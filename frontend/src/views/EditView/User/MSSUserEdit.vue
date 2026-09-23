@@ -147,84 +147,123 @@
           </a-row>
         </div>
 
-        <!-- 可用任务：清单由本软件在运行前从 MSS 的 interface.json 同步 -->
+        <!-- 任务编排：运行前由本软件按这里的设置改外壳任务，跑完恢复 -->
         <div class="form-section">
           <div class="section-header">
-            <h3>{{ t('edit.mssAvailableTasks') }}</h3>
+            <h3>{{ t('edit.mssOrchestration') }}</h3>
+            <a-tooltip :title="t('edit.mssOrchestrationHint')">
+              <QuestionCircleOutlined class="help-icon" />
+            </a-tooltip>
           </div>
-          <a-alert
-            v-if="!availableTasks.length"
-            type="info"
-            show-icon
-            :message="t('edit.mssAvailableTasksEmpty')"
-          />
-          <div v-else class="task-picker">
-            <div class="task-picker-hint">{{ t('edit.mssAvailableTasksHint') }}</div>
-            <a-row :gutter="[16, 8]">
-              <a-col v-for="task in availableTasks" :key="taskKey(task)" :span="12">
-                <a-checkbox
-                  :checked="isTaskQueued(task)"
-                  :disabled="loading || !userId"
-                  @change="() => toggleTask(task)"
+          <a-row :gutter="24">
+            <a-col :span="8">
+              <a-form-item>
+                <template #label>
+                  <a-tooltip :title="t('edit.mssPlanModeHint')">
+                    <span class="form-label">
+                      {{ t('edit.mssPlanMode') }}
+                      <QuestionCircleOutlined class="help-icon" />
+                    </span>
+                  </a-tooltip>
+                </template>
+                <a-select
+                  v-model:value="formData.Info.PlanMode"
+                  :disabled="loading"
+                  :options="planModeOptions"
+                  size="large"
+                  style="width: 100%"
+                  @change="handleFieldSave('Info.PlanMode', formData.Info.PlanMode)"
+                />
+              </a-form-item>
+            </a-col>
+            <a-col :span="4">
+              <a-form-item>
+                <template #label>
+                  <a-tooltip :title="t('edit.mssActivityFirstHint')">
+                    <span class="form-label">
+                      {{ t('edit.mssActivityFirst') }}
+                      <QuestionCircleOutlined class="help-icon" />
+                    </span>
+                  </a-tooltip>
+                </template>
+                <a-switch
+                  v-model:checked="formData.Info.IfActivityFirst"
+                  :disabled="loading"
+                  @change="
+                    handleFieldSave('Info.IfActivityFirst', formData.Info.IfActivityFirst)
+                  "
+                />
+              </a-form-item>
+            </a-col>
+            <a-col :span="4">
+              <a-form-item>
+                <template #label>
+                  <a-tooltip :title="t('edit.mssClimbModeHint')">
+                    <span class="form-label">
+                      {{ t('edit.mssClimbMode') }}
+                      <QuestionCircleOutlined class="help-icon" />
+                    </span>
+                  </a-tooltip>
+                </template>
+                <a-select
+                  v-model:value="formData.Info.ClimbMode"
+                  :disabled="loading"
+                  size="large"
+                  style="width: 100%"
+                  @change="handleFieldSave('Info.ClimbMode', formData.Info.ClimbMode)"
                 >
-                  <span class="task-picker-name">{{ task.name || task.entry }}</span>
-                  <span v-if="task.description" class="task-picker-desc">
-                    {{ task.description }}
-                  </span>
-                </a-checkbox>
-              </a-col>
-            </a-row>
-          </div>
-        </div>
-
-        <!-- 任务队列：顺序即执行顺序，选项值按队列写进实例配置 -->
-        <div class="form-section">
-          <div class="section-header">
-            <h3>{{ t('edit.taskQueue') }}</h3>
-          </div>
-          <div class="task-picker-hint">{{ t('edit.mssTaskQueueHint') }}</div>
-          <a-empty v-if="!taskQueue.length" :description="t('edit.mssQueueEmpty')" />
-          <div v-else class="queue-list">
-            <div v-for="(item, index) in taskQueue" :key="`${taskKey(item)}-${index}`" class="queue-item">
-              <div class="queue-item-head">
-                <span class="queue-index">{{ index + 1 }}</span>
-                <span class="queue-name">{{ item.name || item.entry }}</span>
-                <a-space size="small">
-                  <a-button
-                    size="small"
-                    :title="t('edit.moveTaskUp')"
-                    :disabled="loading || index === 0"
-                    @click="moveQueueItem(index, -1)"
-                  >
-                    <template #icon><ArrowUpOutlined /></template>
-                  </a-button>
-                  <a-button
-                    size="small"
-                    :title="t('edit.moveTaskDown')"
-                    :disabled="loading || index === taskQueue.length - 1"
-                    @click="moveQueueItem(index, 1)"
-                  >
-                    <template #icon><ArrowDownOutlined /></template>
-                  </a-button>
-                  <a-button size="small" danger :disabled="loading" @click="removeQueueItem(index)">
-                    <template #icon><DeleteOutlined /></template>
-                  </a-button>
-                </a-space>
-              </div>
-              <div v-if="taskOptionNames(item).length" class="queue-options">
-                <div v-for="optionName in taskOptionNames(item)" :key="optionName" class="queue-option">
-                  <span class="queue-option-name">{{ optionName }}</span>
-                  <a-input
-                    :value="formatOptionValue(item.options[optionName])"
-                    :disabled="loading || !userId"
-                    :placeholder="t('edit.mssOptionValueHint')"
-                    class="modern-input"
-                    @blur="handleOptionBlur(index, optionName, $event)"
-                  />
-                </div>
-              </div>
-            </div>
-          </div>
+                  <a-select-option value="Close">{{ t('edit.mssClimbClose') }}</a-select-option>
+                  <a-select-option value="Auto">{{ t('edit.mssClimbAuto') }}</a-select-option>
+                </a-select>
+              </a-form-item>
+            </a-col>
+            <a-col :span="4">
+              <a-form-item>
+                <template #label>
+                  <a-tooltip :title="t('edit.mssClimbStartWeekdayHint')">
+                    <span class="form-label">
+                      {{ t('edit.mssClimbStartWeekday') }}
+                      <QuestionCircleOutlined class="help-icon" />
+                    </span>
+                  </a-tooltip>
+                </template>
+                <a-select
+                  v-model:value="formData.Info.ClimbStartWeekday"
+                  :disabled="loading || formData.Info.ClimbMode !== 'Auto'"
+                  size="large"
+                  style="width: 100%"
+                  @change="
+                    handleFieldSave('Info.ClimbStartWeekday', formData.Info.ClimbStartWeekday)
+                  "
+                >
+                  <a-select-option v-for="day in WEEKDAY_KEYS" :key="day" :value="day">
+                    {{ t(`edit.weekday.${day}`) }}
+                  </a-select-option>
+                </a-select>
+              </a-form-item>
+            </a-col>
+            <a-col :span="4">
+              <a-form-item>
+                <template #label>
+                  <a-tooltip :title="t('edit.mssClimbTimesHint')">
+                    <span class="form-label">
+                      {{ t('edit.mssClimbTimes') }}
+                      <QuestionCircleOutlined class="help-icon" />
+                    </span>
+                  </a-tooltip>
+                </template>
+                <a-input-number
+                  v-model:value="formData.Info.ClimbTimes"
+                  :min="1"
+                  :max="99"
+                  :disabled="loading || formData.Info.ClimbMode !== 'Auto'"
+                  size="large"
+                  style="width: 100%"
+                  @blur="handleFieldSave('Info.ClimbTimes', formData.Info.ClimbTimes)"
+                />
+              </a-form-item>
+            </a-col>
+          </a-row>
         </div>
 
         <!-- 数据统计（只读，由本软件自动写入） -->
@@ -259,6 +298,19 @@
                 <a-input :value="formData.Data.ProxyTimes" readonly size="large" />
               </a-form-item>
             </a-col>
+            <a-col :span="6">
+              <a-form-item>
+                <template #label>
+                  <span class="form-label">
+                    {{ t('edit.mssClimbCompletedWeek') }}
+                    <a-tooltip :title="t('edit.mssDataReadOnlyHint')">
+                      <QuestionCircleOutlined class="help-icon" />
+                    </a-tooltip>
+                  </span>
+                </template>
+                <a-input :value="formData.Data.ClimbCompletedWeek" readonly size="large" />
+              </a-form-item>
+            </a-col>
           </a-row>
         </div>
 
@@ -283,24 +335,26 @@ import { useI18n } from 'vue-i18n'
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
-import {
-  ArrowDownOutlined,
-  ArrowLeftOutlined,
-  ArrowUpOutlined,
-  DeleteOutlined,
-  QuestionCircleOutlined,
-} from '@ant-design/icons-vue'
+import { ArrowLeftOutlined, QuestionCircleOutlined } from '@ant-design/icons-vue'
 import type { FormInstance, Rule } from 'ant-design-vue/es/form'
+import { Service } from '@/api'
+import { PlanComboxIn } from '@/api/models/PlanComboxIn.ts'
 import { useUserApi } from '@/composables/useUserApi.ts'
 import { useScriptApi } from '@/composables/useScriptApi.ts'
 import { parseStatusTagList } from '@/composables/useStatusTag.ts'
 import UserNotifyConfig from '@/components/UserNotifyConfig.vue'
 import ExtraScriptSection from '@/components/ExtraScriptSection.vue'
-import type {
-  MSSAvailableTaskItem,
-  MSSQueuedTaskItem,
-  MSSTaskOptionValue,
-} from '@/types/script'
+
+/** 周常允许开始的星期；值与后端 MSSUserConfig.Info.ClimbStartWeekday 的枚举一致 */
+const WEEKDAY_KEYS = [
+  'Monday',
+  'Tuesday',
+  'Wednesday',
+  'Thursday',
+  'Friday',
+  'Saturday',
+  'Sunday',
+] as const
 
 const { t } = useI18n()
 
@@ -325,10 +379,6 @@ const { configLocked } = useScriptConfigLock(() => scriptId)
 // 脚本信息
 const scriptName = ref('')
 
-// 可用任务（后端写入 Task.AvailableTasks）、任务队列（本页写入 Task.Queue）
-const availableTasks = ref<MSSAvailableTaskItem[]>([])
-const taskQueue = ref<MSSQueuedTaskItem[]>([])
-
 // MSS 用户默认数据（与后端 MSSUserConfig 的默认值保持一致）
 const getDefaultMSSUserData = () => ({
   Info: {
@@ -337,16 +387,17 @@ const getDefaultMSSUserData = () => ({
     Mode: '用户',
     IfQuickConfig: true,
     RemainedDay: -1,
+    PlanMode: 'Fixed',
+    IfActivityFirst: true,
+    ClimbMode: 'Close',
+    ClimbStartWeekday: 'Monday',
+    ClimbTimes: 5,
     IfScriptBeforeTask: false,
     ScriptBeforeTask: '',
     IfScriptAfterTask: false,
     ScriptAfterTask: '',
     Notes: '',
     Tag: '',
-  },
-  Task: {
-    AvailableTasks: '[]',
-    Queue: '[]',
   },
   Notify: {
     Enabled: false,
@@ -359,6 +410,7 @@ const getDefaultMSSUserData = () => ({
   Data: {
     LastProxyDate: '',
     ProxyTimes: 0,
+    ClimbCompletedWeek: '',
   },
 })
 
@@ -369,6 +421,32 @@ const formData = reactive({
   // 嵌套的实际数据
   ...getDefaultMSSUserData(),
 })
+
+// 悬赏试炼关卡来源下拉：固定 + 计划表列表（后端按 consumer 过滤出 MSS 计划表）
+const planModeOptions = ref<Array<{ label: string; value: string }>>([
+  { label: t('edit.mssPlanFixed'), value: 'Fixed' },
+])
+
+const loadPlanModeOptions = async () => {
+  try {
+    const response = await Service.getPlanComboxApiInfoComboxPlanPost({
+      consumer: PlanComboxIn.consumer.MSS,
+    })
+    if (response && response.code === 200 && response.data) {
+      // 只保留有值的项：后端在「固定」之外还会带上计划表 UUID
+      const items = response.data
+        .filter(item => Boolean(item.value))
+        .map(item => ({ label: item.label ?? '', value: String(item.value) }))
+      if (items.length > 0) {
+        planModeOptions.value = items
+      }
+    }
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`加载计划表选项失败: ${errorMsg}`)
+    // 保持只有「固定」一项，用户仍可正常保存其它设置
+  }
+}
 
 // 只读标签：后端按运行情况生成的 JSON 字符串
 const userTags = computed(() => parseStatusTagList(formData.Info.Tag))
@@ -403,113 +481,6 @@ watch(
     }
   }
 )
-
-// ══ 任务队列 ══
-// AvailableTasks / Queue 在配置里都是 JSON 数组字符串（后端也可能直接给数组）
-const parseConfigList = <T,>(raw: unknown): T[] => {
-  if (Array.isArray(raw)) return raw as T[]
-  if (typeof raw !== 'string' || !raw.trim()) return []
-  try {
-    const parsed = JSON.parse(raw)
-    return Array.isArray(parsed) ? (parsed as T[]) : []
-  } catch {
-    return []
-  }
-}
-
-const taskKey = (task: Pick<MSSAvailableTaskItem, 'name' | 'entry'>) =>
-  task.entry || task.name || ''
-
-/** 队列项与清单项算同一个任务：entry 优先，缺失时退回显示名 */
-const isSameTask = (
-  item: Pick<MSSQueuedTaskItem, 'name' | 'entry'>,
-  task: Pick<MSSAvailableTaskItem, 'name' | 'entry'>
-) => (task.entry && item.entry ? task.entry === item.entry : task.name === item.name)
-
-const isTaskQueued = (task: MSSAvailableTaskItem) =>
-  taskQueue.value.some(item => isSameTask(item, task))
-
-/** 队列项的选项名来自清单里的任务定义；清单缺失（未运行过）时不显示选项编辑 */
-const taskOptionNames = (item: MSSQueuedTaskItem): string[] => {
-  const matched = availableTasks.value.find(task => isSameTask(item, task))
-  return matched?.option ?? []
-}
-
-const formatOptionValue = (value: MSSTaskOptionValue | undefined): string => {
-  if (value === undefined) return ''
-  return typeof value === 'string' ? value : JSON.stringify(value)
-}
-
-// 队列整体落盘：选项编辑与排序都走这里，Task.Queue 只提交一次
-const saveQueue = async (next: MSSQueuedTaskItem[]) => {
-  taskQueue.value = next
-  await handleFieldSave('Task.Queue', JSON.stringify(next))
-}
-
-const toggleTask = async (task: MSSAvailableTaskItem) => {
-  if (loading.value || !userId) return
-  if (isTaskQueued(task)) {
-    await saveQueue(taskQueue.value.filter(item => !isSameTask(item, task)))
-    return
-  }
-  await saveQueue([
-    ...taskQueue.value,
-    { name: task.name || task.entry, entry: task.entry || '', options: {} },
-  ])
-}
-
-const moveQueueItem = async (index: number, delta: number) => {
-  const target = index + delta
-  if (target < 0 || target >= taskQueue.value.length) return
-  const next = [...taskQueue.value]
-  const [moved] = next.splice(index, 1)
-  next.splice(target, 0, moved)
-  await saveQueue(next)
-}
-
-const removeQueueItem = async (index: number) => {
-  const next = [...taskQueue.value]
-  next.splice(index, 1)
-  await saveQueue(next)
-}
-
-// 选项取值：选择型（select）填选项名，输入型（input）填 JSON 对象
-// {"输入名": "值"}；清空表示沿用 MSS 里的默认值
-const applyOptionValue = async (index: number, optionName: string, raw: string) => {
-  const current = taskQueue.value[index]
-  if (!current) return
-
-  const text = raw.trim()
-  const options: Record<string, MSSTaskOptionValue> = { ...current.options }
-
-  if (!text) {
-    delete options[optionName]
-  } else if (text.startsWith('{')) {
-    let parsed: unknown
-    try {
-      parsed = JSON.parse(text)
-    } catch {
-      message.error(t('edit.mssOptionValueHint'))
-      return
-    }
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-      message.error(t('edit.mssOptionValueHint'))
-      return
-    }
-    options[optionName] = parsed as Record<string, string>
-  } else {
-    options[optionName] = text
-  }
-
-  await saveQueue(
-    taskQueue.value.map((item, i) => (i === index ? { ...item, options } : item))
-  )
-}
-
-const handleOptionBlur = (index: number, optionName: string, event: Event) => {
-  const target = event.target as HTMLInputElement | null
-  void applyOptionValue(index, optionName, target?.value ?? '')
-}
 
 // 即时保存单个字段变更（局部更新，不整体覆盖用户配置）
 const handleFieldSave = async (key: string, value: any) => {
@@ -614,12 +585,7 @@ const loadUserData = async () => {
             Info: { ...getDefaultMSSUserData().Info, ...userData.Info },
             Notify: { ...getDefaultMSSUserData().Notify, ...userData.Notify },
             Data: { ...getDefaultMSSUserData().Data, ...userData.Data },
-            Task: { ...getDefaultMSSUserData().Task, ...userData.Task },
           })
-          availableTasks.value = parseConfigList<MSSAvailableTaskItem>(
-            userData.Task?.AvailableTasks
-          )
-          taskQueue.value = parseConfigList<MSSQueuedTaskItem>(userData.Task?.Queue)
         }
 
         // 同步扁平化字段 - 使用nextTick确保数据更新完成后再同步
@@ -657,6 +623,7 @@ onMounted(async () => {
   }
 
   await loadScriptInfo()
+  await loadPlanModeOptions()
   await nextTick()
 })
 </script>
@@ -779,85 +746,6 @@ onMounted(async () => {
   gap: 6px;
   align-items: center;
   min-height: 40px;
-}
-
-.task-picker-hint {
-  margin: 8px 0 12px;
-  color: var(--ant-color-text-secondary);
-  font-size: 13px;
-}
-
-.task-picker-name {
-  font-weight: 600;
-}
-
-.task-picker-desc {
-  margin-left: 8px;
-  color: var(--ant-color-text-tertiary);
-  font-size: 12px;
-}
-
-.queue-list {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.queue-item {
-  border: 1px solid var(--ant-color-border-secondary);
-  border-radius: 8px;
-  padding: 12px 16px;
-  background: var(--ant-color-bg-container);
-}
-
-.queue-item-head {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.queue-index {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 24px;
-  height: 24px;
-  border-radius: 50%;
-  background: var(--ant-color-primary-bg);
-  color: var(--ant-color-primary);
-  font-size: 13px;
-  font-weight: 600;
-}
-
-.queue-name {
-  flex: 1;
-  font-weight: 600;
-  color: var(--ant-color-text);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.queue-options {
-  margin-top: 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.queue-option {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.queue-option-name {
-  flex: 0 0 180px;
-  color: var(--ant-color-text-secondary);
-  font-size: 13px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .cancel-button {

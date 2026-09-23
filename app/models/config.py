@@ -46,6 +46,8 @@ from app.utils.constants import (
     MAAEND_STAGE_WITH_AB,
     MAAEND_TASKS,
     MATERIALS_MAP,
+    MSS_DEFAULT_TRIBULATION_STAGE,
+    MSS_TRIBULATION_STAGES,
     PLAN_CONSUMER_VALUES,
     RESOURCE_STAGE_INFO,
     STARRAIL_STAGE_BOOK,
@@ -3174,6 +3176,71 @@ class MaaEndPlanConfig(WeeklyKeyPlanConfig):
         return await super().load(normalized_data)
 
 
+def normalize_mss_plan_key(raw_key: object) -> dict[str, Any]:
+    """将固定配置或旧计划表日期槽位转换为 MSS key。"""
+
+    if isinstance(raw_key, dict) and "Key" in raw_key:
+        raw_key = raw_key["Key"]
+    data = raw_key if isinstance(raw_key, dict) else {}
+
+    stage = data.get("TribulationStage")
+    if stage not in MSS_TRIBULATION_STAGES:
+        stage = MSS_DEFAULT_TRIBULATION_STAGE
+    return {
+        "TribulationStage": stage,
+        "SkipDifficulty": bool(data.get("SkipDifficulty", False)),
+        "Difficulty": _clamp_plan_number(data.get("Difficulty"), 1),
+        "ConsumeAllEnergy": bool(data.get("ConsumeAllEnergy", False)),
+        "FightTimes": _clamp_plan_number(data.get("FightTimes"), 1),
+    }
+
+
+def _clamp_plan_number(value: object, default: int) -> int:
+    """把计划表里的难度 / 次数收成 1..99 的整数；非法值退回默认。"""
+
+    try:
+        number = int(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return default
+    return number if 1 <= number <= 99 else default
+
+
+class MSSPlanKeyValidator(ValidatorBase):
+    """MSS 计划表 key 验证器。"""
+
+    def validate(self, value: Any) -> bool:
+        try:
+            return normalize_mss_plan_key(value) == value
+        except ValueError:
+            return False
+
+    def correct(self, value: Any) -> dict[str, Any]:
+        return normalize_mss_plan_key(value)
+
+
+class MSSPlanConfig(WeeklyKeyPlanConfig):
+    """MSS 计划表配置：每个日期槽位存一套悬赏试炼配置。"""
+
+    def __init__(self) -> None:
+        super().__init__(
+            default_name="新 MSS 计划表",
+            ## 用与校验器同一个函数生成默认值：手写字典的话，往 key 里加字段时
+            ## 很容易漏改这里，配置项会因为「默认值不合法」直接起不来
+            default_key=normalize_mss_plan_key({}),
+            key_validator=MSSPlanKeyValidator(),
+        )
+
+    async def load(self, data: dict) -> bool:
+        """加载计划表并迁移没有 Key 包装的旧日期槽位。"""
+
+        normalized_data = deepcopy(data) if isinstance(data, dict) else {}
+        for group in ["ALL", *calendar.day_name]:
+            group_data = normalized_data.get(group)
+            if isinstance(group_data, dict):
+                normalized_data[group] = {"Key": normalize_mss_plan_key(group_data)}
+        return await super().load(normalized_data)
+
+
 class GeneralUserConfig(ConfigBase):
     """通用脚本用户配置"""
 
@@ -4961,6 +5028,7 @@ class GlobalConfig(ConfigBase):
         MSSConfig.related_config["EmulatorConfig"] = self.EmulatorConfig
         MaaUserConfig.related_config["PlanConfig"] = self.PlanConfig
         MaaEndUserConfig.related_config["PlanConfig"] = self.PlanConfig
+        MSSUserConfig.related_config["PlanConfig"] = self.PlanConfig
         QueueItem.related_config["ScriptConfig"] = self.ScriptConfig
 
     def getStage(self) -> str:
@@ -5224,25 +5292,50 @@ class MSSUserConfig(ConfigBase):
         self.Info_ScriptAfterTask = ConfigItem(
             "Info", "ScriptAfterTask", "", FileValidator()
         )
+        ## 悬赏试炼关卡来源：Fixed 用外壳里配的，选了计划表就按当天槽位改
+        self.Info_PlanMode = ConfigItem(
+            "Info",
+            "PlanMode",
+            "Fixed",
+            TypedMultipleUIDValidator(
+                "Fixed", self.related_config, "PlanConfig", MSSPlanConfig
+            ),
+        )
+        ## 活动期间是否先打活动快速战斗
+        self.Info_IfActivityFirst = ConfigItem(
+            "Info", "IfActivityFirst", True, BoolValidator()
+        )
+        ## 周常模式：Auto 时每周跑一次新版爬塔
+        self.Info_ClimbMode = ConfigItem(
+            "Info", "ClimbMode", "Close", OptionsValidator(["Close", "Auto"])
+        )
+        ## 周常允许开始的星期：没到这天就不跑
+        self.Info_ClimbStartWeekday = ConfigItem(
+            "Info",
+            "ClimbStartWeekday",
+            "Monday",
+            OptionsValidator(
+                [
+                    "Monday",
+                    "Tuesday",
+                    "Wednesday",
+                    "Thursday",
+                    "Friday",
+                    "Saturday",
+                    "Sunday",
+                ]
+            ),
+        )
+        ## 周常爬塔次数（星塔旅人的周常就是把新版爬塔刷满）
+        self.Info_ClimbTimes = ConfigItem(
+            "Info", "ClimbTimes", 5, RangeValidator(1, 99)
+        )
         ## 备注
         self.Info_Notes = ConfigItem("Info", "Notes", "无")
         ## 用户标签信息
         self.Info_Tag = ConfigItem(
             "Info", "Tag", "[ ]", VirtualConfigValidator(self.getTags)
         )
-        ## 服务器资源（官服/台服/国际服/日服）
-        self.Info_Resource = ConfigItem("Info", "Resource", "官服")
-        ## 控制器名（桌面端/安卓端，留空时按项目 interface 与设备自动选择）
-        self.Info_Controller = ConfigItem("Info", "Controller", "")
-
-        ## Task -------------------------------------------------------------
-        ## 可用任务列表（从 MSS 项目 interface.json 读取）
-        self.Task_AvailableTasks = ConfigItem(
-            "Task", "AvailableTasks", "[]", JSONValidator(list)
-        )
-        ## 运行任务队列，元素含任务名、entry 与各选项取值
-        self.Task_Queue = ConfigItem("Task", "Queue", "[]", JSONValidator(list))
-
         ## Data ------------------------------------------------------------
         ## 上次代理日期
         self.Data_LastProxyDate = ConfigItem(
@@ -5251,6 +5344,10 @@ class MSSUserConfig(ConfigBase):
         ## 代理次数
         self.Data_ProxyTimes = ConfigItem(
             "Data", "ProxyTimes", 0, RangeValidator(0, 9999)
+        )
+        ## 周常跑完的 ISO 周（形如 "2026-W34"，按东四区）
+        self.Data_ClimbCompletedWeek = ConfigItem(
+            "Data", "ClimbCompletedWeek", "2000-W01"
         )
 
         ## Notify ----------------------------------------------------------
@@ -5402,6 +5499,14 @@ PLAN_BOOK = {
         "consumer": PLAN_CONSUMER_VALUES[1],
         "script_class": MaaEndConfig,
         "field_name": "SanityMode",
+    },
+    "MSSPlanConfig": {
+        "create_type": "MSSPlan",
+        "config_class": MSSPlanConfig,
+        "schema_class": schema_model.MSSPlanConfig,
+        "consumer": PLAN_CONSUMER_VALUES[2],
+        "script_class": MSSConfig,
+        "field_name": "PlanMode",
     },
 }
 """计划表注册表"""

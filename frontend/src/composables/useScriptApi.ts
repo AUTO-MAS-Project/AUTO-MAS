@@ -1339,19 +1339,29 @@ export function useScriptApi() {
                             ? mssUserData.Info.RemainedDay
                             : -1,
                         Mode: mssUserData.Info?.Mode !== undefined ? mssUserData.Info.Mode : '用户',
-                        Resource:
-                          mssUserData.Info?.Resource !== undefined ? mssUserData.Info.Resource : '',
+                        PlanMode:
+                          mssUserData.Info?.PlanMode !== undefined
+                            ? mssUserData.Info.PlanMode
+                            : 'Fixed',
+                        IfActivityFirst:
+                          mssUserData.Info?.IfActivityFirst !== undefined
+                            ? mssUserData.Info.IfActivityFirst
+                            : true,
+                        ClimbMode:
+                          mssUserData.Info?.ClimbMode !== undefined
+                            ? mssUserData.Info.ClimbMode
+                            : 'Close',
+                        ClimbStartWeekday:
+                          mssUserData.Info?.ClimbStartWeekday !== undefined
+                            ? mssUserData.Info.ClimbStartWeekday
+                            : 'Monday',
+                        ClimbTimes:
+                          mssUserData.Info?.ClimbTimes !== undefined
+                            ? mssUserData.Info.ClimbTimes
+                            : 5,
                         Notes:
                           mssUserData.Info?.Notes !== undefined ? mssUserData.Info.Notes : '',
                         Tag: mssUserData.Info?.Tag !== undefined ? mssUserData.Info.Tag : null,
-                      },
-                      Task: {
-                        AvailableTasks:
-                          mssUserData.Task?.AvailableTasks !== undefined
-                            ? mssUserData.Task.AvailableTasks
-                            : '[]',
-                        Queue:
-                          mssUserData.Task?.Queue !== undefined ? mssUserData.Task.Queue : '[]',
                       },
                       Notify: {
                         Enabled:
@@ -1388,6 +1398,10 @@ export function useScriptApi() {
                           mssUserData.Data?.ProxyTimes !== undefined
                             ? mssUserData.Data.ProxyTimes
                             : 0,
+                        ClimbCompletedWeek:
+                          mssUserData.Data?.ClimbCompletedWeek !== undefined
+                            ? mssUserData.Data.ClimbCompletedWeek
+                            : '',
                       },
                     }
                   }

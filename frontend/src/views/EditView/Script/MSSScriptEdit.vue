@@ -131,7 +131,7 @@
                 </a-select>
               </a-form-item>
             </a-col>
-            <a-col :span="8">
+            <a-col :span="16">
               <a-form-item>
                 <template #label>
                   <span class="form-label">
@@ -141,7 +141,7 @@
                     </a-tooltip>
                   </span>
                 </template>
-                <a-input-group compact>
+                <a-input-group compact class="path-input-group">
                   <a-input
                     v-model:value="mssConfig.Game.LaunchPath"
                     size="large"
@@ -227,100 +227,7 @@
             show-icon
             :message="t('edit.mssEmulatorUnsupported')"
           />
-          <a-row :gutter="24">
-            <a-col :span="8">
-              <a-form-item>
-                <template #label>
-                  <span class="form-label">
-                    {{ t('edit.emulator') }}
-                    <a-tooltip :title="t('edit.mssEmulatorHint')">
-                      <QuestionCircleOutlined class="help-icon" />
-                    </a-tooltip>
-                  </span>
-                </template>
-                <a-select
-                  v-model:value="mssConfig.Emulator.Id"
-                  size="large"
-                  :placeholder="t('edit.pickEmulator')"
-                  :loading="emulatorLoading"
-                  @change="handleEmulatorSelectChange"
-                >
-                  <a-select-option
-                    v-for="item in emulatorOptions"
-                    :key="item.value"
-                    :value="item.value"
-                  >
-                    {{ item.label }}
-                  </a-select-option>
-                </a-select>
-              </a-form-item>
-            </a-col>
-            <a-col :span="8">
-              <a-form-item>
-                <template #label>
-                  <span class="form-label">
-                    {{ t('edit.emulatorInstance') }}
-                    <a-tooltip :title="t('edit.pickEmulatorInstance')">
-                      <QuestionCircleOutlined class="help-icon" />
-                    </a-tooltip>
-                  </span>
-                </template>
-                <!-- 当API返回空列表时显示输入框 -->
-                <a-input
-                  v-if="
-                    emulatorDeviceOptions.length === 0 &&
-                    !emulatorDeviceLoading &&
-                    mssConfig.Emulator.Id &&
-                    mssConfig.Emulator.Id !== '-'
-                  "
-                  v-model:value="mssConfig.Emulator.Index"
-                  size="large"
-                  :placeholder="t('edit.enterInstanceInfoAs')"
-                  class="modern-input"
-                  @blur="handleChange('Emulator', 'Index', mssConfig.Emulator.Index)"
-                />
-                <!-- 正常情况下显示下拉框 -->
-                <a-select
-                  v-else
-                  v-model:value="mssConfig.Emulator.Index"
-                  size="large"
-                  :placeholder="t('edit.pickEmulatorFirst')"
-                  :loading="emulatorDeviceLoading"
-                  :disabled="!mssConfig.Emulator.Id"
-                  @change="handleChange('Emulator', 'Index', $event)"
-                >
-                  <a-select-option
-                    v-for="item in emulatorDeviceOptions"
-                    :key="item.value"
-                    :value="item.value"
-                  >
-                    {{ item.label }}
-                  </a-select-option>
-                </a-select>
-              </a-form-item>
-            </a-col>
-            <a-col :span="8">
-              <a-form-item>
-                <template #label>
-                  <span class="form-label">
-                    {{ t('edit.mssCloseOnFinish') }}
-                    <a-tooltip :title="t('edit.mssCloseOnFinishHint')">
-                      <QuestionCircleOutlined class="help-icon" />
-                    </a-tooltip>
-                  </span>
-                </template>
-                <a-select
-                  v-model:value="mssConfig.Emulator.CloseOnFinish"
-                  size="large"
-                  style="width: 100%"
-                  @change="handleChange('Emulator', 'CloseOnFinish', $event)"
-                >
-                  <a-select-option :value="true">{{ t('edit.yes') }}</a-select-option>
-                  <a-select-option :value="false">{{ t('edit.no') }}</a-select-option>
-                </a-select>
-              </a-form-item>
-            </a-col>
-          </a-row>
+          <!-- 桌面端专用：模拟器端星塔旅人游戏起不来，未做适配，所以不给选择器 -->
         </div>
 
         <!-- 运行配置 -->
@@ -405,24 +312,12 @@ import { useI18n } from 'vue-i18n'
 import { message } from 'ant-design-vue'
 import { ArrowLeftOutlined, FolderOpenOutlined, QuestionCircleOutlined } from '@ant-design/icons-vue'
 import { useScriptApi } from '@/composables/useScriptApi'
-import { useEmulatorDeviceOptions } from '@/composables/useEmulatorDeviceOptions.ts'
-import { Service, type ComboBoxItem } from '@/api'
 
 const { t } = useI18n()
 const logger = window.electronAPI.getLogger('MSS脚本编辑')
 const route = useRoute()
 const router = useRouter()
 const { getScript, updateScript } = useScriptApi()
-const {
-  emulatorDeviceLoading,
-  emulatorDeviceOptions,
-  clearEmulatorDeviceOptions,
-  loadEmulatorDeviceOptions,
-} = useEmulatorDeviceOptions()
-
-// 模拟器相关状态：模拟器的启动与关闭由本软件调度，MSS 外壳只负责连接
-const emulatorLoading = ref(false)
-const emulatorOptions = ref<ComboBoxItem[]>([])
 
 const scriptId = route.params.id as string
 const pageLoading = ref(true)
@@ -549,10 +444,6 @@ const loadScript = async () => {
     Object.assign(mssConfig.Emulator, config.Emulator || {})
     Object.assign(mssConfig.Game, config.Game || {})
     Object.assign(mssConfig.Run, config.Run || {})
-    // 已经选过模拟器时同步加载它的设备列表
-    if (mssConfig.Emulator.Id && mssConfig.Emulator.Id !== '-') {
-      void loadEmulatorDeviceOptions(mssConfig.Emulator.Id)
-    }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`加载脚本失败: ${errorMsg}`)
@@ -597,37 +488,8 @@ const selectGamePath = async () => {
   }
 }
 
-// 模拟器相关方法
-const loadEmulatorOptions = async () => {
-  emulatorLoading.value = true
-  try {
-    const response = await Service.getEmulatorComboxApiInfoComboxEmulatorPost()
-    emulatorOptions.value = response.data || []
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`加载模拟器选项失败: ${errorMsg}`)
-    message.error(t('edit.couldNotLoadEmulator'))
-  } finally {
-    emulatorLoading.value = false
-  }
-}
-
-const handleEmulatorSelectChange = async (emulatorId: string) => {
-  // 换模拟器后旧的实例索引不再有效
-  mssConfig.Emulator.Index = '-'
-  if (emulatorId && emulatorId !== '-') {
-    void loadEmulatorDeviceOptions(emulatorId)
-  } else {
-    clearEmulatorDeviceOptions()
-  }
-
-  await handleChange('Emulator', 'Id', emulatorId)
-  await handleChange('Emulator', 'Index', '-')
-}
-
 onMounted(() => {
   void loadScript()
-  void loadEmulatorOptions()
 })
 </script>
 

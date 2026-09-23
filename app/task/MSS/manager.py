@@ -22,46 +22,50 @@
 
 按用户逐个拉起 MSS 的外壳自动代理任务，结束时统一组装任务报告并推送。
 
-**比通用 MaaFW 多控制了什么**：通用线（``ScriptType = "MaaFW"``）直接由 MAS 的
-运行池加载 MaaFramework 运行项目，不碰项目自带的界面程序；MSS 专项走的是
-**官方 MFAAvalonia 外壳**（``MFAAvalonia.exe --autostart -i <实例> -q``），因此
-需要 MAS 负责任务级地改写并恢复外层的**实例配置**（``config/instances/*.json``，
-上游私有格式，MAS 只在值层面经手）、按用户编排任务队列，并把外壳写的日志接进
-MAS 的历史记录 / 通知 / 统计链路。选择外壳路线的原因：上游尚未提供 `preset`，
-用户需要在 MAS 里按星塔语义组织任务队列并且不想自己打开 GUI。
+**比通用 MaaFW 多控制了什么**：通用线（``ScriptType = "MaaFW"``）由 MAS 的运行池
+直接加载 MaaFramework，任务清单每次现读 ``interface.json``、在 MAS 里挑任务，从不
+启动项目自带的界面程序；MSS 专项走的是**官方 MFAAvalonia 外壳**——用户在外壳里
+配好实例与任务，MAS 只按实例把它拉起来（``MFAAvalonia.exe --autostart -i <实例>
+-q``），再把外壳写的日志接进 MAS 的历史记录 / 通知 / 统计链路。
+
+MAS 只在「计划表与活动编排」里读写外壳的实例配置（``config/instances/*.json`` 是上游私有
+格式，只改 ``CurrentTasks`` 与三个选项、跑完还原，见 ``tools/orchestrate.py``）；游戏启停与
+可选的 Unity 分辨率临时覆盖由 ``tools/game_launch.py`` 负责。
+
+MSS 只适配**桌面端**：星塔旅人的模拟器端游戏起不来，未做适配——所以这里既不要模拟器配置，
+也不参与模拟器的启停。
 """
 
-import asyncio
 import json
 import uuid
 from datetime import datetime
 from pathlib import Path
 
 from app.core import Config
-from app.core.emulator_manager import EmulatorManager
 from app.core.ws import Publisher, protocol
 from app.models.config import MSSConfig, MSSUserConfig
 from app.models.ConfigBase import MultipleConfig
-from app.models.emulator import DeviceBase, DeviceProvider
+from app.models.emulator import DeviceBase
 from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, TaskExecuteBase, UserItem
 from app.services import System
-from app.task.emulator_core import close_emulator
 from app.task.notify_core import push_proxy_result
 from app.utils import get_logger
 from app.utils.constants import TASK_MODE_ZH
+from app.utils.io import (
+    clear_native_config_snapshot,
+    dir_fingerprint,
+    recover_native_config,
+    replace_dir,
+    write_native_config_snapshot,
+)
 
 from .AutoProxy import AutoProxyTask
 from .tools import (
     EXE_NAME,
-    MssTaskCatalog,
-    commit_instance_snapshot,
-    discard_instance_snapshot,
-    interface_exists,
-    load_task_catalog_or_error,
-    recover_previous_instance_snapshot,
+    INTERFACE_NAME,
     resolve_instance_dir,
-    restore_instance_snapshot,
+    resolve_temp_dir,
 )
 
 logger = get_logger("MSS 调度器")
@@ -78,8 +82,6 @@ class MSSManager(TaskExecuteBase):
         self,
         script_info: ScriptItem,
         mode: str = "AutoProxy",
-        *,
-        device_provider: DeviceProvider | None = None,
     ):
         """初始化 MSS 控制器。
 
@@ -87,7 +89,6 @@ class MSSManager(TaskExecuteBase):
             script_info: 本次任务的脚本信息。
             mode: 任务模式；实际分派以 ``task_info.mode`` 为准，此参数仅用于
                 显式覆盖与测试注入。
-            device_provider: 模拟器实例提供者，缺省用全局 ``EmulatorManager``。
         """
 
         super().__init__()
@@ -100,11 +101,8 @@ class MSSManager(TaskExecuteBase):
         self.mode = mode
         self.check_result = "-"
         self.prepared = False
-        self.snapshot_restored = False
+        ## 桌面端专用：MSS 不接管模拟器，这里恒为 None（AutoProxy 会跳过模拟器的启动与关闭）
         self.emulator_manager: DeviceBase | None = None
-        self.task_catalog: MssTaskCatalog | None = None
-        self.had_original_script_config = False
-        self._device_provider = device_provider
 
     async def check(self) -> str:
         """校验 MSS 脚本配置是否可用。
@@ -120,17 +118,16 @@ class MSSManager(TaskExecuteBase):
         if not isinstance(script_config, MSSConfig):
             return "脚本配置类型错误, 不是 MSS 脚本类型"
 
-        if script_config.get("Emulator", "Id") == "-" or script_config.get(
-            "Emulator", "Index"
-        ) in ["", "-"]:
-            return "未完成模拟器配置, 请检查脚本配置中的模拟器设置！"
+        ## 这里**不校验模拟器配置**：MSS 只做桌面端（星塔旅人的模拟器端游戏起不来，
+        ## 不进行适配），没有模拟器也照常运行。缺模拟器要拦的话，拦在 App 自己的
+        ## 桌面端准备里，而不是在这里要求用户去配一个用不上的模拟器。
 
         ## 根目录、外壳程序与实例配置目录都由 Info.Path 派生，逐项给可读的原因
         root_path = Path(str(script_config.get("Info", "Path") or ""))
         if not (root_path / EXE_NAME).is_file():
             return "未找到 MFAAvalonia.exe, 请检查脚本配置中的 MSS 根目录设置！"
 
-        if not interface_exists(root_path):
+        if not (root_path / INTERFACE_NAME).is_file():
             return "未找到 MSS 的 interface.json, 请检查 MSS 根目录设置！"
 
         if not resolve_instance_dir(root_path).is_dir():
@@ -142,11 +139,7 @@ class MSSManager(TaskExecuteBase):
         return "Pass"
 
     async def prepare(self) -> None:
-        """运行前准备。
-
-        顺序不能乱：先处置上次崩溃残留的快照，再备份本轮动手前的现场；实例配置
-        的备份必须发生在任何注入之前。
-        """
+        """运行前准备：锁定脚本配置、加载用户列表、结束上次残留的外壳进程。"""
 
         script_id = uuid.UUID(self.script_info.script_id)
         await Config.ScriptConfig[script_id].lock()
@@ -156,33 +149,25 @@ class MSSManager(TaskExecuteBase):
         logger.success(f"{self.script_info.script_id} 已锁定, MSS 脚本配置提取完成")
 
         self.root_path = Path(str(self.script_config.get("Info", "Path") or ""))
-        self.snapshot_path = Path.cwd() / f"data/{self.script_info.script_id}/Temp"
 
-        ## 任务清单来自 MSS 自己的 interface.json（PI V2），读不出来只降级、不阻断：
-        ## 模板里已有的任务项照常写入
-        self.task_catalog, catalog_error = await asyncio.to_thread(
-            load_task_catalog_or_error, self.root_path
-        )
-        if self.task_catalog is None:
-            logger.warning(f"MSS 任务清单读取失败, 仅按实例配置模板写入任务: {catalog_error}")
-        else:
-            await self._sync_available_tasks(self.task_catalog)
-
-        ## 初始化模拟器管理器：模拟器的启动与关闭统一由本软件调度，
-        ## MSS 自身不再负责拉起模拟器
-        device_provider = self._device_provider or EmulatorManager.get_emulator_instance
-        self.emulator_manager = await device_provider(
-            self.script_config.get("Emulator", "Id")
-        )
-
+        ## 实例配置的注入快照与恢复：编排会改写外壳的 config/instances，改之前把整目录
+        ## 快照到 MAS 自己的数据目录。崩溃时下次运行自动恢复成原样；正常跑完清掉快照，
+        ## 也就是「保留编排」——这套与 MAA / M9A 用的是同一套设施。
+        self.instance_dir = resolve_instance_dir(self.root_path)
+        self.temp_path = resolve_temp_dir(self.script_info.script_id)
         self._recover_previous_run()
-        self.had_original_script_config = commit_instance_snapshot(
-            self.root_path, self.snapshot_path, script_id=self.script_info.script_id
-        )
-        if not self.had_original_script_config:
-            logger.warning(
-                f"未找到可备份的 MSS 实例配置目录: {resolve_instance_dir(self.root_path)}"
+        if self.instance_dir.is_dir():
+            replace_dir(self.instance_dir, self.temp_path)
+            write_native_config_snapshot(
+                self.temp_path,
+                script_id=self.script_info.script_id,
+                original_exists=True,
+                baseline=dir_fingerprint(self.temp_path),
             )
+
+        ## 桌面端用不上模拟器：MSS 未适配模拟器端，这里不再按脚本配置去取实例，
+        ## 免得老配置里残留的模拟器被莫名其妙拉起来
+        self.emulator_manager = None
 
         ## 外壳常驻：同路径下已在运行的 MFAAvalonia 会接管新的命令行请求，那样
         ## `-q`（本次任务完成后退出）与本次的进程跟踪都会失效，所以先结束它
@@ -204,66 +189,19 @@ class MSSManager(TaskExecuteBase):
 
         self.prepared = True
 
-    async def _sync_available_tasks(self, catalog: MssTaskCatalog) -> None:
-        """把 MSS 的任务清单同步进用户的 ``Task.AvailableTasks``。
-
-        前端任务勾选表直接读这个字段；MSS 的清单会随上游发版变化，每次运行前
-        同步一次比在 MAS 里维护一份副本可靠。写入走 ``commit=False``，由收尾时
-        的整表写回统一落盘；失败只告警，不阻断任务。
-
-        Args:
-            catalog: 本次读到的 MSS 任务清单。
-        """
-
-        payload = json.dumps(catalog.available_tasks(), ensure_ascii=False)
-        for uid, config in self.user_config.items():
-            if config.get("Task", "AvailableTasks") == payload:
-                continue
-            try:
-                await config.set("Task", "AvailableTasks", payload, commit=False)
-            except Exception as e:
-                logger.warning(f"同步用户 {uid} 的 MSS 可用任务列表失败: {e}")
-
     def _recover_previous_run(self) -> None:
         """处置上次崩溃残留的实例配置快照。"""
 
-        result = recover_previous_instance_snapshot(
-            self.root_path, self.snapshot_path, script_id=self.script_info.script_id
+        result = recover_native_config(
+            self.temp_path,
+            self.instance_dir,
+            expected_script_id=self.script_info.script_id,
         )
         if result == "restored":
-            logger.info("已恢复上次中断前的 MSS 实例配置")
+            logger.info("已恢复上次中断前的外壳实例配置")
         elif result == "skipped":
             logger.warning(
-                "检测到 MSS 实例配置在中断后被改动, 已保留当前配置并丢弃旧快照"
-            )
-
-    async def _restore_instance_config(self) -> None:
-        """原子恢复任务开始前的 MSS 实例配置。
-
-        正常结束、异常与崩溃后的首次运行都会走到这里；恢复失败必须让用户知道——
-        实例配置会一直带着本次运行写入的队列与 adb 地址，界面却显示一切正常。
-        """
-
-        if self.snapshot_restored or not self.prepared:
-            return
-        self.snapshot_restored = True
-
-        try:
-            restore_instance_snapshot(
-                self.root_path,
-                self.snapshot_path,
-                had_original=self.had_original_script_config,
-            )
-            discard_instance_snapshot(self.snapshot_path)
-        except Exception as e:
-            ## 恢复失败时保留快照：下次任务开始时 recover_previous_run 还能再试一次
-            logger.opt(exception=True).warning(f"恢复 MSS 实例配置失败: {e}")
-            await Publisher.send(
-                id=self.task_info.task_id,
-                type=protocol.TASK_NOTICE,
-                data=WSTaskNoticeData(
-                    level="error", message=f"恢复 MSS 实例配置失败: {e}"
-                ),
+                "检测到外壳实例配置在中断后被改动, 已保留当前配置并丢弃旧快照"
             )
 
     async def main_task(self):
@@ -292,7 +230,6 @@ class MSSManager(TaskExecuteBase):
                 self.script_config,
                 self.user_config,
                 self.emulator_manager,
-                self.task_catalog,
             )
             await self.spawn(task)
 
@@ -301,18 +238,17 @@ class MSSManager(TaskExecuteBase):
 
         if self.check_result != "Pass":
             self.script_info.status = "异常"
-            await self._restore_instance_config()
             return self.check_result
 
         logger.info("MSS 任务已结束, 开始执行后续操作")
+
+        ## 跑完了就把注入快照清掉：编排结果留在外壳里，下次运行不再「恢复」它
+        clear_native_config_snapshot(self.temp_path)
 
         await Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].unlock()
         logger.success(f"已解锁脚本配置 {self.script_info.script_id}")
 
         if self.task_info.mode == "AutoProxy":
-            if self.script_config.get("Emulator", "CloseOnFinish"):
-                await close_emulator(self)
-
             await Config.ScriptConfig[
                 uuid.UUID(self.script_info.script_id)
             ].UserData.load(await self.user_config.toDict())
@@ -357,15 +293,12 @@ class MSSManager(TaskExecuteBase):
                     ),
                 )
 
-        await self._restore_instance_config()
-
         self.script_info.status = "完成"
 
     async def on_crash(self, e: Exception):
         """任务异常时的清理。
 
-        外壳进程与实例配置都在 ``app/task/MSS/AutoProxy.py`` 与 ``final_task``
-        里收尾；这里只保证实例配置不会停在注入态，并把异常告知用户。
+        外壳进程在 ``app/task/MSS/AutoProxy.py`` 里收尾；这里把异常告知用户。
 
         Args:
             e: 触发收尾的异常。
@@ -373,8 +306,6 @@ class MSSManager(TaskExecuteBase):
 
         self.script_info.status = "异常"
         logger.opt(exception=True).warning(f"MSS 任务出现异常: {e}")
-
-        await self._restore_instance_config()
 
         await Publisher.send(
             id=self.task_info.task_id,

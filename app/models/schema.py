@@ -3476,6 +3476,27 @@ class MSSUserConfig_Info(BaseModel):
     IfQuickConfig: Optional[bool] = Field(
         default=None, description="是否启用快速配置（与配置来源独立）"
     )
+    PlanMode: Optional[str] = Field(
+        default=None, description="悬赏试炼关卡来源（Fixed 或计划表 UID）"
+    )
+    IfActivityFirst: Optional[bool] = Field(
+        default=None, description="活动期间是否先打活动"
+    )
+    ClimbMode: Optional[Literal["Close", "Auto"]] = Field(
+        default=None, description="周常模式"
+    )
+    ClimbStartWeekday: Optional[
+        Literal[
+            "Monday",
+            "Tuesday",
+            "Wednesday",
+            "Thursday",
+            "Friday",
+            "Saturday",
+            "Sunday",
+        ]
+    ] = Field(default=None, description="周常允许开始的星期")
+    ClimbTimes: Optional[int] = Field(default=None, description="周常爬塔次数")
     IfScriptBeforeTask: Optional[bool] = Field(
         default=None, description="是否在任务前执行脚本"
     )
@@ -3486,24 +3507,14 @@ class MSSUserConfig_Info(BaseModel):
     ScriptAfterTask: Optional[str] = Field(default=None, description="任务后脚本路径")
     Notes: Optional[str] = Field(default=None, description="备注")
     Tag: Optional[str] = Field(default=None, description="用户标签信息")
-    Resource: Optional[str] = Field(default=None, description="服务器资源名称")
-    Controller: Optional[str] = Field(
-        default=None, description="控制器名称（桌面端/安卓端）"
-    )
-
-
-class MSSUserConfig_Task(BaseModel):
-    AvailableTasks: Optional[Union[str, List]] = Field(
-        default=None, description="可用任务列表 JSON 数组字符串或数组"
-    )
-    Queue: Optional[Union[str, List]] = Field(
-        default=None, description="运行任务队列 JSON 数组字符串或数组"
-    )
 
 
 class MSSUserConfig_Data(BaseModel):
     LastProxyDate: Optional[str] = Field(default=None, description="上次代理日期")
     ProxyTimes: Optional[int] = Field(default=None, description="代理次数")
+    ClimbCompletedWeek: Optional[str] = Field(
+        default=None, description="周常跑完的 ISO 周"
+    )
 
 
 class MSSUserConfig_Notify(BaseModel):
@@ -3519,7 +3530,6 @@ class MSSUserConfig_Notify(BaseModel):
 
 class MSSUserConfig(BaseModel):
     Info: Optional[MSSUserConfig_Info] = Field(default=None, description="基础信息")
-    Task: Optional[MSSUserConfig_Task] = Field(default=None, description="任务配置")
     Data: Optional[MSSUserConfig_Data] = Field(default=None, description="用户数据")
     Notify: Optional[MSSUserConfig_Notify] = Field(default=None, description="单独通知")
 
@@ -4172,8 +4182,8 @@ class MaaFWAgentEnvPrepareOut(OutBase):
     )
 
 
-PlanConfigType = Literal["MaaPlanConfig", "MaaEndPlanConfig"]
-PlanComboxConsumer = Literal["maa", "maaend"]
+PlanConfigType = Literal["MaaPlanConfig", "MaaEndPlanConfig", "MSSPlanConfig"]
+PlanComboxConsumer = Literal["maa", "maaend", "mss"]
 
 
 class PlanIndexItem(BaseModel):
@@ -4284,8 +4294,45 @@ class MaaEndPlanConfig(WeeklyPlanConfig[MaaEndPlanConfig_Info, MaaEndPlanConfig_
     model_config = ConfigDict(extra="forbid")
 
 
-PlanCreateType = Literal["MaaPlan", "MaaEndPlan"]
-PlanConfigData = MaaPlanConfig | MaaEndPlanConfig
+class MSSPlanConfig_Info(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    Name: str = Field(default="新 MSS 计划表", description="计划表名称")
+    Mode: Literal["ALL", "Weekly"] = Field(default="ALL", description="计划表模式")
+
+
+class MSSPlanKey(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    TribulationStage: str = Field(
+        default="基础试炼",
+        description="悬赏试炼关卡（取值见 constants.MSS_TRIBULATION_STAGES）",
+    )
+    SkipDifficulty: bool = Field(
+        default=False, description="悬赏试炼是否跳过难度选择"
+    )
+    Difficulty: int = Field(default=1, description="悬赏试炼难度")
+    ConsumeAllEnergy: bool = Field(
+        default=False, description="悬赏试炼是否消耗所有干劲"
+    )
+    FightTimes: int = Field(default=1, description="自定义快速作战次数")
+
+
+class MSSPlanConfig_Item(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    Key: MSSPlanKey = Field(
+        default_factory=MSSPlanKey,
+        description="MSS 计划表专项 key",
+    )
+
+
+class MSSPlanConfig(WeeklyPlanConfig[MSSPlanConfig_Info, MSSPlanConfig_Item]):
+    model_config = ConfigDict(extra="forbid")
+
+
+PlanCreateType = Literal["MaaPlan", "MaaEndPlan", "MSSPlan"]
+PlanConfigData = MaaPlanConfig | MaaEndPlanConfig | MSSPlanConfig
 
 
 class HistoryIndexItem(BaseModel):

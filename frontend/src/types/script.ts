@@ -221,30 +221,15 @@ export interface M9AScriptConfig {
 // （含 MFAAvalonia.exe 与 interface.json），模拟器与运行上限由 MAS 调度
 export type MSSScriptConfig = MSSConfig
 
-/**
- * 队列项的选项取值：``select`` 型存选项名（case 名）字符串，
- * ``input`` 型存 ``{ 输入名: 值 }`` 对象。前端不知道选项类型，
- * 按值的形态区分，写作与后端 ``Task.Queue`` 解析一致。
- */
-export type MSSTaskOptionValue = string | Record<string, string>
-
-/** MSS 任务队列里的一项：任务显示名、PI V2 entry 与各选项取值 */
-export interface MSSQueuedTaskItem {
-  name: string
-  entry: string
-  options: Record<string, MSSTaskOptionValue>
-}
-
-/**
- * ``Task.AvailableTasks`` 的一项：后端每次运行前从 MSS 的 interface.json 同步，
- * ``option`` 只有选项名——选项的类型与候选值在 MSS 项目里，前端不复制。
- */
-export interface MSSAvailableTaskItem {
-  name: string
-  entry: string
-  description?: string
-  option?: string[]
-}
+/** MSS 周常允许开始的星期，与后端 ClimbStartWeekday 的枚举一致 */
+export type MSSWeekday =
+  | 'Monday'
+  | 'Tuesday'
+  | 'Wednesday'
+  | 'Thursday'
+  | 'Friday'
+  | 'Saturday'
+  | 'Sunday'
 
 export interface MSSUserConfig {
   Info: {
@@ -253,24 +238,26 @@ export interface MSSUserConfig {
     RemainedDay: number
     Mode: '脚本' | '用户' | '直控'
     IfQuickConfig: boolean
+    /** 悬赏试炼关卡来源：Fixed 用外壳里配的，否则是计划表 UUID */
+    PlanMode: string
+    /** 活动期间是否先打活动快速战斗 */
+    IfActivityFirst: boolean
+    /** 周常模式：Auto 时每周自动刷一次新版爬塔 */
+    ClimbMode: 'Close' | 'Auto'
+    ClimbStartWeekday: MSSWeekday
+    ClimbTimes: number
     IfScriptBeforeTask: boolean
     ScriptBeforeTask: string
     IfScriptAfterTask: boolean
     ScriptAfterTask: string
     Notes: string
     Tag?: string | null
-    Resource?: string
-    Controller?: string
-  }
-  Task: {
-    /** 可用任务清单（JSON 数组字符串） */
-    AvailableTasks: string
-    /** 运行任务队列（JSON 数组字符串） */
-    Queue: string
   }
   Data: {
     LastProxyDate: string
     ProxyTimes: number
+    /** 周常跑完的 ISO 周，形如 2026-W34 */
+    ClimbCompletedWeek: string
   }
   Notify: {
     Enabled: boolean
@@ -648,6 +635,8 @@ export interface User {
     LastLimboMonth?: string
     LastLucidscapeMonth?: string
     GreenTicketStoreMonth?: string
+    /** 仅 MSS 用户携带：周常跑完的 ISO 周 */
+    ClimbCompletedWeek?: string
     ProxyTimes: number
   }
   Info: {
@@ -663,6 +652,14 @@ export interface User {
     Password: string
     Resource?: string
     RemainedDay: number
+    /** 仅 MSS 用户携带：悬赏试炼关卡来源（Fixed 或计划表 UUID） */
+    PlanMode?: string
+    /** 仅 MSS 用户携带：活动期间是否先打活动 */
+    IfActivityFirst?: boolean
+    /** 仅 MSS 用户携带：周常模式与设置 */
+    ClimbMode?: string
+    ClimbStartWeekday?: string
+    ClimbTimes?: number
     IfUseMasConfig?: boolean
     SeriesNumb: string
     Server: string

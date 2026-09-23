@@ -1832,38 +1832,54 @@ export default {
       'DirectExe 由本软件启动游戏并在本轮结束后关闭；AttachOnly 只接管已运行的游戏窗口，不启动也不关闭',
     mssLaunchModeDirect: '由本软件启动',
     mssLaunchModeAttach: '只接管已运行的游戏',
-    mssLaunchPathHint: 'DirectExe 模式下要启动的游戏 exe',
+    mssLaunchPathHint:
+      'DirectExe 模式下要启动的游戏 exe，填游戏本体的可执行文件，不要填 MFAAvalonia.exe 外壳',
     mssGameArguments: '游戏启动参数',
     mssGameWaitTime: '等待窗口就绪（秒）',
     mssUnityResolution: '窗口分辨率',
     mssUnityResolutionHint:
       '启动游戏前按 exe 反查 Unity 注册表，临时改成所选尺寸的窗口模式，游戏关闭后恢复；只对 Unity 引擎有效。MSS 官方只支持 16:9 的客户端',
-    mssEmulatorHint:
-      '选择本软件要调度的模拟器；运行前由本软件启动它并等待设备就绪，MSS 外壳只负责连接',
     mssEmulatorUnsupported:
       '模拟器端的《星塔旅人》存在无法启动游戏的 bug，本脚本因此不适配模拟器，请使用桌面端；除非该问题被修复，否则不会进行适配',
-    mssCloseOnFinish: '任务结束后关闭模拟器',
-    mssCloseOnFinishHint: '开启后本次任务结束会关闭上面选定的模拟器，关闭则保持运行',
     mssRunTimesLimitHint: '超过该次数仍失败则终止本次运行',
     mssRunTimeLimitHint: '单次运行中日志停止更新的最长等待时间（分钟）；超过则按运行失败处理',
     mssUseAdmin: '以管理员权限启动',
     mssUseAdminHint:
       'MSS 的桌面端控制器需要管理员权限才能操作游戏窗口；开启后由本软件提权启动外壳（本软件已是管理员时不会重复触发 UAC）',
     mssNotMssScript: '脚本类型不是 MSS',
-    mssAvailableTasks: '可用任务',
-    mssAvailableTasksHint:
-      '清单由本软件在运行前从 MSS 的 interface.json 同步；勾选即加入下方的任务队列',
-    mssAvailableTasksEmpty:
-      '暂无可用任务清单：请确认脚本配置里的 MSS 根目录正确，并至少运行过一次任务',
-    mssTaskQueueHint: '按顺序执行，可上移/下移调整；选项留空表示沿用 MSS 里的默认值',
-    mssQueueEmpty: '尚未选择任务，请在上方勾选',
-    mssOptionValueHint:
-      "选择型填选项名；输入型填 JSON 对象，例如 {'{\"账号\": \"123\"}'}",
     mssLastProxyDate: '上次代理日期',
     mssProxyTimes: '代理次数',
     mssDataReadOnlyHint: '由本软件自动统计，仅供查看',
     mssUserTag: '用户标签',
     mssUserTagHint: '由本软件按运行情况自动生成，仅供查看',
+    mssOrchestration: '任务编排',
+    mssOrchestrationHint:
+      '本软件会在每次运行前按下面的设置改写星塔旅人外壳里的任务勾选与关卡，跑完自动恢复原样',
+    mssPlanMode: '悬赏试炼关卡',
+    mssPlanModeHint:
+      '「默认」表示用外壳里配好的关卡；选择计划表则按当天槽位改关卡',
+    mssPlanFixed: '默认（用外壳里配的）',
+    mssActivityFirst: '活动优先',
+    mssActivityFirstHint:
+      '开启后，活动期间会先打活动快速战斗，再按上面的设置刷悬赏试炼；关闭则完全不动活动任务',
+    mssClimbMode: '周常爬塔',
+    mssClimbModeHint: '开启后每周自动把新版爬塔刷满一次，跑完那周不再重复',
+    mssClimbClose: '关闭',
+    mssClimbAuto: '自动',
+    mssClimbStartWeekday: '周常开始日',
+    mssClimbStartWeekdayHint: '没到这天不跑周常；例如选周三，则周一到周二不刷',
+    mssClimbTimes: '爬塔次数',
+    mssClimbTimesHint: '每周周常要刷的次数，按新版爬塔的「爬塔次数」项写入',
+    mssClimbCompletedWeek: '周常完成周',
+    weekday: {
+      Monday: '周一',
+      Tuesday: '周二',
+      Wednesday: '周三',
+      Thursday: '周四',
+      Friday: '周五',
+      Saturday: '周六',
+      Sunday: '周日',
+    },
     // ZZZ-OD 专项
     zzzodScriptConfiguration: 'ZZZ-OD 脚本配置',
     zzzodScriptNameHint: '用于区分不同的 ZZZ-OD 脚本实例',
@@ -2798,6 +2814,7 @@ export default {
       nte: '异环活动信息',
       reverse1999: '重返未来：1999活动信息',
       bluearchive: '碧蓝档案活动信息',
+      stellasora: '星塔旅人活动信息',
       arknights: '明日方舟活动信息',
       activities: '游戏活动轮播',
     },
@@ -2810,6 +2827,7 @@ export default {
       nte: '异环',
       reverse1999: '重返未来：1999',
       bluearchive: '碧蓝档案',
+      stellasora: '星塔旅人',
       arknights: '明日方舟',
     },
     carousel: {
@@ -2820,6 +2838,7 @@ export default {
       loading: '正在获取活动信息…',
       noActivity: '暂无进行中的活动',
       unavailable: '活动数据暂不可用',
+      endedNote: '后续活动即将开始',
       allHidden: '轮播里的游戏都关掉了，可在「编辑布局」里重新打开',
     },
     activityNotes: {
@@ -3107,7 +3126,7 @@ export default {
     viewConfig: '配置视图',
     viewSimple: '简化视图',
     typeFallback: '计划表',
-    type: { maa: 'MAA 计划表', maaEnd: 'MaaEnd 计划表' },
+    type: { maa: 'MAA 计划表', maaEnd: 'MaaEnd 计划表', mss: 'MSS 计划表' },
     week: {
       ALL: '全局',
       Monday: '周一',
@@ -3125,6 +3144,11 @@ export default {
       currentTask: '当前任务',
       rewardsSet: '奖励组',
       sanityTask: '理智任务',
+      tribulationStage: '悬赏试炼关卡',
+      skipDifficulty: '跳过难度选择',
+      difficulty: '难度',
+      consumeAllEnergy: '消耗所有干劲',
+      fightTimes: '作战次数',
       globalControl: '全局控制',
       stage: '关卡',
       on: '开',

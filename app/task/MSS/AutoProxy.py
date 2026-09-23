@@ -20,13 +20,14 @@
 
 """MSS 自动代理模式（单用户运行编排）。
 
-运行方式 = **改外壳实例配置 + 启动外壳 exe**（与 M9A / MaaEnd 同一模式）：
+运行方式 = **按实例启动外壳 exe；任务由本模块按规则摆好并**留在**外壳配置里**：
 
-1. 以「本轮动手前」的实例配置为模板，只替换 `CurrentTasks` 与 `AdbDevice`
-   里由 MAS 调度的模拟器决定的字段，其余键值原样写回
-   （见 ``.tools.instance_config``）；
-2. 启动 ``MFAAvalonia.exe --autostart -i <实例> -q``；
-3. 读 ``<根>/logs/log-YYYYMMDD.log`` 判定本轮结果。
+1. 按「活动 → 日常 → 周常」算出本轮该跑什么，同步进外壳实例配置（见
+   ``tools.orchestrate``：只动 ``CurrentTasks`` 与三个选项，其余不碰）；
+   改写前把原配置留档到同目录的 ``<实例>.json.automas-backup``，**跑完不还原**；
+2. 确保游戏在运行（``DirectExe`` 由本软件启动，见 ``.tools.game_launch``）；
+3. 启动 ``MFAAvalonia.exe --autostart -i <实例> -q``；
+4. 读 ``<根>/logs/log-YYYYMMDD.log`` 判定本轮结果。
 
 成败判定取自上游结果面（外壳写的日志），MAS 侧不自造标记：成功文案
 ``任务已全部完成！`` 与中止文案 ``已放弃本次任务`` 都在实测日志里出现过；
@@ -40,6 +41,7 @@ import time
 import uuid
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 from app.core import Config
 from app.core.notify import NotifyPayload, dispatch, statistic_targets
@@ -51,6 +53,7 @@ from app.models.schema import WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem, TaskExecuteBase
 from app.services import Notify
 from app.task.general.tools.ExecuteScript import execute_script_task
+from app.tools.stella_activity import has_running_event_now
 from app.utils import (
     LogMonitor,
     ProcessInfo,
@@ -58,21 +61,27 @@ from app.utils import (
     compile_log_signs,
     get_logger,
 )
+from app.utils.io import mark_native_config_injected
 from app.utils.platform import IS_ELEVATED
 from app.utils.constants import UTC4
 
 from .tools import (
     EXE_NAME,
     LOG_DIR_NAME,
-    MssTaskCatalog,
-    apply_adb_device,
-    apply_queue_to_config,
+    MAS_INSTANCE_ID,
+    MAS_INSTANCE_NAME,
+    MSSGameSession,
+    MSSRunPlan,
+    apply_run_plan,
+    current_week_marker,
     latest_log_file,
-    mark_instance_config_injected,
-    normalize_user_queue,
-    read_instance_template,
-    resolve_instance_id,
+    read_instance_config,
+    register_mas_instance,
+    resolve_active_instance_id,
+    resolve_instance_dir,
     resolve_instance_path,
+    resolve_temp_dir,
+    should_run_climb,
     write_instance_config,
 )
 
@@ -117,7 +126,6 @@ class AutoProxyTask(TaskExecuteBase):
         script_config: MSSConfig,
         user_config: MultipleConfig[MSSUserConfig],
         emulator_manager: DeviceBase | None,
-        task_catalog: MssTaskCatalog | None,
     ):
         """初始化单用户运行上下文。
 
@@ -126,7 +134,6 @@ class AutoProxyTask(TaskExecuteBase):
             script_config: MSS 脚本配置。
             user_config: 该脚本的全部用户配置（运行时副本）。
             emulator_manager: 本软件接管的模拟器实例；无模拟器时为 None。
-            task_catalog: MSS 的 PI V2 任务清单，用于补齐模板里没有的任务项。
         """
 
         super().__init__()
@@ -139,7 +146,6 @@ class AutoProxyTask(TaskExecuteBase):
         self.script_config = script_config
         self.user_config = user_config
         self.emulator_manager = emulator_manager
-        self.task_catalog = task_catalog
         self.cur_user_item = self.script_info.user_list[self.script_info.current_index]
         self.cur_user_uid = uuid.UUID(self.cur_user_item.user_id)
         self.cur_user_config = self.user_config[self.cur_user_uid]
@@ -149,12 +155,14 @@ class AutoProxyTask(TaskExecuteBase):
         self.log_monitor: LogMonitor | None = None
         self.script_log_path: Path | None = None
         self.emulator_adb_address: str = ""
+        ## 桌面端的游戏生命周期：启动方式、分辨率临时覆盖、本轮是否由本软件启动
+        self.game_session = MSSGameSession(script_config)
         ## 本用户的开始时刻，用于统计信息通知
         self.user_start_time = datetime.now()
         ## 进程退出看门狗
         self._exit_watch_task: asyncio.Task | None = None
-        ## check 阶段解析出的队列，供 prepare / 写入配置复用
-        self.user_queue: list[dict] = []
+        ## 本轮是否把周常加了进去，跑成功后据此记下「本周已跑」
+        self.climb_planned = False
         self.success_log = compile_log_signs(MSS_SUCCESS_LOG, "Split")
         self.abandon_log = compile_log_signs(MSS_ABANDON_LOG, "Split")
         self.error_log = compile_log_signs(MSS_ERROR_LOG, "Split")
@@ -171,15 +179,156 @@ class AutoProxyTask(TaskExecuteBase):
         self.root_path = Path(self.script_config.get("Info", "Path"))
         self.exe_path = self.root_path / EXE_NAME
         self.log_dir = self.root_path / LOG_DIR_NAME
-        self.snapshot_path = Path.cwd() / f"data/{self.script_info.script_id}/Temp"
-        self.instance_id = resolve_instance_id(self.root_path)
-        self.instance_path = resolve_instance_path(self.root_path, self.instance_id)
+        ## 模板 = 用户在外壳里当前激活的实例；编排结果写进 MAS 自己的实例，用户那份
+        ## 一个字节都不动（照 MAA「MAS 管一份配置」的路子）。
+        self.template_instance_id = resolve_active_instance_id(self.root_path)
+        self.template_path = resolve_instance_path(
+            self.root_path, self.template_instance_id
+        )
+        self.instance_id = MAS_INSTANCE_ID
+        self.instance_path = resolve_instance_path(self.root_path, MAS_INSTANCE_ID)
         ## 提权启动走 ShellExecute，拿不到子进程句柄，只能靠这份进程信息追踪外壳
         self.shell_target_process_info = ProcessInfo(
             name=EXE_NAME,
             exe=str(self.exe_path),
             cmdline=None,
         )
+
+    async def _apply_run_plan(self) -> None:
+        """按「活动 → 日常 → 周常」算出本轮任务，同步进外壳实例配置。
+
+        改动是**持久**的：跑完不还原，外壳里的勾选与关卡始终停在 MAS 上次算出的样子。
+        还原过一次就会让用户在外壳里看到「活动明明结束了，活动快速战斗还勾着」——
+        外壳状态与 MAS 的判断必须一致，这一点比「不碰用户配置」更重要。
+        改写前会把原配置留档到同目录的 ``<实例>.json.automas-backup``。
+
+        三项都不接管时完全不碰实例配置。
+        """
+
+        plan = await self._build_run_plan()
+        if not plan.touches_tasks:
+            logger.info("本轮不改外壳任务：活动、日常、周常都没到要动的条件")
+            return
+
+        try:
+            original = read_instance_config(self.template_path)
+        except Exception as e:
+            logger.opt(exception=True).warning(
+                f"读外壳实例配置失败, 本轮照原配置跑: {e}"
+            )
+            return
+
+        result = apply_run_plan(original, plan)
+        if result.skipped:
+            logger.warning(
+                f"外壳实例配置里找不到这些任务, 本轮跳过: {'、'.join(result.skipped)}"
+            )
+
+        ## 写进 MAS 自己的实例（由模板复制而来）；即使用不着改动也要写一份，
+        ## 外壳要用 `-i auto-mas` 启动，文件得在
+        config = {**result.config, "InstanceName": MAS_INSTANCE_NAME}
+        try:
+            write_instance_config(self.instance_path, config)
+            register_mas_instance(self.root_path)
+        except Exception as e:
+            logger.opt(exception=True).warning(
+                f"写外壳实例配置失败, 本轮照原配置跑: {e}"
+            )
+            return
+
+        ## 记下注入后的指纹。编排前的原样已在 MSSManager.prepare 里快照过：崩在这之后
+        ## 且没人动过外壳配置时，下次运行会自动恢复成快照里的样子；正常跑完由 manager
+        ## 清掉快照，也就是「保留编排」。
+        mark_native_config_injected(
+            resolve_temp_dir(self.script_info.script_id),
+            resolve_instance_dir(self.root_path),
+            script_id=self.script_info.script_id,
+        )
+
+        self.climb_planned = plan.climb_times is not None
+        logger.success(
+            "已同步外壳任务: "
+            f"活动={'打' if plan.activity else '不打'}, "
+            f"悬赏试炼={plan.tribulation_stage or '不改'}"
+            + (
+                f"（跳过难度={plan.skip_difficulty}, 难度={plan.difficulty}, "
+                f"耗尽干劲={plan.consume_all_energy}, 次数={plan.fight_times}）"
+                if plan.tribulation_stage
+                else ""
+            )
+            + f", 周常爬塔={'×' + str(plan.climb_times) if plan.climb_times else '不加'}"
+        )
+
+    async def _build_run_plan(self) -> MSSRunPlan:
+        """算出本轮的活动状态、悬赏试炼关卡与周常设置。"""
+
+        activity: bool | None = None
+        if self.cur_user_config.get("Info", "IfActivityFirst"):
+            activity = await has_running_event_now()
+            if activity is None:
+                ## 取不到数据时说「不知道」而不是「没活动」：真在活动期却把勾选摘掉，
+                ## 整轮就漏打了活动
+                logger.warning("取不到星塔旅人活动数据, 本轮不接管活动任务")
+        else:
+            logger.info("未开启活动优先, 本轮不接管活动任务")
+
+        return MSSRunPlan(
+            activity=activity,
+            climb_times=self._resolve_climb_times(),
+            **self._resolve_tribulation(),
+        )
+
+    def _resolve_tribulation(self) -> dict[str, Any]:
+        """取今天该用的悬赏试炼配置；没选计划表时返回空字典（整个不接管）。
+
+        计划表每个日期槽位存的就是这一套：关卡、是否跳过难度选择与难度、是否消耗所有
+        干劲与作战次数，语义与外壳里那三个选项一一对应。
+        """
+
+        mode = self.cur_user_config.get("Info", "PlanMode")
+        if mode == "Fixed":
+            return {}
+
+        try:
+            plan = self.cur_user_config.related_config["PlanConfig"][uuid.UUID(mode)]
+        except (KeyError, ValueError) as e:
+            logger.warning(f"引用的计划表不存在, 本轮不改悬赏试炼: {e}")
+            return {}
+
+        key = plan.get_current_key()
+        if not isinstance(key, dict):
+            return {}
+
+        stage = str(key.get("TribulationStage") or "")
+        if not stage:
+            return {}
+
+        return {
+            "tribulation_stage": stage,
+            "skip_difficulty": bool(key.get("SkipDifficulty")),
+            "difficulty": int(key.get("Difficulty") or 1),
+            "consume_all_energy": bool(key.get("ConsumeAllEnergy")),
+            "fight_times": int(key.get("FightTimes") or 1),
+        }
+
+    def _resolve_climb_times(self) -> int | None:
+        """取本轮周常该刷的爬塔次数；不该刷时返回 None（完全不动爬塔任务）。"""
+
+        mode = self.cur_user_config.get("Info", "ClimbMode")
+        if mode != "Auto":
+            return None
+
+        completed_week = self.cur_user_config.get("Data", "ClimbCompletedWeek")
+        if not should_run_climb(
+            mode,
+            self.cur_user_config.get("Info", "ClimbStartWeekday"),
+            completed_week,
+            datetime.now(tz=UTC4),
+        ):
+            logger.info(f"本轮不加爬塔：本周记录={completed_week}")
+            return None
+
+        return int(self.cur_user_config.get("Info", "ClimbTimes"))
 
     def _resolve_log_file_path(self) -> Path:
         """按当前本地日期解析外壳日志路径。
@@ -205,26 +354,12 @@ class AutoProxyTask(TaskExecuteBase):
             self.cur_user_item.status = "异常"
             return "未找到 MFAAvalonia.exe, 请检查脚本配置中的 MSS 根目录设置！"
 
-        if not self.instance_path.is_file() and not (
-            self.snapshot_path / self.instance_path.name
-        ).is_file():
+        if not self.template_path.is_file():
             self.cur_user_item.status = "异常"
             return (
-                f"未找到 MSS 实例配置 config/instances/{self.instance_path.name}, "
+                f"未找到 MSS 实例配置 config/instances/{self.template_path.name}, "
                 "请先在 MSS 界面中保存一次实例配置！"
             )
-
-        try:
-            self.user_queue = normalize_user_queue(
-                self.cur_user_config.get("Task", "Queue")
-            )
-        except Exception as e:
-            self.cur_user_item.status = "异常"
-            return f"MSS 任务队列解析失败: {e}"
-
-        if not self.user_queue:
-            self.cur_user_item.status = "异常"
-            return "未配置任务队列或队列为空, 请先在用户配置中选择要运行的任务！"
 
         return "Pass"
 
@@ -273,6 +408,24 @@ class AutoProxyTask(TaskExecuteBase):
         logger.info(f"开始代理用户: {self.cur_user_uid}")
         self.cur_user_item.status = "运行"
 
+        ## 执行任务前脚本（每用户仅一次，不随重试重复）
+        if self.cur_user_config.get("Info", "IfScriptBeforeTask"):
+            await execute_script_task(
+                Path(self.cur_user_config.get("Info", "ScriptBeforeTask")),
+                "脚本前任务",
+            )
+
+        ## 先把本轮要跑的任务同步进外壳实例配置（跑完不还原，见 _apply_run_plan）
+        await self._apply_run_plan()
+
+        ## 桌面端外壳按窗口找游戏，先把游戏准备好；DirectExe 会由本软件启动它
+        try:
+            await self.game_session.ensure_running()
+        except Exception as e:
+            logger.opt(exception=True).warning(f"准备游戏失败: {e}")
+            await self.handle_pre_script_error(f"准备游戏失败: {e}", e)
+            return
+
         for i in range(self.script_config.get("Run", "RunTimesLimit")):
             if self.run_book:
                 break
@@ -287,13 +440,6 @@ class AutoProxyTask(TaskExecuteBase):
                 LogRecord()
             )
 
-            ## 执行任务前脚本
-            if self.cur_user_config.get("Info", "IfScriptBeforeTask"):
-                await execute_script_task(
-                    Path(self.cur_user_config.get("Info", "ScriptBeforeTask")),
-                    "脚本前任务",
-                )
-
             await self.run_once()
 
             if self.cur_user_log.status == "Success!":
@@ -307,6 +453,22 @@ class AutoProxyTask(TaskExecuteBase):
                 f"用户: {self.cur_user_uid} - 代理任务异常: {self.cur_user_log.status}"
             )
             await asyncio.sleep(3)
+
+        ## 周常跑完就记下本周：只有整轮成功才算，失败的话同周重试还会再来一遍
+        if self.run_book and self.climb_planned:
+            await self.cur_user_config.set(
+                "Data",
+                "ClimbCompletedWeek",
+                current_week_marker(datetime.now(tz=UTC4)),
+            )
+            logger.success("本周周常已完成, 已记录到用户配置")
+
+        ## 执行任务后脚本（每用户仅一次；成功与失败都会走到这里）
+        if self.cur_user_config.get("Info", "IfScriptAfterTask"):
+            await execute_script_task(
+                Path(self.cur_user_config.get("Info", "ScriptAfterTask")),
+                "脚本后任务",
+            )
 
     async def _ensure_emulator_online(self) -> bool:
         """由本软件拉起模拟器并等待其在线。
@@ -339,128 +501,16 @@ class AutoProxyTask(TaskExecuteBase):
         logger.success(f"模拟器已就绪, ADB 地址: {self.emulator_adb_address}")
         return True
 
-    def _resolve_emulator_ref(self) -> tuple[str, str, Path]:
-        """解析本次运行使用的模拟器类型、原生实例序号与主管理器程序路径。
-
-        优先问模拟器管理器（一条配置可以纳管多个安装，那种情况下持久化的类型
-        未必等于设备的真实类型），拿不到时退回脚本配置里的模拟器配置项。
-
-        Returns:
-            tuple[str, str, Path]: ``(类型, 原生实例序号, 管理器程序路径)``。
-        """
-
-        emulator_id = self.script_config.get("Emulator", "Id")
-        emulator_index = self.script_config.get("Emulator", "Index")
-
-        resolve_device = getattr(self.emulator_manager, "resolve_device", None)
-        device_ref = resolve_device(emulator_index) if resolve_device else None
-        if device_ref is not None:
-            return (
-                str(device_ref.emulator_type),
-                str(device_ref.native_index),
-                Path(device_ref.manager_path),
-            )
-
-        try:
-            emulator_config = Config.EmulatorConfig[uuid.UUID(str(emulator_id))]
-            return (
-                str(emulator_config.get("Info", "Type") or ""),
-                str(emulator_index),
-                Path(str(emulator_config.get("Info", "Path") or "")),
-            )
-        except Exception as e:
-            logger.warning(f"解析模拟器信息失败, 只更新 ADB 地址: {e}")
-            return "", str(emulator_index), Path("")
-
-    def _resolve_emulator_paths(
-        self, manager_path: Path
-    ) -> tuple[str | None, str | None]:
-        """由主管理器程序路径推出 ``adb.exe`` 路径与模拟器安装根目录。
-
-        MuMu 与雷电的布局一致：管理器程序在 ``<根>/<外壳目录>/`` 下，``adb.exe``
-        与它同级，安装根目录是再上一层。实测 MuMu：管理器
-        ``D:/mumu/MuMuPlayer/nx_main/MuMuManager.exe`` → adb
-        ``D:/mumu/MuMuPlayer/nx_main/adb.exe`` → 根目录 ``D:/mumu/MuMuPlayer``。
-
-        Args:
-            manager_path: 模拟器主管理器程序路径。
-
-        Returns:
-            tuple[str | None, str | None]: ``(adb.exe 路径, 安装根目录)``；
-            路径不可用时为 ``(None, None)``。
-        """
-
-        if not str(manager_path).strip() or not manager_path.name:
-            return None, None
-
-        shell_dir = manager_path.parent
-        adb_path = shell_dir / "adb.exe"
-        if not adb_path.is_file():
-            ## 找不到 adb.exe 就保留用户原有的 AdbPath：写一条不存在的路径
-            ## 只会让外壳起不来，而用户那份至少是他自己验证过的
-            logger.warning(f"未找到模拟器 adb.exe: {adb_path}, 保留实例配置里的原始值")
-            return None, str(shell_dir.parent)
-
-        return str(adb_path).replace("\\", "/"), str(shell_dir.parent)
-
-    def _write_instance_config(self) -> None:
-        """按用户队列与本次模拟器调度结果改写外壳实例配置。
-
-        模板取自「本轮动手前」的快照（多用户连续运行时现场文件已被上一个用户
-        改写），只替换队列、任务项与 AdbDevice 里的 adb 字段。
-        """
-
-        template = read_instance_template(
-            self.root_path, self.snapshot_path, instance_id=self.instance_id
-        )
-        if not template:
-            raise FileNotFoundError(f"未找到可用的 MSS 实例配置: {self.instance_path}")
-
-        catalog = self.task_catalog
-        config = apply_queue_to_config(
-            template,
-            self.user_queue,
-            task_definitions=catalog.task_definitions() if catalog else None,
-            option_definitions=catalog.options if catalog else None,
-        )
-
-        emulator_type, native_index, manager_path = self._resolve_emulator_ref()
-        adb_path, emulator_root = self._resolve_emulator_paths(manager_path)
-        ## Name 不传：那是用户在 MSS 里自己起的名字，MAS 不参与命名
-        changed = apply_adb_device(
-            config,
-            adb_path=adb_path,
-            adb_serial=self.emulator_adb_address or None,
-            emulator_type=emulator_type,
-            emulator_index=native_index,
-            emulator_root=emulator_root,
-        )
-
-        write_instance_config(self.instance_path, config)
-        mark_instance_config_injected(
-            self.root_path, self.snapshot_path, script_id=self.script_info.script_id
-        )
-        logger.info(
-            f"MSS 实例配置已就绪: 实例 {self.instance_id}, 任务 "
-            f"{len(self.user_queue)} 个, AdbDevice 改动: {changed or '无'}"
-        )
-
     async def run_once(self) -> None:
         """执行一次 MSS 运行。
 
-        启动模拟器、写入实例配置、启动外壳进程并等日志判定结果。
+        启动模拟器、启动外壳进程并等日志判定结果；实例配置在 ``main_task`` 里
+        启动之前就已经摆好。
         """
 
         self.wait_event.clear()
 
         if not await self._ensure_emulator_online():
-            return
-
-        try:
-            self._write_instance_config()
-        except Exception as e:
-            logger.opt(exception=True).warning(f"写入 MSS 实例配置失败: {e}")
-            await self.handle_pre_script_error("写入 MSS 实例配置失败", e)
             return
 
         try:
@@ -753,6 +803,8 @@ class AutoProxyTask(TaskExecuteBase):
             await self.log_monitor.stop()
 
         await self.kill_managed_process()
+        ## 只关本轮由本软件启动的游戏；接管来的不动，分辨率在这里恢复
+        await self.game_session.close()
 
         if self.check_result != "Pass":
             self.cur_user_item.status = "异常"

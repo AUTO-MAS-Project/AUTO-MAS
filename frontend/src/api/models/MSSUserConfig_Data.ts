@@ -11,5 +11,9 @@ export type MSSUserConfig_Data = {
      * 代理次数
      */
     ProxyTimes?: (number | null);
+    /**
+     * 周常跑完的 ISO 周
+     */
+    ClimbCompletedWeek?: (string | null);
 };
 

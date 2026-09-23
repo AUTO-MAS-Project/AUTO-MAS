@@ -1571,19 +1571,15 @@ export default {
       'DirectExe は本アプリがゲームを起動し、実行終了後に閉じます。AttachOnly は起動済みのウィンドウを引き継ぐだけで、起動も終了も行いません',
     mssLaunchModeDirect: '本アプリが起動する',
     mssLaunchModeAttach: '起動済みのゲームを引き継ぐ',
-    mssLaunchPathHint: 'DirectExe モードで起動するゲームの exe',
+    mssLaunchPathHint:
+      'DirectExe モードで起動するゲームの exe。MFAAvalonia.exe のシェルではなくゲーム本体を指定します',
     mssGameArguments: 'ゲーム起動引数',
     mssGameWaitTime: 'ウィンドウ準備待ち（秒）',
     mssUnityResolution: 'ウィンドウ解像度',
     mssUnityResolutionHint:
       '起動前に exe から Unity のレジストリを引き、指定サイズのウィンドウモードへ一時的に変更します（ゲーム終了時に復元）。Unity エンジン専用。MSS 公式は 16:9 のクライアントのみ対応',
-    mssEmulatorHint:
-      'このアプリが起動するエミュレーターを選択します。実行前に起動してデバイスの準備を待ち、MSS 側は接続するだけです',
     mssEmulatorUnsupported:
       'エミュレーター版の『ステラソラ』にはゲームが起動できない不具合があるため、このスクリプトはエミュレーターに対応していません。デスクトップ版をご利用ください。上流で修正されない限り対応しません',
-    mssCloseOnFinish: 'タスク終了後にエミュレーターを終了する',
-    mssCloseOnFinishHint:
-      'オンにすると実行後に上のエミュレーターを終了します。オフの場合は起動したままにします',
     mssRunTimesLimitHint: 'この回数を超えても失敗する場合は中止します',
     mssRunTimeLimitHint:
       'ログが更新されない状態の最大待機時間（分）。超えると実行失敗として扱います',
@@ -1591,21 +1587,39 @@ export default {
     mssUseAdminHint:
       'MSS のデスクトップコントローラーはゲームウィンドウを操作するために管理者権限が必要です。有効にすると本アプリがシェルを昇格して起動します（本アプリが既に管理者の場合は UAC は再表示されません）',
     mssNotMssScript: 'このスクリプトは MSS ではありません',
-    mssAvailableTasks: '利用可能なタスク',
-    mssAvailableTasksHint:
-      'この一覧は実行前に MSS の interface.json から同期されます。チェックすると下のタスクキューに追加されます',
-    mssAvailableTasksEmpty:
-      '利用可能なタスク一覧がありません。スクリプト設定の MSS ルートフォルダーを確認し、一度タスクを実行してください',
-    mssTaskQueueHint:
-      '上から順に実行されます。上へ/下へで並べ替えできます。空欄のオプションは MSS 側の値を使います',
-    mssQueueEmpty: 'タスクが選択されていません。上でチェックしてください',
-    mssOptionValueHint:
-      "選択式はオプション名を、入力式は {'{\"アカウント\": \"123\"}'} のような JSON を入力します",
     mssLastProxyDate: '前回の実行日',
     mssProxyTimes: '実行回数',
     mssDataReadOnlyHint: 'このアプリが自動で記録します（閲覧のみ）',
     mssUserTag: 'ユーザータグ',
     mssUserTagHint: 'このアプリが実行結果から自動生成します（閲覧のみ）',
+    mssOrchestration: 'タスク編成',
+    mssOrchestrationHint:
+      '実行のたびに、以下の設定に従ってステラソラ側のタスク選択とステージを書き換え、終了後に元へ戻します',
+    mssPlanMode: '懸賞試練ステージ',
+    mssPlanModeHint:
+      '「デフォルト」はシェル側で設定したステージを使用します。プランを選ぶと当日のスロットに従います',
+    mssPlanFixed: 'デフォルト（シェル側の設定を使用）',
+    mssActivityFirst: 'イベント優先',
+    mssActivityFirstHint:
+      'オンにするとイベント期間中はイベント戦闘を先に実行し、その後は上の設定に従って懸賞試練を消化します。オフではイベントタスクに触れません',
+    mssClimbMode: '週課の塔登り',
+    mssClimbModeHint: '有効にすると週に一度だけ新しい塔登りを消化します（同じ週に繰り返しません）',
+    mssClimbClose: 'オフ',
+    mssClimbAuto: '自動',
+    mssClimbStartWeekday: '週課の開始曜日',
+    mssClimbStartWeekdayHint: 'この曜日より前は実行しません（例：水曜なら月曜と火曜はスキップ）',
+    mssClimbTimes: '塔登り回数',
+    mssClimbTimesHint: '毎週の実行回数。新しい塔登りの「塔登り回数」に書き込まれます',
+    mssClimbCompletedWeek: '週課の完了週',
+    weekday: {
+      Monday: '月曜日',
+      Tuesday: '火曜日',
+      Wednesday: '水曜日',
+      Thursday: '木曜日',
+      Friday: '金曜日',
+      Saturday: '土曜日',
+      Sunday: '日曜日',
+    },
     // BAAH 専用
     baahScriptConfiguration: 'BAAH スクリプト設定',
     baahScriptNameHint: '複数の BAAH スクリプトインスタンスを区別するための名前です',
@@ -2448,6 +2462,7 @@ export default {
       nte: 'Neverness to Everness のイベント情報',
       reverse1999: 'リバース：1999 のイベント情報',
       bluearchive: 'ブルーアーカイブのイベント情報',
+      stellasora: 'ステラソラのイベント情報',
       arknights: 'アークナイツのイベント情報',
       activities: 'ゲームイベントのカルーセル',
     },
@@ -2460,6 +2475,7 @@ export default {
       nte: 'Neverness to Everness',
       reverse1999: 'リバース：1999',
       bluearchive: 'ブルーアーカイブ',
+      stellasora: 'ステラソラ',
       arknights: 'アークナイツ',
     },
     carousel: {
@@ -2470,6 +2486,7 @@ export default {
       loading: 'イベント情報を取得しています…',
       noActivity: '開催中のイベントはありません',
       unavailable: 'イベント情報を取得できません',
+      endedNote: '次のイベントがまもなく始まります',
       allHidden: 'カルーセル内のゲームがすべてオフです。「ホーム画面のカスタマイズ」で戻せます',
     },
     empty: {
@@ -2747,6 +2764,7 @@ export default {
     type: {
       maa: 'MAA プラン',
       maaEnd: 'MaaEnd プラン',
+      mss: 'MSS プラン',
     },
     week: {
       ALL: '全体',
@@ -2765,6 +2783,11 @@ export default {
       currentTask: '現在のタスク',
       rewardsSet: '報酬グループ',
       sanityTask: '理性タスク',
+      tribulationStage: '懸賞試練ステージ',
+      skipDifficulty: '難易度選択をスキップ',
+      difficulty: '難易度',
+      consumeAllEnergy: 'やる気をすべて消費',
+      fightTimes: '作戦回数',
       globalControl: '一括操作',
       stage: 'ステージ',
       on: 'オン',
