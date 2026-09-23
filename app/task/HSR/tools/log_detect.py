@@ -63,7 +63,7 @@ HSR_EOW_SRA_BATTLE_FAILED_RE = re.compile(r"(?<!退出)战斗失败")
 HSR_ENGLISH_FAILURE_RE = re.compile(
     r"(Traceback \(most recent call last\):|Failed to execute script|"
     r"Fatal error|SRAError\(|Exception:|"
-    r"failed\. Stopping further execution|No such task|File not found|"
+    r"failed\. Stopping further execution|No such task|"
     r"Could not find config file)"
 )
 HSR_CHINESE_FAILURE_MARKERS: tuple[str, ...] = (
@@ -235,7 +235,7 @@ HSR_DIVERGENT_FINAL_SUCCESS_SRA: tuple[str | re.Pattern[str], ...] = (
     "Mission accomplished",  # DivergentUniverse.py:40
     # OCR 可能把「18000/18000」切断或混入噪声，SRA 自己也按 ^18000.*18000$ 判
     re.compile(r"当前积分奖励: 18000.*18000"),  # DivergentUniverse.py:231-232
-    "旷宇纷争任务全部完成",  # CosmicStrifeTask.py:25  ⚠️需配合 sra_overrides
+    "旷宇纷争任务全部完成",  # CosmicStrifeTask.py:29 / :71  ⚠️需配合 sra_overrides
 )
 
 HSR_CURRENCY_WARS_FINAL_SUCCESS_M7A: tuple[str, ...] = (

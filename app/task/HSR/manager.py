@@ -588,7 +588,11 @@ class HSRManager(TaskExecuteBase):
             )
         if m7a_available and managed_users_with_credentials:
             accounts_dir = Path(m7a_path) / "settings" / "accounts"
-            if accounts_dir.is_dir() and any(accounts_dir.iterdir()):
+            try:
+                has_m7a_accounts = accounts_dir.is_dir() and any(accounts_dir.iterdir())
+            except OSError:
+                has_m7a_accounts = False
+            if has_m7a_accounts:
                 self._append_log(
                     "三月七内置账号管理与 MAS 切号可能互相覆盖，建议二选一"
                     f"（三月七已保存账号：{accounts_dir}）"
@@ -752,7 +756,7 @@ class HSRManager(TaskExecuteBase):
             if resolve_script_path(self.script_config, "SRA"):
                 try:
                     disable_sra_windows_notifications()
-                    self._append_log("SRA 本体 Windows 通知已临时关闭")
+                    self._append_log("已确认 SRA 本体 Windows 系统通知在本轮为关闭状态")
                 except Exception as e:  # noqa: BLE001
                     logger.warning(f"SRA 本体 Windows 通知关闭失败：{e}")
                     self._append_log(f"SRA 本体 Windows 通知关闭失败，将继续执行：{e}")
