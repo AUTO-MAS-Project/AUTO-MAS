@@ -1478,6 +1478,7 @@ export default {
     enterRecipientEmailAddress: '请输入收件人邮箱地址',
     enterNumber: '请输入数字',
     enterWholeNumber: '请输入整数',
+    ungrouped: '未分组',
     maafwPasswordSaved: '已设置，输入新值可替换',
     maafwPasswordClear: '清除',
     maafwCheckboxCountRange: '需选择 {min}–{max} 项',

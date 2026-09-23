@@ -463,7 +463,7 @@ const groupByName = computed(() => {
   return new Map<string, MaaFWGroupInfo>(entries)
 })
 const getGroupDisplayName = (groupName: string) => {
-  if (groupName === ADD_TASK_UNGROUPED_KEY) return '未分组'
+  if (groupName === ADD_TASK_UNGROUPED_KEY) return t('edit.ungrouped')
   const group = groupByName.value.get(groupName)
   return group?.label || groupName
 }

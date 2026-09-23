@@ -1556,6 +1556,7 @@ export default {
     enterRecipientEmailAddress: 'Enter the recipient email address',
     enterNumber: 'Enter a number',
     enterWholeNumber: 'Enter a whole number',
+    ungrouped: 'Ungrouped',
     maafwPasswordSaved: 'Saved. Type a new value to replace it',
     maafwPasswordClear: 'Clear',
     maafwCheckboxCountRange: 'Select {min}–{max}',
