@@ -176,7 +176,7 @@ import { useScriptApi } from '@/composables/useScriptApi'
 import { useUserApi } from '@/composables/useUserApi'
 import { isSupportedMaaFWControllerType } from '@/types/script'
 import { useMaaFWFlavor } from '@/composables/useMaaFWFlavor'
-import { buildMaaFWTaskInstanceId, resolveMaaFWTaskName } from '@/utils/maafwTaskInstance'
+import { buildMaaFWTaskInstanceIds, resolveMaaFWTaskName } from '@/utils/maafwTaskInstance'
 import MaaFWUserEditHeader from './MaaFWUserEdit/MaaFWUserEditHeader.vue'
 import BasicInfoSection from './MaaFWUserEdit/BasicInfoSection.vue'
 import TaskQueueSection from './MaaFWUserEdit/TaskQueueSection.vue'
@@ -658,11 +658,18 @@ const addTaskToQueue = async (taskName: string) => {
     return
   }
 
-  const taskId = buildMaaFWTaskInstanceId(taskName, new Set(taskSnapshot.value.taskOrder))
-  taskSnapshot.value.taskOrder = partitionTaskOrder([...taskSnapshot.value.taskOrder, taskId])
-  taskSnapshot.value.taskChecked[taskId] = true
-  ensureTaskOptionMap(taskId)
-  selectedTaskId.value = taskId
+  // 任务声明了 repeatable / repeat_count 时一次加入 N 份，各自独立（与手动复制同一体系）
+  const taskIds = buildMaaFWTaskInstanceIds(
+    taskName,
+    taskByName.value.get(taskName)?.repeatCount,
+    taskSnapshot.value.taskOrder
+  )
+  taskSnapshot.value.taskOrder = partitionTaskOrder([...taskSnapshot.value.taskOrder, ...taskIds])
+  for (const taskId of taskIds) {
+    taskSnapshot.value.taskChecked[taskId] = true
+    ensureTaskOptionMap(taskId)
+  }
+  selectedTaskId.value = taskIds[0]
   addTaskCascaderValue.value = []
   await persistQueuedSnapshot()
 }

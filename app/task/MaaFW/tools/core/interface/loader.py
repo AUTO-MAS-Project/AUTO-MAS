@@ -1010,6 +1010,21 @@ def _sanitize_pretasks(interface_model: MaaFWInterface) -> None:
     interface_model.pretask = valid_pretasks or None
 
 
+def _warn_task_repeat_counts(interface_model: MaaFWInterface) -> None:
+    """``repeatable`` 为 true、``repeat_count`` 却不是正整数（-1、0……）：按 1 份处理并告警。"""
+
+    for task in interface_model.task:
+        if task.repeatable is not True or task.repeat_count is None:
+            continue
+        count = coerce_option_count(task.repeat_count)
+        if count is None or count < 1:
+            logger.warning(
+                "MaaFW ProjectInterface 任务 %s 的 repeat_count 不是正整数，按 1 份处理：%s",
+                task.name,
+                json.dumps(task.repeat_count, ensure_ascii=False, default=str),
+            )
+
+
 def _warn_unsupported_option_types(interface_model: MaaFWInterface) -> None:
     for option_name, option in interface_model.option.items():
         if option.type not in SUPPORTED_OPTION_TYPES:
@@ -1236,6 +1251,7 @@ def _load_interface_model_uncollected(
 
     _prune_references_lost_with_imports(interface_model, merge_state.missing_imports)
     _sanitize_pretasks(interface_model)
+    _warn_task_repeat_counts(interface_model)
     _warn_unsupported_option_types(interface_model)
     _sanitize_v210_option_fields(interface_model)
     _validate_task_context_constraints(interface_model)

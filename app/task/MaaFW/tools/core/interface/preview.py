@@ -15,6 +15,7 @@ from .models import (
     MaaFWInterface,
     build_pretask_task_name,
     iter_pretasks,
+    task_repeat_count,
 )
 from .task_config import (
     _build_default_task_order,
@@ -224,6 +225,7 @@ def build_interface_preview_data(
                     "resource": pretask.resource or [],
                     "option": filter_option_names(pretask.option),
                     "defaultCheck": False,
+                    "repeatCount": 1,
                 }
                 for pretask in iter_pretasks(interface)
             ],
@@ -239,6 +241,8 @@ def build_interface_preview_data(
                     "resource": task.resource or [],
                     "option": filter_option_names(task.option),
                     "defaultCheck": bool(task.default_check),
+                    # 用户经「添加任务」加入时展开成几份（repeatable / repeat_count）
+                    "repeatCount": task_repeat_count(task),
                 }
                 for task in unique_tasks
             ],

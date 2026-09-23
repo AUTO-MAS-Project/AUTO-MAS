@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from 'vitest'
 import {
   MAAFW_DUPLICATE_TASK_SEPARATOR,
   buildMaaFWTaskInstanceId,
+  buildMaaFWTaskInstanceIds,
   resolveMaaFWTaskName,
 } from './maafwTaskInstance'
 
@@ -74,6 +75,28 @@ describe('buildMaaFWTaskInstanceId', () => {
     const copyId = buildMaaFWTaskInstanceId(weirdName, new Set([weirdName]))
     expect(copyId).not.toBe(weirdName)
     expect(resolveMaaFWTaskName(copyId, new Set(['战斗', weirdName]))).toBe(weirdName)
+  })
+})
+
+describe('buildMaaFWTaskInstanceIds', () => {
+  it('repeatCount 为 N 时一次给出 N 个互不相同的实例 id，首份是裸任务名', () => {
+    const taskIds = buildMaaFWTaskInstanceIds('刷关', 3, [])
+    expect(taskIds).toHaveLength(3)
+    expect(taskIds[0]).toBe('刷关')
+    expect(new Set(taskIds).size).toBe(3)
+    for (const taskId of taskIds) {
+      expect(resolveMaaFWTaskName(taskId, new Set(['刷关']))).toBe('刷关')
+    }
+  })
+
+  it('队列里已有该任务时全部是副本 id，不撞已有的', () => {
+    const taskIds = buildMaaFWTaskInstanceIds('刷关', 2, ['刷关'])
+    expect(taskIds).toHaveLength(2)
+    expect(taskIds).not.toContain('刷关')
+  })
+
+  it.each([undefined, null, 0, 1, -1, 2.5])('repeatCount=%s 时只加 1 份', count => {
+    expect(buildMaaFWTaskInstanceIds('刷关', count, [])).toEqual(['刷关'])
   })
 })
 

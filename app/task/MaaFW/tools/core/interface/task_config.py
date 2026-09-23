@@ -17,11 +17,13 @@
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
 
 
+from collections.abc import Collection
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from .models import (
+    DUPLICATE_TASK_SUFFIX_SEPARATOR,
     SUPPORTED_OPTION_TYPES,
     MaaFWInterface,
     MaaFWOption,
@@ -35,6 +37,7 @@ from .models import (
     is_pretask_task_name,
     iter_pretasks,
     resolve_task_instance_name,
+    task_repeat_count,
 )
 
 CUSTOM_PRESET_NAME = "__auto_mas_custom_preset__"
@@ -261,11 +264,14 @@ def build_interface_preset_snapshot(
     seen_task_names: set[str] = set()
     occurrences: dict[str, int] = {}
     valid_task_names = interface_task_names & set(task_checked)
+    task_definitions: dict[str, MaaFWTask] = {}
+    for task in interface_model.task:
+        task_definitions.setdefault(task.name, task)
     for preset_task in preset.task or []:
         if preset_task.name not in valid_task_names:
             continue
 
-        # 同一任务在预设里出现多次（MRA「周常配置」把「自动出征」排了 8 次，每次选项
+        # 同一任务在预设里出现多次（MRA「周常配置」把「自动出征」排了 9 次，每次选项
         # 不同）：第二次起映射成重复任务实例，与用户在队列里手动复制任务同一口径。
         # 后缀按出现次序确定，同一份预设每次展开得到同一组实例 id。
         occurrence = occurrences.get(preset_task.name, 0) + 1
@@ -277,29 +283,37 @@ def build_interface_preset_snapshot(
             while task_id in task_checked:
                 suffix += "x"
                 task_id = build_duplicate_task_id(preset_task.name, suffix)
-            if include_default_options:
-                defaults, _ = _build_option_defaults(
-                    task_option_maps.get(preset_task.name, {})
-                )
-                task_options_by_task[task_id] = defaults
 
-        ordered_preset_tasks.append(task_id)
-        seen_task_names.add(task_id)
-        task_checked[task_id] = bool(
-            True if preset_task.enabled is None else preset_task.enabled
+        # 任务声明了 repeatable / repeat_count（MFAA 私有扩展）：这一次出现展开成
+        # repeat_count 份，每份都带预设给的这一套选项，之后在队列里各自独立。
+        instance_ids = build_repeat_instance_ids(
+            task_id,
+            preset_task.name,
+            task_repeat_count(task_definitions[preset_task.name]),
+            taken={*interface_task_names, *ordered_preset_tasks},
         )
-
         option_map = task_option_maps.get(preset_task.name, {})
-        target_options = task_options_by_task.setdefault(task_id, {})
-        for option_name, option_value in (preset_task.option or {}).items():
-            if option_name not in option_map:
-                continue
-            _apply_preset_option_value(
-                option_name,
-                option_value,
-                option_map,
-                target_options,
+        for instance_id in instance_ids:
+            if include_default_options and instance_id not in task_options_by_task:
+                defaults, _ = _build_option_defaults(option_map)
+                task_options_by_task[instance_id] = defaults
+
+            ordered_preset_tasks.append(instance_id)
+            seen_task_names.add(instance_id)
+            task_checked[instance_id] = bool(
+                True if preset_task.enabled is None else preset_task.enabled
             )
+
+            target_options = task_options_by_task.setdefault(instance_id, {})
+            for option_name, option_value in (preset_task.option or {}).items():
+                if option_name not in option_map:
+                    continue
+                _apply_preset_option_value(
+                    option_name,
+                    option_value,
+                    option_map,
+                    target_options,
+                )
 
     normalized_order = ordered_preset_tasks + [
         task_name for task_name in task_order if task_name not in seen_task_names
@@ -403,6 +417,8 @@ def build_default_task_instances(
     只有前一次 default_check）是合法写法：第一次沿用裸任务名，第 k 次起映射成重复
     任务实例 ``<任务名>__MAS_DUP__task<k>``，与用户手动复制同一口径，默认队列里两次
     都在、各按自己的 default_check。后缀按出现次序确定，每次展开得到同一组 id。
+    声明了 repeatable / repeat_count 的任务，每次出现再展开成 N 份
+    （``build_repeat_instance_ids``）。
     """
 
     task_names = {task.name for task in interface_model.task}
@@ -419,9 +435,49 @@ def build_default_task_instances(
             while task_id in task_names or task_id in used:
                 suffix += "x"
                 task_id = build_duplicate_task_id(task.name, suffix)
-        used.add(task_id)
-        instances.append((task_id, task))
+        # repeatable / repeat_count（MFAA 私有扩展）：默认队列里展开成 N 份
+        for instance_id in build_repeat_instance_ids(
+            task_id,
+            task.name,
+            task_repeat_count(task),
+            taken={*task_names, *used},
+        ):
+            used.add(instance_id)
+            instances.append((instance_id, task))
     return instances
+
+
+def build_repeat_instance_ids(
+    task_id: str,
+    task_name: str,
+    count: int,
+    *,
+    taken: Collection[str] = (),
+) -> list[str]:
+    """一份任务实例按 ``repeat_count`` 展开成 ``count`` 份实例 id。
+
+    原实例在前，其后是 ``<任务名>__MAS_DUP__<原后缀>repeat<k>``（k 从 2 起；原实例是
+    裸任务名时原后缀为空）。后缀由位置决定，同一份 interface 每次展开得到同一组 id；
+    撞上 ``taken`` 里的 id 时补 ``x``。
+    """
+
+    if count <= 1:
+        return [task_id]
+    separator_index = task_id.rfind(DUPLICATE_TASK_SUFFIX_SEPARATOR)
+    base_suffix = (
+        task_id[separator_index + len(DUPLICATE_TASK_SUFFIX_SEPARATOR) :]
+        if task_id != task_name and separator_index >= 0
+        else ""
+    )
+    instance_ids = [task_id]
+    for copy_index in range(2, count + 1):
+        suffix = f"{base_suffix}repeat{copy_index}"
+        instance_id = build_duplicate_task_id(task_name, suffix)
+        while instance_id in taken or instance_id in instance_ids:
+            suffix += "x"
+            instance_id = build_duplicate_task_id(task_name, suffix)
+        instance_ids.append(instance_id)
+    return instance_ids
 
 
 def _build_default_task_order(interface_model: MaaFWInterface) -> list[str]:

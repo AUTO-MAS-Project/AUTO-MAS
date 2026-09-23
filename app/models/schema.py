@@ -3812,6 +3812,10 @@ class MaaFWTaskInfo(BaseModel):
     resource: List[str] = Field(default_factory=list, description="适用资源")
     option: List[str] = Field(default_factory=list, description="任务选项")
     defaultCheck: bool = Field(default=False, description="是否默认勾选")
+    repeatCount: int = Field(
+        default=1,
+        description="加入任务队列时展开成几份（interface 的 repeatable / repeat_count）",
+    )
 
 
 class MaaFWOptionCaseInfo(BaseModel):

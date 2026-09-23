@@ -168,6 +168,24 @@ class MaaFWTask(BaseModel):
     controller: list[str] | None = None
     pipeline_override: MaaFWPipelineOverride | None = None
     option: list[str] | None = None
+    # MFAA 私有扩展：任务默认重复执行 repeat_count 次（MaaYuan 10 次、MATR 3 次）。
+    # MAS 不在 runner 里循环，进队列时展开成 N 份重复任务实例（见 task_repeat_count）。
+    # 不做形状校验：写错不该让整份 interface 读不出来，由 task_repeat_count 宽松解读。
+    repeatable: Any = None
+    repeat_count: Any = None
+
+
+def task_repeat_count(task: MaaFWTask) -> int:
+    """任务进队列时展开成几份：``repeatable`` 为 true 且 ``repeat_count`` ≥ 2 才展开。
+
+    ``repeatable`` 缺省 / 为 false 时忽略 ``repeat_count``；``-1``（MFAA 的「无限」）、
+    0、负数、非整数一律按 1 份（加载器对 repeatable 为 true 的这些写法告警）。
+    """
+
+    if task.repeatable is not True:
+        return 1
+    count = coerce_option_count(task.repeat_count)
+    return count if count is not None and count >= 2 else 1
 
 
 class MaaFWGroup(BaseModel):

@@ -34,3 +34,23 @@ export const buildMaaFWTaskInstanceId = (taskName: string, usedTaskIds: TaskName
   } while (usedTaskIds.has(candidate))
   return candidate
 }
+
+/**
+ * 一次加入 `count` 份同一任务的实例 id（interface 的 repeatable / repeat_count）。
+ * 每份都是独立的实例，与手动复制同一体系；`count` 不是 ≥ 1 的整数时按 1 份。
+ */
+export const buildMaaFWTaskInstanceIds = (
+  taskName: string,
+  count: number | null | undefined,
+  usedTaskIds: Iterable<string>
+) => {
+  const total = Number.isInteger(count) && (count as number) > 1 ? (count as number) : 1
+  const used = new Set(usedTaskIds)
+  const taskIds: string[] = []
+  for (let index = 0; index < total; index += 1) {
+    const taskId = buildMaaFWTaskInstanceId(taskName, used)
+    used.add(taskId)
+    taskIds.push(taskId)
+  }
+  return taskIds
+}

@@ -418,6 +418,8 @@ export interface MaaFWTaskInfo {
   resource: string[]
   option: string[]
   defaultCheck: boolean
+  /** 加入任务队列时展开成几份（interface 的 repeatable / repeat_count），缺省 1 */
+  repeatCount?: number
 }
 
 export interface MaaFWOptionCaseInfo {
