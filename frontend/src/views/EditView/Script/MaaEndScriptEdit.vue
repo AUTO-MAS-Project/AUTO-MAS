@@ -168,6 +168,74 @@
           </a-row>
 
           <a-row v-if="isWinController" :gutter="24">
+            <a-col :span="12">
+              <a-form-item>
+                <template #label>
+                  <span class="form-label">
+                    {{ t('edit.gamePath') }}
+                    <a-tooltip :title="t('edit.pickEndfieldExePath')">
+                      <QuestionCircleOutlined class="help-icon" />
+                    </a-tooltip>
+                  </span>
+                </template>
+                <a-input-group compact class="path-input-group">
+                  <a-input
+                    v-model:value="maaEndConfig.Game.Path"
+                    :placeholder="t('edit.pickGameExecutable')"
+                    size="large"
+                    class="path-input"
+                    readonly
+                  />
+                  <a-button size="large" class="path-button" @click="selectGamePath">
+                    <template #icon>
+                      <FolderOpenOutlined />
+                    </template>
+                    {{ t('edit.pickFile') }}
+                  </a-button>
+                </a-input-group>
+              </a-form-item>
+            </a-col>
+            <a-col :span="6">
+              <a-form-item>
+                <template #label>
+                  <span class="form-label">
+                    {{ t('edit.launchArguments') }}
+                    <a-tooltip :title="t('edit.commandLineArgumentsUsed')">
+                      <QuestionCircleOutlined class="help-icon" />
+                    </a-tooltip>
+                  </span>
+                </template>
+                <a-input
+                  v-model:value="maaEndConfig.Game.Arguments"
+                  :placeholder="t('edit.enterLaunchArguments')"
+                  size="large"
+                  @blur="handleChange('Game', 'Arguments', maaEndConfig.Game.Arguments)"
+                />
+              </a-form-item>
+            </a-col>
+            <a-col :span="6">
+              <a-form-item>
+                <template #label>
+                  <span class="form-label">
+                    {{ t('edit.waitTime') }}
+                    <a-tooltip :title="t('edit.pcControllersOnlySeconds')">
+                      <QuestionCircleOutlined class="help-icon" />
+                    </a-tooltip>
+                  </span>
+                </template>
+                <a-input-number
+                  v-model:value="maaEndConfig.Game.WaitTime"
+                  :min="60"
+                  :max="9999"
+                  size="large"
+                  style="width: 100%"
+                  @blur="handleChange('Game', 'WaitTime', maaEndConfig.Game.WaitTime)"
+                />
+              </a-form-item>
+            </a-col>
+          </a-row>
+
+          <a-row v-if="isWinController" :gutter="24">
             <a-col :span="showRestoreDisplayType ? 8 : 12">
               <a-form-item
                 :label="t('edit.maaEndSetResolution')"
@@ -246,75 +314,7 @@
             </a-col>
           </a-row>
 
-          <a-row v-if="isWinController" :gutter="24">
-            <a-col :span="12">
-              <a-form-item>
-                <template #label>
-                  <span class="form-label">
-                    {{ t('edit.gamePath') }}
-                    <a-tooltip :title="t('edit.pickEndfieldExePath')">
-                      <QuestionCircleOutlined class="help-icon" />
-                    </a-tooltip>
-                  </span>
-                </template>
-                <a-input-group compact class="path-input-group">
-                  <a-input
-                    v-model:value="maaEndConfig.Game.Path"
-                    :placeholder="t('edit.pickGameExecutable')"
-                    size="large"
-                    class="path-input"
-                    readonly
-                  />
-                  <a-button size="large" class="path-button" @click="selectGamePath">
-                    <template #icon>
-                      <FolderOpenOutlined />
-                    </template>
-                    {{ t('edit.pickFile') }}
-                  </a-button>
-                </a-input-group>
-              </a-form-item>
-            </a-col>
-            <a-col :span="6">
-              <a-form-item>
-                <template #label>
-                  <span class="form-label">
-                    {{ t('edit.launchArguments') }}
-                    <a-tooltip :title="t('edit.commandLineArgumentsUsed')">
-                      <QuestionCircleOutlined class="help-icon" />
-                    </a-tooltip>
-                  </span>
-                </template>
-                <a-input
-                  v-model:value="maaEndConfig.Game.Arguments"
-                  :placeholder="t('edit.enterLaunchArguments')"
-                  size="large"
-                  @blur="handleChange('Game', 'Arguments', maaEndConfig.Game.Arguments)"
-                />
-              </a-form-item>
-            </a-col>
-            <a-col :span="6">
-              <a-form-item>
-                <template #label>
-                  <span class="form-label">
-                    {{ t('edit.waitTime') }}
-                    <a-tooltip :title="t('edit.pcControllersOnlySeconds')">
-                      <QuestionCircleOutlined class="help-icon" />
-                    </a-tooltip>
-                  </span>
-                </template>
-                <a-input-number
-                  v-model:value="maaEndConfig.Game.WaitTime"
-                  :min="60"
-                  :max="9999"
-                  size="large"
-                  style="width: 100%"
-                  @blur="handleChange('Game', 'WaitTime', maaEndConfig.Game.WaitTime)"
-                />
-              </a-form-item>
-            </a-col>
-          </a-row>
-
-          <a-row v-else-if="isAdbController" :gutter="24">
+          <a-row v-if="isAdbController" :gutter="24">
             <a-col :span="12">
               <a-form-item>
                 <template #label>
