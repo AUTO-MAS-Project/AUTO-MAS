@@ -47,6 +47,7 @@ from .tools.account_switch import (
     HSR_GAME_PROCESS_NAME,
     HSR_GAME_READY_DELAY_SECONDS,
     HSRAccountSwitcher,
+    build_platform_m7a_env,
     is_cloud_platform,
     is_game_management_enabled,
     resolve_game_executable_path,
@@ -1649,6 +1650,8 @@ class HSRAutoProxyTask(TaskExecuteBase):
                 ),
             )
             self.runtime.m7a_runner = m7a_runner
+        # 平台钉扎走环境变量（优先于 config.yaml），与 patch 里的平台字段一致。
+        m7a_runner.env_overrides = build_platform_m7a_env(self.script_config)
         login_plan = self._build_login_plan(user_cfg=user_cfg, sra_path=sra_path)
 
         # 物化前归档本用户字段侧车（_build_user_queue 会把托管字段注入原生

@@ -38,7 +38,8 @@ from .cloud_browser import (
 )
 from .game_resolution import HSRGameResolutionOverride
 from .log_detect import has_screenshot_window_unavailable_output
-from .m7a_config import load_m7a_native_config
+from .m7a_config import build_m7a_platform_patch, load_m7a_native_config
+from .m7a_runtime import build_m7a_platform_env
 from .run_model import HSRNonRetryableTaskError
 from .sra_runtime import (
     SRACommandResult,
@@ -94,6 +95,58 @@ def resolve_cloud_profile_dir(script_id: str, user_id: str) -> Path:
     """一个 MAS 用户的云浏览器 profile：登录态就存在这里，用户之间互不相干。"""
 
     return resolve_cloud_profile_root(script_id) / user_id / HSR_CLOUD_PROFILE_DIRNAME
+
+
+def _cloud_int(script_config: Any, key: str, default: int) -> int:
+    try:
+        return max(1, int(script_config.get("Cloud", key) or default))
+    except (AttributeError, KeyError, TypeError, ValueError):
+        return default
+
+
+def cloud_use_paid_time(script_config: Any) -> bool:
+    """是否允许三月七消耗付费时长走快速排队（花钱的开关，默认关）。"""
+
+    try:
+        return bool(script_config.get("Cloud", "UsePaidTime"))
+    except (AttributeError, KeyError, TypeError):
+        return False
+
+
+def cloud_max_queue_minutes(script_config: Any) -> int:
+    """云·星穹铁道最长排队时间（分钟），也是每个模块超时的排队预算。"""
+
+    return _cloud_int(script_config, "MaxQueueMinutes", 60)
+
+
+def cloud_login_timeout_minutes(script_config: Any) -> int:
+    """三月七等用户在浏览器里手动登录的时间（分钟）。"""
+
+    return _cloud_int(script_config, "LoginTimeoutMinutes", 20)
+
+
+def build_platform_m7a_patch(
+    script_config: Any, *, debug_port: int | None = None
+) -> dict[str, Any]:
+    """本轮三月七 config.yaml 的平台字段；云平台的端口取当前用户的云浏览器。"""
+
+    cloud = is_cloud_platform(script_config)
+    return build_m7a_platform_patch(
+        cloud=cloud,
+        debug_port=debug_port,
+        max_queue_minutes=cloud_max_queue_minutes(script_config),
+        login_timeout_minutes=cloud_login_timeout_minutes(script_config),
+        use_paid_time=cloud_use_paid_time(script_config),
+    )
+
+
+def build_platform_m7a_env(script_config: Any) -> dict[str, str]:
+    """本轮三月七进程的平台环境变量，托管与直控共用。"""
+
+    return build_m7a_platform_env(
+        cloud=is_cloud_platform(script_config),
+        use_paid_time=cloud_use_paid_time(script_config),
+    )
 
 
 def _cloud_auto_battle_enabled(script_config: Any) -> bool:

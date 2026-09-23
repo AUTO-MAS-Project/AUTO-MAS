@@ -355,9 +355,13 @@ class SRANativeControlProvider:
 class M7ADirectControlSession:
     """一次三月七直控运行：以真实安装根目录启动，跑三月七 GUI 里的 config.yaml。"""
 
-    def __init__(self, root: Path, log) -> None:
+    def __init__(
+        self, root: Path, log, env_overrides: dict[str, str] | None = None
+    ) -> None:
         self._root = root
         self._log = log
+        # 直控不写用户配置，平台只靠环境变量钉（优先于 config.yaml）。
+        self._env_overrides = dict(env_overrides or {})
         self._runner: M7ARunner | None = None
         self._closed = False
 
@@ -366,7 +370,9 @@ class M7ADirectControlSession:
             f"三月七将直接使用脚本当前的原生配置运行"
             f"（{self._root / 'config.yaml'}）；MAS 只负责外部进程生命周期"
         )
-        self._runner = M7ARunner(self._root, log_callback=self._log)
+        self._runner = M7ARunner(
+            self._root, log_callback=self._log, env_overrides=self._env_overrides
+        )
         result = await self._runner.run_task("main", timeout=timeout_seconds)
         return HSRRunResult.from_native(
             result,
@@ -439,7 +445,11 @@ class M7ANativeControlProvider:
             raise FileNotFoundError(
                 f"三月七原生配置不存在：{config_path}，请先在三月七中保存一次设置"
             )
-        return M7ADirectControlSession(root, log)
+        from .account_switch import build_platform_m7a_env
+
+        return M7ADirectControlSession(
+            root, log, env_overrides=build_platform_m7a_env(script_config)
+        )
 
 
 def native_provider(engine: str):

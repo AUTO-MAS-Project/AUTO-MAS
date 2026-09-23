@@ -17,7 +17,7 @@
 
 
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Mapping
 
 from app.models.config import HSRConfig, HSRUserConfig
 from app.models.task import UserItem
@@ -26,7 +26,7 @@ from app.utils.io import write_file
 
 from ..task_mapping import HSRTaskModule
 from . import m7a_config as m7a
-from .account_switch import HSRAccountSwitcher
+from .account_switch import HSRAccountSwitcher, build_platform_m7a_patch
 from .log_detect import detect_weekly_completion
 from .m7a_runtime import M7ARunner
 from .run_model import (
@@ -101,15 +101,20 @@ class HSRM7AControl:
         self._queue_weekly_completion = queue_weekly_completion
         self._record_module_result = record_module_result
 
-    async def ensure_platform_ready(self) -> None:
-        """云平台：每个三月七模块进程前确认本用户的云浏览器还活着，死了重起。
+    async def ensure_platform_ready(self) -> dict[str, Any]:
+        """每个三月七模块进程前准备平台，返回本模块要叠加的平台 patch。
 
-        三月七启动失败路径会按标记杀掉浏览器；这里重起后三月七会重新做登录态
-        检查与排队。客户端平台什么都不做（游戏由既有的守卫负责）。
+        云平台：确认本用户的云浏览器还活着，死了重起（三月七启动失败路径会按
+        标记杀掉浏览器，重起后它会重新做登录态检查与排队），再把浏览器端口
+        写进 patch——所以 patch 必须在这一步之后写。客户端平台只钉
+        ``cloud_game_enable: False``，游戏由既有的守卫负责。
         """
 
+        port: int | None = None
         if self._account_switcher.cloud:
-            await self._account_switcher.ensure_cloud_browser()
+            browser = await self._account_switcher.ensure_cloud_browser()
+            port = browser.port
+        return build_platform_m7a_patch(self.script_config, debug_port=port)
 
     async def run_m7a_command(
         self,
@@ -141,16 +146,23 @@ class HSRM7AControl:
         *,
         whitelist: frozenset[str] | None = None,
         deep_merge_keys: frozenset[str] | None = None,
+        platform_patch: Mapping[str, Any] | None = None,
     ) -> None:
-        """把 MAS 模板 patch 直接写入 M7A config.yaml。"""
+        """把 MAS 模板 patch 直接写入 M7A config.yaml。
+
+        ``platform_patch`` 最后叠加，盖过模块 patch 里的 ``cloud_game_enable``。
+        """
 
         effective_patch = m7a.with_disabled_finish_action(
             m7a.with_disabled_notifications(patch)
         )
+        if platform_patch:
+            effective_patch.update(platform_patch)
         effective_whitelist = (
             (whitelist if whitelist is not None else m7a.M7A_DAILY_PATCH_WHITELIST)
             | m7a.M7A_NOTIFICATION_PATCH_WHITELIST
             | m7a.M7A_FINISH_ACTION_PATCH_WHITELIST
+            | m7a.M7A_PLATFORM_PATCH_WHITELIST
         )
         current_config = m7a.load_m7a_yaml(config_path.read_text(encoding="utf-8-sig"))
         if not isinstance(current_config, dict):
@@ -182,7 +194,7 @@ class HSRM7AControl:
 
         m7a_config_path = Path(m7a_path) / "config.yaml"
         main_stage = resolve_m7a_main_stage(plan)
-        await self.ensure_platform_ready()
+        platform_patch = await self.ensure_platform_ready()
 
         daily_patch = m7a.build_m7a_daily_patch(
             plan,
@@ -191,7 +203,9 @@ class HSRM7AControl:
             eow_name=resolve_m7a_eow_stage(plan),
             script_config=self.script_config,
         )
-        self.write_m7a_patch(m7a_config_path, daily_patch)
+        self.write_m7a_patch(
+            m7a_config_path, daily_patch, platform_patch=platform_patch
+        )
         last_result: object | None = None
         for command in module.m7a_tasks:
             result = await self.run_m7a_command(
@@ -238,11 +252,12 @@ class HSRM7AControl:
             if not m7a_config_path.exists():
                 raise RuntimeError(f"M7A config.yaml 不存在: {m7a_config_path}")
 
-            await self.ensure_platform_ready()
+            platform_patch = await self.ensure_platform_ready()
             self.write_m7a_patch(
                 m7a_config_path,
                 patch,
                 whitelist=whitelist,
+                platform_patch=platform_patch,
             )
             last_result: object | None = None
             for command in commands:

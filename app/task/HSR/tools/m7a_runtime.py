@@ -28,7 +28,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from inspect import isawaitable
 from pathlib import Path
-from typing import Awaitable, Callable
+from typing import Awaitable, Callable, Mapping
 
 from app.utils import ProcessManager, decode_bytes, get_logger
 
@@ -61,8 +61,39 @@ M7A_ENV_PREFIX = "MARCH7TH_"
 RECENT_OUTPUT_LINES = 40
 
 
-def build_m7a_env() -> dict[str, str]:
-    """M7A 子进程环境：继承后端环境，剔除继承的 ``MARCH7TH_*``，再叠上 MAS 自己的。"""
+def _env_bool(value: bool) -> str:
+    # 三月七的转换函数是 v.lower() in ("true", "1")，只能写这两个字面量之一。
+    return "true" if value else "false"
+
+
+def build_m7a_platform_env(
+    *, cloud: bool, use_paid_time: bool = False
+) -> dict[str, str]:
+    """按游戏平台钉住三月七的云开关（环境变量优先于 config.yaml）。
+
+    托管与直控都走这一份：客户端平台钉 ``false``，用户在三月七里开过云游戏
+    也不会跑到云上；云平台再钉浏览器类型与有窗口模式，与 MAS 托管浏览器的
+    连接条件一致（内置 Chrome + 同版本 chromedriver，没有 ``--headless``）。
+    ``browser_debug_port`` 等键没有环境变量，只能写 config.yaml。
+    """
+
+    env = {"MARCH7TH_CLOUD_GAME_ENABLE": _env_bool(cloud)}
+    if cloud:
+        env.update(
+            {
+                "MARCH7TH_BROWSER_TYPE": "integrated",
+                "MARCH7TH_BROWSER_HEADLESS_ENABLE": _env_bool(False),
+                "MARCH7TH_CLOUD_GAME_USE_PAID_TIME": _env_bool(use_paid_time),
+            }
+        )
+    return env
+
+
+def build_m7a_env(overrides: Mapping[str, str] | None = None) -> dict[str, str]:
+    """M7A 子进程环境：继承后端环境，剔除继承的 ``MARCH7TH_*``，再叠上 MAS 自己的。
+
+    ``overrides`` 是本轮的平台钉扎（见 :func:`build_m7a_platform_env`）。
+    """
 
     env = {
         key: value
@@ -70,6 +101,8 @@ def build_m7a_env() -> dict[str, str]:
         if not key.upper().startswith(M7A_ENV_PREFIX)
     }
     env.update(M7A_HEADLESS_ENV)
+    if overrides:
+        env.update(overrides)
     return env
 
 
@@ -94,6 +127,7 @@ class M7ARunner:
         log_callback: Callable[[str], None] | None = None,
         output_line_callback: Callable[[str], Awaitable[None] | None] | None = None,
         completion_grace_timeout: float = 5.0,
+        env_overrides: Mapping[str, str] | None = None,
     ):
         self._m7a_dir = Path(m7a_dir)
         self._m7a_exe = self._m7a_dir / "March7th Assistant.exe"
@@ -101,6 +135,8 @@ class M7ARunner:
         self._log_callback = log_callback
         self._output_line_callback = output_line_callback
         self._completion_grace_timeout = completion_grace_timeout
+        # 本轮的平台钉扎（MARCH7TH_CLOUD_GAME_ENABLE 等），每条命令起进程时叠加。
+        self.env_overrides: dict[str, str] = dict(env_overrides or {})
         # 当前这条命令最近的输出，供游戏守卫判断进程消失前 M7A 在做什么。
         self._recent_output: deque[str] = deque(maxlen=RECENT_OUTPUT_LINES)
 
@@ -334,7 +370,7 @@ class M7ARunner:
                 stdin=asyncio.subprocess.PIPE,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
-                env=build_m7a_env(),
+                env=build_m7a_env(self.env_overrides),
             )
             proc = self._process_manager.main_process
             if not isinstance(proc, asyncio.subprocess.Process):

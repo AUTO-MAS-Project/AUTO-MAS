@@ -241,6 +241,55 @@ M7A_FINISH_ACTION_PATCH_WHITELIST: frozenset[str] = frozenset(
     M7A_FINISH_ACTION_DISABLE_PATCH
 )
 
+# 平台钉扎：每个模块 patch 最后叠上，客户端只写 cloud_game_enable=False；云平台
+# 再把三月七钉到「连接 MAS 托管浏览器」的路径上。这些键必须全在白名单里，
+# 否则 merge_whitelist 会静默丢掉。browser_debug_port / 排队 / 登录超时没有
+# 环境变量，只能写 config.yaml。
+M7A_PLATFORM_PATCH_WHITELIST: frozenset[str] = frozenset(
+    {
+        "cloud_game_enable",
+        "browser_type",
+        "browser_headless_enable",
+        "browser_persistent_enable",
+        "cloud_game_fullscreen_enable",
+        "browser_debug_port",
+        "cloud_game_max_queue_time",
+        "cloud_game_login_timeout",
+        "cloud_game_use_paid_time",
+    }
+)
+
+
+def build_m7a_platform_patch(
+    *,
+    cloud: bool,
+    debug_port: int | None = None,
+    max_queue_minutes: int = 60,
+    login_timeout_minutes: int = 20,
+    use_paid_time: bool = False,
+) -> dict[str, Any]:
+    """按游戏平台构造三月七 config.yaml 的平台字段。
+
+    云平台下 ``debug_port`` 必须是本轮已起来的云浏览器端口：patch 写入发生在
+    浏览器就绪之后，三月七按它 ``debugger_address`` 连过去。
+    """
+
+    if not cloud:
+        return {"cloud_game_enable": False}
+    if debug_port is None:
+        raise ValueError("云·星穹铁道需要先启动云浏览器再写入调试端口")
+    return {
+        "cloud_game_enable": True,
+        "browser_type": "integrated",
+        "browser_headless_enable": False,
+        "browser_persistent_enable": True,
+        "cloud_game_fullscreen_enable": False,
+        "browser_debug_port": int(debug_port),
+        "cloud_game_max_queue_time": int(max_queue_minutes),
+        "cloud_game_login_timeout": int(login_timeout_minutes),
+        "cloud_game_use_paid_time": bool(use_paid_time),
+    }
+
 
 M7A_DAILY_PATCH_WHITELIST: frozenset[str] = frozenset(
     {
