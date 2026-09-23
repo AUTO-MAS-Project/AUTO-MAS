@@ -39,6 +39,7 @@ HSR_EOW_COMPLETE_MARKERS: tuple[str, ...] = (
     "历战余响尚未刷新",
 )
 HSR_EOW_REWARD_COUNT_RE = re.compile(r"历战余响本周可领取奖励次数[:：]\s*(\d+)\s*/\s*3")
+# 现行 M7A / SRA 都不再打这句（M7A 走上一条「可领取奖励次数」），留作旧版兼容。
 HSR_EOW_REMAINING_COUNT_RE = re.compile(
     r"本周[「\"]?历战余响[」\"；:：]?\s*剩余次数[:：]\s*(\d+)\s*/\s*3"
 )
@@ -75,12 +76,13 @@ HSR_CHINESE_FAILURE_MARKERS: tuple[str, ...] = (
     "强制退出",
     "未识别到战斗按钮",
     "MemoryOfChaos 主循环失败",
-    # ---- SRA 货币战争 final_failure（参考 HSR-外部脚本日志语义审计.md 2.5）----
-    "[页面定位] 检测超时",  # CurrencyWars.py:159
-    "等待挑战结束超时",  # CurrencyWars.py:708
-    "货币战争开拓者名称为空",  # CosmicStrifeTask.py:34
-    "旷宇纷争-货币战争任务失败",  # CosmicStrifeTask.py:63
-    "旷宇纷争-货币战争刷开局任务失败",  # CosmicStrifeTask.py:50
+    # ---- SRA 货币战争 final_failure（参考 HSR-外部脚本日志语义审计.md 2.5；
+    # 行号按 SRA 2.21.0 tasks/ 源码）----
+    "[页面定位] 检测超时",  # currency_wars/CurrencyWars.py:186
+    "等待挑战结束超时",  # currency_wars/CurrencyWars.py:763
+    "货币战争开拓者名称为空",  # CosmicStrifeTask.py:38
+    "旷宇纷争-货币战争任务失败",  # CosmicStrifeTask.py:69
+    "旷宇纷争-货币战争刷开局任务失败",  # CosmicStrifeTask.py:56
     # ---- M7A 切换游戏界面失败（对应日志「发生错误 无法切换到指定游戏界面」）----
     "无法切换到指定游戏界面",
     # ---- SRA 前置失败：任务名不存在 / 配置文件读不到，走不到「停止进一步执行」
@@ -150,8 +152,12 @@ _BACKSLASH_U_RE = re.compile(
     r"\\u([dD][89abAB][0-9a-fA-F]{2})\\u([dD][c-fC-F][0-9a-fA-F]{2})"
     r"|\\u([0-9a-fA-F]{4})"
 )
-# loguru 默认前缀「2026-09-12 02:14:35,242 | ERROR | 」，摘要里只留级别。
-_LOGURU_PREFIX_RE = re.compile(r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}[,.]\d{3}\s*\|\s*")
+# 日志时间前缀，摘要里只留级别：M7A 用标准库 logging
+# 「%(asctime)s | %(levelname)s | 」→「2026-09-12 02:14:35,242 | ERROR | 」；
+# SRA 用 loguru「{time:HH:mm:ss} | {level:5} | 」→「02:14:35 | ERROR | 」。
+_LOG_TIME_PREFIX_RE = re.compile(
+    r"^(?:\d{4}-\d{2}-\d{2} )?\d{2}:\d{2}:\d{2}(?:[,.]\d{3})?\s*\|\s*"
+)
 _LOG_LEVEL_RE = re.compile(r"\|\s*(ERROR|CRITICAL)\s*\|")
 HSR_FAILURE_SUMMARY_KEEP_MARKERS: tuple[str, ...] = (
     "错误截图已保存",
@@ -198,7 +204,7 @@ def select_failure_summary_lines(lines: list[str], limit: int = 8) -> list[str]:
     ]
     if not any(_LOG_LEVEL_RE.search(line) for line in picked):
         picked = list(lines)
-    picked = [_LOGURU_PREFIX_RE.sub("", line) for line in picked]
+    picked = [_LOG_TIME_PREFIX_RE.sub("", line) for line in picked]
     if len(picked) > limit:
         picked = picked[-limit:]
     return picked
@@ -226,7 +232,7 @@ HSR_DIVERGENT_FINAL_SUCCESS_M7A: tuple[str, ...] = (
 # sra_overrides（task_mapping.py）确保同一轮只启用其中一个，
 # 调用方传入的 module_key 决定查哪组 marker。
 HSR_DIVERGENT_FINAL_SUCCESS_SRA: tuple[str | re.Pattern[str], ...] = (
-    "Mission accomplished",  # DivergentUniverse.py:39
+    "Mission accomplished",  # DivergentUniverse.py:40
     # OCR 可能把「18000/18000」切断或混入噪声，SRA 自己也按 ^18000.*18000$ 判
     re.compile(r"当前积分奖励: 18000.*18000"),  # DivergentUniverse.py:231-232
     "旷宇纷争任务全部完成",  # CosmicStrifeTask.py:25  ⚠️需配合 sra_overrides
