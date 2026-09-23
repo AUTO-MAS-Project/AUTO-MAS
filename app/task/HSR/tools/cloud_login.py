@@ -54,7 +54,7 @@ from .external_locks import (
 from .log_detect import is_cloud_login_success
 from .m7a_control import HSRM7AControl
 from .m7a_runtime import M7ARunner
-from .run_model import HSRRuntimeState
+from .run_model import HSRRuntimeState, external_result_failure_summary
 
 logger = get_logger("HSR 云登录")
 
@@ -121,6 +121,7 @@ async def run_cloud_login(
         user_id=user_id,
     )
     logged_in = False
+    result: object | None = None
     original: bytes | None = None
     try:
         if not config_path.is_file():
@@ -170,10 +171,11 @@ async def run_cloud_login(
         lease.release()
 
     if not logged_in:
+        detail = external_result_failure_summary(result) if result is not None else ""
         return CloudLoginOutcome(
             logged_in=False,
             last_login=None,
-            message="未确认登录成功，请查看日志后重试",
+            message=f"未确认登录成功：{detail}" if detail else "未确认登录成功，请重试",
         )
     stamp = datetime.now().astimezone().isoformat(timespec="seconds")
     try:
