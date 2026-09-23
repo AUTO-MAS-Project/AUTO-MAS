@@ -884,6 +884,11 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         if plan.controllerType == "Win32":
             controller = _find_controller(interface_model, plan.controllerName)
             win32_config = controller.win32
+            mouse = win32_config.mouse if win32_config else None
+            keyboard = win32_config.keyboard if win32_config else None
+            if mouse is None and keyboard is None and win32_config is not None:
+                # MFAA 的写法：只写 input 时鼠标、键盘都用它
+                mouse = keyboard = win32_config.input
             return MaaFWDeviceConfig(
                 type="Win32",
                 hWnd=await self._resolve_window_handle(controller),
@@ -894,10 +899,11 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                     "DXGI_DesktopDup",
                     label=f"controller {controller.name} 的 Win32 截图方式",
                     warn=self._append_log,
+                    combinable=True,
                 ),
                 mouseMethod=_resolve_win32_method(
                     self.script_config.get("Device", "Win32MouseMethod"),
-                    win32_config.mouse if win32_config else None,
+                    mouse,
                     _WIN32_INPUT_METHODS,
                     "Seize",
                     label=f"controller {controller.name} 的 Win32 鼠标输入方式",
@@ -905,7 +911,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 ),
                 keyboardMethod=_resolve_win32_method(
                     self.script_config.get("Device", "Win32KeyboardMethod"),
-                    win32_config.keyboard if win32_config else None,
+                    keyboard,
                     _WIN32_INPUT_METHODS,
                     "Seize",
                     label=f"controller {controller.name} 的 Win32 键盘输入方式",
@@ -2479,33 +2485,101 @@ def _optional_int(value: Any) -> int | None:
 
 def _resolve_win32_method(
     configured_value: Any,
-    interface_method: str | None,
+    interface_method: str | list[Any] | int | None,
     method_values: dict[str, int],
     default_name: str,
     *,
     label: str = "Win32 控制方式",
     warn: Callable[[str], None] | None = None,
+    combinable: bool = False,
 ) -> int:
     """脚本级配置的数值优先，其次 interface 里写的名字，最后是默认方式。
 
     名字不认识时退回默认方式并**告警**：以前是静默换成 DXGI_DesktopDup / Seize，
     项目要的后台截图 / 后台输入悄悄变成前台，用户只看到游戏被抢了鼠标。
+
+    名字大小写不敏感（MFAA 用 ``Enum.TryParse(ignoreCase)``）；可以写成数组（MXU）
+    或逗号 / ``|`` 分隔（MFAA 的组合名写法），也可以是旧版整数。截图方式
+    （``combinable``）按位或合并；输入方式原生层只能选一个，给了多个取第一个并告警。
+    认得的值是不是当前原生库支持的，仍由 worker 的 ``_supported_win32_method`` 再判。
     """
 
     default = method_values[default_name]
     configured = _optional_int(configured_value) or 0
     if configured:
         return configured
-    if interface_method:
-        value = method_values.get(interface_method.strip())
-        if value is not None:
-            return value
-        message = (
-            f"MaaFW interface 里 {label}「{interface_method}」无法识别，"
-            f"已改用默认的 {default_name}"
+    tokens = _win32_method_tokens(interface_method)
+    if not tokens:
+        return default
+    report = warn or logger.warning
+    by_name = {name.casefold(): (name, value) for name, value in method_values.items()}
+    resolved: list[tuple[str, int]] = []
+    unknown: list[str] = []
+    for token in tokens:
+        if isinstance(token, int):
+            if token > 0:
+                resolved.append((str(token), token))
+            else:
+                unknown.append(str(token))
+            continue
+        if token.isdigit():
+            resolved.append((token, int(token)))
+            continue
+        hit = by_name.get(token.casefold())
+        if hit is None:
+            unknown.append(token)
+        else:
+            resolved.append(hit)
+    if not resolved:
+        report(
+            f"MaaFW interface 里 {label}「{_describe_win32_method(interface_method)}」"
+            f"无法识别，已改用默认的 {default_name}"
         )
-        (warn or logger.warning)(message)
-    return default
+        return default
+    if unknown:
+        report(
+            f"MaaFW interface 里 {label}中的「{'、'.join(unknown)}」无法识别，已忽略"
+        )
+    if combinable:
+        value = 0
+        for _, item in resolved:
+            value |= item
+        return value
+    if len(resolved) > 1:
+        report(
+            f"MaaFW interface 里 {label}写了多个（"
+            f"{'、'.join(name for name, _ in resolved)}），输入方式只能选一个，"
+            f"已取第一个 {resolved[0][0]}"
+        )
+    return resolved[0][1]
+
+
+def _win32_method_tokens(value: Any) -> list[str | int]:
+    """把 interface 里的 Win32 方法声明拆成一个个名字 / 整数（空的丢掉）。"""
+
+    if value is None or isinstance(value, bool):
+        return []
+    if isinstance(value, int):
+        return [value]
+    items = value if isinstance(value, list) else [value]
+    tokens: list[str | int] = []
+    for item in items:
+        if isinstance(item, bool):
+            continue
+        if isinstance(item, int):
+            tokens.append(item)
+            continue
+        for part in re.split(r"[,|]", str(item)):
+            part = part.strip()
+            if part:
+                tokens.append(part)
+    return tokens
+
+
+def _describe_win32_method(value: Any) -> str:
+    if isinstance(value, list):
+        return "、".join(str(item) for item in value)
+    return str(value)
 
 
 def _snapshot_descendants(pid: int) -> list[tuple[int, float]]:

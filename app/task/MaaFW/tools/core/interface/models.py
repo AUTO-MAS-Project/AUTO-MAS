@@ -58,9 +58,13 @@ class MaaFWWin32Controller(BaseModel):
 
     class_regex: str | None = None
     window_regex: str | None = None
-    mouse: str | None = None
-    keyboard: str | None = None
-    screencap: str | None = None
+    # 协议写的是方法名字符串；MXU 另认数组（截图按位或），MFAA 另认旧版整数与
+    # ``input``（mouse / keyboard 都没写时两者都用它）。解析与告警在
+    # runner_task._resolve_win32_method，这里只放行这几种形状。
+    mouse: str | list[str] | int | None = None
+    keyboard: str | list[str] | int | None = None
+    screencap: str | list[str] | int | None = None
+    input: str | list[str] | int | None = None
 
 
 class MaaFWMacOSController(BaseModel):
