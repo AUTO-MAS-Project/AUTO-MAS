@@ -3319,9 +3319,6 @@ class HSRCapabilityAdapter(BaseModel):
     engine: Literal["M7A", "SRA"] = Field(..., description="原生脚本引擎")
     display_name: str = Field(..., description="引擎展示名称")
     version: Optional[str] = Field(default=None, description="引擎版本")
-    supported_modes: List[str] = Field(
-        default_factory=list, description="支持的运行模式"
-    )
     capabilities: Dict[str, Any] = Field(
         default_factory=dict, description="引擎能力集合"
     )
@@ -3341,9 +3338,6 @@ class HSRCapabilitiesData(BaseModel):
     )
     effective_engines: List[Literal["M7A", "SRA"]] = Field(
         default_factory=list, description="有效引擎"
-    )
-    supported_modes: List[str] = Field(
-        default_factory=list, description="支持的运行模式"
     )
     adapters: List[HSRCapabilityAdapter] = Field(
         default_factory=list, description="引擎适配器"
@@ -3437,6 +3431,13 @@ class HSRManagedTask(BaseModel):
 
 class HSRManagedConfigData(BaseModel):
     revision: str = Field(default="old-dev", description="契约版本")
+    plan_owner: Literal["script", "user"] = Field(
+        default="script",
+        description=(
+            "任务计划的归属：script=脚本共享计划（保存到脚本配置），"
+            "user=该用户自己的计划（保存到用户配置）"
+        ),
+    )
     tasks: List[HSRManagedTask] = Field(default_factory=list, description="托管任务")
     task_mapping: Dict[str, Literal["M7A", "SRA"]] = Field(
         default_factory=dict, description="任务到引擎映射"
@@ -3474,25 +3475,6 @@ class HSRSRAProfilesData(BaseModel):
 class HSRSRAProfilesOut(OutBase):
     data: Optional[HSRSRAProfilesData] = Field(
         default=None, description="SRA 配置档案列表"
-    )
-
-
-class HSRDirectConfigImportIn(BaseModel):
-    scriptId: str = Field(..., description="HSR 脚本 ID")
-    userId: str = Field(..., description="HSR 用户 ID")
-    engine: Literal["M7A", "SRA"] = Field(..., description="原生脚本引擎")
-
-
-class HSRDirectConfigImportData(BaseModel):
-    engine: Literal["M7A", "SRA"] = Field(..., description="原生脚本引擎")
-    source: Optional[str] = Field(default=None, description="配置来源")
-    imported_at: Optional[str] = Field(default=None, description="导入时间")
-    size: int = Field(default=0, description="快照字节数")
-
-
-class HSRDirectConfigImportOut(OutBase):
-    data: Optional[HSRDirectConfigImportData] = Field(
-        default=None, description="直连配置导入结果"
     )
 
 
