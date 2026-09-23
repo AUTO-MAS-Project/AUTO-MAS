@@ -27,6 +27,10 @@ export type MaaEndOptionsOut = {
      */
     originalResolution?: (string | null);
     /**
+     * 从游戏注册表读取的原始显示模式
+     */
+    originalDisplayType?: ('Window' | 'Fullscreen' | null);
+    /**
      * MaaEnd 控制器选项
      */
     controllers: Array<ComboBoxItem>;

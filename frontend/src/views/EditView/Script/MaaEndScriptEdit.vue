@@ -168,7 +168,7 @@
           </a-row>
 
           <a-row v-if="isWinController" :gutter="24">
-            <a-col :span="maaEndConfig.Game.CloseOnFinish ? 8 : 12">
+            <a-col :span="showRestoreDisplayType ? 8 : 12">
               <a-form-item
                 :label="t('edit.maaEndSetResolution')"
               >
@@ -181,7 +181,7 @@
                 />
               </a-form-item>
             </a-col>
-            <a-col v-if="maaEndConfig.Game.CloseOnFinish" :span="8">
+            <a-col v-if="showRestoreDisplayType" :span="8">
               <a-form-item :label="t('edit.maaEndRestoreDisplayType')">
                 <a-select
                   v-model:value="maaEndConfig.Game.RestoreDisplayType"
@@ -192,7 +192,7 @@
                 />
               </a-form-item>
             </a-col>
-            <a-col v-if="maaEndConfig.Game.CloseOnFinish" :span="8">
+            <a-col v-if="maaEndConfig.Game.CloseOnFinish" :span="showRestoreDisplayType ? 8 : 12">
               <a-form-item
                 :label="t('edit.maaEndRestoreResolution')"
               >
@@ -200,6 +200,7 @@
                   v-model:value="maaEndConfig.Game.RestoreResolution"
                   size="large"
                   :options="restoreResolutionOptions"
+                  :loading="maaEndOptionsLoading"
                   :disabled="isSaving"
                   @change="handleChange('Game', 'RestoreResolution', $event)"
                 />
@@ -577,8 +578,6 @@ const maaEndConfig = reactive<MaaEndScriptConfig>({
     EmulatorId: '',
     EmulatorIndex: '',
     SetResolution: false,
-    GameSettingDisplayType: 'Window',
-    GameSettingResolution: '1920x1080',
     CloseOnFinish: true,
     RestoreResolution: 'Off',
     RestoreDisplayType: 'Window',
@@ -588,6 +587,14 @@ const maaEndConfig = reactive<MaaEndScriptConfig>({
 })
 
 const originalResolution = ref<string | null>(null)
+const originalDisplayType = ref<'Window' | 'Fullscreen' | null>(null)
+
+const showRestoreDisplayType = computed(
+  () =>
+    maaEndConfig.Game.CloseOnFinish &&
+    maaEndConfig.Game.RestoreResolution !== 'Off' &&
+    maaEndConfig.Game.RestoreResolution !== 'Original'
+)
 
 const displayTypeOptions = computed(() => [
   { value: 'Window', label: t('edit.maaEndResolutionWindow') },
@@ -598,19 +605,21 @@ const restoreResolutionOptions = computed(() => [
   { value: 'Off', label: t('edit.maaEndResolutionUnchanged') },
   {
     value: 'Original',
-    label: originalResolution.value
+    label: originalResolution.value && originalDisplayType.value
       ? t('edit.maaEndResolutionOriginal', {
+          displayType:
+            originalDisplayType.value === 'Fullscreen'
+              ? t('edit.maaEndResolutionFullscreen')
+              : t('edit.maaEndResolutionWindow'),
           resolution: originalResolution.value,
         })
       : t('edit.maaEndResolutionRestoreOriginal'),
+    disabled: !originalResolution.value || !originalDisplayType.value,
   },
   { value: '1920x1080', label: '1920 × 1080' },
   { value: '2560x1440', label: '2560 × 1440' },
   { value: '3840x2160', label: '3840 × 2160' },
   { value: 'Custom', label: t('edit.maaEndResolutionCustom') },
-  ...(maaEndConfig.Game.RestoreResolution === 'Fullscreen'
-    ? [{ value: 'Fullscreen', label: t('edit.maaEndResolutionFullscreen') }]
-    : []),
 ])
 
 const rules = {
@@ -706,19 +715,8 @@ const applyMaaEndConfig = (config: MaaEndScriptConfig) => {
   if (config.Game?.SetResolution == null) {
     maaEndConfig.Game.SetResolution = false
   }
-  if (config.Game?.GameSettingDisplayType == null) {
-    maaEndConfig.Game.GameSettingDisplayType = 'Window'
-  }
-  if (config.Game?.GameSettingResolution == null) {
-    maaEndConfig.Game.GameSettingResolution = '1920x1080'
-  }
   if (config.Game?.RestoreDisplayType == null) {
-    maaEndConfig.Game.RestoreDisplayType =
-      config.Game?.RestoreResolution === 'Fullscreen' ? 'Fullscreen' : 'Window'
-  }
-  if (config.Game?.RestoreResolution === 'Fullscreen') {
-    // 旧版本将全屏模式与 1920×1080 合并为一个选项，载入时拆成两个字段。
-    maaEndConfig.Game.RestoreResolution = '1920x1080'
+    maaEndConfig.Game.RestoreDisplayType = 'Window'
   }
   if (maaEndConfig.Run.AccountSwitchMethod === 'MAS') showMasAccountSwitchWarning()
 }
@@ -744,6 +742,8 @@ const loadEmulatorOptions = async () => {
 
 const loadMaaEndOptions = async () => {
   maaEndOptionsLoading.value = true
+  originalResolution.value = null
+  originalDisplayType.value = null
   try {
     const response = await getMaaEndOptions(scriptId)
     if (response?.code !== 200) return
@@ -751,6 +751,7 @@ const loadMaaEndOptions = async () => {
     controllerOptions.value = response.controllers
     controllerProtocols.value = response.controllerTypes
     originalResolution.value = response.originalResolution ?? null
+    originalDisplayType.value = response.originalDisplayType ?? null
 
     if (!maaEndConfig.Game.ControllerType) {
       const defaultController =
@@ -802,12 +803,6 @@ const handleControllerTypeChange = async (value: MaaEndScriptConfig['Game']['Con
   const protocol = controllerProtocols.value[value]
   if (!protocol) return
 
-  const resetOriginalGameResolution =
-    protocol !== 'Win32' && maaEndConfig.Game.GameSettingResolution === 'Original'
-  if (resetOriginalGameResolution) {
-    maaEndConfig.Game.GameSettingResolution = '1920x1080'
-  }
-
   const gamePayload =
     protocol === 'Adb'
       ? {
@@ -822,25 +817,24 @@ const handleControllerTypeChange = async (value: MaaEndScriptConfig['Game']['Con
           EmulatorIndex: '',
         }
 
-  const payload = {
-    ...gamePayload,
-    ...(resetOriginalGameResolution ? { GameSettingResolution: '1920x1080' } : {}),
-  }
-
   if (protocol !== 'Adb') {
     clearEmulatorDeviceOptions()
     maaEndConfig.Game.EmulatorId = ''
     maaEndConfig.Game.EmulatorIndex = ''
-    if (protocol !== 'Win32') originalResolution.value = null
+    if (protocol !== 'Win32') {
+      originalResolution.value = null
+      originalDisplayType.value = null
+    }
   } else {
     maaEndConfig.Game.Path = ''
     maaEndConfig.Game.Arguments = ''
     originalResolution.value = null
+    originalDisplayType.value = null
   }
 
   // 一次写回多个 Game 字段（含本地未同步的 WaitTime），成功后整份拉回保持一致
   const success = await enqueue(async () => {
-    const success = await updateScript(scriptId, { Game: payload })
+    const success = await updateScript(scriptId, { Game: gamePayload })
     if (success) {
       await refreshScript()
     }

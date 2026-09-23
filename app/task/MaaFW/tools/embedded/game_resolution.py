@@ -109,6 +109,47 @@ def read_unity_resolution(
     return width, height
 
 
+def read_unity_display_type(
+    exe_path: Path,
+    registry_module: Any | None = None,
+    *,
+    preferred_value_name: str | None = None,
+) -> str | None:
+    """读取游戏保存的显示模式；可优先读取调用方提供的布尔全屏值。"""
+
+    registry_path = resolve_unity_registry_path(exe_path)
+    registry = registry_module if registry_module is not None else _winreg
+    if registry_path is None or registry is None:
+        return None
+
+    try:
+        with registry.OpenKey(
+            registry.HKEY_CURRENT_USER,
+            registry_path,
+            0,
+            registry.KEY_QUERY_VALUE,
+        ) as key:
+            candidates = (
+                ((preferred_value_name, {0, 1}),) if preferred_value_name else ()
+            ) + (
+                (_FULLSCREEN_MODE_VALUE, {0, 1, 2, 3}),
+                (_LEGACY_IS_FULLSCREEN_VALUE, {0, 1}),
+            )
+            for name, valid_values in candidates:
+                try:
+                    value, _ = registry.QueryValueEx(key, name)
+                    mode = int(value)
+                except (FileNotFoundError, OSError, TypeError, ValueError):
+                    continue
+                if mode in valid_values:
+                    if name == _FULLSCREEN_MODE_VALUE:
+                        return "Window" if mode == _FULLSCREEN_MODE_WINDOWED else "Fullscreen"
+                    return "Fullscreen" if mode == 1 else "Window"
+    except (FileNotFoundError, OSError, TypeError, ValueError):
+        return None
+    return None
+
+
 def _target_values(width: int, height: int) -> tuple[tuple[str, int], ...]:
     return (
         (_WIDTH_VALUE, width),

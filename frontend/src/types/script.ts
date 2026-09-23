@@ -183,8 +183,6 @@ export interface MaaEndScriptConfig {
     EmulatorId: string
     EmulatorIndex: string
     SetResolution: boolean
-    GameSettingDisplayType: 'Window' | 'Fullscreen'
-    GameSettingResolution: 'Original' | '1280x720' | '1920x1080' | '2560x1440'
     CloseOnFinish: boolean
     RestoreDisplayType: 'Window' | 'Fullscreen'
     RestoreResolution:
@@ -193,7 +191,6 @@ export interface MaaEndScriptConfig {
       | '1920x1080'
       | '2560x1440'
       | '3840x2160'
-      | 'Fullscreen'
       | 'Custom'
     RestoreResolutionWidth: number
     RestoreResolutionHeight: number

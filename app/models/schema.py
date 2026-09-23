@@ -951,6 +951,9 @@ class MaaEndOptionsOut(OutBase):
     originalResolution: Optional[str] = Field(
         default=None, description="从游戏 Unity 注册表读取的原始分辨率"
     )
+    originalDisplayType: Optional[Literal["Window", "Fullscreen"]] = Field(
+        default=None, description="从游戏注册表读取的原始显示模式"
+    )
     controllers: List[ComboBoxItem] = Field(..., description="MaaEnd 控制器选项")
     controllerTypes: dict[str, str] = Field(..., description="控制器协议类型映射")
     essenceLocations: List[ComboBoxItem] = Field(
@@ -2742,12 +2745,6 @@ class MaaEndConfig_Game(BaseModel):
     SetResolution: Optional[bool] = Field(
         default=None, description="是否在启动游戏时设置分辨率"
     )
-    GameSettingDisplayType: Optional[Literal["Window", "Fullscreen"]] = Field(
-        default=None, description="启动游戏时的显示模式"
-    )
-    GameSettingResolution: Optional[
-        Literal["Original", "1280x720", "1920x1080", "2560x1440"]
-    ] = Field(default=None, description="启动游戏时的分辨率，Original 表示读取注册表")
     CloseOnFinish: Optional[bool] = Field(default=None, description="结束后关闭游戏")
     RestoreDisplayType: Optional[Literal["Window", "Fullscreen"]] = Field(
         default=None, description="关闭游戏时恢复的显示模式"
@@ -2759,8 +2756,6 @@ class MaaEndConfig_Game(BaseModel):
             "1920x1080",
             "2560x1440",
             "3840x2160",
-            # 旧配置兼容值；新界面使用 RestoreDisplayType 单独选择显示模式。
-            "Fullscreen",
             "Custom",
         ]
     ] = Field(default=None, description="关闭游戏时恢复的分辨率，Off 表示不修改")
