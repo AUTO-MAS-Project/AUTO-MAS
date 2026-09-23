@@ -1513,8 +1513,7 @@ const channelLabel = (channel: string) => {
 }
 
 const syncGamePathInput = () => {
-  gamePathInput.value =
-    formData.Switch.GamePath || gameClientInfo.value?.globalPath || ''
+  gamePathInput.value = formData.Switch.GamePath || gameClientInfo.value?.globalPath || ''
 }
 
 /**
@@ -1541,10 +1540,7 @@ const syncResourceWithChannel = async () => {
     await saveField('Switch.Resource', channel)
     message.success(
       t('edit.bettergiGameClientSynced', {
-        server:
-          channel === '官服'
-            ? t('edit.bettergiServerCn')
-            : t('edit.bettergiServerBili'),
+        server: channel === '官服' ? t('edit.bettergiServerCn') : t('edit.bettergiServerBili'),
       })
     )
   }
@@ -1577,8 +1573,7 @@ const handleGamePathSaved = async () => {
   const input = (gamePathInput.value || '').trim()
   const globalPath = gameClientInfo.value?.globalPath || ''
   // 输入值与 BGI 当前路径一致 → 存空（跟随），否则存显式覆盖
-  const followsGlobal =
-    !!globalPath && normalizePath(input) === normalizePath(globalPath)
+  const followsGlobal = !!globalPath && normalizePath(input) === normalizePath(globalPath)
   const next = followsGlobal ? '' : input
   if (next !== formData.Switch.GamePath) {
     formData.Switch.GamePath = next

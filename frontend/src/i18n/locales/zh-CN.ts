@@ -1652,8 +1652,7 @@ export default {
     bettergiGameClientInvalid: '请选择游戏主程序（YuanShen.exe 或 GenshinImpact.exe）',
     bettergiGameClientUnknownWarning:
       '无法识别游戏客户端渠道（config.ini 缺失或路径无效），请手动指定游戏服务器',
-    bettergiGameClientIntlWarning:
-      '已识别为国际服客户端，无法自动确定区服，请手动指定游戏服务器',
+    bettergiGameClientIntlWarning: '已识别为国际服客户端，无法自动确定区服，请手动指定游戏服务器',
     bettergiGameClientSynced: '已根据客户端自动切换游戏服务器为 {server}',
     bettergiServerMismatchWarning:
       '所选服务器（{server}）与当前游戏客户端（{channel}）不一致，任务将无法正常执行，请调整其一',

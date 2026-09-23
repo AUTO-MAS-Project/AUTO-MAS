@@ -1732,14 +1732,12 @@ export default {
     bettergiGameClientPlaceholder:
       'Configure the game path in BetterGI settings first, or pick the game executable for this user (YuanShen.exe / GenshinImpact.exe)',
     bettergiGameClientRestore: 'Restore BGI default',
-    bettergiGameClientInvalid:
-      'Pick the game executable (YuanShen.exe or GenshinImpact.exe)',
+    bettergiGameClientInvalid: 'Pick the game executable (YuanShen.exe or GenshinImpact.exe)',
     bettergiGameClientUnknownWarning:
       'Cannot detect the game client channel (config.ini missing or invalid path); pick the game server manually',
     bettergiGameClientIntlWarning:
       'International client detected, but the specific server cannot be determined; pick the game server manually',
-    bettergiGameClientSynced:
-      'Game server automatically switched to {server} based on the client',
+    bettergiGameClientSynced: 'Game server automatically switched to {server} based on the client',
     bettergiServerMismatchWarning:
       'The selected server ({server}) does not match the current game client ({channel}); tasks will not run properly — adjust one of them',
     bettergiChannelOfficial: 'CN official',
