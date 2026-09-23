@@ -28,6 +28,7 @@ import subprocess
 import sysconfig
 import threading
 import time
+import uuid
 from contextlib import suppress
 from pathlib import Path
 from typing import Any, BinaryIO, Callable, TextIO
@@ -669,6 +670,9 @@ class MaaFWRunner:
         self._post_lock: threading.Lock = threading.Lock()
         self._task_in_flight: bool = False
         self._deadline_stop_posted: bool = False
+        # 本次运行的实例标识：拼进 interface 声明的固定 agent identifier，防同一项目的
+        # 两个脚本并行时抢同一个 socket（见 _run_agent_identifier）。
+        self._run_instance_tag: str = uuid.uuid4().hex[:8]
 
     @property
     def failure_screenshots(self) -> list[MaaFWFailureScreenshot]:
@@ -1367,7 +1371,10 @@ class MaaFWRunner:
             if agent_plan.embedded:
                 continue
             agent_client = self._create_agent_client(
-                agent_plan.childExec, identifier=agent_plan.identifier
+                agent_plan.childExec,
+                identifier=self._run_agent_identifier(
+                    agent_plan.identifier, agent_plan.childExec
+                ),
             )
             if not agent_client.bind(self.resource):
                 raise RuntimeError("AgentClient 绑定资源失败")
@@ -1450,6 +1457,28 @@ class MaaFWRunner:
             "embedded Agent must run as an isolated subprocess in AUTO-MAS; "
             "rebuild the MaaFW run plan before starting agents"
         )
+
+    def _run_agent_identifier(self, declared: str | None, label: str) -> str | None:
+        """本次运行实际用的 agent 连接标识。
+
+        interface 写了固定的 identifier 时拼成 ``{identifier}_{本次运行实例标识}``（照
+        MFAA ``AgentHelper.cs``）：同一项目的两个脚本并行时，IPC 模式下 socket 名是
+        ``maafw-agent-{identifier}.sock``，不加后缀两边会抢同一个 socket。agent 子进程
+        从命令行拿到的是 AgentClient 实际用的那个（``<socket_id>``），两边一致。
+        纯数字（1–65535）按 MaaFramework ``Transceiver::parse_tcp_port`` 是 TCP 端口，
+        拼后缀会把它变成 IPC 名、改掉语义，所以原样用；这种写法并行时仍会抢同一端口。
+        """
+
+        text = str(declared or "").strip()
+        if not text:
+            return None
+        if text.isdigit() and 1 <= int(text) <= 65535:
+            self.send_log(
+                f"interface 声明的 agent identifier={text} 是 TCP 端口，按原样使用；"
+                f"同一项目的多个脚本同时运行会抢同一端口: {label}"
+            )
+            return text
+        return f"{text}_{self._run_instance_tag}"
 
     def _create_agent_client(
         self, label: str, *, identifier: str | None = None
