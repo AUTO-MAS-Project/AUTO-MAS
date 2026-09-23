@@ -116,10 +116,22 @@ def _clear_readonly_and_retry(func: Callable[[str], Any], path: str, _exc: Any) 
     func(path)
 
 
+def long_path(path: Path | str) -> str:
+    """Windows 上转成 ``\\\\?\\`` 扩展路径：搬进 ``.staging`` 的树比原位置深二三十个字符，
+    pyc 镜像树这类本来就贴着 MAX_PATH 的深路径在那里删不掉。其它系统原样返回。"""
+
+    text = os.path.abspath(str(path))
+    if os.name != "nt" or text.startswith("\\\\?\\"):
+        return text
+    if text.startswith("\\\\"):
+        return "\\\\?\\UNC\\" + text[2:]
+    return "\\\\?\\" + text
+
+
 def remove_tree(path: Path) -> None:
     if os.path.lexists(path):
         if path.is_dir() and not path.is_symlink():
-            shutil.rmtree(path, onexc=_clear_readonly_and_retry)
+            shutil.rmtree(long_path(path), onexc=_clear_readonly_and_retry)
         else:
             path.unlink()
 

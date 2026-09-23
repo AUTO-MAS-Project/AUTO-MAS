@@ -189,7 +189,8 @@ def _clear_readonly_and_retry(
 
 def remove_tree(path: Path) -> None:
     if path.exists():
-        shutil.rmtree(path, onexc=_clear_readonly_and_retry)
+        # 扩展路径：挪进 .staging 的旧视图比原位置深，贴着 MAX_PATH 的深路径在那里删不掉。
+        shutil.rmtree(payloads.long_path(path), onexc=_clear_readonly_and_retry)
 
 
 def _remove_quietly(path: Path, what: str) -> None:
@@ -494,6 +495,14 @@ def _build_view_tree(
     for current, dir_names, file_names in os.walk(carry_from, onerror=_walk_error):
         current_path = Path(current)
         relative_dir = current_path.relative_to(carry_from)
+        # 字节码缓存不承载：可重建（下次运行按需编译），而它的镜像树是全视图最深的路径，
+        # 在比视图深二十来个字符的 staging 里建会超 MAX_PATH（Maa_bbb / FOS 实测）。
+        dir_names[:] = [
+            name
+            for name in dir_names
+            if name != "__pycache__"
+            and not (relative_dir == Path() and name == PYCACHE_DIR_NAME)
+        ]
         if not dir_names and not file_names and relative_dir != Path():
             # 空目录（运行期建的 debug/ 之类）也是私有状态；有内容的目录随文件自然建出。
             target_dir = staging / relative_dir
@@ -1548,12 +1557,10 @@ def adopt_view(
     lineage = payloads.lineage_key(interface)
     version = str(interface.get("version") or "")
     recorded = _recorded_update_manifest(view, base)
-    source_map = None if recorded is not None else _source_projection_map(source)
-    whitelist = (
-        _adoption_whitelist(view) if recorded is None and source_map is None else None
-    )
     if recorded is not None:
         recorded = {rel.casefold(): sha for rel, sha in recorded.items()}
+    source_map = _source_projection_map(source)
+    whitelist = _adoption_whitelist(view)
 
     payload_files: dict[str, str] = {}  # rel -> sha256
     origins: dict[str, str] = {}
@@ -1574,25 +1581,26 @@ def adopt_view(
             rel = (relative_dir / name).as_posix()
             key = rel.casefold()
             digest = sha256_file(path)
+            # 1) 更新器清单里的：内容没变是更新包铺的（package），改过的留私有。
             if recorded is not None and key in recorded:
                 if recorded[key] == digest:
                     payload_files[rel] = digest
                     origins[rel] = payloads.ORIGIN_PACKAGE
-                continue  # 清单里但被改过：私有
-            if source_map is not None:
-                origin_file = source_map.get(key)
+                continue
+            # 2) 来源目录里有同路径文件：同内容是导入来的（import），不同就是本地改过的。
+            origin_file = source_map.get(key) if source_map is not None else None
+            if origin_file is not None and origin_file.is_file():
                 if (
-                    origin_file is not None
-                    and origin_file.is_file()
-                    and origin_file.stat().st_size == path.stat().st_size
+                    origin_file.stat().st_size == path.stat().st_size
                     and sha256_file(origin_file) == digest
                 ):
                     payload_files[rel] = digest
                     origins[rel] = payloads.ORIGIN_IMPORT
                 continue
-            if recorded is not None:
-                # 有清单但不在清单里：来源目录能证明是导入来的才算载荷（附录 B 第 2 条）。
-                continue
+            # 3) 清单与来源都证明不了（来源没了、或来源目录后来被动过缺了这个文件）：按
+            #    视图自己的投影白名单判，已知运行期文件与日志除外（附录 B 第 4 条）。只按
+            #    「来源里没有」就判私有会把整套发行文件当私有带过每次切换，旧版本删掉的资源
+            #    会一直留在视图里。
             if (
                 whitelist is not None
                 and whitelist(rel)
@@ -1601,34 +1609,6 @@ def adopt_view(
             ):
                 payload_files[rel] = digest
                 origins[rel] = payloads.ORIGIN_IMPORT
-    if recorded is not None:
-        # 有清单但清单外的导入文件：再用来源目录确认一遍（附录 B 第 2 条后半）。
-        extra_map = _source_projection_map(source)
-        if extra_map is not None:
-            for current, dir_names, file_names in os.walk(view):
-                current_path = Path(current)
-                relative_dir = current_path.relative_to(view)
-                if relative_dir == Path():
-                    dir_names[:] = [
-                        name
-                        for name in dir_names
-                        if name.casefold() not in ADOPT_PRIVATE_ROOTS
-                    ]
-                for name in file_names:
-                    rel = (relative_dir / name).as_posix()
-                    if rel in payload_files or rel.casefold() in recorded:
-                        continue
-                    if relative_dir == Path() and name == VIEW_MARKER_NAME:
-                        continue
-                    origin_file = extra_map.get(rel.casefold())
-                    path = current_path / name
-                    if (
-                        origin_file is not None
-                        and origin_file.is_file()
-                        and sha256_file(origin_file) == sha256_file(path)
-                    ):
-                        payload_files[rel] = sha256_file(path)
-                        origins[rel] = payloads.ORIGIN_IMPORT
     if not any(
         rel.casefold() in {"interface.json", "interface.jsonc"} for rel in payload_files
     ):
