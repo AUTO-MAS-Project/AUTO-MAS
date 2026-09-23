@@ -584,10 +584,17 @@ def _scan_scan_select_cases(
     if context is not None:
         context.scan_select_specs.add((resolved_scan_dir, normalized_scan_filter))
 
-    if not resolved_scan_dir.exists() or not resolved_scan_dir.is_dir():
-        raise MaaFWInterfaceLoadError(
-            f"scan_select 选项 {option_name} 的 scan_dir 不存在或不是目录: {scan_dir}"
+    if not resolved_scan_dir.is_dir():
+        # scan_dir 常是要用户自备内容的目录（MaaFgo 的自定义配队目录），发行包里本来就
+        # 没有：按「没有可选项」处理，不让整份 interface 读不出来。目录已记进缓存依赖，
+        # 用户建好目录、放进文件后重新加载就有选项了。
+        logger.warning(
+            "MaaFW ProjectInterface scan_select 选项 %s 的 scan_dir 不存在或不是目录：%s；"
+            "按没有可选项处理",
+            option_name,
+            scan_dir,
         )
+        return []
 
     try:
         matched_paths = sorted(
