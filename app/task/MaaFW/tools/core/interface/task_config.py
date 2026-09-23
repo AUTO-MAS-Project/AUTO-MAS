@@ -27,6 +27,7 @@ from .models import (
     MaaFWOption,
     MaaFWPreset,
     MaaFWPresetOptionValue,
+    MaaFWTask,
     MaaFWTaskOptionsByTask,
     MaaFWTaskOptionValue,
     build_duplicate_task_id,
@@ -244,16 +245,22 @@ def build_interface_preset_snapshot(
     task_checked = {task_name: False for task_name in task_order}
     task_option_maps = task_option_maps or _build_task_option_maps(interface_model)
     task_options_by_task: MaaFWTaskOptionsByTask = {}
+    interface_task_names = {task.name for task in interface_model.task}
 
     if include_default_options:
+        # task_order 里可能有同名任务第二次出现的实例 id，选项表按任务名取
         for task_name in task_order:
-            defaults, _ = _build_option_defaults(task_option_maps.get(task_name, {}))
+            defaults, _ = _build_option_defaults(
+                task_option_maps.get(
+                    resolve_task_instance_name(task_name, interface_task_names), {}
+                )
+            )
             task_options_by_task[task_name] = defaults
 
     ordered_preset_tasks: list[str] = []
     seen_task_names: set[str] = set()
     occurrences: dict[str, int] = {}
-    valid_task_names = set(task_checked)
+    valid_task_names = interface_task_names & set(task_checked)
     for preset_task in preset.task or []:
         if preset_task.name not in valid_task_names:
             continue
@@ -387,8 +394,38 @@ def _normalize_preset_name(value: Any) -> str:
     return CUSTOM_PRESET_NAME
 
 
+def build_default_task_instances(
+    interface_model: MaaFWInterface,
+) -> list[tuple[str, MaaFWTask]]:
+    """interface 任务表按出现位置展开成 ``(实例 id, 任务定义)``。
+
+    任务表里同名任务出现多次（MaaGFNeuralCloud 的「收集任务奖励」一前一后两次，
+    只有前一次 default_check）是合法写法：第一次沿用裸任务名，第 k 次起映射成重复
+    任务实例 ``<任务名>__MAS_DUP__task<k>``，与用户手动复制同一口径，默认队列里两次
+    都在、各按自己的 default_check。后缀按出现次序确定，每次展开得到同一组 id。
+    """
+
+    task_names = {task.name for task in interface_model.task}
+    occurrences: dict[str, int] = {}
+    instances: list[tuple[str, MaaFWTask]] = []
+    used: set[str] = set()
+    for task in interface_model.task:
+        occurrence = occurrences.get(task.name, 0) + 1
+        occurrences[task.name] = occurrence
+        task_id = task.name
+        if occurrence > 1:
+            suffix = f"task{occurrence}"
+            task_id = build_duplicate_task_id(task.name, suffix)
+            while task_id in task_names or task_id in used:
+                suffix += "x"
+                task_id = build_duplicate_task_id(task.name, suffix)
+        used.add(task_id)
+        instances.append((task_id, task))
+    return instances
+
+
 def _build_default_task_order(interface_model: MaaFWInterface) -> list[str]:
-    return [task.name for task in interface_model.task]
+    return [task_id for task_id, _ in build_default_task_instances(interface_model)]
 
 
 def _build_valid_task_names(interface_model: MaaFWInterface) -> set[str]:

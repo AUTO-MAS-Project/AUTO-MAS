@@ -16,7 +16,11 @@ from .models import (
     build_pretask_task_name,
     iter_pretasks,
 )
-from .task_config import _build_task_option_maps, build_interface_preset_snapshot
+from .task_config import (
+    _build_default_task_order,
+    _build_task_option_maps,
+    build_interface_preset_snapshot,
+)
 
 logger = logging.getLogger("automas.maafw.interface.preview")
 # 语言文件解析失败只提醒一次：同一份坏文件每次预览都会再撞上。
@@ -93,8 +97,14 @@ def build_interface_preview_data(
 ) -> MaaFWInterfacePreviewData:
     root = Path(root_path).resolve()
     i18n_mapping = _load_i18n_mapping(root, interface)
-    task_order = [task.name for task in interface.task]
+    task_order = _build_default_task_order(interface)
     task_option_maps = _build_task_option_maps(interface)
+    # 前端按任务名认任务（「添加任务」菜单、选项编辑器）：任务表里同名任务出现多次时
+    # 只列第一次，其余次数是默认队列里的重复实例（见 build_default_task_instances）。
+    unique_tasks = []
+    for task in interface.task:
+        if all(task.name != seen.name for seen in unique_tasks):
+            unique_tasks.append(task)
     supported_option_names = {
         option_name
         for option_name, option in interface.option.items()
@@ -230,7 +240,7 @@ def build_interface_preview_data(
                     "option": filter_option_names(task.option),
                     "defaultCheck": bool(task.default_check),
                 }
-                for task in interface.task
+                for task in unique_tasks
             ],
         ],
         options=[

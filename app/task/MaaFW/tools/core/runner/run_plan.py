@@ -34,6 +34,7 @@ from app.task.MaaFW.tools.core.interface.models import (
 from app.task.MaaFW.tools.core.interface.task_config import (
     MaaFWTaskPresetSnapshot,
     _build_option_defaults,
+    build_default_task_instances,
     build_interface_preset_snapshot,
     normalize_snapshot,
     normalize_task_execution_payload,
@@ -533,11 +534,14 @@ def _resolve_snapshot(
             interface_model,
         )
 
+    # 按出现位置各自取 default_check：同名任务出现两次时，以前 {任务名: 勾选} 字典让后一次
+    # （没勾）覆盖前一次，这个任务就从默认计划里消失了（MaaGFNeuralCloud 的收集任务奖励）。
+    instances = build_default_task_instances(interface_model)
     return normalize_snapshot(
         {
-            "taskOrder": [task.name for task in interface_model.task],
+            "taskOrder": [task_id for task_id, _ in instances],
             "taskChecked": {
-                task.name: bool(task.default_check) for task in interface_model.task
+                task_id: bool(task.default_check) for task_id, task in instances
             },
             "taskOptions": {},
         },
