@@ -1,14 +1,16 @@
-"""内嵌副本之间按内容共用大文件：同样的字节只在磁盘上存一份。
+"""载荷 / 视图之间按内容共用大文件：同样的字节只在磁盘上存一份。
 
 满足共用谓词（``projection.is_shared_path``：≥ 64 KB 且不在排除表）的文件按 sha256
 存进 ``data/maafw_blobs/<ab>/<sha256>``，载荷与视图里的路径是指向它的 NTFS 硬链接。
 运行时看到的就是普通文件——agent、runner、更新器都不用知道这回事；两个项目自带的
 numpy、onnxruntime、MaaAgentBinary 只要字节相同就只占一份。
 
-三条约束，都在 :meth:`RuntimeBlobStore.place` 里兑现：
+三条约束，在 :meth:`RuntimeBlobStore.place` / :meth:`RuntimeBlobStore.ingest_in_place` 与
+:func:`place_fresh` 里兑现：
 
-- **永远不往已有文件里写。** 硬链接没有写时复制，往一个链接里写就是改所有项目的
-  那份。落地新内容一律先 unlink 再链接 / 复制；内容没变的文件连碰都不碰。
+- **永远不往已有文件里写。** 硬链接没有写时复制，往一个链接里写就是改所有载荷与视图的
+  那份。放文件一律独占新建（``os.link`` / ``COPY_FILE_FAIL_IF_EXISTS`` / ``open("xb")``），
+  目标已存在就先摘掉目录项再建；内容没变的文件连碰都不碰。
 - **小文件不进库。** 锁文件、``.pth``、dist-info 元数据这类几十字节的东西是最可能被
   原地改写的（M9A 的 bootstrap 就往 ``python/*.lock`` 里追加写），而省空间的大头是
   几十 MB 的原生库；只对 ``LINK_MIN_BYTES`` 以上的文件做共用。

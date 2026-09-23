@@ -1598,6 +1598,14 @@ def _embedded_summary_lines(script_id: str) -> list[str]:
         bundled.append(f"Python {report['bundledPythonVersion']}")
     if bundled:
         details.append(f"项目自带 {'、'.join(bundled)}")
+    current = str(status.get("version") or "")
+    if current:
+        siblings = int(status.get("siblingCount") or 0)
+        details.append(
+            f"当前版本 {current}（与 {siblings} 个脚本共用）"
+            if siblings
+            else f"当前版本 {current}"
+        )
     if details:
         lines.append("；".join(details))
     return lines
@@ -1659,10 +1667,6 @@ async def list_maafw_embedded_sources(
     return MaaFWEmbeddedSourcesOut(data=await asyncio.to_thread(_collect))
 
 
-_EMBEDDED_SOURCE_BUSY = "源脚本正在运行，运行结束后再复用它的项目"
-_EMBEDDED_SOURCE_COPY_BUSY = "源脚本的项目正在更新或准备环境，请稍后再复用"
-
-
 @router.post(
     "/maafw/embedded/clone",
     tags=["MaaFW"],
@@ -1676,8 +1680,9 @@ async def clone_maafw_embedded(
     """同一个项目要开第二、第三个脚本（不同模拟器并行跑）时走这里，不用再选目录
     重新投影，来源目录已经删了也能建。
 
-    副本从源脚本的副本硬链接克隆（运行时、模型与其它副本共用，只多小文件），
-    ``Info.Path`` 与 ``Embedded.*`` 沿用源脚本的记录；类型随项目（M9A 项目 → M9A）。
+    视图从源脚本挂着的载荷物化（大文件与载荷共用，只多小文件；源的运行期状态不带），
+    源脚本运行中也能建；``Info.Path`` 与 ``Embedded.*`` 沿用源脚本的记录（两者必须成对
+    继承）；类型随项目（M9A 项目 → M9A）。
     用户、任务队列与运行设置不带——那是「复制脚本」的事。
     """
 
@@ -1694,45 +1699,32 @@ async def clone_maafw_embedded(
         )
     if busy := _embedded_busy_reason(script_config):
         return MaaFWEmbeddedStatusOut(code=400, status="error", message=busy)
-    if getattr(source_config, "is_locked", False):
-        return MaaFWEmbeddedStatusOut(
-            code=400, status="error", message=_EMBEDDED_SOURCE_BUSY
-        )
 
     target_dir = embedded_project_dir(payload.scriptId)
-    source_dir = embedded_project_dir(payload.sourceScriptId)
     # 老脚本换项目：目标原有副本钉定的版本在克隆后可能就没人用了
     previous_version = await _previous_maafw_version(target_dir)
-    # 两边的副本路径都要预约：源在更新落地 / 准备环境时克隆会带走半截树，
-    # 目标正被别的入口导入时更不能同时写。
+    # 只预约目标：源脚本挂的是不可变载荷（正在切换就取 journal 的目标），物化不读源视图，
+    # 源在运行 / 更新 / 准备环境都不影响。目标正被别的入口导入时不能同时写。
     target_reservation = await try_reserve_project_path(target_dir)
     if target_reservation is None:
         return MaaFWEmbeddedStatusOut(
             code=400, status="error", message=_EMBEDDED_COPY_BUSY
         )
     try:
-        source_reservation = await try_reserve_project_path(source_dir)
-        if source_reservation is None:
-            return MaaFWEmbeddedStatusOut(
-                code=400, status="error", message=_EMBEDDED_SOURCE_COPY_BUSY
-            )
-        try:
-            # 目标已有副本（老脚本换项目）由服务层在克隆成功后原子换掉，失败时原样放回。
-            cloned = await asyncio.to_thread(
-                clone_embedded_copy, payload.sourceScriptId, payload.scriptId
-            )
-        except EmbeddedProjectError as exc:
-            return MaaFWEmbeddedStatusOut(
-                code=400, status="error", message=f"克隆失败: {exc}"
-            )
-        except Exception as exc:  # noqa: BLE001 - 文件系统异常也要原样给用户
-            return MaaFWEmbeddedStatusOut(
-                code=400,
-                status="error",
-                message=f"克隆失败: {type(exc).__name__}: {exc}",
-            )
-        finally:
-            await release_project_path(source_reservation)
+        # 目标已有视图（老脚本换项目）在新视图建好后原子换掉，失败时原样不动。
+        cloned = await asyncio.to_thread(
+            clone_embedded_copy, payload.sourceScriptId, payload.scriptId
+        )
+    except EmbeddedProjectError as exc:
+        return MaaFWEmbeddedStatusOut(
+            code=400, status="error", message=f"克隆失败: {exc}"
+        )
+    except Exception as exc:  # noqa: BLE001 - 文件系统异常也要原样给用户
+        return MaaFWEmbeddedStatusOut(
+            code=400,
+            status="error",
+            message=f"克隆失败: {type(exc).__name__}: {exc}",
+        )
     finally:
         await release_project_path(target_reservation)
     if not cloned:

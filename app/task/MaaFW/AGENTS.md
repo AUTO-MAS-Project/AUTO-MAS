@@ -22,26 +22,43 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
 ## 项目目录与运行
 
 - **有效项目根只从一处取**：`tools/embedded/embedded_project.resolve_maafw_project_root`
-  ——**永远是** `data/mfw/<脚本 uuid 前 12 位>/` 的副本，没有"路径模式"。`Info.Path` 只是
+  ——**永远是** `data/mfw/<脚本 uuid 前 12 位>/` 的视图，没有"路径模式"。`Info.Path` 只是
   导入的来源，运行时不读它；导入完成后用户删掉来源也无妨。manager 三处、`runner_task`、
   `api/scripts.py` 的 `/maafw/update` 都走它；`/maafw/preview`、`/maafw/agent-env/prepare`、
   `/maafw/game-package` 带 `scriptId` 时也按脚本解析，`path` 只在没有脚本时兜底。
-  新增任何"读项目目录"的代码不要再各自读 `Info.Path`。副本可能还没建（升级前的老脚本、
-  刚选目录、来源换了目录），各入口先经 `ensure_embedded_copy`：副本不在或 `Info.Path` 与导入
-  报告里的 `sourcePath` 不是同一目录就导入一次；来源不在而副本健康时什么都不做。
-- **内嵌副本**：按 interface 白名单投影（`project_update/projection.py`），**白名单之外的顶层条目
+  新增任何"读项目目录"的代码不要再各自读 `Info.Path`。视图可能还没建（刚选目录、来源换了目录、
+  被手删），各入口先经 `ensure_embedded_copy`（调用方持该视图的项目预约）：视图不在或 `Info.Path`
+  与导入报告里的 `sourcePath` 不是同一目录就导入一次；来源不在而视图健康时什么都不做；健康但
+  没有标记的老副本就地采纳一次，采纳失败就报错、本次不运行。
+- **载荷 + 视图**：项目内容按「谱系 + 版本 + 内容哈希」登记成不可变**载荷**
+  （`data/mfw/.payloads/<谱系>/<版本>-<hash8>/` + 同名 `.json` 清单，`project_update/payloads.py`），
+  全局一份；每个脚本一棵**视图**（`data/mfw/<12hex>/`，路径永不变，所有按路径键的缓存 / venv /
+  备份桶都不用改键），满足共用谓词的文件是载荷 / 共用库的硬链接，小文件拷贝，运行期产物私有。
+  视图根上的 `.auto_mas_view.json`（谱系、载荷、版本、物化时刻、`switchedBy`）是物化事实的唯一
+  来源，不进指纹、不进任何清单，只随目录原子换入、不原地改（`switchedBy` 打完日志后清除除外）。
+  谱系键 = `mirrorchyan_rid` > `github` > `name`；**组 = 谱系 + `Update.Channel`，同组永远挂同一个
+  载荷**（`lineage.json` 的 `latest[channel]` 只前进，同版本不换 id）。配置项零新增：谱系 / 载荷 /
+  版本都不进 `ScriptConfig.json`。
+- **投影**：按 interface 白名单（`project_update/projection.py`），**白名单之外的顶层条目
   剩余 ≤ 64 MB 的也带走**（MaaEnd 的 `data/`、`locales/`，MaaYYs 的 `assets/答案.csv`，M9A 的
   `data/activity` 都没在 interface 里声明却是 agent 运行时要读的；更大的顶层目录、根上没声明的
   exe / dll、.NET 外壳的 `libs/` 才是外壳运行时）。外壳是冻结的 Python 程序时（根上直接躺着没人
   声明的 `python312.dll`，Maa_bbb 的 MFW.exe 就是），它散在根目录的二进制依赖包（带 `.pyd`，或
   `*.libs` / `*.dist-info`）也不带：agent 子进程的 `PYTHONPATH` 是项目根，`backports/zstd/`
   这种没有 `__init__.py` 的半截包会变成命名空间包盖住真正的模块——副本上 pip 就是这样崩的。
-  副本路径由脚本 ID 推出（`embedded_copy_dir_name`：uuid 去连字符取前 12 位，短是为了 pyc 前缀树
+  视图路径由脚本 ID 推出（`embedded_copy_dir_name`：uuid 去连字符取前 12 位，短是为了 pyc 前缀树
   与深层 site-packages 不撞 MAX_PATH）、不进配置、不可手改；来源目录一个字节不动、也不由 MAS 删。脚本页
-  「选择本地目录」就是 `/maafw/embedded/reimport`：第一次是导入，之后是换来源或按当前来源重导；
-  没有 enable / disable 这种开关路由，`Embedded.*` 里只有报告、来源版本与导入时间。
-  导入在 `data/mfw/.staging/` 里投影完再原子换入，失败不动旧副本；副本缺失且来源
-  还在时 check / preview / update 入口自修复。删脚本连带删副本。
+  「选择本地目录」就是 `/maafw/embedded/reimport`：投影成载荷、登记进脚本所在渠道的组，视图切到组的
+  latest——导入的比组新就推进整组（空闲的兄弟立即切），相同或更旧就上组当前版本（「导入时版本」
+  那行日志仍是所选目录的版本）。没有 enable / disable 这种开关路由，`Embedded.*` 里只有报告、
+  来源版本与导入时间。删脚本连带删视图；载荷与共用库的回收在启动期。
+- **换版本 = 切视图**（`embedded_project.switch_view`，§3.2）：在 `data/mfw/.staging/` 里按新载荷重建
+  链接森林、把视图私有文件带过去（同谱系才带；`.pycache` 不带）、被本地改过的受管文件以新版本为准并
+  留档到 `data/maafw_project_state/<视图哈希>/local-modified/<from>→<to>-<时间>/`、标记先写进
+  staging，再两次目录 rename 换入；journal 在 `data/mfw/.switch/`，启动期 `recover_switches` 按盘上
+  状态收尾（没有「重跑切换」这一档）。**写穿防线**：往 staging / 视图 / 载荷放文件一律
+  `blob_store.place_fresh`（独占新建，已存在的目标只摘目录项）；旧视图私有、新载荷也有的路径以载荷
+  为准。切换方向无关：升级、改渠道降级、迁移统一都是这一条。
 - 内置运行从不启动项目自带的界面程序（MFW.exe / MFAAvalonia / MXU），副本去掉的只有外壳、
   .NET 托管库、界面用的运行时、缓存与日志。**项目自带的运行时原样带走**：MaaFramework 原生库
   目录（`maafw/`，MFAAvalonia 布局下是 `runtimes/win-x64/native`）与 agent 自带的解释器目录
@@ -57,25 +74,31 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   比例：MaaYYs 29%（Go agent，196→138 MB）、M9A 57%（Python 3.13 自带 158 MB，660→283 MB）。
   `contracts.py` 里那个 `.auto_mas_maafw_native_runtime.json` 只剩指纹忽略用，没有代码再往
   项目里铺运行时。
-- **副本之间按内容共用文件**（`project_update/blob_store.py`）：共用谓词只有一个，
+- **按内容共用文件**（`project_update/blob_store.py`）：共用谓词只有一个，
   `projection.is_shared_path(rel, size, private_paths)`——≥ 64 KB、首段不是 `config/ debug/ logs/
   temp/ cache/ .pycache/ .mas-update*`、后缀不是 `.lock .sha256 .pth .log .tmp`、不在 `*.dist-info`
   里、不在谱系学到的 `privatePaths` 里（不再按后缀白名单）。满足的按 sha256 存进
-  `data/maafw_blobs/<ab>/<sha256>`，副本里是指向它的 NTFS 硬链接，同样的字节只存一份；导入
-  （`materialize_projection`）、更新落地（`apply.py`）、克隆 / 视图物化都走它。三条铁律：
-  **永远不往已有文件里写**（硬链接没有写时复制，更新器的 `_copy_path` / 回滚都是先删再写，
-  内容没变的文件连碰都不碰）；小文件不进库（锁文件、`.pth`、dist-info 这类最可能被原地改写，
-  M9A 的 bootstrap 就往 `python/*.lock` 里追加写）；链接失败就退回复制。回收在启动期
-  `clean_maafw_runtime_blobs`（`st_nlink == 1` 即孤儿）。本机实测：inode 被映射时只有被映射的
+  `data/maafw_blobs/<ab>/<sha256>`，载荷与视图里是指向它的 NTFS 硬链接，同样的字节只存一份；导入、
+  更新构建新载荷、视图物化都走它。三条铁律：**永远不往已有文件里写**（硬链接没有写时复制）；小文件
+  不进库（锁文件、`.pth`、dist-info 这类最可能被原地改写，M9A 的 bootstrap 就往 `python/*.lock` 里
+  追加写）；链接失败就退回复制。可写的东西靠四层挡住：尺寸、排除表、运行期新建即新 inode、运行
+  收尾的写穿巡检（`tools/embedded/view_audit.py`：nlink>1 且修改时间晚于物化时刻才读 sha，确认就
+  隔离 blob、记 `privatePaths`、标载荷 `damaged`）。回收在启动期：`clean_maafw_embedded_copies`
+  删无人引用的载荷（引用集 = 视图标记 ∪ 各谱系 latest ∪ 未完成切换的 to，本进程起来之后建的不收），
+  随后 `clean_maafw_runtime_blobs` 删 `st_nlink == 1` 的 blob。本机实测：inode 被映射时只有被映射的
   那个目录项删不掉 / 换不掉，同一 inode 的其它硬链接名随便删换（见 `blob_store.py` 模块说明）。
 - **同一项目再建一个脚本**走 `/maafw/embedded/sources`（候选）+ `/maafw/embedded/clone`
-  （`embedded_project.clone_embedded_copy`）：从源脚本的副本克隆，已共用的文件再挂硬链接、还没入库的
-  模型经共用库放过去、`debug/` 与字节码不带，staging 建好再原子换入；源与目标各持项目预约，源运行中
-  拒绝；`Info.Path` 与 `Embedded.*` 沿用源，类型随项目。「复制脚本」（`Config.add_script`）复用同一个
-  函数。来源目录已删、副本又没了（复制脚本时源正忙没复制到副本、副本被手删）时，
-  `ensure_embedded_copy` 在其它同来源、副本健康的 MFW 脚本里克隆一份再报错——来源可删这句承诺
-  靠它兜底。更新包下载缓存 `data/maafw_update_cache` 按 源 + 版本 + 文件名 命中，启动期
-  `Config.clean_maafw_update_cache` 删 7 天没碰过的（`transport.prune_update_cache`）。
+  （`embedded_project.clone_embedded_copy`）：从源脚本挂着的载荷物化目标视图（源正在切换就取 journal
+  的目标），不读源视图、不要源空闲、源的运行期状态不带；只预约目标；`Info.Path` 与 `Embedded.*`
+  沿用源（两者必须成对继承），类型随项目。「复制脚本」（`Config.add_script`）复用同一个函数。
+  视图与来源都没了时，`ensure_embedded_copy` 从同来源兄弟的谱系（没有兄弟就按载荷清单记的导入来源
+  反查）按本脚本渠道的 latest 重建——来源可删这句承诺靠它兜底。更新包下载缓存
+  `data/maafw_update_cache` 按 源 + 版本 + 文件名 命中，启动期 `Config.clean_maafw_update_cache`
+  删 7 天没碰过的（`transport.prune_update_cache`）。
+- **启动期一次性迁移**（`Config.migrate_maafw_embedded_copies_to_payloads`，排在各项回收之前）：
+  没有标记的老副本逐个采纳（`embedded_project.adopt_view`：更新器清单里没改过的记 `package`，与来源
+  同路径同内容的记 `import`，都证明不了按视图自己的白名单判，已知运行期状态文件一律私有），再把每个
+  组统一到 latest；采纳失败的原样保留、下次再试。
 - Python agent 的解释器三种落法（`agent_env/planner.py`）：项目自带 `python/python.exe` 存在 →
   `project_python`；声明的是自带 Python 模式但文件不存在，或者裸写 `python` 让 PATH 去找
   （PI v2 示例与 MAA_Punish 的写法）→ 该项目专属隔离 venv（`isolated_venv`，按项目路径哈希
@@ -88,7 +111,7 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   包不写依赖，不补的话 agent 一句 `import maa` 就退出。写了清单但没声明 maafw 的照旧不追加。
   **项目自带 Python**（`project_python`）里的 binding 也必须与自带原生库同版本：项目自己的部署
   脚本会 `pip install --upgrade maafw` 升到 PyPI 最新（Maa_bbb v1.12.8 实测 5.13.1/协议 8 对原生库
-  5.11.1/协议 7），表现只有一句「AgentClient 连接超时」。准备运行环境时对**内嵌副本**把它钉回
+  5.11.1/协议 7），表现只有一句「AgentClient 连接超时」。准备运行环境时对**内嵌视图 / 更新时新载荷的 staging**把它钉回
   原生库版本（副本是我们铺的；用户自己的目录只说明不动），环境指纹把该 dist-info 名算进去，
   否则钉回那一步会被缓存跳过；失败路径的诊断（`_describe_agent_maafw_mismatch`）两边都说清。
 - `Run.RunTimeLimit` 是套在单个用户整次 MaaFW 运行上的**硬超时**（`asyncio.wait_for`），
@@ -138,20 +161,28 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   组同源，改一处要同步另一处。只对 `github.com/<owner>/<repo>/releases/download/...` 生效，
   Mirror 酱的一次性签名地址套前缀会把签名打坏，所以按源分流而不是按地址。
   **没有 sha256 摘要时核心包整个忽略镜像**：经第三方转发的字节必须能校验。
-- 项目指纹在本地算（`project_update/contracts.py: project_fingerprint`），只用来防"计划与落地
-  之间树被改动"，发布方不参与；差量包的基线校验用的是 MAS 自己上次落地记下的清单
-  （`apply.py: _validate_plan_base`）。`.mas-update` / `.mas-update-cache` 是更新器的保留目录，
-  `debug` / `logs` / `temp` / `__pycache__` / `.pycache` 与 `config/maa_option.json` 不计入指纹
-  （agent 子进程与环境准备设了 `PYTHONPYCACHEPREFIX=<项目根>/.pycache`，pyc 全落那棵镜像树，
-  它里面没有 `__pycache__` 这一层，漏掉它差量更新就永远退化成全量包）。镜像树里项目根出现两遍，
-  安装路径长到会撞 MAX_PATH（`host_environment.project_pycache_prefix` 的预算）且没开长路径支持时
-  不设前缀，pyc 退回源码旁——解释器写 pyc 失败是静默的，不设比每次启动全量重编译强。
+- **一个组只更新一次**（`tools/embedded/view_update.run_view_update`，运行前 / 运行后 / 手动三条路
+  共用）：谱系锁（进程内）内先把触发脚本同步到组的 latest，再发现（`current` = 组版本）→ 下载一次
+  （取消令牌、GitHub 镜像、按触发脚本解析的代理、进度全部透传）→ 在 `.staging/payload-*` 里从当前
+  载荷 + 包建新载荷（`payloads.build_from_package`）→ 在 staging 上预检一次（钉回 binding 也在这里，
+  写的是 staging）→ `finalize` 并入共用库 → `register` 登记 → 切触发脚本的视图 → 同组空闲脚本立即切
+  （运行中的跑完再切：`_check` 的组同步与 `final_task` 的收尾同步；pending 是派生状态，不落字段）。
+  视图与旧载荷全程一个字节不动：失败 / 预检不过 / 取消都只是丢 staging，没有回滚与中断恢复。
+  下载完成之后到登记之前取消 = 丢 staging（「正在中止更新（丢弃未完成的新版本），请稍候」，60 s
+  宽限）；登记之后不再响应取消。手动 `/maafw/update` 运行中照旧拒绝（`_UPDATE_SCRIPT_BUSY`），整段
+  持本视图预约，切完在预约里确认一次运行环境再放手（前端那次 prepare 会被 `envReady` 短路）。
+- 差量 / 全量只看当前载荷：`source.kind=update`（更新得来的，清单逐文件记包内哈希，指纹就是它
+  现在的指纹——载荷不可变）才要差量包，本地导入的一律全量；差量基线用 `apply.py: _validate_plan_base`
+  对载荷清单校验。全量包清的是旧载荷里 `origin=package` 且不在包内的，加上 `origin=import`、位于新
+  interface 资源目录内、不在包内的（`apply._import_origin_orphans`：用户内容目录与运行时目录不碰）。
+  `.mas-update` / `.mas-update-cache` 是更新器的保留目录；`debug` / `logs` / `temp` / `__pycache__` /
+  `.pycache`、`config/maa_option.json` 与视图标记不计入指纹（agent 子进程与环境准备设了
+  `PYTHONPYCACHEPREFIX=<项目根>/.pycache`，镜像树里项目根出现两遍，路径长到会撞 MAX_PATH 时不设
+  前缀，见 `host_environment.project_pycache_prefix`）。
 - 全量与差量包的落地条目都只从 `apply.py: build_package_plan` 枚举（`files` / `hashes` /
-  `deleted` 三张表）。要改"哪些文件落盘"只动这一处，孤儿清理、基线、回滚会自然跟随。
-  内嵌脚本传 `projection=True`，三张表在 `_project_package_entries` 里按同一份白名单过滤，
-  投影标记也在那里随包换入。
-- 无可信基线时请求整包；整包落地也会清理包内资源目录下的孤儿文件，但保留用户内容目录与
-  运行时目录（口径见 `tests/task/test_maafw_project_update_orphans.py`）。
+  `deleted` 三张表，按投影白名单过滤）。要改"哪些文件落盘"只动这一处。
+- 预检备忘按**谱系 + 目标版本**记（`.payloads/<谱系>/precheck-<版本>.json`），组共有：一个成员预检
+  过某版本失败，组里谁也不再为它下包；只有运行前 / 运行后自动更新读它，手动更新等于强制重试。
 - "检查更新"走 `version_only`，不换下载地址——带 CDK 换地址会扣 Mirror 酱当日额度。
 
 ## 与专项的区别（别照搬）
@@ -169,7 +200,7 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
 
 - 夹具要照抄真实输出的形状（interface 加载结果、更新器返回、运行计划），臆造键名会让
   "读错键"类缺陷全程绿灯。
-- `test_maafw_project_update_orphans.py` 会在临时目录建很深的树，`--basetemp` 用短路径
-  （如 `%TEMP%\mfwt\pt`），否则 Windows 报 `WinError 206`，看起来像代码坏了。
+- 本地边界测试会在临时目录建很深的树，`--basetemp` 用短路径（如 `%TEMP%\mfwt\pt`），
+  否则 Windows 报 `WinError 206`，看起来像代码坏了。
 - 排障先看 `history/<日期>/…/<时分秒>.maafw.log`（`grep -a`）：agent 协议版本不匹配之类
   只记在那里，宿主日志只有一句"连接超时"。
