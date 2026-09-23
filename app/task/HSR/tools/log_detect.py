@@ -224,15 +224,30 @@ def is_m7a_self_browser_start(line: str) -> bool:
     )
 
 
-def find_cloud_non_retryable_marker(*texts: str) -> str | None:
-    """返回输出里第一条云·星穹铁道不可重试失败词；没有则 None。"""
+# 进游戏的正向信号：之前的失败词都是三月七进程内重试里已经翻过篇的。
+HSR_CLOUD_IN_GAME_MARKERS: tuple[str, ...] = (
+    "进入云游戏成功",  # cloud.py:1169/1179
+    "已在游戏中",  # cloud.py:528
+)
 
-    for text in texts:
-        if not text:
-            continue
-        for marker in HSR_CLOUD_NON_RETRYABLE_MARKERS:
-            if marker in text:
-                return marker
+
+def find_cloud_non_retryable_marker(*texts: str) -> str | None:
+    """返回输出里第一条云·星穹铁道不可重试失败词；没有则 None。
+
+    三月七一次运行内会重试进入 3 遍：前一遍「排队超时 / 进入云游戏失败」、后一遍
+    进了游戏，之后任务本身失败，是普通可重试失败。所以只看**最后一次**「进入云
+    游戏成功」或「已在游戏中」之后的输出；全程没有这两行时才看整段。多段文本按
+    传入顺序（stdout 在前）拼起来再判定。
+    """
+
+    full = "\n".join(text for text in texts if text)
+    cut = max((full.rfind(marker) for marker in HSR_CLOUD_IN_GAME_MARKERS), default=-1)
+    if cut >= 0:
+        line_end = full.find("\n", cut)
+        full = "" if line_end < 0 else full[line_end + 1 :]
+    for marker in HSR_CLOUD_NON_RETRYABLE_MARKERS:
+        if marker in full:
+            return marker
     return None
 
 
