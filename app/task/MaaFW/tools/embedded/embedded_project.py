@@ -33,7 +33,8 @@ MFW 脚本一律在视图上跑，没有开关：用户选一次项目目录，A
 **写穿防线**：往 staging 写任何文件都走 ``payloads.place_fresh``（先删目标、再链接，链接失败才
 以独占方式新建复制）——staging 里多数文件是载荷的硬链接，往已存在的目标里写就等于改载荷。
 
-过渡期（启动期迁移之前）：没有标记的老副本照旧能跑、能导入、能克隆，这里不采纳也不报错。
+没有标记的老副本由启动期一次性迁移采纳（:func:`adopt_view`，附录 B）；采纳失败的在运行
+前自愈里再试一次，仍失败就报错、本次不运行。
 
 副本放在 ``data/mfw/<…>`` 而不是 ``data/<uuid>/``：后者会被配置备份整目录快照。删脚本时
 ``remove_script`` 连带删视图（载荷与共用库只少一个链接）。
@@ -537,9 +538,11 @@ def _realize_view(
     base: Path | None,
     carry: bool,
     switched_by: Mapping[str, Any] | None = None,
+    assume_marker: Mapping[str, Any] | None = None,
 ) -> ViewResult:
     """按载荷（重）建视图并原子换入。``carry=True`` 且视图有标记时就是 :func:`switch_view`；
-    否则整棵换掉（没有标记的老副本、全新脚本）。"""
+    否则整棵换掉（没有标记的老副本、全新脚本）。``assume_marker`` 给没有标记的老副本
+    用（采纳）：把它当成已经挂在那个载荷上，私有文件照常带过去。"""
 
     started = time.monotonic()
     root = payloads_root(base)
@@ -547,7 +550,11 @@ def _realize_view(
     new_files = payloads.manifest_files(new_manifest)
     version = str(new_manifest.get("version") or "")
 
-    old_marker = read_view_marker(view) if carry else None
+    old_marker = (
+        dict(assume_marker)
+        if assume_marker is not None
+        else (read_view_marker(view) if carry else None)
+    )
     if old_marker is not None and str(old_marker.get("lineage") or "") != lineage:
         # 换了个项目（重导另一个项目的目录）：旧项目的私有状态（它的 config/、debug/）
         # 不该进新项目的视图，整棵换掉，与今天重新导入一致。
@@ -1317,6 +1324,29 @@ def _lineage_by_import_source(source: str, base: Path | None) -> tuple[str, str]
     return (best[0], best[1]) if best is not None else None
 
 
+def _adopt_or_raise(
+    script_id: str,
+    script_config: Any,
+    *,
+    base: Path | None,
+    send_log: Callable[[str], None] | None,
+) -> None:
+    if send_log is not None:
+        send_log("[MFW 内嵌] 副本还没有登记项目版本，正在登记")
+    try:
+        adopt_view(
+            script_id,
+            channel=_script_channel(script_config),
+            source=imported_source_path(script_config)
+            or str(script_config.get("Info", "Path") or ""),
+            base=base,
+        )
+    except EmbeddedProjectError:
+        raise
+    except Exception as exc:  # noqa: BLE001 - 原因原样给用户
+        raise EmbeddedProjectError(f"副本登记项目版本失败：{exc}") from exc
+
+
 def ensure_embedded_copy(
     script_id: str,
     script_config: Any,
@@ -1327,24 +1357,29 @@ def ensure_embedded_copy(
 ) -> dict[str, Any] | None:
     """视图不在（老脚本、被删）或来源换了目录时导入一次；返回新报告，否则 None。
 
-    调用方拿到非 None 要把报告写回配置。健康的视图（含还没采纳、没有标记的老副本）
-    照常放行。来源目录不在：视图还健康就什么都不做——导入完成后来源本来就可以删；
-    视图也没了就从同项目的载荷 / 同来源的老副本重建，实在没有才抛错让用户重新选目录。
+    调用方拿到非 None 要把报告写回配置。调用方持有该视图的项目预约。健康但还没有标记的
+    视图（启动期采纳失败的老副本）就地再试一次采纳，仍失败就报错、本次不运行——不存在
+    「无标记的视图照常跑」。来源目录不在：视图还健康就什么都不做——导入完成后来源本来
+    就可以删；视图也没了就从同项目的载荷 / 同来源的老副本重建，实在没有才抛错让用户
+    重新选目录。
     """
 
     copy_dir = embedded_project_dir(script_id, base)
     healthy = copy_is_healthy(copy_dir)
     source = str(script_config.get("Info", "Path") or "").strip()
-    if healthy and (
-        not source or _same_directory(source, imported_source_path(script_config))
-    ):
+    keep = healthy and (
+        not source
+        or _same_directory(source, imported_source_path(script_config))
+        or not Path(source).is_dir()
+    )
+    if keep:
+        # 视图还是它自己的来源（或来源已删 / 换成了不存在的路径）：照常用它。
+        if read_view_marker(copy_dir) is None:
+            _adopt_or_raise(script_id, script_config, base=base, send_log=send_log)
         return None
     if not source:
         raise EmbeddedProjectError("还没有选择 MFW 项目目录")
     if not Path(source).is_dir():
-        if healthy:
-            # 来源目录换成了一个不存在的路径：视图还是上一个来源的，照常用它。
-            return None
         marker = read_view_marker(copy_dir)
         if marker is not None:
             # 视图目录还在、interface 没了：按自己的谱系重建到组版本。
@@ -1378,6 +1413,274 @@ def ensure_embedded_copy(
         )
     return import_embedded_project(
         script_id, source, base=base, channel=_script_channel(script_config)
+    )
+
+
+# --------------------------------------------------------------------------
+# 采纳：把没有标记的老副本登记成载荷（附录 B；启动期一次性迁移与运行前自愈共用）
+# --------------------------------------------------------------------------
+
+# 整目录私有（运行期产物、更新器保留目录、半成品）：不进载荷，原样留在视图里。
+ADOPT_PRIVATE_ROOTS = frozenset(
+    {
+        "debug",
+        "logs",
+        "temp",
+        ".pycache",
+        ".mas-update",
+        ".mas-update-cache",
+        ".staging",
+    }
+)
+# 来源也没了时，白名单内也按私有算的已知运行期文件。
+ADOPT_RUNTIME_FILES = frozenset(
+    {
+        "config/maa_option.json",
+        "config/m9a_data.json",
+        "config/warehouse_inventory.json",
+        "data/manifest_cache.json",
+    }
+)
+# 更新器 journal 里「落地已完成」的状态：这些记录里的清单路径是副本最后一次更新落下的。
+_APPLY_COMMITTED = "committed"
+
+
+def _recorded_update_manifest(view: Path, base: Path | None) -> dict[str, str] | None:
+    """老的原地更新事务给这个副本记的包内清单 ``{rel: sha256}``（有的话）。
+
+    清单路径不猜：从更新 journal（``maafw_update_operations/*/state.json``）里本副本
+    最近一次 ``committed`` 记录的 ``manifestPath`` 读。
+    """
+
+    root = _update_operation_root(base)
+    if not root.is_dir():
+        return None
+    target = os.path.normcase(str(view.resolve()))
+    best: tuple[float, Path] | None = None
+    for state_file in root.glob("*/state.json"):
+        try:
+            state = json.loads(state_file.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if not isinstance(state, dict) or state.get("status") != _APPLY_COMMITTED:
+            continue
+        project = str(state.get("projectPath") or "")
+        manifest_path = str(state.get("manifestPath") or "")
+        if not project or not manifest_path:
+            continue
+        try:
+            if os.path.normcase(str(Path(project).resolve())) != target:
+                continue
+        except OSError:
+            continue
+        stamp = float(state.get("updatedAt") or state.get("createdAt") or 0)
+        if best is None or stamp > best[0]:
+            best = (stamp, Path(manifest_path))
+    if best is None or not best[1].is_file():
+        return None
+    try:
+        data = json.loads(best[1].read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    files = data.get("files") if isinstance(data, dict) else None
+    if not isinstance(files, dict):
+        return None
+    return {str(rel): str(sha or "").lower() for rel, sha in files.items()}
+
+
+def _source_projection_map(source: str) -> dict[str, Path] | None:
+    """来源目录按投影规则展开成 ``{视图相对路径: 来源文件}``；来源不在 / 投影不了为 None。"""
+
+    text = str(source or "").strip()
+    if not text or not Path(text).is_dir():
+        return None
+    try:
+        plan = build_projection_plan(Path(text))
+    except (ProjectionError, OSError):
+        return None
+    mapping: dict[str, Path] = {}
+    for relative in plan.copied_files:
+        try:
+            output = plan.rules.output_path(relative).as_posix()
+        except ProjectionError:
+            continue
+        mapping[output.casefold()] = plan.rules.source_root / relative
+    return mapping
+
+
+def _adoption_whitelist(view: Path) -> Callable[[str], bool] | None:
+    """来源也没了：按视图自己的 interface 重算白名单（附录 B 第 4 条）。"""
+
+    try:
+        from app.task.MaaFW.tools.core.automas_maafw_project_update.projection import (
+            build_projection_rules,
+        )
+
+        rules = build_projection_rules(view, strict=False)
+    except (ProjectionError, OSError):
+        return None
+    return lambda rel: rules.keeps(Path(rel))
+
+
+def adopt_view(
+    script_id: str,
+    *,
+    channel: str,
+    source: str = "",
+    base: Path | None = None,
+) -> ViewResult:
+    """把没有标记的老副本就地登记成载荷，视图挂上去（附录 B 第 1–7 条）。
+
+    调用方持有该视图的项目预约。按文件分「载荷」与「私有」：有更新器清单的，清单里、
+    内容没变的是载荷（``origin=package``）；其余与来源目录同路径同内容的是载荷
+    （``origin=import``）；来源也没了就按视图自己的白名单、排除已知运行期文件。其余一律
+    私有，原样留在视图里。载荷在 staging 里建好（大文件并入共用库）、登记，再按
+    :func:`switch_view` 同一套把视图重建一遍（私有文件 inode 不变），写上标记。任一步
+    失败：不写标记、staging 丢掉，调用方下次再试。不写任何配置。
+    """
+
+    view = embedded_project_dir(script_id, base)
+    if not copy_is_healthy(view):
+        raise EmbeddedProjectError("副本不完整（没有 interface.json），无法登记版本")
+    if read_view_marker(view) is not None:
+        raise EmbeddedProjectError("副本已经登记过版本")
+    interface = payloads.read_project_interface(view)
+    lineage = payloads.lineage_key(interface)
+    version = str(interface.get("version") or "")
+    recorded = _recorded_update_manifest(view, base)
+    source_map = None if recorded is not None else _source_projection_map(source)
+    whitelist = (
+        _adoption_whitelist(view) if recorded is None and source_map is None else None
+    )
+    if recorded is not None:
+        recorded = {rel.casefold(): sha for rel, sha in recorded.items()}
+
+    payload_files: dict[str, str] = {}  # rel -> sha256
+    origins: dict[str, str] = {}
+    for current, dir_names, file_names in os.walk(view):
+        current_path = Path(current)
+        relative_dir = current_path.relative_to(view)
+        if relative_dir == Path():
+            dir_names[:] = [
+                name for name in dir_names if name.casefold() not in ADOPT_PRIVATE_ROOTS
+            ]
+        dir_names[:] = [name for name in dir_names if name != "__pycache__"]
+        for name in file_names:
+            if relative_dir == Path() and name == VIEW_MARKER_NAME:
+                continue
+            path = current_path / name
+            if path.is_symlink():
+                continue
+            rel = (relative_dir / name).as_posix()
+            key = rel.casefold()
+            digest = sha256_file(path)
+            if recorded is not None and key in recorded:
+                if recorded[key] == digest:
+                    payload_files[rel] = digest
+                    origins[rel] = payloads.ORIGIN_PACKAGE
+                continue  # 清单里但被改过：私有
+            if source_map is not None:
+                origin_file = source_map.get(key)
+                if (
+                    origin_file is not None
+                    and origin_file.is_file()
+                    and origin_file.stat().st_size == path.stat().st_size
+                    and sha256_file(origin_file) == digest
+                ):
+                    payload_files[rel] = digest
+                    origins[rel] = payloads.ORIGIN_IMPORT
+                continue
+            if recorded is not None:
+                # 有清单但不在清单里：来源目录能证明是导入来的才算载荷（附录 B 第 2 条）。
+                continue
+            if (
+                whitelist is not None
+                and whitelist(rel)
+                and key not in ADOPT_RUNTIME_FILES
+                and not key.endswith(".log")
+            ):
+                payload_files[rel] = digest
+                origins[rel] = payloads.ORIGIN_IMPORT
+    if recorded is not None:
+        # 有清单但清单外的导入文件：再用来源目录确认一遍（附录 B 第 2 条后半）。
+        extra_map = _source_projection_map(source)
+        if extra_map is not None:
+            for current, dir_names, file_names in os.walk(view):
+                current_path = Path(current)
+                relative_dir = current_path.relative_to(view)
+                if relative_dir == Path():
+                    dir_names[:] = [
+                        name
+                        for name in dir_names
+                        if name.casefold() not in ADOPT_PRIVATE_ROOTS
+                    ]
+                for name in file_names:
+                    rel = (relative_dir / name).as_posix()
+                    if rel in payload_files or rel.casefold() in recorded:
+                        continue
+                    if relative_dir == Path() and name == VIEW_MARKER_NAME:
+                        continue
+                    origin_file = extra_map.get(rel.casefold())
+                    path = current_path / name
+                    if (
+                        origin_file is not None
+                        and origin_file.is_file()
+                        and sha256_file(origin_file) == sha256_file(path)
+                    ):
+                        payload_files[rel] = sha256_file(path)
+                        origins[rel] = payloads.ORIGIN_IMPORT
+    if not any(
+        rel.casefold() in {"interface.json", "interface.jsonc"} for rel in payload_files
+    ):
+        # interface 被改过（备份恢复等）：仍以视图里的为准进载荷，否则载荷不健康。
+        for name in ("interface.json", "interface.jsonc"):
+            if (view / name).is_file():
+                payload_files[name] = sha256_file(view / name)
+                origins[name] = payloads.ORIGIN_IMPORT
+                break
+
+    root = payloads_root(base)
+    blob_store = RuntimeBlobStore.default(base)
+    private = tuple(payloads.private_paths(root, lineage))
+    staging = _staging_root(base) / f"payload-{lineage}-{uuid.uuid4().hex[:8]}"
+    try:
+        for rel in sorted(payload_files):
+            source_file = view / rel
+            size = source_file.stat().st_size
+            shared = is_shared_path(rel, size, private)
+            payloads.place_fresh(source_file, staging / rel, link=shared)
+            if shared:
+                # 链过来的是副本里那一份：就地并入共用库（库里已有同内容就换成库的链接）。
+                blob_store.ingest_in_place(staging / rel)
+        info = payloads.lineage_info_from_interface(interface)
+        info["configClass"] = _config_class_name(staging)
+        registered = payloads.register(
+            root,
+            staging,
+            lineage=lineage,
+            channel=channel or DEFAULT_CHANNEL,
+            source={
+                "kind": "update" if recorded is not None else "import",
+                "ref": str(source or ""),
+            },
+            by="迁移",
+            version=version,
+            lineage_info=info,
+            known_hashes=payload_files,
+            origins=origins,
+        )
+    except Exception:
+        _remove_quietly(staging, "采纳半成品")
+        raise
+    # 视图就当作已挂在这份载荷上重建一遍：载荷文件换成载荷 / 共用库的链接，私有文件
+    # inode 不变地带过去，标记随目录原子换入。
+    return _realize_view(
+        view,
+        lineage,
+        registered.payload_id,
+        base=base,
+        carry=True,
+        assume_marker={"lineage": lineage, "payload": registered.payload_id},
     )
 
 

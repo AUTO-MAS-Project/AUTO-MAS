@@ -360,6 +360,8 @@ def main():
 
                 await Config.get_stage()
                 await Config.clean_old_history()
+                # 老副本一次性采纳成「载荷 + 视图」：放在各项回收之前，后面看到的就是终态布局
+                await Config.migrate_maafw_embedded_copies_to_payloads()
                 await Config.clean_maafw_agent_venvs()
                 await Config.clean_maafw_embedded_copies()
                 await Config.clean_maafw_runtime_blobs()

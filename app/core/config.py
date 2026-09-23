@@ -919,8 +919,8 @@ class AppConfig(GlobalConfig):
     async def _clone_embedded_copy_for_script(
         self, source_script_id: str, target_script_id: str
     ) -> None:
-        """复制脚本时连副本一起克隆。源正被更新落地 / 准备环境时不克隆半截树，留给
-        下次运行按来源重建；克隆失败同理，不让复制脚本本身失败。"""
+        """复制脚本时连视图一起建：从源脚本挂着的载荷物化（载荷不可变，不需要源空闲、
+        不带源的运行期状态）。失败不让复制脚本本身失败，下次运行前按来源 / 载荷重建。"""
 
         from app.task.MaaFW.tools.embedded.embedded_project import (
             clone_embedded_copy,
@@ -931,28 +931,19 @@ class AppConfig(GlobalConfig):
             try_reserve_project_path,
         )
 
-        source_key = await try_reserve_project_path(
-            embedded_project_dir(source_script_id)
+        target_key = await try_reserve_project_path(
+            embedded_project_dir(target_script_id)
         )
-        if source_key is None:
-            logger.warning("复制脚本时源脚本的副本正被占用，跳过副本复制，将按需重建")
+        if target_key is None:
             return
         try:
-            target_key = await try_reserve_project_path(
-                embedded_project_dir(target_script_id)
+            await asyncio.to_thread(
+                clone_embedded_copy, source_script_id, target_script_id
             )
-            if target_key is None:
-                return
-            try:
-                await asyncio.to_thread(
-                    clone_embedded_copy, source_script_id, target_script_id
-                )
-            except Exception as exc:  # noqa: BLE001 - 副本复制失败下次运行会从来源重建
-                logger.warning(f"复制脚本时复制内嵌副本失败，将按需重建: {exc}")
-            finally:
-                await release_project_path(target_key)
+        except Exception as exc:  # noqa: BLE001 - 失败下次运行会按来源 / 载荷重建
+            logger.warning(f"复制脚本时建视图失败，将按需重建: {exc}")
         finally:
-            await release_project_path(source_key)
+            await release_project_path(target_key)
 
     async def get_script(self, script_id: str | None) -> tuple[list, dict]:
         """获取脚本配置"""
@@ -5547,6 +5538,251 @@ class AppConfig(GlobalConfig):
                 logger.warning(f"MFW 内嵌副本孤儿清理失败: {child} - {exc}")
                 continue
             logger.info(f"已清理无脚本引用的 MFW 内嵌副本: {child}")
+        await asyncio.to_thread(self._collect_unreferenced_payloads)
+
+    def _collect_unreferenced_payloads(self) -> None:
+        """删掉没有任何视图、谱系 latest、未完成切换引用的载荷（§3.1 第 10 步）。
+
+        引用集 = 所有视图标记的 ``payload`` ∪ 各谱系 ``latest[*]``（``collect_unreferenced``
+        自动算进去）∪ 未完成 journal 的 ``to``。本进程起来之后才建的不收。载荷删掉之后，
+        它独有的 blob 只剩库里一个链接，紧接着的 ``clean_maafw_runtime_blobs`` 收走。
+        """
+
+        from app.task.MaaFW.tools.core.automas_maafw_project_update import payloads
+        from app.task.MaaFW.tools.embedded.embedded_project import (
+            embedded_projects_root,
+            is_embedded_copy_dir_name,
+            payloads_root,
+            read_view_marker,
+            remove_tree,
+            switch_root,
+        )
+
+        root = payloads_root()
+        if not root.is_dir():
+            return
+        referenced: set[str] = set()
+        for child in embedded_projects_root().iterdir():
+            if child.is_dir() and is_embedded_copy_dir_name(child.name):
+                marker = read_view_marker(child)
+                if marker is not None:
+                    referenced.add(
+                        payloads.payload_ref(
+                            str(marker["lineage"]), str(marker["payload"])
+                        )
+                    )
+        journals = switch_root()
+        if journals.is_dir():
+            for journal in journals.glob("*.json"):
+                try:
+                    record = json.loads(journal.read_text(encoding="utf-8"))
+                except (OSError, ValueError):
+                    continue
+                if isinstance(record, dict) and record.get("to"):
+                    referenced.add(
+                        payloads.payload_ref(
+                            str(record.get("lineage") or ""), str(record["to"])
+                        )
+                    )
+        try:
+            candidates = payloads.collect_unreferenced(
+                root, referenced, _PROCESS_STARTED_AT
+            )
+        except Exception as exc:  # noqa: BLE001 - 回收失败不影响启动
+            logger.warning(f"MFW 载荷回收判定失败: {exc}")
+            return
+        removed = 0
+        for path in candidates:
+            try:
+                if path.is_dir():
+                    remove_tree(path)
+                    removed += 1
+                elif path.exists():
+                    path.unlink()
+            except OSError as exc:
+                logger.warning(f"MFW 载荷回收失败: {path} - {exc}")
+        if removed:
+            logger.info(f"已回收 {removed} 个无人引用的 MFW 项目版本（载荷）")
+
+    async def migrate_maafw_embedded_copies_to_payloads(self) -> None:
+        """启动期一次性迁移：把没有标记的老副本采纳成「载荷 + 视图」（附录 B）。
+
+        逐副本持视图预约、各自失败隔离（不写标记、日志点名、下次启动再试）；采纳完对每个
+        谱系每个渠道统一到 latest（附录 B 第 8 条：启动期没有脚本在跑，不用等），切过的
+        视图在后台各确认一次运行环境。全部采纳成功后清掉老的原地更新留下的清单、预检备忘
+        与非下载态的更新记录。配置一个字段都不写；脚本表没加载起来（疑似损坏）整轮弃权。
+        """
+
+        from app.models.config import MaaFWConfig
+        from app.task.MaaFW.tools.embedded.embedded_project import (
+            GroupMember,
+            adopt_view,
+            copy_is_healthy,
+            embedded_project_dir,
+            imported_source_path,
+            read_view_marker,
+        )
+        from app.task.MaaFW.tools.embedded.project_path import (
+            release_project_path,
+            try_reserve_project_path,
+        )
+        from app.task.MaaFW.tools.embedded.update_credentials import (
+            resolve_update_proxy_url,
+        )
+
+        if not self._script_config_loaded_intact():
+            logger.warning(
+                "脚本配置文件非空但没有加载出任何脚本，疑似损坏，跳过 MFW 副本迁移"
+            )
+            return
+        entries: list[tuple[str, str, str, str, str | None]] = []
+        for uid, config in self.ScriptConfig.items():
+            if not isinstance(config, MaaFWConfig):
+                continue
+            entries.append(
+                (
+                    str(uid),
+                    str(config.get("Update", "Channel") or "stable"),
+                    imported_source_path(config)
+                    or str(config.get("Info", "Path") or ""),
+                    str(config.get("Info", "Name") or str(uid)[:8]),
+                    resolve_update_proxy_url(config) or None,
+                )
+            )
+        pending = [
+            entry
+            for entry in entries
+            if copy_is_healthy(embedded_project_dir(entry[0]))
+            and read_view_marker(embedded_project_dir(entry[0])) is None
+        ]
+        if not pending:
+            return
+        started = time.monotonic()
+        adopted: list[str] = []
+        failed: list[str] = []
+        for script_id, channel, source, name, _proxy in pending:
+            key = await try_reserve_project_path(embedded_project_dir(script_id))
+            if key is None:
+                failed.append(name)
+                logger.warning(
+                    f"MFW 副本迁移：脚本「{name}」的副本正被占用，下次启动再试"
+                )
+                continue
+            try:
+                result = await asyncio.to_thread(
+                    lambda sid=script_id, ch=channel, src=source: adopt_view(
+                        sid, channel=ch, source=src
+                    )
+                )
+                adopted.append(script_id)
+                logger.info(
+                    f"MFW 副本迁移：脚本「{name}」已登记为 {result.version}（{result.payload_id}），"
+                    f"私有文件 {result.carried} 个，{result.elapsed:.1f} s"
+                )
+            except Exception as exc:  # noqa: BLE001 - 逐副本隔离，下次启动再试
+                failed.append(name)
+                logger.opt(exception=True).warning(
+                    f"MFW 副本迁移：脚本「{name}」采纳失败，下次启动再试：{exc}"
+                )
+            finally:
+                await release_project_path(key)
+        switched = await self._unify_maafw_views_to_group(entries)
+        logger.info(
+            f"MFW 副本迁移完成：采纳 {len(adopted)} 个、失败 {len(failed)} 个、"
+            f"统一到组版本 {len(switched)} 个，用时 {time.monotonic() - started:.1f} s"
+        )
+        if switched:
+            from app.task.MaaFW.tools.embedded.view_update import (
+                confirm_environments_in_background,
+            )
+
+            confirm_environments_in_background(
+                [
+                    GroupMember(sid, channel, name=name, proxy_url=proxy)
+                    for sid, channel, _src, name, proxy in entries
+                    if sid in set(switched)
+                ]
+            )
+        if not failed:
+            await asyncio.to_thread(self._discard_legacy_update_state)
+
+    async def _unify_maafw_views_to_group(
+        self, entries: list[tuple[str, str, str, str, str | None]]
+    ) -> list[str]:
+        """附录 B 第 8 条：每个视图切到它所在组（谱系 + 渠道）的 latest。"""
+
+        from app.task.MaaFW.tools.embedded.embedded_project import embedded_project_dir
+        from app.task.MaaFW.tools.embedded.project_path import (
+            release_project_path,
+            try_reserve_project_path,
+        )
+        from app.task.MaaFW.tools.embedded.view_update import sync_view_to_group
+
+        switched: list[str] = []
+        for script_id, channel, _source, name, _proxy in entries:
+            key = await try_reserve_project_path(embedded_project_dir(script_id))
+            if key is None:
+                continue
+            try:
+                result = await sync_view_to_group(
+                    script_id, channel, reservation_held=True
+                )
+            except Exception as exc:  # noqa: BLE001 - 留在原版本，下次运行前再同步
+                logger.warning(f"MFW 副本迁移：脚本「{name}」统一到组版本失败：{exc}")
+                continue
+            finally:
+                await release_project_path(key)
+            if result is not None:
+                switched.append(script_id)
+                logger.info(
+                    f"MFW 副本迁移：脚本「{name}」{result.from_payload} → {result.payload_id}"
+                )
+        return switched
+
+    @staticmethod
+    def _discard_legacy_update_state() -> None:
+        """老的原地更新事务留下的东西：各视图状态目录里除 ``local-modified`` 之外的
+        文件（包内清单、预检备忘），以及更新 journal 里非下载态的记录。"""
+
+        state_root = Path.cwd() / "data" / "maafw_project_state"
+        if state_root.is_dir():
+            for state_dir in state_root.iterdir():
+                if not state_dir.is_dir():
+                    continue
+                for child in state_dir.iterdir():
+                    if child.name == "local-modified":
+                        continue
+                    try:
+                        if child.is_dir():
+                            shutil.rmtree(child)
+                        else:
+                            child.unlink()
+                    except OSError as exc:
+                        logger.warning(f"清理老的更新状态失败: {child} - {exc}")
+        operations = Path.cwd() / "data" / "maafw_update_operations"
+        legacy = {
+            "plan_validated",
+            "staged",
+            "applying",
+            "post_validating",
+            "committed",
+            "rolled_back",
+            "recovery_required",
+        }
+        if operations.is_dir():
+            for record in operations.iterdir():
+                state_file = record / "state.json"
+                try:
+                    status = json.loads(state_file.read_text(encoding="utf-8")).get(
+                        "status"
+                    )
+                except (OSError, ValueError, AttributeError):
+                    continue
+                if status in legacy:
+                    try:
+                        shutil.rmtree(record)
+                    except OSError as exc:
+                        logger.warning(f"清理老的更新记录失败: {record} - {exc}")
 
     def _script_config_loaded_intact(self) -> bool:
         """脚本表是空的时候，看配置文件本身是不是真的空：解析失败或文件里明明有
