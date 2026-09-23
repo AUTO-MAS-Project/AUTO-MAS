@@ -1646,6 +1646,11 @@ class MaaFWRunner:
                 )
             if self._stop_requested.is_set():
                 raise RuntimeError(f"已停止，不再等待 Agent 连接: {label}")
+            if self._deadline_hit.is_set():
+                # RunTimeLimit 比连接预算短时，到点就按超时收尾（timedOut 结果回传），
+                # 不能一直等到宿主「限时 + 宽限」强杀 worker。
+                self.send_log(f"{RUN_TIMEOUT_MESSAGE}，不再等待 Agent 连接: {label}")
+                raise MaaFWRunTimeoutError(RUN_TIMEOUT_MESSAGE)
 
             try:
                 if agent_client.connect():
