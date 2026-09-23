@@ -1331,11 +1331,11 @@ class HSRAutoProxyTask(TaskExecuteBase):
         *,
         login_plan: HSRLoginPlan,
     ) -> bool:
-        """补跑阶段有可用 SRA 时先登录；已有登录项时不重复插入。"""
+        """补跑阶段有可用 SRA 时先登录；开头已是登录项时不重复插入。"""
 
         if not login_plan.uses_sra_start_game:
             return False
-        return not any(item.module_key == "StartGame" for item in items)
+        return not (items and items[0].module_key == "StartGame")
 
     def _build_retry_queue_items(
         self,
@@ -1357,6 +1357,13 @@ class HSRAutoProxyTask(TaskExecuteBase):
             phase_items = [item for item in failed_items if item.phase == phase]
             if not phase_items:
                 continue
+            # 队列中途重启游戏后插入的登录项失败了也会进失败列表，落在中间：补跑前
+            # 游戏刚重启、停在标题画面，只有开头的登录项能救回来，中间那条不再单独补跑。
+            phase_items = [
+                item
+                for index, item in enumerate(phase_items)
+                if index == 0 or item.module_key != "StartGame"
+            ]
 
             if self._retry_phase_needs_login(
                 phase_items,

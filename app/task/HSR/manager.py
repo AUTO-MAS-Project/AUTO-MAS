@@ -1049,12 +1049,14 @@ class HSRManager(TaskExecuteBase):
         user_item.status = "运行"
         log_start = len(self._log_lines)
 
+        if "M7A" in control.engines:
+            # 端口（云平台）与收尾动作都要从还原后的原生配置里读，先还原再往下走；
+            # 必须在任务前脚本之前：直控多账号共用一份 config.yaml，按账号改它的
+            # 正是任务前脚本，还原放后面会把它的改动整份盖掉。
+            self._reset_m7a_config_for_direct(user_name)
+
         # 执行任务前脚本（每用户仅一次）
         await run_script_before_task(user_config)
-
-        if "M7A" in control.engines:
-            # 端口（云平台）与收尾动作都要从还原后的原生配置里读，先还原再往下走。
-            self._reset_m7a_config_for_direct(user_name)
 
         switcher = HSRAccountSwitcher(
             script_config=self.script_config,
