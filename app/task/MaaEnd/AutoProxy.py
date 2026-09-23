@@ -313,6 +313,9 @@ class AutoProxyTask(TaskExecuteBase):
             tuple[tuple, list[dict[str, object]] | None] | None
         ) = None
         self.first_run_mode: str | None = None
+        # 在首阶段预任务执行前读取，后续阶段复用同一份游戏显示设置。
+        self.original_game_settings: tuple[int, int, str] | None = None
+        self.original_game_settings_read = False
         self.curdate = datetime.now(tz=UTC4).strftime("%Y-%m-%d")
         self.auto_collect_run_at: datetime | None = None
         self.auto_collect_routes: dict[str, list[str]] = {}
@@ -1369,6 +1372,9 @@ class AutoProxyTask(TaskExecuteBase):
             or self.emulator_manager is not None
         ):
             return None
+        original = (
+            self._read_original_game_settings() if resolution == "Original" else None
+        )
         stages = list(MAAEND_RUN_MOOD_BOOK)
         is_last_stage = all(
             self.run_book[stage] for stage in stages[stages.index(self.mode) + 1 :]
@@ -1382,12 +1388,19 @@ class AutoProxyTask(TaskExecuteBase):
                     "value": False,
                 }
             return None
+        if resolution == "Original" and original is None:
+            logger.warning("无法读取启动前的终末地注册表显示设置，本轮跳过关闭时恢复")
+            for task in close_tasks:
+                task.setdefault("optionValues", {})["CloseGamePCApplyGameSetting"] = {
+                    "type": "switch",
+                    "value": False,
+                }
+            return None
         required_options = (
             "CloseGamePCApplyGameSetting",
+            "CloseGamePCGameSettingDisplayType",
             "CloseGamePCGameSettingResolution",
         )
-        if resolution == "Fullscreen":
-            required_options += ("CloseGamePCGameSettingDisplayType",)
         if self._maaend_task_supported("CloseGamePC") is not True or not all(
             self._maaend_task_option_supported("CloseGamePC", name)
             for name in required_options
@@ -1413,23 +1426,27 @@ class AutoProxyTask(TaskExecuteBase):
             str(self.script_config.get("Game", "ControllerType"))
         ] = True
         tasks.append(close_task)
-        if resolution == "Custom":
+        display_type = (
+            original[2]
+            if original is not None
+            else str(self.script_config.get("Game", "RestoreDisplayType") or "Window")
+        )
+        if display_type not in {"Window", "Fullscreen"}:
+            display_type = "Window"
+        if resolution == "Original":
+            assert original is not None
+            width, height = str(original[0]), str(original[1])
+        elif resolution == "Custom":
             width = str(self.script_config.get("Game", "RestoreResolutionWidth"))
             height = str(self.script_config.get("Game", "RestoreResolutionHeight"))
-        elif resolution == "Fullscreen":
-            width, height = "1920", "1080"
         else:
             width, height = resolution.split("x")
         values = close_task.setdefault("optionValues", {})
         values["CloseGamePCApplyGameSetting"] = {"type": "switch", "value": True}
-        if resolution == "Fullscreen":
-            values["CloseGamePCGameSettingDisplayType"] = {
-                "type": "select",
-                "caseName": "Fullscreen",
-            }
-        else:
-            # 固定或自定义分辨率沿用 MaaEnd 默认的窗口模式，避免残留旧的全屏选项。
-            values.pop("CloseGamePCGameSettingDisplayType", None)
+        values["CloseGamePCGameSettingDisplayType"] = {
+            "type": "select",
+            "caseName": display_type,
+        }
         values["CloseGamePCGameSettingResolution"] = {
             "type": "input",
             "values": {
@@ -1438,6 +1455,30 @@ class AutoProxyTask(TaskExecuteBase):
             },
         }
         return close_task
+
+    def _read_original_game_settings(self) -> tuple[int, int, str] | None:
+        """读取并缓存本轮启动前的注册表分辨率和显示模式。"""
+
+        if self.original_game_settings_read:
+            return self.original_game_settings
+        self.original_game_settings_read = True
+
+        from app.task.MaaFW.tools.embedded.game_resolution import (
+            read_unity_display_type,
+            read_unity_resolution,
+        )
+
+        game_path = str(self.script_config.get("Game", "Path") or "").strip()
+        if not game_path:
+            return None
+        exe_path = Path(game_path)
+        resolution = read_unity_resolution(exe_path)
+        display_type = read_unity_display_type(
+            exe_path, preferred_value_name="video_full_screen_h1998742411"
+        )
+        if resolution is not None and display_type is not None:
+            self.original_game_settings = (*resolution, display_type)
+        return self.original_game_settings
 
     async def set_maaend(self, device_info: DeviceInfo | None) -> None:
         """写入 MaaEnd 运行前配置"""

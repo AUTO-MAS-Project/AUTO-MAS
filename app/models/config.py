@@ -1634,7 +1634,14 @@ class MaaEndConfig(ConfigBase):
             "Game", "CloseOnFinish", True, BoolValidator()
         )
 
-        ## 关闭游戏时恢复分辨率或显示模式；关闭时完全沿用原生设置
+        ## 关闭游戏时恢复的显示模式，与具体分辨率独立配置
+        self.Game_RestoreDisplayType = ConfigItem(
+            "Game",
+            "RestoreDisplayType",
+            "Window",
+            OptionsValidator(["Window", "Fullscreen"]),
+        )
+        ## 关闭游戏时恢复分辨率；Original 复用启动前读取的注册表值
         self.Game_RestoreResolution = ConfigItem(
             "Game",
             "RestoreResolution",
@@ -1642,10 +1649,10 @@ class MaaEndConfig(ConfigBase):
             OptionsValidator(
                 [
                     "Off",
+                    "Original",
                     "1920x1080",
                     "2560x1440",
                     "3840x2160",
-                    "Fullscreen",
                     "Custom",
                 ]
             ),
@@ -1664,14 +1671,22 @@ class MaaEndConfig(ConfigBase):
         super().__init__()
 
     async def load(self, data: dict) -> bool:
+        data = deepcopy(data)
+        game_data = data.get("Game") if isinstance(data, dict) else None
+        migrated = isinstance(game_data, dict) and game_data.get("RestoreResolution") == "Fullscreen"
+        if migrated:
+            game_data["RestoreDisplayType"] = "Fullscreen"
+            game_data["RestoreResolution"] = "1920x1080"
         is_dirty = await super().load(data)
+        if migrated and not is_dirty:
+            await self._commit_changes()
         root_path_value = str(self.get("Info", "Path")).strip()
         resource_interface_path = Path(root_path_value) / "interface.json"
         if root_path_value and resource_interface_path.is_file():
             # 预加载搬入后台：MaaEnd 资源链的 import（约 270ms）与磁盘读取
             # 不再阻塞启动路径，资源就绪后仍会缓存到用户配置
             self._preload_task = asyncio.create_task(self.preload_resource())
-        return is_dirty
+        return is_dirty or migrated
 
     async def preload_resource(self) -> None:
         """尝试预加载 MaaEnd 动态资源，失败时保留现有配置。"""

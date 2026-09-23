@@ -509,11 +509,11 @@ export default {
     maaEndDailyOnceTasksPlaceholder: 'Choose tasks to run once per day',
     maaEndAutoCollectConfig: 'Auto-collect configuration',
     maaEndSetResolution: 'Set resolution on launch',
-    maaEndSetResolutionHint:
-      'Off by default. When enabled, MaaEnd runs its resolution-setting pretask before the first game launch.',
+    maaEndRestoreDisplayType: 'Display mode when closing the game',
     maaEndRestoreResolution: 'Restore resolution when closing the game',
-    maaEndRestoreResolutionHint:
-      'MaaEnd restores it at the end of the last stage for the next launch; it only applies when the game is closed after the run.',
+    maaEndResolutionWindow: 'Window',
+    maaEndResolutionOriginal: 'Restore original ({displayType} {resolution})',
+    maaEndResolutionRestoreOriginal: 'Restore original',
     maaEndResolutionWidth: 'Width',
     maaEndResolutionHeight: 'Height',
     maaEndResolutionUnchanged: 'Do not change',

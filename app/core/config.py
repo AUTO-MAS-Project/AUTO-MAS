@@ -924,7 +924,24 @@ class AppConfig(GlobalConfig):
         if not root_path:
             raise ValueError("MaaEnd 路径未配置")
 
-        return script_config.get_loaded_resource()
+        options = script_config.get_loaded_resource()
+        game_path = str(script_config.get("Game", "Path") or "").strip()
+        if game_path:
+            from app.task.MaaFW.tools.embedded.game_resolution import (
+                read_unity_display_type,
+                read_unity_resolution,
+            )
+
+            exe_path = Path(game_path)
+            original = await asyncio.to_thread(read_unity_resolution, exe_path)
+            if original is not None:
+                options["originalResolution"] = f"{original[0]}x{original[1]}"
+            options["originalDisplayType"] = await asyncio.to_thread(
+                read_unity_display_type,
+                exe_path,
+                preferred_value_name="video_full_screen_h1998742411",
+            )
+        return options
 
     def get_baah_config_names(self, script_id: str) -> list[str]:
         """读取指定 BAAH 安装目录下已有的配置文件名（不含 .json 后缀）。"""
