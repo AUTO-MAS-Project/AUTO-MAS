@@ -164,15 +164,22 @@
           <!-- 检查 / 更新的入口就放在过程面板标题行右侧：点完按钮，结果就在下面这个日志框里，
                与「运行环境」面板把「准备运行环境」放标题行右侧同一口径 -->
           <div class="update-process-actions">
-            <a-button size="small" :loading="updateChecking" @click="emit('check-update')">{{
-              t('edit.checkUpdates2')
-            }}</a-button>
+            <!-- 检查与更新共用下面这个过程面板：一个在跑时另一个不能点，否则后点的那次把面板
+                 重置并先以终态收尾，正在跑的那次之后的进度全被当成迟到事件丢掉 -->
+            <a-button
+              size="small"
+              :loading="updateChecking"
+              :disabled="updateApplying"
+              @click="emit('check-update')"
+              >{{ t('edit.checkUpdates2') }}</a-button
+            >
             <!-- apply 的响应沿用检查结果的 installable=true，更新成功后按钮还挂在那；updated 为真时隐藏 -->
             <a-button
               v-if="updateResult && updateResult.installable && !updateResult.updated"
               type="primary"
               size="small"
               :loading="updateApplying"
+              :disabled="updateChecking"
               @click="emit('apply-update')"
             >
               {{ t('edit.update') }}
