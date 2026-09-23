@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest'
 import {
   summarizeActivity,
   summarizeAnnihilation,
-  summarizeDepot,
   summarizeFight,
   summarizeInfrast,
 } from './taskSummaries'
@@ -48,21 +47,6 @@ describe('activity summary', () => {
   })
 })
 
-describe('depot summary', () => {
-  it('counts configured plans', () => {
-    expect(summarizeDepot(true, '[{"a":1},{"b":2}]')).toBe('2 项计划')
-  })
-
-  it('treats malformed or empty plan JSON as no plans', () => {
-    expect(summarizeDepot(true, 'not json')).toBe('尚未添加计划')
-    expect(summarizeDepot(true, '')).toBe('尚未添加计划')
-  })
-
-  it('stays empty when switched off', () => {
-    expect(summarizeDepot(false, '[{"a":1}]')).toBe('')
-  })
-})
-
 describe('infrast summary', () => {
   it('reports the mode label for built-in modes', () => {
     expect(summarizeInfrast(true, 'Normal', '')).toBe('常规模式')
@@ -84,16 +68,11 @@ describe('infrast summary', () => {
 })
 
 describe('fight summary', () => {
-  const base = { enabled: true, stage: '1-7', series: '0', medicine: 0, remain: '' }
+  const base = { enabled: true, stage: '1-7', series: '0', medicine: 0 }
 
   it('maps AUTO and 不切换 series codes', () => {
     expect(summarizeFight(base)).toBe('1-7 · 连战 AUTO · 理智药 0')
     expect(summarizeFight({ ...base, series: '-1' })).toBe('1-7 · 连战 不切换 · 理智药 0')
-  })
-
-  it('omits the remaining-sanity stage when unset', () => {
-    expect(summarizeFight({ ...base, remain: '-' })).not.toContain('剩余理智')
-    expect(summarizeFight({ ...base, remain: '1-7' })).toContain('剩余理智 1-7')
   })
 
   it('prefixes the plan name in plan mode', () => {

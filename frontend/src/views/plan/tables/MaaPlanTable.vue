@@ -316,7 +316,7 @@ const saveCustomStage = async (index: 1 | 2 | 3 | 4) => {
     const timeConfig = planConfig[timeKey] as Record<string, any>
     if (timeConfig) {
       // 检查每个关卡字段是否使用了旧的自定义关卡
-      const stageFields = ['Stage', 'Stage_1', 'Stage_2', 'Stage_3', 'Stage_Remain']
+      const stageFields = ['Stage', 'Stage_1', 'Stage_2', 'Stage_3']
       for (const field of stageFields) {
         if (timeConfig[field] === oldValue && oldValue !== '') {
           // 更新为新值

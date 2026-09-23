@@ -411,12 +411,8 @@ def build_native_preview(script_id: str, project_path: str | Path, ts: str) -> d
                 )
             tasks = interface.get("task")
             if isinstance(tasks, list) and tasks:
-                names = [
-                    (t.get("name") if isinstance(t, dict) else t) for t in tasks
-                ]
-                rows.append(
-                    {"key": "任务", "value": "、".join(str(n) for n in names)}
-                )
+                names = [(t.get("name") if isinstance(t, dict) else t) for t in tasks]
+                rows.append({"key": "任务", "value": "、".join(str(n) for n in names)})
     if not rows:
         rows.append({"key": "文件", "value": f"{len(files)} 个（无 interface.json）"})
     return {"sections": [{"name": "maafw", "label": "MaaFW 项目配置", "rows": rows}]}

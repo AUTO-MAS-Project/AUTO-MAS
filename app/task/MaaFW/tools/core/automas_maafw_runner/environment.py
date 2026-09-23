@@ -393,6 +393,7 @@ def prepare_runner_environment(
     # 安装可能恰好在取消后一瞬间完成：runtime 已发布是好事，但本次调用不能再
     # 拿租约，否则取消方已经放弃等待，这份租约要拖到 TTL 过期才释放。
     _raise_if_prepare_cancelled(cancel_event)
+    _guard_source_built_binding(project, runtime)
     resolved_runtime_id = str(runtime["runtimeId"])
     _report_environment_progress(
         progress,
@@ -448,6 +449,32 @@ def prepare_runner_environment(
     except Exception:
         pool.release_lease(resolved_runtime_id, lease_id)
         raise
+
+
+SOURCE_BUILT_BINDING_SOURCE_PREFIX = "github-source"
+
+
+def _guard_source_built_binding(project: Path, runtime: Mapping[str, Any]) -> None:
+    """共享环境的 binding 是源码打包（无 DLL）时，不自带原生库的项目不能用它。
+
+    PyPI 缺 ``maafw==X`` 时运行池会从 MaaFramework tag 源码自打一个不带
+    ``maa/bin/MaaFramework.dll`` 的 wheel（``runtime_pool/binding_fallback``），只对自带
+    ``maafw/`` 目录的项目有意义。池按 requirement 集合共享，不自带 DLL 的项目也可能
+    落到同一份环境，它会在第一次 ``Library.version()`` 处因 DLL 不存在而失败、
+    报错还很难看懂——在拿租约之前就说清楚。
+    """
+
+    metadata = runtime.get("installerMetadata")
+    if not isinstance(metadata, Mapping):
+        return
+    binding_source = str(metadata.get("bindingSource") or "").strip()
+    if not binding_source.startswith(SOURCE_BUILT_BINDING_SOURCE_PREFIX):
+        return
+    if project_maafw_runtime_path(project) is None:
+        raise RuntimeError(
+            "项目未自带 MaaFramework 原生库，而共享环境的 binding 来自源码打包"
+            f"（无 DLL，{binding_source}），无法运行"
+        )
 
 
 def release_runner_environment(

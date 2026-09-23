@@ -30,6 +30,7 @@ MAS 在自己的 worker 子进程内加载项目的 MaaFramework 直接驱动，
 from __future__ import annotations
 
 import asyncio
+import functools
 import threading
 import time
 import uuid
@@ -38,6 +39,8 @@ from contextlib import suppress
 from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
+
+import httpx
 
 from app.core import Config
 from app.core.ws import Publisher, protocol
@@ -59,8 +62,10 @@ from app.task.MaaFW.tools.embedded.update_credentials import (
     AutoUpdateMode,
     MaaFWUpdateCredentials,
     describe_cdk,
+    describe_proxy,
     resolve_auto_update_mode,
     resolve_update_credentials,
+    resolve_update_proxy_url,
 )
 from app.task.MaaFW.tools.notify import push_notification
 from app.task.MaaFW.tools.notify.report import (
@@ -82,6 +87,16 @@ logger = get_logger("MFW 内置运行")
 # ``_PREPARE_ENVIRONMENT_CANCEL_GRACE_SECONDS`` 取同一个值（那边导入即打开
 # maa DLL，不为一个常数把它拉进来）。
 _ENV_PREPARE_CANCEL_GRACE_SECONDS = 2.0
+# 取消项目更新后等事务收尾的上限。更新事务在提交前要真建运行环境（预检），
+# 取消令牌只能停掉 uv 子进程，回滚本身还要把备份挪回去——比准备路径多等
+# 得多，等不到才放手（线程随子进程结束，journal 里留着中间态，下次启动由
+# ``recover_interrupted_update`` 收尾）。
+_UPDATE_CANCEL_GRACE_SECONDS = 60.0
+# 还停在下载阶段时取消的宽限：令牌在两个 chunk 之间就生效，没有回滚要做，
+# ``.partial`` 与断点原样留着下次续传，等不到就放手，别让用户对着
+# 「正在回滚更新，请勿关闭」干等一分钟。
+_UPDATE_DOWNLOAD_CANCEL_GRACE_SECONDS = 5.0
+_BYTES_PER_MB = 1024 * 1024
 # CDK 距到期不足这些天时提醒用户续费
 CDK_EXPIRY_WARNING_DAYS = 7
 
@@ -113,6 +128,18 @@ def _result_field(result: Any, name: str, *fallbacks: str) -> Any:
         if value is not None:
             return value
     return None
+
+
+def _optional_byte_count(value: Any) -> int | None:
+    """进度事件里的字节数；缺字段或非法值一律当未知。"""
+
+    if isinstance(value, bool) or value is None:
+        return None
+    try:
+        number = int(value)
+    except (TypeError, ValueError):
+        return None
+    return number if number >= 0 else None
 
 
 def describe_update_result(
@@ -287,6 +314,10 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
         # 项目更新的日志行（已带时间戳）；运行前更新的会并入第一位用户的日志。
         self.project_update_logs: list[str] = []
         self._auto_update_mode: AutoUpdateMode = "Off"
+        # 更新进度的最近一次事件；用户点停止时据此选文案与宽限时长。
+        self._update_stage: str | None = None
+        self._update_downloaded: int | None = None
+        self._update_total: int | None = None
         # 只有 main_task 正常跑完全部用户才置位；取消/崩溃路径不跑运行后更新。
         self._users_completed = False
 
@@ -466,36 +497,214 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
 
         return load_interface_model_cached(project_path, force_reload=force_reload)
 
+    def _resolve_update_proxy(self) -> tuple[str | None, httpx.Proxy | None]:
+        """本脚本更新要用的代理：给子进程的字符串与给核心包的 ``httpx.Proxy``。
+
+        脚本级 ``Update.ProxyAddress`` 优先，留空跟随全局。地址可能带
+        ``user:pw@``，**一个字符都不进日志**——要说明用了哪一层，
+        看 ``describe_proxy``。填错了只警告一句并按直连跑，不让更新直接崩。
+        """
+
+        assert self.script_config is not None
+        proxy_url = resolve_update_proxy_url(self.script_config)
+        if not proxy_url:
+            return None, None
+        try:
+            return proxy_url, httpx.Proxy(proxy_url)
+        except Exception as exc:  # noqa: BLE001 - 代理填错不该挡住更新
+            logger.warning(
+                f"MFW 项目更新代理地址无效（{type(exc).__name__}），本次直连"
+            )
+            # 字符串给空串而不是 None：None 在 ``_prepare_project_environment_sync``
+            # 里的意思是「没解析过，沿用全局」，那会变成下载直连、装依赖却走
+            # 全局代理——同一份配置两种行为。填错就整条直连。
+            return "", None
+
+    def _build_update_progress_reporter(
+        self, send_log: Callable[[str], None]
+    ) -> Callable[[dict[str, Any]], None]:
+        """把核心包的进度事件翻成任务日志行，顺带记下最近阶段。
+
+        回调既会从事件循环里来（下载跑在协程里），也会从 apply 的工作线程里
+        来，所以统一走 ``send_log``（``_threadsafe_update_log`` 的转发），
+        逐行**追加**、不做原地改写。
+
+        阶段与字节数按**原始事件**记，不等翻译结果：翻译按 5% 吞掉绝大多数
+        事件，只认翻译结果的话，取消时报出来的已下载量会落后一大截。
+        """
+
+        from app.task.MaaFW.tools.embedded.update_progress import (
+            MaaFWUpdateTaskLogTranslator,
+        )
+
+        translator = MaaFWUpdateTaskLogTranslator()
+
+        def report(event: dict[str, Any]) -> None:
+            stage = str(event.get("stage") or "").strip()
+            if stage:
+                self._update_stage = stage
+            if stage in {"downloading", "downloaded"}:
+                downloaded = _optional_byte_count(event.get("downloaded_bytes"))
+                if downloaded is not None:
+                    self._update_downloaded = downloaded
+                total = _optional_byte_count(event.get("total_bytes"))
+                if total:
+                    self._update_total = total
+            try:
+                line = translator.event(event)
+            except Exception:  # noqa: BLE001 - 进度只是旁观，不能拖垮更新
+                logger.opt(exception=True).warning("MFW 更新进度翻译失败")
+                return
+            if line:
+                send_log(line)
+
+        return report
+
+    def _describe_update_cancel(self) -> tuple[str, float]:
+        """按最近的更新阶段给「已中止」的文案和等收尾的上限。
+
+        下载停得下来（令牌在两个 chunk 之间生效，断点留着下次续传），所以只
+        等几秒；一旦进了事务（``staged`` 及之后，含提交前的运行环境预检），
+        回滚必须跑完——半途放手留下的是新旧混杂的树，只能按老规矩等满宽限。
+        """
+
+        stage = self._update_stage
+        if stage in (None, "checking"):
+            return "已中止更新检查", _UPDATE_DOWNLOAD_CANCEL_GRACE_SECONDS
+        downloaded_bytes = self._update_downloaded or 0
+        total = self._update_total
+        if stage == "downloading" and not (total and downloaded_bytes >= total):
+            downloaded = downloaded_bytes / _BYTES_PER_MB
+            done = (
+                f"已下载 {downloaded:.1f} / {total / _BYTES_PER_MB:.1f} MB"
+                if total
+                else f"已下载 {downloaded:.1f} MB"
+            )
+            return (
+                f"已中止更新下载：{done}，下次运行从断点续传",
+                _UPDATE_DOWNLOAD_CANCEL_GRACE_SECONDS,
+            )
+        if stage == "downloaded" or stage == "downloading":
+            # 字节已收齐（正在校验 sha256）或 ``downloaded`` 已到：事务线程
+            # 随时会起、起了就停不下来，直到预检那一步拿到令牌再回滚。这段
+            # 里再说「下次续传」就是生产上那次「提示与后台不一致」的翻版。
+            return (
+                "更新包已下载完成，正在中止更新事务（可能回滚），请勿关闭",
+                _UPDATE_CANCEL_GRACE_SECONDS,
+            )
+        return "正在回滚更新，请勿关闭", _UPDATE_CANCEL_GRACE_SECONDS
+
     async def _invoke_project_update(
-        self, project_path: Path, credentials: MaaFWUpdateCredentials
+        self,
+        project_path: Path,
+        credentials: MaaFWUpdateCredentials,
+        *,
+        update_cancel: threading.Event | None = None,
+        precheck_failure: dict[str, Any] | None = None,
     ) -> Any:
-        """直接调核心包（不经 ``tools/project_updater.py`` 门面）。
+        """直接调核心包。
 
         锁在 manager 层是空的（用户 inner task 才拿项目锁），让核心包自己拿，
         所以 ``project_lock_already_held=False``。
+
+        ``update_cancel`` / ``precheck_failure`` 由 ``_run_project_update`` 建：
+        前者是用户停止时置位的令牌，同时交给下载和预检回调里的 uv 安装；后者是
+        预检失败时回调写进来的 ``{targetVersion, requirement, kind, reason, …}``，
+        调用方据此决定发 warning 还是 error（D2）。
         """
 
         from app.task.MaaFW.tools.core.automas_maafw_project_update import (
             update_maafw_project_if_needed,
         )
+        from app.task.MaaFW.tools.embedded.precheck import (
+            build_precheck_validator,
+            precheck_agent_root,
+        )
+        from app.task.MaaFW.tools.embedded.precheck_gate import build_precheck_gate
+        from app.task.MaaFW.tools.embedded.update_mirrors import (
+            github_release_mirror_urls,
+        )
 
+        send_log = self._threadsafe_update_log()
         kwargs: dict[str, Any] = {
             "mirror_cdk": credentials.cdk,
             "channel": credentials.channel,
             # 下载源由用户显式选定，核心包不再自动分流。
             "source_config": {"package_source": credentials.package_source},
-            "send_log": self._threadsafe_update_log(),
+            "send_log": send_log,
             "project_lock_already_held": False,
+            # 359MB 的包在直连 GitHub 下要几十分钟，一行日志都没有等于卡死；
+            # 进度逐行追加进任务日志（#843 那块 WS 面板只有编辑页有）。
+            "progress": self._build_update_progress_reporter(send_log),
+            # 下载与预检共用同一个令牌：用户点停止，下载在一个 chunk 内停下。
+            "cancel_event": update_cancel,
+            # GitHub 源先走加速镜像（全局 Update.GitHubMirror），全挂了回直连。
+            "github_mirror_urls": github_release_mirror_urls,
         }
-        # 核心包签名正在收敛：``interface_model`` 位置参数可能被拿掉（改为包内
-        # 自己读）。按实际签名决定传不传，两种形态都能跑。
-        kwargs["interface_model"] = await asyncio.to_thread(
+        interface_model = await asyncio.to_thread(
             self._load_interface_model, project_path
         )
+        kwargs["interface_model"] = interface_model
         # 与手动更新的 API 路径一致：用户配了代理，运行时更新也得走代理，
-        # 否则受限网络下「手动能更、自动不能」。
-        kwargs["proxy"] = Config.proxy
+        # 否则受限网络下「手动能更、自动不能」。脚本级优先，留空跟随全局。
+        proxy_url, proxy = self._resolve_update_proxy()
+        kwargs["proxy"] = proxy
+
+        # 提交前真建运行环境：建不出来就回滚、继续跑旧版本。isolated_venv 的
+        # agent 建在池根下的预检目录，不写环境缓存（D6）；提交后
+        # ``_ensure_project_environment`` 在正式根再备一次。
+        # 预检里的 uv / pip 子进程也要走同一个代理，用 partial 绑上去，
+        # ``PrepareProjectEnvironment`` 的签名不变。
+        route = self._resolve_runtime_pool_route()
+        kwargs["post_validate"] = build_precheck_validator(
+            prepare=functools.partial(
+                self._prepare_project_environment_sync, proxy_url=proxy_url
+            ),
+            cancel_event=update_cancel or threading.Event(),
+            send_log=send_log,
+            agent_env_root=precheck_agent_root(route.root),
+            failure=precheck_failure if precheck_failure is not None else {},
+            previous_version=getattr(interface_model, "version", None),
+            project_name=getattr(interface_model, "name", None),
+        )
+        # 上次预检失败的版本先轻探一下，拿不到就不再下包建池（D1：只有运行前
+        # 自动更新读备忘，手动更新不传即忽略）。
+        kwargs["precheck_gate"] = build_precheck_gate(
+            project_path,
+            project_name=getattr(interface_model, "name", None),
+            proxy=kwargs["proxy"],
+            send_log=send_log,
+        )
         return await update_maafw_project_if_needed(project_path, **kwargs)
+
+    @staticmethod
+    def _describe_precheck_failure(phase_zh: str, failure: Mapping[str, Any]) -> str:
+        """预检失败给用户看的一句话；按 ``kind`` 分文案。"""
+
+        from app.task.MaaFW.tools.core.automas_maafw_project_update.precheck_memo import (
+            KIND_BINDING_UNAVAILABLE,
+        )
+
+        name = str(failure.get("projectName") or "MFW 项目").strip()
+        target = str(failure.get("targetVersion") or "新版本").strip()
+        previous = str(failure.get("previousVersion") or "当前版本").strip()
+        if failure.get("kind") == KIND_BINDING_UNAVAILABLE:
+            requirement = str(failure.get("requirement") or "maafw").strip()
+            return (
+                f"MFW 项目{phase_zh}更新：{name} {target} 需要 "
+                f"{requirement.replace('==', ' ')}，PyPI/GitHub 都拿不到，"
+                f"本次不升级，继续 {previous}"
+            )
+        reason = str(failure.get("reason") or "").strip()
+        summary = next(
+            (line.strip() for line in reason.splitlines() if line.strip()), "无原因"
+        )
+        if len(summary) > 120:
+            summary = summary[:119] + "…"
+        return (
+            f"MFW 项目{phase_zh}更新：运行环境预检失败（{summary}），"
+            f"本次不升级，继续 {previous}"
+        )
 
     async def _run_project_update(self, phase: AutoUpdateMode) -> None:
         """按时机更新项目目录。整个脚本只跑一次，且在用户任务之外。
@@ -513,13 +722,62 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
         credentials = resolve_update_credentials(self.script_config)
         self._append_update_log(
             f"开始{phase_zh}检查 MFW 项目更新：下载源 {credentials.source}，"
-            f"渠道 {credentials.channel}，Mirror 酱 CDK {describe_cdk(credentials)}"
+            f"渠道 {credentials.channel}，Mirror 酱 CDK {describe_cdk(credentials)}，"
+            f"代理 {describe_proxy(self.script_config)}"
         )
 
+        # 用户点停止时 ``CancelledError`` 从 await 上抛出，但下游不会自己停：
+        # 下载与预检期间的 uv 安装都靠同一个令牌终止，事务随后回滚。与
+        # ``_ensure_project_environment`` 同一套 shield + 有限宽限，只是宽限
+        # 按阶段分——见 ``_describe_update_cancel``。
+        update_cancel = threading.Event()
+        precheck_failure: dict[str, Any] = {}
+        self._update_stage = None
+        self._update_downloaded = None
+        self._update_total = None
+        update_task = asyncio.create_task(
+            self._invoke_project_update(
+                project_path,
+                credentials,
+                update_cancel=update_cancel,
+                precheck_failure=precheck_failure,
+            )
+        )
         try:
-            result = await self._invoke_project_update(project_path, credentials)
+            result = await asyncio.shield(update_task)
+        except asyncio.CancelledError:
+            update_cancel.set()
+            text, grace = self._describe_update_cancel()
+            self._append_update_log(text)
+            # 宽限内没等到也不再拖着关机；线程随子进程结束，其异常在这里
+            # 主动取走，免得事件循环报「Task exception was never retrieved」。
+            update_task.add_done_callback(
+                lambda task: None if task.cancelled() else task.exception()
+            )
+            with suppress(BaseException):
+                await asyncio.wait_for(asyncio.shield(update_task), timeout=grace)
+            raise
         except Exception as exc:  # noqa: BLE001 - 更新失败不阻断运行
             reason = sanitize_log_message(str(exc)).strip() or type(exc).__name__
+            if getattr(exc, "cancelled", False):
+                # 令牌置位后核心包主动停下，而 ``CancelledError`` 没走到上面那个
+                # 分支（取消发生在 shield 之外）：照样别把「已中止」说成失败。
+                # 这里不复用 ``_describe_update_cancel``：那套文案是「正在停」，
+                # 事已停下再说「正在回滚，请勿关闭」只会吓人。
+                logger.info(f"MFW 项目{phase_zh}更新已中止：{reason}")
+                self._append_update_log("MFW 项目更新已中止")
+                return
+            if precheck_failure and getattr(exc, "post_validate_rejected", False):
+                # 预检没过、文件已回滚：项目还是原样、照常能跑。这是「不升级」
+                # 而不是事故，只发一次 warning（D2）；其它失败仍是 error——
+                # 包括预检失败后回滚本身也失败（``unsafe_to_continue``，此时
+                # ``post_validate_rejected`` 为 False），那是新旧混杂的树，不能
+                # 用「继续旧版本」的文案把它盖过去。
+                text = self._describe_precheck_failure(phase_zh, precheck_failure)
+                logger.warning(f"{text}：{reason}")
+                self._append_update_log(text)
+                await self._notify_update("warning", text)
+                return
             logger.opt(exception=True).warning(
                 f"MFW 项目{phase_zh}更新失败，任务继续：{reason}"
             )
@@ -530,6 +788,15 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
             return
 
         if bool(_result_field(result, "updated")):
+            # 提交成功就意味着预检建出了环境，上次失败的备忘（若有）作废。
+            try:
+                from app.task.MaaFW.tools.core.automas_maafw_project_update import (
+                    clear_runtime_precheck,
+                )
+
+                await asyncio.to_thread(clear_runtime_precheck, project_path)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(f"清理运行环境预检备忘失败：{exc}")
             # interface.json 已经变了：不刷新缓存，本轮用户仍按旧版任务表跑。
             try:
                 interface_model = await asyncio.to_thread(
@@ -557,16 +824,28 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
                 "；".join(text for _, text in lines),
             )
 
+    @staticmethod
     def _prepare_project_environment_sync(
-        self,
         project_path: Path,
         cancel_event: threading.Event,
         send_log: Callable[[str], None],
+        *,
+        agent_env_root: Path | None = None,
+        store_cache: bool = True,
+        proxy_url: str | None = None,
     ) -> bool:
         """在工作线程里备好这个项目的运行环境，返回是否真做了准备。
 
         先比指纹：项目没更新过、上次准备的环境也还在盘上，就只是一次哈希加
         几个 stat，直接跳过。
+
+        更新事务的提交前预检也走这里（``tools/embedded/precheck.py``），只是
+        把 isolated_venv 的 agent 建到 ``agent_env_root``（池根下的预检目录）
+        并且 ``store_cache=False`` 不写环境缓存（D6）。静态方法：手动更新的
+        API 路径没有 manager 实例，也要用同一份逻辑。
+
+        ``proxy_url`` 是脚本级解析出来的代理（``None`` 表示没解析过，沿用
+        全局），给池里的 uv / pip 与 agent venv 的安装用。
         """
 
         # 与 API 侧同理：这几个模块会拉起 runtime_pool 与 agent_env，只在真要
@@ -577,6 +856,9 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
         )
         from app.task.MaaFW.tools.core.automas_maafw_runtime_pool import (
             MaaFWRuntimePoolService,
+        )
+        from app.task.MaaFW.tools.core.automas_maafw_runtime_pool.host_environment import (
+            subprocess_proxy_scope,
         )
         from app.task.MaaFW.tools.embedded.env_cache import (
             load_prepared_environment,
@@ -590,24 +872,32 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
         if load_prepared_environment(project_path, fingerprint) is not None:
             return False
 
-        interface = self._load_interface_model(project_path)
+        interface = MaaFWEmbeddedManager._load_interface_model(project_path)
         route = runtime_pool_route_from_service(MaaFWRuntimePoolService())
-        result = MaaFWRunnerService().prepare_project_environment(
-            project_path,
-            interface,
-            runtime_pool_root=route.root,
-            runtime_pool_id=route.pool_id,
-            # worker 子进程跑在隔离 venv 里，代码要靠 PYTHONPATH 找到本仓；
-            # 受监督时 cwd 是 <app-root>，源码在 <app-root>/repo/，只能用源码根
-            import_paths=[SOURCE_ROOT],
-            send_log=send_log,
-            cancel_event=cancel_event,
-        )
-        store_prepared_environment(
-            project_path,
-            str(result.get("projectFingerprint") or "") or fingerprint,
-            result,
-        )
+        # 代理作用域按线程登记，必须在这个同步函数体内进入：池的 uv / pip 子进程
+        # 与 agent venv 的安装都从 strip_host_python_environment 拿到用户在 MAS
+        # 里填的代理（§2.4）。预检回调与运行前确认都经过这里。
+        with subprocess_proxy_scope(
+            proxy_url if proxy_url is not None else Config.proxy_url
+        ):
+            result = MaaFWRunnerService().prepare_project_environment(
+                project_path,
+                interface,
+                runtime_pool_root=route.root,
+                runtime_pool_id=route.pool_id,
+                agent_env_root=agent_env_root,
+                # worker 子进程跑在隔离 venv 里，代码要靠 PYTHONPATH 找到本仓；
+                # 受监督时 cwd 是 <app-root>，源码在 <app-root>/repo/，只能用源码根
+                import_paths=[SOURCE_ROOT],
+                send_log=send_log,
+                cancel_event=cancel_event,
+            )
+        if store_cache:
+            store_prepared_environment(
+                project_path,
+                str(result.get("projectFingerprint") or "") or fingerprint,
+                result,
+            )
         return True
 
     async def _ensure_project_environment(self, phase: AutoUpdateMode) -> None:
@@ -635,12 +925,15 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
         # ``task.cancel()`` 会在下面的 await 上抛出，但工作线程不会自己停——
         # 取消得靠令牌传进去，做法与 ``runner_task`` 的准备路径一致。
         cancel_event = threading.Event()
+        # 装依赖走的代理与更新下载同一份：脚本级优先，留空跟随全局。
+        proxy_url, _proxy = self._resolve_update_proxy()
         prepare_task = asyncio.create_task(
             asyncio.to_thread(
                 self._prepare_project_environment_sync,
                 project_path,
                 cancel_event,
                 self._threadsafe_update_log(),
+                proxy_url=proxy_url,
             )
         )
         try:
@@ -668,7 +961,9 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
         finally:
             await release_project_path(reservation_key)
 
-        # 没变化时只留一行日志，别为「什么都没做」弹通知。
+        # 没变化时只留一行日志，别为「什么都没做」弹通知。刚提交过更新时这里
+        # 必然是「重新准备」：预检不写环境缓存（D6），提交后指纹必 miss，再走
+        # 一遍 prepare 只是池命中 + 解释器 ABI 探针，几秒。
         self._append_update_log(
             f"{phase_zh}运行环境已重新准备完成"
             if prepared
@@ -714,7 +1009,9 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
                 Path(self.script_config.get("Info", "Path")),
             )
         except Exception:
-            logger.opt(exception=True).warning("MaaFW 运行前项目配置归档失败，已跳过（不阻断任务）")
+            logger.opt(exception=True).warning(
+                "MaaFW 运行前项目配置归档失败，已跳过（不阻断任务）"
+            )
 
         # 运行前更新：整个脚本一次，在第一位用户的 inner task 建起来之前。
         # 更新完接着确认运行环境——更新失败也要确认，项目还是原样，环境该备
@@ -738,7 +1035,9 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
                     overlay=read_overlay_values(self.user_config[user_id]),
                 )
             except Exception:
-                logger.opt(exception=True).warning("MaaFW 运行前字段侧车归档失败，已跳过（不阻断任务）")
+                logger.opt(exception=True).warning(
+                    "MaaFW 运行前字段侧车归档失败，已跳过（不阻断任务）"
+                )
             self.inner_task = self._build_inner_task()
             self._inner_finalized = False
             try:

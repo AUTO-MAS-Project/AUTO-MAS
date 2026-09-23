@@ -168,7 +168,7 @@
       </div>
 
       <div v-else-if="isDesktopController" key="win32">
-        <!-- 两行摆完：启动方式 | 游戏 exe ；Unity 分辨率 | 启动参数 | 等待时间 -->
+        <!-- 两行摆完：启动方式 | 游戏 exe ；Unity 分辨率 | 启动参数 | 等待时间 | 启动后再等 -->
         <a-row :gutter="24" class="control-detail-row">
           <a-col :span="12">
             <a-form-item>
@@ -223,7 +223,7 @@
         </a-row>
 
         <a-row v-if="launchMode === 'DirectExe'" :gutter="24" class="control-detail-row">
-          <a-col :span="12">
+          <a-col :span="6">
             <a-form-item>
               <template #label>
                 <a-tooltip :title="t('edit.mfwUnityResolutionTip')">
@@ -261,7 +261,12 @@
           <a-col :span="6">
             <a-form-item>
               <template #label>
-                <span class="form-label">{{ t('edit.waitTimeSeconds') }}</span>
+                <a-tooltip :title="t('edit.mfwWaitTimeTip')">
+                  <span class="form-label">
+                    {{ t('edit.waitTimeSeconds') }}
+                    <QuestionCircleOutlined class="help-icon" aria-hidden="true" />
+                  </span>
+                </a-tooltip>
               </template>
               <a-input-number
                 v-model:value="maafwConfig.Game.WaitTime"

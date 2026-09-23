@@ -1,8 +1,11 @@
-// 配置来源共用判定与提示文案的纯逻辑测试（无 Vue 依赖，直接测分支行为）。
+// 配置来源共用判定与提示文案的纯逻辑测试（不挂载组件，直接测分支行为）。
 import { describe, expect, it } from 'vitest'
+import type { VNode } from 'vue'
 
 import {
+  buildCorruptedForceConfirm,
   buildRestoreConfirm,
+  corruptedForceConfirmContent,
   isCrossSourceRestore,
   sourceLabelKey,
   sourceTagColor,
@@ -85,5 +88,28 @@ describe('buildRestoreConfirm', () => {
     expect(result.title).toBe('edit.configRestoreCrossSourceTitle')
     expect(result.paragraphs).toHaveLength(3)
     expect(result.paragraphs[2]).toBe('edit.configRestoreCrossSourceShared')
+  })
+})
+
+describe('buildCorruptedForceConfirm / corruptedForceConfirmContent', () => {
+  it('损坏位置由后端原文透出，标题与按钮取专用词条', () => {
+    expect(buildCorruptedForceConfirm(t, '配置文件已损坏，无法安全读取：X/one_dragon.yml')).toEqual(
+      {
+        title: 'edit.configRestoreCorruptedTitle',
+        detail: '配置文件已损坏，无法安全读取：X/one_dragon.yml',
+        desc: 'edit.configRestoreCorruptedDesc',
+        okText: 'edit.configRestoreForceAction',
+      }
+    )
+  })
+
+  it('渲染为「红字损坏位置 + 风险说明」两段', () => {
+    const paragraphs = corruptedForceConfirmContent('损坏位置', '风险说明').children as VNode[]
+    expect(paragraphs).toHaveLength(2)
+    expect(paragraphs[0].props?.style).toMatchObject({
+      color: 'var(--ant-color-error)',
+    })
+    expect(paragraphs[0].children).toBe('损坏位置')
+    expect(paragraphs[1].children).toBe('风险说明')
   })
 })

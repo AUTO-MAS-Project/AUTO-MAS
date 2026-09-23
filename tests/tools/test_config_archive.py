@@ -27,6 +27,7 @@ from app.utils.config_archive import (
     MODE_FILE_NAME,
     archive_files,
     file_set_hash,
+    list_times,
     read_backup_mode,
     restore_dir,
     restore_files,
@@ -93,3 +94,49 @@ def test_restore_files_excludes_mode_metadata(tmp_path: Path) -> None:
     restore_files(dest, target)
     assert (target / "a.json").read_text("utf-8") == '{"x": 1}'
     assert not (target / MODE_FILE_NAME).exists()
+
+
+def test_list_times_only_accepts_timestamp_dirs(tmp_path: Path) -> None:
+    """时间戳列表只认本模块生成的目录名，同级的其它子目录既不入选也不被裁掉。
+
+    池内与时间戳目录同级可能存在语义不同的子目录（如 ZzzOd 回收池槽桶内的
+    ``mas-backups`` 备份池快照）；混进列表会让归档去重恒失效、保留清理误裁
+    真实快照。
+    """
+
+    pool = tmp_path / "pool"
+    for name in (
+        "20260921-225131",
+        "20260921-225130",
+        "20260921-225131-2",
+        "20260921-225131-10",
+    ):
+        (pool / name).mkdir(parents=True)
+    # 同级非时间戳子目录：不进列表，也不参与保留清理
+    (pool / "mas-backups").mkdir()
+    (pool / "not-a-time").mkdir()
+
+    assert list_times(pool) == [
+        "20260921-225131-10",
+        "20260921-225131-2",
+        "20260921-225131",
+        "20260921-225130",
+    ]
+
+
+def test_list_times_keeps_full_retention_with_sibling_dir(tmp_path: Path) -> None:
+    """同级非时间戳子目录不再占位：归档池保留份数仍是完整的 keep 份。"""
+
+    pool = tmp_path / "pool"
+    (pool / "mas-backups").mkdir(parents=True)
+
+    # 11 份内容互不相同的归档，keep=10：应保留 10 份真实快照
+    for i in range(11):
+        archive_files({f"{i}.json": f'{{"i": {i}}}'}, pool, keep=10)
+
+    # 直接数盘上的时间戳目录（不走 list_times，避免与实现同源自证）：
+    # 保留份数不受同级非时间戳子目录占位影响
+    snapshots = [p for p in pool.iterdir() if p.is_dir() and p.name[0].isdigit()]
+    assert len(snapshots) == 10
+    # 非时间戳子目录不参与保留清理，原样保留
+    assert (pool / "mas-backups").is_dir()

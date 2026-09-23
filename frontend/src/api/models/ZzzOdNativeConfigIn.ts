@@ -29,6 +29,10 @@ export type ZzzOdNativeConfigIn = {
      */
     instanceRun?: (string | null);
     /**
+     * 游戏结束后操作（无/关闭游戏/关机，白名单校验后写回 one_dragon.yml；缺省不写回）
+     */
+    afterDone?: (string | null);
+    /**
      * 游戏启动参数（缺省不写回）
      */
     launchArgs?: (ZzzOdNativeLaunchArgs | null);

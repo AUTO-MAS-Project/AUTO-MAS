@@ -18,6 +18,7 @@ import type { BetterGIScriptGroupSaveIn } from '../models/BetterGIScriptGroupSav
 import type { BetterGIScriptReadmeOut } from '../models/BetterGIScriptReadmeOut';
 import type { BetterGIScriptSettingsUiOut } from '../models/BetterGIScriptSettingsUiOut';
 import type { BlueArchiveActivityIn } from '../models/BlueArchiveActivityIn';
+import type { BlueArchiveActivityStatusOut } from '../models/BlueArchiveActivityStatusOut';
 import type { Body_batch_update_oknte_configs_api_scripts_oknte_configs_batch_update_post } from '../models/Body_batch_update_oknte_configs_api_scripts_oknte_configs_batch_update_post';
 import type { Body_get_maa_cultivate_operators_api_scripts_maa_cultivate_operators_post } from '../models/Body_get_maa_cultivate_operators_api_scripts_maa_cultivate_operators_post';
 import type { Body_get_maa_depot_inventory_api_scripts_maa_depot_inventory_post } from '../models/Body_get_maa_depot_inventory_api_scripts_maa_depot_inventory_post';
@@ -67,6 +68,8 @@ import type { MaaDepotInventoryOut } from '../models/MaaDepotInventoryOut';
 import type { MaaEndOptionsOut } from '../models/MaaEndOptionsOut';
 import type { MaaFWAgentEnvPrepareIn } from '../models/MaaFWAgentEnvPrepareIn';
 import type { MaaFWAgentEnvPrepareOut } from '../models/MaaFWAgentEnvPrepareOut';
+import type { MaaFWGamePackageIn } from '../models/MaaFWGamePackageIn';
+import type { MaaFWGamePackageOut } from '../models/MaaFWGamePackageOut';
 import type { MaaFWInterfacePreviewIn } from '../models/MaaFWInterfacePreviewIn';
 import type { MaaFWInterfacePreviewOut } from '../models/MaaFWInterfacePreviewOut';
 import type { MaaFWProjectUpdateIn } from '../models/MaaFWProjectUpdateIn';
@@ -171,6 +174,13 @@ import type { ZzzOdInstancesOut } from '../models/ZzzOdInstancesOut';
 import type { ZzzOdLauncherOut } from '../models/ZzzOdLauncherOut';
 import type { ZzzOdNativeConfigIn } from '../models/ZzzOdNativeConfigIn';
 import type { ZzzOdNativeConfigOut } from '../models/ZzzOdNativeConfigOut';
+import type { ZzzOdRecycleClearIn } from '../models/ZzzOdRecycleClearIn';
+import type { ZzzOdRecycleClearOut } from '../models/ZzzOdRecycleClearOut';
+import type { ZzzOdRecycleOut } from '../models/ZzzOdRecycleOut';
+import type { ZzzOdRecycleRestoreIn } from '../models/ZzzOdRecycleRestoreIn';
+import type { ZzzOdSlotCleanIn } from '../models/ZzzOdSlotCleanIn';
+import type { ZzzOdSlotCleanOut } from '../models/ZzzOdSlotCleanOut';
+import type { ZzzOdSlotsOut } from '../models/ZzzOdSlotsOut';
 import type { ZzzOdTaskOptionsOut } from '../models/ZzzOdTaskOptionsOut';
 import type { ZzzOdTeamsOut } from '../models/ZzzOdTeamsOut';
 import type { ZzzOdTeamsSaveIn } from '../models/ZzzOdTeamsSaveIn';
@@ -911,6 +921,29 @@ export class Service {
         });
     }
     /**
+     * 按所选 resource 推断 MFW 项目的安卓游戏包名
+     * 脚本编辑页读完 interface / 切换 resource 时调用，把推出来的包名直接填进表单。
+     *
+     * 只看 resource 的 pipeline，不带用户任务的 pipeline_override（编辑脚本时还没有
+     * 运行计划）；推不出或多个候选都按原样返回，由前端决定不填。
+     * @param requestBody
+     * @returns MaaFWGamePackageOut Successful Response
+     * @throws ApiError
+     */
+    public static resolveMaafwGamePackageApiScriptsMaafwGamePackagePost(
+        requestBody: MaaFWGamePackageIn,
+    ): CancelablePromise<MaaFWGamePackageOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/maafw/game-package',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
      * 预览 MFW interface
      * 读取 MaaFW 项目 interface，并返回 controller/resource/task 摘要。
      * @param requestBody
@@ -1093,6 +1126,48 @@ export class Service {
                 'userId': userId,
                 'configName': configName,
                 'useMasConfig': useMasConfig,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 获取 BAAH 配置文件名列表
+     * 返回 BAAH 配置目录下已有的配置文件名（不含 ``.json`` 后缀）。
+     * @param scriptId
+     * @returns ComboBoxOut Successful Response
+     * @throws ApiError
+     */
+    public static getBaahConfigNamesApiApiScriptsBaahConfigNamesGet(
+        scriptId: string,
+    ): CancelablePromise<ComboBoxOut> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/scripts/baah/config-names',
+            query: {
+                'scriptId': scriptId,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 获取碧蓝档案活动状态
+     * 返回指定服正在进行的活动，没有则返回下一个未开始的活动。
+     * @param lineType
+     * @returns BlueArchiveActivityStatusOut Successful Response
+     * @throws ApiError
+     */
+    public static getBaahActivityStatusApiApiScriptsBaahActivityStatusGet(
+        lineType: 'JP' | 'Globle' | 'CN' = 'CN',
+    ): CancelablePromise<BlueArchiveActivityStatusOut> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/scripts/baah/activity-status',
+            query: {
+                'lineType': lineType,
             },
             errors: {
                 422: `Validation Error`,
@@ -1554,7 +1629,9 @@ export class Service {
      * 把右栏编辑后的配置组 json（项目顺序 + 各项目 jsScriptSettingsObject）写回
      * 该用户的 per-user 副本（``data/{script}/{user}/ScriptGroup/{name}.json``）。
      *
-     * 不触碰 BetterGI 全局 ``User/ScriptGroup/{name}.json`` 同名实配。
+     * 「路径」类引用（名字含 ``/``）不能作文件名，落盘到 ``per_user_copy_name`` 的确定性别名
+     * （右栏把路径项加成多项目配置组后需要载体）。不触碰 BetterGI 全局
+     * ``User/ScriptGroup/{name}.json`` 同名实配。
      * @param requestBody
      * @returns OutBase Successful Response
      * @throws ApiError
@@ -1734,6 +1811,113 @@ export class Service {
         });
     }
     /**
+     * 获取实例槽总览（原生实例 / MAS 绑定槽 / 无主残留）
+     * 槽目录是 MAS 分配在一条龙安装目录里的，注册表与 GUI 都看不到。
+     *
+     * 这份对照表用于诊断「槽目录数与用户数对不上」（绑定但没跑过的槽没有目录）
+     * 与定位无主残留。
+     * @param scriptId
+     * @returns ZzzOdSlotsOut Successful Response
+     * @throws ApiError
+     */
+    public static getZzzodSlotsApiApiScriptsZzzodSlotsGet(
+        scriptId: string,
+    ): CancelablePromise<ZzzOdSlotsOut> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/scripts/zzzod/slots',
+            query: {
+                'scriptId': scriptId,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 清理无主实例槽（先归档进回收池再删目录）
+     * 原生实例与被任一 ZzzOd 用户绑定的槽一律不动，返回实际回收的槽号。
+     * @param requestBody
+     * @returns ZzzOdSlotCleanOut Successful Response
+     * @throws ApiError
+     */
+    public static cleanZzzodSlotsApiApiScriptsZzzodSlotsCleanPost(
+        requestBody: ZzzOdSlotCleanIn,
+    ): CancelablePromise<ZzzOdSlotCleanOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/zzzod/slots/clean',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 获取实例槽回收池（被删用户/脚本留下的槽内容与备份池快照）
+     * 槽目录按安装根指纹归池，跨脚本共享；只有 ``kind=slot`` 的条目可恢复。
+     * @param scriptId
+     * @returns ZzzOdRecycleOut Successful Response
+     * @throws ApiError
+     */
+    public static getZzzodRecycleApiApiScriptsZzzodRecycleGet(
+        scriptId: string,
+    ): CancelablePromise<ZzzOdRecycleOut> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/scripts/zzzod/recycle',
+            query: {
+                'scriptId': scriptId,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 清空实例槽回收池（删除后不可找回，不碰配置恢复池）
+     * 只删 recycle 池；onedragon 原生池与 mas 配置恢复池不受影响。
+     * @param requestBody
+     * @returns ZzzOdRecycleClearOut Successful Response
+     * @throws ApiError
+     */
+    public static clearZzzodRecycleApiApiScriptsZzzodRecycleClearPost(
+        requestBody: ZzzOdRecycleClearIn,
+    ): CancelablePromise<ZzzOdRecycleClearOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/zzzod/recycle/clear',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 把回收池里的槽快照恢复给某个 MAS 用户（现有用户或新建用户，先存底）
+     * 恢复的落点是**用户的绑定槽**（``targetUser`` 指定现有用户，或
+     * ``newUserName`` 新建一个用户）——只物化内容而不建立绑定的恢复没有出口，
+     * MAS 下次运行不会认领它。目标用户已有绑定槽时覆盖其内容，恢复前先存底。
+     * @param requestBody
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static restoreZzzodRecycleApiApiScriptsZzzodRecycleRestorePost(
+        requestBody: ZzzOdRecycleRestoreIn,
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/zzzod/recycle/restore',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
      * 获取预备编队列表（名称 + 绑定配队方案）
      * 读绑定槽（直控传 instanceIdx 读原生实例）的 team.yml（固定 20 个编队）。
      * @param scriptId
@@ -1901,7 +2085,7 @@ export class Service {
     }
     /**
      * 保存实例原生配置（直控模式直接写回一条龙原始 YAML）
-     * 白名单过滤后写回所选实例 game_account.yml、_group.yml 与 instance_run，随后回读最新数据。
+     * 白名单过滤后写回所选实例 game_account.yml、_group.yml、instance_run 与 after_done，随后回读最新数据。
      * @param requestBody
      * @returns ZzzOdNativeConfigOut Successful Response
      * @throws ApiError
@@ -2151,7 +2335,8 @@ export class Service {
     }
     /**
      * 列出配置备份（时间倒序；target 取值由专项定义，非法值返回 400）
-     * 运行/会话下发前与编辑界面进出会自动归档，内容无变化跳过。
+     * 返回 ``items``（``time`` + 备份时点来源标注 ``mode``，倒序）与当前
+     * 来源 ``mode``（仅三态池，供前端跨来源提示）；非法 target 返回 400。
      * @param scriptId
      * @param userId
      * @param target

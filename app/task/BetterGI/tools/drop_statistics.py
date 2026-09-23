@@ -79,8 +79,6 @@ def format_drop_statistics(statistics: dict[str, int] | None) -> str:
     if not statistics:
         return ""
     lines = ["【掉落统计】"]
-    for name, count in sorted(
-        statistics.items(), key=lambda kv: (-kv[1], kv[0])
-    ):
+    for name, count in sorted(statistics.items(), key=lambda kv: (-kv[1], kv[0])):
         lines.append(f"{name}: {count}")
     return "\n".join(lines)

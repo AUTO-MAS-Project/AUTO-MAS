@@ -33,6 +33,7 @@ UUID 是每实例随机生成的临时标识，因此本模块按组名识别与
 非独立模式（``IfUseMasConfig=False``）保持直控 BGI 所选实配，本模块的独立槽位逻辑不生效。
 """
 
+import hashlib
 import json
 import threading
 import uuid
@@ -242,6 +243,32 @@ def is_file_safe_script_group_name(name: str) -> bool:
     """
     cleaned = (name or "").strip()
     return bool(cleaned) and not any(c in cleaned for c in ("/", "\\", ".."))
+
+
+# 路径类引用（AutoPathing 路线名等含 ``/`` 的名字）不能作文件名，但右栏「添加脚本」会把
+# 「路径」项升级成多项目配置组，该组需要一个 per-user 载体，故给这类引用一个确定性别名。
+# 前缀取 ``MAS-``：前端 isMasOwnGroup 会把 ``MAS-*`` 从「配置组」候选里剔除，别名不会冒充
+# 用户自己的配置组；别名文件只写在 ``data/{script}/{user}/ScriptGroup/``，BGI 侧零接触。
+_PATH_COPY_PREFIX = "MAS-路径-"
+# 文件系统非法字符 + 空白（``..`` 另行处理，防路径穿越的严格校验会拒绝）
+_COPY_NAME_UNSAFE_CHARS = frozenset('<>:"/\\|?*') | frozenset(" \t\r\n")
+
+
+def per_user_copy_name(name: str) -> str:
+    """引用名 → per-user 副本名：可作文件名的名字原样返回，路径类引用返回确定性别名。
+
+    别名形如 ``MAS-路径-<路径末段>-<名字 sha1 前 8 位>``：末段只为可读，摘要保证不同引用
+    （不同目录下的同名路线、多实例名）不撞名，且同一引用恒得同一别名，读回可反查。
+    """
+    cleaned = (name or "").strip()
+    if is_file_safe_script_group_name(cleaned):
+        return cleaned
+    digest = hashlib.sha1(cleaned.encode("utf-8")).hexdigest()[:8]
+    tail = cleaned.replace("\\", "/").rstrip("/").rsplit("/", 1)[-1]
+    tail = "".join(
+        "_" if char in _COPY_NAME_UNSAFE_CHARS else char for char in tail
+    ).replace("..", "_")
+    return f"{_PATH_COPY_PREFIX}{tail.strip('._')[:24] or '路径'}-{digest}"
 
 
 def list_script_settings_ui(root: Path, folder: str) -> list[dict[str, Any]]:
@@ -454,13 +481,14 @@ def _safe_write_per_user_copy(
 
 
 def _read_per_user_copy(script_id: str, user_id: str, name: str) -> Any:
-    """读取 per-user 配置组副本；名字非法（含路径分隔符的路线名等）时返回 ``None``。
+    """读取 per-user 配置组副本；没有副本时返回 ``None``（不抛「配置组名非法」）。
 
-    与 ``_safe_write_per_user_copy`` 成对：per-user 副本名必须是合法 ScriptGroup 名，
-    而路线名等合法 BGI 引用可能含 ``/``，此处不得抛「配置组名非法」。
+    名字按 ``per_user_copy_name`` 归一：路径类引用（路线名等）读的是**别名**副本——右栏
+    保存「路径」项落在别名上，运行时据此拿到用户编辑过的组，否则会退回单项目合成、
+    用户在右栏加的脚本等于白加。
     """
     try:
-        path = per_user_script_group_path(script_id, user_id, name)
+        path = per_user_script_group_path(script_id, user_id, per_user_copy_name(name))
     except ValueError:
         return None
     if not path.is_file():
@@ -480,7 +508,9 @@ def list_user_script_group_names(script_id: str, user_id: str) -> list[str]:
     if sg_dir.is_dir():
         for p in sorted(sg_dir.glob("*.json"), key=lambda p: p.stem):
             name = p.stem.strip()
-            if name and name not in names:
+            # 路径类引用的别名副本（见 per_user_copy_name）不是「可编辑配置组」本身：
+            # 它归属某条「路径」引用，不该作为新配置组出现在候选列表里。
+            if name and not name.startswith(_PATH_COPY_PREFIX) and name not in names:
                 names.append(name)
     # 多实例副本（「组名-{uid}」）不是独立配置组：仅当基名也在列表中才隐藏，
     # 避免它们混进「可编辑配置组 / 添加候选」被当成新组重复加入队列。
@@ -519,10 +549,13 @@ def read_user_script_group(
     不依赖队列落库路径是否触发过 ``ensure_keymouse_groups``。
     """
     # 名字含路径分隔符的引用（如 AutoPathing 路线名）：在 BGI 里合法、可作一条龙引用，
-    # 但不是 ScriptGroup 文件名、也没有 per-user 副本。此处**不得**抛「配置组名非法」——
-    # 右栏为「路径」步骤取详情会命中，抛错会直接把 ValueError 弹给用户（2026-09-16 实机）。
+    # 但不是 ScriptGroup 文件名。此处**不得**抛「配置组名非法」——右栏为「路径」步骤取详情
+    # 会命中，抛错会直接把 ValueError 弹给用户（2026-09-16 实机）。
+    # 内容来源：用户在右栏给该「路径」项加了脚本时，副本落在确定性别名上（见
+    # per_user_copy_name），有则以它为准；没有则返回空，由右栏按路径文件合成单项目展示。
     if not is_file_safe_script_group_name(name):
-        return {}
+        alias_copy = _read_per_user_copy(script_id, user_id, name)
+        return alias_copy if isinstance(alias_copy, dict) else {}
     name = resolve_script_group_name(name)
     copy = read_file(per_user_script_group_path(script_id, user_id, name))
     if isinstance(copy, dict) and copy:
@@ -551,13 +584,14 @@ def write_user_script_group(
     ``config`` 传入的是完整配置组 json（含 projects 数组顺序与每项的
     jsScriptSettingsObject）；写前同步 ``name`` 字段。缺目录自动补建。
 
-    ``name`` 含路径分隔符（路径类引用）时**不落盘**并返回 ``None``：这类内容由路径文件
-    驱动、本就没有 per-user 副本，保存属于无意义操作，不应报错打扰用户
-    （2026-09-16 实机：对路径步骤保存/离开时弹「配置组名非法」）。
+    ``name`` 含路径分隔符（「路径」类引用）时按 ``per_user_copy_name`` 的确定性别名落盘
+    （右栏「添加脚本」把路径项升级成多项目配置组后需要这个载体）；副本只写在
+    ``data/{script}/{user}/ScriptGroup/``，BGI 的 ``User/ScriptGroup`` 零接触。
+    名为空返回 ``None``（无可写内容），也不把「配置组名非法」弹给用户。
     """
-    if not is_file_safe_script_group_name(name):
+    if not str(name or "").strip():
         return None
-    name = resolve_script_group_name(name)
+    name = per_user_copy_name(name)
     config = dict(config or {})
     config["name"] = name
     out_path = per_user_script_group_path(script_id, user_id, name)
@@ -871,6 +905,27 @@ def parse_one_dragon_queue(raw: Any) -> list[dict[str, str]]:
             entry["uid"] = item["uid"]
         out.append(entry)
     return out
+
+
+def enabled_one_dragon_task_names(config: dict[str, Any]) -> list[str]:
+    """按 ``TaskOrder`` 顺序返回**启用的一条龙内置任务**名（同名多实例各占一项）。
+
+    用途：BGI 原生一条龙的进度行 ``一条龙任务执行: X/N`` 只有序号、不带任务名，
+    而它正是按「启用的一条龙任务」的顺序编号（配置组任务另有 ``配置组任务执行: X/M``，
+    不与本编号混排，故这里同样剔除自定义配置组），``N`` 即本函数返回表的长度。
+    通知分步表据此把序号还原成用户看得懂的任务名（见 ``one_dragon_report``）。
+    """
+    defs: dict[str, str] = config.get("TaskDefinitions") or {}
+    enabled_map: dict[str, bool] = config.get("TaskEnabledList") or {}
+    names: list[str] = []
+    for uid in list(config.get("TaskOrder") or []):
+        name = defs.get(uid)
+        if not name or name not in _BUILTIN_ONE_DRAGON_GROUPS:
+            continue
+        if not bool(enabled_map.get(uid, True)):
+            continue
+        names.append(name)
+    return names
 
 
 def _custom_groups_from_config(config: dict[str, Any]) -> list[dict[str, Any]]:
@@ -1453,6 +1508,27 @@ def read_native_one_dragon(root: Path, config_name: str) -> dict[str, Any] | Non
     return config if isinstance(config, dict) and config else None
 
 
+def _enabled_builtin_names(config: dict[str, Any]) -> list[str]:
+    """配置里当前启用的内置一条龙组名（按 ``TaskOrder`` 顺序）。
+
+    只给「调用方不提供组开关」的直控写入用（见 ``write_native_one_dragon``）：拿它当
+    ``apply_groups`` 的 ``enabled`` 传进去，结果就是**启停原样保留**——启用中的仍是启用、
+    已关的仍是关闭（启用表缺项与 ``apply_groups`` 同口径，按启用处理）。
+    """
+    defs = config.get("TaskDefinitions") or {}
+    enabled = config.get("TaskEnabledList") or {}
+    names: list[str] = []
+    for uid in config.get("TaskOrder") or []:
+        name = defs.get(uid)
+        if (
+            name in _BUILTIN_ONE_DRAGON_GROUPS
+            and enabled.get(uid, True)
+            and name not in names
+        ):
+            names.append(name)
+    return names
+
+
 def write_native_one_dragon(
     root: Path,
     config_name: str,
@@ -1477,6 +1553,11 @@ def write_native_one_dragon(
     非组字段（领取奖励队伍 / 战斗队伍 / 战斗策略 / 周表默认行）与槽位路径同口径：
     仅在非空时写入，留空则保持原生配置现有值。
 
+    ``groups`` 为空表示「调用方不提供组开关」（直控下 MAS 不接管一条龙启停，面板 Groups
+    也不参与）：此时**沿用配置自身启用的内置组**，绝不能把空表直接交给 ``apply_groups``
+    ——它把空表理解成「全部关掉」，会让用户在运行期间一条龙任务一个都不跑（2026-09-18/19
+    实机：直控 + 快速配置的用户只剩自定义配置组任务在跑，内置任务全被写成关闭）。
+
     Returns:
         写入后的配置 dict；原生配置不存在或非法时返回 None（不凭空造一份）。
     """
@@ -1487,7 +1568,7 @@ def write_native_one_dragon(
         return None
     config = apply_groups(
         config,
-        groups,
+        list(groups) if groups else _enabled_builtin_names(config),
         custom_groups=custom_groups,
         manage_customs=manage_custom_groups,
         queue=queue,
@@ -1504,7 +1585,10 @@ def write_native_one_dragon(
         config["AutoBossStrategyName"] = auto_boss_strategy_name
     # 通用战斗队伍/策略权威覆盖周表「默认」行（与槽位路径同口径，理由见
     # write_user_one_dragon：默认行即「通用队伍」映射，否则其旧值会遮挡通用值）
-    for _wd_key, _team_key in (("weeklyDomain", "partyName"), ("weeklyLeyLine", "team")):
+    for _wd_key, _team_key in (
+        ("weeklyDomain", "partyName"),
+        ("weeklyLeyLine", "team"),
+    ):
         _wd = config.get(_wd_key)
         if isinstance(_wd, dict) and isinstance(_wd.get("default"), dict):
             if party_name:
@@ -1512,11 +1596,17 @@ def write_native_one_dragon(
             if auto_boss_strategy_name:
                 _wd["default"]["strategy"] = auto_boss_strategy_name
     # 四项战斗组的 per-任务设置（见 one_dragon_plan.RIGHTBAR_TO_PLAN 的存储归属注释）：
-    # 首领讨伐/地脉花落本文件；秘境/幽境落全局 config.json 各自段——两个写入函数的
-    # 白名单会自行只收属于自己的键，此处按组名分派即可。
+    # 一条龙顶层键（含每周表平铺键，如 MondayDomainName / DomainRunMonday）落本文件；
+    # 全局段叶子（秘境刷取配置 / 幽境刷取策略）落 config.json 各自段。
+    # 秘境同样要落本文件：DomainName / PartyName / WeeklyDomainEnabled 与周表键都是一条龙
+    # 顶层键，只送去全局写入器会被它的白名单挡掉（那里只管「秘境刷取配置」那几个叶子），
+    # 表现为直控 + 快速配置下「面板改了秘境/周表却不生效」（2026-09-19 检查）。
     if native_step_settings:
-        for _group in ("自动首领讨伐", "自动地脉花"):
-            config.update(native_step_settings.get(_group) or {})
+        for _group in ("自动秘境", "自动首领讨伐", "自动地脉花"):
+            for _key, _value in (native_step_settings.get(_group) or {}).items():
+                if _key in _GLOBAL_DOMAIN_LEAF_SEGMENT:
+                    continue  # 全局段叶子交给下面的写入器，避免在一条龙文件里留脏键
+                config[_key] = _value
         _domain = native_step_settings.get("自动秘境") or {}
         if _domain:
             write_global_domain_settings(root, _domain)

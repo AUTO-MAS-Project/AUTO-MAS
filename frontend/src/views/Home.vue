@@ -43,11 +43,14 @@
       :activity-modules="homeActivityModules"
       :scroll-hint-hidden="scrollHintHidden"
       :carousel-autoplay="carouselAutoplay"
+      :activity-notes-visible="activityNotesVisible"
+      :hidden-activity-notes="hiddenActivityNotes"
       @reorder="reorderHomeModules"
       @reorder-activities="reorderActivityModules"
       @visibility-change="setHomeModuleShown"
       @scroll-hint-change="setScrollHintHidden"
       @autoplay-change="setCarouselAutoplay"
+      @activity-note-visibility-change="setActivityNoteShown"
     />
 
     <div v-if="layoutReady" class="home-content">
@@ -87,6 +90,13 @@
             :items="activityBanners"
             :autoplay="carouselAutoplay"
           >
+            <template #community="{ moduleKey: gameKey }">
+              <!-- 社区信息紧贴游戏导航，与导航一起吸顶，横幅和概览在下方滚动。 -->
+              <HomeActivityNotes
+                v-if="activityNotesVisible && isActivityNoteVisible(gameKey)"
+                :active-key="gameKey"
+              />
+            </template>
             <template #detail="{ moduleKey: gameKey }">
               <HomeEndfieldOverview
                 v-if="gameKey === 'endfield'"
@@ -189,6 +199,7 @@ import { useAppInitialization } from '@/composables/useAppInitialization'
 import HomeActivityCarousel from '@/views/home/components/HomeActivityCarousel.vue'
 import HomeArknightsOverview from '@/views/home/components/HomeArknightsOverview.vue'
 import HomeBackToTop from '@/views/home/components/HomeBackToTop.vue'
+import HomeActivityNotes from '@/views/home/components/HomeActivityNotes.vue'
 import { blueArchivePresentation } from '@/views/home/blueArchivePresentation'
 import HomeBlueArchiveOverview from '@/views/home/components/HomeBlueArchiveOverview.vue'
 import HomeCommandCard from '@/views/home/components/HomeCommandCard.vue'
@@ -232,12 +243,16 @@ const {
   visibleActivityKeys,
   scrollHintHidden,
   carouselAutoplay,
+  activityNotesVisible,
+  hiddenActivityNotes,
   loadHomeLayout,
   reorderHomeModules,
   reorderActivityModules,
   setHomeModuleShown,
   setScrollHintHidden,
   setCarouselAutoplay,
+  setActivityNoteShown,
+  isActivityNoteVisible,
   isHomeModuleVisible,
 } = useHomeLayout()
 const { noticeVisible, noticeData, noticeLoading, fetchNoticeData, onNoticeConfirmed, showNotice } =
@@ -419,7 +434,7 @@ onMounted(async () => {
 
 <style scoped>
 .home-page {
-  max-width: 1480px;
+  max-width: 1600px;
   margin: 0 auto;
 }
 

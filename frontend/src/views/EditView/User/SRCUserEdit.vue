@@ -45,11 +45,12 @@
       :src-config-loading="srcConfigLoading"
       :show-src-config-mask="showSrcConfigMask"
       :loading="loading"
+      :config-locked="configLocked"
       @handle-s-r-c-config="startConfigSession(false)"
       @handle-cancel="handleCancel"
     />
 
-    <div class="user-edit-content">
+    <ConfigLockPanel :script-id="scriptId" content-class="user-edit-content">
       <a-card class="config-card">
         <a-form
           ref="formRef"
@@ -116,11 +117,12 @@
           />
         </a-form>
       </a-card>
-    </div>
+    </ConfigLockPanel>
 
     <!-- ══ 配置恢复（通用组件：MAS 用户配置在前、SRC 原生配置在后）══ -->
     <ConfigRestoreSection
       v-model:open="restoreOpen"
+      :disabled="configLocked"
       :script-name="SRC_DISPLAY_NAME"
       :targets="restoreTargets"
       :api="restoreApi"
@@ -157,6 +159,8 @@
 </template>
 
 <script setup lang="ts">
+import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
+import { useScriptConfigLock } from '@/composables/useScriptConfigLock'
 import { useI18n } from 'vue-i18n'
 import { computed, h, nextTick, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -217,6 +221,7 @@ let srcConfigTimeout: number | null = null
 const scriptId = route.params.scriptId as string
 let userId = route.params.userId as string
 const isEdit = ref(!!userId) // 使用 ref 以便在创建后更新
+const { configLocked } = useScriptConfigLock(() => scriptId)
 
 // 脚本信息
 const scriptName = ref('')
@@ -417,8 +422,10 @@ const handleRestoreView = (
   target: string,
   item: { time: string; mode?: string | null },
   currentMode?: string | null
-) =>
-  new Promise<boolean>(resolve => {
+) => {
+  if (configLocked.value) return Promise.resolve(false)
+
+  return new Promise<boolean>(resolve => {
     const { title, paragraphs } = buildRestoreConfirm(
       t,
       {
@@ -440,6 +447,12 @@ const handleRestoreView = (
       okText: t('edit.configRestoreConfirmOk'),
       cancelText: t('edit.cancel'),
       onOk: async () => {
+        if (configLocked.value) {
+          message.error(t('edit.configLocked'))
+          resolve(false)
+          return
+        }
+
         try {
           const resp = await Service.restoreConfigBackupApiApiScriptsBackupRestorePost({
             scriptId,
@@ -470,6 +483,7 @@ const handleRestoreView = (
       onCancel: () => resolve(false),
     })
   })
+}
 
 // 脚本级查看会话：以脚本 ID 为会话任务标识启动（调度层把脚本级设置任务
 // 归属解析为 Default，跳过用户配置下发——原生目录即所选备份）
@@ -590,6 +604,7 @@ const closeSessionUi = () => {
 // 处理SRC配置/查看会话（viewOnly=true 为只读查看会话：界面显示所选备份
 // 内容，结束不回写；配置会话保存回用户配置目录）
 const startConfigSession = async (viewOnly: boolean) => {
+  if (configLocked.value) return
   try {
     srcConfigLoading.value = true
     currentSessionViewOnly.value = viewOnly
@@ -722,6 +737,11 @@ if (!userId) {
   onMounted(async () => {
     // 等待脚本信息加载完成
     await loadScriptInfo()
+    if (configLocked.value) {
+      isInitializing.value = false
+      return
+    }
+
     // 创建新用户
     const result = await addUser(scriptId)
     if (result && result.userId) {

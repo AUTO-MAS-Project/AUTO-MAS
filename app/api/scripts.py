@@ -24,6 +24,7 @@
 import asyncio
 import uuid
 from collections.abc import Mapping
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Literal
 
@@ -52,14 +53,21 @@ from app.task.MaaFW.tools.core.automas_maafw_project_update.updater import (
     _public_package_source,
     detect_maafw_project_shell_hint,
 )
+from app.task.MaaFW.tools.embedded.game_package import (
+    resolve_game_package,
+    resource_paths_for,
+)
 from app.task.MaaFW.tools.embedded.update_credentials import (
     resolve_update_credentials,
+    resolve_update_proxy_url,
 )
 from app.task.MaaFW.tools.embedded.update_progress import (
     MaaFWUpdateProgressTracker,
 )
 from app.utils import get_logger
+from app.utils.io import ConfigCorruptedError
 from app.utils.paths import SOURCE_ROOT
+from app.utils.constants import UTC8
 from app.utils.security import sanitize_log_message
 
 router = APIRouter(prefix="/api/scripts", tags=["脚本管理"])
@@ -231,6 +239,28 @@ def _maafw_script_config(script_id: str) -> RuntimeMaaFWConfig:
 _MAAFW_CDK_QUIET_STATUSES = frozenset({"ok", "absent"})
 _maafw_update_logger = get_logger("MaaFW 项目更新")
 _maafw_env_logger = get_logger("MFW 运行环境")
+# 手动更新拿项目锁的限时：另一次自动更新 / 预检正持有时回 409，不让同步请求
+# 跟着等几分钟。自动路径不限时。
+_MAAFW_MANUAL_UPDATE_LOCK_TIMEOUT_SECONDS = 5.0
+
+
+def _maafw_httpx_proxy(proxy_url: str | None) -> Any:
+    """代理地址字符串 → ``httpx.Proxy``；没配或填错回 None（本次直连）。
+
+    地址里可能有账号密码，报错时也只说类型，不回显地址。
+    """
+
+    if not proxy_url:
+        return None
+    import httpx
+
+    try:
+        return httpx.Proxy(proxy_url)
+    except Exception as exc:  # noqa: BLE001 - 代理填错不该让整次更新 500
+        _maafw_update_logger.warning(
+            f"MFW 项目更新代理地址无效（{type(exc).__name__}），本次直连"
+        )
+        return None
 
 
 def _maafw_update_extra_fields(result: Any) -> dict[str, Any]:
@@ -555,6 +585,8 @@ async def get_maaend_options(options: ScriptDeleteIn = Body(...)) -> MaaEndOptio
                 MaaEndAutoCollectGroup(**item)
                 for item in data.get("autoCollectGroups", [])
             ],
+            originalResolution=data.get("originalResolution"),
+            originalDisplayType=data.get("originalDisplayType"),
             controllers=[ComboBoxItem(**item) for item in data["controllers"]],
             controllerTypes=data["controllerTypes"],
             essenceLocations=[
@@ -1093,6 +1125,47 @@ async def delete_webhook(webhook: WebhookDeleteIn = Body(...)) -> OutBase:
 
 
 @router.post(
+    "/maafw/game-package",
+    tags=["MaaFW"],
+    summary="按所选 resource 推断 MFW 项目的安卓游戏包名",
+    response_model=MaaFWGamePackageOut,
+    status_code=200,
+)
+async def resolve_maafw_game_package(
+    payload: MaaFWGamePackageIn = Body(...),
+) -> MaaFWGamePackageOut:
+    """脚本编辑页读完 interface / 切换 resource 时调用，把推出来的包名直接填进表单。
+
+    只看 resource 的 pipeline，不带用户任务的 pipeline_override（编辑脚本时还没有
+    运行计划）；推不出或多个候选都按原样返回，由前端决定不填。
+    """
+
+    try:
+        root_path = Path(payload.path).resolve()
+        interface = await asyncio.to_thread(load_interface_model_cached, root_path)
+        paths = await asyncio.to_thread(
+            resource_paths_for, root_path, interface, payload.resource
+        )
+        resolution = await asyncio.to_thread(resolve_game_package, paths)
+    except MaaFWInterfaceLoadError as exc:
+        return MaaFWGamePackageOut(code=400, status="error", message=str(exc))
+    except Exception as exc:
+        logger.opt(exception=True).warning(
+            f"resolve_maafw_game_package失败: {type(exc).__name__}: {exc}"
+        )
+        return MaaFWGamePackageOut(
+            code=500, status="error", message=f"推断游戏包名失败: {exc}"
+        )
+    return MaaFWGamePackageOut(
+        data=MaaFWGamePackageData(
+            reason=resolution.reason,
+            package=resolution.package,
+            candidates=list(resolution.candidates),
+        )
+    )
+
+
+@router.post(
     "/maafw/preview",
     tags=["MaaFW"],
     summary="预览 MFW interface",
@@ -1189,7 +1262,14 @@ async def update_maafw_project(
 
     current_version = str(interface.version or "")
     source_config = _maafw_update_source_config(script_config)
-    proxy = Config.proxy
+    # 代理按脚本级解析（留空跟随全局），与运行前自动更新同一口径；地址可能带
+    # user:pw，不进日志，也不走 ``Config.proxy``（它每次访问都记一行地址）。
+    proxy_url = resolve_update_proxy_url(script_config)
+    proxy = _maafw_httpx_proxy(proxy_url)
+    if proxy_url and proxy is None:
+        # 地址填错：下载已按直连，预检的 uv / pip 也整条直连，别把一个
+        # httpx 都不认的串再塞进子进程环境变量。
+        proxy_url = ""
     # CDK 值绝不进日志：只记录「有没有」。
     _maafw_update_logger.info(
         f"MFW 项目更新({payload.action}): script={payload.scriptId} "
@@ -1306,6 +1386,51 @@ async def update_maafw_project(
             ),
         )
 
+    # 手动更新后跑不起来和自动更新是同一种坏：提交前同样真建一次运行环境，
+    # 建不出来就回滚（预检失败也写备忘，但手动路径不读备忘——它就是强制重试）。
+    # 这几个模块会拉起 runtime_pool 与 agent_env，只在真要用时导入。
+    import functools
+    import threading
+
+    from app.task.MaaFW.embedded_manager import MaaFWEmbeddedManager
+    from app.task.MaaFW.tools.core.automas_maafw_project_update import (
+        clear_runtime_precheck,
+    )
+    from app.task.MaaFW.tools.core.automas_maafw_runtime_pool import (
+        MaaFWRuntimePoolService,
+    )
+    from app.task.MaaFW.tools.embedded.precheck import (
+        build_precheck_validator,
+        precheck_agent_root,
+    )
+    from app.task.MaaFW.tools.embedded.runtime_route import (
+        runtime_pool_route_from_service,
+    )
+    from app.task.MaaFW.tools.embedded.update_mirrors import (
+        github_release_mirror_urls,
+    )
+
+    route = await asyncio.to_thread(
+        lambda: runtime_pool_route_from_service(MaaFWRuntimePoolService())
+    )
+    precheck_failure: dict[str, Any] = {}
+    # 不把 report_progress 交给环境准备：它的收尾事件 completed / failed 会被
+    # 进度跟踪器当成更新终态，而事务此时还在 post_validating。
+    post_validate = build_precheck_validator(
+        # 预检里的 uv / pip 子进程也走脚本级代理；用 partial 绑上去，
+        # ``PrepareProjectEnvironment`` 的签名不变。
+        prepare=functools.partial(
+            MaaFWEmbeddedManager._prepare_project_environment_sync,
+            proxy_url=proxy_url,
+        ),
+        cancel_event=threading.Event(),
+        send_log=send_update_log,
+        agent_env_root=precheck_agent_root(route.root),
+        failure=precheck_failure,
+        previous_version=current_version,
+        project_name=getattr(interface, "name", None),
+    )
+
     try:
         # 仓库、tag、资产名等 GitHub 参数不再传入：核心包从 interface.json 与
         # 目录名自行推断。**source_config 必须传**：它带着用户选定的下载源，
@@ -1322,8 +1447,19 @@ async def update_maafw_project(
             proxy=proxy,
             send_log=send_update_log,
             progress=report_progress,
+            post_validate=post_validate,
+            # 同步 HTTP 请求不该跟着另一次自动更新 / 预检等几分钟。
+            project_lock_timeout=_MAAFW_MANUAL_UPDATE_LOCK_TIMEOUT_SECONDS,
+            # 手动更新与运行前自动更新用同一套加速镜像，否则「手动快、自动慢」。
+            github_mirror_urls=github_release_mirror_urls,
         )
     except MaaFWProjectUpdateError as exc:
+        if exc.project_lock_busy:
+            return MaaFWProjectUpdateOut(
+                code=409,
+                status="error",
+                message="MFW 项目正在自动更新/预检中，请稍后再试",
+            )
         return MaaFWProjectUpdateOut(
             code=400, status="error", message=f"MFW 项目更新失败: {exc}"
         )
@@ -1334,6 +1470,13 @@ async def update_maafw_project(
         return MaaFWProjectUpdateOut(
             code=500, status="error", message=f"MFW 项目更新失败: {exc}"
         )
+
+    if bool(getattr(result, "updated", False)):
+        # 提交成功即预检建出了环境，上次运行前更新留下的备忘（若有）作废。
+        try:
+            await asyncio.to_thread(clear_runtime_precheck, root_path)
+        except Exception as exc:  # noqa: BLE001
+            _maafw_update_logger.warning(f"清理运行环境预检备忘失败: {exc}")
 
     extra = _maafw_update_extra_fields(result)
     message = str(getattr(result, "message", "") or "") or "MFW 项目更新完成"
@@ -1436,6 +1579,9 @@ async def prepare_maafw_agent_env(
     )
     from app.task.MaaFW.tools.core.automas_maafw_runtime_pool import (
         MaaFWRuntimePoolService,
+    )
+    from app.task.MaaFW.tools.core.automas_maafw_runtime_pool.host_environment import (
+        subprocess_proxy_scope,
     )
     from app.task.MaaFW.tools.embedded.env_cache import (
         has_prepared_environment,
@@ -1554,19 +1700,34 @@ async def prepare_maafw_agent_env(
         route = await asyncio.to_thread(
             lambda: runtime_pool_route_from_service(MaaFWRuntimePoolService())
         )
+        # 这个端点按请求里的 path 定位项目、不经脚本配置（见 MaaFW/AGENTS.md），
+        # 所以代理只在 scriptId 能解析到一份 MFW 脚本配置时才按脚本级取；
+        # 编辑页新建项目还没有脚本时落回全局。
+        proxy_url = Config.proxy_url
+        if progress_id:
+            try:
+                proxy_url = resolve_update_proxy_url(_maafw_script_config(progress_id))
+            except (KeyError, ValueError, TypeError):
+                pass
+
+        def _prepare_with_proxy() -> dict[str, Any]:
+            # 代理作用域按线程登记，必须在 to_thread 的目标函数体内进入，
+            # uv / pip 子进程环境才带上用户在 MAS 里填的代理。
+            with subprocess_proxy_scope(proxy_url):
+                return MaaFWRunnerService().prepare_project_environment(
+                    root_path,
+                    interface,
+                    runtime_pool_root=route.root,
+                    runtime_pool_id=route.pool_id,
+                    # worker 子进程跑在隔离 venv 里，代码要靠 PYTHONPATH 找到本仓；
+                    # 受监督时 cwd 是 <app-root>，源码在 <app-root>/repo/，只能用源码根
+                    import_paths=[SOURCE_ROOT],
+                    send_log=append_log,
+                    progress=publish_progress,
+                )
+
         try:
-            result = await asyncio.to_thread(
-                MaaFWRunnerService().prepare_project_environment,
-                root_path,
-                interface,
-                runtime_pool_root=route.root,
-                runtime_pool_id=route.pool_id,
-                # worker 子进程跑在隔离 venv 里，代码要靠 PYTHONPATH 找到本仓；
-                # 受监督时 cwd 是 <app-root>，源码在 <app-root>/repo/，只能用源码根
-                import_paths=[SOURCE_ROOT],
-                send_log=append_log,
-                progress=publish_progress,
-            )
+            result = await asyncio.to_thread(_prepare_with_proxy)
         except Exception as exc:
             # 失败原因此前只活在响应体与 WS 事件里，两边都不落盘：用户报障时
             # app.log 里一行都没有，只能对着界面截图猜。准备过程的逐行日志
@@ -1815,6 +1976,88 @@ async def get_bettergi_custom_groups_api(
             message=f"{type(e).__name__}: {str(e)}",
             data=[],
         )
+
+
+@router.get(
+    "/baah/config-names",
+    tags=["BAAH"],
+    summary="获取 BAAH 配置文件名列表",
+    response_model=ComboBoxOut,
+    status_code=200,
+)
+async def get_baah_config_names_api(scriptId: str) -> ComboBoxOut:
+    """返回 BAAH 配置目录下已有的配置文件名（不含 ``.json`` 后缀）。"""
+
+    try:
+        data = [
+            ComboBoxItem(label=name, value=name)
+            for name in Config.get_baah_config_names(scriptId)
+        ]
+        return ComboBoxOut(
+            code=200,
+            status="success",
+            message=f"共 {len(data)} 份 BAAH 配置",
+            data=data,
+        )
+    except Exception as e:
+        logger.opt(exception=True).warning(
+            f"get_baah_config_names_api失败: {type(e).__name__}: {e}"
+        )
+        return ComboBoxOut(
+            code=400
+            if isinstance(e, (ValueError, KeyError, TypeError, RuntimeError))
+            else 500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+            data=[],
+        )
+
+
+def _format_beijing_time(timestamp: float) -> str:
+    """Unix 秒 → 「YYYY-MM-DD HH:MM」（东八区）。"""
+
+    return datetime.fromtimestamp(timestamp, tz=UTC8).strftime("%Y-%m-%d %H:%M")
+
+
+@router.get(
+    "/baah/activity-status",
+    tags=["BAAH"],
+    summary="获取碧蓝档案活动状态",
+    response_model=BlueArchiveActivityStatusOut,
+    status_code=200,
+)
+async def get_baah_activity_status_api(
+    lineType: Literal["JP", "Globle", "CN"] = "CN",
+) -> BlueArchiveActivityStatusOut:
+    """返回指定服正在进行的活动，没有则返回下一个未开始的活动。"""
+
+    from app.tools.bluearchive_activity import resolve_activity_state
+
+    state = await resolve_activity_state(lineType)
+    if state is None:
+        ## 取不到排期不算错误，如实说明即可
+        return BlueArchiveActivityStatusOut(
+            message="未取到碧蓝档案活动排期，请稍后重试",
+        )
+
+    running, upcoming = state
+    if running is not None:
+        return BlueArchiveActivityStatusOut(
+            Running=True,
+            Name=running.name,
+            StartTime=_format_beijing_time(running.start_time),
+            EndTime=_format_beijing_time(running.end_time),
+            message=f"进行中: {running.name}",
+        )
+
+    if upcoming is not None:
+        return BlueArchiveActivityStatusOut(
+            NextName=upcoming.name,
+            NextStartTime=_format_beijing_time(upcoming.start_time),
+            message=f"下一个活动: {upcoming.name}",
+        )
+
+    return BlueArchiveActivityStatusOut(message="没有进行中或即将开始的活动")
 
 
 @router.get(
@@ -2644,7 +2887,9 @@ async def save_bettergi_script_group_api(
     """把右栏编辑后的配置组 json（项目顺序 + 各项目 jsScriptSettingsObject）写回
     该用户的 per-user 副本（``data/{script}/{user}/ScriptGroup/{name}.json``）。
 
-    不触碰 BetterGI 全局 ``User/ScriptGroup/{name}.json`` 同名实配。
+    「路径」类引用（名字含 ``/``）不能作文件名，落盘到 ``per_user_copy_name`` 的确定性别名
+    （右栏把路径项加成多项目配置组后需要载体）。不触碰 BetterGI 全局
+    ``User/ScriptGroup/{name}.json`` 同名实配。
     """
 
     try:
@@ -2660,12 +2905,11 @@ async def save_bettergi_script_group_api(
             root, req.scriptId, req.userId, req.name, req.data
         )
         if out is None:
-            # 路径类引用（名字含 /）由路径文件驱动、没有 per-user 副本：按成功返回，
-            # 不把「配置组名非法」弹给用户（2026-09-16 实机）
+            # 名为空等无可写内容的情况：按成功返回，不把「配置组名非法」弹给用户
             return OutBase(
                 code=200,
                 status="success",
-                message=f"{req.name} 是路径类引用，内容由路径文件决定，无需保存副本",
+                message=f"{req.name} 无需保存副本",
             )
         return OutBase(
             code=200,
@@ -2901,7 +3145,7 @@ async def set_zzzod_instance_run_mode_api(
 
 @router.post(
     "/zzzod/instances/delete",
-    tags=["ZZZ-OD"],
+    tags=["Delete"],
     summary="删除一条龙实例（直控实例管理；受 MAS 绑定槽保护）",
     response_model=ZzzOdInstancesOut,
     status_code=200,
@@ -2924,6 +3168,182 @@ async def delete_zzzod_instance_api(
             status="error",
             message=f"{type(e).__name__}: {str(e)}",
             data=[],
+        )
+
+
+@router.get(
+    "/zzzod/slots",
+    tags=["ZZZ-OD"],
+    summary="获取实例槽总览（原生实例 / MAS 绑定槽 / 无主残留）",
+    response_model=ZzzOdSlotsOut,
+    status_code=200,
+)
+async def get_zzzod_slots_api(scriptId: str) -> ZzzOdSlotsOut:
+    """槽目录是 MAS 分配在一条龙安装目录里的，注册表与 GUI 都看不到。
+
+    这份对照表用于诊断「槽目录数与用户数对不上」（绑定但没跑过的槽没有目录）
+    与定位无主残留。
+    """
+
+    try:
+        # 槽总览要 rglob 统计各槽目录占用，是阻塞 IO，放线程里跑
+        data = [
+            ZzzOdSlotOut(**item)
+            for item in await asyncio.to_thread(Config.get_zzzod_slots, scriptId)
+        ]
+        return ZzzOdSlotsOut(
+            code=200,
+            status="success",
+            message=f"共 {len(data)} 个实例槽",
+            data=data,
+        )
+    except Exception as e:
+        logger.opt(exception=True).warning(
+            f"get_zzzod_slots_api失败: {type(e).__name__}: {e}"
+        )
+        return ZzzOdSlotsOut(
+            code=400 if isinstance(e, (ValueError, KeyError, TypeError)) else 500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+            data=[],
+        )
+
+
+@router.post(
+    "/zzzod/slots/clean",
+    tags=["Delete"],
+    summary="清理无主实例槽（先归档进回收池再删目录）",
+    response_model=ZzzOdSlotCleanOut,
+    status_code=200,
+)
+async def clean_zzzod_slots_api(
+    body: ZzzOdSlotCleanIn = Body(...),
+) -> ZzzOdSlotCleanOut:
+    """原生实例与被任一 ZzzOd 用户绑定的槽一律不动，返回实际回收的槽号。"""
+
+    try:
+        # 清理要整目录拷贝 + 删目录，是阻塞 IO，放线程里跑
+        removed = await asyncio.to_thread(Config.clean_zzzod_slots, body.scriptId)
+        return ZzzOdSlotCleanOut(
+            code=200,
+            status="success",
+            message=f"已回收 {len(removed)} 个实例槽",
+            data=removed,
+        )
+    except Exception as e:
+        logger.opt(exception=True).warning(
+            f"clean_zzzod_slots_api失败: {type(e).__name__}: {e}"
+        )
+        return ZzzOdSlotCleanOut(
+            code=400 if isinstance(e, (ValueError, KeyError, TypeError)) else 500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+            data=[],
+        )
+
+
+@router.get(
+    "/zzzod/recycle",
+    tags=["ZZZ-OD"],
+    summary="获取实例槽回收池（被删用户/脚本留下的槽内容与备份池快照）",
+    response_model=ZzzOdRecycleOut,
+    status_code=200,
+)
+async def get_zzzod_recycle_api(scriptId: str) -> ZzzOdRecycleOut:
+    """槽目录按安装根指纹归池，跨脚本共享；只有 ``kind=slot`` 的条目可恢复。"""
+
+    try:
+        data = [
+            ZzzOdRecycleEntryOut(**item)
+            for item in await asyncio.to_thread(Config.get_zzzod_recycle, scriptId)
+        ]
+        return ZzzOdRecycleOut(
+            code=200,
+            status="success",
+            message=f"共 {len(data)} 条回收记录",
+            data=data,
+        )
+    except Exception as e:
+        logger.opt(exception=True).warning(
+            f"get_zzzod_recycle_api失败: {type(e).__name__}: {e}"
+        )
+        return ZzzOdRecycleOut(
+            code=400 if isinstance(e, (ValueError, KeyError, TypeError)) else 500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+            data=[],
+        )
+
+
+@router.post(
+    "/zzzod/recycle/clear",
+    tags=["Delete"],
+    summary="清空实例槽回收池（删除后不可找回，不碰配置恢复池）",
+    response_model=ZzzOdRecycleClearOut,
+    status_code=200,
+)
+async def clear_zzzod_recycle_api(
+    body: ZzzOdRecycleClearIn = Body(...),
+) -> ZzzOdRecycleClearOut:
+    """只删 recycle 池；onedragon 原生池与 mas 配置恢复池不受影响。"""
+
+    try:
+        # 整棵目录删除是阻塞 IO，放线程里跑
+        count = await asyncio.to_thread(Config.clear_zzzod_recycle, body.scriptId)
+        return ZzzOdRecycleClearOut(
+            code=200,
+            status="success",
+            message=f"已清空回收池（{count} 条）",
+            data=count,
+        )
+    except Exception as e:
+        logger.opt(exception=True).warning(
+            f"clear_zzzod_recycle_api失败: {type(e).__name__}: {e}"
+        )
+        return ZzzOdRecycleClearOut(
+            code=400 if isinstance(e, (ValueError, KeyError, TypeError)) else 500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+            data=0,
+        )
+
+
+@router.post(
+    "/zzzod/recycle/restore",
+    tags=["Delete"],
+    summary="把回收池里的槽快照恢复给某个 MAS 用户（现有用户或新建用户，先存底）",
+    response_model=OutBase,
+    status_code=200,
+)
+async def restore_zzzod_recycle_api(
+    body: ZzzOdRecycleRestoreIn = Body(...),
+) -> OutBase:
+    """恢复的落点是**用户的绑定槽**（``targetUser`` 指定现有用户，或
+    ``newUserName`` 新建一个用户）——只物化内容而不建立绑定的恢复没有出口，
+    MAS 下次运行不会认领它。目标用户已有绑定槽时覆盖其内容，恢复前先存底。
+    """
+
+    try:
+        slot, user_name = await Config.restore_zzzod_recycle(
+            body.scriptId,
+            body.slot,
+            body.ts,
+            target_user=body.targetUser,
+            new_user_name=body.newUserName,
+        )
+        return OutBase(
+            code=200,
+            status="success",
+            message=f"已恢复到用户「{user_name}」的槽 {slot:02d}（快照 {body.ts}）",
+        )
+    except Exception as e:
+        logger.opt(exception=True).warning(
+            f"restore_zzzod_recycle_api失败: {type(e).__name__}: {e}"
+        )
+        return OutBase(
+            code=400 if isinstance(e, (ValueError, KeyError, TypeError)) else 500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
         )
 
 
@@ -3193,6 +3613,7 @@ async def get_zzzod_native_config_api(
             tasks=[ZzzOdNativeTaskOut(**t) for t in data["tasks"]],
             instanceRun=data["instanceRun"],
             launchArgs=ZzzOdNativeLaunchArgs(**data["launchArgs"]),
+            afterDone=data["afterDone"],
         )
     except Exception as e:
         logger.opt(exception=True).warning(
@@ -3207,6 +3628,7 @@ async def get_zzzod_native_config_api(
             account=[],
             tasks=[],
             instanceRun="仅运行当前",
+            afterDone="无",
         )
 
 
@@ -3220,7 +3642,7 @@ async def get_zzzod_native_config_api(
 async def save_zzzod_native_config_api(
     script: ZzzOdNativeConfigIn = Body(...),
 ) -> ZzzOdNativeConfigOut:
-    """白名单过滤后写回所选实例 game_account.yml、_group.yml 与 instance_run，随后回读最新数据。"""
+    """白名单过滤后写回所选实例 game_account.yml、_group.yml、instance_run 与 after_done，随后回读最新数据。"""
 
     try:
         await Config.save_zzzod_native_config(
@@ -3232,6 +3654,7 @@ async def save_zzzod_native_config_api(
             else None,
             script.instanceRun,
             script.launchArgs.model_dump() if script.launchArgs is not None else None,
+            script.afterDone,
         )
         data = await Config.get_zzzod_native_config(script.scriptId, script.instanceIdx)
         return ZzzOdNativeConfigOut(
@@ -3243,6 +3666,7 @@ async def save_zzzod_native_config_api(
             account=[ZzzOdNativeAccountField(**f) for f in data["account"]],
             tasks=[ZzzOdNativeTaskOut(**t) for t in data["tasks"]],
             instanceRun=data["instanceRun"],
+            afterDone=data["afterDone"],
             launchArgs=ZzzOdNativeLaunchArgs(**data["launchArgs"]),
         )
     except Exception as e:
@@ -3258,6 +3682,7 @@ async def save_zzzod_native_config_api(
             account=[],
             tasks=[],
             instanceRun="仅运行当前",
+            afterDone=script.afterDone or "无",
         )
 
 
@@ -3831,6 +4256,16 @@ async def ensure_config_backup_api(
             message="",
             **data,
         )
+    except ConfigCorruptedError as e:
+        # 源配置损坏：message 用原文（含损坏位置）直达用户，前端编辑页会透传
+        logger.opt(exception=True).warning(f"配置按需归档失败（源配置损坏）: {e}")
+        return ConfigBackupEnsureOut(
+            code=400,
+            status="error",
+            message=str(e),
+            created=False,
+            time="",
+        )
     except Exception as e:
         logger.opt(exception=True).warning(f"配置按需归档失败: {e}")
         return ConfigBackupEnsureOut(
@@ -3863,12 +4298,22 @@ async def restore_config_backup_api(
             script.userId,
             script.time,
             target=script.target,
+            force=script.force,
         )
         return ConfigBackupRestoreOut(
             code=200,
             status="success",
             message=f"已恢复备份 {script.time}",
             target=data["target"],
+        )
+    except ConfigCorruptedError as e:
+        # 源配置损坏：带损坏位置返回 409，前端弹二次确认后携带 force 重试
+        logger.opt(exception=True).warning(f"配置备份恢复被拦截（源配置损坏）: {e}")
+        return ConfigBackupRestoreOut(
+            code=409,
+            status="error",
+            message=str(e),
+            target=script.target,
         )
     except Exception as e:
         logger.opt(exception=True).warning(f"配置备份恢复失败: {e}")

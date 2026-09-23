@@ -50,6 +50,7 @@ from .backup_archive import (
     mas_backup_root,
     mas_config_dir,
     native_backup_root,
+    owner_for_mode,
     read_overlay_sidecar,
     read_overlay_values,
     restore_mas_backup,
@@ -94,9 +95,7 @@ def _mas_owner(ctx: RestoreContext) -> str | None:
         mode = _okww_config_mode(ctx.script_config.UserData[uid].get("Info", "Mode"))
     except (ValueError, KeyError, TypeError):
         return None
-    if mode == "直控":
-        return None
-    return ctx.user_id if mode == "用户" else "Default"
+    return owner_for_mode(mode, ctx.user_id)
 
 
 def _native_config_path(ctx: RestoreContext) -> Path | None:

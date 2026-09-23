@@ -23,6 +23,7 @@
         ghost
         size="large"
         :loading="srcConfigLoading"
+        :disabled="configLocked"
         @click="$emit('handleSRCConfig')"
       >
         <template #icon>
@@ -66,6 +67,7 @@ defineProps<{
   srcConfigLoading: boolean
   showSrcConfigMask: boolean
   loading: boolean
+  configLocked: boolean
 }>()
 
 defineEmits<{
