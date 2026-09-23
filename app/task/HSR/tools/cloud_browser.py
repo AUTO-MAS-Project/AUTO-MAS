@@ -60,6 +60,8 @@ STOP_TIMEOUT_SECONDS = 3.0
 PAGE_TIMEOUT_SECONDS = 30.0
 
 PROFILE_DIRECTORY = "Default"
+MAS_PROFILE_DIRNAME = "cloud-profile"
+"""MAS 托管浏览器 ``--user-data-dir`` 的最后一级目录名；清理判据靠它区分三月七自建的。"""
 INITIALIZED_MARKER = "mas-cloud-initialized"
 """profile 根目录下的标记文件：CDP 首次初始化成功后写入，缺失则下次启动重做。"""
 
@@ -260,20 +262,14 @@ def is_managed_cloud_browser_cmdline(
     return target == root or target.startswith(root.rstrip(os.sep) + os.sep)
 
 
-def m7a_own_profile_root(m7a_root: Path | str) -> Path:
-    """三月七自建浏览器的持久化 profile 根（``cloud.py`` 里写死的位置）。"""
-
-    return Path(m7a_root) / "3rdparty" / "WebBrowser" / "UserProfile"
-
-
-def is_m7a_self_started_browser_cmdline(
-    cmdline: Iterable[str] | None, m7a_root: Path | str
-) -> bool:
+def is_m7a_self_started_browser_cmdline(cmdline: Iterable[str] | None) -> bool:
     """命令行是否属于**三月七自己新建**的云浏览器。
 
-    带三月七标记，且 ``--user-data-dir`` 落在三月七的 ``UserProfile`` 下（持久化
-    开着时），或完全没有 ``--user-data-dir``（非持久化时）。MAS 托管的浏览器恒传
-    自己的 profile，不会命中；不带标记的浏览器一律不命中。
+    判据：带三月七标记，且 ``--user-data-dir`` 缺失或其最后一级目录名不是
+    ``cloud-profile``。MAS 托管的浏览器（任一脚本、任一 MAS 实例）profile 恒为
+    ``…/data/<script_id>/<user_id>/cloud-profile``，不会命中；三月七持久化的
+    ``UserProfile/*``、chromedriver 补的 ``%TEMP%/scoped_dir*`` 以及其他任何形态
+    都命中。不带标记的浏览器一律不命中。目录名比较忽略大小写与尾部分隔符。
     """
 
     if not cmdline:
@@ -281,12 +277,11 @@ def is_m7a_self_started_browser_cmdline(
     args = list(cmdline)
     if M7A_BROWSER_TAG not in args:
         return False
-    user_data_dir = _user_data_dir_of(args)
+    user_data_dir = (_user_data_dir_of(args) or "").strip().strip('"').strip()
     if not user_data_dir:
         return True
-    root = _normalize_path(m7a_own_profile_root(m7a_root))
-    target = _normalize_path(user_data_dir)
-    return target == root or target.startswith(root.rstrip(os.sep) + os.sep)
+    name = os.path.basename(os.path.normpath(user_data_dir.rstrip("\\/")))
+    return name.casefold() != MAS_PROFILE_DIRNAME.casefold()
 
 
 def _find_cloud_browsers(match: Callable[[list[str]], bool]) -> list[psutil.Process]:
@@ -311,12 +306,10 @@ def find_managed_cloud_browsers(
     )
 
 
-def find_m7a_self_started_browsers(m7a_root: Path | str) -> list[psutil.Process]:
+def find_m7a_self_started_browsers() -> list[psutil.Process]:
     """列出三月七自己新建的云浏览器（见 :func:`is_m7a_self_started_browser_cmdline`）。"""
 
-    return _find_cloud_browsers(
-        lambda cmdline: is_m7a_self_started_browser_cmdline(cmdline, m7a_root)
-    )
+    return _find_cloud_browsers(is_m7a_self_started_browser_cmdline)
 
 
 def _terminate_tree(
@@ -360,14 +353,14 @@ async def cleanup_stale_cloud_browsers(
     return count
 
 
-async def cleanup_m7a_self_started_browsers(m7a_root: Path | str) -> int:
+async def cleanup_m7a_self_started_browsers() -> int:
     """关闭三月七自己新建的云浏览器（它的启动重试找不到 MAS 浏览器时会自建）。
 
-    只动带标记、且 profile 属于三月七自己或没有 profile 的；返回关闭的个数。
+    只动带标记、且 profile 不是 MAS 的 ``cloud-profile`` 的；返回关闭的个数。
     """
 
     def _cleanup() -> int:
-        procs = find_m7a_self_started_browsers(m7a_root)
+        procs = find_m7a_self_started_browsers()
         for proc in procs:
             _terminate_tree(proc)
         return len(procs)

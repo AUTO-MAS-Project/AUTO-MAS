@@ -30,6 +30,7 @@ from app.utils import ProcessInfo, get_logger, is_process_running
 
 from .cloud_browser import (
     DEFAULT_DEBUG_PORT,
+    MAS_PROFILE_DIRNAME,
     START_FAILED_MESSAGE,
     CloudBrowser,
     CloudBrowserError,
@@ -61,7 +62,7 @@ HSR_SRA_WINDOW_RECOVERY_MIN_INTERVAL_SECONDS = 5
 HSR_GAME_PROCESS_NAME = "StarRail.exe"
 
 HSRGamePlatform = Literal["Client", "Cloud"]
-HSR_CLOUD_PROFILE_DIRNAME = "cloud-profile"
+HSR_CLOUD_PROFILE_DIRNAME = MAS_PROFILE_DIRNAME
 # 云浏览器连续起这么多次都失败才中止：三月七启动失败路径会按标记杀掉浏览器，
 # 死一次重起一次是常态，连着两次起不来才说明真有问题。
 HSR_CLOUD_BROWSER_START_ATTEMPTS = 2
@@ -227,12 +228,12 @@ async def close_cloud_browser(
     append_log: Callable[[str], None],
     *,
     script_id: str | None = None,
-    m7a_root: str | None = None,
+    include_m7a_started: bool = False,
 ) -> None:
     """关闭当前云浏览器，再按命令行标记兜底清理。
 
-    给了 ``script_id`` 时清理本脚本 profile 下的残留；给了 ``m7a_root`` 时再清掉
-    三月七自己新建的浏览器（见 :func:`cleanup_cloud_leftovers`）。
+    给了 ``script_id`` 时清理本脚本 profile 下的残留；``include_m7a_started`` 时再
+    清掉三月七自己新建的浏览器（见 :func:`cleanup_cloud_leftovers`）。
     """
 
     browser: CloudBrowser | None = runtime.cloud_browser
@@ -244,20 +245,23 @@ async def close_cloud_browser(
         except Exception as e:  # noqa: BLE001
             logger.warning(f"关闭云浏览器失败：{e}")
             append_log(f"关闭云浏览器失败：{e}")
-    await cleanup_cloud_leftovers(append_log, script_id=script_id, m7a_root=m7a_root)
+    await cleanup_cloud_leftovers(
+        append_log, script_id=script_id, include_m7a_started=include_m7a_started
+    )
 
 
 async def cleanup_cloud_leftovers(
     append_log: Callable[[str], None],
     *,
     script_id: str | None = None,
-    m7a_root: str | None = None,
+    include_m7a_started: bool = False,
 ) -> None:
     """按命令行标记清理残留云浏览器；绝不碰不带三月七标记的浏览器。
 
     - 本脚本 MAS profile（``data/{script_id}``）下的：上一轮崩溃等留下的；
-    - 三月七自己新建的（profile 在它的 ``UserProfile`` 下或没有 profile）：它的
-      启动重试会先杀掉所有带标记的浏览器，再找不到 MAS 的就自建一个。
+    - ``include_m7a_started`` 时，三月七自己新建的（profile 缺失或最后一级不是
+      ``cloud-profile``）：它的启动重试会先杀掉所有带标记的浏览器，再找不到 MAS
+      的就自建一个。
     """
 
     if script_id:
@@ -271,9 +275,9 @@ async def cleanup_cloud_leftovers(
         else:
             if count:
                 append_log(f"已清理 {count} 个残留的云浏览器")
-    if m7a_root:
+    if include_m7a_started:
         try:
-            count = await cleanup_m7a_self_started_browsers(m7a_root)
+            count = await cleanup_m7a_self_started_browsers()
         except Exception as e:  # noqa: BLE001
             logger.warning(f"清理三月七自行启动的浏览器失败：{e}")
             append_log(f"清理三月七自行启动的浏览器失败：{e}")
@@ -496,7 +500,7 @@ async def close_game_if_needed(
             runtime,
             append_log,
             script_id=script_id,
-            m7a_root=_script_path(script_config, "M7A"),
+            include_m7a_started=True,
         )
         runtime.game_started_by_mas = False
         return
@@ -574,7 +578,7 @@ class HSRAccountSwitcher:
         # 兜底：上一轮崩溃留下的本脚本云浏览器、三月七启动重试时自建的浏览器
         # 一律先关，保证起来之后只有一个带三月七标记的浏览器、且是 MAS 的。
         await cleanup_cloud_leftovers(
-            self._append_log, script_id=self.script_id, m7a_root=m7a_root
+            self._append_log, script_id=self.script_id, include_m7a_started=True
         )
         if browser is None:
             browser = CloudBrowser(

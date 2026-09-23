@@ -184,7 +184,7 @@ async def run_cloud_login(
                 append_log(f"还原三月七 config.yaml 失败：{e}")
         # 正常关闭让 cookie 落盘；下次运行直接免登录。
         await close_cloud_browser(
-            runtime, append_log, script_id=script_id, m7a_root=str(m7a_root)
+            runtime, append_log, script_id=script_id, include_m7a_started=True
         )
         lease.release()
 
