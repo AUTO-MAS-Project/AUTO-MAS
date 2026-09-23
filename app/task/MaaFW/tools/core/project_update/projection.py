@@ -1024,14 +1024,19 @@ def build_projection_rules(
                 raise ProjectionError("ProjectInterface 的 import 必须是字符串数组")
             for raw_import in raw_imports:
                 imported = declare(
-                    raw_import, "ProjectInterface import", must_exist=True
+                    raw_import, "ProjectInterface import", must_exist=False
                 )
                 if imported is None:
                     continue
                 if strict and not view.is_file(imported):
-                    raise ProjectionError(
-                        f"ProjectInterface import 不是文件：{raw_import}"
+                    # 发行包漏打包了 import 文件（MPA v3.10.46、MSBA v3.7.41）：与加载器
+                    # 同一口径，跳过这一个文件继续导入，其中声明的任务 / 选项不可用。
+                    warnings.append(
+                        f"ProjectInterface import 声明的文件不存在：{raw_import}；"
+                        "发行包漏打包了这个文件，其中声明的任务与选项在副本里不可用，"
+                        "其余照常导入"
                     )
+                    continue
                 if view.is_file(imported):
                     visit_interface(imported, imported.as_posix())
                 else:

@@ -79,6 +79,8 @@ class _MergeState:
         self.group_names: set[str] = set()
         self.global_option_names: set[str] = set()
         self.pretask_names: set[str] = set()
+        # 声明了却不存在的 import 文件（发行包漏打包）：跳过继续，其余引用降级为告警。
+        self.missing_imports: list[str] = []
 
 
 class _LoadContext:
@@ -216,14 +218,11 @@ def _resolve_interface_path(base_dir: Path) -> Path:
 
 
 def _resolve_import_path(import_path: str, base_dir: Path) -> Path:
-    resolved_path = _resolve_project_relative_path(
+    return _resolve_project_relative_path(
         base_dir,
         import_path,
         field_name="import",
     )
-    if not resolved_path.exists() or not resolved_path.is_file():
-        raise MaaFWInterfaceLoadError(f"import 文件不存在: {import_path}")
-    return resolved_path
 
 
 def _validate_importable_fragment(data: dict[str, Any], source_path: Path) -> None:
@@ -516,6 +515,20 @@ def _merge_imports_into_target(
 ) -> None:
     for import_path in import_paths:
         resolved_path = _resolve_import_path(import_path, base_dir)
+        if not resolved_path.is_file():
+            # 发行包漏打包了 import 文件（MPA v3.10.46 的 options/global_option.json、
+            # MSBA v3.7.41 的 tasks/选项_选择章节.json）：官方 MaaPiCli 整份拒绝，这里跳过
+            # 这一个文件继续——其中声明的任务 / 选项不可用，其余照常。文件记进依赖，
+            # 以后补上了缓存会失效。
+            if context is not None:
+                context.dependency_paths.add(resolved_path)
+            state.missing_imports.append(import_path)
+            logger.warning(
+                "MaaFW ProjectInterface import 文件不存在（发行包里没有这个文件）：%s；"
+                "其中声明的任务与选项不可用，其余照常加载",
+                import_path,
+            )
+            continue
         if resolved_path in stack:
             chain = " -> ".join(str(item) for item in [*stack, resolved_path])
             raise MaaFWInterfaceLoadError(f"检测到循环导入: {chain}")
@@ -790,6 +803,69 @@ def _validate_task_context_constraints(interface_model: MaaFWInterface) -> None:
                 raise MaaFWInterfaceLoadError(
                     f"任务 {task_ref} 引用了不存在的 resource: {resource_name}"
                 )
+
+
+def _prune_references_lost_with_imports(
+    interface_model: MaaFWInterface, missing_imports: list[str]
+) -> None:
+    """缺了 import 文件时，指向没定义的选项 / 任务的引用降级为告警并去掉。
+
+    缺的文件里声明了什么无从得知，只能从悬空的引用反推：哪个任务（或全局、资源、
+    控制器、设置、case）引用的选项没有定义，哪个预设引用的任务不存在。没缺文件时
+    悬空引用照旧是错误（由后面的校验报），这里不放宽。
+    """
+
+    if not missing_imports:
+        return
+    missing_text = "、".join(missing_imports)
+    option_names = set(interface_model.option)
+
+    def keep_defined(names: list[str] | None, location: str) -> list[str] | None:
+        if not names:
+            return names
+        lost = [name for name in names if name not in option_names]
+        for name in lost:
+            logger.warning(
+                "MaaFW ProjectInterface %s 引用的选项 %s 没有定义（多半在缺失的 import "
+                "文件 %s 里），该选项不可用",
+                location,
+                name,
+                missing_text,
+            )
+        return [name for name in names if name in option_names] if lost else names
+
+    interface_model.global_option = keep_defined(
+        interface_model.global_option, "global_option"
+    )
+    for setting in interface_model.setting or []:
+        setting.option = keep_defined(setting.option, f"setting {setting.name}")
+    for resource in interface_model.resource:
+        resource.option = keep_defined(resource.option, f"resource {resource.name}")
+    for controller in interface_model.controller:
+        controller.option = keep_defined(
+            controller.option, f"controller {controller.name}"
+        )
+    for task in interface_model.task:
+        task.option = keep_defined(task.option, f"任务 {task.name}")
+    for option_name, option in interface_model.option.items():
+        for case in option.cases or []:
+            case.option = keep_defined(
+                case.option, f"选项 {option_name} 的 case {case.name}"
+            )
+
+    task_names = {task.name for task in interface_model.task}
+    for preset in interface_model.preset:
+        for preset_task in preset.task or []:
+            # __MXU_RANDOM_START__ 这类 MXU 客户端伪任务本来就不是 interface 任务
+            if preset_task.name in task_names or preset_task.name.startswith("__MXU_"):
+                continue
+            logger.warning(
+                "MaaFW ProjectInterface preset %s 引用的任务 %s 不存在（多半在缺失的 "
+                "import 文件 %s 里），应用该预设时跳过它",
+                preset.name,
+                preset_task.name,
+                missing_text,
+            )
 
 
 def _validate_option_references(interface_model: MaaFWInterface) -> None:
@@ -1090,6 +1166,7 @@ def _load_interface_model_uncollected(
     except Exception as exc:
         raise MaaFWInterfaceLoadError(f"校验 interface 配置失败: {exc}") from exc
 
+    _prune_references_lost_with_imports(interface_model, merge_state.missing_imports)
     _sanitize_pretasks(interface_model)
     _warn_unsupported_option_types(interface_model)
     _sanitize_v210_option_fields(interface_model)
