@@ -778,6 +778,14 @@ def register(
                 ):
                     current["origin"] = ORIGIN_PACKAGE
                     changed = True
+            if (
+                str(source.get("kind") or "") == "update"
+                and str((existing.get("source") or {}).get("kind") or "") != "update"
+            ):
+                # 同一份内容这次有更新器清单背书：来源升成 update（下次更新可要差量包）。
+                # 与 origin 合并同一口径，结果不取决于谁先登记。
+                merged["source"] = dict(source)
+                changed = True
             if changed:
                 merged["files"] = merged_files
                 write_json_atomic(manifest_file, merged)
@@ -829,6 +837,16 @@ def register(
                 "source": dict(source),
                 "by": by,
                 "at": _now_text(),
+            }
+        elif (
+            isinstance(current_latest, Mapping)
+            and str(current_latest.get("id") or "") == payload_id
+            and str(manifest.get("source", {}).get("kind") or "") == "update"
+        ):
+            # 同一份内容的来源刚升成 update：latest 记的来源跟着清单走。
+            data["latest"][channel] = {
+                **dict(current_latest),
+                "source": dict(manifest["source"]),
             }
         write_lineage(root, lineage, data)
         latest_id = str(data["latest"][channel]["id"])

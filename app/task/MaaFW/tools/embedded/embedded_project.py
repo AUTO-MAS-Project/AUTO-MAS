@@ -1881,10 +1881,13 @@ def adopt_view(
             staging,
             lineage=lineage,
             channel=channel or DEFAULT_CHANNEL,
-            source={
-                "kind": "update" if recorded is not None else "import",
-                "ref": str(source or ""),
-            },
+            # 有更新器清单背书的记 update（ref 留空：它不是一个下载源，别让「来源」显示成
+            # 本地路径）；其余记 import，ref 是来源目录（视图丢了时据此反查谱系）。
+            source=(
+                {"kind": "update", "ref": ""}
+                if recorded is not None
+                else {"kind": "import", "ref": str(source or "")}
+            ),
             by="迁移",
             version=version,
             lineage_info=info,
