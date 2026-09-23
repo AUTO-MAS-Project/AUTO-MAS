@@ -163,10 +163,14 @@ def build_preferences() -> dict[str, Any]:
     """新 profile 的 ``Default/Preferences``，等价三月七的 ``PERFERENCES``。
 
     给云游戏站点放行 keyboard_lock 与剪贴板权限，兑换码粘贴依赖后者。
+    另关掉拼写检查：否则 Chrome for Testing 启动即下载词典到 **exe 所在目录**
+    的 ``Dictionaries``（即用户的三月七安装目录），``--disable-spell-checking``
+    实测拦不住。
     """
 
     allow = {_CLOUD_ORIGIN_EXCEPTION: {"setting": 1}}
     return {
+        "browser": {"enable_spellchecking": False},
         "profile": {
             "content_settings": {
                 "exceptions": {
@@ -174,7 +178,7 @@ def build_preferences() -> dict[str, Any]:
                     "clipboard": dict(allow),
                 }
             }
-        }
+        },
     }
 
 
