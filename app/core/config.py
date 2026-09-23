@@ -314,7 +314,7 @@ def normalize_proxy_address(raw: str | None) -> str | None:
 
 
 class AppConfig(GlobalConfig):
-    VERSION = "v5.5.0-beta.7"
+    VERSION = "v5.5.0-beta.8"
 
     def __init__(self) -> None:
         super().__init__()
