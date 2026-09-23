@@ -3348,11 +3348,8 @@ export default {
       unlockTip: '配置完成后，请点击“保存配置”按钮来解除页面锁定。',
       maaEndUserTitle: '正在进行 MaaEnd 用户级配置',
       maaEndScriptTitle: '正在进行 MaaEnd 脚本级配置',
-      maaEndDirectTitle: '正在进行 MaaEnd 直控配置',
       maaEndUserDesc: '当前正在配置用户 {name}，请在 MaaEnd 配置界面完成相关设置。',
       maaEndScriptDesc: '当前正在配置脚本级 MaaEnd 配置，请在 MaaEnd 配置界面完成相关设置。',
-      maaEndDirectDesc:
-        '当前正在配置 MaaEnd 原有配置（与用户无关，所有直控用户共用），请在 MaaEnd 配置界面完成相关设置。',
       maaEndUnlockTip: '配置完成后，点击“保存配置”解除页面锁定。',
       okwwTitle: '正在进行 ok-ww 设置',
       okwwDesc: '请在 ok-ww 界面完成设置。',

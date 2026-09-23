@@ -435,21 +435,19 @@ const formData = reactive({
   ...getDefaultMaaEndUserData(),
 })
 
-// 遮罩文案按配置来源三态区分：脚本=脚本级共享配置、用户=当前用户独立配置、
-// 直控=改 MaaEnd 原有配置（与用户无关，不能再说“为这个用户”）。
-const maaEndConfigMaskTitle = computed(() => {
-  if (formData.Info.Mode === '用户') return t('scripts.mask.maaEndUserTitle')
-  if (formData.Info.Mode === '直控') return t('scripts.mask.maaEndDirectTitle')
-  return t('scripts.mask.maaEndScriptTitle')
-})
+// 遮罩文案按配置来源区分：脚本=脚本级共享配置、用户=当前用户独立配置。
+// 直控直接用 MaaEnd 原有配置，在 MaaEnd 里改，MAS 不给配置入口，走不到这里。
+const maaEndConfigMaskTitle = computed(() =>
+  formData.Info.Mode === '用户'
+    ? t('scripts.mask.maaEndUserTitle')
+    : t('scripts.mask.maaEndScriptTitle')
+)
 
-const maaEndConfigMaskDesc = computed(() => {
-  if (formData.Info.Mode === '用户') {
-    return t('scripts.mask.maaEndUserDesc', { name: formData.Info.Name || '' })
-  }
-  if (formData.Info.Mode === '直控') return t('scripts.mask.maaEndDirectDesc')
-  return t('scripts.mask.maaEndScriptDesc')
-})
+const maaEndConfigMaskDesc = computed(() =>
+  formData.Info.Mode === '用户'
+    ? t('scripts.mask.maaEndUserDesc', { name: formData.Info.Name || '' })
+    : t('scripts.mask.maaEndScriptDesc')
+)
 
 const rules = computed<Record<string, Rule[]>>(() => ({
   userName: [
