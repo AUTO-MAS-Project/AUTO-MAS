@@ -1379,7 +1379,7 @@ def embedded_status(
     """给界面看的状态：视图健不健康、来源还在不在、报告。
 
     多带的 ``lineage`` / ``payloadId`` / ``version`` / ``siblingCount``（与本视图挂同一个载荷的
-    其它视图数）只给日志行用；``_embedded_status_out`` 按显式字段构造响应，这几个键到不了 API。
+    其它视图数）只给日志行用；``api_service.embedded.embedded_status_data`` 按显式字段构造响应，这几个键到不了 API。
     """
 
     copy_dir = embedded_project_dir(script_id, base)
