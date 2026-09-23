@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  CAROUSEL_ERA_MODULE_KEYS,
   HOME_ACTIVITY_CAROUSEL_KEY,
   HOME_ACTIVITY_MODULE_KEYS,
   defaultHomeModuleOrder,
@@ -37,12 +38,27 @@ describe('normalizeHomeLayoutConfig', () => {
     expect(normalizeHomeLayoutConfig(saved)).toEqual(saved)
   })
 
-  it('老配置里八张游戏卡全关时，补键顺手关掉总闸，不留一张空提示卡', () => {
+  it('老配置里游戏卡全关时，补键顺手关掉总闸，不留一张空提示卡', () => {
     const layout = normalizeHomeLayoutConfig({
       moduleOrder: ['command', 'quick'],
-      hiddenModules: [...HOME_ACTIVITY_MODULE_KEYS],
+      hiddenModules: [...CAROUSEL_ERA_MODULE_KEYS],
     })
 
+    expect(layout.hiddenModules).toContain(HOME_ACTIVITY_CAROUSEL_KEY)
+  })
+
+  it('后补的游戏卡不影响老配置的「全关」判断', () => {
+    const layout = normalizeHomeLayoutConfig({
+      moduleOrder: ['command', 'quick'],
+      hiddenModules: [...CAROUSEL_ERA_MODULE_KEYS],
+    })
+
+    // 前提：星塔旅人是轮播上线之后才接进来的，老配置的隐藏列表里不可能有它；
+    // 若把后补的卡也算进「全关」判断，下面这条断言就会失败
+    const addedLater = HOME_ACTIVITY_MODULE_KEYS.filter(
+      key => !CAROUSEL_ERA_MODULE_KEYS.includes(key)
+    )
+    expect(addedLater.length).toBeGreaterThan(0)
     expect(layout.hiddenModules).toContain(HOME_ACTIVITY_CAROUSEL_KEY)
   })
 

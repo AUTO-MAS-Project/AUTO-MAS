@@ -3,6 +3,7 @@ import type {
   EndfieldActivityOverview,
   HomeModuleKey,
   SraActivityOverview,
+  StellaActivityOverview,
 } from '@/types/home'
 
 /** 各游戏 banner 的主题色，无封面时用来生成底纹；与原卡片上的 accent 保持一致 */
@@ -15,6 +16,7 @@ export const HOME_ACTIVITY_ACCENTS: Record<string, string> = {
   nte: '#c9a7ff',
   reverse1999: '#f2a0c0',
   bluearchive: '#3ba9ee',
+  stellasora: '#2b9fff',
   arknights: '#9fb4cc',
 }
 
@@ -25,12 +27,16 @@ export const getActivityAccent = (key: HomeModuleKey): string => {
 /** 从各游戏数据源里抽出 banner 需要的几项，屏蔽字段命名差异 */
 export interface ActivityBannerSource {
   cover: string
+  /** 主封面 404 时依次尝试的备用图（见 ActivityBannerItem.coverCandidates） */
+  coverCandidates?: string[]
   subtitle: string
   /** 开始时间：轮播据此区分「还没开始」与「进行中」，取不到时为空串 */
   startTime: string
   endTime: string
   available: boolean
   stale: boolean
+  /** 展示的是刚结束的那场活动；轮播据此补一句「后续活动即将开始」 */
+  ended?: boolean
 }
 
 const toTimestamp = (value: string) => {
@@ -88,5 +94,53 @@ export const arknightsActivityBanner = (activityData: ActivityItem[]): ActivityB
     endTime: activity?.UtcExpireTime ?? '',
     available: activityData.length > 0,
     stale: false,
+  }
+}
+
+/** 星塔旅人的活动封面在资源域下，站点给的是 `/stella/assets/...` 这样的相对路径 */
+const STELLA_ASSET_BASE = 'https://api.ennead.cc'
+
+export const stellaActivityBanner = (
+  overview: StellaActivityOverview
+): ActivityBannerSource => {
+  // 站点已按状态分组：进行中的有多条时取最早结束的那条（与其它卡片同口径）；
+  // 一场都没进行时退回「最近结束的那场」，让卡片照碧蓝档案的样子显示已结束
+  const ongoing = [...(overview.current ?? [])].sort(
+    (left, right) => toTimestamp(left.endTime ?? '') - toTimestamp(right.endTime ?? '')
+  )
+  const lastEnded = [...(overview.ended ?? [])].sort(
+    (left, right) => toTimestamp(right.endTime ?? '') - toTimestamp(left.endTime ?? '')
+  )[0]
+  const activity = ongoing[0] ?? lastEnded
+  // 封面按「越大越优先」排一串候选，由轮播在 onerror 时逐个降级：
+  //   1. 站点 background 1644×900 —— 能铺满，但常 404
+  //   2. 官网横幅 795×510 —— 标题与当前活动对上号的那条（后端标记 matched），
+  //      没对上才退到最新一条
+  //   3. 站点 banner 313×151 —— 只能当右侧贴片
+  const art = (path?: string) =>
+    path ? (path.startsWith('http') ? path : STELLA_ASSET_BASE + path) : ''
+  const officialList = overview.official ?? []
+  const officialTop =
+    officialList.find(item => item.matched && item.banner) ??
+    officialList.find(item => item.banner)
+  const candidates = [
+    art(activity?.textures?.background),
+    art(officialTop?.banner),
+    art(activity?.textures?.banner),
+  ].filter(Boolean)
+
+  // 没有进行中的活动：标题与封面都留着刚结束的那场，但不显示已经走完的倒计时，
+  // 只留一句「后续活动即将开始」
+  const hasOngoing = ongoing.length > 0
+  return {
+    cover: candidates[0] ?? '',
+    coverCandidates: candidates.slice(1),
+    subtitle: activity?.title ?? '',
+    startTime: hasOngoing ? (activity?.startTime ?? '') : '',
+    endTime: hasOngoing ? (activity?.endTime ?? '') : '',
+    // 取到排期就算可用；没有进行中的活动时文案由轮播换「暂无进行中的活动」
+    available: overview.Available,
+    stale: false,
+    ended: !hasOngoing && Boolean(activity),
   }
 }

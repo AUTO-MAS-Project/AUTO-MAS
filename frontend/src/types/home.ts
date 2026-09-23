@@ -12,6 +12,7 @@ export type HomeModuleKey =
   | 'nte'
   | 'reverse1999'
   | 'bluearchive'
+  | 'stellasora'
   | 'arknights'
 
 export interface HomeLayoutConfig {
@@ -140,6 +141,54 @@ export interface SraActivityOverview {
 export type Reverse1999ActivityOverview = SraActivityOverview
 export type BlueArchiveActivityOverview = SraActivityOverview
 
+/**
+ * 星塔旅人的活动数据：后端原样转发 StellaBase 的响应，站点已经按状态分好三组，
+ * 前端自己挑进行中的那条。与其它游戏不同，这里不需要版本维度，所以单独定义。
+ */
+export interface StellaActivityItem {
+  title?: string
+  startTime?: string
+  endTime?: string
+  /**
+   * 活动配图，站点给三张相对路径：
+   * ``background`` 1644×900（弹窗大图，拿来做封面）、``banner`` 310×138、
+   * ``tabBackground`` 308×160（后两张太小，轮播会按「小图嵌入」处理成一小块）。
+   */
+  textures?: { background?: string; banner?: string; tabBackground?: string }
+}
+
+/** 国服官网主推横幅：官方活动主视觉 + 对应新闻页 + 官方标题（前几条才有） */
+export interface StellaOfficialBanner {
+  banner?: string
+  url?: string
+  title?: string
+  /** 标题与当前活动名对得上：封面优先用它，没有命中才退到最新一条 */
+  matched?: boolean
+}
+
+export interface StellaActivityOverview {
+  current: StellaActivityItem[]
+  upcoming: StellaActivityItem[]
+  ended: StellaActivityItem[]
+  /** 国服官网的主推横幅，取不到时为空数组（活动大图 404 时拿它兜底） */
+  official: StellaOfficialBanner[]
+  /**
+   * 这次是否成功取到了活动排期。
+   *
+   * 与「当前有没有进行中的活动」是两件事：站点正常返回、只是两组都空，也算取到了，
+   * 卡片据此显示「暂无进行中的活动」而不是「数据不可用」。
+   */
+  Available: boolean
+}
+
+export const createEmptyStellaActivityOverview = (): StellaActivityOverview => ({
+  current: [],
+  upcoming: [],
+  ended: [],
+  official: [],
+  Available: false,
+})
+
 /** 碧蓝档案的三个服务器；与数据源的 line_type 一一对应 */
 export type BlueArchiveServerKey = 'jp' | 'global' | 'cn'
 
@@ -181,6 +230,11 @@ export interface ActivityBannerItem {
   accent: string
   /** 封面图地址，取不到时为空串 */
   cover: string
+  /**
+   * 主封面加载失败时依次尝试的备用图（星塔旅人的活动大图时有时无：
+   * StellaBase 的 `background` 常 404，官网横幅与站点小图依次补位）。
+   */
+  coverCandidates?: string[]
   /** 版本名或当期活动名 */
   subtitle: string
   /** 活动开始时间；用来区分「还没开始」与「进行中」，取不到时为空串 */
@@ -190,4 +244,11 @@ export interface ActivityBannerItem {
   loading: boolean
   available: boolean
   stale: boolean
+  /**
+   * 这张卡展示的是「刚结束的那场」而不是进行中的活动。
+   *
+   * 与碧蓝档案同口径：没有进行中的活动时退回最近结束的一场，倒计时自然显示
+   * 「[活动已结束]」，再补一句「后续活动即将开始」。
+   */
+  ended?: boolean
 }
