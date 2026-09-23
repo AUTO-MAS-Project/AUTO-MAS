@@ -318,6 +318,26 @@ def _read_journal(path: Path) -> dict[str, Any] | None:
     return data if isinstance(data, dict) else None
 
 
+def switch_in_progress(script_id: str, base: Path | None = None) -> bool:
+    """这个脚本的视图有没有一次没收尾的切换（``.switch/<id>.json`` 在）。"""
+
+    return _journal_path(embedded_copy_dir_name(script_id), base).exists()
+
+
+def clear_switched_by(view_dir: Path) -> bool:
+    """「本视图被谁的更新切过」那行日志打完后清掉标记里的 ``switchedBy``。
+
+    标记是视图私有的小文件，临时文件 + ``os.replace`` 换目录项；其余字段原样保留。
+    """
+
+    marker = read_view_marker(view_dir)
+    if marker is None or "switchedBy" not in marker:
+        return False
+    marker.pop("switchedBy", None)
+    payloads.write_json_atomic(Path(view_dir) / VIEW_MARKER_NAME, marker)
+    return True
+
+
 def resolve_view_payload(
     script_id: str, base: Path | None = None
 ) -> tuple[str, str] | None:
@@ -1492,6 +1512,7 @@ __all__ = [
     "GroupMember",
     "PropagationResult",
     "ViewResult",
+    "clear_switched_by",
     "clone_embedded_copy",
     "copy_is_healthy",
     "discard_copy_update_baseline",
@@ -1515,6 +1536,7 @@ __all__ = [
     "resolve_view_payload",
     "shell_hint_from_report",
     "switch_root",
+    "switch_in_progress",
     "switch_view",
     "write_view_marker",
 ]

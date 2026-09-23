@@ -61,6 +61,7 @@ from app.task.MaaFW.tools.embedded.embedded_project import (
     ensure_embedded_copy,
     resolve_maafw_project_root,
     shell_hint_from_report,
+    switch_in_progress,
 )
 from app.task.MaaFW.tools.embedded.project_path import (
     release_project_path,
@@ -347,6 +348,11 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
         self._update_total: int | None = None
         # 只有 main_task 正常跑完全部用户才置位；取消/崩溃路径不跑运行后更新。
         self._users_completed = False
+        # 运行前检查时做了组同步（视图换了版本）：main_task 据此在用户任务之前确认环境。
+        self._switched_at_check = False
+        # 本轮开始时刻：收尾时只清在它之前轮转出来的原生日志备份。
+        self._round_started_at = time.time()
+        self._view_maintained = False
 
     async def check(self) -> str:
         """校验 embedded 运行的前置条件，返回 ``"Pass"`` 或用户可读的原因。
@@ -386,6 +392,9 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
         # 导入期间持有项目预约（更新 / 准备正拿着就先不动副本）。
         import_key = await try_reserve_project_path(embedded_project_dir(script_id))
         if import_key is None:
+            if switch_in_progress(script_id):
+                # 视图正在换版本（兄弟脚本的更新刚把它切过去，后台还在确认运行环境）。
+                return "正在切换版本，已跳过本次启动"
             if not resolve_maafw_project_root(script_id, script_config).is_dir():
                 return "同一路径 MaaFW 脚本正在运行或更新，已跳过本次启动"
             rebuilt = None
@@ -404,6 +413,11 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
                         for uid, config in Config.ScriptConfig.items()
                         if isinstance(config, MaaFWConfig)
                     ],
+                )
+                # 组同步（§3.1 第 9 步）：组里已是别的版本（兄弟更新了、改了渠道）就在
+                # 上锁之前切过去——配置一个字段都不写，切完接运行环境确认（main_task）。
+                self._switched_at_check = await self._sync_view_to_group(
+                    "运行前", reservation_held=True
                 )
             except EmbeddedProjectError as exc:
                 return str(exc)
@@ -794,6 +808,117 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
             core_call=core_call,
             script_name=str(self.script_info.name or ""),
         )
+
+    def _script_display_name(self, script_id: str) -> str:
+        """``latest.by`` / ``switchedBy`` 记的脚本 → 名字（在事件循环线程上查脚本表）。"""
+
+        try:
+            config = Config.ScriptConfig[uuid.UUID(str(script_id))]
+            return str(config.get("Info", "Name") or str(script_id)[:8])
+        except (KeyError, ValueError, TypeError, AttributeError):
+            return "迁移" if str(script_id) == "迁移" else str(script_id)[:8] or "未知"
+
+    @staticmethod
+    def _format_at(value: Any) -> str:
+        text = str(value or "")
+        return text[:16].replace("T", " ") if text else "未知时间"
+
+    async def _sync_view_to_group(
+        self, phase_zh: str, *, reservation_held: bool
+    ) -> bool:
+        """§3.1 第 9 步：本视图挂的载荷 ≠ 组（谱系 + 渠道）的 latest 就切过去；返回是否切了。
+
+        升级、兄弟更新后的被动 pending、改渠道后的降级都是这一条；一个配置字段都不写。
+        被兄弟的更新立即切换过的，标记里有 ``switchedBy``：打一行日志再清掉（只在持有
+        本视图预约时清）。切换失败只记日志（视图留在原版本、照常运行），下次再同步。
+        """
+
+        from app.task.MaaFW.tools.embedded.embedded_project import (
+            clear_switched_by,
+            read_view_marker,
+        )
+        from app.task.MaaFW.tools.embedded.update_credentials import (
+            DEFAULT_UPDATE_CHANNEL,
+        )
+        from app.task.MaaFW.tools.embedded.view_update import (
+            latest_entry,
+            sync_view_to_group,
+        )
+
+        assert self.script_config is not None
+        script_id = str(self.script_info.script_id)
+        view = embedded_project_dir(script_id)
+        try:
+            marker = await asyncio.to_thread(read_view_marker, view)
+            switched_by = (marker or {}).get("switchedBy")
+            if reservation_held and isinstance(switched_by, Mapping):
+                name = str(switched_by.get("name") or "") or self._script_display_name(
+                    str(switched_by.get("scriptId") or "")
+                )
+                self._append_update_log(
+                    f"本视图已于 {self._format_at(switched_by.get('at'))} 由脚本「{name}」"
+                    f"的更新切到 {(marker or {}).get('version') or '新版本'}"
+                )
+                await asyncio.to_thread(clear_switched_by, view)
+            channel = str(
+                self.script_config.get("Update", "Channel") or DEFAULT_UPDATE_CHANNEL
+            )
+            result = await sync_view_to_group(
+                script_id, channel, reservation_held=reservation_held
+            )
+        except Exception as exc:  # noqa: BLE001 - 同步失败不挡运行，视图留在原版本
+            logger.opt(exception=True).warning(
+                f"MFW 组同步失败，本轮沿用当前版本：{exc}"
+            )
+            self._append_update_log(f"切换到同组版本失败，本轮沿用当前版本：{exc}")
+            return False
+        if result is None:
+            return False
+        entry = await asyncio.to_thread(latest_entry, result.lineage, channel)
+        by = str((entry or {}).get("by") or "")
+        self._append_update_log(
+            f"{phase_zh}已切到 {result.version}（由脚本「{self._script_display_name(by)}」"
+            f"于 {self._format_at((entry or {}).get('at'))} 更新）"
+        )
+        with suppress(Exception):
+            await asyncio.to_thread(self._load_interface_model, view, force_reload=True)
+        return True
+
+    async def _post_run_view_maintenance(self) -> None:
+        """收尾：组同步（跑完回落，§3.1 第 9 步）、写穿巡检、原生日志备份清理。
+
+        放在 ``_commit_user_data`` 之后：用户配置已解锁写回；AfterRun 更新之前。任何一步
+        失败只记日志。
+        """
+
+        script_id = str(self.script_info.script_id)
+        view = embedded_project_dir(script_id)
+        switched = await self._sync_view_to_group("运行后", reservation_held=False)
+        if switched and self._auto_update_mode != "AfterRun":
+            # AfterRun 模式下紧随其后的那次确认已经有了，不重复。
+            await self._ensure_project_environment("AfterRun")
+        try:
+            from app.task.MaaFW.tools.embedded.view_audit import audit_view
+
+            report = await asyncio.to_thread(audit_view, view)
+            for line in report.messages:
+                self._append_update_log(line)
+        except Exception as exc:  # noqa: BLE001
+            logger.opt(exception=True).warning(f"MFW 写穿巡检失败：{exc}")
+        try:
+            from app.task.MaaFW.tools.embedded.view_audit import (
+                clean_native_log_backups,
+            )
+
+            removed = await asyncio.to_thread(
+                clean_native_log_backups, view, self._round_started_at
+            )
+            if removed:
+                logger.info(
+                    f"已清理 {removed} 个 MaaFW 原生日志轮转备份（history 已有副本）"
+                )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(f"清理 MaaFW 原生日志备份失败：{exc}")
 
     def _group_members(self) -> list[Any]:
         """同组候选：其它 MFW 脚本（在事件循环线程上抄出来，守护线程里遍历脚本表会撞
@@ -1193,6 +1318,10 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
         if self._auto_update_mode == "BeforeRun":
             await self._run_project_update("BeforeRun")
             await self._ensure_project_environment("BeforeRun")
+        elif self._switched_at_check:
+            # 运行前检查时被动切了版本（兄弟更新、改渠道）：与 AutoUpdateMode 无关，在用户
+            # 任务之前把环境备好——否则 isolated_venv 的重建会落进 worker、游戏已经起来。
+            await self._ensure_project_environment("BeforeRun")
 
         # AutoProxy 的 main_task / final_task 都是**按用户**的（final_task 会
         # 结算该用户的代理次数、剩余天数并释放项目锁），因此每个用户各建一个。
@@ -1286,6 +1415,14 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
 
         if self.check_result != "Pass":
             return
+        # 用户表已写回、脚本已解锁：跑完回落到组版本（兄弟在本轮期间更新了的话）、
+        # 巡检写穿、清原生日志备份。只做一次（final_task 可能被取消路径再调）。
+        if not self._view_maintained:
+            self._view_maintained = True
+            try:
+                await self._post_run_view_maintenance()
+            except Exception as exc:  # noqa: BLE001
+                logger.opt(exception=True).warning(f"MFW 收尾维护失败：{exc}")
         if self._report_finalized:
             return
         self._report_finalized = True
