@@ -1673,7 +1673,10 @@ class MaaEndConfig(ConfigBase):
     async def load(self, data: dict) -> bool:
         data = deepcopy(data)
         game_data = data.get("Game") if isinstance(data, dict) else None
-        migrated = isinstance(game_data, dict) and game_data.get("RestoreResolution") == "Fullscreen"
+        migrated = (
+            isinstance(game_data, dict)
+            and game_data.get("RestoreResolution") == "Fullscreen"
+        )
         if migrated:
             game_data["RestoreDisplayType"] = "Fullscreen"
             game_data["RestoreResolution"] = "1920x1080"
@@ -2451,7 +2454,12 @@ class HSRConfig(ConfigBase):
         )
 
         ## Game ------------------------------------------------------------
-        ## 是否由 MAS 管理游戏启停、进程监测和窗口操作
+        ## 游戏平台：本地客户端 / 云·星穹铁道（MAS 托管浏览器，只用三月七）。
+        ## OptionsValidator.correct() 回退的是 options[0]，Client 必须排第一。
+        self.Game_Platform = ConfigItem(
+            "Game", "Platform", "Client", OptionsValidator(["Client", "Cloud"])
+        )
+        ## 是否由 MAS 管理游戏启停、进程监测和窗口操作（仅客户端平台）
         self.Game_Enabled = ConfigItem("Game", "Enabled", True, BoolValidator())
         ## 游戏路径
         self.Game_Path = ConfigItem("Game", "Path", "", FileValidator())
@@ -2465,6 +2473,24 @@ class HSRConfig(ConfigBase):
         self.Game_RedeemCodesOnlyWhenChanged = ConfigItem(
             "Game", "RedeemCodesOnlyWhenChanged", True, BoolValidator()
         )
+
+        ## Cloud -----------------------------------------------------------
+        ## 云·星穹铁道（Game.Platform = Cloud）专用，映射到三月七的 cloud_game_* 键
+        ## 是否允许消耗付费时长走快速排队通道（花钱的开关，默认关）
+        self.Cloud_UsePaidTime = ConfigItem(
+            "Cloud", "UsePaidTime", False, BoolValidator()
+        )
+        ## 最长排队时间（分钟），同时计入每个模块的超时预算
+        self.Cloud_MaxQueueMinutes = ConfigItem(
+            "Cloud", "MaxQueueMinutes", 60, RangeValidator(1, 9999)
+        )
+        ## 等待用户在浏览器窗口里手动登录的时间（分钟）
+        self.Cloud_LoginTimeoutMinutes = ConfigItem(
+            "Cloud", "LoginTimeoutMinutes", 20, RangeValidator(1, 9999)
+        )
+        ## 各用户最近一次确认已登录的时间（user_id → ISO 时间），只读展示用，
+        ## 由运行结束后的写回与「登录云游戏」接口维护
+        self.Cloud_LastLogin = ConfigItem("Cloud", "LastLogin", "{ }", JSONValidator())
 
         ## Run -------------------------------------------------------------
         ## 失败任务最大尝试次数

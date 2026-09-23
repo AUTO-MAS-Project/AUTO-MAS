@@ -3000,6 +3000,9 @@ class HSRConfig_Info(BaseModel):
 
 
 class HSRConfig_Game(BaseModel):
+    Platform: Optional[Literal["Client", "Cloud"]] = Field(
+        default=None, description="游戏平台：本地客户端 / 云·星穹铁道"
+    )
     Enabled: Optional[bool] = Field(default=None, description="是否由 MAS 管理游戏")
     Path: Optional[str] = Field(default=None, description="游戏路径")
     WaitTime: Optional[int] = Field(default=None, description="等待时间（秒）")
@@ -3008,6 +3011,22 @@ class HSRConfig_Game(BaseModel):
     )
     RedeemCodesOnlyWhenChanged: Optional[bool] = Field(
         default=None, description="仅在兑换码变化时执行兑换"
+    )
+
+
+class HSRConfig_Cloud(BaseModel):
+    UsePaidTime: Optional[bool] = Field(
+        default=None, description="云·星穹铁道是否消耗付费时长走快速排队通道"
+    )
+    MaxQueueMinutes: Optional[int] = Field(
+        default=None, description="云·星穹铁道最长排队时间（分钟）"
+    )
+    LoginTimeoutMinutes: Optional[int] = Field(
+        default=None, description="云·星穹铁道等待手动登录的时间（分钟）"
+    )
+    LastLogin: Optional[str] = Field(
+        default=None,
+        description="各用户最近一次确认已登录的时间 JSON（用户 ID → ISO 时间），只读",
     )
 
 
@@ -3107,6 +3126,9 @@ class HSRConfig_Managed(BaseModel):
 class HSRConfig(BaseModel):
     Info: Optional[HSRConfig_Info] = Field(default=None, description="脚本基础信息")
     Game: Optional[HSRConfig_Game] = Field(default=None, description="游戏配置")
+    Cloud: Optional[HSRConfig_Cloud] = Field(
+        default=None, description="云·星穹铁道配置"
+    )
     Run: Optional[HSRConfig_Run] = Field(default=None, description="运行配置")
     Update: Optional[HSRConfig_Update] = Field(
         default=None, description="外部脚本更新配置"
