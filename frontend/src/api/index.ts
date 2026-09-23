@@ -21,6 +21,7 @@ export type { BAAHUserConfig_Notify } from './models/BAAHUserConfig_Notify';
 export type { BackendHealthOut } from './models/BackendHealthOut';
 export type { BetterGIConfig } from './models/BetterGIConfig';
 export type { BetterGIConfig_Game } from './models/BetterGIConfig_Game';
+export type { BetterGIConfig_Run } from './models/BetterGIConfig_Run';
 export type { BetterGICustomGroupOut } from './models/BetterGICustomGroupOut';
 export type { BetterGICustomGroupsOut } from './models/BetterGICustomGroupsOut';
 export type { BetterGIDomainCatalogItem } from './models/BetterGIDomainCatalogItem';

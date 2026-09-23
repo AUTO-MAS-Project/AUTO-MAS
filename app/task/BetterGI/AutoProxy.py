@@ -39,13 +39,21 @@ from app.task.proxy_helpers import (
     push_dispatch_log,
     read_config_source,
 )
-from app.utils import ProcessInfo, ProcessManager, ProcessRunner, get_logger
+from app.utils import (
+    ProcessInfo,
+    ProcessManager,
+    ProcessRunner,
+    get_logger,
+    is_process_alive,
+)
 from app.utils.constants import UTC4
+from app.utils.io import read_dict_file
 from app.utils.LogMonitor import LogMonitor
 from app.utils.platform import IS_ELEVATED
 
 from .tools import (
     account_switch,
+    account_switch_native,
     archive_mas_runtime_backup,
     one_dragon,
     one_dragon_bridge,
@@ -367,6 +375,9 @@ class AutoProxyTask(TaskExecuteBase):
         self._native_one_dragon_written: dict | None = None
         self.cur_user_log: LogRecord | None = None
         self.bettergi_process_manager: ProcessManager | None = None
+        # MAS 方式切号的托管游戏启动器（游戏不随后端退出，见
+        # _mas_launch_game_for_switch 的 breakaway 说明）
+        self.switch_game_manager: ProcessManager | None = None
         self.wait_event: asyncio.Event | None = None
         self.script_root_path: Path | None = None
         self.script_exe_path: Path | None = None
@@ -401,6 +412,28 @@ class AutoProxyTask(TaskExecuteBase):
         if self.cur_user_config.get("Info", "RemainedDay") == 0:
             self.cur_user_item.status = "跳过"
             return "用户剩余天数为 0, 跳过该用户"
+
+        # MAS 方式切号的前置校验（对齐 MaaEnd：不满足直接报错而非运行期失败）。
+        # MAS 侧实现当前只覆盖官服 miHoYo 登录界面；B服/国际服请沿用 BetterGI
+        # 脚本方式（Run.AccountSwitchMethod = BGI）。
+        if self._account_switch_method() == "MAS":
+            resource = str(self.cur_user_config.get("Switch", "Resource") or "官服")
+            if resource != "官服":
+                self.cur_user_item.status = "异常"
+                return (
+                    "MAS 方式账号切换暂仅支持官服用户，"
+                    "请改回 BetterGI 脚本切换方式或调整该用户的服务器"
+                )
+            account = str(self.cur_user_config.get("Info", "Id") or "").strip()
+            if account and not str(self.cur_user_config.get("Info", "Password") or ""):
+                # 无密码走下拉列表匹配，要求账号能生成掩码锚点（手机号/邮箱）；
+                # 第三方登录账号没有打码锚点，无法在登录记录中定位
+                if "*" not in account_switch.mask_account(account):
+                    self.cur_user_item.status = "异常"
+                    return (
+                        "MAS 方式下拉列表切换需要手机号或邮箱账号，"
+                        "第三方登录账号请填写密码走账号+密码方式"
+                    )
 
         return "Pass"
 
@@ -1291,12 +1324,26 @@ class AutoProxyTask(TaskExecuteBase):
             await self._push_dispatch_log("执行层失败")
         return result["success"]
 
+    def _account_switch_method(self) -> str:
+        """读取脚本级账号切换方式；缺失或非法值沿用 BetterGI 脚本入口。"""
+        method = str(self.script_config.get("Run", "AccountSwitchMethod") or "BGI")
+        return method if method in {"BGI", "MAS"} else "BGI"
+
     async def _switch_account(self) -> bool:
-        """单独执行一次切号（--startGroups），返回是否切换成功。
+        """单独执行一次切号，返回是否切换成功。
+
+        按脚本级 ``Run.AccountSwitchMethod`` 分流：
+
+        - ``MAS``：MAS 托管游戏启动后，由 MAS 前台 OCR 直接操控游戏切号
+          （仅官服，见 ``_switch_account_mas``）；
+        - ``BGI``（默认）：走 BetterGI「切换账号多模式」脚本（--startGroups）。
 
         未配置账号时直接返回 True（无需切换）；失败/超时返回 False，
         由调用方决定是否继续执行一条龙。
         """
+        if self._account_switch_method() == "MAS":
+            return await self._switch_account_mas()
+
         account = str(self.cur_user_config.get("Info", "Id") or "").strip()
         if not account:
             return True
@@ -1472,6 +1519,105 @@ class AutoProxyTask(TaskExecuteBase):
                 f"用户 {self.cur_user_item.name} 切换账号失败或超时，已中止任务"
             )
         return switch_result["success"]
+
+    async def _switch_account_mas(self) -> bool:
+        """MAS 侧强制切换账号（官服）：托管启动游戏 + 前台 OCR 操控登录界面。
+
+        有密码走「登录其他账号 + 剪贴板输入账密」，无密码走下拉列表按掩码选号
+        （要求目标账号已在本机登录过）。成功后游戏保持运行，与 BGI 脚本路径的
+        收尾一致，由随后的一条龙接管。失败返回 False，由调用方中止任务。
+        """
+        account = str(self.cur_user_config.get("Info", "Id") or "").strip()
+        if not account:
+            return True
+        password = str(self.cur_user_config.get("Info", "Password") or "")
+
+        # MAS 托管游戏启动（同 OK-NTE 语义）：已运行跳过，未运行按 BGI 配置拉起；
+        # 游戏起不来切号无从执行，直接失败中止
+        try:
+            await self._mas_launch_game_for_switch()
+        except Exception as e:
+            logger.opt(exception=True).warning(f"用户 {self.cur_user_item.name} 游戏启动失败: {e}")
+            await self._push_dispatch_log(f"游戏启动失败: {e}")
+            return False
+
+        await self._push_dispatch_log("正在由 MAS 前台切换账号...")
+        # 切号在后台线程内同步执行，on_log 契约是同步回调；_push_dispatch_log 是
+        # async 方法，须经 run_coroutine_threadsafe 调度回事件循环（对齐 OK-WW/OK-NTE）
+        switch_loop = asyncio.get_running_loop()
+
+        def _push_switch_log(line: str) -> None:
+            asyncio.run_coroutine_threadsafe(self._push_dispatch_log(line), switch_loop)
+
+        try:
+            success = await account_switch_native.async_switch_account(
+                account, password, on_log=_push_switch_log
+            )
+        except Exception as e:
+            success = False
+            await self._push_dispatch_log(f"MAS 账号切换失败: {e}")
+            logger.opt(exception=True).warning(
+                f"用户 {self.cur_user_item.name} MAS 账号切换失败: {e}"
+            )
+        if success:
+            await self._push_dispatch_log("MAS 账号切换完成")
+            logger.success(f"用户 {self.cur_user_item.name} MAS 账号切换完成")
+        else:
+            await self._push_dispatch_log("MAS 账号切换失败，已中止任务")
+            logger.warning(f"用户 {self.cur_user_item.name} MAS 账号切换失败，已中止任务")
+        return success
+
+    async def _mas_launch_game_for_switch(self) -> None:
+        """MAS 托管原神启动（MAS 方式切号的前置，同 OK-NTE 已运行跳过语义）。
+
+        游戏路径透传读取 BGI 自身配置 ``genshinStartConfig.installPath``——用户
+        在 BetterGI 里已配好游戏路径，MAS 不另设配置项；读不到或路径无效时
+        显式报错提示先在 BetterGI 设置中配置。
+        """
+        for name in _BGI_GAME_PROCESS_NAMES:
+            # 用存活判定而非可见窗口：游戏启动初期进程已存在但窗口未亮相，
+            # 按窗口判定会对启动中的游戏重复拉起（原神有互斥锁，二次拉起失败）
+            if await asyncio.to_thread(is_process_alive, f"{name}.exe"):
+                logger.info(f"检测到原神进程 ({name}.exe) 已在运行，跳过游戏启动")
+                await self._push_dispatch_log("检测到原神已在运行，跳过游戏启动")
+                return
+
+        game_exe = self._resolve_genshin_exe()
+        await self._push_dispatch_log(f"正在由 MAS 启动原神: {game_exe.name}")
+        # 持有为实例属性：局部 ProcessManager 出栈后 asyncio 子进程 transport
+        # 被 GC 会产生 unclosed 告警噪音；保留句柄不影响 CloseOnFinish 收尾语义
+        self.switch_game_manager = ProcessManager()
+        # breakaway=True：游戏不该随后端退出（Runtime 用 KILL_ON_JOB_CLOSE 的
+        # Job 监督后端，子进程默认留在 Job 里被连带回收；对齐模拟器/游戏客户端
+        # 直拉调用点的既有惯例，见 windows/process.py 顶部契约说明）
+        await self.switch_game_manager.open_process(game_exe, breakaway=True)
+        await self._push_dispatch_log("原神已拉起，等待窗口就绪...")
+
+    def _resolve_genshin_exe(self) -> Path:
+        """透传读取 BGI 配置中的原神安装路径（genshinStartConfig.installPath）。
+
+        读 BGI 的 ``User/config.json`` 走严格解析（响亮失败），不静默当作空配置；
+        键值属上游私有格式，只透传取值、不建模型。
+        """
+        config_path = self.script_root_path / "User" / "config.json"
+        data = read_dict_file(config_path)
+        start_config = data.get("genshinStartConfig")
+        install_path = (
+            str(start_config.get("installPath") or "").strip()
+            if isinstance(start_config, dict)
+            else ""
+        )
+        if not install_path:
+            raise RuntimeError(
+                f"未在 BetterGI 配置中找到游戏路径（{config_path} 的 "
+                "genshinStartConfig.installPath），请先在 BetterGI 设置中配置游戏路径"
+            )
+        game_exe = Path(install_path)
+        if not game_exe.is_file():
+            raise RuntimeError(
+                f"BetterGI 配置的原神路径不存在: {game_exe}，请先在 BetterGI 设置中修正"
+            )
+        return game_exe
 
     async def check_log(self, log_content: list[str], latest_time: datetime) -> None:
         """按内置日志判定结果，未见成功日志便退出则视为异常。"""
