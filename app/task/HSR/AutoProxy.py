@@ -64,6 +64,7 @@ from .tools.log_detect import (
     detect_echo_of_war_completion,
     find_m7a_self_game_stop,
     is_cloud_login_success,
+    is_m7a_self_browser_start,
     parse_cloud_remaining,
     select_failure_summary_lines,
 )
@@ -226,6 +227,8 @@ class HSRAutoProxyTask(TaskExecuteBase):
         self.crashed: bool = False
         self.error_message: str = ""
         self._managed_options_cache: dict[tuple[int, str, str], dict[str, object]] = {}
+        # 输出回调里派生的后台任务（如终止三月七），持有引用防止被回收。
+        self._background_tasks: set[asyncio.Task] = set()
 
     def _append_log(self, message: str, *, max_lines: int = 500) -> None:
         text = str(message).strip()
@@ -602,6 +605,25 @@ class HSRAutoProxyTask(TaskExecuteBase):
         user_name = self.cur_user_item.name
         runtime = self.runtime
 
+        if is_m7a_self_browser_start(line):
+            if runtime.cloud_self_browser_detected:
+                return
+            runtime.cloud_self_browser_detected = True
+            runtime.cloud_login_suppressed.add(uid)
+            runtime.cloud_login_times.pop(uid, None)
+            self._append_log(
+                f"用户「{user_name}」三月七没找到 MAS 托管的云浏览器，正准备自己新建"
+                "（通常是云游戏窗口被关掉后三月七重试启动）；已终止本次三月七，"
+                "下次尝试前由 MAS 重新启动该用户的浏览器，本轮不记录登录时间"
+            )
+            runner = runtime.m7a_runner
+            if runner is not None:
+                # 不在读输出的协程里等进程退出：管道要继续被读，交给独立任务终止。
+                task = asyncio.create_task(runner.terminate_current_process())
+                self._background_tasks.add(task)
+                task.add_done_callback(self._background_tasks.discard)
+            return
+
         login_required, timeout_minutes = detect_cloud_login_required(line)
         if login_required:
             if uid in runtime.cloud_login_notified:
@@ -627,6 +649,8 @@ class HSRAutoProxyTask(TaskExecuteBase):
             return
 
         if is_cloud_login_success(line):
+            if uid in runtime.cloud_login_suppressed:
+                return
             runtime.cloud_login_times[uid] = (
                 datetime.now().astimezone().isoformat(timespec="seconds")
             )

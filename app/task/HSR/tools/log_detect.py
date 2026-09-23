@@ -208,6 +208,22 @@ def _m7a_log_message(line: str) -> str:
     return (match.group(1) if match else line).strip()
 
 
+# cloud.py:311 `self.log_info(f"正在启动 {browser_type} 浏览器")`：三月七找不到 MAS
+# 的浏览器、准备自建时打这行（它的启动重试先 stop_game() 杀掉了所有带标记的
+# 浏览器）。自建的浏览器不在 MAS 的按用户 profile 里，必须立刻拦下。
+HSR_CLOUD_SELF_BROWSER_PREFIX = "正在启动 "
+HSR_CLOUD_SELF_BROWSER_SUFFIX = " 浏览器"
+
+
+def is_m7a_self_browser_start(line: str) -> bool:
+    """这一行是否是三月七准备自己新建浏览器。"""
+
+    message = _m7a_log_message(line)
+    return message.startswith(HSR_CLOUD_SELF_BROWSER_PREFIX) and message.endswith(
+        HSR_CLOUD_SELF_BROWSER_SUFFIX
+    )
+
+
 def find_cloud_non_retryable_marker(*texts: str) -> str | None:
     """返回输出里第一条云·星穹铁道不可重试失败词；没有则 None。"""
 

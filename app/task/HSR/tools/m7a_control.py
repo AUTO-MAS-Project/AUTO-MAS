@@ -129,7 +129,21 @@ class HSRM7AControl:
 
         await self._account_switcher.wait_before_external_script("M7A", user_name)
         self._append_log(f"用户「{user_name}」开始执行 M7A {module_name}（{command}）")
+        runtime = getattr(self._account_switcher, "runtime", None)
+        if runtime is not None:
+            runtime.cloud_self_browser_detected = False
         result = await m7a_runner.run_task(command, timeout=timeout_seconds or 600)
+        if runtime is not None and runtime.cloud_self_browser_detected:
+            # 输出回调已终止了三月七；这不是云本身的问题，按普通失败补跑，
+            # 补跑前 ensure_cloud_browser 会先清掉三月七自建的浏览器、重起 MAS 的。
+            self._append_log(
+                f"用户「{user_name}」M7A {module_name}（{command}）已终止：三月七试图自建浏览器"
+            )
+            raise HSRRetryableTaskError(
+                f"用户「{user_name}」模块「{module_name}」M7A 命令「{command}」："
+                "三月七没找到 MAS 托管的云浏览器、试图自己新建，已终止，补跑前重新启动",
+                result=result,
+            )
         if getattr(result, "success", False):
             self._append_log(
                 f"用户「{user_name}」M7A {module_name}（{command}）执行完成"

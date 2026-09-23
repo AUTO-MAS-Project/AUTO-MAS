@@ -38,7 +38,7 @@ import time
 from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any, Callable, Iterable
 
 import httpx
 import psutil
@@ -260,20 +260,63 @@ def is_managed_cloud_browser_cmdline(
     return target == root or target.startswith(root.rstrip(os.sep) + os.sep)
 
 
-def find_managed_cloud_browsers(
-    profile_root: Path | str | None = None,
-) -> list[psutil.Process]:
-    """列出本机带三月七标记（且 profile 在 ``profile_root`` 下）的 chrome.exe。"""
+def m7a_own_profile_root(m7a_root: Path | str) -> Path:
+    """三月七自建浏览器的持久化 profile 根（``cloud.py`` 里写死的位置）。"""
 
+    return Path(m7a_root) / "3rdparty" / "WebBrowser" / "UserProfile"
+
+
+def is_m7a_self_started_browser_cmdline(
+    cmdline: Iterable[str] | None, m7a_root: Path | str
+) -> bool:
+    """命令行是否属于**三月七自己新建**的云浏览器。
+
+    带三月七标记，且 ``--user-data-dir`` 落在三月七的 ``UserProfile`` 下（持久化
+    开着时），或完全没有 ``--user-data-dir``（非持久化时）。MAS 托管的浏览器恒传
+    自己的 profile，不会命中；不带标记的浏览器一律不命中。
+    """
+
+    if not cmdline:
+        return False
+    args = list(cmdline)
+    if M7A_BROWSER_TAG not in args:
+        return False
+    user_data_dir = _user_data_dir_of(args)
+    if not user_data_dir:
+        return True
+    root = _normalize_path(m7a_own_profile_root(m7a_root))
+    target = _normalize_path(user_data_dir)
+    return target == root or target.startswith(root.rstrip(os.sep) + os.sep)
+
+
+def _find_cloud_browsers(match: Callable[[list[str]], bool]) -> list[psutil.Process]:
     found: list[psutil.Process] = []
     for proc in psutil.process_iter(["name", "cmdline"]):
         with suppress(psutil.Error):
             name = proc.info.get("name")
             if not name or name.lower() != BROWSER_PROCESS_NAME:
                 continue
-            if is_managed_cloud_browser_cmdline(proc.info.get("cmdline"), profile_root):
+            if match(list(proc.info.get("cmdline") or [])):
                 found.append(proc)
     return found
+
+
+def find_managed_cloud_browsers(
+    profile_root: Path | str | None = None,
+) -> list[psutil.Process]:
+    """列出本机带三月七标记（且 profile 在 ``profile_root`` 下）的 chrome.exe。"""
+
+    return _find_cloud_browsers(
+        lambda cmdline: is_managed_cloud_browser_cmdline(cmdline, profile_root)
+    )
+
+
+def find_m7a_self_started_browsers(m7a_root: Path | str) -> list[psutil.Process]:
+    """列出三月七自己新建的云浏览器（见 :func:`is_m7a_self_started_browser_cmdline`）。"""
+
+    return _find_cloud_browsers(
+        lambda cmdline: is_m7a_self_started_browser_cmdline(cmdline, m7a_root)
+    )
 
 
 def _terminate_tree(
@@ -314,6 +357,24 @@ async def cleanup_stale_cloud_browsers(
     count = await asyncio.to_thread(_cleanup)
     if count:
         logger.info(f"已关闭 {count} 个残留的云浏览器进程")
+    return count
+
+
+async def cleanup_m7a_self_started_browsers(m7a_root: Path | str) -> int:
+    """关闭三月七自己新建的云浏览器（它的启动重试找不到 MAS 浏览器时会自建）。
+
+    只动带标记、且 profile 属于三月七自己或没有 profile 的；返回关闭的个数。
+    """
+
+    def _cleanup() -> int:
+        procs = find_m7a_self_started_browsers(m7a_root)
+        for proc in procs:
+            _terminate_tree(proc)
+        return len(procs)
+
+    count = await asyncio.to_thread(_cleanup)
+    if count:
+        logger.info(f"已关闭 {count} 个三月七自行启动的云浏览器进程")
     return count
 
 

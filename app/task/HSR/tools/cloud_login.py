@@ -28,6 +28,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -51,7 +52,7 @@ from .external_locks import (
     acquire_external_path_locks,
     resolve_external_lock_paths,
 )
-from .log_detect import is_cloud_login_success
+from .log_detect import is_cloud_login_success, is_m7a_self_browser_start
 from .m7a_control import HSRM7AControl
 from .m7a_runtime import M7ARunner
 from .run_model import HSRRuntimeState, external_result_failure_summary
@@ -121,6 +122,8 @@ async def run_cloud_login(
         user_id=user_id,
     )
     logged_in = False
+    self_browser = False
+    background: set[asyncio.Task] = set()
     result: object | None = None
     original: bytes | None = None
     try:
@@ -140,8 +143,19 @@ async def run_cloud_login(
             ),
         )
 
+        runner: M7ARunner | None = None
+
         def watch(line: str) -> None:
-            nonlocal logged_in
+            nonlocal logged_in, self_browser
+            if is_m7a_self_browser_start(line):
+                # 窗口被关掉后三月七重试时会自建浏览器，登录态不会进该用户的
+                # profile：立刻终止，这次不算登录成功。
+                if not self_browser and runner is not None:
+                    self_browser = True
+                    task = asyncio.create_task(runner.terminate_current_process())
+                    background.add(task)
+                    task.add_done_callback(background.discard)
+                return
             if is_cloud_login_success(line) or _LOGGED_IN_EVIDENCE in line:
                 logged_in = True
 
@@ -158,7 +172,9 @@ async def run_cloud_login(
             + LOGIN_TASK_MARGIN_MINUTES
         )
         result = await runner.run_task(M7A_LOGIN_TASK, timeout=timeout_minutes * 60)
-        logged_in = logged_in or bool(getattr(result, "success", False))
+        logged_in = not self_browser and (
+            logged_in or bool(getattr(result, "success", False))
+        )
     finally:
         if original is not None:
             try:
@@ -167,9 +183,18 @@ async def run_cloud_login(
                 logger.warning(f"还原三月七 config.yaml 失败：{e}")
                 append_log(f"还原三月七 config.yaml 失败：{e}")
         # 正常关闭让 cookie 落盘；下次运行直接免登录。
-        await close_cloud_browser(runtime, append_log, script_id=script_id)
+        await close_cloud_browser(
+            runtime, append_log, script_id=script_id, m7a_root=str(m7a_root)
+        )
         lease.release()
 
+    if self_browser:
+        return CloudLoginOutcome(
+            logged_in=False,
+            last_login=None,
+            message="云游戏窗口被关闭后三月七试图自己新建浏览器，已终止；"
+            "请重新点「登录云游戏」，登录完成前不要关闭弹出的窗口",
+        )
     if not logged_in:
         detail = external_result_failure_summary(result) if result is not None else ""
         return CloudLoginOutcome(

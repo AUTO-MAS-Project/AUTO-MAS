@@ -282,7 +282,12 @@ def build_m7a_platform_patch(
         "cloud_game_enable": True,
         "browser_type": "integrated",
         "browser_headless_enable": False,
-        "browser_persistent_enable": True,
+        # 钉 False：三月七只有在找不到 MAS 的浏览器时才会自建（它自己的启动重试
+        # 会先 stop_game() 杀掉所有带标记的浏览器），持久化开着就会落到它按安装
+        # 目录共享的 UserProfile\Integrated 里，登录态跨账号残留。非持久化只影响
+        # 新建路径（不传 --user-data-dir、每次注入初始 localStorage），连接 MAS
+        # 浏览器的路径在此之前就已 return，不受影响。
+        "browser_persistent_enable": False,
         "cloud_game_fullscreen_enable": False,
         "browser_debug_port": int(debug_port),
         "cloud_game_max_queue_time": int(max_queue_minutes),

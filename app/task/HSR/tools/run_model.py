@@ -164,6 +164,11 @@ class HSRRuntimeState:
     cloud_login_times: dict[str, str] = field(default_factory=dict)
     # 本轮已为「需要手动登录」推过通知的用户，同一用户不重复推。
     cloud_login_notified: set[str] = field(default_factory=set)
+    # 本轮出现过「三月七自建浏览器」的用户：登录态可能落在三月七的临时 profile
+    # 而不是 MAS 的，本轮不写 LastLogin。
+    cloud_login_suppressed: set[str] = field(default_factory=set)
+    # 当前这条三月七命令里是否拦下过它自建浏览器；每条命令开跑前清零。
+    cloud_self_browser_detected: bool = False
     # 最近一次读到的云游戏剩余时长（user_id → (总, 付费, 免费) 分钟）。
     cloud_remaining: dict[str, tuple[int, int, int]] = field(default_factory=dict)
 
