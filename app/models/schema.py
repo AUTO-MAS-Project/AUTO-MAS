@@ -2557,9 +2557,25 @@ class BetterGIConfig_Game(BaseModel):
     )
 
 
+class BetterGIConfig_Run(GeneralConfig_Run):
+    """BetterGI 运行配置（通用字段 + BetterGI 专属字段）"""
+
+    UseAdmin: Optional[bool] = Field(
+        default=None,
+        description="是否以管理员权限启动 BetterGI（MAS 未提权时开启会触发 UAC）",
+    )
+    AccountSwitchMethod: Optional[Literal["BGI", "MAS"]] = Field(
+        default=None,
+        description=(
+            "账号切换方式: BGI=BetterGI「切换账号多模式」脚本执行; "
+            "MAS=MAS 前台直接操控游戏切号（仅官服，游戏由 MAS 托管启动）"
+        ),
+    )
+
+
 class BetterGIConfig(BaseModel):
     Info: Optional[GeneralConfig_Info] = Field(default=None, description="脚本基础信息")
-    Run: Optional[GeneralConfig_Run] = Field(default=None, description="运行配置")
+    Run: Optional[BetterGIConfig_Run] = Field(default=None, description="运行配置")
     Game: Optional[BetterGIConfig_Game] = Field(default=None, description="游戏配置")
 
 

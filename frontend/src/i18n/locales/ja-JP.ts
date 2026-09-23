@@ -1670,6 +1670,11 @@ export default {
     bettergiCloseGameOnFinishHint: 'タスクの実行が終わったときにゲームを終了するかどうか',
     bettergiRetryLimitHint: 'この回数を超えても失敗する場合は中止します',
     bettergiRunTimeoutHint: 'ログが長時間更新されない場合はタイムアウトと判定します',
+    bettergiAccountSwitchMethod: 'アカウント切り替え方式',
+    bettergiAccountSwitchMethodHint:
+      'BetterGI スクリプト=BetterGI「切替アカウント多重モード」スクリプトで切り替え。MAS=MAS がゲーム画面を直接操作して切り替え（中国公式サーバーのみ、ゲームは MAS が起動。パスワード入力ならアカウント+パスワード、未入力ならドロップダウン一覧）',
+    bettergiAccountSwitchMethodBgi: 'BetterGI スクリプト',
+    bettergiAccountSwitchMethodMas: 'MAS（中国公式のみ）',
     useAdminLaunch: '管理者権限で起動',
     bettergiUseAdminHint:
       '既定で有効（BetterGI には管理者権限が必要）。MAS が非管理者で実行されている場合、起動のたびに UAC が表示されるため、無人実行時はオフにできます。MAS が既に管理者権限の場合は再表示されません',

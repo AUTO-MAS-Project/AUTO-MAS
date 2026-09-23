@@ -1737,6 +1737,11 @@ export default {
     bettergiCloseGameOnFinishHint: 'Whether to close the game once the task has finished running',
     bettergiRetryLimitHint: 'Give up once this many attempts have failed',
     bettergiRunTimeoutHint: 'Treated as a timeout when the log stops changing for this long',
+    bettergiAccountSwitchMethod: 'Account switch method',
+    bettergiAccountSwitchMethodHint:
+      "BetterGI script = switch via the BetterGI 'SwitchAccountMultipleMode' script; MAS = MAS drives the game UI directly (CN official server only, game launched by MAS; with password uses account+password, otherwise the saved-accounts dropdown)",
+    bettergiAccountSwitchMethodBgi: 'BetterGI script',
+    bettergiAccountSwitchMethodMas: 'MAS (CN official only)',
     useAdminLaunch: 'Launch with administrator privileges',
     bettergiUseAdminHint:
       'On by default (BetterGI needs admin rights). If MAS runs without admin, each launch triggers a UAC prompt — turn this off for unattended tasks. When MAS itself is already elevated, keeping it on never re-prompts',

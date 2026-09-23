@@ -1660,6 +1660,11 @@ export default {
     bettergiCloseGameOnFinishHint: '任务执行完毕后是否关闭游戏',
     bettergiRetryLimitHint: '超过该次数仍失败则终止',
     bettergiRunTimeoutHint: '日志长期无变化将判定超时',
+    bettergiAccountSwitchMethod: '账号切换方式',
+    bettergiAccountSwitchMethodHint:
+      'BetterGI 脚本=由 BetterGI「切换账号多模式」脚本执行切换；MAS=MAS 直接操控游戏切号（仅官服，游戏由 MAS 托管启动；填密码走账号+密码，未填走下拉列表）',
+    bettergiAccountSwitchMethodBgi: 'BetterGI 脚本',
+    bettergiAccountSwitchMethodMas: 'MAS（仅官服）',
     useAdminLaunch: '以管理员权限启动',
     bettergiUseAdminHint:
       '默认开启（BetterGI 需要管理员权限）。MAS 非管理员运行时，每次启动都会弹一次 UAC，无人值守任务可关闭避免挂在授权上；MAS 已提权时开启也不会重复弹窗',
