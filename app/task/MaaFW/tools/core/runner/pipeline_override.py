@@ -118,6 +118,9 @@ class MaaFWPipelineOverrideBuilder:
         self.resource_name = resource_name
         # 建覆盖时跳过的项（给用户看的原因）；调用方把它带进运行计划的告警。
         self.warnings: list[str] = []
+        # 因为值下发不了而整段跳过覆盖的 input 选项（没填又没默认值、该填数字却不是）。
+        # 只带事实，调用方按任务拼成告警后清空——它知道当前是哪个任务、显示名是什么。
+        self.input_errors: list[MaaFWInputValueError] = []
 
     def build_task_pipeline_override(
         self,
@@ -388,13 +391,20 @@ class MaaFWPipelineOverrideBuilder:
             elif isinstance(raw_option_value, list):
                 raw_text = raw_option_value[0] if raw_option_value else ""
 
-            typed_value, text_value = self._coerce_input_value(
-                raw_text,
-                input_item.pipeline_type,
-                input_item.default,
-                option_name=option_name,
-                field_name=input_item.name,
-            )
+            try:
+                typed_value, text_value = self._coerce_input_value(
+                    raw_text,
+                    input_item.pipeline_type,
+                    input_item.default,
+                    option_name=option_name,
+                    field_name=input_item.name,
+                )
+            except MaaFWInputValueError as exc:
+                # 与 hotkey 没有默认值时同一口径：这个选项的覆盖整段跳过（半替换会把
+                # 字面量 "{字段}" 塞进 pipeline），任务按项目原 pipeline 跑，不让整轮
+                # 失败（MXU 填 0、CFA 失败时保留原值，也都不让整轮失败）。
+                self.input_errors.append(exc)
+                return {}
             placeholder = f"{{{input_item.name}}}"
             typed_replacements[placeholder] = typed_value
             text_replacements[placeholder] = text_value

@@ -157,6 +157,7 @@ def build_maafw_run_plan(
 
     runnable_tasks: list[MaaFWTaskRunPlan] = []
     skipped_tasks: list[MaaFWSkippedTaskPlan] = []
+    input_warnings: list[str] = []
     # 队列元素是任务实例 id：同一个任务可以出现多次，每份各带自己的一套选项。
     for task_id in selected_common_task_ids:
         task_name = resolve_task_instance_name(task_id, task_map)
@@ -198,15 +199,17 @@ def build_maafw_run_plan(
                     i18n_mapping,
                 )
             ) from exc
-        except MaaFWInputValueError as exc:
-            raise MaaFWRunPlanError(
+        # 值下发不了的 input 选项已被跳过覆盖：按任务拼成告警（只影响这个任务的这个选项）
+        for input_error in pipeline_builder.input_errors:
+            input_warnings.append(
                 _describe_input_value_error(
-                    exc,
+                    input_error,
                     _resolve_i18n_label(task.label, task.name, i18n_mapping),
                     interface,
                     i18n_mapping,
                 )
-            ) from exc
+            )
+        pipeline_builder.input_errors.clear()
         runnable_tasks.append(
             MaaFWTaskRunPlan(
                 name=task.name,
@@ -225,12 +228,13 @@ def build_maafw_run_plan(
     if not runnable_tasks:
         raise MaaFWRunPlanError("当前 controller/resource 下没有可执行任务")
 
-    for warning in pipeline_builder.warnings:
+    builder_warnings = [*pipeline_builder.warnings, *input_warnings]
+    for warning in builder_warnings:
         logger.warning("MaaFW 运行计划：%s", warning)
     # 加载 interface 时的告警（preset 引用不存在的 case、缺 import 文件……）以前只进后端
     # 日志；与建覆盖时跳过的项一起进计划，运行日志开头列一次（加载时已写过后端日志）。
     plan_warnings = list(
-        dict.fromkeys([*interface_load_warnings(interface), *pipeline_builder.warnings])
+        dict.fromkeys([*interface_load_warnings(interface), *builder_warnings])
     )
 
     return MaaFWRunPlan(
@@ -308,7 +312,7 @@ def _describe_input_value_error(
     interface_model: MaaFWInterface,
     i18n_mapping: dict[str, Any],
 ) -> str:
-    """input 的值下发不了时给用户看的一句话：哪个任务、哪个选项（多字段时带字段名）、什么值。"""
+    """input 的值下发不了、覆盖已跳过时的告警：哪个任务、哪个选项（多字段时带字段名）、什么值。"""
 
     option = interface_model.option.get(exc.option_name)
     option_label = (
@@ -325,15 +329,21 @@ def _describe_input_value_error(
             else exc.field_name
         )
         option_label = f"{option_label}」的「{field_label}"
-    kind = _INPUT_TYPE_NAMES.get(exc.expected, exc.expected)
+    kind = _INPUT_TYPE_NAMES.get(
+        exc.expected, "布尔值" if "bool" in exc.expected else exc.expected
+    )
+    skipped = "已跳过该选项的设置，这个任务按项目原本的流程跑"
     if exc.value is None:
-        # 数字类型的输入没有「空」这个取值，项目又没给默认值（MAH 的 select_team
-        # default 是空串）：下发不了，只能报错；只报这一个选项，并说清去哪填。
+        # 数字 / 布尔类型的输入没有「空」这个取值，项目又没给默认值（MAH 的 select_team
+        # default 是空串）：只跳过这一个选项，说清去哪填。
         return (
             f"任务「{task_label}」的选项「{option_label}」需要填一个{kind}，"
-            "但没有填写、项目也没有给默认值；请在用户配置的任务队列里填写后再运行"
+            f"但没有填写、项目也没有给默认值，{skipped}；请在用户配置的任务队列里填写"
         )
-    return f"任务「{task_label}」的选项「{option_label}」的值 {exc.value} 不是{kind}"
+    return (
+        f"任务「{task_label}」的选项「{option_label}」的值 {exc.value} 不是{kind}，"
+        f"{skipped}"
+    )
 
 
 def _coerce_interface(
