@@ -4,6 +4,7 @@ import copy
 import json
 import logging
 import os
+import shutil
 from importlib import metadata
 from pathlib import Path
 from typing import Any
@@ -564,6 +565,15 @@ def _is_option_compatible(
     return True
 
 
+def _is_bare_command(raw_exec: str) -> bool:
+    """``python`` / ``node.exe`` 这种不带路径的命令名（PI：exec 可以是系统 PATH 上的程序）。"""
+
+    value = raw_exec.strip()
+    return bool(value) and not any(
+        marker in value for marker in ("/", "\\", ":", "{PROJECT_DIR}")
+    )
+
+
 def _resolve_pretask_executable(base_dir: Path, raw_exec: str) -> str:
     resolved = _resolve_project_path(base_dir, raw_exec)
     candidate = Path(resolved.resolved)
@@ -576,9 +586,20 @@ def _resolve_pretask_executable(base_dir: Path, raw_exec: str) -> str:
             and windows_candidate.is_file()
         ):
             candidate = windows_candidate
-    if not candidate.is_file():
-        raise MaaFWRunPlanError(f"pretask 可执行文件不存在: {raw_exec}")
-    return str(candidate)
+    if candidate.is_file():
+        return str(candidate)
+    if _is_bare_command(raw_exec):
+        # 项目目录里没有同名文件时按系统 PATH 找（PI 文档的示例就是 ``"exec": "python"``），
+        # 解析成绝对路径再交给子进程：裸名原样交给 CreateProcess 的话，它先在父进程
+        # （AUTO-MAS 宿主解释器）所在目录里找，``python`` 永远落到宿主自己的解释器上——
+        # 与 agent 规划不把裸 ``python`` 交给 PATH 是同一个原因。
+        found = shutil.which(raw_exec.strip())
+        if found:
+            return str(Path(found).resolve())
+        raise MaaFWRunPlanError(
+            f"pretask 可执行文件不存在: {raw_exec}（项目目录与系统 PATH 里都没有）"
+        )
+    raise MaaFWRunPlanError(f"pretask 可执行文件不存在: {raw_exec}")
 
 
 def _build_task_log_options(
