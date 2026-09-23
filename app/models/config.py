@@ -1673,7 +1673,10 @@ class MaaEndConfig(ConfigBase):
     async def load(self, data: dict) -> bool:
         data = deepcopy(data)
         game_data = data.get("Game") if isinstance(data, dict) else None
-        migrated = isinstance(game_data, dict) and game_data.get("RestoreResolution") == "Fullscreen"
+        migrated = (
+            isinstance(game_data, dict)
+            and game_data.get("RestoreResolution") == "Fullscreen"
+        )
         if migrated:
             game_data["RestoreDisplayType"] = "Fullscreen"
             game_data["RestoreResolution"] = "1920x1080"
