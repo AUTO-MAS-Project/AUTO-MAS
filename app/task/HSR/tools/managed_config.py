@@ -162,6 +162,17 @@ SRA_REWARD_LABELS = (
 )
 """SRA receiveRewards 奖励开关的顺序词表（索引式 ``rewards.<i>`` 与命名键
 ``rewards.<name>`` 共用同一顺序，顺序以 SRA TasksConfig 为准）"""
+SRA_REWARD_NAMED_KEYS = (
+    "rewards.trailblazeProfile",
+    "rewards.assignments",
+    "rewards.mail",
+    "rewards.dailyTraining",
+    "rewards.namelessHonor",
+    "rewards.giftOfOdyssey",
+    "rewards.redeemCode",
+)
+"""SRA 2.22.0 起的具名奖励键，顺序同 ``ReceiveRewardsConfig.to_dict``"""
+_SRA_LABELS.update(zip(SRA_REWARD_NAMED_KEYS, SRA_REWARD_LABELS, strict=True))
 _SRA_REROLL_ONLY = "仅「博弈类别」为「刷开局」时生效。"
 # 说明只写能从 SRA 源码（tasks/CosmicStrifeTask.py、tasks/currency_wars/RerollStart.py、
 # tasks/TrailblazePowerTask.py）里确认的格式；拿不准的一律指回 SRA 内的同名设置。

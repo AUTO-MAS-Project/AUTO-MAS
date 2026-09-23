@@ -36,6 +36,7 @@ from app.models.task import LogRecord, ScriptItem, TaskExecuteBase, UserItem
 from app.utils import get_logger
 from app.utils.constants import TASK_MODE_ZH, UTC4
 from app.utils.io import replace_dir
+from app.utils.platform import is_admin
 
 from .AutoProxy import HSRAutoProxyTask, resolve_daily_native_modes
 from .task_mapping import (
@@ -79,6 +80,7 @@ from .tools.sra_runtime import (
     get_sra_app_data_dir,
     load_sra_native_config,
     resolve_sra_profile_selection,
+    sra_cloud_game_enabled,
 )
 from .tools.stage_runtime import resolve_configured_daily_stages
 
@@ -524,6 +526,21 @@ class HSRManager(TaskExecuteBase):
         if not has_executable_user:
             return "未找到任何可执行用户，请确保至少有一个启用且剩余天数不为 0 的用户"
 
+        # 后端未提权时：MAS 起游戏会 WinError 740，直接拦下；不管游戏时只提示，
+        # SRA 带 --no-admin 原地继续，三月七会另起提权进程并被判为失败。
+        if not is_admin():
+            if game_management_enabled:
+                return (
+                    "AUTO-MAS 未以管理员身份运行，无法由 MAS 启动游戏；"
+                    "请以管理员身份运行 AUTO-MAS，或在脚本设置中关闭「MAS 管理游戏」"
+                )
+            logger.warning("AUTO-MAS 未以管理员身份运行，HSR 外部脚本可能无法正常执行")
+            self._append_log(
+                "AUTO-MAS 未以管理员身份运行：SRA 将以非管理员身份继续，"
+                "三月七会另起提权进程、脱离 MAS 跟踪并被判为失败；"
+                "建议以管理员身份运行 AUTO-MAS"
+            )
+
         if game_management_enabled and (enabled_module_keys or has_direct_user):
             if not str(script_config.get("Game", "Path") or "").strip():
                 return "请设置游戏路径"
@@ -561,6 +578,21 @@ class HSRManager(TaskExecuteBase):
                 load_sra_native_config(script_config)
         except (FileNotFoundError, OSError, ValueError) as exc:
             return f"HSR 原生配置不可用：{exc}"
+
+        # 以下两条只提示不阻断：MAS 不按次改写 SRA 的云游戏开关，也不接管三月七
+        # 自己保存的账号。
+        if sra_available and sra_cloud_game_enabled():
+            self._append_log(
+                "SRA 设置中开启了云游戏，SRA 任务将运行云·星穹铁道而不是本地客户端；"
+                "如需本地运行，请在 SRA 设置中关闭云游戏"
+            )
+        if m7a_available and managed_users_with_credentials:
+            accounts_dir = Path(m7a_path) / "settings" / "accounts"
+            if accounts_dir.is_dir() and any(accounts_dir.iterdir()):
+                self._append_log(
+                    "三月七内置账号管理与 MAS 切号可能互相覆盖，建议二选一"
+                    f"（三月七已保存账号：{accounts_dir}）"
+                )
 
         for user_config, user_name, assigned in daily_stage_checks:
             self._precheck_daily_stages(script_config, user_config, user_name, assigned)
@@ -909,6 +941,8 @@ class HSRManager(TaskExecuteBase):
             f"（日常 {control.daily_limit_minutes} + 周常 {control.weekly_limit_minutes}），"
             "超时将终止脚本进程"
         )
+        if "M7A" in control.engines:
+            self._log_ignored_m7a_after_finish()
 
         summaries: list[str] = []
         try:
@@ -953,6 +987,22 @@ class HSRManager(TaskExecuteBase):
         # 执行任务后脚本（每用户仅一次）
         await run_script_after_task(user_config)
         return len(control.engines)
+
+    def _log_ignored_m7a_after_finish(self) -> None:
+        """直控下三月七的 ``after_finish`` 被运行环境钉成 None，配了别的值就说一声。"""
+
+        try:
+            after_finish = load_m7a_native_config(self.script_config).get(
+                "after_finish"
+            )
+        except (FileNotFoundError, OSError, ValueError):
+            return
+        if after_finish is None or str(after_finish) == "None":
+            return
+        self._append_log(
+            f"本轮忽略三月七的收尾动作（{after_finish}），"
+            "关机/睡眠请用 MAS 的队列完成后操作"
+        )
 
     async def _persist_user_logs(self) -> None:
         """将 HSR 用户日志写入历史记录。"""

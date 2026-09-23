@@ -765,6 +765,10 @@ class HSRAutoProxyTask(TaskExecuteBase):
         if not selected:
             self._append_log(f"用户「{user_name}」已关闭 {engine} 兑换码奖励，本轮跳过")
             return False, None
+        if engine == "M7A":
+            # 三月七每日任务从在线码表取兑换码、按 already_used_codes 自行去重，
+            # 不读用户手填的 redemption_code；按手填列表算指纹会让在线新码永远不兑。
+            return True, None
         only_when_changed = self.script_config.get("Game", "RedeemCodesOnlyWhenChanged")
         if only_when_changed is False:
             return True, None
