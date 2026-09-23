@@ -61,7 +61,18 @@ logger = logging.getLogger("automas.maafw.runner.run_plan")
 # 语言文件解析失败只提醒一次：同一份坏文件每次建计划都会再撞上。
 _WARNED_LANGUAGE_FILES: set[str] = set()
 
-PI_INTERFACE_VERSION = "v2.8.1"
+# 注入给 agent 的 PI_INTERFACE_VERSION：Client 侧实际实现到的 PI 语义化版本（不是
+# interface_version 那个固定的 2）。取「协议里要求 Client 必须做到的行为都已实现」的
+# 最高版本，依据（对照 MaaFramework docs/zh_cn/3.3-ProjectInterfaceV2协议.md 的版本表）：
+# - v2.1.0–v2.8.1：import / attach_resource_path、checkbox、option 适用性过滤、preset、
+#   group、PI_* 环境变量、pretask（含 controller / resource 过滤与选项 JSON 参数）、
+#   hotkey 都已实现；未做的只有「应」级的界面行为：resource.hash 不匹配时的提示
+#   （v2.6.0）、setting 设置分区的渲染（v2.8.0）。
+# - v2.9.0–v2.9.2：telemetry 协议写明「并非所有 Client 都会支持」，不上报即合规。
+# - v2.10.0 起不声明：password 输入「必须加密存储」尚未实现（v2.10.0），checkbox 的
+#   min_count / max_count 选择数限制尚未实现（v2.10.1，字段按未知字段放行）；welcome
+#   数组（v2.10.2）已能解析，但前两条做完之前不能越过 v2.10.0。
+PI_INTERFACE_VERSION = "v2.9.2"
 PI_CLIENT_LANGUAGE = "zh_cn"
 PI_CLIENT_NAME = "AUTO-MAS"
 PROJECT_RUNTIME_MANIFEST_NAME = ".auto_mas_maafw_project.json"
