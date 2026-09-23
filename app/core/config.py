@@ -5575,23 +5575,45 @@ class AppConfig(GlobalConfig):
         except Exception as exc:  # noqa: BLE001 - 回收失败不影响启动
             logger.warning(f"MFW 载荷回收失败: {exc}")
             return
+        if not (report.payloads or report.lineages):
+            return
+        parts = []
         if report.payloads:
-            logger.info(f"已回收 {report.payloads} 个无人引用的 MFW 项目版本（载荷）")
+            parts.append(f"{report.payloads} 个无人引用的项目版本（载荷）")
         if report.lineages:
-            logger.info(
-                f"已回收 {len(report.lineages)} 个不再有脚本使用的 MFW 项目（整个谱系）: "
+            parts.append(
+                f"{len(report.lineages)} 个不再有脚本使用的项目（整个谱系: "
                 + ", ".join(report.lineages)
+                + "）"
             )
+        # 与共用库共享的大文件由紧接着的共用库回收释放（那一行另报 MB）。
+        logger.info(
+            f"已回收 MFW {'、'.join(parts)}，释放 {report.freed_bytes / 2**20:.1f} MB"
+        )
 
     async def migrate_maafw_embedded_copies_to_payloads(self) -> None:
         """启动期一次性迁移：把没有标记的老副本采纳成「载荷 + 视图」（附录 B）。
 
-        逐副本持视图预约、各自失败隔离（不写标记、日志点名、下次启动再试）；采纳完对每个
-        谱系每个渠道统一到 latest（附录 B 第 8 条：启动期没有脚本在跑，不用等），切过的
-        视图在后台各确认一次运行环境。全部采纳成功后清掉老的原地更新留下的清单、预检备忘
-        与非下载态的更新记录。配置一个字段都不写；脚本表没加载起来（疑似损坏）整轮弃权。
+        逐副本持视图预约、各自失败隔离（不写标记、日志点名、下次启动再试）。**全部采纳完
+        再统一决定同版本的 latest**（``settle_adopted_latest``：有更新器清单的、文件集合是
+        超集的、文件多的优先，与脚本顺序无关），然后每个谱系每个渠道统一到 latest（附录 B
+        第 8 条），切过的视图连同预约交给后台确认运行环境。之后收掉老的原地更新留下的清单、
+        预检备忘与作废的更新流水（还有没采纳的副本时留着它们要用的那部分）。配置一个字段
+        都不写；脚本表没加载起来（疑似损坏）整轮弃权。
+
+        迁移在后台跑、不挡主定时器：期间拿不到视图预约的运行在运行前检查里按「正在切换
+        版本」跳过一次（``embedded_project.migration_active``）。
         """
 
+        from app.task.MaaFW.tools.embedded.embedded_project import set_migration_active
+
+        set_migration_active(True)
+        try:
+            await self._migrate_maafw_embedded_copies()
+        finally:
+            set_migration_active(False)
+
+    async def _migrate_maafw_embedded_copies(self) -> None:
         from app.models.config import MaaFWConfig
         from app.task.MaaFW.tools.embedded.embedded_project import (
             GroupMember,
@@ -5600,6 +5622,7 @@ class AppConfig(GlobalConfig):
             embedded_project_dir,
             imported_source_path,
             read_view_marker,
+            settle_adopted_latest,
         )
         from app.task.MaaFW.tools.embedded.project_path import (
             release_project_path,
@@ -5645,14 +5668,19 @@ class AppConfig(GlobalConfig):
         adopted: list[str] = []
         failed: list[str] = []
         for script_id, channel, source, name, _proxy in pending:
-            key = await try_reserve_project_path(embedded_project_dir(script_id))
+            view = embedded_project_dir(script_id)
+            key = await try_reserve_project_path(view)
             if key is None:
                 failed.append(name)
                 logger.warning(
                     f"MFW 副本迁移：脚本「{name}」的副本正被占用，下次启动再试"
                 )
                 continue
+            began = time.monotonic()
             try:
+                if await asyncio.to_thread(read_view_marker, view) is not None:
+                    # 迁移在后台跑：它自己开跑时的运行前检查已经就地采纳过了。
+                    continue
                 result = await asyncio.to_thread(
                     lambda sid=script_id, ch=channel, src=source: adopt_view(
                         sid, channel=ch, source=src
@@ -5661,7 +5689,7 @@ class AppConfig(GlobalConfig):
                 adopted.append(script_id)
                 logger.info(
                     f"MFW 副本迁移：脚本「{name}」已登记为 {result.version}（{result.payload_id}），"
-                    f"私有文件 {result.carried} 个，{result.elapsed:.1f} s"
+                    f"私有文件 {result.carried} 个，采纳用时 {time.monotonic() - began:.1f} s"
                 )
             except Exception as exc:  # noqa: BLE001 - 逐副本隔离，下次启动再试
                 failed.append(name)
@@ -5670,23 +5698,26 @@ class AppConfig(GlobalConfig):
                 )
             finally:
                 await release_project_path(key)
-        switched = await self._unify_maafw_views_to_group(entries)
+        # 全部登记完才定同版本的 latest（登记本身是「同版本保留先来的」），再统一切换。
+        await asyncio.to_thread(settle_adopted_latest)
+        switched, held = await self._unify_maafw_views_to_group(entries)
         logger.info(
             f"MFW 副本迁移完成：采纳 {len(adopted)} 个、失败 {len(failed)} 个、"
             f"统一到组版本 {len(switched)} 个，用时 {time.monotonic() - started:.1f} s"
         )
-        if switched:
-            from app.task.MaaFW.tools.embedded.view_update import (
-                confirm_environments_in_background,
-            )
+        from app.task.MaaFW.tools.embedded.view_update import (
+            confirm_environments_in_background,
+        )
 
-            confirm_environments_in_background(
-                [
-                    GroupMember(sid, channel, name=name, proxy_url=proxy)
-                    for sid, channel, _src, name, proxy in entries
-                    if sid in set(switched)
-                ]
-            )
+        # 切换时拿的预约直接交给确认线程（两步之间不留空档）；没切的不确认。
+        confirm_environments_in_background(
+            [
+                GroupMember(sid, channel, name=name, proxy_url=proxy)
+                for sid, channel, _src, name, proxy in entries
+                if sid in set(switched)
+            ],
+            held=held,
+        )
         # 采纳失败的副本下次启动还要靠老的更新清单（committed 记录 + 状态目录里的包内
         # 清单）认出哪些文件没改过，那部分留着；其余作废记录照收。
         await asyncio.to_thread(
@@ -5695,8 +5726,11 @@ class AppConfig(GlobalConfig):
 
     async def _unify_maafw_views_to_group(
         self, entries: list[tuple[str, str, str, str, str | None]]
-    ) -> list[str]:
-        """附录 B 第 8 条：每个视图切到它所在组（谱系 + 渠道）的 latest。"""
+    ) -> tuple[list[str], dict[str, str]]:
+        """附录 B 第 8 条：每个视图切到它所在组（谱系 + 渠道）的 latest。
+
+        返回（切过的脚本, 它们还没放的预约）：预约交给环境确认线程放。
+        """
 
         from app.task.MaaFW.tools.embedded.embedded_project import embedded_project_dir
         from app.task.MaaFW.tools.embedded.project_path import (
@@ -5706,25 +5740,28 @@ class AppConfig(GlobalConfig):
         from app.task.MaaFW.tools.embedded.view_update import sync_view_to_group
 
         switched: list[str] = []
+        held: dict[str, str] = {}
         for script_id, channel, _source, name, _proxy in entries:
             key = await try_reserve_project_path(embedded_project_dir(script_id))
             if key is None:
                 continue
+            result = None
             try:
                 result = await sync_view_to_group(
                     script_id, channel, reservation_held=True
                 )
             except Exception as exc:  # noqa: BLE001 - 留在原版本，下次运行前再同步
                 logger.warning(f"MFW 副本迁移：脚本「{name}」统一到组版本失败：{exc}")
-                continue
             finally:
-                await release_project_path(key)
+                if result is None:
+                    await release_project_path(key)
             if result is not None:
                 switched.append(script_id)
+                held[script_id] = key
                 logger.info(
                     f"MFW 副本迁移：脚本「{name}」{result.from_payload} → {result.payload_id}"
                 )
-        return switched
+        return switched, held
 
     @staticmethod
     def _discard_legacy_update_state(*, keep_adoption_baseline: bool) -> None:

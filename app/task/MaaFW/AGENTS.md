@@ -84,21 +84,27 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   追加写）；链接失败就退回复制。可写的东西靠四层挡住：尺寸、排除表、运行期新建即新 inode、运行
   收尾的写穿巡检（`tools/embedded/view_audit.py`：nlink>1 且修改时间晚于物化时刻才读 sha，确认就
   隔离 blob、记 `privatePaths`、标载荷 `damaged`）。回收在启动期：`clean_maafw_embedded_copies`
-  删无人引用的载荷（引用集 = 视图标记 ∪ 各谱系 latest ∪ 未完成切换的 to，本进程起来之后建的不收），
-  随后 `clean_maafw_runtime_blobs` 删 `st_nlink == 1` 的 blob。本机实测：inode 被映射时只有被映射的
+  删无人引用的载荷（`embedded_project.collect_payload_garbage`：引用集 = 视图标记 ∪ 未完成切换的 to，
+  谱系还有视图时再加它的 latest；一个视图都不剩的谱系整个收走，视图丢了但脚本还在的按导入来源保住；
+  本进程起来之后建的不收），随后 `clean_maafw_runtime_blobs` 删 `st_nlink == 1` 的 blob。本机实测：inode 被映射时只有被映射的
   那个目录项删不掉 / 换不掉，同一 inode 的其它硬链接名随便删换（见 `blob_store.py` 模块说明）。
 - **同一项目再建一个脚本**走 `/maafw/embedded/sources`（候选）+ `/maafw/embedded/clone`
   （`embedded_project.clone_embedded_copy`）：从源脚本挂着的载荷物化目标视图（源正在切换就取 journal
-  的目标），不读源视图、不要源空闲、源的运行期状态不带；只预约目标；`Info.Path` 与 `Embedded.*`
+  的目标），不读源视图、不要源空闲、源的运行期状态不带；只预约目标（源还是没采纳的老副本、只能按目录
+  克隆时才预约源，源被占用就拒绝）；`Info.Path` 与 `Embedded.*`
   沿用源（两者必须成对继承），类型随项目。「复制脚本」（`Config.add_script`）复用同一个函数。
   视图与来源都没了时，`ensure_embedded_copy` 从同来源兄弟的谱系（没有兄弟就按载荷清单记的导入来源
   反查）按本脚本渠道的 latest 重建——来源可删这句承诺靠它兜底。更新包下载缓存
   `data/maafw_update_cache` 按 源 + 版本 + 文件名 命中，启动期 `Config.clean_maafw_update_cache`
   删 7 天没碰过的（`transport.prune_update_cache`）。
-- **启动期一次性迁移**（`Config.migrate_maafw_embedded_copies_to_payloads`，排在各项回收之前）：
-  没有标记的老副本逐个采纳（`embedded_project.adopt_view`：更新器清单里没改过的记 `package`，与来源
-  同路径同内容的记 `import`，都证明不了按视图自己的白名单判，已知运行期状态文件一律私有），再把每个
-  组统一到 latest；采纳失败的原样保留、下次再试。
+- **启动期一次性迁移**（`Config.migrate_maafw_embedded_copies_to_payloads`，排在各项回收之前，整段
+  在后台任务里跑、不挡主定时器；期间拿不到视图预约的运行按「正在切换版本」跳过一次）：没有标记的老
+  副本逐个采纳（`embedded_project.adopt_view`：**载荷内容以视图自身为准**——按视图自己的 interface
+  算投影白名单，白名单内、不是已知运行期状态 / 日志的全部进载荷，内容取视图现状；更新器清单与来源
+  目录只用来标 `origin`，不决定去留，否则「来源旧、视图新」会登记出残缺载荷）。全部采纳完再统一定
+  同版本的 latest（`settle_adopted_latest`：有清单背书的、文件集合是超集的、文件多的优先，与脚本
+  顺序无关），然后把每个组统一到 latest；同版本合并时被切视图独有的文件进 `local-modified` 留档。
+  采纳失败的原样保留、下次再试。
 - Python agent 的解释器三种落法（`agent_env/planner.py`）：项目自带 `python/python.exe` 存在 →
   `project_python`；声明的是自带 Python 模式但文件不存在，或者裸写 `python` 让 PATH 去找
   （PI v2 示例与 MAA_Punish 的写法）→ 该项目专属隔离 venv（`isolated_venv`，按项目路径哈希
@@ -166,7 +172,11 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   （取消令牌、GitHub 镜像、按触发脚本解析的代理、进度全部透传）→ 在 `.staging/payload-*` 里从当前
   载荷 + 包建新载荷（`payloads.build_from_package`）→ 在 staging 上预检一次（钉回 binding 也在这里，
   写的是 staging）→ `finalize` 并入共用库 → `register` 登记 → 切触发脚本的视图 → 同组空闲脚本立即切
-  （运行中的跑完再切：`_check` 的组同步与 `final_task` 的收尾同步；pending 是派生状态，不落字段）。
+  （运行中的跑完再切：`_check` 的组同步与 `final_task` 的收尾同步——收尾同步只在用户全部正常跑完时做，
+  停止 / 崩溃留给下一次 `_check`；pending 是派生状态，不落字段）。切过的兄弟连同预约交给后台环境确认
+  线程（`view_update.propagate_and_confirm`）。运行环境「确认过哪个载荷」记在视图标记的
+  `envConfirmedFor`（确认成功才写，同谱系切换带旧值）：`_check` 看到 `payload ≠ envConfirmedFor` 就由
+  `main_task` 在用户任务前补确认，拿不到预约时据此说「正在切换版本」。
   视图与旧载荷全程一个字节不动：失败 / 预检不过 / 取消都只是丢 staging，没有回滚与中断恢复。
   下载完成之后到登记之前取消 = 丢 staging（「正在中止更新（丢弃未完成的新版本），请稍候」，60 s
   宽限）；登记之后不再响应取消。手动 `/maafw/update` 运行中照旧拒绝（`_UPDATE_SCRIPT_BUSY`），整段

@@ -843,6 +843,84 @@ def register(
     )
 
 
+def _same_version_rank(
+    candidate: str, manifests: Mapping[str, Mapping[str, Any]]
+) -> tuple[int, int, int, int]:
+    """同版本多份载荷里挑谁当 latest 的排序键（越大越好；最后按 id 字典序兜底）。
+
+    1. ``source.kind=update``（有更新器清单背书）优先；
+    2. 文件集合是其它几份的超集的优先（超过几份就记几分）；
+    3. 文件数多、总字节大的优先。
+    与登记顺序无关——迁移时登记顺序就是脚本列表顺序，用户拖一下就会变。
+    """
+
+    manifest = manifests[candidate]
+    files = manifest_files(manifest)
+    keys = {rel.casefold() for rel in files}
+    supersets = 0
+    for other, other_manifest in manifests.items():
+        if other == candidate:
+            continue
+        other_keys = {rel.casefold() for rel in manifest_files(other_manifest)}
+        if other_keys < keys:
+            supersets += 1
+    is_update = int(str((manifest.get("source") or {}).get("kind") or "") == "update")
+    total = sum(int(entry.get("size") or 0) for entry in files.values())
+    return (is_update, supersets, len(files), total)
+
+
+def settle_same_version_latest(root: Path, key: str, channel: str) -> str | None:
+    """``latest[channel]`` 所在版本有多份载荷时，按 :func:`_same_version_rank` 确定地挑一份。
+
+    迁移先把全部副本登记完再调它（登记是「同版本保留先来的」，先来的可能是残缺的那份），
+    然后才统一切换。返回换成的 id；没变返回 None。损坏（``damaged``）或目录不在的不参选。
+    """
+
+    with lineage_lock(root, key):
+        data = read_lineage(root, key)
+        entry = data["latest"].get(channel)
+        if not isinstance(entry, Mapping) or not entry.get("id"):
+            return None
+        version = str(entry.get("version") or "").strip().lstrip("vV")
+        if not version:
+            return None
+        damaged = {str(item) for item in data.get("damaged") or []}
+        manifests: dict[str, dict[str, Any]] = {}
+        for payload_id in list_ids(root, key):
+            if payload_id in damaged or not payload_dir(root, key, payload_id).is_dir():
+                continue
+            manifest = read_manifest(root, key, payload_id)
+            if manifest is None:
+                continue
+            if str(manifest.get("version") or "").strip().lstrip("vV") != version:
+                continue
+            manifests[payload_id] = manifest
+        if len(manifests) < 2:
+            return None
+        chosen = sorted(
+            manifests,
+            key=lambda pid: (_same_version_rank(pid, manifests), _reverse_text(pid)),
+            reverse=True,
+        )[0]
+        if chosen == str(entry["id"]):
+            return None
+        data["latest"][channel] = {
+            **dict(entry),
+            "id": chosen,
+            "version": str(manifests[chosen].get("version") or entry.get("version")),
+            "source": dict(manifests[chosen].get("source") or {}),
+            "at": _now_text(),
+        }
+        write_lineage(root, key, data)
+        return chosen
+
+
+def _reverse_text(text: str) -> tuple[int, ...]:
+    """让 ``sorted(..., reverse=True)`` 在排序键打平时按 id **升序**取第一个。"""
+
+    return tuple(-ord(char) for char in text)
+
+
 # --------------------------------------------------------------------------
 # 回收判定（删除由宿主做）
 # --------------------------------------------------------------------------
@@ -940,6 +1018,7 @@ __all__ = [
     "manifest_files",
     "manifest_path",
     "mark_damaged",
+    "settle_same_version_latest",
     "payload_dir",
     "payload_ref",
     "place_fresh",

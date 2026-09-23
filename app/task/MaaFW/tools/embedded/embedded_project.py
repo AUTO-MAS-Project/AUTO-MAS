@@ -48,6 +48,7 @@ import json
 import os
 import shutil
 import stat
+import threading
 import time
 import uuid
 from collections.abc import Callable, Iterable, Mapping
@@ -326,6 +327,22 @@ def switch_in_progress(script_id: str, base: Path | None = None) -> bool:
     return _journal_path(embedded_copy_dir_name(script_id), base).exists()
 
 
+# 启动期迁移（采纳 + 统一到组版本）在后台跑、不挡主定时器；期间视图被它预约着的运行在
+# 运行前检查里按「正在切换版本」跳过一次。进程内状态，只有迁移本身置位。
+_MIGRATION_ACTIVE = threading.Event()
+
+
+def set_migration_active(active: bool) -> None:
+    if active:
+        _MIGRATION_ACTIVE.set()
+    else:
+        _MIGRATION_ACTIVE.clear()
+
+
+def migration_active() -> bool:
+    return _MIGRATION_ACTIVE.is_set()
+
+
 # 视图标记里「运行环境已为哪个载荷确认过」：切换只换文件，环境确认（isolated_venv 重建等）
 # 是另一件事。把「还欠一次确认」落在盘上而不是 manager 实例上：任何路径漏掉的确认
 # （运行后被停止、检查切完又提前返回、后台确认失败）都在下次运行前按它补上。
@@ -370,7 +387,7 @@ def switch_or_confirm_in_progress(script_id: str, base: Path | None = None) -> b
     更新 / 手动准备环境，不说成「正在切换」。
     """
 
-    if switch_in_progress(script_id, base):
+    if switch_in_progress(script_id, base) or migration_active():
         return True
     marker = read_view_marker(embedded_project_dir(script_id, base))
     if not env_confirm_pending(marker):
@@ -424,6 +441,8 @@ class ViewResult:
     copied: int = 0
     carried: int = 0
     archived: list[str] = field(default_factory=list)
+    # 同版本合并时目标载荷里没有、已留档的文件（不是本地改动）。
+    dropped: list[str] = field(default_factory=list)
     archive_dir: Path | None = None
     elapsed: float = 0.0
 
@@ -486,11 +505,16 @@ def _build_view_tree(
     archive_dir: Callable[[], Path],
     result: ViewResult,
     private: Iterable[str] = (),
+    archive_dropped: bool = False,
 ) -> None:
     """§3.2 第 2–3 步：载荷的链接森林 + 私有状态承载。写 staging 一律 ``place_fresh``。
 
     载荷文件满足共用谓词的挂硬链接（与载荷 / blob 同一 inode），其余复制成视图私有的新
     文件——小文件、``config/`` 这些 agent 可能原地写的，视图里必须是自己的一份。
+
+    ``archive_dropped``：旧载荷里有、新载荷里没有的文件也留档，不静默丢。同版本号的两份
+    载荷之间切换（迁移时把同一版本的多份副本合并到一份）用：那不是「新版本删了它」，
+    而是两份副本内容不一样，被切掉的那份独有的文件可能正是它在用的。
     """
 
     staging.mkdir(parents=True, exist_ok=True)
@@ -517,14 +541,14 @@ def _build_view_tree(
     old_map = {rel.casefold(): rel for rel in old_files}
     archive: Path | None = None
 
-    def _archive(path: Path, rel: str) -> None:
+    def _archive(path: Path, rel: str, *, dropped: bool = False) -> None:
         nonlocal archive
         if archive is None:
             archive = archive_dir()
             result.archive_dir = archive
         try:
             payloads.place_fresh(path, archive / rel, link=True)
-            result.archived.append(rel)
+            (result.dropped if dropped else result.archived).append(rel)
         except OSError as exc:
             logger.warning(f"[MFW 内嵌] 本地改动留档失败，继续切换: {rel}: {exc}")
 
@@ -589,6 +613,9 @@ def _build_view_tree(
                 path, old_payload_path / old_rel, old_files[old_rel]
             ):
                 _archive(path, rel)
+            elif new_rel is None and archive_dropped:
+                # 同版本合并：目标那份里没有它，不是新版本删的，留档而不静默丢。
+                _archive(path, rel, dropped=True)
             # 在新载荷里 → staging 已是新内容；不在 → 新版本删掉了，不带。
 
 
@@ -624,6 +651,7 @@ def _realize_view(
     carry_from = view if (carry and old_marker is not None) else None
     old_files: dict[str, dict[str, Any]] = {}
     old_payload_path: Path | None = None
+    old_manifest_version = ""
     from_id = ""
     if old_marker is not None:
         from_id = str(old_marker.get("payload") or "")
@@ -637,6 +665,7 @@ def _realize_view(
         if old_manifest is not None and candidate is not None and candidate.is_dir():
             old_files = payloads.manifest_files(old_manifest)
             old_payload_path = candidate
+            old_manifest_version = str(old_manifest.get("version") or "")
         else:
             logger.warning(
                 f"[MFW 内嵌] 视图 {view.name} 记的载荷 {from_id} 已不在，"
@@ -682,6 +711,11 @@ def _realize_view(
             archive_dir=lambda: _local_modified_dir(view, from_id, payload_id, base),
             result=result,
             private=payloads.private_paths(root, lineage),
+            archive_dropped=bool(
+                old_payload_path is not None
+                and from_id != payload_id
+                and _same_version(str(old_manifest_version or ""), str(version or ""))
+            ),
         )
         marker: dict[str, Any] = {
             "schemaVersion": VIEW_SCHEMA_VERSION,
@@ -751,7 +785,20 @@ def _realize_view(
             f"[MFW 内嵌] 视图 {view.name} 有 {len(result.archived)} 个受管文件在本地被改过，"
             f"已以新版本为准，旧内容留在 {result.archive_dir}: {preview}{more}"
         )
+    if result.dropped:
+        preview = ", ".join(result.dropped[:10])
+        more = " ..." if len(result.dropped) > 10 else ""
+        logger.warning(
+            f"[MFW 内嵌] 视图 {view.name} 合并到同版本的 {payload_id} 时，有 "
+            f"{len(result.dropped)} 个文件目标里没有，已留档在 {result.archive_dir}: "
+            f"{preview}{more}"
+        )
     return result
+
+
+def _same_version(left: str, right: str) -> bool:
+    a, b = left.strip().lstrip("vV"), right.strip().lstrip("vV")
+    return bool(a) and a == b
 
 
 def _reload_interface_cache(view: Path) -> None:
@@ -1185,6 +1232,27 @@ def _clone_legacy_copy_locked(
 class PayloadGarbageReport:
     payloads: int = 0
     lineages: list[str] = field(default_factory=list)
+    # 删掉时就腾出来的字节（只有这一个链接的文件）；与共用库共享的那部分要等紧接着的
+    # 共用库回收（那一行另报）。
+    freed_bytes: int = 0
+
+
+def _unique_bytes(path: Path) -> int:
+    """目录里只有一个硬链接的文件的总字节：删掉这棵树立即腾出来的空间。"""
+
+    total = 0
+    if path.is_file():
+        info = path.stat()
+        return info.st_size if info.st_nlink <= 1 else 0
+    for current, _dirs, files in os.walk(payloads.long_path(path)):
+        for name in files:
+            try:
+                info = os.stat(os.path.join(current, name))
+            except OSError:
+                continue
+            if info.st_nlink <= 1:
+                total += info.st_size
+    return total
 
 
 def collect_payload_garbage(
@@ -1248,6 +1316,10 @@ def collect_payload_garbage(
     )
     for path in candidates:
         try:
+            freed = _unique_bytes(path)
+        except OSError:
+            freed = 0
+        try:
             if path.parent == root:
                 # 整个谱系：先原子挪开（谱系锁 / 文件被占用时 rename 失败，这轮就不收），
                 # 挪开之后并发的登记只会新建一个空谱系目录，不会写进被删的这份。
@@ -1260,6 +1332,9 @@ def collect_payload_garbage(
                 report.payloads += 1
             elif os.path.lexists(path):
                 path.unlink()
+            else:
+                continue
+            report.freed_bytes += freed
         except OSError as exc:
             logger.warning(f"[MFW 内嵌] 载荷回收失败: {path} - {exc}")
     # 上一轮挪开了却没删干净的谱系
@@ -1517,6 +1592,8 @@ def _adopt_or_raise(
             or str(script_config.get("Info", "Path") or ""),
             base=base,
         )
+        # 同版本已有别的副本登记过：谁当 latest 按确定规则定，不看谁先来。
+        settle_adopted_latest(base)
     except EmbeddedProjectError:
         raise
     except Exception as exc:  # noqa: BLE001 - 原因原样给用户
@@ -1664,28 +1741,8 @@ def _recorded_update_manifest(view: Path, base: Path | None) -> dict[str, str] |
     return {str(rel): str(sha or "").lower() for rel, sha in files.items()}
 
 
-def _source_projection_map(source: str) -> dict[str, Path] | None:
-    """来源目录按投影规则展开成 ``{视图相对路径: 来源文件}``；来源不在 / 投影不了为 None。"""
-
-    text = str(source or "").strip()
-    if not text or not Path(text).is_dir():
-        return None
-    try:
-        plan = build_projection_plan(Path(text))
-    except (ProjectionError, OSError):
-        return None
-    mapping: dict[str, Path] = {}
-    for relative in plan.copied_files:
-        try:
-            output = plan.rules.output_path(relative).as_posix()
-        except ProjectionError:
-            continue
-        mapping[output.casefold()] = plan.rules.source_root / relative
-    return mapping
-
-
 def _adoption_whitelist(view: Path) -> Callable[[str], bool] | None:
-    """来源也没了：按视图自己的 interface 重算白名单（附录 B 第 4 条）。"""
+    """按视图自己的 interface 重算投影白名单（附录 B 第 4 条）：采纳时载荷的去留只看它。"""
 
     try:
         from app.task.MaaFW.tools.core.automas_maafw_project_update.projection import (
@@ -1698,6 +1755,31 @@ def _adoption_whitelist(view: Path) -> Callable[[str], bool] | None:
     return lambda rel: rules.keeps(Path(rel))
 
 
+def settle_adopted_latest(base: Path | None = None) -> list[tuple[str, str, str]]:
+    """全部采纳完之后，按确定的规则重定每个谱系每个渠道同版本的 latest（不看采纳顺序）。
+
+    返回 ``[(谱系, 渠道, 新 latest id)]``，只列变了的。之后的组同步据此把视图统一过去。
+    """
+
+    root = payloads_root(base)
+    changed: list[tuple[str, str, str]] = []
+    for lineage in payloads.list_lineages(root):
+        for channel in list(payloads.read_lineage(root, lineage)["latest"]):
+            try:
+                chosen = payloads.settle_same_version_latest(root, lineage, channel)
+            except (OSError, payloads.PayloadError) as exc:
+                logger.warning(
+                    f"[MFW 内嵌] 重定 {lineage}/{channel} 的 latest 失败: {exc}"
+                )
+                continue
+            if chosen is not None:
+                changed.append((lineage, channel, chosen))
+                logger.info(
+                    f"[MFW 内嵌] 谱系 {lineage} 渠道 {channel} 同版本有多份，latest 定为 {chosen}"
+                )
+    return changed
+
+
 def adopt_view(
     script_id: str,
     *,
@@ -1707,12 +1789,17 @@ def adopt_view(
 ) -> ViewResult:
     """把没有标记的老副本就地登记成载荷，视图挂上去（附录 B 第 1–7 条）。
 
-    调用方持有该视图的项目预约。按文件分「载荷」与「私有」：有更新器清单的，清单里、
-    内容没变的是载荷（``origin=package``）；其余与来源目录同路径同内容的是载荷
-    （``origin=import``）；来源也没了就按视图自己的白名单、排除已知运行期文件。其余一律
-    私有，原样留在视图里。载荷在 staging 里建好（大文件并入共用库）、登记，再按
-    :func:`switch_view` 同一套把视图重建一遍（私有文件 inode 不变），写上标记。任一步
-    失败：不写标记、staging 丢掉，调用方下次再试。不写任何配置。
+    调用方持有该视图的项目预约。**载荷内容以视图自身为准**：对视图按它自己的 interface
+    算投影白名单，白名单内、不在排除表 / 已知运行期状态名单里的文件全部进载荷，内容取
+    视图里的现状（热更新改过的受管文件也算——视图才是这个版本真正在跑的内容，来源目录
+    可能是旧版本）；白名单外的、运行期状态、日志一律私有，原样留在视图里。更新器清单与
+    来源目录只用来标 ``origin``（清单里、内容没变的是 ``package``，其余 ``import``），
+    不再决定去留——否则「来源旧、视图新、无清单」会登记出残缺载荷。
+
+    载荷在 staging 里建好（大文件并入共用库）、登记，再按 :func:`switch_view` 同一套把视图
+    重建一遍（私有文件 inode 不变），写上标记。同版本多份载荷谁当 latest 不在这里定
+    （登记是「同版本保留先来的」）：调用方全部采纳完再 :func:`settle_adopted_latest`。
+    任一步失败：不写标记、staging 丢掉，调用方下次再试。不写任何配置。
     """
 
     view = embedded_project_dir(script_id, base)
@@ -1726,8 +1813,11 @@ def adopt_view(
     recorded = _recorded_update_manifest(view, base)
     if recorded is not None:
         recorded = {rel.casefold(): sha for rel, sha in recorded.items()}
-    source_map = _source_projection_map(source)
     whitelist = _adoption_whitelist(view)
+    if whitelist is None:
+        logger.warning(
+            f"[MFW 内嵌] 视图 {view.name} 算不出投影白名单，除运行期状态与日志外全部按载荷登记"
+        )
 
     payload_files: dict[str, str] = {}  # rel -> sha256
     origins: dict[str, str] = {}
@@ -1749,37 +1839,17 @@ def adopt_view(
             key = rel.casefold()
             if key in ADOPT_RUNTIME_FILES or key.endswith(".log"):
                 # 已知的运行期状态（M9A 的账号记录、runner 每次重写的 maa_option.json……）
-                # 一律私有：哪怕来源目录里恰好有一份同内容的，进了载荷就会在换版本时被
-                # 当成「新版本删掉的文件」丢掉，账号级记录跟着没了。
+                # 一律私有：进了载荷就会在换版本时被当成「新版本删掉的文件」丢掉，账号级
+                # 记录跟着没了。
+                continue
+            if whitelist is not None and not whitelist(rel):
                 continue
             digest = sha256_file(path)
-            # 1) 更新器清单里的：内容没变是更新包铺的（package），改过的留私有。
-            if recorded is not None and key in recorded:
-                if recorded[key] == digest:
-                    payload_files[rel] = digest
-                    origins[rel] = payloads.ORIGIN_PACKAGE
-                continue
-            # 2) 来源目录里有同路径文件：同内容是导入来的（import），不同就是本地改过的。
-            origin_file = source_map.get(key) if source_map is not None else None
-            if origin_file is not None and origin_file.is_file():
-                if (
-                    origin_file.stat().st_size == path.stat().st_size
-                    and sha256_file(origin_file) == digest
-                ):
-                    payload_files[rel] = digest
-                    origins[rel] = payloads.ORIGIN_IMPORT
-                continue
-            # 3) 清单与来源都证明不了（来源没了、或来源目录后来被动过缺了这个文件）：按
-            #    视图自己的投影白名单判，已知运行期文件与日志除外（附录 B 第 4 条）。只按
-            #    「来源里没有」就判私有会把整套发行文件当私有带过每次切换，旧版本删掉的资源
-            #    会一直留在视图里。
-            if (
-                whitelist is not None
-                and whitelist(rel)
-                and key not in ADOPT_RUNTIME_FILES
-                and not key.endswith(".log")
-            ):
-                payload_files[rel] = digest
+            payload_files[rel] = digest
+            # 清单只用来标来源：内容与更新器记的一致就是更新包铺的。
+            if recorded is not None and recorded.get(key) == digest:
+                origins[rel] = payloads.ORIGIN_PACKAGE
+            else:
                 origins[rel] = payloads.ORIGIN_IMPORT
     if not any(
         rel.casefold() in {"interface.json", "interface.jsonc"} for rel in payload_files
@@ -2020,6 +2090,9 @@ __all__ = [
     "remove_tree",
     "resolve_maafw_project_root",
     "resolve_view_payload",
+    "set_migration_active",
+    "settle_adopted_latest",
+    "migration_active",
     "shell_hint_from_report",
     "switch_root",
     "switch_in_progress",
