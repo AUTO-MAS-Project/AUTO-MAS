@@ -95,9 +95,7 @@ def detect_channel(game_exe: Path) -> str | None:
     return None
 
 
-def read_game_info(
-    root_path: Path, user_game_path: str = ""
-) -> dict[str, str | None]:
+def read_game_info(root_path: Path, user_game_path: str = "") -> dict[str, str | None]:
     """读取 BetterGI 游戏客户端信息（供用户页透传展示）。
 
     Args:
