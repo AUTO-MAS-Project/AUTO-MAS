@@ -37,13 +37,13 @@
             <div class="banner-body" :style="bannerStyle(item)">
               <img
                 v-if="hasCover(item)"
-                :src="item.cover"
+                :src="coverOf(item)"
                 :alt="item.title"
                 class="banner-cover"
-                :class="[`is-${coverMode(item)}`, { 'is-measured': coverModes.has(item.cover) }]"
+                :class="[`is-${coverMode(item)}`, { 'is-measured': coverModes.has(coverOf(item)) }]"
                 referrerpolicy="no-referrer"
-                @load="onCoverLoad(item.cover, $event)"
-                @error="onCoverError(item.key)"
+                @load="onCoverLoad(coverOf(item), $event)"
+                @error="onCoverError(item)"
               />
               <div class="banner-overlay" />
 
@@ -56,13 +56,19 @@
                 <div class="banner-subtitle">{{ bannerSubtitle(item) }}</div>
               </div>
 
-              <div v-if="item.endTime" class="banner-remaining">
-                <div class="remaining-label">{{ countdownLabel(item) }}</div>
-                <a-statistic-countdown
-                  :value="countdownValue(countdownTarget(item))"
-                  :format="countdownFormat(item)"
-                  :value-style="remainingStyle"
-                />
+              <!-- 没有进行中的活动时只剩「后续活动即将开始」一行，倒计时整块不出现 -->
+              <div v-if="item.endTime || item.ended" class="banner-remaining">
+                <template v-if="item.endTime">
+                  <div class="remaining-label">{{ countdownLabel(item) }}</div>
+                  <a-statistic-countdown
+                    :value="countdownValue(countdownTarget(item))"
+                    :format="countdownFormat(item)"
+                    :value-style="remainingStyle"
+                  />
+                </template>
+                <div v-if="item.ended" class="remaining-sub">
+                  {{ t('home.carousel.endedNote') }}
+                </div>
               </div>
             </div>
           </article>
@@ -143,6 +149,8 @@ const onFocusOut = (event: FocusEvent) => {
 const userTookControl = ref(false)
 const failedCovers = ref(new Set<HomeModuleKey>())
 const coverModes = ref(new Map<string, CoverMode>())
+// 主封面加载失败后往后挪的候选下标：key -> 当前用的是第几个候选
+const coverIndexes = ref(new Map<HomeModuleKey, number>())
 
 const activeIndex = computed(() => {
   const index = props.items.findIndex(item => item.key === selectedKey.value)
@@ -164,10 +172,27 @@ const remainingStyle: CSSProperties = {
 }
 
 const hasCover = (item: ActivityBannerItem) =>
-  Boolean(item.cover) && !failedCovers.value.has(item.key)
+  Boolean(coverOf(item)) && !failedCovers.value.has(item.key)
 
-const onCoverError = (key: HomeModuleKey) => {
-  failedCovers.value = new Set(failedCovers.value).add(key)
+/** 该卡可用的封面候选：主图在前，备用图依次在后 */
+const coverCandidatesOf = (item: ActivityBannerItem): string[] =>
+  [item.cover, ...(item.coverCandidates ?? [])].filter(Boolean)
+
+/**
+ * 正在用的封面地址：候选图加载失败就往后挪一格（星塔旅人的大图时有时无）。
+ *
+ * 按游戏记游标而不是按地址记——换图之后尺寸要重新量，不能沿用上一张的铺法。
+ */
+const coverOf = (item: ActivityBannerItem): string =>
+  coverCandidatesOf(item)[coverIndexes.value.get(item.key) ?? 0] ?? ''
+
+const onCoverError = (item: ActivityBannerItem) => {
+  const next = (coverIndexes.value.get(item.key) ?? 0) + 1
+  if (next < coverCandidatesOf(item).length) {
+    coverIndexes.value = new Map(coverIndexes.value).set(item.key, next)
+    return
+  }
+  failedCovers.value = new Set(failedCovers.value).add(item.key)
 }
 
 const resolveCoverMode = (width: number, height: number): CoverMode => {
@@ -175,8 +200,11 @@ const resolveCoverMode = (width: number, height: number): CoverMode => {
   if (!width || !height) {
     return 'cover'
   }
+  // 640 以下才算「小图」——那才是图标、缩略图的量级。
+  // 门槛原先是 800，结果星塔旅人官网那张 795×510 的活动主视觉只差 5px 就被当成贴片，
+  // 卡片看着像没有图。
   const ratio = width / height
-  if (width < 800 || (ratio >= 0.7 && ratio <= 1.5)) {
+  if (width < 640 || (ratio >= 0.7 && ratio <= 1.5)) {
     return 'inset'
   }
   return ratio < 0.7 ? 'tall' : 'cover'
@@ -190,10 +218,10 @@ const onCoverLoad = (cover: string, event: Event) => {
 
 // 按封面地址记而不是按游戏记：版本更新换图后要重新量，不能沿用上一张的铺法
 const coverMode = (item: ActivityBannerItem): CoverMode =>
-  coverModes.value.get(item.cover) ?? 'cover'
+  coverModes.value.get(coverOf(item)) ?? 'cover'
 
 const bannerStyle = (item: ActivityBannerItem): CSSProperties => {
-  if (hasCover(item) && coverMode(item) !== 'inset' && coverModes.value.has(item.cover)) {
+  if (hasCover(item) && coverMode(item) !== 'inset' && coverModes.value.has(coverOf(item))) {
     return {}
   }
   // 没有满幅封面时用主题色底纹兜底，文字仍是浅色，观感与有封面的一致
@@ -444,6 +472,13 @@ onBeforeUnmount(() => {
 .remaining-label {
   margin-bottom: 2px;
   color: rgba(255, 255, 255, 0.72);
+  font-size: 12px;
+}
+
+/* 「后续活动即将开始」：只在这张卡展示的是刚结束的那场时出现 */
+.remaining-sub {
+  margin-top: 2px;
+  color: rgba(255, 255, 255, 0.6);
   font-size: 12px;
 }
 
