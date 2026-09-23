@@ -666,9 +666,13 @@ def _sanitize_option_case_values(
             )
             return None
         if value not in case_names:
-            raise MaaFWInterfaceLoadError(
-                f"{location}.{option_name} 引用了不存在的 case: {value}"
+            logger.warning(
+                "MaaFW ProjectInterface %s.%s 引用了不存在的 case，已忽略该预设值：%s",
+                location,
+                option_name,
+                value,
             )
+            return None
         return value
 
     if option.type == "checkbox":
@@ -681,9 +685,13 @@ def _sanitize_option_case_values(
             return None
         invalid_cases = [item for item in value if item not in case_names]
         if invalid_cases:
-            raise MaaFWInterfaceLoadError(
-                f"{location}.{option_name} 引用了不存在的 case: {', '.join(invalid_cases)}"
+            logger.warning(
+                "MaaFW ProjectInterface %s.%s 引用了不存在的 case，已从预设值里去掉：%s",
+                location,
+                option_name,
+                ", ".join(invalid_cases),
             )
+            return [item for item in value if item in case_names]
         return value
 
     if option.type in {"input", "hotkey"}:
@@ -722,10 +730,16 @@ def _validate_task_context_constraints(interface_model: MaaFWInterface) -> None:
     controller_names = {controller.name for controller in interface_model.controller}
 
     for resource in interface_model.resource:
+        # 引用了不存在的 controller 只是这条声明写错（官方 MaaPiCli 同样不拒绝）：
+        # 告警后原样保留列表——删掉错的名字可能把列表删空，空列表的意思是「适用于所有
+        # controller」，反而放宽了作者的限制。
         for controller_name in resource.controller or []:
             if controller_name not in controller_names:
-                raise MaaFWInterfaceLoadError(
-                    f"resource {resource.name} 引用了不存在的 controller: {controller_name}"
+                logger.warning(
+                    "MaaFW ProjectInterface resource %s 引用了不存在的 controller"
+                    "（不会匹配任何控制器）：%s",
+                    resource.name,
+                    controller_name,
                 )
 
     for task in interface_model.task:
