@@ -100,9 +100,7 @@ export const arknightsActivityBanner = (activityData: ActivityItem[]): ActivityB
 /** 星塔旅人的活动封面在资源域下，站点给的是 `/stella/assets/...` 这样的相对路径 */
 const STELLA_ASSET_BASE = 'https://api.ennead.cc'
 
-export const stellaActivityBanner = (
-  overview: StellaActivityOverview
-): ActivityBannerSource => {
+export const stellaActivityBanner = (overview: StellaActivityOverview): ActivityBannerSource => {
   // 站点已按状态分组：进行中的有多条时取最早结束的那条（与其它卡片同口径）；
   // 一场都没进行时退回「最近结束的那场」，让卡片照碧蓝档案的样子显示已结束
   const ongoing = [...(overview.current ?? [])].sort(
@@ -121,8 +119,7 @@ export const stellaActivityBanner = (
     path ? (path.startsWith('http') ? path : STELLA_ASSET_BASE + path) : ''
   const officialList = overview.official ?? []
   const officialTop =
-    officialList.find(item => item.matched && item.banner) ??
-    officialList.find(item => item.banner)
+    officialList.find(item => item.matched && item.banner) ?? officialList.find(item => item.banner)
   const candidates = [
     art(activity?.textures?.background),
     art(officialTop?.banner),

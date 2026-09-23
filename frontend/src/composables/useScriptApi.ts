@@ -1359,8 +1359,7 @@ export function useScriptApi() {
                           mssUserData.Info?.ClimbTimes !== undefined
                             ? mssUserData.Info.ClimbTimes
                             : 5,
-                        Notes:
-                          mssUserData.Info?.Notes !== undefined ? mssUserData.Info.Notes : '',
+                        Notes: mssUserData.Info?.Notes !== undefined ? mssUserData.Info.Notes : '',
                         Tag: mssUserData.Info?.Tag !== undefined ? mssUserData.Info.Tag : null,
                       },
                       Notify: {

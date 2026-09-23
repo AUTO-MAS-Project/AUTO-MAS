@@ -1856,8 +1856,7 @@ export default {
     mssOrchestrationHint:
       '本软件会在每次运行前按下面的设置改写星塔旅人外壳里的任务勾选与关卡，跑完自动恢复原样',
     mssPlanMode: '悬赏试炼关卡',
-    mssPlanModeHint:
-      '「默认」表示用外壳里配好的关卡；选择计划表则按当天槽位改关卡',
+    mssPlanModeHint: '「默认」表示用外壳里配好的关卡；选择计划表则按当天槽位改关卡',
     mssPlanFixed: '默认（用外壳里配的）',
     mssActivityFirst: '活动优先',
     mssActivityFirstHint:

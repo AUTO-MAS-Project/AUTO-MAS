@@ -1,11 +1,7 @@
 import { onScopeDispose, ref } from 'vue'
 import { GetService } from '@/api'
 import { createEmptyStellaActivityOverview } from '@/types/home'
-import type {
-  StellaActivityItem,
-  StellaActivityOverview,
-  StellaOfficialBanner,
-} from '@/types/home'
+import type { StellaActivityItem, StellaActivityOverview, StellaOfficialBanner } from '@/types/home'
 
 const logger = window.electronAPI.getLogger('活动数据')
 

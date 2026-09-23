@@ -189,9 +189,7 @@
                 <a-switch
                   v-model:checked="formData.Info.IfActivityFirst"
                   :disabled="loading"
-                  @change="
-                    handleFieldSave('Info.IfActivityFirst', formData.Info.IfActivityFirst)
-                  "
+                  @change="handleFieldSave('Info.IfActivityFirst', formData.Info.IfActivityFirst)"
                 />
               </a-form-item>
             </a-col>
@@ -314,7 +312,11 @@
           </a-row>
         </div>
 
-        <ExtraScriptSection v-model:form-data="formData" :loading="loading" @save="handleFieldSave" />
+        <ExtraScriptSection
+          v-model:form-data="formData"
+          :loading="loading"
+          @save="handleFieldSave"
+        />
 
         <UserNotifyConfig
           v-model="formData.Notify"
