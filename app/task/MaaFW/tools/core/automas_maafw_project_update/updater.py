@@ -33,6 +33,7 @@ from .payloads import (
     RegisterResult,
     build_from_package,
     finalize,
+    read_lineage,
     register,
     remove_tree,
     version_newer,
@@ -445,6 +446,7 @@ async def update_maafw_project_if_needed(
         # 记着包内哈希、指纹就是它现在的指纹——载荷不可变）才要差量包；本地导入的
         # 载荷没有发布方基线，一律要全量包。
         prefer_full = True
+        damaged = False
         if payload is not None:
             try:
                 source_kind = str(
@@ -453,7 +455,22 @@ async def update_maafw_project_if_needed(
             except PayloadError:
                 source_kind = ""
             prefer_full = source_kind != "update"
-        if prefer_full:
+            # 写穿巡检标过 damaged 的载荷：差量基线（清单）已与盘上内容不符，套差量会把
+            # 被改写的文件原样带进新版本，只能整版重建。
+            if not prefer_full:
+                try:
+                    damaged = payload.payload_id in {
+                        str(item)
+                        for item in read_lineage(payload.root, payload.lineage)[
+                            "damaged"
+                        ]
+                    }
+                except (OSError, PayloadError):
+                    damaged = False
+            if damaged:
+                prefer_full = True
+                send_update_log("当前版本有共用文件被改写过，改为请求全量包")
+        if prefer_full and not damaged:
             send_update_log("当前版本是本地导入的，改为请求全量包")
 
         (
