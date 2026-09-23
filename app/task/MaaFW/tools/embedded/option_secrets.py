@@ -11,6 +11,10 @@
 - 带前缀：是密文。解不开（换了 Windows 账户 / 电脑、配置从别处恢复）就报错请用户重填，
   不能把密文当密码发出去。
 - 不带前缀：旧版本存下的明文，照常使用，下次保存该用户的任务配置时加密。
+
+运行时解密出来的原文会随 ``pipeline_override`` 进 MaaFramework 的原生调试日志
+（``MaaTaskerPostTask`` 按 DBG 级别记下整份 override）；``runner_task`` 复制原生日志、
+转发 worker 输出、摘录失败原因时用 ``redact_secret_text`` 把它们换成占位。
 """
 
 from __future__ import annotations
@@ -128,6 +132,63 @@ def open_task_snapshot(
     }
 
 
+#: 日志里替换密码原文用的占位。
+REDACTED_SECRET_TEXT = "<已隐藏>"
+#: 短于这个长度的密码不做全文替换：一两个字符的值会把日志里所有同样的字符都换掉，
+#: 日志就没法看了；这么短的密码本身也谈不上保密。
+MIN_REDACTED_SECRET_LENGTH = 4
+
+
+def collect_plan_password_values(plan: Any, interface: MaaFWInterface) -> list[str]:
+    """运行计划里所有 password 字段（PI v2.10.0）的实际值（已解密），去重。
+
+    任务与前置任务的 ``options`` 都看：``{option 名: {字段: 值}}``。
+    """
+
+    fields = password_input_names(interface)
+    if not fields:
+        return []
+    values: list[str] = []
+
+    def collect(value: str, _option_name: str, _field_name: str) -> str:
+        if value not in values:
+            values.append(value)
+        return value
+
+    for item in [*getattr(plan, "tasks", []), *getattr(plan, "pretasks", [])]:
+        options = getattr(item, "options", None)
+        if isinstance(options, dict):
+            map_password_values({"_": options}, fields, collect)
+    return values
+
+
+def secret_log_variants(values: list[str]) -> list[str]:
+    """一个密码在日志里可能出现的写法：原文，以及 JSON 转义后的两种（中文原样 / \\u 转义）。
+
+    MaaFramework 原生日志把 ``pipeline_override`` 按 JSON 记下来（``MaaTaskerPostTask``
+    的 ``[pipeline_override={...}]``），带引号、反斜杠或中文的密码在那里是转义后的样子。
+    过短的值不收（见 ``MIN_REDACTED_SECRET_LENGTH``）；长的在前，免得先替换掉子串。
+    """
+
+    variants: set[str] = set()
+    for value in values:
+        if len(value) < MIN_REDACTED_SECRET_LENGTH:
+            continue
+        variants.add(value)
+        variants.add(json.dumps(value, ensure_ascii=False)[1:-1])
+        variants.add(json.dumps(value, ensure_ascii=True)[1:-1])
+    return sorted(variants, key=len, reverse=True)
+
+
+def redact_secret_text(text: str, variants: list[str]) -> str:
+    """把 ``text`` 里出现的密码（``secret_log_variants`` 给出的写法）换成占位。"""
+
+    for variant in variants:
+        if variant in text:
+            text = text.replace(variant, REDACTED_SECRET_TEXT)
+    return text
+
+
 def seal_user_task_snapshot(script_id: str, script_config: Any, snapshot: Any) -> Any:
     """``Config.update_user`` 写 ``Task.TaskSnapshot`` 前调：按脚本当前的 interface 加密密码字段。
 
@@ -147,10 +208,14 @@ def seal_user_task_snapshot(script_id: str, script_config: Any, snapshot: Any) -
 
 
 __all__ = [
+    "REDACTED_SECRET_TEXT",
     "SECRET_PREFIX",
     "MaaFWSecretError",
+    "collect_plan_password_values",
     "is_sealed_secret",
     "open_task_snapshot",
+    "redact_secret_text",
     "seal_task_snapshot",
     "seal_user_task_snapshot",
+    "secret_log_variants",
 ]

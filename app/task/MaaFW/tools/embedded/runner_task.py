@@ -73,7 +73,13 @@ from .embedded_project import resolve_maafw_project_root
 from .flavor import resolve_flavor
 from .game_package import resolve_game_package
 from .game_resolution import UnityGameResolutionOverride, parse_resolution_option
-from .option_secrets import open_task_snapshot
+from .option_secrets import (
+    REDACTED_SECRET_TEXT,
+    collect_plan_password_values,
+    open_task_snapshot,
+    redact_secret_text,
+    secret_log_variants,
+)
 from .project_path import release_project_path, try_reserve_project_path
 from .update_credentials import resolve_update_proxy_url
 
@@ -1314,6 +1320,9 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         def send_runner_log(message: str) -> None:
             loop.call_soon_threadsafe(self._append_log, message)
 
+        # 密码字段（PI v2.10.0）的原文会随 override 进原生日志与 worker 输出：复制、转发、
+        # 摘录失败原因前都换成占位（协议要求不得把原文写进日志）。
+        secrets = self._secret_log_variants()
         prepare_cancel_event = threading.Event()
         # 与运行前更新 / 预检同一份解析：脚本级 Update.ProxyAddress 优先，留空跟随
         # 全局。运行时装依赖也走它，否则「更新能走代理、真跑时装不上」。
@@ -1469,6 +1478,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                     line = _decode_subprocess_output(raw_line).strip()
                 if not line:
                     continue
+                line = redact_secret_text(line, secrets)
                 try:
                     event = json.loads(line)
                 except json.JSONDecodeError:
@@ -1510,6 +1520,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 ).strip()
                 if not line:
                     continue
+                line = redact_secret_text(line, secrets)
                 write_framework_log("worker-stderr", line)
                 stderr_lines.append(line)
                 del stderr_lines[:-20]
@@ -1555,6 +1566,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                     native_debug_log_offset,
                     native_debug_log_rotations,
                     native_log_path,
+                    secrets,
                 )
             except Exception as exc:
                 self._append_log(f"MaaFW 原生日志复制失败: {exc}")
@@ -1579,6 +1591,15 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             # the worker exits without a protocol result.
             message += ": MaaFW worker 未返回任务结果，完整原生日志已保存到本次运行的 .maafw.log"
         raise RuntimeError(message)
+
+    def _secret_log_variants(self) -> list[str]:
+        """本次运行计划里 password 字段的值在日志里可能出现的写法（见 option_secrets）。"""
+
+        if self.run_plan is None or self.interface_model is None:
+            return []
+        return secret_log_variants(
+            collect_plan_password_values(self.run_plan, self.interface_model)
+        )
 
     async def _wait_worker_exit(
         self,
@@ -1641,7 +1662,9 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 if process.returncode is not None and self.pretask_process is process:
                     self.pretask_process = None
 
-            detail = _decode_subprocess_output(output).strip()
+            detail = redact_secret_text(
+                _decode_subprocess_output(output).strip(), self._secret_log_variants()
+            )
             if detail:
                 for line in detail.splitlines():
                     self._append_log(f"[运行前设置] {line}")
@@ -2700,13 +2723,23 @@ def _copy_native_debug_log_delta(
     start_offset: int,
     known_rotations: frozenset[str],
     target: Path,
+    secrets: list[str] | tuple[str, ...] = (),
 ) -> int:
     """把本次运行写下的原生日志分片按顺序原样追加到 ``target``，返回复制的字节数。
 
     按字节复制、不解码不清洗，副本才和项目 ``debug/maafw.log`` 完全一致。追加而不是
     覆盖：同一次代理的几轮重试共用一个文件名，每轮的分片挨着放，原生日志自己的
     「MAA Process Start」头就是分界。逐个分片流式复制，一份可能有几十 MB。
+
+    唯一的改动是 ``secrets``（密码字段的原文及其 JSON 转义写法）：原生日志按 DBG 级别
+    记下整份 ``pipeline_override``（``MaaTaskerPostTask`` 的 ``[pipeline_override={...}]``），
+    密码会原样出现；给了就逐行换成占位（按 UTF-8 字节替换，其余字节不动）。
     """
+
+    secret_pairs = [
+        (secret.encode("utf-8"), REDACTED_SECRET_TEXT.encode("utf-8"))
+        for secret in secrets
+    ]
 
     copied = 0
     target_file: Any | None = None
@@ -2726,7 +2759,14 @@ def _copy_native_debug_log_delta(
                 target_file = target.open("ab")
             with source_path.open("rb") as source_file:
                 source_file.seek(source_offset)
-                shutil.copyfileobj(source_file, target_file)
+                if secret_pairs:
+                    for raw_line in source_file:
+                        for secret, placeholder in secret_pairs:
+                            if secret in raw_line:
+                                raw_line = raw_line.replace(secret, placeholder)
+                        target_file.write(raw_line)
+                else:
+                    shutil.copyfileobj(source_file, target_file)
                 copied += source_file.tell() - source_offset
     finally:
         if target_file is not None:
