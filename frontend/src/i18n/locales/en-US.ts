@@ -1160,7 +1160,7 @@ export default {
     gamePathMatchedHtgame: 'Game path matched to NTEGame.exe launcher automatically',
     applyPreset2: 'Apply the preset',
     turnThisOffWhen:
-      'Turn this off when the script controls the game directly and you use cloud gaming',
+      'When off, MAS does not start or close the game client or change its resolution. Open the game yourself first.',
     on: 'On',
     treatScriptAsFinished: 'Treat the script as finished only when its child processes exit',
     whenTaskProgressCollected:

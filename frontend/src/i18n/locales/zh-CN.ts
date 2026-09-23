@@ -1123,7 +1123,7 @@ export default {
     scriptLevelMaaendConfiguration: '已启动脚本级 MaaEnd 配置',
     gamePathMatchedHtgame: '已自动匹配游戏路径至 NTEGame.exe 启动器',
     applyPreset2: '应用预设',
-    turnThisOffWhen: '建议在脚本直控且使用云游戏的情况下关闭此开关',
+    turnThisOffWhen: '关闭后 MAS 不启动、不关闭游戏客户端，也不改分辨率，需要你自己先把游戏打开。',
     on: '开启',
     treatScriptAsFinished: '开启后仅在脚本的子进程结束时认定脚本进程结束',
     whenTaskProgressCollected:
