@@ -176,7 +176,21 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   DPAPI 密文：`Config.update_user` 写入前按 interface 加密（`tools/embedded/option_secrets`），
   `runner_task` 建计划前只在内存副本里解密；前端只看到密文、显示「已设置」。没有前缀的是旧明文，
   照常使用、下次保存时加密。checkbox 的 `min_count` / `max_count`（v2.10.1）由加载器放宽成自洽值，
-  运行计划里不满足就报错（`MaaFWCheckboxCountError`），不静默截断。
+  运行计划里不满足就报错（`MaaFWCheckboxCountError`），不静默截断。密码原文会随 override 进
+  原生日志（`MaaTaskerPostTask` 按 DBG 记整份 override），`runner_task` 复制原生日志、转发
+  worker 输出时按 `option_secrets.redact_secret_text` 换成占位；新增任何落盘 / 转发日志的路径都要过它。
+- 加载器写的告警（`logger.warning`）由加载器旁听收集、挂在模型上（`interface_load_warnings`），
+  随磁盘缓存保存，进运行计划的 `warnings`（运行日志开头）与导入报告；只给后端看的用
+  `extra=_LOG_ONLY`。发行包的毛病能降级就降级：缺 import 文件、scan_dir 不在、缺
+  interface_version（按 2）、input 的 default 写成数字、数字输入没填 / 填错（跳过该选项的
+  覆盖）都是告警，不整份拒绝。
+- 任务表里同名任务出现多次、`repeatable` + `repeat_count`（MFAA 私有扩展）都展开成
+  `__MAS_DUP__` 重复实例（`task_config.build_default_task_instances` / `build_repeat_instance_ids`，
+  前端「添加任务」按 `repeatCount` 一次加 N 份），不做 runner 循环。select 的私有 `default`
+  **故意不认**：作者自己的 MXU / MFAA 壳都不认，认了反而比作者更激进。
+- `agent.timeout`（秒）只决定等 agent 连上的预算（`runner.agent_connect_budget_seconds`，不写 /
+  -1 = 10 分钟），连上后照旧不限时；interface 写死的 `agent.identifier` 运行时拼上实例后缀，
+  纯数字（TCP 端口）原样用。
 
 ## 更新
 
