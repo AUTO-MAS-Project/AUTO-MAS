@@ -619,7 +619,7 @@ class HSRAutoProxyTask(TaskExecuteBase):
             runner = runtime.m7a_runner
             if runner is not None:
                 # 不在读输出的协程里等进程退出：管道要继续被读，交给独立任务终止。
-                task = asyncio.create_task(runner.terminate_current_process())
+                task = asyncio.create_task(runner.terminate_process_tree())
                 self._background_tasks.add(task)
                 task.add_done_callback(self._background_tasks.discard)
             return

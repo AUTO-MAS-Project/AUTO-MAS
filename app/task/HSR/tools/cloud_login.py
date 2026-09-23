@@ -152,7 +152,7 @@ async def run_cloud_login(
                 # profile：立刻终止，这次不算登录成功。
                 if not self_browser and runner is not None:
                     self_browser = True
-                    task = asyncio.create_task(runner.terminate_current_process())
+                    task = asyncio.create_task(runner.terminate_process_tree())
                     background.add(task)
                     task.add_done_callback(background.discard)
                 return

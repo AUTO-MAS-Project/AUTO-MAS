@@ -30,6 +30,8 @@ from inspect import isawaitable
 from pathlib import Path
 from typing import Awaitable, Callable, Mapping
 
+import psutil
+
 from app.utils import ProcessManager, decode_bytes, get_logger
 
 from .log_detect import (
@@ -165,6 +167,41 @@ class M7ARunner:
             return False
 
         logger.warning("正在终止 M7A 当前子进程")
+        await self._process_manager.kill()
+        return True
+
+    async def terminate_process_tree(self) -> bool:
+        """按进程树终止当前 M7A：先冻结主进程，杀光子孙，再终止主进程。
+
+        三月七经 selenium 拉起的 chromedriver 以 ``close_fds=False`` 继承了它的
+        stdout/stderr 管道：只杀主进程时管道仍无 EOF，``run_task`` 会一直挂到命令
+        超时，chromedriver 也成了 MAS 清理不到的孤儿。冻结主进程是为了杀子进程
+        期间它不再派生新的。
+        """
+
+        pid = self._process_manager.main_pid
+        if pid is None or not await self._process_manager.is_running():
+            return False
+
+        def _kill_descendants() -> int:
+            try:
+                root = psutil.Process(pid)
+            except psutil.Error:
+                return 0
+            with suppress(psutil.Error):
+                root.suspend()
+            try:
+                children = root.children(recursive=True)
+            except psutil.Error:
+                children = []
+            for child in children:
+                with suppress(psutil.NoSuchProcess, psutil.AccessDenied):
+                    child.kill()
+            psutil.wait_procs(children, timeout=3)
+            return len(children)
+
+        count = await asyncio.to_thread(_kill_descendants)
+        logger.warning(f"正在按进程树终止 M7A（子进程 {count} 个）")
         await self._process_manager.kill()
         return True
 
