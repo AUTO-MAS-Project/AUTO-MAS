@@ -626,6 +626,48 @@ def collect_ui_asset_paths(data: Any) -> list[str]:
     return found
 
 
+#: 协议里「支持文件路径、URL 或直接文本」的说明类字段：description 在各层级都有，
+#: contact / license 只在顶层。
+_DOCUMENT_KEYS = frozenset({"description"})
+_ROOT_DOCUMENT_KEYS = ("contact", "license")
+# 说明文字往往就是一段正文；只有像文件路径的值（单行、不太长、带扩展名）才去查盘，
+# 免得把一整段文字拼成超长路径去 stat。
+_DOCUMENT_PATH_RE = re.compile(r"^[^\r\n<>|\"*?]{1,200}\.[A-Za-z0-9]{1,8}$")
+
+
+def collect_document_paths(data: Any) -> list[str]:
+    """interface 里 description（各层级）与顶层 contact / license 中像文件路径的值。
+
+    「关于」页、任务说明会按项目根去读这些文件；以前只靠「顶层小目录一并带走」捡到，
+    放进大目录里的就丢了。是不是真文件由调用方查。
+    """
+
+    found: list[str] = []
+
+    def add(value: Any) -> None:
+        for item in value if isinstance(value, list) else [value]:
+            text = _text(item)
+            if text and _DOCUMENT_PATH_RE.match(text):
+                found.append(text)
+
+    def walk(node: Any) -> None:
+        if isinstance(node, dict):
+            for key, value in node.items():
+                if key in _DOCUMENT_KEYS:
+                    add(value)
+                else:
+                    walk(value)
+        elif isinstance(node, list):
+            for item in node:
+                walk(item)
+
+    walk(data)
+    if isinstance(data, dict):
+        for key in _ROOT_DOCUMENT_KEYS:
+            add(data.get(key))
+    return found
+
+
 def _welcome_entries(value: Any) -> list[str]:
     """顶层 ``welcome`` 的各条内容：单个字符串（旧写法）或字符串数组（PI v2.10.2）。"""
 
@@ -944,7 +986,7 @@ def build_projection_rules(
         return relative
 
     def add_retention_target(
-        referenced: Path, *, required_label: str, required_path: Path
+        referenced: Path, *, required_label: str | None, required_path: Path
     ) -> None:
         """agent / pretask 引用的文件：所在目录整个保留（按分类表剔除）。
 
@@ -1066,6 +1108,13 @@ def build_projection_rules(
             asset_relative = _normalize_ui_asset_path(raw_asset, base_relative)
             if asset_relative is not None and view.is_file(asset_relative):
                 add_target(asset_relative, complete=True, required_label=None)
+
+        # description / contact / license 写成文件路径时（docs/about.md），同样只在文件
+        # 确实在时显式带上。
+        for raw_document in collect_document_paths(data):
+            document_relative = _normalize_ui_asset_path(raw_document, base_relative)
+            if document_relative is not None and view.is_file(document_relative):
+                add_target(document_relative, complete=True, required_label=None)
 
         # welcome 正文里引用的图片：说明页会按项目根去取，缺了就是一排裂图。先按
         # welcome 文件所在目录解析（Markdown 的习惯），再退到项目根；都不在就算了。
@@ -1223,6 +1272,41 @@ def build_projection_rules(
                 raise ProjectionError(f"{label} 声明的路径不存在：{raw_exec}")
             else:
                 warnings.append(f"{label} 声明的路径当前不存在：{raw_exec}")
+
+        # pretask 参数里引用的项目文件（"exec": "python", "args": ["./scripts/p.py"]）：
+        # 所在目录整个保留。参数也可能只是自由文本，找不到只记警告，不让导入失败。
+        for index, pretask in enumerate(_as_list(data.get("pretask"))):
+            if not isinstance(pretask, dict):
+                continue
+            raw_args = pretask.get("args")
+            if not isinstance(raw_args, list):
+                continue
+            for arg_index, raw_arg in enumerate(raw_args):
+                if not isinstance(raw_arg, str) or not looks_like_local_path(raw_arg):
+                    continue
+                label = f"pretask[{index}].args[{arg_index}]"
+                try:
+                    arg_relative = _normalize_declared_path(
+                        raw_arg, base_relative, label
+                    )
+                except ProjectionError:
+                    warnings.append(
+                        f"{label} 像路径但不在项目内，按普通参数原样保留：{raw_arg}"
+                    )
+                    continue
+                if arg_relative in (ROOT, base_relative):
+                    # "{PROJECT_DIR}" 本身：不是要带走的某个文件，整棵根不能因此进白名单。
+                    continue
+                if view.exists(arg_relative):
+                    # 不记进「运行必需」：参数是给 pretask 程序的自由文本，被分类表剔掉
+                    # （例如放在 build/ 下）也只是回到以前的行为，不该让导入失败。
+                    add_retention_target(
+                        arg_relative,
+                        required_label=None,
+                        required_path=arg_relative,
+                    )
+                else:
+                    warnings.append(f"{label} 声明的路径当前不存在：{raw_arg}")
 
     visit_interface(interface_relative, interface_relative.as_posix())
 
