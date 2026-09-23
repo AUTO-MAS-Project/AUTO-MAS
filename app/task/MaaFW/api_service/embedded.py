@@ -46,10 +46,10 @@ from app.task.MaaFW.api_service.common import (
     maafw_group_members,
     maafw_script_config,
 )
-from app.task.MaaFW.tools.core.automas_maafw_interface.loader import (
+from app.task.MaaFW.tools.core.interface.loader import (
     load_interface_model_cached,
 )
-from app.task.MaaFW.tools.core.automas_maafw_interface.preview import (
+from app.task.MaaFW.tools.core.interface.preview import (
     interface_display_name,
 )
 from app.task.MaaFW.tools.embedded.embedded_project import (

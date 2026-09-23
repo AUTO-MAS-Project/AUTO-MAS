@@ -243,14 +243,14 @@ def describe_unusable_runtime(project_path: Path) -> str | None:
     """
 
     # 运行池会拉起 uv 与安装器，只在真要用时导入，别让每次 import 都付这份成本。
-    from app.task.MaaFW.tools.core.automas_maafw_runner.environment import (
+    from app.task.MaaFW.tools.core.runner.environment import (
         describe_runner_runtime_selection,
     )
-    from app.task.MaaFW.tools.core.automas_maafw_runtime_pool import (
+    from app.task.MaaFW.tools.core.runtime_pool import (
         MaaFWRuntimePoolError,
         MaaFWRuntimePoolService,
     )
-    from app.task.MaaFW.tools.core.automas_maafw_runtime_pool.binding import (
+    from app.task.MaaFW.tools.core.runtime_pool.binding import (
         verify_binding,
         verify_native,
     )
@@ -520,7 +520,7 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
         `_run_maafw` 缺这两个值会直接拒绝运行。
         """
 
-        from app.task.MaaFW.tools.core.automas_maafw_runtime_pool import (
+        from app.task.MaaFW.tools.core.runtime_pool import (
             MaaFWRuntimePoolService,
         )
         from app.task.MaaFW.tools.embedded.runtime_route import (
@@ -602,7 +602,7 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
     def _load_interface_model(project_path: Path, *, force_reload: bool = False):
         """读 interface（走核心包的内存/磁盘缓存）；``force_reload`` 用于更新后失效缓存。"""
 
-        from app.task.MaaFW.tools.core.automas_maafw_interface import (
+        from app.task.MaaFW.tools.core.interface import (
             load_interface_model_cached,
         )
 
@@ -726,7 +726,7 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
         调用方据此决定发 warning 还是 error（D2）。
         """
 
-        from app.task.MaaFW.tools.core.automas_maafw_project_update import (
+        from app.task.MaaFW.tools.core.project_update import (
             update_maafw_project_if_needed,
         )
         from app.task.MaaFW.tools.embedded.precheck import (
@@ -1008,7 +1008,7 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
     def _describe_precheck_failure(phase_zh: str, failure: Mapping[str, Any]) -> str:
         """预检失败给用户看的一句话；按 ``kind`` 分文案。"""
 
-        from app.task.MaaFW.tools.core.automas_maafw_project_update.precheck_memo import (
+        from app.task.MaaFW.tools.core.project_update.precheck_memo import (
             KIND_BINDING_UNAVAILABLE,
         )
 
@@ -1124,7 +1124,7 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
         if outcome.registered_id:
             # 登记成功就意味着预检建出了环境，这个版本上次失败的备忘（若有）作废。
             try:
-                from app.task.MaaFW.tools.core.automas_maafw_project_update import (
+                from app.task.MaaFW.tools.core.project_update import (
                     clear_runtime_precheck,
                 )
                 from app.task.MaaFW.tools.embedded.view_update import (
@@ -1200,14 +1200,14 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
 
         # 与 API 侧同理：这几个模块会拉起 runtime_pool 与 agent_env，只在真要
         # 用时导入。
-        from app.task.MaaFW.tools.core.automas_maafw_runner.service import (
+        from app.task.MaaFW.tools.core.runner.service import (
             MaaFWRunnerService,
             project_environment_fingerprint,
         )
-        from app.task.MaaFW.tools.core.automas_maafw_runtime_pool import (
+        from app.task.MaaFW.tools.core.runtime_pool import (
             MaaFWRuntimePoolService,
         )
-        from app.task.MaaFW.tools.core.automas_maafw_runtime_pool.host_environment import (
+        from app.task.MaaFW.tools.core.runtime_pool.host_environment import (
             subprocess_proxy_scope,
         )
         from app.task.MaaFW.tools.embedded.embedded_project import (

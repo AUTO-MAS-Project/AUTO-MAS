@@ -37,7 +37,7 @@ from app.task.MaaFW.api_service.common import (
     maafw_script_config,
 )
 from app.task.MaaFW.api_service.embedded import embedded_summary_lines
-from app.task.MaaFW.tools.core.automas_maafw_interface.loader import (
+from app.task.MaaFW.tools.core.interface.loader import (
     MaaFWInterfaceLoadError,
     load_interface_model_cached,
 )
@@ -111,14 +111,14 @@ async def prepare_agent_env(
     # 避免所有 API 请求都为它们付出导入成本。
     from app.core.ws import protocol as ws_protocol
     from app.core.ws.publisher import Publisher
-    from app.task.MaaFW.tools.core.automas_maafw_runner.service import (
+    from app.task.MaaFW.tools.core.runner.service import (
         MaaFWRunnerService,
         project_environment_fingerprint,
     )
-    from app.task.MaaFW.tools.core.automas_maafw_runtime_pool import (
+    from app.task.MaaFW.tools.core.runtime_pool import (
         MaaFWRuntimePoolService,
     )
-    from app.task.MaaFW.tools.core.automas_maafw_runtime_pool.host_environment import (
+    from app.task.MaaFW.tools.core.runtime_pool.host_environment import (
         subprocess_proxy_scope,
     )
     from app.task.MaaFW.tools.embedded.env_cache import (

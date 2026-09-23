@@ -61,12 +61,12 @@ try:
 except ImportError:  # pragma: no cover - 只有很老的 binding 会走到
     _ContextEventSinkBase = None
 
-from app.task.MaaFW.tools.core.automas_maafw_agent_env import write_agent_compat_shims
-from app.task.MaaFW.tools.core.automas_maafw_runner.environment import (
+from app.task.MaaFW.tools.core.agent_env import write_agent_compat_shims
+from app.task.MaaFW.tools.core.runner.environment import (
     describe_runtime_architecture_mismatch,
     project_maafw_runtime_path,
 )
-from app.task.MaaFW.tools.core.automas_maafw_runtime_pool.host_environment import (
+from app.task.MaaFW.tools.core.runtime_pool.host_environment import (
     set_project_pycache_prefix,
     strip_host_python_environment,
 )
@@ -1244,7 +1244,7 @@ class MaaFWRunner:
             return
 
         self.send_log(f"[Python环境] 开始准备 {len(process_agents)} 个 Agent 环境")
-        from app.task.MaaFW.tools.core.automas_maafw_agent_env.env import (
+        from app.task.MaaFW.tools.core.agent_env.env import (
             prepare_agent_envs,
         )
 

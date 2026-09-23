@@ -38,14 +38,14 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from app.task.MaaFW.tools.core.automas_maafw_project_update import payloads
-from app.task.MaaFW.tools.core.automas_maafw_project_update.blob_store import (
+from app.task.MaaFW.tools.core.project_update import payloads
+from app.task.MaaFW.tools.core.project_update.blob_store import (
     RuntimeBlobStore,
 )
-from app.task.MaaFW.tools.core.automas_maafw_project_update.precheck_memo import (
+from app.task.MaaFW.tools.core.project_update.precheck_memo import (
     precheck_memo_path,
 )
-from app.task.MaaFW.tools.core.automas_maafw_project_update.updater import (
+from app.task.MaaFW.tools.core.project_update.updater import (
     MaaFWProjectUpdateError,
 )
 from app.task.MaaFW.tools.embedded.embedded_project import (

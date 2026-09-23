@@ -35,8 +35,8 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
-from app.task.MaaFW.tools.core.automas_maafw_project_update import payloads
-from app.task.MaaFW.tools.core.automas_maafw_project_update.blob_store import (
+from app.task.MaaFW.tools.core.project_update import payloads
+from app.task.MaaFW.tools.core.project_update.blob_store import (
     RuntimeBlobStore,
     sha256_file,
 )

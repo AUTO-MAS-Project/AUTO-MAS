@@ -8,11 +8,11 @@ from importlib import metadata
 from pathlib import Path
 from typing import Any
 
-from app.task.MaaFW.tools.core.automas_maafw_agent_env import (
+from app.task.MaaFW.tools.core.agent_env import (
     build_maafw_agent_command_plans,
 )
-from app.task.MaaFW.tools.core.automas_maafw_interface.loader import parse_json_text
-from app.task.MaaFW.tools.core.automas_maafw_interface.models import (
+from app.task.MaaFW.tools.core.interface.loader import parse_json_text
+from app.task.MaaFW.tools.core.interface.models import (
     SUPPORTED_OPTION_TYPES,
     MaaFWController,
     MaaFWInterface,
@@ -28,7 +28,7 @@ from app.task.MaaFW.tools.core.automas_maafw_interface.models import (
     iter_pretasks,
     resolve_task_instance_name,
 )
-from app.task.MaaFW.tools.core.automas_maafw_interface.task_config import (
+from app.task.MaaFW.tools.core.interface.task_config import (
     MaaFWTaskPresetSnapshot,
     _build_option_defaults,
     build_interface_preset_snapshot,
@@ -46,7 +46,7 @@ from .models import (
 )
 from .pipeline_override import MaaFWPipelineOverrideBuilder
 
-# 本模块会被运行池隔离 venv 里的 worker 进程导入（``automas_maafw_runner``
+# 本模块会被运行池隔离 venv 里的 worker 进程导入（``runner``
 # 的 ``__init__`` 连带 import 它），那个 venv 只装了 maafw 与项目依赖，没有
 # 宿主的第三方包。所以这里**不能** ``from app.utils import resource_path``：
 # ``app.utils`` 的包初始化会连锁拉起 ``app.utils.logger`` 里的 loguru，worker

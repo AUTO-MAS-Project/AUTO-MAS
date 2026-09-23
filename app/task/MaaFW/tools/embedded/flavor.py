@@ -33,7 +33,7 @@ import importlib
 from collections.abc import Callable
 from typing import Any, Protocol, runtime_checkable
 
-from app.task.MaaFW.tools.core.automas_maafw_interface.models import MaaFWInterface
+from app.task.MaaFW.tools.core.interface.models import MaaFWInterface
 from app.utils import get_logger
 
 logger = get_logger("MaaFW 特调")

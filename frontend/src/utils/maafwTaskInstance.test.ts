@@ -80,10 +80,7 @@ describe('buildMaaFWTaskInstanceId', () => {
 describe('前后端分隔符契约', () => {
   it('与后端 DUPLICATE_TASK_SUFFIX_SEPARATOR 字面一致', () => {
     const modelsPath = fileURLToPath(
-      new URL(
-        '../../../app/task/MaaFW/tools/core/automas_maafw_interface/models.py',
-        import.meta.url
-      )
+      new URL('../../../app/task/MaaFW/tools/core/interface/models.py', import.meta.url)
     )
     const source = readFileSync(modelsPath, 'utf8')
     const matched = source.match(/DUPLICATE_TASK_SUFFIX_SEPARATOR = "([^"]+)"/)

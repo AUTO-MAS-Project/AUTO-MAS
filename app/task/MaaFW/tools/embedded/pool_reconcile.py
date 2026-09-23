@@ -171,10 +171,10 @@ def _reconcile(
         return None
 
     # 这几个模块会拉起 runtime_pool 与 runner，只在真要用时导入。
-    from app.task.MaaFW.tools.core.automas_maafw_runner.environment import (
+    from app.task.MaaFW.tools.core.runner.environment import (
         describe_runner_runtime_selection,
     )
-    from app.task.MaaFW.tools.core.automas_maafw_runtime_pool import (
+    from app.task.MaaFW.tools.core.runtime_pool import (
         MaaFWRuntimePoolService,
     )
 
@@ -184,7 +184,7 @@ def _reconcile(
         logger.warning(f"MFW 运行池回收已跳过：池初始化失败: {exc}")
         return None
 
-    from app.task.MaaFW.tools.core.automas_maafw_runtime_pool.binding import (
+    from app.task.MaaFW.tools.core.runtime_pool.binding import (
         prune_selections,
         retained_versions,
     )
@@ -430,10 +430,10 @@ def previous_maafw_version(project_path: str | Path) -> str | None:
     回收，旧 runtime 不必再等 24 h 宽限。
     """
 
-    from app.task.MaaFW.tools.core.automas_maafw_runner.environment import (
+    from app.task.MaaFW.tools.core.runner.environment import (
         resolve_project_maafw_requirement,
     )
-    from app.task.MaaFW.tools.core.automas_maafw_runtime_pool.identity import (
+    from app.task.MaaFW.tools.core.runtime_pool.identity import (
         infer_exact_maafw_version,
     )
 

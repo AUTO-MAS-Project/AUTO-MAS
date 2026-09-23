@@ -4,7 +4,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.task.MaaFW.tools.core.automas_maafw_agent_env.models import (
+from app.task.MaaFW.tools.core.agent_env.models import (
     MaaFWAgentCommandPlan,
 )
 

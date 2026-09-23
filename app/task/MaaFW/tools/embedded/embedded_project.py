@@ -58,26 +58,26 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from app.task.MaaFW.tools.core.automas_maafw_project_update import payloads
-from app.task.MaaFW.tools.core.automas_maafw_project_update.apply import (
+from app.task.MaaFW.tools.core.project_update import payloads
+from app.task.MaaFW.tools.core.project_update.apply import (
     project_state_dir_for,
 )
-from app.task.MaaFW.tools.core.automas_maafw_project_update.blob_store import (
+from app.task.MaaFW.tools.core.project_update.blob_store import (
     RuntimeBlobStore,
     sha256_file,
 )
-from app.task.MaaFW.tools.core.automas_maafw_project_update.contracts import (
+from app.task.MaaFW.tools.core.project_update.contracts import (
     RUNTIME_STATE_FILES,
     VERSION_BOUND_STATE_FILES,
     VIEW_MARKER_FILE_NAME,
 )
-from app.task.MaaFW.tools.core.automas_maafw_project_update.projection import (
+from app.task.MaaFW.tools.core.project_update.projection import (
     ProjectionError,
     build_projection_plan,
     is_shared_path,
     read_json_object,
 )
-from app.task.MaaFW.tools.core.automas_maafw_runtime_pool.host_environment import (
+from app.task.MaaFW.tools.core.runtime_pool.host_environment import (
     EMBEDDED_COPIES_DIR_PARTS,
     EMBEDDED_PAYLOADS_DIR_NAME,
     EMBEDDED_SWITCH_DIR_NAME,
@@ -831,7 +831,7 @@ def _same_version(left: str, right: str) -> bool:
 
 def _reload_interface_cache(view: Path) -> None:
     try:
-        from app.task.MaaFW.tools.core.automas_maafw_interface.loader import (
+        from app.task.MaaFW.tools.core.interface.loader import (
             load_interface_model_cached,
         )
 
@@ -1018,7 +1018,7 @@ def _recover_one(journal: Path, view: Path, staging_root: Path) -> str:
 
 def _config_class_name(project_dir: Path) -> str:
     try:
-        from app.task.MaaFW.tools.core.automas_maafw_interface.loader import (
+        from app.task.MaaFW.tools.core.interface.loader import (
             load_interface_model,
         )
         from app.task.MaaFW.tools.embedded.flavor import decide_project_config_class
@@ -1838,7 +1838,7 @@ def _adoption_whitelist(view: Path) -> Callable[[str], bool] | None:
     """按视图自己的 interface 重算投影白名单（附录 B 第 4 条）：采纳时载荷的去留只看它。"""
 
     try:
-        from app.task.MaaFW.tools.core.automas_maafw_project_update.projection import (
+        from app.task.MaaFW.tools.core.project_update.projection import (
             build_projection_rules,
         )
 

@@ -19,7 +19,7 @@ from packaging.requirements import InvalidRequirement, Requirement
 from packaging.utils import canonicalize_name
 from packaging.version import InvalidVersion, Version
 
-from app.task.MaaFW.tools.core.automas_maafw_runtime_pool import (
+from app.task.MaaFW.tools.core.runtime_pool import (
     ExtraPackagesInstaller,
     MaaFWRuntimePool,
     MaaFWRuntimePoolBusyError,
@@ -28,7 +28,7 @@ from app.task.MaaFW.tools.core.automas_maafw_runtime_pool import (
     install_extra_packages,
     install_python_runtime,
 )
-from app.task.MaaFW.tools.core.automas_maafw_runtime_pool.binding import (
+from app.task.MaaFW.tools.core.runtime_pool.binding import (
     BindingInfo,
     MaaFWBindingError,
     binding_environment_variables,
@@ -41,11 +41,11 @@ from app.task.MaaFW.tools.core.automas_maafw_runtime_pool.binding import (
     retained_versions,
     select_local_version,
 )
-from app.task.MaaFW.tools.core.automas_maafw_runtime_pool.host_environment import (
+from app.task.MaaFW.tools.core.runtime_pool.host_environment import (
     current_subprocess_proxy,
     strip_host_python_environment,
 )
-from app.task.MaaFW.tools.core.automas_maafw_runtime_pool.installer import (
+from app.task.MaaFW.tools.core.runtime_pool.installer import (
     MaaFWRuntimeInstallCancelled,
     host_bootstrap_python_request,
     install_cancel_scope,

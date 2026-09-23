@@ -1473,7 +1473,7 @@ def _bundled_native_runtime_dir(
     原生库；整目录带走，几十 MB，换来的是 runner 用的就是发行包里那份库。
     """
 
-    from app.task.MaaFW.tools.core.automas_maafw_runner.environment import (
+    from app.task.MaaFW.tools.core.runner.environment import (
         project_maafw_runtime_path,
     )
 
@@ -1517,7 +1517,7 @@ def probe_bundled_python_version(root: Path, rules: ProjectionRules) -> str | No
 def probe_bundled_maafw_version(root: Path) -> str | None:
     """来源（或更新包）自带 MaaFramework 原生库的版本；探测逻辑与 runner 共用。"""
 
-    from app.task.MaaFW.tools.core.automas_maafw_runner.environment import (
+    from app.task.MaaFW.tools.core.runner.environment import (
         probe_bundled_maafw_version as _probe,
     )
 

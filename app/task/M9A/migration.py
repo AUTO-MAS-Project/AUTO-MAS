@@ -897,7 +897,7 @@ def _read_interface_dict(root: Path) -> dict[str, Any] | None:
     """按 MaaFW 的加载器读 interface（含 import 合并）；读不到返回 None。"""
 
     try:
-        from app.task.MaaFW.tools.core.automas_maafw_interface.service import (
+        from app.task.MaaFW.tools.core.interface.service import (
             MaaFWInterfaceService,
         )
 

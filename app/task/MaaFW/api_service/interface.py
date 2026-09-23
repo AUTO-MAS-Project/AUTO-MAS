@@ -29,11 +29,11 @@ from app.task.MaaFW.api_service.common import (
     logger,
     maafw_effective_root,
 )
-from app.task.MaaFW.tools.core.automas_maafw_interface.loader import (
+from app.task.MaaFW.tools.core.interface.loader import (
     MaaFWInterfaceLoadError,
     load_interface_model_cached,
 )
-from app.task.MaaFW.tools.core.automas_maafw_interface.preview import (
+from app.task.MaaFW.tools.core.interface.preview import (
     build_interface_preview_data,
 )
 from app.task.MaaFW.tools.embedded.game_package import (

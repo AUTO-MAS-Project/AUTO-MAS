@@ -37,16 +37,16 @@ from app.task.MaaFW.api_service.common import (
     maafw_group_members,
     maafw_script_config,
 )
-from app.task.MaaFW.tools.core.automas_maafw_interface.loader import (
+from app.task.MaaFW.tools.core.interface.loader import (
     MaaFWInterfaceLoadError,
     load_interface_model_cached,
 )
-from app.task.MaaFW.tools.core.automas_maafw_project_update import (
+from app.task.MaaFW.tools.core.project_update import (
     MaaFWProjectUpdateError,
     discover_maafw_project_update,
     update_maafw_project_if_needed,
 )
-from app.task.MaaFW.tools.core.automas_maafw_project_update.updater import (
+from app.task.MaaFW.tools.core.project_update.updater import (
     _public_package_source,
 )
 from app.task.MaaFW.tools.embedded.embedded_project import (
@@ -333,10 +333,10 @@ async def update_project(script_id: str, action: str) -> MaaFWApiReply:
     import threading
 
     from app.task.MaaFW.embedded_manager import MaaFWEmbeddedManager
-    from app.task.MaaFW.tools.core.automas_maafw_project_update import (
+    from app.task.MaaFW.tools.core.project_update import (
         clear_runtime_precheck,
     )
-    from app.task.MaaFW.tools.core.automas_maafw_runtime_pool import (
+    from app.task.MaaFW.tools.core.runtime_pool import (
         MaaFWRuntimePoolService,
     )
     from app.task.MaaFW.tools.embedded.pool_reconcile import (

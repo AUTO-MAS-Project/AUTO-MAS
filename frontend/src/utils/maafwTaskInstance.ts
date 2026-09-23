@@ -5,7 +5,7 @@
  * 首份沿用裸任务名，第二份起是 `<任务名>__MAS_DUP__<随机后缀>`，
  * 旧配置里的任务名天然就是首份，无需迁移。
  *
- * 分隔符需与后端 `automas_maafw_interface/models.py` 的
+ * 分隔符需与后端 `interface/models.py` 的
  * `DUPLICATE_TASK_SUFFIX_SEPARATOR` 保持一致。
  */
 export const MAAFW_DUPLICATE_TASK_SEPARATOR = '__MAS_DUP__'

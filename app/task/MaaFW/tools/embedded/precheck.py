@@ -38,10 +38,10 @@ from collections.abc import Callable, MutableMapping
 from pathlib import Path
 from typing import Any, Protocol
 
-from app.task.MaaFW.tools.core.automas_maafw_agent_env.planner import (
+from app.task.MaaFW.tools.core.agent_env.planner import (
     compute_isolated_venv_path,
 )
-from app.task.MaaFW.tools.core.automas_maafw_project_update.precheck_memo import (
+from app.task.MaaFW.tools.core.project_update.precheck_memo import (
     classify_precheck_failure,
     write_runtime_precheck,
 )
@@ -88,7 +88,7 @@ def _resolve_requirement(project_path: Path) -> str | None:
     try:
         # 要读项目自带的 DLL，逻辑在 runner 包里；它会拉起 runtime_pool，
         # 所以只在真要写备忘时才导入。
-        from app.task.MaaFW.tools.core.automas_maafw_runner.environment import (
+        from app.task.MaaFW.tools.core.runner.environment import (
             resolve_project_maafw_requirement,
         )
 

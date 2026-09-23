@@ -16,7 +16,7 @@ from packaging import version
 
 from app.utils.constants import MIRROR_ERROR_INFO
 
-from ..automas_maafw_interface.models import MaaFWInterface
+from ..interface.models import MaaFWInterface
 from .apply import (
     UpdateApplyError,
     _check_disk_space,

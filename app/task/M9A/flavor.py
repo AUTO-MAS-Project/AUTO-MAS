@@ -32,7 +32,7 @@ import re
 from collections.abc import Callable
 from typing import Any
 
-from app.task.MaaFW.tools.core.automas_maafw_interface.models import (
+from app.task.MaaFW.tools.core.interface.models import (
     MaaFWInterface,
     resolve_task_instance_name,
 )

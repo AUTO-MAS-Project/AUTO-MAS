@@ -5299,7 +5299,7 @@ class AppConfig(GlobalConfig):
         """
 
         from app.models.config import MaaFWConfig
-        from app.task.MaaFW.tools.core.automas_maafw_agent_env.planner import (
+        from app.task.MaaFW.tools.core.agent_env.planner import (
             collect_orphan_agent_venvs,
         )
         from app.task.MaaFW.tools.embedded.embedded_project import (
@@ -5858,7 +5858,7 @@ class AppConfig(GlobalConfig):
         放在副本清理之后：副本删掉，它引用的 blob 才会变成孤儿。
         """
 
-        from app.task.MaaFW.tools.core.automas_maafw_project_update.blob_store import (
+        from app.task.MaaFW.tools.core.project_update.blob_store import (
             RuntimeBlobStore,
         )
 
@@ -5881,7 +5881,7 @@ class AppConfig(GlobalConfig):
         正在下载 / 落地的条目持有文件锁，会被跳过。
         """
 
-        from app.task.MaaFW.tools.core.automas_maafw_project_update.transport import (
+        from app.task.MaaFW.tools.core.project_update.transport import (
             prune_update_cache,
         )
 

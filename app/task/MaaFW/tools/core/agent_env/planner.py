@@ -6,7 +6,7 @@ from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
 
-from app.task.MaaFW.tools.core.automas_maafw_interface.models import MaaFWAgent
+from app.task.MaaFW.tools.core.interface.models import MaaFWAgent
 
 from .models import MaaFWAgentCommandPlan
 
@@ -146,7 +146,7 @@ def _coerce_agent_configs(
 
 def _coerce_single_agent(item: Any) -> MaaFWAgent:
     # 不用 isinstance(item, MaaFWAgent) 直接判定：dev HMR 会重载
-    # automas_maafw_interface.models，使得缓存 interface 携带的旧 MaaFWAgent
+    # interface.models，使得缓存 interface 携带的旧 MaaFWAgent
     # 类与本模块 import 的新类实例判定失败。改为按 dict / 任意 pydantic 模型
     # 归一化（与 runner._coerce_interface 的 model_dump 兜底同源）。
     if isinstance(item, MaaFWAgent):
