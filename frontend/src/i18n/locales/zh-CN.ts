@@ -1478,6 +1478,8 @@ export default {
     enterRecipientEmailAddress: '请输入收件人邮箱地址',
     enterNumber: '请输入数字',
     enterWholeNumber: '请输入整数',
+    maafwPasswordSaved: '已设置，输入新值可替换',
+    maafwPasswordClear: '清除',
     enterEmulatorInstanceIndex: '请输入模拟器实例索引',
     enterUserName: '请输入用户名称…',
     enterScriptLaunchArguments: '请输入脚本启动参数',

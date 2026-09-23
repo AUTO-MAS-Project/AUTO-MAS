@@ -1440,6 +1440,8 @@ export default {
     enterRecipientEmailAddress: '宛先のメールアドレスを入力してください',
     enterNumber: '数値を入力してください',
     enterWholeNumber: '整数を入力してください',
+    maafwPasswordSaved: '設定済みです。新しい値を入力すると置き換わります',
+    maafwPasswordClear: 'クリア',
     enterEmulatorInstanceIndex: 'エミュレータのインスタンス番号を入力してください',
     enterUserName: 'ユーザー名を入力してください…',
     enterScriptLaunchArguments: 'スクリプトの起動引数を入力してください',

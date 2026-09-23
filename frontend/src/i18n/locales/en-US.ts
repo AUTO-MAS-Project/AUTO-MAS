@@ -1556,6 +1556,8 @@ export default {
     enterRecipientEmailAddress: 'Enter the recipient email address',
     enterNumber: 'Enter a number',
     enterWholeNumber: 'Enter a whole number',
+    maafwPasswordSaved: 'Saved. Type a new value to replace it',
+    maafwPasswordClear: 'Clear',
     enterEmulatorInstanceIndex: 'Enter the emulator instance index',
     enterUserName: 'Enter a user name...',
     enterScriptLaunchArguments: 'Enter the script launch arguments',

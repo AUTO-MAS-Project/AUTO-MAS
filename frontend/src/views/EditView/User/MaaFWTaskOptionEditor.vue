@@ -117,8 +117,30 @@
                 <span>{{ getInputLabel(inputItem) }}</span>
               </span>
             </template>
+            <div v-if="isPasswordInput(inputItem)" class="password-field">
+              <!-- 草稿只存在本组件里：已保存的值只有密文，不回显，失焦 / 回车才提交 -->
+              <a-input-password
+                :value="getPasswordDraft(option.name, inputItem.name)"
+                :disabled="props.disabled"
+                :placeholder="getPasswordPlaceholder(option, inputItem)"
+                autocomplete="new-password"
+                class="option-control"
+                @update:value="setPasswordDraft(option.name, inputItem.name, $event)"
+                @blur="commitPasswordDraft(option.name, inputItem)"
+                @press-enter="commitPasswordDraft(option.name, inputItem)"
+              />
+              <a-button
+                v-if="hasStoredSecret(getInputFieldValue(option, inputItem.name))"
+                type="link"
+                size="small"
+                :disabled="props.disabled"
+                @click="clearPassword(option.name, inputItem)"
+              >
+                {{ t('edit.maafwPasswordClear') }}
+              </a-button>
+            </div>
             <a-input-number
-              v-if="isIntegerInput(inputItem)"
+              v-else-if="isIntegerInput(inputItem)"
               :value="getNumberInputValue(option, inputItem.name)"
               :precision="0"
               :disabled="props.disabled"
@@ -202,6 +224,7 @@ import { message } from 'ant-design-vue'
 import { QuestionCircleOutlined } from '@ant-design/icons-vue'
 import { buildMaaFWAssetUrl } from '@/composables/useMaaFWApi'
 import MaaFWDescriptionView from './MaaFWDescriptionView.vue'
+import { hasStoredSecret, isPasswordInput } from './maafwOptionConstraints'
 import type {
   MaaFWOptionCaseInfo,
   MaaFWOptionInfo,
@@ -259,6 +282,8 @@ type OptionGroup = {
 
 const optionSearchQuery = ref('')
 const activeOptionGroupKeys = ref<string[]>([])
+// 密码字段正在输入、还没提交的值，键为 `option\u0000字段`。换了任务（taskOptions 换了一份）就清空。
+const passwordDrafts = ref<Record<string, string>>({})
 
 const optionMap = computed(() => {
   const entries = props.options.map(option => [option.name, option] as const)
@@ -336,6 +361,13 @@ watch(
     activeOptionGroupKeys.value = groups.map(group => group.key)
   },
   { immediate: true }
+)
+
+watch(
+  () => props.taskOptions,
+  () => {
+    passwordDrafts.value = {}
+  }
 )
 
 const getOptionLabel = (option: MaaFWOptionInfo) => option.label || option.name
@@ -534,6 +566,46 @@ const handleInputTextBlur = (inputItem: MaaFWOptionInputInfo, event: InputChange
   validateInputValue(inputItem, event.target.value)
 }
 
+const passwordDraftKey = (optionName: string, inputName: string) =>
+  `${optionName}\u0000${inputName}`
+
+const getPasswordDraft = (optionName: string, inputName: string) =>
+  passwordDrafts.value[passwordDraftKey(optionName, inputName)] ?? ''
+
+const setPasswordDraft = (optionName: string, inputName: string, value: unknown) => {
+  passwordDrafts.value = {
+    ...passwordDrafts.value,
+    [passwordDraftKey(optionName, inputName)]: typeof value === 'string' ? value : '',
+  }
+}
+
+const dropPasswordDraft = (key: string) => {
+  const next = { ...passwordDrafts.value }
+  delete next[key]
+  passwordDrafts.value = next
+}
+
+const getPasswordPlaceholder = (option: MaaFWOptionInfo, inputItem: MaaFWOptionInputInfo) =>
+  hasStoredSecret(getInputFieldValue(option, inputItem.name))
+    ? t('edit.maafwPasswordSaved')
+    : inputItem.description || inputItem.name
+
+// 只在失焦 / 回车时提交：留空表示不改（已保存的值只有密文，不能拿来回填）；
+// 校验不过就把草稿留在框里等用户改。提交的是明文，后端落盘前加密。
+const commitPasswordDraft = (optionName: string, inputItem: MaaFWOptionInputInfo) => {
+  const key = passwordDraftKey(optionName, inputItem.name)
+  const draft = passwordDrafts.value[key]
+  if (!draft) return
+  if (!validateInputValue(inputItem, draft)) return
+  dropPasswordDraft(key)
+  handleInputFieldChange(optionName, inputItem, draft, false)
+}
+
+const clearPassword = (optionName: string, inputItem: MaaFWOptionInputInfo) => {
+  dropPasswordDraft(passwordDraftKey(optionName, inputItem.name))
+  handleInputFieldChange(optionName, inputItem, '', false)
+}
+
 const getActiveNestedOptionGroups = (option: MaaFWOptionInfo) => {
   if (!['select', 'scan_select', 'switch', 'checkbox'].includes(option.type)) return []
 
@@ -638,6 +710,12 @@ const getActiveNestedOptionGroups = (option: MaaFWOptionInfo) => {
 
 .input-form-item {
   margin-bottom: 0;
+}
+
+.password-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .input-label {

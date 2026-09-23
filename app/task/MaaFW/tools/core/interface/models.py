@@ -18,7 +18,7 @@
 
 
 import json
-from collections.abc import Collection
+from collections.abc import Callable, Collection
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -205,6 +205,21 @@ class MaaFWInputCase(BaseModel):
     verify: str | None = None
     verify_error: str | None = None
     pattern_msg: str | None = None
+    # PI v2.10.0：密码 / 密钥字段。界面掩码、配置加密存储、不进日志；与 default 互斥
+    # （两者同时出现时由加载器告警并丢掉 default）。
+    password: bool = False
+
+    @field_validator("password", mode="before")
+    @classmethod
+    def coerce_password_flag(cls, value: Any) -> bool:
+        # 写成 "true" / 1 也认；认不出来的一律当 false，别让整份 interface 读不出来。
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, (int, float)):
+            return value == 1
+        if isinstance(value, str):
+            return value.strip().casefold() in {"true", "1", "yes"}
+        return False
 
     @model_validator(mode="after")
     def fill_verify_error_alias(self):
@@ -240,6 +255,54 @@ class MaaFWOption(BaseModel):
     scan_filter: str | None = None
     pipeline_override: MaaFWPipelineOverride | None = None
     default_case: str | list[str] | None = None
+
+
+def password_input_names(interface: "MaaFWInterface") -> dict[str, frozenset[str]]:
+    """``{option 名: 其中 password 为 true 的输入字段名}``，只收 input 类型且至少有一个的。"""
+
+    result: dict[str, frozenset[str]] = {}
+    for option_name, option in interface.option.items():
+        if option.type != "input":
+            continue
+        names = frozenset(item.name for item in option.inputs or [] if item.password)
+        if names:
+            result[option_name] = names
+    return result
+
+
+def map_password_values(
+    task_options: Any,
+    password_fields: dict[str, frozenset[str]],
+    transform: Callable[[str, str, str], str],
+) -> Any:
+    """对快照 ``taskOptions``（``{任务实例: {option: {字段: 值}}}``）里的密码字段逐个套 ``transform``。
+
+    ``transform(值, option 名, 字段名)`` 只作用于非空字符串；其余结构原样照抄（返回新
+    对象，不改入参）。``transform`` 抛出的异常原样上抛，调用方决定怎么报。
+    """
+
+    if not isinstance(task_options, dict) or not password_fields:
+        return task_options
+    result: dict[Any, Any] = {}
+    for task_id, option_values in task_options.items():
+        if not isinstance(option_values, dict):
+            result[task_id] = option_values
+            continue
+        mapped_options: dict[Any, Any] = {}
+        for option_name, value in option_values.items():
+            field_names = password_fields.get(option_name)
+            if field_names and isinstance(value, dict):
+                value = {
+                    field: (
+                        transform(item, option_name, field)
+                        if field in field_names and isinstance(item, str) and item
+                        else item
+                    )
+                    for field, item in value.items()
+                }
+            mapped_options[option_name] = value
+        result[task_id] = mapped_options
+    return result
 
 
 def _preset_scalar_text(value: Any) -> str | None:

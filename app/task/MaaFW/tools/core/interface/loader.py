@@ -50,7 +50,8 @@ IMPORTABLE_KEYS = (
 )
 logger = logging.getLogger("automas.maafw.interface.loader")
 
-DISK_CACHE_VERSION = 3
+# 4：加载器开始改写模型（password 字段丢 default），旧缓存没经过这一步。
+DISK_CACHE_VERSION = 4
 DISK_CACHE_MAX_AGE_SECONDS = 30 * 24 * 60 * 60
 DISK_CACHE_CLEANUP_INTERVAL_SECONDS = 24 * 60 * 60
 _interface_cache: dict[
@@ -842,6 +843,25 @@ def _warn_unsupported_option_types(interface_model: MaaFWInterface) -> None:
             )
 
 
+def _sanitize_v210_option_fields(interface_model: MaaFWInterface) -> None:
+    """PI v2.10.0 的声明错误：告警并按宽松口径改写模型。
+
+    - input 字段 ``password: true`` 又写了 ``default``：协议禁止（密钥不该随 interface
+      分发），丢掉 default，界面与运行都不再用它。
+    """
+
+    for option_name, option in interface_model.option.items():
+        for input_item in option.inputs or []:
+            if input_item.password and input_item.default is not None:
+                logger.warning(
+                    "MaaFW ProjectInterface option %s 的输入字段 %s 是密码字段，"
+                    "协议不允许同时声明 default，已忽略 default",
+                    option_name,
+                    input_item.name,
+                )
+                input_item.default = None
+
+
 def _validate_presets(interface_model: MaaFWInterface) -> None:
     task_name_map = {task.name: task for task in interface_model.task}
     option_map = interface_model.option
@@ -928,6 +948,7 @@ def _load_interface_model_with_context(
 
     _sanitize_pretasks(interface_model)
     _warn_unsupported_option_types(interface_model)
+    _sanitize_v210_option_fields(interface_model)
     _validate_task_context_constraints(interface_model)
     _validate_option_references(interface_model)
     _validate_presets(interface_model)

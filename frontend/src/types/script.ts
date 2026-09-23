@@ -438,6 +438,8 @@ export interface MaaFWOptionInputInfo {
   verify?: string | null
   verifyError?: string | null
   patternMsg?: string | null
+  /** PI v2.10.0：密码 / 密钥字段，掩码输入，保存后只拿得到密文 */
+  password?: boolean
 }
 
 export interface MaaFWOptionInfo {

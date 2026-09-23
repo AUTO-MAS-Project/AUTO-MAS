@@ -2977,6 +2977,25 @@ class AppConfig(GlobalConfig):
                     "每个脚本仅允许一个直控用户, 多账号请在该用户的实例管理中配置"
                 )
 
+        # MFW 任务选项里的密码字段（PI v2.10.0）必须加密落盘：前端提交的是新填的明文，
+        # 已保存的是密文，按项目 interface 只加密前者。
+        task_data = data.get("Task")
+        if (
+            isinstance(script_config, MaaFWConfig)
+            and isinstance(task_data, dict)
+            and "TaskSnapshot" in task_data
+        ):
+            from app.task.MaaFW.tools.embedded.option_secrets import (
+                seal_user_task_snapshot,
+            )
+
+            task_data["TaskSnapshot"] = await asyncio.to_thread(
+                seal_user_task_snapshot,
+                script_id,
+                script_config,
+                task_data["TaskSnapshot"],
+            )
+
         await user_config.update(data)
 
     async def import_script_config_file(

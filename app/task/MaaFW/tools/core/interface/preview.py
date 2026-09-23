@@ -263,6 +263,7 @@ def build_interface_preview_data(
                         "verify": input_item.verify,
                         "verifyError": input_item.verify_error,
                         "patternMsg": input_item.pattern_msg,
+                        "password": input_item.password,
                     }
                     for input_item in option.inputs or []
                 ],

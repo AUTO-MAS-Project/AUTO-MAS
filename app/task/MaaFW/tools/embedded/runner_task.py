@@ -72,6 +72,7 @@ from .embedded_project import resolve_maafw_project_root
 from .flavor import resolve_flavor
 from .game_package import resolve_game_package
 from .game_resolution import UnityGameResolutionOverride, parse_resolution_option
+from .option_secrets import open_task_snapshot
 from .project_path import release_project_path, try_reserve_project_path
 from .update_credentials import resolve_update_proxy_url
 
@@ -757,6 +758,9 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         # 没有钩子，仍按快照直接建计划，行为不变。
         flavor = resolve_flavor(self.script_config)
         try:
+            # 密码字段（PI v2.10.0）在配置里是密文，只在这份内存副本里解开交给计划；
+            # 用户配置本身不动，运行后的整表写回也就写不出明文。
+            task_snapshot = open_task_snapshot(task_snapshot, interface_model)
             if flavor is None:
                 return MaaFWRunnerService().build_plan(
                     self.project_path,

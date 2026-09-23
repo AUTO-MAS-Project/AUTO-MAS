@@ -3832,6 +3832,9 @@ class MaaFWOptionInputInfo(BaseModel):
     verify: Optional[str] = Field(default=None, description="输入校验正则")
     verifyError: Optional[str] = Field(default=None, description="输入校验提示")
     patternMsg: Optional[str] = Field(default=None, description="输入校验提示")
+    password: bool = Field(
+        default=False, description="是否为密码 / 密钥字段（界面掩码，配置加密存储）"
+    )
 
 
 class MaaFWOptionHotkeyInfo(BaseModel):
