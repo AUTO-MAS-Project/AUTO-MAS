@@ -714,7 +714,9 @@ class HSRManager(TaskExecuteBase):
                     get_sra_app_data_dir(),
                 )
             except Exception:
-                logger.opt(exception=True).warning("HSR 运行前原生配置归档失败，已跳过（不阻断任务）")
+                logger.opt(exception=True).warning(
+                    "HSR 运行前原生配置归档失败，已跳过（不阻断任务）"
+                )
             if resolve_script_path(self.script_config, "SRA"):
                 try:
                     disable_sra_windows_notifications()
@@ -902,6 +904,11 @@ class HSRManager(TaskExecuteBase):
                 f"用户「{user_name}」进入脚本直控；MAS 不管理游戏，"
                 f"仅运行原生配置并跟踪脚本进程：{'、'.join(control.engines)}"
             )
+        self._append_log(
+            f"直控按整份原生配置一次跑完，单个脚本运行上限 {control.timeout_minutes} 分钟"
+            f"（日常 {control.daily_limit_minutes} + 周常 {control.weekly_limit_minutes}），"
+            "超时将终止脚本进程"
+        )
 
         summaries: list[str] = []
         try:

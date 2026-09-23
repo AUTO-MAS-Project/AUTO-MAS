@@ -8,7 +8,7 @@
       config-label="配置 ok-ww"
       :config-loading="okwwConfigLoading"
       :config-active="showOkwwConfigMask"
-      :config-disabled="pageLoading || !userId"
+      :config-disabled="pageLoading || !userId || configLocked"
       @config="handleOkwwConfig"
       @cancel="handleCancel"
     />
@@ -45,7 +45,7 @@
       </template>
     </GuiSessionMask>
 
-    <div class="user-edit-content">
+    <ConfigLockPanel :script-id="scriptId" content-class="user-edit-content">
       <a-card class="config-card" :loading="pageLoading">
         <a-form :model="formData" layout="vertical" class="config-form">
           <div class="form-section">
@@ -226,32 +226,7 @@
         <a-form :model="formData" layout="vertical" class="config-form">
           <div class="form-section">
             <a-row :gutter="24">
-              <a-col :span="12">
-                <a-form-item>
-                  <template #label>
-                    <span class="form-label">
-                      {{ t('edit.startTaskTN') }}
-                      <a-tooltip :title="t('edit.taskNumbersMatchOk2')">
-                        <QuestionCircleOutlined class="help-icon" />
-                      </a-tooltip>
-                    </span>
-                  </template>
-                  <a-select
-                    v-model:value="formData.Task.TaskIndex"
-                    size="large"
-                    @change="handleTaskIndexChange"
-                  >
-                    <a-select-option
-                      v-for="item in okwwTaskOptions"
-                      :key="item.value"
-                      :value="item.value"
-                    >
-                      {{ item.label }}
-                    </a-select-option>
-                  </a-select>
-                </a-form-item>
-              </a-col>
-              <a-col :span="12">
+              <a-col :span="24">
                 <a-form-item>
                   <template #label>
                     <span class="form-label">
@@ -352,11 +327,12 @@
           />
         </a-form>
       </a-card>
-    </div>
+    </ConfigLockPanel>
 
     <!-- ══ 配置恢复（通用组件：MAS 用户配置在前、ok-ww 原生配置在后）══ -->
     <ConfigRestoreSection
       v-model:open="restoreOpen"
+      :disabled="configLocked"
       :script-name="OKWW_DISPLAY_NAME"
       :targets="restoreTargets"
       :api="restoreApi"
@@ -386,8 +362,10 @@
 </template>
 
 <script setup lang="ts">
+import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
+import { useScriptConfigLock } from '@/composables/useScriptConfigLock'
 import { useI18n } from 'vue-i18n'
-import { computed, h, nextTick, onMounted, onUnmounted, reactive, ref } from 'vue'
+import { h, nextTick, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { message, Modal } from 'ant-design-vue'
 import {
@@ -430,6 +408,7 @@ const {
 const scriptId = route.params.scriptId as string
 const userId = ref((route.params.userId as string) || '')
 const isEdit = ref(!!userId.value)
+const { configLocked } = useScriptConfigLock(() => scriptId)
 const scriptName = ref('ok-ww脚本')
 
 const pageLoading = ref(true)
@@ -477,11 +456,6 @@ const okwwConfigModeOptions: Array<{
     description: t('edit.useExistingOkwwConfiguration'),
     icon: 'setting',
   },
-]
-
-const okwwTaskOptions = [
-  { label: '1 - DailyTask（日常）', value: 1 },
-  { label: '7 - MultiAccountDailyTask（多账号日常）', value: 7 },
 ]
 
 const farmOptions = [
@@ -533,7 +507,6 @@ const getDefaultUserData = (): Omit<OkwwUserFormData, 'userName'> => ({
     Tag: '',
   },
   Task: {
-    TaskIndex: 1,
     WhichToFarm: 'Tacet Suppression',
     WhichTacetSuppressionToFarm: 1,
     WhichForgeryChallengeToFarm: 1,
@@ -563,7 +536,8 @@ const formData = reactive<OkwwUserFormData>({
   ...getDefaultUserData(),
 })
 
-const currentStartupArguments = computed(() => `-t ${formData.Task.TaskIndex || 1} -e`)
+// ok-ww 只调度日常任务（-t 1 = DailyTask）；账号切换由 MAS 侧实现
+const currentStartupArguments = '-t 1 -e'
 
 const handleConfigModeChange = async (value: boolean | string) => {
   if (typeof value !== 'string' || !['脚本', '用户', '直控'].includes(value)) return
@@ -577,6 +551,8 @@ const handleCancel = async () => {
 }
 
 const createUserImmediately = async (): Promise<boolean> => {
+  if (configLocked.value) return false
+
   const resp = await addUser(scriptId, { showError: false })
   if (!resp?.userId) {
     const errorMessage = userApiError.value || '创建用户失败'
@@ -640,7 +616,6 @@ const saveTaskConfig = async () => {
   await enqueue(() =>
     updateUser(scriptId, userId.value, {
       Task: {
-        TaskIndex: formData.Task.TaskIndex,
         WhichToFarm: formData.Task.WhichToFarm,
         WhichTacetSuppressionToFarm: formData.Task.WhichTacetSuppressionToFarm,
         WhichForgeryChallengeToFarm: formData.Task.WhichForgeryChallengeToFarm,
@@ -652,16 +627,8 @@ const saveTaskConfig = async () => {
   )
 }
 
-const handleTaskIndexChange = async (value: 1 | 7) => {
-  formData.Task.TaskIndex = value
-  try {
-    await saveTaskConfig()
-  } catch (e) {
-    logger.error(e instanceof Error ? e.message : String(e))
-  }
-}
-
 const handleOkwwConfig = async () => {
+  if (configLocked.value) return
   if (!userId.value) return
   await startSession(userId.value)
 }
@@ -791,8 +758,10 @@ const handleRestoreView = (
   target: string,
   item: { time: string; mode?: string | null },
   currentMode?: string | null
-) =>
-  new Promise<boolean>(resolve => {
+) => {
+  if (configLocked.value) return Promise.resolve(false)
+
+  return new Promise<boolean>(resolve => {
     const { title, paragraphs } = buildRestoreConfirm(
       t,
       {
@@ -814,6 +783,12 @@ const handleRestoreView = (
       okText: t('edit.configRestoreConfirmOk'),
       cancelText: t('edit.cancel'),
       onOk: async () => {
+        if (configLocked.value) {
+          message.error(t('edit.configLocked'))
+          resolve(false)
+          return
+        }
+
         try {
           const resp = await Service.restoreConfigBackupApiApiScriptsBackupRestorePost({
             scriptId,
@@ -844,6 +819,7 @@ const handleRestoreView = (
       onCancel: () => resolve(false),
     })
   })
+}
 
 // 编辑会话归档（进入/退出时机，指纹去重）：与运行/会话下发前的双池归档
 // （AutoProxy/ScriptConfig 下发处）配合——进入归档原生配置当前状态（MAS

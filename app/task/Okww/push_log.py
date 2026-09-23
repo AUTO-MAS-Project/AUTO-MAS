@@ -82,6 +82,9 @@ OKWW_PUSH_RULES: list[tuple[str, str]] = [
     (r"must_use completed", r'"体力刷本"'),
     # 当前体力：反复记录的 `info_set current_stamina N` 是游戏界面读取的真实值，
     # 保留最后一次作为刷完剩余（体力不足以刷一次的数值也会被记录到）。
+    # 上游 ok.po 自 v3.0.0 起把 current_stamina 译作「当前体力」，翻译后行须匹配
+    # 译文；英文原行规则保留兜底（翻译文件缺失或上游回退时生效）。
+    (r"当前体力 (\d+)", r'"体力当前:" + $((?:当前体力 )(\d+))'),
     (r"current_stamina (\d+)", r'"体力当前:" + $((?:current_stamina )(\d+))'),
     (r"每日任务已完成", r'"✅ 成功: 每日完成"'),
     (r"MainWindow:退出", r'"✅ 成功: 退出"'),

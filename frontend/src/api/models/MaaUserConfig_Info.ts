@@ -100,10 +100,6 @@ export type MaaUserConfig_Info = {
      */
     Stage_3?: (string | null);
     /**
-     * 剩余理智关卡
-     */
-    Stage_Remain?: (string | null);
-    /**
      * 状态标签列表
      */
     Tag?: (string | null);

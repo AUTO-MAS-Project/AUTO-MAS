@@ -1,0 +1,112 @@
+#   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
+#   Copyright © 2025-2026 AUTO-MAS Team
+
+#   This file is part of AUTO-MAS.
+
+#   AUTO-MAS is free software: you can redistribute it and/or modify
+#   it under the terms of the GNU Affero General Public License as
+#   published by the Free Software Foundation, either version 3 of
+#   the License, or (at your option) any later version.
+
+#   AUTO-MAS is distributed in the hope that it will be useful,
+#   but WITHOUT ANY WARRANTY; without even the implied warranty
+#   of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See
+#   the GNU Affero General Public License for more details.
+
+#   You should have received a copy of the GNU Affero General Public License
+#   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
+
+#   Contact: DLmaster_361@163.com
+
+# 合并即入账：PR 合并（或直推）带着 changelog.d/ 里的碎片进了 dev / release 分支，
+# 就把碎片编译进 CHANGELOG.md 顶部的「## [未发布]」段与 res/version.json，删掉碎片，
+# 以机器人身份推回去。作者与 PR 号取自合并那一刻的提交，「准备发版」只剩把未发布段改成
+# 版本号加日期。
+#
+# 用 push 触发而不是 pull_request_target：push 跑的是被推分支自己的这份文件，不会像旧的
+# 署名机器人那样跑默认分支上的过期副本；直推带碎片的提交也一并入账。
+# 机器人用 GITHUB_TOKEN 推送，不会触发别的工作流，也不会触发自己。
+
+name: 入账更新日志碎片
+
+on:
+  push:
+    branches:
+      - dev
+      - 'release/**'
+    paths:
+      - 'changelog.d/**'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+# 同一分支串行，排队不取消：后一次运行会在分支顶端重跑，已入账的碎片不会重复编译
+concurrency:
+  group: changelog-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  absorb:
+    name: 碎片入账
+    runs-on: ubuntu-latest
+    # 贡献者的 fork 上不能跑：机器人会删掉他 PR 里的碎片、改动保护文件，PR 到上游直接被检查拒绝。
+    # 在 fork 上实测时临时设仓库变量 CHANGELOG_ABSORB_ON_FORK=true。
+    if: github.repository == 'AUTO-MAS-Project/AUTO-MAS' || vars.CHANGELOG_ABSORB_ON_FORK == 'true'
+
+    steps:
+      # 检出分支顶端而不是触发这次运行的提交：排队的运行如果检出旧 SHA，会把上一次已经
+      # 入账并删除的碎片再编译一遍，再往分支上推必然冲突。
+      - name: 检出分支
+        uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ github.ref_name }}
+          fetch-depth: 0
+
+      - name: 设置 Python 环境
+        uses: actions/setup-python@v7.0.0
+        with:
+          python-version: '3.12'
+
+      - name: 入账并推送
+        id: absorb
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BRANCH: ${{ github.ref_name }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          # 推送被拒（期间又有人推了）就退回分支顶端重来，最多三次；不 rebase 过时的机器人提交
+          for attempt in 1 2 3; do
+            git fetch --quiet origin "$BRANCH"
+            git reset --hard --quiet "origin/$BRANCH"
+            rm -f "$RUNNER_TEMP/absorb.json"
+            python scripts/changelog.py absorb --repo "$GITHUB_REPOSITORY" \
+              --summary-file "$RUNNER_TEMP/absorb.json" --github-output "$GITHUB_OUTPUT"
+            git add --all changelog.d CHANGELOG.md res/version.json
+            if git diff --cached --quiet; then
+              echo "没有待入账的碎片"
+              echo "pushed=false" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            prs=$(python -c "import json,sys; d=json.load(open(sys.argv[1], encoding='utf-8')); print(' '.join(f\"#{x['pr']}\" for x in d['absorbed'] if x['pr']))" "$RUNNER_TEMP/absorb.json")
+            git commit --quiet -m "chore(changelog): 入账 ${prs:-碎片}"
+            if git push origin "HEAD:$BRANCH"; then
+              echo "pushed=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            echo "推送被拒，第 $attempt 次，退回分支顶端重试"
+          done
+          echo "::error::连续三次推送都被拒，请手动重跑本工作流"
+          exit 1
+
+      # GITHUB_TOKEN 的推送不触发 sync-cnb.yml，CNB 上的分支会少这一个机器人提交；
+      # 与 build-app.yml 同样的做法，显式补一次同步。
+      - name: 同步到 CNB
+        if: steps.absorb.outputs.pushed == 'true'
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run sync-cnb.yml --ref "${{ github.ref_name }}"

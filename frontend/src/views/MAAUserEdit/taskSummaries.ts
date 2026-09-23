@@ -59,6 +59,12 @@ export const summarizeActivity = (options: {
   return `${options.stageLabel ?? '未选择'} · 理智药 ${options.medicine}`
 }
 
+export const summarizeCultivate = (enabled: boolean, targetsJson: string) => {
+  if (!enabled) return ''
+  const count = parseCultivateTargets(targetsJson).length
+  return count ? `${count} 名干员` : '尚未添加养成目标'
+}
+
 export const summarizeDepot = (enabled: boolean, plansJson: string) => {
   if (!enabled) return ''
   let count = 0
@@ -69,12 +75,6 @@ export const summarizeDepot = (enabled: boolean, plansJson: string) => {
     count = 0
   }
   return count ? `${count} 项计划` : '尚未添加计划'
-}
-
-export const summarizeCultivate = (enabled: boolean, targetsJson: string) => {
-  if (!enabled) return ''
-  const count = parseCultivateTargets(targetsJson).length
-  return count ? `${count} 名干员` : '尚未添加养成目标'
 }
 
 export const INFRAST_MODE_OPTIONS = [
@@ -99,7 +99,6 @@ export const summarizeFight = (options: {
   stage: string
   series: string
   medicine: number
-  remain: string
 }) => {
   if (!options.enabled) return ''
   const parts = [
@@ -107,8 +106,5 @@ export const summarizeFight = (options: {
     `连战 ${seriesLabel(options.series)}`,
     `理智药 ${options.medicine}`,
   ]
-  if (options.remain && options.remain !== '-') {
-    parts.push(`剩余理智 ${options.remain}`)
-  }
   return options.planLabel ? `${options.planLabel} · ${parts.join(' · ')}` : parts.join(' · ')
 }

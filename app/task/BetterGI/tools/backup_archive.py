@@ -297,7 +297,9 @@ def archive_mas_runtime_backup(script_id: str, user_id: str, overlay: dict) -> N
     try:
         archive_mas_backup(script_id, user_id, overlay=overlay)
     except Exception:
-        logger.opt(exception=True).warning("BetterGI 运行前 MAS 配置归档失败，已跳过（不阻断任务）")
+        logger.opt(exception=True).warning(
+            "BetterGI 运行前 MAS 配置归档失败，已跳过（不阻断任务）"
+        )
 
 
 # ══════════════════ BetterGI 原生配置（全局 config.json + 一条龙实配） ══════════════════

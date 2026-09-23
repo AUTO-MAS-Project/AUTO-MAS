@@ -327,7 +327,7 @@ class OkwwManager(TaskExecuteBase):
             try:
                 await self.spawn(method)
             finally:
-                # 每个用户任务结束后立即恢复快照，快速配置不得残留到脚本原配置。
+                # 每个用户任务结束后立即恢复快照，overlay 不得残留到脚本原配置。
                 await self._restore_script_config_from_temp()
 
     async def final_task(self):

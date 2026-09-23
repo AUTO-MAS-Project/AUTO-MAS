@@ -106,7 +106,9 @@ jobs:
           KIND: ${{ inputs.kind }}
           VERSION: ${{ inputs.version }}
         run: |
-          args=(--kind "$KIND" --repo "$GITHUB_REPOSITORY" --body-file "$RUNNER_TEMP/pr-body.md" --summary-file "$RUNNER_TEMP/summary.json" --github-output "$GITHUB_OUTPUT")
+          # 没带碎片的提交清单写进本次运行的摘要页，发版 PR 正文只留数量和链接
+          run_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          args=(--kind "$KIND" --repo "$GITHUB_REPOSITORY" --body-file "$RUNNER_TEMP/pr-body.md" --summary-file "$RUNNER_TEMP/summary.json" --github-output "$GITHUB_OUTPUT" --step-summary "$GITHUB_STEP_SUMMARY" --run-url "$run_url")
           if [ -n "$VERSION" ]; then
             args+=(--version "$VERSION")
           fi

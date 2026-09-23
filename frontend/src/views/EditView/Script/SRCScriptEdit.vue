@@ -25,7 +25,7 @@
     </a-space>
   </div>
 
-  <div class="script-edit-content">
+  <ConfigLockPanel :script-id="scriptId" content-class="script-edit-content">
     <a-card :title="t('edit.srcScriptConfiguration')" :loading="pageLoading" class="config-card">
       <template #extra>
         <a-tag color="blue" class="type-tag"> SRC </a-tag>
@@ -267,12 +267,89 @@
             </a-col>
           </a-row>
         </div>
+
+        <!-- 游戏更新 -->
+        <div class="form-section">
+          <div class="section-header">
+            <h3>{{ t('edit.gameUpdate') }}</h3>
+          </div>
+          <a-row :gutter="24">
+            <a-col :span="8">
+              <a-form-item>
+                <template #label>
+                  <a-tooltip :title="t('edit.checkGameUpdateBeforeLogin')">
+                    <span class="form-label">
+                      {{ t('edit.checkGameUpdateBefore') }}
+                      <QuestionCircleOutlined class="help-icon" />
+                    </span>
+                  </a-tooltip>
+                </template>
+                <a-select
+                  v-model:value="srcConfig.Run.IfCheckGameUpdate"
+                  size="large"
+                  style="width: 100%"
+                  @change="handleChange('Run', 'IfCheckGameUpdate', $event)"
+                >
+                  <a-select-option :value="true">{{ t('edit.yes') }}</a-select-option>
+                  <a-select-option :value="false">{{ t('edit.no') }}</a-select-option>
+                </a-select>
+              </a-form-item>
+            </a-col>
+            <a-col :span="8">
+              <a-form-item>
+                <template #label>
+                  <a-tooltip :title="t('edit.whenClientDetectedAs')">
+                    <span class="form-label">
+                      {{ t('edit.installGamePackageAutomatically') }}
+                      <QuestionCircleOutlined class="help-icon" />
+                    </span>
+                  </a-tooltip>
+                </template>
+                <a-select
+                  v-model:value="srcConfig.Run.IfAutoInstallGameApk"
+                  size="large"
+                  style="width: 100%"
+                  :disabled="!srcConfig.Run.IfCheckGameUpdate"
+                  @change="handleChange('Run', 'IfAutoInstallGameApk', $event)"
+                >
+                  <a-select-option :value="true">{{ t('edit.yes') }}</a-select-option>
+                  <a-select-option :value="false">{{ t('edit.no') }}</a-select-option>
+                </a-select>
+              </a-form-item>
+            </a-col>
+            <a-col :span="8">
+              <a-form-item>
+                <template #label>
+                  <a-tooltip :title="t('edit.timeoutDownloadingInstallingGame')">
+                    <span class="form-label">
+                      {{ t('edit.gameUpdateTimeoutMinutes') }}
+                      <QuestionCircleOutlined class="help-icon" />
+                    </span>
+                  </a-tooltip>
+                </template>
+                <a-input-number
+                  v-model:value="srcConfig.Run.GameUpdateTimeLimit"
+                  :min="1"
+                  :max="9999"
+                  size="large"
+                  class="modern-number-input"
+                  style="width: 100%"
+                  :disabled="!srcConfig.Run.IfCheckGameUpdate"
+                  @blur="
+                    handleChange('Run', 'GameUpdateTimeLimit', srcConfig.Run.GameUpdateTimeLimit)
+                  "
+                />
+              </a-form-item>
+            </a-col>
+          </a-row>
+        </div>
       </a-form>
     </a-card>
-  </div>
+  </ConfigLockPanel>
 </template>
 
 <script setup lang="ts">
+import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
 import DocLink from '@/components/DocLink.vue'
 import { MAS_DOC_URLS } from '@/utils/openExternal'
 import { useI18n } from 'vue-i18n'
@@ -336,6 +413,9 @@ const srcConfig = reactive<SRCScriptConfig>({
     ProxyTimesLimit: 0,
     RunTimesLimit: 3,
     RunTimeLimit: 40,
+    IfCheckGameUpdate: false,
+    IfAutoInstallGameApk: false,
+    GameUpdateTimeLimit: 60,
   },
   Emulator: {
     Id: '',

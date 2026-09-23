@@ -62,7 +62,11 @@ from .tools.log_detect import (
 from .tools.m7a_control import HSRM7AControl
 from .tools.m7a_runtime import M7ARunner
 from .tools.managed_config import list_managed_modules, redeem_code_fingerprint
-from .tools.native_control import resolve_configured_engines, resolve_script_path
+from .tools.native_control import (
+    resolve_configured_engines,
+    resolve_phase_timeout_minutes,
+    resolve_script_path,
+)
 from .tools.run_model import (
     CompletionWriteback,
     HSRGameExitedError,
@@ -91,11 +95,6 @@ HSR_ABORT_REASON_GAME_EXITED = "游戏进程已退出，当前阶段剩余模块
 # 游戏进程消失后再等这么久才下结论：读输出的协程要把 M7A 关游戏前那行
 # ERROR 收进来；脚本自己关游戏后紧接着退出的，等它自然结束就不用杀。
 GAME_EXIT_SETTLE_SECONDS = 2
-
-PHASE_TIMEOUT_CONFIG: dict[HSRPhase, tuple[str, int]] = {
-    "daily": ("DailyTimeLimit", 20),
-    "weekly": ("WeeklyTimeLimit", 60),
-}
 
 MODULE_KEYS_BY_PHASE: dict[HSRPhase, tuple[str, ...]] = {
     phase: tuple(module.key for module in HSR_TASK_MODULES if module.category == phase)
@@ -694,9 +693,7 @@ class HSRAutoProxyTask(TaskExecuteBase):
     def _timeout_seconds_for_phase(self, phase: HSRPhase) -> int:
         """按周期读取超时配置，返回秒。"""
 
-        key, default = PHASE_TIMEOUT_CONFIG[phase]
-        minutes = int(self.script_config.get("Run", key) or default)
-        return max(1, minutes) * 60
+        return resolve_phase_timeout_minutes(self.script_config, phase) * 60
 
     def _phase_timeout_seconds(self, phase: HSRPhase) -> int:
         """按阶段读取超时配置，返回秒。"""
@@ -1593,9 +1590,7 @@ class HSRAutoProxyTask(TaskExecuteBase):
         # 物化前归档本用户字段侧车（_build_user_queue 会把托管字段注入原生
         # 配置；指纹去重，失败只记日志不阻断运行——native 池由 manager
         # prepare 在任务级一次性归档）
-        archive_mas_runtime_backup(
-            script_id, uid, read_overlay_values(user_cfg)
-        )
+        archive_mas_runtime_backup(script_id, uid, read_overlay_values(user_cfg))
 
         full_queue = self._build_user_queue(
             user_item=user_item,

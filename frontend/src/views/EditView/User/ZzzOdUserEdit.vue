@@ -25,7 +25,7 @@
             ghost
             size="large"
             :loading="zzzodConfigLoading"
-            :disabled="pageLoading || !userId"
+            :disabled="pageLoading || !userId || configLocked"
             @click="handleZzzodConfig"
           >
             <template #icon>
@@ -91,7 +91,7 @@
       </template>
     </GuiSessionMask>
 
-    <div class="user-edit-content">
+    <ConfigLockPanel :script-id="scriptId" content-class="user-edit-content">
       <a-card class="config-card" :loading="pageLoading">
         <a-form :model="formData" layout="vertical" class="config-form">
           <div class="form-section">
@@ -719,6 +719,26 @@
                   />
                 </a-form-item>
               </a-col>
+              <a-col :span="12">
+                <a-form-item>
+                  <template #label>
+                    <span class="form-label">
+                      {{ t('edit.zzzodAfterDone') }}
+                      <a-tooltip :title="t('edit.zzzodAfterDoneHint')">
+                        <QuestionCircleOutlined class="help-icon" />
+                      </a-tooltip>
+                    </span>
+                  </template>
+                  <a-select
+                    v-model:value="afterDoneValue"
+                    :options="afterDoneOptions"
+                    :loading="afterDoneSaving"
+                    size="large"
+                    class="modern-select"
+                    @change="handleAfterDoneChange"
+                  />
+                </a-form-item>
+              </a-col>
             </a-row>
           </div>
         </a-form>
@@ -775,7 +795,12 @@
                               size="large"
                               class="modern-select"
                               :disabled="!nativeLaunchArgs.launch_argument"
-                              @change="saveNativeLaunchArgsField('screen_size', nativeLaunchArgs.screen_size)"
+                              @change="
+                                saveNativeLaunchArgsField(
+                                  'screen_size',
+                                  nativeLaunchArgs.screen_size
+                                )
+                              "
                             />
                           </a-form-item>
                         </a-col>
@@ -790,7 +815,12 @@
                               size="large"
                               class="modern-select"
                               :disabled="!nativeLaunchArgs.launch_argument"
-                              @change="saveNativeLaunchArgsField('full_screen', nativeLaunchArgs.full_screen)"
+                              @change="
+                                saveNativeLaunchArgsField(
+                                  'full_screen',
+                                  nativeLaunchArgs.full_screen
+                                )
+                              "
                             />
                           </a-form-item>
                         </a-col>
@@ -805,7 +835,9 @@
                               v-model:checked="nativeLaunchArgs.popup_window"
                               size="large"
                               :disabled="!nativeLaunchArgs.launch_argument"
-                              @change="(v: any) => saveNativeLaunchArgsField('popup_window', v === true)"
+                              @change="
+                                (v: any) => saveNativeLaunchArgsField('popup_window', v === true)
+                              "
                             />
                           </a-form-item>
                         </a-col>
@@ -840,7 +872,9 @@
                               size="large"
                               class="modern-select"
                               :disabled="!nativeLaunchArgs.launch_argument"
-                              @change="saveNativeLaunchArgsField('monitor', nativeLaunchArgs.monitor)"
+                              @change="
+                                saveNativeLaunchArgsField('monitor', nativeLaunchArgs.monitor)
+                              "
                             />
                           </a-form-item>
                         </a-col>
@@ -857,7 +891,12 @@
                               size="large"
                               class="modern-input"
                               :disabled="!nativeLaunchArgs.launch_argument"
-                              @blur="saveNativeLaunchArgsField('launch_argument_advance', nativeLaunchArgs.launch_argument_advance)"
+                              @blur="
+                                saveNativeLaunchArgsField(
+                                  'launch_argument_advance',
+                                  nativeLaunchArgs.launch_argument_advance
+                                )
+                              "
                             />
                           </a-form-item>
                         </a-col>
@@ -962,7 +1001,12 @@
                           size="large"
                           class="modern-input"
                           :disabled="!formData.Game.LaunchArgument"
-                          @blur="saveField('Game.LaunchArgumentAdvance', formData.Game.LaunchArgumentAdvance)"
+                          @blur="
+                            saveField(
+                              'Game.LaunchArgumentAdvance',
+                              formData.Game.LaunchArgumentAdvance
+                            )
+                          "
                         />
                       </a-form-item>
                     </a-col>
@@ -1153,6 +1197,7 @@
       <!-- ══ 配置恢复（通用组件：列表 / 预览 / 查看详细 / 一键恢复）══ -->
       <ConfigRestoreSection
         v-model:open="restoreOpen"
+        :disabled="configLocked"
         :script-name="ZZZOD_DISPLAY_NAME"
         :targets="restoreTargets"
         :api="restoreApi"
@@ -1205,11 +1250,13 @@
           </div>
         </a-spin>
       </a-modal>
-    </div>
+    </ConfigLockPanel>
   </div>
 </template>
 
 <script setup lang="ts">
+import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
+import { useScriptConfigLock } from '@/composables/useScriptConfigLock'
 import { computed, h, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
@@ -1234,9 +1281,10 @@ import {
   type ZzzOdInstanceOut,
   type ZzzOdNativeAccountField,
   type ZzzOdNativeConfigOut,
-  type ZzzOdNativeLaunchArgs,
   type ZzzOdUserConfig,
+  ZzzOdNativeLaunchArgs,
 } from '@/api'
+import { buildCorruptedForceConfirm, corruptedForceConfirmContent } from '@/utils/configRestoreMode'
 import ConfigRestoreSection from '@/views/EditView/User/components/ConfigRestoreSection.vue'
 import GuiSessionMask from '@/components/GuiSessionMask.vue'
 import ZzzOdPlanListEditor from '@/components/ZzzOdPlanListEditor.vue'
@@ -1258,6 +1306,7 @@ const { getScript } = useScriptApi()
 const scriptId = route.params.scriptId as string
 const userId = ref((route.params.userId as string) || '')
 const isEdit = ref(!!userId.value)
+const { configLocked } = useScriptConfigLock(() => scriptId)
 const scriptName = ref(t('edit.zzzodScriptFallbackName'))
 
 const pageLoading = ref(true)
@@ -1310,6 +1359,7 @@ const getDefaultUserData = (): Omit<ZzzOdUserFormData, 'userName'> => ({
   },
   OneDragon: {
     AppList: '[]',
+    AfterDone: '关闭游戏',
   },
   Notify: {
     Enabled: false,
@@ -1333,6 +1383,46 @@ const pushLogModeOptions = [
   { label: t('edit.pushLogModeList'), value: '逐条' },
   { label: t('edit.pushLogModeSummary'), value: '汇总' },
 ]
+
+// 游戏结束后操作（value 为后端 OneDragon.AfterDone 取值，与一条龙原生「结束后」
+// 同词表；用户/脚本模式经配置会话双向联动，直控模式直读写原生 after_done）
+const afterDoneOptions = [
+  { label: t('edit.zzzodAfterDoneNone'), value: '无' },
+  { label: t('edit.zzzodAfterDoneCloseGame'), value: '关闭游戏' },
+  { label: t('edit.zzzodAfterDoneShutdown'), value: '关机' },
+]
+
+/** 「游戏结束后操作」按模式分流：直控写原生 after_done（与原生 GUI 同源），
+ * 用户/脚本写 MAS 用户字段（该模式无原生实例概念） */
+type AfterDoneValue = NonNullable<NonNullable<ZzzOdUserConfig['OneDragon']>['AfterDone']>
+const afterDoneValue = computed<AfterDoneValue>({
+  get: () =>
+    formData.Info.Mode === '直控'
+      ? nativeAfterDone.value
+      : (formData.OneDragon.AfterDone ?? '关闭游戏'),
+  set: value => {
+    if (formData.Info.Mode === '直控') {
+      nativeAfterDone.value = value
+    } else {
+      formData.OneDragon.AfterDone = value
+    }
+  },
+})
+
+const afterDoneSaving = ref(false)
+const handleAfterDoneChange = async () => {
+  if (configLocked.value) return
+  if (formData.Info.Mode === '直控') {
+    afterDoneSaving.value = true
+    try {
+      await saveNativeConfig({ afterDone: nativeAfterDone.value }, 'afterDone', true)
+    } finally {
+      afterDoneSaving.value = false
+    }
+    return
+  }
+  await saveField('OneDragon.AfterDone', formData.OneDragon.AfterDone)
+}
 
 // 配置来源三态卡片（value 为后端 Info.Mode 取值，驱动逻辑需保持原样；文案走词表）
 // 「脚本」置灰：一条龙运行时脚本态与用户态同分支（AutoProxy 均按该用户字段注入绑定槽），
@@ -1444,6 +1534,8 @@ const handleNameBlur = async () => {
 }
 
 const createUserImmediately = async (): Promise<boolean> => {
+  if (configLocked.value) return false
+
   const resp = await addUser(scriptId, { showError: false })
   if (!resp?.userId) {
     message.error(userApiError.value || t('edit.couldNotCreateUser'))
@@ -1541,9 +1633,11 @@ const ensurePoolBackup = async (target: string): Promise<void> => {
     })
     if (resp.code !== 200) throw new Error(resp.message || t('edit.zzzodBackupFailed'))
   } catch (e) {
-    // 备份失败不阻断使用，但向用户提示（防止误以为有恢复点）
-    logger.warn(e instanceof Error ? e.message : String(e))
-    message.warning(t('edit.zzzodBackupFailed'))
+    // 备份失败不阻断使用，但向用户提示（防止误以为有恢复点）；
+    // 后端诊断（配置损坏时含损坏位置）附加展示，便于用户自愈
+    const detail = e instanceof Error ? e.message : String(e)
+    logger.warn(detail)
+    message.warning(`${t('edit.zzzodBackupFailed')}（${detail}）`)
   }
 }
 
@@ -1605,6 +1699,7 @@ const openAddInstance = () => {
 }
 
 const confirmAddInstance = async () => {
+  if (configLocked.value) return
   const name = instanceName.value.trim()
   if (!name) {
     message.error(t('edit.zzzodInstanceNameRequired'))
@@ -1642,6 +1737,7 @@ const openRenameInstance = (inst: ZzzOdInstanceOut) => {
 }
 
 const confirmRenameInstance = async () => {
+  if (configLocked.value) return
   const target = renameTarget.value
   const name = instanceName.value.trim()
   if (!target || !name) {
@@ -1686,6 +1782,7 @@ const openDeleteInstance = (inst: ZzzOdInstanceOut) => {
 }
 
 const deleteInstance = async (inst: ZzzOdInstanceOut) => {
+  if (configLocked.value) return
   instanceOpLoading.value = true
   try {
     const resp = await Service.deleteZzzodInstanceApiApiScriptsZzzodInstancesDeletePost({
@@ -1712,6 +1809,7 @@ const deleteInstance = async (inst: ZzzOdInstanceOut) => {
 }
 
 const toggleInstanceActiveInOd = async (inst: ZzzOdInstanceOut, value: boolean) => {
+  if (configLocked.value) return
   try {
     const resp = await Service.setZzzodInstanceActiveInOdApiApiScriptsZzzodInstancesActiveInOdPost({
       scriptId,
@@ -1729,6 +1827,7 @@ const toggleInstanceActiveInOd = async (inst: ZzzOdInstanceOut, value: boolean) 
 
 /** 切换实例「运行前切换账号」：一条龙原生能力（force_login_before_run），MAS 不干涉 */
 const toggleInstanceForceLogin = async (inst: ZzzOdInstanceOut, value: boolean) => {
+  if (configLocked.value) return
   try {
     const resp = await Service.setZzzodInstanceForceLoginApiApiScriptsZzzodInstancesForceLoginPost({
       scriptId,
@@ -1754,6 +1853,7 @@ const isRequiredAccountKey = (key: string) => {
 
 /** 显式设为当前活跃：「仅运行当前」运行时跑的就是它；直控页编辑不自动改活跃 */
 const setActiveInstance = async (inst: ZzzOdInstanceOut) => {
+  if (configLocked.value) return
   instanceOpLoading.value = true
   try {
     const resp = await Service.setZzzodActiveInstanceApiApiScriptsZzzodInstancesSetActivePost({
@@ -1782,7 +1882,7 @@ const teamsRef = ref<InstanceType<typeof ZzzOdPredefinedTeams> | null>(null)
 // 点击「导入」：确认将用母版实例覆盖当前独立用户配置后再执行
 // （后端在覆盖前会强制归档当前 MAS 配置，可在「配置恢复」中找回）
 const confirmImport = () => {
-  if (importSourceIdx.value === null) return
+  if (importSourceIdx.value === null || configLocked.value) return
   Modal.confirm({
     title: t('edit.zzzodImportConfirmTitle'),
     content: t('edit.zzzodImportConfirmDesc'),
@@ -1792,6 +1892,7 @@ const confirmImport = () => {
 }
 
 const importFromInstance = async () => {
+  if (configLocked.value) return
   const sourceIdx = importSourceIdx.value
   if (sourceIdx === null || !userId.value) return
   importLoading.value = true
@@ -1851,6 +1952,9 @@ const nativeInstanceIdx = ref<number | null>(null)
 // 运行实例（value 为一条龙原生中文取值，label 走词表；初始值对齐上游
 // InstanceRun.ALL 默认，加载后由后端返回值覆盖）
 const nativeInstanceRun = ref('全部实例')
+// 直控模式下「游戏结束后操作」读写的是一条龙原生 after_done（UI 与原生 GUI
+// 同源，改哪边另一边都同步）；用户/脚本模式走 MAS 用户字段（会话双向联动）
+const nativeAfterDone = ref<AfterDoneValue>('无')
 const instanceRunOptions = [
   { label: t('edit.zzzodInstanceRunCurrent'), value: '仅运行当前' },
   { label: t('edit.zzzodInstanceRunAll'), value: '全部实例' },
@@ -1864,11 +1968,11 @@ const nativeTasks = ref<TaskCard[]>([])
 // 直控启动参数（game.yml 字段 + dx12 开关；改动即时整组提交，与其他区块解耦）
 const getDefaultLaunchArgs = (): ZzzOdNativeLaunchArgs => ({
   launch_argument: false,
-  screen_size: '1920x1080',
-  full_screen: '0',
+  screen_size: ZzzOdNativeLaunchArgs.screen_size._1920X1080,
+  full_screen: ZzzOdNativeLaunchArgs.full_screen._0,
   popup_window: false,
   dx12: false,
-  monitor: '1',
+  monitor: ZzzOdNativeLaunchArgs.monitor._1,
   launch_argument_advance: '',
 })
 const nativeLaunchArgs = reactive<ZzzOdNativeLaunchArgs>(getDefaultLaunchArgs())
@@ -1877,7 +1981,8 @@ const nativeLaunchArgs = reactive<ZzzOdNativeLaunchArgs>(getDefaultLaunchArgs())
 // 开关下次变化（watch 只在来源值变化时触发，手动的 activeKey 不会被覆盖）
 const launchArgsOpen = ref<string[]>([])
 watch(
-  () => [formData.Info.Mode, formData.Game.LaunchArgument, nativeLaunchArgs.launch_argument] as const,
+  () =>
+    [formData.Info.Mode, formData.Game.LaunchArgument, nativeLaunchArgs.launch_argument] as const,
   ([mode, userOn, nativeOn]) => {
     launchArgsOpen.value = (mode === '直控' ? nativeOn : userOn) ? ['launch-args'] : []
   },
@@ -1894,6 +1999,7 @@ const applyNativeConfig = (data: ZzzOdNativeConfigOut) => {
   Object.assign(nativeAccountValues, values)
   Object.assign(nativeLaunchArgs, getDefaultLaunchArgs(), data.launchArgs ?? {})
   nativeInstanceRun.value = data.instanceRun || '全部实例'
+  nativeAfterDone.value = (data.afterDone as AfterDoneValue) || '无'
   nativeTasks.value = toTaskCards(data.tasks ?? [])
 }
 
@@ -1912,6 +2018,7 @@ const loadNativeConfig = async (instanceIdx: number) => {
     message.error(e instanceof Error ? e.message : t('edit.zzzodNativeLoadFailed'))
     nativeAccountFields.value = []
     nativeTasks.value = []
+    nativeAfterDone.value = '无'
   } finally {
     nativeLoading.value = false
   }
@@ -1930,6 +2037,7 @@ const handleNativeInstanceChange = async (instanceIdx: number) => {
  * 与直控页当前编辑哪个实例无关，独立保存 */
 const runModeSaving = ref(false)
 const handleNativeInstanceRunChange = async () => {
+  if (configLocked.value) return
   runModeSaving.value = true
   try {
     const resp = await Service.setZzzodInstanceRunModeApiApiScriptsZzzodInstancesRunModePost({
@@ -1952,7 +2060,7 @@ const handleNativeInstanceRunChange = async () => {
  *  - 任务开关/排序、运行实例：即时增量提交对应字段——不把未保存的账号
  *    草稿一并落盘或覆盖。
  */
-type NativeSaveSection = 'all' | 'tasks' | 'launchArgs'
+type NativeSaveSection = 'all' | 'tasks' | 'launchArgs' | 'afterDone'
 /** 提交给后端的任务条目（后端只认 app_id/enabled） */
 const toNativeTaskIn = (list: TaskCard[]): { app_id: string; enabled: boolean }[] =>
   list.map(t => ({ app_id: t.app_id, enabled: !!t.enabled }))
@@ -1974,11 +2082,16 @@ const saveNativeConfig = async (
     account?: Record<string, string>
     tasks?: { app_id: string; enabled: boolean }[]
     instanceRun?: string
+    afterDone?: string
     launchArgs?: ZzzOdNativeLaunchArgs
   },
   section: NativeSaveSection = 'all',
   silent = false
 ): Promise<boolean> => {
+  if (configLocked.value) {
+    message.error(t('edit.configLocked'))
+    return false
+  }
   if (nativeInstanceIdx.value === null) return false
   nativeSaving.value = true
   try {
@@ -1994,6 +2107,8 @@ const saveNativeConfig = async (
       nativeTasks.value = toTaskCards(resp.tasks ?? [])
     } else if (section === 'launchArgs') {
       Object.assign(nativeLaunchArgs, getDefaultLaunchArgs(), resp.launchArgs ?? {})
+    } else if (section === 'afterDone') {
+      nativeAfterDone.value = (resp.afterDone as AfterDoneValue) || '无'
     } else {
       applyNativeConfig(resp)
     }
@@ -2015,7 +2130,11 @@ const saveNativeConfig = async (
  */
 const saveNativeLaunchArgsField = (key: keyof ZzzOdNativeLaunchArgs, value: unknown) => {
   ;(nativeLaunchArgs as Record<string, unknown>)[key] = value
-  return saveNativeConfig({ launchArgs: { [key]: value } as ZzzOdNativeLaunchArgs }, 'launchArgs', true)
+  return saveNativeConfig(
+    { launchArgs: { [key]: value } as ZzzOdNativeLaunchArgs },
+    'launchArgs',
+    true
+  )
 }
 
 /** 「保存设置」：账号字段全量写回（连同当前任务编排与运行实例，保持表单一致） */
@@ -2025,6 +2144,7 @@ const saveNativeAccount = () =>
       account: { ...nativeAccountValues },
       tasks: toNativeTaskIn(nativeTasks.value),
       instanceRun: nativeInstanceRun.value,
+      afterDone: nativeAfterDone.value,
     },
     'all'
   )
@@ -2186,12 +2306,20 @@ const flushAllTaskConfigSaves = () => {
   taskConfigPending.clear()
 }
 
-const saveTaskConfigField = async (card: TaskCard, field: TaskConfigField, value: any) => {
+const saveTaskConfigField = async (
+  card: TaskCard,
+  field: TaskConfigField,
+  value: any
+): Promise<boolean> => {
+  if (configLocked.value) {
+    message.error(t('edit.configLocked'))
+    return false
+  }
   // 数值框清空（change 拿到 null/空串/纯空白）与 NaN 一律不发请求（后端
   // int(null/'' ) 报 400）；值未变跳过——Tab 经过或步进回原值时不发多余请求
-  if (value === null || value === undefined || Number.isNaN(value)) return
-  if (typeof value === 'string' && value.trim() === '') return
-  if (Number(value) === Number(field.value)) return
+  if (value === null || value === undefined || Number.isNaN(value)) return false
+  if (typeof value === 'string' && value.trim() === '') return false
+  if (Number(value) === Number(field.value)) return false
   try {
     const resp = await Service.saveZzzodAppConfigApiApiScriptsZzzodAppConfigSavePost({
       scriptId,
@@ -2205,8 +2333,10 @@ const saveTaskConfigField = async (card: TaskCard, field: TaskConfigField, value
     }
     field.value = value
     message.success(t('edit.zzzodTaskConfigSaved'))
+    return true
   } catch (e) {
     message.error(e instanceof Error ? e.message : t('edit.zzzodTaskConfigSaveFailed'))
+    return false
   }
 }
 
@@ -2255,6 +2385,7 @@ const openPlanModal = async (card: TaskCard, fields?: TaskConfigField[]) => {
 
 /** 弹窗保存：plan_list 提交整表（后端按 plan_id 保留已运行进度），其余字段提交当前值 */
 const savePlanModal = async () => {
+  if (configLocked.value) return
   planModal.saving = true
   try {
     const values: Record<string, any> = {}
@@ -2357,12 +2488,13 @@ const restoreApi = {
       time,
       target
     ),
-  restore: async (target: string, time: string) =>
+  restore: async (target: string, time: string, force?: boolean) =>
     Service.restoreConfigBackupApiApiScriptsBackupRestorePost({
       scriptId,
       userId: userId.value,
       time,
       target,
+      force,
     }),
   readFile: async (target: string, time: string, path: string) =>
     Service.getConfigBackupFileApiApiScriptsBackupFileGet(
@@ -2392,9 +2524,9 @@ const handleRestored = (target: string) => {
   }
 }
 
-const handleRestoreView = (target: string, item: { time: string }) =>
-  new Promise<boolean>(resolve => {
-    const isMas = target === 'mas'
+const handleRestoreView = (target: string, item: { time: string }) => {
+  if (configLocked.value) return Promise.resolve(false)
+  return new Promise<boolean>(resolve => {
     // 「查看详细配置」语义：恢复该时点 + 拉起对应会话查看。弹窗文案与
     // 「一键恢复」必须显式区分——预览弹窗里的「查看详细配置」按钮极易被
     // 误以为只读，实际会真覆盖当前配置并拉起查看会话；查看会话结束前
@@ -2410,35 +2542,89 @@ const handleRestoreView = (target: string, item: { time: string }) =>
       okType: 'danger',
       cancelText: t('edit.cancel'),
       onOk: async () => {
+        if (configLocked.value) {
+          message.error(t('edit.configLocked'))
+          resolve(false)
+          return
+        }
         try {
-          const resp = await Service.restoreConfigBackupApiApiScriptsBackupRestorePost({
-            scriptId,
-            userId: userId.value,
-            time: item.time,
-            target,
-          })
-          // 后端失败走 HTTP 200 + body code=400，须显式检查返回体：槽绑定守卫等
-          // 抛错若被吞掉，会照常关弹窗并打开查看会话，显示的是没被恢复的当前配置
-          if (resp.code !== 200) {
-            throw new Error(resp.message || t('edit.configRestoreFailed'))
-          }
-          restoreOpen.value = false
-          if (isMas) {
-            // MAS 备份预览：只读会话打开一条龙，合成视图下看到的是 MAS 实例
-            // （槽内容即恢复的备份，不注入基线、不回读字段）
-            await startSession(userId.value, true)
-          } else {
-            // 一条龙备份预览：脚本级原生会话，看到的是一条龙自己的原生实例，
-            // 与 MAS 侧完全无关
-            await startSession(scriptId, true)
-          }
-          resolve(true)
+          // 恢复流程（含损坏时的强制恢复确认）全部走完才 resolve，避免本入口
+          // 提前放行、查看会话对着没被恢复的配置打开
+          resolve(await restoreForDetailView(target, item, target === 'mas'))
         } catch (e) {
           message.error(e instanceof Error ? e.message : t('edit.configRestoreFailed'))
           resolve(false)
         }
       },
       onCancel: () => resolve(false),
+    })
+  })
+}
+
+/** 「查看详细配置」的恢复：成功后拉起对应查看会话；损坏时转强制恢复二次确认 */
+const restoreForDetailView = async (
+  target: string,
+  item: { time: string },
+  isMas: boolean,
+  force = false
+): Promise<boolean> => {
+  const resp = await Service.restoreConfigBackupApiApiScriptsBackupRestorePost({
+    scriptId,
+    userId: userId.value,
+    time: item.time,
+    target,
+    force,
+  })
+  // 后端失败走 HTTP 200 + body code=400，须显式检查返回体：槽绑定守卫等
+  // 抛错若被吞掉，会照常关弹窗并打开查看会话，显示的是没被恢复的当前配置
+  if (resp.code === 409) {
+    if (force) {
+      // force 仍被拦：不再重复弹确认，直接把原因报给用户
+      throw new Error(resp.message || t('edit.configRestoreFailed'))
+    }
+    // 源配置损坏：与「一键恢复」同一套二次确认，确认后带 force 重试本入口流程
+    return confirmForceRestoreDetail(target, item, isMas, resp.message || '')
+  }
+  if (resp.code !== 200) {
+    throw new Error(resp.message || t('edit.configRestoreFailed'))
+  }
+  restoreOpen.value = false
+  if (isMas) {
+    // MAS 备份预览：只读会话打开一条龙，合成视图下看到的是 MAS 实例
+    // （槽内容即恢复的备份，不注入基线、不回读字段）
+    await startSession(userId.value, true)
+  } else {
+    // 一条龙备份预览：脚本级原生会话，看到的是一条龙自己的原生实例，
+    // 与 MAS 侧完全无关
+    await startSession(scriptId, true)
+  }
+  return true
+}
+
+/** 损坏强制恢复二次确认（「查看详细配置」入口）：文案与渲染复用一键恢复那套 */
+const confirmForceRestoreDetail = (
+  target: string,
+  item: { time: string },
+  isMas: boolean,
+  detail: string
+): Promise<boolean> =>
+  new Promise<boolean>(forceResolve => {
+    const copy = buildCorruptedForceConfirm(t, detail)
+    Modal.confirm({
+      title: copy.title,
+      content: corruptedForceConfirmContent(copy.detail, copy.desc),
+      okText: copy.okText,
+      okType: 'danger',
+      cancelText: t('edit.cancel'),
+      onOk: async () => {
+        try {
+          forceResolve(await restoreForDetailView(target, item, isMas, true))
+        } catch (e) {
+          message.error(e instanceof Error ? e.message : t('edit.configRestoreFailed'))
+          forceResolve(false)
+        }
+      },
+      onCancel: () => forceResolve(false),
     })
   })
 
@@ -2542,6 +2728,7 @@ const {
 } = useZzzodGuiSession()
 
 const handleZzzodConfig = () => {
+  if (configLocked.value) return
   if (formData.Info.Mode === '直控') {
     // 直控：拉起脚本级原生会话——完整原生实例列表，不隔离、不注入，
     // 界面里的改动即真实落地一条龙原始配置（会话关闭后页面自动刷新）。
