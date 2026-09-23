@@ -22,6 +22,7 @@ from typing import Awaitable, Callable, Literal
 
 from app.utils import ProcessManager
 
+from .cloud_browser import CloudBrowser
 from .game_resolution import HSRGameResolutionOverride
 from .log_detect import select_failure_summary_lines
 from .m7a_runtime import M7ARunner
@@ -29,7 +30,9 @@ from .sra_runtime import SRAProcessRegistry
 
 HSRPhase = Literal["daily", "weekly"]
 HSRScriptRunner = Literal["M7A", "SRA"]
-HSRLoginMode = Literal["sra_switch", "sra_remembered", "m7a_fallback"]
+# cloud：云·星穹铁道。不走 SRA StartGame，按「切号」处理——关上一个用户的
+# 云浏览器、起本用户的（每个用户一份 profile，登录态就在里面）。
+HSRLoginMode = Literal["sra_switch", "sra_remembered", "m7a_fallback", "cloud"]
 HSRModuleResultStatus = Literal["completed", "failed", "incomplete", "skipped"]
 
 
@@ -48,9 +51,9 @@ class HSRLoginPlan:
 
     @property
     def needs_account_switch(self) -> bool:
-        """是否需要按切号流程重启游戏。"""
+        """是否需要按切号流程重启游戏（云平台下是切换云浏览器）。"""
 
-        return self.mode == "sra_switch"
+        return self.mode in ("sra_switch", "cloud")
 
 
 @dataclass
@@ -117,6 +120,23 @@ class HSRGameExitedError(HSRRetryableTaskError):
     """
 
 
+class HSRNonRetryableTaskError(RuntimeError):
+    """补跑也不会变好的失败：该用户本轮直接判失败，不进 ``RunTimesLimit`` 补跑。
+
+    与 ``HSRRetryableTaskError`` 是兄弟而不是子类：云·星穹铁道的登录超时、
+    排队超时、时长耗尽、云浏览器起不来都属于这一类，补跑只会再等一遍。
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        result: object | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.result = result
+
+
 @dataclass
 class HSRRuntimeState:
     """HSR 单次运行中跨用户共享的外部脚本状态。"""
@@ -136,6 +156,9 @@ class HSRRuntimeState:
     last_external_script: HSRScriptRunner | None = None
     game_session_clean: bool = False
     game_transitioning: bool = False
+    # 云平台下当前用户的 MAS 托管浏览器；任一时刻只有一个（三月七只认标记不认
+    # 账号），换用户时关旧起新，final_task 全关。
+    cloud_browser: CloudBrowser | None = None
 
     def record_module_result(self, result: HSRModuleResult) -> None:
         """记录模块最终态；同一用户同一模块以后写入为准。"""

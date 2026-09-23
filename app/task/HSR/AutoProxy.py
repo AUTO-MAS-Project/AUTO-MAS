@@ -47,6 +47,7 @@ from .tools.account_switch import (
     HSR_GAME_PROCESS_NAME,
     HSR_GAME_READY_DELAY_SECONDS,
     HSRAccountSwitcher,
+    is_cloud_platform,
     is_game_management_enabled,
     resolve_game_executable_path,
     stop_external_processes,
@@ -185,6 +186,8 @@ class HSRAutoProxyTask(TaskExecuteBase):
             script_config=self.script_config,
             runtime=self.runtime,
             append_log=self._append_log,
+            script_id=self.script_info.script_id,
+            user_id=user_item.user_id,
         )
         self._sra_control = HSRSRAControl(
             script_config=self.script_config,
@@ -313,9 +316,21 @@ class HSRAutoProxyTask(TaskExecuteBase):
         return self._timeout_seconds_for_phase(phase)
 
     async def _restart_game(self, user_name: str, reason: str) -> None:
-        """按开关决定是否由 MAS 关闭并重新启动游戏。"""
+        """按开关决定是否由 MAS 关闭并重新启动游戏。
+
+        云平台不重启浏览器：同一用户的模块之间浏览器保持在游戏画面里，三月七
+        下一次连回去不用重新登录、排队；这里只确认它还活着。
+        """
 
         await self._stop_external_processes()
+        if is_cloud_platform(self.script_config):
+            self.runtime.last_external_script = None
+            self.runtime.game_session_clean = False
+            self._append_log(
+                f"用户「{user_name}」{reason}，云·星穹铁道保持浏览器不重启"
+            )
+            await self._account_switcher.ensure_cloud_browser()
+            return
         if not is_game_management_enabled(self.script_config):
             self.runtime.game_launch_checked = True
             self.runtime.game_started_by_mas = False
@@ -1038,9 +1053,15 @@ class HSRAutoProxyTask(TaskExecuteBase):
         user_cfg,
         sra_path: str,
     ) -> HSRLoginPlan:
-        """根据 SRA 可用性和账号密码生成本轮登录计划。"""
+        """根据 SRA 可用性和账号密码生成本轮登录计划。
+
+        云平台不走 SRA StartGame：按切号处理，由切换器换成本用户的云浏览器，
+        登录态在该用户自己的浏览器 profile 里。
+        """
 
         sra_exe_path = Path(sra_path) / "SRA-cli.exe"
+        if is_cloud_platform(self.script_config):
+            return HSRLoginPlan(mode="cloud", sra_exe_path=sra_exe_path)
         sra_available = bool(sra_path.strip()) and sra_exe_path.exists()
         if not sra_available:
             return HSRLoginPlan(
@@ -1501,7 +1522,11 @@ class HSRAutoProxyTask(TaskExecuteBase):
 
         run_task = asyncio.create_task(item.run())
         try:
-            if not is_game_management_enabled(self.script_config):
+            # 云平台没有 StarRail.exe；浏览器存活由每个三月七模块开跑前检查，
+            # 死了重起而不是判「游戏退出」。
+            if is_cloud_platform(self.script_config) or not is_game_management_enabled(
+                self.script_config
+            ):
                 return await run_task
 
             while not run_task.done():
@@ -1721,11 +1746,12 @@ class HSRAutoProxyTask(TaskExecuteBase):
             permanent_failures.extend(i for i in failed_items if not i.retryable)
             retryable_failures = [i for i in failed_items if i.retryable]
             if attempt < retry_limit and retryable_failures:
-                retry_action = (
-                    "将重新启动游戏后补跑"
-                    if is_game_management_enabled(self.script_config)
-                    else "MAS 未管理游戏，直接补跑"
-                )
+                if is_cloud_platform(self.script_config):
+                    retry_action = "云·星穹铁道保持浏览器，直接补跑"
+                elif is_game_management_enabled(self.script_config):
+                    retry_action = "将重新启动游戏后补跑"
+                else:
+                    retry_action = "MAS 未管理游戏，直接补跑"
                 self._append_log(
                     f"用户「{user_name}」第 {attempt}/{retry_limit} 次尝试后，"
                     f"仍有 {len(retryable_failures)} 个失败任务，{retry_action}"

@@ -51,6 +51,7 @@ from .tools.account_switch import (
     HSRAccountSwitcher,
     check_user_credentials,
     close_game_if_needed,
+    is_cloud_platform,
     is_game_management_enabled,
     resolve_game_executable_path,
     restore_game_resolution_if_needed,
@@ -58,6 +59,13 @@ from .tools.account_switch import (
     user_needs_account_switch,
 )
 from .tools.backup_archive import archive_native_backup
+from .tools.cloud_browser import (
+    DEFAULT_DEBUG_PORT,
+    CloudBrowserError,
+    find_free_debug_port,
+    is_port_free,
+    locate_integrated_browser,
+)
 from .tools.external_locks import (
     HSRExternalPathLockLease,
     acquire_external_path_locks,
@@ -384,6 +392,7 @@ class HSRManager(TaskExecuteBase):
             self._runtime,
             self.script_config,
             self._append_log,
+            script_id=self.script_info.script_id,
         )
 
     async def check(self) -> str:
@@ -400,13 +409,21 @@ class HSRManager(TaskExecuteBase):
         if not isinstance(script_config, HSRConfig):
             return "脚本配置类型错误，不是 HSR 脚本类型"
 
-        game_management_enabled = is_game_management_enabled(script_config)
+        cloud = is_cloud_platform(script_config)
+        # 云平台没有本地客户端，「MAS 管理游戏」只对客户端有意义。
+        game_management_enabled = (
+            is_game_management_enabled(script_config) and not cloud
+        )
 
         m7a_path = resolve_script_path(script_config, "M7A")
         sra_path = resolve_script_path(script_config, "SRA")
         effective_engines = resolve_configured_engines(script_config)
 
-        if not m7a_path and not sra_path:
+        if cloud:
+            cloud_error = self._check_cloud_prerequisites(script_config)
+            if cloud_error:
+                return cloud_error
+        elif not m7a_path and not sra_path:
             return "未配置任何脚本路径，请至少填写 M7A 或 SRA 路径"
 
         for module in HSR_TASK_MODULES:
@@ -428,7 +445,8 @@ class HSRManager(TaskExecuteBase):
                 return f"M7A 路径中未找到 March7th Assistant.exe：{m7a_exe}"
             m7a_available = True
 
-        if sra_path:
+        # 云平台不用 SRA：SRA 路径有没有、可不可用都不影响。
+        if sra_path and not cloud:
             sra_exe = Path(sra_path) / "SRA-cli.exe"
             if not sra_exe.exists():
                 return f"SRA 路径中未找到 SRA-cli.exe：{sra_exe}"
@@ -462,6 +480,11 @@ class HSRManager(TaskExecuteBase):
                 has_direct_user = True
                 if self.task_info.mode != "AutoProxy":
                     return f"用户「{user_name}」启用了脚本直控，但直控仅支持自动代理"
+                if cloud and "SRA" in control.engines:
+                    return (
+                        f"用户「{user_name}」启用了 SRA 直控，"
+                        "云·星穹铁道不支持 SRA 直控，请改用三月七直控"
+                    )
                 if not control.engines:
                     return f"用户「{user_name}」尚未启用任何直控脚本"
                 for engine in control.engines:
@@ -487,6 +510,14 @@ class HSRManager(TaskExecuteBase):
                             f"用户「{user_name}」{engine} 直控不可用："
                             f"{engine_label} 原生配置不存在：{native_config}，"
                             f"请先在 {engine_label} 中保存一次设置"
+                        )
+                if cloud:
+                    # 直控不改用户配置：云浏览器必须开在三月七自己配置的调试端口上。
+                    port = self._m7a_direct_debug_port(script_config)
+                    if not is_port_free(port):
+                        return (
+                            f"用户「{user_name}」三月七直控不可用：三月七配置的浏览器"
+                            f"调试端口 {port} 已被占用，请在三月七设置中修改"
                         )
                 # 直控由脚本原生配置承载完整计划，跳过 MAS 模块队列和凭证检查。
                 continue
@@ -529,6 +560,7 @@ class HSRManager(TaskExecuteBase):
 
         # 后端未提权时：MAS 起游戏会 WinError 740，直接拦下；不管游戏时只提示，
         # SRA 带 --no-admin 原地继续，三月七会另起提权进程并被判为失败。
+        # 云平台不起本地客户端，只提示。
         if not is_admin():
             if game_management_enabled:
                 return (
@@ -555,7 +587,8 @@ class HSRManager(TaskExecuteBase):
         # 静默跳过，多个用户全跑在同一个已登录账号上，还各自写回完成态。
         # 只在确实配了账密时才管：没配账密的用户本来就依赖当前登录态，
         # 有没有 SRA 都是同一个账号，不该被这条拦住。
-        if not sra_available and managed_users_with_credentials:
+        # 云平台按用户分浏览器 profile，切号不经 SRA，不适用。
+        if not cloud and not sra_available and managed_users_with_credentials:
             if managed_user_count > 1:
                 return (
                     f"有 {managed_users_with_credentials} 个启用的托管用户配置了账号密码，"
@@ -587,7 +620,7 @@ class HSRManager(TaskExecuteBase):
                 "SRA 设置中开启了云游戏，SRA 任务将运行云·星穹铁道而不是本地客户端；"
                 "如需本地运行，请在 SRA 设置中关闭云游戏"
             )
-        if m7a_available and managed_users_with_credentials:
+        if not cloud and m7a_available and managed_users_with_credentials:
             accounts_dir = Path(m7a_path) / "settings" / "accounts"
             try:
                 has_m7a_accounts = accounts_dir.is_dir() and any(accounts_dir.iterdir())
@@ -615,6 +648,38 @@ class HSRManager(TaskExecuteBase):
             return self._validate_sra_user_credentials(script_config)
 
         return "Pass"
+
+    @staticmethod
+    def _check_cloud_prerequisites(script_config: HSRConfig) -> str:
+        """云·星穹铁道的脚本级前置；通过返回空串。
+
+        云模式只用三月七：三月七路径与可执行文件、发行包内置的 Chrome 与
+        chromedriver 都是硬条件；再探一次 MAS 托管浏览器能用的调试端口。
+        SRA 路径有没有都不影响。
+        """
+
+        m7a_path = resolve_script_path(script_config, "M7A")
+        if not m7a_path:
+            return "云·星穹铁道只能由三月七执行，请先设置三月七路径"
+        m7a_exe = Path(m7a_path) / "March7th Assistant.exe"
+        if not m7a_exe.is_file():
+            return f"三月七路径中未找到 March7th Assistant.exe：{m7a_exe}"
+        try:
+            locate_integrated_browser(m7a_path)
+            find_free_debug_port(DEFAULT_DEBUG_PORT)
+        except CloudBrowserError as exc:
+            return str(exc)
+        return ""
+
+    @staticmethod
+    def _m7a_direct_debug_port(script_config: HSRConfig) -> int:
+        """直控读三月七自己配置的浏览器调试端口（缺省 9222），MAS 不改它。"""
+
+        try:
+            value = load_m7a_native_config(script_config).get("browser_debug_port")
+            return int(value) if value else DEFAULT_DEBUG_PORT
+        except (FileNotFoundError, OSError, ValueError, TypeError):
+            return DEFAULT_DEBUG_PORT
 
     def _precheck_daily_stages(
         self,
@@ -956,10 +1021,25 @@ class HSRManager(TaskExecuteBase):
             script_config=self.script_config,
             runtime=self._runtime,
             append_log=self._append_log,
+            script_id=self.script_info.script_id,
+            user_id=user_item.user_id,
         )
         self._runtime.game_launch_checked = False
-        await switcher.ensure_game_started_by_mas()
-        if is_game_management_enabled(self.script_config):
+        cloud = is_cloud_platform(self.script_config)
+        if cloud:
+            # 直控 + 云：MAS 照样托管本用户的浏览器，但端口用三月七自己配置的
+            # browser_debug_port（直控不写用户配置）。
+            await switcher.ensure_cloud_browser(
+                fixed_port=self._m7a_direct_debug_port(self.script_config)
+            )
+        else:
+            await switcher.ensure_game_started_by_mas()
+        if cloud:
+            self._append_log(
+                f"用户「{user_name}」进入脚本直控；MAS 托管该用户的云浏览器，"
+                f"三月七按原生配置连接并执行：{'、'.join(control.engines)}"
+            )
+        elif is_game_management_enabled(self.script_config):
             self._append_log(
                 f"用户「{user_name}」进入脚本直控；MAS 负责先启动游戏并跟踪脚本进程，"
                 f"原生配置原样执行：{'、'.join(control.engines)}"
@@ -1159,8 +1239,10 @@ class HSRManager(TaskExecuteBase):
             # TaskExecuteBase 的取消/异常 finally 路径也不会遗留临时值。
             # 配置检查未通过或 prepare() 未走完时 script_config 仍为 None，
             # 与上面 _close_game_if_needed 一样跳过，不把它记成收尾异常。
-            if isinstance(self.script_config, HSRConfig) and is_game_management_enabled(
-                self.script_config
+            if (
+                isinstance(self.script_config, HSRConfig)
+                and is_game_management_enabled(self.script_config)
+                and not is_cloud_platform(self.script_config)
             ):
                 restore_game_resolution_if_needed(
                     self._runtime,

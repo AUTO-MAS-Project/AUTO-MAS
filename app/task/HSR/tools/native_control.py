@@ -215,6 +215,12 @@ def resolve_user_control(
         # 直控但未勾选引擎：回落到「配了脚本路径」的引擎，与脚本管理页展示的
         # effective_engines 同源，避免用户选了直控却什么都不跑。
         engines = resolve_configured_engines(script_config)
+        from .account_switch import is_cloud_platform
+
+        if is_cloud_platform(script_config):
+            # 云·星穹铁道只有三月七能跑；回落时不把 SRA 带进来（显式勾了 SRA
+            # 的直控由 check() 报错）。
+            engines = tuple(engine for engine in engines if engine == "M7A")
     return HSRUserControlSettings(
         mode=mode,
         engines=engines,

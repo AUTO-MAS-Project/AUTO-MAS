@@ -101,6 +101,16 @@ class HSRM7AControl:
         self._queue_weekly_completion = queue_weekly_completion
         self._record_module_result = record_module_result
 
+    async def ensure_platform_ready(self) -> None:
+        """云平台：每个三月七模块进程前确认本用户的云浏览器还活着，死了重起。
+
+        三月七启动失败路径会按标记杀掉浏览器；这里重起后三月七会重新做登录态
+        检查与排队。客户端平台什么都不做（游戏由既有的守卫负责）。
+        """
+
+        if self._account_switcher.cloud:
+            await self._account_switcher.ensure_cloud_browser()
+
     async def run_m7a_command(
         self,
         m7a_runner: M7ARunner,
@@ -172,6 +182,7 @@ class HSRM7AControl:
 
         m7a_config_path = Path(m7a_path) / "config.yaml"
         main_stage = resolve_m7a_main_stage(plan)
+        await self.ensure_platform_ready()
 
         daily_patch = m7a.build_m7a_daily_patch(
             plan,
@@ -227,6 +238,7 @@ class HSRM7AControl:
             if not m7a_config_path.exists():
                 raise RuntimeError(f"M7A config.yaml 不存在: {m7a_config_path}")
 
+            await self.ensure_platform_ready()
             self.write_m7a_patch(
                 m7a_config_path,
                 patch,
