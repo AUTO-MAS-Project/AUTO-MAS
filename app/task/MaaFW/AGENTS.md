@@ -7,6 +7,13 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
 ## 布局与边界
 
 - `embedded_manager.py`：宿主侧管理器——任务调度、更新时机、运行环境确认、用户配置副本与写回。
+- `api_service/`：`/api/scripts/maafw/*` 端点背后的全部业务（`common` 脚本解析 / 有效项目根 /
+  同组候选，`embedded` 副本状态 / 导入 / 克隆 / 候选来源，`interface` 预览 / 包名 / 图片资源，
+  `update` 手动更新，`agent_env` 预备运行环境）。**MFW 的 API 业务一律在这里实现，
+  `app/api/scripts.py` 只放薄端点**：取参数 → 调这里的一个函数 → `XxxOut(**reply.out_fields())`
+  （`MaaFWApiReply`）或把异常映射成 HTTP 错误；不在 API 层定义 MFW 私有辅助函数、常量或锁。
+  依赖只能 `app.api` → `api_service`，反向导入 `app.api` 禁止；worker 导入闭包不得碰它。
+  端点 docstring 会进 OpenAPI 生成物，搬业务时留在端点上原样不动。
 - `tools/embedded/`：宿主与核心包之间**唯一**的接缝（`runner_task`、`runtime_route`、
   `update_credentials`、`update_mirrors`、`project_path`、`env_cache`、`game_package`、
   `game_resolution`、`update_progress`、`embedded_project`）。
@@ -24,7 +31,7 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
 - **有效项目根只从一处取**：`tools/embedded/embedded_project.resolve_maafw_project_root`
   ——**永远是** `data/mfw/<脚本 uuid 前 12 位>/` 的视图，没有"路径模式"。`Info.Path` 只是
   导入的来源，运行时不读它；导入完成后用户删掉来源也无妨。manager 三处、`runner_task`、
-  `api/scripts.py` 的 `/maafw/update` 都走它；`/maafw/preview`、`/maafw/agent-env/prepare`、
+  `api_service/update.py`（`/maafw/update`）都走它；`/maafw/preview`、`/maafw/agent-env/prepare`、
   `/maafw/game-package` 带 `scriptId` 时也按脚本解析，`path` 只在没有脚本时兜底。
   新增任何"读项目目录"的代码不要再各自读 `Info.Path`。视图可能还没建（刚选目录、来源换了目录、
   被手删），各入口先经 `ensure_embedded_copy`（调用方持该视图的项目预约）：视图不在或 `Info.Path`
@@ -182,7 +189,7 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   `main_task` 在用户任务前补确认，拿不到预约时据此说「正在切换版本」。
   视图与旧载荷全程一个字节不动：失败 / 预检不过 / 取消都只是丢 staging，没有回滚与中断恢复。
   下载完成之后到登记之前取消 = 丢 staging（「正在中止更新（丢弃未完成的新版本），请稍候」，60 s
-  宽限）；登记之后不再响应取消。手动 `/maafw/update` 运行中照旧拒绝（`_UPDATE_SCRIPT_BUSY`），整段
+  宽限）；登记之后不再响应取消。手动 `/maafw/update` 运行中照旧拒绝（`api_service/update.py` 的 `UPDATE_SCRIPT_BUSY`），整段
   持本视图预约，切完在预约里确认一次运行环境再放手（前端那次 prepare 会被 `envReady` 短路）。
 - 差量 / 全量只看当前载荷：`source.kind=update`（更新得来的，清单逐文件记包内哈希，指纹就是它
   现在的指纹——载荷不可变）才要差量包，本地导入的一律全量；差量基线用 `apply.py: _validate_plan_base`
