@@ -26,6 +26,7 @@ from app.task.MaaFW.tools.core.interface.models import (
     build_pretask_task_name,
     checkbox_count_problem,
     find_pretask_by_task_name,
+    interface_load_warnings,
     is_pretask_task_name,
     iter_pretasks,
     resolve_task_instance_name,
@@ -210,9 +211,13 @@ def build_maafw_run_plan(
     if not runnable_tasks:
         raise MaaFWRunPlanError("当前 controller/resource 下没有可执行任务")
 
-    plan_warnings = list(pipeline_builder.warnings)
-    for warning in plan_warnings:
+    for warning in pipeline_builder.warnings:
         logger.warning("MaaFW 运行计划：%s", warning)
+    # 加载 interface 时的告警（preset 引用不存在的 case、缺 import 文件……）以前只进后端
+    # 日志；与建覆盖时跳过的项一起进计划，运行日志开头列一次（加载时已写过后端日志）。
+    plan_warnings = list(
+        dict.fromkeys([*interface_load_warnings(interface), *pipeline_builder.warnings])
+    )
 
     return MaaFWRunPlan(
         path=str(resolved_base_dir),

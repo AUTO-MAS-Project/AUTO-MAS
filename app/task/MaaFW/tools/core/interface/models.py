@@ -21,7 +21,14 @@ import json
 from collections.abc import Callable, Collection
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    PrivateAttr,
+    field_validator,
+    model_validator,
+)
 
 MaaFWDocumentContent = str | list[str]
 MaaFWPipelineOverride = dict[str, Any]
@@ -486,6 +493,9 @@ class MaaFWInterface(BaseModel):
     global_option: list[str] | None = None
     import_: list[str] | None = Field(default=None, alias="import")
     preset: list[MaaFWPreset] = Field(default_factory=list)
+    # 加载器这次加载写下的告警（给用户看的原文，已去重），由加载器填、随磁盘缓存保存。
+    # 私有属性：不进 model_dump，也不会被 interface.json 里的同名字段顶掉。
+    _load_warnings: list[str] = PrivateAttr(default_factory=list)
 
     @model_validator(mode="after")
     def fill_display_defaults(self):
@@ -494,6 +504,15 @@ class MaaFWInterface(BaseModel):
         if self.title is None and self.label and self.version:
             self.title = f"{self.label} {self.version}"
         return self
+
+
+def interface_load_warnings(interface: MaaFWInterface) -> list[str]:
+    """加载这份 interface 时的告警（preset 引用不存在的 case、缺 import 文件……）。
+
+    只有经加载器读出来的模型才有；从字典直接校验出来的模型是空列表。
+    """
+
+    return list(getattr(interface, "_load_warnings", None) or [])
 
 
 def iter_pretasks(interface: MaaFWInterface) -> list[MaaFWPretask]:

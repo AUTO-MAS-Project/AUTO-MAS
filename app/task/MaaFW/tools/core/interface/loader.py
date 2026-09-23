@@ -21,6 +21,7 @@ import copy
 import hashlib
 import json
 import logging
+import threading
 import time
 from pathlib import Path
 from threading import RLock
@@ -36,6 +37,7 @@ from .models import (
     build_pretask_task_name,
     coerce_option_count,
     coerce_preset_option_value,
+    interface_load_warnings,
     iter_pretasks,
 )
 
@@ -50,9 +52,15 @@ IMPORTABLE_KEYS = (
     "import",
 )
 logger = logging.getLogger("automas.maafw.interface.loader")
+# 带这个 extra 的告警只进后端日志，不进给用户看的加载告警（运行日志开头、导入报告）：
+# 「不认识的字段已忽略」（``$schema``、``telemetry``……）不影响任何已声明内容的行为，
+# 每次运行都列一遍只是噪声。
+_LOG_ONLY = {"maafw_log_only": True}
+_USER_WARNING_PREFIX = "MaaFW ProjectInterface "
 
 # 4：加载器开始改写模型（password 字段丢 default、checkbox 选择数放宽），旧缓存没经过这一步。
-DISK_CACHE_VERSION = 4
+# 5：缓存里带上加载告警（``warnings``），旧缓存命中会丢掉它们。
+DISK_CACHE_VERSION = 5
 DISK_CACHE_MAX_AGE_SECONDS = 30 * 24 * 60 * 60
 DISK_CACHE_CLEANUP_INTERVAL_SECONDS = 24 * 60 * 60
 _interface_cache: dict[
@@ -77,6 +85,30 @@ class _LoadContext:
     def __init__(self) -> None:
         self.dependency_paths: set[Path] = set()
         self.scan_select_specs: set[tuple[Path, str]] = set()
+
+
+class _LoadWarningCollector(logging.Handler):
+    """把一次加载里加载器写的告警收成给用户看的列表（去重、保持先后）。
+
+    加载器各处照旧用标准 logging 写告警（后端日志不变），这里挂在加载器的 logger 上
+    旁听；只收**本线程**的记录——别的线程同时在加载另一个项目时，它的告警不能混进来。
+    """
+
+    def __init__(self) -> None:
+        super().__init__(logging.WARNING)
+        self._thread_id = threading.get_ident()
+        self.messages: list[str] = []
+
+    def emit(self, record: logging.LogRecord) -> None:
+        if record.thread != self._thread_id or getattr(record, "maafw_log_only", False):
+            return
+        try:
+            message = record.getMessage()
+        except Exception:  # noqa: BLE001 - 格式化失败的告警只丢这一条
+            return
+        message = message.removeprefix(_USER_WARNING_PREFIX)
+        if message not in self.messages:
+            self.messages.append(message)
 
 
 def parse_json_text(text: str) -> Any:
@@ -201,6 +233,7 @@ def _validate_importable_fragment(data: dict[str, Any], source_path: Path) -> No
             "MaaFW ProjectInterface 导入文件包含暂不支持的字段，已忽略：%s；文件：%s",
             ", ".join(invalid_keys),
             source_path,
+            extra=_LOG_ONLY,
         )
 
 
@@ -216,6 +249,7 @@ def _warn_unsupported_root_fields(data: dict[str, Any], source_path: Path) -> No
             "MaaFW ProjectInterface 包含暂不支持的顶层字段，已忽略：%s；文件：%s",
             ", ".join(unsupported_keys),
             source_path,
+            extra=_LOG_ONLY,
         )
 
 
@@ -1013,6 +1047,19 @@ def _build_common_option_names(interface_model: MaaFWInterface) -> list[str]:
 def _load_interface_model_with_context(
     base_dir: str | Path,
 ) -> tuple[MaaFWInterface, _LoadContext]:
+    collector = _LoadWarningCollector()
+    logger.addHandler(collector)
+    try:
+        interface_model, context = _load_interface_model_uncollected(base_dir)
+    finally:
+        logger.removeHandler(collector)
+    interface_model._load_warnings = list(collector.messages)
+    return interface_model, context
+
+
+def _load_interface_model_uncollected(
+    base_dir: str | Path,
+) -> tuple[MaaFWInterface, _LoadContext]:
     resolved_base_dir = Path(base_dir).resolve()
     if not resolved_base_dir.exists() or not resolved_base_dir.is_dir():
         raise MaaFWInterfaceLoadError("请设置 MaaFW 项目目录")
@@ -1275,6 +1322,9 @@ def _load_from_disk_cache(
             return None
 
         interface_model = MaaFWInterface.model_validate(payload["interface"])
+        interface_model._load_warnings = [
+            item for item in payload.get("warnings") or [] if isinstance(item, str)
+        ]
         _touch_disk_cache(cache_path)
         logger.info(f"读取 MaaFW interface 缓存：{root_path}")
         return current_signature, interface_model, dependency_paths, scan_select_specs
@@ -1305,6 +1355,7 @@ def _save_disk_cache(
         ],
         "signature": _signature_to_json(signature),
         "interface": interface_model.model_dump(mode="json", by_alias=True),
+        "warnings": interface_load_warnings(interface_model),
     }
 
     try:
