@@ -66,8 +66,6 @@ from .tools.extra_script import run_script_after_task, run_script_before_task
 from .tools.m7a_config import load_m7a_native_config
 from .tools.managed_config import list_managed_modules
 from .tools.native_control import (
-    get_user_direct_config,
-    has_user_direct_snapshot,
     native_provider,
     resolve_configured_engines,
     resolve_plan,
@@ -451,7 +449,7 @@ class HSRManager(TaskExecuteBase):
             if user_config.get("Info", "RemainedDay") == 0:
                 continue
             # 预检结论要和本轮真正会跑的用户对齐：单独运行指定用户时，别让其他
-            # 用户的直控快照、引擎需求与托管账号数把这一个用户拦下来。
+            # 用户的直控前置条件、引擎需求与托管账号数把这一个用户拦下来。
             if not self.task_info.is_target_user(str(uid)):
                 continue
             has_executable_user = True
@@ -465,9 +463,8 @@ class HSRManager(TaskExecuteBase):
                 if not control.engines:
                     return f"用户「{user_name}」尚未启用任何直控脚本"
                 for engine in control.engines:
-                    # 直控默认直接跑脚本当前的原生配置，不要求先导入快照。
-                    # CLI/Assistant 可执行是硬条件；原生配置文件只在没有快照
-                    # 时才要求存在——已导入快照的用户可脱离原生配置文件运行。
+                    # 直控直接跑脚本当前的原生配置：CLI/Assistant 可执行与
+                    # 原生配置文件都是硬条件。
                     script_root = resolve_script_path(script_config, engine)
                     if not script_root:
                         return f"用户「{user_name}」{engine} 直控不可用：未配置原生脚本路径"
@@ -479,18 +476,16 @@ class HSRManager(TaskExecuteBase):
                             f"用户「{user_name}」{engine} 直控不可用："
                             f"原生执行文件不存在：{executable}"
                         )
-                    if not has_user_direct_snapshot(user_config, engine):
-                        engine_label = "SRA" if engine == "SRA" else "三月七助手"
-                        native_config = native_provider(engine).native_config_path(
-                            script_config
+                    engine_label = "SRA" if engine == "SRA" else "三月七助手"
+                    native_config = native_provider(engine).native_config_path(
+                        script_config
+                    )
+                    if not native_config.is_file():
+                        return (
+                            f"用户「{user_name}」{engine} 直控不可用："
+                            f"{engine_label} 原生配置不存在：{native_config}，"
+                            f"请先在 {engine_label} 中保存一次设置"
                         )
-                        if not native_config.is_file():
-                            return (
-                                f"用户「{user_name}」{engine} 直控不可用："
-                                f"{engine_label} 原生配置不存在：{native_config}，"
-                                f"请先在 {engine_label} 中保存一次设置，"
-                                "或为该用户导入配置快照"
-                            )
                 # 直控由脚本原生配置承载完整计划，跳过 MAS 模块队列和凭证检查。
                 continue
 
@@ -903,10 +898,9 @@ class HSRManager(TaskExecuteBase):
     async def _run_direct_user(self, user_item: UserItem, user_config: Any) -> int:
         """按脚本直控运行一个用户。
 
-        默认直接执行 SRA/M7A 当前的原生配置；用户导入过快照时才改用隔离的
-        快照（见 ``native_control`` 模块说明）。直控只把外部配置交给对应 CLI；
-        MAS 是否管理游戏启停由脚本开关决定，日志、取消和会话收尾始终由 MAS
-        负责。没有新 ``Control``/``Direct`` 字段时不会进入此路径。
+        直接执行 SRA/M7A 当前的原生配置（见 ``native_control`` 模块说明）。
+        直控只把外部配置交给对应 CLI；MAS 是否管理游戏启停由脚本开关决定，
+        日志、取消和会话收尾始终由 MAS 负责。
         """
 
         if self.script_config is None:
@@ -953,8 +947,6 @@ class HSRManager(TaskExecuteBase):
                 provider = native_provider(engine)
                 session = await provider.open_direct_session(
                     script_config=self.script_config,
-                    config_content=get_user_direct_config(user_config, engine),
-                    session_id=user_item.user_id,
                     log=self._append_log,
                 )
                 self._direct_sessions[engine] = session
