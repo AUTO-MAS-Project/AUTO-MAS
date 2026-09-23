@@ -31,7 +31,7 @@ from pathlib import Path
 from typing import Any, Awaitable, Callable
 
 from app.utils import ProcessManager, decode_bytes, get_logger
-from app.utils.io import atomic_write, migrate_legacy_dir, read_file, write_file
+from app.utils.io import atomic_write, migrate_legacy_dir
 
 from .log_detect import (
     HSR_ECHO_OF_WAR_WEEKLY_REWARD_LIMIT,
@@ -66,7 +66,7 @@ SRA_CURRENCY_WARS_STRATEGY = "template"
 SRA_CURRENCY_WARS_STRATEGY_INDEX = 0
 SRA_CURRENCY_WARS_RUNTIMES = 2
 SRA_CURRENCY_WARS_STRATEGY_KEYWORDS = ("阿格莱雅", "aglaea")
-SRA_CACHE_NO_NOTIFY_KEY = "NoNotifyForShortcut"
+SRA_SETTINGS_SYSTEM_NOTIFY_KEY = "system.enabled"
 # SRA 2.22.0 起领取奖励从数组 rewards[0..6] 改成具名开关 rewards.<name>（与
 # replenish.enabled 一样是平铺在 receiveRewards 下的点号键）；旧 profile 仍是数组。
 # SRA 读取时具名键优先、数组只作旧版兼容，写临时配置时按原生 profile 的形态镜像。
@@ -595,25 +595,36 @@ def resolve_sra_profile(
 
 
 def disable_sra_windows_notifications() -> Path:
-    """临时关闭 SRA 本体的 Windows 通知。"""
+    """临时关闭 SRA 本体的 Windows 系统通知。
 
-    cache_path = get_sra_app_data_dir() / "cache.json"
-    cache: dict = {}
-    if cache_path.exists():
-        try:
-            raw_cache = read_file(cache_path)
-        except json.JSONDecodeError:
-            raw_cache = {}
-        if isinstance(raw_cache, dict):
-            cache = raw_cache
+    开关是 ``settings.json`` 的 ``notification.system.enabled``（SRA
+    ``SRACore/models/app_settings.py`` 的 ``isSystemEnabled``，缺省为关）。该文件
+    在运行期备份清单里，任务结束按备份还原。SRA-cli 按系统 ANSI 读它，写回时
+    必须 ``ensure_ascii=True``。
 
-    if cache.get(SRA_CACHE_NO_NOTIFY_KEY) is True:
-        return cache_path
+    Returns:
+        ``settings.json`` 路径；文件不存在或开关本来就关着时不写入。
+    """
 
-    cache[SRA_CACHE_NO_NOTIFY_KEY] = True
-    write_file(cache_path, cache)
-    logger.info(f"SRA cache.json 已关闭 Windows 通知：{cache_path}")
-    return cache_path
+    settings_path = get_sra_app_data_dir() / "settings.json"
+    if not settings_path.is_file():
+        return settings_path
+    settings = json.loads(settings_path.read_text(encoding="utf-8-sig"))
+    if not isinstance(settings, dict):
+        raise ValueError(f"SRA settings.json 顶层不是对象：{settings_path}")
+    notification = settings.get("notification")
+    if not isinstance(notification, dict) or not notification.get(
+        SRA_SETTINGS_SYSTEM_NOTIFY_KEY
+    ):
+        return settings_path
+
+    notification[SRA_SETTINGS_SYSTEM_NOTIFY_KEY] = False
+    atomic_write(
+        settings_path,
+        json.dumps(settings, ensure_ascii=True, indent=2).encode("utf-8"),
+    )
+    logger.info(f"SRA settings.json 已临时关闭系统通知：{settings_path}")
+    return settings_path
 
 
 @dataclass
