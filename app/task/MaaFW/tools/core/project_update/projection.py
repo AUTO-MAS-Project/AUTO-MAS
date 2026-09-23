@@ -1333,6 +1333,21 @@ def build_projection_rules(
     for candidate in {runtime_relative, base_relative / "maafw"}:
         if candidate is None or not view.is_dir(candidate):
             continue
+        if candidate in (ROOT, base_relative):
+            # 原生库直接放在包根目录（MRA / MaaTOT / MALW 的 PiCLI 包、MAAAE、MAG、MAH、
+            # MMleo、MaaEOV）：根目录不能当成原样带走的运行时目录——以前那样做，根目录
+            # 退回分类表，恰好剔掉 MaaFramework / MaaToolkit / MaaAdbControlUnit、留下其余
+            # 原生库（运行时退到运行池的库、与自带版本混载），整个根目录还失去了 64 MB
+            # 限制（MAAAE 带走 134 MB 的外壳 libs/）。改为只把根上的原生库文件逐个原样带走。
+            for native_file in _root_native_runtime_files(view, candidate):
+                add_target(
+                    native_file,
+                    complete=True,
+                    required_label="bundled native runtime",
+                    allow_excluded_root=True,
+                    verbatim_runtime=True,
+                )
+            continue
         add_target(
             candidate,
             complete=True,
@@ -1667,6 +1682,43 @@ def _adopt_small_undeclared_entries(
             + "、".join(frozen_packages)
             + " 是冻结 Python 外壳自带的依赖包，未带入副本"
         )
+
+
+#: MaaFramework 发行的原生库里不以 Maa 开头的那几个（MaaFramework 自己的 bin 目录、PyPI
+#: maafw 包的 maa/bin 里都是这一套）：OCR / 推理 / 图像库带 ``_maa`` 后缀，另有
+#: DirectML 与手柄控制器用的 ViGEmClient。
+_MAAFW_RUNTIME_EXTRA_STEMS = frozenset({"directml", "vigemclient"})
+_NATIVE_LIBRARY_SUFFIXES = frozenset({".dll", ".so", ".dylib"})
+
+
+def _is_maafw_runtime_library(name: str) -> bool:
+    """文件名是不是 MaaFramework 运行时的原生库（而不是外壳 / 界面的）。
+
+    认的是 MaaFramework 自己发布的那套：``Maa*``（MaaFramework、MaaToolkit、MaaUtils、
+    MaaAgentClient / Server、各 ``Maa*ControlUnit``；Linux / macOS 带 ``lib`` 前缀）、
+    ``*_maa``（opencv_world4_maa、onnxruntime_maa、fastdeploy_ppocr_maa）、DirectML、
+    ViGEmClient。外壳放在根上的 MaaPiCli.exe、MFAAvalonia.dll、libSkiaSharp.dll、
+    Node 绑定 MaaNode.node 都不算。
+    """
+
+    path = PurePosixPath(name.casefold())
+    if path.suffix not in _NATIVE_LIBRARY_SUFFIXES:
+        return False
+    stem = path.name.split(".", 1)[0]
+    stem = stem.removeprefix("lib") if path.suffix != ".dll" else stem
+    if stem.startswith("maa") and stem != "maapicli":
+        return True
+    return stem.endswith("_maa") or stem in _MAAFW_RUNTIME_EXTRA_STEMS
+
+
+def _root_native_runtime_files(view: _FileView, directory: Path) -> list[Path]:
+    """``project_maafw_runtime_path`` 认定的运行时目录是包根时，其中的 MaaFramework 原生库文件。"""
+
+    return sorted(
+        entry
+        for entry in view.iter_entries(directory)
+        if view.is_file(entry) and _is_maafw_runtime_library(entry.name)
+    )
 
 
 def _bundled_native_runtime_dir(
