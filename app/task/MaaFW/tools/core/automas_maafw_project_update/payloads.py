@@ -1008,10 +1008,17 @@ def collect_unreferenced(
     for key in list_lineages(root):
         directory = lineage_dir(root, key)
         if live_lineages is not None and key not in live_lineages:
+            # 只看谱系里的内容：锁文件每次加锁都会写 owner 信息（回收自己在锁内复核时也会），
+            # 目录本身的修改时间随锁文件的创建变化；新登记的清单 / 载荷目录 / lineage.json
+            # 自己就带着新的修改时间。
             try:
                 newest = max(
-                    [directory.stat().st_mtime]
-                    + [entry.stat().st_mtime for entry in directory.iterdir()]
+                    [
+                        entry.stat().st_mtime
+                        for entry in directory.iterdir()
+                        if entry.name != LINEAGE_LOCK_NAME
+                    ]
+                    or [0.0]
                 )
             except (OSError, ValueError):
                 continue

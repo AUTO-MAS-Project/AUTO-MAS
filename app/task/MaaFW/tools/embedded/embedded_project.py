@@ -52,6 +52,7 @@ import threading
 import time
 import uuid
 from collections.abc import Callable, Iterable, Mapping
+from contextlib import suppress
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -1266,26 +1267,10 @@ def _unique_bytes(path: Path) -> int:
     return total
 
 
-def collect_payload_garbage(
-    *,
-    started_at: float,
-    live_sources: Iterable[str] = (),
-    base: Path | None = None,
-) -> PayloadGarbageReport:
-    """§3.1 第 10 步：删掉没人引用的载荷；谱系里一个视图都不剩时整个谱系一起删。
+def _payload_references(base: Path | None) -> tuple[set[str], set[str]]:
+    """（引用集, 还活着的谱系）：所有视图标记的 ``payload`` ∪ 未完成 journal 的 ``to``；
+    有视图标记、有 journal 指向、或有没采纳的老副本的谱系算活着。"""
 
-    引用集 = 所有视图标记的 ``payload`` ∪ 未完成 journal 的 ``to``。还活着的谱系 = 有视图
-    标记或 journal 指向的，外加 ``live_sources``（脚本还在、视图却没了的那些脚本的导入来源）
-    按载荷清单反查到的谱系——视图丢了的脚本下次运行前要靠它重建，不能先把谱系收掉。
-    活着的谱系里 ``latest[*]`` 照旧算引用；不活的谱系（最后一个脚本已删）整个目录收走。
-    本进程起来之后才建 / 才登记过的一律不收。载荷删掉后它独有的 blob 只剩库里一个链接，
-    由紧接着的共用库回收收走。
-    """
-
-    root = payloads_root(base)
-    report = PayloadGarbageReport()
-    if not root.is_dir():
-        return report
     referenced: set[str] = set()
     live: set[str] = set()
     views_root = embedded_projects_root(base)
@@ -1313,6 +1298,40 @@ def collect_payload_garbage(
                 live.add(lineage)
                 if record.get("to"):
                     referenced.add(payloads.payload_ref(lineage, str(record["to"])))
+    return referenced, live
+
+
+def _candidate_lineage(root: Path, path: Path) -> str:
+    return path.name if path.parent == root else path.parent.name
+
+
+def collect_payload_garbage(
+    *,
+    started_at: float,
+    live_sources: Iterable[str] = (),
+    base: Path | None = None,
+) -> PayloadGarbageReport:
+    """§3.1 第 10 步：删掉没人引用的载荷；谱系里一个视图都不剩时整个谱系一起删。
+
+    引用集 = 所有视图标记的 ``payload`` ∪ 未完成 journal 的 ``to``。还活着的谱系 = 有视图
+    标记或 journal 指向的，外加 ``live_sources``（脚本还在、视图却没了的那些脚本的导入来源）
+    按载荷清单反查到的谱系——视图丢了的脚本下次运行前要靠它重建，不能先把谱系收掉。
+    活着的谱系里 ``latest[*]`` 照旧算引用；不活的谱系（最后一个脚本已删）整个目录收走。
+    本进程起来之后才建 / 才登记过的一律不收。载荷删掉后它独有的 blob 只剩库里一个链接，
+    由紧接着的共用库回收收走。
+
+    回收跑在后台、API 已在服务：先粗判出有候选的谱系，**删之前在该谱系的锁内按盘上最新
+    状态再判一次**（登记、推进 latest 都在同一把锁里做）。否则判定与删除之间登记进来的
+    新载荷、刚被推成 latest 的旧载荷会被一起删掉，挂着它的视图从此更新不了。谱系锁正被
+    占用（正在登记）的这轮不收。
+    """
+
+    root = payloads_root(base)
+    report = PayloadGarbageReport()
+    if not root.is_dir():
+        return report
+    referenced, live = _payload_references(base)
+    source_live: set[str] = set()
     for source in live_sources:
         if not str(source or "").strip():
             continue
@@ -1321,34 +1340,63 @@ def collect_payload_garbage(
         except (OSError, payloads.PayloadError):
             found = None
         if found is not None:
-            live.add(found[0])
+            source_live.add(found[0])
     candidates = payloads.collect_unreferenced(
-        root, referenced, started_at, live_lineages=live
+        root, referenced, started_at, live_lineages=live | source_live
     )
-    for path in candidates:
+    for key in sorted({_candidate_lineage(root, path) for path in candidates}):
+        directory = root / key
+        whole = False
         try:
-            freed = _unique_bytes(path)
-        except OSError:
-            freed = 0
-        try:
-            if path.parent == root:
-                # 整个谱系：先原子挪开（谱系锁 / 文件被占用时 rename 失败，这轮就不收），
-                # 挪开之后并发的登记只会新建一个空谱系目录，不会写进被删的这份。
-                trash = root / f".trash-{path.name}-{uuid.uuid4().hex[:8]}"
-                os.rename(path, trash)
-                remove_tree(trash)
-                report.lineages.append(path.name)
-            elif path.is_dir():
-                remove_tree(path)
-                report.payloads += 1
-            elif os.path.lexists(path):
-                path.unlink()
-            else:
-                continue
-            report.freed_bytes += freed
+            with payloads.lineage_lock(root, key, timeout=0):
+                referenced, live = _payload_references(base)
+                fresh = [
+                    path
+                    for path in payloads.collect_unreferenced(
+                        root, referenced, started_at, live_lineages=live | source_live
+                    )
+                    if _candidate_lineage(root, path) == key
+                ]
+                whole = any(path.parent == root for path in fresh)
+                if whole:
+                    # 整个谱系：锁文件在锁内删不掉，先清掉其余内容，放锁之后再收目录。
+                    fresh = [
+                        entry
+                        for entry in directory.iterdir()
+                        if entry.name != payloads.LINEAGE_LOCK_NAME
+                    ]
+                for path in fresh:
+                    try:
+                        freed = _unique_bytes(path)
+                    except OSError:
+                        freed = 0
+                    try:
+                        if path.is_dir() and not path.is_symlink():
+                            remove_tree(path)
+                            if not whole:
+                                report.payloads += 1
+                        elif os.path.lexists(path):
+                            path.unlink()
+                        else:
+                            continue
+                        report.freed_bytes += freed
+                    except OSError as exc:
+                        logger.warning(f"[MFW 内嵌] 载荷回收失败: {path} - {exc}")
+        except TimeoutError:
+            logger.debug(f"[MFW 内嵌] 谱系 {key} 正在登记，本轮不回收")
+            continue
         except OSError as exc:
-            logger.warning(f"[MFW 内嵌] 载荷回收失败: {path} - {exc}")
-    # 上一轮挪开了却没删干净的谱系
+            logger.warning(f"[MFW 内嵌] 载荷回收失败: {directory} - {exc}")
+            continue
+        if whole:
+            report.lineages.append(key)
+            # 放锁之后收锁文件与空目录；其间若有新的登记进来，目录非空 / 锁文件被占用，
+            # 删不掉就留着——它已经是新谱系了。
+            with suppress(OSError):
+                (directory / payloads.LINEAGE_LOCK_NAME).unlink()
+            with suppress(OSError):
+                directory.rmdir()
+    # 老版本挪开了却没删干净的谱系
     for leftover in root.glob(".trash-*"):
         try:
             if leftover.stat().st_mtime < started_at:
