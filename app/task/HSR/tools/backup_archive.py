@@ -291,7 +291,31 @@ def split_overlay_for_restore(
             kept = {key: value for key, value in values.items() if key in allowed}
             if kept:
                 target[group] = kept
+    _migrate_legacy_stage_values(plan_part.get("Stage"))
     return user_part, plan_part
+
+
+def _migrate_legacy_stage_values(stage: dict | None) -> None:
+    """把旧版侧车里误存的 SRA 副本编号就地迁成真实关卡编号。
+
+    升级前归档的侧车仍是旧载荷（label 为字典 repr、level 为数组位置）。回填走
+    ``update`` 不经 ``HSRUserConfig.load`` 的迁移，脚本共享计划更是从不迁移；
+    不在这里改，恢复一次旧备份就会让历战余响 / 饰品提取重新刷错关卡。
+    """
+
+    if not stage:
+        return
+    from .stage_runtime import migrate_sra_legacy_stage_labels
+
+    for field in ("ScriptStage", "ScriptEchoOfWar"):
+        if field not in stage:
+            continue
+        migrated, count, _unresolved = migrate_sra_legacy_stage_labels(stage[field])
+        if migrated is not None:
+            stage[field] = migrated
+            logger.info(
+                f"恢复的 Stage.{field} 已迁移 {count} 条 SRA 副本到真实关卡编号"
+            )
 
 
 async def restore_mas_overlay(user_config, script_config, overlay: dict) -> None:

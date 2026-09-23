@@ -1052,6 +1052,10 @@ class HSRManager(TaskExecuteBase):
         # 执行任务前脚本（每用户仅一次）
         await run_script_before_task(user_config)
 
+        if "M7A" in control.engines:
+            # 端口（云平台）与收尾动作都要从还原后的原生配置里读，先还原再往下走。
+            self._reset_m7a_config_for_direct(user_name)
+
         switcher = HSRAccountSwitcher(
             script_config=self.script_config,
             runtime=self._runtime,
@@ -1146,6 +1150,33 @@ class HSRManager(TaskExecuteBase):
         # 执行任务后脚本（每用户仅一次）
         await run_script_after_task(user_config)
         return len(control.engines)
+
+    def _reset_m7a_config_for_direct(self, user_name: str) -> None:
+        """直控前把三月七 config.yaml 还原成本轮开始前的原样。
+
+        托管三月七模块把 MAS 模板字段（副本、奖励开关、关通知、云平台端口等）
+        直接写进真实 config.yaml，整轮结束才按运行期备份还原；三月七自己也会
+        把运行状态（各任务时间戳等）写回同一个文件。同一轮里排在别的用户之后的
+        直控用户不还原，跑的就是上一个用户留下的配置，而不是「原样跑原生配置」。
+        备份在 ``prepare`` 里取，还原不动备份，收尾照常再还原一次。
+        """
+
+        for label, source, backup, existed in self._external_config_targets:
+            if label != "M7A config.yaml" or not existed:
+                continue
+            try:
+                _restore_path_from_backup(label, source, backup)
+            except Exception as e:  # noqa: BLE001
+                logger.opt(exception=True).warning(f"直控前还原三月七配置失败：{e}")
+                self._append_log(
+                    f"用户「{user_name}」直控前还原三月七 config.yaml 失败，"
+                    f"将按当前文件运行：{e}"
+                )
+                return
+            self._append_log(
+                f"用户「{user_name}」直控前已把三月七 config.yaml 还原为本轮开始前的原生配置"
+            )
+            return
 
     def _log_ignored_m7a_after_finish(self) -> None:
         """直控下三月七的 ``after_finish`` 被运行环境钉成 None，配了别的值就说一声。"""
