@@ -619,10 +619,15 @@ def collect_ui_asset_paths(data: Any) -> list[str]:
 
     walk(data)
     if isinstance(data, dict):
-        welcome = _text(data.get("welcome"))
-        if welcome:
-            found.append(welcome)
+        found.extend(_welcome_entries(data.get("welcome")))
     return found
+
+
+def _welcome_entries(value: Any) -> list[str]:
+    """顶层 ``welcome`` 的各条内容：单个字符串（旧写法）或字符串数组（PI v2.10.2）。"""
+
+    items = value if isinstance(value, list) else [value]
+    return [text for text in (_text(item) for item in items) if text]
 
 
 # welcome（README）里以 Markdown / HTML 写法引用的本地图片。只认这两种写法，
@@ -972,13 +977,11 @@ def build_projection_rules(
 
         # welcome 正文里引用的图片：说明页会按项目根去取，缺了就是一排裂图。先按
         # welcome 文件所在目录解析（Markdown 的习惯），再退到项目根；都不在就算了。
-        welcome_raw = _text(data.get("welcome"))
-        welcome_relative = (
-            _normalize_ui_asset_path(welcome_raw, base_relative)
-            if welcome_raw
-            else None
-        )
-        if welcome_relative is not None and view.is_file(welcome_relative):
+        # 数组写法（PI v2.10.2）逐条处理。
+        for welcome_raw in _welcome_entries(data.get("welcome")):
+            welcome_relative = _normalize_ui_asset_path(welcome_raw, base_relative)
+            if welcome_relative is None or not view.is_file(welcome_relative):
+                continue
             try:
                 welcome_text = view.read_text(welcome_relative)
             except (OSError, UnicodeDecodeError):

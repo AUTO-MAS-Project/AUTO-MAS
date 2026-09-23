@@ -274,7 +274,8 @@ class MaaFWInterface(BaseModel):
     version: str | None = None
     contact: str | None = None
     license: str | None = None
-    welcome: str | None = None
+    # PI v2.10.2 起可以是字符串数组（多条公告按顺序展示）；单个字符串是旧写法。
+    welcome: str | list[str] | None = None
     description: str | None = None
     controller: list[MaaFWController] = Field(default_factory=list)
     resource: list[MaaFWResource] = Field(default_factory=list)
