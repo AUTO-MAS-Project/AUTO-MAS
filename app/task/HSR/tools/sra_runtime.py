@@ -641,6 +641,21 @@ class SRACommandResult:
     finished_at: datetime | None = None
 
 
+# SRA-cli 的 stdout 被管道接走时按系统 ANSI 代码页编码，非中文区域（如 cp1252）
+# 下第一行中文就抛 UnicodeEncodeError：启动期崩掉退出码为 1，进了 cmd2 则被
+# 吞成一行提示、退出码仍为 0，任务一步没做。SRA-cli 是 Nuitka 打包，认
+# PYTHONIOENCODING（PyInstaller 打包的三月七不认，见 m7a_runtime）；PYTHONUTF8 无效。
+SRA_CHILD_ENV: dict[str, str] = {"PYTHONIOENCODING": "utf-8"}
+
+
+def build_sra_env() -> dict[str, str]:
+    """SRA 子进程环境：继承后端环境，叠上 ``SRA_CHILD_ENV``。"""
+
+    env = dict(os.environ)
+    env.update(SRA_CHILD_ENV)
+    return env
+
+
 class SRAProcessRegistry:
     """记录 SRA 当前子进程，供任务停止时终止。"""
 
@@ -659,6 +674,7 @@ class SRAProcessRegistry:
             cwd=cwd,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
+            env=build_sra_env(),
         )
         proc = self._process_manager.main_process
         if not isinstance(proc, asyncio.subprocess.Process):

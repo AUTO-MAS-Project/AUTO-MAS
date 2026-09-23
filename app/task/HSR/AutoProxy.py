@@ -1506,6 +1506,10 @@ class HSRAutoProxyTask(TaskExecuteBase):
 
         failures: list[HSRRunItem] = []
         completed_phases: set[HSRPhase] = set()
+        # 模块失败（超时被终止、报错、判定失败）后画面停在哪里不可知，下一个模块
+        # 直接接着跑只会在脏画面上再失败一次：先由 MAS 重启游戏再继续。补跑同样
+        # 走这里，每个失败模块之后都重启，而不是每轮尝试只在开头重启一次。
+        restart_reason: str | None = None
         phases: tuple[HSRPhase, ...] = ("daily", "weekly")
         phase_labels = {
             "daily": "日常",
@@ -1520,9 +1524,16 @@ class HSRAutoProxyTask(TaskExecuteBase):
             user_name = phase_items[0].user_name
             if completed_phases:
                 await self._restart_game(user_name, f"进入{phase_labels[phase]}阶段前")
+                restart_reason = None
             completed_phases.add(phase)
 
             for item_index, item in enumerate(phase_items):
+                if restart_reason is not None:
+                    await self._restart_game(
+                        item.user_name,
+                        f"{restart_reason}，执行模块「{item.module_name}」前",
+                    )
+                    restart_reason = None
                 item.attempts += 1
                 self._append_log(
                     f"用户「{item.user_name}」执行 {item.script} "
@@ -1595,6 +1606,7 @@ class HSRAutoProxyTask(TaskExecuteBase):
                             )
                         failures.extend(remaining)
                         return failures
+                    restart_reason = f"模块「{item.module_name}」失败后"
                     continue
                 except Exception as e:  # noqa: BLE001
                     # 非 HSRRetryableTaskError 的异常是配置或代码错误, 补跑也不会
@@ -1629,6 +1641,7 @@ class HSRAutoProxyTask(TaskExecuteBase):
                             )
                         failures.extend(remaining)
                         return failures
+                    restart_reason = f"模块「{item.module_name}」异常后"
                     continue
 
                 if bool(getattr(result, "success", False)):
@@ -1676,6 +1689,7 @@ class HSRAutoProxyTask(TaskExecuteBase):
                     )
                     failures.extend(remaining)
                     return failures
+                restart_reason = f"模块「{item.module_name}」失败后"
 
         return failures
 
