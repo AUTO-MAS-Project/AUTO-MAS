@@ -1033,10 +1033,6 @@ class MaaUserConfig(ConfigBase):
         self.Task_IfSwitchTheme = ConfigItem(
             "Task", "IfSwitchTheme", False, BoolValidator()
         )
-        ## 是否生息演算
-        self.Task_IfReclamation = ConfigItem(
-            "Task", "IfReclamation", False, BoolValidator()
-        )
         ## 是否库存保持
         self.Task_IfDepotMaintain = ConfigItem(
             "Task", "IfDepotMaintain", False, BoolValidator()

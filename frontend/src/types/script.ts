@@ -635,7 +635,6 @@ export interface User {
     IfMall: boolean
     IfAward: boolean
     IfSwitchTheme: boolean
-    IfReclamation: boolean
     IfRecruit: boolean
     IfStartUp: boolean
     Queue?: unknown
