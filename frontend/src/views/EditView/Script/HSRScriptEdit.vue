@@ -51,14 +51,6 @@
           </a-row>
         </div>
 
-        <a-alert
-          type="info"
-          show-icon
-          class="user-control-notice"
-          :message="t('edit.runModeTaskConfiguration')"
-          :description="t('edit.userPageChooseMas')"
-        />
-
         <!-- M7A / SRA / 游戏路径 -->
         <div class="form-section">
           <div class="section-header">
@@ -80,14 +72,10 @@
                     </span>
                   </a-tooltip>
                 </template>
-                <a-select
-                  :value="hsrConfig.Game.Enabled"
-                  size="large"
+                <a-switch
+                  :checked="Boolean(hsrConfig.Game.Enabled)"
                   @change="handleGameEnabledChange"
-                >
-                  <a-select-option :value="true">{{ t('edit.yes') }}</a-select-option>
-                  <a-select-option :value="false">{{ t('edit.no') }}</a-select-option>
-                </a-select>
+                />
               </a-form-item>
             </a-col>
           </a-row>
@@ -167,7 +155,8 @@
             </a-col>
           </a-row>
 
-          <a-row :gutter="24">
+          <!-- SRA 配置档案只对已填 SRA 路径的脚本有意义，没填就不渲染 -->
+          <a-row v-if="hsrConfig.Info.SRAPath" :gutter="24">
             <a-col :span="12" :offset="12">
               <a-form-item>
                 <template #label>
@@ -205,7 +194,8 @@
             </a-col>
           </a-row>
 
-          <a-row :gutter="24" style="margin-top: 16px">
+          <!-- 游戏路径、启动等待、分辨率只在 MAS 管理游戏时有用，关掉即整块不渲染 -->
+          <a-row v-if="hsrConfig.Game.Enabled" :gutter="24" style="margin-top: 16px">
             <a-col :xs="24" :lg="16">
               <a-form-item>
                 <template #label>
@@ -256,8 +246,12 @@
             </a-col>
           </a-row>
 
-          <a-row :gutter="24" style="margin-top: 16px">
-            <a-col :xs="24" :lg="12">
+          <a-row
+            v-if="hsrConfig.Game.Enabled || hsrConfig.Info.SRAPath"
+            :gutter="24"
+            style="margin-top: 16px"
+          >
+            <a-col v-if="hsrConfig.Game.Enabled" :xs="24" :lg="12">
               <a-form-item>
                 <template #label>
                   <a-tooltip :title="t('edit.writtenCurrentUserS')">
@@ -278,7 +272,8 @@
                 </div>
               </a-form-item>
             </a-col>
-            <a-col :xs="24" :lg="12">
+            <!-- M7A 自带兑换码去重、不走指纹闸门，这个开关只作用于 SRA -->
+            <a-col v-if="hsrConfig.Info.SRAPath" :xs="24" :lg="12">
               <a-form-item>
                 <template #label>
                   <a-tooltip :title="t('edit.runsOncePerUser')">
@@ -347,12 +342,12 @@
               </a-form-item>
             </a-col>
           </a-row>
-          <a-row :gutter="16">
+          <!-- 低性能兼容只作用于三月七，没填三月七路径时不渲染 -->
+          <a-row v-if="hsrConfig.Info.M7APath" :gutter="16">
             <a-col :span="12">
               <a-form-item :label="t('edit.enableLowPerformanceCompatibility')">
                 <a-switch
                   v-model:checked="hsrConfig.Run.LowPerformanceMode"
-                  :disabled="!hsrConfig.Info.M7APath"
                   @change="handleRunConfigChange('LowPerformanceMode', $event)"
                 />
                 <div class="form-item-hint">
@@ -409,8 +404,9 @@
               </a-form-item>
             </a-col>
           </a-row>
-          <a-row :gutter="24">
-            <a-col :xs="24" :lg="12">
+          <!-- 下载源按已填路径的引擎渲染；CDK 只在某个已渲染的源选了 Mirror 酱时需要 -->
+          <a-row v-if="hsrConfig.Info.M7APath || hsrConfig.Info.SRAPath" :gutter="24">
+            <a-col v-if="hsrConfig.Info.M7APath" :xs="24" :lg="12">
               <a-form-item>
                 <template #label>
                   <a-tooltip :title="t('edit.hsrUpdateM7ASourceTip')">
@@ -429,7 +425,7 @@
                 />
               </a-form-item>
             </a-col>
-            <a-col :xs="24" :lg="12">
+            <a-col v-if="hsrConfig.Info.SRAPath" :xs="24" :lg="12">
               <a-form-item>
                 <template #label>
                   <a-tooltip :title="t('edit.hsrUpdateSRASourceTip')">
@@ -449,7 +445,7 @@
               </a-form-item>
             </a-col>
           </a-row>
-          <a-row :gutter="24">
+          <a-row v-if="usesMirrorChyan" :gutter="24">
             <a-col :xs="24" :lg="12">
               <a-form-item>
                 <template #label>
@@ -848,12 +844,16 @@ const sraSourceOptions = computed(() => [
   { label: t('edit.hsrUpdateSourceMirrorChyan'), value: 'MirrorChyan' },
 ])
 
+// 已渲染的下载源（对应引擎填了路径）里有一个选了 Mirror 酱，才需要 CDK 输入框。
+const usesMirrorChyan = computed(
+  () =>
+    (Boolean(hsrConfig.Info.M7APath) && hsrConfig.Update.M7ASource === 'MirrorChyan') ||
+    (Boolean(hsrConfig.Info.SRAPath) && hsrConfig.Update.SRASource === 'MirrorChyan')
+)
+
 // 选了 Mirror 酱却没填 CDK：后端会报错跳过，不会替用户改走 GitHub，输入框下方直接提醒。
 const isCdkMissingForMirror = computed(
-  () =>
-    (hsrConfig.Update.M7ASource === 'MirrorChyan' ||
-      hsrConfig.Update.SRASource === 'MirrorChyan') &&
-    !hsrConfig.Update.MirrorChyanCDK.trim()
+  () => usesMirrorChyan.value && !hsrConfig.Update.MirrorChyanCDK.trim()
 )
 
 // 手动检查 / 更新：自动更新只在任务完成后触发，首次启用要跑满一轮，
@@ -1072,7 +1072,7 @@ const handleCancel = () => {
   router.push('/scripts')
 }
 
-// 清空路径：保存空字符串到后端；任务映射在用户页按用户维护。
+// 清空路径：保存空字符串到后端；任务映射在用户页维护（脚本来源写脚本级，用户来源写用户级）。
 const clearPath = async (key: string) => {
   if (key === 'M7APath' || key === 'SRAPath') {
     await handleChange('Info', key, '')
@@ -1113,8 +1113,8 @@ const sraProfileOptions = computed(() => {
   return options
 })
 
+// 下拉只在填了 SRA 路径时渲染，这里只剩「档案目录读不到」这类原因
 const sraProfileDisabledReason = computed(() => {
-  if (!hsrConfig.Info.SRAPath) return t('edit.sraProfileNeedPath')
   if (sraProfilesError.value) {
     return t('edit.sraProfileLoadFailed', { reason: sraProfilesError.value })
   }
@@ -1206,10 +1206,6 @@ onMounted(async () => {
 
 .engine-path-hint {
   margin-bottom: 16px;
-}
-
-.user-control-notice {
-  margin-bottom: 20px;
 }
 
 .form-section {
