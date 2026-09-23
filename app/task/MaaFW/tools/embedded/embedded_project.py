@@ -67,6 +67,7 @@ from app.task.MaaFW.tools.core.automas_maafw_project_update.blob_store import (
     sha256_file,
 )
 from app.task.MaaFW.tools.core.automas_maafw_project_update.contracts import (
+    RUNTIME_STATE_FILES,
     VIEW_MARKER_FILE_NAME,
 )
 from app.task.MaaFW.tools.core.automas_maafw_project_update.projection import (
@@ -598,6 +599,16 @@ def _build_view_tree(
             path = current_path / name
             rel = (relative_dir / name).as_posix()
             key = rel.casefold()
+            if key in RUNTIME_STATE_FILES:
+                # 运行期状态（账号记录之类）：视图里这份就是真相，不论新旧载荷里有没有、内容
+                # 是什么都原样带过去——按受管文件处理会被换回导入时的内容或当成删掉的文件丢掉。
+                # place_fresh 先摘掉 staging 里的载荷目录项再链，不往载荷里写。
+                if _blocked(relative_dir / name):
+                    _archive(path, rel)
+                else:
+                    payloads.place_fresh(path, staging / rel, link=True)
+                    result.carried += 1
+                continue
             old_rel = old_map.get(key)
             new_rel = new_keys.get(key)
             if old_rel is None:
@@ -1768,15 +1779,8 @@ ADOPT_PRIVATE_ROOTS = frozenset(
         ".staging",
     }
 )
-# 已知的运行期状态文件：采纳时一律按私有（不论清单 / 来源怎么说）。
-ADOPT_RUNTIME_FILES = frozenset(
-    {
-        "config/maa_option.json",
-        "config/m9a_data.json",
-        "config/warehouse_inventory.json",
-        "data/manifest_cache.json",
-    }
-)
+# 已知的运行期状态文件：采纳时一律按私有（不论清单 / 来源怎么说）；切换时视图里那份原样带过去。
+ADOPT_RUNTIME_FILES = RUNTIME_STATE_FILES
 # 更新器 journal 里「落地已完成」的状态：这些记录里的清单路径是副本最后一次更新落下的。
 _APPLY_COMMITTED = "committed"
 

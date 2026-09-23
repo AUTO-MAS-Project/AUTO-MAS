@@ -25,6 +25,19 @@ FINGERPRINT_IGNORED_DIRS = frozenset(
 # 不是项目内容；随切换原子换入，每次都不同。
 VIEW_MARKER_FILE_NAME = ".auto_mas_view.json"
 FINGERPRINT_IGNORED_FILES = frozenset({"config/maa_option.json", VIEW_MARKER_FILE_NAME})
+# 已知的运行期状态文件（项目相对 posix，小写）：runner 每轮重写的 maa_option.json、M9A agent
+# 原地写的账号记录与仓库快照、热更新的清单缓存。用户导入的多半是自己一直在用的目录，里面
+# 早有这些文件；它们不属于任何版本：采纳时不进载荷，切换版本时视图里有就按视图私有文件
+# 原样带过去——按受管文件处理的话，换版本会把它们换回导入那一刻的内容（更新包从旧载荷
+# 继承了它），或当成「新版本删掉的文件」丢掉。
+RUNTIME_STATE_FILES = frozenset(
+    {
+        "config/maa_option.json",
+        "config/m9a_data.json",
+        "config/warehouse_inventory.json",
+        "data/manifest_cache.json",
+    }
+)
 
 # 受管项目跑起来时，runner 会往 <项目>/maafw/ 铺一层共享的 MaaFramework 原生运行时，
 # 并留下这个标记文件。带标记的 maafw/ 是运行期产物，同样要排除；没有标记的 maafw/ 是
