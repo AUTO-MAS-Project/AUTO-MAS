@@ -1068,6 +1068,11 @@ def import_embedded_project(
         raise EmbeddedProjectError(f"导入失败：{exc}") from exc
     except payloads.PayloadError as exc:
         raise EmbeddedProjectError(f"导入失败：{exc}") from exc
+    for resource_name in plan.rules.unavailable_resources:
+        logger.warning(
+            f"[MFW 内嵌] {source} 声明的资源 {resource_name} 在发行包里没有目录，"
+            "副本里该资源不可用，其余照常导入"
+        )
 
     store_root = payloads_root(base)
     blob_store = RuntimeBlobStore.default(base)

@@ -429,6 +429,12 @@ def embedded_summary_lines(script_id: str) -> list[str]:
         bundled.append(f"Python {report['bundledPythonVersion']}")
     if bundled:
         details.append(f"项目自带 {'、'.join(bundled)}")
+    unavailable = report.get("unavailableResources")
+    if isinstance(unavailable, list) and unavailable:
+        details.append(
+            f"发行包缺少资源 {'、'.join(str(name) for name in unavailable)} 的目录，"
+            "选这些资源无法运行"
+        )
     current = str(status.get("version") or "")
     if current:
         siblings = int(status.get("siblingCount") or 0)

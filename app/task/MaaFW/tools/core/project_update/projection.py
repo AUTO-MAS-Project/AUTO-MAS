@@ -292,6 +292,8 @@ class ProjectionRules:
     agents: list[dict[str, Any]]
     conservative: bool
     warnings: list[str] = field(default_factory=list)
+    # 导入时声明了但发行包里没有的 resource（名字）：副本里不可用，其余照常导入。
+    unavailable_resources: list[str] = field(default_factory=list)
 
     @property
     def base_relative(self) -> Path:
@@ -391,6 +393,7 @@ class ProjectionPlan:
             "interfaceBase": self.rules.base_relative.as_posix(),
             "agents": [dict(agent) for agent in self.rules.agents],
             "warnings": list(self.rules.warnings),
+            "unavailableResources": list(self.rules.unavailable_resources),
             "bundledMaaFWVersion": self.bundled_maafw_version or "",
             "bundledPythonVersion": self.bundled_python_version or "",
         }
@@ -804,6 +807,7 @@ def build_projection_rules(
     required: list[RequiredPath] = []
     warnings: list[str] = []
     agents: list[dict[str, Any]] = []
+    unavailable_resources: list[str] = []
     opaque_found = False
 
     def add_target(
@@ -929,7 +933,18 @@ def build_projection_rules(
             for raw_path in values:
                 if not isinstance(raw_path, str):
                     raise ProjectionError(f"resource {name} 的 path 必须是字符串")
-                relative_path = declare(raw_path, f"resource {name}", must_exist=True)
+                relative_path = declare(raw_path, f"resource {name}", must_exist=False)
+                if strict and not view.exists(relative_path):
+                    # 发行包声明了却没打进包的资源（MaaDuDuL v1.1.7 的 resource/zh_hant）：
+                    # 只是这一个资源用不了，不该让整个项目导入不了。选中它运行时由
+                    # runner 的「资源目录不存在」报清楚。
+                    if name not in unavailable_resources:
+                        unavailable_resources.append(name)
+                    warnings.append(
+                        f"resource {name} 声明的路径不存在：{raw_path}；"
+                        "该资源在副本里不可用（选中它运行会报资源目录不存在），其余照常导入"
+                    )
+                    continue
                 if relative_path is not None:
                     add_target(
                         relative_path,
@@ -1190,6 +1205,7 @@ def build_projection_rules(
         agents=agents,
         conservative=conservative,
         warnings=warnings,
+        unavailable_resources=unavailable_resources,
     )
     return rules
 
