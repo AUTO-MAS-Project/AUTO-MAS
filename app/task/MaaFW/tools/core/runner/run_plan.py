@@ -73,14 +73,14 @@ _WARNED_LANGUAGE_FILES: set[str] = set()
 # 最高版本，依据（对照 MaaFramework docs/zh_cn/3.3-ProjectInterfaceV2协议.md 的版本表）：
 # - v2.1.0–v2.8.1：import / attach_resource_path、checkbox、option 适用性过滤、preset、
 #   group、PI_* 环境变量、pretask（含 controller / resource 过滤与选项 JSON 参数）、
-#   hotkey 都已实现；未做的只有「应」级的界面行为：resource.hash 不匹配时的提示
-#   （v2.6.0）、setting 设置分区的渲染（v2.8.0）。
+#   hotkey 都已实现；resource.hash（v2.6.0）在 worker 加载 path 之后、attach 之前比对，
+#   不一致只在运行日志告警；未做的只有「应」级的界面行为：setting 设置分区的渲染（v2.8.0）。
 # - v2.9.0–v2.9.2：telemetry 协议写明「并非所有 Client 都会支持」，不上报即合规。
 # - v2.10.0：password 输入——「必须」级的三条都已做到：界面掩码、配置加密存储
 #   （option_secrets）、不把原文写进日志（原生日志复制 / worker 输出 / 失败摘录处替换）。
 # - v2.10.1：checkbox 的 min_count / max_count——界面限制勾选数，运行前不满足就报错。
 # - v2.10.2：welcome 字符串数组——能解析、投影带上每一条；「按数组顺序展示」是「应」级
-#   的界面行为，与 v2.6.0 / v2.8.0 那两条一样不妨碍声明（单字符串的 welcome 也从未展示）。
+#   的界面行为，与 v2.8.0 那条一样不妨碍声明（单字符串的 welcome 也从未展示）。
 # 所以声明 v2.10.2（协议版本表截至 2026-09-08 的最新版本）。
 PI_INTERFACE_VERSION = "v2.10.2"
 PI_CLIENT_LANGUAGE = "zh_cn"
@@ -920,6 +920,7 @@ def _build_resource_bundle_plan(
             _resolve_project_path(base_dir, item)
             for item in controller.attach_resource_path or []
         ],
+        hash=(resource.hash or "").strip() or None,
     )
 
 

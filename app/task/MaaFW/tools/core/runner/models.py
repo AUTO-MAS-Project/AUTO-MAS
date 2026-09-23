@@ -24,6 +24,9 @@ class MaaFWResourceBundlePlan(BaseModel):
     label: str | None = None
     paths: list[MaaFWResolvedPath] = Field(default_factory=list)
     attachedPaths: list[MaaFWResolvedPath] = Field(default_factory=list)
+    # interface 里 resource.hash（PI v2.6.0）：只加载 paths 之后 MaaResourceGetHash 应得的值。
+    # worker 在加载 attachedPaths 之前比对，不一致只告警。
+    hash: str | None = None
 
 
 class MaaFWTaskRunPlan(BaseModel):

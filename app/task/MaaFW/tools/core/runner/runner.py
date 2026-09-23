@@ -945,11 +945,48 @@ class MaaFWRunner:
             self._initialized = False
 
     def _load_resources(self) -> None:
-        for path_info in [*self.plan.resource.paths, *self.plan.resource.attachedPaths]:
-            if not path_info.exists or not path_info.isDir:
-                raise RuntimeError(f"资源目录不存在: {path_info.resolved}")
-            self._wait_job(self.resource.post_bundle(path_info.resolved))
-            self.send_log(f"已加载资源: {path_info.resolved}")
+        for path_info in self.plan.resource.paths:
+            self._load_resource_bundle(path_info)
+        # PI v2.6.0：hash 只基于 resource.path，必须在加载 attach_resource_path 之前比对
+        # （MFAA / MXU / CFA 同口径）。
+        self._check_resource_hash()
+        for path_info in self.plan.resource.attachedPaths:
+            self._load_resource_bundle(path_info)
+
+    def _load_resource_bundle(self, path_info: Any) -> None:
+        if not path_info.exists or not path_info.isDir:
+            raise RuntimeError(f"资源目录不存在: {path_info.resolved}")
+        self._wait_job(self.resource.post_bundle(path_info.resolved))
+        self.send_log(f"已加载资源: {path_info.resolved}")
+
+    def _check_resource_hash(self) -> None:
+        """interface 声明了 resource.hash 时与 MaaResourceGetHash 比对，不一致只告警。
+
+        协议要求「应向用户发出警告，但不应阻止继续使用」；大小写不敏感（MFAA 同）。
+        取不到实际值（老 binding、原生层报错）时不告警，免得把环境问题说成资源被改。
+        """
+
+        expected = (self.plan.resource.hash or "").strip()
+        if not expected:
+            return
+        try:
+            actual = str(self.resource.hash or "").strip()
+        except Exception as exc:
+            self.send_log(
+                f"{DETAIL_LOG_PREFIX}读取资源 hash 失败，跳过完整性校验: {exc}"
+            )
+            return
+        if not actual or actual.casefold() == expected.casefold():
+            return
+        label = (self.plan.resource.label or "").strip()
+        resource_name = (
+            label if label and not label.startswith("$") else self.plan.resource.name
+        )
+        self.send_log(
+            f"资源完整性校验不一致（资源 {resource_name}）：interface 声明 {expected}，"
+            f"实际加载得到 {actual}。资源文件可能被改动或更新不完整，建议重新下载或"
+            "更新该项目；本次照常运行"
+        )
 
     def _preflight_device(self, device_config: MaaFWDeviceConfig) -> None:
         """在加载插件与资源之前先把设备连通性确认掉。
