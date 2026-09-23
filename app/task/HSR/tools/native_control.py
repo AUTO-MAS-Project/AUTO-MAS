@@ -355,14 +355,12 @@ class SRANativeControlProvider:
 class M7ADirectControlSession:
     """一次三月七直控运行：以真实安装根目录启动，跑三月七 GUI 里的 config.yaml。"""
 
-    def __init__(
-        self, root: Path, log, env_overrides: dict[str, str] | None = None
-    ) -> None:
+    def __init__(self, root: Path, log, script_config: Any = None) -> None:
         self._root = root
         self._log = log
         # 直控不写用户配置：云平台只靠环境变量钉（优先于 config.yaml）；客户端
-        # 平台不钉云开关，按三月七自己的配置跑。
-        self._env_overrides = dict(env_overrides or {})
+        # 平台不钉云开关，按三月七自己的配置跑（见 configure_m7a_runner）。
+        self._script_config = script_config
         self._runner: M7ARunner | None = None
         self._closed = False
 
@@ -371,9 +369,11 @@ class M7ADirectControlSession:
             f"三月七将直接使用脚本当前的原生配置运行"
             f"（{self._root / 'config.yaml'}）；MAS 只负责外部进程生命周期"
         )
-        self._runner = M7ARunner(
-            self._root, log_callback=self._log, env_overrides=self._env_overrides
-        )
+        self._runner = M7ARunner(self._root, log_callback=self._log)
+        if self._script_config is not None:
+            from .account_switch import configure_m7a_runner
+
+            configure_m7a_runner(self._runner, self._script_config, direct=True)
         result = await self._runner.run_task("main", timeout=timeout_seconds)
         return HSRRunResult.from_native(
             result,
@@ -383,7 +383,7 @@ class M7ADirectControlSession:
 
     async def cancel(self) -> None:
         if self._runner is not None:
-            await self._runner.terminate_current_process()
+            await self._runner.terminate()
 
     async def close(self) -> None:
         if self._closed:
@@ -446,11 +446,7 @@ class M7ANativeControlProvider:
             raise FileNotFoundError(
                 f"三月七原生配置不存在：{config_path}，请先在三月七中保存一次设置"
             )
-        from .account_switch import build_platform_m7a_env
-
-        return M7ADirectControlSession(
-            root, log, env_overrides=build_platform_m7a_env(script_config, direct=True)
-        )
+        return M7ADirectControlSession(root, log, script_config)
 
 
 def native_provider(engine: str):

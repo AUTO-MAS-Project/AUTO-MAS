@@ -47,9 +47,9 @@ from .tools.account_switch import (
     HSR_GAME_PROCESS_NAME,
     HSR_GAME_READY_DELAY_SECONDS,
     HSRAccountSwitcher,
-    build_platform_m7a_env,
     cloud_login_timeout_minutes,
     cloud_max_queue_minutes,
+    configure_m7a_runner,
     is_cloud_platform,
     is_game_management_enabled,
     resolve_game_executable_path,
@@ -1812,7 +1812,7 @@ class HSRAutoProxyTask(TaskExecuteBase):
             )
             self.runtime.m7a_runner = m7a_runner
         # 平台钉扎走环境变量（优先于 config.yaml），与 patch 里的平台字段一致。
-        m7a_runner.env_overrides = build_platform_m7a_env(self.script_config)
+        configure_m7a_runner(m7a_runner, self.script_config)
         # 运行器在用户之间复用，逐行回调要换成当前用户的（云登录提醒、剩余时长
         # 与 LastLogin 都按当前用户记）。
         m7a_runner.set_output_line_callback(self._on_m7a_output_line)

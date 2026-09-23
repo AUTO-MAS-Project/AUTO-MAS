@@ -38,12 +38,12 @@ from app.utils import get_logger
 
 from .account_switch import (
     HSRAccountSwitcher,
-    build_platform_m7a_env,
     build_platform_m7a_patch,
     check_cloud_prerequisites,
     close_cloud_browser,
     cloud_login_timeout_minutes,
     cloud_max_queue_minutes,
+    configure_m7a_runner,
     is_cloud_platform,
     merge_cloud_last_login,
 )
@@ -163,8 +163,8 @@ async def run_cloud_login(
             m7a_root,
             log_callback=append_log,
             output_line_callback=watch,
-            env_overrides=build_platform_m7a_env(script_config),
         )
+        configure_m7a_runner(runner, script_config)
         append_log(f"用户「{user_name}」：请在弹出的云·星穹铁道窗口里登录米哈游通行证")
         timeout_minutes = (
             cloud_login_timeout_minutes(script_config)

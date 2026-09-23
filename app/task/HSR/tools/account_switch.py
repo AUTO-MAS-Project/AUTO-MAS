@@ -163,6 +163,19 @@ def build_platform_m7a_env(
     )
 
 
+def configure_m7a_runner(
+    runner: Any, script_config: Any, *, direct: bool = False
+) -> None:
+    """按游戏平台配置三月七运行器：环境变量钉扎与终止方式，只在这一处决定。
+
+    云平台按进程树终止（子进程只有 chromedriver 与三月七自建的浏览器）；客户端
+    平台只杀主进程（三月七可能拉起了游戏客户端，按树杀会把游戏带走）。
+    """
+
+    runner.env_overrides = build_platform_m7a_env(script_config, direct=direct)
+    runner.kill_tree = is_cloud_platform(script_config)
+
+
 def check_cloud_prerequisites(script_config: Any) -> str:
     """云·星穹铁道的脚本级前置；通过返回空串。
 
@@ -443,7 +456,7 @@ async def stop_external_processes(
     stopped = False
     if runtime.m7a_runner is not None:
         try:
-            stopped = await runtime.m7a_runner.terminate_current_process() or stopped
+            stopped = await runtime.m7a_runner.terminate() or stopped
         except Exception as e:  # noqa: BLE001
             logger.warning(f"终止 M7A 当前子进程失败：{e}")
             append_log(f"终止 M7A 当前子进程失败：{e}")

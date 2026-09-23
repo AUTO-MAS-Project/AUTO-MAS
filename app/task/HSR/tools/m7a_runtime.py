@@ -131,6 +131,7 @@ class M7ARunner:
         output_line_callback: Callable[[str], Awaitable[None] | None] | None = None,
         completion_grace_timeout: float = 5.0,
         env_overrides: Mapping[str, str] | None = None,
+        kill_tree: bool = False,
     ):
         self._m7a_dir = Path(m7a_dir)
         self._m7a_exe = self._m7a_dir / "March7th Assistant.exe"
@@ -140,6 +141,9 @@ class M7ARunner:
         self._completion_grace_timeout = completion_grace_timeout
         # 本轮的平台钉扎（MARCH7TH_CLOUD_GAME_ENABLE 等），每条命令起进程时叠加。
         self.env_overrides: dict[str, str] = dict(env_overrides or {})
+        # 停止、超时、收尾时是否按进程树终止（见 terminate）；由平台决定，调用侧
+        # 统一经 account_switch.configure_m7a_runner 设置。
+        self.kill_tree = kill_tree
         # 当前这条命令最近的输出，供游戏守卫判断进程消失前 M7A 在做什么。
         self._recent_output: deque[str] = deque(maxlen=RECENT_OUTPUT_LINES)
 
@@ -169,6 +173,17 @@ class M7ARunner:
         logger.warning("正在终止 M7A 当前子进程")
         await self._process_manager.kill()
         return True
+
+    async def terminate(self) -> bool:
+        """停止、超时、收尾统一走这里：按 ``kill_tree`` 选按树终止或只杀主进程。
+
+        云平台下三月七的子进程只有 chromedriver 与它自建的浏览器，按树杀干净；
+        客户端平台下三月七可能自己拉起了游戏客户端，按树杀会把游戏带走，只杀主进程。
+        """
+
+        if self.kill_tree:
+            return await self.terminate_process_tree()
+        return await self.terminate_current_process()
 
     async def terminate_process_tree(self) -> bool:
         """按进程树终止当前 M7A：先冻结主进程，杀光子孙，再终止主进程。
@@ -352,7 +367,7 @@ class M7ARunner:
                     logger.warning(
                         "M7A 命令已完成但进程未退出，终止子进程以继续后续任务"
                     )
-                    await self.terminate_current_process()
+                    await self.terminate()
                     try:
                         await asyncio.wait_for(wait_group, timeout=2.0)
                     except asyncio.TimeoutError:
@@ -448,7 +463,7 @@ class M7ARunner:
 
         except asyncio.TimeoutError:
             logger.warning(f"M7A {task_name} timed out after {timeout}s")
-            await self.terminate_current_process()
+            await self.terminate()
             return M7ACommandResult(
                 task_name=task_name,
                 exe_path=str(self._m7a_exe),
@@ -460,7 +475,7 @@ class M7ARunner:
 
         except asyncio.CancelledError:
             logger.warning(f"M7A {task_name} 收到取消请求，准备终止子进程")
-            await self.terminate_current_process()
+            await self.terminate()
             raise
 
         except Exception as e:
