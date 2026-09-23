@@ -156,7 +156,6 @@ MAA_STAGE_KEY = [
     "Stage_1",
     "Stage_2",
     "Stage_3",
-    "Stage_Remain",
 ]
 """MAA关卡键表"""
 
@@ -212,28 +211,6 @@ MAA_ANNIHILATION_FIGHT_BASE = {
 高级设置原样生效，MAS 不经手。反过来说：只要 MAS 不消费某个字段，就不得写进
 本表，写了既会覆盖用户在原生界面里的选择，又会在上游新增字段时静默失效。
 """
-
-
-MAA_REMAIN_FIGHT_BASE = {
-    "$type": "FightTask",
-    "Name": "剩余理智",
-    "IsEnable": True,
-    "TaskType": "Fight",
-    "StagePlan": [""],
-    "Series": 0,
-    "IsStageManually": True,
-    "UseMedicine": False,
-    "MedicineCount": 0,
-    "EnableTimesLimit": False,
-    "TimesLimit": 999,
-    "UseCustomAnnihilation": False,
-    "AnnihilationStage": "Annihilation",
-}
-"""MAA剩余理智作战托管补丁
-
-键的取舍口径同 :data:`MAA_ANNIHILATION_FIGHT_BASE`：只写 MAS 运行必需的托管键，
-其余（临期药、源石、博朗台、周计划、指定材料/次数、隐藏项）由 MAA 原生配置透传。
-剩余理智是 MAS 合成任务，原生没有该项时补丁即完整任务定义。"""
 
 MAA_GREEN_TICKET_STORE_TASK = {
     "$type": "CustomTask",

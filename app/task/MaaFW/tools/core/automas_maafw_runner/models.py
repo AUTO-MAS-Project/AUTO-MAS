@@ -34,6 +34,9 @@ class MaaFWTaskRunPlan(BaseModel):
     pipelineOverride: dict[str, Any] = Field(default_factory=dict)
     logOptions: dict[str, Any] = Field(default_factory=dict)
     overrideNodes: list[str] = Field(default_factory=list)
+    # 与 interface 里 default_case 不同的选项，键值都已换成给人看的标签并脱敏；
+    # 建计划时算好，runner 只负责拼成一行。
+    nonDefaultOptions: dict[str, Any] = Field(default_factory=dict)
 
 
 class MaaFWSkippedTaskPlan(BaseModel):
@@ -67,6 +70,9 @@ class MaaFWRunPlan(BaseModel):
     piEnv: dict[str, str] = Field(default_factory=dict)
     tasks: list[MaaFWTaskRunPlan] = Field(default_factory=list)
     skippedTasks: list[MaaFWSkippedTaskPlan] = Field(default_factory=list)
+    # 项目 zh_cn 语言文件的内容，worker 用它翻译 pipeline focus 文案里的 ``$key``。
+    # 随计划带进 worker，runner 自己不再读语言文件。
+    i18n: dict[str, Any] = Field(default_factory=dict)
 
 
 class MaaFWDeviceConfig(BaseModel):

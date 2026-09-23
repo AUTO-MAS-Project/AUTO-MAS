@@ -186,6 +186,18 @@ _RAW_FAILURE_UI_LOG_MARKERS = (
     "[MaaFW Tasker] 失败:",
     "任务执行失败: <entry=",
 )
+# 只进 *.worker.log、不进界面的 runner 行：
+# - 「[MaaFW 详情] 」前缀：完整任务配置（options / override_nodes）、超过每任务
+#   上限后的 focus 文案；
+# - 「[MaaFW Tasker] 开始/成功: <entry>」：英文入口名，和它前面的
+#   「正在运行任务: <标签>」/「任务完成: <标签>」重复。
+# 「任务失败:」「MaaFW 任务完成:」「正在运行任务:」不在这里，宿主与 runner 的
+# 入口跟踪按它们匹配。
+_WORKER_LOG_ONLY_MARKERS = (
+    "[MaaFW 详情] ",
+    "[MaaFW Tasker] 开始:",
+    "[MaaFW Tasker] 成功:",
+)
 _NATIVE_FRAMEWORK_STATUS_RE = re.compile(
     r"(?:\*\*)?\[\d{4}-\d{2}-\d{2}[^\]]*\]\[(?:ERR|WARN|INFO|DEBUG)\]",
     re.IGNORECASE,
@@ -2484,6 +2496,8 @@ def _framework_ui_message(message: str) -> str:
 
 def _should_forward_framework_log(message: str) -> bool:
     if any(marker in message for marker in _RAW_FAILURE_UI_LOG_MARKERS):
+        return False
+    if message.startswith(_WORKER_LOG_ONLY_MARKERS):
         return False
     cleaned = _clean_framework_output(message).strip()
     if _FRAMEWORK_COORDINATE_RE.search(cleaned):

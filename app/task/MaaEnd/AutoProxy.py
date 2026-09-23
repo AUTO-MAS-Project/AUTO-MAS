@@ -1736,7 +1736,9 @@ class AutoProxyTask(TaskExecuteBase):
                 continue
 
             if task_name_value != _MAAEND_CLOSE_GAME_TASK:
-                task["enabled"] = self.task_dict.get(task_name, {}).get(task["id"], False)
+                task["enabled"] = self.task_dict.get(task_name, {}).get(
+                    task["id"], False
+                )
 
             if restore_task is task:
                 # 独立送货/采集阶段也须在末尾执行恢复；重试时同样不能漏掉。

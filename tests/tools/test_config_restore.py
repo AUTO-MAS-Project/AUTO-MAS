@@ -307,9 +307,7 @@ def test_tristate_backup_mode_annotation(
 
     # tri_state：备份时点 Mode = UserData.Info.Mode
     ctx, _ = _tri_ctx("tri-anno-a", "脚本")
-    service = build_restore_service(
-        ctx, [_tri_pool({"restored": [], "set_modes": []})]
-    )
+    service = build_restore_service(ctx, [_tri_pool({"restored": [], "set_modes": []})])
     created = asyncio.run(service.ensure("tri"))
     assert created["created"] is True
     backup_dir = get_backup_dir(_tri_root_path(ctx), created["time"])
@@ -355,9 +353,7 @@ def test_tristate_ensure_dedup_ignores_mode_metadata(
 
     monkeypatch.chdir(tmp_path)
     ctx, _ = _tri_ctx("tri-dedup", "用户")
-    service = build_restore_service(
-        ctx, [_tri_pool({"restored": [], "set_modes": []})]
-    )
+    service = build_restore_service(ctx, [_tri_pool({"restored": [], "set_modes": []})])
     first = asyncio.run(service.ensure("tri"))
     assert first["created"] is True
     second = asyncio.run(service.ensure("tri"))

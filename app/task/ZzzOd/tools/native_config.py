@@ -237,7 +237,10 @@ def save_native_launch_args(root, slot_idx: int, values: dict[str, Any]) -> None
             merged_advance = merge_dx12_argument(advance_base, dx12_val)
             old_advance = existing.get("launch_argument_advance")
             if old_advance is None:
-                if merged_advance != DEFAULT_GAME_LAUNCH_ARGS["launch_argument_advance"]:
+                if (
+                    merged_advance
+                    != DEFAULT_GAME_LAUNCH_ARGS["launch_argument_advance"]
+                ):
                     patch["launch_argument_advance"] = merged_advance
             elif str(old_advance) != merged_advance:
                 patch["launch_argument_advance"] = merged_advance

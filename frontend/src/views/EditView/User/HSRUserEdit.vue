@@ -853,7 +853,8 @@ const handleDirectConfigImport = async (engine: HSREngine) => {
 
 // 与 handleDirectConfigImport 对称：清掉快照后直控回到直接使用脚本当前配置
 const handleDirectConfigClear = async (engine: HSREngine) => {
-  if (!userId || clearingDirectEngine.value || importingDirectEngine.value || configLocked.value) return
+  if (!userId || clearingDirectEngine.value || importingDirectEngine.value || configLocked.value)
+    return
   clearingDirectEngine.value = engine
   try {
     await hsrPluginApi.clearDirectConfig(scriptId, userId, engine)

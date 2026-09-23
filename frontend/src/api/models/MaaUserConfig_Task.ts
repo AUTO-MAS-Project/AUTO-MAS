@@ -56,10 +56,6 @@ export type MaaUserConfig_Task = {
      */
     ActivityMedicineNumb?: (number | null);
     /**
-     * 库存保持计划 JSON
-     */
-    DepotMaintainPlans?: (string | null);
-    /**
      * 干员养成
      */
     IfCultivate?: (boolean | null);

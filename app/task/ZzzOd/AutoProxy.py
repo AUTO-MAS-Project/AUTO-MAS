@@ -66,7 +66,6 @@ from app.task.proxy_helpers import (
     read_config_source,
     split_args,
     user_uses_direct_control,
-    user_uses_quick_config,
 )
 from app.utils import ProcessInfo, ProcessManager, get_logger, is_process_running
 from app.utils.constants import UTC4
@@ -88,10 +87,12 @@ from .tools import (
     find_active_instance,
     find_free_instance_idx,
     instance_dir,
+    instance_run_is_all,
     launch_args_patch,
     list_app_catalog,
     list_instances,
     push_notification,
+    read_game_account,
     restore_instance,
     restore_instance_view,
     snapshot_run_records,
@@ -430,6 +431,52 @@ class AutoProxyTask(TaskExecuteBase):
 
         return self.mode == "直控"
 
+    def _direct_run_targets(self, root: Path) -> list[dict]:
+        """直控运行的目标实例列表（与上游 ``handle_init`` 判定同口径）。
+
+        随原生 ``instance_run`` 而定：全部实例=所有参与运行（``active_in_od``）
+        的实例，其余（含 null / 空串等非法值）=活跃实例——只有**键缺失**才按
+        上游默认取「全部实例」（判定见 :func:`instance_run_is_all`）；目标为空
+        时回落活跃实例（对齐上游 ``handle_init`` 对空参与列表的回落）。上游对
+        「有参与实例但无活跃」会自行切到首个参与实例运行，因此目标非空即
+        放行，不以有无活跃实例拦截。
+        """
+
+        if instance_run_is_all(root):
+            targets = [
+                item for item in list_instances(root) if item.get("active_in_od")
+            ]
+        else:
+            targets = []
+        if not targets:
+            active = find_active_instance(root)
+            targets = [active] if active is not None else []
+        return targets
+
+    def _direct_missing_game_paths(self, root: Path) -> list[str]:
+        """直控运行目标实例中未配置游戏路径的实例名（空=全部可运行）。
+
+        直控=原生裸跑、MAS 零注入，游戏路径只可能来自目标实例的
+        ``game_account.yml``；缺失时一条龙会以「未配置游戏路径」整体失败，
+        这里提前拦截并指明是哪个实例。读不动或条目结构异常的实例不误判
+        为未配置，交由一条龙自身报错。
+        """
+
+        missing: list[str] = []
+        for item in self._direct_run_targets(root):
+            try:
+                idx = int(item.get("idx", -1))
+                if idx <= 0:
+                    continue
+                game_path = str(
+                    read_game_account(instance_dir(root, idx)).get("game_path") or ""
+                ).strip()
+            except Exception:
+                continue
+            if not game_path:
+                missing.append(str(item.get("name") or f"{idx:02d}"))
+        return missing
+
     def _push_log_enabled(self) -> bool:
         """节点详情采集开关：触发用户或（多实例切换时）任一启用用户未关闭即采集。"""
 
@@ -592,42 +639,6 @@ class AutoProxyTask(TaskExecuteBase):
             self._idx_names[slot] = str(cfg.get("Info", "Name") or "")
         self._push_user_book = {user_item.name: user_item for user_item, _, _ in users}
 
-    async def _prepare_direct_quick_config(self) -> None:
-        """直控+快速配置：任务前把该用户面板字段写入绑定实例槽，任务后恢复。
-
-        复用用户态注入原语（ensure_user_slot 解析/分配绑定槽 → 槽目录备份 →
-        由用户配置字段生成 YAML 写入槽），与 ``_prepare_injection`` 共用
-        ``_injected_slots``/``_slot_users`` 现场与 ``_restore_injection`` 恢复路径
-        （无合成视图：直控裸跑走原生注册表，恢复只还原槽目录）。
-
-        绑定槽缺失时按 zzz-od 固定槽形状建空槽（注入原语自动创建
-        game_account.yml / one_dragon/_group.yml），不建平行模型。
-        写失败（含槽备份失败）异常向上传播即任务失败（S5），不吞异常。
-        """
-
-        used_idxs = collect_used_slot_idxs(exclude_uids={self.cur_user_uid})
-        slot = await ensure_user_slot(
-            self.script_root_path, self.cur_user_config, used_idxs
-        )
-        backup_base = (
-            Path.cwd() / "data" / self.script_info.script_id / "Temp" / "InstanceBackup"
-        )
-        backup_dir = backup_base / f"{slot:02d}"
-        if instance_dir(self.script_root_path, slot).is_dir():
-            backup_instance(self.script_root_path, slot, backup_dir)
-            self._injected_slots.append((slot, backup_dir))
-        else:
-            # 槽目录不存在：以固定槽形状建空槽（注入原语创建配置文件）
-            self._injected_slots.append((slot, None))
-        self._inject_user_config(slot, self.cur_user_config, self._enabled_app_list())
-        self._slot_users[slot] = (self.cur_user_item, self.cur_user_config)
-        self._slot_records_before[slot] = snapshot_run_records(
-            self.script_root_path, slot
-        )
-        logger.info(
-            f"ZZZ-OD 直控快速配置：已把用户 {self.cur_user_item.name} 面板字段写入绑定槽 {slot:02d}"
-        )
-
     def _write_view(self) -> None:
         """（重）写合成注册表视图：仅本脚本注入槽，活跃=首槽。
 
@@ -722,8 +733,21 @@ class AutoProxyTask(TaskExecuteBase):
                 if self.cur_user_config.get("Info", "RemainedDay") == 0:
                     self.cur_user_item.status = "跳过"
                     return "用户剩余天数为 0, 跳过该用户"
-        elif find_active_instance(root) is None:
-            return "zzz-od 中没有可运行的实例, 请先在一条龙中创建账号"
+        else:
+            # 直控=原生裸跑零注入，运行前先自愈上次用户模式残留的合成视图
+            # （只含 MAS 槽）：否则下面读到的是视图，会把 MAS 槽当运行目标、
+            # 误报「未配置游戏路径」；无 sidecar 时为 no-op
+            restore_instance_view(root)
+            if not self._direct_run_targets(root):
+                return "zzz-od 中没有可运行的实例, 请先在一条龙中创建账号"
+            # 直控裸跑读原生实例配置，路径缺失时一条龙只会以「未配置游戏路径」
+            # 失败，这里提前给出可读提示并指明实例
+            missing = self._direct_missing_game_paths(root)
+            if missing:
+                return (
+                    f"实例 {'、'.join(missing)} 未配置游戏路径, "
+                    "请在一条龙「账户管理」中设置"
+                )
 
         return "Pass"
 
@@ -805,11 +829,8 @@ class AutoProxyTask(TaskExecuteBase):
                     for item in list_instances(self.script_root_path)
                     if isinstance(item, dict)
                 }
-                # 直控+快速配置开启：任务前把该用户面板字段（Game/OneDragon）
-                # 复用用户态注入原语写入绑定实例槽（任务结束由既有注入快照
-                # 恢复）；关闭=纯原生裸跑零写入。写失败异常向上传播即任务失败。
-                if user_uses_quick_config(self.cur_user_config):
-                    await self._prepare_direct_quick_config()
+                # 直控=MAS 零注入零干涉（快速配置已封锁，见 ZzzOdUserConfig.load），
+                # 完全尊重 zzz-od 自己的 instance_run / 活跃实例 / 多账号运行设置
                 launcher_args = ["--onedragon"]
             else:
                 if self._is_multi_account():

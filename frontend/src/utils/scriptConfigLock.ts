@@ -5,7 +5,9 @@ const RUNNING_STATUSES = new Set(['运行', '运行中'])
 
 const scriptInfoIsRunning = (script: WSTaskScriptInfoData) =>
   (script.status !== undefined && RUNNING_STATUSES.has(script.status)) ||
-  (script.userList ?? []).some(user => user.status !== undefined && RUNNING_STATUSES.has(user.status))
+  (script.userList ?? []).some(
+    user => user.status !== undefined && RUNNING_STATUSES.has(user.status)
+  )
 
 export function isScriptConfigLocked(
   tasks: readonly TaskRuntimeState[],
@@ -25,8 +27,6 @@ export function isScriptConfigLocked(
       return task.taskInfo.some(info => info.script_id === scriptId && scriptInfoIsRunning(info))
     }
 
-    return (
-      task.scriptId === scriptId || task.scripts.some(script => script.scriptId === scriptId)
-    )
+    return task.scriptId === scriptId || task.scripts.some(script => script.scriptId === scriptId)
   })
 }

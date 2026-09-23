@@ -130,7 +130,6 @@
                 :loading="loading"
                 :stage-mode-options="stageModeOptions"
                 :stage-options="stageOptions"
-                :stage-remain-options="stageRemainOptions"
                 :is-plan-mode="isPlanMode"
                 :display-medicine-numb="displayMedicineNumb"
                 :display-series-numb="displaySeriesNumb"
@@ -138,26 +137,22 @@
                 :display-stage1="displayStage1"
                 :display-stage2="displayStage2"
                 :display-stage3="displayStage3"
-                :display-stage-remain="displayStageRemain"
                 :medicine-numb-tooltip="medicineNumbTooltip"
                 :series-numb-tooltip="seriesNumbTooltip"
                 :stage-tooltip="stageTooltip"
                 :stage1-tooltip="stage1Tooltip"
                 :stage2-tooltip="stage2Tooltip"
                 :stage3-tooltip="stage3Tooltip"
-                :stage-remain-tooltip="stageRemainTooltip"
                 @update-medicine-numb="updateMedicineNumb"
                 @update-series-numb="updateSeriesNumb"
                 @update-stage="updateStage"
                 @update-stage1="updateStage1"
                 @update-stage2="updateStage2"
                 @update-stage3="updateStage3"
-                @update-stage-remain="updateStageRemain"
                 @handle-add-custom-stage="addCustomStage"
                 @handle-add-custom-stage1="addCustomStage1"
                 @handle-add-custom-stage2="addCustomStage2"
                 @handle-add-custom-stage3="addCustomStage3"
-                @handle-add-custom-stage-remain="addCustomStageRemain"
                 @save="handleFieldSave"
               />
             </template>
@@ -348,16 +343,6 @@ const activityStageLoading = ref(false)
 const activityStageError = ref('')
 const stageOverviewByServer = ref<HomeOverviewResponse['StageByServer']>({})
 
-// 剩余理智关卡专用选项（将"当前/上次"改为"不选择"）
-const stageRemainOptions = computed(() => {
-  return stageOptions.value.map(option => {
-    if (option.value === '-') {
-      return { ...option, label: option.label.replace('当前/上次', '不选择') }
-    }
-    return option
-  })
-})
-
 // 判断值是否为自定义关卡
 const isCustomStage = (value: string) => {
   if (!value || value === '' || value === '-') return false
@@ -420,12 +405,8 @@ const getPlanTooltip = (fieldName: string) => {
       ) {
         if (value === '-') value = '当前/上次'
         else if (value === '') value = '不选择'
-      } else if (fieldName === 'Stage_Remain') {
-        if (value === '-') value = '不选择'
-        else if (value === '') value = '不选择'
+        tooltip += `${weekdaysZh[index]}: ${value}\n`
       }
-
-      tooltip += `${weekdaysZh[index]}: ${value}\n`
     })
 
     return tooltip.trim()
@@ -441,7 +422,6 @@ const stageTooltip = computed(() => getPlanTooltip('Stage'))
 const stage1Tooltip = computed(() => getPlanTooltip('Stage_1'))
 const stage2Tooltip = computed(() => getPlanTooltip('Stage_2'))
 const stage3Tooltip = computed(() => getPlanTooltip('Stage_3'))
-const stageRemainTooltip = computed(() => getPlanTooltip('Stage_Remain'))
 
 // 计算属性用于显示正确的值（来自计划表或用户配置）
 const displayMedicineNumb = computed({
@@ -528,20 +508,6 @@ const displayStage3 = computed({
   },
 })
 
-const displayStageRemain = computed({
-  get: () => {
-    if (isPlanMode.value && planModeConfig.value?.Stage_Remain !== undefined) {
-      return planModeConfig.value.Stage_Remain
-    }
-    return formData.Info.Stage_Remain
-  },
-  set: value => {
-    if (!isPlanMode.value) {
-      formData.Info.Stage_Remain = value
-    }
-  },
-})
-
 // 获取计划当前配置
 const getPlanCurrentConfig = (planData: any) => {
   if (!planData) return null
@@ -605,7 +571,6 @@ const getDefaultMAAUserData = () => ({
     Stage_1: '',
     Stage_2: '',
     Stage_3: '',
-    Stage_Remain: '',
   },
   Task: {
     IfStartUp: true,
@@ -622,7 +587,6 @@ const getDefaultMAAUserData = () => ({
     IfActivityFirst: false,
     ActivityStageIndex: 1,
     ActivityMedicineNumb: 0,
-    DepotMaintainPlans: '[]',
     CultivateTargets: '[]',
     CultivateSkipDuringActivity: false,
     CultivateSkipDuringResourceCollection: false,
@@ -674,7 +638,6 @@ const fightSummary = computed(() =>
     stage: displayStage.value,
     series: displaySeriesNumb.value,
     medicine: displayMedicineNumb.value ?? 0,
-    remain: displayStageRemain.value,
   })
 )
 
@@ -925,7 +888,7 @@ const loadUserData = async () => {
 }
 
 const appendConfiguredCustomStages = () => {
-  const stageFields = ['Stage', 'Stage_1', 'Stage_2', 'Stage_3', 'Stage_Remain']
+  const stageFields = ['Stage', 'Stage_1', 'Stage_2', 'Stage_3']
   stageFields.forEach(field => {
     const stageValue = (formData.Info as any)[field]
     if (stageValue && isCustomStage(stageValue)) {
@@ -1322,7 +1285,7 @@ const validateStageName = (stageName: string): boolean => {
   return stagePattern.test(stageName.trim())
 }
 
-type StageField = 'Stage' | 'Stage_1' | 'Stage_2' | 'Stage_3' | 'Stage_Remain'
+type StageField = 'Stage' | 'Stage_1' | 'Stage_2' | 'Stage_3'
 
 const updateStageField = (field: StageField, value: string) => {
   if (isPlanMode.value) return
@@ -1405,18 +1368,6 @@ const addCustomStage3 = (stageName: string) => {
   }
 }
 
-// 添加剩余理智关卡
-const addCustomStageRemain = (stageName: string) => {
-  if (!validateStageName(stageName)) {
-    message.error(t('edit.enterValidStageName'))
-    return
-  }
-
-  if (addStageToOptions(stageName)) {
-    updateStageField('Stage_Remain', stageName.trim())
-  }
-}
-
 const handleCancel = async () => {
   const pendingSave = fieldSavePromise
   if (pendingSave && !(await pendingSave)) return
@@ -1452,10 +1403,6 @@ const updateStage2 = (value: string) => {
 
 const updateStage3 = (value: string) => {
   updateStageField('Stage_3', value)
-}
-
-const updateStageRemain = (value: string) => {
-  updateStageField('Stage_Remain', value)
 }
 
 watch(

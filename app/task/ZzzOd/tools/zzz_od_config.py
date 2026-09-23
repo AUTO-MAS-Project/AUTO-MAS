@@ -189,6 +189,21 @@ def read_instance_run(root: Path) -> str | None:
     return str(value) if value is not None else None
 
 
+def instance_run_is_all(root: Path) -> bool:
+    """上游口径：本次运行目标是否为「全部实例」。
+
+    镜像上游 ``one_dragon_config.instance_run`` 属性的
+    ``data.get('instance_run', 默认值)`` 与 ``handle_init`` 的 ``== 全部实例``
+    判定：**只有键缺失**才回落默认「全部实例」；键存在但值为 null / 空串等
+    非法值时，上游走单实例分支。:func:`read_instance_run` 返回原值（键缺失
+    与值为 null 都是 ``None``），区分不了这两种情况，故单列本判定。
+    """
+
+    return _read_registry(root).get("instance_run", INSTANCE_RUN_ALL) == (
+        INSTANCE_RUN_ALL
+    )
+
+
 def write_instance_run(root: Path, value: str) -> None:
     """落盘 instance_run（配合 ``--instance`` 注入运行临时切换，结束后恢复）。"""
 

@@ -1585,7 +1585,10 @@ def write_native_one_dragon(
         config["AutoBossStrategyName"] = auto_boss_strategy_name
     # 通用战斗队伍/策略权威覆盖周表「默认」行（与槽位路径同口径，理由见
     # write_user_one_dragon：默认行即「通用队伍」映射，否则其旧值会遮挡通用值）
-    for _wd_key, _team_key in (("weeklyDomain", "partyName"), ("weeklyLeyLine", "team")):
+    for _wd_key, _team_key in (
+        ("weeklyDomain", "partyName"),
+        ("weeklyLeyLine", "team"),
+    ):
         _wd = config.get(_wd_key)
         if isinstance(_wd, dict) and isinstance(_wd.get("default"), dict):
             if party_name:

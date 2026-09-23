@@ -232,9 +232,7 @@ class ScriptConfigTask(TaskExecuteBase):
             "Game", "ScreenSize", str(game_cfg.get("screen_size") or "1920x1080")
         )
         await cfg.set("Game", "FullScreen", str(game_cfg.get("full_screen") or "0"))
-        await cfg.set(
-            "Game", "PopupWindow", bool(game_cfg.get("popup_window", False))
-        )
+        await cfg.set("Game", "PopupWindow", bool(game_cfg.get("popup_window", False)))
         has_dx12, advance_rest = split_dx12_argument(
             str(game_cfg.get("launch_argument_advance") or "")
         )

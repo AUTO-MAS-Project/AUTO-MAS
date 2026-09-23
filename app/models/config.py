@@ -980,8 +980,6 @@ class MaaUserConfig(ConfigBase):
         self.Info_Stage_2 = ConfigItem("Info", "Stage_2", "-")
         ## 关卡 3
         self.Info_Stage_3 = ConfigItem("Info", "Stage_3", "-")
-        ## 备用关卡
-        self.Info_Stage_Remain = ConfigItem("Info", "Stage_Remain", "-")
         ## 用户标签信息（虚拟字段，供前端显示）
         self.Info_Tag = ConfigItem(
             "Info", "Tag", "[ ]", VirtualConfigValidator(self.getTags)
@@ -1058,10 +1056,6 @@ class MaaUserConfig(ConfigBase):
             RangeValidator(0, 9999),
             legacy_group="Info",
             legacy_name="MedicineNumb",
-        )
-        ## 库存保持计划
-        self.Task_DepotMaintainPlans = ConfigItem(
-            "Task", "DepotMaintainPlans", "[]", JSONValidator(list)
         )
         ## 是否干员养成
         self.Task_IfCultivate = ConfigItem(
@@ -1189,11 +1183,6 @@ class MaaUserConfig(ConfigBase):
         if backup_stages:
             tags.append(
                 {"text": f"备选：{', '.join(backup_stages)}", "color": tag_color}
-            )
-        # 剩余关卡
-        if plan_data["Stage_Remain"] != "禁用":
-            tags.append(
-                {"text": f"剩余：{plan_data['Stage_Remain']}", "color": tag_color}
             )
 
         # 备注标签
@@ -2928,7 +2917,7 @@ class MaaPlanConfig(ConfigBase):
 
             ## 理智关卡
             for name in MAA_STAGE_KEY[2:]:
-                # Stage、Stage_1、Stage_2、Stage_3、Stage_Remain
+                # Stage、Stage_1、Stage_2、Stage_3
                 self.config_item_dict[group][name] = ConfigItem(group, name, "-")
 
             for name in MAA_STAGE_KEY:
@@ -4017,7 +4006,8 @@ class ZzzOdUserConfig(ConfigBase):
         self.Info_Mode = ConfigItem(
             "Info", "Mode", "用户", UserDirectConfigModeValidator()
         )
-        ## 是否启用快速配置（与配置来源独立，按用户保存）
+        ## 是否启用快速配置（已封锁，仅保留字段兼容存量数据：直控在 load/update
+        ## 归一为关，脚本/用户来源不消费本开关）
         self.Info_IfQuickConfig = ConfigItem(
             "Info", "IfQuickConfig", True, BoolValidator()
         )
@@ -4103,7 +4093,9 @@ class ZzzOdUserConfig(ConfigBase):
             "Game", "FullScreen", "0", OptionsValidator(["0", "1"])
         )
         ## 无边框窗口（一条龙拼参时转 -popupwindow）
-        self.Game_PopupWindow = ConfigItem("Game", "PopupWindow", False, BoolValidator())
+        self.Game_PopupWindow = ConfigItem(
+            "Game", "PopupWindow", False, BoolValidator()
+        )
         ## DX12 启动（MAS 便捷开关：注入时把 -use-d3d12 合并进一条龙的
         ## launch_argument_advance；上游无独立字段，勾选框是唯一权威）
         self.Game_Dx12 = ConfigItem("Game", "Dx12", False, BoolValidator())
@@ -4237,6 +4229,24 @@ class ZzzOdUserConfig(ConfigBase):
         )
 
         return json.dumps(tags, ensure_ascii=False)
+
+    async def load(self, data: dict) -> bool:
+        """加载前把直控用户的快速配置开关归一为关（快速配置已封锁，维护者决策）。
+
+        直控 = MAS 零注入零干涉（与 ``update_user`` 切直控守卫同口径），快速配置
+        的覆盖写槽与该语义相悖，消费点已移除。存量数据里「直控 + 开」的残留
+        （旧版默认开、界面无开关可关）在此统一以来源为准归关；脚本 / 用户来源
+        的开关值不消费、保持原样。
+
+        归一作用在传入数据上（与 ``BetterGIConfig.load`` 同款写法），属**内存
+        归一**：每次加载都会重新归位，该字段已无任何消费点，不需要为它额外
+        回写磁盘；切换直控时的 ``update_user`` 守卫会把值真正落到盘上。
+        """
+        normalized_data = deepcopy(data) if isinstance(data, dict) else {}
+        info = normalized_data.get("Info")
+        if isinstance(info, dict) and info.get("Mode") == "直控":
+            info["IfQuickConfig"] = False
+        return await super().load(normalized_data)
 
 
 class ZzzOdConfig(ConfigBase):

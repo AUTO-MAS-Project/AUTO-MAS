@@ -182,7 +182,9 @@
                       :value="String(fieldValue(item.name) ?? '')"
                       :options="optionList(item)"
                       :placeholder="t('edit.bettergiGroupSettingsPlaceholder')"
-                      :get-popup-container="(triggerNode: HTMLElement) => triggerNode.parentElement!"
+                      :get-popup-container="
+                        (triggerNode: HTMLElement) => triggerNode.parentElement!
+                      "
                       allow-clear
                       @change="(v: unknown) => setField(item.name, v == null ? '' : String(v))"
                     />
@@ -198,7 +200,9 @@
                       :value="fieldListValue(item.name)"
                       :options="optionList(item)"
                       :placeholder="t('edit.bettergiGroupSettingsPlaceholder')"
-                      :get-popup-container="(triggerNode: HTMLElement) => triggerNode.parentElement!"
+                      :get-popup-container="
+                        (triggerNode: HTMLElement) => triggerNode.parentElement!
+                      "
                       @change="(v: unknown) => setField(item.name, Array.isArray(v) ? v : [])"
                     />
                   </div>
@@ -724,32 +728,32 @@ const isTruthy = (v: unknown): boolean => {
 const CONTROL_TYPE_ALIASES: Record<string, string> = {
   // 文本类
   'input-text': 'input-text',
-  'text': 'input-text',
-  'input': 'input-text',
-  'textarea': 'input-text',
+  text: 'input-text',
+  input: 'input-text',
+  textarea: 'input-text',
   // 下拉类
-  'select': 'select',
-  'dropdown': 'select',
-  'combo': 'select',
-  'combobox': 'select',
-  'radio': 'select',
+  select: 'select',
+  dropdown: 'select',
+  combo: 'select',
+  combobox: 'select',
+  radio: 'select',
   // 开关类
-  'checkbox': 'checkbox',
-  'switch': 'checkbox',
-  'bool': 'checkbox',
-  'boolean': 'checkbox',
-  'toggle': 'checkbox',
+  checkbox: 'checkbox',
+  switch: 'checkbox',
+  bool: 'checkbox',
+  boolean: 'checkbox',
+  toggle: 'checkbox',
   // 多选类
   'multi-checkbox': 'multi-checkbox',
-  'multicheckbox': 'multi-checkbox',
-  'multi_select': 'multi-checkbox',
+  multicheckbox: 'multi-checkbox',
+  multi_select: 'multi-checkbox',
   'multi-select': 'multi-checkbox',
-  'multiselect': 'multi-checkbox',
-  'multiSelect': 'multi-checkbox',
+  multiselect: 'multi-checkbox',
+  multiSelect: 'multi-checkbox',
   // 分隔类
-  'separator': 'separator',
-  'section': 'separator',
-  'divider': 'separator',
+  separator: 'separator',
+  section: 'separator',
+  divider: 'separator',
 }
 
 const controlTypeOf = (item: Record<string, any>): string => {

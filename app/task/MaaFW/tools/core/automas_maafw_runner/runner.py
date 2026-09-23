@@ -19,6 +19,7 @@
 
 import ctypes
 import hashlib
+import html
 import json
 import os
 import re
@@ -45,13 +46,20 @@ from maa.controller import (
     Win32Controller,
 )
 from maa.define import MaaImageBufferHandle, MaaSize
-from maa.event_sink import NotificationType
+from maa.event_sink import EventSink, NotificationType
 from maa.job import Job, JobWithResult
 from maa.library import Library
 from maa.resource import Resource, ResourceEventSink
 from maa.tasker import Tasker, TaskerEventSink
 from maa.toolkit import Toolkit
 from packaging.version import InvalidVersion, Version
+
+# 运行池里的 binding 版本由项目自己钉，池子没有版本下限：context sink 是 5.x 才有的
+# 类，导入失败时退回只用 tasker sink，不能让整个 runner 导入即炸。
+try:
+    from maa.context import ContextEventSink as _ContextEventSinkBase
+except ImportError:  # pragma: no cover - 只有很老的 binding 会走到
+    _ContextEventSinkBase = None
 
 from app.task.MaaFW.tools.core.automas_maafw_agent_env import write_agent_compat_shims
 from app.task.MaaFW.tools.core.automas_maafw_runner.environment import (
@@ -68,17 +76,44 @@ from app.task.MaaFW.tools.core.automas_maafw_runtime_pool.host_environment impor
 # 就这么丢过一次，见下方注释）。
 try:
     from .models import MaaFWDeviceConfig, MaaFWFailureScreenshot, MaaFWRunResult
-    from .run_plan import MaaFWRunPlan, MaaFWTaskRunPlan
+    from .run_plan import MaaFWRunPlan, MaaFWTaskRunPlan, _lookup_i18n_text
 except ImportError:
     from models import (  # type: ignore[no-redef]
         MaaFWDeviceConfig,
         MaaFWFailureScreenshot,
         MaaFWRunResult,
     )
-    from run_plan import MaaFWRunPlan, MaaFWTaskRunPlan  # type: ignore[no-redef]
+    from run_plan import (  # type: ignore[no-redef]
+        MaaFWRunPlan,
+        MaaFWTaskRunPlan,
+        _lookup_i18n_text,
+    )
 
 ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-9;]*[a-zA-Z]")
 ENCODINGS = ("utf-8", "gbk", "shift_jis", "utf-16")
+# pipeline 节点 focus 文案的前缀：这是项目作者写给用户看的进度/解释，不是框架事件。
+FOCUS_LOG_PREFIX = "[提示] "
+FOCUS_WARNING_MARK = "⚠ "
+# 同一任务里 focus 文案的界面上限。循环等待的节点会每秒响一次同一句话
+# （Node.Recognition.Failed 按 rate_limit 重试），到点后其余只进 worker.log。
+FOCUS_LOG_LIMIT_PER_TASK = 200
+# 超限后仍往 worker.log 发的硬上限，防止死循环把 stdout 刷爆。
+FOCUS_LOG_HARD_LIMIT_PER_TASK = 2000
+_HTML_TAG_RE = re.compile(r"<[^>]+>")
+_HTML_BREAK_RE = re.compile(r"<br\s*/?>", re.IGNORECASE)
+# 带这些样式的标签（MaaEnd 的 <span style="color: red; font-weight: bold;">、
+# maabbb 的 <font color="red">、M9A 的 color:crimson）视为项目作者在标警告。
+_FOCUS_WARNING_TAG_RE = re.compile(
+    r"<[a-z]+\b[^>]*?(?:color\s*[:=]\s*[\"']?\s*(?:red|crimson|orange)\b"
+    r"|font-weight\s*:\s*bold)",
+    re.IGNORECASE,
+)
+# 界面上每任务只有这一行配置，超过就没人看得完；完整 options 走 DETAIL_LOG_PREFIX
+# 那条，宿主拦在界面外、只进 worker.log。
+TASK_CONFIG_LOG_UI_LIMIT = 240
+TASK_CONFIG_LOG_VALUE_LIMIT = 1200
+# 带这个前缀的行只进 *.worker.log，宿主 _should_forward_framework_log 不转发到界面。
+DETAIL_LOG_PREFIX = "[MaaFW 详情] "
 # 这些 controller 动作失败意味着游戏/设备根本没就绪。此时任务失败不该继续
 # 往下跑——后面每个任务都会在同一个空场景里空转到各自超时，既浪费十几分钟，
 # 又可能把「本轮已做过」的完成态错误写回。直接抛出，交给宿主的重试循环。
@@ -87,10 +122,6 @@ FATAL_CONTROLLER_ACTIONS = frozenset({"start_app"})
 # post_stop 都会产生它。脚本侧（如 MaaEnd 的分辨率闸门）用自定义动作强停时，
 # 我们只能从这里知道「这一轮不是自己结束的」。
 MAAFW_POST_STOP_ENTRY = "MaaTaskerPostStop"
-TASK_CONFIG_LOG_VALUE_LIMIT = 1200
-# 整行上限。留足余量低于宿主 _FRAMEWORK_UI_LOG_MAX_CHARS(1200)，
-# 免得任务配置被当成框架错误诊断截断。
-TASK_CONFIG_LOG_LINE_LIMIT = 1000
 
 _MAAFW_INITIALIZED = False
 _MAAFW_INIT_LOCK = threading.Lock()
@@ -536,6 +567,9 @@ class MaaFWRunner:
         self._self_stop_lock: threading.Lock = threading.Lock()
         self._pending_self_stops: int = 0
         self._task_failure_summaries: list[str] = []
+        # 当前任务已打出的 focus 文案条数；sink 回调来自框架线程，计数加锁。
+        self._focus_log_count: int = 0
+        self._focus_lock: threading.Lock = threading.Lock()
         self._failed_controller_actions: set[str] = set()
         self._failed_task_errors: list[tuple[str, str]] = []
         self._failure_screenshot_dir: Path | None = failure_screenshot_dir
@@ -1393,16 +1427,37 @@ class MaaFWRunner:
             self.send_log(f"注册 MaaFW controller 日志监听失败: {exc}")
 
     def _install_tasker_sink(self) -> None:
+        """挂 tasker 与 context 两个监听器。
+
+        MaaFW 5.x 里 tasker sink 只收 ``Tasker.Task.*``，节点级的 ``Node.*``
+        （focus 文案、节点失败）全部只走 context sink（5.12.3 实测）。老 binding
+        没有 ``add_context_sink`` 时 ``Node.*`` 仍从 tasker sink 来，退回由它处理。
+        两条路只能开一条，否则 focus 会打两遍。
+        """
+
+        tasker_sink: _MaaFWTaskerLogSink | None = None
         try:
-            sink = _MaaFWTaskerLogSink(
+            tasker_sink = _MaaFWTaskerLogSink(
                 self.send_log,
-                self._record_task_failure_summary,
+                self._on_node_notification,
                 self._note_tasker_entry,
             )
-            if self.tasker.add_sink(sink) is not None:
-                self.event_sinks.append(sink)
+            if self.tasker.add_sink(tasker_sink) is not None:
+                self.event_sinks.append(tasker_sink)
         except Exception as exc:
             self.send_log(f"注册 MaaFW tasker 日志监听失败: {exc}")
+        if _ContextEventSinkBase is None or not hasattr(
+            self.tasker, "add_context_sink"
+        ):
+            return
+        try:
+            context_sink = _MaaFWContextLogSink(self._on_node_notification)
+            if self.tasker.add_context_sink(context_sink) is not None:
+                self.event_sinks.append(context_sink)
+                if tasker_sink is not None:
+                    tasker_sink.handle_node_events = False
+        except Exception as exc:
+            self.send_log(f"注册 MaaFW context 日志监听失败: {exc}")
 
     def _build_agent_env(self, agent_plan: Any) -> dict[str, str]:
         """构造 agent 子进程环境，严格隔离 AUTO-MAS 自身环境。
@@ -1439,6 +1494,9 @@ class MaaFWRunner:
         python_path_items.append(str(project_path))
         env["PYTHONPATH"] = os.pathsep.join(python_path_items)
         env["PYTHONIOENCODING"] = "utf-8"
+        # agent 的 stdout 接的是管道，Python 默认 8 KB 块缓冲：裸 print() 的输出会
+        # 攒到进程结束才一起冒出来。关掉缓冲让 [Agent:xxx] 行实时进任务日志。
+        env["PYTHONUNBUFFERED"] = "1"
         # pyc 集中到 <项目根>/.pycache：内嵌副本不再被运行期的字节码缓存弄脏，
         # 也不会把 2000 个小文件散进项目自带的 python/Lib。
         set_project_pycache_prefix(env, project_path)
@@ -1622,8 +1680,11 @@ class MaaFWRunner:
                 raise RuntimeError("MaaFW tasker 已释放，无法继续投递任务")
             display_name = _task_display_name(task)
             self.send_log(_format_task_config_log(task))
+            self.send_log(_format_task_config_detail_log(task))
             self.send_log(f"正在运行任务: {display_name}")
             self._task_failure_summaries.clear()
+            with self._focus_lock:
+                self._focus_log_count = 0
             self._failed_controller_actions.clear()
             try:
                 with self._post_lock:
@@ -1748,12 +1809,64 @@ class MaaFWRunner:
                 detail = job.get()
             raise RuntimeError(self._build_job_failure_message(detail))
 
+    def _on_node_notification(self, message: str, details: dict[str, Any]) -> None:
+        """框架每条原始通知都进这里：先打 focus 文案，再记失败摘要。
+
+        任何异常都吞掉——这是框架线程上的回调，抛出去只会让原生层丢通知。
+        """
+
+        try:
+            focus_texts = self._resolve_focus_texts(message, details)
+            for text in focus_texts:
+                self._emit_focus(text)
+            self._record_task_failure_summary(
+                message, details, focus_texts[0] if focus_texts else None
+            )
+        except Exception as exc:  # pragma: no cover - 诊断路径不能反噬任务
+            with suppress(Exception):
+                self.send_log(f"处理 MaaFW 通知失败: {exc}")
+
+    def _resolve_focus_texts(self, message: str, details: dict[str, Any]) -> list[str]:
+        """按 MaaFW focus 协议取出这条消息要给用户看的文案（已翻译、去掉 HTML）。"""
+
+        focus = details.get("focus") if isinstance(details, dict) else None
+        if not isinstance(focus, dict):
+            return []
+        texts: list[str] = []
+        for raw in _focus_values(focus.get(message)):
+            translated = raw
+            if raw.startswith("$"):
+                # 翻不出来就原样打 $key：可见优于隐藏
+                translated = _lookup_i18n_text(raw, self.plan.i18n) or raw
+            cleaned = _clean_focus_text(translated)
+            if cleaned:
+                texts.append(cleaned)
+        return texts
+
+    def _emit_focus(self, text: str) -> None:
+        with self._focus_lock:
+            self._focus_log_count += 1
+            count = self._focus_log_count
+        if count <= FOCUS_LOG_LIMIT_PER_TASK:
+            self.send_log(f"{FOCUS_LOG_PREFIX}{text}")
+            return
+        if count == FOCUS_LOG_LIMIT_PER_TASK + 1:
+            self.send_log(
+                f"{FOCUS_LOG_PREFIX}本任务提示已超过 {FOCUS_LOG_LIMIT_PER_TASK} 条，"
+                "其余只进本次运行的 .worker.log"
+            )
+        if count <= FOCUS_LOG_HARD_LIMIT_PER_TASK:
+            self.send_log(f"{DETAIL_LOG_PREFIX}{FOCUS_LOG_PREFIX}{text}")
+
     def _record_task_failure_summary(
-        self, message: str, details: dict[str, Any]
+        self,
+        message: str,
+        details: dict[str, Any],
+        focus_text: str | None = None,
     ) -> None:
         if message not in MAAFW_FAILURE_EVENT_MESSAGES:
             return
-        summary = _format_maafw_failure_event(message, details)
+        summary = _format_maafw_failure_event(message, details, focus_text)
         if not summary:
             return
         if summary in self._task_failure_summaries:
@@ -1940,13 +2053,16 @@ class _MaaFWTaskerLogSink(TaskerEventSink):
     def __init__(
         self,
         send_log: Callable[[str], None],
-        record_failure: Callable[[str, dict[str, Any]], None],
+        on_notification: Callable[[str, dict[str, Any]], None],
         note_entry: Callable[[NotificationType, str], None] | None = None,
     ) -> None:
         super().__init__()
         self.send_log = send_log
-        self.record_failure = record_failure
+        self.on_notification = on_notification
         self.note_entry = note_entry
+        # 装上 context sink 后 Node.* 由它负责；这里只剩 Tasker.Task.*。
+        # 老 binding 没有 context sink 时保持 True，Node.* 仍从这里过。
+        self.handle_node_events = True
 
     def on_tasker_task(
         self,
@@ -1966,7 +2082,29 @@ class _MaaFWTaskerLogSink(TaskerEventSink):
         msg: str,
         details: dict[str, Any],
     ) -> None:
-        self.record_failure(msg, details)
+        if msg.startswith("Node.") and not self.handle_node_events:
+            return
+        self.on_notification(msg, details)
+
+
+class _MaaFWContextLogSink(_ContextEventSinkBase or EventSink):
+    """节点级通知（``Node.*``）的监听器：focus 文案与节点失败摘要都从这里来。
+
+    binding 没有 ContextEventSink 时基类退成 EventSink 只为让模块能导入；
+    那种情况下 ``_install_tasker_sink`` 根本不会实例化它。
+    """
+
+    def __init__(self, on_notification: Callable[[str, dict[str, Any]], None]) -> None:
+        super().__init__()
+        self.on_notification = on_notification
+
+    def on_raw_notification(
+        self,
+        context: Any,
+        msg: str,
+        details: dict[str, Any],
+    ) -> None:
+        self.on_notification(msg, details)
 
 
 def _notification_label(noti_type: NotificationType) -> str:
@@ -1980,7 +2118,52 @@ def _notification_label(noti_type: NotificationType) -> str:
 
 
 def _format_task_config_log(task: MaaFWTaskRunPlan) -> str:
+    """界面上的那一行：只说任务叫什么、哪些选项改过默认值。
+
+    ``name`` / ``entry`` / ``override_nodes`` 和完整 options 对用户没有意义，
+    走 ``_format_task_config_detail_log`` 那条只进 worker.log 的行。
+    """
+
     display_name = _task_display_name(task)
+    head = f"任务配置: {display_name} · "
+    if not task.nonDefaultOptions:
+        return head + "选项全部默认"
+    pairs = [
+        f"{key}={_format_option_display_value(value)}"
+        for key, value in task.nonDefaultOptions.items()
+    ]
+    line = head + "非默认选项: " + ", ".join(pairs)
+    if len(line) <= TASK_CONFIG_LOG_UI_LIMIT:
+        return line
+    # 逐个去掉尾部的选项，直到放得下「…(+N)」
+    kept = list(pairs)
+    while kept:
+        kept.pop()
+        omitted = len(pairs) - len(kept)
+        line = (
+            head
+            + "非默认选项: "
+            + ", ".join(kept)
+            + f"{', ' if kept else ''}…(+{omitted})"
+        )
+        if len(line) <= TASK_CONFIG_LOG_UI_LIMIT:
+            return line
+    return line[: TASK_CONFIG_LOG_UI_LIMIT - 1] + "…"
+
+
+def _format_option_display_value(value: Any) -> str:
+    if isinstance(value, str):
+        return value
+    if isinstance(value, list):
+        return "/".join(str(item) for item in value) or "无"
+    if isinstance(value, dict):
+        return "{" + ", ".join(f"{k}={v}" for k, v in value.items()) + "}"
+    return json.dumps(value, ensure_ascii=False)
+
+
+def _format_task_config_detail_log(task: MaaFWTaskRunPlan) -> str:
+    """完整的任务配置（只进 worker.log）：入口名、全部 options、覆盖的节点。"""
+
     option_text = json.dumps(
         task.logOptions,
         ensure_ascii=False,
@@ -1993,24 +2176,11 @@ def _format_task_config_log(task: MaaFWTaskRunPlan) -> str:
     if len(task.overrideNodes) > 12:
         override_text += f", ...(+{len(task.overrideNodes) - 12})"
 
-    def compose(options: str) -> str:
-        return (
-            "MaaFW 任务配置: "
-            f"label={display_name}; name={task.name}; entry={task.entry}; options={options}; "
-            f"override_nodes={override_text}"
-        )
-
-    line = compose(option_text)
-    # 整行也要收进限额。此前只有 options 单独受限，override_nodes 名字一长
-    # （MaaEnd 的 _AutoEcoFarmEnterCameraModeFallbackReleaseOnError 之流）整行
-    # 就会超过宿主转发日志的上限，被那条**给框架错误用的**兜底按 240 字符
-    # 拦腰截断，JSON 断在半个键上、还被冠以「框架错误详情」。宁可在这里多砍
-    # options，也要保证 override_nodes 与结尾完整。
-    if len(line) > TASK_CONFIG_LOG_LINE_LIMIT:
-        room = TASK_CONFIG_LOG_LINE_LIMIT - (len(line) - len(option_text))
-        option_text = option_text[: max(0, room - 3)] + "..." if room > 3 else "..."
-        line = compose(option_text)
-    return line
+    return (
+        f"{DETAIL_LOG_PREFIX}任务配置: "
+        f"name={task.name}; entry={task.entry}; options={option_text}; "
+        f"override_nodes={override_text}"
+    )
 
 
 def _task_display_name(task: MaaFWTaskRunPlan) -> str:
@@ -2020,7 +2190,20 @@ def _task_display_name(task: MaaFWTaskRunPlan) -> str:
     return task.name
 
 
-def _format_maafw_failure_event(message: str, details: dict[str, Any]) -> str:
+def _format_maafw_failure_event(
+    message: str,
+    details: dict[str, Any],
+    focus_text: str | None = None,
+) -> str:
+    """把一条失败通知压成一句。details 形状按 MaaFW 5.12.3 实测：
+
+    - ``Node.PipelineNode.Failed``：``name`` 是当前节点，``node_details``
+      （``name`` / ``node_id``）是没走通的那个候选；动作失败时还带 ``action_details``。
+    - ``Node.Action.Failed``：``action_details.action`` 是动作类型（Click 等），
+      ``action_details.name`` 只是节点名的重复。
+    - ``Tasker.Task.Failed``：只有 ``entry``。
+    """
+
     parts = [message]
 
     name = details.get("name") or details.get("entry")
@@ -2038,7 +2221,7 @@ def _format_maafw_failure_event(message: str, details: dict[str, Any]) -> str:
 
     action_details = details.get("action_details")
     if isinstance(action_details, dict):
-        action_name = action_details.get("name")
+        action_name = action_details.get("action") or action_details.get("name")
         if action_name:
             parts.append(f"action={action_name}")
 
@@ -2046,12 +2229,44 @@ def _format_maafw_failure_event(message: str, details: dict[str, Any]) -> str:
     if texts:
         parts.append("text=" + " / ".join(texts[:3]))
 
-    focus = details.get("focus")
-    focus_texts = _collect_maafw_focus_texts(focus)
-    if focus_texts:
-        parts.append("focus=" + " / ".join(focus_texts[:2]))
+    if focus_text:
+        parts.append("focus=" + _short_maafw_text(focus_text))
 
     return ", ".join(parts)
+
+
+def _focus_values(value: Any) -> list[str]:
+    """focus 里某条消息对应的原始文案列表。
+
+    实际项目里出现的形态：字符串；字符串列表；``{"content": …, "display": …}``
+    （content 同样是字符串或列表）；``{"trace": true}`` 之类不带 content 的对象
+    是给调试器看的，不打。
+    """
+
+    if isinstance(value, str):
+        return [value] if value.strip() else []
+    if isinstance(value, list):
+        return [item for item in value if isinstance(item, str) and item.strip()]
+    if isinstance(value, dict):
+        content = value.get("content")
+        if content is not None:
+            return _focus_values(content)
+    return []
+
+
+def _clean_focus_text(text: str) -> str:
+    """去掉 HTML、压平空白；带红色/加粗标记的文案前加 ⚠。"""
+
+    unescaped = html.unescape(text)
+    warn = bool(_FOCUS_WARNING_TAG_RE.search(unescaped))
+    # <br> 换成空格，其余标签直接去掉：中文里内联标签两侧不该多出空格
+    cleaned = " ".join(_HTML_TAG_RE.sub("", _HTML_BREAK_RE.sub(" ", unescaped)).split())
+    if not cleaned:
+        return ""
+    # 项目自己写了 ⚠️ 的（MaaEnd 有）不再叠一个
+    if warn and not cleaned.startswith("⚠"):
+        cleaned = FOCUS_WARNING_MARK + cleaned
+    return cleaned
 
 
 def _collect_maafw_detail_texts(value: Any) -> list[str]:
@@ -2072,14 +2287,6 @@ def _collect_maafw_detail_texts(value: Any) -> list[str]:
 
     walk(value)
     return texts
-
-
-def _collect_maafw_focus_texts(focus: Any) -> list[str]:
-    if isinstance(focus, dict):
-        return [_short_maafw_text(str(value)) for value in focus.values() if value]
-    if isinstance(focus, str) and focus:
-        return [_short_maafw_text(focus)]
-    return []
 
 
 def _short_maafw_text(text: str, limit: int = 80) -> str:
