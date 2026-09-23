@@ -61,8 +61,6 @@ SRA_DIVERGENT_UNIVERSE_RUNTIMES = 20
 SRA_DIVERGENT_UNIVERSE_USE_TECHNIQUE = False
 SRA_DIVERGENT_UNIVERSE_POINT_REWARDS = True
 
-SRA_CURRENCY_WARS_MODE = 0
-SRA_CURRENCY_WARS_DIFFICULTY = 0
 SRA_CURRENCY_WARS_STRATEGY = "template"
 SRA_CURRENCY_WARS_STRATEGY_INDEX = 0
 SRA_CURRENCY_WARS_RUNTIMES = 2
@@ -355,9 +353,6 @@ def build_sra_module_config(
         config["trailblazePower"]["tasklist"] = _build_sra_trailblaze_tasklist(
             user_config, eow_enabled=daily_eow_enabled
         )
-        config["trailblazePower"]["replenish.enabled"] = False
-        config["trailblazePower"]["replenish.way"] = 0
-        config["trailblazePower"]["replenish.times"] = 0
 
     elif module.key == "ReceiveRewards":
         # 领取项来自当前 SRA profile；Managed.Options 只覆盖已发现字段。
@@ -402,24 +397,7 @@ def build_sra_module_config(
         native_options = resolve_sra_managed_options(
             module.key, script_config, user_config
         )
-        username = str(user_config.get("Info", "Name") or "").strip()
         config["cosmicStrife"]["currencyWars.enabled"] = True
-        mode = native_options.get("currencyWars.mode", SRA_CURRENCY_WARS_MODE)
-        difficulty = native_options.get(
-            "currencyWars.difficulty", SRA_CURRENCY_WARS_DIFFICULTY
-        )
-        config["cosmicStrife"]["currencyWars.mode"] = {
-            "normal": 0,
-            "overclock": 1,
-            0: 0,
-            1: 1,
-        }.get(mode, SRA_CURRENCY_WARS_MODE)
-        config["cosmicStrife"]["currencyWars.difficulty"] = {
-            "lowest": 0,
-            "highest": 1,
-            0: 0,
-            1: 1,
-        }.get(difficulty, SRA_CURRENCY_WARS_DIFFICULTY)
         config["cosmicStrife"]["currencyWars.strategy"] = native_options.get(
             "currencyWars.strategy", _resolve_sra_currency_wars_strategy(script_config)
         )
@@ -431,7 +409,6 @@ def build_sra_module_config(
         config["cosmicStrife"]["currencyWars.runtimes"] = int(
             native_options.get("currencyWars.runtimes", SRA_CURRENCY_WARS_RUNTIMES)
         )
-        config["cosmicStrife"]["currencyWars.username"] = username
 
     _apply_managed_options(config, module.key, script_config, user_config)
     if module.key == "Daily":
@@ -468,6 +445,13 @@ def build_sra_module_config(
         config["cosmicStrife"]["enabled"] = True
         config["cosmicStrife"]["divergentUniverse.enabled"] = False
         config["cosmicStrife"]["currencyWars.enabled"] = True
+        # SRA 靠开拓者名称认出自己的角色。必须在套用原生值之后写，否则多账号
+        # 全用原生 profile 里同一个名字；用户在托管表单里显式填了的以它为准。
+        username = str(user_config.get("Info", "Name") or "").strip()
+        if username and not _managed_options(user_config, module.key).get(
+            "currencyWars.username"
+        ):
+            config["cosmicStrife"]["currencyWars.username"] = username
 
     return config
 
@@ -1071,7 +1055,7 @@ def build_sra_echo_of_war_config(
     trailblaze = config["trailblazePower"]
     trailblaze["enabled"] = True
     # 本次只为周本而跑：关掉培养目标识别与活动检测，避免顺带消耗体力；
-    # 补充体力仍按体力模块的口径统一关闭。
+    # 历战余响单独运行时关闭补充开拓力，体力模块则跟随托管值。
     trailblaze["useBuildTarget"] = False
     trailblaze["activity.enabled"] = False
     trailblaze["replenish.enabled"] = False
