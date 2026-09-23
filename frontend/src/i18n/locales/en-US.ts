@@ -746,6 +746,8 @@ export default {
     sanityScriptChangedPick: 'The sanity script changed — pick the stage again.',
     hsrEngineSwitchHint:
       'Switching the engine swaps in the native options and stages of that engine. Values changed under the current engine are not carried over, but they are kept and come back when you switch back.',
+    hsrSharedEngineSwitchHint:
+      "This changes the script-level engine assignment: every user on this script with the Script source, and every User-source user who has not picked an engine, switches to this engine. That engine's own native options and stages then apply.",
     hsrStageMissingForEngine:
       'The trailblaze power engine is now {engine}, and no stage is selected under it. Stages are stored per engine, so stages picked under the other engine are not carried over — pick them again. Switching back restores the previous selection.',
     editHsrUser: 'Edit the HSR user',
