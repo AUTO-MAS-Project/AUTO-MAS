@@ -75,7 +75,8 @@
                   />
                 </a-form-item>
               </a-col>
-              <a-col v-if="controlMode === 'managed' && effectiveEngines.includes('SRA')" :span="6">
+              <!-- 账号密码只给 SRA StartGame 切号用；云·星穹铁道按用户分浏览器登录态，不需要 -->
+              <a-col v-if="showCredentials" :span="6">
                 <a-form-item>
                   <template #label>
                     <span class="form-label">{{ t('edit.account') }}</span>
@@ -88,7 +89,7 @@
                   />
                 </a-form-item>
               </a-col>
-              <a-col v-if="controlMode === 'managed' && effectiveEngines.includes('SRA')" :span="6">
+              <a-col v-if="showCredentials" :span="6">
                 <a-form-item>
                   <template #label>
                     <!-- 加密说明由原先的区块提示降为密码字段的悬停说明 -->
@@ -105,6 +106,32 @@
                     @blur="handleFieldSave('Info.Password', formData.Info.Password)"
                   />
                 </a-form-item>
+              </a-col>
+            </a-row>
+            <!-- 云·星穹铁道：登录态在该用户自己的浏览器 profile 里，这里看状态、发起登录 -->
+            <a-row v-if="isCloud && isEdit" :gutter="24" align="middle" class="cloud-login-row">
+              <a-col :span="24">
+                <div class="cloud-login-line" data-testid="hsr-cloud-login-line">
+                  <span class="progress-label">{{ t('edit.hsrCloudLogin') }}</span>
+                  <a-tag :color="cloudLastLogin ? 'green' : 'orange'">
+                    {{
+                      cloudLastLogin
+                        ? t('edit.hsrCloudLoggedIn', { time: formatCloudLoginTime(cloudLastLogin) })
+                        : t('edit.hsrCloudNotLoggedIn')
+                    }}
+                  </a-tag>
+                  <a-tooltip :title="t('edit.hsrCloudLoginTip')">
+                    <a-button
+                      size="small"
+                      :loading="cloudLoginLoading"
+                      :disabled="configLocked"
+                      data-testid="hsr-cloud-login-button"
+                      @click="handleCloudLogin"
+                    >
+                      {{ t('edit.hsrCloudLoginButton') }}
+                    </a-button>
+                  </a-tooltip>
+                </div>
               </a-col>
             </a-row>
             <a-row :gutter="24" style="margin-top: 8px">
@@ -194,6 +221,7 @@
               :saving="isSaving"
               :loading="managedConfigLoading"
               :shared="planOwner === 'script'"
+              :cloud="isCloud"
               :shown-warnings="visibleCapabilityWarnings"
               @reset-overrides="handleManagedOverridesReset"
               @task-toggle="handleTaskSwitchToggle"
@@ -204,7 +232,7 @@
           </div>
           <div v-else class="control-mode-content">
             <DirectControlSection
-              :available-engines="[...effectiveEngines]"
+              :available-engines="[...directEngines]"
               :control="formData.Control"
               :saving="isSaving"
               @toggle="handleDirectEngineToggle"
@@ -363,6 +391,7 @@ import { useScriptApi } from '@/composables/useScriptApi'
 import { useSaveQueue } from '@/composables/useSaveQueue'
 import {
   filterHSRCapabilityWarnings,
+  getHSRCloudLastLogin,
   useHSRPluginApi,
   type HSRCapabilitySnapshot,
   type HSRManagedConfigSnapshot,
@@ -506,6 +535,39 @@ const visibleCapabilityWarnings = computed(() =>
 )
 const capabilityView = computed(() => buildHSRCapabilityView(capabilitySnapshot.value))
 const effectiveEngines = computed(() => capabilityView.value.effectiveEngines)
+// 云·星穹铁道只用三月七：直控只剩三月七可选，引擎分配恒为三月七
+const isCloud = computed(() => scriptConfig.value?.Game?.Platform === 'Cloud')
+const directEngines = computed<HSREngine[]>(() =>
+  isCloud.value
+    ? effectiveEngines.value.filter(engine => engine === 'M7A')
+    : [...effectiveEngines.value]
+)
+const cloudLastLogin = computed(() =>
+  userId ? getHSRCloudLastLogin(scriptConfig.value?.Cloud?.LastLogin, userId) : ''
+)
+const cloudLoginLoading = ref(false)
+
+const formatCloudLoginTime = (value: string): string => {
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleString()
+}
+
+const handleCloudLogin = async () => {
+  if (!userId || cloudLoginLoading.value) return
+  cloudLoginLoading.value = true
+  try {
+    await hsrPluginApi.cloudLogin(scriptId, userId)
+    message.success(t('edit.hsrCloudLoginSuccess'))
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error)
+    logger.error(`云·星穹铁道登录失败: ${reason}`)
+    message.error(t('edit.hsrCloudLoginFailed', { reason }))
+  } finally {
+    cloudLoginLoading.value = false
+    // 登录时间由后端写进脚本配置，重拉一次让状态行跟上
+    await refreshSharedPlan()
+  }
+}
 const managedConfigSnapshot = ref<HSRManagedConfigSnapshot | null>(null)
 const managedConfigLoading = ref(false)
 const hsrStageOptions = ref<HSRDynamicStageOptionsData | null>(null)
@@ -609,6 +671,7 @@ const refreshSharedPlan = async () => {
 // 返回体力模块的执行引擎（SRA 或 M7A）：脚本态只看脚本 TaskMapping（不允许用户级覆盖），
 // 用户态再叠上该用户的 Managed.TaskMapping。
 const getTaskMapping = (moduleKey: 'Daily'): HSREngine | undefined => {
+  if (isCloud.value) return effectiveEngines.value.includes('M7A') ? 'M7A' : undefined
   const mapping: HSRConfig_TaskMapping = {
     ...DEFAULT_HSR_TASK_MAPPING,
     ...(scriptConfig.value?.TaskMapping ?? {}),
@@ -683,7 +746,7 @@ const fetchHsrStageOptions = async (engine: HSREngine) => {
 // getter 返回字符串而不是新数组，否则 formData.Managed 每次整体赋值都会触发一次重拉
 watch(
   () =>
-    `${planOwner.value ?? ''}|${scriptConfig.value?.TaskMapping?.Daily ?? ''}|${formData.Managed?.TaskMapping?.Daily ?? ''}`,
+    `${planOwner.value ?? ''}|${isCloud.value}|${scriptConfig.value?.TaskMapping?.Daily ?? ''}|${formData.Managed?.TaskMapping?.Daily ?? ''}`,
   () => {
     void loadHsrStageOptions()
   }
@@ -698,6 +761,9 @@ const controlMode = computed<'managed' | 'direct'>(() =>
   formData.Info.Mode === '直控' ? 'direct' : 'managed'
 )
 const dailyStageEngine = computed(() => getTaskMapping('Daily'))
+const showCredentials = computed(
+  () => controlMode.value === 'managed' && effectiveEngines.value.includes('SRA') && !isCloud.value
+)
 
 const loadManagedConfig = async () => {
   if (!userId) return
@@ -768,7 +834,7 @@ const handleManagedInvalidOverridesClear = async (
 
 // 直控下没勾任何引擎时，按已配路径的引擎全开（后端的同名回落保留兜底）
 const ensureDirectEnginesEnabled = async () => {
-  const engines = effectiveEngines.value
+  const engines = directEngines.value
   if (!engines.length || engines.some(engine => Boolean(formData.Control?.[engine]))) return
   for (const engine of engines) await handleDirectEngineToggle(engine, true)
 }
@@ -1323,5 +1389,16 @@ const loadUserData = async () => {
   font-size: 12px;
   color: var(--ant-color-text-tertiary);
   margin-left: 4px;
+}
+
+.cloud-login-row {
+  margin-top: 8px;
+}
+
+.cloud-login-line {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
 }
 </style>

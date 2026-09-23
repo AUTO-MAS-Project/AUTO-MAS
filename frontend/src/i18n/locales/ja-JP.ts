@@ -710,6 +710,32 @@ export default {
       '直接制御は SRA / 三月なのかアシスタントで現在保存されている設定をそのまま実行します。MAS はゲームの起動とプロセスの追跡のみを担当し、アカウント・ステージ・タスクのオン・オフはこのモードでは反映されません。',
     hsrActiveStageExtra: '現在の対象：{stage}',
     hsrRunByEngine: '{engine} が実行します',
+    hsrGamePlatform: 'ゲームプラットフォーム',
+    hsrGamePlatformTip:
+      'クライアント：MAS が下の設定でローカルのスターレイルを起動します。クラウド・スターレイル：MAS がブラウザを管理し、その中で三月七が実行します',
+    hsrPlatformClient: 'クライアント',
+    hsrPlatformCloud: 'クラウド・スターレイル',
+    hsrCloudIntro:
+      'クラウド・スターレイルは MAS が管理するブラウザ内で三月七が実行します。バージョンごとに無料時間は 10 時間で、デイリーをすべて賄うには通常足りません。各ユーザーは初回のみ表示されるウィンドウでログインが必要です。',
+    hsrCloudNoSra: 'クラウド・スターレイルでは SRA を使用しません',
+    hsrCloudUsePaidTime: '有料時間を使用',
+    hsrCloudUsePaidTimeHint: '有効にすると星雲コインを消費して優先キューを使います',
+    hsrCloudMaxQueue: '最大待機時間',
+    hsrCloudMaxQueueTip:
+      '待機がこの時間を超えるとこの回は失敗となり再試行しません。各モジュールのタイムアウトにもこの待機時間が加算されます',
+    hsrCloudLoginWait: 'ログイン待機',
+    hsrCloudLoginWaitTip:
+      '未ログイン時に表示されるウィンドウでログインを待つ時間です。超えるとこの回は失敗となり再試行しません',
+    hsrCloudMinutes: '分',
+    hsrCloudLogin: 'クラウドログイン',
+    hsrCloudLoggedIn: 'ログイン済み（{time}）',
+    hsrCloudNotLoggedIn: '未ログイン',
+    hsrCloudLoginButton: 'クラウドゲームにログイン',
+    hsrCloudLoginTip:
+      'このユーザーのクラウド・スターレイルのウィンドウを開きます。そこで HoYoverse アカウントにログインしてください。ログイン確認後、三月七が一度ゲームに入ってから終了します',
+    hsrCloudLoginSuccess: 'クラウド・スターレイルにログインしました',
+    hsrCloudLoginFailed: 'クラウドゲームへのログインに失敗しました：{reason}',
+    hsrCloudRunByM7a: 'クラウド・スターレイルは三月七が実行します',
     hsrSharedModuleNotEnabled:
       '共有タスク設定ではこのモジュールが無効です。設定は保存されますが、今回は実行されません。',
     hsrResetSharedOverridesConfirmDesc:

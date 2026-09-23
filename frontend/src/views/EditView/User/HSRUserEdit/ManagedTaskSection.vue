@@ -86,9 +86,18 @@
               </a-tooltip>
             </div>
 
-            <!-- 只有该模块真有两个可选引擎时才给分段控件，否则一行说明由谁执行 -->
+            <!-- 云·星穹铁道恒由三月七执行；客户端只有该模块真有两个可选引擎时才给分段控件，
+                 否则一行说明由谁执行 -->
+            <a-typography-text
+              v-if="cloud"
+              type="secondary"
+              class="engine-only-line"
+              data-testid="hsr-cloud-engine-line"
+            >
+              {{ t('edit.hsrCloudRunByM7a') }}
+            </a-typography-text>
             <a-form-item
-              v-if="engineOptions.length > 1"
+              v-else-if="engineOptions.length > 1"
               :label="t('edit.engine')"
               :extra="t('edit.hsrEngineSwitchHint')"
             >
@@ -228,6 +237,8 @@ const props = defineProps<{
   loading: boolean
   /** 当前编辑的是脚本共享计划（「脚本」来源）：只影响提示与确认文案。 */
   shared?: boolean
+  /** 云·星穹铁道：引擎恒为三月七，不给引擎分段控件。 */
+  cloud?: boolean
   /** 页面顶部已经显示过的能力提示，快照里重复的同一句不再在本区块显示。 */
   shownWarnings?: readonly string[]
 }>()

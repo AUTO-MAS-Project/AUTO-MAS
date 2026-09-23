@@ -763,6 +763,32 @@ export default {
       'Direct control runs whatever is currently saved in SRA / March7th Assistant. MAS only launches the game and tracks the process; account, stages, and task switches have no effect in this mode.',
     hsrActiveStageExtra: 'Active: {stage}',
     hsrRunByEngine: 'Run by {engine}',
+    hsrGamePlatform: 'Game platform',
+    hsrGamePlatformTip:
+      'Client: MAS launches the local Star Rail with the settings below. Cloud Star Rail: MAS hosts a browser and March 7th runs inside it',
+    hsrPlatformClient: 'Client',
+    hsrPlatformCloud: 'Cloud Star Rail',
+    hsrCloudIntro:
+      'Cloud Star Rail is run by March 7th in a browser hosted by MAS. Each version grants 10 hours of free play time, which usually does not cover all dailies; each user must sign in once in the pop-up window the first time.',
+    hsrCloudNoSra: 'Cloud Star Rail does not use SRA',
+    hsrCloudUsePaidTime: 'Use paid time',
+    hsrCloudUsePaidTimeHint: 'Spends Nebula Coins to use the fast queue',
+    hsrCloudMaxQueue: 'Max queue time',
+    hsrCloudMaxQueueTip:
+      'If queuing takes longer than this, the round fails without retries; each module timeout also includes this queue time',
+    hsrCloudLoginWait: 'Sign-in wait',
+    hsrCloudLoginWaitTip:
+      'How long to wait for you to sign in in the pop-up window; when it runs out, the round fails without retries',
+    hsrCloudMinutes: 'min',
+    hsrCloudLogin: 'Cloud sign-in',
+    hsrCloudLoggedIn: 'Signed in ({time})',
+    hsrCloudNotLoggedIn: 'Not signed in',
+    hsrCloudLoginButton: 'Sign in to cloud game',
+    hsrCloudLoginTip:
+      "Opens this user's Cloud Star Rail window; sign in to your HoYoverse account there. After confirming the sign-in, March 7th enters the game once and exits",
+    hsrCloudLoginSuccess: 'Signed in to Cloud Star Rail',
+    hsrCloudLoginFailed: 'Cloud game sign-in failed: {reason}',
+    hsrCloudRunByM7a: 'Cloud Star Rail is run by March 7th',
     hsrSharedModuleNotEnabled:
       'This module is not enabled in the shared task configuration; settings are saved but it will not run this round.',
     hsrResetSharedOverridesConfirmDesc:

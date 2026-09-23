@@ -152,6 +152,28 @@ export interface HSRUpdateResult {
   message: string
 }
 
+/** 后端 `/hsr/cloud-login` 的结果：`last_login` 为本次确认已登录的 ISO 时间。 */
+export interface HSRCloudLoginResult {
+  logged_in: boolean
+  last_login?: string | null
+  message: string
+}
+
+/** 从脚本 `Cloud.LastLogin`（user_id → ISO 时间的 JSON）里取某个用户的记录。 */
+export const getHSRCloudLastLogin = (raw: unknown, userId: string): string => {
+  let parsed: unknown = raw
+  if (typeof raw === 'string') {
+    try {
+      parsed = JSON.parse(raw)
+    } catch {
+      return ''
+    }
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return ''
+  const value = (parsed as Record<string, unknown>)[userId]
+  return typeof value === 'string' ? value : ''
+}
+
 export interface HSRCapabilitySnapshot {
   revision: number | string
   available: boolean
@@ -338,11 +360,25 @@ export function useHSRPluginApi() {
     )
   }
 
+  /**
+   * 为用户登录云·星穹铁道：后端起该用户的云浏览器并跑三月七的 game 任务，
+   * 阻塞到三月七退出（用户登录、进游戏或超时）；脚本运行中返回 409。
+   */
+  const cloudLogin = async (scriptId: string, userId: string): Promise<HSRCloudLoginResult> => {
+    return requestPluginData(
+      axios.post<PluginEnvelope<HSRCloudLoginResult>>(url('/cloud-login'), {
+        scriptId,
+        userId,
+      })
+    )
+  }
+
   return {
     getCapabilities,
     getStageOptions,
     getManagedConfig,
     getSraProfiles,
     runEngineUpdate,
+    cloudLogin,
   }
 }

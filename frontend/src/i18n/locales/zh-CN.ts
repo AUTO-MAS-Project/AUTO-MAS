@@ -745,6 +745,31 @@ export default {
       '直控直接运行 SRA / 三月七当前保存的配置，MAS 只负责启动游戏与跟踪进程；账号密码、副本、任务开关在此模式下不生效。',
     hsrActiveStageExtra: '当前生效：{stage}',
     hsrRunByEngine: '由{engine}执行',
+    hsrGamePlatform: '游戏平台',
+    hsrGamePlatformTip:
+      '客户端：MAS 按下面的设置启动本地星穹铁道；云·星穹铁道：MAS 托管浏览器，由三月七在其中运行',
+    hsrPlatformClient: '客户端',
+    hsrPlatformCloud: '云·星穹铁道',
+    hsrCloudIntro:
+      '云·星穹铁道由三月七在 MAS 托管的浏览器里运行。每版本 10 小时免费时长，日常一般跑不满；每个用户首次要在弹出的窗口里登录一次。',
+    hsrCloudNoSra: '云·星穹铁道不使用 SRA',
+    hsrCloudUsePaidTime: '使用付费时长',
+    hsrCloudUsePaidTimeHint: '开启会消耗星云币走快速通道',
+    hsrCloudMaxQueue: '最长排队',
+    hsrCloudMaxQueueTip:
+      '排队超过这个时间，本轮判失败且不再补跑；每个模块的超时也会加上这段排队时间',
+    hsrCloudLoginWait: '登录等待',
+    hsrCloudLoginWaitTip: '未登录时在弹出的窗口里等你登录的时间，超时本轮判失败且不再补跑',
+    hsrCloudMinutes: '分钟',
+    hsrCloudLogin: '云登录',
+    hsrCloudLoggedIn: '已登录（{time}）',
+    hsrCloudNotLoggedIn: '未登录',
+    hsrCloudLoginButton: '登录云游戏',
+    hsrCloudLoginTip:
+      '弹出该用户的云·星穹铁道窗口，在窗口里登录米哈游通行证；三月七确认登录后会进一次游戏再退出',
+    hsrCloudLoginSuccess: '已登录云·星穹铁道',
+    hsrCloudLoginFailed: '登录云游戏失败：{reason}',
+    hsrCloudRunByM7a: '云·星穹铁道由三月七执行',
     hsrSharedModuleNotEnabled: '共享任务配置暂未启用此模块；配置会保存，但本轮不会执行。',
     hsrResetSharedOverridesConfirmDesc:
       '会删除脚本共享任务配置里改过的全部覆盖值（所有模块、所有字段），本脚本下所有「脚本」来源用户之后都按 SRA / 三月七当前配置显示与运行。源配置文件本身不会被修改，此操作无法撤销。',
