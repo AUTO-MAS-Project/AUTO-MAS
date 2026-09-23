@@ -2088,6 +2088,75 @@ class SrcConfig(ConfigBase):
         super().__init__()
 
 
+def declare_hsr_plan_items(config: ConfigBase) -> None:
+    """声明 HSR「任务计划」配置项，``HSRUserConfig`` 与 ``HSRConfig`` 共用。
+
+    计划 = 任务开关 / 副本 / 历战余响开始日 / 托管覆盖 / 用户级引擎分配。
+    配置来源为「用户」时计划读用户配置，为「脚本」时读脚本配置上的同名组
+    （本脚本下所有脚本来源用户共用一份）。两边组名、键名、默认值必须完全
+    一致，运行时、动态表单与备份才能只换一个对象就复用同一套读取代码，
+    所以只在这里单点声明。
+
+    ``Managed.TaskMapping`` 在脚本级是惰性字段：脚本态的引擎分配写脚本级
+    ``TaskMapping`` 组，这一项恒为空对象，只为让两份计划形状一致——
+    ``resolve_script_assignment`` 读到空对象后自然落到脚本级 ``TaskMapping``。
+    """
+
+    ## TaskSwitch ----------------------------------------------------------
+    ## 模块执行开关
+    config.TaskSwitch_Daily = ConfigItem("TaskSwitch", "Daily", True, BoolValidator())
+    config.TaskSwitch_ReceiveRewards = ConfigItem(
+        "TaskSwitch", "ReceiveRewards", True, BoolValidator()
+    )
+    config.TaskSwitch_DivergentUniverse = ConfigItem(
+        "TaskSwitch", "DivergentUniverse", False, BoolValidator()
+    )
+    config.TaskSwitch_CurrencyWars = ConfigItem(
+        "TaskSwitch", "CurrencyWars", False, BoolValidator()
+    )
+    ## Stage ---------------------------------------------------------------
+    ## 关卡通道
+    config.Stage_Channel = ConfigItem(
+        "Stage",
+        "Channel",
+        "CalyxGolden",
+        OptionsValidator(["CalyxGolden", "CalyxCrimson", "Relic", "Ornament"]),
+    )
+    ## 主刷关卡的脚本原生字段 JSON（SRA: id+level；M7A: instance_type+name）
+    config.Stage_ScriptStage = ConfigItem(
+        "Stage", "ScriptStage", "{ }", JSONValidator()
+    )
+    ## 历战余响的脚本原生字段 JSON
+    config.Stage_ScriptEchoOfWar = ConfigItem(
+        "Stage", "ScriptEchoOfWar", "{ }", JSONValidator()
+    )
+    ## TaskOpt -------------------------------------------------------------
+    ## 历战余响开始刷的星期（周一 ~ 周日）
+    config.TaskOpt_EchoOfWarWeekday = ConfigItem(
+        "TaskOpt",
+        "EchoOfWarWeekday",
+        "Monday",
+        OptionsValidator(
+            [
+                "Monday",
+                "Tuesday",
+                "Wednesday",
+                "Thursday",
+                "Friday",
+                "Saturday",
+                "Sunday",
+            ]
+        ),
+    )
+    ## Managed -------------------------------------------------------------
+    ## 用户级模块引擎分配覆盖（脚本级恒为空，见上）
+    config.Managed_TaskMapping = ConfigItem(
+        "Managed", "TaskMapping", "{ }", JSONValidator()
+    )
+    ## 托管字段覆盖值（运行时叠加到原生配置的临时副本上）
+    config.Managed_Options = ConfigItem("Managed", "Options", "{ }", JSONValidator())
+
+
 class HSRUserConfig(ConfigBase):
     """HSR用户配置"""
 
@@ -2104,9 +2173,10 @@ class HSRUserConfig(ConfigBase):
         self.Info_Id = ConfigItem("Info", "Id", "", EncryptValidator())
         ## 密码
         self.Info_Password = ConfigItem("Info", "Password", "", EncryptValidator())
-        ## 配置来源（脚本/用户/直控）
+        ## 配置来源（脚本/用户/直控）：脚本 = 共用脚本级计划；用户 = 本用户
+        ## 自己的计划；直控 = 原样运行 SRA / 三月七当前的原生配置
         self.Info_Mode = ConfigItem(
-            "Info", "Mode", "用户", UserDirectConfigModeValidator()
+            "Info", "Mode", "脚本", UserDirectConfigModeValidator()
         )
         ## 是否启用快速配置（与配置来源独立，按用户保存）
         self.Info_IfQuickConfig = ConfigItem(
@@ -2183,53 +2253,10 @@ class HSRUserConfig(ConfigBase):
         self.Data_WeeklyLastResetWeek = ConfigItem(
             "Data", "WeeklyLastResetWeek", "2000-W01"
         )
-        ## TaskSwitch ------------------------------------------------------
-        ## 模块执行开关
-        self.TaskSwitch_Daily = ConfigItem("TaskSwitch", "Daily", True, BoolValidator())
-        self.TaskSwitch_ReceiveRewards = ConfigItem(
-            "TaskSwitch", "ReceiveRewards", True, BoolValidator()
-        )
-        self.TaskSwitch_DivergentUniverse = ConfigItem(
-            "TaskSwitch", "DivergentUniverse", False, BoolValidator()
-        )
-        self.TaskSwitch_CurrencyWars = ConfigItem(
-            "TaskSwitch", "CurrencyWars", False, BoolValidator()
-        )
-        ## Stage -----------------------------------------------------------
-        ## 关卡通道
-        self.Stage_Channel = ConfigItem(
-            "Stage",
-            "Channel",
-            "CalyxGolden",
-            OptionsValidator(["CalyxGolden", "CalyxCrimson", "Relic", "Ornament"]),
-        )
-        ## 主刷关卡的脚本原生字段 JSON（SRA: id+level；M7A: instance_type+name）
-        self.Stage_ScriptStage = ConfigItem(
-            "Stage", "ScriptStage", "{ }", JSONValidator()
-        )
-        ## 历战余响的脚本原生字段 JSON
-        self.Stage_ScriptEchoOfWar = ConfigItem(
-            "Stage", "ScriptEchoOfWar", "{ }", JSONValidator()
-        )
 
-        ## TaskOpt ---------------------------------------------------------
-        ## 历战余响开始刷的星期（周一 ~ 周日）
-        self.TaskOpt_EchoOfWarWeekday = ConfigItem(
-            "TaskOpt",
-            "EchoOfWarWeekday",
-            "Monday",
-            OptionsValidator(
-                [
-                    "Monday",
-                    "Tuesday",
-                    "Wednesday",
-                    "Thursday",
-                    "Friday",
-                    "Saturday",
-                    "Sunday",
-                ]
-            ),
-        )
+        ## TaskSwitch / Stage / TaskOpt / Managed --------------------------
+        ## 用户来源下的任务计划，与 HSRConfig 同名组共用一处声明
+        declare_hsr_plan_items(self)
 
         ## Notify ----------------------------------------------------------
         ## 是否启用通知
@@ -2253,28 +2280,10 @@ class HSRUserConfig(ConfigBase):
         ## 自定义 Webhook 列表
         self.Notify_CustomWebhooks = MultipleConfig([Webhook])
 
-        ## Control / Managed / Direct ------------------------------------
-        ## 兼容插件版的托管/直连配置形状。内置 HSRManager 按模式读取
-        ## 这些字段；普通用户 API 只返回非敏感元数据。
-        self.Control_Mode = ConfigItem(
-            "Control", "Mode", "managed", OptionsValidator(["managed", "direct"])
-        )
+        ## Control ---------------------------------------------------------
+        ## 直控时运行哪几个引擎；都没勾时回落到已配置路径的引擎
         self.Control_SRA = ConfigItem("Control", "SRA", False, BoolValidator())
         self.Control_M7A = ConfigItem("Control", "M7A", False, BoolValidator())
-        self.Managed_TaskMapping = ConfigItem(
-            "Managed", "TaskMapping", "{ }", JSONValidator()
-        )
-        self.Managed_Options = ConfigItem("Managed", "Options", "{ }", JSONValidator())
-        self.Direct_SRAConfig = ConfigItem(
-            "Direct", "SRAConfig", "", EncryptValidator()
-        )
-        self.Direct_M7AConfig = ConfigItem(
-            "Direct", "M7AConfig", "", EncryptValidator()
-        )
-        self.Direct_SRAImportedAt = ConfigItem("Direct", "SRAImportedAt", "")
-        self.Direct_M7AImportedAt = ConfigItem("Direct", "M7AImportedAt", "")
-        self.Direct_SRASource = ConfigItem("Direct", "SRASource", "")
-        self.Direct_M7ASource = ConfigItem("Direct", "M7ASource", "")
 
         ## 兑换码状态指纹（仅状态信息，不保存兑换码明文）
         self.Data_SRARedeemCodeFingerprint = ConfigItem(
@@ -2287,26 +2296,38 @@ class HSRUserConfig(ConfigBase):
         super().__init__()
 
     async def load(self, data: dict) -> bool:
-        """加载用户配置，并把旧版 ``Control.Mode`` 迁移到 ``Info.Mode``。
+        """加载用户配置，并把已删除的旧字段迁移到 ``Info.Mode``。
 
-        HSR 历史上用 ``Control.Mode``（managed/direct）表达「运行模式」，本次统一
-        到 ``Info.Mode`` 三态来源后两者若不归一就会并存打架：界面上用户改的是
-        来源，运行时却还被旧字段左右。迁移规则：
+        迁移直接读磁盘上的原始字典，不依赖旧 ``ConfigItem`` 仍然存在；旧字段
+        本身不再声明，下次保存即从文件中消失，迁移天然只发生一次。
 
-        - 旧 ``Control.Mode == "direct"`` → ``Info.Mode = "直控"``（只在 Info.Mode
-          仍是默认值「用户」时迁移，避免覆盖用户本次显式选择的来源）。
-        - ``Control.Mode`` 本身保留：``resolve_user_control`` 仍读它做兼容，
-          保证未迁移的存量配置行为不变。
+        - 旧 ``Control.Mode == "direct"`` → ``Info.Mode = "直控"``，不论
+          ``Info.Mode`` 原来是什么：旧版运行时按「``Info.Mode == 直控`` 或
+          ``Control.Mode == direct``」判直控，这类用户无论配置来源选了什么
+          实际都在跑直控，迁成「直控」才是保持行为不变。
+        - 存量记录里没有 ``Info.Mode``（早于三态来源的旧记录）→「用户」：
+          这类用户一直按自己的计划运行；新建用户不经过 ``load``，仍取默认
+          值「脚本」。
         """
 
         is_dirty = await super().load(data)
 
-        raw_control_mode = str(self.get("Control", "Mode") or "").strip().lower()
-        if raw_control_mode == "direct" and str(
-            self.get("Info", "Mode") or ""
-        ).strip() in ("", "用户"):
-            await self.set("Info", "Mode", "直控")
-            is_dirty = True
+        raw = data if isinstance(data, dict) else {}
+        raw_info = raw.get("Info")
+        raw_control = raw.get("Control")
+        raw_control_mode = (
+            str(raw_control.get("Mode") or "").strip().lower()
+            if isinstance(raw_control, dict)
+            else ""
+        )
+        if raw_control_mode == "direct":
+            if self.get("Info", "Mode") != "直控":
+                await self.set("Info", "Mode", "直控")
+                is_dirty = True
+        elif isinstance(raw_info, dict) and "Mode" not in raw_info:
+            if self.get("Info", "Mode") != "用户":
+                await self.set("Info", "Mode", "用户")
+                is_dirty = True
 
         return is_dirty
 
@@ -2460,6 +2481,12 @@ class HSRConfig(ConfigBase):
         self.Update_MirrorChyanCDK = ConfigItem(
             "Update", "MirrorChyanCDK", "", EncryptValidator()
         )
+
+        ## TaskSwitch / Stage / TaskOpt / Managed --------------------------
+        ## 脚本来源下的共享任务计划：本脚本下所有「脚本」来源用户共用一份，
+        ## 与 HSRUserConfig 同名组共用一处声明（Managed.TaskMapping 在这里是
+        ## 恒为空的惰性字段，脚本态的引擎分配写下面的 TaskMapping 组）
+        declare_hsr_plan_items(self)
 
         ## TaskMapping -----------------------------------------------------
         ## 模块脚本分配（延迟导入以避免循环依赖）
