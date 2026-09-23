@@ -5732,7 +5732,10 @@ class AppConfig(GlobalConfig):
         返回（切过的脚本, 它们还没放的预约）：预约交给环境确认线程放。
         """
 
-        from app.task.MaaFW.tools.embedded.embedded_project import embedded_project_dir
+        from app.task.MaaFW.tools.embedded.embedded_project import (
+            MIGRATION_SWITCHED_BY,
+            embedded_project_dir,
+        )
         from app.task.MaaFW.tools.embedded.project_path import (
             release_project_path,
             try_reserve_project_path,
@@ -5742,13 +5745,35 @@ class AppConfig(GlobalConfig):
         switched: list[str] = []
         held: dict[str, str] = {}
         for script_id, channel, _source, name, _proxy in entries:
+            # 迁移在后台跑、主定时器已经起来：运行中的脚本在「运行前检查结束 → 第一个用户」
+            # 与用户之间不持视图预约，只看预约会在空档里把它切走（同一轮前后用户跑不同版本、
+            # 下一个用户被「同一路径正在运行」跳过）。与其它传播路径同一口径：脚本配置锁着
+            # （is_locked）就跳过，留给它的收尾同步或下次运行前检查。在事件循环上查。
+            try:
+                config = self.ScriptConfig[uuid.UUID(script_id)]
+            except (KeyError, ValueError):
+                continue
+            if getattr(config, "is_locked", False):
+                logger.info(
+                    f"MFW 副本迁移：脚本「{name}」正在运行，统一到组版本留给它跑完后再做"
+                )
+                continue
             key = await try_reserve_project_path(embedded_project_dir(script_id))
             if key is None:
+                continue
+            if getattr(config, "is_locked", False):
+                # 等预约的那一下它开跑了（锁在预约之后才上，这里再看一眼）。
+                await release_project_path(key)
                 continue
             result = None
             try:
                 result = await sync_view_to_group(
-                    script_id, channel, reservation_held=True
+                    script_id,
+                    channel,
+                    reservation_held=True,
+                    # 记下是迁移切的：确认期间它开跑会在运行前检查里得到「正在切换版本」，
+                    # 下次运行打一行「启动期迁移时统一到 vX」。
+                    switched_by=MIGRATION_SWITCHED_BY,
                 )
             except Exception as exc:  # noqa: BLE001 - 留在原版本，下次运行前再同步
                 logger.warning(f"MFW 副本迁移：脚本「{name}」统一到组版本失败：{exc}")

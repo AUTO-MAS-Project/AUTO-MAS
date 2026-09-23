@@ -343,6 +343,10 @@ def migration_active() -> bool:
     return _MIGRATION_ACTIVE.is_set()
 
 
+# 启动期迁移统一到组版本时写进标记的 ``switchedBy``（不是哪个脚本的更新切的）。
+MIGRATION_SWITCHED_BY: dict[str, str] = {"scriptId": "迁移", "name": "启动期迁移"}
+
+
 # 视图标记里「运行环境已为哪个载荷确认过」：切换只换文件，环境确认（isolated_venv 重建等）
 # 是另一件事。把「还欠一次确认」落在盘上而不是 manager 实例上：任何路径漏掉的确认
 # （运行后被停止、检查切完又提前返回、后台确认失败）都在下次运行前按它补上。
@@ -441,7 +445,7 @@ class ViewResult:
     copied: int = 0
     carried: int = 0
     archived: list[str] = field(default_factory=list)
-    # 同版本合并时目标载荷里没有、已留档的文件（不是本地改动）。
+    # 同版本合并时目标载荷里没有、或同路径内容不同而已留档的文件（不是本地改动）。
     dropped: list[str] = field(default_factory=list)
     archive_dir: Path | None = None
     elapsed: float = 0.0
@@ -512,7 +516,8 @@ def _build_view_tree(
     载荷文件满足共用谓词的挂硬链接（与载荷 / blob 同一 inode），其余复制成视图私有的新
     文件——小文件、``config/`` 这些 agent 可能原地写的，视图里必须是自己的一份。
 
-    ``archive_dropped``：旧载荷里有、新载荷里没有的文件也留档，不静默丢。同版本号的两份
+    ``archive_dropped``：旧载荷里有、新载荷里没有（或同路径内容不同）的文件也留档，不静默
+    丢 / 覆盖。同版本号的两份
     载荷之间切换（迁移时把同一版本的多份副本合并到一份）用：那不是「新版本删了它」，
     而是两份副本内容不一样，被切掉的那份独有的文件可能正是它在用的。
     """
@@ -613,8 +618,13 @@ def _build_view_tree(
                 path, old_payload_path / old_rel, old_files[old_rel]
             ):
                 _archive(path, rel)
-            elif new_rel is None and archive_dropped:
-                # 同版本合并：目标那份里没有它，不是新版本删的，留档而不静默丢。
+            elif archive_dropped and (
+                new_rel is None
+                or str(old_files[old_rel].get("sha256") or "").lower()
+                != str(new_files[new_rel].get("sha256") or "").lower()
+            ):
+                # 同版本合并：目标那份里没有它、或同路径内容不同（两份副本本来就不一样），
+                # 都不是「新版本改的 / 删的」，旧内容留档而不静默丢 / 覆盖。
                 _archive(path, rel, dropped=True)
             # 在新载荷里 → staging 已是新内容；不在 → 新版本删掉了，不带。
 
@@ -790,7 +800,7 @@ def _realize_view(
         more = " ..." if len(result.dropped) > 10 else ""
         logger.warning(
             f"[MFW 内嵌] 视图 {view.name} 合并到同版本的 {payload_id} 时，有 "
-            f"{len(result.dropped)} 个文件目标里没有，已留档在 {result.archive_dir}: "
+            f"{len(result.dropped)} 个文件目标里没有或内容不同，旧内容已留档在 {result.archive_dir}: "
             f"{preview}{more}"
         )
     return result
@@ -1075,6 +1085,7 @@ def import_embedded_project(
                 "python": plan.bundled_python_version or "",
             },
         )
+        payloads.add_known_source(store_root, lineage, str(source))
     except payloads.PayloadError as exc:
         _remove_quietly(staging, "导入半成品")
         raise EmbeddedProjectError(f"导入失败：{exc}") from exc
@@ -1557,9 +1568,33 @@ def _rebuild_from_group(
 
 
 def _lineage_by_import_source(source: str, base: Path | None) -> tuple[str, str] | None:
-    """哪个谱系的哪个载荷是从 ``source`` 这个目录导入的（清单 ``source.ref``）；取最新登记的。"""
+    """``source`` 这个目录属于哪个谱系，回（谱系, 兜底载荷 id）。
+
+    先查谱系记下的 ``knownSources``（导入与采纳时写，更新得来的谱系也有）；兜底载荷取该谱系
+    某个渠道的 latest（调用方再按自己的渠道取组版本）。老数据没有 ``knownSources`` 时退回
+    按载荷清单 ``source.ref``（只有 ``kind=import`` 的清单记了导入目录）取最新登记的。
+    """
 
     root = payloads_root(base)
+    known = payloads.lineage_by_known_source(root, source)
+    if known is not None:
+        latest_map = payloads.read_lineage(root, known)["latest"]
+        for channel in [DEFAULT_CHANNEL, *sorted(latest_map)]:
+            entry = latest_map.get(channel)
+            if (
+                isinstance(entry, Mapping)
+                and entry.get("id")
+                and _payload_available(known, str(entry["id"]), base)
+            ):
+                return known, str(entry["id"])
+        ids = [
+            pid
+            for pid in payloads.list_ids(root, known)
+            if _payload_available(known, pid, base)
+        ]
+        if ids:
+            return known, ids[-1]
+        # 谱系还在、载荷都没了：退回下面按清单找（找不到就是 None）
     best: tuple[str, str, str] | None = None
     for lineage in payloads.list_lineages(root):
         for payload_id in payloads.list_ids(root, lineage):
@@ -1585,15 +1620,15 @@ def _adopt_or_raise(
     if send_log is not None:
         send_log("[MFW 内嵌] 副本还没有登记项目版本，正在登记")
     try:
-        adopt_view(
+        adopted = adopt_view(
             script_id,
             channel=_script_channel(script_config),
             source=imported_source_path(script_config)
             or str(script_config.get("Info", "Path") or ""),
             base=base,
         )
-        # 同版本已有别的副本登记过：谁当 latest 按确定规则定，不看谁先来。
-        settle_adopted_latest(base)
+        # 同版本已有别的副本登记过：谁当 latest 按确定规则定，不看谁先来。只动本谱系。
+        settle_adopted_latest(base, lineages=[adopted.lineage])
     except EmbeddedProjectError:
         raise
     except Exception as exc:  # noqa: BLE001 - 原因原样给用户
@@ -1755,15 +1790,23 @@ def _adoption_whitelist(view: Path) -> Callable[[str], bool] | None:
     return lambda rel: rules.keeps(Path(rel))
 
 
-def settle_adopted_latest(base: Path | None = None) -> list[tuple[str, str, str]]:
+def settle_adopted_latest(
+    base: Path | None = None, *, lineages: Iterable[str] | None = None
+) -> list[tuple[str, str, str]]:
     """全部采纳完之后，按确定的规则重定每个谱系每个渠道同版本的 latest（不看采纳顺序）。
 
+    ``lineages`` 给了就只重定这些谱系（运行前就地采纳一份时只动它自己的谱系）。
     返回 ``[(谱系, 渠道, 新 latest id)]``，只列变了的。之后的组同步据此把视图统一过去。
     """
 
     root = payloads_root(base)
     changed: list[tuple[str, str, str]] = []
-    for lineage in payloads.list_lineages(root):
+    targets = (
+        payloads.list_lineages(root)
+        if lineages is None
+        else [key for key in lineages if key in set(payloads.list_lineages(root))]
+    )
+    for lineage in targets:
         for channel in list(payloads.read_lineage(root, lineage)["latest"]):
             try:
                 chosen = payloads.settle_same_version_latest(root, lineage, channel)
@@ -1894,6 +1937,9 @@ def adopt_view(
             known_hashes=payload_files,
             origins=origins,
         )
+        # 脚本记着的来源目录记进谱系（更新得来的载荷清单里没有导入目录）：视图丢了时
+        # 反查谱系重建、整谱系回收认「脚本还在」都靠它。
+        payloads.add_known_source(root, lineage, str(source or ""))
     except Exception:
         _remove_quietly(staging, "采纳半成品")
         raise
@@ -2057,6 +2103,7 @@ def shell_hint_from_report(script_config: Any) -> str:
 
 __all__ = [
     "EMBEDDED_PROJECTS_DIR",
+    "MIGRATION_SWITCHED_BY",
     "ENV_CONFIRMED_FIELD",
     "PYCACHE_DIR_NAME",
     "STAGING_DIR_NAME",

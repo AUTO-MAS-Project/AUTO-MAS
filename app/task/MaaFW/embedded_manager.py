@@ -864,13 +864,21 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
             marker = await asyncio.to_thread(read_view_marker, view)
             switched_by = (marker or {}).get("switchedBy")
             if reservation_held and isinstance(switched_by, Mapping):
-                name = str(switched_by.get("name") or "") or self._script_display_name(
-                    str(switched_by.get("scriptId") or "")
-                )
-                self._append_update_log(
-                    f"本视图已于 {self._format_at(switched_by.get('at'))} 由脚本「{name}」"
-                    f"的更新切到 {(marker or {}).get('version') or '新版本'}"
-                )
+                at = self._format_at(switched_by.get("at"))
+                version = (marker or {}).get("version") or "新版本"
+                if str(switched_by.get("scriptId") or "") == "迁移":
+                    self._append_update_log(
+                        f"本视图已于 {at} 在启动期迁移时统一到同组版本 {version}"
+                    )
+                else:
+                    name = str(
+                        switched_by.get("name") or ""
+                    ) or self._script_display_name(
+                        str(switched_by.get("scriptId") or "")
+                    )
+                    self._append_update_log(
+                        f"本视图已于 {at} 由脚本「{name}」的更新切到 {version}"
+                    )
                 await asyncio.to_thread(clear_switched_by, view)
             channel = str(
                 self.script_config.get("Update", "Channel") or DEFAULT_UPDATE_CHANNEL

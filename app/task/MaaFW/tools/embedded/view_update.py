@@ -187,9 +187,13 @@ async def sync_view_to_group(
     *,
     reservation_held: bool,
     base: Path | None = None,
+    switched_by: dict[str, Any] | None = None,
 ) -> ViewResult | None:
     """§3.1 第 9 步：视图挂的载荷 ≠ ``latest[channel]`` 就切过去（升级、被动 pending、
     改渠道后的降级都是这一条）。该渠道还没有载荷就留在原地。返回切换结果，没切为 None。
+
+    ``switched_by``：不是本脚本自己的运行切的（启动期迁移）时记进标记，见
+    :func:`embedded_project.switch_or_confirm_in_progress`。
     """
 
     view = embedded_project_dir(script_id, base)
@@ -207,6 +211,7 @@ async def sync_view_to_group(
         lineage,
         reservation_held=reservation_held,
         base=base,
+        switched_by=switched_by,
     )
 
 

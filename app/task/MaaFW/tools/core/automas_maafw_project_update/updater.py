@@ -1036,13 +1036,21 @@ async def apply_maafw_project_update(
     except UpdateDownloadCancelled as exc:
         # 必须排在下面那个 ``except Exception`` 之前，否则「已中止」会被
         # 包成一条普通的更新失败。
+        _finish_operation(operation, "cancelled")
         raise MaaFWProjectUpdateError(str(exc), cancelled=True) from exc
-    except MaaFWProjectUpdateError:
+    except MaaFWProjectUpdateError as exc:
+        _finish_operation(
+            operation,
+            "cancelled" if getattr(exc, "cancelled", False) else "failed",
+            error=str(exc)[:500],
+        )
         raise
     except Exception as exc:
+        # 下载阶段失败也记终态：流水不停在 discovered，启动期清理一视同仁。
+        _finish_operation(operation, "failed", error=str(exc)[:500])
         raise MaaFWProjectUpdateError(str(exc)) from exc
     if is_cancelled():
-        operation.update("cancelled", downloadedBytes=downloaded.size)
+        _finish_operation(operation, "cancelled", downloadedBytes=downloaded.size)
         raise MaaFWProjectUpdateError(CANCELLED_MESSAGE, cancelled=True)
 
     def emit(stage: str, data: dict[str, Any]) -> None:

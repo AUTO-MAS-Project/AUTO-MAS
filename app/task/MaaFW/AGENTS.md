@@ -103,8 +103,11 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   算投影白名单，白名单内、不是已知运行期状态 / 日志的全部进载荷，内容取视图现状；更新器清单与来源
   目录只用来标 `origin`，不决定去留，否则「来源旧、视图新」会登记出残缺载荷）。全部采纳完再统一定
   同版本的 latest（`settle_adopted_latest`：有清单背书的、文件集合是超集的、文件多的优先，与脚本
-  顺序无关），然后把每个组统一到 latest；同版本合并时被切视图独有的文件进 `local-modified` 留档。
-  采纳失败的原样保留、下次再试。
+  顺序无关），然后把每个组统一到 latest（运行中 `is_locked` 的脚本跳过，留给它的收尾同步或下次
+  运行前检查；切过的标记记 `switchedBy=迁移`）；同版本合并时被切视图独有、或同路径内容不同的文件
+  旧内容进 `local-modified` 留档。采纳失败的原样保留、下次再试。导入与采纳都把脚本记着的来源目录记进
+  `lineage.json.knownSources`：视图丢了反查谱系重建、整谱系回收认「脚本还在」都看它（更新得来的载荷
+  清单里没有导入目录）。
 - Python agent 的解释器三种落法（`agent_env/planner.py`）：项目自带 `python/python.exe` 存在 →
   `project_python`；声明的是自带 Python 模式但文件不存在，或者裸写 `python` 让 PATH 去找
   （PI v2 示例与 MAA_Punish 的写法）→ 该项目专属隔离 venv（`isolated_venv`，按项目路径哈希

@@ -249,6 +249,7 @@ def _empty_lineage(key: str) -> dict[str, Any]:
         "latest": {},
         "privatePaths": [],
         "damaged": [],
+        "knownSources": [],
     }
 
 
@@ -284,7 +285,7 @@ def read_lineage(root: Path, key: str) -> dict[str, Any]:
         data.update(stored)
     if not isinstance(data.get("latest"), dict):
         data["latest"] = {}
-    for list_key in ("privatePaths", "damaged"):
+    for list_key in ("privatePaths", "damaged", "knownSources"):
         if not isinstance(data.get(list_key), list):
             data[list_key] = []
     data["lineage"] = key
@@ -406,6 +407,45 @@ def add_private_path(root: Path, key: str, relative: str) -> None:
 
 def private_paths(root: Path, key: str) -> list[str]:
     return [str(item) for item in read_lineage(root, key)["privatePaths"]]
+
+
+def _normalize_source(source: str) -> str:
+    text = str(source or "").strip()
+    if not text:
+        return ""
+    return os.path.normcase(os.path.normpath(os.path.abspath(text)))
+
+
+def add_known_source(root: Path, key: str, source: str) -> None:
+    """记下「这个谱系的项目曾从 ``source`` 目录导入 / 采纳」（``lineage.json.knownSources``）。
+
+    与载荷清单的 ``source.ref`` 不同：更新得来的载荷没有导入目录，但脚本配置里仍记着
+    ``Info.Path``——视图丢了要靠它反查谱系重建，整谱系回收也要靠它认出「脚本还在」。
+    """
+
+    normalized = _normalize_source(source)
+    if not normalized:
+        return
+    with lineage_lock(root, key):
+        data = read_lineage(root, key)
+        known = [str(item) for item in data.get("knownSources") or []]
+        if normalized not in known:
+            known.append(normalized)
+            data["knownSources"] = known
+            write_lineage(root, key, data)
+
+
+def lineage_by_known_source(root: Path, source: str) -> str | None:
+    """``source`` 目录属于哪个谱系（查各谱系的 ``knownSources``）；没有返回 None。"""
+
+    normalized = _normalize_source(source)
+    if not normalized:
+        return None
+    for key in list_lineages(root):
+        known = read_lineage(root, key).get("knownSources") or []
+        if normalized in {str(item) for item in known}:
+            return key
+    return None
 
 
 # --------------------------------------------------------------------------
@@ -1036,6 +1076,8 @@ __all__ = [
     "manifest_files",
     "manifest_path",
     "mark_damaged",
+    "add_known_source",
+    "lineage_by_known_source",
     "settle_same_version_latest",
     "payload_dir",
     "payload_ref",
