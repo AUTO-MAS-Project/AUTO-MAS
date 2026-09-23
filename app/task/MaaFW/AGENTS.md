@@ -57,18 +57,17 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   比例：MaaYYs 29%（Go agent，196→138 MB）、M9A 57%（Python 3.13 自带 158 MB，660→283 MB）。
   `contracts.py` 里那个 `.auto_mas_maafw_native_runtime.json` 只剩指纹忽略用，没有代码再往
   项目里铺运行时。
-- **副本之间按内容共用文件**（`project_update/blob_store.py`）：上面那些运行时目录里的一切，
-  加上白名单内其它位置的模型 / 二进制文件（`projection.SHARED_CONTENT_SUFFIXES`：onnx / bin /
-  pth / pyd / dll / so / 字体……；JSON、图片、脚本一律不算，项目 agent 热更新的就是它们），
-  ≥ 64 KB 的按 sha256 存进 `data/maafw_blobs/<ab>/<sha256>`，副本里是指向它的 NTFS 硬链接，
-  同样的字节只存一份；导入（`materialize_projection`）与更新落地（`apply.py`）都走
-  `ProjectionRules.is_shared_file` 这一个谓词。同一项目的第二份副本因此只多小文件、项目热更新
-  数据与日志（M9A 实测独占 116 MB → 41.5 MB）。三条铁律：
+- **副本之间按内容共用文件**（`project_update/blob_store.py`）：共用谓词只有一个，
+  `projection.is_shared_path(rel, size, private_paths)`——≥ 64 KB、首段不是 `config/ debug/ logs/
+  temp/ cache/ .pycache/ .mas-update*`、后缀不是 `.lock .sha256 .pth .log .tmp`、不在 `*.dist-info`
+  里、不在谱系学到的 `privatePaths` 里（不再按后缀白名单）。满足的按 sha256 存进
+  `data/maafw_blobs/<ab>/<sha256>`，副本里是指向它的 NTFS 硬链接，同样的字节只存一份；导入
+  （`materialize_projection`）、更新落地（`apply.py`）、克隆 / 视图物化都走它。三条铁律：
   **永远不往已有文件里写**（硬链接没有写时复制，更新器的 `_copy_path` / 回滚都是先删再写，
   内容没变的文件连碰都不碰）；小文件不进库（锁文件、`.pth`、dist-info 这类最可能被原地改写，
   M9A 的 bootstrap 就往 `python/*.lock` 里追加写）；链接失败就退回复制。回收在启动期
-  `clean_maafw_runtime_blobs`（`st_nlink == 1` 即孤儿）。已知边界：A 在跑（DLL 被映射）时
-  B 恰好要换同一份旧库会被挡住，事务照常回滚。
+  `clean_maafw_runtime_blobs`（`st_nlink == 1` 即孤儿）。本机实测：inode 被映射时只有被映射的
+  那个目录项删不掉 / 换不掉，同一 inode 的其它硬链接名随便删换（见 `blob_store.py` 模块说明）。
 - **同一项目再建一个脚本**走 `/maafw/embedded/sources`（候选）+ `/maafw/embedded/clone`
   （`embedded_project.clone_embedded_copy`）：从源脚本的副本克隆，已共用的文件再挂硬链接、还没入库的
   模型经共用库放过去、`debug/` 与字节码不带，staging 建好再原子换入；源与目标各持项目预约，源运行中

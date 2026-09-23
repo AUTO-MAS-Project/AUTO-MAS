@@ -21,7 +21,10 @@ RESERVED_PROJECT_DIRS = frozenset({".mas-update", ".mas-update-cache"})
 FINGERPRINT_IGNORED_DIRS = frozenset(
     {"debug", "logs", "temp", "__pycache__", ".pycache"}
 )
-FINGERPRINT_IGNORED_FILES = frozenset({"config/maa_option.json"})
+# ``.auto_mas_view.json`` 是视图标记（记这棵视图挂在哪个载荷上），MAS 自己的簿记，
+# 不是项目内容；随切换原子换入，每次都不同。
+VIEW_MARKER_FILE_NAME = ".auto_mas_view.json"
+FINGERPRINT_IGNORED_FILES = frozenset({"config/maa_option.json", VIEW_MARKER_FILE_NAME})
 
 # 受管项目跑起来时，runner 会往 <项目>/maafw/ 铺一层共享的 MaaFramework 原生运行时，
 # 并留下这个标记文件。带标记的 maafw/ 是运行期产物，同样要排除；没有标记的 maafw/ 是
@@ -141,6 +144,7 @@ __all__ = [
     "NATIVE_RUNTIME_OVERLAY_DIR",
     "NATIVE_RUNTIME_OVERLAY_MARKER",
     "RESERVED_PROJECT_DIRS",
+    "VIEW_MARKER_FILE_NAME",
     "artifact_id_for",
     "canonical_json",
     "is_within",

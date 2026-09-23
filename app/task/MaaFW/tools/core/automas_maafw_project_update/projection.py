@@ -58,7 +58,7 @@ from typing import Any
 
 import json5
 
-from .blob_store import RuntimeBlobStore
+from .blob_store import LINK_MIN_BYTES, RuntimeBlobStore
 
 MAX_REPORT_ITEMS = 128
 
@@ -152,25 +152,54 @@ KNOWN_RUNTIME_FILE_NAMES = {
     "pythonw.exe",
 }
 KNOWN_RUNTIME_STEMS = {"maaframework", "maatoolkit", "maaadbcontrolunit", "maahttp"}
-# 运行时目录之外也按内容与其它副本共用的文件类型：模型与二进制。这些文件只会被更新器
-# 整文件替换，没有项目会在运行期原地改写它们；JSON / 图片 / 脚本一律不共用——
-# 项目 agent 热更新的就是这类文件，而硬链接没有写时复制。
-SHARED_CONTENT_SUFFIXES = frozenset(
+# 按内容共用（硬链接）的判定：≥ 64 KB 且不在排除表。不再按后缀白名单——被白名单挡掉的
+# 恰是 MaaEnd 的导航网格 .gz、agent .exe、大 JSON / 图片（第二份副本多占 139 MB）。
+# 实测五个项目运行期对出厂文件的原地覆盖只有 config/ 下的几百字节小文件，agent 热更新
+# 一律「临时文件 + os.replace」（换目录项、不写穿 inode）。可写的东西靠四层挡住：尺寸
+# （< 64 KB 永远私有）、下面这张排除表、运行期新建即新 inode、事后写穿巡检学到的
+# ``privatePaths``。
+SHARED_EXCLUDED_ROOT_DIRS = frozenset(
     {
-        ".onnx",
-        ".bin",
-        ".pb",
-        ".pt",
-        ".pth",
-        ".safetensors",
-        ".pyd",
-        ".dll",
-        ".so",
-        ".dylib",
-        ".ttf",
-        ".otf",
+        "config",
+        "debug",
+        "logs",
+        "temp",
+        "cache",
+        ".pycache",
+        ".mas-update",
+        ".mas-update-cache",
     }
 )
+SHARED_EXCLUDED_SUFFIXES = frozenset({".lock", ".sha256", ".pth", ".log", ".tmp"})
+
+
+def is_shared_path(
+    relative: str | Path, size: int, private_paths: Iterable[str] = ()
+) -> bool:
+    """这个项目相对路径的文件能否按内容与其它副本 / 载荷共用（硬链接）。
+
+    ``relative`` 相对项目根（投影后的坐标系）；``private_paths`` 是谱系学到的
+    「会被原地写」的路径（posix，大小写不敏感）。
+    """
+
+    if size < LINK_MIN_BYTES:
+        return False
+    parts = PurePosixPath(Path(relative).as_posix()).parts
+    if not parts:
+        return False
+    if parts[0].casefold() in SHARED_EXCLUDED_ROOT_DIRS:
+        return False
+    if PurePosixPath(parts[-1]).suffix.casefold() in SHARED_EXCLUDED_SUFFIXES:
+        return False
+    if any(part.casefold().endswith(".dist-info") for part in parts[:-1]):
+        return False
+    folded = "/".join(parts).casefold()
+    return not any(
+        folded == str(item).replace("\\", "/").strip("/").casefold()
+        for item in private_paths
+    )
+
+
 KNOWN_UI_SHELL_STEMS = {"mfaavalonia", "mxu", "mfw", "maapicli"}
 SHELL_SUFFIXES = {".bat", ".cmd", ".exe", ".ps1", ".sh"}
 DEPENDENCY_DIR_NAMES = {"agent", "agents", "lock", "locks", "plugins", "requirements"}
@@ -284,19 +313,16 @@ class ProjectionRules:
             ) from exc
         return promoted if promoted.parts else ROOT
 
-    def is_shared_file(self, relative: Path) -> bool:
-        """这个文件可以按内容与其它副本共用（硬链接）。
+    def is_shared_file(
+        self, relative: Path, size: int, private_paths: Iterable[str] = ()
+    ) -> bool:
+        """这个文件可以按内容与其它副本共用（硬链接），谓词见 :func:`is_shared_path`。
 
-        原样带走的运行时目录里的一切，以及白名单内其它位置的模型 / 二进制文件
-        （``SHARED_CONTENT_SUFFIXES``）。大小门槛由 blob store 自己把。
+        ``relative`` 是投影后的（项目根相对）路径；与白名单目标无关——导入、更新落地、
+        视图物化共用同一个谓词。
         """
 
-        if any(
-            mode.verbatim_runtime and _is_relative_to(relative, target)
-            for target, mode in self.targets.items()
-        ):
-            return True
-        return relative.suffix.lower() in SHARED_CONTENT_SUFFIXES
+        return is_shared_path(relative, size, private_paths)
 
     def keeps(self, relative: Path, *, is_directory: bool = False) -> bool:
         """这个源相对路径要不要进副本。"""
@@ -1505,10 +1531,12 @@ def materialize_projection(
     *,
     progress: Callable[[int, int], None] | None = None,
     blob_store: RuntimeBlobStore | None = None,
+    private_paths: Iterable[str] = (),
 ) -> dict[str, int]:
     """把 plan 里要留的文件复制到 ``target_dir``（assets 布局在这里被提升）。
 
-    给了 ``blob_store`` 时，运行时目录与模型类大文件按内容与其它副本共用（硬链接）。
+    给了 ``blob_store`` 时，满足共用谓词（:func:`is_shared_path`：≥ 64 KB 且不在排除表、
+    不在谱系 ``private_paths`` 里）的文件按内容与其它副本共用（硬链接）。
     ``progress(done_bytes, total_bytes)`` 按已复制字节回调（按文件数算的话一个几百 MB
     的模型会让进度条先冲到 90% 再卡住）；每个文件复制完调一次，最后一次 done == total。
     返回共用统计：``sharedFiles`` / ``sharedBytes``。
@@ -1536,15 +1564,19 @@ def materialize_projection(
     done_bytes = 0
     shared_files = 0
     shared_bytes = 0
+    private = tuple(private_paths)
     for index, relative_file in enumerate(ordered, start=1):
         source = rules.source_root / relative_file
-        destination = target / rules.output_path(relative_file)
+        output_relative = rules.output_path(relative_file)
+        destination = target / output_relative
         destination.parent.mkdir(parents=True, exist_ok=True)
         try:
             size = source.stat().st_size
         except OSError:
             size = 0
-        if blob_store is not None and rules.is_shared_file(relative_file):
+        if blob_store is not None and rules.is_shared_file(
+            output_relative, size, private
+        ):
             placed = blob_store.place(source, destination)
             if placed.action == "linked":
                 shared_files += 1
@@ -1607,6 +1639,8 @@ def filter_package_entries(
 __all__ = [
     "EXCLUDED_DIRECTORY_REASONS",
     "MAX_REPORT_ITEMS",
+    "SHARED_EXCLUDED_ROOT_DIRS",
+    "SHARED_EXCLUDED_SUFFIXES",
     "ProjectionError",
     "ProjectionPlan",
     "ProjectionRules",
@@ -1619,6 +1653,7 @@ __all__ = [
     "exclusion_reason",
     "filter_package_entries",
     "is_python_interpreter_path",
+    "is_shared_path",
     "looks_like_local_path",
     "materialize_projection",
     "package_projection_rules",

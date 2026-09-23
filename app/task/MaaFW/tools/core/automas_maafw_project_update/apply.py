@@ -739,9 +739,18 @@ def _project_package_entries(
         },
         tuple(relative for relative in deleted if relative in kept_deleted),
         frozenset(
-            relative for relative in kept_files if rules.is_shared_file(Path(relative))
+            relative
+            for relative in kept_files
+            if rules.is_shared_file(Path(relative), _file_size(files[relative]))
         ),
     )
+
+
+def _file_size(path: Path) -> int:
+    try:
+        return path.stat().st_size
+    except OSError:
+        return 0
 
 
 def _validate_plan_base(

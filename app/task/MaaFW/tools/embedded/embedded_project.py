@@ -51,9 +51,9 @@ from app.task.MaaFW.tools.core.automas_maafw_project_update.blob_store import (
     RuntimeBlobStore,
 )
 from app.task.MaaFW.tools.core.automas_maafw_project_update.projection import (
-    SHARED_CONTENT_SUFFIXES,
     ProjectionError,
     build_projection_plan,
+    is_shared_path,
     materialize_projection,
     read_json_object,
 )
@@ -311,10 +311,7 @@ def clone_embedded_copy(
                             continue
                         except OSError:
                             pass
-                    if (
-                        blob_store.eligible(info.st_size)
-                        and src.suffix.lower() in SHARED_CONTENT_SUFFIXES
-                    ):
+                    if is_shared_path(relative / name, info.st_size):
                         blob_store.place(src, dst)
                         continue
                     shutil.copy2(src, dst)

@@ -234,7 +234,13 @@ def _prepare_project_python_env(
 
 
 def project_python_maafw_version(python_exe: str | Path) -> str | None:
-    """项目自带解释器里装的 maafw binding 版本（读 dist-info 目录名，不起进程）。"""
+    """项目自带解释器里装的 maafw binding 版本（读 dist-info 目录名，不起进程）。
+
+    同一 site-packages 里可能残留多个 ``maafw-*.dist-info``（M9A 发行包就同时带着
+    5.12.3 与 5.13.0，旧的是升级没卸干净留下的）：取 PEP 440 最高的那个。按名字
+    排序取第一个会读成旧版本，于是每次准备环境都去「钉回」一个本来就对的 binding，
+    重装出来的文件脱离共用库。
+    """
 
     root = Path(python_exe).parent
     for site in (
@@ -245,10 +251,24 @@ def project_python_maafw_version(python_exe: str | Path) -> str | None:
             matches = sorted(site.glob("maafw-*.dist-info"))
         except OSError:
             continue
-        for match in matches:
-            version = match.name[len("maafw-") : -len(".dist-info")]
-            if version:
-                return version
+        versions = [
+            text
+            for text in (
+                match.name[len("maafw-") : -len(".dist-info")] for match in matches
+            )
+            if text
+        ]
+        if not versions:
+            continue
+        parsed: list[tuple[Version, str]] = []
+        for text in versions:
+            try:
+                parsed.append((Version(text), text))
+            except InvalidVersion:
+                continue
+        if parsed:
+            return max(parsed, key=lambda item: item[0])[1]
+        return versions[0]
     return None
 
 
