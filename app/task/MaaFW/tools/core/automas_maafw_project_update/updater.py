@@ -35,6 +35,7 @@ from .payloads import (
     finalize,
     register,
     remove_tree,
+    version_newer,
 )
 from .state import (
     DEFAULT_CACHE_ROOT,
@@ -402,6 +403,17 @@ async def update_maafw_project_if_needed(
             skipped_reason=message,
         )
 
+    if payload is not None:
+        # 比较基准 = max(视图版本, 构建基准载荷的版本)。宿主在视图没能同步到组 latest
+        # （被占用）时会把基准换成 latest：再拿视图的旧版本去比，会把组里已有的版本
+        # 重新下一遍。
+        try:
+            base_version = str(payload.manifest().get("version") or "").strip()
+        except PayloadError:
+            base_version = ""
+        if base_version and version_newer(base_version, current_version):
+            send_update_log(f"本项目已登记 {base_version}，以它为基准检查更新")
+            current_version = base_version
     send_update_log("start checking MaaFW project update")
     send_update_log(f"current version: {current_version}")
     send_update_log(f"update channel: {update_channel}")
@@ -455,7 +467,6 @@ async def update_maafw_project_if_needed(
             proxy=proxy,
             send_log=send_update_log,
             prefer_full_package=prefer_full,
-            baseline_matches=None,
             precheck_gate=precheck_gate,
         )
     except Exception as exc:
@@ -701,7 +712,6 @@ async def _discover_project_update_detailed(
     send_log: Callable[[str], None] | None = None,
     prefer_full_package: bool = False,
     version_only: bool = False,
-    baseline_matches: Callable[[], Awaitable[bool]] | None = None,
     precheck_gate: Callable[[str], Awaitable[str | None]] | None = None,
 ) -> tuple[
     MaaFWProjectUpdateDiscovery | None,
@@ -714,9 +724,8 @@ async def _discover_project_update_detailed(
     is ``None`` only when MirrorChyan was never queried (no rid), so callers can
     still surface the CDK status for an up-to-date project.
 
-    ``baseline_matches`` 只在「确认有新版本、要带 CDK 向 Mirror酱 拿差量包」之前
-    被调用一次；返回 False 就改要全量包。它是懒的，因为算项目指纹要 ~2s，
-    而绝大多数运行前检查的结果是「已是最新」。
+    ``prefer_full_package``：调用方按当前载荷的来源定（本地导入的载荷没有发布方基线，
+    只能要全量包）。
 
     ``precheck_gate`` 在确认有新版本之后、分流下载源之前被 await 一次（收目标
     版本号）；返回非空字符串就以它为由按「有更新但不可安装」返回。放在这个
@@ -821,10 +830,6 @@ async def _discover_project_update_detailed(
         # 确认要从 Mirror 酱下载了，才带 CDK 查第二次拿一次性下载地址。
         # 这一次才可能扣今日下载额度，而它对应一次真实下载。
         prefer_full = prefer_full_package
-        if not prefer_full and baseline_matches is not None:
-            # 差量包只有在项目与基线指纹完全一致时才装得上，到这一步才值得
-            # 花那 ~2s 去比。
-            prefer_full = not await baseline_matches()
         send_update_log("已确认有新版本，携带 CDK 获取 Mirror酱 下载地址")
         authorized = await _query_mirrorchyan_latest(
             interface_model,
@@ -1144,20 +1149,25 @@ async def apply_maafw_project_update(
         )
     except PayloadCancelled as exc:
         remove_tree_quietly(staging)
-        operation.update("cancelled", downloadedBytes=downloaded.size)
+        _finish_operation(operation, "cancelled", downloadedBytes=downloaded.size)
         raise MaaFWProjectUpdateError(CANCELLED_MESSAGE, cancelled=True) from exc
-    except MaaFWProjectUpdateError:
+    except MaaFWProjectUpdateError as exc:
         remove_tree_quietly(staging)
+        _finish_operation(operation, "failed", error=str(exc)[:500])
         raise
     except (PayloadError, UpdateApplyError) as exc:
         remove_tree_quietly(staging)
+        _finish_operation(operation, "failed", error=str(exc)[:500])
         raise MaaFWProjectUpdateError(str(exc)) from exc
     except Exception as exc:
         remove_tree_quietly(staging)
+        _finish_operation(operation, "failed", error=str(exc)[:500])
         raise MaaFWProjectUpdateError(str(exc)) from exc
     finally:
         remove_tree_quietly(extract_dir)
 
+    # 流水记到终态：启动期清理只收终态 / 本进程之前的记录，不让目录越攒越多。
+    _finish_operation(operation, "registered", payloadId=registered.payload_id)
     emit("committed", {"payloadId": registered.payload_id})
     send_update_log(
         f"新版本已登记：{registered.payload_id}"
@@ -1183,6 +1193,17 @@ async def apply_maafw_project_update(
         "latestId": registered.target_id,
         "created": registered.created,
     }
+
+
+def _finish_operation(
+    operation: UpdateOperationStore, status: str, **fields: Any
+) -> None:
+    """更新流水记终态；记不上只打日志（它只是流水，不影响这次更新的结果）。"""
+
+    try:
+        operation.update(status, **fields)
+    except Exception:  # noqa: BLE001
+        logger.warning("MaaFW 更新流水写终态失败: %s", status, exc_info=True)
 
 
 def remove_tree_quietly(path: Path) -> None:

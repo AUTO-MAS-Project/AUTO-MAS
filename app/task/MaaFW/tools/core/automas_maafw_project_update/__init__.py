@@ -2,8 +2,6 @@ from __future__ import annotations
 
 from .apply import (
     UpdateApplyError,
-    UpdatePostValidateRejected,
-    UpdateProjectLockBusy,
     project_state_dir_for,
 )
 from .precheck_memo import (
@@ -30,8 +28,6 @@ __all__ = [
     "MaaFWProjectUpdateError",
     "MaaFWProjectUpdateResult",
     "UpdateApplyError",
-    "UpdatePostValidateRejected",
-    "UpdateProjectLockBusy",
     "apply_maafw_project_update",
     "classify_precheck_failure",
     "clear_runtime_precheck",

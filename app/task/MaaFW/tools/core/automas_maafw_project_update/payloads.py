@@ -849,19 +849,39 @@ def register(
 
 
 def collect_unreferenced(
-    root: Path, referenced: set[str], started_at: float
+    root: Path,
+    referenced: set[str],
+    started_at: float,
+    *,
+    live_lineages: set[str] | None = None,
 ) -> list[Path]:
-    """列出可以删的载荷目录与清单文件。
+    """列出可以删的载荷目录与清单文件（以及整个谱系目录）。
 
-    ``referenced`` 由宿主按引用集算：所有视图标记的 ``payload`` ∪ 各谱系 ``latest[*].id``
-    ∪ 未完成 journal 的 ``to``，元素写 ``<lineage>/<id>``（:func:`payload_ref`）或裸 id。
-    各谱系的 ``latest[*]`` 这里也会自动算进去。mtime 不早于 ``started_at`` 的（本进程
-    起来之后才建的）一律不收。
+    ``referenced`` 由宿主按引用集算：所有视图标记的 ``payload`` ∪ 未完成 journal 的
+    ``to``，元素写 ``<lineage>/<id>``（:func:`payload_ref`）或裸 id。
+
+    ``live_lineages``：还有视图（或未完成 journal）的谱系。给了的话，不在其中的谱系
+    整个目录（全部载荷、``lineage.json``、预检备忘）都可回收；``latest[*]`` 只在谱系仍
+    有视图时才算引用——没有脚本再用的项目不该因为「它是最新版」永远占着盘。不给则
+    沿用旧口径：每个谱系的 ``latest[*]`` 都算引用。
+
+    mtime 不早于 ``started_at`` 的（本进程起来之后才建 / 才登记过的）一律不收。
     """
 
     candidates: list[Path] = []
     for key in list_lineages(root):
         directory = lineage_dir(root, key)
+        if live_lineages is not None and key not in live_lineages:
+            try:
+                newest = max(
+                    [directory.stat().st_mtime]
+                    + [entry.stat().st_mtime for entry in directory.iterdir()]
+                )
+            except (OSError, ValueError):
+                continue
+            if newest < started_at:
+                candidates.append(directory)
+            continue
         keep = set(referenced)
         for entry in read_lineage(root, key)["latest"].values():
             if isinstance(entry, Mapping) and entry.get("id"):

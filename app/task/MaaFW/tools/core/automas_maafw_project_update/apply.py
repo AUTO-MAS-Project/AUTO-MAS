@@ -67,23 +67,6 @@ class UpdateApplyError(RuntimeError):
         self.unsafe_to_continue = unsafe_to_continue
 
 
-class UpdatePostValidateRejected(UpdateApplyError):
-    """``post_validate`` 回调（在 staging 上的运行环境预检）拒绝了这次更新。
-
-    新版本只在 staging 里，丢掉就是；项目视图一个字节没动，仍可运行。``reason``
-    是回调给出的原因原文（异常文本），调用方据此区分「预检没过」与其它失败。
-    """
-
-    def __init__(self, reason: str) -> None:
-        text = str(reason or "").strip() or "MaaFW post-validation rejected the update"
-        super().__init__(text)
-        self.reason = text
-
-
-class UpdateProjectLockBusy(UpdateApplyError):
-    """在限定时间内没拿到谱系更新锁：同项目的另一次更新 / 预检正持有它。"""
-
-
 @dataclass(frozen=True)
 class PackagePlan:
     package_type: ArtifactType
@@ -628,8 +611,6 @@ def _emit(
 __all__ = [
     "PackagePlan",
     "UpdateApplyError",
-    "UpdatePostValidateRejected",
-    "UpdateProjectLockBusy",
     "build_package_plan",
     "project_state_dir_for",
 ]

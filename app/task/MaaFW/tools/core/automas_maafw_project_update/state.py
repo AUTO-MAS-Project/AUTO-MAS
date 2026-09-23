@@ -468,24 +468,6 @@ class UpdateOperationStore:
             handle.flush()
             os.fsync(handle.fileno())
 
-    def mark_recovery_required(self, error: str) -> dict[str, Any]:
-        """Persist a fail-closed state even when the journal is corrupt."""
-
-        with operation_lock(self.root, self.operation_id, timeout=None):
-            state = self._read_state()
-            state.update(
-                {
-                    "status": "recovery_required",
-                    "recoveryRequired": True,
-                    "error": redact_text(error)[:500],
-                    "updatedAt": time.time(),
-                }
-            )
-            _atomic_json_write(self.state_path, state)
-            # Do not append to a corrupt journal.  The state file itself is
-            # the authoritative fail-closed marker until manual repair.
-            return state
-
 
 def operation_lock(
     root: Path, operation_id: str, *, timeout: float | None = None
