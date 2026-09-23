@@ -38,6 +38,11 @@ RUNTIME_STATE_FILES = frozenset(
         "data/manifest_cache.json",
     }
 )
+# 上面这些里随版本走的一部分：M9A 热更新的清单缓存与随版本发布的 data/ 表成对，缓存里的时间戳
+# 说明「数据已经更新到哪」。换到另一个载荷时 data/ 取新载荷，缓存也只能取新载荷那份（新载荷
+# 没有就不要，M9A 下次全量检查）；带视图这份会让缓存比数据新，热更新一直走快速路径跳过。
+# 同一载荷上重建视图（采纳、修复）时数据没变，照常按运行期状态带过去。
+VERSION_BOUND_STATE_FILES = frozenset({"data/manifest_cache.json"})
 
 # 受管项目跑起来时，runner 会往 <项目>/maafw/ 铺一层共享的 MaaFramework 原生运行时，
 # 并留下这个标记文件。带标记的 maafw/ 是运行期产物，同样要排除；没有标记的 maafw/ 是

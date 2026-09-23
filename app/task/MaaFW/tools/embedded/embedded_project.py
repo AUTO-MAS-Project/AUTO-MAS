@@ -68,6 +68,7 @@ from app.task.MaaFW.tools.core.automas_maafw_project_update.blob_store import (
 )
 from app.task.MaaFW.tools.core.automas_maafw_project_update.contracts import (
     RUNTIME_STATE_FILES,
+    VERSION_BOUND_STATE_FILES,
     VIEW_MARKER_FILE_NAME,
 )
 from app.task.MaaFW.tools.core.automas_maafw_project_update.projection import (
@@ -512,6 +513,7 @@ def _build_view_tree(
     result: ViewResult,
     private: Iterable[str] = (),
     archive_dropped: bool = False,
+    same_payload: bool = False,
 ) -> None:
     """§3.2 第 2–3 步：载荷的链接森林 + 私有状态承载。写 staging 一律 ``place_fresh``。
 
@@ -599,6 +601,9 @@ def _build_view_tree(
             path = current_path / name
             rel = (relative_dir / name).as_posix()
             key = rel.casefold()
+            if key in VERSION_BOUND_STATE_FILES and not same_payload:
+                # 换载荷：staging 里已是新载荷那份（或没有），视图这份不带，见 contracts。
+                continue
             if key in RUNTIME_STATE_FILES:
                 # 运行期状态（账号记录之类）：视图里这份就是真相，不论新旧载荷里有没有、内容
                 # 是什么都原样带过去——按受管文件处理会被换回导入时的内容或当成删掉的文件丢掉。
@@ -730,6 +735,7 @@ def _realize_view(
             carry_from=carry_from,
             old_files=old_files,
             old_payload_path=old_payload_path,
+            same_payload=bool(from_id) and from_id == payload_id,
             archive_dir=lambda: _local_modified_dir(view, from_id, payload_id, base),
             result=result,
             private=payloads.private_paths(root, lineage),

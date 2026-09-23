@@ -30,6 +30,8 @@ DEFAULT_OPERATION_ROOT = Path.cwd() / "data" / "maafw_update_operations"
 DEFAULT_CACHE_ROOT = Path.cwd() / "data" / "maafw_update_cache"
 DEFAULT_PROJECT_LOCK_ROOT = Path.cwd() / "data" / "maafw_project_locks"
 LOCK_STALE_SECONDS = 30 * 60
+# How many times a waiter recreates a lock directory that was removed under it.
+MISSING_LOCK_DIR_RETRIES = 20
 _SAFE_ID_RE = re.compile(r"^[0-9a-fA-F]{24,128}$")
 _URL_RE = re.compile(r"https?://[^\s\"'<>]+", re.IGNORECASE)
 _LOCAL_LOCK_GUARD = threading.RLock()
@@ -161,6 +163,7 @@ class DurableFileLock:
             "thread": threading.get_ident(),
             "createdAt": time.time(),
         }
+        missing_retries = 0
         while True:
             local_busy = False
             with _LOCAL_LOCK_GUARD:
@@ -217,6 +220,16 @@ class DurableFileLock:
                         handle.close()
                     except OSError:
                         pass
+                # The lock directory can vanish while we wait: lineage GC
+                # empties a lineage under this lock, releases it, then removes
+                # the lock file and the empty directory.  Recreate and retry a
+                # bounded number of times instead of failing the caller.
+                if isinstance(exc, FileNotFoundError):
+                    missing_retries += 1
+                    if missing_retries > MISSING_LOCK_DIR_RETRIES:
+                        raise
+                    self.path.parent.mkdir(parents=True, exist_ok=True)
+                    continue
                 # msvcrt raises OSError(EACCES/EDEADLK) for a busy range;
                 # unrelated errors (bad path, disk full) must not spin.
                 if not self._is_lock_busy(exc):
