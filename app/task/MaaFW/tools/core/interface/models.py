@@ -189,17 +189,26 @@ class MaaFWTask(BaseModel):
     repeat_count: Any = None
 
 
+#: repeat_count 展开的上限（前端 ``maafwTaskInstance.ts`` 的
+#: ``MAAFW_MAX_TASK_REPEAT_COUNT`` 同值）。真实项目最多写到 10（MaaYuan）；每份都是
+#: 队列里一个独立实例，写成几万会把用户配置撑爆，超过的按上限展开并由加载器告警。
+MAX_TASK_REPEAT_COUNT = 99
+
+
 def task_repeat_count(task: MaaFWTask) -> int:
     """任务进队列时展开成几份：``repeatable`` 为 true 且 ``repeat_count`` ≥ 2 才展开。
 
     ``repeatable`` 缺省 / 为 false 时忽略 ``repeat_count``；``-1``（MFAA 的「无限」）、
-    0、负数、非整数一律按 1 份（加载器对 repeatable 为 true 的这些写法告警）。
+    0、负数、非整数一律按 1 份（加载器对 repeatable 为 true 的这些写法告警）；超过
+    ``MAX_TASK_REPEAT_COUNT`` 的按上限。
     """
 
     if task.repeatable is not True:
         return 1
     count = coerce_option_count(task.repeat_count)
-    return count if count is not None and count >= 2 else 1
+    if count is None or count < 2:
+        return 1
+    return min(count, MAX_TASK_REPEAT_COUNT)
 
 
 class MaaFWGroup(BaseModel):

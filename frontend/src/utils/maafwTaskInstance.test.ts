@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from 'vitest'
 
 import {
   MAAFW_DUPLICATE_TASK_SEPARATOR,
+  MAAFW_MAX_TASK_REPEAT_COUNT,
   buildMaaFWTaskInstanceId,
   buildMaaFWTaskInstanceIds,
   resolveMaaFWTaskName,
@@ -98,6 +99,12 @@ describe('buildMaaFWTaskInstanceIds', () => {
   it.each([undefined, null, 0, 1, -1, 2.5])('repeatCount=%s 时只加 1 份', count => {
     expect(buildMaaFWTaskInstanceIds('刷关', count, [])).toEqual(['刷关'])
   })
+
+  it('repeatCount 超过上限时按上限展开', () => {
+    const taskIds = buildMaaFWTaskInstanceIds('刷关', 30000, [])
+    expect(taskIds).toHaveLength(MAAFW_MAX_TASK_REPEAT_COUNT)
+    expect(new Set(taskIds).size).toBe(MAAFW_MAX_TASK_REPEAT_COUNT)
+  })
 })
 
 describe('前后端分隔符契约', () => {
@@ -108,5 +115,14 @@ describe('前后端分隔符契约', () => {
     const source = readFileSync(modelsPath, 'utf8')
     const matched = source.match(/DUPLICATE_TASK_SUFFIX_SEPARATOR = "([^"]+)"/)
     expect(matched?.[1]).toBe(MAAFW_DUPLICATE_TASK_SEPARATOR)
+  })
+
+  it('repeat_count 上限与后端 MAX_TASK_REPEAT_COUNT 一致', () => {
+    const modelsPath = fileURLToPath(
+      new URL('../../../app/task/MaaFW/tools/core/interface/models.py', import.meta.url)
+    )
+    const source = readFileSync(modelsPath, 'utf8')
+    const matched = source.match(/^MAX_TASK_REPEAT_COUNT = (\d+)$/m)
+    expect(Number(matched?.[1])).toBe(MAAFW_MAX_TASK_REPEAT_COUNT)
   })
 })

@@ -470,13 +470,17 @@ def build_repeat_instance_ids(
         else ""
     )
     instance_ids = [task_id]
+    # 成员判断走集合：列表逐个比是平方复杂度（count=30000 要 2.4 s）。
+    seen = {task_id}
+    taken_set = taken if isinstance(taken, (set, frozenset)) else set(taken)
     for copy_index in range(2, count + 1):
         suffix = f"{base_suffix}repeat{copy_index}"
         instance_id = build_duplicate_task_id(task_name, suffix)
-        while instance_id in taken or instance_id in instance_ids:
+        while instance_id in taken_set or instance_id in seen:
             suffix += "x"
             instance_id = build_duplicate_task_id(task_name, suffix)
         instance_ids.append(instance_id)
+        seen.add(instance_id)
     return instance_ids
 
 

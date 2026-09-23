@@ -30,6 +30,7 @@ from typing import Any
 import json5
 
 from .models import (
+    MAX_TASK_REPEAT_COUNT,
     SUPPORTED_OPTION_TYPES,
     MaaFWInterface,
     MaaFWOption,
@@ -1022,6 +1023,15 @@ def _warn_task_repeat_counts(interface_model: MaaFWInterface) -> None:
                 "MaaFW ProjectInterface 任务 %s 的 repeat_count 不是正整数，按 1 份处理：%s",
                 task.name,
                 json.dumps(task.repeat_count, ensure_ascii=False, default=str),
+            )
+        elif count > MAX_TASK_REPEAT_COUNT:
+            logger.warning(
+                "MaaFW ProjectInterface 任务 %s 的 repeat_count 声明为 %s，超过上限 %s，"
+                "按 %s 份展开",
+                task.name,
+                count,
+                MAX_TASK_REPEAT_COUNT,
+                MAX_TASK_REPEAT_COUNT,
             )
 
 

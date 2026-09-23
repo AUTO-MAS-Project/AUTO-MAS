@@ -36,15 +36,25 @@ export const buildMaaFWTaskInstanceId = (taskName: string, usedTaskIds: TaskName
 }
 
 /**
+ * repeat_count 展开的上限，需与后端 `interface/models.py` 的 `MAX_TASK_REPEAT_COUNT` 一致。
+ * 后端给的 repeatCount 已经按它截过，这里再截一次兜底。
+ */
+export const MAAFW_MAX_TASK_REPEAT_COUNT = 99
+
+/**
  * 一次加入 `count` 份同一任务的实例 id（interface 的 repeatable / repeat_count）。
- * 每份都是独立的实例，与手动复制同一体系；`count` 不是 ≥ 1 的整数时按 1 份。
+ * 每份都是独立的实例，与手动复制同一体系；`count` 不是 ≥ 1 的整数时按 1 份，
+ * 超过 `MAAFW_MAX_TASK_REPEAT_COUNT` 时按上限。
  */
 export const buildMaaFWTaskInstanceIds = (
   taskName: string,
   count: number | null | undefined,
   usedTaskIds: Iterable<string>
 ) => {
-  const total = Number.isInteger(count) && (count as number) > 1 ? (count as number) : 1
+  const total =
+    Number.isInteger(count) && (count as number) > 1
+      ? Math.min(count as number, MAAFW_MAX_TASK_REPEAT_COUNT)
+      : 1
   const used = new Set(usedTaskIds)
   const taskIds: string[] = []
   for (let index = 0; index < total; index += 1) {
