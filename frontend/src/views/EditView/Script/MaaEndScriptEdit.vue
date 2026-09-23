@@ -236,7 +236,7 @@
           </a-row>
 
           <a-row v-if="isWinController" :gutter="24">
-            <a-col :span="showRestoreDisplayType ? 8 : 12">
+            <a-col :span="maaEndConfig.Game.CloseOnFinish ? (showRestoreResolution ? 8 : 12) : 24">
               <a-form-item
                 :label="t('edit.maaEndSetResolution')"
               >
@@ -249,18 +249,18 @@
                 />
               </a-form-item>
             </a-col>
-            <a-col v-if="showRestoreDisplayType" :span="8">
+            <a-col v-if="maaEndConfig.Game.CloseOnFinish" :span="showRestoreResolution ? 8 : 12">
               <a-form-item :label="t('edit.maaEndRestoreDisplayType')">
                 <a-select
-                  v-model:value="maaEndConfig.Game.RestoreDisplayType"
+                  :value="restoreDisplaySelection"
                   size="large"
                   :options="displayTypeOptions"
                   :disabled="isSaving"
-                  @change="handleChange('Game', 'RestoreDisplayType', $event)"
+                  @change="handleRestoreDisplayChange"
                 />
               </a-form-item>
             </a-col>
-            <a-col v-if="maaEndConfig.Game.CloseOnFinish" :span="showRestoreDisplayType ? 8 : 12">
+            <a-col v-if="showRestoreResolution" :span="8">
               <a-form-item
                 :label="t('edit.maaEndRestoreResolution')"
               >
@@ -589,19 +589,25 @@ const maaEndConfig = reactive<MaaEndScriptConfig>({
 const originalResolution = ref<string | null>(null)
 const originalDisplayType = ref<'Window' | 'Fullscreen' | null>(null)
 
-const showRestoreDisplayType = computed(
+type RestoreDisplaySelection =
+  | 'Off'
+  | 'Original'
+  | MaaEndScriptConfig['Game']['RestoreDisplayType']
+
+const restoreDisplaySelection = computed<RestoreDisplaySelection>(() => {
+  const resolution = maaEndConfig.Game.RestoreResolution
+  return resolution === 'Off' || resolution === 'Original'
+    ? resolution
+    : maaEndConfig.Game.RestoreDisplayType
+})
+const showRestoreResolution = computed(
   () =>
     maaEndConfig.Game.CloseOnFinish &&
-    maaEndConfig.Game.RestoreResolution !== 'Off' &&
-    maaEndConfig.Game.RestoreResolution !== 'Original'
+    restoreDisplaySelection.value !== 'Off' &&
+    restoreDisplaySelection.value !== 'Original'
 )
 
 const displayTypeOptions = computed(() => [
-  { value: 'Window', label: t('edit.maaEndResolutionWindow') },
-  { value: 'Fullscreen', label: t('edit.maaEndResolutionFullscreen') },
-])
-
-const restoreResolutionOptions = computed(() => [
   { value: 'Off', label: t('edit.maaEndResolutionUnchanged') },
   {
     value: 'Original',
@@ -614,8 +620,12 @@ const restoreResolutionOptions = computed(() => [
           resolution: originalResolution.value,
         })
       : t('edit.maaEndResolutionRestoreOriginal'),
-    disabled: !originalResolution.value || !originalDisplayType.value,
   },
+  { value: 'Window', label: t('edit.maaEndResolutionWindow') },
+  { value: 'Fullscreen', label: t('edit.maaEndResolutionFullscreen') },
+])
+
+const restoreResolutionOptions = computed(() => [
   { value: '1920x1080', label: '1920 × 1080' },
   { value: '2560x1440', label: '2560 × 1440' },
   { value: '3840x2160', label: '3840 × 2160' },
@@ -697,6 +707,27 @@ const handleAccountSwitchMethodChange = async (
 ) => {
   if (value === 'MAS') showMasAccountSwitchWarning()
   await handleChange('Run', 'AccountSwitchMethod', value)
+}
+
+const handleRestoreDisplayChange = async (value: RestoreDisplaySelection) => {
+  const gameUpdate: Partial<MaaEndScriptConfig['Game']> = {}
+  if (value === 'Off' || value === 'Original') {
+    maaEndConfig.Game.RestoreResolution = value
+    gameUpdate.RestoreResolution = value
+  } else {
+    maaEndConfig.Game.RestoreDisplayType = value
+    gameUpdate.RestoreDisplayType = value
+    if (
+      maaEndConfig.Game.RestoreResolution === 'Off' ||
+      maaEndConfig.Game.RestoreResolution === 'Original'
+    ) {
+      maaEndConfig.Game.RestoreResolution = '1920x1080'
+      gameUpdate.RestoreResolution = '1920x1080'
+    }
+  }
+  if (!isInitializing.value) {
+    await enqueue(() => updateScript(scriptId, { Game: gameUpdate }), 'Game.RestoreDisplayType')
+  }
 }
 
 const handleResolutionBlur = async (key: 'RestoreResolutionWidth' | 'RestoreResolutionHeight') => {
