@@ -236,6 +236,27 @@ def _validate_importable_fragment(data: dict[str, Any], source_path: Path) -> No
         )
 
 
+def _ensure_pi_v2(data: dict[str, Any]) -> None:
+    """根 interface 必须是 ProjectInterface V2（``interface_version: 2``）。
+
+    MMleo、MBCCtools、MATR、MaaEOV 发的是 MFA 私有的旧格式，没有 interface_version；
+    不先拦下来，用户看到的是一整段 pydantic 校验原文。
+    """
+
+    if "interface_version" not in data:
+        raise MaaFWInterfaceLoadError(
+            "这个项目的 interface.json 不是 ProjectInterface V2 格式"
+            "（缺少 interface_version，可能是 MFA 私有旧格式），MAS 暂不支持"
+        )
+    version = data["interface_version"]
+    if version != 2:
+        raise MaaFWInterfaceLoadError(
+            "这个项目的 interface.json 不是 ProjectInterface V2 格式"
+            f"（interface_version 是 {json.dumps(version, ensure_ascii=False)}，"
+            "MAS 只支持 2），MAS 暂不支持"
+        )
+
+
 def _warn_unsupported_root_fields(data: dict[str, Any], source_path: Path) -> None:
     supported_keys = {
         field.alias or field_name
@@ -1185,6 +1206,7 @@ def _load_interface_model_uncollected(
     context = _LoadContext()
     root_path = _resolve_interface_path(resolved_base_dir)
     root_data = _read_json_dict(root_path, context)
+    _ensure_pi_v2(root_data)
     _warn_unsupported_root_fields(root_data, root_path)
     merged_data = copy.deepcopy(root_data)
     merge_state = _MergeState()
