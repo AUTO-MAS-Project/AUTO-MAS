@@ -1441,7 +1441,7 @@ ADOPT_PRIVATE_ROOTS = frozenset(
         ".staging",
     }
 )
-# 来源也没了时，白名单内也按私有算的已知运行期文件。
+# 已知的运行期状态文件：采纳时一律按私有（不论清单 / 来源怎么说）。
 ADOPT_RUNTIME_FILES = frozenset(
     {
         "config/maa_option.json",
@@ -1580,6 +1580,11 @@ def adopt_view(
                 continue
             rel = (relative_dir / name).as_posix()
             key = rel.casefold()
+            if key in ADOPT_RUNTIME_FILES or key.endswith(".log"):
+                # 已知的运行期状态（M9A 的账号记录、runner 每次重写的 maa_option.json……）
+                # 一律私有：哪怕来源目录里恰好有一份同内容的，进了载荷就会在换版本时被
+                # 当成「新版本删掉的文件」丢掉，账号级记录跟着没了。
+                continue
             digest = sha256_file(path)
             # 1) 更新器清单里的：内容没变是更新包铺的（package），改过的留私有。
             if recorded is not None and key in recorded:
