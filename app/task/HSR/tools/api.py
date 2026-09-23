@@ -122,9 +122,7 @@ def build_capabilities(script_config: Any) -> dict[str, Any]:
         adapters.append(
             {
                 "engine": engine,
-                "display_name": "三月七助手"
-                if engine == "M7A"
-                else "StarRailAssistant",
+                "display_name": "三月七" if engine == "M7A" else "StarRailAssistant",
                 "version": _installed_version(script_config, engine),
                 "capabilities": {
                     "native_import": bool(import_ready),

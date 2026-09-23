@@ -115,7 +115,7 @@ def script_supports(module_key: str, script: ScriptType) -> bool:
     return script in module.supported_scripts
 
 
-ENGINE_DISPLAY_NAMES: dict[str, str] = {"M7A": "三月七助手", "SRA": "SRA"}
+ENGINE_DISPLAY_NAMES: dict[str, str] = {"M7A": "三月七", "SRA": "SRA"}
 
 
 @dataclass(frozen=True)

@@ -517,7 +517,7 @@ def load_m7a_native_config(script_config: Any) -> dict[str, Any]:
         raise FileNotFoundError("请先设置 M7A 路径")
     path = Path(root) / "config.yaml"
     if not path.is_file():
-        raise FileNotFoundError(f"三月七助手原生配置不存在：{path}")
+        raise FileNotFoundError(f"三月七原生配置不存在：{path}")
     try:
         mtime_ns = path.stat().st_mtime_ns
         cached = _NATIVE_CONFIG_CACHE.get(path)
@@ -525,11 +525,11 @@ def load_m7a_native_config(script_config: Any) -> dict[str, Any]:
             return copy.deepcopy(cached[1])
         data = load_m7a_yaml(path.read_text(encoding="utf-8-sig"))
     except OSError as exc:
-        raise FileNotFoundError(f"无法读取三月七助手原生配置：{path}") from exc
+        raise FileNotFoundError(f"无法读取三月七原生配置：{path}") from exc
     except yaml.YAMLError as exc:
-        raise ValueError(f"三月七助手原生配置不是有效 YAML：{path}") from exc
+        raise ValueError(f"三月七原生配置不是有效 YAML：{path}") from exc
     if not isinstance(data, dict):
-        raise ValueError(f"三月七助手原生配置顶层必须是对象：{path}")
+        raise ValueError(f"三月七原生配置顶层必须是对象：{path}")
     _NATIVE_CONFIG_CACHE[path] = (mtime_ns, data)
     return copy.deepcopy(data)
 

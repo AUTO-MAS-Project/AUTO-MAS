@@ -3051,7 +3051,7 @@ class HSRConfig_Update(BaseModel):
     )
     M7ASource: Optional[Literal["GitHub", "MirrorChyan"]] = Field(
         default=None,
-        description="三月七助手更新包下载源：GitHub / Mirror 酱（需自行填写 CDK）",
+        description="三月七更新包下载源：GitHub / Mirror 酱（需自行填写 CDK）",
     )
     SRASource: Optional[Literal["AutoSite", "GitHub", "MirrorChyan"]] = Field(
         default=None,

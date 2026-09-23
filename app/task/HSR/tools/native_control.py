@@ -5,7 +5,7 @@ old-dev 只保存脚本 ``Info.M7APath``/``Info.SRAPath`` 和用户 ``Info`` 凭
 的写回由 HSRManager 的备份/恢复区负责。
 
 直控只有一种形态：直接用脚本当前的原生配置运行——SRA 把 ``--inline run``
-指向真实 profile 文件，三月七助手以真实安装根目录启动。不建临时目录、不复制
+指向真实 profile 文件，三月七以真实安装根目录启动。不建临时目录、不复制
 任何东西，用户在脚本 GUI 里改什么下次就跑什么。这是
 ``mas-script-specialized-adapter`` 里「直控＝直接使用脚本原有配置、由原生
 GUI 维护」的口径。一个脚本挂多个账号、各跑不同计划的需求由「用户」来源
@@ -347,7 +347,7 @@ class SRANativeControlProvider:
 
 
 class M7ADirectControlSession:
-    """一次三月七助手直控运行：以真实安装根目录启动，跑助手 GUI 里的 config.yaml。"""
+    """一次三月七直控运行：以真实安装根目录启动，跑三月七 GUI 里的 config.yaml。"""
 
     def __init__(self, root: Path, log) -> None:
         self._root = root
@@ -357,15 +357,15 @@ class M7ADirectControlSession:
 
     async def run(self, timeout_seconds: int) -> HSRRunResult:
         self._log(
-            f"三月七助手将直接使用脚本当前的原生配置运行"
+            f"三月七将直接使用脚本当前的原生配置运行"
             f"（{self._root / 'config.yaml'}）；MAS 只负责外部进程生命周期"
         )
         self._runner = M7ARunner(self._root, log_callback=self._log)
         result = await self._runner.run_task("main", timeout=timeout_seconds)
         return HSRRunResult.from_native(
             result,
-            default_summary="三月七助手原生配置执行完成",
-            default_error="三月七助手原生配置执行失败",
+            default_summary="三月七原生配置执行完成",
+            default_error="三月七原生配置执行失败",
         )
 
     async def cancel(self) -> None:
@@ -386,7 +386,7 @@ class M7ANativeControlProvider:
         return Path(_script_path(script_config, "M7A"))
 
     def native_config_path(self, script_config: Any) -> Path:
-        """三月七助手安装根目录下的 config.yaml，直控直接运行它。"""
+        """三月七安装根目录下的 config.yaml，直控直接运行它。"""
 
         return self._root(script_config) / "config.yaml"
 
@@ -396,21 +396,20 @@ class M7ANativeControlProvider:
         executable = root / "March7th Assistant.exe"
         config_path = self.native_config_path(script_config)
         if not raw_root:
-            import_reason = "请先设置三月七助手路径"
-            direct_reason = "请先设置三月七助手路径"
+            import_reason = "请先设置三月七路径"
+            direct_reason = "请先设置三月七路径"
         else:
             import_reason = ""
             direct_reason = ""
             if not config_path.is_file():
                 # 直控直接运行这份文件，没有它就跑不了。
-                import_reason = f"三月七助手原生配置不存在：{config_path}"
+                import_reason = f"三月七原生配置不存在：{config_path}"
                 direct_reason = (
-                    f"三月七助手原生配置不存在：{config_path}，"
-                    "请先在三月七助手中保存一次设置"
+                    f"三月七原生配置不存在：{config_path}，请先在三月七中保存一次设置"
                 )
             if not executable.is_file():
                 direct_reason = (
-                    f"三月七助手路径中未找到 March7th Assistant.exe：{executable}"
+                    f"三月七路径中未找到 March7th Assistant.exe：{executable}"
                 )
         return HSRNativeControlSnapshot(
             engine="M7A",
@@ -427,13 +426,12 @@ class M7ANativeControlProvider:
         executable = root / "March7th Assistant.exe"
         if not executable.is_file():
             raise FileNotFoundError(
-                f"三月七助手路径中未找到 March7th Assistant.exe：{executable}"
+                f"三月七路径中未找到 March7th Assistant.exe：{executable}"
             )
         config_path = self.native_config_path(script_config)
         if not config_path.is_file():
             raise FileNotFoundError(
-                f"三月七助手原生配置不存在：{config_path}，"
-                "请先在三月七助手中保存一次设置"
+                f"三月七原生配置不存在：{config_path}，请先在三月七中保存一次设置"
             )
         return M7ADirectControlSession(root, log)
 

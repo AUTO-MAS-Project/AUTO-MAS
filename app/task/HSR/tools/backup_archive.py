@@ -739,7 +739,7 @@ def build_native_preview(
     m7a_payload = _load_yaml_dict(backup_dir / "M7A" / "config.yaml")
     m7a_rows = _m7a_preview_rows(m7a_payload) if m7a_payload else []
     if m7a_rows:
-        sections.append({"name": "m7a", "label": "M7A（三月七助手）", "rows": m7a_rows})
+        sections.append({"name": "m7a", "label": "M7A（三月七）", "rows": m7a_rows})
 
     for rel in sorted(files):
         if not rel.startswith(f"{_SRA_CONFIGS_DIR}/") or not rel.endswith(".json"):

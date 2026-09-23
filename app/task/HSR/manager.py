@@ -476,7 +476,7 @@ class HSRManager(TaskExecuteBase):
                             f"用户「{user_name}」{engine} 直控不可用："
                             f"原生执行文件不存在：{executable}"
                         )
-                    engine_label = "SRA" if engine == "SRA" else "三月七助手"
+                    engine_label = "SRA" if engine == "SRA" else "三月七"
                     native_config = native_provider(engine).native_config_path(
                         script_config
                     )
