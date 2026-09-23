@@ -3566,7 +3566,9 @@ class MSSConfig_Game(BaseModel):
 
 
 class MSSConfig_Run(BaseModel):
-    RunTimesLimit: Optional[int] = Field(default=None, description="失败任务最大尝试次数")
+    RunTimesLimit: Optional[int] = Field(
+        default=None, description="失败任务最大尝试次数"
+    )
     RunTimeLimit: Optional[int] = Field(
         default=None, description="单次运行时间限制（分钟）"
     )
@@ -4308,9 +4310,7 @@ class MSSPlanKey(BaseModel):
         default="基础试炼",
         description="悬赏试炼关卡（取值见 constants.MSS_TRIBULATION_STAGES）",
     )
-    SkipDifficulty: bool = Field(
-        default=False, description="悬赏试炼是否跳过难度选择"
-    )
+    SkipDifficulty: bool = Field(default=False, description="悬赏试炼是否跳过难度选择")
     Difficulty: int = Field(default=1, description="悬赏试炼难度")
     ConsumeAllEnergy: bool = Field(
         default=False, description="悬赏试炼是否消耗所有干劲"

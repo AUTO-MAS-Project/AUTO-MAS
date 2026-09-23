@@ -62,7 +62,9 @@ OFFICIAL_NEWS_URL = f"{OFFICIAL_BASE}/api/resource/news"
 ## 榜单本身只有十条上下，全取一遍标题最稳（并发发出去，只在缓存过期时做一次）
 OFFICIAL_TITLE_LIMIT = 12
 ## 活动名与公告标题里的标点，比对包含关系前先去掉
-_NAME_NOISE = re.compile(r"[\s\[\]【】「」『』!！?？。.,，、·\-—~～:：;；'\"“”‘’()（）]")
+_NAME_NOISE = re.compile(
+    r"[\s\[\]【】「」『』!！?？。.,，、·\-—~～:：;；'\"“”‘’()（）]"
+)
 
 _cache: tuple[float, dict[str, Any]] | None = None
 _official_cache: tuple[float, list[dict[str, Any]]] | None = None
@@ -207,7 +209,11 @@ async def fetch_official_banners(*, force: bool = False) -> list[dict[str, Any]]
     global _official_cache
 
     now = time.time()
-    if not force and _official_cache is not None and now - _official_cache[0] < CACHE_TTL_SECONDS:
+    if (
+        not force
+        and _official_cache is not None
+        and now - _official_cache[0] < CACHE_TTL_SECONDS
+    ):
         return _official_cache[1]
 
     headers = {
@@ -228,7 +234,10 @@ async def fetch_official_banners(*, force: bool = False) -> list[dict[str, Any]]
                 return None
 
             banners = [
-                {"banner": str(item.get("banner") or ""), "url": str(item.get("url") or "")}
+                {
+                    "banner": str(item.get("banner") or ""),
+                    "url": str(item.get("url") or ""),
+                }
                 for item in data
                 if isinstance(item, Mapping) and item.get("banner")
             ]
@@ -240,7 +249,9 @@ async def fetch_official_banners(*, force: bool = False) -> list[dict[str, Any]]
                 if not news_id.isdigit():
                     return
                 try:
-                    detail = await client.get(f"{OFFICIAL_NEWS_URL}/{news_id}", headers=headers)
+                    detail = await client.get(
+                        f"{OFFICIAL_NEWS_URL}/{news_id}", headers=headers
+                    )
                     detail.raise_for_status()
                     news = ((detail.json().get("data") or {}).get("news")) or {}
                     title = str(news.get("title") or "").strip()
@@ -251,7 +262,9 @@ async def fetch_official_banners(*, force: bool = False) -> list[dict[str, Any]]
                         f"取星塔旅人官网公告标题失败({news_id}): {type(e).__name__}: {e}"
                     )
 
-            await asyncio.gather(*(load_title(item) for item in banners[:OFFICIAL_TITLE_LIMIT]))
+            await asyncio.gather(
+                *(load_title(item) for item in banners[:OFFICIAL_TITLE_LIMIT])
+            )
     except Exception as e:
         logger.warning(f"获取星塔旅人官网横幅失败: {type(e).__name__}: {e}")
         return None
