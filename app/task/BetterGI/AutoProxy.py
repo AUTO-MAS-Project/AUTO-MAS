@@ -615,21 +615,31 @@ class AutoProxyTask(TaskExecuteBase):
             return
         party_name = str(self.cur_user_config.get("OneDragon", "PartyName") or "")
         # 路径 B：战斗 4 项由执行层直连，原生一条龙只跑日常 + 自定义组。
-        # 把「队列里出现过、且 Plan 中配过实例的战斗组」一律从原生副本剔除，使前端队列行
-        # 开关成为唯一真理源：开 → 执行层跑（战斗段）；关（Plan.step.enabled=false）→ 原生
-        # 也不跑，避免「关了还漏跑」。**不能按 plan_mode 门控**：全部行都关掉时 plan_mode
-        # 为假，那样战斗项会整体落回原生副本照跑（2026-09-12 实机排障）。
+        # 把归执行层负责的战斗组一律从原生副本剔除，使前端开关成为唯一真理源：开 → 执行层
+        # 跑（战斗段）；关（Plan.step.enabled=false）→ 原生也不跑，避免「关了还漏跑」。
+        # **不能按 plan_mode 门控**：全部行都关掉时 plan_mode 为假，那样战斗项会整体落回
+        # 原生副本照跑（2026-09-12 实机排障）。
+        # 归属口径与 build_combat_steps 对齐：队列非空时队列是编排真相源，只剔除「入队且在
+        # Plan 中配过」的战斗组（未入队的孤儿实例执行层也不跑，故留原生副本按 Groups 兜底）；
+        # 队列为空（用户从未维护过可视化队列，Plan/Groups 由开关直接改写）时它不做队列过滤，
+        # 直接接管 Plan 中启用的战斗实例，此时必须整批剔除 Plan 里的战斗组——否则界面已关
+        # 的行仍留在 Groups 里，原生一条龙会照跑（2026-09-23 实机：只开「领取邮件」的用户
+        # 被跑出 5 个任务）。
         # Plan 里没有实例的战斗组（异常存量/尚未配过）仍留在原生副本：宁可多跑一次，
         # 也不静默丢掉界面上开着的任务。
         # 日常 4 项不在战斗集合内，仍按 OneDragon.Groups 在原生一条龙启停（单开关已对齐）。
         _exclude: set[str] = set(exclude_task_names or ())
         if self.use_execution_layer:
-            _exclude |= {
-                b
+            _queue_combat_bases = {
+                resolve_base_name(str(q.get("name", "")))
                 for q in (self.one_dragon_queue or [])
-                for b in [resolve_base_name(str(q.get("name", "")))]
-                if b in self.plan_combat_bases
+                if str(q.get("name", "")).strip()
             }
+            _exclude |= (
+                self.plan_combat_bases & _queue_combat_bases
+                if _queue_combat_bases
+                else set(self.plan_combat_bases)
+            )
         # 执行层接管的自定义项同样从原生副本剔除：它们改由执行层「段」承载
         # （见下方 build_execution_segments），不剔除会与原生一条龙重复执行。
         if self.custom_exec_enabled:
