@@ -1608,6 +1608,15 @@ def _looks_like_frozen_python_package_dir(view: _FileView, directory: Path) -> b
     return any(path.suffix.casefold() == ".pyd" for path in view.walk_files(directory))
 
 
+def _looks_like_offline_dependency_dir(view: _FileView, directory: Path) -> bool:
+    """顶层目录里有 ``*.whl`` 或 ``get-pip.py``：项目的离线依赖包（deps/、wheels/ 之类）。"""
+
+    return any(
+        path.suffix.casefold() == ".whl" or path.name.casefold() == "get-pip.py"
+        for path in view.walk_files(directory)
+    )
+
+
 def _adopt_small_undeclared_entries(
     view: _FileView,
     base_relative: Path,
@@ -1674,7 +1683,17 @@ def _adopt_small_undeclared_entries(
             for path in view.walk_files(entry)
             if not covered(path) and exclusion_reason(path) is None
         )
-        if remainder > UNDECLARED_KEEP_LIMIT:
+        if remainder > UNDECLARED_KEEP_LIMIT and _looks_like_offline_dependency_dir(
+            view, entry
+        ):
+            # 离线依赖目录（MaaGumballs 的 deps/ 94 MB、MHXY 102 MB：一堆 .whl，或带
+            # get-pip.py）：agent 首次启动从这里离线装依赖，丢了就装不上。外壳的大目录
+            # 里没有 wheel，不会被这条带走。
+            warnings.append(
+                f"目录 {entry.as_posix()}/ 有 {remainder / 2**20:.0f} MB，里面是离线安装"
+                "的依赖（.whl / get-pip.py），不受 64 MB 限制，一并带入副本"
+            )
+        elif remainder > UNDECLARED_KEEP_LIMIT:
             if entry in targets:
                 warnings.append(
                     f"目录 {entry.as_posix()}/ 里没被 interface 引用的部分有 "
