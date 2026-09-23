@@ -71,8 +71,9 @@ def build_m7a_platform_env(
 ) -> dict[str, str]:
     """按游戏平台钉住三月七的云开关（环境变量优先于 config.yaml）。
 
-    托管与直控都走这一份：客户端平台钉 ``false``，用户在三月七里开过云游戏
-    也不会跑到云上；云平台再钉浏览器类型与有窗口模式，与 MAS 托管浏览器的
+    客户端平台钉 ``false``，托管运行时用户在三月七里开过云游戏也不会跑到云上
+    （客户端 + 直控不调用这里，见 ``build_platform_m7a_env``）；云平台再钉浏览器
+    类型与有窗口模式，与 MAS 托管浏览器的
     连接条件一致（内置 Chrome + 同版本 chromedriver，没有 ``--headless``）。
     ``browser_debug_port`` 等键没有环境变量，只能写 config.yaml。
     """

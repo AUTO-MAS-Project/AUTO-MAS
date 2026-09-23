@@ -144,9 +144,18 @@ def build_platform_m7a_patch(
     )
 
 
-def build_platform_m7a_env(script_config: Any) -> dict[str, str]:
-    """本轮三月七进程的平台环境变量，托管与直控共用。"""
+def build_platform_m7a_env(
+    script_config: Any, *, direct: bool = False
+) -> dict[str, str]:
+    """本轮三月七进程的平台环境变量。
 
+    客户端平台 + 直控不钉云开关：直控尊重三月七自己的配置，「直控 + 三月七原生
+    云模式」是上游一直支持的用法（check() 会提示改用云·星穹铁道平台）。其余组合
+    （客户端托管钉 false、云平台钉 true 及浏览器参数）照常。
+    """
+
+    if direct and not is_cloud_platform(script_config):
+        return {}
     return build_m7a_platform_env(
         cloud=is_cloud_platform(script_config),
         use_paid_time=cloud_use_paid_time(script_config),

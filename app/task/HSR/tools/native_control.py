@@ -360,7 +360,8 @@ class M7ADirectControlSession:
     ) -> None:
         self._root = root
         self._log = log
-        # 直控不写用户配置，平台只靠环境变量钉（优先于 config.yaml）。
+        # 直控不写用户配置：云平台只靠环境变量钉（优先于 config.yaml）；客户端
+        # 平台不钉云开关，按三月七自己的配置跑。
         self._env_overrides = dict(env_overrides or {})
         self._runner: M7ARunner | None = None
         self._closed = False
@@ -448,7 +449,7 @@ class M7ANativeControlProvider:
         from .account_switch import build_platform_m7a_env
 
         return M7ADirectControlSession(
-            root, log, env_overrides=build_platform_m7a_env(script_config)
+            root, log, env_overrides=build_platform_m7a_env(script_config, direct=True)
         )
 
 

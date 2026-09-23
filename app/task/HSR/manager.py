@@ -455,6 +455,8 @@ class HSRManager(TaskExecuteBase):
         sra_needed = False
         managed_user_count = 0
         managed_users_with_credentials = 0
+        # 直控用户共用同一份三月七 config.yaml，原生云模式的提示只说一次。
+        m7a_native_cloud_warned = False
         enabled_module_keys: set[str] = set()
         # (计划, 用户配置, 用户名, 体力模块实际执行引擎)；关卡预检放到原生配置
         # 可用性确认之后再做，免得把「配置文件不存在」这种更根本的问题盖住。
@@ -508,6 +510,14 @@ class HSRManager(TaskExecuteBase):
                             f"{engine_label} 原生配置不存在：{native_config}，"
                             f"请先在 {engine_label} 中保存一次设置"
                         )
+                if (
+                    not cloud
+                    and "M7A" in control.engines
+                    and not m7a_native_cloud_warned
+                ):
+                    m7a_native_cloud_warned = self._warn_m7a_native_cloud_game(
+                        script_config
+                    )
                 if cloud:
                     # 直控不改用户配置：云浏览器必须开在三月七自己配置的调试端口上。
                     port = self._m7a_direct_debug_port(script_config)
@@ -651,6 +661,29 @@ class HSRManager(TaskExecuteBase):
         """云·星穹铁道的脚本级前置；通过返回空串。"""
 
         return check_cloud_prerequisites(script_config)
+
+    def _warn_m7a_native_cloud_game(self, script_config: HSRConfig) -> bool:
+        """客户端平台 + 三月七直控，而三月七自己开了云游戏：只提示，不报错。
+
+        直控不钉云开关、尊重三月七的配置，这是上游一直支持的用法；这里建议改用
+        云·星穹铁道平台，由 MAS 托管浏览器并按用户隔离登录。返回是否提示过。
+        """
+
+        try:
+            value = load_m7a_native_config(script_config).get("cloud_game_enable")
+        except (FileNotFoundError, OSError, ValueError):
+            return False
+        if not (value is True or str(value).strip().lower() in ("true", "1")):
+            return False
+        message = (
+            "三月七设置里开了云游戏，本轮按三月七自己的云模式运行；"
+            "建议把游戏平台改为云·星穹铁道，由 MAS 托管浏览器并按用户隔离登录"
+            "（首次需重新登录一次）"
+        )
+        if is_game_management_enabled(script_config):
+            message += "。MAS 仍会启动游戏客户端，建议关闭 MAS 管理游戏"
+        self._append_log(message)
+        return True
 
     @staticmethod
     def _m7a_direct_debug_port(script_config: HSRConfig) -> int:
