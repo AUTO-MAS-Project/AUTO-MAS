@@ -26,7 +26,7 @@ export type ZzzOdUserConfig_Info = {
      */
     IfQuickConfig?: (boolean | null);
     /**
-     * 绑定的 zzz-od 实例槽下标（-1=未分配；首次运行或「在一条龙内配置」时自动分配并持久注册 MAS-{用户名} 实例）
+     * 绑定的 zzz-od 实例槽下标（-1=未分配；首次运行或「在一条龙内配置」时自动分配，取 1001 起的高位段以避开一条龙原生实例的升序找号；槽目录 config/{idx:02d} 持久保留，注册表只在运行/会话窗口以合成视图出现）
      */
     SlotIdx?: (number | null);
     /**

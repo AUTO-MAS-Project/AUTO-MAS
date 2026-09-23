@@ -14,6 +14,7 @@ const HOME_LAYOUT_STORAGE_KEY = 'auto-mas.home.layout'
 export {
   HOME_ACTIVITY_CAROUSEL_KEY,
   HOME_ACTIVITY_MODULE_KEYS,
+  HOME_ACTIVITY_NOTE_KEYS,
   defaultHomeModuleOrder,
   isHomeActivityModuleKey,
   normalizeHomeLayoutConfig,
@@ -51,6 +52,9 @@ export const useHomeLayout = () => {
   const hiddenHomeModules = ref<HomeModuleKey[]>([])
   const scrollHintHidden = ref(false)
   const carouselAutoplay = ref(false)
+  // 首页便笺：总开关默认关（在游戏社区设置里打开），每游戏单独开关默认全开
+  const activityNotesVisible = ref(false)
+  const hiddenActivityNotes = ref<HomeModuleKey[]>([])
   let saveQueue = Promise.resolve()
 
   const homeModuleOrder = computed(() =>
@@ -62,6 +66,8 @@ export const useHomeLayout = () => {
     hiddenModules: [...hiddenHomeModules.value],
     hideScrollHint: scrollHintHidden.value,
     carouselAutoplay: carouselAutoplay.value,
+    activityNotesVisible: activityNotesVisible.value,
+    hiddenActivityNotes: [...hiddenActivityNotes.value],
   })
 
   const applyLayout = (layout: HomeLayoutConfig) => {
@@ -71,6 +77,8 @@ export const useHomeLayout = () => {
     hiddenHomeModules.value = [...layout.hiddenModules]
     scrollHintHidden.value = layout.hideScrollHint === true
     carouselAutoplay.value = layout.carouselAutoplay === true
+    activityNotesVisible.value = layout.activityNotesVisible === true
+    hiddenActivityNotes.value = [...(layout.hiddenActivityNotes ?? [])]
   }
 
   const logWarning = (message: string, error: unknown) => {
@@ -84,6 +92,8 @@ export const useHomeLayout = () => {
       hiddenModules: [...layout.hiddenModules],
       hideScrollHint: layout.hideScrollHint === true,
       carouselAutoplay: layout.carouselAutoplay === true,
+      activityNotesVisible: layout.activityNotesVisible === true,
+      hiddenActivityNotes: [...(layout.hiddenActivityNotes ?? [])],
     }
     const saveTask = saveQueue.then(() => saveConfig({ homeLayout: snapshot }))
     saveQueue = saveTask.catch(error => {
@@ -172,6 +182,23 @@ export const useHomeLayout = () => {
     return queueLayoutSave(currentLayout())
   }
 
+  /** 首页便笺总开关；由游戏社区设置页的「首页显示日常便笺」控制 */
+  const setActivityNotesVisible = (visible: boolean) => {
+    activityNotesVisible.value = visible
+    return queueLayoutSave(currentLayout())
+  }
+
+  /** 首页便笺的每游戏单独开关：关掉后轮播切到该游戏也不再显示便笺 */
+  const setActivityNoteShown = (key: HomeModuleKey, shown: boolean) => {
+    hiddenActivityNotes.value = shown
+      ? hiddenActivityNotes.value.filter(hiddenKey => hiddenKey !== key)
+      : [...hiddenActivityNotes.value.filter(hiddenKey => hiddenKey !== key), key]
+    return queueLayoutSave(currentLayout())
+  }
+
+  const isActivityNoteVisible = (key: HomeModuleKey | null) =>
+    key !== null && !hiddenActivityNotes.value.includes(key)
+
   const { t } = useI18n()
 
   const toDescriptors = (keys: HomeModuleKey[], titleKey: (key: HomeModuleKey) => string) =>
@@ -203,6 +230,8 @@ export const useHomeLayout = () => {
     hiddenHomeModules,
     scrollHintHidden,
     carouselAutoplay,
+    activityNotesVisible,
+    hiddenActivityNotes,
     homeModules,
     homeActivityModules,
     visibleActivityKeys,
@@ -212,6 +241,9 @@ export const useHomeLayout = () => {
     setHomeModuleShown,
     setScrollHintHidden,
     setCarouselAutoplay,
+    setActivityNotesVisible,
+    setActivityNoteShown,
+    isActivityNoteVisible,
     isHomeModuleShown,
     isHomeModuleVisible,
   }

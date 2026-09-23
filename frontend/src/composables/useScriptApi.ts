@@ -231,10 +231,6 @@ export function useScriptApi() {
                           maaUserData.Info?.Stage_2 !== undefined ? maaUserData.Info.Stage_2 : '-',
                         Stage_3:
                           maaUserData.Info?.Stage_3 !== undefined ? maaUserData.Info.Stage_3 : '-',
-                        Stage_Remain:
-                          maaUserData.Info?.Stage_Remain !== undefined
-                            ? maaUserData.Info.Stage_Remain
-                            : '-',
                         Tag: maaUserData.Info?.Tag !== undefined ? maaUserData.Info.Tag : null,
                       },
                       Task: {
@@ -259,14 +255,6 @@ export function useScriptApi() {
                         IfSwitchTheme:
                           maaUserData.Task?.IfSwitchTheme !== undefined
                             ? maaUserData.Task.IfSwitchTheme
-                            : false,
-                        IfRoguelike:
-                          maaUserData.Task?.IfRoguelike !== undefined
-                            ? maaUserData.Task.IfRoguelike
-                            : false,
-                        IfReclamation:
-                          maaUserData.Task?.IfReclamation !== undefined
-                            ? maaUserData.Task.IfReclamation
                             : false,
                         IfDepotMaintain:
                           maaUserData.Task?.IfDepotMaintain !== undefined
@@ -1279,6 +1267,18 @@ export function useScriptApi() {
                           baahUserData.Info?.ConfigName !== undefined
                             ? baahUserData.Info.ConfigName
                             : '',
+                        ActivityConfigName:
+                          baahUserData.Info?.ActivityConfigName !== undefined
+                            ? baahUserData.Info.ActivityConfigName
+                            : '',
+                        IfActivityAdapt:
+                          baahUserData.Info?.IfActivityAdapt != null
+                            ? baahUserData.Info.IfActivityAdapt
+                            : false,
+                        ActivityLineType:
+                          baahUserData.Info?.ActivityLineType != null
+                            ? baahUserData.Info.ActivityLineType
+                            : 'CN',
                         Notes:
                           baahUserData.Info?.Notes !== undefined ? baahUserData.Info.Notes : '',
                         Tag: baahUserData.Info?.Tag !== undefined ? baahUserData.Info.Tag : null,

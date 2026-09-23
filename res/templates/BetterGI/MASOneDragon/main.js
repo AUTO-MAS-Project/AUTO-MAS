@@ -28,16 +28,27 @@ function baseStepName(name) {
 //      autoBossConfig.bossName，使右栏显示「未选择首领」时静默讨伐一个 BGI 旧配置里的首领；
 //   2) 让 MAS 侧能把缺失原因明确报给用户（见 AutoProxy._run_execution_layer）。
 // 键为归一化基名（baseStepName），值为 [settings 键, 用户可读缺失原因] 数组。
+// 秘境/地脉花的目标值要按「当天行 → 默认行 → 步骤级」解析，故不进本表，见下面单独判。
 const REQUIRED_STEP_FIELDS = {
   自动首领讨伐: [["bossName", "未选择首领"]],
 };
 
-// 返回该步骤缺失的必填项（空数组表示齐全或该步无需校验）。
+// 返回该步骤缺失的必填项（用户可读原因数组；空数组表示齐全或该步无需校验）。
+// 本函数只在 shouldRunToday 通过后调用，所以秘境/地脉花解析为空即「今天要跑但没选值」：
+// 先于进 BGI 报出原因，不再等 BGI 自己抛内部异常（2026-09-19 实机：地脉花报
+// 「地脉花类型未选择」被算成运行失败，秘境则是静默 SKIP_WEEKDAY 看不出原因）。
 function missingRequiredFields(step) {
-  const items = REQUIRED_STEP_FIELDS[baseStepName(step.name)];
-  if (!items) return [];
+  const base = baseStepName(step.name);
   const s = step.settings || {};
-  return items.filter((item) => !s[item[0]]);
+  const missing = [];
+  for (const [key, reason] of REQUIRED_STEP_FIELDS[base] || []) {
+    if (!s[key]) missing.push(reason);
+  }
+  if (base === "自动秘境" && !domainNameOf(step)) missing.push("未选择秘境");
+  if (base === "自动地脉花" && weeklyLeyLineRunsToday(step) && !leyLineTypeOf(step)) {
+    missing.push("未选择地脉花类型");
+  }
+  return missing;
 }
 
 // 日志：优先 BGI 注入的 log（写入 BGI 日志文件，供 MAS 监控解析 MAS_STEP_* 标记），
@@ -72,36 +83,91 @@ function setProp(obj, name, value) {
 // new Date().getDay() 的顺序：0=周日..6=周六
 const DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
-// 星期执行标记：地脉花的「执行」勾选由 MAS 托管在 weeklyLeyLine[day].run；
-// 其余任务读扁平的 run{Day}。全部未勾选视为不限制（每天执行）。
-function weekdayRunFlags(step) {
-  const s = step.settings || {};
-  const weekly = s.weeklyLeyLine;
-  if (weekly && typeof weekly === "object") {
-    const flags = DAY_NAMES.map((d) => !!(weekly[d] && weekly[d].run === true));
-    if (flags.some(Boolean)) return flags;
-  }
-  return DAY_NAMES.map((d) => s["run" + d] === true);
+// 本次运行所属的星期键：在 main() 开头取一次，全程复用。
+// 不逐次取 now：跨零点的一次运行里 gate（23:59:59）与 dispatch（00:00:00）会读到不同的
+// 行，出现「gate 说跑、dispatch 跳过」这类错位（2026-09-19 地脉花口径问题的翻版）。
+// 周表按「本次启动日」解析，也与通知里「这次运行」的语义一致。
+let runDayKey = DAY_NAMES[new Date().getDay()];
+
+// settings 经 JSON 注入/回读，布尔可能以字符串形态出现（见下面 specifyResinUse 的教训：
+// "false" 会被 !! 转成 true，导致「模式=耗尽 / 参数=指定次数」自相矛盾）。所有模式与
+// 星期开关统一经此规范化，避免 gate / 必填校验 / 执行分支各判一套。
+// 返回 true/false；非布尔形态返回 null（= 未设置，默认值由调用方决定）。
+function toBool(value) {
+  if (value === true || value === "true") return true;
+  if (value === false || value === "false") return false;
+  return null;
+}
+
+// 秘境是否走「每周秘境」表：仅显式 false 才走每日（与右栏「开启每日秘境」默认开启一致）。
+function domainWeeklyEnabled(step) {
+  return toBool((step.settings || {}).weeklyDomainEnabled) !== false;
+}
+
+// 地脉花是否走「每日地脉花」：仅显式 false 才走每周（同上，右栏默认开启每日）。
+function leyLineDailyEnabled(step) {
+  return toBool((step.settings || {}).leyLineDailyEnabled) !== false;
 }
 
 // 星期编排：仅当勾选的星期包含今天才执行；全部未勾选视为不限制（每天执行）。
 // 由 MAS 自行管理，不依赖被过滤掉的原生一条龙「每周刷取」配置表。
 function shouldRunToday(step) {
-  const s = step.settings || {};
+  const base = baseStepName(step.name);
   // 秘境特殊处理：每周秘境开启时按当天的「执行」开关（开启才执行）；全关=不执行。
   // 每日秘境（关闭每周）不受星期限制，每天都跑。
-  if (baseStepName(step.name) === "自动秘境") {
-    const useWeekly = s.weeklyDomainEnabled !== false;
-    if (useWeekly) {
-      const wd = s.weeklyDomain || {};
-      const wdName = DAY_NAMES[new Date().getDay()];
-      return !!(wd[wdName] && wd[wdName].run === true);
-    }
-    return true;
+  if (base === "自动秘境") {
+    if (!domainWeeklyEnabled(step)) return true;
+    const row = ((step.settings || {}).weeklyDomain || {})[runDayKey] || {};
+    return toBool(row.run) === true;
   }
-  const flags = weekdayRunFlags(step);
-  if (!flags.some(Boolean)) return true;
-  return flags[new Date().getDay()];
+  // 地脉花与秘境同口径：每周地脉花按「当天行勾了执行才跑」，一行都没勾＝本周不跑。
+  // 不能落到「全部未勾选视为不限制」的通用回退，否则 gate 说今天要跑、dispatchCombat
+  // 却跳过，而必填校验夹在两者中间（2026-09-19 PR #890 review 指出的错位）。
+  if (base === "自动地脉花") return weeklyLeyLineRunsToday(step);
+  // 幽境危战 / 首领讨伐：右栏没有星期表（见 one_dragon_plan.BUILTIN_STEP_SETTING_KEYS，
+  // 只有秘境/地脉花有 weekly 嵌套结构），一律每天执行。此处曾有一层扁平 run{Day} 回退，
+  // 全仓无生产者，且「一行都没勾＝不限制」的语义正是这次地脉花错位的来源，已删除。
+  return true;
+}
+
+// 秘境目标秘境：与 dispatchCombat 取值口径一致（每周当天行 → 每周默认行 → 步骤级）。
+// 抽出来供必填校验复用，避免「校验用一套、执行用另一套」而误报或漏报。
+function domainNameOf(step) {
+  const s = step.settings || {};
+  const wd = s.weeklyDomain || {};
+  const todayRow = (domainWeeklyEnabled(step) && wd[runDayKey]) || {};
+  return todayRow.domainName || (wd.default || {}).domainName || s.domainName;
+}
+
+// 地脉花今天是否会真的跑：与 dispatchCombat 的跳过判定同口径——每日模式直接跑；每周模式
+// 只有当天行勾了「执行」才跑（一行都没勾＝本周不跑）。gate（shouldRunToday）与必填校验都
+// 走它，保证「今天跑不跑」只有一处结论。
+function weeklyLeyLineRunsToday(step) {
+  if (leyLineDailyEnabled(step)) return true;
+  const wd = (step.settings || {}).weeklyLeyLine || {};
+  return toBool((wd[runDayKey] || {}).run) === true;
+}
+
+// 地脉花类型：开启每日地脉花时取步骤级；每周地脉花按「当天行 → 默认行 → 步骤级」兜底。
+// BGI 的 AutoLeyLineOutcropTask.ValidateSettings 缺类型会直接抛「地脉花类型未选择」，
+// 故这里与执行分支共用同一取值，缺失时由必填校验先拦下。
+function leyLineTypeOf(step) {
+  const s = step.settings || {};
+  if (leyLineDailyEnabled(step)) return s.leyLineOutcropType;
+  const wd = s.weeklyLeyLine || {};
+  const row = wd[runDayKey] || {};
+  const def = wd.default || {};
+  return row.type != null ? row.type : def.type != null ? def.type : s.leyLineOutcropType;
+}
+
+// 执行层内部跳过原因（空串 = 本次真的要跑）：与 gate、必填校验共用上面同一批取值函数，
+// 保证「跑不跑」只有一处结论。主循环据此在打 MAS_STEP_BEGIN **之前** 打
+// MAS_STEP_SKIP_WEEKDAY —— 先 BEGIN 再跳过会让 one_dragon_report 把这步当「未完成」记成失败。
+function combatSkipReason(step) {
+  const base = baseStepName(step.name);
+  if (base === "自动秘境" && !domainNameOf(step)) return "无对应秘境";
+  if (base === "自动地脉花" && !weeklyLeyLineRunsToday(step)) return "当天未勾选执行";
+  return "";
 }
 
 // 树脂耗尽是用户开启「树脂耗尽模式」后的预期停止条件：BGI 抛
@@ -112,6 +178,10 @@ function isResinExhausted(msg) {
   return s.indexOf("树脂耗尽") >= 0 || s.indexOf("树脂不足") >= 0;
 }
 
+// 执行单个战斗步。
+// 返回 "skipped" = 本次本就不跑（无对应目标 / 当天未勾选执行）；其余情况返回 undefined（已执行）。
+// 主循环调用前已用 combatSkipReason 拦过一遍（同源判定），这里的守卫只是兜底——
+// 但即便走到也必须回 "skipped"，不能静默 return，否则会被打成 MAS_STEP_DONE（假成功）。
 async function dispatchCombat(step) {
   const s = step.settings || {};
   switch (baseStepName(step.name)) {
@@ -119,14 +189,14 @@ async function dispatchCombat(step) {
       // 每周配置由 MAS 托管：按今天星期从 settings.weeklyDomain 取对应行（回退 default）。
       // 关闭「每周秘境」时只走每日行；奖励档位同理，每周走 default.reward（每周表默认行），
       // 走每日则用 sundaySelectedValue（每日行），两者不可混用。
-      const wdName = DAY_NAMES[new Date().getDay()];
       const wd = s.weeklyDomain || {};
       const defaultRow = wd.default || {};
-      const useWeekly = s.weeklyDomainEnabled !== false;
-      const todayRow = (useWeekly && wd[wdName]) || {};
+      const useWeekly = domainWeeklyEnabled(step);
+      const todayRow = (useWeekly && wd[runDayKey]) || {};
       // 队伍配置表「战斗场景」选队结果优先级最高（压过每周行与步骤级），见后端 team_resolver.py
       const partyName = s.masTeamOverride || todayRow.partyName || defaultRow.partyName || s.partyName;
-      const domainName = todayRow.domainName || defaultRow.domainName || s.domainName;
+      // 与必填校验同口径（见 domainNameOf），避免两处漂移
+      const domainName = domainNameOf(step);
       const reward = useWeekly
         ? todayRow.reward != null
           ? todayRow.reward
@@ -137,11 +207,10 @@ async function dispatchCombat(step) {
       // 战斗策略：优先当天行，其次每周默认行，最后才是步骤级 combatStrategyPath（全局兜底）。
       // 留空则完全不设置，由 BGI 沿用 autoFightConfig 的全局策略。
       const strategyName = s.masStrategyOverride || todayRow.strategy || defaultRow.strategy || s.combatStrategyPath;
-      // 今天无对应秘境配置则跳过（不执行）
-      if (!domainName) {
-        masLog("MAS_STEP_SKIP_WEEKDAY: " + step.uid + " " + step.name);
-        return;
-      }
+      // 无对应秘境配置：正常已由主循环 combatSkipReason 前置拦下（同一个 domainNameOf）。
+      // 这里保留兜底，但返回 "skipped" 而不是静默 return——静默 return 会让主循环接着打
+      // MAS_STEP_DONE，把「没跑的步」记成成功。
+      if (!domainName) return "skipped";
       // 轮数换算（原文件头 TODO #7）：前端右栏不暴露 domainRoundNum，直接取默认值 1
       // 会让 BGI 的 AutoDomain 只刷 1 轮就「正常返回」（不抛异常）——表现为第二轮角色
       // 一动不动、攒够超时后反复 ESC 回主界面、最后被 MAS 记成 MAS_STEP_DONE 成功。
@@ -151,11 +220,10 @@ async function dispatchCombat(step) {
         (s.transientResinUseCount || 0) +
         (s.fragileResinUseCount || 0) +
         (s.originalResinUseCount || 0);
-      // settings 经 JSON 注入/回读，布尔可能以字符串形态出现；这里只规范化一次，
-      // 并把这个结果同时用于「模式判断」与下面的 Param 透传，避免两处得出相反结论
-      // （例如字符串 "false" 会被 !! 转成 true，BGI 就会收到
-      // 「模式=树脂耗尽 / 参数=指定次数」的矛盾设置）。
-      const specifyResinUse = s.specifyResinUse === true || s.specifyResinUse === "true";
+      // settings 经 JSON 注入/回读，布尔可能以字符串形态出现；用统一的 toBool 规范化一次，
+      // 结果同时用于「模式判断」与下面的 Param 透传，避免两处得出相反结论（例如字符串
+      // "false" 会被 !! 转成 true，BGI 就会收到「模式=树脂耗尽 / 参数=指定次数」的矛盾设置）。
+      const specifyResinUse = toBool(s.specifyResinUse) === true;
       let roundNum;
       if (specifyResinUse) {
         // 指定次数模式：轮数 = 各树脂次数之和；次数全为 0 时回退步骤级配置
@@ -196,27 +264,24 @@ async function dispatchCombat(step) {
       // 每日地脉花（leyLineDailyEnabled）优先于每周地脉花：开启时走每日统一配置，直接执行；
       // 否则走每周地脉花：按今天星期取对应行，仅当该行执行开关开启才刷取，
       // 当天某字段为空时按「默认」行兜底（默认行无执行开关）。
-      const wdName = DAY_NAMES[new Date().getDay()];
       // 未配置（新用户）默认走每日模式，与右栏「开启每日地脉花」默认开启一致；
       // 仅显式 false（用户选了每周地脉花）才走每周分支。
-      const daily = s.leyLineDailyEnabled !== false;
-      let country, leyLineOutcropType, team, strategy;
+      const daily = leyLineDailyEnabled(step);
+      // 类型取值与必填校验同口径（见 leyLineTypeOf），避免两处漂移
+      const leyLineOutcropType = leyLineTypeOf(step);
+      let country, team, strategy;
       if (daily) {
         country = s.country;
-        leyLineOutcropType = s.leyLineOutcropType;
         team = s.team;
         strategy = s.combatStrategyPath;
       } else {
+        // 当天行未勾选「执行」即不执行：与 gate / 必填校验同口径（weeklyLeyLineRunsToday），
+        // 正常已由主循环 combatSkipReason 前置拦下（见上面 skipped 的约定）。
+        if (!weeklyLeyLineRunsToday(step)) return "skipped";
         const weeklyLeyLine = s.weeklyLeyLine || {};
-        const wdRow = weeklyLeyLine[wdName] || {};
-        // 执行开关全部关闭（今天的行未勾选）即不执行
-        if (wdRow.run !== true) {
-          masLog("MAS_STEP_SKIP_WEEKDAY: " + step.uid + " " + step.name);
-          break;
-        }
+        const wdRow = weeklyLeyLine[runDayKey] || {};
         const def = weeklyLeyLine.default || {};
         country = wdRow.country != null ? wdRow.country : (def.country != null ? def.country : s.country);
-        leyLineOutcropType = wdRow.type != null ? wdRow.type : (def.type != null ? def.type : s.leyLineOutcropType);
         team = wdRow.team || def.team || s.team;
         strategy = wdRow.strategy || def.strategy || s.combatStrategyPath;
       }
@@ -370,6 +435,10 @@ function safeParsePlan(raw) {
 }
 
 async function main() {
+  // 冻结本次运行所属的星期：整条编排（gate / 必填校验 / 执行分支 / 队伍覆盖）只认这一个
+  // 取值，跨零点启动也不会前后读到不同的行。
+  runDayKey = DAY_NAMES[new Date().getDay()];
+  masLog("MAS_RUN_DAY " + runDayKey);
   masLog(
     "MAS_SETTINGS_KEYS " +
       (typeof settings !== "undefined" && settings
@@ -415,13 +484,28 @@ async function main() {
           " " +
           step.name +
           " " +
-          missing.map((item) => item[1]).join("/")
+          missing.join("/")
       );
+      continue;
+    }
+    // 本次本就不跑（无对应秘境 / 当天未勾选执行）：在打 BEGIN 之前拦下。
+    // MAS_STEP_SKIP_WEEKDAY 不进分步表（见 one_dragon_report.parse_execution_layer_report：
+    // 这类步「要么由随后启动的原生一条龙承接、要么本次本就不跑」）；若先打 BEGIN 再跳过，
+    // 解析器会把这步当「未完成」记成失败。
+    const skipReason = combatSkipReason(step);
+    if (skipReason) {
+      masLog("MAS_STEP_SKIP_WEEKDAY: " + step.uid + " " + step.name + " " + skipReason);
       continue;
     }
     masLog("MAS_STEP_BEGIN: " + step.uid + " " + step.name);
     try {
-      await dispatchCombat(step);
+      const outcome = await dispatchCombat(step);
+      // 兜底：理论上走不到（combatSkipReason 与 dispatchCombat 的守卫同源同参数）。
+      // 真走到这里说明两处判定漂移了，宁可让解析器按「未完成」暴露出来，也不记成成功。
+      if (outcome === "skipped") {
+        masLog("MAS_STEP_SKIP_WEEKDAY: " + step.uid + " " + step.name);
+        continue;
+      }
       masLog("MAS_STEP_DONE: " + step.uid + " " + step.name);
     } catch (e) {
       const msg = (e && (e.message || e.toString())) || String(e);

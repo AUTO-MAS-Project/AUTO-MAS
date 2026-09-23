@@ -15,7 +15,8 @@ import { request as __request } from '../core/request';
 export class BackupService {
     /**
      * 列出配置备份（时间倒序；target 取值由专项定义，非法值返回 400）
-     * 运行/会话下发前与编辑界面进出会自动归档，内容无变化跳过。
+     * 返回 ``items``（``time`` + 备份时点来源标注 ``mode``，倒序）与当前
+     * 来源 ``mode``（仅三态池，供前端跨来源提示）；非法 target 返回 400。
      * @param scriptId
      * @param userId
      * @param target

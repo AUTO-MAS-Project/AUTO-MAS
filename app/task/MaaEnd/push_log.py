@@ -100,7 +100,7 @@ _LINE_TS_FORMAT = "%Y-%m-%d %H:%M:%S.%f"
 # 覆盖：各 emoji 区段（符号/表情/传输/补充符号）、Dingbats 与杂项符号（❌✂⭐⏰）、
 # 变体选择符与零宽连接符；不含 CJK 与全角标点，任务名正文不受影响。
 _EMOJI_STRIP_RE = re.compile(
-    "[\U0001F000-\U0001FAFF\u2300-\u23FF\u2600-\u27BF\u2B00-\u2BFF\uFE0F\u200D\u20E3]"
+    "[\U0001f000-\U0001faff\u2300-\u23ff\u2600-\u27bf\u2b00-\u2bff\ufe0f\u200d\u20e3]"
 )
 
 
@@ -125,7 +125,9 @@ _SUCCESS_RANK = 1
 _FAIL_RANK = 2
 
 
-def maaend_resolve(results: list[tuple[str, str, float]]) -> list[tuple[str, str, float]]:
+def maaend_resolve(
+    results: list[tuple[str, str, float]],
+) -> list[tuple[str, str, float]]:
     """后处理：按任务聚合最终状态，保持最后一次出现顺序
 
     输入/输出均为 ``(log_type, text, ts)`` 元组（与 log_box `_PostProcessor`

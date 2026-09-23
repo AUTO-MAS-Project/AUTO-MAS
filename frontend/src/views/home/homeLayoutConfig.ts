@@ -16,6 +16,15 @@ export const HOME_ACTIVITY_MODULE_KEYS: HomeModuleKey[] = [
   'arknights',
 ]
 
+/** 已接入日常便笺的游戏，提供首页社区信息的独立开关。 */
+export const HOME_ACTIVITY_NOTE_KEYS: HomeModuleKey[] = [
+  'endfield',
+  'starrail',
+  'genshin',
+  'zenless',
+  'arknights',
+]
+
 export const defaultHomeModuleOrder: HomeModuleKey[] = [
   'command',
   'quick',
@@ -71,5 +80,8 @@ export const normalizeHomeLayoutConfig = (value: unknown): HomeLayoutConfig => {
     hideScrollHint: config.hideScrollHint === true,
     // 新装及缺少该字段的旧配置统一默认关闭，避免阅读时自动切换；保留显式开启的选择。
     carouselAutoplay: config.carouselAutoplay === true,
+    // 首页便笺默认不展示：新装与旧配置都保持关闭，用户在游戏社区设置里打开总开关。
+    activityNotesVisible: config.activityNotesVisible === true,
+    hiddenActivityNotes: normalizeModuleKeys(config.hiddenActivityNotes),
   }
 }

@@ -32,13 +32,54 @@
 
 ## [未发布]
 
+### 变更
+
+- 【MAA】库存保持的计划列表重新支持在 MAS 配置页直接编辑 (#958) by @1w1w11w1
+
+### 修复
+
+- 【MAA】修复静默模式下 MAA 启动后仍显示窗口的问题 (#953) by @1w1w11w1
+- 【MAA】修复 MAA 更新资源时误报内存不足、代理反复重试的问题（仅公测） (#955) by @jinghero
+
+## [v5.5.0-beta.8] - 2026-09-23
+
+### 变更
+
+- 【MAA】MAA 配置页直接编辑 base，队列交还 MAA，删除剩余理智任务 (#927) by @1w1w11w1
+- 【end】新建脚本时的类型说明改为写明「明日方舟：终末地」，并可按游戏名搜索到 (#924) by @qiyinxi
+- 【end】关闭游戏时可恢复启动前的显示模式与分辨率（仅公测） (#947) by @HarcoChen
+- 【MFW】项目更新包先走 GitHub 加速镜像并可回退直连，重试退避，进度带预计剩余时间（仅公测） (#945) by @qiyinxi
+
+### 修复
+
+- 【MAA】修复脚本模式下多个自定义基建用户共用班次指针、重试时提前换到下一班的问题 (#939) by @qiyinxi
+- 【MAA】修复 MAA 内存不足误报超时、掉落少记，及 ok-ww 体力不推送、MaaEnd 无任务误判的问题 (#926) by @jinghero
+- 【HSR】修复脚本直控忽略日常/周常超时设置、固定 120 分钟后才终止卡住脚本的问题 (#935) by @qiyinxi
+- 【绝区零一条龙】修复运行或配置会话期间备份恢复失败的问题，损坏时会提示位置并支持确认后强制恢复（仅公测） (#915) by @AthenaHibou
+- 【绝区零一条龙】修复直控模式运行一条龙时任务被跳过或提示未配置游戏路径的问题（仅公测） (#931) by @AthenaHibou
+- 【绝区零一条龙】支持一条龙运行结束后关闭游戏或关机，默认关闭游戏（仅公测） (#937) by @AthenaHibou
+- 【绝区零一条龙】实例槽不再残留：可查看、清理与恢复，槽号被抢自动改绑留底，崩溃后配队不再丢（仅公测） (#942) by @AthenaHibou
+- 【MFW】运行前自动更新显示下载进度，停止任务即中止下载，新增脚本级代理地址（仅公测） (#943) by @qiyinxi
+- 【通用脚本】修复通用用户无法启动通用配置的问题 by @HarcoChen
+- 【通用脚本】修复通用脚本配置文件缺失时任务报错中断的问题 (#829) by @beichen24a1
+- 【工具】修复启动参数含引号或空格时不生效的问题 (#866) by @beichen24a1
+- 【工具】修复日志导出提示弹窗无法关闭的问题（仅公测） by @ClozyA
+
+### 开发流程
+
+- 去掉雷电 VBox 自愈模块导入时的 SyntaxWarning (#934) by @qiyinxi
+
+## [v5.5.0-beta.7] - 2026-09-20
+
 ### 新增
 
 - 【end】任务报告新增各任务执行结果明细，展示方式可调 (#850) by @AthenaHibou
+- 【BAAH】支持按碧蓝档案活动排期自动切换配置文件，并显示当前活动（仅公测） (#733) by @beichen24a1
 - 【SRC】代理前自动检查并更新游戏客户端，避免强制更新卡死 (#854) by @1004452714
 - 【MFW】任务失败时自动截图，随代理结果与统计通知内嵌进邮件或 Webhook 发出 (#841) by @qiyinxi
 - 【MFW】编辑页整改：PC 游戏默认由 MAS 启停、可临时改 Unity 分辨率，运行环境与更新改为日志面板 (#843) by @qiyinxi
 - 【模拟器】为 MuMu 启动、外部命令超时和任务收尾补充诊断日志 (#811) by @Craun718
+- 【工具】首页新增签到情况与可切换用户的单条便笺，社区便笺支持按游戏查看（仅公测） (#912) by @Lance0174
 
 ### 变更
 
@@ -46,17 +87,37 @@
 - 【end】恢复 MAS 切号兼容入口并提示滑索数据风险（仅公测） (#864) by @HarcoChen
 - 【MFW】运行前检查更新时不再重复提示「Mirror 酱 CDK 未配置」 (#838) by @qiyinxi
 - 【MFW】用户页整改：队列与配置两栏等高滚动、队列行只留任务名、启用改下拉，脚本页自动识别游戏包名 (#855) by @qiyinxi
+- 【MFW】MFW 的 .maafw.log 改为原生日志原样副本，MAS 侧输出另存 .worker.log（仅公测） (#881) by @qiyinxi
+- 【MFW】MFW 启动后画面稳定即下发任务，「启动后再等」并入游戏等待时间（仅公测） (#889) by @qiyinxi
 - 【模拟器】「大雷主人模式」也会拦下雷电在桌面右下角定时弹出的推广窗口 (#836) by @qiyinxi
 
 ### 修复
 
+- 【MAA】修复 MAA 里开启的临期理智药等理智作战选项不生效，并移除自动肉鸽开关 (#875) by @1w1w11w1
+- 【MAA】修复 MAA 托管会话后任务队列被改回默认、部分任务设置丢失的问题 (#907) by @1w1w11w1
+- 【MAA】修复静默模式下 MAA 仍弹出公告与更新弹窗的问题 (#918) by @jinghero
+- 【end】问题包包含最近三次失败记录，并自动清理超过 10MB 的登录截图。 (#905) by @HarcoChen
+- 【end】修复使用 ADB 控制器时任务收尾未关闭模拟器，并可能丢失代理数据和结果通知的问题。（仅公测） (#906) by @HarcoChen
 - 【HSR】修复 SRA 历战余响混跑日常时漏记完成、战斗超时后又误记为完成的问题 (#791) by @jinghero
+- 【bgi】修复「直控 + 快速配置」下一条龙任务一条都不跑，以及通知分步表与配置组右栏的显示、保存问题（仅公测） (#890) by @TCddddd
+- 【bgi】修复进副本失败被误报成功；快速配置改按配置来源生效，直控不再改写原生配置（仅公测） (#896) by @TCddddd
+- 【ok-ww】修复 ok-ww 任务结束后启动器设置未还原、设置会话把「游戏退出时关闭应用」永久写入的问题 (#903) by @1w1w11w1
+- 【ok-ww】修复 ok-ww 更新源被游戏区服设置静默切换，并移除面板中已由账号切换取代的多账号日常任务选项 (#904) by @1w1w11w1
 - 【MFW】修复由 MAS 启动桌面游戏后十几秒就报识别异常失败的问题，新增「启动后再等」可调 (#857) by @qiyinxi
+- 【MFW】MFW 运行超时时先截图再停止，每轮失败后重启 MAS 拉起的游戏或模拟器再重试（仅公测） (#880) by @qiyinxi
+- 【MFW】Agent 连不上时说清自带 Python 的 maafw 与原生库协议不匹配，不再只报连接超时 (#885) by @qiyinxi
+- 【MFW】修复 FOS 等没有 requirements.txt 的 Python agent 启动即退出 (#884) by @qiyinxi
+- 【MFW】更新前先预检运行环境，建不出来就不升级；PyPI 缺 maafw 版本时改从源码打包（仅公测） (#901) by @qiyinxi
 - 【通用脚本】修复配置备份静默失败，以及 M9A 通知版本号截断、掉落统计丢失的问题 (#822) by @jinghero
+- 【主页】修复碧蓝档案活动卡片在活动间隙把已结束的活动当成当前活动展示、倒计时停在 0 天 0 时的问题（仅公测） (#823) by @beichen24a1
 - 【调度】修复删除脚本或用户时因数据目录里有只读文件而失败、目录残留的问题 (#824) by @beichen24a1
 - 【调度】修复任务运行中仍可修改或恢复相关脚本配置的问题，运行期间会自动锁定 (#844) by @Craun718
+- 【调度】非自动代理模式不再显示用户下拉，启动也不再带用户（仅公测） (#784) by @ColinHouse
+- 【模拟器】修复 MuMu 同时开着时雷电实例刚启动就被判成没有 ADB 地址、MAA 连接失败的问题（仅公测） (#872) by @qiyinxi
+- 【工具】游戏已在运行时提示启动参数本轮不会生效 (#867) by @beichen24a1
 - 【更新】修复更新日志过长时检查更新失败、新版本提示不显示的问题 (#818) by @beichen24a1
 - 【更新】检查更新在更新日志异常时不再失败，仍会正常提示新版本 (#820) by @beichen24a1
+- 【Runtime】修复了关闭应用时需要等待后端退出后窗口才消失的问题。 (#910) by @ClozyA
 
 ### 开发流程
 
@@ -326,7 +387,9 @@
 - OK-NTE专项 修复任务结束后异环启动器进程残留并持续占用内存的问题 by @qiyinxi by @HarcoChen
 - MAA专项 修复开启活动关优先后普通理智作战的理智药额度被静默清零的问题，两个作战任务各自使用独立理智药额度 by @qiyinxi by @HarcoChen
 
-[未发布]: https://github.com/AUTO-MAS-Project/AUTO-MAS/compare/v5.5.0-beta.6...dev
+[未发布]: https://github.com/AUTO-MAS-Project/AUTO-MAS/compare/v5.5.0-beta.8...dev
+[v5.5.0-beta.8]: https://github.com/AUTO-MAS-Project/AUTO-MAS/compare/v5.5.0-beta.7...v5.5.0-beta.8
+[v5.5.0-beta.7]: https://github.com/AUTO-MAS-Project/AUTO-MAS/compare/v5.5.0-beta.6...v5.5.0-beta.7
 [v5.5.0-beta.6]: https://github.com/AUTO-MAS-Project/AUTO-MAS/compare/v5.5.0-beta.5...v5.5.0-beta.6
 [v5.5.0-beta.5]: https://github.com/AUTO-MAS-Project/AUTO-MAS/compare/v5.5.0-beta.4...v5.5.0-beta.5
 [v5.5.0-beta.4]: https://github.com/AUTO-MAS-Project/AUTO-MAS/compare/v5.5.0-beta.3...v5.5.0-beta.4

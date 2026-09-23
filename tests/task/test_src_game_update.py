@@ -129,9 +129,7 @@ def test_resolve_download_link_gives_up_after_max_hops(
     _patch_redirect(monkeypatch, routes)
 
     assert (
-        asyncio.run(
-            game_update._resolve_download_link("https://link.example.com/cn")
-        )
+        asyncio.run(game_update._resolve_download_link("https://link.example.com/cn"))
         is None
     )
 
@@ -358,9 +356,7 @@ def test_download_apk_timeout(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -
     chunks = [b"\0" * (1024 * 1024)] * 10
 
     def factory(*_a: object, **_kw: object) -> _FakeDownloadClient:
-        return _FakeDownloadClient(
-            chunks, {"content-length": "0"}, delay=0.02
-        )
+        return _FakeDownloadClient(chunks, {"content-length": "0"}, delay=0.02)
 
     monkeypatch.setattr(game_apk.httpx, "AsyncClient", factory)
 

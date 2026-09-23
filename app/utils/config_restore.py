@@ -78,6 +78,9 @@ class RestoreContext:
     user_id: str
     """目标用户 ID。"""
 
+    force: bool = False
+    """损坏时跳过保护步骤的强制恢复（仅消费它的专项池读取，其余忽略）。"""
+
 
 @dataclass
 class ConfigRestorePool:

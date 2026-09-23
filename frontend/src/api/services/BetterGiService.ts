@@ -532,7 +532,9 @@ export class BetterGiService {
      * 把右栏编辑后的配置组 json（项目顺序 + 各项目 jsScriptSettingsObject）写回
      * 该用户的 per-user 副本（``data/{script}/{user}/ScriptGroup/{name}.json``）。
      *
-     * 不触碰 BetterGI 全局 ``User/ScriptGroup/{name}.json`` 同名实配。
+     * 「路径」类引用（名字含 ``/``）不能作文件名，落盘到 ``per_user_copy_name`` 的确定性别名
+     * （右栏把路径项加成多项目配置组后需要载体）。不触碰 BetterGI 全局
+     * ``User/ScriptGroup/{name}.json`` 同名实配。
      * @param requestBody
      * @returns OutBase Successful Response
      * @throws ApiError
