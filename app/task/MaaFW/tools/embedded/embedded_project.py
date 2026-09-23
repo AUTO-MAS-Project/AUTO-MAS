@@ -326,6 +326,59 @@ def switch_in_progress(script_id: str, base: Path | None = None) -> bool:
     return _journal_path(embedded_copy_dir_name(script_id), base).exists()
 
 
+# 视图标记里「运行环境已为哪个载荷确认过」：切换只换文件，环境确认（isolated_venv 重建等）
+# 是另一件事。把「还欠一次确认」落在盘上而不是 manager 实例上：任何路径漏掉的确认
+# （运行后被停止、检查切完又提前返回、后台确认失败）都在下次运行前按它补上。
+ENV_CONFIRMED_FIELD = "envConfirmedFor"
+
+
+def env_confirm_pending(marker: Mapping[str, Any] | None) -> bool:
+    """视图挂的载荷还没确认过运行环境（没有标记的老副本不算：它不归这套管）。"""
+
+    if marker is None:
+        return False
+    return str(marker.get(ENV_CONFIRMED_FIELD) or "") != str(
+        marker.get("payload") or ""
+    )
+
+
+def mark_env_confirmed(view_dir: Path, payload_id: str | None = None) -> bool:
+    """运行环境确认成功后记下 ``envConfirmedFor``；调用方持有该视图的项目预约。
+
+    ``payload_id`` 给了就只在标记仍挂着它时记（确认期间视图被换走就不算数）。标记是
+    视图私有的非受管文件，不进指纹；临时文件 + ``os.replace`` 换目录项，其余字段不动。
+    """
+
+    marker = read_view_marker(view_dir)
+    if marker is None:
+        return False
+    current = str(marker["payload"])
+    if payload_id is not None and current != str(payload_id):
+        return False
+    if str(marker.get(ENV_CONFIRMED_FIELD) or "") == current:
+        return True
+    marker[ENV_CONFIRMED_FIELD] = current
+    payloads.write_json_atomic(Path(view_dir) / VIEW_MARKER_NAME, marker)
+    return True
+
+
+def switch_or_confirm_in_progress(script_id: str, base: Path | None = None) -> bool:
+    """视图正在换版本，或刚换完、后台还在确认运行环境（此刻拿不到它的预约时用）。
+
+    后者的判据：标记挂的载荷 ≠ ``envConfirmedFor``，且这次切换是「从一个确认过的版本」
+    或「被兄弟的更新」切过来的——没确认过也没被切过的老视图拿不到预约，多半是运行 /
+    更新 / 手动准备环境，不说成「正在切换」。
+    """
+
+    if switch_in_progress(script_id, base):
+        return True
+    marker = read_view_marker(embedded_project_dir(script_id, base))
+    if not env_confirm_pending(marker):
+        return False
+    assert marker is not None
+    return "switchedBy" in marker or bool(marker.get(ENV_CONFIRMED_FIELD))
+
+
 def clear_switched_by(view_dir: Path) -> bool:
     """「本视图被谁的更新切过」那行日志打完后清掉标记里的 ``switchedBy``。
 
@@ -637,6 +690,10 @@ def _realize_view(
             "version": version,
             "materializedAt": _now_text(),
         }
+        if old_marker is not None and old_marker.get(ENV_CONFIRMED_FIELD):
+            # 同谱系换版本：带上旧的确认记录。它 ≠ 新载荷，下次运行前据此补一次确认；
+            # 同载荷重建则仍然相等，不必再确认。
+            marker[ENV_CONFIRMED_FIELD] = str(old_marker[ENV_CONFIRMED_FIELD])
         if switched_by:
             marker["switchedBy"] = {
                 **dict(switched_by),
@@ -1047,6 +1104,25 @@ def _clone_legacy_copy(
     source_script_id: str, target_script_id: str, base: Path | None
 ) -> bool:
     source_dir = embedded_project_dir(source_script_id, base)
+    if not copy_is_healthy(source_dir):
+        return False
+    # 按目录克隆要读源副本的每个文件：源正在运行（写 config/、debug/）、更新或准备环境时
+    # 读到的是半截状态。拿不到源的预约就不克隆（载荷路径不读源视图，不需要这一步）。
+    source_key = try_reserve_project_path_sync(source_dir)
+    if source_key is None:
+        raise EmbeddedProjectError(
+            "源脚本的项目副本正被占用（运行 / 更新 / 准备环境），请稍后再试"
+        )
+    try:
+        return _clone_legacy_copy_locked(source_script_id, target_script_id, base)
+    finally:
+        release_project_path_sync(source_key)
+
+
+def _clone_legacy_copy_locked(
+    source_script_id: str, target_script_id: str, base: Path | None
+) -> bool:
+    source_dir = embedded_project_dir(source_script_id, base)
     target_dir = embedded_project_dir(target_script_id, base)
     if not copy_is_healthy(source_dir):
         return False
@@ -1103,6 +1179,97 @@ def _clone_legacy_copy(
     # 目标的树整棵换了，更新器上一次记下的清单已经对不上（与重新导入同理）。
     discard_copy_update_baseline(target_script_id, base)
     return True
+
+
+@dataclass
+class PayloadGarbageReport:
+    payloads: int = 0
+    lineages: list[str] = field(default_factory=list)
+
+
+def collect_payload_garbage(
+    *,
+    started_at: float,
+    live_sources: Iterable[str] = (),
+    base: Path | None = None,
+) -> PayloadGarbageReport:
+    """§3.1 第 10 步：删掉没人引用的载荷；谱系里一个视图都不剩时整个谱系一起删。
+
+    引用集 = 所有视图标记的 ``payload`` ∪ 未完成 journal 的 ``to``。还活着的谱系 = 有视图
+    标记或 journal 指向的，外加 ``live_sources``（脚本还在、视图却没了的那些脚本的导入来源）
+    按载荷清单反查到的谱系——视图丢了的脚本下次运行前要靠它重建，不能先把谱系收掉。
+    活着的谱系里 ``latest[*]`` 照旧算引用；不活的谱系（最后一个脚本已删）整个目录收走。
+    本进程起来之后才建 / 才登记过的一律不收。载荷删掉后它独有的 blob 只剩库里一个链接，
+    由紧接着的共用库回收收走。
+    """
+
+    root = payloads_root(base)
+    report = PayloadGarbageReport()
+    if not root.is_dir():
+        return report
+    referenced: set[str] = set()
+    live: set[str] = set()
+    views_root = embedded_projects_root(base)
+    for child in views_root.iterdir() if views_root.is_dir() else ():
+        if not (child.is_dir() and is_embedded_copy_dir_name(child.name)):
+            continue
+        marker = read_view_marker(child)
+        if marker is None:
+            # 还没采纳的老副本（迁移失败、下次再试）：它的谱系也还活着。
+            if copy_is_healthy(child):
+                try:
+                    live.add(payloads.lineage_key_for_project(child))
+                except (payloads.PayloadError, ProjectionError, OSError):
+                    pass
+            continue
+        lineage = str(marker["lineage"])
+        live.add(lineage)
+        referenced.add(payloads.payload_ref(lineage, str(marker["payload"])))
+    journals = switch_root(base)
+    if journals.is_dir():
+        for journal in journals.glob("*.json"):
+            record = _read_journal(journal) or {}
+            lineage = str(record.get("lineage") or "")
+            if lineage:
+                live.add(lineage)
+                if record.get("to"):
+                    referenced.add(payloads.payload_ref(lineage, str(record["to"])))
+    for source in live_sources:
+        if not str(source or "").strip():
+            continue
+        try:
+            found = _lineage_by_import_source(str(source), base)
+        except (OSError, payloads.PayloadError):
+            found = None
+        if found is not None:
+            live.add(found[0])
+    candidates = payloads.collect_unreferenced(
+        root, referenced, started_at, live_lineages=live
+    )
+    for path in candidates:
+        try:
+            if path.parent == root:
+                # 整个谱系：先原子挪开（谱系锁 / 文件被占用时 rename 失败，这轮就不收），
+                # 挪开之后并发的登记只会新建一个空谱系目录，不会写进被删的这份。
+                trash = root / f".trash-{path.name}-{uuid.uuid4().hex[:8]}"
+                os.rename(path, trash)
+                remove_tree(trash)
+                report.lineages.append(path.name)
+            elif path.is_dir():
+                remove_tree(path)
+                report.payloads += 1
+            elif os.path.lexists(path):
+                path.unlink()
+        except OSError as exc:
+            logger.warning(f"[MFW 内嵌] 载荷回收失败: {path} - {exc}")
+    # 上一轮挪开了却没删干净的谱系
+    for leftover in root.glob(".trash-*"):
+        try:
+            if leftover.stat().st_mtime < started_at:
+                remove_tree(leftover)
+        except OSError:
+            continue
+    return report
 
 
 def _view_markers(base: Path | None) -> dict[str, dict[str, Any]]:
@@ -1283,7 +1450,7 @@ def _rebuild_from_group(
             if key is None:
                 continue
             try:
-                if not _clone_legacy_copy(other_id, script_id, base):
+                if not _clone_legacy_copy_locked(other_id, script_id, base):
                     continue
             finally:
                 release_project_path_sync(key)
@@ -1692,6 +1859,15 @@ class PropagationResult:
     switched: list[str] = field(default_factory=list)
     skipped: dict[str, str] = field(default_factory=dict)
     failed: dict[str, str] = field(default_factory=dict)
+    # ``hold=True`` 时切过的视图的项目预约没放：{script_id: 预约 key}，交给环境确认线程放。
+    held: dict[str, str] = field(default_factory=dict)
+
+
+def release_held_reservations(held: Mapping[str, str]) -> None:
+    """放掉 :func:`propagate_payload` 留着的预约（没交出去的那部分）。"""
+
+    for key in list(held.values()):
+        release_project_path_sync(key)
 
 
 SKIP_BUSY = "正在运行，跑完后再切"
@@ -1708,6 +1884,7 @@ def propagate_payload(
     switched_by: Mapping[str, Any] | None = None,
     exclude: Iterable[str] = (),
     base: Path | None = None,
+    hold: bool = False,
 ) -> PropagationResult:
     """把组（谱系 + 渠道）里挂在别的载荷上的空闲视图切到 ``payload_id``。
 
@@ -1716,56 +1893,70 @@ def propagate_payload(
     拿得到项目预约就 :func:`switch_view`（``switchedBy`` 记下是谁的操作）后释放；运行中或
     拿不到预约就跳过——pending 是派生状态（``view.payload ≠ latest[channel]``），不写任何东西，
     由它自己下次运行前兑现。返回切了谁、跳了谁（附原因）、谁失败了。
+
+    ``hold=True``：切成功的视图不放预约，记进 ``result.held`` 交给调用方（环境确认线程），
+    切换与确认之间不留空档；调用方负责放（:func:`release_held_reservations`）。
     """
 
     result = PropagationResult()
     excluded = {str(item) for item in exclude}
-    for raw in members:
-        member = raw if isinstance(raw, GroupMember) else GroupMember(*raw)
-        script_id = str(member.script_id)
-        if script_id in excluded or (member.channel or DEFAULT_CHANNEL) != channel:
-            continue
-        try:
-            view = embedded_project_dir(script_id, base)
-        except EmbeddedProjectError:
-            continue
-        marker = read_view_marker(view)
-        if marker is None:
-            if copy_is_healthy(view):
-                try:
-                    same = payloads.lineage_key_for_project(view) == lineage
-                except (payloads.PayloadError, ProjectionError):
-                    same = False
-                if same:
-                    result.skipped[script_id] = SKIP_UNADOPTED
-            continue
-        if str(marker.get("lineage") or "") != lineage:
-            continue
-        if str(marker.get("payload") or "") == payload_id:
-            continue
-        if member.busy:
-            result.skipped[script_id] = SKIP_BUSY
-            continue
-        key = try_reserve_project_path_sync(view)
-        if key is None:
-            result.skipped[script_id] = SKIP_RESERVED
-            continue
-        try:
-            switch_view(
-                script_id,
-                payload_id,
-                lineage=lineage,
-                base=base,
-                switched_by=switched_by,
-            )
-            result.switched.append(script_id)
-        except Exception as exc:  # noqa: BLE001 - 一个 T 失败只影响它自己
-            logger.opt(exception=True).warning(
-                f"[MFW 内嵌] 同步脚本 {script_id} 到 {payload_id} 失败: {exc}"
-            )
-            result.failed[script_id] = str(exc) or type(exc).__name__
-        finally:
-            release_project_path_sync(key)
+    try:
+        for raw in members:
+            member = raw if isinstance(raw, GroupMember) else GroupMember(*raw)
+            script_id = str(member.script_id)
+            if script_id in excluded or (member.channel or DEFAULT_CHANNEL) != channel:
+                continue
+            try:
+                view = embedded_project_dir(script_id, base)
+            except EmbeddedProjectError:
+                continue
+            marker = read_view_marker(view)
+            if marker is None:
+                if copy_is_healthy(view):
+                    try:
+                        same = payloads.lineage_key_for_project(view) == lineage
+                    except (payloads.PayloadError, ProjectionError):
+                        same = False
+                    if same:
+                        result.skipped[script_id] = SKIP_UNADOPTED
+                continue
+            if str(marker.get("lineage") or "") != lineage:
+                continue
+            if str(marker.get("payload") or "") == payload_id:
+                continue
+            if member.busy:
+                result.skipped[script_id] = SKIP_BUSY
+                continue
+            key = try_reserve_project_path_sync(view)
+            if key is None:
+                result.skipped[script_id] = SKIP_RESERVED
+                continue
+            keep = False
+            try:
+                switch_view(
+                    script_id,
+                    payload_id,
+                    lineage=lineage,
+                    base=base,
+                    switched_by=switched_by,
+                )
+                result.switched.append(script_id)
+                if hold:
+                    result.held[script_id] = key
+                    keep = True
+            except Exception as exc:  # noqa: BLE001 - 一个 T 失败只影响它自己
+                logger.opt(exception=True).warning(
+                    f"[MFW 内嵌] 同步脚本 {script_id} 到 {payload_id} 失败: {exc}"
+                )
+                result.failed[script_id] = str(exc) or type(exc).__name__
+            finally:
+                if not keep:
+                    release_project_path_sync(key)
+    except BaseException:
+        # 中途出意外：已经留着的预约不能泄漏（否则那些视图再也拿不到预约）。
+        release_held_reservations(result.held)
+        result.held.clear()
+        raise
     return result
 
 
@@ -1793,16 +1984,23 @@ def shell_hint_from_report(script_config: Any) -> str:
 
 __all__ = [
     "EMBEDDED_PROJECTS_DIR",
+    "ENV_CONFIRMED_FIELD",
     "PYCACHE_DIR_NAME",
     "STAGING_DIR_NAME",
     "VIEW_MARKER_NAME",
     "EmbeddedProjectError",
     "GroupMember",
+    "PayloadGarbageReport",
     "PropagationResult",
     "ViewResult",
     "clear_switched_by",
     "clone_embedded_copy",
+    "collect_payload_garbage",
     "copy_is_healthy",
+    "env_confirm_pending",
+    "mark_env_confirmed",
+    "release_held_reservations",
+    "switch_or_confirm_in_progress",
     "discard_copy_update_baseline",
     "embedded_copy_dir_name",
     "embedded_project_dir",

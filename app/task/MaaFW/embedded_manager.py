@@ -59,9 +59,11 @@ from app.task.MaaFW.tools.embedded.embedded_project import (
     EmbeddedProjectError,
     embedded_project_dir,
     ensure_embedded_copy,
+    env_confirm_pending,
+    read_view_marker,
     resolve_maafw_project_root,
     shell_hint_from_report,
-    switch_in_progress,
+    switch_or_confirm_in_progress,
 )
 from app.task.MaaFW.tools.embedded.project_path import (
     release_project_path,
@@ -348,8 +350,10 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
         self._update_total: int | None = None
         # 只有 main_task 正常跑完全部用户才置位；取消/崩溃路径不跑运行后更新。
         self._users_completed = False
-        # 运行前检查时做了组同步（视图换了版本）：main_task 据此在用户任务之前确认环境。
-        self._switched_at_check = False
+        # 运行前检查时视图标记显示还欠一次运行环境确认（``envConfirmedFor`` ≠ 当前载荷：
+        # 刚被组同步切过、或之前哪条路径切完没确认上）：main_task 据此在用户任务之前确认。
+        # 真相在盘上的标记里，这里只是本轮读到的结果——本轮提前返回也不会丢。
+        self._env_confirm_needed = False
         # 本轮开始时刻：收尾时只清在它之前轮转出来的原生日志备份。
         self._round_started_at = time.time()
         self._view_maintained = False
@@ -392,8 +396,10 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
         # 导入期间持有项目预约（更新 / 准备正拿着就先不动副本）。
         import_key = await try_reserve_project_path(embedded_project_dir(script_id))
         if import_key is None:
-            if switch_in_progress(script_id):
-                # 视图正在换版本（兄弟脚本的更新刚把它切过去，后台还在确认运行环境）。
+            if await asyncio.to_thread(switch_or_confirm_in_progress, script_id):
+                # 视图正在换版本，或刚被兄弟脚本的更新切过去、后台还在确认运行环境
+                # （预约在确认线程手里）：整个脚本一句话跳过，别让每个用户在
+                # runner_task 里各报一遍「同一路径正在运行或更新」。
                 return "正在切换版本，已跳过本次启动"
             if not resolve_maafw_project_root(script_id, script_config).is_dir():
                 return "同一路径 MaaFW 脚本正在运行或更新，已跳过本次启动"
@@ -415,9 +421,13 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
                     ],
                 )
                 # 组同步（§3.1 第 9 步）：组里已是别的版本（兄弟更新了、改了渠道）就在
-                # 上锁之前切过去——配置一个字段都不写，切完接运行环境确认（main_task）。
-                self._switched_at_check = await self._sync_view_to_group(
-                    "运行前", reservation_held=True
+                # 上锁之前切过去——配置一个字段都不写。切没切都看一眼标记：还欠确认
+                # （本次切的、或此前哪条路径切完没确认上）就由 main_task 在用户任务前补。
+                await self._sync_view_to_group("运行前", reservation_held=True)
+                self._env_confirm_needed = await asyncio.to_thread(
+                    lambda: env_confirm_pending(
+                        read_view_marker(embedded_project_dir(script_id))
+                    )
                 )
             except EmbeddedProjectError as exc:
                 return str(exc)
@@ -802,7 +812,9 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
         return await run_view_update(
             script_id,
             channel=credentials.channel,
-            members=self._group_members(),
+            # 在拿到谱系锁、登记之后（事件循环上）再抄一次同组候选：等锁 / 下载期间别的
+            # 脚本可能开跑或跑完，用等锁之前的快照会切到正在跑的视图、或漏掉刚闲下来的。
+            members=self._group_members,
             reservation_held=False,
             send_log=send_log,
             core_call=core_call,
@@ -863,6 +875,22 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
             channel = str(
                 self.script_config.get("Update", "Channel") or DEFAULT_UPDATE_CHANNEL
             )
+            entry_now = (
+                await asyncio.to_thread(
+                    latest_entry, str((marker or {}).get("lineage") or ""), channel
+                )
+                if marker is not None
+                else None
+            )
+            previous_maafw: str | None = None
+            if entry_now is not None and str(entry_now["id"]) != str(marker["payload"]):
+                # 要切了：记下切之前钉定的 maafw 版本，切完它若已没有视图在用，运行池
+                # 对账时豁免宽限（与更新提交后同一条路）。
+                from app.task.MaaFW.tools.embedded.pool_reconcile import (
+                    previous_maafw_version,
+                )
+
+                previous_maafw = await asyncio.to_thread(previous_maafw_version, view)
             result = await sync_view_to_group(
                 script_id, channel, reservation_held=reservation_held
             )
@@ -874,6 +902,22 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
             return False
         if result is None:
             return False
+        if previous_maafw:
+            # 组同步把本视图从旧版本切走：若它是最后一个离开旧 maafw 版本的视图，旧
+            # runtime 不必再等 24 h 宽限（``reconcile_after_project_update`` 按全部视图判断
+            # 旧版本还有没有人用）。后台线程跑，不拖运行。
+            try:
+                from app.task.MaaFW.tools.embedded.pool_reconcile import (
+                    reconcile_in_background,
+                )
+
+                reconcile_in_background(
+                    "group-sync",
+                    updated_project_path=view,
+                    previous_version=previous_maafw,
+                )
+            except Exception as exc:  # noqa: BLE001 - 对账失败只影响回收时机
+                logger.warning(f"MFW 组同步后的运行池对账未能启动：{exc}")
         entry = await asyncio.to_thread(latest_entry, result.lineage, channel)
         by = str((entry or {}).get("by") or "")
         self._append_update_log(
@@ -889,14 +933,19 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
 
         放在 ``_commit_user_data`` 之后：用户配置已解锁写回；AfterRun 更新之前。任何一步
         失败只记日志。
+
+        组同步只在用户全部正常跑完时做：被停止 / 崩溃时收尾是受保护的，切了版本就得接着
+        确认运行环境（可能几分钟），「停止」会被拖住；不切的话切换留给下一次运行前检查，
+        那里持预约切、由 ``envConfirmedFor`` 驱动 main_task 在用户任务前确认。
         """
 
         script_id = str(self.script_info.script_id)
         view = embedded_project_dir(script_id)
-        switched = await self._sync_view_to_group("运行后", reservation_held=False)
-        if switched and self._auto_update_mode != "AfterRun":
-            # AfterRun 模式下紧随其后的那次确认已经有了，不重复。
-            await self._ensure_project_environment("AfterRun")
+        if self._users_completed:
+            switched = await self._sync_view_to_group("运行后", reservation_held=False)
+            if switched and self._auto_update_mode != "AfterRun":
+                # AfterRun 模式下紧随其后的那次确认已经有了，不重复。
+                await self._ensure_project_environment("AfterRun")
         try:
             from app.task.MaaFW.tools.embedded.view_audit import audit_view
 
@@ -1153,6 +1202,10 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
         from app.task.MaaFW.tools.core.automas_maafw_runtime_pool.host_environment import (
             subprocess_proxy_scope,
         )
+        from app.task.MaaFW.tools.embedded.embedded_project import (
+            mark_env_confirmed,
+            read_view_marker,
+        )
         from app.task.MaaFW.tools.embedded.env_cache import (
             load_prepared_environment,
             store_prepared_environment,
@@ -1161,8 +1214,22 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
             runtime_pool_route_from_service,
         )
 
+        # 视图挂的载荷在算指纹之前记下：确认成功后只给这个载荷记 ``envConfirmedFor``
+        # （调用方持有视图预约，期间换不了；来源目录 / staging 没有标记，不记）。
+        marker = read_view_marker(project_path) if store_cache else None
+        confirmed_for = str(marker["payload"]) if marker is not None else None
+
+        def _confirmed() -> None:
+            if confirmed_for is None:
+                return
+            try:
+                mark_env_confirmed(project_path, confirmed_for)
+            except OSError as exc:
+                logger.warning(f"MFW 记录运行环境确认失败（下次运行前再确认）：{exc}")
+
         fingerprint = project_environment_fingerprint(project_path)
         if load_prepared_environment(project_path, fingerprint) is not None:
+            _confirmed()
             return False
 
         interface = MaaFWEmbeddedManager._load_interface_model(project_path)
@@ -1191,6 +1258,7 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
                 str(result.get("projectFingerprint") or "") or fingerprint,
                 result,
             )
+            _confirmed()
         return True
 
     async def _ensure_project_environment(self, phase: AutoUpdateMode) -> None:
@@ -1318,9 +1386,10 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
         if self._auto_update_mode == "BeforeRun":
             await self._run_project_update("BeforeRun")
             await self._ensure_project_environment("BeforeRun")
-        elif self._switched_at_check:
-            # 运行前检查时被动切了版本（兄弟更新、改渠道）：与 AutoUpdateMode 无关，在用户
-            # 任务之前把环境备好——否则 isolated_venv 的重建会落进 worker、游戏已经起来。
+        elif self._env_confirm_needed:
+            # 视图挂的版本还没确认过运行环境（运行前检查刚被动切了版本，或此前的切换没
+            # 确认上）：与 AutoUpdateMode 无关，在用户任务之前把环境备好——否则
+            # isolated_venv 的重建会落进 worker、游戏已经起来。确认成功会写回标记。
             await self._ensure_project_environment("BeforeRun")
 
         # AutoProxy 的 main_task / final_task 都是**按用户**的（final_task 会

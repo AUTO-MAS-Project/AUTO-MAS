@@ -5538,71 +5538,50 @@ class AppConfig(GlobalConfig):
                 logger.warning(f"MFW 内嵌副本孤儿清理失败: {child} - {exc}")
                 continue
             logger.info(f"已清理无脚本引用的 MFW 内嵌副本: {child}")
-        await asyncio.to_thread(self._collect_unreferenced_payloads)
-
-    def _collect_unreferenced_payloads(self) -> None:
-        """删掉没有任何视图、谱系 latest、未完成切换引用的载荷（§3.1 第 10 步）。
-
-        引用集 = 所有视图标记的 ``payload`` ∪ 各谱系 ``latest[*]``（``collect_unreferenced``
-        自动算进去）∪ 未完成 journal 的 ``to``。本进程起来之后才建的不收。载荷删掉之后，
-        它独有的 blob 只剩库里一个链接，紧接着的 ``clean_maafw_runtime_blobs`` 收走。
-        """
-
-        from app.task.MaaFW.tools.core.automas_maafw_project_update import payloads
+        # 视图没了的脚本（下次运行前要按载荷重建）：它的导入来源在事件循环线程上抄出来，
+        # 回收据此保住对应的谱系。
         from app.task.MaaFW.tools.embedded.embedded_project import (
-            embedded_projects_root,
-            is_embedded_copy_dir_name,
-            payloads_root,
+            embedded_project_dir,
+            imported_source_path,
             read_view_marker,
-            remove_tree,
-            switch_root,
         )
 
-        root = payloads_root()
-        if not root.is_dir():
-            return
-        referenced: set[str] = set()
-        for child in embedded_projects_root().iterdir():
-            if child.is_dir() and is_embedded_copy_dir_name(child.name):
-                marker = read_view_marker(child)
-                if marker is not None:
-                    referenced.add(
-                        payloads.payload_ref(
-                            str(marker["lineage"]), str(marker["payload"])
-                        )
-                    )
-        journals = switch_root()
-        if journals.is_dir():
-            for journal in journals.glob("*.json"):
-                try:
-                    record = json.loads(journal.read_text(encoding="utf-8"))
-                except (OSError, ValueError):
-                    continue
-                if isinstance(record, dict) and record.get("to"):
-                    referenced.add(
-                        payloads.payload_ref(
-                            str(record.get("lineage") or ""), str(record["to"])
-                        )
-                    )
+        live_sources = [
+            imported_source_path(config) or str(config.get("Info", "Path") or "")
+            for uid, config in self.ScriptConfig.items()
+            if isinstance(config, MaaFWConfig)
+            and read_view_marker(embedded_project_dir(str(uid))) is None
+        ]
+        await asyncio.to_thread(self._collect_unreferenced_payloads, live_sources)
+
+    @staticmethod
+    def _collect_unreferenced_payloads(live_sources: list[str]) -> None:
+        """删掉没人引用的载荷；谱系里一个视图都不剩（最后一个脚本已删）时整个谱系一起删
+        （§3.1 第 10 步，``embedded_project.collect_payload_garbage``）。
+
+        引用集 = 所有视图标记的 ``payload`` ∪ 未完成 journal 的 ``to``；``latest[*]`` 只在
+        谱系还有视图时算引用。本进程起来之后才建的不收。载荷删掉之后，它独有的 blob 只剩
+        库里一个链接，紧接着的 ``clean_maafw_runtime_blobs`` 收走。
+        """
+
+        from app.task.MaaFW.tools.embedded.embedded_project import (
+            collect_payload_garbage,
+        )
+
         try:
-            candidates = payloads.collect_unreferenced(
-                root, referenced, _PROCESS_STARTED_AT
+            report = collect_payload_garbage(
+                started_at=_PROCESS_STARTED_AT, live_sources=live_sources
             )
         except Exception as exc:  # noqa: BLE001 - 回收失败不影响启动
-            logger.warning(f"MFW 载荷回收判定失败: {exc}")
+            logger.warning(f"MFW 载荷回收失败: {exc}")
             return
-        removed = 0
-        for path in candidates:
-            try:
-                if path.is_dir():
-                    remove_tree(path)
-                    removed += 1
-                elif path.exists():
-                    path.unlink()
-            except OSError as exc:
-                logger.warning(f"MFW 载荷回收失败: {path} - {exc}")
-        if removed:
-            logger.info(f"已回收 {removed} 个无人引用的 MFW 项目版本（载荷）")
+        if report.payloads:
+            logger.info(f"已回收 {report.payloads} 个无人引用的 MFW 项目版本（载荷）")
+        if report.lineages:
+            logger.info(
+                f"已回收 {len(report.lineages)} 个不再有脚本使用的 MFW 项目（整个谱系）: "
+                + ", ".join(report.lineages)
+            )
 
     async def migrate_maafw_embedded_copies_to_payloads(self) -> None:
         """启动期一次性迁移：把没有标记的老副本采纳成「载荷 + 视图」（附录 B）。
@@ -5656,6 +5635,11 @@ class AppConfig(GlobalConfig):
             and read_view_marker(embedded_project_dir(entry[0])) is None
         ]
         if not pending:
+            # 没有待采纳的副本：老的原地更新留下的清单与更新记录都没用了（每次启动都收，
+            # 不只在「刚迁移完且全部成功」那一次）。
+            await asyncio.to_thread(
+                self._discard_legacy_update_state, keep_adoption_baseline=False
+            )
             return
         started = time.monotonic()
         adopted: list[str] = []
@@ -5703,8 +5687,11 @@ class AppConfig(GlobalConfig):
                     if sid in set(switched)
                 ]
             )
-        if not failed:
-            await asyncio.to_thread(self._discard_legacy_update_state)
+        # 采纳失败的副本下次启动还要靠老的更新清单（committed 记录 + 状态目录里的包内
+        # 清单）认出哪些文件没改过，那部分留着；其余作废记录照收。
+        await asyncio.to_thread(
+            self._discard_legacy_update_state, keep_adoption_baseline=bool(failed)
+        )
 
     async def _unify_maafw_views_to_group(
         self, entries: list[tuple[str, str, str, str, str | None]]
@@ -5740,10 +5727,37 @@ class AppConfig(GlobalConfig):
         return switched
 
     @staticmethod
-    def _discard_legacy_update_state() -> None:
-        """老的原地更新事务留下的东西：各视图状态目录里除 ``local-modified`` 之外的
-        文件（包内清单、预检备忘），以及更新 journal 里非下载态的记录。"""
+    def _discard_legacy_update_state(*, keep_adoption_baseline: bool) -> None:
+        """收掉更新留下的作废记录。
 
+        - ``data/maafw_update_operations``：本进程起来之前写的记录。新流程里它只是一次
+          下载 + 登记的流水（登记后标 ``registered``，失败 / 取消各有终态），没有谁再读，
+          一律删；老的原地更新留下的 ``committed`` 除外——还有没采纳的老副本时
+          （``keep_adoption_baseline``），采纳要靠它找包内清单。
+        - ``data/maafw_project_state`` 各视图状态目录里除 ``local-modified`` 之外的文件
+          （老的包内清单、预检备忘）：同样只在不再需要采纳基线时删。
+        """
+
+        operations = Path.cwd() / "data" / "maafw_update_operations"
+        if operations.is_dir():
+            for record in operations.iterdir():
+                state_file = record / "state.json"
+                try:
+                    if state_file.stat().st_mtime >= _PROCESS_STARTED_AT:
+                        continue
+                    status = json.loads(state_file.read_text(encoding="utf-8")).get(
+                        "status"
+                    )
+                except (OSError, ValueError, AttributeError):
+                    continue
+                if status == "committed" and keep_adoption_baseline:
+                    continue
+                try:
+                    shutil.rmtree(record)
+                except OSError as exc:
+                    logger.warning(f"清理作废的更新记录失败: {record} - {exc}")
+        if keep_adoption_baseline:
+            return
         state_root = Path.cwd() / "data" / "maafw_project_state"
         if state_root.is_dir():
             for state_dir in state_root.iterdir():
@@ -5759,30 +5773,6 @@ class AppConfig(GlobalConfig):
                             child.unlink()
                     except OSError as exc:
                         logger.warning(f"清理老的更新状态失败: {child} - {exc}")
-        operations = Path.cwd() / "data" / "maafw_update_operations"
-        legacy = {
-            "plan_validated",
-            "staged",
-            "applying",
-            "post_validating",
-            "committed",
-            "rolled_back",
-            "recovery_required",
-        }
-        if operations.is_dir():
-            for record in operations.iterdir():
-                state_file = record / "state.json"
-                try:
-                    status = json.loads(state_file.read_text(encoding="utf-8")).get(
-                        "status"
-                    )
-                except (OSError, ValueError, AttributeError):
-                    continue
-                if status in legacy:
-                    try:
-                        shutil.rmtree(record)
-                    except OSError as exc:
-                        logger.warning(f"清理老的更新记录失败: {record} - {exc}")
 
     def _script_config_loaded_intact(self) -> bool:
         """脚本表是空的时候，看配置文件本身是不是真的空：解析失败或文件里明明有

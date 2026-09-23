@@ -33,7 +33,7 @@ import asyncio
 import dataclasses
 import threading
 import weakref
-from collections.abc import Awaitable, Callable, Iterable, Sequence
+from collections.abc import Awaitable, Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -259,20 +259,37 @@ def describe_propagation(
 
 
 def confirm_environments_in_background(
-    members: Iterable[GroupMember], base: Path | None = None
+    members: Iterable[GroupMember],
+    base: Path | None = None,
+    *,
+    held: Mapping[str, str] | None = None,
 ) -> None:
     """被传播切换的脚本各起一个后台线程确认一次运行环境（持各自的视图预约）。
 
     切换只把文件摆好：``interfaceHash`` / ``requirementsHash`` 一变，isolated_venv 型
     项目的 venv 会整个重建（分钟级、要联网）。不在这里做就会落进它下次运行的 worker 里、
-    游戏已经起来了。拿不到预约（它刚好开跑）就不确认——它自己的运行前确认会做。
+    游戏已经起来了。确认成功会在视图标记里记 ``envConfirmedFor``；失败或没做成，下次
+    运行前检查按标记补。
+
+    ``held``：切换时就没放的预约（:func:`propagate_payload` 的 ``hold=True``），由这里的
+    线程接手、确认完再放——切换与确认之间不留空档，这几分钟里该脚本开跑会在运行前检查
+    得到「正在切换版本」。没给的脚本在线程里自己拿，拿不到（它刚好开跑）就不确认。
+    ``held`` 里不在 ``members`` 之列的预约当场放掉。
     """
 
+    pending = dict(held or {})
+    members = list(members)
+    wanted = {member.script_id for member in members}
+    for script_id in [sid for sid in pending if sid not in wanted]:
+        release_project_path_sync(pending.pop(script_id))
     for member in members:
         view = embedded_project_dir(member.script_id, base)
+        handed = pending.pop(member.script_id, None)
 
-        def _run(view: Path = view, member: GroupMember = member) -> None:
-            key = try_reserve_project_path_sync(view)
+        def _run(
+            view: Path = view, member: GroupMember = member, handed: str | None = handed
+        ) -> None:
+            key = handed if handed is not None else try_reserve_project_path_sync(view)
             if key is None:
                 return
             try:
@@ -295,16 +312,60 @@ def confirm_environments_in_background(
             finally:
                 release_project_path_sync(key)
 
-        threading.Thread(
-            target=_run, name=f"maafw-env-confirm:{view.name}", daemon=True
-        ).start()
+        try:
+            threading.Thread(
+                target=_run, name=f"maafw-env-confirm:{view.name}", daemon=True
+            ).start()
+        except BaseException:
+            # 线程起不来：接手的预约不能泄漏（剩下没交出去的也一并放掉）。
+            if handed is not None:
+                release_project_path_sync(handed)
+            for key in pending.values():
+                release_project_path_sync(key)
+            raise
+
+
+def propagate_and_confirm(
+    lineage: str,
+    channel: str,
+    payload_id: str,
+    members: Sequence[GroupMember],
+    *,
+    switched_by: dict[str, Any] | None = None,
+    exclude: Iterable[str] = (),
+    base: Path | None = None,
+) -> PropagationResult:
+    """传播到同组空闲脚本，并把切过的那些**连同预约**交给后台环境确认线程（工作线程里调）。
+
+    切换与确认在同一个同步调用里衔接：调用方的协程在中间被取消也不会把预约漏在半路。
+    """
+
+    result = propagate_payload(
+        lineage,
+        channel,
+        payload_id,
+        members,
+        switched_by=switched_by,
+        exclude=exclude,
+        base=base,
+        hold=True,
+    )
+    switched = set(result.switched)
+    held = dict(result.held)
+    result.held.clear()
+    confirm_environments_in_background(
+        [member for member in members if member.script_id in switched],
+        base,
+        held=held,
+    )
+    return result
 
 
 async def run_view_update(
     script_id: str,
     *,
     channel: str,
-    members: Sequence[GroupMember],
+    members: Sequence[GroupMember] | Callable[[], Sequence[GroupMember]],
     reservation_held: bool,
     send_log: Callable[[str], None],
     core_call: CoreCall,
@@ -319,6 +380,9 @@ async def run_view_update(
     下次运行前的组同步会补上）。``lock_timeout``：等谱系锁的上限（手动更新给几秒，
     拿不到抛 ``project_lock_busy``；自动路径不限时）。``core_call(视图, 目标, 登记钩子)``
     调核心更新，返回它的结果。
+
+    ``members``：同组候选，或返回候选的函数。给函数时在登记之后（已持谱系锁、在事件
+    循环线程上）才调，拿到的是切换那一刻的运行状态，而不是等锁之前的快照。
     """
 
     view = embedded_project_dir(script_id, base)
@@ -358,12 +422,35 @@ async def run_view_update(
             outcome.group_synced = True
             log(f"已切到本项目当前版本 {synced.version}（与同组脚本一致）")
             marker = await asyncio.to_thread(read_view_marker, view) or marker
+        base_marker = marker
+        entry = await asyncio.to_thread(latest_entry, lineage, channel, base)
+        if (
+            entry is not None
+            and str(entry["id"]) != str(marker["payload"])
+            and not payloads.version_newer(
+                str(marker.get("version") or ""), str(entry.get("version") or "")
+            )
+        ):
+            # 第 1 步没切过去（S 被占用）：组里已有不旧于 S 的版本，就以它为构建与比较
+            # 基准（max(视图版本, latest 版本)），否则会把组里已有的版本再下一遍。
+            base_marker = {
+                **marker,
+                "payload": str(entry["id"]),
+                "version": str(entry.get("version") or ""),
+            }
+            log(
+                f"本脚本还挂在 {marker.get('version') or '旧版本'}，以组里已登记的 "
+                f"{entry.get('version') or entry['id']} 为基准检查更新"
+            )
         target = await asyncio.to_thread(
-            payload_target_for, script_id, marker, channel, base
+            payload_target_for, script_id, base_marker, channel, base
         )
 
         async def after_register(registered: payloads.RegisterResult) -> None:
             outcome.registered_id = registered.payload_id
+            current_members: Sequence[GroupMember] = list(
+                members() if callable(members) else members
+            )
             goal = registered.target_id
             current = await asyncio.to_thread(read_view_marker, view)
             if current is None or str(current["payload"]) != goal:
@@ -381,26 +468,19 @@ async def run_view_update(
                 else:
                     log(f"已切到新版本 {switched.version}（{switched.elapsed:.1f} s）")
             propagation = await asyncio.to_thread(
-                propagate_payload,
+                propagate_and_confirm,
                 lineage,
                 channel,
                 goal,
-                list(members),
+                current_members,
                 switched_by={"scriptId": script_id, "name": script_name},
                 exclude=[script_id],
                 base=base,
             )
             outcome.propagation = propagation
-            summary = describe_propagation(propagation, members)
+            summary = describe_propagation(propagation, current_members)
             if summary:
                 log(summary)
-            switched_members = [
-                member
-                for member in members
-                if member.script_id in set(propagation.switched)
-            ]
-            if switched_members:
-                confirm_environments_in_background(switched_members, base)
 
         outcome.result = await core_call(view, target, after_register)
     finally:
@@ -461,6 +541,7 @@ __all__ = [
     "lineage_update_lock",
     "memo_path_factory",
     "payload_target_for",
+    "propagate_and_confirm",
     "public_source",
     "run_view_update",
     "sync_view_to_group",

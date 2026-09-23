@@ -65,7 +65,6 @@ from app.task.MaaFW.tools.embedded.embedded_project import (
     ensure_embedded_copy,
     import_embedded_project,
     inherit_embedded_record,
-    propagate_payload,
     read_interface_version,
     read_view_marker,
     resolve_maafw_project_root,
@@ -1309,9 +1308,14 @@ async def _propagate_view_to_group(script_id: str, channel: str) -> None:
         )
     except (KeyError, ValueError, TypeError):
         source_name = script_id[:8]
+    # 切换只把文件摆好：被切的兄弟各自在后台确认一次运行环境，别把 isolated_venv 的
+    # 重建留到它们下一次运行、游戏已经起来的时候（§3.1 第 8 步）。切换时拿的预约直接
+    # 交给确认线程，两步之间不留空档。
+    from app.task.MaaFW.tools.embedded.view_update import propagate_and_confirm
+
     try:
         result = await asyncio.to_thread(
-            propagate_payload,
+            propagate_and_confirm,
             str(marker["lineage"]),
             channel,
             str(marker["payload"]),
@@ -1325,17 +1329,6 @@ async def _propagate_view_to_group(script_id: str, channel: str) -> None:
         logger.info(
             f"MFW 脚本 {script_id} 导入后同步同项目脚本：已切换 {result.switched}，"
             f"跳过 {result.skipped}，失败 {result.failed}"
-        )
-    if result.switched:
-        # 切换只把文件摆好：被切的兄弟各自在后台确认一次运行环境（持各自的视图预约），
-        # 别把 isolated_venv 的重建留到它们下一次运行、游戏已经起来的时候（§3.1 第 8 步）。
-        from app.task.MaaFW.tools.embedded.view_update import (
-            confirm_environments_in_background,
-        )
-
-        switched = set(result.switched)
-        confirm_environments_in_background(
-            [member for member in members if member.script_id in switched]
         )
 
 
@@ -2069,7 +2062,6 @@ async def update_maafw_project(
         )
 
     precheck_failure: dict[str, Any] = {}
-    members = _maafw_group_members(payload.scriptId)
     script_name = str(script_config.get("Info", "Name") or payload.scriptId[:8])
     try:
         route = await asyncio.to_thread(
@@ -2127,7 +2119,8 @@ async def update_maafw_project(
             outcome = await run_view_update(
                 payload.scriptId,
                 channel=source_config["channel"],
-                members=members,
+                # 登记之后（持谱系锁、事件循环上）再抄同组候选，别用等锁 / 下载前的快照。
+                members=lambda: _maafw_group_members(payload.scriptId),
                 reservation_held=True,
                 send_log=send_update_log,
                 core_call=core_call,
