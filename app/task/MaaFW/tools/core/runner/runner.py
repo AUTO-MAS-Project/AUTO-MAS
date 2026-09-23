@@ -20,6 +20,7 @@
 import ctypes
 import hashlib
 import html
+import inspect
 import json
 import os
 import re
@@ -239,6 +240,15 @@ def _is_single_method(value: int) -> bool:
 
     raw = int(value)
     return raw > 0 and raw & (raw - 1) == 0
+
+
+def _callable_parameters(target: Any) -> set[str]:
+    """``target``（类取 ``__init__``）的参数名；取不到签名时返回空集。"""
+
+    try:
+        return set(inspect.signature(target).parameters)
+    except (TypeError, ValueError):
+        return set()
 
 
 def _positive_int(value: Any) -> int | None:
@@ -1327,7 +1337,9 @@ class MaaFWRunner:
         for agent_plan in self.plan.agents:
             if agent_plan.embedded:
                 continue
-            agent_client = self._create_agent_client(agent_plan.childExec)
+            agent_client = self._create_agent_client(
+                agent_plan.childExec, identifier=agent_plan.identifier
+            )
             if not agent_client.bind(self.resource):
                 raise RuntimeError("AgentClient 绑定资源失败")
 
@@ -1410,7 +1422,33 @@ class MaaFWRunner:
             "rebuild the MaaFW run plan before starting agents"
         )
 
-    def _create_agent_client(self, label: str) -> AgentClient:
+    def _create_agent_client(
+        self, label: str, *, identifier: str | None = None
+    ) -> AgentClient:
+        declared = str(identifier or "").strip()
+        if declared:
+            # interface 的 agent.identifier：连接标识符，填了就用（PI 协议），项目自己的
+            # agent 可能按这个名字连。老版本绑定库的 AgentClient 不收这个参数，或者按它
+            # 建不起来时，告警后退回自动生成的标识——agent 从命令行拿到的是实际那个。
+            if "identifier" not in _callable_parameters(AgentClient):
+                self.send_log(
+                    f"interface 声明了 agent identifier={declared!r}，当前 MaaFramework "
+                    f"binding 的 AgentClient 不支持指定，已改用自动生成的标识: {label}"
+                )
+            else:
+                try:
+                    agent_client = AgentClient(identifier=declared)
+                except Exception as exc:  # noqa: BLE001 - 退回自动标识，不挡运行
+                    self.send_log(
+                        f"按 interface 声明的 identifier={declared!r} 创建 AgentClient "
+                        f"失败，已改用自动生成的标识: {label}: {exc}"
+                    )
+                else:
+                    self.send_log(
+                        f"AgentClient 使用 interface 声明的标识: "
+                        f"{label}, identifier={agent_client.identifier}"
+                    )
+                    return agent_client
         try:
             agent_client = AgentClient()
             self.send_log(
