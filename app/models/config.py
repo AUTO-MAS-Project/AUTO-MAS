@@ -2331,6 +2331,26 @@ class HSRUserConfig(ConfigBase):
 
         return is_dirty
 
+    def _tag_plan(self) -> ConfigBase:
+        """标签读计划字段时用的对象。
+
+        「脚本」来源的计划在所属 ``HSRConfig`` 的同名组上，经
+        ``related_config["ScriptConfig"]`` 找到持有自己的那份脚本配置；「用户」
+        「直控」来源，或找不到所属脚本（如未挂到全局配置的独立实例）时读自己。
+        """
+
+        if self.get("Info", "Mode") in ("用户", "直控"):
+            return self
+        scripts = self.related_config.get("ScriptConfig")
+        if scripts is None:
+            return self
+        for script in scripts.values():
+            if isinstance(script, HSRConfig) and any(
+                user is self for user in script.UserData.values()
+            ):
+                return script
+        return self
+
     def getTags(self) -> str:
         """生成 HSR 用户标签列表，返回JSON字符串格式的TagItem列表。"""
         tags: list[dict] = []
@@ -2368,8 +2388,10 @@ class HSRUserConfig(ConfigBase):
             bool(self.get("Data", "WeeklyCompletedThisWeek"))
             and self.get("Data", "WeeklyLastResetWeek") == current_week
         )
-        du_on = bool(self.get("TaskSwitch", "DivergentUniverse"))
-        cw_on = bool(self.get("TaskSwitch", "CurrencyWars"))
+        # 完成态恒按用户记，开了哪个周常模块看计划 owner（脚本来源读共享计划）
+        plan = self._tag_plan()
+        du_on = bool(plan.get("TaskSwitch", "DivergentUniverse"))
+        cw_on = bool(plan.get("TaskSwitch", "CurrencyWars"))
         if weekly_done:
             if du_on:
                 weekly_text, weekly_color = "差分宇宙 已完成", "green"
@@ -5025,6 +5047,7 @@ class GlobalConfig(ConfigBase):
         MaaUserConfig.related_config["PlanConfig"] = self.PlanConfig
         MaaEndUserConfig.related_config["PlanConfig"] = self.PlanConfig
         QueueItem.related_config["ScriptConfig"] = self.ScriptConfig
+        HSRUserConfig.related_config["ScriptConfig"] = self.ScriptConfig
 
     def getStage(self) -> str:
         """获取关卡信息"""
