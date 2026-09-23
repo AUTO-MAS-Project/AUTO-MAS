@@ -50,7 +50,7 @@ import fnmatch
 import json
 import os
 import re
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
 from typing import Any
@@ -1494,6 +1494,10 @@ def build_projection_plan(source_root: Path) -> ProjectionPlan:
 
     copied_files: set[Path] = set()
     copied_directories: set[Path] = {ROOT}
+    # 目录目标按路径建索引，每个路径只沿自己的祖先逐级查（O(路径 × 深度)）；以前是
+    # 「每个目标 × 全部目录 / 文件」各做一次 relative_to，MaaFgo 这类几万文件的包要
+    # 几十秒。Path 的相等与哈希在 Windows 上本来就大小写不敏感，与 relative_to 的口径一致。
+    directory_targets: dict[Path, tuple[Path, TargetMode]] = {}
     for target, mode in rules.targets.items():
         target_absolute = root / target
         if target_absolute.is_file():
@@ -1506,9 +1510,16 @@ def build_projection_plan(source_root: Path) -> ProjectionPlan:
                 copied_files.add(target)
                 copied_directories.update(_relative_parents(target))
             continue
-        for directory in all_directories:
-            if not _is_relative_to(directory, target):
-                continue
+        directory_targets[target] = (target, mode)
+
+    def covering_targets(path: Path) -> Iterator[tuple[Path, TargetMode]]:
+        for ancestor in (path, *path.parents):
+            hit = directory_targets.get(ancestor)
+            if hit is not None:
+                yield hit
+
+    for directory in all_directories:
+        for target, mode in covering_targets(directory):
             if (
                 target_exclusion_reason(
                     directory,
@@ -1521,9 +1532,9 @@ def build_projection_plan(source_root: Path) -> ProjectionPlan:
             ):
                 copied_directories.add(directory)
                 copied_directories.update(_relative_parents(directory))
-        for file_path in all_files:
-            if not _is_relative_to(file_path, target):
-                continue
+                break
+    for file_path in all_files:
+        for target, mode in covering_targets(file_path):
             if (
                 target_exclusion_reason(
                     file_path, target=target, mode=mode, target_is_directory=True
@@ -1532,6 +1543,7 @@ def build_projection_plan(source_root: Path) -> ProjectionPlan:
             ):
                 copied_files.add(file_path)
                 copied_directories.update(_relative_parents(file_path))
+                break
 
     # 声明为必需的路径必须真的留下来；唯一的例外是被投影掉的自带 Python 解释器。
     for requirement in rules.required:
@@ -1631,11 +1643,18 @@ def _adopt_small_undeclared_entries(
     依赖包也不要——agent 的 ``PYTHONPATH`` 是项目根，半截包会盖住真正的模块。
     """
 
+    # 被完整目标覆盖 = 自己或某个祖先是完整目标（根除外）。按祖先查集合，不再对每个
+    # 文件把全部目标 relative_to 一遍（MaaFgo 导入曾因此花 500 多秒）。下面循环里
+    # 新增的完整目标要同步进这个集合。
+    complete_targets = {
+        target for target, mode in targets.items() if mode.complete and target != ROOT
+    }
+
     def covered(relative: Path) -> bool:
-        return any(
-            mode.complete and _is_relative_to(relative, target)
-            for target, mode in targets.items()
-            if target != ROOT
+        if not complete_targets:
+            return False
+        return relative in complete_targets or any(
+            parent in complete_targets for parent in relative.parents
         )
 
     entries = sorted(view.iter_entries(base_relative))
@@ -1664,6 +1683,7 @@ def _adopt_small_undeclared_entries(
             )
             if remainder <= UNDECLARED_KEEP_LIMIT:
                 targets[entry] = TargetMode(True, True)
+                complete_targets.add(entry)
             continue
         if reason is not None:
             continue
