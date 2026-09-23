@@ -841,20 +841,11 @@ def _validate_presets(interface_model: MaaFWInterface) -> None:
         reachable_options_by_task[task.name] = collected
 
     for preset in interface_model.preset:
-        seen_task_names: set[str] = set()
+        # 同一任务在 preset 里出现多次是合法的（MRA 周常配置把「自动出征」排了 8 次），
+        # 消费端 build_interface_preset_snapshot 把后续出现展开成重复任务实例，所以每一次
+        # 出现的选项值都要校验。MXU 写进 preset 的 __MXU_RANDOM_START__ 这类客户端伪任务
+        # 不是 interface 任务，下面按「任务不存在」跳过，重复多少次都无所谓。
         for preset_task in preset.task or []:
-            if preset_task.name in seen_task_names:
-                # MXU 会把 __MXU_RANDOM_START__ 这类客户端伪任务写进 preset，同一个
-                # preset 里出现多次是正常的。消费端 build_interface_preset_snapshot
-                # 本来就只认第一次出现，这里跟着忽略即可，不该让整份 interface 读不出来。
-                logger.warning(
-                    "MaaFW ProjectInterface preset 中存在重复任务，已忽略后一次：%s.%s",
-                    preset.name,
-                    preset_task.name,
-                )
-                continue
-            seen_task_names.add(preset_task.name)
-
             task = task_name_map.get(preset_task.name)
             if task is None:
                 continue

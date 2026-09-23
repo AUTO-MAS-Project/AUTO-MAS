@@ -29,6 +29,7 @@ from .models import (
     MaaFWPresetOptionValue,
     MaaFWTaskOptionsByTask,
     MaaFWTaskOptionValue,
+    build_duplicate_task_id,
     build_pretask_task_name,
     is_pretask_task_name,
     iter_pretasks,
@@ -251,18 +252,38 @@ def build_interface_preset_snapshot(
 
     ordered_preset_tasks: list[str] = []
     seen_task_names: set[str] = set()
+    occurrences: dict[str, int] = {}
+    valid_task_names = set(task_checked)
     for preset_task in preset.task or []:
-        if preset_task.name not in task_checked or preset_task.name in seen_task_names:
+        if preset_task.name not in valid_task_names:
             continue
 
-        ordered_preset_tasks.append(preset_task.name)
-        seen_task_names.add(preset_task.name)
-        task_checked[preset_task.name] = bool(
+        # 同一任务在预设里出现多次（MRA「周常配置」把「自动出征」排了 8 次，每次选项
+        # 不同）：第二次起映射成重复任务实例，与用户在队列里手动复制任务同一口径。
+        # 后缀按出现次序确定，同一份预设每次展开得到同一组实例 id。
+        occurrence = occurrences.get(preset_task.name, 0) + 1
+        occurrences[preset_task.name] = occurrence
+        task_id = preset_task.name
+        if occurrence > 1:
+            suffix = f"preset{occurrence}"
+            task_id = build_duplicate_task_id(preset_task.name, suffix)
+            while task_id in task_checked:
+                suffix += "x"
+                task_id = build_duplicate_task_id(preset_task.name, suffix)
+            if include_default_options:
+                defaults, _ = _build_option_defaults(
+                    task_option_maps.get(preset_task.name, {})
+                )
+                task_options_by_task[task_id] = defaults
+
+        ordered_preset_tasks.append(task_id)
+        seen_task_names.add(task_id)
+        task_checked[task_id] = bool(
             True if preset_task.enabled is None else preset_task.enabled
         )
 
         option_map = task_option_maps.get(preset_task.name, {})
-        target_options = task_options_by_task.setdefault(preset_task.name, {})
+        target_options = task_options_by_task.setdefault(task_id, {})
         for option_name, option_value in (preset_task.option or {}).items():
             if option_name not in option_map:
                 continue
