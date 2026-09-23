@@ -56,9 +56,14 @@ HSR_EOW_SRA_BATTLE_TIMEOUT_MARKER = "等待战斗结束超时"
 # 排除同样含该子串的「退出战斗失败」，那只是收尾点击没成功。
 HSR_EOW_SRA_BATTLE_FAILED_RE = re.compile(r"(?<!退出)战斗失败")
 
+# SRA 界面语言为英文时的失败文案（SRACore/localization/resource_en-us.json）：
+# task.taskFailed / task.noSuchTask / config.fileNotFound。SRA-cli 的退出码
+# 恒为 0，这几条漏掉就会把失败判成成功。
 HSR_ENGLISH_FAILURE_RE = re.compile(
     r"(Traceback \(most recent call last\):|Failed to execute script|"
-    r"Fatal error|SRAError\(|Exception:)"
+    r"Fatal error|SRAError\(|Exception:|"
+    r"failed\. Stopping further execution|No such task|File not found|"
+    r"Could not find config file)"
 )
 HSR_CHINESE_FAILURE_MARKERS: tuple[str, ...] = (
     # 审计 HSR-外部脚本日志语义审计.md §4.2：原通用项（任务失败 / 执行失败 /
@@ -78,6 +83,12 @@ HSR_CHINESE_FAILURE_MARKERS: tuple[str, ...] = (
     "旷宇纷争-货币战争刷开局任务失败",  # CosmicStrifeTask.py:50
     # ---- M7A 切换游戏界面失败（对应日志「发生错误 无法切换到指定游戏界面」）----
     "无法切换到指定游戏界面",
+    # ---- SRA 前置失败：任务名不存在 / 配置文件读不到，走不到「停止进一步执行」
+    # （SRACore/thread/task_process.py、SRACore/util/data_persister.py）----
+    "没有此任务",
+    "找不到文件",
+    # ---- M7A 首次运行闸门：打这行后 exit(0)（main.py 的 first_run）----
+    "首次使用请先打开图形界面",
 )
 HSR_BENIGN_FAILURE_MARKERS: tuple[str, ...] = (
     "未找到匹配文字",
@@ -214,9 +225,10 @@ HSR_DIVERGENT_FINAL_SUCCESS_M7A: tuple[str, ...] = (
 # 歧义由 detect_weekly_completion 的 module_key 消除：
 # sra_overrides（task_mapping.py）确保同一轮只启用其中一个，
 # 调用方传入的 module_key 决定查哪组 marker。
-HSR_DIVERGENT_FINAL_SUCCESS_SRA: tuple[str, ...] = (
+HSR_DIVERGENT_FINAL_SUCCESS_SRA: tuple[str | re.Pattern[str], ...] = (
     "Mission accomplished",  # DivergentUniverse.py:39
-    "当前积分奖励: 18000/18000",  # DivergentUniverse.py:216
+    # OCR 可能把「18000/18000」切断或混入噪声，SRA 自己也按 ^18000.*18000$ 判
+    re.compile(r"当前积分奖励: 18000.*18000"),  # DivergentUniverse.py:231-232
     "旷宇纷争任务全部完成",  # CosmicStrifeTask.py:25  ⚠️需配合 sra_overrides
 )
 
@@ -419,7 +431,7 @@ def detect_weekly_completion(
 
     upper_script = str(script).upper()
     if module_key == "DivergentUniverse":
-        candidate_sets: tuple[tuple[str, tuple[str, ...]], ...] = (
+        candidate_sets: tuple[tuple[str, tuple[str | re.Pattern[str], ...]], ...] = (
             ("M7A", HSR_DIVERGENT_FINAL_SUCCESS_M7A),
             ("SRA", HSR_DIVERGENT_FINAL_SUCCESS_SRA),
         )
@@ -433,10 +445,14 @@ def detect_weekly_completion(
 
     matched = next(
         (
-            (label, marker)
+            (label, marker.pattern if isinstance(marker, re.Pattern) else marker)
             for label, markers in candidate_sets
             for marker in markers
-            if marker in text
+            if (
+                marker.search(text)
+                if isinstance(marker, re.Pattern)
+                else marker in text
+            )
         ),
         None,
     )
