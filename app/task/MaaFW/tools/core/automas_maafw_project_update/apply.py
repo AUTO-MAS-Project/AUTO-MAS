@@ -1,35 +1,32 @@
-"""Safe local-directory package planning and transactional application."""
+"""更新包的安全解压与落地计划（纯函数）。
+
+项目更新不再原地改项目目录：新版本在 staging 里从当前载荷 + 更新包建成、预检、登记成
+新的不可变载荷，视图再整棵切过去（``payloads.py`` / 宿主 ``embedded_project``）。这里只
+留下那条流程要用的纯函数：解压与大小闸门、包类型 / 条目 / 删除表的枚举
+（:func:`build_package_plan`，三张表都经投影白名单过滤）、差量基线校验、全量包对
+``origin=import`` 文件的资源目录孤儿判定。原地事务、备份、回滚与中断恢复已整套退役。
+"""
 
 from __future__ import annotations
 
 import hashlib
-import inspect
 import json
 import logging
-import os
 import shutil
-import uuid
 import zipfile
-from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Iterator, Mapping
+from typing import Any, Callable, Mapping
 
-from .blob_store import BLOB_STORE_DIR_NAME, RuntimeBlobStore
 from .contracts import (
     ArtifactType,
     is_within,
-    project_fingerprint,
     safe_relative_path,
 )
-from .state import DEFAULT_OPERATION_ROOT, UpdateOperationStore, project_lock
+from .state import DEFAULT_OPERATION_ROOT
 
 ZIP_MAX_ENTRIES = 100_000
 ZIP_MAX_EXPANDED_BYTES = 8 * 1024 * 1024 * 1024
-MANIFEST_NAME = "resource-manifest.json"
-# 受管文件在本地被改过、又要被这次更新覆盖或删除时，覆盖前的那份留在这里
-# （每次更新整目录重建，只保留最近一次）。
-LOCAL_MODIFIED_DIR_NAME = "local-modified"
 # 逐文件覆盖进度最密每这么多个文件报一次（大项目数千文件，不能每个都报）。
 APPLY_PROGRESS_MAX_STEP_FILES = 50
 
@@ -48,132 +45,18 @@ def _resolve_project_state_dir(project_path: Path, operation_root: Path) -> Path
     return state_root / project_key
 
 
-def _project_state_dir(
-    project_path: Path,
-    operation: UpdateOperationStore,
-    *,
-    create: bool = True,
-) -> Path:
-    state_root = (
-        operation.root.resolve(strict=False).parent / PROJECT_STATE_DIR_NAME
-    ).resolve(strict=False)
-    raw_state_dir = _resolve_project_state_dir(project_path, operation.root)
-    if raw_state_dir.is_symlink():
-        raise UpdateApplyError("MaaFW project state path cannot be a symlink")
-    state_dir = raw_state_dir.resolve(strict=False)
-    if not state_dir.is_relative_to(state_root):
-        raise UpdateApplyError("MaaFW project state path escapes host state root")
-    if state_dir.is_symlink():
-        raise UpdateApplyError("MaaFW project state path cannot be a symlink")
-    if create:
-        state_dir.mkdir(parents=True, exist_ok=True)
-    return state_dir
-
-
 def project_state_dir_for(
     project_path: Path,
     *,
     operation_root: Path | None = None,
 ) -> Path:
-    """这个项目的状态目录（``resource-manifest.json`` 所在处），纯路径推导。
-
-    不碰文件系统、不建目录：给只读探测与「与清单同目录」的旁路文件
-    （如运行环境预检备忘）定位用。要建目录的调用方自己 ``mkdir``。
+    """这个视图路径的状态目录（切换时被覆盖的本地改动留档在它的 ``local-modified/``），
+    纯路径推导：不碰文件系统、不建目录，要建目录的调用方自己 ``mkdir``。
     """
 
     return _resolve_project_state_dir(
         Path(project_path), operation_root or DEFAULT_OPERATION_ROOT
     )
-
-
-def has_trusted_update_baseline(
-    project_path: Path,
-    *,
-    operation_root: Path | None = None,
-) -> bool:
-    """项目是否已有可信的更新基线（差量包能据以校验的那个指纹）。
-
-    只读探测，不创建任何目录。返回 False 时调用方应当去要**全量包**：
-    差量包在 ``_validate_plan_base`` 里必须能对上 ``projectFingerprint``，
-    从未经 MAS 更新过的项目没有这份 manifest，差量包一定被拒——那正是
-    「首次更新永远装不上」的自举死锁。
-    """
-
-    try:
-        # 只做路径推导，绝不新建 operation 目录或项目状态目录——探测必须无副作用。
-        state_dir = _resolve_project_state_dir(
-            Path(project_path), operation_root or DEFAULT_OPERATION_ROOT
-        )
-        manifest_path = state_dir / MANIFEST_NAME
-        if not manifest_path.is_file():
-            return False
-        manifest = _load_manifest(manifest_path)
-        return bool(str(manifest.get("projectFingerprint") or "").strip())
-    except Exception:  # noqa: BLE001
-        # 探测失败一律按「没有基线」处理：要全量包最多是多下点数据，
-        # 要差量包却没有基线则是必然失败。
-        return False
-
-
-def update_baseline_matches_project(
-    project_path: Path,
-    *,
-    operation_root: Path | None = None,
-) -> bool:
-    """更新基线记的指纹是否仍等于项目当前指纹。
-
-    有清单只说明「上一版是我铺的」，不代表项目此后没被改过：M9A 这类项目自带的
-    agent 每次启动都做资源热更新，会改写 ``data/activity/*.json``；用户也可能手动
-    改过某个 pipeline。差量包在 ``_validate_plan_base`` 里要求指纹**完全一致**，
-    对不上就整个拒装——所以只要不一致，调用方就该去要全量包。
-
-    要 rglob + sha256 整个项目（M9A 542MB 实测约 2s），调用方按需再算，不要在
-    事件循环里直接调。探测只读。
-    """
-
-    try:
-        state_dir = _resolve_project_state_dir(
-            Path(project_path), operation_root or DEFAULT_OPERATION_ROOT
-        )
-        manifest = _load_manifest(state_dir / MANIFEST_NAME)
-        recorded = str(manifest.get("projectFingerprint") or "").strip().lower()
-        if not recorded:
-            return False
-        current = project_fingerprint(project_path)
-        return current is not None and current == recorded
-    except Exception:  # noqa: BLE001
-        return False
-
-
-def discard_update_baseline(
-    project_path: Path,
-    *,
-    operation_root: Path | None = None,
-) -> bool:
-    """丢掉 MAS 为该项目记下的更新清单，让下一次更新走「无可信基线 → 全量包」。
-
-    调用时机是**项目树被 MAS 自己整体换掉**之后（内嵌副本重新导入、退出内嵌删副本）：
-    清单里记的是上一棵树的文件哈希，留着只会让每次落地都以「managed project file
-    was modified locally」失败。只删清单目录，不碰 operation 目录。
-    """
-
-    state_dir = _resolve_project_state_dir(
-        Path(project_path), operation_root or DEFAULT_OPERATION_ROOT
-    )
-    if state_dir.is_symlink() or not state_dir.is_dir():
-        return False
-    shutil.rmtree(state_dir)
-    return True
-
-
-def _owned_state_path(path: Path, state_dir: Path) -> Path:
-    candidate = path.expanduser().resolve(strict=False)
-    base = state_dir.expanduser().resolve(strict=False)
-    if not candidate.is_absolute() or not candidate.is_relative_to(base):
-        raise UpdateApplyError(
-            "MaaFW update state path is outside operation-owned state"
-        )
-    return candidate
 
 
 class UpdateApplyError(RuntimeError):
@@ -185,11 +68,10 @@ class UpdateApplyError(RuntimeError):
 
 
 class UpdatePostValidateRejected(UpdateApplyError):
-    """``post_validate`` 回调拒绝了这次更新（返回 False 或抛了异常）。
+    """``post_validate`` 回调（在 staging 上的运行环境预检）拒绝了这次更新。
 
-    文件已经回滚到旧版本，项目仍可运行，所以 ``unsafe_to_continue`` 保持
-    False。``reason`` 是回调给出的原因原文（异常文本），调用方据此区分
-    「预检没过」与其它 apply 失败。
+    新版本只在 staging 里，丢掉就是；项目视图一个字节没动，仍可运行。``reason``
+    是回调给出的原因原文（异常文本），调用方据此区分「预检没过」与其它失败。
     """
 
     def __init__(self, reason: str) -> None:
@@ -199,41 +81,7 @@ class UpdatePostValidateRejected(UpdateApplyError):
 
 
 class UpdateProjectLockBusy(UpdateApplyError):
-    """在限定时间内没拿到项目锁：另一次更新 / 预检正持有它。"""
-
-
-# 更新事务在这几个状态被打断，项目目录里就是「新旧混杂、清单未写」的树；
-# 只有它们需要恢复，``committed`` / ``rolled_back`` / ``failed`` 都是终态。
-INTERRUPTED_STATUSES = frozenset({"staged", "applying", "post_validating"})
-RECOVERED_ROLLBACK_REASON = "recovered after interrupted update"
-
-
-@contextmanager
-def _hold_project_lock(
-    root: Path,
-    *,
-    timeout: float | None,
-    project_lock_already_held: bool,
-) -> Iterator[None]:
-    """拿项目锁；给了 ``timeout`` 又没拿到时抛 ``UpdateProjectLockBusy``。
-
-    自动路径不限时（排队等前一次事务收尾即可）；手动路径给几秒，拿不到就
-    告诉用户「正在自动更新/预检中」，别让一个同步 HTTP 请求跟着预检等几分钟。
-    """
-
-    lock = project_lock(
-        root,
-        timeout=timeout,
-        project_lock_already_held=project_lock_already_held,
-    )
-    try:
-        lock.acquire()
-    except TimeoutError as exc:
-        raise UpdateProjectLockBusy("项目正在自动更新/预检中，请稍后再试") from exc
-    try:
-        yield
-    finally:
-        lock.release()
+    """在限定时间内没拿到谱系更新锁：同项目的另一次更新 / 预检正持有它。"""
 
 
 @dataclass(frozen=True)
@@ -248,356 +96,6 @@ class PackagePlan:
     target_version: str | None = None
     # 内嵌副本里按内容与其它副本共用的文件（``files`` 的子集）：运行时目录与模型类大文件。
     shared: frozenset[str] = frozenset()
-
-
-def apply_package_transaction(
-    project_path: Path,
-    package_path: Path,
-    *,
-    operation: UpdateOperationStore | None = None,
-    operation_root: Path | None = None,
-    plan_id: str | None = None,
-    expected_fingerprint: str | None = None,
-    expected_package_type: ArtifactType | None = None,
-    from_version: str | None = None,
-    target_version: str | None = None,
-    post_validate: Callable[[Path], Any] | None = None,
-    send_log: Callable[[str], None] | None = None,
-    progress: Callable[[str, dict[str, Any]], None] | None = None,
-    project_lock_already_held: bool = False,
-    project_lock_timeout: float | None = None,
-    projection: bool = False,
-) -> dict[str, Any]:
-    """Apply a package using a durable stage/backup transaction.
-
-    The function only removes files previously recorded in the updater-owned
-    project manifest. Unknown user files remain untouched during full updates —
-    except inside the resource bundle directories on the very first update of a
-    project the updater never installed, where there is no such manifest and
-    stale files from the previous layout would otherwise break the new version;
-    see :func:`_orphan_paths_without_baseline`.
-
-    ``post_validate`` 在新文件已落地、清单尚未写入时被调（同一工作线程、项目
-    锁已持有）：返回 ``False`` 或抛异常都视为拒绝，文件回滚到旧版本并抛
-    :class:`UpdatePostValidateRejected`，原因文本保留在异常里。回调里不要再拿
-    项目锁、不要 await。
-    """
-
-    root = project_path.expanduser().resolve(strict=False)
-    archive = package_path.expanduser().resolve(strict=False)
-    if not root.is_dir():
-        raise UpdateApplyError(f"MaaFW project directory does not exist: {root}")
-    if not archive.is_file():
-        raise UpdateApplyError(f"MaaFW update package does not exist: {archive}")
-    expected = str(expected_fingerprint or "").strip().lower()
-
-    store = operation or UpdateOperationStore.create(
-        root=operation_root or DEFAULT_OPERATION_ROOT,
-        projectPath=str(root),
-        expectedFingerprint=expected,
-        planId=plan_id or uuid.uuid4().hex,
-        targetVersion=target_version or "",
-    )
-    effective_plan_id = str(plan_id or store.read().get("planId") or uuid.uuid4().hex)
-    state_dir = _project_state_dir(root, store)
-    work_dir = _owned_state_path(
-        state_dir / "operations" / store.operation_id,
-        state_dir,
-    )
-    extract_dir = work_dir / "extract"
-    backup_dir = work_dir / "backup"
-    raw_manifest_path = state_dir / MANIFEST_NAME
-    if raw_manifest_path.is_symlink():
-        raise UpdateApplyError("MaaFW project manifest cannot be a symlink")
-    manifest_path = _owned_state_path(raw_manifest_path, state_dir)
-    send_update_log = send_log or (lambda _message: None)
-
-    with _hold_project_lock(
-        root,
-        timeout=project_lock_timeout,
-        project_lock_already_held=project_lock_already_held,
-    ):
-        # 指纹要 rglob + sha256 整个项目，锁内只算这一次：锁外先算一遍再进锁比对
-        # 等于白哈希一轮，锁内这次已经足以拒绝「计划之后项目被改过」。
-        send_update_log("正在校验项目指纹（大项目可能要一两分钟）")
-        current = project_fingerprint(root)
-        if current is None:
-            raise UpdateApplyError("cannot calculate MaaFW project fingerprint")
-        if expected and current != expected:
-            raise UpdateApplyError(
-                "MaaFW project changed after update plan; apply rejected"
-            )
-        expanded_size = _zip_expanded_size(archive)
-        _check_disk_space(
-            state_dir,
-            root,
-            state_required=expanded_size,
-            project_required=0,
-        )
-        _remove_owned_path(work_dir, state_dir)
-        extract_dir.mkdir(parents=True, exist_ok=True)
-        try:
-            _safe_extract_zip(archive, extract_dir)
-            package_root = _find_package_root(extract_dir)
-            old_manifest = _load_manifest(manifest_path)
-            previous_manifest_path = _owned_state_path(
-                work_dir / "previous-manifest.json",
-                state_dir,
-            )
-            if manifest_path.is_file():
-                _copy_path(manifest_path, previous_manifest_path)
-            plan = build_package_plan(
-                package_root,
-                extract_dir,
-                root,
-                old_manifest=old_manifest,
-                expected_package_type=expected_package_type,
-                from_version=from_version,
-                target_version=target_version,
-                projection=projection,
-                send_log=send_log,
-            )
-            _validate_plan_base(root, plan, old_manifest, current)
-            if plan.package_type == "full":
-                stale = set(old_manifest.get("files", {})) - set(plan.files)
-                if not old_manifest.get("files"):
-                    orphans = _orphan_paths_without_baseline(root, plan)
-                    if orphans:
-                        preview = ", ".join(sorted(orphans)[:10])
-                        suffix = " ..." if len(orphans) > 10 else ""
-                        send_update_log(
-                            f"MaaFW 项目无基线清单，本次全量更新清理 {len(orphans)} "
-                            f"个旧版残留文件: {preview}{suffix}"
-                        )
-                    stale |= orphans
-            else:
-                stale = set(plan.deleted)
-            touched = sorted(set(plan.files) | stale)
-            locally_modified = _locally_modified_owned_files(
-                root, old_manifest, touched
-            )
-            backup_size = _owned_backup_size(root, touched)
-            payload_size = sum(
-                source.stat().st_size
-                for source in plan.files.values()
-                if source.is_file()
-            )
-            # 只要 backup_size：expanded_size 在上面 _safe_extract_zip 时就已经
-            # 真实落到 state 卷上了，这里再加一遍等于要求两倍空间，会在空间刚好
-            # 够用时报出虚假的 INSUFFICIENT_DISK。
-            _check_disk_space(
-                state_dir,
-                root,
-                state_required=backup_size,
-                project_required=payload_size,
-            )
-            store.update(
-                "plan_validated",
-                projectPath=str(root),
-                packagePath=str(archive),
-                planId=effective_plan_id,
-                expectedFingerprint=expected or current,
-                currentFingerprint=current,
-                packageType=plan.package_type,
-                fromVersion=plan.base_version or from_version or "",
-                targetVersion=plan.target_version or target_version or "",
-                plannedFiles=list(plan.files),
-                deletedFiles=sorted(stale),
-                workDir=str(work_dir),
-                stateRoot=str(state_dir),
-                manifestPath=str(manifest_path),
-                previousManifestPath=(
-                    str(previous_manifest_path) if manifest_path.is_file() else ""
-                ),
-            )
-            _emit(
-                progress,
-                "plan_validated",
-                {"planId": effective_plan_id, "packageType": plan.package_type},
-            )
-
-            backup_dir.mkdir(parents=True, exist_ok=True)
-            backup_entries: dict[str, bool] = {}
-            for relative in touched:
-                target = _project_target(root, relative)
-                if target.exists() or target.is_symlink():
-                    backup_entries[relative] = True
-                    _copy_path(target, backup_dir / relative)
-                else:
-                    backup_entries[relative] = False
-            _write_json(work_dir / "backup-manifest.json", {"files": backup_entries})
-            _preserve_locally_modified(
-                root, state_dir, locally_modified, send_update_log
-            )
-            store.update(
-                "staged",
-                stageDir=str(extract_dir),
-                backupDir=str(backup_dir),
-                touchedPaths=touched,
-                backupEntries=backup_entries,
-                localModifiedFiles=locally_modified,
-            )
-            _emit(progress, "staged", {"planId": effective_plan_id})
-
-            store.update("applying")
-            total_files = len(plan.files)
-            _emit(
-                progress,
-                "applying",
-                {
-                    "planId": effective_plan_id,
-                    "appliedFiles": 0,
-                    "totalFiles": total_files,
-                },
-            )
-            for relative in sorted(
-                stale, key=lambda item: len(Path(item).parts), reverse=True
-            ):
-                _remove_path(_project_target(root, relative))
-            blob_store = (
-                RuntimeBlobStore(_blob_store_root(store.root)) if plan.shared else None
-            )
-            applied_files = 0
-            report_step = _apply_progress_step(total_files)
-            next_report_at = report_step
-            for relative, source in plan.files.items():
-                target = _project_target(root, relative)
-                target.parent.mkdir(parents=True, exist_ok=True)
-                if blob_store is not None and relative in plan.shared:
-                    # 按内容与其它副本共用的文件；内容没变的连碰都不碰。
-                    blob_store.place(source, target)
-                else:
-                    # 暂存区已经是解压好的完整副本，回滚只看 backup/，所以同盘
-                    # 直接挪过去；跨盘 os.replace 会报 OSError，再退回复制——
-                    # 复制走 _copy_path（先删再写），目标可能是共用库的硬链接。
-                    try:
-                        os.replace(source, target)
-                    except OSError:
-                        _copy_path(source, target)
-                applied_files += 1
-                # 覆盖进度只是旁观：按步长节流，最后一个文件必报，
-                # 让前端的「n/m」能走到满格。
-                if applied_files >= next_report_at or applied_files == total_files:
-                    next_report_at = applied_files + report_step
-                    _emit(
-                        progress,
-                        "applying",
-                        {
-                            "planId": effective_plan_id,
-                            "appliedFiles": applied_files,
-                            "totalFiles": total_files,
-                        },
-                    )
-
-            store.update("post_validating")
-            _emit(progress, "post_validating", {"planId": effective_plan_id})
-            _validate_project_interface(root)
-            actual_version = _read_interface_version(root, strict=True).strip()
-            expected_version = str(plan.target_version or target_version or "").strip()
-            if expected_version and actual_version.lstrip(
-                "vV"
-            ) != expected_version.lstrip("vV"):
-                raise UpdateApplyError(
-                    "updated MaaFW interface version does not match the planned target"
-                )
-            if post_validate is not None:
-                # 回调（运行环境预检）失败的原因必须原样带出去：调用方要据此
-                # 分「binding 拿不到」与其它失败、写备忘、给用户看文案。
-                try:
-                    result = post_validate(root)
-                except Exception as exc:
-                    raise UpdatePostValidateRejected(
-                        str(exc).strip() or type(exc).__name__
-                    ) from exc
-                if inspect.isawaitable(result):
-                    raise UpdateApplyError("post_validate callback must be synchronous")
-                if result is False:
-                    raise UpdatePostValidateRejected(
-                        "MaaFW post-validation rejected the update"
-                    )
-
-            send_update_log("正在校验更新后的项目指纹（大项目可能要一两分钟）")
-            after = project_fingerprint(root)
-            if after is None:
-                raise UpdateApplyError(
-                    "cannot calculate updated MaaFW project fingerprint"
-                )
-            # 清单要逐个文件算 sha256，是提交前最后一段长静默。
-            send_update_log("正在生成文件清单（大项目可能要一两分钟）")
-            manifest = {
-                "schemaVersion": 1,
-                "version": plan.target_version or target_version or "",
-                "projectFingerprint": after,
-                # 不登记字节码：它会被解释器重写，登记了只会让下一次更新
-                # 把它们当成「本地改过的受管文件」白白留档。
-                # 旧 manifest 里已有的 .pyc 条目也借这次重写自然清出。
-                "files": {
-                    relative: _sha256_file(_project_target(root, relative))
-                    for relative in sorted(
-                        set(plan.files) | (set(old_manifest.get("files", {})) - stale)
-                    )
-                    if _project_target(root, relative).is_file()
-                    and not _is_bytecode_artifact(relative)
-                },
-            }
-            _write_json(manifest_path, manifest)
-            store.update("committed", committed=True, finalFingerprint=after)
-            _emit(progress, "committed", {"planId": effective_plan_id})
-            send_update_log("MaaFW update package committed")
-            cleanup_warning = ""
-            try:
-                _remove_owned_path(work_dir, state_dir)
-            except Exception as cleanup_error:
-                # Project and manifest are already durably committed.  A
-                # locked backup/staging file must not relabel a successful
-                # update as failed or trigger a second application attempt.
-                cleanup_warning = str(cleanup_error)[:500]
-                store.update(
-                    "committed", cleanupPending=True, cleanupError=cleanup_warning
-                )
-                send_update_log(
-                    "MaaFW update committed; deferred state cleanup is required"
-                )
-            return {
-                "operationId": store.operation_id,
-                "planId": effective_plan_id,
-                "status": "committed",
-                "packageType": plan.package_type,
-                "currentFingerprint": current,
-                "finalFingerprint": after,
-                "targetVersion": plan.target_version or target_version,
-                "cleanupPending": bool(cleanup_warning),
-            }
-        except Exception as exc:
-            try:
-                state = store.read()
-            except Exception:
-                state = {}
-            if state.get("status") in {"applying", "post_validating", "staged"}:
-                try:
-                    _rollback_from_state(root, state)
-                except Exception as rollback_error:
-                    store.update(
-                        "recovery_required",
-                        recoveryRequired=True,
-                        rollbackError=str(rollback_error)[:500],
-                    )
-                    raise UpdateApplyError(
-                        f"MaaFW update failed and rollback failed: {rollback_error}",
-                        unsafe_to_continue=True,
-                    ) from rollback_error
-                store.update("rolled_back", rollbackReason=str(exc)[:500])
-                _emit(progress, "rolled_back", {"planId": effective_plan_id})
-                # 回滚以前只写 journal，历史日志里看不出「文件已退回旧版本」，
-                # 用户只见一句失败、不知道项目现在是哪个版本。
-                send_update_log(f"MaaFW update rolled back: {str(exc)[:200]}")
-                _remove_owned_path(work_dir, state_dir)
-            else:
-                store.update("failed", error=str(exc)[:500])
-                _remove_owned_path(work_dir, state_dir)
-            if isinstance(exc, UpdateApplyError):
-                raise
-            raise UpdateApplyError(str(exc)) from exc
 
 
 def build_package_plan(
@@ -828,15 +326,13 @@ def _package_resource_directories(plan: PackagePlan) -> set[str]:
     return directories
 
 
-def _orphan_paths_without_baseline(project_path: Path, plan: PackagePlan) -> set[str]:
-    """没有基线清单时，从磁盘上算出全量包应当清掉的旧版残留。
+def _import_origin_orphans(project_path: Path, plan: PackagePlan) -> set[str]:
+    """全量包对「导入来的文件」应当清掉的旧版残留（调用方再与 ``origin=import`` 取交集）。
 
-    正常路径靠更新器自己的清单算 stale：装过一次之后「上一版铺了哪些文件」是已知
-    的，只删这些，用户自己放进项目的文件一概不碰。
-
-    但项目**第一次**被更新时没有这份清单——用户是直接指到一棵已经解压好的目录，
-    那棵树不是更新器铺的（日志里那句「本地无可信更新基线」说的就是这件事）。此时
-    stale 恒为空，全量包退化成纯覆盖：新版删掉或挪走的文件会原地留下。实测
+    载荷清单逐文件记来源：``origin=package`` 的是更新包铺的，下一版不在包里就删，
+    精确；``origin=import`` 的是用户选的那棵解压目录带来的，分不清哪些是旧版本装的、
+    哪些是用户自己放的。不处理的话全量包对它们退化成纯覆盖：新版删掉或挪走的文件会
+    原地留下。实测
     MaaYYs v3.10.2 → v3.15.5 把 ``resource_pack/base/pipeline/kun28.json`` 挪进了
     ``战斗/`` 子目录，旧的那份留在原地，两份都定义顶层节点 ``困28``，MaaFramework
     直接拒收整个资源包（``key already exists``），项目从此每次运行都失败。
@@ -851,10 +347,10 @@ def _orphan_paths_without_baseline(project_path: Path, plan: PackagePlan) -> set
     另外跳过我们自己铺进项目的东西（``.auto_mas`` 前缀）与字节码（由解释器重写，
     见 :func:`_is_bytecode_artifact`）。
 
-    残留风险说清楚：没有基线时无法区分「旧版本装的」和「用户自己塞进资源目录的」，
-    因此用户手放在资源目录里的覆写也会被清掉。这与全量包语义一致（它就是要把项目
-    换成新版本），删除动作仍走既有事务——进 touched、先备份、post-validate 失败整体
-    回滚。装过这一次之后清单就有了，后续更新走回精确口径。
+    残留风险说清楚：无法区分「旧版本装的」和「用户自己塞进资源目录的」，因此用户手放
+    在资源目录里的覆写也会被清掉。这与全量包语义一致（它就是要把项目换成新版本）；
+    清理发生在新载荷的 staging 里，旧载荷与视图不受影响。更新过一次之后这些文件都
+    成了 ``origin=package``，后续更新走回精确口径。
     """
 
     orphans: set[str] = set()
@@ -891,251 +387,6 @@ def _is_bytecode_artifact(relative: str) -> bool:
     return normalized.endswith(".pyc") or "__pycache__/" in f"{normalized}/"
 
 
-def _locally_modified_owned_files(
-    project_path: Path,
-    manifest: Mapping[str, Any],
-    touched: list[str],
-) -> list[str]:
-    """清单里登记过、现在内容却对不上哈希、且这次更新会覆盖或删除的受管文件。
-
-    只看 ``touched`` 里的：更新不碰的文件本地怎么改都留着，没什么可提醒的。
-    发现不一致**不拒装**。以前这里是 fail-closed（任一受管文件哈希不符就抛错），
-    结果 M9A 自带 agent 每次启动都热更新 ``data/activity/*.json``，一旦上游发新版，
-    MAS 每次运行都先下完 210MB 全量包再拒装，项目永远停在旧版，用户没有任何
-    界面能解开。现在改成：记警告、把本地那份留到 state 目录，然后照常覆盖。
-    """
-
-    files = manifest.get("files")
-    if not isinstance(files, Mapping):
-        return []
-    touched_set = set(touched)
-    modified: list[str] = []
-    for raw_path, raw_hash in files.items():
-        relative = safe_relative_path(str(raw_path))
-        if relative not in touched_set or _is_bytecode_artifact(relative):
-            continue
-        target = _project_target(project_path, relative)
-        if not target.is_file():
-            continue
-        expected = str(raw_hash or "").strip().lower().removeprefix("sha256:")
-        if expected and _sha256_file(target) != expected:
-            modified.append(relative)
-    return sorted(modified)
-
-
-def _preserve_locally_modified(
-    project_path: Path,
-    state_dir: Path,
-    relatives: list[str],
-    send_update_log: Callable[[str], None],
-) -> None:
-    """把即将被覆盖的本地改动原样留一份到 ``<state>/local-modified/``。
-
-    有东西要留时整目录重建，只保留最近一次有本地改动的那批：留档的目的是让用户
-    改过的东西有处可找，不是做版本库。留档失败不阻断更新——更新本身是主线，
-    且 backup/ 仍在。
-    """
-
-    if not relatives:
-        return
-    keep_dir = _owned_state_path(state_dir / LOCAL_MODIFIED_DIR_NAME, state_dir)
-    try:
-        _remove_owned_path(keep_dir, state_dir)
-    except Exception as exc:  # noqa: BLE001
-        # Windows 上旧留档里有文件被占用时删不干净，新批次会和上次残留混在一起。
-        send_update_log(f"上次的本地改动留档未能清理，目录里可能混有旧文件: {exc}")
-    preview = ", ".join(relatives[:10])
-    suffix = " ..." if len(relatives) > 10 else ""
-    send_update_log(
-        f"MaaFW 项目有 {len(relatives)} 个受管文件在本地被改过（脚本自行热更新或"
-        f"手动修改），本次更新将以更新包内容覆盖，覆盖前的副本留在 {keep_dir}: "
-        f"{preview}{suffix}"
-    )
-    kept = 0
-    for relative in relatives:
-        source = _project_target(project_path, relative)
-        try:
-            _copy_path(source, keep_dir / relative)
-            kept += 1
-        except OSError as exc:
-            send_update_log(f"本地改动留档失败，继续更新: {relative}: {exc}")
-    if kept != len(relatives):
-        send_update_log(f"本地改动留档完成 {kept}/{len(relatives)} 个")
-
-
-def _rollback_from_state(
-    project_path: Path,
-    state: Mapping[str, Any],
-    *,
-    state_dir: Path | None = None,
-) -> None:
-    raw_backup = str(state.get("backupDir") or "").strip()
-    if not raw_backup:
-        raise UpdateApplyError("update journal has no backup directory")
-    if state_dir is None:
-        raw_state = str(state.get("stateRoot") or "").strip()
-        if not raw_state:
-            raise UpdateApplyError("update journal has no owned state root")
-        state_dir = Path(raw_state).expanduser().resolve(strict=False)
-    backup_dir = _owned_state_path(Path(raw_backup), state_dir)
-    touched = state.get("touchedPaths")
-    if not isinstance(touched, list):
-        touched = []
-    for raw_path in sorted(
-        (str(item) for item in touched),
-        key=lambda item: len(Path(item).parts),
-        reverse=True,
-    ):
-        _remove_path(_project_target(project_path, raw_path))
-    backup_entries = state.get("backupEntries")
-    if not isinstance(backup_entries, Mapping):
-        backup_entries = {}
-    for raw_path, existed in backup_entries.items():
-        if not existed:
-            continue
-        source = (backup_dir / safe_relative_path(str(raw_path))).resolve(strict=False)
-        if not source.is_relative_to(backup_dir):
-            raise UpdateApplyError("update backup path escapes operation-owned backup")
-        if source.exists():
-            _copy_path(source, _project_target(project_path, str(raw_path)))
-    raw_manifest = str(state.get("manifestPath") or "").strip()
-    raw_previous_manifest = str(state.get("previousManifestPath") or "").strip()
-    if raw_manifest and raw_previous_manifest:
-        manifest_path = _owned_state_path(Path(raw_manifest), state_dir)
-        previous_path = _owned_state_path(Path(raw_previous_manifest), state_dir)
-        if previous_path.is_file():
-            _copy_path(previous_path, manifest_path)
-    elif raw_manifest:
-        manifest_path = _owned_state_path(Path(raw_manifest), state_dir)
-        _remove_path(manifest_path)
-
-
-def _normalized_project_key(path: str | Path) -> str:
-    return str(Path(path).expanduser().resolve(strict=False)).casefold()
-
-
-def find_interrupted_updates(
-    project_path: Path,
-    *,
-    operation_root: Path | None = None,
-) -> list[str]:
-    """这个项目有哪些更新事务停在了中间态（只读扫描，返回 operation id）。
-
-    读的是 ``<operation_root>/<id>/state.json``；读不出来的记录跳过——它们
-    不可能是本进程刚写的合法中间态，而恢复逻辑宁可漏过也不能误回滚。
-    """
-
-    root_dir = (
-        (operation_root or DEFAULT_OPERATION_ROOT).expanduser().resolve(strict=False)
-    )
-    if not root_dir.is_dir():
-        return []
-    project_key = _normalized_project_key(project_path)
-    found: list[str] = []
-    for child in sorted(root_dir.iterdir()):
-        state_path = child / "state.json"
-        if not child.is_dir() or not state_path.is_file():
-            continue
-        try:
-            state = json.loads(state_path.read_text(encoding="utf-8"))
-        except (OSError, UnicodeDecodeError, json.JSONDecodeError):
-            continue
-        if not isinstance(state, Mapping):
-            continue
-        if str(state.get("status") or "") not in INTERRUPTED_STATUSES:
-            continue
-        recorded = str(state.get("projectPath") or "").strip()
-        if not recorded or _normalized_project_key(recorded) != project_key:
-            continue
-        operation_id = str(state.get("operationId") or child.name)
-        found.append(operation_id)
-    return found
-
-
-def recover_interrupted_update(
-    project_path: Path,
-    *,
-    send_log: Callable[[str], None] | None = None,
-    operation_root: Path | None = None,
-    project_lock_already_held: bool = False,
-    project_lock_timeout: float | None = None,
-) -> list[str]:
-    """把上次被打断的更新事务回滚干净，返回回滚了的 operation id。
-
-    事务的回滚只在同一线程的 ``except`` 里做：``post_validating`` 阶段一旦
-    要真建运行环境（首次建池要下 Python + 依赖，几分钟），进程在这段被杀
-    （Runtime 关机只给约 5 s）就会留下「文件全新、清单未写、状态停在
-    post_validating」的树——下次启动版本比对判「已是最新」，既不更新也不
-    回滚，每次运行都撞同一个装不上的依赖。所以更新流程进入发现之前先来
-    这里扫一遍 journal。
-
-    没有中间态记录时不拿锁、不写任何东西（生产里的记录全是终态，这是绝大
-    多数情况）。回滚失败则把该记录标成 ``recovery_required`` 并抛
-    ``unsafe_to_continue=True`` 的 :class:`UpdateApplyError`，与事务内回滚
-    失败同一口径。
-    """
-
-    send_update_log = send_log or (lambda _message: None)
-    root = project_path.expanduser().resolve(strict=False)
-    root_dir = (
-        (operation_root or DEFAULT_OPERATION_ROOT).expanduser().resolve(strict=False)
-    )
-    if not find_interrupted_updates(root, operation_root=root_dir):
-        return []
-
-    recovered: list[str] = []
-    with _hold_project_lock(
-        root,
-        timeout=project_lock_timeout,
-        project_lock_already_held=project_lock_already_held,
-    ):
-        # 锁内重扫：等锁期间另一次事务可能已经把它收成终态。
-        for operation_id in find_interrupted_updates(root, operation_root=root_dir):
-            store = UpdateOperationStore.open(operation_id, root=root_dir)
-            try:
-                state = store.read()
-                if str(state.get("status") or "") not in INTERRUPTED_STATUSES:
-                    continue
-                _rollback_from_state(root, state)
-                store.update(
-                    "rolled_back",
-                    rollbackReason=RECOVERED_ROLLBACK_REASON,
-                    recoveredFromStatus=str(state.get("status") or ""),
-                )
-            except Exception as exc:
-                try:
-                    store.mark_recovery_required(str(exc))
-                except Exception:  # noqa: BLE001 - 标记失败不该盖住原因
-                    logger.warning(
-                        "MaaFW update recovery could not mark operation %s",
-                        operation_id,
-                        exc_info=True,
-                    )
-                raise UpdateApplyError(
-                    f"MaaFW interrupted update recovery failed: {exc}",
-                    unsafe_to_continue=True,
-                ) from exc
-            send_update_log(
-                f"MaaFW update rolled back: {RECOVERED_ROLLBACK_REASON} "
-                f"({state.get('fromVersion') or '?'} -> "
-                f"{state.get('targetVersion') or '?'}, operation {operation_id})"
-            )
-            raw_work_dir = str(state.get("workDir") or "").strip()
-            raw_state_root = str(state.get("stateRoot") or "").strip()
-            if raw_work_dir and raw_state_root:
-                try:
-                    _remove_owned_path(
-                        Path(raw_work_dir),
-                        Path(raw_state_root).expanduser().resolve(strict=False),
-                    )
-                except Exception as exc:  # noqa: BLE001 - 文件已回滚，残留只占空间
-                    send_update_log(
-                        f"MaaFW update recovery left work dir behind: {exc}"
-                    )
-            recovered.append(operation_id)
-    return recovered
-
-
 def _find_package_root(extract_dir: Path) -> Path:
     candidates = [
         extract_dir,
@@ -1168,23 +419,6 @@ def _zip_expanded_size(package_path: Path) -> int:
     if expanded > ZIP_MAX_EXPANDED_BYTES:
         raise UpdateApplyError("update package expanded size exceeds limit")
     return expanded
-
-
-def _owned_backup_size(project_path: Path, touched: list[str]) -> int:
-    total = 0
-    for relative in touched:
-        target = _project_target(project_path, relative)
-        if target.is_file():
-            total += target.stat().st_size
-        elif target.is_dir():
-            for child in target.rglob("*"):
-                if child.is_symlink():
-                    raise UpdateApplyError(
-                        "project contains a symlink in a managed path"
-                    )
-                if child.is_file():
-                    total += child.stat().st_size
-    return total
 
 
 def _check_disk_space(
@@ -1362,62 +596,6 @@ def _project_target(project_path: Path, relative: str) -> Path:
     return target
 
 
-def _blob_store_root(operation_root: Path) -> Path:
-    """共用库与 ``maafw_project_state`` 同级：都挂在 operation 根的上一层。"""
-
-    return operation_root.resolve(strict=False).parent / BLOB_STORE_DIR_NAME
-
-
-def _copy_file_fresh(source: str | Path, target: str | Path) -> None:
-    """复制成一个新文件：先删旧的。目标可能是与其它副本共用的硬链接，往里写就是改
-    所有项目的那份。"""
-
-    destination = Path(target)
-    if destination.exists() or destination.is_symlink():
-        destination.unlink()
-    shutil.copy2(source, destination)
-
-
-def _copy_path(source: Path, target: Path) -> None:
-    target.parent.mkdir(parents=True, exist_ok=True)
-    if source.is_dir() and not source.is_symlink():
-        shutil.copytree(
-            source, target, dirs_exist_ok=True, copy_function=_copy_file_fresh
-        )
-    else:
-        _copy_file_fresh(source, target)
-
-
-def _remove_path(path: Path) -> None:
-    if not path or (not path.exists() and not path.is_symlink()):
-        return
-    if path.is_dir() and not path.is_symlink():
-        shutil.rmtree(path)
-    else:
-        path.unlink(missing_ok=True)
-
-
-def _remove_owned_path(path: Path, state_dir: Path) -> None:
-    target = _owned_state_path(path, state_dir)
-    if target == state_dir:
-        raise UpdateApplyError("refusing to remove project state root")
-    _remove_path(target)
-
-
-def _write_json(path: Path, payload: Mapping[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_name(f".{uuid.uuid4().hex[:8]}.tmp")
-    try:
-        temporary.write_text(
-            json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
-        )
-        with temporary.open("r+b") as handle:
-            os.fsync(handle.fileno())
-        temporary.replace(path)
-    finally:
-        temporary.unlink(missing_ok=True)
-
-
 def _sha256_file(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as handle:
@@ -1448,15 +626,10 @@ def _emit(
 
 
 __all__ = [
-    "INTERRUPTED_STATUSES",
-    "MANIFEST_NAME",
     "PackagePlan",
     "UpdateApplyError",
     "UpdatePostValidateRejected",
     "UpdateProjectLockBusy",
-    "apply_package_transaction",
     "build_package_plan",
-    "find_interrupted_updates",
     "project_state_dir_for",
-    "recover_interrupted_update",
 ]

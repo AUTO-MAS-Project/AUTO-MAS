@@ -1265,6 +1265,8 @@ class GroupMember:
     channel: str
     busy: bool = False
     name: str = ""
+    # 该脚本自己解析出的代理（脚本级优先，留空跟随全局）；切过去之后的运行环境确认用它。
+    proxy_url: str | None = None
 
 
 @dataclass

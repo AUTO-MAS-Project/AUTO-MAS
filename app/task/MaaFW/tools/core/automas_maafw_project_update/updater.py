@@ -19,14 +19,23 @@ from app.utils.constants import MIRROR_ERROR_INFO
 from ..automas_maafw_interface.models import MaaFWInterface
 from .apply import (
     UpdateApplyError,
-    UpdatePostValidateRejected,
-    UpdateProjectLockBusy,
-    apply_package_transaction,
-    has_trusted_update_baseline,
-    recover_interrupted_update,
-    update_baseline_matches_project,
+    _check_disk_space,
+    _find_package_root,
+    _read_interface_version,
+    _safe_extract_zip,
+    _zip_expanded_size,
 )
-from .contracts import normalise_sha256, project_fingerprint
+from .contracts import normalise_sha256
+from .payloads import (
+    PayloadCancelled,
+    PayloadError,
+    PayloadTarget,
+    RegisterResult,
+    build_from_package,
+    finalize,
+    register,
+    remove_tree,
+)
 from .state import (
     DEFAULT_CACHE_ROOT,
     DEFAULT_OPERATION_ROOT,
@@ -174,6 +183,9 @@ class MaaFWProjectUpdateResult:
     cdk_message: str = ""
     cdk_expired_time: int | None = None
     skipped_reason: str | None = None
+    # 这次登记出来的新载荷，以及登记后该组（谱系 + 渠道）的 latest；视图切换按后者。
+    payload_id: str | None = None
+    latest_id: str | None = None
 
     def __post_init__(self) -> None:
         if self.previous_version is None and self.current_version:
@@ -221,7 +233,7 @@ class MaaFWProjectUpdateError(RuntimeError):
     """Raised when a MaaFW project package cannot be checked or applied.
 
     ``post_validate_rejected``：更新事务被 ``post_validate`` 回调（运行环境
-    预检）拒绝，文件已回滚到旧版本，原因在 ``str(exc)`` 里。
+    预检）拒绝，新版本已丢弃、视图没动，原因在 ``str(exc)`` 里。
     ``project_lock_busy``：限时内没拿到项目锁（另一次更新 / 预检在跑）。
     ``cancelled``：调用方置位了 ``cancel_event``，本次更新是被用户停掉的，
     不是失败——调用方据此换文案，别把「已中止」说成「更新失败」。
@@ -342,21 +354,30 @@ async def update_maafw_project_if_needed(
     projection: bool = False,
     cancel_event: threading.Event | None = None,
     github_mirror_urls: Callable[[str], Sequence[tuple[str, str]]] | None = None,
+    payload: PayloadTarget | None = None,
+    after_register: Callable[[RegisterResult], Awaitable[Any]] | None = None,
 ) -> MaaFWProjectUpdateResult:
-    """检查并按需应用项目更新。
+    """检查并按需更新项目：发现 → 下载一次 → 在 staging 里从当前载荷 + 包建新载荷 →
+    预检 → 并入共用库 → 登记。项目视图在这里一个字节都不动。
 
-    ``post_validate``：新文件落地后、清单写入前在 apply 工作线程里被调，返回
-    False 或抛异常都让事务回滚（运行环境预检挂在这里）。
+    ``payload``：触发脚本当前挂的载荷（谱系、渠道、staging 与共用库，宿主按视图标记
+    组装）。差量 / 全量只看它：当前载荷是更新得来的（``source.kind=update``）才要
+    差量包，本地导入的一律要全量包。
+    ``post_validate``：新载荷在 staging 里建好后被调（工作线程），收 staging 路径，
+    返回 False 或抛异常都让这次更新作废、staging 丢弃（运行环境预检挂在这里）。
+    ``after_register``：登记之后、发 ``completed`` 之前 await 一次，收登记结果——宿主
+    在这里把触发脚本的视图切过去、把同组空闲脚本同步过去。
     ``precheck_gate``：确认有新版本之后、去要下载地址之前被 await 一次，收目标
     版本号，返回非空字符串就按「有更新但不可安装」跳过（原因即该串）——给
     运行前自动更新读上次预检备忘用；手动更新不传，也就忽略备忘。
-    ``project_lock_timeout``：拿项目锁的限时；None 为不限时（自动路径）。
-    ``cancel_event``：用户停止任务时置位，下载会在一个 chunk 内停下并抛
-    ``cancelled=True`` 的 :class:`MaaFWProjectUpdateError`；apply 线程一旦起来
-    就只能让它自己回滚完，所以取消只在下载与起线程之前生效。
+    ``cancel_event``：用户停止任务时置位。下载会在一个 chunk 内停下；下载完成之后
+    到登记之前，构建 / 预检 / 入库在步骤之间检查令牌，停下时丢掉 staging（没有要
+    回滚的东西）；**登记之后不再响应取消**，切换做完再返回。一律抛
+    ``cancelled=True`` 的 :class:`MaaFWProjectUpdateError`。
     ``github_mirror_urls``：下载地址 → ``(名字, 加速地址)`` 列表，只对 GitHub
     源生效。镜像清单与开关都在宿主侧（``tools/embedded/update_mirrors.py``），
-    核心包只管按顺序试。
+    核心包只管按顺序试。``projection`` / ``project_lock_*`` 只为签名兼容留着：
+    新载荷恒按投影白名单落地，互斥由宿主的谱系锁负责。
     """
 
     send_update_log = send_log or (lambda _: None)
@@ -384,33 +405,7 @@ async def update_maafw_project_if_needed(
     send_update_log("start checking MaaFW project update")
     send_update_log(f"current version: {current_version}")
     send_update_log(f"update channel: {update_channel}")
-
-    # 上次事务若在中间态被杀（预检把 post_validating 拉长到分钟级，进程随时
-    # 可能没了），目录里是新文件、清单却没写：版本比对会判「已是最新」，从此
-    # 既不更新也不回滚。进入发现之前先把它退回去。没有中间态记录时是空操作。
-    try:
-        await asyncio.to_thread(
-            recover_interrupted_update,
-            project_path,
-            send_log=send_update_log,
-            project_lock_already_held=project_lock_already_held,
-            project_lock_timeout=project_lock_timeout,
-        )
-    except UpdateApplyError as exc:
-        message = f"MaaFW project update failed: {_sanitize_log_message(str(exc))}"
-        send_update_log(message)
-        _report_progress(
-            progress,
-            "failed",
-            status="recovery_failed",
-            message=message,
-            final=True,
-        )
-        raise MaaFWProjectUpdateError(
-            str(exc),
-            unsafe_to_continue=exc.unsafe_to_continue,
-            project_lock_busy=isinstance(exc, UpdateProjectLockBusy),
-        ) from exc
+    del project_lock_already_held, project_lock_timeout, projection
 
     merged_source_config = dict(source_config or {})
     configured_cdk = str(
@@ -434,27 +429,20 @@ async def update_maafw_project_if_needed(
             merged_source_config["project_shell_hint"] = project_shell_hint
     _report_progress(progress, "checking", message="checking for project updates")
     try:
-        # 没有可信基线就直接要全量包：差量包在 apply 阶段必须能对上
-        # projectFingerprint，而从未经 MAS 更新过的项目根本没有那份 manifest，
-        # 于是「首次更新」必然被拒——这就是自举死锁。探测是只读的，不建目录。
-        prefer_full = not has_trusted_update_baseline(project_path)
-        if prefer_full:
-            send_update_log("本地无可信更新基线，改为请求全量包")
-
-        async def baseline_still_matches() -> bool:
-            # 有清单也不等于项目没变：M9A 的 agent 每次启动都热更新
-            # data/activity/*.json，指纹一变差量包同样会在 apply 阶段被拒。
-            # 全项目哈希要 ~2s，所以不在这里算，而是交给发现流程在「确认有
-            # 新版本、且要带 CDK 向 Mirror酱 要差量包」那一刻才算。
-            matches = await asyncio.to_thread(
-                update_baseline_matches_project, project_path
-            )
-            if not matches:
-                send_update_log(
-                    "项目内容与更新基线不一致（脚本自行热更新或手动改过文件），"
-                    "差量包无法套用，改为请求全量包"
+        # 差量包只能套在「更新器装的那一版」上：当前载荷是更新得来的（清单逐文件
+        # 记着包内哈希、指纹就是它现在的指纹——载荷不可变）才要差量包；本地导入的
+        # 载荷没有发布方基线，一律要全量包。
+        prefer_full = True
+        if payload is not None:
+            try:
+                source_kind = str(
+                    (payload.manifest().get("source") or {}).get("kind") or ""
                 )
-            return matches
+            except PayloadError:
+                source_kind = ""
+            prefer_full = source_kind != "update"
+        if prefer_full:
+            send_update_log("当前版本是本地导入的，改为请求全量包")
 
         (
             discovery,
@@ -467,7 +455,7 @@ async def update_maafw_project_if_needed(
             proxy=proxy,
             send_log=send_update_log,
             prefer_full_package=prefer_full,
-            baseline_matches=None if prefer_full else baseline_still_matches,
+            baseline_matches=None,
             precheck_gate=precheck_gate,
         )
     except Exception as exc:
@@ -570,8 +558,6 @@ async def update_maafw_project_if_needed(
         f"found MaaFW project update: {current_version} -> {candidate.version} "
         f"({candidate.source}{_format_package_size(candidate.size)})"
     )
-    # 项目指纹要 rglob + sha256 整个项目（M9A 660MB 约 1s），只在真有候选
-    # 更新时算，由 apply_maafw_project_update 算一次并绑定到 plan 上。
     if not candidate.plan_id:
         candidate.plan_id = uuid.uuid4().hex
     try:
@@ -582,11 +568,10 @@ async def update_maafw_project_if_needed(
             send_log=send_update_log,
             progress=progress,
             post_validate=post_validate,
-            project_lock_already_held=project_lock_already_held,
-            project_lock_timeout=project_lock_timeout,
-            projection=projection,
             cancel_event=cancel_event,
             github_mirror_urls=github_mirror_urls,
+            payload=payload,
+            after_register=after_register,
         )
     except Exception as exc:
         if getattr(exc, "cancelled", False):
@@ -653,6 +638,8 @@ async def update_maafw_project_if_needed(
         )
         or None,
         resumed_from=int(apply_result.get("resumedFrom") or 0),
+        payload_id=str(apply_result.get("payloadId") or "") or None,
+        latest_id=str(apply_result.get("latestId") or "") or None,
     )
 
 
@@ -968,11 +955,22 @@ async def apply_maafw_project_update(
     projection: bool = False,
     cancel_event: threading.Event | None = None,
     github_mirror_urls: Callable[[str], Sequence[tuple[str, str]]] | None = None,
+    payload: PayloadTarget | None = None,
+    after_register: Callable[[RegisterResult], Awaitable[Any]] | None = None,
 ) -> dict[str, Any]:
+    """下载一次 → 在 staging 里建新载荷 → 预检 → 并入共用库 → 登记 → ``after_register``。
+
+    staging 之外什么都不改：失败 / 预检不过 / 取消都只是丢掉 staging，当前载荷与
+    所有视图原样不动，所以没有备份、回滚与中断恢复。登记之后不再响应取消。
+    """
+
+    del project_lock_already_held, project_lock_timeout, projection
     send_update_log = send_log or (lambda _: None)
     download_url = str(candidate.download_url or "").strip()
     if not download_url:
         raise MaaFWProjectUpdateError("update provider did not return a download URL")
+    if payload is None:
+        raise MaaFWProjectUpdateError("项目还没有登记版本（视图没有标记），无法更新")
 
     # 加速镜像只对 GitHub 源有意义：Mirror 酱发的是一次性签名地址，套前缀
     # 只会把签名打坏。拿不到清单不是错误，直连照跑。
@@ -986,35 +984,30 @@ async def apply_maafw_project_update(
             logger.warning("MaaFW 更新镜像清单获取失败，改为直连", exc_info=True)
             alternates = ()
 
-    root = project_path.resolve()
-    if cancel_event is not None and cancel_event.is_set():
+    def is_cancelled() -> bool:
+        return cancel_event is not None and cancel_event.is_set()
+
+    if is_cancelled():
         raise MaaFWProjectUpdateError(CANCELLED_MESSAGE, cancelled=True)
-    # 这一步要 rglob + sha256 整个项目，大项目一两分钟且全程无输出——
-    # 「发现更新」之后的静默有一半在这里，先说一声再算。
-    send_update_log("正在计算项目指纹（大项目可能要一两分钟）")
-    current = await asyncio.to_thread(project_fingerprint, root)
-    if candidate.project_fingerprint and current != candidate.project_fingerprint:
-        raise MaaFWProjectUpdateError(
-            "MaaFW project changed after update plan; apply rejected"
-        )
     effective_plan_id = str(candidate.plan_id or uuid.uuid4().hex)
     candidate.plan_id = effective_plan_id
     operation_id = uuid.uuid4().hex
+    target_version = candidate.to_version or candidate.version
     operation = UpdateOperationStore.create(
         root=DEFAULT_OPERATION_ROOT,
         operation_id=operation_id,
-        projectPath=str(root),
+        projectPath=str(project_path),
         planId=effective_plan_id,
-        expectedFingerprint=candidate.project_fingerprint or current or "",
+        expectedFingerprint="",
         source=candidate.source,
-        targetVersion=candidate.to_version or candidate.version,
+        targetVersion=target_version,
         packageType=candidate.package_type or "",
-        scriptId=str(script_id or "").strip(),
+        scriptId=str(script_id or payload.by or "").strip(),
     )
     try:
         downloaded = await download_resumable(
             source=candidate.source,
-            version=candidate.to_version or candidate.version,
+            version=target_version,
             download_url=download_url,
             expected_sha256=candidate.sha256,
             artifact_id=candidate.artifact_id,
@@ -1035,56 +1028,168 @@ async def apply_maafw_project_update(
             totalBytes=downloaded.total_bytes,
             resumedFromBytes=downloaded.resumed_from,
         )
-        if cancel_event is not None and cancel_event.is_set():
-            # 最后一次能干净停下的机会：线程一起，回滚就必须跑完，
-            # 半途放手留下的是新旧混杂的树。
-            operation.update("cancelled", downloadedBytes=downloaded.size)
-            raise MaaFWProjectUpdateError(CANCELLED_MESSAGE, cancelled=True)
-        result = await asyncio.to_thread(
-            apply_package_transaction,
-            root,
-            downloaded.path,
-            operation=operation,
-            plan_id=effective_plan_id,
-            expected_fingerprint=candidate.project_fingerprint or current,
+    except UpdateDownloadCancelled as exc:
+        # 必须排在下面那个 ``except Exception`` 之前，否则「已中止」会被
+        # 包成一条普通的更新失败。
+        raise MaaFWProjectUpdateError(str(exc), cancelled=True) from exc
+    except MaaFWProjectUpdateError:
+        raise
+    except Exception as exc:
+        raise MaaFWProjectUpdateError(str(exc)) from exc
+    if is_cancelled():
+        operation.update("cancelled", downloadedBytes=downloaded.size)
+        raise MaaFWProjectUpdateError(CANCELLED_MESSAGE, cancelled=True)
+
+    def emit(stage: str, data: dict[str, Any]) -> None:
+        _report_progress(progress, stage, operation_id=operation.operation_id, **data)
+
+    suffix = uuid.uuid4().hex[:8]
+    staging_root = Path(payload.staging_root)
+    extract_dir = staging_root / f"pkg-{payload.lineage}-{suffix}"
+    staging = staging_root / f"payload-{payload.lineage}-{suffix}"
+    expected_version = str(target_version or "").strip()
+
+    def build() -> Any:
+        staging_root.mkdir(parents=True, exist_ok=True)
+        expanded = _zip_expanded_size(downloaded.path)
+        # 解压一份、新载荷里包内条目再落一份（大文件多半进共用库，只占一次）。
+        _check_disk_space(
+            staging_root,
+            staging_root,
+            state_required=expanded,
+            project_required=expanded,
+        )
+        extract_dir.mkdir(parents=True, exist_ok=True)
+        _safe_extract_zip(downloaded.path, extract_dir)
+        package_root = _find_package_root(extract_dir)
+        built = build_from_package(
+            payload.manifest(),
+            payload.directory(),
+            package_root,
+            extract_dir,
+            staging,
+            blob_store=payload.blob_store,
+            private=payload.private_paths,
+            send_log=send_update_log,
+            on_event=emit,
             expected_package_type=(
                 candidate.package_type
                 if candidate.package_type in {"full", "delta"}
                 else None
             ),
-            from_version=candidate.from_version,
-            target_version=candidate.to_version or candidate.version,
-            post_validate=post_validate,
-            project_lock_already_held=project_lock_already_held,
-            project_lock_timeout=project_lock_timeout,
-            projection=projection,
-            send_log=send_update_log,
-            progress=lambda stage, payload: _report_progress(
-                progress,
-                stage,
-                operation_id=operation.operation_id,
-                **payload,
-            ),
+            target_version=target_version,
+            cancelled=is_cancelled,
         )
-        result["resumedFrom"] = downloaded.resumed_from
-        return result
-    except UpdateDownloadCancelled as exc:
-        # 必须排在下面那个 ``except Exception`` 之前，否则「已中止」会被
-        # 包成一条普通的更新失败。
-        raise MaaFWProjectUpdateError(str(exc), cancelled=True) from exc
-    except UpdateApplyError as exc:
-        # 预检拒绝与锁忙都要在宿主侧认得出来：前者只发一次 warning、后者回
-        # 409；其它 apply 失败仍是 error。原因文本原样带在 message 里。
-        raise MaaFWProjectUpdateError(
-            str(exc),
-            unsafe_to_continue=exc.unsafe_to_continue,
-            post_validate_rejected=isinstance(exc, UpdatePostValidateRejected),
-            project_lock_busy=isinstance(exc, UpdateProjectLockBusy),
-        ) from exc
+        actual = _read_interface_version(staging, strict=True).strip()
+        if expected_version and actual.lstrip("vV") != expected_version.lstrip("vV"):
+            raise PayloadError(
+                "updated MaaFW interface version does not match the planned target"
+            )
+        return built, actual
+
+    registered: RegisterResult | None = None
+    try:
+        built, actual_version = await asyncio.to_thread(build)
+        remove_tree(extract_dir)
+        if is_cancelled():
+            raise PayloadCancelled("update cancelled")
+        emit("post_validating", {})
+        if post_validate is not None:
+            # 回调（运行环境预检）失败的原因必须原样带出去：调用方要据此分
+            # 「binding 拿不到」与其它失败、写备忘、给用户看文案。
+            try:
+                verdict = await asyncio.to_thread(post_validate, staging)
+            except Exception as exc:
+                if is_cancelled():
+                    raise PayloadCancelled("update cancelled") from exc
+                raise MaaFWProjectUpdateError(
+                    str(exc).strip() or type(exc).__name__,
+                    post_validate_rejected=True,
+                ) from exc
+            if verdict is False:
+                raise MaaFWProjectUpdateError(
+                    "MaaFW post-validation rejected the update",
+                    post_validate_rejected=True,
+                )
+        if is_cancelled():
+            raise PayloadCancelled("update cancelled")
+        send_update_log("正在把新版本的大文件并入共用库")
+        finalized = await asyncio.to_thread(
+            finalize,
+            staging,
+            blob_store=payload.blob_store,
+            private=payload.private_paths,
+        )
+        # 最后一个能干净停下的点：再往下就是登记，之后不再响应取消。
+        if is_cancelled():
+            raise PayloadCancelled("update cancelled")
+        send_update_log("正在为新版本生成文件清单（大项目可能要一两分钟）")
+        registered = await asyncio.to_thread(
+            lambda: register(
+                payload.root,
+                staging,
+                lineage=payload.lineage,
+                channel=payload.channel,
+                source={
+                    "kind": "update",
+                    "ref": _public_package_source(candidate.source)
+                    or str(candidate.source or ""),
+                },
+                by=payload.by,
+                version=actual_version,
+                lineage_info=payload.lineage_info,
+                known_hashes=finalized.hashes,
+                origins=built.origins,
+            )
+        )
+    except PayloadCancelled as exc:
+        remove_tree_quietly(staging)
+        operation.update("cancelled", downloadedBytes=downloaded.size)
+        raise MaaFWProjectUpdateError(CANCELLED_MESSAGE, cancelled=True) from exc
     except MaaFWProjectUpdateError:
+        remove_tree_quietly(staging)
         raise
-    except Exception as exc:
+    except (PayloadError, UpdateApplyError) as exc:
+        remove_tree_quietly(staging)
         raise MaaFWProjectUpdateError(str(exc)) from exc
+    except Exception as exc:
+        remove_tree_quietly(staging)
+        raise MaaFWProjectUpdateError(str(exc)) from exc
+    finally:
+        remove_tree_quietly(extract_dir)
+
+    emit("committed", {"payloadId": registered.payload_id})
+    send_update_log(
+        f"新版本已登记：{registered.payload_id}"
+        + ("" if registered.created else "（与本机已有的同一版本内容相同，复用）")
+    )
+    if after_register is not None:
+        # 登记之后不再响应取消：切换约 2 s，做完再返回。钩子自己的失败只记日志——
+        # 载荷已在册，没切过去的视图下次运行前的组同步会补上，不算更新失败。
+        try:
+            await after_register(registered)
+        except Exception:
+            logger.warning("MaaFW 新版本登记后的切换失败", exc_info=True)
+            send_update_log("新版本已登记，但切换脚本时出错；下次运行前会再同步")
+    return {
+        "operationId": operation.operation_id,
+        "planId": effective_plan_id,
+        "status": "committed",
+        "packageType": built.plan.package_type,
+        "finalFingerprint": str(registered.manifest.get("fingerprint") or ""),
+        "targetVersion": actual_version,
+        "resumedFrom": downloaded.resumed_from,
+        "payloadId": registered.payload_id,
+        "latestId": registered.latest_id,
+        "created": registered.created,
+    }
+
+
+def remove_tree_quietly(path: Path) -> None:
+    try:
+        remove_tree(path)
+    except OSError:
+        logger.warning("MaaFW 更新 staging 清理失败，留待启动时清理: %s", path)
 
 
 async def _query_mirrorchyan_latest(

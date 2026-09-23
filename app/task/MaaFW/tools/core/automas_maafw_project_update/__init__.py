@@ -5,11 +5,11 @@ from .apply import (
     UpdatePostValidateRejected,
     UpdateProjectLockBusy,
     project_state_dir_for,
-    recover_interrupted_update,
 )
 from .precheck_memo import (
     classify_precheck_failure,
     clear_runtime_precheck,
+    precheck_memo_path,
     read_runtime_precheck,
     write_runtime_precheck,
 )
@@ -37,9 +37,9 @@ __all__ = [
     "clear_runtime_precheck",
     "detect_maafw_project_shell_hint",
     "discover_maafw_project_update",
+    "precheck_memo_path",
     "project_state_dir_for",
     "read_runtime_precheck",
-    "recover_interrupted_update",
     "update_maafw_project_if_needed",
     "write_runtime_precheck",
 ]

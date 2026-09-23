@@ -43,7 +43,8 @@ except ImportError:  # pragma: no cover - POSIX
 from .apply import (
     PackagePlan,
     UpdateApplyError,
-    _orphan_paths_without_baseline,
+    _apply_progress_step,
+    _import_origin_orphans,
     _validate_plan_base,
     build_package_plan,
 )
@@ -79,6 +80,38 @@ _COPY_CHUNK = 1024 * 1024
 
 class PayloadError(RuntimeError):
     """载荷操作失败。"""
+
+
+class PayloadCancelled(PayloadError):
+    """构建新载荷期间用户停了任务；staging 由调用方丢弃，没有要回滚的东西。"""
+
+
+@dataclass
+class PayloadTarget:
+    """一次更新要落到哪：谱系、触发脚本当前挂的载荷、渠道、staging 与共用库。
+
+    宿主（``tools/embedded``）按视图标记组装，核心更新流程据此从当前载荷 + 更新包
+    在 staging 里建新载荷、预检、登记。
+    """
+
+    root: Path
+    lineage: str
+    payload_id: str
+    channel: str
+    by: str
+    staging_root: Path
+    blob_store: RuntimeBlobStore
+    private_paths: tuple[str, ...] = ()
+    lineage_info: Mapping[str, Any] = field(default_factory=dict)
+
+    def manifest(self) -> dict[str, Any]:
+        value = read_manifest(self.root, self.lineage, self.payload_id)
+        if value is None:
+            raise PayloadError(f"当前项目版本 {self.payload_id} 的清单不在本机")
+        return value
+
+    def directory(self) -> Path:
+        return payload_dir(self.root, self.lineage, self.payload_id)
 
 
 # --------------------------------------------------------------------------
@@ -502,6 +535,10 @@ def build_from_package(
     private: Iterable[str] = (),
     send_log: Callable[[str], None] | None = None,
     progress: Callable[[int, int], None] | None = None,
+    on_event: Callable[[str, dict[str, Any]], None] | None = None,
+    expected_package_type: str | None = None,
+    target_version: str | None = None,
+    cancelled: Callable[[], bool] | None = None,
 ) -> PackageBuild:
     """旧载荷 + 更新包 → staging 里的新载荷树（§3.1 第 4 步）。
 
@@ -510,29 +547,48 @@ def build_from_package(
     - 差量包：以旧载荷清单为基线校验（载荷不可变，清单记的指纹就是它当前的指纹），
       stale = 包声明的删除表。
     包内条目一律 ``origin=package``。失败时调用方直接丢掉 staging。
+
+    ``on_event(stage, payload)`` 按更新进度的阶段词发：``plan_validated``（计划校验完）→
+    ``staged``（旧载荷已复制成新版本骨架）→ ``applying``（逐文件套包，带
+    ``appliedFiles`` / ``totalFiles``）。``cancelled()`` 为真时在两步之间抛
+    :class:`PayloadCancelled`，staging 由调用方丢弃。
     """
+
+    def emit(stage: str, **payload: Any) -> None:
+        if on_event is not None:
+            try:
+                on_event(stage, payload)
+            except Exception:  # noqa: BLE001 - 进度只是旁观
+                pass
+
+    def check_cancel() -> None:
+        if cancelled is not None and cancelled():
+            raise PayloadCancelled("update cancelled")
 
     staging = Path(staging)
     staging.mkdir(parents=True, exist_ok=True)
     staging = staging.resolve()
+    old_root = Path(old_payload_dir).resolve()
     old_files = manifest_files(old_manifest)
     private_list = tuple(private)
-    clone_payload_into(Path(old_payload_dir), old_files, staging)
     compat_manifest = {
         "files": {rel: entry["sha256"] for rel, entry in old_files.items()},
         "projectFingerprint": str(old_manifest.get("fingerprint") or ""),
     }
-    plan = build_package_plan(
-        package_root,
-        extract_dir,
-        staging,
-        old_manifest=compat_manifest,
-        projection=True,
-        send_log=send_log,
-    )
+    # 计划只读旧载荷（投影白名单的叠加视图、差量基线版本），不碰 staging。
     try:
+        plan = build_package_plan(
+            package_root,
+            extract_dir,
+            old_root,
+            old_manifest=compat_manifest,
+            expected_package_type=expected_package_type,  # type: ignore[arg-type]
+            target_version=target_version,
+            projection=True,
+            send_log=send_log,
+        )
         _validate_plan_base(
-            staging,
+            old_root,
             plan,
             compat_manifest,
             str(old_manifest.get("fingerprint") or "").strip().lower(),
@@ -549,17 +605,29 @@ def build_from_package(
         import_files = {
             rel for rel, entry in old_files.items() if entry["origin"] != ORIGIN_PACKAGE
         }
-        stale |= _orphan_paths_without_baseline(staging, plan) & import_files
+        stale |= _import_origin_orphans(old_root, plan) & import_files
     else:
-        stale = {rel for rel in plan.deleted if rel in old_files}
+        # 删除表里可能是目录（``deleted_dir``）：目录下的旧文件一起清。
+        deleted = [item.rstrip("/") for item in plan.deleted if item]
+        stale = {
+            rel
+            for rel in old_files
+            if any(rel == item or rel.startswith(f"{item}/") for item in deleted)
+        }
+    emit("plan_validated", packageType=plan.package_type)
+    check_cancel()
 
-    for rel in sorted(stale, key=lambda item: len(Path(item).parts), reverse=True):
-        target = staging / rel
-        if os.path.lexists(target) and not target.is_dir():
-            target.unlink()
+    clone_payload_into(
+        old_root, (rel for rel in old_files if rel not in stale), staging
+    )
+    emit("staged")
+    check_cancel()
 
     total = len(plan.files)
     applied = 0
+    step = _apply_progress_step(total)
+    next_report = step
+    emit("applying", appliedFiles=0, totalFiles=total)
     for rel, source in plan.files.items():
         target = staging / rel
         size = source.stat().st_size
@@ -576,6 +644,10 @@ def build_from_package(
         applied += 1
         if progress is not None:
             progress(applied, total)
+        if applied >= next_report or applied == total:
+            next_report = applied + step
+            emit("applying", appliedFiles=applied, totalFiles=total)
+            check_cancel()
 
     origins = {
         rel: entry["origin"] for rel, entry in old_files.items() if rel not in stale

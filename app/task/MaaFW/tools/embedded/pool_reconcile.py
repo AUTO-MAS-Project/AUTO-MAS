@@ -462,8 +462,15 @@ def reconcile_after_project_update(
     replaced: list[str] = []
     if previous_version:
         current_version = previous_maafw_version(project_path)
-        if current_version != previous_version:
+        paths = list(project_paths)
+        # 同一项目的多个视图挂同一个载荷，运行中的兄弟要跑完才切：旧版本只有在
+        # 谱系里最后一个视图也离开它之后才算「被替换」，否则豁免宽限会删掉正在用的。
+        still_used = any(
+            previous_maafw_version(path) == previous_version for path in paths
+        )
+        if current_version != previous_version and not still_used:
             replaced.append(previous_version)
+        project_paths = paths
     return reconcile_runtime_pool(
         project_paths,
         replaced_versions=replaced,

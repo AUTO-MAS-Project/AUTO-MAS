@@ -5,8 +5,9 @@ MaaEnd v2.29.0 打包了 MaaFramework v5.14.0-beta.1 的原生库，binding 被�
 里真建运行环境时失败、回滚、继续跑旧版本。没有这份备忘的话，下一次运行前
 更新又会下包、解压、建池、撞同一个缺包错误，每天白跑一遍。
 
-备忘与 ``resource-manifest.json`` 同目录（``data/maafw_project_state/<hash>/``），
-只由本包和宿主侧的 ``tools/embedded/precheck_gate.py`` 读写。结构::
+备忘按**谱系 + 目标版本**记：``data/mfw/.payloads/<谱系>/precheck-<版本>.json``。
+它是整个组共有的——一个成员预检过某版本失败，组里谁也不再为它下包。只由本包和
+宿主侧的 ``tools/embedded/precheck_gate.py`` 读写。结构::
 
     {
       "targetVersion": "v2.29.0",
@@ -32,9 +33,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Mapping
 
-from .apply import _read_interface_version, project_state_dir_for
+from .apply import _read_interface_version
 
-PRECHECK_MEMO_NAME = "runtime-precheck.json"
+PRECHECK_MEMO_PREFIX = "precheck-"
+_VERSION_UNSAFE_RE = re.compile(r"[^0-9A-Za-z._+-]+")
 KIND_BINDING_UNAVAILABLE = "binding_unavailable"
 KIND_OTHER = "other"
 REASON_MAX_CHARS = 500
@@ -59,25 +61,18 @@ _BINDING_UNAVAILABLE_PATTERNS = (
 )
 
 
-def precheck_memo_path(
-    project_path: Path,
-    *,
-    operation_root: Path | None = None,
-) -> Path:
-    return (
-        project_state_dir_for(project_path, operation_root=operation_root)
-        / PRECHECK_MEMO_NAME
-    )
+def precheck_memo_path(payloads_root: Path, lineage: str, version: str) -> Path:
+    """某谱系某目标版本的预检备忘路径（版本号去掉前导 v、非法字符换成 ``_``）。"""
+
+    text = str(version or "").strip().lstrip("vV").casefold()
+    safe = _VERSION_UNSAFE_RE.sub("_", text).strip("._-") or "unknown"
+    return Path(payloads_root) / str(lineage) / f"{PRECHECK_MEMO_PREFIX}{safe}.json"
 
 
-def read_runtime_precheck(
-    project_path: Path,
-    *,
-    operation_root: Path | None = None,
-) -> dict[str, Any] | None:
+def read_runtime_precheck(path: Path) -> dict[str, Any] | None:
     """读备忘；没有、读不出、结构不对都当没有。"""
 
-    path = precheck_memo_path(project_path, operation_root=operation_root)
+    path = Path(path)
     try:
         value = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, UnicodeDecodeError, json.JSONDecodeError):
@@ -89,19 +84,14 @@ def read_runtime_precheck(
     return value
 
 
-def write_runtime_precheck(
-    project_path: Path,
-    payload: Mapping[str, Any],
-    *,
-    operation_root: Path | None = None,
-) -> Path:
+def write_runtime_precheck(path: Path, payload: Mapping[str, Any]) -> Path:
     """原子写备忘（临时文件 + ``os.replace``），只落 ``_MEMO_KEYS`` 里的键。
 
     ``attempts`` 缺省为 1：预检那一次本身就是第一次尝试，之后每次运行前
     被备忘挡下来时由读取方加一再写回。
     """
 
-    path = precheck_memo_path(project_path, operation_root=operation_root)
+    path = Path(path)
     record: dict[str, Any] = {key: payload.get(key) for key in _MEMO_KEYS}
     record["targetVersion"] = str(record.get("targetVersion") or "").strip()
     record["requirement"] = str(record.get("requirement") or "maafw").strip()
@@ -130,16 +120,11 @@ def write_runtime_precheck(
     return path
 
 
-def clear_runtime_precheck(
-    project_path: Path,
-    *,
-    operation_root: Path | None = None,
-) -> bool:
+def clear_runtime_precheck(path: Path) -> bool:
     """删备忘，返回是否真删了什么。"""
 
-    path = precheck_memo_path(project_path, operation_root=operation_root)
     try:
-        path.unlink()
+        Path(path).unlink()
     except FileNotFoundError:
         return False
     return True
@@ -202,7 +187,7 @@ def _now_iso() -> str:
 __all__ = [
     "KIND_BINDING_UNAVAILABLE",
     "KIND_OTHER",
-    "PRECHECK_MEMO_NAME",
+    "PRECHECK_MEMO_PREFIX",
     "REASON_MAX_CHARS",
     "classify_precheck_failure",
     "classify_precheck_kind",
