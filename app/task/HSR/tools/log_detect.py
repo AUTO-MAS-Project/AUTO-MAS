@@ -60,11 +60,14 @@ HSR_EOW_SRA_BATTLE_FAILED_RE = re.compile(r"(?<!退出)战斗失败")
 # SRA 界面语言为英文时的失败文案（SRACore/localization/resource_en-us.json）：
 # task.taskFailed / task.noSuchTask / config.fileNotFound。SRA-cli 的退出码
 # 恒为 0，这几条漏掉就会把失败判成成功。
+# 最后一项是 cmd2 吞掉命令内异常时打的尾行（debug 关闭时恒有），异常类型不定，
+# 锚这行而不是某一种异常名。
 HSR_ENGLISH_FAILURE_RE = re.compile(
     r"(Traceback \(most recent call last\):|Failed to execute script|"
     r"Fatal error|SRAError\(|Exception:|"
     r"failed\. Stopping further execution|No such task|"
-    r"Could not find config file)"
+    r"Could not find config file|"
+    r"To enable full traceback, run the following command)"
 )
 HSR_CHINESE_FAILURE_MARKERS: tuple[str, ...] = (
     # 审计 HSR-外部脚本日志语义审计.md §4.2：原通用项（任务失败 / 执行失败 /
