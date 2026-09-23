@@ -5486,7 +5486,11 @@ class AppConfig(GlobalConfig):
         # 先按 journal 收尾被打断的视图切换：切换的 old / staging 都在 .staging 里，
         # 不先恢复的话下面的半成品清理会把「rename 了一半」时暂存的原视图当垃圾删掉。
         try:
-            await asyncio.to_thread(recover_switches)
+            # 本进程起来之后才写的 journal、拿不到视图预约的（正在切换 / 运行）不碰：
+            # 后台初始化时 API 已经在服务，可能正有一次切换在建 staging。
+            await asyncio.to_thread(
+                lambda: recover_switches(started_at=_PROCESS_STARTED_AT, reserve=True)
+            )
         except Exception as exc:  # noqa: BLE001 - 恢复失败不该影响启动，journal 留着下次再试
             logger.warning(f"MFW 视图切换恢复失败: {exc}")
         staging = root / STAGING_DIR_NAME

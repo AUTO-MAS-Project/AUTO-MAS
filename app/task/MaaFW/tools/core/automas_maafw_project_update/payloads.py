@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import os
 import re
 import shutil
@@ -35,11 +36,6 @@ from typing import Any
 
 from packaging.version import InvalidVersion, Version
 
-try:  # Windows only
-    import _winapi  # type: ignore[import-not-found]
-except ImportError:  # pragma: no cover - POSIX
-    _winapi = None
-
 from .apply import (
     PackagePlan,
     UpdateApplyError,
@@ -48,7 +44,7 @@ from .apply import (
     _validate_plan_base,
     build_package_plan,
 )
-from .blob_store import RuntimeBlobStore, sha256_file
+from .blob_store import RuntimeBlobStore, _copy_exclusive, place_fresh, sha256_file
 from .contracts import (
     VIEW_MARKER_FILE_NAME,
     canonical_json,
@@ -64,6 +60,8 @@ from .projection import (
 )
 from .state import DurableFileLock
 
+logger = logging.getLogger("automas.maafw.project_update.payloads")
+
 SCHEMA_VERSION = 1
 LINEAGE_FILE_NAME = "lineage.json"
 LINEAGE_LOCK_NAME = ".lineage.lock"
@@ -75,7 +73,6 @@ PAYLOAD_STRIP_ROOT_DIRS = frozenset({"debug", "logs", "temp", ".pycache"})
 _LINEAGE_KEY_RE = re.compile(r"^[0-9a-f]{12}$")
 _PAYLOAD_ID_RE = re.compile(r"^[0-9A-Za-z._+-]{1,80}-[0-9a-f]{8}$")
 _VERSION_UNSAFE_RE = re.compile(r"[^0-9A-Za-z._+-]+")
-_COPY_CHUNK = 1024 * 1024
 
 
 class PayloadError(RuntimeError):
@@ -112,72 +109,6 @@ class PayloadTarget:
 
     def directory(self) -> Path:
         return payload_dir(self.root, self.lineage, self.payload_id)
-
-
-# --------------------------------------------------------------------------
-# 写穿防线：往 staging 放文件的唯一方式
-# --------------------------------------------------------------------------
-
-
-_ERROR_FILE_EXISTS = (80, 183)  # ERROR_FILE_EXISTS / ERROR_ALREADY_EXISTS
-
-
-def _copy_exclusive(source: Path, destination: Path) -> None:
-    """复制成一个**新**文件（连同修改时间）：目标已存在就抛 ``FileExistsError``，绝不以
-    ``wb`` 打开一个已有的（可能是载荷硬链接的）文件。Windows 上走 ``CopyFile2`` +
-    ``COPY_FILE_FAIL_IF_EXISTS``（一次系统调用带属性与时间戳，比逐字节读写 + copystat
-    快一倍多），不可用时退回 ``open("xb")``。"""
-
-    if _winapi is not None and hasattr(_winapi, "CopyFile2"):
-        flags = _winapi.COPY_FILE_FAIL_IF_EXISTS | getattr(
-            _winapi, "COPY_FILE_ALLOW_DECRYPTED_DESTINATION", 0
-        )
-        try:
-            _winapi.CopyFile2(str(source), str(destination), flags)
-            return
-        except OSError as exc:
-            if getattr(exc, "winerror", None) in _ERROR_FILE_EXISTS:
-                raise FileExistsError(str(destination)) from exc
-            # 其它失败（只读源、权限……）：目标若已被它建出一半，那是我们自己刚建的，删掉重来。
-            try:
-                os.unlink(destination)
-            except OSError:
-                pass
-    with source.open("rb") as reader, destination.open("xb") as writer:
-        shutil.copyfileobj(reader, writer, _COPY_CHUNK)
-    shutil.copystat(source, destination)
-
-
-def place_fresh(
-    source: Path, destination: Path, *, link: bool, make_parent: bool = True
-) -> str:
-    """把 ``source`` 放到 ``destination``：链接（``link=True``）或复制成新文件。
-
-    返回 ``"linked"`` / ``"copied"``。两种方式都是**独占新建**——``os.link`` 与
-    ``COPY_FILE_FAIL_IF_EXISTS`` / ``open("xb")`` 遇到已存在的目标只会失败，不会写进去；
-    失败就先 ``unlink`` 目标再建一次。所以任何已存在的目标（可能是载荷 / blob 的硬链接）
-    都只会被摘掉目录项，内容一个字节不动。复制只在链接失败时兜底。
-    """
-
-    if make_parent:
-        destination.parent.mkdir(parents=True, exist_ok=True)
-    for attempt in range(2):
-        try:
-            if link:
-                try:
-                    os.link(source, destination)
-                    return "linked"
-                except FileExistsError:
-                    raise
-                except OSError:
-                    pass  # 跨卷、链接数到上限、非 NTFS：退回复制
-            _copy_exclusive(source, destination)
-            return "copied"
-        except FileExistsError:
-            if attempt:
-                raise
-            os.unlink(destination)
-    raise AssertionError("unreachable")
 
 
 def _clear_readonly_and_retry(func: Callable[[str], Any], path: str, _exc: Any) -> None:
@@ -723,6 +654,14 @@ class RegisterResult:
     created: bool
     advanced: bool
     manifest: dict[str, Any]
+    # latest 指的载荷在不在本机；不在时调用方先切到这次登记的那份。
+    latest_available: bool = True
+
+    @property
+    def target_id(self) -> str:
+        """视图该切到的载荷：组的 latest；它丢了就先用这次登记的。"""
+
+        return self.latest_id if self.latest_available else self.payload_id
 
 
 def _safe_version(version: str) -> str:
@@ -852,12 +791,25 @@ def register(
             if str(info_value or "").strip():
                 data[info_key] = str(info_value)
         current_latest = data["latest"].get(channel)
-        advanced = (
-            not isinstance(current_latest, Mapping)
-            or not current_latest.get("id")
-            or not (lineage_dir(root, lineage) / str(current_latest.get("id"))).is_dir()
-            or version_newer(version, str(current_latest.get("version") or ""))
-        )
+        if not isinstance(current_latest, Mapping) or not current_latest.get("id"):
+            advanced = True
+        else:
+            current_version = str(current_latest.get("version") or "")
+            if (lineage_dir(root, lineage) / str(current_latest["id"])).is_dir():
+                advanced = version_newer(version, current_version)
+            else:
+                # latest 指的目录丢了：只有新登记的不比它旧才顶上去，否则组会后退；
+                # 保留原 latest，缺失的载荷由自愈 / 迁移处理。
+                advanced = not version_newer(current_version, version)
+                if not advanced:
+                    logger.warning(
+                        "谱系 %s 渠道 %s 的 latest 载荷 %s 不在本机，新登记的 %s 更旧，"
+                        "保留原 latest",
+                        lineage,
+                        channel,
+                        current_latest["id"],
+                        payload_id,
+                    )
         if advanced:
             data["latest"][channel] = {
                 "id": payload_id,
@@ -868,12 +820,14 @@ def register(
             }
         write_lineage(root, lineage, data)
         latest_id = str(data["latest"][channel]["id"])
+        latest_available = (lineage_dir(root, lineage) / latest_id).is_dir()
     return RegisterResult(
         payload_id=payload_id,
         latest_id=latest_id,
         created=created,
         advanced=bool(advanced),
         manifest=manifest,
+        latest_available=latest_available,
     )
 
 

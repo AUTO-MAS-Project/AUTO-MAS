@@ -1302,16 +1302,7 @@ async def _propagate_view_to_group(script_id: str, channel: str) -> None:
     if marker is None:
         return
     # 遍历脚本表必须在事件循环线程上做（工作线程里遍历会撞 dict changed size）
-    members = [
-        GroupMember(
-            script_id=str(uid),
-            channel=str(config.get("Update", "Channel") or "stable"),
-            busy=bool(getattr(config, "is_locked", False)),
-            name=str(config.get("Info", "Name") or ""),
-        )
-        for uid, config in Config.ScriptConfig.items()
-        if isinstance(config, RuntimeMaaFWConfig) and str(uid) != script_id
-    ]
+    members = _maafw_group_members(script_id)
     try:
         source_name = str(
             _maafw_script_config(script_id).get("Info", "Name") or script_id[:8]
@@ -1334,6 +1325,17 @@ async def _propagate_view_to_group(script_id: str, channel: str) -> None:
         logger.info(
             f"MFW 脚本 {script_id} 导入后同步同项目脚本：已切换 {result.switched}，"
             f"跳过 {result.skipped}，失败 {result.failed}"
+        )
+    if result.switched:
+        # 切换只把文件摆好：被切的兄弟各自在后台确认一次运行环境（持各自的视图预约），
+        # 别把 isolated_venv 的重建留到它们下一次运行、游戏已经起来的时候（§3.1 第 8 步）。
+        from app.task.MaaFW.tools.embedded.view_update import (
+            confirm_environments_in_background,
+        )
+
+        switched = set(result.switched)
+        confirm_environments_in_background(
+            [member for member in members if member.script_id in switched]
         )
 
 

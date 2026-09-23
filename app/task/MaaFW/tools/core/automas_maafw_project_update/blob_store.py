@@ -36,6 +36,12 @@ from pathlib import Path
 BLOB_STORE_DIR_NAME = "maafw_blobs"
 LINK_MIN_BYTES = 64 * 1024
 _TEMP_SUFFIX = ".tmp-"
+_COPY_CHUNK = 1024 * 1024
+
+try:  # Windows only
+    import _winapi  # type: ignore[import-not-found]
+except ImportError:  # pragma: no cover - POSIX
+    _winapi = None
 
 
 @dataclass
@@ -234,11 +240,78 @@ def _copy_fresh(source: Path, destination: Path) -> None:
     shutil.copy2(source, destination)
 
 
+# --------------------------------------------------------------------------
+# 写穿防线：往 staging / 视图 / 载荷放文件的唯一方式
+# --------------------------------------------------------------------------
+
+
+_ERROR_FILE_EXISTS = (80, 183)  # ERROR_FILE_EXISTS / ERROR_ALREADY_EXISTS
+
+
+def _copy_exclusive(source: Path, destination: Path) -> None:
+    """复制成一个**新**文件（连同修改时间）：目标已存在就抛 ``FileExistsError``，绝不以
+    ``wb`` 打开一个已有的（可能是载荷硬链接的）文件。Windows 上走 ``CopyFile2`` +
+    ``COPY_FILE_FAIL_IF_EXISTS``（一次系统调用带属性与时间戳，比逐字节读写 + copystat
+    快一倍多），不可用时退回 ``open("xb")``。"""
+
+    if _winapi is not None and hasattr(_winapi, "CopyFile2"):
+        flags = _winapi.COPY_FILE_FAIL_IF_EXISTS | getattr(
+            _winapi, "COPY_FILE_ALLOW_DECRYPTED_DESTINATION", 0
+        )
+        try:
+            _winapi.CopyFile2(str(source), str(destination), flags)
+            return
+        except OSError as exc:
+            if getattr(exc, "winerror", None) in _ERROR_FILE_EXISTS:
+                raise FileExistsError(str(destination)) from exc
+            # 其它失败（只读源、权限……）：目标若已被它建出一半，那是我们自己刚建的，删掉重来。
+            try:
+                os.unlink(destination)
+            except OSError:
+                pass
+    with source.open("rb") as reader, destination.open("xb") as writer:
+        shutil.copyfileobj(reader, writer, _COPY_CHUNK)
+    shutil.copystat(source, destination)
+
+
+def place_fresh(
+    source: Path, destination: Path, *, link: bool, make_parent: bool = True
+) -> str:
+    """把 ``source`` 放到 ``destination``：链接（``link=True``）或复制成新文件。
+
+    返回 ``"linked"`` / ``"copied"``。两种方式都是**独占新建**——``os.link`` 与
+    ``COPY_FILE_FAIL_IF_EXISTS`` / ``open("xb")`` 遇到已存在的目标只会失败，不会写进去；
+    失败就先 ``unlink`` 目标再建一次。所以任何已存在的目标（可能是载荷 / blob 的硬链接）
+    都只会被摘掉目录项，内容一个字节不动。复制只在链接失败时兜底。
+    """
+
+    if make_parent:
+        destination.parent.mkdir(parents=True, exist_ok=True)
+    for attempt in range(2):
+        try:
+            if link:
+                try:
+                    os.link(source, destination)
+                    return "linked"
+                except FileExistsError:
+                    raise
+                except OSError:
+                    pass  # 跨卷、链接数到上限、非 NTFS：退回复制
+            _copy_exclusive(source, destination)
+            return "copied"
+        except FileExistsError:
+            if attempt:
+                raise
+            os.unlink(destination)
+    raise AssertionError("unreachable")
+
+
 __all__ = [
     "BLOB_STORE_DIR_NAME",
     "GarbageReport",
     "LINK_MIN_BYTES",
     "PlaceResult",
     "RuntimeBlobStore",
+    "place_fresh",
     "sha256_file",
 ]

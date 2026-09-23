@@ -456,12 +456,28 @@ def _build_view_tree(
     def _walk_error(exc: OSError) -> None:
         raise EmbeddedProjectError(f"读取视图失败: {exc.filename}: {exc}") from exc
 
+    def _blocked(rel_path: Path) -> bool:
+        """放进 staging 会与新版本的目录 / 文件撞路径：新版本在这里有个目录，或者某一级
+        父路径在新版本里是个文件。载荷优先，私有那份只能留档。"""
+
+        target = staging / rel_path
+        if target.is_dir():
+            return True
+        parent = target.parent
+        while parent != staging and staging in parent.parents:
+            if parent.exists() and not parent.is_dir():
+                return True
+            parent = parent.parent
+        return False
+
     for current, dir_names, file_names in os.walk(carry_from, onerror=_walk_error):
         current_path = Path(current)
         relative_dir = current_path.relative_to(carry_from)
-        if not dir_names and not file_names:
+        if not dir_names and not file_names and relative_dir != Path():
             # 空目录（运行期建的 debug/ 之类）也是私有状态；有内容的目录随文件自然建出。
-            (staging / relative_dir).mkdir(parents=True, exist_ok=True)
+            target_dir = staging / relative_dir
+            if not target_dir.exists() and not _blocked(relative_dir):
+                target_dir.mkdir(parents=True, exist_ok=True)
         for name in file_names:
             if relative_dir == Path() and name == VIEW_MARKER_NAME:
                 # 旧标记描述的是旧载荷，带进新树就是假事实（§3.2 第 3.5 步）。
@@ -473,6 +489,11 @@ def _build_view_tree(
             new_rel = new_keys.get(key)
             if old_rel is None:
                 if new_rel is None:
+                    if _blocked(relative_dir / name):
+                        # 私有文件与新版本的目录撞路径（或私有目录里的文件撞上新版本的
+                        # 同名文件）：载荷优先，私有那份留档，切换照常完成。
+                        _archive(path, rel)
+                        continue
                     # 运行期新建的私有文件：链过去（nlink 通常是 1，不涉及共用）。
                     payloads.place_fresh(path, staging / rel, link=True)
                     result.carried += 1
@@ -507,6 +528,10 @@ def _realize_view(
     version = str(new_manifest.get("version") or "")
 
     old_marker = read_view_marker(view) if carry else None
+    if old_marker is not None and str(old_marker.get("lineage") or "") != lineage:
+        # 换了个项目（重导另一个项目的目录）：旧项目的私有状态（它的 config/、debug/）
+        # 不该进新项目的视图，整棵换掉，与今天重新导入一致。
+        old_marker = None
     carry_from = view if (carry and old_marker is not None) else None
     old_files: dict[str, dict[str, Any]] = {}
     old_payload_path: Path | None = None
@@ -556,6 +581,7 @@ def _realize_view(
         "old": str(old),
     }
     payloads.write_json_atomic(journal, record)
+    keep_journal = False
     try:
         _build_view_tree(
             staging,
@@ -597,13 +623,24 @@ def _realize_view(
             os.rename(staging, view)
         except OSError:
             if had_view:
-                os.rename(old, view)
+                try:
+                    os.rename(old, view)
+                except OSError:
+                    # 放不回去：视图此刻不在，原视图还在 old。journal 与 staging 都留着，
+                    # 启动期按「视图不在、old 在」把它放回——删了 journal，old 就会被当成
+                    # 半成品清掉，私有状态跟着没了。
+                    keep_journal = True
+                    logger.error(
+                        f"[MFW 内嵌] 视图 {view.name} 换入与放回都失败，原视图留在 {old}，"
+                        "重启时恢复"
+                    )
             raise
         _fault("renamed-new")
     except Exception:
         # 视图没被换掉（或已经放回）：清半成品、删 journal。清理失败不盖掉原始异常。
-        _remove_quietly(staging, "切换半成品")
-        _remove_quietly(journal, "切换 journal")
+        if not keep_journal:
+            _remove_quietly(staging, "切换半成品")
+            _remove_quietly(journal, "切换 journal")
         raise
     journal.unlink()
     _remove_quietly(old, "旧视图")
@@ -703,15 +740,25 @@ def _journal_staging_path(raw: Any, staging_root: Path) -> Path | None:
     return candidate
 
 
-def recover_switches(base: Path | None = None) -> list[str]:
+def recover_switches(
+    base: Path | None = None,
+    *,
+    started_at: float | None = None,
+    reserve: bool = False,
+) -> list[str]:
     """启动期按 journal 收尾被打断的切换；返回做过的事（日志用）。
 
     一律先读视图标记再决定（标记随目录原子换入，与内容同源），**没有「重跑切换」这一档**：
 
     - ``building``：两次 rename 都没发生 → 删 staging、删 journal；
     - ``swapping`` 且视图不在、old 在：rename#1 做了、#2 没做 → old 放回；
+    - ``swapping`` 且视图不在、old 也不在（新建视图：导入到新脚本、克隆、重建丢失视图，
+      本来就没有旧视图）：staging 里的标记 = ``to`` → 把 staging 换成视图；否则删 staging、删 journal；
     - ``swapping`` 且视图标记 = ``to``：两次 rename 都做完了 → 删 old（若还在）、删 journal；
     - ``swapping`` 且视图标记 ≠ ``to``（或没有标记）：rename#1 还没发生 → 删 staging、删 journal。
+
+    后台初始化时 API 已在服务：``started_at`` 给了就不碰本进程起来之后才写的 journal，
+    ``reserve`` 为真时拿不到视图预约（正在切换 / 运行）的也不碰。
     """
 
     directory = switch_root(base)
@@ -723,51 +770,77 @@ def recover_switches(base: Path | None = None) -> list[str]:
         name = journal.stem
         if not is_embedded_copy_dir_name(name):
             continue
-        record = _read_journal(journal)
+        if started_at is not None:
+            try:
+                if journal.stat().st_mtime >= started_at:
+                    continue
+            except OSError:
+                continue
         view = embedded_projects_root(base) / name
-        if record is None:
-            _remove_quietly(journal, "损坏的切换 journal")
-            done.append(f"{name}: journal 损坏，已删除")
-            continue
-        staging = _journal_staging_path(record.get("staging"), staging_root)
-        old = _journal_staging_path(record.get("old"), staging_root)
-        target = str(record.get("to") or "")
-        phase = str(record.get("phase") or "")
-        if phase != "swapping":
-            if staging is not None:
-                _remove_quietly(staging, "切换半成品")
-            _remove_quietly(journal, "切换 journal")
-            done.append(f"{name}: 构建阶段被打断，视图仍在原版本")
-            continue
-        if not view.exists():
-            if old is not None and old.is_dir():
-                os.rename(old, view)
-                if staging is not None:
-                    _remove_quietly(staging, "切换半成品")
-                _remove_quietly(journal, "切换 journal")
-                done.append(f"{name}: 换入前被打断，已放回原视图")
-            else:
-                logger.error(
-                    f"[MFW 内嵌] 视图 {name} 与切换前的备份都不在，保留 journal 待查"
-                )
-                done.append(f"{name}: 视图与备份都不在，未处理")
-            continue
-        marker = read_view_marker(view)
-        if marker is not None and str(marker.get("payload") or "") == target:
-            # 两次 rename 都做完了（标记随目录换入）；同载荷重建时 staging 可能还在。
-            for leftover in (old, staging):
-                if leftover is not None:
-                    _remove_quietly(leftover, "切换残留")
-            _remove_quietly(journal, "切换 journal")
-            done.append(f"{name}: 切换已完成，收尾")
-        else:
-            if staging is not None:
-                _remove_quietly(staging, "切换半成品")
-            _remove_quietly(journal, "切换 journal")
-            done.append(f"{name}: 换入前被打断，视图仍在原版本")
+        key: str | None = None
+        if reserve:
+            key = try_reserve_project_path_sync(view)
+            if key is None:
+                continue
+        try:
+            line = _recover_one(journal, view, staging_root)
+        finally:
+            release_project_path_sync(key)
+        if line:
+            done.append(f"{name}: {line}")
     for line in done:
         logger.info(f"[MFW 内嵌] 切换恢复 {line}")
     return done
+
+
+def _recover_one(journal: Path, view: Path, staging_root: Path) -> str:
+    record = _read_journal(journal)
+    if record is None:
+        _remove_quietly(journal, "损坏的切换 journal")
+        return "journal 损坏，已删除"
+    staging = _journal_staging_path(record.get("staging"), staging_root)
+    old = _journal_staging_path(record.get("old"), staging_root)
+    target = str(record.get("to") or "")
+    phase = str(record.get("phase") or "")
+    if phase != "swapping":
+        if staging is not None:
+            _remove_quietly(staging, "切换半成品")
+        _remove_quietly(journal, "切换 journal")
+        return "构建阶段被打断，视图仍在原版本"
+    if not view.exists():
+        if old is not None and old.is_dir():
+            os.rename(old, view)
+            if staging is not None:
+                _remove_quietly(staging, "切换半成品")
+            _remove_quietly(journal, "切换 journal")
+            return "换入前被打断，已放回原视图"
+        staged = read_view_marker(staging) if staging is not None else None
+        if (
+            staging is not None
+            and staged is not None
+            and str(staged.get("payload") or "") == target
+            and copy_is_healthy(staging)
+        ):
+            # 新建视图（本来就没有旧视图）：staging 已完整、标记就是目标，补完换入。
+            os.rename(staging, view)
+            _remove_quietly(journal, "切换 journal")
+            return "新建视图的换入被打断，已补完换入"
+        if staging is not None:
+            _remove_quietly(staging, "切换半成品")
+        _remove_quietly(journal, "切换 journal")
+        return "新建视图的切换被打断，半成品已清理（视图下次运行前重建）"
+    marker = read_view_marker(view)
+    if marker is not None and str(marker.get("payload") or "") == target:
+        # 两次 rename 都做完了（标记随目录换入）；同载荷重建时 staging 可能还在。
+        for leftover in (old, staging):
+            if leftover is not None:
+                _remove_quietly(leftover, "切换残留")
+        _remove_quietly(journal, "切换 journal")
+        return "切换已完成，收尾"
+    if staging is not None:
+        _remove_quietly(staging, "切换半成品")
+    _remove_quietly(journal, "切换 journal")
+    return "换入前被打断，视图仍在原版本"
 
 
 # --------------------------------------------------------------------------
@@ -870,9 +943,9 @@ def import_embedded_project(
         raise
 
     view_result = _realize_view(
-        final_dir, lineage, registered.latest_id, base=base, carry=True
+        final_dir, lineage, registered.target_id, base=base, carry=True
     )
-    if registered.latest_id != registered.payload_id:
+    if registered.target_id != registered.payload_id:
         logger.info(
             f"[MFW 内嵌] 导入的版本 {source_version} 不比组里的新，"
             f"视图用组当前版本 {view_result.version}（{registered.latest_id}）"
@@ -1184,7 +1257,44 @@ def _rebuild_from_group(
         if send_log is not None:
             send_log(message)
         return inherit_embedded_record(other_config, script_id, base)
+    # 没有同来源的兄弟：按载荷清单记的导入来源反查谱系（兄弟都删了、只剩载荷的情形）。
+    found = _lineage_by_import_source(source, base)
+    if found is not None:
+        lineage, fallback = found
+        target = _group_target(lineage, channel, fallback, base)
+        _realize_view(
+            embedded_project_dir(script_id, base),
+            lineage,
+            target,
+            base=base,
+            carry=False,
+        )
+        message = "[MFW 内嵌] 来源目录已不存在，已按本机登记的项目版本重建"
+        logger.info(message)
+        if send_log is not None:
+            send_log(message)
+        # 报告与来源版本沿用自己原来的记录（导入时间刷新）。
+        return inherit_embedded_record(script_config, script_id, base)
     return None
+
+
+def _lineage_by_import_source(source: str, base: Path | None) -> tuple[str, str] | None:
+    """哪个谱系的哪个载荷是从 ``source`` 这个目录导入的（清单 ``source.ref``）；取最新登记的。"""
+
+    root = payloads_root(base)
+    best: tuple[str, str, str] | None = None
+    for lineage in payloads.list_lineages(root):
+        for payload_id in payloads.list_ids(root, lineage):
+            manifest = payloads.read_manifest(root, lineage, payload_id) or {}
+            origin = manifest.get("source") or {}
+            if str(origin.get("kind") or "") != "import":
+                continue
+            if not _same_directory(str(origin.get("ref") or ""), source):
+                continue
+            built = str(manifest.get("builtAt") or "")
+            if best is None or built > best[2]:
+                best = (lineage, payload_id, built)
+    return (best[0], best[1]) if best is not None else None
 
 
 def ensure_embedded_copy(

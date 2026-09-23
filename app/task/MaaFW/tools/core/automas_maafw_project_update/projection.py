@@ -50,7 +50,6 @@ import fnmatch
 import json
 import os
 import re
-import shutil
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
@@ -58,7 +57,7 @@ from typing import Any
 
 import json5
 
-from .blob_store import LINK_MIN_BYTES, RuntimeBlobStore
+from .blob_store import LINK_MIN_BYTES, RuntimeBlobStore, place_fresh
 
 MAX_REPORT_ITEMS = 128
 
@@ -1582,7 +1581,8 @@ def materialize_projection(
                 shared_files += 1
                 shared_bytes += placed.size
         else:
-            shutil.copy2(source, destination)
+            # 与载荷 / 视图同一口径：独占新建，绝不往已存在的目标里写。
+            place_fresh(source, destination, link=False, make_parent=False)
         if progress is not None:
             # 计划里的字节数是建计划时统计的，复制期间文件可能变；最后一个文件一律报满
             done_bytes = (

@@ -364,7 +364,7 @@ async def run_view_update(
 
         async def after_register(registered: payloads.RegisterResult) -> None:
             outcome.registered_id = registered.payload_id
-            goal = registered.latest_id
+            goal = registered.target_id
             current = await asyncio.to_thread(read_view_marker, view)
             if current is None or str(current["payload"]) != goal:
                 switched = await asyncio.to_thread(

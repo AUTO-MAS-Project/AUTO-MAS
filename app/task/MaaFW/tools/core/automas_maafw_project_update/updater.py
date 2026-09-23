@@ -1180,7 +1180,7 @@ async def apply_maafw_project_update(
         "targetVersion": actual_version,
         "resumedFrom": downloaded.resumed_from,
         "payloadId": registered.payload_id,
-        "latestId": registered.latest_id,
+        "latestId": registered.target_id,
         "created": registered.created,
     }
 
