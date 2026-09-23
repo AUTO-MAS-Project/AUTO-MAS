@@ -326,7 +326,12 @@ def _describe_input_value_error(
         option_label = f"{option_label}」的「{field_label}"
     kind = _INPUT_TYPE_NAMES.get(exc.expected, exc.expected)
     if exc.value is None:
-        return f"任务「{task_label}」：{exc}"
+        # 数字类型的输入没有「空」这个取值，项目又没给默认值（MAH 的 select_team
+        # default 是空串）：下发不了，只能报错；只报这一个选项，并说清去哪填。
+        return (
+            f"任务「{task_label}」的选项「{option_label}」需要填一个{kind}，"
+            "但没有填写、项目也没有给默认值；请在用户配置的任务队列里填写后再运行"
+        )
     return f"任务「{task_label}」的选项「{option_label}」的值 {exc.value} 不是{kind}"
 
 
