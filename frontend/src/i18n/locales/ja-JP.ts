@@ -355,7 +355,7 @@ export default {
     maaCultivateStateAchieved: '達成済み',
     maaCultivateStatePending: '確認待ち',
     maaDepot: '在庫維持',
-    maaDepotHint: '計画リストなどの詳細設定は MAA 側で行います',
+    maaDepotHint: '素材ごとに保有数を設定し、不足時に自動で補充します',
     maaCombat: '理性作戦',
     maaInfrast: '基地シフト',
     maaInfrastMode: '基地モード',
