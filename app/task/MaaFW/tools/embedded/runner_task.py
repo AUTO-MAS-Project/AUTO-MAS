@@ -29,6 +29,7 @@ from app.task.emulator_core import close_emulator
 from app.task.general.tools import execute_script_task
 from app.task.MaaFW.tools.core.controller_win32.service import (
     MaaFWWin32ControllerService,
+    controller_has_window_rules,
 )
 from app.task.MaaFW.tools.core.interface.models import (
     MaaFWController,
@@ -146,6 +147,9 @@ _FRAMEWORK_UI_LOG_MAX_CHARS = 1200
 _RELAY_YIELD_EVERY_LINES = 50
 # 启动/附着游戏后定位其窗口的等待秒数
 WINDOW_SEARCH_TIMEOUT_SECONDS = 5.0
+_WIN32_NO_WINDOW_RULES_MESSAGE = (
+    "该控制器没有声明窗口匹配规则，请在脚本设置里指定窗口句柄或换一个控制器"
+)
 
 # 环境级失败：解释器自身坏了、依赖没装上。重试只会原样再失败一遍，而每次重试
 # 还要重启一遍模拟器/游戏——默认 RunTimesLimit=3，白等好几分钟才告诉用户同一件事。
@@ -726,6 +730,17 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         if (
             run_plan.tasks
             and run_plan.controllerType == "Win32"
+            and not _optional_int(self.script_config.get("Device", "HWnd"))
+            and not controller_has_window_rules(
+                _find_controller(interface_model, run_plan.controllerName)
+            )
+        ):
+            # 控制器一条窗口匹配规则都没写，又没指定句柄：以前会随便抓桌面上第一个窗口。
+            # 在拉起游戏之前就报。
+            game_path_error = _WIN32_NO_WINDOW_RULES_MESSAGE
+        elif (
+            run_plan.tasks
+            and run_plan.controllerType == "Win32"
             and self._mas_manages_game_launch()
         ):
             game_path = self._resolve_game_launch_path()
@@ -1242,6 +1257,8 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         parsed_hwnd = _optional_int(configured_hwnd)
         if parsed_hwnd:
             return parsed_hwnd
+        if not controller_has_window_rules(controller):
+            raise RuntimeError(_WIN32_NO_WINDOW_RULES_MESSAGE)
         matches = await asyncio.to_thread(_match_controller_windows, controller)
         if not matches:
             raise RuntimeError("未找到匹配 MaaFW Win32 controller 的窗口")

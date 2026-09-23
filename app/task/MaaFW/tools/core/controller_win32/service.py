@@ -77,6 +77,11 @@ class MaaFWWin32ControllerService:
             return []
 
         class_regex, window_regex = _controller_window_regex(controller_model)
+        if not class_regex and not window_regex:
+            # 一条匹配规则都没写（Maa-HBR 的 PC 端、MaaWoA 的 Windows 控制器）：以前
+            # 两个正则都按「全匹配」，取到的是桌面上随便第一个窗口。不认任何窗口，
+            # 由调用方要求用户指定窗口句柄。
+            return []
         source_windows = list(windows) if windows is not None else self.list_windows()
         matched: list[MaaFWWindowMatch] = []
         seen_hwnds: set[int] = set()
@@ -117,6 +122,13 @@ class MaaFWWin32ControllerService:
             "mouseMethod": mouse_method,
             "keyboardMethod": keyboard_method,
         }
+
+
+def controller_has_window_rules(controller: MaaFWController) -> bool:
+    """Win32 控制器是否声明了窗口匹配规则（class_regex / window_regex 至少一个）。"""
+
+    class_regex, window_regex = _controller_window_regex(controller)
+    return bool(class_regex or window_regex)
 
 
 def _controller_window_regex(
