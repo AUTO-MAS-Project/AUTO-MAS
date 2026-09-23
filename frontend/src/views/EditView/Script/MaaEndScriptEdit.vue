@@ -237,9 +237,7 @@
 
           <a-row v-if="isWinController" :gutter="24">
             <a-col :span="maaEndConfig.Game.CloseOnFinish ? (showRestoreResolution ? 8 : 12) : 24">
-              <a-form-item
-                :label="t('edit.maaEndSetResolution')"
-              >
+              <a-form-item :label="t('edit.maaEndSetResolution')">
                 <a-select
                   v-model:value="maaEndConfig.Game.SetResolution"
                   size="large"
@@ -261,9 +259,7 @@
               </a-form-item>
             </a-col>
             <a-col v-if="showRestoreResolution" :span="8">
-              <a-form-item
-                :label="t('edit.maaEndRestoreResolution')"
-              >
+              <a-form-item :label="t('edit.maaEndRestoreResolution')">
                 <a-select
                   v-model:value="maaEndConfig.Game.RestoreResolution"
                   size="large"
@@ -589,10 +585,7 @@ const maaEndConfig = reactive<MaaEndScriptConfig>({
 const originalResolution = ref<string | null>(null)
 const originalDisplayType = ref<'Window' | 'Fullscreen' | null>(null)
 
-type RestoreDisplaySelection =
-  | 'Off'
-  | 'Original'
-  | MaaEndScriptConfig['Game']['RestoreDisplayType']
+type RestoreDisplaySelection = 'Off' | 'Original' | MaaEndScriptConfig['Game']['RestoreDisplayType']
 
 const restoreDisplaySelection = computed<RestoreDisplaySelection>(() => {
   const resolution = maaEndConfig.Game.RestoreResolution
@@ -611,15 +604,16 @@ const displayTypeOptions = computed(() => [
   { value: 'Off', label: t('edit.maaEndResolutionUnchanged') },
   {
     value: 'Original',
-    label: originalResolution.value && originalDisplayType.value
-      ? t('edit.maaEndResolutionOriginal', {
-          displayType:
-            originalDisplayType.value === 'Fullscreen'
-              ? t('edit.maaEndResolutionFullscreen')
-              : t('edit.maaEndResolutionWindow'),
-          resolution: originalResolution.value,
-        })
-      : t('edit.maaEndResolutionRestoreOriginal'),
+    label:
+      originalResolution.value && originalDisplayType.value
+        ? t('edit.maaEndResolutionOriginal', {
+            displayType:
+              originalDisplayType.value === 'Fullscreen'
+                ? t('edit.maaEndResolutionFullscreen')
+                : t('edit.maaEndResolutionWindow'),
+            resolution: originalResolution.value,
+          })
+        : t('edit.maaEndResolutionRestoreOriginal'),
   },
   { value: 'Window', label: t('edit.maaEndResolutionWindow') },
   { value: 'Fullscreen', label: t('edit.maaEndResolutionFullscreen') },
