@@ -383,7 +383,7 @@ def _owner_alive(root: Path, owner: str) -> bool:
         script_root = str(script_config.get("Info", "RootPath") or "").strip()
         if not script_root or config_root_key(script_root) != key:
             continue
-        if any(str(uid) == owner for uid in script_config.UserData):
+        if any(str(uid) == owner for uid in script_config.UserData.keys()):
             return True
     return False
 
