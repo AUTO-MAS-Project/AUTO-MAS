@@ -188,6 +188,13 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   `__MAS_DUP__` 重复实例（`task_config.build_default_task_instances` / `build_repeat_instance_ids`，
   前端「添加任务」按 `repeatCount` 一次加 N 份），不做 runner 循环。select 的私有 `default`
   **故意不认**：作者自己的 MXU / MFAA 壳都不认，认了反而比作者更激进。
+- `pipeline_override` 按**递归深合并**叠加（`runner/pipeline_override.deep_merge_pipeline_override`，
+  与 CFA 一致）：同一任务里任务自身与各选项对同一节点同一字段都给对象时，子键逐层合并，数组与
+  标量后者覆盖前者。MFAA / MXU（普通任务）把各份覆盖交给 MaaFW 逐个应用，同一节点的同名字段
+  **整体替换**（`attach` 例外）。所以多个选项分头写同一个 `custom_action_param` / `action` 子键
+  的项目在 MAS 里跑出来的覆盖与它们自己的壳不同：全语料 MaaYuan 558 处、MPA 209 处、MaaNTE 2 处
+  （都是壳里后写的选项把先写的子键整个冲掉，MAS 两边都留）。这是有意的取舍——深合并不丢作者
+  分头写的字段，MXU 自己的特殊任务也是先深合并再下发；不要为了「和 MFAA 一致」改成整体替换。
 - `agent.timeout`（秒）只决定等 agent 连上的预算（`runner.agent_connect_budget_seconds`，不写 /
   -1 = 10 分钟），连上后照旧不限时；interface 写死的 `agent.identifier` 运行时拼上实例后缀，
   纯数字（TCP 端口）原样用。
