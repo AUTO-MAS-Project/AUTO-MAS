@@ -8,8 +8,8 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
 
 - `embedded_manager.py`：宿主侧管理器——任务调度、更新时机、运行环境确认、用户配置副本与写回。
 - `tools/embedded/`：宿主与核心包之间**唯一**的接缝（`runner_task`、`runtime_route`、
-  `update_credentials`、`project_path`、`env_cache`、`game_package`、`game_resolution`、
-  `update_progress`、`embedded_project`）。
+  `update_credentials`、`update_mirrors`、`project_path`、`env_cache`、`game_package`、
+  `game_resolution`、`update_progress`、`embedded_project`）。
   要读 `Config`、发通知、碰宿主模型，只能在这里和 `embedded_manager.py` 里做。
 - `tools/core/automas_maafw_*`：六个核心包（interface / runner / runtime_pool / agent_env /
   project_update / controller_win32），按零宿主耦合设计。已知例外只有
@@ -129,6 +129,16 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
 - 下载源 / CDK / 渠道 / 时机**只看脚本级 `Update.*`，不做全局兜底**
   （`tools/embedded/update_credentials.py`）；全局的 `Update.MirrorChyanCDK` / `Update.Channel`
   服务的是 MAS 自身更新。
+- **唯一带全局兜底的是代理**：脚本级 `Update.ProxyAddress` 留空跟随全局（设置 → 其他 →
+  网络代理），填了只走自己的，同时管更新包下载与运行环境安装（池的 uv / pip、agent venv）。
+  解析走 `resolve_update_proxy_url`，日志里只能出现 `describe_proxy` 的「脚本级 / 全局 /
+  未配置」——地址可能带 `user:pw@`。别改用 `Config.proxy`：那个属性每次访问都往日志写一行
+  「使用代理: <地址>」。
+- GitHub 加速镜像是**只有全局**的一项：`Update.GitHubMirror`（`Auto` / `Off`），脚本级没有
+  对应字段。清单在 `tools/embedded/update_mirrors.py`，与前端 `mirrorService.ts` 的 gh-proxy
+  组同源，改一处要同步另一处。只对 `github.com/<owner>/<repo>/releases/download/...` 生效，
+  Mirror 酱的一次性签名地址套前缀会把签名打坏，所以按源分流而不是按地址。
+  **没有 sha256 摘要时核心包整个忽略镜像**：经第三方转发的字节必须能校验。
 - 项目指纹在本地算（`project_update/contracts.py: project_fingerprint`），只用来防"计划与落地
   之间树被改动"，发布方不参与；差量包的基线校验用的是 MAS 自己上次落地记下的清单
   （`apply.py: _validate_plan_base`）。`.mas-update` / `.mas-update-cache` 是更新器的保留目录，

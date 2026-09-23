@@ -335,6 +335,9 @@
             </a-col>
           </a-row>
         </div>
+
+        <!-- 实例槽管理：脚本级诊断（槽目录按安装目录归池、跨脚本共享），默认折叠 -->
+        <ZzzOdSlotManage :script-id="scriptId" />
       </a-form>
     </a-card>
   </ConfigLockPanel>
@@ -342,6 +345,7 @@
 
 <script setup lang="ts">
 import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
+import ZzzOdSlotManage from './ZzzOdSlotManage.vue'
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'

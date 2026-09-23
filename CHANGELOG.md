@@ -34,16 +34,41 @@
 
 ### 变更
 
-- 【MAA】MAA 配置页直接编辑 base，队列交还 MAA，删除剩余理智任务 (#927) by @1w1w11w1
-- 【end】新建脚本时的类型说明改为写明「明日方舟：终末地」，并可按游戏名搜索到 (#924) by @qiyinxi
+- 【MAA】库存保持的计划列表重新支持在 MAS 配置页直接编辑 (#958) by @1w1w11w1
 
 ### 修复
 
+- 【MAA】修复静默模式下 MAA 启动后仍显示窗口的问题 (#953) by @1w1w11w1
+- 【MAA】修复 MAA 更新资源时误报内存不足、代理反复重试的问题（仅公测） (#955) by @jinghero
+- 【绝区零一条龙】修复自动代理再次运行时报错中断的问题（仅公测） (#962) by @AthenaHibou
+
+## [v5.5.0-beta.8] - 2026-09-23
+
+### 变更
+
+- 【MAA】MAA 配置页直接编辑 base，队列交还 MAA，删除剩余理智任务 (#927) by @1w1w11w1
+- 【end】新建脚本时的类型说明改为写明「明日方舟：终末地」，并可按游戏名搜索到 (#924) by @qiyinxi
+- 【end】关闭游戏时可恢复启动前的显示模式与分辨率（仅公测） (#947) by @HarcoChen
+- 【MFW】项目更新包先走 GitHub 加速镜像并可回退直连，重试退避，进度带预计剩余时间（仅公测） (#945) by @qiyinxi
+
+### 修复
+
+- 【MAA】修复脚本模式下多个自定义基建用户共用班次指针、重试时提前换到下一班的问题 (#939) by @qiyinxi
+- 【MAA】修复 MAA 内存不足误报超时、掉落少记，及 ok-ww 体力不推送、MaaEnd 无任务误判的问题 (#926) by @jinghero
+- 【HSR】修复脚本直控忽略日常/周常超时设置、固定 120 分钟后才终止卡住脚本的问题 (#935) by @qiyinxi
 - 【绝区零一条龙】修复运行或配置会话期间备份恢复失败的问题，损坏时会提示位置并支持确认后强制恢复（仅公测） (#915) by @AthenaHibou
 - 【绝区零一条龙】修复直控模式运行一条龙时任务被跳过或提示未配置游戏路径的问题（仅公测） (#931) by @AthenaHibou
+- 【绝区零一条龙】支持一条龙运行结束后关闭游戏或关机，默认关闭游戏（仅公测） (#937) by @AthenaHibou
+- 【绝区零一条龙】实例槽不再残留：可查看、清理与恢复，槽号被抢自动改绑留底，崩溃后配队不再丢（仅公测） (#942) by @AthenaHibou
+- 【MFW】运行前自动更新显示下载进度，停止任务即中止下载，新增脚本级代理地址（仅公测） (#943) by @qiyinxi
 - 【通用脚本】修复通用用户无法启动通用配置的问题 by @HarcoChen
+- 【通用脚本】修复通用脚本配置文件缺失时任务报错中断的问题 (#829) by @beichen24a1
 - 【工具】修复启动参数含引号或空格时不生效的问题 (#866) by @beichen24a1
 - 【工具】修复日志导出提示弹窗无法关闭的问题（仅公测） by @ClozyA
+
+### 开发流程
+
+- 去掉雷电 VBox 自愈模块导入时的 SyntaxWarning (#934) by @qiyinxi
 
 ## [v5.5.0-beta.7] - 2026-09-20
 
@@ -363,7 +388,8 @@
 - OK-NTE专项 修复任务结束后异环启动器进程残留并持续占用内存的问题 by @qiyinxi by @HarcoChen
 - MAA专项 修复开启活动关优先后普通理智作战的理智药额度被静默清零的问题，两个作战任务各自使用独立理智药额度 by @qiyinxi by @HarcoChen
 
-[未发布]: https://github.com/AUTO-MAS-Project/AUTO-MAS/compare/v5.5.0-beta.7...dev
+[未发布]: https://github.com/AUTO-MAS-Project/AUTO-MAS/compare/v5.5.0-beta.8...dev
+[v5.5.0-beta.8]: https://github.com/AUTO-MAS-Project/AUTO-MAS/compare/v5.5.0-beta.7...v5.5.0-beta.8
 [v5.5.0-beta.7]: https://github.com/AUTO-MAS-Project/AUTO-MAS/compare/v5.5.0-beta.6...v5.5.0-beta.7
 [v5.5.0-beta.6]: https://github.com/AUTO-MAS-Project/AUTO-MAS/compare/v5.5.0-beta.5...v5.5.0-beta.6
 [v5.5.0-beta.5]: https://github.com/AUTO-MAS-Project/AUTO-MAS/compare/v5.5.0-beta.4...v5.5.0-beta.5

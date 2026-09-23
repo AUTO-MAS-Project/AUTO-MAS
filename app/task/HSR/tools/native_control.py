@@ -31,6 +31,7 @@ import yaml
 from app.utils.io import atomic_write
 
 from .m7a_runtime import M7ARunner
+from .run_model import HSRPhase
 from .sra_runtime import (
     SRAProcessRegistry,
     get_sra_app_data_dir,
@@ -42,6 +43,13 @@ HSREngine = Literal["SRA", "M7A"]
 
 # 引擎回落顺序与 HSRTaskModule.supported_scripts 保持一致
 _HSR_ENGINE_ORDER: tuple[HSREngine, ...] = ("M7A", "SRA")
+
+# 各周期的超时配置键与默认值（分钟），默认值须与 HSRConfig.Run_*TimeLimit 一致。
+# 托管队列按模块所属周期取值；直控整轮跑原生配置，取两者之和。
+PHASE_TIMEOUT_CONFIG: dict[HSRPhase, tuple[str, int]] = {
+    "daily": ("DailyTimeLimit", 20),
+    "weekly": ("WeeklyTimeLimit", 60),
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -120,6 +128,22 @@ def _script_path(config: Any, engine: HSREngine) -> str:
     return str(_config_value(config, "Info", f"{engine}Path", "") or "").strip()
 
 
+def resolve_phase_timeout_minutes(script_config: Any, phase: HSRPhase) -> int:
+    """读取某个周期的超时上限（分钟），至少 1 分钟。
+
+    ``script_config`` 为 ``None`` 或字段缺失/非法时回落到默认值，与前端和
+    ``RangeValidator(1, 9999)`` 的下界保持一致。
+    """
+
+    key, default = PHASE_TIMEOUT_CONFIG[phase]
+    raw = _config_value(script_config, "Run", key, default)
+    try:
+        minutes = int(raw or default)
+    except (TypeError, ValueError):
+        minutes = default
+    return max(1, minutes)
+
+
 def resolve_script_path(config: Any, engine: HSREngine) -> str:
     """Public path resolver shared by old HSR manager/tools and API adapters."""
 
@@ -175,15 +199,33 @@ def resolve_user_control(
     return HSRUserControlSettings(
         mode=mode,
         engines=engines,
-        timeout_seconds=120 * 60,
+        daily_limit_minutes=resolve_phase_timeout_minutes(script_config, "daily"),
+        weekly_limit_minutes=resolve_phase_timeout_minutes(script_config, "weekly"),
     )
 
 
 @dataclass(frozen=True, slots=True)
 class HSRUserControlSettings:
+    """一个用户的托管/直控设置。
+
+    直控把整份原生配置交给 ``SRA-cli run`` / ``M7A main`` 一次跑完，日常与周常
+    没有边界，所以单个引擎的运行上限取脚本「日常 + 周常」两项超时之和，而不是
+    托管队列那样按模块分别计时。此前这里写死 120 分钟，用户改超时设置对直控
+    完全无效（issue #933）。
+    """
+
     mode: Literal["managed", "direct"]
     engines: tuple[HSREngine, ...]
-    timeout_seconds: int
+    daily_limit_minutes: int
+    weekly_limit_minutes: int
+
+    @property
+    def timeout_minutes(self) -> int:
+        return self.daily_limit_minutes + self.weekly_limit_minutes
+
+    @property
+    def timeout_seconds(self) -> int:
+        return self.timeout_minutes * 60
 
 
 def get_user_direct_config(user_config: Any, engine: HSREngine) -> str:
@@ -525,6 +567,7 @@ __all__ = [
     "HSRNativeControlSnapshot",
     "HSRRunResult",
     "HSRUserControlSettings",
+    "PHASE_TIMEOUT_CONFIG",
     "M7ADirectControlSession",
     "M7ANativeControlProvider",
     "SRADirectControlSession",
@@ -533,6 +576,7 @@ __all__ = [
     "has_user_direct_snapshot",
     "native_provider",
     "resolve_configured_engines",
+    "resolve_phase_timeout_minutes",
     "resolve_script_path",
     "resolve_user_control",
 ]

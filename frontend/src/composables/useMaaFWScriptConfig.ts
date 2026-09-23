@@ -95,6 +95,7 @@ export const getDefaultMaaFWScriptConfig = (): MaaFWScriptConfig => ({
     Source: 'GitHub',
     Channel: 'stable',
     MirrorChyanCDK: '',
+    ProxyAddress: '',
   },
   Embedded: {
     SourceVersion: '',

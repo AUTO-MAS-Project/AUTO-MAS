@@ -10,5 +10,9 @@ export type ZzzOdUserConfig_OneDragon = {
      * 任务编排 JSON 数组字符串 [{"app_id": "...", "enabled": true}, ...]，顺序即执行顺序
      */
     AppList?: (string | null);
+    /**
+     * 游戏结束后操作（MAS 拉起的一条龙运行结束时执行；无=不处理）
+     */
+    AfterDone?: ('无' | '关闭游戏' | '关机' | null);
 };
 

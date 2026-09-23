@@ -7,7 +7,7 @@ import {
   QuestionCircleOutlined,
 } from '@ant-design/icons-vue'
 import { message } from 'ant-design-vue'
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import type { GlobalConfig, VersionOut } from '@/api'
 import ChangelogView from '@/components/ChangelogView.vue'
 import type { ChangelogData } from '@/utils/changelog'
@@ -34,6 +34,13 @@ const {
   handleSettingChange: (category: keyof GlobalConfig, key: string, value: any) => Promise<void>
   checkUpdate: () => Promise<void>
 }>()
+
+// MFW 项目包的 GitHub 加速镜像：与后端 Update.GitHubMirror 的 OptionsValidator 一致，
+// 多给一项用户选了就会被静默纠回
+const githubMirrorOptions = computed(() => [
+  { label: t('setting.others.githubMirrorAuto'), value: 'Auto' },
+  { label: t('setting.others.githubMirrorOff'), value: 'Off' },
+])
 
 // 当前版本的更新日志在编译期从 res/version.json 注入（res/ 不进 Electron 产物）
 const changelogVisible = ref(false)
@@ -151,7 +158,7 @@ const copyAllInfo = async () => {
         </a-col>
       </a-row>
       <a-row :gutter="24">
-        <a-col :span="12">
+        <a-col :span="8">
           <div class="form-item-vertical">
             <div class="form-label-wrapper">
               <span class="form-label">{{ t('setting.others.proxy') }}</span>
@@ -167,7 +174,25 @@ const copyAllInfo = async () => {
             />
           </div>
         </a-col>
-        <a-col :span="12">
+        <a-col :span="8">
+          <div class="form-item-vertical">
+            <div class="form-label-wrapper">
+              <span class="form-label">{{ t('setting.others.githubMirror') }}</span>
+              <a-tooltip :title="t('setting.others.githubMirrorTip')">
+                <QuestionCircleOutlined class="help-icon" />
+              </a-tooltip>
+            </div>
+            <!-- 只管 MFW 项目包从 GitHub Release 下载；MAS 自身更新与 Mirror 酱源不受影响 -->
+            <a-select
+              :value="settings.Update?.GitHubMirror ?? 'Auto'"
+              :options="githubMirrorOptions"
+              size="large"
+              style="width: 100%"
+              @change="(value: any) => handleSettingChange('Update', 'GitHubMirror', value)"
+            />
+          </div>
+        </a-col>
+        <a-col :span="8">
           <div class="form-item-vertical">
             <div class="form-label-wrapper">
               <span class="form-label">{{ t('setting.others.cdk') }}</span>

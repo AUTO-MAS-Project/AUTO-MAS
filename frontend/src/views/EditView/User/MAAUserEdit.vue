@@ -580,8 +580,8 @@ const getDefaultMAAUserData = () => ({
     IfAward: true,
     IfSwitchTheme: false,
     IfRecruit: true,
-    IfReclamation: false,
     IfDepotMaintain: false,
+    DepotMaintainPlans: '[]',
     IfCultivate: false,
     IfGreenTicketStore: false,
     IfActivityFirst: false,
@@ -1150,7 +1150,7 @@ const loadStageModeOptions = async () => {
   }
 }
 
-// 手动选班 = 把轮换起点拨到该班（写入 MAA 配置, 由 MAA 原生推进）
+// 手动选班 = 把轮换起点拨到该班（无时段表存 MAS 用户字段、由 MAS 推进；时段表只有自动）
 const handleInfrastPlanSelectChange = async (index: number, label: string) => {
   if (configLocked.value) return
   try {
@@ -1163,7 +1163,8 @@ const handleInfrastPlanSelectChange = async (index: number, label: string) => {
       message.error(t('edit.maaCustomInfrastPlanSelectFailed'))
       return
     }
-    infrastPlanSelect.value = index
+    // 后端会把「自动」归一成第一班, 以返回值为准, 免得刷新前后显示不一致
+    infrastPlanSelect.value = result.index ?? index
     message.success(t('edit.maaCustomInfrastPlanSelected', { name: label }))
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)

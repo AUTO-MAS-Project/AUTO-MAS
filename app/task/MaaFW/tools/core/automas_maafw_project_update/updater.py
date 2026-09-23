@@ -4,10 +4,11 @@ import asyncio
 import json
 import logging
 import re
+import threading
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Awaitable, Callable, Mapping
+from typing import Any, Awaitable, Callable, Mapping, Sequence
 from urllib.parse import quote
 
 import httpx
@@ -31,7 +32,11 @@ from .state import (
     DEFAULT_OPERATION_ROOT,
     UpdateOperationStore,
 )
-from .transport import download_resumable
+from .transport import (
+    CANCELLED_MESSAGE,
+    UpdateDownloadCancelled,
+    download_resumable,
+)
 
 HTTP_HEADERS = {"User-Agent": "AutoMasGui"}
 
@@ -218,6 +223,8 @@ class MaaFWProjectUpdateError(RuntimeError):
     ``post_validate_rejected``：更新事务被 ``post_validate`` 回调（运行环境
     预检）拒绝，文件已回滚到旧版本，原因在 ``str(exc)`` 里。
     ``project_lock_busy``：限时内没拿到项目锁（另一次更新 / 预检在跑）。
+    ``cancelled``：调用方置位了 ``cancel_event``，本次更新是被用户停掉的，
+    不是失败——调用方据此换文案，别把「已中止」说成「更新失败」。
     """
 
     def __init__(
@@ -228,12 +235,14 @@ class MaaFWProjectUpdateError(RuntimeError):
         unsafe_to_continue: bool = False,
         post_validate_rejected: bool = False,
         project_lock_busy: bool = False,
+        cancelled: bool = False,
     ) -> None:
         super().__init__(message)
         self.provider_error_code = provider_error_code
         self.unsafe_to_continue = unsafe_to_continue
         self.post_validate_rejected = post_validate_rejected
         self.project_lock_busy = project_lock_busy
+        self.cancelled = cancelled
 
 
 def _normalise_package_source(raw_value: Any) -> str:
@@ -284,6 +293,19 @@ def _public_package_source(raw_value: Any) -> str | None:
     return "mirrorchyan"
 
 
+def _format_package_size(size: int | None) -> str:
+    """把包大小说成人话，接在 ``found …`` 那行后面；没有大小就什么都不加。
+
+    359MB 全量包在直连 GitHub 下要几十分钟，用户看到「发现更新」之后那段
+    静默里最该知道的就是「要下多大」。GitHub 资产元数据里必有 size，
+    Mirror 酱有时也给。
+    """
+
+    if not size or size <= 0:
+        return ""
+    return f", {size / (1024 * 1024):.1f} MB"
+
+
 def _report_progress(
     callback: ProgressCallback | None,
     stage: str,
@@ -318,6 +340,8 @@ async def update_maafw_project_if_needed(
     project_lock_already_held: bool = False,
     project_lock_timeout: float | None = None,
     projection: bool = False,
+    cancel_event: threading.Event | None = None,
+    github_mirror_urls: Callable[[str], Sequence[tuple[str, str]]] | None = None,
 ) -> MaaFWProjectUpdateResult:
     """检查并按需应用项目更新。
 
@@ -327,6 +351,12 @@ async def update_maafw_project_if_needed(
     版本号，返回非空字符串就按「有更新但不可安装」跳过（原因即该串）——给
     运行前自动更新读上次预检备忘用；手动更新不传，也就忽略备忘。
     ``project_lock_timeout``：拿项目锁的限时；None 为不限时（自动路径）。
+    ``cancel_event``：用户停止任务时置位，下载会在一个 chunk 内停下并抛
+    ``cancelled=True`` 的 :class:`MaaFWProjectUpdateError`；apply 线程一旦起来
+    就只能让它自己回滚完，所以取消只在下载与起线程之前生效。
+    ``github_mirror_urls``：下载地址 → ``(名字, 加速地址)`` 列表，只对 GitHub
+    源生效。镜像清单与开关都在宿主侧（``tools/embedded/update_mirrors.py``），
+    核心包只管按顺序试。
     """
 
     send_update_log = send_log or (lambda _: None)
@@ -537,7 +567,8 @@ async def update_maafw_project_if_needed(
         raise MaaFWProjectUpdateError(message)
 
     send_update_log(
-        f"found MaaFW project update: {current_version} -> {candidate.version} ({candidate.source})"
+        f"found MaaFW project update: {current_version} -> {candidate.version} "
+        f"({candidate.source}{_format_package_size(candidate.size)})"
     )
     # 项目指纹要 rglob + sha256 整个项目（M9A 660MB 约 1s），只在真有候选
     # 更新时算，由 apply_maafw_project_update 算一次并绑定到 plan 上。
@@ -554,8 +585,22 @@ async def update_maafw_project_if_needed(
             project_lock_already_held=project_lock_already_held,
             project_lock_timeout=project_lock_timeout,
             projection=projection,
+            cancel_event=cancel_event,
+            github_mirror_urls=github_mirror_urls,
         )
     except Exception as exc:
+        if getattr(exc, "cancelled", False):
+            # 用户点的停止：断点留着、项目没动，说「失败」会让人以为坏了。
+            message = "MaaFW project update cancelled"
+            send_update_log(message)
+            _report_progress(
+                progress,
+                "failed",
+                status="cancelled",
+                message=message,
+                final=True,
+            )
+            raise
         detail = _sanitize_log_message(str(exc))
         message = (
             detail
@@ -921,13 +966,32 @@ async def apply_maafw_project_update(
     project_lock_already_held: bool = False,
     project_lock_timeout: float | None = None,
     projection: bool = False,
+    cancel_event: threading.Event | None = None,
+    github_mirror_urls: Callable[[str], Sequence[tuple[str, str]]] | None = None,
 ) -> dict[str, Any]:
     send_update_log = send_log or (lambda _: None)
     download_url = str(candidate.download_url or "").strip()
     if not download_url:
         raise MaaFWProjectUpdateError("update provider did not return a download URL")
 
+    # 加速镜像只对 GitHub 源有意义：Mirror 酱发的是一次性签名地址，套前缀
+    # 只会把签名打坏。拿不到清单不是错误，直连照跑。
+    alternates: Sequence[tuple[str, str]] = ()
+    if github_mirror_urls is not None and str(
+        candidate.source or ""
+    ).strip().casefold().startswith("github"):
+        try:
+            alternates = tuple(github_mirror_urls(download_url))
+        except Exception:
+            logger.warning("MaaFW 更新镜像清单获取失败，改为直连", exc_info=True)
+            alternates = ()
+
     root = project_path.resolve()
+    if cancel_event is not None and cancel_event.is_set():
+        raise MaaFWProjectUpdateError(CANCELLED_MESSAGE, cancelled=True)
+    # 这一步要 rglob + sha256 整个项目，大项目一两分钟且全程无输出——
+    # 「发现更新」之后的静默有一半在这里，先说一声再算。
+    send_update_log("正在计算项目指纹（大项目可能要一两分钟）")
     current = await asyncio.to_thread(project_fingerprint, root)
     if candidate.project_fingerprint and current != candidate.project_fingerprint:
         raise MaaFWProjectUpdateError(
@@ -959,6 +1023,9 @@ async def apply_maafw_project_update(
             proxy=proxy,
             send_log=send_update_log,
             progress=progress,
+            cancel_event=cancel_event,
+            alternates=alternates,
+            expected_size=candidate.size,
         )
         operation.update(
             "downloaded",
@@ -968,6 +1035,11 @@ async def apply_maafw_project_update(
             totalBytes=downloaded.total_bytes,
             resumedFromBytes=downloaded.resumed_from,
         )
+        if cancel_event is not None and cancel_event.is_set():
+            # 最后一次能干净停下的机会：线程一起，回滚就必须跑完，
+            # 半途放手留下的是新旧混杂的树。
+            operation.update("cancelled", downloadedBytes=downloaded.size)
+            raise MaaFWProjectUpdateError(CANCELLED_MESSAGE, cancelled=True)
         result = await asyncio.to_thread(
             apply_package_transaction,
             root,
@@ -996,6 +1068,10 @@ async def apply_maafw_project_update(
         )
         result["resumedFrom"] = downloaded.resumed_from
         return result
+    except UpdateDownloadCancelled as exc:
+        # 必须排在下面那个 ``except Exception`` 之前，否则「已中止」会被
+        # 包成一条普通的更新失败。
+        raise MaaFWProjectUpdateError(str(exc), cancelled=True) from exc
     except UpdateApplyError as exc:
         # 预检拒绝与锁忙都要在宿主侧认得出来：前者只发一次 warning、后者回
         # 409；其它 apply 失败仍是 error。原因文本原样带在 message 里。

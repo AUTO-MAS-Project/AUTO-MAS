@@ -45,6 +45,7 @@ from .AutoProxy import (
     find_launcher_exe,
     inject_user_fields,
     parse_user_apps,
+    recycle_unbound_slots,
 )
 from .tools import (
     archive_mas_config_backup,
@@ -53,6 +54,7 @@ from .tools import (
     find_active_instance,
     instance_dir,
     normalize_app_group_entries,
+    read_after_done,
     read_app_group,
     read_game,
     read_game_account,
@@ -127,13 +129,40 @@ class ScriptConfigTask(TaskExecuteBase):
                 archive_onedragon_backup(self.root_path)
             except Exception as e:
                 logger.opt(exception=True).warning(f"归档 zzz-od 原生配置快照失败: {e}")
-            used = collect_used_slot_idxs(exclude_uids={self._target_uid})
-            slot = await ensure_user_slot(self.root_path, self.cur_user_config, used)
+            # 孤儿槽回收：与运行注入同口径，回收在 ensure_user_slot 之前——
+            # 腾出的号本次会话即可复用（原生配置快照已归档在前，回收仍可找回）。
+            # 查看会话（只读预览历史备份）跳过：用户只是看，不该在安装目录里
+            # 产生删除副作用（整目录拷贝+删除，线程里跑）
+            if not self.view_only:
+                await asyncio.to_thread(
+                    recycle_unbound_slots,
+                    self.root_path,
+                    exclude_script_id=self.script_info.script_id,
+                )
+            used = collect_used_slot_idxs(
+                self.root_path, exclude_uids={self._target_uid}
+            )
+            slot = await ensure_user_slot(
+                self.root_path,
+                self.cur_user_config,
+                used,
+                script_id=self.script_info.script_id,
+                owner_uid=str(self._target_uid) if self._target_uid else None,
+            )
             self._session_slot = slot
             write_instance_view(
                 self.root_path,
                 [(slot, f"MAS-{self.cur_user_config.get('Info', 'Name')}")],
                 active_idx=slot,
+                # 会话注入 MAS 侧「游戏结束后操作」：GUI 所见即本页下拉；
+                # 查看会话不注入（槽内即恢复的备份，所见即备份）
+                after_done=(
+                    None
+                    if self.view_only
+                    else str(
+                        self.cur_user_config.get("OneDragon", "AfterDone") or "关闭游戏"
+                    )
+                ),
             )
             if self.view_only:
                 logger.info(
@@ -241,6 +270,9 @@ class ScriptConfigTask(TaskExecuteBase):
         await cfg.set("Game", "Monitor", str(game_cfg.get("monitor") or "1"))
         all_apps = normalize_app_group_entries(read_app_group(slot_dir))
         await cfg.set("OneDragon", "AppList", json.dumps(all_apps, ensure_ascii=False))
+        # 「结束后」：视图由会话注入该键，GUI 所见即可回读；必须在
+        # restore_instance_view 还原前执行（本函数由 final_task 在还原前调用）
+        await cfg.set("OneDragon", "AfterDone", read_after_done(self.root_path))
         logger.info(
             f"绑定槽 {slot:02d} 会话改动已回读用户配置 (任务 {len(all_apps)} 项)"
         )
