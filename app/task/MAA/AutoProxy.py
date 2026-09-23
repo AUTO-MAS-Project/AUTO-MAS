@@ -154,6 +154,11 @@ _MAA_STALL_NOTICE_MARKERS = (
     # latest_time，故取带时间戳那半行的固定结尾。
     "분째 실행 중입니다",
 )
+# MAA v6.17 起内存不足走专属提示，不再带「任务出错:」前缀，实际文案是
+# 「{任务链名}」+ 下面这段。只认整段：MAA 的 MirrorChyan 更新说明里也有
+# 「任务因内存不足停止时给出专门提示…」这一条，资源热更新会把整份说明写进被监控的
+# gui.log，只用前缀匹配会把更新中途的正常运行判成内存不足，代理随即中止并反复重试。
+_MAA_OUT_OF_MEMORY_MARKER = "任务因内存不足停止，请关闭部分程序或重启 MAA 后重试"
 
 
 def _current_week_marker(now: datetime) -> str:
@@ -1931,8 +1936,7 @@ class AutoProxyTask(TaskExecuteBase):
             self.cur_user_log.status = "MAA 的 ADB 连接异常"
         elif "未检测到任何模拟器" in log:
             self.cur_user_log.status = "MAA 未检测到任何模拟器"
-        elif "任务因内存不足停止" in log:
-            # v6.17 起 MAA 内存不足走专属提示，不再带「任务出错:」前缀
+        elif _MAA_OUT_OF_MEMORY_MARKER in log:
             self.cur_user_log.status = "MAA 因内存不足停止，请关闭部分程序后重试"
         elif "已停止" in log:
             self.cur_user_log.status = "MAA 在完成任务前中止"
