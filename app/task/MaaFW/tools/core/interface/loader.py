@@ -59,8 +59,7 @@ _LOG_ONLY = {"maafw_log_only": True}
 _USER_WARNING_PREFIX = "MaaFW ProjectInterface "
 
 # 4：加载器开始改写模型（password 字段丢 default、checkbox 选择数放宽），旧缓存没经过这一步。
-# 5：缓存里带上加载告警（``warnings``），旧缓存命中会丢掉它们；select 的 ``default``
-#    （MFAA 私有扩展）在加载时并进 ``default_case``，旧缓存里没有。
+# 5：缓存里带上加载告警（``warnings``），旧缓存命中会丢掉它们。
 DISK_CACHE_VERSION = 5
 DISK_CACHE_MAX_AGE_SECONDS = 30 * 24 * 60 * 60
 DISK_CACHE_CLEANUP_INTERVAL_SECONDS = 24 * 60 * 60
@@ -1008,44 +1007,6 @@ def _sanitize_pretasks(interface_model: MaaFWInterface) -> None:
     interface_model.pretask = valid_pretasks or None
 
 
-def _apply_option_default_extension(interface_model: MaaFWInterface) -> None:
-    """select 的 ``default``（MFAA 私有扩展，MaaFgo 168 处）并进 ``default_case``。
-
-    优先级：PI 协议的 ``default_case`` 写了就用它，``default`` 不看；没写 ``default_case``
-    时，``default`` 是合法的 case 名就当默认值，不合法告警后照旧回落首项。只认 select：
-    MaaFgo 的 scan_select 也写了 ``"default": ""``（意思是不选），那不是 case 名。
-    """
-
-    for option_name, option in interface_model.option.items():
-        if option.type != "select":
-            continue
-        raw_default = (option.model_extra or {}).get("default")
-        if raw_default is None:
-            continue
-        if option.default_case is not None:
-            if raw_default != option.default_case:
-                logger.warning(
-                    "MaaFW ProjectInterface option %s 同时写了 default_case 与 default，"
-                    "以协议字段 default_case 为准",
-                    option_name,
-                    extra=_LOG_ONLY,
-                )
-            continue
-        case_names = [case.name for case in option.cases or []]
-        if isinstance(raw_default, str) and raw_default in case_names:
-            option.default_case = raw_default
-            continue
-        if not case_names:
-            # 没有任何 case（scan_select 的目录不在）：没有可回落的，目录缺失已另有告警
-            continue
-        logger.warning(
-            "MaaFW ProjectInterface option %s 的 default 不是合法的 case 名，已按首项 %s 处理：%s",
-            option_name,
-            case_names[0],
-            json.dumps(raw_default, ensure_ascii=False, default=str),
-        )
-
-
 def _warn_unsupported_option_types(interface_model: MaaFWInterface) -> None:
     for option_name, option in interface_model.option.items():
         if option.type not in SUPPORTED_OPTION_TYPES:
@@ -1272,7 +1233,6 @@ def _load_interface_model_uncollected(
 
     _prune_references_lost_with_imports(interface_model, merge_state.missing_imports)
     _sanitize_pretasks(interface_model)
-    _apply_option_default_extension(interface_model)
     _warn_unsupported_option_types(interface_model)
     _sanitize_v210_option_fields(interface_model)
     _validate_task_context_constraints(interface_model)
