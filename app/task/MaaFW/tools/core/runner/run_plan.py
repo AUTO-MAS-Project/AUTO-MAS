@@ -154,6 +154,23 @@ def build_maafw_run_plan(
     )
     i18n_mapping = _load_i18n_mapping(resolved_base_dir, interface)
     option_defaults, _ = _build_option_defaults(interface.option)
+    resource_bundle = _build_resource_bundle_plan(
+        resolved_base_dir, resource, controller
+    )
+    # 选中的资源在发行包里没有目录（导入时已记成「不可用的资源」，MaaDuDuL 的
+    # zh_hant）：在宿主建计划 / 运行前检查时就报，别等拉起游戏或模拟器之后 runner
+    # 加载资源时才失败。
+    missing_path = next(
+        (path for path in resource_bundle.paths if not path.exists), None
+    )
+    if missing_path is not None:
+        resource_label = _resolve_i18n_label(
+            resource.label, resource.name, i18n_mapping
+        )
+        raise MaaFWRunPlanError(
+            f"资源「{resource_label}」的目录 {missing_path.raw} 不存在："
+            "发行包里缺少这个资源目录，请在脚本设置里换一个资源"
+        )
 
     runnable_tasks: list[MaaFWTaskRunPlan] = []
     skipped_tasks: list[MaaFWSkippedTaskPlan] = []
@@ -245,7 +262,7 @@ def build_maafw_run_plan(
         controllerType=controller.type,
         controllerDisplay=_build_controller_display(controller),
         resourceName=resource.name,
-        resource=_build_resource_bundle_plan(resolved_base_dir, resource, controller),
+        resource=resource_bundle,
         nativePluginPaths=_build_native_plugin_paths(resolved_base_dir),
         agents=build_maafw_agent_command_plans(
             resolved_base_dir,
