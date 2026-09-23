@@ -36,18 +36,20 @@ from typing import Any
 from app.models.schema import ComboBoxItem
 
 from .zzz_od_config import (
+    _YAML_LOCK,
     DEFAULT_GAME_ACCOUNT,
     DEFAULT_GAME_LAUNCH_ARGS,
     ZZZOD_GAME_LANGUAGE_LABELS,
     ZZZOD_GAME_REGION_LABELS,
-    _YAML_LOCK,
     instance_dir,
     merge_dx12_argument,
+    read_after_done,
     read_app_group,
     read_game,
     read_game_account,
     read_instance_run,
     split_dx12_argument,
+    write_after_done,
     write_app_group,
     write_game,
     write_game_account,
@@ -56,6 +58,10 @@ from .zzz_od_config import (
 
 # 运行实例白名单（one_dragon.yml 的 instance_run 原生取值）
 NATIVE_INSTANCE_RUN_OPTIONS = ("仅运行当前", "全部实例")
+
+# 游戏结束后操作白名单（one_dragon.yml 的 after_done 原生取值，与上游
+# AfterDoneOpEnum 词表一致）
+NATIVE_AFTER_DONE_OPTIONS = ("无", "关闭游戏", "关机")
 
 
 def _native_default(key: str) -> str:
@@ -237,7 +243,10 @@ def save_native_launch_args(root, slot_idx: int, values: dict[str, Any]) -> None
             merged_advance = merge_dx12_argument(advance_base, dx12_val)
             old_advance = existing.get("launch_argument_advance")
             if old_advance is None:
-                if merged_advance != DEFAULT_GAME_LAUNCH_ARGS["launch_argument_advance"]:
+                if (
+                    merged_advance
+                    != DEFAULT_GAME_LAUNCH_ARGS["launch_argument_advance"]
+                ):
                     patch["launch_argument_advance"] = merged_advance
             elif str(old_advance) != merged_advance:
                 patch["launch_argument_advance"] = merged_advance
@@ -323,3 +332,20 @@ def save_native_instance_run(root, value: str) -> None:
     if value not in NATIVE_INSTANCE_RUN_OPTIONS:
         raise ValueError(f"不支持的运行实例取值: {value}")
     write_instance_run(root, str(value))
+
+
+def read_native_after_done(root) -> str:
+    """读取 one_dragon.yml 的 after_done 原值（无/关闭游戏/关机）。
+
+    键缺失回落「无」——对齐上游 one_dragon_config.after_done 的 get 默认。
+    """
+
+    return read_after_done(root)
+
+
+def save_native_after_done(root, value: str) -> None:
+    """白名单校验后写回 one_dragon.yml 的 after_done（无/关闭游戏/关机）。"""
+
+    if value not in NATIVE_AFTER_DONE_OPTIONS:
+        raise ValueError(f"不支持的游戏结束后操作: {value}")
+    write_after_done(root, str(value))

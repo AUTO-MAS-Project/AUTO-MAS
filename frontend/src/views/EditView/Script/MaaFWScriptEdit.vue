@@ -25,7 +25,7 @@
     </a-space>
   </div>
 
-  <div class="script-edit-content">
+  <ConfigLockPanel :script-id="scriptId" content-class="script-edit-content">
     <a-card
       :title="`${projectDisplayName} ${isWizard ? '项目引导' : '项目配置'}`"
       :loading="pageLoading"
@@ -90,7 +90,7 @@
             :interface-dependent-disabled="interfaceDependentDisabled"
             @change="handleChange"
             @controller-change="handleControllerChange"
-            @resource-change="handleResourceChange"
+            @resource-change="handleResourceChangeWithPackage"
             @emulator-select-change="handleEmulatorSelectChange"
             @select-launch-path="selectLaunchPath"
           />
@@ -145,10 +145,11 @@
         }}</a-button>
       </div>
     </a-card>
-  </div>
+  </ConfigLockPanel>
 </template>
 
 <script setup lang="ts">
+import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
 import DocLink from '@/components/DocLink.vue'
 import { MAS_DOC_URLS } from '@/utils/openExternal'
 import { useI18n } from 'vue-i18n'
@@ -157,7 +158,7 @@ import { useRoute, useRouter } from 'vue-router'
 import type { FormInstance } from 'ant-design-vue'
 import { message } from 'ant-design-vue'
 import { ArrowLeftOutlined } from '@ant-design/icons-vue'
-import { GetService } from '@/api'
+import { GetService, MaaFwService } from '@/api'
 import { subscribe, unsubscribe } from '@/composables/useWebSocket'
 import {
   WS_MAAFW_ENV_PREPARE_PROGRESS,
@@ -297,6 +298,7 @@ const {
   adbControlStrategyItems,
   handleControllerChange,
   handleResourceChange,
+  resolveResourceName,
   handleEmulatorSelectChange,
   syncControllerResourceSelection,
   loadEmulatorOptions,
@@ -632,6 +634,34 @@ const runUpdateApply = async () => {
   }
 }
 
+// 游戏包名：按所选 resource 的 pipeline 推断，推出来就直接填进表单并落盘。
+// 首次读到 interface 时只补空的；切换 resource 时覆盖——包名本来就跟服务器走
+// （官服 / B 服不是一个包）。推不出或多个候选就不动，占位符继续写「留空则自动识别」。
+const syncGamePackageName = async (overwrite: boolean) => {
+  const path = maafwConfig.Info.Path.trim()
+  const resource = resolveResourceName(maafwConfig.Info.Resource)
+  if (!path || !resource) return
+  if (!overwrite && maafwConfig.Game.PackageName.trim()) return
+  try {
+    const response = await MaaFwService.resolveMaafwGamePackageApiScriptsMaafwGamePackagePost({
+      path,
+      resource,
+    })
+    const resolved = response.code === 200 && response.data?.reason === 'resolved'
+    const packageName = resolved ? (response.data?.package ?? '').trim() : ''
+    if (!packageName || packageName === maafwConfig.Game.PackageName) return
+    maafwConfig.Game.PackageName = packageName
+    await handleChange('Game', 'PackageName', packageName)
+  } catch (error) {
+    logger.warn(`推断游戏包名失败: ${error instanceof Error ? error.message : String(error)}`)
+  }
+}
+
+const handleResourceChangeWithPackage = async () => {
+  await handleResourceChange()
+  await syncGamePackageName(true)
+}
+
 // Mirror 酱 CDK：脚本级为空时把 MAS 更新设置里填过的那份直接填进来并落盘，
 // 用户不用在两处各填一遍。已填过的脚本一律不动；后端仍只看脚本级配置。
 const cdkPrefilled = ref(false)
@@ -691,7 +721,10 @@ onMounted(async () => {
   }
   // 放在 isInitializing 复位之后：handleChange 在初始化期间不落盘，
   // 预填要真正写进脚本配置而不是只改本地草稿。
-  if (scriptLoaded) await prefillMirrorChyanCdk()
+  if (scriptLoaded) {
+    await prefillMirrorChyanCdk()
+    await syncGamePackageName(false)
+  }
 })
 </script>
 

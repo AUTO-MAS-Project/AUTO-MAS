@@ -119,6 +119,28 @@
       </a-col>
     </a-row>
 
+    <a-row :gutter="24">
+      <a-col :xs="24" :sm="12">
+        <a-form-item>
+          <template #label>
+            <span class="form-label">
+              {{ t('edit.collectNodeDetails') }}
+              <a-tooltip mouse-enter-delay="0.5" :title="t('edit.collectsKeyMomentsFrom')">
+                <QuestionCircleOutlined class="help-icon" />
+              </a-tooltip>
+            </span>
+          </template>
+          <a-select
+            size="large"
+            v-model:value="formData.Notify.PushLogMode"
+            :options="pushLogModeOptions"
+            :disabled="loading"
+            @change="emitSave('Notify.PushLogMode', formData.Notify.PushLogMode)"
+          />
+        </a-form-item>
+      </a-col>
+    </a-row>
+
     <a-form-item>
       <template #label>
         <span class="form-label">
@@ -148,6 +170,13 @@ defineProps<{
   showResource: boolean
   resourceOptions: Array<{ label: string; value: string }>
 }>()
+
+// 节点详情推送模式（value 为后端 Notify.PushLogMode 取值，驱动逻辑需保持原样；label 走词表）
+const pushLogModeOptions = [
+  { label: t('edit.pushLogModeOff'), value: '关闭' },
+  { label: t('edit.pushLogModeList'), value: '逐条' },
+  { label: t('edit.pushLogModeSummary'), value: '汇总' },
+]
 
 const emitSave = (key: string, value: any) => {
   emit('save', key, value)

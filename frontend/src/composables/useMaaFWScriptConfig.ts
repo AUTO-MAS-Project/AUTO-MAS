@@ -95,6 +95,7 @@ export const getDefaultMaaFWScriptConfig = (): MaaFWScriptConfig => ({
     Source: 'GitHub',
     Channel: 'stable',
     MirrorChyanCDK: '',
+    ProxyAddress: '',
   },
   Managed: {
     Enabled: false,
@@ -125,7 +126,7 @@ export const getDefaultMaaFWScriptConfig = (): MaaFWScriptConfig => ({
   },
   Run: {
     ProxyTimesLimit: 0,
-    RunTimesLimit: 1,
+    RunTimesLimit: 3,
     RunTimeLimit: 120,
     DailyOnceTasks: '[ ]',
     WeeklyOnceTasks: '[ ]',

@@ -46,6 +46,7 @@
     >
       <BettergiGroupProjectBody
         v-if="zoomed"
+        ref="zoomBodyRef"
         :script-id="scriptId"
         :user-id="userId"
         :kind="kind"
@@ -60,7 +61,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { FullscreenOutlined } from '@ant-design/icons-vue'
 import BettergiGroupProjectBody from './BettergiGroupProjectBody.vue'
@@ -87,6 +88,7 @@ const props = withDefaults(
 const emit = defineEmits<{ (e: 'add-script'): void }>()
 
 const bodyRef = ref<InstanceType<typeof BettergiGroupProjectBody> | null>(null)
+const zoomBodyRef = ref<InstanceType<typeof BettergiGroupProjectBody> | null>(null)
 
 const shellPaneKey = 'project-editor'
 // 标签栏标题：脚本/路径/录制本质都是「配置组 + 脚本队列」，统一显示为「配置组」
@@ -98,12 +100,22 @@ const zoomTitle = computed<string>(
 
 const zoomed = ref(false)
 
+// 放大弹窗里是**另一份**编辑面板实例：增删/清空必须作用于用户当前看得见的那一份，
+// 否则在放大视图里「添加脚本」只有底层（被弹窗遮住）那份刷新，看起来像没生效。
+const activeBody = () => zoomBodyRef.value ?? bodyRef.value
+
+// 关掉放大弹窗时把底层面板按落库内容重载一次：两层面板各自持有一份 projects，
+// 不重载就会用过期的底层数据覆盖刚在弹窗里改好的结果。
+watch(zoomed, isZoomed => {
+  if (!isZoomed) void bodyRef.value?.reload()
+})
+
 // 供父组件在「添加配置组弹窗(冻结配置组标签)」确认后把选中的 JS/路径追加并保存
 defineExpose({
-  reload: () => bodyRef.value?.reload(),
-  addProjects: (rows: unknown[]) => bodyRef.value?.addProjects(rows as never[]),
-  removeSelectedProjects: () => bodyRef.value?.removeSelectedProjects(),
-  clearProjects: () => bodyRef.value?.clearProjects(),
+  reload: () => activeBody()?.reload(),
+  addProjects: (rows: unknown[]) => activeBody()?.addProjects(rows as never[]),
+  removeSelectedProjects: () => activeBody()?.removeSelectedProjects(),
+  clearProjects: () => activeBody()?.clearProjects(),
 })
 </script>
 

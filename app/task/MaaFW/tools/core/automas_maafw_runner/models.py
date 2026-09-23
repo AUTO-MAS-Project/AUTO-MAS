@@ -100,6 +100,9 @@ class MaaFWRunResult(BaseModel):
     errorMessage: str | None = None
     # 任务失败当刻的画面，按失败先后排列；宿主把它们塞进通知。
     failureScreenshots: list[MaaFWFailureScreenshot] = Field(default_factory=list)
+    # 到了 runDeadlineAt 由 worker 自己停下来的：宿主据此在重试前重启游戏/模拟器。
+    # 和 errorMessage 分开放，宿主不必靠匹配文案判断。
+    timedOut: bool = False
 
 
 class MaaFWRunnerJobPayload(BaseModel):
@@ -113,3 +116,10 @@ class MaaFWRunnerJobPayload(BaseModel):
     # 让截图和 .log / .maafw.log 挨在一起。None 表示不截。
     failureScreenshotDir: str | None = None
     failureScreenshotPrefix: str = ""
+    # 第一个任务最早可下发的墙钟时刻（time.time() 秒）。宿主刚拉起桌面游戏时窗口
+    # 虽已出现、画面还没渲染出来，worker 把资源加载、连 controller、起 agent 都
+    # 做完后再等到这个点，而不是在宿主里干等。None 表示不等。
+    taskStartNotBefore: float | None = None
+    # 单次运行的截止墙钟时刻（time.time() 秒）。到点 worker 自己停掉当前任务、
+    # 截一张图再把结果发回来，宿主只在 worker 没能及时停下时才强杀。None 表示不限。
+    runDeadlineAt: float | None = None

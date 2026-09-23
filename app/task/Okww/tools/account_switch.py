@@ -29,6 +29,12 @@ OCR 复用通用工具集 `app.tools.ocr`。
     → 等待登录页消失（登录成功）
 """
 
+# ⚠️ 黑箱红线：本模块是【临时补位】——账号切换属上游领域（游戏内操作），上游
+# 已有等效入口 ok-wuthering-waves/src/task/MultiAccountDailyTask.py 的
+# _select_and_login_account（多账号日常任务自带切换）。上游入口在当前发行版
+# 不可用（模板特征匹配失效）时由 MAS 补位；上游修复后移除本模块并改为复用
+# 上游入口（见 blackbox-boundary.md）。
+
 import asyncio
 import ctypes
 import inspect

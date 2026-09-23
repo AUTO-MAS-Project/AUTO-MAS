@@ -20,6 +20,10 @@ export type GlobalConfig_Update = {
      */
     ProxyAddress?: (string | null);
     /**
+     * MFW 项目包从 GitHub Release 下载时的加速镜像: Auto 依次试镜像并在全部失败后回退直连, Off 只直连
+     */
+    GitHubMirror?: ('Auto' | 'Off' | null);
+    /**
      * Mirror酱CDK
      */
     MirrorChyanCDK?: (string | null);

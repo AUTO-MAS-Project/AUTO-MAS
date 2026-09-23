@@ -35,7 +35,7 @@ export type ConfigBackupFileOut = {
      */
     size: number;
     /**
-     * 文本内容（utf-8 读取；超出大小上限返回 400）
+     * 文本内容（utf-8 兼容 BOM 读取，无法解码部分以替换符呈现；超出大小上限返回 400）
      */
     content: string;
 };

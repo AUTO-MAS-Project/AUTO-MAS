@@ -23,6 +23,7 @@
         ghost
         size="large"
         :loading="generalConfigLoading"
+        :disabled="configLocked"
         @click="handleGeneralConfig()"
       >
         <template #icon>
@@ -92,7 +93,7 @@
     </div>
   </teleport>
 
-  <div class="user-edit-content">
+  <ConfigLockPanel :script-id="scriptId" content-class="user-edit-content">
     <a-card class="config-card">
       <a-form ref="formRef" :model="formData" :rules="rules" layout="vertical" class="config-form">
         <!-- 基本信息 -->
@@ -217,22 +218,25 @@
         />
       </a-form>
     </a-card>
+  </ConfigLockPanel>
 
-    <!-- ══ 配置恢复（通用组件：MAS 用户配置在前、脚本原生配置在后）══ -->
-    <ConfigRestoreSection
-      v-model:open="restoreOpen"
-      :script-name="GENERAL_DISPLAY_NAME"
-      :targets="restoreTargets"
-      :api="restoreApi"
-      :user-desc="t('edit.generalConfigRestoreUserDesc')"
-      :script-desc="t('edit.generalConfigRestoreScriptDesc')"
-      :on-restored="handleRestored"
-      :on-detail="handleRestoreView"
-    />
-  </div>
+  <!-- ══ 配置恢复（通用组件：MAS 用户配置在前、脚本原生配置在后）══ -->
+  <ConfigRestoreSection
+    v-model:open="restoreOpen"
+    :disabled="configLocked"
+    :script-name="GENERAL_DISPLAY_NAME"
+    :targets="restoreTargets"
+    :api="restoreApi"
+    :user-desc="t('edit.generalConfigRestoreUserDesc')"
+    :script-desc="t('edit.generalConfigRestoreScriptDesc')"
+    :on-restored="handleRestored"
+    :on-detail="handleRestoreView"
+  />
 </template>
 
 <script setup lang="ts">
+import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
+import { useScriptConfigLock } from '@/composables/useScriptConfigLock'
 import { useI18n } from 'vue-i18n'
 import { computed, h, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -282,6 +286,7 @@ const { enqueue } = useSaveQueue()
 const scriptId = route.params.scriptId as string
 let userId = route.params.userId as string
 const isEdit = ref(!!userId) // 使用 ref 以便在创建后更新
+const { configLocked } = useScriptConfigLock(() => scriptId)
 
 // 脚本信息
 const scriptName = ref('')
@@ -501,6 +506,8 @@ const loadScriptInfo = async () => {
 
 // 新增模式下立即创建用户
 const createUserImmediately = async () => {
+  if (configLocked.value) return false
+
   try {
     const result = await addUser(scriptId)
     if (result && result.userId) {
@@ -580,6 +587,7 @@ const loadUserData = async () => {
 }
 
 const handleGeneralConfig = async (viewOnly = false, targetId?: string) => {
+  if (configLocked.value) return
   try {
     generalConfigLoading.value = true
     generalSessionViewOnly.value = viewOnly
@@ -797,8 +805,10 @@ const handleRestored = async () => {
 // mas 备份：恢复到该用户 ConfigFile 后启动查看会话（目录副本型下发，GUI
 // 所见即备份）；原生备份：恢复到脚本配置路径后启动脚本级查看会话（跳过
 // 下发，原生配置即备份）。查看会话结束不回写配置，原生现场由任务前快照还原。
-const handleRestoreView = (target: string, item: { time: string }) =>
-  new Promise<boolean>(resolve => {
+const handleRestoreView = (target: string, item: { time: string }) => {
+  if (configLocked.value) return Promise.resolve(false)
+
+  return new Promise<boolean>(resolve => {
     Modal.confirm({
       title: t('edit.configRestoreDetailView'),
       content: h(
@@ -810,6 +820,12 @@ const handleRestoreView = (target: string, item: { time: string }) =>
       okType: 'danger',
       cancelText: t('edit.cancel'),
       onOk: async () => {
+        if (configLocked.value) {
+          message.error(t('edit.configLocked'))
+          resolve(false)
+          return
+        }
+
         try {
           const resp = await Service.restoreConfigBackupApiApiScriptsBackupRestorePost({
             scriptId,
@@ -837,6 +853,7 @@ const handleRestoreView = (target: string, item: { time: string }) =>
       onCancel: () => resolve(false),
     })
   })
+}
 
 // 编辑界面归档（进入/退出时机，指纹去重）：进入归档脚本原生配置当前状态
 // （MAS 触碰前原始态，用户可能刚在脚本 GUI 里改过），退出归档该用户

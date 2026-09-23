@@ -183,8 +183,20 @@ class ScriptConfigTask(TaskExecuteBase):
         await self.maaend_process_manager.kill()
         await System.kill_process(self.maaend_exe_path)
 
+        maaend_set_path = self.maaend_set_path / "mxu-MaaEnd.json"
+
         # 查看会话的脚本级入口：原生目录即所选备份，跳过下发与注入
         if self.view_only and self.cur_user_item.user_id == "Default":
+            if maaend_set_path.exists():
+                maaend_set = read_file(maaend_set_path)
+                if not isinstance(maaend_set, dict):
+                    raise ValueError("MaaEnd 配置文件不是有效对象")
+                settings = maaend_set.get("settings")
+                if not isinstance(settings, dict):
+                    settings = {}
+                    maaend_set["settings"] = settings
+                settings["autoRunOnLaunch"] = False
+                write_file(maaend_set_path, maaend_set)
             logger.info("MaaEnd 查看会话跳过配置下发: 原生目录即所选备份")
             return
 
@@ -229,19 +241,25 @@ class ScriptConfigTask(TaskExecuteBase):
                 mode=self.config_mode,
             )
 
-        maaend_set_path = self.maaend_set_path / "mxu-MaaEnd.json"
         if not maaend_set_path.exists():
             raise FileNotFoundError(
                 "未找到 MaaEnd 配置文件, 请检查 MaaEnd 路径设置或先启动 MaaEnd 完成配置文件生成"
             )
 
+        maaend_set = read_file(maaend_set_path)
+        if not isinstance(maaend_set, dict):
+            raise ValueError("MaaEnd 配置文件不是有效对象")
         if self.use_mas_config:
-            maaend_set = read_file(maaend_set_path)
             maaend_set = normalize_maaend_config(
                 maaend_set,
                 self.script_config.get("Game", "ControllerType"),
             )
-            write_file(maaend_set_path, maaend_set)
+        settings = maaend_set.get("settings")
+        if not isinstance(settings, dict):
+            settings = {}
+            maaend_set["settings"] = settings
+        settings["autoRunOnLaunch"] = False
+        write_file(maaend_set_path, maaend_set)
         logger.success(f"MaaEnd 运行参数配置完成: {self.config_mode}配置")
 
     async def final_task(self):

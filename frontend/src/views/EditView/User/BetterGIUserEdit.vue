@@ -32,7 +32,7 @@
             ghost
             size="large"
             :loading="bettergiConfigLoading"
-            :disabled="pageLoading || !userId"
+            :disabled="pageLoading || !userId || configLocked"
             @click="handleBettergiConfig"
           >
             <template #icon>
@@ -47,7 +47,7 @@
           ghost
           size="large"
           :loading="bettergiConfigLoading"
-          :disabled="pageLoading || !userId"
+          :disabled="pageLoading || !userId || configLocked"
           @click="handleBettergiConfig"
         >
           <template #icon>
@@ -107,7 +107,7 @@
       </template>
     </GuiSessionMask>
 
-    <div class="user-edit-content">
+    <ConfigLockPanel :script-id="scriptId" content-class="user-edit-content">
       <a-card class="config-card" :loading="pageLoading">
         <a-form :model="formData" layout="vertical" class="config-form">
           <div class="form-section">
@@ -281,14 +281,14 @@
 
             <a-row :gutter="24">
               <a-col :span="24">
+                <!-- 快速配置开关已隐藏：按配置来源派生（直控 = 关，脚本 / 用户 = 开），
+                     见 handleConfigModeChange 与后端 BetterGIUserConfig.load 的加载归一。 -->
                 <GeneralConfigModeSelector
                   :model-value="formData.Info.Mode"
                   :options="bettergiConfigModeOptions"
                   :disabled="pageLoading"
                   :saving="configModeSaving"
-                  :quick-config="formData.Info.IfQuickConfig ?? true"
                   @change="handleConfigModeChange"
-                  @quick-config-change="handleQuickConfigChange"
                 />
               </a-col>
             </a-row>
@@ -866,7 +866,7 @@
             v-model:open="addModal.open"
             :title="addModalTitle"
             :ok-text="addModalOkText"
-            :ok-button-props="{ disabled: !addModal.items.length && !addModal.draft.trim() }"
+            :ok-button-props="addModalOkButtonProps"
             :cancel-text="t('edit.cancel')"
             width="920px"
             :z-index="1200"
@@ -1140,11 +1140,12 @@
           />
         </a-form>
       </a-card>
-    </div>
+    </ConfigLockPanel>
 
     <!-- ══ 配置恢复（通用组件：MAS 用户配置在前、BetterGI 原生配置在后）══ -->
     <ConfigRestoreSection
       v-model:open="restoreOpen"
+      :disabled="configLocked"
       :script-name="BETTERGI_DISPLAY_NAME"
       :targets="restoreTargets"
       :api="restoreApi"
@@ -1181,6 +1182,8 @@
 </template>
 
 <script setup lang="ts">
+import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
+import { useScriptConfigLock } from '@/composables/useScriptConfigLock'
 import { computed, h, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
@@ -1246,6 +1249,7 @@ const { getScript } = useScriptApi()
 const scriptId = route.params.scriptId as string
 const userId = ref((route.params.userId as string) || '')
 const isEdit = ref(!!userId.value)
+const { configLocked } = useScriptConfigLock(() => scriptId)
 const scriptName = ref(t('edit.bettergiScriptFallbackName'))
 
 const pageLoading = ref(true)
@@ -1351,6 +1355,7 @@ const getDefaultUserData = (): Omit<BetterGIUserFormData, 'userName'> => ({
   Notify: {
     Enabled: false,
     IfSendStatistic: false,
+    IfSendDropStatistics: true,
     IfSendMail: false,
     ToAddress: '',
     IfServerChan: false,
@@ -1365,6 +1370,8 @@ const formData = reactive<BetterGIUserFormData>({
 
 // saveField 需在自定义配置组 composable 之前定义（后者在 persist/toggle 中调用它）
 const createUserImmediately = async (): Promise<boolean> => {
+  if (configLocked.value) return false
+
   const resp = await addUser(scriptId, { showError: false })
   if (!resp?.userId) {
     message.error(userApiError.value || t('edit.couldNotCreateUser'))
@@ -1420,27 +1427,8 @@ const saveField = (key: string, value: unknown): Promise<boolean> => {
   return enqueue(persist)
 }
 
-const handleQuickConfigChange = async (value: boolean) => {
-  if (!value) {
-    if (dragonGroupAutoSaveTimer) {
-      clearTimeout(dragonGroupAutoSaveTimer)
-      dragonGroupAutoSaveTimer = null
-    }
-    while (
-      dragonSettingsDirty.value ||
-      globalDomainSettingsDirty.value ||
-      globalStygianSettingsDirty.value
-    ) {
-      if (!(await saveDragonGroupSettings(true, dragonGroupSaveSel))) return
-    }
-  }
-  const previous = formData.Info.IfQuickConfig
-  formData.Info.IfQuickConfig = value
-  if (!(await saveField('Info.IfQuickConfig', value))) {
-    formData.Info.IfQuickConfig = previous
-  }
-}
-
+// 快速配置开关已隐藏（按配置来源派生），原先「关闭前先落盘一条龙组设置」的处理
+// 移到了 handleConfigModeChange：切到直控时 MAS 面板会隐藏，效果等同。
 const toggleGroup = (value: string) => {
   if (!masConfigEnabled.value) return
   const set = new Set(formData.OneDragon.Groups)
@@ -1824,7 +1812,7 @@ const updatePlanStepEnabled = (name: string, enabled: boolean) => {
 
 // 调用后端：按步骤名翻转 Plan 中某战斗实例的启用状态
 const setPlanStepEnabled = async (name: string, enabled: boolean): Promise<void> => {
-  if (!scriptId || !userId.value) return
+  if (!scriptId || !userId.value || configLocked.value) return
   try {
     const resp =
       await BetterGiService.setOneDragonPlanStepEnabledApiScriptsBettergiOneDragonPlanStepEnabledPost(
@@ -2159,13 +2147,17 @@ const toggleConfigGroup = (item: ConfigGroupIdentity) => {
 }
 
 // ---- 添加：把配置组加入一条龙（放到队列末尾）----
-const addToDragon = (item: ConfigGroupIdentity) => {
-  if (!groupsEditable.value) return
-  if (!ALLOW_DUPLICATE_GROUPS && inDragon(item)) return
+const addToDragon = (item: ConfigGroupIdentity): boolean => {
+  if (configLocked.value) {
+    message.error(t('edit.configLocked'))
+    return false
+  }
+  if (!groupsEditable.value) return false
+  if (!ALLOW_DUPLICATE_GROUPS && inDragon(item)) return false
   // 体力作战开启时刷取类官方内置组被冻结，禁止再次加入一条龙（防止把被接管的组写回后端 Groups）
   if (item.kind === 'builtin' && isGroupFrozen(item)) {
     message.warning(t('edit.bettergiGroupFrozenTip'))
-    return
+    return false
   }
   if (item.kind === 'builtin') {
     if (!formData.OneDragon.Groups.includes(item.key)) {
@@ -2189,6 +2181,7 @@ const addToDragon = (item: ConfigGroupIdentity) => {
   const alias = dragonList.value.find(i => i.kind === item.kind && i.key === item.key)?.displayName
   dragonList.value.push(makeDragonRow(alias ? { ...item, displayName: alias } : item))
   persistDragonQueue()
+  return true
 }
 
 // 队列中是否仍存在同类配置组（删除某实例后判断是否还保留后端启用）
@@ -2198,6 +2191,10 @@ const hasSameKindRow = (item: ConfigGroupIdentity, exceptUid?: number): boolean 
 // ---- 右键删除：从一条龙移除（按行实例 uid，一次只删一行）----
 const removeFromDragon = (item: ConfigGroupIdentity) => {
   if (!groupsEditable.value) return
+  if (configLocked.value) {
+    message.error(t('edit.configLocked'))
+    return
+  }
   if (item.kind === 'builtin') {
     if (isGroupFrozen(item)) return // 冻结中不可删除
     dragonList.value = dragonList.value.filter(i => i.uid !== item.uid)
@@ -3091,6 +3088,10 @@ const globalDomainSettingsDirty = ref(false)
 // 全局 config.json 幽境危战段设置（刷取战场/队伍/策略/次数与树脂；autoStygianOnslaughtConfig 段）
 const globalStygianSettings = ref<Record<string, unknown>>({})
 const globalStygianSettingsDirty = ref(false)
+const hasDragonGroupSettingsDirty = computed(
+  () =>
+    dragonSettingsDirty.value || globalDomainSettingsDirty.value || globalStygianSettingsDirty.value
+)
 // 当前选中内置组是否有设置 schema（含每周秘境周表等非 fields 形态的分组）
 const hasGroupSettingFields = computed<boolean>(() =>
   currentGroupSettingSections.value.some(
@@ -3207,6 +3208,13 @@ const saveDragonGroupSettings = (
 ): Promise<boolean> => {
   const sel = selOverride ?? selectedGroupIdentity.value
   const run = dragonGroupSaveChain.then(async () => {
+    if (configLocked.value) {
+      if (hasDragonGroupSettingsDirty.value) {
+        message.error(t('edit.configLocked'))
+        return false
+      }
+      return true
+    }
     if (!sel || sel.kind !== 'builtin' || !userId.value) return false
     const tasks: Promise<unknown>[] = []
     if (dragonSettingsDirty.value) {
@@ -3272,7 +3280,7 @@ watch(
     if (dragonGroupAutoSaveTimer) {
       clearTimeout(dragonGroupAutoSaveTimer)
       dragonGroupAutoSaveTimer = null
-      await saveDragonGroupSettings(true, dragonGroupSaveSel)
+      if (!(await saveDragonGroupSettings(true, dragonGroupSaveSel))) return
     }
     await loadDragonGroupSettings()
   }
@@ -3495,10 +3503,13 @@ const addModalTitle = computed<string>(() =>
 const addModalOkText = computed<string>(() =>
   addModal.addToGroupMode ? t('edit.bettergiAddScriptToGroupOk') : t('edit.bettergiAddToDragonOk')
 )
+const addModalOkButtonProps = computed(() => ({
+  disabled: configLocked.value || (!addModal.items.length && !addModal.draft.trim()),
+}))
 
 // 配置组编辑器 ref：确认「添加脚本」后把选中的 JS/路径追加进当前配置组 json
 const groupProjectEditorRef = ref<{
-  addProjects: (rows: unknown[]) => Promise<void>
+  addProjects: (rows: unknown[]) => Promise<boolean>
   reload: () => Promise<void>
 } | null>(null)
 
@@ -4137,15 +4148,16 @@ const handleAddDraftKeydown = (e: KeyboardEvent) => {
 
 // 确认：加入一条龙 或（配置组模式）作为项目写入当前配置组 json
 const confirmAddToDragon = async () => {
+  if (configLocked.value) {
+    message.error(t('edit.configLocked'))
+    return
+  }
   if (addModal.draft.trim() && !commitAddDraft()) return
   if (!addModal.items.length) {
     message.warning(t('edit.bettergiPickCandidateFirst'))
     return
   }
   const items = [...addModal.items]
-  addModal.items = []
-  addModal.draft = ''
-  clearChipSelection()
   // 配置组模式：把 JS/路径转成 project 行，交给右栏编辑器追加并保存
   if (addModal.addToGroupMode) {
     const editor = groupProjectEditorRef.value
@@ -4153,25 +4165,36 @@ const confirmAddToDragon = async () => {
       .map(toScriptGroupProjectRow)
       .filter((r): r is Record<string, unknown> => r !== null)
     if (!rows.length) {
+      addModal.items = []
+      addModal.draft = ''
+      clearChipSelection()
       addModal.addToGroupMode = false
       addModal.open = false
       message.warning(t('edit.bettergiAddScriptUnsupported'))
       return
     }
-    addModal.addToGroupMode = false
-    addModal.open = false
     try {
-      await editor?.addProjects(rows)
+      const added = (await editor?.addProjects(rows)) ?? false
+      if (!added) return
     } catch (e) {
       logger.error(e instanceof Error ? e.message : String(e))
       message.error(e instanceof Error ? e.message : t('edit.bettergiProjectSaveFailed'))
+      return
     }
+    addModal.items = []
+    addModal.draft = ''
+    clearChipSelection()
+    addModal.addToGroupMode = false
+    addModal.open = false
     return
   }
-  addModal.open = false
   for (const item of items) {
-    addToDragon({ kind: item.kind, key: item.key })
+    if (!addToDragon({ kind: item.kind, key: item.key })) return
   }
+  addModal.items = []
+  addModal.draft = ''
+  clearChipSelection()
+  addModal.open = false
 }
 
 // ---- 行尾双操作 ----
@@ -4329,11 +4352,31 @@ const handleConfigModeChange = async (value: boolean | string) => {
   )
     return
   const previousValue = formData.Info.Mode
+  const previousQuickConfig = formData.Info.IfQuickConfig
+  // 快速配置按来源派生（开关已隐藏）：直控 = 关，脚本 / 用户 = 开
+  const nextQuickConfig = value !== '直控'
+  if (!nextQuickConfig) {
+    // 切到直控后 MAS 面板会隐藏：先把未落盘的一条龙组设置刷下去，避免改动丢失
+    // （原「关闭快速配置」开关的同款处理）
+    if (dragonGroupAutoSaveTimer) {
+      clearTimeout(dragonGroupAutoSaveTimer)
+      dragonGroupAutoSaveTimer = null
+    }
+    while (hasDragonGroupSettingsDirty.value) {
+      if (!(await saveDragonGroupSettings(true, dragonGroupSaveSel))) return
+    }
+  }
   formData.Info.Mode = value as '脚本' | '用户' | '直控'
+  formData.Info.IfQuickConfig = nextQuickConfig
   configModeSaving.value = true
   try {
-    const saved = await updateUser(scriptId, userId.value, { Info: { Mode: formData.Info.Mode } })
-    if (!saved) formData.Info.Mode = previousValue
+    const saved = await updateUser(scriptId, userId.value, {
+      Info: { Mode: formData.Info.Mode, IfQuickConfig: nextQuickConfig },
+    })
+    if (!saved) {
+      formData.Info.Mode = previousValue
+      formData.Info.IfQuickConfig = previousQuickConfig
+    }
   } finally {
     configModeSaving.value = false
   }
@@ -4354,6 +4397,7 @@ const {
 } = useBettergiGuiSession()
 
 const handleBettergiConfig = () => {
+  if (configLocked.value) return
   if (!userId.value) return
   void startSession(userId.value)
 }
@@ -4368,7 +4412,7 @@ const handleSaveBettergiConfig = async () => {
   if (dragonGroupAutoSaveTimer) {
     clearTimeout(dragonGroupAutoSaveTimer)
     dragonGroupAutoSaveTimer = null
-    await saveDragonGroupSettings(true, dragonGroupSaveSel)
+    if (!(await saveDragonGroupSettings(true, dragonGroupSaveSel))) return
   }
   await saveSession()
 }
@@ -4442,8 +4486,10 @@ const handleRestored = async (target: string) => {
 // mas 备份：恢复到 per-user 副本后启动用户级查看会话（BGI GUI 所见即
 // 副本）；原生备份：恢复到 BGI 全局后启动脚本级查看会话（打开 BGI 看
 // 原生配置）。查看会话结束不回写（BetterGI 配置会话本就无回写）。
-const handleRestoreView = (target: string, item: { time: string }) =>
-  new Promise<boolean>(resolve => {
+const handleRestoreView = (target: string, item: { time: string }) => {
+  if (configLocked.value) return Promise.resolve(false)
+
+  return new Promise<boolean>(resolve => {
     Modal.confirm({
       title: t('edit.configRestoreDetailView'),
       content: h(
@@ -4455,6 +4501,12 @@ const handleRestoreView = (target: string, item: { time: string }) =>
       okType: 'danger',
       cancelText: t('edit.cancel'),
       onOk: async () => {
+        if (configLocked.value) {
+          message.error(t('edit.configLocked'))
+          resolve(false)
+          return
+        }
+
         try {
           const resp = await Service.restoreConfigBackupApiApiScriptsBackupRestorePost({
             scriptId,
@@ -4485,6 +4537,7 @@ const handleRestoreView = (target: string, item: { time: string }) =>
       onCancel: () => resolve(false),
     })
   })
+}
 
 // 编辑会话归档（进入/退出时机，指纹去重）：与运行物化前的双池归档
 // （AutoProxy）配合——进入归档 BGI 全局配置当前状态（MAS 触碰前原始态），
@@ -4538,6 +4591,9 @@ const loadUser = async () => {
       OneDragon: { ...getDefaultUserData().OneDragon, ...(userData.OneDragon || {}) },
       Notify: { ...getDefaultUserData().Notify, ...(userData.Notify || {}) },
     })
+    // 快速配置开关已隐藏、按来源派生：存量数据可能残留与来源相左的值（如「直控 + 开」），
+    // 以 Mode 为准归一，与保存路径（handleConfigModeChange）及后端 BetterGIUserConfig.load 一致。
+    formData.Info.IfQuickConfig = formData.Info.Mode !== '直控'
     // 一条龙名称为必填：历史空值归一为「默认配置」
     if (!formData.Task.OneDragonConfigName) {
       formData.Task.OneDragonConfigName = '默认配置'
