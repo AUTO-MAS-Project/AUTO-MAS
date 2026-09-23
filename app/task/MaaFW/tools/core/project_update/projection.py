@@ -751,6 +751,62 @@ def _retention_root(relative: Path, view: _FileView) -> Path:
     return parent if parent != ROOT else relative
 
 
+#: 分类表里按「内嵌解释器」处理的目录名（python / venv / .venv / python-embed …）。
+EMBEDDED_PYTHON_DIR_NAMES = frozenset(
+    name
+    for name, reason in EXCLUDED_DIRECTORY_REASONS.items()
+    if reason == "embedded-python"
+)
+
+
+def _is_python_interpreter_dir(view: _FileView, relative: Path) -> bool:
+    """目录里真有一个 Python 解释器（发行版 / 嵌入式包 / venv），而不只是叫这个名字。
+
+    特征：根上的 ``python.exe`` / ``pythonw.exe`` / ``python`` / ``python3`` /
+    ``pyvenv.cfg`` / ``python3.dll`` / ``python3XY.dll``，或 venv 布局的
+    ``Scripts/python.exe``、``bin/python``。只放 ``.py`` 源码的 ``python/``（MaaFramework
+    官方 Demo 的 agent 就在 ``python/demo3_agent.py``）不是解释器。
+    """
+
+    if not view.is_dir(relative):
+        return False
+    for name in (
+        "python.exe",
+        "pythonw.exe",
+        "python",
+        "python3",
+        "pyvenv.cfg",
+        "python3.dll",
+        "Scripts/python.exe",
+        "bin/python",
+        "bin/python3",
+    ):
+        if view.is_file(relative / name):
+            return True
+    return any(
+        _PYTHON_DLL_RE.match(entry.name) and view.is_file(entry)
+        for entry in view.iter_entries(relative)
+    )
+
+
+def _python_named_source_prefix(view: _FileView, relative: Path) -> Path | None:
+    """``relative``（目录）路径上名字像内嵌解释器、其实只是源码目录的最外层前缀。
+
+    分类表只看名字，会把 ``python/demo3_agent.py`` 所在的整个 ``python/`` 当解释器
+    剔掉，声明的 agent 入口就成了「运行必需却被投影排除」。返回 None 表示路径上没有
+    这种段（或那一段真是解释器目录，照旧按解释器处理）。
+    """
+
+    prefix = ROOT
+    for part in relative.parts:
+        prefix = prefix / part
+        if part.casefold() in EMBEDDED_PYTHON_DIR_NAMES:
+            if _is_python_interpreter_dir(view, prefix):
+                return None
+            return prefix
+    return None
+
+
 # --------------------------------------------------------------------------
 # 白名单目标收集
 # --------------------------------------------------------------------------
@@ -886,6 +942,27 @@ def build_projection_rules(
             if view.is_file(with_exe):
                 return with_exe
         return relative
+
+    def add_retention_target(
+        referenced: Path, *, required_label: str, required_path: Path
+    ) -> None:
+        """agent / pretask 引用的文件：所在目录整个保留（按分类表剔除）。
+
+        所在目录（或它的上级）叫 ``python`` 这类名字、其实只是源码目录时，声明比猜测
+        更可信：把它当显式目标、豁免名字本身（与 resource 目录叫 ``runtime`` 同一口径），
+        里面照常按分类表剔除。
+        """
+
+        retention = _retention_root(referenced, view)
+        directory = retention if view.is_dir(retention) else retention.parent
+        python_source = _python_named_source_prefix(view, directory) is not None
+        add_target(
+            retention,
+            complete=python_source,
+            required_label=required_label,
+            required_path=required_path,
+            allow_excluded_root=python_source,
+        )
 
     visited: set[Path] = set()
 
@@ -1052,15 +1129,22 @@ def build_projection_rules(
                     # 自带解释器所在目录原样带走：里面的 site-packages 就是这个项目
                     # 实际跑起来的环境，运行池重建的不等价（版本、自定义构建、
                     # requirements 没写的包）。其它 agent 文件所在目录只是保留根。
-                    add_target(
-                        _retention_root(exec_relative, view),
-                        complete=interpreter,
-                        required_label=label,
-                        required_path=exec_relative,
-                        allow_excluded_root=interpreter,
-                        python_interpreter=interpreter,
-                        verbatim_runtime=interpreter,
-                    )
+                    if interpreter:
+                        add_target(
+                            _retention_root(exec_relative, view),
+                            complete=True,
+                            required_label=label,
+                            required_path=exec_relative,
+                            allow_excluded_root=True,
+                            python_interpreter=True,
+                            verbatim_runtime=True,
+                        )
+                    else:
+                        add_retention_target(
+                            exec_relative,
+                            required_label=label,
+                            required_path=exec_relative,
+                        )
                     _add_root_python_siblings(
                         exec_relative, view, targets, base_relative
                     )
@@ -1099,9 +1183,8 @@ def build_projection_rules(
                         continue
                 if view.exists(arg_relative):
                     discovered.append(arg_relative.as_posix())
-                    add_target(
-                        _retention_root(arg_relative, view),
-                        complete=False,
+                    add_retention_target(
+                        arg_relative,
                         required_label=label,
                         required_path=arg_relative,
                     )
@@ -1131,9 +1214,8 @@ def build_projection_rules(
             label = f"pretask[{index}].exec"
             exec_relative = declare_executable(raw_exec, label)
             if view.exists(exec_relative):
-                add_target(
-                    _retention_root(exec_relative, view),
-                    complete=False,
+                add_retention_target(
+                    exec_relative,
                     required_label=label,
                     required_path=exec_relative,
                 )
@@ -1439,7 +1521,24 @@ def _adopt_small_undeclared_entries(
         if entry in targets and targets[entry].complete:
             continue
         is_dir = view.is_dir(entry)
-        if exclusion_reason(entry, is_directory=is_dir) is not None:
+        reason = exclusion_reason(entry, is_directory=is_dir)
+        if (
+            reason == "embedded-python"
+            and is_dir
+            and not _is_python_interpreter_dir(view, entry)
+        ):
+            # 叫 python / venv 却没有解释器的目录只是项目源码（agent 会 import 的
+            # 辅助脚本），按名字当解释器丢掉就和路径模式不一样了。名字本身豁免，
+            # 里面照常按分类表剔除。
+            remainder = sum(
+                view.size(path)
+                for path in view.walk_files(entry)
+                if exclusion_reason(path.relative_to(entry)) is None
+            )
+            if remainder <= UNDECLARED_KEEP_LIMIT:
+                targets[entry] = TargetMode(True, True)
+            continue
+        if reason is not None:
             continue
         if not is_dir:
             if entry.suffix.casefold() in UNDECLARED_BINARY_SUFFIXES:
