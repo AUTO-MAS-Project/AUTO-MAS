@@ -46,10 +46,31 @@ logger = get_logger("HSR M7A 运行器")
 # 它认 MARCH7TH_GUI_STARTED，M7A 自己的图形界面拉起 CLI 时用的就是这个标记。
 # 托管运行没人按键：不带它时任务正文跑完仍会停在 input()，而系统 ANSI 代码页
 # 不是中文时更会直接崩在写不出中文的 stdout 上，把已经做完的模块判成失败。
-M7A_HEADLESS_ENV: dict[str, str] = {"MARCH7TH_GUI_STARTED": "true"}
+#
+# M7A 读配置时环境变量优先于 config.yaml（module/config/config.py 的映射表）。
+# MARCH7TH_AFTER_FINISH 钉成 None：托管与直控都不让 M7A 在任务后退出游戏、
+# 关机或睡眠——这些由 MAS 的队列完成后操作负责。后端环境里其余 MARCH7TH_*
+# 会静默盖过 MAS 写进 config.yaml 的值，起进程前剔掉（见 build_m7a_env）。
+M7A_HEADLESS_ENV: dict[str, str] = {
+    "MARCH7TH_GUI_STARTED": "true",
+    "MARCH7TH_AFTER_FINISH": "None",
+}
+M7A_ENV_PREFIX = "MARCH7TH_"
 # 保留的近期输出行数：M7A 失败前会连打十几条同样的 WARNING，太短会把
 # 真正的 ERROR 挤掉。
 RECENT_OUTPUT_LINES = 40
+
+
+def build_m7a_env() -> dict[str, str]:
+    """M7A 子进程环境：继承后端环境，剔除继承的 ``MARCH7TH_*``，再叠上 MAS 自己的。"""
+
+    env = {
+        key: value
+        for key, value in os.environ.items()
+        if not key.upper().startswith(M7A_ENV_PREFIX)
+    }
+    env.update(M7A_HEADLESS_ENV)
+    return env
 
 
 @dataclass
@@ -313,7 +334,7 @@ class M7ARunner:
                 stdin=asyncio.subprocess.PIPE,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
-                env={**os.environ, **M7A_HEADLESS_ENV},
+                env=build_m7a_env(),
             )
             proc = self._process_manager.main_process
             if not isinstance(proc, asyncio.subprocess.Process):
@@ -323,8 +344,10 @@ class M7ARunner:
                 stderr,
                 completed_by_marker,
             ) = await self._communicate_with_live_output(proc, timeout)
+            # rc=0 且没有任何输出不算成功：M7A 未提权时会另起提权进程后原进程
+            # 直接 exit(0)，真正干活的进程脱离了 MAS 的视野。
             success = (
-                completed_by_marker or proc.returncode == 0
+                completed_by_marker or (proc.returncode == 0 and bool(stdout or stderr))
             ) and not has_failure_output(stdout, stderr)
 
             logger.info(

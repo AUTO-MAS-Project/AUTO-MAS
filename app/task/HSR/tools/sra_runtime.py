@@ -32,6 +32,7 @@ from typing import Any, Awaitable, Callable
 
 from app.utils import ProcessManager, decode_bytes, get_logger
 from app.utils.io import atomic_write, migrate_legacy_dir
+from app.utils.platform import is_admin
 
 from .log_detect import (
     HSR_ECHO_OF_WAR_WEEKLY_REWARD_LIMIT,
@@ -676,6 +677,30 @@ class SRAProcessRegistry:
         return True
 
 
+def _sra_cli_args(command_text: str) -> tuple[str, ...]:
+    """SRA-cli 的命令行参数。
+
+    SRA-cli 未提权时默认用 ``runas`` 另起一个提权进程、原进程 ``exit(0)``，
+    真正干活的进程脱离 MAS 视野；``--no-admin`` 让它打一行警告后原地继续。
+    SRA 只在未提权时从 argv 里摘掉这个参数（``SRACore/__main__.py``），
+    已提权时它会原样落进 cmd2 的启动命令、报「不是一个有效命令」，所以只在
+    后端未提权时传（子进程继承后端的令牌，两边判断一致）。
+    """
+
+    args = ("--inline", command_text, "quit")
+    return args if is_admin() else ("--no-admin", *args)
+
+
+def _sra_run_succeeded(returncode: int | None, stdout: str, stderr: str) -> bool:
+    """SRA 不把任务成败写进退出码，成败只看输出；没有任何输出不算成功。"""
+
+    return (
+        returncode == 0
+        and bool(stdout or stderr)
+        and not has_failure_output(stdout, stderr)
+    )
+
+
 async def run_sra_single_task(
     sra_exe_path: Path,
     task_class: str,
@@ -706,9 +731,7 @@ async def run_sra_single_task(
         process_registry = process_registry or SRAProcessRegistry()
         proc = await process_registry.open_process(
             str(sra_exe_path),
-            "--inline",
-            command_text,
-            "quit",
+            *_sra_cli_args(command_text),
             cwd=sra_exe_path.parent,
         )
         stdout, stderr = await _communicate_sra_with_live_output(
@@ -717,7 +740,7 @@ async def run_sra_single_task(
             log_callback,
             output_line_callback=output_line_callback,
         )
-        success = proc.returncode == 0 and not has_failure_output(stdout, stderr)
+        success = _sra_run_succeeded(proc.returncode, stdout, stderr)
 
         return SRACommandResult(
             task_class=task_class,
@@ -796,9 +819,7 @@ async def run_sra_config(
     try:
         proc = await registry.open_process(
             str(sra_exe_path),
-            "--inline",
-            f'run "{config_path}"',
-            "quit",
+            *_sra_cli_args(f'run "{config_path}"'),
             cwd=sra_exe_path.parent,
         )
         stdout, stderr = await _communicate_sra_with_live_output(
@@ -806,7 +827,7 @@ async def run_sra_config(
             timeout,
             log_callback,
         )
-        success = proc.returncode == 0 and not has_failure_output(stdout, stderr)
+        success = _sra_run_succeeded(proc.returncode, stdout, stderr)
         return SRACommandResult(
             task_class="run",
             config_path=str(config_path),

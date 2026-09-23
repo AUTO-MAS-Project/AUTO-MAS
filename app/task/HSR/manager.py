@@ -36,6 +36,7 @@ from app.models.task import LogRecord, ScriptItem, TaskExecuteBase, UserItem
 from app.utils import get_logger
 from app.utils.constants import TASK_MODE_ZH, UTC4
 from app.utils.io import replace_dir
+from app.utils.platform import is_admin
 
 from .AutoProxy import HSRAutoProxyTask, resolve_daily_native_modes
 from .task_mapping import (
@@ -524,6 +525,21 @@ class HSRManager(TaskExecuteBase):
         if not has_executable_user:
             return "未找到任何可执行用户，请确保至少有一个启用且剩余天数不为 0 的用户"
 
+        # 后端未提权时：MAS 起游戏会 WinError 740，直接拦下；不管游戏时只提示，
+        # SRA 带 --no-admin 原地继续，三月七会另起提权进程并被判为失败。
+        if not is_admin():
+            if game_management_enabled:
+                return (
+                    "AUTO-MAS 未以管理员身份运行，无法由 MAS 启动游戏；"
+                    "请以管理员身份运行 AUTO-MAS，或在脚本设置中关闭「MAS 管理游戏」"
+                )
+            logger.warning("AUTO-MAS 未以管理员身份运行，HSR 外部脚本可能无法正常执行")
+            self._append_log(
+                "AUTO-MAS 未以管理员身份运行：SRA 将以非管理员身份继续，"
+                "三月七会另起提权进程、脱离 MAS 跟踪并被判为失败；"
+                "建议以管理员身份运行 AUTO-MAS"
+            )
+
         if game_management_enabled and (enabled_module_keys or has_direct_user):
             if not str(script_config.get("Game", "Path") or "").strip():
                 return "请设置游戏路径"
@@ -909,6 +925,8 @@ class HSRManager(TaskExecuteBase):
             f"（日常 {control.daily_limit_minutes} + 周常 {control.weekly_limit_minutes}），"
             "超时将终止脚本进程"
         )
+        if "M7A" in control.engines:
+            self._log_ignored_m7a_after_finish()
 
         summaries: list[str] = []
         try:
@@ -953,6 +971,22 @@ class HSRManager(TaskExecuteBase):
         # 执行任务后脚本（每用户仅一次）
         await run_script_after_task(user_config)
         return len(control.engines)
+
+    def _log_ignored_m7a_after_finish(self) -> None:
+        """直控下三月七的 ``after_finish`` 被运行环境钉成 None，配了别的值就说一声。"""
+
+        try:
+            after_finish = load_m7a_native_config(self.script_config).get(
+                "after_finish"
+            )
+        except (FileNotFoundError, OSError, ValueError):
+            return
+        if after_finish is None or str(after_finish) == "None":
+            return
+        self._append_log(
+            f"本轮忽略三月七的收尾动作（{after_finish}），"
+            "关机/睡眠请用 MAS 的队列完成后操作"
+        )
 
     async def _persist_user_logs(self) -> None:
         """将 HSR 用户日志写入历史记录。"""
