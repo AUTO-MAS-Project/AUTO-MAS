@@ -30,6 +30,7 @@ from app.task.MaaFW.tools.core.interface.models import (
     is_pretask_task_name,
     iter_pretasks,
     resolve_task_instance_name,
+    simplified_chinese_language_file,
 )
 from app.task.MaaFW.tools.core.interface.task_config import (
     MaaFWTaskPresetSnapshot,
@@ -1030,10 +1031,8 @@ def _load_maafw_version() -> str:
 def _load_i18n_mapping(
     base_dir: Path, interface_model: MaaFWInterface
 ) -> dict[str, Any]:
-    if not interface_model.languages:
-        return {}
-    language_file = interface_model.languages.get(PI_CLIENT_LANGUAGE)
-    if not isinstance(language_file, str) or not language_file.strip():
+    language_file = simplified_chinese_language_file(interface_model)
+    if language_file is None:
         return {}
     language_path = _resolve_project_path(base_dir, language_file)
     if not language_path.exists or not language_path.isFile:

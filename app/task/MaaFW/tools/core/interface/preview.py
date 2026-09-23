@@ -15,6 +15,7 @@ from .models import (
     MaaFWInterface,
     build_pretask_task_name,
     iter_pretasks,
+    simplified_chinese_language_file,
     task_repeat_count,
 )
 from .task_config import (
@@ -366,11 +367,8 @@ def interface_display_name(root_path: str | Path, interface: MaaFWInterface) -> 
 
 
 def _load_i18n_mapping(root_path: Path, interface: MaaFWInterface) -> dict[str, Any]:
-    if not interface.languages:
-        return {}
-
-    language_file = interface.languages.get("zh_cn")
-    if not isinstance(language_file, str) or not language_file.strip():
+    language_file = simplified_chinese_language_file(interface)
+    if language_file is None:
         return {}
 
     language_path = _resolve_project_path(root_path, language_file)

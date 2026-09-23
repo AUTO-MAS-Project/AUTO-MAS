@@ -562,6 +562,35 @@ def interface_load_warnings(interface: MaaFWInterface) -> list[str]:
     return list(getattr(interface, "_load_warnings", None) or [])
 
 
+#: 归为简体中文的语言键前缀（小写、``_`` 换成 ``-`` 之后比），照 MFAA
+#: ``LanguageHelper.NormalizeLangCode`` / ``IsSimplifiedChinese``。
+_SIMPLIFIED_CHINESE_PREFIXES = ("zh-hans", "zh-cn", "zh-sg")
+
+
+def simplified_chinese_language_file(interface: MaaFWInterface) -> str | None:
+    """``languages`` 里简体中文那份语言文件的相对路径；没有返回 None。
+
+    协议示例与多数项目写 ``zh_cn``，但键名没有强制写法：MaaGakumasu 写的是
+    ``zh-CN`` / ``zh-Hant``，只认 ``zh_cn`` 时它的 ``$key`` 一个也翻不出来。精确的
+    ``zh_cn`` 优先，其余按 MFAA 的口径归一（``zh-CN`` / ``zh_CN`` / ``zh-Hans`` /
+    ``zh-SG`` 都算；繁体与裸 ``zh`` 不算）。
+    """
+
+    languages = interface.languages or {}
+    exact = languages.get("zh_cn")
+    if isinstance(exact, str) and exact.strip():
+        return exact
+    for key, value in languages.items():
+        normalized = str(key).strip().lower().replace("_", "-")
+        if (
+            normalized.startswith(_SIMPLIFIED_CHINESE_PREFIXES)
+            and isinstance(value, str)
+            and value.strip()
+        ):
+            return value
+    return None
+
+
 def iter_pretasks(interface: MaaFWInterface) -> list[MaaFWPretask]:
     """Return ProjectInterface pretasks as a stable list."""
 
