@@ -1560,7 +1560,9 @@ class MaaFWRunner:
         text = str(declared or "").strip()
         if not text:
             return None
-        if text.isdigit() and 1 <= int(text) <= 65535:
+        # 只认 ASCII 0-9：框架用 std::isdigit（C locale），str.isdigit 还认全角 / 阿拉伯
+        # 等 Unicode 数字，那些在框架里是 IPC 名。
+        if text.isascii() and text.isdigit() and 1 <= int(text) <= 65535:
             self.send_log(
                 f"interface 声明的 agent identifier={text} 是 TCP 端口，按原样使用；"
                 f"同一项目的多个脚本同时运行会抢同一端口: {label}"
