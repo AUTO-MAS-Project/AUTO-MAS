@@ -3398,6 +3398,23 @@ class HSRUpdateOut(OutBase):
     data: Optional[HSRUpdateData] = Field(default=None, description="更新结果")
 
 
+class HSRCloudLoginIn(BaseModel):
+    scriptId: str = Field(..., description="HSR 脚本配置 ID")
+    userId: str = Field(..., description="要登录云·星穹铁道的用户 ID")
+
+
+class HSRCloudLoginData(BaseModel):
+    logged_in: bool = Field(default=False, description="是否确认已登录")
+    last_login: Optional[str] = Field(
+        default=None, description="本次确认已登录的时间（ISO 8601）"
+    )
+    message: str = Field(default="", description="面向用户的结果说明")
+
+
+class HSRCloudLoginOut(OutBase):
+    data: Optional[HSRCloudLoginData] = Field(default=None, description="登录结果")
+
+
 class HSRManagedField(BaseModel):
     key: str = Field(..., description="字段键")
     label: str = Field(default="", description="字段名称")

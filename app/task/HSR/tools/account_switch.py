@@ -35,7 +35,9 @@ from .cloud_browser import (
     CloudBrowserError,
     CloudBrowserMissingError,
     cleanup_stale_cloud_browsers,
+    find_free_debug_port,
     is_port_free,
+    locate_integrated_browser,
 )
 from .game_resolution import HSRGameResolutionOverride
 from .log_detect import has_screenshot_window_unavailable_output
@@ -148,6 +150,28 @@ def build_platform_m7a_env(script_config: Any) -> dict[str, str]:
         cloud=is_cloud_platform(script_config),
         use_paid_time=cloud_use_paid_time(script_config),
     )
+
+
+def check_cloud_prerequisites(script_config: Any) -> str:
+    """云·星穹铁道的脚本级前置；通过返回空串。
+
+    云模式只用三月七：三月七路径与可执行文件、发行包内置的 Chrome 与
+    chromedriver 都是硬条件；再探一次 MAS 托管浏览器能用的调试端口。
+    SRA 路径有没有都不影响。
+    """
+
+    m7a_path = _script_path(script_config, "M7A")
+    if not m7a_path:
+        return "云·星穹铁道只能由三月七执行，请先设置三月七路径"
+    m7a_exe = Path(m7a_path) / "March7th Assistant.exe"
+    if not m7a_exe.is_file():
+        return f"三月七路径中未找到 March7th Assistant.exe：{m7a_exe}"
+    try:
+        locate_integrated_browser(m7a_path)
+        find_free_debug_port(DEFAULT_DEBUG_PORT)
+    except CloudBrowserError as exc:
+        return str(exc)
+    return ""
 
 
 def read_cloud_last_login(script_config: Any) -> dict[str, str]:

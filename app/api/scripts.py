@@ -3898,6 +3898,66 @@ async def post_hsr_update_api(data: HSRUpdateIn) -> HSRUpdateOut:
         )
 
 
+@router.post(
+    "/hsr/cloud-login",
+    tags=["HSR"],
+    summary="为 HSR 用户登录云·星穹铁道",
+    response_model=HSRCloudLoginOut,
+    status_code=200,
+)
+async def post_hsr_cloud_login_api(data: HSRCloudLoginIn) -> HSRCloudLoginOut:
+    """起该用户的云浏览器并用三月七的 ``game`` 任务等用户在窗口里登录。
+
+    阻塞到三月七退出为止（最长为登录等待 + 最长排队 + 余量），与正在运行的
+    任务互斥：脚本运行中或三月七目录被占用时返回 409。成功后写
+    ``Cloud.LastLogin``。
+    """
+
+    try:
+        script_config = _hsr_script_config(data.scriptId)
+        user_config = _hsr_user_config(script_config, data.userId)
+        from app.task.HSR.tools.cloud_login import (
+            HSRCloudLoginBusyError,
+            run_cloud_login,
+        )
+
+        try:
+            outcome = await run_cloud_login(
+                script_config,
+                script_id=data.scriptId,
+                user_id=data.userId,
+                user_name=str(user_config.get("Info", "Name") or data.userId),
+            )
+        except HSRCloudLoginBusyError as e:
+            return HSRCloudLoginOut(code=409, status="error", message=str(e))
+
+        return HSRCloudLoginOut(
+            code=200 if outcome.logged_in else 400,
+            status="success" if outcome.logged_in else "error",
+            message=outcome.message,
+            data=HSRCloudLoginData(
+                logged_in=outcome.logged_in,
+                last_login=outcome.last_login,
+                message=outcome.message,
+            ),
+        )
+    except Exception as e:
+        logger.opt(exception=True).warning(
+            f"post_hsr_cloud_login_api失败: {type(e).__name__}: {e}"
+        )
+        return HSRCloudLoginOut(
+            code=400
+            if isinstance(
+                e, (FileNotFoundError, OSError, RuntimeError, ValueError, KeyError)
+            )
+            else 500,
+            status="error",
+            message=str(e)
+            if isinstance(e, (ValueError, RuntimeError))
+            else (f"{type(e).__name__}: {str(e)}"),
+        )
+
+
 @router.get(
     "/hsr/managed-config",
     tags=["HSR"],

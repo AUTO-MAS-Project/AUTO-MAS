@@ -49,6 +49,7 @@ from .task_mapping import (
 from .tools import push_notification
 from .tools.account_switch import (
     HSRAccountSwitcher,
+    check_cloud_prerequisites,
     check_user_credentials,
     close_game_if_needed,
     cloud_max_queue_minutes,
@@ -61,13 +62,7 @@ from .tools.account_switch import (
     user_needs_account_switch,
 )
 from .tools.backup_archive import archive_native_backup
-from .tools.cloud_browser import (
-    DEFAULT_DEBUG_PORT,
-    CloudBrowserError,
-    find_free_debug_port,
-    is_port_free,
-    locate_integrated_browser,
-)
+from .tools.cloud_browser import DEFAULT_DEBUG_PORT, is_port_free
 from .tools.external_locks import (
     HSRExternalPathLockLease,
     acquire_external_path_locks,
@@ -653,25 +648,9 @@ class HSRManager(TaskExecuteBase):
 
     @staticmethod
     def _check_cloud_prerequisites(script_config: HSRConfig) -> str:
-        """云·星穹铁道的脚本级前置；通过返回空串。
+        """云·星穹铁道的脚本级前置；通过返回空串。"""
 
-        云模式只用三月七：三月七路径与可执行文件、发行包内置的 Chrome 与
-        chromedriver 都是硬条件；再探一次 MAS 托管浏览器能用的调试端口。
-        SRA 路径有没有都不影响。
-        """
-
-        m7a_path = resolve_script_path(script_config, "M7A")
-        if not m7a_path:
-            return "云·星穹铁道只能由三月七执行，请先设置三月七路径"
-        m7a_exe = Path(m7a_path) / "March7th Assistant.exe"
-        if not m7a_exe.is_file():
-            return f"三月七路径中未找到 March7th Assistant.exe：{m7a_exe}"
-        try:
-            locate_integrated_browser(m7a_path)
-            find_free_debug_port(DEFAULT_DEBUG_PORT)
-        except CloudBrowserError as exc:
-            return str(exc)
-        return ""
+        return check_cloud_prerequisites(script_config)
 
     @staticmethod
     def _m7a_direct_debug_port(script_config: HSRConfig) -> int:
