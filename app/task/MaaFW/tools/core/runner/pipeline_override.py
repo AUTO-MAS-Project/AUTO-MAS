@@ -46,11 +46,17 @@ class MaaFWCheckboxCountError(ValueError):
         )
 
 
+#: password 字段下发失败时代替原值写进提示的文字（核心包不引宿主的 option_secrets）。
+SECRET_VALUE_PLACEHOLDER = "（密码字段，已隐藏）"
+
+
 class MaaFWInputValueError(ValueError):
     """input 字段的值下发不了：该填数字的地方填的不是数字，或者没填也没有默认值。
 
     与 ``MaaFWCheckboxCountError`` 同样只带事实（选项名、字段名、值、期望的类型），
     给人看的整句由建计划的一方拼（它有任务与选项的显示名）。``value`` 为 None 表示没填。
+    ``secret``：字段是 password（PI v2.10.0），原值不进异常——这句话会进运行日志与后端
+    日志；``value`` 换成 ``SECRET_VALUE_PLACEHOLDER``。
     """
 
     def __init__(
@@ -60,12 +66,16 @@ class MaaFWInputValueError(ValueError):
         *,
         expected: str,
         value: str | None,
+        secret: bool = False,
     ) -> None:
         self.option_name = option_name
         self.field_name = field_name
         self.expected = expected
-        self.value = value
-        detail = "未填写且 interface 未声明默认值" if value is None else f"值 {value}"
+        self.secret = secret
+        self.value = SECRET_VALUE_PLACEHOLDER if secret and value is not None else value
+        detail = (
+            "未填写且 interface 未声明默认值" if value is None else f"值 {self.value}"
+        )
         super().__init__(
             f"选项 {option_name} 的字段 {field_name} 需要 {expected} 值，{detail}"
         )
@@ -256,6 +266,7 @@ class MaaFWPipelineOverrideBuilder:
         *,
         option_name: str = "",
         field_name: str = "",
+        secret: bool = False,
     ) -> tuple[object, str]:
         normalized_type = (pipeline_type or "string").lower()
         if normalized_type not in {"string", "str", ""} and not raw_value.strip():
@@ -286,6 +297,7 @@ class MaaFWPipelineOverrideBuilder:
                     field_name or "?",
                     expected=normalized_type,
                     value=raw_value,
+                    secret=secret,
                 )
             return integer, str(integer)
         if normalized_type in {"float", "double", "number"}:
@@ -299,6 +311,7 @@ class MaaFWPipelineOverrideBuilder:
                     field_name or "?",
                     expected=normalized_type,
                     value=raw_value,
+                    secret=secret,
                 )
             return typed_value, str(typed_value)
         return raw_value, raw_value
@@ -398,6 +411,7 @@ class MaaFWPipelineOverrideBuilder:
                     input_item.default,
                     option_name=option_name,
                     field_name=input_item.name,
+                    secret=bool(input_item.password),
                 )
             except MaaFWInputValueError as exc:
                 # 与 hotkey 没有默认值时同一口径：这个选项的覆盖整段跳过（半替换会把

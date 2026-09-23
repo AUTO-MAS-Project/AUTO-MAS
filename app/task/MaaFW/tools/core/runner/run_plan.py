@@ -361,6 +361,12 @@ def _describe_input_value_error(
             f"任务「{task_label}」的选项「{option_label}」需要填一个{kind}，"
             f"但没有填写、项目也没有给默认值，{skipped}；请在用户配置的任务队列里填写"
         )
+    if getattr(exc, "secret", False):
+        # password 字段：原值不进日志（PI v2.10.0），只说哪一项填得不对。
+        return (
+            f"任务「{task_label}」的选项「{option_label}」填的值（密码字段，已隐藏）"
+            f"不是{kind}，{skipped}"
+        )
     return (
         f"任务「{task_label}」的选项「{option_label}」的值 {exc.value} 不是{kind}，"
         f"{skipped}"
