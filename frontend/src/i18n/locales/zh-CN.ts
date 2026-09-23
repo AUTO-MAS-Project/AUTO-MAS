@@ -729,6 +729,8 @@ export default {
     sanityScriptChangedPick: '体力执行脚本已切换，请重新选择副本。',
     hsrEngineSwitchHint:
       '切换执行引擎会改用该引擎自己的一套原生配置项和体力副本；当前引擎下改过的值不会带过去，但会保留，切回时仍在。',
+    hsrSharedEngineSwitchHint:
+      '这里改的是脚本级引擎分配：本脚本所有「脚本」来源用户，以及「用户」来源里没有单独指定引擎的用户，都会改用这个引擎。切换后该引擎自己的一套原生配置项和体力副本生效。',
     hsrStageMissingForEngine:
       '当前体力执行引擎为 {engine}，该引擎下尚未选择副本。副本按引擎分别保存，另一引擎下已选的副本不会自动带过来，请重新选择；切回原引擎时原选择仍保留。',
     editHsrUser: '编辑 HSR 用户',

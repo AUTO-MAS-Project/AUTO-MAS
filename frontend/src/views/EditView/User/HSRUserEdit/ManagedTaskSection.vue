@@ -90,7 +90,7 @@
             <a-form-item
               v-if="engineOptions.length > 1"
               :label="t('edit.engine')"
-              :extra="t('edit.hsrEngineSwitchHint')"
+              :extra="shared ? t('edit.hsrSharedEngineSwitchHint') : t('edit.hsrEngineSwitchHint')"
             >
               <a-segmented
                 :value="selectedEngine"
