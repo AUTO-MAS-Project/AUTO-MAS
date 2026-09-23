@@ -232,7 +232,7 @@
           </div>
           <div v-else class="control-mode-content">
             <DirectControlSection
-              :available-engines="[...directEngines]"
+              :available-engines="directEngineCards"
               :control="formData.Control"
               :saving="isSaving"
               @toggle="handleDirectEngineToggle"
@@ -408,7 +408,7 @@ import type {
   HSRPlanData,
   HSRUserConfigData,
 } from './HSRUserEdit/types'
-import { buildHSRCapabilityView } from './HSRUserEdit/capabilityView'
+import { buildHSRCapabilityView, resolveDirectEngineCards } from './HSRUserEdit/capabilityView'
 import DirectControlSection from './HSRUserEdit/DirectControlSection.vue'
 import ManagedTaskSection from './HSRUserEdit/ManagedTaskSection.vue'
 
@@ -541,6 +541,10 @@ const directEngines = computed<HSREngine[]>(() =>
   isCloud.value
     ? effectiveEngines.value.filter(engine => engine === 'M7A')
     : [...effectiveEngines.value]
+)
+// 直控区块的开关：可选引擎之外，已勾选的也要给开关，否则后端因它拒绝运行时无从关掉
+const directEngineCards = computed<HSREngine[]>(() =>
+  resolveDirectEngineCards(directEngines.value, formData.Control)
 )
 const cloudLastLogin = computed(() =>
   userId ? getHSRCloudLastLogin(scriptConfig.value?.Cloud?.LastLogin, userId) : ''
