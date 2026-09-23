@@ -100,8 +100,9 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   谱系还有视图时再加它的 latest；一个视图都不剩的谱系整个收走，视图丢了但脚本还在的按导入来源保住；
   本进程起来之后建的不收。回收跑在后台、API 已在服务：删之前要在该谱系的 `lineage_lock` 内按盘上最新
   状态再判一次，否则判定之后刚登记的载荷会被一起删掉；整谱系收走时放锁后还会删锁文件和空目录，
-  所以 `DurableFileLock` 的等待方碰到目录没了要重建再等，不能把这次撞车报给调用方），随后 `clean_maafw_runtime_blobs` 删 `st_nlink == 1` 的 blob。本机实测：inode 被映射时只有被映射的
-  那个目录项删不掉 / 换不掉，同一 inode 的其它硬链接名随便删换（见 `blob_store.py` 模块说明）。
+  所以 `DurableFileLock` 的等待方碰到目录没了要重建再等，不能把这次撞车报给调用方），随后 `clean_maafw_runtime_blobs` 删 `st_nlink == 1` 的 blob。本机实测：inode 被映射（DLL 已加载）时
+  删不掉的是它的最后一个链接，与进程经由哪个名字加载无关——视图里的名字（含正被经由加载的
+  那个）都能删，只要库里的 blob 还在（见 `blob_store.py` 模块说明）。
 - **同一项目再建一个脚本**走 `/maafw/embedded/sources`（候选）+ `/maafw/embedded/clone`
   （`embedded_project.clone_embedded_copy`）：从源脚本挂着的载荷物化目标视图（源正在切换就取 journal
   的目标），不读源视图、不要源空闲、源的运行期状态不带；只预约目标（源还是没采纳的老副本、只能按目录
