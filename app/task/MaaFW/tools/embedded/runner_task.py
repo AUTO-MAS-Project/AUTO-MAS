@@ -1496,10 +1496,9 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                     line = _decode_subprocess_output(raw_line).strip()
                 if not line:
                     continue
-                line = redact_secret_text(line, secrets)
-                try:
-                    event = json.loads(line)
-                except json.JSONDecodeError:
+                event = _parse_worker_protocol_line(line, secrets)
+                if event is None:
+                    line = redact_secret_text(line, secrets)
                     write_framework_log("worker-stdout", line)
                     if _should_forward_framework_log(line):
                         self._append_log(_framework_ui_message(line))
@@ -2662,6 +2661,37 @@ def _framework_ui_message(message: str) -> str:
         "完整内容请查看本次运行的 .maafw.log"
     )
     return summary[:_FRAMEWORK_UI_LOG_MAX_CHARS]
+
+
+def _parse_worker_protocol_line(
+    line: str, secrets: list[str] | tuple[str, ...]
+) -> dict[str, Any] | None:
+    """worker stdout 的一行若是协议事件（JSON 对象）就解析并打码后返回，否则 None。
+
+    **先解析、后打码**：以前对整行 JSON 做字符串替换，密码恰好是 ``true`` / ``result`` /
+    ``success`` / ``2026`` 或某个任务名时，替换会打坏 JSON 结构、键名、截图路径、完成任务
+    列表——成功的运行被判成「worker exited without result」而重试，或通知丢图、周期任务
+    不记完成。现在只替换给人读的文本（log / error 的 ``message``、结果里的
+    ``errorMessage``），结构字段（路径、任务名、状态、布尔、数字）一律不动。
+    解析不了的行（原生诊断）由调用方照旧整行打码。
+    """
+
+    try:
+        event = json.loads(line)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(event, dict):
+        return None
+    message = event.get("message")
+    if isinstance(message, str):
+        event["message"] = redact_secret_text(message, secrets)
+    data = event.get("data")
+    if isinstance(data, dict) and isinstance(data.get("errorMessage"), str):
+        event["data"] = {
+            **data,
+            "errorMessage": redact_secret_text(data["errorMessage"], secrets),
+        }
+    return event
 
 
 def _should_forward_framework_log(message: str) -> bool:
