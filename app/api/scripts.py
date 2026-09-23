@@ -57,6 +57,7 @@ from app.task.MaaFW.tools.core.automas_maafw_project_update.updater import (
 )
 from app.task.MaaFW.tools.embedded.embedded_project import (
     EmbeddedProjectError,
+    GroupMember,
     clone_embedded_copy,
     copy_is_healthy,
     embedded_project_dir,
@@ -64,7 +65,9 @@ from app.task.MaaFW.tools.embedded.embedded_project import (
     ensure_embedded_copy,
     import_embedded_project,
     inherit_embedded_record,
+    propagate_payload,
     read_interface_version,
+    read_view_marker,
     resolve_maafw_project_root,
     shell_hint_from_report,
 )
@@ -1248,6 +1251,12 @@ async def _embed_from_source(
     环境准备进行到一半时换树，两边都会坏。
     """
 
+    try:
+        channel = str(
+            _maafw_script_config(script_id).get("Update", "Channel") or "stable"
+        )
+    except (KeyError, ValueError, TypeError):
+        channel = "stable"
     reservation = await try_reserve_project_path(embedded_project_dir(script_id))
     if reservation is None:
         return None, _EMBEDDED_COPY_BUSY
@@ -1260,6 +1269,7 @@ async def _embed_from_source(
             script_id,
             source_path,
             progress=_embedded_import_progress(publish),
+            channel=channel,
         )
         publish("imported", "success", "导入完成", 100.0)
     except EmbeddedProjectError as exc:
@@ -1279,7 +1289,52 @@ async def _embed_from_source(
         },
     )
     await _apply_project_flavor(script_id)
+    await _propagate_view_to_group(script_id, channel)
     return None, ""
+
+
+async def _propagate_view_to_group(script_id: str, channel: str) -> None:
+    """导入之后，把同项目同渠道里还挂在别的版本上的空闲脚本切到组当前版本（§3.5「本地
+    导入并组」）。运行中 / 被占用的跳过，它们下次运行前自己对齐。失败只记日志。"""
+
+    view = embedded_project_dir(script_id)
+    marker = await asyncio.to_thread(read_view_marker, view)
+    if marker is None:
+        return
+    # 遍历脚本表必须在事件循环线程上做（工作线程里遍历会撞 dict changed size）
+    members = [
+        GroupMember(
+            script_id=str(uid),
+            channel=str(config.get("Update", "Channel") or "stable"),
+            busy=bool(getattr(config, "is_locked", False)),
+            name=str(config.get("Info", "Name") or ""),
+        )
+        for uid, config in Config.ScriptConfig.items()
+        if isinstance(config, RuntimeMaaFWConfig) and str(uid) != script_id
+    ]
+    try:
+        source_name = str(
+            _maafw_script_config(script_id).get("Info", "Name") or script_id[:8]
+        )
+    except (KeyError, ValueError, TypeError):
+        source_name = script_id[:8]
+    try:
+        result = await asyncio.to_thread(
+            propagate_payload,
+            str(marker["lineage"]),
+            channel,
+            str(marker["payload"]),
+            members,
+            switched_by={"scriptId": script_id, "name": source_name},
+        )
+    except Exception as exc:  # noqa: BLE001 - 同步兄弟失败不影响本次导入
+        logger.opt(exception=True).warning(f"导入后同步同项目脚本失败：{exc}")
+        return
+    if result.switched or result.skipped or result.failed:
+        logger.info(
+            f"MFW 脚本 {script_id} 导入后同步同项目脚本：已切换 {result.switched}，"
+            f"跳过 {result.skipped}，失败 {result.failed}"
+        )
 
 
 _EmbeddedImportPublish = Callable[[str, str, str, float | None], None]

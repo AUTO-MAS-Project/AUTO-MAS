@@ -78,6 +78,10 @@ PROJECT_PYCACHE_DIR_NAME = ".pycache"
 #: 项目根出现两遍，M9A 自带 site-packages 最深 75 字符，``data/maafw_projects/<完整 uuid>``
 #: 在每用户安装目录（%LOCALAPPDATA%\Programs\AUTO-MAS）下就撞 MAX_PATH。
 EMBEDDED_COPIES_DIR_PARTS = ("data", "mfw")
+#: 副本根下的两个簿记目录：不可变项目载荷（``<谱系>/<版本>-<hash>``）与视图切换 journal。
+#: 名字以点开头，不是副本目录名的形状，启动期孤儿清理不会把它们当副本删。
+EMBEDDED_PAYLOADS_DIR_NAME = ".payloads"
+EMBEDDED_SWITCH_DIR_NAME = ".switch"
 
 
 #: 前缀树里一个 pyc 的路径 = 前缀 + 去掉盘符的源码绝对路径，项目根会出现两遍；给源码相对

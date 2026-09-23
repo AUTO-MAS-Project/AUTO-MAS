@@ -5471,7 +5471,9 @@ class AppConfig(GlobalConfig):
             embedded_copy_dir_name,
             embedded_projects_root,
             is_embedded_copy_dir_name,
+            recover_switches,
             remove_tree,
+            switch_root,
         )
         from app.task.MaaFW.tools.embedded.project_path import (
             release_project_path,
@@ -5481,6 +5483,12 @@ class AppConfig(GlobalConfig):
         root = embedded_projects_root()
         if not root.is_dir():
             return
+        # 先按 journal 收尾被打断的视图切换：切换的 old / staging 都在 .staging 里，
+        # 不先恢复的话下面的半成品清理会把「rename 了一半」时暂存的原视图当垃圾删掉。
+        try:
+            await asyncio.to_thread(recover_switches)
+        except Exception as exc:  # noqa: BLE001 - 恢复失败不该影响启动，journal 留着下次再试
+            logger.warning(f"MFW 视图切换恢复失败: {exc}")
         staging = root / STAGING_DIR_NAME
         if staging.is_dir():
             for leftover in staging.iterdir():
@@ -5491,10 +5499,13 @@ class AppConfig(GlobalConfig):
                         continue
                 except OSError:
                     continue
-                # 半成品叫 <副本目录名>-<8 位随机> 或 <副本目录名>-old-<8 位随机>
-                reservation = await try_reserve_project_path(
-                    root / leftover.name.split("-", 1)[0]
-                )
+                # 半成品叫 <副本目录名>-<8 位随机>、<副本目录名>-old-/-sw-<8 位随机>
+                # 或 payload-<谱系>-<8 位随机>
+                prefix = leftover.name.split("-", 1)[0]
+                if (switch_root() / f"{prefix}.json").exists():
+                    # 恢复没收尾的切换：它的 old 目录可能就是原视图，留着待查
+                    continue
+                reservation = await try_reserve_project_path(root / prefix)
                 if reservation is None:
                     continue
                 await release_project_path(reservation)

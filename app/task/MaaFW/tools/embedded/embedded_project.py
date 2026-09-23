@@ -16,18 +16,27 @@
 #   You should have received a copy of the GNU Affero General Public License
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
 
-"""MFW 内嵌副本：项目根从哪来、副本怎么建、怎么跟着来源走。
+"""MFW 内嵌项目：不可变载荷 + 每脚本视图。
 
-MFW 脚本一律在副本上跑，没有开关：用户选一次项目目录，AUTO-MAS 按 interface 白名单
-投影出一份只含内置运行所需文件的副本，此后运行、预览、更新全在副本上。副本路径由
-脚本 ID 推出，不进配置，用户不可手改；``Info.Path`` 只是来源目录——导入完成后它对
-运行没有任何作用，用户删掉也无妨（留着只为「重新导入」）。
+MFW 脚本一律在视图上跑，没有开关：用户选一次项目目录，AUTO-MAS 按 interface 白名单
+投影成一份**载荷**（``data/mfw/.payloads/<谱系>/<版本>-<hash>``，全局一份、登记后不再改），
+再给脚本物化一棵**视图** ``data/mfw/<脚本 uuid 前 12 位>/``：载荷里 ≥ 64 KB 的文件在视图里
+是指向载荷 / 共用库的硬链接，小文件拷贝，运行期产物（``debug/``、``config/`` 里 agent 写的、
+``.pycache`` …）是视图私有的。视图路径由脚本 ID 推出，不进配置，用户不可手改；
+``Info.Path`` 只是来源目录——导入完成后它对运行没有任何作用，用户删掉也无妨。
 
-老脚本（副本还不存在）与来源换了目录（``Info.Path`` 与导入报告里记的来源不一致）都在
-``ensure_embedded_copy`` 里自动导入一次，各入口（运行前检查、预览、更新）都经过它。
+视图根上的 ``.auto_mas_view.json`` 记它挂在哪个载荷上（谱系、载荷 id、版本、物化时刻），
+是物化事实的唯一来源。换版本 = :func:`switch_view`：在 staging 里按新载荷重建链接森林、
+把私有文件带过去、标记先写进 staging，再两次目录 rename 原子换入；journal 在
+``data/mfw/.switch/`` 里，进程被杀后 :func:`recover_switches` 按盘上状态收尾。
 
-副本放在 ``data/mfw/<脚本 uuid 前 12 位>/`` 而不是 ``data/<uuid>/``：后者会被配置备份
-整目录快照，几十到两百 MB 的项目副本不该混进去。删脚本时 ``remove_script`` 连带删。
+**写穿防线**：往 staging 写任何文件都走 ``payloads.place_fresh``（先删目标、再链接，链接失败才
+以独占方式新建复制）——staging 里多数文件是载荷的硬链接，往已存在的目标里写就等于改载荷。
+
+过渡期（启动期迁移之前）：没有标记的老副本照旧能跑、能导入、能克隆，这里不采纳也不报错。
+
+副本放在 ``data/mfw/<…>`` 而不是 ``data/<uuid>/``：后者会被配置备份整目录快照。删脚本时
+``remove_script`` 连带删视图（载荷与共用库只少一个链接）。
 
 这里全是同步的文件操作，API 与管理器用 ``asyncio.to_thread`` 调。
 """
@@ -38,27 +47,35 @@ import json
 import os
 import shutil
 import stat
+import time
 import uuid
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Mapping
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from app.task.MaaFW.tools.core.automas_maafw_project_update import payloads
 from app.task.MaaFW.tools.core.automas_maafw_project_update.apply import (
-    discard_update_baseline,
+    project_state_dir_for,
 )
 from app.task.MaaFW.tools.core.automas_maafw_project_update.blob_store import (
     RuntimeBlobStore,
+    sha256_file,
+)
+from app.task.MaaFW.tools.core.automas_maafw_project_update.contracts import (
+    VIEW_MARKER_FILE_NAME,
 )
 from app.task.MaaFW.tools.core.automas_maafw_project_update.projection import (
     ProjectionError,
     build_projection_plan,
     is_shared_path,
-    materialize_projection,
     read_json_object,
 )
 from app.task.MaaFW.tools.core.automas_maafw_runtime_pool.host_environment import (
     EMBEDDED_COPIES_DIR_PARTS,
+    EMBEDDED_PAYLOADS_DIR_NAME,
+    EMBEDDED_SWITCH_DIR_NAME,
     PROJECT_PYCACHE_DIR_NAME,
 )
 from app.task.MaaFW.tools.embedded.project_path import (
@@ -75,17 +92,52 @@ logger = get_logger("MFW 内嵌")
 COPY_DIR_NAME_LENGTH = 12
 
 STAGING_DIR_NAME = ".staging"
+PAYLOADS_DIR_NAME = EMBEDDED_PAYLOADS_DIR_NAME
+SWITCH_DIR_NAME = EMBEDDED_SWITCH_DIR_NAME
+VIEW_MARKER_NAME = VIEW_MARKER_FILE_NAME
+VIEW_SCHEMA_VERSION = 1
+DEFAULT_CHANNEL = "stable"
 # 副本里 Python 字节码缓存的落点（``PYTHONPYCACHEPREFIX``，见 host_environment）：agent 与
 # 环境准备写出的 pyc 全在这一个目录下，副本其余部分不再被运行期弄脏；随副本一起删。
 PYCACHE_DIR_NAME = PROJECT_PYCACHE_DIR_NAME
+# 受管文件被本地改过、切换时被新载荷覆盖前的留档目录（与更新器同一个 state 目录）。
+LOCAL_MODIFIED_DIR_NAME = "local-modified"
 
 
 class EmbeddedProjectError(RuntimeError):
     """内嵌副本操作失败。文案面向用户，调用方原样带出。"""
 
 
+# 测试注入点：切换在各阶段调用它，测试让它抛 BaseException 模拟进程被杀（不走清理分支）。
+_SWITCH_FAULT: Callable[[str], None] | None = None
+
+
+def _fault(stage: str) -> None:
+    if _SWITCH_FAULT is not None:
+        _SWITCH_FAULT(stage)
+
+
+# --------------------------------------------------------------------------
+# 路径
+# --------------------------------------------------------------------------
+
+
 def embedded_projects_root(base: Path | None = None) -> Path:
     return (base if base is not None else Path.cwd()) / EMBEDDED_PROJECTS_DIR
+
+
+def payloads_root(base: Path | None = None) -> Path:
+    return embedded_projects_root(base) / PAYLOADS_DIR_NAME
+
+
+def switch_root(base: Path | None = None) -> Path:
+    return embedded_projects_root(base) / SWITCH_DIR_NAME
+
+
+def _staging_root(base: Path | None) -> Path:
+    root = embedded_projects_root(base) / STAGING_DIR_NAME
+    root.mkdir(parents=True, exist_ok=True)
+    return root
 
 
 def embedded_copy_dir_name(script_id: str) -> str:
@@ -109,7 +161,7 @@ def is_embedded_copy_dir_name(name: str) -> bool:
 
 
 def embedded_project_dir(script_id: str, base: Path | None = None) -> Path:
-    """副本目录：``data/mfw/<脚本 uuid 前 12 位>``，由脚本 ID 推出、不进配置。"""
+    """视图目录：``data/mfw/<脚本 uuid 前 12 位>``，由脚本 ID 推出、不进配置。"""
 
     return embedded_projects_root(base) / embedded_copy_dir_name(script_id)
 
@@ -117,9 +169,9 @@ def embedded_project_dir(script_id: str, base: Path | None = None) -> Path:
 def resolve_maafw_project_root(
     script_id: str, script_config: Any, base: Path | None = None
 ) -> Path:
-    """有效项目根：永远是副本。``Info.Path`` 只是来源，运行时不读它。
+    """有效项目根：永远是视图。``Info.Path`` 只是来源，运行时不读它。
 
-    所有"拿项目目录做事"的地方都从这里取，别再各自读 Info.Path。副本可能还没建
+    所有"拿项目目录做事"的地方都从这里取，别再各自读 Info.Path。视图可能还没建
     （老脚本、刚选目录），要先经 ``ensure_embedded_copy``。
     """
 
@@ -139,6 +191,17 @@ def remove_tree(path: Path) -> None:
         shutil.rmtree(path, onexc=_clear_readonly_and_retry)
 
 
+def _remove_quietly(path: Path, what: str) -> None:
+    try:
+        if os.path.lexists(path):
+            if path.is_dir() and not path.is_symlink():
+                remove_tree(path)
+            else:
+                path.unlink()
+    except OSError as exc:
+        logger.warning(f"[MFW 内嵌] {what}清理失败，留待启动时清理: {path} - {exc}")
+
+
 def _update_operation_root(base: Path | None) -> Path:
     """更新器的 operation 根；与 ``project_update/state.py`` 的默认值同一口径。"""
 
@@ -148,12 +211,28 @@ def _update_operation_root(base: Path | None) -> Path:
 
 
 def discard_copy_update_baseline(script_id: str, base: Path | None = None) -> bool:
-    """副本被整体换掉（重新导入）或删掉（退出内嵌）之后，丢掉更新器记的清单。"""
+    """视图被整体换掉（重新导入 / 克隆）之后，丢掉更新器为这个路径记的清单与预检备忘。
 
-    return discard_update_baseline(
-        embedded_project_dir(script_id, base),
-        operation_root=_update_operation_root(base),
-    )
+    ``local-modified/`` 留着：切换刚把被覆盖的本地改动留档在那里。
+    """
+
+    return _discard_view_baseline(embedded_project_dir(script_id, base), base)
+
+
+def _discard_view_baseline(view: Path, base: Path | None) -> bool:
+    state_dir = project_state_dir_for(view, operation_root=_update_operation_root(base))
+    if state_dir.is_symlink() or not state_dir.is_dir():
+        return False
+    removed = False
+    for child in list(state_dir.iterdir()):
+        if child.name == LOCAL_MODIFIED_DIR_NAME:
+            continue
+        if child.is_dir() and not child.is_symlink():
+            remove_tree(child)
+        else:
+            child.unlink()
+        removed = True
+    return removed
 
 
 def copy_is_healthy(copy_dir: Path) -> bool:
@@ -179,17 +258,549 @@ def _now_text() -> str:
     return datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds")
 
 
+def _is_relative_to(path: Path, parent: Path) -> bool:
+    try:
+        path.resolve().relative_to(parent.resolve())
+        return True
+    except ValueError:
+        return False
+
+
+def _script_channel(script_config: Any) -> str:
+    try:
+        value = str(script_config.get("Update", "Channel") or "").strip()
+    except Exception:  # noqa: BLE001 - 配置桩 / 老配置读不出就按默认渠道
+        value = ""
+    return value or DEFAULT_CHANNEL
+
+
+# --------------------------------------------------------------------------
+# 视图标记与 journal
+# --------------------------------------------------------------------------
+
+
+def read_view_marker(view_dir: Path) -> dict[str, Any] | None:
+    """视图标记；没有、读不出、缺谱系 / 载荷字段都当没有（未采纳的老副本）。"""
+
+    path = Path(view_dir) / VIEW_MARKER_NAME
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    if not isinstance(data, dict):
+        return None
+    if not str(data.get("lineage") or "") or not str(data.get("payload") or ""):
+        return None
+    return data
+
+
+def write_view_marker(directory: Path, data: Mapping[str, Any]) -> None:
+    """把标记写进一棵**还没换入**的树（staging）。视图里的标记只随目录 rename 换入，
+    不原地改写——内容与标记必须同源。"""
+
+    path = Path(directory) / VIEW_MARKER_NAME
+    if os.path.lexists(path):
+        path.unlink()
+    with path.open("x", encoding="utf-8", newline="\n") as handle:
+        json.dump(dict(data), handle, ensure_ascii=False, indent=2, sort_keys=True)
+        handle.write("\n")
+
+
+def _journal_path(view_name: str, base: Path | None) -> Path:
+    return switch_root(base) / f"{view_name}.json"
+
+
+def _read_journal(path: Path) -> dict[str, Any] | None:
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def resolve_view_payload(
+    script_id: str, base: Path | None = None
+) -> tuple[str, str] | None:
+    """脚本视图挂着的（谱系, 载荷 id）：正在切换时取 journal 的 ``to``，否则取标记。"""
+
+    view = embedded_project_dir(script_id, base)
+    journal = _read_journal(_journal_path(view.name, base))
+    if journal and journal.get("lineage") and journal.get("to"):
+        return str(journal["lineage"]), str(journal["to"])
+    marker = read_view_marker(view)
+    if marker is None:
+        return None
+    return str(marker["lineage"]), str(marker["payload"])
+
+
+# --------------------------------------------------------------------------
+# 视图物化 / 切换
+# --------------------------------------------------------------------------
+
+
+@dataclass
+class ViewResult:
+    view: Path
+    lineage: str
+    payload_id: str
+    version: str
+    from_payload: str = ""
+    linked: int = 0
+    copied: int = 0
+    carried: int = 0
+    archived: list[str] = field(default_factory=list)
+    archive_dir: Path | None = None
+    elapsed: float = 0.0
+
+
+def _payload_or_error(root: Path, lineage: str, payload_id: str) -> tuple[Path, dict]:
+    try:
+        manifest = payloads.read_manifest(root, lineage, payload_id)
+        directory = payloads.payload_dir(root, lineage, payload_id)
+    except payloads.PayloadError as exc:
+        raise EmbeddedProjectError(f"项目版本记录无效：{exc}") from exc
+    if manifest is None or not directory.is_dir():
+        raise EmbeddedProjectError(f"项目版本 {payload_id} 不在本机，无法切换")
+    return directory, manifest
+
+
+def _differs_from(path: Path, payload_file: Path, entry: Mapping[str, Any]) -> bool:
+    """视图里的文件内容是否与载荷记的不同。先比 inode（链接着同一份就是没动过，不读文件），
+    再比大小，最后才算 sha。"""
+
+    info = path.stat()
+    try:
+        payload_info: os.stat_result | None = payload_file.stat()
+    except OSError:
+        payload_info = None
+    if payload_info is not None and (info.st_ino, info.st_dev) == (
+        payload_info.st_ino,
+        payload_info.st_dev,
+    ):
+        return False
+    size = int(entry.get("size") or 0)
+    if size and info.st_size != size:
+        return True
+    if (
+        payload_info is not None
+        and info.st_size == payload_info.st_size
+        and info.st_mtime_ns == payload_info.st_mtime_ns
+    ):
+        # 视图里的小文件是连修改时间一起从载荷复制的；大小、时间都没变就是没动过
+        # （写入必然刷新修改时间），省掉几千个小文件的哈希。
+        return False
+    return sha256_file(path) != str(entry.get("sha256") or "")
+
+
+def _local_modified_dir(
+    view: Path, from_id: str, to_id: str, base: Path | None
+) -> Path:
+    state_dir = project_state_dir_for(view, operation_root=_update_operation_root(base))
+    stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    return state_dir / LOCAL_MODIFIED_DIR_NAME / f"{from_id or 'none'}→{to_id}-{stamp}"
+
+
+def _build_view_tree(
+    staging: Path,
+    payload_path: Path,
+    new_files: Mapping[str, Mapping[str, Any]],
+    *,
+    carry_from: Path | None,
+    old_files: Mapping[str, Mapping[str, Any]],
+    old_payload_path: Path | None,
+    archive_dir: Callable[[], Path],
+    result: ViewResult,
+    private: Iterable[str] = (),
+) -> None:
+    """§3.2 第 2–3 步：载荷的链接森林 + 私有状态承载。写 staging 一律 ``place_fresh``。
+
+    载荷文件满足共用谓词的挂硬链接（与载荷 / blob 同一 inode），其余复制成视图私有的新
+    文件——小文件、``config/`` 这些 agent 可能原地写的，视图里必须是自己的一份。
+    """
+
+    staging.mkdir(parents=True, exist_ok=True)
+    private_list = tuple(private)
+    for directory in sorted(
+        {Path(rel).parent for rel in new_files}, key=lambda item: len(item.parts)
+    ):
+        (staging / directory).mkdir(parents=True, exist_ok=True)
+    for rel, entry in new_files.items():
+        action = payloads.place_fresh(
+            payload_path / rel,
+            staging / rel,
+            link=is_shared_path(rel, int(entry.get("size") or 0), private_list),
+            make_parent=False,
+        )
+        if action == "linked":
+            result.linked += 1
+        else:
+            result.copied += 1
+    if carry_from is None or not carry_from.is_dir():
+        return
+
+    new_keys = {rel.casefold(): rel for rel in new_files}
+    old_map = {rel.casefold(): rel for rel in old_files}
+    archive: Path | None = None
+
+    def _archive(path: Path, rel: str) -> None:
+        nonlocal archive
+        if archive is None:
+            archive = archive_dir()
+            result.archive_dir = archive
+        try:
+            payloads.place_fresh(path, archive / rel, link=True)
+            result.archived.append(rel)
+        except OSError as exc:
+            logger.warning(f"[MFW 内嵌] 本地改动留档失败，继续切换: {rel}: {exc}")
+
+    def _walk_error(exc: OSError) -> None:
+        raise EmbeddedProjectError(f"读取视图失败: {exc.filename}: {exc}") from exc
+
+    for current, dir_names, file_names in os.walk(carry_from, onerror=_walk_error):
+        current_path = Path(current)
+        relative_dir = current_path.relative_to(carry_from)
+        if not dir_names and not file_names:
+            # 空目录（运行期建的 debug/ 之类）也是私有状态；有内容的目录随文件自然建出。
+            (staging / relative_dir).mkdir(parents=True, exist_ok=True)
+        for name in file_names:
+            if relative_dir == Path() and name == VIEW_MARKER_NAME:
+                # 旧标记描述的是旧载荷，带进新树就是假事实（§3.2 第 3.5 步）。
+                continue
+            path = current_path / name
+            rel = (relative_dir / name).as_posix()
+            key = rel.casefold()
+            old_rel = old_map.get(key)
+            new_rel = new_keys.get(key)
+            if old_rel is None:
+                if new_rel is None:
+                    # 运行期新建的私有文件：链过去（nlink 通常是 1，不涉及共用）。
+                    payloads.place_fresh(path, staging / rel, link=True)
+                    result.carried += 1
+                elif _differs_from(path, payload_path / new_rel, new_files[new_rel]):
+                    # 新版本开始自带这个路径：载荷优先，视图那份留档。绝不能往 staging 里
+                    # 那个载荷硬链接上写（写穿防线）。
+                    _archive(path, rel)
+                continue
+            if old_payload_path is not None and _differs_from(
+                path, old_payload_path / old_rel, old_files[old_rel]
+            ):
+                _archive(path, rel)
+            # 在新载荷里 → staging 已是新内容；不在 → 新版本删掉了，不带。
+
+
+def _realize_view(
+    view: Path,
+    lineage: str,
+    payload_id: str,
+    *,
+    base: Path | None,
+    carry: bool,
+    switched_by: Mapping[str, Any] | None = None,
+) -> ViewResult:
+    """按载荷（重）建视图并原子换入。``carry=True`` 且视图有标记时就是 :func:`switch_view`；
+    否则整棵换掉（没有标记的老副本、全新脚本）。"""
+
+    started = time.monotonic()
+    root = payloads_root(base)
+    new_dir, new_manifest = _payload_or_error(root, lineage, payload_id)
+    new_files = payloads.manifest_files(new_manifest)
+    version = str(new_manifest.get("version") or "")
+
+    old_marker = read_view_marker(view) if carry else None
+    carry_from = view if (carry and old_marker is not None) else None
+    old_files: dict[str, dict[str, Any]] = {}
+    old_payload_path: Path | None = None
+    from_id = ""
+    if old_marker is not None:
+        from_id = str(old_marker.get("payload") or "")
+        try:
+            old_manifest = payloads.read_manifest(
+                root, str(old_marker["lineage"]), from_id
+            )
+            candidate = payloads.payload_dir(root, str(old_marker["lineage"]), from_id)
+        except payloads.PayloadError:
+            old_manifest, candidate = None, None
+        if old_manifest is not None and candidate is not None and candidate.is_dir():
+            old_files = payloads.manifest_files(old_manifest)
+            old_payload_path = candidate
+        else:
+            logger.warning(
+                f"[MFW 内嵌] 视图 {view.name} 记的载荷 {from_id} 已不在，"
+                "按全部受管文件都可能被改过处理"
+            )
+
+    result = ViewResult(
+        view=view,
+        lineage=lineage,
+        payload_id=payload_id,
+        version=version,
+        from_payload=from_id,
+    )
+    journal = _journal_path(view.name, base)
+    if journal.exists():
+        raise EmbeddedProjectError("该脚本的项目上一次切换版本还没收尾，请重启后再试")
+    staging_root = _staging_root(base)
+    suffix = uuid.uuid4().hex[:8]
+    staging = staging_root / f"{view.name}-sw-{suffix}"
+    old = staging_root / f"{view.name}-old-{suffix}"
+    record: dict[str, Any] = {
+        "schemaVersion": VIEW_SCHEMA_VERSION,
+        "view": view.name,
+        "lineage": lineage,
+        "from": from_id,
+        "fromLineage": str((old_marker or {}).get("lineage") or ""),
+        "to": payload_id,
+        "phase": "building",
+        "startedAt": _now_text(),
+        "staging": str(staging),
+        "old": str(old),
+    }
+    payloads.write_json_atomic(journal, record)
+    try:
+        _build_view_tree(
+            staging,
+            new_dir,
+            new_files,
+            carry_from=carry_from,
+            old_files=old_files,
+            old_payload_path=old_payload_path,
+            archive_dir=lambda: _local_modified_dir(view, from_id, payload_id, base),
+            result=result,
+            private=payloads.private_paths(root, lineage),
+        )
+        marker: dict[str, Any] = {
+            "schemaVersion": VIEW_SCHEMA_VERSION,
+            "lineage": lineage,
+            "payload": payload_id,
+            "version": version,
+            "materializedAt": _now_text(),
+        }
+        if switched_by:
+            marker["switchedBy"] = {
+                **dict(switched_by),
+                "at": _now_text(),
+                "from": from_id,
+                "to": payload_id,
+            }
+        write_view_marker(staging, marker)
+        if not copy_is_healthy(staging):
+            raise EmbeddedProjectError("载荷里没有 interface.json，拒绝换入")
+        _fault("built")
+        record["phase"] = "swapping"
+        payloads.write_json_atomic(journal, record)
+        _fault("swapping")
+        had_view = view.exists()
+        if had_view:
+            os.rename(view, old)
+            _fault("renamed-old")
+        try:
+            os.rename(staging, view)
+        except OSError:
+            if had_view:
+                os.rename(old, view)
+            raise
+        _fault("renamed-new")
+    except Exception:
+        # 视图没被换掉（或已经放回）：清半成品、删 journal。清理失败不盖掉原始异常。
+        _remove_quietly(staging, "切换半成品")
+        _remove_quietly(journal, "切换 journal")
+        raise
+    journal.unlink()
+    _remove_quietly(old, "旧视图")
+    # 视图内容整棵换了：更新器为这个路径记的清单（原地更新事务的基线）已经对不上。
+    try:
+        _discard_view_baseline(view, base)
+    except OSError as exc:
+        logger.warning(f"[MFW 内嵌] 丢弃旧更新基线失败: {view.name} - {exc}")
+    _reload_interface_cache(view)
+    result.elapsed = time.monotonic() - started
+    if result.archived:
+        preview = ", ".join(result.archived[:10])
+        more = " ..." if len(result.archived) > 10 else ""
+        logger.info(
+            f"[MFW 内嵌] 视图 {view.name} 有 {len(result.archived)} 个受管文件在本地被改过，"
+            f"已以新版本为准，旧内容留在 {result.archive_dir}: {preview}{more}"
+        )
+    return result
+
+
+def _reload_interface_cache(view: Path) -> None:
+    try:
+        from app.task.MaaFW.tools.core.automas_maafw_interface.loader import (
+            load_interface_model_cached,
+        )
+
+        load_interface_model_cached(view, force_reload=True)
+    except Exception as exc:  # noqa: BLE001 - 缓存刷新失败只影响下次预览多读一遍
+        logger.debug(f"[MFW 内嵌] 切换后刷新 interface 缓存失败: {view} - {exc}")
+
+
+def materialize_view(
+    script_id: str,
+    lineage: str,
+    payload_id: str,
+    *,
+    carry_from: Path | None = None,
+    base: Path | None = None,
+    switched_by: Mapping[str, Any] | None = None,
+) -> ViewResult:
+    """按载荷物化脚本视图。
+
+    ``carry_from`` 为 None：全新视图，目标位置原有的东西（没有标记的老副本）整棵换掉。
+    ``carry_from`` 是该脚本自己的视图目录：等同 :func:`switch_view`，私有文件带过去。
+    """
+
+    view = embedded_project_dir(script_id, base)
+    if carry_from is not None and Path(carry_from) != view:
+        raise EmbeddedProjectError("只能从脚本自己的视图承载私有文件")
+    return _realize_view(
+        view,
+        lineage,
+        payload_id,
+        base=base,
+        carry=carry_from is not None,
+        switched_by=switched_by,
+    )
+
+
+def switch_view(
+    script_id: str,
+    payload_id: str,
+    *,
+    lineage: str | None = None,
+    base: Path | None = None,
+    switched_by: Mapping[str, Any] | None = None,
+) -> ViewResult:
+    """把脚本视图切到 ``payload_id``（§3.2）。调用方必须持有该视图的项目预约。
+
+    视图必须有标记（它就是 P_old）。方向无关：升级、改渠道降级、同载荷重建都是这一条。
+    """
+
+    view = embedded_project_dir(script_id, base)
+    marker = read_view_marker(view)
+    if marker is None:
+        raise EmbeddedProjectError("视图还没有登记项目版本（未采纳），不能切换")
+    return _realize_view(
+        view,
+        lineage or str(marker["lineage"]),
+        payload_id,
+        base=base,
+        carry=True,
+        switched_by=switched_by,
+    )
+
+
+def _journal_staging_path(raw: Any, staging_root: Path) -> Path | None:
+    """journal 里记的 staging / old 路径；不在 ``.staging`` 之下的一律不认（不删别处的东西）。"""
+
+    text = str(raw or "").strip()
+    if not text:
+        return None
+    candidate = Path(text)
+    if candidate.parent.resolve() != staging_root.resolve():
+        logger.warning(f"[MFW 内嵌] 切换 journal 指向 staging 之外，忽略: {text}")
+        return None
+    return candidate
+
+
+def recover_switches(base: Path | None = None) -> list[str]:
+    """启动期按 journal 收尾被打断的切换；返回做过的事（日志用）。
+
+    一律先读视图标记再决定（标记随目录原子换入，与内容同源），**没有「重跑切换」这一档**：
+
+    - ``building``：两次 rename 都没发生 → 删 staging、删 journal；
+    - ``swapping`` 且视图不在、old 在：rename#1 做了、#2 没做 → old 放回；
+    - ``swapping`` 且视图标记 = ``to``：两次 rename 都做完了 → 删 old（若还在）、删 journal；
+    - ``swapping`` 且视图标记 ≠ ``to``（或没有标记）：rename#1 还没发生 → 删 staging、删 journal。
+    """
+
+    directory = switch_root(base)
+    if not directory.is_dir():
+        return []
+    staging_root = embedded_projects_root(base) / STAGING_DIR_NAME
+    done: list[str] = []
+    for journal in sorted(directory.glob("*.json")):
+        name = journal.stem
+        if not is_embedded_copy_dir_name(name):
+            continue
+        record = _read_journal(journal)
+        view = embedded_projects_root(base) / name
+        if record is None:
+            _remove_quietly(journal, "损坏的切换 journal")
+            done.append(f"{name}: journal 损坏，已删除")
+            continue
+        staging = _journal_staging_path(record.get("staging"), staging_root)
+        old = _journal_staging_path(record.get("old"), staging_root)
+        target = str(record.get("to") or "")
+        phase = str(record.get("phase") or "")
+        if phase != "swapping":
+            if staging is not None:
+                _remove_quietly(staging, "切换半成品")
+            _remove_quietly(journal, "切换 journal")
+            done.append(f"{name}: 构建阶段被打断，视图仍在原版本")
+            continue
+        if not view.exists():
+            if old is not None and old.is_dir():
+                os.rename(old, view)
+                if staging is not None:
+                    _remove_quietly(staging, "切换半成品")
+                _remove_quietly(journal, "切换 journal")
+                done.append(f"{name}: 换入前被打断，已放回原视图")
+            else:
+                logger.error(
+                    f"[MFW 内嵌] 视图 {name} 与切换前的备份都不在，保留 journal 待查"
+                )
+                done.append(f"{name}: 视图与备份都不在，未处理")
+            continue
+        marker = read_view_marker(view)
+        if marker is not None and str(marker.get("payload") or "") == target:
+            # 两次 rename 都做完了（标记随目录换入）；同载荷重建时 staging 可能还在。
+            for leftover in (old, staging):
+                if leftover is not None:
+                    _remove_quietly(leftover, "切换残留")
+            _remove_quietly(journal, "切换 journal")
+            done.append(f"{name}: 切换已完成，收尾")
+        else:
+            if staging is not None:
+                _remove_quietly(staging, "切换半成品")
+            _remove_quietly(journal, "切换 journal")
+            done.append(f"{name}: 换入前被打断，视图仍在原版本")
+    for line in done:
+        logger.info(f"[MFW 内嵌] 切换恢复 {line}")
+    return done
+
+
+# --------------------------------------------------------------------------
+# 导入 / 克隆 / 自愈
+# --------------------------------------------------------------------------
+
+
+def _config_class_name(project_dir: Path) -> str:
+    try:
+        from app.task.MaaFW.tools.core.automas_maafw_interface.loader import (
+            load_interface_model,
+        )
+        from app.task.MaaFW.tools.embedded.flavor import decide_project_config_class
+
+        return decide_project_config_class(load_interface_model(project_dir)).__name__
+    except Exception:  # noqa: BLE001 - 只是给新建对话框过滤用的簿记，识别失败留空
+        return ""
+
+
 def import_embedded_project(
     script_id: str,
     source_path: str | Path,
     *,
     base: Path | None = None,
     progress: Callable[[int, int], None] | None = None,
+    channel: str = DEFAULT_CHANNEL,
 ) -> dict[str, Any]:
-    """把来源目录投影成副本。先在 staging 里建好，再原子换到正式位置。
+    """来源目录 → 载荷（登记进脚本所在渠道的组）→ 视图切到组的 latest。
 
-    返回值直接写进 ``Embedded.*``：``report`` / ``sourceVersion`` / ``importedAt``。
-    失败时 staging 被清掉、正式位置原样不动——重新导入失败不会把旧副本弄没。
+    返回值直接写进 ``Embedded.*``：``report`` / ``sourceVersion`` / ``importedAt`` /
+    ``copyPath``（``sourceVersion`` 是用户选的那个目录的版本，不是切换后的组版本）。
+    导入的版本不比组新时视图上的是组既有的载荷（§3.5「本地导入并组」）。
+    失败时 staging 被清掉、视图原样不动——重新导入失败不会把旧副本弄没。
     """
 
     source = Path(str(source_path or "").strip())
@@ -205,81 +816,132 @@ def import_embedded_project(
 
     try:
         plan = build_projection_plan(source)
+        interface = read_json_object(
+            plan.rules.interface_base / "interface.json"
+            if (plan.rules.interface_base / "interface.json").is_file()
+            else plan.rules.interface_base / "interface.jsonc",
+            "ProjectInterface",
+        )
+        lineage = payloads.lineage_key(interface)
     except ProjectionError as exc:
         raise EmbeddedProjectError(f"导入失败：{exc}") from exc
+    except payloads.PayloadError as exc:
+        raise EmbeddedProjectError(f"导入失败：{exc}") from exc
 
-    staging_root = root / STAGING_DIR_NAME
-    staging_root.mkdir(parents=True, exist_ok=True)
-    staging_dir = staging_root / f"{final_dir.name}-{uuid.uuid4().hex[:8]}"
-    old_dir = staging_root / f"{final_dir.name}-old-{uuid.uuid4().hex[:8]}"
+    store_root = payloads_root(base)
+    blob_store = RuntimeBlobStore.default(base)
+    private = payloads.private_paths(store_root, lineage)
+    staging = _staging_root(base) / f"payload-{lineage}-{uuid.uuid4().hex[:8]}"
     try:
-        shared = materialize_projection(
-            plan,
-            staging_dir,
+        built = payloads.build_from_source(
+            source,
+            staging,
+            blob_store=blob_store,
+            private=private,
             progress=progress,
-            blob_store=RuntimeBlobStore.default(base),
+            plan=plan,
         )
-        if not copy_is_healthy(staging_dir):
+        finalized = payloads.finalize(staging, blob_store=blob_store, private=private)
+        if not copy_is_healthy(staging):
             raise EmbeddedProjectError("投影结果里没有 interface.json，拒绝换入")
-        if final_dir.exists():
-            final_dir.rename(old_dir)
-        staging_dir.rename(final_dir)
+        source_version = read_interface_version(staging)
+        info = payloads.lineage_info_from_interface(interface)
+        info["configClass"] = _config_class_name(staging)
+        registered = payloads.register(
+            store_root,
+            staging,
+            lineage=lineage,
+            channel=channel or DEFAULT_CHANNEL,
+            source={"kind": "import", "ref": str(source)},
+            by=str(script_id),
+            version=source_version,
+            lineage_info=info,
+            known_hashes=finalized.hashes,
+            bundled={
+                "maafw": plan.bundled_maafw_version or "",
+                "python": plan.bundled_python_version or "",
+            },
+        )
+    except payloads.PayloadError as exc:
+        _remove_quietly(staging, "导入半成品")
+        raise EmbeddedProjectError(f"导入失败：{exc}") from exc
     except Exception:
-        # 先把旧副本放回去，再清半成品：清理本身失败不能连累回滚，也不能盖掉原始异常。
-        if old_dir.exists() and not final_dir.exists():
-            old_dir.rename(final_dir)
-        try:
-            remove_tree(staging_dir)
-        except OSError as exc:
-            logger.warning(f"[MFW 内嵌] 导入半成品清理失败，留待启动时清理: {exc}")
+        _remove_quietly(staging, "导入半成品")
         raise
-    try:
-        remove_tree(old_dir)
-    except OSError as exc:
-        logger.warning(f"[MFW 内嵌] 旧副本清理失败，留待启动时清理: {exc}")
-    # 树整棵换了，更新器上一次记下的清单已经对不上；不丢掉的话后面每次更新都会
-    # 以「文件被本地修改」失败，而且没有别的入口能清它。
-    discard_copy_update_baseline(script_id, base)
+
+    view_result = _realize_view(
+        final_dir, lineage, registered.latest_id, base=base, carry=True
+    )
+    if registered.latest_id != registered.payload_id:
+        logger.info(
+            f"[MFW 内嵌] 导入的版本 {source_version} 不比组里的新，"
+            f"视图用组当前版本 {view_result.version}（{registered.latest_id}）"
+        )
+    # 视图换树后 _realize_view 已丢掉更新器为这个路径记的旧清单（不丢的话后面每次更新
+    # 都会以「文件被本地修改」失败，而且没有别的入口能清它）。
 
     report = plan.report()
     report["sourcePath"] = str(source)
     report["copyPath"] = str(final_dir)
-    # 与其它副本共用的运行时文件（同内容只在磁盘上存一份）。
-    report["sharedFiles"] = shared["sharedFiles"]
-    report["sharedBytes"] = shared["sharedBytes"]
+    # 与其它副本共用的文件（同内容只在磁盘上存一份）。
+    report["sharedFiles"] = built.shared_files + finalized.ingested_files
+    report["sharedBytes"] = built.shared_bytes + finalized.ingested_bytes
     return {
         "report": report,
-        "sourceVersion": read_interface_version(final_dir),
+        "sourceVersion": source_version,
         "importedAt": _now_text(),
         "copyPath": str(final_dir),
     }
 
 
-# 克隆副本时不带的运行期产物：MaaFW 原生日志目录、Python 字节码缓存、导入半成品。
-# 这些都是副本跑起来之后自己长出来的，新脚本从零开始更干净，也不会把源脚本的日志带走。
-CLONE_SKIP_ROOT_NAMES = frozenset({"debug", STAGING_DIR_NAME})
+# 克隆没有标记的老副本时不带的运行期产物：MaaFW 原生日志目录、Python 字节码缓存、导入半成品。
+CLONE_SKIP_ROOT_NAMES = frozenset({"debug", STAGING_DIR_NAME, VIEW_MARKER_NAME})
 CLONE_SKIP_DIR_NAMES = frozenset({"__pycache__", PYCACHE_DIR_NAME})
+
+
+def _payload_available(lineage: str, payload_id: str, base: Path | None) -> bool:
+    try:
+        root = payloads_root(base)
+        return (
+            payloads.payload_dir(root, lineage, payload_id).is_dir()
+            and payloads.read_manifest(root, lineage, payload_id) is not None
+        )
+    except payloads.PayloadError:
+        return False
 
 
 def clone_embedded_copy(
     source_script_id: str, target_script_id: str, base: Path | None = None
 ) -> bool:
-    """从另一个脚本的副本克隆一份给 ``target_script_id``；源没有健康副本就什么都不做，返回是否克隆了。
+    """同一项目再建一个脚本：从源脚本挂着的载荷物化目标视图；返回是否克隆了。
 
-    共用库里的文件（``st_nlink > 1``，只会被更新器整文件替换、从不原地写）直接再挂一个
-    硬链接；源副本里还没入库的模型 / 二进制大文件（在扩大共用面之前导入的老副本）
-    经共用库放到新副本，下次源副本重导或更新时也会收敛到同一份；其余文件真复制——
-    和导入时的共用规则一致，克隆出来的脚本不会多占运行时与模型那份空间。
-    先在 staging 里建好再原子换入：半成品不会被当成健康副本，目标原有的副本（老脚本
-    换项目）只在克隆成功后才被换掉，失败时原样放回。
+    源有标记（或正在切换）→ 直接从载荷物化，不读源视图，源运行期的私有状态不带过去。
+    源是还没采纳的老副本 → 退回按目录克隆（已共用的再挂链接、共用候选经共用库放、其余复制，
+    ``debug/`` 与字节码不带）。目标原有的视图只在新树建好后才被换掉，失败时原样不动。
     """
 
+    resolved = resolve_view_payload(source_script_id, base)
+    if resolved is not None and _payload_available(*resolved, base):
+        lineage, payload_id = resolved
+        _realize_view(
+            embedded_project_dir(target_script_id, base),
+            lineage,
+            payload_id,
+            base=base,
+            carry=False,
+        )
+        return True
+    return _clone_legacy_copy(source_script_id, target_script_id, base)
+
+
+def _clone_legacy_copy(
+    source_script_id: str, target_script_id: str, base: Path | None
+) -> bool:
     source_dir = embedded_project_dir(source_script_id, base)
     target_dir = embedded_project_dir(target_script_id, base)
     if not copy_is_healthy(source_dir):
         return False
-    staging_root = embedded_projects_root(base) / STAGING_DIR_NAME
-    staging_root.mkdir(parents=True, exist_ok=True)
+    staging_root = _staging_root(base)
     staging_dir = staging_root / f"{target_dir.name}-{uuid.uuid4().hex[:8]}"
     old_dir = staging_root / f"{target_dir.name}-old-{uuid.uuid4().hex[:8]}"
     blob_store = RuntimeBlobStore.default(base)
@@ -301,20 +963,19 @@ def clone_embedded_copy(
             )
             (staging_dir / relative).mkdir(parents=True, exist_ok=True)
             for name in file_names:
+                if relative == Path() and name in CLONE_SKIP_ROOT_NAMES:
+                    continue
                 src = Path(current_root) / name
                 dst = staging_dir / relative / name
                 try:
                     info = src.stat()
                     if info.st_nlink > 1:
-                        try:
-                            os.link(src, dst)
-                            continue
-                        except OSError:
-                            pass
+                        payloads.place_fresh(src, dst, link=True)
+                        continue
                     if is_shared_path(relative / name, info.st_size):
                         blob_store.place(src, dst)
                         continue
-                    shutil.copy2(src, dst)
+                    payloads.place_fresh(src, dst, link=False)
                 except OSError as exc:
                     raise EmbeddedProjectError(
                         f"复制副本失败: {src.name}: {exc}"
@@ -327,24 +988,37 @@ def clone_embedded_copy(
     except Exception:
         if old_dir.exists() and not target_dir.exists():
             old_dir.rename(target_dir)
-        try:
-            remove_tree(staging_dir)
-        except OSError as exc:
-            logger.warning(f"[MFW 内嵌] 克隆半成品清理失败，留待启动时清理: {exc}")
+        _remove_quietly(staging_dir, "克隆半成品")
         raise
-    try:
-        remove_tree(old_dir)
-    except OSError as exc:
-        logger.warning(f"[MFW 内嵌] 旧副本清理失败，留待启动时清理: {exc}")
+    _remove_quietly(old_dir, "旧副本")
     # 目标的树整棵换了，更新器上一次记下的清单已经对不上（与重新导入同理）。
     discard_copy_update_baseline(target_script_id, base)
     return True
 
 
+def _view_markers(base: Path | None) -> dict[str, dict[str, Any]]:
+    """所有视图的标记：{视图目录名: 标记}。"""
+
+    root = embedded_projects_root(base)
+    markers: dict[str, dict[str, Any]] = {}
+    if not root.is_dir():
+        return markers
+    for child in root.iterdir():
+        if child.is_dir() and is_embedded_copy_dir_name(child.name):
+            marker = read_view_marker(child)
+            if marker is not None:
+                markers[child.name] = marker
+    return markers
+
+
 def embedded_status(
     script_id: str, script_config: Any, *, base: Path | None = None
 ) -> dict[str, Any]:
-    """给界面看的状态：开没开、副本健不健康、来源还在不在、报告。"""
+    """给界面看的状态：视图健不健康、来源还在不在、报告。
+
+    多带的 ``lineage`` / ``payloadId`` / ``version`` / ``siblingCount``（与本视图挂同一个载荷的
+    其它视图数）只给日志行用；``_embedded_status_out`` 按显式字段构造响应，这几个键到不了 API。
+    """
 
     copy_dir = embedded_project_dir(script_id, base)
     source = str(script_config.get("Info", "Path") or "").strip()
@@ -358,6 +1032,18 @@ def embedded_status(
             report = parsed if isinstance(parsed, dict) else {}
         except ValueError:
             report = {}
+    marker = read_view_marker(copy_dir)
+    lineage = str((marker or {}).get("lineage") or "")
+    payload_id = str((marker or {}).get("payload") or "")
+    sibling_count = 0
+    if marker is not None:
+        sibling_count = sum(
+            1
+            for name, other in _view_markers(base).items()
+            if name != copy_dir.name
+            and str(other.get("lineage") or "") == lineage
+            and str(other.get("payload") or "") == payload_id
+        )
     return {
         "copyPath": str(copy_dir),
         "copyHealthy": copy_is_healthy(copy_dir),
@@ -366,6 +1052,11 @@ def embedded_status(
         "sourceVersion": str(script_config.get("Embedded", "SourceVersion") or ""),
         "importedAt": str(script_config.get("Embedded", "ImportedAt") or ""),
         "report": report,
+        "lineage": lineage,
+        "payloadId": payload_id,
+        "version": str((marker or {}).get("version") or "")
+        or read_interface_version(copy_dir),
+        "siblingCount": sibling_count,
     }
 
 
@@ -398,8 +1089,10 @@ def _same_directory(left: str, right: str) -> bool:
 def inherit_embedded_record(
     source_config: Any, target_script_id: str, base: Path | None = None
 ) -> dict[str, Any]:
-    """从源脚本克隆副本之后，目标该写进 ``Embedded.*`` 的记录：报告沿用源的（``copyPath``
-    改成自己的），来源版本沿用源记的（没有就读副本 interface），导入时间取现在。"""
+    """从源脚本克隆之后，目标该写进 ``Embedded.*`` 的记录：报告沿用源的（``copyPath``
+    改成自己的），来源版本沿用源记的（没有就读视图 interface），导入时间取现在。
+    ``Info.Path`` 与 ``Report.sourcePath`` 必须成对继承（``ensure_embedded_copy`` 靠它们
+    判断要不要重导）。"""
 
     target_dir = embedded_project_dir(target_script_id, base)
     raw = source_config.get("Embedded", "Report")
@@ -423,16 +1116,35 @@ def inherit_embedded_record(
     }
 
 
-def _clone_from_sibling(
+def _group_target(lineage: str, channel: str, fallback: str, base: Path | None) -> str:
+    """组语义下视图该挂的载荷：``latest[channel]``，该渠道没有就用 ``fallback``。"""
+
+    try:
+        entry = payloads.latest(payloads_root(base), lineage, channel)
+    except payloads.PayloadError:
+        entry = None
+    if entry and _payload_available(lineage, str(entry["id"]), base):
+        return str(entry["id"])
+    return fallback
+
+
+def _rebuild_from_group(
     script_id: str,
+    script_config: Any,
     source: str,
     siblings: Iterable[tuple[str, Any]],
     *,
     base: Path | None,
     send_log: Callable[[str], None] | None,
 ) -> dict[str, Any] | None:
-    """来源目录已删、副本又没了：找一个同来源、副本健康的脚本克隆过来。找不到返回 None。"""
+    """来源目录已删、视图又没了：从同项目的载荷重建。找不到返回 None。
 
+    视图没了、标记也跟着没了，谱系只能从同来源的其它脚本上认出来：有标记的兄弟 →
+    按它的谱系取本脚本渠道的 ``latest`` 物化（不读兄弟视图、不要兄弟空闲）；只有没采纳的
+    老副本兄弟 → 照旧按目录克隆（持兄弟预约）。
+    """
+
+    channel = _script_channel(script_config)
     for other_id, other_config in siblings:
         other_id = str(other_id)
         if other_id == script_id:
@@ -442,20 +1154,32 @@ def _clone_from_sibling(
         )
         if not other_source or not _same_directory(source, other_source):
             continue
-        other_dir = embedded_project_dir(other_id, base)
-        if not copy_is_healthy(other_dir):
-            continue
-        # 源副本正在更新 / 准备环境时不能克隆半截树；换下一个同来源的脚本。
-        key = try_reserve_project_path_sync(other_dir)
-        if key is None:
-            continue
-        try:
-            if not clone_embedded_copy(other_id, script_id, base):
+        resolved = resolve_view_payload(other_id, base)
+        if resolved is not None and _payload_available(*resolved, base):
+            lineage, fallback = resolved
+            target = _group_target(lineage, channel, fallback, base)
+            _realize_view(
+                embedded_project_dir(script_id, base),
+                lineage,
+                target,
+                base=base,
+                carry=False,
+            )
+        else:
+            other_dir = embedded_project_dir(other_id, base)
+            if not copy_is_healthy(other_dir):
                 continue
-        finally:
-            release_project_path_sync(key)
+            # 老副本正在更新 / 准备环境时不能克隆半截树；换下一个同来源的脚本。
+            key = try_reserve_project_path_sync(other_dir)
+            if key is None:
+                continue
+            try:
+                if not _clone_legacy_copy(other_id, script_id, base):
+                    continue
+            finally:
+                release_project_path_sync(key)
         other_name = str(other_config.get("Info", "Name") or other_id[:8])
-        message = f"[MFW 内嵌] 来源目录已不存在，已从脚本「{other_name}」的副本克隆"
+        message = f"[MFW 内嵌] 来源目录已不存在，已从脚本「{other_name}」的项目重建"
         logger.info(message)
         if send_log is not None:
             send_log(message)
@@ -471,11 +1195,11 @@ def ensure_embedded_copy(
     send_log: Callable[[str], None] | None = None,
     siblings: Iterable[tuple[str, Any]] | None = None,
 ) -> dict[str, Any] | None:
-    """副本不在（老脚本、被删）或来源换了目录时导入一次；返回新报告，否则 None。
+    """视图不在（老脚本、被删）或来源换了目录时导入一次；返回新报告，否则 None。
 
-    调用方拿到非 None 要把报告写回配置。来源目录不在：副本还健康就什么都不做——
-    导入完成后来源本来就可以删；副本也没了就在 ``siblings``（其它 MFW 脚本）里找同来源、
-    副本健康的克隆一份，实在没有才抛错让用户重新选目录。
+    调用方拿到非 None 要把报告写回配置。健康的视图（含还没采纳、没有标记的老副本）
+    照常放行。来源目录不在：视图还健康就什么都不做——导入完成后来源本来就可以删；
+    视图也没了就从同项目的载荷 / 同来源的老副本重建，实在没有才抛错让用户重新选目录。
     """
 
     copy_dir = embedded_project_dir(script_id, base)
@@ -489,10 +1213,27 @@ def ensure_embedded_copy(
         raise EmbeddedProjectError("还没有选择 MFW 项目目录")
     if not Path(source).is_dir():
         if healthy:
-            # 来源目录换成了一个不存在的路径：副本还是上一个来源的，照常用它。
+            # 来源目录换成了一个不存在的路径：视图还是上一个来源的，照常用它。
             return None
-        rebuilt = _clone_from_sibling(
-            script_id, source, siblings or (), base=base, send_log=send_log
+        marker = read_view_marker(copy_dir)
+        if marker is not None:
+            # 视图目录还在、interface 没了：按自己的谱系重建到组版本。
+            lineage = str(marker["lineage"])
+            target = _group_target(
+                lineage, _script_channel(script_config), str(marker["payload"]), base
+            )
+            if _payload_available(lineage, target, base):
+                if send_log is not None:
+                    send_log("[MFW 内嵌] 视图不完整，正在按已登记的项目版本重建")
+                _realize_view(copy_dir, lineage, target, base=base, carry=True)
+                return None
+        rebuilt = _rebuild_from_group(
+            script_id,
+            script_config,
+            source,
+            siblings or (),
+            base=base,
+            send_log=send_log,
         )
         if rebuilt is not None:
             return rebuilt
@@ -505,7 +1246,107 @@ def ensure_embedded_copy(
             if not healthy
             else "[MFW 内嵌] 来源目录已更换，正在重新导入副本"
         )
-    return import_embedded_project(script_id, source, base=base)
+    return import_embedded_project(
+        script_id, source, base=base, channel=_script_channel(script_config)
+    )
+
+
+# --------------------------------------------------------------------------
+# 传播：组里的空闲视图立即切到目标载荷
+# --------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class GroupMember:
+    """调用方在事件循环线程上从脚本表抄出来的一行（守护线程里遍历脚本表会撞
+    「dict changed size」）。``busy`` = 脚本配置正锁着（运行中）。"""
+
+    script_id: str
+    channel: str
+    busy: bool = False
+    name: str = ""
+
+
+@dataclass
+class PropagationResult:
+    switched: list[str] = field(default_factory=list)
+    skipped: dict[str, str] = field(default_factory=dict)
+    failed: dict[str, str] = field(default_factory=dict)
+
+
+SKIP_BUSY = "正在运行，跑完后再切"
+SKIP_RESERVED = "项目正被占用（运行 / 更新 / 准备环境），下次运行前再切"
+SKIP_UNADOPTED = "还没登记项目版本（未采纳的老副本），本次不切"
+
+
+def propagate_payload(
+    lineage: str,
+    channel: str,
+    payload_id: str,
+    members: Iterable[GroupMember | tuple[str, str]],
+    *,
+    switched_by: Mapping[str, Any] | None = None,
+    exclude: Iterable[str] = (),
+    base: Path | None = None,
+) -> PropagationResult:
+    """把组（谱系 + 渠道）里挂在别的载荷上的空闲视图切到 ``payload_id``。
+
+    ``members`` 是调用方算好的候选脚本（``GroupMember`` 或 ``(script_id, channel)``），
+    这里按视图标记筛出同谱系、同渠道、``payload ≠ 目标`` 的；不比版本号。对每个：
+    拿得到项目预约就 :func:`switch_view`（``switchedBy`` 记下是谁的操作）后释放；运行中或
+    拿不到预约就跳过——pending 是派生状态（``view.payload ≠ latest[channel]``），不写任何东西，
+    由它自己下次运行前兑现。返回切了谁、跳了谁（附原因）、谁失败了。
+    """
+
+    result = PropagationResult()
+    excluded = {str(item) for item in exclude}
+    for raw in members:
+        member = raw if isinstance(raw, GroupMember) else GroupMember(*raw)
+        script_id = str(member.script_id)
+        if script_id in excluded or (member.channel or DEFAULT_CHANNEL) != channel:
+            continue
+        try:
+            view = embedded_project_dir(script_id, base)
+        except EmbeddedProjectError:
+            continue
+        marker = read_view_marker(view)
+        if marker is None:
+            if copy_is_healthy(view):
+                try:
+                    same = payloads.lineage_key_for_project(view) == lineage
+                except (payloads.PayloadError, ProjectionError):
+                    same = False
+                if same:
+                    result.skipped[script_id] = SKIP_UNADOPTED
+            continue
+        if str(marker.get("lineage") or "") != lineage:
+            continue
+        if str(marker.get("payload") or "") == payload_id:
+            continue
+        if member.busy:
+            result.skipped[script_id] = SKIP_BUSY
+            continue
+        key = try_reserve_project_path_sync(view)
+        if key is None:
+            result.skipped[script_id] = SKIP_RESERVED
+            continue
+        try:
+            switch_view(
+                script_id,
+                payload_id,
+                lineage=lineage,
+                base=base,
+                switched_by=switched_by,
+            )
+            result.switched.append(script_id)
+        except Exception as exc:  # noqa: BLE001 - 一个 T 失败只影响它自己
+            logger.opt(exception=True).warning(
+                f"[MFW 内嵌] 同步脚本 {script_id} 到 {payload_id} 失败: {exc}"
+            )
+            result.failed[script_id] = str(exc) or type(exc).__name__
+        finally:
+            release_project_path_sync(key)
+    return result
 
 
 def shell_hint_from_report(script_config: Any) -> str:
@@ -530,21 +1371,19 @@ def shell_hint_from_report(script_config: Any) -> str:
     return ""
 
 
-def _is_relative_to(path: Path, parent: Path) -> bool:
-    try:
-        path.resolve().relative_to(parent.resolve())
-        return True
-    except ValueError:
-        return False
-
-
 __all__ = [
     "EMBEDDED_PROJECTS_DIR",
     "PYCACHE_DIR_NAME",
+    "STAGING_DIR_NAME",
+    "VIEW_MARKER_NAME",
     "EmbeddedProjectError",
+    "GroupMember",
+    "PropagationResult",
+    "ViewResult",
     "clone_embedded_copy",
     "copy_is_healthy",
     "discard_copy_update_baseline",
+    "embedded_copy_dir_name",
     "embedded_project_dir",
     "embedded_projects_root",
     "embedded_status",
@@ -552,8 +1391,18 @@ __all__ = [
     "import_embedded_project",
     "imported_source_path",
     "inherit_embedded_record",
+    "is_embedded_copy_dir_name",
+    "materialize_view",
+    "payloads_root",
+    "propagate_payload",
     "read_interface_version",
+    "read_view_marker",
+    "recover_switches",
     "remove_tree",
     "resolve_maafw_project_root",
+    "resolve_view_payload",
     "shell_hint_from_report",
+    "switch_root",
+    "switch_view",
+    "write_view_marker",
 ]
