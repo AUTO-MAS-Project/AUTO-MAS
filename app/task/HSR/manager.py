@@ -51,8 +51,10 @@ from .tools.account_switch import (
     HSRAccountSwitcher,
     check_user_credentials,
     close_game_if_needed,
+    cloud_max_queue_minutes,
     is_cloud_platform,
     is_game_management_enabled,
+    merge_cloud_last_login,
     resolve_game_executable_path,
     restore_game_resolution_if_needed,
     stop_external_processes,
@@ -808,6 +810,27 @@ class HSRManager(TaskExecuteBase):
 
         self._completion_writebacks.clear()
 
+    async def _apply_cloud_login_writebacks(self) -> None:
+        """配置解锁后把本轮确认已登录的时间合并进 ``Cloud.LastLogin``。
+
+        只是给界面看的记录，写失败只记日志，不影响任务结果。
+        """
+
+        pending = dict(self._runtime.cloud_login_times)
+        if not pending:
+            return
+        script_id = uuid.UUID(self.script_info.script_id)
+        if script_id not in Config.ScriptConfig:
+            return
+        try:
+            await merge_cloud_last_login(Config.ScriptConfig[script_id], pending)
+        except Exception as e:  # noqa: BLE001
+            logger.opt(exception=True).warning(f"云·星穹铁道登录时间写回失败：{e}")
+            self._append_log(f"云·星穹铁道登录时间写回失败：{e}")
+            return
+        self._runtime.cloud_login_times.clear()
+        logger.info(f"云·星穹铁道登录时间已写回：{sorted(pending)}")
+
     async def prepare(self):
         """锁定配置、加载用户列表（不启动外部程序）"""
 
@@ -1049,11 +1072,24 @@ class HSRManager(TaskExecuteBase):
                 f"用户「{user_name}」进入脚本直控；MAS 不管理游戏，"
                 f"仅运行原生配置并跟踪脚本进程：{'、'.join(control.engines)}"
             )
-        self._append_log(
-            f"直控按整份原生配置一次跑完，单个脚本运行上限 {control.timeout_minutes} 分钟"
-            f"（日常 {control.daily_limit_minutes} + 周常 {control.weekly_limit_minutes}），"
-            "超时将终止脚本进程"
-        )
+        timeout_seconds = control.timeout_seconds
+        if cloud:
+            # 云·星穹铁道整轮只排一次队，直控加一份排队预算。
+            queue_minutes = cloud_max_queue_minutes(self.script_config)
+            timeout_seconds += queue_minutes * 60
+            self._append_log(
+                f"直控按整份原生配置一次跑完，单个脚本运行上限 "
+                f"{control.timeout_minutes + queue_minutes} 分钟"
+                f"（日常 {control.daily_limit_minutes} + 周常 "
+                f"{control.weekly_limit_minutes} + 云排队 {queue_minutes}），"
+                "超时将终止脚本进程"
+            )
+        else:
+            self._append_log(
+                f"直控按整份原生配置一次跑完，单个脚本运行上限 {control.timeout_minutes} 分钟"
+                f"（日常 {control.daily_limit_minutes} + 周常 {control.weekly_limit_minutes}），"
+                "超时将终止脚本进程"
+            )
         if "M7A" in control.engines:
             self._log_ignored_m7a_after_finish()
 
@@ -1069,7 +1105,7 @@ class HSRManager(TaskExecuteBase):
                 )
                 self._direct_sessions[engine] = session
                 try:
-                    result = await session.run(control.timeout_seconds)
+                    result = await session.run(timeout_seconds)
                     if not result.success:
                         raise RuntimeError(result.error or f"{engine} 直控执行失败")
                     summary = result.summary or f"{engine} 直控执行完成"
@@ -1287,6 +1323,7 @@ class HSRManager(TaskExecuteBase):
                 logger.opt(exception=True).warning(msg)
                 self._append_log(msg)
                 final_errors.append(msg)
+            await self._apply_cloud_login_writebacks()
             await self._persist_user_logs()
             await self._push_result_notification()
             return "；".join(final_errors) or self.check_result
@@ -1297,6 +1334,7 @@ class HSRManager(TaskExecuteBase):
             logger.success(f"已解锁脚本配置 {self.script_info.script_id}")
             self._append_log("HSR 配置已解锁")
 
+        await self._apply_cloud_login_writebacks()
         try:
             if self.task_info.mode == "AutoProxy":
                 await self._apply_completion_writebacks()

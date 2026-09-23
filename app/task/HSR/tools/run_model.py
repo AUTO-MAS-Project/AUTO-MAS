@@ -159,6 +159,13 @@ class HSRRuntimeState:
     # 云平台下当前用户的 MAS 托管浏览器；任一时刻只有一个（三月七只认标记不认
     # 账号），换用户时关旧起新，final_task 全关。
     cloud_browser: CloudBrowser | None = None
+    # 本轮确认已登录的时刻（user_id → ISO 时间）。运行期脚本配置锁定，等
+    # final_task 解锁后再合并进 Cloud.LastLogin。
+    cloud_login_times: dict[str, str] = field(default_factory=dict)
+    # 本轮已为「需要手动登录」推过通知的用户，同一用户不重复推。
+    cloud_login_notified: set[str] = field(default_factory=set)
+    # 最近一次读到的云游戏剩余时长（user_id → (总, 付费, 免费) 分钟）。
+    cloud_remaining: dict[str, tuple[int, int, int]] = field(default_factory=dict)
 
     def record_module_result(self, result: HSRModuleResult) -> None:
         """记录模块最终态；同一用户同一模块以后写入为准。"""

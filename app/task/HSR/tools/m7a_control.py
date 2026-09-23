@@ -27,9 +27,10 @@ from app.utils.io import write_file
 from ..task_mapping import HSRTaskModule
 from . import m7a_config as m7a
 from .account_switch import HSRAccountSwitcher, build_platform_m7a_patch
-from .log_detect import detect_weekly_completion
+from .log_detect import detect_weekly_completion, find_cloud_non_retryable_marker
 from .m7a_runtime import M7ARunner
 from .run_model import (
+    HSRNonRetryableTaskError,
     HSRPhase,
     HSRRetryableTaskError,
     HSRRunItem,
@@ -137,7 +138,28 @@ class HSRM7AControl:
             self._append_log(
                 f"用户「{user_name}」M7A {module_name}（{command}）执行失败"
             )
+            self._raise_if_cloud_non_retryable(result, user_name, module_name, command)
         return result
+
+    def _raise_if_cloud_non_retryable(
+        self, result: object, user_name: str, module_name: str, command: str
+    ) -> None:
+        """云平台下登录超时、排队超时、时长耗尽等失败补跑无用，直接判不可重试。"""
+
+        if not self._account_switcher.cloud:
+            return
+        marker = find_cloud_non_retryable_marker(
+            str(getattr(result, "output", "") or ""),
+            str(getattr(result, "error", "") or ""),
+        )
+        if marker is None:
+            return
+        raise HSRNonRetryableTaskError(
+            f"用户「{user_name}」模块「{module_name}」M7A 命令「{command}」"
+            f"云·星穹铁道失败（{marker}），不再补跑："
+            f"{external_result_failure_summary(result)}",
+            result=result,
+        )
 
     @staticmethod
     def write_m7a_patch(

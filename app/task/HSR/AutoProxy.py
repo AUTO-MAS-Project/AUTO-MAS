@@ -48,6 +48,8 @@ from .tools.account_switch import (
     HSR_GAME_READY_DELAY_SECONDS,
     HSRAccountSwitcher,
     build_platform_m7a_env,
+    cloud_login_timeout_minutes,
+    cloud_max_queue_minutes,
     is_cloud_platform,
     is_game_management_enabled,
     resolve_game_executable_path,
@@ -57,8 +59,12 @@ from .tools.account_switch import (
 from .tools.backup_archive import archive_mas_runtime_backup, read_mas_overlay
 from .tools.extra_script import run_script_after_task, run_script_before_task
 from .tools.log_detect import (
+    HSR_CLOUD_REMAINING_WARN_MINUTES,
+    detect_cloud_login_required,
     detect_echo_of_war_completion,
     find_m7a_self_game_stop,
+    is_cloud_login_success,
+    parse_cloud_remaining,
     select_failure_summary_lines,
 )
 from .tools.m7a_control import HSRM7AControl
@@ -76,6 +82,7 @@ from .tools.run_model import (
     HSRLoginPlan,
     HSRModuleResult,
     HSRModuleResultStatus,
+    HSRNonRetryableTaskError,
     HSRPhase,
     HSRRetryableTaskError,
     HSRRunItem,
@@ -95,6 +102,7 @@ logger = get_logger("HSR 自动代理")
 # 队列中止时写给剩余未执行项的原因，用户会在任务报告里直接看到。
 HSR_ABORT_REASON_LOGIN_FAILED = "SRA 登录/切号失败，当前阶段未执行"
 HSR_ABORT_REASON_GAME_EXITED = "游戏进程已退出，当前阶段剩余模块未执行"
+HSR_ABORT_REASON_CLOUD = "云·星穹铁道无法继续，本轮剩余模块未执行"
 # 游戏进程消失后再等这么久才下结论：读输出的协程要把 M7A 关游戏前那行
 # ERROR 收进来；脚本自己关游戏后紧接着退出的，等它自然结束就不用杀。
 GAME_EXIT_SETTLE_SECONDS = 2
@@ -523,6 +531,9 @@ class HSRAutoProxyTask(TaskExecuteBase):
         module_result = self._format_current_user_module_results()
         if module_result:
             user_result = f"{user_result}\n\n{module_result}"
+        cloud_remaining = self._format_cloud_remaining(self.cur_user_item.user_id)
+        if cloud_remaining:
+            user_result = f"{user_result}\n\n{cloud_remaining}"
 
         statistics = {
             "user_info": self.cur_user_item.name,
@@ -552,6 +563,93 @@ class HSRAutoProxyTask(TaskExecuteBase):
                     message=f"推送 HSR 用户统计通知时出现异常: {e}",
                 ),
             )
+
+    async def _send_task_notice(self, level: str, message: str) -> None:
+        """调度台提示；发送失败不影响任务。"""
+
+        try:
+            await Publisher.send(
+                id=self.task_info.task_id,
+                type=protocol.TASK_NOTICE,
+                data=WSTaskNoticeData(level=level, message=message),
+            )
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"发送 HSR 调度台提示失败：{e}")
+
+    def _format_cloud_remaining(self, user_id: str) -> str:
+        """结束通知里的云·星穹铁道剩余时长；没读到时返回空串。"""
+
+        remaining = self.runtime.cloud_remaining.get(user_id)
+        if remaining is None:
+            return ""
+        total, paid, free = remaining
+        text = (
+            f"云·星穹铁道剩余时长：{total} 分钟（付费 {paid} 分钟，免费 {free} 分钟）"
+        )
+        if total < HSR_CLOUD_REMAINING_WARN_MINUTES:
+            text += f"\n剩余时长不足 {HSR_CLOUD_REMAINING_WARN_MINUTES} 分钟，下次可能跑不完"
+        return text
+
+    async def _on_m7a_output_line(self, line: str) -> None:
+        """三月七逐行输出：客户端照旧做截图窗口恢复；云平台识别登录与剩余时长。"""
+
+        await self._account_switcher.recover_game_window_if_screenshot_blocked(line)
+        if is_cloud_platform(self.script_config):
+            await self._handle_cloud_line(line)
+
+    async def _handle_cloud_line(self, line: str) -> None:
+        uid = self.cur_user_item.user_id
+        user_name = self.cur_user_item.name
+        runtime = self.runtime
+
+        login_required, timeout_minutes = detect_cloud_login_required(line)
+        if login_required:
+            if uid in runtime.cloud_login_notified:
+                return
+            runtime.cloud_login_notified.add(uid)
+            minutes = timeout_minutes or cloud_login_timeout_minutes(self.script_config)
+            message = (
+                f"用户「{user_name}」需要在 {self.script_info.name or 'HSR'} "
+                "弹出的云·星穹铁道浏览器窗口里登录米哈游通行证（扫码或密码均可），"
+                f"请在 {minutes} 分钟内完成"
+            )
+            self._append_log(message)
+            await self._send_task_notice("warning", message)
+            try:
+                await push_notification(
+                    "云登录提醒",
+                    f"{user_name} 需要登录云·星穹铁道",
+                    {"message": message},
+                    self.cur_user_config,
+                )
+            except Exception as e:  # noqa: BLE001
+                logger.opt(exception=True).warning(f"推送云登录提醒失败：{e}")
+            return
+
+        if is_cloud_login_success(line):
+            runtime.cloud_login_times[uid] = (
+                datetime.now().astimezone().isoformat(timespec="seconds")
+            )
+            if uid in runtime.cloud_login_notified:
+                runtime.cloud_login_notified.discard(uid)
+                message = f"用户「{user_name}」已登录云·星穹铁道"
+                self._append_log(message)
+                await self._send_task_notice("info", message)
+            return
+
+        remaining = parse_cloud_remaining(line)
+        if remaining is not None:
+            runtime.cloud_remaining[uid] = remaining
+            total, paid, free = remaining
+            self._append_log(
+                f"用户「{user_name}」云·星穹铁道剩余时长 {total} 分钟"
+                f"（付费 {paid} 分钟，免费 {free} 分钟）"
+            )
+            if total < HSR_CLOUD_REMAINING_WARN_MINUTES:
+                self._append_log(
+                    f"用户「{user_name}」云·星穹铁道剩余时长不足 "
+                    f"{HSR_CLOUD_REMAINING_WARN_MINUTES} 分钟，可能跑不完本轮任务"
+                )
 
     def _queue_eow_completion_if_confirmed(
         self,
@@ -720,9 +818,15 @@ class HSRAutoProxyTask(TaskExecuteBase):
         return False, "", is_new_week_in_mem
 
     def _timeout_seconds_for_phase(self, phase: HSRPhase) -> int:
-        """按周期读取超时配置，返回秒。"""
+        """按周期读取超时配置，返回秒。
 
-        return resolve_phase_timeout_minutes(self.script_config, phase) * 60
+        云平台每个模块都可能先排队，超时再加上一份排队预算。
+        """
+
+        minutes = resolve_phase_timeout_minutes(self.script_config, phase)
+        if is_cloud_platform(self.script_config):
+            minutes += cloud_max_queue_minutes(self.script_config)
+        return minutes * 60
 
     def _phase_timeout_seconds(self, phase: HSRPhase) -> int:
         """按阶段读取超时配置，返回秒。"""
@@ -1404,6 +1508,39 @@ class HSRAutoProxyTask(TaskExecuteBase):
                     result = await self._run_item_with_game_guard(item)
                 except asyncio.CancelledError:
                     raise
+                except HSRNonRetryableTaskError as e:
+                    # 云·星穹铁道的登录超时、排队超时、时长耗尽、浏览器起不来：
+                    # 后面的模块和补跑都只会再撞一遍，本用户本轮直接判失败。
+                    item.last_error = str(e)
+                    item.retryable = False
+                    failures.append(item)
+                    self._append_log(
+                        f"用户「{item.user_name}」模块「{item.module_name}」执行失败"
+                        f"（不重试）：{item.last_error}"
+                    )
+                    remaining = self._remaining_items_after(
+                        items,
+                        phases=phases,
+                        phase_index=phase_index,
+                        phase_items=phase_items,
+                        item_index=item_index,
+                        failures=failures,
+                        reason=HSR_ABORT_REASON_CLOUD,
+                    )
+                    for skipped in remaining:
+                        skipped.retryable = False
+                    if remaining:
+                        self._append_log(
+                            f"用户「{item.user_name}」{HSR_ABORT_REASON_CLOUD}"
+                            f"（共 {len(remaining)} 项）"
+                        )
+                    failures.extend(remaining)
+                    await self._send_task_notice(
+                        "error",
+                        f"HSR 用户「{item.user_name}」{item.module_name}失败，"
+                        f"本轮不再补跑：{item.last_error}",
+                    )
+                    return failures
                 except HSRRetryableTaskError as e:
                     item.last_error = str(e)
                     failures.append(item)
@@ -1652,6 +1789,9 @@ class HSRAutoProxyTask(TaskExecuteBase):
             self.runtime.m7a_runner = m7a_runner
         # 平台钉扎走环境变量（优先于 config.yaml），与 patch 里的平台字段一致。
         m7a_runner.env_overrides = build_platform_m7a_env(self.script_config)
+        # 运行器在用户之间复用，逐行回调要换成当前用户的（云登录提醒、剩余时长
+        # 与 LastLogin 都按当前用户记）。
+        m7a_runner.set_output_line_callback(self._on_m7a_output_line)
         login_plan = self._build_login_plan(user_cfg=user_cfg, sra_path=sra_path)
 
         # 物化前归档本用户字段侧车（_build_user_queue 会把托管字段注入原生

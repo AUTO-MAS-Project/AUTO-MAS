@@ -144,6 +144,13 @@ class M7ARunner:
     def root_path(self) -> Path:
         return self._m7a_dir
 
+    def set_output_line_callback(
+        self, callback: Callable[[str], Awaitable[None] | None] | None
+    ) -> None:
+        """换成当前用户的逐行输出回调（运行器在同一轮的用户之间复用）。"""
+
+        self._output_line_callback = callback
+
     @property
     def recent_output_lines(self) -> list[str]:
         """当前（或最近一条）M7A 命令末尾的输出行，按时间先后排列。"""

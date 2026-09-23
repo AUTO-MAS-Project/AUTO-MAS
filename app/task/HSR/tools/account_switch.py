@@ -20,6 +20,7 @@
 
 
 import asyncio
+import json
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Callable, Literal
@@ -146,6 +147,33 @@ def build_platform_m7a_env(script_config: Any) -> dict[str, str]:
     return build_m7a_platform_env(
         cloud=is_cloud_platform(script_config),
         use_paid_time=cloud_use_paid_time(script_config),
+    )
+
+
+def read_cloud_last_login(script_config: Any) -> dict[str, str]:
+    """``Cloud.LastLogin``：user_id → 最近一次确认已登录的 ISO 时间。"""
+
+    try:
+        raw = script_config.get("Cloud", "LastLogin")
+    except (AttributeError, KeyError, TypeError):
+        return {}
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw)
+        except json.JSONDecodeError:
+            return {}
+    if not isinstance(raw, dict):
+        return {}
+    return {str(key): str(value) for key, value in raw.items()}
+
+
+async def merge_cloud_last_login(script_config: Any, updates: dict[str, str]) -> None:
+    """把若干用户的登录时间合并写回 ``Cloud.LastLogin``（配置须已解锁）。"""
+
+    merged = read_cloud_last_login(script_config)
+    merged.update(updates)
+    await script_config.set(
+        "Cloud", "LastLogin", json.dumps(merged, ensure_ascii=False)
     )
 
 
