@@ -110,6 +110,10 @@ _ADB_INPUT_EMULATOR_EXTRAS = 1 << 3
 # 候选里摘掉，让文本走 MinitouchAndAdbKey 的 `InputText` 命令并替换成 ldconsole。
 # 触控仍是 minitouch 协议，雷电 adbd 本身是 root，minitouch 可用（实测 init 508 ms）。
 _ADB_INPUT_LDPLAYER_CONSOLE_TEXT = (1 << 1) | 1
+# 名字与取值照抄 MaaFramework 绑定库 ``maa/define.py``（main 分支）。Foreground /
+# Background 是组合名：原生层在组合里按顺序择一可用的方式，FOS、MaaNTE、mpa 的默认
+# Win32 控制器写的就是 Background。运行时绑定库 / 原生库认不认得某个值由 worker 再判一次
+# （runner._supported_win32_method），这里只负责把名字翻成数。
 _WIN32_SCREENCAP_METHODS = {
     "GDI": 1,
     "FramePool": 1 << 1,
@@ -117,6 +121,8 @@ _WIN32_SCREENCAP_METHODS = {
     "DXGI_DesktopDup_Window": 1 << 3,
     "PrintWindow": 1 << 4,
     "ScreenDC": 1 << 5,
+    "Foreground": (1 << 3) | (1 << 5),
+    "Background": (1 << 1) | (1 << 4),
 }
 _WIN32_INPUT_METHODS = {
     "Seize": 1,
@@ -128,6 +134,8 @@ _WIN32_INPUT_METHODS = {
     "PostMessageWithCursorPos": 1 << 6,
     "SendMessageWithWindowPos": 1 << 7,
     "PostMessageWithWindowPos": 1 << 8,
+    "Interception": 1 << 9,
+    "AnchoredTouch": 1 << 10,
 }
 _SUBPROCESS_OUTPUT_ENCODINGS = ("utf-8", "gbk", "shift_jis", "utf-16")
 _RUN_OVERVIEW_LOG_VALUE_LIMIT = 1200
@@ -856,19 +864,25 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                     self.script_config.get("Device", "Win32ScreencapMethod"),
                     win32_config.screencap if win32_config else None,
                     _WIN32_SCREENCAP_METHODS,
-                    _WIN32_SCREENCAP_METHODS["DXGI_DesktopDup"],
+                    "DXGI_DesktopDup",
+                    label=f"controller {controller.name} 的 Win32 截图方式",
+                    warn=self._append_log,
                 ),
                 mouseMethod=_resolve_win32_method(
                     self.script_config.get("Device", "Win32MouseMethod"),
                     win32_config.mouse if win32_config else None,
                     _WIN32_INPUT_METHODS,
-                    _WIN32_INPUT_METHODS["Seize"],
+                    "Seize",
+                    label=f"controller {controller.name} 的 Win32 鼠标输入方式",
+                    warn=self._append_log,
                 ),
                 keyboardMethod=_resolve_win32_method(
                     self.script_config.get("Device", "Win32KeyboardMethod"),
                     win32_config.keyboard if win32_config else None,
                     _WIN32_INPUT_METHODS,
-                    _WIN32_INPUT_METHODS["Seize"],
+                    "Seize",
+                    label=f"controller {controller.name} 的 Win32 键盘输入方式",
+                    warn=self._append_log,
                 ),
             )
 
@@ -2405,13 +2419,30 @@ def _resolve_win32_method(
     configured_value: Any,
     interface_method: str | None,
     method_values: dict[str, int],
-    default: int,
+    default_name: str,
+    *,
+    label: str = "Win32 控制方式",
+    warn: Callable[[str], None] | None = None,
 ) -> int:
+    """脚本级配置的数值优先，其次 interface 里写的名字，最后是默认方式。
+
+    名字不认识时退回默认方式并**告警**：以前是静默换成 DXGI_DesktopDup / Seize，
+    项目要的后台截图 / 后台输入悄悄变成前台，用户只看到游戏被抢了鼠标。
+    """
+
+    default = method_values[default_name]
     configured = _optional_int(configured_value) or 0
     if configured:
         return configured
     if interface_method:
-        return method_values.get(interface_method, default)
+        value = method_values.get(interface_method.strip())
+        if value is not None:
+            return value
+        message = (
+            f"MaaFW interface 里 {label}「{interface_method}」无法识别，"
+            f"已改用默认的 {default_name}"
+        )
+        (warn or logger.warning)(message)
     return default
 
 

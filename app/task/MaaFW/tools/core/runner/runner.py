@@ -241,6 +241,28 @@ def _is_single_method(value: int) -> bool:
     return raw > 0 and raw & (raw - 1) == 0
 
 
+def _supported_win32_method(enum_cls: Any, value: int, *, combinable: bool) -> bool:
+    """当前加载的绑定库认不认得这个 Win32 截图 / 输入方式取值。
+
+    绑定库与原生库按版本成对（运行池按原生库版本钉 binding），枚举里没有的取值原生层
+    同样不认识：例如 5.12.3 没有 AnchoredTouch（1 << 10），原样传下去会建控制器失败或
+    行为未定义。截图方式可以是多个位的组合（Background = FramePool | PrintWindow），
+    只要每个位都是已知成员即可；输入方式只能选一个。负数是 All 这类全选，交给原生层。
+    """
+
+    raw = int(value)
+    if raw <= 0:
+        return True
+    members = [int(member) for member in getattr(enum_cls, "__members__", {}).values()]
+    known = [member for member in members if member > 0]
+    if not combinable:
+        return raw in known
+    mask = 0
+    for member in known:
+        mask |= member
+    return raw & ~mask == 0
+
+
 def _format_enum_methods(enum_cls: Any, value: int) -> str:
     raw_value = int(value)
     members = getattr(enum_cls, "__members__", {})
@@ -989,6 +1011,27 @@ class MaaFWRunner:
             keyboard_method = (
                 device_config.keyboardMethod or MaaWin32InputMethodEnum.Seize
             )
+            screencap_method = self._fallback_unsupported_win32_method(
+                "截图方式",
+                MaaWin32ScreencapMethodEnum,
+                screencap_method,
+                MaaWin32ScreencapMethodEnum.DXGI_DesktopDup,
+                combinable=True,
+            )
+            mouse_method = self._fallback_unsupported_win32_method(
+                "鼠标输入方式",
+                MaaWin32InputMethodEnum,
+                mouse_method,
+                MaaWin32InputMethodEnum.Seize,
+                combinable=False,
+            )
+            keyboard_method = self._fallback_unsupported_win32_method(
+                "键盘输入方式",
+                MaaWin32InputMethodEnum,
+                keyboard_method,
+                MaaWin32InputMethodEnum.Seize,
+                combinable=False,
+            )
             return Win32Controller(
                 device_config.hWnd,
                 screencap_method,
@@ -1000,6 +1043,26 @@ class MaaFWRunner:
             "AUTO-MAS MaaFW Direct currently supports only Adb/Win32 "
             f"controllers; use the project UI for {device_config.type}"
         )
+
+    def _fallback_unsupported_win32_method(
+        self,
+        label: str,
+        enum_cls: Any,
+        value: int,
+        default: int,
+        *,
+        combinable: bool,
+    ) -> int:
+        if _supported_win32_method(enum_cls, value, combinable=combinable):
+            return value
+        loaded, binding = describe_loaded_maafw()
+        self.send_log(
+            f"Win32 {label} {int(value)} 当前 MaaFramework 不支持"
+            f"（原生库 {loaded or '未知'}，binding {binding or '未知'}），"
+            f"已改用 {_format_enum_methods(enum_cls, default)}；"
+            "需要该方式请更新项目自带的 MaaFramework"
+        )
+        return default
 
     def _log_controller_config(self, device_config: MaaFWDeviceConfig) -> None:
         if device_config.type == "Adb":
