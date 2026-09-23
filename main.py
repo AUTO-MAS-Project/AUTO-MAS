@@ -360,14 +360,27 @@ def main():
 
                 await Config.get_stage()
                 await Config.clean_old_history()
-                # 老副本一次性采纳成「载荷 + 视图」：放在各项回收之前，后面看到的就是终态布局
-                await Config.migrate_maafw_embedded_copies_to_payloads()
-                await Config.clean_maafw_agent_venvs()
-                await Config.clean_maafw_embedded_copies()
-                await Config.clean_maafw_runtime_blobs()
-                await Config.clean_maafw_update_cache()
-                # 副本清理之后：副本没了，它的 binding / runtime 才会变成无人引用
-                await Config.clean_maafw_runtime_pool()
+
+                async def _maafw_startup_maintenance() -> None:
+                    # 老副本一次性采纳成「载荷 + 视图」要几分钟：连同它后面依赖终态布局的
+                    # 各项回收一起放到后台，不挡主定时器（队列定时按分钟精确匹配，挡住就
+                    # 被静默跳过）。期间撞上的 MFW 运行在运行前检查里按「正在切换版本」跳过。
+                    try:
+                        await Config.migrate_maafw_embedded_copies_to_payloads()
+                        await Config.clean_maafw_agent_venvs()
+                        await Config.clean_maafw_embedded_copies()
+                        await Config.clean_maafw_runtime_blobs()
+                        await Config.clean_maafw_update_cache()
+                        # 副本清理之后：副本没了，它的 binding / runtime 才会变成无人引用
+                        await Config.clean_maafw_runtime_pool()
+                    except asyncio.CancelledError:
+                        raise
+                    except Exception:
+                        logger.exception("MFW 启动期维护失败，下次启动再试")
+
+                app.state.maafw_startup_maintenance = asyncio.create_task(
+                    _maafw_startup_maintenance()
+                )
                 await Config.clean_debug_diagnostics()
                 await Config.clean_maafw_native_debug_logs()
 
@@ -439,6 +452,13 @@ def main():
                 background_task.cancel()
                 with suppress(asyncio.CancelledError):
                     await background_task
+            # MFW 启动期维护（迁移 + 回收）也是后台跑的：同样先停下。迁移逐副本持视图预约、
+            # 被打断的切换有 journal，下次启动收尾。
+            maintenance = getattr(app.state, "maafw_startup_maintenance", None)
+            if maintenance is not None and not maintenance.done():
+                maintenance.cancel()
+                with suppress(asyncio.CancelledError):
+                    await maintenance
 
             # 停止 WS 分发与连接后台任务，避免清理期间仍处理入站消息
             await MainConnection.begin_shutdown()
