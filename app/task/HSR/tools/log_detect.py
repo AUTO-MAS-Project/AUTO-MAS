@@ -201,9 +201,21 @@ _M7A_LOG_MESSAGE_RE = re.compile(
 )
 
 
-def _m7a_log_message(line: str) -> str:
-    """去掉三月七日志行的「时间 | 级别 | 」前缀，只留消息正文。"""
+# 三月七控制台日志可能带 ANSI 颜色码（未实跑核实过原始字节），残留在级别或正文
+# 两侧会让前后缀匹配静默失效，解析前先剥掉。
+_ANSI_SGR_RE = re.compile(r"\x1b\[[0-9;]*m")
 
+
+def strip_ansi(text: str) -> str:
+    """去掉 ANSI 颜色码（``ESC[...m``）。"""
+
+    return _ANSI_SGR_RE.sub("", text) if "\x1b" in text else text
+
+
+def _m7a_log_message(line: str) -> str:
+    """去掉三月七日志行的颜色码与「时间 | 级别 | 」前缀，只留消息正文。"""
+
+    line = strip_ansi(line)
     match = _M7A_LOG_MESSAGE_RE.search(line)
     return (match.group(1) if match else line).strip()
 
@@ -240,7 +252,7 @@ def find_cloud_non_retryable_marker(*texts: str) -> str | None:
     传入顺序（stdout 在前）拼起来再判定。
     """
 
-    full = "\n".join(text for text in texts if text)
+    full = strip_ansi("\n".join(text for text in texts if text))
     cut = max((full.rfind(marker) for marker in HSR_CLOUD_IN_GAME_MARKERS), default=-1)
     if cut >= 0:
         line_end = full.find("\n", cut)
@@ -254,6 +266,7 @@ def find_cloud_non_retryable_marker(*texts: str) -> str | None:
 def detect_cloud_login_required(line: str) -> tuple[bool, int | None]:
     """这一行是否是三月七在等人登录；返回 (是否需人工, 超时分钟数或 None)。"""
 
+    line = strip_ansi(line)
     match = HSR_CLOUD_LOGIN_TIMEOUT_RE.search(line)
     if match:
         return True, int(match.group(1))
@@ -267,13 +280,14 @@ def detect_cloud_login_required(line: str) -> tuple[bool, int | None]:
 def is_cloud_login_success(line: str) -> bool:
     """这一行是否说明当前云浏览器已处于登录态。"""
 
+    line = strip_ansi(line)
     return any(marker in line for marker in HSR_CLOUD_LOGIN_SUCCESS_MARKERS)
 
 
 def parse_cloud_remaining(line: str) -> tuple[int, int, int] | None:
     """解析「云游戏剩余时长：N 分钟（付费：P 分钟，免费：F 分钟）」。"""
 
-    match = HSR_CLOUD_REMAINING_RE.search(line)
+    match = HSR_CLOUD_REMAINING_RE.search(strip_ansi(line))
     if match is None:
         return None
     total, paid, free = (int(value) for value in match.groups())
