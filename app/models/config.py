@@ -2308,6 +2308,28 @@ class HSRUserConfig(ConfigBase):
             await self.set("Info", "Mode", "直控")
             is_dirty = True
 
+        # 旧版把 SRA 体力副本的数组位置存成了关卡编号，历战余响与饰品提取整体
+        # 错位；repr 形态的旧载荷里带着真实编号，加载时改写（幂等）。
+        from app.task.HSR.tools.stage_runtime import migrate_sra_legacy_stage_labels
+
+        for field in ("ScriptStage", "ScriptEchoOfWar"):
+            migrated, count, unresolved = migrate_sra_legacy_stage_labels(
+                self.get("Stage", field)
+            )
+            if migrated is not None:
+                await self.set("Stage", field, migrated)
+                is_dirty = True
+                logger.info(
+                    f"HSR 用户「{self.get('Info', 'Name')}」的 Stage.{field} "
+                    f"已迁移 {count} 条 SRA 副本到真实关卡编号"
+                )
+            if unresolved:
+                logger.info(
+                    f"HSR 用户「{self.get('Info', 'Name')}」的 Stage.{field} 有 "
+                    f"{unresolved} 条 SRA 副本无法确认关卡编号，未改动；"
+                    "如刷取的关卡不对，请在用户页重新选择一次"
+                )
+
         return is_dirty
 
     def getTags(self) -> str:
