@@ -233,6 +233,7 @@
           <div v-else class="control-mode-content">
             <DirectControlSection
               :available-engines="directEngineCards"
+              :cloud="isCloud"
               :control="formData.Control"
               :saving="isSaving"
               @toggle="handleDirectEngineToggle"

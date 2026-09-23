@@ -12,7 +12,10 @@
         <div class="engine-card-header">
           <div>
             <div class="engine-name">{{ engineLabel(engine) }}</div>
-            <div class="engine-description">{{ engineDescription(engine) }}</div>
+            <!-- 云平台下 SRA 卡只在仍勾着时出现：说明它为何不能用，让用户关掉 -->
+            <div class="engine-description">
+              {{ cloud && engine === 'SRA' ? t('edit.hsrCloudNoSra') : engineDescription(engine) }}
+            </div>
           </div>
           <a-switch
             :checked="Boolean(control[engine])"
@@ -38,6 +41,8 @@ defineProps<{
   availableEngines: HSREngine[]
   control: NonNullable<HSRUserConfigData['Control']>
   saving: boolean
+  /** 云·星穹铁道：只能用三月七直控，SRA 卡仅为关掉遗留勾选而显示。 */
+  cloud?: boolean
 }>()
 
 const emit = defineEmits<{
