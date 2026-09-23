@@ -522,6 +522,8 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                     selected_preset=selected_preset,
                 )
             )
+            for warning in self.run_plan.warnings:
+                self._append_log(f"MaaFW 运行计划提示: {warning}")
 
         try:
             # 执行任务前脚本（每用户仅一次，重试不重复跑）。

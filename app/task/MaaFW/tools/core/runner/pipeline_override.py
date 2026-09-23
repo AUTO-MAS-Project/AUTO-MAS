@@ -47,6 +47,8 @@ class MaaFWPipelineOverrideBuilder:
         self.interface_model = interface_model
         self.controller_names = controller_names
         self.resource_name = resource_name
+        # 建覆盖时跳过的项（给用户看的原因）；调用方把它带进运行计划的告警。
+        self.warnings: list[str] = []
 
     def build_task_pipeline_override(
         self,
@@ -360,9 +362,16 @@ class MaaFWPipelineOverrideBuilder:
                 if isinstance(field_value, str):
                     raw_text = field_value
             if not raw_text.strip():
-                raise MaaFWHotkeyError(
-                    f"hotkey 字段 {option_name}.{hotkey_item.name} 未配置"
+                # 项目没给 default、用户也没设：这一个快捷键选项的覆盖整段跳过（半替换
+                # 会把字面量 "{K}" 塞进 pipeline），任务按项目原始 pipeline 跑，不让整次
+                # 运行失败。
+                warning = (
+                    f"快捷键 {option_name}.{hotkey_item.name} 没有默认值也未设置，"
+                    "已跳过该选项的 pipeline 覆盖"
                 )
+                if warning not in self.warnings:
+                    self.warnings.append(warning)
+                return {}
 
             resolved = resolve_hotkey(raw_text, controller_type)
             values = resolved.placeholder_values(hotkey_item.name)

@@ -188,6 +188,10 @@ def build_maafw_run_plan(
     if not runnable_tasks:
         raise MaaFWRunPlanError("当前 controller/resource 下没有可执行任务")
 
+    plan_warnings = list(pipeline_builder.warnings)
+    for warning in plan_warnings:
+        logger.warning("MaaFW 运行计划：%s", warning)
+
     return MaaFWRunPlan(
         path=str(resolved_base_dir),
         projectName=interface.name,
@@ -215,6 +219,7 @@ def build_maafw_run_plan(
         piEnv=_build_pi_env(interface, controller, resource, i18n_mapping),
         tasks=runnable_tasks,
         skippedTasks=skipped_tasks,
+        warnings=plan_warnings,
         i18n=i18n_mapping,
     )
 
