@@ -2034,6 +2034,14 @@ class BetterGIUserConfig_Switch(BaseModel):
     Uid: Optional[str] = Field(
         default=None, description="账号 UID（可不填，切换前识别一致将不执行切换动作）"
     )
+    GamePath: Optional[str] = Field(
+        default=None,
+        description=(
+            "游戏客户端路径（用户级覆盖，可空）：官服/B服/国际服是不同客户端，"
+            "留空使用 BetterGI 全局配置；填写后该用户运行时由 MAS 写入 "
+            "BetterGI 配置并按此路径拉起"
+        ),
+    )
 
 
 class BetterGIUserConfig_Info(GeneralUserConfig_Info):
@@ -2067,6 +2075,23 @@ class OneDragonPlan(BaseModel):
     version: int = Field(default=1, description="Plan 结构版本")
     steps: List[OneDragonPlanStep] = Field(
         default_factory=list, description="有序步骤列表"
+    )
+
+
+class BetterGIGameInfoOut(OutBase):
+    """BetterGI 游戏客户端信息（用户页透传展示）"""
+
+    installPath: Optional[str] = Field(
+        default=None, description="生效游戏路径（用户级优先，否则 BGI 全局配置）"
+    )
+    globalPath: Optional[str] = Field(
+        default=None, description="BetterGI 全局配置的游戏路径原值"
+    )
+    channel: Optional[Literal["官服", "B服", "国际服"]] = Field(
+        default=None, description="识别到的客户端渠道，无法识别为 null"
+    )
+    source: Optional[Literal["用户", "全局"]] = Field(
+        default=None, description="生效路径来源"
     )
 
 

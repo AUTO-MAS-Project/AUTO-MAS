@@ -26,6 +26,7 @@ export type { BetterGICustomGroupOut } from './models/BetterGICustomGroupOut';
 export type { BetterGICustomGroupsOut } from './models/BetterGICustomGroupsOut';
 export type { BetterGIDomainCatalogItem } from './models/BetterGIDomainCatalogItem';
 export type { BetterGIDomainCatalogOut } from './models/BetterGIDomainCatalogOut';
+export type { BetterGIGameInfoOut } from './models/BetterGIGameInfoOut';
 export type { BetterGIGlobalDomainSettingsIn } from './models/BetterGIGlobalDomainSettingsIn';
 export type { BetterGIGlobalDomainSettingsOut } from './models/BetterGIGlobalDomainSettingsOut';
 export type { BetterGIGlobalStygianSettingsIn } from './models/BetterGIGlobalStygianSettingsIn';

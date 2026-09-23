@@ -1739,9 +1739,9 @@ export default {
     bettergiRunTimeoutHint: 'Treated as a timeout when the log stops changing for this long',
     bettergiAccountSwitchMethod: 'Account switch method',
     bettergiAccountSwitchMethodHint:
-      "BetterGI script = switch via the BetterGI 'SwitchAccountMultipleMode' script; MAS = MAS drives the game UI directly (CN official server only, game launched by MAS; with password uses account+password, otherwise the saved-accounts dropdown)",
+      "BetterGI script = switch via the BetterGI 'SwitchAccountMultipleMode' script; MAS = MAS drives the game UI directly (CN official: with password uses account+password, otherwise the saved-accounts dropdown; CN Bilibili: matches the login records by Bilibili username, password login not supported yet)",
     bettergiAccountSwitchMethodBgi: 'BetterGI script',
-    bettergiAccountSwitchMethodMas: 'MAS (CN official only)',
+    bettergiAccountSwitchMethodMas: 'MAS (CN official / Bilibili)',
     useAdminLaunch: 'Launch with administrator privileges',
     bettergiUseAdminHint:
       'On by default (BetterGI needs admin rights). If MAS runs without admin, each launch triggers a UAC prompt — turn this off for unattended tasks. When MAS itself is already elevated, keeping it on never re-prompts',
@@ -1761,11 +1761,30 @@ export default {
     bettergiAccount: 'Account',
     bettergiEnterAccount: 'Enter the account (for account switching; leave empty if not needed)',
     bettergiAccountHint:
-      'Used for account switching; leave empty if you do not need it. In dropdown mode enter the full phone number or email and MAS masks it the way the game displays it',
+      'Used for account switching; leave empty if you do not need it. CN official: enter the full phone number or email and MAS masks it the way the game displays it; CN Bilibili: enter the Bilibili username',
     bettergiAccountUid: 'Account UID',
     bettergiEnterUid: 'Enter the UID (recommended when switching accounts)',
     bettergiUidHint:
       'Optional, but recommended for account switching: when it already matches before switching, the switch is skipped',
+    bettergiGameClient: 'Game client',
+    bettergiGameClientHint:
+      'CN official / CN Bilibili / international are three isolated clients (a Bilibili account can only log into the Bilibili client). Leave empty to follow the BetterGI global config; when filled, MAS temporarily launches that client for this user at runtime (BetterGI config is not modified) — users on different servers of the same script can each have their own client',
+    bettergiGameClientPlaceholder:
+      'Configure the game path in BetterGI settings first, or pick the game executable for this user (YuanShen.exe / GenshinImpact.exe)',
+    bettergiGameClientRestore: 'Restore BGI default',
+    bettergiGameClientInvalid:
+      'Pick the game executable (YuanShen.exe or GenshinImpact.exe)',
+    bettergiGameClientUnknownWarning:
+      'Cannot detect the game client channel (config.ini missing or invalid path); pick the game server manually',
+    bettergiGameClientIntlWarning:
+      'International client detected, but the specific server cannot be determined; pick the game server manually',
+    bettergiGameClientSynced:
+      'Game server automatically switched to {server} based on the client',
+    bettergiServerMismatchWarning:
+      'The selected server ({server}) does not match the current game client ({channel}); tasks will not run properly — adjust one of them',
+    bettergiChannelOfficial: 'CN official',
+    bettergiChannelBili: 'CN Bilibili',
+    bettergiChannelGlobal: 'International',
     bettergiPasswordHint:
       'With no password, account switching uses the in-game dropdown. Fill it in if switching needs a password login',
     bettergiEnterPasswordPlaceholder:

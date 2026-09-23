@@ -2912,6 +2912,44 @@ async def save_zzzod_app_config_api(
 
 
 @router.get(
+    "/bettergi/game-info",
+    tags=["BetterGI"],
+    summary="获取游戏客户端信息（路径 + 渠道，用户页透传展示）",
+    response_model=BetterGIGameInfoOut,
+    status_code=200,
+)
+async def get_bettergi_game_info_api(
+    scriptId: str, detectPath: str = ""
+) -> BetterGIGameInfoOut:
+    """读取 BetterGI 配置的游戏路径并识别客户端渠道（官服/B服/国际服）。
+
+    ``detectPath`` 非空时对该路径做渠道识别（用户自填路径的即时标注），
+    为空时返回生效路径（用户级优先，否则 BGI 全局配置）及其渠道。
+    """
+
+    try:
+        data = await Config.get_bettergi_game_info(scriptId, detectPath)
+        return BetterGIGameInfoOut(
+            code=200,
+            status="success",
+            message="操作成功",
+            installPath=data["installPath"],
+            globalPath=data["globalPath"],
+            channel=data["channel"],
+            source=data["source"],
+        )
+    except Exception as e:
+        logger.opt(exception=True).warning(
+            f"get_bettergi_game_info_api失败: {type(e).__name__}: {e}"
+        )
+        return BetterGIGameInfoOut(
+            code=500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+        )
+
+
+@router.get(
     "/zzzod/native-config",
     tags=["ZZZ-OD"],
     summary="获取实例原生配置（直控页面表单数据）",

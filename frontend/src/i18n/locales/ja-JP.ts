@@ -1672,9 +1672,9 @@ export default {
     bettergiRunTimeoutHint: 'ログが長時間更新されない場合はタイムアウトと判定します',
     bettergiAccountSwitchMethod: 'アカウント切り替え方式',
     bettergiAccountSwitchMethodHint:
-      'BetterGI スクリプト=BetterGI「切替アカウント多重モード」スクリプトで切り替え。MAS=MAS がゲーム画面を直接操作して切り替え（中国公式サーバーのみ、ゲームは MAS が起動。パスワード入力ならアカウント+パスワード、未入力ならドロップダウン一覧）',
+      'BetterGI スクリプト=BetterGI「切替アカウント多重モード」スクリプトで切り替え。MAS=MAS がゲーム画面を直接操作して切り替え（中国公式：パスワード入力ならアカウント+パスワード、未入力ならドロップダウン一覧。B鯖：Bilibili ユーザー名でログイン記録を照合、パスワードログインは未対応）',
     bettergiAccountSwitchMethodBgi: 'BetterGI スクリプト',
-    bettergiAccountSwitchMethodMas: 'MAS（中国公式のみ）',
+    bettergiAccountSwitchMethodMas: 'MAS（中国公式 / B鯖）',
     useAdminLaunch: '管理者権限で起動',
     bettergiUseAdminHint:
       '既定で有効（BetterGI には管理者権限が必要）。MAS が非管理者で実行されている場合、起動のたびに UAC が表示されるため、無人実行時はオフにできます。MAS が既に管理者権限の場合は再表示されません',
@@ -1695,11 +1695,30 @@ export default {
     bettergiAccount: 'アカウント',
     bettergiEnterAccount: 'アカウントを入力してください（アカウント切り替え用。不要な場合は空欄）',
     bettergiAccountHint:
-      'アカウント切り替えに使用します。不要な場合は空欄のままにしてください。ドロップダウンモードでは電話番号またはメールアドレスを完全な形で入力すると、MAS がゲームの表示に合わせて伏せ字に変換します',
+      'アカウント切り替えに使用します。不要な場合は空欄のままにしてください。中国公式：電話番号またはメールアドレスを入力すると、MAS がゲームの表示に合わせて伏せ字に変換します。B鯖：Bilibili ユーザー名を入力してください',
     bettergiAccountUid: 'アカウント UID',
     bettergiEnterUid: 'UID を入力してください（アカウント切り替え時は推奨）',
     bettergiUidHint:
       '任意項目です。アカウント切り替え時は入力を推奨します。切り替え前に一致が確認できた場合、切り替え処理は行われません',
+    bettergiGameClient: 'ゲームクライアント',
+    bettergiGameClientHint:
+      '中国公式 / B鯖 / グローバルは互いに独立したクライアントです（Bilibili アカウントは B鯖クライアントにのみログイン可能）。空欄の場合は BetterGI のグローバル設定に従います。入力すると、実行時に MAS がそのクライアントを一時的に起動します（BetterGI の設定は変更しません）。同じスクリプト内の異なるサーバーのユーザーは、それぞれ独自のクライアントを設定できます',
+    bettergiGameClientPlaceholder:
+      '先に BetterGI の設定でゲームパスを構成するか、このユーザーのゲーム実行ファイル（YuanShen.exe / GenshinImpact.exe）を選択してください',
+    bettergiGameClientRestore: 'BGI 既定に戻す',
+    bettergiGameClientInvalid:
+      'ゲーム実行ファイル（YuanShen.exe または GenshinImpact.exe）を選択してください',
+    bettergiGameClientUnknownWarning:
+      'ゲームクライアントのチャネルを識別できません（config.ini の欠損または無効なパス）。ゲームサーバーを手動で指定してください',
+    bettergiGameClientIntlWarning:
+      'グローバルクライアントを検出しましたが、具体的なサーバーを特定できません。ゲームサーバーを手動で指定してください',
+    bettergiGameClientSynced:
+      'クライアントに基づきゲームサーバーを {server} に自動切り替えしました',
+    bettergiServerMismatchWarning:
+      '選択したサーバー（{server}）と現在のゲームクライアント（{channel}）が一致せず、タスクは正常に実行できません。どちらかを調整してください',
+    bettergiChannelOfficial: '中国公式',
+    bettergiChannelBili: 'B鯖',
+    bettergiChannelGlobal: 'グローバル',
     bettergiPasswordHint:
       'パスワードが未入力の場合、アカウント切り替えはゲーム内のドロップダウンで行われます。パスワードログインで切り替える場合は必ず入力してください',
     bettergiEnterPasswordPlaceholder:
