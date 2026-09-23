@@ -136,6 +136,16 @@ class MaaFWAgent(BaseModel):
     child_args: list[str] | None = None
     identifier: str | None = None
     embedded: bool | None = None
+    # MFAA 私有扩展：等 agent 连上的秒数（>0 生效，-1 / 不写 = 不限）。MAS 据此定连接
+    # 等待预算（runner.agent_connect_budget_seconds）。写法不对当没写，不让整份读不出来。
+    timeout: int | float | None = None
+
+    @field_validator("timeout", mode="before")
+    @classmethod
+    def coerce_timeout(cls, value: Any) -> int | float | None:
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            return None
+        return value if math.isfinite(value) else None
 
 
 class MaaFWPretask(BaseModel):

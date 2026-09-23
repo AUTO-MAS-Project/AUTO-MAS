@@ -204,6 +204,7 @@ def _build_agent_command_plan(
         command=command,
         cwd=str(base_dir),
         identifier=agent_config.identifier,
+        timeout=agent_config.timeout,
         embedded=False,
     )
 

@@ -128,9 +128,38 @@ _MAAFW_INITIALIZED = False
 _MAAFW_INIT_LOCK = threading.Lock()
 
 
-AGENT_CONNECT_RETRY_COUNT = 30
 AGENT_CONNECT_RETRY_INTERVAL = 0.2
+# 每次 connect() 的阻塞上限；按总等待预算反复尝试，直到连上、agent 进程退出或用户停止。
 AGENT_CONNECT_TIMEOUT_MS = 1000
+# 以前固定 30 次 ×（1 s + 0.2 s）≈ 36 s；interface 写的 agent.timeout 比它短时仍按它等。
+AGENT_CONNECT_BASELINE_SECONDS = 36.0
+# 在 agent.timeout 之上再宽容的秒数：MFAA 的 timeout 是它自己连接的上限，MAS 这边在
+# 连接前还要建环境变量、起子进程、等 Python 解释器冷启动（杀软扫描时十几秒很常见），
+# 按原值卡死会把作者认为够用的时间吃掉一截。30 s 与 baseline 同一量级，够吸收这段差。
+AGENT_CONNECT_GRACE_SECONDS = 30.0
+# 不写 agent.timeout 或写 -1 / 0：MFAA / MXU 是进程活着就一直等（MaaGumballs、
+# MaaStarResonance 首启要 pip 装依赖，36 s 不够）。MAS 不无限等，封顶 10 分钟。
+AGENT_CONNECT_UNBOUNDED_CAP_SECONDS = 600.0
+# 超过 baseline 还没连上时，每隔这么久往用户日志报一次还在等。
+AGENT_CONNECT_PROGRESS_LOG_SECONDS = 30.0
+
+
+def agent_connect_budget_seconds(timeout: Any) -> float:
+    """按 interface 的 ``agent.timeout``（秒，MFAA / CFA 语义）算连接的总等待预算。
+
+    - 正数 T：``max(T, 36) + 30``；
+    - 不写、-1、0 或写法不对：10 分钟上限。
+    只用于等 agent 连上；连上之后照旧不设请求超时（``set_timeout(-1)``）。
+    """
+
+    if isinstance(timeout, (int, float)) and not isinstance(timeout, bool):
+        if timeout > 0:
+            return max(float(timeout), AGENT_CONNECT_BASELINE_SECONDS) + (
+                AGENT_CONNECT_GRACE_SECONDS
+            )
+    return AGENT_CONNECT_UNBOUNDED_CAP_SECONDS
+
+
 # 冷启动的模拟器要等很久：LDPlayer.open() 在 in_android==1 之后只 sleep 3 秒
 # 就返回「启动完成」（不传 package_name 时不走那个 30 秒分支），此时 Android
 # 里的 adbd 往往还没起来。第一层不受影响——它把等待交给项目外壳自己做了，
@@ -1479,32 +1508,60 @@ class MaaFWRunner:
         agent_plan: Any = None,
     ) -> None:
         last_error: Exception | None = None
+        declared_timeout = getattr(agent_plan, "timeout", None)
+        budget = agent_connect_budget_seconds(declared_timeout)
+        if declared_timeout is not None:
+            self.send_log(
+                f"interface 声明了 agent.timeout={declared_timeout}，"
+                f"连接 Agent 最多等 {budget:.0f} 秒: {label}"
+            )
         if not agent_client.set_timeout(AGENT_CONNECT_TIMEOUT_MS):
             self.send_log(f"AgentClient 设置连接超时失败: {label}")
-        for attempt in range(1, AGENT_CONNECT_RETRY_COUNT + 1):
+        started_at = time.monotonic()
+        next_progress_at = AGENT_CONNECT_BASELINE_SECONDS
+        attempt = 0
+        while True:
+            attempt += 1
             exit_code = process.poll()
             if exit_code is not None:
                 raise RuntimeError(
                     f"Agent 进程已退出，无法连接: {label}, exit={exit_code}"
                 )
+            if self._stop_requested.is_set():
+                raise RuntimeError(f"已停止，不再等待 Agent 连接: {label}")
 
             try:
                 if agent_client.connect():
+                    # 超时只管「等连上」：连上之后恢复成不限时，不能让它变成运行期每次
+                    # 请求的超时（MAES 写 8 秒，超过 8 秒的自定义动作会被判超时）。
                     if not agent_client.set_timeout(-1):
                         self.send_log(f"AgentClient 恢复运行超时失败: {label}")
                     if attempt > 1:
                         self.send_log(
-                            f"AgentClient 已连接: {label}, 尝试次数 {attempt}"
+                            f"AgentClient 已连接: {label}, 尝试次数 {attempt}，"
+                            f"用时 {time.monotonic() - started_at:.0f} 秒"
                         )
                     return
             except Exception as exc:
                 last_error = exc
 
-            time.sleep(AGENT_CONNECT_RETRY_INTERVAL)
+            elapsed = time.monotonic() - started_at
+            if elapsed >= budget:
+                break
+            if elapsed >= next_progress_at:
+                self.send_log(
+                    f"仍在等待 agent 启动（已等 {elapsed:.0f} 秒，上限 {budget:.0f} 秒）: {label}"
+                )
+                next_progress_at = elapsed + AGENT_CONNECT_PROGRESS_LOG_SECONDS
+            if self._stop_requested.wait(AGENT_CONNECT_RETRY_INTERVAL):
+                raise RuntimeError(f"已停止，不再等待 Agent 连接: {label}")
 
         detail = f": {last_error}" if last_error else ""
         hint = self._describe_agent_maafw_mismatch(agent_plan)
-        raise RuntimeError(f"AgentClient 连接超时: {label}{detail}{hint}")
+        raise RuntimeError(
+            f"AgentClient 连接超时（等了 {time.monotonic() - started_at:.0f} 秒）: "
+            f"{label}{detail}{hint}"
+        )
 
     def _describe_agent_maafw_mismatch(self, agent_plan: Any) -> str:
         """连不上时补一句版本诊断。

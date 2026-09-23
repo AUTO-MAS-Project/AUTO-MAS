@@ -24,6 +24,8 @@ class MaaFWAgentCommandPlan(BaseModel):
     command: list[str] = Field(default_factory=list)
     cwd: str
     identifier: str | None = None
+    # interface 的 agent.timeout（秒，MFAA 私有扩展）；只决定等 agent 连上的预算
+    timeout: float | None = None
     embedded: bool = False
 
 
