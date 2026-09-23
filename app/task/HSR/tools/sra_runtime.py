@@ -420,7 +420,6 @@ def build_sra_module_config(
             0: 0,
             1: 1,
         }.get(difficulty, SRA_CURRENCY_WARS_DIFFICULTY)
-        config["cosmicStrife"]["currencyWars.policy"] = 0
         config["cosmicStrife"]["currencyWars.strategy"] = native_options.get(
             "currencyWars.strategy", _resolve_sra_currency_wars_strategy(script_config)
         )
@@ -626,6 +625,21 @@ def disable_sra_windows_notifications() -> Path:
     )
     logger.info(f"SRA settings.json 已临时关闭系统通知：{settings_path}")
     return settings_path
+
+
+def sra_cloud_game_enabled() -> bool:
+    """SRA ``settings.json`` 的 ``general.cloudGame.enabled``；读不到按关闭算。
+
+    云游戏开关只在这里（任务配置 TasksConfig 没有 ``general`` 段），MAS 不改它。
+    """
+
+    settings_path = get_sra_app_data_dir() / "settings.json"
+    try:
+        settings = json.loads(settings_path.read_text(encoding="utf-8-sig"))
+    except (OSError, ValueError):
+        return False
+    general = settings.get("general") if isinstance(settings, dict) else None
+    return isinstance(general, dict) and bool(general.get("cloudGame.enabled"))
 
 
 @dataclass
@@ -890,9 +904,6 @@ def _build_sra_base_config(name: str) -> dict:
     return {
         "name": name,
         "version": 0,
-        "general": {
-            "cloudGame.enabled": False,
-        },
         "startGame": {
             "enabled": False,
             "game.channel": SRA_GAME_CHANNEL_CLIENT,
@@ -928,7 +939,6 @@ def _build_sra_base_config(name: str) -> dict:
             "currencyWars.enabled": False,
             "currencyWars.mode": 0,
             "currencyWars.difficulty": 0,
-            "currencyWars.policy": 0,
             "currencyWars.runtimes": 0,
             "currencyWars.strategy": "template",
             "currencyWars.strategyIndex": 0,

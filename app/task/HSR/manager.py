@@ -80,6 +80,7 @@ from .tools.sra_runtime import (
     get_sra_app_data_dir,
     load_sra_native_config,
     resolve_sra_profile_selection,
+    sra_cloud_game_enabled,
 )
 from .tools.stage_runtime import resolve_configured_daily_stages
 
@@ -577,6 +578,21 @@ class HSRManager(TaskExecuteBase):
                 load_sra_native_config(script_config)
         except (FileNotFoundError, OSError, ValueError) as exc:
             return f"HSR 原生配置不可用：{exc}"
+
+        # 以下两条只提示不阻断：MAS 不按次改写 SRA 的云游戏开关，也不接管三月七
+        # 自己保存的账号。
+        if sra_available and sra_cloud_game_enabled():
+            self._append_log(
+                "SRA 设置中开启了云游戏，SRA 任务将运行云·星穹铁道而不是本地客户端；"
+                "如需本地运行，请在 SRA 设置中关闭云游戏"
+            )
+        if m7a_available and managed_users_with_credentials:
+            accounts_dir = Path(m7a_path) / "settings" / "accounts"
+            if accounts_dir.is_dir() and any(accounts_dir.iterdir()):
+                self._append_log(
+                    "三月七内置账号管理与 MAS 切号可能互相覆盖，建议二选一"
+                    f"（三月七已保存账号：{accounts_dir}）"
+                )
 
         for user_config, user_name, assigned in daily_stage_checks:
             self._precheck_daily_stages(script_config, user_config, user_name, assigned)
