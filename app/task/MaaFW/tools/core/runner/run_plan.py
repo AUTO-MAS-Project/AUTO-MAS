@@ -24,6 +24,7 @@ from app.task.MaaFW.tools.core.interface.models import (
     MaaFWTaskOptionsByTask,
     MaaFWTaskOptionValue,
     build_pretask_task_name,
+    checkbox_count_problem,
     find_pretask_by_task_name,
     is_pretask_task_name,
     iter_pretasks,
@@ -45,7 +46,7 @@ from .models import (
     MaaFWSkippedTaskPlan,
     MaaFWTaskRunPlan,
 )
-from .pipeline_override import MaaFWPipelineOverrideBuilder
+from .pipeline_override import MaaFWCheckboxCountError, MaaFWPipelineOverrideBuilder
 
 # 本模块会被运行池隔离 venv 里的 worker 进程导入（``runner``
 # 的 ``__init__`` 连带 import 它），那个 venv 只装了 maafw 与项目依赖，没有
@@ -69,9 +70,9 @@ _WARNED_LANGUAGE_FILES: set[str] = set()
 #   hotkey 都已实现；未做的只有「应」级的界面行为：resource.hash 不匹配时的提示
 #   （v2.6.0）、setting 设置分区的渲染（v2.8.0）。
 # - v2.9.0–v2.9.2：telemetry 协议写明「并非所有 Client 都会支持」，不上报即合规。
-# - v2.10.0 起不声明：password 输入「必须加密存储」尚未实现（v2.10.0），checkbox 的
-#   min_count / max_count 选择数限制尚未实现（v2.10.1，字段按未知字段放行）；welcome
-#   数组（v2.10.2）已能解析，但前两条做完之前不能越过 v2.10.0。
+# - v2.10.0–v2.10.2：password 输入的掩码与加密存储（v2.10.0）、checkbox 的
+#   min_count / max_count（v2.10.1）已实现，welcome 数组（v2.10.2）已能解析；
+#   声明版本是否随之提升另行决定，这里仍停在 v2.9.2。
 PI_INTERFACE_VERSION = "v2.9.2"
 PI_CLIENT_LANGUAGE = "zh_cn"
 PI_CLIENT_NAME = "AUTO-MAS"
@@ -177,10 +178,20 @@ def build_maafw_run_plan(
             continue
 
         options = selected_task_options.get(task_id, {})
-        pipeline_override = pipeline_builder.build_task_pipeline_override(
-            task.name,
-            options,
-        )
+        try:
+            pipeline_override = pipeline_builder.build_task_pipeline_override(
+                task.name,
+                options,
+            )
+        except MaaFWCheckboxCountError as exc:
+            raise MaaFWRunPlanError(
+                _describe_checkbox_count_error(
+                    exc,
+                    _resolve_i18n_label(task.label, task.name, i18n_mapping),
+                    interface,
+                    i18n_mapping,
+                )
+            ) from exc
         runnable_tasks.append(
             MaaFWTaskRunPlan(
                 name=task.name,
@@ -232,6 +243,34 @@ def build_maafw_run_plan(
         skippedTasks=skipped_tasks,
         warnings=plan_warnings,
         i18n=i18n_mapping,
+    )
+
+
+def _describe_checkbox_count_error(
+    exc: MaaFWCheckboxCountError,
+    task_label: str,
+    interface_model: MaaFWInterface,
+    i18n_mapping: dict[str, Any],
+) -> str:
+    """勾选数不满足 checkbox 限制时给用户看的一句话：哪个任务、哪个选项、要几项、现在几项。"""
+
+    option = interface_model.option.get(exc.option_name)
+    option_label = (
+        _resolve_i18n_label(option.label, exc.option_name, i18n_mapping)
+        if option is not None
+        else exc.option_name
+    )
+    if exc.max_count is None:
+        requirement = f"至少需要选择 {exc.min_count} 项"
+    elif exc.min_count <= 0:
+        requirement = f"最多只能选择 {exc.max_count} 项"
+    elif exc.min_count == exc.max_count:
+        requirement = f"需要恰好选择 {exc.min_count} 项"
+    else:
+        requirement = f"需要选择 {exc.min_count}~{exc.max_count} 项"
+    return (
+        f"任务「{task_label}」的选项「{option_label}」{requirement}，"
+        f"当前选了 {exc.selected} 项，请在用户配置的任务队列里调整后再运行"
     )
 
 
@@ -481,13 +520,25 @@ def _build_pretask_plans(
         if pretask.resource and resource.name not in pretask.resource:
             continue
 
-        serialized_options = _collect_pretask_option_values(
-            pretask,
-            interface_model,
-            task_options.get(task_id, {}),
-            controller_name=controller.name,
-            resource_name=resource.name,
+        pretask_label = _resolve_i18n_label(
+            pretask.label,
+            pretask.name or pretask.exec,
+            i18n_mapping,
         )
+        try:
+            serialized_options = _collect_pretask_option_values(
+                pretask,
+                interface_model,
+                task_options.get(task_id, {}),
+                controller_name=controller.name,
+                resource_name=resource.name,
+            )
+        except MaaFWCheckboxCountError as exc:
+            raise MaaFWRunPlanError(
+                _describe_checkbox_count_error(
+                    exc, pretask_label, interface_model, i18n_mapping
+                )
+            ) from exc
         args = list(pretask.args or [])
         if pretask.option:
             args.append(
@@ -500,11 +551,7 @@ def _build_pretask_plans(
         plans.append(
             MaaFWPretaskRunPlan(
                 name=task_name,
-                label=_resolve_i18n_label(
-                    pretask.label,
-                    pretask.name or pretask.exec,
-                    i18n_mapping,
-                ),
+                label=pretask_label,
                 executable=_resolve_pretask_executable(base_dir, pretask.exec),
                 # 并入自 mfwa：pretask 参数里的 {PROJECT_DIR} 也要展开，
                 # 否则声明 args: ["{PROJECT_DIR}/x.json"] 的项目会拿到字面量
@@ -557,6 +604,17 @@ def _collect_pretask_option_values(
                 collect(nested_name, next_lineage)
         elif option.type == "checkbox" and isinstance(value, list):
             selected_names = set(value)
+            selected_count = sum(
+                1 for case in option.cases or [] if case.name in selected_names
+            )
+            problem = checkbox_count_problem(option, selected_count)
+            if problem is not None:
+                raise MaaFWCheckboxCountError(
+                    option_name,
+                    selected=selected_count,
+                    min_count=problem[1],
+                    max_count=problem[2],
+                )
             for case in option.cases or []:
                 if case.name not in selected_names:
                     continue

@@ -459,6 +459,9 @@ export interface MaaFWOptionInfo {
     default?: string | null
   }>
   defaultCase?: string | string[] | null
+  /** PI v2.10.1：checkbox 最少 / 最多选择数，后端已放宽成自洽值；null 为不限 */
+  minCount?: number | null
+  maxCount?: number | null
 }
 
 export interface MaaFWAdbEmulatorExtraCapabilityInfo {

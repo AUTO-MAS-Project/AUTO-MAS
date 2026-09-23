@@ -34,6 +34,7 @@ from .models import (
     MaaFWOption,
     MaaFWPretask,
     build_pretask_task_name,
+    coerce_option_count,
     coerce_preset_option_value,
     iter_pretasks,
 )
@@ -50,7 +51,7 @@ IMPORTABLE_KEYS = (
 )
 logger = logging.getLogger("automas.maafw.interface.loader")
 
-# 4：加载器开始改写模型（password 字段丢 default），旧缓存没经过这一步。
+# 4：加载器开始改写模型（password 字段丢 default、checkbox 选择数放宽），旧缓存没经过这一步。
 DISK_CACHE_VERSION = 4
 DISK_CACHE_MAX_AGE_SECONDS = 30 * 24 * 60 * 60
 DISK_CACHE_CLEANUP_INTERVAL_SECONDS = 24 * 60 * 60
@@ -843,11 +844,46 @@ def _warn_unsupported_option_types(interface_model: MaaFWInterface) -> None:
             )
 
 
+def _warn_option_count_values(data: dict[str, Any]) -> None:
+    """``min_count`` / ``max_count`` 写法不对时告警：模型按没写处理（见 ``coerce_option_count``）。"""
+
+    options = data.get("option")
+    if not isinstance(options, dict):
+        return
+    for option_name, option in options.items():
+        if not isinstance(option, dict):
+            continue
+        for key in ("min_count", "max_count"):
+            if key not in option or option[key] is None:
+                continue
+            raw = option[key]
+            coerced = coerce_option_count(raw)
+            if coerced is None:
+                logger.warning(
+                    "MaaFW ProjectInterface option %s.%s 不是非负整数，已忽略：%s",
+                    option_name,
+                    key,
+                    json.dumps(raw, ensure_ascii=False, default=str),
+                )
+            elif not isinstance(raw, int) or isinstance(raw, bool):
+                logger.warning(
+                    "MaaFW ProjectInterface option %s.%s 应为数字，已按 %d 处理：%s",
+                    option_name,
+                    key,
+                    coerced,
+                    json.dumps(raw, ensure_ascii=False, default=str),
+                )
+
+
 def _sanitize_v210_option_fields(interface_model: MaaFWInterface) -> None:
-    """PI v2.10.0 的声明错误：告警并按宽松口径改写模型。
+    """PI v2.10.0 / v2.10.1 的两类声明错误：告警并按宽松口径改写模型。
 
     - input 字段 ``password: true`` 又写了 ``default``：协议禁止（密钥不该随 interface
       分发），丢掉 default，界面与运行都不再用它。
+    - checkbox 的 ``min_count`` 超过 case 数：压到 case 数（最多只能要求全选）；
+      ``max_count`` 超过 case 数：等于不限，置空；``max_count`` 小于 ``min_count``：
+      两者矛盾，丢掉上限、保留下限（下限是「不能少选」的运行前提，上限只是界面约束）。
+    - 非 checkbox 写了这两个字段：不适用，置空。
     """
 
     for option_name, option in interface_model.option.items():
@@ -860,6 +896,66 @@ def _sanitize_v210_option_fields(interface_model: MaaFWInterface) -> None:
                     input_item.name,
                 )
                 input_item.default = None
+
+        if option.min_count is None and option.max_count is None:
+            continue
+        if option.type != "checkbox":
+            logger.warning(
+                "MaaFW ProjectInterface option %s 不是 checkbox，min_count / max_count 已忽略",
+                option_name,
+            )
+            option.min_count = None
+            option.max_count = None
+            continue
+
+        case_count = len(option.cases or [])
+        if option.min_count is not None and option.min_count > case_count:
+            logger.warning(
+                "MaaFW ProjectInterface option %s 的 min_count=%d 超过 case 数 %d，已按 %d 处理",
+                option_name,
+                option.min_count,
+                case_count,
+                case_count,
+            )
+            option.min_count = case_count
+        if option.max_count is not None and option.max_count > case_count:
+            logger.warning(
+                "MaaFW ProjectInterface option %s 的 max_count=%d 超过 case 数 %d，已按不限处理",
+                option_name,
+                option.max_count,
+                case_count,
+            )
+            option.max_count = None
+        if (
+            option.min_count is not None
+            and option.max_count is not None
+            and option.max_count < option.min_count
+        ):
+            logger.warning(
+                "MaaFW ProjectInterface option %s 的 max_count=%d 小于 min_count=%d，已忽略 max_count",
+                option_name,
+                option.max_count,
+                option.min_count,
+            )
+            option.max_count = None
+        if option.min_count == 0:
+            option.min_count = None
+
+        default_names = (
+            set(option.default_case) if isinstance(option.default_case, list) else set()
+        )
+        default_count = len({case.name for case in option.cases or []} & default_names)
+        if (option.min_count is not None and default_count < option.min_count) or (
+            option.max_count is not None and default_count > option.max_count
+        ):
+            logger.warning(
+                "MaaFW ProjectInterface option %s 的 default_case 选了 %d 项，"
+                "不满足 min_count=%s / max_count=%s；未改动过该选项的用户运行前需要先调整",
+                option_name,
+                default_count,
+                option.min_count,
+                option.max_count,
+            )
 
 
 def _validate_presets(interface_model: MaaFWInterface) -> None:
@@ -940,6 +1036,7 @@ def _load_interface_model_with_context(
     )
     _expand_scan_select_options(merged_data, resolved_base_dir, context)
     _warn_preset_value_coercions(merged_data)
+    _warn_option_count_values(merged_data)
 
     try:
         interface_model = MaaFWInterface.model_validate(merged_data)

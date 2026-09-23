@@ -175,7 +175,8 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
 - input 字段 `password: true`（PI v2.10.0）的值在 `Task.TaskSnapshot` 里是带 `mas-dpapi:` 前缀的
   DPAPI 密文：`Config.update_user` 写入前按 interface 加密（`tools/embedded/option_secrets`），
   `runner_task` 建计划前只在内存副本里解密；前端只看到密文、显示「已设置」。没有前缀的是旧明文，
-  照常使用、下次保存时加密。
+  照常使用、下次保存时加密。checkbox 的 `min_count` / `max_count`（v2.10.1）由加载器放宽成自洽值，
+  运行计划里不满足就报错（`MaaFWCheckboxCountError`），不静默截断。
 
 ## 更新
 

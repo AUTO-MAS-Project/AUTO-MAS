@@ -93,7 +93,12 @@
           class="option-checkbox-group"
           @change="handleCheckboxChange(option.name, $event)"
         >
-          <a-checkbox v-for="caseItem in option.cases" :key="caseItem.name" :value="caseItem.name">
+          <a-checkbox
+            v-for="caseItem in option.cases"
+            :key="caseItem.name"
+            :value="caseItem.name"
+            :disabled="isCheckboxCaseLocked(option, getStringListValue(option), caseItem.name)"
+          >
             {{ getCaseLabel(caseItem) }}
           </a-checkbox>
         </a-checkbox-group>
@@ -187,6 +192,14 @@
           :message="`不支持的配置项类型：${option.type || '未知'}，请联系脚本作者或升级 AUTO-MAS`"
         />
 
+        <div
+          v-if="getCheckboxCountHint(option)"
+          class="option-count-hint"
+          :class="{ 'option-count-hint--warning': getCheckboxCountHint(option)?.warning }"
+        >
+          {{ getCheckboxCountHint(option)?.text }}
+        </div>
+
         <MaaFWDescriptionView
           v-if="option.description"
           :content="option.description"
@@ -224,7 +237,12 @@ import { message } from 'ant-design-vue'
 import { QuestionCircleOutlined } from '@ant-design/icons-vue'
 import { buildMaaFWAssetUrl } from '@/composables/useMaaFWApi'
 import MaaFWDescriptionView from './MaaFWDescriptionView.vue'
-import { hasStoredSecret, isPasswordInput } from './maafwOptionConstraints'
+import {
+  getCheckboxCountState,
+  hasStoredSecret,
+  isCheckboxCaseLocked,
+  isPasswordInput,
+} from './maafwOptionConstraints'
 import type {
   MaaFWOptionCaseInfo,
   MaaFWOptionInfo,
@@ -606,6 +624,25 @@ const clearPassword = (optionName: string, inputItem: MaaFWOptionInputInfo) => {
   handleInputFieldChange(optionName, inputItem, '', false)
 }
 
+const getCheckboxCountHint = (option: MaaFWOptionInfo) => {
+  const state = getCheckboxCountState(option, getStringListValue(option))
+  if (!state) return null
+  let text: string
+  if (state.max === null) {
+    text = t('edit.maafwCheckboxCountMin', { min: state.min })
+  } else if (state.min === 0) {
+    text = t('edit.maafwCheckboxCountMax', { max: state.max })
+  } else if (state.min === state.max) {
+    text = t('edit.maafwCheckboxCountExact', { count: state.min })
+  } else {
+    text = t('edit.maafwCheckboxCountRange', { min: state.min, max: state.max })
+  }
+  if (state.violation) {
+    text += t('edit.maafwCheckboxCountCurrent', { count: state.count })
+  }
+  return { text, warning: state.violation !== null }
+}
+
 const getActiveNestedOptionGroups = (option: MaaFWOptionInfo) => {
   if (!['select', 'scan_select', 'switch', 'checkbox'].includes(option.type)) return []
 
@@ -716,6 +753,15 @@ const getActiveNestedOptionGroups = (option: MaaFWOptionInfo) => {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+.option-count-hint {
+  font-size: 12px;
+  color: var(--ant-color-text-secondary);
+}
+
+.option-count-hint--warning {
+  color: var(--ant-color-warning);
 }
 
 .input-label {

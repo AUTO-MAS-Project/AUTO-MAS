@@ -3864,6 +3864,12 @@ class MaaFWOptionInfo(BaseModel):
     defaultCase: Optional[Union[str, List[str]]] = Field(
         default=None, description="默认 case"
     )
+    minCount: Optional[int] = Field(
+        default=None, description="checkbox 最少选择数，未限制为 None"
+    )
+    maxCount: Optional[int] = Field(
+        default=None, description="checkbox 最多选择数，未限制为 None"
+    )
 
 
 class MaaFWTaskSnapshot(BaseModel):

@@ -255,6 +255,53 @@ class MaaFWOption(BaseModel):
     scan_filter: str | None = None
     pipeline_override: MaaFWPipelineOverride | None = None
     default_case: str | list[str] | None = None
+    # PI v2.10.1：checkbox 的最少 / 最多选择数。写法不对（负数、小数、非数字）的按没写
+    # 处理；与 case 数、彼此之间不自洽的由加载器告警并放宽（见 loader）。
+    min_count: int | None = None
+    max_count: int | None = None
+
+    @field_validator("min_count", "max_count", mode="before")
+    @classmethod
+    def coerce_count(cls, value: Any) -> int | None:
+        return coerce_option_count(value)
+
+
+def coerce_option_count(value: Any) -> int | None:
+    """把 ``min_count`` / ``max_count`` 宽松地归一成非负整数；不可用时返回 None。
+
+    协议写的是 number；``"1"`` 这种数字字符串、``2.0`` 这种整数小数照样认，
+    其余（负数、非整数、布尔、结构值）都当没写。告警由加载器按原始值写。
+    """
+
+    if isinstance(value, bool) or value is None:
+        return None
+    if isinstance(value, int):
+        return value if value >= 0 else None
+    if isinstance(value, float):
+        return int(value) if value.is_integer() and value >= 0 else None
+    if isinstance(value, str):
+        text = value.strip()
+        if text.isdigit():
+            return int(text)
+    return None
+
+
+def checkbox_count_problem(
+    option: "MaaFWOption", selected_count: int
+) -> tuple[str, int, int | None] | None:
+    """勾选数不满足 checkbox 的 ``min_count`` / ``max_count`` 时返回 ``(方向, 下限, 上限)``。
+
+    方向是 ``"min"``（选少了）或 ``"max"``（选多了）；满足或没有限制时返回 None。
+    限制值已由加载器放宽成自洽的（下限不超过 case 数、上限不小于下限）。
+    """
+
+    min_count = option.min_count or 0
+    max_count = option.max_count
+    if selected_count < min_count:
+        return "min", min_count, max_count
+    if max_count is not None and selected_count > max_count:
+        return "max", min_count, max_count
+    return None
 
 
 def password_input_names(interface: "MaaFWInterface") -> dict[str, frozenset[str]]:

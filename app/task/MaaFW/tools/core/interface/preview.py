@@ -277,6 +277,8 @@ def build_interface_preview_data(
                     for hotkey_item in option.hotkeys or []
                 ],
                 "defaultCase": option.default_case,
+                "minCount": option.min_count,
+                "maxCount": option.max_count,
             }
             for option_name, option in interface.option.items()
             if option.type in SUPPORTED_OPTION_TYPES

@@ -14,9 +14,34 @@ from app.task.MaaFW.tools.core.interface.models import (
     MaaFWResource,
     MaaFWTask,
     MaaFWTaskOptionValue,
+    checkbox_count_problem,
 )
 
 from .hotkey import MaaFWHotkeyError, resolve_hotkey
+
+
+class MaaFWCheckboxCountError(ValueError):
+    """checkbox 的勾选数不满足 ``min_count`` / ``max_count``（PI v2.10.1）。
+
+    只带机器可读的事实；给人看的整句由建计划的一方拼（它有任务与选项的显示名）。
+    """
+
+    def __init__(
+        self,
+        option_name: str,
+        *,
+        selected: int,
+        min_count: int,
+        max_count: int | None,
+    ) -> None:
+        self.option_name = option_name
+        self.selected = selected
+        self.min_count = min_count
+        self.max_count = max_count
+        super().__init__(
+            f"选项 {option_name} 选了 {selected} 项，要求 "
+            f"{min_count}~{'不限' if max_count is None else max_count} 项"
+        )
 
 
 def deep_merge_pipeline_override(
@@ -473,6 +498,15 @@ class MaaFWPipelineOverrideBuilder:
             selected_case_names = set(
                 self._normalize_checkbox_values(option_name, option, options)
             )
+            problem = checkbox_count_problem(option, len(selected_case_names))
+            if problem is not None:
+                _, min_count, max_count = problem
+                raise MaaFWCheckboxCountError(
+                    option_name,
+                    selected=len(selected_case_names),
+                    min_count=min_count,
+                    max_count=max_count,
+                )
             for case in option.cases:
                 if case.name not in selected_case_names:
                     continue
