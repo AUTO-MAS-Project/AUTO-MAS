@@ -180,6 +180,7 @@ import { buildMaaFWTaskInstanceId, resolveMaaFWTaskName } from '@/utils/maafwTas
 import MaaFWUserEditHeader from './MaaFWUserEdit/MaaFWUserEditHeader.vue'
 import BasicInfoSection from './MaaFWUserEdit/BasicInfoSection.vue'
 import TaskQueueSection from './MaaFWUserEdit/TaskQueueSection.vue'
+import { buildPresetAppliedSnapshot, selectPresetQueueEntries } from './maafwPresetQueue'
 import type {
   MaaFWGroupInfo,
   MaaFWInterfacePreviewData,
@@ -550,14 +551,19 @@ const addTaskCascaderOptions = computed<AddTaskCascaderOption[]>(() =>
   }))
 )
 const presetTemplates = computed(() => {
-  const activeTaskNames = new Set(activeTasks.value.map(task => task.name))
+  const activeTaskByName = new Map(activeTasks.value.map(task => [task.name, task] as const))
   return presetOptions.value
     .map(preset => {
       const snapshot = normalizeTaskSnapshot(preset.snapshot, previewData.value)
-      const taskNames = snapshot.taskOrder.filter(taskName => activeTaskNames.has(taskName))
-      return { preset, taskNames }
+      // 预设里重复的任务是实例 id（`<任务名>__MAS_DUP__presetN`），按实例解析后再判断可用
+      const entries = selectPresetQueueEntries(
+        snapshot.taskOrder,
+        activeTaskByName,
+        validTaskNames.value
+      )
+      return { preset, entries, taskOptions: snapshot.taskOptions }
     })
-    .filter(template => template.taskNames.length > 0)
+    .filter(template => template.entries.length > 0)
 })
 const selectedQueuedTask = computed(
   () =>
@@ -672,16 +678,16 @@ const applyPresetTemplate = async (presetName: string) => {
   const template = presetTemplates.value.find(item => item.preset.name === presetName)
   if (!template) return
 
-  const presetSnapshot = normalizeTaskSnapshot(template.preset.snapshot, previewData.value)
-  const pretaskIds = taskSnapshot.value.taskOrder.filter(taskId => isPretaskId(taskId))
-  const nextTaskIds = partitionTaskOrder([...pretaskIds, ...template.taskNames])
-  const nextTaskIdSet = new Set(nextTaskIds)
-  taskSnapshot.value.taskOrder = nextTaskIds
-  taskSnapshot.value.taskChecked = Object.fromEntries(nextTaskIds.map(taskId => [taskId, true]))
-  taskSnapshot.value.taskOptions = Object.fromEntries(
-    Object.entries(presetSnapshot.taskOptions).filter(([taskId]) => nextTaskIdSet.has(taskId))
+  const nextSnapshot = buildPresetAppliedSnapshot(
+    template.entries,
+    template.taskOptions,
+    taskSnapshot.value.taskOrder,
+    isPretaskId
   )
-  selectedTaskId.value = nextTaskIds[0] || ''
+  taskSnapshot.value.taskOrder = nextSnapshot.taskOrder
+  taskSnapshot.value.taskChecked = nextSnapshot.taskChecked
+  taskSnapshot.value.taskOptions = nextSnapshot.taskOptions
+  selectedTaskId.value = nextSnapshot.taskOrder[0] || ''
   formData.Task.SelectedPreset = presetName
   showPresetModal.value = false
   await savePresetAndSnapshot()
