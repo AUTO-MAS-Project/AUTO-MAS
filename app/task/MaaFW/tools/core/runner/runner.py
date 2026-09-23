@@ -1764,6 +1764,12 @@ class MaaFWRunner:
         python_path_items.append(str(project_path))
         env["PYTHONPATH"] = os.pathsep.join(python_path_items)
         env["PYTHONIOENCODING"] = "utf-8"
+        # UTF-8 模式（open() / Path.read_text() 不写 encoding 时按 UTF-8）：MFAA 与 MXU
+        # 起 agent 都设，项目作者是在它下面测的；不设的话中文 Windows 上不写 encoding
+        # 的读写按 cp936 走，同一个 agent 在 MAS 里可能读坏自己的 UTF-8 文件。项目自带的
+        # 嵌入式 Python 有 ._pth（隔离模式、PYTHONPATH 不生效），这个变量照样生效
+        # （本机实测 3.12.7 / 3.13.7）。只设给 agent，worker 自己不受影响。
+        env["PYTHONUTF8"] = "1"
         # agent 的 stdout 接的是管道，Python 默认 8 KB 块缓冲：裸 print() 的输出会
         # 攒到进程结束才一起冒出来。关掉缓冲让 [Agent:xxx] 行实时进任务日志。
         env["PYTHONUNBUFFERED"] = "1"

@@ -1641,6 +1641,10 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             raise RuntimeError("MaaFW 运行计划尚未初始化")
 
         env = os.environ.copy()
+        # 与 agent 同口径（runner._build_agent_env）：pretask 多是项目自带 Python 跑的
+        # 脚本，输出与读文件都按 UTF-8；对非 Python 程序这两个变量无害。
+        env["PYTHONIOENCODING"] = "utf-8"
+        env["PYTHONUTF8"] = "1"
         env.update(self.run_plan.piEnv)
         creationflags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
         for pretask in self.run_plan.pretasks:
