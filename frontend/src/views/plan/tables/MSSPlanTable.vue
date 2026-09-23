@@ -25,9 +25,7 @@
               :bordered="false"
               :list-height="STAGE_LIST_HEIGHT"
               :disabled="isColumnDisabled(asTimeKey(column.key))"
-              @update:value="
-                (value: string) => handleStageChange(asTimeKey(column.key), value)
-              "
+              @update:value="(value: string) => handleStageChange(asTimeKey(column.key), value)"
             >
               <a-select-option v-for="stage in TRIBULATION_STAGES" :key="stage" :value="stage">
                 {{ shortStage(stage) }}
@@ -40,7 +38,12 @@
               size="small"
               class="config-control"
               :bordered="false"
-              :options="difficultyOptions(keyOf(asTimeKey(column.key)).TribulationStage).map(level => ({ label: level, value: level }))"
+              :options="
+                difficultyOptions(keyOf(asTimeKey(column.key)).TribulationStage).map(level => ({
+                  label: level,
+                  value: level,
+                }))
+              "
               :disabled="
                 isColumnDisabled(asTimeKey(column.key)) ||
                 isOverriddenBySwitch('Difficulty', asTimeKey(column.key))
@@ -241,11 +244,7 @@ const keyOf = (timeKey: TimeKey): StellaPlanKey => {
   return {
     TribulationStage: effectiveStage,
     SkipDifficulty: raw?.SkipDifficulty === true,
-    Difficulty: number(
-      raw?.Difficulty,
-      DEFAULT_KEY.Difficulty,
-      difficultyLimitOf(effectiveStage)
-    ),
+    Difficulty: number(raw?.Difficulty, DEFAULT_KEY.Difficulty, difficultyLimitOf(effectiveStage)),
     ConsumeAllEnergy: raw?.ConsumeAllEnergy === true,
     FightTimes: number(raw?.FightTimes, DEFAULT_KEY.FightTimes, 99),
   }
