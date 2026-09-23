@@ -1549,7 +1549,6 @@ export default {
     wutheringWavesUpdateTask: '鳴潮の更新タスクが終了しました',
     wutheringWavesUpdateTimed: '鳴潮の更新がタイムアウトしたため、自動的に停止しました',
     k60SecondsRecommendedDefault: '既定の待機時間は 60 秒への変更をおすすめします。',
-    whichSpellsOutEvery: 'には設定手順がすべて明記されています。',
     // BAAH 専用
     baahScriptConfiguration: 'BAAH スクリプト設定',
     baahScriptNameHint: '複数の BAAH スクリプトインスタンスを区別するための名前です',
