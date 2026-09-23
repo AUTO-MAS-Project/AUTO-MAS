@@ -1319,13 +1319,27 @@ def build_projection_rules(
     for base in {ROOT, base_relative}:
         for entry in view.iter_entries(base):
             name = entry.name
-            if name.casefold() in DEPENDENCY_DIR_NAMES and view.is_dir(entry):
-                add_target(entry, complete=False, required_label=None)
-            elif view.is_file(entry) and any(
-                fnmatch.fnmatchcase(name, pattern)
-                for pattern in DEPENDENCY_FILE_PATTERNS
-            ):
-                add_target(entry, complete=False, required_label=None)
+            is_dependency = (
+                name.casefold() in DEPENDENCY_DIR_NAMES and view.is_dir(entry)
+            ) or (
+                view.is_file(entry)
+                and any(
+                    fnmatch.fnmatchcase(name, pattern)
+                    for pattern in DEPENDENCY_FILE_PATTERNS
+                )
+            )
+            if not is_dependency:
+                continue
+            if not _is_relative_to(entry, base_relative):
+                # assets 布局（MATR）：interface 在 assets/ 下，根目录上的 plugins/ 等是
+                # 自动收集的、不是 interface 声明的；副本以 assets/ 为根，它们提升不进去。
+                # 以前留在白名单里，到下面的越界检查整包拒绝；现在跳过并告警。
+                warnings.append(
+                    f"根目录上的 {entry.as_posix()} 不在 interface 所在的 "
+                    f"{base_relative.as_posix()}/ 里，内嵌副本以它为根，未带入"
+                )
+                continue
+            add_target(entry, complete=False, required_label=None)
 
     # 项目自带的 MaaFramework 原生库目录原样带走：runner 优先加载它（与路径模式一致），
     # 非 Python 的 agent 更是启动时就从 <项目>/maafw 加载。
