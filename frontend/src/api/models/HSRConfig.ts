@@ -2,6 +2,7 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
+import type { HSRConfig_Cloud } from './HSRConfig_Cloud';
 import type { HSRConfig_Game } from './HSRConfig_Game';
 import type { HSRConfig_Info } from './HSRConfig_Info';
 import type { HSRConfig_Managed } from './HSRConfig_Managed';
@@ -20,6 +21,10 @@ export type HSRConfig = {
      * 游戏配置
      */
     Game?: (HSRConfig_Game | null);
+    /**
+     * 云·星穹铁道配置
+     */
+    Cloud?: (HSRConfig_Cloud | null);
     /**
      * 运行配置
      */
