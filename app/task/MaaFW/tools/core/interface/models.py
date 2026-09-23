@@ -18,7 +18,9 @@
 
 
 import json
+import math
 from collections.abc import Callable, Collection
+from decimal import Decimal
 from typing import Any, Literal
 
 from pydantic import (
@@ -216,6 +218,16 @@ class MaaFWInputCase(BaseModel):
     # （两者同时出现时由加载器告警并丢掉 default）。
     password: bool = False
 
+    @field_validator("default", mode="before")
+    @classmethod
+    def coerce_default_text(cls, value: Any) -> str | None:
+        # 协议写的是字符串，但真实发行包里有写成数字的（MAG：``"default": 300000``）：
+        # 与 preset 里的选项值同一口径按 JSON 写法转成字符串，结构值当没写。
+        # 告警由加载器按原始值写。
+        if value is None:
+            return None
+        return _preset_scalar_text(value)
+
     @field_validator("password", mode="before")
     @classmethod
     def coerce_password_flag(cls, value: Any) -> bool:
@@ -360,12 +372,19 @@ def map_password_values(
 
 
 def _preset_scalar_text(value: Any) -> str | None:
-    """preset 里的标量按 JSON 写法转成字符串（99 → "99"，true → "true"）；非标量返回 None。"""
+    """preset 里的标量按 JSON 写法转成字符串（99 → "99"，true → "true"）；非标量返回 None。
+
+    整数形态的浮点（``99.0``、``1e20``）规范成整数串（"99"、"100000000000000000000"）：
+    JSON 解析出来是 float，原样 ``json.dumps`` 会得到 "99.0" / "1e+20"，下发到
+    pipeline_type 为 int 的输入时转不成整数。
+    """
 
     if isinstance(value, str):
         return value
     if isinstance(value, bool):
         return "true" if value else "false"
+    if isinstance(value, float) and math.isfinite(value) and value.is_integer():
+        return format(Decimal(repr(value)).to_integral_value(), "f")
     if isinstance(value, (int, float)):
         return json.dumps(value)
     return None

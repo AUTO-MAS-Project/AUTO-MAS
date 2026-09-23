@@ -47,7 +47,11 @@ from .models import (
     MaaFWSkippedTaskPlan,
     MaaFWTaskRunPlan,
 )
-from .pipeline_override import MaaFWCheckboxCountError, MaaFWPipelineOverrideBuilder
+from .pipeline_override import (
+    MaaFWCheckboxCountError,
+    MaaFWInputValueError,
+    MaaFWPipelineOverrideBuilder,
+)
 
 # 本模块会被运行池隔离 venv 里的 worker 进程导入（``runner``
 # 的 ``__init__`` 连带 import 它），那个 venv 只装了 maafw 与项目依赖，没有
@@ -193,6 +197,15 @@ def build_maafw_run_plan(
                     i18n_mapping,
                 )
             ) from exc
+        except MaaFWInputValueError as exc:
+            raise MaaFWRunPlanError(
+                _describe_input_value_error(
+                    exc,
+                    _resolve_i18n_label(task.label, task.name, i18n_mapping),
+                    interface,
+                    i18n_mapping,
+                )
+            ) from exc
         runnable_tasks.append(
             MaaFWTaskRunPlan(
                 name=task.name,
@@ -277,6 +290,44 @@ def _describe_checkbox_count_error(
         f"任务「{task_label}」的选项「{option_label}」{requirement}，"
         f"当前选了 {exc.selected} 项，请在用户配置的任务队列里调整后再运行"
     )
+
+
+_INPUT_TYPE_NAMES = {
+    "int": "整数",
+    "integer": "整数",
+    "float": "数字",
+    "double": "数字",
+    "number": "数字",
+}
+
+
+def _describe_input_value_error(
+    exc: MaaFWInputValueError,
+    task_label: str,
+    interface_model: MaaFWInterface,
+    i18n_mapping: dict[str, Any],
+) -> str:
+    """input 的值下发不了时给用户看的一句话：哪个任务、哪个选项（多字段时带字段名）、什么值。"""
+
+    option = interface_model.option.get(exc.option_name)
+    option_label = (
+        _resolve_i18n_label(option.label, exc.option_name, i18n_mapping)
+        if option is not None
+        else exc.option_name
+    )
+    inputs = (option.inputs or []) if option is not None else []
+    if len(inputs) > 1:
+        field = next((item for item in inputs if item.name == exc.field_name), None)
+        field_label = (
+            _resolve_i18n_label(field.label, exc.field_name, i18n_mapping)
+            if field is not None
+            else exc.field_name
+        )
+        option_label = f"{option_label}」的「{field_label}"
+    kind = _INPUT_TYPE_NAMES.get(exc.expected, exc.expected)
+    if exc.value is None:
+        return f"任务「{task_label}」：{exc}"
+    return f"任务「{task_label}」的选项「{option_label}」的值 {exc.value} 不是{kind}"
 
 
 def _coerce_interface(

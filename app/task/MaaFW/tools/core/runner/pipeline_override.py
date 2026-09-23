@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import copy
+import math
+from decimal import Decimal, InvalidOperation
 from typing import Any, cast
 
 import json5
@@ -42,6 +44,48 @@ class MaaFWCheckboxCountError(ValueError):
             f"选项 {option_name} 选了 {selected} 项，要求 "
             f"{min_count}~{'不限' if max_count is None else max_count} 项"
         )
+
+
+class MaaFWInputValueError(ValueError):
+    """input 字段的值下发不了：该填数字的地方填的不是数字，或者没填也没有默认值。
+
+    与 ``MaaFWCheckboxCountError`` 同样只带事实（选项名、字段名、值、期望的类型），
+    给人看的整句由建计划的一方拼（它有任务与选项的显示名）。``value`` 为 None 表示没填。
+    """
+
+    def __init__(
+        self,
+        option_name: str,
+        field_name: str,
+        *,
+        expected: str,
+        value: str | None,
+    ) -> None:
+        self.option_name = option_name
+        self.field_name = field_name
+        self.expected = expected
+        self.value = value
+        detail = "未填写且 interface 未声明默认值" if value is None else f"值 {value}"
+        super().__init__(
+            f"选项 {option_name} 的字段 {field_name} 需要 {expected} 值，{detail}"
+        )
+
+
+def _parse_integer_text(text: str) -> int | None:
+    """整数，或整数形态的小数 / 科学计数（``99.0``、``1e20``）；别的返回 None。"""
+
+    stripped = text.strip()
+    try:
+        return int(stripped)
+    except ValueError:
+        pass
+    try:
+        number = Decimal(stripped)
+    except InvalidOperation:
+        return None
+    if not number.is_finite() or number != number.to_integral_value():
+        return None
+    return int(number)
 
 
 def deep_merge_pipeline_override(
@@ -219,19 +263,40 @@ class MaaFWPipelineOverrideBuilder:
             # 合法取值（M9A 的兑换码没填就该是空）。
             fallback = "" if default is None else str(default).strip()
             if not fallback:
-                raise ValueError(
-                    f"选项 {option_name or '?'} 的字段 {field_name or '?'} "
-                    f"需要 {normalized_type} 值，但未填写且 interface 未声明默认值"
+                raise MaaFWInputValueError(
+                    option_name or "?",
+                    field_name or "?",
+                    expected=normalized_type,
+                    value=None,
                 )
             raw_value = fallback
         if normalized_type in {"bool", "boolean"}:
             typed_value = raw_value.lower() in {"true", "1", "yes", "y", "on"}
             return typed_value, "true" if typed_value else "false"
         if normalized_type in {"int", "integer"}:
-            typed_value = int(raw_value)
-            return typed_value, str(typed_value)
+            # 整数形态的小数（「99.0」「1e20」，preset / 默认值里写成数字时常见）规范成整数；
+            # 确实不是整数的报清楚是哪个选项、什么值，不抛 int() 那句没有上下文的原文。
+            integer = _parse_integer_text(raw_value)
+            if integer is None:
+                raise MaaFWInputValueError(
+                    option_name or "?",
+                    field_name or "?",
+                    expected=normalized_type,
+                    value=raw_value,
+                )
+            return integer, str(integer)
         if normalized_type in {"float", "double", "number"}:
-            typed_value = float(raw_value)
+            try:
+                typed_value = float(raw_value)
+            except ValueError:
+                typed_value = math.nan
+            if not math.isfinite(typed_value):
+                raise MaaFWInputValueError(
+                    option_name or "?",
+                    field_name or "?",
+                    expected=normalized_type,
+                    value=raw_value,
+                )
             return typed_value, str(typed_value)
         return raw_value, raw_value
 

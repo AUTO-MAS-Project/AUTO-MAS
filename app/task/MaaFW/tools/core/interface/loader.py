@@ -698,6 +698,41 @@ def _warn_preset_value_coercions(data: dict[str, Any]) -> None:
                     )
 
 
+def _warn_input_default_coercions(data: dict[str, Any]) -> None:
+    """input 字段的 default 不是字符串：模型按 JSON 写法转成字符串（MAG 的 300000），逐处告警。"""
+
+    options = data.get("option")
+    if not isinstance(options, dict):
+        return
+    for option_name, option in options.items():
+        if not isinstance(option, dict) or not isinstance(option.get("inputs"), list):
+            continue
+        for input_item in option["inputs"]:
+            if not isinstance(input_item, dict):
+                continue
+            raw = input_item.get("default")
+            if raw is None or isinstance(raw, str):
+                continue
+            text, _ = coerce_preset_option_value(raw)
+            if isinstance(text, str):
+                logger.warning(
+                    "MaaFW ProjectInterface option %s 的输入字段 %s 的 default 应为字符串，"
+                    "已按 %r 处理：%s",
+                    option_name,
+                    input_item.get("name"),
+                    text,
+                    json.dumps(raw, ensure_ascii=False),
+                )
+            else:
+                logger.warning(
+                    "MaaFW ProjectInterface option %s 的输入字段 %s 的 default 不是字符串，"
+                    "已忽略：%s",
+                    option_name,
+                    input_item.get("name"),
+                    json.dumps(raw, ensure_ascii=False, default=str),
+                )
+
+
 def _sanitize_option_case_values(
     option_name: str,
     option: MaaFWOption,
@@ -1166,6 +1201,7 @@ def _load_interface_model_uncollected(
     )
     _expand_scan_select_options(merged_data, resolved_base_dir, context)
     _warn_preset_value_coercions(merged_data)
+    _warn_input_default_coercions(merged_data)
     _warn_option_count_values(merged_data)
 
     try:
