@@ -643,6 +643,7 @@ export interface User {
     ActivityStageIndex?: number
     ActivityMedicineNumb?: number
     IfDepotMaintain?: boolean
+    DepotMaintainPlans?: string
     IfGreenTicketStore?: boolean
     SanityTaskType?: MaaEndTaskConfig['SanityTaskType']
     OperatorProgression?: MaaEndTaskConfig['OperatorProgression']

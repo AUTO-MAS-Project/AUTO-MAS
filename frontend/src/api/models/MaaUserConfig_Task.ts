@@ -40,6 +40,10 @@ export type MaaUserConfig_Task = {
      */
     IfDepotMaintain?: (boolean | null);
     /**
+     * 库存保持计划 JSON
+     */
+    DepotMaintainPlans?: (string | null);
+    /**
      * 绿票商店
      */
     IfGreenTicketStore?: (boolean | null);

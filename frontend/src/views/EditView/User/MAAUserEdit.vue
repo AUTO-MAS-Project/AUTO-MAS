@@ -582,6 +582,7 @@ const getDefaultMAAUserData = () => ({
     IfRecruit: true,
     IfReclamation: false,
     IfDepotMaintain: false,
+    DepotMaintainPlans: '[]',
     IfCultivate: false,
     IfGreenTicketStore: false,
     IfActivityFirst: false,

@@ -353,7 +353,7 @@ export default {
     maaCultivateStateAchieved: 'Achieved',
     maaCultivateStatePending: 'Pending',
     maaDepot: 'Depot maintenance',
-    maaDepotHint: 'Configure the plan list in the MAA interface',
+    maaDepotHint: 'Set target stock per material; farmed automatically when short',
     maaCombat: 'Sanity combat',
     maaInfrast: 'Infrastructure shift',
     maaInfrastMode: 'Infrastructure mode',

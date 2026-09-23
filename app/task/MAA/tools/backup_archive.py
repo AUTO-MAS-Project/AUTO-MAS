@@ -141,6 +141,7 @@ _OVERLAY_TASK_KEYS = (
     "IfSwitchTheme",
     "IfReclamation",
     "IfDepotMaintain",
+    "DepotMaintainPlans",
     "IfGreenTicketStore",
     "IfActivityFirst",
     "ActivityStageIndex",
@@ -195,6 +196,7 @@ _OVERLAY_MAS_ONLY_ORDER = (
     "CultivateTargets",
     "CultivateSkipDuringActivity",
     "CultivateSkipDuringResourceCollection",
+    "DepotMaintainPlans",
     "IfGreenTicketStore",
 )
 
@@ -212,6 +214,7 @@ _OVERLAY_FIELD_LABELS = {
     "IfSwitchTheme": "更换主题",
     "IfReclamation": "生息演算",
     "IfDepotMaintain": "库存保持",
+    "DepotMaintainPlans": "库存保持计划",
     "IfGreenTicketStore": "绿票商店",
     "IfActivityFirst": "活动关优先",
     "ActivityStageIndex": "活动关卡序号",
@@ -753,6 +756,17 @@ def _overlay_value(key: str, value) -> str:
         # 关卡哨兵值（与配置界面同口径）：- = 禁用（下拉原始标签），
         # * = 当前/上次，空 = 不选择，其余为关卡名/计划 UID
         text = {"-": "禁用", "*": "当前/上次", "": "不选择"}.get(str(value), str(value))
+    elif key == "DepotMaintainPlans":
+        # JSON 串存库存保持计划列表，预览只给数量（恢复仍整串写回）
+        try:
+            plans = json.loads(value) if isinstance(value, str) else value
+            text = (
+                f"已配置 {len(plans)} 个计划"
+                if isinstance(plans, list) and plans
+                else "无"
+            )
+        except Exception:
+            text = "已配置"
     elif key == "CultivateTargets":
         # JSON 串存养成目标列表，预览只给数量（不臆造目标内容，恢复仍整串写回）
         try:
@@ -795,7 +809,7 @@ def build_overlay_summary(overlay: dict) -> list[dict]:
 
     - **MAS 独有配置**：MAA GUI 无对应概念、「查看详细配置」看不到的
       字段，必须全量展示（配置文件来源/关卡配置模式/剿灭开始星期/活动关
-      优先三项/干员养成四项/绿票商店/库存保持计划）；
+      优先三项/干员养成四项/库存保持计划/绿票商店）；
     - **MAA 配置**：与 MAA GUI 概念对应的字段（服务器/账号/任务开关/
       战斗参数/剿灭/基建），关卡为合成后的具体刷本内容。
 

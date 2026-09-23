@@ -1041,6 +1041,10 @@ class MaaUserConfig(ConfigBase):
         self.Task_IfDepotMaintain = ConfigItem(
             "Task", "IfDepotMaintain", False, BoolValidator()
         )
+        ## 库存保持计划（快速配置面板维护；MAA 侧同名 PlanList 为透传载体）
+        self.Task_DepotMaintainPlans = ConfigItem(
+            "Task", "DepotMaintainPlans", "[]", JSONValidator(list)
+        )
         ## 是否每月自动购买一次绿票商店
         self.Task_IfGreenTicketStore = ConfigItem(
             "Task", "IfGreenTicketStore", False, BoolValidator()

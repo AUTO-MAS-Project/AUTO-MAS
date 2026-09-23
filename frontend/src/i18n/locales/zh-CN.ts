@@ -345,7 +345,7 @@ export default {
     maaCultivateStateAchieved: '已达成',
     maaCultivateStatePending: '待确认',
     maaDepot: '库存保持',
-    maaDepotHint: '计划列表等高级设置在 MAA 界面里配置',
+    maaDepotHint: '按材料设定保有量，不足时自动刷取补足',
     maaCombat: '理智作战',
     maaInfrast: '基建换班',
     maaInfrastMode: '基建模式',

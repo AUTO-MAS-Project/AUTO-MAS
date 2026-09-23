@@ -561,6 +561,67 @@ def _repair_maa_task_queue(source_queue: list[dict]) -> list[dict]:
     ]
 
 
+def _build_depot_maintain_task(
+    plans_json: str,
+    source_task: dict | None = None,
+) -> dict:
+    """生成 MAA 库存保持任务配置。
+
+    只覆盖 MAS 面板管理的 Stage/DropId/DropCount；其余字段（含用户在 MAA 里设的
+    UseMedicine/UseStone 等）从来源任务整条透传——上游私有格式只做值经手，
+    不按 MAS 口径改写其语义。
+    """
+
+    source_task = source_task or {}
+    source_plans = source_task.get("PlanList") or []
+    if not isinstance(source_plans, list):
+        source_plans = []
+
+    plans = []
+    for plan in json.loads(plans_json):
+        if (
+            isinstance(plan, dict)
+            and isinstance(plan.get("Stage"), str)
+            and bool(plan["Stage"])
+            and isinstance(plan.get("DropId"), str)
+            and bool(plan["DropId"])
+            and isinstance(plan.get("DropCount"), int)
+            and not isinstance(plan.get("DropCount"), bool)
+            and plan["DropCount"] > 0
+        ):
+            source_plan = next(
+                (
+                    item
+                    for item in source_plans
+                    if isinstance(item, dict)
+                    and item.get("Stage") == plan["Stage"]
+                    and item.get("DropId") == plan["DropId"]
+                ),
+                {},
+            )
+            plans.append(
+                {
+                    **deepcopy(source_plan),
+                    "Stage": plan["Stage"],
+                    "DropId": plan["DropId"],
+                    "DropCount": plan["DropCount"],
+                }
+            )
+
+    # 必须走 _with_type_first：MAA 用 System.Text.Json 的多态元数据读条目，
+    # $type 不在第一个属性就整个配置反序列化失败并静默退回 .bak（旧值）。
+    # 下方注入点在 _repair_maa_task_queue 之后执行，不能指望队列级修复兜底。
+    return _with_type_first(
+        {
+            **deepcopy(source_task),
+            "Name": "库存保持",
+            "IsEnable": True,
+            "TaskType": "DepotMaintain",
+            "PlanList": plans,
+        }
+    )
+
+
 def _build_cultivate_task(
     plan: "CultivatePlan",
     source_task: dict | None,
@@ -1443,10 +1504,16 @@ class AutoProxyTask(TaskExecuteBase):
             source_queue, "活动关优先", "Fight", allow_type_fallback=False
         )
 
-        # 库存保持的高级设置（计划列表）由 MAA 自己的 GUI 维护，MAS 只负责开关：
-        # task_set["DepotMaintain"] 原样来自来源配置，计划列表不经手、不翻译。
+        # 库存保持计划：MAS 快速配置面板维护的计划写回原生 PlanList。只覆盖
+        # MAS 管理的三项（Stage/DropId/DropCount），其余原生字段（含用户在 MAA 里
+        # 设的药/石开关）整条透传，不按 #927 前的口径硬编码 UseMedicine/UseStone。
         # 养成计划是 MAS 自有能力，仍由 _build_cultivate_task 单独注入一条同类型
         # 任务（Name 不同，MAA 按名称区分）。
+        if "DepotMaintain" in task_set:
+            task_set["DepotMaintain"] = _build_depot_maintain_task(
+                self.cur_user_config.get("Task", "DepotMaintainPlans"),
+                source_task=task_set["DepotMaintain"],
+            )
 
         # 加载关卡号配置
         if self.cur_user_config.get("Info", "StageMode") == "Fixed":
