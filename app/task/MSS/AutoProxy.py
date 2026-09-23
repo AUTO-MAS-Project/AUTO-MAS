@@ -660,16 +660,17 @@ class AutoProxyTask(TaskExecuteBase):
         """
 
         while not self.wait_event.is_set():
-            if self.process_manager is None or not await self.process_manager.is_running():
+            if (
+                self.process_manager is None
+                or not await self.process_manager.is_running()
+            ):
                 await asyncio.sleep(_LOG_DRAIN_SECONDS)
                 if self.wait_event.is_set():
                     return
                 self.cur_user_log.status = self._judge_from_log(
                     "".join(self.cur_user_log.content)
                 )
-                logger.info(
-                    f"MSS 外壳进程已退出, 结果判定: {self.cur_user_log.status}"
-                )
+                logger.info(f"MSS 外壳进程已退出, 结果判定: {self.cur_user_log.status}")
                 self.wait_event.set()
                 return
 
