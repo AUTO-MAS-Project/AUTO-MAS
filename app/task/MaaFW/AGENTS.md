@@ -101,11 +101,16 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   `game_resolution.py`：按 `<exe>_Data/app.info` 反查 `HKCU\Software\<公司>\<产品>`，
   只改 Unity 播放器的 `Screenmanager *` 值，不碰游戏自有的那层（星铁的
   `GraphicsSettings_PCResolution`、终末地的 `video_resolution_*`），效果要实机验证。
-- `Game.StartupSettleTime`：游戏是**本轮刚起来的**（MAS 拉起，或接管时窗口是等出来的）才生效，
-  从窗口出现起算，宿主把「最早可下发时刻」写进 job（`taskStartNotBefore`），worker 在资源 /
-  controller / agent 初始化完成后补足剩余等待。游戏早就在跑、重试轮次、AttachOnly 都不等。
-  背景：终末地窗口出现后登录界面要 22~31s 才渲染，MaaEnd 的 SceneManager 见画面十几秒不变
-  就判「环境识别异常」失败，beta.5 runner 启动变快（窗口→下发 7~9s）后每次冷启动都撞上。
+- 启动后再等（#889 起没有单独的键，上限就是 `Game.WaitTime`）：游戏是**本轮刚起来的**（MAS
+  拉起，或接管时窗口是等出来的）才生效，从窗口出现起算，宿主把「最早可下发时刻」写进 job
+  （`taskStartNotBefore`），worker 在资源 / controller / agent 初始化完成后每秒截一帧，两条提前
+  放行：连续 5s 画面没变（静态登录页）；或连续 20s 有内容哪怕一直在动（`runner.py` 的
+  `STARTUP_SCREEN_CONTENT_SECONDS`）。黑屏 / 纯色把两个计数都清零，截不到图就等满上限。
+  游戏早就在跑、重试轮次、AttachOnly 都不等。真机数据（2026-09-19）：终末地主界面每秒 3~6%
+  抽样点在动、崩坏三登录页 22~38%，「没变」对它们永远不成立；终末地在窗口后 22s、主界面
+  还没出来时下发首个任务照样成功。背景：终末地窗口出现后登录界面要 22~31s 才渲染，MaaEnd 的
+  SceneManager 见画面十几秒不变就判「环境识别异常」失败，beta.5 runner 启动变快（窗口→下发
+  7~9s）后每次冷启动都撞上。
 - 用户配置在 `check()` 时深拷贝成副本跑，`final_task` 解锁后**整表写回**（#720 / #737）。
   改任何运行期写用户字段的逻辑，都要用落盘探针验证，只看内存会误判成已生效。
 

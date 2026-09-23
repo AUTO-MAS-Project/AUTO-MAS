@@ -3,8 +3,8 @@ import { describe, expect, it } from 'vitest'
 import { parse } from '@vue/compiler-sfc'
 
 describe('quick configuration panel visibility', () => {
-  // BetterGI 不在列：本 PR 决定「快速配置不作为配置来源开关」，该页面恢复原貌——
-  // 任务配置卡片常显、开关回到 GeneralConfigModeSelector 内（按来源而非开关决定面板形态）。
+  // BetterGI 不在列：其快速配置开关已隐藏，改由配置来源派生（直控 = 关，脚本 / 用户 = 开），
+  // 于是选择器不再渲染该开关；面板形态仍按来源决定（见本文件最后一条用例）。
   // M9A 也不在列：它已是 MaaFW 的特调类型，页面就是 MaaFWUserEdit.vue，见下一条
   for (const name of ['MAA', 'SRC', 'MaaEnd', 'Okww', 'OkNte']) {
     it(`${name} keeps its switch outside the conditional panel`, () => {
@@ -50,18 +50,32 @@ describe('quick configuration panel visibility', () => {
     expect(source).toContain('v-if="quickConfig !== undefined"')
   })
 
-  it('flushes BetterGI task settings before hiding the panel', () => {
+  it('derives BetterGI quick configuration from the config source', () => {
+    // 开关已从 BetterGI 页隐藏：值随配置来源派生（直控 = 关，脚本 / 用户 = 开），切来源时
+    // 与 Mode 一起保存；原「关闭前先落盘一条龙组设置」的处理移到切到直控时（面板将隐藏）。
     const source = readFileSync(new URL('./BetterGIUserEdit.vue', import.meta.url), 'utf8')
+    const template = parse(source).descriptor.template!.content
+    expect(template).not.toMatch(/quick-config|enableQuickConfiguration|Info\.IfQuickConfig/)
+    expect(source).not.toContain('handleQuickConfigChange')
+
     const handler = source.slice(
-      source.indexOf('const handleQuickConfigChange ='),
-      source.indexOf('const toggleGroup =')
+      source.indexOf('const handleConfigModeChange ='),
+      source.indexOf('// ----- 原生 GUI 设置会话')
     )
+    expect(handler).toContain("const nextQuickConfig = value !== '直控'")
+    expect(handler).toMatch(
+      /Info: \{ Mode: formData\.Info\.Mode, IfQuickConfig: nextQuickConfig \}/
+    )
+    expect(handler).toMatch(
+      /if \(!saved\) \{[\s\S]*?formData\.Info\.IfQuickConfig = previousQuickConfig/
+    )
+    // 切到直控（派生为关）前先把未落盘的一条龙组设置刷掉，避免面板隐藏后丢改动
     expect(handler.indexOf('await saveDragonGroupSettings(true, dragonGroupSaveSel)')).toBeLessThan(
-      handler.indexOf('formData.Info.IfQuickConfig = value')
+      handler.indexOf('formData.Info.IfQuickConfig = nextQuickConfig')
     )
     expect(handler).toMatch(/!\(await saveDragonGroupSettings\([\s\S]*?\)\)\s*\)\s*return/)
-    expect(source).toContain('masConfigEnabled.value\n')
-    expect(source).toContain('const globalUserId = masConfigEnabled.value ?')
+    // 加载时同样按来源归一（存量「直控 + 开」不再残留在表单里）
+    expect(source).toContain("formData.Info.IfQuickConfig = formData.Info.Mode !== '直控'")
   })
 
   for (const name of ['General', 'HSR', 'BAAH', 'ZzzOd']) {

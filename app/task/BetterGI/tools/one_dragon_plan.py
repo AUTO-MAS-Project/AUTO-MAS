@@ -356,10 +356,15 @@ def plan_steps_to_native_settings(
     首领讨伐/地脉花 → 一条龙文件；秘境 → 全局 ``autoDomainConfig`` 段；
     幽境危战 → 全局 ``autoStygianOnslaughtConfig`` 段。
 
-    - 只收 ``RIGHTBAR_TO_PLAN`` 登记过的键（即 ``BUILTIN_STEP_SETTING_KEYS`` 白名单）；
+    - 只收 ``RIGHTBAR_TO_PLAN`` 登记过的键（即 ``BUILTIN_STEP_SETTING_KEYS`` 白名单），
+      外加 ``flatten_weekly_struct`` 展平出的每周表平铺键（``MondayDomainName`` /
+      ``DomainRunMonday`` / ``LeyLineMondayType`` …，均为一条龙顶层键）；
     - 只收**非空**值：留空的字段保持原生配置现有值，避免把面板空值灌进原生配置；
-    - 结构化/全局共享字段（秘境每周表、地脉花每工作日 country/type、maxArtifactStar）
-      不在本表内，按注释约定留在原生存储，不参与对齐。
+    - ``maxArtifactStar`` 虽在 ``RIGHTBAR_TO_PLAN`` 内，但它是全局
+      ``autoArtifactSalvageConfig`` 段的叶子，调用方写一条龙时会按全局段落叶过滤掉。
+
+    2026-09-19：原先每周表整体不参与对齐，直控 + 快速配置下面板改了周表也不生效
+    （BGI 仍按自己那份旧周表跑），现补上展平键，与执行层 main.js 的取值链对齐。
 
     Returns:
         ``{组基名: {原生键: 值}}``；无战斗步骤或无可对齐字段时返回空 dict。
@@ -381,6 +386,17 @@ def plan_steps_to_native_settings(
             if value is None or value == "":
                 continue
             bucket[native_key] = value
+        # 每周表：Plan 里是嵌套结构（weeklyDomain / weeklyLeyLine，供执行层 main.js 按
+        # 「当天行 → 默认行 → 步骤级」取值），原生一条龙仍是 BGI 的平铺键，这里反向展平
+        # 一并写入。布尔 False 必须写出去（「当天不执行」就靠它传达），故只跳过 None 与
+        # 空串；展平出的 default 行键（PartyName / DomainName）与步骤级同值，覆盖无副作用。
+        for native_key, value in flatten_weekly_struct(base, settings).items():
+            if value is None or value == "":
+                continue
+            bucket[native_key] = value
+    # 只剔除「空桶」：这里的 value 是 {原生键: 值} 整桶，不是叶子值——桶里哪怕只有 False
+    # （某工作日行被取消勾选）也是非空 dict，恒为真、照样返回；False 在上面两个插入循环里
+    # 已经过了 None/空串判断（False == "" 为假），不会被任何一处滤掉。
     return {key: value for key, value in out.items() if value}
 
 

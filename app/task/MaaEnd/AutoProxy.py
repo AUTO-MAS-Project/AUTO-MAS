@@ -1010,12 +1010,6 @@ class AutoProxyTask(TaskExecuteBase):
                     logger.success("静默模式: 成功隐藏 MaaEnd 窗口")
                 else:
                     logger.warning("静默模式: 隐藏 MaaEnd 窗口失败")
-            if self.emulator_manager is None:
-                if await self.game_process_manager.activate_window():
-                    logger.success("前置 Endfield 窗口成功")
-                else:
-                    logger.warning("前置 Endfield 窗口失败")
-
             await asyncio.sleep(1)
             await self._wait_maaend_stage()
 
@@ -1126,7 +1120,10 @@ class AutoProxyTask(TaskExecuteBase):
                 await System.kill_process(self.script_config.get("Game", "Path"))
             else:
                 logger.info("中止模拟器进程")
-                await close_emulator(self)
+                await close_emulator(
+                    self,
+                    index=self.script_config.get("Game", "EmulatorIndex"),
+                )
         except Exception as e:
             logger.opt(exception=True).warning(f"关闭游戏或模拟器失败: {e}")
 
@@ -1959,7 +1956,10 @@ class AutoProxyTask(TaskExecuteBase):
                                 self.task_name_map.get(task_name, task_name)
                             )
                             task_index[task_name]["index"] += 1
-                        elif f"任务失败: {task_name}" in log_line:
+                        elif (
+                            task_name in task_index
+                            and f"任务失败: {task_name}" in log_line
+                        ):
                             task_index[task_name]["index"] += 1
 
                     await self._mark_daily_once_tasks_completed(completed_task_names)

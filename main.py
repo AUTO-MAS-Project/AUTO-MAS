@@ -364,6 +364,8 @@ def main():
                 await Config.clean_maafw_embedded_copies()
                 await Config.clean_maafw_runtime_blobs()
                 await Config.clean_maafw_update_cache()
+                # 副本清理之后：副本没了，它的 binding / runtime 才会变成无人引用
+                await Config.clean_maafw_runtime_pool()
                 await Config.clean_debug_diagnostics()
                 await Config.clean_maafw_native_debug_logs()
 

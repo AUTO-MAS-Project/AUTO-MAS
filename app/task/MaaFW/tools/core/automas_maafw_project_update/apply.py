@@ -10,9 +10,10 @@ import os
 import shutil
 import uuid
 import zipfile
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Mapping
+from typing import Any, Callable, Iterator, Mapping
 
 from .blob_store import BLOB_STORE_DIR_NAME, RuntimeBlobStore
 from .contracts import (
@@ -67,6 +68,22 @@ def _project_state_dir(
     if create:
         state_dir.mkdir(parents=True, exist_ok=True)
     return state_dir
+
+
+def project_state_dir_for(
+    project_path: Path,
+    *,
+    operation_root: Path | None = None,
+) -> Path:
+    """这个项目的状态目录（``resource-manifest.json`` 所在处），纯路径推导。
+
+    不碰文件系统、不建目录：给只读探测与「与清单同目录」的旁路文件
+    （如运行环境预检备忘）定位用。要建目录的调用方自己 ``mkdir``。
+    """
+
+    return _resolve_project_state_dir(
+        Path(project_path), operation_root or DEFAULT_OPERATION_ROOT
+    )
 
 
 def has_trusted_update_baseline(
@@ -167,6 +184,58 @@ class UpdateApplyError(RuntimeError):
         self.unsafe_to_continue = unsafe_to_continue
 
 
+class UpdatePostValidateRejected(UpdateApplyError):
+    """``post_validate`` 回调拒绝了这次更新（返回 False 或抛了异常）。
+
+    文件已经回滚到旧版本，项目仍可运行，所以 ``unsafe_to_continue`` 保持
+    False。``reason`` 是回调给出的原因原文（异常文本），调用方据此区分
+    「预检没过」与其它 apply 失败。
+    """
+
+    def __init__(self, reason: str) -> None:
+        text = str(reason or "").strip() or "MaaFW post-validation rejected the update"
+        super().__init__(text)
+        self.reason = text
+
+
+class UpdateProjectLockBusy(UpdateApplyError):
+    """在限定时间内没拿到项目锁：另一次更新 / 预检正持有它。"""
+
+
+# 更新事务在这几个状态被打断，项目目录里就是「新旧混杂、清单未写」的树；
+# 只有它们需要恢复，``committed`` / ``rolled_back`` / ``failed`` 都是终态。
+INTERRUPTED_STATUSES = frozenset({"staged", "applying", "post_validating"})
+RECOVERED_ROLLBACK_REASON = "recovered after interrupted update"
+
+
+@contextmanager
+def _hold_project_lock(
+    root: Path,
+    *,
+    timeout: float | None,
+    project_lock_already_held: bool,
+) -> Iterator[None]:
+    """拿项目锁；给了 ``timeout`` 又没拿到时抛 ``UpdateProjectLockBusy``。
+
+    自动路径不限时（排队等前一次事务收尾即可）；手动路径给几秒，拿不到就
+    告诉用户「正在自动更新/预检中」，别让一个同步 HTTP 请求跟着预检等几分钟。
+    """
+
+    lock = project_lock(
+        root,
+        timeout=timeout,
+        project_lock_already_held=project_lock_already_held,
+    )
+    try:
+        lock.acquire()
+    except TimeoutError as exc:
+        raise UpdateProjectLockBusy("项目正在自动更新/预检中，请稍后再试") from exc
+    try:
+        yield
+    finally:
+        lock.release()
+
+
 @dataclass(frozen=True)
 class PackagePlan:
     package_type: ArtifactType
@@ -196,6 +265,7 @@ def apply_package_transaction(
     send_log: Callable[[str], None] | None = None,
     progress: Callable[[str, dict[str, Any]], None] | None = None,
     project_lock_already_held: bool = False,
+    project_lock_timeout: float | None = None,
     projection: bool = False,
 ) -> dict[str, Any]:
     """Apply a package using a durable stage/backup transaction.
@@ -206,6 +276,11 @@ def apply_package_transaction(
     project the updater never installed, where there is no such manifest and
     stale files from the previous layout would otherwise break the new version;
     see :func:`_orphan_paths_without_baseline`.
+
+    ``post_validate`` 在新文件已落地、清单尚未写入时被调（同一工作线程、项目
+    锁已持有）：返回 ``False`` 或抛异常都视为拒绝，文件回滚到旧版本并抛
+    :class:`UpdatePostValidateRejected`，原因文本保留在异常里。回调里不要再拿
+    项目锁、不要 await。
     """
 
     root = project_path.expanduser().resolve(strict=False)
@@ -237,7 +312,11 @@ def apply_package_transaction(
     manifest_path = _owned_state_path(raw_manifest_path, state_dir)
     send_update_log = send_log or (lambda _message: None)
 
-    with project_lock(root, project_lock_already_held=project_lock_already_held):
+    with _hold_project_lock(
+        root,
+        timeout=project_lock_timeout,
+        project_lock_already_held=project_lock_already_held,
+    ):
         # 指纹要 rglob + sha256 整个项目，锁内只算这一次：锁外先算一遍再进锁比对
         # 等于白哈希一轮，锁内这次已经足以拒绝「计划之后项目被改过」。
         current = project_fingerprint(root)
@@ -421,11 +500,20 @@ def apply_package_transaction(
                     "updated MaaFW interface version does not match the planned target"
                 )
             if post_validate is not None:
-                result = post_validate(root)
+                # 回调（运行环境预检）失败的原因必须原样带出去：调用方要据此
+                # 分「binding 拿不到」与其它失败、写备忘、给用户看文案。
+                try:
+                    result = post_validate(root)
+                except Exception as exc:
+                    raise UpdatePostValidateRejected(
+                        str(exc).strip() or type(exc).__name__
+                    ) from exc
                 if inspect.isawaitable(result):
                     raise UpdateApplyError("post_validate callback must be synchronous")
                 if result is False:
-                    raise UpdateApplyError("MaaFW post-validation rejected the update")
+                    raise UpdatePostValidateRejected(
+                        "MaaFW post-validation rejected the update"
+                    )
 
             after = project_fingerprint(root)
             if after is None:
@@ -496,6 +584,9 @@ def apply_package_transaction(
                     ) from rollback_error
                 store.update("rolled_back", rollbackReason=str(exc)[:500])
                 _emit(progress, "rolled_back", {"planId": effective_plan_id})
+                # 回滚以前只写 journal，历史日志里看不出「文件已退回旧版本」，
+                # 用户只见一句失败、不知道项目现在是哪个版本。
+                send_update_log(f"MaaFW update rolled back: {str(exc)[:200]}")
                 _remove_owned_path(work_dir, state_dir)
             else:
                 store.update("failed", error=str(exc)[:500])
@@ -906,6 +997,132 @@ def _rollback_from_state(
         _remove_path(manifest_path)
 
 
+def _normalized_project_key(path: str | Path) -> str:
+    return str(Path(path).expanduser().resolve(strict=False)).casefold()
+
+
+def find_interrupted_updates(
+    project_path: Path,
+    *,
+    operation_root: Path | None = None,
+) -> list[str]:
+    """这个项目有哪些更新事务停在了中间态（只读扫描，返回 operation id）。
+
+    读的是 ``<operation_root>/<id>/state.json``；读不出来的记录跳过——它们
+    不可能是本进程刚写的合法中间态，而恢复逻辑宁可漏过也不能误回滚。
+    """
+
+    root_dir = (
+        (operation_root or DEFAULT_OPERATION_ROOT).expanduser().resolve(strict=False)
+    )
+    if not root_dir.is_dir():
+        return []
+    project_key = _normalized_project_key(project_path)
+    found: list[str] = []
+    for child in sorted(root_dir.iterdir()):
+        state_path = child / "state.json"
+        if not child.is_dir() or not state_path.is_file():
+            continue
+        try:
+            state = json.loads(state_path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+            continue
+        if not isinstance(state, Mapping):
+            continue
+        if str(state.get("status") or "") not in INTERRUPTED_STATUSES:
+            continue
+        recorded = str(state.get("projectPath") or "").strip()
+        if not recorded or _normalized_project_key(recorded) != project_key:
+            continue
+        operation_id = str(state.get("operationId") or child.name)
+        found.append(operation_id)
+    return found
+
+
+def recover_interrupted_update(
+    project_path: Path,
+    *,
+    send_log: Callable[[str], None] | None = None,
+    operation_root: Path | None = None,
+    project_lock_already_held: bool = False,
+    project_lock_timeout: float | None = None,
+) -> list[str]:
+    """把上次被打断的更新事务回滚干净，返回回滚了的 operation id。
+
+    事务的回滚只在同一线程的 ``except`` 里做：``post_validating`` 阶段一旦
+    要真建运行环境（首次建池要下 Python + 依赖，几分钟），进程在这段被杀
+    （Runtime 关机只给约 5 s）就会留下「文件全新、清单未写、状态停在
+    post_validating」的树——下次启动版本比对判「已是最新」，既不更新也不
+    回滚，每次运行都撞同一个装不上的依赖。所以更新流程进入发现之前先来
+    这里扫一遍 journal。
+
+    没有中间态记录时不拿锁、不写任何东西（生产里的记录全是终态，这是绝大
+    多数情况）。回滚失败则把该记录标成 ``recovery_required`` 并抛
+    ``unsafe_to_continue=True`` 的 :class:`UpdateApplyError`，与事务内回滚
+    失败同一口径。
+    """
+
+    send_update_log = send_log or (lambda _message: None)
+    root = project_path.expanduser().resolve(strict=False)
+    root_dir = (
+        (operation_root or DEFAULT_OPERATION_ROOT).expanduser().resolve(strict=False)
+    )
+    if not find_interrupted_updates(root, operation_root=root_dir):
+        return []
+
+    recovered: list[str] = []
+    with _hold_project_lock(
+        root,
+        timeout=project_lock_timeout,
+        project_lock_already_held=project_lock_already_held,
+    ):
+        # 锁内重扫：等锁期间另一次事务可能已经把它收成终态。
+        for operation_id in find_interrupted_updates(root, operation_root=root_dir):
+            store = UpdateOperationStore.open(operation_id, root=root_dir)
+            try:
+                state = store.read()
+                if str(state.get("status") or "") not in INTERRUPTED_STATUSES:
+                    continue
+                _rollback_from_state(root, state)
+                store.update(
+                    "rolled_back",
+                    rollbackReason=RECOVERED_ROLLBACK_REASON,
+                    recoveredFromStatus=str(state.get("status") or ""),
+                )
+            except Exception as exc:
+                try:
+                    store.mark_recovery_required(str(exc))
+                except Exception:  # noqa: BLE001 - 标记失败不该盖住原因
+                    logger.warning(
+                        "MaaFW update recovery could not mark operation %s",
+                        operation_id,
+                        exc_info=True,
+                    )
+                raise UpdateApplyError(
+                    f"MaaFW interrupted update recovery failed: {exc}",
+                    unsafe_to_continue=True,
+                ) from exc
+            send_update_log(
+                f"MaaFW update rolled back: {RECOVERED_ROLLBACK_REASON} "
+                f"({state.get('fromVersion') or '?'} -> "
+                f"{state.get('targetVersion') or '?'}, operation {operation_id})"
+            )
+            raw_work_dir = str(state.get("workDir") or "").strip()
+            raw_state_root = str(state.get("stateRoot") or "").strip()
+            if raw_work_dir and raw_state_root:
+                try:
+                    _remove_owned_path(
+                        Path(raw_work_dir),
+                        Path(raw_state_root).expanduser().resolve(strict=False),
+                    )
+                except Exception as exc:  # noqa: BLE001 - 文件已回滚，残留只占空间
+                    send_update_log(
+                        f"MaaFW update recovery left work dir behind: {exc}"
+                    )
+            recovered.append(operation_id)
+    return recovered
+
+
 def _find_package_root(extract_dir: Path) -> Path:
     candidates = [
         extract_dir,
@@ -1218,9 +1435,15 @@ def _emit(
 
 
 __all__ = [
+    "INTERRUPTED_STATUSES",
     "MANIFEST_NAME",
     "PackagePlan",
     "UpdateApplyError",
+    "UpdatePostValidateRejected",
+    "UpdateProjectLockBusy",
     "apply_package_transaction",
     "build_package_plan",
+    "find_interrupted_updates",
+    "project_state_dir_for",
+    "recover_interrupted_update",
 ]

@@ -82,7 +82,7 @@ export const SCRIPT_TYPE_OPTIONS: ScriptTypeOption[] = [
     value: 'MaaEnd',
     titleKey: 'scripts.type.MaaEnd',
     descriptionKey: 'scripts.create.typeDesc.MaaEnd',
-    keywords: ['maaend', 'maaframework'],
+    keywords: ['maaend', 'maaframework', '终末地', 'endfield'],
     group: 'specialized',
     icon: SCRIPT_LOGOS.MaaEnd,
   },

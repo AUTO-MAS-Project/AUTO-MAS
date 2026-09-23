@@ -3102,16 +3102,6 @@ class GeneralUserConfig(ConfigBase):
         return json.dumps(tags, ensure_ascii=False)
 
 
-class OkwwTaskIndexValidator(OptionsValidator):
-    """兼容旧版中以序号 2 保存的多账号日常任务。"""
-
-    def __init__(self) -> None:
-        super().__init__([1, 7])
-
-    def correct(self, value: Any) -> Any:
-        return 7 if value == 2 else super().correct(value)
-
-
 class OkwwConfigModeValidator(ConfigSourceValidator):
     """脚本/用户/直控配置来源（兼容旧版“简洁/详细”）。"""
 
@@ -3147,7 +3137,6 @@ class OkwwUserConfig(ConfigBase):
     # 用户卡 Tag 仅展示中文简称（与编辑页下拉的 English（中文） 区分）
     OKWW_TASK_BOOK: dict[int, str] = {
         1: "日常",
-        7: "多账号日常",
     }
 
     def __init__(self) -> None:
@@ -3185,11 +3174,8 @@ class OkwwUserConfig(ConfigBase):
         )
 
         ## Task ------------------------------------------------------------
-        # MAS 仅接管 DailyTask / MultiAccountDailyTask 及 DailyTask 高频设置。
-        ## 启动任务序号
-        self.Task_TaskIndex = ConfigItem(
-            "Task", "TaskIndex", 1, OkwwTaskIndexValidator()
-        )
+        # MAS 仅接管 DailyTask 及 DailyTask 高频设置；账号切换由 MAS 侧
+        # account_switch 实现，不再暴露上游 MultiAccountDailyTask。
         ## 每日任务体力用途
         self.Task_WhichToFarm = ConfigItem(
             "Task",
@@ -3630,7 +3616,13 @@ class BetterGIUserConfig(ConfigBase):
         super().__init__()
 
     async def load(self, data: dict) -> bool:
-        """加载配置前，把旧版「国际服账号 + 国际服服务器 / B服切换模式」迁移为「游戏服务器」。"""
+        """加载配置前迁移旧版「游戏服务器」写法，并把快速配置开关按配置来源归一。
+
+        快速配置开关已从 BetterGI 用户页隐藏，改为按 ``Info.Mode`` 派生（维护者决策）：
+        直控 = 用 BGI 所选原生配置、MAS 不接管 ⇒ 恒为关；脚本 / 用户 = MAS 侧面板生效 ⇒ 开。
+        存量数据里可能残留与来源相左的值（如「直控 + 开」），加载时统一以来源为准，
+        免得 ``AutoProxy.writes_native_config`` 与界面语义又对不上。
+        """
         normalized_data = deepcopy(data) if isinstance(data, dict) else {}
         switch = normalized_data.get("Switch")
         if isinstance(switch, dict) and "Resource" not in switch:
@@ -3643,6 +3635,10 @@ class BetterGIUserConfig(ConfigBase):
                 )
             else:
                 switch["Resource"] = "官服"
+        # 来源字面量与 UserDirectConfigModeValidator 的取值一致（模型层不反向依赖 app.task）
+        info = normalized_data.get("Info")
+        if isinstance(info, dict) and info.get("Mode") in ("脚本", "用户", "直控"):
+            info["IfQuickConfig"] = info["Mode"] != "直控"
         return await super().load(normalized_data)
 
     def getTags(self) -> str:
@@ -4872,8 +4868,18 @@ class BAAHUserConfig(ConfigBase):
         self.Info_IfQuickConfig = ConfigItem(
             "Info", "IfQuickConfig", True, BoolValidator()
         )
-        ## BAAH 配置文件名（BAAH_CONFIGS 目录下的文件名，不含 .json 后缀）
+        ## 默认使用的 BAAH 配置文件名（BAAH_CONFIGS 目录下的文件名，不含 .json 后缀）
         self.Info_ConfigName = ConfigItem("Info", "ConfigName", "")
+        ## 活动期间使用的 BAAH 配置文件名；留空表示活动期间也用 ConfigName
+        self.Info_ActivityConfigName = ConfigItem("Info", "ActivityConfigName", "")
+        ## 是否按碧蓝档案有没有活动切换使用的配置文件
+        self.Info_IfActivityAdapt = ConfigItem(
+            "Info", "IfActivityAdapt", False, BoolValidator()
+        )
+        ## 活动排期按哪个服判断（Kivo 时间轴的原文拼写：JP / Globle / CN）
+        self.Info_ActivityLineType = ConfigItem(
+            "Info", "ActivityLineType", "CN", OptionsValidator(["JP", "Globle", "CN"])
+        )
         ## 备注
         self.Info_Notes = ConfigItem("Info", "Notes", "无")
         ## 用户标签信息

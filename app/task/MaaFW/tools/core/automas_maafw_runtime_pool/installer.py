@@ -8,6 +8,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 from collections.abc import Callable, Iterator, Mapping, Sequence
@@ -15,10 +16,14 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
+from packaging.requirements import InvalidRequirement, Requirement
 from packaging.specifiers import InvalidSpecifier, SpecifierSet
 from packaging.version import InvalidVersion, Version
 
 from .host_environment import strip_host_python_environment
+from .identity import (
+    find_maafw_requirement,
+)
 
 logger = logging.getLogger("automas.maafw.runtime_pool.installer")
 
@@ -295,13 +300,26 @@ def host_bootstrap_python_request() -> dict[str, str] | None:
         交给 ``resolve_python_interpreter`` 去找或下载。
     """
 
+    # 宿主解释器整个进程生命周期不会变，探针（起一个子进程）只做一次；启动期
+    # 对账要给每个项目算一遍身份，不缓存就是每个项目一个子进程。探测失败不缓存。
+    key = str(Path(sys.executable))
+    if key in _HOST_BOOTSTRAP_REQUEST_CACHE:
+        cached = _HOST_BOOTSTRAP_REQUEST_CACHE[key]
+        return dict(cached) if cached is not None else None
     probe = probe_python_identity(Path(sys.executable))
+    request: dict[str, str] | None
     if _python_probe_can_bootstrap(probe):
-        return None
-    return {
-        "implementation": "cpython",
-        "constraint": f"=={sys.version_info.major}.{sys.version_info.minor}.*",
-    }
+        request = None
+    else:
+        request = {
+            "implementation": "cpython",
+            "constraint": f"=={sys.version_info.major}.{sys.version_info.minor}.*",
+        }
+    _HOST_BOOTSTRAP_REQUEST_CACHE[key] = request
+    return dict(request) if request is not None else None
+
+
+_HOST_BOOTSTRAP_REQUEST_CACHE: dict[str, dict[str, str] | None] = {}
 
 
 def resolve_python_interpreter(
@@ -605,8 +623,15 @@ def install_python_runtime(
         dependency_installer = "pip"
         resolved_requirements = _resolved_requirements(python_executable)
         index_metadata = None
-    _verify_maafw_importable(python_executable)
-    version = _installed_maafw_version(python_executable)
+    has_maafw = find_maafw_requirement(requirements) is not None
+    if has_maafw:
+        # 旧布局（maafw 装进 venv）：只剩本地测试与显式传 requirements 的调用方会走到。
+        _verify_maafw_importable(python_executable)
+        version = _installed_maafw_version(python_executable)
+    else:
+        # base 布局：maafw 不在 venv 里，按版本存在 <pool>/bindings（runtime_pool/binding.py）。
+        _verify_base_importable(python_executable)
+        version = None
     installer_name = "uv" if uv_executable is not None else "pip"
     cache_relative_to_pool: str | None = None
     if uv_executable is not None:
@@ -644,7 +669,12 @@ def install_python_runtime(
         },
     }
     if index_metadata is not None:
-        installer_metadata["index"] = index_metadata
+        index_metadata = dict(index_metadata)
+        if index_metadata:
+            installer_metadata["index"] = index_metadata
+    if not has_maafw:
+        # 回收对账按它区分 base 与旧布局条目（旧布局的 manifest 没有这个键）。
+        installer_metadata["layout"] = "base"
     return {
         "pythonExecutable": str(python_executable),
         "pythonVersion": probe.get("version") or platform.python_version(),
@@ -652,6 +682,93 @@ def install_python_runtime(
         "resolvedRequirements": resolved_requirements,
         **installer_metadata,
     }
+
+
+def install_extra_packages(
+    python_executable: Path,
+    requirements: Sequence[str],
+    *,
+    pool_root: Path,
+    installed: Sequence[str],
+    cwd: str | Path | None = None,
+    bootstrap_python: str | Path | None = None,
+    send_log: Callable[[str], None] | None = None,
+) -> dict[str, Any]:
+    """往已发布的 base venv 追加装 binding 多要的发行包（D2 ``extraPackages``）。
+
+    只新增、不升级：``installed``（manifest 里的 freeze 结果）逐条钉成 ``name==version``
+    写进 constraints 文件，uv 解析时动不了它们——正被别的 worker 映射着的
+    ``numpy._multiarray_umath.pyd`` 不能原地换；新包要求的版本与已装的冲突时 uv
+    直接报错、一个文件都不写（两个 binding 的 extras 互斥就是这种情况）。装完重跑
+    base 自检，返回新的 freeze 结果给池写回 manifest。没有 uv 的 pip 路径不做
+    （只服务旧安装，见 ``_install_requirements_with_pip``）。
+    """
+
+    log = send_log or (lambda _: None)
+    bootstrap = str(bootstrap_python or sys.executable)
+    uv_executable = _find_uv_executable(bootstrap)
+    if uv_executable is None:
+        raise RuntimeError(
+            "MaaFW runtime 追加依赖失败：找不到 uv，不在 pip 建出的环境上追加安装"
+        )
+    resolved_cwd = Path(cwd).resolve() if cwd is not None else Path.cwd()
+    uv_cache_dir = resolve_uv_cache_dir(Path(pool_root))
+    uv_cache_dir.mkdir(parents=True, exist_ok=True)
+    pins = exact_pins(installed)
+    log(
+        "[MaaFW Runtime Pool] 追加安装 binding 依赖: "
+        + ", ".join(requirements)
+        + f"（已装的 {len(pins)} 个包钉死不动）"
+    )
+    with tempfile.TemporaryDirectory(
+        prefix="maafw-extra-", ignore_cleanup_errors=True
+    ) as scratch:
+        constraint_file = Path(scratch) / "constraints.txt"
+        constraint_file.write_text(
+            "".join(f"{pin}\n" for pin in pins), encoding="utf-8"
+        )
+        index_metadata = _install_requirements_with_uv(
+            uv_executable,
+            python_executable,
+            requirements,
+            cache_dir=uv_cache_dir,
+            link_mode=UV_LINK_MODE,
+            cwd=resolved_cwd,
+            upgrade=False,
+            constraint_file=constraint_file,
+        )
+    _verify_base_importable(python_executable)
+    resolved_requirements = _resolved_requirements_with_uv(
+        uv_executable,
+        python_executable,
+        cache_dir=uv_cache_dir,
+    )
+    result: dict[str, Any] = {
+        "resolvedRequirements": resolved_requirements,
+        "extraPackages": list(requirements),
+    }
+    if index_metadata:
+        result["index"] = dict(index_metadata)
+    return result
+
+
+def exact_pins(freeze_lines: Sequence[str]) -> list[str]:
+    """freeze 输出里能当 constraints 用的 ``name==version`` 行（``name @ url`` 之类跳过）。"""
+
+    pins: list[str] = []
+    for line in freeze_lines:
+        text = str(line).split(";", 1)[0].strip()
+        if not text or text.startswith("#"):
+            continue
+        try:
+            parsed = Requirement(text)
+        except InvalidRequirement:
+            continue
+        specifiers = list(parsed.specifier)
+        if parsed.url or len(specifiers) != 1 or specifiers[0].operator != "==":
+            continue
+        pins.append(f"{parsed.name}=={specifiers[0].version}")
+    return pins
 
 
 def _create_environment(
@@ -1257,8 +1374,13 @@ def _install_requirements_with_uv(
     cache_dir: Path,
     link_mode: str,
     cwd: Path,
+    upgrade: bool = True,
+    constraint_file: Path | None = None,
 ) -> dict[str, Any] | None:
     """按 ``resolve_package_index_candidates()`` 的顺序重试同一条安装命令。
+
+    ``upgrade=False`` + ``constraint_file`` 是往已发布的 base 追加装包的口径
+    （``install_extra_packages``）：已装的包全钉死在 constraints 里，uv 只能新增。
 
     Runtime 注入离线标记（见 ``is_package_index_offline()``）时优先级最高：
     只给 uv 传 ``--offline`` 跑一次，让它只从缓存解析、绝不联网，也不带任何
@@ -1270,6 +1392,9 @@ def _install_requirements_with_uv(
     返回实际生效的索引来源与尝试序号，供调用方写入 ``installer_metadata``；
     离线时返回 ``{"source": None, "attempt": 1, "offline": True}``；未使用候选
     列表（未配置任何镜像/单值索引，或命中上面的显式旁路）时返回 ``None``。
+
+    maafw 不再经 uv 安装（按版本存在 ``<pool>/bindings``，见 ``binding.py``），此前
+    「索引上没有 ``maafw==X`` 就从 tag 源码自打 wheel」的兜底随之从这里拿掉。
     """
 
     env = _uv_install_environment(
@@ -1292,7 +1417,8 @@ def _install_requirements_with_uv(
             str(cache_dir),
             "--link-mode",
             link_mode,
-            "--upgrade",
+            *(["--upgrade"] if upgrade else []),
+            *(["--constraint", str(constraint_file)] if constraint_file else []),
             "--quiet",
             *index_args,
             *requirements,
@@ -1310,19 +1436,33 @@ def _install_requirements_with_uv(
         return None
 
     candidates = resolve_package_index_candidates()
-    source, attempt = _run_with_source_rotation(
-        lambda index_source: _base_command(
-            ["--index-url", index_source] if index_source else []
-        ),
-        candidates,
-        cwd=cwd,
-        build_env=lambda _source: env,
-        timeout=RUNTIME_INSTALL_TIMEOUT_SECONDS,
-        failure_label="MaaFW runtime 依赖安装",
-    )
-    if source is None:
-        return None
-    return {"source": source, "attempt": attempt}
+
+    try:
+        source, attempt = _run_with_source_rotation(
+            lambda index_source: _base_command(
+                ["--index-url", index_source] if index_source else []
+            ),
+            candidates,
+            cwd=cwd,
+            build_env=lambda _source: env,
+            timeout=RUNTIME_INSTALL_TIMEOUT_SECONDS,
+            failure_label="MaaFW runtime 依赖安装",
+        )
+    except MaaFWRuntimeSourceRotationError as online_error:
+        # 没网时 uv 连索引都摸不到就报错，哪怕缓存里每个包都在。base 集合全是 PyPI
+        # 上的常驻包，联网全失败几乎只可能是网络；退一步只从缓存解析再试一次——
+        # 升级后第一次运行要建 base 的离线用户就靠这条（旧 runtime 是从同一份缓存
+        # 硬链接出来的，包都在）。缓存里也没有的话原样抛出联网那次的错误。
+        try:
+            _run(_base_command(["--offline"]), cwd=cwd, env=env)
+        except RuntimeError:
+            raise online_error from None
+        return {"source": None, "attempt": 1, "offline": True, "fallback": "cache"}
+    result: dict[str, Any] = {}
+    if source is not None:
+        result["source"] = source
+        result["attempt"] = attempt
+    return result or None
 
 
 def _install_requirements_with_pip(
@@ -1331,6 +1471,9 @@ def _install_requirements_with_pip(
     *,
     cwd: Path,
 ) -> None:
+    # 没有 uv 时的 pip 路径不做 binding 兜底：pip 缺包的文本是
+    # ``ERROR: No matching distribution found for maafw==X``，与 uv 不同，且这条路径
+    # 只服务没有 uv 的旧安装（生产 M9A 的池环境就是 pip 建的）。留作后续。
     _run(
         [
             str(python_executable),
@@ -1450,6 +1593,14 @@ def _run_subprocess(
     uv 下载依赖，没有这一步，任务取消只能干等安装线程跑完。
     """
 
+    if env is not None and logger.isEnabledFor(logging.DEBUG):
+        # 只打代理变量的键名与 NO_PROXY 的值：HTTP_PROXY 里可能带 user:pw@。
+        logger.debug(
+            "MaaFW runtime 子进程 %s：代理变量=%s，NO_PROXY=%s",
+            command[:3],
+            sorted(key for key in env if key.upper().endswith("_PROXY")),
+            env.get("NO_PROXY") or env.get("no_proxy") or "",
+        )
     cancel_event = current_install_cancel_event()
     if cancel_event is None:
         return subprocess.run(
@@ -1558,9 +1709,10 @@ def _run_with_source_rotation(
     「这个源失败了」而继续轮换下一个候选——那会把关机时的取消变成慢动作重试。
     """
 
-    attempts: list[str | None] = list(candidates) if candidates else [None]
-    last_error: RuntimeError | None = None
-    for attempt_index, source in enumerate(attempts, start=1):
+    sources: list[str | None] = list(candidates) if candidates else [None]
+    failed_attempts: list[tuple[str | None, int, str]] = []
+    last_message: str | None = None
+    for attempt_index, source in enumerate(sources, start=1):
         command = build_command(source)
         env = build_env(source)
         try:
@@ -1575,23 +1727,39 @@ def _run_with_source_rotation(
         if result.returncode == 0:
             return source, attempt_index
         detail = (result.stderr or result.stdout or "").strip()
-        last_error = RuntimeError(
-            f"{failure_label}失败 (exit={result.returncode}): {detail[:800]}"
-        )
-        if attempt_index < len(attempts):
+        failed_attempts.append((source, result.returncode, detail))
+        last_message = f"{failure_label}失败 (exit={result.returncode}): {detail[:800]}"
+        if attempt_index < len(sources):
             logger.warning(
                 "%s失败，换下一个源重试（失败源：%s，第 %d/%d 次尝试）：%s",
                 failure_label,
                 source or "默认",
                 attempt_index,
-                len(attempts),
+                len(sources),
                 detail[-400:],
             )
-    if last_error is None:
-        # attempts 至少一项，循环体必然至少跑过一次并设置过 last_error；
+    if last_message is None:
+        # sources 至少一项，循环体必然至少跑过一次并设置过 last_message；
         # 走到这里说明调用方式本身有 bug。
         raise RuntimeError(f"{failure_label}重试逻辑内部错误：候选列表为空")
-    raise last_error
+    raise MaaFWRuntimeSourceRotationError(last_message, attempts=failed_attempts)
+
+
+class MaaFWRuntimeSourceRotationError(RuntimeError):
+    """全部候选源都失败。message 是最后一轮的；``attempts`` 留着每一轮的原始 stderr。
+
+    此前只保留最后一轮的错误文本，前几轮的 stderr 只 ``logger.warning`` 后丢弃；
+    binding 兜底要看的是「任一候选说索引上没有这个版本」，得把每轮都留下来。
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        attempts: Sequence[tuple[str | None, int, str]] = (),
+    ) -> None:
+        super().__init__(message)
+        self.attempts: tuple[tuple[str | None, int, str], ...] = tuple(attempts)
 
 
 def _clean_process_environment() -> dict[str, str]:
@@ -1654,6 +1822,45 @@ def _verify_maafw_importable(python_executable: Path) -> None:
         detail = (result.stderr or result.stdout or "").strip()
         raise RuntimeError(
             "MaaFW runtime 校验失败：依赖已安装但 import maa 不成功，"
+            f"该环境不可用。原始错误：{detail[-400:]}"
+        )
+
+
+#: base venv 自检要能 import 的模块：runner 三包与 maafw binding 的全部三方 import。
+_BASE_IMPORT_CHECK = (
+    "import numpy, strenum, pydantic, psutil, packaging, json5, jsonc;"
+    "import sysconfig, pathlib;"
+    "site = pathlib.Path(sysconfig.get_path('purelib'));"
+    "assert (site / 'MaaAgentBinary').is_dir(), f'MaaAgentBinary missing in {site}';"
+    "print('ok')"
+)
+
+
+def _verify_base_importable(python_executable: Path) -> None:
+    """base 布局的自检：常量集合里的包都 import 得动、MaaAgentBinary 目录在。
+
+    与 ``_verify_maafw_importable`` 同一个道理——元数据里有不等于能用；worker 起来
+    才发现 ``import numpy`` 炸掉，用户看到的是一句天书。
+    """
+
+    try:
+        result = subprocess.run(
+            [str(python_executable), "-c", _BASE_IMPORT_CHECK],
+            capture_output=True,
+            timeout=60,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            env=_clean_install_environment(python_executable.parent.parent),
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise RuntimeError(
+            f"MaaFW runtime 校验失败：无法执行 {python_executable}"
+        ) from exc
+    if result.returncode != 0:
+        detail = (result.stderr or result.stdout or "").strip()
+        raise RuntimeError(
+            "MaaFW runtime 校验失败：base 依赖已安装但 import 不成功，"
             f"该环境不可用。原始错误：{detail[-400:]}"
         )
 

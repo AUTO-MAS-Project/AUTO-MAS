@@ -27,11 +27,40 @@ describe('blueArchivePresentation', () => {
       endTime: new Date(30).toISOString(),
     })
   })
-  it('活动间隙选择最近结束的活动', () => {
-    expect(blueArchivePresentation(overview, 35).versionName).toBe('当前活动')
+  it('活动间隙优先展示已排期的下一场', () => {
+    expect(blueArchivePresentation(overview, 35)).toMatchObject({
+      versionName: '下期活动',
+      cover: 'next.png',
+    })
+  })
+  it('没有进行中也没有已排期的下一场时，退回最近结束的活动', () => {
+    const onlyEnded = { ...overview, activities: overview.activities.slice(0, 2) }
+    expect(blueArchivePresentation(onlyEnded, 35)).toMatchObject({
+      versionName: '当前活动',
+      endTime: new Date(30).toISOString(),
+    })
   })
   it('只有预告时选择最近即将开始的活动', () => {
     expect(blueArchivePresentation(overview, 0).versionName).toBe('旧活动')
+  })
+  it('忽略开始与结束同一时刻的条目', () => {
+    const withInstantNotice = {
+      ...overview,
+      activities: [...overview.activities, activity('常驻化公告', 36, 36, 'instant.png')],
+    }
+    expect(blueArchivePresentation(withInstantNotice, 35).versionName).toBe('下期活动')
+  })
+  it('只剩零时长条目时返回空列表，组件据此走空状态', () => {
+    const onlyNotices = {
+      ...overview,
+      activities: [activity('常驻化公告', 36, 36, 'instant.png')],
+    }
+    expect(blueArchivePresentation(onlyNotices, 35)).toMatchObject({
+      activities: [],
+      versionName: '',
+      startTime: '',
+      endTime: '',
+    })
   })
   it('空列表不显示旧缓存的占位标题和封面', () => {
     expect(

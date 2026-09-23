@@ -37,9 +37,12 @@ from .AutoProxy import (
     _configure_okww_launcher,
     _okww_config_mode,
     _okww_mas_config_dir,
-    _update_json,
 )
-from .tools.backup_archive import archive_mas_runtime_backup, read_overlay_values
+from .tools.backup_archive import (
+    archive_mas_runtime_backup,
+    owner_for_mode,
+    read_overlay_values,
+)
 
 logger = get_logger("OK-WW 脚本设置")
 
@@ -78,17 +81,13 @@ class ScriptConfigTask(TaskExecuteBase):
         self.script_config_path = self.root_path / _OKWW_REL_CONFIG_DIR
         target_user_id = self.cur_user_item.user_id
         mode = "脚本"
-        self.resource: str | None = None
         if target_user_id != "Default":
             target_user_config = self.user_config[uuid.UUID(target_user_id)]
             mode = _okww_config_mode(target_user_config.get("Info", "Mode"))
-            self.resource = str(target_user_config.get("Info", "Resource"))
         self.use_mas_config = mode != "直控"
         # MAS 配置目录 owner（脚本态共享 Default、用户态独立目录；直控无 MAS 配置）
         self.mas_owner = (
-            ("Default" if mode == "脚本" else target_user_id)
-            if self.use_mas_config
-            else None
+            owner_for_mode(mode, target_user_id) if self.use_mas_config else None
         )
         # 本会话涉及用户的覆盖层字段（脚本级 Default 入口无单一用户，不带侧车）
         self.mas_overlay = (
@@ -104,7 +103,7 @@ class ScriptConfigTask(TaskExecuteBase):
 
     async def main_task(self) -> None:
         await self._kill_processes()
-        _configure_okww_launcher(self.root_path, self.resource)
+        _configure_okww_launcher(self.root_path)
 
         # 下发前归档 MAS 配置到用户池（下发源，会话保存会覆盖它；指纹去重，
         # 失败不阻断会话）。native 池由 manager.prepare 在任务级一次性归档
@@ -152,15 +151,15 @@ class ScriptConfigTask(TaskExecuteBase):
             return
 
         if not self.crashed and self.use_mas_config and self.mas_config_dir:
-            _configure_okww_launcher(self.root_path, self.resource)
+            _configure_okww_launcher(self.root_path)
             if not self.script_config_path.is_dir():
                 raise FileNotFoundError(
                     "未找到 OK-WW 配置目录，请先在 OK-WW 中保存设置"
                 )
-            _update_json(
-                self.script_config_path / "Basic Options.json",
-                {"Exit App when Game Exits": True},
-            )
+            # 不在这里注入 Basic Options.json：它是运行期 overlay 值，写入后
+            # 随即随整目录回写进 base，而配置会话没有还原路径——会把这个非面板
+            # 字段永久固化进 base。运行期由 AutoProxy._apply_mas_overrides 覆盖，
+            # 任务结束由整目录快照还原，base 只保留用户在 ok-ww GUI 里的设置。
             self.mas_config_dir.parent.mkdir(parents=True, exist_ok=True)
             swap_in_dir(self.script_config_path, self.mas_config_dir)
             logger.success(f"OK-WW 配置已保存到: {self.mas_config_dir}")

@@ -24,7 +24,7 @@
         size="large"
         :loading="generalConfigLoading"
         :disabled="configLocked"
-        @click="handleGeneralConfig"
+        @click="handleGeneralConfig()"
       >
         <template #icon>
           <SettingOutlined />
@@ -232,7 +232,6 @@
       :on-restored="handleRestored"
       :on-detail="handleRestoreView"
     />
-  </div>
 </template>
 
 <script setup lang="ts">

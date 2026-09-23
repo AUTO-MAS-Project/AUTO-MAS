@@ -20,6 +20,7 @@ import asyncio
 import re
 import time
 import uuid
+from collections.abc import Callable
 from contextlib import suppress
 from datetime import datetime
 from pathlib import Path
@@ -61,6 +62,7 @@ from .tools.one_dragon_plan import (
     resolve_base_name,
 )
 from .tools.one_dragon_report import (
+    count_failed_custom_items,
     parse_execution_layer_report,
     parse_one_dragon_report,
 )
@@ -250,6 +252,38 @@ def _party_config_error(log: str) -> str | None:
     return name or None
 
 
+# ── 进副本后「打不了 / 卡在副本里」的提示 ─────────────────
+# 战斗队伍在游戏内存在、但 BGI 拿它匹配不到自动战斗脚本时（AutoDomainTask →
+# CombatScriptBag.FindCombatScript 打「未匹配到任何战斗脚本」），BGI 会把自动秘境直接结束掉：
+# 副本进了、仗没打，人还留在副本里；紧接着领奖的切队也会因「未能返回主界面」失败。
+# 两种情况 BGI 都照打「任务结束」继续后面的任务，只看收尾标记会整条判成功——这里给用户
+# 可操作的原因（分步表判失败由 one_dragon_report._BGI_STEP_FATAL_HINTS 负责）。
+_BGI_PARTY_ROLES_RE = re.compile(r'识别到的队伍角色[:：]\s*"([^"]+)"')
+
+
+def _combat_script_miss_hint(log: str) -> str | None:
+    """「队伍匹配不到自动战斗脚本」（进副本后无法开打）的用户可读提示；无则 None。"""
+    if "未匹配到任何战斗脚本" not in log:
+        return None
+    roles = _BGI_PARTY_ROLES_RE.findall(log)
+    party = roles[-1].strip() if roles else ""
+    who = f"队伍「{party}」" if party else "当前队伍"
+    return (
+        f"{who}在 BGI 的自动战斗里没有匹配的脚本，进副本后无法开打（该任务被跳过）；"
+        "请在 BGI「自动战斗」里为该队伍配置脚本，或改用已有脚本的队伍"
+    )
+
+
+def _back_to_main_failed_hint(log: str) -> str | None:
+    """「切队回不到主界面」（游戏被留在副本/子界面）的用户可读提示；无则 None。"""
+    if "未能返回主界面" not in log:
+        return None
+    return (
+        "切换队伍失败：游戏被留在副本/子界面（未能返回主界面），"
+        "本次领奖等后续步骤未干成；请手动回到主界面后重试"
+    )
+
+
 def _missing_config_reasons(log: str) -> list[str]:
     """从执行层累计日志提取「必填配置缺失」的用户可读原因（``步骤名：原因``）。
 
@@ -260,6 +294,25 @@ def _missing_config_reasons(log: str) -> list[str]:
         f"{m.group(2)}：{m.group(3).strip()}"
         for m in _BGI_MISSING_CONFIG_RE.finditer(log)
     ]
+
+
+def _merge_one_dragon_reports(*phases: list[dict] | None) -> list[dict] | None:
+    """把各相的分步表按执行顺序拼成一张表，并重编号 ``1/N…N/N``。
+
+    一次任务最多两相：执行层（``--startGroups`` 直连战斗 4 项）先跑、原生一条龙（日常）
+    后跑，拼起来就是真实执行顺序。两相各自都从 1 开始编号，直接拼会出现两个 ``1/4``、
+    ``1/3``，故按合并后的长度重编号；相内顺序与各步的 ``start``/``end`` 原样保留。
+    全部相都没有步骤时返回 None，调用方据此省略通知里的整块。
+    """
+    merged: list[dict] = []
+    for steps in phases:
+        for step in steps or []:
+            merged.append({**step, "index": len(merged) + 1})
+    if not merged:
+        return None
+    for step in merged:
+        step["total"] = len(merged)
+    return merged
 
 
 class AutoProxyTask(TaskExecuteBase):
@@ -301,6 +354,10 @@ class AutoProxyTask(TaskExecuteBase):
         self.use_mas_config = self.config_mode != CONFIG_SOURCE_DIRECT
         # 直控 + 快速配置开启：把面板值写入 BGI **那份原生配置**（运行前快照、结束还原）。
         # 与 use_mas_config 分开：后者只决定「用哪份配置启动」，这里决定「要不要接管写入」。
+        # ⚠️ 该开关已从 BetterGI 用户页隐藏，改由配置来源派生（BetterGIUserConfig.load：
+        # 直控 = 关，脚本 / 用户 = 开），故此处对直控恒为假 —— 整条 _write_native_one_dragon
+        # 路径当前不可达（含一条龙平面周表键那部分写入）。按维护者决策保留实现，
+        # 将来若恢复开关可直接复用。
         self.writes_native_config = self.config_mode == CONFIG_SOURCE_DIRECT and bool(
             self.cur_user_config.get("Info", "IfQuickConfig")
         )
@@ -316,6 +373,8 @@ class AutoProxyTask(TaskExecuteBase):
         self.log_monitor: LogMonitor | None = None
         # 切队配置错误报错只推送一次，避免每个日志回调重复刷屏
         self._party_err_pushed = False
+        # 运行时提示（找不到自动战斗脚本、切队回不到主界面）同样只推一次
+        self._bgi_hints_pushed: set[str] = set()
 
     async def check(self) -> str:
         # 跨日重置：必须在 ProxyTimesLimit 上限比较之前完成，否则昨日达上限的用户
@@ -824,6 +883,25 @@ class AutoProxyTask(TaskExecuteBase):
             return False
         return any(bool(v) for v in enabled.values())
 
+    def _native_one_dragon_task_names(self) -> list[str]:
+        """本次启动的一条龙配置里「启用的一条龙内置任务」名（按 ``TaskOrder`` 顺序）。
+
+        原生进度行 ``一条龙任务执行: X/N`` 只有序号没有任务名，统计通知的分步表要靠这份
+        顺序表才能把序号还原成任务名（见 ``tools.one_dragon_report``）。读配置失败时返回
+        空表——解析器会退回日志行内推断，不能让一条辅助信息拖垮整次通知。
+        """
+        try:
+            cfg = one_dragon.load_one_dragon(
+                self.script_root_path, self.launch_config_name
+            )
+        except (OSError, ValueError, KeyError, TypeError) as e:
+            logger.warning(f"用户 {self.cur_user_item.name} 一条龙任务名读取失败: {e}")
+            return []
+        names = one_dragon.enabled_one_dragon_task_names(cfg)
+        # 留痕：分步表任务名对不上时，先看这行就知道是配置读不到还是顺序表与本次运行不符
+        logger.info(f"用户 {self.cur_user_item.name} 原生一条龙任务名（按配置顺序）: {names}")
+        return names
+
     async def main_task(self):
         await self.prepare()
 
@@ -1161,23 +1239,35 @@ class AutoProxyTask(TaskExecuteBase):
                 f"用户 {self.cur_user_item.name} 执行层有任务未执行（配置缺失）: {reason}"
             )
 
+        # 自定义项（配置组 / 脚本 / 路径 / 录制）不走 main.js，BGI 也不会因为其中某个项目
+        # 失败而判本次执行层失败（配置组照样走到「执行结束」），所以只能按 BGI 项目行自己补计；
+        # 否则这类失败会静默消失（2026-09-19 实机：脚本项失败仍报「成功」）。
+        custom_failed = count_failed_custom_items("".join(exec_log.content))
+        # 失败步数：main.js 的收尾汇总最可靠，缺失时退回逐行计数；自定义项另行累加
+        failed_steps = max(partial_failed, step_failed) + custom_failed
+        if custom_failed:
+            logger.warning(
+                f"用户 {self.cur_user_item.name} 执行层有 {custom_failed} 个自定义项失败"
+                f"（配置组/脚本/路径/录制，已跳过并继续后续项目）"
+            )
+
         # 收尾状态：成功必须用 "Success!"（final_task 的成功轮筛选与 on_crash 的
         # 「非 Success! 即弹运行异常通知」都依赖这个契约串）
         exec_log.status = "Success!" if result["success"] else failure_reason
-        if result["success"] and partial_failed:
+        if result["success"] and failed_steps:
             # 有步骤失败并已跳过：按 2026-09-09 决策不判负（不重试、计入成功），但状态不能再
             # 报「成功」——否则出现「任务没跑完却显示成功」（2026-09-15 实机：地脉花未打）。
-            self.partial_failed_steps = partial_failed
-            exec_log.status = f"部分失败：{partial_failed} 个步骤未完成（已跳过继续）"
+            self.partial_failed_steps = failed_steps
+            exec_log.status = f"部分失败：{failed_steps} 个步骤未完成（已跳过继续）"
 
         if result["success"]:
-            if step_failed:
+            if failed_steps:
                 logger.warning(
                     f"用户 {self.cur_user_item.name} 执行层完成，"
-                    f"但 {step_failed} 个步骤失败（已跳过并继续后续步骤）"
+                    f"但 {failed_steps} 个步骤失败（已跳过并继续后续步骤）"
                 )
                 await self._push_dispatch_log(
-                    f"执行层完成，{step_failed} 个步骤失败已跳过（结果记为部分失败）"
+                    f"执行层完成，{failed_steps} 个步骤失败已跳过（结果记为部分失败）"
                 )
             else:
                 await self._push_dispatch_log("执行层完成")
@@ -1374,6 +1464,14 @@ class AutoProxyTask(TaskExecuteBase):
         log_status = "BetterGI 正常运行中"
         user_item_status: str | None = None
 
+        # 进副本后打不了 / 游戏被留在副本里的提示：BGI 两种情况都照打「任务结束」继续后面的
+        # 任务（不判负），但要给一次可操作的原因；分步表与「部分失败」由 final_task 收尾处理
+        for hint in (_combat_script_miss_hint(log), _back_to_main_failed_hint(log)):
+            if hint and hint not in self._bgi_hints_pushed:
+                self._bgi_hints_pushed.add(hint)
+                logger.warning(f"用户 {self.cur_user_item.name} {hint}")
+                await self._push_dispatch_log(f"BetterGI 运行提示：{hint}")
+
         # 切队配置错误（战斗队伍名在游戏内置找不到）优先于笼统的 [ERR] 判定，
         # 并给一次指明队伍名的明确报错
         if party_err := _party_config_error(log):
@@ -1463,21 +1561,56 @@ class AutoProxyTask(TaskExecuteBase):
             statistic_paths.append(log_path.with_suffix(".json"))
 
         # 一条龙分步执行报告：按执行顺序列出每步做了什么、成败与经过（供统计通知/邮件模板）。
-        # 多次重试会产生多轮 log_record，若拼成一条再解析会重复出现两轮 1/N…N/N，
-        # 故按轮解析：成功即停止重试、成功轮最多一个，优先取它；无成功轮时取最后一个
-        # 能解析出步骤的轮次，避免末轮在打出「一条龙任务执行」前就失败而整块省略。
-        # 无一条龙任务（仅配置组/未捕获到日志）时自动省略该区块。
-        one_dragon_report: list[dict] | None = None
+        # 一次任务最多两相（执行层 → 原生一条龙），两相**都要进表**：只取一相会让后跑的
+        # 日常相把战斗 4 项顶掉（2026-09-19 实机：通知只见「领取邮件/领取尘歌壶奖励/
+        # 领取每日奖励」，执行层的幽境危战/地脉花/首领讨伐/秘境全看不见）。
+        # 同一相的多轮日志只可能是重试，故每相只取一轮：成功轮优先，无成功轮时取最后一轮
+        # 能解析出步骤的（末轮可能在打出标记前就失败）。全部相都无步骤时整块省略。
         runs = list(self.cur_user_item.log_record.values())
-        success_runs = [item for item in runs if item.status == "Success!"]
-        for item in reversed(success_runs or runs):
-            content = "".join(item.content)
-            # 原生一条龙与执行层各有一套标记，任一路径解析出步骤即用（共用同一张表）
-            one_dragon_report = parse_one_dragon_report(
-                content
-            ) or parse_execution_layer_report(content)
-            if one_dragon_report:
-                break
+        # 原生一条龙的进度行只有序号、日志里没有任务名：按本次启动的那份配置给出名字表，
+        # 供解析器按序号还原（长度对不上时解析器自行退回日志推断，见 one_dragon_report）。
+        native_task_names = self._native_one_dragon_task_names()
+
+        def _phase_steps(parser: Callable[[str], list[dict] | None]) -> list[dict] | None:
+            """取某一相的步骤：成功轮优先，否则最近一轮能解析出步骤的轮次。"""
+            fallback: list[dict] | None = None
+            for item in reversed(runs):
+                steps = parser("".join(item.content))
+                if not steps:
+                    continue
+                if item.status == "Success!":
+                    return steps
+                if fallback is None:
+                    fallback = steps
+            return fallback
+
+        # 注意：执行层以「部分失败」收尾的那些轮同样要取——单步失败被判负、状态不是
+        # Success!，只认成功轮会把它整相丢掉。
+        # 这一相不止 main.js 的战斗步：队列里的自定义项（配置组 / 脚本 / 路径 / 录制）由
+        # 同一次 --startGroups 直连 BGI 配置组执行，解析器按 BGI 项目行一并还原
+        # （2026-09-19 实机：只有自定义项的运行整块分步表缺失）。
+        exec_steps = _phase_steps(parse_execution_layer_report)
+        native_steps = _phase_steps(
+            lambda content: parse_one_dragon_report(content, native_task_names)
+        )
+        one_dragon_report = _merge_one_dragon_reports(exec_steps, native_steps)
+        # 原生一条龙的任务级异常（匹配不到自动战斗脚本、切队回不到主界面…）会让该任务被跳过，
+        # BGI 却照打「任务结束」并继续后面的任务，只看「一条龙和配置组任务结束」会整条判成功
+        # （2026-09-19 实机：秘境一仗没打、领奖也没领，通知却是「成功」）。分步表里判失败的步
+        # 计入「部分失败」——与执行层同口径：不判负、照常计次，但状态与通知要说清。
+        native_failed = sum(1 for s in native_steps or [] if not s["ok"])
+        if native_failed:
+            self.partial_failed_steps += native_failed
+            logger.warning(
+                f"用户 {self.cur_user_item.name} 一条龙有 {native_failed} 个任务未干成"
+                f"（已跳过并继续后续任务）"
+            )
+        if one_dragon_report:
+            # 必须留痕：分步表少了一相时，先看这行就知道是「那相没跑/没解析出步骤」还是「拼接漏了」
+            logger.info(
+                f"用户 {self.cur_user_item.name} 分步表：执行层 {len(exec_steps or [])} 步 + "
+                f"一条龙 {len(native_steps or [])} 步 = {len(one_dragon_report)} 行"
+            )
 
         # 掉落统计：解析各轮日志里的「本轮奖励识别结果」（BGI 奖励识别打印的行），
         # 按物品跨轮跨来源累加。与分步报告不同——掉落是逐轮产出，必须合并全部轮次，

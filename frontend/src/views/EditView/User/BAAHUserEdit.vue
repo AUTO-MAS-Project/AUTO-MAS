@@ -115,13 +115,143 @@
                     </span>
                   </a-tooltip>
                 </template>
-                <a-input
+                <a-select
                   v-model:value="formData.Info.ConfigName"
                   :placeholder="t('edit.baahConfigNamePlaceholder')"
                   :disabled="loading"
+                  :loading="configNamesLoading"
+                  :options="configNameOptions"
                   size="large"
-                  class="modern-input"
-                  @blur="handleFieldSave('Info.ConfigName', formData.Info.ConfigName)"
+                  show-search
+                  option-filter-prop="label"
+                  style="width: 100%"
+                  @dropdown-visible-change="
+                    (open: boolean) => {
+                      if (open) void loadConfigNames()
+                    }
+                  "
+                  @change="handleFieldSave('Info.ConfigName', formData.Info.ConfigName)"
+                />
+              </a-form-item>
+            </a-col>
+          </a-row>
+
+          <!-- 活动适配：按碧蓝档案当前有没有活动，改用另一份配置文件 -->
+          <a-row :gutter="24">
+            <a-col :span="8">
+              <a-form-item name="ifActivityAdapt">
+                <template #label>
+                  <a-tooltip :title="t('edit.baahIfActivityAdaptHint')">
+                    <span class="form-label">
+                      {{ t('edit.baahIfActivityAdapt') }}
+                      <QuestionCircleOutlined class="help-icon" />
+                    </span>
+                  </a-tooltip>
+                </template>
+                <a-select
+                  v-model:value="formData.Info.IfActivityAdapt"
+                  :disabled="loading"
+                  size="large"
+                  style="width: 100%"
+                  @change="
+                    handleFieldSave('Info.IfActivityAdapt', formData.Info.IfActivityAdapt)
+                  "
+                >
+                  <a-select-option :value="true">{{ t('edit.yes') }}</a-select-option>
+                  <a-select-option :value="false">{{ t('edit.no') }}</a-select-option>
+                </a-select>
+              </a-form-item>
+            </a-col>
+            <a-col :span="8">
+              <a-form-item name="activityLineType">
+                <template #label>
+                  <a-tooltip :title="t('edit.baahActivityLineTypeHint')">
+                    <span class="form-label">
+                      {{ t('edit.baahActivityLineType') }}
+                      <QuestionCircleOutlined class="help-icon" />
+                    </span>
+                  </a-tooltip>
+                </template>
+                <a-select
+                  v-model:value="formData.Info.ActivityLineType"
+                  :disabled="loading || !formData.Info.IfActivityAdapt"
+                  size="large"
+                  style="width: 100%"
+                  @change="
+                    handleFieldSave('Info.ActivityLineType', formData.Info.ActivityLineType)
+                  "
+                >
+                  <a-select-option value="CN">
+                    {{ t('edit.baahActivityLineCN') }}
+                  </a-select-option>
+                  <a-select-option value="JP">
+                    {{ t('edit.baahActivityLineJP') }}
+                  </a-select-option>
+                  <a-select-option value="Globle">
+                    {{ t('edit.baahActivityLineGloble') }}
+                  </a-select-option>
+                </a-select>
+                <div v-if="formData.Info.IfActivityAdapt" class="activity-status">
+                  <a-spin v-if="activityStatusLoading" size="small" />
+                  <template v-else-if="activityStatus">
+                    <template v-if="activityStatus.Running">
+                      <span class="activity-status-label">
+                        {{ t('edit.baahActivityRunning') }}
+                      </span>
+                      <span class="activity-status-name">{{ activityStatus.Name }}</span>
+                      <div class="activity-status-time">
+                        {{ activityStatus.StartTime }} ~ {{ activityStatus.EndTime }}
+                      </div>
+                    </template>
+                    <template v-else-if="activityStatus.NextName">
+                      <span class="activity-status-label">
+                        {{ t('edit.baahActivityUpcoming') }}
+                      </span>
+                      <span class="activity-status-name">{{ activityStatus.NextName }}</span>
+                      <div class="activity-status-time">{{ activityStatus.NextStartTime }}</div>
+                    </template>
+                    <div v-else class="activity-status-empty">
+                      {{ t('edit.baahActivityNone') }}
+                    </div>
+                  </template>
+                  <div v-else class="activity-status-empty">
+                    {{ t('edit.baahActivityUnavailable') }}
+                  </div>
+                </div>
+              </a-form-item>
+            </a-col>
+            <a-col :span="8">
+              <a-form-item name="activityConfigName">
+                <template #label>
+                  <a-tooltip :title="t('edit.baahActivityConfigNameHint')">
+                    <span class="form-label">
+                      {{ t('edit.baahActivityConfigName') }}
+                      <QuestionCircleOutlined class="help-icon" />
+                    </span>
+                  </a-tooltip>
+                </template>
+                <a-select
+                  v-model:value="formData.Info.ActivityConfigName"
+                  :placeholder="t('edit.baahActivityConfigNamePlaceholder')"
+                  :disabled="loading || !formData.Info.IfActivityAdapt"
+                  :loading="configNamesLoading"
+                  :options="configNameOptions"
+                  size="large"
+                  show-search
+                  allow-clear
+                  option-filter-prop="label"
+                  style="width: 100%"
+                  @dropdown-visible-change="
+                    (open: boolean) => {
+                      if (open) void loadConfigNames()
+                    }
+                  "
+                  @change="
+                    handleFieldSave(
+                      'Info.ActivityConfigName',
+                      formData.Info.ActivityConfigName ?? ''
+                    )
+                  "
                 />
               </a-form-item>
             </a-col>
@@ -272,7 +402,6 @@
         </div>
       </template>
     </ConfigRestoreSection>
-  </div>
 </template>
 
 <script setup lang="ts">
@@ -291,6 +420,7 @@ import { Service } from '@/api'
 import UserNotifyConfig from '@/components/UserNotifyConfig.vue'
 import GeneralConfigModeSelector from '@/views/EditView/User/GeneralConfigModeSelector.vue'
 import ConfigRestoreSection from '@/views/EditView/User/components/ConfigRestoreSection.vue'
+import { BaahService, type BlueArchiveActivityStatusOut, type ComboBoxItem } from '@/api'
 
 const { t } = useI18n()
 
@@ -323,6 +453,9 @@ const getDefaultBAAHUserData = () => ({
     Mode: '用户',
     RemainedDay: -1,
     ConfigName: '',
+    ActivityConfigName: '',
+    IfActivityAdapt: false,
+    ActivityLineType: 'CN',
     Notes: '',
     Tag: '',
   },
@@ -347,6 +480,64 @@ const formData = reactive({
   // 嵌套的实际数据
   ...getDefaultBAAHUserData(),
 })
+
+// 配置名下拉候选：由后端按主程序路径实时读取 BAAH_CONFIGS，两份配置名共用
+const configNameOptions = ref<{ label: string; value: string }[]>([])
+const configNamesLoading = ref(false)
+const loadConfigNames = async () => {
+  configNamesLoading.value = true
+  try {
+    const resp = await BaahService.getBaahConfigNamesApiApiScriptsBaahConfigNamesGet(scriptId)
+    configNameOptions.value = (resp.data || [])
+      .filter((item): item is ComboBoxItem & { value: string } => item.value != null)
+      .map(item => ({ label: item.label, value: item.value }))
+  } catch (e) {
+    logger.error(e instanceof Error ? e.message : String(e))
+  } finally {
+    configNamesLoading.value = false
+  }
+}
+
+// 所选服的活动排期，开关或服务器变化时重新取
+const activityStatus = ref<BlueArchiveActivityStatusOut | null>(null)
+const activityStatusLoading = ref(false)
+// 快速切换服务器时先发的请求可能后到：用代数标记，只采纳最新一次的结果
+let activityStatusGeneration = 0
+const loadActivityStatus = async () => {
+  if (!formData.Info.IfActivityAdapt) {
+    activityStatusGeneration += 1
+    activityStatus.value = null
+    activityStatusLoading.value = false
+    return
+  }
+
+  const generation = (activityStatusGeneration += 1)
+  activityStatusLoading.value = true
+  try {
+    // 服务器值缺失时兜底成国服，避免拼出 lineType=null 的请求被后端拒掉
+    const lineType = (formData.Info.ActivityLineType || 'CN') as 'JP' | 'Globle' | 'CN'
+    const resp =
+      await BaahService.getBaahActivityStatusApiApiScriptsBaahActivityStatusGet(lineType)
+    if (generation !== activityStatusGeneration) return
+    activityStatus.value = resp
+  } catch (e) {
+    if (generation !== activityStatusGeneration) return
+    logger.error(e instanceof Error ? e.message : String(e))
+    activityStatus.value = null
+  } finally {
+    if (generation === activityStatusGeneration) {
+      activityStatusLoading.value = false
+    }
+  }
+}
+
+watch(
+  () => [formData.Info.IfActivityAdapt, formData.Info.ActivityLineType],
+  () => {
+    void loadActivityStatus()
+  },
+  { immediate: true }
+)
 
 // 只读标签：后端按运行情况生成的 JSON 字符串
 const userTags = computed(() => parseStatusTagList(formData.Info.Tag))
@@ -764,6 +955,30 @@ onUnmounted(() => {
   height: 24px;
   background: linear-gradient(135deg, var(--ant-color-primary), var(--ant-color-primary-hover));
   border-radius: 2px;
+}
+
+.activity-status {
+  margin-top: 8px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--ant-color-text-secondary);
+}
+
+.activity-status-label {
+  color: var(--ant-color-text-secondary);
+}
+
+.activity-status-name {
+  color: var(--ant-color-text);
+  font-weight: 600;
+}
+
+.activity-status-time {
+  color: var(--ant-color-text-tertiary);
+}
+
+.activity-status-empty {
+  color: var(--ant-color-text-tertiary);
 }
 
 .form-label {

@@ -23,6 +23,7 @@ import json
 import os
 import re
 import subprocess
+import sysconfig
 import threading
 import time
 from contextlib import suppress
@@ -145,6 +146,13 @@ STARTUP_SCREEN_SAMPLE_STRIDE = 4
 STARTUP_SCREEN_PIXEL_DELTA = 16
 STARTUP_SCREEN_CHANGED_PIXELS = 8
 STARTUP_SCREEN_BLANK_STD = 6.0
+# 「不再变化」对带动态背景的登录界面永远不成立（真机 1 fps 抽样：终末地主界面每秒 3~6%
+# 抽样点在动，崩坏三登录页 22~38%），只靠它会退化成等满上限。第二条放行条件：画面
+# 连续这么多秒都有内容（不黑屏、不纯色），不管动不动。危险的只是加载阶段的黑屏 /
+# 静止画面（MaaEnd 的 SceneManager 见十几秒不变就判环境异常），有内容且在动的画面
+# 早交给脚本没事——终末地在窗口出现后 22s、主界面还没出来时下发，首个任务照样成功。
+# 20s 覆盖两款游戏 logo / 健康提示 / 加载动画的总时长，再长就是在白等。
+STARTUP_SCREEN_CONTENT_SECONDS = 20
 RUN_TIMEOUT_MESSAGE = "MaaFW 任务运行超时"
 
 
@@ -230,6 +238,16 @@ def _format_latency(seconds: float) -> str:
     return f"{seconds * 1000:.0f} ms"
 
 
+def _agent_binary_path() -> str:
+    """``MaaAgentBinary``（maatouch / minitouch / minicap）的目录：当前解释器的 site-packages 下那份。
+
+    base venv 装了独立包 ``maaagentbinary``，与此前池 venv 里 binding 旁边那份同源
+    （同一个包）。用 ``sysconfig`` 取 purelib，不写死 ``Lib/site-packages``。
+    """
+
+    return str(Path(sysconfig.get_path("purelib")) / "MaaAgentBinary")
+
+
 def _ensure_maafw_client_library_mode(runtime_path: Path | None = None) -> None:
     """Keep MaaFW loaded as a client library inside AUTO-MAS."""
 
@@ -278,15 +296,32 @@ def _file_fingerprint(path: Path) -> tuple[int, str] | None:
     return len(data), hashlib.sha256(data).hexdigest()
 
 
+def _binding_manifest_native_sha256() -> str | None:
+    """binding 目录清单里记的官方 wheel ``MaaFramework.dll`` sha256；源码 binding / 读不到为 None。"""
+
+    binding_dir = str(os.environ.get("AUTO_MAS_MAAFW_BINDING_DIR") or "").strip()
+    if not binding_dir:
+        return None
+    try:
+        payload = json.loads(
+            (Path(binding_dir) / "binding.json").read_text(encoding="utf-8")
+        )
+    except (OSError, ValueError):
+        return None
+    value = payload.get("nativeDllSha256") if isinstance(payload, dict) else None
+    return str(value) if value else None
+
+
 def detect_custom_maafw_build(runtime_path: Path | None) -> bool | None:
-    """项目自带的原生库是否与 binding 附带的那份不是同一个二进制。
+    """项目自带的原生库是否与官方发行的那份不是同一个二进制。
 
     版本号相同不等于二进制相同。按版本钉 binding 只能保证「官方发布的同版本」，
     挡不住项目塞进来一份自己改的构建——它报的版本串照样是 X，版本一致性检查
     看不出任何异常。
 
-    两份文件此时都在本地（一份在项目目录，一份在 runner venv 的 ``maa/bin``），
-    直接比字节即可，**不需要联网**。这是版本号抓不到、又能廉价拿到的那层证据。
+    官方那份的 sha256 记在 binding 目录的清单里（下载 wheel 时算的，池里不再保留
+    每个版本的 DLL 副本），这里只需哈希一次项目的 DLL 来比，**不需要联网**。源码
+    铺出来的 binding 没有官方 DLL 可比，返回 None。
 
     对 MaaFramework 官方目录里 46 个 Windows 发行包做过全量比对：能确定版本的
     44 个**全部与对应 PyPI wheel 逐字节相同**，无人自带改过的构建。所以这个
@@ -297,24 +332,22 @@ def detect_custom_maafw_build(runtime_path: Path | None) -> bool | None:
     """
 
     if runtime_path is None:
-        # 没有项目自带的库，本来就直接用 binding 那份，不存在分歧
+        # 没有项目自带的库，用的就是池里官方那份，不存在分歧
         return False
-
-    project_dll = runtime_path / "MaaFramework.dll"
-    binding_dll = (
-        Path(maa_package.__file__).resolve().parent / "bin" / "MaaFramework.dll"
-    )
-    try:
-        if project_dll.resolve() == binding_dll:
-            return False  # 同一个文件，谈不上分歧
-    except OSError:
+    native_dir = str(os.environ.get("AUTO_MAS_MAAFW_NATIVE_DIR") or "").strip()
+    if native_dir:
+        try:
+            if runtime_path.resolve() == Path(native_dir).resolve():
+                return False
+        except OSError:
+            return None
+    official = _binding_manifest_native_sha256()
+    if official is None:
         return None
-
-    project_print = _file_fingerprint(project_dll)
-    binding_print = _file_fingerprint(binding_dll)
-    if project_print is None or binding_print is None:
+    project_print = _file_fingerprint(runtime_path / "MaaFramework.dll")
+    if project_print is None:
         return None
-    return project_print != binding_print
+    return project_print[1] != official
 
 
 def _installed_maafw_version(venv_path: Path) -> str | None:
@@ -360,6 +393,34 @@ def _display_maafw_version(value: str) -> str:
     return "v" + raw.lstrip("vV") if raw else "未知"
 
 
+def _assert_binding_origin() -> None:
+    """``maa`` 必须来自宿主指定的 binding 目录（``AUTO_MAS_MAAFW_BINDING_DIR``）。
+
+    base venv 里不装 maafw，``import maa`` 应当落到 PYTHONPATH 里的 binding 目录；
+    要是落到别处（残留的旧 venv、用户的 site-packages），版本就不是项目钉的那个，
+    而这种错平时只表现为「识别不对」。没设这个变量（本地直接跑 runner）不检查。
+    """
+
+    expected = str(os.environ.get("AUTO_MAS_MAAFW_BINDING_DIR") or "").strip()
+    if not expected:
+        return
+    actual = Path(maa_package.__file__).resolve()
+    if Path(expected).resolve() not in actual.parents:
+        raise RuntimeError(
+            f"maa 包不是从指定的 binding 目录加载的：实际 {actual}，期望在 {expected} 下"
+        )
+
+
+def _pool_native_runtime_path() -> Path | None:
+    """项目没自带 DLL 时，宿主经 ``MAAFW_BINARY_PATH`` / ``AUTO_MAS_MAAFW_NATIVE_DIR`` 给的池内官方原生库目录。"""
+
+    for key in ("MAAFW_BINARY_PATH", "AUTO_MAS_MAAFW_NATIVE_DIR"):
+        value = str(os.environ.get(key) or "").strip()
+        if value and (Path(value) / "MaaFramework.dll").is_file():
+            return Path(value)
+    return None
+
+
 def _ensure_maafw_global_init(
     project_path: Path | None = None,
     send_log: Callable[[str], None] | None = None,
@@ -370,7 +431,16 @@ def _ensure_maafw_global_init(
     with _MAAFW_INIT_LOCK:
         if _MAAFW_INITIALIZED:
             return
+        _assert_binding_origin()
         runtime_path = project_maafw_runtime_path(project_path)
+        if runtime_path is None:
+            runtime_path = _pool_native_runtime_path()
+        if runtime_path is None:
+            raise RuntimeError(
+                "找不到 MaaFramework 原生库：项目目录里没有 MaaFramework.dll，"
+                "运行池也没有为这个版本备好官方原生库（MAAFW_BINARY_PATH / "
+                "AUTO_MAS_MAAFW_NATIVE_DIR 未设置）"
+            )
         # 架构不符时 Library.open 必然失败，但原生层的报错定位不到「装错了包」。
         # 提前判断只是把同一个失败说清楚，不会挡下原本能跑的情况。
         architecture_error = describe_runtime_architecture_mismatch(runtime_path)
@@ -379,7 +449,7 @@ def _ensure_maafw_global_init(
         _ensure_maafw_client_library_mode(runtime_path)
         if send_log is not None:
             loaded, binding = describe_loaded_maafw()
-            source = str(runtime_path) if runtime_path else "runner 运行环境自带"
+            source = str(runtime_path)
             send_log(
                 "MaaFramework 实际加载: "
                 f"{_display_maafw_version(loaded)}; 来源={source}"
@@ -862,12 +932,15 @@ class MaaFWRunner:
                 device_config.screencapMethods or MaaAdbScreencapMethodEnum.Default
             )
             input_methods = device_config.inputMethods or MaaAdbInputMethodEnum.Default
+            # MaaAgentBinary 装在 base venv 里（独立包 maaagentbinary）；binding 目录不再
+            # 铺它，AdbController 的默认值 <maa>/../MaaAgentBinary 会落空，必须显式传。
             return AdbController(
                 device_config.adbPath,
                 device_config.address,
                 screencap_methods,
                 input_methods,
                 device_config.config,
+                agent_path=_agent_binary_path(),
             )
 
         if device_config.type == "Win32":
@@ -1343,6 +1416,10 @@ class MaaFWRunner:
         # build_runner_environment），但不能透传给项目 agent：agent 以 `python ./agent/main.py`
         # 启动，靠脚本目录进 sys.path[0] 才能 import 同级模块，官方模板就是这么写的，
         # 继承过去会当场 ModuleNotFoundError——它随 PYTHON* 前缀一起被剔除。
+        # 用户在 MAS 里填了代理时，宿主起 worker 前已把 HTTP(S)_PROXY / ALL_PROXY /
+        # NO_PROXY 写进 worker 环境（host_environment.subprocess_proxy_scope），
+        # 这里从 os.environ 复制会一并带上，项目 agent 进程因此也走这个代理——
+        # 有意为之：agent 自己 pip 装依赖、拉资源同样在用户的网络环境里。
         env = strip_host_python_environment()
         env.update(self.plan.piEnv)
 
@@ -1367,8 +1444,9 @@ class MaaFWRunner:
         set_project_pycache_prefix(env, project_path)
 
         # PATH 前置：agent Python 目录、Scripts 目录、项目根目录、项目必要 dll 目录。
-        # 再把 maa 包的 bin 放在项目路径之后、宿主 PATH 之前：项目自带的原生库
-        # 仍然优先，缺库的项目则从当前 maafw 包拿到同版本的 DLL。
+        # 再把官方原生库目录放在项目路径之后、宿主 PATH 之前：项目自带的原生库
+        # 仍然优先，缺库的项目则从运行池为这个版本备的 native 目录拿到同版本的 DLL
+        # （binding 目录里的 maa/bin 只是占位，没有 DLL）。
         python_exe = Path(agent_plan.executable)
         path_items: list[str] = []
         python_dir = python_exe.parent
@@ -1383,7 +1461,9 @@ class MaaFWRunner:
             if candidate.is_dir():
                 path_items.append(str(candidate))
 
-        maa_bin_path = Path(maa_package.__file__).resolve().parent / "bin"
+        maa_bin_path = _pool_native_runtime_path() or (
+            Path(maa_package.__file__).resolve().parent / "bin"
+        )
         if maa_bin_path.is_dir():
             path_items.append(str(maa_bin_path))
 
@@ -1461,8 +1541,9 @@ class MaaFWRunner:
         controller、agent 的初始化已经在前面做完，这里只补足剩余的等待；游戏早就
         在跑（重试轮次、AttachOnly、宿主没给时刻）时剩余 ≤ 0，直接过。
 
-        等待期间每秒截一帧：画面有内容且连续几秒不再变化就提前放行——这是登录界面
-        渲染完成最直接的迹象；截不到图、画面一直在动（动态背景、进度条）就等到上限，
+        等待期间每秒截一帧，两条提前放行：画面有内容且连续几秒不再变化（静态登录界面
+        渲染完成）；或者画面连续 ``STARTUP_SCREEN_CONTENT_SECONDS`` 秒都有内容，哪怕一直
+        在动（动态背景、进度条）——黑屏 / 纯色会把两个计数都清零。截不到图就等到上限，
         和以前一样。用 stop 事件的 wait 代替 sleep，取消能立即打断。
         """
 
@@ -1478,11 +1559,13 @@ class MaaFWRunner:
             return
         self.send_log(
             f"游戏刚启动，最多再等 {remaining:.0f}s；画面连续 "
-            f"{STARTUP_SCREEN_STABLE_SECONDS}s 没有变化就提前下发任务"
+            f"{STARTUP_SCREEN_STABLE_SECONDS}s 没有变化、或连续 "
+            f"{STARTUP_SCREEN_CONTENT_SECONDS}s 有内容就提前下发任务"
         )
         gate_ends_at = time.monotonic() + remaining
         previous: Any | None = None
         stable_seconds = 0
+        content_seconds = 0
         capture_error_logged = False
         while True:
             if self._stop_requested.wait(
@@ -1502,10 +1585,12 @@ class MaaFWRunner:
                     self.send_log(f"启动画面截图失败，改为等满上限: {exc}")
                 frame = None
             if frame is None or _startup_screen_is_blank(frame):
-                # 截不到、黑屏、纯色：都还在加载，重新计数
+                # 截不到、黑屏、纯色：都还在加载，两个计数都重来
                 previous = None
                 stable_seconds = 0
+                content_seconds = 0
                 continue
+            content_seconds += 1
             if previous is not None and not _startup_screen_changed(previous, frame):
                 stable_seconds += 1
             else:
@@ -1514,6 +1599,12 @@ class MaaFWRunner:
             if stable_seconds >= STARTUP_SCREEN_STABLE_SECONDS:
                 self.send_log(
                     f"画面连续 {stable_seconds}s 没有变化，提前下发任务"
+                    f"（实际等了 {remaining - left:.0f}s）"
+                )
+                return
+            if content_seconds >= STARTUP_SCREEN_CONTENT_SECONDS:
+                self.send_log(
+                    f"画面连续 {content_seconds}s 有内容（仍在变化），提前下发任务"
                     f"（实际等了 {remaining - left:.0f}s）"
                 )
                 return

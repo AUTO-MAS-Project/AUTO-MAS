@@ -40,6 +40,9 @@ from app.task.MaaFW.tools.core.automas_maafw_interface.preview import (
 from app.task.MaaFW.tools.core.automas_maafw_interface.service import (
     MaaFWInterfaceService,
 )
+from app.task.MaaFW.tools.core.automas_maafw_runner.environment import (
+    MaaFWRunnerEnvironment,
+)
 from app.task.MaaFW.tools.core.automas_maafw_runner.models import (
     MaaFWDeviceConfig,
     MaaFWRunPlan,
@@ -51,6 +54,9 @@ from app.task.MaaFW.tools.core.automas_maafw_runner.run_plan import (
     select_snapshot_tasks,
 )
 from app.task.MaaFW.tools.core.automas_maafw_runner.service import MaaFWRunnerService
+from app.task.MaaFW.tools.core.automas_maafw_runtime_pool.host_environment import (
+    subprocess_proxy_scope,
+)
 from app.task.MaaFW.tools.notify import push_notification
 from app.task.MaaFW.tools.notify.report import (
     NOTIFY_SCREENSHOT_LIMIT,
@@ -1259,27 +1265,35 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             loop.call_soon_threadsafe(self._append_log, message)
 
         prepare_cancel_event = threading.Event()
+        proxy_url = Config.proxy_url
+
+        def _prepare_environment_with_proxy() -> MaaFWRunnerEnvironment:
+            # 代理作用域按线程登记，要在 to_thread 的目标函数体内进入：池的 uv /
+            # pip 子进程、以及这里派生出的 worker 环境（worker 内的 agent pip 与
+            # 项目 agent 再从它继承）都从 strip_host_python_environment 拿到代理变量。
+            with subprocess_proxy_scope(proxy_url):
+                return service.prepare_environment(
+                    self.project_path,
+                    runtime_pool_root=runtime_pool_root,
+                    runtime_pool_id=runtime_pool_id,
+                    lease_owner=f"automas-script-maafw:{self.script_info.script_id}",
+                    lease_ttl_seconds=max(
+                        600,
+                        int(self.script_config.get("Run", "RunTimeLimit") or 120) * 60
+                        + 600,
+                    ),
+                    # worker 跑在 runtime pool 的隔离 venv 里，代码要靠 PYTHONPATH
+                    # 找到本仓。这里必须是源码根而不是 Path.cwd()：受 Runtime 监督时
+                    # 工作目录是 <app-root>、源码在 <app-root>/repo/，cwd 下没有 app/ 包。
+                    # 只给代码路径、不给宿主 venv 的 site-packages，隔离 venv 里的
+                    # maafw 因此仍然优先。
+                    import_paths=[SOURCE_ROOT],
+                    send_log=send_runner_log,
+                    cancel_event=prepare_cancel_event,
+                )
+
         prepare_environment_task = asyncio.create_task(
-            asyncio.to_thread(
-                service.prepare_environment,
-                self.project_path,
-                runtime_pool_root=runtime_pool_root,
-                runtime_pool_id=runtime_pool_id,
-                lease_owner=f"automas-script-maafw:{self.script_info.script_id}",
-                lease_ttl_seconds=max(
-                    600,
-                    int(self.script_config.get("Run", "RunTimeLimit") or 120) * 60
-                    + 600,
-                ),
-                # worker 跑在 runtime pool 的隔离 venv 里，代码要靠 PYTHONPATH
-                # 找到本仓。这里必须是源码根而不是 Path.cwd()：受 Runtime 监督时
-                # 工作目录是 <app-root>、源码在 <app-root>/repo/，cwd 下没有 app/ 包。
-                # 只给代码路径、不给宿主 venv 的 site-packages，隔离 venv 里的
-                # maafw 因此仍然优先。
-                import_paths=[SOURCE_ROOT],
-                send_log=send_runner_log,
-                cancel_event=prepare_cancel_event,
-            )
+            asyncio.to_thread(_prepare_environment_with_proxy)
         )
         try:
             runner_environment = await asyncio.shield(prepare_environment_task)

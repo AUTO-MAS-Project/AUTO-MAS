@@ -23,11 +23,12 @@ import asyncio
 import json
 import shutil
 import uuid
+from copy import deepcopy
 from pathlib import Path
 
 from app.core import Config
 from app.core.ws import Publisher, protocol
-from app.models.config import MaaConfig, MaaUserConfig
+from app.models.config import MaaConfig, MaaUserConfig, maa_scheme_name
 from app.models.ConfigBase import MultipleConfig
 from app.models.emulator import DeviceBase
 from app.models.schema import WSTaskNoticeData
@@ -36,7 +37,12 @@ from app.services import System
 from app.utils import ProcessManager, get_logger
 from app.utils.io import read_file, write_file
 
-from .AutoProxy import _build_maa_preset_task_queue
+from .AutoProxy import (
+    _MAA_CONFIG_FILES,
+    _build_maa_preset_task_queue,
+    _merge_maa_config_file,
+    _restrict_task_queue_to_baseline,
+)
 from .tools.backup_archive import (
     archive_mas_runtime_backup,
     mas_config_dir,
@@ -56,6 +62,9 @@ class ScriptConfigTask(TaskExecuteBase):
     结束不回写 MAS 配置，安装 config/ 由 manager 的任务前快照还原（临时
     注入，看完还原）。
     """
+
+    _maa_config_baseline: dict[str, dict] | None = None
+    """set_maa 写盘快照；final_task 以此甄别用户的 GUI 修改。"""
 
     def __init__(
         self,
@@ -242,6 +251,12 @@ class ScriptConfigTask(TaskExecuteBase):
             encoding="utf-8",  # OLD: 即将移除
         )  # OLD: 即将移除
         write_file(self.maa_set_path / "gui.new.json", gui_new_set)
+        # 会话基线：final_task 以此甄别用户在 MAA GUI 里的真实修改，
+        # 不把 MAA 保存时自带的原生默认任务固化进 MAS 存档
+        self._maa_config_baseline = {
+            "gui.json": deepcopy(gui_set),
+            "gui.new.json": deepcopy(gui_new_set),
+        }
         logger.success(f"MAA运行参数配置完成: 设置脚本 {self.cur_user_item.user_id}")
 
     async def final_task(self):
@@ -263,9 +278,47 @@ class ScriptConfigTask(TaskExecuteBase):
             return
 
         mas_dir = mas_config_dir(self.script_info.script_id, self._mas_owner())
-        shutil.rmtree(mas_dir, ignore_errors=True)
-        mas_dir.mkdir(parents=True, exist_ok=True)
-        shutil.copytree(self.maa_set_path, mas_dir, dirs_exist_ok=True)
+        baseline = self._maa_config_baseline or {}
+
+        # 归一回写：按 (TaskType, Name) 身份对齐合并，只透传用户在 MAA GUI 里
+        # 的真实修改；MAA 保存时自带的原生默认任务(UserDataUpdate/生息演算等)
+        # 不固化进 MAS 存档，合成任务也不因 MAA 默认队列未包含而被抹除。
+        # 队列结构以 MAS 合成结果为准，其余文件不盲拷。
+        normalized = False
+        for name in _MAA_CONFIG_FILES:
+            base = baseline.get(name)
+            if base is None:
+                continue
+            try:
+                current = read_file(self.maa_set_path / name)
+            except (OSError, json.JSONDecodeError) as e:
+                logger.opt(exception=True).warning(f"读取 MAA 配置以对比回写失败({name}): {e}")
+                continue
+            if not current:
+                # MAA 未写盘(如被强杀)，GUI 改动无从谈起，存档保持 set_maa 下发态
+                continue
+            try:
+                archive = read_file(mas_dir / name)
+            except (OSError, json.JSONDecodeError):
+                archive = None
+            if not archive:
+                # 空存档(首次会话)以会话基线为底，仅叠加用户修改
+                archive = deepcopy(base)
+            archive_new = deepcopy(archive)
+            scheme = maa_scheme_name(mas_dir, archive)
+            changed = _merge_maa_config_file(
+                archive_new, base, current, scheme, drop_missing=False
+            )
+            changed = (
+                _restrict_task_queue_to_baseline(archive_new, base, scheme)
+                or changed
+            )
+            if not changed:
+                continue
+            write_file(mas_dir / name, archive_new)
+            normalized = True
+        if not normalized:
+            logger.info("MAA 配置回写: 相对会话基线无用户修改, 存档保持不变")
 
     async def on_crash(self, e: Exception):
         self.cur_user_item.status = "异常"

@@ -281,14 +281,14 @@
 
             <a-row :gutter="24">
               <a-col :span="24">
+                <!-- 快速配置开关已隐藏：按配置来源派生（直控 = 关，脚本 / 用户 = 开），
+                     见 handleConfigModeChange 与后端 BetterGIUserConfig.load 的加载归一。 -->
                 <GeneralConfigModeSelector
                   :model-value="formData.Info.Mode"
                   :options="bettergiConfigModeOptions"
                   :disabled="pageLoading"
                   :saving="configModeSaving"
-                  :quick-config="formData.Info.IfQuickConfig ?? true"
                   @change="handleConfigModeChange"
-                  @quick-config-change="handleQuickConfigChange"
                 />
               </a-col>
             </a-row>
@@ -1427,23 +1427,8 @@ const saveField = (key: string, value: unknown): Promise<boolean> => {
   return enqueue(persist)
 }
 
-const handleQuickConfigChange = async (value: boolean) => {
-  if (!value) {
-    if (dragonGroupAutoSaveTimer) {
-      clearTimeout(dragonGroupAutoSaveTimer)
-      dragonGroupAutoSaveTimer = null
-    }
-    while (hasDragonGroupSettingsDirty.value) {
-      if (!(await saveDragonGroupSettings(true, dragonGroupSaveSel))) return
-    }
-  }
-  const previous = formData.Info.IfQuickConfig
-  formData.Info.IfQuickConfig = value
-  if (!(await saveField('Info.IfQuickConfig', value))) {
-    formData.Info.IfQuickConfig = previous
-  }
-}
-
+// 快速配置开关已隐藏（按配置来源派生），原先「关闭前先落盘一条龙组设置」的处理
+// 移到了 handleConfigModeChange：切到直控时 MAS 面板会隐藏，效果等同。
 const toggleGroup = (value: string) => {
   if (!masConfigEnabled.value) return
   const set = new Set(formData.OneDragon.Groups)
@@ -4369,11 +4354,31 @@ const handleConfigModeChange = async (value: boolean | string) => {
   )
     return
   const previousValue = formData.Info.Mode
+  const previousQuickConfig = formData.Info.IfQuickConfig
+  // 快速配置按来源派生（开关已隐藏）：直控 = 关，脚本 / 用户 = 开
+  const nextQuickConfig = value !== '直控'
+  if (!nextQuickConfig) {
+    // 切到直控后 MAS 面板会隐藏：先把未落盘的一条龙组设置刷下去，避免改动丢失
+    // （原「关闭快速配置」开关的同款处理）
+    if (dragonGroupAutoSaveTimer) {
+      clearTimeout(dragonGroupAutoSaveTimer)
+      dragonGroupAutoSaveTimer = null
+    }
+    while (hasDragonGroupSettingsDirty.value) {
+      if (!(await saveDragonGroupSettings(true, dragonGroupSaveSel))) return
+    }
+  }
   formData.Info.Mode = value as '脚本' | '用户' | '直控'
+  formData.Info.IfQuickConfig = nextQuickConfig
   configModeSaving.value = true
   try {
-    const saved = await updateUser(scriptId, userId.value, { Info: { Mode: formData.Info.Mode } })
-    if (!saved) formData.Info.Mode = previousValue
+    const saved = await updateUser(scriptId, userId.value, {
+      Info: { Mode: formData.Info.Mode, IfQuickConfig: nextQuickConfig },
+    })
+    if (!saved) {
+      formData.Info.Mode = previousValue
+      formData.Info.IfQuickConfig = previousQuickConfig
+    }
   } finally {
     configModeSaving.value = false
   }
@@ -4588,6 +4593,9 @@ const loadUser = async () => {
       OneDragon: { ...getDefaultUserData().OneDragon, ...(userData.OneDragon || {}) },
       Notify: { ...getDefaultUserData().Notify, ...(userData.Notify || {}) },
     })
+    // 快速配置开关已隐藏、按来源派生：存量数据可能残留与来源相左的值（如「直控 + 开」），
+    // 以 Mode 为准归一，与保存路径（handleConfigModeChange）及后端 BetterGIUserConfig.load 一致。
+    formData.Info.IfQuickConfig = formData.Info.Mode !== '直控'
     // 一条龙名称为必填：历史空值归一为「默认配置」
     if (!formData.Task.OneDragonConfigName) {
       formData.Task.OneDragonConfigName = '默认配置'

@@ -15,67 +15,58 @@ from .installer import (
     _uv_version,
 )
 
-# prune 只在任务收尾时作为维护步骤跑，慢了就该放弃而不是拖住任务结束。
-# 真机上曾在共享缓存上卡满 300 秒，任务才得以继续。
-UV_CACHE_PRUNE_TIMEOUT_SECONDS = 60
+# 缓存清理只是维护步骤，慢了就该放弃而不是拖住调用方。真机上旧的 prune 曾在
+# 共享缓存上卡满 300 秒；现在受监督注入的共享缓存直接跳过，池本地缓存几百 MB
+# 的 clean 只是删目录，秒级。
+UV_CACHE_CLEAN_TIMEOUT_SECONDS = 60
 
 
-def prune_uv_cache(
+def clean_uv_cache(
     pool_root: str | Path,
     *,
-    dry_run: bool = True,
     bootstrap_python: str | Path | None = None,
     uv_executable: str | Path | None = None,
 ) -> dict[str, Any]:
-    """Preview or run uv's own safe cache-prune operation for one pool.
+    """整个清掉池自己的 uv 缓存（``uv cache clean``）。
 
-    Preview mode never invokes uv and therefore cannot promise an exact
-    reclaimable byte count: uv decides which entries are dangling or cached
-    environments at execution time.  The returned before/after snapshots,
-    command, executable version, output, and status make the operation
-    auditable without deleting the cache directory directly.
+    以前这里跑的是 ``uv cache prune``：它只删 uv 自己认为悬空的条目，旧版本
+    maafw / numpy 的解包目录在索引里都还「可达」，prune 一个字节也不会动（真机
+    实测 ``removedFiles=0``）；池里的 runtime 是从这份缓存硬链接出来的，旧 runtime
+    删掉之后那些文件就只剩缓存这一个链接，要真正腾出磁盘只能 clean。
+
+    只在池里已无旧身份 runtime 时调（见 ``pool_reconcile``）：缓存一清，离线用户
+    就再也建不出新 runtime，所以「还有旧 runtime 等着被新身份替换」时不能清。
+    受监督时注入的共享缓存归 Runtime 管，这里同样跳过。
     """
 
     root = Path(pool_root).resolve()
     cache_path, injected = _resolve_uv_cache_dir_with_source(root)
-    try:
-        relative_to_pool = cache_path.relative_to(root).as_posix()
-    except ValueError:
-        # 受监督时 cache_path 可能是 Runtime 注入的共享缓存目录，不在 pool_root
-        # 之内——不是错误，只是「相对池目录」这个概念本身不适用。
-        relative_to_pool = None
     result: dict[str, Any] = {
         "kind": "uv",
         "scope": "pool",
-        "dryRun": bool(dry_run),
+        "operation": "clean",
         "attempted": False,
-        "status": "preview" if dry_run else "pending",
+        "status": "pending",
         "cachePath": str(cache_path),
-        "relativeToPool": relative_to_pool,
-        "previewExact": False,
         "observedAt": _format_time(),
     }
-
     if cache_path.is_symlink():
         result.update(
             {
                 "status": "unsafe",
-                "error": "uv cache path is a symbolic link; prune was refused",
+                "error": "uv cache path is a symbolic link; clean was refused",
                 "before": _empty_stats(cache_path),
             }
         )
         return result
-
     if injected:
-        # 注入的缓存是 Runtime 主项目也在用的共享缓存，归 Runtime 管：池不能
-        # 替它 prune（会动到主项目的 wheel），也不该为此在任务收尾时等待。
         result.update(
             {
                 "status": "skipped",
                 "injected": True,
                 "reason": (
                     "uv cache directory is injected by the supervisor via "
-                    f"{AUTO_MAS_UV_CACHE_DIR_ENV}; prune is left to its owner"
+                    f"{AUTO_MAS_UV_CACHE_DIR_ENV}; clean is left to its owner"
                 ),
                 "before": _empty_stats(cache_path),
             }
@@ -84,6 +75,9 @@ def prune_uv_cache(
 
     before = _directory_stats(cache_path)
     result["before"] = before
+    if not before["exists"]:
+        result["status"] = "absent"
+        return result
 
     bootstrap = str(bootstrap_python or sys.executable)
     resolved_uv = (
@@ -95,7 +89,7 @@ def prune_uv_cache(
         result.update(
             {
                 "status": "unavailable",
-                "error": ("uv executable was not found; cache prune was not attempted"),
+                "error": "uv executable was not found; cache clean was not attempted",
                 "uv": {"available": False, "executable": None, "version": None},
             }
         )
@@ -104,7 +98,7 @@ def prune_uv_cache(
     command = [
         resolved_uv,
         "cache",
-        "prune",
+        "clean",
         "--cache-dir",
         str(cache_path),
         "--no-config",
@@ -120,21 +114,14 @@ def prune_uv_cache(
                 "version": _uv_version(resolved_uv),
             },
             "command": command,
+            "attempted": True,
         }
     )
-
-    if not before["exists"]:
-        result["status"] = "absent"
-        return result
-    if dry_run:
-        return result
-
-    result["attempted"] = True
     try:
         completed = subprocess.run(
             command,
             capture_output=True,
-            timeout=UV_CACHE_PRUNE_TIMEOUT_SECONDS,
+            timeout=UV_CACHE_CLEAN_TIMEOUT_SECONDS,
             text=True,
             encoding="utf-8",
             errors="replace",
@@ -145,7 +132,7 @@ def prune_uv_cache(
         result.update(
             {
                 "status": "error",
-                "error": f"uv cache prune could not be executed: {exc}",
+                "error": f"uv cache clean could not be executed: {exc}",
                 "after": _directory_stats(cache_path),
             }
         )
@@ -165,14 +152,14 @@ def prune_uv_cache(
         }
     )
     if completed.returncode == 0:
-        result["status"] = "pruned"
+        result["status"] = "cleaned"
     else:
         detail = stderr or stdout or "no output"
         result.update(
             {
                 "status": "error",
                 "error": (
-                    f"uv cache prune failed (exit={completed.returncode}): "
+                    f"uv cache clean failed (exit={completed.returncode}): "
                     f"{detail[:800]}"
                 ),
             }
