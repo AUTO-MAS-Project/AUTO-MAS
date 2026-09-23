@@ -14,5 +14,9 @@ export type BetterGIUserConfig_Switch = {
      * 账号 UID（可不填，切换前识别一致将不执行切换动作）
      */
     Uid?: (string | null);
+    /**
+     * 游戏客户端路径（用户级覆盖，可空）：官服/B服/国际服是不同客户端，留空使用 BetterGI 全局配置；填写后该用户运行时由 MAS 写入 BetterGI 配置并按此路径拉起
+     */
+    GamePath?: (string | null);
 };
 

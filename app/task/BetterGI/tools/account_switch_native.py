@@ -16,14 +16,14 @@
 #   You should have received a copy of the GNU Affero General Public License
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
 
-"""BetterGI（原神）MAS 侧强制账号切换（官服 miHoYo 登录）。
+"""BetterGI（原神）MAS 侧强制账号切换（官服 miHoYo / B服 bilibili 渠服登录）。
 
 参照 OK-WW / OK-NTE 强制切号骨架（前台 pyautogui + DPI 适配 + 1080p 帧坐标空间，
-OCR 复用通用工具集 `app.tools.ocr`）。原神登录界面部分元素没有文本（退出图标、
-输入框、勾选框），无文本元素按 1080p 帧相对坐标点击；勾选/单选状态用橙色填充
-做颜色判定，避免已勾选时二次点击反而取消。
+OCR 复用通用工具集 `app.tools.ocr`）。登录界面部分元素没有文本（退出图标、
+切换图标、输入框、下拉箭头），无文本元素按 1080p 帧相对坐标点击；勾选/单选
+状态用橙色填充做颜色判定，避免已勾选时二次点击反而取消。
 
-流程（有密码/无密码前 4 步相同，取自实机截图「原神账号切换流程」）::
+官服流程（有密码/无密码前 4 步相同，取自实机截图「原神账号切换流程」）::
 
     等待进入可切号态（标题「点击进入」/ 登录对话框 / 账密表单）
     （游戏内滞留时：ESC → 派蒙菜单「退出游戏」→ 退出到标题）
@@ -36,18 +36,31 @@ OCR 复用通用工具集 `app.tools.ocr`）。原神登录界面部分元素没
       兜底，两版共用；勾选圆点过小不做预勾选）
     → 等待登录界面消失（登录成功，游戏保持运行交还 BGI 一条龙）
 
-掩码匹配复用上游切号脚本适配的 `mask_account`（与游戏登录界面打码规则一致），
-OCR 对 `*` 的识别漂移用宽容正则（`*`/`x`/`＊` 等同处理）兜住。
+B服流程（取自实机截图「B服切换流程」；暂不支持账密登录——验证码无法自动
+完成，填了密码也忽略）::
+
+    等待进入可切号态（标题「点击进入」/ 隐私政策弹窗 / 登录记录面板）
+    （无登录会话时先弹 bilibili 隐私政策 → 点「同意」进面板）
+    → 点标题右下角切换账号图标 → 「确认切换账号?」点「确定」→ 登录记录面板
+    → 点账号卡片下拉箭头展开列表 → 按B站昵称匹配点选目标（LCS ≥ 0.7，
+      超出可见范围滚轮翻页；排除当前账号卡片防误点收起）
+    → 点「登录」→ 等待「点击进入」重新出现（B服登录后回标题而非进游戏）
+
+掩码匹配复用上游切号脚本适配的 `mask_account`（与官服登录界面打码规则一致），
+OCR 对 `*` 的识别漂移用宽容正则（`*`/`x`/`＊` 等同处理）兜住；B服昵称按
+LCS 相似度匹配（对齐一条龙 find_by_lcs 的 0.7 阈值口径）。
 """
 
 import asyncio
 import ctypes
 import inspect
 import re
+import threading
 import time
 from collections.abc import Callable
 from contextlib import contextmanager, suppress
 from datetime import datetime
+from difflib import SequenceMatcher
 from functools import lru_cache
 from pathlib import Path
 
@@ -73,6 +86,12 @@ if IS_WINDOWS:
     import win32process
 
 logger = get_logger("BetterGI 账号切换")
+
+# 切换流程互斥锁：两个切换线程并发驱动同一游戏窗口会互相踩踏（2026-09-23 实机：
+# 任务反复启停留下僵尸切换线程，与下一个用户的切换并发，一个点开账密表单、
+# 另一个在滚轮翻页，最终把隐私政策文档页都点了出来）。非阻塞获取，抢不到
+# 直接响亮失败，不排队。
+_SWITCH_LOCK = threading.Lock()
 
 # 诊断文件（debug/bgi-account-switch/switch-detail-*.log）：记录切换过程各步骤
 # OCR 文本，供用户反馈登录失败时对照定位识别漂移；切换串行独占前台，单例写入。
@@ -152,6 +171,15 @@ _ACCOUNT_FIELD_ROI: Box = (694, 459, 1238, 534)
 _FORM_ACCOUNT_POINT = (958, 399)
 _FORM_PASSWORD_POINT = (958, 484)
 _FORM_ENTER_POINT = (973, 709)
+# 账密表单内部相对锚定：账号/密码输入框纵向间距、密码框到「进入游戏」按钮的
+# 偏移。占位符 OCR 只认出一个时据此推算另一个——miHoYo 登录 UI 是内嵌网页，
+# 会随游戏/SDK 版本更新重排（B服面板 2026-09-23 实测漂移 ±70px），固定点仅作
+# 最后兜底。
+_FORM_FIELD_Y_GAP = 85
+_FORM_ENTER_Y_OFFSET_FROM_PASSWORD = 225
+_FORM_ENTER_Y_OFFSET_FROM_ACCOUNT = 310
+# 登录对话框：「登录其他账号」链接到「进入游戏」按钮的纵向偏移（兜底锚定用）
+_LOGIN_ENTER_Y_OFFSET_FROM_OTHER = 125
 # 账号列表滚动中心（下拉列表展开后的中部），目标账号超出可见范围时滚轮翻页
 _LIST_SCROLL_POINT = (966, 620)
 # 勾选框/单选圆点相对其右侧文本框的横向偏移（圆点在文本左侧 35px 处）
@@ -165,6 +193,47 @@ _LOGIN_DIALOG_TEXTS = ("登录其他账号",)
 _PASSWORD_FORM_TEXTS = ("输入密码", "用户协议")
 # 「退出登录」确认弹窗内独有的单选项文本
 _KEEP_RECORDS_TEXT = "退出并保留登录记录"
+
+# ── B服（bilibili 渠服）登录界面 ─────────────────────────────────────────
+# B服与官服共用同一游戏进程（YuanShen.exe），登录 UI 完全不同：入口是标题右下
+# 角切换账号图标（非官服的右侧栏退出图标），面板按B站昵称展示登录记录。
+#
+# ⚠️ 实机结论（2026-09-23）：登录记录面板的纵向位置在两次运行间会漂移约 ±70px
+# （1080p 帧空间），固定坐标不可靠——面板内元素一律以「上次登录」标记行
+# （每条登录记录都带，OCR 可锚定）为纵向锚点相对定位，x 依赖面板恒定中线。
+# 仅B服隐私政策弹窗出现的文本（标题「bilibili游戏隐私政策提示」，点「同意」继续）
+_BILI_PRIVACY_TEXTS = ("隐私政策",)
+# 仅B服登录记录面板出现的文本（面板标题），出现即可选号
+_BILI_PANEL_TEXTS = ("登录记录",)
+# B服标题界面右侧图标列最底部的 ≡ 图标（与官服退出图标同一 UI 槽位：官服点它
+# 弹「退出登录」，B服点它弹「确认切换账号?」）。⚠️ 不要点屏幕最角落的 B站 SDK
+# 悬浮控件——那是第三方悬浮窗，且该位置落在「点击进入」横条热区内，误点会
+# 直接用当前账号进游戏（2026-09-23 实机踩坑）
+_BILI_SWITCH_ICON_POINT = (1824, 979)
+# B服账号卡片行右侧展开箭头：相对卡片锚行（最顶部「上次登录」标记中心）的
+# 校准偏移。箭头命中框很小且必须精确命中（点卡片其他区域无效），实机校准
+# （2026-09-23）：箭头中心 = 锚行中心上移 16px、x=1129；点击后必须逐次验证
+# 展开状态（点击是翻转开关），未展开则在校准点周围 ±12/±10px 候选网格继续尝试
+_BILI_ARROW_X = 1129
+_BILI_ARROW_Y_OFFSET_FROM_CARD = -16
+# B服面板「登录」按钮中心（粉色按钮，OCR 失败时兜底点击；y 相对卡片锚行偏移）
+_BILI_LOGIN_POINT = (962, 703)
+_BILI_LOGIN_Y_OFFSET_FROM_CARD = 150
+# B服隐私政策弹窗「同意」按钮中心（粉色按钮，OCR 失败时兜底点击）
+_BILI_AGREE_POINT = (1000, 622)
+# 点击「登录」后面板关闭的等待上限：超时说明登录未生效，响亮失败而非继续
+# 等待（后续标题等待的派蒙退出兜底会按 ESC 关掉面板，把「没切成」误判成完成）
+_BILI_LOGIN_EFFECT_TIMEOUT = 60.0
+# B服登录记录列表滚动中心（目标账号不在可见范围时滚轮翻页）
+_BILI_LIST_SCROLL_POINT = (962, 656)
+# 每条登录记录都带的「上次登录」时间戳文本；列表展开后面板内出现 ≥2 条
+_BILI_RECORD_MARK = "上次登录"
+# 当前账号卡片行（最顶部的「上次登录」标记）的 y 判定窗口：匹配列表项与
+# 选号回读时排除/采信该行附近的文本，防止误点卡片把已展开的列表收起
+_BILI_CARD_ROW_WINDOW = 35
+# B站昵称与 OCR 文本的相似度阈值（LCS 比例，对齐一条龙 switch_bilibili_account
+# 的 percent=0.7 口径，容 OCR 漂移与表情符号丢失）
+_BILI_NICKNAME_THRESHOLD = 0.7
 
 # 勾选框/单选圆点选中态的橙色填充（miHoYo UI 主题色）：HSV 宽松区间做在位判定
 _CHECK_HUE_RANGE = (8, 28)
@@ -383,11 +452,13 @@ def _press_escape(hwnd: int, *, after_sleep: float = 1.5) -> None:
     time.sleep(after_sleep)
 
 
-def _scroll_list(hwnd: int) -> None:
-    """在账号列表区域滚轮下翻一页（目标账号不在可见范围时使用）。"""
+def _scroll_list(
+    hwnd: int, point: tuple[int, int] = _LIST_SCROLL_POINT
+) -> None:
+    """在指定滚动中心区域滚轮下翻一页（目标账号不在可见范围时使用）。"""
     with _per_monitor_dpi():
         width, height = _client_size(hwnd)
-        px, py = _LIST_SCROLL_POINT
+        px, py = point
         client_x = round(px * width / _FRAME_WIDTH)
         client_y = round(py * height / _FRAME_HEIGHT)
         screen_x, screen_y = win32gui.ClientToScreen(hwnd, (client_x, client_y))
@@ -606,18 +677,21 @@ def _exit_to_title_from_game(hwnd: int, on_log: Callable[[str], None]) -> bool:
     return False
 
 
-def _wait_for_actionable_state(hwnd: int, on_log: Callable[[str], None]) -> int:
-    """等待进入可执行的切号态（标题 / 登录对话框 / 账密表单），返回有效窗口句柄。
+def _wait_until_state(
+    hwnd: int,
+    on_log: Callable[[str], None],
+    states: tuple[tuple[str, ...], ...],
+) -> int:
+    """等待画面进入任一目标文本态，返回当前有效窗口句柄。
 
-    游戏窗口刚出现时可能仍停在启动过渡帧（加载条、游戏内更新），此时三态
-    都不命中，若立即按标题分流会落在不匹配的画面上。采用「进展续延」语义：
+    通用「进展续延」等待驱动，官服可切号态等待与B服各阶段等待共用：
 
-    - 命中任意态 → 返回当前有效句柄，由调用方按对应态执行；
+    - 命中 ``states`` 中任一组文本 → 返回当前有效句柄；
     - 界面仍在变化（有加载/更新进展）→ 持续顺延，硬上限 ``_IN_GAME_UPDATE_TIMEOUT``；
     - 界面静止 ``_IN_GAME_STALL_SECONDS``（模态弹窗等确认的典型形态）→ 识别并
       点击确认类按钮继续；
-    - 累计 ``_STATE_ESCAPE_SECONDS`` 仍未进入可切号态 → 周期性尝试经派蒙菜单
-      退出到标题（覆盖大世界滞留——原神待机画面持续变化，帧哈希永远「有进展」，
+    - 累计 ``_STATE_ESCAPE_SECONDS`` 仍未命中 → 周期性尝试经派蒙菜单退出到
+      标题（覆盖大世界滞留——原神待机画面持续变化，帧哈希永远「有进展」，
       滞留兜底不能依赖画面静止；不在游戏内时尝试无害静默失败）；
     - 等待期间窗口句柄失效（版本更新确认后游戏本体退出、交由启动器更新重启）
       → 重新定位原神窗口继续等待，而非直接失败。
@@ -650,11 +724,7 @@ def _wait_for_actionable_state(hwnd: int, on_log: Callable[[str], None]) -> int:
             last_progress = time.monotonic()
         if iter_count % _DIAGNOSTIC_DUMP_EVERY_POLLS == 0:
             _dump_ocr_items(items_full)
-        if (
-            _find_text(items_full, _TITLE_TEXTS) is not None
-            or _find_text(items_full, _LOGIN_DIALOG_TEXTS) is not None
-            or _find_text(items_full, _PASSWORD_FORM_TEXTS) is not None
-        ):
+        if any(_find_text(items_full, st) is not None for st in states):
             return hwnd
         if time.monotonic() - last_progress >= _IN_GAME_STALL_SECONDS:
             # 画面静止常是模态弹窗在等确认（游戏内更新提示、版本更新引导等）：
@@ -671,21 +741,30 @@ def _wait_for_actionable_state(hwnd: int, on_log: Callable[[str], None]) -> int:
                 state_wait_start = time.monotonic()
             last_progress = time.monotonic()
         if time.monotonic() - state_wait_start >= _STATE_ESCAPE_SECONDS:
-            # 累计仍未进入可切号态（大世界滞留 / 卡在未知界面）：周期性尝试
+            # 累计仍未命中目标态（大世界滞留 / 卡在未知界面）：周期性尝试
             # 经派蒙菜单退出到标题；不在游戏内时找不到「退出游戏」，静默无害
             state_wait_start = time.monotonic()
             escaped = False
             with suppress(Exception):
                 escaped = _exit_to_title_from_game(hwnd, on_log)
             if not escaped:
-                on_log("未找到游戏内退出入口（可能不在游戏内），继续等待可切号界面...")
+                on_log("未找到游戏内退出入口（可能不在游戏内），继续等待...")
         if iter_count % 5 == 0:
-            on_log("原神仍在启动/加载过渡帧或游戏内，等待进入可切号界面...")
+            on_log("原神仍在启动/加载过渡帧或游戏内，继续等待目标界面...")
         iter_count += 1
         time.sleep(_IN_GAME_POLL_INTERVAL)
     raise RuntimeError(
-        "等待原神可切号界面超时：长时间无进展或超过硬上限"
-        f"（{_IN_GAME_UPDATE_TIMEOUT:g}s），请人工确认游戏已停在「点击进入」界面"
+        "等待原神目标界面超时：长时间无进展或超过硬上限"
+        f"（{_IN_GAME_UPDATE_TIMEOUT:g}s），请人工确认游戏状态后重试"
+    )
+
+
+def _wait_for_actionable_state(hwnd: int, on_log: Callable[[str], None]) -> int:
+    """等待进入官服可执行的切号态（标题 / 登录对话框 / 账密表单），返回有效句柄。"""
+    return _wait_until_state(
+        hwnd,
+        on_log,
+        (_TITLE_TEXTS, _LOGIN_DIALOG_TEXTS, _PASSWORD_FORM_TEXTS),
     )
 
 
@@ -892,8 +971,19 @@ def _select_and_enter(hwnd: int, account: str, on_log: Callable[[str], None]) ->
     if enter is not None:
         _click_box(hwnd, enter, after_sleep=3)
     else:
-        on_log("未识别到「进入游戏」按钮文本，按对话框相对位置兜底点击")
-        _click_point(hwnd, *_LOGIN_ENTER_POINT, after_sleep=3)
+        # 兜底锚定「登录其他账号」链接（对话框内稳定文本），面板漂移时比固定点可靠
+        other = _find_text(_read_texts(hwnd), _LOGIN_DIALOG_TEXTS)
+        if other is not None:
+            on_log("未识别到「进入游戏」按钮文本，按「登录其他账号」相对位置兜底点击")
+            _click_point(
+                hwnd,
+                _LOGIN_ENTER_POINT[0],
+                other[1] + other[3] // 2 - _LOGIN_ENTER_Y_OFFSET_FROM_OTHER,
+                after_sleep=3,
+            )
+        else:
+            on_log("未识别到「进入游戏」按钮文本，按对话框固定位置兜底点击")
+            _click_point(hwnd, *_LOGIN_ENTER_POINT, after_sleep=3)
     _wait_login_success(hwnd, on_log)
 
 
@@ -905,25 +995,66 @@ def _input_credentials(
 ) -> None:
     """账密表单输入账号与密码（剪贴板粘贴，参照一条龙 EnterGame 流程）。
 
-    输入框优先按占位符 OCR 定位（「输入手机号/邮箱」「输入密码」），OCR
-    瞬时失败回退实机截图标定的固定点。
+    输入框优先按占位符 OCR 定位（「输入手机号/邮箱」「输入密码」）；一个
+    占位符识别失败时按另一个的 y 推算（表单纵向间距固定），两个都失败才
+    回退实机截图标定的固定点。
     """
     on_log(f"正在输入账号 {mask_account(account)}")
-    field = _find_text(_read_texts(hwnd), ("输入手机号", "输入邮箱", "输入账号"))
-    if field is not None:
-        _click_box(hwnd, field, after_sleep=0.5)
+    items = _read_texts(hwnd)
+    account_field = _find_text(items, ("输入手机号", "输入邮箱", "输入账号"))
+    password_field = _find_text(items, ("输入密码",))
+    if account_field is not None:
+        _click_box(hwnd, account_field, after_sleep=0.5)
+    elif password_field is not None:
+        _click_point(
+            hwnd,
+            _FORM_ACCOUNT_POINT[0],
+            password_field[1] + password_field[3] // 2 - _FORM_FIELD_Y_GAP,
+            after_sleep=0.5,
+        )
     else:
         _click_point(hwnd, *_FORM_ACCOUNT_POINT, after_sleep=0.5)
     _clipboard_copy_and_paste(account)
 
     time.sleep(1)
     on_log("正在输入密码")
-    field = _find_text(_read_texts(hwnd), ("输入密码",))
-    if field is not None:
-        _click_box(hwnd, field, after_sleep=0.5)
+    items = _read_texts(hwnd)
+    password_field = _find_text(items, ("输入密码",))
+    account_field = _find_text(items, ("输入手机号", "输入邮箱", "输入账号"))
+    if password_field is not None:
+        _click_box(hwnd, password_field, after_sleep=0.5)
+    elif account_field is not None:
+        _click_point(
+            hwnd,
+            _FORM_PASSWORD_POINT[0],
+            account_field[1] + account_field[3] // 2 + _FORM_FIELD_Y_GAP,
+            after_sleep=0.5,
+        )
     else:
         _click_point(hwnd, *_FORM_PASSWORD_POINT, after_sleep=0.5)
     _clipboard_copy_and_paste(password)
+
+    # 勾选《用户协议》和《隐私政策》：勾选圆点在「同意」文本左侧且命中框小
+    # （用户实测点偏会误触《用户协议》链接、打开隐私政策文档页）——按候选偏移
+    # 逐个点击并用橙色填充验证，命中即停，避免盲点
+    time.sleep(1)
+    on_log("正在勾选《用户协议》和《隐私政策》")
+    agree = _find_text(_read_texts(hwnd), ("同意",))
+    if agree is None:
+        on_log("未识别到协议勾选文本，跳过勾选直接登录（若打开隐私文档页将失败）")
+        return
+    frame = _capture_window(hwnd, activate=False)
+    for offset in (25, 35, 15):
+        point = (max(agree[0] - offset, 0), agree[1] + agree[3] // 2)
+        if _check_is_marked(frame, point):
+            on_log("协议已处于勾选状态，跳过点击")
+            return
+        _click_point(hwnd, *point, after_sleep=0.5)
+        frame = _capture_window(hwnd, activate=False)
+        if _check_is_marked(frame, point):
+            on_log("协议勾选成功")
+            return
+    on_log("协议勾选未确认（圆点过小），继续点击「进入游戏」")
 
 
 def _select_other_account_entry(hwnd: int, on_log: Callable[[str], None]) -> None:
@@ -951,12 +1082,35 @@ def _enter_with_password(
     """
     _input_credentials(hwnd, account, password, on_log)
     on_log("正在点击「进入游戏」登录")
-    enter = _find_text(_read_texts(hwnd), ("进入游戏",))
+    items = _read_texts(hwnd)
+    enter = _find_text(items, ("进入游戏",))
     if enter is not None:
         _click_box(hwnd, enter, after_sleep=3)
     else:
-        on_log("未识别到「进入游戏」按钮文本，按表单相对位置兜底点击")
-        _click_point(hwnd, *_FORM_ENTER_POINT, after_sleep=3)
+        # 兜底优先锚定已识别的表单元素（密码/账号占位符），面板漂移时比固定点可靠
+        password_field = _find_text(items, ("输入密码",))
+        account_field = _find_text(items, ("输入手机号", "输入邮箱", "输入账号"))
+        if password_field is not None:
+            on_log("未识别到「进入游戏」按钮文本，按密码框相对位置兜底点击")
+            _click_point(
+                hwnd,
+                _FORM_ENTER_POINT[0],
+                password_field[1] + password_field[3] // 2
+                + _FORM_ENTER_Y_OFFSET_FROM_PASSWORD,
+                after_sleep=3,
+            )
+        elif account_field is not None:
+            on_log("未识别到「进入游戏」按钮文本，按账号框相对位置兜底点击")
+            _click_point(
+                hwnd,
+                _FORM_ENTER_POINT[0],
+                account_field[1] + account_field[3] // 2
+                + _FORM_ENTER_Y_OFFSET_FROM_ACCOUNT,
+                after_sleep=3,
+            )
+        else:
+            on_log("未识别到「进入游戏」按钮文本，按表单固定位置兜底点击")
+            _click_point(hwnd, *_FORM_ENTER_POINT, after_sleep=3)
     _wait_login_success(hwnd, on_log)
 
 
@@ -984,8 +1138,17 @@ def _wait_login_success(
                 "登录出现安全验证（滑块/扫码等），MAS 无法自动完成；"
                 "请手动完成验证后重试，或改用无密码的下拉列表方式"
             )
-        # 协议确认框：按钮文本恰为「同意」（精确匹配，排除左侧「不同意」）
-        agree = next((b for t, b in items if t == "同意"), None)
+        # 协议勾选失效时点「进入游戏」会打开隐私政策文档页（整页文档而非确认
+        # 弹窗），继续等待只会白耗超时——明确失败
+        if _find_text(items, ("米哈游用户个人信息及隐私保护政策",)) is not None:
+            raise RuntimeError(
+                "登录跳转到了隐私政策文档页（协议勾选未生效），请重试；"
+                "若反复出现请手动登录一次该账号"
+            )
+        # 协议确认框：按钮文本恰为「同意」（精确匹配并取最右，排除左侧
+        # 「不同意」，防 OCR 丢字误点）
+        agrees = [b for t, b in items if t == "同意"]
+        agree = max(agrees, key=lambda b: b[0] + b[2]) if agrees else None
         if agree is not None:
             on_log("检测到协议确认弹窗，点击「同意」继续登录")
             _click_box(hwnd, agree, after_sleep=2)
@@ -1004,6 +1167,281 @@ def _wait_login_success(
             absent_count = 0
         time.sleep(1)
     raise RuntimeError("等待登录完成超时（登录界面未消失），可能账密有误或网络异常")
+
+
+# ── B服（bilibili 渠服）：登录记录面板按昵称选号 ────────────────────────
+# B服暂不支持账密登录（验证码无法自动完成），仅有下拉选号一版；目标账号按
+# B站昵称匹配（用户在 MAS「账户」字段填写B站用户名）。
+
+
+def _mask_nickname(nickname: str) -> str:
+    """B站昵称打码（诊断/日志展示用）：前 2 + * + 后 1，过短原样。"""
+    if len(nickname) <= 3:
+        return nickname
+    return f"{nickname[:2]}{'*' * (len(nickname) - 3)}{nickname[-1:]}"
+
+
+def _nickname_match_ratio(text: str, nickname: str) -> float:
+    """B站昵称与 OCR 文本的相似度（LCS 比例，对齐一条龙 find_by_lcs 口径）。"""
+    if not text or not nickname:
+        return 0.0
+    if nickname in text:
+        return 1.0
+    return SequenceMatcher(None, text, nickname, autojunk=False).ratio()
+
+
+def _on_bili_panel(hwnd: int) -> bool:
+    """B服登录记录面板是否已打开（面板标题「登录记录」）。"""
+    return _find_text(_read_texts(hwnd), _BILI_PANEL_TEXTS) is not None
+
+
+def _click_bili_agree(hwnd: int, on_log: Callable[[str], None]) -> None:
+    """隐私政策弹窗点「同意」。
+
+    按钮文本恰为「同意」；正文含「已知悉并同意」「不同意」等干扰，只认精确
+    命中并取最右（同意按钮在「不同意」右侧，防 OCR 把「不同意」丢字误读成
+    「同意」），OCR 失败回退实机截图标定的按钮固定点。
+    """
+    on_log("检测到隐私政策提示，点击「同意」")
+    agrees = [b for t, b in _read_texts(hwnd) if t == "同意"]
+    agree = max(agrees, key=lambda b: b[0] + b[2]) if agrees else None
+    if agree is not None:
+        _click_box(hwnd, agree, after_sleep=2)
+    else:
+        on_log("未识别到「同意」按钮文本，按弹窗相对位置兜底点击")
+        _click_point(hwnd, *_BILI_AGREE_POINT, after_sleep=2)
+    if _wait_ocr_text(hwnd, _BILI_PANEL_TEXTS, timeout=30) is None:
+        raise RuntimeError("同意隐私政策后登录记录面板未打开（30s 未识别到面板）")
+    on_log("登录记录面板已打开")
+
+
+def _open_bili_panel_from_title(hwnd: int, on_log: Callable[[str], None]) -> None:
+    """标题界面 → 点右下角切换账号图标 → 「确认切换账号?」点「确定」→ 面板。
+
+    图标点击是双入口：已登录（有会话）时弹「确认切换账号?」确认框，未登录
+    时直接打开登录记录面板，按点击后画面分流。
+    """
+    for attempt in range(1, 4):
+        on_log(f"正在点击标题界面右下角切换账号图标（{attempt}/3）")
+        _click_point(hwnd, *_BILI_SWITCH_ICON_POINT, after_sleep=1.5)
+        deadline = time.monotonic() + 20
+        confirmed = False
+        while time.monotonic() < deadline:
+            items = _read_texts(hwnd)
+            if _find_text(items, _BILI_PANEL_TEXTS) is not None:
+                on_log("登录记录面板已打开")
+                return
+            if not confirmed:
+                confirms = [b for t, b in items if t == "确定"]
+                confirm = (
+                    max(confirms, key=lambda b: b[0] + b[2]) if confirms else None
+                )
+                if confirm is not None:
+                    on_log("检测到「确认切换账号」弹窗，点击「确定」")
+                    _click_box(hwnd, confirm, after_sleep=2)
+                    confirmed = True
+                    continue
+            time.sleep(1)
+        on_log("登录记录面板未打开，重试点击切换账号图标")
+    raise RuntimeError(
+        "点击切换账号图标后登录记录面板未打开（已重试 3 次），请人工确认当前处于标题界面"
+    )
+
+
+def _bili_card_row_y(hwnd: int) -> int | None:
+    """当前账号卡片锚行（最顶部的「上次登录」标记）的 y 中心；找不到返回 None。
+
+    面板纵向位置会漂移（2026-09-23 实机 ±70px），面板内元素的点击/排除一律
+    以本锚行相对定位，不用固定坐标。
+    """
+    marks = [b for t, b in _read_texts(hwnd) if _BILI_RECORD_MARK in t]
+    if not marks:
+        return None
+    top = min(marks, key=lambda box: box[1])
+    return top[1] + top[3] // 2
+
+
+def _find_bili_account(
+    hwnd: int, nickname: str, *, exclude_y: int | None = None
+) -> Box | None:
+    """在当前画面找与目标B站昵称最相似的文本框（LCS ≥ 阈值，取最高分）。
+
+    Args:
+        nickname: 目标B站用户名（用户在 MAS「账户」字段填写）。
+        exclude_y: 传入时跳过中心 y 落在 ``exclude_y ± 窗口`` 内的命中——
+            列表展开后当前账号卡片同样显示昵称且在列表上方，误点卡片会把
+            列表收起而不是选中目标账号。
+    """
+    best: tuple[float, Box] | None = None
+    for text, box in _read_texts(hwnd):
+        if exclude_y is not None:
+            center_y = box[1] + box[3] // 2
+            if abs(center_y - exclude_y) <= _BILI_CARD_ROW_WINDOW:
+                continue
+        ratio = _nickname_match_ratio(text, nickname)
+        if ratio >= _BILI_NICKNAME_THRESHOLD and (best is None or ratio > best[0]):
+            best = (ratio, box)
+    return best[1] if best else None
+
+
+def _expand_bili_list(hwnd: int, on_log: Callable[[str], None]) -> None:
+    """点当前账号卡片行右侧的展开箭头直至登录记录列表展开（≥2 条记录）。
+
+    每条登录记录（含输入卡片）都带「上次登录」时间戳，出现 ≥2 条即列表已
+    展开。箭头命中框很小且必须精确命中（点卡片其他区域无效），面板纵向又
+    会漂移——以锚行校准点为中心铺 ±12/±10px 候选网格逐个尝试，每次点击后
+    立即验证展开状态（点击是翻转开关，盲点会把展开的列表再点收起）。
+    """
+    for _ in range(3):
+        marks = [b for t, b in _read_texts(hwnd) if _BILI_RECORD_MARK in t]
+        if len(marks) >= 2:
+            return
+        if marks:
+            top = min(marks, key=lambda box: box[1])
+            base_y = top[1] + top[3] // 2 + _BILI_ARROW_Y_OFFSET_FROM_CARD
+            candidates = (
+                (_BILI_ARROW_X, base_y),
+                (_BILI_ARROW_X, base_y + 10),
+                (_BILI_ARROW_X, base_y - 10),
+                (_BILI_ARROW_X - 12, base_y),
+                (_BILI_ARROW_X + 12, base_y),
+            )
+        else:
+            # 无锚行（面板结构异常）：按参考面板位置盲点，点后同样验证
+            candidates = (
+                (_BILI_ARROW_X, 476),
+                (_BILI_ARROW_X, 486),
+                (_BILI_ARROW_X, 466),
+            )
+        for point in candidates:
+            on_log(f"点击账号卡片展开箭头 {point}")
+            _click_point(hwnd, *point, after_sleep=1)
+            if (
+                len([b for t, b in _read_texts(hwnd) if _BILI_RECORD_MARK in t])
+                >= 2
+            ):
+                return
+    raise RuntimeError(
+        "无法展开B服登录记录列表（展开箭头候选点全部未命中），"
+        "请人工确认面板状态；诊断文件与错误截图见 debug/bgi-account-switch/"
+    )
+
+
+def _select_bili_account(
+    hwnd: int, nickname: str, on_log: Callable[[str], None]
+) -> None:
+    """展开登录记录列表 → 按昵称匹配点选目标 → 回读卡片确认（重试 3 次）。"""
+    masked = _mask_nickname(nickname)
+    max_retries = 3
+    for attempt in range(1, max_retries + 1):
+        _activate_window(hwnd)
+        time.sleep(1)
+        _expand_bili_list(hwnd, on_log)
+        time.sleep(0.5)
+        card_row_y = _bili_card_row_y(hwnd)
+        for page in range(6):
+            box = _find_bili_account(hwnd, nickname, exclude_y=card_row_y)
+            if box is not None:
+                _click_box(hwnd, box, after_sleep=1)
+                time.sleep(1)
+                # 回读当前账号卡片行确认已选中目标（列表收起后卡片显示目标昵称）
+                confirmed = any(
+                    _nickname_match_ratio(t, nickname) >= _BILI_NICKNAME_THRESHOLD
+                    and abs(t_box[1] + t_box[3] // 2 - card_row_y)
+                    <= _BILI_CARD_ROW_WINDOW
+                    for t, t_box in _read_texts(hwnd)
+                    if card_row_y is not None
+                )
+                if confirmed:
+                    on_log(f"已选中B服账号 {masked}")
+                    return
+                break
+            if page < 5:
+                on_log(f"目标账号不在当前可见列表，滚轮翻页（{page + 1}/5）")
+                _scroll_list(hwnd, _BILI_LIST_SCROLL_POINT)
+        if attempt < max_retries:
+            on_log(f"B服账号选择结果未确认，重试（{attempt}/{max_retries}）")
+        else:
+            raise RuntimeError(
+                f"未能在登录记录中选中B服账号 {masked}（已重试 3 次）；"
+                "请确认该账号已在本机登录过（登录记录面板可见），"
+                "且「账户」字段填写的用户名与面板显示的昵称一致"
+            )
+
+
+def _click_bili_login(hwnd: int, on_log: Callable[[str], None]) -> None:
+    """点面板「登录」按钮（按钮文本恰为「登录」，OCR 失败回退锚行相对位置）。"""
+    on_log("正在点击「登录」")
+    logins = [b for t, b in _read_texts(hwnd) if t == "登录"]
+    login = max(logins, key=lambda b: b[0] + b[2]) if logins else None
+    if login is not None:
+        _click_box(hwnd, login, after_sleep=3)
+        return
+    on_log("未识别到「登录」按钮文本，按卡片锚行相对位置兜底点击")
+    card_row_y = _bili_card_row_y(hwnd)
+    point = (
+        (_BILI_LOGIN_POINT[0], card_row_y + _BILI_LOGIN_Y_OFFSET_FROM_CARD)
+        if card_row_y is not None
+        else _BILI_LOGIN_POINT
+    )
+    _click_point(hwnd, *point, after_sleep=3)
+
+
+def _wait_bili_panel_closed(hwnd: int, on_log: Callable[[str], None]) -> None:
+    """点击「登录」后先等登录记录面板关闭（登录已受理），再等标题重现。
+
+    面板不关闭说明登录未生效，必须响亮失败而非继续等待：后续标题等待的
+    派蒙退出兜底会按 ESC 把面板关掉、让标题「点击进入」出现，把「没切成」
+    误判成「切换完成」（对齐官服 _wait_login_success 的登录界面消失门控）。
+    等待期间出现「验证/扫码」立即明确失败（滑块/扫码 MAS 无法自动完成）。
+    纯轮询、无 ESC/确认点击等副作用，不会自行把面板关掉掩蔽失败。
+    """
+    deadline = time.monotonic() + _BILI_LOGIN_EFFECT_TIMEOUT
+    absent_count = 0
+    while time.monotonic() < deadline:
+        items = _read_texts(hwnd)
+        if _find_text(items, ("验证", "扫码")) is not None:
+            raise RuntimeError(
+                "登录出现安全验证（滑块/扫码等），MAS 无法自动完成；"
+                "请手动完成验证后重试"
+            )
+        if _find_text(items, _BILI_PANEL_TEXTS) is None:
+            absent_count += 1
+            if absent_count >= 2:
+                return
+        else:
+            absent_count = 0
+        time.sleep(1)
+    raise RuntimeError(
+        "点击登录后登录记录面板未关闭（登录可能未生效），请人工确认后重试"
+    )
+
+
+def _switch_account_bili(
+    hwnd: int, nickname: str, on_log: Callable[[str], None]
+) -> None:
+    """B服切号主流程：进面板 → 按昵称选号 → 登录 → 等「点击进入」重现。
+
+    与官服的差异：入口是标题右下角切换账号图标（确认弹窗点「确定」）；无登录
+    会话时先弹隐私政策（点「同意」）；完成信号是标题「点击进入」重新出现
+    （B服登录后回到标题而非直接进游戏），且点「登录」后必须先确认面板已
+    关闭（登录已受理）再等标题，防止登录未生效被误判为完成。
+    """
+    masked = _mask_nickname(nickname)
+    hwnd = _wait_until_state(
+        hwnd, on_log, (_TITLE_TEXTS, _BILI_PRIVACY_TEXTS, _BILI_PANEL_TEXTS)
+    )
+    if _find_text(_read_texts(hwnd), _BILI_PRIVACY_TEXTS) is not None:
+        _click_bili_agree(hwnd, on_log)
+    if not _on_bili_panel(hwnd):
+        _open_bili_panel_from_title(hwnd, on_log)
+    _select_bili_account(hwnd, nickname, on_log)
+    _click_bili_login(hwnd, on_log)
+    on_log("已点击登录，等待登录记录面板关闭")
+    _wait_bili_panel_closed(hwnd, on_log)
+    on_log("登录已受理，等待回到标题界面")
+    _wait_until_state(hwnd, on_log, (_TITLE_TEXTS,))
+    on_log(f"B服账号切换完成：{masked}")
 
 
 def _save_error_screenshot(hwnd: int) -> None:
@@ -1025,15 +1463,21 @@ def _save_error_screenshot(hwnd: int) -> None:
 
 
 def account_switch(
-    account: str, password: str = "", *, on_log: Callable[[str], None] | None = None
+    account: str,
+    password: str = "",
+    *,
+    resource: str = "官服",
+    on_log: Callable[[str], None] | None = None,
 ) -> bool:
-    """强制切换原神登录账号（官服 miHoYo 登录界面）。
+    """强制切换原神登录账号（按服务器分流官服/B服流程）。
 
     Args:
-        account: 目标账号（手机号/邮箱）；未填密码时按登录界面掩码匹配选号，
-            要求该账号已在本机登录过（有登录记录）。
-        password: 账号密码；非空时走「登录其他账号 + 剪贴板输入账密」版本，
-            为空时走下拉列表版本。
+        account: 目标账号。官服为手机号/邮箱（未填密码时按登录界面掩码匹配
+            选号，要求该账号已在本机登录过）；B服为B站用户名（按登录记录
+            面板显示的昵称匹配选号）。
+        password: 账号密码；官服非空时走「登录其他账号 + 剪贴板输入账密」
+            版本。B服暂不支持账密登录（验证码无法自动完成），填了也忽略。
+        resource: 目标服务器（用户配置 Switch.Resource），决定走哪套登录 UI。
         on_log: 流程进度回调（供 MAS 推送调度台日志），默认仅写日志。
 
     Returns:
@@ -1047,10 +1491,18 @@ def account_switch(
         raise RuntimeError("BetterGI 账号切换仅支持 Windows 平台")
     account = str(account or "").strip()
     password = str(password or "")
+    resource = (str(resource or "官服").strip() or "官服")
     if not account:
         raise RuntimeError("未配置账号，无法切换")
-    use_password = bool(password)
-    mode_label = "账号+密码" if use_password else "下拉列表"
+    is_bili = resource == "B服"
+    if is_bili and password:
+        # 密码在 B服无可用通道（登录必触发验证码），显式告知避免用户误以为生效
+        on_log("B服暂不支持账密登录（验证码无法自动完成），忽略密码，按B站用户名匹配选号")
+    use_password = bool(password) and not is_bili
+    if is_bili:
+        mode_label = "B服·用户名匹配"
+    else:
+        mode_label = "账号+密码" if use_password else "下拉列表"
 
     # 开启诊断记录：进度日志与各步骤 OCR 文本写入 debug/bgi-account-switch/，
     # 供登录失败时用户反馈定位（文件随时间戳命名，一次切换一个文件）
@@ -1065,34 +1517,47 @@ def account_switch(
         _write_diagnostic(f"[{datetime.now():%H:%M:%S}] {msg}\n")
         on_log(msg)
 
-    _on_log(f"开始切换原神账号（{mode_label}）：{mask_account(account)}")
+    display = _mask_nickname(account) if is_bili else mask_account(account)
+    _on_log(f"开始切换原神账号（{mode_label}）：{display}")
 
-    # 屏保运行时截图全黑会导致 OCR 全盲，开工前先轻推鼠标退出（对齐 OK-NTE）
-    _dismiss_screensaver()
+    # 互斥：并发切换会双线程抢占同一游戏窗口（僵尸线程 + 新流程互相踩踏），
+    # 抢不到锁直接响亮失败
+    if not _SWITCH_LOCK.acquire(blocking=False):
+        raise RuntimeError(
+            "上一个账号切换流程仍在执行中（可能因画面卡住而未退出），"
+            "请重启任务后再试"
+        )
     try:
-        hwnd = _find_game_hwnd()
-        _activate_window(hwnd)
-        # 启动稳定化：等界面进入「标题 / 登录对话框 / 账密表单」之一再分流，
-        # 滞留游戏内时自动经派蒙菜单退出到标题（多用户循环的常见起点）；
-        # 等待期间窗口失效重定位后的新句柄经返回值带回，后续流程不再用死句柄
-        hwnd = _wait_for_actionable_state(hwnd, _on_log)
-        if not (_on_login_dialog(hwnd) or _on_password_form(hwnd)):
-            _open_login_dialog(hwnd, _on_log)
-        if use_password:
-            _select_other_account_entry(hwnd, _on_log)
-            _enter_with_password(hwnd, account, password, _on_log)
-        else:
-            _select_and_enter(hwnd, account, _on_log)
-    except Exception:
+        # 屏保运行时截图全黑会导致 OCR 全盲，开工前先轻推鼠标退出（对齐 OK-NTE）
+        _dismiss_screensaver()
         try:
-            # wait=False：主流程已等待过窗口，此处单次枚举即可，避免失败后再空等宽限期。
-            _save_error_screenshot(_find_game_hwnd(wait=False))
+            hwnd = _find_game_hwnd()
+            _activate_window(hwnd)
+            if is_bili:
+                _switch_account_bili(hwnd, account, _on_log)
+            else:
+                # 启动稳定化：等界面进入「标题 / 登录对话框 / 账密表单」之一再分流，
+                # 滞留游戏内时自动经派蒙菜单退出到标题（多用户循环的常见起点）；
+                # 等待期间窗口失效重定位后的新句柄经返回值带回，后续流程不再用死句柄
+                hwnd = _wait_for_actionable_state(hwnd, _on_log)
+                if not (_on_login_dialog(hwnd) or _on_password_form(hwnd)):
+                    _open_login_dialog(hwnd, _on_log)
+                if use_password:
+                    _select_other_account_entry(hwnd, _on_log)
+                    _enter_with_password(hwnd, account, password, _on_log)
+                else:
+                    _select_and_enter(hwnd, account, _on_log)
         except Exception:
-            pass
-        raise
+            try:
+                # wait=False：主流程已等待过窗口，此处单次枚举即可，避免失败后再空等宽限期。
+                _save_error_screenshot(_find_game_hwnd(wait=False))
+            except Exception:
+                pass
+            raise
     finally:
+        _SWITCH_LOCK.release()
         _DIAGNOSTIC_PATH = None
-    logger.success(f"原神账号切换成功：{mask_account(account)}")
+    logger.success(f"原神账号切换成功：{display}")
     return True
 
 
@@ -1128,7 +1593,13 @@ def _dismiss_screensaver() -> None:
 
 
 async def async_switch_account(
-    account: str, password: str = "", *, on_log: Callable[[str], None] | None = None
+    account: str,
+    password: str = "",
+    *,
+    resource: str = "官服",
+    on_log: Callable[[str], None] | None = None,
 ) -> bool:
     """async 版本：在后台线程执行完整切换流程，避免阻塞事件循环。"""
-    return await asyncio.to_thread(account_switch, account, password, on_log=on_log)
+    return await asyncio.to_thread(
+        account_switch, account, password, resource=resource, on_log=on_log
+    )

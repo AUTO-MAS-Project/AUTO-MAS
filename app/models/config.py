@@ -3768,6 +3768,10 @@ class BetterGIUserConfig(ConfigBase):
         )
         ## 账号 UID（可不填，切换前识别一致将不执行切换动作）
         self.Switch_Uid = ConfigItem("Switch", "Uid", "")
+        ## 游戏客户端路径（用户级覆盖，可空）：官服/B服/国际服是不同客户端，B站账号
+        ## 只能登录B服客户端。留空 = 使用 BetterGI 全局配置的游戏路径；填写后该用户
+        ## 运行时由 MAS 写入 BetterGI 配置并按此路径拉起（实现同脚本混服用户各用各的客户端）
+        self.Switch_GamePath = ConfigItem("Switch", "GamePath", "", FileValidator())
 
         ## Data ------------------------------------------------------------
         self.Data_LastProxyDate = ConfigItem(

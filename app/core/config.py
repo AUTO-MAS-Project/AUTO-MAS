@@ -2592,6 +2592,26 @@ class AppConfig(GlobalConfig):
             raise ValueError(f"实例 {int(instance_idx):02d} 不存在")
         return root, instance
 
+    async def get_bettergi_game_info(
+        self, script_id: str, detect_path: str = ""
+    ) -> dict:
+        """读取 BetterGI 游戏客户端信息（路径 + 渠道），供用户页透传展示。
+
+        Args:
+            script_id: BetterGI 脚本 ID。
+            detect_path: 非空时对该路径做渠道识别（用于用户自填路径的即时标注）；
+                为空时展示生效路径（用户级优先，否则 BGI 全局）。
+        """
+
+        script_config = Config.ScriptConfig[uuid.UUID(script_id)]
+        if not isinstance(script_config, BetterGIConfig):
+            raise TypeError("脚本配置类型错误, 不是 BetterGI 类型")
+        root = Path(script_config.get("Info", "RootPath"))
+
+        from app.task.BetterGI.tools.game_info import read_game_info
+
+        return read_game_info(root, detect_path)
+
     async def get_zzzod_native_config(self, script_id: str, instance_idx: int) -> dict:
         """读取实例原生配置（账号字段 + 启动参数 + 任务编排 + 运行实例），供直控页面表单渲染。
 
