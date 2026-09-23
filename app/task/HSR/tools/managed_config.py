@@ -59,7 +59,7 @@ class HSRManagedField:
 class HSRManagedModule:
     """一个引擎下一个模块的托管表单。
 
-    ``warnings`` 只放人类可读的表单级提示（如三月七助手缺配置说明文件）；
+    ``warnings`` 只放人类可读的表单级提示（如三月七缺配置说明文件）；
     ``dropped_overrides`` 记录该模块被忽略的 ``Managed.Options`` 覆盖键，
     前端据此提示并提供清理入口。
     """
@@ -442,7 +442,7 @@ def list_m7a_managed_modules(
     root = Path(raw_root)
     source = root / "config.yaml"
     if not source.is_file():
-        raise FileNotFoundError(f"三月七助手原生配置不存在：{source}")
+        raise FileNotFoundError(f"三月七原生配置不存在：{source}")
     payload = load_m7a_native_config(script_config)
     example_path = root / "assets" / "config" / "config.example.yaml"
     comments = _load_m7a_comments(example_path)
@@ -451,8 +451,8 @@ def list_m7a_managed_modules(
         # 字段名称与说明都取自这份带注释的样例；缺了只能退化成原始键名，
         # 要让用户知道为什么表单看起来像一堆变量名。
         module_warnings = (
-            f"未找到三月七助手的配置说明文件 {example_path}，"
-            "配置项只能显示原始键名、没有说明；请检查三月七助手安装是否完整",
+            f"未找到三月七的配置说明文件 {example_path}，"
+            "配置项只能显示原始键名、没有说明；请检查三月七安装是否完整",
         )
     buckets: dict[str, list[HSRManagedField]] = {
         key: []

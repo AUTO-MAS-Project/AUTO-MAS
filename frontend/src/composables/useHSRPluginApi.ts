@@ -23,7 +23,6 @@ interface HSRAdapterCapability {
   engine: HSREngine
   display_name: string
   version?: string | null
-  supported_modes: string[]
   capabilities: string[] | Record<string, unknown>
   ready?: boolean | null
   ready_reason?: string
@@ -72,7 +71,7 @@ interface HSRManagedEngineForm {
   engine: HSREngine
   fields: HSRManagedField[]
   source?: string | null
-  /** 表单级人类可读提示（如三月七助手缺少配置说明文件）。 */
+  /** 表单级人类可读提示（如三月七缺少配置说明文件）。 */
   warnings?: string[]
   /** 在当前源配置中失效、运行时会被忽略的覆盖值；对应后端 `HSRManagedForm.dropped_overrides`。 */
   dropped_overrides?: HSRDroppedOverride[]
@@ -102,8 +101,13 @@ export interface HSRManagedTask extends HSRTaskCapability {
   forms: Partial<Record<HSREngine, HSRManagedEngineForm>>
 }
 
+/** 任务计划挂在谁身上：script = 脚本共享计划，user = 该用户自己的计划。 */
+export type HSRPlanOwner = 'script' | 'user'
+
 export interface HSRManagedConfigSnapshot {
   revision: number | string
+  /** 表单值取自哪份计划；与用户的配置来源（Info.Mode）一一对应，直控按 user 返回。 */
+  plan_owner?: HSRPlanOwner
   tasks: HSRManagedTask[]
   task_mapping: Record<string, HSREngine>
   warnings: string[]
@@ -128,13 +132,6 @@ export interface HSRSRAProfilesSnapshot {
   fallback: boolean
   fallback_reason?: string | null
   profiles: HSRSRAProfile[]
-}
-
-interface HSRDirectConfigImportResult {
-  engine: HSREngine
-  source?: string | null
-  imported_at?: string | null
-  size?: number
 }
 
 /** `check` 只查版本；`apply` 查完就地安装（目录被任务占用时后端回 409）。 */
@@ -162,7 +159,6 @@ export interface HSRCapabilitySnapshot {
   candidate_engines: HSREngine[]
   configured_engines: HSREngine[]
   effective_engines: HSREngine[]
-  supported_modes: string[]
   adapters: HSRAdapterCapability[] | Record<string, HSRAdapterCapability>
   tasks: HSRTaskCapability[] | Record<string, HSRTaskCapability>
   warnings: string[]
@@ -327,35 +323,6 @@ export function useHSRPluginApi() {
     )
   }
 
-  const importDirectConfig = async (
-    scriptId: string,
-    userId: string,
-    engine: HSREngine
-  ): Promise<HSRDirectConfigImportResult> => {
-    return requestPluginData(
-      axios.post<PluginEnvelope<HSRDirectConfigImportResult>>(url('/direct-config/import'), {
-        scriptId,
-        userId,
-        engine,
-      })
-    )
-  }
-
-  /** 清掉该用户的直控快照，直控回到直接使用脚本当前配置。 */
-  const clearDirectConfig = async (
-    scriptId: string,
-    userId: string,
-    engine: HSREngine
-  ): Promise<HSRDirectConfigImportResult> => {
-    return requestPluginData(
-      axios.post<PluginEnvelope<HSRDirectConfigImportResult>>(url('/direct-config/clear'), {
-        scriptId,
-        userId,
-        engine,
-      })
-    )
-  }
-
   /** 手动检查或安装 M7A / SRA 的更新；这是唯一不必等一轮任务跑完就能更新的入口。 */
   const runEngineUpdate = async (
     scriptId: string,
@@ -376,8 +343,6 @@ export function useHSRPluginApi() {
     getStageOptions,
     getManagedConfig,
     getSraProfiles,
-    importDirectConfig,
-    clearDirectConfig,
     runEngineUpdate,
   }
 }

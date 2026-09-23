@@ -3051,7 +3051,7 @@ class HSRConfig_Update(BaseModel):
     )
     M7ASource: Optional[Literal["GitHub", "MirrorChyan"]] = Field(
         default=None,
-        description="三月七助手更新包下载源：GitHub / Mirror 酱（需自行填写 CDK）",
+        description="三月七更新包下载源：GitHub / Mirror 酱（需自行填写 CDK）",
     )
     SRASource: Optional[Literal["AutoSite", "GitHub", "MirrorChyan"]] = Field(
         default=None,
@@ -3065,6 +3065,45 @@ class HSRConfig_Update(BaseModel):
     )
 
 
+class HSRConfig_TaskSwitch(BaseModel):
+    Daily: Optional[bool] = Field(default=None, description="日常模块开关")
+    ReceiveRewards: Optional[bool] = Field(default=None, description="领取奖励模块开关")
+    DivergentUniverse: Optional[bool] = Field(
+        default=None, description="差分宇宙模块开关"
+    )
+    CurrencyWars: Optional[bool] = Field(default=None, description="货币战争模块开关")
+
+
+class HSRConfig_Stage(BaseModel):
+    Channel: Optional[Literal["CalyxGolden", "CalyxCrimson", "Relic", "Ornament"]] = (
+        Field(default=None, description="体力关卡通道")
+    )
+    ScriptStage: Optional[str] = Field(
+        default=None, description="主刷关卡脚本原生字段 JSON"
+    )
+    ScriptEchoOfWar: Optional[str] = Field(
+        default=None, description="历战余响脚本原生字段 JSON"
+    )
+
+
+class HSRConfig_TaskOpt(BaseModel):
+    EchoOfWarWeekday: Optional[
+        Literal[
+            "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"
+        ]
+    ] = Field(default=None, description="历战余响开始刷的星期（周一 ~ 周日）")
+
+
+class HSRConfig_Managed(BaseModel):
+    """脚本级共享计划的托管覆盖。
+
+    脚本级 ``Managed.TaskMapping`` 恒为空（引擎分配走 ``TaskMapping`` 组），
+    故不在接口里开放。
+    """
+
+    Options: Optional[str] = Field(default=None, description="托管任务选项 JSON")
+
+
 class HSRConfig(BaseModel):
     Info: Optional[HSRConfig_Info] = Field(default=None, description="脚本基础信息")
     Game: Optional[HSRConfig_Game] = Field(default=None, description="游戏配置")
@@ -3074,6 +3113,18 @@ class HSRConfig(BaseModel):
     )
     TaskMapping: Optional[HSRConfig_TaskMapping] = Field(
         default=None, description="模块脚本分配"
+    )
+    TaskSwitch: Optional[HSRConfig_TaskSwitch] = Field(
+        default=None, description="共享计划：模块执行开关（脚本来源用户共用）"
+    )
+    Stage: Optional[HSRConfig_Stage] = Field(
+        default=None, description="共享计划：关卡配置（脚本来源用户共用）"
+    )
+    TaskOpt: Optional[HSRConfig_TaskOpt] = Field(
+        default=None, description="共享计划：模块执行参数（脚本来源用户共用）"
+    )
+    Managed: Optional[HSRConfig_Managed] = Field(
+        default=None, description="共享计划：托管覆盖（脚本来源用户共用）"
     )
 
 
@@ -3166,25 +3217,13 @@ class HSRUserConfig_TaskOpt(BaseModel):
 
 
 class HSRUserConfig_Control(BaseModel):
-    Mode: Optional[Literal["managed", "direct"]] = Field(
-        default=None, description="托管或直连模式"
-    )
-    SRA: Optional[bool] = Field(default=None, description="是否允许 SRA")
-    M7A: Optional[bool] = Field(default=None, description="是否允许 M7A")
+    SRA: Optional[bool] = Field(default=None, description="直控时是否运行 SRA")
+    M7A: Optional[bool] = Field(default=None, description="直控时是否运行三月七")
 
 
 class HSRUserConfig_Managed(BaseModel):
     TaskMapping: Optional[str] = Field(default=None, description="托管任务映射 JSON")
     Options: Optional[str] = Field(default=None, description="托管任务选项 JSON")
-
-
-class HSRUserConfig_Direct(BaseModel):
-    """直连快照元数据；原生配置正文不会进入普通用户 GET 响应。"""
-
-    SRAImportedAt: Optional[str] = Field(default=None, description="SRA 导入时间")
-    M7AImportedAt: Optional[str] = Field(default=None, description="M7A 导入时间")
-    SRASource: Optional[str] = Field(default=None, description="SRA 快照来源")
-    M7ASource: Optional[str] = Field(default=None, description="M7A 快照来源")
 
 
 class HSRUserConfig_Notify(BaseModel):
@@ -3215,7 +3254,6 @@ class HSRUserConfig(BaseModel):
     Managed: Optional[HSRUserConfig_Managed] = Field(
         default=None, description="托管配置"
     )
-    Direct: Optional[HSRUserConfig_Direct] = Field(default=None, description="直连快照")
 
 
 class HSRDynamicStageM7A(BaseModel):
@@ -3281,9 +3319,6 @@ class HSRCapabilityAdapter(BaseModel):
     engine: Literal["M7A", "SRA"] = Field(..., description="原生脚本引擎")
     display_name: str = Field(..., description="引擎展示名称")
     version: Optional[str] = Field(default=None, description="引擎版本")
-    supported_modes: List[str] = Field(
-        default_factory=list, description="支持的运行模式"
-    )
     capabilities: Dict[str, Any] = Field(
         default_factory=dict, description="引擎能力集合"
     )
@@ -3303,9 +3338,6 @@ class HSRCapabilitiesData(BaseModel):
     )
     effective_engines: List[Literal["M7A", "SRA"]] = Field(
         default_factory=list, description="有效引擎"
-    )
-    supported_modes: List[str] = Field(
-        default_factory=list, description="支持的运行模式"
     )
     adapters: List[HSRCapabilityAdapter] = Field(
         default_factory=list, description="引擎适配器"
@@ -3399,6 +3431,13 @@ class HSRManagedTask(BaseModel):
 
 class HSRManagedConfigData(BaseModel):
     revision: str = Field(default="old-dev", description="契约版本")
+    plan_owner: Literal["script", "user"] = Field(
+        default="script",
+        description=(
+            "任务计划的归属：script=脚本共享计划（保存到脚本配置），"
+            "user=该用户自己的计划（保存到用户配置）"
+        ),
+    )
     tasks: List[HSRManagedTask] = Field(default_factory=list, description="托管任务")
     task_mapping: Dict[str, Literal["M7A", "SRA"]] = Field(
         default_factory=dict, description="任务到引擎映射"
@@ -3436,25 +3475,6 @@ class HSRSRAProfilesData(BaseModel):
 class HSRSRAProfilesOut(OutBase):
     data: Optional[HSRSRAProfilesData] = Field(
         default=None, description="SRA 配置档案列表"
-    )
-
-
-class HSRDirectConfigImportIn(BaseModel):
-    scriptId: str = Field(..., description="HSR 脚本 ID")
-    userId: str = Field(..., description="HSR 用户 ID")
-    engine: Literal["M7A", "SRA"] = Field(..., description="原生脚本引擎")
-
-
-class HSRDirectConfigImportData(BaseModel):
-    engine: Literal["M7A", "SRA"] = Field(..., description="原生脚本引擎")
-    source: Optional[str] = Field(default=None, description="配置来源")
-    imported_at: Optional[str] = Field(default=None, description="导入时间")
-    size: int = Field(default=0, description="快照字节数")
-
-
-class HSRDirectConfigImportOut(OutBase):
-    data: Optional[HSRDirectConfigImportData] = Field(
-        default=None, description="直连配置导入结果"
     )
 
 

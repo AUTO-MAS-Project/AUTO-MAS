@@ -17,7 +17,7 @@
 
 
 from pathlib import Path
-from typing import Callable
+from typing import Any, Callable
 
 from app.models.config import HSRConfig, HSRUserConfig
 from app.models.task import UserItem
@@ -159,7 +159,7 @@ class HSRM7AControl:
     async def execute_m7a_daily(
         self,
         *,
-        user_cfg: HSRUserConfig,
+        plan: Any,
         user_name: str,
         module: HSRTaskModule,
         m7a_path: str,
@@ -168,16 +168,16 @@ class HSRM7AControl:
         redeem_codes_enabled: bool = True,
         timeout_seconds: int | None = None,
     ):
-        """执行 M7A Daily 模块。"""
+        """执行 M7A Daily 模块（副本、开始日与托管覆盖读 ``plan``）。"""
 
         m7a_config_path = Path(m7a_path) / "config.yaml"
-        main_stage = resolve_m7a_main_stage(user_cfg)
+        main_stage = resolve_m7a_main_stage(plan)
 
         daily_patch = m7a.build_m7a_daily_patch(
-            user_cfg,
+            plan,
             daily_eow_enabled=daily_eow_enabled,
             main_stage=main_stage,
-            eow_name=resolve_m7a_eow_stage(user_cfg),
+            eow_name=resolve_m7a_eow_stage(plan),
             script_config=self.script_config,
         )
         self.write_m7a_patch(m7a_config_path, daily_patch)
@@ -263,6 +263,7 @@ class HSRM7AControl:
         *,
         user_item: UserItem,
         user_cfg: HSRUserConfig,
+        plan: Any,
         user_name: str,
         uid: str,
         module: HSRTaskModule,
@@ -272,16 +273,16 @@ class HSRM7AControl:
         daily_eow_enabled: bool,
         redeem_codes_enabled: bool = True,
     ) -> HSRRunItem | None:
-        """创建一个 M7A 模块队列项。"""
+        """创建一个 M7A 模块队列项（副本与托管覆盖读 ``plan``）。"""
 
         timeout_seconds = self._module_timeout_seconds(module.key)
 
         if module.key == "Daily":
-            daily_main_stage = resolve_m7a_main_stage(user_cfg)
+            daily_main_stage = resolve_m7a_main_stage(plan)
 
             async def run_m7a_daily():
                 return await self.execute_m7a_daily(
-                    user_cfg=user_cfg,
+                    plan=plan,
                     user_name=user_name,
                     module=module,
                     m7a_path=m7a_path,
@@ -326,7 +327,7 @@ class HSRM7AControl:
                 m7a_path=m7a_path,
                 m7a_runner=m7a_runner,
                 patch=m7a.build_receive_rewards_patch(
-                    user_cfg,
+                    plan,
                     script_config=self.script_config,
                     redeem_codes_enabled=redeem_codes_enabled,
                 ),
@@ -347,8 +348,8 @@ class HSRM7AControl:
                 m7a_runner=m7a_runner,
                 patch=m7a.build_divergent_universe_patch(
                     self.script_config,
-                    user_cfg,
-                    ornament_stage_name=resolve_m7a_ornament_stage(user_cfg),
+                    plan,
+                    ornament_stage_name=resolve_m7a_ornament_stage(plan),
                 ),
                 whitelist=m7a.M7A_COSMIC_STRIFE_PATCH_WHITELIST,
                 commands=list(module.m7a_tasks),
@@ -380,8 +381,9 @@ class HSRM7AControl:
                 m7a_runner=m7a_runner,
                 patch=m7a.build_currency_wars_patch(
                     user_cfg,
-                    ornament_stage_name=resolve_m7a_ornament_stage(user_cfg),
+                    ornament_stage_name=resolve_m7a_ornament_stage(plan),
                     script_config=self.script_config,
+                    plan=plan,
                 ),
                 whitelist=m7a.M7A_COSMIC_STRIFE_PATCH_WHITELIST,
                 commands=list(module.m7a_tasks),

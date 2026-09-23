@@ -4,8 +4,12 @@
 /* eslint-disable */
 import type { HSRConfig_Game } from './HSRConfig_Game';
 import type { HSRConfig_Info } from './HSRConfig_Info';
+import type { HSRConfig_Managed } from './HSRConfig_Managed';
 import type { HSRConfig_Run } from './HSRConfig_Run';
+import type { HSRConfig_Stage } from './HSRConfig_Stage';
 import type { HSRConfig_TaskMapping } from './HSRConfig_TaskMapping';
+import type { HSRConfig_TaskOpt } from './HSRConfig_TaskOpt';
+import type { HSRConfig_TaskSwitch } from './HSRConfig_TaskSwitch';
 import type { HSRConfig_Update } from './HSRConfig_Update';
 export type HSRConfig = {
     /**
@@ -28,5 +32,21 @@ export type HSRConfig = {
      * 模块脚本分配
      */
     TaskMapping?: (HSRConfig_TaskMapping | null);
+    /**
+     * 共享计划：模块执行开关（脚本来源用户共用）
+     */
+    TaskSwitch?: (HSRConfig_TaskSwitch | null);
+    /**
+     * 共享计划：关卡配置（脚本来源用户共用）
+     */
+    Stage?: (HSRConfig_Stage | null);
+    /**
+     * 共享计划：模块执行参数（脚本来源用户共用）
+     */
+    TaskOpt?: (HSRConfig_TaskOpt | null);
+    /**
+     * 共享计划：托管覆盖（脚本来源用户共用）
+     */
+    Managed?: (HSRConfig_Managed | null);
 };
 

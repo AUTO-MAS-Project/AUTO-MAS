@@ -67,10 +67,9 @@ from .tools.extra_script import run_script_after_task, run_script_before_task
 from .tools.m7a_config import load_m7a_native_config
 from .tools.managed_config import list_managed_modules
 from .tools.native_control import (
-    get_user_direct_config,
-    has_user_direct_snapshot,
     native_provider,
     resolve_configured_engines,
+    resolve_plan,
     resolve_script_path,
     resolve_user_control,
 )
@@ -442,9 +441,9 @@ class HSRManager(TaskExecuteBase):
         managed_user_count = 0
         managed_users_with_credentials = 0
         enabled_module_keys: set[str] = set()
-        # (用户配置, 用户名, 体力模块实际执行引擎)；关卡预检放到原生配置可用性
-        # 确认之后再做，免得把「配置文件不存在」这种更根本的问题盖住。
-        daily_stage_checks: list[tuple[HSRUserConfig, str, str]] = []
+        # (计划, 用户配置, 用户名, 体力模块实际执行引擎)；关卡预检放到原生配置
+        # 可用性确认之后再做，免得把「配置文件不存在」这种更根本的问题盖住。
+        daily_stage_checks: list[tuple[Any, HSRUserConfig, str, str]] = []
 
         for uid, user_config in script_config.UserData.items():
             if not user_config.get("Info", "Status"):
@@ -452,7 +451,7 @@ class HSRManager(TaskExecuteBase):
             if user_config.get("Info", "RemainedDay") == 0:
                 continue
             # 预检结论要和本轮真正会跑的用户对齐：单独运行指定用户时，别让其他
-            # 用户的直控快照、引擎需求与托管账号数把这一个用户拦下来。
+            # 用户的直控前置条件、引擎需求与托管账号数把这一个用户拦下来。
             if not self.task_info.is_target_user(str(uid)):
                 continue
             has_executable_user = True
@@ -466,9 +465,8 @@ class HSRManager(TaskExecuteBase):
                 if not control.engines:
                     return f"用户「{user_name}」尚未启用任何直控脚本"
                 for engine in control.engines:
-                    # 直控默认直接跑脚本当前的原生配置，不要求先导入快照。
-                    # CLI/Assistant 可执行是硬条件；原生配置文件只在没有快照
-                    # 时才要求存在——已导入快照的用户可脱离原生配置文件运行。
+                    # 直控直接跑脚本当前的原生配置：CLI/Assistant 可执行与
+                    # 原生配置文件都是硬条件。
                     script_root = resolve_script_path(script_config, engine)
                     if not script_root:
                         return f"用户「{user_name}」{engine} 直控不可用：未配置原生脚本路径"
@@ -480,18 +478,16 @@ class HSRManager(TaskExecuteBase):
                             f"用户「{user_name}」{engine} 直控不可用："
                             f"原生执行文件不存在：{executable}"
                         )
-                    if not has_user_direct_snapshot(user_config, engine):
-                        engine_label = "SRA" if engine == "SRA" else "三月七助手"
-                        native_config = native_provider(engine).native_config_path(
-                            script_config
+                    engine_label = "SRA" if engine == "SRA" else "三月七"
+                    native_config = native_provider(engine).native_config_path(
+                        script_config
+                    )
+                    if not native_config.is_file():
+                        return (
+                            f"用户「{user_name}」{engine} 直控不可用："
+                            f"{engine_label} 原生配置不存在：{native_config}，"
+                            f"请先在 {engine_label} 中保存一次设置"
                         )
-                        if not native_config.is_file():
-                            return (
-                                f"用户「{user_name}」{engine} 直控不可用："
-                                f"{engine_label} 原生配置不存在：{native_config}，"
-                                f"请先在 {engine_label} 中保存一次设置，"
-                                "或为该用户导入配置快照"
-                            )
                 # 直控由脚本原生配置承载完整计划，跳过 MAS 模块队列和凭证检查。
                 continue
 
@@ -499,13 +495,16 @@ class HSRManager(TaskExecuteBase):
             if user_needs_account_switch(user_config):
                 managed_users_with_credentials += 1
 
+            # 任务开关、副本与引擎分配读计划（脚本来源 = 脚本配置上的共享计划），
+            # 账号与完成态仍读用户配置。
+            plan = resolve_plan(user_config, script_config)
             for module in HSR_TASK_MODULES:
-                if user_config.get("TaskSwitch", module.key):
+                if plan.get("TaskSwitch", module.key):
                     enabled_module_keys.add(module.key)
                     assignment = resolve_script_assignment(
                         module,
                         script_config,
-                        user_config=user_config,
+                        user_config=plan,
                         effective_engines=effective_engines,
                     )
                     assigned = assignment.script
@@ -513,7 +512,9 @@ class HSRManager(TaskExecuteBase):
                     if fallback_note:
                         self._append_log(f"用户「{user_name}」{fallback_note}")
                     if module.key == "Daily":
-                        daily_stage_checks.append((user_config, user_name, assigned))
+                        daily_stage_checks.append(
+                            (plan, user_config, user_name, assigned)
+                        )
                     if assigned == "SRA":
                         sra_needed = True
                     if assigned == "M7A":
@@ -588,14 +589,27 @@ class HSRManager(TaskExecuteBase):
             )
         if m7a_available and managed_users_with_credentials:
             accounts_dir = Path(m7a_path) / "settings" / "accounts"
-            if accounts_dir.is_dir() and any(accounts_dir.iterdir()):
+            try:
+                has_m7a_accounts = accounts_dir.is_dir() and any(accounts_dir.iterdir())
+            except OSError:
+                has_m7a_accounts = False
+            if has_m7a_accounts:
                 self._append_log(
                     "三月七内置账号管理与 MAS 切号可能互相覆盖，建议二选一"
                     f"（三月七已保存账号：{accounts_dir}）"
                 )
 
-        for user_config, user_name, assigned in daily_stage_checks:
-            self._precheck_daily_stages(script_config, user_config, user_name, assigned)
+        # 脚本来源用户共用一份计划，同一条「未选择副本」提示只记一次。
+        precheck_seen: set[str] = set()
+        for plan, user_config, user_name, assigned in daily_stage_checks:
+            self._precheck_daily_stages(
+                script_config,
+                plan,
+                user_config,
+                user_name,
+                assigned,
+                seen=precheck_seen,
+            )
 
         if sra_available:
             return self._validate_sra_user_credentials(script_config)
@@ -605,9 +619,12 @@ class HSRManager(TaskExecuteBase):
     def _precheck_daily_stages(
         self,
         script_config: HSRConfig,
+        plan: Any,
         user_config: HSRUserConfig,
         user_name: str,
         assigned: str,
+        *,
+        seen: set[str] | None = None,
     ) -> None:
         """把体力模块「引擎名下没配关卡」的跳过判定提前到预检，只提示不阻断。
 
@@ -619,12 +636,27 @@ class HSRManager(TaskExecuteBase):
         好副本之前天然处于「该引擎下一个关卡都没选」的状态，若据此中止整个任务，
         一个还没配完的用户会连带让同脚本下其他用户全部跑不了。用户在编辑页已经
         能看到「当前引擎下未选择副本」的提示，这里再在开跑前复述一次即可。
+
+        副本、托管值与历战余响开始日读 ``plan``，本周是否已完成读 ``user_config``。
+        脚本来源用户共用一份计划，提示以「脚本共享任务配置」为主语、经 ``seen``
+        去重，免得 N 个用户把同一句话刷 N 遍。
         """
 
         engine_name = ENGINE_DISPLAY_NAMES.get(assigned, assigned)
+        subject = (
+            "脚本共享任务配置：" if plan is script_config else f"用户「{user_name}」"
+        )
+
+        def log_once(message: str) -> None:
+            if seen is not None:
+                if message in seen:
+                    return
+                seen.add(message)
+            self._append_log(message)
+
         try:
             values: dict[str, object] = {}
-            for module in list_managed_modules(assigned, script_config, user_config):
+            for module in list_managed_modules(assigned, script_config, plan):
                 if module.key == "Daily":
                     values = {field.key: field.value for field in module.fields}
                     break
@@ -634,28 +666,30 @@ class HSRManager(TaskExecuteBase):
             assigned, values
         )
         main_configured, eow_configured = resolve_configured_daily_stages(
-            user_config, assigned
+            plan, assigned
         )
         if cultivation_enabled or activity_enabled:
             main_configured = True
-        daily_eow_enabled, _ = HSRAutoProxyTask._resolve_daily_params(user_config)
+        daily_eow_enabled, _ = HSRAutoProxyTask._resolve_daily_params(
+            user_config, plan=plan
+        )
 
         if not main_configured and not eow_configured:
-            self._append_log(
-                f"用户「{user_name}」的体力模块由 {engine_name} 执行，"
+            log_once(
+                f"{subject}体力模块由 {engine_name} 执行，"
                 f"但 {engine_name} 下未选择体力副本和历战余响关卡，体力模块本轮不会执行。"
                 "副本按执行引擎分别保存，切换引擎后需要重新选择；"
                 "或在该引擎中开启「培养目标」由脚本自行决定副本"
             )
             return
         if not main_configured and not daily_eow_enabled:
-            self._append_log(
-                f"用户「{user_name}」{engine_name} 下未选择体力副本，"
+            log_once(
+                f"{subject}{engine_name} 下未选择体力副本，"
                 "今日不需要历战余响，体力模块将跳过"
             )
         if daily_eow_enabled and not eow_configured:
-            self._append_log(
-                f"用户「{user_name}」本周需要历战余响，但 {engine_name} 下未选择"
+            log_once(
+                f"{subject}本周需要历战余响，但 {engine_name} 下未选择"
                 "历战余响关卡，历战余响将跳过"
             )
 
@@ -752,7 +786,7 @@ class HSRManager(TaskExecuteBase):
             if resolve_script_path(self.script_config, "SRA"):
                 try:
                     disable_sra_windows_notifications()
-                    self._append_log("SRA 本体 Windows 通知已临时关闭")
+                    self._append_log("已确认 SRA 本体 Windows 系统通知在本轮为关闭状态")
                 except Exception as e:  # noqa: BLE001
                     logger.warning(f"SRA 本体 Windows 通知关闭失败：{e}")
                     self._append_log(f"SRA 本体 Windows 通知关闭失败，将继续执行：{e}")
@@ -900,10 +934,9 @@ class HSRManager(TaskExecuteBase):
     async def _run_direct_user(self, user_item: UserItem, user_config: Any) -> int:
         """按脚本直控运行一个用户。
 
-        默认直接执行 SRA/M7A 当前的原生配置；用户导入过快照时才改用隔离的
-        快照（见 ``native_control`` 模块说明）。直控只把外部配置交给对应 CLI；
-        MAS 是否管理游戏启停由脚本开关决定，日志、取消和会话收尾始终由 MAS
-        负责。没有新 ``Control``/``Direct`` 字段时不会进入此路径。
+        直接执行 SRA/M7A 当前的原生配置（见 ``native_control`` 模块说明）。
+        直控只把外部配置交给对应 CLI；MAS 是否管理游戏启停由脚本开关决定，
+        日志、取消和会话收尾始终由 MAS 负责。
         """
 
         if self.script_config is None:
@@ -952,8 +985,6 @@ class HSRManager(TaskExecuteBase):
                 provider = native_provider(engine)
                 session = await provider.open_direct_session(
                     script_config=self.script_config,
-                    config_content=get_user_direct_config(user_config, engine),
-                    session_id=user_item.user_id,
                     log=self._append_log,
                 )
                 self._direct_sessions[engine] = session

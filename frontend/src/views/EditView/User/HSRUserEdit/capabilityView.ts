@@ -7,7 +7,6 @@ import type {
 interface HSRCapabilityView {
   effectiveEngines: HSREngine[]
   taskKeys: string[]
-  supportedModes: string[]
   showSRAFields: boolean
   showM7AFields: boolean
   showTaskMapping: boolean
@@ -24,14 +23,12 @@ export const buildHSRCapabilityView = (
     ? snapshot.tasks
     : Object.values(snapshot?.tasks || {})
   const taskKeys = tasks.map((task: HSRTaskCapability) => task.key)
-  const supportedModes = snapshot?.supported_modes || []
 
   return {
     effectiveEngines,
     taskKeys,
-    supportedModes,
     showSRAFields: effectiveEngines.includes('SRA'),
     showM7AFields: effectiveEngines.includes('M7A'),
-    showTaskMapping: taskKeys.length > 0 || supportedModes.includes('managed'),
+    showTaskMapping: taskKeys.length > 0,
   }
 }
