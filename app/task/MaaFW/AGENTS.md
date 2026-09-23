@@ -65,7 +65,9 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   staging，再两次目录 rename 换入；journal 在 `data/mfw/.switch/`，启动期 `recover_switches` 按盘上
   状态收尾（没有「重跑切换」这一档）。**写穿防线**：往 staging / 视图 / 载荷放文件一律
   `blob_store.place_fresh`（独占新建，已存在的目标只摘目录项）；旧视图私有、新载荷也有的路径以载荷
-  为准。切换方向无关：升级、改渠道降级、迁移统一都是这一条。
+  为准——唯一例外是 `contracts.RUNTIME_STATE_FILES`（M9A 账号记录这类运行期状态）：视图里有就原样
+  带过去，不比内容、不留档，否则换版本会把它换回导入那天的内容或当成删掉的文件丢掉（用户导入的多半
+  是自己一直在用的目录，里面早有这些文件）。切换方向无关：升级、改渠道降级、迁移统一都是这一条。
 - 内置运行从不启动项目自带的界面程序（MFW.exe / MFAAvalonia / MXU），副本去掉的只有外壳、
   .NET 托管库、界面用的运行时、缓存与日志。**项目自带的运行时原样带走**：MaaFramework 原生库
   目录（`maafw/`，MFAAvalonia 布局下是 `runtimes/win-x64/native`）与 agent 自带的解释器目录
@@ -90,10 +92,11 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   不进库（锁文件、`.pth`、dist-info 这类最可能被原地改写，M9A 的 bootstrap 就往 `python/*.lock` 里
   追加写）；链接失败就退回复制。可写的东西靠四层挡住：尺寸、排除表、运行期新建即新 inode、运行
   收尾的写穿巡检（`tools/embedded/view_audit.py`：nlink>1 且修改时间晚于物化时刻才读 sha，确认就
-  隔离 blob、记 `privatePaths`、标载荷 `damaged`）。回收在启动期：`clean_maafw_embedded_copies`
+  隔离 blob、记 `privatePaths`、标载荷 `damaged`；`damaged` 的载荷下次更新只要全量包）。回收在启动期：`clean_maafw_embedded_copies`
   删无人引用的载荷（`embedded_project.collect_payload_garbage`：引用集 = 视图标记 ∪ 未完成切换的 to，
   谱系还有视图时再加它的 latest；一个视图都不剩的谱系整个收走，视图丢了但脚本还在的按导入来源保住；
-  本进程起来之后建的不收），随后 `clean_maafw_runtime_blobs` 删 `st_nlink == 1` 的 blob。本机实测：inode 被映射时只有被映射的
+  本进程起来之后建的不收。回收跑在后台、API 已在服务：删之前要在该谱系的 `lineage_lock` 内按盘上最新
+  状态再判一次，否则判定之后刚登记的载荷会被一起删掉），随后 `clean_maafw_runtime_blobs` 删 `st_nlink == 1` 的 blob。本机实测：inode 被映射时只有被映射的
   那个目录项删不掉 / 换不掉，同一 inode 的其它硬链接名随便删换（见 `blob_store.py` 模块说明）。
 - **同一项目再建一个脚本**走 `/maafw/embedded/sources`（候选）+ `/maafw/embedded/clone`
   （`embedded_project.clone_embedded_copy`）：从源脚本挂着的载荷物化目标视图（源正在切换就取 journal
