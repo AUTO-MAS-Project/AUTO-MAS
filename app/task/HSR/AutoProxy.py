@@ -22,7 +22,7 @@
 
 import asyncio
 import uuid
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from contextlib import suppress
 from datetime import datetime
 from pathlib import Path
@@ -229,6 +229,9 @@ class HSRAutoProxyTask(TaskExecuteBase):
         self._managed_options_cache: dict[tuple[int, str, str], dict[str, object]] = {}
         # 输出回调里派生的后台任务（如终止三月七），持有引用防止被回收。
         self._background_tasks: set[asyncio.Task] = set()
+        # 本用户的 SRA 登录项工厂（按阶段）；登录计划不走 SRA StartGame 时为 None。
+        # 队列中途因模块失败重启游戏后，下一个 SRA 模块前要先用它登录一次。
+        self._restart_login_item_factory: Callable[[HSRPhase], HSRRunItem] | None = None
 
     def _append_log(self, message: str, *, max_lines: int = 500) -> None:
         text = str(message).strip()
@@ -1498,6 +1501,27 @@ class HSRAutoProxyTask(TaskExecuteBase):
             candidate.last_error = reason
         return skipped
 
+    def _login_item_after_restart(self, item: HSRRunItem) -> HSRRunItem | None:
+        """队列中途重启游戏后，``item`` 之前是否要先补一次 SRA 登录。
+
+        只有 MAS 真的重启了本地客户端（客户端平台且管理游戏）、登录计划走 SRA
+        StartGame、且下一个是 SRA 的非登录模块时才需要：三月七自己会处理进入
+        游戏；紧跟着的若本来就是登录项也不重复插。
+        """
+
+        factory = getattr(self, "_restart_login_item_factory", None)
+        if factory is None or item.script != "SRA" or item.module_key == "StartGame":
+            return None
+        if is_cloud_platform(self.script_config) or not is_game_management_enabled(
+            self.script_config
+        ):
+            return None
+        self._append_log(
+            f"用户「{item.user_name}」游戏已重启，执行 SRA 模块「{item.module_name}」前"
+            "先登录进入游戏"
+        )
+        return factory(item.phase)
+
     async def _run_queue_items(
         self,
         items: list[HSRRunItem],
@@ -1527,13 +1551,22 @@ class HSRAutoProxyTask(TaskExecuteBase):
                 restart_reason = None
             completed_phases.add(phase)
 
-            for item_index, item in enumerate(phase_items):
+            item_index = -1
+            while item_index + 1 < len(phase_items):
+                item_index += 1
+                item = phase_items[item_index]
                 if restart_reason is not None:
                     await self._restart_game(
                         item.user_name,
                         f"{restart_reason}，执行模块「{item.module_name}」前",
                     )
                     restart_reason = None
+                    # 重启后游戏停在标题 / 登录画面：SRA 的非登录任务从大世界或
+                    # ESC 菜单起步，先插一次登录；登录项失败时按登录失败中止后续。
+                    login_item = self._login_item_after_restart(item)
+                    if login_item is not None:
+                        phase_items.insert(item_index, login_item)
+                        item = login_item
                 item.attempts += 1
                 self._append_log(
                     f"用户「{item.user_name}」执行 {item.script} "
@@ -1831,6 +1864,23 @@ class HSRAutoProxyTask(TaskExecuteBase):
         # 与 LastLogin 都按当前用户记）。
         m7a_runner.set_output_line_callback(self._on_m7a_output_line)
         login_plan = self._build_login_plan(user_cfg=user_cfg, sra_path=sra_path)
+        if login_plan.uses_sra_start_game:
+
+            def build_restart_login_item(phase: HSRPhase) -> HSRRunItem:
+                return self._create_start_game_item(
+                    user_item=user_item,
+                    user_cfg=user_cfg,
+                    user_name=user_name,
+                    uid=uid,
+                    phase=phase,
+                    login_plan=login_plan,
+                    script_id=script_id,
+                    temp_files=self.temp_files,
+                )
+
+            self._restart_login_item_factory = build_restart_login_item
+        else:
+            self._restart_login_item_factory = None
 
         # 物化前归档本用户字段侧车（_build_user_queue 会把托管字段注入原生
         # 配置；指纹去重，失败只记日志不阻断运行——native 池由 manager
