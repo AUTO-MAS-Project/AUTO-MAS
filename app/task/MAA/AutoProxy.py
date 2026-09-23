@@ -1658,8 +1658,10 @@ class AutoProxyTask(TaskExecuteBase):
             global_set["GUI.UseTray"] = "True"
             global_set["GUI.MinimizeToTray"] = "True"
             global_set["Start.MinimizeDirectly"] = "True"
+            # 启动即最小化是同一开关的新旧两通道，两个文件都要写：新版 MAA 读
+            # gui.new.json，只写 gui.json 那一半时它启动后仍会弹窗。
             gui_new_set.setdefault("Gui", {}).update(
-                {"UseTray": True, "MinimizeToTray": True}
+                {"UseTray": True, "MinimizeToTray": True, "MinimizeOnStartup": True}
             )
             # 无人值守运行，公告与更新后首启的版本说明弹窗一并关闭
             global_set["Announcement.DoNotShowAnnouncement"] = "True"
