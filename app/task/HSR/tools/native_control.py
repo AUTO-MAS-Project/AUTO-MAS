@@ -161,31 +161,64 @@ def resolve_configured_engines(config: Any) -> tuple[HSREngine, ...]:
     return tuple(engine for engine in _HSR_ENGINE_ORDER if _script_path(config, engine))
 
 
+HSRPlanOwner = Literal["script", "user"]
+
+
+def resolve_plan_owner(user_config: Any) -> HSRPlanOwner | None:
+    """按 ``Info.Mode`` 决定该用户的任务计划挂在谁身上。
+
+    - 「脚本」→ ``"script"``：本脚本下所有脚本来源用户共用 ``HSRConfig`` 上的
+      同名组（TaskSwitch / Stage / TaskOpt / Managed.Options / TaskMapping）；
+    - 「用户」→ ``"user"``：该用户 ``HSRUserConfig`` 上自己的一份；
+    - 「直控」→ ``None``：没有 MAS 计划，原样运行原生配置。
+
+    账号密码、剩余天数、完成态（``Data``）与通知恒按用户，不随 owner 变化。
+    非法值由 ``UserDirectConfigModeValidator`` 在加载时纠成「脚本」，这里对
+    空值（如未指定用户的接口调用）同样按「脚本」处理。
+    """
+
+    mode = str(_config_value(user_config, "Info", "Mode", "") or "").strip()
+    if mode == "直控":
+        return None
+    if mode == "用户":
+        return "user"
+    return "script"
+
+
+def resolve_plan(user_config: Any, script_config: Any) -> Any | None:
+    """返回该用户实际生效的任务计划对象；直控返回 ``None``。
+
+    两份计划组名、键名完全相同（``declare_hsr_plan_items``），调用方只需把
+    返回值当作「读计划键的对象」传下去：读计划键用它，读 ``Info`` / ``Data`` /
+    ``Notify`` / ``Control`` 仍用 ``user_config``——脚本配置上没有这些用户键，
+    ``ConfigBase.get`` 缺项直接抛 ``AttributeError``，两者不能混用。
+    """
+
+    owner = resolve_plan_owner(user_config)
+    if owner is None:
+        return None
+    return script_config if owner == "script" else user_config
+
+
 def resolve_user_control(
     user_config: Any,
     *,
     script_config: Any | None = None,
 ) -> "HSRUserControlSettings":
-    """Resolve per-user managed/direct mode, accepting old ConfigBase records.
+    """Resolve per-user managed/direct mode from ``Info.Mode``.
 
-    配置来源与引擎直控的合流点：``Info.Mode``（脚本/用户/直控三态，用户可见的来源
-    选择器）在这里折进 HSR 原有的 ``Control.Mode``（引擎级托管/直控），两者不是
-    并列的第二套概念。语义：
+    ``Info.Mode`` 是唯一的模式轴：「直控」→ ``direct``，「脚本」/「用户」都是
+    MAS 托管（区别只在计划 owner，见 :func:`resolve_plan_owner`）。直控跑哪些
+    引擎由 ``Control.{engine}`` 决定，一个都没勾时回落到已配置脚本路径的引擎
+    （否则会「直控但什么都不跑」）。
 
-    - ``Info.Mode == "直控"`` → ``direct``。用户选「直控」就是要直接用原生配置跑，
-      不再需要单独再去勾 ``Control.Mode``；跑哪些引擎仍由 ``Control.{engine}``
-      决定，一个都没勾时回落到已配置脚本路径的引擎（否则会「直控但什么都不跑」）。
-    - ``Info.Mode`` 为脚本/用户 → 维持 ``Control.Mode`` 既有取值，兼容插件版
-      存量用户的托管/直控设置。
-    - ``Info.IfQuickConfig``：HSR **明确声明不支持快速配置**——SRA/M7A 的
-      原生配置由脚本 GUI 维护，MAS 侧托管字段（每日关卡等）的写入深度耦合
-      托管运行器（临时配置覆盖而非直接写原生文件），不存在可独立下发的
-      快速配置子集，故开关不产生任何行为差异；前端不渲染该开关（死开关）。
+    ``Info.IfQuickConfig``：HSR **明确声明不支持快速配置**——SRA/M7A 的原生
+    配置由脚本 GUI 维护，MAS 侧托管字段（每日关卡等）的写入深度耦合托管
+    运行器（临时配置覆盖而非直接写原生文件），不存在可独立下发的快速配置
+    子集，故开关不产生任何行为差异；前端不渲染该开关（死开关）。
     """
 
-    info_mode = str(_config_value(user_config, "Info", "Mode", "") or "").strip()
-    raw_mode = str(_config_value(user_config, "Control", "Mode", "managed"))
-    direct = info_mode == "直控" or raw_mode.strip().lower() == "direct"
+    direct = resolve_plan_owner(user_config) is None
     mode: Literal["managed", "direct"] = "direct" if direct else "managed"
     engines: tuple[HSREngine, ...] = tuple(
         engine
@@ -565,6 +598,7 @@ def native_provider(engine: str):
 __all__ = [
     "HSREngine",
     "HSRNativeControlSnapshot",
+    "HSRPlanOwner",
     "HSRRunResult",
     "HSRUserControlSettings",
     "PHASE_TIMEOUT_CONFIG",
@@ -577,6 +611,8 @@ __all__ = [
     "native_provider",
     "resolve_configured_engines",
     "resolve_phase_timeout_minutes",
+    "resolve_plan",
+    "resolve_plan_owner",
     "resolve_script_path",
     "resolve_user_control",
 ]

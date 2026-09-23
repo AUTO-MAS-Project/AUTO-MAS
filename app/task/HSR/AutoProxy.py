@@ -65,6 +65,7 @@ from .tools.managed_config import list_managed_modules, redeem_code_fingerprint
 from .tools.native_control import (
     resolve_configured_engines,
     resolve_phase_timeout_minutes,
+    resolve_plan,
     resolve_script_path,
 )
 from .tools.run_model import (
@@ -146,12 +147,10 @@ def _server_day_clock(now_dt: datetime | None = None) -> datetime:
     return now_dt.astimezone(UTC4)
 
 
-def _has_enabled_phase_module(user_config, phase: HSRPhase) -> bool:
-    """判断用户是否启用了指定周期的任一 HSR 模块。"""
+def _has_enabled_phase_module(plan, phase: HSRPhase) -> bool:
+    """判断计划是否启用了指定周期的任一 HSR 模块。"""
 
-    return any(
-        bool(user_config.get("TaskSwitch", key)) for key in MODULE_KEYS_BY_PHASE[phase]
-    )
+    return any(bool(plan.get("TaskSwitch", key)) for key in MODULE_KEYS_BY_PHASE[phase])
 
 
 class HSRAutoProxyTask(TaskExecuteBase):
@@ -616,9 +615,16 @@ class HSRAutoProxyTask(TaskExecuteBase):
     def _resolve_daily_params(
         user_config,
         now_dt: datetime | None = None,
+        *,
+        plan=None,
     ) -> tuple[bool, bool]:
-        """解析本周历战余响任务，不写用户 Data。"""
+        """解析本周历战余响任务，不写用户 Data。
 
+        开始日读 ``plan``（缺省即 ``user_config``），完成态读 ``user_config``。
+        """
+
+        if plan is None:
+            plan = user_config
         weekday_options = [
             "Monday",
             "Tuesday",
@@ -628,7 +634,7 @@ class HSRAutoProxyTask(TaskExecuteBase):
             "Saturday",
             "Sunday",
         ]
-        eow_target = user_config.get("TaskOpt", "EchoOfWarWeekday") or "Monday"
+        eow_target = plan.get("TaskOpt", "EchoOfWarWeekday") or "Monday"
         if eow_target not in weekday_options:
             eow_target = "Monday"
 
@@ -664,9 +670,16 @@ class HSRAutoProxyTask(TaskExecuteBase):
     def _resolve_weekly_skip(
         user_config,
         now_dt: datetime | None = None,
+        *,
+        plan=None,
     ) -> tuple[bool, str, bool]:
-        """解析周常是否本周已完成，不写用户 Data。"""
-        weekly_enabled = _has_enabled_phase_module(user_config, "weekly")
+        """解析周常是否本周已完成，不写用户 Data。
+
+        模块开关读 ``plan``（缺省即 ``user_config``），完成态读 ``user_config``。
+        """
+        weekly_enabled = _has_enabled_phase_module(
+            user_config if plan is None else plan, "weekly"
+        )
 
         # 游戏周边界是服务器时间周一 04:00 = UTC+4 零点，见 _period_markers
         now_dt = _server_day_clock(now_dt)
@@ -705,18 +718,18 @@ class HSRAutoProxyTask(TaskExecuteBase):
         *,
         assigned_script: str,
         module_key: str,
-        user_cfg,
+        plan,
     ) -> dict[str, object]:
-        """读取动态托管页展示的原生值，并允许用户覆盖。"""
+        """读取动态托管页展示的原生值，并叠加计划里的托管覆盖。"""
 
-        cache_key = (id(user_cfg), assigned_script, module_key)
+        cache_key = (id(plan), assigned_script, module_key)
         if cache_key in self._managed_options_cache:
             return dict(self._managed_options_cache[cache_key])
         try:
             modules = list_managed_modules(
                 assigned_script,
                 self.script_config,
-                user_cfg,
+                plan,
             )
             for module in modules:
                 if module.key == module_key:
@@ -730,13 +743,11 @@ class HSRAutoProxyTask(TaskExecuteBase):
         self._managed_options_cache[cache_key] = {}
         return {}
 
-    def _daily_native_modes(
-        self, *, assigned_script: str, user_cfg
-    ) -> tuple[bool, bool]:
+    def _daily_native_modes(self, *, assigned_script: str, plan) -> tuple[bool, bool]:
         values = self._managed_module_values(
             assigned_script=assigned_script,
             module_key="Daily",
-            user_cfg=user_cfg,
+            plan=plan,
         )
         return resolve_daily_native_modes(assigned_script, values)
 
@@ -745,12 +756,13 @@ class HSRAutoProxyTask(TaskExecuteBase):
         *,
         engine: str,
         user_cfg,
+        plan,
         user_name: str,
     ) -> tuple[bool, str | None]:
         values = self._managed_module_values(
             assigned_script=engine,
             module_key="ReceiveRewards",
-            user_cfg=user_cfg,
+            plan=plan,
         )
         if engine == "SRA":
             # SRA 2.22.0 起兑换码开关是具名键，旧 profile 仍是数组下标 6
@@ -787,7 +799,7 @@ class HSRAutoProxyTask(TaskExecuteBase):
         self,
         *,
         assigned_script: str,
-        user_cfg,
+        plan,
         user_name: str,
         uid: str,
         daily_eow_enabled: bool,
@@ -796,11 +808,11 @@ class HSRAutoProxyTask(TaskExecuteBase):
 
         cultivation_enabled, native_activity_enabled = self._daily_native_modes(
             assigned_script=assigned_script,
-            user_cfg=user_cfg,
+            plan=plan,
         )
 
         main_configured, eow_configured = resolve_configured_daily_stages(
-            user_cfg, assigned_script
+            plan, assigned_script
         )
 
         if cultivation_enabled or native_activity_enabled:
@@ -828,6 +840,7 @@ class HSRAutoProxyTask(TaskExecuteBase):
         phase: HSRPhase,
         user_item: UserItem,
         user_cfg,
+        plan,
         user_name: str,
         uid: str,
         m7a_path: str,
@@ -837,7 +850,11 @@ class HSRAutoProxyTask(TaskExecuteBase):
         temp_files: list[Path],
         daily_eow_enabled: bool,
     ) -> list[HSRRunItem]:
-        """按阶段构建队列，保持 HSR_TASK_MODULES 中的业务顺序。"""
+        """按阶段构建队列，保持 HSR_TASK_MODULES 中的业务顺序。
+
+        模块开关、引擎分配、副本与托管覆盖读 ``plan``；兑换码指纹等完成态读
+        ``user_cfg``。
+        """
 
         items: list[HSRRunItem] = []
         effective_engines = resolve_configured_engines(self.script_config)
@@ -845,13 +862,15 @@ class HSRAutoProxyTask(TaskExecuteBase):
         for module in HSR_TASK_MODULES:
             if module.category != phase:
                 continue
-            if not user_cfg.get("TaskSwitch", module.key):
+            if not plan.get("TaskSwitch", module.key):
                 continue
 
+            # 脚本来源时 plan 是脚本配置，其 Managed.TaskMapping 恒为空，
+            # 自然落到脚本级 TaskMapping。
             assignment = resolve_script_assignment(
                 module,
                 self.script_config,
-                user_config=user_cfg,
+                user_config=plan,
                 effective_engines=effective_engines,
             )
             assigned = assignment.script
@@ -865,7 +884,7 @@ class HSRAutoProxyTask(TaskExecuteBase):
                 main_configured, module_daily_eow_enabled = (
                     self._resolve_daily_runnable_parts(
                         assigned_script=assigned,
-                        user_cfg=user_cfg,
+                        plan=plan,
                         user_name=user_name,
                         uid=uid,
                         daily_eow_enabled=daily_eow_enabled,
@@ -889,6 +908,7 @@ class HSRAutoProxyTask(TaskExecuteBase):
                     self._resolve_redeem_code_policy(
                         engine=assigned,
                         user_cfg=user_cfg,
+                        plan=plan,
                         user_name=user_name,
                     )
                 )
@@ -899,13 +919,13 @@ class HSRAutoProxyTask(TaskExecuteBase):
                 if module.key == "Daily" and module_daily_eow_enabled:
                     cultivation_enabled, _ = self._daily_native_modes(
                         assigned_script=assigned,
-                        user_cfg=user_cfg,
+                        plan=plan,
                     )
                     if cultivation_enabled:
                         items.append(
                             self._sra_control.create_echo_of_war_item(
                                 user_item=user_item,
-                                user_cfg=user_cfg,
+                                plan=plan,
                                 user_name=user_name,
                                 uid=uid,
                                 phase=phase,
@@ -918,6 +938,7 @@ class HSRAutoProxyTask(TaskExecuteBase):
                 item = self._sra_control.create_module_item(
                     user_item=user_item,
                     user_cfg=user_cfg,
+                    plan=plan,
                     user_name=user_name,
                     uid=uid,
                     module=module,
@@ -963,6 +984,7 @@ class HSRAutoProxyTask(TaskExecuteBase):
                 item = self._m7a_control.create_module_item(
                     user_item=user_item,
                     user_cfg=user_cfg,
+                    plan=plan,
                     user_name=user_name,
                     uid=uid,
                     module=module,
@@ -1218,6 +1240,7 @@ class HSRAutoProxyTask(TaskExecuteBase):
         *,
         user_item: UserItem,
         user_cfg,
+        plan,
         user_name: str,
         uid: str,
         m7a_path: str,
@@ -1227,11 +1250,17 @@ class HSRAutoProxyTask(TaskExecuteBase):
         script_id: str,
         temp_files: list[Path],
     ) -> list[HSRRunItem]:
-        """按用户构建本轮 HSR 执行队列。"""
+        """按用户构建本轮 HSR 执行队列。
 
-        daily_eow_enabled, eow_is_new_week = self._resolve_daily_params(user_cfg)
+        ``plan`` 是该用户生效的任务计划（脚本来源为脚本配置，用户来源为
+        ``user_cfg`` 本身）；``Data`` / ``Info`` 恒读 ``user_cfg``。
+        """
+
+        daily_eow_enabled, eow_is_new_week = self._resolve_daily_params(
+            user_cfg, plan=plan
+        )
         weekly_skip, weekly_skip_reason, weekly_is_new_week = self._resolve_weekly_skip(
-            user_cfg
+            user_cfg, plan=plan
         )
         logger.debug(
             f"用户「{user_name}」resolver: "
@@ -1245,6 +1274,7 @@ class HSRAutoProxyTask(TaskExecuteBase):
             phase="daily",
             user_item=user_item,
             user_cfg=user_cfg,
+            plan=plan,
             user_name=user_name,
             uid=uid,
             m7a_path=m7a_path,
@@ -1264,6 +1294,7 @@ class HSRAutoProxyTask(TaskExecuteBase):
                     phase="weekly",
                     user_item=user_item,
                     user_cfg=user_cfg,
+                    plan=plan,
                     user_name=user_name,
                     uid=uid,
                     m7a_path=m7a_path,
@@ -1569,6 +1600,10 @@ class HSRAutoProxyTask(TaskExecuteBase):
         uid = user_item.user_id
         user_cfg = self.cur_user_config
         user_name = user_cfg.get("Info", "Name")
+        # 直控用户由 HSRManager._run_direct_user 执行，不会进这里。
+        plan = resolve_plan(user_cfg, self.script_config)
+        if plan is None:
+            raise RuntimeError(f"用户「{user_name}」为直控来源，不能进入 MAS 托管队列")
         m7a_path = resolve_script_path(self.script_config, "M7A")
         sra_path = resolve_script_path(self.script_config, "SRA")
         script_id = self.script_info.script_id
@@ -1595,6 +1630,7 @@ class HSRAutoProxyTask(TaskExecuteBase):
         full_queue = self._build_user_queue(
             user_item=user_item,
             user_cfg=user_cfg,
+            plan=plan,
             user_name=user_name,
             uid=uid,
             m7a_path=m7a_path,

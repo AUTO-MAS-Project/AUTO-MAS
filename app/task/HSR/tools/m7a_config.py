@@ -728,12 +728,17 @@ def build_currency_wars_patch(
     ornament_stage_name: str | None = None,
     *,
     script_config=None,
+    plan=None,
 ) -> dict[str, Any]:
-    """构建 M7A 货币战争 patch。"""
+    """构建 M7A 货币战争 patch。
+
+    托管覆盖读 ``plan``（该用户生效的任务计划，缺省即 ``user_config``），
+    开拓者名称读 ``user_config``。
+    """
+    if plan is None:
+        plan = user_config
     username = str(user_config.get("Info", "Name") or "").strip()
-    native_options = resolve_m7a_managed_options(
-        script_config, user_config, "CurrencyWars"
-    )
+    native_options = resolve_m7a_managed_options(script_config, plan, "CurrencyWars")
 
     patch = {
         "cloud_game_enable": False,
@@ -775,7 +780,7 @@ def build_currency_wars_patch(
     return _apply_managed_patch(
         patch,
         script_config=script_config,
-        user_config=user_config,
+        user_config=plan,
         module_key="CurrencyWars",
         whitelist=M7A_COSMIC_STRIFE_PATCH_WHITELIST,
     )

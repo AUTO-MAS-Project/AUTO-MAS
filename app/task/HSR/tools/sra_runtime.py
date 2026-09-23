@@ -324,9 +324,16 @@ def build_sra_module_config(
     name: str = "",
     daily_eow_enabled: bool = False,
     redeem_codes_enabled: bool = True,
+    plan=None,
 ) -> dict:
-    """构造只启用一个目标模块的 SRA TasksConfig。"""
+    """构造只启用一个目标模块的 SRA TasksConfig。
 
+    副本与托管覆盖读 ``plan``（该用户生效的任务计划，缺省即 ``user_config``），
+    货币战争的开拓者名称读 ``user_config``。
+    """
+
+    if plan is None:
+        plan = user_config
     config = _build_sra_base_config(name or f"_mas_temp_{module.key}")
     if module.sra_task is None:
         return config
@@ -352,7 +359,7 @@ def build_sra_module_config(
 
     if module.key == "Daily":
         config["trailblazePower"]["tasklist"] = _build_sra_trailblaze_tasklist(
-            user_config, eow_enabled=daily_eow_enabled
+            plan, eow_enabled=daily_eow_enabled
         )
         config["trailblazePower"]["replenish.enabled"] = False
         config["trailblazePower"]["replenish.way"] = 0
@@ -360,9 +367,7 @@ def build_sra_module_config(
 
     elif module.key == "ReceiveRewards":
         # 领取项来自当前 SRA profile；Managed.Options 只覆盖已发现字段。
-        native_options = resolve_sra_managed_options(
-            module.key, script_config, user_config
-        )
+        native_options = resolve_sra_managed_options(module.key, script_config, plan)
         config["receiveRewards"]["rewards"] = [
             bool(native_options.get("rewards.0", True)),
             bool(native_options.get("rewards.1", True)),
@@ -374,9 +379,7 @@ def build_sra_module_config(
         ]
 
     elif module.key == "DivergentUniverse":
-        native_options = resolve_sra_managed_options(
-            module.key, script_config, user_config
-        )
+        native_options = resolve_sra_managed_options(module.key, script_config, plan)
         config["cosmicStrife"]["divergentUniverse.enabled"] = True
         config["cosmicStrife"]["divergentUniverse.mode"] = int(
             native_options.get("divergentUniverse.mode", SRA_DIVERGENT_UNIVERSE_MODE)
@@ -398,9 +401,7 @@ def build_sra_module_config(
         )
 
     elif module.key == "CurrencyWars":
-        native_options = resolve_sra_managed_options(
-            module.key, script_config, user_config
-        )
+        native_options = resolve_sra_managed_options(module.key, script_config, plan)
         username = str(user_config.get("Info", "Name") or "").strip()
         config["cosmicStrife"]["currencyWars.enabled"] = True
         mode = native_options.get("currencyWars.mode", SRA_CURRENCY_WARS_MODE)
@@ -433,7 +434,7 @@ def build_sra_module_config(
         )
         config["cosmicStrife"]["currencyWars.username"] = username
 
-    _apply_managed_options(config, module.key, script_config, user_config)
+    _apply_managed_options(config, module.key, script_config, plan)
     if module.key == "Daily":
         trailblaze = config["trailblazePower"]
         trailblaze["enabled"] = True
@@ -441,7 +442,7 @@ def build_sra_module_config(
             trailblaze["tasklist"] = []
         else:
             trailblaze["tasklist"] = _build_sra_trailblaze_tasklist(
-                user_config,
+                plan,
                 eow_enabled=daily_eow_enabled,
             )
     elif module.key == "ReceiveRewards":

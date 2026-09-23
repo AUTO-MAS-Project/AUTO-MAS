@@ -70,6 +70,7 @@ from .tools.native_control import (
     has_user_direct_snapshot,
     native_provider,
     resolve_configured_engines,
+    resolve_plan,
     resolve_script_path,
     resolve_user_control,
 )
@@ -440,9 +441,9 @@ class HSRManager(TaskExecuteBase):
         managed_user_count = 0
         managed_users_with_credentials = 0
         enabled_module_keys: set[str] = set()
-        # (用户配置, 用户名, 体力模块实际执行引擎)；关卡预检放到原生配置可用性
-        # 确认之后再做，免得把「配置文件不存在」这种更根本的问题盖住。
-        daily_stage_checks: list[tuple[HSRUserConfig, str, str]] = []
+        # (计划, 用户配置, 用户名, 体力模块实际执行引擎)；关卡预检放到原生配置
+        # 可用性确认之后再做，免得把「配置文件不存在」这种更根本的问题盖住。
+        daily_stage_checks: list[tuple[Any, HSRUserConfig, str, str]] = []
 
         for uid, user_config in script_config.UserData.items():
             if not user_config.get("Info", "Status"):
@@ -497,13 +498,16 @@ class HSRManager(TaskExecuteBase):
             if user_needs_account_switch(user_config):
                 managed_users_with_credentials += 1
 
+            # 任务开关、副本与引擎分配读计划（脚本来源 = 脚本配置上的共享计划），
+            # 账号与完成态仍读用户配置。
+            plan = resolve_plan(user_config, script_config)
             for module in HSR_TASK_MODULES:
-                if user_config.get("TaskSwitch", module.key):
+                if plan.get("TaskSwitch", module.key):
                     enabled_module_keys.add(module.key)
                     assignment = resolve_script_assignment(
                         module,
                         script_config,
-                        user_config=user_config,
+                        user_config=plan,
                         effective_engines=effective_engines,
                     )
                     assigned = assignment.script
@@ -511,7 +515,9 @@ class HSRManager(TaskExecuteBase):
                     if fallback_note:
                         self._append_log(f"用户「{user_name}」{fallback_note}")
                     if module.key == "Daily":
-                        daily_stage_checks.append((user_config, user_name, assigned))
+                        daily_stage_checks.append(
+                            (plan, user_config, user_name, assigned)
+                        )
                     if assigned == "SRA":
                         sra_needed = True
                     if assigned == "M7A":
@@ -562,8 +568,17 @@ class HSRManager(TaskExecuteBase):
         except (FileNotFoundError, OSError, ValueError) as exc:
             return f"HSR 原生配置不可用：{exc}"
 
-        for user_config, user_name, assigned in daily_stage_checks:
-            self._precheck_daily_stages(script_config, user_config, user_name, assigned)
+        # 脚本来源用户共用一份计划，同一条「未选择副本」提示只记一次。
+        precheck_seen: set[str] = set()
+        for plan, user_config, user_name, assigned in daily_stage_checks:
+            self._precheck_daily_stages(
+                script_config,
+                plan,
+                user_config,
+                user_name,
+                assigned,
+                seen=precheck_seen,
+            )
 
         if sra_available:
             return self._validate_sra_user_credentials(script_config)
@@ -573,9 +588,12 @@ class HSRManager(TaskExecuteBase):
     def _precheck_daily_stages(
         self,
         script_config: HSRConfig,
+        plan: Any,
         user_config: HSRUserConfig,
         user_name: str,
         assigned: str,
+        *,
+        seen: set[str] | None = None,
     ) -> None:
         """把体力模块「引擎名下没配关卡」的跳过判定提前到预检，只提示不阻断。
 
@@ -587,12 +605,27 @@ class HSRManager(TaskExecuteBase):
         好副本之前天然处于「该引擎下一个关卡都没选」的状态，若据此中止整个任务，
         一个还没配完的用户会连带让同脚本下其他用户全部跑不了。用户在编辑页已经
         能看到「当前引擎下未选择副本」的提示，这里再在开跑前复述一次即可。
+
+        副本、托管值与历战余响开始日读 ``plan``，本周是否已完成读 ``user_config``。
+        脚本来源用户共用一份计划，提示以「脚本共享任务配置」为主语、经 ``seen``
+        去重，免得 N 个用户把同一句话刷 N 遍。
         """
 
         engine_name = ENGINE_DISPLAY_NAMES.get(assigned, assigned)
+        subject = (
+            "脚本共享任务配置：" if plan is script_config else f"用户「{user_name}」"
+        )
+
+        def log_once(message: str) -> None:
+            if seen is not None:
+                if message in seen:
+                    return
+                seen.add(message)
+            self._append_log(message)
+
         try:
             values: dict[str, object] = {}
-            for module in list_managed_modules(assigned, script_config, user_config):
+            for module in list_managed_modules(assigned, script_config, plan):
                 if module.key == "Daily":
                     values = {field.key: field.value for field in module.fields}
                     break
@@ -602,28 +635,30 @@ class HSRManager(TaskExecuteBase):
             assigned, values
         )
         main_configured, eow_configured = resolve_configured_daily_stages(
-            user_config, assigned
+            plan, assigned
         )
         if cultivation_enabled or activity_enabled:
             main_configured = True
-        daily_eow_enabled, _ = HSRAutoProxyTask._resolve_daily_params(user_config)
+        daily_eow_enabled, _ = HSRAutoProxyTask._resolve_daily_params(
+            user_config, plan=plan
+        )
 
         if not main_configured and not eow_configured:
-            self._append_log(
-                f"用户「{user_name}」的体力模块由 {engine_name} 执行，"
+            log_once(
+                f"{subject}体力模块由 {engine_name} 执行，"
                 f"但 {engine_name} 下未选择体力副本和历战余响关卡，体力模块本轮不会执行。"
                 "副本按执行引擎分别保存，切换引擎后需要重新选择；"
                 "或在该引擎中开启「培养目标」由脚本自行决定副本"
             )
             return
         if not main_configured and not daily_eow_enabled:
-            self._append_log(
-                f"用户「{user_name}」{engine_name} 下未选择体力副本，"
+            log_once(
+                f"{subject}{engine_name} 下未选择体力副本，"
                 "今日不需要历战余响，体力模块将跳过"
             )
         if daily_eow_enabled and not eow_configured:
-            self._append_log(
-                f"用户「{user_name}」本周需要历战余响，但 {engine_name} 下未选择"
+            log_once(
+                f"{subject}本周需要历战余响，但 {engine_name} 下未选择"
                 "历战余响关卡，历战余响将跳过"
             )
 
