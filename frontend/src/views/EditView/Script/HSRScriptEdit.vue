@@ -1145,7 +1145,6 @@ const loadCapabilities = async () => {
       candidate_engines: configuredEngines,
       configured_engines: configuredEngines,
       effective_engines: configuredEngines,
-      supported_modes: ['managed', 'direct'],
       adapters: [],
       tasks: [],
       warnings: [

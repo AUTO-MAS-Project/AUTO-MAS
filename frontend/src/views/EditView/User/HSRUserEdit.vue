@@ -91,7 +91,12 @@
               <a-col v-if="controlMode === 'managed' && effectiveEngines.includes('SRA')" :span="6">
                 <a-form-item>
                   <template #label>
-                    <span class="form-label">{{ t('edit.password') }}</span>
+                    <!-- 加密说明由原先的区块提示降为密码字段的悬停说明 -->
+                    <a-tooltip :title="t('edit.whenSavingMasEncrypts')">
+                      <span class="form-label"
+                        >{{ t('edit.password') }} <QuestionCircleOutlined class="help-icon"
+                      /></span>
+                    </a-tooltip>
                   </template>
                   <a-input-password
                     v-model:value="formData.Info.Password"
@@ -103,7 +108,8 @@
               </a-col>
             </a-row>
             <a-row :gutter="24" style="margin-top: 8px">
-              <a-col :span="6">
+              <!-- 只有一个服务器可选时不渲染下拉（字段仍保留在后端，留作扩展口） -->
+              <a-col v-if="serverOptions.length > 1" :span="6">
                 <a-form-item>
                   <template #label>
                     <span class="form-label">{{ t('edit.server') }}</span>
@@ -151,51 +157,29 @@
                 </a-form-item>
               </a-col>
             </a-row>
+            <!-- 页面上唯一的模式控件；三张卡片自带描述，不再另挂来源提示 -->
             <GeneralConfigModeSelector
-              :model-value="formData.Info.Mode ?? '用户'"
+              :model-value="formData.Info.Mode ?? '脚本'"
               :options="hsrConfigModeOptions"
               :disabled="isSaving"
               :saving="isSaving"
-              :alert-message="t('edit.configSourceHintBase')"
+              alert-message=""
               @change="handleConfigModeChange"
-            />
-            <a-form-item style="margin-top: 8px">
-              <template #label>
-                <span class="form-label">
-                  {{ t('edit.runMode') }}
-                  <a-tooltip :title="t('edit.hsrRunModeHint')">
-                    <QuestionCircleOutlined class="help-icon" />
-                  </a-tooltip>
-                </span>
-              </template>
-              <a-select
-                :value="controlMode"
-                :options="controlModeOptions"
-                :disabled="isSaving"
-                size="large"
-                @change="handleControlModeChange"
-              />
-            </a-form-item>
-            <a-alert
-              v-if="controlMode === 'managed' && effectiveEngines.includes('SRA')"
-              type="info"
-              show-icon
-              style="margin-top: 8px"
-              :message="t('edit.whenSavingMasEncrypts')"
             />
           </div>
 
-          <!-- 关卡配置 -->
+          <!-- 关卡配置：「脚本」来源编辑脚本共享计划，「用户」来源编辑该用户自己的计划 -->
           <div v-if="controlMode === 'managed'" class="control-mode-content">
             <a-alert
+              v-if="planOwner === 'script'"
               type="info"
               show-icon
-              :message="t('edit.masRunsThisUser')"
+              :message="t('edit.hsrSharedPlanHint')"
               class="mode-alert"
             />
             <StageConfigSection
               v-if="dailyStageEngine"
-              :form-data="formData"
+              :form-data="planForm"
               :loading="isSaving"
               :daily-engine="dailyStageEngine"
               :stage-options="hsrStageOptions"
@@ -206,9 +190,11 @@
             />
             <ManagedTaskSection
               :snapshot="managedConfigSnapshot"
-              :task-switch="formData.TaskSwitch"
+              :task-switch="planForm.TaskSwitch"
               :saving="isSaving"
               :loading="managedConfigLoading"
+              :shared="planOwner === 'script'"
+              :shown-warnings="visibleCapabilityWarnings"
               @reset-overrides="handleManagedOverridesReset"
               @task-toggle="handleTaskSwitchToggle"
               @mapping-change="handleManagedMappingChange"
@@ -217,27 +203,16 @@
             />
           </div>
           <div v-else class="control-mode-content">
-            <a-alert
-              type="warning"
-              show-icon
-              :message="t('edit.scriptDirectControlIgnores')"
-              class="mode-alert"
-            />
             <DirectControlSection
               :available-engines="[...effectiveEngines]"
               :control="formData.Control"
-              :direct="formData.Direct"
               :saving="isSaving"
-              :importing-engine="importingDirectEngine"
-              :clearing-engine="clearingDirectEngine"
               @toggle="handleDirectEngineToggle"
-              @import-config="handleDirectConfigImport"
-              @clear-config="handleDirectConfigClear"
             />
           </div>
 
-          <!-- 进度与重置 (历战余响开始日 已下沉到 体力配置 区) -->
-          <div v-if="controlMode === 'managed'" class="form-section">
+          <!-- 进度与重置（完成态恒按用户记，脚本 / 用户来源都显示；历战余响开始日在体力配置区） -->
+          <div v-if="formData.Info.Mode !== '直控'" class="form-section">
             <div class="section-header">
               <h3>{{ t('edit.progressReset') }}</h3>
             </div>
@@ -392,13 +367,18 @@ import {
   type HSRCapabilitySnapshot,
   type HSRManagedConfigSnapshot,
   type HSREngine,
+  type HSRPlanOwner,
 } from '@/composables/useHSRPluginApi'
 import type { HSRConfig_TaskMapping } from '@/api'
 import { DEFAULT_HSR_TASK_MAPPING, resolveTaskMappingValue } from '@/types/script'
 import type { HSRScriptConfig } from '@/types/script'
 import StageConfigSection from './HSRUserEdit/StageConfigSection.vue'
 import GeneralConfigModeSelector from '@/views/EditView/User/GeneralConfigModeSelector.vue'
-import type { HSRDynamicStageOptionsData, HSRUserConfigData } from './HSRUserEdit/types'
+import type {
+  HSRDynamicStageOptionsData,
+  HSRPlanData,
+  HSRUserConfigData,
+} from './HSRUserEdit/types'
 import { buildHSRCapabilityView } from './HSRUserEdit/capabilityView'
 import DirectControlSection from './HSRUserEdit/DirectControlSection.vue'
 import ManagedTaskSection from './HSRUserEdit/ManagedTaskSection.vue'
@@ -438,33 +418,15 @@ const logger = window.electronAPI.getLogger('HSR 用户编辑')
 const route = useRoute()
 const router = useRouter()
 const { addUser, updateUser, getUsers } = useUserApi()
-const { getScript } = useScriptApi()
+const { getScript, updateScript } = useScriptApi()
 const hsrPluginApi = useHSRPluginApi()
 
 const isInitializing = ref(true)
 // 保存串行队列：连续改动按序写回，不再被布尔互斥丢掉
 const { isSaving, enqueue } = useSaveQueue()
 
-// Initialize the reactive form before any computed/watch that can evaluate it
-// during setup.  Keeping this declaration first avoids a browser TDZ error.
-const formData = reactive<HSRUserConfigData>({
-  Info: {
-    Name: '',
-    Status: true,
-    Id: '',
-    Password: '',
-    // 配置来源三态（脚本/用户/直控），与下方 Control.Mode（托管/直连）是不同的轴，勿混用
-    Mode: '用户',
-    // HSR 按方案 B 声明不支持快速配置（模型/schema 字段保留但运行时无消费，
-    // native_control.py 已声明），前端不渲染快速配置开关，故不设 IfQuickConfig 默认值
-    Server: 'CN-Official',
-    RemainedDay: -1,
-    IfScriptBeforeTask: false,
-    ScriptBeforeTask: '',
-    IfScriptAfterTask: false,
-    ScriptAfterTask: '',
-    Notes: '',
-  },
+// 一份计划的初始值（加载前的占位）。用户自己的计划与脚本共享计划形状相同。
+const createDefaultPlan = (): HSRPlanData => ({
   Stage: {
     Channel: 'CalyxGolden',
     ScriptStage: '{ }',
@@ -479,6 +441,33 @@ const formData = reactive<HSRUserConfigData>({
   TaskOpt: {
     EchoOfWarWeekday: 'Monday',
   },
+  Managed: {
+    TaskMapping: {},
+    Options: {},
+  },
+})
+
+// Initialize the reactive form before any computed/watch that can evaluate it
+// during setup.  Keeping this declaration first avoids a browser TDZ error.
+const formData = reactive<HSRUserConfigData>({
+  Info: {
+    Name: '',
+    Status: true,
+    Id: '',
+    Password: '',
+    // 配置来源三态（脚本/用户/直控）是页面上唯一的模式轴；新建用户默认「脚本」，与后端一致
+    Mode: '脚本',
+    // HSR 按方案 B 声明不支持快速配置（模型/schema 字段保留但运行时无消费，
+    // native_control.py 已声明），前端不渲染快速配置开关，故不设 IfQuickConfig 默认值
+    Server: 'CN-Official',
+    RemainedDay: -1,
+    IfScriptBeforeTask: false,
+    ScriptBeforeTask: '',
+    IfScriptAfterTask: false,
+    ScriptAfterTask: '',
+    Notes: '',
+  },
+  ...createDefaultPlan(),
   Data: {
     EchoOfWarCompletedThisWeek: false,
     EchoOfWarLastResetWeek: '',
@@ -496,21 +485,13 @@ const formData = reactive<HSRUserConfigData>({
     ServerChanKey: '',
   },
   Control: {
-    Mode: 'managed',
     SRA: false,
     M7A: false,
   },
-  Managed: {
-    TaskMapping: {},
-    Options: {},
-  },
-  Direct: {
-    SRAImportedAt: '',
-    M7AImportedAt: '',
-    SRASource: '',
-    M7ASource: '',
-  },
 })
+
+// 脚本共享计划：脚本配置上与用户计划同名的几组，本脚本下所有「脚本」来源用户共用
+const sharedPlan = reactive<HSRPlanData>(createDefaultPlan())
 
 const scriptId = route.params.scriptId as string
 let userId = route.params.userId as string
@@ -527,8 +508,6 @@ const capabilityView = computed(() => buildHSRCapabilityView(capabilitySnapshot.
 const effectiveEngines = computed(() => capabilityView.value.effectiveEngines)
 const managedConfigSnapshot = ref<HSRManagedConfigSnapshot | null>(null)
 const managedConfigLoading = ref(false)
-const importingDirectEngine = ref<HSREngine | null>(null)
-const clearingDirectEngine = ref<HSREngine | null>(null)
 const hsrStageOptions = ref<HSRDynamicStageOptionsData | null>(null)
 const hsrStageOptionsLoading = ref(false)
 const hsrStageOptionsError = ref('')
@@ -536,31 +515,22 @@ const hsrStageOptionsError = ref('')
 const serverOptions = computed(() => [
   { value: 'CN-Official', label: t('edit.hsrServerCnOfficial') },
 ])
-const controlModeOptions = [
-  { value: 'managed', label: t('edit.masManaged') },
-  { value: 'direct', label: t('edit.scriptDirectControl') },
-]
 
 // 配置来源三态卡片（value 为后端 Info.Mode 取值，驱动逻辑需保持原样；文案走词表）
-// 「脚本」置灰：HSR 运行时脚本态与用户态同分支（native_control 仅按 直控/其余 折进 Control.Mode），
-// 选了也不生效——禁用并悬停说明原因
+// 脚本 = 本脚本下「脚本」来源用户共用一份任务配置；用户 = 该用户自己一份；直控 = 原样跑原生配置
 const hsrConfigModeOptions: Array<{
   label: string
   value: '脚本' | '用户' | '直控'
   title: string
   description: string
   icon: 'database' | 'setting'
-  disabled?: boolean
-  disabledReason?: string
 }> = [
   {
     label: t('edit.script'),
     value: '脚本',
     title: t('edit.script'),
-    description: t('edit.useScriptS'),
+    description: t('edit.hsrUseScriptShared'),
     icon: 'database',
-    disabled: true,
-    disabledReason: t('edit.scriptModeDisabled'),
   },
   {
     label: t('edit.user'),
@@ -606,12 +576,43 @@ const hasValidCompletionDate = (value?: string | null): boolean => {
   return date !== '' && date !== DEFAULT_COMPLETION_DATE
 }
 
-// 根据脚本页 TaskMapping 返回体力模块的执行引擎（SRA 或 M7A）。
+// 任务计划挂在谁身上，与后端 resolve_plan_owner 同一口径：直控没有 MAS 计划，
+// 「用户」读写该用户自己的计划，其余（含空值）按「脚本」读写脚本共享计划。
+const planOwner = computed<HSRPlanOwner | null>(() => {
+  if (formData.Info.Mode === '直控') return null
+  return formData.Info.Mode === '用户' ? 'user' : 'script'
+})
+
+// 体力配置 / 托管任务两个区块的数据源随 owner 切换
+const planForm = computed<HSRPlanData>(() => (planOwner.value === 'script' ? sharedPlan : formData))
+
+// 计划字段分组：脚本态下这些组（外加脚本级 TaskMapping）保存到脚本配置
+const PLAN_GROUPS = new Set(['TaskSwitch', 'Stage', 'TaskOpt', 'Managed', 'TaskMapping'])
+
+const applySharedPlan = (config: HSRScriptConfig | null) => {
+  const defaults = createDefaultPlan()
+  sharedPlan.Stage = { ...defaults.Stage, ...(config?.Stage ?? {}) } as HSRPlanData['Stage']
+  sharedPlan.TaskSwitch = { ...defaults.TaskSwitch, ...(config?.TaskSwitch ?? {}) }
+  sharedPlan.TaskOpt = { ...defaults.TaskOpt, ...(config?.TaskOpt ?? {}) }
+  // 脚本级没有 Managed.TaskMapping：脚本态的引擎分配直接读写脚本 TaskMapping 组
+  sharedPlan.Managed = { TaskMapping: {}, Options: parseJsonRecord(config?.Managed?.Options) }
+}
+
+// 切到「脚本」或恢复后重拉脚本配置，拿到其他用户可能刚改过的共享计划
+const refreshSharedPlan = async () => {
+  const script = await getScript(scriptId)
+  if (!script) return
+  scriptConfig.value = script.config as HSRScriptConfig
+  applySharedPlan(scriptConfig.value)
+}
+
+// 返回体力模块的执行引擎（SRA 或 M7A）：脚本态只看脚本 TaskMapping（不允许用户级覆盖），
+// 用户态再叠上该用户的 Managed.TaskMapping。
 const getTaskMapping = (moduleKey: 'Daily'): HSREngine | undefined => {
   const mapping: HSRConfig_TaskMapping = {
     ...DEFAULT_HSR_TASK_MAPPING,
     ...(scriptConfig.value?.TaskMapping ?? {}),
-    ...(formData.Managed?.TaskMapping ?? {}),
+    ...(planOwner.value === 'script' ? {} : (formData.Managed?.TaskMapping ?? {})),
   }
   return resolveTaskMappingValue(mapping[moduleKey] ?? undefined, new Set(effectiveEngines.value))
 }
@@ -682,33 +683,19 @@ const fetchHsrStageOptions = async (engine: HSREngine) => {
 // getter 返回字符串而不是新数组，否则 formData.Managed 每次整体赋值都会触发一次重拉
 watch(
   () =>
-    `${scriptConfig.value?.TaskMapping?.Daily ?? ''}|${formData.Managed?.TaskMapping?.Daily ?? ''}`,
+    `${planOwner.value ?? ''}|${scriptConfig.value?.TaskMapping?.Daily ?? ''}|${formData.Managed?.TaskMapping?.Daily ?? ''}`,
   () => {
     void loadHsrStageOptions()
   }
 )
 
 const handleTaskSwitchToggle = async (moduleKey: string, enabled: boolean) => {
-  ;(formData.TaskSwitch as Record<string, boolean | null | undefined>)[moduleKey] = enabled
-  const userData: Record<string, unknown> = { TaskSwitch: { [moduleKey]: enabled } }
-  if (isInitializing.value || !userId) return
-  await enqueue(async () => {
-    try {
-      const saved = await updateUser(scriptId, userId, userData)
-      if (saved) {
-        logger.info(`用户配置已保存: TaskSwitch.${moduleKey}=${enabled}`)
-      } else {
-        logger.error(`保存失败: TaskSwitch.${moduleKey}`)
-      }
-    } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : String(error)
-      logger.error(`保存失败: ${errorMsg}`)
-    }
-  }, `TaskSwitch.${moduleKey}`)
+  await handleFieldSave(`TaskSwitch.${moduleKey}`, enabled)
 }
 
+// 运行形态只由配置来源派生：直控跑原生配置，其余由 MAS 按计划托管
 const controlMode = computed<'managed' | 'direct'>(() =>
-  formData.Control?.Mode === 'direct' ? 'direct' : 'managed'
+  formData.Info.Mode === '直控' ? 'direct' : 'managed'
 )
 const dailyStageEngine = computed(() => getTaskMapping('Daily'))
 
@@ -718,12 +705,19 @@ const loadManagedConfig = async () => {
   try {
     const snapshot = await hsrPluginApi.getManagedConfig(scriptId, userId)
     managedConfigSnapshot.value = snapshot
-    formData.Managed = {
-      TaskMapping: {
-        ...(managedConfigSnapshot.value.task_mapping ?? {}),
-        ...(formData.Managed?.TaskMapping ?? {}),
-      },
-      Options: formData.Managed?.Options ?? {},
+    if (snapshot.plan_owner && planOwner.value && snapshot.plan_owner !== planOwner.value) {
+      logger.warn(`托管配置的计划归属与配置来源不一致: ${snapshot.plan_owner} / ${planOwner.value}`)
+    }
+    // 用户态沿用旧口径：把解析后的引擎分配并进该用户的 Managed.TaskMapping 本地副本；
+    // 脚本态的引擎分配只在脚本 TaskMapping 组，不碰用户字段
+    if (planOwner.value === 'user') {
+      formData.Managed = {
+        TaskMapping: {
+          ...(managedConfigSnapshot.value.task_mapping ?? {}),
+          ...(formData.Managed?.TaskMapping ?? {}),
+        },
+        Options: formData.Managed?.Options ?? {},
+      }
     }
   } catch (error) {
     managedConfigSnapshot.value = null
@@ -733,8 +727,8 @@ const loadManagedConfig = async () => {
   }
 }
 
-// 「重置为源配置」：清空这个用户在 MAS 里的全部 Managed.Options 覆盖值，
-// 之后表单和运行都按 SRA / 三月七助手当前配置走。确认弹窗在子组件里。
+// 「重置为源配置」：清空当前计划（脚本共享或该用户自己）在 MAS 里的全部 Managed.Options
+// 覆盖值，之后表单和运行都按 SRA / 三月七当前配置走。确认弹窗在子组件里。
 const handleManagedOverridesReset = async () => {
   if (!userId || managedConfigLoading.value) return
   const saved = await handleFieldSave('Managed.Options', {})
@@ -753,7 +747,8 @@ const handleManagedInvalidOverridesClear = async (
   keys: string[]
 ) => {
   if (!userId || managedConfigLoading.value || keys.length === 0) return
-  const options = { ...(formData.Managed?.Options ?? {}) }
+  const plan = planForm.value
+  const options = { ...(plan.Managed?.Options ?? {}) }
   const engineOptions = { ...(options[engine] ?? {}) }
   const taskOptions = { ...(engineOptions[task] ?? {}) }
   for (const key of keys) delete taskOptions[key]
@@ -761,7 +756,7 @@ const handleManagedInvalidOverridesClear = async (
   else delete engineOptions[task]
   if (Object.keys(engineOptions).length > 0) options[engine] = engineOptions
   else delete options[engine]
-  formData.Managed = { ...(formData.Managed ?? {}), Options: options }
+  plan.Managed = { ...(plan.Managed ?? {}), Options: options }
   const saved = await handleFieldSave('Managed.Options', options)
   if (!saved) {
     message.error(t('edit.couldNotClearInvalidManagedOverrides'))
@@ -771,37 +766,49 @@ const handleManagedInvalidOverridesClear = async (
   message.success(t('edit.invalidManagedOverridesCleared', { n: keys.length }))
 }
 
-// 配置来源三态切换：校验 value ∈ 三态 → 赋值 Info.Mode → 真实保存
+// 直控下没勾任何引擎时，按已配路径的引擎全开（后端的同名回落保留兜底）
+const ensureDirectEnginesEnabled = async () => {
+  const engines = effectiveEngines.value
+  if (!engines.length || engines.some(engine => Boolean(formData.Control?.[engine]))) return
+  for (const engine of engines) await handleDirectEngineToggle(engine, true)
+}
+
+// 配置来源三态切换：校验 value ∈ 三态 → 赋值 Info.Mode → 真实保存 → 按新来源重拉数据。
+// 脚本 ↔ 用户意味着计划 owner 变了，托管表单与副本下拉都要换到新 owner 的值。
 const handleConfigModeChange = async (value: boolean | string) => {
   if (typeof value !== 'string' || !['脚本', '用户', '直控'].includes(value)) return
+  const previousMode = formData.Info.Mode
+  if (previousMode === value) return
   formData.Info.Mode = value as '脚本' | '用户' | '直控'
-  await handleFieldSave('Info.Mode', formData.Info.Mode)
-}
-
-const handleControlModeChange = async (value: string | number) => {
-  if (value !== 'managed' && value !== 'direct') return
-  const previousMode = formData.Control?.Mode
-  if (!formData.Control) formData.Control = { Mode: 'managed' }
-  formData.Control.Mode = value
-  const saved = await handleFieldSave('Control.Mode', value)
+  const saved = await handleFieldSave('Info.Mode', formData.Info.Mode)
   if (!saved) {
-    formData.Control.Mode = previousMode || 'managed'
-    message.error(t('edit.couldNotSaveRun'))
+    formData.Info.Mode = previousMode
     return
   }
-  if (value === 'managed') await loadManagedConfig()
+  if (value === '直控') {
+    await ensureDirectEnginesEnabled()
+    return
+  }
+  if (value === '脚本') await refreshSharedPlan()
+  await loadManagedConfig()
 }
 
+// 引擎分配：脚本态写脚本级 TaskMapping.<模块>（共享计划的一部分，不允许用户级覆盖），
+// 用户态照旧写该用户的 Managed.TaskMapping。
 const handleManagedMappingChange = async (task: string, engine: HSREngine) => {
-  const mapping = { ...(formData.Managed?.TaskMapping ?? {}), [task]: engine }
-  formData.Managed = { ...(formData.Managed ?? {}), TaskMapping: mapping }
   if (managedConfigSnapshot.value) {
     managedConfigSnapshot.value.task_mapping = {
       ...managedConfigSnapshot.value.task_mapping,
       [task]: engine,
     }
   }
-  await handleFieldSave('Managed.TaskMapping', mapping)
+  if (planOwner.value === 'script') {
+    await handleFieldSave(`TaskMapping.${task}`, engine)
+  } else {
+    const mapping = { ...(formData.Managed?.TaskMapping ?? {}), [task]: engine }
+    formData.Managed = { ...(formData.Managed ?? {}), TaskMapping: mapping }
+    await handleFieldSave('Managed.TaskMapping', mapping)
+  }
   if (task === 'Daily') await loadHsrStageOptions()
 }
 
@@ -811,12 +818,13 @@ const handleManagedFieldChange = async (
   key: string,
   value: unknown
 ) => {
-  const options = { ...(formData.Managed?.Options ?? {}) }
+  const plan = planForm.value
+  const options = { ...(plan.Managed?.Options ?? {}) }
   const engineOptions = { ...(options[engine] ?? {}) }
   const taskOptions = { ...(engineOptions[task] ?? {}), [key]: value }
   engineOptions[task] = taskOptions
   options[engine] = engineOptions
-  formData.Managed = { ...(formData.Managed ?? {}), Options: options }
+  plan.Managed = { ...(plan.Managed ?? {}), Options: options }
   const field = managedConfigSnapshot.value?.tasks
     .find(item => item.key === task)
     ?.forms?.[engine]?.fields.find(item => item.key === key)
@@ -825,53 +833,9 @@ const handleManagedFieldChange = async (
 }
 
 const handleDirectEngineToggle = async (engine: HSREngine, enabled: boolean) => {
-  if (!formData.Control) formData.Control = { Mode: 'direct' }
+  if (!formData.Control) formData.Control = {}
   formData.Control[engine] = enabled
   await handleFieldSave(`Control.${engine}`, enabled)
-}
-
-const handleDirectConfigImport = async (engine: HSREngine) => {
-  if (!userId || importingDirectEngine.value || configLocked.value) return
-  importingDirectEngine.value = engine
-  try {
-    const result = await hsrPluginApi.importDirectConfig(scriptId, userId, engine)
-    if (!formData.Direct) formData.Direct = {}
-    formData.Direct[`${engine}ImportedAt`] = result.imported_at
-    formData.Direct[`${engine}Source`] = result.source
-    message.success(t('edit.nativeP0ConfigurationWas', { p0: engine }))
-  } catch (error) {
-    message.error(
-      t('edit.couldNotImportP0', {
-        p0: engine,
-        p1: error instanceof Error ? error.message : String(error),
-      })
-    )
-  } finally {
-    importingDirectEngine.value = null
-  }
-}
-
-// 与 handleDirectConfigImport 对称：清掉快照后直控回到直接使用脚本当前配置
-const handleDirectConfigClear = async (engine: HSREngine) => {
-  if (!userId || clearingDirectEngine.value || importingDirectEngine.value || configLocked.value)
-    return
-  clearingDirectEngine.value = engine
-  try {
-    await hsrPluginApi.clearDirectConfig(scriptId, userId, engine)
-    if (!formData.Direct) formData.Direct = {}
-    formData.Direct[`${engine}ImportedAt`] = ''
-    formData.Direct[`${engine}Source`] = ''
-    message.success(t('edit.directSnapshotCleared', { p0: engine }))
-  } catch (error) {
-    message.error(
-      t('edit.couldNotClearP0', {
-        p0: engine,
-        p1: error instanceof Error ? error.message : String(error),
-      })
-    )
-  } finally {
-    clearingDirectEngine.value = null
-  }
 }
 
 // EchoOfWarWeekday 变更已下沉到 StageConfigSection.vue（体力配置区）。
@@ -978,9 +942,25 @@ const resetWeeklyProgress = async () => {
   )
 }
 
+// 按计划 owner 分流保存：脚本态的计划字段（TaskSwitch / Stage / TaskOpt / Managed.Options /
+// 脚本级 TaskMapping）写脚本配置，其余（Info / Data / Notify / Control）以及用户态的一切写用户配置。
 const handleFieldSave = async (key: string, value: unknown): Promise<boolean> => {
   const parts = key.split('.')
-  let localTarget = formData as unknown as MutableRecord
+  const toScript = planOwner.value === 'script' && PLAN_GROUPS.has(parts[0])
+  if (toScript && key === 'Managed.TaskMapping') {
+    // 脚本态不允许用户级引擎覆盖，脚本级这一项也不开放写入
+    logger.warn('脚本来源下忽略 Managed.TaskMapping 的保存')
+    return false
+  }
+  if (!toScript && parts[0] === 'TaskMapping') {
+    logger.warn(`用户来源下 ${key} 不属于用户配置，已忽略`)
+    return false
+  }
+  let localTarget = (!toScript
+    ? formData
+    : parts[0] === 'TaskMapping'
+      ? (scriptConfig.value ??= {} as HSRScriptConfig)
+      : sharedPlan) as unknown as MutableRecord
   for (let i = 0; i < parts.length - 1; i++) {
     const part = parts[i]
     const next = localTarget[part]
@@ -994,12 +974,13 @@ const handleFieldSave = async (key: string, value: unknown): Promise<boolean> =>
   if (isInitializing.value || !userId) return false
   return enqueue(async () => {
     try {
-      const userData: MutableRecord = {}
-      let current = userData
+      const patch: MutableRecord = {}
+      let current = patch
       for (let i = 0; i < parts.length - 1; i++) {
         current[parts[i]] = {}
         current = current[parts[i]] as MutableRecord
       }
+      // 脚本级与用户级的这几项同样是 JSONValidator，两条保存路径都要先转成 JSON 字符串
       const isManagedJsonField =
         parts[0] === 'Managed' && (parts[1] === 'TaskMapping' || parts[1] === 'Options')
       const isStageJsonField =
@@ -1010,12 +991,15 @@ const handleFieldSave = async (key: string, value: unknown): Promise<boolean> =>
           ? JSON.stringify(value ?? {})
           : value
       current[parts[parts.length - 1]] = persistedValue
-      const saved = await updateUser(scriptId, userId, userData)
+      const saved = toScript
+        ? await updateScript(scriptId, patch)
+        : await updateUser(scriptId, userId, patch)
+      const target = toScript ? '脚本共享计划' : '用户配置'
       if (saved) {
-        logger.info(`用户配置已保存: ${key}`)
+        logger.info(`${target}已保存: ${key}`)
         return true
       } else {
-        logger.error(`保存失败: ${key}`)
+        logger.error(`${target}保存失败: ${key}`)
         return false
       }
     } catch (error) {
@@ -1045,7 +1029,6 @@ const loadCapabilities = async () => {
       candidate_engines: configuredEngines,
       configured_engines: configuredEngines,
       effective_engines: configuredEngines,
-      supported_modes: ['managed', 'direct'],
       adapters: [],
       tasks: [],
       warnings: [
@@ -1095,12 +1078,13 @@ interface HSRPreviewSection {
 const previewSections = (raw: unknown): HSRPreviewSection[] =>
   (raw as { sections?: HSRPreviewSection[] } | null)?.sections ?? []
 
-// 一键恢复成功：mas 恢复回填字段（托管配置等），需重拉表单；native 恢复写
-// 两引擎原生配置，MAS 表单不受影响
+// 一键恢复成功：mas 恢复回填字段（托管配置等，计划部分写回当前 owner），需重拉表单；
+// native 恢复写两引擎原生配置，MAS 表单不受影响
 const handleRestored = async (target: string) => {
   restoreOpen.value = false
   if (target === 'mas') {
     await loadUserData()
+    if (planOwner.value === 'script') await refreshSharedPlan()
     if (controlMode.value === 'managed') await loadManagedConfig()
   }
 }
@@ -1137,6 +1121,7 @@ onMounted(async () => {
     }
     scriptName.value = script.name
     scriptConfig.value = script.config as HSRScriptConfig
+    applySharedPlan(scriptConfig.value)
     await loadCapabilities()
     await loadHsrStageOptions()
 
@@ -1216,7 +1201,6 @@ const loadUserData = async () => {
             },
           }
         }
-        if (userData.Direct) formData.Direct = { ...(formData.Direct ?? {}), ...userData.Direct }
         logger.info('用户数据加载成功')
       } else {
         message.error(t('edit.userDoesNotExist'))
