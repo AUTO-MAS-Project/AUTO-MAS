@@ -52,6 +52,25 @@ HSR 直接读写两个上游的真实配置文件。当前备份覆盖 M7A 的 `
 - **直控直接使用脚本当前的原生配置**（SRA 把 `--inline run` 指向真实 profile，M7A 以真实安装根目录启动），零配置可跑，不复制、不建隔离目录——这就是 SKILL.md 里「直控＝直接使用外侧脚本原生配置，由原生 GUI 或上游入口维护」的落地。`check()` 一律要求 CLI/Assistant 可执行且原生配置文件存在。
 - 直控快照（`Direct.*`、导入 / 清除接口、隔离目录）**已删除**：「一个脚本挂多个账号、各跑不同计划」由用户态承担（每用户一份计划叠在活配置上），不要再加回第二套机制。存量记录里的 `Direct.*` 加载即忽略、下次保存即丢弃。
 
+## 云模式契约（`Game.Platform = Cloud`）
+
+云·星穹铁道没有本地客户端：**浏览器归 MAS，游戏自动化归三月七**。浏览器托管在 `tools/cloud_browser.py`，平台分叉集中在 `tools/account_switch.py`（`resolve_game_platform` / `is_cloud_platform`）。
+
+- **MAS 托管浏览器**：用三月七发行包自带的 Chrome for Testing（版本取 `3rdparty/WebBrowser/chrome/win64/` 下唯一目录名，不写死）拉起独立 `chrome.exe`，**每个 MAS 用户一份 `--user-data-dir`**（`data/{script_id}/{user_id}/cloud-profile`，相对后端 cwd）。登录态就是这份 profile 里的 cookie；多账号靠 profile 隔离，不靠账号密码。新 profile 由 MAS 预写 `Preferences`（剪贴板 / keyboard_lock 权限）并经 CDP 注入 `initial_local_storage.json` 与自动战斗开关——这三件三月七只在「新建浏览器」路径做，连接路径跳过。
+- **三月七走「连接已有浏览器」路径的五个硬条件**，缺一条它就会自己新建浏览器（用它写死的 profile，多账号失效）或连不上：
+  1. 进程名在三月七的集合里——用包内 `chrome.exe`；
+  2. argv 里有**独立元素** `--march-7th-assistant-sr-cloud-game`；
+  3. 无窗口属性一致——不加 `--headless=new`，patch `browser_headless_enable: False` + env `MARCH7TH_BROWSER_HEADLESS_ENABLE=false`；
+  4. `browser_debug_port` 等于本轮浏览器的调试端口——**patch 必须在浏览器就绪之后写**，端口从当前用户的 `CloudBrowser` 取；
+  5. chromedriver 与 Chrome 同版本——两者都取自同一个三月七包，钉 `browser_type: integrated` + env `MARCH7TH_BROWSER_TYPE=integrated`。
+  另外 `--user-data-dir` 不能省：新版 Chromium 对默认 profile 忽略 `--remote-debugging-port`。
+- **云只用三月七**：SRA 只会新建自己的浏览器，接不上 MAS 的。`resolve_script_assignment` 在云平台直接返回三月七，用户 / 脚本 `TaskMapping` 与四级回落都不参与；SRA 直控在 `check()` 报错；SRA 路径有没有都不影响云（外部脚本更新照常）。不要为云加 SRA 分支。
+- **平台钉扎两处一致**：环境变量（`build_platform_m7a_env`，托管与直控共用，优先于 config.yaml）与 config.yaml patch（`build_platform_m7a_patch`，叠在每个模块 patch 最后）。客户端平台也要钉 `MARCH7TH_CLOUD_GAME_ENABLE=false` / `cloud_game_enable: False`。**patch 的所有新键都要进 `M7A_PLATFORM_PATCH_WHITELIST`**，否则 `merge_whitelist` 静默丢弃。直控不写用户配置：只钉环境变量，浏览器开在用户 config.yaml 自己的 `browser_debug_port` 上，被占就报错。
+- **生命周期**：任一时刻只有一个 MAS 云浏览器（三月七找浏览器只认标记不认账号）。用户开始 = 关上一个用户的、起本用户的（`prepare_game_for_account_switch`，登录计划 `cloud` 按切号处理）；**同一用户的模块之间不关**（下一个三月七进程连回去已在游戏里，不重新排队）；每个三月七模块开跑前查存活，三月七启动失败路径会按标记杀掉浏览器，死了就重起，连续两次起不来判不可重试；任务结束 `close_game_if_needed` 按 pid 关并按命令行标记兜底清理本脚本的残留。云平台不注册 `StarRail.exe` 存活检测、不碰分辨率注册表与游戏路径。
+- **失败分类**：登录超时 / 排队超时 / 时长为 0 / 付费耗尽 / 浏览器起不来是 `HSRNonRetryableTaskError`，本用户剩余模块不跑、不进 `RunTimesLimit`；「未登录」「请在浏览器中完成登录操作」不判失败，转调度台提示与用户通知。文案一律照抄三月七原文（见 `tools/log_detect.py` 的云 marker），三月七一次运行内部会重试 3 遍，只在模块已失败时按 marker 归类。
+- **LastLogin 是只读展示**：运行中记在 runtime，配置解锁后合并写回 `Cloud.LastLogin`（与 `CompletionWriteback` 同一时机）；「登录云游戏」接口跑三月七自带的 `game` 任务当登录探针，受外部路径锁保护、与任务互斥，config.yaml 用完逐字节还原。
+- **不嵌进 Electron**：让三月七连 MAS 自己的 Electron 会被它的 `close_all_m7a_browser()` 终止 MAS 主进程，且 chromedriver 版本对不上。浏览器保持独立进程。
+
 ## 快速配置：明确不支持（方案 B）
 
 **HSR 不支持快速配置**：SRA/M7A 的原生配置由脚本 GUI 维护，MAS 侧托管字段（每日关卡等）的写入深度耦合托管运行器（临时配置覆盖而非直接写原生文件），不存在可独立下发的快速配置子集，故 `Info.IfQuickConfig` 开关不产生任何行为差异，前端不渲染该开关（死开关；声明见 `app/task/HSR/tools/native_control.py` 的 `resolve_user_control`）。不要按普适承诺给 HSR 加快速配置面板，也不要在实现中把「直控+开启」与「直控+关闭」造出差异。
@@ -59,7 +78,7 @@ HSR 直接读写两个上游的真实配置文件。当前备份覆盖 M7A 的 `
 ## 其他必守规则
 
 - **关卡字段保持脚本原生形状**（SRA `id`+`level`，M7A `instance_type`+`name`），不引入 MAA 式统一关卡词表。
-- **切号统一走 SRA StartGame**，M7A 模块也依赖该登录路径；不要为 M7A 另起切号实现。
+- **客户端平台切号统一走 SRA StartGame**，M7A 模块也依赖该登录路径；不要为 M7A 另起切号实现（云平台的切号是换浏览器 profile，见「云模式契约」）。
 - 完成态一律经 `CompletionWriteback` 在真实成功后写回，**不在模块执行中途直接改 `Data`**。
 - 周期判定用 ISO 周字段 + 完成日期**双字段**，不靠日期差推算。
 - 兑换码只存状态指纹，不存明文。
@@ -94,3 +113,4 @@ HSR 直接读写两个上游的真实配置文件。当前备份覆盖 M7A 的 `
 - [ ] 加密字段未经 API 明文外泄
 - [ ] 新增托管字段走后端定义，未在 Vue 加硬编码分支
 - [ ] 能力快照的 `effective_engines` 与实际可执行引擎一致
+- [ ] 云平台：引擎恒为三月七；新增三月七 patch 键进了白名单；patch 在云浏览器就绪之后写；客户端专属动作（StarRail.exe、分辨率、游戏路径、SRA StartGame）都有平台分叉
