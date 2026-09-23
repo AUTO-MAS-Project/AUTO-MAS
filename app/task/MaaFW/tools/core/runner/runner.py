@@ -110,6 +110,20 @@ _FOCUS_WARNING_TAG_RE = re.compile(
     r"|font-weight\s*:\s*bold)",
     re.IGNORECASE,
 )
+# MFAA / CFA 的颜色标记 ``[color:red]文案[/color]``（Maa_bbb 前后都写 ``[color:x]``）。
+_FOCUS_COLOR_MARKUP_RE = re.compile(r"\[/?color(?::[^\]]*)?\]", re.IGNORECASE)
+_FOCUS_WARNING_COLOR_MARKUP_RE = re.compile(
+    r"\[color:\s*(?:red|crimson|orange)\s*\]", re.IGNORECASE
+)
+# 协议「Client 处理流程」第 5 步：用 details_json 里的同名字段替换 ``{name}`` 这类占位。
+_FOCUS_PLACEHOLDER_RE = re.compile(r"\{(\w+)\}")
+# focus 旧协议（MFAA FocusHandler.Focus）：整串 focus 等价于 start；对象里的
+# start / succeeded / failed 按动作阶段打；toast 在动作开始时打（[标题, 内容]）。
+_LEGACY_FOCUS_KEYS = {
+    "Node.Action.Starting": "start",
+    "Node.Action.Succeeded": "succeeded",
+    "Node.Action.Failed": "failed",
+}
 # 界面上每任务只有这一行配置，超过就没人看得完；完整 options 走 DETAIL_LOG_PREFIX
 # 那条，宿主拦在界面外、只进 worker.log。
 TASK_CONFIG_LOG_UI_LIMIT = 240
@@ -2103,21 +2117,35 @@ class MaaFWRunner:
                 self.send_log(f"处理 MaaFW 通知失败: {exc}")
 
     def _resolve_focus_texts(self, message: str, details: dict[str, Any]) -> list[str]:
-        """按 MaaFW focus 协议取出这条消息要给用户看的文案（已翻译、去掉 HTML）。"""
+        """按 MaaFW focus 协议取出这条消息要给用户看的文案（已翻译、换好占位、去掉 HTML）。
 
-        focus = details.get("focus") if isinstance(details, dict) else None
-        if not isinstance(focus, dict):
+        新协议（以消息类型为键）之外，同时认 MFAA 的旧协议（``_legacy_focus_values``）：
+        Maa_bbb、MaaDuDuL、MaaFgo、MRA、MaaTOT 的发行包里还在用。旧协议只翻译不换
+        占位——MFAA 旧协议里的 ``{x}`` 是它私有的计数器语法，不是 details 字段。
+        """
+
+        if not isinstance(details, dict):
             return []
+        focus = details.get("focus")
         texts: list[str] = []
-        for raw in _focus_values(focus.get(message)):
-            translated = raw
-            if raw.startswith("$"):
-                # 翻不出来就原样打 $key：可见优于隐藏
-                translated = _lookup_i18n_text(raw, self.plan.i18n) or raw
-            cleaned = _clean_focus_text(translated)
+        if isinstance(focus, dict):
+            for raw in _focus_values(focus.get(message)):
+                cleaned = _clean_focus_text(
+                    _replace_focus_placeholders(self._translate_focus(raw), details)
+                )
+                if cleaned:
+                    texts.append(cleaned)
+        for raw in _legacy_focus_values(focus, message):
+            cleaned = _clean_focus_text(self._translate_focus(raw))
             if cleaned:
                 texts.append(cleaned)
         return texts
+
+    def _translate_focus(self, raw: str) -> str:
+        if not raw.startswith("$"):
+            return raw
+        # 翻不出来就原样打 $key：可见优于隐藏
+        return _lookup_i18n_text(raw, self.plan.i18n) or raw
 
     def _emit_focus(self, text: str) -> None:
         with self._focus_lock:
@@ -2530,11 +2558,61 @@ def _focus_values(value: Any) -> list[str]:
     return []
 
 
+def _legacy_focus_values(focus: Any, message: str) -> list[str]:
+    """focus 旧协议在这条消息上要打的原始文案（MFAA ``FocusHandler.ProcessOldProtocol``）。
+
+    整串 focus 等价于 ``start``；``toast`` 在动作开始时打，``[标题, 内容]`` 合成一行
+    （MAS 只有运行日志这一个渠道）。``aborted``（MFAA 据此中止任务）不认：真实发行包
+    里没有用的，而中止任务是行为变化，不在兼容范围内。
+    """
+
+    if isinstance(focus, str):
+        if message == "Node.Action.Starting" and focus.strip():
+            return [focus]
+        return []
+    if not isinstance(focus, dict):
+        return []
+    key = _LEGACY_FOCUS_KEYS.get(message)
+    if key is None:
+        return []
+    values = _focus_values(focus.get(key))
+    if message == "Node.Action.Starting":
+        toast = _focus_values(focus.get("toast"))
+        if toast:
+            values = [*values, "：".join(toast[:2])]
+    return values
+
+
+def _replace_focus_placeholders(text: str, details: dict[str, Any]) -> str:
+    """``{字段}`` 换成 details_json 里的同名值（MFAA / MXU / CFA 同口径）。
+
+    details 里没有的原样保留（StellaSora 的「选择难度_{难度}」这种不是占位）；
+    ``{image}`` 在 MFAA / MXU 里是截图，运行日志放不下图，直接去掉。
+    """
+
+    def replace(match: re.Match[str]) -> str:
+        key = match.group(1)
+        if key == "image":
+            return ""
+        value = details.get(key)
+        if value is None:
+            return match.group(0)
+        if isinstance(value, str):
+            return value
+        return json.dumps(value, ensure_ascii=False)
+
+    return _FOCUS_PLACEHOLDER_RE.sub(replace, text)
+
+
 def _clean_focus_text(text: str) -> str:
-    """去掉 HTML、压平空白；带红色/加粗标记的文案前加 ⚠。"""
+    """去掉 HTML 与 ``[color:x]`` 标记、压平空白；带红色/加粗标记的文案前加 ⚠。"""
 
     unescaped = html.unescape(text)
-    warn = bool(_FOCUS_WARNING_TAG_RE.search(unescaped))
+    warn = bool(
+        _FOCUS_WARNING_TAG_RE.search(unescaped)
+        or _FOCUS_WARNING_COLOR_MARKUP_RE.search(unescaped)
+    )
+    unescaped = _FOCUS_COLOR_MARKUP_RE.sub("", unescaped)
     # <br> 换成空格，其余标签直接去掉：中文里内联标签两侧不该多出空格
     cleaned = " ".join(_HTML_TAG_RE.sub("", _HTML_BREAK_RE.sub(" ", unescaped)).split())
     if not cleaned:
