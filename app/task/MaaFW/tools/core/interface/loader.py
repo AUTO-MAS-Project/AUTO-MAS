@@ -34,6 +34,7 @@ from .models import (
     MaaFWOption,
     MaaFWPretask,
     build_pretask_task_name,
+    coerce_preset_option_value,
     iter_pretasks,
 )
 
@@ -608,54 +609,112 @@ def _validate_option_name_list(
             )
 
 
-def _validate_option_case_values(
+def _warn_preset_value_coercions(data: dict[str, Any]) -> None:
+    """preset 里不是字符串的选项值：模型会宽松转换 / 丢弃，这里把每一处写进告警。"""
+
+    presets = data.get("preset")
+    if not isinstance(presets, list):
+        return
+    for preset in presets:
+        if not isinstance(preset, dict):
+            continue
+        for preset_task in preset.get("task") or []:
+            if not isinstance(preset_task, dict):
+                continue
+            location = f"preset {preset.get('name')}.task {preset_task.get('name')}"
+            raw_options = preset_task.get("option")
+            if raw_options is None:
+                continue
+            if not isinstance(raw_options, dict):
+                logger.warning(
+                    "MaaFW ProjectInterface %s.option 不是对象，已忽略该任务的预设选项值",
+                    location,
+                )
+                continue
+            for option_name, option_value in raw_options.items():
+                _, problems = coerce_preset_option_value(option_value)
+                for problem in problems:
+                    logger.warning(
+                        "MaaFW ProjectInterface %s.%s：%s",
+                        location,
+                        option_name,
+                        problem,
+                    )
+
+
+def _sanitize_option_case_values(
     option_name: str,
     option: MaaFWOption,
     value: Any,
     *,
     location: str,
-) -> None:
+) -> Any:
+    """校验一个预设选项值；形状不对的整项丢弃（返回 None），不认识的输入字段只丢该字段。
+
+    官方 MaaPiCli 对写错的预设值是忽略而不是拒绝整份 interface，这里同一口径：
+    一个预设值写错只影响这一项，不能让项目整个导入不了。
+    """
+
     case_names = {case.name for case in option.cases or []}
 
     if option.type in {"select", "switch", "scan_select"}:
         if not isinstance(value, str):
-            raise MaaFWInterfaceLoadError(f"{location}.{option_name} 必须是字符串")
+            logger.warning(
+                "MaaFW ProjectInterface %s.%s 必须是字符串，已忽略该预设值",
+                location,
+                option_name,
+            )
+            return None
         if value not in case_names:
             raise MaaFWInterfaceLoadError(
                 f"{location}.{option_name} 引用了不存在的 case: {value}"
             )
-        return
+        return value
 
     if option.type == "checkbox":
-        if not isinstance(value, list) or not all(
-            isinstance(item, str) for item in value
-        ):
-            raise MaaFWInterfaceLoadError(f"{location}.{option_name} 必须是字符串数组")
+        if not isinstance(value, list):
+            logger.warning(
+                "MaaFW ProjectInterface %s.%s 必须是字符串数组，已忽略该预设值",
+                location,
+                option_name,
+            )
+            return None
         invalid_cases = [item for item in value if item not in case_names]
         if invalid_cases:
             raise MaaFWInterfaceLoadError(
                 f"{location}.{option_name} 引用了不存在的 case: {', '.join(invalid_cases)}"
             )
-        return
+        return value
 
     if option.type in {"input", "hotkey"}:
         if not isinstance(value, dict):
-            raise MaaFWInterfaceLoadError(f"{location}.{option_name} 必须是对象")
+            logger.warning(
+                "MaaFW ProjectInterface %s.%s 必须是对象，已忽略该预设值",
+                location,
+                option_name,
+            )
+            return None
         field_names = (
             {input_item.name for input_item in option.inputs or []}
             if option.type == "input"
             else {hotkey_item.name for hotkey_item in option.hotkeys or []}
         )
         field_label = "输入项" if option.type == "input" else "快捷键字段"
+        kept: dict[str, Any] = {}
         for field_name, field_value in value.items():
             if field_name not in field_names:
-                raise MaaFWInterfaceLoadError(
-                    f"{location}.{option_name} 引用了不存在的{field_label}: {field_name}"
+                logger.warning(
+                    "MaaFW ProjectInterface %s.%s 引用了不存在的%s，已忽略：%s",
+                    location,
+                    option_name,
+                    field_label,
+                    field_name,
                 )
-            if not isinstance(field_value, str):
-                raise MaaFWInterfaceLoadError(
-                    f"{location}.{option_name}.{field_name} 必须是字符串"
-                )
+                continue
+            kept[field_name] = field_value
+        return kept
+
+    return value
 
 
 def _validate_task_context_constraints(interface_model: MaaFWInterface) -> None:
@@ -801,18 +860,23 @@ def _validate_presets(interface_model: MaaFWInterface) -> None:
                 continue
 
             reachable_options = reachable_options_by_task.get(task.name, set())
-            for option_name, option_value in (preset_task.option or {}).items():
-                if option_name not in reachable_options:
-                    continue
+            if not preset_task.option:
+                continue
+            sanitized_options: dict[str, Any] = {}
+            for option_name, option_value in preset_task.option.items():
                 option = option_map.get(option_name)
-                if option is None:
+                if option_name not in reachable_options or option is None:
+                    sanitized_options[option_name] = option_value
                     continue
-                _validate_option_case_values(
+                sanitized = _sanitize_option_case_values(
                     option_name,
                     option,
                     option_value,
                     location=f"preset {preset.name}.task {task.name}",
                 )
+                if sanitized is not None:
+                    sanitized_options[option_name] = sanitized
+            preset_task.option = sanitized_options
 
 
 def _build_common_option_names(interface_model: MaaFWInterface) -> list[str]:
@@ -850,6 +914,7 @@ def _load_interface_model_with_context(
         context,
     )
     _expand_scan_select_options(merged_data, resolved_base_dir, context)
+    _warn_preset_value_coercions(merged_data)
 
     try:
         interface_model = MaaFWInterface.model_validate(merged_data)

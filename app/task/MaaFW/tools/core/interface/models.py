@@ -17,10 +17,11 @@
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
 
 
+import json
 from collections.abc import Collection
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 MaaFWDocumentContent = str | list[str]
 MaaFWPipelineOverride = dict[str, Any]
@@ -237,12 +238,95 @@ class MaaFWOption(BaseModel):
     default_case: str | list[str] | None = None
 
 
+def _preset_scalar_text(value: Any) -> str | None:
+    """preset 里的标量按 JSON 写法转成字符串（99 → "99"，true → "true"）；非标量返回 None。"""
+
+    if isinstance(value, str):
+        return value
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, (int, float)):
+        return json.dumps(value)
+    return None
+
+
+def coerce_preset_option_value(
+    value: Any,
+) -> tuple[MaaFWPresetOptionValue | None, list[str]]:
+    """把 preset 里写的一个选项值宽松地归一成协议形状，返回 ``(值, 问题说明)``。
+
+    协议规定 ``OptionValue`` 只有字符串、字符串数组、字符串到字符串的对象三种，但真实
+    发行包里有把 input 值写成数字的（MaaNTE v1.5.1：``{"count": 99}``）。官方
+    MaaPiCli 对这类值是忽略而不是拒绝整份 interface，这里更进一步：数字 / 布尔标量
+    按 JSON 写法转成字符串（与用户在输入框里填 ``99`` 等价），结构不对的项丢掉。
+    值整个不可用时返回 ``None``。问题说明给加载器写告警用，这里不记日志。
+    """
+
+    problems: list[str] = []
+    text = _preset_scalar_text(value)
+    if text is not None:
+        if not isinstance(value, str):
+            problems.append(f"{json.dumps(value)} 已按字符串 {text!r} 处理")
+        return text, problems
+    if isinstance(value, list):
+        items: list[str] = []
+        for item in value:
+            item_text = _preset_scalar_text(item)
+            if item_text is None:
+                problems.append(
+                    f"数组元素 {json.dumps(item, ensure_ascii=False)} 不是字符串，已忽略"
+                )
+                continue
+            if not isinstance(item, str):
+                problems.append(
+                    f"数组元素 {json.dumps(item)} 已按字符串 {item_text!r} 处理"
+                )
+            items.append(item_text)
+        return items, problems
+    if isinstance(value, dict):
+        fields: dict[str, str] = {}
+        for key, item in value.items():
+            item_text = _preset_scalar_text(item)
+            if not isinstance(key, str) or item_text is None:
+                problems.append(
+                    f"字段 {key} 的值 {json.dumps(item, ensure_ascii=False)} 不是字符串，已忽略"
+                )
+                continue
+            if not isinstance(item, str):
+                problems.append(
+                    f"字段 {key} 的值 {json.dumps(item)} 已按字符串 {item_text!r} 处理"
+                )
+            fields[key] = item_text
+        return fields, problems
+    problems.append(
+        f"值 {json.dumps(value, ensure_ascii=False, default=str)} 不是合法的选项值，已忽略"
+    )
+    return None, problems
+
+
 class MaaFWPresetTask(BaseModel):
     model_config = ConfigDict(extra="allow")
 
     name: str
     enabled: bool | None = True
     option: dict[str, MaaFWPresetOptionValue] | None = None
+
+    @field_validator("option", mode="before")
+    @classmethod
+    def coerce_option_values(cls, value: Any) -> Any:
+        # 宽松解析：一个预设值写错不该让整份 interface 读不出来（告警由加载器写）。
+        if value is None:
+            return None
+        if not isinstance(value, dict):
+            return None
+        coerced: dict[str, MaaFWPresetOptionValue] = {}
+        for option_name, option_value in value.items():
+            if not isinstance(option_name, str):
+                continue
+            normalized, _ = coerce_preset_option_value(option_value)
+            if normalized is not None:
+                coerced[option_name] = normalized
+        return coerced
 
 
 class MaaFWPreset(BaseModel):
