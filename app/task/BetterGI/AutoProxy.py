@@ -434,7 +434,9 @@ class AutoProxyTask(TaskExecuteBase):
         account = str(self.cur_user_config.get("Info", "Id") or "").strip()
         if method == "MAS":
             if resource == "官服":
-                if account and not str(self.cur_user_config.get("Info", "Password") or ""):
+                if account and not str(
+                    self.cur_user_config.get("Info", "Password") or ""
+                ):
                     # 无密码走下拉列表匹配，要求账号能生成掩码锚点（手机号/邮箱）；
                     # 第三方登录账号没有打码锚点，无法在登录记录中定位
                     if "*" not in account_switch.mask_account(account):
@@ -1605,7 +1607,9 @@ class AutoProxyTask(TaskExecuteBase):
         try:
             await self._ensure_user_game_running(user_game_path)
         except Exception as e:
-            logger.opt(exception=True).warning(f"用户 {self.cur_user_item.name} 游戏启动失败: {e}")
+            logger.opt(exception=True).warning(
+                f"用户 {self.cur_user_item.name} 游戏启动失败: {e}"
+            )
             await self._push_dispatch_log(f"游戏启动失败: {e}")
             return False
 
@@ -1632,7 +1636,9 @@ class AutoProxyTask(TaskExecuteBase):
             logger.success(f"用户 {self.cur_user_item.name} MAS 账号切换完成")
         else:
             await self._push_dispatch_log("MAS 账号切换失败，已中止任务")
-            logger.warning(f"用户 {self.cur_user_item.name} MAS 账号切换失败，已中止任务")
+            logger.warning(
+                f"用户 {self.cur_user_item.name} MAS 账号切换失败，已中止任务"
+            )
         return success
 
     async def _ensure_user_game_running(self, user_game_path: str = "") -> Path:
@@ -1655,7 +1661,9 @@ class AutoProxyTask(TaskExecuteBase):
         )
         if running is not None:
             if game_info.same_path(running, game_exe):
-                logger.info(f"检测到原神已在运行且与该用户客户端一致，跳过启动: {running}")
+                logger.info(
+                    f"检测到原神已在运行且与该用户客户端一致，跳过启动: {running}"
+                )
                 await self._push_dispatch_log("检测到原神已在运行，跳过游戏启动")
                 return game_exe
             await self._push_dispatch_log(
