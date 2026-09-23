@@ -62,6 +62,9 @@ class MaaFWRunPlan(BaseModel):
     projectLabel: str | None = None
     controllerName: str
     controllerType: str
+    # interface 里该 controller 的截图缩放声明（display_short_side / display_long_side /
+    # display_expand / display_raw 原样摘出），worker 建控制器后按它设截图目标尺寸。
+    controllerDisplay: dict[str, Any] = Field(default_factory=dict)
     resourceName: str
     resource: MaaFWResourceBundlePlan
     nativePluginPaths: list[MaaFWResolvedPath] = Field(default_factory=list)

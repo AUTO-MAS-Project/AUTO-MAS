@@ -193,6 +193,7 @@ def build_maafw_run_plan(
         projectLabel=interface.label,
         controllerName=controller.name,
         controllerType=controller.type,
+        controllerDisplay=_build_controller_display(controller),
         resourceName=resource.name,
         resource=_build_resource_bundle_plan(resolved_base_dir, resource, controller),
         nativePluginPaths=_build_native_plugin_paths(resolved_base_dir),
@@ -266,6 +267,25 @@ def _select_controller(
             f"controllers; use the project UI for: {declared_types}"
         )
     return controller
+
+
+CONTROLLER_DISPLAY_FIELDS = (
+    "display_short_side",
+    "display_long_side",
+    "display_expand",
+    "display_raw",
+)
+
+
+def _build_controller_display(controller: MaaFWController) -> dict[str, Any]:
+    """controller 的截图缩放声明原样摘出，交给 worker 在建控制器后下发。"""
+
+    dumped = controller.model_dump(mode="json")
+    return {
+        name: dumped[name]
+        for name in CONTROLLER_DISPLAY_FIELDS
+        if dumped.get(name) is not None
+    }
 
 
 def _ensure_direct_controller(controller: MaaFWController) -> None:

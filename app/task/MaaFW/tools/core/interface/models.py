@@ -89,8 +89,12 @@ class MaaFWController(BaseModel):
     description: str | None = None
     icon: str | None = None
     type: str
-    display_short_side: int | None = 720
-    display_long_side: int | None = None
+    # 协议写的是 number（schema 同），不只是整数；下发给控制器时再取整。
+    display_short_side: int | float | None = 720
+    display_long_side: int | float | None = None
+    # Unity Canvas Scaler Expand 语义的参考分辨率 [width, height]。以前按未知字段放行，
+    # 这里仍不做形状校验（写错不该让整份 interface 读不出来），建计划时校验、不对就告警忽略。
+    display_expand: Any = None
     display_raw: bool | None = False
     permission_required: bool | None = False
     attach_resource_path: list[str] | None = None

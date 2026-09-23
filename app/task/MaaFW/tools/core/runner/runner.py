@@ -241,6 +241,27 @@ def _is_single_method(value: int) -> bool:
     return raw > 0 and raw & (raw - 1) == 0
 
 
+def _positive_int(value: Any) -> int | None:
+    """interface 里的 number（可能是浮点、可能是数字字符串）→ 正整数；不合法返回 None。"""
+
+    if isinstance(value, bool) or value is None:
+        return None
+    try:
+        number = round(float(value))
+    except (TypeError, ValueError, OverflowError):
+        return None
+    return number if number > 0 else None
+
+
+def _positive_int_pair(value: Any) -> tuple[int, int] | None:
+    if not isinstance(value, (list, tuple)) or len(value) != 2:
+        return None
+    first, second = (_positive_int(item) for item in value)
+    if first is None or second is None:
+        return None
+    return first, second
+
+
 def _supported_win32_method(enum_cls: Any, value: int, *, combinable: bool) -> bool:
     """当前加载的绑定库认不认得这个 Win32 截图 / 输入方式取值。
 
@@ -908,6 +929,7 @@ class MaaFWRunner:
     def _connect_device(self, device_config: MaaFWDeviceConfig) -> None:
         self._log_controller_config(device_config)
         self.controller = self._create_controller(device_config)
+        self._apply_screenshot_target(self.controller)
         self._install_controller_sink(self.controller)
         self._wait_job(self.controller.post_connection())
         if not self.tasker.bind(self.resource, self.controller):
@@ -1043,6 +1065,67 @@ class MaaFWRunner:
             "AUTO-MAS MaaFW Direct currently supports only Adb/Win32 "
             f"controllers; use the project UI for {device_config.type}"
         )
+
+    def _apply_screenshot_target(self, controller: Any) -> None:
+        """按 interface 的 display_* 设截图目标尺寸（PI：四者互斥）。
+
+        取用顺序 display_raw > display_expand > display_long_side > display_short_side
+        （后者默认 720，与原生层默认值相同）。老版本绑定库没有对应方法（例如 5.12 没有
+        set_screenshot_target_expand）或原生层拒绝时告警，保持原生层默认的短边 720。
+        """
+
+        display = self.plan.controllerDisplay or {}
+
+        def apply(method_name: str, description: str, *args: Any) -> None:
+            setter = getattr(controller, method_name, None)
+            if not callable(setter):
+                self.send_log(
+                    f"截图缩放 {description} 未生效：当前 MaaFramework binding 没有 "
+                    f"{method_name}，保持默认短边 720"
+                )
+                return
+            detail = ""
+            try:
+                applied = setter(*args)
+            except Exception as exc:  # noqa: BLE001 - 设不上不该挡住运行
+                applied = False
+                detail = f"：{exc}"
+            if applied is False:
+                self.send_log(
+                    f"截图缩放 {description} 设置失败{detail}，保持 MaaFramework 默认值"
+                )
+            else:
+                self.send_log(f"截图缩放: {description}")
+
+        if display.get("display_raw") is True:
+            apply("set_screenshot_use_raw_size", "原始分辨率", True)
+            return
+
+        expand = display.get("display_expand")
+        if expand is not None:
+            size = _positive_int_pair(expand)
+            if size is not None:
+                apply(
+                    "set_screenshot_target_expand", f"Expand {size[0]}x{size[1]}", *size
+                )
+                return
+            self.send_log(
+                f"interface 的 display_expand 必须是 [宽, 高] 两个正数，已忽略: {expand!r}"
+            )
+
+        long_side = _positive_int(display.get("display_long_side"))
+        if long_side is not None:
+            apply("set_screenshot_target_long_side", f"长边 {long_side}", long_side)
+            return
+
+        raw_short = display.get("display_short_side")
+        short_side = _positive_int(raw_short)
+        if short_side is not None:
+            apply("set_screenshot_target_short_side", f"短边 {short_side}", short_side)
+        elif raw_short is not None:
+            self.send_log(
+                f"interface 的 display_short_side 不是正数，已忽略: {raw_short!r}"
+            )
 
     def _fallback_unsupported_win32_method(
         self,
