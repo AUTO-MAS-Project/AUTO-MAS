@@ -237,17 +237,20 @@ def _validate_importable_fragment(data: dict[str, Any], source_path: Path) -> No
 
 
 def _ensure_pi_v2(data: dict[str, Any]) -> None:
-    """根 interface 必须是 ProjectInterface V2（``interface_version: 2``）。
+    """根 interface 按 ProjectInterface V2 读；缺 ``interface_version`` 时按 2 处理。
 
-    MMleo、MBCCtools、MATR、MaaEOV 发的是 MFA 私有的旧格式，没有 interface_version；
-    不先拦下来，用户看到的是一整段 pydantic 校验原文。
+    MMleo、MBCCtools、MATR、MaaEOV 的 interface 没写 interface_version（MFA 时代的
+    写法）。MFAA / MFW-CFA 缺失时照常按 V2 读，这里同一口径：补成 2 并告警。显式写成
+    别的值（如 1）才拒绝，报一句中文而不是 pydantic 校验原文。
     """
 
     if "interface_version" not in data:
-        raise MaaFWInterfaceLoadError(
-            "这个项目的 interface.json 不是 ProjectInterface V2 格式"
-            "（缺少 interface_version，可能是 MFA 私有旧格式），MAS 暂不支持"
+        logger.warning(
+            "MaaFW ProjectInterface interface.json 缺少 interface_version"
+            "（可能是 MFA 时代的旧写法），按 ProjectInterface V2 处理"
         )
+        data["interface_version"] = 2
+        return
     version = data["interface_version"]
     if version != 2:
         raise MaaFWInterfaceLoadError(
