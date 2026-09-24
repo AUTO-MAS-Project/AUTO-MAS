@@ -92,9 +92,12 @@
             :loading="loading"
             :stage-options="stageOptions"
             :activity-stage-options="activityStageOptions"
+            :legacy-activity-stage-option="legacyActivityStageOption"
             :activity-stage-loading="activityStageLoading"
             :activity-stage-error="activityStageError"
-            :display-activity-stage-index="displayActivityStageIndex"
+            :display-activity-stage-intent="displayActivityStageIntent"
+            :activity-stage-state="activityStageState"
+            :activity-period="activityPeriod"
             :depot-item-options="depotItemOptions"
             :depot-item-options-loading="depotItemOptionsLoading"
             :depot-item-options-error="depotItemOptionsError"
@@ -238,6 +241,9 @@ import BasicInfoSection from '@/views/MAAUserEdit/BasicInfoSection.vue'
 import StageConfigSection from '@/views/MAAUserEdit/StageConfigSection.vue'
 import TaskPipelineSection from '@/views/MAAUserEdit/TaskPipelineSection.vue'
 import { summarizeFight } from '@/views/MAAUserEdit/taskSummaries'
+import { resolveActivityStageState } from '@/views/MAAUserEdit/activityStageState'
+import { isJadeStage, stageNumber } from '@/utils/activityStage'
+
 import type { CultivateOperatorCatalogEntry } from '@/views/MAAUserEdit/cultivateTargets'
 import UserNotifyConfig from '@/components/UserNotifyConfig.vue'
 import ExtraScriptSection from '@/components/ExtraScriptSection.vue'
@@ -339,7 +345,9 @@ const serverOptions = [
 
 // 关卡选项
 const stageOptions = ref<any[]>([{ label: t('edit.none'), value: '' }])
-const activityStageOptions = ref<Array<{ label: string; value: number }>>([])
+const activityStageOptions = ref<Array<{ label: string; value: string }>>([])
+/** 当前活动关数据的期间态（进行中/下期预览/间隙期），驱动状态行 */
+const activityPeriod = ref<'ongoing' | 'preview' | 'gap'>('gap')
 const activityStageLoading = ref(false)
 const activityStageError = ref('')
 const stageOverviewByServer = ref<HomeOverviewResponse['StageByServer']>({})
@@ -586,7 +594,7 @@ const getDefaultMAAUserData = () => ({
     IfCultivate: false,
     IfGreenTicketStore: false,
     IfActivityFirst: false,
-    ActivityStageIndex: 1,
+    ActivityStageIntent: '',
     ActivityMedicineNumb: 0,
     CultivateTargets: '[]',
     CultivateSkipDuringActivity: false,
@@ -621,12 +629,49 @@ const formData = reactive({
   ...getDefaultMAAUserData(),
 })
 
-const displayActivityStageIndex = computed(() => {
-  const configuredIndex = formData.Task.ActivityStageIndex
-  return activityStageOptions.value.some(option => option.value === configuredIndex)
-    ? configuredIndex
-    : activityStageOptions.value[0]?.value
+/** 旧版序号（pos:N，MAA 列表位置）不是本期的倒N/搓玉选项：当前值就是它时补一条
+ * 选项，否则下拉显示占位符、下方状态行却报正常注入，两边对不上 */
+const legacyActivityStageOption = computed<{ label: string; value: string } | null>(() => {
+  const configuredIntent = formData.Task.ActivityStageIntent ?? ''
+  if (
+    !configuredIntent.startsWith('pos:') ||
+    activityStageOptions.value.some(option => option.value === configuredIntent)
+  ) {
+    return null
+  }
+  return {
+    label: t('edit.activityStageLegacyOption', { n: configuredIntent.slice(4) }),
+    value: configuredIntent,
+  }
 })
+
+const displayActivityStageIntent = computed(() => {
+  const configuredIntent = formData.Task.ActivityStageIntent
+  // 未配置或本期选项对不上（如旧版遗留意图）时显示占位符，不假装已选
+  if (legacyActivityStageOption.value) return configuredIntent
+  return activityStageOptions.value.some(option => option.value === configuredIntent)
+    ? configuredIntent
+    : undefined
+})
+
+/** 该用户服务器视角的两期关卡（状态行取数用） */
+const serverStageLists = computed(() => {
+  const server = formData.Info.Server === 'Bilibili' ? 'Official' : formData.Info.Server
+  const overview = stageOverviewByServer.value[server]
+  return {
+    activity: overview?.Activity ?? [],
+    preview: overview?.Preview ?? [],
+  }
+})
+
+/** 选关下方状态行（统一状态机，方案 §6） */
+const activityStageState = computed(() =>
+  resolveActivityStageState(
+    formData.Task.ActivityStageIntent ?? '',
+    serverStageLists.value.activity,
+    serverStageLists.value.preview
+  )
+)
 
 // 折叠态摘要：不展开也能确认当前生效的关卡配置
 const fightSummary = computed(() =>
@@ -917,10 +962,27 @@ const applyServerStageOptions = () => {
     isCustom: false,
   }))
   appendConfiguredCustomStages()
-  activityStageOptions.value = stageOverview.Activity.map((stage, index) => ({
-    label: `${index + 1}. ${stage.Activity.StageName} · ${stage.Display} · ${stage.DropName}`,
-    value: index + 1,
-  }))
+  // 进行中优先，间隙期用下期预览（选项不消失，可提前布阵；预览不注入）
+  const source = stageOverview.Activity.length > 0 ? stageOverview.Activity : stageOverview.Preview
+  activityPeriod.value =
+    stageOverview.Activity.length > 0
+      ? 'ongoing'
+      : stageOverview.Preview.length > 0
+        ? 'preview'
+        : 'gap'
+  // 意图值与后端解析同锚：非玉关按关卡号降序编为 last:N，含玉关固定 jade
+  const lastRankByStage = new Map<string, number>()
+  source
+    .filter(stage => !isJadeStage(stage))
+    .sort((a, b) => stageNumber(b.Value) - stageNumber(a.Value))
+    .forEach((stage, index) => lastRankByStage.set(stage.Value, index + 1))
+  activityStageOptions.value = source.map(stage => {
+    const label = `${stage.Activity.StageName} · ${stage.Display} · ${stage.DropName}`
+    const rank = lastRankByStage.get(stage.Value)
+    return rank
+      ? { label: `倒${rank}. ${label}`, value: `last:${rank}` }
+      : { label: `搓玉 · ${label}`, value: 'jade' }
+  })
 }
 
 const loadActivityStageOptions = async () => {

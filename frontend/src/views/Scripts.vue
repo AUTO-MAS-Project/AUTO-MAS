@@ -326,6 +326,8 @@ const loadScripts = async () => {
   }
 }
 
+/** 拉一次各服当期活动关：只为判断跳过簿条目对应的活动是否还在进行中，
+ * 失败按「无进行中活动」处理（徽标不显示），与计划表页取不到数据时同口径 */
 const handleAddScript = () => {
   scriptCreateVisible.value = true
 }

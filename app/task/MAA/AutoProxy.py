@@ -107,12 +107,17 @@ _ANNIHILATION_PROGRESS_RE = re.compile(
     re.IGNORECASE,
 )
 _MAA_SANITY_RECOGNITION_RE = re.compile(r"理智\s*[:：]\s*\d+\s*/\s*\d+")
+# 活动关优先任务名（注入队列名与日志锚点共用，与 MAA 任务名同字，勿改）
+_MAA_ACTIVITY_TASK_NAME = "活动关优先"
+# 解析不到活动关的原因文本之一：间隙期没有进行中的活动，属常态而非异常，
+# 通知与统计按它降噪（不弹窗、不进统计行）
+_ACTIVITY_NO_ONGOING_REASON = "当前无进行中的活动关卡"
 # MAA 走到能看到理智的界面（进到副本门口）后，gui.log 才会出现无时间戳的
 # 「理智: X/Y」识别行（v6.17.5 国服实测，繁服同字）；其余界面语言样本未核实，
 # 命中不到时一律视为未进入战斗流程。
 _MAA_SANITY_COMPLETION_MARKERS = (
     "完成任务: 理智作战",
-    "完成任务: 活动关优先",
+    f"完成任务: {_MAA_ACTIVITY_TASK_NAME}",
     "完成任务: 库存保持",
     "完成任务: 养成计划",
 )
@@ -172,6 +177,18 @@ def _current_month_marker(now: datetime) -> str:
     """返回月份标记。"""
 
     return now.strftime("%Y-%m")
+
+
+def _current_day_marker(now: datetime) -> str:
+    """返回当日标记（调用方按东四区取 now，与代理统计同锚）。"""
+
+    return now.date().isoformat()
+
+
+def _task_failed(log: str, name: str) -> bool:
+    """MAA 日志里该任务最后一次是「任务出错」而非「完成任务」。"""
+
+    return log.rfind(f"任务出错: {name}") > log.rfind(f"完成任务: {name}")
 
 
 def _should_run_annihilation(
@@ -705,23 +722,74 @@ def _build_data_update_task(source_task: dict | None) -> dict:
     }
 
 
+def _stage_number_key(value: str) -> int:
+    """提取关卡码尾部的编号（SR-8 → 8），无编号时排最后。"""
+
+    match = re.search(r"(\d+)$", value)
+    return int(match.group(1)) if match else -1
+
+
 def _resolve_activity_stage(
-    activity_stages: list[dict], configured_index: int
-) -> str | None:
-    """按序号选择当前活动材料关卡，序号失效时回退到第一项。"""
+    activity_stages: list[dict], intent: str
+) -> tuple[str | None, str]:
+    """按用户选关意图解析当前活动关，返回 (关卡码, 解析摘要)。
+
+    jade=含玉关；last:N=非玉关按关卡号降序第 N 项（倒1=最高编号关）；pos:N=旧版
+    MAA 列表位置（迁移值，末位通常是玉关，与倒数名次同形不同义，各按各的口径
+    取）。越界一律不注入、不回退首关，返回 (None, 原因) 由调用方决定提示。
+    """
 
     stages = [
-        stage["Value"]
+        (
+            stage["Value"],
+            stage.get("RawDrop") or "",
+            stage.get("DropName") or stage["Value"],
+        )
         for stage in activity_stages
         if isinstance(stage, dict)
         and isinstance(stage.get("Value"), str)
         and stage["Value"]
     ]
     if not stages:
-        return None
-    return (
-        stages[configured_index - 1] if configured_index <= len(stages) else stages[0]
-    )
+        return None, _ACTIVITY_NO_ONGOING_REASON
+
+    if intent == "jade":
+        for value, raw_drop, drop_name in stages:
+            if "玉" in raw_drop:
+                return value, f"搓玉 → {value}"
+        return None, "本期无搓玉关"
+
+    if intent.startswith("pos:"):
+        # 旧版序号按列表位置取（末位即玉关），越界不回落首关
+        try:
+            index = int(intent[4:])
+        except ValueError:
+            return None, "活动关意图无效"
+        if not (1 <= index <= len(stages)):
+            return None, f"旧版序号第{index}关超出本期范围"
+        value, _raw_drop, drop_name = stages[index - 1]
+        return value, f"旧版第{index}关 → {value} · {drop_name}"
+
+    if intent.startswith("last:"):
+        try:
+            index = int(intent[5:])
+        except ValueError:
+            return None, "活动关意图无效"
+        ranked = sorted(
+            (
+                (value, drop_name)
+                for value, raw_drop, drop_name in stages
+                if "玉" not in raw_drop
+            ),
+            key=lambda item: _stage_number_key(item[0]),
+            reverse=True,
+        )
+        if not (1 <= index <= len(ranked)):
+            return None, f"倒数第{index}关超出本期范围"
+        value, drop_name = ranked[index - 1]
+        return value, f"倒{index} → {value} · {drop_name}"
+
+    return None, "未配置活动关意图"
 
 
 def _build_activity_priority_fight(
@@ -736,7 +804,7 @@ def _build_activity_priority_fight(
     activity_fight = deepcopy(fight_task)
     activity_fight.update(
         {
-            "Name": "活动关优先",
+            "Name": _MAA_ACTIVITY_TASK_NAME,
             "IsEnable": True,
             "TaskType": "Fight",
             "StagePlan": [activity_stage],
@@ -771,6 +839,12 @@ class AutoProxyTask(TaskExecuteBase):
     _cultivate_collected_depot: bool = False
     _cultivate_collected_oper_box: bool = False
     _depot_maintain_suppressed: bool = False
+    # 本轮活动关解析摘要（注入时即时 WS 提示；final_task 再随统计报告带出）
+    _activity_stage_summary: str = ""
+    # 本轮活动关标识（活动名，跳过簿键）；未注入活动关时为空
+    _activity_stage_name: str = ""
+    # 本轮是否已记录活动关任务出错（check_log 回调会反复触发，只记一次）
+    _activity_stage_failed: bool = False
 
     def __init__(
         self,
@@ -852,6 +926,10 @@ class AutoProxyTask(TaskExecuteBase):
         # 上一轮是否真的被养成接管抑制过库存保持：只有抑制过才在下一轮
         # 恢复开关值，否则会把已完成的库存保持重新点亮、重试轮整个重跑
         self._depot_maintain_suppressed = False
+        # 本轮活动关解析摘要（注入时即时 WS 提示；final_task 再随统计报告带出）
+        self._activity_stage_summary = ""
+        self._activity_stage_name = ""
+        self._activity_stage_failed = False
 
         self.maa_root_path = Path(self.script_config.get("Info", "Path"))
         self.maa_set_path = self.maa_root_path / "config"
@@ -1434,6 +1512,7 @@ class AutoProxyTask(TaskExecuteBase):
             source_queue = []
         # 活动关优先是独立任务，仅由自身开关控制，不受理智作战开关影响
         activity_stage = None
+        activity_summary = ""
         if self.mode == "Routine" and self.cur_user_config.get(
             "Task", "IfActivityFirst"
         ):
@@ -1442,10 +1521,100 @@ class AutoProxyTask(TaskExecuteBase):
                 "Info",
                 server=self.cur_user_config.get("Info", "Server"),
             )
-            activity_stage = _resolve_activity_stage(
+            activity_stage, activity_summary = _resolve_activity_stage(
                 stage_info.get("Activity", []),
-                self.cur_user_config.get("Task", "ActivityStageIndex"),
+                self.cur_user_config.get("Task", "ActivityStageIntent"),
             )
+            activity_entries = stage_info.get("Activity", [])
+            activity_name = ""
+            if activity_stage:
+                matched = next(
+                    (
+                        stage
+                        for stage in activity_entries
+                        if isinstance(stage, dict)
+                        and stage.get("Value") == activity_stage
+                    ),
+                    None,
+                )
+                activity_name = str(
+                    (matched or {}).get("Activity", {}).get("StageName")
+                    or activity_stage
+                )
+            self._activity_stage_name = activity_name
+            # 跳过簿闸门只看出错日期是不是今天：过期条目既不拦注入、也不会被
+            # 前端展示，留着无害，因此这里不再做已结束活动的修剪
+            skip_entry = (
+                self._load_activity_skip_book().get(activity_name)
+                if activity_name
+                else None
+            )
+            skip_notice = ""
+            if skip_entry and skip_entry.get("date") == _current_day_marker(
+                datetime.now(tz=UTC4)
+            ):
+                # 跳过只到当日为止：次日重试，成功即清条目（自愈，不需要人工解锁）
+                skip_reason = "今日已出错，跳过当日"
+                logger.info(
+                    f"用户 {self.cur_user_item.name} 活动关跳过簿命中"
+                    f"（{skip_reason}），本轮不注入"
+                )
+                skip_notice = skip_reason
+                activity_stage = None
+                activity_summary = f"{activity_name} · {skip_reason}"
+
+            # 结果与通知可见，且每轮只发一条 TASK_NOTICE：
+            # - 跳过簿命中：单独一条「未注入」，不再落进下面的失配分支（否则既会
+            #   重复提示，又会让真实失配被当成正常解析播报）
+            # - 注入成功：记解析摘要
+            # - 间隙期「当前无进行中的活动关卡」是常态而不是异常：只记 info、不发
+            #   通知（调度台对 warning 会弹通知、开语音还会播报，重试轮还会再发）
+            # - 其余失配（越界/无匹配/未配置意图）：warning 提示
+            if skip_notice:
+                await Publisher.send(
+                    id=self.task_info.task_id,
+                    type=protocol.TASK_NOTICE,
+                    data=WSTaskNoticeData(
+                        level="info",
+                        message=(
+                            f"用户 {self.cur_user_item.name} 活动关未注入：{skip_notice}"
+                        ),
+                    ),
+                )
+            elif activity_stage is not None:
+                logger.info(
+                    f"用户 {self.cur_user_item.name} 活动关解析: {activity_summary}"
+                )
+                await Publisher.send(
+                    id=self.task_info.task_id,
+                    type=protocol.TASK_NOTICE,
+                    data=WSTaskNoticeData(
+                        level="info",
+                        message=(
+                            f"用户 {self.cur_user_item.name} 活动关：{activity_summary}"
+                        ),
+                    ),
+                )
+            elif activity_summary == _ACTIVITY_NO_ONGOING_REASON:
+                logger.info(
+                    f"用户 {self.cur_user_item.name} 活动关未注入: {activity_summary}"
+                )
+            else:
+                logger.warning(
+                    f"用户 {self.cur_user_item.name} 活动关未注入: {activity_summary}"
+                )
+                await Publisher.send(
+                    id=self.task_info.task_id,
+                    type=protocol.TASK_NOTICE,
+                    data=WSTaskNoticeData(
+                        level="warning",
+                        message=(
+                            f"用户 {self.cur_user_item.name} 活动关未注入："
+                            f"{activity_summary}"
+                        ),
+                    ),
+                )
+            self._activity_stage_summary = activity_summary
 
         # 养成计划注入，仅 Routine 模式（方案决策 27）：剿灭/绿票轮不注入。
         # 必须在下方 MAA_TASKS 装配循环之前执行：接管抑制靠提前置
@@ -1501,7 +1670,7 @@ class AutoProxyTask(TaskExecuteBase):
             source_queue, "剿灭作战", "Fight", allow_type_fallback=False
         )
         activity_source = _find_task_source(
-            source_queue, "活动关优先", "Fight", allow_type_fallback=False
+            source_queue, _MAA_ACTIVITY_TASK_NAME, "Fight", allow_type_fallback=False
         )
 
         # 库存保持计划：MAS 快速配置面板维护的计划写回原生 PlanList。只覆盖
@@ -1913,6 +2082,60 @@ class AutoProxyTask(TaskExecuteBase):
         )
         return False
 
+    def _load_activity_skip_book(self) -> dict:
+        """读当前用户的活动关跳过簿（损坏按空簿处理，条目形状不对的丢弃）。"""
+
+        try:
+            book = json.loads(self.cur_user_config.get("Data", "ActivitySkipBook"))
+        except (json.JSONDecodeError, TypeError):
+            return {}
+        if not isinstance(book, dict):
+            return {}
+        return {
+            str(key): entry for key, entry in book.items() if isinstance(entry, dict)
+        }
+
+    async def _record_activity_stage_failure(self) -> None:
+        """活动关任务出错：记跳过簿（当日不再注入）并提示。
+
+        条目只存出错日期与当时指派摘要：闸门只看日期，次日自动重试，
+        成功与否都不需要清条目，没有需要人工解锁的状态。
+        """
+
+        if not self._activity_stage_name or self._activity_stage_failed:
+            return
+        book = self._load_activity_skip_book()
+        book[self._activity_stage_name] = {
+            "date": _current_day_marker(datetime.now(tz=UTC4)),
+            "detail": self._activity_stage_summary,
+        }
+        try:
+            await self.cur_user_config.set(
+                "Data", "ActivitySkipBook", json.dumps(book, ensure_ascii=False)
+            )
+        except Exception as e:
+            # 写簿失败不打断日志分析：保持未落闩，下个回调重试
+            logger.opt(exception=True).warning(
+                f"用户 {self.cur_user_item.name} 活动关跳过簿写入失败: {e}"
+            )
+            return
+        # 写簿成功后才落闩并提示，保证一条出错只提示一次
+        self._activity_stage_failed = True
+        logger.warning(
+            f"用户 {self.cur_user_item.name} 活动关任务出错，今日不再注入活动关"
+        )
+        await Publisher.send(
+            id=self.task_info.task_id,
+            type=protocol.TASK_NOTICE,
+            data=WSTaskNoticeData(
+                level="warning",
+                message=(
+                    f"用户 {self.cur_user_item.name} 活动关未打：任务出错，"
+                    f"今日不再注入活动关"
+                ),
+            ),
+        )
+
     async def check_log(self, log_content: list[str], latest_time: datetime) -> None:
         """日志回调"""
 
@@ -1976,6 +2199,11 @@ class AutoProxyTask(TaskExecuteBase):
         if self.cur_user_config.get("Info", "IfQuickConfig"):
             await self._collect_cultivate_archive(log)
 
+        # 活动关任务出错：MAA 会继续跑完队列（活动关失败不算整轮失败），
+        # 这里只负责让失败可见并记跳过簿；跳过只到当日，次日自动重试
+        if _task_failed(log, _MAA_ACTIVITY_TASK_NAME) and self._activity_stage_name:
+            await self._record_activity_stage_failure()
+
         if "未选择任务" in log:
             self.cur_user_log.status = "MAA 未选择任何任务"
         elif "任务出错: 开始唤醒" in log:
@@ -1993,7 +2221,7 @@ class AutoProxyTask(TaskExecuteBase):
             if any(self.task_dict.values()) or (
                 not self.cur_user_config.get("Info", "IfQuickConfig")
                 and any(
-                    log.rfind(f"任务出错: {name}") > log.rfind(f"完成任务: {name}")
+                    _task_failed(log, name)
                     for name in re.findall(r"任务出错: ([^\r\n]+)", log)
                 )
             ):

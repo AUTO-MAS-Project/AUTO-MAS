@@ -4449,6 +4449,7 @@ class AppConfig(GlobalConfig):
                 )
             return {
                 "Activity": stage_data.get("Info", []),
+                "Preview": stage_data.get("Preview", []),
                 "Resource": res_stage_info,
                 "Options": stage_options,
             }

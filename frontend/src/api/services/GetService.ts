@@ -54,6 +54,7 @@ import type { ScriptDeleteIn } from '../models/ScriptDeleteIn';
 import type { ScriptGetIn } from '../models/ScriptGetIn';
 import type { ScriptGetOut } from '../models/ScriptGetOut';
 import type { SettingGetOut } from '../models/SettingGetOut';
+import type { StageComboBoxOut } from '../models/StageComboBoxOut';
 import type { TaskRuntimeSnapshot } from '../models/TaskRuntimeSnapshot';
 import type { TimeSetGetIn } from '../models/TimeSetGetIn';
 import type { TimeSetGetOut } from '../models/TimeSetGetOut';
@@ -90,12 +91,12 @@ export class GetService {
     /**
      * 获取关卡号下拉框信息
      * @param requestBody
-     * @returns ComboBoxOut Successful Response
+     * @returns StageComboBoxOut Successful Response
      * @throws ApiError
      */
     public static getStageComboxApiInfoComboxStagePost(
         requestBody: GetStageIn,
-    ): CancelablePromise<ComboBoxOut> {
+    ): CancelablePromise<StageComboBoxOut> {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/info/combox/stage',

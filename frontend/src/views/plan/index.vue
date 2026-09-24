@@ -53,6 +53,12 @@
           @finish-edit-plan-name="finishEditPlanName"
           @mode-change="onModeChange"
         >
+          <!-- 类型专属的表格上方区块（活动关指派表等）：按注册表分派，共享页不判断类型 -->
+          <component
+            :is="currentPlanDescriptor.headerComponent"
+            v-if="currentPlanDescriptor.headerComponent"
+            :plan-id="activePlanId"
+          />
           <!-- 动态渲染不同类型的表格 -->
           <component
             :is="currentPlanDescriptor.tableComponent"

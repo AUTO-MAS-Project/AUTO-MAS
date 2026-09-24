@@ -199,6 +199,10 @@ export function useScriptApi() {
                             : 'Official',
                         Status:
                           maaUserData.Info?.Status !== undefined ? maaUserData.Info.Status : true,
+                        IfQuickConfig:
+                          maaUserData.Info?.IfQuickConfig !== undefined
+                            ? maaUserData.Info.IfQuickConfig
+                            : true,
                         RemainedDay:
                           maaUserData.Info?.RemainedDay !== undefined
                             ? maaUserData.Info.RemainedDay
@@ -266,10 +270,10 @@ export function useScriptApi() {
                           maaUserData.Task?.IfActivityFirst !== undefined
                             ? maaUserData.Task.IfActivityFirst
                             : false,
-                        ActivityStageIndex:
-                          maaUserData.Task?.ActivityStageIndex !== undefined
-                            ? maaUserData.Task.ActivityStageIndex
-                            : 1,
+                        ActivityStageIntent:
+                          maaUserData.Task?.ActivityStageIntent !== undefined
+                            ? maaUserData.Task.ActivityStageIntent
+                            : '',
                         ActivityMedicineNumb:
                           maaUserData.Task?.ActivityMedicineNumb !== undefined
                             ? maaUserData.Task.ActivityMedicineNumb
@@ -318,6 +322,10 @@ export function useScriptApi() {
                           maaUserData.Data?.ProxyTimes !== undefined
                             ? maaUserData.Data.ProxyTimes
                             : 0,
+                        ActivitySkipBook:
+                          maaUserData.Data?.ActivitySkipBook !== undefined
+                            ? maaUserData.Data.ActivitySkipBook
+                            : '{ }',
                       },
                     }
                   } else if (userIndex.type === 'SrcUserConfig' && userData) {
@@ -1249,7 +1257,11 @@ export function useScriptApi() {
                 users,
               }
             } else {
-              // 如果获取用户失败，返回空用户列表的脚本
+              // 非 200 与抛异常同一口径：置 error 让调用方呈现降级提示，
+              // 否则该脚本的用户会静默从消费方（如活动关指派表）里消失
+              const errorMsg = userResponse.message || String(userResponse.code)
+              logger.warn(`获取脚本 ${script.uid} 的用户数据失败: ${errorMsg}`)
+              error.value = errorMsg
               return {
                 ...script,
                 users: [],
@@ -1258,6 +1270,8 @@ export function useScriptApi() {
           } catch (err) {
             const errorMsg = err instanceof Error ? err.message : String(err)
             logger.warn(`获取脚本 ${script.uid} 的用户数据失败: ${errorMsg}`)
+            // 记录到 error（调用方可据此呈现降级提示），仍返回部分数据
+            error.value = errorMsg
             return {
               ...script,
               users: [],

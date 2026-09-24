@@ -22,6 +22,7 @@
 import asyncio
 import calendar
 import json
+import re
 import uuid
 from copy import deepcopy
 from datetime import datetime, timedelta, timezone
@@ -865,6 +866,44 @@ def _tag_notes(config: ConfigBase) -> dict:
     }
 
 
+_ACTIVITY_STAGE_INTENT_PATTERN = re.compile(
+    r"jade|last:[1-9][0-9]{0,3}|pos:[1-9][0-9]{0,3}"
+)
+
+
+class ActivityStageIntentValidator(ValidatorBase):
+    """活动关选关意图验证器：jade=搓玉 / last:N=倒数第N关 / pos:N=旧版列表位置。
+
+    空串表示未指派。旧版关卡序号（整型或纯数字串）原义是 MAA 列表位置，如实迁
+    成 pos:N 而不是按编号降序近似成 last:N：同一期 3 个材料关时选的「倒3」在下期
+    只剩 2 个材料关时就与「旧序号」同形，近似迁移后会被旧值兜底认领、静默改刷其
+    它关；pos 自带「这是列表位置」的语义，两种口径从此不再互相污染。
+    """
+
+    def validate(self, value: Any) -> bool:
+        if value == "":
+            return True
+        return isinstance(value, str) and bool(
+            _ACTIVITY_STAGE_INTENT_PATTERN.fullmatch(value)
+        )
+
+    def correct(self, value: Any) -> str:
+        if isinstance(value, bool):
+            return ""
+        if isinstance(value, int) and 1 <= value <= 9999:
+            return f"pos:{value}"
+        if isinstance(value, float) and value.is_integer() and 1 <= value <= 9999:
+            return f"pos:{int(value)}"
+        if isinstance(value, str):
+            text = value.strip()
+            # isdecimal 而非 isdigit：上标数字等 isdigit 为真但 int() 不收
+            if text.isdecimal() and 1 <= int(text) <= 9999:
+                return f"pos:{int(text)}"
+            if self.validate(text):
+                return text
+        return ""
+
+
 class MaaUserConfig(ConfigBase):
     """MAA用户配置"""
 
@@ -1009,6 +1048,10 @@ class MaaUserConfig(ConfigBase):
         self.Data_GreenTicketStoreMonth = ConfigItem(
             "Data", "GreenTicketStoreMonth", "2000-01", DateTimeValidator("%Y-%m")
         )
+        ## 活动关跳过簿（{活动名: {date, detail}}，出错当天不再注入）
+        self.Data_ActivitySkipBook = ConfigItem(
+            "Data", "ActivitySkipBook", "{ }", JSONValidator()
+        )
         ## 上次成功代理时服务端的游戏资源版本，用于识别待下载的资源热更新
         self.Data_LastResVersion = ConfigItem("Data", "LastResVersion", "")
         ## 养成接管提示（注入时写入，供前端展示接管态；空 = 未接管）
@@ -1056,9 +1099,13 @@ class MaaUserConfig(ConfigBase):
         self.Task_IfActivityFirst = ConfigItem(
             "Task", "IfActivityFirst", False, BoolValidator()
         )
-        ## 优先刷取的活动关卡序号
-        self.Task_ActivityStageIndex = ConfigItem(
-            "Task", "ActivityStageIndex", 1, RangeValidator(1, 9999)
+        ## 优先刷取的活动关卡意图（jade / last:N；旧序号如实迁为 pos:N 列表位置）
+        self.Task_ActivityStageIntent = ConfigItem(
+            "Task",
+            "ActivityStageIntent",
+            "",
+            ActivityStageIntentValidator(),
+            legacy_name="ActivityStageIndex",
         )
         ## 活动关优先任务吃理智药数量
         self.Task_ActivityMedicineNumb = ConfigItem(
@@ -1121,6 +1168,28 @@ class MaaUserConfig(ConfigBase):
         self.Notify_CustomWebhooks = MultipleConfig([Webhook])
 
         super().__init__()
+
+    async def load(self, data: dict) -> bool:
+        """加载配置，并处理活动关旧序号与总开关的联动迁移。
+
+        旧版 `ActivityStageIndex` 自 v5.4.0 起默认 1 且照常落盘，没碰过活动关的
+        用户也带着这个值。总开关没开时选关本来不生效，直接迁成 pos:1 会把这批
+        用户算成「已指派」（计划表页按已指派统计、要人工逐个移出），因此只有开关
+        真开着、或序号不是默认值 1 时才迁移；其余不迁，等用户开开关时现场选一次。
+        """
+
+        task_data = data.get("Task") if isinstance(data, dict) else None
+        if isinstance(task_data, dict):
+            legacy_index = task_data.get("ActivityStageIndex")
+            if (
+                legacy_index is not None
+                and "ActivityStageIntent" not in task_data
+                and not task_data.get("IfActivityFirst", False)
+                and str(legacy_index).strip() == "1"
+            ):
+                # 弹出旧键即视为用户没选过：字段保持默认空串（未指派）
+                task_data.pop("ActivityStageIndex")
+        return await super().load(data)
 
     def getInfrastName(self) -> str:
 
@@ -5049,50 +5118,84 @@ class GlobalConfig(ConfigBase):
                 stage_data_by_server = {"Official": raw_stage_data}
 
             all_stage_data = {}
+
+            def _stage_drop_entry(stage: dict, activity: dict) -> dict:
+                if stage["Drop"] in MATERIALS_MAP:
+                    drop_id = stage["Drop"]
+                elif "玉" in stage["Drop"]:
+                    drop_id = "30012"
+                else:
+                    drop_id = "NotFound"
+                return {
+                    "Display": stage["Display"],
+                    "Value": stage["Value"],
+                    # 原始掉落文本：搓玉检测必须用它，
+                    # 归一化 30012 与真固源岩线同 ID
+                    "RawDrop": stage["Drop"],
+                    "Drop": drop_id,
+                    "DropName": MATERIALS_MAP.get(stage["Drop"], stage["Drop"]),
+                    "Activity": activity,
+                }
+
             for server, server_stage_data in stage_data_by_server.items():
                 activity_stage_drop_info = []
                 activity_stage_combox = []
+                activity_stage_preview: list[tuple[datetime, list[dict]]] = []
 
                 for side_story in server_stage_data.values():
                     activity = side_story["Activity"]
                     activity_timezone = timezone(
                         timedelta(hours=activity.get("TimeZone", 8))
                     )
-                    if (
-                        datetime.strptime(
-                            activity["UtcStartTime"], "%Y/%m/%d %H:%M:%S"
-                        ).replace(tzinfo=activity_timezone)
-                        < datetime.now(tz=activity_timezone)
-                        < datetime.strptime(
-                            activity["UtcExpireTime"], "%Y/%m/%d %H:%M:%S"
-                        ).replace(tzinfo=activity_timezone)
-                    ):
+                    activity_start = datetime.strptime(
+                        activity["UtcStartTime"], "%Y/%m/%d %H:%M:%S"
+                    ).replace(tzinfo=activity_timezone)
+                    activity_expire = datetime.strptime(
+                        activity["UtcExpireTime"], "%Y/%m/%d %H:%M:%S"
+                    ).replace(tzinfo=activity_timezone)
+                    now = datetime.now(tz=activity_timezone)
+                    if activity_start < now < activity_expire:
                         for stage in side_story["Stages"]:
+                            # activity 标记供计划表关卡下拉识别活动关（交换置顶）
                             activity_stage_combox.append(
-                                {"label": stage["Display"], "value": stage["Value"]}
+                                {
+                                    "label": stage["Display"],
+                                    "value": stage["Value"],
+                                    "activity": True,
+                                }
                             )
-
                             if "SSReopen" not in stage["Display"]:
-                                if stage["Drop"] in MATERIALS_MAP:
-                                    drop_id = stage["Drop"]
-                                elif "玉" in stage["Drop"]:
-                                    drop_id = "30012"
-                                else:
-                                    drop_id = "NotFound"
-
                                 activity_stage_drop_info.append(
-                                    {
-                                        "Display": stage["Display"],
-                                        "Value": stage["Value"],
-                                        "Drop": drop_id,
-                                        "DropName": MATERIALS_MAP.get(
-                                            stage["Drop"], stage["Drop"]
-                                        ),
-                                        "Activity": activity,
-                                    }
+                                    _stage_drop_entry(stage, activity)
                                 )
+                    elif activity_expire > now and now < activity_start:
+                        # 未开始的活动进预览（下期提前布阵），仅显示不注入；
+                        # SSReopen 一键复刻伪关与剧情关不进槽位。
+                        # 按期记下起始时刻：多期都未开始时只取最近一期，
+                        # 槽位、banner 与文案都是「下期」单数口径
+                        activity_stage_preview.append(
+                            (
+                                activity_start,
+                                [
+                                    _stage_drop_entry(stage, activity)
+                                    for stage in side_story["Stages"]
+                                    if "SSReopen" not in stage["Display"]
+                                ],
+                            )
+                        )
 
-                stage_data = {"Info": activity_stage_drop_info}
+                if activity_stage_preview:
+                    # 只保留最近一期（跨时区比较的是绝对时刻，aware datetime 可比）
+                    preview_stages = min(
+                        activity_stage_preview, key=lambda item: item[0]
+                    )[1]
+                else:
+                    preview_stages = []
+
+                stage_data = {
+                    "Info": activity_stage_drop_info,
+                    "Preview": preview_stages,
+                }
 
                 for day in range(0, 8):
                     res_stage = []

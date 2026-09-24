@@ -36,8 +36,8 @@ describe('activity summary', () => {
   })
 
   it('shows the selected stage and medicine count', () => {
-    expect(summarizeActivity({ ...base, stageLabel: '2. 墟 · AT-7', medicine: 4 })).toBe(
-      '2. 墟 · AT-7 · 理智药 4'
+    expect(summarizeActivity({ ...base, stageLabel: '倒2. 墟 · AT-7', medicine: 4 })).toBe(
+      '倒2. 墟 · AT-7 · 理智药 4'
     )
   })
 

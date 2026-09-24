@@ -86,8 +86,20 @@ class ComboBoxItem(BaseModel):
     value: Optional[str] = Field(..., description="实际值")
 
 
+class StageComboBoxItem(ComboBoxItem):
+    """关卡下拉选项。活动关标记属关卡语义，只挂在这里，不上跨专项共享的 ComboBoxItem"""
+
+    activity: Optional[bool] = Field(
+        default=None, description="是否为进行中的活动关（仅关卡下拉选项携带）"
+    )
+
+
 class ComboBoxOut(OutBase):
     data: List[ComboBoxItem] = Field(..., description="下拉框选项")
+
+
+class StageComboBoxOut(OutBase):
+    data: List[StageComboBoxItem] = Field(..., description="关卡下拉框选项")
 
 
 class MaaDepotInventoryOut(OutBase):
@@ -1736,6 +1748,10 @@ class MaaUserConfig_Data(BaseModel):
     GreenTicketStoreMonth: Optional[str] = Field(
         default=None, description="上次完成绿票商店购买的月份"
     )
+    ActivitySkipBook: Optional[str] = Field(
+        default=None,
+        description="活动关跳过簿 JSON（{活动名: {date, detail}}，出错当天不再注入）",
+    )
     LastResVersion: Optional[str] = Field(
         default=None, description="上次成功代理时服务端的游戏资源版本"
     )
@@ -1760,8 +1776,9 @@ class MaaUserConfig_Task(BaseModel):
     IfActivityFirst: Optional[bool] = Field(
         default=None, description="活动期间优先刷活动关"
     )
-    ActivityStageIndex: Optional[int] = Field(
-        default=None, description="优先刷取的活动关卡序号"
+    ActivityStageIntent: Optional[str] = Field(
+        default=None,
+        description="活动关选关意图（jade=搓玉 / last:N=倒数第N关，空=未指派）",
     )
     ActivityMedicineNumb: Optional[int] = Field(
         default=None, description="活动关优先任务吃理智药数量"

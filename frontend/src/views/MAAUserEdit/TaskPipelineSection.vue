@@ -132,8 +132,8 @@
                 />
               </template>
               <a-select
-                :value="displayActivityStageIndex"
-                :options="activityStageOptions"
+                :value="displayActivityStageIntent"
+                :options="activityStageSelectOptions"
                 :loading="activityStageLoading"
                 :disabled="loading || activityStageLoading || activityStageOptions.length === 0"
                 :placeholder="
@@ -145,6 +145,17 @@
                 option-filter-prop="label"
                 @change="handleActivityStageChange"
               />
+              <div
+                v-if="activityStageState"
+                class="stage-state-line"
+                :class="`tone-${activityStageState.tone}`"
+              >
+                <span class="state-dot"></span>
+                {{ t(activityStageState.messageKey, activityStageState.params) }}
+                <a-tag v-if="activityPeriod === 'preview'" color="processing" class="state-tag">
+                  {{ t('edit.maaStageNotStarted') }}
+                </a-tag>
+              </div>
             </a-form-item>
           </a-col>
           <a-col :xs="24" :md="8">
@@ -352,6 +363,7 @@ import type {
 } from './cultivateTargets'
 import type { CultivatePreviewOut } from '@/api'
 import { currentMonthMarker, currentWeekMarker } from './periodMarkers'
+import type { ActivityStageState } from './activityStageState'
 import {
   ANNIHILATION_STAGE_OPTIONS as annihilationStageOptions,
   ANNIHILATION_WEEKDAY_OPTIONS as annihilationWeekdayOptions,
@@ -374,10 +386,16 @@ const formData = defineModel<any>('formData', { required: true })
 const props = defineProps<{
   loading: boolean
   stageOptions: any[]
-  activityStageOptions: Array<{ label: string; value: number }>
+  activityStageOptions: Array<{ label: string; value: string }>
+  /** 当前值为旧版序号（pos:N）时补的下拉项；只影响展示，不计入「有无可刷关卡」 */
+  legacyActivityStageOption?: { label: string; value: string } | null
   activityStageLoading: boolean
   activityStageError: string
-  displayActivityStageIndex?: number
+  displayActivityStageIntent?: string
+  /** 选关下方状态行（统一状态机输出，类型取自状态机模块，勿手抄字段） */
+  activityStageState: ActivityStageState | null
+  /** 当前活动关数据的期间态 */
+  activityPeriod?: 'ongoing' | 'preview' | 'gap'
   depotItemOptions: SelectOption[]
   depotItemOptionsLoading: boolean
   depotItemOptionsError: string
@@ -460,15 +478,22 @@ const activityFirst = computed(() => formData.value.Task.IfActivityFirst)
 
 const handleActivityToggle = (checked: boolean) => emitSave('Task.IfActivityFirst', checked)
 
-const handleActivityStageChange = (value: number) => emitSave('Task.ActivityStageIndex', value)
+const handleActivityStageChange = (value: string) => emitSave('Task.ActivityStageIntent', value)
+
+/** 下拉选项：正文选项前补一条当前值的旧版序号项（不参与「当前无可刷活动关」判定） */
+const activityStageSelectOptions = computed(() =>
+  props.legacyActivityStageOption
+    ? [props.legacyActivityStageOption, ...props.activityStageOptions]
+    : props.activityStageOptions
+)
 
 const activitySummary = computed(() =>
   summarizeActivity({
     enabled: activityFirst.value,
     loading: props.activityStageLoading,
     optionCount: props.activityStageOptions.length,
-    stageLabel: props.activityStageOptions.find(
-      option => option.value === props.displayActivityStageIndex
+    stageLabel: activityStageSelectOptions.value.find(
+      option => option.value === props.displayActivityStageIntent
     )?.label,
     medicine: formData.value.Task.ActivityMedicineNumb ?? 0,
   })
@@ -598,6 +623,64 @@ const greenTicketStoreSummary = computed(() => {
 
 .task-alert {
   margin: 12px 0;
+}
+
+.stage-state-line {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  border-radius: 6px;
+  padding: 4px 12px;
+  font-size: 13px;
+}
+
+.stage-state-line .state-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.stage-state-line.tone-ok {
+  background: var(--ant-color-success-bg);
+  color: var(--ant-color-text-secondary);
+}
+
+.stage-state-line.tone-ok .state-dot {
+  background: var(--ant-color-success);
+}
+
+.stage-state-line.tone-warn {
+  background: var(--ant-color-warning-bg);
+  color: var(--ant-color-warning);
+  border: 1px solid var(--ant-color-warning-border);
+}
+
+.stage-state-line.tone-warn .state-dot {
+  background: var(--ant-color-warning);
+}
+
+.stage-state-line.tone-info {
+  background: var(--ant-color-primary-bg);
+  color: var(--ant-color-text-secondary);
+}
+
+.stage-state-line.tone-info .state-dot {
+  background: var(--ant-color-primary);
+}
+
+.stage-state-line.tone-muted {
+  background: var(--ant-color-fill-quaternary);
+  color: var(--ant-color-text-tertiary);
+}
+
+.stage-state-line.tone-muted .state-dot {
+  background: var(--ant-color-text-quaternary);
+}
+
+.stage-state-line .state-tag {
+  margin-inline-end: 0;
 }
 
 .pipeline-phase {

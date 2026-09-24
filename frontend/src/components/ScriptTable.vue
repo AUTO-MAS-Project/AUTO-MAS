@@ -552,11 +552,12 @@ import {
   UserAddOutlined,
 } from '@ant-design/icons-vue'
 import draggable from 'vuedraggable'
-import { ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { message, Modal } from 'ant-design-vue'
 import { useScriptApi } from '@/composables/useScriptApi'
 import { useUserApi } from '@/composables/useUserApi'
 import { parseStatusTagList } from '@/composables/useStatusTag'
+import { getServerDisplayName } from '@/utils/serverLabel'
 
 const { t } = useI18n()
 
@@ -890,42 +891,6 @@ const getServerTagColor = (server: string): string => {
       return 'gold'
     default:
       return 'gray'
-  }
-}
-
-// 获取服务器显示名称
-const getServerDisplayName = (server: string): string => {
-  switch (server) {
-    // MAA服务器
-    case 'Official':
-      return '官服'
-    case 'Bilibili':
-      return 'B服'
-    case 'YoStarEN':
-      return '国际服'
-    case 'YoStarJP':
-      return '日服'
-    case 'YoStarKR':
-      return '韩服'
-    case 'txwy':
-      return '繁中服'
-    // SRC服务器
-    case 'CN-Official':
-      return '官服'
-    case 'CN-Bilibili':
-      return 'B服'
-    case 'VN-Official':
-      return '越南服'
-    case 'OVERSEA-America':
-      return '美服'
-    case 'OVERSEA-Asia':
-      return '亚服'
-    case 'OVERSEA-Europe':
-      return '欧服'
-    case 'OVERSEA-TWHKMO':
-      return '港澳台服'
-    default:
-      return server || '未知'
   }
 }
 
@@ -1326,6 +1291,7 @@ const onUserDragEnd = async (script: Script) => {
   border: 1px solid rgba(0, 0, 0, 0.15);
 }
 
+/* 跳过徽标与重置按钮成组，保持与其它标签一致的间距节奏 */
 .user-controls {
   display: flex;
   align-items: center;

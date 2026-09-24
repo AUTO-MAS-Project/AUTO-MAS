@@ -562,6 +562,8 @@ export interface User {
     LastProxyDate: string
     GreenTicketStoreMonth?: string
     ProxyTimes: number
+    /** 活动关跳过簿 JSON（{活动名: {date, detail}}，出错当天不再注入） */
+    ActivitySkipBook?: string
   }
   Info: {
     Annihilation: string
@@ -585,6 +587,8 @@ export interface User {
     Stage_2: string
     Stage_3: string
     Status: boolean
+    /** 快速配置：独立于配置来源的用户级开关 */
+    IfQuickConfig?: boolean
     Tag?: string | null // 用户标签列表（JSON字符串，TagItem的dict列表）
   }
   Notify: {
@@ -614,7 +618,7 @@ export interface User {
     IfStartUp: boolean
     Queue?: unknown
     IfActivityFirst?: boolean
-    ActivityStageIndex?: number
+    ActivityStageIntent?: string
     ActivityMedicineNumb?: number
     IfDepotMaintain?: boolean
     DepotMaintainPlans?: string

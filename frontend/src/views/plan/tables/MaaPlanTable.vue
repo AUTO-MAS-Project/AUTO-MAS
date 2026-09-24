@@ -63,6 +63,9 @@
                     fontWeight: isCustomStage(option.value) ? '500' : 'normal',
                   }"
                 >
+                  <a-tag v-if="option.activity" color="processing" class="activity-tag">
+                    {{ t('plan.table.activityTag') }}
+                  </a-tag>
                   {{ option.label }}
                 </span>
               </a-select-option>
@@ -369,7 +372,22 @@ interface SelectOption {
   label: string
   value: string
   disabled?: boolean
+  /** 进行中的活动关（后端 combox 标记，下拉置顶展示「活动」标） */
+  activity?: boolean
 }
+
+// 所有星期提供的关卡合集：判断自定义关卡号是否为往期活动遗留。
+// 提到 computed：getSelectOptions 从模板逐格调用，放在函数里会每次重扫
+// 八套选项（关卡选项缓存是 ref，原始选项就绪后计算属性会自动重算）
+const allOfferedStages = computed(() => {
+  const offered = new Set<string>()
+  TIME_KEYS.forEach(timeKey =>
+    getCachedStageOptions(timeKey).forEach(option => {
+      if (option.value) offered.add(option.value)
+    })
+  )
+  return offered
+})
 
 // 获取选择框选项
 const getSelectOptions = (
@@ -381,16 +399,31 @@ const getSelectOptions = (
     return SERIES_OPTIONS.value
   }
 
-  // 关卡选择选项 - 从 API 缓存获取
+  // 关卡选择选项 - 从 API 缓存获取（活动关带 activity 标记，下拉置顶便于交换）
   const cachedOptions = getCachedStageOptions(columnKey as TimeKey)
   const baseOptions: SelectOption[] = cachedOptions.map(option => ({
     label: option.label,
     value: option.value || '-',
+    activity: option.activity === true,
   }))
+  // 活动关排到下拉最前（含禁用/当前上次占位项之前），选中即交换进格子
+  baseOptions.sort((a, b) => Number(b.activity === true) - Number(a.activity === true))
 
-  // 添加自定义关卡选项（使用计算属性以确保响应式）
+  // 添加自定义关卡选项（使用计算属性以确保响应式）；
+  // 形似活动关码、且所有星期都不在选项里的自定义值多半是上期活动遗留，
+  // 标注已结束。永久资源关（理智本/技能本等）只在其开放星期出现，
+  // 不代表已结束，按前缀豁免；关卡选项缓存没到位时（合集为空）一律不标，
+  // 否则缓存加载完成前的那一帧会把所有自定义关卡都标成已结束
   currentCustomStages.value.forEach(stageName => {
-    baseOptions.push({ label: stageName, value: stageName })
+    const isEndedActivity =
+      allOfferedStages.value.size > 0 &&
+      !allOfferedStages.value.has(stageName) &&
+      /^[A-Za-z]{1,3}-\d+$/.test(stageName) &&
+      !/^(LS|CE|AP|CA|SK)-/i.test(stageName)
+    baseOptions.push({
+      label: isEndedActivity ? t('plan.table.endedSuffix', { label: stageName }) : stageName,
+      value: stageName,
+    })
   })
 
   // 标记已使用的关卡
@@ -707,5 +740,14 @@ watch(
 :deep(.ant-select-item-option.custom-stage-option .ant-select-item-option-content) {
   color: var(--ant-color-primary) !important;
   font-weight: 500;
+}
+
+/* 下拉选项中的活动关「活动」标 */
+.activity-tag {
+  margin-inline-end: 4px;
+  margin-inline-start: 0;
+  font-size: 10px;
+  line-height: 16px;
+  padding: 0 4px;
 }
 </style>

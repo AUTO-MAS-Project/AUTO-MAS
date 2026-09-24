@@ -292,7 +292,7 @@ export default {
     maaEventFirstHint: '日課フローの中の独立したタスクで、通常の理性作戦より先に実行されます',
     maaEventStage: 'イベントステージ',
     maaEventStageHint:
-      'リスト内の順番で保存します。イベント更新後は同じ順番のステージが自動で選ばれ、その順番が無くなった場合は先頭に戻ります',
+      '周回意図（合成玉集め / 最も番号の大きいステージからN番目）を保存します。次のイベントでも同じ意図で自動解析され、一致するステージがない場合はスキップしてお知らせします',
     maaPickEventStage: 'イベントステージを選択してください',
     maaNoEventStage: '現在、周回できるイベントステージはありません',
     maaEventPotion: 'イベントステージの理性回復薬',
@@ -2781,6 +2781,8 @@ export default {
       stagePlaceholder: 'ステージ番号を入力',
       noSwitch: '変更しない',
       usedSuffix: '{label}（選択済み）',
+      activityTag: 'イベント',
+      endedSuffix: '{label}（終了）',
     },
     toast: {
       created: '新しい{type}「{name}」を作成しました',
