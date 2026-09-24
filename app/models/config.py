@@ -3126,7 +3126,8 @@ class MaaEndPlanConfig(WeeklyKeyPlanConfig):
 
 
 BAAH_PLAN_KEY_SHAPE = {
-    # 字段: (默认值, 最短长度, 最长长度)，与 schema 的 BAAHPlanKey 逐位对应
+    # 字段: (默认值, 最短长度, 最长长度)，与 schema 的 BAAHPlanKey 逐位对应；
+    # 每一位的取值范围见 schema.BAAH_PLAN_KEY_SLOT_RULES，不在这里重复一份。
     "Event": ([1, 1], 2, 3),
     "Wanted": ([1, -1, 1], 2, 4),
     "Special": ([1, -1, 1], 2, 4),
@@ -3151,7 +3152,11 @@ def default_baah_plan_key() -> dict[str, Any]:
 
 
 def normalize_baah_plan_key(raw_key: object) -> dict[str, Any]:
-    """将固定配置或旧计划表日期槽位转换为 BAAH key，任何输入都不抛异常。"""
+    """将固定配置或旧计划表日期槽位转换为 BAAH key，任何输入都不抛异常。
+
+    越界的位按 schema 的逐位规则修正到最近的合法值（困难图关卡 0/-1 修成 1、
+    次数小于 -1 修成 -1、开关位非 0/1 修成 1），存量的脏配置因此也能过校验。
+    """
 
     if isinstance(raw_key, dict) and "Key" in raw_key:
         raw_key = raw_key["Key"]
@@ -3177,7 +3182,13 @@ def normalize_baah_plan_key(raw_key: object) -> dict[str, Any]:
         elif len(items) < minimum:
             # 缺位用默认值补齐，已经写明的位保持不动。
             items = items + default[len(items) :]
-        result[field] = items
+
+        # 存量配置里可能存着越界的位（如困难图关卡写成 0），按 schema 的规则表
+        # 修正到最近的合法值：这一步只修不问，任何输入都不抛异常。
+        result[field] = [
+            schema_model.fix_baah_plan_slot(field, index, item)
+            for index, item in enumerate(items)
+        ]
 
     return result
 

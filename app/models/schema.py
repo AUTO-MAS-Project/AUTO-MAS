@@ -28,12 +28,21 @@ from typing import (
     Generic,
     List,
     Literal,
+    NamedTuple,
     Optional,
     TypeVar,
     Union,
 )
 
-from pydantic import BaseModel, ConfigDict, Field, JsonValue, SecretStr, field_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    JsonValue,
+    SecretStr,
+    ValidationInfo,
+    field_validator,
+)
 
 TPlanInfo = TypeVar("TPlanInfo")
 TPlanItem = TypeVar("TPlanItem")
@@ -4369,6 +4378,115 @@ class BAAHPlanConfig_Info(BaseModel):
     Mode: Literal["ALL", "Weekly"] = Field(default="ALL", description="计划表模式")
 
 
+class BAAHSlotRule(NamedTuple):
+    """BAAH 计划表某一位的取值规则。
+
+    六个字段都是「三位一组」的整数列表，位置含义随字段而变（序号、地区、关卡、
+    次数、开关），同一位在不同字段上的合法范围也不同，所以逐位列出规则表，
+    校验与修正都从这张表读，避免两边各写一份后漂移。
+    """
+
+    title: str  # 这一位的中文名，报错信息里用
+    minimum: int  # 允许的最小值
+    maximum: Optional[int] = None  # 允许的最大值，None 表示不设上限
+    allowed: tuple[int, ...] = ()  # 区间之外额外允许的取值（如关卡位的 -1）
+    fallback: Optional[int] = None  # 越界时的修正目标，None 表示就近钳到区间端点
+
+
+# 六类关卡的计划表 key 逐位规则。前端 BAAHPlanTable.vue 的 parts 与
+# app/models/config.py 的 BAAH_PLAN_KEY_SHAPE 都以这张表为准：次数位 -1 表示最大
+# 次数、0 表示不扫荡，所以下限是 -1；悬赏通缉/特殊任务/学园交流会的关卡位允许 -1
+# （BAAH 用它表示最高关），但 0 会让上游提示「关卡序号为0，无法扫荡」；困难图与
+# 普通图走上游的滚动关卡选择，负下标算不出坐标，只能从 1 开始。
+BAAH_PLAN_KEY_SLOT_RULES: dict[str, tuple[BAAHSlotRule, ...]] = {
+    "Event": (
+        BAAHSlotRule("活动关卡序号", minimum=1),
+        BAAHSlotRule("活动扫荡次数", minimum=-1),
+        BAAHSlotRule("活动关卡开关", minimum=0, maximum=1, fallback=1),
+    ),
+    "Wanted": (
+        BAAHSlotRule("地区", minimum=1),
+        BAAHSlotRule("关卡", minimum=1, allowed=(-1,)),
+        BAAHSlotRule("扫荡次数", minimum=-1),
+        BAAHSlotRule("开关", minimum=0, maximum=1, fallback=1),
+    ),
+    "Special": (
+        BAAHSlotRule("地区", minimum=1),
+        BAAHSlotRule("关卡", minimum=1, allowed=(-1,)),
+        BAAHSlotRule("扫荡次数", minimum=-1),
+        BAAHSlotRule("开关", minimum=0, maximum=1, fallback=1),
+    ),
+    "Exchange": (
+        BAAHSlotRule("学院", minimum=1),
+        BAAHSlotRule("关卡", minimum=1, allowed=(-1,)),
+        BAAHSlotRule("扫荡次数", minimum=-1),
+        BAAHSlotRule("开关", minimum=0, maximum=1, fallback=1),
+    ),
+    "Hard": (
+        BAAHSlotRule("章节", minimum=1),
+        BAAHSlotRule("关卡", minimum=1),
+        BAAHSlotRule("扫荡次数", minimum=-1),
+        BAAHSlotRule("开关", minimum=0, maximum=1, fallback=1),
+    ),
+    "Normal": (
+        BAAHSlotRule("章节", minimum=1),
+        BAAHSlotRule("关卡", minimum=1),
+        BAAHSlotRule("扫荡次数", minimum=-1),
+        BAAHSlotRule("开关", minimum=0, maximum=1, fallback=1),
+    ),
+}
+"""BAAH 计划表 key 的逐位取值规则，缺省的可选位不在表内时不校验"""
+
+
+def _baah_slot_expected(rule: BAAHSlotRule) -> str:
+    """把一位的合法取值说成一句人话，用于校验报错。"""
+
+    if rule.allowed:
+        extra = "、".join(str(item) for item in rule.allowed)
+        return f"只能填 {extra} 或不小于 {rule.minimum}"
+    if rule.maximum is None:
+        return f"必须不小于 {rule.minimum}"
+    if rule.minimum == rule.maximum:
+        return f"只能是 {rule.minimum}"
+    return f"只能填 {rule.minimum} 到 {rule.maximum}"
+
+
+def baah_plan_slot_error(field: str, index: int, value: int) -> Optional[str]:
+    """该位不合法时返回完整的中文原因（含字段、位次与期望取值），合法返回 None。"""
+
+    rules = BAAH_PLAN_KEY_SLOT_RULES.get(field)
+    # 列表比规则表短是合法的（可选位可以缺省），超出规则表的位不做判断。
+    if rules is None or index >= len(rules):
+        return None
+
+    rule = rules[index]
+    if value in rule.allowed:
+        return None
+    if value < rule.minimum or (rule.maximum is not None and value > rule.maximum):
+        return (
+            f"{field} 第 {index + 1} 位（{rule.title}）{_baah_slot_expected(rule)}，"
+            f"当前为 {value}"
+        )
+    return None
+
+
+def fix_baah_plan_slot(field: str, index: int, value: int) -> int:
+    """把越界的一位修正到最近的合法值，规则表里没有的位原样返回。"""
+
+    rules = BAAH_PLAN_KEY_SLOT_RULES.get(field)
+    if rules is None or index >= len(rules):
+        return value
+
+    rule = rules[index]
+    if value in rule.allowed:
+        return value
+    if value < rule.minimum:
+        return rule.minimum if rule.fallback is None else rule.fallback
+    if rule.maximum is not None and value > rule.maximum:
+        return rule.maximum if rule.fallback is None else rule.fallback
+    return value
+
+
 class BAAHPlanKey(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -4408,6 +4526,22 @@ class BAAHPlanKey(BaseModel):
         max_length=4,
         description="普通图扫荡：章节、关卡、次数",
     )
+
+    @field_validator("Event", "Wanted", "Special", "Exchange", "Hard", "Normal")
+    @classmethod
+    def validate_slot_values(cls, value: list[int], info: ValidationInfo) -> list[int]:
+        """逐位校验取值。
+
+        只限制长度挡不住负数与 0，而它们会被原样传给 BAAH：悬赏通缉/特殊任务/
+        学园交流会的关卡位 0 会让上游提示「关卡序号为0，无法扫荡」，困难图与普通
+        图的关卡位走滚动选择，负数算不出坐标。规则表见 BAAH_PLAN_KEY_SLOT_RULES。
+        """
+
+        for index, item in enumerate(value):
+            error = baah_plan_slot_error(info.field_name, index, item)
+            if error is not None:
+                raise ValueError(error)
+        return value
 
 
 class BAAHPlanConfig_Item(BaseModel):

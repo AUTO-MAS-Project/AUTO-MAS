@@ -45,6 +45,7 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
 import { computed, ref, watch } from 'vue'
+import { message } from 'ant-design-vue'
 import { QuestionCircleOutlined } from '@ant-design/icons-vue'
 import type { PlanChangeHandler } from '@/utils/planTypeRegistry'
 
@@ -186,6 +187,16 @@ const BAAH_KEY_FIELD_BY_NAME = Object.fromEntries(
   BAAH_KEY_FIELDS.map(field => [field.field, field])
 ) as Record<BAAHKeyFieldName, BAAHKeyField>
 
+/**
+ * 关卡位：悬赏通缉 / 特殊任务 / 学园交流会允许 -1（最高关），困难 / 普通必须 >= 1，
+ * 两边都不接受 0（上游按这个值算关卡坐标，0 算不出来）。后端已按位校验，
+ * 但输入框的 min 拦不住手输的 0，所以在改值时当场纠正并说明，不让它静默失败。
+ */
+const STAGE_PART_HINT_KEYS = new Set([
+  'plan.baah.partLevelHighest',
+  'plan.baah.partLevel',
+])
+
 type BAAHDayKey = Record<BAAHKeyFieldName, number[]>
 
 const toIntegerArray = (raw: unknown): number[] =>
@@ -282,6 +293,12 @@ const handlePartChange = async (
   const previous = localTableData.value[timeKey]
   const nextItems = [...(previous?.[field] ?? fieldSpec.defaultValue)]
   nextItems[index] = toPartValue(value, fieldSpec.defaultValue[index] ?? 1)
+
+  const part = fieldSpec.parts[index]
+  if (part && STAGE_PART_HINT_KEYS.has(part.hintKey) && nextItems[index] === 0) {
+    nextItems[index] = 1
+    message.warning(t('plan.baah.partLevelZeroFixed'))
+  }
 
   const nextDayKey = { ...(previous ?? normalizeBAAHDayKey(null)), [field]: nextItems }
 

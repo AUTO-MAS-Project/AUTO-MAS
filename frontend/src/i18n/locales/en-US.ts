@@ -3306,6 +3306,7 @@ export default {
       partLevel: 'Stage',
       partAcademy: 'Academy',
       partChapter: 'Chapter',
+      partLevelZeroFixed: 'The stage must be -1 (last stage) or at least 1; changed to 1',
     },
     toast: {
       created: 'Created a new {type}: "{name}"',

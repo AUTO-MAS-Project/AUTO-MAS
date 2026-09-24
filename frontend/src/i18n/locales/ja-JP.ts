@@ -2752,6 +2752,7 @@ export default {
       partLevel: 'ステージ',
       partAcademy: '学園',
       partChapter: '章',
+      partLevelZeroFixed: 'ステージは -1（最後のステージ）または 1 以上のみです。1 に変更しました',
     },
     toast: {
       created: '新しい{type}「{name}」を作成しました',

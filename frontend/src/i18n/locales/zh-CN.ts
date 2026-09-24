@@ -3179,6 +3179,8 @@ export default {
       partLevel: '关卡',
       partAcademy: '学院',
       partChapter: '章节',
+      // 关卡位只认 -1 或 >= 1，用户填 0 时界面直接改成 1，这条说明改了什么
+      partLevelZeroFixed: '关卡位只能填 -1（最高关）或 1 以上，已改为 1',
     },
     toast: {
       created: '已创建新的{type}："{name}"',
