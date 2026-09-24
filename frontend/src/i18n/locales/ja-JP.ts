@@ -769,7 +769,7 @@ export default {
     checkUpdates2: '更新を確認',
     emulator2: 'エミュレータ',
     regexGuide: '正規表現のガイド',
-    loadingMfwInterface: 'MFW インターフェースを読み込んでいます',
+    loadingMfwInterface: 'プロジェクトのインターフェースを読み込んでいます',
     loadingMaafwProjectInterface: 'MaaFW プロジェクトのインターフェースを読み込んでいます',
     clear: 'クリア',
     switchAccountDirectly: 'そのままアカウントを切り替える',
@@ -1434,7 +1434,7 @@ export default {
     saveUserBeforeImporting: '設定をインポートする前に、ユーザーを保存してください',
     createUserBeforeConfiguring: 'OK-NTE を設定する前に、ユーザーを作成してください',
     setLogFilePath: '先にスクリプト設定でログファイルのパスを設定してください',
-    importMfwProjectScript: '先にスクリプトページで MFW プロジェクトをインポートしてください',
+    importMfwProjectScript: '先にスクリプトページでプロジェクトをインポートしてください',
     addEnableUserBefore: '更新を確認する前に、ユーザーを追加して有効にしてください',
     finishSetupOkWw: 'ok-ww の画面で設定を完了してください。',
     readingControllersResourcesTasks:
@@ -1504,8 +1504,8 @@ export default {
     trackedProcessCommandLine: '追跡対象プロセスのコマンドライン引数',
     pickEndfieldExePath: 'Endfield.exe のパスを選択',
     pickMfwResourceLeave:
-      'MFW のリソースを選びます。空の場合は、現在の制御方式に合う最初のリソースが自動で選ばれます',
-    pickMfwProject: 'MFW プロジェクトを選択',
+      'リソースを選びます。空の場合は、現在の制御方式に合う最初のリソースが自動で選ばれます',
+    pickMfwProject: 'プロジェクトを選択',
     pickDirectoryHoldingMaaend2: 'MaaEnd.exe があるフォルダを選択',
     pickExe: 'exe を選択',
     pickDirectoryHoldingOk3: 'ok-nte.exe があるフォルダを選択',

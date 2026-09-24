@@ -821,7 +821,7 @@ export default {
     checkUpdates2: 'Check for updates',
     emulator2: 'Emulator',
     regexGuide: 'Regex guide',
-    loadingMfwInterface: 'Loading the MFW interface',
+    loadingMfwInterface: 'Loading the project interface',
     loadingMaafwProjectInterface: 'Loading the MaaFW project interface',
     clear: 'Clear',
     switchAccountDirectly: 'Switch the account directly',
@@ -1548,7 +1548,7 @@ export default {
     saveUserBeforeImporting: 'Save the user before importing a configuration',
     createUserBeforeConfiguring: 'Create the user before configuring OK-NTE',
     setLogFilePath: 'Set the log file path in the script configuration first',
-    importMfwProjectScript: 'Import the MFW project on the script page first',
+    importMfwProjectScript: 'Import the project on the script page first',
     addEnableUserBefore: 'Add and enable a user before checking for updates',
     finishSetupOkWw: 'Finish the setup in the ok-ww window.',
     readingControllersResourcesTasks:
@@ -1616,8 +1616,8 @@ export default {
     trackedProcessCommandLine: 'Tracked process command line',
     pickEndfieldExePath: 'Pick the Endfield.exe path',
     pickMfwResourceLeave:
-      'Pick the MFW resource; leave empty to auto-pick the first resource matching the control method',
-    pickMfwProject: 'Pick the MFW project',
+      'Pick the resource; leave empty to auto-pick the first resource matching the control method',
+    pickMfwProject: 'Pick the project',
     pickDirectoryHoldingMaaend2: 'Pick the directory holding MaaEnd.exe',
     pickExe: 'Pick an exe',
     pickDirectoryHoldingOk3: 'Pick the directory holding ok-nte.exe',
