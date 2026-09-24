@@ -118,6 +118,18 @@ def script_supports(module_key: str, script: ScriptType) -> bool:
 ENGINE_DISPLAY_NAMES: dict[str, str] = {"M7A": "三月七", "SRA": "SRA"}
 
 
+def engine_label(engine: str, *, left: bool = True, right: bool = True) -> str:
+    """把引擎显示名嵌进中文句子：拉丁名（SRA）与相邻汉字之间留空格，中文名（三月七）不留。
+
+    ``left`` / ``right`` 表示该侧紧挨着汉字；挨着全角标点或句首句尾时传 False。
+    """
+
+    name = ENGINE_DISPLAY_NAMES.get(engine, engine)
+    if not name.isascii():
+        return name
+    return f"{' ' if left else ''}{name}{' ' if right else ''}"
+
+
 @dataclass(frozen=True)
 class HSRScriptAssignment:
     """模块引擎归属的解析结果。
@@ -188,9 +200,9 @@ def describe_script_fallback(
 
     if not assignment.fallback:
         return None
-    requested = ENGINE_DISPLAY_NAMES.get(assignment.requested, assignment.requested)
-    actual = ENGINE_DISPLAY_NAMES.get(assignment.script, assignment.script)
+    requested = assignment.requested
     return (
-        f"模块「{module.name}」指派给 {requested}，但 {requested} 未配置路径，"
-        f"已改用 {actual} 执行"
+        f"模块「{module.name}」指派给{engine_label(requested, right=False)}，"
+        f"但{engine_label(requested)}未配置路径，"
+        f"已改用{engine_label(assignment.script)}执行"
     )

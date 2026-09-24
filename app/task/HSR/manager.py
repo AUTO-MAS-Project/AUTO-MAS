@@ -40,9 +40,9 @@ from app.utils.platform import is_admin
 
 from .AutoProxy import HSRAutoProxyTask, resolve_daily_native_modes
 from .task_mapping import (
-    ENGINE_DISPLAY_NAMES,
     HSR_TASK_MODULES,
     describe_script_fallback,
+    engine_label,
     resolve_script_assignment,
     script_supports,
 )
@@ -490,25 +490,22 @@ class HSRManager(TaskExecuteBase):
                     # 直控直接跑脚本当前的原生配置：CLI/Assistant 可执行与
                     # 原生配置文件都是硬条件。
                     script_root = resolve_script_path(script_config, engine)
+                    label = engine_label(engine, left=False)
+                    unavailable = f"用户「{user_name}」{label}直控不可用："
                     if not script_root:
-                        return f"用户「{user_name}」{engine} 直控不可用：未配置原生脚本路径"
+                        return f"{unavailable}未配置原生脚本路径"
                     executable = Path(script_root) / (
                         "SRA-cli.exe" if engine == "SRA" else "March7th Assistant.exe"
                     )
                     if not executable.is_file():
-                        return (
-                            f"用户「{user_name}」{engine} 直控不可用："
-                            f"原生执行文件不存在：{executable}"
-                        )
-                    engine_label = "SRA" if engine == "SRA" else "三月七"
+                        return f"{unavailable}原生执行文件不存在：{executable}"
                     native_config = native_provider(engine).native_config_path(
                         script_config
                     )
                     if not native_config.is_file():
                         return (
-                            f"用户「{user_name}」{engine} 直控不可用："
-                            f"{engine_label} 原生配置不存在：{native_config}，"
-                            f"请先在 {engine_label} 中保存一次设置"
+                            f"{unavailable}{label}原生配置不存在：{native_config}，"
+                            f"请先在{engine_label(engine)}中保存一次设置"
                         )
                 if (
                     not cloud
@@ -721,7 +718,7 @@ class HSRManager(TaskExecuteBase):
         去重，免得 N 个用户把同一句话刷 N 遍。
         """
 
-        engine_name = ENGINE_DISPLAY_NAMES.get(assigned, assigned)
+        engine_name = engine_label(assigned)
         subject = (
             "脚本共享任务配置：" if plan is script_config else f"用户「{user_name}」"
         )
@@ -755,20 +752,20 @@ class HSRManager(TaskExecuteBase):
 
         if not main_configured and not eow_configured:
             log_once(
-                f"{subject}体力模块由 {engine_name} 执行，"
-                f"但 {engine_name} 下未选择体力副本和历战余响关卡，体力模块本轮不会执行。"
+                f"{subject}体力模块由{engine_name}执行，"
+                f"但{engine_name}下未选择体力副本和历战余响关卡，体力模块本轮不会执行。"
                 "副本按执行引擎分别保存，切换引擎后需要重新选择；"
                 "或在该引擎中开启「培养目标」由脚本自行决定副本"
             )
             return
         if not main_configured and not daily_eow_enabled:
             log_once(
-                f"{subject}{engine_name} 下未选择体力副本，"
+                f"{subject}{engine_label(assigned, left=False)}下未选择体力副本，"
                 "今日不需要历战余响，体力模块将跳过"
             )
         if daily_eow_enabled and not eow_configured:
             log_once(
-                f"{subject}本周需要历战余响，但 {engine_name} 下未选择"
+                f"{subject}本周需要历战余响，但{engine_name}下未选择"
                 "历战余响关卡，历战余响将跳过"
             )
 
