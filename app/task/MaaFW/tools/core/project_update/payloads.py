@@ -654,11 +654,16 @@ def _iter_files(root: Path) -> Iterator[tuple[str, Path]]:
     for current, dir_names, file_names in os.walk(root, onerror=_error):
         dir_names.sort()
         base = Path(current)
+        # 相对路径每个目录只算一次、文件名直接拼：以前每个文件一次 relative_to，
+        # MaaFgo 这类上万文件的载荷登记时是个大头。os.walk 给的 current 就是 root 拼出来的，
+        # 与 relative_to(root).as_posix() 结果相同。
+        rel_dir = os.path.relpath(current, root).replace(os.sep, "/")
+        prefix = "" if rel_dir == "." else f"{rel_dir}/"
         for name in sorted(file_names):
             path = base / name
             if path.is_symlink():
                 raise PayloadError(f"载荷里不允许符号链接：{path}")
-            yield path.relative_to(root).as_posix(), path
+            yield f"{prefix}{name}", path
 
 
 def finalize(

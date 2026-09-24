@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 from pathlib import Path
 from typing import Any, Literal
@@ -96,26 +97,28 @@ def project_fingerprint(project_path: str | Path) -> str | None:
     ignored_dirs = set(FINGERPRINT_IGNORED_DIRS)
     if (root / NATIVE_RUNTIME_OVERLAY_DIR / NATIVE_RUNTIME_OVERLAY_MARKER).is_file():
         ignored_dirs.add(NATIVE_RUNTIME_OVERLAY_DIR)
-    files: list[Path] = []
+    # 相对路径直接从字符串前缀切出来，每个候选只算一次：以前扫描、排序键、写摘要各做一次
+    # relative_to，上万文件的项目（MaaFgo）光这一项就要好几秒。rglob 给的路径都是 root
+    # 拼出来的，前缀必然一致；万一不一致按原逻辑跳过。
+    root_prefix = str(root).rstrip("\\/") + os.sep
+    files: list[tuple[str, Path]] = []
     for candidate in root.rglob("*"):
-        try:
-            relative = candidate.relative_to(root)
-        except ValueError:
+        text = str(candidate)
+        if not text.startswith(root_prefix):
             continue
-        if any(part in RESERVED_PROJECT_DIRS for part in relative.parts):
+        relative = text[len(root_prefix) :].replace(os.sep, "/")
+        parts = relative.split("/")
+        if any(part in RESERVED_PROJECT_DIRS for part in parts):
             continue
-        if any(part in ignored_dirs for part in relative.parts):
+        if any(part in ignored_dirs for part in parts):
             continue
-        if relative.as_posix().casefold() in FINGERPRINT_IGNORED_FILES:
+        if relative.casefold() in FINGERPRINT_IGNORED_FILES:
             continue
         if candidate.is_symlink():
             return None
         if candidate.is_file():
-            files.append(candidate)
-    for candidate in sorted(
-        files, key=lambda item: item.relative_to(root).as_posix().casefold()
-    ):
-        relative = candidate.relative_to(root).as_posix()
+            files.append((relative, candidate))
+    for relative, candidate in sorted(files, key=lambda item: item[0].casefold()):
         try:
             content = candidate.read_bytes()
         except OSError:
