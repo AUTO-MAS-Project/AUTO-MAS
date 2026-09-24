@@ -30,7 +30,10 @@
   几个不能照抄的地方：`Run.RunTimeLimit` 固定 120（旧值是日志停滞阈值，MaaFW 是整轮硬超时）、
   `Update.AutoUpdateMode` 必须显式写 `AfterRun` / `Off`（引擎对缺省回落 `BeforeRun`）、
   用户级服务器 → 脚本级资源（不一致的用户停用 + 备注）、CDK 按 MFAA `config.json` 的 `DownloadCDK`
-  → MAS 全局 CDK → GitHub 推导一次。
+  → MAS 全局 CDK → GitHub 推导一次。input 值只清兑换码「占位」这一个预填哨兵（别的 default 是能跑的
+  真值，引擎对 string 空值不回落 default）；实例文件来源的用户留下其中勾选的「切换账号」。
+  v5.6.0-beta.1 的迁移这两条都没做到，`repair_m9a_migration_losses` 在迁移之后按
+  `.m9a-legacy-*.bak` 补回一次，看过备份就留 `ScriptConfig.json.m9a-repaired` 标记、不再重做。
 
 配置类在 `app/models/config.py`：`M9AConfig(MaaFWConfig)` / `M9AUserConfig(MaaFWUserConfig)` 同形，只改
 `DEFAULT_SCRIPT_NAME`、`USER_CONFIG_CLASS`、`FLAVOR`。`FLAVOR` 是字符串 `"app.task.M9A.flavor:FLAVOR"`，

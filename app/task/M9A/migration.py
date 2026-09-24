@@ -32,27 +32,35 @@
 幂等：迁完旧键消失、类型标签换完，再跑一遍什么都不会发生。改写前把整个文件复制成
 ``ScriptConfig.json.m9a-legacy-<时间戳>.bak``，只留最近三份。所有不可无损的地方（丢弃的
 选项、停用的用户、读不到 interface 的降级）都收进 ``MigrationReport``，由启动流程发通知。
+
+v5.6.0-beta.1 的迁移把所有等于 interface default 的输入值都清空了（自定义作战关卡的章节号 2、
+关卡号 6 也在内），还丢了实例文件里勾选的「切换账号」。已经按那版迁过的配置由
+``repair_m9a_migration_losses`` 按上面的备份补回一次，见文件末尾。
 """
 
 from __future__ import annotations
 
+import copy
 import json
 import os
 import shutil
 from collections import Counter
+from collections.abc import Collection
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from app.task.M9A.flavor import (
     CLOSE_ENTRY,
     FALLBACK_TASK_NAMES,
     LEGACY_ENTRY_ALIASES,
+    OFFICIAL_RESOURCE_NAME,
     STARTUP_ENTRY,
     SWITCH_ACCOUNT_ENTRY,
     is_m9a_project,
 )
+from app.task.MaaFW.tools.core.interface.models import resolve_task_instance_name
 from app.utils import get_logger
 
 logger = get_logger("M9A 迁移")
@@ -64,6 +72,16 @@ LEGACY_BACKUP_KEEP = 3
 MAAFW_RUN_TIME_LIMIT = 120
 # 运行期由特调补上、迁移时从队列里剔掉的三个任务（按 entry 判）。
 _RUNTIME_MANAGED_ENTRIES = {STARTUP_ENTRY, CLOSE_ENTRY, SWITCH_ACCOUNT_ENTRY}
+# 实例文件来源只剔首尾：旧版原样照跑实例文件，里面勾选的「切换账号」是用户自己配的（多账号时
+# 可以有好几个、各带目标账号），留下来；特调见到队列里已有切号就不再补。
+_INSTANCE_FILE_MANAGED_ENTRIES = {STARTUP_ENTRY, CLOSE_ENTRY}
+# 旧前端把 input 的 default 预填进输入框、旧引擎照抄提交。只有兑换码的「占位」是哨兵（真提交会让
+# 任务卡死），其余 default 都是能跑的真值（自定义作战关卡的章节号 2、关卡号 6），不能清。
+_PREFILL_SENTINELS = frozenset({"占位"})
+# 迁移通知与补救通知共用的一句：关了快速配置时旧版直接跑实例文件、不读「账号」。
+_ACCOUNT_NOW_SWITCHES = (
+    "「账号」在旧版不参与运行，现在会用于自动切换账号（仅官服），如果原来只是备注请清空"
+)
 _LEGACY_SCRIPT_KEYS = (
     "IfPsychubeDailyOnce",
     "IfSleepDreamMonthlyOnce",
@@ -83,6 +101,10 @@ class MigrationReport:
     dropped_tasks: list[str] = field(default_factory=list)
     dropped_options: list[str] = field(default_factory=list)
     degraded_scripts: list[str] = field(default_factory=list)
+    #: 关了快速配置、但找不到 MFAA 实例文件，退回任务队列的用户。
+    instance_file_fallbacks: list[str] = field(default_factory=list)
+    #: 关了快速配置的用户：旧版不读「账号」，迁移后特调会拿它切号。
+    account_switch_users: list[str] = field(default_factory=list)
     backup_path: Path | None = None
     #: 迁移函数自己抛了异常：原文件已另存，后续 connect() 会按新类加载。
     failure: str = ""
@@ -102,13 +124,23 @@ class MigrationReport:
             )
         if self.degraded_scripts:
             lines.append(
-                "读不到项目 interface、按内置别名迁移（任务选项已丢弃）："
+                "读不到项目 interface、按内置别名迁移（任务选项与实例文件里的「切换账号」已丢弃）："
                 + "、".join(self.degraded_scripts)
             )
         if self.disabled_users:
             lines.append(
                 "服务器与脚本资源不一致、已停用的用户："
                 + "、".join(self.disabled_users)
+            )
+        if self.account_switch_users:
+            lines.append(
+                f"以下用户原先关闭了快速配置，{_ACCOUNT_NOW_SWITCHES}："
+                + "、".join(self.account_switch_users)
+            )
+        if self.instance_file_fallbacks:
+            lines.append(
+                "关闭了快速配置但找不到 MFAA 实例文件、已改用任务队列的用户："
+                + "、".join(self.instance_file_fallbacks)
             )
         if self.dropped_tasks:
             lines.append("找不到对应任务、已丢弃：" + "、".join(self.dropped_tasks))
@@ -259,8 +291,13 @@ def _project_is_m9a(payload: dict[str, Any], uid: str) -> bool:
     return bool(interface) and is_m9a_project(interface)
 
 
-def _project_root_for_detection(payload: dict[str, Any], uid: str) -> Path | None:
-    """识别用的项目根：副本在就读副本（路径由脚本 ID 推出），否则读来源目录。"""
+def _project_root_for_detection(
+    payload: dict[str, Any], uid: str, *, prefer_source: bool = False
+) -> Path | None:
+    """识别用的项目根：副本在就读副本（路径由脚本 ID 推出），否则读来源目录。
+
+    ``prefer_source`` 反过来先读来源目录：补救要用迁移当时读的那份 interface 重算。
+    """
 
     candidates: list[Path] = []
     try:
@@ -274,7 +311,7 @@ def _project_root_for_detection(payload: dict[str, Any], uid: str) -> Path | Non
     info = payload.get("Info") or {}
     source = str(info.get("Path") or "").strip() if isinstance(info, dict) else ""
     if source:
-        candidates.append(Path(source))
+        candidates.insert(0 if prefer_source else len(candidates), Path(source))
     for candidate in candidates:
         if (candidate / "interface.json").is_file():
             return candidate
@@ -561,6 +598,16 @@ def _migrate_user(
     snapshot = _build_snapshot(
         user, index, script_payload, script_uid, user_uid, script_label, report
     )
+    # 关了快速配置时旧版原样跑实例文件、不读「账号」；迁移后特调只看账号非空、资源是官服就补切号。
+    # 实例文件里本来就勾了切号的，特调见到已有不再补，行为不变；没勾的要提醒一句。
+    if (
+        status
+        and str(info.get("Account") or "").strip()
+        and not _truthy(info.get("IfQuickConfig", True))
+        and script_resource == OFFICIAL_RESOURCE_NAME
+        and not _has_switch_account(snapshot["taskOrder"], index)
+    ):
+        report.account_switch_users.append(f"{script_label} / {name}")
 
     period_records = {
         "daily": {},
@@ -641,7 +688,7 @@ def _build_snapshot(
     script_label: str,
     report: MigrationReport,
 ) -> dict[str, Any]:
-    items = _legacy_queue_items(user, script_payload, script_uid, user_uid, report)
+    items, source = _legacy_queue_items(user, script_payload, script_uid, user_uid)
     order: list[str] = []
     checked: dict[str, bool] = {}
     options: dict[str, Any] = {}
@@ -649,13 +696,22 @@ def _build_snapshot(
     user_label = (
         f"{script_label} / {str((user.get('Info') or {}).get('Name') or user_uid[:8])}"
     )
+    if source == "queue_fallback":
+        report.instance_file_fallbacks.append(user_label)
+    # 快速配置的旧引擎自己在首尾补启动 / 关闭、按「账号」插切号，队列里这三个是陈旧数据；
+    # 实例文件则原样照跑，其中的切号留下（选项要靠 interface 翻译，读不到就只能照旧剔掉）。
+    managed_entries = (
+        _INSTANCE_FILE_MANAGED_ENTRIES
+        if source == "instance_file" and index.available
+        else _RUNTIME_MANAGED_ENTRIES
+    )
     for raw_name, raw_options in items:
         task_name = index.resolve_task_name(raw_name)
         if not task_name:
             report.dropped_tasks.append(f"{user_label}：{raw_name}")
             continue
-        if index.entry_of(task_name) in _RUNTIME_MANAGED_ENTRIES:
-            continue  # 首尾与切号由特调运行期补，旧队列里的是陈旧数据
+        if index.entry_of(task_name) in managed_entries:
+            continue  # 由特调运行期补
         task = index.task_by_name.get(task_name) or {}
         groups = task.get("group") or []
         if isinstance(groups, str):
@@ -684,20 +740,24 @@ def _legacy_queue_items(
     script_payload: dict[str, Any],
     script_uid: str,
     user_uid: str,
-    report: MigrationReport,
-) -> list[tuple[str, list[dict[str, Any]]]]:
-    """旧用户的任务来源：快速配置关闭时是 MFAA 实例文件，否则是 ``Task.Queue``。"""
+) -> tuple[
+    list[tuple[str, list[dict[str, Any]]]],
+    Literal["instance_file", "queue", "queue_fallback"],
+]:
+    """旧用户的任务来源：快速配置关闭时是 MFAA 实例文件，否则是 ``Task.Queue``。
+
+    第二个返回值是来源；``queue_fallback`` 表示关了快速配置、却找不到实例文件，退回了任务队列。
+    """
 
     info = user.get("Info") if isinstance(user.get("Info"), dict) else {}
+    source: Literal["instance_file", "queue", "queue_fallback"] = "queue"
     if not _truthy(info.get("IfQuickConfig", True)):
         instance_items = _instance_file_items(
             user, script_payload, script_uid, user_uid
         )
         if instance_items is not None:
-            return instance_items
-        report.dropped_options.append(
-            f"{str(info.get('Name') or user_uid[:8])}：找不到 MFAA 实例文件，改用任务队列"
-        )
+            return instance_items, "instance_file"
+        source = "queue_fallback"
     task = user.get("Task") if isinstance(user.get("Task"), dict) else {}
     raw = task.get("Queue")
     if isinstance(raw, str):
@@ -706,7 +766,7 @@ def _legacy_queue_items(
         except ValueError:
             raw = []
     if not isinstance(raw, list):
-        return []
+        return [], source
     items: list[tuple[str, list[dict[str, Any]]]] = []
     for entry in raw:
         if isinstance(entry, str):
@@ -721,7 +781,17 @@ def _legacy_queue_items(
                     else [],
                 )
             )
-    return items
+    return items, source
+
+
+def _has_switch_account(task_order: list[str], index: _InterfaceIndex) -> bool:
+    """快照的任务列表里有没有「切换账号」（按 entry 判，重复实例 id 先还原成任务名）。"""
+
+    return any(
+        index.entry_of(resolve_task_instance_name(task_id, index.task_by_name))
+        == SWITCH_ACCOUNT_ENTRY
+        for task_id in task_order
+    )
 
 
 def _instance_file_items(
@@ -854,25 +924,33 @@ def _nested_options(sub_options: list[Any], cases: list[Any]) -> list[dict[str, 
 def _clean_input_values(
     definition: dict[str, Any], values: dict[str, Any]
 ) -> dict[str, str]:
-    """input 选项的值：等于 interface 里声明的 ``default`` 的一律清空。
+    """input 选项的值转成字符串，只清掉预填进来的哨兵 default（兑换码的「占位」）。
 
-    旧前端把 ``default`` 预填进输入框（M9A 的兑换码 default 是字面量「占位」），旧引擎也照抄
-    提交；MaaFW 引擎把 default 只当占位提示、不进执行值，真提交「占位」会让任务卡死。
-    迁移是把这些预填值清掉的最后机会。
+    旧前端把 ``default`` 预填进输入框，旧引擎也照抄提交；MaaFW 引擎把 default 只当占位提示、
+    不进执行值，真提交「占位」会让任务卡死，迁移是把它清掉的最后机会。别的 default 是能跑的
+    真值（自定义作战关卡的章节号 2、关卡号 6），引擎对 string 空值又不回落 default，清掉就会
+    下发 ``-12`` 这样的关卡。
     """
 
-    defaults: dict[str, str] = {}
-    raw_inputs = definition.get("inputs")
-    for item in raw_inputs if isinstance(raw_inputs, list) else []:
-        if isinstance(item, dict) and item.get("name") is not None:
-            defaults[str(item["name"])] = str(item.get("default") or "")
+    defaults = _input_defaults(definition)
     cleaned: dict[str, str] = {}
     for key, value in values.items():
         text = "" if value is None else str(value)
-        if text and defaults.get(str(key), None) == text:
+        if text in _PREFILL_SENTINELS and defaults.get(str(key)) == text:
             text = ""
         cleaned[str(key)] = text
     return cleaned
+
+
+def _input_defaults(definition: dict[str, Any] | None) -> dict[str, str]:
+    """input 选项各字段在 interface 里声明的 ``default``（``{字段名: 值}``）。"""
+
+    defaults: dict[str, str] = {}
+    raw_inputs = definition.get("inputs") if isinstance(definition, dict) else None
+    for item in raw_inputs if isinstance(raw_inputs, list) else []:
+        if isinstance(item, dict) and item.get("name") is not None:
+            defaults[str(item["name"])] = str(item.get("default") or "")
+    return defaults
 
 
 # ---------------------------------------------------------------------------
@@ -933,9 +1011,376 @@ def _int(value: Any, default: int) -> int:
         return default
 
 
+# ---------------------------------------------------------------------------
+# 补救：v5.6.0-beta.1 迁移丢掉的东西
+# ---------------------------------------------------------------------------
+
+#: 补救看过备份就在 ``ScriptConfig.json`` 旁留这个标记，此后不再做：用户后来自己删掉的切号、
+#: 清空的值不能再被补回来。
+REPAIR_MARKER_SUFFIX = ".m9a-repaired"
+REPAIR_BACKUP_SUFFIX = ".m9a-repair-"
+
+
+@dataclass
+class RepairReport:
+    """一次补救的结果，给启动通知与日志用。"""
+
+    restored_inputs: list[str] = field(default_factory=list)
+    restored_switches: list[str] = field(default_factory=list)
+    #: 升级后改过任务列表或「账号」、切号不自动补回的用户（带原来的目标账号）。
+    manual_switches: list[str] = field(default_factory=list)
+    account_switch_users: list[str] = field(default_factory=list)
+    #: 来源目录与内嵌副本都读不到 interface、没法按备份核对的脚本。
+    unchecked_scripts: list[str] = field(default_factory=list)
+    backup_path: Path | None = None
+
+    @property
+    def needs_notice(self) -> bool:
+        return bool(
+            self.restored_inputs
+            or self.restored_switches
+            or self.manual_switches
+            or self.account_switch_users
+            or self.unchecked_scripts
+        )
+
+    def summary_lines(self) -> list[str]:
+        lines: list[str] = []
+        if self.restored_inputs:
+            lines.append(
+                "升级时被清空的输入值（如自定义作战关卡的章节号、关卡号）已按迁移前的备份找回："
+                + "、".join(self.restored_inputs)
+            )
+        if self.restored_switches:
+            lines.append(
+                "升级时丢掉的「切换账号」任务（关闭快速配置时在 M9A 里配的）已补回："
+                + "、".join(self.restored_switches)
+            )
+        if self.manual_switches:
+            lines.append(
+                "以下用户升级后改过任务列表或「账号」，「切换账号」没有自动补回，"
+                "需要的话请在任务队列里手动添加：" + "、".join(self.manual_switches)
+            )
+        if self.account_switch_users:
+            lines.append(
+                f"以下用户原先关闭了快速配置，{_ACCOUNT_NOW_SWITCHES}："
+                + "、".join(self.account_switch_users)
+            )
+        if self.unchecked_scripts:
+            lines.append(
+                "以下脚本读不到项目文件，没能按迁移前的备份核对，请检查自定义作战关卡的"
+                "章节号、关卡号与「切换账号」：" + "、".join(self.unchecked_scripts)
+            )
+        return lines
+
+    def notice(self) -> dict[str, Any]:
+        lines = self.summary_lines()
+        if self.backup_path is not None:
+            lines.append(f"补救前的配置已备份为 {self.backup_path.name}")
+        return {
+            "level": "warning"
+            if self.manual_switches
+            or self.account_switch_users
+            or self.unchecked_scripts
+            else "info",
+            "title": "已找回 M9A 升级时丢掉的设置"
+            if self.restored_inputs or self.restored_switches
+            else "M9A 升级后请确认设置",
+            "lines": lines,
+        }
+
+
+def repair_m9a_migration_losses(
+    script_config_path: Path,
+    *,
+    skip_uids: Collection[str] = (),
+    now: datetime | None = None,
+) -> RepairReport:
+    """启动期入口：按迁移备份补回 v5.6.0-beta.1 迁移丢掉的东西，只做一次。
+
+    那版迁移把等于 interface default 的输入值一律清空（自定义作战关卡的章节号 2、关卡号 6
+    也在内），还把实例文件里勾选的「切换账号」当成首尾任务剔掉了。原料还在
+    ``ScriptConfig.json.m9a-legacy-*.bak`` 里，补法见 ``repair_script_config_payload``。
+
+    必须排在 ``migrate_legacy_m9a_scripts`` 之后、``ScriptConfig.connect()`` 之前；``skip_uids``
+    传这次启动刚迁过的脚本，它们用的就是修好的迁移，通知也已经发过。没有迁移备份就什么都
+    不做；看过备份就留标记，哪怕这次没东西可补。出错只记日志，下次启动再试。
+    """
+
+    report = RepairReport()
+    path = Path(script_config_path)
+    marker = path.with_name(f"{path.name}{REPAIR_MARKER_SUFFIX}")
+    if marker.exists() or not path.is_file():
+        return report
+    failed_prefix = f"{path.name}{LEGACY_BACKUP_SUFFIX}failed-"
+    backups = sorted(
+        (
+            item
+            for item in path.parent.glob(f"{path.name}{LEGACY_BACKUP_SUFFIX}*.bak")
+            if not item.name.startswith(failed_prefix)
+        ),
+        key=lambda item: item.name,
+        reverse=True,
+    )
+    if not backups:
+        return report
+
+    tmp = path.with_name(f"{path.name}.m9a-repairing")
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        legacy_scripts = {
+            uid: payload
+            for uid, payload in _collect_legacy_scripts(backups).items()
+            if uid not in skip_uids
+        }
+        changed = isinstance(data, dict) and repair_script_config_payload(
+            data, legacy_scripts, report
+        )
+        stamp = now or datetime.now()
+        if changed:
+            backup = path.with_name(
+                f"{path.name}{REPAIR_BACKUP_SUFFIX}{stamp.strftime('%Y%m%d%H%M%S')}.bak"
+            )
+            shutil.copyfile(path, backup)
+            report.backup_path = backup
+            tmp.write_text(
+                json.dumps(data, ensure_ascii=False, indent=4), encoding="utf-8"
+            )
+            os.replace(tmp, path)
+        marker.write_text(
+            json.dumps(
+                {
+                    "repairedAt": stamp.isoformat(timespec="seconds"),
+                    "lines": report.summary_lines(),
+                },
+                ensure_ascii=False,
+                indent=4,
+            ),
+            encoding="utf-8",
+        )
+    except Exception as exc:  # noqa: BLE001 - 补救失败不该挡住启动
+        logger.opt(exception=True).warning(f"M9A 迁移补救失败，下次启动再试：{exc}")
+        try:
+            tmp.unlink(missing_ok=True)
+        except OSError:
+            pass
+        return RepairReport()
+    for line in report.summary_lines():
+        logger.info(f"M9A 迁移补救：{line}")
+    return report
+
+
+def _collect_legacy_scripts(backups: list[Path]) -> dict[str, dict[str, Any]]:
+    """从新到旧读迁移备份，每个 M9A 脚本取最新一份迁移前的旧数据块。"""
+
+    legacy: dict[str, dict[str, Any]] = {}
+    for backup in backups:
+        try:
+            content = json.loads(backup.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if not isinstance(content, dict):
+            continue
+        for instance in content.get("instances") or []:
+            if not isinstance(instance, dict) or instance.get("type") != "M9AConfig":
+                continue
+            uid = str(instance.get("uid") or "")
+            payload = content.get(uid)
+            if (
+                uid not in legacy
+                and isinstance(payload, dict)
+                and _is_legacy_m9a_payload(payload)
+            ):
+                legacy[uid] = payload
+    return legacy
+
+
+def repair_script_config_payload(
+    data: dict[str, Any],
+    legacy_scripts: dict[str, dict[str, Any]],
+    report: RepairReport,
+) -> bool:
+    """按迁移前的旧数据块就地补 ``data``，返回有没有改动。
+
+    用修好的迁移把旧数据块重算一遍当答案，逐个用户与现状比，只动两类地方：
+
+    1. input 字段：答案里的值等于 interface default（beta.1 就是清的这种）、现状是空的 → 填回；
+       用户升级后自己填过的不动。
+    2. 「切换账号」：答案里有、现状一个都没有 → 现状的任务顺序恰好等于答案去掉切号，才按答案
+       原位补回；用户升级后调过顺序或增删过任务就不猜位置，提醒手动加。
+    """
+
+    changed = False
+    for instance in data.get("instances") or []:
+        if not isinstance(instance, dict) or instance.get("type") != "M9AConfig":
+            continue
+        uid = str(instance.get("uid") or "")
+        payload = data.get(uid)
+        legacy = legacy_scripts.get(uid)
+        user_data = _user_data_of(payload) if isinstance(payload, dict) else None
+        if legacy is None or user_data is None:
+            continue
+        script_label = _script_label(payload, uid)
+        # 用迁移当时读的来源目录重算，答案才和那版的输出逐项对得上；来源目录删了就退到副本
+        # （副本里也有 interface 与直控用的 config/instances）
+        root = _project_root_for_detection(legacy, uid, prefer_source=True)
+        index = _InterfaceIndex(_read_interface_dict(root) if root else None)
+        if root is None or not index.available:
+            report.unchecked_scripts.append(script_label)  # 认不出 default 与切号，不猜
+            continue
+        answer_source = copy.deepcopy(legacy)
+        if isinstance(answer_source.get("Info"), dict):
+            answer_source["Info"]["Path"] = str(root)
+        answer = migrate_legacy_script(answer_source, MigrationReport(), script_uid=uid)
+        answer_users = _user_data_of(answer) or {}
+        legacy_users = _user_data_of(legacy) or {}
+        official = (payload.get("Info") or {}).get("Resource") == OFFICIAL_RESOURCE_NAME
+        for user_uid, user in user_data.items():
+            answer_user = answer_users.get(user_uid)
+            if not isinstance(user, dict) or not isinstance(answer_user, dict):
+                continue
+            info = user.get("Info") if isinstance(user.get("Info"), dict) else {}
+            legacy_info = (legacy_users.get(user_uid) or {}).get("Info") or {}
+            label = f"{script_label} / {str(info.get('Name') or user_uid[:8])}"
+            account = str(info.get("Account") or "").strip()
+            # 升级后自己填了别的「账号」：补回实例文件里的切号会压过它，交给用户决定
+            account_changed = account != str(legacy_info.get("Account") or "").strip()
+            if _repair_user_snapshot(
+                user,
+                answer_user,
+                index,
+                keep_account=bool(account and account_changed),
+                label=label,
+                report=report,
+            ):
+                changed = True
+
+            # 旧版不读的「账号」beta.1 起被拿去切号了，补一句提醒（判据同迁移）；升级后
+            # 自己改过账号的，是有意要切，不提醒
+            snapshot = _load_snapshot((user.get("Task") or {}).get("TaskSnapshot"))
+            if (
+                official
+                and _truthy(info.get("Status", True))
+                and account
+                and not account_changed
+                and not _truthy(legacy_info.get("IfQuickConfig", True))
+                and not _has_switch_account(
+                    list((snapshot or {}).get("taskOrder") or []), index
+                )
+            ):
+                report.account_switch_users.append(label)
+    return changed
+
+
+def _repair_user_snapshot(
+    user: dict[str, Any],
+    answer_user: dict[str, Any],
+    index: _InterfaceIndex,
+    *,
+    keep_account: bool,
+    label: str,
+    report: RepairReport,
+) -> bool:
+    """单个用户的两类补救；有改动就写回 ``user`` 的 ``Task.TaskSnapshot``。
+
+    ``keep_account`` 为真（用户升级后自己改了「账号」）时切号不自动补回，只提醒。
+    """
+
+    task = user.get("Task")
+    current = (
+        _load_snapshot(task.get("TaskSnapshot")) if isinstance(task, dict) else None
+    )
+    answer = _load_snapshot((answer_user.get("Task") or {}).get("TaskSnapshot"))
+    if current is None or answer is None or not isinstance(task, dict):
+        return False
+    current_options = current.setdefault("taskOptions", {})
+    answer_options = answer.get("taskOptions") or {}
+    if not isinstance(current_options, dict) or not isinstance(answer_options, dict):
+        return False
+
+    # 一、被清空的 input 字段
+    restored = False
+    for task_id, answer_task_options in answer_options.items():
+        current_task_options = current_options.get(task_id)
+        if not isinstance(answer_task_options, dict) or not isinstance(
+            current_task_options, dict
+        ):
+            continue
+        for option_name, answer_value in answer_task_options.items():
+            current_value = current_task_options.get(option_name)
+            if not isinstance(answer_value, dict) or not isinstance(
+                current_value, dict
+            ):
+                continue
+            defaults = _input_defaults(index.options.get(option_name))
+            for field_name, text in answer_value.items():
+                if (
+                    text
+                    and text == defaults.get(field_name)
+                    and not current_value.get(field_name)
+                ):
+                    current_value[field_name] = text
+                    restored = True
+    if restored:
+        report.restored_inputs.append(label)
+
+    # 二、被剔掉的切换账号
+    switched = False
+    answer_order = [str(task_id) for task_id in answer.get("taskOrder") or []]
+    switch_ids = [
+        task_id for task_id in answer_order if _has_switch_account([task_id], index)
+    ]
+    current_order = current.get("taskOrder")
+    if (
+        switch_ids
+        and isinstance(current_order, list)
+        and not _has_switch_account(current_order, index)
+    ):
+        if not keep_account and current_order == [
+            task_id for task_id in answer_order if task_id not in switch_ids
+        ]:
+            current["taskOrder"] = answer_order
+            checked = current.setdefault("taskChecked", {})
+            for task_id in switch_ids:
+                checked[task_id] = True
+                if task_id in answer_options:
+                    current_options[task_id] = answer_options[task_id]
+            report.restored_switches.append(label)
+            switched = True
+        else:
+            accounts = [
+                str(value)
+                for task_id in switch_ids
+                for option_value in (answer_options.get(task_id) or {}).values()
+                if isinstance(option_value, dict)
+                for value in option_value.values()
+                if str(value).strip()
+            ]
+            report.manual_switches.append(
+                f"{label}（原目标账号：{'、'.join(accounts)}）" if accounts else label
+            )
+
+    if restored or switched:
+        task["TaskSnapshot"] = json.dumps(current, ensure_ascii=False)
+    return restored or switched
+
+
+def _load_snapshot(raw: Any) -> dict[str, Any] | None:
+    """``Task.TaskSnapshot`` 的 JSON 串 → 字典；空串或坏数据返回 None。"""
+
+    try:
+        snapshot = json.loads(raw) if isinstance(raw, str) and raw.strip() else None
+    except ValueError:
+        return None
+    return snapshot if isinstance(snapshot, dict) else None
+
+
 __all__ = [
     "MigrationReport",
+    "RepairReport",
     "migrate_legacy_m9a_scripts",
     "migrate_legacy_script",
     "migrate_script_config_payload",
+    "repair_m9a_migration_losses",
+    "repair_script_config_payload",
 ]

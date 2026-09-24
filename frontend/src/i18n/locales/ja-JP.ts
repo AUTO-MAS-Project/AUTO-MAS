@@ -150,6 +150,8 @@ export default {
     cancellingDeletesUnfinishedDownload:
       'キャンセルすると、未完了のダウンロードファイルは削除されます。',
     cancel2: 'キャンセル',
+    powerCountdownConnectionLost:
+      'バックエンドとの接続が切れました。カウントダウンは続いている可能性があり、残り秒数は更新されません。',
     cancelUpdateDownload: '更新のダウンロードをキャンセルしますか？',
     visualSelection: 'ビジュアル選択',
     downloadBackground: 'バックグラウンドでダウンロード',
@@ -2705,6 +2707,13 @@ export default {
     anotherWindowTookOverBackend: '別のウィンドウがバックエンド接続を引き継ぎました',
     thisWindowStoppedReconnecting:
       'このウィンドウは再接続を停止しました。2 つのウィンドウが接続を奪い合わないようにするためです。',
+    backgroundInitDegradedTitle: '一部のバックグラウンドサービスを起動できませんでした',
+    backgroundInitFailedTitle: 'バックグラウンドサービスを起動できませんでした',
+    backgroundInitTimerStarted:
+      '定時タスクは正常に起動しました。以下の機能は再起動するまで使えない可能性があります。',
+    backgroundInitTimerNotStarted:
+      '定時タスクが起動していない可能性があり、キューは予定時刻に実行されません。アプリを再起動してください。',
+    backgroundInitFailedSteps: '失敗した項目：{steps}',
     couldNotAddAccount: 'アカウントグループを追加できませんでした',
     gotIt: '了解',
     continueDownload: 'ダウンロードを続ける',

@@ -408,6 +408,9 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         self.base_run_plan: MaaFWRunPlan | None = None
         self.run_plan: MaaFWRunPlan | None = None
         self.cur_user_log: LogRecord | None = None
+        # 与 MAA 等专项同口径：user_start_time 是本用户这一轮的开始（统计通知用），
+        # cur_user_log_started_at 是当前这次尝试的开始（日志记录与 history 文件名用）
+        self.user_start_time: datetime | None = None
         self.cur_user_log_started_at: datetime | None = None
         # 每次尝试的结构化结果，供用户级统计的「任务详情」用。MaaFW 不像
         # M9A 那样只能正则解析日志文本——这里本来就有 completedTasks 与
@@ -501,6 +504,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
 
     async def prepare(self) -> None:
         start_time = datetime.now()
+        self.user_start_time = start_time
         self.cur_user_log_started_at = start_time
         self.cur_user_item.log_record[start_time] = self.cur_user_log = LogRecord()
         if self.project_update_logs:
@@ -561,6 +565,11 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             for index in range(self.script_config.get("Run", "RunTimesLimit")):
                 if self.run_complete:
                     break
+
+                # 每次尝试单独一份日志（界面与 history 都分开）：第一次沿用 prepare()
+                # 建的那份，开头有更新检查与运行总览；之后每次另起。
+                if index > 0:
+                    self._start_attempt_log()
 
                 self._append_log(
                     f"用户 {self.cur_user_item.name} - 尝试次数: "
@@ -1475,9 +1484,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             )
             raise
         started_at = self.cur_user_log_started_at or datetime.now()
-        local_started_at = started_at.replace(
-            tzinfo=datetime.now().astimezone().tzinfo
-        ).astimezone(UTC4)
+        local_started_at = started_at.astimezone(UTC4)
         history_dir = (
             Path.cwd()
             / "history"
@@ -1497,7 +1504,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             payload = service.create_job_payload(
                 runner_plan,
                 device_config,
-                # 失败截图和本次运行的 .log / .maafw.log 放一起。
+                # 失败截图和本次尝试的 .log / .maafw.log 放一起。
                 failure_screenshot_dir=history_dir,
                 failure_screenshot_prefix=history_stamp,
                 task_start_not_before=self._task_start_not_before(),
@@ -2284,6 +2291,23 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         await self._close_emulator()
         await self._close_game()
 
+    def _start_attempt_log(self) -> None:
+        """重试前另起一份日志记录，与 MAA 等专项一样每次尝试单独成段。
+
+        界面日志从这一次重新显示；history 里的 ``.log`` / ``.json``、``.worker.log``、
+        ``.maafw.log`` 与失败截图都按本次开始时刻另起文件名。文件名只精确到秒，
+        上一次在同一秒内就失败时顺延一秒，免得两次尝试写进同一个文件。
+        """
+
+        start_time = datetime.now()
+        previous = self.cur_user_log_started_at
+        if previous is not None and start_time.replace(
+            microsecond=0
+        ) <= previous.replace(microsecond=0):
+            start_time = previous.replace(microsecond=0) + timedelta(seconds=1)
+        self.cur_user_log_started_at = start_time
+        self.cur_user_item.log_record[start_time] = self.cur_user_log = LogRecord()
+
     def _timed_out_user_summary(self, result: MaaFWRunResult) -> str:
         limit = self.script_config.get("Run", "RunTimeLimit")
         total = len(self.run_plan.tasks) if self.run_plan is not None else 0
@@ -2338,9 +2362,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
 
         statistic_paths: list[Path] = []
         for timestamp, log_item in self.cur_user_item.log_record.items():
-            dt = timestamp.replace(
-                tzinfo=datetime.now().astimezone().tzinfo
-            ).astimezone(UTC4)
+            dt = timestamp.astimezone(UTC4)
             log_path = (
                 Path.cwd()
                 / f"history/{dt.strftime('%Y-%m-%d')}/{self.cur_user_item.name}/{dt.strftime('%H-%M-%S')}.log"
@@ -2453,8 +2475,8 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             statistics = await Config.merge_statistic_info(statistic_paths)
             statistics["user_info"] = self.cur_user_item.name
             statistics["start_time"] = (
-                self.cur_user_log_started_at.strftime("%Y-%m-%d %H:%M:%S")
-                if self.cur_user_log_started_at is not None
+                self.user_start_time.strftime("%Y-%m-%d %H:%M:%S")
+                if self.user_start_time is not None
                 else ""
             )
             statistics["end_time"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -2938,9 +2960,9 @@ def _copy_native_debug_log_delta(
 ) -> int:
     """把本次运行写下的原生日志分片按顺序原样追加到 ``target``，返回复制的字节数。
 
-    按字节复制、不解码不清洗，副本才和项目 ``debug/maafw.log`` 完全一致。追加而不是
-    覆盖：同一次代理的几轮重试共用一个文件名，每轮的分片挨着放，原生日志自己的
-    「MAA Process Start」头就是分界。逐个分片流式复制，一份可能有几十 MB。
+    按字节复制、不解码不清洗，副本才和项目 ``debug/maafw.log`` 完全一致。每次尝试
+    各写各的文件（文件名是这次尝试的开始时刻），追加只是为了不覆盖已有内容。
+    逐个分片流式复制，一份可能有几十 MB。
 
     唯一的改动是 ``secrets``（密码字段的原文及其 JSON 转义写法）：框架在
     ``Tasker::post_task`` 里按 INFO 级别记下整份 ``pipeline_override``（``[pipeline_override={...}]``），
