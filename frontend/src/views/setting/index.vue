@@ -62,13 +62,6 @@ const historyRetentionOptions = computed(() => [
   { label: t('setting.retention.forever'), value: 0 },
 ])
 
-// value 是后端 Notify.SendTaskResultTime 的配置值，只译 label
-const sendTaskResultTimeOptions = computed(() => [
-  { label: t('setting.pushTime.never'), value: '不推送' },
-  { label: t('setting.pushTime.always'), value: '任何时刻' },
-  { label: t('setting.pushTime.failOnly'), value: '仅失败时' },
-])
-
 const updateSourceOptions = computed(() => [
   { label: 'GitHub', value: 'GitHub' },
   { label: t('setting.source.MirrorChyan'), value: 'MirrorChyan' },
@@ -391,7 +384,6 @@ onMounted(() => {
         <a-tab-pane key="notify" :tab="t('setting.tab.notify')">
           <TabNotify
             :settings="settings"
-            :send-task-result-time-options="sendTaskResultTimeOptions"
             :handle-setting-change="handleSettingChange"
             :test-notify="testNotify"
             :testing-notify="testingNotify"

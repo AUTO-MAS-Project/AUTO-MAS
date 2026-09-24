@@ -294,6 +294,7 @@ def apply_package_transaction(
     ):
         # 指纹要 rglob + sha256 整个项目，锁内只算这一次：锁外先算一遍再进锁比对
         # 等于白哈希一轮，锁内这次已经足以拒绝「计划之后项目被改过」。
+        send_update_log("正在校验项目指纹（大项目可能要一两分钟）")
         current = project_fingerprint(root)
         if current is None:
             raise UpdateApplyError("cannot calculate MaaFW project fingerprint")
@@ -480,11 +481,14 @@ def apply_package_transaction(
                         "MaaFW post-validation rejected the update"
                     )
 
+            send_update_log("正在校验更新后的项目指纹（大项目可能要一两分钟）")
             after = project_fingerprint(root)
             if after is None:
                 raise UpdateApplyError(
                     "cannot calculate updated MaaFW project fingerprint"
                 )
+            # 清单要逐个文件算 sha256，是提交前最后一段长静默。
+            send_update_log("正在生成文件清单（大项目可能要一两分钟）")
             manifest = {
                 "schemaVersion": 1,
                 "version": plan.target_version or target_version or "",

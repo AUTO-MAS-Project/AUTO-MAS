@@ -38,6 +38,7 @@ import type { MaaCultivateOperatorsOut } from '../models/MaaCultivateOperatorsOu
 import type { MaaDepotInventoryOut } from '../models/MaaDepotInventoryOut';
 import type { MaaEndOptionsOut } from '../models/MaaEndOptionsOut';
 import type { NoticeOut } from '../models/NoticeOut';
+import type { NotifyChannelsOut } from '../models/NotifyChannelsOut';
 import type { OCRScreenshotIn } from '../models/OCRScreenshotIn';
 import type { OCRScreenshotOut } from '../models/OCRScreenshotOut';
 import type { PlanComboxIn } from '../models/PlanComboxIn';
@@ -789,6 +790,18 @@ export class GetService {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/setting/get',
+        });
+    }
+    /**
+     * 查询通知渠道描述
+     * 返回通知渠道描述表，仅展示元数据，不含任何配置值。
+     * @returns NotifyChannelsOut Successful Response
+     * @throws ApiError
+     */
+    public static getNotifyChannelsApiSettingNotifyChannelsGet(): CancelablePromise<NotifyChannelsOut> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/setting/notify/channels',
         });
     }
     /**

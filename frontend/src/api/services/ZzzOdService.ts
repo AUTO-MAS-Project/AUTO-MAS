@@ -10,7 +10,6 @@ import type { ZzzOdImportIn } from '../models/ZzzOdImportIn';
 import type { ZzzOdImportOut } from '../models/ZzzOdImportOut';
 import type { ZzzOdInstanceActiveIn } from '../models/ZzzOdInstanceActiveIn';
 import type { ZzzOdInstanceAddIn } from '../models/ZzzOdInstanceAddIn';
-import type { ZzzOdInstanceDeleteIn } from '../models/ZzzOdInstanceDeleteIn';
 import type { ZzzOdInstanceFlagIn } from '../models/ZzzOdInstanceFlagIn';
 import type { ZzzOdInstanceForceLoginIn } from '../models/ZzzOdInstanceForceLoginIn';
 import type { ZzzOdInstanceRenameIn } from '../models/ZzzOdInstanceRenameIn';
@@ -19,6 +18,8 @@ import type { ZzzOdInstancesOut } from '../models/ZzzOdInstancesOut';
 import type { ZzzOdLauncherOut } from '../models/ZzzOdLauncherOut';
 import type { ZzzOdNativeConfigIn } from '../models/ZzzOdNativeConfigIn';
 import type { ZzzOdNativeConfigOut } from '../models/ZzzOdNativeConfigOut';
+import type { ZzzOdRecycleOut } from '../models/ZzzOdRecycleOut';
+import type { ZzzOdSlotsOut } from '../models/ZzzOdSlotsOut';
 import type { ZzzOdTaskOptionsOut } from '../models/ZzzOdTaskOptionsOut';
 import type { ZzzOdTeamsOut } from '../models/ZzzOdTeamsOut';
 import type { ZzzOdTeamsSaveIn } from '../models/ZzzOdTeamsSaveIn';
@@ -169,20 +170,45 @@ export class ZzzOdService {
         });
     }
     /**
-     * 删除一条龙实例（直控实例管理；受 MAS 绑定槽保护）
-     * 删除注册表条目与实例目录，返回更新后的实例列表。
-     * @param requestBody
-     * @returns ZzzOdInstancesOut Successful Response
+     * 获取实例槽总览（原生实例 / MAS 绑定槽 / 无主残留）
+     * 槽目录是 MAS 分配在一条龙安装目录里的，注册表与 GUI 都看不到。
+     *
+     * 这份对照表用于诊断「槽目录数与用户数对不上」（绑定但没跑过的槽没有目录）
+     * 与定位无主残留。
+     * @param scriptId
+     * @returns ZzzOdSlotsOut Successful Response
      * @throws ApiError
      */
-    public static deleteZzzodInstanceApiApiScriptsZzzodInstancesDeletePost(
-        requestBody: ZzzOdInstanceDeleteIn,
-    ): CancelablePromise<ZzzOdInstancesOut> {
+    public static getZzzodSlotsApiApiScriptsZzzodSlotsGet(
+        scriptId: string,
+    ): CancelablePromise<ZzzOdSlotsOut> {
         return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/scripts/zzzod/instances/delete',
-            body: requestBody,
-            mediaType: 'application/json',
+            method: 'GET',
+            url: '/api/scripts/zzzod/slots',
+            query: {
+                'scriptId': scriptId,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 获取实例槽回收池（被删用户/脚本留下的槽内容与备份池快照）
+     * 槽目录按安装根指纹归池，跨脚本共享；只有 ``kind=slot`` 的条目可恢复。
+     * @param scriptId
+     * @returns ZzzOdRecycleOut Successful Response
+     * @throws ApiError
+     */
+    public static getZzzodRecycleApiApiScriptsZzzodRecycleGet(
+        scriptId: string,
+    ): CancelablePromise<ZzzOdRecycleOut> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/scripts/zzzod/recycle',
+            query: {
+                'scriptId': scriptId,
+            },
             errors: {
                 422: `Validation Error`,
             },

@@ -65,6 +65,18 @@ export const summarizeCultivate = (enabled: boolean, targetsJson: string) => {
   return count ? `${count} 名干员` : '尚未添加养成目标'
 }
 
+export const summarizeDepot = (enabled: boolean, plansJson: string) => {
+  if (!enabled) return ''
+  let count = 0
+  try {
+    const parsed = JSON.parse(plansJson || '[]')
+    count = Array.isArray(parsed) ? parsed.length : 0
+  } catch {
+    count = 0
+  }
+  return count ? `${count} 项计划` : '尚未添加计划'
+}
+
 export const INFRAST_MODE_OPTIONS = [
   { label: '常规模式', value: 'Normal' },
   { label: '一键轮休', value: 'Rotation' },

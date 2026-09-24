@@ -1012,6 +1012,11 @@ class MaaUserConfig(ConfigBase):
         self.Data_CustomInfrast = ConfigItem(
             "Data", "CustomInfrast", "{ }", JSONValidator()
         )
+        ## 无时段排班表下一班的索引：每用户一份、由 MAS 在基建换班完成后推进；
+        ## 带时段表交 MAA 按时段选班，不读它
+        self.Data_InfrastPlanIndex = ConfigItem(
+            "Data", "InfrastPlanIndex", 0, RangeValidator(0, 9999)
+        )
 
         ## Task ------------------------------------------------------------
         ## 是否自动唤醒
@@ -1030,13 +1035,13 @@ class MaaUserConfig(ConfigBase):
         self.Task_IfSwitchTheme = ConfigItem(
             "Task", "IfSwitchTheme", False, BoolValidator()
         )
-        ## 是否生息演算
-        self.Task_IfReclamation = ConfigItem(
-            "Task", "IfReclamation", False, BoolValidator()
-        )
         ## 是否库存保持
         self.Task_IfDepotMaintain = ConfigItem(
             "Task", "IfDepotMaintain", False, BoolValidator()
+        )
+        ## 库存保持计划（快速配置面板维护；MAA 侧同名 PlanList 为透传载体）
+        self.Task_DepotMaintainPlans = ConfigItem(
+            "Task", "DepotMaintainPlans", "[]", JSONValidator(list)
         )
         ## 是否每月自动购买一次绿票商店
         self.Task_IfGreenTicketStore = ConfigItem(
@@ -1631,7 +1636,14 @@ class MaaEndConfig(ConfigBase):
             "Game", "CloseOnFinish", True, BoolValidator()
         )
 
-        ## 关闭游戏时恢复分辨率或显示模式；关闭时完全沿用原生设置
+        ## 关闭游戏时恢复的显示模式，与具体分辨率独立配置
+        self.Game_RestoreDisplayType = ConfigItem(
+            "Game",
+            "RestoreDisplayType",
+            "Window",
+            OptionsValidator(["Window", "Fullscreen"]),
+        )
+        ## 关闭游戏时恢复分辨率；Original 复用启动前读取的注册表值
         self.Game_RestoreResolution = ConfigItem(
             "Game",
             "RestoreResolution",
@@ -1639,10 +1651,10 @@ class MaaEndConfig(ConfigBase):
             OptionsValidator(
                 [
                     "Off",
+                    "Original",
                     "1920x1080",
                     "2560x1440",
                     "3840x2160",
-                    "Fullscreen",
                     "Custom",
                 ]
             ),
@@ -1661,14 +1673,25 @@ class MaaEndConfig(ConfigBase):
         super().__init__()
 
     async def load(self, data: dict) -> bool:
+        data = deepcopy(data)
+        game_data = data.get("Game") if isinstance(data, dict) else None
+        migrated = (
+            isinstance(game_data, dict)
+            and game_data.get("RestoreResolution") == "Fullscreen"
+        )
+        if migrated:
+            game_data["RestoreDisplayType"] = "Fullscreen"
+            game_data["RestoreResolution"] = "1920x1080"
         is_dirty = await super().load(data)
+        if migrated and not is_dirty:
+            await self._commit_changes()
         root_path_value = str(self.get("Info", "Path")).strip()
         resource_interface_path = Path(root_path_value) / "interface.json"
         if root_path_value and resource_interface_path.is_file():
             # 预加载搬入后台：MaaEnd 资源链的 import（约 270ms）与磁盘读取
             # 不再阻塞启动路径，资源就绪后仍会缓存到用户配置
             self._preload_task = asyncio.create_task(self.preload_resource())
-        return is_dirty
+        return is_dirty or migrated
 
     async def preload_resource(self) -> None:
         """尝试预加载 MaaEnd 动态资源，失败时保留现有配置。"""
@@ -2953,6 +2976,13 @@ class MaaFWConfig(ConfigBase):
         self.Update_MirrorChyanCDK = ConfigItem(
             "Update", "MirrorChyanCDK", "", EncryptValidator()
         )
+        ## 脚本级网络代理，给这个项目的更新包下载与运行环境安装（uv / pip、
+        ## binding 源码兜底）用。与 CDK / 渠道不同，这一项**留空就跟随全局**
+        ## `Update.ProxyAddress`（设置 → 其他 → 网络代理），填了就只走自己的：
+        ## 代理解决的是「这台机器连不连得上」，多数人全局一份就够，个别项目
+        ## 的源在别的网络才需要单独指。格式同全局项，`host:port` 不带协议时
+        ## 补 `http://`（合并逻辑见 tools/embedded/update_credentials.py）。
+        self.Update_ProxyAddress = ConfigItem("Update", "ProxyAddress", "")
         ## [已废弃] GitHub 仓库/tag/asset 覆盖：仓库与资产名改为从 interface.json
         ## 和目录名自动推导，运行流程不再读取；保留一个版本兼容旧配置文件后删除。
         self.Update_GitHubRepo = ConfigItem("Update", "GitHubRepo", "")
@@ -4258,8 +4288,9 @@ class ZzzOdUserConfig(ConfigBase):
         )
         ## 绑定的 zzz-od 实例槽下标（运行/配置会话内临时合成视图写回原生配置，非持久注册）：-1=未分配，首次运行或
         ## 「在一条龙内配置」时自动分配空闲 idx 并锁定该槽至会话结束，
-        ## 此后配置会话与运行时注入都固定使用该槽
-        self.Info_SlotIdx = ConfigItem("Info", "SlotIdx", -1, RangeValidator(-1, 999))
+        ## 此后配置会话与运行时注入都固定使用该槽。新槽从 MAS_SLOT_BASE（1001）起，
+        ## 退到一条龙「升序找最小空号」够不到的高位段（上限 9999 与之一致放宽）
+        self.Info_SlotIdx = ConfigItem("Info", "SlotIdx", -1, RangeValidator(-1, 9999))
         ## 一条龙启动器选择（直控/用户两态通用）：
         ## 自动 = 优先用「上次成功」的启动器，启动失败自动换另一个重试并记住下一次
         ## 成功的那个；原始/集成 = 固定用对应启动器（对应 exe 未安装时回退可用项）
@@ -4945,6 +4976,15 @@ class GlobalConfig(ConfigBase):
         )
         ## 代理地址
         self.Update_ProxyAddress = ConfigItem("Update", "ProxyAddress", "")
+        ## GitHub 加速镜像
+        ## **只影响 MFW 项目包从 GitHub Release 下载这一条路**（脚本的
+        ## `Update.Source` 选 GitHub 时）：国内直连 GitHub 常年 100 多 KB/s，
+        ## 359MB 的全量包要四十分钟。`Auto` 依次试镜像、全部失败再回直连；
+        ## `Off` 只直连。MAS 自身的更新与初始化 clone 走前端 mirrorService，
+        ## 不读这一项；Mirror 酱是另一个源，也不受它影响。
+        self.Update_GitHubMirror = ConfigItem(
+            "Update", "GitHubMirror", "Auto", OptionsValidator(["Auto", "Off"])
+        )
         ## 镜像站 CDK
         self.Update_MirrorChyanCDK = ConfigItem(
             "Update", "MirrorChyanCDK", "", EncryptValidator()

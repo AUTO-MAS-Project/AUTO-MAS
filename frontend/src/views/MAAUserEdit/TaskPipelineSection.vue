@@ -197,14 +197,29 @@
         />
       </PipelineRow>
 
-      <!-- 库存保持：MAS 只管开关，计划列表等高级设置交给 MAA 自己的界面 -->
+      <!-- 库存保持：日常流程中的独立任务，固定与计划表模式下均可启用 -->
       <PipelineRow
         :name="t('edit.maaDepot')"
-        :summary="t('edit.maaDepotHint')"
+        :summary="depotSummary"
         :checked="formData.Task.IfDepotMaintain"
         :disabled="loading"
         @change="emitSave('Task.IfDepotMaintain', $event)"
-      />
+      >
+        <DepotMaintainPlanEditor
+          :form-data="formData"
+          :loading="loading"
+          :stage-options="stageOptions"
+          :item-options="depotItemOptions"
+          :item-options-loading="depotItemOptionsLoading"
+          :item-options-error="depotItemOptionsError"
+          :stage-candidates="depotStageCandidates"
+          :stage-candidates-loading="depotStageCandidatesLoading"
+          :inventory="depotInventory"
+          :depot-inventory-time="depotInventoryTime"
+          :load-stage-candidates="loadDepotStageCandidates"
+          @save="emitSave"
+        />
+      </PipelineRow>
 
       <!-- 理智作战 -->
       <PipelineRow
@@ -328,6 +343,7 @@ import { useI18n } from 'vue-i18n'
 import { computed } from 'vue'
 import PipelineRow from './PipelineRow.vue'
 import LabelWithHint from './LabelWithHint.vue'
+import DepotMaintainPlanEditor from './DepotMaintainPlanEditor.vue'
 
 import CultivateTargetEditor from './CultivateTargetEditor.vue'
 import type {
@@ -343,6 +359,7 @@ import {
   summarizeActivity,
   summarizeAnnihilation,
   summarizeCultivate,
+  summarizeDepot,
   summarizeInfrast,
 } from './taskSummaries'
 
@@ -395,7 +412,7 @@ const props = defineProps<{
   infrastructureImporting: boolean
   infrastructureOptions: InfrastPlanOption[]
   infrastructureOptionsLoading: boolean
-  /** 当前基建班次索引（-1=按时段自动；来自 MAA 配置，MAA 原生推进） */
+  /** 当前基建班次索引（时段表恒为 -1；无时段表是下次开始的班，由 MAS 推进） */
   infrastPlanSelect: number
   /** 排班表时段形态（后端判定: period/rotate/mixed/empty） */
   infrastPlanState: string
@@ -470,11 +487,13 @@ const infrastLabelWithPeriod = (option: InfrastPlanOption) =>
     ? t('edit.maaCustomInfrastPlanWithPeriod', { name: option.label, period: option.period })
     : option.label
 
+// 时段表由 MAA 按钟点选班，班次只展示不可选；无时段表可手选起始班
 const infrastSelectOptions = computed(() => [
   { label: infrastAutoLabel.value, value: '-1' },
   ...props.infrastructureOptions.map(option => ({
     label: infrastLabelWithPeriod(option),
     value: option.value,
+    disabled: props.infrastPlanState === 'period',
   })),
 ])
 
@@ -522,6 +541,10 @@ const infrastSummary = computed(() => {
 
 const cultivateSummary = computed(() =>
   summarizeCultivate(formData.value.Task.IfCultivate, formData.value.Task.CultivateTargets)
+)
+
+const depotSummary = computed(() =>
+  summarizeDepot(formData.value.Task.IfDepotMaintain, formData.value.Task.DepotMaintainPlans)
 )
 
 const greenTicketStoreDoneThisMonth = computed(

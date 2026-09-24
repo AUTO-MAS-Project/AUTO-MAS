@@ -162,6 +162,28 @@ def _save_game_sign_result_snapshot(
         logger.warning(f"保存游戏社区结果快照失败: {e}")
 
 
+def _parse_maa_drop_count(text: str) -> int:
+    """把 MAA 掉落行中的数量换算成整数。
+
+    MAA 对较大数量输出 ``1.5k``（≥1 万）与 ``1.2M``（≥100 万）缩写（不区分
+    大小写），其余为 ``864`` 或 ``9,999`` 形态。
+
+    Args:
+        text: 掉落行中的数量原文。
+
+    Returns:
+        换算后的整数数量。
+    """
+
+    text = text.replace(",", "")
+    multiplier = 1
+    if text[-1:] in ("k", "K"):
+        multiplier, text = 1000, text[:-1]
+    elif text[-1:] in ("m", "M"):
+        multiplier, text = 1_000_000, text[:-1]
+    return round(float(text) * multiplier)
+
+
 def _parse_maa_drop_statistics(logs: list[str]) -> dict[str, dict[str, int]]:
     """按理智任务边界解析 MAA 日志中的关卡掉落统计。
 
@@ -251,16 +273,12 @@ def _parse_maa_drop_statistics(logs: list[str]) -> dict[str, dict[str, int]]:
                 continue
 
             item_match: list[tuple[str, str]] = re.findall(
-                r"^(?!\[)(\S+?)\s*:\s*([\d,]+[kK]?)(?:\s*\(\+[\d,]+[kK]?\))?",
+                r"^(?!\[)(\S+?)\s*:\s*([\d,]+(?:\.\d+)?[kKmM]?)(?:\s*\(\+[\d,]+(?:\.\d+)?[kKmM]?\))?",
                 line,
                 re.M,
             )
             for item, total in item_match:
-                total = total.replace(",", "")
-                if total.lower().endswith("k"):
-                    total = int(total[:-1]) * 1000
-                else:
-                    total = int(total)
+                total = _parse_maa_drop_count(total)
 
                 if item not in [
                     "当前次数",
@@ -299,7 +317,7 @@ def normalize_proxy_address(raw: str | None) -> str | None:
 
 
 class AppConfig(GlobalConfig):
-    VERSION = "v5.5.0-beta.7"
+    VERSION = "v5.5.0"
 
     def __init__(self) -> None:
         super().__init__()
@@ -910,7 +928,24 @@ class AppConfig(GlobalConfig):
         if not root_path:
             raise ValueError("MaaEnd 路径未配置")
 
-        return script_config.get_loaded_resource()
+        options = script_config.get_loaded_resource()
+        game_path = str(script_config.get("Game", "Path") or "").strip()
+        if game_path:
+            from app.task.MaaFW.tools.embedded.game_resolution import (
+                read_unity_display_type,
+                read_unity_resolution,
+            )
+
+            exe_path = Path(game_path)
+            original = await asyncio.to_thread(read_unity_resolution, exe_path)
+            if original is not None:
+                options["originalResolution"] = f"{original[0]}x{original[1]}"
+            options["originalDisplayType"] = await asyncio.to_thread(
+                read_unity_display_type,
+                exe_path,
+                preferred_value_name="video_full_screen_h1998742411",
+            )
+        return options
 
     def get_baah_config_names(self, script_id: str) -> list[str]:
         """读取指定 BAAH 安装目录下已有的配置文件名（不含 .json 后缀）。"""
@@ -962,6 +997,23 @@ class AppConfig(GlobalConfig):
             for key, value in queue.QueueItem.items():
                 if value.get("Info", "ScriptId") == str(uid):
                     await queue.QueueItem.remove(key)
+
+        # ZzzOd：删除脚本前回收该脚本全部用户的绑定槽（归档后删目录）——槽目录
+        # 挂在一条龙安装目录里，不回收就永久残留；mas 备份池随 data/{script_id}
+        # 一起删除，回收池挂在项目级、按安装根分桶，才是删脚本后的存底
+        script_config = self.ScriptConfig[uid]
+        if isinstance(script_config, ZzzOdConfig):
+            for user_uid in list(script_config.UserData.keys()):
+                await self._zzzod_recycle_user_slot(
+                    script_id,
+                    script_config,
+                    user_uid,
+                    action="删除脚本",
+                    # 整个脚本都在移除：同脚本用户间的相互占用不挡回收
+                    # （否则共享同一槽的用户双双跳过，mas 备份池随 data/{script_id}
+                    # 整删且未经归档，恢复历史丢失）
+                    exclude_same_script=True,
+                )
 
         await self.ScriptConfig.remove(uid)
         # 数据目录里可能有只读文件（如脚本配置目录快照带进来的 .git 对象）：裸
@@ -1309,7 +1361,7 @@ class AppConfig(GlobalConfig):
         ]
 
     def add_zzzod_instance(self, script_id: str, name: str) -> list[dict]:
-        """直控：新建一条龙实例（最小空闲槽避开原生与跨脚本 MAS 绑定槽）。
+        """直控：新建一条龙实例（最小空闲槽避开原生与本安装的 MAS 绑定槽）。
 
         变更注册表与实例目录前先归档原生配置（指纹去重），保证可恢复。
         """
@@ -1321,7 +1373,7 @@ class AppConfig(GlobalConfig):
         from app.task.ZzzOd.tools import add_instance
 
         self.ensure_zzzod_direct_backup(script_id)
-        idx = add_instance(root, name, collect_used_slot_idxs())
+        idx = add_instance(root, name, collect_used_slot_idxs(root))
         logger.info(f"ZZZ-OD 直控新建实例: 槽 {idx:02d} (名称 {name})")
         return self.get_zzzod_instances(script_id)
 
@@ -1412,9 +1464,188 @@ class AppConfig(GlobalConfig):
         from app.task.ZzzOd.tools import remove_instance
 
         self.ensure_zzzod_direct_backup(script_id)
-        remove_instance(root, instance_idx, protected_idxs=collect_used_slot_idxs())
+        remove_instance(root, instance_idx, protected_idxs=collect_used_slot_idxs(root))
         logger.info(f"ZZZ-OD 直控删除实例: {instance_idx:02d}")
         return self.get_zzzod_instances(script_id)
+
+    def get_zzzod_slots(self, script_id: str) -> list[dict]:
+        """实例槽总览：原生实例 / MAS 绑定槽 / 无主残留（含未落盘的绑定）。
+
+        槽目录是 MAS 分配在一条龙安装目录里的，注册表里没有它、GUI 看不见，
+        「槽目录数为什么和用户数对不上」只能靠这份对照表看清：``kind`` 与
+        ``has_dir`` 一起看——绑定但没跑过的用户是「mas 且无目录」。
+
+        Raises:
+            ConfigCorruptedError: 一条龙注册表不可读（原生名单缺失，不能把
+                原生实例误标成无主残留）。
+        """
+
+        from app.task.ZzzOd.AutoProxy import collect_slot_owners
+        from app.task.ZzzOd.tools import list_slot_overview
+
+        script_config = self._zzzod_script_config(script_id)
+        root = self._zzzod_root(script_config)
+        return list_slot_overview(root, collect_slot_owners(root))
+
+    def _ensure_zzzod_install_unlocked(self, root: Path) -> None:
+        """任一指向同一安装的 ZzzOd 脚本正在运行时拒绝槽级写操作。
+
+        槽目录跨脚本共享同一份安装目录：另一脚本运行中时，其用户的绑定号
+        可能尚未持久化（首跑的 SlotIdx 只写在运行期副本，final_task 才回写），
+        持久配置里的占用判定读不到——此时清理/恢复会误动在跑用户的槽。
+
+        Raises:
+            RuntimeError: 有同安装的 ZzzOd 脚本处于运行中。
+        """
+
+        from app.utils.config_archive import config_root_key
+
+        key = config_root_key(root)
+        for script_config in self.ScriptConfig.values():
+            if (
+                not isinstance(script_config, ZzzOdConfig)
+                or not script_config.is_locked
+            ):
+                continue
+            script_root = str(script_config.get("Info", "RootPath") or "").strip()
+            if script_root and config_root_key(script_root) == key:
+                raise RuntimeError("有正在运行的绝区零一条龙脚本, 请结束后再试")
+
+    def clean_zzzod_slots(self, script_id: str) -> list[int]:
+        """手动清理该安装下无人绑定的实例槽，返回实际回收的槽号。
+
+        与运行/会话前的自动回收同源（先归档进回收池再删目录；原生实例与
+        被任一 ZzzOd 用户绑定的槽不动），但范围更宽、且失败会抛出：手动清理
+        不受「只收归属用户已不存在的号」的台账限制（来路不明的残留正是用户要清的
+        对象），注册表缺失/损坏也直接报错，界面才能说明「为什么没清」。
+        直控用户显式发起即可，不受「直控零写入」约束——那条约束管的是 MAS
+        在运行期间自行写安装目录。
+
+        Raises:
+            RuntimeError: 有同安装的 ZzzOd 脚本正在运行（在跑用户的绑定号
+                可能未持久化，清理会误收其槽）。
+            ValueError: 一条龙注册表不存在或不可读（无从判定无主槽）。
+        """
+
+        from app.task.ZzzOd.AutoProxy import recycle_unbound_slots
+
+        script_config = self._zzzod_script_config(script_id)
+        root = self._zzzod_root(script_config)
+        self._ensure_zzzod_install_unlocked(root)
+        return recycle_unbound_slots(root, only_allocated=False, swallow=False)
+
+    def get_zzzod_recycle(self, script_id: str) -> list[dict]:
+        """回收池条目（被删用户/脚本留下的槽内容与该槽 MAS 备份池快照）。"""
+
+        from app.task.ZzzOd.tools import list_recycle_entries
+
+        script_config = self._zzzod_script_config(script_id)
+        return list_recycle_entries(self._zzzod_root(script_config))
+
+    def clear_zzzod_recycle(self, script_id: str) -> int:
+        """清空本安装的回收池，返回删除的条目数。
+
+        只删 recycle 池（被删用户/脚本留下的存底）；``onedragon`` 原生池与
+        mas 配置恢复池在别的子树，不受影响。
+
+        Raises:
+            RuntimeError: 有同安装的 ZzzOd 脚本正在运行——运行路径会向回收池
+                归档存底（注入前回收、撞号存底），并发清空会互相踩。
+        """
+
+        from app.task.ZzzOd.tools import clear_recycle_pool
+
+        script_config = self._zzzod_script_config(script_id)
+        root = self._zzzod_root(script_config)
+        self._ensure_zzzod_install_unlocked(root)
+        return clear_recycle_pool(root)
+
+    async def restore_zzzod_recycle(
+        self,
+        script_id: str,
+        slot_idx: int,
+        ts: str,
+        *,
+        target_user: str | None = None,
+        new_user_name: str | None = None,
+    ) -> tuple[int, str]:
+        """把回收池里的一条槽快照恢复给某个 MAS 用户（现有用户或新建用户）。
+
+        恢复的落点是**用户的绑定槽**，而不是某个裸槽号：只把内容物化到
+        ``config/NN`` 而不建立绑定的恢复没有出口——MAS 下次运行不会认领它，
+        用户拿不到内容（想取出文件用回收池的「查看」直接复制）。
+
+        ``target_user`` 指定现有用户 uid；``new_user_name`` 新建一个用户并把
+        内容恢复到它的槽（名字即该值）。二者必须且只能给一个。目标用户尚无
+        绑定槽时按常规分配（含认领它上次没跑完的槽）；已有绑定槽时覆盖其内容
+        ——恢复前自动存底，误恢复可从回收池找回。
+
+        Returns:
+            ``(目标槽号, 用户名)``。
+
+        Raises:
+            RuntimeError: 有同安装的 ZzzOd 脚本正在运行，或本脚本配置已锁定
+                （恢复会写 ``config/NN`` 与用户绑定号，可能与在跑任务竞态）。
+            ValueError: 恢复目标非法（两个都给/都不给、新用户名为空、指定用户
+                不属于该脚本），或回收条目不存在/内容为空。条目问题先于建用户
+                判定，恢复中失败也会把刚建的用户撤掉，不留半成品。
+        """
+
+        from app.task.ZzzOd.AutoProxy import collect_used_slot_idxs, ensure_user_slot
+        from app.task.ZzzOd.tools import restore_recycle_slot
+        from app.task.ZzzOd.tools.backup_archive import recycle_backup_root
+        from app.utils.config_archive import get_backup_dir
+
+        script_config = self._zzzod_script_config(script_id)
+        root = self._zzzod_root(script_config)
+        self._ensure_zzzod_install_unlocked(root)
+        if script_config.is_locked:
+            raise RuntimeError("脚本正在运行, 请结束后再试")
+        if bool(target_user) == bool(new_user_name):
+            raise ValueError("恢复目标必须且只能选一个：现有用户或新建用户")
+        # 先验明快照在场再动手：建用户、写绑定都是持久化的，等写完才发现
+        # 条目不对就留下一个没内容的半成品用户
+        if get_backup_dir(recycle_backup_root(root, slot_idx), ts) is None:
+            raise ValueError(f"备份不存在: {ts}")
+
+        created_uid: uuid.UUID | None = None
+        try:
+            if new_user_name is not None:
+                name = str(new_user_name).strip()
+                if not name:
+                    raise ValueError("新用户名称不能为空")
+                # 与「添加用户」同一入口（含持久化）；锁定时它自己会拒绝
+                uid, user_cfg = await self.add_user(script_id)
+                created_uid = uid
+                await user_cfg.set("Info", "Name", name)
+            else:
+                _, _, user_cfg, uid = self._zzzod_user(script_id, str(target_user))
+                name = str(user_cfg.get("Info", "Name") or "")
+
+            used = collect_used_slot_idxs(root, exclude_uids={uid})
+            dest = await ensure_user_slot(
+                root, user_cfg, used, script_id=script_id, owner_uid=str(uid)
+            )
+            # 存底 + 整目录替换是阻塞 IO（拷贝槽目录），放线程里跑
+            await asyncio.to_thread(
+                restore_recycle_slot, root, slot_idx, ts, target_slot=dest
+            )
+        except Exception:
+            # 恢复中失败把刚建的用户撤掉：留着它会是个没内容的半成品用户；
+            # 它的槽随后因归属消失被自动回收（内容已在回收池存底，可再恢复）
+            if created_uid is not None:
+                try:
+                    await script_config.UserData.remove(created_uid)
+                except Exception as e:
+                    logger.opt(exception=True).warning(
+                        f"恢复失败后撤回新建用户失败（请手动删除）: {e}"
+                    )
+            raise
+        logger.info(
+            f"ZZZ-OD 槽 {slot_idx:02d} 已从回收池恢复到用户「{name}」的槽 "
+            f"{dest:02d} 快照 {ts}"
+        )
+        return dest, name
 
     def _zzzod_user(
         self, script_id: str, user_id: str
@@ -1575,8 +1806,10 @@ class AppConfig(GlobalConfig):
             )
 
             _, _, user_cfg, uid = self._zzzod_user(script_id, user_id)
-            used = collect_used_slot_idxs(exclude_uids={uid})
-            slot = await ensure_user_slot(root, user_cfg, used)
+            used = collect_used_slot_idxs(root, exclude_uids={uid})
+            slot = await ensure_user_slot(
+                root, user_cfg, used, script_id=script_id, owner_uid=str(uid)
+            )
 
         current = read_app_config(root, slot, app_id) if slot > 0 else {}
         patch: dict = {}
@@ -1723,8 +1956,10 @@ class AppConfig(GlobalConfig):
             )
 
             _, root, user_cfg, uid = self._zzzod_user(script_id, user_id)
-            used = collect_used_slot_idxs(exclude_uids={uid})
-            slot = await ensure_user_slot(root, user_cfg, used)
+            used = collect_used_slot_idxs(root, exclude_uids={uid})
+            slot = await ensure_user_slot(
+                root, user_cfg, used, script_id=script_id, owner_uid=str(uid)
+            )
 
         saved = write_team_list(
             instance_dir(self._zzzod_script_root(script_id), slot), teams
@@ -1980,7 +2215,11 @@ class AppConfig(GlobalConfig):
         slot = int(user_cfg.get("Info", "SlotIdx") or -1)
         if slot <= 0:
             slot = await ensure_user_slot(
-                root, user_cfg, collect_used_slot_idxs(exclude_uids={uid})
+                root,
+                user_cfg,
+                collect_used_slot_idxs(root, exclude_uids={uid}),
+                script_id=script_id,
+                owner_uid=str(uid),
             )
         target_dir = instance_dir(root, slot)
         target_dir.mkdir(parents=True, exist_ok=True)
@@ -2029,21 +2268,42 @@ class AppConfig(GlobalConfig):
         }
 
     def _zzzod_slot_occupant(
-        self, root: Path, script_id: str, user_uid: uuid.UUID, slot: int
+        self,
+        root: Path,
+        script_id: str,
+        user_uid: uuid.UUID | None,
+        slot: int,
+        *,
+        exclude_same_script: bool = False,
     ) -> str | None:
         """判定目标实例槽当前被谁占用（返回可读描述；空闲/仅本用户时 None）。
 
-        占用者可能是：其他 ZzzOd 脚本/同脚本其他用户（按 ``Info.SlotIdx``
-        绑定）或一条龙原生实例（按原生注册表）。注册表源走原生原件（合成
-        视图在盘时读 sidecar），与备份口径一致。仅本用户绑定或槽目录虽在但
-        无人认领（孤儿槽）视为空闲——孤儿槽可被恢复重新认领。
+        占用者可能是：指向同一份安装的其他 ZzzOd 脚本/同脚本其他用户（按
+        ``Info.SlotIdx`` 绑定）或一条龙原生实例（按原生注册表）。绑定只算
+        指向本安装的脚本——槽目录按安装目录隔离，别的安装的同号槽互不相干。
+        注册表源走原生原件（合成视图在盘时读 sidecar），与备份口径一致。
+        仅本用户绑定或槽目录虽在但无人认领（孤儿槽）视为空闲——孤儿槽可被
+        恢复重新认领。``user_uid=None`` 表示不排除任何用户（回收池恢复这类
+        没有用户上下文的场景：任何绑定都算占用）。
+
+        ``exclude_same_script=True``：忽略本脚本内用户的绑定占用（仅剩其他
+        脚本与原生实例算占用）——删脚本时整个脚本都在移除，同脚本用户间的
+        相互占用不该挡住回收（否则共享同一槽的两个用户会互相把对方当占用、
+        双双跳过，槽与备份池残留）。
         """
 
         from app.task.ZzzOd.tools import read_native_registry
+        from app.utils.config_archive import config_root_key
 
         # 1) 其他 ZzzOd 用户（含其他脚本）按 SlotIdx 绑定占用
-        for script_config in self.ScriptConfig.values():
+        key = config_root_key(root)
+        for script_uid, script_config in self.ScriptConfig.items():
             if not isinstance(script_config, ZzzOdConfig):
+                continue
+            if exclude_same_script and str(script_uid) == script_id:
+                continue
+            script_root = str(script_config.get("Info", "RootPath") or "").strip()
+            if not script_root or config_root_key(script_root) != key:
                 continue
             script_name = str(script_config.get("Info", "Name") or "未知脚本")
             for other_uid, cfg in script_config.UserData.items():
@@ -2061,6 +2321,98 @@ class AppConfig(GlobalConfig):
             if int(item.get("idx", -1)) == slot:
                 return str(item.get("name") or f"原生实例 {slot:02d}")
         return None
+
+    async def _zzzod_recycle_user_slot(
+        self,
+        script_id: str,
+        script_config: ZzzOdConfig,
+        user_uid: uuid.UUID,
+        *,
+        action: str,
+        exclude_same_script: bool = False,
+    ) -> None:
+        """回收用户的绑定槽（del_script 循环用；del_user 走 _zzzod_recycle_bound_slot）。"""
+
+        if user_uid not in script_config.UserData:
+            return
+        user_cfg = script_config.UserData[user_uid]
+        slot = int(user_cfg.get("Info", "SlotIdx") or -1)
+        if slot <= 0:
+            return
+        name = str(user_cfg.get("Info", "Name") or "")
+        await self._zzzod_recycle_bound_slot(
+            script_id,
+            script_config,
+            user_uid,
+            slot,
+            name,
+            action=action,
+            exclude_same_script=exclude_same_script,
+        )
+
+    async def _zzzod_recycle_bound_slot(
+        self,
+        script_id: str,
+        script_config: ZzzOdConfig,
+        user_uid: uuid.UUID | None,
+        slot: int,
+        name: str,
+        *,
+        action: str,
+        exclude_same_script: bool = False,
+    ) -> None:
+        """回收一个已知的绑定槽：归档进项目级回收池后删除槽目录（幂等）。
+
+        槽目录是 MAS 分配在一条龙安装目录里的，注册表里没有它、GUI 看不见，
+        直控删实例还受绑定保护，用户/脚本删除后没有任何出口能清掉——只能在
+        删除动作里一并回收，否则永久残留并占着 idx。仍被原生实例或其他
+        ZzzOd 用户占用时跳过（那是别人的槽）；安装目录失效、注册表不可读时
+        也跳过。删除动作不因回收失败中断（每一步的失败都只告警）。
+
+        槽的 MAS 备份池一并回收：mas 池按（脚本, 槽）分桶、没有用户维度，
+        槽号分给新用户后留在原位会串到别人名下（见
+        :func:`app.task.ZzzOd.tools.recycle_mas_backups`）。槽目录收走后该号
+        同时移出分配台账（台账只记 MAS 手上还在用的号）。
+
+        ``exclude_same_script``：删脚本时传 True——整个脚本都在移除，同脚本
+        用户间的相互占用不挡回收（否则共享同一槽的两个用户会双双跳过，
+        mas 池随后被 data/{script_id} 整删且未经归档，恢复历史丢失）。
+        """
+
+        from app.task.ZzzOd.AutoProxy import forget_allocated_slot
+        from app.task.ZzzOd.tools import recycle_mas_backups, recycle_slot
+
+        try:
+            root = self._zzzod_root(script_config)
+        except Exception:
+            return  # 安装目录没配好或已失效，无从回收
+        try:
+            occupant = self._zzzod_slot_occupant(
+                root, script_id, user_uid, slot, exclude_same_script=exclude_same_script
+            )
+        except Exception as e:
+            logger.opt(exception=True).warning(
+                f"槽 {slot:02d} 占用判定失败，跳过回收: {e}"
+            )
+            return
+        if occupant is not None:
+            logger.warning(f"槽 {slot:02d} 仍被「{occupant}」占用，跳过回收")
+            return
+        reason = f"{action} {name}".strip()
+        # 归档 + 删目录是阻塞 IO（拷贝槽目录），放线程里跑
+        try:
+            if await asyncio.to_thread(recycle_slot, root, slot, reason=reason):
+                # 目录已收走，该号移出台账（与恢复路径同口径：台账只记「当前由
+                # MAS 持有」的号；留着它，将来同号目录再出现会被自动回收当残留
+                # 收走）。回收失败时目录还在，台账保留，仍受自动回收管辖
+                forget_allocated_slot(root, slot)
+            await asyncio.to_thread(
+                recycle_mas_backups, root, script_id, slot, reason=reason
+            )
+        except Exception as e:
+            logger.opt(exception=True).warning(
+                f"槽 {slot:02d} 回收失败，已跳过（不阻断删除）: {e}"
+            )
 
     @staticmethod
     def _preview_account_fields(account: dict) -> list[dict]:
@@ -2610,7 +2962,26 @@ class AppConfig(GlobalConfig):
         user_uid = uuid.UUID(user_id)
         script_config = self.ScriptConfig[script_uid]
 
+        # ZzzOd：用户绑定槽挂在一条龙安装目录里，删除用户必须连带回收（归档后
+        # 删目录）——否则槽目录永久残留，还占着 idx 让新用户只能往后排。
+        # 先捕获槽信息再移除：UserData.remove 在脚本锁定时抛错，回收若排在
+        # 它前面会「槽已物理删除、删除却被拒绝」，留下用户仍在的中间态
+        recycle_ctx: tuple[int, str] | None = None
+        if (
+            isinstance(script_config, ZzzOdConfig)
+            and user_uid in script_config.UserData
+        ):
+            user_cfg = script_config.UserData[user_uid]
+            slot = int(user_cfg.get("Info", "SlotIdx") or -1)
+            if slot > 0:
+                recycle_ctx = (slot, str(user_cfg.get("Info", "Name") or ""))
+
         await script_config.UserData.remove(user_uid)
+
+        if recycle_ctx is not None:
+            await self._zzzod_recycle_bound_slot(
+                script_id, script_config, user_uid, *recycle_ctx, action="删除用户"
+            )
         # 与 del_script 同理：用户数据目录里可能有只读文件，裸 rmtree 删不干净还抛异常。
         user_data_dir = Path.cwd() / f"data/{script_id}/{user_id}"
         if user_data_dir.exists():
@@ -2727,14 +3098,27 @@ class AppConfig(GlobalConfig):
             return plans, problem, infrast_plan_state(text)
         return [], "MAA 原生配置中没有基建任务", "empty"
 
+    def _infrast_plan_owned_by_mas(self, script_id: str, user_id: str) -> bool:
+        """班次指针是否由 MAS 用户字段管理, 与 set_maa 的注入判定同源。
+
+        快速配置开着时 MAS 注入排班表, 班次由 MAS 决定: 带时段表一律交 MAA 按
+        时段选班, 无时段表注入用户自己的 ``Data.InfrastPlanIndex``。关着时 MAS
+        不注入, MAA 跑的是来源配置自己的队列, 班次仍在那份配置的 PlanSelect 里。
+        """
+
+        script_config = self.ScriptConfig[uuid.UUID(script_id)]
+        user_config = script_config.UserData[uuid.UUID(user_id)]
+        return bool(user_config.get("Info", "IfQuickConfig"))
+
     async def set_infrast_plan_select(
         self, script_id: str, user_id: str, index: int
     ) -> int:
-        """把用户选定的基建班次写入该用户的事实源配置。
+        """把用户选定的基建班次写入该用户的事实源。
 
-        index 与 MAA 原生语义一致: -1=按时段自动, 0..n-1=从该班开始顺序轮换;
-        轮换推进由 MAA 原生「自动保存为下个计划」完成并经运行后回写管道存回存档。
-        写不进去时抛异常(而不是返回入参假装成功), 由接口层转成错误响应。
+        index 与 MAA 原生语义一致: -1=自动, 0..n-1=从该班开始顺序轮换。MAS 注入
+        的组合下事实源是用户配置的 ``Data.InfrastPlanIndex``(每用户一份, 推进由
+        MAS 在基建换班完成后做), 带时段表只接受 -1; 直控且关快速配置时写 MAA
+        原生配置。写不进去时抛异常(而不是返回入参假装成功), 由接口层转成错误响应。
         """
 
         script_uid = uuid.UUID(script_id)
@@ -2744,19 +3128,33 @@ class AppConfig(GlobalConfig):
             raise TypeError(f"脚本 {script_id} 不是 MAA 脚本, 无法设置基建班次")
         if index < -1:
             raise ValueError("基建班次索引不能小于 -1")
+        if user_uid not in script_config.UserData:
+            raise ValueError(f"脚本 {script_id} 下不存在用户 {user_id}")
 
         # 显式班次要落在 -1..班次数-1 内: MAA 侧只会把越界值静默修正成第一班
         # 或直接报错, 与其静默改掉用户的选择不如在入口拒绝; -1 是默认值无需校验
+        plans, problem, state = self._infrast_plans(script_id, user_id)
         if index >= 0:
-            if user_uid not in script_config.UserData:
-                raise ValueError(f"脚本 {script_id} 下不存在用户 {user_id}")
-            plans, problem, _ = self._infrast_plans(script_id, user_id)
             if problem is not None:
                 raise ValueError(f"自定义基建排班不可用, 无法设置基建班次: {problem}")
             if index >= len(plans):
                 raise ValueError(
                     f"基建班次索引 {index} 超出排班表范围, 该排班表共 {len(plans)} 个班次"
                 )
+
+        if self._infrast_plan_owned_by_mas(script_id, user_id):
+            if state == "period":
+                if index >= 0:
+                    raise ValueError(
+                        "带时间段的排班表由 MAA 按时段自动换班, 不支持手选班次"
+                    )
+                return -1
+            # 无时段表: -1(自动)即从第一班起, 指针只存 0..n-1
+            next_index = max(index, 0)
+            await script_config.UserData[user_uid].set(
+                "Data", "InfrastPlanIndex", next_index
+            )
+            return next_index
 
         config_dir = self._infrast_config_dir(script_id, user_id)
         data = read_maa_config(config_dir / "gui.new.json")
@@ -2785,13 +3183,28 @@ class AppConfig(GlobalConfig):
         return index
 
     async def get_infrast_plan_select(self, script_id: str, user_id: str) -> int:
-        """读取当前基建班次索引; 未设置过时返回 -1(按时段自动)。"""
+        """读取当前基建班次索引; 带时段表 / 未设置过时返回 -1(自动)。
+
+        MAS 注入的组合下, 无时段表返回用户字段里的指针(下次从该班开始);
+        直控且关快速配置时读 MAA 原生配置。
+        """
 
         script_uid = uuid.UUID(script_id)
         if script_uid not in self.ScriptConfig:
             return -1
-        if not isinstance(self.ScriptConfig[script_uid], MaaConfig):
+        script_config = self.ScriptConfig[script_uid]
+        if not isinstance(script_config, MaaConfig):
             return -1
+        user_uid = uuid.UUID(user_id)
+        if user_uid not in script_config.UserData:
+            return -1
+        if self._infrast_plan_owned_by_mas(script_id, user_id):
+            plans, problem, state = self._infrast_plans(script_id, user_id)
+            if problem is not None or state != "rotate":
+                return -1
+            return int(
+                script_config.UserData[user_uid].get("Data", "InfrastPlanIndex")
+            ) % len(plans)
         config_dir = self._infrast_config_dir(script_id, user_id)
         data = read_maa_config(config_dir / "gui.new.json")
         if data is None:

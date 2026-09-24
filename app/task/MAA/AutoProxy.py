@@ -154,6 +154,11 @@ _MAA_STALL_NOTICE_MARKERS = (
     # latest_time，故取带时间戳那半行的固定结尾。
     "분째 실행 중입니다",
 )
+# MAA v6.17 起内存不足走专属提示，不再带「任务出错:」前缀，实际文案是
+# 「{任务链名}」+ 下面这段。只认整段：MAA 的 MirrorChyan 更新说明里也有
+# 「任务因内存不足停止时给出专门提示…」这一条，资源热更新会把整份说明写进被监控的
+# gui.log，只用前缀匹配会把更新中途的正常运行判成内存不足，代理随即中止并反复重试。
+_MAA_OUT_OF_MEMORY_MARKER = "任务因内存不足停止，请关闭部分程序或重启 MAA 后重试"
 
 
 def _current_week_marker(now: datetime) -> str:
@@ -246,6 +251,11 @@ def _has_completed_sanity_task(log_records: list[LogRecord]) -> bool:
 
 _MAA_CONFIG_FILES = ("gui.json", "gui.new.json")
 
+# 每次注入都由 MAS 决定、不从存档取值的任务字段: MAA 运行期改了也不回写。
+# PlanSelect 是 MAA 跑完基建后自增的班次指针, 脚本模式下存档全脚本共用,
+# 回写会让多个自定义基建用户互相拨对方的班次。
+_MAA_TASK_KEYS_NOT_MERGED = frozenset({"PlanSelect"})
+
 _MAA_GUI_SKELETON: dict[str, dict] = {
     "gui.json": {"Current": "Default", "Global": {}, "Configurations": {"Default": {}}},
     "gui.new.json": {"Configurations": {"Default": {}}, "Timers": {"List": []}},
@@ -292,6 +302,7 @@ def _merge_task_queue(
     current_queue: list,
     *,
     drop_missing: bool = True,
+    ignore_keys: frozenset[str] = frozenset(),
 ) -> bool:
     """按 (TaskType, Name) 把运行期任务队列相对基线的变更合并进存档队列。
 
@@ -304,6 +315,8 @@ def _merge_task_queue(
     存档一并移除、下次按默认重建; False(脚本设置会话)时保留——设置会话里
     MAA 用自己的默认队列保存, 合成任务从当前队列消失是回写行为而非用户删除,
     不能据此抹掉存档里用户在这些任务上的高级字段。
+
+    ignore_keys 里的字段不回写: 由 MAS 每次注入决定、MAA 运行期改了也不算数。
     """
 
     if not isinstance(archive_queue, list) or not isinstance(baseline_queue, list):
@@ -344,6 +357,8 @@ def _merge_task_queue(
         else:
             target = archive_queue[target_index]
         for key_, value in task.items():
+            if key_ in ignore_keys:
+                continue
             if base_task.get(key_) != value and target.get(key_) != value:
                 target[key_] = deepcopy(value)
                 changed = True
@@ -373,6 +388,7 @@ def _merge_maa_changes(
     current: dict | list,
     *,
     drop_missing: bool = True,
+    ignore_keys: frozenset[str] = frozenset(),
 ) -> bool:
     """把 MAA 运行期配置相对基线快照的增改原地合并进来源存档。
 
@@ -399,7 +415,11 @@ def _merge_maa_changes(
                     continue
                 changed = (
                     _merge_maa_changes(
-                        archive[key], base_value, value, drop_missing=drop_missing
+                        archive[key],
+                        base_value,
+                        value,
+                        drop_missing=drop_missing,
+                        ignore_keys=ignore_keys,
                     )
                     or changed
                 )
@@ -410,6 +430,7 @@ def _merge_maa_changes(
                         base_value,
                         value,
                         drop_missing=drop_missing,
+                        ignore_keys=ignore_keys,
                     )
                     or changed
                 )
@@ -426,6 +447,7 @@ def _merge_maa_config_file(
     scheme: str,
     *,
     drop_missing: bool = True,
+    ignore_keys: frozenset[str] = frozenset(),
 ) -> bool:
     """按生效方案合并一份 MAA 配置, 返回是否有变更。
 
@@ -435,19 +457,35 @@ def _merge_maa_config_file(
     """
 
     if scheme == "Default":
-        return _merge_maa_changes(archive, baseline, current, drop_missing=drop_missing)
+        return _merge_maa_changes(
+            archive,
+            baseline,
+            current,
+            drop_missing=drop_missing,
+            ignore_keys=ignore_keys,
+        )
 
     configurations = archive.get("Configurations")
     if not isinstance(configurations, dict) or not isinstance(
         configurations.get(scheme), dict
     ):
-        return _merge_maa_changes(archive, baseline, current, drop_missing=drop_missing)
+        return _merge_maa_changes(
+            archive,
+            baseline,
+            current,
+            drop_missing=drop_missing,
+            ignore_keys=ignore_keys,
+        )
 
     original_default = configurations.get("Default")
     configurations["Default"] = configurations[scheme]
     try:
         changed = _merge_maa_changes(
-            archive, baseline, current, drop_missing=drop_missing
+            archive,
+            baseline,
+            current,
+            drop_missing=drop_missing,
+            ignore_keys=ignore_keys,
         )
     finally:
         merged = configurations["Default"]
@@ -521,6 +559,67 @@ def _repair_maa_task_queue(source_queue: list[dict]) -> list[dict]:
         _with_type_first(task) if isinstance(task, dict) else task
         for task in source_queue
     ]
+
+
+def _build_depot_maintain_task(
+    plans_json: str,
+    source_task: dict | None = None,
+) -> dict:
+    """生成 MAA 库存保持任务配置。
+
+    只覆盖 MAS 面板管理的 Stage/DropId/DropCount；其余字段（含用户在 MAA 里设的
+    UseMedicine/UseStone 等）从来源任务整条透传——上游私有格式只做值经手，
+    不按 MAS 口径改写其语义。
+    """
+
+    source_task = source_task or {}
+    source_plans = source_task.get("PlanList") or []
+    if not isinstance(source_plans, list):
+        source_plans = []
+
+    plans = []
+    for plan in json.loads(plans_json):
+        if (
+            isinstance(plan, dict)
+            and isinstance(plan.get("Stage"), str)
+            and bool(plan["Stage"])
+            and isinstance(plan.get("DropId"), str)
+            and bool(plan["DropId"])
+            and isinstance(plan.get("DropCount"), int)
+            and not isinstance(plan.get("DropCount"), bool)
+            and plan["DropCount"] > 0
+        ):
+            source_plan = next(
+                (
+                    item
+                    for item in source_plans
+                    if isinstance(item, dict)
+                    and item.get("Stage") == plan["Stage"]
+                    and item.get("DropId") == plan["DropId"]
+                ),
+                {},
+            )
+            plans.append(
+                {
+                    **deepcopy(source_plan),
+                    "Stage": plan["Stage"],
+                    "DropId": plan["DropId"],
+                    "DropCount": plan["DropCount"],
+                }
+            )
+
+    # 必须走 _with_type_first：MAA 用 System.Text.Json 的多态元数据读条目，
+    # $type 不在第一个属性就整个配置反序列化失败并静默退回 .bak（旧值）。
+    # 下方注入点在 _repair_maa_task_queue 之后执行，不能指望队列级修复兜底。
+    return _with_type_first(
+        {
+            **deepcopy(source_task),
+            "Name": "库存保持",
+            "IsEnable": True,
+            "TaskType": "DepotMaintain",
+            "PlanList": plans,
+        }
+    )
 
 
 def _build_cultivate_task(
@@ -700,6 +799,11 @@ class AutoProxyTask(TaskExecuteBase):
         )
         self.check_result = "-"
         self._annihilation_weekly_completion_recorded = False
+        # 无时段排班表本轮注入的班次：同一用户的多次重试都注入这一个值，
+        # 基建换班完成后只把用户配置里的指针推进一次
+        self._infrast_plan_index: int | None = None
+        self._infrast_plan_count = 0
+        self._infrast_plan_advanced = False
 
     async def check(self) -> str:
 
@@ -1400,10 +1504,16 @@ class AutoProxyTask(TaskExecuteBase):
             source_queue, "活动关优先", "Fight", allow_type_fallback=False
         )
 
-        # 库存保持的高级设置（计划列表）由 MAA 自己的 GUI 维护，MAS 只负责开关：
-        # task_set["DepotMaintain"] 原样来自来源配置，计划列表不经手、不翻译。
+        # 库存保持计划：MAS 快速配置面板维护的计划写回原生 PlanList。只覆盖
+        # MAS 管理的三项（Stage/DropId/DropCount），其余原生字段（含用户在 MAA 里
+        # 设的药/石开关）整条透传，不按 #927 前的口径硬编码 UseMedicine/UseStone。
         # 养成计划是 MAS 自有能力，仍由 _build_cultivate_task 单独注入一条同类型
         # 任务（Name 不同，MAA 按名称区分）。
+        if "DepotMaintain" in task_set:
+            task_set["DepotMaintain"] = _build_depot_maintain_task(
+                self.cur_user_config.get("Task", "DepotMaintainPlans"),
+                source_task=task_set["DepotMaintain"],
+            )
 
         # 加载关卡号配置
         if self.cur_user_config.get("Info", "StageMode") == "Fixed":
@@ -1498,16 +1608,23 @@ class AutoProxyTask(TaskExecuteBase):
                         }
                         for index, infrast in enumerate(infrast_plans)
                     ]
-                    # PlanSelect 保留用户存档中的值(不按轮次改写)——带时段表默认 -1=MAA
-                    # 按时段自动选班; 手动选班/无时段表的轮换推进均由 MAA 原生「自动保存
-                    # 为下个计划」完成, 经运行后配置回写管道存回每用户存档
-                    if (
-                        infrast_plan_mode(infrast_plans) == "rotate"
-                        and task_set["Infrast"].get("PlanSelect", -1) == -1
-                    ):
-                        # 无时段表: 缺省与显式「自动换班」(-1)都归一到第一班开始轮换。
-                        # -1 时 MAA 匹配不到时段, 会永远跑第一班且无法推进(并打错误日志)
-                        task_set["Infrast"]["PlanSelect"] = 0
+                    # PlanSelect 不沿用存档: 脚本模式下存档是全脚本共用的, MAA 每跑完
+                    # 一次基建就 ++PlanSelect, 多个自定义基建用户会互相拨对方的班次。
+                    # 带时段表 → -1, 时间语义整个交给 MAA 按时段选班(-1 不推进);
+                    # 无时段表 → 注入用户自己的指针, 一轮里重试几次都是同一个值,
+                    # 基建换班完成后由 check_log 推进一次
+                    if infrast_plan_mode(infrast_plans) == "rotate":
+                        if self._infrast_plan_index is None:
+                            self._infrast_plan_count = len(infrast_plans)
+                            self._infrast_plan_index = (
+                                int(
+                                    self.cur_user_config.get("Data", "InfrastPlanIndex")
+                                )
+                                % self._infrast_plan_count
+                            )
+                        task_set["Infrast"]["PlanSelect"] = self._infrast_plan_index
+                    else:
+                        task_set["Infrast"]["PlanSelect"] = -1
                 else:
                     logger.warning(
                         f"用户 {self.cur_user_item.name} 的{infrast_problem}, 将使用普通基建模式"
@@ -1613,8 +1730,10 @@ class AutoProxyTask(TaskExecuteBase):
             global_set["GUI.UseTray"] = "True"
             global_set["GUI.MinimizeToTray"] = "True"
             global_set["Start.MinimizeDirectly"] = "True"
+            # 启动即最小化是同一开关的新旧两通道，两个文件都要写：新版 MAA 读
+            # gui.new.json，只写 gui.json 那一半时它启动后仍会弹窗。
             gui_new_set.setdefault("Gui", {}).update(
-                {"UseTray": True, "MinimizeToTray": True}
+                {"UseTray": True, "MinimizeToTray": True, "MinimizeOnStartup": True}
             )
             # 无人值守运行，公告与更新后首启的版本说明弹窗一并关闭
             global_set["Announcement.DoNotShowAnnouncement"] = "True"
@@ -1713,6 +1832,13 @@ class AutoProxyTask(TaskExecuteBase):
                 baseline[name],
                 current,
                 maa_scheme_name(archive_dir, archive),
+                # 快速配置开着时班次由 MAS 注入, MAA 自增的 PlanSelect 不回写;
+                # 关着时 MAA 跑的是存档自己的队列, 推进要靠回写保住
+                ignore_keys=(
+                    _MAA_TASK_KEYS_NOT_MERGED
+                    if self.cur_user_config.get("Info", "IfQuickConfig")
+                    else frozenset()
+                ),
             ):
                 continue
             write_file(archive_dir / name, archive_new)
@@ -1829,6 +1955,22 @@ class AutoProxyTask(TaskExecuteBase):
             )
             logger.info(f"用户 {self.cur_user_item.name} 已完成本月绿票商店购买")
 
+        # 无时段排班表: 基建换班完成即推进用户自己的班次指针, 一轮内只推一次;
+        # 后续重试注入的仍是本轮的班次, 不会把下一班提前换上
+        if (
+            self.mode == "Routine"
+            and self._infrast_plan_index is not None
+            and not self._infrast_plan_advanced
+            and "完成任务: 基建换班" in log
+        ):
+            self._infrast_plan_advanced = True
+            next_index = (self._infrast_plan_index + 1) % self._infrast_plan_count
+            await self.cur_user_config.set("Data", "InfrastPlanIndex", next_index)
+            logger.info(
+                f"用户 {self.cur_user_item.name} 基建换班已完成第 "
+                f"{self._infrast_plan_index + 1} 班, 下次从第 {next_index + 1} 班开始"
+            )
+
         # 养成采集：识别链完成标记 → 立即读安装目录识别数据落用户档案
         # （方案 §4.2/决策 31，T1.17；无标记时不读不采）
         if self.cur_user_config.get("Info", "IfQuickConfig"):
@@ -1863,6 +2005,8 @@ class AutoProxyTask(TaskExecuteBase):
             self.cur_user_log.status = "MAA 的 ADB 连接异常"
         elif "未检测到任何模拟器" in log:
             self.cur_user_log.status = "MAA 未检测到任何模拟器"
+        elif _MAA_OUT_OF_MEMORY_MARKER in log:
+            self.cur_user_log.status = "MAA 因内存不足停止，请关闭部分程序后重试"
         elif "已停止" in log:
             self.cur_user_log.status = "MAA 在完成任务前中止"
         elif (
