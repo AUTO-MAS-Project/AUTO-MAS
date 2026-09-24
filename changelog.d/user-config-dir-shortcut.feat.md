@@ -1,2 +1,0 @@
-project: scheduler
-用户编辑页新增打开配置文件夹的快捷入口
