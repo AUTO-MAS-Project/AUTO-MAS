@@ -2,7 +2,7 @@
 name: mas-script-specialized-adapter
 description: >-
   Review, add, or refactor AUTO-MAS specialized script adapters by upstream
-  architecture, including MAA, SRC, MaaEnd/MXU, M9A/MFAA, General, ok-script
+  architecture, including MAA, SRC, MaaEnd/MXU, General, ok-script
   adapters such as Okww and OkNte, multi-engine adapters such as HSR, and the
   one-dragon line such as BetterGI. Use when lowering user setup friction,
   judging whether a change stays inside the black-box boundary (barrier first,
@@ -53,7 +53,7 @@ description: >-
 3. 读 [代码规范](references/adapter-code-norms.md)（必遵守）+ 对应案例：
    [SRC](references/examples-src.md) ·
    [MaaEnd/MXU](references/examples-maaend.md) ·
-   [M9A/MFAA](references/examples-m9a.md) ·
+   [M9A（MaaFW 特调，不是专项）](references/examples-m9a.md) ·
    [Okww](references/examples-okww.md) ·
    [OkNte](references/examples-oknte.md) ·
    [HSR](references/examples-hsr.md) ·
@@ -104,7 +104,7 @@ description: >-
 | General | 脚本 / 用户 / 直控 三态 |
 | MaaEnd | 脚本 / 用户 / 直控 三态 |
 | MaaFW | 仅用户；`Info.IfQuickConfig` 开关有效，`Info.Mode` 三态无代码消费，不要按三态写逻辑 |
-| M9A | 脚本 / 用户 / 直控 三态 |
+| M9A | 不是专项：MaaFW 的特调类型，与 MaaFW 同（见 `app/task/M9A/AGENTS.md`） |
 | Okww | 脚本 / 用户 / 直控 三态 |
 | OkNte | 脚本 / 用户 / 直控 三态 |
 | HSR | 脚本 / 用户 / 直控 三态（脚本态 = `HSRConfig` 同名组共享计划；**不支持快速配置**，见下） |

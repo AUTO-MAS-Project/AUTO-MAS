@@ -57,7 +57,7 @@
 | Okww（ok-script） | 脚本/用户/直控 | 脚本→`Default/`；用户→`{userId}/`；直控直接读取脚本原配置 |
 | General | 脚本/用户/直控 | 按专项真实配置 owner 落盘；直控读取脚本原配置 |
 | MaaEnd | 脚本/用户/直控 | 按专项真实配置 owner 落盘 |
-| M9A | 脚本/用户/直控 | 队列 JSON 的物理布局按专项实现 |
+| M9A | 不适用（MaaFW 的特调类型，不是专项） | 同 MaaFW，见 `app/task/M9A/AGENTS.md` |
 
 **规则**：
 - 来源三态只决定配置 owner；快速配置是**独立于来源的用户级布尔开关**，三种来源下均可启用。开启时 MAS 尝试用该用户快速配置覆盖原生便捷配置；关闭时不覆盖来源配置。
@@ -75,7 +75,7 @@
 | 线 | 自启动 | 用户改设置 |
 |----|--------|------------|
 | ok-script（Okww） | CLI `-t`/`-e`，`AutoProxy` 拼 argv | `ScriptConfig` 无参启动本体 GUI，停止任务后同步配置 |
-| MFAA（M9A） | 写盘 + exe，无稳定 CLI | 写 JSON，勿套 ScriptConfig 壳 |
+| MFAA | 写盘 + exe，无稳定 CLI | 写 JSON，勿套 ScriptConfig 壳 |
 | MXU（MaaEnd） | 文档化参数 / `mxu-*.json` | ScriptConfig + `mxu-*.json` |
 
 细节：[script-frontend-architectures.md](./script-frontend-architectures.md)、各 `examples-*.md`。
