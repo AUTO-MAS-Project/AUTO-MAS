@@ -66,6 +66,28 @@
             show-icon
             :message="t(flavor.queueHintKey)"
           />
+          <!-- 从外壳（MFAAvalonia）的实例配置把任务与选项搬到 MAS，一次性迁移用 -->
+          <div class="flavor-shell-import">
+            <a-button :loading="shellImportLoading" @click="openShellImport">
+              {{ t('edit.shellConfigImport') }}
+            </a-button>
+            <span class="flavor-shell-import-hint">{{ t('edit.shellConfigImportHint') }}</span>
+          </div>
+          <a-modal
+            v-model:open="shellImportOpen"
+            :title="t('edit.shellConfigImportTitle')"
+            :ok-text="t('edit.shellConfigImportOk')"
+            :cancel-text="t('edit.shellConfigImportCancel')"
+            :confirm-loading="shellImportLoading"
+            @ok="confirmShellImport"
+          >
+            <a-select
+              v-model:value="shellImportInstance"
+              class="flavor-shell-import-select"
+              :options="shellImportOptions"
+            />
+            <p class="flavor-shell-import-note">{{ t('edit.shellConfigImportConfirmContent') }}</p>
+          </a-modal>
           <TaskQueueSection
             v-model:add-task-cascader-value="addTaskCascaderValue"
             v-model:show-preset-modal="showPresetModal"
@@ -652,6 +674,95 @@ const syncControllerResourceSelection = async () => {
   await pruneQueuedTasksForCurrentContext(false)
 }
 
+/** 外壳配置导入：列实例 → 选一个 → 二次确认 → 覆盖当前任务队列 */
+const shellImportOpen = ref(false)
+const shellImportLoading = ref(false)
+const shellImportInstance = ref('')
+const shellImportOptions = ref<Array<{ label: string; value: string }>>([])
+
+const openShellImport = async () => {
+  shellImportLoading.value = true
+  try {
+    const response = await Service.listMaafwShellConfigsApiScriptsMaafwShellConfigsPost({
+      scriptId,
+    })
+    if (response.code !== 200 || !response.data) {
+      message.warning(response.message || t('edit.shellConfigImportFailed'))
+      return
+    }
+    const instances = response.data.instances || []
+    if (instances.length === 0) {
+      message.warning(t('edit.shellConfigImportEmpty'))
+      return
+    }
+    shellImportOptions.value = instances.map(item =>
+      item.active
+        ? {
+            value: item.id,
+            label: `${item.name} (${item.taskCount}) · ${t('edit.shellConfigImportActive')}`,
+          }
+        : { value: item.id, label: `${item.name} (${item.taskCount})` }
+    )
+    const preferred = instances.find(item => item.active) || instances[0]
+    shellImportInstance.value = preferred.id
+    shellImportOpen.value = true
+  } catch (error) {
+    logger.error(`读取外壳配置失败: ${error instanceof Error ? error.message : String(error)}`)
+    message.warning(t('edit.shellConfigImportFailed'))
+  } finally {
+    shellImportLoading.value = false
+  }
+}
+
+const confirmShellImport = () => {
+  Modal.confirm({
+    title: t('edit.shellConfigImportConfirmTitle'),
+    content: t('edit.shellConfigImportConfirmContent'),
+    okText: t('edit.shellConfigImportOk'),
+    cancelText: t('edit.shellConfigImportCancel'),
+    onOk: () => applyShellImport(),
+  })
+}
+
+const applyShellImport = async () => {
+  shellImportLoading.value = true
+  try {
+    const response = await Service.importMaafwShellConfigApiScriptsMaafwShellConfigImportPost({
+      scriptId,
+      instanceId: shellImportInstance.value,
+    })
+    if (response.code !== 200 || !response.data) {
+      message.error(response.message || t('edit.shellConfigImportFailed'))
+      return
+    }
+    // 外壳存的是任务名与一套选项；转成 MAS 的任务实例与选项表
+    const order: string[] = []
+    const options: typeof taskSnapshot.value.taskOptions = {}
+    for (const task of response.data.tasks || []) {
+      const ids = buildMaaFWTaskInstanceIds(
+        task.name,
+        taskByName.value.get(task.name)?.repeatCount,
+        order
+      )
+      order.push(...ids)
+      for (const id of ids) {
+        options[id] = { ...((task.options || {}) as (typeof options)[string]) }
+      }
+    }
+    taskSnapshot.value.taskOrder = partitionTaskOrder(order)
+    taskSnapshot.value.taskChecked = Object.fromEntries(order.map(id => [id, true]))
+    taskSnapshot.value.taskOptions = options
+    await persistQueuedSnapshot()
+    shellImportOpen.value = false
+    message.success(response.message || t('edit.shellConfigImportDone'))
+  } catch (error) {
+    logger.error(`导入外壳配置失败: ${error instanceof Error ? error.message : String(error)}`)
+    message.error(t('edit.shellConfigImportFailed'))
+  } finally {
+    shellImportLoading.value = false
+  }
+}
+
 const addTaskToQueue = async (taskName: string) => {
   if (!taskByName.value.has(taskName)) {
     addTaskCascaderValue.value = []
@@ -1092,6 +1203,29 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
+.flavor-shell-import {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.flavor-shell-import-hint {
+  color: var(--ant-color-text-secondary, rgb(0 0 0 / 45%));
+  font-size: 12px;
+}
+
+.flavor-shell-import-select {
+  width: 100%;
+  margin-bottom: 12px;
+}
+
+.flavor-shell-import-note {
+  margin: 0;
+  color: var(--ant-color-text-secondary, rgb(0 0 0 / 45%));
+  font-size: 12px;
+}
+
 .flavor-queue-hint {
   margin-bottom: 16px;
 }

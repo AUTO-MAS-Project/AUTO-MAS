@@ -16,6 +16,10 @@ import type { MaaFWInterfacePreviewIn } from '../models/MaaFWInterfacePreviewIn'
 import type { MaaFWInterfacePreviewOut } from '../models/MaaFWInterfacePreviewOut';
 import type { MaaFWProjectUpdateIn } from '../models/MaaFWProjectUpdateIn';
 import type { MaaFWProjectUpdateOut } from '../models/MaaFWProjectUpdateOut';
+import type { MaaFWShellConfigImportIn } from '../models/MaaFWShellConfigImportIn';
+import type { MaaFWShellConfigImportOut } from '../models/MaaFWShellConfigImportOut';
+import type { MaaFWShellConfigsIn } from '../models/MaaFWShellConfigsIn';
+import type { MaaFWShellConfigsOut } from '../models/MaaFWShellConfigsOut';
 import type { CancelablePromise } from '../core/CancelablePromise';
 import { OpenAPI } from '../core/OpenAPI';
 import { request as __request } from '../core/request';
@@ -76,6 +80,52 @@ export class MaaFwService {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/scripts/maafw/embedded/sources',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 列出 MFAAvalonia 外壳里可导入的实例配置
+     * 列出外壳（MFAAvalonia）项目里可导入的实例配置。
+     *
+     * 外壳的实例配置在项目 ``config/instances/`` 下，属于投影排除目录、不进内嵌副本，
+     * 所以只能从脚本记着的**项目来源目录**读；来源没设或已删时返回一句可照做的提示。
+     * @param requestBody
+     * @returns MaaFWShellConfigsOut Successful Response
+     * @throws ApiError
+     */
+    public static listMaafwShellConfigsApiScriptsMaafwShellConfigsPost(
+        requestBody?: MaaFWShellConfigsIn,
+    ): CancelablePromise<MaaFWShellConfigsOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/maafw/shell-configs',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 从外壳实例配置导入任务队列
+     * 把一个外壳实例的任务与选项翻译成 MAS 的任务队列，供用户页导入。
+     *
+     * 只读外壳文件，不写；写盘由前端拿到结果后按 MAS 自己的用户配置走。
+     * 项目里没有的任务名、翻不回 case 名的下标都会跳过并在 ``skipped`` 里说明。
+     * @param requestBody
+     * @returns MaaFWShellConfigImportOut Successful Response
+     * @throws ApiError
+     */
+    public static importMaafwShellConfigApiScriptsMaafwShellConfigImportPost(
+        requestBody: MaaFWShellConfigImportIn,
+    ): CancelablePromise<MaaFWShellConfigImportOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/maafw/shell-config/import',
             body: requestBody,
             mediaType: 'application/json',
             errors: {

@@ -91,7 +91,11 @@ def _instance_ids_from_settings(root: Path) -> tuple[list[str], str]:
     for raw in (raw_order, raw_list):
         for token in raw.replace("|", ",").replace(";", ",").split(","):
             instance_id = token.strip()
-            if instance_id and instance_id not in {".", ".."} and instance_id not in ids:
+            if (
+                instance_id
+                and instance_id not in {".", ".."}
+                and instance_id not in ids
+            ):
                 ids.append(instance_id)
     return ids, str(settings.get(INSTANCES_ACTIVE_KEY) or "").strip()
 
@@ -277,9 +281,7 @@ def read_shell_selection(
         if name not in valid_names:
             skipped.append(name)
             continue
-        options, dropped = _translate_options(
-            options_by_task.get(name), option_book
-        )
+        options, dropped = _translate_options(options_by_task.get(name), option_book)
         skipped.extend(dropped)
         tasks.append({"name": name, "options": options})
 

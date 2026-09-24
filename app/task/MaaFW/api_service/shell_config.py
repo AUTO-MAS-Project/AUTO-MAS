@@ -50,7 +50,9 @@ logger = get_logger("MaaFW 外壳配置")
 NO_SOURCE_HINT = "请先在脚本页选择项目目录，再导入外壳配置"
 
 
-def _shell_source_dir(script_id: str | None, fallback_path: str) -> tuple[Path | None, str]:
+def _shell_source_dir(
+    script_id: str | None, fallback_path: str
+) -> tuple[Path | None, str]:
     """取外壳的来源目录（``Info.Path``，其次请求里带的 ``path``）。
 
     Returns:
