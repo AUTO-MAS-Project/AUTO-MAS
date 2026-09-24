@@ -80,8 +80,8 @@ class _MainTimer:
         self.community_sign_task: asyncio.Task | None = None
         # 定时启动的上次检查时刻（带本地偏移），None 表示尚未检查过
         self._last_timed_check: datetime | None = None
-        # 已触发过的 (队列, 时间槽, 计划日期)，防止秋季回拨重复的钟点再触发一次
-        self._timed_fired: set[tuple[str, str, date]] = set()
+        # 已触发过的 (队列, 时间槽, 计划时刻)，防止秋季回拨重复的钟点再触发一次
+        self._timed_fired: set[tuple[str, str, datetime]] = set()
 
     async def start(self):
         """启动定时器"""
@@ -171,21 +171,23 @@ class _MainTimer:
 
         以「上次检查 → 本次检查」的本地墙钟区间判定到点：计划时刻落在
         ``(上次检查, 本次检查]`` 内即视为到点，因此春季跳表跳过的钟点、短暂睡眠 /
-        卡顿错过的定时都会在下一次检查时补上；首次检查从当前分钟的零秒算起，与
-        逐分钟精确匹配时的触发时刻一致。补跑只在迟到不超过 ``TIMED_START_GRACE``
+        卡顿错过的定时都会在下一次检查时补上。区间左端始终不晚于当前分钟的零秒，
+        与逐分钟精确匹配一致：这一分钟中途才设好的定时仍在本分钟内触发，同一分钟
+        的重复命中由已触发记录挡住。补跑只在迟到不超过 ``TIMED_START_GRACE``
         时进行，超出的记日志放弃。星期按计划时刻所在的本地日期判定。
         """
 
         now = _local_now()
         now_wall = now.replace(tzinfo=None)
+        minute_floor = now_wall.replace(second=0, microsecond=0) - timedelta(
+            microseconds=1
+        )
         prev = self._last_timed_check
         if prev is None:
-            prev_wall = now_wall.replace(second=0, microsecond=0) - timedelta(
-                microseconds=1
-            )
-            real_elapsed = now_wall - prev_wall
+            prev_wall = minute_floor
+            real_elapsed = now_wall - minute_floor
         else:
-            prev_wall = prev.replace(tzinfo=None)
+            prev_wall = min(prev.replace(tzinfo=None), minute_floor)
             real_elapsed = now.astimezone(timezone.utc) - prev.astimezone(timezone.utc)
         self._last_timed_check = now
 
@@ -193,56 +195,25 @@ class _MainTimer:
         self._timed_fired = {
             key
             for key in self._timed_fired
-            if key[2] >= now_wall.date() - timedelta(days=1)
+            if key[2].date() >= now_wall.date() - timedelta(days=1)
         }
 
         for uid, queue in Config.QueueConfig.items():
-            # 循环队列由队列项各自的周期驱动，定时设置对它不生效
-            if queue.get("Info", "CycleEnabled"):
+            # 检查区间已前移，一个队列的配置读不出来不能连带丢掉其余队列的到点
+            try:
+                due = self._due_timed_slots(
+                    uid, queue, prev_wall, now_wall, real_elapsed
+                )
+            except Exception as e:
+                logger.opt(exception=e).error(f"读取队列定时设置失败：{uid}")
                 continue
-
-            if not queue.get("Info", "TimeEnabled"):
-                continue
-
-            last_timed_start = queue.get("Data", "LastTimedStart")
-            due: list[tuple[str, datetime]] = []
-
-            for time_set_id, time_set in queue.TimeSet.items():
-                if not time_set.get("Info", "Enabled"):
-                    continue
-
-                for planned in _timed_slots_in_window(
-                    prev_wall, now_wall, time_set.get("Info", "Time")
-                ):
-                    if planned.strftime("%A") not in time_set.get("Info", "Days"):
-                        continue
-
-                    key = (str(uid), str(time_set_id), planned.date())
-                    # 避免重复调起任务：本次运行内按时间槽去重，重启后靠持久化的
-                    # LastTimedStart 兜住同一分钟
-                    if key in self._timed_fired or (
-                        planned.strftime("%Y-%m-%d %H:%M") == last_timed_start
-                    ):
-                        continue
-
-                    # 迟到时长按真实流逝时间封顶：春季跳表时墙钟跨过一小时，真实只过了一瞬
-                    lateness = min(now_wall - planned, real_elapsed)
-                    if lateness > TIMED_START_GRACE:
-                        self._timed_fired.add(key)
-                        logger.info(
-                            f"定时 {planned:%Y-%m-%d %H:%M} 已错过 {lateness}，"
-                            f"超出补跑窗口，不再唤起队列：{uid}"
-                        )
-                        continue
-
-                    due.append((str(time_set_id), planned))
 
             if not due:
                 continue
 
             # 同一队列一次检查内只唤起一次，多个到点的时间槽一并记为已触发
             for time_set_id, planned in due:
-                self._timed_fired.add((str(uid), time_set_id, planned.date()))
+                self._timed_fired.add((str(uid), time_set_id, planned))
             planned = max(planned for _, planned in due)
 
             if now_wall - planned >= timedelta(minutes=1):
@@ -265,6 +236,58 @@ class _MainTimer:
                 )
             except Exception as e:
                 logger.opt(exception=e).error(f"定时唤起任务失败：{uid}")
+
+    def _due_timed_slots(
+        self,
+        uid,
+        queue,
+        prev_wall: datetime,
+        now_wall: datetime,
+        real_elapsed: timedelta,
+    ) -> list[tuple[str, datetime]]:
+        """列出队列在本次检查区间内到点、且仍在补跑窗口内的 (时间槽, 计划时刻)。"""
+
+        # 循环队列由队列项各自的周期驱动，定时设置对它不生效
+        if queue.get("Info", "CycleEnabled"):
+            return []
+
+        if not queue.get("Info", "TimeEnabled"):
+            return []
+
+        last_timed_start = queue.get("Data", "LastTimedStart")
+        due: list[tuple[str, datetime]] = []
+
+        for time_set_id, time_set in queue.TimeSet.items():
+            if not time_set.get("Info", "Enabled"):
+                continue
+
+            for planned in _timed_slots_in_window(
+                prev_wall, now_wall, time_set.get("Info", "Time")
+            ):
+                if planned.strftime("%A") not in time_set.get("Info", "Days"):
+                    continue
+
+                key = (str(uid), str(time_set_id), planned)
+                # 避免重复调起任务：本次运行内按时间槽与计划时刻去重（当天改了时间的
+                # 槽按新时刻照常触发），重启后靠持久化的 LastTimedStart 兜住同一分钟
+                if key in self._timed_fired or (
+                    planned.strftime("%Y-%m-%d %H:%M") == last_timed_start
+                ):
+                    continue
+
+                # 迟到时长按真实流逝时间封顶：春季跳表时墙钟跨过一小时，真实只过了一瞬
+                lateness = min(now_wall - planned, real_elapsed)
+                if lateness > TIMED_START_GRACE:
+                    self._timed_fired.add(key)
+                    logger.info(
+                        f"定时 {planned:%Y-%m-%d %H:%M} 已错过 {lateness}，"
+                        f"超出补跑窗口，不再唤起队列：{uid}"
+                    )
+                    continue
+
+                due.append((str(time_set_id), planned))
+
+        return due
 
     def schedule_community_for_startup(self) -> None:
         """Schedule one background community sign-in after application startup."""
