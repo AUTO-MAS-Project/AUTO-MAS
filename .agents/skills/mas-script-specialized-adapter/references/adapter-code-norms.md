@@ -75,7 +75,7 @@
 | 线 | 自启动 | 用户改设置 |
 |----|--------|------------|
 | ok-script（Okww） | CLI `-t`/`-e`，`AutoProxy` 拼 argv | `ScriptConfig` 无参启动本体 GUI，停止任务后同步配置 |
-| MFAA（M9A） | 写盘 + exe，无稳定 CLI | 写 JSON，勿套 ScriptConfig 壳 |
+| MFAA | 写盘 + exe，无稳定 CLI | 写 JSON，勿套 ScriptConfig 壳 |
 | MXU（MaaEnd） | 文档化参数 / `mxu-*.json` | ScriptConfig + `mxu-*.json` |
 
 细节：[script-frontend-architectures.md](./script-frontend-architectures.md)、各 `examples-*.md`。

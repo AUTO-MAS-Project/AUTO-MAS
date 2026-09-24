@@ -67,7 +67,7 @@
 >   （用户在 BGI GUI 直接编辑的对象，排除 MAS 运行时槽位），两池「已启用
 >   任务」同标签同口径，详见 examples-bettergi.md
 > - **MaaFW（自包含式 + 纯字段侧车，无会话）**：`app/task/MaaFW/tools/
->   restore_service.py` + `MaaFWUserEdit.vue`——M9A 同线：mas 池是纯字段
+>   restore_service.py` + `MaaFWUserEdit.vue`——M9A 特调同走此分支：mas 池是纯字段
 >   侧车（Info/Task.SelectedPreset/TaskSnapshot/Device 段，无 per-user 目录），
 >   native = 项目 `config/` + `interface.json`（运行时物化处，排除 resource/
 >   资产）；无原生 GUI 遮罩会话；**通用性专项**：native 池收敛到脚本级
@@ -122,7 +122,7 @@
 | --- | --- | --- | --- |
 | `tri_state` | owner 随 `Info.Mode` 切换（脚本=共享 `Default`、用户=独立目录、直控=无 MAS 配置）——MAA / MaaEnd / Okww / SRC | 备份时点 Mode | 跨来源自动切回（必须同时声明 `set_mode`） |
 | `user_only` | 恒按用户目录、备份内容与 Mode 无关——OkNte / BetterGI / General / **ZzzOd** | 恒「用户」 | 不校验（备份内容与 Mode 无关） |
-| `sidecar_only` | 纯字段侧车、无目录副本——M9A / MaaFW / HSR / BAAH | 实际 Mode（仅作标签） | 不校验（恢复是字段回填，Mode 仅预览不回填） |
+| `sidecar_only` | 纯字段侧车、无目录副本——MaaFW（含 M9A 特调）/ HSR / BAAH | 实际 Mode（仅作标签） | 不校验（恢复是字段回填，Mode 仅预览不回填） |
 
 - `current_mode` 缺省读统一字段 `UserData.Info.Mode`，专项结构特殊时才覆写；
   `set_mode`（把 `Info.Mode` 写回备份时点）**只有 `tri_state` 需要**，缺省时
@@ -185,12 +185,15 @@ MAS 编辑页配置的字段可能**不落盘在被备份的文件里**（ok-ww�
 目录；MAA 在 mas 快照时播种（MAA 路径可晚于用户配置，播种失败不挡建用户）；
 OkNte 的用户目录是页面编辑对象天然存在；ZzzOd 进页即物理化槽位。
 
-#### 1.1.4 无 ConfigFile 目录的专项：纯字段侧车（M9A）
+#### 1.1.4 无 ConfigFile 目录的专项：纯字段侧车（MaaFW）
 
-MFAA 线（M9A）的 MAS 用户配置是**字段**（存共享 ScriptConfig.json，运行时
-经 build_config 写入原生实例配置），没有 per-user ConfigFile 目录。此时
-mas 池是**纯字段侧车**——归档内唯一文件就是 `_mas_overlay.json`，没有
-目录部分：
+MaaFW（M9A 是它的特调类型，同走这一套）的 MAS 用户配置是**字段**（存共享
+ScriptConfig.json 的 Info / Task.SelectedPreset / TaskSnapshot / Device 段），
+没有 per-user ConfigFile 目录。此时 mas 池是**纯字段侧车**——归档内唯一
+文件就是 `_mas_overlay.json`，没有目录部分。MaaFW 的侧车只存原始字段，
+预览时直接从 TaskSnapshot 取已启用任务；下面「原始值 + 展示快照」几条
+是旧 M9A 专项（MFAA 线，已随 #973 删除）留下的口径，给需要把选项 index
+翻译成文字的字段型专项参考：
 
 - 侧车同时存**原始值**（Queue JSON 串等，回填 UserData 用）与**展示快照**
   （选项 index 翻译成中文 case 名，预览零本体依赖）。展示快照在归档时经
@@ -203,13 +206,14 @@ mas 池是**纯字段侧车**——归档内唯一文件就是 `_mas_overlay.jso
   归档/预览时定义可用（脚本路径存在）就翻译，不可用就显示原始值；
   与 mas 池同口径的 native 反读同此策略。
 
-配套的 native 池形态（M9A 本体 `config/`）：实例配置文件**任意命名**
-（M9A GUI 用哈希命名），预览须**全实例反读**并按实例折叠展示（ZzzOd
+旧 M9A 专项配套的 native 池形态（MFAAvalonia 维护的本体 `config/`，经验
+仍适用于同类外置 GUI）：实例配置文件**任意命名**（MFAAvalonia 用哈希
+命名），预览须**全实例反读**并按实例折叠展示（ZzzOd
 实例列表同语义），**实例显示名取 JSON 内的名称字段**（如 `InstanceName`），
 文件名只作缺失回退——MaaFramework 线的实例文件名普遍不是显示名，只认
 固定文件名（如 default.json）会漏掉用户创建的全部实例。
 
-**侧车与否的判据（M9A 有、General 无）**：MAS 编辑页字段**会注入原生
+**侧车与否的判据（MaaFW 有、General 无）**：MAS 编辑页字段**会注入原生
 配置**（是配置内容的一部分）→ 进侧车与预览；字段只由 MAS 自己消费
 （前后置脚本、来源开关等执行域配置）→ 不进备份。ConfigFile/配置目录
 本身的持久副本形态（OkNte 页面编辑对象、General 会话回写副本）同样
@@ -477,7 +481,7 @@ return build_restore_service(
 
 | 项 | 用途 | 说明 |
 | --- | --- | --- |
-| `#preview` 插槽 | **完全接管预览摘要区** | 字段型专项（M9A/HSR…）用自身结构渲染键值摘要；**备份文件清单不进插槽**——由基座按 `raw.files`（§3.4）统一渲染兜底 |
+| `#preview` 插槽 | **完全接管预览摘要区** | 字段型专项（HSR…）用自身结构渲染键值摘要；**备份文件清单不进插槽**——由基座按 `raw.files`（§3.4）统一渲染兜底 |
 | `#preview-title` 插槽 | 覆盖预览弹窗标题/说明 | 缺省「配置预览 · 时间」 |
 | `fieldLabels` / `formatValue` | 预览字段标签与枚举词表 | 内置渲染用 |
 | `userDesc` / `scriptDesc` | 描述文案覆写 | 专项归档时机措辞与通用不同时（如 ok-nte 的脚本级/用户级归档措辞） |

@@ -66,11 +66,11 @@ data/{script_id}/OkNteBackups/
   项目级根（`data/{Script}Backups`，脚本目录之外）并按**物理配置根指纹分桶**——
   `config_root_key(路径)` = 规范化绝对路径的短哈希：同一份物理配置无论被哪
   个脚本引用都归同一个池，跨脚本共享、不随脚本删除（同一路径必然同格式，
-  不会混池）。现有采用者：MAA / MaaEnd / M9A / OkNte / Okww / SRC / BAAH /
+  不会混池）。现有采用者：MAA / MaaEnd / OkNte / Okww / SRC / BAAH /
   HSR / ZzzOd / BetterGI（BAAH 额外按用户 `ConfigName` 三级分桶：
   `native/{fingerprint}/{user_id}`，因其原生配置目标按用户动态解析；ZzzOd
   的 onedragon 池挂项目级根；BetterGI 走 `data/BetterGIBackups/native/{key}`）。
-- **脚本级（通用性专项强制，General/MaaFW 原生池）**：native 挂在自己脚本
+- **脚本级（通用性专项强制，General/MaaFW 原生池，M9A 特调随 MaaFW）**：native 挂在自己脚本
   目录下 `data/{script_id}/{Script}Backups/native/{key}`——通用性专项（接入
   任意第三方项目/脚本，不是特定软件适配）的「项目」本质属于绑定它的单个
   脚本实例，跨脚本共享备份没有意义；`key` 二级分桶防脚本内换绑路径混淆。
