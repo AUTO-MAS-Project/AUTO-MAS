@@ -83,6 +83,28 @@
               @change="handleFieldSave('Info.PlanMode', formData.Info.PlanMode)"
             />
           </a-form-item>
+          <!-- 这一轮根本跑不起来时提前说清楚，别等引擎报「没有可执行任务」 -->
+          <a-alert
+            v-if="queueCannotRun"
+            class="flavor-queue-empty"
+            type="warning"
+            show-icon
+            :message="t('edit.mssFlavorQueueEmpty')"
+          />
+          <!-- 活动优先是 MSS 自己的取舍（和计划表下拉一样只在 MSS 上出现）。后端缺省是开,
+               所以这里按「不是 false 就算开」显示，不必给 MaaFW 用户塞一个它没有的字段 -->
+          <a-form-item
+            v-if="flavor.type === 'MSS'"
+            class="flavor-activity-first"
+            :label="t('edit.mssFlavorActivityFirst')"
+            :extra="t('edit.mssFlavorActivityFirstHint')"
+          >
+            <a-switch
+              :checked="formData.Info.IfActivityFirst !== false"
+              :disabled="loading"
+              @change="handleActivityFirstChange"
+            />
+          </a-form-item>
           <TaskQueueSection
             v-model:add-task-cascader-value="addTaskCascaderValue"
             v-model:show-preset-modal="showPresetModal"
@@ -674,6 +696,24 @@ const getDisplayName = (item: MaaFWDisplayItem) => {
 
 const selectTask = (taskId: string) => {
   selectedTaskId.value = taskId
+}
+
+/**
+ * 队列空、计划表又是「固定」时这一轮没有任何可执行任务：引擎会判「无法构建运行计划」
+ * 并抛异常（`run_plan` 里 runnable_tasks 为空）。在这里提前警告，别让用户跑完才知道。
+ * 选了计划表就不算——特调钩子会把悬赏试炼补上。
+ */
+const queueCannotRun = computed(
+  () =>
+    flavor.value.type === 'MSS' &&
+    taskSnapshot.value.taskOrder.length === 0 &&
+    (formData.Info.PlanMode ?? 'Fixed') === 'Fixed'
+)
+
+/** 活动优先开关：后端缺省是开，这里只在用户显式关掉时写 false */
+const handleActivityFirstChange = (checked: boolean | string | number) => {
+  formData.Info.IfActivityFirst = checked === true
+  handleFieldSave('Info.IfActivityFirst', formData.Info.IfActivityFirst)
 }
 
 const persistQueuedSnapshot = async () => {

@@ -338,6 +338,8 @@ export interface MaaFWUserConfig {
     IfQuickConfig?: boolean
     /** 仅 MSS 用户携带：悬赏试炼关卡来源（Fixed 或 MSS 计划表 UUID） */
     PlanMode?: string
+    /** 仅 MSS 用户携带：队列里没加活动任务时，是否在活动期间自动加入并排到最前 */
+    IfActivityFirst?: boolean | null
   }
   Task: {
     SelectedPreset: string
