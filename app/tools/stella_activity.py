@@ -300,7 +300,7 @@ def current_activity_name(payload: Mapping[str, Any] | None) -> str:
 
 def match_official_banner(
     banners: Sequence[Mapping[str, Any]], name: str
-) -> Mapping[str, Any] | None:
+) -> dict[str, Any] | None:
     """在官网横幅里找与活动名对应的那条。
 
     官网公告标题形如 ``[奋斗吧！大小姐的旅人修炼手册]版本一览``，活动名是
@@ -311,7 +311,7 @@ def match_official_banner(
         name: 活动名（:func:`current_activity_name` 的结果）。
 
     Returns:
-        Mapping[str, Any] | None: 命中的那条横幅；没对上时返回 None。
+        dict[str, Any] | None: 命中的那条横幅**副本**；没对上时返回 None。
     """
 
     target = _normalize_name(name)
@@ -321,7 +321,8 @@ def match_official_banner(
     for item in banners:
         title = _normalize_name(str(item.get("title") or ""))
         if title and (target in title or title in target):
-            return item
+            # 返回副本：调用方会在命中项上打 matched 标记，不能写回传进来的列表
+            return dict(item)
     return None
 
 
