@@ -283,6 +283,10 @@ def _apply_plan(
         targets = [tribulation]
         ids = _insert_before_tail(ids, tribulation, interface_model, name_of)
         log(f"[MSS] 计划表已选，自动加入「{tribulation}」")
+    else:
+        ## 队列里手动加了多个同任务实例时只改第一个：剩下的留给用户自己配，
+        ## 这样「一个按计划表刷、一个固定刷别的关」还能共存
+        targets = targets[:1]
 
     values: dict[str, Any] = {
         OPTION_TRIBULATION_STAGE: stage,
