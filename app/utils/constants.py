@@ -203,6 +203,8 @@ ARKNIGHTS_GAME_DAY_TZ = {
 来源 MAA `src/MaaWpfGui/Extensions/DateTimeExtension.cs`：`_clientTypeTimezone`
 中 Official / Bilibili / txwy 为 UTC+8，YoStarEN 为 UTC-7（固定偏移，不随夏令时），
 YoStarJP / YoStarKR 为 UTC+9；`YjDayStartHour = 4`。
+前端 `frontend/src/views/MAAUserEdit/periodMarkers.ts` 的 ARKNIGHTS_GAME_DAY_OFFSET
+是同一张表，改动时两边同步。
 """
 
 
