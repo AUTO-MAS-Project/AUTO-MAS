@@ -309,8 +309,14 @@ const logger = window.electronAPI.getLogger('BAAH用户编辑')
 
 const router = useRouter()
 const route = useRoute()
-const { addUser, updateUser, getUsers, loading: userLoading, openUserConfigFolder } = useUserApi()
-const { loading: folderLoading } = useUserApi()
+const {
+  addUser,
+  updateUser,
+  getUsers,
+  loading: userLoading,
+  openUserConfigFolder,
+  loading: folderLoading,
+} = useUserApi()
 const { getScript } = useScriptApi()
 
 const formRef = ref<FormInstance>()

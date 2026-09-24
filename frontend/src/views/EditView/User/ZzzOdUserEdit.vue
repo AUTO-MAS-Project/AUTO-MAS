@@ -1266,8 +1266,14 @@ const { t } = useI18n()
 const logger = window.electronAPI.getLogger('ZZZ-OD用户编辑')
 const route = useRoute()
 const router = useRouter()
-const { addUser, getUsers, updateUser, error: userApiError, openUserConfigFolder } = useUserApi()
-const { loading: folderLoading } = useUserApi()
+const {
+  addUser,
+  getUsers,
+  updateUser,
+  error: userApiError,
+  openUserConfigFolder,
+  loading: folderLoading,
+} = useUserApi()
 const { getScript } = useScriptApi()
 
 const scriptId = route.params.scriptId as string
