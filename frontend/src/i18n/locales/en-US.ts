@@ -93,6 +93,7 @@ export default {
     logFileLoadedP0: 'Log file loaded, {p0} lines',
     cancel: 'Cancel',
     configuring: 'Configuring',
+    openConfigFolder: 'Open config folder',
     dragReorder: 'Drag to reorder',
     confirmExit: 'Confirm exit',
     webhookDeleted: 'Webhook deleted',

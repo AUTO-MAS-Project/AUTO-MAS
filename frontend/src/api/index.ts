@@ -422,6 +422,8 @@ export type { ToolsUpdateIn } from './models/ToolsUpdateIn';
 export type { UpdateCheckIn } from './models/UpdateCheckIn';
 export type { UpdateCheckOut } from './models/UpdateCheckOut';
 export { UpdateDownloadSnapshot } from './models/UpdateDownloadSnapshot';
+export type { UserConfigDirIn } from './models/UserConfigDirIn';
+export type { UserConfigDirOut } from './models/UserConfigDirOut';
 export type { UserCreateOut } from './models/UserCreateOut';
 export type { UserDeleteIn } from './models/UserDeleteIn';
 export type { UserGetIn } from './models/UserGetIn';

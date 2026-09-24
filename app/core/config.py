@@ -3067,6 +3067,21 @@ class AppConfig(GlobalConfig):
         if user_data_dir.exists():
             await asyncio.to_thread(force_rmtree, user_data_dir)
 
+    async def get_user_config_dir(self, script_id: str, user_id: str) -> Path:
+        """获取用户配置目录, 不存在时创建"""
+
+        logger.info(f"{script_id} 获取用户配置目录: {user_id}")
+
+        script_uid = uuid.UUID(script_id)
+        user_uid = uuid.UUID(user_id)
+        if user_uid not in self.ScriptConfig[script_uid].UserData:
+            raise ValueError("用户不存在")
+
+        user_config_dir = Path.cwd() / f"data/{script_id}/{user_id}"
+        user_config_dir.mkdir(parents=True, exist_ok=True)
+
+        return user_config_dir
+
     async def reorder_user(self, script_id: str, index_list: list[str]) -> None:
         """重新排序用户"""
 

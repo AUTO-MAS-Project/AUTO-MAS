@@ -484,6 +484,30 @@ async def get_user(user: UserGetIn = Body(...)) -> UserGetOut:
 
 
 @router.post(
+    "/user/config-dir",
+    tags=["Get"],
+    summary="获取用户配置目录",
+    response_model=UserConfigDirOut,
+    status_code=200,
+)
+async def get_user_config_dir(user: UserConfigDirIn = Body(...)) -> UserConfigDirOut:
+
+    try:
+        user_config_dir = await Config.get_user_config_dir(user.scriptId, user.userId)
+    except Exception as e:
+        logger.opt(exception=True).warning(
+            f"get_user_config_dir失败: {type(e).__name__}: {e}"
+        )
+        return UserConfigDirOut(
+            code=500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+            path="",
+        )
+    return UserConfigDirOut(message="用户配置目录获取成功", path=str(user_config_dir))
+
+
+@router.post(
     "/user/add",
     tags=["Add"],
     summary="添加用户",

@@ -7,6 +7,7 @@
       script-edit-segment="hsr"
       :current-label="isEdit ? t('edit.editHsrUser') : t('edit.addHsrUser')"
       :logo-src="hsrLogo"
+      :user-id="userId"
       @cancel="handleCancel"
     />
 

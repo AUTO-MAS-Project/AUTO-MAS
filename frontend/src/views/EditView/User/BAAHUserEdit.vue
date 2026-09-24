@@ -17,6 +17,17 @@
     </div>
 
     <a-space size="middle">
+      <a-button
+        v-if="!!userId"
+        size="large"
+        :loading="folderLoading"
+        @click="handleOpenFolder"
+      >
+        <template #icon>
+          <FolderOpenOutlined />
+        </template>
+        {{ t('comp.openConfigFolder') }}
+      </a-button>
       <a-button size="large" class="cancel-button" @click="handleCancel">
         <template #icon>
           <ArrowLeftOutlined />
@@ -403,7 +414,7 @@ import { useI18n } from 'vue-i18n'
 import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
-import { ArrowLeftOutlined, HistoryOutlined, QuestionCircleOutlined } from '@ant-design/icons-vue'
+import { ArrowLeftOutlined, FolderOpenOutlined, HistoryOutlined, QuestionCircleOutlined } from '@ant-design/icons-vue'
 import type { FormInstance, Rule } from 'ant-design-vue/es/form'
 import { useUserApi } from '@/composables/useUserApi.ts'
 import { useScriptApi } from '@/composables/useScriptApi.ts'
@@ -420,7 +431,14 @@ const logger = window.electronAPI.getLogger('BAAH用户编辑')
 
 const router = useRouter()
 const route = useRoute()
-const { addUser, updateUser, getUsers, loading: userLoading } = useUserApi()
+const {
+  addUser,
+  updateUser,
+  getUsers,
+  loading: userLoading,
+  openUserConfigFolder,
+  loading: folderLoading,
+} = useUserApi()
 const { getScript } = useScriptApi()
 
 const formRef = ref<FormInstance>()
@@ -430,6 +448,11 @@ const isSaving = ref(false) // 标记是否正在保存
 
 // 路由参数
 const scriptId = route.params.scriptId as string
+
+const handleOpenFolder = async () => {
+  if (!userId) return
+  await openUserConfigFolder(scriptId, userId)
+}
 let userId = route.params.userId as string
 const isEdit = ref(!!userId) // 使用 ref 以便在创建后更新
 const { configLocked } = useScriptConfigLock(() => scriptId)
