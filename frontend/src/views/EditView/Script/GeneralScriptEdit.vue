@@ -31,7 +31,7 @@
     </a-space>
   </div>
 
-  <div class="script-edit-content">
+  <ConfigLockPanel :script-id="scriptId" content-class="script-edit-content">
     <a-card
       :title="t('edit.generalScriptConfiguration')"
       :loading="pageLoading"
@@ -856,7 +856,7 @@
         </div>
       </a-form>
     </a-card>
-  </div>
+  </ConfigLockPanel>
 
   <!-- 上传脚本弹窗 -->
   <a-modal
@@ -976,6 +976,7 @@
 </template>
 
 <script setup lang="ts">
+import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
 import { useI18n } from 'vue-i18n'
 import { computed, onMounted, onUnmounted, reactive, ref, watch, nextTick } from 'vue'
 import DocLink from '@/components/DocLink.vue'

@@ -199,7 +199,12 @@ _BANGBOO_PRICE_OPTIONS = [
 ]
 
 # 随便观游历任务默认（与上游 config 默认一致）
-_ADVENTURE_MISSION_DEFAULTS = ("RESEARCH_3_4", "RESEARCH_2_4", "RESEARCH_1_4", "COMMUNITY_3_4")
+_ADVENTURE_MISSION_DEFAULTS = (
+    "RESEARCH_3_4",
+    "RESEARCH_2_4",
+    "RESEARCH_1_4",
+    "COMMUNITY_3_4",
+)
 
 # WorldPatrol 界面消失处理（value 为代码常量，label 与上游 GUI 一致）
 _WORLD_PATROL_UI_DISAPPEAR_OPTIONS = [
@@ -304,8 +309,18 @@ TASK_APP_FIELDS: dict[str, list[dict[str, Any]]] = {
             },
         },
         {"field": "loop", "title": "循环执行", "type": "bool", "default": True},
-        {"field": "daily_reset_plan_times", "title": "每日清零已运行次数", "type": "bool", "default": False},
-        {"field": "restore_charge", "title": "体力恢复", "type": "select", "options": _RESTORE_CHARGE_OPTIONS},
+        {
+            "field": "daily_reset_plan_times",
+            "title": "每日清零已运行次数",
+            "type": "bool",
+            "default": False,
+        },
+        {
+            "field": "restore_charge",
+            "title": "体力恢复",
+            "type": "select",
+            "options": _RESTORE_CHARGE_OPTIONS,
+        },
     ],
     "notorious_hunt": [
         {
@@ -329,47 +344,188 @@ TASK_APP_FIELDS: dict[str, list[dict[str, Any]]] = {
                 "notorious_hunt_buff_num": 1,
             },
         },
-        {"field": "weekly_challenge_start_weekday", "title": "周挑战起始日", "type": "select", "options": _WEEKDAY_OPTIONS},
+        {
+            "field": "weekly_challenge_start_weekday",
+            "title": "周挑战起始日",
+            "type": "select",
+            "options": _WEEKDAY_OPTIONS,
+        },
         {"field": "loop", "title": "循环执行", "type": "bool", "default": True},
     ],
     "lost_void": [
-        {"field": "daily_plan_times", "title": "每日计划次数", "type": "number", "default": 5},
-        {"field": "weekly_plan_times", "title": "每周计划次数", "type": "number", "default": 2},
-        {"field": "extra_task", "title": "额外任务", "type": "select", "options": _LOST_VOID_TASK_OPTIONS},
-        {"field": "mission_name", "title": "选图", "type": "select", "source": "compendium_lost_void", "default": "战线肃清"},
-        {"field": "challenge_config", "title": "挑战配置", "type": "select", "source": "lost_void_challenge", "default": "默认-成就模式"},
+        {
+            "field": "daily_plan_times",
+            "title": "每日计划次数",
+            "type": "number",
+            "default": 5,
+        },
+        {
+            "field": "weekly_plan_times",
+            "title": "每周计划次数",
+            "type": "number",
+            "default": 2,
+        },
+        {
+            "field": "extra_task",
+            "title": "额外任务",
+            "type": "select",
+            "options": _LOST_VOID_TASK_OPTIONS,
+        },
+        {
+            "field": "mission_name",
+            "title": "选图",
+            "type": "select",
+            "source": "compendium_lost_void",
+            "default": "战线肃清",
+        },
+        {
+            "field": "challenge_config",
+            "title": "挑战配置",
+            "type": "select",
+            "source": "lost_void_challenge",
+            "default": "默认-成就模式",
+        },
     ],
     "withered_domain": [
-        {"field": "daily_plan_times", "title": "每日计划次数", "type": "number", "default": 99},
-        {"field": "weekly_plan_times", "title": "每周计划次数", "type": "number", "default": 2},
-        {"field": "extra_task", "title": "额外任务", "type": "select", "options": _HOLLOW_EXTRA_TASK_OPTIONS, "default": "刷满周期奖励"},
-        {"field": "extra_exit", "title": "额外任务退出时机", "type": "select", "options": _HOLLOW_EXTRA_EXIT_OPTIONS, "default": "通关"},
-        {"field": "mission_name", "title": "选图", "type": "select", "source": "hollow_zero_missions", "default": "旧都列车-内部"},
-        {"field": "challenge_config", "title": "挑战配置", "type": "select", "source": "hollow_zero_challenge", "default": "默认-专属空洞-艾莲"},
+        {
+            "field": "daily_plan_times",
+            "title": "每日计划次数",
+            "type": "number",
+            "default": 99,
+        },
+        {
+            "field": "weekly_plan_times",
+            "title": "每周计划次数",
+            "type": "number",
+            "default": 2,
+        },
+        {
+            "field": "extra_task",
+            "title": "额外任务",
+            "type": "select",
+            "options": _HOLLOW_EXTRA_TASK_OPTIONS,
+            "default": "刷满周期奖励",
+        },
+        {
+            "field": "extra_exit",
+            "title": "额外任务退出时机",
+            "type": "select",
+            "options": _HOLLOW_EXTRA_EXIT_OPTIONS,
+            "default": "通关",
+        },
+        {
+            "field": "mission_name",
+            "title": "选图",
+            "type": "select",
+            "source": "hollow_zero_missions",
+            "default": "旧都列车-内部",
+        },
+        {
+            "field": "challenge_config",
+            "title": "挑战配置",
+            "type": "select",
+            "source": "hollow_zero_challenge",
+            "default": "默认-专属空洞-艾莲",
+        },
     ],
     "coffee": [
-        {"field": "transport_point", "title": "传送地点", "type": "select", "options": _COFFEE_TRANSPORT_OPTIONS},
-        {"field": "choose_way", "title": "咖啡选择", "type": "select", "options": _COFFEE_CHOOSE_WAY_OPTIONS},
-        {"field": "challenge_way", "title": "喝后挑战", "type": "select", "options": _COFFEE_CHALLENGE_WAY_OPTIONS},
-        {"field": "card_num", "title": "体力计划外的数量", "type": "select", "options": _COFFEE_CARD_NUM_OPTIONS, "default": "1"},
-        {"field": "auto_battle", "title": "配队方案", "type": "select", "source": "auto_battle", "default": "全配队通用"},
-        {"field": "predefined_team_idx", "title": "预备编队", "type": "team", "source": "predefined_teams"},
-        {"field": "run_charge_plan_afterwards", "title": "结束后运行体力计划", "type": "bool", "default": False},
+        {
+            "field": "transport_point",
+            "title": "传送地点",
+            "type": "select",
+            "options": _COFFEE_TRANSPORT_OPTIONS,
+        },
+        {
+            "field": "choose_way",
+            "title": "咖啡选择",
+            "type": "select",
+            "options": _COFFEE_CHOOSE_WAY_OPTIONS,
+        },
+        {
+            "field": "challenge_way",
+            "title": "喝后挑战",
+            "type": "select",
+            "options": _COFFEE_CHALLENGE_WAY_OPTIONS,
+        },
+        {
+            "field": "card_num",
+            "title": "体力计划外的数量",
+            "type": "select",
+            "options": _COFFEE_CARD_NUM_OPTIONS,
+            "default": "1",
+        },
+        {
+            "field": "auto_battle",
+            "title": "配队方案",
+            "type": "select",
+            "source": "auto_battle",
+            "default": "全配队通用",
+        },
+        {
+            "field": "predefined_team_idx",
+            "title": "预备编队",
+            "type": "team",
+            "source": "predefined_teams",
+        },
+        {
+            "field": "run_charge_plan_afterwards",
+            "title": "结束后运行体力计划",
+            "type": "bool",
+            "default": False,
+        },
         *[
-            {"field": f"day_coffee_{day}", "title": f"{name}咖啡", "type": "select", "source": f"coffee_day_{day}", "default": "汀曼特调"}
+            {
+                "field": f"day_coffee_{day}",
+                "title": f"{name}咖啡",
+                "type": "select",
+                "source": f"coffee_day_{day}",
+                "default": "汀曼特调",
+            }
             for day, name in zip((1, 2, 3, 4, 5, 6, 7), _WEEKDAY_LABELS)
         ],
     ],
     "intel_board": [
-        {"field": "predefined_team_idx", "title": "预备编队", "type": "team", "source": "predefined_teams"},
-        {"field": "auto_battle_config", "title": "配队方案", "type": "select", "source": "auto_battle", "default": "全配队通用"},
-        {"field": "exp_grind_mode", "title": "刷满经验模式", "type": "bool", "default": False},
+        {
+            "field": "predefined_team_idx",
+            "title": "预备编队",
+            "type": "team",
+            "source": "predefined_teams",
+        },
+        {
+            "field": "auto_battle_config",
+            "title": "配队方案",
+            "type": "select",
+            "source": "auto_battle",
+            "default": "全配队通用",
+        },
+        {
+            "field": "exp_grind_mode",
+            "title": "刷满经验模式",
+            "type": "bool",
+            "default": False,
+        },
     ],
     "suibian_temple": [
-        {"field": "auto_manage_enabled", "title": "自动托管", "type": "bool", "default": True},
+        {
+            "field": "auto_manage_enabled",
+            "title": "自动托管",
+            "type": "bool",
+            "default": True,
+        },
         {"field": "yum_cha_sin", "title": "饮茶仙", "type": "bool", "default": True},
-        {"field": "yum_cha_sin_period_refresh", "title": "饮茶仙-定期采办刷新", "type": "bool", "default": True},
-        {"field": "adventure_duration", "title": "游历-时间", "type": "select", "options": _ADVENTURE_DURATION_OPTIONS, "default": "HOUR_20"},
+        {
+            "field": "yum_cha_sin_period_refresh",
+            "title": "饮茶仙-定期采办刷新",
+            "type": "bool",
+            "default": True,
+        },
+        {
+            "field": "adventure_duration",
+            "title": "游历-时间",
+            "type": "select",
+            "options": _ADVENTURE_DURATION_OPTIONS,
+            "default": "HOUR_20",
+        },
         *[
             {
                 "field": f"adventure_mission_{i}",
@@ -380,38 +536,167 @@ TASK_APP_FIELDS: dict[str, list[dict[str, Any]]] = {
             }
             for i in (1, 2, 3, 4)
         ],
-        {"field": "craft_drag_times", "title": "制造-最大下拉次数", "type": "number", "default": 10},
-        {"field": "good_goods_purchase_enabled", "title": "好物铺购买", "type": "bool", "default": False},
-        {"field": "boo_box_purchase_enabled", "title": "邦巢-购买", "type": "bool", "default": False},
-        {"field": "boo_box_adventure_price", "title": "邦巢-游历最低价", "type": "select", "options": _BANGBOO_PRICE_OPTIONS, "default": "S4"},
-        {"field": "boo_box_craft_price", "title": "邦巢-制造最低价", "type": "select", "options": _BANGBOO_PRICE_OPTIONS, "default": "S4"},
-        {"field": "boo_box_sell_price", "title": "邦巢-售卖最低价", "type": "select", "options": _BANGBOO_PRICE_OPTIONS, "default": "S4"},
-        {"field": "pawnshop_omnicoin_enabled", "title": "德丰大押-百宝通", "type": "bool", "default": True},
-        {"field": "pawnshop_crest_enabled", "title": "德丰大押-云纹徽", "type": "bool", "default": True},
-        {"field": "pawnshop_crest_unlimited_denny_enabled", "title": "云纹徽-不限购丁尼", "type": "bool", "default": False},
+        {
+            "field": "craft_drag_times",
+            "title": "制造-最大下拉次数",
+            "type": "number",
+            "default": 10,
+        },
+        {
+            "field": "good_goods_purchase_enabled",
+            "title": "好物铺购买",
+            "type": "bool",
+            "default": False,
+        },
+        {
+            "field": "boo_box_purchase_enabled",
+            "title": "邦巢-购买",
+            "type": "bool",
+            "default": False,
+        },
+        {
+            "field": "boo_box_adventure_price",
+            "title": "邦巢-游历最低价",
+            "type": "select",
+            "options": _BANGBOO_PRICE_OPTIONS,
+            "default": "S4",
+        },
+        {
+            "field": "boo_box_craft_price",
+            "title": "邦巢-制造最低价",
+            "type": "select",
+            "options": _BANGBOO_PRICE_OPTIONS,
+            "default": "S4",
+        },
+        {
+            "field": "boo_box_sell_price",
+            "title": "邦巢-售卖最低价",
+            "type": "select",
+            "options": _BANGBOO_PRICE_OPTIONS,
+            "default": "S4",
+        },
+        {
+            "field": "pawnshop_omnicoin_enabled",
+            "title": "德丰大押-百宝通",
+            "type": "bool",
+            "default": True,
+        },
+        {
+            "field": "pawnshop_crest_enabled",
+            "title": "德丰大押-云纹徽",
+            "type": "bool",
+            "default": True,
+        },
+        {
+            "field": "pawnshop_crest_unlimited_denny_enabled",
+            "title": "云纹徽-不限购丁尼",
+            "type": "bool",
+            "default": False,
+        },
     ],
     "world_patrol": [
-        {"field": "auto_battle", "title": "配队方案", "type": "select", "source": "auto_battle", "default": "全配队通用"},
-        {"field": "route_list", "title": "路线名单", "type": "select", "options": [{"label": "全部", "value": ""}], "source": "world_patrol_route_list"},
-        {"field": "daily_loop_count", "title": "每日轮数", "type": "number", "default": 1},
-        {"field": "loop_interval_seconds", "title": "每轮最少占用时长(秒)", "type": "number", "default": 1800},
-        {"field": "ui_disappear_action", "title": "界面消失处理", "type": "select", "options": _WORLD_PATROL_UI_DISAPPEAR_OPTIONS},
-        {"field": "ui_disappear_seconds", "title": "界面消失判定秒数", "type": "number", "default": 10},
-        {"field": "route_retry_times", "title": "路线重试次数", "type": "number", "default": 1},
-        {"field": "route_retry_action", "title": "重试后仍卡住处理", "type": "select", "options": _WORLD_PATROL_ROUTE_RETRY_OPTIONS},
+        {
+            "field": "auto_battle",
+            "title": "配队方案",
+            "type": "select",
+            "source": "auto_battle",
+            "default": "全配队通用",
+        },
+        {
+            "field": "route_list",
+            "title": "路线名单",
+            "type": "select",
+            "options": [{"label": "全部", "value": ""}],
+            "source": "world_patrol_route_list",
+        },
+        {
+            "field": "daily_loop_count",
+            "title": "每日轮数",
+            "type": "number",
+            "default": 1,
+        },
+        {
+            "field": "loop_interval_seconds",
+            "title": "每轮最少占用时长(秒)",
+            "type": "number",
+            "default": 1800,
+        },
+        {
+            "field": "ui_disappear_action",
+            "title": "界面消失处理",
+            "type": "select",
+            "options": _WORLD_PATROL_UI_DISAPPEAR_OPTIONS,
+        },
+        {
+            "field": "ui_disappear_seconds",
+            "title": "界面消失判定秒数",
+            "type": "number",
+            "default": 10,
+        },
+        {
+            "field": "route_retry_times",
+            "title": "路线重试次数",
+            "type": "number",
+            "default": 1,
+        },
+        {
+            "field": "route_retry_action",
+            "title": "重试后仍卡住处理",
+            "type": "select",
+            "options": _WORLD_PATROL_ROUTE_RETRY_OPTIONS,
+        },
     ],
     "life_on_line": [
-        {"field": "daily_plan_times", "title": "每日计划次数", "type": "number", "default": 20},
-        {"field": "predefined_team_idx", "title": "预备编队", "type": "team", "source": "predefined_teams"},
+        {
+            "field": "daily_plan_times",
+            "title": "每日计划次数",
+            "type": "number",
+            "default": 20,
+        },
+        {
+            "field": "predefined_team_idx",
+            "title": "预备编队",
+            "type": "team",
+            "source": "predefined_teams",
+        },
     ],
     "drive_disc_dismantle": [
-        {"field": "dismantle_level", "title": "拆解等级", "type": "select", "options": _DISMANTLE_LEVEL_OPTIONS},
-        {"field": "dismantle_abandon", "title": "全选已弃置", "type": "bool", "default": False},
+        {
+            "field": "dismantle_level",
+            "title": "拆解等级",
+            "type": "select",
+            "options": _DISMANTLE_LEVEL_OPTIONS,
+        },
+        {
+            "field": "dismantle_abandon",
+            "title": "全选已弃置",
+            "type": "bool",
+            "default": False,
+        },
     ],
     "random_play": [
-        {"field": "transport_point", "title": "传送地点", "type": "select", "options": _RANDOM_PLAY_TRANSPORT_OPTIONS},
-        {"field": "agent_name_1", "title": "代理人-1", "type": "select", "options": [{"label": "随机", "value": "随机"}], "source": "agent_names", "default": "随机"},
-        {"field": "agent_name_2", "title": "代理人-2", "type": "select", "options": [{"label": "随机", "value": "随机"}], "source": "agent_names", "default": "随机"},
+        {
+            "field": "transport_point",
+            "title": "传送地点",
+            "type": "select",
+            "options": _RANDOM_PLAY_TRANSPORT_OPTIONS,
+        },
+        {
+            "field": "agent_name_1",
+            "title": "代理人-1",
+            "type": "select",
+            "options": [{"label": "随机", "value": "随机"}],
+            "source": "agent_names",
+            "default": "随机",
+        },
+        {
+            "field": "agent_name_2",
+            "title": "代理人-2",
+            "type": "select",
+            "options": [{"label": "随机", "value": "随机"}],
+            "source": "agent_names",
+            "default": "随机",
+        },
     ],
 }
 
@@ -422,7 +707,9 @@ TASK_APP_JUMPS: frozenset[str] = frozenset(
 )
 
 # 数字列字段（plan_list 行内保存时转 int）
-_PLAN_NUMBER_FIELDS = frozenset({"plan_times", "predefined_team_idx", "notorious_hunt_buff_num"})
+_PLAN_NUMBER_FIELDS = frozenset(
+    {"plan_times", "predefined_team_idx", "notorious_hunt_buff_num"}
+)
 
 
 def get_task_app_fields(app_id: str) -> list[dict[str, Any]] | None:
@@ -454,7 +741,11 @@ def resolve_field_options(
     if source == "predefined_teams":
         from .zzz_od_config import predefined_team_options
 
-        return [dict(o) for o in predefined_team_options(config_dir)] if config_dir is not None else []
+        return (
+            [dict(o) for o in predefined_team_options(config_dir)]
+            if config_dir is not None
+            else []
+        )
 
     from .compendium import (
         agent_names,

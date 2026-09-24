@@ -15,5 +15,9 @@ export type MaaUserConfig_Data = {
      * 上次成功代理时服务端的游戏资源版本
      */
     LastResVersion?: (string | null);
+    /**
+     * 养成接管提示（空 = 未接管）
+     */
+    CultivateNotice?: (string | null);
 };
 

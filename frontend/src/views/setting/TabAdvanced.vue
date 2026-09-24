@@ -207,11 +207,7 @@ const exportDataBackup = async () => {
               </template>
               {{ t('setting.advanced.exportOkNte') }}
             </a-button>
-            <a-button
-              type="primary"
-              :loading="exportingZzzOdLogs"
-              @click="exportZzzOdIssueReport"
-            >
+            <a-button type="primary" :loading="exportingZzzOdLogs" @click="exportZzzOdIssueReport">
               <template #icon>
                 <DownloadOutlined />
               </template>

@@ -648,7 +648,8 @@ export function useSchedulerLogic() {
       if (tab.resumeFromScriptId) {
         requestBody.resumeFromScriptId = tab.resumeFromScriptId
       }
-      if (tab.selectedUserId) {
+      // 指定单个用户只对自动代理有意义，其他模式后端一律拒绝；切走模式后不再带上
+      if (tab.selectedUserId && tab.selectedMode === TaskCreateIn.mode.AUTO_PROXY) {
         requestBody.userId = tab.selectedUserId
       }
 

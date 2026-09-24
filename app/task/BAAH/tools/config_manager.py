@@ -197,6 +197,23 @@ def resolve_user_config_path(config_dir: Path, config_name: str) -> Path:
     return config_dir / f"{resolve_config_name(config_name)}.json"
 
 
+def list_config_names(config_dir: Path) -> list[str]:
+    """列出 BAAH 配置目录下已有的配置文件名。
+
+    Args:
+        config_dir: BAAH 配置目录（``BAAH_CONFIGS``）。
+
+    Returns:
+        list[str]: 配置文件名列表（不含 ``.json`` 后缀），按名称排序；
+            目录不存在时返回空列表。
+    """
+
+    if not config_dir.is_dir():
+        return []
+
+    return sorted(path.stem for path in config_dir.glob("*.json") if path.is_file())
+
+
 def apply_managed_config(
     user_config_path: Path,
     software_config_path: Path | None,
@@ -361,9 +378,7 @@ def latest_log_file(log_dir: Path, not_before: float) -> Path | None:
     return max(candidates, key=lambda path: path.stat().st_mtime)
 
 
-def resolve_log_time_range(
-    log_path: Path, time_format: str
-) -> tuple[int, int] | None:
+def resolve_log_time_range(log_path: Path, time_format: str) -> tuple[int, int] | None:
     """按日志首行的实际排版推算时间戳的字符切片区间。
 
     BAAH 的行格式是「{版本} - {分:秒} - {级别} : {消息}」，例如

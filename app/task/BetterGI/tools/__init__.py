@@ -16,6 +16,44 @@
 #   You should have received a copy of the GNU Affero General Public License
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
 
+from .backup_archive import (
+    archive_mas_backup,
+    archive_mas_runtime_backup,
+    archive_native_backup,
+    build_mas_preview,
+    build_native_preview,
+    build_overlay_preview,
+    get_mas_backup_dir,
+    get_native_backup_dir,
+    group_overlay,
+    list_mas_backups,
+    list_native_backups,
+    mas_backup_root,
+    mas_user_dir,
+    read_overlay_sidecar,
+    read_overlay_values,
+    restore_mas_backup,
+    restore_native_backup,
+)
 from .notify import push_notification
 
-__all__ = ["push_notification"]
+__all__ = [
+    "push_notification",
+    "archive_mas_backup",
+    "archive_mas_runtime_backup",
+    "archive_native_backup",
+    "build_mas_preview",
+    "build_native_preview",
+    "build_overlay_preview",
+    "get_mas_backup_dir",
+    "get_native_backup_dir",
+    "group_overlay",
+    "list_mas_backups",
+    "list_native_backups",
+    "mas_backup_root",
+    "mas_user_dir",
+    "read_overlay_sidecar",
+    "read_overlay_values",
+    "restore_mas_backup",
+    "restore_native_backup",
+]

@@ -1,14 +1,5 @@
 <template>
   <div class="oknte-config-editor">
-    <div class="editor-header">
-      <h3>{{ t('edit.okNteConfiguration') }}</h3>
-      <!-- 保存为静默自动进行（不展示已保存/未保存标签，避免与配置备份混淆）；
-           右侧动作区由父组件经 header-actions 插槽注入（配置恢复入口） -->
-      <div class="editor-header-actions">
-        <slot name="header-actions" />
-      </div>
-    </div>
-
     <a-spin :spinning="loading" :tip="t('edit.loadingConfiguration')">
       <a-row :gutter="24" class="editor-layout">
         <!-- 左侧：配置文件列表 -->
@@ -46,7 +37,7 @@
               <span class="form-filename">{{ selectedConfigFilename }}</span>
             </div>
 
-            <a-form layout="vertical" class="form-fields">
+            <a-form layout="vertical" class="form-fields" :disabled="loading || saving">
               <a-form-item
                 v-for="field in selectedConfig.fields"
                 :key="field.name"
@@ -326,9 +317,11 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
 import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
+import { onBeforeRouteLeave, onBeforeRouteUpdate } from 'vue-router'
 import { message } from 'ant-design-vue'
 import { ArrowDownOutlined, ArrowUpOutlined } from '@ant-design/icons-vue'
 import { OknteService } from '@/api/services/OknteService'
+import { useScriptConfigLock } from '@/composables/useScriptConfigLock'
 
 const { t } = useI18n()
 
@@ -376,9 +369,11 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   saved: []
+  savingChange: [value: boolean]
 }>()
 
 const logger = window.electronAPI.getLogger('OK-NTE配置编辑')
+const { configLocked } = useScriptConfigLock(() => props.scriptId)
 
 const loading = ref(false)
 const saving = ref(false)
@@ -387,6 +382,8 @@ const selectedFilename = ref<string | null>(null)
 const changedFiles = ref(new Set<string>())
 const localChanges = ref<Record<string, Record<string, any>>>({})
 const optionLabels = ref<Record<string, string>>({})
+let saveTimer: ReturnType<typeof setTimeout> | undefined
+let pendingSave: Promise<boolean> | undefined
 
 const groupedConfigs = computed(() => {
   const groups: Record<string, ConfigFile[]> = {}
@@ -426,6 +423,7 @@ const cleanupFileChanges = (filename: string) => {
 }
 
 const setFieldValue = (filename: string, fieldName: string, value: any) => {
+  if (saving.value || loading.value) return
   if (!localChanges.value[filename]) {
     localChanges.value[filename] = {}
   }
@@ -460,6 +458,7 @@ const setNestedFieldValue = (
   child: ConfigField,
   value: any
 ) => {
+  if (saving.value || loading.value) return
   if (!localChanges.value[filename]) {
     localChanges.value[filename] = {}
   }
@@ -575,7 +574,7 @@ const selectConfig = (filename: string) => {
 }
 
 const loadConfigs = async () => {
-  if (!props.scriptId || !props.userId) return
+  if (!props.scriptId || !props.userId) return false
   loading.value = true
   try {
     const resp = await OknteService.getOknteConfigsListApiScriptsOknteConfigsListPost(
@@ -599,6 +598,7 @@ const loadConfigs = async () => {
       } else {
         selectedFilename.value = configs.value[0].filename
       }
+      return true
     } else {
       message.error(resp?.message || '加载配置失败')
     }
@@ -608,11 +608,18 @@ const loadConfigs = async () => {
   } finally {
     loading.value = false
   }
+  return false
 }
 
-const saveAll = async (silent = true) => {
-  if (!hasChanges.value) return
+const persistChanges = async (silent: boolean): Promise<boolean> => {
+  if (configLocked.value) {
+    if (!hasChanges.value) return true
+    message.error(t('edit.configLocked'))
+    return false
+  }
+  if (!hasChanges.value) return true
   saving.value = true
+  emit('savingChange', true)
   try {
     const configsToUpdate = { ...localChanges.value }
     const resp = await OknteService.batchUpdateOknteConfigsApiScriptsOknteConfigsBatchUpdatePost({
@@ -621,13 +628,12 @@ const saveAll = async (silent = true) => {
       configs: configsToUpdate,
     })
     if (resp?.code === 200) {
-      changedFiles.value = new Set()
-      localChanges.value = {}
-      await loadConfigs()
+      if (!(await loadConfigs())) return false
       emit('saved')
       if (!silent) {
         message.success(t('edit.configurationSaved'))
       }
+      return true
     } else {
       message.error(resp?.message || '保存失败')
     }
@@ -636,14 +642,42 @@ const saveAll = async (silent = true) => {
     message.error(t('edit.couldNotSaveConfiguration'))
   } finally {
     saving.value = false
+    emit('savingChange', false)
   }
+  return false
 }
+
+const saveAll = (silent = true): Promise<boolean> => {
+  clearTimeout(saveTimer)
+  if (pendingSave) return pendingSave
+  pendingSave = persistChanges(silent).finally(() => {
+    pendingSave = undefined
+  })
+  return pendingSave
+}
+
+defineExpose({ saveAll })
+
+watch(
+  localChanges,
+  () => {
+    clearTimeout(saveTimer)
+    if (hasChanges.value && !saving.value) {
+      saveTimer = setTimeout(() => void saveAll(), 500)
+    }
+  },
+  { deep: true }
+)
+
+onBeforeRouteLeave(async () => await saveAll())
+onBeforeRouteUpdate(async () => await saveAll())
 
 onMounted(() => {
   loadConfigs()
 })
 
 onBeforeUnmount(async () => {
+  clearTimeout(saveTimer)
   if (hasChanges.value) {
     await saveAll(true)
   }
@@ -664,37 +698,6 @@ watch(
   display: flex;
   flex-direction: column;
   gap: 16px;
-}
-
-.editor-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding-bottom: 16px;
-  border-bottom: 2px solid var(--ant-color-border-secondary);
-}
-
-.editor-header h3 {
-  margin: 0;
-  font-size: 20px;
-  font-weight: 700;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.editor-header-actions {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.editor-header h3::before {
-  content: '';
-  width: 4px;
-  height: 24px;
-  background: linear-gradient(135deg, var(--ant-color-primary), var(--ant-color-primary-hover));
-  border-radius: 2px;
 }
 
 .editor-layout {

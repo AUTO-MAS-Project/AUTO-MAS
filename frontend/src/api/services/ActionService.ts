@@ -25,6 +25,7 @@ import type { ScriptUploadIn } from '../models/ScriptUploadIn';
 import type { ShareAuthStatusOut } from '../models/ShareAuthStatusOut';
 import type { TaskCreateIn } from '../models/TaskCreateIn';
 import type { TaskCreateOut } from '../models/TaskCreateOut';
+import type { VirtualDisplayDetachOut } from '../models/VirtualDisplayDetachOut';
 import type { WebhookTestIn } from '../models/WebhookTestIn';
 import type { CancelablePromise } from '../core/CancelablePromise';
 import { OpenAPI } from '../core/OpenAPI';
@@ -346,6 +347,21 @@ export class ActionService {
             errors: {
                 422: `Validation Error`,
             },
+        });
+    }
+    /**
+     * 立即拆除虚拟显示器
+     * 用户明示要拆：真实显示器回来时的询问弹窗和设置页的「立即拆除」都走这里。
+     *
+     * 任务在不在跑都照办。拆完守卫的巡检照常：桌面上还有真实输出就什么都不做，一块都没有
+     * 的话下一轮会重新挂上——要彻底停用得关开关。
+     * @returns VirtualDisplayDetachOut Successful Response
+     * @throws ApiError
+     */
+    public static detachVirtualDisplayApiSettingVirtualDisplayDetachPost(): CancelablePromise<VirtualDisplayDetachOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/setting/virtual-display/detach',
         });
     }
     /**

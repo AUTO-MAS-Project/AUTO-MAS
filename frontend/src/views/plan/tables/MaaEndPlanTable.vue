@@ -460,9 +460,7 @@ const configRows = computed(() => [
   {
     rowKey: 'EssenceMenu',
     fieldName: '基质模式',
-    ...Object.fromEntries(
-      MAAEND_PLAN_TIME_KEYS.map(timeKey => [timeKey, getEssenceMenu(timeKey)])
-    ),
+    ...Object.fromEntries(MAAEND_PLAN_TIME_KEYS.map(timeKey => [timeKey, getEssenceMenu(timeKey)])),
   },
   {
     rowKey: 'CurrentTask',

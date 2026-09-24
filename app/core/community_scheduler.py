@@ -34,9 +34,7 @@ CommunityTriggerSource = Literal[
     "task_manual",
     "task_startup",
 ]
-TASK_COMMUNITY_SOURCES = frozenset(
-    {"task_scheduled", "task_manual", "task_startup"}
-)
+TASK_COMMUNITY_SOURCES = frozenset({"task_scheduled", "task_manual", "task_startup"})
 AccountCredentialChecker = Callable[[object], bool]
 
 
@@ -93,6 +91,7 @@ def should_run_community_for_source(
     if source == "startup":
         return bool(run_on_startup)
     return source in TASK_COMMUNITY_SOURCES
+
 
 __all__ = [
     "TASK_COMMUNITY_SOURCES",

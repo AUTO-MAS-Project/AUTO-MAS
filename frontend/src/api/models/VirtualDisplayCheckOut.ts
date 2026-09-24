@@ -24,6 +24,10 @@ export type VirtualDisplayCheckOut = {
      * 检测时的显示器概况
      */
     monitors?: string;
+    /**
+     * 守卫此刻挂着的虚拟显示器（设备名与模式），没挂时为空；设置页据此显示当前挂着哪块
+     */
+    holding?: (string | null);
     results?: Array<VirtualDisplayCheckResultItem>;
 };
 

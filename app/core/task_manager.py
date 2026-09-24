@@ -24,9 +24,10 @@ import asyncio
 import os
 import time
 import uuid
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, Literal
+from typing import Callable, Dict, Literal
 
 import app.task as task
 from app.core.desktop_guard import ensure_desktop_available
@@ -91,6 +92,55 @@ System = LazyProxy("app.services", "System")
 
 # 脚本配置类名 → 脚本类型键（与 ScriptCreateIn.type 词表一致）
 _SCRIPT_TYPE_BY_CLASS = {cls.__name__: key for key, cls in CLASS_BOOK.items()}
+
+
+@dataclass(frozen=True)
+class _ManagerBuildContext:
+    """构造脚本调度器所需的额外输入（占用归属与 SRC 根路径）。"""
+
+    script_uid: uuid.UUID
+    reservation_owner: str
+    src_root_path: Path | None
+    reservations: "_ScriptTaskReservations"
+
+
+def _build_src_manager(
+    script_item: ScriptItem, ctx: _ManagerBuildContext
+) -> TaskExecuteBase:
+    """SRC 要把 src 根路径的占用回调交给调度器，占用记在构建上下文的预留表里。"""
+
+    if ctx.src_root_path is None:
+        raise RuntimeError("SRC 路径占用未初始化")
+    return task.SrcManager(
+        script_item,
+        reserved_src_root_path=ctx.src_root_path,
+        reserve_src_root=lambda root_path: ctx.reservations.try_acquire(
+            ctx.script_uid,
+            ctx.reservation_owner,
+            src_root_path=root_path,
+        ),
+    )
+
+
+# 脚本配置类 → 调度器工厂。各配置类互不为父子（都直接继承 ConfigBase），
+# 按 type 精确查表；新增脚本类型在这里注册一条即可。工厂体内经 task 包
+# 惰性取类，维持 app/task/__init__.py 为 worker 子进程设的导入隔离。
+_MANAGER_BOOK: dict[
+    type, Callable[[ScriptItem, _ManagerBuildContext], TaskExecuteBase]
+] = {
+    MaaConfig: lambda script_item, _ctx: task.MaaManager(script_item),
+    GeneralConfig: lambda script_item, _ctx: task.GeneralManager(script_item),
+    OkwwConfig: lambda script_item, _ctx: task.OkwwManager(script_item),
+    OkNteConfig: lambda script_item, _ctx: task.OkNteManager(script_item),
+    MaaEndConfig: lambda script_item, _ctx: task.MaaEndManager(script_item),
+    M9AConfig: lambda script_item, _ctx: task.M9AManager(script_item),
+    HSRConfig: lambda script_item, _ctx: task.HSRManager(script_item),
+    BetterGIConfig: lambda script_item, _ctx: task.BetterGIManager(script_item),
+    ZzzOdConfig: lambda script_item, _ctx: task.ZzzOdManager(script_item),
+    BAAHConfig: lambda script_item, _ctx: task.BAAHManager(script_item),
+    MaaFWConfig: lambda script_item, _ctx: task.MaaFWEmbeddedManager(script_item),
+    SrcConfig: _build_src_manager,
+}
 
 logger = get_logger("业务调度")
 
@@ -246,10 +296,15 @@ class Task(TaskExecuteBase):
         task_info: TaskInfo,
         script_identities: list[WSTaskScriptIdentityData],
         script_reservations: _ScriptTaskReservations | None = None,
+        script_run_days: list[list[str]] | None = None,
     ):
         super().__init__()
         self.task_info = task_info
         self.script_identities = script_identities
+        # 队列项限定的运行周几，与 script_identities 一一对应；非队列任务为 None。
+        # 以任务创建那一刻的星期为准，队列跨过午夜后后面的项不会按第二天算。
+        self.script_run_days = script_run_days
+        self.run_weekday = datetime.now().strftime("%A")
         self.script_reservations = script_reservations or _ScriptTaskReservations()
         self.is_closing = False
         self._exit_result = "success"
@@ -340,46 +395,22 @@ class Task(TaskExecuteBase):
     ):
         """按脚本类型构造对应的脚本调度器，类型不支持时返回 None。
 
-        顺序执行与循环运行共用这一份分派，新增脚本类型只需改这里。
+        顺序执行与循环运行共用这一份分派，新增脚本类型在 _MANAGER_BOOK
+        注册一条工厂即可；各配置类互不为父子，按 type 精确查表。
         """
 
-        if isinstance(script_config, MaaConfig):
-            return task.MaaManager(script_item)
-        if isinstance(script_config, SrcConfig):
-            if src_root_path is None:
-                raise RuntimeError("SRC 路径占用未初始化")
-            return task.SrcManager(
-                script_item,
-                reserved_src_root_path=src_root_path,
-                reserve_src_root=lambda root_path, script_uid=script_uid, owner=reservation_owner: (
-                    self.script_reservations.try_acquire(
-                        script_uid,
-                        owner,
-                        src_root_path=root_path,
-                    )
-                ),
-            )
-        if isinstance(script_config, GeneralConfig):
-            return task.GeneralManager(script_item)
-        if isinstance(script_config, OkwwConfig):
-            return task.OkwwManager(script_item)
-        if isinstance(script_config, OkNteConfig):
-            return task.OkNteManager(script_item)
-        if isinstance(script_config, MaaEndConfig):
-            return task.MaaEndManager(script_item)
-        if isinstance(script_config, M9AConfig):
-            return task.M9AManager(script_item)
-        if isinstance(script_config, HSRConfig):
-            return task.HSRManager(script_item)
-        if isinstance(script_config, BetterGIConfig):
-            return task.BetterGIManager(script_item)
-        if isinstance(script_config, ZzzOdConfig):
-            return task.ZzzOdManager(script_item)
-        if isinstance(script_config, BAAHConfig):
-            return task.BAAHManager(script_item)
-        if isinstance(script_config, MaaFWConfig):
-            return task.MaaFWEmbeddedManager(script_item)
-        return None
+        build = _MANAGER_BOOK.get(type(script_config))
+        if build is None:
+            return None
+        return build(
+            script_item,
+            _ManagerBuildContext(
+                script_uid=script_uid,
+                reservation_owner=reservation_owner,
+                src_root_path=src_root_path,
+                reservations=self.script_reservations,
+            ),
+        )
 
     async def _run_cycle_task(self) -> None:
         """循环运行：按各队列项自己的周期，持续调度整个队列。
@@ -658,8 +689,8 @@ class Task(TaskExecuteBase):
                 "manual_task": "task_manual",
                 "startup_task": "task_startup",
             }.get(self.task_info.trigger_source, "task_manual")
-            self.task_info.community_results = (
-                await MainTimer.try_community_for_task(source=sign_source)
+            self.task_info.community_results = await MainTimer.try_community_for_task(
+                source=sign_source
             )
 
         await self.prepare()
@@ -692,6 +723,13 @@ class Task(TaskExecuteBase):
         await ensure_desktop_available()
         await self._run_script_list(start_index)
 
+    def _is_script_scheduled_today(self, index: int) -> bool:
+        """队列项的运行周几不含创建任务当天时跳过；非队列任务与缺省项一律运行。"""
+
+        if self.script_run_days is None or index >= len(self.script_run_days):
+            return True
+        return self.run_weekday in self.script_run_days[index]
+
     async def _run_script_list(self, start_index: int) -> None:
         for self.task_info.current_index in range(
             start_index, len(self.task_info.script_list)
@@ -711,6 +749,13 @@ class Task(TaskExecuteBase):
                         level="error",
                         message=f"任务 {script_item.name} 对应脚本已被删除",
                     ),
+                )
+                continue
+
+            if not self._is_script_scheduled_today(self.task_info.current_index):
+                script_item.status = "跳过"
+                logger.info(
+                    f"跳过任务: {current_script_uid}, 队列项未安排在 {self.run_weekday} 运行"
                 )
                 continue
 
@@ -849,15 +894,23 @@ class _TaskManager:
         self._startup_queue_running = False
 
     @staticmethod
-    def _queue_script_ids(queue_id: uuid.UUID) -> list[uuid.UUID]:
-        """返回队列中实际引用的脚本 ID。"""
+    def _queue_script_entries(
+        queue_id: uuid.UUID,
+    ) -> list[tuple[uuid.UUID, list[str]]]:
+        """返回队列中实际引用的脚本 ID 及该队列项限定的运行周几。"""
 
         return [
-            uuid.UUID(script_id)
+            (uuid.UUID(script_id), list(queue_item.get("Schedule", "Days")))
             for queue_item in Config.QueueConfig[queue_id].QueueItem.values()
             if (script_id := str(queue_item.get("Info", "ScriptId") or "").strip())
             and script_id != "-"
         ]
+
+    @classmethod
+    def _queue_script_ids(cls, queue_id: uuid.UUID) -> list[uuid.UUID]:
+        """返回队列中实际引用的脚本 ID。"""
+
+        return [script_id for script_id, _ in cls._queue_script_entries(queue_id)]
 
     @staticmethod
     def _script_identity(script_id: uuid.UUID) -> WSTaskScriptIdentityData:
@@ -1067,18 +1120,23 @@ class _TaskManager:
         else:
             raise ValueError(f"任务 {uid} 无法找到对应脚本配置")
 
-        # 创建时冻结任务脚本身份，供 task.created 通知与运行时快照复用
-        target_script_ids = (
-            self._queue_script_ids(queue_id)
-            if queue_id is not None
-            else [script_uid]
-            if script_uid is not None
-            else []
-        )
+        # 创建时冻结任务脚本身份，供 task.created 通知与运行时快照复用；
+        # 队列项限定的运行周几随身份一起冻结，顺序执行时据此跳过
+        script_run_days: list[list[str]] | None = None
+        if queue_id is not None:
+            queue_entries = [
+                entry
+                for entry in self._queue_script_entries(queue_id)
+                if entry[0] in Config.ScriptConfig
+            ]
+            target_script_ids = [script_id for script_id, _ in queue_entries]
+            script_run_days = [days for _, days in queue_entries]
+        elif script_uid is not None and script_uid in Config.ScriptConfig:
+            target_script_ids = [script_uid]
+        else:
+            target_script_ids = []
         script_identities = [
-            self._script_identity(script_id)
-            for script_id in target_script_ids
-            if script_id in Config.ScriptConfig
+            self._script_identity(script_id) for script_id in target_script_ids
         ]
 
         reservation_owner = str(task_uid)
@@ -1113,6 +1171,7 @@ class _TaskManager:
                 self.task_info[task_uid],
                 script_identities,
                 self._script_reservations,
+                script_run_days=script_run_days,
             )
             await Publisher.send(
                 id=protocol.ID_TASK_MANAGER,
@@ -1184,11 +1243,14 @@ class _TaskManager:
                         await System.cancel_power_task()
 
                     task_item_list = list(self.task_handler.values())
+                    if task_item_list:
+                        logger.info("等待全部任务中的子任务结束...")
                     for task_item in task_item_list:
                         if not task_item.is_closing:
                             task_item.cancel()
                             task_item.is_closing = True
-                            await task_item.accomplish.wait()
+                        await task_item.accomplish.wait()
+                        logger.info(f"子任务已结束: {task_item.task_id}")
                     cleanup_tasks = [
                         cleanup for cleanup in self._cleanup_tasks if not cleanup.done()
                     ]

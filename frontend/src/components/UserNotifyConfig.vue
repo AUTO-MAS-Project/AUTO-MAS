@@ -38,6 +38,17 @@
         </div>
       </div>
 
+      <div v-if="showDropStatistics" class="notify-channel-item">
+        <div class="notify-channel-header">
+          <span class="notify-channel-name">{{ t('edit.notifyDropStatistics') }}</span>
+          <a-switch
+            v-model:checked="notify.IfSendDropStatistics"
+            :disabled="loading || !notify.Enabled"
+            @change="emitSave('Notify.IfSendDropStatistics', notify.IfSendDropStatistics)"
+          />
+        </div>
+      </div>
+
       <div class="notify-channel-item">
         <div class="notify-channel-header">
           <span class="notify-channel-name">{{ t('edit.emailNotification') }}</span>
@@ -105,6 +116,7 @@ type UserNotifyConfigData = {
   Enabled?: boolean | null
   IfSendStatistic?: boolean | null
   IfSendSixStar?: boolean | null
+  IfSendDropStatistics?: boolean | null
   IfSendMail?: boolean | null
   ToAddress?: string | null
   IfServerChan?: boolean | null
@@ -121,6 +133,8 @@ withDefaults(
     scriptId?: string | null
     userId?: string | null
     showSixStar?: boolean
+    // 掉落统计开关（BGI「奖励识别」汇总）：仅 BetterGI 用户编辑页启用
+    showDropStatistics?: boolean
     // 卡片化页面（如 MaaEnd 用户编辑页）由外层卡片提供标题时隐藏内部标题
     hideSectionHeader?: boolean
   }>(),
@@ -129,6 +143,7 @@ withDefaults(
     scriptId: null,
     userId: null,
     showSixStar: false,
+    showDropStatistics: false,
     hideSectionHeader: false,
   }
 )

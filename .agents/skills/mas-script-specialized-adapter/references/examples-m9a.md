@@ -49,3 +49,16 @@ MFAA 形态**通常不把「本次要跑的任务队列」托付给一条启动�
 仍为 MaaFramework + 任务队列 JSON → 复制本线：复制任务目录与表面、改 `ScriptType` / Hub / 类型声明；schema 变更后重新生成 OpenAPI，**勿手改生成模型**。脚本级字段少时可保持薄 ScriptEdit。
 
 参考 PR：[#154](https://github.com/AUTO-MAS-Project/AUTO-MAS/pull/154) 全量表面 + 后端（体验类改动宜单独 PR）
+
+## 配置恢复接入要求（MFAA 线形态）
+
+接入通用配置恢复（`app/utils/config_restore.py` + `/backup/*` 端点 + `ConfigRestoreSection.vue`，见 [config-restore.md](config-restore.md) §1.1.4）时，本线与目录型专项（MAA/MaaEnd）的形态差异必须遵守：
+
+- **无 per-user ConfigFile 目录**：mas 池是**纯字段侧车**（Info 核心 + Task.Queue 原始值），无目录部分、无播种、恢复即回填 UserData；配置来源（Mode）只预览不回填。
+- **无 ScriptConfig 遮罩会话**：不提供「查看详细配置」（onDetail 不传即不渲染按钮）——M9A.exe 打开即读盘自动执行，没有「打开 GUI 停留等人看」的受控入口；归档三时机缺「会话包络」时机，只有进入编辑页（native）/ 退出编辑页（mas）/ 任务前（native，manager prepare 换出后、instances 清理前，此刻 config/ 仍是完整现场）。
+- **队列侧车双份**：原始 Queue JSON（回填用）+ 展示快照（归档时经 interface.json 翻译成中文文本，预览零本体依赖）；自描述值（selected_cases/输入值）不依赖定义直出，index 类选项缺定义时降级原始值不臆造。
+- **native 预览全实例反读**：M9A GUI 的实例文件是 `instances/` 下**任意命名**（实测为哈希，`default.json` 只是 MAS 的注入模板之一，不能只认它），逐个反读、每实例一个折叠面板（ZzzOd 实例列表同语义，`a-collapse`）；**实例显示名取 JSON 内 `InstanceName`，文件名仅作缺失回退**——MaaFramework 线的实例文件名普遍不是显示名。每实例摘要行（服务器资源/已启用任务/账号/连接地址/控制器）+ 该实例任务配置详情都折在同一个面板里；config.json 全局设置不进预览。
+- **恢复按钮挂任务队列区标题行**（该专项核心配置区）：标题行**恒渲染**，
+  `v-if` 只门控队列内容不门控标题行——直控/快速配置关闭下标题行仍在，恢复
+  入口不随区块内容隐藏而消失，无需全局兜底按钮。
+- 运行不修改 MAS 用户字段（只写 Data.* 运行记录），mas 池无「运行前归档」必要；native 归档必须覆盖直控+快速配置写入前的现场。

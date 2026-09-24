@@ -25,7 +25,7 @@
 - 专项在 ``tools/restore_service.py`` 声明 :class:`ConfigRestorePool` 池表
   （普通函数，显式收 :class:`RestoreContext`，可直接单测），核心门面按脚本
   类型分发并用 :func:`build_restore_service` 一次性绑定上下文；
-- HTTP 层只有一组通用端点（``/backup/list|ensure|restore|preview``），
+- HTTP 层只有一组通用端点（``/backup/list|ensure|restore|preview|file``），
   target 取值由专项池定义，校验失败统一 400；
 - 服务层不感知任何脚本结构，也不做文件读写之外的业务（守卫/信息字段回填等
   归专项池函数）。
@@ -36,12 +36,30 @@
 
 from __future__ import annotations
 
+import uuid
 from dataclasses import dataclass
-from typing import Any, Awaitable, Callable
+from pathlib import Path
+from typing import Any, Awaitable, Callable, Literal
 
 from app.utils import get_logger
+from app.utils.config_archive import (
+    MODE_FILE_NAME,
+    archive_files,
+    dir_files,
+    get_backup_dir,
+    list_times,
+    read_backup_mode,
+    read_backup_text,
+    write_backup_mode,
+)
 
 logger = get_logger("配置恢复服务")
+
+MODE_SCRIPT = "脚本"
+"""三态配置来源：脚本级（owner = 共享 Default 目录）"""
+
+MODE_USER = "用户"
+"""三态配置来源：用户级（owner = 用户独立目录）"""
 
 
 @dataclass
@@ -60,6 +78,9 @@ class RestoreContext:
     user_id: str
     """目标用户 ID。"""
 
+    force: bool = False
+    """损坏时跳过保护步骤的强制恢复（仅消费它的专项池读取，其余忽略）。"""
+
 
 @dataclass
 class ConfigRestorePool:
@@ -68,27 +89,108 @@ class ConfigRestorePool:
     全部函数第一个参数收 :class:`RestoreContext`，其余参数见各字段；
     ``kind`` 供前端分段器渲染（``user``=MAS 用户配置、``script``=脚本原生），
     池表顺序即前端展示顺序（MAS 在前、脚本在后）。
+
+    两种声明形态（可混用）：
+
+    - **声明式（推荐）**：提供 :attr:`files`（归档什么）+ :attr:`backup_root`
+      （放哪里）两个真知识回调，``list`` / ``snapshot`` / ``read_file`` /
+      无 ``preview`` 时的 files 兜底载荷全部由基座自动派生；
+    - **显式回调**：直接给 ``list_backups`` / ``snapshot`` / ``read_file`` /
+      ``preview``，优先级高于声明式派生（已有专项的定制预览不受影响）。
+
+    ``restore`` 恒为显式回调（恢复语义含守卫/回填/写回规则，是专项知识，
+    不做缺省）；缺省表示该池不支持恢复。
     """
 
     key: str
     """目标标识（如 ``mas`` / ``onedragon`` / ``native``），前端与后端路由共用。"""
 
     kind: str
-    """池类别：``user`` 或 ``script``。"""
+    """池类别：``user`` 或 ``script``。
 
-    list_backups: Callable[[RestoreContext], Awaitable[list[str]]]
-    """返回该目标全部备份时间戳（倒序，最新在前）。"""
+    用于构建校验与三态增强的作用域判定（``mas_mode`` 仅 user 池生效）；
+    前端分段展示顺序由池表顺序决定（MAS 在前、脚本在后）。
+    """
+
+    list_backups: Callable[[RestoreContext], Awaitable[list[str]]] | None = None
+    """返回该目标全部备份时间戳（倒序，最新在前）；声明式下自动派生。"""
 
     preview: Callable[[RestoreContext, str], Awaitable[dict]] | None = None
     """给定时间戳返回预览载荷 dict（纯读不恢复；专项自定义结构）。"""
 
-    restore: Callable[[RestoreContext, str], Awaitable[object]] | None = None
-    """给定时间戳执行恢复（恢复前归档当前由池函数自理）。"""
+    restore: Callable[[RestoreContext, str], Awaitable[None]] | None = None
+    """给定时间戳执行恢复（恢复前归档当前由池函数自理）；返回值当前无
+    消费方（门面层丢弃），恢复后的回填等语义在回调内自理。缺省表示该池
+    不支持恢复。"""
 
     snapshot: Callable[[RestoreContext], Awaitable[dict]] | None = None
     """归档当前配置（指纹去重，无变化跳过）；供三时机 ``service.ensure`` 调用。
 
     返回 ``{"created": bool, "time": str}``。
+    """
+
+    read_file: Callable[[RestoreContext, str, str], Awaitable[dict]] | None = None
+    """只读读取指定备份内一个文本文件（``(ctx, ts, rel_path)``）。
+
+    供前端预览弹窗「查看原始文件」；返回 ``{"path", "size", "content"}``。
+    路径越界/超限等校验建议直接调用
+    :func:`app.utils.config_archive.read_backup_text`。``None`` 时若声明了
+    :attr:`files` + :attr:`backup_root`，由基座按同函数自动实现。
+    """
+
+    files: (
+        Callable[
+            [RestoreContext],
+            Awaitable["dict[str, Path | str | bytes] | None"],
+        ]
+        | None
+    ) = None
+    """声明式：本次要归档的文件集（``ctx`` → 相对键 → ``Path`` 或内存内容）。
+
+    ``str`` 按 UTF-8 编码、``bytes`` 原样写入归档（页面字段侧车直接给
+    JSON 字符串，免临时文件）；值为 ``None`` 或空 dict 表示当前无可归档
+    内容（``snapshot`` 报「无变化」）。与 :attr:`backup_root` 一起构成
+    声明式接入的最小面。
+    """
+
+    backup_root: Callable[[RestoreContext], Awaitable[Path | None]] | None = None
+    """声明式：该池的归档根目录（含分桶规则，不含时间戳目录）。
+
+    返回 ``None`` 表示当前无可归档根（如脚本路径未配置）——``list`` 为空、
+    ``snapshot`` 报无变化，而不是抛错（用户未配置路径时编辑页不该报错）。
+    声明式派生（``list`` / ``snapshot`` / ``read_file`` / files 兜底
+    ``preview``）全部基于它；单独提供亦可让 ``read_file`` / files 兜底
+    生效。
+    """
+
+    mas_mode: Literal["tri_state", "user_only", "sidecar_only"] | None = None
+    """MAS 池的配置来源三态声明（仅 ``kind="user"`` 池有意义；缺省 ``None``
+    表示不启用三态增强，行为完全等于现状，向后兼容）。
+
+    - ``"tri_state"``：owner 随 ``Info.Mode`` 切换（脚本=共享 ``Default``
+      目录、用户=独立目录、直控=无 MAS 配置）。归档时把备份时点 Mode 写入
+      备份元数据（``_mas_mode``）；恢复时若备份 Mode ≠ 当前 Mode，自动把
+      ``Info.Mode`` 写回备份时点再执行恢复——专项 restore 回调按当前 Mode
+      解析 owner，写回后目标自然就是备份 Mode 的目录（跨来源恢复 = 目录
+      重定向 + 状态切回）。提示由前端比对 ``list`` 返回的当前来源给出。
+    - ``"user_only"``：恒按用户目录（无 owner 解耦）。备份恒标注「用户级」，
+      无跨来源校验（备份内容与 Mode 无关）。
+    - ``"sidecar_only"``：纯字段侧车、无目录副本。备份标注实际 Mode 供列表
+      标签，无目录迁移校验（恢复是字段回填，Mode 仅预览不回填）。
+    """
+
+    current_mode: Callable[[RestoreContext], Awaitable[str | None]] | None = None
+    """读当前配置来源 Mode（如 ``UserData.Info.Mode``）。
+
+    缺省用基座默认读取（统一字段 ``Info.Mode``，读不到返回 ``None``）；
+    ``tri_state`` / ``sidecar_only`` 标注备份时点 Mode 用。
+    """
+
+    set_mode: Callable[[RestoreContext, str], Awaitable[None]] | None = None
+    """跨来源恢复时把 ``Info.Mode`` 写回备份时点（``tri_state`` 必须）。
+
+    缺省 ``None``：跨来源恢复（备份 Mode ≠ 当前 Mode）时拒绝执行并报错，
+    避免「目录写过去了状态没切回、下次运行 owner 又变回去」的半恢复。
     """
 
 
@@ -105,8 +207,8 @@ class ConfigRestoreTarget:
     preview: Callable[[str], Awaitable[dict]] | None = None
     """给定时间戳返回预览摘要 dict（纯读不恢复）；None 表示该目标不支持预览。"""
 
-    restore: Callable[[str], Awaitable[object]] | None = None
-    """给定时间戳执行恢复（恢复前归档当前由回调自理）；返回供前端展示的结果。"""
+    restore: Callable[[str], Awaitable[None]] | None = None
+    """给定时间戳执行恢复（恢复前归档当前由回调自理）。"""
 
     snapshot: Callable[[], Awaitable[dict]] | None = None
     """归档当前配置（指纹去重，无变化跳过）；None 表示该目标不支持按需归档。
@@ -116,22 +218,32 @@ class ConfigRestoreTarget:
     ``{"created": bool, "time": str}``。
     """
 
+    read_file: Callable[[str, str], Awaitable[dict]] | None = None
+    """只读读取指定备份内一个文本文件（``(ts, rel_path)``）；None 不支持。"""
+
+    backup_dir_for: Callable[[str], Awaitable[Path | None]] | None = None
+    """``ts`` → 归档目录（缺省派生用）；service.preview 借此为未带 ``files``
+    字段的定制预览载荷注入标准文件清单（见 skill 文档 §3.4 备份文件兜底）。"""
+
+    mas_mode: Literal["tri_state", "user_only", "sidecar_only"] | None = None
+    """池声明的三态类型（绑定后透传；``list`` 标注 / ``restore`` 切换用）。"""
+
+    current_mode: Callable[[], Awaitable[str | None]] | None = None
+    """读当前配置来源 Mode（绑定上下文后无参调用）。"""
+
+    set_mode: Callable[[str], Awaitable[None]] | None = None
+    """跨来源恢复时写回备份时点 Mode（绑定上下文后无参调用）。"""
+
 
 class ConfigRestoreService:
     """双目标配置恢复服务：按 key 分发列表/预览/恢复。
 
-    ``script_name`` 只用于文案参数化（错误提示等），前端展示文案走 i18n
-    ``{script}`` 插值。
+    专项展示名走前端 i18n ``{script}`` 插值，本服务不感知。
     """
 
-    def __init__(
-        self,
-        script_name: str,
-        targets: list[ConfigRestoreTarget],
-    ) -> None:
+    def __init__(self, targets: list[ConfigRestoreTarget]) -> None:
         if not targets:
             raise ValueError("配置恢复服务至少需要一个目标池")
-        self.script_name = script_name
         self._targets = {t.key: t for t in targets}
 
     @property
@@ -146,20 +258,99 @@ class ConfigRestoreService:
             raise ValueError(f"不支持的恢复目标: {key}")
         return target
 
-    async def list(self, key: str) -> list[str]:
-        return await self.get_target(key).list_backups()
+    async def list(self, key: str) -> list[dict]:
+        """备份列表（倒序），每项带配置来源标注：``[{"time", "mode"}]``。
+
+        ``mode`` 为备份时点的三态 Mode（``脚本`` / ``用户`` / ``直控``）；
+        无标注（旧版备份或未声明三态）为 ``None``。当前来源见
+        :meth:`current_mode`。
+        """
+
+        target = self.get_target(key)
+        if target.list_backups is None:
+            raise ValueError(f"目标「{key}」不支持列出备份")
+        times = await target.list_backups()
+        items: list[dict] = []
+        for ts in times:
+            mode: str | None = None
+            if target.mas_mode is not None and target.backup_dir_for is not None:
+                backup_dir = await target.backup_dir_for(ts)
+                if backup_dir is not None:
+                    mode = read_backup_mode(backup_dir)
+            items.append({"time": ts, "mode": mode})
+        return items
+
+    async def current_mode(self, key: str) -> str | None:
+        """该池当前的配置来源 Mode（``脚本`` / ``用户`` / ``直控``）。
+
+        只有 ``tri_state`` 池有「跨来源」概念：``user_only`` / ``sidecar_only``
+        与脚本级池返回 ``None``（备份标注的实际 Mode 只作展示，不参与比对）。
+        """
+
+        target = self.get_target(key)
+        if target.mas_mode != "tri_state" or target.current_mode is None:
+            return None
+        return await target.current_mode()
 
     async def preview(self, key: str, ts: str) -> dict:
+        """预览载荷（专项定制结构）+ 标准 ``files`` 字段统一注入。
+
+        专项定制预览**不需要**自己拼文件清单：载荷未带 ``files`` 键且池
+        声明（或派生）了归档目录时，基座自动把归档内文件清单注入
+        ``payload["files"]``，供前端「备份文件」兜底节渲染。
+        """
+
         target = self.get_target(key)
         if target.preview is None:
             raise ValueError(f"目标「{key}」不支持预览")
-        return await target.preview(ts)
+        payload = await target.preview(ts)
+        if "files" not in payload and target.backup_dir_for is not None:
+            backup_dir = await target.backup_dir_for(ts)
+            if backup_dir is not None:
+                payload["files"] = [
+                    {"path": rel, "size": path.stat().st_size}
+                    for rel, path in sorted(dir_files(backup_dir).items())
+                    if rel != MODE_FILE_NAME  # 模式标注是元数据，不进文件清单
+                ]
+        return payload
 
-    async def restore(self, key: str, ts: str) -> object:
+    async def restore(self, key: str, ts: str) -> None:
+        """执行恢复（三态跨来源则自动切换来源）。
+
+        ``tri_state`` 池的 mas 备份若标注的 Mode ≠ 当前 Mode，先把
+        ``Info.Mode`` 写回备份时点再执行——专项 restore 按当前 Mode 解析
+        owner，写回后目标即备份 Mode 的目录（跨来源恢复 = 目录重定向 +
+        状态切回）。**顺序固定为 set_mode 先于 restore**：若 restore 失败
+        （如目标目录被占用），Mode 已停在备份时点而目录未恢复，下次运行
+        会按备份时点 Mode 读当前目录——恢复前 force 归档已留存底，可手动
+        找回，勿调整为可交换顺序。其余情况（同 Mode / 无标注旧备份 /
+        非 tri_state）直接执行，行为与未声明三态一致。前端据 ``list``
+        返回的当前来源提示。
+        """
+
         target = self.get_target(key)
         if target.restore is None:
             raise ValueError(f"目标「{key}」不支持恢复")
-        return await target.restore(ts)
+        if (
+            target.mas_mode == "tri_state"
+            and target.backup_dir_for is not None
+            and target.current_mode is not None
+        ):
+            backup_dir = await target.backup_dir_for(ts)
+            if backup_dir is not None:
+                backup_mode = read_backup_mode(backup_dir)
+                current_mode = await target.current_mode()
+                if (
+                    backup_mode in (MODE_SCRIPT, MODE_USER)
+                    and current_mode
+                    and backup_mode != current_mode
+                ):
+                    if target.set_mode is None:
+                        raise ValueError(
+                            "该备份来自其他配置来源，当前专项不支持来源切换恢复"
+                        )
+                    await target.set_mode(backup_mode)
+        await target.restore(ts)
 
     async def ensure(self, key: str) -> dict:
         """归档目标池当前配置（指纹去重，无变化自动跳过）。
@@ -172,6 +363,14 @@ class ConfigRestoreService:
         if target.snapshot is None:
             raise ValueError(f"目标「{key}」不支持按需归档")
         return await target.snapshot()
+
+    async def read_backup_file(self, key: str, ts: str, rel_path: str) -> dict:
+        """只读读取指定备份内一个文本文件（预览「查看原始文件」用）。"""
+
+        target = self.get_target(key)
+        if target.read_file is None:
+            raise ValueError(f"目标「{key}」不支持查看文件内容")
+        return await target.read_file(ts, rel_path)
 
 
 def _bind_context(
@@ -188,9 +387,125 @@ def _bind_context(
     return call
 
 
+async def _default_current_mode(ctx: RestoreContext) -> str | None:
+    """基座默认读取当前配置来源 Mode（统一字段 ``UserData.Info.Mode``）。
+
+    读不到（UserData 结构不匹配 / 用户不存在）返回 ``None``（不标注不校验，
+    降级为现状）。专项 UserData 结构特殊时可用 :attr:`ConfigRestorePool.current_mode`
+    覆盖。
+    """
+
+    try:
+        user = ctx.script_config.UserData[uuid.UUID(ctx.user_id)]
+        mode = user.get("Info", "Mode")
+        return str(mode) if mode else None
+    except Exception:
+        return None
+
+
+def _build_target(pool: ConfigRestorePool, ctx: RestoreContext) -> ConfigRestoreTarget:
+    """把一个池声明绑定到上下文，并按声明式字段派生缺省回调。
+
+    显式回调（``list_backups`` / ``snapshot`` / ``read_file`` / ``preview``）
+    优先；缺省时若声明了 :attr:`ConfigRestorePool.files` +
+    :attr:`ConfigRestorePool.backup_root`，由基座派生：
+
+    - ``list_backups`` = ``list_times(backup_root)``
+    - ``snapshot`` = ``archive_files(files(ctx), backup_root(ctx))``（指纹
+      去重、保留清理全在 :func:`archive_files`，无可归档内容报无变化）
+    - ``read_file`` = ``read_backup_text(归档目录, rel_path)``
+    - ``preview``（未定制时）= 空载荷，由 :meth:`ConfigRestoreService.preview`
+      统一注入归档文件清单 ``{"files": [...]}``
+    """
+
+    bound_list = _bind_context(pool.list_backups, ctx)
+    bound_preview = _bind_context(pool.preview, ctx)
+    bound_snapshot = _bind_context(pool.snapshot, ctx)
+    bound_read_file = _bind_context(pool.read_file, ctx)
+    bound_files = _bind_context(pool.files, ctx)
+    bound_root = _bind_context(pool.backup_root, ctx)
+    bound_current_mode = _bind_context(pool.current_mode, ctx)
+    bound_set_mode = _bind_context(pool.set_mode, ctx)
+
+    declarative = bound_files is not None and bound_root is not None
+    root_only = bound_root is not None
+
+    # 三态增强：只对 kind="user" 池有意义；缺省 Mode 读取用基座默认
+    effective_mas_mode = pool.mas_mode if pool.kind == "user" else None
+    if effective_mas_mode is not None and bound_current_mode is None:
+        bound_current_mode = _bind_context(_default_current_mode, ctx)
+
+    backup_dir_for: Callable[[str], Awaitable[Path | None]] | None = None
+    if root_only:
+
+        async def backup_dir_for(ts: str) -> Path | None:
+            root = await bound_root()  # type: ignore[misc]
+            if root is None:
+                return None
+            return get_backup_dir(root, ts)
+
+    if bound_list is None and declarative:
+
+        async def bound_list() -> list[str]:
+            root = await bound_root()  # type: ignore[misc]
+            return list_times(root) if root is not None else []
+
+    if bound_snapshot is None and declarative:
+
+        async def bound_snapshot() -> dict:
+            payload = await bound_files()  # type: ignore[misc]
+            root = await bound_root()  # type: ignore[misc]
+            times = list_times(root) if root is not None else []
+            latest = times[0] if times else ""
+            if not payload or root is None:
+                return {"created": False, "time": latest}
+            dest = archive_files(payload, root)
+            if dest is None:
+                return {"created": False, "time": latest}
+            # 三态增强：归档时标注备份时点 Mode（列表标签 / 恢复校验用）
+            if effective_mas_mode is not None:
+                if effective_mas_mode == "user_only":
+                    mode = MODE_USER
+                else:
+                    mode = await bound_current_mode()  # type: ignore[misc]
+                if mode:
+                    write_backup_mode(dest, mode)
+            logger.info(f"池「{pool.key}」配置已归档: {dest.name}")
+            return {"created": True, "time": dest.name}
+
+    if bound_read_file is None and root_only:
+
+        async def bound_read_file(ts: str, rel_path: str) -> dict:
+            root = await bound_root()  # type: ignore[misc]
+            if root is None:
+                raise ValueError(f"目标「{pool.key}」无可读备份")
+            backup_dir = get_backup_dir(root, ts)
+            if backup_dir is None:
+                raise ValueError(f"备份不存在: {ts}")
+            return read_backup_text(backup_dir, rel_path)
+
+    if bound_preview is None and root_only:
+
+        async def bound_preview(ts: str) -> dict:
+            # 文件清单由 service.preview 统一注入（本闭包只占位表示可预览）
+            return {}
+
+    return ConfigRestoreTarget(
+        key=pool.key,
+        list_backups=bound_list,
+        preview=bound_preview,
+        restore=_bind_context(pool.restore, ctx),
+        snapshot=bound_snapshot,
+        read_file=bound_read_file,
+        backup_dir_for=backup_dir_for,
+        mas_mode=effective_mas_mode,
+        current_mode=bound_current_mode,
+        set_mode=bound_set_mode,
+    )
+
+
 def build_restore_service(
     ctx: RestoreContext,
-    script_name: str,
     pools: list[ConfigRestorePool],
 ) -> ConfigRestoreService:
     """把专项声明的池表绑定到具体脚本/用户上下文，构建运行时服务。
@@ -201,18 +516,19 @@ def build_restore_service(
 
     if not pools:
         raise ValueError("配置恢复服务至少需要一个目标池")
+    seen: set[str] = set()
     for pool in pools:
+        if pool.key in seen:
+            raise ValueError(f"池 key 重复: {pool.key}")
+        seen.add(pool.key)
         if pool.kind not in ("user", "script"):
             raise ValueError(f"池「{pool.key}」的 kind 非法: {pool.kind}")
+        if pool.mas_mode not in (None, "tri_state", "user_only", "sidecar_only"):
+            raise ValueError(f"池「{pool.key}」的 mas_mode 非法: {pool.mas_mode}")
+        # 声明式形态：files 与 backup_root 必须成对，否则 list/preview/ensure
+        # 全部派生不出来，运行期才报「不支持」是误导性错误
+        if pool.files is not None and pool.backup_root is None:
+            raise ValueError(f"池「{pool.key}」声明了 files 但缺少 backup_root")
 
-    targets = [
-        ConfigRestoreTarget(
-            key=pool.key,
-            list_backups=_bind_context(pool.list_backups, ctx),
-            preview=_bind_context(pool.preview, ctx),
-            restore=_bind_context(pool.restore, ctx),
-            snapshot=_bind_context(pool.snapshot, ctx),
-        )
-        for pool in pools
-    ]
-    return ConfigRestoreService(script_name=script_name, targets=targets)
+    targets = [_build_target(pool, ctx) for pool in pools]
+    return ConfigRestoreService(targets=targets)

@@ -16,10 +16,8 @@ import {
 } from '@/api'
 import type { ScriptDetail, ScriptType, User } from '@/types/script'
 import { useAudioPlayer } from '@/composables/useAudioPlayer'
-import {
-  MAAEND_AUTO_COLLECT_COMMON_ROUTE_OPTIONS,
-  MAAEND_AUTO_COLLECT_ROUTE_OPTIONS,
-} from '@/utils/maaEndProtocolSpace'
+import { getTaskRuntimeStates } from '@/composables/useTaskRuntimeState'
+import { isScriptConfigLocked } from '@/utils/scriptConfigLock'
 
 const logger = window.electronAPI.getLogger('脚本API')
 
@@ -67,14 +65,6 @@ const SCRIPT_TYPE_BY_CONFIG_TYPE: Record<string, ScriptType> = {
 
 const resolveScriptType = (configType: string): ScriptType => {
   return SCRIPT_TYPE_BY_CONFIG_TYPE[configType] ?? 'General'
-}
-
-const normalizeMaaEndOptionArray = <T extends string>(
-  value: unknown,
-  fallback: readonly T[]
-): T[] => {
-  if (!Array.isArray(value)) return [...fallback]
-  return value.filter((item): item is T => typeof item === 'string' && fallback.includes(item as T))
 }
 
 export function useScriptApi() {
@@ -223,10 +213,6 @@ export function useScriptApi() {
                           maaUserData.Info?.InfrastName !== undefined
                             ? maaUserData.Info.InfrastName
                             : '',
-                        InfrastIndex:
-                          maaUserData.Info?.InfrastIndex !== undefined
-                            ? maaUserData.Info.InfrastIndex
-                            : '',
                         Password:
                           maaUserData.Info?.Password !== undefined ? maaUserData.Info.Password : '',
                         Notes: maaUserData.Info?.Notes !== undefined ? maaUserData.Info.Notes : '',
@@ -245,10 +231,6 @@ export function useScriptApi() {
                           maaUserData.Info?.Stage_2 !== undefined ? maaUserData.Info.Stage_2 : '-',
                         Stage_3:
                           maaUserData.Info?.Stage_3 !== undefined ? maaUserData.Info.Stage_3 : '-',
-                        Stage_Remain:
-                          maaUserData.Info?.Stage_Remain !== undefined
-                            ? maaUserData.Info.Stage_Remain
-                            : '-',
                         Tag: maaUserData.Info?.Tag !== undefined ? maaUserData.Info.Tag : null,
                       },
                       Task: {
@@ -273,14 +255,6 @@ export function useScriptApi() {
                         IfSwitchTheme:
                           maaUserData.Task?.IfSwitchTheme !== undefined
                             ? maaUserData.Task.IfSwitchTheme
-                            : false,
-                        IfRoguelike:
-                          maaUserData.Task?.IfRoguelike !== undefined
-                            ? maaUserData.Task.IfRoguelike
-                            : false,
-                        IfReclamation:
-                          maaUserData.Task?.IfReclamation !== undefined
-                            ? maaUserData.Task.IfReclamation
                             : false,
                         IfDepotMaintain:
                           maaUserData.Task?.IfDepotMaintain !== undefined
@@ -676,14 +650,9 @@ export function useScriptApi() {
                           maaEndUserData.Task?.AutoCollectMode === 'Concentrated'
                             ? 'Concentrated'
                             : 'Distributed',
-                        AutoCollectRoutes: normalizeMaaEndOptionArray(
-                          maaEndUserData.Task?.AutoCollectRoutes,
-                          MAAEND_AUTO_COLLECT_ROUTE_OPTIONS.map(option => option.value)
-                        ),
-                        AutoCollectCommonRoutes: normalizeMaaEndOptionArray(
-                          maaEndUserData.Task?.AutoCollectCommonRoutes,
-                          MAAEND_AUTO_COLLECT_COMMON_ROUTE_OPTIONS.map(option => option.value)
-                        ),
+                        AutoCollectRoutes: maaEndUserData.Task?.AutoCollectRoutes ?? null,
+                        AutoCollectCommonRoutes:
+                          maaEndUserData.Task?.AutoCollectCommonRoutes ?? null,
                         IfTrialOfSwordmancy:
                           maaEndUserData.Task?.IfTrialOfSwordmancy != null
                             ? maaEndUserData.Task.IfTrialOfSwordmancy
@@ -1176,9 +1145,7 @@ export function useScriptApi() {
                             ? zzzodUserData.Info.Status
                             : true,
                         Mode:
-                          zzzodUserData.Info?.Mode !== undefined
-                            ? zzzodUserData.Info.Mode
-                            : '用户',
+                          zzzodUserData.Info?.Mode !== undefined ? zzzodUserData.Info.Mode : '用户',
                         RemainedDay:
                           zzzodUserData.Info?.RemainedDay !== undefined
                             ? zzzodUserData.Info.RemainedDay
@@ -1200,13 +1167,8 @@ export function useScriptApi() {
                             ? zzzodUserData.Info.ScriptAfterTask
                             : '',
                         Notes:
-                          zzzodUserData.Info?.Notes !== undefined
-                            ? zzzodUserData.Info.Notes
-                            : '',
-                        Tag:
-                          zzzodUserData.Info?.Tag !== undefined
-                            ? zzzodUserData.Info.Tag
-                            : null,
+                          zzzodUserData.Info?.Notes !== undefined ? zzzodUserData.Info.Notes : '',
+                        Tag: zzzodUserData.Info?.Tag !== undefined ? zzzodUserData.Info.Tag : null,
                       },
                       Game: {
                         GameRegion:
@@ -1296,9 +1258,7 @@ export function useScriptApi() {
                             ? baahUserData.Info.Name
                             : `用户${userIndex.uid}`,
                         Status:
-                          baahUserData.Info?.Status !== undefined
-                            ? baahUserData.Info.Status
-                            : true,
+                          baahUserData.Info?.Status !== undefined ? baahUserData.Info.Status : true,
                         RemainedDay:
                           baahUserData.Info?.RemainedDay !== undefined
                             ? baahUserData.Info.RemainedDay
@@ -1307,10 +1267,21 @@ export function useScriptApi() {
                           baahUserData.Info?.ConfigName !== undefined
                             ? baahUserData.Info.ConfigName
                             : '',
+                        ActivityConfigName:
+                          baahUserData.Info?.ActivityConfigName !== undefined
+                            ? baahUserData.Info.ActivityConfigName
+                            : '',
+                        IfActivityAdapt:
+                          baahUserData.Info?.IfActivityAdapt != null
+                            ? baahUserData.Info.IfActivityAdapt
+                            : false,
+                        ActivityLineType:
+                          baahUserData.Info?.ActivityLineType != null
+                            ? baahUserData.Info.ActivityLineType
+                            : 'CN',
                         Notes:
                           baahUserData.Info?.Notes !== undefined ? baahUserData.Info.Notes : '',
-                        Tag:
-                          baahUserData.Info?.Tag !== undefined ? baahUserData.Info.Tag : null,
+                        Tag: baahUserData.Info?.Tag !== undefined ? baahUserData.Info.Tag : null,
                       },
                       Notify: {
                         Enabled:
@@ -1531,6 +1502,13 @@ export function useScriptApi() {
     scriptId: string,
     data: Record<string, unknown>
   ): Promise<boolean> => {
+    if (isScriptConfigLocked(getTaskRuntimeStates(), scriptId)) {
+      const errorMsg = t('edit.configLocked')
+      error.value = errorMsg
+      message.warning(errorMsg)
+      return false
+    }
+
     loading.value = true
     error.value = null
 

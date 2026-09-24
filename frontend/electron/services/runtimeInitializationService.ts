@@ -10,6 +10,8 @@
  * environmentService / repositoryService / dependencyService。
  */
 
+import { join } from 'node:path'
+
 import { app } from 'electron'
 
 import { getLogger } from './logger'
@@ -85,7 +87,7 @@ const RUNTIME_STAGE_PREFIX_MAP: readonly (readonly [string, InitializationRunSta
  * `bootstrap` / `repair` / `doctor` 这类顶层 stage 与协议后续新增的 stage 都走这里：
  * 协议要求调用方对未知 stage 使用通用展示而不是拒绝整个协议，所以这里绝不抛错。
  */
-export const FALLBACK_INITIALIZATION_STAGE: InitializationRunStage = 'python'
+const FALLBACK_INITIALIZATION_STAGE: InitializationRunStage = 'python'
 
 /** 查显式对应；没有对应物时返回 null，供调用方区分「映射到了」与「兜底」。 */
 export function mapRuntimeStageToInitializationStage(
@@ -256,7 +258,7 @@ export interface BootstrapProgressUpdate {
 }
 
 /** `observe` 的第四个参数：progress 事件上除 stage / message / percent 之外的可选字段。 */
-export interface BootstrapProgressDetail {
+interface BootstrapProgressDetail {
   status?: string
   current?: number
   total?: number
@@ -269,17 +271,17 @@ export interface BootstrapProgressDetail {
 export const NETWORK_PROBE_STAGE = 'network.probe'
 
 /** bootstrap 实际经过的三个界面段，按现有界面的固定先后顺序排列。 */
-export const RUNTIME_BOOTSTRAP_STAGE_ORDER: readonly InitializationRunStage[] = [
+const RUNTIME_BOOTSTRAP_STAGE_ORDER: readonly InitializationRunStage[] = [
   'python',
   'repository',
   'dependency',
 ]
 
 /** 新链路没有对应物、进入 bootstrap 时立刻置为完成的三段。 */
-export const RUNTIME_TAKEOVER_STAGES: readonly InitializationRunStage[] = ['mirror', 'pip', 'git']
+const RUNTIME_TAKEOVER_STAGES: readonly InitializationRunStage[] = ['mirror', 'pip', 'git']
 
 export const RUNTIME_TAKEOVER_MESSAGE = '由 Runtime 接管'
-export const RUNTIME_DEVELOPMENT_SKIP_MESSAGE = '由 Runtime development 模式接管，跳过'
+const RUNTIME_DEVELOPMENT_SKIP_MESSAGE = '由 Runtime development 模式接管，跳过'
 
 /** 兼容旧消费方的段起始值；indeterminate=true 时界面不得把它显示成精确百分比。 */
 const STAGE_STARTED_PROGRESS = 10
@@ -478,7 +480,7 @@ export interface RuntimeStageOutcome {
  * `details` 是裸 `Record<string, unknown>`，Runtime 只在写了日志文件的命令上放 `logPath`，
  * 所以拿不到就返回 undefined，由界面退回自己的日志文件。
  */
-export function readRuntimeLogPath(details: Record<string, unknown>): string | undefined {
+function readRuntimeLogPath(details: Record<string, unknown>): string | undefined {
   const logPath = details.logPath
   return typeof logPath === 'string' && logPath.length > 0 ? logPath : undefined
 }
@@ -526,8 +528,37 @@ export function describeRuntimeFailureDetails(details: Record<string, unknown>):
   return ` details=${text}`
 }
 
+/** 把需要用户手工处理的仓库错误改成可直接照做的说明。 */
+export function formatRuntimeFailureMessage(
+  code: string,
+  appRoot: string,
+  fallback: string
+): string {
+  const updateDirectories = join(appRoot, 'repo.update-*')
+  const previousDirectories = join(appRoot, 'repo.previous-*')
+
+  if (code === 'GIT_REPO_CLEANUP_FAILED') {
+    return (
+      '仓库旧文件删除失败。请完全退出 AUTO-MAS，删除程序目录中所有名称以 ' +
+      `repo.update- 和 repo.previous- 开头的文件夹（${updateDirectories}、${previousDirectories}），` +
+      '然后重新打开 AUTO-MAS。'
+    )
+  }
+
+  if (code === 'UPDATE_STATE_AMBIGUOUS') {
+    return (
+      '后端仓库状态异常。请完全退出 AUTO-MAS，删除 ' +
+      `${join(appRoot, 'repo')}、程序目录中所有名称以 repo.update- 和 repo.previous- 开头的文件夹` +
+      `（${updateDirectories}、${previousDirectories}），再删除 ${join(appRoot, 'runtime-state', 'update.json')}。` +
+      '重新打开 AUTO-MAS 后会自动下载后端仓库。'
+    )
+  }
+
+  return fallback
+}
+
 /** 可注入的客户端工厂，便于单元测试替换掉真实子进程。 */
-export type RuntimeClientFactory = (options: CreateRuntimeClientOptions) => RuntimeClient
+type RuntimeClientFactory = (options: CreateRuntimeClientOptions) => RuntimeClient
 
 /**
  * 单步重试的处置强度。
@@ -841,7 +872,11 @@ export class RuntimeInitializationService {
     const remediation = [...outcome.result.remediation]
     this.lastRemediation.set(failedStage, remediation)
 
-    const message = outcome.result.message || `Runtime 命令失败（${outcome.code}）`
+    const message = formatRuntimeFailureMessage(
+      outcome.code,
+      this.options.launchConfig.appRoot,
+      outcome.result.message || `Runtime 命令失败（${outcome.code}）`
+    )
     logger.error(
       `Runtime 命令失败: ${outcome.code} ${message}${describeRuntimeFailureDetails(outcome.result.details)}`
     )

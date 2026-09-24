@@ -52,6 +52,7 @@ from .tools.account_switch import (
     stop_external_processes,
     user_needs_account_switch,
 )
+from .tools.backup_archive import archive_mas_runtime_backup, read_overlay_values
 from .tools.extra_script import run_script_after_task, run_script_before_task
 from .tools.log_detect import (
     detect_echo_of_war_completion,
@@ -61,7 +62,11 @@ from .tools.log_detect import (
 from .tools.m7a_control import HSRM7AControl
 from .tools.m7a_runtime import M7ARunner
 from .tools.managed_config import list_managed_modules, redeem_code_fingerprint
-from .tools.native_control import resolve_configured_engines, resolve_script_path
+from .tools.native_control import (
+    resolve_configured_engines,
+    resolve_phase_timeout_minutes,
+    resolve_script_path,
+)
 from .tools.run_model import (
     CompletionWriteback,
     HSRGameExitedError,
@@ -75,7 +80,11 @@ from .tools.run_model import (
     external_result_failure_summary,
 )
 from .tools.sra_control import HSRSRAControl
-from .tools.sra_runtime import cleanup_sra_temp_config
+from .tools.sra_runtime import (
+    SRA_REWARD_REDEEM_CODE_KEY,
+    SRA_REWARD_REDEEM_CODE_LEGACY_KEY,
+    cleanup_sra_temp_config,
+)
 from .tools.stage_runtime import resolve_configured_daily_stages
 
 logger = get_logger("HSR 自动代理")
@@ -86,11 +95,6 @@ HSR_ABORT_REASON_GAME_EXITED = "游戏进程已退出，当前阶段剩余模块
 # 游戏进程消失后再等这么久才下结论：读输出的协程要把 M7A 关游戏前那行
 # ERROR 收进来；脚本自己关游戏后紧接着退出的，等它自然结束就不用杀。
 GAME_EXIT_SETTLE_SECONDS = 2
-
-PHASE_TIMEOUT_CONFIG: dict[HSRPhase, tuple[str, int]] = {
-    "daily": ("DailyTimeLimit", 20),
-    "weekly": ("WeeklyTimeLimit", 60),
-}
 
 MODULE_KEYS_BY_PHASE: dict[HSRPhase, tuple[str, ...]] = {
     phase: tuple(module.key for module in HSR_TASK_MODULES if module.category == phase)
@@ -541,7 +545,6 @@ class HSRAutoProxyTask(TaskExecuteBase):
         eow_enabled: bool,
         result: object,
         script: Literal["M7A", "SRA"],
-        dedicated_run: bool = False,
     ) -> None:
         """外部脚本确认历战余响完成后，登记完成态。"""
 
@@ -551,7 +554,6 @@ class HSRAutoProxyTask(TaskExecuteBase):
         completed, reason = detect_echo_of_war_completion(
             result,
             script,
-            dedicated_run=dedicated_run,
         )
         if not completed:
             self._record_module_result(
@@ -691,9 +693,7 @@ class HSRAutoProxyTask(TaskExecuteBase):
     def _timeout_seconds_for_phase(self, phase: HSRPhase) -> int:
         """按周期读取超时配置，返回秒。"""
 
-        key, default = PHASE_TIMEOUT_CONFIG[phase]
-        minutes = int(self.script_config.get("Run", key) or default)
-        return max(1, minutes) * 60
+        return resolve_phase_timeout_minutes(self.script_config, phase) * 60
 
     def _phase_timeout_seconds(self, phase: HSRPhase) -> int:
         """按阶段读取超时配置，返回秒。"""
@@ -752,8 +752,16 @@ class HSRAutoProxyTask(TaskExecuteBase):
             module_key="ReceiveRewards",
             user_cfg=user_cfg,
         )
-        field_key = "rewards.6" if engine == "SRA" else "reward_redemption_code_enable"
-        selected = bool(values.get(field_key, True))
+        if engine == "SRA":
+            # SRA 2.22.0 起兑换码开关是具名键，旧 profile 仍是数组下标 6
+            selected = bool(
+                values.get(
+                    SRA_REWARD_REDEEM_CODE_KEY,
+                    values.get(SRA_REWARD_REDEEM_CODE_LEGACY_KEY, True),
+                )
+            )
+        else:
+            selected = bool(values.get("reward_redemption_code_enable", True))
         if not selected:
             self._append_log(f"用户「{user_name}」已关闭 {engine} 兑换码奖励，本轮跳过")
             return False, None
@@ -1578,6 +1586,11 @@ class HSRAutoProxyTask(TaskExecuteBase):
             )
             self.runtime.m7a_runner = m7a_runner
         login_plan = self._build_login_plan(user_cfg=user_cfg, sra_path=sra_path)
+
+        # 物化前归档本用户字段侧车（_build_user_queue 会把托管字段注入原生
+        # 配置；指纹去重，失败只记日志不阻断运行——native 池由 manager
+        # prepare 在任务级一次性归档）
+        archive_mas_runtime_backup(script_id, uid, read_overlay_values(user_cfg))
 
         full_queue = self._build_user_queue(
             user_item=user_item,

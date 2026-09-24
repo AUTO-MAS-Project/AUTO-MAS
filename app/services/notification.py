@@ -25,8 +25,11 @@ import ipaddress
 import json
 import re
 import smtplib
+from collections.abc import Sequence
+from dataclasses import dataclass
 from datetime import datetime
 from email.header import Header
+from email.mime.image import MIMEImage
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.utils import formataddr
@@ -47,6 +50,23 @@ Config = LazyProxy("app.core", "Config")
 
 SMTP_TIMEOUT_SECONDS = 15
 DEFAULT_WEBHOOK_TEMPLATE = '{"title": "{title}", "content": "{content}"}'
+# OneBot 图片段里的占位写法，前端预设与这里必须一致。
+WEBHOOK_IMAGE_PLACEHOLDER = "base64://{image_base64}"
+
+
+@dataclass(frozen=True)
+class MailInlineImage:
+    """随网页邮件一起发送的内嵌图片，正文用 ``<img src="cid:{cid}">`` 引用。
+
+    走 ``multipart/related`` + Content-ID，而不是把 base64 直接写进 ``<img src>``：
+    data URI 在 QQ 邮箱、Gmail、Outlook 里都会被拦掉，六星喜报以前就是这么
+    失效的（c8d3c41e6 改成了外链）。
+    """
+
+    cid: str
+    data: bytes
+    subtype: str = "png"
+
 
 # Windows 通知最终写入 NOTIFYICONDATA 的定长字段：标题落在 szInfoTitle（64 个
 # UTF-16 代码单元）、正文落在 szInfo（256 个）。plyer 直接把字符串塞进 ctypes 定长
@@ -140,6 +160,17 @@ def _webhook_client_kwargs(url: str) -> dict:
     return {"timeout": 10, "proxy": Config.proxy}
 
 
+def _is_webhook_image_placeholder(obj: object) -> bool:
+    """是不是 OneBot 预设里那段 ``base64://{image_base64}`` 图片。"""
+
+    return (
+        isinstance(obj, dict)
+        and obj.get("type") == "image"
+        and isinstance(obj.get("data"), dict)
+        and obj["data"].get("file") == WEBHOOK_IMAGE_PLACEHOLDER
+    )
+
+
 class Notification:
     async def push_plyer(self, title: str, message: str, ticker: str, t: int) -> None:
         """
@@ -177,7 +208,13 @@ class Notification:
             raise RuntimeError("plyer.notification 未正确导入，无法推送系统通知")
 
     async def send_mail(
-        self, mode: Literal["文本", "网页"], title: str, content: str, to_address: str
+        self,
+        mode: Literal["文本", "网页"],
+        title: str,
+        content: str,
+        to_address: str,
+        *,
+        images: Sequence[MailInlineImage] = (),
     ) -> None:
         """
         推送邮件通知
@@ -192,6 +229,8 @@ class Notification:
             邮件内容
         to_address: str
             收件人地址
+        images: Sequence[MailInlineImage], optional
+            网页模式下随信内嵌的图片；文本模式忽略
         """
 
         if Config.get("Notify", "SMTPServerAddress") == "":
@@ -216,6 +255,8 @@ class Notification:
         # 定义邮件正文
         if mode == "文本":
             message = MIMEText(content, "plain", "utf-8")
+        elif mode == "网页" and images:
+            message = MIMEMultipart("related")
         elif mode == "网页":
             message = MIMEMultipart("alternative")
         message["From"] = formataddr(
@@ -231,6 +272,15 @@ class Notification:
 
         if mode == "网页":
             message.attach(MIMEText(content, "html", "utf-8"))
+            for image in images:
+                part = MIMEImage(image.data, _subtype=image.subtype)
+                part.add_header("Content-ID", f"<{image.cid}>")
+                part.add_header(
+                    "Content-Disposition",
+                    "inline",
+                    filename=f"{image.cid}.{image.subtype}",
+                )
+                message.attach(part)
 
         smtp_server = Config.get("Notify", "SMTPServerAddress")
         from_address = Config.get("Notify", "FromAddress")
@@ -287,6 +337,18 @@ class Notification:
             logger.success(f"Server酱推送通知成功: {title}")
         else:
             raise Exception(f"ServerChan 推送通知失败: {response.text}")
+
+    async def send_cmcc_newmsg(self, title: str, content: str, api_key: str) -> None:
+        """通过中国移动新消息（5G 消息）提交通知。"""
+
+        from app.services.cmcc_newmsg import send_cmcc_newmsg
+
+        await send_cmcc_newmsg(
+            api_key=api_key,
+            content=content,
+            proxy=Config.proxy,
+        )
+        logger.success(f"中国移动5G短信通知已提交: {title}")
 
     async def send_openclaw_weixin(self, title: str, content: str) -> None:
         """通过微信 Claw 通道推送通知。
@@ -381,18 +443,22 @@ class Notification:
                 def replace_variables(obj):
                     if isinstance(obj, dict):
                         # 普通任务报告没有图片时，OneBot 图片模板仍需投递可读正文。
-                        if (
-                            not image_base64
-                            and obj.get("type") == "image"
-                            and isinstance(obj.get("data"), dict)
-                            and obj["data"].get("file") == "base64://{image_base64}"
-                        ):
+                        if not image_base64 and _is_webhook_image_placeholder(obj):
                             return {
                                 "type": "text",
                                 "data": {"text": f"{title}\n\n{content}"},
                             }
                         return {k: replace_variables(v) for k, v in obj.items()}
                     elif isinstance(obj, list):
+                        # 「文本 + 图片」模板没图时只去掉图片段，别把正文发两遍。
+                        if not image_base64 and any(
+                            not _is_webhook_image_placeholder(item) for item in obj
+                        ):
+                            obj = [
+                                item
+                                for item in obj
+                                if not _is_webhook_image_placeholder(item)
+                            ]
                         return [replace_variables(item) for item in obj]
                     elif isinstance(obj, str):
                         result = obj

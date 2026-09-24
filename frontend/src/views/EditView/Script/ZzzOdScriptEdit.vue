@@ -24,12 +24,8 @@
     </a-space>
   </div>
 
-  <div class="script-edit-content">
-    <a-card
-      :title="t('edit.zzzodScriptConfiguration')"
-      :loading="pageLoading"
-      class="config-card"
-    >
+  <ConfigLockPanel :script-id="scriptId" content-class="script-edit-content">
+    <a-card :title="t('edit.zzzodScriptConfiguration')" :loading="pageLoading" class="config-card">
       <template #extra>
         <a-tag color="blue" class="type-tag">ZZZ-OD</a-tag>
       </template>
@@ -339,12 +335,17 @@
             </a-col>
           </a-row>
         </div>
+
+        <!-- 实例槽管理：脚本级诊断（槽目录按安装目录归池、跨脚本共享），默认折叠 -->
+        <ZzzOdSlotManage :script-id="scriptId" />
       </a-form>
     </a-card>
-  </div>
+  </ConfigLockPanel>
 </template>
 
 <script setup lang="ts">
+import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
+import ZzzOdSlotManage from './ZzzOdSlotManage.vue'
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'

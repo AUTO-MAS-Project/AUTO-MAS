@@ -47,9 +47,7 @@ logger = get_logger("森空岛扫码登录 API")
 def _log_qr_error(stage: str, error: Exception) -> None:
     """记录脱敏诊断，扫码接口不向前端透传异常细节。"""
 
-    logger.warning(
-        format_exception_reason(error, stage=stage, include_message=False)
-    )
+    logger.warning(format_exception_reason(error, stage=stage, include_message=False))
 
 
 class SklandQrCreateOut(OutBase):

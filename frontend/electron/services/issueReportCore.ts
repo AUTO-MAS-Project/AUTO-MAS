@@ -7,8 +7,8 @@ import { getLogger } from './logger'
 
 const logger = getLogger('问题包')
 
-export const MAX_ENTRY_BYTES = 25 * 1024 * 1024
-export const MAX_ARCHIVE_BYTES = 95 * 1024 * 1024
+const MAX_ENTRY_BYTES = 25 * 1024 * 1024
+const MAX_ARCHIVE_BYTES = 95 * 1024 * 1024
 const TEXT_EXTENSIONS = new Set([
   '.cfg',
   '.csv',
@@ -30,7 +30,7 @@ const SENSITIVE_BEARER_PATTERN =
 const SENSITIVE_ASSIGNMENT_PATTERN =
   /((?:["']?[\w-]*(?:password|passwd|token|cookie|secret|authorization|credential|api[_-]?key|stoken|ltoken|serverchan|path)[\w-]*["']?\s*[:=]\s*["']?))(?!Bearer\b|Basic\b)[^"'\s,;&}\]]+/gi
 
-export interface ReportEntry {
+interface ReportEntry {
   path: string
   sourceSize: number
   storedSize: number
@@ -44,21 +44,33 @@ export interface CollectorState {
   archiveBytes: number
 }
 
-export interface HistoryLogCandidate {
+interface HistoryLogCandidate {
   sourcePath: string
   archivePath: string
   mtimeMs: number
+}
+
+interface HistoryRecordCandidate {
+  logPath: string
+  jsonPath: string
+  archiveRoot: string
+  relativeBasePath: string
+  mtimeMs: number
+}
+
+function historyArchiveRoot(rootIndex: number): string {
+  return rootIndex === 0 ? 'logs/mas-history' : 'logs/mas-history/backend'
 }
 
 export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
-export function isTextFile(filePath: string): boolean {
+function isTextFile(filePath: string): boolean {
   return TEXT_EXTENSIONS.has(path.extname(filePath).toLowerCase())
 }
 
-export function sanitizeText(text: string): string {
+function sanitizeText(text: string): string {
   let sanitized = text.replace(SENSITIVE_BEARER_PATTERN, '$1***')
   sanitized = sanitized.replace(SENSITIVE_ASSIGNMENT_PATTERN, '$1***')
   const homePath = os.homedir()
@@ -68,7 +80,7 @@ export function sanitizeText(text: string): string {
   return sanitized
 }
 
-export function sanitizeJsonValue(value: unknown): unknown {
+function sanitizeJsonValue(value: unknown): unknown {
   if (Array.isArray(value)) {
     return value.map(item => sanitizeJsonValue(item))
   }
@@ -89,7 +101,7 @@ export function sanitizeJsonValue(value: unknown): unknown {
   )
 }
 
-export function readJson(filePath: string): unknown {
+function readJson(filePath: string): unknown {
   try {
     return JSON.parse(fs.readFileSync(filePath, 'utf-8').replace(/^\uFEFF/, ''))
   } catch {
@@ -109,7 +121,7 @@ export function resolveDataRoots(appRoot: string): string[] {
   return roots
 }
 
-export interface InstallationOptions {
+interface InstallationOptions {
   /** ScriptConfig.json 实例记录中的类型值，如 'OkwwConfig' / 'MaaEndConfig' */
   configType: string
   /** 安装目录字段名，如 'RootPath' / 'Path' */
@@ -175,7 +187,7 @@ export function discoverInstallations(
   return installations
 }
 
-export function addEntry(
+function addEntry(
   state: CollectorState,
   archivePath: string,
   sourceSize: number,
@@ -194,7 +206,7 @@ export function addEntry(
   })
 }
 
-export function addSkippedEntry(
+function addSkippedEntry(
   state: CollectorState,
   archivePath: string,
   sourceSize: number,
@@ -209,7 +221,7 @@ export function addSkippedEntry(
   })
 }
 
-export function readDiagnosticContent(filePath: string): Buffer {
+function readDiagnosticContent(filePath: string): Buffer {
   const rawText = fs.readFileSync(filePath, 'utf-8')
   if (path.extname(filePath).toLowerCase() === '.json') {
     const json = readJson(filePath)
@@ -362,7 +374,7 @@ export function addLatestMasHistoryLog(
 ): string | undefined {
   let latest: HistoryLogCandidate | undefined
 
-  const visitDirectory = (historyRoot: string, currentDir: string): void => {
+  const visitDirectory = (historyRoot: string, currentDir: string, archiveRoot: string): void => {
     let entries: fs.Dirent[]
     try {
       entries = fs.readdirSync(currentDir, { withFileTypes: true })
@@ -378,7 +390,7 @@ export function addLatestMasHistoryLog(
 
       const sourcePath = path.join(currentDir, entry.name)
       if (entry.isDirectory()) {
-        visitDirectory(historyRoot, sourcePath)
+        visitDirectory(historyRoot, sourcePath, archiveRoot)
         continue
       }
 
@@ -391,7 +403,7 @@ export function addLatestMasHistoryLog(
         const relativePath = path.relative(historyRoot, sourcePath).replace(/\\/g, '/')
         const candidate = {
           sourcePath,
-          archivePath: path.posix.join('logs/mas-history', relativePath),
+          archivePath: path.posix.join(archiveRoot, relativePath),
           mtimeMs,
         }
         if (
@@ -407,10 +419,10 @@ export function addLatestMasHistoryLog(
     }
   }
 
-  for (const dataRoot of dataRoots) {
+  for (const [rootIndex, dataRoot] of dataRoots.entries()) {
     const historyRoot = path.join(dataRoot, 'history')
     if (fs.existsSync(historyRoot)) {
-      visitDirectory(historyRoot, historyRoot)
+      visitDirectory(historyRoot, historyRoot, historyArchiveRoot(rootIndex))
     }
   }
 
@@ -424,4 +436,103 @@ export function addLatestMasHistoryLog(
     return undefined
   }
   return state.entries[state.entries.length - 1]?.path
+}
+
+export function addRecentFailedMaaEndHistoryLogs(
+  state: CollectorState,
+  dataRoots: string[],
+  limit = 3
+): string[] {
+  const candidates: HistoryRecordCandidate[] = []
+  const seenPaths = new Set<string>()
+
+  const visitDirectory = (historyRoot: string, currentDir: string, archiveRoot: string): void => {
+    let entries: fs.Dirent[]
+    try {
+      entries = fs.readdirSync(currentDir, { withFileTypes: true })
+    } catch (error) {
+      logger.debug(`读取 MaaEnd 历史日志目录失败: ${currentDir}, ${String(error)}`)
+      return
+    }
+
+    for (const entry of entries) {
+      if (entry.isSymbolicLink()) {
+        continue
+      }
+
+      const sourcePath = path.join(currentDir, entry.name)
+      if (entry.isDirectory()) {
+        visitDirectory(historyRoot, sourcePath, archiveRoot)
+        continue
+      }
+
+      if (!entry.isFile() || path.extname(entry.name).toLowerCase() !== '.json') {
+        continue
+      }
+
+      const data = readJson(sourcePath)
+      if (!isRecord(data) || typeof data.maaend_result !== 'string') {
+        continue
+      }
+
+      const result = data.maaend_result.replace(/^\[[^\]]+\]\s*/, '')
+      if (result === 'Success!') {
+        continue
+      }
+
+      const normalizedPath = path.resolve(sourcePath)
+      const pathKey = process.platform === 'win32' ? normalizedPath.toLowerCase() : normalizedPath
+      if (seenPaths.has(pathKey)) {
+        continue
+      }
+
+      try {
+        const relativePath = path.relative(historyRoot, sourcePath).replace(/\\/g, '/')
+        candidates.push({
+          logPath: sourcePath.slice(0, -path.extname(sourcePath).length) + '.log',
+          jsonPath: sourcePath,
+          archiveRoot,
+          relativeBasePath: relativePath.slice(0, -path.extname(relativePath).length),
+          mtimeMs: fs.statSync(sourcePath).mtimeMs,
+        })
+        seenPaths.add(pathKey)
+      } catch (error) {
+        logger.debug(`读取 MaaEnd 历史日志信息失败: ${sourcePath}, ${String(error)}`)
+      }
+    }
+  }
+
+  for (const [rootIndex, dataRoot] of dataRoots.entries()) {
+    const historyRoot = path.join(dataRoot, 'history')
+    if (fs.existsSync(historyRoot)) {
+      visitDirectory(historyRoot, historyRoot, historyArchiveRoot(rootIndex))
+    }
+  }
+
+  const addedPaths: string[] = []
+  const selected = candidates
+    .sort(
+      (left, right) =>
+        right.mtimeMs - left.mtimeMs || right.relativeBasePath.localeCompare(left.relativeBasePath)
+    )
+    .slice(0, Math.max(limit, 0))
+
+  for (const candidate of selected) {
+    for (const [sourcePath, extension] of [
+      [candidate.logPath, '.log'],
+      [candidate.jsonPath, '.json'],
+    ] as const) {
+      const archivePath = path.posix.join(
+        candidate.archiveRoot,
+        `${candidate.relativeBasePath}${extension}`
+      )
+      const entryCount = state.entries.length
+      addDiagnosticFile(state, sourcePath, archivePath)
+      if (state.entries.length > entryCount) {
+        addedPaths.push(state.entries[state.entries.length - 1].path)
+      }
+    }
+  }
+
+  return addedPaths
 }

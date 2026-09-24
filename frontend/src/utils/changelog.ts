@@ -2,12 +2,12 @@
 //   Copyright © 2025-2026 AUTO-MAS Team
 
 /** 一个版本段：分类 -> 条目（条目是行内 Markdown 文本） */
-export type ChangelogEntries = Record<string, string[]>
+type ChangelogEntries = Record<string, string[]>
 
 /** 后端 /api/update/check 与编译期注入共用的形状：版本号 -> 分类 -> 条目 */
 export type ChangelogData = Record<string, ChangelogEntries>
 
-export type ChangelogCategoryKind = 'critical' | 'highlight' | 'normal'
+type ChangelogCategoryKind = 'critical' | 'highlight' | 'normal'
 
 export interface ChangelogCategory {
   name: string
@@ -15,7 +15,7 @@ export interface ChangelogCategory {
   items: string[]
 }
 
-export interface ChangelogSection {
+interface ChangelogSection {
   version: string
   categories: ChangelogCategory[]
 }
@@ -24,15 +24,15 @@ export interface ChangelogSection {
  * 需要置顶并特殊渲染的分类。只识别这两个名字，其余分类一律按后端给的顺序常规展示，
  * 所以这里不是分类白名单：新增的未知分类照常出现，只是排在这两类之后。
  */
-export const CRITICAL_CATEGORY = '破坏性变更'
-export const HIGHLIGHT_CATEGORY = '本次亮点'
+const CRITICAL_CATEGORY = '破坏性变更'
+const HIGHLIGHT_CATEGORY = '本次亮点'
 
 const PINNED_ORDER: Record<string, number> = {
   [CRITICAL_CATEGORY]: 0,
   [HIGHLIGHT_CATEGORY]: 1,
 }
 
-export function categoryKind(name: string): ChangelogCategoryKind {
+function categoryKind(name: string): ChangelogCategoryKind {
   if (name === CRITICAL_CATEGORY) return 'critical'
   if (name === HIGHLIGHT_CATEGORY) return 'highlight'
   return 'normal'
@@ -93,8 +93,16 @@ export function compareVersions(a: string, b: string): number {
 }
 
 /** 版本号降序（最新在前） */
+/** 合并即入账的暂存段：不是版本号，比任何已发布版本都新，排最前 */
+const UNRELEASED_VERSION = '未发布'
+
 export function sortVersionsDesc(versions: string[]): string[] {
-  return [...versions].sort((a, b) => compareVersions(b, a))
+  return [...versions].sort((a, b) => {
+    if (a === UNRELEASED_VERSION || b === UNRELEASED_VERSION) {
+      return a === b ? 0 : a === UNRELEASED_VERSION ? -1 : 1
+    }
+    return compareVersions(b, a)
+  })
 }
 
 /**

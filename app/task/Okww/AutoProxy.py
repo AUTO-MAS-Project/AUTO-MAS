@@ -52,7 +52,7 @@ from app.utils import (
 )
 from app.utils.constants import UTC4
 from app.utils.i18n import PoTranslator
-from app.utils.io import replace_dir, write_file
+from app.utils.io import mark_native_config_injected, swap_in_dir, write_file
 from app.utils.LogMonitor import LogMonitor
 
 from .push_log import (
@@ -62,6 +62,12 @@ from .push_log import (
     okww_resolve,
 )
 from .tools import async_switch_account, push_notification
+from .tools.backup_archive import (
+    archive_mas_runtime_backup,
+    mas_config_dir,
+    owner_for_mode,
+    read_overlay_values,
+)
 
 logger = get_logger("OK-WW 自动代理")
 
@@ -91,8 +97,10 @@ _OKWW_REL_CONFIG_DIR = "data/apps/ok-ww/working/configs"
 _OKWW_REL_LOG_FILE = "data/apps/ok-ww/working/logs/ok-script.log"
 _OKWW_REL_PYTHONW = "data/apps/ok-ww/python/pythonw.exe"
 _OKWW_TRACK_PROCESS_NAME = "pythonw.exe"
-_OKWW_PROFILE_BY_RESOURCE = {"官服": "China", "国际服": "Global"}
 _OKWW_UPDATE_METHOD = "AUTO_UPDATE"
+# ok-ww 只调度日常任务（-t 1 = DailyTask）；账号切换由 MAS 侧 account_switch
+# 实现，不再暴露上游 MultiAccountDailyTask（其 -t 序号与 MAS 面板语义不符）。
+_OKWW_TASK_INDEX = 1
 _OKWW_LOG_TIME_START = 1
 _OKWW_LOG_TIME_END = 23
 _OKWW_LOG_TIME_FORMAT = "%Y-%m-%d %H:%M:%S,%f"
@@ -105,10 +113,10 @@ def _okww_config_mode(raw: object) -> str:
 
 def _okww_mas_config_dir(script_id: str, user_id: str, mode: str) -> Path:
     mode = _okww_config_mode(mode)
-    if mode == "直控":
+    owner = owner_for_mode(mode, user_id)
+    if owner is None:
         raise ValueError("直控配置不使用 MAS 全量配置目录")
-    owner = "Default" if mode == "脚本" else user_id
-    return Path.cwd() / "data" / script_id / owner / "ConfigFile"
+    return mas_config_dir(script_id, owner)
 
 
 def _update_json(path: Path, values: dict[str, object]) -> None:
@@ -121,9 +129,13 @@ def _update_json(path: Path, values: dict[str, object]) -> None:
     write_file(path, data)
 
 
-def _configure_okww_launcher(
-    script_root_path: Path, resource: str | None = None
-) -> None:
+def _configure_okww_launcher(script_root_path: Path) -> None:
+    """补齐 OK-WW 启动器设置（缺省才补、无事零写入）。
+
+    只补 ``auto_start`` / ``update_method`` 两项启动器默认值，不改动用户安装
+    时选择的更新渠道（``current_profile`` 由 ok-ww 安装包决定，与游戏区服
+    无关，MAS 不接管）。
+    """
     app_json_path = script_root_path / _OKWW_REL_APP_JSON
     if not app_json_path.is_file():
         return
@@ -132,31 +144,12 @@ def _configure_okww_launcher(
     if not isinstance(app_config, dict):
         raise ValueError("OK-WW app.json 格式错误")
 
-    profile = app_config.get("current_profile")
-    if resource is not None:
-        profile = _OKWW_PROFILE_BY_RESOURCE.get(resource)
-        if profile is None:
-            raise ValueError(f"不支持的 OK-WW 游戏资源: {resource}")
-    available_profiles = {
-        item.get("name")
-        for item in (app_config.get("profiles") or [])
-        if isinstance(item, dict)
-    }
-    if (
-        resource is not None
-        and available_profiles
-        and profile not in available_profiles
-    ):
-        raise ValueError(f"当前 OK-WW 安装不支持{resource}资源")
     changed = False
     if app_config.get("auto_start") is not True:
         app_config["auto_start"] = True
         changed = True
     if "update_method" not in app_config:
         app_config["update_method"] = _OKWW_UPDATE_METHOD
-        changed = True
-    if resource is not None and app_config.get("current_profile") != profile:
-        app_config["current_profile"] = profile
         changed = True
     if not changed:
         return
@@ -315,7 +308,7 @@ class AutoProxyTask(TaskExecuteBase):
             for rule in OKWW_PUSH_RULES:
                 self.log_collect.collect(*rule)
 
-        self.task_index = int(self.cur_user_config.get("Task", "TaskIndex"))
+        self.task_index = _OKWW_TASK_INDEX
         self.okww_args = ["-t", str(self.task_index), "-e"]
 
         self.script_config_path = self.script_root_path / _OKWW_REL_CONFIG_DIR
@@ -326,6 +319,18 @@ class AutoProxyTask(TaskExecuteBase):
         return self.script_log_path
 
     def _apply_mas_overrides(self) -> None:
+        """overlay 覆盖段：把 MAS 侧运行值覆盖到当前来源配置之上。
+
+        DailyTask.json 是面板 overlay 子集，由 IfQuickConfig 守卫、与来源独立
+        ——直控+开启同样覆盖，任务结束由 manager 既有整目录快照恢复。
+
+        Basic Options.json 的退出行为同样属 overlay：它不是面板字段，但 MAS
+        运行期需要它，且**三态一律覆盖**——覆盖发生在换入后的 working 目录，
+        任务结束由同一份整目录快照还原，因此不会固化进任何来源的 base。
+        （此前直控被排除在外，是「直控=原生配置不许动」的旧口径；按 overlay
+        语义，只要任务结束能还原，覆盖与来源无关。）
+        """
+
         _update_json(
             self.script_config_path / "Basic Options.json",
             {"Exit App when Game Exits": True},
@@ -359,20 +364,42 @@ class AutoProxyTask(TaskExecuteBase):
 
         logger.info("开始配置 OK-WW 运行参数: 自动代理")
         await System.kill_process(self.script_exe_path)
-        _configure_okww_launcher(
-            self.script_root_path,
-            str(self.cur_user_config.get("Info", "Resource")),
-        )
+        _configure_okww_launcher(self.script_root_path)
 
         config_mode = _okww_config_mode(self.cur_user_config.get("Info", "Mode"))
         if config_mode != "直控":
+            # 下发前归档 MAS 配置到用户池（下发源，运行回写与快速配置覆盖会
+            # 改它；指纹去重，失败不阻断运行）。目标路径按三态 owner（脚本态
+            # 共享 Default 目录）。native 池由 manager prepare 在任务级一次
+            # 性归档，此处不重复
+            archive_mas_runtime_backup(
+                self.script_info.script_id,
+                str(self.cur_user_uid),
+                _okww_mas_config_dir(
+                    self.script_info.script_id,
+                    str(self.cur_user_uid),
+                    config_mode,
+                ),
+                overlay=read_overlay_values(self.cur_user_config),
+                # 备份标注来源：tri_state 池跨来源恢复靠它切回
+                mode=config_mode,
+            )
             mas_config_dir = _okww_mas_config_dir(
                 self.script_info.script_id,
                 str(self.cur_user_uid),
                 config_mode,
             )
-            replace_dir(mas_config_dir, self.script_config_path)
+            swap_in_dir(mas_config_dir, self.script_config_path)
+        else:
+            source = Path.cwd() / f"data/{self.script_info.script_id}/Temp"
+            if source.is_dir():
+                swap_in_dir(source, self.script_config_path)
         self._apply_mas_overrides()
+        mark_native_config_injected(
+            Path.cwd() / f"data/{self.script_info.script_id}/Temp",
+            self.script_config_path,
+            script_id=self.script_info.script_id,
+        )
         logger.info("OK-WW 运行参数配置完成: 自动代理")
 
     async def _push_dispatch_log(self, line: str) -> None:
@@ -483,6 +510,7 @@ class AutoProxyTask(TaskExecuteBase):
                     logger.info("检测到其他鸣潮客户端进程，继续启动已配置的游戏")
                 else:
                     logger.info("检测到已配置的鸣潮客户端进程正在运行，跳过重复启动")
+                    await self._note_launch_arguments_skipped()
                     return
 
             await self.game_manager.open_process(
@@ -499,6 +527,15 @@ class AutoProxyTask(TaskExecuteBase):
             name=_WUWA_CLIENT_PROCESS,
             exe=str(self.game_process_path),
         )
+
+    async def _note_launch_arguments_skipped(self) -> None:
+        """游戏已在运行时不会重复启动，配了启动参数的用户要知道这轮没生效。"""
+
+        arguments = str(self.script_config.get("Game", "Arguments") or "").strip()
+        if arguments:
+            message = f"检测到游戏已在运行，本轮不会应用启动参数（{arguments}）"
+            logger.info(message)
+            await self._push_dispatch_log(message)
 
     async def main_task(self):
         await self.prepare()

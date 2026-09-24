@@ -47,6 +47,15 @@ export const SCRIPT_TYPE_OPTIONS: ScriptTypeOption[] = [
     icon: SCRIPT_LOGOS.General,
   },
   {
+    // MaaFW 是通用引擎，不是专项：任何带 interface.json 的项目都由它运行，和「通用脚本」并列。
+    value: 'MaaFW',
+    titleKey: 'scripts.type.MaaFW',
+    descriptionKey: 'scripts.create.typeDesc.MaaFW',
+    keywords: ['maafw', 'maaframework', 'framework', 'mfw', 'interface.json', '通用'],
+    group: 'general',
+    icon: SCRIPT_LOGOS.MaaFW,
+  },
+  {
     value: 'MAA',
     titleKey: 'scripts.type.MAA',
     descriptionKey: 'scripts.create.typeDesc.MAA',
@@ -66,7 +75,7 @@ export const SCRIPT_TYPE_OPTIONS: ScriptTypeOption[] = [
     value: 'MaaEnd',
     titleKey: 'scripts.type.MaaEnd',
     descriptionKey: 'scripts.create.typeDesc.MaaEnd',
-    keywords: ['maaend', 'maaframework'],
+    keywords: ['maaend', 'maaframework', '终末地', 'endfield'],
     group: 'specialized',
     icon: SCRIPT_LOGOS.MaaEnd,
   },
@@ -77,14 +86,6 @@ export const SCRIPT_TYPE_OPTIONS: ScriptTypeOption[] = [
     keywords: ['m9a', '1999', '重返未来'],
     group: 'specialized',
     icon: SCRIPT_LOGOS.M9A,
-  },
-  {
-    value: 'MaaFW',
-    titleKey: 'scripts.type.MaaFW',
-    descriptionKey: 'scripts.create.typeDesc.MaaFW',
-    keywords: ['maafw', 'maaframework', 'framework', 'mfw'],
-    group: 'specialized',
-    icon: SCRIPT_LOGOS.MaaFW,
   },
   {
     value: 'Okww',

@@ -20,8 +20,7 @@ DEVICE_JSON = """{
 
 # MuMu 自己的 C++ 日志写进了 stdout，跟在完整 JSON 后面
 CPP_LOG_TAIL = (
-    "\n[*** LOG ERROR #0001 ***] [2026-09-07 20:11:03] [mumu] "
-    "{bad_weak_ptr}\n"
+    "\n[*** LOG ERROR #0001 ***] [2026-09-07 20:11:03] [mumu] {bad_weak_ptr}\n"
 )
 
 # MuMu 的埋点，出现在设备 JSON 之前，本身也是一段合法 JSON

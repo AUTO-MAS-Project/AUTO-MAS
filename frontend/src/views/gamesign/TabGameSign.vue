@@ -14,6 +14,7 @@ import type { GameSignAccountGroupConfig, ToolsConfig_GameSign } from '@/api'
 import { useGameSignAccountApi } from '@/composables/useGameSignAccountApi'
 import DocLink from '@/components/DocLink.vue'
 import { MAS_DOC_URLS } from '@/utils/openExternal'
+import { getConfig, saveConfig } from '@/utils/config'
 import QrLoginModal from './QrLoginModal.vue'
 import { useGameSignApi } from './useGameSignApi'
 import { useQrLogin, type QrLoginProvider } from './useQrLogin'
@@ -339,8 +340,7 @@ const {
     if (savedAccount && editingAccount.value?.uid === accountId) {
       // 只回填本次扫码拿到的那一个凭据字段。整体替换成服务端副本会把弹窗里
       // 其他还没保存的输入（用户名、手动粘贴的其他平台 Token）静默冲掉。
-      const credentialField =
-        qrLoginProvider.value === 'skland' ? 'SklandToken' : 'MiyousheToken'
+      const credentialField = qrLoginProvider.value === 'skland' ? 'SklandToken' : 'MiyousheToken'
       editingAccount.value[credentialField] = savedAccount[credentialField]
     }
     if (onRefreshConfig) {
@@ -399,6 +399,44 @@ const handleNotifyEnabledChange = async (value: boolean) => {
   }
 }
 
+// ==================== 首页显示日常便笺 ====================
+// 这是首页轮播下方的便笺总开关，存在前端本地配置（homeLayout），不是后端 GameSign 字段；
+// 默认关闭，用户打开后首页活动轮播下方才显示当前游戏的日常便笺。
+
+const homeActivityNotesVisible = ref(false)
+const homeActivityNotesSaving = ref(false)
+
+const loadHomeActivityNotes = async () => {
+  try {
+    const config = await getConfig()
+    homeActivityNotesVisible.value = config.homeLayout?.activityNotesVisible === true
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`读取首页便笺开关失败: ${errorMsg}`)
+  }
+}
+
+const handleHomeActivityNotesChange = async (value: boolean) => {
+  homeActivityNotesSaving.value = true
+  try {
+    const config = await getConfig()
+    await saveConfig({
+      homeLayout: {
+        ...(config.homeLayout ?? { moduleOrder: [], hiddenModules: [] }),
+        activityNotesVisible: value,
+      },
+    })
+    homeActivityNotesVisible.value = value
+    logger.info(`首页显示日常便笺 已保存: ${value}`)
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`保存首页便笺开关失败: ${errorMsg}`)
+    message.error(t('gamesign.toast.homeActivityEnableSaveFailed'))
+  } finally {
+    homeActivityNotesSaving.value = false
+  }
+}
+
 // ==================== 手动签到 ====================
 
 const handleManualSign = async () => {
@@ -436,6 +474,7 @@ const handleManualSign = async () => {
 
 onMounted(() => {
   loadAccounts()
+  void loadHomeActivityNotes()
 })
 </script>
 
@@ -488,6 +527,18 @@ onMounted(() => {
             :checked="config.ActivityEnabled !== false"
             :disabled="disabled"
             @change="handleChange('ActivityEnabled', $event)"
+          />
+        </div>
+        <div class="setting-row">
+          <div class="setting-info">
+            <span class="setting-title">{{ t('gamesign.section.homeActivityEnable') }}</span>
+            <span class="setting-desc">{{ t('gamesign.section.homeActivityEnableDesc') }}</span>
+          </div>
+          <a-switch
+            :checked="homeActivityNotesVisible"
+            :disabled="disabled"
+            :loading="homeActivityNotesSaving"
+            @change="handleHomeActivityNotesChange"
           />
         </div>
         <div class="setting-row">

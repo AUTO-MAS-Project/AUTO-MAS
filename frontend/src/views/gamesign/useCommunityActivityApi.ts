@@ -1,14 +1,15 @@
 import {
   ApiError,
   CommunityService,
+  Service,
   type CommunityActivityResourceOut,
   type CommunityActivitySnapshotOut,
   type CommunityActivityTaskOut,
 } from '@/api'
+import { parseSignResult } from './gameSignDisplay'
 
-export type ActivityStatus = CommunityActivitySnapshotOut['status']
-export type ActivityTask = CommunityActivityTaskOut & { period: string }
-export type ActivityResource = CommunityActivityResourceOut
+type ActivityTask = CommunityActivityTaskOut & { period: string }
+type ActivityResource = CommunityActivityResourceOut
 export type ActivitySnapshot = Omit<
   CommunityActivitySnapshotOut,
   'completed' | 'target' | 'tasks' | 'resources'
@@ -69,5 +70,13 @@ export function useCommunityActivityApi() {
     }
   }
 
-  return { queryActivity }
+  const querySignResult = async () => {
+    const response = await Service.getToolsApiToolsGetPost()
+    if (response.code !== 200) {
+      throw new Error(response.message || '读取签到结果失败')
+    }
+    return parseSignResult(response.data?.GameSign?.Result)
+  }
+
+  return { queryActivity, querySignResult }
 }

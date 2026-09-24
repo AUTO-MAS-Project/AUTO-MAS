@@ -37,18 +37,23 @@
               <div class="type-section-heading">
                 <span class="type-section-title">{{ t('scripts.create.groupGeneral') }}</span>
               </div>
-              <label
-                v-for="option in typeSections.general"
-                :key="option.value"
-                :class="['type-row general-type-row', { selected: selectedType === option.value }]"
-              >
-                <img :src="option.icon" :alt="option.title" class="type-icon" />
-                <span class="choice-copy">
-                  <span class="choice-title">{{ option.title }}</span>
-                  <span class="choice-description">{{ option.description }}</span>
-                </span>
-                <a-radio :value="option.value" />
-              </label>
+              <div class="type-grid">
+                <label
+                  v-for="option in typeSections.general"
+                  :key="option.value"
+                  :class="[
+                    'type-row general-type-row',
+                    { selected: selectedType === option.value },
+                  ]"
+                >
+                  <img :src="option.icon" :alt="option.title" class="type-icon" />
+                  <span class="choice-copy">
+                    <span class="choice-title">{{ option.title }}</span>
+                    <span class="choice-description">{{ option.description }}</span>
+                  </span>
+                  <a-radio :value="option.value" />
+                </label>
+              </div>
             </section>
             <section
               v-if="typeSections.specialized.length"

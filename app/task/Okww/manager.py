@@ -16,7 +16,6 @@
 #   You should have received a copy of the GNU Affero General Public License
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
 
-import shutil
 import uuid
 from contextlib import suppress
 from datetime import datetime
@@ -31,7 +30,13 @@ from app.models.task import ScriptItem, TaskExecuteBase, UserItem
 from app.tools.push_log import build_user_result_text
 from app.utils import ProcessManager, get_logger
 from app.utils.constants import TASK_MODE_ZH
-from app.utils.io import force_rmtree, replace_dir
+from app.utils.io import (
+    clear_native_config_snapshot,
+    commit_native_config_snapshot,
+    force_rmtree,
+    recover_native_config,
+    swap_in_dir,
+)
 
 from .AutoProxy import (
     _OKWW_REL_APP_JSON,
@@ -42,6 +47,7 @@ from .AutoProxy import (
 )
 from .ScriptConfig import ScriptConfigTask
 from .tools import push_notification
+from .tools.backup_archive import archive_native_backup
 from .Update import WuwaUpdateTask
 
 logger = get_logger("OK-WW 调度器")
@@ -194,13 +200,20 @@ class OkwwManager(TaskExecuteBase):
                 Path(self.script_config.get("Info", "RootPath")) / _OKWW_REL_CONFIG_DIR
             )
             self.temp_path = Path.cwd() / f"data/{self.script_info.script_id}/Temp"
-            force_rmtree(self.temp_path)
-            self.temp_path.mkdir(parents=True, exist_ok=True)
-            if self.script_config_path.exists():
+            self._recover_previous_run()
+            if commit_native_config_snapshot(
+                self.temp_path,
+                self.script_config_path,
+                script_id=self.script_info.script_id,
+            ):
                 self.had_original_script_config = True
-                shutil.copytree(
-                    self.script_config_path, self.temp_path, dirs_exist_ok=True
-                )
+
+            # 任务级一次性归档 ok-ww 原生配置（项目级池，指纹去重，失败不
+            # 阻断任务）：原生配置物理上跨用户共享，只代表「本轮任务动手前」
+            # 的脚本原生状态——下发/覆盖处按用户归档会把上一轮下发的 MAS
+            # 配置误当原生内容挤进保留池，必须在任何下发前归档这一次
+            with suppress(Exception):
+                archive_native_backup(self.script_config_path)
 
     async def _restore_script_config_from_temp(self) -> None:
         if not (
@@ -217,11 +230,26 @@ class OkwwManager(TaskExecuteBase):
             force_rmtree(self.script_config_path)
         else:
             logger.info(f"复原 OK-WW 脚本配置文件: {self.temp_path}")
-            replace_dir(self.temp_path, self.script_config_path)
+            swap_in_dir(self.temp_path, self.script_config_path)
+
+    def _recover_previous_run(self) -> None:
+        """处置上次崩溃残留的原始配置快照。"""
+
+        result = recover_native_config(
+            self.temp_path,
+            self.script_config_path,
+            expected_script_id=self.script_info.script_id,
+        )
+        if result == "restored":
+            logger.info("已恢复上次中断前的 OK-WW 原始配置")
+        elif result == "skipped":
+            logger.warning(
+                "检测到 OK-WW 原生配置在中断后被改动, 已保留当前配置并丢弃旧快照"
+            )
 
     def _cleanup_script_config_temp(self) -> None:
         if self.temp_path:
-            force_rmtree(self.temp_path)
+            clear_native_config_snapshot(self.temp_path)
 
     async def main_task(self):
         self.check_result = await self.check()
@@ -259,6 +287,8 @@ class OkwwManager(TaskExecuteBase):
                     self.script_info,
                     self.script_config,
                     self.user_config,
+                    # 查看会话（view_only）仅 ScriptConfig 模式支持：只读打开原生 GUI
+                    view_only=self.task_info.view_only,
                 )
             )
             return
@@ -297,7 +327,7 @@ class OkwwManager(TaskExecuteBase):
             try:
                 await self.spawn(method)
             finally:
-                # 每个用户任务结束后立即恢复快照，快速配置不得残留到脚本原配置。
+                # 每个用户任务结束后立即恢复快照，overlay 不得残留到脚本原配置。
                 await self._restore_script_config_from_temp()
 
     async def final_task(self):
@@ -392,10 +422,15 @@ class OkwwManager(TaskExecuteBase):
                     await script_cfg.unlock()
 
     def _keep_script_config_changes(self) -> bool:
-        """直控配置会话成功后保留脚本原生 GUI 写回的配置。"""
+        """直控配置会话成功后保留脚本原生 GUI 写回的配置。
+
+        查看会话（view_only）不在此列：只读预览结束后原生现场必须按任务前
+        快照还原，不能把 GUI 里的临时改动当作直控保存保留下来。
+        """
 
         return (
             self.task_info.mode == "ScriptConfig"
+            and not self.task_info.view_only
             and self.script_config_mode == "直控"
             and bool(self.script_info.user_list)
             and self.script_info.user_list[0].status == "完成"

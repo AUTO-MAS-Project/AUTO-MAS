@@ -41,7 +41,7 @@ export interface CloudMirrorConfig {
   apiEndpoints?: ApiEndpoints // API 端点配置
 }
 
-export interface LocalConfigCache {
+interface LocalConfigCache {
   config: CloudMirrorConfig
   etag?: string // 用于判断配置是否需要更新
   lastUpdated: string // 最后更新时间

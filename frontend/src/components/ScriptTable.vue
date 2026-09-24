@@ -766,8 +766,9 @@ const isMaaEndPresetSupported = (script: Script) => {
   return script.type === 'MaaEnd' && controllerType === 'Win32-Front'
 }
 
+// 直控直接用 MaaEnd 原有配置，在 MaaEnd 里改，不给配置入口。
 const shouldShowMaaEndUserConfigButton = (script: Script, user: User) => {
-  return script.type === 'MaaEnd' && user.Info?.Mode !== '脚本'
+  return script.type === 'MaaEnd' && user.Info?.Mode === '用户'
 }
 
 const handleStartOkwwConfig = (script: Script) => {

@@ -35,7 +35,7 @@ const t = translate
 type QrApiResponse = QrCreateOut & QrCheckOut & OutBase & { scan_code?: string }
 type QrLogger = ReturnType<typeof window.electronAPI.getLogger>
 
-export const QR_RESPONSE_INVALID_MESSAGE = t('gamesign.qr.responseInvalid')
+const QR_RESPONSE_INVALID_MESSAGE = t('gamesign.qr.responseInvalid')
 
 const POLL_INTERVAL_MS = 2000
 /** 成功后延迟关闭弹窗，让用户看到成功提示 */
@@ -47,12 +47,12 @@ const AUTO_CLOSE_DELAY_MS = 1200
  * 这类错误要提示并允许重新生成，与本地主动取消是两回事：
  * 后者由 AbortError 静默吞掉，不能弹提示。
  */
-export const isQrExpiredMessage = (messageText: string) =>
+const isQrExpiredMessage = (messageText: string) =>
   /二维码|qr|expired|invalid|nonetype.*get|object has no attribute.*get/i.test(messageText)
 
 const isQrAbortError = (error: unknown) => error instanceof Error && error.name === 'AbortError'
 
-export interface QrLoginOptions {
+interface QrLoginOptions {
   /** 当前正在编辑的账号 uid；取不到时只走完扫码流程，不落库 */
   getAccountId: () => string | undefined
   /**

@@ -106,9 +106,7 @@ def _track_community_notification(
         _log_community_api_error("后台游戏社区通知发送失败", exc)
         return
     if failed_channels:
-        logger.warning(
-            f"后台游戏社区通知部分失败: {'、'.join(failed_channels)}"
-        )
+        logger.warning(f"后台游戏社区通知部分失败: {'、'.join(failed_channels)}")
 
 
 async def _dispatch_community_notification(
@@ -138,8 +136,6 @@ def _get_community_account_field(account: object, field: str, default=None):
         return account.get("GameSignAccount", field)  # type: ignore[attr-defined]
     except (AttributeError, KeyError):
         return default
-
-
 
 
 @router.post(
@@ -212,9 +208,7 @@ async def manual_game_sign() -> OutBase:
             # 格式化并存储结果
             formatted = format_community_sign_results(results)
             # 合并结果（手动签到按 account_uid 替换旧数据）
-            result_update = Config.update_community_results(
-                formatted, replace=True
-            )
+            result_update = Config.update_community_results(formatted, replace=True)
             if isawaitable(result_update):
                 await result_update
 
@@ -223,13 +217,8 @@ async def manual_game_sign() -> OutBase:
             all_signed = True
             for uid, account in Config.ToolsConfig.GameSign_Accounts.items():
                 has_credentials = has_community_credentials(account)
-                if (
-                    _get_community_account_field(account, "Enabled")
-                    and has_credentials
-                ):
-                    if _get_community_account_field(
-                        account, "LastSignDate"
-                    ) != today:
+                if _get_community_account_field(account, "Enabled") and has_credentials:
+                    if _get_community_account_field(account, "LastSignDate") != today:
                         all_signed = False
                         break
             if all_signed:
@@ -321,12 +310,12 @@ async def query_community_activity(
             )
 
     return CommunityActivityOut(
-        status="warning" if any(
-            snapshot.status != "success" for snapshot in snapshots
-        ) else "success",
-        message="部分游戏日常查询失败" if any(
-            snapshot.status == "failed" for snapshot in snapshots
-        ) else "",
+        status="warning"
+        if any(snapshot.status != "success" for snapshot in snapshots)
+        else "success",
+        message="部分游戏日常查询失败"
+        if any(snapshot.status == "failed" for snapshot in snapshots)
+        else "",
         data=[
             CommunityActivitySnapshotOut(
                 account=snapshot.account,
@@ -336,7 +325,9 @@ async def query_community_activity(
                 status=snapshot.status,
                 completed=snapshot.completed,
                 target=snapshot.target,
-                tasks=[CommunityActivityTaskOut(**dict(task)) for task in snapshot.tasks],
+                tasks=[
+                    CommunityActivityTaskOut(**dict(task)) for task in snapshot.tasks
+                ],
                 resources=[
                     CommunityActivityResourceOut(**dict(resource))
                     for resource in snapshot.resources
@@ -349,7 +340,7 @@ async def query_community_activity(
                 source=snapshot.source,
             )
             for snapshot in snapshots
-        ]
+        ],
     )
 
 

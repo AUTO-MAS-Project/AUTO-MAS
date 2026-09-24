@@ -8,7 +8,7 @@
       config-label="配置 OK-NTE"
       :config-loading="oknteConfigLoading"
       :config-active="showOknteConfigMask"
-      :config-disabled="pageLoading || !activeUserId"
+      :config-disabled="pageLoading || !activeUserId || configLocked"
       @config="handleOkNteConfig"
       @cancel="handleCancel"
     />
@@ -50,7 +50,7 @@
       </template>
     </GuiSessionMask>
 
-    <div class="user-edit-content">
+    <ConfigLockPanel :script-id="scriptId" content-class="user-edit-content">
       <a-card class="config-card" :loading="pageLoading">
         <a-form :model="formData" layout="vertical" class="config-form">
           <div class="form-section">
@@ -135,6 +135,18 @@
                     @blur="saveField('Info.Password', formData.Info.Password)"
                   />
                 </a-form-item>
+              </a-col>
+            </a-row>
+
+            <a-row :gutter="24">
+              <a-col :span="24">
+                <GeneralConfigModeSelector
+                  :model-value="formData.Info.Mode"
+                  :options="oknteConfigModeOptions"
+                  :disabled="pageLoading"
+                  :alert-message="t('edit.configSourceHintBase')"
+                  @change="handleConfigModeChange"
+                />
               </a-col>
             </a-row>
 
@@ -272,22 +284,32 @@
         </a-form>
       </a-card>
 
-      <!-- OK-NTE 配置编辑器（配置恢复按钮经插槽统一放在编辑器标题行右侧） -->
-      <a-card class="config-card" style="margin-top: 24px">
+      <a-flex class="section-header" justify="space-between" align="center" wrap="wrap" gap="small">
+        <h3>{{ t('edit.okNteConfiguration') }}</h3>
+        <a-space>
+          <span>{{ t('edit.enableQuickConfiguration') }}</span>
+          <a-switch
+            :checked="formData.Info.IfQuickConfig"
+            :disabled="pageLoading || isInitializing || isSaving || configEditorSaving"
+            :aria-label="t('edit.enableQuickConfiguration')"
+            @change="handleQuickConfigChange"
+          />
+          <a-button size="small" @click="openRestoreModal">
+            <template #icon><HistoryOutlined /></template>
+            {{ t('edit.configRestoreTitle') }}
+          </a-button>
+        </a-space>
+      </a-flex>
+      <a-card v-if="formData.Info.IfQuickConfig" class="config-card">
         <OkNteConfigEditor
           v-if="activeUserId"
+          ref="configEditor"
           :script-id="scriptId"
           :user-id="activeUserId"
           :refresh-token="oknteConfigRefreshToken"
+          @saving-change="configEditorSaving = $event"
           @saved="handleConfigSaved"
-        >
-          <template #header-actions>
-            <a-button size="small" @click="openRestoreModal">
-              <template #icon><HistoryOutlined /></template>
-              {{ t('edit.configRestoreTitle') }}
-            </a-button>
-          </template>
-        </OkNteConfigEditor>
+        />
       </a-card>
 
       <a-card class="config-card" style="margin-top: 24px">
@@ -301,11 +323,12 @@
           />
         </a-form>
       </a-card>
-    </div>
+    </ConfigLockPanel>
 
     <!-- ══ 配置恢复（通用组件：MAS 用户配置在前、ok-nte 原生配置在后）══ -->
     <ConfigRestoreSection
       v-model:open="restoreOpen"
+      :disabled="configLocked"
       :script-name="OKNTE_DISPLAY_NAME"
       :targets="restoreTargets"
       :api="restoreApi"
@@ -323,11 +346,7 @@
           <template v-for="f in previewFiles(raw)" :key="f.name">
             <h4 class="oknte-preview-title">{{ f.label }}</h4>
             <a-descriptions :column="1" size="small" bordered class="oknte-preview-box">
-              <a-descriptions-item
-                v-for="row in f.summary"
-                :key="row.key"
-                :label="row.key"
-              >
+              <a-descriptions-item v-for="row in f.summary" :key="row.key" :label="row.key">
                 {{ row.value }}
               </a-descriptions-item>
             </a-descriptions>
@@ -339,17 +358,10 @@
 </template>
 
 <script setup lang="ts">
+import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
+import { useScriptConfigLock } from '@/composables/useScriptConfigLock'
 import { useI18n } from 'vue-i18n'
-import {
-  computed,
-  h,
-  nextTick,
-  onMounted,
-  onUnmounted,
-  reactive,
-  ref,
-  watch,
-} from 'vue'
+import { computed, h, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { message, Modal } from 'ant-design-vue'
 import {
@@ -367,6 +379,7 @@ import UserEditHeader from '@/components/UserEditHeader.vue'
 import UserNotifyConfig from '@/components/UserNotifyConfig.vue'
 import GuiSessionMask from '@/components/GuiSessionMask.vue'
 import ConfigRestoreSection from '@/views/EditView/User/components/ConfigRestoreSection.vue'
+import GeneralConfigModeSelector from '@/views/EditView/User/GeneralConfigModeSelector.vue'
 import OkNteConfigEditor from './OkNteUserEdit/OkNteConfigEditor.vue'
 
 const { t } = useI18n()
@@ -390,13 +403,16 @@ const {
 const scriptId = route.params.scriptId as string
 let userId = (route.params.userId as string) || ''
 const isEdit = ref(!!userId)
+const { configLocked } = useScriptConfigLock(() => scriptId)
 const activeUserId = ref(userId)
 const scriptName = ref('OK-NTE脚本')
 
 const pageLoading = ref(true)
 const isInitializing = ref(true)
 // 保存串行队列：连续改动按序写回，不再被布尔互斥丢掉
-const { enqueue } = useSaveQueue()
+const { enqueue, isSaving } = useSaveQueue()
+const configEditor = ref<InstanceType<typeof OkNteConfigEditor> | null>(null)
+const configEditorSaving = ref(false)
 const oknteConfigRefreshToken = ref(0)
 
 /** OK-NTE 已适配任务（-t 1..19）；新版上游 DailyRoutineTask 是 -t 2 */
@@ -404,6 +420,36 @@ const OKNTE_MAX_TASK_INDEX = 19
 
 const resourceOptions = [{ label: '官服', value: '官服' }]
 // 节点详情推送模式（value 为后端 Notify.PushLogMode 取值，驱动逻辑需保持原样；label 走词表）
+const oknteConfigModeOptions: Array<{
+  label: string
+  value: '脚本' | '用户' | '直控'
+  title: string
+  description: string
+  icon: 'file' | 'database' | 'setting'
+}> = [
+  {
+    label: t('edit.script'),
+    value: '脚本',
+    title: t('edit.script'),
+    description: '使用脚本级共享配置',
+    icon: 'file',
+  },
+  {
+    label: t('edit.user'),
+    value: '用户',
+    title: t('edit.user'),
+    description: t('edit.useThisUserS'),
+    icon: 'database',
+  },
+  {
+    label: t('edit.directControl'),
+    value: '直控',
+    title: t('edit.directControl'),
+    description: t('edit.nativeConfigSourceDescription'),
+    icon: 'setting',
+  },
+]
+
 const pushLogModeOptions = [
   { label: t('edit.pushLogModeOff'), value: '关闭' },
   { label: t('edit.pushLogModeList'), value: '逐条' },
@@ -451,6 +497,7 @@ const getDefaultUserData = (): Omit<OkNteUserFormData, 'userName'> => ({
     Id: '',
     Password: '',
     Mode: '脚本',
+    IfQuickConfig: true,
     Resource: '官服',
     RemainedDay: -1,
     IfUseMasConfig: true,
@@ -499,6 +546,8 @@ const refreshOkNteConfigEditor = () => {
 }
 
 const createUserImmediately = async () => {
+  if (configLocked.value) return false
+
   const resp = await addUser(scriptId)
   if (!resp?.userId) {
     throw new Error(resp?.message || '创建用户失败')
@@ -510,6 +559,23 @@ const createUserImmediately = async () => {
     name: 'OkNteUserEdit',
     params: { scriptId, userId },
   })
+}
+
+// 快速配置开关：与配置来源独立，真实保存
+const handleQuickConfigChange = async (value: boolean) => {
+  if (!value && configEditor.value && !(await configEditor.value.saveAll())) return
+  const previous = formData.Info.IfQuickConfig
+  formData.Info.IfQuickConfig = value
+  if (!(await saveField('Info.IfQuickConfig', value))) {
+    formData.Info.IfQuickConfig = previous
+  }
+}
+
+const handleConfigModeChange = async (value: boolean | string) => {
+  if (typeof value !== 'string' || !oknteConfigModeOptions.some(option => option.value === value))
+    return
+  formData.Info.Mode = value as '脚本' | '用户' | '直控'
+  await saveField('Info.Mode', formData.Info.Mode)
 }
 
 const saveField = async (key: string, value: unknown) => {
@@ -528,9 +594,9 @@ const saveField = async (key: string, value: unknown) => {
     formData.userName = String(value || '')
   }
 
-  await enqueue(async () => {
+  return await enqueue(async () => {
     try {
-      await updateUser(scriptId, userId, patch)
+      return await updateUser(scriptId, userId, patch)
     } catch (e) {
       logger.error(e instanceof Error ? e.message : String(e))
     }
@@ -558,10 +624,12 @@ const handleTaskIndexChange = async (value: number) => {
 }
 
 const handleOkNteConfig = async () => {
+  if (configLocked.value) return
   if (!userId) {
     message.error(t('edit.createUserBeforeConfiguring'))
     return
   }
+  if (configEditor.value && !(await configEditor.value.saveAll())) return
   await startSession(userId)
 }
 
@@ -584,7 +652,7 @@ const loadUser = async () => {
   pageLoading.value = true
   try {
     if (!userId) {
-      await createUserImmediately()
+      if (!(await createUserImmediately())) return
     }
     const resp = await getUsers(scriptId, userId)
     const userIndex = resp?.index?.find(i => i.uid === userId)
@@ -636,12 +704,7 @@ const restoreApi = {
   list: async (target: string) =>
     Service.listConfigBackupsApiApiScriptsBackupListGet(scriptId, userId, target),
   preview: async (target: string, time: string) =>
-    Service.getConfigBackupPreviewApiApiScriptsBackupPreviewGet(
-      scriptId,
-      userId,
-      time,
-      target
-    ),
+    Service.getConfigBackupPreviewApiApiScriptsBackupPreviewGet(scriptId, userId, time, target),
   restore: async (target: string, time: string) =>
     Service.restoreConfigBackupApiApiScriptsBackupRestorePost({
       scriptId,
@@ -649,9 +712,12 @@ const restoreApi = {
       time,
       target,
     }),
+  readFile: async (target: string, time: string, path: string) =>
+    Service.getConfigBackupFileApiApiScriptsBackupFileGet(scriptId, userId, time, target, path),
 }
 
-const openRestoreModal = () => {
+const openRestoreModal = async () => {
+  if (configEditor.value && !(await configEditor.value.saveAll())) return
   restoreOpen.value = true
 }
 
@@ -662,7 +728,7 @@ interface OkNtePreviewFileView {
   summary: Array<{ key: string; value: string }>
 }
 const previewFiles = (raw: unknown): OkNtePreviewFileView[] =>
-  (raw as { files?: OkNtePreviewFileView[] } | null)?.files ?? []
+  (raw as { fileCards?: OkNtePreviewFileView[] } | null)?.fileCards ?? []
 
 // 一键恢复成功：MAS 目录回到该时点，重拉动态表单——否则旧表单值在下次
 // 保存时全量写回、静默撤销刚做的恢复（ok-nte 原生恢复不影响本页表单）
@@ -679,38 +745,50 @@ const handleRestored = (target: string) => {
 // 即备份）；原生备份：恢复到 ok-nte 本体后启动脚本级查看会话（跳过下发，
 // 原生目录即备份）。查看会话结束不回写配置，原生现场由任务前快照还原。
 const handleRestoreView = (target: string, item: { time: string }) => {
-  Modal.confirm({
-    title: t('edit.configRestoreDetailView'),
-    content: h(
-      'p',
-      { style: { color: 'var(--ant-color-error)', margin: 0 } },
-      t('edit.configRestoreDetailConfirm', { script: OKNTE_DISPLAY_NAME })
-    ),
-    okText: t('edit.configRestoreConfirmOk'),
-    cancelText: t('edit.cancel'),
-    onOk: async () => {
-      try {
-        const resp = await Service.restoreConfigBackupApiApiScriptsBackupRestorePost({
-          scriptId,
-          userId,
-          time: item.time,
-          target,
-        })
-        // 后端失败走 HTTP 200 + body code=400，须显式检查返回体：备份不存在/
-        // 配置路径未设置等抛错若被吞掉，会照常关弹窗并打开查看会话
-        if (resp.code !== 200) {
-          throw new Error(resp.message || t('edit.configRestoreFailed'))
+  if (configLocked.value) return Promise.resolve(false)
+  return new Promise<boolean>(resolve => {
+    Modal.confirm({
+      title: t('edit.configRestoreDetailView'),
+      content: h(
+        'p',
+        { style: { color: 'var(--ant-color-error)', margin: 0 } },
+        t('edit.configRestoreDetailConfirm', { script: OKNTE_DISPLAY_NAME })
+      ),
+      okText: t('edit.configRestoreConfirmOk'),
+      okType: 'danger',
+      cancelText: t('edit.cancel'),
+      onOk: async () => {
+        if (configLocked.value) {
+          message.error(t('edit.configLocked'))
+          resolve(false)
+          return
         }
-        restoreOpen.value = false
-        if (target === 'mas') {
-          await startSession(userId, true)
-        } else {
-          await startSession(scriptId, true)
+        try {
+          const resp = await Service.restoreConfigBackupApiApiScriptsBackupRestorePost({
+            scriptId,
+            userId,
+            time: item.time,
+            target,
+          })
+          // 后端失败走 HTTP 200 + body code=400，须显式检查返回体：备份不存在/
+          // 配置路径未设置等抛错若被吞掉，会照常关弹窗并打开查看会话
+          if (resp.code !== 200) {
+            throw new Error(resp.message || t('edit.configRestoreFailed'))
+          }
+          restoreOpen.value = false
+          if (target === 'mas') {
+            await startSession(userId, true)
+          } else {
+            await startSession(scriptId, true)
+          }
+          resolve(true)
+        } catch (e) {
+          message.error(e instanceof Error ? e.message : t('edit.configRestoreFailed'))
+          resolve(false)
         }
-      } catch (e) {
-        message.error(e instanceof Error ? e.message : t('edit.configRestoreFailed'))
-      }
-    },
+      },
+      onCancel: () => resolve(false),
+    })
   })
 }
 
@@ -720,13 +798,15 @@ const handleRestoreView = (target: string, item: { time: string }) => {
 const ensureOkNteBackup = async (target: 'mas' | 'native') => {
   if (!userId) return
   try {
-    await Service.ensureConfigBackupApiApiScriptsBackupEnsurePost({
+    const resp = await Service.ensureConfigBackupApiApiScriptsBackupEnsurePost({
       scriptId,
       userId,
       target,
     })
+    if (resp.code !== 200) throw new Error(resp.message || t('edit.configRestoreEnsureFailed'))
   } catch (e) {
     logger.error(e instanceof Error ? e.message : String(e))
+    message.warning(t('edit.configRestoreEnsureFailed'))
   }
 }
 
@@ -747,9 +827,12 @@ watch(showOknteViewMask, (now, before) => {
 })
 
 onUnmounted(() => {
-  // 退出编辑页：归档 MAS 配置终态（编辑会话包络），并结束未关闭的会话
-  void ensureOkNteBackup('mas')
-  void stopSession()
+  // 退出编辑页：先停会话再归档 MAS 配置终态——并行会与 final_task 的回写
+  // 撞车，归档到半程状态；会话未开时 stopSession 自身早退，不影响归档时机
+  void (async () => {
+    await stopSession()
+    await ensureOkNteBackup('mas')
+  })()
 })
 </script>
 

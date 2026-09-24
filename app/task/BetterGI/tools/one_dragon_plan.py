@@ -39,15 +39,16 @@ from __future__ import annotations
 
 import json
 import uuid
-from typing import Any
+from typing import Any, Literal
 
 from app.utils import get_logger
 
 logger = get_logger("BetterGI 一条龙计划")
 
 # 步骤来源类型，与前端队列 kind 保持一致
+StepKind = Literal["builtin", "js", "pathing", "scriptgroup", "keymouse", "custom"]
 _STEP_KINDS: frozenset[str] = frozenset(
-    {"builtin", "js", "pathing", "scriptgroup", "custom"}
+    {"builtin", "js", "pathing", "scriptgroup", "keymouse", "custom"}
 )
 
 # 8 个内置一条龙步骤的标准名（与 BGI 一条龙 TaskDefinitions 值一致）
@@ -345,13 +346,75 @@ RIGHTBAR_TO_PLAN: dict[str, dict[str, str]] = {
 }
 
 
+def plan_steps_to_native_settings(
+    steps: list[dict[str, Any]],
+) -> dict[str, dict[str, Any]]:
+    """把 Plan 战斗步骤的 settings 反转成「右栏/原生键」字典，按组基名归集。
+
+    用途：直控来源 + 快速配置开启时把面板值写进 BGI 原生配置——与执行层方向相反
+    （执行层是原生键 → Plan settings）。落点由调用方按存储归属分派：
+    首领讨伐/地脉花 → 一条龙文件；秘境 → 全局 ``autoDomainConfig`` 段；
+    幽境危战 → 全局 ``autoStygianOnslaughtConfig`` 段。
+
+    - 只收 ``RIGHTBAR_TO_PLAN`` 登记过的键（即 ``BUILTIN_STEP_SETTING_KEYS`` 白名单），
+      外加 ``flatten_weekly_struct`` 展平出的每周表平铺键（``MondayDomainName`` /
+      ``DomainRunMonday`` / ``LeyLineMondayType`` …，均为一条龙顶层键）；
+    - 只收**非空**值：留空的字段保持原生配置现有值，避免把面板空值灌进原生配置；
+    - ``maxArtifactStar`` 虽在 ``RIGHTBAR_TO_PLAN`` 内，但它是全局
+      ``autoArtifactSalvageConfig`` 段的叶子，调用方写一条龙时会按全局段落叶过滤掉。
+
+    2026-09-19：原先每周表整体不参与对齐，直控 + 快速配置下面板改了周表也不生效
+    （BGI 仍按自己那份旧周表跑），现补上展平键，与执行层 main.js 的取值链对齐。
+
+    Returns:
+        ``{组基名: {原生键: 值}}``；无战斗步骤或无可对齐字段时返回空 dict。
+    """
+    out: dict[str, dict[str, Any]] = {}
+    for step in steps or []:
+        if not isinstance(step, dict):
+            continue
+        base = _resolve_base_name(str(step.get("name", "")))
+        mapping = RIGHTBAR_TO_PLAN.get(base)
+        if not mapping:
+            continue
+        settings = step.get("settings")
+        if not isinstance(settings, dict):
+            continue
+        bucket = out.setdefault(base, {})
+        for native_key, plan_key in mapping.items():
+            value = settings.get(plan_key)
+            if value is None or value == "":
+                continue
+            bucket[native_key] = value
+        # 每周表：Plan 里是嵌套结构（weeklyDomain / weeklyLeyLine，供执行层 main.js 按
+        # 「当天行 → 默认行 → 步骤级」取值），原生一条龙仍是 BGI 的平铺键，这里反向展平
+        # 一并写入。布尔 False 必须写出去（「当天不执行」就靠它传达），故只跳过 None 与
+        # 空串；展平出的 default 行键（PartyName / DomainName）与步骤级同值，覆盖无副作用。
+        for native_key, value in flatten_weekly_struct(base, settings).items():
+            if value is None or value == "":
+                continue
+            bucket[native_key] = value
+    # 只剔除「空桶」：这里的 value 是 {原生键: 值} 整桶，不是叶子值——桶里哪怕只有 False
+    # （某工作日行被取消勾选）也是非空 dict，恒为真、照样返回；False 在上面两个插入循环里
+    # 已经过了 None/空串判断（False == "" 为假），不会被任何一处滤掉。
+    return {key: value for key, value in out.items() if value}
+
+
 # ── 每周配置：右栏平铺键 ↔ Plan 嵌套结构 ───────────────────────────────
 # 前端 weekly 表格仍用 BGI 原生平铺键（MondayPartyName / LeyLineMondayCountry …），
 # 后端落盘时重组为 Plan settings 内的嵌套对象，执行层 main.js 按「今天星期」取值。
 # 嵌套键：秘境 weeklyDomain / 地脉花 weeklyLeyLine，值形如
 #   { "default": {partyName, domainName, reward}, "Monday": {...}, ... }
 #   { "Monday": {country, type, run}, ... }
-WEEKDAY_KEYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+WEEKDAY_KEYS = [
+    "Monday",
+    "Tuesday",
+    "Wednesday",
+    "Thursday",
+    "Friday",
+    "Saturday",
+    "Sunday",
+]
 
 
 def _secret_weekly_plan_key(field_key: str):
@@ -495,6 +558,30 @@ def flatten_weekly_struct(group: str, settings: dict[str, Any]) -> dict[str, Any
     return out
 
 
+def is_combat_group(group: str) -> bool:
+    """是否为带执行层 Plan 的战斗 4 项组名（支持 ``自动秘境-副本A`` 形式的后缀名）。"""
+    base = _resolve_base_name(group)
+    return base in RIGHTBAR_TO_PLAN
+
+
+def plan_combat_bases(plan_steps: list[dict[str, Any]]) -> set[str]:
+    """Plan 中「配过实例」的战斗步骤基名集合（**不区分启停**）。
+
+    回答的是「该战斗组归谁负责」：只要 Plan 里有它的实例，就归执行层——开则由战斗段
+    执行，关则本次不跑（不应再退回原生副本，否则界面关了还会漏跑）。
+    与 ``build_combat_steps`` 的分工：本函数看归属（不看 ``enabled`` / ``Groups``），
+    后者看本次实际跑谁。
+    """
+    bases: set[str] = set()
+    for step in plan_steps or []:
+        if not isinstance(step, dict):
+            continue
+        base = _resolve_base_name(str(step.get("name", "")))
+        if base in BUILTIN_COMBAT_STEP_NAMES:
+            bases.add(base)
+    return bases
+
+
 def build_combat_steps(
     plan_steps: list[dict[str, Any]],
     queue: list[dict[str, Any]] | None = None,
@@ -624,7 +711,11 @@ def build_combat_steps(
     # 3) 未被 queue 消费的 Plan 步骤（孤儿实例，如曾创建后从队列移除/未入队）
     #    不执行：左栏队列是用户所见即所得，追加执行会让用户跑出「界面上没有的
     #    任务」（2026-09-09 实机排障：队列 7 个战斗组被跑出 11 步）。
-    orphans = [str(plan_combat[i].get("name", "")) for i in range(len(plan_combat)) if i not in consumed]
+    orphans = [
+        str(plan_combat[i].get("name", ""))
+        for i in range(len(plan_combat))
+        if i not in consumed
+    ]
     if orphans:
         logger.warning(f"以下执行层实例不在队列中，本次跳过: {', '.join(orphans)}")
     return out
@@ -657,7 +748,11 @@ def prune_plan_to_queue(
         queue = []
 
     if not plan_steps:
-        return plan_json if isinstance(plan_json, str) else json.dumps(plan_json, ensure_ascii=False)
+        return (
+            plan_json
+            if isinstance(plan_json, str)
+            else json.dumps(plan_json, ensure_ascii=False)
+        )
 
     # 计算队列当前引用的战斗实例步骤名（含被关闭行；仅剔除已从队列移除的行）
     referenced: set[str] = set()
@@ -697,7 +792,11 @@ def prune_plan_to_queue(
     ]
     if len(new_steps) == len(plan_steps):
         # 无变化：原样返回（保留原字符串，避免每次队列保存都重写 Plan）
-        return plan_json if isinstance(plan_json, str) else json.dumps(plan_json, ensure_ascii=False)
+        return (
+            plan_json
+            if isinstance(plan_json, str)
+            else json.dumps(plan_json, ensure_ascii=False)
+        )
 
     # 重建 JSON，保留 version 等外层字段
     if isinstance(plan_json, str):
