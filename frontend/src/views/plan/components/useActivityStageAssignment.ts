@@ -1,6 +1,9 @@
-// 计划表页「活动关批量指派表」的数据与视图推导：加载、槽位行、用户注入状态、写回。
-// 纯逻辑在 ./activityStageSlots，跨页共享原语在 @/utils/activityStage 与 @/utils/activitySkipBook；
-// 组件（ActivityStageSection / ActivitySlotTable）只负责渲染。
+// 计划表页「活动关指派表」的数据与视图推导：加载、用户行、选关选项、多选写回。
+// 纯逻辑在 ./activityUserRows，跨页共享原语在 @/utils/activityStage 与
+// @/utils/activitySkipBook；组件（ActivityStageSection / ActivityUserTable）只渲染。
+//
+// 配置层级是「用户级唯一来源」：每个用户自己持有总开关与选关意图，本表是批量
+// 视图，改动立即写回该用户配置，没有计划级默认值、也没有继承关系。
 
 import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -10,75 +13,31 @@ import { useScriptApi } from '@/composables/useScriptApi'
 import { useUserApi } from '@/composables/useUserApi'
 import type { ActivityItem } from '@/types/home'
 import {
-  ongoingActivityNames,
-  readActivityMeta,
-  slotKeyOfIntent,
-  stageServerOf,
-} from '@/utils/activityStage'
-import { getServerDisplayName } from '@/utils/serverLabel'
-import {
-  activeSkipEntry,
   ongoingSkipBook,
+  activeSkipEntry,
   parseActivitySkipBook,
   skipSummary,
 } from '@/utils/activitySkipBook'
+import { readActivityMeta, stageServerOf } from '@/utils/activityStage'
 import {
-  buildSlotRows,
-  resolveUserInjectStatus,
+  buildIntentOptions,
+  matchesFilter,
+  resolveUserState,
+  summarizeRows,
+  STATE_LABEL_KEYS,
+  type ActivityFilter,
   type ActivityUserRow,
-  type StageSlotRow,
-  type UserInjectStatus,
-} from './activityStageSlots'
+  type ActivityUserRowView,
+  type ActivityUserState,
+  type IntentOption,
+  type IntentOptionView,
+} from './activityUserRows'
 
-/** 槽位行上的单个用户：渲染与操作只用到这些字段（原行挂在 user 上供写回） */
-export interface SlotUserItem {
-  userId: string
-  userName: string
-  serverName: string
-  /** 芯片浮层提示（阻塞原因；可注入用户为空串） */
-  title: string
-  /** off=总开关未开（虚线），dim=其它不生效原因（置灰） */
-  variant: 'normal' | 'off' | 'dim'
-  user: ActivityUserRow
-}
+/** 期间态：进行中 / 下期预览（仅预览不注入）/ 间隙期 */
+type Period = 'ongoing' | 'preview' | 'gap'
 
-/** 候选用户（「添加用户」弹层）：未指派 / 从其他槽位移入 */
-export interface SlotCandidate {
-  userId: string
-  userName: string
-  serverName: string
-  /** 移入前的槽位名（未指派用户为空串） */
-  fromLabel: string
-  user: ActivityUserRow
-}
-
-/** 槽位行渲染模型：文案与状态都在这里算好，表格组件保持无逻辑 */
-export interface SlotViewRow {
-  key: string
-  label: string
-  stageCode: string | null
-  stageMat: string | null
-  notStarted: boolean
-  skeleton: boolean
-  rowClass: string
-  statusClass: 'ok' | 'warn' | 'muted' | 'idle'
-  statusText: string
-  users: SlotUserItem[]
-  candidates: { unassigned: SlotCandidate[]; fromOtherSlots: SlotCandidate[] }
-}
-
-interface UserSlotItem {
-  user: ActivityUserRow
-  status: UserInjectStatus
-}
-
-const rowStageExists = (row: StageSlotRow) => row.stageCode !== null
-
-/** 组件传入的响应式 props 对象（读值写在计算属性里，依赖照常追踪） */
 export interface ActivityAssignmentProps {
   planId: string
-  /** 计划表 id → 名称映射，用于未跟随用户的归属标注 */
-  planNames?: Record<string, string>
 }
 
 export function useActivityStageAssignment(props: ActivityAssignmentProps) {
@@ -88,36 +47,23 @@ export function useActivityStageAssignment(props: ActivityAssignmentProps) {
   const { updateUser } = useUserApi()
 
   const loading = ref(false)
-  const error = ref('')
   const saving = ref(false)
+  const error = ref('')
+  const filter = ref<ActivityFilter>('all')
 
+  /** 本表跟随用户（其余用户不在此列表，底部给一行提示） */
   const users = ref<ActivityUserRow[]>([])
+  const otherUsersCount = ref(0)
   const activityByServer = ref<Record<string, ActivityItem[]>>({})
   const previewByServer = ref<Record<string, ActivityItem[]>>({})
+  const selectedKeys = ref<Set<string>>(new Set())
 
-  // ==================== 视图状态推导 ====================
+  const rowKeyOf = (user: ActivityUserRow) => `${user.scriptId}:${user.userId}`
 
-  /** 未跟随用户的归属描述（其他计划表名 / 固定模式） */
-  const planLabelFor = (user: ActivityUserRow): string => {
-    if (user.stageMode === 'Fixed') return t('plan.activity.planFixed')
-    return props.planNames?.[user.stageMode] ?? t('plan.activity.planUnknown')
-  }
-
-  /** followsPlan/planLabel 随当前计划表派生，原始行只存 stageMode */
-  const usersView = computed<ActivityUserRow[]>(() =>
-    users.value.map(user => ({
-      ...user,
-      followsPlan: user.stageMode === props.planId,
-      planLabel: planLabelFor(user),
-    }))
-  )
-
-  const followingUsers = computed(() => usersView.value.filter(user => user.followsPlan))
-
-  /** 锚定服务器 = 跟随用户中最常见的服务器（并列取先出现者，仅影响关卡展示列） */
+  /** 锚定服务器 = 跟随用户中最常见的服务器（并列取先出现者，仅影响表头信息） */
   const anchorServer = computed(() => {
     const counts = new Map<string, number>()
-    for (const user of followingUsers.value) {
+    for (const user of users.value) {
       counts.set(user.server, (counts.get(user.server) ?? 0) + 1)
     }
     let best = 'Official'
@@ -131,246 +77,134 @@ export function useActivityStageAssignment(props: ActivityAssignmentProps) {
     return best
   })
 
-  const activityStages = computed(
-    () => activityByServer.value[stageServerOf(anchorServer.value)] ?? []
-  )
-  const previewStages = computed(
-    () => previewByServer.value[stageServerOf(anchorServer.value)] ?? []
-  )
-  const period = computed<'ongoing' | 'preview' | 'gap'>(() => {
-    if (activityStages.value.length) return 'ongoing'
-    if (previewStages.value.length) return 'preview'
-    return 'gap'
-  })
-  const displayStages = computed(() =>
-    period.value === 'ongoing' ? activityStages.value : previewStages.value
-  )
-  const ongoingMeta = computed(() => readActivityMeta(activityStages.value))
-  const previewMeta = computed(() => readActivityMeta(previewStages.value))
-
-  const assignedIntents = computed(() =>
-    followingUsers.value.map(user => user.intent).filter(intent => intent !== '')
-  )
-
-  const slotRows = computed(() =>
-    buildSlotRows(displayStages.value, assignedIntents.value, period.value === 'preview')
-  )
-
-  /** 用户自己服务器的期间态：注入判定必须按各服真实数据，不能用锚定服 */
-  const periodForUser = (server: string): 'ongoing' | 'preview' | 'gap' => {
+  /** 注入判定必须按各服真实数据，不能用锚定服 */
+  const periodForUser = (server: string): Period => {
     const key = stageServerOf(server)
     if ((activityByServer.value[key] ?? []).length) return 'ongoing'
     if ((previewByServer.value[key] ?? []).length) return 'preview'
     return 'gap'
   }
 
-  const stagesForUser = (server: string) => {
+  const stagesForUser = (server: string): ActivityItem[] => {
     const key = stageServerOf(server)
-    const currentPeriod = periodForUser(server)
-    if (currentPeriod === 'ongoing') return activityByServer.value[key] ?? []
-    if (currentPeriod === 'preview') return previewByServer.value[key] ?? []
-    return []
+    return periodForUser(server) === 'ongoing'
+      ? (activityByServer.value[key] ?? [])
+      : (previewByServer.value[key] ?? [])
   }
 
-  const usersInSlot = (rowKey: string): UserSlotItem[] =>
-    followingUsers.value
-      .filter(user => slotKeyOfIntent(user.intent) === rowKey)
-      .map(user => ({
-        user,
-        status: resolveUserInjectStatus(
-          user,
-          stagesForUser(user.server),
-          periodForUser(user.server)
-        ),
-      }))
-
-  const ghostUsers = computed(() => usersView.value.filter(user => !user.followsPlan))
-
-  const slotLabelOfIntent = (intent: string) => {
-    const key = slotKeyOfIntent(intent)
-    if (key === 'jade') return t('plan.activity.slotJade')
-    if (key.startsWith('last:')) return t('plan.activity.slotLast', { n: key.slice(5) })
-    if (key.startsWith('pos:')) return t('plan.activity.slotLegacy', { n: key.slice(4) })
-    return key
-  }
-
-  // ==================== 状态列 ====================
-
-  /** 行内需要黄字提示的用户：预览行与骨架行的 gap 是「待开启」不算警告 */
-  const rowBlockingItems = (row: StageSlotRow, items: UserSlotItem[]): UserSlotItem[] => {
-    const warnReasons = ['no-match', 'switch-off', 'no-quick-config', 'user-disabled', 'skipped']
-    return items.filter(
-      item =>
-        warnReasons.includes(item.status.reason) ||
-        (item.status.reason === 'gap' && !row.notStarted)
-    )
-  }
-
-  const blockingText = (item: UserSlotItem): string => {
-    switch (item.status.reason) {
-      case 'switch-off':
-        return t('plan.activity.statusSwitchOff', { name: item.user.userName })
-      case 'no-quick-config':
-        return t('plan.activity.statusNoQuickConfig', { name: item.user.userName })
-      case 'no-match':
-        return t('plan.activity.statusUserNoMatch', { name: item.user.userName })
-      case 'user-disabled':
-        return t('plan.activity.statusUserDisabled', { name: item.user.userName })
-      case 'skipped':
-        return (item.user.skipDays ?? 0) >= 2
-          ? t('plan.activity.statusUserSkipped', {
-              name: item.user.userName,
-              n: item.user.skipDays,
-            })
-          : t('plan.activity.statusUserSkippedToday', { name: item.user.userName })
-      case 'gap':
-        return t('plan.activity.statusUserGap', { name: item.user.userName })
-      default:
-        return ''
-    }
-  }
-
-  const rowStatusClass = (row: StageSlotRow, items: UserSlotItem[]) => {
-    if (!items.length) return row.notStarted ? 'muted' : 'idle'
-    if (rowBlockingItems(row, items).length) return 'warn'
-    // 骨架行上其他服有进行中活动的用户仍会真实注入，标 ok 而非置灰
-    if (items.some(item => item.status.willInject)) return 'ok'
-    if (row.notStarted) return 'muted'
-    return 'ok'
-  }
-
-  const rowStatusText = (row: StageSlotRow, items: UserSlotItem[]): string => {
-    if (!items.length) return t('plan.activity.statusIdle')
-    const warnings = rowBlockingItems(row, items)
-      .map(blockingText)
-      .filter(text => text !== '')
-    if (warnings.length) return warnings.join('；')
-    const injectCount = items.filter(item => item.status.willInject).length
-    if (injectCount > 0) return t('plan.activity.statusInject', { n: injectCount })
-    return t('plan.activity.statusAwaiting', { n: items.length })
-  }
-
-  // ==================== 渲染模型（表格组件直接用） ====================
-
-  const toSlotUser = (item: UserSlotItem): SlotUserItem => ({
-    userId: item.user.userId,
-    userName: item.user.userName,
-    serverName: getServerDisplayName(item.user.server),
-    title: blockingText(item),
-    variant:
-      item.status.reason === 'switch-off'
-        ? 'off'
-        : ['no-quick-config', 'user-disabled', 'gap', 'skipped'].includes(item.status.reason)
-          ? 'dim'
-          : 'normal',
-    user: item.user,
-  })
-
-  const toCandidate = (user: ActivityUserRow, fromLabel = ''): SlotCandidate => ({
-    userId: user.userId,
-    userName: user.userName,
-    serverName: getServerDisplayName(user.server),
-    fromLabel,
-    user,
-  })
-
-  /** 添加用户候选：未指派的跟随用户 + 其他槽位用户（一人一槽，移入自动移出原槽） */
-  const candidatesFor = (rowKey: string) => ({
-    unassigned: followingUsers.value.filter(user => !user.intent).map(user => toCandidate(user)),
-    fromOtherSlots: followingUsers.value
-      .filter(user => {
-        const key = slotKeyOfIntent(user.intent)
-        return key !== '' && key !== rowKey
-      })
-      .map(user => toCandidate(user, slotLabelOfIntent(user.intent))),
-  })
-
-  const slotViewRows = computed<SlotViewRow[]>(() =>
-    slotRows.value.map(row => {
-      const items = usersInSlot(row.key)
-      const classes: string[] = []
-      if (row.notStarted) classes.push('slots-row-gap')
-      if (!rowStageExists(row)) classes.push('slots-row-missing')
-      return {
-        key: row.key,
-        label: slotLabelOfIntent(row.key),
-        stageCode: row.stageCode,
-        stageMat: row.stageMat,
-        notStarted: row.notStarted,
-        skeleton: row.skeleton,
-        rowClass: classes.join(' '),
-        statusClass: rowStatusClass(row, items),
-        statusText: rowStatusText(row, items),
-        users: items.map(toSlotUser),
-        candidates: candidatesFor(row.key),
-      }
-    })
+  const period = computed<Period>(() => periodForUser(anchorServer.value))
+  const anchorStages = computed(() =>
+    period.value === 'ongoing'
+      ? (activityByServer.value[stageServerOf(anchorServer.value)] ?? [])
+      : (previewByServer.value[stageServerOf(anchorServer.value)] ?? [])
   )
-
-  const warningCount = computed(
-    () => slotViewRows.value.filter(row => row.statusClass === 'warn').length
-  )
-
-  const assignedCount = computed(() => followingUsers.value.filter(user => user.intent).length)
-
-  const summaryActivityName = computed(() => {
-    if (period.value === 'ongoing') return ongoingMeta.value?.name ?? ''
-    if (period.value === 'preview') return previewMeta.value?.name ?? ''
-    return ''
-  })
-
-  const summaryText = computed(() => {
-    if (period.value === 'preview' && previewMeta.value) {
-      return t('plan.activity.summaryPreview', {
-        start: previewMeta.value.startText,
-        n: assignedCount.value,
-      })
-    }
-    if (warningCount.value > 0) {
-      return t('plan.activity.summaryWarn', { n: assignedCount.value, w: warningCount.value })
-    }
-    return t('plan.activity.summary', { n: assignedCount.value })
-  })
-
-  const metaText = computed(() => {
-    if (period.value === 'ongoing' && ongoingMeta.value) {
-      return t('plan.activity.metaOngoing', {
-        start: ongoingMeta.value.startText,
-        expire: ongoingMeta.value.expireText,
-      })
-    }
-    if (period.value === 'preview') {
-      return t('plan.activity.metaPreview')
-    }
-    return t('plan.activity.metaGap')
-  })
-
-  // ==================== 数据加载与写回 ====================
+  const anchorMeta = computed(() => readActivityMeta(anchorStages.value))
 
   /**
-   * 跳过簿命中判定。解析与闸门走共享模块（与脚本页徽标、后端同锚）；
-   * 额外要求条目活动仍在**该用户自己服务器**进行中——连错条目在活动结束后
-   * 由后端在下一轮运行时修剪，这里先自行排除，避免把上期活动的旧条目算进本期。
+   * 跳过簿命中判定。解析与闸门走共享模块（与后端同锚）；额外要求条目活动仍在
+   * 该用户自己服务器上——旧条目在后端下一轮运行才修剪，这里先自行排除。
    */
-  const resolveSkipState = (
-    user: { Info: { Server: string }; Data?: { ActivitySkipBook?: string } },
-    ongoingNamesByServer: Record<string, Set<string>>
-  ): { skipActive: boolean; skipDays: number; skipSummary: string } => {
-    // 与脚本页徽标同一判据（ongoingSkipBook）：只认该用户自己服务器上仍在进行的
-    // 活动条目，上期活动的旧条目先自行排除，不把它的连错天数算进本期
-    const hit = activeSkipEntry(
-      ongoingSkipBook(
-        parseActivitySkipBook(user.Data?.ActivitySkipBook),
-        ongoingNamesByServer[stageServerOf(user.Info.Server)]
-      )
+  const resolveSkipState = (user: {
+    Info: { Server: string }
+    Data?: { ActivitySkipBook?: string }
+  }): Pick<ActivityUserRow, 'skipToday' | 'skipDays' | 'skipSummary'> => {
+    const serverKey = stageServerOf(user.Info.Server)
+    const ongoingNames = new Set(
+      (activityByServer.value[serverKey] ?? [])
+        .map(stage => stage.Activity?.StageName)
+        .filter((name): name is string => Boolean(name))
     )
-    if (!hit) return { skipActive: false, skipDays: 0, skipSummary: '' }
+    const hit = activeSkipEntry(
+      ongoingSkipBook(parseActivitySkipBook(user.Data?.ActivitySkipBook), ongoingNames)
+    )
+    if (!hit) return { skipToday: false, skipDays: 0, skipSummary: '' }
     return {
-      skipActive: true,
+      skipToday: true,
       skipDays: hit.entry.days ?? 0,
       skipSummary: skipSummary(hit.entry),
     }
   }
+
+  const labelOfOption = (option: IntentOption) => t(option.labelKey, option.labelParams)
+
+  const stateLabel = (state: ActivityUserState) => t(STATE_LABEL_KEYS[state])
+
+  /** 行视图：状态与选项按该行自己服务器的期间态与关卡算 */
+  const rowsView = computed<ActivityUserRowView[]>(() =>
+    users.value.map(row => {
+      const stages = stagesForUser(row.server)
+      const rowPeriod = periodForUser(row.server)
+      const state = resolveUserState(row, stages, rowPeriod)
+      return {
+        key: rowKeyOf(row),
+        row,
+        state,
+        stateText: stateLabel(state),
+        period: rowPeriod,
+        options: buildIntentOptions(stages, row.intent).map(option => ({
+          ...option,
+          label: labelOfOption(option),
+        })),
+        skipDetail: row.skipToday
+          ? [row.skipSummary, row.skipDays > 1 ? `连错 ${row.skipDays} 天` : '']
+              .filter(Boolean)
+              .join(' · ')
+          : '',
+      }
+    })
+  )
+
+  const visibleRows = computed(() =>
+    rowsView.value.filter(view => matchesFilter(view.state, filter.value))
+  )
+
+  const summary = computed(() => summarizeRows(rowsView.value.map(view => view.state)))
+
+  /** 还没选关的跟随用户数（筛选条上的入口） */
+  const noIntentCount = computed(
+    () => rowsView.value.filter(view => view.state === 'no-intent').length
+  )
+
+  const selectedCount = computed(() => selectedKeys.value.size)
+  const allSelected = computed(
+    () =>
+      visibleRows.value.length > 0 &&
+      visibleRows.value.every(view => selectedKeys.value.has(view.key))
+  )
+  const someSelected = computed(
+    () => !allSelected.value && visibleRows.value.some(view => selectedKeys.value.has(view.key))
+  )
+
+  /** 批量选关的选项锚定在锚定服（意图本身跨服通用，各号按自己服务器解析） */
+  const bulkStageOptions = computed<IntentOptionView[]>(() =>
+    buildIntentOptions(anchorStages.value, '').map(option => ({
+      ...option,
+      label: labelOfOption(option),
+    }))
+  )
+
+  const metaText = computed(() => {
+    if (period.value === 'ongoing' && anchorMeta.value) {
+      return t('plan.activity.metaOngoing', {
+        start: anchorMeta.value.startText,
+        expire: anchorMeta.value.expireText,
+      })
+    }
+    if (period.value === 'preview') return t('plan.activity.metaPreview')
+    return t('plan.activity.metaGap')
+  })
+
+  const summaryText = computed(() => {
+    if (summary.value.attention > 0) {
+      return t('plan.activity.summaryWarn', {
+        n: summary.value.followed,
+        w: summary.value.attention,
+      })
+    }
+    return t('plan.activity.summary', { n: summary.value.followed })
+  })
+
+  // ==================== 加载与写回 ====================
 
   const loadData = async () => {
     loading.value = true
@@ -404,13 +238,18 @@ export function useActivityStageAssignment(props: ActivityAssignmentProps) {
       }
       activityByServer.value = activityMap
       previewByServer.value = previewMap
-      // 各服进行中的活动名只随本次加载算一次，用户行逐条复用它判跳过簿条目归属
-      const ongoingNamesByServer = ongoingActivityNames(activityMap)
 
       const rows: ActivityUserRow[] = []
+      let others = 0
       for (const script of scripts) {
         if (script.type !== 'MAA') continue
         for (const user of script.users ?? []) {
+          // 本表只管跟随这张计划表的用户：意图是用户级字段，其他表的用户在各自
+          // 表的页面或用户编辑页调整（底部给一行提示，不在此列表里混排）
+          if (user.Info.StageMode !== props.planId) {
+            others += 1
+            continue
+          }
           rows.push({
             scriptId: script.uid,
             scriptName: script.name,
@@ -419,16 +258,16 @@ export function useActivityStageAssignment(props: ActivityAssignmentProps) {
             server: user.Info.Server,
             status: user.Info.Status,
             stageMode: user.Info.StageMode,
-            followsPlan: false,
-            planLabel: '',
             ifQuickConfig: user.Info.IfQuickConfig ?? true,
             ifActivityFirst: user.Task?.IfActivityFirst ?? false,
             intent: user.Task?.ActivityStageIntent ?? '',
-            ...resolveSkipState(user, ongoingNamesByServer),
+            ...resolveSkipState(user),
           })
         }
       }
       users.value = rows
+      otherUsersCount.value = others
+      selectedKeys.value = new Set()
       if (partialWarning) {
         message.warning(t('plan.activity.partialLoad'))
       }
@@ -441,59 +280,120 @@ export function useActivityStageAssignment(props: ActivityAssignmentProps) {
     }
   }
 
-  const persistIntent = async (user: ActivityUserRow, intent: string) => {
+  /** 单字段写回：updateUser 失败（含运行锁、非 200）自行弹错并返回 false */
+  const persist = async (
+    row: ActivityUserRow,
+    patch: Record<string, unknown>
+  ): Promise<boolean> => {
+    try {
+      return await updateUser(row.scriptId, row.userId, { Task: patch })
+    } catch (e) {
+      logger.error(`写回活动关配置异常: ${e instanceof Error ? e.message : String(e)}`)
+      return false
+    }
+  }
+
+  /** 行内改动：写回后同步本地原始行（视图行是派生副本，改它会下次重算时丢失） */
+  const persistRow = async (view: ActivityUserRowView, patch: Record<string, unknown>) => {
     saving.value = true
     try {
-      // updateUser 失败（含运行锁、非 200）自行弹错并返回 false，不会抛出
-      const ok = await updateUser(user.scriptId, user.userId, {
-        Task: { ActivityStageIntent: intent },
-      })
-      if (!ok) return false
-      // 写回原始行（视图行是派生副本，改它会在下次重算时丢失）
-      const raw = users.value.find(
-        row => row.scriptId === user.scriptId && row.userId === user.userId
-      )
-      if (raw) raw.intent = intent
-      return true
-    } catch (e) {
-      logger.error(`写回活动关意图异常: ${e instanceof Error ? e.message : String(e)}`)
-      return false
+      if (!(await persist(view.row, patch))) return
+      const raw = users.value.find(row => rowKeyOf(row) === view.key)
+      if (!raw) return
+      if ('ActivityStageIntent' in patch) {
+        raw.intent = String(patch.ActivityStageIntent ?? '')
+      }
+      if ('IfActivityFirst' in patch) {
+        raw.ifActivityFirst = patch.IfActivityFirst === true
+      }
     } finally {
       saving.value = false
     }
   }
 
-  const assignUser = async (user: ActivityUserRow, row: SlotViewRow) => {
-    if (await persistIntent(user, row.key)) {
-      message.success(t('plan.activity.assignDone', { name: user.userName }))
+  const setRowIntent = (view: ActivityUserRowView, intent: string) =>
+    persistRow(view, { ActivityStageIntent: intent })
+
+  const setRowSwitch = (view: ActivityUserRowView, checked: boolean) =>
+    persistRow(view, { IfActivityFirst: checked })
+
+  /**
+   * 批量应用：只写动过的字段（两个控件默认「不修改」）；逐人一次单字段 PATCH，
+   * 失败的留在选中态并逐个报名字，成功的取消选中。
+   */
+  const applyBulk = async (toggle?: boolean | null, intent?: string | null) => {
+    const targetKeys = [...selectedKeys.value]
+    const targets = rowsView.value.filter(view => targetKeys.includes(view.key))
+    if (!targets.length) return
+    const patch: Record<string, unknown> = {}
+    if (toggle === true || toggle === false) patch.IfActivityFirst = toggle
+    if (typeof intent === 'string') patch.ActivityStageIntent = intent
+    if (!Object.keys(patch).length) return
+
+    saving.value = true
+    const failed: string[] = []
+    try {
+      for (const view of targets) {
+        if (!(await persist(view.row, { ...patch }))) {
+          failed.push(view.row.userName)
+          continue
+        }
+        const raw = users.value.find(row => rowKeyOf(row) === view.key)
+        if (raw) {
+          if ('ActivityStageIntent' in patch) {
+            raw.intent = String(patch.ActivityStageIntent ?? '')
+          }
+          if ('IfActivityFirst' in patch) raw.ifActivityFirst = patch.IfActivityFirst === true
+        }
+        selectedKeys.value.delete(view.key)
+      }
+    } finally {
+      saving.value = false
     }
+    if (failed.length) {
+      message.error(t('plan.activity.bulkPartial', { n: failed.length, names: failed.join('、') }))
+      return
+    }
+    message.success(t('plan.activity.bulkApplied', { n: targets.length }))
   }
 
-  const removeUser = async (user: ActivityUserRow) => {
-    if (await persistIntent(user, '')) {
-      message.success(t('plan.activity.removeDone', { name: user.userName }))
-    }
+  const toggleSelect = (key: string, checked: boolean) => {
+    if (checked) selectedKeys.value.add(key)
+    else selectedKeys.value.delete(key)
+  }
+
+  const toggleSelectAll = (checked: boolean) => {
+    for (const view of visibleRows.value) toggleSelect(view.key, checked)
   }
 
   onMounted(() => {
-    // 收起状态下也加载一份用户数据，保证摘要条的指派数与注意数可见
+    // 收起状态下也加载一份数据，保证摘要条的人数与注意数可见
     void loadData()
   })
 
   return {
     loading,
-    error,
     saving,
+    error,
+    filter,
     period,
-    ghostUsers,
-    slotViewRows,
-    previewMeta,
-    summaryActivityName,
-    summaryText,
     metaText,
-    warningCount,
+    summaryText,
+    visibleRows,
+    noIntentCount,
+    summary,
+    activityName: computed(() => anchorMeta.value?.name ?? ''),
+    otherUsersCount,
+    bulkStageOptions,
+    selectedKeys,
+    selectedCount,
+    allSelected,
+    someSelected,
     loadData,
-    assignUser,
-    removeUser,
+    setRowIntent,
+    setRowSwitch,
+    applyBulk,
+    toggleSelect,
+    toggleSelectAll,
   }
 }

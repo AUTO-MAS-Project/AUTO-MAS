@@ -58,7 +58,6 @@
             :is="currentPlanDescriptor.headerComponent"
             v-if="currentPlanDescriptor.headerComponent"
             :plan-id="activePlanId"
-            :plan-names="planNameById"
           />
           <!-- 动态渲染不同类型的表格 -->
           <component
@@ -119,10 +118,6 @@ interface PlanListItem {
 const planList = ref<PlanListItem[]>([])
 const activePlanId = ref<string>('')
 const planDataMap = ref<Record<string, PlanConfigData>>({})
-
-const planNameById = computed(() =>
-  Object.fromEntries(planList.value.map(plan => [plan.id, plan.name]))
-)
 
 const currentPlanName = ref<string>('')
 const currentMode = ref<'ALL' | 'Weekly'>('ALL')

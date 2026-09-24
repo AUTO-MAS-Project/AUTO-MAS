@@ -8,8 +8,10 @@
         <span v-if="period === 'ongoing'" class="live-dot">
           <span class="dot"></span>{{ t('plan.activity.ongoing') }}
         </span>
-        <span v-if="summaryActivityName" class="activity-name">{{ summaryActivityName }}</span>
-        <span class="summary-pill" :class="{ warn: warningCount > 0 }">{{ summaryText }}</span>
+        <span v-if="activityName" class="activity-name">{{ activityName }}</span>
+        <span class="summary-pill" :class="{ warn: summary.attention > 0 }">
+          {{ summaryText }}
+        </span>
         <span class="meta">{{ metaText }}</span>
       </button>
       <a-tooltip :title="t('plan.activity.refresh')">
@@ -38,39 +40,30 @@
       </a-alert>
       <template v-else>
         <p class="hint">{{ t('plan.activity.hint') }}</p>
+        <p v-if="noticeText" class="period-notice">{{ noticeText }}</p>
 
-        <a-alert
-          v-if="period === 'preview' && previewMeta"
-          type="info"
-          class="gap-banner"
-          show-icon
-        >
-          <template #message>
-            {{
-              t('plan.activity.previewBanner', {
-                name: previewMeta.name,
-                start: previewMeta.startText,
-              })
-            }}
-          </template>
-        </a-alert>
-        <a-alert v-else-if="period === 'gap'" type="info" class="gap-banner" show-icon>
-          <template #message>{{ t('plan.activity.gapBanner') }}</template>
-        </a-alert>
-
-        <ActivitySlotTable
-          :rows="slotViewRows"
+        <ActivityUserTable
+          :rows="visibleRows"
+          :no-intent-count="noIntentCount"
+          :summary="summary"
+          :filter="filter"
+          :selected-keys="selectedKeys"
+          :selected-count="selectedCount"
+          :all-selected="allSelected"
+          :some-selected="someSelected"
+          :bulk-stage-options="bulkStageOptions"
           :saving="saving"
-          @assign="assignUser"
-          @remove="removeUser"
+          @select="toggleSelect"
+          @select-all="toggleSelectAll"
+          @toggle="setRowSwitch"
+          @intent="setRowIntent"
+          @bulk="applyBulk"
+          @update:filter="filter = $event"
         />
 
-        <div v-if="ghostUsers.length" class="unassigned">
-          {{ t('plan.activity.notFollowing') }}
-          <span v-for="user in ghostUsers" :key="user.userId" class="ghost-chip">
-            {{ user.userName }} · {{ user.planLabel }}
-          </span>
-        </div>
+        <p v-if="otherUsersCount" class="others">
+          {{ t('plan.activity.others', { n: otherUsersCount }) }}
+        </p>
       </template>
     </div>
   </div>
@@ -78,35 +71,42 @@
 
 <script setup lang="ts">
 // 活动关批量指派的计划表页区块：只负责折叠、摘要条与三种期间态的呈现；
-// 数据、槽位行与状态文案由 useActivityStageAssignment 提供，表格在 ActivitySlotTable。
-import { ref, watch } from 'vue'
+// 数据、用户行与状态文案由 useActivityStageAssignment 提供，表格在 ActivityUserTable。
+import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { CaretRightOutlined, ReloadOutlined } from '@ant-design/icons-vue'
-import ActivitySlotTable from './ActivitySlotTable.vue'
+import ActivityUserTable from './ActivityUserTable.vue'
 import { useActivityStageAssignment } from './useActivityStageAssignment'
 
 const props = defineProps<{
   planId: string
-  /** 计划表 id → 名称映射，用于未跟随用户的归属标注 */
-  planNames?: Record<string, string>
 }>()
 
 const { t } = useI18n()
 const {
   loading,
-  error,
   saving,
+  error,
+  filter,
   period,
-  ghostUsers,
-  slotViewRows,
-  previewMeta,
-  summaryActivityName,
-  summaryText,
   metaText,
-  warningCount,
+  summaryText,
+  visibleRows,
+  noIntentCount,
+  summary,
+  activityName,
+  otherUsersCount,
+  bulkStageOptions,
+  selectedKeys,
+  selectedCount,
+  allSelected,
+  someSelected,
   loadData,
-  assignUser,
-  removeUser,
+  setRowIntent,
+  setRowSwitch,
+  applyBulk,
+  toggleSelect,
+  toggleSelectAll,
 } = useActivityStageAssignment(props)
 
 // 折叠状态只记组件内（方案 §4.1，不进 localStorage）：切计划表类型会重建组件，
@@ -122,14 +122,25 @@ const onToggle = () => {
 // 出现需关注事项时自动展开一次（每次进入页面最多一次，不覆盖用户手动收起；
 // 事项未解决前每次进来都会再展开，避免问题被折叠藏住）
 watch(
-  [loading, warningCount],
-  ([isLoading, warnings]) => {
-    if (!isLoading && warnings > 0 && !userTouched.value && collapsed.value) {
+  [loading, () => summary.value.attention],
+  ([isLoading, attention]) => {
+    if (!isLoading && attention > 0 && !userTouched.value && collapsed.value) {
       collapsed.value = false
     }
   },
   { immediate: true }
 )
+
+/** 间隙期与下期预览各一句，说明本次指派按哪一期解析 */
+const noticeText = computed(() => {
+  if (period.value === 'preview') {
+    return t('plan.activity.previewNotice')
+  }
+  if (period.value === 'gap') {
+    return t('plan.activity.gapNotice')
+  }
+  return ''
+})
 </script>
 
 <style scoped>
@@ -155,84 +166,64 @@ watch(
   min-width: 0;
   background: none;
   border: none;
-  padding: 4px 0 8px;
-  color: inherit;
-  text-align: left;
-  font: inherit;
+  padding: 6px 0;
   cursor: pointer;
-  flex-wrap: wrap;
 }
 
-.section-head .chev {
-  color: var(--ant-color-text-tertiary);
+.chev {
   transition: transform 0.2s;
+  color: var(--ant-color-text-secondary);
 }
 
-.section-head .chev.open {
+.chev.open {
   transform: rotate(90deg);
 }
 
-.section-head:hover .section-title {
-  color: var(--ant-color-primary);
-}
-
 .section-title {
-  font-size: 15px;
   font-weight: 600;
 }
 
 .live-dot {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  font-size: 12px;
+  gap: 4px;
   color: var(--ant-color-success);
-  background: var(--ant-color-success-bg);
-  border-radius: 4px;
-  padding: 1px 8px;
+  font-size: 12px;
 }
 
 .live-dot .dot {
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: var(--ant-color-success);
-  animation: pulse 2s infinite;
-}
-
-@keyframes pulse {
-  50% {
-    opacity: 0.35;
-  }
+  background: currentcolor;
 }
 
 .activity-name {
-  font-size: 13px;
+  font-size: 12px;
   color: var(--ant-color-text-secondary);
 }
 
 .summary-pill {
-  font-size: 12px;
-  color: var(--ant-color-text-secondary);
-  background: var(--ant-color-fill-tertiary);
-  border: 1px solid var(--ant-color-border-secondary);
+  padding: 1px 8px;
   border-radius: 10px;
-  padding: 1px 10px;
-  white-space: nowrap;
+  font-size: 12px;
+  background: var(--ant-color-fill-secondary);
+  color: var(--ant-color-text-secondary);
 }
 
 .summary-pill.warn {
-  color: var(--ant-color-warning);
-  border-color: var(--ant-color-warning-border);
+  background: var(--ant-color-warning-bg);
+  color: var(--ant-color-warning-text);
 }
 
-.section-head .meta {
+.meta {
+  margin-left: auto;
   font-size: 12px;
-  color: var(--ant-color-text-quaternary);
+  color: var(--ant-color-text-secondary);
 }
 
 .section-body {
-  padding: 2px 0 12px;
+  padding: 4px 0 8px;
 }
 
 .section-loading {
@@ -242,35 +233,20 @@ watch(
 }
 
 .hint {
+  margin: 4px 0 8px;
   font-size: 12px;
-  color: var(--ant-color-text-tertiary);
-  margin: 0 0 12px;
+  color: var(--ant-color-text-secondary);
 }
 
-.gap-banner {
-  margin-bottom: 12px;
+.period-notice {
+  margin: 0 0 8px;
+  font-size: 12px;
+  color: var(--ant-color-text-secondary);
 }
 
-.unassigned {
-  margin-top: 12px;
-  border-top: 1px dashed var(--ant-color-border-secondary);
-  padding-top: 10px;
+.others {
+  margin: 4px 0 0;
   font-size: 12px;
-  color: var(--ant-color-text-tertiary);
-  display: flex;
-  gap: 8px;
-  align-items: center;
-  flex-wrap: wrap;
-}
-
-.ghost-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  border: 1px dashed var(--ant-color-border);
-  color: var(--ant-color-text-tertiary);
-  border-radius: 16px;
-  padding: 2px 10px;
-  font-size: 12px;
+  color: var(--ant-color-text-secondary);
 }
 </style>
