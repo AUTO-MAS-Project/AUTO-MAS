@@ -150,6 +150,8 @@ export default {
     cancellingDeletesUnfinishedDownload:
       'キャンセルすると、未完了のダウンロードファイルは削除されます。',
     cancel2: 'キャンセル',
+    powerCountdownConnectionLost:
+      'バックエンドとの接続が切れました。カウントダウンは続いている可能性があり、残り秒数は更新されません。',
     cancelUpdateDownload: '更新のダウンロードをキャンセルしますか？',
     visualSelection: 'ビジュアル選択',
     downloadBackground: 'バックグラウンドでダウンロード',

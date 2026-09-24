@@ -321,6 +321,9 @@ export async function connect(): Promise<boolean> {
     return false
   }
   if (socket && socket.readyState === WebSocket.OPEN) {
+    // scheduleReconnect 会把状态改成 reconnecting 再在计时器里调到这里；
+    // 连接其实一直可用，早退前把状态校正回 open，否则诊断显示停在重连中
+    state.value = 'open'
     return true
   }
   if (connectPromise) {

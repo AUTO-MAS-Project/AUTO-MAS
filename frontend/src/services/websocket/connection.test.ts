@@ -116,6 +116,23 @@ describe('websocket connection 状态机', () => {
     expect(FakeWebSocket.instances.length).toBe(1)
   })
 
+  it('协调器对仍可用的连接安排重连时，计时器触发后状态校正回 open', async () => {
+    const conn = await loadConnection()
+    const p = conn.connect()
+    await vi.waitFor(() => expect(FakeWebSocket.instances.length).toBe(1))
+    latestSocket().triggerOpen()
+    await p
+
+    // 例如开发模式跳过自动重启时直接 scheduleReconnect：状态先被置为 reconnecting
+    conn.scheduleReconnect(0)
+    expect(conn.connectionState().value).toBe('reconnecting')
+
+    await vi.waitFor(() => expect(conn.connectionState().value).toBe('open'))
+    // 走的是已连接早退分支，不重复建连
+    expect(FakeWebSocket.instances.length).toBe(1)
+    conn.shutdown()
+  })
+
   it('shutdown 后进入 closed 且拒绝新的 connect', async () => {
     const conn = await loadConnection()
     const p = conn.connect()

@@ -150,6 +150,7 @@ export default {
     cancelDownload: '取消下载',
     cancellingDeletesUnfinishedDownload: '取消后将删除当前未完成的下载文件。',
     cancel2: '取消操作',
+    powerCountdownConnectionLost: '与后端的连接已中断，倒计时可能仍在进行，剩余秒数暂停更新',
     cancelUpdateDownload: '取消更新下载？',
     visualSelection: '可视化选择模式',
     downloadBackground: '后台下载',

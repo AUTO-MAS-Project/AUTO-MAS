@@ -16,6 +16,13 @@
       <div class="warning-icon">⚠️</div>
       <h2 class="countdown-title">{{ title }}</h2>
       <p class="countdown-message">{{ message }}</p>
+      <a-alert
+        v-if="powerCountdownDisconnected"
+        type="warning"
+        show-icon
+        :message="t('comp.powerCountdownConnectionLost')"
+        class="countdown-disconnected"
+      />
       <div class="countdown-timer">
         <span class="countdown-number">{{ remaining }}</span>
         <span class="countdown-unit">{{ t('comp.seconds') }}</span>
@@ -56,7 +63,7 @@ const POWER_OPERATION_LABEL: Record<string, string> = {
   Logoff: '注销',
 }
 
-const { powerCountdown } = useAppLifecycle()
+const { powerCountdown, powerCountdownDisconnected } = useAppLifecycle()
 
 const visible = ref(false)
 const remaining = computed(() => powerCountdown.value?.remaining ?? 0)
@@ -150,6 +157,11 @@ const handleCancel = async () => {
   color: var(--ant-color-text-secondary);
   margin: 0 0 32px 0;
   line-height: 1.5;
+}
+
+.countdown-disconnected {
+  margin: -16px 0 24px 0;
+  text-align: left;
 }
 
 .countdown-timer {
