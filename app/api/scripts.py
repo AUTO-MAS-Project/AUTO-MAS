@@ -36,7 +36,6 @@ from app.models.config import BetterGIConfig as RuntimeBetterGIConfig
 from app.models.config import MaaFWConfig as RuntimeMaaFWConfig
 from app.models.config import OkNteConfig as RuntimeOkNteConfig
 from app.models.schema import *
-from app.services import ConfigCenterError
 from app.task.MaaFW.tools.core.automas_maafw_interface.loader import (
     MaaFWInterfaceLoadError,
     load_interface_model_cached,
@@ -492,18 +491,14 @@ async def reorder_script(script: ScriptReorderIn = Body(...)) -> OutBase:
 @router.post(
     "/import/web",
     tags=["Update"],
-    summary="从配置中心导入脚本配置",
+    summary="从网络加载脚本配置",
     response_model=OutBase,
     status_code=200,
 )
-async def import_script_from_web(script: ScriptTemplateImportIn = Body(...)) -> OutBase:
+async def import_script_from_web(script: ScriptUrlIn = Body(...)) -> OutBase:
 
     try:
-        await Config.import_script_from_share(
-            script.scriptId, config_key=script.configKey, version_no=script.versionNo
-        )
-    except ConfigCenterError as e:
-        return OutBase(code=500, status="error", message=str(e))
+        await Config.import_script_from_web(script.scriptId, script.url)
     except Exception as e:
         logger.opt(exception=True).warning(
             f"import_script_from_web失败: {type(e).__name__}: {e}"
@@ -515,45 +510,18 @@ async def import_script_from_web(script: ScriptTemplateImportIn = Body(...)) -> 
 
 
 @router.post(
-    "/share/inspect",
-    tags=["Get"],
-    summary="分享前检查脚本配置中的隐私风险",
-    response_model=ShareInspectOut,
-    status_code=200,
-)
-async def inspect_script_share(
-    script: ScriptShareInspectIn = Body(...),
-) -> ShareInspectOut:
-
-    try:
-        _, risks = await Config.build_share_config(
-            script.scriptId, config_name=script.config_name
-        )
-    except Exception as e:
-        return ShareInspectOut(
-            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
-        )
-    return ShareInspectOut(risks=[ShareRiskItem(**_) for _ in risks])
-
-
-@router.post(
     "/Upload/web",
     tags=["Action"],
-    summary="分享脚本配置到配置中心",
+    summary="上传脚本配置到网络",
     response_model=OutBase,
     status_code=200,
 )
 async def upload_script_to_web(script: ScriptUploadIn = Body(...)) -> OutBase:
 
     try:
-        await Config.upload_script_to_share(
-            script.scriptId,
-            config_name=script.config_name,
-            description=script.description,
-            acknowledged=script.acknowledged,
+        await Config.upload_script_to_web(
+            script.scriptId, script.config_name, script.author, script.description
         )
-    except ConfigCenterError as e:
-        return OutBase(code=500, status="error", message=str(e))
     except Exception as e:
         logger.opt(exception=True).warning(
             f"upload_script_to_web失败: {type(e).__name__}: {e}"

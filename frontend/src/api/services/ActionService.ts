@@ -22,7 +22,6 @@ import type { PatternDebugOut } from '../models/PatternDebugOut';
 import type { PowerIn } from '../models/PowerIn';
 import type { ScriptConfigImportIn } from '../models/ScriptConfigImportIn';
 import type { ScriptUploadIn } from '../models/ScriptUploadIn';
-import type { ShareAuthStatusOut } from '../models/ShareAuthStatusOut';
 import type { TaskCreateIn } from '../models/TaskCreateIn';
 import type { TaskCreateOut } from '../models/TaskCreateOut';
 import type { VirtualDisplayDetachOut } from '../models/VirtualDisplayDetachOut';
@@ -43,7 +42,7 @@ export class ActionService {
         });
     }
     /**
-     * 分享脚本配置到配置中心
+     * 上传脚本配置到网络
      * @param requestBody
      * @returns OutBase Successful Response
      * @throws ApiError
@@ -362,28 +361,6 @@ export class ActionService {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/setting/virtual-display/detach',
-        });
-    }
-    /**
-     * 发起配置中心浏览器授权
-     * @returns ShareAuthStatusOut Successful Response
-     * @throws ApiError
-     */
-    public static startShareAuthApiShareAuthStartPost(): CancelablePromise<ShareAuthStatusOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/share/auth/start',
-        });
-    }
-    /**
-     * 取消等待中的配置中心授权
-     * @returns ShareAuthStatusOut Successful Response
-     * @throws ApiError
-     */
-    public static cancelShareAuthApiShareAuthCancelPost(): CancelablePromise<ShareAuthStatusOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/share/auth/cancel',
         });
     }
     /**

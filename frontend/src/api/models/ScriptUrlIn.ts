@@ -2,14 +2,14 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-export type ScriptShareInspectIn = {
+export type ScriptUrlIn = {
     /**
      * 脚本ID
      */
     scriptId: string;
     /**
-     * 配置名称
+     * 配置文件URL
      */
-    config_name: string;
+    url: string;
 };
 

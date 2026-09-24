@@ -12,12 +12,12 @@ export type ScriptUploadIn = {
      */
     config_name: string;
     /**
+     * 作者
+     */
+    author: string;
+    /**
      * 描述
      */
     description: string;
-    /**
-     * 是否已确认分享前检查出的隐私风险项
-     */
-    acknowledged?: boolean;
 };
 

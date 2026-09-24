@@ -291,6 +291,27 @@ async def confirm_notice() -> OutBase:
 
 
 @router.post(
+    "/webconfig",
+    tags=["Get"],
+    summary="获取配置分享中心的配置信息",
+    response_model=InfoOut,
+    status_code=200,
+)
+async def get_web_config() -> InfoOut:
+
+    try:
+        data = await Config.get_web_config()
+    except Exception as e:
+        logger.opt(exception=True).warning(
+            f"get_web_config失败: {type(e).__name__}: {e}"
+        )
+        return InfoOut(
+            code=500, status="error", message=f"{type(e).__name__}: {str(e)}", data={}
+        )
+    return InfoOut(data={"WebConfig": data})
+
+
+@router.post(
     "/get/overview",
     tags=["Get"],
     summary="信息总览",

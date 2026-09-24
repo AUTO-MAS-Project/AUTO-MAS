@@ -1,4 +1,4 @@
-import type { ShareTemplateItem } from '@/composables/useTemplateApi'
+import type { WebConfigTemplate } from '@/composables/useTemplateApi'
 import type { ScriptType } from '@/types/script'
 import { SCRIPT_LOGOS } from '@/utils/scriptLogos'
 
@@ -16,11 +16,6 @@ interface ScriptTypeOption {
   icon: string
 }
 
-export interface TemplateRequest {
-  page: number
-  keyword: string
-}
-
 interface CreateStep {
   key: CreateStepKey
   titleKey: string
@@ -29,13 +24,13 @@ interface CreateStep {
 interface CreateRequestState {
   type: ScriptType
   configMode: ConfigMode
-  template: ShareTemplateItem | null
+  template: WebConfigTemplate | null
 }
 
 export type ScriptCreateRequest =
   | { kind: 'new'; type: Exclude<ScriptType, 'General'> }
   | { kind: 'general-custom' }
-  | { kind: 'general-template'; template: ShareTemplateItem }
+  | { kind: 'general-template'; template: WebConfigTemplate }
 
 export const SCRIPT_TYPE_OPTIONS: ScriptTypeOption[] = [
   {
