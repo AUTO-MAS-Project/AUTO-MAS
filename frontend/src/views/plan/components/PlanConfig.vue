@@ -40,15 +40,18 @@
           ]"
           @change="handleModeChange"
         />
-        <span class="view-label">{{ t('plan.viewLabel') }}</span>
-        <a-segmented
-          :value="viewMode"
-          :options="[
-            { label: t('plan.viewConfig'), value: 'config' },
-            { label: t('plan.viewSimple'), value: 'simple' },
-          ]"
-          @change="$emit('update:view-mode', $event)"
-        />
+        <!-- 只给提供了简化视图的类型显示这个切换，避免出现点了没反应的控件 -->
+        <template v-if="supportsSimpleView">
+          <span class="view-label">{{ t('plan.viewLabel') }}</span>
+          <a-segmented
+            :value="viewMode"
+            :options="[
+              { label: t('plan.viewConfig'), value: 'config' },
+              { label: t('plan.viewSimple'), value: 'simple' },
+            ]"
+            @change="$emit('update:view-mode', $event)"
+          />
+        </template>
       </a-space>
     </template>
 
@@ -69,6 +72,8 @@ interface Props {
   currentPlanName: string
   currentMode: 'ALL' | 'Weekly'
   viewMode: 'config' | 'simple'
+  /** 该类型是否提供简化视图；为 false 时隐藏视图切换 */
+  supportsSimpleView: boolean
   isEditingPlanName: boolean
 }
 

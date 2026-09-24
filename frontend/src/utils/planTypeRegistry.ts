@@ -12,6 +12,7 @@ export type PlanConfigData = PlanGetOut['data'][string]
 export const PLAN_CONFIG_TYPES = {
   MAA: PlanIndexItem.type.MAA_PLAN_CONFIG,
   MAA_END: PlanIndexItem.type.MAA_END_PLAN_CONFIG,
+  BAAH: PlanIndexItem.type.BAAHPLAN_CONFIG,
 } as const
 
 export interface PlanChangeOptions {
@@ -33,6 +34,8 @@ interface PlanTypeDescriptor {
   defaultName: string
   selectorTag: string
   reloadAfterSave: boolean
+  /** 是否提供「简化视图」；没提供的类型隐藏视图切换，避免留下点了没反应的控件 */
+  supportsSimpleView: boolean
   tableComponent: Component
 }
 
@@ -47,6 +50,7 @@ export const PLAN_TYPE_REGISTRY: Record<PlanConfigType, PlanTypeDescriptor> = {
     defaultName: '新 MAA 计划表',
     selectorTag: 'MAA',
     reloadAfterSave: true,
+    supportsSimpleView: true,
     tableComponent: defineAsyncComponent(() => import('@/views/plan/tables/MaaPlanTable.vue')),
   },
   [PLAN_CONFIG_TYPES.MAA_END]: {
@@ -56,7 +60,20 @@ export const PLAN_TYPE_REGISTRY: Record<PlanConfigType, PlanTypeDescriptor> = {
     defaultName: '新 MaaEnd 计划表',
     selectorTag: 'MaaEnd',
     reloadAfterSave: false,
+    supportsSimpleView: true,
     tableComponent: defineAsyncComponent(() => import('@/views/plan/tables/MaaEndPlanTable.vue')),
+  },
+  [PLAN_CONFIG_TYPES.BAAH]: {
+    configType: PLAN_CONFIG_TYPES.BAAH,
+    createType: PlanCreateIn.type.BAAHPLAN,
+    displayNameKey: 'plan.type.baah',
+    // defaultName 会被写进计划名，并被 plan/index.vue 拿来判断“还是默认名”，保持中文
+    defaultName: '新 BAAH 计划表',
+    selectorTag: 'BAAH',
+    reloadAfterSave: false,
+    // BAAH 一格要塞 2~3 个数字，转置成简化视图只会更难读，因此只提供配置视图
+    supportsSimpleView: false,
+    tableComponent: defineAsyncComponent(() => import('@/views/plan/tables/BAAHPlanTable.vue')),
   },
 }
 

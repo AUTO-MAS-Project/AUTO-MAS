@@ -2307,15 +2307,15 @@ class BAAHUserConfig_Info(BaseModel):
     ConfigName: Optional[str] = Field(
         default=None, description="默认使用的 BAAH 配置文件名"
     )
-    ActivityConfigName: Optional[str] = Field(
-        default=None, description="活动期间使用的 BAAH 配置文件名"
-    )
-    IfActivityAdapt: Optional[bool] = Field(
-        default=None, description="是否按碧蓝档案有没有活动切换使用的配置文件"
+    StageMode: Optional[str] = Field(
+        default=None, description="关卡计划表；Fixed 表示按脚本配置"
     )
     ActivityLineType: Optional[Literal["JP", "Globle", "CN"]] = Field(
         default=None,
         description="活动排期按哪个服判断: JP 日服, Globle 国际服, CN 国服",
+    )
+    IfEventFirst: Optional[bool] = Field(
+        default=None, description="活动期间把活动关卡排到最前"
     )
     Notes: Optional[str] = Field(default=None, description="备注")
     Tag: Optional[str] = Field(
@@ -2634,17 +2634,6 @@ class BAAHConfig(BaseModel):
     Emulator: Optional[BAAHConfig_Emulator] = Field(
         default=None, description="模拟器配置"
     )
-
-
-class BlueArchiveActivityStatusOut(OutBase):
-    """碧蓝档案活动状态：进行中的活动，或下一个未开始的活动"""
-
-    Running: bool = Field(default=False, description="当前是否有进行中的活动")
-    Name: str = Field(default="", description="进行中的活动名称")
-    StartTime: str = Field(default="", description="进行中活动的开始时间")
-    EndTime: str = Field(default="", description="进行中活动的结束时间")
-    NextName: str = Field(default="", description="下一个活动的名称")
-    NextStartTime: str = Field(default="", description="下一个活动的开始时间")
 
 
 class MaaEndUserConfig_Info(BaseModel):
@@ -4261,8 +4250,8 @@ class MaaFWAgentEnvPrepareOut(OutBase):
     )
 
 
-PlanConfigType = Literal["MaaPlanConfig", "MaaEndPlanConfig"]
-PlanComboxConsumer = Literal["maa", "maaend"]
+PlanConfigType = Literal["MaaPlanConfig", "MaaEndPlanConfig", "BAAHPlanConfig"]
+PlanComboxConsumer = Literal["maa", "maaend", "baah"]
 
 
 class PlanIndexItem(BaseModel):
@@ -4373,8 +4362,69 @@ class MaaEndPlanConfig(WeeklyPlanConfig[MaaEndPlanConfig_Info, MaaEndPlanConfig_
     model_config = ConfigDict(extra="forbid")
 
 
-PlanCreateType = Literal["MaaPlan", "MaaEndPlan"]
-PlanConfigData = MaaPlanConfig | MaaEndPlanConfig
+class BAAHPlanConfig_Info(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    Name: str = Field(default="新 BAAH 计划表", description="计划表名称")
+    Mode: Literal["ALL", "Weekly"] = Field(default="ALL", description="计划表模式")
+
+
+class BAAHPlanKey(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    Event: list[int] = Field(
+        default_factory=lambda: [1, 1],
+        min_length=2,
+        max_length=3,
+        description="活动关卡：关卡序号、扫荡次数",
+    )
+    Wanted: list[int] = Field(
+        default_factory=lambda: [1, -1, 1],
+        min_length=2,
+        max_length=4,
+        description="悬赏通缉：地区、关卡、次数",
+    )
+    Special: list[int] = Field(
+        default_factory=lambda: [1, -1, 1],
+        min_length=2,
+        max_length=4,
+        description="特殊任务：地区、关卡、次数",
+    )
+    Exchange: list[int] = Field(
+        default_factory=lambda: [1, -1, 1],
+        min_length=2,
+        max_length=4,
+        description="学园交流会：学院、关卡、次数",
+    )
+    Hard: list[int] = Field(
+        default_factory=lambda: [1, 1, -1],
+        min_length=2,
+        max_length=4,
+        description="困难图扫荡：章节、关卡、次数",
+    )
+    Normal: list[int] = Field(
+        default_factory=lambda: [1, 1, -1],
+        min_length=2,
+        max_length=4,
+        description="普通图扫荡：章节、关卡、次数",
+    )
+
+
+class BAAHPlanConfig_Item(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    Key: BAAHPlanKey = Field(
+        default_factory=BAAHPlanKey,
+        description="BAAH 计划表专项 key",
+    )
+
+
+class BAAHPlanConfig(WeeklyPlanConfig[BAAHPlanConfig_Info, BAAHPlanConfig_Item]):
+    model_config = ConfigDict(extra="forbid")
+
+
+PlanCreateType = Literal["MaaPlan", "MaaEndPlan", "BAAHPlan"]
+PlanConfigData = MaaPlanConfig | MaaEndPlanConfig | BAAHPlanConfig
 
 
 class HistoryIndexItem(BaseModel):

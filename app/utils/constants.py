@@ -49,8 +49,8 @@ TYPE_BOOK = {
 }
 """配置类型映射表"""
 
-PLAN_CONSUMER_VALUES = ("maa", "maaend")
-"""计划表消费方列表"""
+PLAN_CONSUMER_VALUES = ("maa", "maaend", "baah")
+"""计划表消费方列表；PLAN_BOOK 按下标引用此项，新消费方只能追加到末尾"""
 
 MAA_RUN_MOOD_BOOK = {
     "GreenTicketStore": "绿票商店",

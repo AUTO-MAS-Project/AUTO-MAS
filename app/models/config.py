@@ -3125,6 +3125,103 @@ class MaaEndPlanConfig(WeeklyKeyPlanConfig):
         return await super().load(normalized_data)
 
 
+BAAH_PLAN_KEY_SHAPE = {
+    # 字段: (默认值, 最短长度, 最长长度)，与 schema 的 BAAHPlanKey 逐位对应
+    "Event": ([1, 1], 2, 3),
+    "Wanted": ([1, -1, 1], 2, 4),
+    "Special": ([1, -1, 1], 2, 4),
+    "Exchange": ([1, -1, 1], 2, 4),
+    "Hard": ([1, 1, -1], 2, 4),
+    "Normal": ([1, 1, -1], 2, 4),
+}
+"""BAAH 计划表 key 的字段默认值与长度区间"""
+
+
+def default_baah_plan_key() -> dict[str, Any]:
+    """返回 BAAH 计划表默认 key。
+
+    校验器与 BAAHPlanConfig 的 default_key 都用它生成，避免默认值在两处各写
+    一份后漂移。
+    """
+
+    return {
+        field: list(default)
+        for field, (default, _minimum, _maximum) in BAAH_PLAN_KEY_SHAPE.items()
+    }
+
+
+def normalize_baah_plan_key(raw_key: object) -> dict[str, Any]:
+    """将固定配置或旧计划表日期槽位转换为 BAAH key，任何输入都不抛异常。"""
+
+    if isinstance(raw_key, dict) and "Key" in raw_key:
+        raw_key = raw_key["Key"]
+    data = raw_key if isinstance(raw_key, dict) else {}
+
+    result: dict[str, Any] = {}
+    for field, (default, minimum, maximum) in BAAH_PLAN_KEY_SHAPE.items():
+        value = data.get(field)
+        if not isinstance(value, list):
+            result[field] = list(default)
+            continue
+
+        try:
+            items = [int(item) for item in value]
+        except (TypeError, ValueError):
+            # 每一位都有固定含义（如「地区、关卡、次数」），丢掉一位会让后面的
+            # 位整体错位，所以只要有一位转不成 int，整项就回落到默认值。
+            result[field] = list(default)
+            continue
+
+        if len(items) > maximum:
+            items = items[:maximum]
+        elif len(items) < minimum:
+            # 缺位用默认值补齐，已经写明的位保持不动。
+            items = items + default[len(items) :]
+        result[field] = items
+
+    return result
+
+
+def validate_baah_plan_key(raw_key: object) -> dict[str, Any]:
+    """严格校验并返回规范化的 BAAH key，不合法时抛 ValueError。"""
+
+    return schema_model.BAAHPlanConfig_Item(Key=raw_key).Key.model_dump()
+
+
+class BAAHPlanKeyValidator(ValidatorBase):
+    """BAAH 计划表 key 验证器。"""
+
+    def validate(self, value: Any) -> bool:
+        try:
+            return validate_baah_plan_key(value) == value
+        except ValueError:
+            return False
+
+    def correct(self, value: Any) -> dict[str, Any]:
+        return normalize_baah_plan_key(value)
+
+
+class BAAHPlanConfig(WeeklyKeyPlanConfig):
+    """BAAH 计划表配置。"""
+
+    def __init__(self) -> None:
+        super().__init__(
+            default_name="新 BAAH 计划表",
+            default_key=default_baah_plan_key(),
+            key_validator=BAAHPlanKeyValidator(),
+        )
+
+    async def load(self, data: dict) -> bool:
+        """加载计划表并迁移没有 Key 包装的旧日期槽位。"""
+
+        normalized_data = deepcopy(data) if isinstance(data, dict) else {}
+        for group in ["ALL", *calendar.day_name]:
+            group_data = normalized_data.get(group)
+            if isinstance(group_data, dict):
+                normalized_data[group] = {"Key": normalize_baah_plan_key(group_data)}
+        return await super().load(normalized_data)
+
+
 class GeneralUserConfig(ConfigBase):
     """通用脚本用户配置"""
 
@@ -4922,6 +5019,7 @@ class GlobalConfig(ConfigBase):
         BAAHConfig.related_config["EmulatorConfig"] = self.EmulatorConfig
         MaaUserConfig.related_config["PlanConfig"] = self.PlanConfig
         MaaEndUserConfig.related_config["PlanConfig"] = self.PlanConfig
+        BAAHUserConfig.related_config["PlanConfig"] = self.PlanConfig
         QueueItem.related_config["ScriptConfig"] = self.ScriptConfig
         HSRUserConfig.related_config["ScriptConfig"] = self.ScriptConfig
 
@@ -5011,6 +5109,8 @@ class GlobalConfig(ConfigBase):
 class BAAHUserConfig(ConfigBase):
     """BAAH 用户配置"""
 
+    related_config: dict[str, MultipleConfig] = {}
+
     def __init__(self) -> None:
 
         ## Info ------------------------------------------------------------
@@ -5032,15 +5132,22 @@ class BAAHUserConfig(ConfigBase):
         )
         ## 默认使用的 BAAH 配置文件名（BAAH_CONFIGS 目录下的文件名，不含 .json 后缀）
         self.Info_ConfigName = ConfigItem("Info", "ConfigName", "")
-        ## 活动期间使用的 BAAH 配置文件名；留空表示活动期间也用 ConfigName
-        self.Info_ActivityConfigName = ConfigItem("Info", "ActivityConfigName", "")
-        ## 是否按碧蓝档案有没有活动切换使用的配置文件
-        self.Info_IfActivityAdapt = ConfigItem(
-            "Info", "IfActivityAdapt", False, BoolValidator()
+        ## 关卡计划表；Fixed 表示按脚本配置
+        self.Info_StageMode = ConfigItem(
+            "Info",
+            "StageMode",
+            "Fixed",
+            TypedMultipleUIDValidator(
+                "Fixed", self.related_config, "PlanConfig", BAAHPlanConfig
+            ),
         )
-        ## 活动排期按哪个服判断（Kivo 时间轴的原文拼写：JP / Globle / CN）
+        ## 活动排期按哪个服判断，供「活动关优先」使用（Kivo 时间轴的原文拼写：JP / Globle / CN）
         self.Info_ActivityLineType = ConfigItem(
             "Info", "ActivityLineType", "CN", OptionsValidator(["JP", "Globle", "CN"])
+        )
+        ## 活动期间自动把「活动关卡」任务排到最前并打开
+        self.Info_IfEventFirst = ConfigItem(
+            "Info", "IfEventFirst", False, BoolValidator()
         )
         ## 备注
         self.Info_Notes = ConfigItem("Info", "Notes", "无")
@@ -5180,6 +5287,14 @@ PLAN_BOOK = {
         "consumer": PLAN_CONSUMER_VALUES[1],
         "script_class": MaaEndConfig,
         "field_name": "SanityMode",
+    },
+    "BAAHPlanConfig": {
+        "create_type": "BAAHPlan",
+        "config_class": BAAHPlanConfig,
+        "schema_class": schema_model.BAAHPlanConfig,
+        "consumer": PLAN_CONSUMER_VALUES[2],
+        "script_class": BAAHConfig,
+        "field_name": "StageMode",
     },
 }
 """计划表注册表"""

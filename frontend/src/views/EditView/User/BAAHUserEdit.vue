@@ -136,30 +136,61 @@
             </a-col>
           </a-row>
 
-          <!-- 活动适配：按碧蓝档案当前有没有活动，改用另一份配置文件 -->
+          <!-- 关卡计划表与活动关优先：本次运行按它们改写 BAAH 的关卡与任务顺序 -->
           <a-row :gutter="24">
             <a-col :span="8">
-              <a-form-item name="ifActivityAdapt">
+              <a-form-item name="stageMode">
                 <template #label>
-                  <a-tooltip :title="t('edit.baahIfActivityAdaptHint')">
+                  <a-tooltip :title="t('edit.baahStageModeHint')">
                     <span class="form-label">
-                      {{ t('edit.baahIfActivityAdapt') }}
+                      {{ t('edit.baahStageMode') }}
                       <QuestionCircleOutlined class="help-icon" />
                     </span>
                   </a-tooltip>
                 </template>
                 <a-select
-                  v-model:value="formData.Info.IfActivityAdapt"
+                  v-model:value="formData.Info.StageMode"
+                  :disabled="loading"
+                  :options="stageModeOptions"
+                  size="large"
+                  style="width: 100%"
+                  @change="handleFieldSave('Info.StageMode', formData.Info.StageMode)"
+                />
+                <a-button
+                  v-if="isStagePlanMode"
+                  type="link"
+                  size="small"
+                  class="go-plan-button"
+                  @click="handleGoToPlans"
+                >
+                  <template #icon><CalendarOutlined /></template>
+                  {{ t('edit.goPlan') }}
+                </a-button>
+              </a-form-item>
+            </a-col>
+            <a-col :span="6">
+              <a-form-item name="ifEventFirst">
+                <template #label>
+                  <a-tooltip :title="t('edit.baahIfEventFirstHint')">
+                    <span class="form-label">
+                      {{ t('edit.baahIfEventFirst') }}
+                      <QuestionCircleOutlined class="help-icon" />
+                    </span>
+                  </a-tooltip>
+                </template>
+                <a-select
+                  v-model:value="formData.Info.IfEventFirst"
                   :disabled="loading"
                   size="large"
                   style="width: 100%"
-                  @change="handleFieldSave('Info.IfActivityAdapt', formData.Info.IfActivityAdapt)"
+                  @change="handleFieldSave('Info.IfEventFirst', formData.Info.IfEventFirst)"
                 >
                   <a-select-option :value="true">{{ t('edit.yes') }}</a-select-option>
                   <a-select-option :value="false">{{ t('edit.no') }}</a-select-option>
                 </a-select>
               </a-form-item>
             </a-col>
+            <!-- 活动排期服务器：「活动关优先」也按它判断所选服当前有没有进行中的活动 -->
             <a-col :span="8">
               <a-form-item name="activityLineType">
                 <template #label>
@@ -172,7 +203,7 @@
                 </template>
                 <a-select
                   v-model:value="formData.Info.ActivityLineType"
-                  :disabled="loading || !formData.Info.IfActivityAdapt"
+                  :disabled="loading"
                   size="large"
                   style="width: 100%"
                   @change="handleFieldSave('Info.ActivityLineType', formData.Info.ActivityLineType)"
@@ -187,68 +218,6 @@
                     {{ t('edit.baahActivityLineGloble') }}
                   </a-select-option>
                 </a-select>
-                <div v-if="formData.Info.IfActivityAdapt" class="activity-status">
-                  <a-spin v-if="activityStatusLoading" size="small" />
-                  <template v-else-if="activityStatus">
-                    <template v-if="activityStatus.Running">
-                      <span class="activity-status-label">
-                        {{ t('edit.baahActivityRunning') }}
-                      </span>
-                      <span class="activity-status-name">{{ activityStatus.Name }}</span>
-                      <div class="activity-status-time">
-                        {{ activityStatus.StartTime }} ~ {{ activityStatus.EndTime }}
-                      </div>
-                    </template>
-                    <template v-else-if="activityStatus.NextName">
-                      <span class="activity-status-label">
-                        {{ t('edit.baahActivityUpcoming') }}
-                      </span>
-                      <span class="activity-status-name">{{ activityStatus.NextName }}</span>
-                      <div class="activity-status-time">{{ activityStatus.NextStartTime }}</div>
-                    </template>
-                    <div v-else class="activity-status-empty">
-                      {{ t('edit.baahActivityNone') }}
-                    </div>
-                  </template>
-                  <div v-else class="activity-status-empty">
-                    {{ t('edit.baahActivityUnavailable') }}
-                  </div>
-                </div>
-              </a-form-item>
-            </a-col>
-            <a-col :span="8">
-              <a-form-item name="activityConfigName">
-                <template #label>
-                  <a-tooltip :title="t('edit.baahActivityConfigNameHint')">
-                    <span class="form-label">
-                      {{ t('edit.baahActivityConfigName') }}
-                      <QuestionCircleOutlined class="help-icon" />
-                    </span>
-                  </a-tooltip>
-                </template>
-                <a-select
-                  v-model:value="formData.Info.ActivityConfigName"
-                  :placeholder="t('edit.baahActivityConfigNamePlaceholder')"
-                  :disabled="loading || !formData.Info.IfActivityAdapt"
-                  :loading="configNamesLoading"
-                  :options="configNameOptions"
-                  size="large"
-                  show-search
-                  allow-clear
-                  option-filter-prop="label"
-                  style="width: 100%"
-                  @dropdown-visible-change="
-                    (open: boolean) => {
-                      if (open) void loadConfigNames()
-                    }
-                  "
-                  @change="
-                    handleFieldSave(
-                      'Info.ActivityConfigName',
-                      formData.Info.ActivityConfigName ?? ''
-                    )
-                  "
-                />
               </a-form-item>
             </a-col>
           </a-row>
@@ -403,7 +372,12 @@ import { useI18n } from 'vue-i18n'
 import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
-import { ArrowLeftOutlined, HistoryOutlined, QuestionCircleOutlined } from '@ant-design/icons-vue'
+import {
+  ArrowLeftOutlined,
+  CalendarOutlined,
+  HistoryOutlined,
+  QuestionCircleOutlined,
+} from '@ant-design/icons-vue'
 import type { FormInstance, Rule } from 'ant-design-vue/es/form'
 import { useUserApi } from '@/composables/useUserApi.ts'
 import { useScriptApi } from '@/composables/useScriptApi.ts'
@@ -412,7 +386,9 @@ import { Service } from '@/api'
 import UserNotifyConfig from '@/components/UserNotifyConfig.vue'
 import GeneralConfigModeSelector from '@/views/EditView/User/GeneralConfigModeSelector.vue'
 import ConfigRestoreSection from '@/views/EditView/User/components/ConfigRestoreSection.vue'
-import { BaahService, type BlueArchiveActivityStatusOut, type ComboBoxItem } from '@/api'
+import { BaahService, type ComboBoxItem } from '@/api'
+import { PlanComboxIn } from '@/api/models/PlanComboxIn'
+import { navigateTo } from '@/router'
 
 const { t } = useI18n()
 
@@ -445,9 +421,10 @@ const getDefaultBAAHUserData = () => ({
     Mode: '用户',
     RemainedDay: -1,
     ConfigName: '',
-    ActivityConfigName: '',
-    IfActivityAdapt: false,
+    // Fixed 表示按 BAAH 自己的关卡配置运行，其余取值是关卡计划表 uid
+    StageMode: 'Fixed',
     ActivityLineType: 'CN',
+    IfEventFirst: false,
     Notes: '',
     Tag: '',
   },
@@ -490,45 +467,28 @@ const loadConfigNames = async () => {
   }
 }
 
-// 所选服的活动排期，开关或服务器变化时重新取
-const activityStatus = ref<BlueArchiveActivityStatusOut | null>(null)
-const activityStatusLoading = ref(false)
-// 快速切换服务器时先发的请求可能后到：用代数标记，只采纳最新一次的结果
-let activityStatusGeneration = 0
-const loadActivityStatus = async () => {
-  if (!formData.Info.IfActivityAdapt) {
-    activityStatusGeneration += 1
-    activityStatus.value = null
-    activityStatusLoading.value = false
-    return
-  }
-
-  const generation = (activityStatusGeneration += 1)
-  activityStatusLoading.value = true
+// 关卡计划表下拉候选：后端按消费方 baah 返回 BAAH 计划表；「固定」始终排在第一项
+// 用本地词表的固定项，保证在英文/日文界面下也是自己的语言
+const stageModeOptions = ref<Array<{ label: string; value: string }>>([
+  { label: t('edit.fixed'), value: 'Fixed' },
+])
+const isStagePlanMode = computed(() => formData.Info.StageMode !== 'Fixed')
+const loadStageModeOptions = async () => {
   try {
-    // 服务器值缺失时兜底成国服，避免拼出 lineType=null 的请求被后端拒掉
-    const lineType = (formData.Info.ActivityLineType || 'CN') as 'JP' | 'Globle' | 'CN'
-    const resp = await BaahService.getBaahActivityStatusApiApiScriptsBaahActivityStatusGet(lineType)
-    if (generation !== activityStatusGeneration) return
-    activityStatus.value = resp
-  } catch (e) {
-    if (generation !== activityStatusGeneration) return
-    logger.error(e instanceof Error ? e.message : String(e))
-    activityStatus.value = null
-  } finally {
-    if (generation === activityStatusGeneration) {
-      activityStatusLoading.value = false
+    const response = await Service.getPlanComboxApiInfoComboxPlanPost({
+      consumer: PlanComboxIn.consumer.BAAH,
+    })
+    if (response?.code === 200 && response.data) {
+      const planOptions = response.data
+        .filter((item): item is ComboBoxItem & { value: string } => item.value !== null)
+        .filter(item => item.value !== 'Fixed')
+        .map(item => ({ label: item.label, value: item.value }))
+      stageModeOptions.value = [{ label: t('edit.fixed'), value: 'Fixed' }, ...planOptions]
     }
+  } catch (error) {
+    logger.error(`加载关卡计划表失败: ${error instanceof Error ? error.message : String(error)}`)
   }
 }
-
-watch(
-  () => [formData.Info.IfActivityAdapt, formData.Info.ActivityLineType],
-  () => {
-    void loadActivityStatus()
-  },
-  { immediate: true }
-)
 
 // 只读标签：后端按运行情况生成的 JSON 字符串
 const userTags = computed(() => parseStatusTagList(formData.Info.Tag))
@@ -606,6 +566,11 @@ const handleConfigModeChange = async (value: boolean | string) => {
   if (typeof value !== 'string' || !['脚本', '用户', '直控'].includes(value)) return
   formData.Info.Mode = value as '脚本' | '用户' | '直控'
   await handleFieldSave('Info.Mode', formData.Info.Mode)
+}
+
+// 直接跳到当前选中的关卡计划表，省去在计划管理里再找一遍
+const handleGoToPlans = () => {
+  navigateTo('/plans', { query: { planId: formData.Info.StageMode } })
 }
 
 // 即时保存单个字段变更（局部更新，不整体覆盖用户配置）
@@ -830,6 +795,7 @@ onMounted(async () => {
   // 先等脚本信息与用户就绪（新建模式内部会创建用户并写入 userId）再归档，
   // 否则新建用户首次进入会因 userId 未就绪静默跳过归档
   await loadScriptInfo()
+  await loadStageModeOptions()
   await nextTick()
   void ensureBAAHBackup('native')
 })
@@ -948,30 +914,6 @@ onUnmounted(() => {
   border-radius: 2px;
 }
 
-.activity-status {
-  margin-top: 8px;
-  font-size: 13px;
-  line-height: 1.6;
-  color: var(--ant-color-text-secondary);
-}
-
-.activity-status-label {
-  color: var(--ant-color-text-secondary);
-}
-
-.activity-status-name {
-  color: var(--ant-color-text);
-  font-weight: 600;
-}
-
-.activity-status-time {
-  color: var(--ant-color-text-tertiary);
-}
-
-.activity-status-empty {
-  color: var(--ant-color-text-tertiary);
-}
-
 .form-label {
   display: flex;
   align-items: center;
@@ -1015,6 +957,10 @@ onUnmounted(() => {
   gap: 6px;
   align-items: center;
   min-height: 40px;
+}
+
+.go-plan-button {
+  padding-inline: 0;
 }
 
 .cancel-button {

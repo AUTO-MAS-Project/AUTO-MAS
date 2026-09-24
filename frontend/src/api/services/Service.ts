@@ -18,7 +18,6 @@ import type { BetterGIScriptGroupSaveIn } from '../models/BetterGIScriptGroupSav
 import type { BetterGIScriptReadmeOut } from '../models/BetterGIScriptReadmeOut';
 import type { BetterGIScriptSettingsUiOut } from '../models/BetterGIScriptSettingsUiOut';
 import type { BlueArchiveActivityIn } from '../models/BlueArchiveActivityIn';
-import type { BlueArchiveActivityStatusOut } from '../models/BlueArchiveActivityStatusOut';
 import type { Body_batch_update_oknte_configs_api_scripts_oknte_configs_batch_update_post } from '../models/Body_batch_update_oknte_configs_api_scripts_oknte_configs_batch_update_post';
 import type { Body_get_maa_cultivate_operators_api_scripts_maa_cultivate_operators_post } from '../models/Body_get_maa_cultivate_operators_api_scripts_maa_cultivate_operators_post';
 import type { Body_get_maa_depot_inventory_api_scripts_maa_depot_inventory_post } from '../models/Body_get_maa_depot_inventory_api_scripts_maa_depot_inventory_post';
@@ -1212,27 +1211,6 @@ export class Service {
             url: '/api/scripts/baah/config-names',
             query: {
                 'scriptId': scriptId,
-            },
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 获取碧蓝档案活动状态
-     * 返回指定服正在进行的活动，没有则返回下一个未开始的活动。
-     * @param lineType
-     * @returns BlueArchiveActivityStatusOut Successful Response
-     * @throws ApiError
-     */
-    public static getBaahActivityStatusApiApiScriptsBaahActivityStatusGet(
-        lineType: 'JP' | 'Globle' | 'CN' = 'CN',
-    ): CancelablePromise<BlueArchiveActivityStatusOut> {
-        return __request(OpenAPI, {
-            method: 'GET',
-            url: '/api/scripts/baah/activity-status',
-            query: {
-                'lineType': lineType,
             },
             errors: {
                 422: `Validation Error`,

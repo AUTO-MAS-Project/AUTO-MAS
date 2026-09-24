@@ -28,17 +28,17 @@ export type BAAHUserConfig_Info = {
      */
     ConfigName?: (string | null);
     /**
-     * 活动期间使用的 BAAH 配置文件名
+     * 关卡计划表；Fixed 表示按脚本配置
      */
-    ActivityConfigName?: (string | null);
-    /**
-     * 是否按碧蓝档案有没有活动切换使用的配置文件
-     */
-    IfActivityAdapt?: (boolean | null);
+    StageMode?: (string | null);
     /**
      * 活动排期按哪个服判断: JP 日服, Globle 国际服, CN 国服
      */
     ActivityLineType?: ('JP' | 'Globle' | 'CN' | null);
+    /**
+     * 活动期间把活动关卡排到最前
+     */
+    IfEventFirst?: (boolean | null);
     /**
      * 备注
      */

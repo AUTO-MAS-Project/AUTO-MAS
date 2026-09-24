@@ -45,6 +45,7 @@
           :current-plan-name="currentPlanName"
           :current-mode="currentMode"
           :view-mode="viewMode"
+          :supports-simple-view="currentPlanDescriptor.supportsSimpleView"
           :is-editing-plan-name="isEditingPlanName"
           @update:current-plan-name="currentPlanName = $event"
           @update:current-mode="currentMode = $event"
