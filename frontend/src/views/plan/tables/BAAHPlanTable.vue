@@ -1,9 +1,5 @@
 <template>
   <div>
-    <!-- 每天一类：说明放在表格上方，用户不必点开下拉才知道留空是什么意思 -->
-    <div v-if="baahLayout === 'single'" class="layout-hint">
-      {{ t('plan.baahLayout.singleHint') }}
-    </div>
     <div class="config-table-wrapper">
       <!-- 行对象的字段是 rowKey，Ant 默认取 key，不指定会退回索引做主键 -->
       <a-table
@@ -18,7 +14,7 @@
         :scroll="{ x: 'max-content' }"
       >
         <template #bodyCell="{ column, record }">
-          <!-- 每天一类整张表只有一行，行首自己写明这一行是什么；留空的含义在表格上方说过一次 -->
+          <!-- 每天一类整张表只有一行，行首自己写明这一行是什么 -->
           <template v-if="baahLayout === 'single' && column.key === 'fieldName'">
             <span class="field-label">{{ record.fieldName }}</span>
           </template>
@@ -32,17 +28,33 @@
             </a-tooltip>
           </template>
 
-          <!-- 每天一类：一格只有一个下拉，选中的那一类不写进 key，其余五类写成空数组 -->
+          <!-- 每天一类：先选今天打哪一类，选中后就地填这一类的参数，其余五类写成空数组 -->
           <div v-else-if="baahLayout === 'single'" class="key-cell">
-            <a-tooltip :title="t('plan.baahLayout.singleHint')">
-              <a-select
-                class="layout-select"
+            <a-select
+              class="layout-select"
+              size="small"
+              :value="getSingleChoice(asTimeKey(column.key))"
+              :options="singleChoiceOptions"
+              :disabled="isColumnDisabled(asTimeKey(column.key))"
+              :aria-label="singleSelectLabel(asTimeKey(column.key))"
+              @change="handleSingleChoiceChange(asTimeKey(column.key), $event)"
+            />
+            <!-- 选中一类后就地填这一类的 2~3 个数字，规则与多类混打逐位相同 -->
+            <a-tooltip
+              v-for="part in singleParts(asTimeKey(column.key))"
+              :key="part.index"
+              :title="part.hint"
+            >
+              <a-input-number
+                class="config-number"
                 size="small"
-                :value="getSingleChoice(asTimeKey(column.key))"
-                :options="singleChoiceOptions"
+                :value="singlePartValue(asTimeKey(column.key), part.index)"
+                :min="part.min"
+                :precision="0"
+                :controls="false"
                 :disabled="isColumnDisabled(asTimeKey(column.key))"
-                :aria-label="singleSelectLabel(asTimeKey(column.key))"
-                @change="handleSingleChoiceChange(asTimeKey(column.key), $event)"
+                :aria-label="`${singleRowLabel} ${part.hint}`"
+                @change="handleSinglePartChange(asTimeKey(column.key), part.index, $event)"
               />
             </a-tooltip>
           </div>
@@ -309,7 +321,7 @@ const configColumns = computed(() => {
       title: single ? '' : t('plan.table.field'),
       dataIndex: 'fieldName',
       key: 'fieldName',
-      width: single ? 150 : 130,
+      width: single ? 88 : 130,
       fixed: 'left',
       align: 'center',
     },
@@ -317,8 +329,8 @@ const configColumns = computed(() => {
       title: t(`plan.week.${timeKey}`),
       dataIndex: timeKey,
       key: timeKey,
-      // 每天一类时一格只有一个下拉，不必留出 2~3 个输入框的宽度
-      width: single ? 150 : 190,
+      // 每天一类时一格是「一个下拉 + 该类的 2~3 个输入框」，与多类混打一样宽
+      width: single ? 300 : 190,
       align: 'center',
     })),
   ]
@@ -335,7 +347,7 @@ const getDayKey = (timeKey: PlanTimeKey): BAAHDayKey =>
   fillDayFields(localTableData.value[timeKey] ?? {})
 
 const configRows = computed(() => {
-  // 每天一类：一天只有一个选择，整张表就一行「今天打哪类关卡」，八列各一个下拉
+  // 每天一类：一天只有一个选择，整张表就一行「关卡」，八列各一组控件
   if (props.baahLayout === 'single') {
     return [{ rowKey: 'single', fieldName: singleRowLabel.value }]
   }
@@ -361,7 +373,32 @@ const toPartValue = (value: number | string | null, fallback: number): number =>
   return typeof parsed === 'number' && Number.isInteger(parsed) ? parsed : fallback
 }
 
-/** 改一位：先落到本地让界面即时反馈，保存失败再退回原来的那一格 */
+/**
+ * 整格提交：先落到本地让界面即时反馈，保存失败再退回原来的那一格。
+ *
+ * 后端按「日期 → Key」两级写入，一格只能整份提交：只发一个字段会被当成整份 Key，
+ * 其余五类关卡会被 validator 补成默认值，静默丢掉取值。
+ */
+const submitDayKey = async (
+  timeKey: PlanTimeKey,
+  nextDayKey: BAAHDayFields,
+  previousFields: BAAHDayFields | undefined
+) => {
+  localTableData.value = {
+    ...localTableData.value,
+    [timeKey]: nextDayKey,
+  }
+
+  const saved = await props.handlePlanChange(`${timeKey}.Key`, nextDayKey, false)
+  if (!saved) {
+    localTableData.value = {
+      ...localTableData.value,
+      [timeKey]: previousFields ?? {},
+    }
+  }
+}
+
+/** 改一位：多类混打用，提交的是六类齐全的那一份 Key */
 const handlePartChange = async (
   timeKey: PlanTimeKey,
   field: BAAHKeyFieldName,
@@ -383,39 +420,53 @@ const handlePartChange = async (
 
   const nextDayKey: BAAHDayKey = { ...previous, [field]: nextItems }
 
-  localTableData.value = {
-    ...localTableData.value,
-    [timeKey]: nextDayKey,
-  }
-
-  // 后端按「日期 → Key」两级写入，只能整格提交：只发单个字段会被当成整份 Key，
-  // 其余五类关卡会被补成默认值
-  const saved = await props.handlePlanChange(`${timeKey}.Key`, nextDayKey, false)
-  if (!saved) {
-    localTableData.value = {
-      ...localTableData.value,
-      [timeKey]: previousFields ?? {},
-    }
-  }
+  await submitDayKey(timeKey, nextDayKey, previousFields)
 }
 
 /**
  * 每天一类：从一格里读出「今天打哪一类」。
  *
- * 这种排法的形状固定：恰好一类缺席（key 里没有它），其余五类都是空数组。读不出
- * 这个形状时（旧数据、多类混打的排法）显示留空，但**不替用户改写数据**——只有
- * 用户真的动过这一格的下拉，才会按每天一类重排并落盘。
+ * 这种排法的落盘形状是「恰好一类有值、其余五类空数组」；旧数据写成「恰好一类缺席、
+ * 其余五类空数组」，这里一并认出来，但**不替用户改写数据**——只有用户真的动过这一格
+ * 才会按现在的规则落盘。读不出这两种形状时（多类混打的排法）显示「不打」。
  */
 const getSingleChoice = (timeKey: PlanTimeKey): BAAHKeyFieldName | '' => {
   const fields = localTableData.value[timeKey]
   if (!fields) return ''
 
-  const absent = BAAH_KEY_FIELDS.filter(field => !(field.field in fields))
-  if (absent.length !== 1) return ''
+  const valued = BAAH_KEY_FIELDS.filter(field => (fields[field.field] ?? []).length > 0)
+  if (valued.length === 1) return valued[0].field
+  if (valued.length > 1) return ''
 
-  const present = BAAH_KEY_FIELDS.filter(field => field.field in fields)
-  const allEmpty = present.every(field => (fields[field.field] ?? []).length === 0)
-  return allEmpty ? absent[0].field : ''
+  const absent = BAAH_KEY_FIELDS.filter(field => !(field.field in fields))
+  return absent.length === 1 ? absent[0].field : ''
+}
+
+/** 读一类的参数：空数组与缺席都按该类默认值填出来，输入框才有值可编 */
+const readFieldValues = (timeKey: PlanTimeKey, field: BAAHKeyFieldName): number[] => {
+  const spec = BAAH_KEY_FIELD_BY_NAME[field]
+  const items = [...(localTableData.value[timeKey]?.[field] ?? [])].slice(0, spec.maxLength)
+  for (let index = items.length; index < spec.parts.length; index += 1) {
+    items.push(spec.defaultValue[index] ?? 1)
+  }
+  return items
+}
+
+/** 每天一类：选中那一类的参数位，规则与多类混打逐位相同；没选类时没有参数位 */
+const singleParts = (timeKey: PlanTimeKey) => {
+  const choice = getSingleChoice(timeKey)
+  if (!choice) return []
+
+  return BAAH_KEY_FIELD_BY_NAME[choice].parts.map((part, index) => ({
+    index,
+    min: part.min,
+    hint: t(part.hintKey),
+  }))
+}
+
+const singlePartValue = (timeKey: PlanTimeKey, index: number): number => {
+  const choice = getSingleChoice(timeKey)
+  return choice ? (readFieldValues(timeKey, choice)[index] ?? 1) : 1
 }
 
 const singleChoiceOptions = computed(() => [
@@ -430,45 +481,55 @@ const singleSelectLabel = (timeKey: PlanTimeKey) =>
   `${singleRowLabel.value} ${t(`plan.week.${timeKey}`)}`
 
 /**
- * 每天一类：一格只有一个选择。
+ * 每天一类：选一类就写这一类的**具体参数**，其余五类写空数组；选「不打」则六类全空。
  *
- * 选中的那一类**缺席**（key 里没有它，于是 BAAH 用自己配置里的关卡与开关），其余
- * 五类写成空数组；选「留空」则六类全部写成空数组，今天什么关卡都不打。
+ * 字段缺席那一态留给别处排好的数据（运行期不覆盖，BAAH 用它自己配置里的关卡），
+ * 这里的下拉不再产出缺席。
  */
 const handleSingleChoiceChange = async (timeKey: PlanTimeKey, value: unknown) => {
   const choice = typeof value === 'string' ? value : ''
-  const previous = localTableData.value[timeKey]
+  const previousFields = localTableData.value[timeKey]
 
   const nextDayKey: BAAHDayFields = {}
   for (const field of BAAH_KEY_FIELDS) {
-    if (choice && field.field === choice) continue
-    nextDayKey[field.field] = []
+    nextDayKey[field.field] =
+      choice && field.field === choice ? readFieldValues(timeKey, field.field) : []
   }
 
-  localTableData.value = {
-    ...localTableData.value,
-    [timeKey]: nextDayKey,
+  await submitDayKey(timeKey, nextDayKey, previousFields)
+}
+
+/** 每天一类：改选中那一类的第 index 位，其余五类照旧写空数组 */
+const handleSinglePartChange = async (
+  timeKey: PlanTimeKey,
+  index: number,
+  value: number | string | null
+) => {
+  const choice = getSingleChoice(timeKey)
+  if (!choice) return
+
+  const fieldSpec = BAAH_KEY_FIELD_BY_NAME[choice]
+  const previousFields = localTableData.value[timeKey]
+  const nextItems = readFieldValues(timeKey, choice)
+  nextItems[index] = toPartValue(value, fieldSpec.defaultValue[index] ?? 1)
+
+  // 关卡位只认 -1（最高关）或 1 以上，手输的 0 在这里当场纠正，与多类混打同一条规则
+  const part = fieldSpec.parts[index]
+  if (part && STAGE_PART_HINT_KEYS.has(part.hintKey) && nextItems[index] === 0) {
+    nextItems[index] = 1
+    message.warning(t('plan.baah.partLevelZeroFixed'))
   }
 
-  // 与多类混打同一条链路：后端只按「分组 → 配置项」两层遍历，只能整格提交整份
-  // Key；只发一个字段会被 validator 把其余字段补成默认值，静默丢掉另外五类的取值
-  const saved = await props.handlePlanChange(`${timeKey}.Key`, nextDayKey, false)
-  if (!saved) {
-    localTableData.value = {
-      ...localTableData.value,
-      [timeKey]: previous ?? {},
-    }
+  const nextDayKey: BAAHDayFields = {}
+  for (const field of BAAH_KEY_FIELDS) {
+    nextDayKey[field.field] = field.field === choice ? nextItems : []
   }
+
+  await submitDayKey(timeKey, nextDayKey, previousFields)
 }
 </script>
 
 <style scoped>
-.layout-hint {
-  margin-bottom: 8px;
-  color: var(--ant-color-text-secondary);
-  font-size: 13px;
-}
-
 .config-table-wrapper {
   overflow: hidden;
 }

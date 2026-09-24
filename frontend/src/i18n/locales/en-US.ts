@@ -3257,10 +3257,8 @@ export default {
       label: 'Layout:',
       mixed: 'Mixed stages',
       single: 'One type per day',
-      singleRowLabel: 'Stage type for today',
-      emptyOption: 'Blank (no stages today)',
-      singleHint:
-        'Pick one stage type per day: the chosen type uses the stages and switches from your BAAH config, and blank means no stages today. Cells arranged as mixed stages show up as blank and only switch to one-type-per-day after you pick again.',
+      singleRowLabel: 'Stage',
+      emptyOption: 'None',
     },
     typeFallback: 'plan',
     type: {

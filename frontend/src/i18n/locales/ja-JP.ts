@@ -2703,10 +2703,8 @@ export default {
       label: '形式：',
       mixed: '複数種類',
       single: '1日1種類',
-      singleRowLabel: '今日のステージ種類',
-      emptyOption: '未選択（今日はステージを実行しない）',
-      singleHint:
-        '1日につき1種類だけ選べます。選んだ種類は BAAH 側の設定のステージとスイッチを使用し、未選択の日はステージを実行しません。複数種類で組んだマスは未選択として表示され、選び直したときに1日1種類として保存されます。',
+      singleRowLabel: 'ステージ',
+      emptyOption: 'なし',
     },
     typeFallback: 'プラン',
     type: {
