@@ -3199,6 +3199,8 @@ export default {
       // 下拉里代表 -1 的那一项：关卡位是倒数第一个能扫荡的关卡，次数位是扫荡次数拉满
       stageHighest: '倒数第一个',
       timesMax: '最大次数',
+      // 多类混打里每一类头上那一行开关，关了就是这一天不跑这一类
+      partEnabled: '启用',
     },
     toast: {
       created: '已创建新的{type}："{name}"',

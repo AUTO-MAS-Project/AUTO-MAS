@@ -6,6 +6,7 @@ import {
   applySingleNumber,
   buildSingleDayKey,
   fillDayFields,
+  isFieldEnabled,
   partIndexOf,
   partOptionMax,
   readDayFields,
@@ -233,5 +234,20 @@ describe('partOptionMax', () => {
     expect(partOptionMax('plan.baah.partLevel')).toBe(15)
     expect(partOptionMax('plan.baah.partLevelHighest')).toBe(15)
     expect(partOptionMax('plan.baah.partStageIndex')).toBe(15)
+  })
+})
+
+describe('isFieldEnabled', () => {
+  it('有值的类算启用', () => {
+    expect(isFieldEnabled({ Hard: [1, 2, 3] }, 'Hard')).toBe(true)
+  })
+
+  it('空数组是「今天不打」', () => {
+    expect(isFieldEnabled({ Hard: [] }, 'Hard')).toBe(false)
+  })
+
+  it('缺席也当作没启用', () => {
+    expect(isFieldEnabled({ Hard: [1, 2, 3] }, 'Normal')).toBe(false)
+    expect(isFieldEnabled(undefined, 'Hard')).toBe(false)
   })
 })

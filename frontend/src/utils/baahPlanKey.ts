@@ -277,6 +277,12 @@ export const readSingleCell = (fields: BAAHDayFields | undefined): BAAHSingleCel
   }
 }
 
+/** 这一类今天要不要跑：空数组与缺席都算不打 */
+export const isFieldEnabled = (
+  fields: BAAHDayFields | undefined,
+  field: BAAHKeyFieldName
+): boolean => (fields?.[field] ?? []).length > 0
+
 /** 每天一类：选中那一类有值，其余五类空数组（今天不打），选「不打」则六类全空 */
 export const buildSingleDayKey = (kind: BAAHKeyFieldName | '', items: number[]): BAAHDayFields => {
   const dayKey: BAAHDayFields = {}

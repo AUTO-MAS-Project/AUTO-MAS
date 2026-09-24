@@ -46,12 +46,24 @@
           />
         </template>
 
+        <!-- 多类混打：每类头上先一行开关，关了就是这一天不跑这一类 -->
+        <template v-else-if="record.rowKind === 'enabled'">
+          <a-switch
+            size="small"
+            :checked="record[column.key]"
+            :disabled="isColumnDisabled(asTimeKey(column.key))"
+            :aria-label="cellLabel(record.fieldName, column.key)"
+            @change="handlePartEnabledChange(asTimeKey(column.key), record.field, $event)"
+          />
+        </template>
+
         <!-- 多类混打：每类关卡的每一位各占一行，一格一个下拉，与每天一类同一套控件 -->
         <template v-else>
           <a-select
             class="config-select"
             size="small"
             :bordered="false"
+            placeholder="-"
             :value="record[column.key]"
             :options="partOptions(record.hintKey, record.min)"
             :disabled="isColumnDisabled(asTimeKey(column.key))"
@@ -80,9 +92,11 @@ import {
   applySingleNumber,
   buildSingleDayKey,
   fillDayFields,
+  isFieldEnabled,
   partIndexOf,
   partOptionMax,
   readDayFields,
+  readFieldValues,
   readSingleCell,
   type BAAHDayFields,
   type BAAHKeyFieldName,
@@ -97,13 +111,13 @@ interface Props {
   tableData: Record<string, any> | null
   currentMode: 'ALL' | 'Weekly'
   /**
-   * BAAH 两种排法都挤不进「简化视图」：多类混打 17 行、每天一类 3 行，
+   * BAAH 两种排法都挤不进「简化视图」：多类混打 23 行、每天一类 3 行，
    * 转置只会更难读，所以配置视图与简化视图共用这一张表。
    */
   viewMode: 'config' | 'simple'
   /**
-   * 关卡安排：每天一类（默认，三行各管一件事）或多类混打（每一位一行，共 17 行）。
-   * 两种排法都是一格一个下拉，只在「一行代表什么、整份 key 怎么组」上分叉，
+   * 关卡安排：每天一类（默认，三行各管一件事）或多类混打（每类一行开关加各自参数，共 23 行）。
+   * 两种排法的参数行都是一格一个下拉，只在「一行代表什么、整份 key 怎么组」上分叉，
    * 表格方向都是列 = 全局 / 周一~周日。
    */
   baahLayout: 'mixed' | 'single'
@@ -244,9 +258,23 @@ const configRows = computed(() => {
     ]
   }
 
-  // 多类混打：每一位各占一行（六类合起来 17 行），行标题写成「类名 · 位名」
-  return BAAH_PLAN_KEY_FIELDS.flatMap(field =>
-    field.parts.map((part, index) => ({
+  // 多类混打：每类先一行「启用」开关，再按位各占一行（六类合起来 23 行），
+  // 行标题写成「类名 · 位名」
+  return BAAH_PLAN_KEY_FIELDS.flatMap(field => [
+    {
+      rowKey: `${field.field}.enabled`,
+      rowKind: 'enabled',
+      field: field.field,
+      fieldName: `${t(field.labelKey)} · ${t('plan.baah.partEnabled')}`,
+      fieldHint: t(field.hintKey),
+      ...Object.fromEntries(
+        BAAH_PLAN_TIME_KEYS.map(timeKey => [
+          timeKey,
+          isFieldEnabled(localTableData.value[timeKey], field.field),
+        ])
+      ),
+    },
+    ...field.parts.map((part, index) => ({
       rowKey: `${field.field}.${index}`,
       rowKind: 'part',
       field: field.field,
@@ -258,11 +286,14 @@ const configRows = computed(() => {
       ...Object.fromEntries(
         BAAH_PLAN_TIME_KEYS.map(timeKey => [
           timeKey,
-          fillDayFields(localTableData.value[timeKey] ?? {})[field.field][index],
+          // 这一类今天没启用时参数行留空，免得填了却不生效
+          isFieldEnabled(localTableData.value[timeKey], field.field)
+            ? fillDayFields(localTableData.value[timeKey] ?? {})[field.field][index]
+            : undefined,
         ])
       ),
-    }))
-  )
+    })),
+  ])
 })
 
 /**
@@ -302,6 +333,22 @@ const handlePartChange = async (
   if (write.corrected) message.warning(t('plan.baah.partLevelZeroFixed'))
 
   await submitDayKey(timeKey, write.fields, previousFields)
+}
+
+/**
+ * 多类混打：开关关掉就把这一类写成空数组（今天不打），打开则补回参数。
+ * 打开时优先沿用原来填过的值，不会把用户改过的关卡重置成默认值。
+ */
+const handlePartEnabledChange = async (
+  timeKey: PlanTimeKey,
+  field: BAAHKeyFieldName,
+  checked: unknown
+) => {
+  const previousFields = localTableData.value[timeKey]
+  const filled = fillDayFields(previousFields ?? {})
+  const items = checked ? readFieldValues(previousFields, field) : []
+
+  await submitDayKey(timeKey, { ...filled, [field]: items }, previousFields)
 }
 
 const handleSingleKindChange = async (timeKey: PlanTimeKey, value: unknown) => {

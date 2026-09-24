@@ -3325,6 +3325,8 @@ export default {
       // The dropdown entry that stands for -1: the last raid-able stage, or the maximum run count
       stageHighest: 'Last raid-able',
       timesMax: 'Max runs',
+      // The switch row above each stage kind in the mixed layout
+      partEnabled: 'Enabled',
     },
     toast: {
       created: 'Created a new {type}: "{name}"',

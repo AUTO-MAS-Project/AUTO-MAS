@@ -2771,6 +2771,8 @@ export default {
       // -1 を表す選択肢：ステージは掃討できる最後のステージ、回数は最大
       stageHighest: '最後から1番目',
       timesMax: '最大回数',
+      // 複数種類レイアウトで各種別の上に付くスイッチ
+      partEnabled: '有効',
     },
     toast: {
       created: '新しい{type}「{name}」を作成しました',
