@@ -197,6 +197,7 @@ SCRIPT_BOOK = {
     "BetterGIConfig": BetterGIConfig,
     "ZzzOdConfig": ZzzOdConfig,
     "BAAHConfig": BAAHConfig,
+    "OkScriptConfig": OkScriptConfig,
 }
 USER_BOOK = {
     "MaaConfig": MaaUserConfig,
@@ -211,6 +212,7 @@ USER_BOOK = {
     "BetterGIConfig": BetterGIUserConfig,
     "ZzzOdConfig": ZzzOdUserConfig,
     "BAAHConfig": BAAHUserConfig,
+    "OkScriptConfig": OkScriptUserConfig,
 }
 
 
@@ -1316,6 +1318,51 @@ async def get_baah_activity_status_api(
         )
 
     return BlueArchiveActivityStatusOut(message="没有进行中或即将开始的活动")
+
+
+@router.post(
+    "/okscript/probe",
+    tags=["OkScript"],
+    summary="识别 ok-script 项目",
+    response_model=OkScriptProbeOut,
+    status_code=200,
+)
+async def probe_okscript_project_api(
+    body: OkScriptProbeIn = Body(...),
+) -> OkScriptProbeOut:
+    """识别安装目录里的 ok-script 项目，返回项目名、版本与一次性任务列表。"""
+
+    from app.task.OkScript.project import OkScriptProjectError, probe_project
+
+    try:
+        project = await asyncio.to_thread(probe_project, body.rootPath)
+    except OkScriptProjectError as e:
+        return OkScriptProbeOut(code=400, status="error", message=str(e))
+    except Exception as e:
+        logger.opt(exception=True).warning(
+            f"probe_okscript_project_api失败: {type(e).__name__}: {e}"
+        )
+        return OkScriptProbeOut(
+            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
+        )
+
+    return OkScriptProbeOut(
+        message=f"已识别 {project.app_name} {project.version}",
+        data=OkScriptProjectInfo(
+            appName=project.app_name,
+            version=project.version,
+            verified=project.verified,
+            tasks=[
+                OkScriptTaskItem(
+                    taskId=task.task_id,
+                    index=task.index,
+                    name=task.name,
+                    continuous=task.continuous,
+                )
+                for task in project.tasks
+            ],
+        ),
+    )
 
 
 @router.get(

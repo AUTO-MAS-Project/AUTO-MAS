@@ -1646,6 +1646,7 @@ class ScriptIndexItem(BaseModel):
         "BetterGIConfig",
         "ZzzOdConfig",
         "BAAHConfig",
+        "OkScriptConfig",
     ] = Field(..., description="配置类型")
 
 
@@ -1664,6 +1665,7 @@ class UserIndexItem(BaseModel):
         "BetterGIUserConfig",
         "ZzzOdUserConfig",
         "BAAHUserConfig",
+        "OkScriptUserConfig",
     ] = Field(..., description="配置类型")
 
 
@@ -2349,6 +2351,62 @@ class BAAHUserConfig(BaseModel):
     )
 
 
+class OkScriptUserConfig_Info(BaseModel):
+    Name: Optional[str] = Field(default=None, description="用户名")
+    Status: Optional[bool] = Field(default=None, description="用户状态")
+    RemainedDay: Optional[int] = Field(default=None, description="剩余天数")
+    Notes: Optional[str] = Field(default=None, description="备注")
+    Tag: Optional[str] = Field(
+        default=None, description="用户标签列表（JSON字符串，TagItem的dict列表）"
+    )
+
+
+class OkScriptUserConfig_Task(BaseModel):
+    TaskId: Optional[str] = Field(
+        default=None,
+        description="要运行的一次性任务（项目任务列表里的「模块.类名」）",
+    )
+    TaskName: Optional[str] = Field(
+        default=None, description="任务显示名（仅用于标签展示）"
+    )
+
+
+class OkScriptUserConfig_Data(BaseModel):
+    LastProxyDate: Optional[str] = Field(default=None, description="上次代理日期")
+    ProxyTimes: Optional[int] = Field(default=None, description="代理次数")
+    LastProxyStatus: Optional[str] = Field(
+        default=None, description="上次代理状态（未知/成功/失败）"
+    )
+
+
+class OkScriptUserConfig_Notify(BaseModel):
+    Enabled: Optional[bool] = Field(default=None, description="是否启用通知")
+    IfSendStatistic: Optional[bool] = Field(
+        default=None, description="是否发送统计信息"
+    )
+    IfSendMail: Optional[bool] = Field(default=None, description="是否发送邮件通知")
+    ToAddress: Optional[str] = Field(default=None, description="邮件接收地址")
+    IfServerChan: Optional[bool] = Field(
+        default=None, description="是否使用Server酱推送"
+    )
+    ServerChanKey: Optional[str] = Field(default=None, description="ServerChanKey")
+
+
+class OkScriptUserConfig(BaseModel):
+    Info: Optional[OkScriptUserConfig_Info] = Field(
+        default=None, description="用户信息"
+    )
+    Task: Optional[OkScriptUserConfig_Task] = Field(
+        default=None, description="任务配置"
+    )
+    Data: Optional[OkScriptUserConfig_Data] = Field(
+        default=None, description="用户数据"
+    )
+    Notify: Optional[OkScriptUserConfig_Notify] = Field(
+        default=None, description="单独通知"
+    )
+
+
 class GeneralConfig_Info(BaseModel):
     Name: Optional[str] = Field(default=None, description="脚本名称")
     RootPath: Optional[str] = Field(default=None, description="脚本根目录")
@@ -2633,6 +2691,60 @@ class BAAHConfig(BaseModel):
     Run: Optional[BAAHConfig_Run] = Field(default=None, description="运行配置")
     Emulator: Optional[BAAHConfig_Emulator] = Field(
         default=None, description="模拟器配置"
+    )
+
+
+class OkScriptConfig_Info(BaseModel):
+    Name: Optional[str] = Field(default=None, description="脚本名称")
+    RootPath: Optional[str] = Field(
+        default=None,
+        description="ok-script 项目安装根目录（含「项目名.exe」与 data 文件夹）",
+    )
+
+
+class OkScriptConfig_Run(BaseModel):
+    ProxyTimesLimit: Optional[int] = Field(
+        default=None, description="每日代理次数上限，0 表示不限"
+    )
+    RunTimesLimit: Optional[int] = Field(
+        default=None, description="单次任务最多运行次数（含首次）"
+    )
+    RunTimeLimit: Optional[int] = Field(
+        default=None,
+        description="日志停止更新的最长等待时间（分钟），超过即判为无法确认完成",
+    )
+
+
+class OkScriptConfig(BaseModel):
+    Info: Optional[OkScriptConfig_Info] = Field(
+        default=None, description="脚本基础信息"
+    )
+    Run: Optional[OkScriptConfig_Run] = Field(default=None, description="运行配置")
+
+
+class OkScriptProbeIn(BaseModel):
+    rootPath: str = Field(..., description="ok-script 项目安装根目录")
+
+
+class OkScriptTaskItem(BaseModel):
+    taskId: str = Field(..., description="任务 ID（项目任务列表里的「模块.类名」）")
+    index: int = Field(..., description="任务序号，即启动参数 -t 的值（从 1 开始）")
+    name: str = Field(..., description="任务显示名")
+    continuous: bool = Field(
+        ..., description="是否为持续触发任务（不会自行结束，暂不支持运行）"
+    )
+
+
+class OkScriptProjectInfo(BaseModel):
+    appName: str = Field(..., description="项目名（安装包应用名，如 ok-ef）")
+    version: str = Field(..., description="项目版本")
+    verified: bool = Field(..., description="是否为已验证可用的项目")
+    tasks: List[OkScriptTaskItem] = Field(..., description="一次性任务列表")
+
+
+class OkScriptProbeOut(OutBase):
+    data: Optional[OkScriptProjectInfo] = Field(
+        default=None, description="识别结果，识别失败时为空"
     )
 
 
@@ -4434,9 +4546,10 @@ class ScriptCreateIn(BaseModel):
         "BetterGI",
         "ZzzOd",
         "BAAH",
+        "OkScript",
     ] = Field(
         ...,
-        description="脚本类型: MAA脚本, 通用脚本, OK-WW脚本, OK-NTE脚本, SRC脚本, MaaEnd脚本, M9A脚本, MaaFW脚本, HSR脚本, BetterGI脚本, ZZZ-OD脚本, BAAH脚本",
+        description="脚本类型: MAA脚本, 通用脚本, OK-WW脚本, OK-NTE脚本, SRC脚本, MaaEnd脚本, M9A脚本, MaaFW脚本, HSR脚本, BetterGI脚本, ZZZ-OD脚本, BAAH脚本, OkScript通用脚本",
     )
     scriptId: str | None = Field(
         default=None, description="直接从该脚本ID复制创建, 仅在复制创建时使用"
@@ -4458,6 +4571,7 @@ class ScriptCreateOut(OutBase):
         BetterGIConfig,
         ZzzOdConfig,
         BAAHConfig,
+        OkScriptConfig,
     ] = Field(..., description="脚本配置数据")
 
 
@@ -4484,6 +4598,7 @@ class ScriptGetOut(OutBase):
             BetterGIConfig,
             ZzzOdConfig,
             BAAHConfig,
+            OkScriptConfig,
         ],
     ] = Field(..., description="脚本数据字典, key来自于index列表的uid")
 
@@ -4503,6 +4618,7 @@ class ScriptUpdateIn(BaseModel):
         BetterGIConfig,
         ZzzOdConfig,
         BAAHConfig,
+        OkScriptConfig,
     ] = Field(..., description="脚本更新数据")
 
 
@@ -4559,6 +4675,7 @@ class UserGetOut(OutBase):
             BetterGIUserConfig,
             ZzzOdUserConfig,
             BAAHUserConfig,
+            OkScriptUserConfig,
         ],
     ] = Field(..., description="用户数据字典, key来自于index列表的uid")
 
@@ -4578,6 +4695,7 @@ class UserCreateOut(OutBase):
         BetterGIUserConfig,
         ZzzOdUserConfig,
         BAAHUserConfig,
+        OkScriptUserConfig,
     ] = Field(..., description="用户配置数据")
 
 
@@ -4596,6 +4714,7 @@ class UserUpdateIn(UserInBase):
         BetterGIUserConfig,
         ZzzOdUserConfig,
         BAAHUserConfig,
+        OkScriptUserConfig,
     ] = Field(..., description="用户更新数据")
 
 

@@ -65,6 +65,7 @@ from .config import (
     MaaEndConfig,
     MaaFWConfig,
     OkNteConfig,
+    OkScriptConfig,
     OkwwConfig,
     SrcConfig,
     ZzzOdConfig,
@@ -139,6 +140,7 @@ _MANAGER_BOOK: dict[
     BetterGIConfig: lambda script_item, _ctx: task.BetterGIManager(script_item),
     ZzzOdConfig: lambda script_item, _ctx: task.ZzzOdManager(script_item),
     BAAHConfig: lambda script_item, _ctx: task.BAAHManager(script_item),
+    OkScriptConfig: lambda script_item, _ctx: task.OkScriptManager(script_item),
     MaaFWConfig: lambda script_item, _ctx: task.MaaFWEmbeddedManager(script_item),
     SrcConfig: _build_src_manager,
 }

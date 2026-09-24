@@ -5148,6 +5148,125 @@ class BAAHConfig(ConfigBase):
         super().__init__()
 
 
+class OkScriptUserConfig(ConfigBase):
+    """OkScript 通用用户配置（ok-script 线，直接使用项目原生配置）"""
+
+    def __init__(self) -> None:
+
+        ## Info ------------------------------------------------------------
+        ## 用户名称
+        self.Info_Name = ConfigItem("Info", "Name", "新用户", UserNameValidator())
+        ## 是否启用
+        self.Info_Status = ConfigItem("Info", "Status", True, BoolValidator())
+        ## 剩余天数
+        self.Info_RemainedDay = ConfigItem(
+            "Info", "RemainedDay", -1, RangeValidator(-1, 9999)
+        )
+        ## 备注
+        self.Info_Notes = ConfigItem("Info", "Notes", "无")
+        ## 用户标签信息
+        self.Info_Tag = ConfigItem(
+            "Info", "Tag", "[ ]", VirtualConfigValidator(self.getTags)
+        )
+
+        ## Task ------------------------------------------------------------
+        ## 要运行的一次性任务（上游 onetime_tasks 里的「模块.类名」，运行时换算成 -t 序号）
+        self.Task_TaskId = ConfigItem("Task", "TaskId", "")
+        ## 任务显示名（选择任务时记下，只用于标签展示）
+        self.Task_TaskName = ConfigItem("Task", "TaskName", "")
+
+        ## Data ------------------------------------------------------------
+        ## 上次代理日期
+        self.Data_LastProxyDate = ConfigItem(
+            "Data", "LastProxyDate", "2000-01-01", DateTimeValidator("%Y-%m-%d")
+        )
+        ## 代理次数
+        self.Data_ProxyTimes = ConfigItem(
+            "Data", "ProxyTimes", 0, RangeValidator(0, 9999)
+        )
+        ## 上次代理结果
+        self.Data_LastProxyStatus = ConfigItem(
+            "Data",
+            "LastProxyStatus",
+            "未知",
+            OptionsValidator(["未知", "成功", "失败"]),
+        )
+
+        ## Notify ----------------------------------------------------------
+        ## 是否启用通知
+        self.Notify_Enabled = ConfigItem("Notify", "Enabled", False, BoolValidator())
+        ## 是否发送统计信息
+        self.Notify_IfSendStatistic = ConfigItem(
+            "Notify", "IfSendStatistic", False, BoolValidator()
+        )
+        ## 是否发送邮件
+        self.Notify_IfSendMail = ConfigItem(
+            "Notify", "IfSendMail", False, BoolValidator()
+        )
+        ## 收件地址
+        self.Notify_ToAddress = ConfigItem("Notify", "ToAddress", "")
+        ## 是否启用 Server 酱
+        self.Notify_IfServerChan = ConfigItem(
+            "Notify", "IfServerChan", False, BoolValidator()
+        )
+        ## Server 酱密钥
+        self.Notify_ServerChanKey = ConfigItem("Notify", "ServerChanKey", "")
+        ## 自定义 Webhook 列表
+        self.Notify_CustomWebhooks = MultipleConfig([Webhook])
+
+        super().__init__()
+
+    def getTags(self) -> str:
+        """生成 OkScript 用户标签列表"""
+        tags = []
+
+        last_status = self.get("Data", "LastProxyStatus")
+        tags.append(
+            {"text": f"上次：{_tag_last_status(last_status)}", "color": "green"}
+        )
+
+        task_name = str(self.get("Task", "TaskName") or "").strip()
+        tags.append({"text": f"任务：{task_name or '未选择'}", "color": "orange"})
+
+        # 剩余天数标签
+        tags.append(_tag_remained_days(self))
+
+        # 备注标签
+        tags.append(_tag_notes(self))
+
+        return json.dumps(tags, ensure_ascii=False)
+
+
+class OkScriptConfig(ConfigBase):
+    """OkScript 通用配置（ok-script 线）"""
+
+    def __init__(self) -> None:
+
+        ## Info ------------------------------------------------------------
+        ## 脚本名称
+        self.Info_Name = ConfigItem("Info", "Name", "新 OkScript 脚本")
+        ## ok-script 项目安装根目录（含「项目名.exe」与 data 文件夹）
+        self.Info_RootPath = ConfigItem("Info", "RootPath", "", FileValidator())
+
+        ## Run -------------------------------------------------------------
+        ## 每日代理次数上限
+        self.Run_ProxyTimesLimit = ConfigItem(
+            "Run", "ProxyTimesLimit", 0, RangeValidator(0, 9999)
+        )
+        ## 单次任务最多运行次数（含首次）
+        self.Run_RunTimesLimit = ConfigItem(
+            "Run", "RunTimesLimit", 2, RangeValidator(1, 9999)
+        )
+        ## 日志停止更新的最长等待时间（分钟），超过即判为无法确认完成
+        self.Run_RunTimeLimit = ConfigItem(
+            "Run", "RunTimeLimit", 30, RangeValidator(1, 9999)
+        )
+
+        self.UserData = MultipleConfig([OkScriptUserConfig])
+
+        super().__init__()
+
+
 CLASS_BOOK = {
     "MAA": MaaConfig,
     "MaaEnd": MaaEndConfig,
@@ -5161,6 +5280,7 @@ CLASS_BOOK = {
     "BetterGI": BetterGIConfig,
     "ZzzOd": ZzzOdConfig,
     "BAAH": BAAHConfig,
+    "OkScript": OkScriptConfig,
 }
 """配置类映射表: 脚本类型键 → 配置类, GlobalConfig 的脚本配置列表由此派生"""
 
