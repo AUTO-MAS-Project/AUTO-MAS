@@ -788,6 +788,23 @@ export default {
     stringSplittingGuide: '字符串切割指南',
     done: '完成',
     createFirstUser: '创建第一个用户！',
+    shellImportTitle: '导入已有配置为用户',
+    shellImportHint:
+      '在项目目录里找到 {count} 份 {source} 配置。勾选的每一份会创建一个用户，用户名就是配置名，任务队列和任务选项一起导入；不勾选就只建一个空的新用户。',
+    shellImportSelectAll: '全选',
+    shellImportSelectedCount: '已选 {selected} / {total}',
+    shellImportActive: '当前使用中',
+    shellImportTaskCount: '{count} 个任务',
+    shellImportUserName: '用户名：{name}',
+    shellImportButton: '导入 {count} 个用户',
+    shellImporting: '正在导入…',
+    shellImportFailedHead: '{count} 份配置没能导入：',
+    shellImportFailedLine: '「{name}」：{reason}',
+    shellImportSkippedLine: '「{name}」跳过了 {count} 项：{items}',
+    shellImportSkippedLineMore: '「{name}」跳过了 {items} 等 {count} 项',
+    shellImportListSeparator: '、',
+    shellImportAllFailed: '没能导入已有配置，改为新建一个空用户',
+    shellImportAllFailedWithReason: '没能导入已有配置，改为新建一个空用户：{reason}',
     wutheringWavesWillBe:
       '将按所选服务器检查并更新鸣潮，更新过程可能下载数 GB 数据，请确保游戏未在运行',
     turnAutomaticRelicSalvage:

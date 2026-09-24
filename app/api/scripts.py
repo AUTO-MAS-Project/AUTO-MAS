@@ -37,6 +37,7 @@ from app.models.schema import *
 from app.task.MaaFW.api_service import agent_env as maafw_agent_env_api
 from app.task.MaaFW.api_service import embedded as maafw_embedded_api
 from app.task.MaaFW.api_service import interface as maafw_interface_api
+from app.task.MaaFW.api_service import shell_instances as maafw_shell_instances_api
 from app.task.MaaFW.api_service import update as maafw_update_api
 from app.utils import get_logger
 from app.utils.constants import UTC8
@@ -1031,6 +1032,43 @@ async def clone_maafw_embedded(
         payload.scriptId, payload.sourceScriptId
     )
     return MaaFWEmbeddedStatusOut(**reply.out_fields())
+
+
+@router.post(
+    "/maafw/shell-instances",
+    tags=["MaaFW"],
+    summary="列出项目目录里外壳（MFAAvalonia / MXU / MFW-PyQt6）保存的配置实例",
+    response_model=MaaFWShellInstancesOut,
+    status_code=200,
+)
+async def list_maafw_shell_instances(
+    payload: MaaFWShellInstancesIn = Body(...),
+) -> MaaFWShellInstancesOut:
+    """新建脚本引导最后一步用：外壳里配好的每份实例都可以导入成一个用户。只读外壳文件。"""
+
+    reply = await maafw_shell_instances_api.list_shell_instances(payload.scriptId)
+    return MaaFWShellInstancesOut(**reply.out_fields())
+
+
+@router.post(
+    "/maafw/shell-instances/import",
+    tags=["MaaFW"],
+    summary="把选中的外壳配置实例导入成用户",
+    response_model=MaaFWShellInstanceImportOut,
+    status_code=200,
+)
+async def import_maafw_shell_instances(
+    payload: MaaFWShellInstanceImportIn = Body(...),
+) -> MaaFWShellInstanceImportOut:
+    """每个实例建一个用户：用户名取实例名，任务队列与任务选项一起导入。
+
+    逐个实例独立处理，失败原因与当前项目里对不上而跳过的任务 / 选项写在各项结果里。
+    """
+
+    reply = await maafw_shell_instances_api.import_shell_instances(
+        payload.scriptId, payload.instanceIds
+    )
+    return MaaFWShellInstanceImportOut(**reply.out_fields())
 
 
 @router.post(

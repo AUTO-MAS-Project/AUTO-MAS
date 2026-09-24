@@ -4,6 +4,7 @@ import importlib.util
 import logging
 import os
 import re
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -379,6 +380,23 @@ def interface_display_name(root_path: str | Path, interface: MaaFWInterface) -> 
         if name:
             return name
     return ""
+
+
+def interface_text_translator(
+    root_path: str | Path, interface: MaaFWInterface
+) -> Callable[[str | None], str | None]:
+    """按项目简体中文语言文件翻 ``$键`` 文案的函数，与预览里的 label 同一口径。
+
+    语言文件只读一次；翻不出来（没有语言文件、缺键、不是 ``$`` 开头）原样返回。
+    """
+
+    mapping = _load_i18n_mapping(Path(root_path).resolve(), interface)
+
+    def translate(value: str | None) -> str | None:
+        translated = _resolve_i18n_value(value, mapping)
+        return translated if isinstance(translated, str) else value
+
+    return translate
 
 
 def _load_i18n_mapping(root_path: Path, interface: MaaFWInterface) -> dict[str, Any]:
