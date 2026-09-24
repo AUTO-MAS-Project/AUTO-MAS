@@ -51,8 +51,10 @@ const CLOSE_READY_TIMEOUT = 30000
 // 收到 ready 后等待后端进程正常退出的时限，超时才允许 taskkill
 const PROCESS_EXIT_TIMEOUT = 5000
 const PROCESS_POLL_INTERVAL = 300
-// 后端自动重启
+// 后端自动重启：时间窗内累计达到上限即进入恢复失败终态。不能按「重新连上就清零」计数：
+// 后端能接受 WS 随即崩溃时，每次恢复都会先连上再断开，计数永远到不了上限，变成无限重启
 const MAX_BACKEND_RESTART_ATTEMPTS = 3
+const BACKEND_RESTART_WINDOW_MS = 600000
 const RESTART_DELAY = 2000
 // 一轮重连失败后，后端进程仍存活时的下一轮延迟
 const NEXT_CYCLE_DELAY = 30000
@@ -64,7 +66,7 @@ const INTENTIONAL_RESTART_RETRY_DELAY = 3000
 // 永久滞留，否则之后真正的事故也不再提示与自动恢复。按最慢的一次后端更新取上限：
 // 拉取源码 + 装依赖可达数分钟
 const INTENTIONAL_RESTART_TIMEOUT = 600000
-// 倒计时消息停止更新后自动清除展示状态
+// 倒计时消息停止更新后自动清除展示状态；主连接断开期间只标记连接中断、不清除
 const POWER_COUNTDOWN_STALE_MS = 3000
 // 断开提示的通知 key：同一次断开只保留一条，重连成功后按 key 收起
 const DISCONNECT_NOTICE_KEY = 'app-lifecycle-disconnect'
@@ -93,8 +95,10 @@ let closeViaRuntime = false
 let restartPromise: Promise<void> | null = null
 let disconnectRecoveryPromise: Promise<void> | null = null
 let resumeRecoveryPromise: Promise<void> | null = null
-let backendRestartAttempts = 0
+// 每次自动重启后端的发起时刻，只保留 BACKEND_RESTART_WINDOW_MS 内的
+let backendRestartTimestamps: number[] = []
 let restartFailureShown = false
+let closeRestartFailureModal: (() => void) | null = null
 let disconnectIncidentShown = false
 let closeDisconnectModal: (() => void) | null = null
 
@@ -109,6 +113,8 @@ let powerMutationSequence = 0
 
 const backendStatus: Ref<BackendStatus> = ref('unknown')
 const powerCountdown: Ref<WSPowerCountdownData | null> = ref(null)
+// 倒计时推送因主连接断开而中断：弹窗保留（仍可取消），剩余秒数停在最后一次推送
+const powerCountdownDisconnected: Ref<boolean> = ref(false)
 
 let powerCountdownStaleTimer: number | undefined
 
@@ -152,16 +158,30 @@ const handleCloseRequested = (): void => {
   })
 }
 
+const armPowerCountdownStaleTimer = (): void => {
+  powerCountdownStaleTimer = window.setTimeout(() => {
+    powerCountdownStaleTimer = undefined
+    if (connectionState().value !== 'open') {
+      // 断开期间收不到逐秒推送，不代表倒计时已结束：保留弹窗给用户留取消入口，
+      // 标记连接中断后继续观察，重新连上后由快照或新推送接管
+      powerCountdownDisconnected.value = true
+      armPowerCountdownStaleTimer()
+      return
+    }
+    // 连接正常而更新停止（已执行或已结束）：清除展示状态
+    powerCountdown.value = null
+    powerCountdownDisconnected.value = false
+  }, POWER_COUNTDOWN_STALE_MS)
+}
+
 const handlePowerCountdownUpdated = (data: WSPowerCountdownData): void => {
   powerMutationSequence++
   powerCountdown.value = data
+  powerCountdownDisconnected.value = false
   if (powerCountdownStaleTimer !== undefined) {
     window.clearTimeout(powerCountdownStaleTimer)
   }
-  // 倒计时更新停止（已执行或后端消失）后清除展示状态
-  powerCountdownStaleTimer = window.setTimeout(() => {
-    powerCountdown.value = null
-  }, POWER_COUNTDOWN_STALE_MS)
+  armPowerCountdownStaleTimer()
 }
 
 const handlePowerCountdownCancelled = (): void => {
@@ -172,6 +192,17 @@ const handlePowerCountdownCancelled = (): void => {
     powerCountdownStaleTimer = undefined
   }
   powerCountdown.value = null
+  powerCountdownDisconnected.value = false
+}
+
+/**
+ * 经 HTTP 取消电源倒计时，成功后立即在本地清除展示状态。
+ * 主连接断开期间后端回发的 power.countdown.cancelled 收不到，不能只等它来关弹窗。
+ * 请求失败时向调用方抛出，展示状态不变。
+ */
+const cancelPowerCountdown = async (): Promise<void> => {
+  await Service.cancelPowerTaskApiDispatchCancelPowerPost()
+  handlePowerCountdownCancelled()
 }
 
 const refreshLifecycleSnapshots = async (): Promise<void> => {
@@ -204,8 +235,9 @@ const refreshLifecycleSnapshots = async (): Promise<void> => {
 }
 
 const handleConnected = async (): Promise<void> => {
-  backendRestartAttempts = 0
-  restartFailureShown = false
+  // 重新连上（系统恢复后重连、手动重连）说明后端实际可用：撤掉恢复失败终态和它的弹窗。
+  // 自动重启计数不在这里清零，按时间窗累计
+  dismissRestartFailure()
   backendStatus.value = 'running'
   endIntentionalBackendRestart('后端已重新连上')
   dismissDisconnectIncident()
@@ -387,8 +419,16 @@ const runCloseFlow = async (): Promise<void> => {
     return
   }
 
+  // 主连接不在 open（断线中，或初始化阶段从未建立）时 ready 无从送达，也不会再有断开事件
+  // 替它解除等待：不等 ready，POST /close 后改以后端进程退出作为收尾完成的信号
+  const connectionOpen = connectionState().value === 'open'
+  if (!connectionOpen) {
+    logger.warn(`主 WebSocket 未连接（${connectionState().value}），不等待 backend.shutdown.ready`)
+  }
   // 先挂好 ready 等待，再发 POST /close，避免消息先于等待到达
-  const readyPromise = waitForShutdownReady(CLOSE_READY_TIMEOUT)
+  const readyPromise = connectionOpen
+    ? waitForShutdownReady(CLOSE_READY_TIMEOUT)
+    : Promise.resolve(false)
 
   try {
     await Service.closeApiCoreClosePost()
@@ -404,11 +444,14 @@ const runCloseFlow = async (): Promise<void> => {
     // 不等待进程退出、不 taskkill，直接关闭前端
     logger.info('开发模式：后端保持运行，前端直接退出')
     backendExitConfirmed = true
-  } else if (ready) {
+  } else if (ready || !connectionOpen) {
     // ready 表示 teardown 已完成；从此刻起给进程完整的正常退出窗口，
     // 不能让 ready 到达较晚而把退出观察期压缩到接近 0。
+    // 主连接未连接时收不到 ready：后端若已崩溃，第一次轮询即确认退出；若仍存活，
+    // /close 立即返回、teardown 在后台进行（停止全部任务、关模拟器与游戏），完成后后端自行退出。
+    // 这时进程退出就是 ready 的替身，等待时限沿用 ready 的时限，不能提前 taskkill 打断收尾
     logger.info('等待后端进程正常退出')
-    const exited = await waitForBackendExit(PROCESS_EXIT_TIMEOUT)
+    const exited = await waitForBackendExit(ready ? PROCESS_EXIT_TIMEOUT : CLOSE_READY_TIMEOUT)
     backendExitConfirmed = exited
     if (!backendExitConfirmed) {
       logger.warn('后端进程未在规定时间内退出')
@@ -498,7 +541,7 @@ const showRestartFailureModal = (): void => {
   backendStatus.value = 'error'
   stopReconnect()
 
-  Modal.error({
+  const modal = Modal.error({
     title: t('misc.couldNotRecoverBackend'),
     content: t('misc.backendStillCannotConnect'),
     okText: t('misc.restartApp'),
@@ -515,6 +558,22 @@ const showRestartFailureModal = (): void => {
       }
     },
   })
+  if (modal && typeof modal.destroy === 'function') {
+    closeRestartFailureModal = () => modal.destroy()
+  }
+}
+
+const dismissRestartFailure = (): void => {
+  restartFailureShown = false
+  closeRestartFailureModal?.()
+  closeRestartFailureModal = null
+}
+
+/** 清掉时间窗外的记录，返回窗口内已发起的自动重启次数 */
+const countRecentBackendRestarts = (): number => {
+  const windowStart = Date.now() - BACKEND_RESTART_WINDOW_MS
+  backendRestartTimestamps = backendRestartTimestamps.filter(startedAt => startedAt > windowStart)
+  return backendRestartTimestamps.length
 }
 
 const restartBackendFlow = (allowDevMode: boolean = false): Promise<void> => {
@@ -532,15 +591,17 @@ const restartBackendFlow = (allowDevMode: boolean = false): Promise<void> => {
     scheduleReconnect(DEV_MODE_RETRY_DELAY)
     return Promise.resolve()
   }
-  if (backendRestartAttempts >= MAX_BACKEND_RESTART_ATTEMPTS) {
+  if (countRecentBackendRestarts() >= MAX_BACKEND_RESTART_ATTEMPTS) {
     showRestartFailureModal()
     return Promise.resolve()
   }
 
   const run = async (): Promise<void> => {
-    backendRestartAttempts++
+    backendRestartTimestamps.push(Date.now())
     backendStatus.value = 'starting'
-    logger.warn(`尝试恢复后端服务 (第 ${backendRestartAttempts} 次)`)
+    logger.warn(
+      `尝试恢复后端服务 (${BACKEND_RESTART_WINDOW_MS / 60000} 分钟内第 ${backendRestartTimestamps.length} 次)`
+    )
 
     try {
       let result: { success: boolean; error?: string; logs?: string } | undefined
@@ -556,7 +617,7 @@ const restartBackendFlow = (allowDevMode: boolean = false): Promise<void> => {
       if (!result?.success) {
         backendStatus.value = 'error'
         logger.error(`后端恢复失败: ${result?.error ?? '未知错误'}`)
-        if (backendRestartAttempts >= MAX_BACKEND_RESTART_ATTEMPTS) {
+        if (countRecentBackendRestarts() >= MAX_BACKEND_RESTART_ATTEMPTS) {
           showRestartFailureModal()
         } else if (!isClosing()) {
           scheduleReconnect(RESTART_DELAY)
@@ -577,7 +638,7 @@ const restartBackendFlow = (allowDevMode: boolean = false): Promise<void> => {
       backendStatus.value = 'error'
       const errorMsg = error instanceof Error ? error.message : String(error)
       logger.error(`后端恢复异常: ${errorMsg}`)
-      if (backendRestartAttempts >= MAX_BACKEND_RESTART_ATTEMPTS) {
+      if (countRecentBackendRestarts() >= MAX_BACKEND_RESTART_ATTEMPTS) {
         showRestartFailureModal()
       } else if (!isClosing()) {
         scheduleReconnect(RESTART_DELAY)
@@ -774,10 +835,13 @@ const handleSystemResume = (): Promise<void> => {
     if (isClosing()) return
 
     if (running === false || !httpReachable) {
+      // 已处于恢复失败终态时 restartBackendFlow 直接返回：终态只停自动重启，弹窗保留
       await restartBackendFlow()
       return
     }
 
+    // 后端确实可达：终态下也照常重连，连上后由 handleConnected 撤掉终态与失败弹窗，
+    // 不能让「仍无法连接」的弹窗留在已经恢复的应用上
     await reconnectNow('系统从睡眠恢复')
   })().finally(() => {
     resumeRecoveryPromise = null
@@ -867,8 +931,10 @@ export async function connectWithRetry(
 export async function manualReconnect(): Promise<boolean> {
   if (isClosing()) return false
   stopReconnect()
-  restartFailureShown = false
-  backendRestartAttempts = 0
+  // 连同失败弹窗一起撤掉，否则再次进入终态时旧弹窗失去句柄、叠在新弹窗下
+  dismissRestartFailure()
+  // 用户显式介入：重新给自动恢复完整的次数
+  backendRestartTimestamps = []
   const connected = await reconnectNow('用户手动重连')
   if (connected) backendStatus.value = 'running'
   return connected
@@ -883,6 +949,8 @@ export function useAppLifecycle() {
     manualReconnect,
     backendStatus,
     powerCountdown,
+    powerCountdownDisconnected,
+    cancelPowerCountdown,
     connectionState: connectionState(),
   }
 }

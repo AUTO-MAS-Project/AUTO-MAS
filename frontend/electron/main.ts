@@ -519,9 +519,11 @@ async function forceQuitAfterRendererTimeout(reason: string): Promise<void> {
       coordinatedQuit,
       forceQuitInProgress,
       quitRequestInFlight,
+      relaunchAfterQuit,
     })
     forceQuitInProgress = retryableState.forceQuitInProgress
     quitRequestInFlight = retryableState.quitRequestInFlight
+    relaunchAfterQuit = retryableState.relaunchAfterQuit
     if (mainWindow && !mainWindow.isDestroyed()) {
       showMainWindow()
     } else if (app.isReady()) {

@@ -147,6 +147,8 @@ export default {
     cancelDownload: 'Cancel the download',
     cancellingDeletesUnfinishedDownload: 'Cancelling deletes the unfinished download.',
     cancel2: 'Cancel',
+    powerCountdownConnectionLost:
+      'Lost connection to the backend. The countdown may still be running; the remaining time is no longer updated.',
     cancelUpdateDownload: 'Cancel the update download?',
     visualSelection: 'Visual selection',
     downloadBackground: 'Download in the background',
