@@ -1158,37 +1158,42 @@ class MaaUserConfig(ConfigBase):
         else:
             tags.append({"text": "基建：关闭", "color": "red"})
 
-        # 关卡信息标签
-        if self.get("Info", "StageMode") == "Fixed":
-            plan_data = {
-                stage_key: self.get_stage_zh(self.get("Info", stage_key))
-                for stage_key in MAA_STAGE_KEY[2:]
-            }
-            tag_color = "blue"
-        else:
-            plan = self.related_config["PlanConfig"][
-                uuid.UUID(self.get("Info", "StageMode"))
-            ]
-            if isinstance(plan, MaaPlanConfig):
+        # 活动关优先标签：独立任务，只看自身开关，不受理智作战开关影响
+        if self.get("Task", "IfActivityFirst"):
+            tags.append({"text": "活动关优先", "color": "cyan"})
+
+        # 关卡信息标签：只在理智作战开启时显示
+        if self.get("Task", "IfFight"):
+            if self.get("Info", "StageMode") == "Fixed":
                 plan_data = {
-                    stage_key: self.get_stage_zh(
-                        plan.get_current_info(stage_key).getValue()
-                    )
+                    stage_key: self.get_stage_zh(self.get("Info", stage_key))
                     for stage_key in MAA_STAGE_KEY[2:]
                 }
-                tag_color = "green"
-        # 主关卡
-        tags.append({"text": f"主关卡：{plan_data['Stage']}", "color": tag_color})
-        # 备选关卡（合并显示）
-        backup_stages = [
-            plan_data[f"Stage_{i}"]
-            for i in range(1, 4)
-            if plan_data[f"Stage_{i}"] != "禁用"
-        ]
-        if backup_stages:
-            tags.append(
-                {"text": f"备选：{', '.join(backup_stages)}", "color": tag_color}
-            )
+                tag_color = "blue"
+            else:
+                plan = self.related_config["PlanConfig"][
+                    uuid.UUID(self.get("Info", "StageMode"))
+                ]
+                if isinstance(plan, MaaPlanConfig):
+                    plan_data = {
+                        stage_key: self.get_stage_zh(
+                            plan.get_current_info(stage_key).getValue()
+                        )
+                        for stage_key in MAA_STAGE_KEY[2:]
+                    }
+                    tag_color = "green"
+            # 主关卡
+            tags.append({"text": f"主关卡：{plan_data['Stage']}", "color": tag_color})
+            # 备选关卡（合并显示）
+            backup_stages = [
+                plan_data[f"Stage_{i}"]
+                for i in range(1, 4)
+                if plan_data[f"Stage_{i}"] != "禁用"
+            ]
+            if backup_stages:
+                tags.append(
+                    {"text": f"备选：{', '.join(backup_stages)}", "color": tag_color}
+                )
 
         # 备注标签
         tags.append(_tag_notes(self))
