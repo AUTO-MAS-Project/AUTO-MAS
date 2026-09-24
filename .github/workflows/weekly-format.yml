@@ -5,7 +5,7 @@ name: Scheduled formatting
 
 on:
   schedule:
-    # GitHub Actions 使用 UTC，此处对应北京时间每周一 03:00。
+    # GitHub Actions 使用 UTC；此 cron 在北京时间每周一 03:00（UTC 周日 19:00）触发。
     # 避开 0 点的 github runner 高峰时段。
     - cron: '0 19 * * 0'
   workflow_dispatch:
