@@ -571,24 +571,34 @@ const addTaskMenuGroups = computed(() => {
 
   return Array.from(groupMap.values()).filter(group => group.taskCount > 0)
 })
-const addTaskCascaderOptions = computed<AddTaskCascaderOption[]>(() =>
-  addTaskMenuGroups.value.map(group => ({
+/** 分组里的项 → 级联选项：任务直接可选，二级分组再展开一层 */
+const toCascaderItems = (items: AddTaskMenuGroup['items']): AddTaskCascaderOption[] =>
+  items.map(item =>
+    item.type === 'task'
+      ? { value: `task:${item.task.name}`, label: item.label }
+      : {
+          value: item.key,
+          label: `${item.label} (${item.taskCount})`,
+          children: item.tasks.map(task => ({
+            value: `task:${task.name}`,
+            label: getDisplayName(task),
+          })),
+        }
+  )
+
+const addTaskCascaderOptions = computed<AddTaskCascaderOption[]>(() => {
+  const groups = addTaskMenuGroups.value
+  // interface 没给任务分组时只有一档「未分组」，再套一层级联就成了「左栏一个选项、
+  // 右栏一长条」，比直接铺开更难找。这种情况把任务提到顶层，去掉那层壳。
+  if (groups.length === 1 && groups[0].key === ADD_TASK_UNGROUPED_KEY) {
+    return toCascaderItems(groups[0].items)
+  }
+  return groups.map(group => ({
     value: `group:${group.key}`,
     label: `${group.label} (${group.taskCount})`,
-    children: group.items.map(item =>
-      item.type === 'task'
-        ? { value: `task:${item.task.name}`, label: item.label }
-        : {
-            value: item.key,
-            label: `${item.label} (${item.taskCount})`,
-            children: item.tasks.map(task => ({
-              value: `task:${task.name}`,
-              label: getDisplayName(task),
-            })),
-          }
-    ),
+    children: toCascaderItems(group.items),
   }))
-)
+})
 const presetTemplates = computed(() => {
   const activeTaskByName = new Map(activeTasks.value.map(task => [task.name, task] as const))
   return presetOptions.value
