@@ -34,6 +34,7 @@
 
 ### 新增
 
+- 【MSS】新增星塔旅人脚本类型，支持悬赏试炼计划表与活动编排 (#959) by @beichen24a1
 - 【MFW】MFW 改在副本上运行、同项目多脚本共用文件，M9A 并入 MFW 自动迁移，兼容更多 MFW 项目 (#973) by @qiyinxi
 - 【MFW】新建脚本引导最后一步可从 MFAAvalonia、MXU、MFW-PyQt6 的配置直接导入用户 (#997) by @qiyinxi
 - 【模拟器】MuMu 新增启动前强力清理开关，避免已有实例导致无法以管理员身份启动 (#683) by @qiyinxi
