@@ -961,6 +961,9 @@ export default {
     mfwGamePackageNamePassed:
       'エミュレータ起動と同時にゲームを起動します。interface の読み込み時やリソース切替時にプロジェクトの pipeline から判別して自動入力します。判別できない場合や候補が複数ある場合は空欄のままで起動せず、ここに手動で入力できます',
     mfwGamePackageNamePlaceholder: '例: com.hypergryph.arknights',
+    mfwGameUpdateOff: 'オフ',
+    mfwGameUpdateCheck: '確認のみ（古い場合は手動更新を案内）',
+    mfwGameUpdateAutoInstall: '自動でダウンロードしてインストール',
     maaendScriptConfiguration: 'MaaEnd スクリプト設定',
     maaendPath: 'MaaEnd のパス',
     maaendAdapterStillUnder: 'MaaEnd 専用アダプターはテスト中です。問題があれば参加してください：',
@@ -1555,6 +1558,8 @@ export default {
       'アカウントを入力すると「アカウント切替」タスクが自動で追加されます（公式サーバーのみ）。パスワードはローカルのメモ用で、スクリプトには渡されません',
     m9aFlavorQueueHint:
       'ゲーム起動・ゲーム終了・アカウント切替は M9A 専用処理が自動で追加します。手動で追加する必要はありません',
+    m9aFlavorGameUpdateHint:
+      'エミュレーター起動後、ゲームクライアントを公式サイトの最新版と比較します。公式サーバーのみ対象です（bilibili サーバーなど他のリソースは確認しません）。古い場合：「確認のみ」は今回の実行を失敗にして手動更新を案内し、「自動でダウンロードしてインストール」は約 2 GB の公式インストーラーをダウンロードして上書きインストールします（ゲームデータは保持されます）',
     mssFlavorScriptTitle: 'MSS スクリプトを編集',
     mssFlavorSourceDirectory: 'MSS プログラムディレクトリ',
     mssFlavorSourceHint: 'interface.json を含む MaaStellaSora ディレクトリを選択します',

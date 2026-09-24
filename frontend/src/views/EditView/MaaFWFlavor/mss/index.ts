@@ -29,6 +29,7 @@ export const MSS_FLAVOR: MaaFWFlavor = {
   accountPlaceholderKey: 'edit.localNoteOnly',
   accountTooltipKey: 'edit.maafwAccountRecordTooltip',
   queueHintKey: 'edit.mssFlavorQueueHint',
+  gameUpdateHintKey: null,
   slots: {
     userBeforeTaskQueue: [
       defineMaaFWFlavorSlotComponent(() => import('./MSSPlanModeField.vue')),

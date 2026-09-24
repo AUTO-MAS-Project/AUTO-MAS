@@ -99,6 +99,7 @@
             :adb-control-strategy-items="adbControlStrategyItems"
             :selected-emulator-label="selectedEmulatorLabel"
             :interface-dependent-disabled="interfaceDependentDisabled"
+            :game-update-hint-key="flavor.gameUpdateHintKey"
             @change="handleChange"
             @controller-change="handleControllerChange"
             @resource-change="handleResourceChangeWithPackage"

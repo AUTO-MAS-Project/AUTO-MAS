@@ -1,7 +1,7 @@
 # app/task/M9A — M9A 是 MaaFW 的特调类型，不是专项
 
 进这个目录之前先读 `app/task/MaaFW/AGENTS.md`：M9A 的运行、更新、内嵌副本、通知、失败截图、
-周期任务、代理次数……全部是 MaaFW 引擎的既有语义，这里一行都没有重写。本目录只有两个文件：
+周期任务、代理次数……全部是 MaaFW 引擎的既有语义，这里一行都没有重写。本目录只有三个文件：
 
 - `flavor.py`：`FLAVOR` 对象（满足 `app/task/MaaFW/tools/embedded/flavor.py` 的 `MaaFWFlavor` 协议）。
   它做的事穷举如下，多一件都没有：
@@ -12,6 +12,16 @@
      `Close1999` 放尾；脚本资源为「官服」且用户 `Info.Account` 非空时在启动之后插 entry `SwitchAccount`
      并把账号填进它第一个 input 选项。队列里已有的不重复加、不改用户自己配的选项；按 entry 找不到就写
      一行用户日志跳过。**不**过滤 standalone、**不**结束 `M9A.exe`、**不**碰重试 / 周期 / 超时 / 更新。
+  3. `ensure_game_updated(...)`：引擎的**可选**游戏更新钩子（契约写在 MaaFW `flavor.py` 的模块
+     说明里，不在协议里），转给 `game_update.py`。
+- `game_update.py`：脚本 `Run.GameUpdateMode` 不是 `Off` 时，模拟器启动后、第一个任务前比对
+  官服客户端版本。只查资源为「官服」且拉起的包名是 `com.shenlan.m.reverse1999` 的，其余 `Skipped`。
+  直链取自官网版本配置接口（`pageVersion` 从官网 `assets/js/api.js` 里读，读不出用写死的兜底值），
+  版本号按 HTTP Range 只读直链安装包的清单（`app/utils/game_apk.fetch_remote_apk_version`，直链文件名
+  里没有版本号）。本机 versionCode 高于官网包（其他渠道装的，如 MuMu 应用中心：3.9.0 是 210、
+  官网 4.0.0 是 170）时 Android 不许降级、官网包永远装不上，两种模式都直接判失败、不下载。
+  否则落后时 `Check` 判失败提示手动更新，`AutoInstall` 下载到 `data/GameApk` 后
+  `adb install -r`、装完复查，安装包成败都删。下载 / 安装各 60 分钟上限，写死不做配置。
 - `migration.py`：旧版 M9A 专项配置（`Run.IfPsychubeDailyOnce`、`Task.Queue`、`Data.LastPsychubeDate`…）
   → MaaFW 形状的一次性迁移，以及「通用 MaaFW 脚本指向 M9A 项目 → 换类型标签」。在
   `Config.init_config` 里 **`ScriptConfig.connect()` 之前**改原始 JSON（`ConfigBase.load` 只认类里

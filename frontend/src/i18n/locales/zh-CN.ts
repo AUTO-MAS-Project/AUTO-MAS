@@ -990,6 +990,9 @@ export default {
     mfwGamePackageNamePassed:
       '启动模拟器时顺带把游戏拉起来。读取 interface 或切换资源时会从项目的 pipeline 里识别并自动填入；识别不出或识别到多个时留空、运行时不启动游戏，可在此手动填写',
     mfwGamePackageNamePlaceholder: '如 com.hypergryph.arknights',
+    mfwGameUpdateOff: '关闭',
+    mfwGameUpdateCheck: '仅检查（落后时提示手动更新）',
+    mfwGameUpdateAutoInstall: '自动下载安装',
     maaendScriptConfiguration: 'MaaEnd 脚本配置',
     maaendPath: 'MaaEnd 路径',
     maaendAdapterStillUnder: 'MaaEnd专项还在积极测试中，如有问题请加入',
@@ -1592,6 +1595,8 @@ export default {
     m9aFlavorAccountTooltip:
       '账号填写后会自动加入「切换账号」任务（官服有效）；密码仅用于本地记录，不会传入脚本',
     m9aFlavorQueueHint: '启动游戏、关闭游戏与切换账号由 M9A 专项自动加入，无需手动添加',
+    m9aFlavorGameUpdateHint:
+      '启动模拟器后比对游戏客户端与官网最新版本，只对官服生效（B 服等其他资源不检查）。落后时：「仅检查」让本次运行失败并提示手动更新；「自动下载安装」下载约 2 GB 的官方安装包并覆盖安装，保留游戏数据',
     mssFlavorScriptTitle: '编辑 MSS 脚本',
     mssFlavorSourceDirectory: 'MSS 程序目录',
     mssFlavorSourceHint: '选择包含 interface.json 的 MaaStellaSora（星塔助手）目录',

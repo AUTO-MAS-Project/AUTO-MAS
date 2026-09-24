@@ -1012,6 +1012,9 @@ export default {
     mfwGamePackageNamePassed:
       'Launch the game together with the emulator. Detected from the project pipeline and filled in when the interface is read or the resource changes; when detection finds nothing or several candidates it stays empty, the game is not launched, and you can fill it in here',
     mfwGamePackageNamePlaceholder: 'e.g. com.hypergryph.arknights',
+    mfwGameUpdateOff: 'Off',
+    mfwGameUpdateCheck: 'Check only (ask to update manually when outdated)',
+    mfwGameUpdateAutoInstall: 'Download and install automatically',
     maaendScriptConfiguration: 'MaaEnd script configuration',
     maaendPath: 'MaaEnd path',
     maaendAdapterStillUnder:
@@ -1668,6 +1671,8 @@ export default {
       'When the account is filled, a “Switch account” task is added automatically (CN official server only); the password is a local note only and is never passed to the script',
     m9aFlavorQueueHint:
       'Start game, close game and switch account are added automatically by the M9A adapter; no need to add them by hand',
+    m9aFlavorGameUpdateHint:
+      'After the emulator starts, compare the game client with the latest version on the official site. Official server only (Bilibili and other resources are not checked). When outdated: "Check only" fails this run and asks you to update manually; "Download and install automatically" downloads the official package (about 2 GB) and installs it over the old client, keeping game data',
     mssFlavorScriptTitle: 'Edit MSS script',
     mssFlavorSourceDirectory: 'MSS program directory',
     mssFlavorSourceHint: 'Pick the MaaStellaSora directory that contains interface.json',

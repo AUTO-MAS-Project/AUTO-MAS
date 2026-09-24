@@ -30,6 +30,7 @@ export const MAAFW_FLAVOR: MaaFWFlavor = {
   accountPlaceholderKey: 'edit.localNoteOnly',
   accountTooltipKey: 'edit.maafwAccountRecordTooltip',
   queueHintKey: null,
+  gameUpdateHintKey: null,
   slots: {},
   prepareUserPage: null,
 }

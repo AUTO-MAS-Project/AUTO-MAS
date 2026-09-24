@@ -94,6 +94,11 @@ export interface MaaFWFlavor {
   accountTooltipKey: string
   /** 用户页任务队列区顶部的提示（\n 分行，一行一个框）；为空则不显示 */
   queueHintKey: string | null
+  /**
+   * 脚本页「游戏更新」下拉的问号提示；为空表示这个类型的后端特调没有游戏更新钩子，
+   * 下拉整个不显示（游戏包名独占一行，布局与通用 MaaFW 相同）
+   */
+  gameUpdateHintKey: string | null
 
   // ---- 独有区块与钩子 ----
   /** 插入点 → 组件（按数组顺序渲染）；没有独有区块写 {} */
