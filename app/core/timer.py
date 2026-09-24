@@ -20,7 +20,7 @@
 #   Contact: DLmaster_361@163.com
 
 import asyncio
-from datetime import datetime
+from datetime import date, datetime, timedelta, timezone
 
 from app.services import Matomo
 from app.utils import get_logger
@@ -38,6 +38,39 @@ from .task_manager import TaskManager
 
 logger = get_logger("主业务定时器")
 
+# 定时错过后的补跑宽限：计划时刻过去不超过这么久（按真实流逝时间）才补跑一次。
+# 只兜住短暂的睡眠 / 卡顿与春季跳表，不补长时间关机或整夜睡眠错过的定时。
+TIMED_START_GRACE = timedelta(minutes=10)
+
+
+def _local_now() -> datetime:
+    """当前时刻（带本地偏移），单独抽出便于测试注入。"""
+
+    return datetime.now().astimezone()
+
+
+def _timed_slots_in_window(
+    prev_wall: datetime, now_wall: datetime, time_str: str
+) -> list[datetime]:
+    """列出本地墙钟区间 ``(prev_wall, now_wall]`` 内的 ``HH:MM`` 计划时刻。
+
+    计划时刻按本地墙钟日期逐日展开；墙钟回拨（``now_wall <= prev_wall``）时区间为空。
+    """
+
+    try:
+        slot_time = datetime.strptime(time_str, "%H:%M").time()
+    except (TypeError, ValueError):
+        return []
+
+    slots: list[datetime] = []
+    day: date = prev_wall.date()
+    while day <= now_wall.date():
+        planned = datetime.combine(day, slot_time)
+        if prev_wall < planned <= now_wall:
+            slots.append(planned)
+        day += timedelta(days=1)
+    return slots
+
 
 class _MainTimer:
     def __init__(self):
@@ -45,6 +78,10 @@ class _MainTimer:
         self.second_timer: asyncio.Task[None] | None = None
         self.hour_timer: asyncio.Task[None] | None = None
         self.community_sign_task: asyncio.Task | None = None
+        # 定时启动的上次检查时刻（带本地偏移），None 表示尚未检查过
+        self._last_timed_check: datetime | None = None
+        # 已触发过的 (队列, 时间槽, 计划日期)，防止秋季回拨重复的钟点再触发一次
+        self._timed_fired: set[tuple[str, str, date]] = set()
 
     async def start(self):
         """启动定时器"""
@@ -130,10 +167,34 @@ class _MainTimer:
 
     @logger.catch()
     async def timed_start(self):
-        """定时启动代理任务"""
+        """定时启动代理任务
 
-        curtime = datetime.now().strftime("%Y-%m-%d %H:%M")
-        curday = datetime.now().strftime("%A")
+        以「上次检查 → 本次检查」的本地墙钟区间判定到点：计划时刻落在
+        ``(上次检查, 本次检查]`` 内即视为到点，因此春季跳表跳过的钟点、短暂睡眠 /
+        卡顿错过的定时都会在下一次检查时补上；首次检查从当前分钟的零秒算起，与
+        逐分钟精确匹配时的触发时刻一致。补跑只在迟到不超过 ``TIMED_START_GRACE``
+        时进行，超出的记日志放弃。星期按计划时刻所在的本地日期判定。
+        """
+
+        now = _local_now()
+        now_wall = now.replace(tzinfo=None)
+        prev = self._last_timed_check
+        if prev is None:
+            prev_wall = now_wall.replace(second=0, microsecond=0) - timedelta(
+                microseconds=1
+            )
+            real_elapsed = now_wall - prev_wall
+        else:
+            prev_wall = prev.replace(tzinfo=None)
+            real_elapsed = now.astimezone(timezone.utc) - prev.astimezone(timezone.utc)
+        self._last_timed_check = now
+
+        # 已触发记录只需覆盖秋季回拨的重复钟点，保留前一天即可
+        self._timed_fired = {
+            key
+            for key in self._timed_fired
+            if key[2] >= now_wall.date() - timedelta(days=1)
+        }
 
         for uid, queue in Config.QueueConfig.items():
             # 循环队列由队列项各自的周期驱动，定时设置对它不生效
@@ -143,28 +204,67 @@ class _MainTimer:
             if not queue.get("Info", "TimeEnabled"):
                 continue
 
-            # 避免重复调起任务
-            if curtime == queue.get("Data", "LastTimedStart"):
+            last_timed_start = queue.get("Data", "LastTimedStart")
+            due: list[tuple[str, datetime]] = []
+
+            for time_set_id, time_set in queue.TimeSet.items():
+                if not time_set.get("Info", "Enabled"):
+                    continue
+
+                for planned in _timed_slots_in_window(
+                    prev_wall, now_wall, time_set.get("Info", "Time")
+                ):
+                    if planned.strftime("%A") not in time_set.get("Info", "Days"):
+                        continue
+
+                    key = (str(uid), str(time_set_id), planned.date())
+                    # 避免重复调起任务：本次运行内按时间槽去重，重启后靠持久化的
+                    # LastTimedStart 兜住同一分钟
+                    if key in self._timed_fired or (
+                        planned.strftime("%Y-%m-%d %H:%M") == last_timed_start
+                    ):
+                        continue
+
+                    # 迟到时长按真实流逝时间封顶：春季跳表时墙钟跨过一小时，真实只过了一瞬
+                    lateness = min(now_wall - planned, real_elapsed)
+                    if lateness > TIMED_START_GRACE:
+                        self._timed_fired.add(key)
+                        logger.info(
+                            f"定时 {planned:%Y-%m-%d %H:%M} 已错过 {lateness}，"
+                            f"超出补跑窗口，不再唤起队列：{uid}"
+                        )
+                        continue
+
+                    due.append((str(time_set_id), planned))
+
+            if not due:
                 continue
 
-            for time_set in queue.TimeSet.values():
-                if (
-                    time_set.get("Info", "Enabled")
-                    and curday in time_set.get("Info", "Days")
-                    and curtime[11:16] == time_set.get("Info", "Time")
-                ):
-                    logger.info(f"定时唤起任务：{uid}")
-                    await TaskManager.add_task(
-                        "AutoProxy",
-                        str(uid),
-                        new_task_info={
-                            "queueId": str(uid),
-                            "taskName": f"队列 - {queue.get('Info', 'Name')}",
-                            "taskType": "定时代理",
-                        },
-                        trigger_source="scheduled_task",
-                    )
-                    await queue.set("Data", "LastTimedStart", curtime)
+            # 同一队列一次检查内只唤起一次，多个到点的时间槽一并记为已触发
+            for time_set_id, planned in due:
+                self._timed_fired.add((str(uid), time_set_id, planned.date()))
+            planned = max(planned for _, planned in due)
+
+            if now_wall - planned >= timedelta(minutes=1):
+                logger.info(f"补跑错过的定时 {planned:%Y-%m-%d %H:%M}：{uid}")
+            logger.info(f"定时唤起任务：{uid}")
+            # 检查区间已前移，一个队列唤起失败不能连带跳过其余队列
+            try:
+                await TaskManager.add_task(
+                    "AutoProxy",
+                    str(uid),
+                    new_task_info={
+                        "queueId": str(uid),
+                        "taskName": f"队列 - {queue.get('Info', 'Name')}",
+                        "taskType": "定时代理",
+                    },
+                    trigger_source="scheduled_task",
+                )
+                await queue.set(
+                    "Data", "LastTimedStart", planned.strftime("%Y-%m-%d %H:%M")
+                )
+            except Exception as e:
+                logger.opt(exception=e).error(f"定时唤起任务失败：{uid}")
 
     def schedule_community_for_startup(self) -> None:
         """Schedule one background community sign-in after application startup."""
