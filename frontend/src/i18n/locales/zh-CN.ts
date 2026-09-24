@@ -789,6 +789,23 @@ export default {
     whenSavingMasEncrypts:
       '保存时 MAS 会自动加密账号密码。未配置 SRA 或未使用 SRA 模块时，账号密码不会用于切号。',
     aboutSharing: '分享说明',
+    share: {
+      loginRequired: '需要先登录配置中心',
+      loginRequiredDesc: '分享者身份由登录账号决定，登录后即可提交，不需要手填作者。',
+      startLogin: '登录配置中心',
+      startFailed: '无法发起配置中心登录',
+      pendingDesc: '已在浏览器中打开授权页面，请核对下面的短码后点击「授权」：',
+      reopenBrowser: '重新打开授权页',
+      cancelAuth: '取消登录',
+      authorized: '已登录配置中心：{name}',
+      signedInAs: '将以 {name} 的身份分享',
+      signedInDesc: '提交后进入配置中心的待审核流程，通过审核后其他用户才能看到。',
+      switchAccount: '换个账号',
+      riskTitle: '这些配置项可能仍包含不该公开的内容',
+      riskConfirm: '我已确认上述内容可以公开分享',
+      privacyNotice:
+        '脚本根目录、脚本路径等已知路径会在上传前自动替换为占位符，用户数据不会上传。提交后进入配置中心待审核流程，通过审核后其他用户才能下载使用。',
+    },
     singleFile: '单文件',
     match: '命中',
     multiLineAggregationGuide: '多行聚合指南',

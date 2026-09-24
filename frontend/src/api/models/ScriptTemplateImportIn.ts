@@ -2,22 +2,18 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-export type ScriptUploadIn = {
+export type ScriptTemplateImportIn = {
     /**
      * 脚本ID
      */
     scriptId: string;
     /**
-     * 配置名称
+     * 配置中心配置标识
      */
-    config_name: string;
+    configKey: string;
     /**
-     * 描述
+     * 版本号, 为空表示已发布的最新版本
      */
-    description: string;
-    /**
-     * 是否已确认分享前检查出的隐私风险项
-     */
-    acknowledged?: boolean;
+    versionNo?: (number | null);
 };
 
