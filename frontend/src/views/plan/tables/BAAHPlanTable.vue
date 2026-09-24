@@ -31,7 +31,7 @@
           />
         </template>
 
-        <!-- 关卡名称与战斗次数都是下拉：-1 那项读作「最高关」或「最大」，其余是具体数字 -->
+        <!-- 关卡名称与战斗次数都是下拉：-1 那项读作「倒数第一个」或「最大次数」 -->
         <template v-else-if="record.rowKind === 'stage' || record.rowKind === 'times'">
           <a-select
             class="config-select"
@@ -46,25 +46,23 @@
           />
         </template>
 
-        <!-- 多类混打：一行一类，一格放这一类的 2~3 个数字，顺序与后端存的一致 -->
-        <div v-else class="part-cell">
+        <!-- 多类混打：每类关卡的每一位各占一行，一格只放一个数字 -->
+        <template v-else>
           <a-input-number
-            v-for="part in record.parts"
-            :key="part.index"
-            class="config-input-number part-number"
+            class="config-input-number"
             size="small"
             :bordered="false"
             :controls="false"
             :precision="0"
-            :value="record[column.key][part.index]"
-            :min="part.min"
+            :value="record[column.key]"
+            :min="record.min"
             :disabled="isColumnDisabled(asTimeKey(column.key))"
-            :aria-label="cellLabel(`${record.fieldName} ${part.hint}`, column.key)"
+            :aria-label="cellLabel(record.fieldName, column.key)"
             @update:value="
-              handlePartChange(asTimeKey(column.key), record.field, part.index, $event)
+              handlePartChange(asTimeKey(column.key), record.field, record.index, $event)
             "
           />
-        </div>
+        </template>
       </template>
     </a-table>
   </div>
@@ -131,15 +129,16 @@ const syncLocalTableData = (tableData: Record<string, any> | null) => {
 watch(() => props.tableData, syncLocalTableData, { immediate: true })
 
 const configColumns = computed(() => {
-  // 每天一类一格只有一个控件，列宽与 MAA 的配置视图一致；多类混打一格塞 2~3 个数字
-  const dayWidth = props.baahLayout === 'single' ? 120 : 150
+  // 两种排法都是一格一个控件，列宽与 MAA 的配置视图一致
+  // 多类混打的行标题是「悬赏通缉 · 地区」这样的两段式，首列得留宽一点
+  const titleWidth = props.baahLayout === 'single' ? 120 : 160
 
   return [
     {
       title: t('plan.table.field'),
       dataIndex: 'fieldName',
       key: 'fieldName',
-      width: 120,
+      width: titleWidth,
       fixed: 'left',
       align: 'center',
     },
@@ -147,7 +146,7 @@ const configColumns = computed(() => {
       title: t(`plan.week.${timeKey}`),
       dataIndex: timeKey,
       key: timeKey,
-      width: dayWidth,
+      width: 120,
       align: 'center',
     })),
   ]
@@ -233,24 +232,24 @@ const configRows = computed(() => {
     ]
   }
 
-  return BAAH_PLAN_KEY_FIELDS.map(field => ({
-    rowKey: field.field,
-    rowKind: 'parts',
-    field: field.field,
-    fieldName: t(field.labelKey),
-    fieldHint: t(field.hintKey),
-    parts: field.parts.map((part, index) => ({
+  // 多类混打：每一位各占一行（六类合起来 17 行），行标题写成「类名 · 位名」
+  return BAAH_PLAN_KEY_FIELDS.flatMap(field =>
+    field.parts.map((part, index) => ({
+      rowKey: `${field.field}.${index}`,
+      rowKind: 'part',
+      field: field.field,
       index,
       min: part.min,
-      hint: t(part.hintKey),
-    })),
-    ...Object.fromEntries(
-      BAAH_PLAN_TIME_KEYS.map(timeKey => [
-        timeKey,
-        fillDayFields(localTableData.value[timeKey] ?? {})[field.field],
-      ])
-    ),
-  }))
+      fieldName: `${t(field.labelKey)} · ${t(part.hintKey)}`,
+      fieldHint: t(field.hintKey),
+      ...Object.fromEntries(
+        BAAH_PLAN_TIME_KEYS.map(timeKey => [
+          timeKey,
+          fillDayFields(localTableData.value[timeKey] ?? {})[field.field][index],
+        ])
+      ),
+    }))
+  )
 })
 
 /**
@@ -366,17 +365,5 @@ const handleSingleNumberChange = async (
 
 .config-input-number :deep(.ant-input-number-handler-wrap) {
   display: none;
-}
-
-/* 多类混打一格并排 2~3 个数字，按格内可用宽度平分 */
-.part-cell {
-  display: flex;
-  justify-content: center;
-  gap: 4px;
-}
-
-.part-cell .config-input-number {
-  width: 42px;
-  min-width: 0;
 }
 </style>
