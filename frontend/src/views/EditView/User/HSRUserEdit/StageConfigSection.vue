@@ -12,26 +12,13 @@
       </div>
     </div>
 
+    <!-- 区块内最多一条提示：选项读取失败优先，其次是引擎切换后要重选副本 -->
     <a-alert
-      v-if="nativeEngineMismatch"
-      type="warning"
+      v-if="stageNotice"
+      :type="stageNotice.type"
       show-icon
       style="margin-bottom: 8px"
-      :message="t('edit.sanityScriptChangedPick')"
-    />
-    <a-alert
-      v-if="currentEngineStageMissing"
-      type="warning"
-      show-icon
-      style="margin-bottom: 8px"
-      :message="t('edit.hsrStageMissingForEngine', { engine: dailyEngine })"
-    />
-    <a-alert
-      v-if="stageOptionsError && !stageOptionsLoading"
-      type="error"
-      show-icon
-      style="margin-bottom: 8px"
-      :message="stageOptionsError"
+      :message="stageNotice.message"
     />
 
     <!-- 第一行：四个独立关卡下拉框。选项只来自当前执行脚本暴露的副本配置。 -->
@@ -134,10 +121,10 @@
       </a-col>
     </a-row>
 
-    <!-- 第二行：刷取副本 + 当前生效关卡 -->
+    <!-- 第二行：刷取副本（extra 显示当前生效关卡） | 历战余响 | 历战余响开始日 -->
     <a-row :gutter="24" style="margin-top: 8px">
       <a-col :span="8">
-        <a-form-item>
+        <a-form-item :extra="t('edit.hsrActiveStageExtra', { stage: currentStageDisplay })">
           <template #label>
             <a-tooltip :title="t('edit.pickStageFarmThis')">
               <span class="form-label">
@@ -155,26 +142,13 @@
           />
         </a-form-item>
       </a-col>
-      <a-col :span="16">
-        <a-form-item>
-          <template #label>
-            <span class="form-label">{{ t('edit.activeStage') }}</span>
-          </template>
-          <div class="current-stage-display">
-            <a-tag :color="currentStageColor" size="large" class="stage-tag">
-              {{ currentStageDisplay }}
-            </a-tag>
-          </div>
-        </a-form-item>
-      </a-col>
-    </a-row>
-
-    <!-- 第三行：历战余响 | 历战余响开始日 -->
-    <a-row :gutter="24" style="margin-top: 8px">
-      <a-col :span="12">
+      <a-col :span="8">
         <a-form-item name="EchoOfWar">
           <template #label>
-            <a-tooltip :title="t('edit.pickEchoOfWarStage')">
+            <!-- 遗器自动分解提醒由原先的区块提示降为这里的悬停说明 -->
+            <a-tooltip
+              :title="`${t('edit.pickEchoOfWarStage')} ${t('edit.turnAutomaticRelicSalvage')}`"
+            >
               <span class="form-label">
                 {{ t('edit.echoOfWar') }}
                 <QuestionCircleOutlined class="help-icon" />
@@ -195,7 +169,7 @@
           />
         </a-form-item>
       </a-col>
-      <a-col :span="12">
+      <a-col :span="8">
         <a-form-item>
           <template #label>
             <a-tooltip :title="t('edit.startDayIfIt')">
@@ -215,14 +189,6 @@
         </a-form-item>
       </a-col>
     </a-row>
-
-    <!-- 刷取提示 -->
-    <a-alert
-      type="info"
-      show-icon
-      style="margin-top: 8px"
-      :message="t('edit.turnAutomaticRelicSalvage')"
-    />
   </div>
 </template>
 
@@ -444,6 +410,22 @@ const currentEngineStageMissing = computed(() => {
   return !hasMain && otherEngineHasStages.value
 })
 
+const stageNotice = computed<{ type: 'error' | 'warning'; message: string } | null>(() => {
+  if (props.stageOptionsError && !props.stageOptionsLoading) {
+    return { type: 'error', message: props.stageOptionsError }
+  }
+  if (nativeEngineMismatch.value) {
+    return { type: 'warning', message: t('edit.sanityScriptChangedPick') }
+  }
+  if (currentEngineStageMissing.value) {
+    return {
+      type: 'warning',
+      message: t('edit.hsrStageMissingForEngine', { engine: props.dailyEngine }),
+    }
+  }
+  return null
+})
+
 const dynamicOptionsForChannel = (channel: ActiveChannel) => {
   const category = dynamicCategoryByChannel.value[channel]
   return (category?.options ?? []).map(option => ({
@@ -609,7 +591,7 @@ const currentNativePayload = computed(() => {
   return getPayloadForChannel(activeChannel.value)
 })
 
-// 当前生效关卡显示：副本类型 + 关卡名
+// 当前生效关卡（显示在「刷取副本」下方的 extra）：副本类型 + 关卡名
 // 格式：拟造花萼（金） 材料：武器经验（以太之蕾 翁法罗斯）
 const currentStageDisplay = computed((): string => {
   if (nativeEngineMismatch.value) return t('edit.hsrRepickStage')
@@ -620,15 +602,6 @@ const currentStageDisplay = computed((): string => {
       : nativePayload.label
   }
   return t('edit.notConfigured')
-})
-
-const currentStageColor = computed((): string => {
-  const dynamicCategory = currentNativePayload.value?.category ?? ''
-  if (dynamicCategory === '侵蚀隧洞' || dynamicCategory === 'caver_of_corrosion') return 'purple'
-  if (dynamicCategory === '饰品提取' || dynamicCategory === 'ornament_extraction') return 'cyan'
-  if (dynamicCategory === '拟造花萼（金）' || dynamicCategory === 'calyx_golden') return 'gold'
-  if (dynamicCategory === '拟造花萼（赤）' || dynamicCategory === 'calyx_crimson') return 'red'
-  return 'default'
 })
 
 // 刷取副本
@@ -669,16 +642,5 @@ const filterOption = (input: unknown, option?: { label?: unknown; children?: unk
 .section-header h3::before {
   height: 22px;
   background: var(--ant-color-primary);
-}
-
-.current-stage-display {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 32px;
-}
-.stage-tag {
-  font-size: 14px;
-  padding: 4px 12px;
 }
 </style>

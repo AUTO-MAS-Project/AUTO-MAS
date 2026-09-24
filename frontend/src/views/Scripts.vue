@@ -114,7 +114,11 @@
     :submitting="addLoading || templateLoading"
     :template-loading="templateLoading"
     :template-error="templateError"
+    :mfw-sources="mfwSources"
+    :mfw-sources-loading="mfwSourcesLoading"
+    :mfw-sources-error="mfwSourcesError"
     @request-templates="loadTemplates"
+    @request-mfw-sources="loadMfwSources"
     @submit="handleSubmitScriptCreate"
   />
 </template>
@@ -148,6 +152,8 @@ import {
   type WSTaskNoticeData,
 } from '@/services/websocket/types'
 import { useTemplateApi, type WebConfigTemplate } from '@/composables/useTemplateApi'
+import { useMaaFWEmbeddedApi } from '@/composables/useMaaFWEmbeddedApi'
+import type { MaaFWEmbeddedSourceItem } from '@/api'
 import { Service } from '@/api/services/Service'
 import { TaskCreateIn } from '@/api/models/TaskCreateIn'
 import DocLink from '@/components/DocLink.vue'
@@ -165,6 +171,7 @@ const { addScript, deleteScript, getScriptsWithUsers } = useScriptApi()
 const { updateUser, deleteUser } = useUserApi()
 const { subscribe, unsubscribe } = useWebSocket()
 const { getWebConfigTemplates, importScriptFromWeb, error: templateError } = useTemplateApi()
+const { listEmbeddedSources, cloneEmbedded } = useMaaFWEmbeddedApi()
 
 const scripts = ref<Script[]>([])
 const scriptSearchKeyword = ref('')
@@ -180,6 +187,10 @@ const templates = ref<WebConfigTemplate[]>([])
 const addLoading = ref(false)
 const copyingScriptId = ref<string | null>(null)
 const templateLoading = ref(false)
+// 新建 MFW 脚本第二步「复用已有脚本的项目」的候选：有健康副本的 MFW / M9A 脚本
+const mfwSources = ref<MaaFWEmbeddedSourceItem[]>([])
+const mfwSourcesLoading = ref(false)
+const mfwSourcesError = ref<string | null>(null)
 
 // 配置会话遮罩：同一时刻只会有一个配置会话在前台
 type ConfigMaskKind = 'MAA' | 'SRC' | 'MaaEnd' | 'Okww'
@@ -337,9 +348,9 @@ const navigateToCreatedScript = (
   data?: Record<string, unknown>
 ) => {
   const route = {
-    // MFW 新建后进分步引导；其余类型直接进编辑页
+    // MFW 新建后进分步引导（M9A 是 MaaFW 的特调类型，同一套引导）；其余类型直接进编辑页
     path:
-      type === 'MaaFW'
+      type === 'MaaFW' || type === 'M9A'
         ? `/scripts/${scriptId}/setup/maafw`
         : `/scripts/${scriptId}/edit/${getScriptEditSegment(type)}`,
     ...(data
@@ -360,9 +371,25 @@ const navigateToCreatedScript = (
 const handleSubmitScriptCreate = async (request: ScriptCreateRequest) => {
   addLoading.value = true
   try {
-    const type = request.kind === 'new' ? request.type : 'General'
+    const type = request.kind === 'new' || request.kind === 'mfw-reuse' ? request.type : 'General'
     const result = await addScript(type)
     if (!result) return
+
+    if (request.kind === 'mfw-reuse') {
+      // 同一个项目再建一个脚本：从源脚本的副本克隆，秒级可用；类型随项目（M9A → M9A）。
+      // 克隆失败脚本也已经建好了，照样进引导页让用户自己选目录。
+      try {
+        const { message: text } = await cloneEmbedded(result.scriptId, request.sourceScriptId)
+        if (text) message.success(text)
+      } catch (error) {
+        const reason = error instanceof Error ? error.message : String(error)
+        logger.error(`复用已有脚本的项目失败: ${reason}`)
+        message.error(t('scripts.toast.reuseFailed', { reason }))
+      }
+      scriptCreateVisible.value = false
+      navigateToCreatedScript(result.scriptId, type)
+      return
+    }
 
     if (request.kind === 'general-template') {
       const imported = await importScriptFromWeb(result.scriptId, request.template.downloadUrl)
@@ -381,6 +408,22 @@ const handleSubmitScriptCreate = async (request: ScriptCreateRequest) => {
     logger.error(`创建脚本失败: ${errorMsg}`)
   } finally {
     addLoading.value = false
+  }
+}
+
+const loadMfwSources = async () => {
+  mfwSourcesLoading.value = true
+  mfwSourcesError.value = null
+  try {
+    mfwSources.value = await listEmbeddedSources()
+  } catch (error) {
+    // 读失败不能伪装成「没有可复用的脚本」：对话框按错误态显示原因与重试
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`加载可复用的 MFW 脚本失败: ${errorMsg}`)
+    mfwSources.value = []
+    mfwSourcesError.value = t('scripts.toast.mfwSourcesFailed', { error: errorMsg })
+  } finally {
+    mfwSourcesLoading.value = false
   }
 }
 

@@ -31,7 +31,8 @@ from pathlib import Path
 from typing import Any, Awaitable, Callable
 
 from app.utils import ProcessManager, decode_bytes, get_logger
-from app.utils.io import atomic_write, migrate_legacy_dir, read_file, write_file
+from app.utils.io import atomic_write, migrate_legacy_dir
+from app.utils.platform import is_admin
 
 from .log_detect import (
     HSR_ECHO_OF_WAR_WEEKLY_REWARD_LIMIT,
@@ -60,13 +61,11 @@ SRA_DIVERGENT_UNIVERSE_RUNTIMES = 20
 SRA_DIVERGENT_UNIVERSE_USE_TECHNIQUE = False
 SRA_DIVERGENT_UNIVERSE_POINT_REWARDS = True
 
-SRA_CURRENCY_WARS_MODE = 0
-SRA_CURRENCY_WARS_DIFFICULTY = 0
 SRA_CURRENCY_WARS_STRATEGY = "template"
 SRA_CURRENCY_WARS_STRATEGY_INDEX = 0
 SRA_CURRENCY_WARS_RUNTIMES = 2
 SRA_CURRENCY_WARS_STRATEGY_KEYWORDS = ("阿格莱雅", "aglaea")
-SRA_CACHE_NO_NOTIFY_KEY = "NoNotifyForShortcut"
+SRA_SETTINGS_SYSTEM_NOTIFY_KEY = "system.enabled"
 # SRA 2.22.0 起领取奖励从数组 rewards[0..6] 改成具名开关 rewards.<name>（与
 # replenish.enabled 一样是平铺在 receiveRewards 下的点号键）；旧 profile 仍是数组。
 # SRA 读取时具名键优先、数组只作旧版兼容，写临时配置时按原生 profile 的形态镜像。
@@ -324,9 +323,16 @@ def build_sra_module_config(
     name: str = "",
     daily_eow_enabled: bool = False,
     redeem_codes_enabled: bool = True,
+    plan=None,
 ) -> dict:
-    """构造只启用一个目标模块的 SRA TasksConfig。"""
+    """构造只启用一个目标模块的 SRA TasksConfig。
 
+    副本与托管覆盖读 ``plan``（该用户生效的任务计划，缺省即 ``user_config``），
+    货币战争的开拓者名称读 ``user_config``。
+    """
+
+    if plan is None:
+        plan = user_config
     config = _build_sra_base_config(name or f"_mas_temp_{module.key}")
     if module.sra_task is None:
         return config
@@ -352,17 +358,12 @@ def build_sra_module_config(
 
     if module.key == "Daily":
         config["trailblazePower"]["tasklist"] = _build_sra_trailblaze_tasklist(
-            user_config, eow_enabled=daily_eow_enabled
+            plan, eow_enabled=daily_eow_enabled
         )
-        config["trailblazePower"]["replenish.enabled"] = False
-        config["trailblazePower"]["replenish.way"] = 0
-        config["trailblazePower"]["replenish.times"] = 0
 
     elif module.key == "ReceiveRewards":
         # 领取项来自当前 SRA profile；Managed.Options 只覆盖已发现字段。
-        native_options = resolve_sra_managed_options(
-            module.key, script_config, user_config
-        )
+        native_options = resolve_sra_managed_options(module.key, script_config, plan)
         config["receiveRewards"]["rewards"] = [
             bool(native_options.get("rewards.0", True)),
             bool(native_options.get("rewards.1", True)),
@@ -374,9 +375,7 @@ def build_sra_module_config(
         ]
 
     elif module.key == "DivergentUniverse":
-        native_options = resolve_sra_managed_options(
-            module.key, script_config, user_config
-        )
+        native_options = resolve_sra_managed_options(module.key, script_config, plan)
         config["cosmicStrife"]["divergentUniverse.enabled"] = True
         config["cosmicStrife"]["divergentUniverse.mode"] = int(
             native_options.get("divergentUniverse.mode", SRA_DIVERGENT_UNIVERSE_MODE)
@@ -398,28 +397,9 @@ def build_sra_module_config(
         )
 
     elif module.key == "CurrencyWars":
-        native_options = resolve_sra_managed_options(
-            module.key, script_config, user_config
-        )
-        username = str(user_config.get("Info", "Name") or "").strip()
+        native_options = resolve_sra_managed_options(module.key, script_config, plan)
+
         config["cosmicStrife"]["currencyWars.enabled"] = True
-        mode = native_options.get("currencyWars.mode", SRA_CURRENCY_WARS_MODE)
-        difficulty = native_options.get(
-            "currencyWars.difficulty", SRA_CURRENCY_WARS_DIFFICULTY
-        )
-        config["cosmicStrife"]["currencyWars.mode"] = {
-            "normal": 0,
-            "overclock": 1,
-            0: 0,
-            1: 1,
-        }.get(mode, SRA_CURRENCY_WARS_MODE)
-        config["cosmicStrife"]["currencyWars.difficulty"] = {
-            "lowest": 0,
-            "highest": 1,
-            0: 0,
-            1: 1,
-        }.get(difficulty, SRA_CURRENCY_WARS_DIFFICULTY)
-        config["cosmicStrife"]["currencyWars.policy"] = 0
         config["cosmicStrife"]["currencyWars.strategy"] = native_options.get(
             "currencyWars.strategy", _resolve_sra_currency_wars_strategy(script_config)
         )
@@ -431,9 +411,8 @@ def build_sra_module_config(
         config["cosmicStrife"]["currencyWars.runtimes"] = int(
             native_options.get("currencyWars.runtimes", SRA_CURRENCY_WARS_RUNTIMES)
         )
-        config["cosmicStrife"]["currencyWars.username"] = username
 
-    _apply_managed_options(config, module.key, script_config, user_config)
+    _apply_managed_options(config, module.key, script_config, plan)
     if module.key == "Daily":
         trailblaze = config["trailblazePower"]
         trailblaze["enabled"] = True
@@ -441,7 +420,7 @@ def build_sra_module_config(
             trailblaze["tasklist"] = []
         else:
             trailblaze["tasklist"] = _build_sra_trailblaze_tasklist(
-                user_config,
+                plan,
                 eow_enabled=daily_eow_enabled,
             )
     elif module.key == "ReceiveRewards":
@@ -468,6 +447,13 @@ def build_sra_module_config(
         config["cosmicStrife"]["enabled"] = True
         config["cosmicStrife"]["divergentUniverse.enabled"] = False
         config["cosmicStrife"]["currencyWars.enabled"] = True
+        # SRA 靠开拓者名称认出自己的角色。必须在套用原生值之后写，否则多账号
+        # 全用原生 profile 里同一个名字；用户在托管表单里显式填了的以它为准。
+        username = str(user_config.get("Info", "Name") or "").strip()
+        if username and not _managed_options(plan, module.key).get(
+            "currencyWars.username"
+        ):
+            config["cosmicStrife"]["currencyWars.username"] = username
 
     return config
 
@@ -595,25 +581,51 @@ def resolve_sra_profile(
 
 
 def disable_sra_windows_notifications() -> Path:
-    """临时关闭 SRA 本体的 Windows 通知。"""
+    """临时关闭 SRA 本体的 Windows 系统通知。
 
-    cache_path = get_sra_app_data_dir() / "cache.json"
-    cache: dict = {}
-    if cache_path.exists():
-        try:
-            raw_cache = read_file(cache_path)
-        except json.JSONDecodeError:
-            raw_cache = {}
-        if isinstance(raw_cache, dict):
-            cache = raw_cache
+    开关是 ``settings.json`` 的 ``notification.system.enabled``（SRA
+    ``SRACore/models/app_settings.py`` 的 ``isSystemEnabled``，缺省为关）。该文件
+    在运行期备份清单里，任务结束按备份还原。SRA-cli 按系统 ANSI 读它，写回时
+    必须 ``ensure_ascii=True``。
 
-    if cache.get(SRA_CACHE_NO_NOTIFY_KEY) is True:
-        return cache_path
+    Returns:
+        ``settings.json`` 路径；文件不存在或开关本来就关着时不写入。
+    """
 
-    cache[SRA_CACHE_NO_NOTIFY_KEY] = True
-    write_file(cache_path, cache)
-    logger.info(f"SRA cache.json 已关闭 Windows 通知：{cache_path}")
-    return cache_path
+    settings_path = get_sra_app_data_dir() / "settings.json"
+    if not settings_path.is_file():
+        return settings_path
+    settings = json.loads(settings_path.read_text(encoding="utf-8-sig"))
+    if not isinstance(settings, dict):
+        raise ValueError(f"SRA settings.json 顶层不是对象：{settings_path}")
+    notification = settings.get("notification")
+    if not isinstance(notification, dict) or not notification.get(
+        SRA_SETTINGS_SYSTEM_NOTIFY_KEY
+    ):
+        return settings_path
+
+    notification[SRA_SETTINGS_SYSTEM_NOTIFY_KEY] = False
+    atomic_write(
+        settings_path,
+        json.dumps(settings, ensure_ascii=True, indent=2).encode("utf-8"),
+    )
+    logger.info(f"SRA settings.json 已临时关闭系统通知：{settings_path}")
+    return settings_path
+
+
+def sra_cloud_game_enabled() -> bool:
+    """SRA ``settings.json`` 的 ``general.cloudGame.enabled``；读不到按关闭算。
+
+    云游戏开关只在这里（任务配置 TasksConfig 没有 ``general`` 段），MAS 不改它。
+    """
+
+    settings_path = get_sra_app_data_dir() / "settings.json"
+    try:
+        settings = json.loads(settings_path.read_text(encoding="utf-8-sig"))
+    except (OSError, ValueError):
+        return False
+    general = settings.get("general") if isinstance(settings, dict) else None
+    return isinstance(general, dict) and bool(general.get("cloudGame.enabled"))
 
 
 @dataclass
@@ -627,6 +639,21 @@ class SRACommandResult:
     returncode: int = 0
     started_at: datetime | None = None
     finished_at: datetime | None = None
+
+
+# SRA-cli 的 stdout 被管道接走时按系统 ANSI 代码页编码，非中文区域（如 cp1252）
+# 下第一行中文就抛 UnicodeEncodeError：启动期崩掉退出码为 1，进了 cmd2 则被
+# 吞成一行提示、退出码仍为 0，任务一步没做。SRA-cli 是 Nuitka 打包，认
+# PYTHONIOENCODING（PyInstaller 打包的三月七不认，见 m7a_runtime）；PYTHONUTF8 无效。
+SRA_CHILD_ENV: dict[str, str] = {"PYTHONIOENCODING": "utf-8"}
+
+
+def build_sra_env() -> dict[str, str]:
+    """SRA 子进程环境：继承后端环境，叠上 ``SRA_CHILD_ENV``。"""
+
+    env = dict(os.environ)
+    env.update(SRA_CHILD_ENV)
+    return env
 
 
 class SRAProcessRegistry:
@@ -647,6 +674,7 @@ class SRAProcessRegistry:
             cwd=cwd,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
+            env=build_sra_env(),
         )
         proc = self._process_manager.main_process
         if not isinstance(proc, asyncio.subprocess.Process):
@@ -663,6 +691,30 @@ class SRAProcessRegistry:
         logger.warning("正在终止 SRA 当前子进程")
         await self._process_manager.kill()
         return True
+
+
+def _sra_cli_args(command_text: str) -> tuple[str, ...]:
+    """SRA-cli 的命令行参数。
+
+    SRA-cli 未提权时默认用 ``runas`` 另起一个提权进程、原进程 ``exit(0)``，
+    真正干活的进程脱离 MAS 视野；``--no-admin`` 让它打一行警告后原地继续。
+    SRA 只在未提权时从 argv 里摘掉这个参数（``SRACore/__main__.py``），
+    已提权时它会原样落进 cmd2 的启动命令、报「不是一个有效命令」，所以只在
+    后端未提权时传（子进程继承后端的令牌，两边判断一致）。
+    """
+
+    args = ("--inline", command_text, "quit")
+    return args if is_admin() else ("--no-admin", *args)
+
+
+def _sra_run_succeeded(returncode: int | None, stdout: str, stderr: str) -> bool:
+    """SRA 不把任务成败写进退出码，成败只看输出；没有任何输出不算成功。"""
+
+    return (
+        returncode == 0
+        and bool(stdout or stderr)
+        and not has_failure_output(stdout, stderr)
+    )
 
 
 async def run_sra_single_task(
@@ -695,9 +747,7 @@ async def run_sra_single_task(
         process_registry = process_registry or SRAProcessRegistry()
         proc = await process_registry.open_process(
             str(sra_exe_path),
-            "--inline",
-            command_text,
-            "quit",
+            *_sra_cli_args(command_text),
             cwd=sra_exe_path.parent,
         )
         stdout, stderr = await _communicate_sra_with_live_output(
@@ -706,7 +756,7 @@ async def run_sra_single_task(
             log_callback,
             output_line_callback=output_line_callback,
         )
-        success = proc.returncode == 0 and not has_failure_output(stdout, stderr)
+        success = _sra_run_succeeded(proc.returncode, stdout, stderr)
 
         return SRACommandResult(
             task_class=task_class,
@@ -785,9 +835,7 @@ async def run_sra_config(
     try:
         proc = await registry.open_process(
             str(sra_exe_path),
-            "--inline",
-            f'run "{config_path}"',
-            "quit",
+            *_sra_cli_args(f'run "{config_path}"'),
             cwd=sra_exe_path.parent,
         )
         stdout, stderr = await _communicate_sra_with_live_output(
@@ -795,7 +843,7 @@ async def run_sra_config(
             timeout,
             log_callback,
         )
-        success = proc.returncode == 0 and not has_failure_output(stdout, stderr)
+        success = _sra_run_succeeded(proc.returncode, stdout, stderr)
         return SRACommandResult(
             task_class="run",
             config_path=str(config_path),
@@ -858,9 +906,6 @@ def _build_sra_base_config(name: str) -> dict:
     return {
         "name": name,
         "version": 0,
-        "general": {
-            "cloudGame.enabled": False,
-        },
         "startGame": {
             "enabled": False,
             "game.channel": SRA_GAME_CHANNEL_CLIENT,
@@ -896,7 +941,6 @@ def _build_sra_base_config(name: str) -> dict:
             "currencyWars.enabled": False,
             "currencyWars.mode": 0,
             "currencyWars.difficulty": 0,
-            "currencyWars.policy": 0,
             "currencyWars.runtimes": 0,
             "currencyWars.strategy": "template",
             "currencyWars.strategyIndex": 0,
@@ -1029,7 +1073,7 @@ def build_sra_echo_of_war_config(
     trailblaze = config["trailblazePower"]
     trailblaze["enabled"] = True
     # 本次只为周本而跑：关掉培养目标识别与活动检测，避免顺带消耗体力；
-    # 补充体力仍按体力模块的口径统一关闭。
+    # 历战余响单独运行时关闭补充开拓力，体力模块则跟随托管值。
     trailblaze["useBuildTarget"] = False
     trailblaze["activity.enabled"] = False
     trailblaze["replenish.enabled"] = False
