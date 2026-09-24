@@ -3547,6 +3547,7 @@ export default {
       modeLabel: 'Mode:',
       resumePlaceholder: 'Resume from a specific script (defaults to the first)',
       userPlaceholder: 'Run one user only (defaults to all)',
+      resumeUserPlaceholder: 'Start from a specific user (defaults to the first)',
       stop: 'Stop',
       start: 'Run',
     },

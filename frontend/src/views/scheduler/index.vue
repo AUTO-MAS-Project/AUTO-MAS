@@ -82,6 +82,7 @@
               v-model:selected-mode="tab.selectedMode"
               v-model:resume-from-script-id="tab.resumeFromScriptId"
               v-model:selected-user-id="tab.selectedUserId"
+              v-model:resume-from-user-id="tab.resumeFromUserId"
               v-model:running-task-label="tab.runningTaskLabel"
               v-model:running-mode-label="tab.runningModeLabel"
               :resume-script-options="tab.resumeScriptOptions || []"

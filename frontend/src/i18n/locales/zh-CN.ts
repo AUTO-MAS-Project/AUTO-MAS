@@ -3414,6 +3414,7 @@ export default {
       modeLabel: '模式：',
       resumePlaceholder: '从指定脚本继续（默认第一个）',
       userPlaceholder: '单独运行指定用户（默认全部）',
+      resumeUserPlaceholder: '从指定用户开始（默认第一个）',
       stop: '停止任务',
       start: '开始执行',
     },

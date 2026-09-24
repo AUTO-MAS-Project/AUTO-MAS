@@ -72,6 +72,19 @@
             @change="onResumeScriptChange"
             @dropdown-visible-change="onResumeDropdownVisibleChange"
           />
+          <a-select
+            v-if="status !== '运行' && showResumeUserSelect"
+            v-model:value="localResumeFromUserId"
+            :placeholder="t('scheduler.control.resumeUserPlaceholder')"
+            style="width: 260px"
+            :loading="userOptionsLoading"
+            :options="userOptions || []"
+            :disabled="disabled"
+            allow-clear
+            size="large"
+            @change="onResumeUserChange"
+            @dropdown-visible-change="onUserDropdownVisibleChange"
+          />
           <a-button
             :type="status === '运行' ? 'default' : 'primary'"
             :danger="status === '运行'"
@@ -124,6 +137,7 @@ import { TaskCreateIn } from '@/api/models/TaskCreateIn'
 import type { ComboBoxItem } from '@/api/models/ComboBoxItem'
 import type { WSTaskCyclePreviewData } from '@/services/websocket/types'
 import { type SchedulerStatus, getTaskModeOptions } from './schedulerConstants'
+import { type UserScopeField, exclusiveUserScope } from './schedulerUserOptions'
 
 const { t } = useI18n()
 
@@ -134,6 +148,7 @@ interface Props {
   resumeScriptOptions?: Array<{ label: string; value: string }>
   resumeScriptLoading?: boolean
   selectedUserId?: string | null
+  resumeFromUserId?: string | null
   userOptions?: Array<{ label: string; value: string }>
   userOptionsLoading?: boolean
   taskOptions: ComboBoxItem[]
@@ -152,6 +167,7 @@ interface Emits {
   (e: 'update:selectedMode', value: TaskCreateIn.mode | null): void
   (e: 'update:resumeFromScriptId', value: string | null): void
   (e: 'update:selectedUserId', value: string | null): void
+  (e: 'update:resumeFromUserId', value: string | null): void
 
   (e: 'start'): void
 
@@ -173,6 +189,7 @@ const props = withDefaults(defineProps<Props>(), {
   resumeScriptOptions: () => [],
   resumeScriptLoading: false,
   selectedUserId: null,
+  resumeFromUserId: null,
   userOptions: () => [],
   userOptionsLoading: false,
   runningTaskLabel: '',
@@ -188,6 +205,7 @@ const localSelectedTaskId = ref(props.selectedTaskId)
 const localSelectedMode = ref(props.selectedMode)
 const localResumeFromScriptId = ref(props.resumeFromScriptId ?? null)
 const localSelectedUserId = ref(props.selectedUserId ?? null)
+const localResumeFromUserId = ref(props.resumeFromUserId ?? null)
 
 // 「循环运行」只对循环队列开放，其余任务仍然只有自动代理
 const modeOptions = computed(() =>
@@ -212,6 +230,10 @@ const showUserSelect = computed(
   () =>
     localSelectedMode.value === TaskCreateIn.mode.AUTO_PROXY && (props.userOptions?.length ?? 0) > 0
 )
+
+// 选脚本时，队列那格「从某一脚本开始」换成「从某一用户开始」：该用户及其后的用户参与，前面的不跑。
+// 与「单独运行指定用户」共用同一份用户选项，二者互斥，选了一个就清掉另一个。
+const showResumeUserSelect = computed(() => showUserSelect.value && !showResumeScriptSelect.value)
 
 // 运行时的显示文本 - 直接使用 props，不再需要本地 ref
 // const runningTaskLabel = ref('')
@@ -284,6 +306,14 @@ watch(
   { immediate: true }
 )
 
+watch(
+  () => props.resumeFromUserId,
+  newVal => {
+    localResumeFromUserId.value = newVal ?? null
+  },
+  { immediate: true }
+)
+
 // 事件处理
 const onTaskChange = (value: string) => {
   emit('update:selectedTaskId', value)
@@ -302,8 +332,18 @@ const onResumeDropdownVisibleChange = (open: boolean) => {
   if (open) emit('refresh-resume-scripts')
 }
 
+const emitUserScope = (field: UserScopeField, value: string | undefined) => {
+  const next = exclusiveUserScope(field, value ?? null)
+  if ('selectedUserId' in next) emit('update:selectedUserId', next.selectedUserId ?? null)
+  if ('resumeFromUserId' in next) emit('update:resumeFromUserId', next.resumeFromUserId ?? null)
+}
+
 const onUserChange = (value: string | undefined) => {
-  emit('update:selectedUserId', value ?? null)
+  emitUserScope('selectedUserId', value)
+}
+
+const onResumeUserChange = (value: string | undefined) => {
+  emitUserScope('resumeFromUserId', value)
 }
 
 const onUserDropdownVisibleChange = (open: boolean) => {
