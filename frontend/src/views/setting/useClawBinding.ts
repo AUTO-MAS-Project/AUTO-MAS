@@ -50,6 +50,7 @@ export function useClawBinding(
   let disposed = false
   let isBound = false
   let enableAfterBind = false
+  let qqBindingObserved = false
 
   const checkResponse = (result: OutBase) => {
     if (result.code !== 200) throw new Error(result.message || label('QrError'))
@@ -64,6 +65,9 @@ export function useClawBinding(
       checkResponse(result)
       status.value = result
       isBound = !!result.connected
+      if (channel === 'qq' && (!result.connected || result.state === 'connected')) {
+        qqBindingObserved = false
+      }
       // 后端发现凭据不完整时同时关闭旧的通知开关，避免继续向失效渠道投递。
       if (result.enabled && !result.connected) {
         await onBoundChange(false)
@@ -79,8 +83,7 @@ export function useClawBinding(
       if (
         !disposed &&
         channel === 'qq' &&
-        status.value?.connected &&
-        status.value.state !== 'connected'
+        (qqBindingObserved || (status.value?.connected && status.value.state !== 'connected'))
       ) {
         statusTimer = setTimeout(() => void loadStatus(), POLL_INTERVAL)
       }
@@ -107,6 +110,7 @@ export function useClawBinding(
       })
       if (id !== runId) return
       checkResponse(result)
+      const wasConnecting = state.value === 'connecting'
       state.value = result.connected ? 'connected' : result.state || 'waiting'
       hint.value = result.message || label('QrWaiting')
       if (state.value === 'connected') {
@@ -115,6 +119,10 @@ export function useClawBinding(
         isBound = true
         await loadStatus()
       } else if (['waiting', 'scanned', 'connecting'].includes(state.value)) {
+        if (channel === 'qq' && state.value === 'connecting' && !wasConnecting) {
+          qqBindingObserved = true
+          void loadStatus()
+        }
         timer = setTimeout(() => void poll(id), POLL_INTERVAL)
       }
     } catch (error) {
@@ -164,6 +172,7 @@ export function useClawBinding(
     try {
       checkResponse(await api.unbind())
       isBound = false
+      qqBindingObserved = false
       await onBoundChange(false)
       await loadStatus()
       message.success(label('UnbindSuccess'))

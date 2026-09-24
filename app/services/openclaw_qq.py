@@ -672,7 +672,10 @@ class OpenClawQQManager:
                                 self._gateway_seen_ready = True
                                 self._gateway_ready.set()
                                 logger.info("QQ 官方机器人消息网关已连接")
-                            elif op in (7, 9):
+                            elif op == 9:
+                                self._invalidate_access_token()
+                                break
+                            elif op == 7:
                                 break
                     finally:
                         if heartbeat is not None:
