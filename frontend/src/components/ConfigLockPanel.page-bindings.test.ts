@@ -10,6 +10,7 @@ const editPages = [
   'Script/MaaEndScriptEdit.vue',
   'Script/MaaFWScriptEdit.vue',
   'Script/OkNteScriptEdit.vue',
+  'Script/OkScriptScriptEdit.vue',
   'Script/OkwwScriptEdit.vue',
   'Script/SRCScriptEdit.vue',
   'Script/ZzzOdScriptEdit.vue',
@@ -21,6 +22,7 @@ const editPages = [
   'User/MaaEndUserEdit.vue',
   'User/MaaFWUserEdit.vue',
   'User/OkNteUserEdit.vue',
+  'User/OkScriptUserEdit.vue',
   'User/OkwwUserEdit.vue',
   'User/SRCUserEdit.vue',
   'User/ZzzOdUserEdit.vue',
@@ -29,7 +31,7 @@ const editPages = [
 describe('ConfigLockPanel edit page bindings', () => {
   it('binds every edit page to the route script id', () => {
     // M9A 没有专用页面（MaaFW 的特调类型，走 MaaFW 的两个页面）
-    expect(editPages).toHaveLength(22)
+    expect(editPages).toHaveLength(24)
     for (const filename of editPages) {
       const pageUrl = `../views/EditView/${filename}`
       const pageSource = readFileSync(new URL(pageUrl, import.meta.url), 'utf8')

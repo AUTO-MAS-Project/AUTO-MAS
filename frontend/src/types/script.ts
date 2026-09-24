@@ -11,6 +11,7 @@ import type {
   BetterGIConfig,
   ZzzOdConfig,
   BAAHConfig,
+  OkScriptConfig,
 } from '@/api'
 import type {
   AutoEssenceLocation,
@@ -36,6 +37,7 @@ export type ScriptType =
   | 'BetterGI'
   | 'ZzzOd'
   | 'BAAH'
+  | 'OkScript'
 
 // MAA脚本配置
 export interface MAAScriptConfig {
@@ -542,6 +544,7 @@ export interface Script {
     | HSRConfig
     | BetterGIConfig
     | BAAHConfig
+    | OkScriptConfig
   users: User[]
 }
 
@@ -641,6 +644,7 @@ export interface ScriptIndexItem {
     | 'BetterGIConfig'
     | 'ZzzOdConfig'
     | 'BAAHConfig'
+    | 'OkScriptConfig'
 }
 
 // 脚本详情（用于前端展示）
@@ -660,6 +664,7 @@ export interface ScriptDetail {
     | BetterGIConfig
     | ZzzOdConfig
     | BAAHConfig
+    | OkScriptConfig
   users?: User[]
   createTime?: string
 }

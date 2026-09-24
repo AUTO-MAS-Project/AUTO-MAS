@@ -409,7 +409,8 @@
                             script.type === 'MaaFW' ||
                             script.type === 'M9A' ||
                             script.type === 'ZzzOd' ||
-                            script.type === 'BAAH'
+                            script.type === 'BAAH' ||
+                            script.type === 'OkScript'
                           "
                           class="user-info-tags"
                         >
@@ -733,6 +734,7 @@ const handleToggleUserStatus = (user: User) => {
 const getScriptTypeLabel = (type: Script['type']) => {
   if (type === 'Okww') return 'ok-ww'
   if (type === 'OkNte') return 'ok-nte'
+  if (type === 'OkScript') return 'ok-script'
   return type
 }
 
@@ -748,6 +750,7 @@ const SCRIPT_TYPE_TAG_COLORS: Record<Script['type'], string> = {
   BetterGI: 'gold',
   ZzzOd: 'volcano',
   BAAH: 'magenta',
+  OkScript: 'cyan',
   General: 'green',
 }
 

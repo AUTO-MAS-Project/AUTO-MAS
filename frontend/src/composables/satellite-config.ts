@@ -11,10 +11,10 @@ interface SatelliteModule {
 /**
  * 不上轨道的脚本类型。
  *
- * 通用脚本在 SCRIPT_LOGOS 里用的就是 AUTO-MAS 自己的图标，也就是这圈卫星的中心图标，
- * 放上去会出现一颗和中心一模一样的卫星。
+ * 通用脚本与 ok-script 通用专项在 SCRIPT_LOGOS 里用的就是 AUTO-MAS 自己的图标，也就是这圈
+ * 卫星的中心图标，放上去会出现一颗和中心一模一样的卫星。
  */
-const EXCLUDED_FROM_ORBIT: readonly ScriptType[] = ['General']
+const EXCLUDED_FROM_ORBIT: readonly ScriptType[] = ['General', 'OkScript']
 
 /**
  * 卫星在轨道上的排列顺序。
