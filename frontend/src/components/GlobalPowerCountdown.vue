@@ -16,6 +16,13 @@
       <div class="warning-icon">⚠️</div>
       <h2 class="countdown-title">{{ title }}</h2>
       <p class="countdown-message">{{ message }}</p>
+      <a-alert
+        v-if="powerCountdownDisconnected"
+        type="warning"
+        show-icon
+        :message="t('comp.powerCountdownConnectionLost')"
+        class="countdown-disconnected"
+      />
       <div class="countdown-timer">
         <span class="countdown-number">{{ remaining }}</span>
         <span class="countdown-unit">{{ t('comp.seconds') }}</span>
@@ -39,7 +46,6 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
 import { computed, ref, watch } from 'vue'
-import { Service } from '@/api'
 import { useAppLifecycle } from '@/composables/useAppLifecycle'
 
 const { t } = useI18n()
@@ -56,7 +62,7 @@ const POWER_OPERATION_LABEL: Record<string, string> = {
   Logoff: '注销',
 }
 
-const { powerCountdown } = useAppLifecycle()
+const { powerCountdown, powerCountdownDisconnected, cancelPowerCountdown } = useAppLifecycle()
 
 const visible = ref(false)
 const remaining = computed(() => powerCountdown.value?.remaining ?? 0)
@@ -96,11 +102,12 @@ watch(
   { immediate: true }
 )
 
-// 取消电源操作（走现有 HTTP API，后端会回发 power.countdown.cancelled）
+// 取消电源操作（走现有 HTTP API，后端会回发 power.countdown.cancelled；
+// 断线期间收不到该事件，成功后由生命周期协调器在本地清除状态关闭弹窗）
 const handleCancel = async () => {
   logger.info('用户取消电源操作')
   try {
-    await Service.cancelPowerTaskApiDispatchCancelPowerPost()
+    await cancelPowerCountdown()
     logger.info('电源操作已取消')
 
     // 触发全局事件，通知调度中心刷新电源状态
@@ -150,6 +157,11 @@ const handleCancel = async () => {
   color: var(--ant-color-text-secondary);
   margin: 0 0 32px 0;
   line-height: 1.5;
+}
+
+.countdown-disconnected {
+  margin: -16px 0 24px 0;
+  text-align: left;
 }
 
 .countdown-timer {
