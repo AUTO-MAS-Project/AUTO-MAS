@@ -114,6 +114,9 @@
     :submitting="addLoading || templateLoading"
     :template-loading="templateLoading"
     :template-error="templateError"
+    :template-page="templatePage"
+    :template-page-size="TEMPLATE_PAGE_SIZE"
+    :template-total="templateTotal"
     @request-templates="loadTemplates"
     @submit="handleSubmitScriptCreate"
   />
@@ -137,6 +140,7 @@ import type { Script, ScriptType, User } from '@/types/script'
 import {
   getScriptEditSegment,
   type ScriptCreateRequest,
+  type TemplateRequest,
 } from '@/views/scripts/components/scriptCreateFlow'
 import { useScriptApi } from '@/composables/useScriptApi'
 import { useUserApi } from '@/composables/useUserApi'
@@ -147,7 +151,11 @@ import {
   type WSTaskCompletedData,
   type WSTaskNoticeData,
 } from '@/services/websocket/types'
-import { useTemplateApi, type WebConfigTemplate } from '@/composables/useTemplateApi'
+import {
+  TEMPLATE_PAGE_SIZE,
+  useTemplateApi,
+  type ShareTemplateItem,
+} from '@/composables/useTemplateApi'
 import { Service } from '@/api/services/Service'
 import { TaskCreateIn } from '@/api/models/TaskCreateIn'
 import DocLink from '@/components/DocLink.vue'
@@ -164,7 +172,7 @@ const router = useRouter()
 const { addScript, deleteScript, getScriptsWithUsers } = useScriptApi()
 const { updateUser, deleteUser } = useUserApi()
 const { subscribe, unsubscribe } = useWebSocket()
-const { getWebConfigTemplates, importScriptFromWeb, error: templateError } = useTemplateApi()
+const { getShareTemplates, importScriptFromTemplate, error: templateError } = useTemplateApi()
 
 const scripts = ref<Script[]>([])
 const scriptSearchKeyword = ref('')
@@ -176,7 +184,10 @@ const scriptTableRef = ref<InstanceType<typeof ScriptTable> | null>(null)
 // 增加：标记是否已经完成过一次脚本列表加载（成功或失败都算一次）
 const loadedOnce = ref(false)
 const scriptCreateVisible = ref(false)
-const templates = ref<WebConfigTemplate[]>([])
+const templates = ref<ShareTemplateItem[]>([])
+const templatePage = ref(1)
+const templateTotal = ref(0)
+let templateRequestId = 0
 const addLoading = ref(false)
 const copyingScriptId = ref<string | null>(null)
 const templateLoading = ref(false)
@@ -364,9 +375,16 @@ const handleSubmitScriptCreate = async (request: ScriptCreateRequest) => {
     if (!result) return
 
     if (request.kind === 'general-template') {
-      const imported = await importScriptFromWeb(result.scriptId, request.template.downloadUrl)
-      if (!imported) return
-      message.success(t('scripts.toast.createdFromTemplate', { name: request.template.configName }))
+      const imported = await importScriptFromTemplate(result.scriptId, request.template)
+      // 导入失败就把刚建出来的空脚本删掉，不给用户留一个没有配置的壳
+      if (!imported) {
+        await deleteScript(result.scriptId)
+        await loadScripts()
+        return
+      }
+      message.success(
+        t('scripts.toast.createdFromTemplate', { name: request.template.displayName })
+      )
       await loadScripts()
       scriptCreateVisible.value = false
       navigateToCreatedScript(result.scriptId, 'General')
@@ -383,15 +401,25 @@ const handleSubmitScriptCreate = async (request: ScriptCreateRequest) => {
   }
 }
 
-const loadTemplates = async () => {
+const loadTemplates = async (query: TemplateRequest = { page: 1, keyword: '' }) => {
+  const requestId = ++templateRequestId
   templateLoading.value = true
   try {
-    templates.value = await getWebConfigTemplates()
+    const result = await getShareTemplates({
+      page: query.page,
+      pageSize: TEMPLATE_PAGE_SIZE,
+      keyword: query.keyword,
+    })
+    // 快速改关键字时请求可能乱序返回，只认最后一次
+    if (requestId !== templateRequestId) return
+    templates.value = result.items
+    templatePage.value = result.page
+    templateTotal.value = result.total
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`加载模板列表失败: ${errorMsg}`)
   } finally {
-    templateLoading.value = false
+    if (requestId === templateRequestId) templateLoading.value = false
   }
 }
 
