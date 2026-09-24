@@ -36,6 +36,7 @@ export type ScriptType =
   | 'BetterGI'
   | 'ZzzOd'
   | 'BAAH'
+  | 'MSS'
 
 // MAA脚本配置
 export interface MAAScriptConfig {
@@ -194,6 +195,10 @@ export interface MaaEndScriptConfig {
 // 页面与类型都直接复用 MaaFW 的；这里只留一个别名，方便按名字找到它。
 export type M9AScriptConfig = MaaFWScriptConfig
 
+// MSS（MaaStellaSora / 星塔旅人）同样是 MaaFW 的特调类型，脚本配置与 MaaFW 同形；
+// 用户配置只多一项 Info.PlanMode（见 MaaFWUserConfig）。
+export type MSSScriptConfig = MaaFWScriptConfig
+
 // HSR 脚本配置（后端已通过 HSRConfig OpenAPI 暴露类型）
 export type HSRScriptConfig = HSRConfig
 
@@ -331,6 +336,10 @@ export interface MaaFWUserConfig {
     Mode?: '脚本' | '用户' | '直控'
     /** 快速配置：独立于配置来源的用户级开关 */
     IfQuickConfig?: boolean
+    /** 仅 MSS 用户携带：悬赏试炼关卡来源（Fixed 或 MSS 计划表 UUID） */
+    PlanMode?: string
+    /** 仅 MSS 用户携带：队列里没加活动任务时，是否在活动期间自动加入并排到最前 */
+    IfActivityFirst?: boolean | null
   }
   Task: {
     SelectedPreset: string
@@ -641,6 +650,7 @@ export interface ScriptIndexItem {
     | 'BetterGIConfig'
     | 'ZzzOdConfig'
     | 'BAAHConfig'
+    | 'MSSConfig'
 }
 
 // 脚本详情（用于前端展示）

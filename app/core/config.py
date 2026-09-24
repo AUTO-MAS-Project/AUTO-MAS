@@ -78,6 +78,9 @@ from app.models.config import (
     MaaFWUserConfig,
     MaaPlanConfig,
     MaaUserConfig,
+    MSSConfig,
+    MSSPlanConfig,
+    MSSUserConfig,
     OkNteConfig,
     OkNteUserConfig,
     OkwwConfig,
@@ -863,6 +866,7 @@ class AppConfig(GlobalConfig):
             "BetterGI",
             "ZzzOd",
             "BAAH",
+            "MSS",
         ],
         script_id: str | None = None,
     ) -> tuple[
@@ -878,7 +882,8 @@ class AppConfig(GlobalConfig):
         | HSRConfig
         | BetterGIConfig
         | ZzzOdConfig
-        | BAAHConfig,
+        | BAAHConfig
+        | MSSConfig,
     ]:
         """添加脚本配置"""
 
@@ -1242,7 +1247,8 @@ class AppConfig(GlobalConfig):
         | HSRUserConfig
         | BetterGIUserConfig
         | ZzzOdUserConfig
-        | BAAHUserConfig,
+        | BAAHUserConfig
+        | MSSUserConfig,
     ]:
         """添加用户配置"""
 
@@ -1274,7 +1280,7 @@ class AppConfig(GlobalConfig):
         elif isinstance(script_config, MaaEndConfig):
             uid, config = await script_config.UserData.add(MaaEndUserConfig)
         elif isinstance(script_config, MaaFWConfig):
-            # 含特调子类（M9A）：用户类由脚本类的 USER_CONFIG_CLASS 决定。
+            # 含特调子类（M9A / MSS）：用户类由脚本类的 USER_CONFIG_CLASS 决定。
             uid, config = await script_config.UserData.add(
                 script_config.USER_CONFIG_CLASS
             )
@@ -3728,8 +3734,8 @@ class AppConfig(GlobalConfig):
         }
 
     async def add_plan(
-        self, script: Literal["MaaPlan", "MaaEndPlan"]
-    ) -> tuple[uuid.UUID, MaaPlanConfig | MaaEndPlanConfig]:
+        self, script: Literal["MaaPlan", "MaaEndPlan", "MSSPlan"]
+    ) -> tuple[uuid.UUID, MaaPlanConfig | MaaEndPlanConfig | MSSPlanConfig]:
         """添加计划表"""
 
         logger.info(f"添加计划表: {script}")
@@ -3776,7 +3782,7 @@ class AppConfig(GlobalConfig):
             raise TypeError(f"不支持的计划表配置类型: {plan_type}")
 
         consumer_config = PLAN_BOOK[plan_type]
-        user_list: list[MaaUserConfig | MaaEndUserConfig] = []
+        user_list: list[MaaUserConfig | MaaEndUserConfig | MSSUserConfig] = []
 
         for script in self.ScriptConfig.values():
             if not isinstance(script, consumer_config["script_class"]):

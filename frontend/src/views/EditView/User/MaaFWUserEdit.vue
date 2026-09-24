@@ -59,13 +59,52 @@
             </a-button>
           </a-flex>
           <!-- 特调类型（M9A）自动加首尾任务与切号，提醒用户不用手动加；不隐藏这三个任务，手动加了也只是被去重 -->
+          <!-- 一条提示一个框：挤在一个框里读起来还是一坨 -->
           <a-alert
-            v-if="flavor.queueHintKey"
+            v-for="(line, index) in queueHintLines"
+            :key="index"
             class="flavor-queue-hint"
             type="info"
             show-icon
-            :message="t(flavor.queueHintKey)"
+            :message="line"
           />
+          <!-- 特调类型（MSS）的用户可以引用计划表：运行前由特调钩子按当天槽位改写任务选项 -->
+          <a-form-item
+            v-if="flavor.planConsumer"
+            class="flavor-plan-mode"
+            :label="t('edit.maafwFlavorPlanMode')"
+            :extra="flavor.planHintKey ? t(flavor.planHintKey) : undefined"
+          >
+            <a-select
+              v-model:value="formData.Info.PlanMode"
+              :options="planModeOptions"
+              :disabled="loading"
+              class="flavor-plan-select"
+              @change="handleFieldSave('Info.PlanMode', formData.Info.PlanMode)"
+            />
+          </a-form-item>
+          <!-- 这一轮根本跑不起来时提前说清楚，别等引擎报「没有可执行任务」 -->
+          <a-alert
+            v-if="queueCannotRun"
+            class="flavor-queue-empty"
+            type="warning"
+            show-icon
+            :message="t('edit.mssFlavorQueueEmpty')"
+          />
+          <!-- 活动优先是 MSS 自己的取舍（和计划表下拉一样只在 MSS 上出现）。后端缺省是开,
+               所以这里按「不是 false 就算开」显示，不必给 MaaFW 用户塞一个它没有的字段 -->
+          <a-form-item
+            v-if="flavor.type === 'MSS'"
+            class="flavor-activity-first"
+            :label="t('edit.mssFlavorActivityFirst')"
+            :extra="t('edit.mssFlavorActivityFirstHint')"
+          >
+            <a-switch
+              :checked="formData.Info.IfActivityFirst !== false"
+              :disabled="loading"
+              @change="handleActivityFirstChange"
+            />
+          </a-form-item>
           <TaskQueueSection
             v-model:add-task-cascader-value="addTaskCascaderValue"
             v-model:show-preset-modal="showPresetModal"
@@ -317,6 +356,7 @@ const getDefaultMaaFWUserData = (): MaaFWUserConfig => ({
     Tag: '',
     Account: '',
     Password: '',
+    PlanMode: 'Fixed',
   },
   Task: {
     SelectedPreset: '',
@@ -351,7 +391,38 @@ const rules = computed<Record<string, Rule[]>>(() => ({
   ],
 }))
 
+/** 队列提示按条目给出（文案里用 \n 分行），渲染成列表而不是一坨文字 */
+const queueHintLines = computed(() =>
+  t(flavor.value.queueHintKey ?? '')
+    .split('\n')
+    .map(line => line.trim())
+    .filter(Boolean)
+)
+
 const accountRecordTooltip = computed(() => t(flavor.value.accountTooltipKey))
+
+// 计划表下拉（只有 flavor 声明了计划表消费方的类型才显示）：固定 + 该消费方的计划表
+const planModeOptions = ref<Array<{ label: string; value: string }>>([
+  { label: t('edit.maafwFlavorPlanFixed'), value: 'Fixed' },
+])
+const loadPlanModeOptions = async () => {
+  const consumer = flavor.value.planConsumer
+  if (!consumer) return
+  try {
+    const response = await Service.getPlanComboxApiInfoComboxPlanPost({ consumer })
+    if (response?.code !== 200 || !response.data) return
+    planModeOptions.value = response.data
+      .filter(item => Boolean(item.value))
+      .map(item =>
+        item.value === 'Fixed'
+          ? { label: t('edit.maafwFlavorPlanFixed'), value: 'Fixed' }
+          : { label: item.label ?? '', value: String(item.value) }
+      )
+  } catch (error) {
+    // 取不到计划表时只留「固定」一项，其它设置照常能改
+    logger.error(`加载计划表选项失败: ${error instanceof Error ? error.message : String(error)}`)
+  }
+}
 
 const controllerOptions = computed(() =>
   (previewData.value?.controllers || []).filter(controller =>
@@ -532,24 +603,34 @@ const addTaskMenuGroups = computed(() => {
 
   return Array.from(groupMap.values()).filter(group => group.taskCount > 0)
 })
-const addTaskCascaderOptions = computed<AddTaskCascaderOption[]>(() =>
-  addTaskMenuGroups.value.map(group => ({
+/** 分组里的项 → 级联选项：任务直接可选，二级分组再展开一层 */
+const toCascaderItems = (items: AddTaskMenuGroup['items']): AddTaskCascaderOption[] =>
+  items.map(item =>
+    item.type === 'task'
+      ? { value: `task:${item.task.name}`, label: item.label }
+      : {
+          value: item.key,
+          label: `${item.label} (${item.taskCount})`,
+          children: item.tasks.map(task => ({
+            value: `task:${task.name}`,
+            label: getDisplayName(task),
+          })),
+        }
+  )
+
+const addTaskCascaderOptions = computed<AddTaskCascaderOption[]>(() => {
+  const groups = addTaskMenuGroups.value
+  // interface 没给任务分组时只有一档「未分组」，再套一层级联就成了「左栏一个选项、
+  // 右栏一长条」，比直接铺开更难找。这种情况把任务提到顶层，去掉那层壳。
+  if (groups.length === 1 && groups[0].key === ADD_TASK_UNGROUPED_KEY) {
+    return toCascaderItems(groups[0].items)
+  }
+  return groups.map(group => ({
     value: `group:${group.key}`,
     label: `${group.label} (${group.taskCount})`,
-    children: group.items.map(item =>
-      item.type === 'task'
-        ? { value: `task:${item.task.name}`, label: item.label }
-        : {
-            value: item.key,
-            label: `${item.label} (${item.taskCount})`,
-            children: item.tasks.map(task => ({
-              value: `task:${task.name}`,
-              label: getDisplayName(task),
-            })),
-          }
-    ),
+    children: toCascaderItems(group.items),
   }))
-)
+})
 const presetTemplates = computed(() => {
   const activeTaskByName = new Map(activeTasks.value.map(task => [task.name, task] as const))
   return presetOptions.value
@@ -615,6 +696,24 @@ const getDisplayName = (item: MaaFWDisplayItem) => {
 
 const selectTask = (taskId: string) => {
   selectedTaskId.value = taskId
+}
+
+/**
+ * 队列空、计划表又是「固定」时这一轮没有任何可执行任务：引擎会判「无法构建运行计划」
+ * 并抛异常（`run_plan` 里 runnable_tasks 为空）。在这里提前警告，别让用户跑完才知道。
+ * 选了计划表就不算——特调钩子会把悬赏试炼补上。
+ */
+const queueCannotRun = computed(
+  () =>
+    flavor.value.type === 'MSS' &&
+    taskSnapshot.value.taskOrder.length === 0 &&
+    (formData.Info.PlanMode ?? 'Fixed') === 'Fixed'
+)
+
+/** 活动优先开关：后端缺省是开，这里只在用户显式关掉时写 false */
+const handleActivityFirstChange = (checked: boolean | string | number) => {
+  formData.Info.IfActivityFirst = checked === true
+  handleFieldSave('Info.IfActivityFirst', formData.Info.IfActivityFirst)
 }
 
 const persistQueuedSnapshot = async () => {
@@ -838,8 +937,8 @@ const loadScriptInfo = async () => {
       handleCancel()
       return
     }
-    // M9A 是 MaaFW 的特调类型，配置同形，同一个页面
-    if (script.type !== 'MaaFW' && script.type !== 'M9A') {
+    // M9A / MSS 是 MaaFW 的特调类型，同一个页面
+    if (script.type !== 'MaaFW' && script.type !== 'M9A' && script.type !== 'MSS') {
       message.error(t('edit.scriptTypeNotMfw'))
       handleCancel()
       return
@@ -853,7 +952,7 @@ const loadScriptInfo = async () => {
     preferAdbController.value = Boolean(
       loadedScriptConfig.Emulator?.Id && loadedScriptConfig.Emulator.Id !== '-'
     )
-    await reloadInterface(false)
+    await Promise.all([reloadInterface(false), loadPlanModeOptions()])
 
     if (isEdit.value) {
       await loadUserData()
@@ -906,9 +1005,11 @@ const loadUserData = async () => {
       const userIndex = userResponse.index.find(index => index.uid === userId)
       const userData = userResponse.data[userId] as Partial<MaaFWUserConfig> | undefined
 
-      // M9AUserConfig 是 MaaFWUserConfig 的同形子类，同一个页面
+      // M9A / MSS 的用户类是 MaaFWUserConfig 的子类（MSS 多一项 Info.PlanMode），同一个页面
       const isMaaFWUser =
-        userIndex?.type === 'MaaFWUserConfig' || userIndex?.type === 'M9AUserConfig'
+        userIndex?.type === 'MaaFWUserConfig' ||
+        userIndex?.type === 'M9AUserConfig' ||
+        userIndex?.type === 'MSSUserConfig'
       if (isMaaFWUser && userData) {
         applyUserData(userData)
         taskSnapshot.value = normalizeTaskSnapshot(formData.Task.TaskSnapshot, previewData.value)
@@ -1092,8 +1193,18 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
+/* 每条提示一个框（文案里用 \n 分行），框之间留点空 */
 .flavor-queue-hint {
+  margin-bottom: 8px;
+}
+
+.flavor-queue-hint-last {
   margin-bottom: 16px;
+}
+
+.flavor-plan-select {
+  width: 100%;
+  max-width: 360px;
 }
 
 .user-edit-container {

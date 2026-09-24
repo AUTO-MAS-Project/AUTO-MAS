@@ -93,6 +93,12 @@
                     alt="BAAH"
                     class="script-logo"
                   />
+                  <img
+                    v-else-if="script.type === 'MSS'"
+                    src="@/assets/mss.png"
+                    alt="MSS"
+                    class="script-logo"
+                  />
                   <img v-else src="@/assets/AUTO-MAS.ico" alt="AUTO-MAS" class="script-logo" />
                 </div>
                 <div class="script-details">
@@ -409,7 +415,8 @@
                             script.type === 'MaaFW' ||
                             script.type === 'M9A' ||
                             script.type === 'ZzzOd' ||
-                            script.type === 'BAAH'
+                            script.type === 'BAAH' ||
+                            script.type === 'MSS'
                           "
                           class="user-info-tags"
                         >
@@ -753,6 +760,7 @@ const SCRIPT_TYPE_TAG_COLORS: Record<Script['type'], string> = {
   BetterGI: 'gold',
   ZzzOd: 'volcano',
   BAAH: 'magenta',
+  MSS: 'orange',
   General: 'green',
 }
 

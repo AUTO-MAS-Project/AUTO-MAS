@@ -46,6 +46,7 @@ const SCRIPT_CREATE_TYPE_BY_SCRIPT_TYPE: Record<ScriptType, ScriptCreateIn.type>
   BetterGI: ScriptCreateIn.type.BETTER_GI,
   ZzzOd: ScriptCreateIn.type.ZZZ_OD,
   BAAH: ScriptCreateIn.type.BAAH,
+  MSS: ScriptCreateIn.type.MSS,
   General: ScriptCreateIn.type.GENERAL,
 }
 
@@ -61,6 +62,7 @@ const SCRIPT_TYPE_BY_CONFIG_TYPE: Record<string, ScriptType> = {
   BetterGIConfig: 'BetterGI',
   ZzzOdConfig: 'ZzzOd',
   BAAHConfig: 'BAAH',
+  MSSConfig: 'MSS',
 }
 
 const resolveScriptType = (configType: string): ScriptType => {
@@ -821,10 +823,12 @@ export function useScriptApi() {
                       },
                     }
                   } else if (
-                    (userIndex.type === 'MaaFWUserConfig' || userIndex.type === 'M9AUserConfig') &&
+                    (userIndex.type === 'MaaFWUserConfig' ||
+                      userIndex.type === 'M9AUserConfig' ||
+                      userIndex.type === 'MSSUserConfig') &&
                     userData
                   ) {
-                    // M9AUserConfig 是 MaaFWUserConfig 的同形子类，归一化走同一条路
+                    // M9A / MSS 的用户类是 MaaFWUserConfig 的子类，归一化走同一条路
                     const maafwUserData = userData as unknown as LooseUserConfig
                     return {
                       id: userIndex.uid,
