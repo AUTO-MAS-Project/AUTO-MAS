@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest'
 
 import { MAX_NDJSON_LINE_LENGTH, NdjsonEventStream, parseRuntimeEventLine } from './ndjson'
 import { RuntimeClientError } from './protocol'
+import type { RuntimeEvent } from './protocol'
 
 const fixturesDir = join(dirname(fileURLToPath(import.meta.url)), '__fixtures__')
 
@@ -144,6 +145,78 @@ describe('parseRuntimeEventLine', () => {
     )
 
     expect(event).toMatchObject({ remediation: [], details: {}, retryable: false })
+  })
+})
+
+describe('parseRuntimeEventLine：M14 网络细节字段', () => {
+  // bootstrap-network-relay.ndjson 按真机样本（2026-09-11 M14 构建）裁剪重写，字段名与形态
+  // 与契约表一致；git 类源的测速按修订后契约不带 bytesPerSecond。
+  const lines = fixture('bootstrap-network-relay.ndjson').trim().split('\n')
+  const events = lines.map(line => parseRuntimeEventLine(line))
+  const progressOf = (pick: (event: Extract<RuntimeEvent, { type: 'progress' }>) => boolean) =>
+    events.find(event => event?.type === 'progress' && pick(event))
+
+  it('测速事件解析出 item / source / bytesPerSecond 与源数计数', () => {
+    const probe = progressOf(event => event.stage === 'network.probe')
+    expect(probe).toMatchObject({
+      type: 'progress',
+      stage: 'network.probe',
+      status: 'running',
+      item: 'github',
+      source: 'github',
+      bytesPerSecond: 5420756,
+      current: 1,
+      total: 5,
+    })
+    expect(probe?.type === 'progress' && probe.percent).toBeUndefined()
+  })
+
+  it('只测首字节的 git 类源不带 bytesPerSecond，解析为 undefined 而不是 0', () => {
+    const cnb = progressOf(event => event.stage === 'network.probe' && event.source === 'cnb')
+    expect(cnb).toMatchObject({ status: 'running', item: 'cnb', current: 2, total: 2 })
+    if (cnb?.type !== 'progress') throw new Error('应解析为 progress')
+    expect(cnb.bytesPerSecond).toBeUndefined()
+
+    const failed = progressOf(
+      event => event.stage === 'network.probe' && event.source === 'tsinghua'
+    )
+    expect(failed?.type === 'progress' && failed.bytesPerSecond).toBe(0)
+  })
+
+  it('下载事件解析出文件名、来源、速度与真实字节，percent 是浮点', () => {
+    const download = progressOf(
+      event => event.stage === 'uv.download' && event.current === 15036024
+    )
+    expect(download).toMatchObject({
+      item: 'uv-x86_64-pc-windows-msvc.zip',
+      source: 'edgeone-gh-proxy',
+      bytesPerSecond: 15036024,
+      current: 15036024,
+      total: 19013455,
+      percent: 79.08096661022418,
+    })
+  })
+
+  it('旧版 Runtime 的事件没有这三个字段时解析为 undefined', () => {
+    const legacyLine = fixture('bootstrap-success.ndjson').trim().split('\n')[2]
+    const legacy = parseRuntimeEventLine(legacyLine)
+    expect(legacy).toMatchObject({ type: 'progress', stage: 'uv.download' })
+    if (legacy?.type !== 'progress') throw new Error('夹具第三行应是 progress')
+    expect(legacy.item).toBeUndefined()
+    expect(legacy.source).toBeUndefined()
+    expect(legacy.bytesPerSecond).toBeUndefined()
+    expect(legacy.current).toBeUndefined()
+  })
+
+  it('类型不对或空串的新字段同样按缺失处理', () => {
+    const event = parseRuntimeEventLine(
+      '{"protocol":1,"type":"progress","stage":"python.install","status":"running","message":"x",' +
+        '"item":"","source":42,"bytesPerSecond":"fast"}'
+    )
+    if (event?.type !== 'progress') throw new Error('应解析为 progress')
+    expect(event.item).toBeUndefined()
+    expect(event.source).toBeUndefined()
+    expect(event.bytesPerSecond).toBeUndefined()
   })
 })
 

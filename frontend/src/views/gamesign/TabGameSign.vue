@@ -14,13 +14,15 @@ import type { GameSignAccountGroupConfig, ToolsConfig_GameSign } from '@/api'
 import { useGameSignAccountApi } from '@/composables/useGameSignAccountApi'
 import DocLink from '@/components/DocLink.vue'
 import { MAS_DOC_URLS } from '@/utils/openExternal'
+import { getConfig, saveConfig } from '@/utils/config'
 import QrLoginModal from './QrLoginModal.vue'
 import { useGameSignApi } from './useGameSignApi'
-import { useQrLogin } from './useQrLogin'
+import { useQrLogin, type QrLoginProvider } from './useQrLogin'
 import {
   buildUserTagsMap,
   getSignDetailAlias,
   getSignDetailClass,
+  getSignDetailItems,
   getSignStatusKey,
   getTagClass,
   getTagText,
@@ -39,11 +41,14 @@ const {
 } = defineProps<{
   config: ToolsConfig_GameSign
   disabled?: boolean
-  onFieldChange?: (key: string, value: any) => void | Promise<void>
+  onFieldChange?: <K extends keyof ToolsConfig_GameSign>(
+    key: K,
+    value: ToolsConfig_GameSign[K]
+  ) => void | Promise<void>
   onRefreshConfig?: () => Promise<void>
 }>()
 
-const logger = window.electronAPI.getLogger('游戏签到')
+const logger = window.electronAPI.getLogger('游戏社区')
 const signLoading = ref(false)
 const notifySaving = ref(false)
 const credentialToolDescription = computed(() => t('gamesign.section.toolDesc'))
@@ -57,38 +62,59 @@ interface AccountInstance {
   Name: string
   Enabled: boolean
   MiyousheToken: string
+  MiyousheDeviceId: string
+  MiyousheDeviceFp: string
+  CloudGenshinToken: string
   KuroToken: string
   SklandToken: string
   TaygedoToken: string
 }
 
-const { addAccount, updateAccount, loginTaygedo, loginSkland, deleteAccount } =
-  useGameSignAccountApi()
+interface AccountListInstance {
+  uid?: unknown
+  type?: unknown
+}
+
+interface AccountListData {
+  instances?: AccountListInstance[]
+  [key: string]: unknown
+}
+
+const asRecord = (value: unknown): Record<string, unknown> =>
+  typeof value === 'object' && value !== null ? (value as Record<string, unknown>) : {}
+
+const asString = (value: unknown) => (typeof value === 'string' ? value : '')
+
+const { addAccount, updateAccount, loginTaygedo, deleteAccount } = useGameSignAccountApi()
 const { listAccounts, reorderAccounts, manualSign } = useGameSignApi()
 const accounts = ref<AccountInstance[]>([])
 const addLoading = ref(false)
 const isDragging = ref(false)
-const credentialAction = ref<'taygedo-login' | 'skland-login' | null>(null)
+const credentialAction = ref<'taygedo-login' | null>(null)
 
 const loadAccounts = async () => {
   try {
     const response = await listAccounts()
     if (response.code !== 200) return
-    const data = response.data as any
+    const data = response.data as unknown as AccountListData | undefined
     const instances: AccountInstance[] = []
-    const instanceList = data?.instances || []
+    const instanceList = Array.isArray(data?.instances) ? data.instances : []
     for (const inst of instanceList) {
-      const uid = inst.uid as string
-      const accountData = data?.[uid]?.GameSignAccount || {}
+      const uid = asString(inst.uid)
+      if (!uid) continue
+      const accountData = asRecord(asRecord(data?.[uid]).GameSignAccount)
       instances.push({
         uid,
-        type: inst.type || 'GameSignAccountGroup',
-        Name: accountData.Name || t('gamesign.defaultUserName'),
-        Enabled: accountData.Enabled ?? true,
-        MiyousheToken: accountData.MiyousheToken || '',
-        KuroToken: accountData.KuroToken || '',
-        SklandToken: accountData.SklandToken || '',
-        TaygedoToken: accountData.TaygedoToken || '',
+        type: asString(inst.type) || 'GameSignAccountGroup',
+        Name: asString(accountData.Name) || t('gamesign.defaultUserName'),
+        Enabled: typeof accountData.Enabled === 'boolean' ? accountData.Enabled : true,
+        MiyousheToken: asString(accountData.MiyousheToken),
+        MiyousheDeviceId: asString(accountData.MiyousheDeviceId),
+        MiyousheDeviceFp: asString(accountData.MiyousheDeviceFp),
+        CloudGenshinToken: asString(accountData.CloudGenshinToken),
+        KuroToken: asString(accountData.KuroToken),
+        SklandToken: asString(accountData.SklandToken),
+        TaygedoToken: asString(accountData.TaygedoToken),
       })
     }
     accounts.value = instances
@@ -102,6 +128,9 @@ const getAccountAllData = (account: AccountInstance): GameSignAccountGroupConfig
   Name: account.Name,
   Enabled: account.Enabled,
   MiyousheToken: account.MiyousheToken,
+  MiyousheDeviceId: account.MiyousheDeviceId,
+  MiyousheDeviceFp: account.MiyousheDeviceFp,
+  CloudGenshinToken: account.CloudGenshinToken,
   KuroToken: account.KuroToken,
   SklandToken: account.SklandToken,
   TaygedoToken: account.TaygedoToken,
@@ -120,6 +149,9 @@ const handleAddAccount = async () => {
         Name: data.Name || defaultName,
         Enabled: data.Enabled ?? true,
         MiyousheToken: data.MiyousheToken || '',
+        MiyousheDeviceId: data.MiyousheDeviceId || '',
+        MiyousheDeviceFp: data.MiyousheDeviceFp || '',
+        CloudGenshinToken: data.CloudGenshinToken || '',
         KuroToken: data.KuroToken || '',
         SklandToken: data.SklandToken || '',
         TaygedoToken: data.TaygedoToken || '',
@@ -160,7 +192,12 @@ const handleAccountEnabledChange = async (account: AccountInstance, enabled: boo
 
 // ==================== 拖拽排序 ====================
 
-const onDragEnd = async (evt: any) => {
+interface DragEndEvent {
+  oldIndex?: number | null
+  newIndex?: number | null
+}
+
+const onDragEnd = async (evt: DragEndEvent) => {
   if (evt.oldIndex === evt.newIndex) return
   isDragging.value = true
   try {
@@ -188,24 +225,23 @@ const taygedoLoginModalVisible = ref(false)
 const taygedoLoginAccountId = ref('')
 const taygedoLoginPhone = ref('')
 const taygedoLoginPassword = ref('')
-const sklandLoginModalVisible = ref(false)
-const sklandLoginAccountId = ref('')
-const sklandLoginPhone = ref('')
-const sklandLoginPassword = ref('')
+const qrLoginProvider = ref<QrLoginProvider>('miyoushe')
+
+const openMiyousheQrLogin = () => {
+  qrLoginProvider.value = 'miyoushe'
+  void startQrLogin()
+}
+
+const openSklandQrLogin = () => {
+  qrLoginProvider.value = 'skland'
+  void startQrLogin()
+}
 
 const closeTaygedoLoginModal = () => {
   taygedoLoginModalVisible.value = false
   taygedoLoginAccountId.value = ''
   taygedoLoginPhone.value = ''
   taygedoLoginPassword.value = ''
-  credentialAction.value = null
-}
-
-const closeSklandLoginModal = () => {
-  sklandLoginModalVisible.value = false
-  sklandLoginAccountId.value = ''
-  sklandLoginPhone.value = ''
-  sklandLoginPassword.value = ''
   credentialAction.value = null
 }
 
@@ -217,17 +253,8 @@ const openTaygedoLoginModal = () => {
   taygedoLoginModalVisible.value = true
 }
 
-const openSklandLoginModal = () => {
-  if (!editingAccount.value) return
-  sklandLoginAccountId.value = editingAccount.value.uid
-  sklandLoginPhone.value = ''
-  sklandLoginPassword.value = ''
-  sklandLoginModalVisible.value = true
-}
-
 const openEditModal = (account: AccountInstance) => {
   closeTaygedoLoginModal()
-  closeSklandLoginModal()
   editingAccount.value = { ...account }
   editModalVisible.value = true
 }
@@ -235,7 +262,6 @@ const openEditModal = (account: AccountInstance) => {
 const handleEditModalCancel = () => {
   closeQrModal()
   closeTaygedoLoginModal()
-  closeSklandLoginModal()
   editModalVisible.value = false
   editingAccount.value = null
 }
@@ -288,34 +314,7 @@ const handleTaygedoLogin = async () => {
   }
 }
 
-const handleSklandLogin = async () => {
-  const accountId = sklandLoginAccountId.value
-  const phone = sklandLoginPhone.value.trim()
-  const password = sklandLoginPassword.value
-  if (!accountId) return
-  if (!phone || !password) {
-    message.warning(t('gamesign.toast.needSklandCredential'))
-    return
-  }
-  credentialAction.value = 'skland-login'
-  try {
-    await loginSkland(accountId, phone, password)
-    await loadAccounts()
-    const updated = accounts.value.find(item => item.uid === accountId)
-    if (updated && editingAccount.value?.uid === accountId) {
-      editingAccount.value = { ...updated }
-    }
-    closeSklandLoginModal()
-  } catch {
-    // loginSkland 已展示错误提示，保留二级弹窗供用户重新输入。
-  } finally {
-    sklandLoginPhone.value = ''
-    sklandLoginPassword.value = ''
-    credentialAction.value = null
-  }
-}
-
-// ==================== 米游社扫码登录 ====================
+// ==================== 米游社 / 森空岛扫码登录 ====================
 // 会话状态机在 useQrLogin，弹窗在 QrLoginModal，这里只提供「存到哪个账号」
 // 和存完之后的本地同步。沿用原来的变量名，模板不用改。
 
@@ -329,12 +328,21 @@ const {
   cancel: closeQrModal,
 } = useQrLogin({
   getAccountId: () => editingAccount.value?.uid,
-  onSaved: async (accountId, cookiesStr, isStillCurrent) => {
-    if (editingAccount.value?.uid === accountId) {
-      editingAccount.value.MiyousheToken = cookiesStr
+  provider: () => qrLoginProvider.value,
+  onSaved: async (accountId, credential, isStillCurrent) => {
+    // 森空岛完整凭据由后端用 scanCode 保存，这里只刷新账号；米游社仍先回填 Cookie。
+    if (qrLoginProvider.value === 'miyoushe' && editingAccount.value?.uid === accountId) {
+      editingAccount.value.MiyousheToken = credential
     }
     await loadAccounts()
     if (!isStillCurrent()) return
+    const savedAccount = accounts.value.find(account => account.uid === accountId)
+    if (savedAccount && editingAccount.value?.uid === accountId) {
+      // 只回填本次扫码拿到的那一个凭据字段。整体替换成服务端副本会把弹窗里
+      // 其他还没保存的输入（用户名、手动粘贴的其他平台 Token）静默冲掉。
+      const credentialField = qrLoginProvider.value === 'skland' ? 'SklandToken' : 'MiyousheToken'
+      editingAccount.value[credentialField] = savedAccount[credentialField]
+    }
     if (onRefreshConfig) {
       await onRefreshConfig()
     }
@@ -367,7 +375,10 @@ const getAccountGroupsForPlatformReactive = (
 
 // ==================== 通用变更处理 ====================
 
-const handleChange = async (key: string, value: any) => {
+const handleChange = async <K extends keyof ToolsConfig_GameSign>(
+  key: K,
+  value: ToolsConfig_GameSign[K]
+) => {
   if (!onFieldChange) return
 
   try {
@@ -388,6 +399,44 @@ const handleNotifyEnabledChange = async (value: boolean) => {
   }
 }
 
+// ==================== 首页显示日常便笺 ====================
+// 这是首页轮播下方的便笺总开关，存在前端本地配置（homeLayout），不是后端 GameSign 字段；
+// 默认关闭，用户打开后首页活动轮播下方才显示当前游戏的日常便笺。
+
+const homeActivityNotesVisible = ref(false)
+const homeActivityNotesSaving = ref(false)
+
+const loadHomeActivityNotes = async () => {
+  try {
+    const config = await getConfig()
+    homeActivityNotesVisible.value = config.homeLayout?.activityNotesVisible === true
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`读取首页便笺开关失败: ${errorMsg}`)
+  }
+}
+
+const handleHomeActivityNotesChange = async (value: boolean) => {
+  homeActivityNotesSaving.value = true
+  try {
+    const config = await getConfig()
+    await saveConfig({
+      homeLayout: {
+        ...(config.homeLayout ?? { moduleOrder: [], hiddenModules: [] }),
+        activityNotesVisible: value,
+      },
+    })
+    homeActivityNotesVisible.value = value
+    logger.info(`首页显示日常便笺 已保存: ${value}`)
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`保存首页便笺开关失败: ${errorMsg}`)
+    message.error(t('gamesign.toast.homeActivityEnableSaveFailed'))
+  } finally {
+    homeActivityNotesSaving.value = false
+  }
+}
+
 // ==================== 手动签到 ====================
 
 const handleManualSign = async () => {
@@ -403,7 +452,7 @@ const handleManualSign = async () => {
     if (response.code !== 200 && response.code !== 0) {
       throw new Error(response.message || t('gamesign.toast.signFailed'))
     }
-    logger.info('游戏签到完成')
+    logger.info('游戏社区签到完成')
     if (response.status === 'warning') {
       message.warning(response.message || t('gamesign.toast.signPartialNotify'))
     } else {
@@ -425,6 +474,7 @@ const handleManualSign = async () => {
 
 onMounted(() => {
   loadAccounts()
+  void loadHomeActivityNotes()
 })
 </script>
 
@@ -466,6 +516,29 @@ onMounted(() => {
             :checked="config.Enabled"
             :disabled="disabled"
             @change="handleChange('Enabled', $event)"
+          />
+        </div>
+        <div class="setting-row">
+          <div class="setting-info">
+            <span class="setting-title">{{ t('gamesign.section.activityEnable') }}</span>
+            <span class="setting-desc">{{ t('gamesign.section.activityEnableDesc') }}</span>
+          </div>
+          <a-switch
+            :checked="config.ActivityEnabled !== false"
+            :disabled="disabled"
+            @change="handleChange('ActivityEnabled', $event)"
+          />
+        </div>
+        <div class="setting-row">
+          <div class="setting-info">
+            <span class="setting-title">{{ t('gamesign.section.homeActivityEnable') }}</span>
+            <span class="setting-desc">{{ t('gamesign.section.homeActivityEnableDesc') }}</span>
+          </div>
+          <a-switch
+            :checked="homeActivityNotesVisible"
+            :disabled="disabled"
+            :loading="homeActivityNotesSaving"
+            @change="handleHomeActivityNotesChange"
           />
         </div>
         <div class="setting-row">
@@ -586,18 +659,25 @@ onMounted(() => {
                           :key="gIdx"
                         >
                           <template
-                            v-for="game in group.games"
-                            :key="`${game.account || group.account_alias}-${game.game}`"
+                            v-for="game in getSignDetailItems(group.games)"
+                            :key="`${game.account || group.account_alias}-${game.game}-${game.kind}`"
                           >
                             <div class="sign-tooltip-alias">
                               {{ getSignDetailAlias(group, game, t('gamesign.unknownUser')) }}
                             </div>
                             <div class="sign-tooltip-row">
-                              <span>{{ game.game }}</span>
+                              <span>{{
+                                game.kind === 'community'
+                                  ? t('gamesign.list.kuroCoinSign')
+                                  : game.kind === 'game'
+                                    ? t('gamesign.list.gameSignTask', { game: game.game })
+                                    : game.game
+                              }}</span>
                               <span :class="getSignDetailClass(game.status)">
                                 ● {{ t(getSignStatusKey(game.status)) }}
                               </span>
                               <span v-if="game.reward" class="tt-reward">{{ game.reward }}</span>
+                              <span v-if="game.reason" class="tt-reason">{{ game.reason }}</span>
                             </div>
                           </template>
                         </template>
@@ -608,6 +688,9 @@ onMounted(() => {
                     </template>
                     <span :class="['platform-tag', getTagClass(tag.status)]">
                       {{ getTagText(tag) }}
+                      <template v-if="tag.status === 'partial' && tag.failedCount > 0">
+                        · {{ t('gamesign.signStatus.partialFailure') }}
+                      </template>
                     </span>
                   </a-tooltip>
                 </a-space>
@@ -652,6 +735,8 @@ onMounted(() => {
       :ok-text="t('gamesign.edit.save')"
       :cancel-text="t('common.cancel')"
       :width="560"
+      :body-style="{ maxHeight: 'calc(100vh - 180px)', overflowY: 'auto' }"
+      centered
       @ok="handleEditModalOk"
       @cancel="handleEditModalCancel"
     >
@@ -672,11 +757,11 @@ onMounted(() => {
           />
           <a-button
             size="small"
-            class="credential-helper-btn"
             danger
+            class="credential-helper-btn"
             style="margin-top: 6px"
             :loading="qrLoading"
-            @click="startQrLogin"
+            @click="openMiyousheQrLogin"
           >
             <template #icon><QrcodeOutlined /></template>
             {{ t('gamesign.edit.qrLogin') }}
@@ -705,14 +790,15 @@ onMounted(() => {
           />
           <a-button
             size="small"
-            class="credential-helper-btn"
             danger
+            class="credential-helper-btn"
             style="margin-top: 6px"
-            :loading="credentialAction === 'skland-login'"
-            :disabled="credentialAction !== null"
-            @click="openSklandLoginModal"
+            :loading="qrLoading"
+            :disabled="qrLoading || credentialAction !== null"
+            @click="openSklandQrLogin"
           >
-            {{ t('gamesign.edit.passwordLogin') }}
+            <template #icon><QrcodeOutlined /></template>
+            {{ t('gamesign.edit.qrLogin') }}
           </a-button>
         </div>
         <a-divider orientation="left" class="community-divider">{{
@@ -727,8 +813,8 @@ onMounted(() => {
           />
           <a-button
             size="small"
-            class="credential-helper-btn"
             danger
+            class="credential-helper-btn"
             style="margin-top: 6px"
             :loading="credentialAction === 'taygedo-login'"
             :disabled="credentialAction !== null"
@@ -779,62 +865,11 @@ onMounted(() => {
           <a-button @click="closeTaygedoLoginModal">{{ t('common.cancel') }}</a-button>
           <a-button
             type="primary"
-            class="credential-helper-btn"
             danger
+            class="credential-helper-btn"
             :loading="credentialAction === 'taygedo-login'"
             :disabled="credentialAction !== null"
             @click="handleTaygedoLogin"
-          >
-            {{ t('gamesign.login.submit') }}
-          </a-button>
-        </a-space>
-      </div>
-    </a-modal>
-
-    <!-- 森空岛账密获取 Token 弹窗 -->
-    <a-modal
-      v-model:open="sklandLoginModalVisible"
-      :title="t('gamesign.login.sklandTitle')"
-      :footer="null"
-      :width="420"
-      @cancel="closeSklandLoginModal"
-    >
-      <div class="modal-form">
-        <a-alert class="credential-disclaimer" type="warning" show-icon>
-          <template #message>{{ t('gamesign.login.disclaimerTitle') }}</template>
-          <template #description>{{ credentialPrivacyNotice }}</template>
-        </a-alert>
-        <div class="form-item-vertical">
-          <span class="form-label">{{ t('gamesign.login.currentAccount') }}</span>
-          <a-input :value="editingAccount?.Name || ''" disabled />
-        </div>
-        <div class="form-item-vertical">
-          <span class="form-label">{{ t('gamesign.login.sklandPhone') }}</span>
-          <a-input
-            v-model:value="sklandLoginPhone"
-            autocomplete="off"
-            :placeholder="t('gamesign.login.sklandPhonePlaceholder')"
-            allow-clear
-          />
-        </div>
-        <div class="form-item-vertical">
-          <span class="form-label">{{ t('gamesign.login.password') }}</span>
-          <a-input-password
-            v-model:value="sklandLoginPassword"
-            autocomplete="new-password"
-            :placeholder="t('gamesign.login.sklandPasswordPlaceholder')"
-            allow-clear
-          />
-        </div>
-        <a-space style="width: 100%; justify-content: flex-end">
-          <a-button @click="closeSklandLoginModal">{{ t('common.cancel') }}</a-button>
-          <a-button
-            type="primary"
-            class="credential-helper-btn"
-            danger
-            :loading="credentialAction === 'skland-login'"
-            :disabled="credentialAction !== null"
-            @click="handleSklandLogin"
           >
             {{ t('gamesign.login.submit') }}
           </a-button>
@@ -849,6 +884,7 @@ onMounted(() => {
       :status-text="qrStatusText"
       :qr-code-data-url="qrCodeDataUrl"
       :loading="qrLoading"
+      :provider="qrLoginProvider"
       @cancel="closeQrModal"
       @retry="startQrLogin"
     />
@@ -880,13 +916,9 @@ onMounted(() => {
 }
 
 .section-header-actions .section-update-button.primary-style {
-  background: linear-gradient(
-    135deg,
-    var(--ant-color-primary),
-    var(--ant-color-primary-hover)
-  ) !important;
-  border: 1px solid var(--ant-color-primary) !important;
-  color: #fff !important;
+  background: var(--ant-color-primary);
+  border: 1px solid var(--ant-color-primary);
+  color: #fff;
   box-shadow: 0 2px 8px rgba(22, 119, 255, 0.18);
   transition:
     transform 0.16s ease,
@@ -1107,7 +1139,9 @@ onMounted(() => {
 .platform-tag {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 3px;
+  min-width: 76px;
   padding: 2px 8px;
   border-radius: 3px;
   font-size: 12px;
@@ -1115,6 +1149,8 @@ onMounted(() => {
   border: 1px solid transparent;
   cursor: default;
   white-space: nowrap;
+  text-align: center;
+  box-sizing: border-box;
 }
 
 /* 绿色：签到成功 */
@@ -1166,6 +1202,8 @@ onMounted(() => {
 .sign-tooltip {
   width: 100%;
   min-width: 0;
+  max-height: min(360px, calc(50vh - 64px));
+  overflow-y: auto;
   color: rgba(255, 255, 255, 0.85);
 }
 .sign-tooltip-title {
@@ -1219,6 +1257,11 @@ onMounted(() => {
 .tt-reward {
   grid-column: 1 / -1;
   color: rgba(255, 255, 255, 0.55);
+  font-size: 12px;
+}
+.tt-reason {
+  grid-column: 1 / -1;
+  color: var(--ant-color-error);
   font-size: 12px;
 }
 .sign-tooltip-empty {
@@ -1312,6 +1355,105 @@ onMounted(() => {
 .community-divider {
   color: var(--ant-color-text-secondary);
   font-size: 13px;
+}
+
+@media (max-width: 860px) {
+  .section-header-actions {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .setting-row {
+    align-items: flex-start;
+    padding: 12px 16px;
+  }
+
+  .setting-row-static {
+    flex-wrap: wrap;
+  }
+
+  .user-table-container {
+    overflow: visible;
+    border: none;
+    background: transparent;
+  }
+
+  .user-table-header {
+    display: none;
+  }
+
+  .user-draggable {
+    min-height: 0;
+  }
+
+  .user-row {
+    display: grid;
+    grid-template-columns: 32px minmax(0, 1fr) auto;
+    align-items: center;
+    margin-bottom: 8px;
+    border: 1px solid var(--ant-color-border);
+    border-radius: 8px;
+  }
+
+  .user-row:last-child {
+    margin-bottom: 0;
+    border-bottom: 1px solid var(--ant-color-border);
+  }
+
+  .row-cell {
+    width: auto;
+    min-width: 0;
+    padding: 12px;
+    border-right: none;
+  }
+
+  .row-cell.drag-cell {
+    grid-column: 1;
+    grid-row: 1;
+    padding: 12px 4px;
+  }
+
+  .row-cell.name-cell {
+    grid-column: 2;
+    grid-row: 1;
+    justify-content: flex-start;
+    text-align: left;
+  }
+
+  .row-cell.status-cell {
+    grid-column: 3;
+    grid-row: 1;
+    padding-left: 4px;
+  }
+
+  .row-cell.tags-cell {
+    grid-column: 2 / 4;
+    grid-row: 2;
+    min-width: 0;
+    padding: 0 12px 12px;
+  }
+
+  .row-cell.tags-cell :deep(.ant-space) {
+    display: flex;
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .row-cell.actions-cell {
+    grid-column: 2 / 4;
+    grid-row: 3;
+    width: auto;
+    min-width: 0;
+    justify-content: flex-start;
+    padding: 0 12px 12px;
+  }
+
+  .empty-state {
+    padding: 32px 16px;
+    border: 1px solid var(--ant-color-border);
+    border-radius: 8px;
+    background: var(--ant-color-bg-container);
+  }
 }
 
 /* 深色模式下使用低亮度状态底色，避免浅色标签在暗背景中刺眼。 */

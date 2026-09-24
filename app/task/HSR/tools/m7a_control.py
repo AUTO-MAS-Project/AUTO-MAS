@@ -19,8 +19,6 @@
 from pathlib import Path
 from typing import Callable
 
-import yaml
-
 from app.models.config import HSRConfig, HSRUserConfig
 from app.models.task import UserItem
 from app.utils import get_logger
@@ -144,9 +142,7 @@ class HSRM7AControl:
             | m7a.M7A_NOTIFICATION_PATCH_WHITELIST
             | m7a.M7A_FINISH_ACTION_PATCH_WHITELIST
         )
-        current_config = (
-            yaml.safe_load(config_path.read_text(encoding="utf-8-sig")) or {}
-        )
+        current_config = m7a.load_m7a_yaml(config_path.read_text(encoding="utf-8-sig"))
         if not isinstance(current_config, dict):
             raise ValueError(f"M7A config.yaml 顶层必须是对象: {config_path}")
         patched_config = m7a.merge_whitelist(
@@ -251,8 +247,6 @@ class HSRM7AControl:
             return last_result
 
         return HSRRunItem(
-            user_item=user_item,
-            user_cfg=user_cfg,
             user_name=user_name,
             user_id=uid,
             phase=phase,
@@ -260,7 +254,6 @@ class HSRM7AControl:
             module_name=module.name,
             script="M7A",
             description=description,
-            timeout_seconds=timeout_seconds,
             run=run_m7a_patched,
             on_success=on_success,
         )
@@ -298,8 +291,6 @@ class HSRM7AControl:
                 )
 
             return HSRRunItem(
-                user_item=user_item,
-                user_cfg=user_cfg,
                 user_name=user_name,
                 user_id=uid,
                 phase=phase,
@@ -310,7 +301,6 @@ class HSRM7AControl:
                     f"M7A routine：主关卡={'已配置' if daily_main_stage else '使用原生动态配置'}，"
                     f"历战余响本周尝试={'是' if daily_eow_enabled else '否'}"
                 ),
-                timeout_seconds=timeout_seconds,
                 run=run_m7a_daily,
                 on_success=(
                     lambda result, uid=uid, user_name=user_name, daily_eow_enabled=daily_eow_enabled: (

@@ -1,12 +1,7 @@
 import { ref } from 'vue'
 import { translate as t } from '@/i18n'
 import { Service } from '@/api/services/Service'
-import type {
-  ActivityItem,
-  HomeOverviewResponse,
-  ProxyInfo,
-  ResourceItem,
-} from '@/types/home'
+import type { ActivityItem, HomeOverviewResponse, ProxyInfo, ResourceItem } from '@/types/home'
 
 const logger = window.electronAPI.getLogger('首页')
 

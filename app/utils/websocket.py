@@ -440,22 +440,6 @@ class WSClientManager:
         """获取客户端实例"""
         return self._clients.get(name)
 
-    def list_clients(self) -> Dict[str, Dict[str, Any]]:
-        """列出所有客户端及其状态"""
-        result = {}
-        for name, client in self._clients.items():
-            result[name] = {
-                "name": name,
-                "url": client.url,
-                "is_connected": client.is_connected,
-                "is_system": name in self._system_clients,
-                "ping_interval": client.ping_interval,
-                "ping_timeout": client.ping_timeout,
-                "reconnect_interval": client.reconnect_interval,
-                "max_reconnect_attempts": client.max_reconnect_attempts,
-            }
-        return result
-
     async def create_client(
         self,
         name: str,
@@ -579,14 +563,6 @@ class WSClientManager:
 
         self._logger.info(f"已删除 WebSocket 客户端: {name}")
         return True
-
-    async def send_message(self, name: str, message: Dict[str, Any]) -> bool:
-        """发送消息"""
-        client = self._clients.get(name)
-        if not client or not client.is_connected:
-            return False
-
-        return await client.send(message)
 
     async def send_auth(
         self,

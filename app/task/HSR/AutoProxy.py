@@ -35,7 +35,7 @@ from app.models.schema import WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem, TaskExecuteBase, UserItem
 from app.services.system import System
 from app.utils import ProcessManager, get_logger, is_process_running
-from app.utils.constants import UTC4, UTC8
+from app.utils.constants import UTC4
 
 from .task_mapping import (
     HSR_TASK_MODULES,
@@ -52,12 +52,21 @@ from .tools.account_switch import (
     stop_external_processes,
     user_needs_account_switch,
 )
+from .tools.backup_archive import archive_mas_runtime_backup, read_overlay_values
 from .tools.extra_script import run_script_after_task, run_script_before_task
-from .tools.log_detect import detect_echo_of_war_completion
+from .tools.log_detect import (
+    detect_echo_of_war_completion,
+    find_m7a_self_game_stop,
+    select_failure_summary_lines,
+)
 from .tools.m7a_control import HSRM7AControl
 from .tools.m7a_runtime import M7ARunner
 from .tools.managed_config import list_managed_modules, redeem_code_fingerprint
-from .tools.native_control import resolve_configured_engines, resolve_script_path
+from .tools.native_control import (
+    resolve_configured_engines,
+    resolve_phase_timeout_minutes,
+    resolve_script_path,
+)
 from .tools.run_model import (
     CompletionWriteback,
     HSRGameExitedError,
@@ -71,7 +80,11 @@ from .tools.run_model import (
     external_result_failure_summary,
 )
 from .tools.sra_control import HSRSRAControl
-from .tools.sra_runtime import cleanup_sra_temp_config
+from .tools.sra_runtime import (
+    SRA_REWARD_REDEEM_CODE_KEY,
+    SRA_REWARD_REDEEM_CODE_LEGACY_KEY,
+    cleanup_sra_temp_config,
+)
 from .tools.stage_runtime import resolve_configured_daily_stages
 
 logger = get_logger("HSR 自动代理")
@@ -79,11 +92,9 @@ logger = get_logger("HSR 自动代理")
 # 队列中止时写给剩余未执行项的原因，用户会在任务报告里直接看到。
 HSR_ABORT_REASON_LOGIN_FAILED = "SRA 登录/切号失败，当前阶段未执行"
 HSR_ABORT_REASON_GAME_EXITED = "游戏进程已退出，当前阶段剩余模块未执行"
-
-PHASE_TIMEOUT_CONFIG: dict[HSRPhase, tuple[str, int]] = {
-    "daily": ("DailyTimeLimit", 20),
-    "weekly": ("WeeklyTimeLimit", 60),
-}
+# 游戏进程消失后再等这么久才下结论：读输出的协程要把 M7A 关游戏前那行
+# ERROR 收进来；脚本自己关游戏后紧接着退出的，等它自然结束就不用杀。
+GAME_EXIT_SETTLE_SECONDS = 2
 
 MODULE_KEYS_BY_PHASE: dict[HSRPhase, tuple[str, ...]] = {
     phase: tuple(module.key for module in HSR_TASK_MODULES if module.category == phase)
@@ -117,6 +128,22 @@ def resolve_daily_native_modes(
         }
     )
     return bool(values.get("build_target_enable", False)), activity_enabled
+
+
+def _server_day_clock(now_dt: datetime | None = None) -> datetime:
+    """把一个时刻换算成游戏换日口径（UTC+4）的挂钟时间。
+
+    星铁在服务器时间（UTC+8）周一 04:00 重置，等价于 UTC+4 的零点，按 UTC+4 取
+    `isocalendar()` / `%A` / `%Y-%m-%d` 就会在正确时刻翻页。日 / 周标记是「那个瞬间」
+    的属性，与调用方或用户本机在哪个时区无关，所以带时区的输入一律换算过去；naive
+    输入按已经是 UTC+4 处理。
+    """
+
+    if now_dt is None:
+        return datetime.now(tz=UTC4)
+    if now_dt.tzinfo is None:
+        return now_dt.replace(tzinfo=UTC4)
+    return now_dt.astimezone(UTC4)
 
 
 def _has_enabled_phase_module(user_config, phase: HSRPhase) -> bool:
@@ -195,8 +222,9 @@ class HSRAutoProxyTask(TaskExecuteBase):
             return
         # 日志行时间戳跟随用户本机时区；HSR 之外的专项都用本地时间，
         # 这里曾硬编码 UTC+8，非中国时区的用户看到的每一行都是偏的。
-        # 注意别把周常重置日、历战余响开始日那几处 UTC8 一起改掉，
-        # 那些是游戏服务器日期语义，必须留在 UTC+8。
+        # 注意别把周常重置日、历战余响开始日那几处一起改掉，那些是游戏服务器
+        # 日期语义，用 UTC+4 表达：星铁的日 / 周边界是服务器时间周一 04:00，
+        # 正好等于 UTC+4 的零点，`isocalendar()` 与 `%A` 因此会在正确时刻翻页。
         now_text = datetime.now().astimezone().strftime("%H:%M:%S")
         appended_lines: list[str] = []
         for line in text.splitlines():
@@ -347,10 +375,15 @@ class HSRAutoProxyTask(TaskExecuteBase):
     def _period_markers(
         now_dt: datetime | None = None,
     ) -> tuple[str, str]:
-        """返回当前日期和 ISO 周标记。"""
+        """返回当前日期和 ISO 周标记（游戏服务器口径）。
 
-        if now_dt is None:
-            now_dt = datetime.now(tz=UTC8)
+        用 UTC+4 而不是 UTC+8：星铁在服务器时间周一 04:00 重置，UTC+4 的零点正是
+        这一刻。按 UTC+8 算会提前四小时翻页——周一 00:00~04:00（北京时间，对 UTC+2
+        用户就是周日晚上）跑的那一轮，会把「上一周已完成」的结果写成新一周的完成态，
+        真正重置后整周都不再尝试。
+        """
+
+        now_dt = _server_day_clock(now_dt)
         iso_year, iso_week, _ = now_dt.isocalendar()
         return (
             now_dt.strftime("%Y-%m-%d"),
@@ -383,8 +416,7 @@ class HSRAutoProxyTask(TaskExecuteBase):
     ) -> list[tuple[str, str, object]]:
         """构造日常代理状态写回字段，口径与用户列表标签保持一致。"""
 
-        if now_dt is None:
-            now_dt = datetime.now(tz=UTC4)
+        now_dt = _server_day_clock(now_dt)
 
         today = now_dt.strftime("%Y-%m-%d")
         last_proxy_date = str(user_config.get("Data", "LastProxyDate") or "")
@@ -513,7 +545,6 @@ class HSRAutoProxyTask(TaskExecuteBase):
         eow_enabled: bool,
         result: object,
         script: Literal["M7A", "SRA"],
-        dedicated_run: bool = False,
     ) -> None:
         """外部脚本确认历战余响完成后，登记完成态。"""
 
@@ -523,7 +554,6 @@ class HSRAutoProxyTask(TaskExecuteBase):
         completed, reason = detect_echo_of_war_completion(
             result,
             script,
-            dedicated_run=dedicated_run,
         )
         if not completed:
             self._record_module_result(
@@ -602,8 +632,8 @@ class HSRAutoProxyTask(TaskExecuteBase):
         if eow_target not in weekday_options:
             eow_target = "Monday"
 
-        if now_dt is None:
-            now_dt = datetime.now(tz=UTC8)
+        # 游戏周边界是服务器时间周一 04:00 = UTC+4 零点，见 _period_markers
+        now_dt = _server_day_clock(now_dt)
         iso_year, iso_week, _ = now_dt.isocalendar()
         now_week = f"{iso_year:04d}-W{iso_week:02d}"
 
@@ -638,8 +668,8 @@ class HSRAutoProxyTask(TaskExecuteBase):
         """解析周常是否本周已完成，不写用户 Data。"""
         weekly_enabled = _has_enabled_phase_module(user_config, "weekly")
 
-        if now_dt is None:
-            now_dt = datetime.now(tz=UTC8)
+        # 游戏周边界是服务器时间周一 04:00 = UTC+4 零点，见 _period_markers
+        now_dt = _server_day_clock(now_dt)
         iso_year, iso_week, _ = now_dt.isocalendar()
         now_week = f"{iso_year:04d}-W{iso_week:02d}"
 
@@ -663,9 +693,7 @@ class HSRAutoProxyTask(TaskExecuteBase):
     def _timeout_seconds_for_phase(self, phase: HSRPhase) -> int:
         """按周期读取超时配置，返回秒。"""
 
-        key, default = PHASE_TIMEOUT_CONFIG[phase]
-        minutes = int(self.script_config.get("Run", key) or default)
-        return max(1, minutes) * 60
+        return resolve_phase_timeout_minutes(self.script_config, phase) * 60
 
     def _phase_timeout_seconds(self, phase: HSRPhase) -> int:
         """按阶段读取超时配置，返回秒。"""
@@ -724,17 +752,20 @@ class HSRAutoProxyTask(TaskExecuteBase):
             module_key="ReceiveRewards",
             user_cfg=user_cfg,
         )
-        field_key = "rewards.6" if engine == "SRA" else "reward_redemption_code_enable"
-        selected = bool(values.get(field_key, True))
+        if engine == "SRA":
+            # SRA 2.22.0 起兑换码开关是具名键，旧 profile 仍是数组下标 6
+            selected = bool(
+                values.get(
+                    SRA_REWARD_REDEEM_CODE_KEY,
+                    values.get(SRA_REWARD_REDEEM_CODE_LEGACY_KEY, True),
+                )
+            )
+        else:
+            selected = bool(values.get("reward_redemption_code_enable", True))
         if not selected:
             self._append_log(f"用户「{user_name}」已关闭 {engine} 兑换码奖励，本轮跳过")
             return False, None
-        try:
-            only_when_changed = self.script_config.get(
-                "Game", "RedeemCodesOnlyWhenChanged"
-            )
-        except (AttributeError, KeyError, TypeError):
-            only_when_changed = True
+        only_when_changed = self.script_config.get("Game", "RedeemCodesOnlyWhenChanged")
         if only_when_changed is False:
             return True, None
         try:
@@ -1348,8 +1379,15 @@ class HSRAutoProxyTask(TaskExecuteBase):
                         return failures
                     continue
                 except Exception as e:  # noqa: BLE001
+                    # 非 HSRRetryableTaskError 的异常是配置或代码错误, 补跑也不会
+                    # 变好: 记录堆栈、记为失败但标记不可重试, 后续模块照常继续
                     item.last_error = str(e)
+                    item.retryable = False
                     failures.append(item)
+                    logger.opt(exception=True).warning(
+                        f"用户「{item.user_name}」模块「{item.module_name}」执行异常："
+                        f"{item.last_error}"
+                    )
                     self._append_log(
                         f"用户「{item.user_name}」模块「{item.module_name}」执行异常："
                         f"{item.last_error}"
@@ -1364,11 +1402,18 @@ class HSRAutoProxyTask(TaskExecuteBase):
                             failures=failures,
                             reason=HSR_ABORT_REASON_LOGIN_FAILED,
                         )
+                        for skipped in remaining:
+                            skipped.retryable = False
+                        if remaining:
+                            self._append_log(
+                                f"用户「{item.user_name}」{HSR_ABORT_REASON_LOGIN_FAILED}"
+                                f"（共 {len(remaining)} 项）"
+                            )
                         failures.extend(remaining)
                         return failures
                     continue
 
-                if bool(getattr(result, "success", True)):
+                if bool(getattr(result, "success", False)):
                     if item.on_success is not None:
                         item.on_success(result)
                     # 历战余响、差分宇宙、货币战争的最终结果由 on_success 按日志判定
@@ -1432,21 +1477,54 @@ class HSRAutoProxyTask(TaskExecuteBase):
                     break
                 if self.runtime.game_transitioning:
                     continue
-                if not is_process_running(HSR_GAME_PROCESS_NAME):
-                    await self._stop_external_processes()
-                    run_task.cancel()
-                    with suppress(BaseException):
-                        await run_task
-                    raise HSRGameExitedError(
-                        "检测到星穹铁道进程已退出，已终止当前外部脚本；"
-                        "若是用户主动关闭游戏，请同时在 MAS 中停止任务"
-                    )
+                if is_process_running(HSR_GAME_PROCESS_NAME):
+                    continue
+                # 进程刚消失时先让出一拍：让读输出的协程把 M7A 关游戏前打的
+                # 那行 ERROR 收进来，也给「脚本自己关掉游戏后紧接着退出」留出
+                # 自然结束的机会。
+                await asyncio.sleep(GAME_EXIT_SETTLE_SECONDS)
+                if run_task.done():
+                    break
+                reason = self._describe_game_exit(item)
+                await self._stop_external_processes()
+                run_task.cancel()
+                with suppress(BaseException):
+                    await run_task
+                raise HSRGameExitedError(reason)
             return await run_task
         except asyncio.CancelledError:
             run_task.cancel()
             with suppress(BaseException):
                 await run_task
             raise
+
+    def _describe_game_exit(self, item: HSRRunItem) -> str:
+        """游戏进程消失时给出准确归因。
+
+        M7A 等 6 分钟识不出任何界面会自己 stop_game() 再 continue 重启游戏，
+        这时把失败写成「进程已退出，若是用户主动关闭…」既冤枉用户，也把真正
+        的原因（画面卡在哪、错误截图在哪）藏进了几十行 WARNING 里。
+        """
+
+        runner = self.runtime.m7a_runner
+        if item.script == "M7A" and runner is not None:
+            recent = runner.recent_output_lines
+            if find_m7a_self_game_stop(recent) is not None:
+                cause = (
+                    "长时间未识别出游戏界面"
+                    if any("获取当前界面超时" in line for line in recent)
+                    else "启动或检查游戏时出错"
+                )
+                detail = "\n".join(select_failure_summary_lines(recent))
+                return (
+                    f"M7A {cause}，已自行关闭游戏；"
+                    "MAS 已终止本次 M7A，补跑前会重新启动游戏。M7A 最后的报错："
+                    f"\n{detail}"
+                )
+        return (
+            "检测到星穹铁道进程已退出，已终止当前外部脚本；"
+            "若是用户主动关闭游戏，请同时在 MAS 中停止任务"
+        )
 
     def _format_queue_failures(
         self,
@@ -1509,6 +1587,11 @@ class HSRAutoProxyTask(TaskExecuteBase):
             self.runtime.m7a_runner = m7a_runner
         login_plan = self._build_login_plan(user_cfg=user_cfg, sra_path=sra_path)
 
+        # 物化前归档本用户字段侧车（_build_user_queue 会把托管字段注入原生
+        # 配置；指纹去重，失败只记日志不阻断运行——native 池由 manager
+        # prepare 在任务级一次性归档）
+        archive_mas_runtime_backup(script_id, uid, read_overlay_values(user_cfg))
+
         full_queue = self._build_user_queue(
             user_item=user_item,
             user_cfg=user_cfg,
@@ -1533,6 +1616,7 @@ class HSRAutoProxyTask(TaskExecuteBase):
         await run_script_before_task(user_cfg)
 
         failed_items: list[HSRRunItem] = []
+        permanent_failures: list[HSRRunItem] = []
         current_items = full_queue
         for attempt in range(1, retry_limit + 1):
             if not current_items:
@@ -1591,7 +1675,10 @@ class HSRAutoProxyTask(TaskExecuteBase):
                 await run_script_after_task(user_cfg)
                 return
 
-            if attempt < retry_limit:
+            # 不可重试的失败（配置或代码错误）只记结果, 不进补跑队列
+            permanent_failures.extend(i for i in failed_items if not i.retryable)
+            retryable_failures = [i for i in failed_items if i.retryable]
+            if attempt < retry_limit and retryable_failures:
                 retry_action = (
                     "将重新启动游戏后补跑"
                     if is_game_management_enabled(self.script_config)
@@ -1599,11 +1686,11 @@ class HSRAutoProxyTask(TaskExecuteBase):
                 )
                 self._append_log(
                     f"用户「{user_name}」第 {attempt}/{retry_limit} 次尝试后，"
-                    f"仍有 {len(failed_items)} 个失败任务，{retry_action}"
+                    f"仍有 {len(retryable_failures)} 个失败任务，{retry_action}"
                 )
                 self._finish_current_user_log(status, user_status="运行")
                 current_items = self._build_retry_queue_items(
-                    failed_items,
+                    retryable_failures,
                     user_item=user_item,
                     user_cfg=user_cfg,
                     user_name=user_name,
@@ -1614,6 +1701,7 @@ class HSRAutoProxyTask(TaskExecuteBase):
                 )
             else:
                 self._finish_current_user_log(status, user_status="异常")
+                failed_items = permanent_failures + retryable_failures
                 for failed_item in failed_items:
                     if failed_item.module_key == "StartGame":
                         continue

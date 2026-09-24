@@ -12,6 +12,9 @@
 分支、提交信息、版本记录、Issue/PR 正文规范以文档站为准。代码风格、模块边界、
 数据模型、API 契约、前端规范、专项适配等 Agent 执行规则以本目录的 `mas-*` Skill 为准。
 
+其中 `cherry-pick` 到已发行分支只允许改动小的纯后端修复，带前端逻辑的摘取属于违规操作
+（相关 PR 应 close、相关 commit 应 revert）；该规则在文档站与 `mas-skills` 中同步维护。
+
 ## 已有 Skill
 
 - `mas-skills`：统一入口，用于按任务类型分发并组合工程规范类 Skill。

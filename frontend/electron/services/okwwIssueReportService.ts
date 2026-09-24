@@ -18,10 +18,7 @@ const logger = getLogger('OK-WW问题包')
 // 与 app/task/Okww/AutoProxy.py 的 _OKWW_REL_LOG_FILE 保持同步
 const OKWW_REL_LOG_FILE = 'data/apps/ok-ww/working/logs/ok-script.log'
 
-function addLatestOkwwScriptLog(
-  state: CollectorState,
-  installations: Installation[]
-): void {
+function addLatestOkwwScriptLog(state: CollectorState, installations: Installation[]): void {
   let latest: { sourcePath: string; archivePath: string; mtimeMs: number } | undefined
 
   for (const installation of installations) {
@@ -45,7 +42,7 @@ function addLatestOkwwScriptLog(
   }
 }
 
-export interface OkwwIssueReportResult {
+interface OkwwIssueReportResult {
   success: boolean
   message?: string
   zipPath?: string

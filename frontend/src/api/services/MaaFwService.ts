@@ -4,6 +4,8 @@
 /* eslint-disable */
 import type { MaaFWAgentEnvPrepareIn } from '../models/MaaFWAgentEnvPrepareIn';
 import type { MaaFWAgentEnvPrepareOut } from '../models/MaaFWAgentEnvPrepareOut';
+import type { MaaFWGamePackageIn } from '../models/MaaFWGamePackageIn';
+import type { MaaFWGamePackageOut } from '../models/MaaFWGamePackageOut';
 import type { MaaFWInterfacePreviewIn } from '../models/MaaFWInterfacePreviewIn';
 import type { MaaFWInterfacePreviewOut } from '../models/MaaFWInterfacePreviewOut';
 import type { MaaFWProjectUpdateIn } from '../models/MaaFWProjectUpdateIn';
@@ -12,6 +14,29 @@ import type { CancelablePromise } from '../core/CancelablePromise';
 import { OpenAPI } from '../core/OpenAPI';
 import { request as __request } from '../core/request';
 export class MaaFwService {
+    /**
+     * 按所选 resource 推断 MFW 项目的安卓游戏包名
+     * 脚本编辑页读完 interface / 切换 resource 时调用，把推出来的包名直接填进表单。
+     *
+     * 只看 resource 的 pipeline，不带用户任务的 pipeline_override（编辑脚本时还没有
+     * 运行计划）；推不出或多个候选都按原样返回，由前端决定不填。
+     * @param requestBody
+     * @returns MaaFWGamePackageOut Successful Response
+     * @throws ApiError
+     */
+    public static resolveMaafwGamePackageApiScriptsMaafwGamePackagePost(
+        requestBody: MaaFWGamePackageIn,
+    ): CancelablePromise<MaaFWGamePackageOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/maafw/game-package',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
     /**
      * 预览 MFW interface
      * 读取 MaaFW 项目 interface，并返回 controller/resource/task 摘要。
@@ -62,6 +87,10 @@ export class MaaFwService {
      * 在项目引导里读到 interface 之后调用，把首次运行才会付出的下载与建环境
      * 成本提前到配置阶段。与 ``/maafw/update`` 一样是同步端点：整个准备过程
      * 在请求内完成，首次冷启动可能耗时数分钟。
+     *
+     * 编辑页每打开一次就会调一次，所以先比一遍项目输入指纹：项目没更新过、上次
+     * 准备的环境也还在盘上，就直接还回上次的结果，不再取锁起进程。用户手动重试
+     * 时前端带 ``force``，跳过这层缓存。
      * @param requestBody
      * @returns MaaFWAgentEnvPrepareOut Successful Response
      * @throws ApiError

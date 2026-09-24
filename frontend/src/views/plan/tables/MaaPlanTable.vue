@@ -316,7 +316,7 @@ const saveCustomStage = async (index: 1 | 2 | 3 | 4) => {
     const timeConfig = planConfig[timeKey] as Record<string, any>
     if (timeConfig) {
       // 检查每个关卡字段是否使用了旧的自定义关卡
-      const stageFields = ['Stage', 'Stage_1', 'Stage_2', 'Stage_3', 'Stage_Remain']
+      const stageFields = ['Stage', 'Stage_1', 'Stage_2', 'Stage_3']
       for (const field of stageFields) {
         if (timeConfig[field] === oldValue && oldValue !== '') {
           // 更新为新值
@@ -501,27 +501,24 @@ const enableAllStages = async (stageKey: string) => {
       }
     }
   }
-  // 保存整个时间配置
-  const planConfig = coordinator.toApiData()
-  for (const timeKey of TIME_KEYS) {
-    const timeConfig = planConfig[timeKey]
-    if (timeConfig) {
-      await props.handlePlanChange(timeKey, timeConfig)
-    }
-  }
+  await saveAllTimeConfigs()
 }
 
 const disableAllStages = async (stageKey: string) => {
   for (const timeKey of TIME_KEYS) {
     coordinator.toggleStage(stageKey, timeKey, false)
   }
-  // 保存整个时间配置
+  await saveAllTimeConfigs()
+}
+
+// 逐个时间键保存整份时间配置，只在最后一次回读，避免 8 次 update 各带一次 get
+const saveAllTimeConfigs = async () => {
   const planConfig = coordinator.toApiData()
-  for (const timeKey of TIME_KEYS) {
-    const timeConfig = planConfig[timeKey]
-    if (timeConfig) {
-      await props.handlePlanChange(timeKey, timeConfig)
-    }
+  const timeKeys = TIME_KEYS.filter(timeKey => planConfig[timeKey])
+  for (const [i, timeKey] of timeKeys.entries()) {
+    await props.handlePlanChange(timeKey, planConfig[timeKey], {
+      refresh: i === timeKeys.length - 1,
+    })
   }
 }
 

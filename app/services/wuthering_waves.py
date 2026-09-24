@@ -50,16 +50,6 @@ class WutheringWavesLocalState:
     state: str
     is_predownload: bool
 
-    @property
-    def is_idle(self) -> bool:
-        """启动器是否已静止（无正在进行的下载或解压）。
-
-        version 可能在下载途中就被写入，只有 state 为空且不处于预下载时，
-        才代表该版本真正落盘可用。
-        """
-
-        return not self.state and not self.is_predownload
-
 
 @dataclass(frozen=True)
 class WutheringWavesUpdateInfo:

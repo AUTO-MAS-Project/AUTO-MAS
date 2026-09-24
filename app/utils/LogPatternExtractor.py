@@ -55,16 +55,10 @@ from app.utils.expression import CompiledExpression, ExpressionError, compile_ex
 PATTERN_TYPE_SPLIT = "split"
 PATTERN_TYPE_REGEX = "regex"
 PATTERN_TYPE_MULTILINE = "multiline"
-SUPPORTED_PATTERN_TYPES = (
-    PATTERN_TYPE_SPLIT,
-    PATTERN_TYPE_REGEX,
-    PATTERN_TYPE_MULTILINE,
-)
 
 # 规则日志类型：普通 = 任何推送报告均包含；失败 = 仅在存在未完成用户的报告中包含
 LOG_TYPE_NORMAL = "普通"
 LOG_TYPE_ERROR = "失败"
-SUPPORTED_LOG_TYPES = (LOG_TYPE_NORMAL, LOG_TYPE_ERROR)
 
 
 def _clean_log_type(value: object) -> str:
@@ -470,7 +464,6 @@ def flush_patterns(
 # 标志匹配模式：Split = 「|」分隔关键字子串包含（存量语义）；Regex = 整条正则
 SIGN_MODE_SPLIT = "Split"
 SIGN_MODE_REGEX = "Regex"
-SUPPORTED_SIGN_MODES = (SIGN_MODE_SPLIT, SIGN_MODE_REGEX)
 
 
 @dataclass

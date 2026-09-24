@@ -14,10 +14,6 @@ _LAZY_EXPORTS = {
         ".automas_maafw_interface",
         "MaaFWInterfaceService",
     ),
-    "MaaFWProjectUpdateService": (
-        ".automas_maafw_project_update",
-        "MaaFWProjectUpdateService",
-    ),
 }
 
 
@@ -36,5 +32,4 @@ def __dir__() -> list[str]:
 
 __all__ = [
     "MaaFWInterfaceService",
-    "MaaFWProjectUpdateService",
 ]

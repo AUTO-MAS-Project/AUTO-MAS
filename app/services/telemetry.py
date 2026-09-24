@@ -33,6 +33,10 @@ from sentry_sdk import metrics
 from sentry_sdk.integrations.logging import LoggingIntegration
 from sentry_sdk.integrations.loguru import LoguruIntegration
 
+from app.utils import get_logger
+
+logger = get_logger("遥测")
+
 SENTRY_DSN = (
     "https://eae490f602916b04f2f51f49f0fb5155@"
     "o4511881138733056.ingest.us.sentry.io/4511902512644096"
@@ -256,14 +260,21 @@ def sanitize_event(
 
 
 def is_telemetry_enabled(config_path: Path) -> bool:
-    """读取遥测开关；缺失或损坏的旧配置按默认开启处理。"""
+    """读取遥测开关；缺失的旧配置按默认开启处理，损坏的配置按关闭处理。"""
 
     try:
-        data = json.loads(config_path.read_text(encoding="utf-8"))
-        value = data.get("Function", {}).get("IfEnableTelemetry", True)
-        return value if isinstance(value, bool) else True
-    except (OSError, json.JSONDecodeError, AttributeError):
+        text = config_path.read_text(encoding="utf-8")
+    except OSError:
         return True
+    if not text.strip():
+        return True
+    try:
+        data = json.loads(text)
+        value = data.get("Function", {}).get("IfEnableTelemetry", True)
+    except (json.JSONDecodeError, AttributeError) as e:
+        logger.warning(f"配置文件 {config_path} 损坏, 遥测按关闭处理: {e}")
+        return False
+    return value if isinstance(value, bool) else True
 
 
 def resolve_sentry_dist(source_root: Path) -> str | None:

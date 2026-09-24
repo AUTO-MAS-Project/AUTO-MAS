@@ -39,13 +39,15 @@ from app.models.schema import (
     PatternDebugResultItem,
     SettingGetOut,
     SettingUpdateIn,
+    VirtualDisplayCheckOut,
+    VirtualDisplayCheckResultItem,
+    VirtualDisplayDetachOut,
     Webhook,
     WebhookCreateOut,
     WebhookDeleteIn,
     WebhookGetIn,
     WebhookGetOut,
     WebhookIndexItem,
-    WebhookReorderIn,
     WebhookTestIn,
     WebhookUpdateIn,
 )
@@ -110,6 +112,7 @@ async def get_scripts() -> SettingGetOut:
     try:
         data = await Config.get_setting()
     except Exception as e:
+        logger.opt(exception=True).warning(f"get_scripts失败: {type(e).__name__}: {e}")
         return SettingGetOut(
             code=500,
             status="error",
@@ -134,6 +137,9 @@ async def update_script(script: SettingUpdateIn = Body(...)) -> OutBase:
         await Config.update_setting(data)
 
     except Exception as e:
+        logger.opt(exception=True).warning(
+            f"update_script失败: {type(e).__name__}: {e}"
+        )
         return OutBase(
             code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
         )
@@ -153,6 +159,7 @@ async def test_notify() -> OutBase:
     try:
         result = await send_test_notification()
     except Exception as e:
+        logger.opt(exception=True).warning(f"test_notify失败: {type(e).__name__}: {e}")
         return OutBase(
             code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
         )
@@ -183,6 +190,9 @@ async def debug_pattern_api(req: PatternDebugIn = Body(...)) -> PatternDebugOut:
             req.pattern.model_dump(exclude_none=True), req.logText
         )
     except Exception as e:
+        logger.opt(exception=True).warning(
+            f"debug_pattern_api失败: {type(e).__name__}: {e}"
+        )
         return PatternDebugOut(
             code=500,
             status="error",
@@ -211,6 +221,7 @@ async def get_webhook(webhook: WebhookGetIn = Body(...)) -> WebhookGetOut:
         index = [WebhookIndexItem(**_) for _ in index]
         data = {uid: Webhook(**cfg) for uid, cfg in data.items()}
     except Exception as e:
+        logger.opt(exception=True).warning(f"get_webhook失败: {type(e).__name__}: {e}")
         return WebhookGetOut(
             code=500,
             status="error",
@@ -233,6 +244,7 @@ async def add_webhook() -> WebhookCreateOut:
         uid, config = await Config.add_webhook(None, None)
         data = Webhook(**(await config.toDict()))
     except Exception as e:
+        logger.opt(exception=True).warning(f"add_webhook失败: {type(e).__name__}: {e}")
         return WebhookCreateOut(
             code=500,
             status="error",
@@ -256,6 +268,9 @@ async def update_webhook(webhook: WebhookUpdateIn = Body(...)) -> OutBase:
             None, None, webhook.webhookId, webhook.data.model_dump(exclude_unset=True)
         )
     except Exception as e:
+        logger.opt(exception=True).warning(
+            f"update_webhook失败: {type(e).__name__}: {e}"
+        )
         return OutBase(
             code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
         )
@@ -273,23 +288,9 @@ async def delete_webhook(webhook: WebhookDeleteIn = Body(...)) -> OutBase:
     try:
         await Config.del_webhook(None, None, webhook.webhookId)
     except Exception as e:
-        return OutBase(
-            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
+        logger.opt(exception=True).warning(
+            f"delete_webhook失败: {type(e).__name__}: {e}"
         )
-    return OutBase()
-
-
-@router.post(
-    "/webhook/order",
-    tags=["Update"],
-    summary="重新排序webhook项",
-    response_model=OutBase,
-    status_code=200,
-)
-async def reorder_webhook(webhook: WebhookReorderIn = Body(...)) -> OutBase:
-    try:
-        await Config.reorder_webhook(None, None, webhook.indexList)
-    except Exception as e:
         return OutBase(
             code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
         )
@@ -315,5 +316,105 @@ async def test_webhook(webhook: WebhookTestIn = Body(...)) -> OutBase:
             webhook_config,
         )
     except Exception as e:
+        logger.opt(exception=True).warning(f"test_webhook失败: {type(e).__name__}: {e}")
         return OutBase(code=500, status="error", message=f"Webhook测试失败: {str(e)}")
     return OutBase()
+
+
+@router.post(
+    "/virtual-display/check",
+    tags=["Get"],
+    summary="检测虚拟显示驱动",
+    response_model=VirtualDisplayCheckOut,
+    status_code=200,
+)
+async def check_virtual_display() -> VirtualDisplayCheckOut:
+    """三段式检测虚拟显示驱动。
+
+    前两段验「能不能调用」，第三段真插一块屏再拆掉，验「有没有效果」——只做前两段
+    会出现「设置页显示检测通过、无人值守时照样失败」的假信号。第三段会真的改变桌面
+    拓扑，所以只挂在用户手动触发的按钮上，不在任务流程里自动跑。
+    """
+
+    from app.core.desktop_guard import check_virtual_display_driver
+
+    try:
+        return await check_virtual_display_driver()
+    except Exception as e:
+        logger.opt(exception=True).warning(
+            f"check_virtual_display失败: {type(e).__name__}: {e}"
+        )
+        return VirtualDisplayCheckOut(
+            code=500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+            results=[
+                VirtualDisplayCheckResultItem(
+                    stage="installed", passed=False, message="检测过程异常"
+                )
+            ],
+        )
+
+
+@router.post(
+    "/virtual-display/detach",
+    tags=["Action"],
+    summary="立即拆除虚拟显示器",
+    response_model=VirtualDisplayDetachOut,
+    status_code=200,
+)
+async def detach_virtual_display() -> VirtualDisplayDetachOut:
+    """用户明示要拆：真实显示器回来时的询问弹窗和设置页的「立即拆除」都走这里。
+
+    任务在不在跑都照办。拆完守卫的巡检照常：桌面上还有真实输出就什么都不做，一块都没有
+    的话下一轮会重新挂上——要彻底停用得关开关。
+    """
+
+    from app.core.desktop_guard import DesktopGuard
+
+    try:
+        detached = await DesktopGuard.detach_now("用户手动拆除")
+    except Exception as e:
+        logger.opt(exception=True).warning(
+            f"detach_virtual_display失败: {type(e).__name__}: {e}"
+        )
+        return VirtualDisplayDetachOut(
+            code=500, status="error", message=f"拆除失败: {str(e)}"
+        )
+    if not detached:
+        return VirtualDisplayDetachOut(message="当前没有挂载虚拟显示器")
+    return VirtualDisplayDetachOut(detached=True, message="已拆除虚拟显示器")
+
+
+@router.post(
+    "/virtual-display/status",
+    tags=["Get"],
+    summary="查询虚拟显示驱动状态",
+    response_model=VirtualDisplayCheckOut,
+    status_code=200,
+)
+async def virtual_display_status() -> VirtualDisplayCheckOut:
+    """只查驱动装没装、能不能调，不改变桌面拓扑。
+
+    设置页打开时自动调用，用来决定开关能不能打开。不做缓存也不持久化：一次 0.2ms，
+    而存下来的状态只会变陈旧。
+    """
+
+    from app.core.desktop_guard import probe_virtual_display_driver
+
+    try:
+        return await probe_virtual_display_driver()
+    except Exception as e:
+        logger.opt(exception=True).warning(
+            f"virtual_display_status失败: {type(e).__name__}: {e}"
+        )
+        return VirtualDisplayCheckOut(
+            code=500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+            results=[
+                VirtualDisplayCheckResultItem(
+                    stage="installed", passed=False, message="探测过程异常"
+                )
+            ],
+        )

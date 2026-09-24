@@ -83,7 +83,7 @@ export async function enterApp(
     }
 
     // 标记应用已初始化完成
-    await markAsInitialized()
+    markAsInitialized()
 
     // 预加载调度中心
     preloadSchedulerView(reason)
@@ -122,9 +122,6 @@ export async function forceEnterApp(reason: string = '强行进入'): Promise<vo
     } else {
       logger.warn(`${reason}：WebSocket连接失败，但继续进入应用`)
     }
-
-    // 等待一下确保连接状态稳定
-    await new Promise(resolve => setTimeout(resolve, 500))
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`${reason}：WebSocket连接异常: ${errorMsg}`)
@@ -134,7 +131,7 @@ export async function forceEnterApp(reason: string = '强行进入'): Promise<vo
   logger.info(`${reason}：跳转到主页...`)
 
   // 标记应用已初始化完成
-  await markAsInitialized()
+  markAsInitialized()
 
   if (router.currentRoute.value.path !== '/home') {
     router.push('/home')
@@ -146,15 +143,6 @@ export async function forceEnterApp(reason: string = '强行进入'): Promise<vo
 
   // 预加载调度中心
   preloadSchedulerView(reason)
-}
-
-/**
- * 正常进入应用（需要WebSocket连接成功）
- * @param reason 进入原因
- * @returns 是否成功进入
- */
-export async function normalEnterApp(reason: string = '正常进入'): Promise<boolean> {
-  return await enterApp(reason, false)
 }
 
 /**

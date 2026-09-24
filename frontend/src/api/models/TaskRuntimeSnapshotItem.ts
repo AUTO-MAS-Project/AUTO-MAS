@@ -50,9 +50,13 @@ export type TaskRuntimeSnapshotItem = {
      */
     cycleNextList?: Array<WSTaskCyclePreviewData>;
     /**
-     * 当前脚本日志
+     * 已推送的脚本日志, 与下一条增量推送衔接
      */
     log?: string;
+    /**
+     * 已推送日志对应的推送序号
+     */
+    logSeq?: number;
 };
 export namespace TaskRuntimeSnapshotItem {
     /**

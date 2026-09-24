@@ -8,6 +8,8 @@ import type { HSRDirectConfigImportOut } from '../models/HSRDirectConfigImportOu
 import type { HSRManagedConfigOut } from '../models/HSRManagedConfigOut';
 import type { HSRSRAProfilesOut } from '../models/HSRSRAProfilesOut';
 import type { HSRStageOptionsOut } from '../models/HSRStageOptionsOut';
+import type { HSRUpdateIn } from '../models/HSRUpdateIn';
+import type { HSRUpdateOut } from '../models/HSRUpdateOut';
 import type { CancelablePromise } from '../core/CancelablePromise';
 import { OpenAPI } from '../core/OpenAPI';
 import { request as __request } from '../core/request';
@@ -61,6 +63,29 @@ export class HsrService {
             query: {
                 'scriptId': scriptId,
             },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 检查或执行 HSR 外部脚本更新
+     * 手动检查或安装 M7A / SRA 的更新。
+     *
+     * 自动更新只在任务正常跑完后触发（``Update.AutoUpdateMode = AfterRun``），
+     * 这个接口是唯一不必等一轮任务就能更新的入口。
+     * @param requestBody
+     * @returns HSRUpdateOut Successful Response
+     * @throws ApiError
+     */
+    public static postHsrUpdateApiApiScriptsHsrUpdatePost(
+        requestBody: HSRUpdateIn,
+    ): CancelablePromise<HSRUpdateOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/hsr/update',
+            body: requestBody,
+            mediaType: 'application/json',
             errors: {
                 422: `Validation Error`,
             },

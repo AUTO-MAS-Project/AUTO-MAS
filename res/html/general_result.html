@@ -152,6 +152,14 @@
             {% endif %}
             <p class="result-label">用户代理情况</p>
             <div class="result-box">{{ result }}</div>
+            {% if screenshots %}
+            <p class="result-label">失败截图</p>
+            {% for shot in screenshots %}
+            <p>{{ shot.label | e }}</p>
+            <img src="cid:{{ shot.cid }}" alt="{{ shot.label | e }}"
+                style="max-width: 100%; border: 1px solid #ddd; border-radius: 8px;">
+            {% endfor %}
+            {% endif %}
             {% if push_log %}
             <p class="result-label">任务进程信息</p>
             <div class="result-box">{{ push_log }}</div>

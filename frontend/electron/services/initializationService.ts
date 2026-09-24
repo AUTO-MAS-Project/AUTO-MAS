@@ -39,6 +39,14 @@ export interface InitializationProgress {
   runtimeMode?: RuntimeLaunchMode
   /** 当前阶段没有可靠总量，界面应展示持续活动状态而不是精确百分比。 */
   indeterminate?: boolean
+  /** 以下七项只有 Runtime 链路产生，原样透传 `BootstrapProgressUpdate` 的同名字段。 */
+  runtimeStage?: string
+  runtimeStatus?: string
+  item?: string
+  source?: string
+  bytesPerSecond?: number
+  current?: number
+  total?: number
   details?: {
     checkInfo?: unknown // 可以是 EnvironmentCheckResult, RepositoryCheckResult, 或 DependencyCheckResult
     currentMirror?: string
@@ -384,6 +392,13 @@ export class InitializationService {
         status: update.status,
         runtimeMode,
         indeterminate: update.indeterminate,
+        runtimeStage: update.runtimeStage,
+        runtimeStatus: update.runtimeStatus,
+        item: update.item,
+        source: update.source,
+        bytesPerSecond: update.bytesPerSecond,
+        current: update.current,
+        total: update.total,
       })
   }
 
@@ -555,110 +570,6 @@ export class InitializationService {
       mirrorKey,
       mode
     )
-  }
-
-  /**
-   * 仅更新源码和依赖（用于已初始化的环境）
-   */
-  async updateOnly(onProgress?: InitializationProgressCallback): Promise<InitializationResult> {
-    const completedStages: string[] = []
-    const totalStages = 2
-
-    try {
-      // 初始化镜像源配置
-      await this.mirrorService.initialize()
-
-      // 阶段 1: 拉取源码
-      onProgress?.({
-        stage: 'repository',
-        stageIndex: 1,
-        totalStages,
-        progress: 0,
-        message: '正在更新源码...',
-      })
-
-      const repositoryService = new RepositoryService(
-        this.appRoot,
-        this.mirrorService,
-        this.targetBranch
-      )
-      const repoResult = await repositoryService.pullRepository(repoProgress => {
-        onProgress?.({
-          stage: 'repository',
-          stageIndex: 1,
-          totalStages,
-          progress: repoProgress.progress,
-          message: repoProgress.message,
-          details: repoProgress.details,
-        })
-      })
-
-      if (!repoResult.success) {
-        return {
-          success: false,
-          error: repoResult.error,
-          completedStages,
-          failedStage: 'repository',
-        }
-      }
-
-      completedStages.push('repository')
-
-      // 阶段 2: 安装依赖
-      onProgress?.({
-        stage: 'dependency',
-        stageIndex: 2,
-        totalStages,
-        progress: 0,
-        message: '正在更新依赖...',
-      })
-
-      const dependencyService = new DependencyService(this.appRoot, this.mirrorService)
-      const depResult = await dependencyService.installDependencies(depProgress => {
-        onProgress?.({
-          stage: 'dependency',
-          stageIndex: 2,
-          totalStages,
-          progress: depProgress.progress,
-          message: depProgress.message,
-          details: depProgress.details,
-        })
-      })
-
-      if (!depResult.success) {
-        return {
-          success: false,
-          error: depResult.error,
-          completedStages,
-          failedStage: 'dependency',
-        }
-      }
-
-      completedStages.push('dependency')
-
-      // 完成
-      onProgress?.({
-        stage: 'complete',
-        stageIndex: totalStages,
-        totalStages,
-        progress: 100,
-        message: '更新完成',
-      })
-
-      return {
-        success: true,
-        completedStages,
-      }
-    } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : String(error)
-      logger.error(`更新失败: ${errorMsg}`)
-
-      return {
-        success: false,
-        error: errorMsg,
-        completedStages,
-      }
-    }
   }
 
   /**

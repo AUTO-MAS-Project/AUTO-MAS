@@ -25,7 +25,7 @@
     </a-space>
   </div>
 
-  <div class="script-edit-content">
+  <ConfigLockPanel :script-id="scriptId" content-class="script-edit-content">
     <a-card :title="t('edit.srcScriptConfiguration')" :loading="pageLoading" class="config-card">
       <template #extra>
         <a-tag color="blue" class="type-tag"> SRC </a-tag>
@@ -267,12 +267,89 @@
             </a-col>
           </a-row>
         </div>
+
+        <!-- 游戏更新 -->
+        <div class="form-section">
+          <div class="section-header">
+            <h3>{{ t('edit.gameUpdate') }}</h3>
+          </div>
+          <a-row :gutter="24">
+            <a-col :span="8">
+              <a-form-item>
+                <template #label>
+                  <a-tooltip :title="t('edit.checkGameUpdateBeforeLogin')">
+                    <span class="form-label">
+                      {{ t('edit.checkGameUpdateBefore') }}
+                      <QuestionCircleOutlined class="help-icon" />
+                    </span>
+                  </a-tooltip>
+                </template>
+                <a-select
+                  v-model:value="srcConfig.Run.IfCheckGameUpdate"
+                  size="large"
+                  style="width: 100%"
+                  @change="handleChange('Run', 'IfCheckGameUpdate', $event)"
+                >
+                  <a-select-option :value="true">{{ t('edit.yes') }}</a-select-option>
+                  <a-select-option :value="false">{{ t('edit.no') }}</a-select-option>
+                </a-select>
+              </a-form-item>
+            </a-col>
+            <a-col :span="8">
+              <a-form-item>
+                <template #label>
+                  <a-tooltip :title="t('edit.whenClientDetectedAs')">
+                    <span class="form-label">
+                      {{ t('edit.installGamePackageAutomatically') }}
+                      <QuestionCircleOutlined class="help-icon" />
+                    </span>
+                  </a-tooltip>
+                </template>
+                <a-select
+                  v-model:value="srcConfig.Run.IfAutoInstallGameApk"
+                  size="large"
+                  style="width: 100%"
+                  :disabled="!srcConfig.Run.IfCheckGameUpdate"
+                  @change="handleChange('Run', 'IfAutoInstallGameApk', $event)"
+                >
+                  <a-select-option :value="true">{{ t('edit.yes') }}</a-select-option>
+                  <a-select-option :value="false">{{ t('edit.no') }}</a-select-option>
+                </a-select>
+              </a-form-item>
+            </a-col>
+            <a-col :span="8">
+              <a-form-item>
+                <template #label>
+                  <a-tooltip :title="t('edit.timeoutDownloadingInstallingGame')">
+                    <span class="form-label">
+                      {{ t('edit.gameUpdateTimeoutMinutes') }}
+                      <QuestionCircleOutlined class="help-icon" />
+                    </span>
+                  </a-tooltip>
+                </template>
+                <a-input-number
+                  v-model:value="srcConfig.Run.GameUpdateTimeLimit"
+                  :min="1"
+                  :max="9999"
+                  size="large"
+                  class="modern-number-input"
+                  style="width: 100%"
+                  :disabled="!srcConfig.Run.IfCheckGameUpdate"
+                  @blur="
+                    handleChange('Run', 'GameUpdateTimeLimit', srcConfig.Run.GameUpdateTimeLimit)
+                  "
+                />
+              </a-form-item>
+            </a-col>
+          </a-row>
+        </div>
       </a-form>
     </a-card>
-  </div>
+  </ConfigLockPanel>
 </template>
 
 <script setup lang="ts">
+import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
 import DocLink from '@/components/DocLink.vue'
 import { MAS_DOC_URLS } from '@/utils/openExternal'
 import { useI18n } from 'vue-i18n'
@@ -283,6 +360,7 @@ import { message } from 'ant-design-vue'
 import type { SRCScriptConfig, ScriptType } from '@/types/script.ts'
 import { useEmulatorDeviceOptions } from '@/composables/useEmulatorDeviceOptions.ts'
 import { useScriptApi } from '@/composables/useScriptApi.ts'
+import { useSaveQueue } from '@/composables/useSaveQueue'
 import { Service, type ComboBoxItem } from '@/api'
 import {
   ArrowLeftOutlined,
@@ -308,7 +386,8 @@ const formRef = ref<FormInstance>()
 const pageLoading = ref(false)
 const scriptId = route.params.id as string
 const isInitializing = ref(true) // 标记是否正在初始化
-const isSaving = ref(false) // 标记是否正在保存
+// 保存串行队列：连续改动按序写回，不再被布尔互斥丢掉
+const { enqueue } = useSaveQueue()
 
 const formData = reactive({
   name: '',
@@ -334,6 +413,9 @@ const srcConfig = reactive<SRCScriptConfig>({
     ProxyTimesLimit: 0,
     RunTimesLimit: 3,
     RunTimeLimit: 40,
+    IfCheckGameUpdate: false,
+    IfAutoInstallGameApk: false,
+    GameUpdateTimeLimit: 60,
   },
   Emulator: {
     Id: '',
@@ -352,45 +434,43 @@ const emulatorLoading = ref(false)
 const emulatorOptions = ref<ComboBoxItem[]>([])
 
 // 即时保存函数 - 只发送修改的字段（遵循最小原则）
-const handleChange = async (category: string, key: string, value: any) => {
-  if (isInitializing.value || isSaving.value) return
+// 后端会把这些路径字段规范化（相对路径转绝对、展开 %APPDATA%、解析 .lnk 等），
+// 保存后只回读这一个字段，界面才与落盘值一致；其余字段保存即生效不再整份回读
+const FIELDS_REQUIRE_REFRESH_AFTER_SAVE = new Set<string>(['Info.Path'])
 
-  isSaving.value = true
-  try {
-    // 构建只包含单个修改字段的更新数据（遵循最小原则）
-    const updateData: any = { [category]: { [key]: value } }
-
-    const success = await updateScript(scriptId, updateData)
-    if (success) {
-      logger.info(`配置已保存: ${category}.${key}`)
-      // 保存成功后刷新数据
-      await refreshScript()
-    }
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`保存失败: ${errorMsg}`)
-  } finally {
-    isSaving.value = false
+const refreshNormalizedField = async (category: string, key: string) => {
+  const scriptDetail = await getScript(scriptId)
+  const normalized = (scriptDetail?.config as Record<string, any> | undefined)?.[category]?.[key]
+  if (normalized !== undefined) {
+    ;(srcConfig as Record<string, any>)[category][key] = normalized
   }
 }
 
-// 刷新脚本配置
-const refreshScript = async () => {
-  try {
-    const scriptDetail = await getScript(scriptId)
-    if (scriptDetail) {
-      Object.assign(srcConfig, scriptDetail.config as SRCScriptConfig)
-      formData.name = scriptDetail.name
+const handleChange = async (category: string, key: string, value: any) => {
+  if (isInitializing.value) return
+
+  await enqueue(async () => {
+    try {
+      // 构建只包含单个修改字段的更新数据（遵循最小原则）
+      const updateData: any = { [category]: { [key]: value } }
+
+      const success = await updateScript(scriptId, updateData)
+      if (success) {
+        logger.info(`配置已保存: ${category}.${key}`)
+        if (FIELDS_REQUIRE_REFRESH_AFTER_SAVE.has(`${category}.${key}`)) {
+          await refreshNormalizedField(category, key)
+        }
+      }
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error)
+      logger.error(`保存失败: ${errorMsg}`)
     }
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`刷新配置失败: ${errorMsg}`)
-  }
+  }, `${category}.${key}`)
 }
 
 onMounted(async () => {
-  await loadScript()
-  await loadEmulatorOptions()
+  // 两个请求互不依赖, 并行发出
+  await Promise.all([loadScript(), loadEmulatorOptions()])
   // 初始化完成后允许自动保存
   isInitializing.value = false
 })
@@ -482,25 +562,23 @@ const handleEmulatorSelectChange = async (emulatorId: string) => {
   }
 
   // 保存模拟器选择和清空的实例字段
-  isSaving.value = true
-  try {
-    const updateData = {
-      Emulator: {
-        Id: emulatorId,
-        Index: '',
-      },
+  await enqueue(async () => {
+    try {
+      const updateData = {
+        Emulator: {
+          Id: emulatorId,
+          Index: '',
+        },
+      }
+      const success = await updateScript(scriptId, updateData)
+      if (success) {
+        logger.info('模拟器配置已保存')
+      }
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error)
+      logger.error(`保存模拟器配置失败: ${errorMsg}`)
     }
-    const success = await updateScript(scriptId, updateData)
-    if (success) {
-      logger.info('模拟器配置已保存')
-      await refreshScript()
-    }
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`保存模拟器配置失败: ${errorMsg}`)
-  } finally {
-    isSaving.value = false
-  }
+  })
 }
 
 // 文件选择方法

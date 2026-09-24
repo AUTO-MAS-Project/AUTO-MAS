@@ -187,12 +187,14 @@ def _ensure_script_subscription(root_path: Path) -> Path:
     return sub_path
 
 
-def _ensure_auto_update_on_cli(root_path: Path) -> Path:
+def _ensure_auto_update_on_cli(root_path: Path, sync_update: bool = False) -> Path:
     """配置 BetterGI 脚本仓库自动更新并把渠道固定为 CNB，返回主配置文件路径。
 
     ``{RootPath}/User/config.json`` 的 ``ScriptConfig`` 置：
-    - ``autoUpdateBeforeCommandLineRun = false``：命令行启动
-      （切号/一条龙）是否先同步更新仓库脚本再执行，当前冻结停用。
+    - ``autoUpdateBeforeCommandLineRun = sync_update``：命令行启动
+      （切号/一条龙）是否先同步更新仓库脚本再执行。日常冻结为 ``False``；
+      仅在切换账号脚本本地缺失（首次使用/误删）时由调用方传 ``True``，
+      让 BGI 在跑切号组前先把脚本同步拉下来，避免「第一次启动切号必失败」。
     - ``autoUpdateSubscribedScripts = true``：普通启动时也后台更新已订阅脚本（兜底）
     - ``selectedChannelName = "CNB"``：脚本仓库固定从 BetterGI 官方 cnb.cool 镜像
       ``https://cnb.cool/bettergi/bettergi-scripts-list`` 拉取/更新。CNB 本就是
@@ -209,7 +211,7 @@ def _ensure_auto_update_on_cli(root_path: Path) -> Path:
         if not isinstance(script_cfg, dict):
             legacy = config.get("ScriptConfig")  # 兼容历史 PascalCase 键，合并后弃用
             script_cfg = legacy if isinstance(legacy, dict) else {}
-        script_cfg["autoUpdateBeforeCommandLineRun"] = False
+        script_cfg["autoUpdateBeforeCommandLineRun"] = bool(sync_update)
         script_cfg["autoUpdateSubscribedScripts"] = True
         script_cfg["selectedChannelName"] = "CNB"
         config.pop("ScriptConfig", None)
@@ -222,21 +224,26 @@ def _ensure_auto_update_on_cli(root_path: Path) -> Path:
     return config_path
 
 
-def ensure_switch_subscription(root_path: Path) -> bool:
+def ensure_switch_subscription(root_path: Path, *, sync_update: bool = False) -> bool:
     """确保切换账号脚本被订阅，返回脚本本地是否已就绪。本函数不删除任何东西。
 
-    BGI 负责按订阅更新仓库脚本（运行前同步更新已冻结，改走后台
+    BGI 负责按订阅更新仓库脚本（运行前同步更新默认冻结，改走后台
     ``autoUpdateSubscribedScripts``），这里只覆盖式写入订阅清单
     （``js/SwitchAccountMultipleMode``）并开启自动更新，保留用户已有订阅项与其余配置。
-    脚本缺失（用户误删/初次使用）时交给 BGI 启动后自动补位；是否需要强制重建仓库由
-    ``rebuild_script_repo_if_checkout_failed`` 在杀掉旧 BGI 进程之后单独决定。
+    脚本缺失（用户误删/初次使用）时由调用方传 ``sync_update=True`` 临时开启
+    ``autoUpdateBeforeCommandLineRun``，让 BGI 在跑切号组前先把脚本同步拉下，避免首跑
+    切号失败；是否需要强制重建仓库由 ``rebuild_script_repo_if_checkout_failed`` 在杀掉
+    旧 BGI 进程之后单独决定。
+
+    Args:
+        sync_update: 是否开启「命令行运行前同步更新」（脚本缺失/首跑时传 True）。
 
     Returns:
         切换账号脚本当前是否已存在于本地（帮助日志判断是已就绪还是将现拉取）。
     """
     try:
         _ensure_script_subscription(root_path)
-        _ensure_auto_update_on_cli(root_path)
+        _ensure_auto_update_on_cli(root_path, sync_update=sync_update)
     except Exception as e:
         logger.opt(exception=True).warning(f"切换账号脚本仓库订阅设置失败: {e}")
         raise

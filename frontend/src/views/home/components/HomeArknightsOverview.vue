@@ -235,10 +235,9 @@ const handleImageError = (event: Event) => {
 }
 
 .activity-info {
-  margin-bottom: 24px;
-  padding: 16px;
-  border: 1px solid var(--ant-color-border);
-  border-radius: 8px;
+  margin-bottom: 20px;
+  padding: 0 0 20px;
+  border-bottom: 1px solid var(--ant-color-border-secondary);
 }
 
 .activity-header {

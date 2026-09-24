@@ -3,11 +3,11 @@
     v-if="status === 'failed'"
     :title="t('init.steps.backend')"
     :message="errorMessage"
-    :failure-actions="RETRY_ONLY"
+    :failure-actions="BACKEND_FAILURE_ACTIONS"
     :failure-logs="backendLogs"
     :show-skip-button="showSkipButton"
     :docs-url="BACKEND_START_FAILURE_DOC_URL"
-    @action="handleRetry"
+    @action="handleFailureAction"
     @open-docs="handleOpenDocumentation"
     @skip="emit('skip')"
   />
@@ -30,7 +30,7 @@ import { useUpdateChecker } from '@/composables/useUpdateChecker'
 import { SLOW_LAUNCH_THRESHOLD_MS, openLaunchLogWindow } from '@/utils/launch'
 import LaunchFailure from './LaunchFailure.vue'
 import type { RuntimeFailureFields } from '@/types/electron'
-import type { FailureAction } from '@/utils/initializationDecision'
+import type { FailureAction, FailureActionKind } from '@/utils/initializationDecision'
 
 defineOptions({ name: 'RuntimeBackendStartPanel' })
 
@@ -57,7 +57,12 @@ const logger = window.electronAPI.getLogger('后端启动步骤')
 const { startPolling } = useUpdateChecker()
 
 // 后端起不来时能做的只有重试，换源和重建环境都轮不到这一段。
-const RETRY_ONLY: FailureAction[] = [{ kind: 'retry', labelKey: 'init.step.retry' }]
+// 加一个查看日志：这一段的失败结果不带 logPath，spawn 之前就失败时连日志正文都没有，
+// 「详细信息」折叠整块不出现，不给入口的话这一屏一个日志出口都没有。
+const BACKEND_FAILURE_ACTIONS: FailureAction[] = [
+  { kind: 'retry', labelKey: 'init.step.retry' },
+  { kind: 'open-log', labelKey: 'launch.viewLog' },
+]
 
 const BACKEND_START_FAILURE_DOC_URL =
   'https://doc.auto-mas.top/docs/FAQ.html#%E5%90%8E%E7%AB%AF%E5%90%AF%E5%8A%A8%E5%A4%B1%E8%B4%A5-%E8%B7%B3%E8%BF%87%E5%90%8E%E5%BA%94%E7%94%A8%E5%86%85%E4%B8%8D%E5%81%9C%E6%8A%A5%E9%94%99-network-error'
@@ -159,7 +164,11 @@ async function startBackend() {
   }
 }
 
-async function handleRetry() {
+async function handleFailureAction(kind: FailureActionKind) {
+  if (kind === 'open-log') {
+    await openLaunchLogWindow('后端启动步骤')
+    return
+  }
   await startBackend()
 }
 

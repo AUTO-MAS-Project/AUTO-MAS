@@ -67,14 +67,6 @@ class MaaFWRunPlan(BaseModel):
     piEnv: dict[str, str] = Field(default_factory=dict)
     tasks: list[MaaFWTaskRunPlan] = Field(default_factory=list)
     skippedTasks: list[MaaFWSkippedTaskPlan] = Field(default_factory=list)
-    # ``None`` keeps the ordinary/legacy project-manifest behaviour. Managed
-    # execution supplies an authoritative boolean from Project Store so a
-    # writable checkout cannot opt itself into the shared worker runtime.
-    managedSharedAgentDependenciesComplete: bool | None = None
-    # Store indexes whose bundled interpreter was intentionally stripped and
-    # projected to the managed ``python`` route. Only these external plans may
-    # be rebound to the exact shared runtime interpreter.
-    managedPythonAgentIndexes: list[int] | None = None
 
 
 class MaaFWDeviceConfig(BaseModel):
@@ -93,6 +85,11 @@ class MaaFWDeviceConfig(BaseModel):
     adbReadyTimeout: int | None = None
 
 
+class MaaFWFailureScreenshot(BaseModel):
+    task: str
+    path: str
+
+
 class MaaFWRunResult(BaseModel):
     success: bool
     projectName: str
@@ -101,6 +98,11 @@ class MaaFWRunResult(BaseModel):
     completedTasks: list[str] = Field(default_factory=list)
     failedTask: str | None = None
     errorMessage: str | None = None
+    # 任务失败当刻的画面，按失败先后排列；宿主把它们塞进通知。
+    failureScreenshots: list[MaaFWFailureScreenshot] = Field(default_factory=list)
+    # 到了 runDeadlineAt 由 worker 自己停下来的：宿主据此在重试前重启游戏/模拟器。
+    # 和 errorMessage 分开放，宿主不必靠匹配文案判断。
+    timedOut: bool = False
 
 
 class MaaFWRunnerJobPayload(BaseModel):
@@ -110,3 +112,14 @@ class MaaFWRunnerJobPayload(BaseModel):
     # 进程继续占用设备。createTime 与 pid 配对使用，防 pid 复用误判。
     ownerPid: int | None = None
     ownerCreateTime: float | None = None
+    # 任务失败截图落盘目录与文件名前缀，宿主指向本次运行的 history 目录，
+    # 让截图和 .log / .maafw.log 挨在一起。None 表示不截。
+    failureScreenshotDir: str | None = None
+    failureScreenshotPrefix: str = ""
+    # 第一个任务最早可下发的墙钟时刻（time.time() 秒）。宿主刚拉起桌面游戏时窗口
+    # 虽已出现、画面还没渲染出来，worker 把资源加载、连 controller、起 agent 都
+    # 做完后再等到这个点，而不是在宿主里干等。None 表示不等。
+    taskStartNotBefore: float | None = None
+    # 单次运行的截止墙钟时刻（time.time() 秒）。到点 worker 自己停掉当前任务、
+    # 截一张图再把结果发回来，宿主只在 worker 没能及时停下时才强杀。None 表示不限。
+    runDeadlineAt: float | None = None

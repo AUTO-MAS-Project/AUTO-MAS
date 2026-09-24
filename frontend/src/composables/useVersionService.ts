@@ -110,17 +110,6 @@ export const startTitlebarVersionCheck = () => {
   titlebarPollTimer = window.setInterval(pollTitlebarVersionOnce, TITLEBAR_POLL_MS)
 }
 
-/**
- * 停止标题栏版本信息定时检查
- */
-export const stopTitlebarVersionCheck = () => {
-  if (titlebarPollTimer) {
-    clearInterval(titlebarPollTimer)
-    titlebarPollTimer = null
-    logger.info('停止标题栏版本信息定时检查')
-  }
-}
-
 // ========== 版本更新检查相关（4小时）==========
 // 这部分直接从 useUpdateChecker 导入，保持原有逻辑
 export { useUpdateChecker, useUpdateModal } from './useUpdateChecker'

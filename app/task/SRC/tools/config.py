@@ -277,12 +277,34 @@ def recover_src_user_config(
         backup_path.rename(config_path)
 
 
+def _restore_unchanged_source_values(
+    current: dict, baseline: dict, source: dict
+) -> None:
+    """保留上游运行期变更，但不把本轮未变化的 MAS 注入值回写到来源。"""
+
+    for key, value in baseline.items():
+        if key not in current:
+            continue
+        if (
+            isinstance(value, dict)
+            and isinstance(current[key], dict)
+            and isinstance(source.get(key), dict)
+        ):
+            _restore_unchanged_source_values(current[key], value, source[key])
+        elif current[key] == value:
+            if key in source:
+                current[key] = source[key]
+            else:
+                del current[key]
+
+
 def save_src_user_config(
     src_set_path: Path,
     config_path: Path,
     *,
     preserve_commit_marker: bool = False,
     expected_installation_id: str | None = None,
+    runtime_baseline: dict | None = None,
 ) -> None:
     """以可恢复的目录替换事务保存一次 SRC 用户配置。"""
 
@@ -298,6 +320,11 @@ def save_src_user_config(
     shutil.copytree(src_set_path, staging_path)
     if not is_src_config_available(staging_path):
         raise RuntimeError(f"SRC 用户配置内容不完整: {staging_path}")
+    if runtime_baseline is not None:
+        current = read_file(staging_path / "src.json")
+        source = read_file(config_path / "src.json")
+        _restore_unchanged_source_values(current, runtime_baseline, source)
+        write_file(staging_path / "src.json", current)
     if expected_installation_id is not None:
         validate_src_installation(
             src_set_path.parent,

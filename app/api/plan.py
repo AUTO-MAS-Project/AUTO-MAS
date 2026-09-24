@@ -26,8 +26,10 @@ from fastapi import APIRouter, Body
 from app.core import Config
 from app.models.config import PLAN_BOOK
 from app.models.schema import *
+from app.utils import get_logger
 
 router = APIRouter(prefix="/api/plan", tags=["计划管理"])
+logger = get_logger("计划管理 API")
 
 
 @router.post(
@@ -45,6 +47,7 @@ async def add_plan(plan: PlanCreateIn = Body(...)) -> PlanCreateOut:
             **(await config.toDict())
         )
     except Exception as e:
+        logger.opt(exception=True).warning(f"add_plan失败: {type(e).__name__}: {e}")
         plan_schema_class = next(
             item["schema_class"]
             for item in PLAN_BOOK.values()
@@ -80,6 +83,7 @@ async def get_plan(plan: PlanGetIn = Body(...)) -> PlanGetOut:
 
             data[uid] = PLAN_BOOK[plan_type]["schema_class"](**raw_data[uid])
     except Exception as e:
+        logger.opt(exception=True).warning(f"get_plan失败: {type(e).__name__}: {e}")
         return PlanGetOut(
             code=500,
             status="error",
@@ -102,6 +106,7 @@ async def update_plan(plan: PlanUpdateIn = Body(...)) -> OutBase:
     try:
         await Config.update_plan(plan.planId, plan.data.model_dump(exclude_unset=True))
     except Exception as e:
+        logger.opt(exception=True).warning(f"update_plan失败: {type(e).__name__}: {e}")
         return OutBase(
             code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
         )
@@ -120,6 +125,7 @@ async def delete_plan(plan: PlanDeleteIn = Body(...)) -> OutBase:
     try:
         await Config.del_plan(plan.planId)
     except Exception as e:
+        logger.opt(exception=True).warning(f"delete_plan失败: {type(e).__name__}: {e}")
         return OutBase(
             code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
         )
@@ -138,6 +144,7 @@ async def reorder_plan(plan: PlanReorderIn = Body(...)) -> OutBase:
     try:
         await Config.reorder_plan(plan.indexList)
     except Exception as e:
+        logger.opt(exception=True).warning(f"reorder_plan失败: {type(e).__name__}: {e}")
         return OutBase(
             code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
         )

@@ -1,11 +1,7 @@
 import log from 'electron-log'
 import * as path from 'path'
 import { app } from 'electron'
-
-/**
- * 日志级别类型
- */
-export type LogLevel = 'error' | 'warn' | 'info' | 'verbose' | 'debug' | 'silly'
+import { isDevelopmentEnvironment } from './instanceConfig'
 
 /**
  * 模块颜色映射
@@ -29,7 +25,11 @@ function fileFormat(params: { data: unknown[]; level: string; message: { date: D
  * 控制台日志格式化函数
  * 格式：<green>{time:YYYY-MM-DD HH:mm:ss.SSS}</green> | <level>{level: <8}</level> | <custom-color>{module}</custom-color> | <level>{message}</level>
  */
-function consoleFormat(params: { data: unknown[]; level: string; message: { date: Date } }): string[] {
+function consoleFormat(params: {
+  data: unknown[]
+  level: string
+  message: { date: Date }
+}): string[] {
   const time = formatTime(params.message.date)
   const level = formatLevel(params.level)
   const module = params.data[0] && typeof params.data[0] === 'string' ? params.data[0] : 'unknown'
@@ -95,7 +95,11 @@ export function initializeLogger(): void {
     console.error('日志初始化失败: electron.app 不可用')
     return
   }
-  const appPath = path.dirname(app.getPath('exe'))
+  // 必须和 environmentService 的 getAppRoot() 同口径：日志窗读的是 `<appRoot>/debug`，
+  // 开发环境下 exe 是 node_modules 里的 electron.exe，写到那儿日志页永远读不到。
+  const appPath = isDevelopmentEnvironment()
+    ? path.dirname(app.getAppPath())
+    : path.dirname(app.getPath('exe'))
 
   // 设置日志级别
   log.transports.file.level = 'info'
@@ -114,17 +118,6 @@ export function initializeLogger(): void {
 
   // Hook console 方法
   hookConsole()
-}
-
-/**
- * 保存原始 console 方法的引用
- */
-const originalConsole = {
-  log: console.log,
-  info: console.info,
-  warn: console.warn,
-  error: console.error,
-  debug: console.debug,
 }
 
 /**
@@ -177,17 +170,6 @@ function formatConsoleArgs(args: unknown[]): unknown[] {
 }
 
 /**
- * 恢复原始 console 方法（用于调试或特殊情况）
- */
-export function restoreConsole(): void {
-  console.log = originalConsole.log
-  console.info = originalConsole.info
-  console.warn = originalConsole.warn
-  console.error = originalConsole.error
-  console.debug = originalConsole.debug
-}
-
-/**
  * 创建日志记录器
  */
 export class Logger {
@@ -214,16 +196,8 @@ export class Logger {
     log.info(this.moduleName, message, ...args)
   }
 
-  verbose(message: string, ...args: unknown[]): void {
-    log.verbose(this.moduleName, message, ...args)
-  }
-
   debug(message: string, ...args: unknown[]): void {
     log.debug(this.moduleName, message, ...args)
-  }
-
-  silly(message: string, ...args: unknown[]): void {
-    log.silly(this.moduleName, message, ...args)
   }
 }
 

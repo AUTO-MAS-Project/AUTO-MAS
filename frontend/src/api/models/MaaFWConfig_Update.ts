@@ -14,7 +14,7 @@ export type MaaFWConfig_Update = {
     /**
      * 项目更新包下载源：Mirror 酱（需自行填写 CDK）/ GitHub
      */
-    Source?: ('MirrorChyan' | 'GitHub' | null);
+    Source?: ('GitHub' | 'MirrorChyan' | null);
     /**
      * 项目更新渠道：稳定版 / 测试版
      */
@@ -23,6 +23,10 @@ export type MaaFWConfig_Update = {
      * Mirror 酱 CDK，选择 Mirror 酱作为下载源时必填
      */
     MirrorChyanCDK?: (string | null);
+    /**
+     * 脚本级网络代理，更新包下载与运行环境安装走它；留空跟随全局 Update.ProxyAddress
+     */
+    ProxyAddress?: (string | null);
     /**
      * [已废弃] GitHub 仓库覆盖，改为从 interface.json 推导
      */

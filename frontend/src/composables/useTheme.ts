@@ -357,6 +357,12 @@ const antdTheme = computed(() => ({
   token: {
     colorPrimary: themeColors[themeColor.value],
   },
+  components: {
+    InputNumber: {
+      // 步进按钮（▲▼）常驻显示：antd 默认悬停才出现，快速连续调整不直观
+      handleVisible: true as const,
+    },
+  },
 }))
 
 export function useTheme() {

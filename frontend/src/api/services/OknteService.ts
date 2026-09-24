@@ -3,7 +3,6 @@
 /* tslint:disable */
 /* eslint-disable */
 import type { Body_batch_update_oknte_configs_api_scripts_oknte_configs_batch_update_post } from '../models/Body_batch_update_oknte_configs_api_scripts_oknte_configs_batch_update_post';
-import type { Body_update_oknte_config_api_scripts_oknte_configs_update_post } from '../models/Body_update_oknte_config_api_scripts_oknte_configs_update_post';
 import type { CancelablePromise } from '../core/CancelablePromise';
 import { OpenAPI } from '../core/OpenAPI';
 import { request as __request } from '../core/request';
@@ -11,8 +10,7 @@ export class OknteService {
     /**
      * 获取 OK-NTE 配置文件列表及 schema
      * 获取 OK-NTE 配置文件列表及 schema 定义。
-     * 读写用户配置目录（data/{script_id}/{user_id}/ConfigFile/），
-     * 若为空则自动从 ok-nte configs 目录初始化默认配置。
+     * 读写用户快速配置目录，首次从已有来源初始化，不修改来源文件。
      *
      * Args:
      * script_id: OK-NTE 脚本 ID
@@ -36,35 +34,6 @@ export class OknteService {
                 'script_id': scriptId,
                 'user_id': userId,
             },
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 更新 OK-NTE 配置文件
-     * 更新 OK-NTE 配置文件
-     *
-     * Args:
-     * script_id: OK-NTE 脚本 ID
-     * user_id: 用户 ID
-     * filename: 配置文件名（如 DailyTask.json）
-     * data: 要更新的配置数据
-     *
-     * Returns:
-     * dict: 操作结果
-     * @param requestBody
-     * @returns any Successful Response
-     * @throws ApiError
-     */
-    public static updateOknteConfigApiScriptsOknteConfigsUpdatePost(
-        requestBody: Body_update_oknte_config_api_scripts_oknte_configs_update_post,
-    ): CancelablePromise<any> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/scripts/oknte/configs/update',
-            body: requestBody,
-            mediaType: 'application/json',
             errors: {
                 422: `Validation Error`,
             },

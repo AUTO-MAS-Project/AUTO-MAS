@@ -9,15 +9,9 @@
     class="update-modal"
   >
     <div class="update-container">
-      <!-- 更新内容展示 -->
+      <!-- 更新内容展示：按版本分区块，破坏性变更 / 本次亮点置顶 -->
       <div class="update-content">
-        <!-- eslint-disable vue/no-v-html 更新说明来自 MAS 后端 markdown，属可信内容 -->
-        <div
-          ref="markdownContentRef"
-          class="markdown-content"
-          v-html="renderMarkdown(updateContent)"
-        ></div>
-        <!-- eslint-enable vue/no-v-html -->
+        <ChangelogView :data="updateData" :empty-text="t('comp.changelog.loadFailed')" />
       </div>
 
       <!-- 操作按钮 -->
@@ -36,10 +30,11 @@
 
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
-import { computed, ref } from 'vue'
-import MarkdownIt from 'markdown-it'
+import { computed } from 'vue'
+import ChangelogView from './ChangelogView.vue'
 import UpdateDownloadModal from './UpdateDownloadModal.vue'
 import { useUpdateDownload } from '@/composables/useUpdateDownload'
+import type { ChangelogData } from '@/utils/changelog'
 
 const { t } = useI18n()
 const logger = window.electronAPI.getLogger('更新模态框')
@@ -47,7 +42,8 @@ const logger = window.electronAPI.getLogger('更新模态框')
 // Props 定义
 interface Props {
   visible: boolean
-  updateData: Record<string, string[]>
+  /** 版本号 -> 分类 -> 条目，来自 /api/update/check 的 update_info */
+  updateData: ChangelogData
   latestVersion?: string
 }
 
@@ -61,9 +57,6 @@ const emit = defineEmits<{
 
 const { start } = useUpdateDownload()
 
-// 内部状态
-const hasUpdate = ref(false)
-
 // 计算最新版本号
 const latestVersion = computed(() => {
   return props.latestVersion || ''
@@ -75,57 +68,7 @@ const visible = computed({
   set: (value: boolean) => emit('update:visible', value),
 })
 
-// 计算属性 - 转换 updateData 为 markdown
-const updateContent = computed(() => {
-  return updateInfoToMarkdown(props.updateData, latestVersion.value, '更新内容')
-})
-
-// markdown 渲染器
-const md = new MarkdownIt({ html: true, linkify: true, typographer: true })
-const renderMarkdown = (content: string) => md.render(content)
-
-/** 将接口的 update_info 对象转成 Markdown 文本 */
-function updateInfoToMarkdown(info: unknown, version?: string, header = '更新内容'): string {
-  // 如果后端直接给了字符串，直接返回
-  if (typeof info === 'string') return info
-
-  if (!info || typeof info !== 'object') return ''
-
-  const obj = info as Record<string, unknown>
-  const lines: string[] = []
-
-  // 顶部标题
-  if (version) {
-    lines.push(`### ${version} ${header}`)
-  } else {
-    lines.push(`### ${header}`)
-  }
-  lines.push('') // 空行
-
-  for (const key of Object.keys(obj)) {
-    const val = obj[key]
-    if (Array.isArray(val) && val.length > 0) {
-      lines.push(`#### ${key}`)
-      for (const item of val) {
-        // 防御：数组里既可能是字符串也可能是对象
-        if (typeof item === 'string') {
-          lines.push(`- ${item}`)
-        } else {
-          // 兜底：把对象友好地 stringify（去掉引号）
-          lines.push(`- ${JSON.stringify(item, null, 0)}`)
-        }
-      }
-      lines.push('') // 每段之间空一行
-    }
-  }
-
-  return lines.join('\n')
-}
-
-// 初始化检查
-if (props.updateData && Object.keys(props.updateData).length > 0) {
-  hasUpdate.value = true
-}
+const updateData = computed(() => props.updateData)
 
 // 处理下载按钮点击
 const handleDownload = async () => {
@@ -190,11 +133,6 @@ const handleCancel = () => {
 /* 悬停时略微提升对比度，便于发现 */
 :deep(.update-content:hover::-webkit-scrollbar-thumb) {
   background: rgba(255, 255, 255, 0.22);
-}
-
-.markdown-content {
-  line-height: 1.6;
-  color: var(--ant-color-text);
 }
 
 .update-footer {

@@ -43,30 +43,22 @@
 import { useI18n } from 'vue-i18n'
 import { useLogHighlight } from '@/composables/useLogHighlight'
 import { VueMonacoEditor } from '@guolao/vue-monaco-editor'
-import { computed, nextTick, onMounted, onUnmounted, ref, toRefs, watch } from 'vue'
+import { computed, nextTick, onUnmounted, ref, toRefs, watch } from 'vue'
 
 const { t } = useI18n()
 
 interface Props {
   logContent: string
-  tabKey: string
-  isLogAtBottom: boolean
   externalLogMode?: 'follow' | 'browse' // 外部控制的日志模式
-}
-
-interface Emits {
-  (_e: 'scroll', _isAtBottom: boolean): void
-  (_e: 'setRef', _el: HTMLElement | null, _key: string): void
 }
 
 // 日志显示模式类型
 type LogMode = 'follow' | 'browse'
 
 const props = defineProps<Props>()
-const emit = defineEmits<Emits>()
 
 // 解构 props 以便在模板中直接使用（保持响应性）
-const { logContent, tabKey: _tabKey } = toRefs(props)
+const { logContent } = toRefs(props)
 const LARGE_LOG_MONACO_THRESHOLD = 60000
 const usePlainLog = computed(() => logContent.value.length > LARGE_LOG_MONACO_THRESHOLD)
 
@@ -80,7 +72,6 @@ const plainLogContainerRef = ref<HTMLElement | null>(null)
 const handleBeforeMount = (monaco: any) => {
   registerLogLanguage(monaco)
 }
-// 根据 isLogAtBottom 属性初始化模式
 const logMode = ref<LogMode>('follow')
 
 // 监听外部控制的日志模式变化
@@ -171,7 +162,6 @@ const scrollToBottom = () => {
   } else if (logContentRef.value) {
     logContentRef.value.scrollTop = logContentRef.value.scrollHeight
   }
-  emit('scroll', true)
 }
 
 // 只监听日志内容变化
@@ -185,16 +175,7 @@ watch(
   }
 )
 
-// 组件挂载时设置引用
-onMounted(() => {
-  if (logContentRef.value) {
-    emit('setRef', logContentRef.value, props.tabKey)
-  }
-})
-
-// 组件卸载前清理引用
 onUnmounted(() => {
-  emit('setRef', null, props.tabKey)
   editorInstance = null
 })
 </script>

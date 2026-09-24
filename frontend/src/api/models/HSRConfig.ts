@@ -6,6 +6,7 @@ import type { HSRConfig_Game } from './HSRConfig_Game';
 import type { HSRConfig_Info } from './HSRConfig_Info';
 import type { HSRConfig_Run } from './HSRConfig_Run';
 import type { HSRConfig_TaskMapping } from './HSRConfig_TaskMapping';
+import type { HSRConfig_Update } from './HSRConfig_Update';
 export type HSRConfig = {
     /**
      * 脚本基础信息
@@ -19,6 +20,10 @@ export type HSRConfig = {
      * 运行配置
      */
     Run?: (HSRConfig_Run | null);
+    /**
+     * 外部脚本更新配置
+     */
+    Update?: (HSRConfig_Update | null);
     /**
      * 模块脚本分配
      */

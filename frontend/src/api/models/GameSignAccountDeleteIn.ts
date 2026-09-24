@@ -3,7 +3,7 @@
 /* tslint:disable */
 /* eslint-disable */
 /**
- * 游戏签到账号组删除请求
+ * 游戏社区账号组删除请求
  */
 export type GameSignAccountDeleteIn = {
     /**

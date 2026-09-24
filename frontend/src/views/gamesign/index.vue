@@ -1,23 +1,28 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
-import { onMounted, onUnmounted, reactive } from 'vue'
-import { useEventListener } from '@vueuse/core'
-import type { ToolsConfig } from '@/api'
-import { Service } from '@/api'
+import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import type { ToolsConfig, ToolsConfig_GameSign } from '@/api'
 import { useToolsApi } from '@/composables/useToolsApi'
+import { useToolsStatusPolling } from '@/composables/useToolsStatusPolling'
 import { useWebSocket } from '@/composables/useWebSocket'
 import {
   WS_GAMESIGN_RESULT_UPDATED,
   WS_ID_GAME_SIGN,
   type WSGameSignResultData,
 } from '@/services/websocket/types'
+import CommunityActivityView from './CommunityActivityView.vue'
 import TabGameSign from './TabGameSign.vue'
 
 const { t } = useI18n()
 
 defineOptions({ name: 'GameSignPage' })
 
-const logger = window.electronAPI.getLogger('游戏签到')
+const logger = window.electronAPI.getLogger('游戏社区')
+const route = useRoute()
+const router = useRouter()
+
+type CommunityTab = 'sign' | 'activity'
 
 const { loading, getTools, updateTools } = useToolsApi()
 const { subscribe, unsubscribe } = useWebSocket()
@@ -27,6 +32,7 @@ const toolsConfig = reactive<ToolsConfig>({
   GameSign: {
     Enabled: false,
     NotifyEnabled: false,
+    ActivityEnabled: true,
     RunOnStartup: false,
     LastSignDate: '2000-01-01',
     Status: '-',
@@ -39,6 +45,7 @@ const editingConfig = reactive<ToolsConfig>({
   GameSign: {
     Enabled: false,
     NotifyEnabled: false,
+    ActivityEnabled: true,
     RunOnStartup: false,
     LastSignDate: '2000-01-01',
     Status: '-',
@@ -46,13 +53,28 @@ const editingConfig = reactive<ToolsConfig>({
   },
 })
 
-// 轮询定时器
-let pollTimer: ReturnType<typeof setInterval> | null = null
+const toolsLoaded = ref(false)
+
 let gameSignSubscriptionId: string | null = null
-let statusPollFailed = false
 
 // 卸载守卫：组件卸载后阻止异步回调写入响应式状态
 let isMounted = true
+
+const activityEnabled = computed(
+  () => toolsLoaded.value && editingConfig.GameSign?.ActivityEnabled !== false
+)
+
+const activeTab = computed<CommunityTab>(() =>
+  route.query.tab === 'activity' && activityEnabled.value ? 'activity' : 'sign'
+)
+
+const handleTabChange = (key: string | number) => {
+  const tab: CommunityTab = key === 'activity' && activityEnabled.value ? 'activity' : 'sign'
+  void router.replace({
+    path: '/gamesign',
+    query: tab === 'activity' ? { tab: 'activity' } : {},
+  })
+}
 
 const syncGameSignResult = (result: unknown) => {
   if (!isMounted || typeof result !== 'string') return
@@ -64,61 +86,22 @@ const syncGameSignResult = (result: unknown) => {
   }
 }
 
-// 仅更新状态（不影响编辑状态，不触发 loading）
-const updateStatus = async () => {
-  try {
-    const response = await Service.getToolsApiToolsGetPost()
-    if (!isMounted) return
-    if (response.code !== 200 || !response.data) {
-      throw new Error(response.message || t('gamesign.statusInvalid'))
-    }
-    statusPollFailed = false
-    const data = response.data
+// 状态轮询：签到页签激活时才拉；签到已启用 5 s 一次，否则 30 s
+const { updateStatus, startStatusPolling, stopStatusPolling } = useToolsStatusPolling({
+  applyStatus: data => {
     if (data.GameSign?.Status) {
       toolsConfig.GameSign!.Status = data.GameSign.Status
     }
     syncGameSignResult(data.GameSign?.Result)
-  } catch (error) {
-    if (!statusPollFailed) {
-      const errorMsg = error instanceof Error ? error.message : String(error)
-      logger.warn(`更新签到状态失败，将继续重试: ${errorMsg}`)
-      statusPollFailed = true
-    }
-  }
-}
+  },
+  isActive: () => toolsConfig.GameSign?.Enabled === true,
+  enabled: () => activeTab.value === 'sign',
+  invalidMessage: () => t('gamesign.statusInvalid'),
+  logger,
+})
 
 // 签到完成后立即刷新配置（不等轮询）
-const refreshGameSignConfig = async () => {
-  try {
-    const response = await Service.getToolsApiToolsGetPost()
-    if (!isMounted) return
-    if (response.code !== 200 || !response.data) {
-      throw new Error(response.message || t('gamesign.resultInvalid'))
-    }
-    const data = response.data
-    if (data.GameSign?.Status) {
-      toolsConfig.GameSign!.Status = data.GameSign.Status
-    }
-    syncGameSignResult(data.GameSign?.Result)
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.warn(`刷新签到结果失败: ${errorMsg}`)
-  }
-}
-
-const startStatusPolling = () => {
-  if (pollTimer) clearInterval(pollTimer)
-  pollTimer = setInterval(() => {
-    updateStatus()
-  }, 1000)
-}
-
-const stopStatusPolling = () => {
-  if (pollTimer) {
-    clearInterval(pollTimer)
-    pollTimer = null
-  }
-}
+const refreshGameSignConfig = () => updateStatus()
 
 // 加载配置
 const loadTools = async () => {
@@ -128,40 +111,51 @@ const loadTools = async () => {
       data.GameSign = {
         Enabled: false,
         NotifyEnabled: false,
+        ActivityEnabled: true,
         RunOnStartup: false,
         LastSignDate: '2000-01-01',
         Status: '-',
         Result: '{}',
       }
     }
+    data.GameSign.ActivityEnabled ??= true
     Object.assign(toolsConfig, data)
     Object.assign(editingConfig, JSON.parse(JSON.stringify(data)))
-    logger.info('游戏签到配置加载完成')
+    toolsLoaded.value = true
+    logger.info('游戏社区配置加载完成')
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`加载游戏签到配置失败: ${errorMsg}`)
+    logger.error(`加载游戏社区配置失败: ${errorMsg}`)
   }
 }
 
 // 只提交当前 GameSign 字段，避免并发覆盖签到状态或其它工具配置。
-const handleGameSignFieldChange = async (key: string, value: any) => {
-  if (!editingConfig.GameSign) return
+type GameSignFieldKey = keyof ToolsConfig_GameSign
 
-  const previousValue = (editingConfig.GameSign as any)[key]
+const handleGameSignFieldChange = async <K extends GameSignFieldKey>(
+  key: K,
+  value: ToolsConfig_GameSign[K]
+) => {
+  const editingGameSign = editingConfig.GameSign
+  if (!editingGameSign) return
+
+  const previousValue = editingGameSign[key]
 
   try {
-    ;(editingConfig.GameSign as any)[key] = value
-    await updateTools({ GameSign: { [key]: value } })
+    editingGameSign[key] = value
+    await updateTools({
+      GameSign: { [key]: value } as Partial<ToolsConfig_GameSign>,
+    })
 
     if (toolsConfig.GameSign && key !== 'Status' && key !== 'Result') {
-      ;(toolsConfig.GameSign as any)[key] = value
+      toolsConfig.GameSign[key] = value
     }
 
     logger.info(`GameSign.${key} 已保存`)
   } catch (error) {
     // 仅在当前值仍是本次提交值时回滚，避免较早请求失败覆盖更新后的操作。
-    if ((editingConfig.GameSign as any)[key] === value) {
-      ;(editingConfig.GameSign as any)[key] = previousValue
+    if (editingGameSign[key] === value) {
+      editingGameSign[key] = previousValue
     }
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`保存 GameSign.${key} 失败: ${errorMsg}`)
@@ -169,10 +163,13 @@ const handleGameSignFieldChange = async (key: string, value: any) => {
   }
 }
 
-useEventListener(window, 'focus', () => void updateStatus())
-useEventListener(document, 'visibilitychange', () => {
-  if (document.visibilityState === 'visible') {
-    void updateStatus()
+watch(activeTab, tab => {
+  if (tab === 'sign' && isMounted) void updateStatus()
+})
+
+watch(activityEnabled, enabled => {
+  if (!enabled && route.query.tab === 'activity' && isMounted) {
+    void router.replace({ path: '/gamesign', query: {} })
   }
 })
 
@@ -204,13 +201,20 @@ onUnmounted(() => {
       <h1 class="page-title">{{ t('gamesign.title') }}</h1>
     </div>
     <div class="gamesign-content">
-      <TabGameSign
-        v-if="editingConfig.GameSign"
-        :config="editingConfig.GameSign"
-        :disabled="loading"
-        :on-field-change="handleGameSignFieldChange"
-        :on-refresh-config="refreshGameSignConfig"
-      />
+      <a-tabs :active-key="activeTab" type="card" class="community-tabs" @change="handleTabChange">
+        <a-tab-pane key="sign" :tab="t('gamesign.nav.sign')">
+          <TabGameSign
+            v-if="editingConfig.GameSign"
+            :config="editingConfig.GameSign"
+            :disabled="loading"
+            :on-field-change="handleGameSignFieldChange"
+            :on-refresh-config="refreshGameSignConfig"
+          />
+        </a-tab-pane>
+        <a-tab-pane v-if="activityEnabled" key="activity" :tab="t('gamesign.nav.activity')">
+          <CommunityActivityView />
+        </a-tab-pane>
+      </a-tabs>
     </div>
   </div>
 </template>
@@ -224,7 +228,7 @@ onUnmounted(() => {
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
-  height: 100%;
+  min-height: 100%;
 }
 
 .gamesign-header {
@@ -240,51 +244,39 @@ onUnmounted(() => {
   font-size: 32px;
   font-weight: 700;
   color: var(--ant-color-text);
-  background: linear-gradient(135deg, var(--ant-color-primary), var(--ant-color-primary-hover));
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
 }
 
 .gamesign-content {
   background: var(--ant-color-bg-container);
-  border-radius: 12px;
+  border-radius: 8px;
   width: 100%;
   flex: 1;
-  min-height: 0;
-  overflow: auto;
 }
 
-/* 内容区滚动条样式（与工具页统一） */
-.gamesign-content::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+.community-tabs {
+  margin: 0;
+  padding: 12px;
 }
 
-.gamesign-content::-webkit-scrollbar-track {
+.community-tabs :deep(.ant-tabs-nav) {
+  margin: 0;
+  padding: 0;
+}
+
+.community-tabs :deep(.ant-tabs-content-holder) {
+  overflow: visible;
+}
+
+.community-tabs :deep(.ant-tabs-card > .ant-tabs-nav .ant-tabs-tab) {
+  margin-right: 8px;
+  background: transparent;
+  border: 1px solid var(--ant-color-border);
+  border-radius: 8px 8px 0 0;
+}
+
+.community-tabs :deep(.ant-tabs-card > .ant-tabs-nav .ant-tabs-tab-active) {
   background: var(--ant-color-bg-container);
-  border-radius: 4px;
-}
-
-.gamesign-content::-webkit-scrollbar-thumb {
-  background: rgba(0, 0, 0, 0.15);
-  border-radius: 4px;
-}
-
-.gamesign-content::-webkit-scrollbar-thumb:hover {
-  background: rgba(0, 0, 0, 0.25);
-}
-
-:root.dark .gamesign-content::-webkit-scrollbar-track {
-  background: var(--ant-color-bg-elevated);
-}
-
-:root.dark .gamesign-content::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.15);
-}
-
-:root.dark .gamesign-content::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.25);
+  border-bottom-color: var(--ant-color-bg-container);
 }
 
 /* ==================== 子组件统一表单样式（与工具页/设置页一致） ==================== */
@@ -324,7 +316,7 @@ onUnmounted(() => {
   content: '';
   width: 4px;
   height: 24px;
-  background: linear-gradient(135deg, var(--ant-color-primary), var(--ant-color-primary-hover));
+  background: var(--ant-color-primary);
   border-radius: 2px;
 }
 
@@ -356,5 +348,21 @@ onUnmounted(() => {
 :deep(.help-icon) {
   color: #8c8c8c;
   font-size: 14px;
+}
+
+@media (max-width: 860px) {
+  .community-tabs {
+    padding: 8px;
+  }
+
+  :deep(.tab-content) {
+    padding: 16px;
+  }
+
+  :deep(.section-header) {
+    align-items: flex-start;
+    flex-wrap: wrap;
+    gap: 12px;
+  }
 }
 </style>

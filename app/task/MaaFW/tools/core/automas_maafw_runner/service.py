@@ -2,9 +2,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import os
-import subprocess
-import sys
 import threading
 import uuid
 from pathlib import Path
@@ -12,10 +11,7 @@ from typing import Any, Callable
 
 import psutil
 
-from app.task.MaaFW.tools.core.automas_maafw_agent_env import (
-    prepare_agent_envs,
-    write_agent_compat_shims,
-)
+from app.task.MaaFW.tools.core.automas_maafw_agent_env import prepare_agent_envs
 from app.task.MaaFW.tools.core.automas_maafw_agent_env.service import (
     MaaFWAgentEnvService,
 )
@@ -35,17 +31,13 @@ from .models import (
     MaaFWDeviceConfig,
     MaaFWRunnerJobPayload,
     MaaFWRunPlan,
-    MaaFWRunResult,
 )
 from .run_plan import build_maafw_run_plan
-from .shared_agent import route_managed_python_agents_to_shared_runtime
-from .worker_registry import (
-    GLOBAL_MAAFW_WORKER_REGISTRY,
-    MaaFWWorkerRegistry,
-    MaaFWWorkerShutdownReport,
-)
+from .worker_registry import GLOBAL_MAAFW_WORKER_REGISTRY, MaaFWWorkerRegistry
 
 ProjectEnvironmentProgressCallback = Callable[[dict[str, Any]], None]
+
+logger = logging.getLogger("automas.maafw.runner.service")
 _PROJECT_ENVIRONMENT_INPUTS = (
     "interface.json",
     "interface.jsonc",
@@ -105,7 +97,9 @@ def _report_project_progress(
     try:
         callback(event)
     except Exception:
-        return
+        # 进度只是旁观者，不能拖垮准备流程；但要留痕，否则回调里的
+        # ``no running event loop`` 这类错误就此消失。
+        logger.warning("MaaFW 环境准备进度回调失败: stage=%s", stage, exc_info=True)
 
 
 class MaaFWRunnerService:
@@ -114,17 +108,11 @@ class MaaFWRunnerService:
     def __init__(self, *, worker_registry: MaaFWWorkerRegistry | None = None) -> None:
         self._worker_registry = worker_registry or GLOBAL_MAAFW_WORKER_REGISTRY
 
-    def reopen_worker_registry(self) -> None:
-        self._worker_registry.reopen()
-
     def register_worker(self, worker: Any) -> str | None:
         return self._worker_registry.register(worker)
 
     def unregister_worker(self, worker_id: str | None) -> None:
         self._worker_registry.unregister(worker_id)
-
-    async def shutdown_workers(self) -> MaaFWWorkerShutdownReport:
-        return await self._worker_registry.shutdown_all()
 
     def build_plan(
         self,
@@ -135,7 +123,7 @@ class MaaFWRunnerService:
         resource_name: str | None = None,
         selected_preset: str | None = None,
         task_snapshot: dict[str, Any] | None = None,
-        task_names: list[str] | None = None,
+        task_ids: list[str] | None = None,
         task_options: dict[str, Any] | None = None,
         managed_env_root: str | Path | None = None,
     ) -> MaaFWRunPlan:
@@ -146,7 +134,7 @@ class MaaFWRunnerService:
             resource_name=resource_name,
             selected_preset=selected_preset,
             task_snapshot=task_snapshot,
-            task_names=task_names,
+            task_ids=task_ids,
             task_options=task_options,
             managed_env_root=managed_env_root,
         )
@@ -155,6 +143,11 @@ class MaaFWRunnerService:
         self,
         plan: MaaFWRunPlan | dict[str, Any],
         device_config: MaaFWDeviceConfig | dict[str, Any],
+        *,
+        failure_screenshot_dir: str | Path | None = None,
+        failure_screenshot_prefix: str = "",
+        task_start_not_before: float | None = None,
+        run_deadline_at: float | None = None,
     ) -> MaaFWRunnerJobPayload:
         owner_pid = os.getpid()
         try:
@@ -172,6 +165,14 @@ class MaaFWRunnerService:
             ),
             ownerPid=owner_pid,
             ownerCreateTime=owner_create_time,
+            failureScreenshotDir=(
+                str(failure_screenshot_dir)
+                if failure_screenshot_dir is not None
+                else None
+            ),
+            failureScreenshotPrefix=failure_screenshot_prefix,
+            taskStartNotBefore=task_start_not_before,
+            runDeadlineAt=run_deadline_at,
         )
 
     def prepare_environment(
@@ -242,15 +243,19 @@ class MaaFWRunnerService:
         send_log: Callable[[str], None] | None = None,
         bootstrap_python: str | None = None,
         install_agent_dependencies: bool = True,
-        managed_shared_agent_dependencies_complete: bool | None = None,
-        managed_python_agent_indexes: list[int] | tuple[int, ...] | None = None,
         progress: ProjectEnvironmentProgressCallback | None = None,
+        cancel_event: threading.Event | None = None,
     ) -> dict[str, Any]:
         """Prewarm the exact Runner pool identity and project Agent runtimes.
 
         The preflight lease is always released before returning. A later run
         resolves the same canonical requirements, reuses the prepared runtime,
         and acquires its own execution-scoped lease.
+
+        ``cancel_event`` reaches the runtime install step only: setting it kills
+        the running uv subprocess. Agent venv preparation is not interruptible,
+        so a caller that cancels should wait for the thread with a bounded grace
+        period rather than assume it stops at once.
         """
 
         environment: MaaFWRunnerEnvironment | None = None
@@ -271,6 +276,7 @@ class MaaFWRunnerService:
                 import_paths=import_paths,
                 send_log=send_log,
                 progress=progress,
+                cancel_event=cancel_event,
             )
             _report_project_progress(
                 progress,
@@ -309,21 +315,6 @@ class MaaFWRunnerService:
                 interface,
                 managed_env_root=agent_env_root,
             )
-            shared_agents = route_managed_python_agents_to_shared_runtime(
-                project_path,
-                agent_plans,
-                python_executable=environment.python_executable,
-                dependencies_complete=(managed_shared_agent_dependencies_complete),
-                managed_python_agent_indexes=managed_python_agent_indexes,
-            )
-            if shared_agents:
-                shim_dir = write_agent_compat_shims(environment.venv_path)
-                if send_log is not None:
-                    send_log(
-                        "[Python环境] 托管 Python Agent 复用共享 runtime: "
-                        f"{environment.python_executable} "
-                        f"(agents={len(shared_agents)}, shim={shim_dir})"
-                    )
             agent_result = prepare_agent_envs(
                 project_path,
                 agent_plans,
@@ -390,66 +381,6 @@ class MaaFWRunnerService:
             encoding="utf-8",
         )
         return job_path
-
-    def run_worker(
-        self,
-        payload: MaaFWRunnerJobPayload,
-        *,
-        work_dir: str | Path,
-        worker_command: list[str] | None = None,
-        send_log: Callable[[str], None] | None = None,
-        timeout: float | None = None,
-    ) -> MaaFWRunResult:
-        log = send_log or (lambda _: None)
-        job_path = self.write_job_file(payload, work_dir)
-        command = worker_command or [
-            sys.executable,
-            "-m",
-            "app.task.MaaFW.tools.core.automas_maafw_runner.worker",
-        ]
-        process = subprocess.Popen(
-            [*command, str(job_path)],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-        )
-        worker_id = self.register_worker(process)
-        result_payload: dict[str, Any] | None = None
-        try:
-            assert process.stdout is not None
-            for line in process.stdout:
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    event = json.loads(line)
-                except json.JSONDecodeError:
-                    log(line)
-                    continue
-                event_type = event.get("type")
-                if event_type == "log":
-                    log(str(event.get("message") or ""))
-                elif event_type == "result" and isinstance(event.get("data"), dict):
-                    result_payload = event["data"]
-                elif event_type == "error":
-                    log(str(event.get("message") or ""))
-            process.wait(timeout=timeout)
-        finally:
-            if process.poll() is None:
-                process.terminate()
-            self.unregister_worker(worker_id)
-
-        if result_payload is not None:
-            return MaaFWRunResult.model_validate(result_payload)
-        return MaaFWRunResult(
-            success=False,
-            projectName=payload.plan.projectName,
-            controllerName=payload.plan.controllerName,
-            resourceName=payload.plan.resourceName,
-            errorMessage=f"MaaFW runner worker exited without result: {process.returncode}",
-        )
 
     @staticmethod
     def _coerce_interface(interface: MaaFWInterface | dict[str, Any]) -> MaaFWInterface:

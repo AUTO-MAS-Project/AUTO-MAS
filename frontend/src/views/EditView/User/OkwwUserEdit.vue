@@ -8,33 +8,44 @@
       config-label="配置 ok-ww"
       :config-loading="okwwConfigLoading"
       :config-active="showOkwwConfigMask"
-      :config-disabled="pageLoading || !userId"
+      :config-disabled="pageLoading || !userId || configLocked"
       @config="handleOkwwConfig"
       @cancel="handleCancel"
     />
 
-    <teleport to="body">
-      <div v-if="showOkwwConfigMask" class="okww-config-mask">
-        <div class="mask-content">
-          <div class="mask-icon">
-            <SettingOutlined :style="{ fontSize: '48px', color: 'var(--ant-color-primary)' }" />
-          </div>
-          <h2 class="mask-title">{{ t('edit.okWwSetupProgress') }}</h2>
-          <p class="mask-description">
-            {{ t('edit.finishSetupOkWw') }}
-            <br />
-            {{ t('edit.clickSaveSettingsWhen') }}
-          </p>
-          <div class="mask-actions">
-            <a-button v-if="okwwTaskId" type="primary" size="large" @click="handleSaveOkwwConfig">
-              {{ t('edit.saveSettings') }}
-            </a-button>
-          </div>
-        </div>
-      </div>
-    </teleport>
+    <!-- 原生 GUI 会话遮罩（配置会话 / 查看会话，公用组件对齐 ok-nte） -->
+    <GuiSessionMask
+      :open="showOkwwConfigMask"
+      :icon="SettingOutlined"
+      :title="t('edit.okWwSetupProgress')"
+      :description="`${t('edit.finishSetupOkWw')}\n${t('edit.clickSaveSettingsWhen')}`"
+    >
+      <template #actions>
+        <a-button v-if="okwwTaskId" type="primary" size="large" @click="handleSaveOkwwConfig">
+          {{ t('edit.saveSettings') }}
+        </a-button>
+      </template>
+    </GuiSessionMask>
+    <GuiSessionMask
+      :open="showOkwwViewMask"
+      :icon="EyeOutlined"
+      :title="t('edit.okwwViewingTitle')"
+      :description="`${t('edit.okwwViewingDesc')}\n${t('edit.okwwViewingDesc2')}`"
+    >
+      <template #actions>
+        <a-button
+          v-if="okwwTaskId"
+          type="primary"
+          size="large"
+          :loading="stoppingOkwwConfig"
+          @click="handleCloseOkwwView"
+        >
+          {{ t('edit.okwwViewClose') }}
+        </a-button>
+      </template>
+    </GuiSessionMask>
 
-    <div class="user-edit-content">
+    <ConfigLockPanel :script-id="scriptId" content-class="user-edit-content">
       <a-card class="config-card" :loading="pageLoading">
         <a-form :model="formData" layout="vertical" class="config-form">
           <div class="form-section">
@@ -90,7 +101,7 @@
                   :options="okwwConfigModeOptions"
                   :disabled="pageLoading"
                   :saving="isSaving"
-                  alert-message="脚本使用脚本级共享配置，用户使用当前用户独立配置；直控直接使用 Okww 原有配置。快速配置为独立覆盖层，仅覆盖本页暴露的高频任务字段。"
+                  :alert-message="t('edit.configSourceHintBase')"
                   @change="handleConfigModeChange"
                 />
               </a-col>
@@ -98,29 +109,8 @@
                 <a-form-item>
                   <template #label>
                     <span class="form-label">
-                      {{ t('edit.enableQuickConfiguration') }}
-                      <a-tooltip :title="t('edit.overridesCurrentScriptConfiguration')">
-                        <QuestionCircleOutlined class="help-icon" />
-                      </a-tooltip>
-                    </span>
-                  </template>
-                  <a-select
-                    v-model:value="formData.Info.IfQuickConfig"
-                    size="large"
-                    :options="quickConfigOptions"
-                    @change="saveField('Info.IfQuickConfig', formData.Info.IfQuickConfig)"
-                  />
-                </a-form-item>
-              </a-col>
-              <a-col :span="12">
-                <a-form-item>
-                  <template #label>
-                    <span class="form-label">
                       {{ t('edit.collectNodeDetails') }}
-                      <a-tooltip
-                        mouse-enter-delay="0.5"
-                        :title="t('edit.collectsKeyMomentsFrom')"
-                      >
+                      <a-tooltip mouse-enter-delay="0.5" :title="t('edit.collectsKeyMomentsFrom')">
                         <QuestionCircleOutlined class="help-icon" />
                       </a-tooltip>
                     </span>
@@ -216,40 +206,27 @@
         </a-form>
       </a-card>
 
-      <a-card v-if="formData.Info.IfQuickConfig" class="config-card" style="margin-top: 24px">
+      <a-flex class="section-header" justify="space-between" align="center" wrap="wrap" gap="small">
+        <h3>{{ t('edit.taskConfiguration') }}</h3>
+        <a-space>
+          <span>{{ t('edit.enableQuickConfiguration') }}</span>
+          <a-switch
+            :checked="formData.Info.IfQuickConfig"
+            :disabled="pageLoading || isInitializing || isSaving"
+            :aria-label="t('edit.enableQuickConfiguration')"
+            @change="handleQuickConfigChange"
+          />
+          <a-button size="small" @click="openRestoreModal">
+            <template #icon><HistoryOutlined /></template>
+            {{ t('edit.configRestoreTitle') }}
+          </a-button>
+        </a-space>
+      </a-flex>
+      <a-card v-if="formData.Info.IfQuickConfig" class="config-card">
         <a-form :model="formData" layout="vertical" class="config-form">
           <div class="form-section">
-            <div class="section-header">
-              <h3>{{ t('edit.taskConfiguration') }}</h3>
-            </div>
-
             <a-row :gutter="24">
-              <a-col :span="12">
-                <a-form-item>
-                  <template #label>
-                    <span class="form-label">
-                      {{ t('edit.startTaskTN') }}
-                      <a-tooltip :title="t('edit.taskNumbersMatchOk2')">
-                        <QuestionCircleOutlined class="help-icon" />
-                      </a-tooltip>
-                    </span>
-                  </template>
-                  <a-select
-                    v-model:value="formData.Task.TaskIndex"
-                    size="large"
-                    @change="handleTaskIndexChange"
-                  >
-                    <a-select-option
-                      v-for="item in okwwTaskOptions"
-                      :key="item.value"
-                      :value="item.value"
-                    >
-                      {{ item.label }}
-                    </a-select-option>
-                  </a-select>
-                </a-form-item>
-              </a-col>
-              <a-col :span="12">
+              <a-col :span="24">
                 <a-form-item>
                   <template #label>
                     <span class="form-label">
@@ -350,29 +327,64 @@
           />
         </a-form>
       </a-card>
-    </div>
+    </ConfigLockPanel>
+
+    <!-- ══ 配置恢复（通用组件：MAS 用户配置在前、ok-ww 原生配置在后）══ -->
+    <ConfigRestoreSection
+      v-model:open="restoreOpen"
+      :disabled="configLocked"
+      :script-name="OKWW_DISPLAY_NAME"
+      :targets="restoreTargets"
+      :api="restoreApi"
+      :script-desc="t('edit.okwwConfigRestoreScriptDesc')"
+      :on-restored="handleRestored"
+      :on-detail="handleRestoreView"
+    >
+      <!-- ok-ww 备份摘要为文件集结构，用插槽完全接管预览区 -->
+      <template #preview="{ raw }">
+        <a-empty
+          v-if="!previewFiles(raw).length"
+          :description="t('edit.configRestorePreviewEmpty')"
+        />
+        <div v-else>
+          <template v-for="f in previewFiles(raw)" :key="f.name">
+            <h4 class="okww-preview-title">{{ f.label }}</h4>
+            <a-descriptions :column="1" size="small" bordered class="okww-preview-box">
+              <a-descriptions-item v-for="row in f.summary" :key="row.key" :label="row.key">
+                {{ row.value }}
+              </a-descriptions-item>
+            </a-descriptions>
+          </template>
+        </div>
+      </template>
+    </ConfigRestoreSection>
   </div>
 </template>
 
 <script setup lang="ts">
+import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
+import { useScriptConfigLock } from '@/composables/useScriptConfigLock'
 import { useI18n } from 'vue-i18n'
-import { computed, nextTick, onMounted, onUnmounted, reactive, ref } from 'vue'
+import { h, nextTick, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { message, Modal } from 'ant-design-vue'
-import { QuestionCircleOutlined, SettingOutlined } from '@ant-design/icons-vue'
+import {
+  EyeOutlined,
+  HistoryOutlined,
+  QuestionCircleOutlined,
+  SettingOutlined,
+} from '@ant-design/icons-vue'
 import { Service, type OkwwUserConfig } from '@/api'
-import { TaskCreateIn } from '@/api/models/TaskCreateIn'
 import { useUserApi } from '@/composables/useUserApi'
 import { useScriptApi } from '@/composables/useScriptApi'
-import { useWebSocket } from '@/composables/useWebSocket'
-import {
-  WS_TASK_COMPLETED,
-  WS_TASK_NOTICE,
-  type WSTaskNoticeData,
-} from '@/services/websocket/types'
+import { useOkwwGuiSession } from '@/composables/useOkwwGuiSession'
+import { useSaveQueue } from '@/composables/useSaveQueue'
 import UserEditHeader from '@/components/UserEditHeader.vue'
 import ExtraScriptSection from '@/components/ExtraScriptSection.vue'
 import UserNotifyConfig from '@/components/UserNotifyConfig.vue'
+import GuiSessionMask from '@/components/GuiSessionMask.vue'
+import ConfigRestoreSection from '@/views/EditView/User/components/ConfigRestoreSection.vue'
+import { buildRestoreConfirm } from '@/utils/configRestoreMode'
 import GeneralConfigModeSelector from './GeneralConfigModeSelector.vue'
 
 const { t } = useI18n()
@@ -382,31 +394,31 @@ const route = useRoute()
 const router = useRouter()
 const { addUser, getUsers, updateUser, error: userApiError, addUserErrorCode } = useUserApi()
 const { getScript } = useScriptApi()
-const { subscribe, unsubscribe } = useWebSocket()
+const {
+  okwwConfigLoading,
+  okwwTaskId,
+  showOkwwConfigMask,
+  showOkwwViewMask,
+  stoppingOkwwConfig,
+  startSession,
+  saveSession,
+  stopSession,
+} = useOkwwGuiSession()
 
 const scriptId = route.params.scriptId as string
 const userId = ref((route.params.userId as string) || '')
 const isEdit = ref(!!userId.value)
+const { configLocked } = useScriptConfigLock(() => scriptId)
 const scriptName = ref('ok-ww脚本')
 
 const pageLoading = ref(true)
 const isInitializing = ref(true)
-const isSaving = ref(false)
-const okwwConfigLoading = ref(false)
-const okwwSubscriptionIds = ref<string[]>([])
-const okwwTaskId = ref<string | null>(null)
-const showOkwwConfigMask = ref(false)
-const stoppingOkwwConfig = ref(false)
-let okwwConfigTimeout: number | null = null
+// 保存串行队列：连续改动按序写回，不再被布尔互斥丢掉
+const { isSaving, enqueue } = useSaveQueue()
 
 const resourceOptions = [
   { label: '官服（China）', value: '官服' },
   { label: '国际服（Global）', value: '国际服' },
-]
-
-const quickConfigOptions = [
-  { label: t('edit.enabled3'), value: true },
-  { label: t('edit.off'), value: false },
 ]
 
 // 节点详情推送模式（value 为后端 Notify.PushLogMode 取值，驱动逻辑需保持原样；label 走词表）
@@ -444,11 +456,6 @@ const okwwConfigModeOptions: Array<{
     description: t('edit.useExistingOkwwConfiguration'),
     icon: 'setting',
   },
-]
-
-const okwwTaskOptions = [
-  { label: '1 - DailyTask（日常）', value: 1 },
-  { label: '7 - MultiAccountDailyTask（多账号日常）', value: 7 },
 ]
 
 const farmOptions = [
@@ -500,7 +507,6 @@ const getDefaultUserData = (): Omit<OkwwUserFormData, 'userName'> => ({
     Tag: '',
   },
   Task: {
-    TaskIndex: 1,
     WhichToFarm: 'Tacet Suppression',
     WhichTacetSuppressionToFarm: 1,
     WhichForgeryChallengeToFarm: 1,
@@ -530,7 +536,8 @@ const formData = reactive<OkwwUserFormData>({
   ...getDefaultUserData(),
 })
 
-const currentStartupArguments = computed(() => `-t ${formData.Task.TaskIndex || 1} -e`)
+// ok-ww 只调度日常任务（-t 1 = DailyTask）；账号切换由 MAS 侧实现
+const currentStartupArguments = '-t 1 -e'
 
 const handleConfigModeChange = async (value: boolean | string) => {
   if (typeof value !== 'string' || !['脚本', '用户', '直控'].includes(value)) return
@@ -538,51 +545,14 @@ const handleConfigModeChange = async (value: boolean | string) => {
   await saveField('Info.Mode', formData.Info.Mode)
 }
 
-const clearOkwwConfigSession = () => {
-  for (const subscriptionId of okwwSubscriptionIds.value) {
-    unsubscribe(subscriptionId)
-  }
-  okwwSubscriptionIds.value = []
-  okwwTaskId.value = null
-  showOkwwConfigMask.value = false
-  if (okwwConfigTimeout) {
-    window.clearTimeout(okwwConfigTimeout)
-    okwwConfigTimeout = null
-  }
-}
-
-const stopOkwwConfigSession = async (keepOnFailure = false): Promise<boolean> => {
-  const taskId = okwwTaskId.value
-  if (!taskId) {
-    clearOkwwConfigSession()
-    return true
-  }
-  if (stoppingOkwwConfig.value) return false
-
-  stoppingOkwwConfig.value = true
-  try {
-    const response = await Service.stopTaskApiDispatchStopPost({ taskId })
-    if (response.code !== 200) {
-      throw new Error(response.message || '停止 ok-ww 设置失败')
-    }
-    clearOkwwConfigSession()
-    return true
-  } catch (e) {
-    logger.error(e instanceof Error ? e.message : String(e))
-    if (keepOnFailure) return false
-    clearOkwwConfigSession()
-    return false
-  } finally {
-    stoppingOkwwConfig.value = false
-  }
-}
-
 const handleCancel = async () => {
-  await stopOkwwConfigSession()
+  await stopSession()
   await router.push('/scripts')
 }
 
 const createUserImmediately = async (): Promise<boolean> => {
+  if (configLocked.value) return false
+
   const resp = await addUser(scriptId, { showError: false })
   if (!resp?.userId) {
     const errorMessage = userApiError.value || '创建用户失败'
@@ -609,106 +579,66 @@ const createUserImmediately = async (): Promise<boolean> => {
 }
 
 const saveField = async (key: string, value: unknown) => {
-  if (isInitializing.value || isSaving.value || !userId.value) return
+  if (isInitializing.value || !userId.value) return
 
-  isSaving.value = true
-  try {
-    const parts = key.split('.')
-    const patch: Record<string, any> = {}
-    let current = patch
-    for (let i = 0; i < parts.length - 1; i += 1) {
-      current[parts[i]] = {}
-      current = current[parts[i]]
+  const parts = key.split('.')
+  const patch: Record<string, any> = {}
+  let current = patch
+  for (let i = 0; i < parts.length - 1; i += 1) {
+    current[parts[i]] = {}
+    current = current[parts[i]]
+  }
+  current[parts[parts.length - 1]] = value
+
+  if (key === 'Info.Name') {
+    formData.userName = String(value || '')
+  }
+
+  return await enqueue(async () => {
+    try {
+      return await updateUser(scriptId, userId.value, patch)
+    } catch (e) {
+      logger.error(e instanceof Error ? e.message : String(e))
     }
-    current[parts[parts.length - 1]] = value
+  }, key)
+}
 
-    if (key === 'Info.Name') {
-      formData.userName = String(value || '')
-    }
-
-    await updateUser(scriptId, userId.value, patch)
-  } catch (e) {
-    logger.error(e instanceof Error ? e.message : String(e))
-  } finally {
-    isSaving.value = false
+const handleQuickConfigChange = async (value: boolean) => {
+  const previous = formData.Info.IfQuickConfig
+  formData.Info.IfQuickConfig = value
+  if (!(await saveField('Info.IfQuickConfig', value))) {
+    formData.Info.IfQuickConfig = previous
   }
 }
 
 const saveTaskConfig = async () => {
   if (isInitializing.value || !userId.value) return
-  await updateUser(scriptId, userId.value, {
-    Task: {
-      TaskIndex: formData.Task.TaskIndex,
-      WhichToFarm: formData.Task.WhichToFarm,
-      WhichTacetSuppressionToFarm: formData.Task.WhichTacetSuppressionToFarm,
-      WhichForgeryChallengeToFarm: formData.Task.WhichForgeryChallengeToFarm,
-      MaterialSelection: formData.Task.MaterialSelection,
-      FarmNightmareNestForDailyEcho: formData.Task.FarmNightmareNestForDailyEcho,
-      AdditionalTasks: formData.Task.AdditionalTasks,
-    },
-  })
-}
-
-const handleTaskIndexChange = async (value: 1 | 7) => {
-  formData.Task.TaskIndex = value
-  try {
-    await saveTaskConfig()
-  } catch (e) {
-    logger.error(e instanceof Error ? e.message : String(e))
-  }
+  await enqueue(() =>
+    updateUser(scriptId, userId.value, {
+      Task: {
+        WhichToFarm: formData.Task.WhichToFarm,
+        WhichTacetSuppressionToFarm: formData.Task.WhichTacetSuppressionToFarm,
+        WhichForgeryChallengeToFarm: formData.Task.WhichForgeryChallengeToFarm,
+        MaterialSelection: formData.Task.MaterialSelection,
+        FarmNightmareNestForDailyEcho: formData.Task.FarmNightmareNestForDailyEcho,
+        AdditionalTasks: formData.Task.AdditionalTasks,
+      },
+    })
+  )
 }
 
 const handleOkwwConfig = async () => {
+  if (configLocked.value) return
   if (!userId.value) return
-  try {
-    okwwConfigLoading.value = true
-    const response = await Service.addTaskApiDispatchStartPost({
-      taskId: userId.value,
-      mode: TaskCreateIn.mode.SCRIPT_CONFIG,
-    })
-    if (response.code !== 200 || !response.taskId) {
-      throw new Error(response.message || '启动 ok-ww 设置失败')
-    }
-
-    showOkwwConfigMask.value = true
-    okwwTaskId.value = response.taskId
-    const subscriptionIds = [
-      subscribe({ id: response.taskId, type: WS_TASK_NOTICE }, wsMessage => {
-        const data = wsMessage.data as unknown as WSTaskNoticeData
-        if (data.level === 'error') {
-          message.error(t('edit.okWwSetupFailed', { p0: data.message }))
-          void stopOkwwConfigSession()
-        }
-      }),
-      subscribe({ id: response.taskId, type: WS_TASK_COMPLETED }, () => {
-        clearOkwwConfigSession()
-      }),
-    ]
-    okwwSubscriptionIds.value = subscriptionIds
-    const configTarget =
-      formData.Info.Mode === '直控'
-        ? '脚本直控'
-        : formData.Info.Mode === '脚本'
-          ? '脚本共享'
-          : '当前用户'
-    message.success(t('edit.openedOkWwSettings', { p0: configTarget }))
-    okwwConfigTimeout = window.setTimeout(handleSaveOkwwConfig, 30 * 60 * 1000)
-  } catch (e) {
-    logger.error(e instanceof Error ? e.message : String(e))
-    message.error(e instanceof Error ? e.message : '启动 ok-ww 设置失败')
-    clearOkwwConfigSession()
-  } finally {
-    okwwConfigLoading.value = false
-  }
+  await startSession(userId.value)
 }
 
-const handleSaveOkwwConfig = async () => {
-  if (!okwwTaskId.value) return
-  if (await stopOkwwConfigSession(true)) {
-    message.success(t('edit.okWwSettingsSaved'))
-  } else {
-    message.error(t('edit.couldNotSaveOk2'))
-  }
+const handleSaveOkwwConfig = () => {
+  void saveSession()
+}
+
+const handleCloseOkwwView = () => {
+  void stopSession()
 }
 
 const loadScriptInfo = async (): Promise<boolean> => {
@@ -756,14 +686,174 @@ const loadUser = async () => {
   }
 }
 
+// ══ 配置恢复（通用组件 props 供给：双目标 MAS 在前脚本在后）══
+// 专项统一名（文案参数化用）：ok-ww 统一叫「ok-ww」
+const OKWW_DISPLAY_NAME = 'ok-ww'
+const restoreOpen = ref(false)
+
+// 目标池顺序 = segmented 展示顺序：MAS 用户配置（在前）、ok-ww 原生配置（在后）
+const restoreTargets: Array<{ key: string; kind: 'user' | 'script' }> = [
+  { key: 'mas', kind: 'user' },
+  { key: 'native', kind: 'script' },
+]
+
+// 组件调用后端：通用 /backup/* 端点（脚本/用户上下文在此闭包捕获）
+const restoreApi = {
+  list: async (target: string) =>
+    Service.listConfigBackupsApiApiScriptsBackupListGet(scriptId, userId.value, target),
+  preview: async (target: string, time: string) =>
+    Service.getConfigBackupPreviewApiApiScriptsBackupPreviewGet(
+      scriptId,
+      userId.value,
+      time,
+      target
+    ),
+  restore: async (target: string, time: string) =>
+    Service.restoreConfigBackupApiApiScriptsBackupRestorePost({
+      scriptId,
+      userId: userId.value,
+      time,
+      target,
+    }),
+  readFile: async (target: string, time: string, path: string) =>
+    Service.getConfigBackupFileApiApiScriptsBackupFileGet(
+      scriptId,
+      userId.value,
+      time,
+      target,
+      path
+    ),
+}
+
+const openRestoreModal = () => {
+  restoreOpen.value = true
+}
+
+// 预览响应原文（unknown）收敛为文件集视图：泛用组件的 raw 插槽不带专项类型
+interface OkwwPreviewFileView {
+  name: string
+  label: string
+  summary: Array<{ key: string; value: string }>
+}
+const previewFiles = (raw: unknown): OkwwPreviewFileView[] =>
+  (raw as { fileCards?: OkwwPreviewFileView[] } | null)?.fileCards ?? []
+
+// 一键恢复成功：mas 恢复含快速配置覆盖层字段回填，重拉表单——否则旧表单
+// 值在下次保存时会静默覆盖回滚结果；native 恢复不影响本页表单
+const handleRestored = async (target: string) => {
+  restoreOpen.value = false
+  if (target === 'mas') {
+    await loadUser()
+  }
+}
+
+// 「查看详细配置」语义（对齐一条龙）：恢复该时点 + 拉起查看会话预览。
+// 弹窗文案必须显式区分——该按钮极易被误以为只读，实际会真覆盖当前配置。
+// mas 备份：恢复到 MAS 目录后启动查看会话（下发为查看的必经复制，GUI 所见
+// 即备份）；原生备份：恢复到 ok-ww 本体后启动脚本级查看会话（跳过下发，
+// 原生目录即备份）。查看会话结束不回写配置，原生现场由任务前快照还原。
+// 与一键恢复同口径：单弹窗文案，跨配置来源时换标题并追加来源切换说明
+// （确认后由基座把配置来源切回备份时点再恢复）。
+const handleRestoreView = (
+  target: string,
+  item: { time: string; mode?: string | null },
+  currentMode?: string | null
+) => {
+  if (configLocked.value) return Promise.resolve(false)
+
+  return new Promise<boolean>(resolve => {
+    const { title, paragraphs } = buildRestoreConfirm(
+      t,
+      {
+        title: t('edit.configRestoreDetailView'),
+        desc: t('edit.configRestoreDetailConfirm', { script: OKWW_DISPLAY_NAME }),
+      },
+      item.mode,
+      currentMode
+    )
+    Modal.confirm({
+      title,
+      content: h(
+        'div',
+        paragraphs.map(text =>
+          h('p', { style: { color: 'var(--ant-color-error)', margin: '0 0 8px' } }, text)
+        )
+      ),
+      okType: 'danger',
+      okText: t('edit.configRestoreConfirmOk'),
+      cancelText: t('edit.cancel'),
+      onOk: async () => {
+        if (configLocked.value) {
+          message.error(t('edit.configLocked'))
+          resolve(false)
+          return
+        }
+
+        try {
+          const resp = await Service.restoreConfigBackupApiApiScriptsBackupRestorePost({
+            scriptId,
+            userId: userId.value,
+            time: item.time,
+            target,
+          })
+          // 后端失败走 HTTP 200 + body code=400，须显式检查返回体：备份不存在/
+          // 路径未设置等抛错若被吞掉，会照常关弹窗并打开查看会话
+          if (resp.code !== 200) {
+            throw new Error(resp.message || t('edit.configRestoreFailed'))
+          }
+          restoreOpen.value = false
+          if (target === 'mas') {
+            // 恢复后重拉表单：后端 UserData 已回填，不重拉会让旧表单值在
+            // 下次保存时整块写回、覆盖恢复结果（对齐一键恢复 handleRestored）
+            await loadUser()
+            await startSession(userId.value, true)
+          } else {
+            await startSession(scriptId, true)
+          }
+          resolve(true)
+        } catch (e) {
+          message.error(e instanceof Error ? e.message : t('edit.configRestoreFailed'))
+          resolve(false)
+        }
+      },
+      onCancel: () => resolve(false),
+    })
+  })
+}
+
+// 编辑会话归档（进入/退出时机，指纹去重）：与运行/会话下发前的双池归档
+// （AutoProxy/ScriptConfig 下发处）配合——进入归档原生配置当前状态（MAS
+// 触碰前原始态），退出归档 MAS 配置终态（编辑会话包络）
+const ensureOkwwBackup = async (target: 'mas' | 'native') => {
+  if (!userId.value) return
+  try {
+    const resp = await Service.ensureConfigBackupApiApiScriptsBackupEnsurePost({
+      scriptId,
+      userId: userId.value,
+      target,
+    })
+    if (resp.code !== 200) throw new Error(resp.message || t('edit.configRestoreEnsureFailed'))
+  } catch (e) {
+    logger.error(e instanceof Error ? e.message : String(e))
+    message.warning(t('edit.configRestoreEnsureFailed'))
+  }
+}
+
 onMounted(async () => {
   if (await loadScriptInfo()) {
     await loadUser()
+    // 进入编辑页：归档 ok-ww 原生配置当前状态（MAS 触碰前的原始态）
+    await ensureOkwwBackup('native')
   }
 })
 
 onUnmounted(() => {
-  void stopOkwwConfigSession()
+  // 退出编辑页：先停会话再归档 MAS 配置终态——并行会与 final_task 的回写
+  // 撞车，归档到半程状态；会话未开时 stopSession 自身早退，不影响归档时机
+  void (async () => {
+    await stopSession()
+    await ensureOkwwBackup('mas')
+  })()
 })
 </script>
 
@@ -784,6 +874,9 @@ onUnmounted(() => {
 }
 
 .section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   border-bottom: 1px solid var(--ant-color-border-secondary);
 }
 
@@ -799,45 +892,19 @@ onUnmounted(() => {
   cursor: help;
 }
 
-.okww-config-mask {
-  position: fixed;
-  inset: 32px 0 0;
-  z-index: 9999;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: rgba(0, 0, 0, 0.45);
-}
-
-.mask-content {
-  width: 100%;
-  max-width: 480px;
-  padding: 24px;
-  text-align: center;
-  background: var(--ant-color-bg-elevated);
-  border: 1px solid var(--ant-color-border);
-  border-radius: 8px;
-}
-
-.mask-icon {
-  margin-bottom: 16px;
-}
-
-.mask-title {
-  margin: 0 0 8px;
-  font-size: 18px;
+/* 配置预览：逐文件的摘要标题与摘要表 */
+.okww-preview-title {
+  margin: 14px 0 6px;
+  font-size: 14px;
   font-weight: 600;
-  color: var(--ant-color-text);
 }
 
-.mask-description {
-  margin: 0 0 24px;
-  color: var(--ant-color-text-secondary);
+.okww-preview-title:first-child {
+  margin-top: 0;
 }
 
-.mask-actions {
-  display: flex;
-  justify-content: center;
+.okww-preview-box {
+  margin-bottom: 4px;
 }
 
 @media (max-width: 768px) {

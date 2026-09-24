@@ -1,5 +1,5 @@
 /**
- * 米游社扫码登录的会话状态机。
+ * 米游社 / 森空岛扫码登录的会话状态机。
  *
  * 从 TabGameSign.vue 抽出来的部分：持有二维码会话（ticket/device）、轮询定时器、
  * AbortController 与展示状态；不碰账号列表、不碰弹窗以外的界面。
@@ -17,6 +17,8 @@ import QRCode from 'qrcode'
 import type { CancelablePromise, OutBase, QrCheckOut, QrCreateOut } from '@/api'
 import { useGameSignApi } from './useGameSignApi'
 
+export type QrLoginProvider = 'miyoushe' | 'skland'
+
 export type QrLoginStatus =
   | 'idle'
   | 'loading'
@@ -30,10 +32,10 @@ export type QrLoginStatus =
 // 这个 composable 有直接调用它的单测（没有组件实例），所以用全局 t 而不是 useI18n()
 const t = translate
 
-type QrApiResponse = QrCreateOut & QrCheckOut & OutBase
+type QrApiResponse = QrCreateOut & QrCheckOut & OutBase & { scan_code?: string }
 type QrLogger = ReturnType<typeof window.electronAPI.getLogger>
 
-export const QR_RESPONSE_INVALID_MESSAGE = t('gamesign.qr.responseInvalid')
+const QR_RESPONSE_INVALID_MESSAGE = t('gamesign.qr.responseInvalid')
 
 const POLL_INTERVAL_MS = 2000
 /** 成功后延迟关闭弹窗，让用户看到成功提示 */
@@ -45,12 +47,12 @@ const AUTO_CLOSE_DELAY_MS = 1200
  * 这类错误要提示并允许重新生成，与本地主动取消是两回事：
  * 后者由 AbortError 静默吞掉，不能弹提示。
  */
-export const isQrExpiredMessage = (messageText: string) =>
+const isQrExpiredMessage = (messageText: string) =>
   /二维码|qr|expired|invalid|nonetype.*get|object has no attribute.*get/i.test(messageText)
 
 const isQrAbortError = (error: unknown) => error instanceof Error && error.name === 'AbortError'
 
-export interface QrLoginOptions {
+interface QrLoginOptions {
   /** 当前正在编辑的账号 uid；取不到时只走完扫码流程，不落库 */
   getAccountId: () => string | undefined
   /**
@@ -59,14 +61,28 @@ export interface QrLoginOptions {
    */
   onSaved: (
     accountId: string,
-    cookiesStr: string,
+    credential: string,
     isStillCurrent: () => boolean
   ) => Promise<void> | void
   logger: QrLogger
+  /** 可传固定值或 getter；默认保留米游社行为，森空岛入口按当前请求动态切换 */
+  provider?: QrLoginProvider | (() => QrLoginProvider)
 }
 
-export function useQrLogin({ getAccountId, onSaved, logger }: QrLoginOptions) {
-  const { createMiyousheQr, checkMiyousheQr, saveMiyousheQr } = useGameSignApi()
+export function useQrLogin({ getAccountId, onSaved, logger, provider }: QrLoginOptions) {
+  const {
+    createMiyousheQr,
+    checkMiyousheQr,
+    saveMiyousheQr,
+    createSklandQr,
+    checkSklandQr,
+    saveSklandQr,
+  } = useGameSignApi()
+
+  const resolveProvider = (): QrLoginProvider => {
+    if (typeof provider === 'function') return provider()
+    return provider ?? 'miyoushe'
+  }
 
   const visible = ref(false)
   const loading = ref(false)
@@ -147,16 +163,24 @@ export function useQrLogin({ getAccountId, onSaved, logger }: QrLoginOptions) {
     signal?: AbortSignal
   ): Promise<QrApiResponse> => {
     let response: QrApiResponse
+    const currentProvider = resolveProvider()
     if (path === '/create') {
-      response = await abortableRequest(createMiyousheQr(), signal)
+      response = await abortableRequest(
+        currentProvider === 'skland' ? createSklandQr() : createMiyousheQr(),
+        signal
+      )
     } else if (path === '/check') {
       response = await abortableRequest(
-        checkMiyousheQr(body?.ticket || '', body?.device || ''),
+        currentProvider === 'skland'
+          ? checkSklandQr(body?.ticket || '', body?.device || '')
+          : checkMiyousheQr(body?.ticket || '', body?.device || ''),
         signal
       )
     } else {
       response = await abortableRequest(
-        saveMiyousheQr(body?.account_uid || '', body?.cookie || ''),
+        currentProvider === 'skland'
+          ? saveSklandQr(body?.account_uid || '', body?.scan_code || '')
+          : saveMiyousheQr(body?.account_uid || '', body?.cookie || ''),
         signal
       )
     }
@@ -170,6 +194,7 @@ export function useQrLogin({ getAccountId, onSaved, logger }: QrLoginOptions) {
       qr_url: undefined,
       device: undefined,
       cookies_str: undefined,
+      scan_code: undefined,
     }
     logger.debug(`[QR ${path}] ${JSON.stringify(logData)}`)
     // 不在此处抛出 API 错误，由调用方根据 data.status / data.code 处理
@@ -198,15 +223,15 @@ export function useQrLogin({ getAccountId, onSaved, logger }: QrLoginOptions) {
     device.value = ''
   }
 
-  const handleConfirmed = async (cookiesStr: string, id: number, signal: AbortSignal) => {
+  const handleConfirmed = async (credential: string, id: number, signal: AbortSignal) => {
     if (!isCurrentSession(id)) return
-    if (!cookiesStr) {
+    if (!credential) {
       status.value = 'error'
       statusText.value = t('gamesign.qr.noCookie')
       return
     }
 
-    // Passport 模式：cookies 直接从响应头获取，无需 exchange
+    // 米游社 Passport 模式：cookies 直接从响应头获取；森空岛确认后用 scanCode 保存完整凭据。
     const accountId = getAccountId()
     if (accountId) {
       status.value = 'exchanging'
@@ -214,14 +239,16 @@ export function useQrLogin({ getAccountId, onSaved, logger }: QrLoginOptions) {
       try {
         const saveResponse = await qrFetch(
           '/save',
-          { account_uid: accountId, cookie: cookiesStr },
+          resolveProvider() === 'skland'
+            ? { account_uid: accountId, scan_code: credential }
+            : { account_uid: accountId, cookie: credential },
           signal
         )
         if (!isCurrentSession(id)) return
         if (saveResponse.code !== 200 || saveResponse.status === 'error') {
           throw new Error(saveResponse.message || t('gamesign.qr.saveTokenFailed'))
         }
-        await onSaved(accountId, cookiesStr, () => isCurrentSession(id))
+        await onSaved(accountId, credential, () => isCurrentSession(id))
         if (!isCurrentSession(id)) return
       } catch (error) {
         if (!isCurrentSession(id) || isQrAbortError(error)) return
@@ -235,7 +262,13 @@ export function useQrLogin({ getAccountId, onSaved, logger }: QrLoginOptions) {
     }
     status.value = 'done'
     statusText.value = t('gamesign.qr.success')
-    message.success(t('gamesign.qr.loginSuccess'))
+    message.success(
+      t(
+        resolveProvider() === 'skland'
+          ? 'gamesign.qr.sklandLoginSuccess'
+          : 'gamesign.qr.loginSuccess'
+      )
+    )
     clearCloseTimer()
     closeTimer = setTimeout(() => {
       closeTimer = null
@@ -266,7 +299,9 @@ export function useQrLogin({ getAccountId, onSaved, logger }: QrLoginOptions) {
       statusText.value = t('gamesign.qr.scanned')
     } else if (data.status === 'Confirmed') {
       stopPoll()
-      await handleConfirmed(data.cookies_str || '', id, signal)
+      const credential =
+        resolveProvider() === 'skland' ? data.scan_code || '' : data.cookies_str || ''
+      await handleConfirmed(credential, id, signal)
     } else if (data.status === 'Canceled') {
       failPoll(responseMessage || t('gamesign.qr.cancelled'))
     } else if (data.status === 'Expired') {
@@ -339,7 +374,9 @@ export function useQrLogin({ getAccountId, onSaved, logger }: QrLoginOptions) {
       ticket.value = data.ticket
       device.value = data.device
       status.value = 'waiting'
-      statusText.value = t('gamesign.qr.waiting')
+      statusText.value = t(
+        resolveProvider() === 'skland' ? 'gamesign.qr.sklandWaiting' : 'gamesign.qr.waiting'
+      )
       pollTimer.value = setInterval(() => {
         void poll(id)
       }, POLL_INTERVAL_MS)

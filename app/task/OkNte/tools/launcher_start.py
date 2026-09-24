@@ -184,7 +184,9 @@ def _activate_window(hwnd: int) -> None:
     show_command = (
         win32con.SW_RESTORE
         if win32gui.IsIconic(hwnd)
-        else win32con.SW_SHOW if not win32gui.IsWindowVisible(hwnd) else None
+        else win32con.SW_SHOW
+        if not win32gui.IsWindowVisible(hwnd)
+        else None
     )
     if show_command is not None:
         win32gui.ShowWindow(hwnd, show_command)
@@ -414,7 +416,9 @@ def start_game_via_launcher(
             # 弹窗一：全新启动器推送 → 点「立即体验」升级启动器
             upgrade_box = _find_text(items, ("立即体验",))
             if upgrade_box is not None and not launcher_upgrade_clicked:
-                on_log("检测到「全新启动器现已推出」弹窗，点击「立即体验」升级启动器...")
+                on_log(
+                    "检测到「全新启动器现已推出」弹窗，点击「立即体验」升级启动器..."
+                )
                 _click_box(hwnd, upgrade_box, after_sleep=3)
                 launcher_upgrade_clicked = True
                 deadline = max(deadline, now + _UPDATE_TIMEOUT)
@@ -447,9 +451,7 @@ def start_game_via_launcher(
             # 上被吞掉：必须先点「确定」/「忽略」关掉弹窗，本轮不再处理开始/更新
             # 按钮（对齐 ok-nte 上游 launcher_popup_close 的防护顺序）
             if any(text.strip() == "提示" for text, _ in items):
-                popup_box = _find_text(items, ("确定",)) or _find_text(
-                    items, ("忽略",)
-                )
+                popup_box = _find_text(items, ("确定",)) or _find_text(items, ("忽略",))
                 if popup_box is not None:
                     on_log("检测到启动器「提示」弹窗，点击关闭...")
                     _click_box(hwnd, popup_box, after_sleep=2)
@@ -484,11 +486,7 @@ def start_game_via_launcher(
             update_box = None if start_box else _find_text(items, ("更新",))
             if update_clicked and start_box is None:
                 start_button_gone = True
-            if (
-                start_box is not None
-                and update_clicked
-                and start_button_gone
-            ):
+            if start_box is not None and update_clicked and start_button_gone:
                 # 更新完成后按钮已真正变回「开始游戏」（中间被进度 UI/遮罩
                 # 取代过）：重置点击预算与更新标记，允许再次点击进入游戏
                 # （更新后无重启弹窗时此处是唯一再点入口）
