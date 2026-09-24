@@ -221,6 +221,7 @@ class OpenClawQQManager:
         self._config_lock = asyncio.Lock()
         self._send_lock = asyncio.Lock()
         self._credential_lock = asyncio.Lock()
+        self._gateway_lock = asyncio.Lock()
         self._hooks_bound = False
         self._runtime_credentials: _RuntimeCredentials | None = None
         self._secret_storage_available: bool | None = None
@@ -244,9 +245,10 @@ class OpenClawQQManager:
         """在后端启动时恢复已绑定机器人的网关连接。"""
 
         self.bind_config_hooks()
-        app_id, client_secret, user_openid = self._credentials()
-        if app_id and client_secret and user_openid:
-            await self._start_gateway(app_id, client_secret)
+        async with self._credential_lock:
+            app_id, client_secret, user_openid = self._credentials()
+            if app_id and client_secret and user_openid:
+                await self._start_gateway(app_id, client_secret)
 
     async def stop(self) -> None:
         """停止服务并清理短期访问令牌和临时二维码。"""
@@ -254,8 +256,9 @@ class OpenClawQQManager:
         async with self._session_lock:
             self._sessions.clear()
             self._session_generation += 1
-        await self._stop_gateway()
-        self._invalidate_access_token()
+        async with self._credential_lock:
+            await self._stop_gateway()
+            self._invalidate_access_token()
 
     async def _on_enabled_changed(self, enabled: Any) -> None:
         if not bool(enabled):
@@ -517,14 +520,14 @@ class OpenClawQQManager:
                             state="error",
                             message="二维码登录会话已关闭，请重新生成",
                         )
-                await self._save_credentials_locked(
-                    app_id=app_id,
-                    client_secret=client_secret,
-                    user_openid=user_openid,
-                )
-                async with self._session_lock:
+                    # 会话锁覆盖保存与启动；解绑或重新扫码只能在本次绑定完成后失效会话。
+                    await self._save_credentials_locked(
+                        app_id=app_id,
+                        client_secret=client_secret,
+                        user_openid=user_openid,
+                    )
                     session.bound_at = monotonic()
-                await self._start_gateway(app_id, client_secret)
+                    await self._start_gateway(app_id, client_secret)
         except (ValueError, RuntimeError) as exc:
             async with self._session_lock:
                 if (
@@ -558,8 +561,8 @@ class OpenClawQQManager:
         async with self._session_lock:
             self._sessions.clear()
             self._session_generation += 1
-        await self._stop_gateway()
         async with self._send_lock, self._credential_lock:
+            await self._stop_gateway()
             self._runtime_credentials = None
             self._invalidate_access_token()
             values = {
@@ -575,13 +578,20 @@ class OpenClawQQManager:
     async def _start_gateway(self, app_id: str, client_secret: str) -> None:
         """使用当前凭据启动唯一的 QQ 网关连接任务。"""
 
-        await self._stop_gateway()
-        self._gateway_seen_ready = False
-        self._gateway_task = asyncio.create_task(
-            self._run_gateway(app_id, client_secret), name="openclaw-qq-gateway"
-        )
+        async with self._gateway_lock:
+            await self._stop_gateway_locked()
+            self._gateway_seen_ready = False
+            self._gateway_task = asyncio.create_task(
+                self._run_gateway(app_id, client_secret), name="openclaw-qq-gateway"
+            )
 
     async def _stop_gateway(self) -> None:
+        async with self._gateway_lock:
+            await self._stop_gateway_locked()
+
+    async def _stop_gateway_locked(self) -> None:
+        """在网关锁内等待旧任务退出并清理连接状态。"""
+
         task = self._gateway_task
         self._gateway_task = None
         if task is not None:

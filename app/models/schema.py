@@ -1423,10 +1423,7 @@ class OpenClawWeixinStatusOut(OutBase):
 
     enabled: bool = Field(default=False, description="是否启用微信 Claw 通知")
     connected: bool = Field(default=False, description="是否已绑定微信账号")
-    state: str = Field(
-        default="disconnected",
-        description="消息网关状态：disconnected、connecting、connected 或 reconnecting",
-    )
+    state: str = Field(default="disconnected", description="当前连接状态")
 
 
 class OpenClawQQQrStartOut(OutBase):
@@ -1460,7 +1457,10 @@ class OpenClawQQStatusOut(OutBase):
 
     enabled: bool = Field(default=False, description="是否启用 QQ 官方机器人通知")
     connected: bool = Field(default=False, description="是否已绑定 QQ 官方机器人")
-    state: str = Field(default="disconnected", description="当前连接状态")
+    state: str = Field(
+        default="disconnected",
+        description="消息网关状态：disconnected、connecting、connected 或 reconnecting",
+    )
 
 
 class GlobalConfig_Update(BaseModel):
