@@ -1646,6 +1646,7 @@ class ScriptIndexItem(BaseModel):
         "BetterGIConfig",
         "ZzzOdConfig",
         "BAAHConfig",
+        "WhimboxConfig",
         "MSSConfig",
     ] = Field(..., description="配置类型")
 
@@ -1665,6 +1666,7 @@ class UserIndexItem(BaseModel):
         "BetterGIUserConfig",
         "ZzzOdUserConfig",
         "BAAHUserConfig",
+        "WhimboxUserConfig",
         "MSSUserConfig",
     ] = Field(..., description="配置类型")
 
@@ -2636,6 +2638,143 @@ class BAAHConfig(BaseModel):
     Emulator: Optional[BAAHConfig_Emulator] = Field(
         default=None, description="模拟器配置"
     )
+
+
+class WhimboxConfig_Run(BaseModel):
+    """奇想盒运行配置（复用通用三限语义 + 提权开关）"""
+
+    ProxyTimesLimit: Optional[int] = Field(
+        default=None, description="每日代理次数上限（0=不限）"
+    )
+    RunTimesLimit: Optional[int] = Field(default=None, description="重试次数限制")
+    RunTimeLimit: Optional[int] = Field(
+        default=None, description="运行时间限制（分钟，日志静默超时判定）"
+    )
+    UseAdmin: Optional[bool] = Field(
+        default=None,
+        description="以管理员权限启动奇想盒后端（上游强制管理员，默认开启）",
+    )
+
+
+class WhimboxConfig(BaseModel):
+    """奇想盒脚本配置（无限暖暖，BetterGI 线）"""
+
+    Info: Optional[GeneralConfig_Info] = Field(default=None, description="脚本基础信息")
+    Run: Optional[WhimboxConfig_Run] = Field(default=None, description="运行配置")
+
+
+class WhimboxUserConfig_Info(BaseModel):
+    """奇想盒用户信息
+
+    配置来源只有两态：脚本=用 MAS 面板配置，直控=用奇想盒原生配置；不含「用户」
+    态与快速配置开关（上游仅一份 config.json，「脚本」与「用户」行为一致）。
+    """
+
+    Name: Optional[str] = Field(default=None, description="用户名")
+    Status: Optional[bool] = Field(default=None, description="用户状态")
+    RemainedDay: Optional[int] = Field(default=None, description="剩余天数")
+    Mode: Optional[Literal["脚本", "直控"]] = Field(
+        default=None, description="配置来源（脚本/直控）"
+    )
+    IfScriptBeforeTask: Optional[bool] = Field(
+        default=None, description="是否在任务前执行脚本"
+    )
+    ScriptBeforeTask: Optional[str] = Field(default=None, description="任务前脚本路径")
+    IfScriptAfterTask: Optional[bool] = Field(
+        default=None, description="是否在任务后执行脚本"
+    )
+    ScriptAfterTask: Optional[str] = Field(default=None, description="任务后脚本路径")
+    Notes: Optional[str] = Field(default=None, description="备注")
+    Tag: Optional[str] = Field(
+        default=None, description="用户标签列表（JSON字符串，TagItem的dict列表）"
+    )
+
+
+class WhimboxUserConfig_OneDragon(BaseModel):
+    """奇想盒一条龙流程级配置（物化为上游 OneDragon 流程开关）"""
+
+    IfRunAllAccounts: Optional[bool] = Field(
+        default=None,
+        description="一条龙是否循环全部游戏账号（多账号由奇想盒 OCR 动态发现并循环）",
+    )
+
+
+class WhimboxUserConfig_Task(BaseModel):
+    """奇想盒任务覆盖集（键集来自任务目录，MAS 不建模字段定义）"""
+
+    Tasks: Optional[Union[str, dict]] = Field(
+        default=None,
+        description="步骤开关覆盖集 JSON map {步骤键: bool}，键集来自任务目录",
+    )
+    Options: Optional[Union[str, dict]] = Field(
+        default=None,
+        description="目标/参数覆盖集 JSON map {键: 值}，键集来自任务目录",
+    )
+
+
+class WhimboxUserConfig_Data(GeneralUserConfig_Data):
+    """奇想盒用户数据（复用通用字段）"""
+
+    LastProxyStatus: Optional[str] = Field(
+        default=None, description="上次代理状态（未知/成功/失败）"
+    )
+
+
+class WhimboxUserConfig(BaseModel):
+    """奇想盒用户配置（一条龙配置档）"""
+
+    Info: Optional[WhimboxUserConfig_Info] = Field(default=None, description="用户信息")
+    OneDragon: Optional[WhimboxUserConfig_OneDragon] = Field(
+        default=None, description="一条龙流程配置"
+    )
+    Task: Optional[WhimboxUserConfig_Task] = Field(
+        default=None, description="任务覆盖集"
+    )
+    Data: Optional[WhimboxUserConfig_Data] = Field(default=None, description="用户数据")
+    Notify: Optional[GeneralUserConfig_Notify] = Field(
+        default=None, description="单独通知"
+    )
+
+
+class WhimboxTaskCatalogItem(BaseModel):
+    """任务目录条目：一条龙步骤开关（上游三件套机械转换）"""
+
+    key: str = Field(default=..., description="上游配置键")
+    display: str = Field(default=..., description="显示名（上游模板 description）")
+    section: str = Field(default=..., description="上游配置节")
+
+
+class WhimboxOptionCatalogItem(BaseModel):
+    """任务目录条目：一条龙目标/参数字段（上游三件套机械转换）"""
+
+    key: str = Field(default=..., description="上游配置键")
+    display: str = Field(default=..., description="显示名（上游模板 description）")
+    section: str = Field(default=..., description="上游配置节")
+    field_type: str = Field(
+        default=..., description="控件类型：bool/int/select/multi_select/text"
+    )
+    options: List[str] = Field(default_factory=list, description="值域候选")
+    default: Optional[Union[bool, int, float, str, List[str]]] = Field(
+        default=None, description="上游模板默认值（布尔语义已归一为 bool）"
+    )
+
+
+class WhimboxTaskCatalogData(BaseModel):
+    """任务目录数据：步骤开关 + 参数字段 + 上游版本提示"""
+
+    steps: List[WhimboxTaskCatalogItem] = Field(
+        default_factory=list, description="一条龙步骤开关（键集与顺序来自上游模板）"
+    )
+    options: List[WhimboxOptionCatalogItem] = Field(
+        default_factory=list, description="一条龙目标/参数字段"
+    )
+    upstream_version: str = Field(default="", description="奇想盒后端版本（dist-info）")
+
+
+class WhimboxTaskCatalogOut(OutBase):
+    """任务目录响应"""
+
+    data: WhimboxTaskCatalogData = Field(default_factory=WhimboxTaskCatalogData)
 
 
 class BlueArchiveActivityStatusOut(OutBase):
@@ -4543,10 +4682,11 @@ class ScriptCreateIn(BaseModel):
         "BetterGI",
         "ZzzOd",
         "BAAH",
+        "Whimbox",
         "MSS",
     ] = Field(
         ...,
-        description="脚本类型: MAA脚本, 通用脚本, OK-WW脚本, OK-NTE脚本, SRC脚本, MaaEnd脚本, M9A脚本, MaaFW脚本, HSR脚本, BetterGI脚本, ZZZ-OD脚本, BAAH脚本, MSS脚本",
+        description="脚本类型: MAA脚本, 通用脚本, OK-WW脚本, OK-NTE脚本, SRC脚本, MaaEnd脚本, M9A脚本, MaaFW脚本, HSR脚本, BetterGI脚本, ZZZ-OD脚本, BAAH脚本, 奇想盒脚本, MSS脚本",
     )
     scriptId: str | None = Field(
         default=None, description="直接从该脚本ID复制创建, 仅在复制创建时使用"
@@ -4568,6 +4708,7 @@ class ScriptCreateOut(OutBase):
         BetterGIConfig,
         ZzzOdConfig,
         BAAHConfig,
+        WhimboxConfig,
         MSSConfig,
     ] = Field(..., description="脚本配置数据")
 
@@ -4595,6 +4736,7 @@ class ScriptGetOut(OutBase):
             BetterGIConfig,
             ZzzOdConfig,
             BAAHConfig,
+            WhimboxConfig,
             MSSConfig,
         ],
     ] = Field(..., description="脚本数据字典, key来自于index列表的uid")
@@ -4615,6 +4757,7 @@ class ScriptUpdateIn(BaseModel):
         BetterGIConfig,
         ZzzOdConfig,
         BAAHConfig,
+        WhimboxConfig,
         MSSConfig,
     ] = Field(..., description="脚本更新数据")
 
@@ -4672,6 +4815,7 @@ class UserGetOut(OutBase):
             BetterGIUserConfig,
             ZzzOdUserConfig,
             BAAHUserConfig,
+            WhimboxUserConfig,
             MSSUserConfig,
         ],
     ] = Field(..., description="用户数据字典, key来自于index列表的uid")
@@ -4692,6 +4836,7 @@ class UserCreateOut(OutBase):
         BetterGIUserConfig,
         ZzzOdUserConfig,
         BAAHUserConfig,
+        WhimboxUserConfig,
         MSSUserConfig,
     ] = Field(..., description="用户配置数据")
 
@@ -4711,6 +4856,7 @@ class UserUpdateIn(UserInBase):
         BetterGIUserConfig,
         ZzzOdUserConfig,
         BAAHUserConfig,
+        WhimboxUserConfig,
         MSSUserConfig,
     ] = Field(..., description="用户更新数据")
 

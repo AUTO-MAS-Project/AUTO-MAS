@@ -45,6 +45,7 @@ _LAZY_EXPORTS = {
     "ZzzOdManager": (".ZzzOd", "ZzzOdManager"),
     "BAAHManager": (".BAAH", "BAAHManager"),
     "MaaFWEmbeddedManager": (".MaaFW.embedded_manager", "MaaFWEmbeddedManager"),
+    "WhimboxManager": (".Whimbox", "WhimboxManager"),
 }
 
 
@@ -72,4 +73,5 @@ __all__ = [
     "BetterGIManager",
     "ZzzOdManager",
     "MaaFWEmbeddedManager",
+    "WhimboxManager",
 ]

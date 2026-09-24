@@ -1289,7 +1289,8 @@ class ConfigSourceValidator(OptionsValidator):
     """配置来源校验器, 支持两态或三态, 并兼容旧版来源名。
 
     Args:
-        modes: 允许的配置来源。三态=脚本/用户/直控, 两态=用户/直控。
+        modes: 允许的配置来源。三态=脚本/用户/直控; 两态按上游形态定
+            （奇想盒为脚本/直控，见 ``WhimboxConfigModeValidator``）。
         legacy_map: 旧版来源名到新名的映射, 加载时自动归一。
     """
 
@@ -1320,6 +1321,18 @@ class UserDirectConfigModeValidator(ConfigSourceValidator):
 
     def __init__(self) -> None:
         super().__init__(("脚本", "用户", "直控"))
+
+
+class WhimboxConfigModeValidator(ConfigSourceValidator):
+    """脚本/直控两态配置来源。
+
+    奇想盒上游只有一份 config.json，且没有脚本级的独立一条龙配置，「脚本」与
+    「用户」在运行时行为一致（都写 MAS 面板值），故只保留两态：脚本=用 MAS 面板
+    配置，直控=用奇想盒原生配置。存量的「用户」归一到「脚本」（行为相同）。
+    """
+
+    def __init__(self) -> None:
+        super().__init__(("脚本", "直控"), {"用户": "脚本"})
 
 
 class MaaEndUserConfig(ConfigBase):
@@ -5257,6 +5270,148 @@ class BAAHConfig(ConfigBase):
         super().__init__()
 
 
+class WhimboxUserConfig(ConfigBase):
+    """奇想盒用户配置（无限暖暖，一条龙配置档）
+
+    一条龙字段定义与值域完全来自上游安装目录三件套（任务目录，运行时读取），
+    本类只存「用户勾了哪些步骤、选了哪些值」的覆盖集（Tasks/Options 两个
+    JSON map），不复制上游字段模型；写入时按当前模板键集过滤后物化到上游
+    configs/config.json。
+    """
+
+    def __init__(self) -> None:
+
+        ## Info ------------------------------------------------------------
+        self.Info_Name = ConfigItem("Info", "Name", "新用户", UserNameValidator())
+        self.Info_Status = ConfigItem("Info", "Status", True, BoolValidator())
+        ## 配置来源（脚本/直控两态）：脚本=用 MAS 面板配置，直控=直接用奇想盒原生配置
+        self.Info_Mode = ConfigItem(
+            "Info", "Mode", "脚本", WhimboxConfigModeValidator()
+        )
+        self.Info_RemainedDay = ConfigItem(
+            "Info", "RemainedDay", -1, RangeValidator(-1, 9999)
+        )
+        self.Info_IfScriptBeforeTask = ConfigItem(
+            "Info", "IfScriptBeforeTask", False, BoolValidator()
+        )
+        self.Info_ScriptBeforeTask = ConfigItem(
+            "Info", "ScriptBeforeTask", "", FileValidator()
+        )
+        self.Info_IfScriptAfterTask = ConfigItem(
+            "Info", "IfScriptAfterTask", False, BoolValidator()
+        )
+        self.Info_ScriptAfterTask = ConfigItem(
+            "Info", "ScriptAfterTask", "", FileValidator()
+        )
+        self.Info_Notes = ConfigItem("Info", "Notes", "无")
+        self.Info_Tag = ConfigItem(
+            "Info", "Tag", "[ ]", VirtualConfigValidator(self.getTags)
+        )
+
+        ## OneDragon -------------------------------------------------------
+        ## 一条龙是否循环全部游戏账号（物化为上游 OneDragon.change_account；
+        ## 账号列表由奇想盒运行期 OCR 动态发现，MAS 不做账号定向）
+        self.OneDragon_IfRunAllAccounts = ConfigItem(
+            "OneDragon", "IfRunAllAccounts", False, BoolValidator()
+        )
+        ## 一条龙结束后关闭游戏与奇想盒不设开关：恒物化上游
+        ## OneDragon.auto_close_game=true（后续脚本流程依赖游戏已退出，
+        ## 由适配层强制，用户不可关闭）
+
+        ## Task ------------------------------------------------------------
+        ## 步骤开关覆盖集：JSON map {步骤键: bool}，键集来自任务目录
+        ## （上游 OneDragonDefaultSteps 节），只存用户勾选结果
+        self.Task_Tasks = ConfigItem("Task", "Tasks", "{ }", JSONValidator(dict))
+        ## 目标/参数覆盖集：JSON map {键: 值}，键集来自任务目录
+        ## （上游 OneDragon 节托管字段），只存用户显式选择的值
+        self.Task_Options = ConfigItem("Task", "Options", "{ }", JSONValidator(dict))
+
+        ## Data ------------------------------------------------------------
+        self.Data_LastProxyDate = ConfigItem(
+            "Data", "LastProxyDate", "2000-01-01", DateTimeValidator("%Y-%m-%d")
+        )
+        self.Data_ProxyTimes = ConfigItem(
+            "Data", "ProxyTimes", 0, RangeValidator(0, 9999)
+        )
+        self.Data_LastProxyStatus = ConfigItem(
+            "Data",
+            "LastProxyStatus",
+            "未知",
+            OptionsValidator(["未知", "成功", "失败"]),
+        )
+
+        ## Notify ----------------------------------------------------------
+        ## 是否启用用户通知
+        self.Notify_Enabled = ConfigItem("Notify", "Enabled", False, BoolValidator())
+        ## 是否发送用户统计信息
+        self.Notify_IfSendStatistic = ConfigItem(
+            "Notify", "IfSendStatistic", False, BoolValidator()
+        )
+        ## 是否发送邮件
+        self.Notify_IfSendMail = ConfigItem(
+            "Notify", "IfSendMail", False, BoolValidator()
+        )
+        ## 用户收件地址
+        self.Notify_ToAddress = ConfigItem("Notify", "ToAddress", "")
+        ## 是否启用 Server 酱
+        self.Notify_IfServerChan = ConfigItem(
+            "Notify", "IfServerChan", False, BoolValidator()
+        )
+        ## Server 酱密钥
+        self.Notify_ServerChanKey = ConfigItem("Notify", "ServerChanKey", "")
+        ## 自定义 Webhook 列表
+        self.Notify_CustomWebhooks = MultipleConfig([Webhook])
+
+        super().__init__()
+
+    def getTags(self) -> str:
+        """生成奇想盒用户标签列表"""
+        tags = []
+
+        # 任务代理标签（使用东4区时间）
+        tags.append(_tag_proxy(self, "任务"))
+
+        # 剩余天数标签
+        tags.append(_tag_remained_days(self))
+
+        # 备注标签
+        tags.append(_tag_notes(self))
+
+        return json.dumps(tags, ensure_ascii=False)
+
+
+class WhimboxConfig(ConfigBase):
+    """奇想盒配置（无限暖暖，BetterGI 线：无头 CLI + 日志面判定）"""
+
+    def __init__(self) -> None:
+
+        ## Info ------------------------------------------------------------
+        self.Info_Name = ConfigItem("Info", "Name", "新奇想盒脚本")
+        ## 奇想盒安装根目录（whimbox_app.exe 所在目录；configs/logs 与其同级）
+        self.Info_RootPath = ConfigItem("Info", "RootPath", "", FileValidator())
+
+        ## Run -------------------------------------------------------------
+        self.Run_ProxyTimesLimit = ConfigItem(
+            "Run", "ProxyTimesLimit", 0, RangeValidator(0, 9999)
+        )
+        ## 失败重试次数：只用于「没有上游结论」的异常（进程提前退出/卡死）；
+        #  上游自己判负时，仅当失败原因与上一轮不同才继续重试（同一结论连着出现即收口）
+        self.Run_RunTimesLimit = ConfigItem(
+            "Run", "RunTimesLimit", 3, RangeValidator(1, 9999)
+        )
+        ## 运行超时（分钟）：日志静默超过该时长判定卡死
+        self.Run_RunTimeLimit = ConfigItem(
+            "Run", "RunTimeLimit", 30, RangeValidator(1, 9999)
+        )
+        ## 以管理员权限启动奇想盒后端（上游强制管理员，缺权限会在起跑即退出；
+        ## MAS 自身已提权时不重复触发 UAC，子进程自动继承管理员令牌）
+        self.Run_UseAdmin = ConfigItem("Run", "UseAdmin", True, BoolValidator())
+
+        self.UserData = MultipleConfig([WhimboxUserConfig])
+
+        super().__init__()
+
+
 CLASS_BOOK = {
     "MAA": MaaConfig,
     "MaaEnd": MaaEndConfig,
@@ -5270,6 +5425,7 @@ CLASS_BOOK = {
     "BetterGI": BetterGIConfig,
     "ZzzOd": ZzzOdConfig,
     "BAAH": BAAHConfig,
+    "Whimbox": WhimboxConfig,
     "MSS": MSSConfig,
 }
 """配置类映射表: 脚本类型键 → 配置类, GlobalConfig 的脚本配置列表由此派生"""
