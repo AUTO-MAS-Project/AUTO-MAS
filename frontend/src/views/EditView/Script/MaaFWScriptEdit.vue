@@ -859,7 +859,7 @@ const handleCreateFirstUser = async () => {
   router.push(addUserPath())
 }
 
-// ---- 引导最后一步：外壳（MFAAvalonia / MXU）配置导入成用户 ----
+// ---- 引导最后一步：外壳（MFAAvalonia / MXU / MFW-PyQt6）配置导入成用户 ----
 // 只在引导形态、进入最后一步时扫描；扫不到或扫描失败都只记日志，区块不显示。
 const shellInstances = ref<MaaFWShellInstanceItem[]>([])
 const selectedShellInstanceIds = ref<string[]>([])

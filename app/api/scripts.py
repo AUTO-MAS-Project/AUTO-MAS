@@ -1037,7 +1037,7 @@ async def clone_maafw_embedded(
 @router.post(
     "/maafw/shell-instances",
     tags=["MaaFW"],
-    summary="列出项目目录里外壳（MFAAvalonia / MXU）保存的配置实例",
+    summary="列出项目目录里外壳（MFAAvalonia / MXU / MFW-PyQt6）保存的配置实例",
     response_model=MaaFWShellInstancesOut,
     status_code=200,
 )

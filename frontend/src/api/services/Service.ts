@@ -1020,7 +1020,7 @@ export class Service {
         });
     }
     /**
-     * 列出项目目录里外壳（MFAAvalonia / MXU）保存的配置实例
+     * 列出项目目录里外壳（MFAAvalonia / MXU / MFW-PyQt6）保存的配置实例
      * 新建脚本引导最后一步用：外壳里配好的每份实例都可以导入成一个用户。只读外壳文件。
      * @param requestBody
      * @returns MaaFWShellInstancesOut Successful Response

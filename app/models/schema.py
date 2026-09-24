@@ -4163,7 +4163,9 @@ class MaaFWShellInstanceItem(BaseModel):
         ...,
         description="导入后的用户名（与已有用户、同名实例重名时带「 (2)」这类后缀）",
     )
-    source: Literal["MFAAvalonia", "MXU"] = Field(..., description="实例来自哪个外壳")
+    source: Literal["MFAAvalonia", "MXU", "MFW-PyQt6"] = Field(
+        ..., description="实例来自哪个外壳"
+    )
     active: bool = Field(default=False, description="是否是外壳上次使用的实例")
     taskCount: int = Field(default=0, description="实例队列里勾选着的任务数")
     controller: str = Field(default="", description="实例的控制方式（给人看的名字）")

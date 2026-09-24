@@ -43,6 +43,7 @@ export namespace MaaFWShellInstanceItem {
     export enum source {
         MFAAVALONIA = 'MFAAvalonia',
         MXU = 'MXU',
+        MFW_PY_QT6 = 'MFW-PyQt6',
     }
 }
 

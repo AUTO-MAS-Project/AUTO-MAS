@@ -37,6 +37,15 @@
   ``{type, caseName}`` / ``{type, caseNames}`` / ``{type, value: bool}``（switch）/
   ``{type, values: {输入名: 值}}``（input / hotkey），嵌套选项平铺在同一张表里；
   ``globalOptionValues`` 是所有实例共用的全局选项；上次使用的是 ``lastActiveInstanceId``。
+- **MFW-PyQt6**（识宝等 ``MFW.exe`` 发行包，旧名 CFA）：``config/multi_config.json`` 的
+  ``config_list`` 是配置顺序、``curr_config_id`` 是上次使用的那份；每份配置是
+  ``config/configs/<id>.json``：``{name, item_id, tasks[], global_options}``，任务是
+  ``{name, item_id, is_checked, task_option}``。``item_id`` 为 ``PreTask`` / ``Controller`` /
+  ``Resource`` / ``Post-Action`` 的四条不是任务：控制方式在 ``Controller`` 的
+  ``task_option.controller_type``，资源在 ``Resource`` 的 ``task_option.resource``，资源级选项在
+  它的 ``setting_options``。选项是 ``{选项名: {value, branches?: {case 名: {子选项…}}, hidden?}}``：
+  select / switch 的 ``value`` 是 case 名，input 是 ``{输入名: 值}``（值可能是数字），
+  ``hidden`` 表示所在分支此刻不生效；``_`` 开头的键（``_speedrun_config``）是外壳自己的设置。
 
 这是在外壳私有格式上做的一次性映射（黑箱规范里的「私有格式」条目）：外壳改了格式，表现是
 扫不到实例（只记日志）或导入时跳过项变多（结果里逐项列出），不会写坏任何东西。
@@ -70,11 +79,14 @@ from app.utils import get_logger
 
 logger = get_logger("MFW 外壳配置导入")
 
-ShellSource = Literal["MFAAvalonia", "MXU"]
+ShellSource = Literal["MFAAvalonia", "MXU", "MFW-PyQt6"]
 SOURCE_MFAA: ShellSource = "MFAAvalonia"
 SOURCE_MXU: ShellSource = "MXU"
+SOURCE_MFW: ShellSource = "MFW-PyQt6"
 
 _MFAA_SETTINGS_FILE = "appsettings.json"
+#: MFW-PyQt6 配置里不是任务的四条（按 ``item_id`` 认）
+_MFW_SPECIAL_ITEMS = frozenset({"PreTask", "Controller", "Resource", "Post-Action"})
 #: switch 的布尔值按 case 名对应（PI v2 的 switch 两个 case 通常叫 Yes / No，顺序不固定，
 #: M9A 就同时有 [Yes, No] 与 [No, Yes]），不按下标猜。
 _SWITCH_TRUE_NAMES = frozenset({"yes", "y", "true", "on", "1", "是", "开"})
@@ -103,9 +115,10 @@ class ShellInstance:
     controller: str = ""
     resource: str = ""
     tasks: list[ShellTask] = field(default_factory=list)
-    #: MXU 的 ``globalOptionValues``（所有实例共用）
+    #: 全局选项：MXU 的 ``globalOptionValues``（所有实例共用）、MFW-PyQt6 的 ``global_options``
     global_options: Mapping[str, Any] = field(default_factory=dict)
-    #: MFAAvalonia 的 ``ResourceOptionItems``（资源级选项）原样保留；None 表示没有这个字段
+    #: 资源级选项原样保留：MFAAvalonia 的 ``ResourceOptionItems``、MFW-PyQt6 的
+    #: ``setting_options``；None 表示没有这个字段
     resource_options: Any = None
 
 
@@ -124,15 +137,20 @@ class ShellImportPlan:
 
 
 def scan_shell_instances(root: Path) -> list[ShellInstance]:
-    """扫一个项目目录里的外壳配置实例，MFAAvalonia 在前、MXU 在后。
+    """扫一个项目目录里的外壳配置实例，按 MFAAvalonia、MXU、MFW-PyQt6 的顺序全部列出
+    （识宝 v1.10 同时带着 MFAAvalonia 与 MFW-PyQt6 两套配置）。
 
-    单个文件读不了或不认识只跳过并记日志，不影响其它文件。
+    单个文件读不了或不认识只跳过并记日志，不影响其它文件与其它格式。
     """
 
     config_dir = root / "config"
     if not config_dir.is_dir():
         return []
-    return [*_scan_mfaa(root, config_dir), *_scan_mxu(config_dir)]
+    return [
+        *_scan_mfaa(root, config_dir),
+        *_scan_mxu(config_dir),
+        *_scan_mfw(config_dir),
+    ]
 
 
 def _read_json_object(path: Path) -> dict[str, Any] | None:
@@ -287,6 +305,89 @@ def _scan_mxu(config_dir: Path) -> list[ShellInstance]:
     return instances
 
 
+def _mfw_config_paths(config_dir: Path) -> tuple[list[tuple[str, Path]], str]:
+    """MFW-PyQt6 的配置文件（按 ``config_list`` 的顺序）与上次使用的配置 id。
+
+    ``multi_config.json`` 读不了或没有列表时退回 ``configs/`` 下的全部文件（按文件名）。
+    """
+
+    configs_dir = config_dir / "configs"
+    multi_path = config_dir / "multi_config.json"
+    multi = _read_json_object(multi_path) if multi_path.is_file() else None
+    current = str((multi or {}).get("curr_config_id") or "").strip()
+    listed = (multi or {}).get("config_list")
+    paths: list[tuple[str, Path]] = []
+    if isinstance(listed, list) and listed:
+        for raw_id in listed:
+            config_id = str(raw_id or "").strip()
+            # 只认同目录下的文件名，别让配置里的路径指到别处
+            if not config_id or Path(config_id).name != config_id:
+                continue
+            stem = (
+                config_id[:-5] if config_id.casefold().endswith(".json") else config_id
+            )
+            path = configs_dir / f"{stem}.json"
+            if path.is_file():
+                paths.append((stem, path))
+            else:
+                logger.warning(f"MFW-PyQt6 配置列表里的 {config_id} 找不到文件，已跳过")
+    elif configs_dir.is_dir():
+        paths = [(path.stem, path) for path in sorted(configs_dir.glob("*.json"))]
+    return paths, current
+
+
+def _scan_mfw(config_dir: Path) -> list[ShellInstance]:
+    if not (config_dir / "configs").is_dir():
+        return []
+    paths, current = _mfw_config_paths(config_dir)
+    instances: list[ShellInstance] = []
+    for config_id, path in paths:
+        payload = _read_json_object(path)
+        if payload is None:
+            continue
+        raw_tasks = payload.get("tasks")
+        if not isinstance(raw_tasks, list):
+            logger.warning(f"不认识的 MFW-PyQt6 配置文件（没有 tasks），已跳过：{path}")
+            continue
+        controller = resource = ""
+        resource_options: Any = None
+        tasks: list[ShellTask] = []
+        for task in raw_tasks:
+            if not isinstance(task, dict):
+                continue
+            item_id = str(task.get("item_id") or "")
+            name = str(task.get("name") or "").strip()
+            options = task.get("task_option")
+            options = options if isinstance(options, dict) else {}
+            if item_id in _MFW_SPECIAL_ITEMS:
+                if item_id == "Controller":
+                    controller = str(options.get("controller_type") or "").strip()
+                elif item_id == "Resource":
+                    resource = str(options.get("resource") or "").strip()
+                    resource_options = options.get("setting_options")
+                continue
+            if not name or not _truthy(task.get("is_checked")):
+                continue
+            tasks.append(ShellTask(name=name, raw_options=options))
+        global_options = payload.get("global_options")
+        instances.append(
+            ShellInstance(
+                id=f"mfw:{config_id}",
+                name=str(payload.get("name") or "").strip() or config_id,
+                source=SOURCE_MFW,
+                active=bool(current) and current == config_id,
+                controller=controller,
+                resource=resource,
+                tasks=tasks,
+                global_options=global_options
+                if isinstance(global_options, dict)
+                else {},
+                resource_options=resource_options,
+            )
+        )
+    return instances
+
+
 # ---------------------------------------------------------------------------
 # 用户名
 # ---------------------------------------------------------------------------
@@ -432,6 +533,49 @@ def plan_instance_import(
         shared_values = _mfaa_resource_option_values(
             instance, interface.option, labels, skipped
         )
+    if instance.source == SOURCE_MFW:
+        for raw_shared, prefix in (
+            (instance.global_options, "全局选项"),
+            (instance.resource_options, "资源选项"),
+        ):
+            if raw_shared is None or raw_shared == {}:
+                continue
+            if not isinstance(raw_shared, dict):
+                skipped.append(f"{prefix}（格式无法识别）")
+                continue
+            _mfw_collect_options(
+                raw_shared, interface.option, prefix, labels, shared_values, skipped
+            )
+
+    def collect_task_options(
+        raw_options: Any, option_map: Mapping[str, MaaFWOption], prefix: str
+    ) -> dict[str, MaaFWTaskOptionValue]:
+        """一条任务自己的选项，叠在全局 / 资源级选项上（任务自己记的优先）。"""
+
+        values = {k: v for k, v in shared_values.items() if k in option_map}
+        if instance.source == SOURCE_MFAA:
+            _mfaa_collect_options(
+                raw_options or [],
+                option_map,
+                interface.option,
+                prefix,
+                labels,
+                values,
+                skipped,
+            )
+        elif instance.source == SOURCE_MFW:
+            task_values: dict[str, MaaFWTaskOptionValue] = {}
+            _mfw_collect_options(
+                raw_options or {}, option_map, prefix, labels, task_values, skipped
+            )
+            values.update(task_values)
+        else:
+            values.update(
+                _mxu_option_values(
+                    raw_options or {}, option_map, prefix, labels, skipped
+                )
+            )
+        return values
 
     # MXU 把前置任务（pretask）当成队列里的一条 ``__MXU_PRETASK__<名>`` 存，MAS 的队列也认
     pretasks = {
@@ -459,18 +603,14 @@ def plan_instance_import(
             ):
                 skipped.append(f"任务「{labels.task(task_name)}」（当前资源下不可用）")
                 continue
-            option_map = option_maps.get(task_name, {})
-            values = {k: v for k, v in shared_values.items() if k in option_map}
-            values.update(
-                _mxu_option_values(
-                    shell_task.raw_options or {},
-                    option_map,
+            pretask_values.setdefault(
+                task_name,
+                collect_task_options(
+                    shell_task.raw_options,
+                    option_maps.get(task_name, {}),
                     f"「{labels.task(task_name)}」的选项",
-                    labels,
-                    skipped,
-                )
+                ),
             )
-            pretask_values.setdefault(task_name, values)
             continue
         if task_name not in tasks_by_name:
             # 任务改过名但入口没变（MFAA 实例里记着 entry）：入口唯一时按入口认
@@ -494,30 +634,11 @@ def plan_instance_import(
             skipped.append(f"任务「{task_label}」（当前资源下不可用）")
             continue
 
-        option_map = option_maps.get(task_name, {})
-        values: dict[str, MaaFWTaskOptionValue] = {
-            name: value for name, value in shared_values.items() if name in option_map
-        }
-        if instance.source == SOURCE_MFAA:
-            _mfaa_collect_options(
-                shell_task.raw_options or [],
-                option_map,
-                interface.option,
-                f"「{task_label}」的选项",
-                labels,
-                values,
-                skipped,
-            )
-        else:
-            values.update(
-                _mxu_option_values(
-                    shell_task.raw_options or {},
-                    option_map,
-                    f"「{task_label}」的选项",
-                    labels,
-                    skipped,
-                )
-            )
+        values = collect_task_options(
+            shell_task.raw_options,
+            option_maps.get(task_name, {}),
+            f"「{task_label}」的选项",
+        )
         preset_tasks.append(
             MaaFWPresetTask(name=task_name, enabled=True, option=values)
         )
@@ -548,7 +669,8 @@ def plan_instance_import(
             "taskOptions": {task_id: task_options[task_id] for task_id in queued},
         },
         task_count=len(queued),
-        skipped=skipped,
+        # 同一个选项在嵌套分支里可能出现多次（MFW-PyQt6 的 branches），同样的跳过只记一次
+        skipped=list(dict.fromkeys(skipped)),
     )
 
 
@@ -581,6 +703,8 @@ def _field_values(
             continue
         if isinstance(value, bool):
             fields[str(key)] = "true" if value else "false"
+        elif isinstance(value, float) and value.is_integer():
+            fields[str(key)] = str(int(value))
         else:
             fields[str(key)] = str(value)
     return fields
@@ -772,8 +896,107 @@ def _mxu_option_value(
     return None
 
 
+def _mfw_collect_options(
+    raw_options: Mapping[str, Any],
+    option_map: Mapping[str, MaaFWOption],
+    owner_prefix: str,
+    labels: _Labels,
+    values: dict[str, MaaFWTaskOptionValue],
+    skipped: list[str],
+    hidden_names: set[str] | None = None,
+) -> None:
+    """MFW-PyQt6 的 ``{选项名: {value, branches?, hidden?}}`` 逐层展平。
+
+    同一个选项可能既在外层又在某个分支里（``hidden`` 的那份是不生效分支里的旧值）：
+    生效的那份优先，都不生效时取先出现的。
+    """
+
+    if hidden_names is None:
+        hidden_names = set()
+    for raw_name, raw in raw_options.items():
+        name = str(raw_name)
+        if name.startswith("_"):
+            continue  # 外壳自己的设置（_speedrun_config 速通），不是 interface 选项
+        owner = f"{owner_prefix}「{labels.option(name)}」"
+        if not isinstance(raw, dict):
+            skipped.append(f"{owner}的取值")
+            continue
+        definition = option_map.get(name)
+        if definition is None:
+            skipped.append(owner)
+            continue
+        hidden = raw.get("hidden") is True
+        if name not in values or (name in hidden_names and not hidden):
+            value = _mfw_option_value(
+                raw.get("value"), definition, owner, labels, skipped
+            )
+            if value is not None:
+                values[name] = value
+                if hidden:
+                    hidden_names.add(name)
+                else:
+                    hidden_names.discard(name)
+        branches = raw.get("branches")
+        if isinstance(branches, dict):
+            for nested in branches.values():
+                if isinstance(nested, dict):
+                    _mfw_collect_options(
+                        nested,
+                        option_map,
+                        owner_prefix,
+                        labels,
+                        values,
+                        skipped,
+                        hidden_names,
+                    )
+
+
+def _mfw_option_value(
+    raw: Any,
+    definition: MaaFWOption,
+    owner: str,
+    labels: _Labels,
+    skipped: list[str],
+) -> MaaFWTaskOptionValue | None:
+    if raw is None:
+        return None  # 没记取值，按项目默认
+    cases = _case_names(definition)
+    if definition.type in _CHOICE_TYPES:
+        if isinstance(raw, bool):
+            wanted = _SWITCH_TRUE_NAMES if raw else _SWITCH_FALSE_NAMES
+            case = next((name for name in cases if name.casefold() in wanted), "")
+        else:
+            case = str(raw) if isinstance(raw, (str, int, float)) else ""
+        # scan_select 的候选是运行时扫出来的，interface 里可能一个都没写
+        if case and (case in cases or (definition.type == "scan_select" and not cases)):
+            return case
+        skipped.append(
+            f"{owner}的取值" + (f"「{labels.case(definition, case)}」" if case else "")
+        )
+        return None
+    if definition.type == "checkbox":
+        if not isinstance(raw, list):
+            skipped.append(f"{owner}的取值")
+            return None
+        chosen: list[str] = []
+        for item in raw:
+            if str(item) in cases:
+                chosen.append(str(item))
+            else:
+                skipped.append(f"{owner}的取值「{labels.case(definition, str(item))}」")
+        return chosen
+    if definition.type in _FIELD_TYPES:
+        fields = _field_values(raw, definition, owner, labels, skipped)
+        if fields is None:
+            skipped.append(f"{owner}的取值")
+        return fields
+    skipped.append(f"{owner}的取值")
+    return None
+
+
 __all__ = [
     "SOURCE_MFAA",
+    "SOURCE_MFW",
     "SOURCE_MXU",
     "ShellImportPlan",
     "ShellInstance",

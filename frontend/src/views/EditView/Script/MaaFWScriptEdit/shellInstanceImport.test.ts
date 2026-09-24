@@ -57,6 +57,9 @@ describe('describeShellSources', () => {
   it('去重并保持出现顺序', () => {
     expect(describeShellSources(['MFAAvalonia', 'MXU', 'MFAAvalonia'])).toBe('MFAAvalonia / MXU')
     expect(describeShellSources(['MXU'])).toBe('MXU')
+    expect(describeShellSources(['MFW-PyQt6', 'MFAAvalonia', 'MFW-PyQt6'])).toBe(
+      'MFW-PyQt6 / MFAAvalonia'
+    )
   })
 })
 
