@@ -64,6 +64,8 @@ INSTANCES_ACTIVE_KEY = "Instances.LastActive"
 ## 实例配置文件里承载任务与选项的两个键
 KEY_CURRENT_TASKS = "CurrentTasks"
 KEY_TASK_ITEMS = "TaskItems"
+## 实例的显示名（外壳里那个「配置 1」「AUTO-MAS」）
+KEY_INSTANCE_NAME = "InstanceName"
 ## ``CurrentTasks`` 元素的连接符号，由外壳自己定义（实测形如 "登录游戏<|||>登录_登录"）
 TASK_SEPARATOR = "<|||>"
 ## switch 写成布尔时的取值
@@ -138,19 +140,35 @@ def list_shell_instances(root: Path) -> list[dict[str, Any]]:
     ordered.extend(sorted(found - set(ordered)))
 
     instances: list[dict[str, Any]] = []
-    for instance_id in ordered:
+    for position, instance_id in enumerate(ordered):
         data = _read_instance_file(directory / f"{instance_id}{INSTANCE_SUFFIX}")
         raw_tasks = data.get(KEY_CURRENT_TASKS)
         task_count = len(raw_tasks) if isinstance(raw_tasks, list) else 0
+        ## 外壳把显示名放在 InstanceName（「配置 1」「AUTO-MAS」）；没写就按位置起一个，
+        ## 免得用户在大括号里看到一串 uuid 认不出哪个是哪个
+        display_name = str(data.get(KEY_INSTANCE_NAME) or "").strip()
         instances.append(
             {
                 "id": instance_id,
-                "name": instance_id,
+                "name": display_name or f"配置 {position + 1}",
                 "taskCount": task_count,
                 "active": instance_id == active_id,
             }
         )
     return instances
+
+
+def _option_payload(option: dict[str, Any]) -> Any:
+    """取一个外壳选项的载荷。
+
+    外壳按 MaaFramework 的语义落盘：``input`` 的值放在 ``data`` 里（``{"难度": "3"}``，
+    此时 ``index`` 是 null），``select`` / ``switch`` 则是 ``index``（cases 下标）。
+    """
+
+    data = option.get("data")
+    if isinstance(data, dict):
+        return data
+    return option.get("index")
 
 
 def _is_index(value: Any) -> bool:
@@ -171,6 +189,10 @@ def _translate_option_value(
     ``select`` 一类的下标翻不回 case 名时返回 ``False``，由调用方记进 skipped——
     宁可不带这一项，也不要给 MaaFW 下发一个它认不出的值。
     """
+
+    ## input 型：{输入名: 值}，原样带走
+    if isinstance(value, dict):
+        return True, value
 
     if definition is not None and definition.cases and _is_index(value):
         cases = [case.name for case in definition.cases]
@@ -202,7 +224,7 @@ def _translate_options(
         name = str(option.get("name") or "").strip()
         if name:
             known, value = _translate_option_value(
-                option.get("value"), option_book.get(name)
+                _option_payload(option), option_book.get(name)
             )
             if known:
                 result[name] = value
@@ -216,7 +238,7 @@ def _translate_options(
             if not sub_name:
                 continue
             known, value = _translate_option_value(
-                sub.get("value"), option_book.get(sub_name)
+                _option_payload(sub), option_book.get(sub_name)
             )
             if known:
                 result[sub_name] = value
