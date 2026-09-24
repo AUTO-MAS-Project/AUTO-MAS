@@ -1,3 +1,3 @@
 beta-only: true
-project: mfw
-修复 MSS 脚本导入项目后，脚本名与列表标签未改用项目名的问题
+project: mss
+修复导入项目后脚本名与脚本列表标签没有改用项目名的问题

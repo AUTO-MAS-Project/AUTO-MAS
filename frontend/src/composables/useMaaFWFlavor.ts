@@ -9,14 +9,15 @@
 // 1. 后端：配置类 XConfig(MaaFWConfig) / XUserConfig、app/task/X 的特调钩子、schema，
 //    然后起开发后端重新生成 OpenAPI（frontend/src/api 不手改）。
 // 2. 全应用的脚本类型登记（与任何新脚本类型相同，漏了 typecheck 会逐处报错）：
-//    types/script.ts 的 ScriptType、utils/scriptLogos.ts 的图标与展示名、
+//    types/script.ts 的 ScriptType 与 ScriptIndexItem.type（配置类名，这处不受 typecheck 约束）、
+//    utils/scriptLogos.ts 的图标与展示名、
 //    composables/useScriptApi.ts 的 SCRIPT_CREATE_TYPE_BY_SCRIPT_TYPE、
 //    词表 zh-CN.ts 的 scripts.type.X / scripts.create.typeDesc.X 与该特调自己的文案。
 // 3. maafwFlavorTypes.ts 的 MaaFWFlavorType 加上 'X'。
 // 4. 新建目录 views/EditView/MaaFWFlavor/x/：index.ts 导出描述对象 X_FLAVOR（字段见
 //    MaaFWFlavor，全部必填）；独有区块写成本目录下的组件，用 defineMaaFWFlavorSlotComponent
 //    声明到 slots 的插入点上（按需加载），需要预取数据就给 prepareUserPage。
-// 5. 在下面的 MAAFW_FLAVORS 里登记 X_FLAVOR。
+// 5. 在下面的 FLAVOR_REGISTRY 里登记 X_FLAVOR（漏登记 typecheck 会报错）。
 // 公共页面（MaaFW 脚本页 / 用户页、脚本列表、新建流程）与路由不用改：路由、类型卡片、
 // 路由后缀、用户类型白名单、默认脚本名都从这里生成。只有需要一个现在没有的插入点时，
 // 才在 MaaFWFlavorSlotContextMap 加名字、在公共页面对应位置放一个 <MaaFWFlavorSlot>。
@@ -41,8 +42,15 @@ export type {
   MaaFWUserSlotContext,
 } from './maafwFlavorTypes'
 
+// 按类型登记：MaaFWFlavorType 加了新成员却没在这里登记时 typecheck 直接报错
+const FLAVOR_REGISTRY = {
+  MaaFW: MAAFW_FLAVOR,
+  M9A: M9A_FLAVOR,
+  MSS: MSS_FLAVOR,
+} satisfies Record<MaaFWFlavorType, MaaFWFlavor>
+
 /** 全部 MaaFW 类型，MaaFW 本身在第一个（未知类型的兜底） */
-export const MAAFW_FLAVORS: readonly MaaFWFlavor[] = [MAAFW_FLAVOR, M9A_FLAVOR, MSS_FLAVOR]
+export const MAAFW_FLAVORS: readonly MaaFWFlavor[] = Object.values(FLAVOR_REGISTRY)
 
 /** 只有特调（不含 MaaFW 本身）：路由按它们生成，MaaFW 自己的几条路由（含引导页）手写在路由表里 */
 export const MAAFW_SPECIAL_FLAVORS: readonly MaaFWFlavor[] = MAAFW_FLAVORS.filter(
