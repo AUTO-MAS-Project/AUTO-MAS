@@ -4797,9 +4797,7 @@ class UserConfigDirIn(UserInBase):
 
 
 class UserConfigDirOut(OutBase):
-    path: Optional[str] = Field(
-        default=None, description="用户配置目录绝对路径"
-    )
+    path: Optional[str] = Field(default=None, description="用户配置目录绝对路径")
 
 
 class UserGetIn(UserInBase):
