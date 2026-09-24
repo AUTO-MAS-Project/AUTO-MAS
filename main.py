@@ -354,13 +354,43 @@ def main():
                         exclude_tags=["Delete"],
                     )
                     mcp.mount_http()
+                    # 通知渠道描述只服务设置页渲染，不作为 MCP 工具暴露。
+                    # fastapi-mcp==0.4.0 的 exclude_operations 与 exclude_tags 取并集，
+                    # 两者同时传会让两个排除都失效（Delete 路由也会漏出去），只能在
+                    # 挂载后从工具清单里剪掉；handle_list_tools / handle_call_tool
+                    # 实时读这两个属性，剪除即生效。
+                    notify_channels_op = (
+                        "get_notify_channels_api_setting_notify_channels_get"
+                    )
+                    mcp.tools = [t for t in mcp.tools if t.name != notify_channels_op]
+                    mcp.operation_map.pop(notify_channels_op, None)
                     logger.info("MCP 服务已挂载")
                 else:
                     logger.info("MCP 服务未启用，跳过路由挂载")
 
                 await Config.get_stage()
                 await Config.clean_old_history()
-                await Config.clean_maafw_agent_venvs()
+
+                async def _maafw_startup_maintenance() -> None:
+                    # 老副本一次性采纳成「载荷 + 视图」要几分钟：连同它后面依赖终态布局的
+                    # 各项回收一起放到后台，不挡主定时器（队列定时按分钟精确匹配，挡住就
+                    # 被静默跳过）。期间撞上的 MFW 运行在运行前检查里按「正在切换版本」跳过。
+                    try:
+                        await Config.migrate_maafw_embedded_copies_to_payloads()
+                        await Config.clean_maafw_agent_venvs()
+                        await Config.clean_maafw_embedded_copies()
+                        await Config.clean_maafw_runtime_blobs()
+                        await Config.clean_maafw_update_cache()
+                        # 副本清理之后：副本没了，它的 binding / runtime 才会变成无人引用
+                        await Config.clean_maafw_runtime_pool()
+                    except asyncio.CancelledError:
+                        raise
+                    except Exception:
+                        logger.exception("MFW 启动期维护失败，下次启动再试")
+
+                app.state.maafw_startup_maintenance = asyncio.create_task(
+                    _maafw_startup_maintenance()
+                )
                 await Config.clean_debug_diagnostics()
                 await Config.clean_maafw_native_debug_logs()
 
@@ -379,7 +409,7 @@ def main():
                 await DesktopGuard.start()
                 await MainTimer.start()
 
-                # Claw 通知管理器只维护扫码会话和凭据，消息请求按需发起。
+                # 微信按需发送；QQ 同时维持官方网关连接以完成扫码绑定。
                 from app.services.openclaw_qq import openclaw_qq_manager
                 from app.services.openclaw_weixin import openclaw_weixin_manager
 
@@ -432,6 +462,13 @@ def main():
                 background_task.cancel()
                 with suppress(asyncio.CancelledError):
                     await background_task
+            # MFW 启动期维护（迁移 + 回收）也是后台跑的：同样先停下。迁移逐副本持视图预约、
+            # 被打断的切换有 journal，下次启动收尾。
+            maintenance = getattr(app.state, "maafw_startup_maintenance", None)
+            if maintenance is not None and not maintenance.done():
+                maintenance.cancel()
+                with suppress(asyncio.CancelledError):
+                    await maintenance
 
             # 停止 WS 分发与连接后台任务，避免清理期间仍处理入站消息
             await MainConnection.begin_shutdown()

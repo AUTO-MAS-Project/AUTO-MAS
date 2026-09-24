@@ -344,6 +344,7 @@ import { computed } from 'vue'
 import PipelineRow from './PipelineRow.vue'
 import LabelWithHint from './LabelWithHint.vue'
 import DepotMaintainPlanEditor from './DepotMaintainPlanEditor.vue'
+
 import CultivateTargetEditor from './CultivateTargetEditor.vue'
 import type {
   CultivateGoalOption as GoalOption,
@@ -411,7 +412,7 @@ const props = defineProps<{
   infrastructureImporting: boolean
   infrastructureOptions: InfrastPlanOption[]
   infrastructureOptionsLoading: boolean
-  /** 当前基建班次索引（-1=按时段自动；来自 MAA 配置，MAA 原生推进） */
+  /** 当前基建班次索引（时段表恒为 -1；无时段表是下次开始的班，由 MAS 推进） */
   infrastPlanSelect: number
   /** 排班表时段形态（后端判定: period/rotate/mixed/empty） */
   infrastPlanState: string
@@ -486,11 +487,13 @@ const infrastLabelWithPeriod = (option: InfrastPlanOption) =>
     ? t('edit.maaCustomInfrastPlanWithPeriod', { name: option.label, period: option.period })
     : option.label
 
+// 时段表由 MAA 按钟点选班，班次只展示不可选；无时段表可手选起始班
 const infrastSelectOptions = computed(() => [
   { label: infrastAutoLabel.value, value: '-1' },
   ...props.infrastructureOptions.map(option => ({
     label: infrastLabelWithPeriod(option),
     value: option.value,
+    disabled: props.infrastPlanState === 'period',
   })),
 ])
 
@@ -536,12 +539,12 @@ const infrastSummary = computed(() => {
   )
 })
 
-const depotSummary = computed(() =>
-  summarizeDepot(formData.value.Task.IfDepotMaintain, formData.value.Task.DepotMaintainPlans)
-)
-
 const cultivateSummary = computed(() =>
   summarizeCultivate(formData.value.Task.IfCultivate, formData.value.Task.CultivateTargets)
+)
+
+const depotSummary = computed(() =>
+  summarizeDepot(formData.value.Task.IfDepotMaintain, formData.value.Task.DepotMaintainPlans)
 )
 
 const greenTicketStoreDoneThisMonth = computed(

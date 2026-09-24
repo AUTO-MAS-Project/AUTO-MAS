@@ -88,6 +88,33 @@
                 @change="emit('autoplay-change', Boolean($event))"
               />
             </div>
+
+            <!-- 首页签到情况与便笺：总开关在游戏社区设置里，这里按游戏控制显示 -->
+            <div class="home-layout-children-hint">{{ t('home.layout.activityNotesGroup') }}</div>
+            <div class="home-layout-note-list" :class="{ 'is-muted': !activityNotesVisible }">
+              <div
+                v-for="key in HOME_ACTIVITY_NOTE_KEYS"
+                :key="key"
+                class="home-layout-item is-sub"
+              >
+                <!-- 与上方游戏开关行一致：第一个 28px 列放占位，标题在中间列、开关贴右 -->
+                <span class="home-layout-spacer" aria-hidden="true"></span>
+                <span class="home-layout-title">{{ t(`home.game.${key}`) }}</span>
+                <a-switch
+                  size="small"
+                  :checked="!hiddenActivityNotes.includes(key)"
+                  :aria-label="
+                    t('home.layout.activityNoteVisibility', {
+                      name: t(`home.game.${key}`),
+                    })
+                  "
+                  @change="emit('activity-note-visibility-change', key, Boolean($event))"
+                />
+              </div>
+              <div v-if="!activityNotesVisible" class="home-layout-master-hint">
+                {{ t('home.layout.activityNotesMasterOff') }}
+              </div>
+            </div>
           </div>
         </div>
       </template>
@@ -113,7 +140,7 @@ import type { CSSProperties } from 'vue'
 import { MenuOutlined } from '@ant-design/icons-vue'
 import draggable from 'vuedraggable'
 import type { HomeModuleDescriptor, HomeModuleKey } from '@/types/home'
-import { HOME_ACTIVITY_CAROUSEL_KEY } from '@/views/home/homeLayoutConfig'
+import { HOME_ACTIVITY_CAROUSEL_KEY, HOME_ACTIVITY_NOTE_KEYS } from '@/views/home/homeLayoutConfig'
 
 defineOptions({
   name: 'HomeLayoutDrawer',
@@ -125,6 +152,10 @@ interface Props {
   activityModules: HomeModuleDescriptor[]
   scrollHintHidden: boolean
   carouselAutoplay: boolean
+  /** 首页便笺总开关（在游戏社区设置里控制），关闭时这里预置的开关弱化显示 */
+  activityNotesVisible: boolean
+  /** 首页便笺被单独关闭的游戏 */
+  hiddenActivityNotes: HomeModuleKey[]
 }
 
 const { t } = useI18n()
@@ -143,6 +174,7 @@ const emit = defineEmits<{
   'visibility-change': [key: HomeModuleKey, visible: boolean]
   'scroll-hint-change': [hidden: boolean]
   'autoplay-change': [autoplay: boolean]
+  'activity-note-visibility-change': [key: HomeModuleKey, visible: boolean]
 }>()
 
 const toKeys = (modules: HomeModuleDescriptor[]) => modules.map(module => module.key)
@@ -214,6 +246,24 @@ const onVisibilityChange = (key: HomeModuleKey, value: boolean | string | number
   font-size: 12px;
 }
 
+.home-layout-note-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  transition: opacity 0.2s ease;
+}
+
+/* 总开关（游戏社区设置里）关掉后，这里预置的单独开关弱化提示当前不生效 */
+.home-layout-note-list.is-muted {
+  opacity: 0.5;
+}
+
+.home-layout-master-hint {
+  color: var(--ant-color-text-tertiary);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
 /* 两级列表的手柄类名必须互斥：外层 draggable 的 handle 选择器只认外层那个，
    否则内层手柄也会命中外层，能不能拖对全看 Sortable 的全局守卫 */
 .home-layout-drag-handle,
@@ -252,6 +302,12 @@ const onVisibilityChange = (key: HomeModuleKey, value: boolean | string | number
   font-weight: 500;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* 便笺开关行没有拖拽手柄，用等宽占位对齐三列网格的 28px 首列 */
+.home-layout-spacer {
+  width: 28px;
+  height: 28px;
 }
 
 .home-layout-ghost {

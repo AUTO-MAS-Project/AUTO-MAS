@@ -241,6 +241,60 @@ M7A_FINISH_ACTION_PATCH_WHITELIST: frozenset[str] = frozenset(
     M7A_FINISH_ACTION_DISABLE_PATCH
 )
 
+# 平台钉扎：每个模块 patch 最后叠上，客户端只写 cloud_game_enable=False；云平台
+# 再把三月七钉到「连接 MAS 托管浏览器」的路径上。这些键必须全在白名单里，
+# 否则 merge_whitelist 会静默丢掉。browser_debug_port / 排队 / 登录超时没有
+# 环境变量，只能写 config.yaml。
+M7A_PLATFORM_PATCH_WHITELIST: frozenset[str] = frozenset(
+    {
+        "cloud_game_enable",
+        "browser_type",
+        "browser_headless_enable",
+        "browser_persistent_enable",
+        "cloud_game_fullscreen_enable",
+        "browser_debug_port",
+        "cloud_game_max_queue_time",
+        "cloud_game_login_timeout",
+        "cloud_game_use_paid_time",
+    }
+)
+
+
+def build_m7a_platform_patch(
+    *,
+    cloud: bool,
+    debug_port: int | None = None,
+    max_queue_minutes: int = 60,
+    login_timeout_minutes: int = 20,
+    use_paid_time: bool = False,
+) -> dict[str, Any]:
+    """按游戏平台构造三月七 config.yaml 的平台字段。
+
+    云平台下 ``debug_port`` 必须是本轮已起来的云浏览器端口：patch 写入发生在
+    浏览器就绪之后，三月七按它 ``debugger_address`` 连过去。
+    """
+
+    if not cloud:
+        return {"cloud_game_enable": False}
+    if debug_port is None:
+        raise ValueError("云·星穹铁道需要先启动云浏览器再写入调试端口")
+    return {
+        "cloud_game_enable": True,
+        "browser_type": "integrated",
+        "browser_headless_enable": False,
+        # 钉 False：三月七只有在找不到 MAS 的浏览器时才会自建（它自己的启动重试
+        # 会先 stop_game() 杀掉所有带标记的浏览器），持久化开着就会落到它按安装
+        # 目录共享的 UserProfile\Integrated 里，登录态跨账号残留。非持久化只影响
+        # 新建路径（不传 --user-data-dir、每次注入初始 localStorage），连接 MAS
+        # 浏览器的路径在此之前就已 return，不受影响。
+        "browser_persistent_enable": False,
+        "cloud_game_fullscreen_enable": False,
+        "browser_debug_port": int(debug_port),
+        "cloud_game_max_queue_time": int(max_queue_minutes),
+        "cloud_game_login_timeout": int(login_timeout_minutes),
+        "cloud_game_use_paid_time": bool(use_paid_time),
+    }
+
 
 M7A_DAILY_PATCH_WHITELIST: frozenset[str] = frozenset(
     {
@@ -263,7 +317,6 @@ M7A_DAILY_PATCH_WHITELIST: frozenset[str] = frozenset(
         "reward_redemption_code_enable",
         "reward_achievement_enable",
         "reward_message_enable",
-        "redemption_code",
         "power_enable",
         "echo_of_war_enable",
         "echo_of_war_timestamp",
@@ -333,7 +386,6 @@ def build_m7a_daily_patch(
         "reward_redemption_code_enable": False,
         "reward_achievement_enable": False,
         "reward_message_enable": False,
-        "redemption_code": [],
         "build_target_enable": False,
         "use_fuel": False,
         "use_reserved_trailblaze_power": False,
@@ -517,7 +569,7 @@ def load_m7a_native_config(script_config: Any) -> dict[str, Any]:
         raise FileNotFoundError("请先设置 M7A 路径")
     path = Path(root) / "config.yaml"
     if not path.is_file():
-        raise FileNotFoundError(f"三月七助手原生配置不存在：{path}")
+        raise FileNotFoundError(f"三月七原生配置不存在：{path}")
     try:
         mtime_ns = path.stat().st_mtime_ns
         cached = _NATIVE_CONFIG_CACHE.get(path)
@@ -525,11 +577,11 @@ def load_m7a_native_config(script_config: Any) -> dict[str, Any]:
             return copy.deepcopy(cached[1])
         data = load_m7a_yaml(path.read_text(encoding="utf-8-sig"))
     except OSError as exc:
-        raise FileNotFoundError(f"无法读取三月七助手原生配置：{path}") from exc
+        raise FileNotFoundError(f"无法读取三月七原生配置：{path}") from exc
     except yaml.YAMLError as exc:
-        raise ValueError(f"三月七助手原生配置不是有效 YAML：{path}") from exc
+        raise ValueError(f"三月七原生配置不是有效 YAML：{path}") from exc
     if not isinstance(data, dict):
-        raise ValueError(f"三月七助手原生配置顶层必须是对象：{path}")
+        raise ValueError(f"三月七原生配置顶层必须是对象：{path}")
     _NATIVE_CONFIG_CACHE[path] = (mtime_ns, data)
     return copy.deepcopy(data)
 
@@ -728,12 +780,17 @@ def build_currency_wars_patch(
     ornament_stage_name: str | None = None,
     *,
     script_config=None,
+    plan=None,
 ) -> dict[str, Any]:
-    """构建 M7A 货币战争 patch。"""
+    """构建 M7A 货币战争 patch。
+
+    托管覆盖读 ``plan``（该用户生效的任务计划，缺省即 ``user_config``），
+    开拓者名称读 ``user_config``。
+    """
+    if plan is None:
+        plan = user_config
     username = str(user_config.get("Info", "Name") or "").strip()
-    native_options = resolve_m7a_managed_options(
-        script_config, user_config, "CurrencyWars"
-    )
+    native_options = resolve_m7a_managed_options(script_config, plan, "CurrencyWars")
 
     patch = {
         "cloud_game_enable": False,
@@ -775,7 +832,7 @@ def build_currency_wars_patch(
     return _apply_managed_patch(
         patch,
         script_config=script_config,
-        user_config=user_config,
+        user_config=plan,
         module_key="CurrencyWars",
         whitelist=M7A_COSMIC_STRIFE_PATCH_WHITELIST,
     )

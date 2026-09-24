@@ -14,7 +14,7 @@ describe('ConfigRestoreSection runtime lock', () => {
   })
 
   it('rechecks the lock after the restore confirmation is opened', () => {
-    expect(source).toContain('const runRestore = async (item: BackupItem) => {')
+    expect(source).toContain('const runRestore = async (item: BackupItem, force = false) => {')
     expect(source).toContain('if (props.disabled) {\n    throw new Error')
   })
 
@@ -24,7 +24,6 @@ describe('ConfigRestoreSection runtime lock', () => {
       'BetterGIUserEdit.vue',
       'GeneralUserEdit.vue',
       'HSRUserEdit.vue',
-      'M9AUserEdit.vue',
       'MAAUserEdit.vue',
       'MaaEndUserEdit.vue',
       'MaaFWUserEdit.vue',

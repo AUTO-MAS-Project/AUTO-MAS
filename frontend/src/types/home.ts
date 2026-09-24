@@ -20,6 +20,10 @@ export interface HomeLayoutConfig {
   hideScrollHint?: boolean
   /** 活动轮播是否自动播放；未设置按开启处理 */
   carouselAutoplay?: boolean
+  /** 首页轮播下方是否显示当前游戏的日常便笺；由游戏社区设置里的总开关控制，默认关闭 */
+  activityNotesVisible?: boolean
+  /** 首页便笺被单独关闭的游戏；在「编辑布局」里控制 */
+  hiddenActivityNotes?: HomeModuleKey[]
 }
 
 export interface HomeModuleDescriptor {

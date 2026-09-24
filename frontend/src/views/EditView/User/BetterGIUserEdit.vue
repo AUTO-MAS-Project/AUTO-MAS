@@ -3090,9 +3090,7 @@ const globalStygianSettings = ref<Record<string, unknown>>({})
 const globalStygianSettingsDirty = ref(false)
 const hasDragonGroupSettingsDirty = computed(
   () =>
-    dragonSettingsDirty.value ||
-    globalDomainSettingsDirty.value ||
-    globalStygianSettingsDirty.value
+    dragonSettingsDirty.value || globalDomainSettingsDirty.value || globalStygianSettingsDirty.value
 )
 // 当前选中内置组是否有设置 schema（含每周秘境周表等非 fields 形态的分组）
 const hasGroupSettingFields = computed<boolean>(() =>

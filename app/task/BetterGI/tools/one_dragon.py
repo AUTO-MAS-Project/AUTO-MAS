@@ -42,8 +42,10 @@ from typing import Any
 
 from app.models.config import _BGI_BUILTIN_ONE_DRAGON_GROUPS
 from app.task.BetterGI.tools.one_dragon_plan import BUILTIN_COMBAT_STEP_NAMES
-from app.utils import resource_path
+from app.utils import get_logger, resource_path
 from app.utils.io import read_file, write_file
+
+logger = get_logger("BetterGI 一条龙配置")
 
 # 8 个内置一条龙配置组：单一来源为 app/models/config.py 的 _BGI_BUILTIN_ONE_DRAGON_GROUPS，
 # 此处仅别名引用，避免双份硬编码随版本漂移。
@@ -164,7 +166,15 @@ def list_js_scripts(root: Path) -> list[tuple[str, str]]:
                 continue
             folder = p.name.strip()
             display = folder
-            data = read_file(manifest)
+            try:
+                data = read_file(manifest)
+            except (OSError, ValueError) as e:
+                # manifest.json 是玩家订阅/手放的第三方文件，这里只用它取显示名；
+                # 坏一个不该让整个列表拿不到，显示名退回目录名，BetterGI 仍按目录名定位。
+                logger.warning(
+                    f"JS 脚本 {folder} 的 manifest.json 无法解析，显示名按目录名处理: {e}"
+                )
+                data = None
             if isinstance(data, dict) and isinstance(data.get("name"), str):
                 display = data["name"].strip() or folder
             if folder and not any(f == folder for f, _ in items):
@@ -1585,7 +1595,10 @@ def write_native_one_dragon(
         config["AutoBossStrategyName"] = auto_boss_strategy_name
     # 通用战斗队伍/策略权威覆盖周表「默认」行（与槽位路径同口径，理由见
     # write_user_one_dragon：默认行即「通用队伍」映射，否则其旧值会遮挡通用值）
-    for _wd_key, _team_key in (("weeklyDomain", "partyName"), ("weeklyLeyLine", "team")):
+    for _wd_key, _team_key in (
+        ("weeklyDomain", "partyName"),
+        ("weeklyLeyLine", "team"),
+    ):
         _wd = config.get(_wd_key)
         if isinstance(_wd, dict) and isinstance(_wd.get("default"), dict):
             if party_name:

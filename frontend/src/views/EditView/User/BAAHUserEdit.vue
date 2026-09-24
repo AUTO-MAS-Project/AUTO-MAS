@@ -153,9 +153,7 @@
                   :disabled="loading"
                   size="large"
                   style="width: 100%"
-                  @change="
-                    handleFieldSave('Info.IfActivityAdapt', formData.Info.IfActivityAdapt)
-                  "
+                  @change="handleFieldSave('Info.IfActivityAdapt', formData.Info.IfActivityAdapt)"
                 >
                   <a-select-option :value="true">{{ t('edit.yes') }}</a-select-option>
                   <a-select-option :value="false">{{ t('edit.no') }}</a-select-option>
@@ -177,9 +175,7 @@
                   :disabled="loading || !formData.Info.IfActivityAdapt"
                   size="large"
                   style="width: 100%"
-                  @change="
-                    handleFieldSave('Info.ActivityLineType', formData.Info.ActivityLineType)
-                  "
+                  @change="handleFieldSave('Info.ActivityLineType', formData.Info.ActivityLineType)"
                 >
                   <a-select-option value="CN">
                     {{ t('edit.baahActivityLineCN') }}
@@ -355,54 +351,49 @@
     </a-card>
   </ConfigLockPanel>
 
-    <!-- ══ 配置恢复（通用组件：MAS 用户字段在前、BAAH 原生配置在后）══ -->
-    <ConfigRestoreSection
-      v-model:open="restoreOpen"
-      :disabled="configLocked"
-      :script-name="BAAH_DISPLAY_NAME"
-      :targets="restoreTargets"
-      :api="restoreApi"
-      :user-desc="t('edit.baahConfigRestoreUserDesc')"
-      :script-desc="t('edit.baahConfigRestoreScriptDesc')"
-      :on-restored="handleRestored"
-    >
-      <!-- mas 备份为字段侧车分区、native 备份为关键字段反读分区 -->
-      <template #preview="{ raw }">
-        <a-empty
-          v-if="!previewSections(raw).length"
-          :description="t('edit.configRestorePreviewEmpty')"
-        />
-        <div v-else>
-          <template v-for="s in previewSections(raw)" :key="s.name">
-            <h4 class="baah-preview-title">{{ s.label }}</h4>
-            <a-descriptions
-              v-if="s.rows && s.rows.length"
-              :column="1"
-              size="small"
-              bordered
-              class="baah-preview-box"
-            >
-              <a-descriptions-item v-for="row in s.rows" :key="row.key" :label="row.key">
+  <!-- ══ 配置恢复（通用组件：MAS 用户字段在前、BAAH 原生配置在后）══ -->
+  <ConfigRestoreSection
+    v-model:open="restoreOpen"
+    :disabled="configLocked"
+    :script-name="BAAH_DISPLAY_NAME"
+    :targets="restoreTargets"
+    :api="restoreApi"
+    :user-desc="t('edit.baahConfigRestoreUserDesc')"
+    :script-desc="t('edit.baahConfigRestoreScriptDesc')"
+    :on-restored="handleRestored"
+  >
+    <!-- mas 备份为字段侧车分区、native 备份为关键字段反读分区 -->
+    <template #preview="{ raw }">
+      <a-empty
+        v-if="!previewSections(raw).length"
+        :description="t('edit.configRestorePreviewEmpty')"
+      />
+      <div v-else>
+        <template v-for="s in previewSections(raw)" :key="s.name">
+          <h4 class="baah-preview-title">{{ s.label }}</h4>
+          <a-descriptions
+            v-if="s.rows && s.rows.length"
+            :column="1"
+            size="small"
+            bordered
+            class="baah-preview-box"
+          >
+            <a-descriptions-item v-for="row in s.rows" :key="row.key" :label="row.key">
+              {{ row.value }}
+            </a-descriptions-item>
+          </a-descriptions>
+          <div v-for="g in s.groups ?? []" :key="`${s.name}-${g.name}`" class="baah-preview-group">
+            <div class="baah-preview-group-name">{{ g.name }}</div>
+            <a-descriptions :column="1" size="small" bordered class="baah-preview-box">
+              <a-descriptions-item v-for="row in g.rows" :key="row.key" :label="row.key">
                 {{ row.value }}
               </a-descriptions-item>
             </a-descriptions>
-            <div
-              v-for="g in s.groups ?? []"
-              :key="`${s.name}-${g.name}`"
-              class="baah-preview-group"
-            >
-              <div class="baah-preview-group-name">{{ g.name }}</div>
-              <a-descriptions :column="1" size="small" bordered class="baah-preview-box">
-                <a-descriptions-item v-for="row in g.rows" :key="row.key" :label="row.key">
-                  {{ row.value }}
-                </a-descriptions-item>
-              </a-descriptions>
-            </div>
-          </template>
-        </div>
-      </template>
-    </ConfigRestoreSection>
-  </div>
+          </div>
+        </template>
+      </div>
+    </template>
+  </ConfigRestoreSection>
 </template>
 
 <script setup lang="ts">
@@ -517,8 +508,7 @@ const loadActivityStatus = async () => {
   try {
     // 服务器值缺失时兜底成国服，避免拼出 lineType=null 的请求被后端拒掉
     const lineType = (formData.Info.ActivityLineType || 'CN') as 'JP' | 'Globle' | 'CN'
-    const resp =
-      await BaahService.getBaahActivityStatusApiApiScriptsBaahActivityStatusGet(lineType)
+    const resp = await BaahService.getBaahActivityStatusApiApiScriptsBaahActivityStatusGet(lineType)
     if (generation !== activityStatusGeneration) return
     activityStatus.value = resp
   } catch (e) {

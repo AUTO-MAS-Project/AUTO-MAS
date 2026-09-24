@@ -29,6 +29,10 @@
 - 全量 / 差量：核心包叫 ``full`` / ``delta``，对外统一成 ``full`` /
   ``incremental``。
 - 所有文案先过 :func:`sanitize_log_message`，WS 通道同日志一样不得泄露 CDK。
+
+运行前自动更新没有这块面板，进度只能进任务日志，翻译在
+:class:`MaaFWUpdateTaskLogTranslator`：日志是**追加**的，每多一行就多一条
+永久记录，所以节流按进度跨度（下载 5%、覆盖 25%）而不是时间。
 """
 
 from __future__ import annotations
@@ -55,13 +59,43 @@ _STAGE_MESSAGES: dict[str, str] = {
     "checking": "正在检查更新",
     "downloading": "正在下载更新包",
     "downloaded": "更新包下载完成",
-    "plan_validated": "更新计划校验通过，正在备份将被覆盖的文件",
-    "staged": "备份完成，开始覆盖文件",
-    "applying": "正在覆盖文件",
-    "post_validating": "正在校验更新结果",
-    "committed": "更新已写入项目目录",
+    "plan_validated": "更新计划校验通过，正在准备新版本",
+    "staged": "已从当前版本复制出新版本骨架，开始套用更新包",
+    "applying": "正在套用更新包",
+    "post_validating": "正在预检新版本的运行环境",
+    "committed": "新版本已登记，正在切换脚本",
+    # 不再发出：新版本只在 staging 里建，失败就丢掉，没有回滚。词表项留着兼容。
     "rolled_back": "更新失败，已回滚到更新前状态",
 }
+
+# 任务日志的节流步长：下载每 5%、覆盖每 25% 一行。359MB 的包按 5% 是 20 行，
+# 既看得出在动，也不会把用户自己的运行日志淹掉。
+_DOWNLOAD_PERCENT_STEP = 5.0
+_DOWNLOAD_UNKNOWN_STEP_BYTES = 32 * 1024 * 1024
+_APPLY_PERCENT_STEP = 25.0
+# 这三个阶段核心包自己已经用 send_log 写过人话，再翻一遍就是重复行。
+_TASK_LOG_SKIPPED_STAGES = frozenset({"checking", "completed", "failed"})
+
+
+def _megabytes(value: float | int | None) -> str:
+    """字节数 → 一位小数的 MB 数字（不带单位，由调用方拼）。"""
+
+    return f"{(value or 0) / (1024 * 1024):.1f}"
+
+
+def _format_eta(seconds: float) -> str:
+    """剩余秒数 → 「1 分 46 秒」这类中文时长。
+
+    一律向下取整：``round`` 会把 59.6 说成「60 秒」、3599.7 说成「60 分」，
+    看着像坏了。
+    """
+
+    total = int(seconds)
+    if total < 60:
+        return f"{total} 秒"
+    if total < 3600:
+        return f"{total // 60} 分 {total % 60} 秒"
+    return f"{total // 3600} 小时 {(total % 3600) // 60} 分"
 
 
 def normalize_package_kind(raw_value: Any) -> str | None:
@@ -279,8 +313,119 @@ class MaaFWUpdateProgressTracker:
         )
 
 
+class MaaFWUpdateTaskLogTranslator:
+    """核心包进度事件 → 运行前自动更新要追加进任务日志的中文行。
+
+    返回 ``None`` 表示这条事件不值得单独占一行。与 WS 面板的区别：
+
+    - 节流按**进度跨度**：下载每跨 5%（``total`` 未知时每 32MB）、覆盖每跨
+      25% 一行，收尾必发。按时间节流会让 359MB 的下载刷出几百行。
+    - ``checking`` / ``completed`` / ``failed`` 一律跳过：核心包自己已经用
+      ``send_log`` 写过人话，再翻一遍就是重复行；取消时宿主另有自己的文案。
+
+    速度沿用 :class:`MaaFWUpdateProgressTracker` 算好的 ``speedBytesPerSec``，
+    而且**只把决定要发的事件喂给它**——这样速度是两条相邻日志行之间的平均，
+    不是两个 64KB chunk 之间的抖动。因此内部那个 tracker 不再按时间节流。
+    """
+
+    def __init__(self, *, tracker: MaaFWUpdateProgressTracker | None = None) -> None:
+        self._tracker = tracker or MaaFWUpdateProgressTracker(throttle_seconds=0.0)
+        self._download_key: int | None = None
+        self._download_done = False
+        self._apply_bucket: int | None = None
+        self._apply_done = False
+
+    def event(self, event: Mapping[str, Any]) -> str | None:
+        stage = str(event.get("stage") or "").strip()
+        if not stage or stage in _TASK_LOG_SKIPPED_STAGES:
+            return None
+        if stage in {"downloading", "downloaded"}:
+            return self._download(stage, event)
+        if stage == "applying":
+            return self._applying(event)
+        message = _STAGE_MESSAGES.get(stage)
+        return sanitize_log_message(message) if message else None
+
+    # ------------------------------------------------------------------ 下载
+
+    def _download(self, stage: str, event: Mapping[str, Any]) -> str | None:
+        downloaded = _optional_int(event.get("downloaded_bytes"))
+        total = _optional_int(event.get("total_bytes"))
+        finished = stage == "downloaded" or (
+            downloaded is not None
+            and total is not None
+            and total > 0
+            and downloaded >= total
+        )
+        if finished:
+            if self._download_done:
+                return None
+            self._download_done = True
+            self._tracker.event(event)
+            text = _STAGE_MESSAGES["downloaded"]
+            return sanitize_log_message(
+                f"{text}（{_megabytes(total or downloaded)} MB）"
+                if (total or downloaded)
+                else text
+            )
+        if downloaded is None or self._download_done:
+            return None
+        if total and total > 0:
+            key = int(downloaded / total * 100.0 // _DOWNLOAD_PERCENT_STEP)
+        else:
+            # 总大小未知（服务端没给 Content-Length）时只能按绝对量报。
+            key = downloaded // _DOWNLOAD_UNKNOWN_STEP_BYTES
+        if self._download_key is not None and key == self._download_key:
+            return None
+        self._download_key = key
+        data = self._tracker.event(event)
+        if data is None:  # pragma: no cover - 内部 tracker 不节流
+            return None
+        head = _STAGE_MESSAGES["downloading"]
+        if data.percent is not None:
+            head = f"{head} {data.percent:.1f}%"
+        details: list[str] = []
+        if total:
+            details.append(f"{_megabytes(downloaded)} / {_megabytes(total)} MB")
+        else:
+            details.append(f"已下载 {_megabytes(downloaded)} MB")
+        if data.speedBytesPerSec:
+            details.append(f"{_megabytes(data.speedBytesPerSec)} MB/s")
+            # 0% 那行还没有速度，自然也没有 ETA；总大小未知时同理。359MB 的包
+            # 「还要多久」比「现在多少 MB/s」更是用户真正想问的那个问题。
+            if total and total > downloaded:
+                details.append(
+                    "预计剩余 "
+                    + _format_eta((total - downloaded) / data.speedBytesPerSec)
+                )
+        return sanitize_log_message(f"{head}（{'，'.join(details)}）")
+
+    # ------------------------------------------------------------------ 覆盖
+
+    def _applying(self, event: Mapping[str, Any]) -> str | None:
+        applied = _optional_int(event.get("appliedFiles"))
+        total = _optional_int(event.get("totalFiles"))
+        if applied is None or not total or total <= 0:
+            if self._apply_bucket is not None:
+                return None
+            self._apply_bucket = -1
+            return sanitize_log_message(_STAGE_MESSAGES["applying"])
+        finished = applied >= total
+        if finished:
+            if self._apply_done:
+                return None
+            self._apply_done = True
+        else:
+            bucket = int(applied / total * 100.0 // _APPLY_PERCENT_STEP)
+            if self._apply_bucket is not None and bucket == self._apply_bucket:
+                return None
+            self._apply_bucket = bucket
+        return sanitize_log_message(f"{_STAGE_MESSAGES['applying']} {applied}/{total}")
+
+
 __all__ = [
     "MaaFWUpdateProgressTracker",
+    "MaaFWUpdateTaskLogTranslator",
     "PACKAGE_KIND_FULL",
     "PACKAGE_KIND_INCREMENTAL",
     "STATUS_FAILED",

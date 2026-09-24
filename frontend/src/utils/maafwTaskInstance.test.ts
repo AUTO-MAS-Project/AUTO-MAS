@@ -4,7 +4,9 @@ import { describe, expect, it, vi } from 'vitest'
 
 import {
   MAAFW_DUPLICATE_TASK_SEPARATOR,
+  MAAFW_MAX_TASK_REPEAT_COUNT,
   buildMaaFWTaskInstanceId,
+  buildMaaFWTaskInstanceIds,
   resolveMaaFWTaskName,
 } from './maafwTaskInstance'
 
@@ -77,16 +79,50 @@ describe('buildMaaFWTaskInstanceId', () => {
   })
 })
 
+describe('buildMaaFWTaskInstanceIds', () => {
+  it('repeatCount 为 N 时一次给出 N 个互不相同的实例 id，首份是裸任务名', () => {
+    const taskIds = buildMaaFWTaskInstanceIds('刷关', 3, [])
+    expect(taskIds).toHaveLength(3)
+    expect(taskIds[0]).toBe('刷关')
+    expect(new Set(taskIds).size).toBe(3)
+    for (const taskId of taskIds) {
+      expect(resolveMaaFWTaskName(taskId, new Set(['刷关']))).toBe('刷关')
+    }
+  })
+
+  it('队列里已有该任务时全部是副本 id，不撞已有的', () => {
+    const taskIds = buildMaaFWTaskInstanceIds('刷关', 2, ['刷关'])
+    expect(taskIds).toHaveLength(2)
+    expect(taskIds).not.toContain('刷关')
+  })
+
+  it.each([undefined, null, 0, 1, -1, 2.5])('repeatCount=%s 时只加 1 份', count => {
+    expect(buildMaaFWTaskInstanceIds('刷关', count, [])).toEqual(['刷关'])
+  })
+
+  it('repeatCount 超过上限时按上限展开', () => {
+    const taskIds = buildMaaFWTaskInstanceIds('刷关', 30000, [])
+    expect(taskIds).toHaveLength(MAAFW_MAX_TASK_REPEAT_COUNT)
+    expect(new Set(taskIds).size).toBe(MAAFW_MAX_TASK_REPEAT_COUNT)
+  })
+})
+
 describe('前后端分隔符契约', () => {
   it('与后端 DUPLICATE_TASK_SUFFIX_SEPARATOR 字面一致', () => {
     const modelsPath = fileURLToPath(
-      new URL(
-        '../../../app/task/MaaFW/tools/core/automas_maafw_interface/models.py',
-        import.meta.url
-      )
+      new URL('../../../app/task/MaaFW/tools/core/interface/models.py', import.meta.url)
     )
     const source = readFileSync(modelsPath, 'utf8')
     const matched = source.match(/DUPLICATE_TASK_SUFFIX_SEPARATOR = "([^"]+)"/)
     expect(matched?.[1]).toBe(MAAFW_DUPLICATE_TASK_SEPARATOR)
+  })
+
+  it('repeat_count 上限与后端 MAX_TASK_REPEAT_COUNT 一致', () => {
+    const modelsPath = fileURLToPath(
+      new URL('../../../app/task/MaaFW/tools/core/interface/models.py', import.meta.url)
+    )
+    const source = readFileSync(modelsPath, 'utf8')
+    const matched = source.match(/^MAX_TASK_REPEAT_COUNT = (\d+)$/m)
+    expect(Number(matched?.[1])).toBe(MAAFW_MAX_TASK_REPEAT_COUNT)
   })
 })

@@ -24,6 +24,14 @@ MAS 用户与 zzz-od 实例槽**固定绑定**：每个用户绑定一个槽（�
 运行/会话窗口内以**合成注册表视图**临时替换 one_dragon.yml（仅本脚本
 用户槽），窗口结束恢复原生内容，zzz-od 原生世界零 MAS 痕迹。
 
+新槽一律落在 ``MAS_SLOT_BASE``（1001）起的高位段：一条龙的「新增实例」只在
+自己的注册表里找最小空号、**不扫盘**，而 MAS 槽刻意不进注册表，低号段随时会
+被它抢走并覆盖。绑定号已经被原生实例占走时走**撞号兜底**——残留内容先存底
+进回收池、该槽的 MAS 备份池跟着改绑到新号，目录本身不动（已归原生实例）。
+自动回收另受**槽分配台账**约束（只收归属用户已不存在的号），手动清理不受限；
+同安装另有 ZzzOd 脚本在跑时整体跳过（它在用槽的绑定号要到 ``final_task`` 才
+回写，此时回收会拆掉它的现场）。
+
 - 用户态 + 「多实例切换」（脚本级下拉，不推荐）：把全部启用用户的配置
   注入各自绑定槽（备份 → 注入并清运行记录），随后
   ``--onedragon --instance {slot1,slot2,...}`` 一次性运行多账号一条龙——
@@ -46,6 +54,7 @@ MAS 用户与 zzz-od 实例槽**固定绑定**：每个用户绑定一个槽（�
 
 import asyncio
 import json
+import shutil
 import uuid
 from contextlib import suppress
 from datetime import datetime
@@ -66,9 +75,9 @@ from app.task.proxy_helpers import (
     read_config_source,
     split_args,
     user_uses_direct_control,
-    user_uses_quick_config,
 )
 from app.utils import ProcessInfo, ProcessManager, get_logger, is_process_running
+from app.utils.config_archive import config_root_key
 from app.utils.constants import UTC4
 from app.utils.LogMonitor import LogMonitor
 
@@ -76,11 +85,14 @@ from .push_log import ACCOUNT_PREFIX_RE, ZZZOD_PUSH_RULES, make_zzzod_resolve
 from .tools import (
     INSTANCE_RUN_ALL,
     INSTANCE_RUN_CURRENT,
+    MAS_SLOT_BASE,
+    MAS_SLOT_MAX,
     RUN_STATUS_FAILED,
     RUN_STATUS_RUNNING,
     RUN_STATUS_SUCCESS,
     archive_mas_config_backup,
     archive_onedragon_backup,
+    archive_taken_slot,
     backup_instance,
     clear_run_records,
     collect_mas_user_info,
@@ -88,10 +100,15 @@ from .tools import (
     find_active_instance,
     find_free_instance_idx,
     instance_dir,
+    instance_run_is_all,
     launch_args_patch,
     list_app_catalog,
     list_instances,
+    mas_backup_root,
     push_notification,
+    read_game_account,
+    read_native_after_done,
+    recycle_orphan_slots,
     restore_instance,
     restore_instance_view,
     snapshot_run_records,
@@ -239,15 +256,240 @@ def _other_launcher_label(root: Path, label: str) -> str | None:
     return other if (root / _ZZZOD_LAUNCHER_BOOK[other]).is_file() else None
 
 
+_ALLOCATED_SLOT_LEDGER_DIR = "ZzzOdSlots"
+"""槽分配台账的 MAS 数据目录：``data/ZzzOdSlots``（按安装根指纹分桶）"""
+
+
+def _allocated_ledger_path(root: Path) -> Path:
+    """安装根对应的槽分配台账文件：``data/ZzzOdSlots/{安装根指纹}.json``。"""
+
+    return (
+        Path.cwd()
+        / "data"
+        / _ALLOCATED_SLOT_LEDGER_DIR
+        / f"{config_root_key(root)}.json"
+    )
+
+
+def _allocated_slots(root: Path) -> dict[int, str | None]:
+    """MAS 在本安装分配/绑定过的实例槽 → 归属用户 uid（台账）。
+
+    台账是「这个号是 MAS 分的、归谁」的凭据，自动回收只收台账内 owner 已
+    不存在的号：一条龙原生流程是「先建目录后写注册表」，用户在原生 GUI 新建
+    实例的瞬间盘上已有目录、注册表尚未落盘，只看盘上目录会把它当残留删掉。
+    台账缺失或损坏时返回空字典——自动回收退化为不收（残留由手动清理兜底），
+    不会反向误删原生目录。
+
+    owner 为 ``None`` 表示归属未知（旧格式台账，或调用方没给用户 uid）；
+    这类号同样按「保留」处理，理由见 :func:`_recyclable_allocated_idxs`。
+    """
+
+    path = _allocated_ledger_path(root)
+    if not path.is_file():
+        return {}
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except Exception as e:
+        logger.warning(f"槽分配台账不可读，本次按未分配处理: {e}")
+        return {}
+    slots = raw.get("slots") if isinstance(raw, dict) else None
+    if isinstance(slots, list):
+        # 旧格式（只有号、没有归属）：读成 owner 未知，下次写盘时升级
+        return {
+            int(i): None
+            for i in slots
+            if isinstance(i, int)
+            and not isinstance(i, bool)
+            and 0 < int(i) <= MAS_SLOT_MAX
+        }
+    if not isinstance(slots, dict):
+        return {}
+    ledger: dict[int, str | None] = {}
+    for key, value in slots.items():
+        try:
+            slot = int(key)
+        except (TypeError, ValueError):
+            continue
+        # 超出 MAS_SLOT_MAX 的号不是 MAS 槽（脏值）：写进 Info.SlotIdx 会被
+        # RangeValidator 静默夹到上限，槽目录名与绑定号错位，一律当没有
+        if slot <= 0 or slot > MAS_SLOT_MAX:
+            continue
+        # 归属必须是字符串：混进 bool/数字按未知处理，不让脏值决定保留与否
+        ledger[slot] = value if isinstance(value, str) and value else None
+    return ledger
+
+
+def _save_allocated_slots(root: Path, slots: dict[int, str | None]) -> None:
+    """落盘槽分配台账（写失败只告警：只影响后续自动回收范围，不该让运行失败）。"""
+
+    path = _allocated_ledger_path(root)
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            json.dumps(
+                {"slots": {str(k): v for k, v in sorted(slots.items())}},
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
+    except OSError as e:
+        logger.warning(f"槽分配台账写入失败（不影响本次运行）: {e}")
+
+
+def _record_allocated_slot(root: Path, slot_idx: int, owner: str | None = None) -> None:
+    """把 MAS 分配/绑定的槽号与归属用户记进台账（幂等；无变化不写盘）。
+
+    归属用于区分「用户还在、只是绑定号没回写」与「用户已删」两种无主形态，
+    见 :func:`_recyclable_allocated_idxs`。
+    """
+
+    slot = int(slot_idx)
+    if slot <= 0 or slot > MAS_SLOT_MAX:
+        return
+    owner = str(owner) if owner else None
+    slots = _allocated_slots(root)
+    if slot in slots and slots[slot] == owner:
+        return
+    slots[slot] = owner
+    _save_allocated_slots(root, slots)
+
+
+def forget_allocated_slot(root: Path, slot_idx: int) -> None:
+    """把槽号移出台账（该号不再参与自动回收；幂等）。
+
+    删除用户/脚本回收掉槽目录后调用：台账只记「MAS 手上还在用」的号，目录都
+    没了就不该再占着。恢复快照走的是另一条路——它把内容恢复给某个用户并记上
+    归属（见 :func:`app.core.config.AppConfig.restore_zzzod_recycle`），不用
+    本函数。手动清理不受台账限制。
+    """
+
+    slot = int(slot_idx)
+    if slot <= 0:
+        return
+    slots = _allocated_slots(root)
+    if slot not in slots:
+        return
+    del slots[slot]
+    _save_allocated_slots(root, slots)
+
+
+def _owner_alive(root: Path, owner: str) -> bool:
+    """归属用户是否仍存在于指向同一份安装的任一 ZzzOd 脚本（按 uid 比对）。"""
+
+    key = config_root_key(root)
+    for script_config in Config.ScriptConfig.values():
+        if not isinstance(script_config, ZzzOdConfig):
+            continue
+        script_root = str(script_config.get("Info", "RootPath") or "").strip()
+        if not script_root or config_root_key(script_root) != key:
+            continue
+        if any(str(uid) == owner for uid in script_config.UserData.keys()):
+            return True
+    return False
+
+
+def _recyclable_allocated_idxs(root: Path) -> set[int]:
+    """自动回收可收的台账号：归属用户已不存在的号。
+
+    归属仍存在的号一律保留。运行/会话期用的是独立用户配置副本、绑定号要到
+    ``final_task`` 才回写，崩溃或强杀会让槽呈「有目录、有台账、持久绑定查不到」
+    的形态——只按持久绑定判定会把它当残留收走，而槽里还有用户在原生 GUI 里
+    维护的配队。归属未知（``None``）同样保留：无法证明它无主时宁可不收。
+    """
+
+    return {
+        slot
+        for slot, owner in _allocated_slots(root).items()
+        if owner is not None and not _owner_alive(root, owner)
+    }
+
+
+def _follow_mas_backups(script_id: str, old_slot: int, new_slot: int) -> None:
+    """改绑后把该槽的 MAS 备份池挪到新槽号（用户的「配置恢复」历史跟着人走）。
+
+    池按 ``(脚本, 槽)`` 分桶；留在旧号会让用户在新槽的「配置恢复」里看不到
+    自己的历史，而旧号 MAS 已不再使用、池也不会再被清理。目标已存在时不动
+    ——那是别人的历史，不能混在一起。
+    """
+
+    old_pool = mas_backup_root(script_id, old_slot)
+    if not old_pool.is_dir():
+        return
+    new_pool = mas_backup_root(script_id, new_slot)
+    if new_pool.exists():
+        logger.warning(
+            f"槽 {new_slot:02d} 已有 MAS 备份池，槽 {old_slot:02d} 的历史原地保留"
+        )
+        return
+    try:
+        shutil.move(str(old_pool), str(new_pool))
+    except OSError as e:
+        logger.opt(exception=True).warning(
+            f"槽 {old_slot:02d} 的 MAS 备份池迁移到槽 {new_slot:02d} 失败: {e}"
+        )
+
+
+def _reclaim_own_slot(
+    root: Path,
+    owner_uid: str | None,
+    native_idxs: set[int],
+    used_idxs: set[int],
+) -> int | None:
+    """绑定号缺失时，认领回台账里属于本用户的高位段槽（中断现场恢复）。
+
+    上次运行/会话被崩溃、断电或强杀打断时，绑定号只写在运行期副本里、没回写
+    持久配置，用户下次运行会被当成「未分配」另拿一个新号——上一个槽里他在原生
+    GUI 维护的配队就再也回不来了。这里优先认领台账里归本用户、且当前没被原生
+    实例或其他用户占用的号（盘上有目录的优先，那里才有上次的配队），让配队
+    跟着人走。没有任何候选时返回 ``None``，由调用方按常规分配新号。
+    """
+
+    if not owner_uid:
+        return None
+    owner = str(owner_uid)
+    candidates = [
+        slot
+        for slot, slot_owner in _allocated_slots(root).items()
+        if slot_owner == owner and slot not in native_idxs and slot not in used_idxs
+    ]
+    if not candidates:
+        return None
+    # 盘上有目录的优先（上次的配队在那里）；同为有目录时取号更大的那个——
+    # 改绑只会往更大的号走，最大的最接近用户最后一次实际使用的槽
+    with_dir = [slot for slot in candidates if instance_dir(root, slot).is_dir()]
+    return max(with_dir or candidates)
+
+
 async def ensure_user_slot(
-    root: Path, user_config: ZzzOdUserConfig, used_idxs: set[int]
+    root: Path,
+    user_config: ZzzOdUserConfig,
+    used_idxs: set[int],
+    *,
+    script_id: str | None = None,
+    owner_uid: str | None = None,
 ) -> int:
     """解析/分配用户的绑定实例槽（纯分配，不触碰注册表——注册表由合成视图提供）。
 
     绑定下标存于用户配置 ``Info.SlotIdx``：有效 = 不与原生实例、其他 MAS
-    用户已绑定槽冲突；无效则分配最小空闲 idx（全局查重）并把绑定落回用户
-    配置。槽目录持久保留（配队等复杂配置），注册表只在运行/会话窗口内以
-    合成视图出现。
+    用户已绑定槽冲突；无效则优先认领台账里属于本用户的高位段槽（见
+    :func:`_reclaim_own_slot`，用于上次没跑完的中断现场），没有则分配最小
+    空闲 idx（全局查重）并把绑定落回用户配置。槽目录持久保留（配队等复杂
+    配置），注册表只在运行/会话窗口内以合成视图出现。分配结果连同归属用户
+    记进槽分配台账（含沿用旧绑定——一次运行即可把存量用户的绑定补进台账），
+    供自动回收判定「这个号是 MAS 分的、还归不归活着的用户」。
+
+    新槽从 :data:`MAS_SLOT_BASE` 起分配——一条龙的「新增实例」只按自己的
+    注册表找最小空号、看不见 MAS 槽，低号段随时可能被抢，退到高位段让它
+    够不到。绑定号已经被原生实例抢走时，先把残留内容存底进回收池、再把该
+    槽的 MAS 备份池挪到新号（配队与「配置恢复」历史都跟着用户走）；此时
+    槽目录已归原生实例，只存底不删。
+
+    Args:
+        root: 一条龙安装目录。
+        user_config: 用户配置对象（绑定号读写在 ``Info.SlotIdx``）。
+        used_idxs: 本次批量已分配的槽号集合，就地更新。
+        script_id: 所属脚本 ID，仅用于搬迁该脚本的 MAS 备份池；缺省跳过。
+        owner_uid: 用户 uid，写进台账作为该槽的归属；缺省则归属未知。
     """
 
     bound = int(user_config.get("Info", "SlotIdx") or -1)
@@ -259,27 +501,58 @@ async def ensure_user_slot(
     if bound > 0 and bound not in native_idxs and bound not in used_idxs:
         slot = bound
     else:
-        slot = find_free_instance_idx(root, used_idxs)
+        taken = bound > 0 and bound in native_idxs
+        # 绑定号缺失（首跑，或上次崩溃没回写）时先认领自己名下的旧槽；
+        # 被原生实例抢走是「绑定号还在」的另一回事，走下面的撞号兜底
+        reclaimed = (
+            None
+            if taken
+            else _reclaim_own_slot(root, owner_uid, native_idxs, used_idxs)
+        )
+        slot = (
+            reclaimed
+            if reclaimed is not None
+            else find_free_instance_idx(
+                root, used_idxs, base=MAS_SLOT_BASE, limit=MAS_SLOT_MAX
+            )
+        )
+        if taken:
+            user_name = str(user_config.get("Info", "Name") or "未知用户")
+            archive_taken_slot(
+                root,
+                bound,
+                reason=f"槽号已被原生实例占用，用户「{user_name}」改绑高位段",
+            )
+            if script_id:
+                _follow_mas_backups(script_id, bound, slot)
     used_idxs.add(slot)
     if slot != bound:
         await user_config.set("Info", "SlotIdx", slot)
+    _record_allocated_slot(root, slot, owner_uid)
     return slot
 
 
 def collect_used_slot_idxs(
+    root: Path,
     exclude_uids: set[uuid.UUID] | None = None,
 ) -> set[int]:
-    """收集所有 ZzzOd 脚本用户已绑定的实例槽 idx（跨脚本全局查重用）。
+    """收集指向同一份安装的 ZzzOd 脚本用户已绑定的实例槽 idx（分配查重用）。
 
-    槽目录 config/{idx:02d} 跨脚本共享文件系统，idx 分配必须全局唯一，
-    否则不同脚本的用户会写入同一目录互相覆盖配置。本次要注入/会话的用户
-    经 ``exclude_uids`` 排除——它们通过自身 SlotIdx 重认领绑定。
+    槽目录挂在某一份安装的 ``config/`` 下，占用判定必须按安装分桶：指向别的
+    安装的脚本用户不该挤占本安装的号（旧口径跨全部 ZzzOd 脚本一起去重，
+    多脚本各指一份安装时会把号白白占掉，新用户只能被挤到更大的 idx）。
+    ``root`` 用 :func:`config_root_key` 归一比对。本次要注入/会话的用户经
+    ``exclude_uids`` 排除——它们通过自身 SlotIdx 重认领绑定。
     """
 
+    key = config_root_key(root)
     used: set[int] = set()
     excluded = exclude_uids or set()
     for script_config in Config.ScriptConfig.values():
         if not isinstance(script_config, ZzzOdConfig):
+            continue
+        script_root = str(script_config.get("Info", "RootPath") or "").strip()
+        if not script_root or config_root_key(script_root) != key:
             continue
         for uid, cfg in script_config.UserData.items():
             if uid in excluded:
@@ -288,6 +561,127 @@ def collect_used_slot_idxs(
             if bound > 0:
                 used.add(bound)
     return used
+
+
+def collect_slot_owners(root: Path) -> dict[int, list[dict]]:
+    """按安装根分桶收集槽的 MAS 归属（idx → 归属列表）。
+
+    与 :func:`collect_used_slot_idxs` 同口径（只算指向同一份安装的脚本），
+    但带出脚本/用户名与配置来源，供实例槽总览展示「这个号被谁占着」。
+    **绑定但盘上无目录的槽也要能列出来**——那正是「槽目录数与用户数对不上」
+    时最需要看到的一行（没跑过的用户只有绑定号、没有目录）。
+    """
+
+    key = config_root_key(root)
+    owners: dict[int, list[dict]] = {}
+    for script_uid, script_config in Config.ScriptConfig.items():
+        if not isinstance(script_config, ZzzOdConfig):
+            continue
+        script_root = str(script_config.get("Info", "RootPath") or "").strip()
+        if not script_root or config_root_key(script_root) != key:
+            continue
+        script_name = str(script_config.get("Info", "Name") or "")
+        for uid, cfg in script_config.UserData.items():
+            bound = int(cfg.get("Info", "SlotIdx") or -1)
+            if bound <= 0:
+                continue
+            owners.setdefault(bound, []).append(
+                {
+                    "scriptId": str(script_uid),
+                    "userId": str(uid),
+                    "scriptName": script_name,
+                    "userName": str(cfg.get("Info", "Name") or ""),
+                    "mode": str(cfg.get("Info", "Mode") or "用户"),
+                }
+            )
+    return owners
+
+
+def running_zzzod_scripts(
+    root: Path, exclude_script_id: str | None = None
+) -> list[str]:
+    """指向同一份安装、且正在运行/开会话的 ZzzOd 脚本名（``exclude_script_id`` 排除自己）。
+
+    槽目录跨脚本共享同一份安装，而运行/会话期用的是**独立用户配置副本**
+    （manager ``prepare`` 提取、``final_task`` 才回写），在跑脚本的在用槽在
+    持久配置里查不到绑定——别的脚本此时回收孤儿槽会把它们当残留收走，拆掉
+    正在跑的现场。自动回收据此跳过本轮（见 :func:`recycle_unbound_slots`）。
+    """
+
+    key = config_root_key(root)
+    running: list[str] = []
+    for script_uid, script_config in Config.ScriptConfig.items():
+        if not isinstance(script_config, ZzzOdConfig) or not script_config.is_locked:
+            continue
+        if exclude_script_id and str(script_uid) == str(exclude_script_id):
+            continue
+        script_root = str(script_config.get("Info", "RootPath") or "").strip()
+        if script_root and config_root_key(script_root) == key:
+            running.append(str(script_config.get("Info", "Name") or script_uid))
+    return running
+
+
+def recycle_unbound_slots(
+    root: Path,
+    *,
+    only_allocated: bool = True,
+    swallow: bool = True,
+    exclude_script_id: str | None = None,
+) -> list[int]:
+    """回收盘上无人绑定的实例槽（运行/会话前自动回收与手动清理共用）。
+
+    绑定集合取全部 ZzzOd 用户（**不排除**本次要注入/会话的用户）：排除会把
+    它们正在用的槽当孤儿回收，槽里的配队等随即丢失。在 ``ensure_user_slot``
+    之前调用时，腾出的号本轮即可复用。直控态不自动调用——直控是纯原生裸跑，
+    MAS 不往安装目录里删东西；手动清理是用户显式发起的动作，不受此限。
+    同安装另有 ZzzOd 脚本在跑时整体跳过：它在用槽的绑定号尚未回写，收了会
+    拆掉它的现场（残留交手动清理兜底）。
+
+    Args:
+        root: 一条龙安装目录。
+        only_allocated: 自动路径默认只收台账里归属用户已不存在的号（见
+            :func:`_recyclable_allocated_idxs`）；手动清理传 ``False`` 连来路
+            不明的残留一起收。
+        swallow: 默认失败只告警，不阻断运行/会话；手动清理传 ``False``，
+            让注册表缺失/损坏等原因抛到界面。
+        exclude_script_id: 调用方自己的脚本 ID——自动路径的调用方本身处于
+            锁定态，判定同安装在跑脚本时必须排除自己。
+
+    Returns:
+        实际回收的槽下标。
+
+    Raises:
+        ValueError: 注册表缺失且 ``swallow=False``。
+        ConfigCorruptedError: 注册表不可读且 ``swallow=False``。
+        RuntimeError: 同安装有别的 ZzzOd 脚本在跑且 ``swallow=False``。
+    """
+
+    running = running_zzzod_scripts(root, exclude_script_id)
+    if running:
+        message = (
+            f"同安装的「{'、'.join(running)}」正在运行，本轮跳过无主槽回收"
+            "（其在用槽的绑定号尚未回写，收了会拆掉在跑的现场）"
+        )
+        if not swallow:
+            raise RuntimeError(message)
+        logger.warning(message)
+        return []
+    allocated = _recyclable_allocated_idxs(root) if only_allocated else None
+    try:
+        removed = recycle_orphan_slots(
+            root,
+            collect_used_slot_idxs(root),
+            allocated_idxs=allocated,
+            swallow=swallow,
+        )
+    except Exception as e:
+        if not swallow:
+            raise
+        logger.opt(exception=True).warning(f"孤儿实例槽回收失败: {e}")
+        return []
+    if removed:
+        logger.info(f"已回收 {len(removed)} 个未绑定的实例槽: {removed}")
+    return removed
 
 
 def parse_user_apps(user_config: ZzzOdUserConfig) -> list[dict]:
@@ -430,6 +824,52 @@ class AutoProxyTask(TaskExecuteBase):
 
         return self.mode == "直控"
 
+    def _direct_run_targets(self, root: Path) -> list[dict]:
+        """直控运行的目标实例列表（与上游 ``handle_init`` 判定同口径）。
+
+        随原生 ``instance_run`` 而定：全部实例=所有参与运行（``active_in_od``）
+        的实例，其余（含 null / 空串等非法值）=活跃实例——只有**键缺失**才按
+        上游默认取「全部实例」（判定见 :func:`instance_run_is_all`）；目标为空
+        时回落活跃实例（对齐上游 ``handle_init`` 对空参与列表的回落）。上游对
+        「有参与实例但无活跃」会自行切到首个参与实例运行，因此目标非空即
+        放行，不以有无活跃实例拦截。
+        """
+
+        if instance_run_is_all(root):
+            targets = [
+                item for item in list_instances(root) if item.get("active_in_od")
+            ]
+        else:
+            targets = []
+        if not targets:
+            active = find_active_instance(root)
+            targets = [active] if active is not None else []
+        return targets
+
+    def _direct_missing_game_paths(self, root: Path) -> list[str]:
+        """直控运行目标实例中未配置游戏路径的实例名（空=全部可运行）。
+
+        直控=原生裸跑、MAS 零注入，游戏路径只可能来自目标实例的
+        ``game_account.yml``；缺失时一条龙会以「未配置游戏路径」整体失败，
+        这里提前拦截并指明是哪个实例。读不动或条目结构异常的实例不误判
+        为未配置，交由一条龙自身报错。
+        """
+
+        missing: list[str] = []
+        for item in self._direct_run_targets(root):
+            try:
+                idx = int(item.get("idx", -1))
+                if idx <= 0:
+                    continue
+                game_path = str(
+                    read_game_account(instance_dir(root, idx)).get("game_path") or ""
+                ).strip()
+            except Exception:
+                continue
+            if not game_path:
+                missing.append(str(item.get("name") or f"{idx:02d}"))
+        return missing
+
     def _push_log_enabled(self) -> bool:
         """节点详情采集开关：触发用户或（多实例切换时）任一启用用户未关闭即采集。"""
 
@@ -558,12 +998,28 @@ class AutoProxyTask(TaskExecuteBase):
             archive_onedragon_backup(self.script_root_path)
         except Exception as e:
             logger.opt(exception=True).warning(f"归档 ZZZ-OD 原生配置快照失败: {e}")
+        # 孤儿槽回收：一条龙注册表里没有、也没有任何 ZzzOd 用户绑定的
+        # config/NN 是「分配过、用户/脚本已删」的残留——GUI 看不见也删不掉，
+        # 不收就永久占号。放在 ensure_user_slot 之前：腾出的号本轮即可复用；
+        # 原生配置快照已归档在前，回收后仍可找回（整目录拷贝+删除，线程里跑）
+        await asyncio.to_thread(
+            recycle_unbound_slots,
+            self.script_root_path,
+            exclude_script_id=self.script_info.script_id,
+        )
         used_idxs = collect_used_slot_idxs(
-            exclude_uids={uuid.UUID(u.user_id) for u, _, _ in users}
+            self.script_root_path,
+            exclude_uids={uuid.UUID(u.user_id) for u, _, _ in users},
         )
 
         for user_item, cfg, apps in users:
-            slot = await ensure_user_slot(self.script_root_path, cfg, used_idxs)
+            slot = await ensure_user_slot(
+                self.script_root_path,
+                cfg,
+                used_idxs,
+                script_id=self.script_info.script_id,
+                owner_uid=user_item.user_id,
+            )
             backup_dir = backup_base / f"{slot:02d}"
             if instance_dir(self.script_root_path, slot).is_dir():
                 backup_instance(self.script_root_path, slot, backup_dir)
@@ -591,42 +1047,6 @@ class AutoProxyTask(TaskExecuteBase):
             user_item.push_log_mode = str(cfg.get("Notify", "PushLogMode") or "汇总")
             self._idx_names[slot] = str(cfg.get("Info", "Name") or "")
         self._push_user_book = {user_item.name: user_item for user_item, _, _ in users}
-
-    async def _prepare_direct_quick_config(self) -> None:
-        """直控+快速配置：任务前把该用户面板字段写入绑定实例槽，任务后恢复。
-
-        复用用户态注入原语（ensure_user_slot 解析/分配绑定槽 → 槽目录备份 →
-        由用户配置字段生成 YAML 写入槽），与 ``_prepare_injection`` 共用
-        ``_injected_slots``/``_slot_users`` 现场与 ``_restore_injection`` 恢复路径
-        （无合成视图：直控裸跑走原生注册表，恢复只还原槽目录）。
-
-        绑定槽缺失时按 zzz-od 固定槽形状建空槽（注入原语自动创建
-        game_account.yml / one_dragon/_group.yml），不建平行模型。
-        写失败（含槽备份失败）异常向上传播即任务失败（S5），不吞异常。
-        """
-
-        used_idxs = collect_used_slot_idxs(exclude_uids={self.cur_user_uid})
-        slot = await ensure_user_slot(
-            self.script_root_path, self.cur_user_config, used_idxs
-        )
-        backup_base = (
-            Path.cwd() / "data" / self.script_info.script_id / "Temp" / "InstanceBackup"
-        )
-        backup_dir = backup_base / f"{slot:02d}"
-        if instance_dir(self.script_root_path, slot).is_dir():
-            backup_instance(self.script_root_path, slot, backup_dir)
-            self._injected_slots.append((slot, backup_dir))
-        else:
-            # 槽目录不存在：以固定槽形状建空槽（注入原语创建配置文件）
-            self._injected_slots.append((slot, None))
-        self._inject_user_config(slot, self.cur_user_config, self._enabled_app_list())
-        self._slot_users[slot] = (self.cur_user_item, self.cur_user_config)
-        self._slot_records_before[slot] = snapshot_run_records(
-            self.script_root_path, slot
-        )
-        logger.info(
-            f"ZZZ-OD 直控快速配置：已把用户 {self.cur_user_item.name} 面板字段写入绑定槽 {slot:02d}"
-        )
 
     def _write_view(self) -> None:
         """（重）写合成注册表视图：仅本脚本注入槽，活跃=首槽。
@@ -722,8 +1142,21 @@ class AutoProxyTask(TaskExecuteBase):
                 if self.cur_user_config.get("Info", "RemainedDay") == 0:
                     self.cur_user_item.status = "跳过"
                     return "用户剩余天数为 0, 跳过该用户"
-        elif find_active_instance(root) is None:
-            return "zzz-od 中没有可运行的实例, 请先在一条龙中创建账号"
+        else:
+            # 直控=原生裸跑零注入，运行前先自愈上次用户模式残留的合成视图
+            # （只含 MAS 槽）：否则下面读到的是视图，会把 MAS 槽当运行目标、
+            # 误报「未配置游戏路径」；无 sidecar 时为 no-op
+            restore_instance_view(root)
+            if not self._direct_run_targets(root):
+                return "zzz-od 中没有可运行的实例, 请先在一条龙中创建账号"
+            # 直控裸跑读原生实例配置，路径缺失时一条龙只会以「未配置游戏路径」
+            # 失败，这里提前给出可读提示并指明实例
+            missing = self._direct_missing_game_paths(root)
+            if missing:
+                return (
+                    f"实例 {'、'.join(missing)} 未配置游戏路径, "
+                    "请在一条龙「账户管理」中设置"
+                )
 
         return "Pass"
 
@@ -805,11 +1238,8 @@ class AutoProxyTask(TaskExecuteBase):
                     for item in list_instances(self.script_root_path)
                     if isinstance(item, dict)
                 }
-                # 直控+快速配置开启：任务前把该用户面板字段（Game/OneDragon）
-                # 复用用户态注入原语写入绑定实例槽（任务结束由既有注入快照
-                # 恢复）；关闭=纯原生裸跑零写入。写失败异常向上传播即任务失败。
-                if user_uses_quick_config(self.cur_user_config):
-                    await self._prepare_direct_quick_config()
+                # 直控=MAS 零注入零干涉（快速配置已封锁，见 ZzzOdUserConfig.load），
+                # 完全尊重 zzz-od 自己的 instance_run / 活跃实例 / 多账号运行设置
                 launcher_args = ["--onedragon"]
             else:
                 if self._is_multi_account():
@@ -844,9 +1274,27 @@ class AutoProxyTask(TaskExecuteBase):
                         "--instance",
                         ",".join(str(slot) for slot, _ in self._injected_slots),
                     ]
+            # 游戏结束后操作：委托一条龙在运行收尾时执行。上游 CLI 只认
+            # --close-game / --shutdown 参数，不读原生 after_done 配置（该
+            # 配置只在一条龙 GUI 内启动运行时生效），故由 MAS 传参；关机
+            # 固定 60 秒，与一条龙 GUI 内启动的口径一致。取值随来源：
+            # 直控=原生 after_done（与直控页/GUI 显示一致），脚本/用户=该
+            # 用户的 MAS 字段（经配置会话双向联动与 GUI 保持一致）。多实例
+            # 切换整轮共用触发者的值。与 MAS 收尾的 CloseOnFinish
+            # （kill_managed_process）相互独立，同时配置会各执行一次，无害。
+            if self.mode == "直控":
+                after_done = read_native_after_done(self.script_root_path)
+            else:
+                after_done = str(
+                    self.cur_user_config.get("OneDragon", "AfterDone") or "关闭游戏"
+                )
+            if after_done == "关闭游戏":
+                launcher_args.append("--close-game")
+            elif after_done == "关机":
+                launcher_args.extend(["--shutdown", "60"])
 
-            # 任务结束后关闭游戏由 MAS 侧执行（见 kill_managed_process），
-            # 不再委托一条龙 --close-game：手动停止调度时 MAS 也能一并关游戏
+            # 任务结束后关闭游戏由 MAS 侧兜底执行（见 kill_managed_process），
+            # 不依赖一条龙 --close-game：手动停止调度时 MAS 也能一并关游戏
 
             # 启动器选择：直控/用户统一按配置——自动=优先上次成功项，原始/集成=固定
             # 对应项（未安装回退可用项）；直控默认「自动」时行为等同原强绑定默认顺序

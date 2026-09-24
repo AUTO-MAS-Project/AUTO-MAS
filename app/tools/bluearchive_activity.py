@@ -122,7 +122,11 @@ def collect_activities(
 
     # 进行中同时有多场时取最早结束的那场，与前端的取值保持一致
     running = sorted(
-        (item for item in picked.values() if item.start_time <= now_seconds < item.end_time),
+        (
+            item
+            for item in picked.values()
+            if item.start_time <= now_seconds < item.end_time
+        ),
         key=lambda item: item.end_time,
     )
     upcoming = sorted(

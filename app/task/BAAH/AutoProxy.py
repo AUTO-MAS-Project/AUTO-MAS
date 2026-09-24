@@ -173,9 +173,7 @@ class AutoProxyTask(TaskExecuteBase):
         self.if_activity_adapt = bool(
             self.cur_user_config.get("Info", "IfActivityAdapt")
         )
-        self.activity_line_type = self.cur_user_config.get(
-            "Info", "ActivityLineType"
-        )
+        self.activity_line_type = self.cur_user_config.get("Info", "ActivityLineType")
 
         default_name = resolve_config_name(
             str(self.cur_user_config.get("Info", "ConfigName"))
@@ -204,7 +202,9 @@ class AutoProxyTask(TaskExecuteBase):
             logger.warning(f"活动配置文件名称 {e}, 本次使用默认配置文件运行")
             return self.effective_config_name
 
-        logger.info(f"碧蓝档案当前有进行中的活动, 使用活动配置文件 {activity_config_name}")
+        logger.info(
+            f"碧蓝档案当前有进行中的活动, 使用活动配置文件 {activity_config_name}"
+        )
         self.effective_config_name = activity_config_name
         return self.effective_config_name
 
@@ -266,11 +266,11 @@ class AutoProxyTask(TaskExecuteBase):
         from .tools.backup_archive import archive_native_backup
 
         try:
-            archive_native_backup(
-                self.config_dir, config_name, str(self.cur_user_uid)
-            )
+            archive_native_backup(self.config_dir, config_name, str(self.cur_user_uid))
         except Exception:
-            logger.opt(exception=True).warning("BAAH 运行前配置归档失败，已跳过（不阻断任务）")
+            logger.opt(exception=True).warning(
+                "BAAH 运行前配置归档失败，已跳过（不阻断任务）"
+            )
 
     async def main_task(self):
         """自动代理模式主逻辑"""

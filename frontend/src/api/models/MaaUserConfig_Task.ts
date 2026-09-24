@@ -32,13 +32,13 @@ export type MaaUserConfig_Task = {
      */
     IfSwitchTheme?: (boolean | null);
     /**
-     * 生息演算
-     */
-    IfReclamation?: (boolean | null);
-    /**
      * 库存保持
      */
     IfDepotMaintain?: (boolean | null);
+    /**
+     * 库存保持计划 JSON
+     */
+    DepotMaintainPlans?: (string | null);
     /**
      * 绿票商店
      */
@@ -55,10 +55,6 @@ export type MaaUserConfig_Task = {
      * 活动关优先任务吃理智药数量
      */
     ActivityMedicineNumb?: (number | null);
-    /**
-     * 库存保持计划 JSON
-     */
-    DepotMaintainPlans?: (string | null);
     /**
      * 干员养成
      */

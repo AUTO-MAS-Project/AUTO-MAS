@@ -174,6 +174,7 @@ async def _wait_bgi_exit(
         await asyncio.sleep(interval)
     return remaining
 
+
 # BetterGI 管理的原神游戏进程名（不含 .exe），与 BetterGI 源码
 # TaskContext.GetGenshinGameProcessNameList() 保持一致；任务结束后按此顺序逐一尝试关闭。
 _BGI_GAME_PROCESS_NAMES: tuple[str, ...] = (
@@ -490,7 +491,9 @@ class AutoProxyTask(TaskExecuteBase):
             if str(q.get("kind", "")) in CUSTOM_EXEC_KINDS
             and str(q.get("name", "")).strip()
         ]
-        self.custom_exec_enabled = self.use_execution_layer and bool(self.custom_exec_items)
+        self.custom_exec_enabled = self.use_execution_layer and bool(
+            self.custom_exec_items
+        )
         # 路径 B 执行层开关与 Plan：UseExecutionLayer 开且 Plan 含启用的战斗 4 项时进入 plan 模式。
         # 只有「Plan 中配过该组」且「队列中该条目启用」的战斗组才由执行层接管，其余战斗组
         # 留在一条龙副本（_write_one_dragon_config 只剔除实际接管的组，避免重复执行）。
@@ -673,7 +676,9 @@ class AutoProxyTask(TaskExecuteBase):
                     CUSTOM_EXEC_KINDS,
                 ),
             )
-            self.exec_group_names = [str(p.stem) for p in self._materialized_exec_groups]
+            self.exec_group_names = [
+                str(p.stem) for p in self._materialized_exec_groups
+            ]
         # 通用战斗队伍/策略先补写进全局 config.json（秘境/地脉花/幽境危战读取段）；
         # 优先级：右栏配置 > 顶部通用（通用仅兜底）
         one_dragon.apply_global_battle_team(self.script_root_path, party_name)
@@ -793,7 +798,9 @@ class AutoProxyTask(TaskExecuteBase):
             )
             return
         one_dragon.cleanup_leftover_mas_groups(
-            self.script_root_path, self.script_info.script_id, self.cur_user_item.user_id
+            self.script_root_path,
+            self.script_info.script_id,
+            self.cur_user_item.user_id,
         )
         # 上一轮被强杀时残留的执行层「段」组一并清理，避免常驻 BGI 配置组列表
         one_dragon_bridge.cleanup_leftover_execution_groups(
@@ -899,7 +906,9 @@ class AutoProxyTask(TaskExecuteBase):
             return []
         names = one_dragon.enabled_one_dragon_task_names(cfg)
         # 留痕：分步表任务名对不上时，先看这行就知道是配置读不到还是顺序表与本次运行不符
-        logger.info(f"用户 {self.cur_user_item.name} 原生一条龙任务名（按配置顺序）: {names}")
+        logger.info(
+            f"用户 {self.cur_user_item.name} 原生一条龙任务名（按配置顺序）: {names}"
+        )
         return names
 
     async def main_task(self):
@@ -946,9 +955,7 @@ class AutoProxyTask(TaskExecuteBase):
             if exec_ok:
                 # 执行层已完成，原生一条龙无活可干：整体视为成功，直接收尾
                 self.run_book = True
-                self.script_info.log = (
-                    "执行层已完成；原生一条龙无启用任务，跳过阶段2"
-                )
+                self.script_info.log = "执行层已完成；原生一条龙无启用任务，跳过阶段2"
             else:
                 self.script_info.log = "一条龙无启用任务，跳过"
             logger.info(
@@ -996,7 +1003,9 @@ class AutoProxyTask(TaskExecuteBase):
                 logger.error(
                     f"用户 {self.cur_user_item.name} 无法启动 BetterGI：{_BGI_UNKILLABLE_HINT}"
                 )
-                await self._push_dispatch_log(f"无法启动 BetterGI：{_BGI_UNKILLABLE_HINT}")
+                await self._push_dispatch_log(
+                    f"无法启动 BetterGI：{_BGI_UNKILLABLE_HINT}"
+                )
                 return
 
             await self._push_dispatch_log(
@@ -1026,7 +1035,9 @@ class AutoProxyTask(TaskExecuteBase):
             # 启动后若一个 BetterGI 都不剩（参数被旧单实例吞掉 / 进程秒退），直接置失败并唤醒
             # 等待，避免 wait_event 永远等不到日志行而无限卡住（2026-09-15 实机排障）。
             if not await asyncio.to_thread(find_pids_by_name, _BGI_TRACK_PROCESS_NAME):
-                self.cur_user_log.status = "BetterGI 启动后立即退出（可能有旧实例在运行）"
+                self.cur_user_log.status = (
+                    "BetterGI 启动后立即退出（可能有旧实例在运行）"
+                )
                 self.wait_event.set()
 
             self.wait_event.clear()
@@ -1113,7 +1124,9 @@ class AutoProxyTask(TaskExecuteBase):
         if not await self.kill_managed_process():
             failure_reason = _BGI_UNKILLABLE_HINT
             exec_log.status = failure_reason
-            logger.error(f"用户 {self.cur_user_item.name} 执行层未启动：{failure_reason}")
+            logger.error(
+                f"用户 {self.cur_user_item.name} 执行层未启动：{failure_reason}"
+            )
             await self._push_dispatch_log(f"执行层未启动：{failure_reason}")
             return False
 
@@ -1194,33 +1207,36 @@ class AutoProxyTask(TaskExecuteBase):
                 self._resolve_log_file_path, datetime.now()
             )
             # 空闲超时循环：日志每次输出即续期，仅当日志静默超过 idle 阈值
-            #（BGI 卡死）才终止，不设总时长上限。旧实现为固定 900s 墙钟，
+            # （BGI 卡死）才终止，不设总时长上限。旧实现为固定 900s 墙钟，
             # 多实例执行层总耗时 20+ 分钟会被误杀（2026-09-08 实机排障：
             # 7 步在 14 分钟处被砍，末位步骤未执行）。
             while not done_event.is_set():
-                    try:
-                        await asyncio.wait_for(done_event.wait(), timeout=1.0)
-                    except asyncio.TimeoutError:
-                        pass
-                    # 已启动却查不到被跟踪的进程：可能是参数被旧单实例吞掉（新进程秒退），
-                    # 也可能是 BGI 自行提权重启导致 PID 变了——按进程名复核，确实一个都不剩
-                    # 才判失败，避免把「自重启」误判成退出。
-                    if result["started"] and not await self._bgi_alive():
-                        failure_reason = "执行层进程在结束标记前退出"
-                        done_event.set()
-                        break
-                    # 仅按空闲阈值判定卡死（日志持续输出即一直等，不设总时长上限）
-                    if time.monotonic() - last_activity >= _BGI_PLAN_COMBAT_IDLE_TIMEOUT_SECONDS:
-                        result["success"] = False
-                        failure_reason = (
-                            "执行层空闲超时"
-                            f"（{_BGI_PLAN_COMBAT_IDLE_TIMEOUT_SECONDS}s 无日志输出）"
-                        )
-                        logger.warning(
-                            f"用户 {self.cur_user_item.name} 执行层空闲超时"
-                            f"（{_BGI_PLAN_COMBAT_IDLE_TIMEOUT_SECONDS}s 无日志输出）"
-                        )
-                        break
+                try:
+                    await asyncio.wait_for(done_event.wait(), timeout=1.0)
+                except asyncio.TimeoutError:
+                    pass
+                # 已启动却查不到被跟踪的进程：可能是参数被旧单实例吞掉（新进程秒退），
+                # 也可能是 BGI 自行提权重启导致 PID 变了——按进程名复核，确实一个都不剩
+                # 才判失败，避免把「自重启」误判成退出。
+                if result["started"] and not await self._bgi_alive():
+                    failure_reason = "执行层进程在结束标记前退出"
+                    done_event.set()
+                    break
+                # 仅按空闲阈值判定卡死（日志持续输出即一直等，不设总时长上限）
+                if (
+                    time.monotonic() - last_activity
+                    >= _BGI_PLAN_COMBAT_IDLE_TIMEOUT_SECONDS
+                ):
+                    result["success"] = False
+                    failure_reason = (
+                        "执行层空闲超时"
+                        f"（{_BGI_PLAN_COMBAT_IDLE_TIMEOUT_SECONDS}s 无日志输出）"
+                    )
+                    logger.warning(
+                        f"用户 {self.cur_user_item.name} 执行层空闲超时"
+                        f"（{_BGI_PLAN_COMBAT_IDLE_TIMEOUT_SECONDS}s 无日志输出）"
+                    )
+                    break
         except Exception as e:
             logger.opt(exception=True).warning(f"执行层执行异常: {e}")
             result["success"] = False
@@ -1300,7 +1316,9 @@ class AutoProxyTask(TaskExecuteBase):
         # 1. 订阅脚本仓库（BetterGI 自行拉取/更新切换账号脚本）+ 生成配置组
         #    首次使用/误删导致脚本本地缺失时，临时开启「运行前同步更新」，
         #    让 BGI 在跑切号组前先把脚本同步拉下，避免「第一次启动切号必失败」。
-        script_missing = not account_switch.switch_script_dir(self.script_root_path).is_dir()
+        script_missing = not account_switch.switch_script_dir(
+            self.script_root_path
+        ).is_dir()
         try:
             script_present = account_switch.ensure_switch_subscription(
                 self.script_root_path, sync_update=script_missing
@@ -1571,7 +1589,9 @@ class AutoProxyTask(TaskExecuteBase):
         # 供解析器按序号还原（长度对不上时解析器自行退回日志推断，见 one_dragon_report）。
         native_task_names = self._native_one_dragon_task_names()
 
-        def _phase_steps(parser: Callable[[str], list[dict] | None]) -> list[dict] | None:
+        def _phase_steps(
+            parser: Callable[[str], list[dict] | None],
+        ) -> list[dict] | None:
             """取某一相的步骤：成功轮优先，否则最近一轮能解析出步骤的轮次。"""
             fallback: list[dict] | None = None
             for item in reversed(runs):
@@ -1767,7 +1787,9 @@ class AutoProxyTask(TaskExecuteBase):
         for name in _BGI_GAME_PROCESS_NAMES:
             image = f"{name}.exe"
             try:
-                result = await ProcessRunner.run_process("taskkill", "/IM", image, "/F", "/T")
+                result = await ProcessRunner.run_process(
+                    "taskkill", "/IM", image, "/F", "/T"
+                )
                 if result.returncode != 0:
                     reason = (result.stderr or result.stdout or "").strip()
                     if "没有找到进程" in reason or "not found" in reason.lower():

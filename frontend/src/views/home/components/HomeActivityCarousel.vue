@@ -11,20 +11,24 @@
     </a-card>
 
     <template v-else>
-      <!-- 没做 tablist 的方向键漫游焦点，就别用 tab 语义许下做不到的承诺 -->
-      <div v-if="items.length > 1" class="banner-switcher">
-        <button
-          v-for="(item, index) in items"
-          :key="item.key"
-          type="button"
-          class="switcher-chip"
-          :class="{ 'is-active': index === activeIndex }"
-          :style="index === activeIndex ? activeChipStyle(item) : undefined"
-          :aria-current="index === activeIndex ? 'true' : undefined"
-          @click="select(index)"
-        >
-          {{ item.title }}
-        </button>
+      <div class="activity-sticky-header">
+        <!-- 没做 tablist 的方向键漫游焦点，就别用 tab 语义许下做不到的承诺 -->
+        <div v-if="items.length > 1" class="banner-switcher">
+          <button
+            v-for="(item, index) in items"
+            :key="item.key"
+            type="button"
+            class="switcher-chip"
+            :class="{ 'is-active': index === activeIndex }"
+            :style="index === activeIndex ? activeChipStyle(item) : undefined"
+            :aria-current="index === activeIndex ? 'true' : undefined"
+            @click="select(index)"
+          >
+            {{ item.title }}
+          </button>
+        </div>
+
+        <slot v-if="activeKey" name="community" :module-key="activeKey" />
       </div>
 
       <div v-if="activeItem && !isCompact" class="banner-viewport">
@@ -291,6 +295,16 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   gap: 12px;
+}
+
+.activity-sticky-header {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: var(--ant-color-bg-layout);
 }
 
 .banner-viewport {
