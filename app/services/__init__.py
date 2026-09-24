@@ -20,10 +20,9 @@
 #   Contact: DLmaster_361@163.com
 
 
-from .config_center import ConfigCenter, ConfigCenterError
 from .matomo import Matomo
 from .notification import Notify
 from .system import System
 from .update import Updater
 
-__all__ = ["ConfigCenter", "ConfigCenterError", "Matomo", "Notify", "System", "Updater"]
+__all__ = ["Matomo", "Notify", "System", "Updater"]

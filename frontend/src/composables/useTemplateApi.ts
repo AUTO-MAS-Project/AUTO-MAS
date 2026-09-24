@@ -1,97 +1,85 @@
 import { ref } from 'vue'
 import { message } from 'ant-design-vue'
-import { Service, type ShareTemplateItem } from '@/api'
+import { Service } from '@/api'
 
-export type { ShareTemplateItem }
-
-export interface TemplateQuery {
-  page: number
-  pageSize: number
-  keyword: string
+export interface WebConfigTemplate {
+  configName: string
+  description: string
+  author: string
+  createTime: string
+  downloadUrl: string
 }
 
-export interface TemplatePage {
-  items: ShareTemplateItem[]
-  page: number
-  pageSize: number
-  total: number
-  hasNext: boolean
+interface WebConfigResponse {
+  code: number
+  status: string
+  message: string
+  data: {
+    WebConfig: WebConfigTemplate[]
+  }
 }
 
-export const TEMPLATE_PAGE_SIZE = 10
-
-const emptyPage = (query: TemplateQuery): TemplatePage => ({
-  items: [],
-  page: query.page,
-  pageSize: query.pageSize,
-  total: 0,
-  hasNext: false,
-})
+const isWebConfigResponseData = (value: unknown): value is WebConfigResponse['data'] =>
+  typeof value === 'object' &&
+  value !== null &&
+  Array.isArray((value as Partial<WebConfigResponse['data']>).WebConfig)
 
 export function useTemplateApi() {
   const loading = ref(false)
   const error = ref<string | null>(null)
 
-  // 拉取配置中心已审核发布的通用脚本配置；搜索与翻页都在服务端完成
-  const getShareTemplates = async (query: TemplateQuery): Promise<TemplatePage> => {
+  // 获取Web配置模板列表
+  const getWebConfigTemplates = async (): Promise<WebConfigTemplate[]> => {
     loading.value = true
     error.value = null
 
     try {
-      const response = await Service.listShareTemplatesApiShareTemplatesPost({
-        page: query.page,
-        pageSize: query.pageSize,
-        keyword: query.keyword || null,
-      })
+      const response = await Service.getWebConfigApiInfoWebconfigPost()
 
       if (response.code !== 200) {
         const errorMsg = response.message || '获取模板列表失败'
-        error.value = errorMsg
-        return emptyPage(query)
+        message.error(errorMsg)
+        throw new Error(errorMsg)
       }
 
-      return {
-        items: response.items ?? [],
-        page: response.page ?? query.page,
-        pageSize: response.pageSize ?? query.pageSize,
-        total: response.total ?? 0,
-        hasNext: response.hasNext ?? false,
-      }
+      // 直接返回API响应中的WebConfig数组
+      return isWebConfigResponseData(response.data) ? response.data.WebConfig : []
     } catch (err) {
-      error.value = err instanceof Error ? err.message : '获取模板列表失败'
-      return emptyPage(query)
+      const errorMsg = err instanceof Error ? err.message : '获取模板列表失败'
+      error.value = errorMsg
+      if (err instanceof Error && !err.message.includes('HTTP error')) {
+        message.error(errorMsg)
+      }
+      return []
     } finally {
       loading.value = false
     }
   }
 
-  // 按配置中心的结构化标识导入配置，渲染进程不再提交下载地址
-  const importScriptFromTemplate = async (
-    scriptId: string,
-    template: ShareTemplateItem
-  ): Promise<boolean> => {
+  // 从Web导入脚本配置
+  const importScriptFromWeb = async (scriptId: string, url: string): Promise<boolean> => {
     loading.value = true
     error.value = null
 
     try {
       const response = await Service.importScriptFromWebApiScriptsImportWebPost({
         scriptId,
-        configKey: template.configKey,
-        versionNo: template.publishedVersionNo ?? null,
+        url,
       })
 
       if (response.code !== 200) {
         const errorMsg = response.message || '导入配置失败'
-        error.value = errorMsg
         message.error(errorMsg)
-        return false
+        throw new Error(errorMsg)
       }
 
       return true
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : '导入配置失败'
       error.value = errorMsg
-      message.error(errorMsg)
+      if (err instanceof Error && !err.message.includes('HTTP error')) {
+        message.error(errorMsg)
+      }
       return false
     } finally {
       loading.value = false
@@ -101,7 +89,7 @@ export function useTemplateApi() {
   return {
     loading,
     error,
-    getShareTemplates,
-    importScriptFromTemplate,
+    getWebConfigTemplates,
+    importScriptFromWeb,
   }
 }

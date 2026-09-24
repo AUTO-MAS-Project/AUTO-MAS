@@ -119,12 +119,10 @@
                 v-model:value="templateKeyword"
                 allow-clear
                 :placeholder="t('scripts.create.templateSearch')"
-                @update:value="scheduleTemplateSearch"
-                @press-enter="requestTemplates(1)"
               >
                 <template #prefix><SearchOutlined /></template>
               </a-input>
-              <a-button :loading="templateLoading" @click="requestTemplates(templatePage)">{{
+              <a-button :loading="templateLoading" @click="emit('request-templates')">{{
                 t('scripts.create.reload')
               }}</a-button>
             </div>
@@ -136,7 +134,7 @@
               class="template-alert"
             >
               <template #action>
-                <a-button size="small" @click="requestTemplates(templatePage)">{{
+                <a-button size="small" @click="emit('request-templates')">{{
                   t('scripts.create.retry')
                 }}</a-button>
               </template>
@@ -144,46 +142,42 @@
             <div v-if="templateLoading" class="template-loading-state">
               <a-spin size="large" :tip="t('scripts.create.templateLoading')" />
             </div>
-            <template v-else-if="templates.length">
-              <a-radio-group v-model:value="selectedTemplateKey" class="entity-list template-list">
-                <label
-                  v-for="template in templates"
-                  :key="template.configKey"
-                  :class="[
-                    'entity-row template-row',
-                    { selected: selectedTemplateKey === template.configKey },
-                  ]"
-                >
-                  <span class="choice-copy">
-                    <span class="choice-title">{{ template.displayName }}</span>
-                    <span class="template-meta">
-                      <span
-                        ><UserOutlined />
-                        {{ template.ownerUsername || t('scripts.template.unknownAuthor') }}</span
-                      >
-                      <span
-                        ><ClockCircleOutlined /> {{ formatPublishedAt(template.publishedAt) }}</span
-                      >
-                    </span>
-                    <span class="template-description">{{
-                      template.description || t('scripts.noDescription')
-                    }}</span>
+            <a-radio-group
+              v-else-if="filteredTemplates.length"
+              v-model:value="selectedTemplateUrl"
+              class="entity-list template-list"
+            >
+              <label
+                v-for="template in filteredTemplates"
+                :key="template.downloadUrl"
+                :class="[
+                  'entity-row template-row',
+                  { selected: selectedTemplateUrl === template.downloadUrl },
+                ]"
+              >
+                <span class="choice-copy">
+                  <span class="choice-title">{{ template.configName }}</span>
+                  <span class="template-meta">
+                    <span
+                      ><UserOutlined />
+                      {{ template.author || t('scripts.template.unknownAuthor') }}</span
+                    >
+                    <span
+                      ><ClockCircleOutlined />
+                      {{ template.createTime || t('scripts.template.unknownTime') }}</span
+                    >
                   </span>
-                  <a-radio :value="template.configKey" />
-                </label>
-              </a-radio-group>
-              <div v-if="templateTotal > templatePageSize" class="template-pagination">
-                <a-pagination
-                  size="small"
-                  :current="templatePage"
-                  :page-size="templatePageSize"
-                  :total="templateTotal"
-                  :show-size-changer="false"
-                  :disabled="templateLoading"
-                  @change="requestTemplates"
-                />
-              </div>
-            </template>
+                  <!-- eslint-disable vue/no-v-html -- MarkdownIt has raw HTML disabled, so template descriptions are escaped. -->
+                  <span
+                    class="template-description"
+                    @click="handleTemplateDescriptionClick"
+                    v-html="parseMarkdown(template.description)"
+                  ></span>
+                  <!-- eslint-enable vue/no-v-html -->
+                </span>
+                <a-radio :value="template.downloadUrl" />
+              </label>
+            </a-radio-group>
             <a-empty
               v-else
               :description="
@@ -192,7 +186,7 @@
                   : t('scripts.create.noTemplates')
               "
             >
-              <a-button v-if="templateKeyword" @click="clearTemplateKeyword">{{
+              <a-button v-if="templateKeyword" @click="templateKeyword = ''">{{
                 t('scripts.clearSearch')
               }}</a-button>
               <a-button v-else @click="chooseCustomConfig">{{
@@ -221,7 +215,7 @@
               {{
                 selectedConfigMode === 'custom'
                   ? t('scripts.create.custom')
-                  : t('scripts.create.sourceTemplate', { name: selectedTemplate?.displayName })
+                  : t('scripts.create.sourceTemplate', { name: selectedTemplate?.configName })
               }}
             </a-descriptions-item>
           </a-descriptions>
@@ -246,7 +240,7 @@
 
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
-import { computed, defineComponent, h, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, defineComponent, h, ref, watch } from 'vue'
 import {
   ArrowLeftOutlined,
   ClockCircleOutlined,
@@ -255,9 +249,10 @@ import {
   SettingOutlined,
   UserOutlined,
 } from '@ant-design/icons-vue'
+import MarkdownIt from 'markdown-it'
 import type { ScriptType } from '@/types/script'
-import type { ShareTemplateItem } from '@/composables/useTemplateApi'
-import { formatBackendDateTime } from '@/utils/dateDisplay'
+import type { WebConfigTemplate } from '@/composables/useTemplateApi'
+import { openExternalUrl } from '@/utils/openExternal'
 import {
   buildCreateRequest,
   buildCreateSteps,
@@ -267,7 +262,6 @@ import {
   type ConfigMode,
   type CreateStepKey,
   type ScriptCreateRequest,
-  type TemplateRequest,
 } from './scriptCreateFlow'
 
 const { t } = useI18n()
@@ -282,32 +276,26 @@ const StepHeading = defineComponent({
 
 const props = defineProps<{
   open: boolean
-  templates: ShareTemplateItem[]
+  templates: WebConfigTemplate[]
   submitting: boolean
   templateLoading: boolean
   templateError: string | null
-  templatePage: number
-  templatePageSize: number
-  templateTotal: number
 }>()
 
 const emit = defineEmits<{
   'update:open': [open: boolean]
-  'request-templates': [query: TemplateRequest]
+  'request-templates': []
   submit: [request: ScriptCreateRequest]
 }>()
 
-// 关键字输入后的静默期，避免每敲一个字就打一次配置中心
-const TEMPLATE_SEARCH_DEBOUNCE = 400
-
+const md = new MarkdownIt({ html: false, linkify: true, typographer: true })
 const currentStep = ref<CreateStepKey>('type')
 const selectedType = ref<ScriptType>('MAA')
 const selectedConfigMode = ref<ConfigMode>('template')
-const selectedTemplateKey = ref<string | null>(null)
+const selectedTemplateUrl = ref<string | null>(null)
 const configView = ref<'choice' | 'templates'>('choice')
 const typeKeyword = ref('')
 const templateKeyword = ref('')
-let searchTimer: ReturnType<typeof setTimeout> | null = null
 
 const steps = computed(() => buildCreateSteps({ type: selectedType.value }))
 const currentStepIndex = computed(() =>
@@ -333,13 +321,22 @@ const filteredTypes = computed(() =>
   filterScriptTypeOptions(typeOptions.value, typeKeyword.value, t)
 )
 const typeSections = computed(() => splitScriptTypeOptions(filteredTypes.value))
+const filteredTemplates = computed(() => {
+  const keyword = templateKeyword.value.trim().toLowerCase()
+  return props.templates.filter(template =>
+    [template.configName, template.author, template.description]
+      .join(' ')
+      .toLowerCase()
+      .includes(keyword)
+  )
+})
 const selectedTemplate = computed(() =>
-  props.templates.find(template => template.configKey === selectedTemplateKey.value)
+  props.templates.find(template => template.downloadUrl === selectedTemplateUrl.value)
 )
 const nextDisabled = computed(() => {
   if (props.submitting) return true
   if (currentStep.value === 'config' && configView.value === 'templates') {
-    return !selectedTemplateKey.value
+    return !selectedTemplateUrl.value
   }
   return false
 })
@@ -364,44 +361,14 @@ watch(
 )
 
 const resetDialog = () => {
-  cancelScheduledSearch()
   currentStep.value = 'type'
   selectedType.value = 'MAA'
   selectedConfigMode.value = 'template'
-  selectedTemplateKey.value = null
+  selectedTemplateUrl.value = null
   configView.value = 'choice'
   typeKeyword.value = ''
   templateKeyword.value = ''
 }
-
-const cancelScheduledSearch = () => {
-  if (searchTimer !== null) {
-    clearTimeout(searchTimer)
-    searchTimer = null
-  }
-}
-
-const requestTemplates = (page: number) => {
-  cancelScheduledSearch()
-  selectedTemplateKey.value = null
-  emit('request-templates', { page, keyword: templateKeyword.value.trim() })
-}
-
-const scheduleTemplateSearch = () => {
-  cancelScheduledSearch()
-  searchTimer = setTimeout(() => requestTemplates(1), TEMPLATE_SEARCH_DEBOUNCE)
-}
-
-const clearTemplateKeyword = () => {
-  templateKeyword.value = ''
-  requestTemplates(1)
-}
-
-// 发布时间来自配置中心，按本机时区展示
-const formatPublishedAt = (publishedAt: string | undefined) =>
-  publishedAt ? formatBackendDateTime(publishedAt) : t('scripts.template.unknownTime')
-
-onBeforeUnmount(cancelScheduledSearch)
 
 const getTypeOption = (type: ScriptType) =>
   SCRIPT_TYPE_OPTIONS.find(option => option.value === type) ?? SCRIPT_TYPE_OPTIONS[0]
@@ -428,10 +395,10 @@ const handleNext = () => {
   if (currentStep.value === 'config') {
     if (configView.value === 'choice' && selectedConfigMode.value === 'template') {
       configView.value = 'templates'
-      requestTemplates(1)
+      emit('request-templates')
       return
     }
-    if (selectedConfigMode.value === 'custom' || selectedTemplateKey.value) submitCurrentSelection()
+    if (selectedConfigMode.value === 'custom' || selectedTemplateUrl.value) submitCurrentSelection()
     return
   }
 }
@@ -456,6 +423,16 @@ const clearTypeFilters = () => {
 const chooseCustomConfig = () => {
   selectedConfigMode.value = 'custom'
   configView.value = 'choice'
+}
+
+const parseMarkdown = (text: string) => md.render(text || t('scripts.noDescription'))
+
+const handleTemplateDescriptionClick = (event: MouseEvent) => {
+  const link = (event.target as HTMLElement | null)?.closest('a')
+  if (!link) return
+  event.preventDefault()
+  const url = link.getAttribute('href')
+  if (url) openExternalUrl(url)
 }
 </script>
 
@@ -669,16 +646,6 @@ const chooseCustomConfig = () => {
 
 .template-alert {
   margin-bottom: 12px;
-}
-
-.template-pagination {
-  display: flex;
-  justify-content: flex-end;
-  margin-top: 12px;
-}
-
-.template-description {
-  white-space: pre-line;
 }
 
 .template-loading-state {
