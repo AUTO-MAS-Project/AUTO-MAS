@@ -24,7 +24,7 @@ import calendar
 import json
 import uuid
 from copy import deepcopy
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone, tzinfo
 from pathlib import Path
 from typing import Any, Callable
 
@@ -52,6 +52,8 @@ from app.utils.constants import (
     RESOURCE_STAGE_INFO,
     STARRAIL_STAGE_BOOK,
     UTC4,
+    game_now,
+    get_game_day_tz,
 )
 from app.utils.io import read_file
 
@@ -820,11 +822,11 @@ def _tag_last_status(status: object) -> str:
     return "未运行" if text in ("", "未知") else text
 
 
-def _tag_proxy(config: ConfigBase, label: str = "日常") -> dict:
-    """上次代理标签（使用东4区时间），label 区分日常/任务文案。"""
+def _tag_proxy(config: ConfigBase, label: str = "日常", tz: tzinfo = UTC4) -> dict:
+    """上次代理标签（默认使用东4区时间，tz 为游戏日时区），label 区分日常/任务文案。"""
     if (
         datetime.strptime(config.get("Data", "LastProxyDate"), "%Y-%m-%d").date()
-        == datetime.now(tz=UTC4).date()
+        == datetime.now(tz=tz).date()
     ):
         return {
             "text": f"{label}：已代理{config.get('Data', 'ProxyTimes')}次",
@@ -1144,8 +1146,8 @@ class MaaUserConfig(ConfigBase):
         """生成用户标签列表，返回JSON字符串格式的TagItem列表"""
         tags = []
 
-        # 日常代理标签（使用东4区时间）
-        tags.append(_tag_proxy(self))
+        # 日常代理标签（按区服的游戏日时区）
+        tags.append(_tag_proxy(self, tz=get_game_day_tz(self.get("Info", "Server"))))
 
         # 剩余天数标签
         tags.append(_tag_remained_days(self))
@@ -1179,7 +1181,9 @@ class MaaUserConfig(ConfigBase):
             if isinstance(plan, MaaPlanConfig):
                 plan_data = {
                     stage_key: self.get_stage_zh(
-                        plan.get_current_info(stage_key).getValue()
+                        plan.get_current_info(
+                            stage_key, server=self.get("Info", "Server")
+                        ).getValue()
                     )
                     for stage_key in MAA_STAGE_KEY[2:]
                 }
@@ -3097,14 +3101,14 @@ class MaaPlanConfig(ConfigBase):
 
         super().__init__()
 
-    def get_current_info(self, name: str) -> ConfigItem:
-        """获取当前的计划表配置项"""
+    def get_current_info(self, name: str, server: str | None = None) -> ConfigItem:
+        """获取当前的计划表配置项，周模式按 server 区服的游戏日取当天配置"""
 
         if self.get("Info", "Mode") == "ALL":
             return self.config_item_dict["ALL"][name]
 
         elif self.get("Info", "Mode") == "Weekly":
-            today = datetime.now(tz=UTC4).strftime("%A")
+            today = game_now(server).strftime("%A")
 
             if today in self.config_item_dict:
                 return self.config_item_dict[today][name]

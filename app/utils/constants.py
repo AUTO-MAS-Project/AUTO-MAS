@@ -190,6 +190,34 @@ ARKNIGHTS_PACKAGE_NAME = {
 }
 """明日方舟包名映射表"""
 
+ARKNIGHTS_GAME_DAY_TZ = {
+    "Official": UTC4,
+    "Bilibili": UTC4,
+    "txwy": UTC4,
+    "YoStarEN": timezone(timedelta(hours=-11)),
+    "YoStarJP": timezone(timedelta(hours=5)),
+    "YoStarKR": timezone(timedelta(hours=5)),
+}
+"""明日方舟各区服的游戏日时区：服务器当地 04:00 换日，即服务器时区减 4 小时
+
+来源 MAA `src/MaaWpfGui/Extensions/DateTimeExtension.cs`：`_clientTypeTimezone`
+中 Official / Bilibili / txwy 为 UTC+8，YoStarEN 为 UTC-7（固定偏移，不随夏令时），
+YoStarJP / YoStarKR 为 UTC+9；`YjDayStartHour = 4`。
+"""
+
+
+def get_game_day_tz(server: str | None) -> timezone:
+    """按明日方舟区服取游戏日时区，未知或空区服回落到东4区。"""
+
+    return ARKNIGHTS_GAME_DAY_TZ.get(server or "", UTC4)
+
+
+def game_now(server: str | None) -> datetime:
+    """按明日方舟区服的游戏日时区取当前时间，其日期即当前游戏日。"""
+
+    return datetime.now(tz=get_game_day_tz(server))
+
+
 ARKNIGHTS_VERSION_API_SERVER = {
     "Official": "official",
     "Bilibili": "b",
