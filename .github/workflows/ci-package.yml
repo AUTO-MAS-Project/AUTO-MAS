@@ -57,24 +57,14 @@ jobs:
           Compress-Archive -Path 'frontend/dist/win-unpacked/*' `
             -DestinationPath $env:PORTABLE_NAME -Force
 
-      - name: 构建安装包
-        uses: Minionguyjpro/Inno-Setup-Action@v1.2.7
-        env:
-          VERSION_TAG: ${{ steps.metadata.outputs.version_tag }}
-        with:
-          path: res/packaging/AUTO-MAS.iss
-          options: /q
-
       - name: 收集构建产物
         env:
           PORTABLE_NAME: AUTO-MAS-${{ steps.metadata.outputs.version_tag }}-${{ steps.metadata.outputs.short_sha }}-x64.zip
-          SETUP_NAME: AUTO-MAS-Setup-${{ steps.metadata.outputs.version_tag }}-${{ steps.metadata.outputs.short_sha }}.exe
         shell: pwsh
         run: |
           $artifactDir = Join-Path $env:GITHUB_WORKSPACE 'dist/ci-artifacts'
           New-Item -ItemType Directory -Force -Path $artifactDir | Out-Null
           Move-Item -LiteralPath $env:PORTABLE_NAME -Destination $artifactDir
-          Move-Item -LiteralPath 'AUTO-MAS-Setup.exe' -Destination (Join-Path $artifactDir $env:SETUP_NAME)
 
       - name: 上传构建产物
         uses: actions/upload-artifact@v7.0.1
