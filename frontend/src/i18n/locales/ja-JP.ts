@@ -752,6 +752,7 @@ export default {
     failure: '失敗時',
     stringSplittingGuide: '文字列分割のガイド',
     done: '完了',
+    createFirstUser: '最初のユーザーを作成！',
     wutheringWavesWillBe:
       '選択したサーバーで鳴潮の更新を確認・実行します。数 GB のダウンロードが発生する場合があるため、ゲームが起動していないことを確認してください',
     turnAutomaticRelicSalvage:
