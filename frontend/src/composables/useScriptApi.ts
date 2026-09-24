@@ -258,10 +258,6 @@ export function useScriptApi() {
                           maaUserData.Task?.IfSwitchTheme !== undefined
                             ? maaUserData.Task.IfSwitchTheme
                             : false,
-                        IfReclamation:
-                          maaUserData.Task?.IfReclamation !== undefined
-                            ? maaUserData.Task.IfReclamation
-                            : false,
                         IfDepotMaintain:
                           maaUserData.Task?.IfDepotMaintain !== undefined
                             ? maaUserData.Task.IfDepotMaintain
@@ -278,6 +274,10 @@ export function useScriptApi() {
                           maaUserData.Task?.ActivityMedicineNumb !== undefined
                             ? maaUserData.Task.ActivityMedicineNumb
                             : (maaUserData.Info?.MedicineNumb ?? 0),
+                        DepotMaintainPlans:
+                          maaUserData.Task?.DepotMaintainPlans !== undefined
+                            ? maaUserData.Task.DepotMaintainPlans
+                            : '[]',
                       },
                       Notify: {
                         Enabled:

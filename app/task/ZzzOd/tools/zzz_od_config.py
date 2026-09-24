@@ -233,15 +233,51 @@ def write_instance_run(root: Path, value: str) -> None:
         write_file(_one_dragon_file(root), data)
 
 
-def find_free_instance_idx(root: Path, used_idxs: set[int] | None = None) -> int:
-    """返回最小空闲实例 idx。
+MAS_SLOT_BASE = 1001
+"""MAS 用户槽的起始槽号（``config/1001`` 起）。
+
+一条龙的「新增实例」（``create_new_instance``）只在自己的注册表里找最小空号，
+**不扫盘上的 ``config/NN``**；而 MAS 槽刻意不进原生注册表（只在运行/会话窗口
+以合成视图出现），所以低号段随时可能被一条龙抢走并覆盖。把 MAS 槽固定在远高于
+任何实际原生实例数的高位段，一条龙的升序找号就够不到它们，低号段整体交还给
+一条龙。
+
+直控页新建的**原生**实例仍走 :func:`find_free_instance_idx` 的默认起点 1，与
+一条龙自己新增实例的口径一致（它在注册表里，不会被抢）。
+"""
+
+MAS_SLOT_MAX = 9999
+"""MAS 用户槽的槽号上限（与用户配置 ``Info.SlotIdx`` 的 ``RangeValidator`` 一致）。
+
+越过上限的号会与绑定号校验范围脱节：``SlotIdx`` 被静默夹到上限、槽目录名却是
+原值，读写错位。回收池恢复的 ``targetSlot`` 同样受此约束。
+"""
+
+
+def find_free_instance_idx(
+    root: Path,
+    used_idxs: set[int] | None = None,
+    *,
+    base: int = 1,
+    limit: int | None = None,
+) -> int:
+    """返回不小于 ``base`` 的最小空闲实例 idx。
 
     占位集合（按以下顺序合并，确保新槽不与任何已有槽冲突）：
     1. 原生 ``instance_list`` 的 idx
     2. 盘上 ``config/NN`` 目录（覆盖 finalize 失败导致 deepcopy 未回写、
        但实例目录已创建的情况——保证后续用户不会分配到同一槽）
     3. ``used_idxs``（本次会话内已分配 / 跨脚本 MAS 用户已绑定的槽）
-    对齐 zzz-od ``create_new_instance`` 的最小正整数规则。
+
+    ``base=1`` 对齐 zzz-od ``create_new_instance`` 的最小正整数规则（原生实例
+    用）；MAS 用户槽传 :data:`MAS_SLOT_BASE`，退到高位段避开一条龙的找号范围。
+
+    ``limit`` 给出上限时，超出即报错而不是返回越界号：MAS 槽号要写进
+    ``Info.SlotIdx``，越过 :data:`MAS_SLOT_MAX` 会被 ``RangeValidator`` 静默
+    夹到上限，槽目录名与绑定号错位。原生实例不传（一条龙自身对 idx 无上限）。
+
+    Raises:
+        ValueError: 号段已用满（``limit`` 内找不到空号）。
     """
 
     used: set[int] = set()
@@ -254,9 +290,11 @@ def find_free_instance_idx(root: Path, used_idxs: set[int] | None = None) -> int
             used.add(int(child.name))
     if used_idxs:
         used |= {int(i) for i in used_idxs}
-    idx = 1
+    idx = max(1, int(base))
     while idx in used:
         idx += 1
+    if limit is not None and idx > int(limit):
+        raise ValueError(f"实例槽号段已用满（{base}~{limit}）")
     return idx
 
 

@@ -186,7 +186,8 @@ export interface MaaEndScriptConfig {
     EmulatorIndex: string
     SetResolution: boolean
     CloseOnFinish: boolean
-    RestoreResolution: 'Off' | '1920x1080' | '2560x1440' | '3840x2160' | 'Fullscreen' | 'Custom'
+    RestoreDisplayType: 'Window' | 'Fullscreen'
+    RestoreResolution: 'Off' | 'Original' | '1920x1080' | '2560x1440' | '3840x2160' | 'Custom'
     RestoreResolutionWidth: number
     RestoreResolutionHeight: number
   }
@@ -326,6 +327,11 @@ export interface MaaFWScriptConfig {
     Channel: 'stable' | 'beta'
     /** 脚本自己的 Mirror 酱 CDK，选 Mirror 酱作为更新源时必填；不从全局设置兜底。 */
     MirrorChyanCDK: string
+    /**
+     * 只对这个项目生效的网络代理，`host:port` 或带协议；更新包下载与运行环境安装走它。
+     * 留空跟随全局（设置 → 其他 → 网络代理），兜底在后端合并，前端不做预填。
+     */
+    ProxyAddress: string
     /**
      * @deprecated 后端已改用 AutoUpdateMode；旧配置可能只有这个字段，仅供读取时映射，
      * 前端不再写入。见 useMaaFWProjectUpdate.resolveAutoUpdateMode。
@@ -694,7 +700,6 @@ export interface User {
     IfMall: boolean
     IfAward: boolean
     IfSwitchTheme: boolean
-    IfReclamation: boolean
     IfRecruit: boolean
     IfStartUp: boolean
     Queue?: unknown
@@ -702,6 +707,7 @@ export interface User {
     ActivityStageIndex?: number
     ActivityMedicineNumb?: number
     IfDepotMaintain?: boolean
+    DepotMaintainPlans?: string
     IfGreenTicketStore?: boolean
     SanityTaskType?: MaaEndTaskConfig['SanityTaskType']
     OperatorProgression?: MaaEndTaskConfig['OperatorProgression']

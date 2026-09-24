@@ -355,7 +355,7 @@ export default {
     maaCultivateStateAchieved: '達成済み',
     maaCultivateStatePending: '確認待ち',
     maaDepot: '在庫維持',
-    maaDepotHint: '計画リストなどの詳細設定は MAA 側で行います',
+    maaDepotHint: '素材ごとに保有数を設定し、不足時に自動で補充します',
     maaCombat: '理性作戦',
     maaInfrast: '基地シフト',
     maaInfrastMode: '基地モード',
@@ -492,11 +492,11 @@ export default {
       'タスクが当日に正常完了した後、同日の後続実行では自動的にスキップします。空欄なら毎回実行します',
     maaEndDailyOnceTasksPlaceholder: '1日1回だけ実行するタスクを選択',
     maaEndSetResolution: '起動時に解像度を設定',
-    maaEndSetResolutionHint:
-      '既定ではオフです。オンにすると、最初のゲーム起動前に MaaEnd の解像度設定プレタスクを実行します。',
+    maaEndRestoreDisplayType: 'ゲーム終了時の表示モード',
     maaEndRestoreResolution: 'ゲーム終了時に解像度を復元',
-    maaEndRestoreResolutionHint:
-      '最後のステージ終了時に MaaEnd が次回起動用の設定を復元します。実行後にゲームを終了する場合のみ有効です。',
+    maaEndResolutionWindow: 'ウィンドウ',
+    maaEndResolutionOriginal: '元に戻す（{displayType} {resolution}）',
+    maaEndResolutionRestoreOriginal: '元に戻す',
     maaEndResolutionWidth: '幅',
     maaEndResolutionHeight: '高さ',
     maaEndResolutionUnchanged: '変更しない',
@@ -1156,7 +1156,6 @@ export default {
       '必須。空にするとこのルールは無効になります。Python の正規表現でログ 1 行全体に照合します',
     requiredEmptyValueDisables4:
       '必須。空にするとこのルールは無効になります。行を絞り込むための正規表現です',
-    updateNow: '今すぐ更新',
     treatRunAsTimed2:
       '代行タスク実行中、SRC のログがこの時間だけ変化しなければタイムアウトとみなします',
     treatAnnihilationRunAs:
@@ -1329,10 +1328,14 @@ export default {
     leaveEmptySkipTrailing: '空にすると末尾を切り取りません',
     leaveEmptySkipLeading: '空にすると先頭を切り取りません',
     cdkTip:
-      'MAS の更新設定にある CDK が自動で入ります。このスクリプト専用のものに置き換えても構いません。更新の取得元に MirrorChyan を選んだ場合は必須です',
+      'MAS の更新設定にある CDK が自動で入ります。このスクリプト専用のものに置き換えても構いません。更新の取得元に MirrorChyan を選んだ場合は必須です。「?」をクリックすると MirrorChyan で取得できます：',
     cdkPlaceholder: 'MirrorChyan CDK を入力してください',
     cdkPrefilledFromGlobal:
       'MAS 更新設定の CDK を自動入力しました。そのまま使うか、このスクリプト専用のものに置き換えてください',
+    proxyAddress: 'プロキシアドレス',
+    proxyAddressTip:
+      'このプロジェクトだけに適用されるネットワークプロキシです。空欄のときは全体設定（設定 → その他 → ネットワークプロキシ）に従います。入力すると、このプロジェクトの更新ダウンロードと実行環境のインストールはここのプロキシだけを経由します',
+    proxyAddressPlaceholder: '例 127.0.0.1:7890、空欄なら全体設定に従います',
     notDeclared: '未宣言',
     updateProcess: '更新の進行',
     updateProcessPlaceholder:
@@ -3504,7 +3507,9 @@ export default {
       openclawQqUnbindConfirm:
         '連携を解除すると、この端末に保存した QQ ログイン状態が消去されます。続行しますか？',
       openclawQqStatusRetry: '連携状態を再取得',
-      openclawQqBound: '連携済み',
+      openclawQqBound: '接続済み',
+      openclawQqConnecting: '接続中',
+      openclawQqReconnecting: '再接続中',
       openclawQqUnbound: '未連携',
       openclawQqBindSuccess: 'QQ 公式ボットを連携しました',
       openclawQqUnbindSuccess: 'QQ 公式ボットの連携を解除しました',
@@ -3556,6 +3561,11 @@ export default {
       proxyTip:
         'プロキシを使っていて接続に問題がある場合は、ここにプロキシアドレスを設定してください。全体に適用されます。',
       proxyPlaceholder: 'プロキシアドレスを入力してください',
+      githubMirror: 'GitHub ダウンロードミラー',
+      githubMirrorTip:
+        'MFW スクリプトが GitHub Releases から更新パッケージを取得するときだけ有効です。自動では gh-proxy 系ミラーを順に試し、すべて失敗すると直接接続に戻ります。オフでは常に直接接続します。sha256 ダイジェストのない資産はミラーを使いません',
+      githubMirrorAuto: '自動（ミラー優先、失敗時は直接接続）',
+      githubMirrorOff: 'オフ（GitHub に直接接続）',
       cdk: 'MirrorChyan CDK',
       cdkIntro:
         'MirrorChyan CDK は Mirror ソースから高速ダウンロードするための認証情報です。取得はこちら：',

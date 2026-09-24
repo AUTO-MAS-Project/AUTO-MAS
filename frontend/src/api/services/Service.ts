@@ -75,6 +75,7 @@ import type { MaaFWInterfacePreviewOut } from '../models/MaaFWInterfacePreviewOu
 import type { MaaFWProjectUpdateIn } from '../models/MaaFWProjectUpdateIn';
 import type { MaaFWProjectUpdateOut } from '../models/MaaFWProjectUpdateOut';
 import type { NoticeOut } from '../models/NoticeOut';
+import type { NotifyChannelsOut } from '../models/NotifyChannelsOut';
 import type { OutBase } from '../models/OutBase';
 import type { PatternDebugIn } from '../models/PatternDebugIn';
 import type { PatternDebugOut } from '../models/PatternDebugOut';
@@ -174,6 +175,13 @@ import type { ZzzOdInstancesOut } from '../models/ZzzOdInstancesOut';
 import type { ZzzOdLauncherOut } from '../models/ZzzOdLauncherOut';
 import type { ZzzOdNativeConfigIn } from '../models/ZzzOdNativeConfigIn';
 import type { ZzzOdNativeConfigOut } from '../models/ZzzOdNativeConfigOut';
+import type { ZzzOdRecycleClearIn } from '../models/ZzzOdRecycleClearIn';
+import type { ZzzOdRecycleClearOut } from '../models/ZzzOdRecycleClearOut';
+import type { ZzzOdRecycleOut } from '../models/ZzzOdRecycleOut';
+import type { ZzzOdRecycleRestoreIn } from '../models/ZzzOdRecycleRestoreIn';
+import type { ZzzOdSlotCleanIn } from '../models/ZzzOdSlotCleanIn';
+import type { ZzzOdSlotCleanOut } from '../models/ZzzOdSlotCleanOut';
+import type { ZzzOdSlotsOut } from '../models/ZzzOdSlotsOut';
 import type { ZzzOdTaskOptionsOut } from '../models/ZzzOdTaskOptionsOut';
 import type { ZzzOdTeamsOut } from '../models/ZzzOdTeamsOut';
 import type { ZzzOdTeamsSaveIn } from '../models/ZzzOdTeamsSaveIn';
@@ -1151,9 +1159,6 @@ export class Service {
     /**
      * 获取 BAAH 配置文件名列表
      * 返回 BAAH 配置目录下已有的配置文件名（不含 ``.json`` 后缀）。
-     *
-     * 配置目录由脚本配置里的主程序路径派生（``BAAH.exe`` 同级的 ``BAAH_CONFIGS``），
-     * 与运行时读写的是同一个目录，供界面下拉选择，避免手输一个不存在的配置名。
      * @param scriptId
      * @returns ComboBoxOut Successful Response
      * @throws ApiError
@@ -1175,9 +1180,6 @@ export class Service {
     /**
      * 获取碧蓝档案活动状态
      * 返回指定服正在进行的活动，没有则返回下一个未开始的活动。
-     *
-     * 与 BAAH 活动适配用的是同一份数据、同一套口径（只认「活动」分类，同一
-     * 活动被拆成多条时保留结束最晚的那条），界面据此显示当前会按哪一边切换。
      * @param lineType
      * @returns BlueArchiveActivityStatusOut Successful Response
      * @throws ApiError
@@ -1651,7 +1653,9 @@ export class Service {
      * 把右栏编辑后的配置组 json（项目顺序 + 各项目 jsScriptSettingsObject）写回
      * 该用户的 per-user 副本（``data/{script}/{user}/ScriptGroup/{name}.json``）。
      *
-     * 不触碰 BetterGI 全局 ``User/ScriptGroup/{name}.json`` 同名实配。
+     * 「路径」类引用（名字含 ``/``）不能作文件名，落盘到 ``per_user_copy_name`` 的确定性别名
+     * （右栏把路径项加成多项目配置组后需要载体）。不触碰 BetterGI 全局
+     * ``User/ScriptGroup/{name}.json`` 同名实配。
      * @param requestBody
      * @returns OutBase Successful Response
      * @throws ApiError
@@ -1831,6 +1835,113 @@ export class Service {
         });
     }
     /**
+     * 获取实例槽总览（原生实例 / MAS 绑定槽 / 无主残留）
+     * 槽目录是 MAS 分配在一条龙安装目录里的，注册表与 GUI 都看不到。
+     *
+     * 这份对照表用于诊断「槽目录数与用户数对不上」（绑定但没跑过的槽没有目录）
+     * 与定位无主残留。
+     * @param scriptId
+     * @returns ZzzOdSlotsOut Successful Response
+     * @throws ApiError
+     */
+    public static getZzzodSlotsApiApiScriptsZzzodSlotsGet(
+        scriptId: string,
+    ): CancelablePromise<ZzzOdSlotsOut> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/scripts/zzzod/slots',
+            query: {
+                'scriptId': scriptId,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 清理无主实例槽（先归档进回收池再删目录）
+     * 原生实例与被任一 ZzzOd 用户绑定的槽一律不动，返回实际回收的槽号。
+     * @param requestBody
+     * @returns ZzzOdSlotCleanOut Successful Response
+     * @throws ApiError
+     */
+    public static cleanZzzodSlotsApiApiScriptsZzzodSlotsCleanPost(
+        requestBody: ZzzOdSlotCleanIn,
+    ): CancelablePromise<ZzzOdSlotCleanOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/zzzod/slots/clean',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 获取实例槽回收池（被删用户/脚本留下的槽内容与备份池快照）
+     * 槽目录按安装根指纹归池，跨脚本共享；只有 ``kind=slot`` 的条目可恢复。
+     * @param scriptId
+     * @returns ZzzOdRecycleOut Successful Response
+     * @throws ApiError
+     */
+    public static getZzzodRecycleApiApiScriptsZzzodRecycleGet(
+        scriptId: string,
+    ): CancelablePromise<ZzzOdRecycleOut> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/scripts/zzzod/recycle',
+            query: {
+                'scriptId': scriptId,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 清空实例槽回收池（删除后不可找回，不碰配置恢复池）
+     * 只删 recycle 池；onedragon 原生池与 mas 配置恢复池不受影响。
+     * @param requestBody
+     * @returns ZzzOdRecycleClearOut Successful Response
+     * @throws ApiError
+     */
+    public static clearZzzodRecycleApiApiScriptsZzzodRecycleClearPost(
+        requestBody: ZzzOdRecycleClearIn,
+    ): CancelablePromise<ZzzOdRecycleClearOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/zzzod/recycle/clear',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 把回收池里的槽快照恢复给某个 MAS 用户（现有用户或新建用户，先存底）
+     * 恢复的落点是**用户的绑定槽**（``targetUser`` 指定现有用户，或
+     * ``newUserName`` 新建一个用户）——只物化内容而不建立绑定的恢复没有出口，
+     * MAS 下次运行不会认领它。目标用户已有绑定槽时覆盖其内容，恢复前先存底。
+     * @param requestBody
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static restoreZzzodRecycleApiApiScriptsZzzodRecycleRestorePost(
+        requestBody: ZzzOdRecycleRestoreIn,
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/zzzod/recycle/restore',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
      * 获取预备编队列表（名称 + 绑定配队方案）
      * 读绑定槽（直控传 instanceIdx 读原生实例）的 team.yml（固定 20 个编队）。
      * @param scriptId
@@ -1998,7 +2109,7 @@ export class Service {
     }
     /**
      * 保存实例原生配置（直控模式直接写回一条龙原始 YAML）
-     * 白名单过滤后写回所选实例 game_account.yml、_group.yml 与 instance_run，随后回读最新数据。
+     * 白名单过滤后写回所选实例 game_account.yml、_group.yml、instance_run 与 after_done，随后回读最新数据。
      * @param requestBody
      * @returns ZzzOdNativeConfigOut Successful Response
      * @throws ApiError
@@ -3244,6 +3355,18 @@ export class Service {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/setting/test_notify',
+        });
+    }
+    /**
+     * 查询通知渠道描述
+     * 返回通知渠道描述表，仅展示元数据，不含任何配置值。
+     * @returns NotifyChannelsOut Successful Response
+     * @throws ApiError
+     */
+    public static getNotifyChannelsApiSettingNotifyChannelsGet(): CancelablePromise<NotifyChannelsOut> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/setting/notify/channels',
         });
     }
     /**

@@ -254,10 +254,7 @@ jobs:
         shell: pwsh
 
       - name: 创建安装程序压缩包
-        run: |
-          Move-Item -Path .\Setup\AUTO-MAS-Setup.exe -Destination AUTO-MAS-Setup.exe
-          Compress-Archive -Path AUTO-MAS-Setup.exe -DestinationPath AUTO-MAS-Setup-${{ steps.generate_version_info.outputs.version_tag }}-x64.zip -Force
-          Remove-Item AUTO-MAS-Setup.exe
+        run: Compress-Archive -Path .\Setup\AUTO-MAS-Setup.exe -DestinationPath AUTO-MAS-Setup-${{ steps.generate_version_info.outputs.version_tag }}-x64.zip -Force
         shell: pwsh
 
       - name: 上传构建产物

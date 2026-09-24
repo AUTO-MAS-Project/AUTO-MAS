@@ -19,8 +19,9 @@
 """配置归档公共原语：时间戳快照 + 指纹去重 + 保留清理 + 整目录恢复。
 
 供各适配器复用：把「运行/配置会话前会被 MAS 触碰的配置文件」在改动前归档
-一份，每份是 ``store_root`` 下的一个时间戳目录，内容无变化自动跳过，超出
-保留份数自动清理最旧；恢复时整目录替换目标位置。
+一份，每份是 ``store_root`` 下的一个时间戳目录，与基准一致时自动跳过
+（常规归档比最新一份，存底场景比任一现存份，见 :func:`_archive`），超出
+保留份数自动清理最旧（存底场景全部保留）；恢复时整目录替换目标位置。
 
 本模块不感知任何脚本结构：归档什么文件、归档时机、恢复后的字段回填等
 业务语义由调用方（适配器）决定，这里只提供脚本无关的原语。主要调用方
@@ -90,27 +91,36 @@ def config_root_key(config_path: str | Path) -> str:
     return hashlib.sha1(norm.encode("utf-8")).hexdigest()[:12]
 
 
-def list_times(root: Path) -> list[str]:
-    """返回 ``root`` 下全部归档时间戳，时间倒序（目录名即时间戳）。
+def timestamp_sort_key(name: str) -> tuple[str, int]:
+    """归档时间戳目录名的排序键：``(基础时间戳, 同秒顺延序号)``。
 
-    排序键按 ``(基础时间戳, 同秒顺延序号)`` 解析——同秒目录名带 ``-N``
-    后缀，直接按字符串倒序会让 ``-10`` 排到 ``-9`` 之前（同秒归档超过
-    9 次时 ``times[0]`` 不再是最新那份）。
+    目录名形态 ``YYYYMMDD-HHMMSS`` 或 ``YYYYMMDD-HHMMSS-N``（同秒顺延）。
+    末段为非 6 位纯数字时视为顺延序号、按数值参与排序：直接按字符串倒序会
+    让 ``-10`` 沉到 ``-9`` 之后（同秒归档超过 9 次时 ``times[0]`` 不再是
+    最新那份）。跨模块复用（ZzzOd 回收池条目排序）。
+    """
+
+    base, _, serial = name.rpartition("-")
+    if serial.isdigit() and len(serial) != 6:
+        return (base, int(serial))
+    return (name, 0)
+
+
+def list_times(root: Path) -> list[str]:
+    """返回 ``root`` 下的归档时间戳，时间倒序（目录名即时间戳）。
+
+    只接受本模块生成的时间戳目录名（``_TS_PATTERN``）——池内与时间戳目录
+    同级可能存在语义不同的子目录（如 ZzzOd 回收池槽桶内的 ``mas-backups``
+    备份池快照），混进列表会让去重恒失效、保留清理误裁真实快照。
+    排序键见 :func:`timestamp_sort_key`。
     """
 
     if not root.is_dir():
         return []
-
-    def sort_key(name: str) -> tuple[str, int]:
-        # 目录名：YYYYMMDD-HHMMSS 或 YYYYMMDD-HHMMSS-N（同秒顺延）；
-        # 末段为非 6 位纯数字时视为顺延序号，按数值参与排序
-        base, _, serial = name.rpartition("-")
-        if serial.isdigit() and len(serial) != 6:
-            return (base, int(serial))
-        return (name, 0)
-
     return sorted(
-        (p.name for p in root.iterdir() if p.is_dir()), key=sort_key, reverse=True
+        (p.name for p in root.iterdir() if p.is_dir() and _TS_PATTERN.match(p.name)),
+        key=timestamp_sort_key,
+        reverse=True,
     )
 
 
@@ -189,7 +199,7 @@ def _archive(
     times = list_times(store_root)
     if force:
         protect = frozenset(times) | protect
-        # 只与最新份比：存底时刻紧跟恢复/覆盖，当前现场若与任一历史条目
+        # 与任一历史条目比：存底时刻紧跟恢复/覆盖，当前现场若与任一历史条目
         # 一致，多出来的存底条目没有信息量，却会在 keep 清理时挤掉最旧的
         for ts in times:
             try:
