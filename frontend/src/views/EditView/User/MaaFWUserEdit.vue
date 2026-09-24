@@ -5,6 +5,7 @@
       :save-error-message="saveErrorMessage"
       :script-id="scriptId"
       :script-name="scriptName"
+      :script-route-suffix="flavor.routeSuffix"
       :is-edit="isEdit"
       :user-id="userId"
       @cancel="handleCancel"
@@ -69,43 +70,13 @@
             show-icon
             :message="line"
           />
-          <!-- 特调类型（MSS）的用户可以引用计划表：运行前由特调钩子按当天槽位改写任务选项 -->
-          <a-form-item
-            v-if="flavor.planConsumer"
-            class="flavor-plan-mode"
-            :label="t('edit.maafwFlavorPlanMode')"
-            :extra="flavor.planHintKey ? t(flavor.planHintKey) : undefined"
-          >
-            <a-select
-              v-model:value="formData.Info.PlanMode"
-              :options="planModeOptions"
-              :disabled="loading"
-              class="flavor-plan-select"
-              @change="handleFieldSave('Info.PlanMode', formData.Info.PlanMode)"
-            />
-          </a-form-item>
-          <!-- 这一轮根本跑不起来时提前说清楚，别等引擎报「没有可执行任务」 -->
-          <a-alert
-            v-if="queueCannotRun"
-            class="flavor-queue-empty"
-            type="warning"
-            show-icon
-            :message="t('edit.mssFlavorQueueEmpty')"
+          <!-- 特调独有区块（如 MSS 的计划表与活动优先），由特调注册表按需加载 -->
+          <MaaFWFlavorSlot
+            name="userBeforeTaskQueue"
+            :flavor="flavor"
+            :context="flavorSlotContext"
+            @save="handleFieldSave"
           />
-          <!-- 活动优先是 MSS 自己的取舍（和计划表下拉一样只在 MSS 上出现）。后端缺省是开,
-               所以这里按「不是 false 就算开」显示，不必给 MaaFW 用户塞一个它没有的字段 -->
-          <a-form-item
-            v-if="flavor.type === 'MSS'"
-            class="flavor-activity-first"
-            :label="t('edit.mssFlavorActivityFirst')"
-            :extra="t('edit.mssFlavorActivityFirstHint')"
-          >
-            <a-switch
-              :checked="formData.Info.IfActivityFirst !== false"
-              :disabled="loading"
-              @change="handleActivityFirstChange"
-            />
-          </a-form-item>
           <TaskQueueSection
             v-model:add-task-cascader-value="addTaskCascaderValue"
             v-model:show-preset-modal="showPresetModal"
@@ -215,8 +186,15 @@ import { buildMaaFWAssetUrl, useMaaFWApi } from '@/composables/useMaaFWApi'
 import { useScriptApi } from '@/composables/useScriptApi'
 import { useUserApi } from '@/composables/useUserApi'
 import { isSupportedMaaFWControllerType } from '@/types/script'
-import { useMaaFWFlavor } from '@/composables/useMaaFWFlavor'
+import {
+  isMaaFWFamily,
+  maafwUserConfigTypes,
+  prepareMaaFWFlavorUserPage,
+  useMaaFWFlavor,
+  type MaaFWUserSlotContext,
+} from '@/composables/useMaaFWFlavor'
 import { buildMaaFWTaskInstanceIds, resolveMaaFWTaskName } from '@/utils/maafwTaskInstance'
+import MaaFWFlavorSlot from '@/views/EditView/MaaFWFlavor/MaaFWFlavorSlot.vue'
 import MaaFWUserEditHeader from './MaaFWUserEdit/MaaFWUserEditHeader.vue'
 import BasicInfoSection from './MaaFWUserEdit/BasicInfoSection.vue'
 import TaskQueueSection from './MaaFWUserEdit/TaskQueueSection.vue'
@@ -315,7 +293,7 @@ const { configLocked } = useScriptConfigLock(() => scriptId)
 
 const scriptName = ref('')
 const scriptPath = ref('')
-// flavor 文案以脚本当前类型为准（MaaFW / M9A），不看路由 meta
+// flavor 文案以脚本当前类型为准（MaaFW / M9A / MSS ……），不看路由 meta
 const scriptType = ref<ScriptType>('MaaFW')
 const flavor = useMaaFWFlavor(scriptType)
 const scriptConfig = ref<MaaFWScriptConfig | null>(null)
@@ -401,29 +379,6 @@ const queueHintLines = computed(() =>
 )
 
 const accountRecordTooltip = computed(() => t(flavor.value.accountTooltipKey))
-
-// 计划表下拉（只有 flavor 声明了计划表消费方的类型才显示）：固定 + 该消费方的计划表
-const planModeOptions = ref<Array<{ label: string; value: string }>>([
-  { label: t('edit.maafwFlavorPlanFixed'), value: 'Fixed' },
-])
-const loadPlanModeOptions = async () => {
-  const consumer = flavor.value.planConsumer
-  if (!consumer) return
-  try {
-    const response = await Service.getPlanComboxApiInfoComboxPlanPost({ consumer })
-    if (response?.code !== 200 || !response.data) return
-    planModeOptions.value = response.data
-      .filter(item => Boolean(item.value))
-      .map(item =>
-        item.value === 'Fixed'
-          ? { label: t('edit.maafwFlavorPlanFixed'), value: 'Fixed' }
-          : { label: item.label ?? '', value: String(item.value) }
-      )
-  } catch (error) {
-    // 取不到计划表时只留「固定」一项，其它设置照常能改
-    logger.error(`加载计划表选项失败: ${error instanceof Error ? error.message : String(error)}`)
-  }
-}
 
 const controllerOptions = computed(() =>
   (previewData.value?.controllers || []).filter(controller =>
@@ -699,23 +654,12 @@ const selectTask = (taskId: string) => {
   selectedTaskId.value = taskId
 }
 
-/**
- * 队列空、计划表又是「固定」时这一轮没有任何可执行任务：引擎会判「无法构建运行计划」
- * 并抛异常（`run_plan` 里 runnable_tasks 为空）。在这里提前警告，别让用户跑完才知道。
- * 选了计划表就不算——特调钩子会把悬赏试炼补上。
- */
-const queueCannotRun = computed(
-  () =>
-    flavor.value.type === 'MSS' &&
-    taskSnapshot.value.taskOrder.length === 0 &&
-    (formData.Info.PlanMode ?? 'Fixed') === 'Fixed'
-)
-
-/** 活动优先开关：后端缺省是开，这里只在用户显式关掉时写 false */
-const handleActivityFirstChange = (checked: boolean | string | number) => {
-  formData.Info.IfActivityFirst = checked === true
-  handleFieldSave('Info.IfActivityFirst', formData.Info.IfActivityFirst)
-}
+// 特调插入点的上下文：独有区块直接改 formData 草稿，落盘走 save 事件回到 handleFieldSave
+const flavorSlotContext = computed<MaaFWUserSlotContext>(() => ({
+  formData,
+  loading: loading.value,
+  queuedTaskCount: taskSnapshot.value.taskOrder.length,
+}))
 
 const persistQueuedSnapshot = async () => {
   taskSnapshot.value.taskOrder = partitionTaskOrder(taskSnapshot.value.taskOrder)
@@ -938,8 +882,8 @@ const loadScriptInfo = async () => {
       handleCancel()
       return
     }
-    // M9A / MSS 是 MaaFW 的特调类型，同一个页面
-    if (script.type !== 'MaaFW' && script.type !== 'M9A' && script.type !== 'MSS') {
+    // MaaFW 与它的特调类型（M9A / MSS ……）都是同一个页面
+    if (!isMaaFWFamily(script.type)) {
       message.error(t('edit.scriptTypeNotMfw'))
       handleCancel()
       return
@@ -953,7 +897,8 @@ const loadScriptInfo = async () => {
     preferAdbController.value = Boolean(
       loadedScriptConfig.Emulator?.Id && loadedScriptConfig.Emulator.Id !== '-'
     )
-    await Promise.all([reloadInterface(false), loadPlanModeOptions()])
+    // 特调独有区块的数据与组件和 interface 一起备好，卡片出来时已经齐了
+    await Promise.all([reloadInterface(false), prepareMaaFWFlavorUserPage(flavor.value)])
 
     if (isEdit.value) {
       await loadUserData()
@@ -1006,11 +951,8 @@ const loadUserData = async () => {
       const userIndex = userResponse.index.find(index => index.uid === userId)
       const userData = userResponse.data[userId] as Partial<MaaFWUserConfig> | undefined
 
-      // M9A / MSS 的用户类是 MaaFWUserConfig 的子类（MSS 多一项 Info.PlanMode），同一个页面
-      const isMaaFWUser =
-        userIndex?.type === 'MaaFWUserConfig' ||
-        userIndex?.type === 'M9AUserConfig' ||
-        userIndex?.type === 'MSSUserConfig'
+      // 特调的用户类是 MaaFWUserConfig 的子类（如 MSS 多一项 Info.PlanMode），同一个页面
+      const isMaaFWUser = Boolean(userIndex && maafwUserConfigTypes().has(userIndex.type))
       if (isMaaFWUser && userData) {
         applyUserData(userData)
         taskSnapshot.value = normalizeTaskSnapshot(formData.Task.TaskSnapshot, previewData.value)
@@ -1201,11 +1143,6 @@ onUnmounted(() => {
 
 .flavor-queue-hint-last {
   margin-bottom: 16px;
-}
-
-.flavor-plan-select {
-  width: 100%;
-  max-width: 360px;
 }
 
 .user-edit-container {
