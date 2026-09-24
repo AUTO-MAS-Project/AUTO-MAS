@@ -87,6 +87,12 @@
                     alt="ZZZ-OD"
                     class="script-logo"
                   />
+                  <img
+                    v-else-if="script.type === 'BAAH'"
+                    src="@/assets/baah.png"
+                    alt="BAAH"
+                    class="script-logo"
+                  />
                   <img v-else src="@/assets/AUTO-MAS.ico" alt="AUTO-MAS" class="script-logo" />
                 </div>
                 <div class="script-details">
@@ -410,7 +416,8 @@
                             script.type === 'OkNte' ||
                             script.type === 'BetterGI' ||
                             script.type === 'MaaFW' ||
-                            script.type === 'ZzzOd'
+                            script.type === 'ZzzOd' ||
+                            script.type === 'BAAH'
                           "
                           class="user-info-tags"
                         >
@@ -595,8 +602,6 @@ interface Props {
   scripts: Script[]
   activeConnections: Map<string, { subscriptionIds: string[]; taskId: string }>
   copyingScriptId?: string | null
-  allPlansData?: Record<string, Record<string, unknown>>
-  currentPlanData?: Record<string, unknown>
   searching?: boolean
 }
 
@@ -615,17 +620,11 @@ interface Emits {
 
   (e: 'startMaaConfig', script: Script): void
 
-  (e: 'saveMaaConfig', script: Script): void
-
   (e: 'startSrcConfig', script: Script): void
-
-  (e: 'saveSrcConfig', script: Script): void
 
   (e: 'startMaaEndConfig', script: Script): void
 
   (e: 'startMaaEndUserConfig', script: Script, user: User): void
-
-  (e: 'saveMaaEndConfig', script: Script): void
 
   (e: 'startOkwwConfig', script: Script): void
 
@@ -677,13 +676,14 @@ const isUsersCollapsed = (scriptId: string) =>
 const expandedUserIds = ref<Set<string>>(new Set())
 const expandedUserPasswords = ref<Set<string>>(new Set())
 
-// 监听props变化，更新本地状态
+// 监听 props 变化，更新本地状态。只关心数组引用（增删、父级回写的新顺序），
+// 不能 deep：父级改共享对象（启停用户、删用户）时会用未重排的父数组把拖拽顺序覆盖回去
 watch(
   () => props.scripts,
   newScripts => {
     localScripts.value = [...newScripts]
   },
-  { immediate: true, deep: true }
+  { immediate: true }
 )
 
 const handleEdit = (script: Script) => {
@@ -766,12 +766,9 @@ const isMaaEndPresetSupported = (script: Script) => {
   return script.type === 'MaaEnd' && controllerType === 'Win32-Front'
 }
 
+// 直控直接用 MaaEnd 原有配置，在 MaaEnd 里改，不给配置入口。
 const shouldShowMaaEndUserConfigButton = (script: Script, user: User) => {
-  return script.type === 'MaaEnd' && user.Info?.Mode !== '脚本'
-}
-
-const handleSaveMaaEndConfig = (script: Script) => {
-  emit('saveMaaEndConfig', script)
+  return script.type === 'MaaEnd' && user.Info?.Mode === '用户'
 }
 
 const handleStartOkwwConfig = (script: Script) => {
@@ -799,6 +796,7 @@ const SCRIPT_TYPE_TAG_COLORS: Record<Script['type'], string> = {
   HSR: 'purple',
   BetterGI: 'gold',
   ZzzOd: 'volcano',
+  BAAH: 'magenta',
   General: 'green',
 }
 

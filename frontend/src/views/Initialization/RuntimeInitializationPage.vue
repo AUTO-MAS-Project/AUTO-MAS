@@ -23,6 +23,7 @@
       :title="statusTitle"
       :hint="statusHint"
       :progress="statusProgress"
+      :details="statusDetails"
       :steps="launchSteps"
       :action-label="t('launch.viewLog')"
       @action="openLaunchLogWindow('初始化流程')"
@@ -54,6 +55,7 @@ const {
   hasFailed,
   isBackendStep,
   launchSteps,
+  statusDetails,
   statusHint,
   statusProgress,
   statusTitle,

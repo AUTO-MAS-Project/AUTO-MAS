@@ -394,11 +394,17 @@ def _wait_for_actionable_state(hwnd: int, on_log: Callable[[str], None]) -> int:
     deadline = time.monotonic() + _IN_GAME_UPDATE_TIMEOUT
     last_progress = time.monotonic()
     last_sig: int | None = None
+    items: list[OCRItem] = []
     iter_count = 0
     while time.monotonic() < deadline:
         try:
             frame = _capture_window(hwnd, activate=False)
-            items = ocr_image(frame)
+            sig = _frame_signature(frame)
+            if sig != last_sig:
+                # 画面有变化才跑全帧 OCR；帧哈希未变时沿用上次识别结果
+                items = ocr_image(frame)
+                last_sig = sig
+                last_progress = time.monotonic()
         except RuntimeError:
             # 窗口句柄失效：可能是游戏内更新触发客户端重启，重找新窗口继续而非中止。
             hwnd = _reacquire_game_hwnd(on_log)
@@ -413,10 +419,6 @@ def _wait_for_actionable_state(hwnd: int, on_log: Callable[[str], None]) -> int:
             or _find_text(items, _LOADED_BADGE_TEXTS) is not None
         ):
             return hwnd
-        sig = _frame_signature(frame)
-        if sig != last_sig:
-            last_sig = sig
-            last_progress = time.monotonic()
         if time.monotonic() - last_progress >= _IN_GAME_STALL_SECONDS:
             break
         if iter_count % 5 == 0:

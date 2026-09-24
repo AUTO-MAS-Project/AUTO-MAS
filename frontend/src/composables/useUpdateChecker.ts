@@ -1,5 +1,5 @@
 import { translate as t } from '@/i18n'
-import { ref, onUnmounted } from 'vue'
+import { ref } from 'vue'
 import { Service } from '@/api'
 import { message } from 'ant-design-vue'
 import { useAudioPlayer } from '@/composables/useAudioPlayer'
@@ -19,6 +19,8 @@ const latestVersion = ref('')
 const POLL_MS = 4 * 60 * 60 * 1000 // 4小时
 let updateCheckTimer: ReturnType<typeof setInterval> | null = null
 let initialUpdateCheckTimer: ReturnType<typeof setTimeout> | null = null
+// startPolling 在读设置期间可能被再次调用（appEntry 与初始化面板都会起），用它去重
+let startPollingRequest: Promise<void> | null = null
 const isPolling = ref(false)
 
 type UpdateCheckPromise = ReturnType<typeof Service.checkUpdateApiUpdateCheckPost>
@@ -149,31 +151,38 @@ export function useUpdateChecker() {
     updateVisible.value = false
   }
 
-  // 启动定时检查器
+  // 启动定时检查器（应用级定时器，幂等；停止只在 disposeAppLifecycle 里做）
   const startPolling = async () => {
-    // 检查自动更新设置是否开启
-    const autoUpdateEnabled = await checkAutoUpdateEnabled()
-    if (!autoUpdateEnabled) {
-      logger.info('自动检查更新已关闭，不启动定时任务')
-      return
-    }
-
     // 如果已经在检查中，则不重复启动
     if (updateCheckTimer) {
       logger.info('定时任务已存在，跳过启动')
       return
     }
+    if (startPollingRequest) return startPollingRequest
 
-    logger.info('启动定时版本检查任务')
+    startPollingRequest = (async () => {
+      // 检查自动更新设置是否开启
+      const autoUpdateEnabled = await checkAutoUpdateEnabled()
+      if (!autoUpdateEnabled) {
+        logger.info('自动检查更新已关闭，不启动定时任务')
+        return
+      }
+      if (updateCheckTimer) return
 
-    // 延迟3秒后再执行首次检查，确保后端已经完全启动
-    initialUpdateCheckTimer = setTimeout(async () => {
-      initialUpdateCheckTimer = null
-      await pollOnce()
-    }, 3000)
+      logger.info('启动定时版本检查任务')
 
-    // 每 4 小时检查一次更新
-    updateCheckTimer = setInterval(pollOnce, POLL_MS)
+      // 延迟3秒后再执行首次检查，确保后端已经完全启动
+      initialUpdateCheckTimer = setTimeout(async () => {
+        initialUpdateCheckTimer = null
+        await pollOnce()
+      }, 3000)
+
+      // 每 4 小时检查一次更新
+      updateCheckTimer = setInterval(pollOnce, POLL_MS)
+    })().finally(() => {
+      startPollingRequest = null
+    })
+    return startPollingRequest
   }
 
   // 停止定时检查器
@@ -195,11 +204,6 @@ export function useUpdateChecker() {
     stopPolling() // 先停止现有任务
     await startPolling() // 再根据设置重新启动
   }
-
-  // 组件卸载时清理定时器
-  onUnmounted(() => {
-    stopPolling()
-  })
 
   return {
     updateVisible,

@@ -13,16 +13,18 @@ import type { Emulator2SettingsApplyAllOut } from '../models/Emulator2SettingsAp
 import type { Emulator2SettingsApplyIn } from '../models/Emulator2SettingsApplyIn';
 import type { Emulator2SettingsApplyOut } from '../models/Emulator2SettingsApplyOut';
 import type { Emulator2StableModeIn } from '../models/Emulator2StableModeIn';
+import type { Emulator2StoreOpenIn } from '../models/Emulator2StoreOpenIn';
+import type { Emulator2StoreOpenOut } from '../models/Emulator2StoreOpenOut';
 import type { EmulatorOperateIn } from '../models/EmulatorOperateIn';
 import type { OutBase } from '../models/OutBase';
 import type { PatternDebugIn } from '../models/PatternDebugIn';
 import type { PatternDebugOut } from '../models/PatternDebugOut';
 import type { PowerIn } from '../models/PowerIn';
 import type { ScriptConfigImportIn } from '../models/ScriptConfigImportIn';
-import type { ScriptFileIn } from '../models/ScriptFileIn';
 import type { ScriptUploadIn } from '../models/ScriptUploadIn';
 import type { TaskCreateIn } from '../models/TaskCreateIn';
 import type { TaskCreateOut } from '../models/TaskCreateOut';
+import type { VirtualDisplayDetachOut } from '../models/VirtualDisplayDetachOut';
 import type { WebhookTestIn } from '../models/WebhookTestIn';
 import type { CancelablePromise } from '../core/CancelablePromise';
 import { OpenAPI } from '../core/OpenAPI';
@@ -37,25 +39,6 @@ export class ActionService {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/info/notice/confirm',
-        });
-    }
-    /**
-     * 导出脚本配置到文件
-     * @param requestBody
-     * @returns OutBase Successful Response
-     * @throws ApiError
-     */
-    public static exportScriptToFileApiScriptsExportFilePost(
-        requestBody: ScriptFileIn,
-    ): CancelablePromise<OutBase> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/scripts/export/file',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
         });
     }
     /**
@@ -108,6 +91,29 @@ export class ActionService {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/emulator/operate',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 打开游戏中心
+     * 在一台**已在线**的设备上打开模拟器自带的游戏中心。
+     *
+     * 雷电纯净模式会把游戏中心从桌面藏掉，这是它唯一的图形入口。
+     * 拉不起来返回 ``ok=false`` 和一句说明，不算接口错误；只有设备号解析不出来才是 500。
+     * @param requestBody
+     * @returns Emulator2StoreOpenOut Successful Response
+     * @throws ApiError
+     */
+    public static openStoreApiEmulator2InstancesStoreOpenPost(
+        requestBody: Emulator2StoreOpenIn,
+    ): CancelablePromise<Emulator2StoreOpenOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/emulator2/instances/store/open',
             body: requestBody,
             mediaType: 'application/json',
             errors: {
@@ -340,6 +346,21 @@ export class ActionService {
             errors: {
                 422: `Validation Error`,
             },
+        });
+    }
+    /**
+     * 立即拆除虚拟显示器
+     * 用户明示要拆：真实显示器回来时的询问弹窗和设置页的「立即拆除」都走这里。
+     *
+     * 任务在不在跑都照办。拆完守卫的巡检照常：桌面上还有真实输出就什么都不做，一块都没有
+     * 的话下一轮会重新挂上——要彻底停用得关开关。
+     * @returns VirtualDisplayDetachOut Successful Response
+     * @throws ApiError
+     */
+    public static detachVirtualDisplayApiSettingVirtualDisplayDetachPost(): CancelablePromise<VirtualDisplayDetachOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/setting/virtual-display/detach',
         });
     }
     /**

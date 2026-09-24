@@ -1,4 +1,4 @@
-import { defineConfig } from 'vite'
+import { configDefaults, defineConfig } from 'vitest/config'
 import vue from '@vitejs/plugin-vue'
 import tailwindcss from '@tailwindcss/vite'
 import { sentryVitePlugin } from '@sentry/vite-plugin'
@@ -72,6 +72,10 @@ export default defineConfig(({ command }) => {
       'import.meta.env.VITE_APP_CHANGELOG': JSON.stringify(
         versionJson.version_info?.[versionJson.version] ?? {}
       ),
+      // 合并即入账的条目先放在「未发布」段，开发构建里一并展示；发布构建来自 tag，没有这一段
+      'import.meta.env.VITE_APP_CHANGELOG_UNRELEASED': JSON.stringify(
+        versionJson.version_info?.['未发布'] ?? {}
+      ),
       // 渲染进程兜底端点用，正常仍以 Electron 下发的端点为准
       'import.meta.env.VITE_AUTO_MAS_HTTP_PORT': JSON.stringify(String(backendPort)),
     },
@@ -83,6 +87,9 @@ export default defineConfig(({ command }) => {
       port: DEV_SERVER_PORT,
       // 端口被占用时直接失败，避免静默换端口后 Electron 仍加载另一实例的页面
       strictPort: true,
+      // dev 模块响应禁用一切 HTTP 缓存：no-cache 仍允许浏览器存储旧响应、部分场景
+      // 不回源校验，曾导致渲染层加载陈旧模块（页面结构与最新代码拼接的诡异状态）
+      headers: { 'Cache-Control': 'no-store' },
       watch: {
         // 只排除构建产物，environment 不会被 Vite 监听（因为没有被 import）
         ignored: ['**/node_modules/**', '**/dist/**', '**/dist-electron/**'],
@@ -92,6 +99,11 @@ export default defineConfig(({ command }) => {
       // 优化构建性能
       chunkSizeWarningLimit: 5000, // 提高到 5MB，适合 Electron 应用
       sourcemap: 'hidden', // 生成供 Sentry 上传的 sourcemap，但不在生产 JS 中暴露引用
+    },
+    test: {
+      // dist-electron 是 Electron 主进程的 CJS 编译产物（源测试在 electron/），
+      // 编译后的 require('vitest') 无法运行，不排除会让 yarn test 随构建必然失败
+      exclude: [...configDefaults.exclude, '**/dist-electron/**'],
     },
   }
 })

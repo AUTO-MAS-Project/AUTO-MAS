@@ -33,10 +33,51 @@ MAS 侧的动态选项（任务计划里的副本级联、配队方案、迷失�
 
 import re
 from pathlib import Path
+from typing import Any
 
 from app.utils.io import read_file
 
 _COMPENDIUM_REL = Path("assets") / "game_data" / "compendium_data.yml"
+
+# 解析结果缓存：每次选项请求都要读整份副本字典和整目录 yml，按文件签名
+# （名称/mtime/大小）命中即复用上次解析结果；调用方只读不改
+_SCAN_CACHE: dict[Path, tuple[tuple, Any]] = {}
+
+
+def _file_signature(path: Path) -> tuple:
+    try:
+        stat = path.stat()
+    except OSError:
+        return (path.name, 0, 0)
+    return (path.name, stat.st_mtime_ns, stat.st_size)
+
+
+def _read_compendium(root: Path) -> list:
+    """读取副本字典（签名未变时复用上次解析结果）。"""
+
+    path = root / _COMPENDIUM_REL
+    signature = (_file_signature(path),)
+    cached = _SCAN_CACHE.get(path)
+    if cached is not None and cached[0] == signature:
+        return cached[1]
+    data = read_file(path) or []
+    _SCAN_CACHE[path] = (signature, data)
+    return data
+
+
+def _read_yml_dir(dir_path: Path) -> list[tuple[Path, Any]]:
+    """读取目录下全部 *.yml（按名排序），目录签名未变时复用上次解析结果。"""
+
+    if not dir_path.is_dir():
+        return []
+    paths = sorted(dir_path.glob("*.yml"))
+    signature = tuple(_file_signature(path) for path in paths)
+    cached = _SCAN_CACHE.get(dir_path)
+    if cached is not None and cached[0] == signature:
+        return cached[1]
+    entries = [(path, read_file(path)) for path in paths]
+    _SCAN_CACHE[dir_path] = (signature, entries)
+    return entries
 
 
 def _display(item: dict, name_key: str, display_key: str) -> str:
@@ -53,7 +94,7 @@ def train_categories(root: Path) -> list[dict]:
     「恶名狩猎 深度追猎」。
     """
 
-    for tab in read_file(root / _COMPENDIUM_REL) or []:
+    for tab in _read_compendium(root):
         if not isinstance(tab, dict) or tab.get("tab_name") != "训练":
             continue
         categories: list[dict] = []
@@ -67,11 +108,15 @@ def train_categories(root: Path) -> list[dict]:
                 mission_types.append(
                     {
                         "name": str(mt.get("mission_type_name") or ""),
-                        "display": _display(mt, "mission_type_name", "mission_type_name_display"),
+                        "display": _display(
+                            mt, "mission_type_name", "mission_type_name_display"
+                        ),
                         "missions": [
                             {
                                 "name": str(m.get("mission_name") or ""),
-                                "display": _display(m, "mission_name", "mission_name_display"),
+                                "display": _display(
+                                    m, "mission_name", "mission_name_display"
+                                ),
                             }
                             for m in (mt.get("mission_list") or [])
                             if isinstance(m, dict)
@@ -93,14 +138,17 @@ def train_categories(root: Path) -> list[dict]:
 def lost_void_missions(root: Path) -> list[str]:
     """迷失之地（作战→零号空洞→迷失之地）关卡展示名列表。"""
 
-    for tab in read_file(root / _COMPENDIUM_REL) or []:
+    for tab in _read_compendium(root):
         if not isinstance(tab, dict) or tab.get("tab_name") != "作战":
             continue
         for cat in tab.get("category_list") or []:
             if not isinstance(cat, dict) or cat.get("category_name") != "零号空洞":
                 continue
             for mt in cat.get("mission_type_list") or []:
-                if not isinstance(mt, dict) or mt.get("mission_type_name") != "迷失之地":
+                if (
+                    not isinstance(mt, dict)
+                    or mt.get("mission_type_name") != "迷失之地"
+                ):
                     continue
                 return [
                     _display(m, "mission_name", "mission_name_display")
@@ -115,14 +163,17 @@ def hollow_zero_missions(root: Path) -> list[str]:
     ``get_hollow_zero_mission_name_list`` 同规则，取 mission_name）。"""
 
     names: list[str] = []
-    for tab in read_file(root / _COMPENDIUM_REL) or []:
+    for tab in _read_compendium(root):
         if not isinstance(tab, dict) or tab.get("tab_name") != "作战":
             continue
         for cat in tab.get("category_list") or []:
             if not isinstance(cat, dict) or cat.get("category_name") != "零号空洞":
                 continue
             for mt in cat.get("mission_type_list") or []:
-                if not isinstance(mt, dict) or mt.get("mission_type_name") == "迷失之地":
+                if (
+                    not isinstance(mt, dict)
+                    or mt.get("mission_type_name") == "迷失之地"
+                ):
                     continue
                 names.extend(
                     str(m.get("mission_name") or "")
@@ -186,10 +237,7 @@ def coffee_options(root: Path, day: int) -> list[dict]:
                 options.append({"label": all_coffee[name], "value": name})
         return options
     # 当日无排程：回退为全部咖啡
-    return [
-        {"label": display, "value": name}
-        for name, display in all_coffee.items()
-    ]
+    return [{"label": display, "value": name} for name, display in all_coffee.items()]
 
 
 def world_patrol_route_lists(root: Path) -> list[dict]:
@@ -197,12 +245,9 @@ def world_patrol_route_lists(root: Path) -> list[dict]:
     与上游 ``get_world_patrol_route_lists`` 同源；「全部」由静态选项前置）。"""
 
     names: list[str] = []
-    dir_path = root / "config" / "world_patrol_route_list"
-    if dir_path.is_dir():
-        for path in sorted(dir_path.glob("*.yml")):
-            data = read_file(path)
-            if isinstance(data, dict) and data.get("name"):
-                names.append(str(data["name"]))
+    for _path, data in _read_yml_dir(root / "config" / "world_patrol_route_list"):
+        if isinstance(data, dict) and data.get("name"):
+            names.append(str(data["name"]))
     return [{"label": n, "value": n} for n in names]
 
 
@@ -211,12 +256,9 @@ def agent_names(root: Path) -> list[dict]:
     「随机」由字段静态选项前置）。"""
 
     names: list[str] = []
-    dir_path = root / "assets" / "game_data" / "agent"
-    if dir_path.is_dir():
-        for path in sorted(dir_path.glob("*.yml")):
-            data = read_file(path)
-            if isinstance(data, dict) and data.get("agent_name"):
-                names.append(str(data["agent_name"]))
+    for _path, data in _read_yml_dir(root / "assets" / "game_data" / "agent"):
+        if isinstance(data, dict) and data.get("agent_name"):
+            names.append(str(data["agent_name"]))
     return [{"label": n, "value": n} for n in names]
 
 
@@ -244,14 +286,9 @@ def agent_id_options(root: Path) -> list[dict]:
             return options
 
     options: list[dict] = []
-    dir_path = root / "assets" / "game_data" / "agent"
-    if dir_path.is_dir():
-        for path in sorted(dir_path.glob("*.yml")):
-            data = read_file(path)
-            if isinstance(data, dict) and data.get("agent_name"):
-                options.append(
-                    {"label": str(data["agent_name"]), "value": path.stem}
-                )
+    for path, data in _read_yml_dir(root / "assets" / "game_data" / "agent"):
+        if isinstance(data, dict) and data.get("agent_name"):
+            options.append({"label": str(data["agent_name"]), "value": path.stem})
     return options
 
 
@@ -287,5 +324,7 @@ def lost_void_challenge_options(root: Path) -> list[dict]:
     """迷失之地挑战配置模板选项（config/lost_void_challenge，sample 计入）。"""
 
     return _template_options(
-        root / "config" / "lost_void_challenge", include_sample=True, include_merged=False
+        root / "config" / "lost_void_challenge",
+        include_sample=True,
+        include_merged=False,
     )

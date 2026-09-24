@@ -28,6 +28,7 @@ import inspect
 import json
 import os
 import shlex
+import shutil
 import uuid
 from abc import ABC, abstractmethod
 from contextlib import suppress
@@ -50,6 +51,32 @@ from app.utils.constants import (
 from app.utils.io import write_file
 
 logger = get_logger("配置基类")
+
+
+def _load_json_file(path: Path) -> dict[str, Any]:
+    """
+    读取配置文件, 解析失败时保留 ``.corrupt-<时间戳>`` 副本后按空配置继续
+
+    Args:
+        path: 配置文件路径, 空文件视为空配置
+
+    Returns:
+        dict[str, Any]: 解析结果; 空文件或损坏文件返回 ``{}``
+    """
+    text = path.read_text(encoding="utf-8")
+    if not text.strip():
+        return {}
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError as e:
+        corrupt_path = path.with_name(
+            f"{path.name}.corrupt-{datetime.now():%Y%m%d-%H%M%S}"
+        )
+        shutil.copyfile(path, corrupt_path)
+        logger.error(
+            f"配置文件 {path} 解析失败, 已保留副本 {corrupt_path.name}, 按默认值加载: {e}"
+        )
+        return {}
 
 
 class ValidatorBase(ABC):
@@ -130,6 +157,30 @@ class MultipleOptionsValidator(ValidatorBase):
 
     def correct(self, value):
         return value if self.validate(value) else []
+
+
+class StringListValidator(ValidatorBase):
+    """仅允许字符串成员的动态多选列表。
+
+    MaaEnd 的目标武器选项来自安装目录，无法在配置模型初始化时写死，
+    因此不能使用需要静态选项表的 ``MultipleOptionsValidator``。
+    allow_none 用于区分“沿用动态默认值”和显式清空列表。
+    """
+
+    def __init__(self, *, allow_none: bool = False):
+        self.allow_none = allow_none
+
+    def validate(self, value):
+        if value is None and self.allow_none:
+            return True
+        return isinstance(value, list) and all(isinstance(item, str) for item in value)
+
+    def correct(self, value):
+        if value is None and self.allow_none:
+            return None
+        if not isinstance(value, list):
+            return []
+        return [item for item in value if isinstance(item, str)]
 
 
 class UUIDValidator(ValidatorBase):
@@ -266,7 +317,10 @@ class EncryptValidator(ValidatorBase):
             return False
 
     def correct(self, value: Any) -> Any:
-        return value if self.validate(value) else dpapi_encrypt("数据损坏, 请重新设置")
+        if self.validate(value):
+            return value
+        logger.warning("加密配置项无法解密, 已替换为占位值, 请重新设置")
+        return dpapi_encrypt("数据损坏, 请重新设置")
 
 
 class VirtualConfigValidator(ValidatorBase):
@@ -832,6 +886,7 @@ class ConfigBase(ABC):
         self.file: Path | None = None
         self.is_locked = False
         self._save_methods: list[Callable[[], Coroutine[Any, Any, None]]] = []
+        self._save_lock = asyncio.Lock()
 
         # 配置项索引
         self._config_item_index: dict[str, dict[str, ConfigItem]] = {}
@@ -869,10 +924,7 @@ class ConfigBase(ABC):
             self.file.parent.mkdir(parents=True, exist_ok=True)
             self.file.touch()
 
-        try:
-            data = json.loads(self.file.read_text(encoding="utf-8"))
-        except json.JSONDecodeError:
-            data = {}
+        data = _load_json_file(self.file)
 
         await self.load(data)
 
@@ -1099,7 +1151,10 @@ class ConfigBase(ABC):
         if not self.file:
             raise ValueError("文件路径未设置, 请先调用 `connect` 方法连接配置文件")
 
-        write_file(self.file, await self.toDict(if_decrypt=False))
+        # 序列化与落盘整体串行, 保证连续两次保存的落盘顺序与调用顺序一致
+        async with self._save_lock:
+            data = await self.toDict(if_decrypt=False)
+            await asyncio.to_thread(write_file, self.file, data)
 
     async def lock(self):
         """
@@ -1162,6 +1217,7 @@ class MultipleConfig(Generic[T]):
         self.data: dict[uuid.UUID, T] = {}
         self.is_locked = False
         self._save_methods: list[Callable[[], Coroutine[Any, Any, None]]] = []
+        self._save_lock = asyncio.Lock()
 
     def __getitem__(self, key: uuid.UUID) -> T:
         """允许通过 config[uuid] 访问配置项"""
@@ -1207,10 +1263,7 @@ class MultipleConfig(Generic[T]):
             self.file.parent.mkdir(parents=True, exist_ok=True)
             self.file.touch()
 
-        try:
-            data = json.loads(self.file.read_text(encoding="utf-8"))
-        except json.JSONDecodeError:
-            data = {}
+        data = _load_json_file(self.file)
 
         await self.load(data)
 
@@ -1297,6 +1350,14 @@ class MultipleConfig(Generic[T]):
                 self.data[self.order[-1]] = self.sub_config_type[type_name]()
                 await self.data[self.order[-1]].load(source_data[instance["uid"]])
 
+                # 重建出来的子配置要挂上父级保存回调（#174），否则复制脚本、任务
+                # 收尾整表写回之后，对这些子配置的修改只改内存、不落盘。放在子配置
+                # load 之后：它自己的纠错保存不该触发父级半途落盘。
+                for save_method in self._save_methods:
+                    await self.data[self.order[-1]].add_save_method(save_method)
+                if self.file:
+                    await self.data[self.order[-1]].add_save_method(self.save)
+
         normalized_data = await self.toDict(if_decrypt=False)
         is_dirty = normalized_data != source_data
 
@@ -1375,7 +1436,10 @@ class MultipleConfig(Generic[T]):
         if not self.file:
             raise ValueError("文件路径未设置, 请先调用 `connect` 方法连接配置文件")
 
-        write_file(self.file, await self.toDict(if_decrypt=False))
+        # 序列化与落盘整体串行, 保证连续两次保存的落盘顺序与调用顺序一致
+        async with self._save_lock:
+            data = await self.toDict(if_decrypt=False)
+            await asyncio.to_thread(write_file, self.file, data)
 
     async def add(self, config_type: Type[T]) -> tuple[uuid.UUID, T]:
         """

@@ -8,6 +8,8 @@ import { ref, type Ref } from 'vue'
 import { Modal, notification } from 'ant-design-vue'
 import { Service } from '@/api'
 import { useAppClosing } from '@/composables/useAppClosing'
+import { useUpdateChecker } from '@/composables/useUpdateChecker'
+import { clearStageOptionsCache } from '@/composables/usePlanDataCoordinator'
 import { realtimeSnapshotApi } from '@/services/realtimeSnapshotApi'
 import {
   bootstrapResidentResources,
@@ -206,6 +208,8 @@ const handleConnected = async (): Promise<void> => {
   backendStatus.value = 'running'
   endIntentionalBackendRestart('后端已重新连上')
   dismissDisconnectIncident()
+  // 后端重启/重连后关卡数据可能已变，让计划页下次重新拉关卡选项
+  clearStageOptionsCache()
   await refreshLifecycleSnapshots()
 }
 
@@ -335,6 +339,8 @@ export function disposeAppLifecycle(): void {
   }
   endIntentionalBackendRestart('生命周期协调器释放')
   dismissDisconnectIncident()
+  // 4 小时更新检查是应用级定时器，跟着生命周期一起停，不绑任何页面
+  useUpdateChecker().stopPolling()
   logger.info('应用生命周期协调器已释放')
 }
 
@@ -864,15 +870,6 @@ export async function manualReconnect(): Promise<boolean> {
   return connected
 }
 
-/** 手动重启后端（重置失败计数） */
-export async function restartBackendManually(): Promise<void> {
-  // 用户显式重启优先于有意重启窗口，否则会被上面的守卫直接跳过
-  endIntentionalBackendRestart('用户手动重启后端')
-  backendRestartAttempts = 0
-  restartFailureShown = false
-  await restartBackendFlow(true)
-}
-
 export function useAppLifecycle() {
   return {
     initializeAppLifecycle,
@@ -880,7 +877,6 @@ export function useAppLifecycle() {
     connectWithRetry,
     closeApp,
     manualReconnect,
-    restartBackendManually,
     backendStatus,
     powerCountdown,
     connectionState: connectionState(),

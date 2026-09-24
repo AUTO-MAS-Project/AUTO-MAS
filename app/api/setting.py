@@ -28,11 +28,15 @@ from fastapi import APIRouter, Body
 from fastapi.responses import FileResponse, JSONResponse
 from starlette.background import BackgroundTask
 
-from app.core import Config
+from app.core import Config, notify_channels
 from app.core.notify import send_test_notification
 from app.models.config import Webhook as WebhookConfig
 from app.models.schema import (
     GlobalConfig,
+    NotifyChannelFieldOut,
+    NotifyChannelOptionOut,
+    NotifyChannelOut,
+    NotifyChannelsOut,
     OutBase,
     PatternDebugIn,
     PatternDebugOut,
@@ -41,13 +45,13 @@ from app.models.schema import (
     SettingUpdateIn,
     VirtualDisplayCheckOut,
     VirtualDisplayCheckResultItem,
+    VirtualDisplayDetachOut,
     Webhook,
     WebhookCreateOut,
     WebhookDeleteIn,
     WebhookGetIn,
     WebhookGetOut,
     WebhookIndexItem,
-    WebhookReorderIn,
     WebhookTestIn,
     WebhookUpdateIn,
 )
@@ -112,6 +116,7 @@ async def get_scripts() -> SettingGetOut:
     try:
         data = await Config.get_setting()
     except Exception as e:
+        logger.opt(exception=True).warning(f"get_scripts失败: {type(e).__name__}: {e}")
         return SettingGetOut(
             code=500,
             status="error",
@@ -136,6 +141,9 @@ async def update_script(script: SettingUpdateIn = Body(...)) -> OutBase:
         await Config.update_setting(data)
 
     except Exception as e:
+        logger.opt(exception=True).warning(
+            f"update_script失败: {type(e).__name__}: {e}"
+        )
         return OutBase(
             code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
         )
@@ -155,6 +163,7 @@ async def test_notify() -> OutBase:
     try:
         result = await send_test_notification()
     except Exception as e:
+        logger.opt(exception=True).warning(f"test_notify失败: {type(e).__name__}: {e}")
         return OutBase(
             code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
         )
@@ -165,6 +174,68 @@ async def test_notify() -> OutBase:
             message=f"部分通知发送失败: {'、'.join(result.failed)}",
         )
     return OutBase()
+
+
+@router.get(
+    "/notify/channels",
+    tags=["Get"],
+    summary="查询通知渠道描述",
+    response_model=NotifyChannelsOut,
+    status_code=200,
+)
+async def get_notify_channels() -> NotifyChannelsOut:
+    """返回通知渠道描述表，仅展示元数据，不含任何配置值。"""
+
+    try:
+        channels = [
+            NotifyChannelOut(
+                key=channel.key,
+                nameKey=channel.name_key,
+                descKey=channel.desc_key,
+                icon=channel.icon,
+                group=channel.group,
+                order=channel.order,
+                docUrl=channel.doc_url,
+                scopes=sorted(channel.scopes),
+                kind=channel.kind,
+                customBlock=channel.custom_block,
+                enableField=list(channel.enable_field)
+                if channel.enable_field
+                else None,
+                summaryKey=channel.summary_key,
+                summaryFields=list(channel.summary_fields),
+                fields={
+                    scope: [
+                        NotifyChannelFieldOut(
+                            group=item.group,
+                            name=item.name,
+                            labelKey=item.label_key,
+                            control=item.control,
+                            options=[
+                                NotifyChannelOptionOut(value=value, labelKey=label_key)
+                                for value, label_key in item.options
+                            ],
+                            placeholderKey=item.placeholder_key,
+                            tipKey=item.tip_key,
+                        )
+                        for item in items
+                    ]
+                    for scope, items in channel.fields.items()
+                },
+            )
+            for channel in notify_channels.get_notify_channels()
+        ]
+    except Exception as e:
+        logger.opt(exception=True).warning(
+            f"get_notify_channels失败: {type(e).__name__}: {e}"
+        )
+        return NotifyChannelsOut(
+            code=500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+            channels=[],
+        )
+    return NotifyChannelsOut(channels=channels)
 
 
 @router.post(
@@ -185,6 +256,9 @@ async def debug_pattern_api(req: PatternDebugIn = Body(...)) -> PatternDebugOut:
             req.pattern.model_dump(exclude_none=True), req.logText
         )
     except Exception as e:
+        logger.opt(exception=True).warning(
+            f"debug_pattern_api失败: {type(e).__name__}: {e}"
+        )
         return PatternDebugOut(
             code=500,
             status="error",
@@ -213,6 +287,7 @@ async def get_webhook(webhook: WebhookGetIn = Body(...)) -> WebhookGetOut:
         index = [WebhookIndexItem(**_) for _ in index]
         data = {uid: Webhook(**cfg) for uid, cfg in data.items()}
     except Exception as e:
+        logger.opt(exception=True).warning(f"get_webhook失败: {type(e).__name__}: {e}")
         return WebhookGetOut(
             code=500,
             status="error",
@@ -235,6 +310,7 @@ async def add_webhook() -> WebhookCreateOut:
         uid, config = await Config.add_webhook(None, None)
         data = Webhook(**(await config.toDict()))
     except Exception as e:
+        logger.opt(exception=True).warning(f"add_webhook失败: {type(e).__name__}: {e}")
         return WebhookCreateOut(
             code=500,
             status="error",
@@ -258,6 +334,9 @@ async def update_webhook(webhook: WebhookUpdateIn = Body(...)) -> OutBase:
             None, None, webhook.webhookId, webhook.data.model_dump(exclude_unset=True)
         )
     except Exception as e:
+        logger.opt(exception=True).warning(
+            f"update_webhook失败: {type(e).__name__}: {e}"
+        )
         return OutBase(
             code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
         )
@@ -275,23 +354,9 @@ async def delete_webhook(webhook: WebhookDeleteIn = Body(...)) -> OutBase:
     try:
         await Config.del_webhook(None, None, webhook.webhookId)
     except Exception as e:
-        return OutBase(
-            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
+        logger.opt(exception=True).warning(
+            f"delete_webhook失败: {type(e).__name__}: {e}"
         )
-    return OutBase()
-
-
-@router.post(
-    "/webhook/order",
-    tags=["Update"],
-    summary="重新排序webhook项",
-    response_model=OutBase,
-    status_code=200,
-)
-async def reorder_webhook(webhook: WebhookReorderIn = Body(...)) -> OutBase:
-    try:
-        await Config.reorder_webhook(None, None, webhook.indexList)
-    except Exception as e:
         return OutBase(
             code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
         )
@@ -317,6 +382,7 @@ async def test_webhook(webhook: WebhookTestIn = Body(...)) -> OutBase:
             webhook_config,
         )
     except Exception as e:
+        logger.opt(exception=True).warning(f"test_webhook失败: {type(e).__name__}: {e}")
         return OutBase(code=500, status="error", message=f"Webhook测试失败: {str(e)}")
     return OutBase()
 
@@ -341,6 +407,9 @@ async def check_virtual_display() -> VirtualDisplayCheckOut:
     try:
         return await check_virtual_display_driver()
     except Exception as e:
+        logger.opt(exception=True).warning(
+            f"check_virtual_display失败: {type(e).__name__}: {e}"
+        )
         return VirtualDisplayCheckOut(
             code=500,
             status="error",
@@ -351,6 +420,36 @@ async def check_virtual_display() -> VirtualDisplayCheckOut:
                 )
             ],
         )
+
+
+@router.post(
+    "/virtual-display/detach",
+    tags=["Action"],
+    summary="立即拆除虚拟显示器",
+    response_model=VirtualDisplayDetachOut,
+    status_code=200,
+)
+async def detach_virtual_display() -> VirtualDisplayDetachOut:
+    """用户明示要拆：真实显示器回来时的询问弹窗和设置页的「立即拆除」都走这里。
+
+    任务在不在跑都照办。拆完守卫的巡检照常：桌面上还有真实输出就什么都不做，一块都没有
+    的话下一轮会重新挂上——要彻底停用得关开关。
+    """
+
+    from app.core.desktop_guard import DesktopGuard
+
+    try:
+        detached = await DesktopGuard.detach_now("用户手动拆除")
+    except Exception as e:
+        logger.opt(exception=True).warning(
+            f"detach_virtual_display失败: {type(e).__name__}: {e}"
+        )
+        return VirtualDisplayDetachOut(
+            code=500, status="error", message=f"拆除失败: {str(e)}"
+        )
+    if not detached:
+        return VirtualDisplayDetachOut(message="当前没有挂载虚拟显示器")
+    return VirtualDisplayDetachOut(detached=True, message="已拆除虚拟显示器")
 
 
 @router.post(
@@ -372,6 +471,9 @@ async def virtual_display_status() -> VirtualDisplayCheckOut:
     try:
         return await probe_virtual_display_driver()
     except Exception as e:
+        logger.opt(exception=True).warning(
+            f"virtual_display_status失败: {type(e).__name__}: {e}"
+        )
         return VirtualDisplayCheckOut(
             code=500,
             status="error",

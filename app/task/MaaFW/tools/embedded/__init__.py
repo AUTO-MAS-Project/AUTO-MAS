@@ -14,16 +14,12 @@ from .project_path import (
     release_project_path,
     try_reserve_project_path,
 )
-from .registry import MaaFWRegistryService
 from .runtime_route import (
-    MaaFWManagedExecutionRoute,
     MaaFWRuntimePoolRoute,
     MaaFWRuntimeRouteError,
 )
 
 __all__ = [
-    "MaaFWManagedExecutionRoute",
-    "MaaFWRegistryService",
     "MaaFWRuntimePoolRoute",
     "MaaFWRuntimeRouteError",
     "normalize_project_path",

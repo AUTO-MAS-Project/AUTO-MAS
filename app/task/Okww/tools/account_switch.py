@@ -29,6 +29,12 @@ OCR 复用通用工具集 `app.tools.ocr`。
     → 等待登录页消失（登录成功）
 """
 
+# ⚠️ 黑箱红线：本模块是【临时补位】——账号切换属上游领域（游戏内操作），上游
+# 已有等效入口 ok-wuthering-waves/src/task/MultiAccountDailyTask.py 的
+# _select_and_login_account（多账号日常任务自带切换）。上游入口在当前发行版
+# 不可用（模板特征匹配失效）时由 MAS 补位；上游修复后移除本模块并改为复用
+# 上游入口（见 blackbox-boundary.md）。
+
 import asyncio
 import ctypes
 import inspect
@@ -446,21 +452,24 @@ def _wait_for_actionable_state(hwnd: int, on_log: Callable[[str], None]) -> None
     deadline = time.monotonic() + _IN_GAME_UPDATE_TIMEOUT
     last_progress = time.monotonic()
     last_sig: int | None = None
+    items_full: list[OCRItem] = []
+    on_login_page = False
     iter_count = 0
     while time.monotonic() < deadline:
         frame = _capture_window(hwnd, activate=False)
-        items_full = ocr_image(frame)
-        if iter_count % _DIAGNOSTIC_DUMP_EVERY_POLLS == 0:
-            _dump_ocr_items(items_full)
-        if (
-            _find_text(ocr_image(frame, _LOGIN_ROI), _LOGIN_PAGE_TEXTS) is not None
-            or _find_text(items_full, _LOGGED_IN_MENU_TEXTS) is not None
-        ):
-            return
         sig = _frame_signature(frame)
         if sig != last_sig:
+            # 画面有变化才跑 OCR；帧哈希未变时沿用上次识别结果
+            items_full = ocr_image(frame)
+            on_login_page = (
+                _find_text(ocr_image(frame, _LOGIN_ROI), _LOGIN_PAGE_TEXTS) is not None
+            )
             last_sig = sig
             last_progress = time.monotonic()
+        if iter_count % _DIAGNOSTIC_DUMP_EVERY_POLLS == 0:
+            _dump_ocr_items(items_full)
+        if on_login_page or _find_text(items_full, _LOGGED_IN_MENU_TEXTS) is not None:
+            return
         if time.monotonic() - last_progress >= _IN_GAME_STALL_SECONDS:
             break
         if iter_count % 5 == 0:

@@ -4,11 +4,6 @@ import { app } from 'electron'
 import { isDevelopmentEnvironment } from './instanceConfig'
 
 /**
- * 日志级别类型
- */
-export type LogLevel = 'error' | 'warn' | 'info' | 'verbose' | 'debug' | 'silly'
-
-/**
  * 模块颜色映射
  */
 const moduleColors = new Map<string, string>()
@@ -126,17 +121,6 @@ export function initializeLogger(): void {
 }
 
 /**
- * 保存原始 console 方法的引用
- */
-const originalConsole = {
-  log: console.log,
-  info: console.info,
-  warn: console.warn,
-  error: console.error,
-  debug: console.debug,
-}
-
-/**
  * Hook console 方法，将所有 console 调用重定向到 logger 系统
  */
 function hookConsole(): void {
@@ -186,17 +170,6 @@ function formatConsoleArgs(args: unknown[]): unknown[] {
 }
 
 /**
- * 恢复原始 console 方法（用于调试或特殊情况）
- */
-export function restoreConsole(): void {
-  console.log = originalConsole.log
-  console.info = originalConsole.info
-  console.warn = originalConsole.warn
-  console.error = originalConsole.error
-  console.debug = originalConsole.debug
-}
-
-/**
  * 创建日志记录器
  */
 export class Logger {
@@ -223,16 +196,8 @@ export class Logger {
     log.info(this.moduleName, message, ...args)
   }
 
-  verbose(message: string, ...args: unknown[]): void {
-    log.verbose(this.moduleName, message, ...args)
-  }
-
   debug(message: string, ...args: unknown[]): void {
     log.debug(this.moduleName, message, ...args)
-  }
-
-  silly(message: string, ...args: unknown[]): void {
-    log.silly(this.moduleName, message, ...args)
   }
 }
 

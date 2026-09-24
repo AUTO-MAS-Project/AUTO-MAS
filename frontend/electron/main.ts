@@ -1,4 +1,3 @@
-import { spawn } from 'child_process'
 import {
   app,
   BrowserWindow,
@@ -19,7 +18,7 @@ import {
 } from 'electron'
 import * as fs from 'fs'
 import * as path from 'path'
-import { checkEnvironment, getAppRoot } from './services/environmentService'
+import { getAppRoot } from './services/environmentService'
 import {
   registerInitializationHandlers,
   checkCriticalFilesViaRuntime,
@@ -37,6 +36,7 @@ import {
 import { decideRendererRecovery } from './rendererCrashRecovery'
 
 import { getLogger, initializeLogger } from './services/logger'
+import { readLogContent, readLogIncrement } from './services/logFileReader'
 import { createMaaEndIssueReport } from './services/maaEndIssueReportService'
 import { createOkwwIssueReport } from './services/okwwIssueReportService'
 import { createOkNteIssueReport } from './services/okNteIssueReportService'
@@ -190,29 +190,6 @@ function isRunningAsAdmin(): boolean {
     return true // 非Windows系统暂时返回true
   } catch {
     return false
-  }
-}
-
-// 重新以管理员权限启动应用
-function restartAsAdmin(): void {
-  if (process.platform === 'win32') {
-    const exePath = process.execPath
-    const args = process.argv.slice(1)
-
-    // 使用PowerShell以管理员权限启动
-    spawn(
-      'powershell',
-      [
-        '-Command',
-        `Start-Process -FilePath "${exePath}" -ArgumentList "${args.join(' ')}" -Verb RunAs`,
-      ],
-      {
-        detached: true,
-        stdio: 'ignore',
-      }
-    )
-
-    app.quit()
   }
 }
 
@@ -545,11 +522,9 @@ async function forceQuitAfterRendererTimeout(reason: string): Promise<void> {
     })
     forceQuitInProgress = retryableState.forceQuitInProgress
     quitRequestInFlight = retryableState.quitRequestInFlight
-    dialog.showErrorBox(
-      'AUTO-MAS 无法安全退出',
-      `未能确认后端进程已退出，前端将保持运行以避免遗留后台进程。\n\n${errorMsg}`
-    )
-    if ((!mainWindow || mainWindow.isDestroyed()) && app.isReady()) {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      showMainWindow()
+    } else if (app.isReady()) {
       try {
         createWindow()
       } catch (windowError) {
@@ -558,6 +533,10 @@ async function forceQuitAfterRendererTimeout(reason: string): Promise<void> {
         logger.error(`强制清理失败后重建窗口失败: ${windowErrorMsg}`)
       }
     }
+    dialog.showErrorBox(
+      'AUTO-MAS 无法安全退出',
+      `未能确认后端进程已退出，前端将保持运行以避免遗留后台进程。\n\n${errorMsg}`
+    )
   }
 }
 
@@ -571,6 +550,9 @@ function requestRendererClose(reason: string): void {
   }
 
   quitRequestInFlight = true
+  // 先让用户看到窗口已经关闭，renderer 保留在后台继续完成后端清理。
+  win.setSkipTaskbar(true)
+  win.hide()
   logger.info(`请求 renderer 执行协调退出: ${reason}`)
   win.webContents.send('app-close-requested')
   quitFallbackTimer = setTimeout(() => {
@@ -614,6 +596,7 @@ function updateTrayVisibility(config: AppConfig) {
 
 let mainWindow: Electron.BrowserWindow | null = null
 let logWindow: Electron.BrowserWindow | null = null
+let virtualDisplayPromptWindow: Electron.BrowserWindow | null = null
 /** 日志窗打开时选中的那一份：后端的 app.log 或主进程的 frontend.log。 */
 type LogWindowFile = 'app' | 'frontend'
 type WindowActivity = 'visible' | 'background'
@@ -662,6 +645,29 @@ function centerBoundsInWorkArea(bounds: Rectangle, workArea: Rectangle): Rectang
 function parseConfigInteger(value: string | undefined, fallback: number): number {
   const parsed = Number.parseInt(value?.trim() ?? '', 10)
   return Number.isFinite(parsed) ? parsed : fallback
+}
+
+/**
+ * 开发环境的不变式：前端必须由 vite 开发服务器提供。
+ *
+ * 在加载前端**之前**先校验，而不是等加载失败再兜底——否则一旦
+ * VITE_DEV_SERVER_URL 缺失，加载逻辑会静默回退去读 dist/，让开发者
+ * 以为跑的是当前源码。开发环境下任何异常都应优先指出，不能静默换一条路。
+ *
+ * 打包分发不受影响（由 vite 产出的静态资源在 dist/ 中，正常读取）。
+ */
+function assertDevelopmentRuntime(): void {
+  if (app.isPackaged) return
+  if (process.env.VITE_DEV_SERVER_URL) return
+
+  const message =
+    '开发环境未设置 VITE_DEV_SERVER_URL：前端必须由 vite 开发服务器提供，' +
+    '不会回退读取 dist/ 中的构建产物。\n\n' +
+    '请使用 yarn dev 启动（会同时拉起 vite 与 electron）。'
+  logger.error(message)
+  dialog.showErrorBox('AUTO-MAS 开发环境启动方式不正确', message)
+  app.quit()
+  process.exit(1)
 }
 
 function createWindow() {
@@ -899,6 +905,7 @@ function createWindow() {
   }
 
   win.setMenuBarVisibility(false)
+  assertDevelopmentRuntime()
   const devServer = process.env.VITE_DEV_SERVER_URL
   if (devServer) {
     logger.info(`加载开发服务器: ${devServer}`)
@@ -955,6 +962,7 @@ function createWindow() {
 
   win.on('closed', () => {
     logger.info('主窗口已关闭')
+    closeVirtualDisplayPrompt()
     // 清理监听（可选）
     screen.removeListener('display-metrics-changed', handleDisplayConfigurationChanged)
     screen.removeListener('display-removed', handleDisplayConfigurationChanged)
@@ -1113,6 +1121,166 @@ function createLogWindow(file?: LogWindowFile) {
     logWindow = null
   })
 }
+
+// ==================== 虚拟显示器询问弹窗 ====================
+// 真实显示器回来了但有任务在跑，后端不拆虚拟屏、改为问用户。此时虚拟屏是主显示器，
+// 主窗口和任务栏都留在看不见的那块上，所以这个弹窗必须另开窗口、放到回来的那块屏
+// 右下角，而不是画在主窗口里。它只是一个壳：数据由主窗口渲染进程从后端消息转来，
+// 拆不拆由弹窗自己调后端接口。
+
+interface VirtualDisplayPromptPayload {
+  /** 回来的真实显示设备名 */
+  returned: string[]
+  /** 回来那块屏的工作区，物理像素；后端读不到时为空 */
+  monitor?: { left: number; top: number; right: number; bottom: number } | null
+}
+
+let virtualDisplayPromptPayload: VirtualDisplayPromptPayload | null = null
+
+const VDD_PROMPT_WIDTH = 460
+const VDD_PROMPT_HEIGHT = 240
+const VDD_PROMPT_MARGIN = 16
+
+function isVirtualDisplayPromptPayload(value: unknown): value is VirtualDisplayPromptPayload {
+  if (!value || typeof value !== 'object') return false
+  const candidate = value as Partial<VirtualDisplayPromptPayload>
+  if (!Array.isArray(candidate.returned)) return false
+  const monitor = candidate.monitor
+  if (monitor == null) return true
+  return (
+    typeof monitor === 'object' &&
+    ['left', 'top', 'right', 'bottom'].every(
+      key => typeof (monitor as Record<string, unknown>)[key] === 'number'
+    )
+  )
+}
+
+/**
+ * 弹窗该落在哪块屏。
+ * 后端给的矩形是物理像素，Electron 的屏幕坐标是 DIP，Windows 上要先换算再找屏；
+ * 没给矩形就挑一块非主显示器——虚拟屏是在无输出时挂上的，此刻一定是主显示器。
+ */
+function resolveVirtualDisplayPromptDisplay(payload: VirtualDisplayPromptPayload): Display {
+  const rect = payload.monitor
+  if (rect) {
+    const physicalCenter = {
+      x: Math.round((rect.left + rect.right) / 2),
+      y: Math.round((rect.top + rect.bottom) / 2),
+    }
+    const dipCenter =
+      process.platform === 'win32' && typeof screen.screenToDipPoint === 'function'
+        ? screen.screenToDipPoint(physicalCenter)
+        : physicalCenter
+    return screen.getDisplayNearestPoint(dipCenter)
+  }
+  const primary = screen.getPrimaryDisplay()
+  return screen.getAllDisplays().find(display => display.id !== primary.id) ?? primary
+}
+
+function virtualDisplayPromptBounds(display: Display): Rectangle {
+  const area = display.workArea
+  return {
+    x: area.x + area.width - VDD_PROMPT_WIDTH - VDD_PROMPT_MARGIN,
+    y: area.y + area.height - VDD_PROMPT_HEIGHT - VDD_PROMPT_MARGIN,
+    width: VDD_PROMPT_WIDTH,
+    height: VDD_PROMPT_HEIGHT,
+  }
+}
+
+function showVirtualDisplayPrompt(payload: VirtualDisplayPromptPayload): void {
+  virtualDisplayPromptPayload = payload
+  const display = resolveVirtualDisplayPromptDisplay(payload)
+  const bounds = virtualDisplayPromptBounds(display)
+
+  if (virtualDisplayPromptWindow && !virtualDisplayPromptWindow.isDestroyed()) {
+    virtualDisplayPromptWindow.setBounds(bounds)
+    virtualDisplayPromptWindow.webContents.send('vdd-prompt:data', payload)
+    virtualDisplayPromptWindow.showInactive()
+    return
+  }
+
+  logger.info(
+    `创建虚拟显示器询问弹窗：回来的显示器 ${payload.returned.join(', ')}，落在显示器 ${display.id} 的 ${JSON.stringify(bounds)}`
+  )
+
+  const win = new BrowserWindow({
+    ...bounds,
+    frame: false,
+    resizable: false,
+    minimizable: false,
+    maximizable: false,
+    fullscreenable: false,
+    alwaysOnTop: true,
+    skipTaskbar: true,
+    show: false,
+    title: '虚拟显示器 - AUTO-MAS',
+    webPreferences: {
+      nodeIntegration: false,
+      contextIsolation: true,
+      preload: path.join(__dirname, 'preload.js'),
+    },
+    autoHideMenuBar: true,
+  })
+  virtualDisplayPromptWindow = win
+  win.setMenuBarVisibility(false)
+
+  const hash = '/vdd-prompt'
+  const devServer = process.env.VITE_DEV_SERVER_URL
+  if (devServer) {
+    win.loadURL(`${devServer}#${hash}`)
+  } else {
+    win.loadFile(path.join(app.getAppPath(), 'dist', 'index.html'), { hash })
+  }
+
+  win.once('ready-to-show', () => {
+    if (win.isDestroyed()) return
+    // 创建时给的 bounds 可能被 DPI 折算挪动，显示前再摆一次
+    win.setBounds(bounds)
+    // 不抢焦点：正在跑的脚本可能靠键盘操作游戏，焦点一走就打断
+    win.showInactive()
+  })
+
+  win.on('closed', () => {
+    if (virtualDisplayPromptWindow === win) {
+      virtualDisplayPromptWindow = null
+      virtualDisplayPromptPayload = null
+    }
+    logger.info('虚拟显示器询问弹窗已关闭')
+  })
+}
+
+function closeVirtualDisplayPrompt(): void {
+  const win = virtualDisplayPromptWindow
+  virtualDisplayPromptWindow = null
+  virtualDisplayPromptPayload = null
+  if (win && !win.isDestroyed()) {
+    win.close()
+  }
+}
+
+ipcMain.handle('vdd-prompt:show', (_event, payload: unknown) => {
+  if (!isVirtualDisplayPromptPayload(payload)) {
+    logger.warn(`虚拟显示器询问弹窗收到无法识别的数据: ${JSON.stringify(payload)}`)
+    return { success: false, error: 'invalid payload' }
+  }
+  try {
+    showVirtualDisplayPrompt(payload)
+    return { success: true }
+  } catch (error) {
+    logger.error('打开虚拟显示器询问弹窗失败:', error)
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : String(error),
+    }
+  }
+})
+
+ipcMain.handle('vdd-prompt:close', () => {
+  closeVirtualDisplayPrompt()
+})
+
+// 弹窗页面挂载后自己来取：主进程在 did-finish-load 时推送会早于 Vue 组件注册监听
+ipcMain.handle('vdd-prompt:get', () => virtualDisplayPromptPayload)
 
 // 日志系统 IPC 处理器
 ipcMain.handle(
@@ -1333,30 +1501,23 @@ ipcMain.handle('data:backup', async () => {
   }
 })
 
-ipcMain.handle('log:getContent', async (_event, lines?: number, fileName?: string) => {
-  try {
-    const appRoot = getAppRoot()
-    const logFile = fileName || 'frontend.log'
-    const logPath = path.join(appRoot, 'debug', logFile)
-
-    if (!fs.existsSync(logPath)) {
-      return ''
+// 传了 fromOffset 走增量形态，返回 { content, size, reset }；否则沿用整份字符串
+ipcMain.handle(
+  'log:getContent',
+  async (_event, lines?: number, fileName?: string, fromOffset?: number) => {
+    const logPath = path.join(getAppRoot(), 'debug', fileName || 'frontend.log')
+    try {
+      if (typeof fromOffset === 'number') {
+        return await readLogIncrement(logPath, fromOffset)
+      }
+      return await readLogContent(logPath, lines)
+    } catch (error) {
+      logger.error('读取日志内容失败:', error)
+      // 增量形态下按「没有新内容」处理，下一轮继续从同一偏移读
+      return typeof fromOffset === 'number' ? { content: '', size: fromOffset, reset: false } : ''
     }
-
-    const content = fs.readFileSync(logPath, 'utf-8')
-
-    if (!lines || lines === 0) {
-      return content
-    }
-
-    // 返回最后 N 行
-    const allLines = content.split('\n')
-    return allLines.slice(-lines).join('\n')
-  } catch (error) {
-    logger.error('读取日志内容失败:', error)
-    return ''
   }
-})
+)
 
 ipcMain.handle('log:openWindow', async (_event, file?: LogWindowFile) => {
   try {
@@ -1527,12 +1688,6 @@ ipcMain.handle('show-item-in-folder', async (_event, filePath: string) => {
   }
 })
 
-// 环境检查
-ipcMain.handle('check-environment', async () => {
-  const appRoot = getAppRoot()
-  return checkEnvironment(appRoot)
-})
-
 // Runtime 上下文 - 初始化界面开局问一次：走没走 Runtime、回退日志文件、可用镜像键
 ipcMain.handle('get-runtime-init-context', async () => resolveRuntimeInitContext())
 
@@ -1584,73 +1739,6 @@ ipcMain.handle('check-critical-files', async () => {
 // Python相关 - 已迁移到初始化服务
 // 这些 IPC 处理器已在 initializationHandlers.ts 中实现
 
-// 获取当前主题信息
-ipcMain.handle('get-theme-info', async () => {
-  try {
-    const appRoot = getAppRoot()
-    const configPath = path.join(appRoot, 'config', 'frontend_config.json')
-
-    let themeMode = 'system'
-    let themeColor = 'blue'
-
-    // 尝试从配置文件读取主题设置
-    if (fs.existsSync(configPath)) {
-      try {
-        const configData = fs.readFileSync(configPath, 'utf8')
-        const config = JSON.parse(configData)
-        themeMode = config.themeMode || 'system'
-        themeColor = config.themeColor || 'blue'
-      } catch {
-        logger.warn('读取主题配置失败，使用默认值')
-      }
-    }
-
-    // 检测系统主题
-    const systemTheme = nativeTheme.shouldUseDarkColors ? 'dark' : 'light'
-
-    // 确定实际使用的主题
-    let actualTheme = themeMode
-    if (themeMode === 'system') {
-      actualTheme = systemTheme
-    }
-
-    const themeColors: Record<string, string> = {
-      blue: '#1677ff',
-      purple: '#722ed1',
-      cyan: '#13c2c2',
-      green: '#52c41a',
-      magenta: '#eb2f96',
-      pink: '#eb2f96',
-      red: '#ff4d4f',
-      orange: '#fa8c16',
-      yellow: '#fadb14',
-      volcano: '#fa541c',
-      geekblue: '#2f54eb',
-      lime: '#a0d911',
-      gold: '#faad14',
-    }
-
-    return {
-      themeMode,
-      themeColor,
-      actualTheme,
-      systemTheme,
-      isDark: actualTheme === 'dark',
-      primaryColor: themeColors[themeColor] || themeColors.blue,
-    }
-  } catch {
-    logger.error('获取主题信息失败')
-    return {
-      themeMode: 'system',
-      themeColor: 'blue',
-      actualTheme: 'light',
-      systemTheme: 'light',
-      isDark: false,
-      primaryColor: '#1677ff',
-    }
-  }
-})
-
 // 获取应用路径
 ipcMain.handle('get-app-path', async (_event, name: Parameters<typeof app.getPath>[0]) => {
   try {
@@ -1658,41 +1746,6 @@ ipcMain.handle('get-app-path', async (_event, name: Parameters<typeof app.getPat
   } catch {
     logger.error(`获取路径 ${name} 失败`)
     return ''
-  }
-})
-
-// 获取对话框专用的主题信息
-ipcMain.handle('get-theme', async () => {
-  try {
-    const appRoot = getAppRoot()
-    const configPath = path.join(appRoot, 'config', 'frontend_config.json')
-
-    let themeMode = 'system'
-
-    // 尝试从配置文件读取主题设置
-    if (fs.existsSync(configPath)) {
-      try {
-        const configData = fs.readFileSync(configPath, 'utf8')
-        const config = JSON.parse(configData)
-        themeMode = config.themeMode || 'system'
-      } catch {
-        logger.warn('读取主题配置失败，使用默认值')
-      }
-    }
-
-    // 检测系统主题
-    const systemTheme = nativeTheme.shouldUseDarkColors ? 'dark' : 'light'
-
-    // 确定实际使用的主题
-    let actualTheme = themeMode
-    if (themeMode === 'system') {
-      actualTheme = systemTheme
-    }
-
-    return actualTheme
-  } catch {
-    logger.error('获取对话框主题失败')
-    return nativeTheme.shouldUseDarkColors ? 'dark' : 'light'
   }
 })
 
@@ -1901,15 +1954,6 @@ ipcMain.handle('set-runtime-launch-mode', async (_event, mode: unknown) => {
     logger.error('保存 Runtime 启动方式失败', error)
     throw error
   }
-})
-
-// 管理员权限相关
-ipcMain.handle('check-admin', () => {
-  return isRunningAsAdmin()
-})
-
-ipcMain.handle('restart-as-admin', () => {
-  restartAsAdmin()
 })
 
 // 应用生命周期

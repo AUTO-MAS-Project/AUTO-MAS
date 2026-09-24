@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import os
 import shutil
 import subprocess
@@ -12,12 +13,17 @@ from pathlib import Path
 from typing import Callable
 
 from ..automas_maafw_runtime_pool import runtime_managed_uv_executable
+from ..automas_maafw_runtime_pool.host_environment import (
+    strip_host_python_environment,
+)
 from ..automas_maafw_runtime_pool.installer import (
     is_package_index_offline,
     resolve_package_index_candidates,
 )
 from .models import MaaFWAgentCommandPlan, MaaFWAgentEnvPrepareResult
 from .planner import MaaFWAgentEnvError, venv_base_python_missing, venv_python_exe
+
+logger = logging.getLogger("automas.maafw.agent_env.env")
 
 AGENT_BOOTSTRAP_PACKAGE = "json-with-comments"
 AGENT_ENV_MANIFEST_NAME = ".auto_mas_agent_env.json"
@@ -251,7 +257,9 @@ def _report_agent_progress(
             }
         )
     except Exception:
-        return
+        # 进度只是旁观者，不能拖垮 Agent 环境准备；但要留痕，否则回调里的
+        # ``no running event loop`` 这类错误就此消失。
+        logger.warning("MaaFW Agent 环境进度回调失败: %s", status, exc_info=True)
 
 
 def _prepare_isolated_venv_env(
@@ -351,6 +359,8 @@ def _ensure_isolated_venv(
                 text=True,
                 encoding="utf-8",
                 errors="replace",
+                # 引导解释器同样不能被宿主 PYTHONHOME / PYTHONPATH 带偏。
+                env=strip_host_python_environment(),
             )
         except subprocess.TimeoutExpired as exc:
             raise MaaFWAgentEnvError(
@@ -379,12 +389,13 @@ def _create_venv_with_uv(venv_path: Path, log: Callable[[str], None]) -> None:
     log(f"[Python环境] 引导 Python 均缺少 venv 模块，改用 uv 创建: {venv_path}")
     try:
         result = subprocess.run(
-            [uv_exe, "venv", "--seed", str(venv_path)],
+            [uv_exe, "venv", "--seed", "--no-config", str(venv_path)],
             capture_output=True,
             timeout=UV_VENV_TIMEOUT,
             text=True,
             encoding="utf-8",
             errors="replace",
+            env=strip_host_python_environment(),
         )
     except subprocess.TimeoutExpired as exc:
         raise MaaFWAgentEnvError(
@@ -474,6 +485,7 @@ def _write_isolated_venv_manifest(venv_path: Path, project_path: Path) -> None:
 def _load_project_agent_requirements(project_path: Path) -> list[str]:
     requirements_path = project_path / "requirements.txt"
     packages: list[str] = []
+    declared = True
     try:
         with requirements_path.open("r", encoding="utf-8") as file:
             for raw_line in file:
@@ -482,7 +494,7 @@ def _load_project_agent_requirements(project_path: Path) -> list[str]:
                     continue
                 packages.append(line)
     except FileNotFoundError:
-        pass
+        declared = False
 
     normalized = {item.split(";", 1)[0].strip().lower() for item in packages}
     if not any(item.startswith(AGENT_BOOTSTRAP_PACKAGE) for item in normalized):
@@ -493,9 +505,20 @@ def _load_project_agent_requirements(project_path: Path) -> list[str]:
     # ``run_plan`` 反过来 import 本包，写成模块级导入会成环。
     from app.task.MaaFW.tools.core.automas_maafw_runner.environment import (
         pin_agent_maafw_requirement,
+        resolve_project_maafw_requirement,
     )
 
-    return pin_agent_maafw_requirement(project_path, packages)
+    pinned = pin_agent_maafw_requirement(project_path, packages)
+    if not declared:
+        # 压根没有 requirements.txt 的 Python agent：MFW-PyQt6 的「嵌入式 Agent」
+        # 模式（FOS 这类，CFA_setting.json 里 embedded=true）把 maa 与 numpy 冻进了
+        # 外壳自己的程序里，发行包不写依赖。这份 venv 只会给 Python agent 用，里面
+        # 至少得有跟项目自带原生库同版本的 binding，否则 agent import maa 当场退出。
+        # 项目没自带原生库时拿不到版本，就还是原样。
+        requirement = resolve_project_maafw_requirement(project_path)
+        if requirement is not None:
+            pinned.append(requirement)
+    return pinned
 
 
 def _project_agent_requirements_hash(project_path: Path) -> str:
@@ -516,14 +539,8 @@ def _project_interface_hash(project_path: Path) -> str:
 
 
 def _build_agent_env_for_pip(project_path: Path) -> dict[str, str]:
-    env = os.environ.copy()
-    env.pop("VIRTUAL_ENV", None)
-    env.pop("UV_PROJECT_ENVIRONMENT", None)
-    env.pop("PYTHONHOME", None)
-    env.pop("PYTHONUSERBASE", None)
-    env.pop("PIP_TARGET", None)
-    env.pop("PIP_PREFIX", None)
-    env.pop("PIP_USER", None)
+    # 剔除名单与运行池 / worker 共用；隔离 venv 里的 pip 只认项目根这一条 PYTHONPATH。
+    env = strip_host_python_environment()
     env["PYTHONPATH"] = str(project_path)
     return env
 
@@ -759,6 +776,8 @@ def _python_supports_venv(python: str) -> bool:
             capture_output=True,
             timeout=VENV_PROBE_TIMEOUT,
             text=True,
+            # 宿主 PYTHONHOME 会让解释器起不来、PYTHONWARNINGS=error 会让探测误判成「不可用」。
+            env=strip_host_python_environment(),
         )
     except (OSError, subprocess.SubprocessError):
         return False

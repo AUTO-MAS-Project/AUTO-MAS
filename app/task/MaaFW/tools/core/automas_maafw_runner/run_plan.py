@@ -2,16 +2,16 @@ from __future__ import annotations
 
 import copy
 import json
+import logging
 import os
 from importlib import metadata
 from pathlib import Path
 from typing import Any
 
-import json5
-
 from app.task.MaaFW.tools.core.automas_maafw_agent_env import (
     build_maafw_agent_command_plans,
 )
+from app.task.MaaFW.tools.core.automas_maafw_interface.loader import parse_json_text
 from app.task.MaaFW.tools.core.automas_maafw_interface.models import (
     SUPPORTED_OPTION_TYPES,
     MaaFWController,
@@ -54,6 +54,10 @@ from .pipeline_override import MaaFWPipelineOverrideBuilder
 # 轮转日志的进程。数法与 ``app/utils/paths.py`` 的 SOURCE_ROOT 同源，只是从
 # 本文件自己的位置往上数六层。守卫见 tests/task/test_maafw_worker_import_isolation.py。
 _SOURCE_ROOT = Path(__file__).resolve().parents[6]
+
+logger = logging.getLogger("automas.maafw.runner.run_plan")
+# 语言文件解析失败只提醒一次：同一份坏文件每次建计划都会再撞上。
+_WARNED_LANGUAGE_FILES: set[str] = set()
 
 PI_INTERFACE_VERSION = "v2.8.1"
 PI_CLIENT_LANGUAGE = "zh_cn"
@@ -199,8 +203,9 @@ def build_maafw_run_plan(
             resource,
             selected_pretask_ids,
             selected_task_options,
+            i18n_mapping,
         ),
-        piEnv=_build_pi_env(resolved_base_dir, interface, controller, resource),
+        piEnv=_build_pi_env(interface, controller, resource, i18n_mapping),
         tasks=runnable_tasks,
         skippedTasks=skipped_tasks,
     )
@@ -392,9 +397,9 @@ def _build_pretask_plans(
     resource: MaaFWResource,
     selected_ids: list[str],
     task_options: MaaFWTaskOptionsByTask,
+    i18n_mapping: dict[str, Any],
 ) -> list[MaaFWPretaskRunPlan]:
     plans: list[MaaFWPretaskRunPlan] = []
-    i18n_mapping = _load_i18n_mapping(base_dir, interface_model)
     pretask_names = {
         build_pretask_task_name(pretask) for pretask in iter_pretasks(interface_model)
     }
@@ -660,20 +665,16 @@ def _is_within_base_dir(path: Path, base_dir: Path) -> bool:
 
 
 def _build_pi_env(
-    base_dir: Path,
     interface_model: MaaFWInterface,
     controller: MaaFWController,
     resource: MaaFWResource,
+    i18n_mapping: dict[str, Any],
 ) -> dict[str, str]:
-    controller_payload = _resolve_i18n_payload(
-        controller.model_dump(mode="json", exclude_none=True),
-        base_dir,
-        interface_model,
+    controller_payload = _resolve_i18n_value(
+        controller.model_dump(mode="json", exclude_none=True), i18n_mapping
     )
-    resource_payload = _resolve_i18n_payload(
-        resource.model_dump(mode="json", exclude_none=True),
-        base_dir,
-        interface_model,
+    resource_payload = _resolve_i18n_value(
+        resource.model_dump(mode="json", exclude_none=True), i18n_mapping
     )
     return {
         "PI_INTERFACE_VERSION": PI_INTERFACE_VERSION,
@@ -708,13 +709,6 @@ def _load_maafw_version() -> str:
         return ""
 
 
-def _resolve_i18n_payload(
-    payload: Any, base_dir: Path, interface_model: MaaFWInterface
-) -> Any:
-    mapping = _load_i18n_mapping(base_dir, interface_model)
-    return _resolve_i18n_value(payload, mapping)
-
-
 def _load_i18n_mapping(
     base_dir: Path, interface_model: MaaFWInterface
 ) -> dict[str, Any]:
@@ -730,9 +724,18 @@ def _load_i18n_mapping(
         resolved_path = Path(language_path.resolved)
         if resolved_path.stat().st_size > MAX_LANGUAGE_FILE_BYTES:
             return {}
-        data = json5.loads(resolved_path.read_text(encoding="utf-8"))
+        # 走 loader 的 json→json5 快路径：绝大多数语言文件是严格 JSON，
+        # 纯 Python 的 json5 解析同一份文件要慢三个数量级。
+        data = parse_json_text(resolved_path.read_text(encoding="utf-8"))
         return data if isinstance(data, dict) else {}
-    except Exception:
+    except Exception as exc:
+        if language_file not in _WARNED_LANGUAGE_FILES:
+            _WARNED_LANGUAGE_FILES.add(language_file)
+            logger.warning(
+                "MaaFW 语言文件解析失败，任务文案退回原始键: %s: %s",
+                language_file,
+                exc,
+            )
         return {}
 
 

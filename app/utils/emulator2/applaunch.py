@@ -81,6 +81,10 @@ _BOOT_TIMEOUT_CAP = 120.0
 #: 等应用进前台的上限。理由同上, Activity 恢复是秒级的事。
 _LAUNCH_TIMEOUT_CAP = 45.0
 
+#: 界面上「打开游戏中心」一次点击最多等多久。实测两家都是 1 秒内到前台; 等这么久还没到,
+#: 多半是商店被禁用了（此时 ``pm path`` 仍有路径, 三路启动都不会报错, 只会等到超时）。
+_STORE_LAUNCH_TIMEOUT = 10.0
+
 #: ``dumpsys activity activities`` 里表示「这个 Activity 正在前台」的几种写法。
 #: 不同 Android 版本用词不一样, 全都要认——只认一种会在某些镜像上永远判成没起来。
 _FOREGROUND_MARKERS = (
@@ -96,6 +100,7 @@ LaunchReason = Literal[
     "launched",
     "not-installed",
     "no-adb",
+    "no-store",
     "boot-timeout",
     "launch-timeout",
 ]
@@ -153,6 +158,21 @@ def is_package_missing(pm_path_output: str) -> bool:
     按返回码 0 判则永远判不出没装——那条分支就成了死代码。
     """
     return not (pm_path_output or "").strip()
+
+
+def is_package_present(pm_path_output: str) -> bool:
+    """从 ``pm path <包名>`` 的输出里判断这个包是否**确定装了**。
+
+    与 :func:`is_package_missing` 不是互补的：设备掉线时 adb 打印
+    ``adb.exe: device 'emulator-5562' not found``——既不是「空」也不是「装了」。
+    2026-09-12 生产实测就栽在这里：拿「非空」当「装了」，把所有**关着的**雷电实例
+    都判成了 MuMu，缓存 30 秒后实例启动时 ADB 地址被清空、MAA 直接报连接异常。
+    只有真正的 ``package:`` 行才算装了。
+    """
+    return any(
+        line.strip().startswith("package:")
+        for line in (pm_path_output or "").splitlines()
+    )
 
 
 def parse_launch_component(resolve_output: str, package_name: str) -> str | None:
@@ -362,6 +382,10 @@ class AppLaunchMixin(DeviceBase):
 
     config: EmulatorConfig
 
+    #: 这家模拟器自带的游戏中心 / 应用商店的包名，``None`` 表示没有。
+    #: 界面上「打开游戏中心」按钮走 :meth:`open_store`，靠它决定拉哪个包。
+    store_package: str | None = None
+
     async def vendor_launch_app(self, idx: str, package_name: str) -> object:
         """用这家模拟器自己的命令启动应用。
 
@@ -370,18 +394,44 @@ class AppLaunchMixin(DeviceBase):
         """
         return None
 
+    async def prepare_launch(self, idx: str) -> None:
+        """启动模拟器之前的一步。默认什么都不做，两家后端各自覆盖（雷电在这里应用「大雷主人模式」）。
+
+        这一步失败不该拦住模拟器启动：覆盖时自己记警告；万一漏了抛出来，
+        :meth:`open` 也只记一条警告继续往下走。
+        """
+
+    async def after_boot(self, idx: str, info: DeviceInfo) -> None:
+        """模拟器在线之后、拉应用之前的一步。默认什么都不做（MuMu 在这里应用「大雷主人模式」）。
+
+        约束同 :meth:`prepare_launch`。
+        """
+
     async def open(self, idx: str, package_name: str = "") -> DeviceInfo:
         """启动设备；给了包名就在设备就绪后把应用也拉起来。
 
-        不给包名时行为与原生实现完全一致，只开模拟器。
+        不给包名时行为与原生实现完全一致，只开模拟器——中间多出的两个钩子默认是空的。
         """
+        try:
+            await self.prepare_launch(idx)
+        except Exception as e:  # noqa: BLE001 - 钩子失败不拦启动
+            logger.warning(f"启动前钩子失败，实例 {idx} 照常启动: {e}")
         info = await super().open(idx)
+        try:
+            await self.after_boot(idx, info)
+        except Exception as e:  # noqa: BLE001 - 同上
+            logger.warning(f"启动后钩子失败，实例 {idx} 继续: {e}")
         if package_name:
             await self.launch_app(idx, package_name, info)
         return info
 
     async def launch_app(
-        self, idx: str, package_name: str, info: DeviceInfo | None = None
+        self,
+        idx: str,
+        package_name: str,
+        info: DeviceInfo | None = None,
+        *,
+        launch_timeout: float | None = None,
     ) -> AppLaunchResult:
         """在**已经在线**的设备上把应用拉起来。
 
@@ -390,6 +440,10 @@ class AppLaunchMixin(DeviceBase):
 
         拉不起来只记警告并把结果返回，**不抛异常**：模拟器已经开好了，把整次启动
         判成失败反而更糟，脚本自己那套启动流程还有机会兜住。
+
+        ``launch_timeout`` 是等应用进前台的秒数；不给就按 ``MaxWaitTime`` 与
+        :data:`_LAUNCH_TIMEOUT_CAP` 取小。界面上一次点击触发的启动应该传一个短得多的值——
+        用户在盯着按钮转圈，等不起 45 秒。
         """
         if info is None:
             info = (await self.getInfo(idx))[idx]
@@ -403,13 +457,29 @@ class AppLaunchMixin(DeviceBase):
         # 两个上限都取 min：这一步是加在原有启动流程后面的，等不到就该让位给
         # 脚本自己的启动流程，不能按 MaxWaitTime 把整条代理拖住
         max_wait = float(self.config.get("Info", "MaxWaitTime"))
+        if launch_timeout is None:
+            launch_timeout = min(max_wait, _LAUNCH_TIMEOUT_CAP)
         return await ensure_app_running(
             build_adb_runner(self.get_adb_path(), info.adb_address),
             package_name,
             boot_timeout=min(max_wait, _BOOT_TIMEOUT_CAP),
-            launch_timeout=min(max_wait, _LAUNCH_TIMEOUT_CAP),
+            launch_timeout=launch_timeout,
             vendor_launch=lambda: self.vendor_launch_app(idx, package_name),
             label=str(idx),
+        )
+
+    async def open_store(self, idx: str) -> AppLaunchResult:
+        """打开这家模拟器自带的游戏中心 / 应用商店。
+
+        给界面上的「打开游戏中心」按钮用：雷电开启「大雷主人模式」之后 launcher 会把游戏中心
+        从桌面和应用列表里过滤掉（包没禁、``am start`` 照常），用户没有别的入口。
+        没有商店的后端直接返回 ``no-store``，不去碰设备。
+        """
+        if not self.store_package:
+            logger.warning(f"设备 #{idx} 所属的模拟器没有游戏中心，无法打开")
+            return AppLaunchResult(False, "no-store")
+        return await self.launch_app(
+            idx, self.store_package, launch_timeout=_STORE_LAUNCH_TIMEOUT
         )
 
 

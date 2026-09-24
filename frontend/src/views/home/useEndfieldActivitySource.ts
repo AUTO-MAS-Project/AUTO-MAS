@@ -163,16 +163,51 @@ export const useEndfieldActivitySource = () => {
       }
       if (retryCount < MAX_RETRIES) {
         retryCount += 1
-        retryTimer = window.setTimeout(() => {
-          retryTimer = null
-          void load()
-        }, RETRY_DELAY_MS)
+        if (active) {
+          scheduleRetry()
+        } else {
+          // 模块隐藏期间不重试，重新可见时补一次
+          retryPending = true
+        }
       }
     } finally {
       window.clearTimeout(timer)
       if (!disposed) {
         loading.value = false
       }
+    }
+  }
+
+  // 模块可见时才发请求；隐藏时停掉重试定时器，重新可见时把攒下的重试补上
+  let active = false
+  let started = false
+  let retryPending = false
+
+  const scheduleRetry = () => {
+    retryTimer = window.setTimeout(() => {
+      retryTimer = null
+      void load()
+    }, RETRY_DELAY_MS)
+  }
+
+  const start = () => {
+    if (disposed) return
+    active = true
+    if (!started) {
+      started = true
+      void load()
+    } else if (retryPending) {
+      retryPending = false
+      void load()
+    }
+  }
+
+  const stop = () => {
+    active = false
+    if (retryTimer !== null) {
+      window.clearTimeout(retryTimer)
+      retryTimer = null
+      retryPending = true
     }
   }
 
@@ -184,11 +219,11 @@ export const useEndfieldActivitySource = () => {
     }
   })
 
-  void load()
-
   return {
     overview,
     loading,
+    start,
+    stop,
     refresh: () => {
       retryCount = 0
       void load()

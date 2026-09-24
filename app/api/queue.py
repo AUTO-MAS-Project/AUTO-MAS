@@ -26,8 +26,10 @@ from fastapi import APIRouter, Body
 from app.api.ws_command import ws_command
 from app.core import Config
 from app.models.schema import *
+from app.utils import get_logger
 
 router = APIRouter(prefix="/api/queue", tags=["调度队列管理"])
+logger = get_logger("调度队列 API")
 
 
 @ws_command("queue.add")
@@ -44,6 +46,7 @@ async def add_queue() -> QueueCreateOut:
         uid, config = await Config.add_queue()
         data = QueueConfig(**(await config.toDict()))
     except Exception as e:
+        logger.opt(exception=True).warning(f"add_queue失败: {type(e).__name__}: {e}")
         return QueueCreateOut(
             code=500,
             status="error",
@@ -69,6 +72,7 @@ async def get_queues(queue: QueueGetIn = Body(...)) -> QueueGetOut:
         index = [QueueIndexItem(**_) for _ in index]
         data = {uid: QueueConfig(**cfg) for uid, cfg in config.items()}
     except Exception as e:
+        logger.opt(exception=True).warning(f"get_queues失败: {type(e).__name__}: {e}")
         return QueueGetOut(
             code=500,
             status="error",
@@ -93,6 +97,7 @@ async def update_queue(queue: QueueUpdateIn = Body(...)) -> OutBase:
             queue.queueId, queue.data.model_dump(exclude_unset=True)
         )
     except Exception as e:
+        logger.opt(exception=True).warning(f"update_queue失败: {type(e).__name__}: {e}")
         return OutBase(
             code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
         )
@@ -111,24 +116,7 @@ async def delete_queue(queue: QueueDeleteIn = Body(...)) -> OutBase:
     try:
         await Config.del_queue(queue.queueId)
     except Exception as e:
-        return OutBase(
-            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
-        )
-    return OutBase()
-
-
-@router.post(
-    "/order",
-    tags=["Update"],
-    summary="重新排序",
-    response_model=OutBase,
-    status_code=200,
-)
-async def reorder_queue(script: QueueReorderIn = Body(...)) -> OutBase:
-
-    try:
-        await Config.reorder_queue(script.indexList)
-    except Exception as e:
+        logger.opt(exception=True).warning(f"delete_queue失败: {type(e).__name__}: {e}")
         return OutBase(
             code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
         )
@@ -149,6 +137,7 @@ async def get_time_set(time: TimeSetGetIn = Body(...)) -> TimeSetGetOut:
         index = [TimeSetIndexItem(**_) for _ in index]
         data = {uid: TimeSet(**cfg) for uid, cfg in data.items()}
     except Exception as e:
+        logger.opt(exception=True).warning(f"get_time_set失败: {type(e).__name__}: {e}")
         return TimeSetGetOut(
             code=500,
             status="error",
@@ -187,6 +176,9 @@ async def update_time_set(time: TimeSetUpdateIn = Body(...)) -> OutBase:
             time.queueId, time.timeSetId, time.data.model_dump(exclude_unset=True)
         )
     except Exception as e:
+        logger.opt(exception=True).warning(
+            f"update_time_set失败: {type(e).__name__}: {e}"
+        )
         return OutBase(
             code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
         )
@@ -205,6 +197,9 @@ async def delete_time_set(time: TimeSetDeleteIn = Body(...)) -> OutBase:
     try:
         await Config.del_time_set(time.queueId, time.timeSetId)
     except Exception as e:
+        logger.opt(exception=True).warning(
+            f"delete_time_set失败: {type(e).__name__}: {e}"
+        )
         return OutBase(
             code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
         )
@@ -223,6 +218,9 @@ async def reorder_time_set(time: TimeSetReorderIn = Body(...)) -> OutBase:
     try:
         await Config.reorder_time_set(time.queueId, time.indexList)
     except Exception as e:
+        logger.opt(exception=True).warning(
+            f"reorder_time_set失败: {type(e).__name__}: {e}"
+        )
         return OutBase(
             code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
         )
@@ -243,6 +241,7 @@ async def get_item(item: QueueItemGetIn = Body(...)) -> QueueItemGetOut:
         index = [QueueItemIndexItem(**_) for _ in index]
         data = {uid: QueueItem(**cfg) for uid, cfg in data.items()}
     except Exception as e:
+        logger.opt(exception=True).warning(f"get_item失败: {type(e).__name__}: {e}")
         return QueueItemGetOut(
             code=500,
             status="error",
@@ -267,6 +266,7 @@ async def add_item(item: QueueSetInBase = Body(...)) -> QueueItemCreateOut:
         data = QueueItem(**(await config.toDict()))
     except Exception as e:
         # 循环运行中的队列会拒绝增删队列项，原因要带回给前端提示
+        logger.opt(exception=True).warning(f"add_item失败: {type(e).__name__}: {e}")
         return QueueItemCreateOut(
             code=500,
             status="error",
@@ -291,6 +291,7 @@ async def update_item(item: QueueItemUpdateIn = Body(...)) -> OutBase:
             item.queueId, item.queueItemId, item.data.model_dump(exclude_unset=True)
         )
     except Exception as e:
+        logger.opt(exception=True).warning(f"update_item失败: {type(e).__name__}: {e}")
         return OutBase(
             code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
         )
@@ -309,6 +310,7 @@ async def delete_item(item: QueueItemDeleteIn = Body(...)) -> OutBase:
     try:
         await Config.del_queue_item(item.queueId, item.queueItemId)
     except Exception as e:
+        logger.opt(exception=True).warning(f"delete_item失败: {type(e).__name__}: {e}")
         return OutBase(
             code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
         )
@@ -327,6 +329,7 @@ async def reorder_item(item: QueueItemReorderIn = Body(...)) -> OutBase:
     try:
         await Config.reorder_queue_item(item.queueId, item.indexList)
     except Exception as e:
+        logger.opt(exception=True).warning(f"reorder_item失败: {type(e).__name__}: {e}")
         return OutBase(
             code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
         )

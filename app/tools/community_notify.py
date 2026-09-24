@@ -248,6 +248,7 @@ def _community_notification_rows(
     results: list[dict[str, object]],
     *,
     include_signature: bool = True,
+    include_title: bool = True,
 ) -> list[tuple[str, str]]:
     """统一文本、Markdown、HTML 与图片中的平台分组和结果行。"""
 
@@ -260,7 +261,9 @@ def _community_notification_rows(
         platform = str(item.get("platform", "未知") or "未知")
         grouped.setdefault(platform, []).append(item)
 
-    rows: list[tuple[str, str]] = [("title", "【社区签到通知】")]
+    rows: list[tuple[str, str]] = []
+    if include_title:
+        rows.append(("title", "【社区签到通知】"))
     for platform in _ordered_platforms(grouped):
         items = grouped[platform]
         total = len(items)
@@ -386,12 +389,13 @@ def format_community_notification(
     *,
     output_format: NotificationBodyFormat = "markdown",
     include_signature: bool = True,
+    include_title: bool = True,
 ) -> str:
     """按社区分组生成通知正文，并显式支持文本与 Markdown。"""
 
     lines: list[str] = []
     for kind, text in _community_notification_rows(
-        results, include_signature=include_signature
+        results, include_signature=include_signature, include_title=include_title
     ):
         if kind in {"heading", "footer"} and lines:
             lines.append("")
@@ -507,14 +511,17 @@ def append_community_summary_html(content: str, summary: str) -> str:
 
 
 def _community_html_fragment(
-    results: list[dict[str, object]], *, include_signature: bool = True
+    results: list[dict[str, object]],
+    *,
+    include_signature: bool = True,
+    include_title: bool = True,
 ) -> str:
     """生成社区通知的 HTML 主体，动态文本先统一转义。"""
 
     tags = {"title": "h2", "heading": "h3", "item": "p", "footer": "p"}
     html_lines = []
     for kind, text in _community_notification_rows(
-        results, include_signature=include_signature
+        results, include_signature=include_signature, include_title=include_title
     ):
         tag = tags[kind]
         html_lines.append(f"<{tag}>{escape(text)}</{tag}>")
@@ -529,7 +536,9 @@ def _render_community_html(
 
     return Config.notify_env.get_template("community_result.html").render(
         title=title,
-        content=_community_html_fragment(results, include_signature=False),
+        content=_community_html_fragment(
+            results, include_signature=False, include_title=False
+        ),
     )
 
 
@@ -545,10 +554,13 @@ def build_community_notification_payload(
 
     results = _notification_results(results)
     title = "社区签到通知"
-    plain_text = format_community_notification(results, output_format="text")
-    markdown_text = format_community_notification(results)
+    plain_text = format_community_notification(
+        results, output_format="text", include_title=False
+    )
+    markdown_text = format_community_notification(results, include_title=False)
     return NotifyPayload(
         title=title,
+        standalone_title="【社区签到通知】",
         text=plain_text,
         append_signature=False,
         html=_render_community_html(results, title),

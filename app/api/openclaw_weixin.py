@@ -32,8 +32,10 @@ from app.models.schema import (
     OutBase,
 )
 from app.services.openclaw_weixin import openclaw_weixin_manager
+from app.utils import get_logger
 
 router = APIRouter(prefix="/api/setting/openclaw-weixin", tags=["微信 Claw 通知"])
+logger = get_logger("微信 Claw 通知 API")
 
 
 @router.post(
@@ -47,6 +49,9 @@ async def get_status() -> OpenClawWeixinStatusOut:
     try:
         state = openclaw_weixin_manager.status()
     except Exception as exc:
+        logger.opt(exception=True).warning(
+            f"get_status失败: {type(exc).__name__}: {exc}"
+        )
         return OpenClawWeixinStatusOut(
             code=500,
             status="error",
@@ -73,6 +78,9 @@ async def start_login() -> OpenClawWeixinQrStartOut:
     except ValueError as exc:
         return OpenClawWeixinQrStartOut(code=400, status="error", message=str(exc))
     except Exception as exc:
+        logger.opt(exception=True).warning(
+            f"start_login失败: {type(exc).__name__}: {exc}"
+        )
         return OpenClawWeixinQrStartOut(
             code=500,
             status="error",
@@ -101,6 +109,9 @@ async def check_login(
             verify_code=body.verifyCode,
         )
     except Exception as exc:
+        logger.opt(exception=True).warning(
+            f"check_login失败: {type(exc).__name__}: {exc}"
+        )
         return OpenClawWeixinQrCheckOut(
             code=500,
             status="error",
@@ -127,6 +138,7 @@ async def unbind() -> OutBase:
     try:
         await openclaw_weixin_manager.unbind()
     except Exception as exc:
+        logger.opt(exception=True).warning(f"unbind失败: {type(exc).__name__}: {exc}")
         return OutBase(
             code=500,
             status="error",

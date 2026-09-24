@@ -44,6 +44,7 @@ _LAZY_EXPORTS = {
     "HSRManager": (".HSR", "HSRManager"),
     "BetterGIManager": (".BetterGI", "BetterGIManager"),
     "ZzzOdManager": (".ZzzOd", "ZzzOdManager"),
+    "BAAHManager": (".BAAH", "BAAHManager"),
     "MaaFWEmbeddedManager": (".MaaFW.embedded_manager", "MaaFWEmbeddedManager"),
 }
 

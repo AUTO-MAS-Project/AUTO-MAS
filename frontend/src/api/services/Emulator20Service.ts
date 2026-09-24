@@ -21,9 +21,9 @@ import type { Emulator2SettingsApplyAllIn } from '../models/Emulator2SettingsApp
 import type { Emulator2SettingsApplyAllOut } from '../models/Emulator2SettingsApplyAllOut';
 import type { Emulator2SettingsApplyIn } from '../models/Emulator2SettingsApplyIn';
 import type { Emulator2SettingsApplyOut } from '../models/Emulator2SettingsApplyOut';
-import type { Emulator2SettingsIn } from '../models/Emulator2SettingsIn';
-import type { Emulator2SettingsOut } from '../models/Emulator2SettingsOut';
 import type { Emulator2StableModeIn } from '../models/Emulator2StableModeIn';
+import type { Emulator2StoreOpenIn } from '../models/Emulator2StoreOpenIn';
+import type { Emulator2StoreOpenOut } from '../models/Emulator2StoreOpenOut';
 import type { CancelablePromise } from '../core/CancelablePromise';
 import { OpenAPI } from '../core/OpenAPI';
 import { request as __request } from '../core/request';
@@ -115,7 +115,7 @@ export class Emulator20Service {
      * 合并多条安装的实例。键是设备号，另附模拟器自己的实例索引。
      *
      * 枚举失败的安装标 ``unavailable``——一次枚举失败不等于实例被删除，
-     * 既不写墓碑也不影响下次恢复。
+     * 既不写墓碑也不影响下次恢复。``withSettings=false`` 只取状态，给轮询用。
      * @param requestBody
      * @returns Emulator2DevicesOut Successful Response
      * @throws ApiError
@@ -200,21 +200,21 @@ export class Emulator20Service {
         });
     }
     /**
-     * 查询实例设置
-     * 读一台设备的四项设置。
+     * 打开游戏中心
+     * 在一台**已在线**的设备上打开模拟器自带的游戏中心。
      *
-     * 每项都带状态：``.config`` 里有的才是用户保存过的，没有而从模拟器默认读到的
-     * 标 ``default``，两边都没有标 ``unset``。
+     * 雷电纯净模式会把游戏中心从桌面藏掉，这是它唯一的图形入口。
+     * 拉不起来返回 ``ok=false`` 和一句说明，不算接口错误；只有设备号解析不出来才是 500。
      * @param requestBody
-     * @returns Emulator2SettingsOut Successful Response
+     * @returns Emulator2StoreOpenOut Successful Response
      * @throws ApiError
      */
-    public static getSettingsApiEmulator2SettingsGetPost(
-        requestBody: Emulator2SettingsIn,
-    ): CancelablePromise<Emulator2SettingsOut> {
+    public static openStoreApiEmulator2InstancesStoreOpenPost(
+        requestBody: Emulator2StoreOpenIn,
+    ): CancelablePromise<Emulator2StoreOpenOut> {
         return __request(OpenAPI, {
             method: 'POST',
-            url: '/api/emulator2/settings/get',
+            url: '/api/emulator2/instances/store/open',
             body: requestBody,
             mediaType: 'application/json',
             errors: {

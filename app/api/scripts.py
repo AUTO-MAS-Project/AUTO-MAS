@@ -24,6 +24,7 @@
 import asyncio
 import uuid
 from collections.abc import Mapping
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Literal
 
@@ -49,17 +50,28 @@ from app.task.MaaFW.tools.core.automas_maafw_project_update import (
     update_maafw_project_if_needed,
 )
 from app.task.MaaFW.tools.core.automas_maafw_project_update.updater import (
-    detect_maafw_project_shell_hint,
     _public_package_source,
+    detect_maafw_project_shell_hint,
+)
+from app.task.MaaFW.tools.embedded.game_package import (
+    resolve_game_package,
+    resource_paths_for,
 )
 from app.task.MaaFW.tools.embedded.update_credentials import (
     resolve_update_credentials,
+    resolve_update_proxy_url,
+)
+from app.task.MaaFW.tools.embedded.update_progress import (
+    MaaFWUpdateProgressTracker,
 )
 from app.utils import get_logger
+from app.utils.io import ConfigCorruptedError
 from app.utils.paths import SOURCE_ROOT
+from app.utils.constants import UTC8
 from app.utils.security import sanitize_log_message
 
 router = APIRouter(prefix="/api/scripts", tags=["脚本管理"])
+logger = get_logger("脚本管理 API")
 
 
 def _hsr_script_config(script_id: str):
@@ -110,7 +122,9 @@ def _read_combat_from_plan(
         return data
     user_config = _bettergi_user_config(script_config, user_id)
     plan_json = user_config.get("OneDragon", "Plan") or ""
-    data.update(one_dragon_plan.extract_rightbar_from_plan(plan_json, target_group) or {})
+    data.update(
+        one_dragon_plan.extract_rightbar_from_plan(plan_json, target_group) or {}
+    )
     # 还原 weekly 嵌套结构为平铺右栏键（供前端周表回显）
     steps = one_dragon_plan.parse_one_dragon_plan(plan_json) if plan_json else []
     target = next((s for s in steps if s.get("name") == target_group), None)
@@ -175,7 +189,9 @@ def _combat_target_group(source: str, group: str) -> str:
 
     if group and one_dragon_plan.resolve_base_name(group):
         return group
-    return {"globalStygian": "自动幽境危战", "globalDomain": "自动秘境"}.get(source, group)
+    return {"globalStygian": "自动幽境危战", "globalDomain": "自动秘境"}.get(
+        source, group
+    )
 
 
 def _hsr_user_config(script_config: RuntimeHSRConfig, user_id: str):
@@ -191,15 +207,16 @@ def _oknte_script_config(script_id: str) -> tuple[uuid.UUID, RuntimeOkNteConfig]
     return script_uid, script_config
 
 
-def _oknte_legacy_mas_config_dir(script_id: str) -> Path:
-    script_uid, _ = _oknte_script_config(script_id)
-    return Path.cwd() / "data" / str(script_uid) / "Default" / "ConfigFile"
-
-
 def _oknte_mas_config_dir(script_id: str, user_id: str) -> Path:
-    script_uid, _ = _oknte_script_config(script_id)
+    from app.task.OkNte.tools.backup_archive import ensure_quick_config_dir
+
+    script_uid, script_config = _oknte_script_config(script_id)
     user_uid = uuid.UUID(user_id)
-    return Path.cwd() / "data" / str(script_uid) / str(user_uid) / "ConfigFile"
+    if user_uid not in script_config.UserData:
+        raise ValueError("OK-NTE 用户不存在，请刷新后重试")
+    if script_config.is_locked:
+        raise ValueError("OK-NTE 正在运行，请结束任务后编辑")
+    return ensure_quick_config_dir(str(script_uid), str(user_uid), script_config)
 
 
 def _oknte_config_file_path(config_dir: Path, filename: str) -> Path:
@@ -222,12 +239,28 @@ def _maafw_script_config(script_id: str) -> RuntimeMaaFWConfig:
 _MAAFW_CDK_QUIET_STATUSES = frozenset({"ok", "absent"})
 _maafw_update_logger = get_logger("MaaFW 项目更新")
 _maafw_env_logger = get_logger("MFW 运行环境")
+# 手动更新拿项目锁的限时：另一次自动更新 / 预检正持有时回 409，不让同步请求
+# 跟着等几分钟。自动路径不限时。
+_MAAFW_MANUAL_UPDATE_LOCK_TIMEOUT_SECONDS = 5.0
 
 
-def _maafw_update_send_log(line: str) -> None:
-    """更新实现的逐行日志回调；写日志前先打码，避免 CDK 等敏感值落盘。"""
+def _maafw_httpx_proxy(proxy_url: str | None) -> Any:
+    """代理地址字符串 → ``httpx.Proxy``；没配或填错回 None（本次直连）。
 
-    _maafw_update_logger.info(sanitize_log_message(str(line)))
+    地址里可能有账号密码，报错时也只说类型，不回显地址。
+    """
+
+    if not proxy_url:
+        return None
+    import httpx
+
+    try:
+        return httpx.Proxy(proxy_url)
+    except Exception as exc:  # noqa: BLE001 - 代理填错不该让整次更新 500
+        _maafw_update_logger.warning(
+            f"MFW 项目更新代理地址无效（{type(exc).__name__}），本次直连"
+        )
+        return None
 
 
 def _maafw_update_extra_fields(result: Any) -> dict[str, Any]:
@@ -333,6 +366,7 @@ SCRIPT_BOOK = {
     "HSRConfig": HSRConfig,
     "BetterGIConfig": BetterGIConfig,
     "ZzzOdConfig": ZzzOdConfig,
+    "BAAHConfig": BAAHConfig,
 }
 USER_BOOK = {
     "MaaConfig": MaaUserConfig,
@@ -346,6 +380,7 @@ USER_BOOK = {
     "HSRConfig": HSRUserConfig,
     "BetterGIConfig": BetterGIUserConfig,
     "ZzzOdConfig": ZzzOdUserConfig,
+    "BAAHConfig": BAAHUserConfig,
 }
 
 
@@ -362,6 +397,7 @@ async def add_script(script: ScriptCreateIn = Body(...)) -> ScriptCreateOut:
         uid, config = await Config.add_script(script.type, script.scriptId)
         data = SCRIPT_BOOK[type(config).__name__](**(await config.toDict()))
     except Exception as e:
+        logger.opt(exception=True).warning(f"add_script失败: {type(e).__name__}: {e}")
         return ScriptCreateOut(
             code=500,
             status="error",
@@ -391,6 +427,7 @@ async def get_script(script: ScriptGetIn = Body(...)) -> ScriptGetOut:
             for uid, cfg in data.items()
         }
     except Exception as e:
+        logger.opt(exception=True).warning(f"get_script失败: {type(e).__name__}: {e}")
         return ScriptGetOut(
             code=500,
             status="error",
@@ -415,6 +452,9 @@ async def update_script(script: ScriptUpdateIn = Body(...)) -> OutBase:
             script.scriptId, script.data.model_dump(exclude_unset=True)
         )
     except Exception as e:
+        logger.opt(exception=True).warning(
+            f"update_script失败: {type(e).__name__}: {e}"
+        )
         return OutBase(
             code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
         )
@@ -433,6 +473,9 @@ async def delete_script(script: ScriptDeleteIn = Body(...)) -> OutBase:
     try:
         await Config.del_script(script.scriptId)
     except Exception as e:
+        logger.opt(exception=True).warning(
+            f"delete_script失败: {type(e).__name__}: {e}"
+        )
         return OutBase(
             code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
         )
@@ -451,42 +494,9 @@ async def reorder_script(script: ScriptReorderIn = Body(...)) -> OutBase:
     try:
         await Config.reorder_script(script.indexList)
     except Exception as e:
-        return OutBase(
-            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
+        logger.opt(exception=True).warning(
+            f"reorder_script失败: {type(e).__name__}: {e}"
         )
-    return OutBase()
-
-
-@router.post(
-    "/import/file",
-    tags=["Update"],
-    summary="从文件加载脚本配置",
-    response_model=OutBase,
-    status_code=200,
-)
-async def import_script_from_file(script: ScriptFileIn = Body(...)) -> OutBase:
-
-    try:
-        await Config.import_script_from_file(script.scriptId, script.jsonFile)
-    except Exception as e:
-        return OutBase(
-            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
-        )
-    return OutBase()
-
-
-@router.post(
-    "/export/file",
-    tags=["Action"],
-    summary="导出脚本配置到文件",
-    response_model=OutBase,
-    status_code=200,
-)
-async def export_script_to_file(script: ScriptFileIn = Body(...)) -> OutBase:
-
-    try:
-        await Config.export_script_to_file(script.scriptId, script.jsonFile)
-    except Exception as e:
         return OutBase(
             code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
         )
@@ -505,6 +515,9 @@ async def import_script_from_web(script: ScriptUrlIn = Body(...)) -> OutBase:
     try:
         await Config.import_script_from_web(script.scriptId, script.url)
     except Exception as e:
+        logger.opt(exception=True).warning(
+            f"import_script_from_web失败: {type(e).__name__}: {e}"
+        )
         return OutBase(
             code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
         )
@@ -525,6 +538,9 @@ async def upload_script_to_web(script: ScriptUploadIn = Body(...)) -> OutBase:
             script.scriptId, script.config_name, script.author, script.description
         )
     except Exception as e:
+        logger.opt(exception=True).warning(
+            f"upload_script_to_web失败: {type(e).__name__}: {e}"
+        )
         return OutBase(
             code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
         )
@@ -545,6 +561,9 @@ async def import_script_config_file(
     try:
         await Config.import_script_config_file(config.scriptId, config.userId)
     except Exception as e:
+        logger.opt(exception=True).warning(
+            f"import_script_config_file失败: {type(e).__name__}: {e}"
+        )
         return OutBase(
             code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
         )
@@ -562,13 +581,33 @@ async def get_maaend_options(options: ScriptDeleteIn = Body(...)) -> MaaEndOptio
     try:
         data = await Config.get_maaend_options(options.scriptId)
         return MaaEndOptionsOut(
+            autoCollectGroups=[
+                MaaEndAutoCollectGroup(**item)
+                for item in data.get("autoCollectGroups", [])
+            ],
+            originalResolution=data.get("originalResolution"),
+            originalDisplayType=data.get("originalDisplayType"),
             controllers=[ComboBoxItem(**item) for item in data["controllers"]],
             controllerTypes=data["controllerTypes"],
             essenceLocations=[
                 ComboBoxItem(**item) for item in data["essenceLocations"]
             ],
+            essenceMenus=[
+                ComboBoxItem(**item) for item in data.get("essenceMenus", [])
+            ],
+            essenceTargetWeaponGroups=[
+                MaaEndEssenceTargetGroup(
+                    value=item["value"],
+                    label=item["label"],
+                    options=[ComboBoxItem(**option) for option in item["options"]],
+                )
+                for item in data.get("essenceTargetWeaponGroups", [])
+            ],
         )
     except Exception as e:
+        logger.opt(exception=True).warning(
+            f"get_maaend_options失败: {type(e).__name__}: {e}"
+        )
         return MaaEndOptionsOut(
             code=500,
             status="error",
@@ -576,6 +615,8 @@ async def get_maaend_options(options: ScriptDeleteIn = Body(...)) -> MaaEndOptio
             controllers=[],
             controllerTypes={},
             essenceLocations=[],
+            essenceMenus=[],
+            essenceTargetWeaponGroups=[],
         )
 
 
@@ -598,6 +639,7 @@ async def get_user(user: UserGetIn = Body(...)) -> UserGetOut:
             for uid, cfg in data.items()
         }
     except Exception as e:
+        logger.opt(exception=True).warning(f"get_user失败: {type(e).__name__}: {e}")
         return UserGetOut(
             code=500,
             status="error",
@@ -631,6 +673,7 @@ async def add_user(user: UserInBase = Body(...)) -> UserCreateOut:
             data=GeneralUserConfig(**{}),
         )
     except Exception as e:
+        logger.opt(exception=True).warning(f"add_user失败: {type(e).__name__}: {e}")
         return UserCreateOut(
             code=500,
             status="error",
@@ -666,6 +709,25 @@ async def update_user(user: UserUpdateIn = Body(...)) -> OutBase:
             new_plan = one_dragon_plan.prune_plan_to_queue(plan, od["Queue"], groups)
             if new_plan != plan:
                 od["Plan"] = new_plan
+            # 录制（KeyMouse）加入队列：提前生成 per-user 配置组副本（含单 KeyMouse 项目），
+            # 使右栏项目编辑能读到录制内容、运行时可被物化，避免「一条龙里没有内容」。
+            try:
+                from app.task.BetterGI.tools import one_dragon as _od
+
+                _root = Path(str(script_cfg.get("Info", "RootPath"))).expanduser()
+                _queue = _od.parse_one_dragon_queue(od["Queue"])
+                _od.ensure_keymouse_groups(
+                    _root,
+                    user.scriptId,
+                    user.userId,
+                    [e.get("name") for e in _queue if isinstance(e, dict)],
+                )
+            except Exception:  # pragma: no cover - 兜底：生成失败不应阻断保存
+                import logging
+
+                logging.getLogger(__name__).warning(
+                    "为队列中的录制生成配置组副本失败（已忽略）", exc_info=True
+                )
         except Exception as e:  # pragma: no cover - 兜底：同步失败不应阻断保存
             import logging
 
@@ -676,6 +738,7 @@ async def update_user(user: UserUpdateIn = Body(...)) -> OutBase:
     try:
         await Config.update_user(user.scriptId, user.userId, data)
     except Exception as e:
+        logger.opt(exception=True).warning(f"update_user失败: {type(e).__name__}: {e}")
         return OutBase(
             code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
         )
@@ -694,6 +757,7 @@ async def delete_user(user: UserDeleteIn = Body(...)) -> OutBase:
     try:
         await Config.del_user(user.scriptId, user.userId)
     except Exception as e:
+        logger.opt(exception=True).warning(f"delete_user失败: {type(e).__name__}: {e}")
         return OutBase(
             code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
         )
@@ -712,6 +776,7 @@ async def reorder_user(user: UserReorderIn = Body(...)) -> OutBase:
     try:
         await Config.reorder_user(user.scriptId, user.indexList)
     except Exception as e:
+        logger.opt(exception=True).warning(f"reorder_user失败: {type(e).__name__}: {e}")
         return OutBase(
             code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
         )
@@ -730,6 +795,9 @@ async def import_infrastructure(user: UserSetIn = Body(...)) -> OutBase:
     try:
         await Config.set_infrastructure(user.scriptId, user.userId, user.jsonFile)
     except Exception as e:
+        logger.opt(exception=True).warning(
+            f"import_infrastructure失败: {type(e).__name__}: {e}"
+        )
         return OutBase(
             code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
         )
@@ -737,24 +805,78 @@ async def import_infrastructure(user: UserSetIn = Body(...)) -> OutBase:
 
 
 @router.post(
+    "/user/infrastructure/plan-select",
+    tags=["Update"],
+    summary="设置基建班次",
+    response_model=UserInfrastPlanSelectOut,
+    status_code=200,
+)
+async def set_infrast_plan_select(
+    user: UserInfrastPlanSelectIn = Body(...),
+) -> UserInfrastPlanSelectOut:
+    try:
+        index = await Config.set_infrast_plan_select(
+            user.scriptId, user.userId, user.index
+        )
+    except Exception as e:
+        logger.opt(exception=True).warning(
+            f"set_infrast_plan_select失败: {type(e).__name__}: {e}"
+        )
+        return UserInfrastPlanSelectOut(
+            code=500, status="error", message=f"{type(e).__name__}: {str(e)}", index=-1
+        )
+    return UserInfrastPlanSelectOut(index=index)
+
+
+@router.post(
+    "/user/infrastructure/plan-select/get",
+    tags=["Get"],
+    summary="获取当前基建班次",
+    response_model=UserInfrastPlanSelectOut,
+    status_code=200,
+)
+async def get_infrast_plan_select(
+    user: UserDeleteIn = Body(...),
+) -> UserInfrastPlanSelectOut:
+    try:
+        index = await Config.get_infrast_plan_select(user.scriptId, user.userId)
+    except Exception as e:
+        logger.opt(exception=True).warning(
+            f"get_infrast_plan_select失败: {type(e).__name__}: {e}"
+        )
+        return UserInfrastPlanSelectOut(
+            code=500, status="error", message=f"{type(e).__name__}: {str(e)}", index=-1
+        )
+    return UserInfrastPlanSelectOut(index=index)
+
+
+@router.post(
     "/user/combox/infrastructure",
     tags=["Get"],
     summary="用户自定义基建排班可选项",
-    response_model=ComboBoxOut,
+    response_model=UserInfrastPlanComboxOut,
     status_code=200,
 )
-async def get_user_combox_infrastructure(user: UserDeleteIn = Body(...)) -> ComboBoxOut:
+async def get_user_combox_infrastructure(
+    user: UserDeleteIn = Body(...),
+) -> UserInfrastPlanComboxOut:
 
     try:
-        raw_data = await Config.get_user_combox_infrastructure(
-            user.scriptId, user.userId
-        )
-        data = [ComboBoxItem(**item) for item in raw_data] if raw_data else []
+        result = await Config.get_user_combox_infrastructure(user.scriptId, user.userId)
+        data = [UserInfrastPlanComboxItem(**item) for item in result["data"]]
+        state = result["state"]
     except Exception as e:
-        return ComboBoxOut(
-            code=500, status="error", message=f"{type(e).__name__}: {str(e)}", data=[]
+        logger.opt(exception=True).warning(
+            f"get_user_combox_infrastructure失败: {type(e).__name__}: {e}"
         )
-    return ComboBoxOut(data=data)
+        return UserInfrastPlanComboxOut(
+            code=500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+            state="empty",
+            data=[],
+        )
+    return UserInfrastPlanComboxOut(state=state, data=data)
 
 
 @router.post(
@@ -770,10 +892,138 @@ async def get_maa_depot_items(script: ScriptDeleteIn = Body(...)) -> ComboBoxOut
         raw_data = await Config.get_maa_depot_items(script.scriptId)
         data = [ComboBoxItem(**item) for item in raw_data]
     except Exception as e:
+        logger.opt(exception=True).warning(
+            f"get_maa_depot_items失败: {type(e).__name__}: {e}"
+        )
         return ComboBoxOut(
             code=500, status="error", message=f"{type(e).__name__}: {str(e)}", data=[]
         )
     return ComboBoxOut(data=data)
+
+
+@router.post(
+    "/maa/depot/stage/candidates",
+    tags=["Get"],
+    summary="MAA 库存保持关卡候选（掉落指定材料，按单件期望理智升序，label 为 xx 理智/件）",
+    response_model=ComboBoxOut,
+    status_code=200,
+)
+async def get_maa_depot_stage_candidates(
+    script: ScriptDeleteIn = Body(...), itemId: str = Body(...)
+) -> ComboBoxOut:
+
+    try:
+        raw_data = await Config.get_maa_depot_stage_candidates(script.scriptId, itemId)
+        data = [ComboBoxItem(**item) for item in raw_data]
+    except Exception as e:
+        return ComboBoxOut(
+            code=500, status="error", message=f"{type(e).__name__}: {str(e)}", data=[]
+        )
+    return ComboBoxOut(data=data)
+
+
+@router.post(
+    "/maa/depot/inventory",
+    tags=["Get"],
+    summary="MAA 仓库库存（当前用户档案；label=数量字符串，value=物品ID）",
+    response_model=MaaDepotInventoryOut,
+    status_code=200,
+)
+async def get_maa_depot_inventory(
+    script: ScriptDeleteIn = Body(...), userId: str = Body(...)
+) -> MaaDepotInventoryOut:
+
+    try:
+        raw_data, recognized_at = await Config.get_maa_depot_inventory(
+            script.scriptId, userId
+        )
+        data = [ComboBoxItem(**item) for item in raw_data]
+    except Exception as e:
+        return MaaDepotInventoryOut(
+            code=500, status="error", message=f"{type(e).__name__}: {str(e)}", data=[]
+        )
+    return MaaDepotInventoryOut(data=data, recognizedAt=recognized_at)
+
+
+@router.post(
+    "/maa/cultivate/skland/bindings",
+    tags=["Get"],
+    summary="森空岛绑定角色列表（遍历已配置森空岛凭据的签到账号组，明日方舟）",
+    response_model=ComboBoxOut,
+    status_code=200,
+)
+async def get_maa_cultivate_skland_bindings() -> ComboBoxOut:
+
+    try:
+        raw_data = await Config.get_maa_cultivate_skland_bindings()
+        data = [ComboBoxItem(**item) for item in raw_data]
+    except Exception as e:
+        return ComboBoxOut(
+            code=500, status="error", message=f"{type(e).__name__}: {str(e)}", data=[]
+        )
+    return ComboBoxOut(data=data)
+
+
+@router.post(
+    "/maa/cultivate/operators",
+    tags=["Get"],
+    summary="MAA 干员养成选择器目录（含技能/模组名称目录，稀有度降序）",
+    response_model=MaaCultivateOperatorsOut,
+    status_code=200,
+)
+async def get_maa_cultivate_operators(
+    script: ScriptDeleteIn = Body(...), userId: str = Body(...)
+) -> MaaCultivateOperatorsOut:
+
+    try:
+        raw_data = await Config.get_maa_cultivate_operators(script.scriptId, userId)
+        data = [MaaCultivateOperatorOptionItem(**item) for item in raw_data]
+    except Exception as e:
+        return MaaCultivateOperatorsOut(
+            code=500, status="error", message=f"{type(e).__name__}: {str(e)}", data=[]
+        )
+    return MaaCultivateOperatorsOut(data=data)
+
+
+@router.post(
+    "/maa/cultivate/preview",
+    tags=["Get"],
+    summary="MAA 养成计划预览（纯计算不落库）",
+    response_model=CultivatePreviewOut,
+    status_code=200,
+)
+async def get_maa_cultivate_preview(
+    preview: CultivatePreviewIn = Body(...),
+) -> CultivatePreviewOut:
+
+    try:
+        data = await Config.get_maa_cultivate_preview(
+            preview.scriptId, preview.userId, preview.targets
+        )
+    except Exception as e:
+        return CultivatePreviewOut(
+            code=500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+            stages=[],
+            demands=[],
+            unobtainable=[],
+            progressions=[],
+            hasProgression=False,
+            hasInventory=False,
+        )
+    return CultivatePreviewOut(
+        stages=data["stages"],
+        demands=data["demands"],
+        unobtainable=data["unobtainable"],
+        totalExpectedSanity=data.get("totalExpectedSanity"),
+        progressions=[
+            CultivateOperatorProgression(**item)
+            for item in data.get("progressions", [])
+        ],
+        hasProgression=bool(data.get("availability", {}).get("has_progression")),
+        hasInventory=bool(data.get("availability", {}).get("has_inventory")),
+    )
 
 
 @router.post(
@@ -792,6 +1042,7 @@ async def get_webhook(webhook: WebhookGetIn = Body(...)) -> WebhookGetOut:
         index = [WebhookIndexItem(**_) for _ in index]
         data = {uid: Webhook(**cfg) for uid, cfg in data.items()}
     except Exception as e:
+        logger.opt(exception=True).warning(f"get_webhook失败: {type(e).__name__}: {e}")
         return WebhookGetOut(
             code=500,
             status="error",
@@ -815,6 +1066,7 @@ async def add_webhook(webhook: WebhookInBase = Body(...)) -> WebhookCreateOut:
         uid, config = await Config.add_webhook(webhook.scriptId, webhook.userId)
         data = Webhook(**(await config.toDict()))
     except Exception as e:
+        logger.opt(exception=True).warning(f"add_webhook失败: {type(e).__name__}: {e}")
         return WebhookCreateOut(
             code=500,
             status="error",
@@ -842,6 +1094,9 @@ async def update_webhook(webhook: WebhookUpdateIn = Body(...)) -> OutBase:
             webhook.data.model_dump(exclude_unset=True),
         )
     except Exception as e:
+        logger.opt(exception=True).warning(
+            f"update_webhook失败: {type(e).__name__}: {e}"
+        )
         return OutBase(
             code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
         )
@@ -860,6 +1115,9 @@ async def delete_webhook(webhook: WebhookDeleteIn = Body(...)) -> OutBase:
     try:
         await Config.del_webhook(webhook.scriptId, webhook.userId, webhook.webhookId)
     except Exception as e:
+        logger.opt(exception=True).warning(
+            f"delete_webhook失败: {type(e).__name__}: {e}"
+        )
         return OutBase(
             code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
         )
@@ -867,23 +1125,44 @@ async def delete_webhook(webhook: WebhookDeleteIn = Body(...)) -> OutBase:
 
 
 @router.post(
-    "/webhook/order",
-    tags=["Update"],
-    summary="重新排序webhook项",
-    response_model=OutBase,
+    "/maafw/game-package",
+    tags=["MaaFW"],
+    summary="按所选 resource 推断 MFW 项目的安卓游戏包名",
+    response_model=MaaFWGamePackageOut,
     status_code=200,
 )
-async def reorder_webhook(webhook: WebhookReorderIn = Body(...)) -> OutBase:
+async def resolve_maafw_game_package(
+    payload: MaaFWGamePackageIn = Body(...),
+) -> MaaFWGamePackageOut:
+    """脚本编辑页读完 interface / 切换 resource 时调用，把推出来的包名直接填进表单。
+
+    只看 resource 的 pipeline，不带用户任务的 pipeline_override（编辑脚本时还没有
+    运行计划）；推不出或多个候选都按原样返回，由前端决定不填。
+    """
 
     try:
-        await Config.reorder_webhook(
-            webhook.scriptId, webhook.userId, webhook.indexList
+        root_path = Path(payload.path).resolve()
+        interface = await asyncio.to_thread(load_interface_model_cached, root_path)
+        paths = await asyncio.to_thread(
+            resource_paths_for, root_path, interface, payload.resource
         )
-    except Exception as e:
-        return OutBase(
-            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
+        resolution = await asyncio.to_thread(resolve_game_package, paths)
+    except MaaFWInterfaceLoadError as exc:
+        return MaaFWGamePackageOut(code=400, status="error", message=str(exc))
+    except Exception as exc:
+        logger.opt(exception=True).warning(
+            f"resolve_maafw_game_package失败: {type(exc).__name__}: {exc}"
         )
-    return OutBase()
+        return MaaFWGamePackageOut(
+            code=500, status="error", message=f"推断游戏包名失败: {exc}"
+        )
+    return MaaFWGamePackageOut(
+        data=MaaFWGamePackageData(
+            reason=resolution.reason,
+            package=resolution.package,
+            candidates=list(resolution.candidates),
+        )
+    )
 
 
 @router.post(
@@ -915,6 +1194,9 @@ async def preview_maafw_interface(
             data=None,
         )
     except Exception as exc:
+        logger.opt(exception=True).warning(
+            f"preview_maafw_interface失败: {type(exc).__name__}: {exc}"
+        )
         return MaaFWInterfacePreviewOut(
             code=500,
             status="error",
@@ -971,13 +1253,23 @@ async def update_maafw_project(
             code=400, status="error", message=f"MFW interface 读取失败: {exc}"
         )
     except Exception as exc:
+        logger.opt(exception=True).warning(
+            f"update_maafw_project失败: {type(exc).__name__}: {exc}"
+        )
         return MaaFWProjectUpdateOut(
             code=500, status="error", message=f"MFW interface 读取失败: {exc}"
         )
 
     current_version = str(interface.version or "")
     source_config = _maafw_update_source_config(script_config)
-    proxy = Config.proxy
+    # 代理按脚本级解析（留空跟随全局），与运行前自动更新同一口径；地址可能带
+    # user:pw，不进日志，也不走 ``Config.proxy``（它每次访问都记一行地址）。
+    proxy_url = resolve_update_proxy_url(script_config)
+    proxy = _maafw_httpx_proxy(proxy_url)
+    if proxy_url and proxy is None:
+        # 地址填错：下载已按直连，预检的 uv / pip 也整条直连，别把一个
+        # httpx 都不认的串再塞进子进程环境变量。
+        proxy_url = ""
     # CDK 值绝不进日志：只记录「有没有」。
     _maafw_update_logger.info(
         f"MFW 项目更新({payload.action}): script={payload.scriptId} "
@@ -985,30 +1277,66 @@ async def update_maafw_project(
         f"cdk={'已配置' if source_config['mirror_cdk'] else '未配置'}"
     )
 
+    from app.core.ws import protocol as ws_protocol
+    from app.core.ws.publisher import Publisher
+
+    # 编辑页「更新过程」面板：阶段、下载 / 覆盖进度与逐行日志全程推给前端。
+    # 更新实现的回调既会从事件循环里来（下载在协程里跑），也会从工作线程里来
+    # （apply_package_transaction 跑在 to_thread 里），统一跨回循环再发。
+    tracker = MaaFWUpdateProgressTracker()
+    loop = asyncio.get_running_loop()
+
+    def publish_progress(data: WSMaaFWProjectUpdateProgressData | None) -> None:
+        if data is None:
+            return
+        asyncio.run_coroutine_threadsafe(
+            Publisher.send(
+                id=payload.scriptId,
+                type=ws_protocol.MAAFW_PROJECT_UPDATE_PROGRESS,
+                data=data,
+            ),
+            loop,
+        )
+
+    def send_update_log(line: str) -> None:
+        # 写日志前先打码，避免 CDK 等敏感值落盘；WS 通道走同一份打码结果。
+        text = sanitize_log_message(str(line))
+        _maafw_update_logger.info(text)
+        publish_progress(tracker.log(text))
+
+    def report_progress(event: dict[str, Any]) -> None:
+        publish_progress(tracker.event(event))
+
     if payload.action == "check":
+        publish_progress(tracker.checking())
         try:
             discovery = await discover_maafw_project_update(
                 interface,
                 current_version=current_version,
                 source_config=source_config,
                 proxy=proxy,
-                send_log=_maafw_update_send_log,
+                send_log=send_update_log,
                 # 只问有没有新版本：带 CDK 去换下载地址会扣一次今日额度，
                 # 而用户可能只是随手点了下「检查更新」。真更新时再取。
                 version_only=True,
             )
         except MaaFWProjectUpdateError as exc:
-            return MaaFWProjectUpdateOut(
-                code=400, status="error", message=f"MFW 更新检查失败: {exc}"
-            )
+            message = f"MFW 更新检查失败: {exc}"
+            publish_progress(tracker.finished(success=False, message=message))
+            return MaaFWProjectUpdateOut(code=400, status="error", message=message)
         except Exception as exc:
-            return MaaFWProjectUpdateOut(
-                code=500, status="error", message=f"MFW 更新检查失败: {exc}"
+            logger.opt(exception=True).warning(
+                f"update_maafw_project失败: {type(exc).__name__}: {exc}"
             )
+            message = f"MFW 更新检查失败: {exc}"
+            publish_progress(tracker.finished(success=False, message=message))
+            return MaaFWProjectUpdateOut(code=500, status="error", message=message)
 
         if discovery is None:
+            message = f"MFW 项目已是最新版本: {current_version or '未知'}"
+            publish_progress(tracker.finished(success=True, message=message))
             return MaaFWProjectUpdateOut(
-                message=f"MFW 项目已是最新版本: {current_version or '未知'}",
+                message=message,
                 data=MaaFWProjectUpdateData(
                     checked=True, currentVersion=current_version
                 ),
@@ -1034,6 +1362,17 @@ async def update_maafw_project(
         unavailable_reason = getattr(discovery, "unavailable_reason", "")
         if not installable and unavailable_reason:
             message = f"{message}（暂无可安装更新包: {unavailable_reason}）"
+        publish_progress(
+            tracker.finished(
+                success=True,
+                message=_maafw_update_message_with_cdk(message, extra),
+                package_kind=(
+                    getattr(candidate, "package_type", None)
+                    if candidate is not None
+                    else None
+                ),
+            )
+        )
         return MaaFWProjectUpdateOut(
             message=_maafw_update_message_with_cdk(message, extra),
             data=MaaFWProjectUpdateData(
@@ -1047,11 +1386,58 @@ async def update_maafw_project(
             ),
         )
 
+    # 手动更新后跑不起来和自动更新是同一种坏：提交前同样真建一次运行环境，
+    # 建不出来就回滚（预检失败也写备忘，但手动路径不读备忘——它就是强制重试）。
+    # 这几个模块会拉起 runtime_pool 与 agent_env，只在真要用时导入。
+    import functools
+    import threading
+
+    from app.task.MaaFW.embedded_manager import MaaFWEmbeddedManager
+    from app.task.MaaFW.tools.core.automas_maafw_project_update import (
+        clear_runtime_precheck,
+    )
+    from app.task.MaaFW.tools.core.automas_maafw_runtime_pool import (
+        MaaFWRuntimePoolService,
+    )
+    from app.task.MaaFW.tools.embedded.precheck import (
+        build_precheck_validator,
+        precheck_agent_root,
+    )
+    from app.task.MaaFW.tools.embedded.runtime_route import (
+        runtime_pool_route_from_service,
+    )
+    from app.task.MaaFW.tools.embedded.update_mirrors import (
+        github_release_mirror_urls,
+    )
+
+    route = await asyncio.to_thread(
+        lambda: runtime_pool_route_from_service(MaaFWRuntimePoolService())
+    )
+    precheck_failure: dict[str, Any] = {}
+    # 不把 report_progress 交给环境准备：它的收尾事件 completed / failed 会被
+    # 进度跟踪器当成更新终态，而事务此时还在 post_validating。
+    post_validate = build_precheck_validator(
+        # 预检里的 uv / pip 子进程也走脚本级代理；用 partial 绑上去，
+        # ``PrepareProjectEnvironment`` 的签名不变。
+        prepare=functools.partial(
+            MaaFWEmbeddedManager._prepare_project_environment_sync,
+            proxy_url=proxy_url,
+        ),
+        cancel_event=threading.Event(),
+        send_log=send_update_log,
+        agent_env_root=precheck_agent_root(route.root),
+        failure=precheck_failure,
+        previous_version=current_version,
+        project_name=getattr(interface, "name", None),
+    )
+
     try:
         # 仓库、tag、资产名等 GitHub 参数不再传入：核心包从 interface.json 与
         # 目录名自行推断。**source_config 必须传**：它带着用户选定的下载源，
         # 漏了就会退回缺省的 GitHub——check 说走 Mirror 酱、apply 却从 GitHub
         # 下载，正是本次设计要禁掉的静默换源。
+        # 检查 / 下载 / 覆盖 / 校验的收尾事件（completed / failed）由更新实现
+        # 自己经 progress 发出，这里不再补发。
         result = await update_maafw_project_if_needed(
             root_path,
             interface,
@@ -1059,16 +1445,38 @@ async def update_maafw_project(
             channel=source_config["channel"],
             source_config=source_config,
             proxy=proxy,
-            send_log=_maafw_update_send_log,
+            send_log=send_update_log,
+            progress=report_progress,
+            post_validate=post_validate,
+            # 同步 HTTP 请求不该跟着另一次自动更新 / 预检等几分钟。
+            project_lock_timeout=_MAAFW_MANUAL_UPDATE_LOCK_TIMEOUT_SECONDS,
+            # 手动更新与运行前自动更新用同一套加速镜像，否则「手动快、自动慢」。
+            github_mirror_urls=github_release_mirror_urls,
         )
     except MaaFWProjectUpdateError as exc:
+        if exc.project_lock_busy:
+            return MaaFWProjectUpdateOut(
+                code=409,
+                status="error",
+                message="MFW 项目正在自动更新/预检中，请稍后再试",
+            )
         return MaaFWProjectUpdateOut(
             code=400, status="error", message=f"MFW 项目更新失败: {exc}"
         )
     except Exception as exc:
+        logger.opt(exception=True).warning(
+            f"update_maafw_project失败: {type(exc).__name__}: {exc}"
+        )
         return MaaFWProjectUpdateOut(
             code=500, status="error", message=f"MFW 项目更新失败: {exc}"
         )
+
+    if bool(getattr(result, "updated", False)):
+        # 提交成功即预检建出了环境，上次运行前更新留下的备忘（若有）作废。
+        try:
+            await asyncio.to_thread(clear_runtime_precheck, root_path)
+        except Exception as exc:  # noqa: BLE001
+            _maafw_update_logger.warning(f"清理运行环境预检备忘失败: {exc}")
 
     extra = _maafw_update_extra_fields(result)
     message = str(getattr(result, "message", "") or "") or "MFW 项目更新完成"
@@ -1098,6 +1506,7 @@ def _maafw_agent_env_prepare_data(
     logs: list[str],
     *,
     cached: bool,
+    previously_prepared: bool = False,
 ) -> MaaFWAgentEnvPrepareData:
     """把 ``prepare_project_environment()`` 的结果摊平成响应体。
 
@@ -1134,6 +1543,7 @@ def _maafw_agent_env_prepare_data(
         venvPath=runtime.get("venvPath"),
         maafwVersion=runtime.get("maafwVersion"),
         cached=cached,
+        previouslyPrepared=previously_prepared,
         preparedAt=result.get("preparedAt"),
     )
 
@@ -1170,7 +1580,11 @@ async def prepare_maafw_agent_env(
     from app.task.MaaFW.tools.core.automas_maafw_runtime_pool import (
         MaaFWRuntimePoolService,
     )
+    from app.task.MaaFW.tools.core.automas_maafw_runtime_pool.host_environment import (
+        subprocess_proxy_scope,
+    )
     from app.task.MaaFW.tools.embedded.env_cache import (
+        has_prepared_environment,
         load_prepared_environment,
         store_prepared_environment,
     )
@@ -1249,6 +1663,10 @@ async def prepare_maafw_agent_env(
         fingerprint = await asyncio.to_thread(
             project_environment_fingerprint, root_path
         )
+        # 界面要分「首次准备完成」和「运行环境更新完成」两句话，在写入新缓存前先看一眼
+        previously_prepared = await asyncio.to_thread(
+            has_prepared_environment, root_path
+        )
         if not payload.force:
             cached_result = await asyncio.to_thread(
                 load_prepared_environment, root_path, fingerprint
@@ -1282,19 +1700,34 @@ async def prepare_maafw_agent_env(
         route = await asyncio.to_thread(
             lambda: runtime_pool_route_from_service(MaaFWRuntimePoolService())
         )
+        # 这个端点按请求里的 path 定位项目、不经脚本配置（见 MaaFW/AGENTS.md），
+        # 所以代理只在 scriptId 能解析到一份 MFW 脚本配置时才按脚本级取；
+        # 编辑页新建项目还没有脚本时落回全局。
+        proxy_url = Config.proxy_url
+        if progress_id:
+            try:
+                proxy_url = resolve_update_proxy_url(_maafw_script_config(progress_id))
+            except (KeyError, ValueError, TypeError):
+                pass
+
+        def _prepare_with_proxy() -> dict[str, Any]:
+            # 代理作用域按线程登记，必须在 to_thread 的目标函数体内进入，
+            # uv / pip 子进程环境才带上用户在 MAS 里填的代理。
+            with subprocess_proxy_scope(proxy_url):
+                return MaaFWRunnerService().prepare_project_environment(
+                    root_path,
+                    interface,
+                    runtime_pool_root=route.root,
+                    runtime_pool_id=route.pool_id,
+                    # worker 子进程跑在隔离 venv 里，代码要靠 PYTHONPATH 找到本仓；
+                    # 受监督时 cwd 是 <app-root>，源码在 <app-root>/repo/，只能用源码根
+                    import_paths=[SOURCE_ROOT],
+                    send_log=append_log,
+                    progress=publish_progress,
+                )
+
         try:
-            result = await asyncio.to_thread(
-                MaaFWRunnerService().prepare_project_environment,
-                root_path,
-                interface,
-                runtime_pool_root=route.root,
-                runtime_pool_id=route.pool_id,
-                # worker 子进程跑在隔离 venv 里，代码要靠 PYTHONPATH 找到本仓；
-                # 受监督时 cwd 是 <app-root>，源码在 <app-root>/repo/，只能用源码根
-                import_paths=[SOURCE_ROOT],
-                send_log=append_log,
-                progress=publish_progress,
-            )
+            result = await asyncio.to_thread(_prepare_with_proxy)
         except Exception as exc:
             # 失败原因此前只活在响应体与 WS 事件里，两边都不落盘：用户报障时
             # app.log 里一行都没有，只能对着界面截图猜。准备过程的逐行日志
@@ -1338,7 +1771,13 @@ async def prepare_maafw_agent_env(
     )
     return MaaFWAgentEnvPrepareOut(
         message="MFW 运行环境已就绪",
-        data=_maafw_agent_env_prepare_data(root_path, result, logs, cached=False),
+        data=_maafw_agent_env_prepare_data(
+            root_path,
+            result,
+            logs,
+            cached=False,
+            previously_prepared=previously_prepared,
+        ),
     )
 
 
@@ -1386,6 +1825,9 @@ async def get_m9a_available_tasks(script_id: str):
             "data": result_tasks,
         }
     except Exception as e:
+        logger.opt(exception=True).warning(
+            f"get_m9a_available_tasks失败: {type(e).__name__}: {e}"
+        )
         return {
             "code": 500,
             "status": "error",
@@ -1433,6 +1875,9 @@ async def get_hsr_stage_options_api(
             data=data,
         )
     except Exception as e:
+        logger.opt(exception=True).warning(
+            f"get_hsr_stage_options_api失败: {type(e).__name__}: {e}"
+        )
         return HSRStageOptionsOut(
             code=400
             if isinstance(e, (ValueError, KeyError, TypeError, RuntimeError))
@@ -1466,6 +1911,9 @@ async def get_bettergi_strategies_api(scriptId: str) -> ComboBoxOut:
             data=data,
         )
     except Exception as e:
+        logger.opt(exception=True).warning(
+            f"get_bettergi_strategies_api失败: {type(e).__name__}: {e}"
+        )
         return ComboBoxOut(
             code=400
             if isinstance(e, (ValueError, KeyError, TypeError, RuntimeError))
@@ -1517,6 +1965,9 @@ async def get_bettergi_custom_groups_api(
             data=data,
         )
     except Exception as e:
+        logger.opt(exception=True).warning(
+            f"get_bettergi_custom_groups_api失败: {type(e).__name__}: {e}"
+        )
         return BetterGICustomGroupsOut(
             code=400
             if isinstance(e, (ValueError, KeyError, TypeError, RuntimeError))
@@ -1525,6 +1976,88 @@ async def get_bettergi_custom_groups_api(
             message=f"{type(e).__name__}: {str(e)}",
             data=[],
         )
+
+
+@router.get(
+    "/baah/config-names",
+    tags=["BAAH"],
+    summary="获取 BAAH 配置文件名列表",
+    response_model=ComboBoxOut,
+    status_code=200,
+)
+async def get_baah_config_names_api(scriptId: str) -> ComboBoxOut:
+    """返回 BAAH 配置目录下已有的配置文件名（不含 ``.json`` 后缀）。"""
+
+    try:
+        data = [
+            ComboBoxItem(label=name, value=name)
+            for name in Config.get_baah_config_names(scriptId)
+        ]
+        return ComboBoxOut(
+            code=200,
+            status="success",
+            message=f"共 {len(data)} 份 BAAH 配置",
+            data=data,
+        )
+    except Exception as e:
+        logger.opt(exception=True).warning(
+            f"get_baah_config_names_api失败: {type(e).__name__}: {e}"
+        )
+        return ComboBoxOut(
+            code=400
+            if isinstance(e, (ValueError, KeyError, TypeError, RuntimeError))
+            else 500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+            data=[],
+        )
+
+
+def _format_beijing_time(timestamp: float) -> str:
+    """Unix 秒 → 「YYYY-MM-DD HH:MM」（东八区）。"""
+
+    return datetime.fromtimestamp(timestamp, tz=UTC8).strftime("%Y-%m-%d %H:%M")
+
+
+@router.get(
+    "/baah/activity-status",
+    tags=["BAAH"],
+    summary="获取碧蓝档案活动状态",
+    response_model=BlueArchiveActivityStatusOut,
+    status_code=200,
+)
+async def get_baah_activity_status_api(
+    lineType: Literal["JP", "Globle", "CN"] = "CN",
+) -> BlueArchiveActivityStatusOut:
+    """返回指定服正在进行的活动，没有则返回下一个未开始的活动。"""
+
+    from app.tools.bluearchive_activity import resolve_activity_state
+
+    state = await resolve_activity_state(lineType)
+    if state is None:
+        ## 取不到排期不算错误，如实说明即可
+        return BlueArchiveActivityStatusOut(
+            message="未取到碧蓝档案活动排期，请稍后重试",
+        )
+
+    running, upcoming = state
+    if running is not None:
+        return BlueArchiveActivityStatusOut(
+            Running=True,
+            Name=running.name,
+            StartTime=_format_beijing_time(running.start_time),
+            EndTime=_format_beijing_time(running.end_time),
+            message=f"进行中: {running.name}",
+        )
+
+    if upcoming is not None:
+        return BlueArchiveActivityStatusOut(
+            NextName=upcoming.name,
+            NextStartTime=_format_beijing_time(upcoming.start_time),
+            message=f"下一个活动: {upcoming.name}",
+        )
+
+    return BlueArchiveActivityStatusOut(message="没有进行中或即将开始的活动")
 
 
 @router.get(
@@ -1551,6 +2084,9 @@ async def get_bettergi_one_dragon_configs_api(scriptId: str) -> ComboBoxOut:
             data=data,
         )
     except Exception as e:
+        logger.opt(exception=True).warning(
+            f"get_bettergi_one_dragon_configs_api失败: {type(e).__name__}: {e}"
+        )
         return ComboBoxOut(
             code=400
             if isinstance(e, (ValueError, KeyError, TypeError, RuntimeError))
@@ -1591,8 +2127,50 @@ async def get_bettergi_js_scripts_api(scriptId: str) -> ComboBoxOut:
             data=data,
         )
     except Exception as e:
+        logger.opt(exception=True).warning(
+            f"get_bettergi_js_scripts_api失败: {type(e).__name__}: {e}"
+        )
         return ComboBoxOut(
-            code=400 if isinstance(e, (ValueError, KeyError, TypeError, RuntimeError))
+            code=400
+            if isinstance(e, (ValueError, KeyError, TypeError, RuntimeError))
+            else 500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+            data=[],
+        )
+
+
+@router.get(
+    "/bettergi/key-mouse-scripts",
+    tags=["BetterGI"],
+    summary="获取 BetterGI 可用键鼠脚本（录制）列表",
+    response_model=ComboBoxOut,
+    status_code=200,
+)
+async def get_bettergi_key_mouse_scripts_api(scriptId: str) -> ComboBoxOut:
+    """返回 BetterGI 键鼠脚本（录制）候选。
+
+    ``label`` 与 ``value`` 同为 {RootPath}/User/KeyMouseScript/*.json 的文件名（即脚本名）。
+    供一条龙「添加配置组」弹窗的「录制」标签页作为候选（贴录制标签）选择。
+    """
+
+    try:
+        script_config = _bettergi_script_config(scriptId)
+        root = Path(script_config.get("Info", "RootPath")).expanduser()
+        from app.task.BetterGI.tools import one_dragon
+
+        names = one_dragon.list_key_mouse_scripts(root)
+        data = [ComboBoxItem(label=name, value=name) for name in names]
+        return ComboBoxOut(
+            code=200,
+            status="success",
+            message=f"共 {len(data)} 个键鼠脚本",
+            data=data,
+        )
+    except Exception as e:
+        return ComboBoxOut(
+            code=400
+            if isinstance(e, (ValueError, KeyError, TypeError, RuntimeError))
             else 500,
             status="error",
             message=f"{type(e).__name__}: {str(e)}",
@@ -1643,8 +2221,12 @@ async def get_bettergi_script_groups_api(
             data=data,
         )
     except Exception as e:
+        logger.opt(exception=True).warning(
+            f"get_bettergi_script_groups_api失败: {type(e).__name__}: {e}"
+        )
         return ComboBoxOut(
-            code=400 if isinstance(e, (ValueError, KeyError, TypeError, RuntimeError))
+            code=400
+            if isinstance(e, (ValueError, KeyError, TypeError, RuntimeError))
             else 500,
             status="error",
             message=f"{type(e).__name__}: {str(e)}",
@@ -1689,8 +2271,12 @@ async def get_bettergi_script_group_detail_api(
             data=data,
         )
     except Exception as e:
+        logger.opt(exception=True).warning(
+            f"get_bettergi_script_group_detail_api失败: {type(e).__name__}: {e}"
+        )
         return BetterGIScriptGroupDetailOut(
-            code=400 if isinstance(e, (ValueError, KeyError, TypeError, RuntimeError))
+            code=400
+            if isinstance(e, (ValueError, KeyError, TypeError, RuntimeError))
             else 500,
             status="error",
             message=f"{type(e).__name__}: {str(e)}",
@@ -1726,8 +2312,12 @@ async def get_bettergi_script_settings_ui_api(
             data=ui,
         )
     except Exception as e:
+        logger.opt(exception=True).warning(
+            f"get_bettergi_script_settings_ui_api失败: {type(e).__name__}: {e}"
+        )
         return BetterGIScriptSettingsUiOut(
-            code=400 if isinstance(e, (ValueError, KeyError, TypeError, RuntimeError))
+            code=400
+            if isinstance(e, (ValueError, KeyError, TypeError, RuntimeError))
             else 500,
             status="error",
             message=f"{type(e).__name__}: {str(e)}",
@@ -1763,8 +2353,12 @@ async def get_bettergi_script_readme_api(
             data=text,
         )
     except Exception as e:
+        logger.opt(exception=True).warning(
+            f"get_bettergi_script_readme_api失败: {type(e).__name__}: {e}"
+        )
         return BetterGIScriptReadmeOut(
-            code=400 if isinstance(e, (ValueError, KeyError, TypeError, RuntimeError))
+            code=400
+            if isinstance(e, (ValueError, KeyError, TypeError, RuntimeError))
             else 500,
             status="error",
             message=f"{type(e).__name__}: {str(e)}",
@@ -1797,11 +2391,17 @@ async def get_bettergi_script_dirs_api(scriptId: str) -> BetterGIScriptDirsOut:
             autoPathingDir=dirs.get("autoPathing"),
             oneDragonDir=dirs.get("oneDragon"),
             scriptGroupDir=dirs.get("scriptGroup"),
+            keyMouseScriptDir=dirs.get("keyMouseScript"),
+            autoFightDir=dirs.get("autoFight"),
             exePath=dirs.get("exe"),
         )
     except Exception as e:
+        logger.opt(exception=True).warning(
+            f"get_bettergi_script_dirs_api失败: {type(e).__name__}: {e}"
+        )
         return BetterGIScriptDirsOut(
-            code=400 if isinstance(e, (ValueError, KeyError, TypeError, RuntimeError))
+            code=400
+            if isinstance(e, (ValueError, KeyError, TypeError, RuntimeError))
             else 500,
             status="error",
             message=f"{type(e).__name__}: {str(e)}",
@@ -1810,6 +2410,8 @@ async def get_bettergi_script_dirs_api(scriptId: str) -> BetterGIScriptDirsOut:
             autoPathingDir=None,
             oneDragonDir=None,
             scriptGroupDir=None,
+            keyMouseScriptDir=None,
+            autoFightDir=None,
             exePath=None,
         )
 
@@ -1842,8 +2444,12 @@ async def get_bettergi_auto_pathing_tree_api(scriptId: str) -> BetterGIPathingTr
             dirs=[BetterGIPathingNode(**node) for node in tree],
         )
     except Exception as e:
+        logger.opt(exception=True).warning(
+            f"get_bettergi_auto_pathing_tree_api失败: {type(e).__name__}: {e}"
+        )
         return BetterGIPathingTreeOut(
-            code=400 if isinstance(e, (ValueError, KeyError, TypeError, RuntimeError))
+            code=400
+            if isinstance(e, (ValueError, KeyError, TypeError, RuntimeError))
             else 500,
             status="error",
             message=f"{type(e).__name__}: {str(e)}",
@@ -1888,8 +2494,12 @@ async def get_bettergi_one_dragon_settings_api(
             data=data,
         )
     except Exception as e:
+        logger.opt(exception=True).warning(
+            f"get_bettergi_one_dragon_settings_api失败: {type(e).__name__}: {e}"
+        )
         return BetterGIOneDragonSettingsOut(
-            code=400 if isinstance(e, (ValueError, KeyError, TypeError, RuntimeError))
+            code=400
+            if isinstance(e, (ValueError, KeyError, TypeError, RuntimeError))
             else 500,
             status="error",
             message=f"{type(e).__name__}: {str(e)}",
@@ -1936,8 +2546,12 @@ async def save_bettergi_one_dragon_settings_api(
             message=f"已保存 {len(req.settings)} 项一条龙设置",
         )
     except Exception as e:
+        logger.opt(exception=True).warning(
+            f"save_bettergi_one_dragon_settings_api失败: {type(e).__name__}: {e}"
+        )
         return OutBase(
-            code=400 if isinstance(e, (ValueError, KeyError, TypeError, RuntimeError))
+            code=400
+            if isinstance(e, (ValueError, KeyError, TypeError, RuntimeError))
             else 500,
             status="error",
             message=f"{type(e).__name__}: {str(e)}",
@@ -1960,8 +2574,10 @@ async def set_one_dragon_plan_step_enabled(
     """按步骤名翻转 Plan 中某战斗实例的启用状态（同组多实例各自独立启停）。
 
     步骤名由行实例 uid 决定（形如 ``自动秘境`` / ``自动秘境-3``），与前端展示用的
-    「后名」解耦，改名不会丢设置。仅写入执行层消费的 enabled 标记，不影响原生
-    一条龙副本；运行时 build_combat_steps 按 step.enabled 决定是否纳入执行层。
+    「后名」解耦，改名不会丢设置。本接口只写 Plan（不改原生副本文件），但它是前端
+    队列行的启停开关：运行时 build_combat_steps 按 step.enabled 决定是否纳入执行层，
+    且 AutoProxy 会把 Plan 中配过实例的战斗组整体从原生副本剔除——因此 enabled=false
+    的最终语义是「本次不跑」，而不是「退回原生一条龙跑」。
 
     步骤不存在时（刚另存为/复制出来的新实例）先创建再设启用——否则开关只改前端、
     后端无步骤可写，刷新后回退。
@@ -1995,6 +2611,9 @@ async def set_one_dragon_plan_step_enabled(
             message=f"已更新步骤 {name} 启用={enabled}",
         )
     except Exception as e:
+        logger.opt(exception=True).warning(
+            f"set_one_dragon_plan_step_enabled失败: {type(e).__name__}: {e}"
+        )
         return OutBase(
             code=400
             if isinstance(e, (ValueError, KeyError, TypeError, RuntimeError))
@@ -2035,7 +2654,9 @@ async def get_bettergi_global_domain_settings_api(
         )
         # 战斗4项（自动秘境）的可映射字段（领奖树脂/分解圣遗物/奖励识别等）在 Plan 中回显
         if userId:
-            data = _read_combat_from_plan(script_config, userId, groupName, "globalDomain", data)
+            data = _read_combat_from_plan(
+                script_config, userId, groupName, "globalDomain", data
+            )
         return BetterGIGlobalDomainSettingsOut(
             code=200,
             status="success",
@@ -2043,8 +2664,12 @@ async def get_bettergi_global_domain_settings_api(
             data=data,
         )
     except Exception as e:
+        logger.opt(exception=True).warning(
+            f"get_bettergi_global_domain_settings_api失败: {type(e).__name__}: {e}"
+        )
         return BetterGIGlobalDomainSettingsOut(
-            code=400 if isinstance(e, (ValueError, KeyError, TypeError, RuntimeError))
+            code=400
+            if isinstance(e, (ValueError, KeyError, TypeError, RuntimeError))
             else 500,
             status="error",
             message=f"{type(e).__name__}: {str(e)}",
@@ -2090,8 +2715,12 @@ async def save_bettergi_global_domain_settings_api(
             message=f"已保存 {len(req.settings)} 项秘境刷取配置",
         )
     except Exception as e:
+        logger.opt(exception=True).warning(
+            f"save_bettergi_global_domain_settings_api失败: {type(e).__name__}: {e}"
+        )
         return OutBase(
-            code=400 if isinstance(e, (ValueError, KeyError, TypeError, RuntimeError))
+            code=400
+            if isinstance(e, (ValueError, KeyError, TypeError, RuntimeError))
             else 500,
             status="error",
             message=f"{type(e).__name__}: {str(e)}",
@@ -2129,7 +2758,9 @@ async def get_bettergi_global_stygian_settings_api(
         )
         # 战斗4项（自动幽境危战）全部字段在 Plan 中回显
         if userId:
-            data = _read_combat_from_plan(script_config, userId, groupName, "globalStygian", data)
+            data = _read_combat_from_plan(
+                script_config, userId, groupName, "globalStygian", data
+            )
         return BetterGIGlobalStygianSettingsOut(
             code=200,
             status="success",
@@ -2137,8 +2768,12 @@ async def get_bettergi_global_stygian_settings_api(
             data=data,
         )
     except Exception as e:
+        logger.opt(exception=True).warning(
+            f"get_bettergi_global_stygian_settings_api失败: {type(e).__name__}: {e}"
+        )
         return BetterGIGlobalStygianSettingsOut(
-            code=400 if isinstance(e, (ValueError, KeyError, TypeError, RuntimeError))
+            code=400
+            if isinstance(e, (ValueError, KeyError, TypeError, RuntimeError))
             else 500,
             status="error",
             message=f"{type(e).__name__}: {str(e)}",
@@ -2184,8 +2819,12 @@ async def save_bettergi_global_stygian_settings_api(
             message=f"已保存 {len(req.settings)} 项幽境危战设置",
         )
     except Exception as e:
+        logger.opt(exception=True).warning(
+            f"save_bettergi_global_stygian_settings_api失败: {type(e).__name__}: {e}"
+        )
         return OutBase(
-            code=400 if isinstance(e, (ValueError, KeyError, TypeError, RuntimeError))
+            code=400
+            if isinstance(e, (ValueError, KeyError, TypeError, RuntimeError))
             else 500,
             status="error",
             message=f"{type(e).__name__}: {str(e)}",
@@ -2225,7 +2864,8 @@ async def get_bettergi_domain_catalog_api(
         )
     except Exception as e:
         return BetterGIDomainCatalogOut(
-            code=400 if isinstance(e, (ValueError, KeyError, TypeError, RuntimeError))
+            code=400
+            if isinstance(e, (ValueError, KeyError, TypeError, RuntimeError))
             else 500,
             status="error",
             message=f"{type(e).__name__}: {str(e)}",
@@ -2247,7 +2887,9 @@ async def save_bettergi_script_group_api(
     """把右栏编辑后的配置组 json（项目顺序 + 各项目 jsScriptSettingsObject）写回
     该用户的 per-user 副本（``data/{script}/{user}/ScriptGroup/{name}.json``）。
 
-    不触碰 BetterGI 全局 ``User/ScriptGroup/{name}.json`` 同名实配。
+    「路径」类引用（名字含 ``/``）不能作文件名，落盘到 ``per_user_copy_name`` 的确定性别名
+    （右栏把路径项加成多项目配置组后需要载体）。不触碰 BetterGI 全局
+    ``User/ScriptGroup/{name}.json`` 同名实配。
     """
 
     try:
@@ -2262,14 +2904,25 @@ async def save_bettergi_script_group_api(
         out = one_dragon.write_user_script_group(
             root, req.scriptId, req.userId, req.name, req.data
         )
+        if out is None:
+            # 名为空等无可写内容的情况：按成功返回，不把「配置组名非法」弹给用户
+            return OutBase(
+                code=200,
+                status="success",
+                message=f"{req.name} 无需保存副本",
+            )
         return OutBase(
             code=200,
             status="success",
             message=f"已保存配置组 {req.name}（共 {len(projects)} 个项目）到用户配置",
         )
     except Exception as e:
+        logger.opt(exception=True).warning(
+            f"save_bettergi_script_group_api失败: {type(e).__name__}: {e}"
+        )
         return OutBase(
-            code=400 if isinstance(e, (ValueError, KeyError, TypeError, RuntimeError))
+            code=400
+            if isinstance(e, (ValueError, KeyError, TypeError, RuntimeError))
             else 500,
             status="error",
             message=f"{type(e).__name__}: {str(e)}",
@@ -2297,6 +2950,9 @@ async def get_zzzod_instances_api(scriptId: str) -> ZzzOdInstancesOut:
             data=data,
         )
     except Exception as e:
+        logger.opt(exception=True).warning(
+            f"get_zzzod_instances_api失败: {type(e).__name__}: {e}"
+        )
         return ZzzOdInstancesOut(
             code=400 if isinstance(e, (ValueError, KeyError, TypeError)) else 500,
             status="error",
@@ -2334,6 +2990,9 @@ async def add_zzzod_instance_api(
             Config.add_zzzod_instance(body.scriptId, body.name)
         )
     except Exception as e:
+        logger.opt(exception=True).warning(
+            f"add_zzzod_instance_api失败: {type(e).__name__}: {e}"
+        )
         return ZzzOdInstancesOut(
             code=400 if isinstance(e, (ValueError, KeyError, TypeError)) else 500,
             status="error",
@@ -2356,11 +3015,12 @@ async def rename_zzzod_instance_api(
 
     try:
         return _zzzod_instances_response(
-            Config.rename_zzzod_instance(
-                body.scriptId, body.instanceIdx, body.name
-            )
+            Config.rename_zzzod_instance(body.scriptId, body.instanceIdx, body.name)
         )
     except Exception as e:
+        logger.opt(exception=True).warning(
+            f"rename_zzzod_instance_api失败: {type(e).__name__}: {e}"
+        )
         return ZzzOdInstancesOut(
             code=400 if isinstance(e, (ValueError, KeyError, TypeError)) else 500,
             status="error",
@@ -2388,6 +3048,9 @@ async def set_zzzod_instance_active_in_od_api(
             )
         )
     except Exception as e:
+        logger.opt(exception=True).warning(
+            f"set_zzzod_instance_active_in_od_api失败: {type(e).__name__}: {e}"
+        )
         return ZzzOdInstancesOut(
             code=400 if isinstance(e, (ValueError, KeyError, TypeError)) else 500,
             status="error",
@@ -2413,6 +3076,9 @@ async def set_zzzod_active_instance_api(
             Config.set_zzzod_instance_active(body.scriptId, body.instanceIdx)
         )
     except Exception as e:
+        logger.opt(exception=True).warning(
+            f"set_zzzod_active_instance_api失败: {type(e).__name__}: {e}"
+        )
         return ZzzOdInstancesOut(
             code=400 if isinstance(e, (ValueError, KeyError, TypeError)) else 500,
             status="error",
@@ -2440,6 +3106,9 @@ async def set_zzzod_instance_force_login_api(
             )
         )
     except Exception as e:
+        logger.opt(exception=True).warning(
+            f"set_zzzod_instance_force_login_api失败: {type(e).__name__}: {e}"
+        )
         return ZzzOdInstancesOut(
             code=400 if isinstance(e, (ValueError, KeyError, TypeError)) else 500,
             status="error",
@@ -2464,6 +3133,9 @@ async def set_zzzod_instance_run_mode_api(
         Config.set_zzzod_instance_run_mode(body.scriptId, body.instanceRun)
         return OutBase()
     except Exception as e:
+        logger.opt(exception=True).warning(
+            f"set_zzzod_instance_run_mode_api失败: {type(e).__name__}: {e}"
+        )
         return OutBase(
             code=400 if isinstance(e, (ValueError, KeyError, TypeError)) else 500,
             status="error",
@@ -2473,7 +3145,7 @@ async def set_zzzod_instance_run_mode_api(
 
 @router.post(
     "/zzzod/instances/delete",
-    tags=["ZZZ-OD"],
+    tags=["Delete"],
     summary="删除一条龙实例（直控实例管理；受 MAS 绑定槽保护）",
     response_model=ZzzOdInstancesOut,
     status_code=200,
@@ -2488,11 +3160,190 @@ async def delete_zzzod_instance_api(
             Config.delete_zzzod_instance(body.scriptId, body.instanceIdx)
         )
     except Exception as e:
+        logger.opt(exception=True).warning(
+            f"delete_zzzod_instance_api失败: {type(e).__name__}: {e}"
+        )
         return ZzzOdInstancesOut(
             code=400 if isinstance(e, (ValueError, KeyError, TypeError)) else 500,
             status="error",
             message=f"{type(e).__name__}: {str(e)}",
             data=[],
+        )
+
+
+@router.get(
+    "/zzzod/slots",
+    tags=["ZZZ-OD"],
+    summary="获取实例槽总览（原生实例 / MAS 绑定槽 / 无主残留）",
+    response_model=ZzzOdSlotsOut,
+    status_code=200,
+)
+async def get_zzzod_slots_api(scriptId: str) -> ZzzOdSlotsOut:
+    """槽目录是 MAS 分配在一条龙安装目录里的，注册表与 GUI 都看不到。
+
+    这份对照表用于诊断「槽目录数与用户数对不上」（绑定但没跑过的槽没有目录）
+    与定位无主残留。
+    """
+
+    try:
+        # 槽总览要 rglob 统计各槽目录占用，是阻塞 IO，放线程里跑
+        data = [
+            ZzzOdSlotOut(**item)
+            for item in await asyncio.to_thread(Config.get_zzzod_slots, scriptId)
+        ]
+        return ZzzOdSlotsOut(
+            code=200,
+            status="success",
+            message=f"共 {len(data)} 个实例槽",
+            data=data,
+        )
+    except Exception as e:
+        logger.opt(exception=True).warning(
+            f"get_zzzod_slots_api失败: {type(e).__name__}: {e}"
+        )
+        return ZzzOdSlotsOut(
+            code=400 if isinstance(e, (ValueError, KeyError, TypeError)) else 500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+            data=[],
+        )
+
+
+@router.post(
+    "/zzzod/slots/clean",
+    tags=["Delete"],
+    summary="清理无主实例槽（先归档进回收池再删目录）",
+    response_model=ZzzOdSlotCleanOut,
+    status_code=200,
+)
+async def clean_zzzod_slots_api(
+    body: ZzzOdSlotCleanIn = Body(...),
+) -> ZzzOdSlotCleanOut:
+    """原生实例与被任一 ZzzOd 用户绑定的槽一律不动，返回实际回收的槽号。"""
+
+    try:
+        # 清理要整目录拷贝 + 删目录，是阻塞 IO，放线程里跑
+        removed = await asyncio.to_thread(Config.clean_zzzod_slots, body.scriptId)
+        return ZzzOdSlotCleanOut(
+            code=200,
+            status="success",
+            message=f"已回收 {len(removed)} 个实例槽",
+            data=removed,
+        )
+    except Exception as e:
+        logger.opt(exception=True).warning(
+            f"clean_zzzod_slots_api失败: {type(e).__name__}: {e}"
+        )
+        return ZzzOdSlotCleanOut(
+            code=400 if isinstance(e, (ValueError, KeyError, TypeError)) else 500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+            data=[],
+        )
+
+
+@router.get(
+    "/zzzod/recycle",
+    tags=["ZZZ-OD"],
+    summary="获取实例槽回收池（被删用户/脚本留下的槽内容与备份池快照）",
+    response_model=ZzzOdRecycleOut,
+    status_code=200,
+)
+async def get_zzzod_recycle_api(scriptId: str) -> ZzzOdRecycleOut:
+    """槽目录按安装根指纹归池，跨脚本共享；只有 ``kind=slot`` 的条目可恢复。"""
+
+    try:
+        data = [
+            ZzzOdRecycleEntryOut(**item)
+            for item in await asyncio.to_thread(Config.get_zzzod_recycle, scriptId)
+        ]
+        return ZzzOdRecycleOut(
+            code=200,
+            status="success",
+            message=f"共 {len(data)} 条回收记录",
+            data=data,
+        )
+    except Exception as e:
+        logger.opt(exception=True).warning(
+            f"get_zzzod_recycle_api失败: {type(e).__name__}: {e}"
+        )
+        return ZzzOdRecycleOut(
+            code=400 if isinstance(e, (ValueError, KeyError, TypeError)) else 500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+            data=[],
+        )
+
+
+@router.post(
+    "/zzzod/recycle/clear",
+    tags=["Delete"],
+    summary="清空实例槽回收池（删除后不可找回，不碰配置恢复池）",
+    response_model=ZzzOdRecycleClearOut,
+    status_code=200,
+)
+async def clear_zzzod_recycle_api(
+    body: ZzzOdRecycleClearIn = Body(...),
+) -> ZzzOdRecycleClearOut:
+    """只删 recycle 池；onedragon 原生池与 mas 配置恢复池不受影响。"""
+
+    try:
+        # 整棵目录删除是阻塞 IO，放线程里跑
+        count = await asyncio.to_thread(Config.clear_zzzod_recycle, body.scriptId)
+        return ZzzOdRecycleClearOut(
+            code=200,
+            status="success",
+            message=f"已清空回收池（{count} 条）",
+            data=count,
+        )
+    except Exception as e:
+        logger.opt(exception=True).warning(
+            f"clear_zzzod_recycle_api失败: {type(e).__name__}: {e}"
+        )
+        return ZzzOdRecycleClearOut(
+            code=400 if isinstance(e, (ValueError, KeyError, TypeError)) else 500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+            data=0,
+        )
+
+
+@router.post(
+    "/zzzod/recycle/restore",
+    tags=["Delete"],
+    summary="把回收池里的槽快照恢复给某个 MAS 用户（现有用户或新建用户，先存底）",
+    response_model=OutBase,
+    status_code=200,
+)
+async def restore_zzzod_recycle_api(
+    body: ZzzOdRecycleRestoreIn = Body(...),
+) -> OutBase:
+    """恢复的落点是**用户的绑定槽**（``targetUser`` 指定现有用户，或
+    ``newUserName`` 新建一个用户）——只物化内容而不建立绑定的恢复没有出口，
+    MAS 下次运行不会认领它。目标用户已有绑定槽时覆盖其内容，恢复前先存底。
+    """
+
+    try:
+        slot, user_name = await Config.restore_zzzod_recycle(
+            body.scriptId,
+            body.slot,
+            body.ts,
+            target_user=body.targetUser,
+            new_user_name=body.newUserName,
+        )
+        return OutBase(
+            code=200,
+            status="success",
+            message=f"已恢复到用户「{user_name}」的槽 {slot:02d}（快照 {body.ts}）",
+        )
+    except Exception as e:
+        logger.opt(exception=True).warning(
+            f"restore_zzzod_recycle_api失败: {type(e).__name__}: {e}"
+        )
+        return OutBase(
+            code=400 if isinstance(e, (ValueError, KeyError, TypeError)) else 500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
         )
 
 
@@ -2521,6 +3372,9 @@ async def get_zzzod_teams_api(
             agentOptions=data["agentOptions"],
         )
     except Exception as e:
+        logger.opt(exception=True).warning(
+            f"get_zzzod_teams_api失败: {type(e).__name__}: {e}"
+        )
         return ZzzOdTeamsOut(
             code=400 if isinstance(e, (ValueError, KeyError, TypeError)) else 500,
             status="error",
@@ -2537,7 +3391,9 @@ async def get_zzzod_teams_api(
     response_model=ZzzOdTeamsSaveOut,
     status_code=200,
 )
-async def save_zzzod_teams_api(script: ZzzOdTeamsSaveIn = Body(...)) -> ZzzOdTeamsSaveOut:
+async def save_zzzod_teams_api(
+    script: ZzzOdTeamsSaveIn = Body(...),
+) -> ZzzOdTeamsSaveOut:
     """直控传 instanceIdx 直接写原生实例，缺省写用户绑定槽。"""
 
     try:
@@ -2562,6 +3418,9 @@ async def save_zzzod_teams_api(script: ZzzOdTeamsSaveIn = Body(...)) -> ZzzOdTea
             ],
         )
     except Exception as e:
+        logger.opt(exception=True).warning(
+            f"save_zzzod_teams_api失败: {type(e).__name__}: {e}"
+        )
         return ZzzOdTeamsSaveOut(
             code=400 if isinstance(e, (ValueError, KeyError, TypeError)) else 500,
             status="error",
@@ -2639,6 +3498,9 @@ async def get_zzzod_app_config_api(
             fields=[ZzzOdAppConfigFieldOut(**f) for f in data["fields"]],
         )
     except Exception as e:
+        logger.opt(exception=True).warning(
+            f"get_zzzod_app_config_api失败: {type(e).__name__}: {e}"
+        )
         return ZzzOdAppConfigOut(
             code=400 if isinstance(e, (ValueError, KeyError, TypeError)) else 500,
             status="error",
@@ -2671,6 +3533,9 @@ async def get_zzzod_task_options_api(scriptId: str, appId: str) -> ZzzOdTaskOpti
             challenge=data["challenge"],
         )
     except Exception as e:
+        logger.opt(exception=True).warning(
+            f"get_zzzod_task_options_api失败: {type(e).__name__}: {e}"
+        )
         return ZzzOdTaskOptionsOut(
             code=400 if isinstance(e, (ValueError, KeyError, TypeError)) else 500,
             status="error",
@@ -2712,6 +3577,9 @@ async def save_zzzod_app_config_api(
             ],
         )
     except Exception as e:
+        logger.opt(exception=True).warning(
+            f"save_zzzod_app_config_api失败: {type(e).__name__}: {e}"
+        )
         return ZzzOdAppConfigOut(
             code=400 if isinstance(e, (ValueError, KeyError, TypeError)) else 500,
             status="error",
@@ -2744,8 +3612,13 @@ async def get_zzzod_native_config_api(
             account=[ZzzOdNativeAccountField(**f) for f in data["account"]],
             tasks=[ZzzOdNativeTaskOut(**t) for t in data["tasks"]],
             instanceRun=data["instanceRun"],
+            launchArgs=ZzzOdNativeLaunchArgs(**data["launchArgs"]),
+            afterDone=data["afterDone"],
         )
     except Exception as e:
+        logger.opt(exception=True).warning(
+            f"get_zzzod_native_config_api失败: {type(e).__name__}: {e}"
+        )
         return ZzzOdNativeConfigOut(
             code=400 if isinstance(e, (ValueError, KeyError, TypeError)) else 500,
             status="error",
@@ -2755,6 +3628,7 @@ async def get_zzzod_native_config_api(
             account=[],
             tasks=[],
             instanceRun="仅运行当前",
+            afterDone="无",
         )
 
 
@@ -2768,7 +3642,7 @@ async def get_zzzod_native_config_api(
 async def save_zzzod_native_config_api(
     script: ZzzOdNativeConfigIn = Body(...),
 ) -> ZzzOdNativeConfigOut:
-    """白名单过滤后写回所选实例 game_account.yml、_group.yml 与 instance_run，随后回读最新数据。"""
+    """白名单过滤后写回所选实例 game_account.yml、_group.yml、instance_run 与 after_done，随后回读最新数据。"""
 
     try:
         await Config.save_zzzod_native_config(
@@ -2779,10 +3653,10 @@ async def save_zzzod_native_config_api(
             if script.tasks is not None
             else None,
             script.instanceRun,
+            script.launchArgs.model_dump() if script.launchArgs is not None else None,
+            script.afterDone,
         )
-        data = await Config.get_zzzod_native_config(
-            script.scriptId, script.instanceIdx
-        )
+        data = await Config.get_zzzod_native_config(script.scriptId, script.instanceIdx)
         return ZzzOdNativeConfigOut(
             code=200,
             status="success",
@@ -2792,8 +3666,13 @@ async def save_zzzod_native_config_api(
             account=[ZzzOdNativeAccountField(**f) for f in data["account"]],
             tasks=[ZzzOdNativeTaskOut(**t) for t in data["tasks"]],
             instanceRun=data["instanceRun"],
+            afterDone=data["afterDone"],
+            launchArgs=ZzzOdNativeLaunchArgs(**data["launchArgs"]),
         )
     except Exception as e:
+        logger.opt(exception=True).warning(
+            f"save_zzzod_native_config_api失败: {type(e).__name__}: {e}"
+        )
         return ZzzOdNativeConfigOut(
             code=400 if isinstance(e, (ValueError, KeyError, TypeError)) else 500,
             status="error",
@@ -2803,35 +3682,7 @@ async def save_zzzod_native_config_api(
             account=[],
             tasks=[],
             instanceRun="仅运行当前",
-        )
-
-
-@router.get(
-    "/zzzod/backups",
-    tags=["ZZZ-OD"],
-    summary="列出配置备份（onedragon=一条龙原生配置 / mas=MAS 用户槽）",
-    response_model=ZzzOdBackupListOut,
-    status_code=200,
-)
-async def list_zzzod_backups_api(
-    scriptId: str, userId: str, target: str = "onedragon"
-) -> ZzzOdBackupListOut:
-    """按时间倒序返回历史备份（运行/会话前自动归档，内容无变化跳过）。"""
-
-    try:
-        data = await Config.list_zzzod_backups(scriptId, userId, target)
-        return ZzzOdBackupListOut(
-            code=200,
-            status="success",
-            message=f"共 {len(data)} 份备份",
-            data=[ZzzOdBackupItemOut(**item) for item in data],
-        )
-    except Exception as e:
-        return ZzzOdBackupListOut(
-            code=400 if isinstance(e, (ValueError, KeyError, TypeError)) else 500,
-            status="error",
-            message=f"{type(e).__name__}: {str(e)}",
-            data=[],
+            afterDone=script.afterDone or "无",
         )
 
 
@@ -2849,78 +3700,15 @@ async def get_zzzod_launchers_api(scriptId: str) -> ZzzOdLauncherOut:
         data = Config.get_zzzod_launchers(scriptId)
         return ZzzOdLauncherOut(code=200, status="success", message="", **data)
     except Exception as e:
+        logger.opt(exception=True).warning(
+            f"get_zzzod_launchers_api失败: {type(e).__name__}: {e}"
+        )
         return ZzzOdLauncherOut(
             code=400 if isinstance(e, (ValueError, KeyError, TypeError)) else 500,
             status="error",
             message=f"{type(e).__name__}: {str(e)}",
             original_available=False,
             integrated_available=False,
-        )
-
-
-@router.post(
-    "/zzzod/backup/restore",
-    tags=["ZZZ-OD"],
-    summary="把指定备份恢复到目标位置（onedragon=一条龙原生配置 / mas=MAS 用户配置）",
-    response_model=ZzzOdBackupRestoreOut,
-    status_code=200,
-)
-async def restore_zzzod_backup_api(
-    script: ZzzOdBackupRestoreIn = Body(...),
-) -> ZzzOdBackupRestoreOut:
-    """onedragon：恢复一条龙原生配置（MAS 槽不触碰）；mas：恢复槽并全量回填本页字段。"""
-
-    try:
-        slot = await Config.restore_zzzod_backup(
-            script.scriptId, script.userId, script.time, target=script.target
-        )
-        return ZzzOdBackupRestoreOut(
-            code=200,
-            status="success",
-            message=f"已恢复备份 {script.time}",
-            slot=slot,
-            target=script.target,
-        )
-    except Exception as e:
-        return ZzzOdBackupRestoreOut(
-            code=400 if isinstance(e, (ValueError, KeyError, TypeError)) else 500,
-            status="error",
-            message=f"{type(e).__name__}: {str(e)}",
-            slot=-1,
-            target=script.target,
-        )
-
-
-@router.post(
-    "/zzzod/backup/ensure",
-    tags=["ZZZ-OD"],
-    summary="按需归档目标池当前配置（指纹去重，无变化跳过；编辑界面三时机调用）",
-    response_model=ZzzOdBackupEnsureOut,
-    status_code=200,
-)
-async def ensure_zzzod_backup_api(
-    script: ZzzOdBackupEnsureIn = Body(...),
-) -> ZzzOdBackupEnsureOut:
-    """onedragon：一条龙原生配置当前状态（进入编辑界面时捕捉 MAS 操作前原始态）；
-    mas：MAS 用户绑定槽当前状态（退出编辑界面时的用户侧终态）。"""
-
-    try:
-        data = await Config.ensure_zzzod_backup(
-            script.scriptId, script.userId, target=script.target
-        )
-        return ZzzOdBackupEnsureOut(
-            code=200,
-            status="success",
-            message="",
-            **data,
-        )
-    except Exception as e:
-        return ZzzOdBackupEnsureOut(
-            code=400 if isinstance(e, (ValueError, KeyError, TypeError)) else 500,
-            status="error",
-            message=f"{type(e).__name__}: {str(e)}",
-            created=False,
-            time="",
         )
 
 
@@ -2948,6 +3736,9 @@ async def import_zzzod_config_api(
             **data,
         )
     except Exception as e:
+        logger.opt(exception=True).warning(
+            f"import_zzzod_config_api失败: {type(e).__name__}: {e}"
+        )
         return ZzzOdImportOut(
             code=400 if isinstance(e, (ValueError, KeyError, TypeError)) else 500,
             status="error",
@@ -2957,50 +3748,6 @@ async def import_zzzod_config_api(
             importedAccountCount=0,
             importedTaskCount=0,
             slot=-1,
-        )
-
-
-@router.get(
-    "/zzzod/backup/preview",
-    tags=["ZZZ-OD"],
-    summary="读取指定备份的配置摘要（纯读不恢复，供「预览配置」快速展示）",
-    response_model=ZzzOdBackupPreviewOut,
-    status_code=200,
-)
-async def get_zzzod_backup_preview_api(
-    scriptId: str, userId: str, time: str, target: str = "onedragon"
-) -> ZzzOdBackupPreviewOut:
-    """mas：账号字段与已启用任务编排（即 MAS 本页展示的配置）；onedragon：实例列表。"""
-
-    # target 是 Literal 响应字段：非法值进 try 后成功/异常两条分支都会因
-    # 响应模型校验失败抛 ValidationError → 裸 500；在入口用 400 拦截
-    if target not in ("onedragon", "mas"):
-        raise HTTPException(status_code=400, detail=f"不支持的备份类别: {target}")
-
-    try:
-        data = Config.get_zzzod_backup_preview(
-            scriptId, userId, time, target=target
-        )
-        return ZzzOdBackupPreviewOut(
-            code=200,
-            status="success",
-            message="",
-            **data,
-        )
-    except Exception as e:
-        # 响应模型 info/account/tasks/instances 全部 required（...）；除填
-        # account/tasks/instances 外还要填 info，否则 Pydantic 校验失败抛
-        # ValidationError → 裸 500。错误信息塞进 info 的首项展示给用户。
-        return ZzzOdBackupPreviewOut(
-            code=400 if isinstance(e, (ValueError, KeyError, TypeError)) else 500,
-            status="error",
-            message=f"{type(e).__name__}: {str(e)}",
-            time=time,
-            target=target,  # type: ignore[arg-type]
-            info=[ZzzOdPreviewField(key="error", value=str(e))],
-            account=[],
-            tasks=[],
-            instances=[],
         )
 
 
@@ -3020,10 +3767,127 @@ async def get_hsr_capabilities_api(scriptId: str | None = None) -> HSRCapabiliti
         script_config = _hsr_script_config(scriptId)
         from app.task.HSR.tools.api import build_capabilities
 
-        data = HSRCapabilitiesData(**build_capabilities(script_config))
+        # 走线程：里面要起一次 SRA-cli.exe --version 读版本号，正常 0.09 秒，
+        # 但异常构建或杀毒扫描时能卡到超时，直接调会连 WebSocket 一起冻住。
+        data = HSRCapabilitiesData(
+            **await asyncio.to_thread(build_capabilities, script_config)
+        )
         return HSRCapabilitiesOut(data=data)
     except Exception as e:
+        logger.opt(exception=True).warning(
+            f"get_hsr_capabilities_api失败: {type(e).__name__}: {e}"
+        )
         return HSRCapabilitiesOut(
+            code=400
+            if isinstance(
+                e, (FileNotFoundError, OSError, RuntimeError, ValueError, KeyError)
+            )
+            else 500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+        )
+
+
+@router.post(
+    "/hsr/update",
+    tags=["HSR"],
+    summary="检查或执行 HSR 外部脚本更新",
+    response_model=HSRUpdateOut,
+    status_code=200,
+)
+async def post_hsr_update_api(data: HSRUpdateIn) -> HSRUpdateOut:
+    """手动检查或安装 M7A / SRA 的更新。
+
+    自动更新只在任务正常跑完后触发（``Update.AutoUpdateMode = AfterRun``），
+    这个接口是唯一不必等一轮任务就能更新的入口。
+    """
+
+    try:
+        script_config = _hsr_script_config(data.scriptId)
+        from app.task.HSR.tools.native_control import resolve_script_path
+        from app.task.HSR.tools.update import (
+            check_engine_update,
+            update_engine_if_needed,
+        )
+
+        root = resolve_script_path(script_config, data.engine)
+        if not root:
+            return HSRUpdateOut(
+                code=400, status="error", message=f"未配置 {data.engine} 路径"
+            )
+
+        source = str(script_config.get("Update", f"{data.engine}Source") or "")
+        channel = str(script_config.get("Update", "Channel") or "stable")
+        cdk = str(script_config.get("Update", "MirrorChyanCDK") or "")
+
+        if data.action == "check":
+            result = await check_engine_update(
+                data.engine,
+                Path(root),
+                source=source,
+                channel=channel,
+                cdk=cdk,
+                proxy=Config.proxy,
+            )
+            return HSRUpdateOut(
+                data=HSRUpdateData(
+                    engine=data.engine,
+                    checked=True,
+                    updated=False,
+                    current_version=result.current_version,
+                    latest_version=result.latest_version,
+                    update_available=result.update_available,
+                    installable=result.installable,
+                    message=result.blocked_reason or "",
+                )
+            )
+
+        # apply：目录锁必须以非阻塞方式拿，正在跑任务时立刻告诉用户，
+        # 而不是把 HTTP 请求挂在那里等。
+        from app.task.HSR.tools.external_locks import (
+            HSRExternalPathBusyError,
+            acquire_external_path_locks,
+            resolve_external_lock_paths,
+        )
+
+        try:
+            lease = await acquire_external_path_locks(
+                resolve_external_lock_paths(script_config, (data.engine,)),
+                wait=False,
+            )
+        except HSRExternalPathBusyError as e:
+            return HSRUpdateOut(code=409, status="error", message=str(e))
+
+        try:
+            outcome = await update_engine_if_needed(
+                data.engine,
+                Path(root),
+                source=source,
+                channel=channel,
+                cdk=cdk,
+                proxy=Config.proxy,
+                download_dir=Path.cwd() / "data" / "hsr_update",
+            )
+        finally:
+            lease.release()
+
+        return HSRUpdateOut(
+            data=HSRUpdateData(
+                engine=data.engine,
+                checked=outcome.checked,
+                updated=outcome.updated,
+                current_version=outcome.current_version,
+                latest_version=outcome.latest_version,
+                update_available=outcome.update_available,
+                installable=outcome.updated or not outcome.message,
+                message=outcome.message,
+            )
+        )
+    except Exception as e:
+        logger.opt(exception=True).warning(
+            f"post_hsr_update_api失败: {type(e).__name__}: {e}"
+        )
+        return HSRUpdateOut(
             code=400
             if isinstance(
                 e, (FileNotFoundError, OSError, RuntimeError, ValueError, KeyError)
@@ -3060,6 +3924,9 @@ async def get_hsr_managed_config_api(
         data = HSRManagedConfigData(**build_managed_config(script_config, user_config))
         return HSRManagedConfigOut(data=data)
     except Exception as e:
+        logger.opt(exception=True).warning(
+            f"get_hsr_managed_config_api失败: {type(e).__name__}: {e}"
+        )
         return HSRManagedConfigOut(
             code=400
             if isinstance(
@@ -3093,6 +3960,9 @@ async def get_hsr_sra_profiles_api(scriptId: str | None = None) -> HSRSRAProfile
             data=data,
         )
     except Exception as e:
+        logger.opt(exception=True).warning(
+            f"get_hsr_sra_profiles_api失败: {type(e).__name__}: {e}"
+        )
         return HSRSRAProfilesOut(
             code=400
             if isinstance(e, (ValueError, KeyError, TypeError, RuntimeError))
@@ -3193,8 +4063,7 @@ async def clear_hsr_direct_config_api(
 async def get_oknte_configs_list(script_id: str, user_id: str):
     """
     获取 OK-NTE 配置文件列表及 schema 定义。
-    读写用户配置目录（data/{script_id}/{user_id}/ConfigFile/），
-    若为空则自动从 ok-nte configs 目录初始化默认配置。
+    读写用户快速配置目录，首次从已有来源初始化，不修改来源文件。
 
     Args:
         script_id: OK-NTE 脚本 ID
@@ -3205,11 +4074,9 @@ async def get_oknte_configs_list(script_id: str, user_id: str):
     """
     try:
         import json
-        import shutil
 
         from app.task.OkNte.config_schema import (
             build_fields_for_config,
-            ensure_oknte_daily_routine_configs,
             get_all_config_info,
             load_oknte_option_labels,
         )
@@ -3220,37 +4087,15 @@ async def get_oknte_configs_list(script_id: str, user_id: str):
         root_path = script_config.get("Info", "RootPath")
         option_labels = load_oknte_option_labels(root_path) if root_path else {}
 
-        # 用户配置目录；旧版 Default 目录仅作为升级后的初始化来源。
+        # 面板与来源分别保存；切换来源不重置面板。
         mas_config_dir = _oknte_mas_config_dir(script_id, user_id)
 
-        # ok-nte 源配置目录（用于自动初始化）
-        legacy_config_dir = _oknte_legacy_mas_config_dir(script_id)
-        oknte_configs_dir = (
-            legacy_config_dir
-            if legacy_config_dir.is_dir() and any(legacy_config_dir.iterdir())
-            else None
-        )
-        if oknte_configs_dir is None:
-            raw_config_path = script_config.get("Script", "ConfigPath")
-            oknte_configs_dir = Path(raw_config_path) if raw_config_path else None
-        if not oknte_configs_dir or not oknte_configs_dir.exists():
-            if root_path:
-                root = Path(root_path)
-                packaged_dir = root / "data" / "apps" / "ok-nte" / "working" / "configs"
-                source_dir = root / "configs"
-                oknte_configs_dir = (
-                    packaged_dir if packaged_dir.is_dir() else source_dir
-                )
-
-        # 自动初始化：用户目录为空时从旧版共享目录或 ok-nte configs 复制默认配置
-        need_init = not mas_config_dir.exists() or not any(mas_config_dir.iterdir())
-        if need_init and oknte_configs_dir and oknte_configs_dir.is_dir():
-            mas_config_dir.mkdir(parents=True, exist_ok=True)
-            shutil.copytree(oknte_configs_dir, mas_config_dir, dirs_exist_ok=True)
-        mas_config_dir.mkdir(parents=True, exist_ok=True)
-        ensure_oknte_daily_routine_configs(mas_config_dir)
-
         configs_info = get_all_config_info()
+        if script_config.get("Script", "ConfigPathMode") == "File":
+            filename = Path(script_config.get("Script", "ConfigPath")).name
+            configs_info = [
+                info for info in configs_info if info["filename"] == filename
+            ]
 
         # 读取 per-user JSON 配置，通过 build_fields_for_config 构建字段列表
         result = []
@@ -3258,11 +4103,16 @@ async def get_oknte_configs_list(script_id: str, user_id: str):
             filename = info["filename"]
             filepath = _oknte_config_file_path(mas_config_dir, filename)
             current_data: dict[str, Any] = {}
+            parse_error = False
             if filepath.exists():
                 try:
                     current_data = json.loads(filepath.read_text(encoding="utf-8"))
-                except Exception:
-                    pass
+                except Exception as e:
+                    # 解析失败按空数据构建字段, 但要让前端知道这份配置没读出来
+                    parse_error = True
+                    logger.warning(
+                        f"OkNte 配置解析失败: {filepath}: {type(e).__name__}: {e}"
+                    )
 
             fields = build_fields_for_config(filename, current_data, option_labels)
 
@@ -3271,6 +4121,7 @@ async def get_oknte_configs_list(script_id: str, user_id: str):
                     **info,
                     "fields": fields,
                     "currentData": current_data,
+                    "parseError": parse_error,
                 }
             )
 
@@ -3283,60 +4134,14 @@ async def get_oknte_configs_list(script_id: str, user_id: str):
             "configPath": str(mas_config_dir) if mas_config_dir else None,
         }
     except Exception as e:
+        logger.opt(exception=True).warning(
+            f"get_oknte_configs_list失败: {type(e).__name__}: {e}"
+        )
         return {
             "code": 500,
             "status": "error",
             "message": f"{type(e).__name__}: {str(e)}",
             "data": [],
-        }
-
-
-@router.post(
-    "/oknte/configs/update",
-    tags=["OKNTE"],
-    summary="更新 OK-NTE 配置文件",
-    status_code=200,
-)
-async def update_oknte_config(
-    script_id: str = Body(...),
-    user_id: str = Body(...),
-    filename: str = Body(...),
-    data: dict = Body(...),
-):
-    """
-    更新 OK-NTE 配置文件
-
-    Args:
-        script_id: OK-NTE 脚本 ID
-        user_id: 用户 ID
-        filename: 配置文件名（如 DailyTask.json）
-        data: 要更新的配置数据
-
-    Returns:
-        dict: 操作结果
-    """
-    try:
-        from app.task.OkNte.config_schema import update_oknte_config_data
-
-        # 写入用户配置目录
-        mas_config_dir = _oknte_mas_config_dir(script_id, user_id)
-        mas_config_dir.mkdir(parents=True, exist_ok=True)
-
-        filepath = _oknte_config_file_path(mas_config_dir, filename)
-
-        existing_data = update_oknte_config_data(filepath, data)
-
-        return {
-            "code": 200,
-            "status": "success",
-            "message": f"配置文件 {filename} 已更新",
-            "data": existing_data,
-        }
-    except Exception as e:
-        return {
-            "code": 500,
-            "status": "error",
-            "message": f"{type(e).__name__}: {str(e)}",
         }
 
 
@@ -3368,6 +4173,11 @@ async def batch_update_oknte_configs(
         # 写入用户配置目录
         mas_config_dir = _oknte_mas_config_dir(script_id, user_id)
         mas_config_dir.mkdir(parents=True, exist_ok=True)
+        _, script_config = _oknte_script_config(script_id)
+        if script_config.get("Script", "ConfigPathMode") == "File":
+            filename = Path(script_config.get("Script", "ConfigPath")).name
+            if set(configs) - {filename}:
+                raise ValueError("单文件模式只能编辑所选配置文件")
 
         updated_files = []
         for filename, data in configs.items():
@@ -3382,11 +4192,207 @@ async def batch_update_oknte_configs(
             "data": updated_files,
         }
     except Exception as e:
+        logger.opt(exception=True).warning(
+            f"batch_update_oknte_configs失败: {type(e).__name__}: {e}"
+        )
         return {
             "code": 500,
             "status": "error",
             "message": f"{type(e).__name__}: {str(e)}",
         }
+
+
+@router.get(
+    "/backup/list",
+    tags=["Backup"],
+    summary="列出配置备份（时间倒序；target 取值由专项定义，非法值返回 400）",
+    response_model=ConfigBackupListOut,
+    status_code=200,
+)
+async def list_config_backups_api(
+    scriptId: str, userId: str, target: str
+) -> ConfigBackupListOut:
+    """返回 ``items``（``time`` + 备份时点来源标注 ``mode``，倒序）与当前
+    来源 ``mode``（仅三态池，供前端跨来源提示）；非法 target 返回 400。"""
+
+    try:
+        data = await Config.list_config_backups(scriptId, userId, target)
+        return ConfigBackupListOut(
+            code=200,
+            status="success",
+            message=f"共 {len(data['items'])} 份备份",
+            mode=data["mode"],
+            data=[ConfigBackupItemOut(**item) for item in data["items"]],
+        )
+    except Exception as e:
+        logger.opt(exception=True).warning(f"配置备份列表查询失败: {e}")
+        return ConfigBackupListOut(
+            code=400 if isinstance(e, (ValueError, KeyError, TypeError)) else 500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+            data=[],
+        )
+
+
+@router.post(
+    "/backup/ensure",
+    tags=["Backup"],
+    summary="按需归档目标池当前配置（指纹去重，无变化跳过；编辑界面进入/退出时机调用）",
+    response_model=ConfigBackupEnsureOut,
+    status_code=200,
+)
+async def ensure_config_backup_api(
+    script: ConfigBackupEnsureIn = Body(...),
+) -> ConfigBackupEnsureOut:
+    """target 取值由专项池定义（如 zzz-od 的 mas/onedragon、ok-nte 的 mas/native）。"""
+
+    try:
+        data = await Config.ensure_config_backup(
+            script.scriptId, script.userId, target=script.target
+        )
+        return ConfigBackupEnsureOut(
+            code=200,
+            status="success",
+            message="",
+            **data,
+        )
+    except ConfigCorruptedError as e:
+        # 源配置损坏：message 用原文（含损坏位置）直达用户，前端编辑页会透传
+        logger.opt(exception=True).warning(f"配置按需归档失败（源配置损坏）: {e}")
+        return ConfigBackupEnsureOut(
+            code=400,
+            status="error",
+            message=str(e),
+            created=False,
+            time="",
+        )
+    except Exception as e:
+        logger.opt(exception=True).warning(f"配置按需归档失败: {e}")
+        return ConfigBackupEnsureOut(
+            code=400 if isinstance(e, (ValueError, KeyError, TypeError)) else 500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+            created=False,
+            time="",
+        )
+
+
+@router.post(
+    "/backup/restore",
+    tags=["Backup"],
+    summary="把指定备份恢复到目标位置（恢复前自动存底当前配置，误恢复可找回）",
+    response_model=ConfigBackupRestoreOut,
+    status_code=200,
+)
+async def restore_config_backup_api(
+    script: ConfigBackupRestoreIn = Body(...),
+) -> ConfigBackupRestoreOut:
+    """恢复语义由专项池定义：脚本原生池恢复到脚本本体，MAS 用户池恢复到
+    用户配置并按需回填前端表单。备份来自其他配置来源（脚本级/用户级）时
+    由服务层把配置来源切回备份时点再恢复；提示由前端据备份列表与当前
+    来源比对给出。"""
+
+    try:
+        data = await Config.restore_config_backup(
+            script.scriptId,
+            script.userId,
+            script.time,
+            target=script.target,
+            force=script.force,
+        )
+        return ConfigBackupRestoreOut(
+            code=200,
+            status="success",
+            message=f"已恢复备份 {script.time}",
+            target=data["target"],
+        )
+    except ConfigCorruptedError as e:
+        # 源配置损坏：带损坏位置返回 409，前端弹二次确认后携带 force 重试
+        logger.opt(exception=True).warning(f"配置备份恢复被拦截（源配置损坏）: {e}")
+        return ConfigBackupRestoreOut(
+            code=409,
+            status="error",
+            message=str(e),
+            target=script.target,
+        )
+    except Exception as e:
+        logger.opt(exception=True).warning(f"配置备份恢复失败: {e}")
+        return ConfigBackupRestoreOut(
+            code=400 if isinstance(e, (ValueError, KeyError, TypeError)) else 500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+            target=script.target,
+        )
+
+
+@router.get(
+    "/backup/preview",
+    tags=["Backup"],
+    summary="读取指定备份的配置摘要（纯读不恢复，供「预览配置」快速展示）",
+    response_model=ConfigBackupPreviewOut,
+    status_code=200,
+)
+async def get_config_backup_preview_api(
+    scriptId: str, userId: str, time: str, target: str
+) -> ConfigBackupPreviewOut:
+    """data 载荷结构由专项定义（前端按 target 消费）；非法 target 返回 400。"""
+
+    try:
+        data = await Config.get_config_backup_preview(
+            scriptId, userId, time, target=target
+        )
+        return ConfigBackupPreviewOut(
+            code=200,
+            status="success",
+            message="",
+            **data,
+        )
+    except Exception as e:
+        logger.opt(exception=True).warning(f"配置备份预览失败: {e}")
+        return ConfigBackupPreviewOut(
+            code=400 if isinstance(e, (ValueError, KeyError, TypeError)) else 500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+            time=time,
+            target=target,
+            data={},
+        )
+
+
+@router.get(
+    "/backup/file",
+    tags=["Backup"],
+    summary="只读读取指定备份内一个文本文件（预览「查看原始文件」用，路径限归档内）",
+    response_model=ConfigBackupFileOut,
+    status_code=200,
+)
+async def get_config_backup_file_api(
+    scriptId: str, userId: str, time: str, target: str, path: str
+) -> ConfigBackupFileOut:
+    """路径越界/文件超限/池未实现查看能力均返回 400，message 说明原因。"""
+
+    try:
+        data = await Config.get_config_backup_file(
+            scriptId, userId, time, target=target, path=path
+        )
+        return ConfigBackupFileOut(
+            code=200,
+            status="success",
+            message="",
+            **data,
+        )
+    except Exception as e:
+        logger.opt(exception=True).warning(f"配置备份文件读取失败: {e}")
+        return ConfigBackupFileOut(
+            code=400 if isinstance(e, (ValueError, KeyError, TypeError)) else 500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+            time=time,
+            target=target,
+            path=path,
+            size=0,
+            content="",
+        )
 
 
 _MAAFW_IMAGE_SUFFIXES = {

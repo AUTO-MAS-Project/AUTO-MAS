@@ -51,7 +51,7 @@ async function getConfigInternal(): Promise<FrontendConfig> {
     // 优先从文件读取配置
     const fileConfig = await window.electronAPI.loadConfig()
     if (fileConfig) {
-      logger.info(`从文件加载配置: ${JSON.stringify(fileConfig)}`)
+      logger.info(`从文件加载配置: 键=${Object.keys(fileConfig).join(',')}`)
       return { ...DEFAULT_CONFIG, ...fileConfig }
     }
 
@@ -108,10 +108,9 @@ export async function getConfig(): Promise<FrontendConfig> {
 // 保存配置
 export async function saveConfig(config: Partial<FrontendConfig>): Promise<void> {
   try {
-    logger.info(`开始保存配置: ${JSON.stringify(config)}`)
+    logger.info(`开始保存配置: 键=${Object.keys(config).join(',')}`)
     const currentConfig = await getConfigInternal() // 使用内部函数避免递归
     const newConfig = { ...currentConfig, ...config }
-    logger.info(`合并后的配置: ${JSON.stringify(newConfig)}`)
     await window.electronAPI.saveConfig(newConfig)
     logger.info('配置保存成功')
   } catch (error) {
@@ -132,21 +131,4 @@ export async function resetConfig(): Promise<void> {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`重置配置失败: ${errorMsg}`)
   }
-}
-
-// 保存主题设置
-export async function saveThemeConfig(themeMode: ThemeMode, themeColor: ThemeColor): Promise<void> {
-  await saveConfig({ themeMode, themeColor })
-}
-
-// 保存镜像源设置
-export async function saveMirrorConfig(
-  gitMirror: string,
-  pythonMirror?: string,
-  pipMirror?: string
-): Promise<void> {
-  const config: Partial<FrontendConfig> = { selectedGitMirror: gitMirror }
-  if (pythonMirror) config.selectedPythonMirror = pythonMirror
-  if (pipMirror) config.selectedPipMirror = pipMirror
-  await saveConfig(config)
 }

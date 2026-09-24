@@ -17,24 +17,35 @@ import type { BetterGIScriptGroupDetailOut } from '../models/BetterGIScriptGroup
 import type { BetterGIScriptGroupSaveIn } from '../models/BetterGIScriptGroupSaveIn';
 import type { BetterGIScriptReadmeOut } from '../models/BetterGIScriptReadmeOut';
 import type { BetterGIScriptSettingsUiOut } from '../models/BetterGIScriptSettingsUiOut';
+import type { BlueArchiveActivityIn } from '../models/BlueArchiveActivityIn';
+import type { BlueArchiveActivityStatusOut } from '../models/BlueArchiveActivityStatusOut';
 import type { Body_batch_update_oknte_configs_api_scripts_oknte_configs_batch_update_post } from '../models/Body_batch_update_oknte_configs_api_scripts_oknte_configs_batch_update_post';
-import type { Body_update_oknte_config_api_scripts_oknte_configs_update_post } from '../models/Body_update_oknte_config_api_scripts_oknte_configs_update_post';
+import type { Body_get_maa_cultivate_operators_api_scripts_maa_cultivate_operators_post } from '../models/Body_get_maa_cultivate_operators_api_scripts_maa_cultivate_operators_post';
+import type { Body_get_maa_depot_inventory_api_scripts_maa_depot_inventory_post } from '../models/Body_get_maa_depot_inventory_api_scripts_maa_depot_inventory_post';
+import type { Body_get_maa_depot_stage_candidates_api_scripts_maa_depot_stage_candidates_post } from '../models/Body_get_maa_depot_stage_candidates_api_scripts_maa_depot_stage_candidates_post';
 import type { ComboBoxOut } from '../models/ComboBoxOut';
 import type { CommunityActivityOut } from '../models/CommunityActivityOut';
 import type { CommunityActivityQueryIn } from '../models/CommunityActivityQueryIn';
+import type { ConfigBackupEnsureIn } from '../models/ConfigBackupEnsureIn';
+import type { ConfigBackupEnsureOut } from '../models/ConfigBackupEnsureOut';
+import type { ConfigBackupFileOut } from '../models/ConfigBackupFileOut';
+import type { ConfigBackupListOut } from '../models/ConfigBackupListOut';
+import type { ConfigBackupPreviewOut } from '../models/ConfigBackupPreviewOut';
+import type { ConfigBackupRestoreIn } from '../models/ConfigBackupRestoreIn';
+import type { ConfigBackupRestoreOut } from '../models/ConfigBackupRestoreOut';
+import type { CultivatePreviewIn } from '../models/CultivatePreviewIn';
+import type { CultivatePreviewOut } from '../models/CultivatePreviewOut';
 import type { DispatchIn } from '../models/DispatchIn';
 import type { EmulatorCreateOut } from '../models/EmulatorCreateOut';
 import type { EmulatorDeleteIn } from '../models/EmulatorDeleteIn';
 import type { EmulatorGetIn } from '../models/EmulatorGetIn';
 import type { EmulatorGetOut } from '../models/EmulatorGetOut';
 import type { EmulatorOperateIn } from '../models/EmulatorOperateIn';
-import type { EmulatorReorderIn } from '../models/EmulatorReorderIn';
 import type { EmulatorSearchOut } from '../models/EmulatorSearchOut';
 import type { EmulatorStatusOut } from '../models/EmulatorStatusOut';
 import type { EmulatorUpdateIn } from '../models/EmulatorUpdateIn';
 import type { GameSignAccountCreateOut } from '../models/GameSignAccountCreateOut';
 import type { GameSignAccountDeleteIn } from '../models/GameSignAccountDeleteIn';
-import type { GameSignAccountGetIn } from '../models/GameSignAccountGetIn';
 import type { GameSignAccountReorderIn } from '../models/GameSignAccountReorderIn';
 import type { GameSignAccountsListOut } from '../models/GameSignAccountsListOut';
 import type { GameSignAccountUpdateIn } from '../models/GameSignAccountUpdateIn';
@@ -49,15 +60,22 @@ import type { HSRDirectConfigImportOut } from '../models/HSRDirectConfigImportOu
 import type { HSRManagedConfigOut } from '../models/HSRManagedConfigOut';
 import type { HSRSRAProfilesOut } from '../models/HSRSRAProfilesOut';
 import type { HSRStageOptionsOut } from '../models/HSRStageOptionsOut';
+import type { HSRUpdateIn } from '../models/HSRUpdateIn';
+import type { HSRUpdateOut } from '../models/HSRUpdateOut';
 import type { InfoOut } from '../models/InfoOut';
+import type { MaaCultivateOperatorsOut } from '../models/MaaCultivateOperatorsOut';
+import type { MaaDepotInventoryOut } from '../models/MaaDepotInventoryOut';
 import type { MaaEndOptionsOut } from '../models/MaaEndOptionsOut';
 import type { MaaFWAgentEnvPrepareIn } from '../models/MaaFWAgentEnvPrepareIn';
 import type { MaaFWAgentEnvPrepareOut } from '../models/MaaFWAgentEnvPrepareOut';
+import type { MaaFWGamePackageIn } from '../models/MaaFWGamePackageIn';
+import type { MaaFWGamePackageOut } from '../models/MaaFWGamePackageOut';
 import type { MaaFWInterfacePreviewIn } from '../models/MaaFWInterfacePreviewIn';
 import type { MaaFWInterfacePreviewOut } from '../models/MaaFWInterfacePreviewOut';
 import type { MaaFWProjectUpdateIn } from '../models/MaaFWProjectUpdateIn';
 import type { MaaFWProjectUpdateOut } from '../models/MaaFWProjectUpdateOut';
 import type { NoticeOut } from '../models/NoticeOut';
+import type { NotifyChannelsOut } from '../models/NotifyChannelsOut';
 import type { OutBase } from '../models/OutBase';
 import type { PatternDebugIn } from '../models/PatternDebugIn';
 import type { PatternDebugOut } from '../models/PatternDebugOut';
@@ -86,14 +104,12 @@ import type { QueueItemGetIn } from '../models/QueueItemGetIn';
 import type { QueueItemGetOut } from '../models/QueueItemGetOut';
 import type { QueueItemReorderIn } from '../models/QueueItemReorderIn';
 import type { QueueItemUpdateIn } from '../models/QueueItemUpdateIn';
-import type { QueueReorderIn } from '../models/QueueReorderIn';
 import type { QueueSetInBase } from '../models/QueueSetInBase';
 import type { QueueUpdateIn } from '../models/QueueUpdateIn';
 import type { ScriptConfigImportIn } from '../models/ScriptConfigImportIn';
 import type { ScriptCreateIn } from '../models/ScriptCreateIn';
 import type { ScriptCreateOut } from '../models/ScriptCreateOut';
 import type { ScriptDeleteIn } from '../models/ScriptDeleteIn';
-import type { ScriptFileIn } from '../models/ScriptFileIn';
 import type { ScriptGetIn } from '../models/ScriptGetIn';
 import type { ScriptGetOut } from '../models/ScriptGetOut';
 import type { ScriptReorderIn } from '../models/ScriptReorderIn';
@@ -126,28 +142,25 @@ import type { UserDeleteIn } from '../models/UserDeleteIn';
 import type { UserGetIn } from '../models/UserGetIn';
 import type { UserGetOut } from '../models/UserGetOut';
 import type { UserInBase } from '../models/UserInBase';
+import type { UserInfrastPlanComboxOut } from '../models/UserInfrastPlanComboxOut';
+import type { UserInfrastPlanSelectIn } from '../models/UserInfrastPlanSelectIn';
+import type { UserInfrastPlanSelectOut } from '../models/UserInfrastPlanSelectOut';
 import type { UserReorderIn } from '../models/UserReorderIn';
 import type { UserSetIn } from '../models/UserSetIn';
 import type { UserUpdateIn } from '../models/UserUpdateIn';
 import type { VersionOut } from '../models/VersionOut';
 import type { VirtualDisplayCheckOut } from '../models/VirtualDisplayCheckOut';
+import type { VirtualDisplayDetachOut } from '../models/VirtualDisplayDetachOut';
 import type { WebhookCreateOut } from '../models/WebhookCreateOut';
 import type { WebhookDeleteIn } from '../models/WebhookDeleteIn';
 import type { WebhookGetIn } from '../models/WebhookGetIn';
 import type { WebhookGetOut } from '../models/WebhookGetOut';
 import type { WebhookInBase } from '../models/WebhookInBase';
-import type { WebhookReorderIn } from '../models/WebhookReorderIn';
 import type { WebhookTestIn } from '../models/WebhookTestIn';
 import type { WebhookUpdateIn } from '../models/WebhookUpdateIn';
 import type { WebSocketMetaOut } from '../models/WebSocketMetaOut';
 import type { ZzzOdAppConfigOut } from '../models/ZzzOdAppConfigOut';
 import type { ZzzOdAppConfigSaveIn } from '../models/ZzzOdAppConfigSaveIn';
-import type { ZzzOdBackupEnsureIn } from '../models/ZzzOdBackupEnsureIn';
-import type { ZzzOdBackupEnsureOut } from '../models/ZzzOdBackupEnsureOut';
-import type { ZzzOdBackupListOut } from '../models/ZzzOdBackupListOut';
-import type { ZzzOdBackupPreviewOut } from '../models/ZzzOdBackupPreviewOut';
-import type { ZzzOdBackupRestoreIn } from '../models/ZzzOdBackupRestoreIn';
-import type { ZzzOdBackupRestoreOut } from '../models/ZzzOdBackupRestoreOut';
 import type { ZzzOdCatalogOut } from '../models/ZzzOdCatalogOut';
 import type { ZzzOdImportIn } from '../models/ZzzOdImportIn';
 import type { ZzzOdImportOut } from '../models/ZzzOdImportOut';
@@ -162,6 +175,13 @@ import type { ZzzOdInstancesOut } from '../models/ZzzOdInstancesOut';
 import type { ZzzOdLauncherOut } from '../models/ZzzOdLauncherOut';
 import type { ZzzOdNativeConfigIn } from '../models/ZzzOdNativeConfigIn';
 import type { ZzzOdNativeConfigOut } from '../models/ZzzOdNativeConfigOut';
+import type { ZzzOdRecycleClearIn } from '../models/ZzzOdRecycleClearIn';
+import type { ZzzOdRecycleClearOut } from '../models/ZzzOdRecycleClearOut';
+import type { ZzzOdRecycleOut } from '../models/ZzzOdRecycleOut';
+import type { ZzzOdRecycleRestoreIn } from '../models/ZzzOdRecycleRestoreIn';
+import type { ZzzOdSlotCleanIn } from '../models/ZzzOdSlotCleanIn';
+import type { ZzzOdSlotCleanOut } from '../models/ZzzOdSlotCleanOut';
+import type { ZzzOdSlotsOut } from '../models/ZzzOdSlotsOut';
 import type { ZzzOdTaskOptionsOut } from '../models/ZzzOdTaskOptionsOut';
 import type { ZzzOdTeamsOut } from '../models/ZzzOdTeamsOut';
 import type { ZzzOdTeamsSaveIn } from '../models/ZzzOdTeamsSaveIn';
@@ -355,6 +375,29 @@ export class Service {
         });
     }
     /**
+     * 获取碧蓝档案活动数据（Kivo 中转）
+     * 按服务器取回碧蓝档案的活动时间轴。
+     *
+     * 这里只做转发：把 Kivo 的响应原样交给前端，筛选与格式转换都由前端完成。
+     * 之所以要绕一道后端，是因为 Kivo 的接口校验 Origin，浏览器直连必定 403。
+     * @param requestBody
+     * @returns InfoOut Successful Response
+     * @throws ApiError
+     */
+    public static getBluearchiveActivityApiInfoBluearchiveActivityPost(
+        requestBody: BlueArchiveActivityIn,
+    ): CancelablePromise<InfoOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/info/bluearchive/activity',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
      * 添加脚本
      * @param requestBody
      * @returns ScriptCreateOut Successful Response
@@ -442,44 +485,6 @@ export class Service {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/scripts/order',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 从文件加载脚本配置
-     * @param requestBody
-     * @returns OutBase Successful Response
-     * @throws ApiError
-     */
-    public static importScriptFromFileApiScriptsImportFilePost(
-        requestBody: ScriptFileIn,
-    ): CancelablePromise<OutBase> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/scripts/import/file',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 导出脚本配置到文件
-     * @param requestBody
-     * @returns OutBase Successful Response
-     * @throws ApiError
-     */
-    public static exportScriptToFileApiScriptsExportFilePost(
-        requestBody: ScriptFileIn,
-    ): CancelablePromise<OutBase> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/scripts/export/file',
             body: requestBody,
             mediaType: 'application/json',
             errors: {
@@ -678,14 +683,52 @@ export class Service {
         });
     }
     /**
+     * 设置基建班次
+     * @param requestBody
+     * @returns UserInfrastPlanSelectOut Successful Response
+     * @throws ApiError
+     */
+    public static setInfrastPlanSelectApiScriptsUserInfrastructurePlanSelectPost(
+        requestBody: UserInfrastPlanSelectIn,
+    ): CancelablePromise<UserInfrastPlanSelectOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/user/infrastructure/plan-select',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 获取当前基建班次
+     * @param requestBody
+     * @returns UserInfrastPlanSelectOut Successful Response
+     * @throws ApiError
+     */
+    public static getInfrastPlanSelectApiScriptsUserInfrastructurePlanSelectGetPost(
+        requestBody: UserDeleteIn,
+    ): CancelablePromise<UserInfrastPlanSelectOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/user/infrastructure/plan-select/get',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
      * 用户自定义基建排班可选项
      * @param requestBody
-     * @returns ComboBoxOut Successful Response
+     * @returns UserInfrastPlanComboxOut Successful Response
      * @throws ApiError
      */
     public static getUserComboxInfrastructureApiScriptsUserComboxInfrastructurePost(
         requestBody: UserDeleteIn,
-    ): CancelablePromise<ComboBoxOut> {
+    ): CancelablePromise<UserInfrastPlanComboxOut> {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/scripts/user/combox/infrastructure',
@@ -708,6 +751,93 @@ export class Service {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/scripts/maa/depot/items',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * MAA 库存保持关卡候选（掉落指定材料，按单件期望理智升序，label 为 xx 理智/件）
+     * @param requestBody
+     * @returns ComboBoxOut Successful Response
+     * @throws ApiError
+     */
+    public static getMaaDepotStageCandidatesApiScriptsMaaDepotStageCandidatesPost(
+        requestBody: Body_get_maa_depot_stage_candidates_api_scripts_maa_depot_stage_candidates_post,
+    ): CancelablePromise<ComboBoxOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/maa/depot/stage/candidates',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * MAA 仓库库存（当前用户档案；label=数量字符串，value=物品ID）
+     * @param requestBody
+     * @returns MaaDepotInventoryOut Successful Response
+     * @throws ApiError
+     */
+    public static getMaaDepotInventoryApiScriptsMaaDepotInventoryPost(
+        requestBody: Body_get_maa_depot_inventory_api_scripts_maa_depot_inventory_post,
+    ): CancelablePromise<MaaDepotInventoryOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/maa/depot/inventory',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 森空岛绑定角色列表（遍历已配置森空岛凭据的签到账号组，明日方舟）
+     * @returns ComboBoxOut Successful Response
+     * @throws ApiError
+     */
+    public static getMaaCultivateSklandBindingsApiScriptsMaaCultivateSklandBindingsPost(): CancelablePromise<ComboBoxOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/maa/cultivate/skland/bindings',
+        });
+    }
+    /**
+     * MAA 干员养成选择器目录（含技能/模组名称目录，稀有度降序）
+     * @param requestBody
+     * @returns MaaCultivateOperatorsOut Successful Response
+     * @throws ApiError
+     */
+    public static getMaaCultivateOperatorsApiScriptsMaaCultivateOperatorsPost(
+        requestBody: Body_get_maa_cultivate_operators_api_scripts_maa_cultivate_operators_post,
+    ): CancelablePromise<MaaCultivateOperatorsOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/maa/cultivate/operators',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * MAA 养成计划预览（纯计算不落库）
+     * @param requestBody
+     * @returns CultivatePreviewOut Successful Response
+     * @throws ApiError
+     */
+    public static getMaaCultivatePreviewApiScriptsMaaCultivatePreviewPost(
+        requestBody: CultivatePreviewIn,
+    ): CancelablePromise<CultivatePreviewOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/maa/cultivate/preview',
             body: requestBody,
             mediaType: 'application/json',
             errors: {
@@ -792,17 +922,21 @@ export class Service {
         });
     }
     /**
-     * 重新排序webhook项
+     * 按所选 resource 推断 MFW 项目的安卓游戏包名
+     * 脚本编辑页读完 interface / 切换 resource 时调用，把推出来的包名直接填进表单。
+     *
+     * 只看 resource 的 pipeline，不带用户任务的 pipeline_override（编辑脚本时还没有
+     * 运行计划）；推不出或多个候选都按原样返回，由前端决定不填。
      * @param requestBody
-     * @returns OutBase Successful Response
+     * @returns MaaFWGamePackageOut Successful Response
      * @throws ApiError
      */
-    public static reorderWebhookApiScriptsWebhookOrderPost(
-        requestBody: WebhookReorderIn,
-    ): CancelablePromise<OutBase> {
+    public static resolveMaafwGamePackageApiScriptsMaafwGamePackagePost(
+        requestBody: MaaFWGamePackageIn,
+    ): CancelablePromise<MaaFWGamePackageOut> {
         return __request(OpenAPI, {
             method: 'POST',
-            url: '/api/scripts/webhook/order',
+            url: '/api/scripts/maafw/game-package',
             body: requestBody,
             mediaType: 'application/json',
             errors: {
@@ -1000,6 +1134,48 @@ export class Service {
         });
     }
     /**
+     * 获取 BAAH 配置文件名列表
+     * 返回 BAAH 配置目录下已有的配置文件名（不含 ``.json`` 后缀）。
+     * @param scriptId
+     * @returns ComboBoxOut Successful Response
+     * @throws ApiError
+     */
+    public static getBaahConfigNamesApiApiScriptsBaahConfigNamesGet(
+        scriptId: string,
+    ): CancelablePromise<ComboBoxOut> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/scripts/baah/config-names',
+            query: {
+                'scriptId': scriptId,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 获取碧蓝档案活动状态
+     * 返回指定服正在进行的活动，没有则返回下一个未开始的活动。
+     * @param lineType
+     * @returns BlueArchiveActivityStatusOut Successful Response
+     * @throws ApiError
+     */
+    public static getBaahActivityStatusApiApiScriptsBaahActivityStatusGet(
+        lineType: 'JP' | 'Globle' | 'CN' = 'CN',
+    ): CancelablePromise<BlueArchiveActivityStatusOut> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/scripts/baah/activity-status',
+            query: {
+                'lineType': lineType,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
      * 获取 BetterGI 一条龙配置名列表
      * 返回 BetterGI 可选一条龙配置名：{RootPath}/User/OneDragon*.json 文件名（默认配置置顶）。
      * @param scriptId
@@ -1038,6 +1214,30 @@ export class Service {
         return __request(OpenAPI, {
             method: 'GET',
             url: '/api/scripts/bettergi/js-scripts',
+            query: {
+                'scriptId': scriptId,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 获取 BetterGI 可用键鼠脚本（录制）列表
+     * 返回 BetterGI 键鼠脚本（录制）候选。
+     *
+     * ``label`` 与 ``value`` 同为 {RootPath}/User/KeyMouseScript*.json 的文件名（即脚本名）。
+     * 供一条龙「添加配置组」弹窗的「录制」标签页作为候选（贴录制标签）选择。
+     * @param scriptId
+     * @returns ComboBoxOut Successful Response
+     * @throws ApiError
+     */
+    public static getBettergiKeyMouseScriptsApiApiScriptsBettergiKeyMouseScriptsGet(
+        scriptId: string,
+    ): CancelablePromise<ComboBoxOut> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/scripts/bettergi/key-mouse-scripts',
             query: {
                 'scriptId': scriptId,
             },
@@ -1264,8 +1464,10 @@ export class Service {
      * 按步骤名翻转 Plan 中某战斗实例的启用状态（同组多实例各自独立启停）。
      *
      * 步骤名由行实例 uid 决定（形如 ``自动秘境`` / ``自动秘境-3``），与前端展示用的
-     * 「后名」解耦，改名不会丢设置。仅写入执行层消费的 enabled 标记，不影响原生
-     * 一条龙副本；运行时 build_combat_steps 按 step.enabled 决定是否纳入执行层。
+     * 「后名」解耦，改名不会丢设置。本接口只写 Plan（不改原生副本文件），但它是前端
+     * 队列行的启停开关：运行时 build_combat_steps 按 step.enabled 决定是否纳入执行层，
+     * 且 AutoProxy 会把 Plan 中配过实例的战斗组整体从原生副本剔除——因此 enabled=false
+     * 的最终语义是「本次不跑」，而不是「退回原生一条龙跑」。
      *
      * 步骤不存在时（刚另存为/复制出来的新实例）先创建再设启用——否则开关只改前端、
      * 后端无步骤可写，刷新后回退。
@@ -1428,7 +1630,9 @@ export class Service {
      * 把右栏编辑后的配置组 json（项目顺序 + 各项目 jsScriptSettingsObject）写回
      * 该用户的 per-user 副本（``data/{script}/{user}/ScriptGroup/{name}.json``）。
      *
-     * 不触碰 BetterGI 全局 ``User/ScriptGroup/{name}.json`` 同名实配。
+     * 「路径」类引用（名字含 ``/``）不能作文件名，落盘到 ``per_user_copy_name`` 的确定性别名
+     * （右栏把路径项加成多项目配置组后需要载体）。不触碰 BetterGI 全局
+     * ``User/ScriptGroup/{name}.json`` 同名实配。
      * @param requestBody
      * @returns OutBase Successful Response
      * @throws ApiError
@@ -1608,6 +1812,113 @@ export class Service {
         });
     }
     /**
+     * 获取实例槽总览（原生实例 / MAS 绑定槽 / 无主残留）
+     * 槽目录是 MAS 分配在一条龙安装目录里的，注册表与 GUI 都看不到。
+     *
+     * 这份对照表用于诊断「槽目录数与用户数对不上」（绑定但没跑过的槽没有目录）
+     * 与定位无主残留。
+     * @param scriptId
+     * @returns ZzzOdSlotsOut Successful Response
+     * @throws ApiError
+     */
+    public static getZzzodSlotsApiApiScriptsZzzodSlotsGet(
+        scriptId: string,
+    ): CancelablePromise<ZzzOdSlotsOut> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/scripts/zzzod/slots',
+            query: {
+                'scriptId': scriptId,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 清理无主实例槽（先归档进回收池再删目录）
+     * 原生实例与被任一 ZzzOd 用户绑定的槽一律不动，返回实际回收的槽号。
+     * @param requestBody
+     * @returns ZzzOdSlotCleanOut Successful Response
+     * @throws ApiError
+     */
+    public static cleanZzzodSlotsApiApiScriptsZzzodSlotsCleanPost(
+        requestBody: ZzzOdSlotCleanIn,
+    ): CancelablePromise<ZzzOdSlotCleanOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/zzzod/slots/clean',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 获取实例槽回收池（被删用户/脚本留下的槽内容与备份池快照）
+     * 槽目录按安装根指纹归池，跨脚本共享；只有 ``kind=slot`` 的条目可恢复。
+     * @param scriptId
+     * @returns ZzzOdRecycleOut Successful Response
+     * @throws ApiError
+     */
+    public static getZzzodRecycleApiApiScriptsZzzodRecycleGet(
+        scriptId: string,
+    ): CancelablePromise<ZzzOdRecycleOut> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/scripts/zzzod/recycle',
+            query: {
+                'scriptId': scriptId,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 清空实例槽回收池（删除后不可找回，不碰配置恢复池）
+     * 只删 recycle 池；onedragon 原生池与 mas 配置恢复池不受影响。
+     * @param requestBody
+     * @returns ZzzOdRecycleClearOut Successful Response
+     * @throws ApiError
+     */
+    public static clearZzzodRecycleApiApiScriptsZzzodRecycleClearPost(
+        requestBody: ZzzOdRecycleClearIn,
+    ): CancelablePromise<ZzzOdRecycleClearOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/zzzod/recycle/clear',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 把回收池里的槽快照恢复给某个 MAS 用户（现有用户或新建用户，先存底）
+     * 恢复的落点是**用户的绑定槽**（``targetUser`` 指定现有用户，或
+     * ``newUserName`` 新建一个用户）——只物化内容而不建立绑定的恢复没有出口，
+     * MAS 下次运行不会认领它。目标用户已有绑定槽时覆盖其内容，恢复前先存底。
+     * @param requestBody
+     * @returns OutBase Successful Response
+     * @throws ApiError
+     */
+    public static restoreZzzodRecycleApiApiScriptsZzzodRecycleRestorePost(
+        requestBody: ZzzOdRecycleRestoreIn,
+    ): CancelablePromise<OutBase> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/zzzod/recycle/restore',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
      * 获取预备编队列表（名称 + 绑定配队方案）
      * 读绑定槽（直控传 instanceIdx 读原生实例）的 team.yml（固定 20 个编队）。
      * @param scriptId
@@ -1775,7 +2086,7 @@ export class Service {
     }
     /**
      * 保存实例原生配置（直控模式直接写回一条龙原始 YAML）
-     * 白名单过滤后写回所选实例 game_account.yml、_group.yml 与 instance_run，随后回读最新数据。
+     * 白名单过滤后写回所选实例 game_account.yml、_group.yml、instance_run 与 after_done，随后回读最新数据。
      * @param requestBody
      * @returns ZzzOdNativeConfigOut Successful Response
      * @throws ApiError
@@ -1788,33 +2099,6 @@ export class Service {
             url: '/api/scripts/zzzod/native-config/save',
             body: requestBody,
             mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 列出配置备份（onedragon=一条龙原生配置 / mas=MAS 用户槽）
-     * 按时间倒序返回历史备份（运行/会话前自动归档，内容无变化跳过）。
-     * @param scriptId
-     * @param userId
-     * @param target
-     * @returns ZzzOdBackupListOut Successful Response
-     * @throws ApiError
-     */
-    public static listZzzodBackupsApiApiScriptsZzzodBackupsGet(
-        scriptId: string,
-        userId: string,
-        target: string = 'onedragon',
-    ): CancelablePromise<ZzzOdBackupListOut> {
-        return __request(OpenAPI, {
-            method: 'GET',
-            url: '/api/scripts/zzzod/backups',
-            query: {
-                'scriptId': scriptId,
-                'userId': userId,
-                'target': target,
-            },
             errors: {
                 422: `Validation Error`,
             },
@@ -1842,47 +2126,6 @@ export class Service {
         });
     }
     /**
-     * 把指定备份恢复到目标位置（onedragon=一条龙原生配置 / mas=MAS 用户配置）
-     * onedragon：恢复一条龙原生配置（MAS 槽不触碰）；mas：恢复槽并全量回填本页字段。
-     * @param requestBody
-     * @returns ZzzOdBackupRestoreOut Successful Response
-     * @throws ApiError
-     */
-    public static restoreZzzodBackupApiApiScriptsZzzodBackupRestorePost(
-        requestBody: ZzzOdBackupRestoreIn,
-    ): CancelablePromise<ZzzOdBackupRestoreOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/scripts/zzzod/backup/restore',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 按需归档目标池当前配置（指纹去重，无变化跳过；编辑界面三时机调用）
-     * onedragon：一条龙原生配置当前状态（进入编辑界面时捕捉 MAS 操作前原始态）；
-     * mas：MAS 用户绑定槽当前状态（退出编辑界面时的用户侧终态）。
-     * @param requestBody
-     * @returns ZzzOdBackupEnsureOut Successful Response
-     * @throws ApiError
-     */
-    public static ensureZzzodBackupApiApiScriptsZzzodBackupEnsurePost(
-        requestBody: ZzzOdBackupEnsureIn,
-    ): CancelablePromise<ZzzOdBackupEnsureOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/scripts/zzzod/backup/ensure',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
      * 基于一条龙已有实例快速生成当前用户配置（覆盖前自动归档当前配置）
      * 把来源实例的账号信息与已启用任务编排写入本用户；覆盖前强制归档当前 MAS 槽配置，
      * 导入前状态可在「配置恢复」中找回。
@@ -1904,36 +2147,6 @@ export class Service {
         });
     }
     /**
-     * 读取指定备份的配置摘要（纯读不恢复，供「预览配置」快速展示）
-     * mas：账号字段与已启用任务编排（即 MAS 本页展示的配置）；onedragon：实例列表。
-     * @param scriptId
-     * @param userId
-     * @param time
-     * @param target
-     * @returns ZzzOdBackupPreviewOut Successful Response
-     * @throws ApiError
-     */
-    public static getZzzodBackupPreviewApiApiScriptsZzzodBackupPreviewGet(
-        scriptId: string,
-        userId: string,
-        time: string,
-        target: string = 'onedragon',
-    ): CancelablePromise<ZzzOdBackupPreviewOut> {
-        return __request(OpenAPI, {
-            method: 'GET',
-            url: '/api/scripts/zzzod/backup/preview',
-            query: {
-                'scriptId': scriptId,
-                'userId': userId,
-                'time': time,
-                'target': target,
-            },
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
      * 获取内置 HSR 能力快照
      * 返回内置 HSR 的能力快照，不暴露原生编辑器会话。
      * @param scriptId
@@ -1949,6 +2162,29 @@ export class Service {
             query: {
                 'scriptId': scriptId,
             },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 检查或执行 HSR 外部脚本更新
+     * 手动检查或安装 M7A / SRA 的更新。
+     *
+     * 自动更新只在任务正常跑完后触发（``Update.AutoUpdateMode = AfterRun``），
+     * 这个接口是唯一不必等一轮任务就能更新的入口。
+     * @param requestBody
+     * @returns HSRUpdateOut Successful Response
+     * @throws ApiError
+     */
+    public static postHsrUpdateApiApiScriptsHsrUpdatePost(
+        requestBody: HSRUpdateIn,
+    ): CancelablePromise<HSRUpdateOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/hsr/update',
+            body: requestBody,
+            mediaType: 'application/json',
             errors: {
                 422: `Validation Error`,
             },
@@ -2041,8 +2277,7 @@ export class Service {
     /**
      * 获取 OK-NTE 配置文件列表及 schema
      * 获取 OK-NTE 配置文件列表及 schema 定义。
-     * 读写用户配置目录（data/{script_id}/{user_id}/ConfigFile/），
-     * 若为空则自动从 ok-nte configs 目录初始化默认配置。
+     * 读写用户快速配置目录，首次从已有来源初始化，不修改来源文件。
      *
      * Args:
      * script_id: OK-NTE 脚本 ID
@@ -2072,35 +2307,6 @@ export class Service {
         });
     }
     /**
-     * 更新 OK-NTE 配置文件
-     * 更新 OK-NTE 配置文件
-     *
-     * Args:
-     * script_id: OK-NTE 脚本 ID
-     * user_id: 用户 ID
-     * filename: 配置文件名（如 DailyTask.json）
-     * data: 要更新的配置数据
-     *
-     * Returns:
-     * dict: 操作结果
-     * @param requestBody
-     * @returns any Successful Response
-     * @throws ApiError
-     */
-    public static updateOknteConfigApiScriptsOknteConfigsUpdatePost(
-        requestBody: Body_update_oknte_config_api_scripts_oknte_configs_update_post,
-    ): CancelablePromise<any> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/scripts/oknte/configs/update',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
      * 批量更新 OK-NTE 配置文件
      * 批量更新 OK-NTE 配置文件
      *
@@ -2123,6 +2329,140 @@ export class Service {
             url: '/api/scripts/oknte/configs/batch-update',
             body: requestBody,
             mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 列出配置备份（时间倒序；target 取值由专项定义，非法值返回 400）
+     * 返回 ``items``（``time`` + 备份时点来源标注 ``mode``，倒序）与当前
+     * 来源 ``mode``（仅三态池，供前端跨来源提示）；非法 target 返回 400。
+     * @param scriptId
+     * @param userId
+     * @param target
+     * @returns ConfigBackupListOut Successful Response
+     * @throws ApiError
+     */
+    public static listConfigBackupsApiApiScriptsBackupListGet(
+        scriptId: string,
+        userId: string,
+        target: string,
+    ): CancelablePromise<ConfigBackupListOut> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/scripts/backup/list',
+            query: {
+                'scriptId': scriptId,
+                'userId': userId,
+                'target': target,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 按需归档目标池当前配置（指纹去重，无变化跳过；编辑界面进入/退出时机调用）
+     * target 取值由专项池定义（如 zzz-od 的 mas/onedragon、ok-nte 的 mas/native）。
+     * @param requestBody
+     * @returns ConfigBackupEnsureOut Successful Response
+     * @throws ApiError
+     */
+    public static ensureConfigBackupApiApiScriptsBackupEnsurePost(
+        requestBody: ConfigBackupEnsureIn,
+    ): CancelablePromise<ConfigBackupEnsureOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/backup/ensure',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 把指定备份恢复到目标位置（恢复前自动存底当前配置，误恢复可找回）
+     * 恢复语义由专项池定义：脚本原生池恢复到脚本本体，MAS 用户池恢复到
+     * 用户配置并按需回填前端表单。备份来自其他配置来源（脚本级/用户级）时
+     * 由服务层把配置来源切回备份时点再恢复；提示由前端据备份列表与当前
+     * 来源比对给出。
+     * @param requestBody
+     * @returns ConfigBackupRestoreOut Successful Response
+     * @throws ApiError
+     */
+    public static restoreConfigBackupApiApiScriptsBackupRestorePost(
+        requestBody: ConfigBackupRestoreIn,
+    ): CancelablePromise<ConfigBackupRestoreOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/backup/restore',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 读取指定备份的配置摘要（纯读不恢复，供「预览配置」快速展示）
+     * data 载荷结构由专项定义（前端按 target 消费）；非法 target 返回 400。
+     * @param scriptId
+     * @param userId
+     * @param time
+     * @param target
+     * @returns ConfigBackupPreviewOut Successful Response
+     * @throws ApiError
+     */
+    public static getConfigBackupPreviewApiApiScriptsBackupPreviewGet(
+        scriptId: string,
+        userId: string,
+        time: string,
+        target: string,
+    ): CancelablePromise<ConfigBackupPreviewOut> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/scripts/backup/preview',
+            query: {
+                'scriptId': scriptId,
+                'userId': userId,
+                'time': time,
+                'target': target,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 只读读取指定备份内一个文本文件（预览「查看原始文件」用，路径限归档内）
+     * 路径越界/文件超限/池未实现查看能力均返回 400，message 说明原因。
+     * @param scriptId
+     * @param userId
+     * @param time
+     * @param target
+     * @param path
+     * @returns ConfigBackupFileOut Successful Response
+     * @throws ApiError
+     */
+    public static getConfigBackupFileApiApiScriptsBackupFileGet(
+        scriptId: string,
+        userId: string,
+        time: string,
+        target: string,
+        path: string,
+    ): CancelablePromise<ConfigBackupFileOut> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/scripts/backup/file',
+            query: {
+                'scriptId': scriptId,
+                'userId': userId,
+                'time': time,
+                'target': target,
+                'path': path,
+            },
             errors: {
                 422: `Validation Error`,
             },
@@ -2322,25 +2662,6 @@ export class Service {
         });
     }
     /**
-     * 重新排序模拟器项
-     * @param requestBody
-     * @returns OutBase Successful Response
-     * @throws ApiError
-     */
-    public static reorderEmulatorApiEmulatorOrderPost(
-        requestBody: EmulatorReorderIn,
-    ): CancelablePromise<OutBase> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/emulator/order',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
      * 操作模拟器
      * @param requestBody
      * @returns OutBase Successful Response
@@ -2451,25 +2772,6 @@ export class Service {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/queue/delete',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 重新排序
-     * @param requestBody
-     * @returns OutBase Successful Response
-     * @throws ApiError
-     */
-    public static reorderQueueApiQueueOrderPost(
-        requestBody: QueueReorderIn,
-    ): CancelablePromise<OutBase> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/queue/order',
             body: requestBody,
             mediaType: 'application/json',
             errors: {
@@ -2897,26 +3199,6 @@ export class Service {
         });
     }
     /**
-     * 获取游戏社区账号组详情
-     * 获取游戏社区账号组详情
-     * @param requestBody
-     * @returns GameSignAccountCreateOut Successful Response
-     * @throws ApiError
-     */
-    public static getGameSignAccountApiToolsSignAccountGetPost(
-        requestBody: GameSignAccountGetIn,
-    ): CancelablePromise<GameSignAccountCreateOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/tools/sign/account/get',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
      * 更新游戏社区账号组配置
      * 更新游戏社区账号组配置
      * @param requestBody
@@ -3053,6 +3335,18 @@ export class Service {
         });
     }
     /**
+     * 查询通知渠道描述
+     * 返回通知渠道描述表，仅展示元数据，不含任何配置值。
+     * @returns NotifyChannelsOut Successful Response
+     * @throws ApiError
+     */
+    public static getNotifyChannelsApiSettingNotifyChannelsGet(): CancelablePromise<NotifyChannelsOut> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/setting/notify/channels',
+        });
+    }
+    /**
      * 调试日志模式
      * 调试单条日志模式配置，返回逐行/逐窗口匹配结果
      *
@@ -3144,25 +3438,6 @@ export class Service {
         });
     }
     /**
-     * 重新排序webhook项
-     * @param requestBody
-     * @returns OutBase Successful Response
-     * @throws ApiError
-     */
-    public static reorderWebhookApiSettingWebhookOrderPost(
-        requestBody: WebhookReorderIn,
-    ): CancelablePromise<OutBase> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/setting/webhook/order',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
      * 测试Webhook配置
      * 测试自定义Webhook
      * @param requestBody
@@ -3196,6 +3471,21 @@ export class Service {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/setting/virtual-display/check',
+        });
+    }
+    /**
+     * 立即拆除虚拟显示器
+     * 用户明示要拆：真实显示器回来时的询问弹窗和设置页的「立即拆除」都走这里。
+     *
+     * 任务在不在跑都照办。拆完守卫的巡检照常：桌面上还有真实输出就什么都不做，一块都没有
+     * 的话下一轮会重新挂上——要彻底停用得关开关。
+     * @returns VirtualDisplayDetachOut Successful Response
+     * @throws ApiError
+     */
+    public static detachVirtualDisplayApiSettingVirtualDisplayDetachPost(): CancelablePromise<VirtualDisplayDetachOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/setting/virtual-display/detach',
         });
     }
     /**

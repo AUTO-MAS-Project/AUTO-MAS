@@ -10,16 +10,24 @@
           :staticity="70"
         />
         <div class="command-content">
-          <EncryptedText
-            v-if="!isBootstrapping"
-            :text="commandTitle"
-            class="command-title"
-            encrypted-class="command-title-encrypted"
-            :reveal-delay-ms="66"
-            :flip-delay-ms="500"
-          />
+          <ShatterText v-if="!isBootstrapping" :text="commandTitle" class="command-title" />
         </div>
-        <div v-if="!isBootstrapping" class="command-author">—— {{ commandAuthor }}</div>
+        <div v-if="!isBootstrapping" class="command-footer">
+          <a-tooltip :title="t('home.command.refresh')">
+            <a-button
+              type="text"
+              size="small"
+              class="command-refresh"
+              :aria-label="t('home.command.refresh')"
+              @click="onRefreshGreeting"
+            >
+              <template #icon>
+                <ReloadOutlined :key="spinKey" class="command-refresh-icon" />
+              </template>
+            </a-button>
+          </a-tooltip>
+          <span class="command-author">—— {{ commandAuthor }}</span>
+        </div>
       </div>
 
       <div class="scheduler-launcher">
@@ -48,7 +56,12 @@
               :max-tag-count="'responsive'"
               :placeholder="t('home.command.placeholder')"
               @dropdown-visible-change="$emit('dropdown-visible-change', $event)"
-            />
+            >
+              <!-- 拉取失败时列表为空：说明原因，展开下拉本身就会重试 -->
+              <template v-if="schedulerTasksUnavailable" #notFoundContent>
+                <span class="launcher-select-hint">{{ t('home.quickStart.listUnavailable') }}</span>
+              </template>
+            </a-select>
             <a-button
               type="primary"
               size="large"
@@ -71,12 +84,12 @@
 
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
-import { computed } from 'vue'
-import { PlayCircleOutlined } from '@ant-design/icons-vue'
+import { computed, ref } from 'vue'
+import { PlayCircleOutlined, ReloadOutlined } from '@ant-design/icons-vue'
 import type { ComboBoxItem } from '@/api'
-import EncryptedText from '@/components/inspira/EncryptedText.vue'
 import ParticlesBg from '@/components/inspira/ParticlesBg.vue'
 import { useTheme } from '@/composables/useTheme'
+import ShatterText from '@/views/home/components/ShatterText.vue'
 
 const { t } = useI18n()
 
@@ -86,6 +99,7 @@ const props = defineProps<{
   commandAuthor: string
   schedulerTaskOptions: ComboBoxItem[]
   schedulerTasksLoading: boolean
+  schedulerTasksUnavailable: boolean
   startingHomeTask: boolean
   selectedTaskIds: string[]
 }>()
@@ -94,7 +108,16 @@ const emit = defineEmits<{
   'update:selectedTaskIds': [value: string[]]
   'dropdown-visible-change': [open: boolean]
   start: []
+  'refresh-greeting': []
 }>()
+
+// 靠 key 变化重挂载图标来重放旋转动画，比手动增删 class 稳
+const spinKey = ref(0)
+
+const onRefreshGreeting = () => {
+  spinKey.value += 1
+  emit('refresh-greeting')
+}
 
 const selectedTaskIds = computed({
   get: () => props.selectedTaskIds,
@@ -152,19 +175,44 @@ const commandParticleColor = computed(() => themeColors[themeColor.value])
   color: var(--ant-color-text);
 }
 
-.command-title :deep(.command-title-encrypted) {
-  color: var(--ant-color-text-secondary);
-}
-
-.command-author {
+.command-footer {
   position: absolute;
   right: 0;
   bottom: 0;
   z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.command-author {
   color: var(--ant-color-text-tertiary);
   font-size: 13px;
   line-height: 1.5;
   white-space: nowrap;
+}
+
+.command-refresh {
+  color: var(--ant-color-text-tertiary);
+  transition: color 0.2s ease;
+}
+
+.command-refresh:hover {
+  color: var(--ant-color-primary);
+}
+
+.command-refresh-icon {
+  animation: command-refresh-spin 0.5s ease;
+}
+
+@keyframes command-refresh-spin {
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .scheduler-launcher {
@@ -213,6 +261,10 @@ const commandParticleColor = computed(() => themeColors[themeColor.value])
 .launcher-select,
 .launcher-start {
   width: 100%;
+}
+
+.launcher-select-hint {
+  color: var(--ant-color-text-tertiary);
 }
 
 @media (max-width: 1240px) {

@@ -9,6 +9,11 @@ import {
   getInitializationStageStatus,
   initializationStages,
 } from './initializationPresentation'
+import {
+  EMPTY_NETWORK_ACTIVITY,
+  formatNetworkDetails,
+  reduceNetworkActivity,
+} from './networkActivity'
 import type {
   ElectronMirrorSource,
   InstallStageResult,
@@ -24,6 +29,11 @@ import type {
   FailureNoticeKind,
 } from '@/utils/initializationDecision'
 import type { InitializationStepKey, InitializationStepStatus } from './initializationPresentation'
+import type {
+  NetworkActivity,
+  NetworkActivityPayload,
+  NetworkDetailLabels,
+} from './networkActivity'
 
 export function useInitializationFlow() {
   const { t } = useI18n()
@@ -50,7 +60,7 @@ export function useInitializationFlow() {
     doctorRunning: boolean
   }
 
-  interface ProgressPayload {
+  interface ProgressPayload extends NetworkActivityPayload {
     stage?: string
     progress?: number
     message?: string
@@ -96,6 +106,8 @@ export function useInitializationFlow() {
 
   const currentStepIndex = ref(0)
   const runtimeMode = ref<RuntimeInitMode>('off')
+  /** Runtime 报上来的测速结果与当前下载文件，只在 Runtime 链路有内容；页面级，不分段。 */
+  const networkActivity = ref<NetworkActivity>(EMPTY_NETWORK_ACTIVITY)
   const runtimeMirrorKeys = ref<Record<string, string[]>>({})
   const runtimeFallbackLogPath = ref('')
   const flowKind = ref<'first-run' | 'update' | 'startup'>('first-run')
@@ -163,6 +175,26 @@ export function useInitializationFlow() {
     currentState.value.progressIndeterminate ? undefined : currentState.value.progress
   )
 
+  const networkDetailLabels: NetworkDetailLabels = {
+    transferSource: source => t('launch.transferSource', { source }),
+    probeUnavailable: source => t('launch.probeUnavailable', { source }),
+  }
+
+  /**
+   * 进度条下面的网络细节，最多两行：测速时是「各源实测」+「最终顺序」，下载时是
+   * 「文件名」+「已下载 / 总量 · 速度 · 来源」。
+   *
+   * 本次运行一次都没出现过细节（旧链路、旧版 Runtime、还没到有字段的阶段）时为 undefined，
+   * LaunchStatus 不占位，界面与以前一致；出现过之后就一直交给它一个数组（哪怕为空），
+   * 让两行的位置留着，细节出现和消失时步骤条不会上下跳。
+   */
+  const statusDetails = computed<string[] | undefined>(() => {
+    if (runtimeMode.value === 'off') return undefined
+    const lines = formatNetworkDetails(networkActivity.value, networkDetailLabels)
+    if (lines === undefined) return undefined
+    return currentState.value.status === 'processing' ? lines : []
+  })
+
   const failureProps = computed(() => {
     const step = currentStep.value
     const state = currentState.value
@@ -204,6 +236,13 @@ export function useInitializationFlow() {
         raw.status === 'failed'
           ? raw.status
           : undefined,
+      runtimeStage: typeof raw.runtimeStage === 'string' ? raw.runtimeStage : undefined,
+      runtimeStatus: typeof raw.runtimeStatus === 'string' ? raw.runtimeStatus : undefined,
+      item: typeof raw.item === 'string' ? raw.item : undefined,
+      source: typeof raw.source === 'string' ? raw.source : undefined,
+      bytesPerSecond: typeof raw.bytesPerSecond === 'number' ? raw.bytesPerSecond : undefined,
+      current: typeof raw.current === 'number' ? raw.current : undefined,
+      total: typeof raw.total === 'number' ? raw.total : undefined,
     }
   }
 
@@ -212,6 +251,7 @@ export function useInitializationFlow() {
     const progress = readProgressPayload(value)
     const previousStatus = state.status
     const previousMessage = state.message
+    networkActivity.value = reduceNetworkActivity(networkActivity.value, progress)
 
     if (progress.status === 'completed' || (progress.progress ?? 0) >= 100) {
       state.status = 'success'
@@ -352,6 +392,7 @@ export function useInitializationFlow() {
     state.message = ''
     state.progress = 0
     state.progressIndeterminate = true
+    networkActivity.value = EMPTY_NETWORK_ACTIVITY
     let failure: RuntimeFailureFields = {}
 
     try {
@@ -712,6 +753,7 @@ export function useInitializationFlow() {
     hasFailed,
     isBackendStep,
     launchSteps,
+    statusDetails,
     statusHint,
     statusProgress,
     statusTitle,

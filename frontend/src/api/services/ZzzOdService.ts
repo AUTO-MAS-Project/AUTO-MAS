@@ -5,18 +5,11 @@
 import type { OutBase } from '../models/OutBase';
 import type { ZzzOdAppConfigOut } from '../models/ZzzOdAppConfigOut';
 import type { ZzzOdAppConfigSaveIn } from '../models/ZzzOdAppConfigSaveIn';
-import type { ZzzOdBackupEnsureIn } from '../models/ZzzOdBackupEnsureIn';
-import type { ZzzOdBackupEnsureOut } from '../models/ZzzOdBackupEnsureOut';
-import type { ZzzOdBackupListOut } from '../models/ZzzOdBackupListOut';
-import type { ZzzOdBackupPreviewOut } from '../models/ZzzOdBackupPreviewOut';
-import type { ZzzOdBackupRestoreIn } from '../models/ZzzOdBackupRestoreIn';
-import type { ZzzOdBackupRestoreOut } from '../models/ZzzOdBackupRestoreOut';
 import type { ZzzOdCatalogOut } from '../models/ZzzOdCatalogOut';
 import type { ZzzOdImportIn } from '../models/ZzzOdImportIn';
 import type { ZzzOdImportOut } from '../models/ZzzOdImportOut';
 import type { ZzzOdInstanceActiveIn } from '../models/ZzzOdInstanceActiveIn';
 import type { ZzzOdInstanceAddIn } from '../models/ZzzOdInstanceAddIn';
-import type { ZzzOdInstanceDeleteIn } from '../models/ZzzOdInstanceDeleteIn';
 import type { ZzzOdInstanceFlagIn } from '../models/ZzzOdInstanceFlagIn';
 import type { ZzzOdInstanceForceLoginIn } from '../models/ZzzOdInstanceForceLoginIn';
 import type { ZzzOdInstanceRenameIn } from '../models/ZzzOdInstanceRenameIn';
@@ -25,6 +18,8 @@ import type { ZzzOdInstancesOut } from '../models/ZzzOdInstancesOut';
 import type { ZzzOdLauncherOut } from '../models/ZzzOdLauncherOut';
 import type { ZzzOdNativeConfigIn } from '../models/ZzzOdNativeConfigIn';
 import type { ZzzOdNativeConfigOut } from '../models/ZzzOdNativeConfigOut';
+import type { ZzzOdRecycleOut } from '../models/ZzzOdRecycleOut';
+import type { ZzzOdSlotsOut } from '../models/ZzzOdSlotsOut';
 import type { ZzzOdTaskOptionsOut } from '../models/ZzzOdTaskOptionsOut';
 import type { ZzzOdTeamsOut } from '../models/ZzzOdTeamsOut';
 import type { ZzzOdTeamsSaveIn } from '../models/ZzzOdTeamsSaveIn';
@@ -175,20 +170,45 @@ export class ZzzOdService {
         });
     }
     /**
-     * 删除一条龙实例（直控实例管理；受 MAS 绑定槽保护）
-     * 删除注册表条目与实例目录，返回更新后的实例列表。
-     * @param requestBody
-     * @returns ZzzOdInstancesOut Successful Response
+     * 获取实例槽总览（原生实例 / MAS 绑定槽 / 无主残留）
+     * 槽目录是 MAS 分配在一条龙安装目录里的，注册表与 GUI 都看不到。
+     *
+     * 这份对照表用于诊断「槽目录数与用户数对不上」（绑定但没跑过的槽没有目录）
+     * 与定位无主残留。
+     * @param scriptId
+     * @returns ZzzOdSlotsOut Successful Response
      * @throws ApiError
      */
-    public static deleteZzzodInstanceApiApiScriptsZzzodInstancesDeletePost(
-        requestBody: ZzzOdInstanceDeleteIn,
-    ): CancelablePromise<ZzzOdInstancesOut> {
+    public static getZzzodSlotsApiApiScriptsZzzodSlotsGet(
+        scriptId: string,
+    ): CancelablePromise<ZzzOdSlotsOut> {
         return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/scripts/zzzod/instances/delete',
-            body: requestBody,
-            mediaType: 'application/json',
+            method: 'GET',
+            url: '/api/scripts/zzzod/slots',
+            query: {
+                'scriptId': scriptId,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 获取实例槽回收池（被删用户/脚本留下的槽内容与备份池快照）
+     * 槽目录按安装根指纹归池，跨脚本共享；只有 ``kind=slot`` 的条目可恢复。
+     * @param scriptId
+     * @returns ZzzOdRecycleOut Successful Response
+     * @throws ApiError
+     */
+    public static getZzzodRecycleApiApiScriptsZzzodRecycleGet(
+        scriptId: string,
+    ): CancelablePromise<ZzzOdRecycleOut> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/scripts/zzzod/recycle',
+            query: {
+                'scriptId': scriptId,
+            },
             errors: {
                 422: `Validation Error`,
             },
@@ -362,7 +382,7 @@ export class ZzzOdService {
     }
     /**
      * 保存实例原生配置（直控模式直接写回一条龙原始 YAML）
-     * 白名单过滤后写回所选实例 game_account.yml、_group.yml 与 instance_run，随后回读最新数据。
+     * 白名单过滤后写回所选实例 game_account.yml、_group.yml、instance_run 与 after_done，随后回读最新数据。
      * @param requestBody
      * @returns ZzzOdNativeConfigOut Successful Response
      * @throws ApiError
@@ -375,33 +395,6 @@ export class ZzzOdService {
             url: '/api/scripts/zzzod/native-config/save',
             body: requestBody,
             mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 列出配置备份（onedragon=一条龙原生配置 / mas=MAS 用户槽）
-     * 按时间倒序返回历史备份（运行/会话前自动归档，内容无变化跳过）。
-     * @param scriptId
-     * @param userId
-     * @param target
-     * @returns ZzzOdBackupListOut Successful Response
-     * @throws ApiError
-     */
-    public static listZzzodBackupsApiApiScriptsZzzodBackupsGet(
-        scriptId: string,
-        userId: string,
-        target: string = 'onedragon',
-    ): CancelablePromise<ZzzOdBackupListOut> {
-        return __request(OpenAPI, {
-            method: 'GET',
-            url: '/api/scripts/zzzod/backups',
-            query: {
-                'scriptId': scriptId,
-                'userId': userId,
-                'target': target,
-            },
             errors: {
                 422: `Validation Error`,
             },
@@ -429,47 +422,6 @@ export class ZzzOdService {
         });
     }
     /**
-     * 把指定备份恢复到目标位置（onedragon=一条龙原生配置 / mas=MAS 用户配置）
-     * onedragon：恢复一条龙原生配置（MAS 槽不触碰）；mas：恢复槽并全量回填本页字段。
-     * @param requestBody
-     * @returns ZzzOdBackupRestoreOut Successful Response
-     * @throws ApiError
-     */
-    public static restoreZzzodBackupApiApiScriptsZzzodBackupRestorePost(
-        requestBody: ZzzOdBackupRestoreIn,
-    ): CancelablePromise<ZzzOdBackupRestoreOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/scripts/zzzod/backup/restore',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 按需归档目标池当前配置（指纹去重，无变化跳过；编辑界面三时机调用）
-     * onedragon：一条龙原生配置当前状态（进入编辑界面时捕捉 MAS 操作前原始态）；
-     * mas：MAS 用户绑定槽当前状态（退出编辑界面时的用户侧终态）。
-     * @param requestBody
-     * @returns ZzzOdBackupEnsureOut Successful Response
-     * @throws ApiError
-     */
-    public static ensureZzzodBackupApiApiScriptsZzzodBackupEnsurePost(
-        requestBody: ZzzOdBackupEnsureIn,
-    ): CancelablePromise<ZzzOdBackupEnsureOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/scripts/zzzod/backup/ensure',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
      * 基于一条龙已有实例快速生成当前用户配置（覆盖前自动归档当前配置）
      * 把来源实例的账号信息与已启用任务编排写入本用户；覆盖前强制归档当前 MAS 槽配置，
      * 导入前状态可在「配置恢复」中找回。
@@ -485,36 +437,6 @@ export class ZzzOdService {
             url: '/api/scripts/zzzod/import',
             body: requestBody,
             mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 读取指定备份的配置摘要（纯读不恢复，供「预览配置」快速展示）
-     * mas：账号字段与已启用任务编排（即 MAS 本页展示的配置）；onedragon：实例列表。
-     * @param scriptId
-     * @param userId
-     * @param time
-     * @param target
-     * @returns ZzzOdBackupPreviewOut Successful Response
-     * @throws ApiError
-     */
-    public static getZzzodBackupPreviewApiApiScriptsZzzodBackupPreviewGet(
-        scriptId: string,
-        userId: string,
-        time: string,
-        target: string = 'onedragon',
-    ): CancelablePromise<ZzzOdBackupPreviewOut> {
-        return __request(OpenAPI, {
-            method: 'GET',
-            url: '/api/scripts/zzzod/backup/preview',
-            query: {
-                'scriptId': scriptId,
-                'userId': userId,
-                'time': time,
-                'target': target,
-            },
             errors: {
                 422: `Validation Error`,
             },

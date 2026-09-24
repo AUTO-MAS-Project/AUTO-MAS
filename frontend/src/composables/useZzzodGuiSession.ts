@@ -109,9 +109,7 @@ export function useZzzodGuiSession() {
           clearSession()
         }),
       ]
-      message.success(
-        viewOnly ? t('edit.zzzodViewOpened') : t('edit.zzzodSessionOpened')
-      )
+      message.success(viewOnly ? t('edit.zzzodViewOpened') : t('edit.zzzodSessionOpened'))
       if (viewOnly) {
         // 查看会话：超时静默关闭，不提示也不触发「保存」
         zzzodConfigTimeout = window.setTimeout(() => void stopSession(), SESSION_TIMEOUT_MS)

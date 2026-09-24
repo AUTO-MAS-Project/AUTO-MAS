@@ -50,10 +50,7 @@ export function useZzzOdTaskBoard(
   const sortEnabledFirst = () => {
     if (!options.editable()) return
     const list = [...dragCards.value]
-    const sorted = [
-      ...list.filter(card => card.enabled),
-      ...list.filter(card => !card.enabled),
-    ]
+    const sorted = [...list.filter(card => card.enabled), ...list.filter(card => !card.enabled)]
     dragCards.value = sorted
     options.commit(sorted)
   }

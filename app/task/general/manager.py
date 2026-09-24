@@ -22,6 +22,7 @@
 
 import shutil
 import uuid
+from contextlib import suppress
 from datetime import datetime
 from pathlib import Path
 
@@ -29,11 +30,19 @@ from app.core import Config, EmulatorManager
 from app.core.ws import Publisher, protocol
 from app.models.config import GeneralConfig, GeneralUserConfig
 from app.models.ConfigBase import MultipleConfig
+from app.models.emulator import DeviceProvider
 from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, TaskExecuteBase, UserItem
+from app.task.proxy_helpers import CONFIG_SOURCE_DIRECT, read_config_source
 from app.tools.push_log import build_user_result_text
 from app.utils import ProcessManager, get_logger
 from app.utils.constants import TASK_MODE_ZH
+from app.utils.io import (
+    clear_native_config_snapshot,
+    commit_native_config_snapshot,
+    recover_native_config,
+    swap_in_dir,
+)
 
 from .AutoProxy import AutoProxyTask
 from .ScriptConfig import ScriptConfigTask
@@ -50,7 +59,12 @@ METHOD_BOOK: dict[str, type[AutoProxyTask | ScriptConfigTask]] = {
 class GeneralManager(TaskExecuteBase):
     """通用脚本控制器"""
 
-    def __init__(self, script_info: ScriptItem):
+    def __init__(
+        self,
+        script_info: ScriptItem,
+        *,
+        device_provider: DeviceProvider | None = None,
+    ):
         super().__init__()
 
         if script_info.task_info is None:
@@ -61,6 +75,7 @@ class GeneralManager(TaskExecuteBase):
         self.check_result = "-"
         self.external_config_exists = False
         self.external_config_snapshot_ready = False
+        self._device_provider = device_provider
 
     async def check(self) -> str:
         """校验通用脚本配置是否可用"""
@@ -91,6 +106,12 @@ class GeneralManager(TaskExecuteBase):
             "Script", "ConfigPath"
         ):
             return "未填写配置路径, 请检查脚本配置中的配置路径设置！"
+        # 日志路径未填时每轮尝试都会白等 60 秒日志文件再失败, 属于确定性配置错误,
+        # 在任务开始前拦下; 目录不存在不在这里拦, 有的脚本首次运行才创建日志目录
+        if not Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].get(
+            "Script", "LogPath"
+        ):
+            return "未填写日志路径, 请检查脚本配置中的日志路径设置！"
         if Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].get(
             "Game", "Enabled"
         ):
@@ -155,18 +176,34 @@ class GeneralManager(TaskExecuteBase):
                 logger.opt(exception=True).warning(f"清理脚本直控配置失败: {e}")
         return not self.script_config_path.exists()
 
+    def _recover_previous_run(self) -> None:
+        """处置上次崩溃残留的原始配置快照。"""
+
+        result = recover_native_config(
+            self.temp_path,
+            self.script_config_path,
+            expected_script_id=self.script_info.script_id,
+        )
+        if result == "restored":
+            logger.info("已恢复上次中断前的通用脚本原始配置")
+        elif result == "skipped":
+            logger.warning(
+                "检测到通用脚本原生配置在中断后被改动, 已保留当前配置并丢弃旧快照"
+            )
+
     def _snapshot_external_config(self) -> None:
         """保存脚本直控配置，作为用户切换和任务结束时的恢复基线。"""
-        shutil.rmtree(self.temp_path, ignore_errors=True)
         self.external_config_exists = self.script_config_path.exists()
-        self.temp_path.mkdir(parents=True, exist_ok=True)
 
         if self.external_config_exists:
             if self.script_config.get("Script", "ConfigPathMode") == "Folder":
-                shutil.copytree(
-                    self.script_config_path, self.temp_path, dirs_exist_ok=True
+                commit_native_config_snapshot(
+                    self.temp_path,
+                    self.script_config_path,
+                    script_id=self.script_info.script_id,
                 )
             elif self.script_config.get("Script", "ConfigPathMode") == "File":
+                self.temp_path.mkdir(parents=True, exist_ok=True)
                 shutil.copy(self.script_config_path, self.temp_path / "config.temp")
 
         self.external_config_snapshot_ready = True
@@ -176,34 +213,40 @@ class GeneralManager(TaskExecuteBase):
         if not self.external_config_snapshot_ready:
             return
 
-        # 配置路径被脚本进程占用时只能清掉一部分，此时仍要把快照覆盖回去，
-        # 否则用户目录会停在半删状态
-        if not self._remove_script_config():
-            logger.warning(
-                f"脚本直控配置未清理干净, 直接覆盖恢复: {self.script_config_path}"
-            )
-
         if not self.external_config_exists:
-            logger.info("脚本直控配置不存在，保持配置路径为空")
+            # 任务前原生配置不存在: 现场内容只可能是本任务注入的 MAS 配置
+            # (查看会话恢复的备份 / 非直控用户的下发), 删除即恢复「不存在」
+            # 原状——混合用户时直控用户也因此拿到干净的原始现场
+            self._remove_script_config()
+            logger.info("脚本任务前原生配置不存在, 已清理任务注入的配置")
             return
 
         if self.script_config.get("Script", "ConfigPathMode") == "Folder":
-            shutil.copytree(self.temp_path, self.script_config_path, dirs_exist_ok=True)
+            # 原子换入: 原生目录要么原样要么完整就位, 不出现半删中间态
+            swap_in_dir(self.temp_path, self.script_config_path)
         elif self.script_config.get("Script", "ConfigPathMode") == "File":
+            # 配置路径被脚本进程占用时只能清掉一部分, 此时仍要把快照覆盖回去,
+            # 否则用户目录会停在半删状态
+            if not self._remove_script_config():
+                logger.warning(
+                    f"脚本直控配置未清理干净, 直接覆盖恢复: {self.script_config_path}"
+                )
             self.script_config_path.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy(self.temp_path / "config.temp", self.script_config_path)
 
     def _cleanup_external_config_snapshot(self) -> None:
         if not self.external_config_snapshot_ready:
             return
-        shutil.rmtree(self.temp_path, ignore_errors=True)
+        clear_native_config_snapshot(self.temp_path)
         self.external_config_snapshot_ready = False
 
     def _user_uses_mas_config(self) -> bool:
         user_id = self.script_info.user_list[self.script_info.current_index].user_id
         if user_id == "Default":
             return True
-        return bool(self.user_config[uuid.UUID(user_id)].get("Info", "IfUseMasConfig"))
+        user_config = self.user_config[uuid.UUID(user_id)]
+        # 直控=不写；脚本/用户来源都写面板值
+        return read_config_source(user_config) != CONFIG_SOURCE_DIRECT
 
     async def prepare(self):
         """运行前准备"""
@@ -227,7 +270,10 @@ class GeneralManager(TaskExecuteBase):
                 )
                 == "Emulator"
             ):
-                self.emulator_manager = await EmulatorManager.get_emulator_instance(
+                device_provider = (
+                    self._device_provider or EmulatorManager.get_emulator_instance
+                )
+                self.emulator_manager = await device_provider(
                     self.script_config.get("Game", "EmulatorId")
                 )
 
@@ -258,7 +304,20 @@ class GeneralManager(TaskExecuteBase):
         )
 
         logger.info(f"记录脚本直控配置: {self.script_config_path}")
+        self._recover_previous_run()
         self._snapshot_external_config()
+
+        # 任务级一次性归档脚本原生配置（脚本级池，指纹去重，失败不阻断
+        # 任务）：此刻 ConfigPath 仍是任务动手前的完整现场，必须在任何
+        # 换入/写入前归档
+        from .tools.backup_archive import archive_native_backup
+
+        with suppress(Exception):
+            archive_native_backup(
+                self.script_info.script_id,
+                self.script_config_path,
+                self.script_config.get("Script", "ConfigPathMode"),
+            )
 
     async def main_task(self):
 
@@ -306,7 +365,11 @@ class GeneralManager(TaskExecuteBase):
             try:
                 await self.spawn(task)
             finally:
-                if not use_mas_config:
+                # 查看会话（viewOnly）不重拍快照：用户级查看会把该用户
+                # ConfigFile 下发进原生配置（GUI 所见即备份），重拍会把被
+                # 污染的原生存成新快照、覆盖 prepare 时的真实原状，收尾
+                # 还原时原生就被固定成备份内容
+                if not use_mas_config and not self.task_info.view_only:
                     self._snapshot_external_config()
 
     async def final_task(self):

@@ -167,28 +167,21 @@ class LogMonitor:
                 warned_mtime_date = None
                 offset = read_offsets.get(current_path, 0)
 
-            # 检查文件是否仍然存在
-            if not current_path.exists():
-                logger.warning(f"日志文件不存在: {current_path}")
-                await self.do_callback()
-                await asyncio.sleep(1)
-                continue
-
-            if not if_mtime_checked:
-                file_mtime_date = date.fromtimestamp(current_path.stat().st_mtime)
-                if file_mtime_date == date.today():
-                    log_stat = current_path.stat()
-                    if_mtime_checked = True
-                else:
-                    if warned_mtime_date != file_mtime_date:
-                        logger.warning(f"日志文件今天未被修改: {file_mtime_date}")
-                        warned_mtime_date = file_mtime_date
-                    await self.do_callback()
-                    await asyncio.sleep(1)
-                    continue
-
             # 尝试读取文件
             try:
+                if not if_mtime_checked:
+                    file_mtime_date = date.fromtimestamp(current_path.stat().st_mtime)
+                    if file_mtime_date == date.today():
+                        log_stat = current_path.stat()
+                        if_mtime_checked = True
+                    else:
+                        if warned_mtime_date != file_mtime_date:
+                            logger.warning(f"日志文件今天未被修改: {file_mtime_date}")
+                            warned_mtime_date = file_mtime_date
+                        await self.do_callback()
+                        await asyncio.sleep(1)
+                        continue
+
                 # 轮转或文件被替换（同一路径上换了文件身份）：滚动前后属于
                 # 同一次运行，log_contents 与 if_log_start 保留不清空，否则
                 # 落库历史只剩轮转后内容（跨零点实测）；被重命名的旧文件按

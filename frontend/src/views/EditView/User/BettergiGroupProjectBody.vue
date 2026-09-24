@@ -4,10 +4,16 @@
     :class="{ 'bgi-project-editor-disabled': !editable }"
     @click.capture="handleBlankClick"
   >
-    <!-- 工具栏：添加脚本 / 删除脚本（仅配置组可编辑且非单项目虚拟组） -->
+    <!-- 工具栏：添加脚本 / 删除脚本 / 清空（四类配置组 scriptgroup / keymouse / js / pathing 均可编辑） -->
     <div v-if="isScriptGroup && editable" class="bgi-project-toolbar">
       <a-space size="small">
-        <a-button size="small" type="primary" ghost :disabled="!editable" @click="emit('add-script')">
+        <a-button
+          size="small"
+          type="primary"
+          ghost
+          :disabled="!editable"
+          @click="emit('add-script')"
+        >
           <template #icon><PlusOutlined /></template>
           {{ t('edit.bettergiProjectAddScript') }}
         </a-button>
@@ -23,8 +29,26 @@
             {{ t('edit.bettergiProjectRemoveScript') }}
           </a-button>
         </a-popconfirm>
+        <a-popconfirm
+          :title="t('edit.bettergiProjectClearConfirm')"
+          :ok-text="t('edit.ok')"
+          :cancel-text="t('edit.cancel')"
+          :disabled="!projects.length || isStandaloneSingle"
+          @confirm="clearProjects"
+        >
+          <a-button size="small" danger :disabled="!projects.length || isStandaloneSingle">
+            <template #icon><ClearOutlined /></template>
+            {{ t('edit.bettergiProjectClearScript') }}
+          </a-button>
+        </a-popconfirm>
       </a-space>
-      <span class="bgi-project-toolbar-tip">{{ t('edit.bettergiProjectToolbarTip') }}</span>
+      <span class="bgi-project-toolbar-tip">
+        {{
+          isStandaloneSingle
+            ? t('edit.bettergiProjectStandaloneTip')
+            : t('edit.bettergiProjectToolbarTip')
+        }}
+      </span>
     </div>
 
     <!-- 多选操作提示条（Ctrl 逐个 / Shift 区间，选中超过 1 行时显示） -->
@@ -66,15 +90,22 @@
                 @dblclick.stop="openProjectSettings(element, index)"
               >
                 <!-- 拖拽热区：可编辑配置组覆盖整行左侧 2/3；JS/路径单行（无可选）占满 -->
-                <div class="bgi-project-drag-area" :class="{ 'bgi-project-drag-area-full': !selectable }">
+                <div
+                  class="bgi-project-drag-area"
+                  :class="{ 'bgi-project-drag-area-full': !selectable }"
+                >
                   <HolderOutlined
                     v-if="isSortable"
                     class="bgi-project-drag-handle"
                     aria-hidden="true"
                   />
                   <span v-else class="bgi-project-drag-spacer" aria-hidden="true"></span>
-                  <span class="bgi-project-name">{{ element.name || element.folderName || element.key || '—' }}</span>
-                  <span v-if="element.folderName" class="bgi-project-folder">{{ element.folderName }}</span>
+                  <span class="bgi-project-name">{{
+                    element.name || element.folderName || element.key || '—'
+                  }}</span>
+                  <span v-if="element.folderName" class="bgi-project-folder">{{
+                    element.folderName
+                  }}</span>
                 </div>
                 <div v-if="selectable" class="bgi-project-row-state">
                   <button
@@ -114,7 +145,7 @@
       width="720px"
       :z-index="1100"
       class="bgi-project-settings-modal"
-      :ok-button-props="{ disabled: props.kind !== 'scriptgroup' }"
+      :ok-button-props="{ disabled: !isScriptGroup || configLocked }"
       @ok="saveProjectSettings"
       @cancel="settingsModal.open = false"
     >
@@ -127,39 +158,51 @@
                 <template v-for="(item, idx) in settingsModal.items" :key="item.name || idx">
                   <!-- 分隔线 -->
                   <div
-                    v-if="item.type === 'separator'"
+                    v-if="controlTypeOf(item) === 'separator'"
                     class="bgi-project-separator"
                     :class="{ 'bgi-project-separator-first': idx === 0 }"
                   >
                     {{ item.label || '' }}
                   </div>
                   <!-- checkbox -->
-                  <div v-else-if="item.type === 'checkbox'" class="bgi-project-setting-row">
+                  <div
+                    v-else-if="controlTypeOf(item) === 'checkbox'"
+                    class="bgi-project-setting-row"
+                  >
                     <span class="bgi-project-setting-label">{{ item.label }}</span>
                     <a-switch
-                      :checked="Boolean(fieldValue(item.name))"
+                      :checked="isTruthy(fieldValue(item.name))"
                       @change="(v: boolean | string | number) => setField(item.name, Boolean(v))"
                     />
                   </div>
                   <!-- select -->
-                  <div v-else-if="item.type === 'select'" class="bgi-project-setting-row">
+                  <div v-else-if="controlTypeOf(item) === 'select'" class="bgi-project-setting-row">
                     <span class="bgi-project-setting-label">{{ item.label }}</span>
                     <a-select
                       :value="String(fieldValue(item.name) ?? '')"
-                      :options="item.options?.map((o: string) => ({ label: o, value: o })) || []"
+                      :options="optionList(item)"
                       :placeholder="t('edit.bettergiGroupSettingsPlaceholder')"
+                      :get-popup-container="
+                        (triggerNode: HTMLElement) => triggerNode.parentElement!
+                      "
                       allow-clear
                       @change="(v: unknown) => setField(item.name, v == null ? '' : String(v))"
                     />
                   </div>
                   <!-- multi-checkbox -->
-                  <div v-else-if="item.type === 'multi-checkbox'" class="bgi-project-setting-row">
+                  <div
+                    v-else-if="controlTypeOf(item) === 'multi-checkbox'"
+                    class="bgi-project-setting-row"
+                  >
                     <span class="bgi-project-setting-label">{{ item.label }}</span>
                     <a-select
                       mode="multiple"
                       :value="fieldListValue(item.name)"
-                      :options="item.options?.map((o: string) => ({ label: o, value: o })) || []"
+                      :options="optionList(item)"
                       :placeholder="t('edit.bettergiGroupSettingsPlaceholder')"
+                      :get-popup-container="
+                        (triggerNode: HTMLElement) => triggerNode.parentElement!
+                      "
                       @change="(v: unknown) => setField(item.name, Array.isArray(v) ? v : [])"
                     />
                   </div>
@@ -168,7 +211,9 @@
                     <span class="bgi-project-setting-label">{{ item.label }}</span>
                     <a-input
                       :value="String(fieldValue(item.name) ?? '')"
-                      @change="(e: Event) => setField(item.name, (e.target as HTMLInputElement).value)"
+                      @change="
+                        (e: Event) => setField(item.name, (e.target as HTMLInputElement).value)
+                      "
                     />
                   </div>
                 </template>
@@ -198,13 +243,17 @@
 import { computed, reactive, ref, watch } from 'vue'
 import { message } from 'ant-design-vue'
 import { useI18n } from 'vue-i18n'
-import { CheckCircleFilled, DeleteOutlined, HolderOutlined, PlusOutlined } from '@ant-design/icons-vue'
+import {
+  CheckCircleFilled,
+  ClearOutlined,
+  DeleteOutlined,
+  HolderOutlined,
+  PlusOutlined,
+} from '@ant-design/icons-vue'
 import draggable from 'vuedraggable'
 import { BetterGiService } from '@/api'
-import type {
-  BetterGIScriptGroupSaveIn,
-  BetterGIScriptGroupDetailOut,
-} from '@/api'
+import type { BetterGIScriptGroupSaveIn, BetterGIScriptGroupDetailOut } from '@/api'
+import { useScriptConfigLock } from '@/composables/useScriptConfigLock'
 
 const { t } = useI18n()
 
@@ -239,20 +288,36 @@ const props = withDefaults(
   }
 )
 
-const emit = defineEmits<{ (e: 'add-script'): void }>()
+const emit = defineEmits<{
+  (e: 'add-script'): void
+}>()
 
 const logger = window.electronAPI.getLogger('BetterGI配置组项目编辑')
+const { configLocked } = useScriptConfigLock(() => props.scriptId)
 
 const loading = ref(false)
-const saving = ref(false)
+// 是否已存在 per-user 配置组副本（js/路径 未编辑时为 false，仅合成单项目展示）
+const hasPerUserReplica = ref(false)
 
-const isScriptGroup = computed<boolean>(() => props.kind === 'scriptgroup')
-// 可选择（Shift/Ctrl 多选）：仅可编辑配置组
-const selectable = computed<boolean>(() => isScriptGroup.value && props.editable)
-// 可拖拽排序：配置组 json 且至少两个项目
-const isSortable = computed<boolean>(
-  () => selectable.value && projects.value.length > 1
+const isKeyMouse = computed<boolean>(() => props.kind === 'keymouse')
+// 可读取项目列表：配置组 / 录制 为真实配置组；js / 路径 以 per-user ScriptGroup 副本形式当作可编辑配置组管理
+// （后端详情/保存接口与运行时物化均按原名识别 per-user 副本，四类一视同仁）
+const isScriptGroup = computed<boolean>(() => {
+  const k = props.kind
+  return k === 'scriptgroup' || k === 'keymouse' || k === 'js' || k === 'pathing'
+})
+// 独立单脚本（JS/路径 未生成 per-user 副本）：仅展示单项目，禁用选中/移除/清空以免误清空为「空组」；
+// 仅「添加脚本」可将其转为真正的多项目配置组。脚本组/录制与「已转为配置组」的 JS/路径 不受限。
+const isStandaloneSingle = computed<boolean>(
+  () => (props.kind === 'js' || props.kind === 'pathing') && !hasPerUserReplica.value
 )
+// 可选择（Shift/Ctrl 多选）/可增删：四类可编辑配置组（scriptgroup / keymouse / js / pathing）均支持，
+// 但独立单脚本（无 per-user 副本）不可选中——避免误清空为「空组」
+const selectable = computed<boolean>(
+  () => isScriptGroup.value && props.editable && !isStandaloneSingle.value
+)
+// 可拖拽排序：配置组 json 且至少两个项目
+const isSortable = computed<boolean>(() => selectable.value && projects.value.length > 1)
 
 // 当前编辑的完整配置组 json（scriptgroup 时保存整份；js/pathing 无 json 载体）
 const groupJson = ref<Record<string, any>>({})
@@ -328,7 +393,7 @@ const handleBlankClick = (event: MouseEvent) => {
 // Ctrl/Cmd=逐个切换多选；Shift=从锚点行到当前行区间多选。
 // 双击（打开设置弹窗）由 dblclick 独立处理，不参与多选。
 const handleRowClick = (row: ProjectRow, index: number, event: MouseEvent) => {
-  if (!props.editable || !isScriptGroup.value) return
+  if (!props.editable || !isScriptGroup.value || isStandaloneSingle.value) return
   const uid = row._uid
   if (typeof uid !== 'number') return
   if (event.shiftKey) {
@@ -367,6 +432,7 @@ const reload = async () => {
   if (!isScriptGroup.value || !props.groupName || !props.userId) {
     // JS/路径：单项目虚拟组（项目名=显示名；folder 供双击读设置）
     if (props.kind === 'js' || props.kind === 'pathing') {
+      hasPerUserReplica.value = false
       clearSelection()
       projects.value = [
         {
@@ -378,7 +444,7 @@ const reload = async () => {
       ]
     }
     return
-    }
+  }
   loading.value = true
   try {
     const resp: BetterGIScriptGroupDetailOut =
@@ -388,6 +454,37 @@ const reload = async () => {
         props.groupName
       )
     if (resp.code !== 200) {
+      // js/路径 无 per-user 配置组副本：合成一个带 type/status 等字段的可保存单项目，
+      // 使「添加脚本 / 移除脚本 / 清空」能直接落盘为配置组（无需切换 kind）。
+      if (props.kind === 'js' || props.kind === 'pathing') {
+        hasPerUserReplica.value = false
+        clearSelection()
+        let name = props.displayName || props.groupName
+        let folderName: string | undefined = props.folderName || undefined
+        if (props.kind === 'pathing') {
+          // 路径项目名=相对路径末段 + .json，folderName=目录；与 toScriptGroupProjectRow 的 pathing 分支一致
+          const rel = String(props.groupName || '').trim()
+          const segs = rel.split('/')
+          const file = segs.pop() || rel
+          name = `${file}.json`
+          folderName = segs.join('/') || undefined
+        }
+        projects.value = [
+          {
+            name,
+            folderName,
+            key: props.groupName,
+            type: props.kind === 'js' ? 'Javascript' : 'Pathing',
+            status: 'Enabled',
+            schedule: 'Daily',
+            runNum: 1,
+            index: 0,
+            _uid: ++projectSeq,
+          },
+        ]
+        groupJson.value = {}
+        return
+      }
       message.warning(resp.message || t('edit.bettergiProjectLoadFailed'))
       projects.value = []
       groupJson.value = {}
@@ -397,6 +494,7 @@ const reload = async () => {
     groupJson.value = data
     const list = Array.isArray(data.projects) ? data.projects : []
     projects.value = list.map(item => ({ ...item, _uid: ++projectSeq }))
+    hasPerUserReplica.value = true
     clearSelection()
   } catch (e) {
     logger.error(e instanceof Error ? e.message : String(e))
@@ -408,12 +506,20 @@ const reload = async () => {
   }
 }
 
-// 拖拽排序结束 / 各保存路径统一写回 per-user 副本；写前规范化 index 并剔除 _uid
-const persistProjects = async () => {
-  if (!isScriptGroup.value || saving.value) return
-  saving.value = true
+// 一次保存的目标快照：发起时刻的组名 / 项目 / 组 json。
+// 保存排队期间用户可能已切到别的配置组，快照保证这一次保存仍写回原组，
+// 不会拿新组的 projects 去覆盖别的组（也不会把原组的改动丢掉）。
+type PersistSnapshot = {
+  name: string
+  rows: ProjectRow[]
+  groupJson: Record<string, any>
+}
+
+// 拖拽排序结束 / 各保存路径统一写回 per-user 副本；写前规范化 index 并剔除 _uid。
+// 返回是否真正落盘成功：调用方据此回滚界面上的乐观改动（见 addProjects / clearProjects）。
+const writeProjects = async (snapshot: PersistSnapshot): Promise<boolean> => {
   try {
-    const rows = projects.value.map((item, idx) => {
+    const rows = snapshot.rows.map((item, idx) => {
       const { _uid: _removed, ...rest } = item as ProjectRow & { _uid?: number }
       void _removed
       return { ...rest, index: idx + 1 }
@@ -421,32 +527,56 @@ const persistProjects = async () => {
     const body: BetterGIScriptGroupSaveIn = {
       scriptId: props.scriptId,
       userId: props.userId,
-      name: props.groupName,
+      name: snapshot.name,
       data: {
-        ...groupJson.value,
+        ...snapshot.groupJson,
         projects: rows,
       },
     }
     const resp =
-      await BetterGiService.saveBettergiScriptGroupApiApiScriptsBettergiScriptGroupSavePost(
-        body
-      )
+      await BetterGiService.saveBettergiScriptGroupApiApiScriptsBettergiScriptGroupSavePost(body)
     if (resp.code !== 200) {
       throw new Error(resp.message || t('edit.bettergiProjectSaveFailed'))
     }
-    groupJson.value = { ...groupJson.value, projects: rows }
+    // 落盘期间没切组才回填本地状态（切走了就不是当前组的 json）
+    if (props.groupName === snapshot.name) {
+      groupJson.value = { ...snapshot.groupJson, projects: rows }
+      // 落盘后即存在 per-user 副本：JS/路径 由「独立单脚本」转为真正的配置组，解除清空/移除限制
+      if (props.kind === 'js' || props.kind === 'pathing') hasPerUserReplica.value = true
+    }
     message.success(t('edit.bettergiProjectSaved'))
+    return true
   } catch (e) {
     logger.error(e instanceof Error ? e.message : String(e))
     message.error(e instanceof Error ? e.message : t('edit.bettergiProjectSaveFailed'))
-  } finally {
-    saving.value = false
+    return false
   }
+}
+
+// 保存串行化：以 promise 链取代布尔互斥——布尔守卫会在「上一次保存尚未返回」时静默丢弃
+// 紧随其后的保存（拖拽落定、添加脚本、弹窗保存接连触发即可命中，表现为「设置保存不上」）。
+// 链上传递的是「本次快照的落盘结果」：每个调用方拿到的都是自己那一次的结果。
+let persistChain: Promise<boolean> = Promise.resolve(true)
+
+const persistProjects = (): Promise<boolean> => {
+  if (!isScriptGroup.value) return persistChain
+  if (configLocked.value) {
+    message.error(t('edit.configLocked'))
+    return Promise.resolve(false)
+  }
+  const snapshot: PersistSnapshot = {
+    name: props.groupName,
+    rows: projects.value.map(item => ({ ...item })),
+    groupJson: { ...groupJson.value },
+  }
+  persistChain = persistChain.then(() => writeProjects(snapshot))
+  return persistChain
 }
 
 // 父组件「添加配置组弹窗(冻结配置组标签)」确认后调用：把 JS/路径行追加到末尾并保存
 const addProjects = async (rows: ProjectRow[]) => {
-  if (!isScriptGroup.value || !rows.length) return
+  if (!isScriptGroup.value || !rows.length) return false
+  const previous = projects.value
   const next = projects.value.map(item => ({ ...item }))
   for (const row of rows) {
     const { _uid: _removed, ...rest } = row as ProjectRow & { _uid?: number }
@@ -454,30 +584,55 @@ const addProjects = async (rows: ProjectRow[]) => {
     next.push({ ...rest, _uid: ++projectSeq })
   }
   projects.value = next
-  await persistProjects()
+  const saved = await persistProjects()
+  if (!saved) {
+    projects.value = previous
+    return false
+  }
   clearSelection()
+  return true
 }
 
 // 删除选中行（多选 + 「删除脚本」确认后）
 const removeSelectedProjects = async () => {
-  if (!isScriptGroup.value) return
+  if (!isScriptGroup.value) return false
   const keep = projects.value.filter(r => !isRowSelected(r))
-  if (keep.length === projects.value.length) return
+  if (keep.length === projects.value.length) return false
+  const previous = projects.value
   projects.value = keep
+  const saved = await persistProjects()
+  if (!saved) {
+    projects.value = previous
+    return false
+  }
   clearSelection()
-  await persistProjects()
+  return true
 }
 
-const projRowKey = (proj: ProjectRow, index: number): string => {
-  const base = proj.folderName
-    ? proj.folderName
-    : String(proj.name || proj.key || '')
-  return `${props.kind}:${base}:${index}`
+// 清空全部脚本项目（破坏性，需二次确认）
+const clearProjects = async () => {
+  if (!isScriptGroup.value || !projects.value.length) return false
+  const previous = projects.value
+  projects.value = []
+  const saved = await persistProjects()
+  if (!saved) {
+    projects.value = previous
+    return false
+  }
+  clearSelection()
+  return true
 }
+
+// draggable 的 item-key 函数只收到行本身（vuedraggable 内部是 getKey(element)，不传 index），
+// 必须按行实例唯一——用加载/新增时注入的 _uid。旧实现按「folderName/名字 + index」拼 key，
+// index 恒为 undefined：同目录下的多个路径项目、重复添加的同一个脚本会撞 key，
+// Vue 只渲染其中一行（表现为「加进配置组了但队列里看不到」）。
+const projRowKey = (proj: ProjectRow): string => `proj:${String(proj._uid ?? '')}`
 
 // 双击项目：并行读取 settings.json UI 定义 + README，打开弹窗（两标签）
 const openProjectSettings = async (proj: ProjectRow, index: number) => {
-  if (!props.editable) return
+  // 录制（KeyMouse）也以「脚本弹窗」展示，与 JS/路径一致；不要求实际有设置内容
+  if (!props.editable && !isKeyMouse.value) return
   const folder = (proj.folderName || props.folderName || '').trim()
   settingsTab.value = 'config'
   settingsModal.projectIndex = index
@@ -504,8 +659,8 @@ const openProjectSettings = async (proj: ProjectRow, index: number) => {
         folder
       ),
     ])
-    settingsModal.items = uiResp.code === 200 ? (uiResp.data || []) : []
-    settingsModal.readme = readmeResp.code === 200 ? (readmeResp.data || '') : ''
+    settingsModal.items = uiResp.code === 200 ? uiResp.data || [] : []
+    settingsModal.readme = readmeResp.code === 200 ? readmeResp.data || '' : ''
     // 把 UI 定义里的 default 预置进本地值，避免保存时因缺项丢失默认设置
     for (const item of settingsModal.items) {
       const name = String(item?.name ?? '').trim()
@@ -539,17 +694,108 @@ const fieldListValue = (name: string): string[] => {
   const v = fieldValue(name)
   if (Array.isArray(v)) return v.map(String)
   if (typeof v === 'string' && v.trim()) {
-    // BetterGI multi-checkbox 可能以分隔符存字符串
-    return v.split(/[;,；、]/).map(s => s.trim()).filter(Boolean)
+    // BetterGI multi-checkbox 可能以分隔符存字符串。
+    // 必须包含全角逗号「，」：实际脚本（如锄地一条龙的 excludeTags）就用它分隔，
+    // 漏掉会导致整串被当成一个选项、已存值无法回显。
+    return v
+      .split(/[,;，；、｜|]/)
+      .map(s => s.trim())
+      .filter(Boolean)
   }
   return []
+}
+
+// 复选框取值容错：脚本实际存储形态不统一（布尔 / "false" / "0" / "否" 皆有），
+// 直接 Boolean(v) 会把字符串 "false"、"否" 误判为已勾选。
+const isTruthy = (v: unknown): boolean => {
+  if (typeof v === 'boolean') return v
+  if (typeof v === 'number') return v !== 0
+  if (typeof v === 'string') {
+    const s = v.trim().toLowerCase()
+    if (!s || s === 'false' || s === '0' || s === '否' || s === 'no' || s === 'off') {
+      return false
+    }
+  }
+  return Boolean(v)
+}
+
+// 控件类型归一：以 BetterGI 官方 settings.json 的 type 枚举为权威来源
+// （官方仅 input-text / select / checkbox，开发文档补充 multi-checkbox / separator，共 5 种），
+// 同时兼容社区常见别名（switch/bool/combo/multi_select/multi-select 等）。
+// BetterGI 自身渲染也是「按 type 分发、未知时按数据形态推断」，与这里一致：
+//   有 options 必为下拉/多选，default 为布尔必为开关，default 为数组必为多选。
+// 结构兜底的目的就是避免「该是下拉/开关/多选」的项退化成纯文本框。
+const CONTROL_TYPE_ALIASES: Record<string, string> = {
+  // 文本类
+  'input-text': 'input-text',
+  text: 'input-text',
+  input: 'input-text',
+  textarea: 'input-text',
+  // 下拉类
+  select: 'select',
+  dropdown: 'select',
+  combo: 'select',
+  combobox: 'select',
+  radio: 'select',
+  // 开关类
+  checkbox: 'checkbox',
+  switch: 'checkbox',
+  bool: 'checkbox',
+  boolean: 'checkbox',
+  toggle: 'checkbox',
+  // 多选类
+  'multi-checkbox': 'multi-checkbox',
+  multicheckbox: 'multi-checkbox',
+  multi_select: 'multi-checkbox',
+  'multi-select': 'multi-checkbox',
+  multiselect: 'multi-checkbox',
+  multiSelect: 'multi-checkbox',
+  // 分隔类
+  separator: 'separator',
+  section: 'separator',
+  divider: 'separator',
+}
+
+const controlTypeOf = (item: Record<string, any>): string => {
+  const raw = String(item?.type ?? '')
+    .trim()
+    .toLowerCase()
+  if (raw && CONTROL_TYPE_ALIASES[raw]) return CONTROL_TYPE_ALIASES[raw]
+  // 无 type 或 type 未知时，按 BetterGI 思路从数据形态推断：
+  const hasOptions = Array.isArray(item?.options) && item.options.length > 0
+  const isArrayDefault = Array.isArray(item?.default)
+  if (hasOptions && isArrayDefault) return 'multi-checkbox'
+  if (hasOptions) return 'select'
+  if (isArrayDefault) return 'multi-checkbox'
+  if (typeof item?.default === 'boolean') return 'checkbox'
+  return 'input-text'
+}
+
+// 候选项归一：兼容字符串数组与对象数组（{label,value}/{name,value} 等）
+const optionList = (item: Record<string, any>): Array<{ label: string; value: string }> => {
+  const raw = item?.options
+  if (!Array.isArray(raw)) return []
+  return raw
+    .map((o: unknown) => {
+      if (typeof o === 'string') return { label: o, value: o }
+      if (o && typeof o === 'object') {
+        const r = o as Record<string, unknown>
+        const label = String(r.label ?? r.name ?? r.text ?? r.value ?? '')
+        const value = String(r.value ?? r.key ?? r.name ?? label)
+        return { label, value }
+      }
+      return { label: String(o ?? ''), value: String(o ?? '') }
+    })
+    .filter(o => o.value !== '')
 }
 
 const setField = (name: string, value: unknown) => {
   settingsModal.values[name] = value
 }
 
-// 保存弹窗修改：js/pathing 无 json 载体时给出提示（保存按钮对非 scriptgroup 已禁用）
+// 保存弹窗修改：四类可编辑配置组（配置组/录制/脚本/路径）的项目都落 per-user 配置组副本，
+// 保存后由运行时物化给 BGI；路径类引用（名字含分隔符）由路径文件驱动、后端跳过落盘，
+// 保存按钮对四类一律开放（此前只对 scriptgroup 开放，双击脚本后保存被禁用）
 const saveProjectSettings = async () => {
   if (!isScriptGroup.value) {
     message.info(t('edit.bettergiProjectIndependentSaveLater'))
@@ -560,13 +806,22 @@ const saveProjectSettings = async () => {
     settingsModal.open = false
     return
   }
+  if (configLocked.value) {
+    message.error(t('edit.configLocked'))
+    return
+  }
+  const previous = projects.value
   settingsModal.saving = true
   try {
     const list = projects.value.map((p, i) => (i === idx ? { ...p } : p))
     const target = list[idx]
     target.jsScriptSettingsObject = { ...settingsModal.values }
     projects.value = list
-    await persistProjects()
+    const saved = await persistProjects()
+    if (!saved) {
+      projects.value = previous
+      return
+    }
     settingsModal.open = false
   } finally {
     settingsModal.saving = false
@@ -583,7 +838,7 @@ watch(
   },
   { immediate: true }
 )
-defineExpose({ reload, addProjects, removeSelectedProjects })
+defineExpose({ reload, addProjects, removeSelectedProjects, clearProjects })
 </script>
 
 <style scoped>

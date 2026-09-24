@@ -65,6 +65,35 @@ class CredentialStatus:
 
 
 @dataclass(frozen=True)
+class CommunitySignDetail:
+    """保留合并前的任务结果，不包含账号或运行期凭据。"""
+
+    kind: Literal["game", "community"]
+    status: str
+    reward: str = ""
+    reason: str = ""
+
+    @classmethod
+    def from_result(
+        cls, *, kind: Literal["game", "community"], result: Mapping[str, object]
+    ) -> "CommunitySignDetail":
+        return cls(
+            kind=kind,
+            status=str(result.get("status") or "失败"),
+            reward=str(result.get("reward") or ""),
+            reason=str(result.get("reason") or ""),
+        )
+
+    def to_legacy(self) -> dict[str, str]:
+        return {
+            "kind": self.kind,
+            "status": self.status,
+            "reward": self.reward,
+            "reason": self.reason,
+        }
+
+
+@dataclass(frozen=True)
 class CommunitySignResult:
     """签到结果的领域表示，同时兼容旧版字典字段。"""
 
@@ -77,6 +106,7 @@ class CommunitySignResult:
     reason: str = ""
     completed: bool = False
     notification_only: bool = False
+    details: tuple[CommunitySignDetail, ...] = ()
 
     @classmethod
     def from_legacy(
@@ -91,6 +121,20 @@ class CommunitySignResult:
         account = str(item.get("account") or fallback_account)
         if account == "未知用户":
             account = fallback_account
+        details = []
+        raw_details = item.get("details")
+        if isinstance(raw_details, list):
+            for detail in raw_details:
+                if isinstance(detail, dict) and detail.get("kind") in (
+                    "game",
+                    "community",
+                ):
+                    details.append(
+                        CommunitySignDetail.from_result(
+                            kind="game" if detail["kind"] == "game" else "community",
+                            result=detail,
+                        )
+                    )
         return cls(
             account=account,
             account_uid=str(item.get("account_uid") or fallback_uid),
@@ -101,6 +145,7 @@ class CommunitySignResult:
             reason=str(item.get("reason") or ""),
             completed=bool(item.get("_completed")),
             notification_only=bool(item.get("_notification_only")),
+            details=tuple(details),
         )
 
     def to_legacy(self) -> dict[str, object]:
@@ -119,6 +164,8 @@ class CommunitySignResult:
             result["_completed"] = True
         if self.notification_only:
             result["_notification_only"] = True
+        if self.details:
+            result["details"] = [detail.to_legacy() for detail in self.details]
         return result
 
 

@@ -23,6 +23,7 @@
 import asyncio
 import json
 import re
+import shutil
 import time
 import uuid
 from datetime import datetime
@@ -36,10 +37,16 @@ from app.models.emulator import DeviceBase, DeviceInfo
 from app.models.schema import WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem, TaskExecuteBase
 from app.services import Notify, System
+from app.task.emulator_core import close_emulator
 from app.task.general.tools import execute_script_task
+from app.task.proxy_helpers import (
+    CONFIG_SOURCE_SCRIPT,
+    resolve_config_source,
+    user_uses_quick_config,
+)
 from app.utils import LogMonitor, ProcessManager, get_logger
 from app.utils.constants import UTC4
-from app.utils.io import read_file, write_file
+from app.utils.io import mark_native_config_injected, read_file, write_file
 
 from .task_loader import M9ATaskLoader
 from .tools import push_notification
@@ -85,6 +92,11 @@ class AutoProxyTask(TaskExecuteBase):
         self.cur_user_item = self.script_info.user_list[self.script_info.current_index]
         self.cur_user_uid = uuid.UUID(self.cur_user_item.user_id)
         self.cur_user_config = self.user_config[self.cur_user_uid]
+        # 配置来源三态与独立的快速配置开关（两段式：来源决定是否下发 MAS
+        # 托管配置，快速配置决定是否把面板值写进 M9A 原生配置）。
+        self.config_mode, self.direct_control = resolve_config_source(
+            self.cur_user_config, CONFIG_SOURCE_SCRIPT
+        )
         self.check_result = "-"
 
         # 初始化路径
@@ -93,8 +105,6 @@ class AutoProxyTask(TaskExecuteBase):
         self.m9a_logs_dir = self.m9a_root_path / "logs"
         self.m9a_exe_path = self.m9a_root_path / "M9A.exe"
         self.m9a_tasks_path = self.m9a_config_path / "instances/default.json"
-
-        self.template_path = self.m9a_root_path / "config/instances/default.json"
 
         self.is_first_user_for_version_check = False
         self.is_virtual_update_user = False
@@ -148,8 +158,6 @@ class AutoProxyTask(TaskExecuteBase):
 
     async def main_task(self):
         """自动代理模式主逻辑"""
-        self.task_dict = {}
-
         # 初始化每日代理状态
         if not self.is_virtual_update_user:
             self.curdate = datetime.now(tz=UTC4).strftime("%Y-%m-%d")
@@ -197,6 +205,11 @@ class AutoProxyTask(TaskExecuteBase):
                 queue = []
                 resource = "官服"
                 account = ""
+            elif not user_uses_quick_config(self.cur_user_config):
+                # 原生队列不经过面板解析、过滤或完成记录裁剪。
+                queue = []
+                resource = self.cur_user_config.get("Info", "Resource") or "官服"
+                account = self.cur_user_config.get("Info", "Account") or ""
             else:
                 queue, queue_error = self._load_user_queue()
                 resource = self.cur_user_config.get("Info", "Resource") or "官服"
@@ -257,12 +270,7 @@ class AutoProxyTask(TaskExecuteBase):
                 ]
                 self.cur_user_log.status = "模拟器启动失败"
 
-                try:
-                    await self.emulator_manager.close(
-                        self.script_config.get("Emulator", "Index")
-                    )
-                except Exception as e:
-                    logger.opt(exception=True).warning(f"关闭模拟器失败: {e}")
+                await close_emulator(self)
 
                 await Notify.push_plyer(
                     "用户自动代理出现异常！",
@@ -282,13 +290,15 @@ class AutoProxyTask(TaskExecuteBase):
 
             logger.info(f"用户 {self.cur_user_uid} 将执行 {len(queue)} 个任务: {queue}")
 
-            # 写入 M9A 配置
             await self.write_m9a_config(queue, emulator_info, resource, account)
 
             # 启动 M9A
             logger.info(f"启动 M9A 进程：{self.m9a_exe_path}")
             self.wait_event.clear()
-            await self.m9a_process_manager.open_process(self.m9a_exe_path)
+            args = (
+                [] if self.is_virtual_update_user else ["--autostart", "-i", "default"]
+            )
+            await self.m9a_process_manager.open_process(self.m9a_exe_path, *args)
             self.m9a_started = True
             # 等待 M9A 处理日志文件与初始化
             logger.info("等待 M9A 初始化...")
@@ -307,7 +317,9 @@ class AutoProxyTask(TaskExecuteBase):
             await self.m9a_log_monitor.stop()
             await self._stop_failure_quiet_waiter()
 
-            if not self.is_virtual_update_user:
+            if not self.is_virtual_update_user and user_uses_quick_config(
+                self.cur_user_config
+            ):
                 completed_entries = self._collect_completed_task_entries()
                 self.completed_task_entries.update(completed_entries)
                 await self._update_completed_task_state(completed_entries)
@@ -332,13 +344,8 @@ class AutoProxyTask(TaskExecuteBase):
                 await self.m9a_process_manager.kill()
                 self.m9a_started = False
                 if not self.is_virtual_update_user:
-                    try:
-                        await self.emulator_manager.close(
-                            self.script_config.get("Emulator", "Index")
-                        )
-                        self.emulator_opened = False
-                    except Exception as e:
-                        logger.opt(exception=True).warning(f"关闭模拟器失败: {e}")
+                    await close_emulator(self)
+                    self.emulator_opened = False
                 await System.kill_process(self.m9a_exe_path)
                 self.m9a_started = False
 
@@ -488,8 +495,48 @@ class AutoProxyTask(TaskExecuteBase):
             await System.kill_process(self.m9a_exe_path)
 
         try:
+            # 队列模板来自所选来源，不能读到上一用户刚注入的任务。
+            if not self.is_virtual_update_user:
+                native = (
+                    Path.cwd()
+                    / f"data/{self.script_info.script_id}/Temp/instances/default.json"
+                )
+                source = native
+                if not self.direct_control:
+                    owner = (
+                        "Default"
+                        if self.config_mode == CONFIG_SOURCE_SCRIPT
+                        else str(self.cur_user_uid)
+                    )
+                    saved = (
+                        Path.cwd()
+                        / f"data/{self.script_info.script_id}/{owner}/ConfigFile/default.json"
+                    )
+                    if not saved.is_file() and source.is_file():
+                        saved.parent.mkdir(parents=True, exist_ok=True)
+                        shutil.copyfile(source, saved)
+                    source = saved
+                if (
+                    source.is_file()
+                    and source.resolve() != self.m9a_tasks_path.resolve()
+                ):
+                    self.m9a_tasks_path.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copyfile(source, self.m9a_tasks_path)
+                elif not source.is_file() and user_uses_quick_config(
+                    self.cur_user_config
+                ):
+                    # 无来源模板时沿用最小配置策略，不能读上一用户的运行期文件。
+                    self.m9a_tasks_path.unlink(missing_ok=True)
             if self.is_virtual_update_user:
                 config = await self._build_virtual_config()
+            elif not user_uses_quick_config(self.cur_user_config):
+                if not source.is_file():
+                    raise FileNotFoundError("请先在 M9A 中保存默认实例的任务配置")
+                config = read_file(source)
+                if emulator_info and emulator_info.adb_address != "Unknown":
+                    config["Connect.Address"] = emulator_info.adb_address
+                config["BeforeTask"] = "StartupSoftwareAndScript"
+                config["AfterTask"] = "CloseEmulatorAndMFA"
             else:
                 emulator_id = self.script_config.get("Emulator", "Id")
                 emulator_index = self.script_config.get("Emulator", "Index")
@@ -513,43 +560,12 @@ class AutoProxyTask(TaskExecuteBase):
         write_file(self.m9a_tasks_path, config)
         logger.info(f"已写入 M9A 配置：{self.m9a_tasks_path}")
 
-        # Debug 备份：保存到 data/script_id 目录，按 testN.json 递增，保留最近 5 个
-        debug_dir = Path("data") / self.script_info.script_id
-        debug_dir.mkdir(parents=True, exist_ok=True)
-
-        # 查找现有 test*.json 文件，获取下一个编号
-        existing_tests = list(debug_dir.glob("test*.json"))
-        test_numbers = []
-        for test_file in existing_tests:
-            match = re.search(r"test(\d+)\.json", test_file.name)
-            if match:
-                test_numbers.append(int(match.group(1)))
-
-        next_num = max(test_numbers) + 1 if test_numbers else 1
-        backup_path = debug_dir / f"test{next_num}.json"
-
-        # 保存备份
-        write_file(backup_path, config)
-        logger.info(f"Debug 备份已保存：{backup_path}")
-
-        # 清理旧备份，只保留最近 5 个
-        existing_tests = list(debug_dir.glob("test*.json"))
-        test_files_with_num = []
-        for test_file in existing_tests:
-            match = re.search(r"test(\d+)\.json", test_file.name)
-            if match:
-                test_files_with_num.append((int(match.group(1)), test_file))
-
-        # 按编号排序，删除最旧的
-        test_files_with_num.sort(key=lambda x: x[0])
-        if len(test_files_with_num) > 5:
-            files_to_delete = test_files_with_num[:-5]
-            for num, file_path in files_to_delete:
-                try:
-                    file_path.unlink()
-                    logger.debug(f"已删除旧备份文件：{file_path}")
-                except Exception as e:
-                    logger.warning(f"删除旧备份文件失败 {file_path}: {e}")
+        # 快照记录注入后指纹, 供崩溃恢复区分 MAS 污染与用户手动改动
+        mark_native_config_injected(
+            Path.cwd() / f"data/{self.script_info.script_id}/Temp",
+            self.m9a_config_path,
+            script_id=self.script_info.script_id,
+        )
 
     @staticmethod
     def _extract_failed_task_names(log: str) -> set[str]:
@@ -618,13 +634,16 @@ class AutoProxyTask(TaskExecuteBase):
                     self.script_info._m9a_has_new_version = True
                     logger.info("在首个用户日志中检测到 M9A 新版本提示！")
 
-            version_match = re.search(r"当前资源版本：v([\d.]+)", log)
+            # 壳把含中文消息的半角「: 」规范化为全角「：」后才落盘
+            # （MFAAvalonia LoggerHelper.NormalizeMessage），旧正则能命中但
+            # 只捕获数字，预发布通道的 -beta.N/-alpha.N 后缀会被截断。
+            version_match = re.search(r"当前资源版本[:：]\s*v(\S+)", log)
             if version_match and not getattr(
                 self.script_info, "_m9a_current_version", None
             ):
                 self.script_info._m9a_current_version = version_match.group(1)
 
-            version_match = re.search(r"最新资源版本：v([\d.]+)", log)
+            version_match = re.search(r"最新资源版本[:：]\s*v(\S+)", log)
             if version_match:
                 self.script_info._m9a_latest_version = version_match.group(1)
 
@@ -647,10 +666,7 @@ class AutoProxyTask(TaskExecuteBase):
         elif "已放弃本次任务" in log:
             self.cur_user_log.status = "M9A 已放弃本次任务"
         elif not await self.m9a_process_manager.is_running():
-            if "任务已全部完成！" not in log and "All tasks completed" not in log:
-                self.cur_user_log.status = "M9A 进程已异常结束"
-            else:
-                self.cur_user_log.status = "M9A 进程已结束"
+            self.cur_user_log.status = "M9A 进程已异常结束"
         elif self.is_log_stalled(
             latest_time, minutes=self.script_config.get("Run", "RunTimeLimit")
         ):
@@ -800,12 +816,7 @@ class AutoProxyTask(TaskExecuteBase):
         if self.emulator_opened:
             # 关闭模拟器
             logger.info("用户任务结束，关闭模拟器")
-            try:
-                await self.emulator_manager.close(
-                    self.script_config.get("Emulator", "Index")
-                )
-            except Exception as e:
-                logger.warning(f"关闭模拟器失败: {e}")
+            await close_emulator(self)
 
         # 保存历史记录并合并统计信息
         user_logs_list = []
@@ -926,13 +937,13 @@ class AutoProxyTask(TaskExecuteBase):
     ) -> dict:
         config = None
 
-        if self.template_path.exists():
+        if self.m9a_tasks_path.exists():
             try:
-                config = read_file(self.template_path)
+                config = read_file(self.m9a_tasks_path)
                 config["Resource"] = resource
-                logger.info(f"使用配置模板：{self.template_path}")
+                logger.info(f"使用配置模板：{self.m9a_tasks_path}")
             except Exception as e:
-                logger.warning(f"读取模板 {self.template_path} 失败：{e}")
+                logger.warning(f"读取模板 {self.m9a_tasks_path} 失败：{e}")
 
         if config is None:
             logger.warning("无法读取配置模板，使用最小默认配置")
@@ -1060,9 +1071,9 @@ class AutoProxyTask(TaskExecuteBase):
     async def _build_virtual_config(self) -> dict:
 
         config = {}
-        if self.template_path.exists():
+        if self.m9a_tasks_path.exists():
             try:
-                config = read_file(self.template_path)
+                config = read_file(self.m9a_tasks_path)
             except Exception:
                 pass
 
@@ -1313,7 +1324,6 @@ class AutoProxyTask(TaskExecuteBase):
 
             if emulator_type == "ldplayer":
                 return await self._build_ldplayer_config(
-                    emulator_info,
                     emulator_path,
                     emulator_index,
                     native_index,
@@ -1332,7 +1342,6 @@ class AutoProxyTask(TaskExecuteBase):
 
     async def _build_ldplayer_config(
         self,
-        emulator_info: DeviceInfo,
         emulator_path: Path,
         emulator_index: str,
         native_index: str,

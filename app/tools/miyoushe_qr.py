@@ -86,7 +86,6 @@ PASSPORT_LTOKEN_URL = (
     "https://passport-api.mihoyo.com/account/auth/api/getLTokenBySToken"
 )
 # ---- GameToken QR 登录 API（参考项目已确认的请求/响应形状） ----
-GAME_TOKEN_CREATE_URL = "https://hk4e-sdk.mihoyo.com/hk4e_cn/combo/panda/qrcode/fetch"
 GAME_TOKEN_CHECK_URL = "https://hk4e-sdk.mihoyo.com/hk4e_cn/combo/panda/qrcode/query"
 GAME_TOKEN_STOKEN_URL = (
     "https://api-takumi.mihoyo.com/account/ma-cn-session/app/getTokenByGameToken"
@@ -235,9 +234,7 @@ async def _supplement_stoken(
             )
         payload = resp.json()
     except (httpx.HTTPError, OSError, ValueError) as e:
-        logger.warning(
-            format_exception_reason(e, stage="补全 stoken 请求失败")
-        )
+        logger.warning(format_exception_reason(e, stage="补全 stoken 请求失败"))
         return
 
     if not isinstance(payload, dict) or payload.get("retcode") != 0:
@@ -313,9 +310,7 @@ def _has_complete_qr_credential(cookie_parts: dict[str, str]) -> bool:
 def _serialize_cookie_parts(cookie_parts: dict[str, str]) -> str:
     """完整序列化 Cookie 字段，不裁剪字段和值。"""
 
-    return "; ".join(
-        f"{key}={value}" for key, value in cookie_parts.items() if value
-    )
+    return "; ".join(f"{key}={value}" for key, value in cookie_parts.items() if value)
 
 
 def _qr_headers(device: str) -> dict:
@@ -503,53 +498,6 @@ def _passport_app_cookie_parts(payload: object) -> dict[str, str]:
     }
 
 
-def _game_token_qr_data(payload: object) -> tuple[str, str] | None:
-    """从 GameToken 二维码响应中提取二维码 URL 和 ticket。"""
-
-    if not isinstance(payload, dict):
-        return None
-    qr_url = str(payload.get("url") or "").strip()
-    if not qr_url:
-        return None
-    parsed = urlparse(qr_url)
-    path = parsed.path.lower()
-    host = parsed.netloc.lower()
-    known_sdk_qr = host == "hk4e-sdk.mihoyo.com" and (
-        "/qrcode/" in path or path.endswith("/qrcode.html")
-    )
-    known_account_qr = host == "user.mihoyo.com" and path == "/qr_code_in_game.html"
-    if parsed.scheme.lower() != "https" or not (known_sdk_qr or known_account_qr):
-        return None
-
-    ticket = str(payload.get("ticket") or "").strip()
-    if not ticket:
-        ticket_values = parse_qs(parsed.query).get("ticket", [])
-        ticket = str(ticket_values[0] if ticket_values else "").strip()
-    if not ticket:
-        return None
-    return qr_url, ticket
-
-
-async def _create_game_token_qr(
-    device: str, proxy: str | None = None
-) -> tuple[str, str] | None:
-    """尝试创建参考项目使用的 GameToken 二维码。"""
-
-    async with httpx.AsyncClient(
-        proxy=proxy or Config.proxy,
-        trust_env=False,
-    ) as client:
-        response = await client.post(
-            GAME_TOKEN_CREATE_URL,
-            json={"app_id": GAME_TOKEN_APP_ID, "device": device},
-            timeout=15.0,
-        )
-        payload = response.json()
-    if not isinstance(payload, dict) or payload.get("retcode") != 0:
-        return None
-    return _game_token_qr_data(payload.get("data"))
-
-
 async def _create_passport_app_qr(
     device: str, proxy: str | None = None
 ) -> tuple[str, str] | None:
@@ -587,23 +535,17 @@ async def create_qr_login(proxy: str | None = None) -> dict:
     try:
         passport_app_qr = await _create_passport_app_qr(device, proxy)
     except (httpx.HTTPError, OSError, ValueError) as error:
-        logger.debug(
-            f"Passport App QR 不可用，回退 Web: {type(error).__name__}"
-        )
+        logger.debug(f"Passport App QR 不可用，回退 Web: {type(error).__name__}")
         passport_app_qr = None
     except Exception as error:
-        logger.debug(
-            f"Passport App QR 回退 Web: {type(error).__name__}"
-        )
+        logger.debug(f"Passport App QR 回退 Web: {type(error).__name__}")
         passport_app_qr = None
 
     if passport_app_qr is not None:
         qr_url, passport_app_ticket = passport_app_qr
         logger.info("Passport App QR 创建成功")
         return {
-            "ticket": (
-                f"{_PASSPORT_APP_TICKET_PREFIX}{passport_app_ticket}"
-            ),
+            "ticket": (f"{_PASSPORT_APP_TICKET_PREFIX}{passport_app_ticket}"),
             "qr_url": qr_url,
             "device": device,
         }
@@ -723,9 +665,7 @@ async def _check_passport_app_qr_status(
     if status in ("Expired", "Canceled"):
         return {
             "status": status,
-            "message": (
-                QR_EXPIRED_MESSAGE if status == "Expired" else "登录已取消"
-            ),
+            "message": (QR_EXPIRED_MESSAGE if status == "Expired" else "登录已取消"),
         }
     if status != "Confirmed":
         return {"status": "Error", "error": "收到未知扫码状态"}
@@ -815,11 +755,7 @@ async def _check_game_token_qr_status(
     if status in ("Expired", "Canceled"):
         return {
             "status": status,
-            "message": (
-                QR_EXPIRED_MESSAGE
-                if status == "Expired"
-                else "登录已取消"
-            ),
+            "message": (QR_EXPIRED_MESSAGE if status == "Expired" else "登录已取消"),
         }
 
     payload = qr_data.get("payload")
@@ -1187,26 +1123,17 @@ async def exchange_stoken(
             except ValueError as error:
                 raise ValueError("GameToken 换取 stoken 接口返回无效 JSON") from error
 
-            if (
-                not isinstance(data, dict)
-                or data.get("retcode") not in (0, "0")
-            ):
+            if not isinstance(data, dict) or data.get("retcode") not in (0, "0"):
                 raise ValueError("GameToken 换取 stoken 失败")
             token_data = data.get("data")
             token_info = (
-                token_data.get("token")
-                if isinstance(token_data, dict)
-                else None
+                token_data.get("token") if isinstance(token_data, dict) else None
             )
             user_info = (
-                token_data.get("user_info")
-                if isinstance(token_data, dict)
-                else None
+                token_data.get("user_info") if isinstance(token_data, dict) else None
             )
             stoken_v2 = (
-                token_info.get("token")
-                if isinstance(token_info, dict)
-                else None
+                token_info.get("token") if isinstance(token_info, dict) else None
             )
             mid = user_info.get("mid") if isinstance(user_info, dict) else None
             if not isinstance(stoken_v2, str) or not stoken_v2.strip():
@@ -1245,18 +1172,16 @@ async def exchange_stoken(
             except (httpx.HTTPError, OSError, ValueError):
                 logger.debug("GameToken 获取 cookie_token 跳过")
             else:
-                cookie_payload = cookie_data.get("data") if isinstance(
-                    cookie_data, dict
-                ) else None
+                cookie_payload = (
+                    cookie_data.get("data") if isinstance(cookie_data, dict) else None
+                )
                 cookie_info = (
                     cookie_payload.get("token")
                     if isinstance(cookie_payload, dict)
                     else None
                 )
                 cookie_token = (
-                    cookie_info.get("token")
-                    if isinstance(cookie_info, dict)
-                    else None
+                    cookie_info.get("token") if isinstance(cookie_info, dict) else None
                 )
                 if (
                     isinstance(cookie_data, dict)
@@ -1269,9 +1194,7 @@ async def exchange_stoken(
                     if cookie_token.startswith("v2_"):
                         cookie_parts["cookie_token_v2"] = cookie_token
 
-            return {
-                "cookies_str": _serialize_cookie_parts(cookie_parts)
-            }
+            return {"cookies_str": _serialize_cookie_parts(cookie_parts)}
     finally:
         request_body["game_token"] = ""
         token_value = ""

@@ -5,7 +5,7 @@ import { getAppRoot } from '../services/environmentService'
 import { getLogger } from '../services/logger'
 const logger = getLogger('进程管理')
 
-export interface ProcessInfo {
+interface ProcessInfo {
   pid: number
   name: string
   commandLine: string
@@ -95,7 +95,7 @@ export async function getRelatedProcesses(appRoot: string = getAppRoot()): Promi
 /**
  * 强制结束指定的进程
  */
-export async function killProcess(pid: number): Promise<boolean> {
+async function killProcess(pid: number): Promise<boolean> {
   return new Promise(resolve => {
     if (process.platform !== 'win32') {
       resolve(false)
@@ -155,7 +155,7 @@ export async function killAllRelatedProcesses(appRoot: string = getAppRoot()): P
 /**
  * 等待进程结束
  */
-export async function waitForProcessExit(pid: number, timeoutMs: number = 5000): Promise<boolean> {
+async function waitForProcessExit(pid: number, timeoutMs: number = 5000): Promise<boolean> {
   return new Promise(resolve => {
     const startTime = Date.now()
 

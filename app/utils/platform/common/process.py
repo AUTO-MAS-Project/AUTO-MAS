@@ -53,18 +53,23 @@ class ProcessInfo:
 
 
 def match_process(proc: psutil.Process, target: ProcessInfo) -> bool:
-    """检查进程是否与目标进程信息匹配"""
+    """检查进程是否与目标进程信息匹配
 
-    try:
-        if target.pid is not None and proc.pid != target.pid:
-            return False
-        if target.name is not None and proc.name() != target.name:
-            return False
-        if target.exe is not None and Path(proc.exe()) != Path(target.exe):
-            return False
-        if target.cmdline is not None and proc.cmdline() != target.cmdline:
-            return False
-    except (psutil.NoSuchProcess, psutil.AccessDenied):
+    ``proc`` 须来自预取了 name/exe/cmdline 的 ``psutil.process_iter``, 直接用
+    ``proc.info`` 里的字段比对, 不再逐个进程重新查询; 无权限读到的字段为 None,
+    按不匹配处理。
+    """
+
+    info = proc.info
+    if target.pid is not None and proc.pid != target.pid:
+        return False
+    if target.name is not None and info["name"] != target.name:
+        return False
+    if target.exe is not None and (
+        not info["exe"] or Path(info["exe"]) != Path(target.exe)
+    ):
+        return False
+    if target.cmdline is not None and info["cmdline"] != target.cmdline:
         return False
 
     return True
@@ -344,22 +349,27 @@ class ProcessManager:
                 启动前的残留实例并跳过，避免错误跟踪旧进程（留 2 秒容差吸收时间戳偏差）
         """
 
-        deadline = time.monotonic() + timeout_seconds
-        while time.monotonic() < deadline:
+        def _scan() -> psutil.Process | None:
             for proc in psutil.process_iter(
                 ["pid", "name", "exe", "cmdline", "create_time"]
             ):
-                try:
-                    if match_process(proc, target_process):
-                        if (
-                            min_create_time is not None
-                            and proc.create_time() < min_create_time - 2
-                        ):
-                            continue
-                        self.target_process = proc
-                        return
-                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                if not match_process(proc, target_process):
                     continue
+                create_time = proc.info["create_time"]
+                if min_create_time is not None and (
+                    create_time is None or create_time < min_create_time - 2
+                ):
+                    continue
+                return proc
+            return None
+
+        # 全量进程扫描放到线程里, 避免阻塞事件循环
+        deadline = time.monotonic() + timeout_seconds
+        while time.monotonic() < deadline:
+            proc = await asyncio.to_thread(_scan)
+            if proc is not None:
+                self.target_process = proc
+                return
             await asyncio.sleep(0.1)
         else:
             raise RuntimeError("未能在限定时间内找到目标进程")

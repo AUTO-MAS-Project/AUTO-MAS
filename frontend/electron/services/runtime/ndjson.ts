@@ -45,6 +45,11 @@ function asOptionalNumber(value: unknown): number | undefined {
   return typeof value === 'number' && Number.isFinite(value) ? value : undefined
 }
 
+/** 可选字符串字段：缺失、非字符串或空串都视为「无信息」。 */
+function asOptionalString(value: unknown): string | undefined {
+  return typeof value === 'string' && value.length > 0 ? value : undefined
+}
+
 function asBoolean(value: unknown): boolean {
   return value === true
 }
@@ -127,6 +132,9 @@ export function parseRuntimeEventLine(line: string): RuntimeEvent | undefined {
         current: asOptionalNumber(raw.current),
         total: asOptionalNumber(raw.total),
         percent: asOptionalNumber(raw.percent),
+        item: asOptionalString(raw.item),
+        source: asOptionalString(raw.source),
+        bytesPerSecond: asOptionalNumber(raw.bytesPerSecond),
       } satisfies RuntimeProgressEvent
 
     case 'state':

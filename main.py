@@ -56,7 +56,9 @@ if _leaked_venv is not None:
     # PATH 裸调 python/pip 的子进程都会命中 MAS 的 runtime venv；按该值精确
     # 摘除对应段，PATH 其余内容不动
     _venv_scripts = os.path.normcase(
-        os.path.join(_leaked_venv, "Scripts" if os.name == "nt" else "bin").rstrip("\\/")
+        os.path.join(_leaked_venv, "Scripts" if os.name == "nt" else "bin").rstrip(
+            "\\/"
+        )
     )
     _path_entries = os.environ.get("PATH", "").split(os.pathsep)
     _kept_entries = [
@@ -83,6 +85,9 @@ class InterceptHandler(logging.Handler):
             level = logger.level(record.levelname).name
         except ValueError:
             level = record.levelno
+        # 访问日志降到 DEBUG: 不进 app.log (INFO), 开发时 stderr (DEBUG) 仍可见
+        if record.name == "uvicorn.access":
+            level = "DEBUG"
         # 过滤敏感信息并转发日志
         sanitized_message = sanitize_log_message(record.getMessage())
         logger.opt(depth=6, exception=record.exc_info).log(level, sanitized_message)
@@ -314,7 +319,9 @@ def main():
                             )
                         elif isinstance(value, list):
                             schema_part[key] = [
-                                resolve_with_depth_limit(item, reference_schema, _depth + 1)
+                                resolve_with_depth_limit(
+                                    item, reference_schema, _depth + 1
+                                )
                                 if isinstance(item, dict)
                                 else item
                                 for item in value
@@ -347,6 +354,16 @@ def main():
                         exclude_tags=["Delete"],
                     )
                     mcp.mount_http()
+                    # 通知渠道描述只服务设置页渲染，不作为 MCP 工具暴露。
+                    # fastapi-mcp==0.4.0 的 exclude_operations 与 exclude_tags 取并集，
+                    # 两者同时传会让两个排除都失效（Delete 路由也会漏出去），只能在
+                    # 挂载后从工具清单里剪掉；handle_list_tools / handle_call_tool
+                    # 实时读这两个属性，剪除即生效。
+                    notify_channels_op = (
+                        "get_notify_channels_api_setting_notify_channels_get"
+                    )
+                    mcp.tools = [t for t in mcp.tools if t.name != notify_channels_op]
+                    mcp.operation_map.pop(notify_channels_op, None)
                     logger.info("MCP 服务已挂载")
                 else:
                     logger.info("MCP 服务未启用，跳过路由挂载")
@@ -372,7 +389,7 @@ def main():
                 await DesktopGuard.start()
                 await MainTimer.start()
 
-                # Claw 通知管理器只维护扫码会话和凭据，消息请求按需发起。
+                # 微信按需发送；QQ 同时维持官方网关连接以完成扫码绑定。
                 from app.services.openclaw_qq import openclaw_qq_manager
                 from app.services.openclaw_weixin import openclaw_weixin_manager
 

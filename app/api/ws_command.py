@@ -132,8 +132,8 @@ async def execute_ws_command(
         }
 
     except Exception as e:
-        logger.error(
-            f"执行命令 {endpoint} 失败: {type(e).__name__}: {str(e)}", exc_info=True
+        logger.opt(exception=True).error(
+            f"执行命令 {endpoint} 失败: {type(e).__name__}: {str(e)}"
         )
         return {
             "success": False,

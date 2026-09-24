@@ -935,28 +935,6 @@ async def _fetch_miyoushe_sign_info(
     return sign_info
 
 
-async def _check_sign_info(
-    cookie: str,
-    game_cfg: dict[str, object],
-    region: str,
-    uid: str,
-    *,
-    proxy: str | None = None,
-    device_id: str = "",
-) -> bool:
-    """检查今日是否已签到（保留给旧调用方使用）。"""
-
-    sign_info = await _fetch_miyoushe_sign_info(
-        cookie,
-        game_cfg,
-        region,
-        uid,
-        proxy=proxy,
-        device_id=device_id,
-    )
-    return bool(sign_info and sign_info.get("is_sign"))
-
-
 async def _fetch_miyoushe_sign_reward(
     cookie: str,
     game_cfg: dict[str, object],

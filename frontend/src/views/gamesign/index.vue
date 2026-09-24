@@ -1,11 +1,10 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
-import { useEventListener } from '@vueuse/core'
 import { useRoute, useRouter } from 'vue-router'
 import type { ToolsConfig, ToolsConfig_GameSign } from '@/api'
-import { Service } from '@/api'
 import { useToolsApi } from '@/composables/useToolsApi'
+import { useToolsStatusPolling } from '@/composables/useToolsStatusPolling'
 import { useWebSocket } from '@/composables/useWebSocket'
 import {
   WS_GAMESIGN_RESULT_UPDATED,
@@ -56,11 +55,7 @@ const editingConfig = reactive<ToolsConfig>({
 
 const toolsLoaded = ref(false)
 
-// 轮询定时器
-let pollTimer: ReturnType<typeof setInterval> | null = null
 let gameSignSubscriptionId: string | null = null
-let statusRequest: Promise<void> | null = null
-let statusPollFailed = false
 
 // 卸载守卫：组件卸载后阻止异步回调写入响应式状态
 let isMounted = true
@@ -74,8 +69,7 @@ const activeTab = computed<CommunityTab>(() =>
 )
 
 const handleTabChange = (key: string | number) => {
-  const tab: CommunityTab =
-    key === 'activity' && activityEnabled.value ? 'activity' : 'sign'
+  const tab: CommunityTab = key === 'activity' && activityEnabled.value ? 'activity' : 'sign'
   void router.replace({
     path: '/gamesign',
     query: tab === 'activity' ? { tab: 'activity' } : {},
@@ -92,59 +86,22 @@ const syncGameSignResult = (result: unknown) => {
   }
 }
 
-// 仅更新状态（不影响编辑状态，不触发 loading）
-const updateStatus = () => {
-  if (statusRequest) return statusRequest
-
-  const request = (async () => {
-    try {
-      const response = await Service.getToolsApiToolsGetPost()
-      if (!isMounted) return
-      if (response.code !== 200 || !response.data) {
-        throw new Error(response.message || t('gamesign.statusInvalid'))
-      }
-      statusPollFailed = false
-      const data = response.data
-      if (data.GameSign?.Status) {
-        toolsConfig.GameSign!.Status = data.GameSign.Status
-      }
-      syncGameSignResult(data.GameSign?.Result)
-    } catch (error) {
-      if (!statusPollFailed) {
-        const errorMsg = error instanceof Error ? error.message : String(error)
-        logger.warn(`更新签到状态失败，将继续重试: ${errorMsg}`)
-        statusPollFailed = true
-      }
+// 状态轮询：签到页签激活时才拉；签到已启用 5 s 一次，否则 30 s
+const { updateStatus, startStatusPolling, stopStatusPolling } = useToolsStatusPolling({
+  applyStatus: data => {
+    if (data.GameSign?.Status) {
+      toolsConfig.GameSign!.Status = data.GameSign.Status
     }
-  })()
-  statusRequest = request
-  void request.then(
-    () => {
-      if (statusRequest === request) statusRequest = null
-    },
-    () => {
-      if (statusRequest === request) statusRequest = null
-    }
-  )
-  return request
-}
+    syncGameSignResult(data.GameSign?.Result)
+  },
+  isActive: () => toolsConfig.GameSign?.Enabled === true,
+  enabled: () => activeTab.value === 'sign',
+  invalidMessage: () => t('gamesign.statusInvalid'),
+  logger,
+})
 
 // 签到完成后立即刷新配置（不等轮询）
 const refreshGameSignConfig = () => updateStatus()
-
-const startStatusPolling = () => {
-  if (pollTimer) clearInterval(pollTimer)
-  pollTimer = setInterval(() => {
-    if (activeTab.value === 'sign') void updateStatus()
-  }, 1000)
-}
-
-const stopStatusPolling = () => {
-  if (pollTimer) {
-    clearInterval(pollTimer)
-    pollTimer = null
-  }
-}
 
 // 加载配置
 const loadTools = async () => {
@@ -206,15 +163,6 @@ const handleGameSignFieldChange = async <K extends GameSignFieldKey>(
   }
 }
 
-useEventListener(window, 'focus', () => {
-  if (activeTab.value === 'sign') void updateStatus()
-})
-useEventListener(document, 'visibilitychange', () => {
-  if (document.visibilityState === 'visible' && activeTab.value === 'sign') {
-    void updateStatus()
-  }
-})
-
 watch(activeTab, tab => {
   if (tab === 'sign' && isMounted) void updateStatus()
 })
@@ -253,12 +201,7 @@ onUnmounted(() => {
       <h1 class="page-title">{{ t('gamesign.title') }}</h1>
     </div>
     <div class="gamesign-content">
-      <a-tabs
-        :active-key="activeTab"
-        type="card"
-        class="community-tabs"
-        @change="handleTabChange"
-      >
+      <a-tabs :active-key="activeTab" type="card" class="community-tabs" @change="handleTabChange">
         <a-tab-pane key="sign" :tab="t('gamesign.nav.sign')">
           <TabGameSign
             v-if="editingConfig.GameSign"

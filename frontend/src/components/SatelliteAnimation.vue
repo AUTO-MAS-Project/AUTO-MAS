@@ -147,11 +147,15 @@ function stopStatusPolling() {
 }
 
 function startStatusPolling() {
-  if (performanceStore.isBackgrounded || updateInterval !== null) {
+  if (
+    performanceStore.isBackgrounded ||
+    updateInterval !== null ||
+    connectionState().value === 'open'
+  ) {
     return
   }
 
-  // 周期性 HTTP 快照兜底：WS 断开期间也能拉回权威状态
+  // 周期性 HTTP 快照兜底：只在主 WS 没开着时轮询；WS 开着靠 task.* 事件推送
   updateInterval = setInterval(() => void refreshSatelliteStatuses(), CONFIG.statusUpdateInterval)
 }
 
@@ -1288,6 +1292,17 @@ watch(
     }
   }
 )
+
+// WS 打开时事件推送足够，停掉 HTTP 轮询（运行态资源在 onConnected 里已重拉一次快照）；
+// 掉线期间再靠轮询兜底
+watch(connectionState(), state => {
+  if (isUnmounted || performanceStore.isBackgrounded) return
+  if (state === 'open') {
+    stopStatusPolling()
+  } else {
+    startStatusPolling()
+  }
+})
 
 watch(
   () => performanceStore.isBackgrounded,

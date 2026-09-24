@@ -16,21 +16,9 @@ export type ToolsConfig_GameSign = {
      */
     ActivityEnabled?: (boolean | null);
     /**
-     * 签到窗口起点 HH:mm
-     */
-    WindowStart?: (string | null);
-    /**
-     * 签到窗口终点 HH:mm
-     */
-    WindowEnd?: (string | null);
-    /**
      * 启动时运行
      */
     RunOnStartup?: (boolean | null);
-    /**
-     * 定时运行
-     */
-    ScheduledRun?: (boolean | null);
     /**
      * 是否立即开始
      */
@@ -39,10 +27,6 @@ export type ToolsConfig_GameSign = {
      * 上次签到日期
      */
     LastSignDate?: (string | null);
-    /**
-     * 今日计划签到时间
-     */
-    ScheduledTime?: (string | null);
     /**
      * 签到状态标签
      */

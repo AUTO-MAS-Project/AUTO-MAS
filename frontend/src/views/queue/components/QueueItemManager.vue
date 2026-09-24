@@ -18,6 +18,9 @@
         <div class="header-cell drag-cell"></div>
         <div class="header-cell index-cell">{{ t('queue.item.colIndex') }}</div>
         <div class="header-cell script-cell">{{ t('queue.item.colScript') }}</div>
+        <div v-if="!showCycleConfig" class="header-cell days-cell">
+          {{ t('queue.item.colDays') }}
+        </div>
         <div v-if="showCycleConfig" class="header-cell cycle-cell">
           {{ t('queue.cycle.colConfig') }}
         </div>
@@ -62,6 +65,28 @@
                 allow-clear
                 @change="updateQueueItemScript(record)"
               />
+            </div>
+            <div v-if="!showCycleConfig" class="row-cell days-cell">
+              <a-select
+                v-model:value="record.schedule.Days"
+                mode="multiple"
+                size="small"
+                style="width: 100%"
+                class="days-select"
+                :placeholder="t('queue.time.selectDays')"
+                :disabled="locked"
+                :max-tag-count="7"
+                :bordered="false"
+                @change="saveDays(record)"
+              >
+                <a-select-option value="Monday">{{ t('queue.time.Monday') }}</a-select-option>
+                <a-select-option value="Tuesday">{{ t('queue.time.Tuesday') }}</a-select-option>
+                <a-select-option value="Wednesday">{{ t('queue.time.Wednesday') }}</a-select-option>
+                <a-select-option value="Thursday">{{ t('queue.time.Thursday') }}</a-select-option>
+                <a-select-option value="Friday">{{ t('queue.time.Friday') }}</a-select-option>
+                <a-select-option value="Saturday">{{ t('queue.time.Saturday') }}</a-select-option>
+                <a-select-option value="Sunday">{{ t('queue.time.Sunday') }}</a-select-option>
+              </a-select>
             </div>
             <div v-if="showCycleConfig" class="row-cell cycle-cell">
               <div class="cycle-panel">
@@ -134,7 +159,7 @@
                       :placeholder="t('queue.time.selectDays')"
                       :disabled="!record.schedule.Enabled"
                       :max-tag-count="3"
-                      @change="saveSchedule(record, { Days: record.schedule.Days })"
+                      @change="saveDays(record)"
                     >
                       <a-select-option value="Monday">{{ t('queue.time.Monday') }}</a-select-option>
                       <a-select-option value="Tuesday">
@@ -237,28 +262,6 @@ const isDraggingQueueItem = ref(false)
 
 // 选项数据
 const scriptOptions = ref<Array<{ label: string; value: string | null }>>([])
-
-// 表格列配置
-const _queueColumns = [
-  {
-    title: t('queue.item.colIndex'),
-    key: 'index',
-    width: 80,
-    align: 'center',
-  },
-  {
-    title: t('queue.item.colScript'),
-    key: 'script',
-    align: 'center',
-    ellipsis: true,
-  },
-  {
-    title: t('queue.item.colActions'),
-    key: 'actions',
-    width: 100,
-    align: 'center',
-  },
-]
 
 // 后端 NextRunAt 的空值哨兵，表示「尚未推算」；见 app/utils/constants.py
 const CYCLE_EMPTY_TIME = '2000-01-01 00:00:00'
@@ -371,6 +374,17 @@ const saveInterval = async (record: any) => {
   if (success) {
     record.savedIntervalMinutes = minutes
   }
+}
+
+// 周几按星期顺序存盘，和定时列表保持一致
+const DAY_ORDER = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+
+const saveDays = async (record: any) => {
+  const days = [...(record.schedule.Days || [])].sort(
+    (a: string, b: string) => DAY_ORDER.indexOf(a) - DAY_ORDER.indexOf(b)
+  )
+  record.schedule.Days = days
+  await saveSchedule(record, { Days: days })
 }
 
 const saveScheduleTime = async (record: any) => {
@@ -555,174 +569,6 @@ onMounted(() => {
   font-weight: 600;
 }
 
-/* 表格样式优化 */
-.queue-table {
-  width: 100% !important;
-  max-width: 100% !important;
-}
-
-.queue-table :deep(.ant-table-wrapper) {
-  width: 100% !important;
-  max-width: 100% !important;
-}
-
-/* 禁用所有滚动条，让表格自动延伸 */
-:deep(.ant-table-wrapper) {
-  overflow: visible !important;
-}
-
-:deep(.ant-table-container) {
-  overflow: visible !important;
-  max-height: none !important;
-  height: auto !important;
-}
-
-:deep(.ant-table-body) {
-  overflow: visible !important;
-  max-height: none !important;
-  height: auto !important;
-}
-
-:deep(.ant-table-content) {
-  overflow: visible !important;
-  max-height: none !important;
-  height: auto !important;
-}
-
-:deep(.ant-table-tbody) {
-  overflow: visible !important;
-}
-
-:deep(.ant-table) {
-  font-size: 14px;
-  table-layout: auto;
-  width: 100%;
-  overflow: visible !important;
-}
-
-/* 列宽度控制 */
-:deep(.ant-table-thead > tr > th:nth-child(1)) {
-  width: 80px !important;
-  min-width: 80px !important;
-  max-width: 80px !important;
-}
-
-:deep(.ant-table-thead > tr > th:nth-child(2)) {
-  width: auto !important;
-  min-width: 120px !important;
-}
-
-:deep(.ant-table-thead > tr > th:nth-child(3)) {
-  width: 180px !important;
-  min-width: 180px !important;
-  max-width: 180px !important;
-}
-
-:deep(.ant-table-tbody > tr > td:nth-child(1)) {
-  width: 80px !important;
-  min-width: 80px !important;
-  max-width: 80px !important;
-}
-
-:deep(.ant-table-tbody > tr > td:nth-child(2)) {
-  width: auto !important;
-  min-width: 120px !important;
-}
-
-:deep(.ant-table-tbody > tr > td:nth-child(3)) {
-  width: 180px !important;
-  min-width: 180px !important;
-  max-width: 180px !important;
-}
-
-/* 强制移除任何可能的滚动条 */
-:deep(.ant-table-wrapper),
-:deep(.ant-table-container),
-:deep(.ant-table-body),
-:deep(.ant-table-content),
-:deep(.ant-table),
-:deep(.ant-table-tbody) {
-  scrollbar-width: none !important;
-  /* Firefox */
-  -ms-overflow-style: none !important;
-  /* IE/Edge */
-}
-
-:deep(.ant-table-wrapper)::-webkit-scrollbar,
-:deep(.ant-table-container)::-webkit-scrollbar,
-:deep(.ant-table-body)::-webkit-scrollbar,
-:deep(.ant-table-content)::-webkit-scrollbar,
-:deep(.ant-table)::-webkit-scrollbar,
-:deep(.ant-table-tbody)::-webkit-scrollbar {
-  display: none !important;
-  /* Chrome/Safari */
-}
-
-/* 表格行和列样式 */
-:deep(.ant-table-tbody > tr > td) {
-  padding: 8px 12px;
-  border-bottom: 1px solid var(--ant-color-border);
-}
-
-:deep(.ant-table-thead > tr > th) {
-  font-weight: 600;
-  padding: 8px 12px;
-  text-align: center;
-  background-color: var(--ant-color-bg-container);
-  border-bottom: 1px solid var(--ant-color-border);
-}
-
-/* 脚本名称列特殊处理 */
-:deep(.ant-table-tbody > tr > td:nth-child(2)) {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  word-break: break-all;
-}
-
-:deep(.ant-table-thead > tr > th:nth-child(2)) {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-/* 确保列内容正确显示 */
-:deep(.ant-table-thead > tr > th) {
-  text-align: center;
-  vertical-align: middle;
-}
-
-:deep(.ant-table-tbody > tr > td) {
-  text-align: center;
-  vertical-align: middle;
-}
-
-:deep(.ant-table-cell) {
-  text-align: center;
-}
-
-/* 表格整体布局优化 */
-:deep(.ant-table-wrapper) {
-  width: 100%;
-  min-height: auto;
-}
-
-/* 确保表格不会被压缩 */
-:deep(.ant-table-fixed-header) {
-  scrollbar-width: none !important;
-  -ms-overflow-style: none !important;
-}
-
-:deep(.ant-table-fixed-header)::-webkit-scrollbar {
-  display: none !important;
-}
-
-/* 序号列样式 */
-:deep(.ant-table-tbody > tr > td:first-child) {
-  font-weight: 500;
-  color: var(--ant-color-text-secondary);
-}
-
 /* 操作按钮布局 */
 :deep(.ant-btn) {
   min-width: auto;
@@ -738,12 +584,6 @@ onMounted(() => {
 
 :deep(.ant-space-item) {
   margin-right: 6px !important;
-}
-
-/* 操作列内容居中且不超出 */
-:deep(.ant-table-tbody > tr > td:nth-child(3) .ant-space) {
-  justify-content: center;
-  width: 100%;
 }
 
 /* 按钮图标样式调整 */
@@ -906,6 +746,12 @@ onMounted(() => {
   min-width: 0;
 }
 
+.header-cell.days-cell,
+.row-cell.days-cell {
+  flex: 1 1 360px;
+  min-width: 0;
+}
+
 .cycle-panel {
   display: flex;
   flex-direction: column;
@@ -1055,6 +901,7 @@ onMounted(() => {
   .index-cell,
   .drag-cell,
   .script-cell,
+  .days-cell,
   .actions-cell {
     width: 100% !important;
     min-width: auto !important;

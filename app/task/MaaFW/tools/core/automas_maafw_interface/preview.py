@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import logging
 import os
 from pathlib import Path
 from typing import Any
@@ -16,6 +17,10 @@ from .models import (
     iter_pretasks,
 )
 from .task_config import _build_task_option_maps, build_interface_preset_snapshot
+
+logger = logging.getLogger("automas.maafw.interface.preview")
+# 语言文件解析失败只提醒一次：同一份坏文件每次预览都会再撞上。
+_WARNED_LANGUAGE_FILES: set[str] = set()
 
 
 class MaaFWInterfaceValidationReport(BaseModel):
@@ -342,7 +347,15 @@ def _load_i18n_mapping(root_path: Path, interface: MaaFWInterface) -> dict[str, 
         # MaaEnd 那份 108KB 的 zh_cn.json 用 json5 要 392ms，用 json 只要 0.3ms。
         data = parse_json_text(language_path.read_text(encoding="utf-8"))
         return data if isinstance(data, dict) else {}
-    except Exception:
+    except Exception as exc:
+        key = str(language_path)
+        if key not in _WARNED_LANGUAGE_FILES:
+            _WARNED_LANGUAGE_FILES.add(key)
+            logger.warning(
+                "MaaFW 语言文件解析失败，预览文案退回原始键: %s: %s",
+                language_path,
+                exc,
+            )
         return {}
 
 

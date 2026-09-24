@@ -22,6 +22,7 @@
 
 import asyncio
 import os
+from collections import deque
 from contextlib import suppress
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -36,6 +37,7 @@ from .log_detect import (
     can_read_stream_live,
     emit_process_output,
     has_failure_output,
+    unescape_backslash_u,
 )
 
 logger = get_logger("HSR M7A 运行器")
@@ -45,6 +47,9 @@ logger = get_logger("HSR M7A 运行器")
 # 托管运行没人按键：不带它时任务正文跑完仍会停在 input()，而系统 ANSI 代码页
 # 不是中文时更会直接崩在写不出中文的 stdout 上，把已经做完的模块判成失败。
 M7A_HEADLESS_ENV: dict[str, str] = {"MARCH7TH_GUI_STARTED": "true"}
+# 保留的近期输出行数：M7A 失败前会连打十几条同样的 WARNING，太短会把
+# 真正的 ERROR 挤掉。
+RECENT_OUTPUT_LINES = 40
 
 
 @dataclass
@@ -71,23 +76,22 @@ class M7ARunner:
     ):
         self._m7a_dir = Path(m7a_dir)
         self._m7a_exe = self._m7a_dir / "March7th Assistant.exe"
-        self._commands: list[str] = []
         self._process_manager = ProcessManager()
         self._log_callback = log_callback
         self._output_line_callback = output_line_callback
         self._completion_grace_timeout = completion_grace_timeout
-
-    @property
-    def exe_path(self) -> Path:
-        return self._m7a_exe
+        # 当前这条命令最近的输出，供游戏守卫判断进程消失前 M7A 在做什么。
+        self._recent_output: deque[str] = deque(maxlen=RECENT_OUTPUT_LINES)
 
     @property
     def root_path(self) -> Path:
         return self._m7a_dir
 
     @property
-    def command_log(self) -> list[str]:
-        return list(self._commands)
+    def recent_output_lines(self) -> list[str]:
+        """当前（或最近一条）M7A 命令末尾的输出行，按时间先后排列。"""
+
+        return list(self._recent_output)
 
     async def terminate_current_process(self) -> bool:
         """终止当前 M7A 子进程。"""
@@ -119,11 +123,12 @@ class M7ARunner:
                 text = raw
             else:
                 text = decode_bytes(bytes(raw))
-            for line in text.rstrip("\r\n").splitlines():
+            for line in unescape_backslash_u(text).rstrip("\r\n").splitlines():
                 line = line.strip()
                 if not line:
                     continue
                 lines.append(line)
+                self._recent_output.append(line)
                 self._emit_process_output(title, line)
                 if self._output_line_callback is not None:
                     result = self._output_line_callback(line)
@@ -170,19 +175,21 @@ class M7ARunner:
             stdout_bytes, stderr_bytes = await asyncio.wait_for(
                 proc.communicate(), timeout=timeout
             )
-            stdout = decode_bytes(stdout_bytes).strip()
-            stderr = decode_bytes(stderr_bytes).strip()
+            stdout = unescape_backslash_u(decode_bytes(stdout_bytes)).strip()
+            stderr = unescape_backslash_u(decode_bytes(stderr_bytes)).strip()
             self._emit_process_output("M7A", stdout)
             self._emit_process_output("M7A stderr", stderr)
-            if self._output_line_callback is not None:
-                for text in (stdout, stderr):
-                    for line in text.splitlines():
-                        line = line.strip()
-                        if not line:
-                            continue
-                        result = self._output_line_callback(line)
-                        if isawaitable(result):
-                            await result
+            for text in (stdout, stderr):
+                for line in text.splitlines():
+                    line = line.strip()
+                    if not line:
+                        continue
+                    self._recent_output.append(line)
+                    if self._output_line_callback is None:
+                        continue
+                    result = self._output_line_callback(line)
+                    if isawaitable(result):
+                        await result
             completed = self._has_completion_marker(
                 stdout
             ) or self._has_completion_marker(stderr)
@@ -284,7 +291,7 @@ class M7ARunner:
         """执行一条 M7A 命令。"""
 
         started_at = datetime.now(timezone.utc)
-        self._commands.append(task_name)
+        self._recent_output.clear()
 
         if not self._m7a_exe.exists():
             msg = f"March7th Assistant.exe does not exist: {self._m7a_exe}"

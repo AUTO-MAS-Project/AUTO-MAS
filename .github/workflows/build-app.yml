@@ -27,18 +27,26 @@ on:
 permissions:
   contents: write
   actions: write
+  issues: write
+
+concurrency:
+  group: build-app
+  queue: max
+  cancel-in-progress: false
 
 jobs:
-
   build:
     name: 构建 Windows 版本
     runs-on: windows-latest
-    if: github.repository == 'AUTO-MAS-Project/AUTO-MAS' && (github.ref_name == 'main' || github.ref_name == 'dev')
-    
+    if: github.repository == 'AUTO-MAS-Project/AUTO-MAS' && (github.ref_name == 'main' || github.ref_name == 'dev' || startsWith(github.ref_name, 'release/'))
+
     outputs:
       version_tag: ${{ steps.generate_version_info.outputs.version_tag }}
       is_prerelease: ${{ steps.generate_version_info.outputs.is_prerelease }}
       version_changelog: ${{ steps.generate_version_info.outputs.version_changelog }}
+      note_cut_count: ${{ steps.generate_version_info.outputs.note_cut_count }}
+      note_issue_title: ${{ steps.generate_version_info.outputs.note_issue_title }}
+      note_issue_body: ${{ steps.generate_version_info.outputs.note_issue_body }}
 
     steps:
       - name: 签出代码
@@ -46,9 +54,65 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: 设置 Python 环境
+        uses: actions/setup-python@v7.0.0
+        with:
+          python-version: "3.12"
+
+      - name: 生成版本信息
+        id: generate_version_info
+        run: |
+          $versionTag = (python scripts/changelog.py current).Trim()
+          if ($LASTEXITCODE -ne 0 -or -not $versionTag) { throw "读不到当前版本号" }
+          $notePath = Join-Path $env:RUNNER_TEMP 'release-note.md'
+          $runUrl = "$env:GITHUB_SERVER_URL/$env:GITHUB_REPOSITORY/actions/runs/$env:GITHUB_RUN_ID"
+          python scripts/changelog.py release-note --version $versionTag --output $notePath --github-output $env:GITHUB_OUTPUT --run-url $runUrl
+          if ($LASTEXITCODE -ne 0) { throw "渲染 Release 正文失败" }
+          $changelog = Get-Content -LiteralPath $notePath -Raw -Encoding utf8
+          $isPrerelease = if ($versionTag.Contains('-')) { 'true' } else { 'false' }
+          $delimiter = "EOF_$([guid]::NewGuid().ToString('N'))"
+          Add-Content -LiteralPath $env:GITHUB_OUTPUT -Value "version_tag=$versionTag" -Encoding utf8
+          Add-Content -LiteralPath $env:GITHUB_OUTPUT -Value "is_prerelease=$isPrerelease" -Encoding utf8
+          Add-Content -LiteralPath $env:GITHUB_OUTPUT -Value "version_changelog<<$delimiter`n$changelog`n$delimiter" -Encoding utf8
+          Write-Host "版本 $versionTag，预发布：$isPrerelease"
+        shell: pwsh
+
+      - name: 发布前置检查
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_ORG: ${{ vars.SENTRY_ORG }}
+          SENTRY_PROJECT: ${{ vars.SENTRY_PROJECT }}
+          SIGNPATH_API_TOKEN: ${{ secrets.SIGNPATH_API_TOKEN }}
+          VERSION_TAG: ${{ steps.generate_version_info.outputs.version_tag }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:SENTRY_AUTH_TOKEN)) {
+            throw '缺少 GitHub Actions secret: SENTRY_AUTH_TOKEN'
+          }
+          if ([string]::IsNullOrWhiteSpace($env:SENTRY_ORG)) {
+            throw '缺少 GitHub Actions variable: SENTRY_ORG'
+          }
+          if ([string]::IsNullOrWhiteSpace($env:SENTRY_PROJECT)) {
+            throw '缺少 GitHub Actions variable: SENTRY_PROJECT'
+          }
+          if ([string]::IsNullOrWhiteSpace($env:SIGNPATH_API_TOKEN)) {
+            throw '缺少 GitHub Actions secret: SIGNPATH_API_TOKEN'
+          }
+          python scripts/changelog.py guard
+          if ($LASTEXITCODE -ne 0) { throw "发布守门未通过" }
+          $releaseRef = "refs/heads/release/$env:VERSION_TAG"
+          $remoteReleaseBranch = @(git ls-remote --heads origin $releaseRef)
+          $lsRemoteExitCode = $LASTEXITCODE
+          if ($lsRemoteExitCode -ne 0) {
+            throw "查询远端分支失败（git ls-remote 退出码 $lsRemoteExitCode）"
+          }
+          if ($remoteReleaseBranch.Count -gt 0) {
+            throw "远端已存在分支 release/$env:VERSION_TAG，发布阶段无法推送；请先处理该分支再构建"
+          }
+          Write-Host "前置检查通过：将发布 $env:VERSION_TAG"
+        shell: pwsh
+
       - name: 读取 Runtime 版本
         run: |
-          # 从本次构建所选分支读取独立版本文件，不再依赖默认分支中的工作流常量。
           $runtimeVersionFile = Join-Path '${{ github.workspace }}' 'res\runtime-version.txt'
           $runtimeVersion = (Get-Content -LiteralPath $runtimeVersionFile -Raw).Trim()
           if ($runtimeVersion -notmatch '^v\d+(\.\d+)*([-+][0-9A-Za-z.-]+)?$') {
@@ -57,11 +121,6 @@ jobs:
           Add-Content -LiteralPath $env:GITHUB_ENV -Value "RUNTIME_VERSION=$runtimeVersion" -Encoding utf8
           Write-Host "本次构建使用 Runtime $runtimeVersion"
         shell: pwsh
-
-      - name: 设置 Node.js 环境
-        uses: actions/setup-node@v7.0.0
-        with:
-          node-version: '20'
 
       - name: 下载并校验 Runtime 可执行文件
         env:
@@ -99,8 +158,7 @@ jobs:
               throw "SHA-256 校验失败：$exeName 与 SHA256SUMS.txt 不匹配，可能下载损坏或被篡改"
             }
 
-            # 校验通过后改成稳定文件名，Electron 侧固定按 auto-mas-runtime.exe 定位
-            # （见 frontend/electron/services/runtime/launchConfig.ts）。
+            # Electron 侧固定按 auto-mas-runtime.exe 定位（frontend/electron/services/runtime/launchConfig.ts）
             Move-Item -Path $exeName -Destination 'auto-mas-runtime.exe' -Force
             Remove-Item 'SHA256SUMS.txt'
             Write-Host "Runtime $env:RUNTIME_VERSION 校验通过：$runtimeDir\auto-mas-runtime.exe"
@@ -108,6 +166,11 @@ jobs:
             Pop-Location
           }
         shell: pwsh
+
+      - name: 设置 Node.js 环境
+        uses: actions/setup-node@v7.0.0
+        with:
+          node-version: "20"
 
       - name: 构建应用程序
         env:
@@ -119,25 +182,12 @@ jobs:
           corepack enable
           corepack prepare yarn@4.9.1 --activate
           yarn install
-          if ([string]::IsNullOrWhiteSpace($env:SENTRY_AUTH_TOKEN)) {
-            throw '缺少 GitHub Actions secret: SENTRY_AUTH_TOKEN'
-          }
-          if ([string]::IsNullOrWhiteSpace($env:SENTRY_ORG)) {
-            throw '缺少 GitHub Actions variable: SENTRY_ORG'
-          }
-          if ([string]::IsNullOrWhiteSpace($env:SENTRY_PROJECT)) {
-            throw '缺少 GitHub Actions variable: SENTRY_PROJECT'
-          }
           yarn build
           Move-Item -Path "dist\win-unpacked\AUTO-MAS.exe" -Destination "..\AUTO-MAS.exe"
         shell: pwsh
 
       - name: 放入 Runtime 可执行文件
         run: |
-          # 不经 electron-builder 的 extraResources 声明：本地没有预先下载 runtime\auto-mas-runtime.exe
-          # 时会让 yarn build 直接报错退出。构建产物出来后按 environment.zip 同样的方式原样拷入
-          # resources 目录，Lite 与 Full 安装包都直接打包 dist\win-unpacked\* 的全部内容，因此
-          # 两者会一起带上它。
           $target = 'frontend\dist\win-unpacked\resources'
           New-Item -ItemType Directory -Force -Path $target | Out-Null
           Copy-Item -Path 'runtime\auto-mas-runtime.exe' -Destination (Join-Path $target 'auto-mas-runtime.exe') -Force
@@ -146,190 +196,65 @@ jobs:
       - name: 上传未签名主程序
         id: upload-unsigned-main-program
         uses: actions/upload-artifact@v7.0.1
-        with: 
-            name: AUTO-MAS
-            path: AUTO-MAS.exe
+        with:
+          name: AUTO-MAS
+          path: AUTO-MAS.exe
 
       - name: 签名主程序
         uses: signpath/github-action-submit-signing-request@v2.3
         with:
-            api-token: '${{ secrets.SIGNPATH_API_TOKEN }}'
-            organization-id: '787a1d5f-6177-4f30-9559-d2646473584a'
-            project-slug: 'AUTO_MAA'
-            signing-policy-slug: 'release-signing'
-            artifact-configuration-slug: "AUTO-MAS"
-            github-artifact-id: '${{ steps.upload-unsigned-main-program.outputs.artifact-id }}'
-            wait-for-completion: true
-            output-artifact-directory: 'frontend\dist\win-unpacked'
+          api-token: "${{ secrets.SIGNPATH_API_TOKEN }}"
+          organization-id: "787a1d5f-6177-4f30-9559-d2646473584a"
+          project-slug: "AUTO_MAA"
+          signing-policy-slug: "release-signing"
+          artifact-configuration-slug: "AUTO-MAS"
+          github-artifact-id: "${{ steps.upload-unsigned-main-program.outputs.artifact-id }}"
+          wait-for-completion: true
+          output-artifact-directory: 'frontend\dist\win-unpacked'
 
-      - name: 生成版本信息
-        id: generate_version_info
-        run: |
-          $tempScript = "temp_version_script.js"
-          @'
-          const fs = require('fs');
-          const path = require('path');
-
-          let versionPath = '../res/version.json';
-          if (!fs.existsSync(versionPath)) {
-              versionPath = 'res/version.json';
-          }
-          const version = JSON.parse(fs.readFileSync(versionPath, 'utf8'));
-
-          function versionInfoMarkdown(info) {
-              let md = '';
-              for (const [key, values] of Object.entries(info)) {
-                  md += `## ${key}\n`;
-                  for (const v of values) md += `- ${v}\n`;
-              }
-              return md;
-          }
-
-          const versionTag = version.version;
-          const isPrerelease = versionTag.includes('-beta');
-
-          const allVersionInfo = {};
-          for (const v_i of Object.values(version.version_info)) {
-              for (const [key, value] of Object.entries(v_i)) {
-                  if (!allVersionInfo[key]) allVersionInfo[key] = [];
-                  allVersionInfo[key].push(...value);
-              }
-          }
-          const changelog = `<!--${JSON.stringify(version.version_info, null, 0)}-->\n${versionInfoMarkdown(allVersionInfo)}`;
-
-          const outputPath = process.env.GITHUB_OUTPUT;
-          fs.appendFileSync(outputPath, `version_tag=${versionTag}\n`);
-          fs.appendFileSync(outputPath, `is_prerelease=${isPrerelease}\n`);
-          fs.appendFileSync(outputPath, `version_changelog<<EOF\n${changelog}\nEOF\n`);
-          '@ | Out-File -FilePath $tempScript -Encoding UTF8
-
-          node $tempScript
-          Remove-Item $tempScript
-        shell: pwsh
-
-      - name: 准备 Inno Setup
-        run: |
-          choco install innosetup -y
-          echo "C:\Program Files (x86)\Inno Setup 6" >> $env:GITHUB_PATH
-          @"
-          #define MyAppName "AUTO-MAS"
-          #define MyAppVersion "${{ steps.generate_version_info.outputs.version_tag }}"
-          #define MyAppPublisher "AUTO-MAS Team"
-          #define MyAppURL "https://auto-mas.top/"
-          #define MyAppExeName "AUTO-MAS.exe"
-          #define MyAppPath "${{ github.workspace }}\frontend\dist\win-unpacked"
-          #define RootPath "${{ github.workspace }}"
-
-          [Setup]
-          AppId={{D116A92A-E174-4699-B777-61C5FD837B19}
-          AppName={#MyAppName}
-          AppVersion={#MyAppVersion}
-          AppVerName={#MyAppName}
-          AppPublisher={#MyAppPublisher}
-          AppPublisherURL={#MyAppURL}
-          AppSupportURL={#MyAppURL}
-          AppUpdatesURL={#MyAppURL}
-          DefaultDirName={autopf}\{#MyAppName}
-          UninstallDisplayIcon={app}\{#MyAppExeName}
-          ArchitecturesAllowed=x64compatible
-          ArchitecturesInstallIn64BitMode=x64compatible
-          DisableProgramGroupPage=yes
-          LicenseFile={#RootPath}\LICENSE
-          PrivilegesRequired=admin
-          OutputDir={#RootPath}
-          OutputBaseFilename=AUTO-MAS-Setup
-          SetupIconFile={#RootPath}\res\icons\AUTO-MAS.ico
-          SolidCompression=yes
-          WizardStyle=modern
-          AppMutex=AUTO_MAS_Installer_Mutex
-
-          [Languages]
-          Name: "Chinese"; MessagesFile: "{#RootPath}\res\docs\ChineseSimplified.isl"
-          Name: "English"; MessagesFile: "compiler:Default.isl"
-
-          [Tasks]
-          Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
-
-          [Files]
-          Source: "{#MyAppPath}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
-
-          [Icons]
-          Name: "{autoprograms}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
-          Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
-
-          [Run]
-          Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall runascurrentuser
-
-          [Code]
-
-          procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
-          begin
-            if CurUninstallStep = usPostUninstall then
-            begin
-              DelTree(ExpandConstant('{app}'), True, True, True);
-            end;
-          end;
-          "@ | Out-File -FilePath AUTO-MAS.iss -Encoding UTF8
-        shell: pwsh
-
-      - name: 构建精简安装包
-        run: |
-          iscc AUTO-MAS.iss
-          Rename-Item -Path AUTO-MAS-Setup.exe -NewName AUTO-MAS-Lite-Setup.exe
-          Compress-Archive -Path .\frontend\dist\win-unpacked\* -DestinationPath AUTO-MAS-Lite-${{ steps.generate_version_info.outputs.version_tag }}-x64.zip -Force
-        shell: pwsh
-
-      - name: 缓存完整环境
-        id: cache-environment
-        uses: actions/cache@v6.1.0
+      - name: 构建安装包
+        uses: Minionguyjpro/Inno-Setup-Action@v1.2.7
+        env:
+          VERSION_TAG: ${{ steps.generate_version_info.outputs.version_tag }}
         with:
-          path: environment.zip
-          key: environment-zip
+          path: res/packaging/AUTO-MAS.iss
+          options: |-
+            /q
 
-      - name: 下载完整环境
-        if: steps.cache-environment.outputs.cache-hit != 'true'
-        run: Invoke-WebRequest -Uri https://download.auto-mas.top/d/AUTO-MAS/Environment/environment.zip -OutFile environment.zip
-    
-      - name: 部署完整环境
-        run: Expand-Archive -Path environment.zip -DestinationPath .\frontend\dist\win-unpacked -Force
-        shell: pwsh
-
-      - name: 构建完整安装包
-        run: |
-          iscc AUTO-MAS.iss
-          Rename-Item -Path AUTO-MAS-Setup.exe -NewName AUTO-MAS-Full-Setup.exe
-          Compress-Archive -Path .\frontend\dist\win-unpacked\* -DestinationPath AUTO-MAS-Full-${{ steps.generate_version_info.outputs.version_tag }}-x64.zip -Force
+      - name: 创建便携包压缩包
+        run: Compress-Archive -Path .\frontend\dist\win-unpacked\* -DestinationPath AUTO-MAS-${{ steps.generate_version_info.outputs.version_tag }}-x64.zip -Force
         shell: pwsh
 
       - name: 上传未签名安装程序
+        if: steps.generate_version_info.outputs.is_prerelease != 'true'
         id: upload-unsigned-setup-program
         uses: actions/upload-artifact@v7.0.1
         with:
           name: AUTO-MAS-Unsigned-Setup
-          path: |
-            AUTO-MAS-Lite-Setup.exe
-            AUTO-MAS-Full-Setup.exe
+          path: AUTO-MAS-Setup.exe
 
       - name: 签名安装程序
+        if: steps.generate_version_info.outputs.is_prerelease != 'true'
         uses: signpath/github-action-submit-signing-request@v2.3
         with:
-            api-token: '${{ secrets.SIGNPATH_API_TOKEN }}'
-            organization-id: '787a1d5f-6177-4f30-9559-d2646473584a'
-            project-slug: 'AUTO_MAA'
-            signing-policy-slug: ${{ steps.generate_version_info.outputs.is_prerelease == 'true' && 'test-signing' || 'release-signing' }}
-            artifact-configuration-slug: "AUTO-MAS-Setup"
-            github-artifact-id: '${{ steps.upload-unsigned-setup-program.outputs.artifact-id }}'
-            wait-for-completion: true
-            output-artifact-directory: 'Signed'
+          api-token: "${{ secrets.SIGNPATH_API_TOKEN }}"
+          organization-id: "787a1d5f-6177-4f30-9559-d2646473584a"
+          project-slug: "AUTO_MAA"
+          signing-policy-slug: "release-signing"
+          artifact-configuration-slug: "AUTO-MAS-Setup"
+          github-artifact-id: "${{ steps.upload-unsigned-setup-program.outputs.artifact-id }}"
+          wait-for-completion: true
+          output-artifact-directory: Setup
+
+      - name: 收集预发布版安装程序
+        if: steps.generate_version_info.outputs.is_prerelease == 'true'
+        run: |
+          New-Item -ItemType Directory -Force -Path Setup | Out-Null
+          Move-Item -Path AUTO-MAS-Setup.exe -Destination Setup
+        shell: pwsh
 
       - name: 创建安装程序压缩包
-        run: |
-          Move-Item -Path .\Signed\AUTO-MAS-Lite-Setup.exe -Destination AUTO-MAS-Setup.exe
-          Compress-Archive -Path AUTO-MAS-Setup.exe -DestinationPath AUTO-MAS-Lite-Setup-${{ steps.generate_version_info.outputs.version_tag }}-x64.zip -Force
-          Remove-Item AUTO-MAS-Setup.exe
-          Move-Item -Path .\Signed\AUTO-MAS-Full-Setup.exe -Destination AUTO-MAS-Setup.exe
-          Compress-Archive -Path AUTO-MAS-Setup.exe -DestinationPath AUTO-MAS-Full-Setup-${{ steps.generate_version_info.outputs.version_tag }}-x64.zip -Force
-          Remove-Item AUTO-MAS-Setup.exe
+        run: Compress-Archive -Path .\Setup\AUTO-MAS-Setup.exe -DestinationPath AUTO-MAS-Setup-${{ steps.generate_version_info.outputs.version_tag }}-x64.zip -Force
         shell: pwsh
 
       - name: 上传构建产物
@@ -373,23 +298,10 @@ jobs:
           git push origin "$TAG_NAME"
 
       - name: 同步发行版分支到 CNB
-        # 同步失败不该阻断发版：本改动进入默认分支之前，dispatch 会因为默认分支上的
-        # sync-cnb.yml 还没有 workflow_dispatch 而被拒，那时这一步必然报错。
         continue-on-error: true
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # 上一步用 GITHUB_TOKEN 推分支和 tag，而 GITHUB_TOKEN 造成的 push / create
-          # 不会触发 sync-cnb.yml，CNB 上于是没有当版 release/vX.Y.Z 分支。Runtime 首次
-          # 克隆受管工作区按 [cnb, github] 顺序找这个分支，国内用户在 cnb 上找不到、又
-          # 连不上 github，初始化直接卡死（GIT_CLONE_FAILED）。
-          # workflow_dispatch 是该限制的明确例外，可以用 GITHUB_TOKEN 调起。
-          #
-          # 必须 dispatch 到发行版分支本身。sync-cnb 的 checkout 是 ref: github.ref，
-          # 而 git-sync 只把检出的那个 ref 连同全部 tag 推过去，不是整库镜像：
-          # v5.5.0-beta.3 发版当天 12:34（codex/sync-github-from-dev）与 12:48（main）
-          # 各跑过一次 sync 且都成功，CNB 上照样没有 release/v5.5.0-beta.3，直到有人
-          # 把提交推到该分支本身才同步过去。dispatch 到构建分支等于又推了一次 dev。
           gh workflow run sync-cnb.yml --ref "release/${{ needs.build.outputs.version_tag }}"
 
       - name: 发布发行版
@@ -399,34 +311,54 @@ jobs:
           tag_name: ${{ needs.build.outputs.version_tag }}
           body: |
             ${{ needs.build.outputs.version_changelog }}
-
-            ## 代码签名策略（Code signing policy）
+            ## 代码签名策略 / Code Signing Policy
 
             免费代码签名由 [SignPath.io](https://signpath.io/) 提供，证书由 [SignPath Foundation](https://signpath.org/) 提供。
 
+            - 审批人: [DLmaster (@DLmaster361)](https://github.com/DLmaster361)
+
             Free code signing provided by [SignPath.io](https://signpath.io/), certificate by [SignPath Foundation](https://signpath.org/).
 
-            - 审批人（Approvers）: [DLmaster (@DLmaster361)](https://github.com/DLmaster361)
+            - Approvers: [DLmaster (@DLmaster361)](https://github.com/DLmaster361)
 
-            ## 隐私政策（Privacy policy）
+            ## 隐私政策 / Privacy Policy
 
             为更好地提供服务，AUTO-MAS 将自动收集以下信息：
 
             - 软件版本号
             - 运行时错误信息
+            - 性能追踪信息
 
-            AUTO-MAS 尊重并保护用户隐私，上报的所有信息均经过匿名化处理，不包含任何个人身份信息。所收集的数据存储于 AUTO-MAS 官方服务器，不会传输至任何第三方机构或设施。
+            AUTO-MAS 尊重并保护用户隐私。上述信息会在客户端完成脱敏后发送至 Sentry SaaS（美国区域）进行错误与性能分析；不会发送用户身份、Cookie、请求头、请求体、URL 查询参数、局部变量或本机绝对路径。匿名遥测默认开启，可在「设置 -> 功能设置」中关闭；关闭后前后端均不再发送遥测数据。
 
             To better serve you, AUTO-MAS will automatically collect the following information:
 
             - Software version number
             - Runtime error information
+            - Performance tracing information
 
-            AUTO-MAS respects and protects user privacy, all collected information has been anonymized and does not contain any personal identity information. All collected data is stored on the official server of AUTO-MAS, and will not be transmitted to any third-party institution or facility.
+            AUTO-MAS respects and protects user privacy. This information is redacted on the client before being sent to Sentry SaaS (US region) for error and performance analysis. User identity, cookies, request headers, request bodies, URL query parameters, local variables, and absolute local paths are not sent. Anonymous telemetry is enabled by default and can be disabled under 「Settings -> Function Settings」; once disabled, neither the frontend nor backend sends telemetry data.
 
             [已有 Mirror酱 CDK ？前往 Mirror酱 高速下载](https://mirrorchyan.com/zh/projects?rid=AUTO_MAS&source=auto-mas-release)
           files: artifacts/*
           prerelease: ${{ needs.build.outputs.is_prerelease }}
+
+      - name: 更新公告被熔断时开 issue 告知
+        # 同一版重跑不重复开 issue：按标题找到已开的就追加评论。
+        if: needs.build.outputs.note_cut_count != '' && needs.build.outputs.note_cut_count != '0'
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ISSUE_TITLE: ${{ needs.build.outputs.note_issue_title }}
+          ISSUE_BODY: ${{ needs.build.outputs.note_issue_body }}
+        run: |
+          existing=$(gh issue list --state open --limit 100 --json number,title \
+            | jq -r --arg title "$ISSUE_TITLE" '[.[] | select(.title == $title)][0].number // empty')
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --body "$ISSUE_BODY"
+          else
+            gh issue create --title "$ISSUE_TITLE" --body "$ISSUE_BODY"
+          fi
 
       - name: 标记 Sentry 生产部署
         env:
@@ -453,7 +385,6 @@ jobs:
           $headers = @{
             Authorization = "Bearer $env:SENTRY_AUTH_TOKEN"
           }
-          # 登记部署失败不应影响已经发布的 Release。
           try {
             Invoke-RestMethod `
               -Method Post `
@@ -470,7 +401,7 @@ jobs:
     name: 发布 CNB 发行版
     runs-on: ubuntu-latest
     needs: build
-    if: github.repository == 'AUTO-MAS-Project/AUTO-MAS' && (github.ref_name == 'main' || github.ref_name == 'dev')
+    if: github.repository == 'AUTO-MAS-Project/AUTO-MAS' && (github.ref_name == 'main' || github.ref_name == 'dev' || startsWith(github.ref_name, 'release/'))
 
     steps:
       - name: 签出代码
@@ -479,7 +410,7 @@ jobs:
       - name: 设置 Python 环境
         uses: actions/setup-python@v7.0.0
         with:
-          python-version: '3.x'
+          python-version: "3.x"
 
       - name: 安装依赖
         run: |
@@ -512,25 +443,16 @@ jobs:
           name: build-artifacts
           path: .
 
-      - name: 上传精简安装包
+      - name: 上传安装包
         uses: MirrorChyan/uploading-action@v1
         with:
           filetype: local
-          filename: AUTO-MAS-Lite-Setup-${{ needs.build.outputs.version_tag }}-x64.zip
+          filename: AUTO-MAS-Setup-${{ needs.build.outputs.version_tag }}-x64.zip
           version_name: ${{ needs.build.outputs.version_tag }}
           mirrorchyan_rid: AUTO_MAS
           upload_token: ${{ secrets.MirrorChyanUploadToken }}
           os: windows
           arch: x64
-
-      - name: 上传完整安装包
-        uses: MirrorChyan/uploading-action@v1
-        with:
-          filetype: local
-          filename: AUTO-MAS-Full-Setup-${{ needs.build.outputs.version_tag }}-x64.zip
-          version_name: ${{ needs.build.outputs.version_tag }}
-          mirrorchyan_rid: AUTO_MAS
-          upload_token: ${{ secrets.MirrorChyanUploadToken }}
 
       - name: 上传版本说明
         uses: MirrorChyan/release-note-action@v1

@@ -140,10 +140,9 @@ async def _shutdown_backend() -> None:
             with suppress(RuntimeError):
                 await System.cancel_power_task()
         except Exception as error:
-            logger.error(
+            logger.opt(exception=True).error(
                 "开发模式轻量清理失败，取消发送退出信号: "
-                f"{type(error).__name__}: {error}",
-                exc_info=True,
+                f"{type(error).__name__}: {error}"
             )
             return
         await Publisher.send(id=protocol.ID_MAIN, type=protocol.BACKEND_SHUTDOWN_READY)
@@ -155,8 +154,8 @@ async def _shutdown_backend() -> None:
     try:
         await ShutdownCoordinator.run_teardown()
     except Exception as e:
-        logger.error(
-            f"后端清理失败，取消发送退出信号: {type(e).__name__}: {e}", exc_info=True
+        logger.opt(exception=True).error(
+            f"后端清理失败，取消发送退出信号: {type(e).__name__}: {e}"
         )
         return
 

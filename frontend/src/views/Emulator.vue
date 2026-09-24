@@ -20,9 +20,11 @@ import { EmulatorOperateIn, Service } from '@/api'
 import DocLink from '@/components/DocLink.vue'
 import Emulator2Panel from '@/views/Emulator/Emulator2Panel.vue'
 import { MAS_DOC_URLS } from '@/utils/openExternal'
+import { usePerformanceStore } from '@/stores/performance'
 const { t } = useI18n()
 
 const logger = window.electronAPI.getLogger('模拟器管理')
+const performanceStore = usePerformanceStore()
 
 defineOptions({ name: 'EmulatorManager' })
 
@@ -93,30 +95,24 @@ const showingDevices = ref<Set<string>>(new Set())
 
 // 轮询相关状态
 const pollingTimer = ref<ReturnType<typeof setTimeout> | null>(null)
-const POLLING_INTERVAL = 5000 // 5秒轮询一次
+const POLLING_INTERVAL = 10000 // 10 秒轮询一次
 
 // 路由监听
 const route = useRoute()
 
-// 轮询获取所有模拟器的设备状态
+// 只轮询当前激活页签的模拟器；emulator2 类型由 Emulator2Panel 自己刷新
 const pollDevicesStatus = async () => {
-  // 只在有模拟器时轮询
-  if (emulatorIndex.value.length === 0) {
+  const uid = activeKey.value
+  if (!uid || !emulatorIndex.value.some(e => e.uid === uid) || isEmulator2(uid)) {
     return
   }
 
   // 静默获取设备状态，不显示loading
   try {
-    for (const emulator of emulatorIndex.value) {
-      const response = await Service.getStatusApiEmulatorStatusPost({
-        emulatorId: emulator.uid,
-      })
-
-      if (response.code === 200) {
-        const allDevicesData = response.data || {}
-        const currentDevices = allDevicesData[emulator.uid] || {}
-        devicesData.value[emulator.uid] = currentDevices
-      }
+    const response = await Service.getStatusApiEmulatorStatusPost({ emulatorId: uid })
+    if (response.code === 200) {
+      const allDevicesData = response.data || {}
+      devicesData.value[uid] = allDevicesData[uid] || {}
     }
   } catch (e) {
     // 轮询时的错误静默处理，避免频繁弹错误提示
@@ -125,10 +121,13 @@ const pollDevicesStatus = async () => {
   }
 }
 
-// 启动轮询
+// 启动轮询；窗口在后台时不起，回到前台由 isBackgrounded 监听重新起
 const startPolling = () => {
   if (pollingTimer.value) {
     clearInterval(pollingTimer.value)
+  }
+  if (performanceStore.isBackgrounded) {
+    return
   }
   pollingTimer.value = setInterval(pollDevicesStatus, POLLING_INTERVAL)
   logger.info('模拟器页面轮询已启动')
@@ -801,6 +800,22 @@ watch(
   { immediate: true }
 )
 
+// 窗口进后台时停掉轮询，回到前台立即拉一次再继续
+watch(
+  () => performanceStore.isBackgrounded,
+  backgrounded => {
+    if (route.path !== '/emulators') {
+      return
+    }
+    if (backgrounded) {
+      stopPolling()
+    } else {
+      void pollDevicesStatus()
+      startPolling()
+    }
+  }
+)
+
 onMounted(async () => {
   await loadEmulators()
   await onEmulatorsLoaded()
@@ -841,17 +856,6 @@ onUnmounted(() => {
   stopPolling()
   // 即时保存模式下，无需额外保存，数据已在编辑完成时保存
 })
-
-// 重写 handleAdd:添加后自动切换到新Tab并加载
-const handleAddWithSwitch = async () => {
-  await handleAdd()
-  if (emulatorIndex.value.length > 0) {
-    const newEmulator = emulatorIndex.value[emulatorIndex.value.length - 1]
-    activeKey.value = newEmulator.uid
-    saveActiveKey(activeKey.value)
-    await loadDevices(newEmulator.uid)
-  }
-}
 
 // 重写 handleSearch:搜索并在模态框导入后自动切换
 const handleSearchAndImport = async (result: EmulatorSearchResult) => {
@@ -921,7 +925,7 @@ const handleBossKeyInputChange = (uuid: string) => {
             >
               {{ t('emulator.autoSearch') }}
             </a-button>
-            <a-button size="large" :icon="h(PlusOutlined)" @click="handleAddWithSwitch">
+            <a-button size="large" :icon="h(PlusOutlined)" @click="handleAdd">
               {{ t('emulator.manualAdd') }}
             </a-button>
           </a-space>
@@ -1132,7 +1136,7 @@ const handleBossKeyInputChange = (uuid: string) => {
                           </a-button>
                         </template>
                       </a-input>
-                      <span v-else style="color: var(--text-color-tertiary); font-size: 12px">
+                      <span v-else style="color: var(--ant-color-text-tertiary); font-size: 12px">
                         {{ t('emulator.bossKeyUnsupported') }}
                       </span>
                     </a-descriptions-item>
@@ -1160,6 +1164,7 @@ const handleBossKeyInputChange = (uuid: string) => {
                 <Emulator2Panel
                   :ref="(el: any) => setEmulator2Panel(element.uid, el)"
                   :emulator-id="element.uid"
+                  :active="activeKey === element.uid"
                 />
               </div>
 
@@ -1291,12 +1296,7 @@ const handleBossKeyInputChange = (uuid: string) => {
                 >
                   {{ t('emulator.autoSearch') }}
                 </a-button>
-                <a-button
-                  type="primary"
-                  size="middle"
-                  :icon="h(PlusOutlined)"
-                  @click="handleAddWithSwitch"
-                >
+                <a-button type="primary" size="middle" :icon="h(PlusOutlined)" @click="handleAdd">
                   {{ t('emulator.manualAddMulti') }}
                 </a-button>
               </a-space>
@@ -1497,21 +1497,21 @@ const handleBossKeyInputChange = (uuid: string) => {
 
 .config-form :deep(.ant-input-borderless:hover),
 .config-form :deep(.ant-input-number-borderless:hover) {
-  background: var(--bg-color-elevated);
+  background: var(--ant-color-bg-elevated);
 }
 
 .config-form :deep(.ant-input-borderless:focus),
 .config-form :deep(.ant-input-number-borderless:focus) {
-  background: var(--bg-color-elevated);
+  background: var(--ant-color-bg-elevated);
   box-shadow: none;
 }
 
 .config-form :deep(.ant-select-borderless:hover .ant-select-selector) {
-  background: var(--bg-color-elevated) !important;
+  background: var(--ant-color-bg-elevated) !important;
 }
 
 .config-form :deep(.ant-select-focused.ant-select-borderless .ant-select-selector) {
-  background: var(--bg-color-elevated) !important;
+  background: var(--ant-color-bg-elevated) !important;
   box-shadow: none !important;
 }
 
@@ -1611,7 +1611,7 @@ const handleBossKeyInputChange = (uuid: string) => {
 
 .devices-grid :deep(.ant-table-thead > tr > th) {
   padding: 8px 12px;
-  background: var(--bg-color-container);
+  background: var(--ant-color-bg-container);
   font-weight: 500;
   position: sticky;
   top: 0;
@@ -1623,7 +1623,7 @@ const handleBossKeyInputChange = (uuid: string) => {
 }
 
 .devices-grid :deep(.ant-table-tbody > tr:hover > td) {
-  background: var(--bg-color-elevated);
+  background: var(--ant-color-bg-elevated);
 }
 
 /* 老板键列表 */
@@ -1634,28 +1634,6 @@ const handleBossKeyInputChange = (uuid: string) => {
 }
 
 /* 暗色模式支持 */
-:root {
-  --bg-color-container: #f9f9f9;
-  --bg-color-elevated: #ffffff;
-  --border-color: #e8e8e8;
-  --border-color-hover: #d9d9d9;
-  --text-color-primary: rgba(0, 0, 0, 0.88);
-  --text-color-secondary: rgba(0, 0, 0, 0.65);
-  --text-color-tertiary: rgba(0, 0, 0, 0.45);
-  --primary-color: #1890ff;
-}
-
-html.dark {
-  --bg-color-container: #1f1f1f;
-  --bg-color-elevated: #141414;
-  --border-color: #303030;
-  --border-color-hover: #434343;
-  --text-color-primary: rgba(255, 255, 255, 0.88);
-  --text-color-secondary: rgba(255, 255, 255, 0.65);
-  --text-color-tertiary: rgba(255, 255, 255, 0.45);
-  --primary-color: #1890ff;
-}
-
 html.dark .config-section,
 html.dark .devices-section {
   background: #1a1a1a;

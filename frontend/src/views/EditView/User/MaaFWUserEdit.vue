@@ -9,12 +9,12 @@
       @cancel="handleCancel"
     />
 
-    <div class="user-edit-content">
+    <ConfigLockPanel :script-id="scriptId" content-class="user-edit-content">
       <a-card class="config-card" :loading="loading">
         <template #title>
           <div class="card-title">
             <img
-              :src="getScriptIcon('MaaFW', projectIconUrl)"
+              :src="projectIconUrl || SCRIPT_LOGOS.MaaFW"
               alt="MaaFW"
               width="22"
               height="22"
@@ -35,19 +35,32 @@
         >
           <BasicInfoSection
             :form-data="formData"
-            :preset-options="presetOptions"
-            :selected-preset-label="selectedPresetLabel"
             :interface-dependent-disabled="interfaceDependentDisabled"
             :account-record-tooltip="accountRecordTooltip"
             @save="handleFieldSave"
-            @preset-menu-click="handlePresetMenuClick"
           />
 
+          <!-- MaaFW 是通用引擎，没有可退回的原生配置：三态来源与快速配置开关对它没有所指，
+               任务队列始终显示。两个字段仍留在配置模型里，只是不再提供入口。 -->
+          <a-flex
+            class="section-header"
+            justify="space-between"
+            align="center"
+            wrap="wrap"
+            gap="small"
+          >
+            <h3>{{ t('edit.taskQueueConfiguration') }}</h3>
+            <a-button size="small" @click="restoreOpen = true">
+              <template #icon>
+                <HistoryOutlined />
+              </template>
+              {{ t('edit.configRestoreTitle') }}
+            </a-button>
+          </a-flex>
           <TaskQueueSection
             v-model:add-task-cascader-value="addTaskCascaderValue"
             v-model:show-preset-modal="showPresetModal"
             :interface-loading="interfaceLoading"
-            :script-path="scriptPath"
             :preview-data="previewData"
             :interface-dependent-disabled="interfaceDependentDisabled"
             :available-tasks="availableTasks"
@@ -61,10 +74,8 @@
             :effective-controller-name="effectiveControllerName"
             :effective-resource-name="effectiveResourceName"
             @reorder-tasks="applyQueuedTaskIds"
-            @reload-interface="reloadInterface"
             @add-task-cascader-change="handleAddTaskCascaderChange"
             @apply-preset-template="applyPresetTemplate"
-            @append-preset-template="appendPresetTemplate"
             @select-task="selectTask"
             @move-task="moveTask"
             @task-drag-end="handleTaskDragEnd"
@@ -87,11 +98,49 @@
           />
         </a-form>
       </a-card>
-    </div>
+    </ConfigLockPanel>
+
+    <!-- ══ 配置恢复（通用组件：MAS 用户字段在前、MaaFW 项目配置在后）══ -->
+    <ConfigRestoreSection
+      v-model:open="restoreOpen"
+      :disabled="configLocked"
+      :script-name="MAAFW_DISPLAY_NAME"
+      :targets="restoreTargets"
+      :api="restoreApi"
+      :user-desc="t('edit.maafwConfigRestoreUserDesc')"
+      :script-desc="t('edit.maafwConfigRestoreScriptDesc')"
+      :on-restored="handleRestored"
+    >
+      <!-- mas 备份为字段侧车分区、native 备份为 interface 概览分区 -->
+      <template #preview="{ raw }">
+        <a-empty
+          v-if="!previewSections(raw).length"
+          :description="t('edit.configRestorePreviewEmpty')"
+        />
+        <div v-else>
+          <template v-for="s in previewSections(raw)" :key="s.name">
+            <h4 class="maafw-preview-title">{{ s.label }}</h4>
+            <a-descriptions
+              v-if="s.rows && s.rows.length"
+              :column="1"
+              size="small"
+              bordered
+              class="maafw-preview-box"
+            >
+              <a-descriptions-item v-for="row in s.rows" :key="row.key" :label="row.key">
+                {{ row.value }}
+              </a-descriptions-item>
+            </a-descriptions>
+          </template>
+        </div>
+      </template>
+    </ConfigRestoreSection>
   </div>
 </template>
 
 <script setup lang="ts">
+import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
+import { useScriptConfigLock } from '@/composables/useScriptConfigLock'
 import { useI18n } from 'vue-i18n'
 import {
   computed,
@@ -99,6 +148,7 @@ import {
   nextTick,
   onBeforeUnmount,
   onMounted,
+  onUnmounted,
   reactive,
   ref,
   shallowRef,
@@ -107,13 +157,16 @@ import {
 import { useRoute, useRouter } from 'vue-router'
 import type { FormInstance, Rule } from 'ant-design-vue/es/form'
 import { message, Modal } from 'ant-design-vue'
+import { HistoryOutlined } from '@ant-design/icons-vue'
 import ExtraScriptSection from '@/components/ExtraScriptSection.vue'
 import UserNotifyConfig from '@/components/UserNotifyConfig.vue'
+import ConfigRestoreSection from '@/views/EditView/User/components/ConfigRestoreSection.vue'
+import { Service } from '@/api'
 import { buildMaaFWAssetUrl, useMaaFWApi } from '@/composables/useMaaFWApi'
 import { useScriptApi } from '@/composables/useScriptApi'
 import { useUserApi } from '@/composables/useUserApi'
 import { isSupportedMaaFWControllerType } from '@/types/script'
-import { getScriptIcon, maafwScriptIcon } from '@/utils/scriptIcon'
+import { SCRIPT_LOGOS } from '@/utils/scriptLogos'
 import { buildMaaFWTaskInstanceId, resolveMaaFWTaskName } from '@/utils/maafwTaskInstance'
 import MaaFWUserEditHeader from './MaaFWUserEdit/MaaFWUserEditHeader.vue'
 import BasicInfoSection from './MaaFWUserEdit/BasicInfoSection.vue'
@@ -207,6 +260,7 @@ const enqueueSave = async (action: () => Promise<void>) => {
 const scriptId = route.params.scriptId as string
 let userId = route.params.userId as string
 const isEdit = ref(!!userId)
+const { configLocked } = useScriptConfigLock(() => scriptId)
 
 const scriptName = ref('')
 const scriptPath = ref('')
@@ -222,7 +276,7 @@ const handleProjectIconError = (event: Event) => {
   const image = event.currentTarget as HTMLImageElement | null
   if (!image || image.dataset.maafwIconFallbackApplied === 'true') return
   image.dataset.maafwIconFallbackApplied = 'true'
-  image.src = maafwScriptIcon
+  image.src = SCRIPT_LOGOS.MaaFW
 }
 const selectedTaskId = ref('')
 const addTaskCascaderValue = ref<string[]>([])
@@ -237,6 +291,9 @@ const getDefaultMaaFWUserData = (): MaaFWUserConfig => ({
   Info: {
     Name: '',
     Status: true,
+    Mode: '用户',
+    // 快速配置：独立于配置来源的用户级开关（生成模型 MaaFWUserConfig_Info 已含该字段）
+    IfQuickConfig: true,
     RemainedDay: -1,
     IfScriptBeforeTask: false,
     ScriptBeforeTask: '',
@@ -538,14 +595,6 @@ const getDisplayName = (item: MaaFWDisplayItem) => {
   return item.label || item.name
 }
 
-const selectedPresetLabel = computed(() => {
-  const presetName = formData.Task.SelectedPreset
-  if (!presetName) return '切换预设'
-
-  const preset = presetOptions.value.find(item => item.name === presetName)
-  return preset ? getDisplayName(preset) : '切换预设'
-})
-
 const selectTask = (taskId: string) => {
   selectedTaskId.value = taskId
 }
@@ -622,32 +671,6 @@ const applyPresetTemplate = async (presetName: string) => {
   )
   selectedTaskId.value = nextTaskIds[0] || ''
   formData.Task.SelectedPreset = presetName
-  showPresetModal.value = false
-  await savePresetAndSnapshot()
-}
-
-const appendPresetTemplate = async (presetName: string) => {
-  const template = presetTemplates.value.find(item => item.preset.name === presetName)
-  if (!template) return
-
-  const presetSnapshot = normalizeTaskSnapshot(template.preset.snapshot, previewData.value)
-  // 追加预设只补齐队列里还没有的任务；要再来一份同样的任务，用「添加任务」手动加。
-  const existingTaskNames = new Set(
-    taskSnapshot.value.taskOrder.map(taskId => resolveTaskName(taskId))
-  )
-  const appendedNames = template.taskNames.filter(taskName => !existingTaskNames.has(taskName))
-  const nextTaskIds = partitionTaskOrder([...taskSnapshot.value.taskOrder, ...appendedNames])
-  const nextTaskIdSet = new Set(nextTaskIds)
-  taskSnapshot.value.taskOrder = nextTaskIds
-  taskSnapshot.value.taskChecked = Object.fromEntries(nextTaskIds.map(taskId => [taskId, true]))
-  taskSnapshot.value.taskOptions = Object.fromEntries(
-    [
-      ...Object.entries(taskSnapshot.value.taskOptions),
-      ...Object.entries(presetSnapshot.taskOptions),
-    ].filter(([taskId]) => nextTaskIdSet.has(taskId))
-  )
-  selectedTaskId.value = appendedNames[0] || nextTaskIds[0] || ''
-  formData.Task.SelectedPreset = ''
   showPresetModal.value = false
   await savePresetAndSnapshot()
 }
@@ -734,7 +757,7 @@ const applyUserData = (userData: Partial<MaaFWUserConfig>) => {
 const handleFieldSave = async (key: string, value: unknown) => {
   if (isInitializing.value || !userId) return
 
-  await enqueueSave(async () => {
+  return await enqueueSave(async () => {
     const parts = key.split('.')
     let userData: Record<string, unknown> = {}
     let current = userData
@@ -752,10 +775,13 @@ const handleFieldSave = async (key: string, value: unknown) => {
     const success = await updateUser(scriptId, userId, userData)
     if (!success) throw new Error(t('edit.couldNotSaveUser2', { p0: key }))
     logger.info(`用户配置已保存: ${key}`)
-  }).catch(error => {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`保存失败: ${errorMsg}`)
   })
+    .then(() => true)
+    .catch(error => {
+      const errorMsg = error instanceof Error ? error.message : String(error)
+      logger.error(`保存失败: ${errorMsg}`)
+      return false
+    })
 }
 
 const savePresetAndSnapshot = async () => {
@@ -818,6 +844,8 @@ const loadScriptInfo = async () => {
 }
 
 const createUserImmediately = async () => {
+  if (configLocked.value) return false
+
   try {
     const result = await addUser(scriptId)
     if (result?.userId) {
@@ -848,7 +876,7 @@ const loadUserData = async () => {
       const userIndex = userResponse.index.find(index => index.uid === userId)
       const userData = userResponse.data[userId] as Partial<MaaFWUserConfig> | undefined
 
-      if (String(userIndex?.type) === 'MaaFWUserConfig' && userData) {
+      if (userIndex?.type === 'MaaFWUserConfig' && userData) {
         applyUserData(userData)
         taskSnapshot.value = normalizeTaskSnapshot(formData.Task.TaskSnapshot, previewData.value)
         await syncControllerResourceSelection()
@@ -889,10 +917,6 @@ const reloadInterface = async (showMessage = true) => {
     await nextTick()
     if (showMessage) message.success(t('edit.interfaceLoaded'))
   }
-}
-
-const handlePresetMenuClick = async ({ key }: { key: string | number }) => {
-  await applyPresetTemplate(String(key))
 }
 
 const moveTask = async (taskId: string, direction: -1 | 1) => {
@@ -941,6 +965,72 @@ const handleBeforeUnload = (event: BeforeUnloadEvent) => {
   event.returnValue = ''
 }
 
+// ══ 配置恢复（通用组件 props 供给：双目标 MAS 在前脚本在后）══
+// 专项统一名（文案参数化用）：MaaFW 统一叫「maafw」
+const MAAFW_DISPLAY_NAME = 'maafw'
+const restoreOpen = ref(false)
+
+const restoreTargets: Array<{ key: string; kind: 'user' | 'script' }> = [
+  { key: 'mas', kind: 'user' },
+  { key: 'native', kind: 'script' },
+]
+
+const restoreApi = {
+  list: async (target: string) =>
+    Service.listConfigBackupsApiApiScriptsBackupListGet(scriptId, userId, target),
+  preview: async (target: string, time: string) =>
+    Service.getConfigBackupPreviewApiApiScriptsBackupPreviewGet(scriptId, userId, time, target),
+  restore: async (target: string, time: string) =>
+    Service.restoreConfigBackupApiApiScriptsBackupRestorePost({
+      scriptId,
+      userId,
+      time,
+      target,
+    }),
+  readFile: async (target: string, time: string, path: string) =>
+    Service.getConfigBackupFileApiApiScriptsBackupFileGet(scriptId, userId, time, target, path),
+}
+
+interface MaaFWPreviewRow {
+  key: string
+  value: string
+}
+interface MaaFWPreviewSection {
+  name: string
+  label: string
+  rows?: MaaFWPreviewRow[]
+}
+const previewSections = (raw: unknown): MaaFWPreviewSection[] =>
+  (raw as { sections?: MaaFWPreviewSection[] } | null)?.sections ?? []
+
+// 一键恢复成功：mas 恢复回填字段（Task/Device 段），需重拉表单；native 恢复
+// 写 MaaFW 项目配置，MAS 表单不受影响
+const handleRestored = async (target: string) => {
+  restoreOpen.value = false
+  if (target === 'mas') {
+    // 恢复回填的是后端 UserData，重拉表单同步页面（含任务快照）
+    await loadUserData()
+    await reloadInterface(false)
+  }
+}
+
+// 编辑会话归档（进入/退出时机，指纹去重）：进入归档 MaaFW 项目配置当前状态
+// （MAS 触碰前原始态），退出归档 MAS 用户字段侧车终态（编辑会话包络）
+const ensureMaaFWBackup = async (target: 'mas' | 'native') => {
+  if (!userId) return
+  try {
+    const resp = await Service.ensureConfigBackupApiApiScriptsBackupEnsurePost({
+      scriptId,
+      userId,
+      target,
+    })
+    if (resp.code !== 200) throw new Error(resp.message || t('edit.configRestoreEnsureFailed'))
+  } catch (e) {
+    logger.error(e instanceof Error ? e.message : String(e))
+    message.warning(t('edit.configRestoreEnsureFailed'))
+  }
+}
+
 onMounted(() => {
   window.addEventListener('beforeunload', handleBeforeUnload)
   if (!scriptId) {
@@ -949,12 +1039,22 @@ onMounted(() => {
     return
   }
 
-  loadScriptInfo()
+  // 先等脚本信息与用户就绪（新建模式内部会创建用户并写入 userId）再归档，
+  // 否则新建用户首次进入会因 userId 未就绪静默跳过归档
+  void (async () => {
+    await loadScriptInfo()
+    void ensureMaaFWBackup('native')
+  })()
 })
 
 onBeforeUnmount(() => {
   window.removeEventListener('beforeunload', handleBeforeUnload)
   if (saveStatusTimer) clearTimeout(saveStatusTimer)
+})
+
+onUnmounted(() => {
+  // 退出编辑页：归档 MAS 用户字段侧车终态（编辑会话包络；MaaFW 无遮罩会话）
+  void ensureMaaFWBackup('mas')
 })
 </script>
 
@@ -989,6 +1089,18 @@ onBeforeUnmount(() => {
   width: 22px;
   height: 22px;
   object-fit: contain;
+}
+
+/* 配置恢复预览（分区行；弹窗内滚动由通用组件负责） */
+.maafw-preview-title {
+  font-size: 15px;
+  font-weight: 600;
+  margin: 12px 0 8px;
+  color: var(--ant-color-text);
+}
+
+.maafw-preview-box {
+  margin-bottom: 8px;
 }
 
 @media (max-width: 768px) {

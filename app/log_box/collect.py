@@ -107,23 +107,6 @@ class LogCollect:
                 source.open()
             self._opened = True
 
-    def postprocess(self, processor: Optional[_PostProcessor] = None):
-        """登记后置处理器（最终处理），作用于捕捉完的最终多行结果集。
-
-        也可作为装饰器使用：``@col.postprocess()`` 会把被装饰函数登记为后置
-        处理器。只登记、不结束会话；结束由随后调用 ``col.close()`` 或脚本
-        退出（atexit）触发。
-        """
-        if processor is None:
-
-            def _register(fn: _PostProcessor) -> _PostProcessor:
-                self._postprocessors.append(fn)
-                return fn
-
-            return _register
-        self._postprocessors.append(processor)
-        return processor
-
     def close(self, processor: Optional[_PostProcessor] = None) -> "LogCollect":
         """结束采集会话并完成推送（幂等）
 
@@ -192,39 +175,6 @@ class LogCollect:
         self._line_rules.append(
             RegexMatcher(match=match_re, extract=extract, log_type=log_type)
         )
-
-    def collect_scope(
-        self,
-        start_re: str,
-        end_re: str = "",
-        expr: str = "",
-        max_lines: int = _MULTILINE_DEFAULT_MAX_LINES,
-        type: str = LogType.NORMAL,
-    ) -> "LogCollect":
-        """多行聚合规则：起始/结束正则划定窗口，提取表达式从窗口提取字段。
-
-        起始正则为空时不生效；结束正则留空时窗口在遇到新起始行、达到最大
-        跨行数或日志处理结束时关闭。正则非空但非法时 fail-fast。
-        """
-        if not start_re.strip():
-            return self
-        start = compile_regex(start_re)
-        if start is None:
-            raise ValueError(f"起始正则无效: {start_re}")
-        end = compile_regex(end_re) if end_re else None
-        if end_re and end is None:
-            raise ValueError(f"结束正则无效: {end_re}")
-        extract = compile_expression(expr) if expr else None
-        self._scope_rules.append(
-            MultiLineAggregator(
-                start_re=start,
-                end_re=end,
-                extract_expr=extract,
-                max_lines=max_lines,
-                log_type=type,
-            )
-        )
-        return self
 
     # ---------- 调试与推送 ----------
 

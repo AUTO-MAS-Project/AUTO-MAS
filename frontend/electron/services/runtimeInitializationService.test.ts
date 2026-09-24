@@ -7,14 +7,17 @@ import {
   BootstrapProgressBridge,
   BootstrapProgressUpdate,
   MirrorLookup,
+  NETWORK_PROBE_STAGE,
   RUNTIME_TAKEOVER_MESSAGE,
   RuntimeInitializationService,
   describeRuntimeFailureDetails,
   emitDevelopmentSkipProgress,
+  formatRuntimeFailureMessage,
   mapDoctorChecksToCriticalFiles,
   mapMirrorSelection,
   mapRuntimeStage,
   mapRuntimeStageToInitializationStage,
+  resolveProgressPercent,
   toRuntimeVersion,
 } from './runtimeInitializationService'
 import type {
@@ -39,7 +42,11 @@ vi.mock('./logger', () => ({
 
 const fixturesDir = join(dirname(fileURLToPath(import.meta.url)), 'runtime', '__fixtures__')
 
-/** 夹具由本机构建的 auto-mas-runtime.exe 真实跑出来，不是手写的。 */
+/**
+ * 夹具由本机构建的 auto-mas-runtime.exe 真实跑出来，不是手写的。
+ * 例外：`bootstrap-network-relay.ndjson` 按 2026-09-11 M14 构建的真机样本裁剪重写，事件顺序、
+ * 数值形态照真机；git 类源的测速按修订后契约不带 bytesPerSecond。
+ */
 function fixtureEvents(name: string): RuntimeEvent[] {
   return readFileSync(join(fixturesDir, name), 'utf8')
     .split('\n')
@@ -51,6 +58,7 @@ function fixtureEvents(name: string): RuntimeEvent[] {
 
 const APP_ROOT = 'D:\\AUTO-MAS'
 const RUNTIME_PATH = 'D:\\AUTO-MAS\\runtime\\auto-mas-runtime.exe'
+const updateStatePath = join(APP_ROOT, 'runtime-state', 'update.json')
 
 interface FakeCall {
   command: string[]
@@ -248,6 +256,19 @@ describe('阶段映射', () => {
     expect(stages).toContain('dependencies.sync')
     expect(stages).toContain('workspace.clone')
   })
+
+  it('M14 事件流里只有测速 stage 与顶层 bootstrap 没有显式对应，测速走通用段不抛错', () => {
+    const stages = new Set<string>()
+    for (const event of fixtureEvents('bootstrap-network-relay.ndjson')) {
+      if ('stage' in event && typeof event.stage === 'string') stages.add(event.stage)
+    }
+
+    const unmapped = [...stages]
+      .filter(stage => mapRuntimeStageToInitializationStage(stage) === null)
+      .sort()
+    expect(unmapped).toEqual(['bootstrap', NETWORK_PROBE_STAGE])
+    expect(mapRuntimeStage(NETWORK_PROBE_STAGE)).toBe('python')
+  })
 })
 
 describe('失败 details 摘要', () => {
@@ -284,6 +305,19 @@ describe('失败 details 摘要', () => {
     const text = describeRuntimeFailureDetails({ blob: 'x'.repeat(5000) })
     expect(text.length).toBeLessThan(1100)
     expect(text).toContain('已截断')
+  })
+})
+
+describe('用户可处理的仓库错误', () => {
+  it.each([
+    ['GIT_REPO_CLEANUP_FAILED', 'repo.previous-', updateStatePath, false],
+    ['UPDATE_STATE_AMBIGUOUS', 'repo', updateStatePath, true],
+  ])('%s 给出明确的删除说明', (code, expectedPath, statePath, includesStatePath) => {
+    const message = formatRuntimeFailureMessage(code, APP_ROOT, '原始错误')
+
+    expect(message).toContain('完全退出 AUTO-MAS')
+    expect(message).toContain(expectedPath)
+    expect(message.includes(statePath)).toBe(includesStatePath)
   })
 })
 
@@ -414,6 +448,7 @@ describe('进度桥接', () => {
         progress: 10,
         message: '正在同步锁定依赖',
         indeterminate: true,
+        runtimeStage: 'dependencies.sync',
       },
     ])
   })
@@ -495,6 +530,279 @@ describe('进度桥接', () => {
     for (let i = 1; i < progress.length; i += 1) {
       expect(progress[i]).toBeGreaterThanOrEqual(progress[i - 1])
     }
+  })
+})
+
+// ==================== 网络细节透传（M14） ====================
+
+describe('网络细节透传', () => {
+  /** 与 execute() 里的接法一致：progress 事件把可选字段整包交给 observe。 */
+  function replay(name: string, bridge: BootstrapProgressBridge): void {
+    for (const event of fixtureEvents(name)) {
+      if (event.type === 'progress') {
+        bridge.observe(event.stage, event.message, event.percent, {
+          status: event.status,
+          current: event.current,
+          total: event.total,
+          item: event.item,
+          source: event.source,
+          bytesPerSecond: event.bytesPerSecond,
+        })
+      }
+      if (event.type === 'state') bridge.observe(event.stage, event.message)
+    }
+  }
+
+  function replayAll(name: string): BootstrapProgressUpdate[] {
+    const updates: BootstrapProgressUpdate[] = []
+    const bridge = new BootstrapProgressBridge(update => updates.push(update))
+    replay(name, bridge)
+    bridge.finish('运行环境准备完成')
+    return updates
+  }
+
+  it('测速事件按原 stage 透传源 key 与实测速度，但不推进主进度条', () => {
+    const updates = replayAll('bootstrap-network-relay.ndjson')
+    const probes = updates.filter(u => u.runtimeStage === NETWORK_PROBE_STAGE)
+    expect(probes).toHaveLength(18)
+
+    const running = probes.filter(u => u.runtimeStatus === 'running')
+    expect(running.map(u => u.source)).toEqual([
+      'github',
+      'cdn-gh-proxy',
+      'edgeone-gh-proxy',
+      'agentsmirror',
+      'gh-proxy',
+      'github',
+      'cnb',
+      'astral',
+      'github',
+      'gh-proxy',
+      'pypi',
+      'aliyun',
+      'tsinghua',
+      'ustc',
+    ])
+    // 正数 = 实测吞吐，0 = 探测失败，缺失 = 只测首字节（git 类源）
+    expect(running.map(u => u.bytesPerSecond)).toEqual([
+      5420756,
+      4266111,
+      16774854,
+      225525,
+      26201,
+      undefined,
+      undefined,
+      8854451,
+      9251466,
+      0,
+      7840993,
+      5370009,
+      0,
+      164019,
+    ])
+    expect(running.every(u => u.item === u.source)).toBe(true)
+
+    // 源数计数不是字节，不透传也不当百分比
+    expect(
+      probes.every(
+        u => u.indeterminate === true && u.current === undefined && u.total === undefined
+      )
+    ).toBe(true)
+
+    const done = probes.filter(u => u.runtimeStatus === 'succeeded')
+    expect(done.map(u => u.message)).toEqual([
+      'uv 源顺序：edgeone-gh-proxy → github → cdn-gh-proxy → agentsmirror → gh-proxy',
+      'git 源顺序：github → cnb',
+      'python 源顺序：github → astral → gh-proxy',
+      'package-index 源顺序：pypi → aliyun → ustc → tsinghua',
+    ])
+
+    // 真机顺序：uv.check 与一条无数值的 uv.download 先到，第一轮测速挂在已开始的 python 段上
+    expect(updates[0]).toMatchObject({
+      stage: 'python',
+      status: 'started',
+      runtimeStage: 'uv.check',
+    })
+    expect(probes[0]).toMatchObject({ stage: 'python', status: 'running', progress: 10 })
+    // 依赖段开始后的测速挂在依赖段上，进度停在段起始值
+    expect(probes[probes.length - 1]).toMatchObject({
+      stage: 'dependency',
+      status: 'running',
+      progress: 10,
+    })
+  })
+
+  it('下载类 stage 透传文件名、来源、速度与字节数，百分比按字节现算', () => {
+    const updates = replayAll('bootstrap-network-relay.ndjson')
+
+    const uv = updates.filter(u => u.runtimeStage === 'uv.download')
+    // 第一条是真机上测速之前那条没有数值的 running
+    expect(uv[0]).toMatchObject({ indeterminate: true, progress: 10 })
+    expect(uv[0].item).toBeUndefined()
+
+    const uvBytes = uv.slice(1)
+    expect(uvBytes.map(u => u.progress)).toEqual([10, 79, 99])
+    expect(uvBytes.every(u => u.indeterminate === false)).toBe(true)
+    expect(
+      uvBytes.every(
+        u => u.item === 'uv-x86_64-pc-windows-msvc.zip' && u.source === 'edgeone-gh-proxy'
+      )
+    ).toBe(true)
+    expect(uvBytes.map(u => u.bytesPerSecond)).toEqual([0, 15036024, 19013455])
+    expect(uvBytes[1]).toMatchObject({
+      current: 15036024,
+      total: 19013455,
+      runtimeStatus: 'running',
+    })
+
+    // python.install 在仓库之后到达，挂在 repository 段上（既有段序规则），细节照常透传
+    const python = updates.filter(u => u.runtimeStage === 'python.install' && u.item !== undefined)
+    expect(python.map(u => u.stage)).toEqual(['repository', 'repository', 'repository'])
+    expect(python.map(u => u.progress)).toEqual([10, 52, 99])
+    expect(python[0].item).toBe(
+      'cpython-3.12.13+20260807-x86_64-pc-windows-msvc-install_only_stripped.tar.gz'
+    )
+    // 中继换源后 source 跟着变
+    expect(python.map(u => u.source)).toEqual(['github', 'astral', 'astral'])
+  })
+
+  it('依赖同步的 total 全程恒定、current 累计，换文件后文件名与来源跟着换', () => {
+    const updates = replayAll('bootstrap-network-relay.ndjson')
+    const deps = updates.filter(u => u.runtimeStage === 'dependencies.sync' && u.item !== undefined)
+
+    expect(deps.map(u => u.item)).toEqual([
+      'maafw-5.12.3-py3-none-win_amd64.whl',
+      'onnxruntime-1.29.0-cp312-cp312-win_amd64.whl',
+      'MaaAgentBinary-1.0.1-py3-none-any.whl',
+      'onnxruntime-1.29.0-cp312-cp312-win_amd64.whl',
+      'opencv_python-4.10.0.84-cp37-abi3-win_amd64.whl',
+      'annotated_doc-0.0.5-py3-none-any.whl',
+      'win32_setctime-1.2.0-py3-none-any.whl',
+    ])
+    expect(deps.map(u => u.progress)).toEqual([10, 10, 23, 45, 70, 99, 99])
+    expect(deps.map(u => u.current)).toEqual([
+      16384, 12295188, 33299008, 64690673, 100000000, 143019809, 143023892,
+    ])
+    expect(new Set(deps.map(u => u.total))).toEqual(new Set([143023892]))
+    expect(deps[4].source).toBe('aliyun')
+
+    const dependency = updates.filter(u => u.stage === 'dependency')
+    expect(dependency[dependency.length - 1]).toMatchObject({ status: 'completed', progress: 100 })
+  })
+
+  it('分母中途增大时按字节算出的百分比被单调钳位停住，不倒退', () => {
+    const updates: BootstrapProgressUpdate[] = []
+    const bridge = new BootstrapProgressBridge(update => updates.push(update))
+    const wheel = (current: number, total: number, item: string) =>
+      bridge.observe('dependencies.sync', '正在下载锁定依赖', undefined, {
+        status: 'running',
+        current,
+        total,
+        item,
+        source: 'aliyun',
+        bytesPerSecond: 3355443,
+      })
+
+    wheel(0, 10485760, 'numpy.whl')
+    wheel(8388608, 10485760, 'numpy.whl')
+    // 10485760/52428800 本来是 20%，停在上一条的 80
+    wheel(10485760, 52428800, 'opencv.whl')
+    wheel(41943040, 52428800, 'opencv.whl')
+    wheel(52428800, 52428800, 'opencv.whl')
+
+    expect(updates.map(u => u.progress)).toEqual([10, 80, 80, 80, 99])
+    expect(updates.map(u => u.total)).toEqual([10485760, 10485760, 52428800, 52428800, 52428800])
+    expect(updates.map(u => u.item)).toEqual([
+      'numpy.whl',
+      'numpy.whl',
+      'opencv.whl',
+      'opencv.whl',
+      'opencv.whl',
+    ])
+  })
+
+  it('回放旧版 Runtime 的真实事件流时没有任何网络细节字段，段序与以前一致', () => {
+    const updates = replayAll('bootstrap-success.ndjson')
+
+    expect(updates.some(u => u.runtimeStage === NETWORK_PROBE_STAGE)).toBe(false)
+    for (const update of updates) {
+      expect(update.item).toBeUndefined()
+      expect(update.source).toBeUndefined()
+      expect(update.bytesPerSecond).toBeUndefined()
+      expect(update.current).toBeUndefined()
+      expect(update.total).toBeUndefined()
+    }
+    expect(updates.filter(u => u.status === 'started').map(u => u.stage)).toEqual([
+      'python',
+      'repository',
+      'dependency',
+    ])
+  })
+
+  it('桥接自己合成的更新（接管、收口、失败）不带 Runtime stage', () => {
+    const updates: BootstrapProgressUpdate[] = []
+    const bridge = new BootstrapProgressBridge(update => updates.push(update))
+    bridge.takeOver()
+    bridge.observe('uv.download', '正在下载固定版本 uv', 12)
+    bridge.finish('运行环境准备完成')
+
+    const synthesized = updates.filter(u => u.runtimeStage === undefined)
+    expect(synthesized.map(u => u.status)).toEqual([
+      'completed',
+      'completed',
+      'completed',
+      'completed',
+      'completed',
+      'completed',
+    ])
+    expect(updates.find(u => u.runtimeStage === 'uv.download')).toMatchObject({
+      stage: 'python',
+      status: 'started',
+      progress: 12,
+    })
+  })
+
+  it('bootstrap 端到端把网络细节交到 onProgress', async () => {
+    const updates: BootstrapProgressUpdate[] = []
+    FakeRuntimeClient.scripts = [{ events: fixtureEvents('bootstrap-network-relay.ndjson') }]
+
+    const outcome = await createService().bootstrap(update => updates.push(update))
+
+    expect(outcome.success).toBe(true)
+    expect(updates.filter(u => u.runtimeStage === NETWORK_PROBE_STAGE)).toHaveLength(18)
+    expect(
+      updates.find(
+        u =>
+          u.runtimeStage === 'dependencies.sync' &&
+          u.item === 'opencv_python-4.10.0.84-cp37-abi3-win_amd64.whl'
+      )
+    ).toMatchObject({
+      stage: 'dependency',
+      status: 'running',
+      source: 'aliyun',
+      bytesPerSecond: 12000000,
+      current: 100000000,
+      total: 143023892,
+    })
+    expect(updates[updates.length - 1]).toMatchObject({ stage: 'dependency', status: 'completed' })
+  })
+})
+
+describe('resolveProgressPercent', () => {
+  it('有真实字节时按 current / total 现算，优先于 Runtime 给的 percent', () => {
+    expect(resolveProgressPercent(5, { current: 50, total: 200 })).toBe(25)
+    expect(resolveProgressPercent(undefined, { current: 50, total: 200 })).toBe(25)
+  })
+
+  it('没有分母时退回 percent', () => {
+    expect(resolveProgressPercent(42, { current: 50 })).toBe(42)
+    expect(resolveProgressPercent(42, { current: 50, total: 0 })).toBe(42)
+    expect(resolveProgressPercent(42, {})).toBe(42)
+    expect(resolveProgressPercent(undefined, {})).toBeUndefined()
+  })
+
+  it('current 越过 total 时封顶 100', () => {
+    expect(resolveProgressPercent(undefined, { current: 300, total: 200 })).toBe(100)
   })
 })
 

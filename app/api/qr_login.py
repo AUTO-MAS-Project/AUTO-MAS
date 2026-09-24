@@ -46,9 +46,7 @@ logger = get_logger("米游社扫码登录 API")
 def _log_qr_error(stage: str, error: Exception) -> None:
     """记录脱敏诊断，二维码接口不向前端透传异常细节。"""
 
-    logger.warning(
-        format_exception_reason(error, stage=stage, include_message=False)
-    )
+    logger.warning(format_exception_reason(error, stage=stage, include_message=False))
 
 
 # ---- 请求/响应模型 ----

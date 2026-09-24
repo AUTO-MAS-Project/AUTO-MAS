@@ -18,6 +18,19 @@ from typing import Any
 from packaging.specifiers import InvalidSpecifier, SpecifierSet
 from packaging.version import InvalidVersion, Version
 
+from .binding_fallback import (
+    ensure_binding_wheel,
+    local_wheel_requirement,
+    maafw_version_missing_from_index,
+    replace_maafw_requirement,
+)
+from .host_environment import current_subprocess_proxy, strip_host_python_environment
+from .identity import (
+    MaaFWRuntimeIdentityError,
+    find_maafw_requirement,
+    infer_exact_maafw_version,
+    requirement_distribution_name,
+)
 
 logger = logging.getLogger("automas.maafw.runtime_pool.installer")
 
@@ -588,6 +601,10 @@ def install_python_runtime(
             cache_dir=uv_cache_dir,
             link_mode=UV_LINK_MODE,
             cwd=resolved_cwd,
+            pool_root=pool_root,
+            # 兜底下载走 urllib，拿不到子进程环境里的代理变量，显式传同一个代理串。
+            proxy_url=current_subprocess_proxy(),
+            log=log,
         )
         dependency_installer = "uv-pip"
         resolved_requirements = _resolved_requirements_with_uv(
@@ -643,7 +660,14 @@ def install_python_runtime(
         },
     }
     if index_metadata is not None:
-        installer_metadata["index"] = index_metadata
+        index_metadata = dict(index_metadata)
+        binding_source = index_metadata.pop("bindingSource", None)
+        if index_metadata:
+            installer_metadata["index"] = index_metadata
+        if binding_source:
+            # 无 DLL 项目守卫（runner/environment.py::prepare_runner_environment）
+            # 按这个字段判断共享环境里的 binding 是不是源码打包的。
+            installer_metadata["bindingSource"] = binding_source
     return {
         "pythonExecutable": str(python_executable),
         "pythonVersion": probe.get("version") or platform.python_version(),
@@ -725,6 +749,7 @@ def _create_environment_with_uv(
             bootstrap,
             "--no-python-downloads",
             "--no-project",
+            "--no-config",
             "--cache-dir",
             str(uv_cache_dir),
             "--link-mode",
@@ -890,6 +915,7 @@ def _find_pool_managed_python(
                 "--managed-python",
                 "--no-project",
                 "--no-python-downloads",
+                "--no-config",
                 "--resolve-links",
                 "--cache-dir",
                 str(cache_dir),
@@ -967,6 +993,7 @@ def _install_pool_managed_python(
         str(python_root),
         "--no-bin",
         "--no-registry",
+        "--no-config",
         "--cache-dir",
         str(cache_dir),
         "--no-progress",
@@ -1158,6 +1185,8 @@ def _python_supports_venv(python: str) -> bool:
             text=True,
             encoding="utf-8",
             errors="replace",
+            # 探测与真正拉起解释器用同一份环境，宿主 PYTHONHOME / PYTHONWARNINGS 不参与判定。
+            env=_clean_process_environment(),
         )
     except (OSError, subprocess.SubprocessError):
         return False
@@ -1251,6 +1280,9 @@ def _install_requirements_with_uv(
     cache_dir: Path,
     link_mode: str,
     cwd: Path,
+    pool_root: Path | None = None,
+    proxy_url: str | None = None,
+    log: Callable[[str], None] | None = None,
 ) -> dict[str, Any] | None:
     """按 ``resolve_package_index_candidates()`` 的顺序重试同一条安装命令。
 
@@ -1264,6 +1296,13 @@ def _install_requirements_with_uv(
     返回实际生效的索引来源与尝试序号，供调用方写入 ``installer_metadata``；
     离线时返回 ``{"source": None, "attempt": 1, "offline": True}``；未使用候选
     列表（未配置任何镜像/单值索引，或命中上面的显式旁路）时返回 ``None``。
+
+    候选轮换路径上多一层 binding 兜底：全部候选都失败、且任一候选的 stderr 说的是
+    「索引上没有 ``maafw==X`` 这个版本」（不是连不上索引）时，从 MaaFramework 的
+    tag 源码包自打 wheel（``binding_fallback``），把 requirements 里的 ``maafw==X``
+    换成 ``maafw @ file:///…`` 再按同样的候选轮换装一次；成功时返回值多一个
+    ``"bindingSource": "github-source:<tag>"``。``--offline`` 与显式 ``UV_INDEX_URL``
+    旁路不做兜底。``pool_root`` 为 ``None`` 时兜底关闭（缓存目录无处可放）。
     """
 
     env = _uv_install_environment(
@@ -1272,13 +1311,18 @@ def _install_requirements_with_uv(
         link_mode,
     )
 
-    def _base_command(index_args: list[str]) -> list[str]:
+    def _base_command(
+        index_args: list[str], install_requirements: Sequence[str] = requirements
+    ) -> list[str]:
         return [
             uv_executable,
             "pip",
             "install",
             "--python",
             str(python_executable),
+            # 用户级 / 项目级 uv.toml（额外 [[index]]、offline、exclude-newer …）
+            # 不得参与池的解析，索引与镜像只由本文件的候选逻辑决定。
+            "--no-config",
             "--cache-dir",
             str(cache_dir),
             "--link-mode",
@@ -1286,7 +1330,7 @@ def _install_requirements_with_uv(
             "--upgrade",
             "--quiet",
             *index_args,
-            *requirements,
+            *install_requirements,
         ]
 
     if is_package_index_offline():
@@ -1301,19 +1345,109 @@ def _install_requirements_with_uv(
         return None
 
     candidates = resolve_package_index_candidates()
-    source, attempt = _run_with_source_rotation(
-        lambda index_source: _base_command(
-            ["--index-url", index_source] if index_source else []
-        ),
-        candidates,
-        cwd=cwd,
-        build_env=lambda _source: env,
-        timeout=RUNTIME_INSTALL_TIMEOUT_SECONDS,
-        failure_label="MaaFW runtime 依赖安装",
-    )
-    if source is None:
+
+    def _rotate(install_requirements: Sequence[str]) -> tuple[str | None, int]:
+        return _run_with_source_rotation(
+            lambda index_source: _base_command(
+                ["--index-url", index_source] if index_source else [],
+                install_requirements,
+            ),
+            candidates,
+            cwd=cwd,
+            build_env=lambda _source: env,
+            timeout=RUNTIME_INSTALL_TIMEOUT_SECONDS,
+            failure_label="MaaFW runtime 依赖安装",
+        )
+
+    binding_source: str | None = None
+    try:
+        source, attempt = _rotate(requirements)
+    except MaaFWRuntimeSourceRotationError as exc:
+        missing_version = _missing_maafw_version_for_fallback(requirements, exc)
+        if missing_version is None or pool_root is None:
+            raise
+        # ``exc`` 的 message 只带最后一轮的 stderr；触发兜底的「索引上没有这个
+        # 版本」可能是前几轮说的（最后一轮恰好超时）。兜底也失败时把那一段
+        # 拼进去，备忘按异常文本分类（``binding_unavailable`` / ``other``）才不会
+        # 把缺版本记成别的原因。
+        base_message = _message_with_missing_version_detail(exc)
+        try:
+            wheel_path, tag = ensure_binding_wheel(
+                missing_version,
+                pool_root,
+                proxy_url=proxy_url,
+                check_cancelled=raise_if_install_cancelled,
+                log=log,
+            )
+        except MaaFWRuntimeInstallCancelled:
+            raise
+        except Exception as fallback_exc:
+            raise RuntimeError(
+                f"{base_message}；GitHub 兜底也失败：{fallback_exc}"
+            ) from fallback_exc
+        if log is not None:
+            log(
+                f"PyPI 无 maafw {missing_version}，"
+                f"改用 MaaFramework {tag} 源码打包的 binding"
+            )
+        fallback_requirements = replace_maafw_requirement(
+            requirements,
+            local_wheel_requirement(wheel_path),
+            is_maafw=lambda item: requirement_distribution_name(item) == "maafw",
+        )
+        try:
+            source, attempt = _rotate(fallback_requirements)
+        except RuntimeError as fallback_exc:
+            raise RuntimeError(
+                f"{base_message}；GitHub 兜底也失败："
+                f"安装源码打包的 binding 失败：{fallback_exc}"
+            ) from fallback_exc
+        binding_source = f"github-source:{tag}"
+
+    result: dict[str, Any] = {}
+    if source is not None:
+        result["source"] = source
+        result["attempt"] = attempt
+    if binding_source is not None:
+        result["bindingSource"] = binding_source
+    return result or None
+
+
+def _message_with_missing_version_detail(
+    error: MaaFWRuntimeSourceRotationError,
+) -> str:
+    """把「索引上没有这个版本」那一轮的 stderr 补进 message（若最后一轮说的不是它）。"""
+
+    message = str(error)
+    if maafw_version_missing_from_index(message):
+        return message
+    for source, _, detail in error.attempts:
+        if maafw_version_missing_from_index(detail):
+            snippet = " ".join(detail.split())[:400]
+            return f"{message}；索引 {source or '默认'} 报告：{snippet}"
+    return message
+
+
+def _missing_maafw_version_for_fallback(
+    requirements: Sequence[str],
+    error: MaaFWRuntimeSourceRotationError,
+) -> str | None:
+    """判断这次全候选失败是否该走 binding 兜底，是则返回 requirement 里钉的 ``X``。
+
+    判据两条都要满足：任一候选的 stderr 匹配「索引上没有 maafw==」（连不上索引、
+    离线缓存缺包都不算）；requirements 里 ``maafw`` 是精确 ``==``。版本从 requirement
+    取，不从 stderr 抠。
+    """
+
+    if not any(
+        maafw_version_missing_from_index(detail) for _, _, detail in error.attempts
+    ):
         return None
-    return {"source": source, "attempt": attempt}
+    try:
+        requirement = find_maafw_requirement(requirements)
+    except MaaFWRuntimeIdentityError:
+        return None
+    return infer_exact_maafw_version(requirement)
 
 
 def _install_requirements_with_pip(
@@ -1322,6 +1456,9 @@ def _install_requirements_with_pip(
     *,
     cwd: Path,
 ) -> None:
+    # 没有 uv 时的 pip 路径不做 binding 兜底：pip 缺包的文本是
+    # ``ERROR: No matching distribution found for maafw==X``，与 uv 不同，且这条路径
+    # 只服务没有 uv 的旧安装（生产 M9A 的池环境就是 pip 建的）。留作后续。
     _run(
         [
             str(python_executable),
@@ -1347,6 +1484,7 @@ def _probe_python_identity(python_executable: Path) -> dict[str, str]:
             text=True,
             encoding="utf-8",
             errors="replace",
+            env=_clean_process_environment(),
         )
     except (OSError, subprocess.SubprocessError) as exc:
         raise RuntimeError(
@@ -1440,6 +1578,14 @@ def _run_subprocess(
     uv 下载依赖，没有这一步，任务取消只能干等安装线程跑完。
     """
 
+    if env is not None and logger.isEnabledFor(logging.DEBUG):
+        # 只打代理变量的键名与 NO_PROXY 的值：HTTP_PROXY 里可能带 user:pw@。
+        logger.debug(
+            "MaaFW runtime 子进程 %s：代理变量=%s，NO_PROXY=%s",
+            command[:3],
+            sorted(key for key in env if key.upper().endswith("_PROXY")),
+            env.get("NO_PROXY") or env.get("no_proxy") or "",
+        )
     cancel_event = current_install_cancel_event()
     if cancel_event is None:
         return subprocess.run(
@@ -1548,9 +1694,10 @@ def _run_with_source_rotation(
     「这个源失败了」而继续轮换下一个候选——那会把关机时的取消变成慢动作重试。
     """
 
-    attempts: list[str | None] = list(candidates) if candidates else [None]
-    last_error: RuntimeError | None = None
-    for attempt_index, source in enumerate(attempts, start=1):
+    sources: list[str | None] = list(candidates) if candidates else [None]
+    failed_attempts: list[tuple[str | None, int, str]] = []
+    last_message: str | None = None
+    for attempt_index, source in enumerate(sources, start=1):
         command = build_command(source)
         env = build_env(source)
         try:
@@ -1565,40 +1712,44 @@ def _run_with_source_rotation(
         if result.returncode == 0:
             return source, attempt_index
         detail = (result.stderr or result.stdout or "").strip()
-        last_error = RuntimeError(
-            f"{failure_label}失败 (exit={result.returncode}): {detail[:800]}"
-        )
-        if attempt_index < len(attempts):
+        failed_attempts.append((source, result.returncode, detail))
+        last_message = f"{failure_label}失败 (exit={result.returncode}): {detail[:800]}"
+        if attempt_index < len(sources):
             logger.warning(
                 "%s失败，换下一个源重试（失败源：%s，第 %d/%d 次尝试）：%s",
                 failure_label,
                 source or "默认",
                 attempt_index,
-                len(attempts),
+                len(sources),
                 detail[-400:],
             )
-    if last_error is None:
-        # attempts 至少一项，循环体必然至少跑过一次并设置过 last_error；
+    if last_message is None:
+        # sources 至少一项，循环体必然至少跑过一次并设置过 last_message；
         # 走到这里说明调用方式本身有 bug。
         raise RuntimeError(f"{failure_label}重试逻辑内部错误：候选列表为空")
-    raise last_error
+    raise MaaFWRuntimeSourceRotationError(last_message, attempts=failed_attempts)
+
+
+class MaaFWRuntimeSourceRotationError(RuntimeError):
+    """全部候选源都失败。message 是最后一轮的；``attempts`` 留着每一轮的原始 stderr。
+
+    此前只保留最后一轮的错误文本，前几轮的 stderr 只 ``logger.warning`` 后丢弃；
+    binding 兜底要看的是「任一候选说索引上没有这个版本」，得把每轮都留下来。
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        attempts: Sequence[tuple[str | None, int, str]] = (),
+    ) -> None:
+        super().__init__(message)
+        self.attempts: tuple[tuple[str | None, int, str], ...] = tuple(attempts)
 
 
 def _clean_process_environment() -> dict[str, str]:
-    env = os.environ.copy()
-    for name in (
-        # 启动链路（Runtime → uv run → 后端）注入的 venv 指向，交给 uv/pip
-        # 前必须剔除，否则外部 uv 会把项目环境解析到 MAS 的 runtime venv 上
-        "VIRTUAL_ENV",
-        "UV_PROJECT_ENVIRONMENT",
-        "PYTHONHOME",
-        "PYTHONUSERBASE",
-        "PYTHONPATH",
-        "PIP_TARGET",
-        "PIP_PREFIX",
-        "PIP_USER",
-    ):
-        env.pop(name, None)
+    # 剔除名单与 worker / agent 各处共用（host_environment 模块），这里只补自己的要求。
+    env = strip_host_python_environment()
     env["PYTHONNOUSERSITE"] = "1"
     return env
 
@@ -1694,6 +1845,7 @@ def _resolved_requirements_with_uv(
                 "freeze",
                 "--python",
                 str(python_executable),
+                "--no-config",
                 "--cache-dir",
                 str(cache_dir),
             ],

@@ -23,6 +23,7 @@
 import asyncio
 import shutil
 import uuid
+from contextlib import suppress
 from datetime import datetime
 from pathlib import Path
 from typing import Callable
@@ -31,8 +32,15 @@ from app.core import Config, EmulatorManager
 from app.core.ws import Publisher, protocol
 from app.models.config import SrcConfig, SrcUserConfig
 from app.models.ConfigBase import MultipleConfig
+from app.models.emulator import DeviceProvider
 from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, TaskExecuteBase, UserItem
+from app.task.emulator_core import close_emulator
+from app.task.proxy_helpers import (
+    CONFIG_SOURCE_DIRECT,
+    CONFIG_SOURCE_SCRIPT,
+    read_config_source,
+)
 from app.utils import ProcessManager, get_logger
 from app.utils.constants import TASK_MODE_ZH
 
@@ -41,6 +49,7 @@ from .ScriptConfig import ScriptConfigTask
 from .tools import (
     SrcConfigSnapshotState,
     SrcProcessState,
+    archive_native_backup,
     has_committed_src_user_config_transaction,
     is_src_config_available,
     kill_src_processes,
@@ -80,6 +89,7 @@ class SrcManager(TaskExecuteBase):
         *,
         reserved_src_root_path: Path,
         reserve_src_root: Callable[[Path], bool],
+        device_provider: DeviceProvider | None = None,
     ):
         super().__init__()
 
@@ -90,6 +100,7 @@ class SrcManager(TaskExecuteBase):
         self.script_info = script_info
         self._reserved_src_root_path = reserved_src_root_path.resolve()
         self._reserve_src_root = reserve_src_root
+        self._device_provider = device_provider
         self.check_result = "-"
         self.process_cleanup_success = True
         self.prepared = False
@@ -142,14 +153,34 @@ class SrcManager(TaskExecuteBase):
         )
         if not src_config_available and not temp_config_available:
             return "SRC配置文件不存在或已损坏, 请检查SRC路径设置或检查配置文件情况！"
+        # 脚本级存档仅在存在非直控用户时需要: 直控直接使用 SRC 安装目录的原生配置
         if (
             self.task_info.mode != "ScriptConfig"
+            and self._has_mas_config_user()
             and not (
                 Path.cwd() / f"data/{self.script_info.script_id}/Default/ConfigFile"
             ).exists()
         ):
             return "未完成 SRC 全局设置, 请先设置 SRC！"
         return "Pass"
+
+    def _has_mas_config_user(self) -> bool:
+        """目标用户里是否存在非直控（脚本/用户）配置来源的用户。
+
+        check() 先于 prepare() 执行，此时 self.user_config 尚未加载、user_list
+        还是占位项；直接读脚本配置持久化的 UserData，按参与运行的用户（启用、
+        剩余天数非 0、命中目标用户）判定，与 M9A._uses_direct_control 同构。
+        """
+
+        return any(
+            read_config_source(config, CONFIG_SOURCE_SCRIPT) != CONFIG_SOURCE_DIRECT
+            for uid, config in Config.ScriptConfig[
+                uuid.UUID(self.script_info.script_id)
+            ].UserData.items()
+            if config.get("Info", "Status")
+            and config.get("Info", "RemainedDay") != 0
+            and self.task_info.is_target_user(str(uid))
+        )
 
     async def prepare(self):
         """运行前准备"""
@@ -162,7 +193,8 @@ class SrcManager(TaskExecuteBase):
         logger.success(f"{self.script_info.script_id}已锁定, SRC配置提取完成")
 
         # 初始化模拟器管理器和用户列表
-        self.emulator_manager = await EmulatorManager.get_emulator_instance(
+        device_provider = self._device_provider or EmulatorManager.get_emulator_instance
+        self.emulator_manager = await device_provider(
             self.script_config.get("Emulator", "Id")
         )
         if self.task_info.mode == "ScriptConfig":
@@ -189,6 +221,11 @@ class SrcManager(TaskExecuteBase):
 
         # 备份本次任务开始前的原始配置
         self._backup_src_config_to_temp()
+
+        # 归档原生配置到持久保留池（指纹去重，失败不阻断任务——Temp 快照
+        # 已保证原生安全，这里提供的是跨会话可找回的历史）
+        with suppress(Exception):
+            archive_native_backup(self.src_set_path)
         self.prepared = True
 
     async def _initialize_recovery_context(self) -> None:
@@ -476,6 +513,35 @@ class SrcManager(TaskExecuteBase):
             Path.cwd() / f"data/{self.script_info.script_id}/Default/ConfigFile"
         )
 
+    def _keep_script_config_changes(self) -> bool:
+        """直控配置会话成功时保留 SRC 原生 GUI 的写回（对齐 MaaEnd 豁免）。
+
+        直控会话 MAS 零写入（ScriptConfig 直控分支直接 return），安装
+        config/ 由本体保存；若 final_task 无条件用任务前快照还原，会把
+        用户刚在原生 GUI 里改的配置抹回会话前状态。脚本级（Default）与
+        用户脚本态会话不豁免——它们的 GUI 改动已由 ScriptConfig 收尾回写
+        MAS 目录，安装目录现场仍按任务前快照还原。viewOnly 查看会话不保留
+        任何现场改动，结束后也还原任务前快照。
+        """
+
+        if self.task_info.mode != "ScriptConfig" or self.task_info.view_only:
+            return False
+        if not (
+            self.script_info.user_list
+            and self.script_info.user_list[0].status == "完成"
+        ):
+            return False
+        user_id = self.script_info.user_list[0].user_id
+        if user_id == "Default":
+            return False
+        try:
+            mode = str(
+                self.user_config[uuid.UUID(user_id)].get("Info", "Mode") or ""
+            ).strip()
+        except (KeyError, ValueError, TypeError):
+            return False
+        return mode == "直控"
+
     def _backup_src_config_to_temp(self) -> None:
         """完整复制配置后，再提交为可恢复的 Temp 快照。"""
 
@@ -605,11 +671,6 @@ class SrcManager(TaskExecuteBase):
             self.temp_ready_path,
             expected_script_id=self.script_info.script_id,
         )
-
-    def _read_config_snapshot_root(self) -> Path:
-        """读取已提交配置快照所属的 SRC 根目录。"""
-
-        return self._read_config_snapshot_state().src_root_path
 
     def _quarantine_config_snapshot(self, reason: str) -> None:
         """隔离不应自动恢复的快照，避免覆盖现场配置。"""
@@ -751,12 +812,16 @@ class SrcManager(TaskExecuteBase):
             raise RuntimeError("脚本配置类型错误, 不是 SRC 脚本类型")
 
         for self.script_info.current_index in range(len(self.script_info.user_list)):
+            task_kwargs: dict = {"src_installation_id": self.src_installation_id}
+            # 查看会话（view_only）仅 ScriptConfig 模式支持：只读打开原生 GUI
+            if self.task_info.mode == "ScriptConfig":
+                task_kwargs["view_only"] = self.task_info.view_only
             task = METHOD_BOOK[self.task_info.mode](
                 self.script_info,
                 self.script_config,
                 self.user_config,
                 self.emulator_manager,
-                src_installation_id=self.src_installation_id,
+                **task_kwargs,
             )
             try:
                 await self.spawn(task)
@@ -800,9 +865,11 @@ class SrcManager(TaskExecuteBase):
                     raise RuntimeError(
                         f"SRC 配置快照不存在或已损坏，已保留当前配置: {self.temp_path}"
                     )
-                self._restore_src_config_from_temp(
-                    expected_installation_id=self.src_installation_id,
-                )
+                # 直控配置会话保留 GUI 写回（对齐 MaaEnd 豁免），其余按任务前快照还原
+                if not self._keep_script_config_changes():
+                    self._restore_src_config_from_temp(
+                        expected_installation_id=self.src_installation_id,
+                    )
                 self._retire_src_config_snapshot()
             else:
                 logger.warning(f"SRC 进程仍可能运行，保留配置快照: {self.temp_path}")
@@ -829,16 +896,8 @@ class SrcManager(TaskExecuteBase):
         if self.task_info.mode not in ["AutoProxy"]:
             return False
 
-        try:
-            await asyncio.wait_for(
-                self.emulator_manager.close(
-                    self.script_config.get("Emulator", "Index")
-                ),
-                timeout=_EMULATOR_CLOSE_TIMEOUT_SECONDS,
-            )
-        except Exception as e:
+        if not await close_emulator(self, timeout=_EMULATOR_CLOSE_TIMEOUT_SECONDS):
             self.script_info.status = "异常"
-            logger.opt(exception=True).warning(f"关闭模拟器时出现异常: {e}")
 
         # 根配置保持锁定以阻止外部编辑；仅临时开放内部用户集合写回。
         await self.script_config.UserData.unlock()

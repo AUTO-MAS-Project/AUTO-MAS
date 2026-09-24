@@ -28,8 +28,10 @@ from fastapi import APIRouter, Body, Query
 from app.core import Config
 from app.models.schema import *
 from app.services import Updater
+from app.utils import get_logger
 
 router = APIRouter(prefix="/api/update", tags=["软件更新"])
+logger = get_logger("软件更新 API")
 
 
 @router.get(
@@ -59,6 +61,7 @@ async def check_update(version: UpdateCheckIn = Body(...)) -> UpdateCheckOut:
             current_version=version.current_version, if_force=version.if_force
         )
     except Exception as e:
+        logger.opt(exception=True).warning(f"check_update失败: {type(e).__name__}: {e}")
         return UpdateCheckOut(
             code=500,
             status="error",
@@ -91,6 +94,9 @@ async def download_update(
                 message="已有更新任务在进行中, 请勿重复操作",
             )
     except Exception as e:
+        logger.opt(exception=True).warning(
+            f"download_update失败: {type(e).__name__}: {e}"
+        )
         return OutBase(
             code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
         )
@@ -112,6 +118,9 @@ async def cancel_update_download() -> OutBase:
                 code=409, status="error", message="当前没有正在进行中的下载任务"
             )
     except Exception as e:
+        logger.opt(exception=True).warning(
+            f"cancel_update_download失败: {type(e).__name__}: {e}"
+        )
         return OutBase(
             code=500,
             status="error",
@@ -137,6 +146,9 @@ async def switch_update_download_to_cnb() -> OutBase:
                 message="当前无法切换到 CNB 下载源, 请确认正在从 GitHub 源下载",
             )
     except Exception as e:
+        logger.opt(exception=True).warning(
+            f"switch_update_download_to_cnb失败: {type(e).__name__}: {e}"
+        )
         return OutBase(
             code=500,
             status="error",
@@ -159,6 +171,9 @@ async def install_update() -> OutBase:
         Config.temp_task.append(task)
         task.add_done_callback(lambda t: Config.temp_task.remove(t))
     except Exception as e:
+        logger.opt(exception=True).warning(
+            f"install_update失败: {type(e).__name__}: {e}"
+        )
         return OutBase(
             code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
         )

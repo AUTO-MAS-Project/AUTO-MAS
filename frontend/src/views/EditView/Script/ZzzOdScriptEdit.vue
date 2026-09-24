@@ -24,12 +24,8 @@
     </a-space>
   </div>
 
-  <div class="script-edit-content">
-    <a-card
-      :title="t('edit.zzzodScriptConfiguration')"
-      :loading="pageLoading"
-      class="config-card"
-    >
+  <ConfigLockPanel :script-id="scriptId" content-class="script-edit-content">
+    <a-card :title="t('edit.zzzodScriptConfiguration')" :loading="pageLoading" class="config-card">
       <template #extra>
         <a-tag color="blue" class="type-tag">ZZZ-OD</a-tag>
       </template>
@@ -339,12 +335,17 @@
             </a-col>
           </a-row>
         </div>
+
+        <!-- 实例槽管理：脚本级诊断（槽目录按安装目录归池、跨脚本共享），默认折叠 -->
+        <ZzzOdSlotManage :script-id="scriptId" />
       </a-form>
     </a-card>
-  </div>
+  </ConfigLockPanel>
 </template>
 
 <script setup lang="ts">
+import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
+import ZzzOdSlotManage from './ZzzOdSlotManage.vue'
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
@@ -355,6 +356,7 @@ import {
   QuestionCircleOutlined,
 } from '@ant-design/icons-vue'
 import { useScriptApi } from '@/composables/useScriptApi'
+import { useSaveQueue } from '@/composables/useSaveQueue'
 
 const { t } = useI18n()
 const logger = window.electronAPI.getLogger('ZZZ-OD脚本编辑')
@@ -364,7 +366,8 @@ const { getScript, updateScript } = useScriptApi()
 
 const scriptId = route.params.id as string
 const pageLoading = ref(true)
-const isSaving = ref(false)
+// 保存串行队列：连续改动按序写回，不再被布尔互斥丢掉
+const { isSaving, enqueue } = useSaveQueue()
 const isInitializing = ref(true)
 
 // ══ ZZZ-OD 项目结构常量（需与 app/task/ZzzOd/AutoProxy.py 的 _ZZZOD_LAUNCHERS 保持同步）══
@@ -450,20 +453,19 @@ const rules = computed(() => ({
 const handleCancel = () => router.push('/scripts')
 
 const handleChange = async (category: string, key: string, value: unknown) => {
-  if (isInitializing.value || isSaving.value) return
-  isSaving.value = true
-  try {
-    const updateData = { [category]: { [key]: value } } as Record<string, Record<string, unknown>>
-    const success = await updateScript(scriptId, updateData)
-    if (success) {
-      logger.info(`配置已保存: ${category}.${key}`)
+  if (isInitializing.value) return
+  await enqueue(async () => {
+    try {
+      const updateData = { [category]: { [key]: value } } as Record<string, Record<string, unknown>>
+      const success = await updateScript(scriptId, updateData)
+      if (success) {
+        logger.info(`配置已保存: ${category}.${key}`)
+      }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e)
+      logger.error(msg)
     }
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e)
-    logger.error(msg)
-  } finally {
-    isSaving.value = false
-  }
+  }, `${category}.${key}`)
 }
 
 const applyRootPathDefaults = async (rootPath: string) => {
@@ -475,23 +477,22 @@ const applyRootPathDefaults = async (rootPath: string) => {
   const previousPath = zzzodConfig.Info.RootPath
   zzzodConfig.Info.RootPath = norm
 
-  isSaving.value = true
-  try {
-    const success = await updateScript(scriptId, {
-      Info: { RootPath: norm },
-    })
-    if (success) {
-      message.success(t('edit.zzzodRootPathSaved'))
-      return true
+  return enqueue(async () => {
+    try {
+      const success = await updateScript(scriptId, {
+        Info: { RootPath: norm },
+      })
+      if (success) {
+        message.success(t('edit.zzzodRootPathSaved'))
+        return true
+      }
+      zzzodConfig.Info.RootPath = previousPath
+      return false
+    } catch (error) {
+      zzzodConfig.Info.RootPath = previousPath
+      throw error
     }
-    zzzodConfig.Info.RootPath = previousPath
-    return false
-  } catch (error) {
-    zzzodConfig.Info.RootPath = previousPath
-    throw error
-  } finally {
-    isSaving.value = false
-  }
+  })
 }
 
 const loadScript = async () => {

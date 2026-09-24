@@ -38,6 +38,7 @@ export type RuntimeKnownStage =
   | 'bootstrap'
   | 'repair'
   | 'cleanup'
+  | 'network.probe'
   | 'uv.check'
   | 'uv.download'
   | 'uv.verify'
@@ -66,6 +67,7 @@ export const RUNTIME_STAGES: readonly RuntimeKnownStage[] = [
   'bootstrap',
   'repair',
   'cleanup',
+  'network.probe',
   'uv.check',
   'uv.download',
   'uv.verify',
@@ -746,7 +748,16 @@ export interface RuntimeHelloEvent extends RuntimeEventCommon {
   capabilities: RuntimeCapability[]
 }
 
-/** 可量化的阶段进度。`current`/`total`/`percent` 只在总量可知时出现。 */
+/**
+ * 可量化的阶段进度。`current`/`total`/`percent` 只在总量可知时出现。
+ *
+ * M14 起下载类 stage（`uv.download` / `python.install` / `dependencies.sync`）的
+ * `current` / `total` 是真实字节数，并追加三个可选字段说明「在拉什么、从哪拉、多快」；
+ * `network.probe`（下载前的镜像源测速）每探测完一个源发一条 `running`，`item` 与 `source`
+ * 都是源 key，`current` / `total` 是已完成源数 / 源总数，全部完成后发一条 `succeeded`。
+ * 测速的 `bytesPerSecond` 三种取值三种含义：正数是实测吞吐；`0` 是探测失败；缺失是探测
+ * 成功但只测了首字节、没有吞吐可报（git 类源）。旧版 Runtime 不带这三个字段，缺失即无信息。
+ */
 export interface RuntimeProgressEvent extends RuntimeEventCommon {
   type: 'progress'
   stage: RuntimeStage
@@ -755,6 +766,12 @@ export interface RuntimeProgressEvent extends RuntimeEventCommon {
   current?: number
   total?: number
   percent?: number
+  /** 当前条目：正在下载的文件名，或测速时的源 key。 */
+  item?: string
+  /** 当前字节来自哪个源的 key（`aliyun` / `tsinghua` / `pypi` / `github` / `cnb` …）。 */
+  source?: string
+  /** 最近 1 秒窗口的整数吞吐（字节/秒）；测速时 `0` 表示探测失败、缺失表示只测了首字节。 */
+  bytesPerSecond?: number
 }
 
 /** 生命周期状态迁移或只读状态快照。 */

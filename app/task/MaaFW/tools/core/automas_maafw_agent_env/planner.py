@@ -217,6 +217,15 @@ def _resolve_executable(
 ) -> dict[str, Any]:
     replaced = _replace_project_dir(child_exec, base_dir)
     if not _looks_like_project_path(replaced):
+        if _is_bare_python_command(replaced):
+            return _isolated_venv_executable(
+                base_dir,
+                managed_env_root=managed_env_root,
+                fallback_reason=(
+                    f"项目声明从 PATH 查找解释器 {replaced!r}，"
+                    "AUTO-MAS 不依赖宿主 Python"
+                ),
+            )
         return {
             "command": replaced,
             "exists": None,
@@ -236,21 +245,11 @@ def _resolve_executable(
         }
 
     if _is_bundled_python_pattern(child_exec, child_args, base_dir):
-        venv_path = compute_isolated_venv_path(
+        return _isolated_venv_executable(
             base_dir,
             managed_env_root=managed_env_root,
+            fallback_reason=f"项目声明的解释器不存在: {resolved_path}",
         )
-        venv_python = venv_python_exe(venv_path)
-        return {
-            "command": str(venv_python),
-            "exists": venv_python.exists(),
-            "fallback_reason": (
-                f"项目声明的解释器不存在: {resolved_path}，"
-                f"将使用该项目专属隔离 venv: {venv_path}"
-            ),
-            "runtime_kind": "isolated_venv",
-            "isolated_venv_path": str(venv_path),
-        }
 
     return {
         "command": str(resolved_path),
@@ -273,6 +272,47 @@ def _resolve_project_executable_path(base_dir: Path, raw_path: str) -> Path:
     ):
         return exe_candidate.resolve()
     return resolved_path
+
+
+def _isolated_venv_executable(
+    base_dir: Path,
+    *,
+    managed_env_root: str | Path | None,
+    fallback_reason: str,
+) -> dict[str, Any]:
+    venv_path = compute_isolated_venv_path(
+        base_dir,
+        managed_env_root=managed_env_root,
+    )
+    venv_python = venv_python_exe(venv_path)
+    return {
+        "command": str(venv_python),
+        "exists": venv_python.exists(),
+        "fallback_reason": f"{fallback_reason}，将使用该项目专属隔离 venv: {venv_path}",
+        "runtime_kind": "isolated_venv",
+        "isolated_venv_path": str(venv_path),
+    }
+
+
+#: interface.json 里「从 PATH 找解释器」的写法（PI v2 协议示例就是裸的 ``python``）。
+BARE_PYTHON_COMMANDS: frozenset[str] = frozenset(
+    {"python", "python3", "pythonw", "python.exe", "python3.exe", "pythonw.exe"}
+)
+
+
+def _is_bare_python_command(child_exec: str) -> bool:
+    """裸的 ``python`` 不能原样交给 PATH 去找。
+
+    worker 跑在运行池的 venv 里，而 Windows 上 venv 的 ``python.exe`` 只是个
+    启动器，真正的进程是基解释器；``CreateProcess`` 找可执行文件先看「父进程
+    所在目录」再看 PATH，且看的是父进程自己的 PATH，不是传给子进程的 ``env``。
+    于是裸 ``python`` 永远落到运行池的基解释器上——那里没有 ``maa``，agent 一起
+    就 ``ModuleNotFoundError``，用户 PATH 里有没有 Python 都一样。项目自带解释器
+    走 ``project_python``；这种没带的按隔离 venv 处理，和「声明了自带 Python 但
+    文件不存在」同一条路。
+    """
+
+    return child_exec.strip().lower() in BARE_PYTHON_COMMANDS
 
 
 def _classify_existing_project_executable(resolved_path: Path) -> str:

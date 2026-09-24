@@ -126,7 +126,8 @@ export function useHistoryLogic() {
 
         const { useAudioPlayer } = await import('@/composables/useAudioPlayer')
         const { playSound } = useAudioPlayer()
-        await playSound('history_query')
+        // 提示不等音频：播放前还要查设置、探文件，用户只关心结果已经出来了
+        void playSound('history_query')
 
         if (!isMounted) return
         message.success(t('history.toast.searchDone'))

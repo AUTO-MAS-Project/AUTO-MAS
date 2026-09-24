@@ -35,13 +35,13 @@ from app.models.schema import WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem, TaskExecuteBase, UserItem
 from app.utils import get_logger
 from app.utils.constants import TASK_MODE_ZH, UTC4
+from app.utils.io import replace_dir
 
 from .AutoProxy import HSRAutoProxyTask, resolve_daily_native_modes
 from .task_mapping import (
     ENGINE_DISPLAY_NAMES,
     HSR_TASK_MODULES,
     describe_script_fallback,
-    get_assigned_script,
     resolve_script_assignment,
     script_supports,
 )
@@ -56,6 +56,7 @@ from .tools.account_switch import (
     stop_external_processes,
     user_needs_account_switch,
 )
+from .tools.backup_archive import archive_native_backup
 from .tools.external_locks import (
     HSRExternalPathLockLease,
     acquire_external_path_locks,
@@ -104,16 +105,13 @@ def _restore_path_from_backup(label: str, source: Path, backup: Path) -> None:
         raise RuntimeError(f"备份路径不存在：{backup}")
 
     source.parent.mkdir(parents=True, exist_ok=True)
-    temp_source = source.with_name(f"{source.name}.tmp")
-    _remove_path(temp_source)
 
     if backup.is_dir():
-        shutil.copytree(backup, temp_source)
+        replace_dir(backup, source)
     else:
-        shutil.copy2(backup, temp_source)
+        _remove_path(source)
+        shutil.copy2(backup, source)
 
-    _remove_path(source)
-    temp_source.rename(source)
     logger.info(f"{label} 已恢复：{source}")
 
 
@@ -247,6 +245,97 @@ class HSRManager(TaskExecuteBase):
             raise RuntimeError("；".join(errors))
 
         logger.info("HSR 外部配置已恢复")
+
+    async def _rollback_pending_updates(self) -> None:
+        """收拾上一轮崩在中途的外部脚本更新。
+
+        只读 journal、只动改名，不联网。放在拿到路径锁之后、备份外部配置之前：
+        备份要拿到的是回滚之后的稳定状态。
+        """
+
+        from app.task.HSR.tools.update import rollback_pending
+
+        for engine in ("M7A", "SRA"):
+            root = resolve_script_path(self.script_config, engine)
+            if not root:
+                continue
+            try:
+                await rollback_pending(Path(root), send_log=self._append_log)
+            except Exception as e:  # noqa: BLE001 - 回滚失败不该挡住任务启动
+                logger.opt(exception=True).warning(f"HSR 更新：回滚 {engine} 残留失败")
+                self._append_log(f"{engine} 未完成更新的回滚失败，将按现状继续：{e}")
+
+    def _update_aborted(self) -> bool:
+        """用户是否已经要求停止——下载途中每收一块问一次。
+
+        收尾期的更新跑在 ``asyncio.shield`` 里（``models/task.py`` 的
+        ``_execute_task``），取消传不进来：``stopped_manually`` 只覆盖「停止落在
+        主任务里」，而停止落在更新途中时唯一的痕迹是根任务已经被取消。两个都
+        看，才不至于让用户按了停止还要等一个几百 MB 的下载走完、期间外部目录锁
+        一直被占着。
+        """
+
+        if self.stopped_manually:
+            return True
+        task_item = self.task_info
+        root_task = getattr(task_item, "task", None) if task_item else None
+        return bool(root_task is not None and root_task.cancelled())
+
+    async def _update_external_scripts(self) -> str | None:
+        """本轮正常跑完后更新外部脚本。返回非空字符串表示应判为异常。
+
+        更新失败本身不算任务失败——按现有版本继续跑就是了。只有目录真的被改
+        坏（回滚也失败）才必须让脚本进异常态，否则下一轮会在半坏的目录上反复
+        跑。
+        """
+
+        script_config = self.script_config
+        if script_config is None:
+            return None
+        if str(script_config.get("Update", "AutoUpdateMode") or "Off") != "AfterRun":
+            return None
+        # 取消或已经出错的这一轮不动目录：收尾期最不该起一个几百 MB 的下载。
+        # `stopped_manually` 是基类在任何 CancelledError 上置的（models/task.py），
+        # 且置于 final_task 之前，比只看 `crashed` 气密——HSR 只在用户循环里置
+        # `crashed`，取消若落在 check() 通过之后、用户循环开始之前就会漏掉。
+        if self.stopped_manually or self.crashed or self.check_result != "Pass":
+            return None
+
+        from app.task.HSR.tools.update import update_engine_if_needed
+
+        channel = str(script_config.get("Update", "Channel") or "stable")
+        cdk = str(script_config.get("Update", "MirrorChyanCDK") or "")
+        # 与 MaaFW 更新缓存同一口径：下载包落 MAS 数据目录，不落安装卷。
+        download_dir = Path.cwd() / "data" / "hsr_update"
+
+        blocking: list[str] = []
+        for engine in ("M7A", "SRA"):
+            if self._update_aborted():
+                break
+            root = resolve_script_path(script_config, engine)
+            if not root:
+                continue
+            source = str(script_config.get("Update", f"{engine}Source") or "")
+            try:
+                outcome = await update_engine_if_needed(
+                    engine,
+                    Path(root),
+                    source=source,
+                    channel=channel,
+                    cdk=cdk,
+                    proxy=Config.proxy,
+                    download_dir=download_dir,
+                    send_log=self._append_log,
+                    should_abort=self._update_aborted,
+                )
+            except Exception as e:  # noqa: BLE001 - 更新绝不能拖垮任务收尾
+                logger.opt(exception=True).warning(f"HSR 更新：{engine} 更新时出错")
+                self._append_log(f"{engine} 更新异常，按现有版本继续：{e}")
+                continue
+            if outcome.blocking:
+                blocking.append(outcome.message)
+
+        return "；".join(blocking) if blocking else None
 
     def _append_log(self, message: str, *, max_lines: int = 500) -> None:
         """向调度台日志追加一行 HSR 运行信息。"""
@@ -477,10 +566,7 @@ class HSRManager(TaskExecuteBase):
             self._precheck_daily_stages(script_config, user_config, user_name, assigned)
 
         if sra_available:
-            return self._validate_sra_user_credentials(
-                script_config,
-                only_sra_needed=False,
-            )
+            return self._validate_sra_user_credentials(script_config)
 
         return "Pass"
 
@@ -550,32 +636,7 @@ class HSRManager(TaskExecuteBase):
             and user_config.get("Info", "RemainedDay") != 0
         )
 
-    @staticmethod
-    def _user_needs_sra(user_config, script_config: HSRConfig) -> bool:
-        """判断用户是否需要 SRA StartGame 登录/切号。"""
-
-        effective_engines = resolve_configured_engines(script_config)
-        for module in HSR_TASK_MODULES:
-            if not user_config.get("TaskSwitch", module.key):
-                continue
-            if (
-                get_assigned_script(
-                    module,
-                    script_config,
-                    user_config=user_config,
-                    effective_engines=effective_engines,
-                )
-                == "SRA"
-            ):
-                return True
-        return False
-
-    def _validate_sra_user_credentials(
-        self,
-        script_config: HSRConfig,
-        *,
-        only_sra_needed: bool,
-    ) -> str:
+    def _validate_sra_user_credentials(self, script_config: HSRConfig) -> str:
         """校验启用用户的 SRA 登录/切号凭证。"""
 
         for uid, user_config in script_config.UserData.items():
@@ -591,9 +652,6 @@ class HSRManager(TaskExecuteBase):
                 == "direct"
             ):
                 continue
-            if only_sra_needed and not self._user_needs_sra(user_config, script_config):
-                continue
-
             user_name = user_config.get("Info", "Name")
             result = check_user_credentials(user_config, user_name)
             if result != "Pass":
@@ -643,8 +701,22 @@ class HSRManager(TaskExecuteBase):
             )
             self._append_log("HSR 外部脚本目录运行锁已获取")
 
+            await self._rollback_pending_updates()
             self._backup_external_configs()
             self._append_log("HSR 外部脚本配置已备份")
+            # 运行前归档两引擎原生配置到持久池（运行会写托管字段、结束按运行期
+            # 备份清单还原，崩溃残留会污染；持久归档提供跨会话找回。指纹去重，
+            # 失败不阻断任务）
+            m7a_root = resolve_script_path(self.script_config, "M7A")
+            try:
+                archive_native_backup(
+                    Path(m7a_root) if m7a_root else None,
+                    get_sra_app_data_dir(),
+                )
+            except Exception:
+                logger.opt(exception=True).warning(
+                    "HSR 运行前原生配置归档失败，已跳过（不阻断任务）"
+                )
             if resolve_script_path(self.script_config, "SRA"):
                 try:
                     disable_sra_windows_notifications()
@@ -832,6 +904,11 @@ class HSRManager(TaskExecuteBase):
                 f"用户「{user_name}」进入脚本直控；MAS 不管理游戏，"
                 f"仅运行原生配置并跟踪脚本进程：{'、'.join(control.engines)}"
             )
+        self._append_log(
+            f"直控按整份原生配置一次跑完，单个脚本运行上限 {control.timeout_minutes} 分钟"
+            f"（日常 {control.daily_limit_minutes} + 周常 {control.weekly_limit_minutes}），"
+            "超时将终止脚本进程"
+        )
 
         summaries: list[str] = []
         try:
@@ -999,7 +1076,11 @@ class HSRManager(TaskExecuteBase):
         try:
             # 分辨率注册表只在游戏关闭后恢复，且放在 final_task 中保证
             # TaskExecuteBase 的取消/异常 finally 路径也不会遗留临时值。
-            if is_game_management_enabled(self.script_config):
+            # 配置检查未通过或 prepare() 未走完时 script_config 仍为 None，
+            # 与上面 _close_game_if_needed 一样跳过，不把它记成收尾异常。
+            if isinstance(self.script_config, HSRConfig) and is_game_management_enabled(
+                self.script_config
+            ):
                 restore_game_resolution_if_needed(
                     self._runtime,
                     self._append_log,
@@ -1012,6 +1093,13 @@ class HSRManager(TaskExecuteBase):
 
         try:
             restore_error = await self._restore_external_configs()
+            # 外部脚本更新是这一段关键区里的最后一件事：往前必须晚于配置恢复
+            # （恢复写的是打补丁前的用户配置，反过来会把旧配置盖到新版本上），
+            # 往后必须早于释放路径锁，否则更新期间目录不再独占。
+            if not final_errors and not restore_error:
+                update_error = await self._update_external_scripts()
+                if update_error:
+                    final_errors.append(update_error)
         finally:
             # 备份/运行/恢复是同一关键区；配置解锁与通知在锁释放后进行。
             self._release_external_path_lock()

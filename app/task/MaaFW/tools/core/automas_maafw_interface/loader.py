@@ -32,7 +32,6 @@ from .models import (
     SUPPORTED_OPTION_TYPES,
     MaaFWInterface,
     MaaFWOption,
-    MaaFWOptionCase,
     MaaFWPretask,
     build_pretask_task_name,
     iter_pretasks,
@@ -824,25 +823,6 @@ def _build_common_option_names(interface_model: MaaFWInterface) -> list[str]:
     for controller in interface_model.controller:
         option_names.extend(controller.option or [])
     return option_names
-
-
-def rescan_scan_select_option(
-    interface_model: MaaFWInterface,
-    option_name: str,
-    base_dir: str | Path,
-) -> list[dict[str, str]]:
-    option = interface_model.option.get(option_name)
-    if option is None:
-        raise MaaFWInterfaceLoadError(f"scan_select 选项不存在: {option_name}")
-    if option.type != "scan_select":
-        raise MaaFWInterfaceLoadError(f"选项不是 scan_select 类型: {option_name}")
-
-    resolved_base_dir = Path(base_dir).resolve()
-    option_data = option.model_dump(mode="json", exclude_none=True)
-    option_data["cases"] = []
-    scanned_cases = _scan_scan_select_cases(option_name, option_data, resolved_base_dir)
-    option.cases = [MaaFWOptionCase.model_validate(item) for item in scanned_cases]
-    return scanned_cases
 
 
 def _load_interface_model_with_context(

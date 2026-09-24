@@ -3,8 +3,8 @@ import { useI18n } from 'vue-i18n'
 import { onMounted, onUnmounted, reactive, ref } from 'vue'
 import { useEventListener } from '@vueuse/core'
 import type { ToolsConfig, ToolsConfig_ArknightsPC } from '@/api'
-import { Service } from '@/api'
 import { useToolsApi } from '@/composables/useToolsApi'
+import { useToolsStatusPolling } from '@/composables/useToolsStatusPolling'
 import { useStatusTag, createStatusTag } from '@/composables/useStatusTag'
 import TabArknightsPC from './TabArknightsPC.vue'
 
@@ -53,70 +53,19 @@ const arknightsPCStatusTag = useStatusTag(
   createStatusTag(t('tools.statusDisabled'), 'default')
 )
 
-// 轮询定时器
-let pollTimer: ReturnType<typeof setInterval> | null = null
-let statusRequest: Promise<void> | null = null
-let statusPollFailed = false
-
-// 卸载守卫：组件卸载后阻止异步回调写入响应式状态
-let isMounted = true
-
-// 仅更新状态（不影响编辑状态，不触发 loading）
-const updateStatus = () => {
-  if (statusRequest) return statusRequest
-
-  const request = (async () => {
-    try {
-      // 直接调用 Service 而非 getTools()，避免 loading 状态切换导致组件重渲染闪烁
-      const response = await Service.getToolsApiToolsGetPost()
-      if (!isMounted) return
-      if (response.code !== 200 || !response.data) {
-        throw new Error(response.message || t('tools.statusInvalid'))
-      }
-      const data = response.data
-      statusPollFailed = false
-      if (data.ArknightsPC?.Status) {
-        // 只更新 toolsConfig 的状态，不更新 editingConfig
-        // 这样轮询只影响状态标签显示，不会触发编辑表单重新渲染
-        toolsConfig.ArknightsPC!.Status = data.ArknightsPC.Status
-      }
-    } catch (error) {
-      if (!statusPollFailed) {
-        const errorMsg = error instanceof Error ? error.message : String(error)
-        logger.warn(`更新工具状态失败，将继续重试: ${errorMsg}`)
-        statusPollFailed = true
-      }
+// 状态轮询：工具已启用 5 s 一次，否则 30 s
+const { startStatusPolling, stopStatusPolling } = useToolsStatusPolling({
+  applyStatus: data => {
+    if (data.ArknightsPC?.Status) {
+      // 只更新 toolsConfig 的状态，不更新 editingConfig
+      // 这样轮询只影响状态标签显示，不会触发编辑表单重新渲染
+      toolsConfig.ArknightsPC!.Status = data.ArknightsPC.Status
     }
-  })()
-  statusRequest = request
-  void request.then(
-    () => {
-      if (statusRequest === request) statusRequest = null
-    },
-    () => {
-      if (statusRequest === request) statusRequest = null
-    }
-  )
-  return request
-}
-
-// 启动状态轮询
-const startStatusPolling = () => {
-  if (pollTimer) {
-    clearInterval(pollTimer)
-  }
-  pollTimer = setInterval(() => {
-    void updateStatus()
-  }, 1000) // 每秒更新一次
-}
-
-// 停止状态轮询
-const stopStatusPolling = () => {
-  if (pollTimer) {
-    clearInterval(pollTimer)
-    pollTimer = null
-  }
-}
+  },
+  isActive: () => toolsConfig.ArknightsPC?.Enabled === true,
+  invalidMessage: () => t('tools.statusInvalid'),
+  logger,
+})
 
 // 加载配置
 const loadTools = async () => {
@@ -230,12 +179,6 @@ const handleKeyDown = async (event: KeyboardEvent) => {
 
 // 使用 VueUse 的 useEventListener 管理键盘事件
 useEventListener(document, 'keydown', handleKeyDown)
-useEventListener(window, 'focus', () => void updateStatus())
-useEventListener(document, 'visibilitychange', () => {
-  if (document.visibilityState === 'visible') {
-    void updateStatus()
-  }
-})
 
 // 生命周期：加载配置并启动轮询
 onMounted(async () => {
@@ -243,9 +186,8 @@ onMounted(async () => {
   startStatusPolling()
 })
 
-// 生命周期：停止轮询，标记组件已卸载
+// 生命周期：停止轮询
 onUnmounted(() => {
-  isMounted = false
   stopStatusPolling()
 })
 </script>

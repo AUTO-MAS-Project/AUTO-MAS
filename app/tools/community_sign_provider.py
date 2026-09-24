@@ -44,9 +44,7 @@ logger = get_logger("游戏社区签到")
 
 _system_time_checked_at = 0.0
 _SYSTEM_TIME_CHECK_INTERVAL = 300.0
-_TAYGEDO_COMMUNITY_DETAIL_GAMES = frozenset(
-    ("幻塔社区", "异环社区", "塔吉多社区")
-)
+_TAYGEDO_COMMUNITY_DETAIL_GAMES = frozenset(("幻塔社区", "异环社区", "塔吉多社区"))
 
 
 class _TimeSource(Protocol):
@@ -236,9 +234,7 @@ async def _run_miyoushe_provider(
                     await on_credential_update("MiyousheToken", updated_token)
                 except Exception as error:
                     # 收尾 credential_updates 仍会重试，不能让回写故障掩盖签到结果。
-                    logger.warning(
-                        f"米游社凭据即时回写失败: {type(error).__name__}"
-                    )
+                    logger.warning(f"米游社凭据即时回写失败: {type(error).__name__}")
 
     results = await miyoushe_sign_in(
         token,
@@ -384,6 +380,8 @@ _COMMUNITY_SIGN_PROVIDERS = (
 COMMUNITY_TOKEN_FIELDS = tuple(
     provider.token_field for provider in _COMMUNITY_SIGN_PROVIDERS
 )
+
+
 def read_community_token(account: object, field: str) -> str:
     """读取凭据字段，兼容旧版本尚未包含新增字段的账号对象。"""
 
@@ -613,8 +611,7 @@ def _is_taygedo_community_detail_result(item: dict[str, object]) -> bool:
 
     return (
         str(item.get("platform") or "").strip() == "塔吉多"
-        and str(item.get("game") or "").strip()
-        in _TAYGEDO_COMMUNITY_DETAIL_GAMES
+        and str(item.get("game") or "").strip() in _TAYGEDO_COMMUNITY_DETAIL_GAMES
     )
 
 
@@ -632,9 +629,7 @@ def format_community_sign_results(
     platforms: dict[str, dict[str, dict[str, object]]] = {}
 
     for item in results:
-        if item.get("_notification_only") or _is_taygedo_community_detail_result(
-            item
-        ):
+        if item.get("_notification_only") or _is_taygedo_community_detail_result(item):
             continue
         platform = item.get("platform", "未知")
         account = str(item.get("account", "未知"))
@@ -660,6 +655,7 @@ def format_community_sign_results(
                 "status": item.get("status", "失败"),
                 "reward": item.get("reward", ""),
                 "reason": item.get("reason", ""),
+                "details": item.get("details", []),
             }
         )
 

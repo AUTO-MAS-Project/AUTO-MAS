@@ -4,7 +4,7 @@ import type {
   HSREngine,
 } from '@/composables/useHSRPluginApi'
 
-export interface HSRCapabilityView {
+interface HSRCapabilityView {
   effectiveEngines: HSREngine[]
   taskKeys: string[]
   supportedModes: string[]
@@ -34,16 +34,4 @@ export const buildHSRCapabilityView = (
     showM7AFields: effectiveEngines.includes('M7A'),
     showTaskMapping: taskKeys.length > 0 || supportedModes.includes('managed'),
   }
-}
-
-export const resolveCapabilityTaskEngine = (
-  snapshot: HSRCapabilitySnapshot | null | undefined,
-  taskKey: string,
-  fallback: HSREngine = 'SRA'
-): HSREngine => {
-  const tasks = Array.isArray(snapshot?.tasks)
-    ? snapshot.tasks
-    : Object.values(snapshot?.tasks || {})
-  const task = tasks.find(candidate => candidate.key === taskKey)
-  return task?.engines?.[0] || fallback
 }

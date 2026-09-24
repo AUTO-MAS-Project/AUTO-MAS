@@ -4,7 +4,7 @@ import { OpenAPI } from '@/api/core/OpenAPI'
 /** Engines exposed by the built-in HSR adapter. */
 export type HSREngine = 'SRA' | 'M7A'
 
-export interface HSRBrowserCapability {
+interface HSRBrowserCapability {
   service: string
   handoff_protocol?: string
   service_available: boolean
@@ -19,7 +19,7 @@ export interface HSRBrowserCapability {
   }>
 }
 
-export interface HSRAdapterCapability {
+interface HSRAdapterCapability {
   engine: HSREngine
   display_name: string
   version?: string | null
@@ -38,16 +38,9 @@ export interface HSRTaskCapability {
   strategies?: Partial<Record<HSREngine, string[]>>
 }
 
-export type HSRManagedFieldType =
-  | 'boolean'
-  | 'integer'
-  | 'number'
-  | 'string'
-  | 'select'
-  | 'json'
-  | 'stage'
+type HSRManagedFieldType = 'boolean' | 'integer' | 'number' | 'string' | 'select' | 'json' | 'stage'
 
-export interface HSRManagedFieldOption {
+interface HSRManagedFieldOption {
   value: unknown
   label: string
 }
@@ -74,7 +67,7 @@ export interface HSRDroppedOverride {
   message: string
 }
 
-export interface HSRManagedEngineForm {
+interface HSRManagedEngineForm {
   key?: string
   engine: HSREngine
   fields: HSRManagedField[]
@@ -137,11 +130,29 @@ export interface HSRSRAProfilesSnapshot {
   profiles: HSRSRAProfile[]
 }
 
-export interface HSRDirectConfigImportResult {
+interface HSRDirectConfigImportResult {
   engine: HSREngine
   source?: string | null
   imported_at?: string | null
   size?: number
+}
+
+/** `check` 只查版本；`apply` 查完就地安装（目录被任务占用时后端回 409）。 */
+export type HSRUpdateAction = 'check' | 'apply'
+
+/**
+ * 后端 `/hsr/update` 的结果。`message` 是后端给的面向用户说明，直接展示；
+ * `installable` 为假表示有新版但当前下载源装不了（多半是 Mirror 酱 CDK 问题）。
+ */
+export interface HSRUpdateResult {
+  engine: HSREngine
+  checked: boolean
+  updated: boolean
+  current_version?: string | null
+  latest_version?: string | null
+  update_available: boolean
+  installable: boolean
+  message: string
 }
 
 export interface HSRCapabilitySnapshot {
@@ -187,7 +198,7 @@ const firstNumber = (...values: unknown[]): number | null => {
   return typeof value === 'number' ? value : null
 }
 
-export interface HSRStageOption {
+interface HSRStageOption {
   id: string
   label: string
   detail: string
@@ -196,7 +207,7 @@ export interface HSRStageOption {
   native_payload: Record<string, unknown>
 }
 
-export interface HSRStageCategory {
+interface HSRStageCategory {
   key: string
   label: string
   options: HSRStageOption[]
@@ -345,6 +356,21 @@ export function useHSRPluginApi() {
     )
   }
 
+  /** 手动检查或安装 M7A / SRA 的更新；这是唯一不必等一轮任务跑完就能更新的入口。 */
+  const runEngineUpdate = async (
+    scriptId: string,
+    engine: HSREngine,
+    action: HSRUpdateAction
+  ): Promise<HSRUpdateResult> => {
+    return requestPluginData(
+      axios.post<PluginEnvelope<HSRUpdateResult>>(url('/update'), {
+        scriptId,
+        engine,
+        action,
+      })
+    )
+  }
+
   return {
     getCapabilities,
     getStageOptions,
@@ -352,5 +378,6 @@ export function useHSRPluginApi() {
     getSraProfiles,
     importDirectConfig,
     clearDirectConfig,
+    runEngineUpdate,
   }
 }

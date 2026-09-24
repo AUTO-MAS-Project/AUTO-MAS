@@ -327,33 +327,19 @@ const fetchQueues = async () => {
       logger.debug(`API Response: ${JSON.stringify(response)}`) // 调试日志
 
       if (response.index && response.index.length > 0) {
-        queueList.value = response.index.map((item: any, index: number) => {
-          try {
-            // API响应格式: {"uid": "xxx", "type": "QueueConfig"}
-            const queueId = item.uid
-            const queueName = response.data[queueId]?.Info?.Name || t('queue.newQueueName')
-            logger.debug(`Queue ID: ${queueId}, Name: ${queueName}, Type: ${typeof queueId}`) // 调试日志
-            return {
-              id: queueId,
-              name: queueName,
-            }
-          } catch (itemError) {
-            const errorMsg = itemError instanceof Error ? itemError.message : String(itemError)
-            logger.warn(`解析队列项失败: ${errorMsg}, item: ${JSON.stringify(item)}`)
-            return {
-              id: `queue_${index}`,
-              name: t('queue.newQueueName'),
-            }
-          }
-        })
+        // API响应格式: {"uid": "xxx", "type": "QueueConfig"}
+        queueList.value = response.index.map((item: any) => ({
+          id: item.uid,
+          name: response.data[item.uid]?.Info?.Name || t('queue.newQueueName'),
+        }))
 
         // 如果有队列且没有选中的队列，默认选中第一个
         if (queueList.value.length > 0 && !activeQueueId.value) {
           activeQueueId.value = queueList.value[0].id
           logger.debug(`Selected queue ID: ${activeQueueId.value}`) // 调试日志
-          // 使用nextTick确保DOM更新后再加载数据
+          // 首屏直接复用这次拉回来的数据，不再为同一份内容再请求一次
           nextTick(() => {
-            loadQueueData(activeQueueId.value).catch(error => {
+            loadQueueData(activeQueueId.value, response.data).catch(error => {
               const errorMsg = error instanceof Error ? error.message : String(error)
               logger.error(`加载队列数据失败: ${errorMsg}`)
             })
@@ -365,8 +351,7 @@ const fetchQueues = async () => {
         currentQueueData.value = null
       }
     } else {
-      const errorMsg = response instanceof Error ? response.message : String(response)
-      logger.error(`API响应错误: ${errorMsg}`)
+      logger.error(`API响应错误: ${response.message}`)
       queueList.value = []
       currentQueueData.value = null
     }
@@ -380,18 +365,18 @@ const fetchQueues = async () => {
   }
 }
 
-// 加载队列数据
-const loadQueueData = async (queueId: string) => {
+// 加载队列数据；调用方手里已有整份队列数据时直接传入，省一次请求
+const loadQueueData = async (queueId: string, queuesData?: Record<string, any>) => {
   if (!queueId) return
 
   try {
-    const response = await Service.getQueuesApiQueueGetPost({})
+    const data = queuesData ?? (await Service.getQueuesApiQueueGetPost({})).data
     if (!isMounted) return
-    currentQueueData.value = response.data
+    currentQueueData.value = data
 
     // 根据API响应数据更新队列信息
-    if (response.data && response.data[queueId]) {
-      const queueData = response.data[queueId]
+    if (data && data[queueId]) {
+      const queueData = data[queueId]
 
       // 更新队列名称和状态
       const currentQueue = queueList.value.find(queue => queue.id === queueId)
@@ -410,28 +395,23 @@ const loadQueueData = async (queueId: string) => {
       // 更新完成后操作状态 - 从API响应中获取
       currentAfterAccomplish.value = queueData.Info?.AfterAccomplish ?? 'NoAction'
       currentAfterAccomplishDelay.value = queueData.Info?.AfterAccomplishDelay ?? 0
-      await new Promise(resolve => setTimeout(resolve, 50))
-      if (!isMounted) return
 
-      // 加载定时项和队列项数据 - 添加错误处理
-      try {
-        await refreshTimeSets()
-      } catch (timeError) {
-        const errorMsg = timeError instanceof Error ? timeError.message : String(timeError)
-        logger.error(`刷新定时项失败: ${errorMsg}`)
-      }
-
-      try {
-        await refreshQueueItems()
-      } catch (itemError) {
-        const errorMsg = itemError instanceof Error ? itemError.message : String(itemError)
-        logger.error(`刷新队列项失败: ${errorMsg}`)
-      }
+      // 定时项和队列项互不依赖，并行拉取
+      await Promise.all([
+        refreshTimeSets().catch(timeError => {
+          const errorMsg = timeError instanceof Error ? timeError.message : String(timeError)
+          logger.error(`刷新定时项失败: ${errorMsg}`)
+        }),
+        refreshQueueItems().catch(itemError => {
+          const errorMsg = itemError instanceof Error ? itemError.message : String(itemError)
+          logger.error(`刷新队列项失败: ${errorMsg}`)
+        }),
+      ])
     }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`加载队列数据失败: ${errorMsg}`)
-    // 不显示错误消息，避免干扰用户体验
+    if (isMounted) message.error(t('queue.toast.loadQueueFailed'))
   }
 }
 
@@ -728,6 +708,19 @@ const refreshQueueConfig = async () => {
   }
 }
 
+// 保存成功后把这次变更写进本地快照；各控件已 v-model 到对应 ref，这里只补快照与列表名
+const applyLocalQueueChange = (key: string, value: any) => {
+  const queueId = activeQueueId.value
+  const queueData = currentQueueData.value?.[queueId]
+  if (queueData) {
+    queueData.Info = { ...(queueData.Info ?? {}), [key]: value }
+  }
+  if (key === 'Name') {
+    const currentQueue = queueList.value.find(queue => queue.id === queueId)
+    if (currentQueue && value) currentQueue.name = value
+  }
+}
+
 // 即时保存单个字段变更 - 只发送修改的字段（遵循最小原则）
 const handleSaveChange = async (key: string, value: any): Promise<boolean> => {
   if (!activeQueueId.value) return false
@@ -750,8 +743,8 @@ const handleSaveChange = async (key: string, value: any): Promise<boolean> => {
       return false
     }
 
-    // 保存成功后重新获取最新配置
-    await refreshQueueConfig()
+    // 保存成功：更新接口不带最新 Info，本地应用这次变更即可，不再整份回读
+    applyLocalQueueChange(key, value)
     return true
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)

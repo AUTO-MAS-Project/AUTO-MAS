@@ -26,8 +26,10 @@ from fastapi import APIRouter, Body
 from app.core import Config, TaskManager
 from app.models.schema import *
 from app.services import System
+from app.utils import get_logger
 
 router = APIRouter(prefix="/api/dispatch", tags=["任务调度"])
+logger = get_logger("任务调度 API")
 
 
 @router.get(
@@ -75,6 +77,7 @@ async def add_task(task: TaskCreateIn = Body(...)) -> TaskCreateOut:
             instance_idx=task.instanceIdx,
         )
     except Exception as e:
+        logger.opt(exception=True).warning(f"add_task失败: {type(e).__name__}: {e}")
         return TaskCreateOut(
             code=500, status="error", message=f"{type(e).__name__}: {str(e)}", taskId=""
         )
@@ -93,6 +96,7 @@ async def stop_task(task: DispatchIn = Body(...)) -> OutBase:
     try:
         await TaskManager.stop_task(task.taskId)
     except Exception as e:
+        logger.opt(exception=True).warning(f"stop_task失败: {type(e).__name__}: {e}")
         return OutBase(
             code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
         )
@@ -112,6 +116,7 @@ async def get_power() -> PowerOut:
         # 电源任务启动后标志已清空, 等待期间要回报任务实际待执行的操作
         signal = System.current_power_operation or Config.power_sign
     except Exception as e:
+        logger.opt(exception=True).warning(f"get_power失败: {type(e).__name__}: {e}")
         return PowerOut(
             code=500,
             status="error",
@@ -138,6 +143,7 @@ async def set_power(task: PowerIn = Body(...)) -> OutBase:
         # 因此手动改选一律撤销它, 新选择留给下一次任务结束时生效
         await System.cancel_pending_power_task()
     except Exception as e:
+        logger.opt(exception=True).warning(f"set_power失败: {type(e).__name__}: {e}")
         return OutBase(
             code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
         )
@@ -156,6 +162,9 @@ async def cancel_power_task() -> OutBase:
     try:
         await System.cancel_power_task()
     except Exception as e:
+        logger.opt(exception=True).warning(
+            f"cancel_power_task失败: {type(e).__name__}: {e}"
+        )
         return OutBase(
             code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
         )

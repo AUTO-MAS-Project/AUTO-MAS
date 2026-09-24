@@ -28,8 +28,10 @@ from fastapi import APIRouter, Body
 
 from app.core import Config
 from app.models.schema import *
+from app.utils import get_logger
 
 router = APIRouter(prefix="/api/history", tags=["历史记录"])
+logger = get_logger("历史记录 API")
 
 
 @router.post(
@@ -57,6 +59,9 @@ async def search_history(history: HistorySearchIn) -> HistorySearchOut:
                 record = HistoryData(**record)
                 data[date][user] = record
     except Exception as e:
+        logger.opt(exception=True).warning(
+            f"search_history失败: {type(e).__name__}: {e}"
+        )
         return HistorySearchOut(
             code=500,
             status="error",
@@ -82,6 +87,9 @@ async def get_history_data(history: HistoryDataGetIn = Body(...)) -> HistoryData
         data["log_content"] = path.with_suffix(".log").read_text(encoding="utf-8")
         data = HistoryData(**data)
     except Exception as e:
+        logger.opt(exception=True).warning(
+            f"get_history_data失败: {type(e).__name__}: {e}"
+        )
         return HistoryDataGetOut(
             code=500,
             status="error",

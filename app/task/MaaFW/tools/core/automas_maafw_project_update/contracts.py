@@ -9,23 +9,6 @@ from pathlib import Path
 from typing import Any, Literal
 
 ArtifactType = Literal["full", "delta"]
-UpdateStatus = Literal[
-    "discovered",
-    "plan_validated",
-    "downloading",
-    "paused",
-    "downloaded",
-    "verified",
-    "staged",
-    "applying",
-    "post_validating",
-    "committed",
-    "cancelled",
-    "failed",
-    "rolled_back",
-    "recovery_required",
-]
-
 RESERVED_PROJECT_DIRS = frozenset({".mas-update", ".mas-update-cache"})
 
 # 指纹只回答「项目是否还是我们装下去的那份」，必须排除运行期产物：MaaFW 每次启动都往
@@ -87,9 +70,7 @@ def project_fingerprint(project_path: str | Path) -> str | None:
         return None
     digest = hashlib.sha256()
     ignored_dirs = set(FINGERPRINT_IGNORED_DIRS)
-    if (
-        root / NATIVE_RUNTIME_OVERLAY_DIR / NATIVE_RUNTIME_OVERLAY_MARKER
-    ).is_file():
+    if (root / NATIVE_RUNTIME_OVERLAY_DIR / NATIVE_RUNTIME_OVERLAY_MARKER).is_file():
         ignored_dirs.add(NATIVE_RUNTIME_OVERLAY_DIR)
     files: list[Path] = []
     for candidate in root.rglob("*"):
@@ -157,7 +138,6 @@ __all__ = [
     "NATIVE_RUNTIME_OVERLAY_DIR",
     "NATIVE_RUNTIME_OVERLAY_MARKER",
     "RESERVED_PROJECT_DIRS",
-    "UpdateStatus",
     "artifact_id_for",
     "canonical_json",
     "is_within",

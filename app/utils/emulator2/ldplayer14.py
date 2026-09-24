@@ -20,18 +20,10 @@
 
 """Emulator 2.0 的雷电 14 后端。
 
-继承旧 ``LDManager``，启动 / 关闭 / 状态 / 实例锁 / 配置守卫**全部原样复用**，
-只覆盖两处行为：
-
-1. **不禁用游戏中心。** 旧管理器在启动流程里自己读全局「屏蔽广告」开关并执行
-   ``pm disable-user com.android.flysilkworm``。实测那条命令对安卓端已观察到的两类广告
-   （桌面顶部搜索栏、底部推广栏）一条都挡不住，唯一效果是杀掉用户想保留的游戏中心，
-   所以这里让它变成空操作。
-2. **老板键按实例读。** 旧管理器读的是配置级的 ``Info.BossKey``，而雷电的老板键是
-   每个实例各一份的。认不出时**明确报错，不猜**。
-
-配置守卫（启动前拍快照、关闭后校验回滚）**有意保留**——用户开着屏蔽广告时，
-新配置也享受同样的配置保护。代价是设置写入必须拿同一把实例锁，见 :meth:`write_instance_settings`。
+继承旧 ``LDManager`` 的启动、关闭、状态、实例锁和配置守卫。
+「大雷主人模式」沿用旧版全局开关，在启动前应用安装级设置，保留游戏中心入口。
+老板键按实例读取；设置写入与配置守卫使用同一把实例锁。
+启动后多一道「虚拟机真的起来了吗」的核对，VBox 服务卡住时自愈一次，见 :mod:`.vbox`。
 """
 
 import asyncio
@@ -41,15 +33,18 @@ import shutil
 import time
 from pathlib import Path
 
+import psutil
+
 from app.models.config import EmulatorConfig
 from app.models.emulator import DeviceInfo, DeviceRef, DeviceStatus
 from app.utils import ProcessRunner, get_logger
 from app.utils.emulator.ldplayer import _INSTANCE_CONFIG_SNAPSHOTS, LDManager
 from app.utils.platform import IS_WINDOWS
 
-from .adb import parse_adb_devices, resolve_serial
-from .applaunch import AppLaunchMixin, is_package_missing
+from .adb import candidate_serial, parse_adb_devices, resolve_serial
+from .applaunch import AppLaunchMixin, is_package_missing, is_package_present
 from .bosskey import BossKey, read_boss_key
+from .master_mode import is_master_mode_enabled, ldplayer_clean_mode_args
 from .settings import (
     InstanceSettings,
     SettingsConflictError,
@@ -59,6 +54,16 @@ from .settings import (
     validate_changes,
 )
 from .stability import LDPLAYER_ITEMS, evaluate, safe_writes
+from .vbox import (
+    VBOX_SERVICE_PROCESS,
+    VmProbe,
+    complete_vbox_runtime,
+    live_vm_pids,
+    missing_runtime_sentinels,
+    resolve_vbox_runtime_dir,
+    restart_vbox_service,
+    vm_is_missing,
+)
 
 
 def _dig_flat(config: dict, key: str) -> str | None:
@@ -98,6 +103,12 @@ _FOREIGN_MARKER_PACKAGES = ("com.mumu.store", "com.netease.mumu.cloner")
 #: 但它也不会几秒一变, 所以比 adb devices 的缓存放宽一些。
 _OWNERSHIP_CACHE_SECONDS = 30.0
 
+#: 自愈前先 ``quit`` 那个只有窗口没有虚拟机的实例，等它从 list2 里下线的上限。
+#: 僵尸窗口对 quit 的响应不可靠，超时就直接结束播放器进程。
+_ZOMBIE_QUIT_TIMEOUT = 15.0
+#: 雷电修复工具的提示，自愈做不了或做了没用时都指到这里。
+_REPAIR_HINT = "请关闭所有雷电实例后运行雷电修复工具（安装目录下的 dnrepairer.exe）"
+
 
 class BossKeyUnavailableError(RuntimeError):
     """无法确定该实例的老板键，隐藏操作不可用。
@@ -123,13 +134,213 @@ class LDPlayer14Manager(AppLaunchMixin, LDManager):
     「先开模拟器、再用 adb 拉应用」两步，不再依赖 ``launch --packagename``。
     """
 
-    #: adb devices 的缓存。放类属性而不是覆写 __init__，免得和父类的构造契约纠缠。
-    _adb_cache: list[str] | None = None
-    _adb_cache_until: float = 0.0
+    #: 游戏中心 / 应用商店的包名，供「打开游戏中心」按钮使用。
+    store_package = "com.android.flysilkworm"
+
+    #: adb devices 的缓存：adb 路径 -> (在线序列号, 缓存到什么时候)。
+    #: 放类属性而不是覆写 __init__，免得和父类的构造契约纠缠；按路径而不是按实例存，
+    #: 因为管理器本身每个请求都会重建（见 :mod:`.service`），挂在实例上的缓存永远不会命中。
+    _adb_cache: dict[str, tuple[list[str], float]] = {}
 
     #: 序列号 -> (是不是别家的, 缓存到什么时候)。同上放类属性；
     #: 「谁占着这个端口」本来就是整机的事实，几个管理器实例共用一份反而更对。
     _ownership_cache: dict[str, tuple[bool, float]] = {}
+
+    async def _open_locked(self, idx: str, package_name: str) -> DeviceInfo:
+        """在父类启动流程之上核对虚拟机是否真的起来，没起来就自愈一次。
+
+        父类只看 ``list2`` 的「Android 已启动」标志。VBox 服务卡住时这个标志照样会置 1，
+        而虚拟机进程根本不存在、adb 也看不到它，MAA 一连就是 ADB 异常；另一种形态是
+        标志停在 2、父类等到超时。两种都在这里接住：确认整机没有别的虚拟机在跑之后，
+        关掉僵尸窗口、重启 VBox 服务、再启动一次。详见 :mod:`.vbox`。
+
+        启动前先查一眼 VBox 运行时是否被修复工具修残（缺 GPU 库），缺了就从雷电安装目录
+        补回去；补不了就直接报错，不去启动一台注定几十秒内崩掉的虚拟机。
+        """
+        await self._ensure_vbox_runtime(idx)
+        try:
+            info = await super()._open_locked(idx, package_name)
+        except RuntimeError as e:
+            if not await self._vm_missing(idx):
+                raise
+            reason = str(e)
+        else:
+            if not await self._vm_missing(idx):
+                return info
+            reason = "雷电报告 Android 已启动，但没有虚拟机进程，adb 也看不到它"
+
+        await self._recover_vbox_service(idx, reason)
+
+        info = await super()._open_locked(idx, package_name)
+        if await self._vm_missing(idx):
+            raise RuntimeError(
+                f"雷电实例 {idx} 重启 {VBOX_SERVICE_PROCESS} 后仍然起不来，{_REPAIR_HINT}"
+            )
+        logger.info(f"雷电实例 {idx} 在重启 {VBOX_SERVICE_PROCESS} 后已正常启动")
+        return info
+
+    async def _ensure_vbox_runtime(self, idx: str) -> None:
+        """VBox 运行时缺 GPU 库时从雷电安装目录补回；补不回就报错。详见 :mod:`.vbox`。"""
+        runtime_dir = await asyncio.to_thread(resolve_vbox_runtime_dir)
+        if runtime_dir is None:
+            return
+        missing = await asyncio.to_thread(missing_runtime_sentinels, runtime_dir)
+        if not missing:
+            return
+
+        install_dir = self.emulator_path.parent
+        logger.warning(
+            f"雷电 VBox 运行时 {runtime_dir} 缺少 {missing}，多半是雷电修复工具没修完；"
+            f"尝试从 {install_dir} 补回"
+        )
+        try:
+            copied = await asyncio.to_thread(
+                complete_vbox_runtime, runtime_dir, install_dir
+            )
+        except PermissionError as e:
+            raise RuntimeError(
+                f"雷电实例 {idx} 无法启动：VBox 运行时 {runtime_dir} 缺少 {missing}"
+                f"（雷电修复工具没修完），MAS 没有权限把文件补回去（{e}）。"
+                f"请以管理员身份运行，或{_REPAIR_HINT}"
+            ) from e
+
+        still_missing = await asyncio.to_thread(missing_runtime_sentinels, runtime_dir)
+        if still_missing:
+            raise RuntimeError(
+                f"雷电实例 {idx} 无法启动：VBox 运行时 {runtime_dir} 缺少 {still_missing}，"
+                f"雷电安装目录里也找不到可补的副本（已补 {len(copied)} 个），{_REPAIR_HINT}"
+            )
+        logger.warning(
+            f"已向雷电 VBox 运行时 {runtime_dir} 补回 {len(copied)} 个文件，继续启动实例 {idx}"
+        )
+
+    async def _probe_instances(self) -> dict[str, VmProbe]:
+        """给这条安装的每台实例做一次「虚拟机在不在」探测。查不到 list2 时返回空表。"""
+        try:
+            devices = await self.get_device_info(None)
+        except Exception as e:  # noqa: BLE001 - 探测本身失败就不做自愈判断
+            logger.debug(f"探测雷电实例状态失败: {e}")
+            return {}
+
+        # 越过 adb devices 的缓存：这里要的是「现在」有没有，不是几秒前的视图
+        serials = await self._list_adb_serials(fresh=True)
+        probes: dict[str, VmProbe] = {}
+        for idx, device in devices.items():
+            others = [i for i in devices if str(i) != str(idx)]
+            outcome = resolve_serial(idx, serials, others)
+            probes[str(idx)] = VmProbe(
+                in_android=device.in_android,
+                vbox_pid=device.vbox_pid,
+                serial_online=outcome.source != "formula",
+            )
+        return probes
+
+    async def _vm_missing(self, idx: str) -> bool:
+        """这台实例是不是「有窗口没虚拟机」。查不到时按不缺处理，不扩大事故。"""
+        probe = (await self._probe_instances()).get(str(idx))
+        return probe is not None and vm_is_missing(probe)
+
+    async def _recover_vbox_service(self, idx: str, reason: str) -> None:
+        """关掉僵尸窗口并重启 VBox 服务。
+
+        只在**所有开着的实例都已经是僵尸**时才动手：服务一重启，它名下所有虚拟机一起死，
+        任何一台还好好的（或正在启动、状态说不清的）实例都会被强关。两道闸门：
+
+        - 整机没有任何 ``Ld9BoxHeadless.exe``——这条不分安装、不分归属，
+          启动早期 list2 的 VBox pid 也可能是 -1，进程在就当它活着
+        - 这条安装里其他开着的实例都是「Android 已启动但没虚拟机」的僵尸态；
+          「正在启动」（in_android=2）说不清是刚起还是卡住，一律按还活着处理
+        """
+        running = live_vm_pids()
+        if running:
+            raise RuntimeError(
+                f"雷电实例 {idx} 启动异常（{reason}），像是 {VBOX_SERVICE_PROCESS} 卡住了；"
+                f"但整机仍有 {len(running)} 个雷电虚拟机进程在运行（可能包括本实例尚未就绪的），"
+                f"重启该服务会把它们一起关掉。只有所有实例都异常时才会自动修复，"
+                f"请关闭所有雷电实例后再重试，或{_REPAIR_HINT}"
+            )
+
+        probes = await self._probe_instances()
+        healthy_others = sorted(
+            other
+            for other, probe in probes.items()
+            if other != str(idx)
+            and probe.in_android != 0
+            and not (probe.in_android == 1 and vm_is_missing(probe))
+        )
+        if healthy_others:
+            raise RuntimeError(
+                f"雷电实例 {idx} 启动异常（{reason}），像是 {VBOX_SERVICE_PROCESS} 卡住了；"
+                f"但实例 {', '.join(healthy_others)} 还在运行或正在启动，"
+                f"重启该服务会把它们一起关掉。只有所有实例都异常时才会自动修复，"
+                f"请关闭它们后再重试，或{_REPAIR_HINT}"
+            )
+
+        logger.warning(
+            f"雷电实例 {idx} 启动异常（{reason}），整机没有任何雷电虚拟机在运行、"
+            f"其他开着的实例也都是僵尸窗口，关闭该实例并重启 {VBOX_SERVICE_PROCESS} 后重试"
+        )
+        await self._quit_zombie_instance(idx)
+        try:
+            await restart_vbox_service()
+        except PermissionError as e:
+            raise RuntimeError(
+                f"雷电实例 {idx} 启动异常（{reason}），{e}；请以管理员身份运行，或{_REPAIR_HINT}"
+            ) from e
+
+    async def _quit_zombie_instance(self, idx: str) -> None:
+        """让只剩窗口的实例下线：先走 ``quit``，等不到就结束播放器进程。
+
+        必须等到 list2 真的变成关机再返回：父类启动流程先查状态，只要那行还是
+        「已启动」它就不 launch、直接当在线返回，自愈就成了空转。两手都没让它下线
+        时抛错，而不是让后面报一句会误导的「重启后仍起不来」。
+        """
+        try:
+            await ProcessRunner.run_process(
+                self.emulator_path,
+                "quit",
+                "--index",
+                idx,
+                timeout=self.config.get("Info", "MaxWaitTime"),
+                if_merge_std=True,
+                breakaway=True,
+            )
+        except Exception as e:  # noqa: BLE001 - quit 失败还有下面的兜底
+            logger.warning(f"雷电实例 {idx} quit 失败: {e}")
+
+        deadline = time.monotonic() + _ZOMBIE_QUIT_TIMEOUT
+        while time.monotonic() < deadline:
+            if await self.getStatus(idx) == DeviceStatus.OFFLINE:
+                return
+            await asyncio.sleep(0.5)
+
+        try:
+            device = (await self.get_device_info(idx))[idx]
+        except Exception as e:  # noqa: BLE001 - 取不到 pid 就没法再兜底
+            raise RuntimeError(
+                f"雷电实例 {idx} 对 quit 无响应，且取不到进程信息: {e}"
+            ) from e
+        if device.pid > 0:
+            try:
+                proc = psutil.Process(device.pid)
+                proc.kill()
+                await asyncio.to_thread(proc.wait, 10)
+                logger.warning(
+                    f"雷电实例 {idx} 对 quit 无响应，已结束播放器进程 {device.pid}"
+                )
+            except psutil.NoSuchProcess:
+                pass
+            except Exception as e:  # noqa: BLE001 - 下面按 list2 复核, 这里只记原因
+                logger.warning(
+                    f"结束雷电实例 {idx} 的播放器进程 {device.pid} 失败: {e}"
+                )
+
+        deadline = time.monotonic() + _ZOMBIE_QUIT_TIMEOUT
+        while time.monotonic() < deadline:
+            if await self.getStatus(idx) == DeviceStatus.OFFLINE:
+                return
+            await asyncio.sleep(0.5)
+        raise RuntimeError(f"雷电实例 {idx} 的窗口关不掉，无法自愈，{_REPAIR_HINT}")
 
     async def vendor_launch_app(self, idx: str, package_name: str) -> object:
         """``ldconsole runapp``。
@@ -243,20 +454,22 @@ class LDPlayer14Manager(AppLaunchMixin, LDManager):
         logger.info(f"已写入雷电实例 {idx} 的设置: {cleaned}")
         return cleaned
 
-    async def _list_adb_serials(self) -> list[str]:
+    async def _list_adb_serials(self, *, fresh: bool = False) -> list[str]:
         """``adb devices`` 的在线设备列表，带 5 秒缓存。
 
         状态轮询每几秒就调一次 :meth:`getInfo`，不缓存的话每轮都要起一次子进程。
         缓存到期前多台设备共用同一份结果，这正是 :func:`resolve_serial`
-        排除其他实例候选时需要的一致视图。
+        排除其他实例候选时需要的一致视图。``fresh`` 越过缓存，给需要「现在」的探测用。
         """
-        now = time.monotonic()
-        if self._adb_cache is not None and now < self._adb_cache_until:
-            return self._adb_cache
-
         adb_path = self.get_adb_path()
         if adb_path is None:
             return []
+        cache_key = str(adb_path)
+
+        now = time.monotonic()
+        cached = self._adb_cache.get(cache_key)
+        if not fresh and cached is not None and now < cached[1]:
+            return cached[0]
 
         try:
             result = await ProcessRunner.run_process(
@@ -267,8 +480,7 @@ class LDPlayer14Manager(AppLaunchMixin, LDManager):
             logger.debug(f"执行 adb devices 失败: {e}")
             return []
 
-        self._adb_cache = serials
-        self._adb_cache_until = now + _ADB_CACHE_SECONDS
+        self._adb_cache[cache_key] = (serials, now + _ADB_CACHE_SECONDS)
         return serials
 
     async def _is_foreign_serial(self, serial: str) -> bool:
@@ -282,8 +494,9 @@ class LDPlayer14Manager(AppLaunchMixin, LDManager):
         :func:`~.adb.resolve_serial` 照样会把它标成「核对通过」。
 
         判据用「认出别人」而不是「认出自己」，理由见 :data:`_FOREIGN_MARKER_PACKAGES`。
-        查不动（没有 adb、命令失败）时一律返回 ``False``：拿不准就维持原样，
-        不要凭一次查询失败把一台好设备判死。
+        查不动（没有 adb、命令失败、设备掉线）时一律返回 ``False`` **且不缓存**：
+        拿不准就维持原样，不要凭一次查询失败把一台好设备判死。只有 ``pm path``
+        真打出 ``package:`` 行才算「装着别家的包」。
         """
         now = time.monotonic()
         cached = self._ownership_cache.get(serial)
@@ -295,6 +508,7 @@ class LDPlayer14Manager(AppLaunchMixin, LDManager):
             return False
 
         foreign = False
+        marker = ""
         for package in _FOREIGN_MARKER_PACKAGES:
             try:
                 result = await ProcessRunner.run_process(
@@ -311,18 +525,26 @@ class LDPlayer14Manager(AppLaunchMixin, LDManager):
             except Exception as e:  # noqa: BLE001 - 查不动就不下结论, 见 docstring
                 logger.debug(f"核对 {serial} 的归属失败: {e}")
                 return False
-            if not is_package_missing(str(getattr(result, "stdout", "") or "")):
+            output = str(getattr(result, "stdout", "") or "")
+            if is_package_present(output):
                 foreign = True
+                marker = package
                 break
+            if not is_package_missing(output):
+                # 「device not found」「offline」这类：设备根本没连上，判不了归属，
+                # 也不能把这个结论缓存起来——它可能几秒后就上线了
+                logger.debug(f"核对 {serial} 的归属无结论: {output.strip()[:120]}")
+                return False
 
         self._ownership_cache[serial] = (foreign, now + _OWNERSHIP_CACHE_SECONDS)
         if foreign:
             # 只在缓存未命中时说一次：getInfo 会被状态接口反复轮询，
             # 每轮都记一条会把日志刷满
             logger.warning(
-                f"ADB 序列号 {serial} 实际连到的是别家模拟器，不能当作雷电实例使用。"
-                f"MuMu 会占用回环 5555 端口，正好是雷电 0 号的端口；"
-                f"请避免与 MuMu 同时运行，或改用 1 号及以后的实例"
+                f"ADB 序列号 {serial} 实际连到的是别家模拟器（装着 {marker}），"
+                f"不能当作雷电实例使用。MuMu 开着时就会这样：它的 127.0.0.1:16384 会出现在"
+                f" adb 设备列表里，还会占用回环 5555 端口（雷电 0 号的端口）；"
+                f"跑雷电任务时请避免同时开着 MuMu，0 号实例改用 1 号及以后的"
             )
         return foreign
 
@@ -342,23 +564,50 @@ class LDPlayer14Manager(AppLaunchMixin, LDManager):
         if not serials:
             return result
 
-        # 排除其他实例的候选时要看全量索引，不能只看本次查询的那一台
-        try:
-            all_indexes = list((await self.get_device_info(None)).keys())
-        except Exception:  # noqa: BLE001 - 拿不到全量就不做认领, 只做核对
+        # 排除其他实例的候选时要看全量索引，不能只看本次查询的那一台。
+        # 查全部时父类已经把全量给了，别再跑一遍 list2——这条路径是状态轮询走的
+        if idx is None:
             all_indexes = list(result)
+        else:
+            try:
+                all_indexes = list((await self.get_device_info(None)).keys())
+            except Exception:  # noqa: BLE001 - 拿不到全量就不做认领, 只做核对
+                all_indexes = list(result)
 
         resolved: dict[str, DeviceInfo] = {}
         for native_index, info in result.items():
+            candidate = candidate_serial(native_index)
+
+            # 只核对、只认领在线实例：关着的和正在启动的 adb 里本来就没有它，
+            # 核对只会得到「device not found」（而且启动期间查出的结论会被缓存，等它
+            # 真上线时反而把地址清空）；认领则只会把别家设备挂到一台没开的实例名下——
+            # 2026-09-17 状态轮询就这样给关着的五台实例各刷了两千多条「认领为 16384」。
+            if info.status != DeviceStatus.ONLINE:
+                resolved[native_index] = DeviceInfo(
+                    title=info.title, status=info.status, adb_address=candidate
+                )
+                continue
+
             others = [i for i in all_indexes if str(i) != str(native_index)]
             outcome = resolve_serial(native_index, serials, others)
             address = outcome.serial
 
             if await self._is_foreign_serial(address):
-                # 宁可交白卷也不交错的：把别家的设备当成本实例发出去，后面每一条
-                # adb 操作（连接、装包、启动应用）都会打到另一台模拟器上，
-                # 而日志还显示「核对通过」。原因由 _is_foreign_serial 记一次。
-                address = ""
+                if outcome.source == "recovered":
+                    # 认领错了：别家设备恰好是唯一没人认领的那台，本实例的 adbd 只是
+                    # 还没起来。回落公式值，让后面的等待启动去等它上线；置空会让
+                    # MAA 直接拿到空地址报连接失败（2026-09-18 15:00 Mirror 那次）。
+                    logger.info(
+                        f"雷电实例 {native_index} 认领到的 {address} 是别家模拟器，"
+                        f"改回约定的 {candidate}"
+                    )
+                    address = candidate
+                else:
+                    # 公式值本身连到了别家：这台实例的端口被占了。宁可交白卷也不交错的：
+                    # 把别家的设备当成本实例发出去，后面每一条 adb 操作（连接、装包、
+                    # 启动应用）都会打到另一台模拟器上，而日志还显示「核对通过」。
+                    # 原因由 _is_foreign_serial 记一次。
+                    address = ""
             elif outcome.source == "recovered":
                 logger.warning(
                     f"雷电实例 {native_index} 的 ADB 序列号与约定不符，"
@@ -373,10 +622,25 @@ class LDPlayer14Manager(AppLaunchMixin, LDManager):
     async def read_stable_mode(self, idx: str) -> tuple[bool, list[str]]:
         """稳定模式是否已生效，以及还有哪几项不安全。"""
         config = await asyncio.to_thread(self.read_instance_config, idx)
+        return self._stable_mode_of(config)
+
+    @staticmethod
+    def _stable_mode_of(config: dict | None) -> tuple[bool, list[str]]:
         if config is None:
             return False, [item.field for item in LDPLAYER_ITEMS]
         current = {item.key: _dig_flat(config, item.key) for item in LDPLAYER_ITEMS}
         return evaluate(LDPLAYER_ITEMS, current)
+
+    async def read_instance_overview(
+        self, idx: str
+    ) -> tuple[InstanceSettings, bool, list[str]]:
+        """四项设置和稳定模式一次读完：设备表每行都要这两样，分开读就是把同一个文件读两遍。"""
+        config = await asyncio.to_thread(self.read_instance_config, idx)
+        stable, unsafe = self._stable_mode_of(config)
+        if config is None:
+            return build_settings(None, None, readable=False), stable, unsafe
+        vbox_text = await asyncio.to_thread(self._read_instance_vbox, idx)
+        return build_settings(config, vbox_text), stable, unsafe
 
     async def apply_stable_mode(self, idx: str) -> list[str]:
         """把不安全的项写成安全值，返回实际改动的字段名。
@@ -519,12 +783,41 @@ class LDPlayer14Manager(AppLaunchMixin, LDManager):
 
         raise RuntimeError(f"删除雷电实例 {native_index} 失败：它仍然在列表中")
 
-    async def _block_ads_via_adb(self, idx: str) -> None:
-        """空操作：不禁用游戏中心。
+    async def prepare_launch(self, idx: str) -> None:
+        """启动前按旧版全局开关应用「大雷主人模式」的安卓桌面层。
 
-        旧实现禁用 ``com.android.flysilkworm``。实测（见去广告实验记录）它对安卓桌面
-        顶部搜索栏与底部推广栏一条都挡不住——那两处是雷电魔改 launcher 自己联网拉的，
-        与游戏中心无关——所以旧实现只是白白杀掉用户要保留的游戏中心。
+        ``globalsetting --cleanmode`` 是**整个安装**的全局开关，宿主只在 VM 冷启动时把它
+        作为 ``phone.cleanmode`` 推进客户机，所以放在启动前、每次都设：开着设 1、关着设 0，
+        和旧配置的处理口径一致。已经在跑的其他实例要到它们下次冷启动才会跟着变。
+        宿主窗口那层（加载页轮播、开机全屏页）``cleanmode`` 管不到，由门面按安装统一处理，
+        见 :func:`~.master_mode.apply_host_mode`。设不上只记警告，不拦启动。
+        """
+        enabled = is_master_mode_enabled()
+        try:
+            result = await ProcessRunner.run_process(
+                self.emulator_path,
+                *ldplayer_clean_mode_args(enabled),
+                timeout=self.config.get("Info", "MaxWaitTime"),
+                if_merge_std=True,
+                breakaway=True,
+            )
+        except Exception as e:  # noqa: BLE001 - 见 docstring
+            logger.warning(f"设置雷电「大雷主人模式」失败，实例 {idx} 照常启动: {e}")
+            return
+        if result.returncode != 0:
+            logger.warning(
+                f"设置雷电「大雷主人模式」返回 {result.returncode}，实例 {idx} 照常启动: "
+                f"{result.stdout.strip()}"
+            )
+            return
+        logger.info(
+            f"雷电「大雷主人模式」已{'开启' if enabled else '关闭'}，实例 {idx} 冷启动后生效"
+        )
+
+    async def _block_ads_via_adb(self, idx: str) -> None:
+        """保留父类兼容入口，但不禁用游戏中心。
+
+        模式由 :meth:`prepare_launch` 统一处理，整包禁用会让「打开游戏中心」失效。
         """
         return None
 

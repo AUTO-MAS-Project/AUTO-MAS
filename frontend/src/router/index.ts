@@ -107,6 +107,12 @@ const routes = [
     meta: { title: '编辑通用脚本' },
   },
   {
+    path: '/scripts/:id/edit/baah',
+    name: 'BAAHScriptEdit',
+    component: () => import('../views/EditView/Script/BAAHScriptEdit.vue'),
+    meta: { title: '编辑BAAH脚本' },
+  },
+  {
     path: '/scripts/:id/edit/okww',
     name: 'OkwwScriptEdit',
     component: () => import('../views/EditView/Script/OkwwScriptEdit.vue'),
@@ -227,6 +233,18 @@ const routes = [
     meta: { title: '编辑通用用户' },
   },
   {
+    path: '/scripts/:scriptId/users/add/baah',
+    name: 'BAAHUserAdd',
+    component: () => import('../views/EditView/User/BAAHUserEdit.vue'),
+    meta: { title: '添加BAAH用户' },
+  },
+  {
+    path: '/scripts/:scriptId/users/:userId/edit/baah',
+    name: 'BAAHUserEdit',
+    component: () => import('../views/EditView/User/BAAHUserEdit.vue'),
+    meta: { title: '编辑BAAH用户' },
+  },
+  {
     path: '/scripts/:scriptId/users/add/okww',
     name: 'OkwwUserAdd',
     component: () => import('../views/EditView/User/OkwwUserEdit.vue'),
@@ -334,6 +352,13 @@ const routes = [
     name: 'Logs',
     component: () => import('../views/Logs.vue'),
     meta: { title: '日志查看', skipGuard: true },
+  },
+  {
+    // 主进程另开的小窗口：真实显示器回来了但有任务在跑，问用户要不要拆虚拟屏
+    path: '/vdd-prompt',
+    name: 'VirtualDisplayPrompt',
+    component: () => import('../views/VirtualDisplayPrompt.vue'),
+    meta: { title: '虚拟显示器', skipGuard: true },
   },
 ]
 

@@ -18,28 +18,60 @@
       :aria-label="t('edit.configurationManagement')"
       @change="handleChange"
     >
-      <label
+      <a-tooltip
         v-for="option in options"
         :key="String(option.value)"
-        :class="[
-          'config-mode-option',
-          { selected: modelValue === option.value, disabled: disabled || saving },
-        ]"
+        :title="option.disabled ? option.disabledReason : undefined"
       >
-        <a-radio :value="option.value" class="config-mode-radio" />
-        <span class="config-mode-icon">
-          <DatabaseOutlined v-if="option.icon === 'database'" />
-          <SettingOutlined v-else-if="option.icon === 'setting'" />
-          <FileTextOutlined v-else />
-        </span>
-        <span class="config-mode-copy">
-          <span class="config-mode-title">{{ option.title }}</span>
-          <span class="config-mode-description">{{ option.description }}</span>
-        </span>
-      </label>
+        <label
+          :class="[
+            'config-mode-option',
+            { selected: modelValue === option.value, disabled: isOptionDisabled(option) },
+          ]"
+          :aria-disabled="option.disabled || undefined"
+        >
+          <a-radio
+            :value="option.value"
+            class="config-mode-radio"
+            :disabled="isOptionDisabled(option)"
+          />
+          <span class="config-mode-icon">
+            <DatabaseOutlined v-if="option.icon === 'database'" />
+            <SettingOutlined v-else-if="option.icon === 'setting'" />
+            <FileTextOutlined v-else />
+          </span>
+          <span class="config-mode-copy">
+            <span class="config-mode-title">{{ option.title }}</span>
+            <span class="config-mode-description">{{ option.description }}</span>
+          </span>
+        </label>
+      </a-tooltip>
     </a-radio-group>
 
     <a-alert class="config-mode-alert" type="info" show-icon :message="alertMessage" />
+
+    <!--
+      快速配置：独立于配置来源的用户级开关（与 Info.Mode 无耦合，任一来源均可开关）。
+      只有声明了 quickConfig 双向绑定的调用方才渲染，避免给未接入运行时的专项做出死开关。
+    -->
+    <a-form-item v-if="quickConfig !== undefined" class="quick-config-form-item">
+      <template #label>
+        <span class="config-mode-label">
+          {{ t('edit.enableQuickConfiguration') }}
+          <a-tooltip :title="t('edit.overridesCurrentScriptConfiguration')">
+            <QuestionCircleOutlined class="help-icon" />
+          </a-tooltip>
+        </span>
+      </template>
+      <a-select
+        :value="quickConfig"
+        size="large"
+        style="width: 100%"
+        :disabled="disabled || saving || quickConfigDisabled"
+        :options="quickConfigOptions"
+        @change="handleQuickConfigChange"
+      />
+    </a-form-item>
   </a-form-item>
 </template>
 
@@ -52,6 +84,7 @@ import {
   LoadingOutlined,
   SettingOutlined,
 } from '@ant-design/icons-vue'
+import { QuestionCircleOutlined } from '@ant-design/icons-vue'
 import type { RadioChangeEvent } from 'ant-design-vue/es/radio/interface'
 
 const { t } = useI18n()
@@ -61,15 +94,36 @@ type ConfigModeOption = {
   title: string
   description: string
   icon?: 'database' | 'file' | 'setting'
+  /** 该选项不可选（如该专项运行时不存在脚本级共享配置）：置灰且不可勾选 */
+  disabled?: boolean
+  /** 不可选原因（悬停该选项时的提示文案） */
+  disabledReason?: string
 }
 
-const props = defineProps<{
-  modelValue: boolean | string
-  disabled?: boolean
-  saving?: boolean
-  options?: ConfigModeOption[]
-  alertMessage?: string
-}>()
+const props = withDefaults(
+  defineProps<{
+    modelValue: boolean | string
+    disabled?: boolean
+    saving?: boolean
+    options?: ConfigModeOption[]
+    alertMessage?: string
+    /**
+     * 快速配置开关（用户级，独立于 Info.Mode）。
+     * 未传入表示调用方未接入该字段，此时不渲染，避免做出无运行时的死开关。
+     * 必须显式 default: undefined：Boolean prop 未声明 default 时 Vue 会
+     * casting 成 false，「不传」与「显式传 false」无法区分，守卫
+     * v-if="quickConfig !== undefined" 将永远通过（#781 移除绑定后的真实事故）。
+     */
+    quickConfig?: boolean | undefined
+    quickConfigDisabled?: boolean
+  }>(),
+  {
+    options: undefined,
+    alertMessage: undefined,
+    quickConfig: undefined,
+    quickConfigDisabled: undefined,
+  }
+)
 
 // 默认值不能写在 withDefaults 里：defineProps 会被提升到 setup() 之外，
 // 引用不到 useI18n() 返回的 t，编译期直接报错（typecheck 与单测都发现不了，
@@ -90,18 +144,28 @@ const defaultOptions = computed<ConfigModeOption[]>(() => [
 ])
 
 const options = computed(() => props.options ?? defaultOptions.value)
-const alertMessage = computed(
-  () =>
-    props.alertMessage ??
-    '同一脚本下可以为不同用户选择不同配置来源；直控配置由脚本自身维护，并由直控用户共享。'
-)
+const alertMessage = computed(() => props.alertMessage ?? t('edit.configSourceHint'))
+
+/** 整组禁用（页面加载/保存中）或该选项声明 disabled 时，选项置灰不可勾选 */
+const isOptionDisabled = (option: ConfigModeOption): boolean =>
+  props.disabled === true || props.saving === true || option.disabled === true
+
+const quickConfigOptions = computed(() => [
+  { label: t('edit.enabled3'), value: true },
+  { label: t('edit.off'), value: false },
+])
 
 const emit = defineEmits<{
   change: [value: boolean | string]
+  quickConfigChange: [value: boolean]
 }>()
 
 const handleChange = (event: RadioChangeEvent) => {
   emit('change', event.target.value as boolean | string)
+}
+
+const handleQuickConfigChange = (value: boolean) => {
+  emit('quickConfigChange', value)
 }
 </script>
 
@@ -210,6 +274,10 @@ const handleChange = (event: RadioChangeEvent) => {
 
 .config-mode-alert {
   margin-top: 12px;
+}
+
+.quick-config-form-item {
+  margin-top: 16px;
 }
 
 @media (max-width: 760px) {

@@ -1,4 +1,4 @@
-export interface QuitCoordinationState {
+interface QuitCoordinationState {
   coordinatedQuit: boolean
   forceQuitInProgress: boolean
   quitRequestInFlight: boolean

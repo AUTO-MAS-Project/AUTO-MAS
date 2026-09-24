@@ -18,11 +18,12 @@
 
     <a-space size="middle">
       <a-button
-        v-if="userMode !== '脚本' && !showMaaConfigMask"
+        v-if="userMode === '用户' && !showMaaConfigMask"
         type="primary"
         ghost
         size="large"
         :loading="maaConfigLoading"
+        :disabled="configLocked"
         @click="$emit('handleMAAConfig')"
       >
         <template #icon>
@@ -31,7 +32,7 @@
         {{ t('edit.maaConfiguration') }}
       </a-button>
       <a-button
-        v-if="userMode !== '脚本' && showMaaConfigMask"
+        v-if="userMode === '用户' && showMaaConfigMask"
         type="default"
         size="large"
         disabled
@@ -66,6 +67,7 @@ defineProps<{
   maaConfigLoading: boolean
   showMaaConfigMask: boolean
   loading: boolean
+  configLocked: boolean
 }>()
 
 defineEmits<{

@@ -24,7 +24,10 @@ export interface TaskRuntimeSnapshotItem {
   scripts: WSTaskScriptIdentityData[]
   task_info: WSTaskScriptInfoData[]
   cycleNextList: WSTaskCyclePreviewData[]
+  /** 上次推送的完整日志尾部（≤200,000 字符），与下一条 task.log.updated 增量衔接 */
   log: string
+  /** 上次推送的 seq；没有推送过时后端给 0 */
+  logSeq?: number
 }
 
 export interface TaskRuntimeSnapshot {

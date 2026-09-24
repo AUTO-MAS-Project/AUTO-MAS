@@ -34,16 +34,17 @@ from app.models.schema import (
     EmulatorGetIn,
     EmulatorGetOut,
     EmulatorOperateIn,
-    EmulatorReorderIn,
     EmulatorSearchOut,
     EmulatorSearchResult,
     EmulatorStatusOut,
     EmulatorUpdateIn,
     OutBase,
 )
+from app.utils import get_logger
 from app.utils.emulator.tools import search_all_emulators
 
 router = APIRouter(prefix="/api/emulator", tags=["模拟器管理"])
+logger = get_logger("模拟器 API")
 
 
 @router.post(
@@ -59,6 +60,7 @@ async def get_emulator(emulator: EmulatorGetIn = Body(...)) -> EmulatorGetOut:
         index = [EmulatorConfigIndexItem(**_) for _ in index]
         data = {uid: EmulatorConfig(**cfg) for uid, cfg in data.items()}
     except Exception as e:
+        logger.opt(exception=True).warning(f"get_emulator失败: {type(e).__name__}: {e}")
         return EmulatorGetOut(
             code=500,
             status="error",
@@ -81,6 +83,7 @@ async def add_emulator() -> EmulatorCreateOut:
         uid, config = await Config.add_emulator()
         data = EmulatorConfig(**(await config.toDict()))
     except Exception as e:
+        logger.opt(exception=True).warning(f"add_emulator失败: {type(e).__name__}: {e}")
         return EmulatorCreateOut(
             code=500,
             status="error",
@@ -104,6 +107,9 @@ async def update_emulator(emulator: EmulatorUpdateIn = Body(...)) -> OutBase:
             emulator.emulatorId, emulator.data.model_dump(exclude_unset=True)
         )
     except Exception as e:
+        logger.opt(exception=True).warning(
+            f"update_emulator失败: {type(e).__name__}: {e}"
+        )
         return OutBase(
             code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
         )
@@ -121,23 +127,9 @@ async def delete_emulator(emulator: EmulatorDeleteIn = Body(...)) -> OutBase:
     try:
         await Config.del_emulator(emulator.emulatorId)
     except Exception as e:
-        return OutBase(
-            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
+        logger.opt(exception=True).warning(
+            f"delete_emulator失败: {type(e).__name__}: {e}"
         )
-    return OutBase()
-
-
-@router.post(
-    "/order",
-    tags=["Update"],
-    summary="重新排序模拟器项",
-    response_model=OutBase,
-    status_code=200,
-)
-async def reorder_emulator(emulator: EmulatorReorderIn = Body(...)) -> OutBase:
-    try:
-        await Config.reorder_emulator(emulator.indexList)
-    except Exception as e:
         return OutBase(
             code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
         )
@@ -157,6 +149,9 @@ async def operation_emulator(emulator: EmulatorOperateIn = Body(...)) -> OutBase
             emulator.operate, emulator.emulatorId, emulator.index
         )
     except Exception as e:
+        logger.opt(exception=True).warning(
+            f"operation_emulator失败: {type(e).__name__}: {e}"
+        )
         return OutBase(
             code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
         )
@@ -174,6 +169,7 @@ async def get_status(emulator: EmulatorGetIn = Body(...)) -> EmulatorStatusOut:
     try:
         data = await EmulatorManager.get_status(emulator.emulatorId)
     except Exception as e:
+        logger.opt(exception=True).warning(f"get_status失败: {type(e).__name__}: {e}")
         return EmulatorStatusOut(
             code=500, status="error", message=f"{type(e).__name__}: {str(e)}", data={}
         )
@@ -193,6 +189,9 @@ async def search_emulators() -> EmulatorSearchOut:
         emulators = await asyncio.to_thread(search_all_emulators)
         results = [EmulatorSearchResult(**emulator) for emulator in emulators]
     except Exception as e:
+        logger.opt(exception=True).warning(
+            f"search_emulators失败: {type(e).__name__}: {e}"
+        )
         return EmulatorSearchOut(
             code=500,
             status="error",

@@ -99,15 +99,6 @@ MUMU_ITEMS: tuple[StabilityItem, ...] = (
     ),
 )
 
-ITEMS_BY_TYPE: dict[str, tuple[StabilityItem, ...]] = {
-    "ldplayer": LDPLAYER_ITEMS,
-    "mumu": MUMU_ITEMS,
-}
-
-
-def items_for(emulator_type: str) -> tuple[StabilityItem, ...]:
-    return ITEMS_BY_TYPE.get(emulator_type, ())
-
 
 def evaluate(
     items: tuple[StabilityItem, ...], current: dict[str, str | None]

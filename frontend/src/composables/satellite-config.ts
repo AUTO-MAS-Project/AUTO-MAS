@@ -2,7 +2,7 @@ import centerIcon from '@/assets/AUTO-MAS.ico'
 import type { ScriptType } from '@/types/script'
 import { SCRIPT_LOGOS } from '@/utils/scriptLogos'
 
-export interface SatelliteModule {
+interface SatelliteModule {
   scriptType: ScriptType
   iconUrl: string
   enabled: boolean
@@ -41,9 +41,7 @@ function orbitRank(type: ScriptType): number {
   return index === -1 ? ORBIT_ORDER.length : index
 }
 
-export const satelliteModules: SatelliteModule[] = (
-  Object.keys(SCRIPT_LOGOS) as ScriptType[]
-)
+export const satelliteModules: SatelliteModule[] = (Object.keys(SCRIPT_LOGOS) as ScriptType[])
   .filter(type => !EXCLUDED_FROM_ORBIT.includes(type))
   .sort((left, right) => orbitRank(left) - orbitRank(right))
   .map(type => ({

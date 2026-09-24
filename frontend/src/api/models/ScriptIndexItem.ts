@@ -28,6 +28,7 @@ export namespace ScriptIndexItem {
         HSRCONFIG = 'HSRConfig',
         BETTER_GICONFIG = 'BetterGIConfig',
         ZZZ_OD_CONFIG = 'ZzzOdConfig',
+        BAAHCONFIG = 'BAAHConfig',
     }
 }
 

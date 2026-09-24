@@ -30,6 +30,9 @@ from datetime import datetime
 from typing import List, Literal, Optional
 
 from app.runtime_tasks import RuntimeTasks
+from app.utils.logger import get_logger
+
+logger = get_logger("任务执行")
 
 TaskTriggerSource = Literal[
     "scheduled_task",
@@ -142,14 +145,15 @@ class TaskItem(ABC):
         default_factory=list, repr=False
     )  # 循环运行的待运行条目预览
     trigger_source: TaskTriggerSource = "manual_task"  # MAS 任务触发来源
-    game_sign_results: list[dict[str, object]] = field(
-        default_factory=list, repr=False
-    )
+    game_sign_results: list[dict[str, object]] = field(default_factory=list, repr=False)
     game_sign_summary_consumed: bool = field(default=False, repr=False)
     _change_task: asyncio.Task[None] | None = field(
         default=None, init=False, repr=False, compare=False
     )
     _change_dirty: bool = field(default=False, init=False, repr=False, compare=False)
+    # 日志增量推送状态: 上次推送的完整日志 (不截断) 与推送序号, 见 TaskInfo.on_change
+    _last_pushed_log: str = field(default="", init=False, repr=False, compare=False)
+    _log_seq: int = field(default=0, init=False, repr=False, compare=False)
 
     @property
     def community_results(self) -> list[dict[str, object]]:
@@ -344,6 +348,8 @@ class TaskExecuteBase(ABC):
         finally:
             self._task_group = None
             try:
+                started_at = time.monotonic()
+                logger.info(f"任务执行结束，开始收尾: {type(self).__name__}")
                 if self.wait_for_finalizer_on_cancel:
                     await self._run_final_task()
                 else:
@@ -352,6 +358,10 @@ class TaskExecuteBase(ABC):
                     except Exception as e:
                         await self.on_crash(e)
             finally:
+                logger.info(
+                    f"任务收尾完成: {type(self).__name__} - 用时: "
+                    f"{time.monotonic() - started_at:.3f}秒"
+                )
                 self.accomplish.set()
 
     async def _run_final_task(self) -> None:

@@ -1,5 +1,6 @@
 import type { ScriptType } from '@/types/script'
 import generalIcon from '@/assets/AUTO-MAS.ico'
+import baahIcon from '@/assets/baah.png'
 import bettergiIcon from '@/assets/bettergi.ico'
 import hsrIcon from '@/assets/hsr.png'
 import maaIcon from '@/assets/MAA.png'
@@ -13,6 +14,7 @@ import zzzOdIcon from '@/assets/zzz-od.ico'
 
 /** 脚本类型 → 图标资源，Vite 处理后的 URL */
 export const SCRIPT_LOGOS: Record<ScriptType, string> = {
+  BAAH: baahIcon,
   BetterGI: bettergiIcon,
   General: generalIcon,
   HSR: hsrIcon,
@@ -28,6 +30,7 @@ export const SCRIPT_LOGOS: Record<ScriptType, string> = {
 
 /** 脚本类型 → 展示名，用于图片 alt 与标签文案 */
 export const SCRIPT_LABELS: Record<ScriptType, string> = {
+  BAAH: 'BAAH',
   BetterGI: 'BetterGI',
   General: 'AUTO-MAS',
   HSR: 'HSR',

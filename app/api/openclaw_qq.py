@@ -32,8 +32,10 @@ from app.models.schema import (
     OutBase,
 )
 from app.services.openclaw_qq import openclaw_qq_manager
+from app.utils import get_logger
 
 router = APIRouter(prefix="/api/setting/openclaw-qq", tags=["QQ 官方机器人通知"])
+logger = get_logger("QQ 机器人通知 API")
 
 
 @router.post(
@@ -42,11 +44,17 @@ router = APIRouter(prefix="/api/setting/openclaw-qq", tags=["QQ 官方机器人�
     response_model=OpenClawQQStatusOut,
 )
 async def get_status() -> OpenClawQQStatusOut:
-    """返回 QQ 绑定状态，不返回协议凭据。"""
+    """返回 QQ 绑定及网关状态，不返回协议凭据。
+
+    connected 表示凭据已绑定；state 表示网关是连接中、已连接还是重连中。
+    """
 
     try:
         state = openclaw_qq_manager.status()
     except Exception as exc:
+        logger.opt(exception=True).warning(
+            f"get_status失败: {type(exc).__name__}: {exc}"
+        )
         return OpenClawQQStatusOut(
             code=500,
             status="error",
@@ -73,6 +81,9 @@ async def start_login() -> OpenClawQQQrStartOut:
     except ValueError as exc:
         return OpenClawQQQrStartOut(code=400, status="error", message=str(exc))
     except Exception as exc:
+        logger.opt(exception=True).warning(
+            f"start_login失败: {type(exc).__name__}: {exc}"
+        )
         return OpenClawQQQrStartOut(
             code=500,
             status="error",
@@ -93,11 +104,19 @@ async def start_login() -> OpenClawQQQrStartOut:
 async def check_login(
     body: OpenClawQQQrCheckIn = Body(...),
 ) -> OpenClawQQQrCheckOut:
-    """轮询二维码状态；确认后自动保存 QQ 机器人凭据。"""
+    """轮询二维码与消息网关状态。
+
+    扫码确认后先保存凭据，此时可能返回 state=connecting、connected=false；
+    网关 READY 后返回 state=connected、connected=true。网关等待超时
+    返回 state=error，但绑定凭据仍保留，后台继续重连。
+    """
 
     try:
         result = await openclaw_qq_manager.check_login(session_id=body.sessionId)
     except Exception as exc:
+        logger.opt(exception=True).warning(
+            f"check_login失败: {type(exc).__name__}: {exc}"
+        )
         return OpenClawQQQrCheckOut(
             code=500,
             status="error",
@@ -124,6 +143,7 @@ async def unbind() -> OutBase:
     try:
         await openclaw_qq_manager.unbind()
     except Exception as exc:
+        logger.opt(exception=True).warning(f"unbind失败: {type(exc).__name__}: {exc}")
         return OutBase(
             code=500,
             status="error",

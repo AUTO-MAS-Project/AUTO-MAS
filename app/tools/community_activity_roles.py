@@ -198,9 +198,7 @@ def _binding_entries(
             continue
         if not isinstance(binding_list, list):
             raise ValueError("森空岛角色绑定列表响应格式无效")
-        entries.extend(
-            entry for entry in binding_list if isinstance(entry, Mapping)
-        )
+        entries.extend(entry for entry in binding_list if isinstance(entry, Mapping))
     return tuple(entries)
 
 
@@ -286,9 +284,7 @@ def normalize_miyoushe_roles(
             continue
         nested = item.get("list")
         if isinstance(nested, list):
-            role_entries.extend(
-                role for role in nested if isinstance(role, Mapping)
-            )
+            role_entries.extend(role for role in nested if isinstance(role, Mapping))
         else:
             role_entries.append(item)
 

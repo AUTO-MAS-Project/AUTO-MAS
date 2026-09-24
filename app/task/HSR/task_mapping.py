@@ -144,15 +144,12 @@ def resolve_script_assignment(
 ) -> HSRScriptAssignment:
     """解析模块执行脚本，并保留「是否回落、从哪个到哪个」供调用方呈现。
 
-    纯函数，不写日志；``get_assigned_script`` 只是它的兼容包装。
+    纯函数，不写日志。
     """
 
     assigned = None
     if user_config is not None:
-        try:
-            raw = user_config.get("Managed", "TaskMapping")
-        except (AttributeError, KeyError, TypeError):
-            raw = None
+        raw = user_config.get("Managed", "TaskMapping")
         if isinstance(raw, str):
             try:
                 raw = json.loads(raw)
@@ -191,20 +188,3 @@ def describe_script_fallback(
         f"模块「{module.name}」指派给 {requested}，但 {requested} 未配置路径，"
         f"已改用 {actual} 执行"
     )
-
-
-def get_assigned_script(
-    module: HSRTaskModule,
-    script_config,
-    *,
-    user_config=None,
-    effective_engines: tuple[ScriptType, ...] | None = None,
-) -> ScriptType:
-    """获取模块执行脚本；兼容用户级 Managed.TaskMapping 覆盖。"""
-
-    return resolve_script_assignment(
-        module,
-        script_config,
-        user_config=user_config,
-        effective_engines=effective_engines,
-    ).script

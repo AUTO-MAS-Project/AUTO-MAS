@@ -36,6 +36,7 @@
 
 
 import asyncio
+import json
 import uuid
 from datetime import datetime
 
@@ -46,6 +47,7 @@ from app.utils.constants import UTC8
 from app.utils.logger import get_logger
 from app.utils.security import format_exception_reason
 
+from .community_contract import CommunitySignDetail
 from .game_sign_result import merge_community_sign_result
 
 logger = get_logger("库街区社区")
@@ -84,9 +86,7 @@ def _safe_json(response: httpx.Response) -> dict[str, object]:
             marker in response_preview
             for marker in ("captcha", "geetest", "安全验证", "风控", "challenge")
         ):
-            raise _KuroRiskError(
-                "库街区请求触发风控或安全验证，请稍后重试"
-            ) from exc
+            raise _KuroRiskError("库街区请求触发风控或安全验证，请稍后重试") from exc
         raise ValueError(
             f"库街区返回了非 JSON 响应（HTTP {response.status_code}），疑似风控或服务维护"
         ) from exc
@@ -170,23 +170,17 @@ def _raise_kuro_response_error(
         raise ValueError(
             f"{stage}失败（HTTP {response.status_code}，code={code}）：{message}"
         )
-    if _is_kuro_code(code, 200) or (
-        allow_already_signed and _is_kuro_code(code, 1511)
-    ):
+    if _is_kuro_code(code, 200) or (allow_already_signed and _is_kuro_code(code, 1511)):
         return
 
     if _is_kuro_code(code, 220):
         if any(marker in lowered_message for marker in _KURO_RISK_MARKERS):
-            raise _KuroRiskError(
-                "库街区请求触发风控或安全验证（code=220），请稍后重试"
-            )
+            raise _KuroRiskError("库街区请求触发风控或安全验证（code=220），请稍后重试")
         raise _KuroAuthError(
             "库街区 Token 已失效（code=220）；库街区 APP 端再次登录可能使旧 Token 失效，请重新获取 Token"
         )
     if _is_kuro_code(code, 1513):
-        raise _KuroAuthError(
-            "库街区用户信息异常（code=1513），请重新获取 Token"
-        )
+        raise _KuroAuthError("库街区用户信息异常（code=1513），请重新获取 Token")
     raise ValueError(
         f"{stage}失败（HTTP {response.status_code}，code={code}）：{message}"
     )
@@ -219,10 +213,7 @@ def _extract_kuro_role_records(value: object) -> list[dict[str, object]]:
     if not isinstance(value, dict):
         raise ValueError("库街区角色列表响应格式无效")
 
-    if any(
-        value.get(key) not in (None, "")
-        for key in ("roleId", "role_id", "roleID")
-    ):
+    if any(value.get(key) not in (None, "") for key in ("roleId", "role_id", "roleID")):
         return [value]
 
     for key in ("roles", "roleList", "role_list", "list", "data", "roleInfo", "role"):
@@ -369,12 +360,42 @@ GAME_HEADERS = {
 
 
 def validate_kuro_credential(token: str) -> str:
-    """校验库街区 Token 的本地非空条件，不探测上游有效期。"""
+    """校验库街区凭据的本地格式，不探测上游有效期。"""
 
     value = str(token or "").strip()
     if not value:
         raise ValueError("库街区 Token 为空")
+    parse_kuro_credential(value)
     return value
+
+
+def parse_kuro_credential(raw: str) -> tuple[str, str, str]:
+    """兼容旧 Token 和包含登录设备标识的凭据 JSON。"""
+    value = raw.strip()
+    if value.startswith("{"):
+        try:
+            data = json.loads(value)
+        except ValueError:
+            raise ValueError("库街区凭据 JSON 格式无效") from None
+        token = data.get("token")
+        if not isinstance(token, str) or not token.strip():
+            raise ValueError("库街区凭据缺少 Token")
+        token = token.strip()
+        device, distinct = _kuro_device_identifiers(token)
+        credential = (
+            token,
+            str(data.get("devCode") or device),
+            str(data.get("distinctId") or distinct),
+        )
+    else:
+        credential = (value, *_kuro_device_identifiers(value))
+    # 请求头仅接受无空白的可见 ASCII，提前拒绝以免协议异常回显凭据。
+    if any(
+        not part or any(char < "!" or char > "~" for char in part)
+        for part in credential
+    ):
+        raise ValueError("库街区 Token 或设备标识格式无效")
+    return credential
 
 
 # ==================== 签到主流程 ====================
@@ -384,7 +405,7 @@ async def kuro_sign_in(token: str, proxy: str | None = None) -> list[dict[str, o
     """库街区社区签到
 
     Args:
-        token: 库街区 JWT Token 字符串
+        token: 库街区 Token 或包含设备标识的凭据 JSON
         proxy: 代理地址
 
     Returns:
@@ -396,8 +417,7 @@ async def kuro_sign_in(token: str, proxy: str | None = None) -> list[dict[str, o
         logger.warning("库街区 Token 为空")
         return _kuro_game_failure_results("未知/库街区", "Token 为空")
 
-    token = token.strip()
-    dev_code, distinct_id = _kuro_device_identifiers(token)
+    token, dev_code, distinct_id = parse_kuro_credential(token)
 
     resolved_proxy = proxy if proxy is not None else Config.proxy
     async with httpx.AsyncClient(proxy=resolved_proxy, trust_env=False) as client:
@@ -544,7 +564,6 @@ async def kuro_sign_in(token: str, proxy: str | None = None) -> list[dict[str, o
                     token=token,
                     dev_code=dev_code,
                     distinct_id=distinct_id,
-                    game_id=str(signable_roles[0]["gameId"]),
                     client=client,
                 )
             except Exception as error:
@@ -553,11 +572,24 @@ async def kuro_sign_in(token: str, proxy: str | None = None) -> list[dict[str, o
                     "reason": _log_kuro_exception("库街区社区打卡失败", error),
                 }
         for index in range(game_results_start, len(results)):
+            # 分项保留游戏实际结果；库洛币签到属于账号，只展示和统计一次。
+            details = [
+                CommunitySignDetail.from_result(
+                    kind="game", result=results[index]
+                ).to_legacy()
+            ]
+            if index == game_results_start:
+                details.append(
+                    CommunitySignDetail.from_result(
+                        kind="community", result=community_result
+                    ).to_legacy()
+                )
             results[index] = merge_community_sign_result(
                 results[index],
                 community_result,
                 include_reward=index == game_results_start,
             )
+            results[index]["details"] = details
 
     return results
 
@@ -567,14 +599,14 @@ async def _do_community_sign(
     token: str,
     dev_code: str,
     distinct_id: str,
-    game_id: str,
     client: httpx.AsyncClient,
 ) -> dict[str, object]:
     """执行账号级社区打卡，解析上游确认的库洛币奖励。"""
+    # 参考 Kuro-autosignin 的账号级打卡固定传 2，不沿用游戏角色的 gameId。
     response = await client.post(
         COMMUNITY_SIGN_URL,
         headers=_kuro_request_headers(BBS_HEADERS, token, dev_code, distinct_id),
-        data={"gameId": game_id},
+        data={"gameId": "2"},
         timeout=30.0,
     )
     payload = _safe_json(response)

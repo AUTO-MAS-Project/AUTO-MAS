@@ -24,7 +24,7 @@
     </a-space>
   </div>
 
-  <div class="script-edit-content">
+  <ConfigLockPanel :script-id="scriptId" content-class="script-edit-content">
     <a-card :title="t('edit.okNteScriptConfiguration')" :loading="pageLoading" class="config-card">
       <template #extra>
         <a-tag color="blue" class="type-tag">OK-NTE</a-tag>
@@ -332,10 +332,11 @@
         </div>
       </a-form>
     </a-card>
-  </div>
+  </ConfigLockPanel>
 </template>
 
 <script setup lang="ts">
+import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
 import { useI18n } from 'vue-i18n'
 import { onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -353,6 +354,7 @@ import {
   type OkNteConfig_Script,
 } from '@/api'
 import { useScriptApi } from '@/composables/useScriptApi'
+import { useSaveQueue } from '@/composables/useSaveQueue'
 
 const { t } = useI18n()
 
@@ -363,7 +365,8 @@ const { getScript, updateScript } = useScriptApi()
 
 const scriptId = route.params.id as string
 const pageLoading = ref(true)
-const isSaving = ref(false)
+// 保存串行队列：连续改动按序写回，不再被布尔互斥丢掉
+const { isSaving, enqueue } = useSaveQueue()
 const isInitializing = ref(true)
 
 const formData = reactive({
@@ -446,20 +449,19 @@ const handleGameEnabledChange = async (enabled: boolean) => {
 }
 
 const handleChange = async (category: string, key: string, value: unknown) => {
-  if (isInitializing.value || isSaving.value) return
-  isSaving.value = true
-  try {
-    const updateData = { [category]: { [key]: value } } as Record<string, Record<string, unknown>>
-    const success = await updateScript(scriptId, updateData)
-    if (success) {
-      logger.info(`配置已保存: ${category}.${key}`)
+  if (isInitializing.value) return
+  await enqueue(async () => {
+    try {
+      const updateData = { [category]: { [key]: value } } as Record<string, Record<string, unknown>>
+      const success = await updateScript(scriptId, updateData)
+      if (success) {
+        logger.info(`配置已保存: ${category}.${key}`)
+      }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e)
+      logger.error(msg)
     }
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e)
-    logger.error(msg)
-  } finally {
-    isSaving.value = false
-  }
+  }, `${category}.${key}`)
 }
 
 const buildAutoPaths = (rootPath: string) => {
@@ -493,8 +495,7 @@ const applyRootPathDefaults = async (rootPath: string) => {
   oknteConfig.Script.TrackProcessExe = trackProcessExe
   oknteConfig.Script.TrackProcessCmdline = ''
 
-  isSaving.value = true
-  try {
+  await enqueue(async () => {
     const success = await updateScript(scriptId, {
       Info: { RootPath: norm },
       Script: {
@@ -513,9 +514,7 @@ const applyRootPathDefaults = async (rootPath: string) => {
     if (success) {
       message.success(t('edit.okNtePathMatched'))
     }
-  } finally {
-    isSaving.value = false
-  }
+  })
 }
 
 const loadScript = async () => {
@@ -620,8 +619,7 @@ const selectGameRootPath = async () => {
 
   oknteConfig.Game.Path = candidateLauncher
   oknteConfig.Game.Type = 'Client'
-  isSaving.value = true
-  try {
+  await enqueue(async () => {
     await updateScript(scriptId, {
       Game: {
         Path: oknteConfig.Game.Path,
@@ -629,9 +627,7 @@ const selectGameRootPath = async () => {
       },
     })
     message.success(t('edit.gamePathMatchedHtgame'))
-  } finally {
-    isSaving.value = false
-  }
+  })
 }
 
 onMounted(loadScript)
