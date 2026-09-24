@@ -455,7 +455,7 @@ class AppConfig(GlobalConfig):
             global_mirror_cdk=str(self.get("Update", "MirrorChyanCDK") or ""),
         )
         await self.ScriptConfig.connect(self.config_path / "ScriptConfig.json")
-        if m9a_migration.changed:
+        if m9a_migration.changed or m9a_migration.failure:
             await self._settle_m9a_migration(m9a_migration)
         await self.QueueConfig.connect(self.config_path / "QueueConfig.json")
         await self.ToolsConfig.connect(self.config_path / "ToolsConfig.json")

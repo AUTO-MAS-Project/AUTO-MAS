@@ -151,7 +151,8 @@ def migrate_legacy_m9a_scripts(
         # 「配置未改动」只保得住这一刻：紧接着 ScriptConfig.connect() 会按新类加载，
         # 旧键当场丢掉。所以失败也要先把原文件另存一份，并把失败带进启动通知。
         logger.opt(exception=True).warning(f"M9A 迁移失败：{exc}")
-        report.failure = f"{type(exc).__name__}: {exc}"
+        # 文件没写回：出错前记下的「已迁移 / 已换类型 / 已停用」都没落盘，一条也不能报。
+        report = MigrationReport(failure=f"{type(exc).__name__}: {exc}")
         stamp = (now or datetime.now()).strftime("%Y%m%d%H%M%S")
         failed_backup = path.with_name(
             f"{path.name}{LEGACY_BACKUP_SUFFIX}failed-{stamp}.bak"
