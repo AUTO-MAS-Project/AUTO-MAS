@@ -3836,6 +3836,10 @@ class MSSUserConfig_Info(MaaFWUserConfig_Info):
     PlanMode: Optional[str] = Field(
         default=None, description="悬赏试炼关卡来源（Fixed 或 MSS 计划表 UID）"
     )
+    IfActivityFirst: Optional[bool] = Field(
+        default=None,
+        description="队列里没加活动任务时，是否在活动期间自动加入并排到最前",
+    )
 
 
 class MSSUserConfig(MaaFWUserConfig):

@@ -3028,6 +3028,10 @@ class MSSUserConfig(MaaFWUserConfig):
     related_config: dict[str, MultipleConfig] = {}
 
     def __init__(self) -> None:
+        ## 活动优先：队列里没加「活动快速战斗」时，确认在活动期也自动加入并排到最前
+        self.Info_IfActivityFirst = ConfigItem(
+            "Info", "IfActivityFirst", True, BoolValidator()
+        )
         ## 悬赏试炼关卡来源：Fixed 用任务队列里配的，选了计划表就按当天槽位改
         self.Info_PlanMode = ConfigItem(
             "Info",
