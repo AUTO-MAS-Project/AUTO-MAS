@@ -1014,6 +1014,21 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 f"脚本配置的 ADB 路径不存在，继续自动解析: {configured_path}"
             )
 
+        manager = self.emulator_manager
+        get_adb_path = getattr(manager, "get_adb_path", None)
+        if callable(get_adb_path):
+            with suppress(Exception):
+                manager_adb_path = get_adb_path()
+                if manager_adb_path is not None:
+                    manager_adb_path = Path(manager_adb_path)
+                    if manager_adb_path.exists():
+                        self._cached_adb_path = str(manager_adb_path)
+                        self._append_log(
+                            "ADB 路径选择: MAS 模拟器管理器; "
+                            f"路径={self._cached_adb_path}"
+                        )
+                        return self._cached_adb_path
+
         derived_path = self._derive_adb_path_from_emulator_config()
         if derived_path is not None and derived_path.exists():
             self._cached_adb_path = str(derived_path)
