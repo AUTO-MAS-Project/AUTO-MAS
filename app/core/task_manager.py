@@ -1035,6 +1035,53 @@ class _TaskManager:
             )
         return user_uid
 
+    @staticmethod
+    def _resolve_resume_users(
+        script_uid: uuid.UUID, user_id: str | None
+    ) -> frozenset[str] | None:
+        """解析「从某一用户开始」所覆盖的用户范围
+
+        顺序取脚本 UserData 的顺序，与各脚本适配器 ``prepare()`` 里整表复制后
+        构建 user_list 的遍历顺序一致。起始用户本身未启用或天数耗尽不报错，
+        由适配器照常筛掉，等效于从它之后第一个可运行的用户开始。
+
+        Args:
+            script_uid (uuid.UUID): 目标脚本 UID。
+            user_id (str | None): 起始用户 ID; 为 None 时表示不限。
+
+        Returns:
+            frozenset[str] | None: 起始用户及其后的用户 ID; 未指定时为 None。
+
+        Raises:
+            ValueError: 用户不属于该脚本, 或从它开始没有可运行的用户。
+        """
+
+        if user_id is None:
+            return None
+
+        script_config = Config.ScriptConfig[script_uid]
+        script_name = script_config.get("Info", "Name")
+        try:
+            user_uid = uuid.UUID(user_id)
+        except ValueError as e:
+            raise ValueError(f"用户 {user_id} 不属于脚本 {script_name}") from e
+        if user_uid not in script_config.UserData:
+            raise ValueError(f"用户 {user_id} 不属于脚本 {script_name}")
+
+        user_order = list(script_config.UserData.keys())
+        resume_uids = user_order[user_order.index(user_uid) :]
+        # 与 _resolve_target_user 同理：全被筛掉时各适配器会静默跑出空用户列表
+        if not any(
+            script_config.UserData[uid].get("Info", "Status")
+            and script_config.UserData[uid].get("Info", "RemainedDay") != 0
+            for uid in resume_uids
+        ):
+            raise ValueError(
+                f"从用户 {script_config.UserData[user_uid].get('Info', 'Name')} "
+                "开始没有已启用且代理天数未耗尽的用户"
+            )
+        return frozenset(str(uid) for uid in resume_uids)
+
     async def add_task(
         self,
         mode: Literal["AutoProxy", "ScriptConfig", "Update", "CycleRun"],
@@ -1042,6 +1089,7 @@ class _TaskManager:
         new_task_info: dict | None = None,
         resume_from_script_id: str | None = None,
         user_id: str | None = None,
+        resume_from_user_id: str | None = None,
         trigger_source: TaskTriggerSource = "manual_task",
         view_only: bool = False,
         instance_idx: int | None = None,
@@ -1054,6 +1102,8 @@ class _TaskManager:
             id (str): 任务项对应的配置 ID
             new_task_info (dict): 新任务项信息. Defaults to {}.
             user_id (str): 单独运行的用户 ID; 仅脚本的自动代理任务可用。
+            resume_from_user_id (str): 起始用户 ID, 该用户及其后的用户参与运行;
+                仅脚本的自动代理任务可用, 与 user_id 互斥。
             trigger_source: MAS 任务触发来源，API 手动启动默认 manual_task。
             view_only: 配置查看会话（ScriptConfig 专用）：只读打开原生界面，
                 不注入基线也不回读字段，用于「查看历史备份」等预览场景。
@@ -1072,6 +1122,11 @@ class _TaskManager:
             mode != "AutoProxy" or uid not in Config.ScriptConfig
         ):
             raise ValueError("指定单个用户仅支持脚本的自动代理任务")
+        if resume_from_user_id is not None:
+            if user_id is not None:
+                raise ValueError("单独运行指定用户与从指定用户开始不能同时使用")
+            if mode != "AutoProxy" or uid not in Config.ScriptConfig:
+                raise ValueError("从指定用户开始仅支持脚本的自动代理任务")
 
         # CycleRun 只是「怎么排」的差别，脚本仍按自动代理执行；各脚本适配器
         # 只认 AutoProxy，所以模式在这里就翻译掉，循环与否记在 is_cycle 上。
@@ -1094,6 +1149,7 @@ class _TaskManager:
             # 立刻打上占用标记：检查到这里之间没有 await，并发的两次启动才不会都通过
             Config.running_cycle_queue_ids.add(uid)
 
+        resume_user_ids: frozenset[str] | None = None
         if mode in ("ScriptConfig", "Update"):
             if uid in Config.ScriptConfig:
                 task_uid = uuid.uuid4()
@@ -1120,6 +1176,7 @@ class _TaskManager:
             queue_id = None
             script_uid = uid
             user_uid = self._resolve_target_user(uid, user_id)
+            resume_user_ids = self._resolve_resume_users(uid, resume_from_user_id)
         else:
             raise ValueError(f"任务 {uid} 无法找到对应脚本配置")
 
@@ -1165,6 +1222,8 @@ class _TaskManager:
                 script_id=str(script_uid) if script_uid else None,
                 user_id=str(user_uid) if user_uid else None,
                 resume_from_script_id=resume_from_script_id,
+                resume_from_user_id=resume_from_user_id,
+                resume_user_ids=resume_user_ids,
                 trigger_source=trigger_source,
                 is_cycle=is_cycle,
                 view_only=view_only and exec_mode == "ScriptConfig",
