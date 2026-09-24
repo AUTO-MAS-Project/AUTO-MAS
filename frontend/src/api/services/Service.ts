@@ -55,8 +55,8 @@ import type { HistoryDataGetOut } from '../models/HistoryDataGetOut';
 import type { HistorySearchIn } from '../models/HistorySearchIn';
 import type { HistorySearchOut } from '../models/HistorySearchOut';
 import type { HSRCapabilitiesOut } from '../models/HSRCapabilitiesOut';
-import type { HSRDirectConfigImportIn } from '../models/HSRDirectConfigImportIn';
-import type { HSRDirectConfigImportOut } from '../models/HSRDirectConfigImportOut';
+import type { HSRCloudLoginIn } from '../models/HSRCloudLoginIn';
+import type { HSRCloudLoginOut } from '../models/HSRCloudLoginOut';
 import type { HSRManagedConfigOut } from '../models/HSRManagedConfigOut';
 import type { HSRSRAProfilesOut } from '../models/HSRSRAProfilesOut';
 import type { HSRStageOptionsOut } from '../models/HSRStageOptionsOut';
@@ -68,6 +68,12 @@ import type { MaaDepotInventoryOut } from '../models/MaaDepotInventoryOut';
 import type { MaaEndOptionsOut } from '../models/MaaEndOptionsOut';
 import type { MaaFWAgentEnvPrepareIn } from '../models/MaaFWAgentEnvPrepareIn';
 import type { MaaFWAgentEnvPrepareOut } from '../models/MaaFWAgentEnvPrepareOut';
+import type { MaaFWEmbeddedCloneIn } from '../models/MaaFWEmbeddedCloneIn';
+import type { MaaFWEmbeddedIn } from '../models/MaaFWEmbeddedIn';
+import type { MaaFWEmbeddedReimportIn } from '../models/MaaFWEmbeddedReimportIn';
+import type { MaaFWEmbeddedSourcesIn } from '../models/MaaFWEmbeddedSourcesIn';
+import type { MaaFWEmbeddedSourcesOut } from '../models/MaaFWEmbeddedSourcesOut';
+import type { MaaFWEmbeddedStatusOut } from '../models/MaaFWEmbeddedStatusOut';
 import type { MaaFWGamePackageIn } from '../models/MaaFWGamePackageIn';
 import type { MaaFWGamePackageOut } from '../models/MaaFWGamePackageOut';
 import type { MaaFWInterfacePreviewIn } from '../models/MaaFWInterfacePreviewIn';
@@ -395,29 +401,6 @@ export class Service {
             errors: {
                 422: `Validation Error`,
             },
-        });
-    }
-    /**
-     * 获取星塔旅人活动数据（StellaBase 中转）
-     * 取回星塔旅人的活动排期。
-     *
-     * StellaBase 不放开跨域，浏览器直连拿不到数据，所以统一由后端中转——筛选与
-     * 格式转换仍由前端完成，与碧蓝档案那条链路一致。取数失败返回一份空数据，由
-     * 卡片显示自己的失败态，不影响其它卡片。
-     *
-     * 顺带捎上国服官网的主推横幅（``official``）：StellaBase 的活动大图时有时无，
-     * 官网那张 795×510 的官方主视觉正好当封面兜底；官网挂了不影响排期本身。
-     * 其中与当前活动对得上号的那条会带 ``matched: true``，前端优先用它。
-     *
-     * Returns:
-     * InfoOut: 站点原始响应，另加 ``official`` 横幅列表；取不到排期时 data 为空字典。
-     * @returns InfoOut Successful Response
-     * @throws ApiError
-     */
-    public static getStellaActivityApiInfoStellaActivityPost(): CancelablePromise<InfoOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/info/stella/activity',
         });
     }
     /**
@@ -945,6 +928,94 @@ export class Service {
         });
     }
     /**
+     * 查看 MFW 脚本的内嵌副本状态
+     * @param requestBody
+     * @returns MaaFWEmbeddedStatusOut Successful Response
+     * @throws ApiError
+     */
+    public static getMaafwEmbeddedStatusApiScriptsMaafwEmbeddedStatusPost(
+        requestBody: MaaFWEmbeddedIn,
+    ): CancelablePromise<MaaFWEmbeddedStatusOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/maafw/embedded/status',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 按来源目录导入（或重新导入）副本
+     * 脚本页选目录就是走这里：第一次是导入，之后是换来源或按当前来源重导。
+     *
+     * 导入成功才把来源写进 Info.Path；失败时旧副本与旧来源都原样不动。
+     * @param requestBody
+     * @returns MaaFWEmbeddedStatusOut Successful Response
+     * @throws ApiError
+     */
+    public static reimportMaafwEmbeddedApiScriptsMaafwEmbeddedReimportPost(
+        requestBody: MaaFWEmbeddedReimportIn,
+    ): CancelablePromise<MaaFWEmbeddedStatusOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/maafw/embedded/reimport',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 列出可作为克隆来源的其它 MFW 脚本
+     * 新建脚本对话框里「复用已有脚本的项目」的候选：有健康副本的 MFW / M9A 脚本。
+     *
+     * 新建时脚本还没建出来，所以不要求 ``scriptId``；传了就把它自己排除掉。
+     * @param requestBody
+     * @returns MaaFWEmbeddedSourcesOut Successful Response
+     * @throws ApiError
+     */
+    public static listMaafwEmbeddedSourcesApiScriptsMaafwEmbeddedSourcesPost(
+        requestBody?: MaaFWEmbeddedSourcesIn,
+    ): CancelablePromise<MaaFWEmbeddedSourcesOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/maafw/embedded/sources',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 从另一个 MFW 脚本的副本克隆，同一项目再建一个脚本
+     * 同一个项目要开第二、第三个脚本（不同模拟器并行跑）时走这里，不用再选目录
+     * 重新投影，来源目录已经删了也能建。
+     *
+     * 副本从源脚本的副本硬链接克隆（运行时、模型与其它副本共用，只多小文件），
+     * ``Info.Path`` 与 ``Embedded.*`` 沿用源脚本的记录；类型随项目（M9A 项目 → M9A）。
+     * 用户、任务队列与运行设置不带——那是「复制脚本」的事。
+     * @param requestBody
+     * @returns MaaFWEmbeddedStatusOut Successful Response
+     * @throws ApiError
+     */
+    public static cloneMaafwEmbeddedApiScriptsMaafwEmbeddedClonePost(
+        requestBody: MaaFWEmbeddedCloneIn,
+    ): CancelablePromise<MaaFWEmbeddedStatusOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/maafw/embedded/clone',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
      * 按所选 resource 推断 MFW 项目的安卓游戏包名
      * 脚本编辑页读完 interface / 切换 resource 时调用，把推出来的包名直接填进表单。
      *
@@ -1033,36 +1104,6 @@ export class Service {
             url: '/api/scripts/maafw/agent-env/prepare',
             body: requestBody,
             mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 获取 M9A 可用任务列表（排除 standalone 任务）
-     * 获取 M9A 可用任务列表（排除 standalone 任务）
-     *
-     * 前端调用此接口获取可选择的任务列表，
-     * 用于展示在用户编辑界面的任务选择区域。
-     *
-     * Args:
-     * script_id: M9A 脚本 ID
-     *
-     * Returns:
-     * dict: 包含任务列表的响应
-     * @param scriptId
-     * @returns any Successful Response
-     * @throws ApiError
-     */
-    public static getM9AAvailableTasksApiScriptsM9ATasksAvailablePost(
-        scriptId: string,
-    ): CancelablePromise<any> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/scripts/m9a/tasks/available',
-            query: {
-                'script_id': scriptId,
-            },
             errors: {
                 422: `Validation Error`,
             },
@@ -2214,8 +2255,36 @@ export class Service {
         });
     }
     /**
+     * 为 HSR 用户登录云·星穹铁道
+     * 起该用户的云浏览器并用三月七的 ``game`` 任务等用户在窗口里登录。
+     *
+     * 阻塞到三月七退出为止（最长为登录等待 + 最长排队 + 余量），与正在运行的
+     * 任务互斥：脚本运行中或三月七目录被占用时返回 409。成功后写
+     * ``Cloud.LastLogin``。
+     * @param requestBody
+     * @returns HSRCloudLoginOut Successful Response
+     * @throws ApiError
+     */
+    public static postHsrCloudLoginApiApiScriptsHsrCloudLoginPost(
+        requestBody: HSRCloudLoginIn,
+    ): CancelablePromise<HSRCloudLoginOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/hsr/cloud-login',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
      * 获取 HSR 托管配置字段
-     * 返回原生动态托管字段；用户 ID 只负责归属校验。
+     * 返回原生动态托管字段。
+     *
+     * 传了用户 ID 时先做归属校验，再按该用户的配置来源决定表单读哪份计划：
+     * 「脚本」读脚本共享计划，「用户」读该用户自己的计划；不传用户 ID 时读
+     * 脚本共享计划。响应的 ``plan_owner`` 指明保存目标。
      * @param scriptId
      * @param userId
      * @returns HSRManagedConfigOut Successful Response
@@ -2253,45 +2322,6 @@ export class Service {
             query: {
                 'scriptId': scriptId,
             },
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 导入 HSR 原生配置快照
-     * @param requestBody
-     * @returns HSRDirectConfigImportOut Successful Response
-     * @throws ApiError
-     */
-    public static importHsrDirectConfigApiApiScriptsHsrDirectConfigImportPost(
-        requestBody: HSRDirectConfigImportIn,
-    ): CancelablePromise<HSRDirectConfigImportOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/scripts/hsr/direct-config/import',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 清除 HSR 用户的直控配置快照
-     * 清掉该用户导入的快照，直控回到直接使用脚本当前原生配置。
-     * @param requestBody
-     * @returns HSRDirectConfigImportOut Successful Response
-     * @throws ApiError
-     */
-    public static clearHsrDirectConfigApiApiScriptsHsrDirectConfigClearPost(
-        requestBody: HSRDirectConfigImportIn,
-    ): CancelablePromise<HSRDirectConfigImportOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/scripts/hsr/direct-config/clear',
-            body: requestBody,
-            mediaType: 'application/json',
             errors: {
                 422: `Validation Error`,
             },

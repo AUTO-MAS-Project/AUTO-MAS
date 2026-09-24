@@ -14,8 +14,8 @@
         <template #title>
           <div class="card-title">
             <img
-              :src="projectIconUrl || SCRIPT_LOGOS.MaaFW"
-              alt="MaaFW"
+              :src="projectIconUrl || flavor.logo"
+              :alt="flavor.typeTagLabel"
               width="22"
               height="22"
               class="title-logo"
@@ -37,6 +37,7 @@
             :form-data="formData"
             :interface-dependent-disabled="interfaceDependentDisabled"
             :account-record-tooltip="accountRecordTooltip"
+            :account-placeholder="t(flavor.accountPlaceholderKey)"
             @save="handleFieldSave"
           />
 
@@ -57,6 +58,29 @@
               {{ t('edit.configRestoreTitle') }}
             </a-button>
           </a-flex>
+          <!-- 特调类型（M9A）自动加首尾任务与切号，提醒用户不用手动加；不隐藏这三个任务，手动加了也只是被去重 -->
+          <a-alert
+            v-if="flavor.queueHintKey"
+            class="flavor-queue-hint"
+            type="info"
+            show-icon
+            :message="t(flavor.queueHintKey)"
+          />
+          <!-- 特调类型（MSS）的用户可以引用计划表：运行前由特调钩子按当天槽位改写任务选项 -->
+          <a-form-item
+            v-if="flavor.planConsumer"
+            class="flavor-plan-mode"
+            :label="t('edit.maafwFlavorPlanMode')"
+            :extra="flavor.planHintKey ? t(flavor.planHintKey) : undefined"
+          >
+            <a-select
+              v-model:value="formData.Info.PlanMode"
+              :options="planModeOptions"
+              :disabled="loading"
+              class="flavor-plan-select"
+              @change="handleFieldSave('Info.PlanMode', formData.Info.PlanMode)"
+            />
+          </a-form-item>
           <TaskQueueSection
             v-model:add-task-cascader-value="addTaskCascaderValue"
             v-model:show-preset-modal="showPresetModal"
@@ -166,11 +190,12 @@ import { buildMaaFWAssetUrl, useMaaFWApi } from '@/composables/useMaaFWApi'
 import { useScriptApi } from '@/composables/useScriptApi'
 import { useUserApi } from '@/composables/useUserApi'
 import { isSupportedMaaFWControllerType } from '@/types/script'
-import { SCRIPT_LOGOS } from '@/utils/scriptLogos'
-import { buildMaaFWTaskInstanceId, resolveMaaFWTaskName } from '@/utils/maafwTaskInstance'
+import { useMaaFWFlavor } from '@/composables/useMaaFWFlavor'
+import { buildMaaFWTaskInstanceIds, resolveMaaFWTaskName } from '@/utils/maafwTaskInstance'
 import MaaFWUserEditHeader from './MaaFWUserEdit/MaaFWUserEditHeader.vue'
 import BasicInfoSection from './MaaFWUserEdit/BasicInfoSection.vue'
 import TaskQueueSection from './MaaFWUserEdit/TaskQueueSection.vue'
+import { buildPresetAppliedSnapshot, selectPresetQueueEntries } from './maafwPresetQueue'
 import type {
   MaaFWGroupInfo,
   MaaFWInterfacePreviewData,
@@ -180,6 +205,7 @@ import type {
   MaaFWTaskOptionValue,
   MaaFWTaskSnapshot,
   MaaFWUserConfig,
+  ScriptType,
 } from '@/types/script'
 
 const { t } = useI18n()
@@ -264,6 +290,9 @@ const { configLocked } = useScriptConfigLock(() => scriptId)
 
 const scriptName = ref('')
 const scriptPath = ref('')
+// flavor 文案以脚本当前类型为准（MaaFW / M9A），不看路由 meta
+const scriptType = ref<ScriptType>('MaaFW')
+const flavor = useMaaFWFlavor(scriptType)
 const scriptConfig = ref<MaaFWScriptConfig | null>(null)
 const preferAdbController = ref(false)
 const previewData = shallowRef<MaaFWInterfacePreviewData | null>(null)
@@ -276,7 +305,7 @@ const handleProjectIconError = (event: Event) => {
   const image = event.currentTarget as HTMLImageElement | null
   if (!image || image.dataset.maafwIconFallbackApplied === 'true') return
   image.dataset.maafwIconFallbackApplied = 'true'
-  image.src = SCRIPT_LOGOS.MaaFW
+  image.src = flavor.value.logo
 }
 const selectedTaskId = ref('')
 const addTaskCascaderValue = ref<string[]>([])
@@ -303,6 +332,7 @@ const getDefaultMaaFWUserData = (): MaaFWUserConfig => ({
     Tag: '',
     Account: '',
     Password: '',
+    PlanMode: 'Fixed',
   },
   Task: {
     SelectedPreset: '',
@@ -337,8 +367,30 @@ const rules = computed<Record<string, Rule[]>>(() => ({
   ],
 }))
 
-const accountRecordTooltip =
-  '账号 / 密码仅用于本地记录，不会自动传入脚本；需要传参请在下方任务选项中配置'
+const accountRecordTooltip = computed(() => t(flavor.value.accountTooltipKey))
+
+// 计划表下拉（只有 flavor 声明了计划表消费方的类型才显示）：固定 + 该消费方的计划表
+const planModeOptions = ref<Array<{ label: string; value: string }>>([
+  { label: t('edit.maafwFlavorPlanFixed'), value: 'Fixed' },
+])
+const loadPlanModeOptions = async () => {
+  const consumer = flavor.value.planConsumer
+  if (!consumer) return
+  try {
+    const response = await Service.getPlanComboxApiInfoComboxPlanPost({ consumer })
+    if (response?.code !== 200 || !response.data) return
+    planModeOptions.value = response.data
+      .filter(item => Boolean(item.value))
+      .map(item =>
+        item.value === 'Fixed'
+          ? { label: t('edit.maafwFlavorPlanFixed'), value: 'Fixed' }
+          : { label: item.label ?? '', value: String(item.value) }
+      )
+  } catch (error) {
+    // 取不到计划表时只留「固定」一项，其它设置照常能改
+    logger.error(`加载计划表选项失败: ${error instanceof Error ? error.message : String(error)}`)
+  }
+}
 
 const controllerOptions = computed(() =>
   (previewData.value?.controllers || []).filter(controller =>
@@ -451,7 +503,7 @@ const groupByName = computed(() => {
   return new Map<string, MaaFWGroupInfo>(entries)
 })
 const getGroupDisplayName = (groupName: string) => {
-  if (groupName === ADD_TASK_UNGROUPED_KEY) return '未分组'
+  if (groupName === ADD_TASK_UNGROUPED_KEY) return t('edit.ungrouped')
   const group = groupByName.value.get(groupName)
   return group?.label || groupName
 }
@@ -538,14 +590,19 @@ const addTaskCascaderOptions = computed<AddTaskCascaderOption[]>(() =>
   }))
 )
 const presetTemplates = computed(() => {
-  const activeTaskNames = new Set(activeTasks.value.map(task => task.name))
+  const activeTaskByName = new Map(activeTasks.value.map(task => [task.name, task] as const))
   return presetOptions.value
     .map(preset => {
       const snapshot = normalizeTaskSnapshot(preset.snapshot, previewData.value)
-      const taskNames = snapshot.taskOrder.filter(taskName => activeTaskNames.has(taskName))
-      return { preset, taskNames }
+      // 预设里重复的任务是实例 id（`<任务名>__MAS_DUP__presetN`），按实例解析后再判断可用
+      const entries = selectPresetQueueEntries(
+        snapshot.taskOrder,
+        activeTaskByName,
+        validTaskNames.value
+      )
+      return { preset, entries, taskOptions: snapshot.taskOptions }
     })
-    .filter(template => template.taskNames.length > 0)
+    .filter(template => template.entries.length > 0)
 })
 const selectedQueuedTask = computed(
   () =>
@@ -640,11 +697,18 @@ const addTaskToQueue = async (taskName: string) => {
     return
   }
 
-  const taskId = buildMaaFWTaskInstanceId(taskName, new Set(taskSnapshot.value.taskOrder))
-  taskSnapshot.value.taskOrder = partitionTaskOrder([...taskSnapshot.value.taskOrder, taskId])
-  taskSnapshot.value.taskChecked[taskId] = true
-  ensureTaskOptionMap(taskId)
-  selectedTaskId.value = taskId
+  // 任务声明了 repeatable / repeat_count 时一次加入 N 份，各自独立（与手动复制同一体系）
+  const taskIds = buildMaaFWTaskInstanceIds(
+    taskName,
+    taskByName.value.get(taskName)?.repeatCount,
+    taskSnapshot.value.taskOrder
+  )
+  taskSnapshot.value.taskOrder = partitionTaskOrder([...taskSnapshot.value.taskOrder, ...taskIds])
+  for (const taskId of taskIds) {
+    taskSnapshot.value.taskChecked[taskId] = true
+    ensureTaskOptionMap(taskId)
+  }
+  selectedTaskId.value = taskIds[0]
   addTaskCascaderValue.value = []
   await persistQueuedSnapshot()
 }
@@ -660,16 +724,16 @@ const applyPresetTemplate = async (presetName: string) => {
   const template = presetTemplates.value.find(item => item.preset.name === presetName)
   if (!template) return
 
-  const presetSnapshot = normalizeTaskSnapshot(template.preset.snapshot, previewData.value)
-  const pretaskIds = taskSnapshot.value.taskOrder.filter(taskId => isPretaskId(taskId))
-  const nextTaskIds = partitionTaskOrder([...pretaskIds, ...template.taskNames])
-  const nextTaskIdSet = new Set(nextTaskIds)
-  taskSnapshot.value.taskOrder = nextTaskIds
-  taskSnapshot.value.taskChecked = Object.fromEntries(nextTaskIds.map(taskId => [taskId, true]))
-  taskSnapshot.value.taskOptions = Object.fromEntries(
-    Object.entries(presetSnapshot.taskOptions).filter(([taskId]) => nextTaskIdSet.has(taskId))
+  const nextSnapshot = buildPresetAppliedSnapshot(
+    template.entries,
+    template.taskOptions,
+    taskSnapshot.value.taskOrder,
+    isPretaskId
   )
-  selectedTaskId.value = nextTaskIds[0] || ''
+  taskSnapshot.value.taskOrder = nextSnapshot.taskOrder
+  taskSnapshot.value.taskChecked = nextSnapshot.taskChecked
+  taskSnapshot.value.taskOptions = nextSnapshot.taskOptions
+  selectedTaskId.value = nextSnapshot.taskOrder[0] || ''
   formData.Task.SelectedPreset = presetName
   showPresetModal.value = false
   await savePresetAndSnapshot()
@@ -813,12 +877,14 @@ const loadScriptInfo = async () => {
       handleCancel()
       return
     }
-    if (script.type !== 'MaaFW') {
+    // M9A / MSS 是 MaaFW 的特调类型，同一个页面
+    if (script.type !== 'MaaFW' && script.type !== 'M9A' && script.type !== 'MSS') {
       message.error(t('edit.scriptTypeNotMfw'))
       handleCancel()
       return
     }
 
+    scriptType.value = script.type
     scriptName.value = script.name
     const loadedScriptConfig = script.config as MaaFWScriptConfig
     scriptConfig.value = loadedScriptConfig
@@ -826,7 +892,7 @@ const loadScriptInfo = async () => {
     preferAdbController.value = Boolean(
       loadedScriptConfig.Emulator?.Id && loadedScriptConfig.Emulator.Id !== '-'
     )
-    await reloadInterface(false)
+    await Promise.all([reloadInterface(false), loadPlanModeOptions()])
 
     if (isEdit.value) {
       await loadUserData()
@@ -852,7 +918,10 @@ const createUserImmediately = async () => {
       userId = result.userId
       isEdit.value = true
       router.replace({
-        name: 'MaaFWUserEdit',
+        // 加用户路由与编辑路由成对（M9AUserAdd ↔ M9AUserEdit），跳回同一条线，别把 M9A 落到 MFW 的 URL 上。
+        name: String(route.name ?? '').endsWith('UserAdd')
+          ? String(route.name).replace(/UserAdd$/, 'UserEdit')
+          : 'MaaFWUserEdit',
         params: { ...route.params, userId: result.userId },
       })
       await loadUserData()
@@ -876,7 +945,12 @@ const loadUserData = async () => {
       const userIndex = userResponse.index.find(index => index.uid === userId)
       const userData = userResponse.data[userId] as Partial<MaaFWUserConfig> | undefined
 
-      if (userIndex?.type === 'MaaFWUserConfig' && userData) {
+      // M9A / MSS 的用户类是 MaaFWUserConfig 的子类（MSS 多一项 Info.PlanMode），同一个页面
+      const isMaaFWUser =
+        userIndex?.type === 'MaaFWUserConfig' ||
+        userIndex?.type === 'M9AUserConfig' ||
+        userIndex?.type === 'MSSUserConfig'
+      if (isMaaFWUser && userData) {
         applyUserData(userData)
         taskSnapshot.value = normalizeTaskSnapshot(formData.Task.TaskSnapshot, previewData.value)
         await syncControllerResourceSelection()
@@ -909,7 +983,7 @@ const reloadInterface = async (showMessage = true) => {
   }
 
   previewData.value = null
-  const data = await previewInterface(scriptPath.value)
+  const data = await previewInterface(scriptPath.value, scriptId)
   if (data) {
     previewData.value = markRaw(data)
     taskSnapshot.value = normalizeTaskSnapshot(taskSnapshot.value, data)
@@ -1059,6 +1133,15 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
+.flavor-queue-hint {
+  margin-bottom: 16px;
+}
+
+.flavor-plan-select {
+  width: 100%;
+  max-width: 360px;
+}
+
 .user-edit-container {
   padding: 32px;
   min-height: 100vh;

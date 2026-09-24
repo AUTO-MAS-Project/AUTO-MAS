@@ -67,7 +67,7 @@ class EngineSpec:
 
 M7A = EngineSpec(
     engine="M7A",
-    display_name="三月七助手",
+    display_name="三月七",
     mirrorchyan_rid="March7thAssistant",
     github_repo="moesnow/March7thAssistant",
     executable="March7th Assistant.exe",

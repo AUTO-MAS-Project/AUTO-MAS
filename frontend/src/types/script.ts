@@ -8,11 +8,9 @@ import type {
   OkNteConfig,
   SrcConfig,
   MaaEndConfig,
-  M9AConfig,
   BetterGIConfig,
   ZzzOdConfig,
   BAAHConfig,
-  MSSConfig,
 } from '@/api'
 import type {
   AutoEssenceLocation,
@@ -193,82 +191,13 @@ export interface MaaEndScriptConfig {
   }
 }
 
-// M9A脚本配置
-export interface M9AScriptConfig {
-  Info: {
-    Name: string
-    Path: string
-  }
-  Emulator: {
-    Id: string
-    Index: string
-  }
-  Run: {
-    ProxyTimesLimit: number
-    RunTimesLimit: number
-    RunTimeLimit: number
-    IfAutoUpdateAfterQueue: boolean
-    IfPsychubeDailyOnce: boolean
-    IfSleepDreamMonthlyOnce: boolean
-  }
-  SubConfigsInfo: {
-    UserData: {
-      instances: unknown[]
-    }
-  }
-}
+// M9A 是 MaaFW 引擎的特调类型：配置模型与 MaaFW 同形（后端 M9AConfig 是 MaaFWConfig 的同形子类），
+// 页面与类型都直接复用 MaaFW 的；这里只留一个别名，方便按名字找到它。
+export type M9AScriptConfig = MaaFWScriptConfig
 
-// MSS（MaaStellaSora / 星塔旅人）脚本配置：Info.Path 是 MSS 根目录
-// （含 MFAAvalonia.exe 与 interface.json），模拟器与运行上限由 MAS 调度
-export type MSSScriptConfig = MSSConfig
-
-/** MSS 周常允许开始的星期，与后端 ClimbStartWeekday 的枚举一致 */
-export type MSSWeekday =
-  | 'Monday'
-  | 'Tuesday'
-  | 'Wednesday'
-  | 'Thursday'
-  | 'Friday'
-  | 'Saturday'
-  | 'Sunday'
-
-export interface MSSUserConfig {
-  Info: {
-    Name: string
-    Status: boolean
-    RemainedDay: number
-    Mode: '脚本' | '用户' | '直控'
-    IfQuickConfig: boolean
-    /** 悬赏试炼关卡来源：Fixed 用外壳里配的，否则是计划表 UUID */
-    PlanMode: string
-    /** 活动期间是否先打活动快速战斗 */
-    IfActivityFirst: boolean
-    /** 周常模式：Auto 时每周自动刷一次新版爬塔 */
-    ClimbMode: 'Close' | 'Auto'
-    ClimbStartWeekday: MSSWeekday
-    ClimbTimes: number
-    IfScriptBeforeTask: boolean
-    ScriptBeforeTask: string
-    IfScriptAfterTask: boolean
-    ScriptAfterTask: string
-    Notes: string
-    Tag?: string | null
-  }
-  Data: {
-    LastProxyDate: string
-    ProxyTimes: number
-    /** 周常跑完的 ISO 周，形如 2026-W34 */
-    ClimbCompletedWeek: string
-  }
-  Notify: {
-    Enabled: boolean
-    IfSendStatistic: boolean
-    IfSendMail: boolean
-    ToAddress: string
-    IfServerChan: boolean
-    ServerChanKey: string
-  }
-}
+// MSS（MaaStellaSora / 星塔旅人）同样是 MaaFW 的特调类型，脚本配置与 MaaFW 同形；
+// 用户配置只多一项 Info.PlanMode（见 MaaFWUserConfig）。
+export type MSSScriptConfig = MaaFWScriptConfig
 
 // HSR 脚本配置（后端已通过 HSRConfig OpenAPI 暴露类型）
 export type HSRScriptConfig = HSRConfig
@@ -338,32 +267,17 @@ export interface MaaFWScriptConfig {
      */
     IfAutoUpdate?: boolean
   }
-  Managed: {
-    Enabled: boolean
-    ProjectId: string
-    StoreId: string
-    Version: string
-    RuntimeConstraint: string
-    ProjectManifest: string
-    CheckoutPath: string
-    PendingUpgrade: string
-    LastOperation: string
-  }
-  ManagedRuntime: {
-    RuntimeId: string
-    PoolId: string
-    PythonExecutable: string
-    VenvPath: string
-    RuntimeBinding: string
-  }
-  ManagedRemote: {
-    Source: 'MirrorChyan' | 'GitHub'
-    Channel: 'stable' | 'beta'
-    MirrorChyanRID: string
-    MirrorChyanCDK: string
-    GitHubRepo: string
-    GitHubTag: string
-    GitHubAssetPattern: string
+  /**
+   * 内嵌副本：运行、预览、更新都在 AUTO-MAS 自己投影出的瘦副本上，没有开关。
+   * 副本路径由脚本 ID 推出，不在这里、也不可手改；`Info.Path` 只是用户选的来源目录。
+   */
+  Embedded: {
+    /** 导入时来源的 interface 版本，仅展示。 */
+    SourceVersion: string
+    /** 导入时间，仅展示。 */
+    ImportedAt: string
+    /** 投影报告 JSON 文本；结构见 MaaFWEmbeddedProjection。 */
+    Report: string
   }
   Run: {
     ProxyTimesLimit: number
@@ -422,6 +336,8 @@ export interface MaaFWUserConfig {
     Mode?: '脚本' | '用户' | '直控'
     /** 快速配置：独立于配置来源的用户级开关 */
     IfQuickConfig?: boolean
+    /** 仅 MSS 用户携带：悬赏试炼关卡来源（Fixed 或 MSS 计划表 UUID） */
+    PlanMode?: string
   }
   Task: {
     SelectedPreset: string
@@ -509,6 +425,8 @@ export interface MaaFWTaskInfo {
   resource: string[]
   option: string[]
   defaultCheck: boolean
+  /** 加入任务队列时展开成几份（interface 的 repeatable / repeat_count），缺省 1 */
+  repeatCount?: number
 }
 
 export interface MaaFWOptionCaseInfo {
@@ -529,6 +447,8 @@ export interface MaaFWOptionInputInfo {
   verify?: string | null
   verifyError?: string | null
   patternMsg?: string | null
+  /** PI v2.10.0：密码 / 密钥字段，掩码输入，保存后只拿得到密文 */
+  password?: boolean
 }
 
 export interface MaaFWOptionInfo {
@@ -548,6 +468,9 @@ export interface MaaFWOptionInfo {
     default?: string | null
   }>
   defaultCase?: string | string[] | null
+  /** PI v2.10.1：checkbox 最少 / 最多选择数，后端已放宽成自洽值；null 为不限 */
+  minCount?: number | null
+  maxCount?: number | null
 }
 
 export interface MaaFWAdbEmulatorExtraCapabilityInfo {
@@ -622,12 +545,10 @@ export interface Script {
     | OkNteConfig
     | SrcConfig
     | MaaEndConfig
-    | M9AConfig
     | MaaFWScriptConfig
     | HSRConfig
     | BetterGIConfig
     | BAAHConfig
-    | MSSConfig
   users: User[]
 }
 
@@ -637,12 +558,7 @@ export interface User {
   name: string
   Data: {
     LastProxyDate: string
-    LastPsychubeDate?: string
-    LastLimboMonth?: string
-    LastLucidscapeMonth?: string
     GreenTicketStoreMonth?: string
-    /** 仅 MSS 用户携带：周常跑完的 ISO 周 */
-    ClimbCompletedWeek?: string
     ProxyTimes: number
   }
   Info: {
@@ -658,14 +574,6 @@ export interface User {
     Password: string
     Resource?: string
     RemainedDay: number
-    /** 仅 MSS 用户携带：悬赏试炼关卡来源（Fixed 或计划表 UUID） */
-    PlanMode?: string
-    /** 仅 MSS 用户携带：活动期间是否先打活动 */
-    IfActivityFirst?: boolean
-    /** 仅 MSS 用户携带：周常模式与设置 */
-    ClimbMode?: string
-    ClimbStartWeekday?: string
-    ClimbTimes?: number
     IfUseMasConfig?: boolean
     SeriesNumb: string
     Server: string
@@ -755,28 +663,11 @@ export interface ScriptDetail {
     | OkNteConfig
     | SrcConfig
     | MaaEndConfig
-    | M9AConfig
     | MaaFWScriptConfig
     | HSRConfig
     | BetterGIConfig
     | ZzzOdConfig
     | BAAHConfig
-    | MSSConfig
   users?: User[]
   createTime?: string
-}
-
-// M9A 任务选项类型
-export interface M9ATaskOption {
-  name: string
-  index: number
-  sub_options?: M9ATaskOption[]
-  input_values?: Record<string, string | number>
-  selected_cases?: string[]
-}
-
-// M9A 任务队列项类型
-export interface M9ATaskQueueItem {
-  name: string
-  options: M9ATaskOption[]
 }

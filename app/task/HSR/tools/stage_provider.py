@@ -289,6 +289,10 @@ def _sra_category_from_subtask(task_id: str, raw: dict[str, Any]) -> dict[str, A
     cost = _safe_int(raw.get("cost"), SRA_TP_COSTS.get(task_id))
     max_count = _safe_int(raw.get("max_count"), None)
 
+    # SRA 的 levels 是内联表数组 ``{ id, name, result }``，``id`` 是 SRA 自己
+    # 的关卡编号（也是 ``resources/img/tp/<id> (<level>).png`` 的图片编号），
+    # 与数组位置无关：饰品提取、历战余响把最新关卡排在最前。纯字符串数组是
+    # 更早的形态，只能按位置编号。
     levels = raw.get("levels")
     results = raw.get("results")
     if isinstance(levels, list) and levels:
@@ -302,21 +306,29 @@ def _sra_category_from_subtask(task_id: str, raw: dict[str, Any]) -> dict[str, A
         detail_items = []
 
     options: list[dict[str, Any]] = []
+    seen_levels: set[int] = set()
     for index, item in enumerate(source_items, start=1):
-        label = str(item).strip()
-        if not label:
+        if isinstance(item, dict):
+            label = str(item.get("name") or "").strip()
+            detail = str(item.get("result") or "").strip()
+            level = _safe_int(item.get("id"), None)
+        else:
+            label = str(item).strip()
+            detail = ""
+            if len(detail_items) == len(source_items):
+                detail = str(detail_items[index - 1]).strip()
+            level = index
+        if not label or level is None or level <= 0 or level in seen_levels:
             continue
-        detail = ""
-        if len(detail_items) == len(source_items):
-            detail = str(detail_items[index - 1]).strip()
+        seen_levels.add(level)
         options.append(
             _stage_option(
                 label=label,
-                value=f"SRA::{task_id}::{index}",
+                value=f"SRA::{task_id}::{level}",
                 category_key=task_id,
                 category_label=category_label,
                 detail=detail,
-                sra={"id": task_id, "level": index},
+                sra={"id": task_id, "level": level},
                 cost=cost,
                 max_count=max_count,
             )

@@ -1366,6 +1366,45 @@ class MultipleConfig(Generic[T]):
 
         return is_dirty
 
+    async def retype(
+        self,
+        uid: uuid.UUID,
+        new_type: Type[T],
+        transform: Callable[[dict[str, Any]], dict[str, Any]] | None = None,
+    ) -> T:
+        """同一个 uid 原地换成另一种子配置类型，顺序与 uid 都不变。
+
+        用于"类型由内容决定"的场景（MaaFW 脚本导入的项目被识别为某个特调类型）：
+        ``add()`` 会生成新 uid，队列 / 计划表里对旧 uid 的引用会断。新旧类型必须同形，
+        数据整表经 ``toDict`` 搬过去；``transform`` 可在装入前改写这份字典（比如把子
+        配置的 ``instances[].type`` 换成新类型自己的用户类）。
+        """
+
+        if self.is_locked:
+            raise ValueError("配置已锁定, 无法修改")
+        if uid not in self.data:
+            raise ValueError(f"配置项 '{uid}' 不存在。")
+        if new_type.__name__ not in self.sub_config_type:
+            raise ValueError(f"不支持的配置类型: {new_type.__name__}")
+        if type(self.data[uid]) is new_type:
+            return self.data[uid]
+        if getattr(self.data[uid], "is_locked", False):
+            # 正在运行的任务持有旧对象，换掉它收尾时的写回就丢了。
+            raise ValueError(f"配置项 '{uid}' 正在使用中, 无法切换类型")
+
+        payload = await self.data[uid].toDict(if_decrypt=False)
+        if transform is not None:
+            payload = transform(payload)
+        replacement = new_type()
+        await replacement.load(payload)
+        for save_method in self._save_methods:
+            await replacement.add_save_method(save_method)
+        if self.file:
+            await replacement.add_save_method(self.save)
+        self.data[uid] = replacement
+        await self._commit_changes()
+        return replacement
+
     async def toDict(
         self, if_decrypt: bool = True, regenerate_uuids: bool = False
     ) -> dict[str, list | dict]:

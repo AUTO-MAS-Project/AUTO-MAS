@@ -73,7 +73,7 @@ description: >-
 **不要机械要求所有类型拥有相同文件**——先确认架构契约，再补真实调用链。
 
 - 配置与 schema：`app/models/config.py`、`app/models/schema.py`
-- 注册与 API：`app/core/config.py`、`app/api/scripts.py`、`app/core/task_manager.py`、`app/utils/constants.py`
+- 注册与 API：`app/core/config.py`、`app/api/scripts.py`、`app/core/task_manager.py`、`app/utils/constants.py`；`scripts.py` 只放薄端点，业务在任务模块里实现
 - 任务模块：`app/task/Xxx/` 的 `manager`、`AutoProxy`，按架构需要增加 `ScriptConfig`
 - 日志采集推送：需要把脚本运行日志关键节点推送至任务报告时，用通用组件 `log_box`（用法见 [logbox-api.md](references/logbox-api.md)），专项只喂参数（日志路径/规则/处理器）并注入 sink。**接入前确认脚本日志滚动行为**：有 inode（本地 NTFS）时一律按 inode 找回，与运行日志监控 LogMonitor 同逻辑，宁缺勿错不猜名字；**仅文件系统不提供 inode（FAT32/exFAT/网络盘）时需要传 `rotated_name` strftime 模板**（日期式滚动的唯一兜底，通用组件不猜测任何日期格式）；`.bak` 式无需声明；删除重建/截断式滚动无法自动找回（见 logbox-api「日志轮转补偿」）。「是否展示节点详情」由专项（或其用户配置）的开关在**是否创建/启用 log_box 的入口**消费（关闭即不创建，省采集开销），不要给 log_box 加通用开关，也不要在聚合层采后过滤（参考 okww 用户级 `Notify.PushLogMode`）。**报告注入是硬约束**：只采集不注入，报告就只有总体状态、看不到节点——采集结果必须进入最终报告正文且保留各用户节点归属（多账号时用户结果行与节点详情按用户交错）；聚合统一复用通用工具 `app/tools/push_log.py` 的 `build_user_result_text`（按用户交错组装「用户结果行+节点」并入 result），专项不要自行拼接实现。具体注入端点现场反查参考实现。
 - 视觉识别：专项需要画面文本识别时，**新逻辑用共享工具 `app/tools/ocr.py`**（用法见 [ocr-tools.md](references/ocr-tools.md)），交互层（截图/激活/点击）专项自持；MaaEnd 登录仍为历史私有 OCR，未迁移前不强制改造
@@ -107,7 +107,7 @@ description: >-
 | M9A | 脚本 / 用户 / 直控 三态 |
 | Okww | 脚本 / 用户 / 直控 三态 |
 | OkNte | 脚本 / 用户 / 直控 三态 |
-| HSR | 脚本 / 用户 / 直控 三态（**不支持快速配置**，见下） |
+| HSR | 脚本 / 用户 / 直控 三态（脚本态 = `HSRConfig` 同名组共享计划；**不支持快速配置**，见下） |
 | BetterGI | 脚本 / 用户 / 直控 三态 |
 | ZzzOd | 脚本 / 用户 / 直控 三态（物理布局见 examples-zzzod） |
 | BAAH | 脚本 / 用户 / 直控 三态 |

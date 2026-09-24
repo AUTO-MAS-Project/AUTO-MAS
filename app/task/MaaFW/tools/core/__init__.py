@@ -7,11 +7,11 @@
 from importlib import import_module
 
 # 惰性导出：本文件同时位于第一层热路径与第二层 worker 的导入链上。
-# automas_maafw_project_update 会 import httpx，而 worker 子进程跑在只有
+# project_update 会 import httpx，而 worker 子进程跑在只有
 # maafw 与项目依赖的隔离 venv 里，急切 re-export 会让 worker 直接起不来。
 _LAZY_EXPORTS = {
     "MaaFWInterfaceService": (
-        ".automas_maafw_interface",
+        ".interface",
         "MaaFWInterfaceService",
     ),
 }

@@ -8,7 +8,9 @@
  *    （backendService 的 `stopBackend()` 已封装）——`workspace sync` 发现后端仍在跑会
  *    直接返回 `BACKEND_STILL_RUNNING`，所以这一步必须真的等到退出；
  * 2. `bootstrap --version v<新版本>`：临时目录浅克隆 `release/<新版本>`、校验通过后整体
- *    替换 `repo/`，再同步 Python 与依赖；
+ *    替换 `repo/`，再同步 Python 与依赖。编排器在跑这条命令之前会先按目标版本的发布分支
+ *    把 `auto-mas-runtime.exe` 换成配套的那一版（第 0 步，见 `runtimeBinaryService`），
+ *    这时旧监督进程已退出、新的还没起来，是唯一能安全替换 exe 的窗口；
  * 3. 重新 `backend supervise`（backendService 的 `startBackend()`）。
  *
  * 三步各自的失败后果完全不同，所以失败结果里带 `phase`，界面据此给出不同的处置入口，
@@ -20,6 +22,12 @@ import type { BackendStartResult, BackendStopResult } from './backendService'
 import { getLogger } from './logger'
 import { MirrorService } from './mirrorService'
 import type { RuntimeLaunchConfig, RuntimeRemediation } from './runtime'
+import {
+  RUNTIME_BINARY_ALIGN_ERROR,
+  RUNTIME_BINARY_DOWNLOAD_FAILED,
+  RUNTIME_BINARY_REPLACE_FAILED,
+  RUNTIME_PIN_UNAVAILABLE,
+} from './runtimeBinaryService'
 import {
   InitializationRunStage,
   InitializationStageStatus,
@@ -59,27 +67,41 @@ export interface RuntimeUpdateProgress {
 /**
  * 失败后可用的重试入口。
  *
- * 全部由初始化链路的单步重试执行，不另写命令：
+ * 除 `bootstrap` 外全部由初始化链路的单步重试执行，不另写命令：
+ * - `bootstrap` → 整条 `bootstrap --version v<目标版本>` 重来（第 0 步失败专用：那时源码
+ *   与环境一样都没动，重来一遍就是正确的重试，不该把用户引去「修复运行环境」）
  * - `workspace-sync` → `workspace sync --version v<目标版本>`
  * - `dependencies-sync` → `dependencies sync`
  * - `dependencies-rebuild` → `dependencies rebuild`
  * - `repair` → `repair`
  */
 export type RuntimeUpdateRetryAction =
+  | 'bootstrap'
   | 'workspace-sync'
   | 'dependencies-sync'
   | 'dependencies-rebuild'
   | 'repair'
 
-/** 重试入口到初始化链路单步重试参数的映射。 */
+/** 重试入口到初始化链路单步重试参数的映射；`bootstrap` 不走单步重试，不在表里。 */
 const RETRY_ACTION_MAP: Readonly<
-  Record<RuntimeUpdateRetryAction, { stage: InitializationRunStage; mode: RuntimeRetryMode }>
+  Record<
+    Exclude<RuntimeUpdateRetryAction, 'bootstrap'>,
+    { stage: InitializationRunStage; mode: RuntimeRetryMode }
+  >
 > = {
   'workspace-sync': { stage: 'repository', mode: 'auto' },
   'dependencies-sync': { stage: 'dependency', mode: 'sync' },
   'dependencies-rebuild': { stage: 'dependency', mode: 'rebuild' },
   repair: { stage: 'python', mode: 'rebuild' },
 }
+
+/** 第 0 步（Runtime 对齐）的失败码：它们发生在源码被动之前。 */
+const RUNTIME_BINARY_FAILURE_CODES: ReadonlySet<string> = new Set([
+  RUNTIME_PIN_UNAVAILABLE,
+  RUNTIME_BINARY_DOWNLOAD_FAILED,
+  RUNTIME_BINARY_REPLACE_FAILED,
+  RUNTIME_BINARY_ALIGN_ERROR,
+])
 
 export interface RuntimeUpdateOutcome {
   success: boolean
@@ -180,7 +202,7 @@ export function resetRuntimeUpdateSession(): void {
 interface RuntimeUpdateAbortResult {
   /** 清场时是否有更新会话。 */
   hadSession: boolean
-  /** 是否有在途 Runtime 命令并已向它下发 cancel。 */
+  /** 是否有在途 Runtime 命令（或第 0 步）并已通知它取消。 */
   forwarded: boolean
   /** 在途命令是否在时限内落地；没有在途命令时为真。 */
   settled: boolean
@@ -215,7 +237,7 @@ export async function abortRuntimeUpdateForShutdown(
   }
 
   if (session === current) session = null
-  logger.info(`更新会话已因应用退出清场${forwarded ? '，并已下发 stdin cancel' : ''}`)
+  logger.info(`更新会话已因应用退出清场${forwarded ? '，并已通知在途步骤取消' : ''}`)
   return { hadSession: true, forwarded, settled }
 }
 
@@ -323,14 +345,15 @@ export async function updateBackendViaRuntime(
     return finishCancelled(current, onProgress)
   }
 
-  // ---------- 2. bootstrap ----------
+  // ---------- 2. bootstrap（编排器先做第 0 步：Runtime 对齐到目标版本） ----------
   const bootstrapOutcome = await trackInFlight(
     current,
     runtimeService.bootstrap(update => onProgress(update))
   )
   if (!bootstrapOutcome.success) {
     // Runtime 只在提交点（整体替换 `repo/`）之前受理取消，所以 OPERATION_CANCELLED 就
-    // 意味着源码一动没动，结局与 bootstrap 开始前取消完全一样：把旧后端拉回来。
+    // 意味着源码一动没动，结局与 bootstrap 开始前取消完全一样：把旧后端拉回来。第 0 步
+    // 被取消时用的是同一个码，它更在源码之前，处置相同。
     if (isCancelledOutcome(bootstrapOutcome)) {
       logger.info('bootstrap 在替换源码前被取消，重新启动旧后端')
       return finishCancelled(current, onProgress, bootstrapOutcome)
@@ -359,8 +382,27 @@ export async function retryBackendUpdate(
     return { success: false, phase: 'bootstrap', error: message, retryable: false }
   }
 
-  const mapped = RETRY_ACTION_MAP[action]
   current.cancelRequested = false
+
+  if (action === 'bootstrap') {
+    // 第 0 步失败后重来：后端仍然停着、源码一动没动，与首次进入 bootstrap 的处境完全一样，
+    // 所以取消的处置也一样——把旧后端拉回来。
+    logger.info('重试更新入口 bootstrap（整条重来）')
+    const outcome = await trackInFlight(
+      current,
+      current.runtimeService.bootstrap(update => onProgress(update))
+    )
+    if (!outcome.success) {
+      if (isCancelledOutcome(outcome)) {
+        logger.info('重来的 bootstrap 在替换源码前被取消，重新启动旧后端')
+        return finishCancelled(current, onProgress, outcome)
+      }
+      return buildBootstrapFailure(outcome, current.cancelRequested)
+    }
+    return restartBackend(current, onProgress)
+  }
+
+  const mapped = RETRY_ACTION_MAP[action]
   logger.info(`重试更新入口 ${action}（段 ${mapped.stage}，模式 ${mapped.mode}）`)
 
   const outcome = await trackInFlight(
@@ -384,6 +426,7 @@ export async function retryBackendUpdate(
 export function describeRetryAction(action: RuntimeUpdateRetryAction): string[] | null {
   const current = session
   if (!current) return null
+  if (action === 'bootstrap') return ['bootstrap', '--version', current.version]
   const mapped = RETRY_ACTION_MAP[action]
   return current.runtimeService.resolveRetryCommand(mapped.stage, mapped.mode)
 }
@@ -400,7 +443,7 @@ export function cancelBackendUpdate(): { accepted: boolean; forwarded: boolean }
 
   current.cancelRequested = true
   const forwarded = current.runtimeService.cancel()
-  logger.info(`已受理更新取消请求${forwarded ? '，并已下发 stdin cancel' : ''}`)
+  logger.info(`已受理更新取消请求${forwarded ? '，并已通知在途步骤取消' : ''}`)
   return { accepted: true, forwarded }
 }
 
@@ -521,7 +564,7 @@ function buildBootstrapFailure(
     remediation: outcome.remediation,
     logs: outcome.logs,
     logPath: outcome.logPath,
-    retryActions: supportRequired ? [] : resolveRetryActions(outcome.failedStage),
+    retryActions: supportRequired ? [] : resolveRetryActions(outcome.failedStage, outcome.code),
     supportRequired,
     ...(cancelled ? { cancelled: true } : {}),
   }
@@ -530,12 +573,15 @@ function buildBootstrapFailure(
 /**
  * 失败段到重试入口。
  *
- * 仓库段失败时旧 `repo/` 仍在，只要重跑 `workspace sync`；依赖段失败时源码已经是新版本
- * 而环境标记为 `environment_broken`，退不回去，只能重试同步、重建依赖或整体修复。
+ * 第 0 步（Runtime 对齐）失败时什么都还没动，整条重来即可；仓库段失败时旧 `repo/` 仍在，
+ * 只要重跑 `workspace sync`；依赖段失败时源码已经是新版本而环境标记为
+ * `environment_broken`，退不回去，只能重试同步、重建依赖或整体修复。
  */
 export function resolveRetryActions(
-  failedStage: InitializationRunStage | undefined
+  failedStage: InitializationRunStage | undefined,
+  code?: string
 ): RuntimeUpdateRetryAction[] {
+  if (code && RUNTIME_BINARY_FAILURE_CODES.has(code)) return ['bootstrap']
   switch (failedStage) {
     case 'repository':
       return ['workspace-sync']

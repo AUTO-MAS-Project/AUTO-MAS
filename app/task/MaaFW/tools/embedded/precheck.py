@@ -16,17 +16,18 @@
 #   You should have received a copy of the GNU Affero General Public License
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
 
-"""更新提交前的运行环境预检：挂在更新事务的 ``post_validate`` 上。
+"""新版本登记前的运行环境预检：挂在更新流程的 ``post_validate`` 上。
 
 MaaEnd v2.29.0 打包了 MaaFramework v5.14.0-beta.1，binding 被钉成
 ``maafw==5.14.0b1`` 而 PyPI 上没有——更新成功、环境建不出来、任务每次必挂。
-所以新文件落地、清单写入之前先**真建**一次运行环境（不 dry-run）：建不出来
-就让事务回滚、继续跑旧版本，并把失败写成备忘（``precheck_memo.py``），之后
-每次运行前由 ``precheck_gate.py`` 轻探一次再决定要不要重试。
+所以新载荷在 staging 里建好、登记之前先**真建**一次运行环境（不 dry-run；把自带
+Python 里的 binding 钉回原生库版本也就发生在这一步，写的是 staging）：建不出来
+就丢掉 staging、所有视图继续跑当前版本，并按谱系 + 目标版本写备忘
+（``precheck_memo.py``），之后每次运行前由 ``precheck_gate.py`` 轻探一次再决定要不要重试。
 
-这里只负责构造回调。回调跑在 apply 的工作线程里、项目锁已持有：不再拿锁、
-不 await。运行前自动更新（``embedded_manager``）与手动更新（``/maafw/update``）
-共用同一份逻辑，两边只在「要不要读备忘」上不同（手动不读，见 precheck_gate）。
+这里只负责构造回调。回调跑在工作线程里，不拿锁、不 await。运行前自动更新
+（``embedded_manager``）与手动更新（``/maafw/update``）共用同一份逻辑，两边只在
+「要不要读备忘」上不同（手动不读，见 precheck_gate）。
 """
 
 from __future__ import annotations
@@ -37,10 +38,10 @@ from collections.abc import Callable, MutableMapping
 from pathlib import Path
 from typing import Any, Protocol
 
-from app.task.MaaFW.tools.core.automas_maafw_agent_env.planner import (
+from app.task.MaaFW.tools.core.agent_env.planner import (
     compute_isolated_venv_path,
 )
-from app.task.MaaFW.tools.core.automas_maafw_project_update.precheck_memo import (
+from app.task.MaaFW.tools.core.project_update.precheck_memo import (
     classify_precheck_failure,
     write_runtime_precheck,
 )
@@ -50,7 +51,7 @@ logger = get_logger("MFW 更新预检")
 
 # 预检期间 isolated_venv 类型的 Python agent 建在池根下这个独立目录（D6）：
 # ``prepare_agent_envs`` 对隔离 venv 是先 rmtree 再重装，直接建在正式根会把
-# 旧版本还能用的 venv 先删掉——预检失败回滚后旧版本就没 agent 了。
+# 旧版本还能用的 venv 先删掉——预检失败后旧版本就没 agent 了。
 PRECHECK_AGENT_ROOT_NAME = "precheck_agent_venvs"
 
 
@@ -87,7 +88,7 @@ def _resolve_requirement(project_path: Path) -> str | None:
     try:
         # 要读项目自带的 DLL，逻辑在 runner 包里；它会拉起 runtime_pool，
         # 所以只在真要写备忘时才导入。
-        from app.task.MaaFW.tools.core.automas_maafw_runner.environment import (
+        from app.task.MaaFW.tools.core.runner.environment import (
             resolve_project_maafw_requirement,
         )
 
@@ -105,20 +106,20 @@ def build_precheck_validator(
     failure: MutableMapping[str, Any],
     previous_version: str | None = None,
     project_name: str | None = None,
-    operation_root: Path | None = None,
+    memo_path_for: Callable[[str], Path] | None = None,
 ) -> Callable[[Path], bool]:
-    """构造 ``post_validate`` 回调。
+    """构造 ``post_validate`` 回调（收新载荷的 staging 路径）。
 
     ``prepare`` 是宿主的 ``_prepare_project_environment_sync``（不要绕过它直接
     new ``MaaFWRunnerService``：route、``import_paths=[SOURCE_ROOT]``、interface
     重读都在里面）。失败时把 ``{targetVersion, requirement, kind, reason, …}``
-    写进 ``failure`` 并落备忘，然后原样 raise 让原因进事务的异常文本；用户
-    取消（``cancel_event`` 已置位）时既不写备忘也不填 ``failure``。
-    D4：不按「requirement 为 None」短路，一律走同一套 prepare。
+    写进 ``failure``，按 ``memo_path_for(目标版本)`` 落备忘（谱系 + 版本，组共有），
+    然后原样 raise 让原因进异常文本；用户取消（``cancel_event`` 已置位）时既不写
+    备忘也不填 ``failure``。D4：不按「requirement 为 None」短路，一律走同一套 prepare。
     """
 
     def validate(root: Path) -> bool:
-        send_log("更新提交前预检运行环境（建不出来将回滚到当前版本）")
+        send_log("正在新版本上预检运行环境（建不出来就丢弃新版本，继续当前版本）")
         try:
             prepare(
                 root,
@@ -139,14 +140,17 @@ def build_precheck_validator(
                 info["projectName"] = str(project_name)
             failure.clear()
             failure.update(info)
-            try:
-                write_runtime_precheck(root, info, operation_root=operation_root)
-            except Exception as memo_error:  # noqa: BLE001
-                logger.warning(f"写运行环境预检备忘失败：{memo_error}")
+            if memo_path_for is not None and info.get("targetVersion"):
+                try:
+                    write_runtime_precheck(
+                        memo_path_for(str(info["targetVersion"])), info
+                    )
+                except Exception as memo_error:  # noqa: BLE001
+                    logger.warning(f"写运行环境预检备忘失败：{memo_error}")
             raise
         finally:
             cleanup_precheck_agent_venv(root, agent_env_root)
-        send_log("运行环境预检通过，提交更新")
+        send_log("运行环境预检通过，登记新版本")
         return True
 
     return validate

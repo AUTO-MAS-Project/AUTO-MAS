@@ -46,10 +46,8 @@ export type HSRPerEngineStageStore<T> = {
   byEngine?: Partial<Record<HSRStageEngine, T>>
 }
 
-type HSRUserControlMode = 'managed' | 'direct'
-
+// 直控时跑哪几个引擎；配置来源只看 Info.Mode，这里没有模式字段
 type HSRUserControl = {
-  Mode?: HSRUserControlMode | null
   SRA?: boolean | null
   M7A?: boolean | null
 }
@@ -57,13 +55,6 @@ type HSRUserControl = {
 type HSRUserManagedConfig = {
   TaskMapping?: Record<string, HSRStageEngine | string> | null
   Options?: Record<string, Record<string, Record<string, unknown>>> | null
-}
-
-type HSRUserDirectConfig = {
-  SRAImportedAt?: string | null
-  M7AImportedAt?: string | null
-  SRASource?: string | null
-  M7ASource?: string | null
 }
 
 type HSRLegacyOrDynamicStage = string | HSRScriptStageContainer | Record<string, unknown> | null
@@ -86,5 +77,11 @@ export type HSRUserConfigData = {
   Notify: HSRUserConfig_Notify
   Control: HSRUserControl
   Managed: HSRUserManagedConfig
-  Direct: HSRUserDirectConfig
 }
+
+/**
+ * 一份任务计划：「脚本」来源时取自脚本配置上的同名组（本脚本下脚本来源用户共用），
+ * 「用户」来源时就是该用户自己的这几组。脚本级计划不用 Managed.TaskMapping，
+ * 引擎分配直接写脚本的 TaskMapping 组。
+ */
+export type HSRPlanData = Pick<HSRUserConfigData, 'Stage' | 'TaskSwitch' | 'TaskOpt' | 'Managed'>

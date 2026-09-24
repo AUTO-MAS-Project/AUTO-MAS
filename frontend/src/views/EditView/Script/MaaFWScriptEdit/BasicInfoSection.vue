@@ -22,34 +22,49 @@
       <a-col :span="16">
         <a-form-item name="path" :rules="rules.path">
           <template #label>
-            <a-tooltip :title="t('edit.pickMfwProjectDirectory')">
+            <a-tooltip :title="directoryHint">
               <span class="form-label">
-                {{ t('edit.localProjectDirectory') }}
+                {{ sourceDirectoryLabel || t('edit.localProjectDirectory') }}
                 <QuestionCircleOutlined class="help-icon" aria-hidden="true" />
               </span>
             </a-tooltip>
           </template>
+          <!-- 导入完成后目录就固定在副本位置（运行、更新都在那里），字段与按钮一起锁死；
+               要换项目请新建脚本。来源目录只在导入前选一次，之后只在运行环境日志里体现。 -->
           <a-input-group compact class="path-input-group">
             <a-input
-              v-model:value="formData.path"
-              :placeholder="t('edit.pickActualMfwProject')"
+              :value="displayedPath"
+              :placeholder="sourcePlaceholder || t('edit.pickActualMfwProject')"
               size="large"
               class="path-input"
               readonly
               aria-readonly="true"
             />
-            <a-button
-              size="large"
-              class="path-button"
-              :disabled="interfaceLoading || updateApplying"
-              @click="emit('select-path')"
-            >
-              <template #icon>
-                <FolderOpenOutlined />
-              </template>
-              {{ t('edit.pickLocalDirectory') }}
-            </a-button>
+            <a-tooltip :title="directoryLocked ? t('edit.maafwDirectoryLockedHint') : ''">
+              <a-button
+                size="large"
+                class="path-button"
+                :disabled="directoryLocked || interfaceLoading || updateApplying || embeddedBusy"
+                @click="emit('select-path')"
+              >
+                <template #icon>
+                  <FolderOpenOutlined />
+                </template>
+                {{ t('edit.pickLocalDirectory') }}
+              </a-button>
+            </a-tooltip>
           </a-input-group>
+          <!-- 导入几十到几百 MB 时进度条顶在字段下面，别让用户对着一个转圈干等 -->
+          <div v-if="embeddedBusy" class="import-progress">
+            <a-progress
+              :percent="importPercent ?? 0"
+              :status="importPercent === 100 ? 'success' : 'active'"
+              size="small"
+            />
+            <span class="import-progress-text">{{
+              importMessage || t('edit.maafwImportingCopy')
+            }}</span>
+          </div>
         </a-form-item>
       </a-col>
     </a-row>
@@ -81,7 +96,7 @@
           <a-button
             size="small"
             :loading="interfaceLoading || envPreparing"
-            :disabled="!maafwConfig.Info.Path || updateApplying"
+            :disabled="!maafwConfig.Info.Path || updateApplying || embeddedBusy"
             @click="emit('preview-interface')"
           >
             <template #icon>
@@ -132,6 +147,7 @@
       <h3>{{ t('edit.pickMfwProject') }}</h3>
       <p>{{ t('edit.pickProjectDirectoryContaining') }}</p>
       <a-button
+        v-if="!embeddedBusy"
         type="primary"
         size="large"
         :disabled="interfaceLoading || updateApplying"
@@ -142,6 +158,16 @@
         </template>
         {{ t('edit.pickProjectDirectory') }}
       </a-button>
+      <div v-else class="import-progress import-progress--guide">
+        <a-progress
+          :percent="importPercent ?? 0"
+          :status="importPercent === 100 ? 'success' : 'active'"
+          size="small"
+        />
+        <span class="import-progress-text">{{
+          importMessage || t('edit.maafwImportingCopy')
+        }}</span>
+      </div>
     </div>
   </div>
 </template>
@@ -159,6 +185,7 @@ import {
   ToolOutlined,
 } from '@ant-design/icons-vue'
 import type { MaaFWInterfacePreviewData, MaaFWScriptConfig, ScriptType } from '@/types/script'
+import type { MaaFWEmbeddedStatus } from '@/composables/useMaaFWEmbeddedApi'
 
 /** 一次准备的结果：首次准备 / 更新了已有环境 / 项目没变直接沿用。 */
 export type MaaFWEnvOutcome = 'prepared' | 'updated' | 'cached'
@@ -184,6 +211,16 @@ const props = defineProps<{
   envLogs: string[]
   envAgents: Array<{ runtimeKind?: string | null; executable: string }>
   envOutcome: MaaFWEnvOutcome | null
+  /** 内嵌副本状态：由父组件从后端拉取；导入几十到几百 MB 时 busy 为 true。 */
+  embeddedStatus: MaaFWEmbeddedStatus
+  embeddedBusy: boolean
+  /** 导入进度：后端按文件数推过来的百分比与阶段文案；没有推送时为 null，进度条显示 0 */
+  importPercent: number | null
+  importMessage: string
+  /** flavor 文案（M9A 等特调类型传入）；缺省用通用 MaaFW 的「本地项目目录」那套 */
+  sourceDirectoryLabel?: string
+  sourceHint?: string
+  sourcePlaceholder?: string
 }>()
 
 const emit = defineEmits<{
@@ -191,6 +228,18 @@ const emit = defineEmits<{
   'select-path': []
   'preview-interface': []
 }>()
+
+// 副本一旦建好，目录就固定在副本位置：字段里显示副本路径而不是来源目录，按钮锁死。
+// 副本还没建（新脚本刚建、或副本丢了来源也没了）时才允许选目录。
+const directoryLocked = computed(() => props.embeddedStatus.copyHealthy)
+const displayedPath = computed(() =>
+  directoryLocked.value ? props.embeddedStatus.copyPath : props.formData.path
+)
+const directoryHint = computed(() =>
+  directoryLocked.value
+    ? t('edit.maafwDirectoryLockedHint')
+    : props.sourceHint || t('edit.pickMfwProjectDirectory')
+)
 
 const envTone = computed<'idle' | 'running' | 'success' | 'failed'>(() => {
   if (props.envPreparing) return 'running'
@@ -246,6 +295,30 @@ watch(
 <style scoped>
 .form-section {
   margin-bottom: 40px;
+}
+
+.import-progress {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 8px;
+  font-size: 13px;
+  color: var(--ant-color-text-secondary);
+}
+
+.import-progress :deep(.ant-progress) {
+  flex: 1;
+  margin: 0;
+}
+
+.import-progress-text {
+  white-space: nowrap;
+}
+
+.import-progress--guide {
+  width: 100%;
+  max-width: 520px;
+  margin: 0 auto;
 }
 
 .section-header {
@@ -319,6 +392,14 @@ watch(
   background: var(--ant-color-primary-bg);
   color: var(--ant-color-primary);
   font-weight: 600;
+}
+
+/* 自定义底色盖掉了 antd 的禁用态：导入后目录锁死时按钮要看得出点不了 */
+.path-button:disabled,
+.path-button.ant-btn-disabled {
+  color: var(--ant-color-text-disabled);
+  background: var(--ant-color-bg-container-disabled);
+  cursor: not-allowed;
 }
 
 /* 左边 interface 概览表（四列：两组「项 / 值」），右边运行环境面板；两边等高，面板里的日志框撑满 */

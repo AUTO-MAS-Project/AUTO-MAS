@@ -4,10 +4,13 @@ import * as path from 'path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
+  RUNTIME_BACKUP_SUFFIX,
   RUNTIME_DEVELOPMENT_ROOT_DIRNAME,
+  RUNTIME_EXECUTABLE_NAME,
   RUNTIME_EXE_ENV,
   RUNTIME_MODE_ENV,
   isPersistedRuntimeLaunchMode,
+  recoverRuntimeBackup,
   resolveDevelopmentRuntimeRoot,
   resolveRuntimeExecutable,
   resolveRuntimeLaunchConfig,
@@ -245,6 +248,63 @@ describe('resolveRuntimeExecutable', () => {
 
   it('未指定且安装包未捆绑时返回 null', () => {
     expect(resolveRuntimeExecutable()).toBeNull()
+  })
+
+  describe('捆绑位置', () => {
+    /** 非 Electron 环境没有 resourcesPath，用例自己指一个临时目录。 */
+    let resourcesPath: string | undefined
+    const processWithResources = process as NodeJS.Process & { resourcesPath?: string }
+
+    beforeEach(() => {
+      resourcesPath = processWithResources.resourcesPath
+      processWithResources.resourcesPath = path.join(appRoot, 'resources')
+      fs.mkdirSync(processWithResources.resourcesPath, { recursive: true })
+    })
+
+    afterEach(() => {
+      if (resourcesPath === undefined) {
+        delete processWithResources.resourcesPath
+      } else {
+        processWithResources.resourcesPath = resourcesPath
+      }
+    })
+
+    it('捆绑的 exe 存在时直接使用', () => {
+      const bundled = path.join(appRoot, 'resources', RUNTIME_EXECUTABLE_NAME)
+      fs.writeFileSync(bundled, 'bundled', 'utf8')
+
+      expect(resolveRuntimeExecutable()).toBe(bundled)
+    })
+
+    it('exe 缺失但随本体更新留下的备份还在时，先把备份改回来再用', () => {
+      const bundled = path.join(appRoot, 'resources', RUNTIME_EXECUTABLE_NAME)
+      fs.writeFileSync(`${bundled}${RUNTIME_BACKUP_SUFFIX}`, 'previous', 'utf8')
+
+      expect(resolveRuntimeExecutable()).toBe(bundled)
+      expect(fs.readFileSync(bundled, 'utf8')).toBe('previous')
+      expect(fs.existsSync(`${bundled}${RUNTIME_BACKUP_SUFFIX}`)).toBe(false)
+      expect(warn).toHaveBeenCalledOnce()
+    })
+
+    it('exe 与备份都不在时返回 null', () => {
+      expect(resolveRuntimeExecutable()).toBeNull()
+    })
+  })
+})
+
+describe('recoverRuntimeBackup', () => {
+  it('exe 还在时不动备份', () => {
+    const exe = path.join(appRoot, RUNTIME_EXECUTABLE_NAME)
+    fs.writeFileSync(exe, 'current', 'utf8')
+    fs.writeFileSync(`${exe}${RUNTIME_BACKUP_SUFFIX}`, 'previous', 'utf8')
+
+    expect(recoverRuntimeBackup(exe)).toBe(false)
+    expect(fs.readFileSync(exe, 'utf8')).toBe('current')
+    expect(fs.existsSync(`${exe}${RUNTIME_BACKUP_SUFFIX}`)).toBe(true)
+  })
+
+  it('两者都不在时什么都不做', () => {
+    expect(recoverRuntimeBackup(path.join(appRoot, RUNTIME_EXECUTABLE_NAME))).toBe(false)
   })
 })
 
