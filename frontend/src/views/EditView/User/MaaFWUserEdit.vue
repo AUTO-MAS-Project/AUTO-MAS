@@ -64,8 +64,13 @@
             class="flavor-queue-hint"
             type="info"
             show-icon
-            :message="t(flavor.queueHintKey)"
-          />
+          >
+            <template #message>
+              <ul class="flavor-queue-hint-list">
+                <li v-for="(line, index) in queueHintLines" :key="index">{{ line }}</li>
+              </ul>
+            </template>
+          </a-alert>
           <!-- 特调类型（MSS）的用户可以引用计划表：运行前由特调钩子按当天槽位改写任务选项 -->
           <a-form-item
             v-if="flavor.planConsumer"
@@ -366,6 +371,14 @@ const rules = computed<Record<string, Rule[]>>(() => ({
     { min: 1, max: 50, message: t('edit.usernameMustBe1'), trigger: 'blur' },
   ],
 }))
+
+/** 队列提示按条目给出（文案里用 \n 分行），渲染成列表而不是一坨文字 */
+const queueHintLines = computed(() =>
+  t(flavor.value.queueHintKey ?? '')
+    .split('\n')
+    .map(line => line.trim())
+    .filter(Boolean)
+)
 
 const accountRecordTooltip = computed(() => t(flavor.value.accountTooltipKey))
 
@@ -1143,9 +1156,10 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
-/* 队列提示按行给，不要挤成一坨（文案里用 \n 分行） */
-.flavor-queue-hint :deep(.ant-alert-message) {
-  white-space: pre-line;
+/* 队列提示按条目给，不要挤成一坨（文案里用 \n 分行） */
+.flavor-queue-hint-list {
+  margin: 0;
+  padding-left: 18px;
 }
 
 .flavor-queue-hint {
