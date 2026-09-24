@@ -2524,8 +2524,13 @@ def _resolve_win32_method(
             else:
                 unknown.append(str(token))
             continue
-        if token.isdigit():
-            resolved.append((token, int(token)))
+        if token.isascii() and token.isdigit():
+            # 与整数写法同口径：0 不是任何方式（worker 对 <= 0 直接放行，交下去就是
+            # 「没有输入方式」），按无法识别处理。
+            if int(token) > 0:
+                resolved.append((token, int(token)))
+            else:
+                unknown.append(token)
             continue
         hit = by_name.get(token.casefold())
         if hit is None:
