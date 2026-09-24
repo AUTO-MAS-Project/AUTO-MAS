@@ -1160,7 +1160,7 @@ class MaaUserConfig(ConfigBase):
 
         # 活动关优先标签：独立任务，只看自身开关，不受理智作战开关影响
         if self.get("Task", "IfActivityFirst"):
-            tags.append({"text": "活动关优先", "color": "cyan"})
+            tags.append({"text": "活动关优先", "color": "gold"})
 
         # 关卡信息标签：只在理智作战开启时显示
         if self.get("Task", "IfFight"):
