@@ -1569,15 +1569,11 @@ class AutoProxyTask(TaskExecuteBase):
                     )
             skip_entry = skip_book.get(activity_name) if activity_name else None
             skip_notice = ""
-            if skip_entry and (
-                skip_entry.get("date") == _current_day_marker(datetime.now(tz=UTC4))
-                or skip_entry.get("days", 0) >= 2
+            if skip_entry and skip_entry.get("date") == _current_day_marker(
+                datetime.now(tz=UTC4)
             ):
-                skip_reason = (
-                    "连错已跳过至活动结束"
-                    if skip_entry.get("days", 0) >= 2
-                    else "今日已出错，跳过当日"
-                )
+                # 跳过只到当日为止：次日重试，成功即清条目（自愈，不需要人工解锁）
+                skip_reason = "今日已出错，跳过当日"
                 logger.info(
                     f"用户 {self.cur_user_item.name} 活动关跳过簿命中"
                     f"（{skip_reason}），本轮不注入"
@@ -2126,7 +2122,11 @@ class AutoProxyTask(TaskExecuteBase):
         return normalized
 
     async def _record_activity_stage_failure(self) -> None:
-        """活动关任务出错：记跳过簿（首错跳当日，连续再错整期跳过）并提示。"""
+        """活动关任务出错：记跳过簿（当日不再注入）并提示。
+
+        `days` 只用于提示里说明「这是连着第几天出错」，不参与闸门——闸门只看
+        `date`，次日自动重试，成功即清条目，没有需要人工解锁的状态。
+        """
 
         if not self._activity_stage_name or self._activity_stage_failed:
             return
@@ -2155,9 +2155,9 @@ class AutoProxyTask(TaskExecuteBase):
             return
         # 写簿成功后才落闩并提示，保证一条出错只提示一次
         self._activity_stage_failed = True
-        skip_hint = "已跳过至活动结束" if days >= 2 else "今日不再注入活动关"
         logger.warning(
-            f"用户 {self.cur_user_item.name} 活动关任务出错（连错 {days} 天），{skip_hint}"
+            f"用户 {self.cur_user_item.name} 活动关任务出错"
+            f"（连错 {days} 天），今日不再注入活动关"
         )
         await Publisher.send(
             id=self.task_info.task_id,
@@ -2165,16 +2165,17 @@ class AutoProxyTask(TaskExecuteBase):
             data=WSTaskNoticeData(
                 level="warning",
                 message=(
-                    f"用户 {self.cur_user_item.name} 活动关未打：任务出错，{skip_hint}"
+                    f"用户 {self.cur_user_item.name} 活动关未打：任务出错"
+                    f"（连错 {days} 天），今日不再注入活动关"
                 ),
             ),
         )
 
     async def _clear_activity_skip_entry(self) -> None:
-        """活动关任务打成功：清掉该活动的连错条目（「连续出错」的复位）。
+        """活动关任务打成功：清掉该活动的出错条目（计数与徽标口径的复位）。
 
-        判据是「连续两次出错」（#868）：中间打过成功就不算连错，否则一次临时故障
-        会和十天后的另一次拼成整期跳过，用户剩下的日子再也打不了活动关。
+        次日闸门本就不再拦（只看日期），清条目是为了让「连错 N 天」不撒谎：
+        中间打过成功就不算连错。
         """
 
         if not self._activity_stage_name:
