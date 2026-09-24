@@ -2216,8 +2216,10 @@ class MaaFWRunner:
                 )
                 if cleaned:
                     texts.append(cleaned)
-        for raw in _legacy_focus_values(focus, message):
-            cleaned = _clean_focus_text(self._translate_focus(raw))
+        for parts in _legacy_focus_values(focus, message):
+            cleaned = _clean_focus_text(
+                "：".join(self._translate_focus(part) for part in parts)
+            )
             if cleaned:
                 texts.append(cleaned)
         return texts
@@ -2639,28 +2641,29 @@ def _focus_values(value: Any) -> list[str]:
     return []
 
 
-def _legacy_focus_values(focus: Any, message: str) -> list[str]:
+def _legacy_focus_values(focus: Any, message: str) -> list[tuple[str, ...]]:
     """focus 旧协议在这条消息上要打的原始文案（MFAA ``FocusHandler.ProcessOldProtocol``）。
 
-    整串 focus 等价于 ``start``；``toast`` 在动作开始时打，``[标题, 内容]`` 合成一行
-    （MAS 只有运行日志这一个渠道）。``aborted``（MFAA 据此中止任务）不认：真实发行包
-    里没有用的，而中止任务是行为变化，不在兼容范围内。
+    每项是一行日志的组成部分：调用方逐段翻译 ``$key``、再用「：」拼成一行。整串 focus
+    等价于 ``start``；``toast`` 在动作开始时打，``[标题, 内容]`` 合成一行（MAS 只有运行
+    日志这一个渠道），标题与内容分别翻译（MFAA 同）。``aborted``（MFAA 据此中止任务）
+    不认：真实发行包里没有用的，而中止任务是行为变化，不在兼容范围内。
     """
 
     if isinstance(focus, str):
         if message == "Node.Action.Starting" and focus.strip():
-            return [focus]
+            return [(focus,)]
         return []
     if not isinstance(focus, dict):
         return []
     key = _LEGACY_FOCUS_KEYS.get(message)
     if key is None:
         return []
-    values = _focus_values(focus.get(key))
+    values: list[tuple[str, ...]] = [(item,) for item in _focus_values(focus.get(key))]
     if message == "Node.Action.Starting":
         toast = _focus_values(focus.get("toast"))
         if toast:
-            values = [*values, "：".join(toast[:2])]
+            values.append(tuple(toast[:2]))
     return values
 
 
