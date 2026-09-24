@@ -98,7 +98,7 @@
                 <div class="script-details">
                   <h3 class="script-name">{{ script.name }}</h3>
                   <a-tag :color="getScriptTypeTagColor(script.type)" class="script-type">
-                    {{ getScriptTypeLabel(script.type) }}
+                    {{ getScriptTypeLabel(script) }}
                   </a-tag>
                 </div>
               </div>
@@ -532,7 +532,7 @@
 
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
-import type { Script, User } from '../types/script'
+import type { MaaFWScriptConfig, Script, User } from '../types/script'
 import type { MaaEndConfig } from '@/api'
 import {
   CopyOutlined,
@@ -730,9 +730,14 @@ const handleToggleUserStatus = (user: User) => {
   emit('toggleUserStatus', user)
 }
 
-const getScriptTypeLabel = (type: Script['type']) => {
+const getScriptTypeLabel = (script: Script) => {
+  const type = script.type
   if (type === 'Okww') return 'ok-ww'
   if (type === 'OkNte') return 'ok-nte'
+  // MFW 家族显示项目实际的名字（引导页读到 interface 时记进 Info.ProjectLabel），没记过才显示类型
+  if (type === 'MaaFW' || type === 'M9A') {
+    return (script.config as MaaFWScriptConfig).Info?.ProjectLabel?.trim() || type
+  }
   return type
 }
 

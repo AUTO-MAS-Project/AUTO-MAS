@@ -8,6 +8,8 @@ import {
   BootstrapProgressUpdate,
   MirrorLookup,
   NETWORK_PROBE_STAGE,
+  RUNTIME_BINARY_CHECK_STAGE,
+  RUNTIME_BINARY_DOWNLOAD_STAGE,
   RUNTIME_TAKEOVER_MESSAGE,
   RuntimeInitializationService,
   describeRuntimeFailureDetails,
@@ -27,6 +29,12 @@ import type {
   RuntimeSupervisedLaunchConfig,
 } from './runtime'
 import type { MirrorConfig, MirrorSource } from './mirrorService'
+import {
+  RUNTIME_BINARY_CANCELLED,
+  RUNTIME_PIN_UNAVAILABLE,
+  type RuntimeBinaryAlignOptions,
+  type RuntimeBinaryAlignResult,
+} from './runtimeBinaryService'
 
 vi.mock('electron', () => ({ app: { getVersion: () => '5.5.0-beta.3' } }))
 vi.mock('./logger', () => ({
@@ -164,6 +172,25 @@ function fakeMirrorService(): MirrorLookup {
   }
 }
 
+// ==================== 假的第 0 步 ====================
+
+/**
+ * 第 0 步（Runtime 对齐）的桩：记录每次调用的参数，按脚本给结果；`hold` 让它停住，
+ * 用来验证取消与「bootstrap 要等它」。
+ */
+const alignStub = {
+  calls: [] as RuntimeBinaryAlignOptions[],
+  result: { status: 'current', pin: { version: 'v0.1.7' } } as RuntimeBinaryAlignResult,
+  hold: null as Promise<void> | null,
+  throws: null as unknown,
+  async run(options: RuntimeBinaryAlignOptions): Promise<RuntimeBinaryAlignResult> {
+    alignStub.calls.push(options)
+    if (alignStub.throws) throw alignStub.throws
+    if (alignStub.hold) await alignStub.hold
+    return alignStub.result
+  },
+}
+
 function createService(
   overrides: Partial<RuntimeSupervisedLaunchConfig> = {},
   mirrorService: MirrorLookup = fakeMirrorService()
@@ -179,6 +206,7 @@ function createService(
     launchConfig,
     mirrorService,
     createClient: options => new FakeRuntimeClient(options) as never,
+    alignRuntimeBinary: options => alignStub.run(options),
   })
 }
 
@@ -216,6 +244,10 @@ function okResult(stage: string): RuntimeEvent {
 beforeEach(() => {
   FakeRuntimeClient.calls = []
   FakeRuntimeClient.scripts = [{ events: [helloEvent, okResult('bootstrap')] }]
+  alignStub.calls = []
+  alignStub.result = { status: 'current', pin: { version: 'v0.1.7' } }
+  alignStub.hold = null
+  alignStub.throws = null
 })
 
 // ==================== 阶段映射 ====================
@@ -929,6 +961,265 @@ describe('bootstrap', () => {
   })
 })
 
+// ==================== 第 0 步：Runtime 对齐 ====================
+
+describe('第 0 步：bootstrap 之前先对齐 Runtime', () => {
+  it('按目标版本、当前 exe 与 app-root 调用对齐，且在 bootstrap 命令之前', async () => {
+    const order: string[] = []
+    alignStub.result = { status: 'upgraded', pin: { version: 'v0.1.10' }, pinSource: 'cnb' }
+    const service = new RuntimeInitializationService({
+      launchConfig: {
+        mode: 'managed',
+        runtimePath: RUNTIME_PATH,
+        appRoot: APP_ROOT,
+        dataRoot: APP_ROOT,
+      },
+      mirrorService: fakeMirrorService(),
+      createClient: options => {
+        order.push('client')
+        return new FakeRuntimeClient(options) as never
+      },
+      alignRuntimeBinary: async options => {
+        order.push('align')
+        return alignStub.run(options)
+      },
+    })
+
+    const outcome = await service.bootstrap(() => undefined)
+
+    expect(outcome.success).toBe(true)
+    expect(order).toEqual(['align', 'client'])
+    expect(alignStub.calls).toHaveLength(1)
+    expect(alignStub.calls[0]).toMatchObject({
+      version: 'v5.5.0-beta.3',
+      runtimePath: RUNTIME_PATH,
+      appRoot: APP_ROOT,
+    })
+    expect(FakeRuntimeClient.calls[0].command).toEqual(['bootstrap', '--version', 'v5.5.0-beta.3'])
+  })
+
+  it('更新流程给的目标版本同样传给第 0 步', async () => {
+    const service = new RuntimeInitializationService({
+      launchConfig: {
+        mode: 'managed',
+        runtimePath: RUNTIME_PATH,
+        appRoot: APP_ROOT,
+        dataRoot: APP_ROOT,
+      },
+      mirrorService: fakeMirrorService(),
+      createClient: options => new FakeRuntimeClient(options) as never,
+      alignRuntimeBinary: options => alignStub.run(options),
+      targetVersion: 'v5.6.0',
+    })
+
+    await service.bootstrap(() => undefined)
+
+    expect(alignStub.calls[0].version).toBe('v5.6.0')
+  })
+
+  it('第 0 步的进度挂在「运行环境」段上，下载细节只进网络细节行、不推进百分比', async () => {
+    const updates: BootstrapProgressUpdate[] = []
+    alignStub.result = { status: 'upgraded', pin: { version: 'v0.1.10' } }
+    const service = new RuntimeInitializationService({
+      launchConfig: {
+        mode: 'managed',
+        runtimePath: RUNTIME_PATH,
+        appRoot: APP_ROOT,
+        dataRoot: APP_ROOT,
+      },
+      mirrorService: fakeMirrorService(),
+      createClient: options => new FakeRuntimeClient(options) as never,
+      alignRuntimeBinary: async options => {
+        options.onProgress?.({ progress: 0, message: '正在确认 v5.5.0-beta.3 需要的 Runtime 版本' })
+        options.onProgress?.({
+          progress: 60,
+          message: '正在从 CNB（1/5） 下载 Runtime v0.1.10',
+          item: 'auto-mas-runtime-v0.1.10.exe',
+          source: 'cnb',
+          bytesPerSecond: 3_000_000,
+          current: 12_000_000,
+          total: 19_000_000,
+        })
+        return alignStub.run(options)
+      },
+    })
+    FakeRuntimeClient.scripts = [
+      { events: fixtureEvents('bootstrap-success.ndjson') as RuntimeEvent[] },
+    ]
+
+    await service.bootstrap(update => updates.push(update))
+
+    const python = updates.filter(update => update.stage === 'python')
+    expect(python[0]).toMatchObject({
+      status: 'started',
+      runtimeStage: RUNTIME_BINARY_CHECK_STAGE,
+      indeterminate: true,
+      message: '正在确认 v5.5.0-beta.3 需要的 Runtime 版本',
+    })
+    expect(python[1]).toMatchObject({
+      status: 'running',
+      runtimeStage: RUNTIME_BINARY_DOWNLOAD_STAGE,
+      indeterminate: true,
+      progress: 10,
+      item: 'auto-mas-runtime-v0.1.10.exe',
+      source: 'cnb',
+      bytesPerSecond: 3_000_000,
+      current: 12_000_000,
+      total: 19_000_000,
+    })
+    expect(python[2]).toMatchObject({
+      status: 'running',
+      runtimeStage: RUNTIME_BINARY_CHECK_STAGE,
+      message: 'Runtime 已更新到 v0.1.10',
+    })
+    // 段没有因第 0 步提前收口，随后 Runtime 自己的事件仍落在同一段并正常结束。
+    expect(python.filter(update => update.status === 'completed')).toHaveLength(1)
+    expect(python.at(-1)?.status).toBe('completed')
+    expect(updates.map(update => update.stage)).not.toContain('complete')
+  })
+
+  it.each([
+    ['unpinned', { status: 'unpinned' } as RuntimeBinaryAlignResult],
+    ['current', { status: 'current', pin: { version: 'v0.1.7' } } as RuntimeBinaryAlignResult],
+    ['skipped', { status: 'skipped' } as RuntimeBinaryAlignResult],
+  ])('第 0 步结果为 %s 时照常 bootstrap', async (_label, result) => {
+    alignStub.result = result
+
+    const outcome = await createService().bootstrap(() => undefined)
+
+    expect(outcome.success).toBe(true)
+    expect(FakeRuntimeClient.calls).toHaveLength(1)
+  })
+
+  it('第 0 步失败时不跑 bootstrap：失败段是运行环境、可重试、给重试与打开日志', async () => {
+    const updates: BootstrapProgressUpdate[] = []
+    alignStub.result = {
+      status: 'failed',
+      code: RUNTIME_PIN_UNAVAILABLE,
+      error: '无法确认 v5.5.0-beta.3 需要的 Runtime 版本：CNB 与 GitHub 都没有给出结果',
+    }
+
+    const outcome = await createService().bootstrap(update => updates.push(update))
+
+    expect(outcome).toEqual({
+      success: false,
+      error: '无法确认 v5.5.0-beta.3 需要的 Runtime 版本：CNB 与 GitHub 都没有给出结果',
+      code: RUNTIME_PIN_UNAVAILABLE,
+      retryable: true,
+      remediation: ['retry', 'open-log'],
+      failedStage: 'python',
+    })
+    expect(FakeRuntimeClient.calls).toHaveLength(0)
+    expect(updates.at(-1)).toMatchObject({
+      stage: 'python',
+      status: 'failed',
+      message: outcome.error,
+    })
+  })
+
+  it('第 0 步自己抛异常时按可重试失败处理，不让 bootstrap 裸抛', async () => {
+    alignStub.throws = new Error('boom')
+
+    const outcome = await createService().bootstrap(() => undefined)
+
+    expect(outcome.success).toBe(false)
+    expect(outcome.failedStage).toBe('python')
+    expect(outcome.retryable).toBe(true)
+    expect(outcome.error).toContain('boom')
+    expect(FakeRuntimeClient.calls).toHaveLength(0)
+  })
+
+  it('第 0 步期间 cancel() 生效：对齐看到取消判据，结果是 OPERATION_CANCELLED 且不跑 bootstrap', async () => {
+    let release: (() => void) | undefined
+    alignStub.hold = new Promise(resolve => {
+      release = resolve
+    })
+    const service = createService()
+    let observedCancel: boolean | undefined
+    alignStub.result = { status: 'cancelled', code: RUNTIME_BINARY_CANCELLED }
+
+    const pending = service.bootstrap(() => undefined)
+    await vi.waitFor(() => expect(alignStub.calls).toHaveLength(1))
+    expect(service.cancel()).toBe(true)
+    observedCancel = alignStub.calls[0].isCancelled?.()
+    release?.()
+    const outcome = await pending
+
+    expect(observedCancel).toBe(true)
+    expect(outcome.success).toBe(false)
+    expect(outcome.code).toBe(RUNTIME_BINARY_CANCELLED)
+    expect(FakeRuntimeClient.calls).toHaveLength(0)
+  })
+
+  it('exe 本来就一致时第 0 步不看取消判据，但期间的 cancel 仍要在进入 bootstrap 前生效', async () => {
+    let release: (() => void) | undefined
+    alignStub.hold = new Promise(resolve => {
+      release = resolve
+    })
+    // 对齐桩照常返回 current（真实实现在版本相等时不查取消判据，就会这样返回）。
+    alignStub.result = { status: 'current', pin: { version: 'v0.1.7' } }
+    const service = createService()
+
+    const pending = service.bootstrap(() => undefined)
+    await vi.waitFor(() => expect(alignStub.calls).toHaveLength(1))
+    expect(service.cancel()).toBe(true)
+    release?.()
+    const outcome = await pending
+
+    expect(outcome.success).toBe(false)
+    expect(outcome.code).toBe(RUNTIME_BINARY_CANCELLED)
+    expect(FakeRuntimeClient.calls).toHaveLength(0)
+  })
+
+  it('上一次的取消不会带进下一次 bootstrap', async () => {
+    const service = createService()
+    service.cancel()
+
+    await service.bootstrap(() => undefined)
+
+    expect(alignStub.calls[0].isCancelled?.()).toBe(false)
+  })
+
+  it('development 模式与找不到 exe 时都不做第 0 步', async () => {
+    await createService({ mode: 'development', repo: APP_ROOT }).bootstrap(() => undefined)
+    expect(alignStub.calls).toHaveLength(0)
+
+    await createService({ runtimePath: null }).bootstrap(() => undefined)
+    expect(alignStub.calls).toHaveLength(0)
+  })
+
+  it('运行环境段的单步重试同样先过第 0 步，仓库段与依赖段不过', async () => {
+    FakeRuntimeClient.scripts = [{ events: [helloEvent, okResult('uv.check')] }]
+    await createService().retryStage('python', () => undefined)
+    expect(alignStub.calls).toHaveLength(1)
+    expect(FakeRuntimeClient.calls[0].command).toEqual(['environment', 'ensure'])
+
+    alignStub.calls = []
+    FakeRuntimeClient.calls = []
+    FakeRuntimeClient.scripts = [{ events: [helloEvent, okResult('workspace.clone')] }]
+    await createService().retryStage('repository', () => undefined)
+    FakeRuntimeClient.scripts = [{ events: [helloEvent, okResult('dependencies.sync')] }]
+    await createService().retryStage('dependency', () => undefined)
+    expect(alignStub.calls).toHaveLength(0)
+    expect(FakeRuntimeClient.calls).toHaveLength(2)
+  })
+
+  it('运行环境段重试时第 0 步失败就停在第 0 步，不跑下层命令', async () => {
+    alignStub.result = {
+      status: 'failed',
+      code: 'RUNTIME_BINARY_DOWNLOAD_FAILED',
+      error: '没能下载到本版本需要的 Runtime v0.1.10',
+    }
+
+    const outcome = await createService().retryStage('python', () => undefined)
+
+    expect(outcome.success).toBe(false)
+    expect(outcome.code).toBe('RUNTIME_BINARY_DOWNLOAD_FAILED')
+    expect(outcome.failedStage).toBe('python')
+    expect(FakeRuntimeClient.calls).toHaveLength(0)
+  })
+})
+
 // ==================== 单步重试 ====================
 
 describe('单步重试', () => {
@@ -1098,6 +1389,7 @@ describe('客户端构造参数', () => {
         received.push(options)
         return new FakeRuntimeClient(options) as never
       },
+      alignRuntimeBinary: options => alignStub.run(options),
     })
     FakeRuntimeClient.scripts = [{ events: fixtureEvents('doctor.ndjson') }]
 
