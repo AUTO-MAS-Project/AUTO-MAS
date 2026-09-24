@@ -32,6 +32,22 @@ const onEscCapture = (event: KeyboardEvent) => {
 }
 // 启停开关在配置弹窗的开关行里，这里只留绑定状态与操作
 const connected = computed(() => !!binding.value.status?.connected)
+const statusLabel = computed(() => {
+  if (!connected.value) return binding.value.label('Unbound')
+  if (props.channel === 'qq' && binding.value.status?.state === 'reconnecting') {
+    return binding.value.label('Reconnecting')
+  }
+  if (props.channel === 'qq' && binding.value.status?.state === 'connecting') {
+    return binding.value.label('Connecting')
+  }
+  return binding.value.label('Bound')
+})
+const statusColor = computed(() => {
+  if (!connected.value) return 'default'
+  return props.channel === 'qq' && binding.value.status?.state !== 'connected'
+    ? 'processing'
+    : 'success'
+})
 </script>
 
 <template>
@@ -56,8 +72,8 @@ const connected = computed(() => !!binding.value.status?.connected)
       <div class="bind-row">
         <a-space :size="8">
           <a-spin v-if="binding.statusLoading" size="small" />
-          <a-tag v-else-if="binding.status" :color="connected ? 'success' : 'default'">
-            {{ binding.label(connected ? 'Bound' : 'Unbound') }}
+          <a-tag v-else-if="binding.status" :color="statusColor">
+            {{ statusLabel }}
           </a-tag>
         </a-space>
         <a-space wrap>
@@ -95,7 +111,7 @@ const connected = computed(() => !!binding.value.status?.connected)
   >
     <div class="qr-content">
       <div class="qr-stage">
-        <a-spin v-if="binding.loading" />
+        <a-spin v-if="binding.loading || binding.state === 'connecting'" />
         <CheckCircleOutlined v-else-if="binding.state === 'connected'" class="qr-success" />
         <a-button v-else-if="failed" type="primary" @click="binding.start">
           <template #icon><ReloadOutlined /></template>
