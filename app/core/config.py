@@ -101,7 +101,10 @@ from app.models.config import (
     read_maa_config,
 )
 from app.models.schema import PlanComboxConsumer
-from app.task.M9A.migration import migrate_legacy_m9a_scripts
+from app.task.M9A.migration import (
+    migrate_legacy_m9a_scripts,
+    repair_m9a_migration_losses,
+)
 from app.utils import get_logger, is_supervised, resource_path
 from app.utils.community import next_community_account_name
 from app.utils.constants import (
@@ -457,6 +460,12 @@ class AppConfig(GlobalConfig):
             self.config_path / "ScriptConfig.json",
             global_mirror_cdk=str(self.get("Update", "MirrorChyanCDK") or ""),
         )
+        # 按 v5.6.0-beta.1 迁过的配置，从迁移备份补回那版清空的输入值与丢掉的切号，只做一次
+        m9a_repair = await asyncio.to_thread(
+            repair_m9a_migration_losses,
+            self.config_path / "ScriptConfig.json",
+            skip_uids=set(m9a_migration.migrated_uids),
+        )
         # HSR 旧直控快照（Direct.*）已删字段，同理必须在 connect 之前另存原始密文
         await self._archive_legacy_hsr_direct_snapshots(
             self.config_path / "ScriptConfig.json"
@@ -464,6 +473,8 @@ class AppConfig(GlobalConfig):
         await self.ScriptConfig.connect(self.config_path / "ScriptConfig.json")
         if m9a_migration.changed or m9a_migration.failure:
             await self._settle_m9a_migration(m9a_migration)
+        if m9a_repair.needs_notice:
+            self.startup_notices.append(m9a_repair.notice())
         await self.QueueConfig.connect(self.config_path / "QueueConfig.json")
         await self.ToolsConfig.connect(self.config_path / "ToolsConfig.json")
 
@@ -5449,6 +5460,8 @@ class AppConfig(GlobalConfig):
                     or report.disabled_users
                     or report.dropped_tasks
                     or report.degraded_scripts
+                    or report.instance_file_fallbacks
+                    or report.account_switch_users
                 )
                 else "info",
                 "title": "M9A 脚本迁移失败"
