@@ -277,14 +277,20 @@ def group_overlay(overlay: dict) -> dict[str, dict]:
     """把平铺的侧车字段按配置段分组（恢复回填 UserData 用）。
 
     仅预览字段（配置文件来源等）不回填：恢复目标目录由当前模式决定，
-    回填旧值会静默改变用户态/脚本态。
+    回填旧值会静默改变用户态/脚本态。不在侧车字段表里的键（旧版侧车中
+    已删除的配置项，如 ``Stage_Remain``、``IfReclamation``）同样不回填：
+    当前配置里没有这些项，``update`` 会抛错让整次恢复失败。
     """
 
     grouped: dict[str, dict] = {}
     for key, value in overlay.items():
         if key in _OVERLAY_PREVIEW_ONLY_KEYS:
             continue
-        grouped.setdefault(_OVERLAY_KEY_GROUP.get(key, "Task"), {})[key] = value
+        group = _OVERLAY_KEY_GROUP.get(key)
+        if group is None:
+            logger.warning(f"备份中的配置项 {key} 已不再使用，跳过回填")
+            continue
+        grouped.setdefault(group, {})[key] = value
     return grouped
 
 
