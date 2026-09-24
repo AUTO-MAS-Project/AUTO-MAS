@@ -601,6 +601,11 @@ class EmulatorConfig(ConfigBase):
         self.Info_ForceKillOnClose = ConfigItem(
             "Info", "ForceKillOnClose", False, BoolValidator()
         )
+        ## 启动 MuMu 实例前先关闭已在运行的实例并强力清理残留进程
+        ## 用于已有非管理员实例导致新实例无法以管理员身份启动的场景; 会关掉全部实例, 多开慎用
+        self.Info_ForceKillBeforeLaunch = ConfigItem(
+            "Info", "ForceKillBeforeLaunch", False, BoolValidator()
+        )
 
         super().__init__()
 
@@ -2135,6 +2140,75 @@ class SrcConfig(ConfigBase):
         super().__init__()
 
 
+def declare_hsr_plan_items(config: ConfigBase) -> None:
+    """声明 HSR「任务计划」配置项，``HSRUserConfig`` 与 ``HSRConfig`` 共用。
+
+    计划 = 任务开关 / 副本 / 历战余响开始日 / 托管覆盖 / 用户级引擎分配。
+    配置来源为「用户」时计划读用户配置，为「脚本」时读脚本配置上的同名组
+    （本脚本下所有脚本来源用户共用一份）。两边组名、键名、默认值必须完全
+    一致，运行时、动态表单与备份才能只换一个对象就复用同一套读取代码，
+    所以只在这里单点声明。
+
+    ``Managed.TaskMapping`` 在脚本级是惰性字段：脚本态的引擎分配写脚本级
+    ``TaskMapping`` 组，这一项恒为空对象，只为让两份计划形状一致——
+    ``resolve_script_assignment`` 读到空对象后自然落到脚本级 ``TaskMapping``。
+    """
+
+    ## TaskSwitch ----------------------------------------------------------
+    ## 模块执行开关
+    config.TaskSwitch_Daily = ConfigItem("TaskSwitch", "Daily", True, BoolValidator())
+    config.TaskSwitch_ReceiveRewards = ConfigItem(
+        "TaskSwitch", "ReceiveRewards", True, BoolValidator()
+    )
+    config.TaskSwitch_DivergentUniverse = ConfigItem(
+        "TaskSwitch", "DivergentUniverse", False, BoolValidator()
+    )
+    config.TaskSwitch_CurrencyWars = ConfigItem(
+        "TaskSwitch", "CurrencyWars", False, BoolValidator()
+    )
+    ## Stage ---------------------------------------------------------------
+    ## 关卡通道
+    config.Stage_Channel = ConfigItem(
+        "Stage",
+        "Channel",
+        "CalyxGolden",
+        OptionsValidator(["CalyxGolden", "CalyxCrimson", "Relic", "Ornament"]),
+    )
+    ## 主刷关卡的脚本原生字段 JSON（SRA: id+level；M7A: instance_type+name）
+    config.Stage_ScriptStage = ConfigItem(
+        "Stage", "ScriptStage", "{ }", JSONValidator()
+    )
+    ## 历战余响的脚本原生字段 JSON
+    config.Stage_ScriptEchoOfWar = ConfigItem(
+        "Stage", "ScriptEchoOfWar", "{ }", JSONValidator()
+    )
+    ## TaskOpt -------------------------------------------------------------
+    ## 历战余响开始刷的星期（周一 ~ 周日）
+    config.TaskOpt_EchoOfWarWeekday = ConfigItem(
+        "TaskOpt",
+        "EchoOfWarWeekday",
+        "Monday",
+        OptionsValidator(
+            [
+                "Monday",
+                "Tuesday",
+                "Wednesday",
+                "Thursday",
+                "Friday",
+                "Saturday",
+                "Sunday",
+            ]
+        ),
+    )
+    ## Managed -------------------------------------------------------------
+    ## 用户级模块引擎分配覆盖（脚本级恒为空，见上）
+    config.Managed_TaskMapping = ConfigItem(
+        "Managed", "TaskMapping", "{ }", JSONValidator()
+    )
+    ## 托管字段覆盖值（运行时叠加到原生配置的临时副本上）
+    config.Managed_Options = ConfigItem("Managed", "Options", "{ }", JSONValidator())
+
+
 class HSRUserConfig(ConfigBase):
     """HSR用户配置"""
 
@@ -2151,9 +2225,10 @@ class HSRUserConfig(ConfigBase):
         self.Info_Id = ConfigItem("Info", "Id", "", EncryptValidator())
         ## 密码
         self.Info_Password = ConfigItem("Info", "Password", "", EncryptValidator())
-        ## 配置来源（脚本/用户/直控）
+        ## 配置来源（脚本/用户/直控）：脚本 = 共用脚本级计划；用户 = 本用户
+        ## 自己的计划；直控 = 原样运行 SRA / 三月七当前的原生配置
         self.Info_Mode = ConfigItem(
-            "Info", "Mode", "用户", UserDirectConfigModeValidator()
+            "Info", "Mode", "脚本", UserDirectConfigModeValidator()
         )
         ## 是否启用快速配置（与配置来源独立，按用户保存）
         self.Info_IfQuickConfig = ConfigItem(
@@ -2230,53 +2305,10 @@ class HSRUserConfig(ConfigBase):
         self.Data_WeeklyLastResetWeek = ConfigItem(
             "Data", "WeeklyLastResetWeek", "2000-W01"
         )
-        ## TaskSwitch ------------------------------------------------------
-        ## 模块执行开关
-        self.TaskSwitch_Daily = ConfigItem("TaskSwitch", "Daily", True, BoolValidator())
-        self.TaskSwitch_ReceiveRewards = ConfigItem(
-            "TaskSwitch", "ReceiveRewards", True, BoolValidator()
-        )
-        self.TaskSwitch_DivergentUniverse = ConfigItem(
-            "TaskSwitch", "DivergentUniverse", False, BoolValidator()
-        )
-        self.TaskSwitch_CurrencyWars = ConfigItem(
-            "TaskSwitch", "CurrencyWars", False, BoolValidator()
-        )
-        ## Stage -----------------------------------------------------------
-        ## 关卡通道
-        self.Stage_Channel = ConfigItem(
-            "Stage",
-            "Channel",
-            "CalyxGolden",
-            OptionsValidator(["CalyxGolden", "CalyxCrimson", "Relic", "Ornament"]),
-        )
-        ## 主刷关卡的脚本原生字段 JSON（SRA: id+level；M7A: instance_type+name）
-        self.Stage_ScriptStage = ConfigItem(
-            "Stage", "ScriptStage", "{ }", JSONValidator()
-        )
-        ## 历战余响的脚本原生字段 JSON
-        self.Stage_ScriptEchoOfWar = ConfigItem(
-            "Stage", "ScriptEchoOfWar", "{ }", JSONValidator()
-        )
 
-        ## TaskOpt ---------------------------------------------------------
-        ## 历战余响开始刷的星期（周一 ~ 周日）
-        self.TaskOpt_EchoOfWarWeekday = ConfigItem(
-            "TaskOpt",
-            "EchoOfWarWeekday",
-            "Monday",
-            OptionsValidator(
-                [
-                    "Monday",
-                    "Tuesday",
-                    "Wednesday",
-                    "Thursday",
-                    "Friday",
-                    "Saturday",
-                    "Sunday",
-                ]
-            ),
-        )
+        ## TaskSwitch / Stage / TaskOpt / Managed --------------------------
+        ## 用户来源下的任务计划，与 HSRConfig 同名组共用一处声明
+        declare_hsr_plan_items(self)
 
         ## Notify ----------------------------------------------------------
         ## 是否启用通知
@@ -2300,28 +2332,10 @@ class HSRUserConfig(ConfigBase):
         ## 自定义 Webhook 列表
         self.Notify_CustomWebhooks = MultipleConfig([Webhook])
 
-        ## Control / Managed / Direct ------------------------------------
-        ## 兼容插件版的托管/直连配置形状。内置 HSRManager 按模式读取
-        ## 这些字段；普通用户 API 只返回非敏感元数据。
-        self.Control_Mode = ConfigItem(
-            "Control", "Mode", "managed", OptionsValidator(["managed", "direct"])
-        )
+        ## Control ---------------------------------------------------------
+        ## 直控时运行哪几个引擎；都没勾时回落到已配置路径的引擎
         self.Control_SRA = ConfigItem("Control", "SRA", False, BoolValidator())
         self.Control_M7A = ConfigItem("Control", "M7A", False, BoolValidator())
-        self.Managed_TaskMapping = ConfigItem(
-            "Managed", "TaskMapping", "{ }", JSONValidator()
-        )
-        self.Managed_Options = ConfigItem("Managed", "Options", "{ }", JSONValidator())
-        self.Direct_SRAConfig = ConfigItem(
-            "Direct", "SRAConfig", "", EncryptValidator()
-        )
-        self.Direct_M7AConfig = ConfigItem(
-            "Direct", "M7AConfig", "", EncryptValidator()
-        )
-        self.Direct_SRAImportedAt = ConfigItem("Direct", "SRAImportedAt", "")
-        self.Direct_M7AImportedAt = ConfigItem("Direct", "M7AImportedAt", "")
-        self.Direct_SRASource = ConfigItem("Direct", "SRASource", "")
-        self.Direct_M7ASource = ConfigItem("Direct", "M7ASource", "")
 
         ## 兑换码状态指纹（仅状态信息，不保存兑换码明文）
         self.Data_SRARedeemCodeFingerprint = ConfigItem(
@@ -2334,28 +2348,82 @@ class HSRUserConfig(ConfigBase):
         super().__init__()
 
     async def load(self, data: dict) -> bool:
-        """加载用户配置，并把旧版 ``Control.Mode`` 迁移到 ``Info.Mode``。
+        """加载用户配置，并把已删除的旧字段迁移到 ``Info.Mode``。
 
-        HSR 历史上用 ``Control.Mode``（managed/direct）表达「运行模式」，本次统一
-        到 ``Info.Mode`` 三态来源后两者若不归一就会并存打架：界面上用户改的是
-        来源，运行时却还被旧字段左右。迁移规则：
+        迁移直接读磁盘上的原始字典，不依赖旧 ``ConfigItem`` 仍然存在；旧字段
+        本身不再声明，下次保存即从文件中消失，迁移天然只发生一次。
 
-        - 旧 ``Control.Mode == "direct"`` → ``Info.Mode = "直控"``（只在 Info.Mode
-          仍是默认值「用户」时迁移，避免覆盖用户本次显式选择的来源）。
-        - ``Control.Mode`` 本身保留：``resolve_user_control`` 仍读它做兼容，
-          保证未迁移的存量配置行为不变。
+        - 旧 ``Control.Mode == "direct"`` → ``Info.Mode = "直控"``，不论
+          ``Info.Mode`` 原来是什么：旧版运行时按「``Info.Mode == 直控`` 或
+          ``Control.Mode == direct``」判直控，这类用户无论配置来源选了什么
+          实际都在跑直控，迁成「直控」才是保持行为不变。
+        - 存量记录里没有 ``Info.Mode``（早于三态来源的旧记录）→「用户」：
+          这类用户一直按自己的计划运行；新建用户不经过 ``load``，仍取默认
+          值「脚本」。
         """
 
         is_dirty = await super().load(data)
 
-        raw_control_mode = str(self.get("Control", "Mode") or "").strip().lower()
-        if raw_control_mode == "direct" and str(
-            self.get("Info", "Mode") or ""
-        ).strip() in ("", "用户"):
-            await self.set("Info", "Mode", "直控")
-            is_dirty = True
+        raw = data if isinstance(data, dict) else {}
+        raw_info = raw.get("Info")
+        raw_control = raw.get("Control")
+        raw_control_mode = (
+            str(raw_control.get("Mode") or "").strip().lower()
+            if isinstance(raw_control, dict)
+            else ""
+        )
+        if raw_control_mode == "direct":
+            if self.get("Info", "Mode") != "直控":
+                await self.set("Info", "Mode", "直控")
+                is_dirty = True
+        elif isinstance(raw_info, dict) and "Mode" not in raw_info:
+            if self.get("Info", "Mode") != "用户":
+                await self.set("Info", "Mode", "用户")
+                is_dirty = True
+
+        # 旧版把 SRA 体力副本的数组位置存成了关卡编号，历战余响与饰品提取整体
+        # 错位；repr 形态的旧载荷里带着真实编号，加载时改写（幂等）。
+        from app.task.HSR.tools.stage_runtime import migrate_sra_legacy_stage_labels
+
+        for field in ("ScriptStage", "ScriptEchoOfWar"):
+            migrated, count, unresolved = migrate_sra_legacy_stage_labels(
+                self.get("Stage", field)
+            )
+            if migrated is not None:
+                await self.set("Stage", field, migrated)
+                is_dirty = True
+                logger.info(
+                    f"HSR 用户「{self.get('Info', 'Name')}」的 Stage.{field} "
+                    f"已迁移 {count} 条 SRA 副本到真实关卡编号"
+                )
+            if unresolved:
+                logger.info(
+                    f"HSR 用户「{self.get('Info', 'Name')}」的 Stage.{field} 有 "
+                    f"{unresolved} 条 SRA 副本无法确认关卡编号，未改动；"
+                    "如刷取的关卡不对，请在用户页重新选择一次"
+                )
 
         return is_dirty
+
+    def _tag_plan(self) -> ConfigBase:
+        """标签读计划字段时用的对象。
+
+        「脚本」来源的计划在所属 ``HSRConfig`` 的同名组上，经
+        ``related_config["ScriptConfig"]`` 找到持有自己的那份脚本配置；「用户」
+        「直控」来源，或找不到所属脚本（如未挂到全局配置的独立实例）时读自己。
+        """
+
+        if self.get("Info", "Mode") in ("用户", "直控"):
+            return self
+        scripts = self.related_config.get("ScriptConfig")
+        if scripts is None:
+            return self
+        for script in scripts.values():
+            if isinstance(script, HSRConfig) and any(
+                user is self for user in script.UserData.values()
+            ):
+                return script
+        return self
 
     def getTags(self) -> str:
         """生成 HSR 用户标签列表，返回JSON字符串格式的TagItem列表。"""
@@ -2394,8 +2462,10 @@ class HSRUserConfig(ConfigBase):
             bool(self.get("Data", "WeeklyCompletedThisWeek"))
             and self.get("Data", "WeeklyLastResetWeek") == current_week
         )
-        du_on = bool(self.get("TaskSwitch", "DivergentUniverse"))
-        cw_on = bool(self.get("TaskSwitch", "CurrencyWars"))
+        # 完成态恒按用户记，开了哪个周常模块看计划 owner（脚本来源读共享计划）
+        plan = self._tag_plan()
+        du_on = bool(plan.get("TaskSwitch", "DivergentUniverse"))
+        cw_on = bool(plan.get("TaskSwitch", "CurrencyWars"))
         if weekly_done:
             if du_on:
                 weekly_text, weekly_color = "差分宇宙 已完成", "green"
@@ -2433,7 +2503,12 @@ class HSRConfig(ConfigBase):
         )
 
         ## Game ------------------------------------------------------------
-        ## 是否由 MAS 管理游戏启停、进程监测和窗口操作
+        ## 游戏平台：本地客户端 / 云·星穹铁道（MAS 托管浏览器，只用三月七）。
+        ## OptionsValidator.correct() 回退的是 options[0]，Client 必须排第一。
+        self.Game_Platform = ConfigItem(
+            "Game", "Platform", "Client", OptionsValidator(["Client", "Cloud"])
+        )
+        ## 是否由 MAS 管理游戏启停、进程监测和窗口操作（仅客户端平台）
         self.Game_Enabled = ConfigItem("Game", "Enabled", True, BoolValidator())
         ## 游戏路径
         self.Game_Path = ConfigItem("Game", "Path", "", FileValidator())
@@ -2447,6 +2522,24 @@ class HSRConfig(ConfigBase):
         self.Game_RedeemCodesOnlyWhenChanged = ConfigItem(
             "Game", "RedeemCodesOnlyWhenChanged", True, BoolValidator()
         )
+
+        ## Cloud -----------------------------------------------------------
+        ## 云·星穹铁道（Game.Platform = Cloud）专用，映射到三月七的 cloud_game_* 键
+        ## 是否允许消耗付费时长走快速排队通道（花钱的开关，默认关）
+        self.Cloud_UsePaidTime = ConfigItem(
+            "Cloud", "UsePaidTime", False, BoolValidator()
+        )
+        ## 最长排队时间（分钟），同时计入每个模块的超时预算
+        self.Cloud_MaxQueueMinutes = ConfigItem(
+            "Cloud", "MaxQueueMinutes", 60, RangeValidator(1, 9999)
+        )
+        ## 等待用户在浏览器窗口里手动登录的时间（分钟）
+        self.Cloud_LoginTimeoutMinutes = ConfigItem(
+            "Cloud", "LoginTimeoutMinutes", 20, RangeValidator(1, 9999)
+        )
+        ## 各用户最近一次确认已登录的时间（user_id → ISO 时间），只读展示用，
+        ## 由运行结束后的写回与「登录云游戏」接口维护
+        self.Cloud_LastLogin = ConfigItem("Cloud", "LastLogin", "{ }", JSONValidator())
 
         ## Run -------------------------------------------------------------
         ## 失败任务最大尝试次数
@@ -2508,6 +2601,12 @@ class HSRConfig(ConfigBase):
             "Update", "MirrorChyanCDK", "", EncryptValidator()
         )
 
+        ## TaskSwitch / Stage / TaskOpt / Managed --------------------------
+        ## 脚本来源下的共享任务计划：本脚本下所有「脚本」来源用户共用一份，
+        ## 与 HSRUserConfig 同名组共用一处声明（Managed.TaskMapping 在这里是
+        ## 恒为空的惰性字段，脚本态的引擎分配写下面的 TaskMapping 组）
+        declare_hsr_plan_items(self)
+
         ## TaskMapping -----------------------------------------------------
         ## 模块脚本分配（延迟导入以避免循环依赖）
         from app.task.HSR.task_mapping import HSR_TASK_MODULES as _HSR_TASK_MODULES
@@ -2524,179 +2623,6 @@ class HSRConfig(ConfigBase):
             )
 
         self.UserData = MultipleConfig([HSRUserConfig])
-
-        super().__init__()
-
-
-class M9AUserConfig(ConfigBase):
-    """M9A用户配置"""
-
-    related_config: dict[str, MultipleConfig] = {}
-
-    def __init__(self) -> None:
-
-        ## Info ------------------------------------------------------------
-        ## 用户名称
-        self.Info_Name = ConfigItem("Info", "Name", "新用户", UserNameValidator())
-        ## 是否启用
-        self.Info_Status = ConfigItem("Info", "Status", True, BoolValidator())
-        ## 剩余天数
-        self.Info_RemainedDay = ConfigItem(
-            "Info", "RemainedDay", -1, RangeValidator(-1, 9999)
-        )
-        ## 配置来源（脚本/用户/直控）
-        self.Info_Mode = ConfigItem(
-            "Info", "Mode", "用户", UserDirectConfigModeValidator()
-        )
-        ## 是否启用快速配置（与配置来源独立，按用户保存）
-        self.Info_IfQuickConfig = ConfigItem(
-            "Info", "IfQuickConfig", True, BoolValidator()
-        )
-        ## 任务前执行脚本
-        self.Info_IfScriptBeforeTask = ConfigItem(
-            "Info", "IfScriptBeforeTask", False, BoolValidator()
-        )
-        self.Info_ScriptBeforeTask = ConfigItem(
-            "Info", "ScriptBeforeTask", "", FileValidator()
-        )
-        ## 任务后执行脚本
-        self.Info_IfScriptAfterTask = ConfigItem(
-            "Info", "IfScriptAfterTask", False, BoolValidator()
-        )
-        self.Info_ScriptAfterTask = ConfigItem(
-            "Info", "ScriptAfterTask", "", FileValidator()
-        )
-        ## 备注
-        self.Info_Notes = ConfigItem("Info", "Notes", "无")
-        ## 用户标签信息
-        self.Info_Tag = ConfigItem(
-            "Info", "Tag", "[ ]", VirtualConfigValidator(self.getTags)
-        )
-        ## 服务器资源
-        self.Info_Resource = ConfigItem("Info", "Resource", "官服")
-        ## 账号信息（用于切换账号）
-        self.Info_Account = ConfigItem("Info", "Account", "")
-
-        ## Task -------------------------------------------------------------
-        ## 可用任务列表（从 M9A 配置文件读取）
-        self.Task_AvailableTasks = ConfigItem(
-            "Task", "AvailableTasks", "[]", JSONValidator(list)
-        )
-        ## 运行任务队列 (用户在可用任务列表中选择)
-        self.Task_Queue = ConfigItem("Task", "Queue", "[]", JSONValidator(list))
-
-        ## Data ------------------------------------------------------------
-        ## 上次代理日期
-        self.Data_LastProxyDate = ConfigItem(
-            "Data", "LastProxyDate", "2000-01-01", DateTimeValidator("%Y-%m-%d")
-        )
-        ## 上次完成每日心相日期
-        self.Data_LastPsychubeDate = ConfigItem(
-            "Data", "LastPsychubeDate", "2000-01-01", DateTimeValidator("%Y-%m-%d")
-        )
-        ## 上次完成自动深眠月份
-        self.Data_LastLimboMonth = ConfigItem(
-            "Data", "LastLimboMonth", "2000-01", DateTimeValidator("%Y-%m")
-        )
-        ## 上次完成自动醒梦月份
-        self.Data_LastLucidscapeMonth = ConfigItem(
-            "Data", "LastLucidscapeMonth", "2000-01", DateTimeValidator("%Y-%m")
-        )
-        ## 代理次数
-        self.Data_ProxyTimes = ConfigItem(
-            "Data", "ProxyTimes", 0, RangeValidator(0, 9999)
-        )
-
-        ## Notify ----------------------------------------------------------
-        ## 是否启用通知
-        self.Notify_Enabled = ConfigItem("Notify", "Enabled", False, BoolValidator())
-        ## 是否发送统计信息
-        self.Notify_IfSendStatistic = ConfigItem(
-            "Notify", "IfSendStatistic", False, BoolValidator()
-        )
-        ## 是否发送邮件
-        self.Notify_IfSendMail = ConfigItem(
-            "Notify", "IfSendMail", False, BoolValidator()
-        )
-        ## 收件地址
-        self.Notify_ToAddress = ConfigItem("Notify", "ToAddress", "")
-        ## 是否启用 Server 酱
-        self.Notify_IfServerChan = ConfigItem(
-            "Notify", "IfServerChan", False, BoolValidator()
-        )
-        ## Server 酱密钥
-        self.Notify_ServerChanKey = ConfigItem("Notify", "ServerChanKey", "")
-        ## 自定义 Webhook 列表
-        self.Notify_CustomWebhooks = MultipleConfig([Webhook])
-
-        super().__init__()
-
-    def getTags(self) -> str:
-        """生成用户标签列表，返回JSON字符串格式的TagItem列表"""
-        tags = []
-
-        # 日常代理标签（使用东4区时间）
-        tags.append(_tag_proxy(self))
-
-        # 剩余天数标签
-        tags.append(_tag_remained_days(self))
-        # 备注标签
-        tags.append(_tag_notes(self))
-
-        return json.dumps(tags, ensure_ascii=False)
-
-
-class M9AConfig(ConfigBase):
-    """M9A配置"""
-
-    related_config: dict[str, MultipleConfig] = {}
-
-    def __init__(self) -> None:
-
-        ## Info ------------------------------------------------------------
-        ## M9A 脚本名称
-        self.Info_Name = ConfigItem("Info", "Name", "新 M9A 脚本")
-        ## M9A 路径
-        self.Info_Path = ConfigItem("Info", "Path", "", FolderValidator())
-
-        ## Emulator --------------------------------------------------------
-        ## 模拟器 ID
-        self.Emulator_Id = ConfigItem(
-            "Emulator",
-            "Id",
-            "-",
-            MultipleUIDValidator("-", self.related_config, "EmulatorConfig"),
-        )
-        ## 模拟器索引
-        self.Emulator_Index = ConfigItem("Emulator", "Index", "-")
-
-        ## Run -------------------------------------------------------------
-        ## 代理次数限制
-        self.Run_ProxyTimesLimit = ConfigItem(
-            "Run", "ProxyTimesLimit", 0, RangeValidator(0, 9999)
-        )
-        ## 运行次数限制
-        self.Run_RunTimesLimit = ConfigItem(
-            "Run", "RunTimesLimit", 3, RangeValidator(1, 9999)
-        )
-        ## 运行时间限制（分钟）
-        self.Run_RunTimeLimit = ConfigItem(
-            "Run", "RunTimeLimit", 10, RangeValidator(1, 9999)
-        )
-        ## 是否在队列结束后自动更新
-        self.Run_IfAutoUpdateAfterQueue = ConfigItem(
-            "Run", "IfAutoUpdateAfterQueue", False, BoolValidator()
-        )
-        ## 每日心相每日只执行一次
-        self.Run_IfPsychubeDailyOnce = ConfigItem(
-            "Run", "IfPsychubeDailyOnce", False, BoolValidator()
-        )
-        ## 深眠浅梦每月只执行一次
-        self.Run_IfSleepDreamMonthlyOnce = ConfigItem(
-            "Run", "IfSleepDreamMonthlyOnce", False, BoolValidator()
-        )
-
-        self.UserData = MultipleConfig([M9AUserConfig])
 
         super().__init__()
 
@@ -2863,15 +2789,28 @@ def _migrate_maafw_auto_update_mode(data: dict) -> dict:
 
 
 class MaaFWConfig(ConfigBase):
-    """MaaFW 项目配置"""
+    """MaaFW 项目配置。
+
+    特调类型（M9A）是它的子类：字段集完全一致，只改下面三个类属性。``ConfigBase.__init__``
+    在各子类 ``__init__`` 末尾才登记条目，子类不能在 ``super().__init__()`` 之后覆盖
+    ``ConfigItem``，所以默认值与用户类都由类属性驱动。
+    """
 
     related_config: dict[str, MultipleConfig] = {}
+
+    ## 新建脚本时的默认名
+    DEFAULT_SCRIPT_NAME = "新 MFW 脚本"
+    ## 用户配置类（子类换成自己的同形子类，ScriptConfig.json 里 type 才对得上）
+    USER_CONFIG_CLASS: type[ConfigBase] = MaaFWUserConfig
+    ## 特调钩子：``"模块路径:属性名"``，运行期由 MaaFW 引擎按需导入（避免 models 反向依赖 task）；
+    ## 通用 MaaFW 为 None。钩子只装饰任务选择，引擎里不出现任何专项名字。
+    FLAVOR: str | None = None
 
     def __init__(self) -> None:
 
         ## Info ------------------------------------------------------------
         ## MaaFW 脚本名称
-        self.Info_Name = ConfigItem("Info", "Name", "新 MFW 脚本")
+        self.Info_Name = ConfigItem("Info", "Name", self.DEFAULT_SCRIPT_NAME)
         ## 项目标签，可用于区分同一 ProjectInterface 的不同实例
         self.Info_ProjectLabel = ConfigItem("Info", "ProjectLabel", "")
         ## MaaFW 项目根目录，应包含 interface.json
@@ -3031,56 +2970,16 @@ class MaaFWConfig(ConfigBase):
         self.Update_GitHubTag = ConfigItem("Update", "GitHubTag", "")
         self.Update_GitHubAssetPattern = ConfigItem("Update", "GitHubAssetPattern", "")
 
-        ## Managed --------------------------------------------------------
-        ## 是否由 Project Store 和 Runtime Pool 托管项目资源
-        self.Managed_Enabled = ConfigItem("Managed", "Enabled", False, BoolValidator())
-        self.Managed_ProjectId = ConfigItem("Managed", "ProjectId", "")
-        self.Managed_StoreId = ConfigItem("Managed", "StoreId", "")
-        self.Managed_Version = ConfigItem("Managed", "Version", "")
-        self.Managed_RuntimeConstraint = ConfigItem("Managed", "RuntimeConstraint", "")
-        self.Managed_ProjectManifest = ConfigItem(
-            "Managed", "ProjectManifest", "{ }", JSONValidator(dict)
-        )
-        self.Managed_CheckoutPath = ConfigItem("Managed", "CheckoutPath", "")
-        self.Managed_PendingUpgrade = ConfigItem(
-            "Managed", "PendingUpgrade", "{ }", JSONValidator(dict)
-        )
-        self.Managed_LastOperation = ConfigItem(
-            "Managed", "LastOperation", "{ }", JSONValidator(dict)
-        )
-
-        ## ManagedRuntime -------------------------------------------------
-        self.ManagedRuntime_RuntimeId = ConfigItem("ManagedRuntime", "RuntimeId", "")
-        self.ManagedRuntime_PoolId = ConfigItem("ManagedRuntime", "PoolId", "")
-        self.ManagedRuntime_PythonExecutable = ConfigItem(
-            "ManagedRuntime", "PythonExecutable", ""
-        )
-        self.ManagedRuntime_VenvPath = ConfigItem("ManagedRuntime", "VenvPath", "")
-        self.ManagedRuntime_RuntimeBinding = ConfigItem(
-            "ManagedRuntime", "RuntimeBinding", "{ }", JSONValidator(dict)
-        )
-
-        ## ManagedRemote --------------------------------------------------
-        self.ManagedRemote_Source = ConfigItem(
-            "ManagedRemote",
-            "Source",
-            "MirrorChyan",
-            OptionsValidator(["MirrorChyan", "GitHub"]),
-        )
-        self.ManagedRemote_Channel = ConfigItem(
-            "ManagedRemote", "Channel", "stable", OptionsValidator(["stable", "beta"])
-        )
-        self.ManagedRemote_MirrorChyanRID = ConfigItem(
-            "ManagedRemote", "MirrorChyanRID", ""
-        )
-        self.ManagedRemote_MirrorChyanCDK = ConfigItem(
-            "ManagedRemote", "MirrorChyanCDK", "", EncryptValidator()
-        )
-        self.ManagedRemote_GitHubRepo = ConfigItem("ManagedRemote", "GitHubRepo", "")
-        self.ManagedRemote_GitHubTag = ConfigItem("ManagedRemote", "GitHubTag", "")
-        self.ManagedRemote_GitHubAssetPattern = ConfigItem(
-            "ManagedRemote", "GitHubAssetPattern", r"\.zip$"
-        )
+        ## Embedded -------------------------------------------------------
+        ## 由 AUTO-MAS 内嵌一份按 interface 白名单投影的副本来运行。副本在
+        ## data/mfw/<脚本 uuid 前 12 位>/，由脚本 ID 推出、不进配置、用户不可手改；
+        ## Info.Path 继续存用户选的来源目录。更新落地时同样只写白名单内的条目。
+        ## 导入时来源的 interface 版本，仅展示
+        self.Embedded_SourceVersion = ConfigItem("Embedded", "SourceVersion", "")
+        ## 导入时间，仅展示
+        self.Embedded_ImportedAt = ConfigItem("Embedded", "ImportedAt", "")
+        ## 投影报告（省下多少、外壳家族、排除条数与原因），JSON 字符串
+        self.Embedded_Report = ConfigItem("Embedded", "Report", "{ }", JSONValidator())
 
         ## Run -------------------------------------------------------------
         ## 运行引擎，决定「谁来跑」：
@@ -3129,13 +3028,35 @@ class MaaFWConfig(ConfigBase):
             "Selection", "Tasks", "[ ]", JSONValidator(list)
         )
 
-        self.UserData = MultipleConfig([MaaFWUserConfig])
+        self.UserData = MultipleConfig([self.USER_CONFIG_CLASS])
 
         super().__init__()
 
     async def load(self, data: dict) -> bool:
         """加载脚本配置前迁移旧版 Update.IfAutoUpdate 布尔开关。"""
         return await super().load(_migrate_maafw_auto_update_mode(data))
+
+
+class M9AUserConfig(MaaFWUserConfig):
+    """M9A 用户配置：与 MaaFW 用户配置同形。
+
+    ``Info.Account`` 在这里不只是备注：脚本资源为官服且账号非空时，运行前会自动插入
+    「切换账号」任务（见 ``app/task/M9A/flavor.py``）。
+    """
+
+
+class M9AConfig(MaaFWConfig):
+    """M9A 脚本配置：MaaFW 的特调类型。
+
+    字段集与 MaaFW 完全一致，运行、更新、内嵌副本全部走 MaaFW 引擎；差别只有类型身份
+    （键 / 图标 / 创建卡）、默认脚本名，以及运行前的队列装饰（启动 / 关闭游戏首尾、
+    ``Info.Account`` 绑定切号）。旧版 M9A 专项的配置形状在启动时由
+    ``app/task/M9A/migration.py`` 一次性迁到这个形状。
+    """
+
+    DEFAULT_SCRIPT_NAME = "新 M9A 脚本"
+    USER_CONFIG_CLASS = M9AUserConfig
+    FLAVOR = "app.task.M9A.flavor:FLAVOR"
 
 
 class MaaPlanConfig(ConfigBase):
@@ -5032,19 +4953,21 @@ class GlobalConfig(ConfigBase):
         self.ScriptConfig = MultipleConfig(list(CLASS_BOOK.values()))
         ## 队列配置列表
         self.QueueConfig = MultipleConfig([QueueConfig])
+        ## 启动期攒下、主连接建立后一次性发出的系统通知
+        self.startup_notices: list[dict[str, Any]] = []
         ## 工具箱配置
         self.ToolsConfig = ToolsConfig()
 
         MaaConfig.related_config["EmulatorConfig"] = self.EmulatorConfig
         MaaEndConfig.related_config["EmulatorConfig"] = self.EmulatorConfig
         SrcConfig.related_config["EmulatorConfig"] = self.EmulatorConfig
-        M9AConfig.related_config["EmulatorConfig"] = self.EmulatorConfig
         MaaFWConfig.related_config["EmulatorConfig"] = self.EmulatorConfig
         GeneralConfig.related_config["EmulatorConfig"] = self.EmulatorConfig
         BAAHConfig.related_config["EmulatorConfig"] = self.EmulatorConfig
         MaaUserConfig.related_config["PlanConfig"] = self.PlanConfig
         MaaEndUserConfig.related_config["PlanConfig"] = self.PlanConfig
         QueueItem.related_config["ScriptConfig"] = self.ScriptConfig
+        HSRUserConfig.related_config["ScriptConfig"] = self.ScriptConfig
 
     def getStage(self) -> str:
         """获取关卡信息"""

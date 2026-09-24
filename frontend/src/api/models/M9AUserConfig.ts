@@ -2,26 +2,34 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-import type { M9AUserConfig_Data } from './M9AUserConfig_Data';
-import type { M9AUserConfig_Info } from './M9AUserConfig_Info';
-import type { M9AUserConfig_Notify } from './M9AUserConfig_Notify';
-import type { M9AUserConfig_Task } from './M9AUserConfig_Task';
+import type { MaaFWUserConfig_Data } from './MaaFWUserConfig_Data';
+import type { MaaFWUserConfig_Device } from './MaaFWUserConfig_Device';
+import type { MaaFWUserConfig_Info } from './MaaFWUserConfig_Info';
+import type { MaaFWUserConfig_Notify } from './MaaFWUserConfig_Notify';
+import type { MaaFWUserConfig_Task } from './MaaFWUserConfig_Task';
+/**
+ * M9A 用户配置：与 MaaFW 用户配置同形（M9A 是 MaaFW 的特调类型）。
+ */
 export type M9AUserConfig = {
     /**
      * 基础信息
      */
-    Info?: (M9AUserConfig_Info | null);
+    Info?: (MaaFWUserConfig_Info | null);
     /**
      * 任务配置
      */
-    Task?: (M9AUserConfig_Task | null);
+    Task?: (MaaFWUserConfig_Task | null);
+    /**
+     * 设备覆盖配置
+     */
+    Device?: (MaaFWUserConfig_Device | null);
     /**
      * 用户数据
      */
-    Data?: (M9AUserConfig_Data | null);
+    Data?: (MaaFWUserConfig_Data | null);
     /**
      * 单独通知
      */
-    Notify?: (M9AUserConfig_Notify | null);
+    Notify?: (MaaFWUserConfig_Notify | null);
 };
 

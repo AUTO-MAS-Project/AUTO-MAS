@@ -25,10 +25,11 @@
 （``app.utils.config_restore``）从 ``files`` + ``backup_root`` 声明派生。
 备份文件级原语见同目录 ``backup_archive``。
 
-mas 池 = **纯字段侧车**（HSR 无 per-user 目录，用户配置即字段）：MAS 用户
-配置全量（Info/TaskSwitch/Stage/TaskOpt/Notify/Control/Managed/Direct
-元数据，平铺键 ``组.键``；Info.Mode 仅预览；不收录加密凭据与快照内容、
-Data 运行统计、子表）。恢复 = 回填 UserData。native 池 = M7A config.yaml +
+mas 池 = **纯字段侧车**（HSR 无 per-user 目录，用户配置即字段）：用户表
+（Info/Notify/Control）恒按用户，计划表（TaskSwitch/Stage/TaskOpt/Managed）
+按配置来源取脚本共享计划或用户计划，平铺键 ``组.键``，另带 ``_plan_owner``
+标注；Info.Mode 仅预览；不收录加密凭据、Data 运行统计、子表。恢复 = 用户表
+回填 UserData、计划表写回当前 owner。native 池 = M7A config.yaml +
 SRA settings.json/cache.json/configs/（按 SRA appdata 根 + M7A 安装根
 组合指纹分桶）。
 """
@@ -47,15 +48,15 @@ from .backup_archive import (
     build_overlay_preview,
     collect_native_files,
     get_mas_backup_dir,
-    group_overlay,
     mas_backup_root,
     native_backup_root,
+    read_mas_overlay,
     read_overlay_sidecar,
-    read_overlay_values,
     restore_mas_backup,
+    restore_mas_overlay,
     restore_native_backup,
 )
-from .native_control import resolve_script_path
+from .native_control import resolve_plan_owner, resolve_script_path
 from .sra_runtime import get_sra_app_data_dir
 
 logger = get_logger("HSR 配置恢复")
@@ -89,7 +90,7 @@ async def _mas_files(ctx: RestoreContext) -> dict[str, str] | None:
 
     _user_guard(ctx)
     user = ctx.script_config.UserData[uuid.UUID(ctx.user_id)]
-    overlay = read_overlay_values(user)
+    overlay = read_mas_overlay(user, ctx.script_config)
     if not overlay:
         return None
     return {OVERLAY_SIDECAR_NAME: json.dumps(overlay, ensure_ascii=False, indent=2)}
@@ -104,18 +105,24 @@ async def _preview_mas(ctx: RestoreContext, ts: str) -> dict:
     if backup_dir is None:
         raise ValueError(f"备份不存在: {ts}")
     overlay = read_overlay_sidecar(backup_dir)
-    return build_overlay_preview(overlay) if overlay else {"sections": []}
+    if not overlay:
+        return {"sections": []}
+    current_owner = None
+    user_uid = uuid.UUID(ctx.user_id)
+    if user_uid in ctx.script_config.UserData:
+        current_owner = resolve_plan_owner(ctx.script_config.UserData[user_uid])
+    return build_overlay_preview(overlay, current_owner=current_owner)
 
 
 async def _restore_mas(ctx: RestoreContext, ts: str) -> None:
     _user_guard(ctx)
     user = ctx.script_config.UserData[uuid.UUID(ctx.user_id)]
-    overlay = read_overlay_values(user)
+    overlay = read_mas_overlay(user, ctx.script_config)
     if overlay:
         archive_mas_backup(ctx.script_id, ctx.user_id, overlay, force=True)
     restored = restore_mas_backup(ctx.script_id, ctx.user_id, ts)
     if restored:
-        await user.update(group_overlay(restored))
+        await restore_mas_overlay(user, ctx.script_config, restored)
 
 
 # ══════════════════ native 池（声明式 + 定制预览/恢复） ══════════════════

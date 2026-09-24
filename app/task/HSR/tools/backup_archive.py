@@ -31,17 +31,22 @@ HSR 是唯一一对多专项（一个 ScriptType 编排 M7A 与 SRA 两个上游
   ``mas``（编辑会话包络的 MAS 侧终态）。
 
 ``mas`` 池是**纯字段侧车**（HSR 无 per-user 目录，用户配置即字段），
-收录 **MAS 用户配置全量**（对齐 MAA「MAS 独有配置全量进侧车」口径）：
-Info（名称/状态/服务器/剩余天数/前后脚本/备注）、TaskSwitch 任务开关、
-Stage 副本配置（含原生关卡 JSON）、TaskOpt、Notify 通知、Control 引擎
-开关、Managed.TaskMapping/Options（托管覆盖值，运行时物化进原生）、
-Direct.*ImportedAt/Source（直控快照元数据）。侧车内平铺键为
-``组.键``（如 ``TaskSwitch.Daily``）。**不收录**：Info.Id/Password（加密
-凭据）、Direct.SRAConfig/M7AConfig（加密快照内容，API 不外泄）、
-IfQuickConfig（HSR 不支持快速配置，死开关）、Info.Tag（虚拟字段）、
-Data.*（运行统计与完成态，恢复配置不恢复统计）、Notify.CustomWebhooks
-（子表结构）。Info.Mode 仅预览不回填（回填旧来源会翻转脚本态/用户态/
-直控）。恢复即字段回填。
+收录 **MAS 用户配置全量**（对齐 MAA「MAS 独有配置全量进侧车」口径），分两表：
+
+- 用户表（恒读写用户配置）：Info（名称/状态/服务器/剩余天数/前后脚本/
+  备注）、Notify 通知、Control 直控引擎开关；
+- 计划表（按配置来源读写）：TaskSwitch 任务开关、Stage 副本配置（含原生
+  关卡 JSON）、TaskOpt、Managed.TaskMapping/Options（托管覆盖值，运行时
+  物化进原生）。「脚本」来源读写脚本配置上的共享计划（不含惰性的
+  Managed.TaskMapping），其余来源读写用户自己的计划。侧车另带
+  ``_plan_owner``（script / user）标注备份时的计划来源。
+
+侧车内平铺键为 ``组.键``（如 ``TaskSwitch.Daily``）。**不收录**：
+Info.Id/Password（加密凭据）、IfQuickConfig（HSR 不支持快速配置，死开关）、
+Info.Tag（虚拟字段）、Data.*（运行统计与完成态，恢复配置不恢复统计）、
+Notify.CustomWebhooks（子表结构）。Info.Mode 仅预览不回填（回填旧来源会
+翻转脚本态/用户态/直控）。恢复即字段回填，计划表写回**当前** owner；旧版
+侧车里已删除的 ``Direct.*`` 等键不回填。
 
 ``native`` 池 = M7A ``config.yaml`` + SRA ``settings.json``/``cache.json``/
 ``configs/``，按 **SRA appdata 根 + M7A 安装根的组合指纹分桶**（SRA appdata
@@ -78,7 +83,7 @@ logger = get_logger("HSR 配置备份")
 
 # ══════════════════ MAS 用户字段侧车（纯侧车，无目录） ══════════════════
 
-_OVERLAY_KEY_GROUPS: dict[str, tuple[str, ...]] = {
+_USER_KEY_GROUPS: dict[str, tuple[str, ...]] = {
     "Info": (
         "Mode",
         "Name",
@@ -91,9 +96,6 @@ _OVERLAY_KEY_GROUPS: dict[str, tuple[str, ...]] = {
         "ScriptAfterTask",
         "Notes",
     ),
-    "TaskSwitch": ("Daily", "ReceiveRewards", "DivergentUniverse", "CurrencyWars"),
-    "Stage": ("Channel", "ScriptStage", "ScriptEchoOfWar"),
-    "TaskOpt": ("EchoOfWarWeekday",),
     "Notify": (
         "Enabled",
         "IfSendStatistic",
@@ -103,14 +105,34 @@ _OVERLAY_KEY_GROUPS: dict[str, tuple[str, ...]] = {
         "ServerChanKey",
     ),
     "Control": ("SRA", "M7A"),
-    "Managed": ("TaskMapping", "Options"),
-    "Direct": ("SRAImportedAt", "M7AImportedAt", "SRASource", "M7ASource"),
 }
-"""侧车收录的配置段与键（MAS 用户配置全量，见模块 docstring 的排除清单）。
+"""恒按用户读写的侧车段与键（只存在于 HSRUserConfig 上）。"""
 
-侧车内平铺键为 ``组.键``——Info.Mode 与 Control.Mode 历史同名，裸键平铺
-会互相覆盖；前缀形式也便于 group_overlay 按段解析。
+_PLAN_KEY_GROUPS: dict[str, tuple[str, ...]] = {
+    "TaskSwitch": ("Daily", "ReceiveRewards", "DivergentUniverse", "CurrencyWars"),
+    "Stage": ("Channel", "ScriptStage", "ScriptEchoOfWar"),
+    "TaskOpt": ("EchoOfWarWeekday",),
+    "Managed": ("TaskMapping", "Options"),
+}
+"""任务计划段与键：按配置来源从脚本配置（共享计划）或用户配置读写。
+
+两表分开是硬约束：``ConfigBase.get`` 对不存在的项直接抛 ``AttributeError``，
+脚本配置上没有 Notify / Control，``Info.Name`` 又是脚本名——绝不能拿脚本
+配置读用户表。侧车内平铺键为 ``组.键``，便于 group_overlay 按段解析。
 """
+
+_SCRIPT_PLAN_KEY_GROUPS: dict[str, tuple[str, ...]] = {
+    **_PLAN_KEY_GROUPS,
+    "Managed": ("Options",),
+}
+"""脚本共享计划实际读写的键：脚本级 ``Managed.TaskMapping`` 是恒为空的惰性
+字段（脚本态引擎分配在脚本 ``TaskMapping`` 组），既不备份也不回填，免得把
+某个用户的旧覆盖写成全体共享的隐藏覆盖。"""
+
+_PLAN_OWNER_KEY = "_plan_owner"
+"""侧车里标注任务计划来源的键（``script`` / ``user``）；只预览，不回填。"""
+
+_PLAN_OWNER_LABELS = {"script": "脚本共享", "user": "用户独立"}
 
 _OVERLAY_PREVIEW_ONLY_KEYS = {"Info.Mode"}
 """仅预览不回填的字段：配置来源决定运行方式，恢复时以当前值为准"""
@@ -144,10 +166,6 @@ _OVERLAY_FIELD_LABELS: dict[tuple[str, str], str] = {
     ("Control", "M7A"): "M7A 引擎开关",
     ("Managed", "TaskMapping"): "任务映射",
     ("Managed", "Options"): "托管覆盖",
-    ("Direct", "SRAImportedAt"): "SRA 快照导入时间",
-    ("Direct", "M7AImportedAt"): "M7A 快照导入时间",
-    ("Direct", "SRASource"): "SRA 快照来源",
-    ("Direct", "M7ASource"): "M7A 快照来源",
 }
 """侧车字段中文标签（对齐 HSR 编辑页词表）"""
 
@@ -185,25 +203,55 @@ _TASKSWITCH_MODULE_LABELS = {
 """TaskSwitch 模块键 → 中文（task_mapping 的模块中文名）"""
 
 
-def read_overlay_values(config) -> dict:
-    """读取配置对象的 MAS 用户配置字段（鸭子类型，仅需 ``get(group, key)``）。
+def read_overlay_values(config, groups: dict[str, tuple[str, ...]]) -> dict:
+    """读取配置对象上 ``groups`` 列出的字段（鸭子类型，仅需 ``get(group, key)``）。
 
-    值为 ``None``（配置项不存在）的键不纳入侧车；平铺键为 ``组.键``。
+    ``groups`` 必须与 ``config`` 的类型对应（用户表只配用户配置），否则
+    ``ConfigBase.get`` 会对不存在的项抛 ``AttributeError``。值为 ``None`` 的
+    键不纳入侧车；平铺键为 ``组.键``。
     """
 
     values: dict = {}
-    for group, keys in _OVERLAY_KEY_GROUPS.items():
+    for group, keys in groups.items():
         for key in keys:
             if (value := config.get(group, key)) is not None:
                 values[f"{group}.{key}"] = value
     return values
 
 
+def _plan_target(user_config, script_config):
+    """当前生效的任务计划对象与 owner 标注（直控按用户处理：没有共享计划）。"""
+
+    from .native_control import resolve_plan_owner
+
+    if resolve_plan_owner(user_config) == "script":
+        return script_config, "script"
+    return user_config, "user"
+
+
+def read_mas_overlay(user_config, script_config) -> dict:
+    """按当前配置来源读取一个用户的 MAS 字段侧车。
+
+    用户表恒从 ``user_config`` 读；计划表在「脚本」来源下从 ``script_config``
+    读共享计划，其余来源从 ``user_config`` 读。侧车带 ``_plan_owner`` 标注。
+    """
+
+    plan, owner = _plan_target(user_config, script_config)
+    values = read_overlay_values(user_config, _USER_KEY_GROUPS)
+    values.update(
+        read_overlay_values(
+            plan, _SCRIPT_PLAN_KEY_GROUPS if owner == "script" else _PLAN_KEY_GROUPS
+        )
+    )
+    values[_PLAN_OWNER_KEY] = owner
+    return values
+
+
 def group_overlay(overlay: dict) -> dict[str, dict]:
-    """把 ``组.键`` 平铺侧车按配置段分组（恢复回填 HSRUserConfig 用）。
+    """把 ``组.键`` 平铺侧车按配置段分组。
 
     仅预览字段（配置来源）不回填：回填旧来源会静默翻转脚本态/用户态/直控。
-    无组前缀的键（旧格式侧车）无法定位段，跳过不回填。
+    无组前缀的键（旧格式侧车、``_plan_owner`` 标注）无法定位段，跳过不回填。
     """
 
     grouped: dict[str, dict] = {}
@@ -215,6 +263,78 @@ def group_overlay(overlay: dict) -> dict[str, dict]:
             continue
         grouped.setdefault(group, {})[name] = value
     return grouped
+
+
+def split_overlay_for_restore(
+    overlay: dict,
+    *,
+    plan_owner: str = "user",
+) -> tuple[dict[str, dict], dict[str, dict]]:
+    """把侧车拆成 (用户段, 计划段) 两份待回填数据，丢弃不该回填的键。
+
+    旧版侧车里的 ``Direct.*``、``Control.Mode`` 等已删除字段不回填——直接
+    ``update`` 会因配置项不存在抛错；写回脚本共享计划时也不回填惰性的
+    ``Managed.TaskMapping``。
+    """
+
+    plan_table = _SCRIPT_PLAN_KEY_GROUPS if plan_owner == "script" else _PLAN_KEY_GROUPS
+    user_part: dict[str, dict] = {}
+    plan_part: dict[str, dict] = {}
+    for group, values in group_overlay(overlay).items():
+        for table, target in (
+            (_USER_KEY_GROUPS, user_part),
+            (plan_table, plan_part),
+        ):
+            allowed = table.get(group)
+            if not allowed:
+                continue
+            kept = {key: value for key, value in values.items() if key in allowed}
+            if kept:
+                target[group] = kept
+    _migrate_legacy_stage_values(plan_part.get("Stage"))
+    return user_part, plan_part
+
+
+def _migrate_legacy_stage_values(stage: dict | None) -> None:
+    """把旧版侧车里误存的 SRA 副本编号就地迁成真实关卡编号。
+
+    升级前归档的侧车仍是旧载荷（label 为字典 repr、level 为数组位置）。回填走
+    ``update`` 不经 ``HSRUserConfig.load`` 的迁移，脚本共享计划更是从不迁移；
+    不在这里改，恢复一次旧备份就会让历战余响 / 饰品提取重新刷错关卡。
+    """
+
+    if not stage:
+        return
+    from .stage_runtime import migrate_sra_legacy_stage_labels
+
+    for field in ("ScriptStage", "ScriptEchoOfWar"):
+        if field not in stage:
+            continue
+        migrated, count, _unresolved = migrate_sra_legacy_stage_labels(stage[field])
+        if migrated is not None:
+            stage[field] = migrated
+            logger.info(
+                f"恢复的 Stage.{field} 已迁移 {count} 条 SRA 副本到真实关卡编号"
+            )
+
+
+async def restore_mas_overlay(user_config, script_config, overlay: dict) -> None:
+    """把侧车回填到用户配置与**当前** owner 的任务计划上。
+
+    备份时是用户独立、当前是脚本共享（或反之）也照样写回当前 owner，不另做
+    校验——写回共享计划会影响本脚本下其他「脚本」来源用户，预览里已标注。
+    """
+
+    plan, owner = _plan_target(user_config, script_config)
+    user_part, plan_part = split_overlay_for_restore(overlay, plan_owner=owner)
+    if plan is user_config:
+        for group, values in plan_part.items():
+            user_part.setdefault(group, {}).update(values)
+        plan_part = {}
+    if user_part:
+        await user_config.update(user_part)
+    if plan_part:
+        await plan.update(plan_part)
 
 
 def mas_backup_root(script_id: str, user_id: str) -> Path:
@@ -455,11 +575,15 @@ def _overlay_row(flat_key: str, value) -> dict:
     return {"key": label, "value": _summary_text(value)}
 
 
-def build_overlay_preview(overlay: dict) -> dict:
+def build_overlay_preview(overlay: dict, current_owner: str | None = None) -> dict:
     """mas 池预览：MAS 用户配置全量分区（侧车收录什么就展示什么）。
 
     分区：MAS 独有配置（来源/用户名/启用状态/服务器/脚本/直控引擎/备注）
-    → 任务配置（任务开关/副本）→ 通知 → 托管配置（映射/覆盖）→ 直控快照。
+    → 任务配置（来源/任务开关/副本）→ 通知 → 托管配置（映射/覆盖）。
+
+    ``current_owner`` 是该用户**当前**的计划 owner（``script`` / ``user``）：
+    恢复总是写回当前 owner，当前为脚本共享时加一行提示影响范围。没有
+    ``_plan_owner`` 标注的旧侧车按用户独立展示（旧版只有用户计划）。
     """
 
     sections: list[dict] = []
@@ -521,6 +645,20 @@ def build_overlay_preview(overlay: dict) -> dict:
         sections.append({"name": "mas-only", "label": "MAS 独有配置", "rows": mas_rows})
 
     task_rows: list[dict] = []
+    backup_owner = str(overlay.get(_PLAN_OWNER_KEY) or "user")
+    task_rows.append(
+        {
+            "key": "任务配置来源",
+            "value": _PLAN_OWNER_LABELS.get(backup_owner, backup_owner),
+        }
+    )
+    if current_owner == "script":
+        task_rows.append(
+            {
+                "key": "恢复写回",
+                "value": "脚本共享任务配置，会影响本脚本下所有「脚本」来源用户",
+            }
+        )
     if any(has("TaskSwitch", key) for key in _TASKSWITCH_MODULE_LABELS):
         enabled = [
             label
@@ -592,14 +730,6 @@ def build_overlay_preview(overlay: dict) -> dict:
     if managed_rows:
         sections.append({"name": "managed", "label": "托管配置", "rows": managed_rows})
 
-    direct_rows: list[dict] = []
-    for key in _OVERLAY_KEY_GROUPS["Direct"]:
-        flat_key = f"Direct.{key}"
-        if flat_key in overlay and str(overlay[flat_key]).strip():
-            direct_rows.append(_overlay_row(flat_key, overlay[flat_key]))
-    if direct_rows:
-        sections.append({"name": "direct", "label": "直控快照", "rows": direct_rows})
-
     return {"sections": sections}
 
 
@@ -633,7 +763,7 @@ def build_native_preview(
     m7a_payload = _load_yaml_dict(backup_dir / "M7A" / "config.yaml")
     m7a_rows = _m7a_preview_rows(m7a_payload) if m7a_payload else []
     if m7a_rows:
-        sections.append({"name": "m7a", "label": "M7A（三月七助手）", "rows": m7a_rows})
+        sections.append({"name": "m7a", "label": "M7A（三月七）", "rows": m7a_rows})
 
     for rel in sorted(files):
         if not rel.startswith(f"{_SRA_CONFIGS_DIR}/") or not rel.endswith(".json"):

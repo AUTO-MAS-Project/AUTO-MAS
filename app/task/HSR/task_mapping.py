@@ -115,7 +115,7 @@ def script_supports(module_key: str, script: ScriptType) -> bool:
     return script in module.supported_scripts
 
 
-ENGINE_DISPLAY_NAMES: dict[str, str] = {"M7A": "三月七助手", "SRA": "SRA"}
+ENGINE_DISPLAY_NAMES: dict[str, str] = {"M7A": "三月七", "SRA": "SRA"}
 
 
 @dataclass(frozen=True)
@@ -144,8 +144,14 @@ def resolve_script_assignment(
 ) -> HSRScriptAssignment:
     """解析模块执行脚本，并保留「是否回落、从哪个到哪个」供调用方呈现。
 
-    纯函数，不写日志。
+    云·星穹铁道只用三月七（SRA 接不上 MAS 托管的浏览器）：平台为云时不走
+    四级回落，用户覆盖与脚本 TaskMapping 一律忽略。纯函数，不写日志。
     """
+
+    from .tools.account_switch import is_cloud_platform
+
+    if is_cloud_platform(script_config):
+        return HSRScriptAssignment(script="M7A", requested="M7A")
 
     assigned = None
     if user_config is not None:
