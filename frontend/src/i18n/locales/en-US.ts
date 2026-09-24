@@ -3257,7 +3257,6 @@ export default {
       label: 'Layout:',
       mixed: 'Mixed stages',
       single: 'One type per day',
-      singleRowLabel: 'Which stage type',
       emptyOption: 'None',
     },
     typeFallback: 'plan',
@@ -3315,6 +3314,14 @@ export default {
       partAcademy: 'Academy',
       partChapter: 'Chapter',
       partLevelZeroFixed: 'The stage must be -1 (last stage) or at least 1; changed to 1',
+      // One row per thing in the one-kind-per-day layout, so the hint spells out that row's range
+      rowKind: 'Stage',
+      rowStage: 'Number',
+      rowTimes: 'Times',
+      rowKindHint: 'Which stage kind to run today; "None" runs none of the six',
+      rowStageHint:
+        'Which stage of that kind; bounty hunt, special task and academy exchange accept -1 (last stage), while hard and normal stages start at 1',
+      rowTimesHint: 'How many times to run it; -1 means the maximum',
     },
     toast: {
       created: 'Created a new {type}: "{name}"',

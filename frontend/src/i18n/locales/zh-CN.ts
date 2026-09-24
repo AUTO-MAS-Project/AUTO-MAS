@@ -3130,8 +3130,6 @@ export default {
       label: '关卡：',
       mixed: '多类混打',
       single: '每天一类',
-      // 每天一类最上面那一行：一行一个下拉，问的是这一天打哪一类
-      singleRowLabel: '打哪类关卡',
       emptyOption: '不打',
     },
     typeFallback: '计划表',
@@ -3190,6 +3188,14 @@ export default {
       partChapter: '章节',
       // 关卡位只认 -1 或 >= 1，用户填 0 时界面直接改成 1，这条说明改了什么
       partLevelZeroFixed: '关卡位只能填 -1（最高关）或 1 以上，已改为 1',
+      // 每天一类那三行的行标题：一行只管一件事，行首的提示写明这一行的取值范围
+      rowKind: '关卡',
+      rowStage: '序号',
+      rowTimes: '次数',
+      rowKindHint: '今天打哪一类关卡；选「不打」则今天六类都不跑',
+      rowStageHint:
+        '打到这一类的第几关；悬赏通缉、特殊任务、学园交流会可填 -1（最高关），困难与普通关卡必须从 1 开始',
+      rowTimesHint: '这一类打几次；-1 表示最大',
     },
     toast: {
       created: '已创建新的{type}："{name}"',

@@ -2703,7 +2703,6 @@ export default {
       label: '形式：',
       mixed: '複数種類',
       single: '1日1種類',
-      singleRowLabel: 'どのステージ種別',
       emptyOption: 'なし',
     },
     typeFallback: 'プラン',
@@ -2761,6 +2760,14 @@ export default {
       partAcademy: '学園',
       partChapter: '章',
       partLevelZeroFixed: 'ステージは -1（最後のステージ）または 1 以上のみです。1 に変更しました',
+      // 1 日 1 種類のレイアウトは 1 行につき 1 項目なので、ヒントにその行の範囲を書く
+      rowKind: 'ステージ',
+      rowStage: '番号',
+      rowTimes: '回数',
+      rowKindHint: '今日やるステージ種別。「なし」なら 6 種類とも実行しません',
+      rowStageHint:
+        'その種別の何番目のステージか。懸賞手配・特殊任務・学園交流会は -1（最後のステージ）が使え、ハードとノーマルは 1 以上のみ',
+      rowTimesHint: 'この種別を何回やるか。-1 は最大',
     },
     toast: {
       created: '新しい{type}「{name}」を作成しました',
