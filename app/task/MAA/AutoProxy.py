@@ -1980,7 +1980,9 @@ class AutoProxyTask(TaskExecuteBase):
             self.cur_user_log.status = "MAA 未选择任何任务"
         elif "任务出错: 开始唤醒" in log:
             self.cur_user_log.status = "MAA 未能正确登录 PRTS"
-        elif "任务已全部完成！" in log:
+        # MAA v6.18.0-beta.3 起任务出错时收尾标题改为「任务已完成，但出现错误！」，
+        # 只有全部成功才打「任务已全部完成！」，完成判定两个都要认。
+        elif "任务已全部完成！" in log or "任务已完成，但出现错误！" in log:
             # 关闭时不读取/反推来源队列；成功与失败均取自 MAA 本轮输出。
             for en_task, zh_task in zip(MAA_TASKS, MAA_TASKS_ZH):
                 if (
