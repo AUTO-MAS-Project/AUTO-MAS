@@ -411,6 +411,11 @@ class AppLaunchMixin(DeviceBase):
         """启动设备；给了包名就在设备就绪后把应用也拉起来。
 
         不给包名时行为与原生实现完全一致，只开模拟器——中间多出的两个钩子默认是空的。
+
+        应用拉不起来照常返回，**唯独等不到系统启动完成时抛异常**：那说明整个等待期内
+        adb 要么连不上这台设备、要么安卓一直没起完，脚本接手也只会报 ADB 连接异常。
+        在这里判失败，调用方会按「模拟器启动失败」关掉它再重试，而不是带着一台用不了的
+        模拟器往下跑。
         """
         try:
             await self.prepare_launch(idx)
@@ -422,7 +427,12 @@ class AppLaunchMixin(DeviceBase):
         except Exception as e:  # noqa: BLE001 - 同上
             logger.warning(f"启动后钩子失败，实例 {idx} 继续: {e}")
         if package_name:
-            await self.launch_app(idx, package_name, info)
+            result = await self.launch_app(idx, package_name, info)
+            if result.reason == "boot-timeout":
+                raise RuntimeError(
+                    f"实例 {idx} 已在线，但等待安卓系统启动完成超时"
+                    f"（ADB {info.adb_address}）"
+                )
         return info
 
     async def launch_app(
