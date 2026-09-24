@@ -3320,10 +3320,10 @@ export default {
       rowTimes: 'Battle count',
       rowKindHint: 'Which stage kind to run today; "None" runs none of the six',
       rowStageHint:
-        'Which stage of that kind to run; bounty hunt, special task and academy exchange can pick the last raid-able stage (one stage further back if that one cannot be raided), while hard and normal stages only take a concrete stage number',
+        'Which stage of that kind to run; bounty hunt, special task and academy exchange can pick the last stage from the end that can be raided (it steps one stage back when that one cannot be raided), while hard and normal stages only take a concrete stage number',
       rowTimesHint: 'How many times to run it; "Max runs" sweeps every remaining run at once',
       // The dropdown entry that stands for -1: the last raid-able stage, or the maximum run count
-      stageHighest: 'Last stage',
+      stageHighest: 'Last raid-able',
       timesMax: 'Max runs',
     },
     toast: {
