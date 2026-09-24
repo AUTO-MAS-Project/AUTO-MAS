@@ -44,7 +44,6 @@ from app.utils.emulator.ldplayer import _INSTANCE_CONFIG_SNAPSHOTS, LDManager
 
 from .adb import candidate_serial, parse_adb_devices, resolve_serial
 from .applaunch import AppLaunchMixin, is_package_missing, is_package_present
-from .bosskey import BossKey, read_boss_key
 from .master_mode import is_master_mode_enabled, ldplayer_clean_mode_args
 from .settings import (
     InstanceSettings,
@@ -105,18 +104,6 @@ _OWNERSHIP_CACHE_SECONDS = 30.0
 _ZOMBIE_QUIT_TIMEOUT = 15.0
 #: 雷电修复工具的提示，自愈做不了或做了没用时都指到这里。
 _REPAIR_HINT = "请关闭所有雷电实例后运行雷电修复工具（安装目录下的 dnrepairer.exe）"
-
-
-class BossKeyUnavailableError(RuntimeError):
-    """无法确定该实例的老板键，隐藏操作不可用。
-
-    带上 ``reason`` 供界面区分：是认不出修饰键、认不出按键，还是配置读不出来。
-    """
-
-    def __init__(self, idx: str, reason: str) -> None:
-        super().__init__(f"无法确定雷电实例 {idx} 的老板键: {reason}")
-        self.idx = idx
-        self.reason = reason
 
 
 class LDPlayer14Manager(AppLaunchMixin, LDManager):
@@ -369,10 +356,6 @@ class LDPlayer14Manager(AppLaunchMixin, LDManager):
             logger.warning(f"读取雷电实例 {idx} 配置失败: {e}")
             return None
         return data if isinstance(data, dict) else None
-
-    def get_boss_key(self, idx: str) -> BossKey:
-        """取该实例的老板键。"""
-        return read_boss_key(self.read_instance_config(idx))
 
     def _get_instance_vbox_path(self, idx: str) -> Path | None:
         idx_text = str(idx)
