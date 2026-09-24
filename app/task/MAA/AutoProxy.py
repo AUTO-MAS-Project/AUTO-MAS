@@ -1568,6 +1568,7 @@ class AutoProxyTask(TaskExecuteBase):
                         f"用户 {self.cur_user_item.name} 活动关跳过簿修剪写入失败: {e}"
                     )
             skip_entry = skip_book.get(activity_name) if activity_name else None
+            skip_notice = ""
             if skip_entry and (
                 skip_entry.get("date") == _current_day_marker(datetime.now(tz=UTC4))
                 or skip_entry.get("days", 0) >= 2
@@ -1581,46 +1582,29 @@ class AutoProxyTask(TaskExecuteBase):
                     f"用户 {self.cur_user_item.name} 活动关跳过簿命中"
                     f"（{skip_reason}），本轮不注入"
                 )
+                skip_notice = skip_reason
+                activity_stage = None
+                activity_summary = f"{activity_name} · {skip_reason}"
+
+            # 结果与通知可见，且每轮只发一条 TASK_NOTICE：
+            # - 跳过簿命中：单独一条「未注入」，不再落进下面的失配分支（否则既会
+            #   重复提示，又会让真实失配被当成正常解析播报）
+            # - 注入成功：记解析摘要
+            # - 间隙期「当前无进行中的活动关卡」是常态而不是异常：只记 info、不发
+            #   通知（调度台对 warning 会弹通知、开语音还会播报，重试轮还会再发）
+            # - 其余失配（越界/无匹配/未配置意图）：warning 提示
+            if skip_notice:
                 await Publisher.send(
                     id=self.task_info.task_id,
                     type=protocol.TASK_NOTICE,
                     data=WSTaskNoticeData(
                         level="info",
                         message=(
-                            f"用户 {self.cur_user_item.name} 活动关未注入："
-                            f"{skip_reason}"
+                            f"用户 {self.cur_user_item.name} 活动关未注入：{skip_notice}"
                         ),
                     ),
                 )
-                activity_stage = None
-                activity_summary = f"{activity_name} · {skip_reason}"
-
-            # 失配一律整期不注入（废除旧版越界静默回退第一关），结果与通知可见；
-            # 间隙期「当前无进行中的活动关卡」是常态而不是异常：只记 info、不发
-            # 通知（调度台对 warning 会弹通知、开语音还会播报，重试轮还会再发一遍）
-            if activity_stage is None and not skip_entry:
-                if activity_summary == _ACTIVITY_NO_ONGOING_REASON:
-                    logger.info(
-                        f"用户 {self.cur_user_item.name} 活动关未注入: "
-                        f"{activity_summary}"
-                    )
-                else:
-                    logger.warning(
-                        f"用户 {self.cur_user_item.name} 活动关未注入: "
-                        f"{activity_summary}"
-                    )
-                    await Publisher.send(
-                        id=self.task_info.task_id,
-                        type=protocol.TASK_NOTICE,
-                        data=WSTaskNoticeData(
-                            level="warning",
-                            message=(
-                                f"用户 {self.cur_user_item.name} 活动关未注入："
-                                f"{activity_summary}"
-                            ),
-                        ),
-                    )
-            else:
+            elif activity_stage is not None:
                 logger.info(
                     f"用户 {self.cur_user_item.name} 活动关解析: {activity_summary}"
                 )
@@ -1631,6 +1615,25 @@ class AutoProxyTask(TaskExecuteBase):
                         level="info",
                         message=(
                             f"用户 {self.cur_user_item.name} 活动关：{activity_summary}"
+                        ),
+                    ),
+                )
+            elif activity_summary == _ACTIVITY_NO_ONGOING_REASON:
+                logger.info(
+                    f"用户 {self.cur_user_item.name} 活动关未注入: {activity_summary}"
+                )
+            else:
+                logger.warning(
+                    f"用户 {self.cur_user_item.name} 活动关未注入: {activity_summary}"
+                )
+                await Publisher.send(
+                    id=self.task_info.task_id,
+                    type=protocol.TASK_NOTICE,
+                    data=WSTaskNoticeData(
+                        level="warning",
+                        message=(
+                            f"用户 {self.cur_user_item.name} 活动关未注入："
+                            f"{activity_summary}"
                         ),
                     ),
                 )

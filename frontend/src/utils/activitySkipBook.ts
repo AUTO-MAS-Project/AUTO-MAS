@@ -51,6 +51,23 @@ export function activeSkipEntry(
   return hit
 }
 
+/**
+ * 只保留「该活动仍在该服进行中」的条目。跳过簿按活动名归属，对不上的是上期遗留
+ *（后端要等下一轮运行才修剪），脚本页徽标与计划表指派表都先用它过滤；没有该服
+ * 当期数据（未加载或拉取失败）时视为没有进行中活动，两处口径一致。
+ */
+export function ongoingSkipBook(
+  book: ActivitySkipBook,
+  ongoingNames: Set<string> | undefined
+): ActivitySkipBook {
+  const kept: ActivitySkipBook = {}
+  if (!ongoingNames) return kept
+  for (const [name, entry] of Object.entries(book)) {
+    if (ongoingNames.has(name)) kept[name] = entry
+  }
+  return kept
+}
+
 /** 条目的展示用摘要（当时指派 + 日期），供 tooltip / 状态列复用 */
 export function skipSummary(entry?: ActivitySkipEntry): string {
   if (!entry) return ''

@@ -92,6 +92,7 @@
     :scripts="filteredScripts"
     :searching="isSearching"
     :active-connections="activeConnections"
+    :ongoing-activity-names="ongoingActivityNamesByServer"
     :copying-script-id="copyingScriptId"
     @edit="handleEditScript"
     @copy="handleCopyScript"
@@ -160,6 +161,8 @@ import { TaskCreateIn } from '@/api/models/TaskCreateIn'
 import DocLink from '@/components/DocLink.vue'
 import { MAS_DOC_URLS } from '@/utils/openExternal'
 import { filterScriptsByKeyword } from '@/views/scripts/scriptSearch'
+import { ongoingActivityNames } from '@/utils/activityStage'
+import type { ActivityItem } from '@/types/home'
 
 const { t } = useI18n()
 
@@ -181,6 +184,12 @@ const filteredScripts = computed(() =>
   filterScriptsByKeyword(scripts.value, scriptSearchKeyword.value)
 )
 const scriptTableRef = ref<InstanceType<typeof ScriptTable> | null>(null)
+// 各服当期活动关：跳过簿条目按活动名归属，活动结束后徽标随之隐藏
+// （后端要等该用户下一轮运行才修剪旧条目，不能等它）
+const activityStageByServer = ref<Record<string, ActivityItem[]>>({})
+const ongoingActivityNamesByServer = computed(() =>
+  ongoingActivityNames(activityStageByServer.value)
+)
 // 增加：标记是否已经完成过一次脚本列表加载（成功或失败都算一次）
 const loadedOnce = ref(false)
 const scriptCreateVisible = ref(false)
@@ -290,6 +299,7 @@ const activeConnections = ref<
 
 onMounted(() => {
   loadScripts()
+  void loadActivityStages()
 })
 
 // 离开页面时释放全部配置会话订阅并清掉超时定时器，不会在其他页面弹出提示
@@ -322,6 +332,32 @@ const loadScripts = async () => {
   } finally {
     // 首次加载结束（不论成功失败）后置位，避免初始闪烁
     loadedOnce.value = true
+  }
+}
+
+/** 拉一次各服当期活动关：只为判断跳过簿条目对应的活动是否还在进行中，
+ * 失败按「无进行中活动」处理（徽标不显示），与计划表页取不到数据时同口径 */
+const loadActivityStages = async () => {
+  try {
+    const response = await Service.getOverviewApiInfoGetOverviewPost()
+    if (response.code !== 200 || !response.data) {
+      logger.warn(`活动关数据获取失败: ${response.message}`)
+      return
+    }
+    const stageByServer =
+      (
+        response.data as {
+          StageByServer?: Record<string, { Activity?: ActivityItem[] }>
+        }
+      ).StageByServer ?? {}
+    const map: Record<string, ActivityItem[]> = {}
+    for (const [server, overview] of Object.entries(stageByServer)) {
+      map[server] = overview.Activity ?? []
+    }
+    activityStageByServer.value = map
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.warn(`活动关数据获取异常: ${errorMsg}`)
   }
 }
 

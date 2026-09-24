@@ -9,14 +9,18 @@ import { Service } from '@/api'
 import { useScriptApi } from '@/composables/useScriptApi'
 import { useUserApi } from '@/composables/useUserApi'
 import type { ActivityItem } from '@/types/home'
-import { readActivityMeta, slotKeyOfIntent, stageServerOf } from '@/utils/activityStage'
+import {
+  ongoingActivityNames,
+  readActivityMeta,
+  slotKeyOfIntent,
+  stageServerOf,
+} from '@/utils/activityStage'
 import { getServerDisplayName } from '@/utils/serverLabel'
 import {
   activeSkipEntry,
-  activityToday,
+  ongoingSkipBook,
   parseActivitySkipBook,
   skipSummary,
-  type ActivitySkipBook,
 } from '@/utils/activitySkipBook'
 import {
   buildSlotRows,
@@ -350,18 +354,16 @@ export function useActivityStageAssignment(props: ActivityAssignmentProps) {
    */
   const resolveSkipState = (
     user: { Info: { Server: string }; Data?: { ActivitySkipBook?: string } },
-    activityMap: Record<string, ActivityItem[]>
+    ongoingNamesByServer: Record<string, Set<string>>
   ): { skipActive: boolean; skipDays: number; skipSummary: string } => {
-    const serverStages = activityMap[stageServerOf(user.Info.Server)] ?? []
-    const ongoingHere: ActivitySkipBook = {}
-    for (const [name, entry] of Object.entries(
-      parseActivitySkipBook(user.Data?.ActivitySkipBook)
-    )) {
-      if (serverStages.some(stage => stage.Activity?.StageName === name)) {
-        ongoingHere[name] = entry
-      }
-    }
-    const hit = activeSkipEntry(ongoingHere, activityToday())
+    // 与脚本页徽标同一判据（ongoingSkipBook）：只认该用户自己服务器上仍在进行的
+    // 活动条目，上期活动的旧条目先自行排除，不把它的连错天数算进本期
+    const hit = activeSkipEntry(
+      ongoingSkipBook(
+        parseActivitySkipBook(user.Data?.ActivitySkipBook),
+        ongoingNamesByServer[stageServerOf(user.Info.Server)]
+      )
+    )
     if (!hit) return { skipActive: false, skipDays: 0, skipSummary: '' }
     return {
       skipActive: true,
@@ -402,6 +404,8 @@ export function useActivityStageAssignment(props: ActivityAssignmentProps) {
       }
       activityByServer.value = activityMap
       previewByServer.value = previewMap
+      // 各服进行中的活动名只随本次加载算一次，用户行逐条复用它判跳过簿条目归属
+      const ongoingNamesByServer = ongoingActivityNames(activityMap)
 
       const rows: ActivityUserRow[] = []
       for (const script of scripts) {
@@ -420,7 +424,7 @@ export function useActivityStageAssignment(props: ActivityAssignmentProps) {
             ifQuickConfig: user.Info.IfQuickConfig ?? true,
             ifActivityFirst: user.Task?.IfActivityFirst ?? false,
             intent: user.Task?.ActivityStageIntent ?? '',
-            ...resolveSkipState(user, activityMap),
+            ...resolveSkipState(user, ongoingNamesByServer),
           })
         }
       }

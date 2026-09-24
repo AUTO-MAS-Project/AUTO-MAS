@@ -576,8 +576,10 @@ import { useScriptApi } from '@/composables/useScriptApi'
 import { useUserApi } from '@/composables/useUserApi'
 import { parseStatusTagList } from '@/composables/useStatusTag'
 import { getServerDisplayName } from '@/utils/serverLabel'
+import { stageServerOf } from '@/utils/activityStage'
 import {
   activeSkipEntry,
+  ongoingSkipBook,
   parseActivitySkipBook,
   skipSummary,
   type ActivitySkipEntry,
@@ -590,6 +592,8 @@ interface Props {
   activeConnections: Map<string, { subscriptionIds: string[]; taskId: string }>
   copyingScriptId?: string | null
   searching?: boolean
+  /** 各服当期进行中的活动名（归一后的服）：对不上的跳过簿条目不加徽标 */
+  ongoingActivityNames?: Record<string, Set<string>>
 }
 
 interface Emits {
@@ -771,7 +775,14 @@ const activitySkips = computed(() => {
   const map = new Map<string, ActivitySkipEntry>()
   for (const script of props.scripts) {
     for (const user of script.users ?? []) {
-      const hit = activeSkipEntry(parseActivitySkipBook(user.Data?.ActivitySkipBook))
+      // 与计划表页同一判据：只认该用户自己服务器上仍在进行的活动条目——活动
+      // 结束后后端要等下一轮运行才修剪，这里先自行排除，不让徽标继续报「已跳过」
+      const hit = activeSkipEntry(
+        ongoingSkipBook(
+          parseActivitySkipBook(user.Data?.ActivitySkipBook),
+          props.ongoingActivityNames?.[stageServerOf(user.Info.Server)]
+        )
+      )
       if (hit) map.set(user.id, hit.entry)
     }
   }

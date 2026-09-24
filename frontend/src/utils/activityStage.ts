@@ -54,6 +54,19 @@ export function resolveIntentStage(intent: string, stages: ActivityItem[]): stri
   return null
 }
 
+/** 各服当期进行中的活动名集合（跳过簿条目按活动名归属，脚本页与计划表页共用同一判据） */
+export function ongoingActivityNames(
+  activityByServer: Record<string, ActivityItem[]> | undefined
+): Record<string, Set<string>> {
+  const byServer: Record<string, Set<string>> = {}
+  for (const [server, stages] of Object.entries(activityByServer ?? {})) {
+    byServer[server] = new Set(
+      stages.map(stage => stage.Activity?.StageName).filter((name): name is string => Boolean(name))
+    )
+  }
+  return byServer
+}
+
 /** 活动元信息（名称/起止文本）取自该组关卡第一条的 Activity 描述 */
 export interface ActivityMeta {
   name: string
