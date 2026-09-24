@@ -65,9 +65,9 @@ from app.task.MaaFW.tools.embedded.update_progress import (
     MaaFWUpdateProgressTracker,
 )
 from app.utils import get_logger
+from app.utils.constants import UTC8
 from app.utils.io import ConfigCorruptedError
 from app.utils.paths import SOURCE_ROOT
-from app.utils.constants import UTC8
 from app.utils.security import sanitize_log_message
 
 router = APIRouter(prefix="/api/scripts", tags=["脚本管理"])
