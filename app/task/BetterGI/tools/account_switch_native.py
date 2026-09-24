@@ -1543,14 +1543,16 @@ def account_switch(
             面板显示的昵称匹配选号）。
         password: 账号密码；官服非空时走「登录其他账号 + 剪贴板输入账密」
             版本。B服暂不支持账密登录（验证码无法自动完成），填了也忽略。
-        resource: 目标服务器（用户配置 Switch.Resource），决定走哪套登录 UI。
+        resource: 目标服务器（用户配置 Switch.Resource），决定走哪套登录 UI；
+            暂仅接受「官服/B服」，其余（国际服各服）响亮失败。
         on_log: 流程进度回调（供 MAS 推送调度台日志），默认仅写日志。
 
     Returns:
         切换成功返回 True；失败抛出带原因描述的 RuntimeError。
 
     Raises:
-        RuntimeError: 未找到游戏窗口 / 界面状态不符 / 选号或登录失败 / 超时。
+        RuntimeError: 未配置账号 / 服务器不支持 / 未找到游戏窗口 / 界面状态不符 /
+            选号或登录失败 / 超时。
     """
     on_log = on_log or (lambda msg: logger.info(msg))
     if not IS_WINDOWS:
@@ -1560,6 +1562,14 @@ def account_switch(
     resource = str(resource or "官服").strip() or "官服"
     if not account:
         raise RuntimeError("未配置账号，无法切换")
+    if resource not in ("官服", "B服"):
+        # 入口兜底（对齐 check() 前置拦截）：MAS 侧只实现了官服/B服两套登录 UI，
+        # 国际服是英文界面，走官服流程只会空转到超时——此处响亮失败。语义上只拦
+        # 「真要切号但服务器不支持」：未配账号 = 不切号由调用方放行（上一行仅拦误调用）。
+        raise RuntimeError(
+            f"MAS 侧账号切换暂仅支持官服/B服（当前：{resource}），"
+            "国际服请使用 BetterGI 脚本切换方式"
+        )
     is_bili = resource == "B服"
     if is_bili and password:
         # 密码在 B服无可用通道（登录必触发验证码），显式告知避免用户误以为生效

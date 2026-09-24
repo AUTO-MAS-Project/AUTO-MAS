@@ -1662,7 +1662,7 @@ export default {
     bettergiRunTimeoutHint: '日志长期无变化将判定超时',
     bettergiAccountSwitchMethod: '账号切换方式',
     bettergiAccountSwitchMethodHint:
-      'BetterGI 脚本=由 BetterGI「切换账号多模式」脚本执行切换；MAS=MAS 直接操控游戏切号（官服填密码走账号+密码、未填走下拉列表；B服按B站用户名匹配登录记录，暂不支持账密登录）',
+      'BetterGI 脚本=由 BetterGI「切换账号多模式」脚本执行切换；MAS=MAS 直接操控游戏切号（官服填密码走账号+密码、未填走下拉列表；B服按B站用户名匹配登录记录，暂不支持账密登录）。MAS 暂不支持国际服，国际服用户请沿用 BetterGI 脚本方式',
     bettergiAccountSwitchMethodBgi: 'BetterGI 脚本',
     bettergiAccountSwitchMethodMas: 'MAS（官服/B服）',
     useAdminLaunch: '以管理员权限启动',

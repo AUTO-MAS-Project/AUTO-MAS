@@ -1739,7 +1739,7 @@ export default {
     bettergiRunTimeoutHint: 'Treated as a timeout when the log stops changing for this long',
     bettergiAccountSwitchMethod: 'Account switch method',
     bettergiAccountSwitchMethodHint:
-      "BetterGI script = switch via the BetterGI 'SwitchAccountMultipleMode' script; MAS = MAS drives the game UI directly (CN official: with password uses account+password, otherwise the saved-accounts dropdown; CN Bilibili: matches the login records by Bilibili username, password login not supported yet)",
+      "BetterGI script = switch via the BetterGI 'SwitchAccountMultipleMode' script; MAS = MAS drives the game UI directly (CN official: with password uses account+password, otherwise the saved-accounts dropdown; CN Bilibili: matches the login records by Bilibili username, password login not supported yet). MAS does not support international clients yet — keep using the BetterGI script",
     bettergiAccountSwitchMethodBgi: 'BetterGI script',
     bettergiAccountSwitchMethodMas: 'MAS (CN official / Bilibili)',
     useAdminLaunch: 'Launch with administrator privileges',

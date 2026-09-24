@@ -355,13 +355,6 @@ const handleAccountSwitchMethodChange = async (
   value: BetterGIScriptConfigForm['Run']['AccountSwitchMethod']
 ) => {
   await handleChange('Run', 'AccountSwitchMethod', value)
-  if (value === 'MAS') {
-    Modal.info({
-      title: t('edit.bettergiAccountSwitchMethod'),
-      content: t('edit.bettergiAccountSwitchMethodHint'),
-      okText: t('edit.gotIt'),
-    })
-  }
 }
 
 const applyRootPathDefaults = async (rootPath: string) => {

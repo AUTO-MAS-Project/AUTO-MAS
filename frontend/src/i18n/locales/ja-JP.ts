@@ -1672,7 +1672,7 @@ export default {
     bettergiRunTimeoutHint: 'ログが長時間更新されない場合はタイムアウトと判定します',
     bettergiAccountSwitchMethod: 'アカウント切り替え方式',
     bettergiAccountSwitchMethodHint:
-      'BetterGI スクリプト=BetterGI「切替アカウント多重モード」スクリプトで切り替え。MAS=MAS がゲーム画面を直接操作して切り替え（中国公式：パスワード入力ならアカウント+パスワード、未入力ならドロップダウン一覧。B鯖：Bilibili ユーザー名でログイン記録を照合、パスワードログインは未対応）',
+      'BetterGI スクリプト=BetterGI「切替アカウント多重モード」スクリプトで切り替え。MAS=MAS がゲーム画面を直接操作して切り替え（中国公式：パスワード入力ならアカウント+パスワード、未入力ならドロップダウン一覧。B鯖：Bilibili ユーザー名でログイン記録を照合、パスワードログインは未対応）。MAS は国際サーバーに未対応のため、国際サーバーでは BetterGI スクリプト方式をご利用ください',
     bettergiAccountSwitchMethodBgi: 'BetterGI スクリプト',
     bettergiAccountSwitchMethodMas: 'MAS（中国公式 / B鯖）',
     useAdminLaunch: '管理者権限で起動',

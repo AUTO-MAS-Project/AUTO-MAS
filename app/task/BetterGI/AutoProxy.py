@@ -429,14 +429,14 @@ class AutoProxyTask(TaskExecuteBase):
         # MAS 方式切号的前置校验（对齐 MaaEnd：不满足直接报错而非运行期失败）。
         # MAS 侧实现覆盖官服（miHoYo 登录界面）与B服（bilibili 登录记录面板）；
         # 国际服请沿用 BetterGI 脚本方式（Run.AccountSwitchMethod = BGI）。
+        # 只校验「填了账号、要执行切号」的用户：未配账号 = 不切号，对任何服务器都是
+        # 合法配置（国际服未配账号不应被拦，2026-09-24 复核）。
         method = self._account_switch_method()
         resource = str(self.cur_user_config.get("Switch", "Resource") or "官服").strip()
         account = str(self.cur_user_config.get("Info", "Id") or "").strip()
-        if method == "MAS":
+        if method == "MAS" and account:
             if resource == "官服":
-                if account and not str(
-                    self.cur_user_config.get("Info", "Password") or ""
-                ):
+                if not str(self.cur_user_config.get("Info", "Password") or ""):
                     # 无密码走下拉列表匹配，要求账号能生成掩码锚点（手机号/邮箱）；
                     # 第三方登录账号没有打码锚点，无法在登录记录中定位
                     if "*" not in account_switch.mask_account(account):
@@ -451,7 +451,8 @@ class AutoProxyTask(TaskExecuteBase):
                     "MAS 方式账号切换暂仅支持官服/B服用户，"
                     "请改回 BetterGI 脚本切换方式或调整该用户的服务器"
                 )
-            # B服未填B站用户名时运行期跳过切换（同 OK-WW 未配置账号语义），不前置拦截
+            # B服的「账户」字段即B站用户名：未填时由外层 account 条件放行、运行期
+            # 跳过切换（同 OK-WW 未配置账号语义），填了即按昵称匹配选号
 
         # 渠道一致性校验（仅对填了账号、要执行切号的用户）：官服/B服/国际服是三个
         # 互相隔离的客户端（B站账号无法登录官服客户端），客户端渠道与用户服务器
