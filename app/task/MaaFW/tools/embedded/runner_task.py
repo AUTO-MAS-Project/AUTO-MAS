@@ -153,8 +153,11 @@ _FRAMEWORK_UI_LOG_MAX_CHARS = 1200
 _RELAY_YIELD_EVERY_LINES = 50
 # 启动/附着游戏后定位其窗口的等待秒数
 WINDOW_SEARCH_TIMEOUT_SECONDS = 5.0
+# 脚本页没有填窗口句柄的入口，提示不能让用户去找一个不存在的设置。
 _WIN32_NO_WINDOW_RULES_MESSAGE = (
-    "该控制器没有声明窗口匹配规则，请在脚本设置里指定窗口句柄或换一个控制器"
+    "该项目的这个 Win32 控制器没有声明窗口匹配规则（interface 里的 class_regex / "
+    "window_regex），MAS 无法确定要控制哪个窗口，为避免控制错窗口不运行；请换用项目的"
+    "其他控制器，或请项目方在 interface 里补上窗口匹配规则"
 )
 
 # 环境级失败：解释器自身坏了、依赖没装上。重试只会原样再失败一遍，而每次重试
