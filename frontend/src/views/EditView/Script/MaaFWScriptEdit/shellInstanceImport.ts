@@ -41,12 +41,22 @@ export const describeShellSources = (sources: readonly string[]): string =>
   [...new Set(sources.filter(Boolean))].join(' / ')
 
 /**
+ * 提示里写的实例名：结果项带的实例名 → 列表里同 ID 的实例名 → 实例 ID（都拿不到才用）。
+ * 找不到的实例结果项里没有名字，只有 `mfaa:default` 这种内部 ID，不能直接给人看。
+ */
+export const shellImportItemName = (
+  item: MaaFWShellInstanceImportItem,
+  names?: ReadonlyMap<string, string>
+): string => item.instanceName || names?.get(item.instanceId) || item.instanceId
+
+/**
  * 导入结束后那一条提示的正文：先写没导入成功的实例，再写导不全的用户。
- * 两者都没有时返回空数组，不弹提示。
+ * 两者都没有时返回空数组，不弹提示。`names` 是实例 ID → 实例名。
  */
 export const buildShellImportReportLines = (
   summary: ShellImportSummary,
-  t: Translate
+  t: Translate,
+  names?: ReadonlyMap<string, string>
 ): string[] => {
   const lines: string[] = []
   if (summary.failed.length > 0) {
@@ -54,7 +64,7 @@ export const buildShellImportReportLines = (
     for (const item of summary.failed) {
       lines.push(
         t('edit.shellImportFailedLine', {
-          name: item.instanceName || item.instanceId,
+          name: shellImportItemName(item, names),
           reason: item.error || '-',
         })
       )

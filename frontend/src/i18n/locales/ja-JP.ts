@@ -769,6 +769,8 @@ export default {
     shellImportSkippedLineMore: '「{name}」で {items} など {count} 項目をスキップしました',
     shellImportListSeparator: '、',
     shellImportAllFailed: '既存の設定を取り込めなかったため、空のユーザーを作成します',
+    shellImportAllFailedWithReason:
+      '既存の設定を取り込めなかったため、空のユーザーを作成します：{reason}',
     wutheringWavesWillBe:
       '選択したサーバーで鳴潮の更新を確認・実行します。数 GB のダウンロードが発生する場合があるため、ゲームが起動していないことを確認してください',
     turnAutomaticRelicSalvage:

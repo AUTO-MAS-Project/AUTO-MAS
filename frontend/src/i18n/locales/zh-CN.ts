@@ -804,6 +804,7 @@ export default {
     shellImportSkippedLineMore: '「{name}」跳过了 {items} 等 {count} 项',
     shellImportListSeparator: '、',
     shellImportAllFailed: '没能导入已有配置，改为新建一个空用户',
+    shellImportAllFailedWithReason: '没能导入已有配置，改为新建一个空用户：{reason}',
     wutheringWavesWillBe:
       '将按所选服务器检查并更新鸣潮，更新过程可能下载数 GB 数据，请确保游戏未在运行',
     turnAutomaticRelicSalvage:

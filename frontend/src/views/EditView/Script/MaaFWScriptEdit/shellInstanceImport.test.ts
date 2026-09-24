@@ -3,6 +3,7 @@ import type { MaaFWShellInstanceImportItem } from '@/api'
 import {
   buildShellImportReportLines,
   describeShellSources,
+  shellImportItemName,
   summarizeShellImport,
   truncateItems,
 } from './shellInstanceImport'
@@ -90,7 +91,27 @@ describe('buildShellImportReportLines', () => {
     )
   })
 
-  it('找不到的实例没有实例名时用实例 ID', () => {
+  it('结果项没有实例名时按列表里的名字写', () => {
+    const lines = buildShellImportReportLines(
+      summarizeShellImport([
+        item({
+          instanceId: 'mfaa:default',
+          instanceName: '',
+          success: false,
+          userId: '',
+          error: 'x',
+        }),
+      ]),
+      t,
+      new Map([['mfaa:default', '配置 1']])
+    )
+    expect(lines[1]).toBe('edit.shellImportFailedLine{"name":"配置 1","reason":"x"}')
+    expect(
+      shellImportItemName(item({ instanceId: 'a', instanceName: '' }), new Map([['b', 'B']]))
+    ).toBe('a')
+  })
+
+  it('找不到的实例列表里也没有时才用实例 ID', () => {
     const lines = buildShellImportReportLines(
       summarizeShellImport([
         item({ instanceId: 'mfaa:gone', instanceName: '', success: false, userId: '', error: '' }),

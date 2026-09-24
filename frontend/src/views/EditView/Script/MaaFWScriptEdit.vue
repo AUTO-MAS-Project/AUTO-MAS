@@ -16,7 +16,7 @@
 
     <a-space size="middle">
       <DocLink :url="flavor.docUrl" />
-      <a-button size="large" class="cancel-button" @click="handleCancel">
+      <a-button size="large" class="cancel-button" :disabled="shellImporting" @click="handleCancel">
         <template #icon>
           <ArrowLeftOutlined />
         </template>
@@ -227,6 +227,7 @@ import RunConfigSection from './MaaFWScriptEdit/RunConfigSection.vue'
 import ShellInstanceImportSection from './MaaFWScriptEdit/ShellInstanceImportSection.vue'
 import {
   buildShellImportReportLines,
+  shellImportItemName,
   summarizeShellImport,
   type ShellImportSummary,
 } from './MaaFWScriptEdit/shellInstanceImport'
@@ -604,7 +605,10 @@ const ensureUpdateSubscription = () => {
   )
 }
 
+// 页面已卸载：还在跑的异步流程（外壳配置导入）结束时不再跳转
+let pageUnmounted = false
 onBeforeUnmount(() => {
+  pageUnmounted = true
   if (envSubscriptionId) {
     unsubscribe(envSubscriptionId)
     envSubscriptionId = null
@@ -846,10 +850,13 @@ const handleCancel = () => {
   router.push('/scripts')
 }
 
+const userRouteSuffix = () => (flavor.value.type === 'M9A' ? 'm9a' : 'maafw')
+const addUserPath = () => `/scripts/${scriptId}/users/add/${userRouteSuffix()}`
+
 // 引导最后一步直接去建第一个用户；先等排队中的保存写完，用户页读到的才是刚配好的脚本
 const handleCreateFirstUser = async () => {
   await enqueue(async () => undefined)
-  router.push(`/scripts/${scriptId}/users/add/${flavor.value.type === 'M9A' ? 'm9a' : 'maafw'}`)
+  router.push(addUserPath())
 }
 
 // ---- 引导最后一步：外壳（MFAAvalonia / MXU）配置导入成用户 ----
@@ -888,7 +895,13 @@ const finishButtonLabel = computed(() => {
   return count > 0 ? t('edit.shellImportButton', { count }) : t('edit.createFirstUser')
 })
 
-const userRouteSuffix = () => (flavor.value.type === 'M9A' ? 'm9a' : 'maafw')
+// 导入要一会儿，结束时用户可能已经离开了这一页（面包屑等）：那时只弹提示、不跳转，
+// 免得把人从别的页面拽回来（pageUnmounted 在卸载钩子里置位）
+const stillOnWizard = () =>
+  !pageUnmounted && route.name === 'MaaFWSetupWizard' && route.params.id === scriptId
+const leaveWizardTo = (path: string) => {
+  if (stillOnWizard()) router.push(path)
+}
 
 // 勾了实例就导入，一个都没勾就是原来的「创建第一个用户！」。导入失败不能把用户卡在引导页：
 // 一个用户都没建成就报错并退回建空用户；部分失败 / 导不全合并成一条提示，照常往下走。
@@ -898,6 +911,8 @@ const handleFinishWizard = async () => {
     await handleCreateFirstUser()
     return
   }
+  // 结果项里没带实例名时（找不到的实例）按列表里的名字写，都没有才退回 ID
+  const instanceNames = new Map(shellInstances.value.map(item => [item.id, item.name]))
   shellImporting.value = true
   try {
     await enqueue(async () => undefined)
@@ -907,18 +922,18 @@ const handleFinishWizard = async () => {
     } catch (error) {
       const reason = error instanceof Error ? error.message : String(error)
       logger.error(`导入外壳配置失败: ${reason}`)
-      message.error(`${t('edit.shellImportAllFailed')}：${reason}`)
-      await handleCreateFirstUser()
+      message.error(t('edit.shellImportAllFailedWithReason', { reason }))
+      leaveWizardTo(addUserPath())
       return
     }
     for (const item of [...summary.failed, ...summary.partial]) {
       logger.warn(
-        `导入外壳配置「${item.instanceName || item.instanceId}」：` +
+        `导入外壳配置「${shellImportItemName(item, instanceNames)}」：` +
           (item.error ? `失败 ${item.error}` : `跳过 ${(item.skipped ?? []).join('、')}`)
       )
     }
+    const lines = buildShellImportReportLines(summary, t, instanceNames)
     if (summary.created.length === 0) {
-      const lines = buildShellImportReportLines(summary, t)
       message.error({
         content: h(
           'div',
@@ -926,10 +941,9 @@ const handleFinishWizard = async () => {
         ),
         duration: 8,
       })
-      await handleCreateFirstUser()
+      leaveWizardTo(addUserPath())
       return
     }
-    const lines = buildShellImportReportLines(summary, t)
     if (lines.length > 0) {
       const notify = summary.failed.length > 0 ? message.error : message.warning
       notify({
@@ -941,11 +955,11 @@ const handleFinishWizard = async () => {
       })
     }
     const [only] = summary.created
-    if (summary.created.length === 1 && only.userId) {
-      router.push(`/scripts/${scriptId}/users/${only.userId}/edit/${userRouteSuffix()}`)
-    } else {
-      router.push('/scripts')
-    }
+    leaveWizardTo(
+      summary.created.length === 1 && only.userId
+        ? `/scripts/${scriptId}/users/${only.userId}/edit/${userRouteSuffix()}`
+        : '/scripts'
+    )
   } finally {
     shellImporting.value = false
   }

@@ -823,6 +823,8 @@ export default {
     shellImportListSeparator: ', ',
     shellImportAllFailed:
       'Could not import the existing configurations; creating an empty user instead',
+    shellImportAllFailedWithReason:
+      'Could not import the existing configurations; creating an empty user instead: {reason}',
     wutheringWavesWillBe:
       'Wuthering Waves will be checked and updated on the selected server. The update may download several GB, so make sure the game is not running',
     turnAutomaticRelicSalvage:

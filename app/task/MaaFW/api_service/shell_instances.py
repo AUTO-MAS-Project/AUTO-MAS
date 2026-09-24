@@ -40,9 +40,11 @@ from app.task.MaaFW.tools.core.interface.loader import (
     load_interface_model_cached,
 )
 from app.task.MaaFW.tools.core.interface.models import MaaFWInterface
+from app.task.MaaFW.tools.core.interface.preview import interface_text_translator
 from app.task.MaaFW.tools.embedded.embedded_project import embedded_project_dir
 from app.task.MaaFW.tools.embedded.shell_instances import (
     ShellInstance,
+    Translate,
     assign_user_names,
     display_name,
     plan_instance_import,
@@ -113,10 +115,14 @@ async def list_shell_instances(script_id: str) -> MaaFWApiReply:
 
     # 显示名要 interface；副本还没建好就退回外壳里记的原名，不为这个触发导入
     interface: MaaFWInterface | None = None
+    translate: Translate | None = None
     view_root = embedded_project_dir(script_id)
     if instances and view_root.is_dir():
         try:
             interface = await asyncio.to_thread(load_interface_model_cached, view_root)
+            translate = await asyncio.to_thread(
+                interface_text_translator, view_root, interface
+            )
         except Exception as exc:  # noqa: BLE001 - 只影响显示名
             logger.warning(f"读取 interface 失败，实例列表显示原名：{exc}")
 
@@ -131,10 +137,12 @@ async def list_shell_instances(script_id: str) -> MaaFWApiReply:
             source=instance.source,
             active=instance.active,
             taskCount=len(instance.tasks),
-            controller=display_name(interface.controller, instance.controller)
+            controller=display_name(
+                interface.controller, instance.controller, translate
+            )
             if interface
             else instance.controller,
-            resource=display_name(interface.resource, instance.resource)
+            resource=display_name(interface.resource, instance.resource, translate)
             if interface
             else instance.resource,
         )
@@ -161,6 +169,8 @@ async def import_shell_instances(
         return MaaFWApiReply.error(400, error)
     try:
         interface = await asyncio.to_thread(load_interface_model_cached, root)
+        # 跳过项里写 interface 的显示名（按项目语言文件翻过），与预览同一口径
+        translate = await asyncio.to_thread(interface_text_translator, root, interface)
         instances = await asyncio.to_thread(
             _scan_first_root, _candidate_roots(script_id, script_config)
         )
@@ -208,6 +218,7 @@ async def import_shell_instances(
                 interface,
                 script_controller=script_controller,
                 script_resource=script_resource,
+                translate=translate,
             )
         )
     return MaaFWApiReply(data=results)
@@ -221,6 +232,7 @@ async def _import_one(
     *,
     script_controller: str,
     script_resource: str,
+    translate: Translate,
 ) -> MaaFWShellInstanceImportItem:
     result = MaaFWShellInstanceImportItem(
         instanceId=instance.id, instanceName=instance.name, name=user_name
@@ -232,6 +244,7 @@ async def _import_one(
             interface,
             script_controller=script_controller,
             script_resource=script_resource,
+            translate=translate,
         )
     except Exception as exc:  # noqa: BLE001 - 一份实例换算失败不影响其它实例
         logger.opt(exception=True).warning(
@@ -251,11 +264,9 @@ async def _import_one(
             script_id,
             str(uid),
             {
-                "Info": {
-                    "Name": user_name,
-                    "Controller": plan.controller,
-                    "Resource": plan.resource,
-                },
+                # 只写名字：Info.Controller / Info.Resource 保持空串，与用户页保存的形状一致——
+                # 运行器与用户页都只看脚本级的这两项，写进用户配置没有作用
+                "Info": {"Name": user_name},
                 "Task": {
                     "SelectedPreset": "",
                     "TaskSnapshot": json.dumps(plan.snapshot, ensure_ascii=False),

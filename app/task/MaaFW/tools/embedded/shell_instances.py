@@ -27,7 +27,8 @@
   ``InstanceName``；任务在 ``TaskItems``（``default_check`` 为真的才在队列里），选项是
   ``{name, index}``——``index`` 是 case 的下标；checkbox 另有 ``selected_cases``；input
   是 ``data: {输入名: 值}``；嵌套选项在 ``sub_options`` 里，checkbox 的 ``sub_options``
-  是各个 case 的容器（名字就是 case 名），容器里再挂的才是选项。上次使用的实例记在
+  是各个 case 的容器（名字就是 case 名），容器里再挂的才是选项；资源级选项在
+  ``ResourceOptionItems``（按 ``{资源名: [同形条目]}`` 读，四个真实样本里都是空表）。上次使用的实例记在
   项目根（老版本在 ``config/``）的 ``appsettings.json`` 的 ``Instances.LastActive``，
   它可能是 ``default`` 而文件名是别的 hex id——对不上就不标「当前使用中」。
 - **MXU**：``config/mxu-<项目名>.json`` 里的 ``instances[]``，每个实例
@@ -44,7 +45,7 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal
@@ -102,7 +103,10 @@ class ShellInstance:
     controller: str = ""
     resource: str = ""
     tasks: list[ShellTask] = field(default_factory=list)
+    #: MXU 的 ``globalOptionValues``（所有实例共用）
     global_options: Mapping[str, Any] = field(default_factory=dict)
+    #: MFAAvalonia 的 ``ResourceOptionItems``（资源级选项）原样保留；None 表示没有这个字段
+    resource_options: Any = None
 
 
 @dataclass
@@ -111,8 +115,6 @@ class ShellImportPlan:
 
     snapshot: dict[str, Any]
     task_count: int
-    controller: str = ""
-    resource: str = ""
     skipped: list[str] = field(default_factory=list)
 
 
@@ -220,6 +222,7 @@ def _scan_mfaa(root: Path, config_dir: Path) -> list[ShellInstance]:
                 controller=str(payload.get("CurrentControllerName") or "").strip(),
                 resource=str(payload.get("Resource") or "").strip(),
                 tasks=tasks,
+                resource_options=payload.get("ResourceOptionItems"),
             )
         )
     return instances
@@ -314,6 +317,9 @@ def assign_user_names(names: Sequence[str], existing: Iterable[str]) -> list[str
 # 实例 → 任务快照
 # ---------------------------------------------------------------------------
 
+#: 把 interface 里的 ``$键`` 文案按项目语言文件翻成给人看的字，翻不出来原样返回。
+Translate = Callable[[str | None], str | None]
+
 
 def _named_item(items: Sequence[Any], raw: str) -> str:
     """controller / resource 按名字（其次按显示名）对上 interface 里的一项，对不上返回空串。"""
@@ -331,15 +337,56 @@ def _named_item(items: Sequence[Any], raw: str) -> str:
     return ""
 
 
-def display_name(items: Sequence[Any], raw: str) -> str:
-    """给人看的 controller / resource 名：interface 里有显示名（且不是 ``$`` 词条键）就用它。"""
+def _readable(raw: str | None, fallback: str, translate: Translate | None) -> str:
+    """显示名：先按语言文件翻，翻不出来（空、仍是 ``$键``）就用 ``fallback``。"""
+
+    text = translate(raw) if translate is not None else raw
+    text = (text or "").strip()
+    return text if text and not text.startswith("$") else fallback
+
+
+def display_name(
+    items: Sequence[Any], raw: str, translate: Translate | None = None
+) -> str:
+    """给人看的 controller / resource 名：interface 里有显示名（能翻成字）就用它。"""
 
     name = _named_item(items, raw)
     if not name:
         return raw.strip()
     item = next(item for item in items if item.name == name)
-    label = (item.label or "").strip()
-    return label if label and not label.startswith("$") else name
+    return _readable(item.label, name, translate)
+
+
+class _Labels:
+    """跳过项里写给人看的任务 / 选项 / 取值名：interface 的 label 按语言文件翻过，拿不到才用 name。"""
+
+    def __init__(self, interface: MaaFWInterface, translate: Translate | None) -> None:
+        self._interface = interface
+        self._translate = translate
+        self._tasks: dict[str, str | None] = {}
+        for task in interface.task:
+            self._tasks.setdefault(task.name, task.label)
+        for pretask in iter_pretasks(interface):
+            self._tasks.setdefault(build_pretask_task_name(pretask), pretask.label)
+
+    def task(self, name: str) -> str:
+        return _readable(self._tasks.get(name), name, self._translate)
+
+    def option(self, name: str) -> str:
+        definition = self._interface.option.get(name)
+        label = definition.label if definition is not None else None
+        return _readable(label, name, self._translate)
+
+    def case(self, definition: MaaFWOption, name: str) -> str:
+        case = next(
+            (item for item in definition.cases or [] if item.name == name), None
+        )
+        return _readable(case.label if case else None, name, self._translate)
+
+    def field(self, definition: MaaFWOption, name: str) -> str:
+        fields = [*(definition.inputs or []), *(definition.hotkeys or [])]
+        item = next((item for item in fields if item.name == name), None)
+        return _readable(item.label if item else None, name, self._translate)
 
 
 def plan_instance_import(
@@ -348,6 +395,7 @@ def plan_instance_import(
     *,
     script_controller: str = "",
     script_resource: str = "",
+    translate: Translate | None = None,
 ) -> ShellImportPlan:
     """把一份实例换算成用户的任务快照，当前项目里对不上的任务 / 选项 / 取值记进 ``skipped``。
 
@@ -358,10 +406,12 @@ def plan_instance_import(
 
     ``script_controller`` / ``script_resource`` 是脚本当前的控制方式与资源（interface 里的
     名字，空串表示不限）：用户页只显示这两者下可用的任务，限定在别处的任务在这里就跳过并
-    记下来，不让它们进了快照又在页面上悄悄消失。
+    记下来，不让它们进了快照又在页面上悄悄消失。``translate`` 把 ``$键`` 翻成字，跳过项里
+    写给人看的名字（与预览同一口径）；不给就用 interface 里的原文。
     """
 
     skipped: list[str] = []
+    labels = _Labels(interface, translate)
     option_maps = build_task_option_maps(interface)
     tasks_by_name: dict[str, MaaFWTask] = {}
     names_by_entry: dict[str, list[str]] = {}
@@ -371,10 +421,16 @@ def plan_instance_import(
         tasks_by_name[task.name] = task
         names_by_entry.setdefault(task.entry, []).append(task.name)
 
-    global_values: dict[str, MaaFWTaskOptionValue] = {}
+    # 全局 / 资源级选项：MAS 把它们并进每个任务的选项表（见 build_task_option_maps），
+    # 所以换算一次，再分给选项表里有它们的任务
+    shared_values: dict[str, MaaFWTaskOptionValue] = {}
     if instance.source == SOURCE_MXU and instance.global_options:
-        global_values = _mxu_option_values(
-            instance.global_options, interface.option, "全局选项", skipped
+        shared_values = _mxu_option_values(
+            instance.global_options, interface.option, "全局选项", labels, skipped
+        )
+    if instance.source == SOURCE_MFAA and instance.resource_options is not None:
+        shared_values = _mfaa_resource_option_values(
+            instance, interface.option, labels, skipped
         )
 
     # MXU 把前置任务（pretask）当成队列里的一条 ``__MXU_PRETASK__<名>`` 存，MAS 的队列也认
@@ -392,22 +448,25 @@ def plan_instance_import(
                 and pretask.controller
                 and script_controller not in pretask.controller
             ):
-                skipped.append(f"任务「{shell_task.name}」（当前控制方式下不可用）")
+                skipped.append(
+                    f"任务「{labels.task(task_name)}」（当前控制方式下不可用）"
+                )
                 continue
             if (
                 script_resource
                 and pretask.resource
                 and script_resource not in pretask.resource
             ):
-                skipped.append(f"任务「{shell_task.name}」（当前资源下不可用）")
+                skipped.append(f"任务「{labels.task(task_name)}」（当前资源下不可用）")
                 continue
             option_map = option_maps.get(task_name, {})
-            values = {k: v for k, v in global_values.items() if k in option_map}
+            values = {k: v for k, v in shared_values.items() if k in option_map}
             values.update(
                 _mxu_option_values(
                     shell_task.raw_options or {},
                     option_map,
-                    f"「{task_name}」的选项",
+                    f"「{labels.task(task_name)}」的选项",
+                    labels,
                     skipped,
                 )
             )
@@ -423,27 +482,29 @@ def plan_instance_import(
                 continue
             task_name = candidates[0]
         task = tasks_by_name[task_name]
+        task_label = labels.task(task_name)
         if (
             script_controller
             and task.controller
             and script_controller not in task.controller
         ):
-            skipped.append(f"任务「{shell_task.name}」（当前控制方式下不可用）")
+            skipped.append(f"任务「{task_label}」（当前控制方式下不可用）")
             continue
         if script_resource and task.resource and script_resource not in task.resource:
-            skipped.append(f"任务「{shell_task.name}」（当前资源下不可用）")
+            skipped.append(f"任务「{task_label}」（当前资源下不可用）")
             continue
 
         option_map = option_maps.get(task_name, {})
         values: dict[str, MaaFWTaskOptionValue] = {
-            name: value for name, value in global_values.items() if name in option_map
+            name: value for name, value in shared_values.items() if name in option_map
         }
         if instance.source == SOURCE_MFAA:
             _mfaa_collect_options(
                 shell_task.raw_options or [],
                 option_map,
                 interface.option,
-                task_name,
+                f"「{task_label}」的选项",
+                labels,
                 values,
                 skipped,
             )
@@ -452,7 +513,8 @@ def plan_instance_import(
                 _mxu_option_values(
                     shell_task.raw_options or {},
                     option_map,
-                    f"「{task_name}」的选项",
+                    f"「{task_label}」的选项",
+                    labels,
                     skipped,
                 )
             )
@@ -486,8 +548,6 @@ def plan_instance_import(
             "taskOptions": {task_id: task_options[task_id] for task_id in queued},
         },
         task_count=len(queued),
-        controller=_named_item(interface.controller, instance.controller),
-        resource=_named_item(interface.resource, instance.resource),
         skipped=skipped,
     )
 
@@ -500,6 +560,7 @@ def _field_values(
     raw: Any,
     definition: MaaFWOption,
     owner: str,
+    labels: _Labels,
     skipped: list[str],
 ) -> dict[str, str] | None:
     """input / hotkey 的 ``{字段名: 值}``：只留 interface 里声明了的字段，值按字符串存。"""
@@ -514,7 +575,7 @@ def _field_values(
     fields: dict[str, str] = {}
     for key, value in raw.items():
         if str(key) not in declared:
-            skipped.append(f"{owner}的「{key}」")
+            skipped.append(f"{owner}的「{labels.field(definition, str(key))}」")
             continue
         if value is None or isinstance(value, (dict, list)):
             continue
@@ -525,11 +586,45 @@ def _field_values(
     return fields
 
 
+def _mfaa_resource_option_values(
+    instance: ShellInstance,
+    all_options: Mapping[str, MaaFWOption],
+    labels: _Labels,
+    skipped: list[str],
+) -> dict[str, MaaFWTaskOptionValue]:
+    """MFAAvalonia 的 ``ResourceOptionItems``：``{资源名: [选项条目…]}``，条目形状同任务选项。
+
+    只取实例当前资源那一格（别的资源下的选项此时不生效）；整张表不是这个形状时不猜，
+    非空就整体记一条跳过。
+    """
+
+    raw = instance.resource_options
+    if raw is None or raw == {}:
+        return {}
+    if not isinstance(raw, dict) or not all(
+        isinstance(items, list) for items in raw.values()
+    ):
+        skipped.append("资源选项（格式无法识别）")
+        return {}
+    values: dict[str, MaaFWTaskOptionValue] = {}
+    _mfaa_collect_options(
+        raw.get(instance.resource) or [],
+        all_options,
+        all_options,
+        "资源选项",
+        labels,
+        values,
+        skipped,
+    )
+    return values
+
+
 def _mfaa_collect_options(
     raw_options: Sequence[Any],
     option_map: Mapping[str, MaaFWOption],
     all_options: Mapping[str, MaaFWOption],
-    task_name: str,
+    owner_prefix: str,
+    labels: _Labels,
     values: dict[str, MaaFWTaskOptionValue],
     skipped: list[str],
 ) -> None:
@@ -541,12 +636,12 @@ def _mfaa_collect_options(
         name = str(raw.get("name") or "").strip()
         if not name:
             continue
-        owner = f"「{task_name}」的选项「{name}」"
+        owner = f"{owner_prefix}「{labels.option(name)}」"
         definition = option_map.get(name)
         if definition is None:
             skipped.append(owner)
             continue
-        value = _mfaa_option_value(raw, definition, owner, skipped)
+        value = _mfaa_option_value(raw, definition, owner, labels, skipped)
         if value is not None:
             values[name] = value
         sub_options = raw.get("sub_options")
@@ -567,7 +662,7 @@ def _mfaa_collect_options(
                 continue
             nested.append(sub)
         _mfaa_collect_options(
-            nested, option_map, all_options, task_name, values, skipped
+            nested, option_map, all_options, owner_prefix, labels, values, skipped
         )
 
 
@@ -575,6 +670,7 @@ def _mfaa_option_value(
     raw: Mapping[str, Any],
     definition: MaaFWOption,
     owner: str,
+    labels: _Labels,
     skipped: list[str],
 ) -> MaaFWTaskOptionValue | None:
     cases = _case_names(definition)
@@ -599,10 +695,10 @@ def _mfaa_option_value(
             if str(item) in cases:
                 chosen.append(str(item))
             else:
-                skipped.append(f"{owner}的取值「{item}」")
+                skipped.append(f"{owner}的取值「{labels.case(definition, str(item))}」")
         return chosen
     if definition.type in _FIELD_TYPES:
-        return _field_values(raw.get("data"), definition, owner, skipped)
+        return _field_values(raw.get("data"), definition, owner, labels, skipped)
     skipped.append(f"{owner}的取值")
     return None
 
@@ -611,18 +707,19 @@ def _mxu_option_values(
     option_values: Mapping[str, Any],
     option_map: Mapping[str, MaaFWOption],
     owner_prefix: str,
+    labels: _Labels,
     skipped: list[str],
 ) -> dict[str, MaaFWTaskOptionValue]:
     """MXU 的 ``{选项名: {type, caseName | caseNames | value | values}}``（嵌套选项已平铺）。"""
 
     values: dict[str, MaaFWTaskOptionValue] = {}
     for name, raw in option_values.items():
-        owner = f"{owner_prefix}「{name}」"
+        owner = f"{owner_prefix}「{labels.option(str(name))}」"
         definition = option_map.get(str(name))
         if definition is None:
             skipped.append(owner)
             continue
-        value = _mxu_option_value(raw, definition, owner, skipped)
+        value = _mxu_option_value(raw, definition, owner, labels, skipped)
         if value is not None:
             values[str(name)] = value
     return values
@@ -632,6 +729,7 @@ def _mxu_option_value(
     raw: Any,
     definition: MaaFWOption,
     owner: str,
+    labels: _Labels,
     skipped: list[str],
 ) -> MaaFWTaskOptionValue | None:
     if not isinstance(raw, dict):
@@ -649,7 +747,9 @@ def _mxu_option_value(
         # scan_select 的候选是运行时扫出来的，interface 里可能一个都没写
         if case and (case in cases or (definition.type == "scan_select" and not cases)):
             return case
-        skipped.append(f"{owner}的取值" + (f"「{case}」" if case else ""))
+        skipped.append(
+            f"{owner}的取值" + (f"「{labels.case(definition, case)}」" if case else "")
+        )
         return None
     if definition.type == "checkbox":
         selected = raw.get("caseNames")
@@ -661,10 +761,10 @@ def _mxu_option_value(
             if str(item) in cases:
                 chosen.append(str(item))
             else:
-                skipped.append(f"{owner}的取值「{item}」")
+                skipped.append(f"{owner}的取值「{labels.case(definition, str(item))}」")
         return chosen
     if definition.type in _FIELD_TYPES:
-        fields = _field_values(raw.get("values"), definition, owner, skipped)
+        fields = _field_values(raw.get("values"), definition, owner, labels, skipped)
         if fields is None:
             skipped.append(f"{owner}的取值")
         return fields
@@ -678,6 +778,7 @@ __all__ = [
     "ShellImportPlan",
     "ShellInstance",
     "ShellTask",
+    "Translate",
     "assign_user_names",
     "display_name",
     "plan_instance_import",
