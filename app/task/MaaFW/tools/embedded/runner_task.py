@@ -1416,9 +1416,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             )
             raise
         started_at = self.cur_user_log_started_at or datetime.now()
-        local_started_at = started_at.replace(
-            tzinfo=datetime.now().astimezone().tzinfo
-        ).astimezone(UTC4)
+        local_started_at = started_at.astimezone(UTC4)
         history_dir = (
             Path.cwd()
             / "history"
@@ -2296,9 +2294,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
 
         statistic_paths: list[Path] = []
         for timestamp, log_item in self.cur_user_item.log_record.items():
-            dt = timestamp.replace(
-                tzinfo=datetime.now().astimezone().tzinfo
-            ).astimezone(UTC4)
+            dt = timestamp.astimezone(UTC4)
             log_path = (
                 Path.cwd()
                 / f"history/{dt.strftime('%Y-%m-%d')}/{self.cur_user_item.name}/{dt.strftime('%H-%M-%S')}.log"
