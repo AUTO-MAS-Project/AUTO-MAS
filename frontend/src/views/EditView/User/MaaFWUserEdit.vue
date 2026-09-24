@@ -695,14 +695,13 @@ const openShellImport = async () => {
       message.warning(t('edit.shellConfigImportEmpty'))
       return
     }
-    shellImportOptions.value = instances.map(item =>
-      item.active
-        ? {
-            value: item.id,
-            label: `${item.name} (${item.taskCount}) · ${t('edit.shellConfigImportActive')}`,
-          }
-        : { value: item.id, label: `${item.name} (${item.taskCount})` }
-    )
+    // 外壳的实例显示名（「配置 1」）和文件名（default）是两回事，两个都给用户看
+    shellImportOptions.value = instances.map(item => ({
+      value: item.id,
+      label: item.active
+        ? `${item.name}（${item.id}） · ${t('edit.shellConfigImportActive')}`
+        : `${item.name}（${item.id}）`,
+    }))
     const preferred = instances.find(item => item.active) || instances[0]
     shellImportInstance.value = preferred.id
     shellImportOpen.value = true
