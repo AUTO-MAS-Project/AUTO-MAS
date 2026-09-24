@@ -43,6 +43,7 @@ from .task_mapping import (
     HSR_TASK_MODULES,
     describe_script_fallback,
     engine_label,
+    engine_list,
     resolve_script_assignment,
     script_supports,
 )
@@ -93,6 +94,9 @@ logger = get_logger("HSR 调度器")
 METHOD_BOOK: dict[str, type[HSRAutoProxyTask]] = {
     "AutoProxy": HSRAutoProxyTask,
 }
+
+_M7A_CONFIG_LABEL = "三月七 config.yaml"
+"""外部配置备份表里三月七 config.yaml 的标签：进日志，也是直控前单独还原它的判据。"""
 
 
 def _remove_path(path: Path) -> None:
@@ -188,7 +192,7 @@ class HSRManager(TaskExecuteBase):
         m7a_path = resolve_script_path(self.script_config, "M7A")
         if m7a_path:
             backup_path(
-                "M7A config.yaml",
+                _M7A_CONFIG_LABEL,
                 Path(str(m7a_path)) / "config.yaml",
                 backup_root / "M7A" / "config.yaml",
             )
@@ -268,8 +272,11 @@ class HSRManager(TaskExecuteBase):
             try:
                 await rollback_pending(Path(root), send_log=self._append_log)
             except Exception as e:  # noqa: BLE001 - 回滚失败不该挡住任务启动
-                logger.opt(exception=True).warning(f"HSR 更新：回滚 {engine} 残留失败")
-                self._append_log(f"{engine} 未完成更新的回滚失败，将按现状继续：{e}")
+                name = engine_label(engine, left=False)
+                logger.opt(exception=True).warning(
+                    f"HSR 更新：回滚{engine_label(engine)}残留失败"
+                )
+                self._append_log(f"{name}未完成更新的回滚失败，将按现状继续：{e}")
 
     def _update_aborted(self) -> bool:
         """用户是否已经要求停止——下载途中每收一块问一次。
@@ -335,8 +342,9 @@ class HSRManager(TaskExecuteBase):
                     should_abort=self._update_aborted,
                 )
             except Exception as e:  # noqa: BLE001 - 更新绝不能拖垮任务收尾
-                logger.opt(exception=True).warning(f"HSR 更新：{engine} 更新时出错")
-                self._append_log(f"{engine} 更新异常，按现有版本继续：{e}")
+                name = engine_label(engine, left=False)
+                logger.opt(exception=True).warning(f"HSR 更新：{name}更新时出错")
+                self._append_log(f"{name}更新异常，按现有版本继续：{e}")
                 continue
             if outcome.blocking:
                 blocking.append(outcome.message)
@@ -370,8 +378,11 @@ class HSRManager(TaskExecuteBase):
             try:
                 await session.cancel()
             except Exception as exc:  # noqa: BLE001
-                logger.warning(f"终止 HSR {engine} 直控会话失败：{exc}")
-                self._append_log(f"终止 HSR {engine} 直控会话失败：{exc}")
+                message = (
+                    f"终止 HSR {engine_label(engine, left=False)}直控会话失败：{exc}"
+                )
+                logger.warning(message)
+                self._append_log(message)
 
         await stop_external_processes(
             self._runtime,
@@ -421,7 +432,7 @@ class HSRManager(TaskExecuteBase):
             if cloud_error:
                 return cloud_error
         elif not m7a_path and not sra_path:
-            return "未配置任何脚本路径，请至少填写 M7A 或 SRA 路径"
+            return "未配置任何脚本路径，请至少填写三月七或 SRA 路径"
 
         for module in HSR_TASK_MODULES:
             raw_assigned = script_config._config_item_index["TaskMapping"][
@@ -430,7 +441,7 @@ class HSRManager(TaskExecuteBase):
             if not script_supports(module.key, raw_assigned):
                 return (
                     f"模块「{module.name}」的分配脚本 '{raw_assigned}' "
-                    f"不被该模块支持（仅支持：{'、'.join(module.supported_scripts)}）"
+                    f"不被该模块支持（仅支持：{engine_list(module.supported_scripts)}）"
                 )
 
         m7a_available = False
@@ -439,7 +450,7 @@ class HSRManager(TaskExecuteBase):
         if m7a_path:
             m7a_exe = Path(m7a_path) / "March7th Assistant.exe"
             if not m7a_exe.exists():
-                return f"M7A 路径中未找到 March7th Assistant.exe：{m7a_exe}"
+                return f"三月七路径中未找到 March7th Assistant.exe：{m7a_exe}"
             m7a_available = True
 
         # 云平台不用 SRA：SRA 路径有没有、可不可用都不影响。
@@ -555,7 +566,7 @@ class HSRManager(TaskExecuteBase):
                     if assigned == "M7A":
                         m7a_needed = True
                     if assigned == "M7A" and not m7a_available:
-                        return f"用户「{user_name}」模块「{module.name}」分配给了 M7A，但 M7A 路径不可用"
+                        return f"用户「{user_name}」模块「{module.name}」分配给了三月七，但三月七路径不可用"
                     if assigned == "SRA" and not sra_available:
                         return f"用户「{user_name}」模块「{module.name}」分配给了 SRA，但 SRA 路径不可用"
 
@@ -1003,7 +1014,7 @@ class HSRManager(TaskExecuteBase):
                     )
         except asyncio.CancelledError:
             self.crashed = True
-            self._append_log("HSR 任务收到停止请求，正在终止 SRA/M7A")
+            self._append_log("HSR 任务收到停止请求，正在终止 SRA / 三月七")
             await self._stop_external_processes()
             raise
 
@@ -1075,17 +1086,17 @@ class HSRManager(TaskExecuteBase):
         if cloud:
             self._append_log(
                 f"用户「{user_name}」进入脚本直控；MAS 托管该用户的云浏览器，"
-                f"三月七按原生配置连接并执行：{'、'.join(control.engines)}"
+                f"三月七按原生配置连接并执行：{engine_list(control.engines)}"
             )
         elif is_game_management_enabled(self.script_config):
             self._append_log(
                 f"用户「{user_name}」进入脚本直控；MAS 负责先启动游戏并跟踪脚本进程，"
-                f"原生配置原样执行：{'、'.join(control.engines)}"
+                f"原生配置原样执行：{engine_list(control.engines)}"
             )
         else:
             self._append_log(
                 f"用户「{user_name}」进入脚本直控；MAS 不管理游戏，"
-                f"仅运行原生配置并跟踪脚本进程：{'、'.join(control.engines)}"
+                f"仅运行原生配置并跟踪脚本进程：{engine_list(control.engines)}"
             )
         timeout_seconds = control.timeout_seconds
         if cloud:
@@ -1122,8 +1133,14 @@ class HSRManager(TaskExecuteBase):
                 try:
                     result = await session.run(timeout_seconds)
                     if not result.success:
-                        raise RuntimeError(result.error or f"{engine} 直控执行失败")
-                    summary = result.summary or f"{engine} 直控执行完成"
+                        raise RuntimeError(
+                            result.error
+                            or f"{engine_label(engine, left=False)}直控执行失败"
+                        )
+                    summary = (
+                        result.summary
+                        or f"{engine_label(engine, left=False)}直控执行完成"
+                    )
                     summaries.append(summary)
                     self._append_log(f"用户「{user_name}」{summary}")
                 except asyncio.CancelledError:
@@ -1161,7 +1178,7 @@ class HSRManager(TaskExecuteBase):
         """
 
         for label, source, backup, existed in self._external_config_targets:
-            if label != "M7A config.yaml" or not existed:
+            if label != _M7A_CONFIG_LABEL or not existed:
                 continue
             try:
                 _restore_path_from_backup(label, source, backup)
@@ -1299,7 +1316,7 @@ class HSRManager(TaskExecuteBase):
         try:
             await self._stop_external_processes()
         except Exception as e:  # noqa: BLE001
-            msg = f"停止 SRA/M7A 外部进程失败：{e}"
+            msg = f"停止 SRA / 三月七外部进程失败：{e}"
             logger.opt(exception=True).warning(msg)
             self._append_log(msg)
             final_errors.append(msg)

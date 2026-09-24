@@ -130,6 +130,12 @@ def engine_label(engine: str, *, left: bool = True, right: bool = True) -> str:
     return f"{' ' if left else ''}{name}{' ' if right else ''}"
 
 
+def engine_list(engines) -> str:
+    """一组引擎的显示名，用顿号连接（「三月七、SRA」）。"""
+
+    return "、".join(ENGINE_DISPLAY_NAMES.get(engine, engine) for engine in engines)
+
+
 @dataclass(frozen=True)
 class HSRScriptAssignment:
     """模块引擎归属的解析结果。

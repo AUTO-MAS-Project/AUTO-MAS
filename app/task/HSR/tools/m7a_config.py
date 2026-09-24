@@ -566,7 +566,7 @@ def load_m7a_native_config(script_config: Any) -> dict[str, Any]:
         raw_root = ""
     root = str(raw_root or "").strip()
     if not root:
-        raise FileNotFoundError("请先设置 M7A 路径")
+        raise FileNotFoundError("请先设置三月七路径")
     path = Path(root) / "config.yaml"
     if not path.is_file():
         raise FileNotFoundError(f"三月七原生配置不存在：{path}")

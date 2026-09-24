@@ -89,6 +89,7 @@ def build_capabilities(script_config: Any) -> dict[str, Any]:
     """
 
     from app.task.HSR.task_mapping import (
+        ENGINE_DISPLAY_NAMES,
         HSR_TASK_MODULES,
         describe_script_fallback,
         resolve_script_assignment,
@@ -122,7 +123,7 @@ def build_capabilities(script_config: Any) -> dict[str, Any]:
         adapters.append(
             {
                 "engine": engine,
-                "display_name": "三月七" if engine == "M7A" else "StarRailAssistant",
+                "display_name": ENGINE_DISPLAY_NAMES.get(engine, engine),
                 "version": _installed_version(script_config, engine),
                 "capabilities": {
                     "native_import": bool(import_ready),
@@ -254,6 +255,7 @@ def build_managed_config(
     from app.task.HSR.task_mapping import (
         HSR_TASK_MODULES,
         describe_script_fallback,
+        engine_label,
         resolve_script_assignment,
     )
 
@@ -281,7 +283,9 @@ def build_managed_config(
         try:
             modules = list_managed_modules(engine, script_config, plan)
         except (FileNotFoundError, OSError, RuntimeError, ValueError, KeyError) as exc:
-            warnings.append(f"{engine} 动态托管字段不可用：{exc}")
+            warnings.append(
+                f"{engine_label(engine, left=False)}动态托管字段不可用：{exc}"
+            )
             continue
         for module in modules:
             task_forms.setdefault(module.key, {})[engine] = module.asdict()
