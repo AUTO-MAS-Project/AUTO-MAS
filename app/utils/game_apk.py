@@ -49,6 +49,9 @@ APK_MIN_BYTES = 64 * 1024 * 1024
 """安装包体积下限，低于此值判定为下载到错误内容（如跳转页 HTML）"""
 
 _VERSION_NAME_RE = re.compile(r"versionName=([\w.\-]+)")
+_VERSION_CODE_RE = re.compile(r"versionCode=(\d+)")
+_INSTALL_FAILURE_RE = re.compile(r"Failure \[([^\]:\s]+)[^\]]*\]")
+"""``adb install`` 的失败行，取原因码，如 ``INSTALL_FAILED_VERSION_DOWNGRADE``"""
 
 _ZIP_EOCD_SIGNATURE = b"PK\x05\x06"
 _ZIP64_LOCATOR_SIGNATURE = b"PK\x06\x07"
@@ -117,6 +120,23 @@ async def get_installed_client_version(
         str | None: 版本号；游戏未安装或读取失败时返回 ``None``。
     """
 
+    info = await get_installed_client_info(adb_path, adb_address, package_name)
+    return info[0] if info is not None else None
+
+
+async def get_installed_client_info(
+    adb_path: Path | None, adb_address: str, package_name: str
+) -> tuple[str, int | None] | None:
+    """读取模拟器内已安装客户端的 ``(versionName, versionCode)``。
+
+    versionCode 用来判断能不能覆盖安装：Android 不允许 versionCode 降级，其他渠道装的
+    客户端 versionCode 可能比官网包还高，官网包就永远装不上。
+
+    Returns:
+        tuple[str, int | None] | None: 版本号与 versionCode（读不到时为 ``None``）；
+        游戏未安装或读取失败时整体返回 ``None``。
+    """
+
     if ":" in adb_address:
         # host:port 形式的设备需要先建立连接，否则 -s 会找不到设备
         await _run_adb(adb_path, adb_address, "connect", adb_address, timeout=20)
@@ -140,8 +160,12 @@ async def get_installed_client_version(
         return None
 
     version = match.group(1)
-    logger.info(f"模拟器内 {package_name} 已安装版本: {version}")
-    return version
+    code_match = _VERSION_CODE_RE.search(output)
+    version_code = int(code_match.group(1)) if code_match is not None else None
+    logger.info(
+        f"模拟器内 {package_name} 已安装版本: {version}（versionCode={version_code}）"
+    )
+    return version, version_code
 
 
 def _parse_version(version: str) -> tuple[int, ...]:
@@ -620,7 +644,15 @@ async def install_apk(
         str(apk_path),
         timeout=timeout,
     )
-    if returncode != 0 or "Success" not in output:
+    # 新版 adb 流式安装先打「Success: streamed N bytes」（只表示传完了），真正的结果在
+    # 后面一行；安装被拒时退出码仍可能是 0。所以只认单独一行的 Success，见 Failure 一律失败。
+    failure = _INSTALL_FAILURE_RE.search(output)
+    if failure is not None:
+        raise RuntimeError(
+            f"安装失败（{failure.group(1)}）: returncode={returncode}, output={output}"
+        )
+    succeeded = any(line.strip() == "Success" for line in output.splitlines())
+    if returncode != 0 or not succeeded:
         raise RuntimeError(f"安装失败: returncode={returncode}, output={output}")
 
     logger.success("游戏安装包安装成功")

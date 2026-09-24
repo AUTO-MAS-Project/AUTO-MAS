@@ -18,7 +18,9 @@
   官服客户端版本。只查资源为「官服」且拉起的包名是 `com.shenlan.m.reverse1999` 的，其余 `Skipped`。
   直链取自官网版本配置接口（`pageVersion` 从官网 `assets/js/api.js` 里读，读不出用写死的兜底值），
   版本号按 HTTP Range 只读直链安装包的清单（`app/utils/game_apk.fetch_remote_apk_version`，直链文件名
-  里没有版本号）。落后时 `Check` 判失败提示手动更新，`AutoInstall` 下载到 `data/GameApk` 后
+  里没有版本号）。本机 versionCode 高于官网包（其他渠道装的，如 MuMu 应用中心：3.9.0 是 210、
+  官网 4.0.0 是 170）时 Android 不许降级、官网包永远装不上，两种模式都直接判失败、不下载。
+  否则落后时 `Check` 判失败提示手动更新，`AutoInstall` 下载到 `data/GameApk` 后
   `adb install -r`、装完复查，安装包成败都删。下载 / 安装各 60 分钟上限，写死不做配置。
 - `migration.py`：旧版 M9A 专项配置（`Run.IfPsychubeDailyOnce`、`Task.Queue`、`Data.LastPsychubeDate`…）
   → MaaFW 形状的一次性迁移，以及「通用 MaaFW 脚本指向 M9A 项目 → 换类型标签」。在

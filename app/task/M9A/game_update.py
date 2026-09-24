@@ -41,7 +41,7 @@ from app.utils.game_apk import (
     GameUpdateResult,
     download_apk,
     fetch_remote_apk_version,
-    get_installed_client_version,
+    get_installed_client_info,
     install_apk,
     is_client_outdated,
 )
@@ -177,11 +177,14 @@ async def ensure_game_updated(
             f"官网安装包的包名是 {remote.package}，与官服不符，跳过游戏版本检查",
         )
 
-    installed = await get_installed_client_version(adb_path, adb_address, package_name)
-    if installed is None:
+    installed_info = await get_installed_client_info(
+        adb_path, adb_address, package_name
+    )
+    if installed_info is None:
         # 读不到已安装版本可能是游戏未安装，也可能是 adb 临时异常，
         # 一律不阻断本次代理，交回 M9A 原有流程判定
         return GameUpdateResult("Skipped", "未能读取模拟器内的游戏版本，跳过更新检查")
+    installed, installed_code = installed_info
 
     if not is_client_outdated(installed, remote.version_name):
         return GameUpdateResult("UpToDate", f"游戏客户端已是最新版本 {installed}")
@@ -189,7 +192,22 @@ async def ensure_game_updated(
     outdated_text = (
         f"游戏客户端版本落后（已安装 {installed}，最新 {remote.version_name}）"
     )
-    logger.info(outdated_text)
+    logger.info(
+        f"{outdated_text}；versionCode 本机 {installed_code}，官网 {remote.version_code}"
+    )
+
+    if (
+        installed_code is not None
+        and remote.version_code is not None
+        and installed_code > remote.version_code
+    ):
+        # Android 不允许 versionCode 降级：其他渠道（如模拟器自带的应用中心）装的客户端
+        # versionCode 比官网包高时，官网包永远装不上，下了也白下
+        return GameUpdateResult(
+            "NeedManualUpdate",
+            f"{outdated_text}。本机客户端来自其他渠道（如模拟器自带的应用中心），"
+            "官网安装包无法覆盖安装，请在原渠道更新游戏后重试",
+        )
 
     if not if_auto_install:
         return GameUpdateResult(
@@ -216,7 +234,8 @@ async def ensure_game_updated(
         with suppress(OSError):
             apk_path.unlink(missing_ok=True)
 
-    current = await get_installed_client_version(adb_path, adb_address, package_name)
+    current_info = await get_installed_client_info(adb_path, adb_address, package_name)
+    current = current_info[0] if current_info is not None else None
     if current is None or is_client_outdated(current, remote.version_name):
         return GameUpdateResult(
             "NeedManualUpdate",
