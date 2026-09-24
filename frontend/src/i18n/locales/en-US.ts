@@ -1652,7 +1652,9 @@ export default {
     mssFlavorControllerHint:
       'The emulator build of Stella Sora cannot launch the game, so MSS supports the desktop build only; pick the desktop controller. Emulators will not be supported unless that problem is fixed',
     mssFlavorQueueHint:
-      'With "Event quick battle" in the task queue it is moved to the front and runs first whenever an event is live, and skipped when none is running. With an empty queue and no plan selected there is nothing to run: tick at least "Bounty Trial quick battle", or pick a plan (which adds it automatically). The new tower climb is moved to the end; to climb only once a week, add it to "Skip once done this week" in the script\'s Run configuration',
+      '· With "Event quick battle" in the task queue it is moved to the front and runs first while an event is live, and skipped when none is running\n' +
+      '· With an empty queue and no plan selected there is nothing to run: tick at least "Bounty Trial quick battle", or pick a plan (which adds it automatically)\n' +
+      '· The new tower climb is moved to the end; to climb only once a week, add it to "Skip once done this week" in the script\'s Run configuration',
     mssFlavorPlanHint:
       'With a plan selected, each run rewrites the stage, difficulty and count of "Bounty Trial quick battle" from today\'s slot, adding the task if it is not queued; "Fixed" runs the options set in the task queue',
     maafwFlavorPlanMode: 'Plan',

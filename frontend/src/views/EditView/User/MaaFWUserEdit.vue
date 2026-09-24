@@ -1143,6 +1143,11 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
+/* 队列提示按行给，不要挤成一坨（文案里用 \n 分行） */
+.flavor-queue-hint :deep(.ant-alert-message) {
+  white-space: pre-line;
+}
+
 .flavor-queue-hint {
   margin-bottom: 16px;
 }
