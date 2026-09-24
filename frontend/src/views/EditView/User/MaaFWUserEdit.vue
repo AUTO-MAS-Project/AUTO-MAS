@@ -59,18 +59,15 @@
             </a-button>
           </a-flex>
           <!-- 特调类型（M9A）自动加首尾任务与切号，提醒用户不用手动加；不隐藏这三个任务，手动加了也只是被去重 -->
+          <!-- 一条提示一个框：挤在一个框里读起来还是一坨 -->
           <a-alert
-            v-if="flavor.queueHintKey"
+            v-for="(line, index) in queueHintLines"
+            :key="index"
             class="flavor-queue-hint"
             type="info"
             show-icon
-          >
-            <template #message>
-              <ul class="flavor-queue-hint-list">
-                <li v-for="(line, index) in queueHintLines" :key="index">{{ line }}</li>
-              </ul>
-            </template>
-          </a-alert>
+            :message="line"
+          />
           <!-- 特调类型（MSS）的用户可以引用计划表：运行前由特调钩子按当天槽位改写任务选项 -->
           <a-form-item
             v-if="flavor.planConsumer"
@@ -1156,13 +1153,12 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
-/* 队列提示按条目给，不要挤成一坨（文案里用 \n 分行） */
-.flavor-queue-hint-list {
-  margin: 0;
-  padding-left: 18px;
+/* 每条提示一个框（文案里用 \n 分行），框之间留点空 */
+.flavor-queue-hint {
+  margin-bottom: 8px;
 }
 
-.flavor-queue-hint {
+.flavor-queue-hint-last {
   margin-bottom: 16px;
 }
 
