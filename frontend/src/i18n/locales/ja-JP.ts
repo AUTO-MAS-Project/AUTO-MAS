@@ -3435,7 +3435,9 @@ export default {
       openclawQqUnbindConfirm:
         '連携を解除すると、この端末に保存した QQ ログイン状態が消去されます。続行しますか？',
       openclawQqStatusRetry: '連携状態を再取得',
-      openclawQqBound: '連携済み',
+      openclawQqBound: '接続済み',
+      openclawQqConnecting: '接続中',
+      openclawQqReconnecting: '再接続中',
       openclawQqUnbound: '未連携',
       openclawQqBindSuccess: 'QQ 公式ボットを連携しました',
       openclawQqUnbindSuccess: 'QQ 公式ボットの連携を解除しました',

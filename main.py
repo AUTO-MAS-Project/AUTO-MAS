@@ -389,7 +389,7 @@ def main():
                 await DesktopGuard.start()
                 await MainTimer.start()
 
-                # Claw 通知管理器只维护扫码会话和凭据，消息请求按需发起。
+                # 微信按需发送；QQ 同时维持官方网关连接以完成扫码绑定。
                 from app.services.openclaw_qq import openclaw_qq_manager
                 from app.services.openclaw_weixin import openclaw_weixin_manager
 

@@ -46,6 +46,8 @@ export function useClawBinding(
   let sessionId = ''
   let runId = 0
   let timer: ReturnType<typeof setTimeout> | undefined
+  let statusTimer: ReturnType<typeof setTimeout> | undefined
+  let disposed = false
   let isBound = false
   let enableAfterBind = false
 
@@ -54,6 +56,7 @@ export function useClawBinding(
   }
 
   const loadStatus = async () => {
+    clearTimeout(statusTimer)
     statusLoading.value = true
     statusError.value = ''
     try {
@@ -72,6 +75,15 @@ export function useClawBinding(
       statusError.value = String(error)
     } finally {
       statusLoading.value = false
+      clearTimeout(statusTimer)
+      if (
+        !disposed &&
+        channel === 'qq' &&
+        status.value?.connected &&
+        status.value.state !== 'connected'
+      ) {
+        statusTimer = setTimeout(() => void loadStatus(), POLL_INTERVAL)
+      }
     }
   }
 
@@ -102,7 +114,7 @@ export function useClawBinding(
         if (enableAfterBind) await onBoundChange(true)
         isBound = true
         await loadStatus()
-      } else if (['waiting', 'scanned'].includes(state.value)) {
+      } else if (['waiting', 'scanned', 'connecting'].includes(state.value)) {
         timer = setTimeout(() => void poll(id), POLL_INTERVAL)
       }
     } catch (error) {
@@ -163,7 +175,11 @@ export function useClawBinding(
   }
 
   onMounted(loadStatus)
-  onBeforeUnmount(close)
+  onBeforeUnmount(() => {
+    disposed = true
+    clearTimeout(statusTimer)
+    close()
+  })
 
   return {
     label,
