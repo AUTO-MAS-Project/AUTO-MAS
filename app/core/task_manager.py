@@ -64,6 +64,7 @@ from .config import (
     MaaConfig,
     MaaEndConfig,
     MaaFWConfig,
+    MSSConfig,
     OkNteConfig,
     OkwwConfig,
     SrcConfig,
@@ -135,6 +136,7 @@ _MANAGER_BOOK: dict[
     MaaEndConfig: lambda script_item, _ctx: task.MaaEndManager(script_item),
     # 特调类型是 MaaFWConfig 的子类，但这张表按类型精确查，得单独登记一行。
     M9AConfig: lambda script_item, _ctx: task.MaaFWEmbeddedManager(script_item),
+    MSSConfig: lambda script_item, _ctx: task.MaaFWEmbeddedManager(script_item),
     HSRConfig: lambda script_item, _ctx: task.HSRManager(script_item),
     BetterGIConfig: lambda script_item, _ctx: task.BetterGIManager(script_item),
     ZzzOdConfig: lambda script_item, _ctx: task.ZzzOdManager(script_item),

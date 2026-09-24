@@ -788,6 +788,23 @@ export default {
     stringSplittingGuide: '字符串切割指南',
     done: '完成',
     createFirstUser: '创建第一个用户！',
+    shellImportTitle: '导入已有配置为用户',
+    shellImportHint:
+      '在项目目录里找到 {count} 份 {source} 配置。勾选的每一份会创建一个用户，用户名就是配置名，任务队列和任务选项一起导入；不勾选就只建一个空的新用户。',
+    shellImportSelectAll: '全选',
+    shellImportSelectedCount: '已选 {selected} / {total}',
+    shellImportActive: '当前使用中',
+    shellImportTaskCount: '{count} 个任务',
+    shellImportUserName: '用户名：{name}',
+    shellImportButton: '导入 {count} 个用户',
+    shellImporting: '正在导入…',
+    shellImportFailedHead: '{count} 份配置没能导入：',
+    shellImportFailedLine: '「{name}」：{reason}',
+    shellImportSkippedLine: '「{name}」跳过了 {count} 项：{items}',
+    shellImportSkippedLineMore: '「{name}」跳过了 {items} 等 {count} 项',
+    shellImportListSeparator: '、',
+    shellImportAllFailed: '没能导入已有配置，改为新建一个空用户',
+    shellImportAllFailedWithReason: '没能导入已有配置，改为新建一个空用户：{reason}',
     wutheringWavesWillBe:
       '将按所选服务器检查并更新鸣潮，更新过程可能下载数 GB 数据，请确保游戏未在运行',
     turnAutomaticRelicSalvage:
@@ -803,7 +820,7 @@ export default {
     checkUpdates2: '检查更新',
     emulator2: '模拟器',
     regexGuide: '正则指南',
-    loadingMfwInterface: '正在加载 MFW 接口',
+    loadingMfwInterface: '正在加载项目接口',
     loadingMaafwProjectInterface: '正在加载 MaaFW 项目接口',
     clear: '清空',
     switchAccountDirectly: '直接切换账号',
@@ -1477,7 +1494,7 @@ export default {
     saveUserBeforeImporting: '请先保存用户后再导入配置',
     createUserBeforeConfiguring: '请先创建用户后再配置 OK-NTE',
     setLogFilePath: '请先在脚本配置中设置日志文件路径',
-    importMfwProjectScript: '请先在脚本页导入 MFW 项目',
+    importMfwProjectScript: '请先在脚本页导入项目',
     addEnableUserBefore: '请先添加并启用用户，再进行更新检查',
     finishSetupOkWw: '请在 ok-ww 界面完成设置。',
     readingControllersResourcesTasks:
@@ -1547,8 +1564,8 @@ export default {
     trackChildProcesses: '追踪子进程',
     trackedProcessCommandLine: '追踪进程命令行参数',
     pickEndfieldExePath: '选择 Endfield.exe 文件路径',
-    pickMfwResourceLeave: '选择 MFW Resource，留空时自动选择匹配当前控制方式的第一个 Resource',
-    pickMfwProject: '选择 MFW 项目',
+    pickMfwResourceLeave: '选择 Resource，留空时自动选择匹配当前控制方式的第一个 Resource',
+    pickMfwProject: '选择项目',
     pickDirectoryHoldingMaaend2: '选择 MaaEnd.exe 所在目录',
     pickExe: '选择 exe',
     pickDirectoryHoldingOk3: '选择 ok-nte.exe 所在目录',
@@ -1573,6 +1590,24 @@ export default {
     m9aFlavorAccountTooltip:
       '账号填写后会自动加入「切换账号」任务（官服有效）；密码仅用于本地记录，不会传入脚本',
     m9aFlavorQueueHint: '启动游戏、关闭游戏与切换账号由 M9A 专项自动加入，无需手动添加',
+    mssFlavorScriptTitle: '编辑 MSS 脚本',
+    mssFlavorSourceDirectory: 'MSS 程序目录',
+    mssFlavorSourceHint: '选择包含 interface.json 的 MaaStellaSora（星塔助手）目录',
+    mssFlavorSourcePlaceholder: '选择包含 interface.json 的 MaaStellaSora 目录',
+    mssFlavorControllerHint:
+      '模拟器端的《星塔旅人》存在无法启动游戏的问题，MSS 只适配桌面端，请选择「桌面端」控制方式；除非该问题被修复，否则不会适配模拟器',
+    mssFlavorQueueHint:
+      '· 任务队列里有「活动快速战斗」时，活动期间自动排到最前先打，非活动期间自动跳过\n' +
+      '· 任务队列为空又没选计划表时，这一轮没有可执行任务：至少勾上「悬赏试炼快速战斗」，或选一张计划表（选了之后队列里没有它也会自动加入）\n' +
+      '· 新版爬塔会排到最后；想每周只跑一次，在脚本「运行配置」的「每周完成后跳过」里选上它',
+    mssFlavorQueueEmpty: '任务队列是空的，计划表也还是「固定」：这一轮没有任何可执行任务，请至少加一个任务或选一张计划表',
+    mssFlavorActivityFirst: '活动优先',
+    mssFlavorActivityFirstHint:
+      '开启后，队列里没加「活动快速战斗」时也会在活动期间自动加入并排到最前；取不到活动数据时不补',
+    mssFlavorPlanHint:
+      '选择计划表后，每次运行按当天的设置改写「悬赏试炼快速战斗」的关卡、难度与次数，队列里没有它时会自动加入；「固定」则按任务队列里配的选项执行',
+    maafwFlavorPlanMode: '计划表',
+    maafwFlavorPlanFixed: '固定（按任务队列里的选项）',
     pickHowGameControlled: '选择游戏控制方式',
     pickUserWhoseServer: '选择用户（按该用户的服务器检查更新）',
     chooseWhetherMasSwitches:
@@ -2818,6 +2853,7 @@ export default {
       nte: '异环活动信息',
       reverse1999: '重返未来：1999活动信息',
       bluearchive: '碧蓝档案活动信息',
+      stellasora: '星塔旅人活动信息',
       arknights: '明日方舟活动信息',
       activities: '游戏活动轮播',
     },
@@ -2830,6 +2866,7 @@ export default {
       nte: '异环',
       reverse1999: '重返未来：1999',
       bluearchive: '碧蓝档案',
+      stellasora: '星塔旅人',
       arknights: '明日方舟',
     },
     carousel: {
@@ -2840,6 +2877,7 @@ export default {
       loading: '正在获取活动信息…',
       noActivity: '暂无进行中的活动',
       unavailable: '活动数据暂不可用',
+      endedNote: '后续活动即将开始',
       allHidden: '轮播里的游戏都关掉了，可在「编辑布局」里重新打开',
     },
     activityNotes: {
@@ -3138,6 +3176,7 @@ export default {
       maa: 'MAA 计划表',
       maaEnd: 'MaaEnd 计划表',
       baah: 'BAAH 计划表',
+      mss: 'MSS 计划表',
     },
     week: {
       ALL: '全局',
@@ -3156,6 +3195,11 @@ export default {
       currentTask: '当前任务',
       rewardsSet: '奖励组',
       sanityTask: '理智任务',
+      tribulationStage: '悬赏试炼关卡',
+      skipDifficulty: '跳过难度选择',
+      difficulty: '难度',
+      consumeAllEnergy: '消耗所有干劲',
+      fightTimes: '作战次数',
       globalControl: '全局控制',
       stage: '关卡',
       on: '开',
@@ -3492,6 +3536,7 @@ export default {
       BetterGI: 'BetterGI脚本',
       ZzzOd: 'ZZZ-OD脚本',
       BAAH: 'BAAH脚本',
+      MSS: 'MSS脚本',
       General: '通用脚本',
     },
     typeDesc: {
@@ -3505,6 +3550,7 @@ export default {
       BetterGI: '原神BGI专项一条龙脚本',
       ZzzOd: '绝区零一条龙 · 自动每日与实例（账号）管理',
       BAAH: '碧蓝档案爱丽丝助手专项，自动完成每日任务与多实例（账号）管理',
+      MSS: '星塔旅人（MaaStellaSora）专项，自动完成每日任务与多实例（账号）管理',
       General: '通用自动化脚本，适用于所有具备日志文件的脚本',
     },
     mask: {
@@ -3618,6 +3664,7 @@ export default {
         BetterGI: '原神BGI专项一条龙脚本',
         ZzzOd: '绝区零一条龙 · 自动每日与实例（账号）管理',
         BAAH: '碧蓝档案爱丽丝助手专项，自动完成每日任务与多实例（账号）管理',
+        MSS: '星塔旅人（MaaStellaSora）专项，自动完成每日任务与多实例（账号）管理',
       },
     },
     toast: {

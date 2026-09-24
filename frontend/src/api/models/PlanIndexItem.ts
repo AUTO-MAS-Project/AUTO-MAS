@@ -20,6 +20,7 @@ export namespace PlanIndexItem {
         MAA_PLAN_CONFIG = 'MaaPlanConfig',
         MAA_END_PLAN_CONFIG = 'MaaEndPlanConfig',
         BAAHPLAN_CONFIG = 'BAAHPlanConfig',
+        MSSPLAN_CONFIG = 'MSSPlanConfig',
     }
 }
 

@@ -140,6 +140,7 @@ import ScriptCreateDialog from '@/views/scripts/components/ScriptCreateDialog.vu
 import type { Script, ScriptType, User } from '@/types/script'
 import {
   getScriptEditSegment,
+  isMfwFamily,
   type ScriptCreateRequest,
 } from '@/views/scripts/components/scriptCreateFlow'
 import { useScriptApi } from '@/composables/useScriptApi'
@@ -272,6 +273,7 @@ const scriptEditPathMap: Record<ScriptType, string> = {
   BetterGI: 'bettergi',
   ZzzOd: 'zzzod',
   BAAH: 'baah',
+  MSS: 'mss',
 }
 
 const getScriptEditPath = (type: ScriptType) => scriptEditPathMap[type]
@@ -347,11 +349,10 @@ const navigateToCreatedScript = (
   data?: Record<string, unknown>
 ) => {
   const route = {
-    // MFW 新建后进分步引导（M9A 是 MaaFW 的特调类型，同一套引导）；其余类型直接进编辑页
-    path:
-      type === 'MaaFW' || type === 'M9A'
-        ? `/scripts/${scriptId}/setup/maafw`
-        : `/scripts/${scriptId}/edit/${getScriptEditSegment(type)}`,
+    // MFW 新建后进分步引导（M9A / MSS 是 MaaFW 的特调类型，同一套引导）；其余类型直接进编辑页
+    path: isMfwFamily(type)
+      ? `/scripts/${scriptId}/setup/maafw`
+      : `/scripts/${scriptId}/edit/${getScriptEditSegment(type)}`,
     ...(data
       ? {
           state: {
@@ -489,6 +490,8 @@ const handleAddUser = (script: Script) => {
     router.push(`/scripts/${script.id}/users/add/zzzod`)
   } else if (script.type === 'BAAH') {
     router.push(`/scripts/${script.id}/users/add/baah`)
+  } else if (script.type === 'MSS') {
+    router.push(`/scripts/${script.id}/users/add/mss`)
   } else {
     router.push(`/scripts/${script.id}/users/add/general`)
   }
@@ -521,6 +524,8 @@ const handleEditUser = (user: User) => {
       router.push(`/scripts/${script.id}/users/${user.id}/edit/zzzod`)
     } else if (script.type === 'BAAH') {
       router.push(`/scripts/${script.id}/users/${user.id}/edit/baah`)
+    } else if (script.type === 'MSS') {
+      router.push(`/scripts/${script.id}/users/${user.id}/edit/mss`)
     } else {
       router.push(`/scripts/${script.id}/users/${user.id}/edit/general`)
     }

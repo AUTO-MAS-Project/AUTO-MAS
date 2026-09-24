@@ -10,6 +10,7 @@ import okNteIcon from '@/assets/ok-nte.ico'
 import okwwIcon from '@/assets/ok-ww.ico'
 import srcIcon from '@/assets/SRC.png'
 import maafwIcon from '@/assets/maafw.png'
+import mssIcon from '@/assets/mss.png'
 import zzzOdIcon from '@/assets/zzz-od.ico'
 
 /** 脚本类型 → 图标资源，Vite 处理后的 URL */
@@ -22,6 +23,7 @@ export const SCRIPT_LOGOS: Record<ScriptType, string> = {
   MAA: maaIcon,
   MaaEnd: maaEndIcon,
   MaaFW: maafwIcon,
+  MSS: mssIcon,
   OkNte: okNteIcon,
   Okww: okwwIcon,
   SRC: srcIcon,
@@ -38,6 +40,7 @@ export const SCRIPT_LABELS: Record<ScriptType, string> = {
   MAA: 'MAA',
   MaaEnd: 'MaaEnd',
   MaaFW: 'MFW',
+  MSS: 'MSS',
   OkNte: 'OK-NTE',
   Okww: 'ok-ww',
   SRC: 'SRC',

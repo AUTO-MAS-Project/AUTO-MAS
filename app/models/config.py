@@ -46,6 +46,8 @@ from app.utils.constants import (
     MAAEND_STAGE_WITH_AB,
     MAAEND_TASKS,
     MATERIALS_MAP,
+    MSS_DEFAULT_TRIBULATION_STAGE,
+    MSS_TRIBULATION_STAGES,
     PLAN_CONSUMER_VALUES,
     RESOURCE_STAGE_INFO,
     STARRAIL_STAGE_BOOK,
@@ -3015,6 +3017,47 @@ class M9AConfig(MaaFWConfig):
     FLAVOR = "app.task.M9A.flavor:FLAVOR"
 
 
+class MSSUserConfig(MaaFWUserConfig):
+    """MSS（MaaStellaSora / 星塔旅人）用户配置：MaaFW 用户配置再加一项计划表引用。
+
+    ``Info.PlanMode`` 是比 MaaFW 多出的唯一字段：``Fixed`` 表示悬赏试炼按任务队列里
+    用户自己配的选项跑；填了 MSS 计划表的 UID，运行前由特调钩子按当天槽位改写悬赏试炼的
+    关卡、难度与次数（见 ``app/task/MSS/flavor.py``）。
+    """
+
+    related_config: dict[str, MultipleConfig] = {}
+
+    def __init__(self) -> None:
+        ## 活动优先：队列里没加「活动快速战斗」时，确认在活动期也自动加入并排到最前
+        self.Info_IfActivityFirst = ConfigItem(
+            "Info", "IfActivityFirst", True, BoolValidator()
+        )
+        ## 悬赏试炼关卡来源：Fixed 用任务队列里配的，选了计划表就按当天槽位改
+        self.Info_PlanMode = ConfigItem(
+            "Info",
+            "PlanMode",
+            "Fixed",
+            TypedMultipleUIDValidator(
+                "Fixed", self.related_config, "PlanConfig", MSSPlanConfig
+            ),
+        )
+
+        super().__init__()
+
+
+class MSSConfig(MaaFWConfig):
+    """MSS 脚本配置：MaaFW 的特调类型。
+
+    字段集与 MaaFW 完全一致，运行、更新、内嵌副本全部走 MaaFW 引擎；差别只有类型身份
+    （键 / 图标 / 创建卡）、默认脚本名、用户上的计划表引用，以及运行前的队列装饰
+    （活动期先打活动、按计划表改悬赏试炼、新版爬塔放最后）。
+    """
+
+    DEFAULT_SCRIPT_NAME = "新 MSS 脚本"
+    USER_CONFIG_CLASS = MSSUserConfig
+    FLAVOR = "app.task.MSS.flavor:FLAVOR"
+
+
 class MaaPlanConfig(ConfigBase):
     """MAA计划表配置"""
 
@@ -3255,6 +3298,71 @@ class BAAHPlanConfig(WeeklyKeyPlanConfig):
             # 沿用槽位默认值（多类混打那六项），与迁移前的行为一致
             if isinstance(group_data, dict) and group_data:
                 normalized_data[group] = {"Key": normalize_baah_plan_key(group_data)}
+        return await super().load(normalized_data)
+
+
+def normalize_mss_plan_key(raw_key: object) -> dict[str, Any]:
+    """将固定配置或旧计划表日期槽位转换为 MSS key。"""
+
+    if isinstance(raw_key, dict) and "Key" in raw_key:
+        raw_key = raw_key["Key"]
+    data = raw_key if isinstance(raw_key, dict) else {}
+
+    stage = data.get("TribulationStage")
+    if stage not in MSS_TRIBULATION_STAGES:
+        stage = MSS_DEFAULT_TRIBULATION_STAGE
+    return {
+        "TribulationStage": stage,
+        "SkipDifficulty": bool(data.get("SkipDifficulty", False)),
+        "Difficulty": _clamp_plan_number(data.get("Difficulty"), 1),
+        "ConsumeAllEnergy": bool(data.get("ConsumeAllEnergy", False)),
+        "FightTimes": _clamp_plan_number(data.get("FightTimes"), 1),
+    }
+
+
+def _clamp_plan_number(value: object, default: int) -> int:
+    """把计划表里的难度 / 次数收成 1..99 的整数；非法值退回默认。"""
+
+    try:
+        number = int(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return default
+    return number if 1 <= number <= 99 else default
+
+
+class MSSPlanKeyValidator(ValidatorBase):
+    """MSS 计划表 key 验证器。"""
+
+    def validate(self, value: Any) -> bool:
+        try:
+            return normalize_mss_plan_key(value) == value
+        except ValueError:
+            return False
+
+    def correct(self, value: Any) -> dict[str, Any]:
+        return normalize_mss_plan_key(value)
+
+
+class MSSPlanConfig(WeeklyKeyPlanConfig):
+    """MSS 计划表配置：每个日期槽位存一套悬赏试炼配置。"""
+
+    def __init__(self) -> None:
+        super().__init__(
+            default_name="新 MSS 计划表",
+            ## 用与校验器同一个函数生成默认值：手写字典的话，往 key 里加字段时
+            ## 很容易漏改这里，配置项会因为「默认值不合法」直接起不来
+            default_key=normalize_mss_plan_key({}),
+            key_validator=MSSPlanKeyValidator(),
+        )
+
+    async def load(self, data: dict) -> bool:
+        """加载计划表并迁移没有 Key 包装的旧日期槽位。"""
+
+        normalized_data = deepcopy(data) if isinstance(data, dict) else {}
+        for group in ["ALL", *calendar.day_name]:
+            group_data = normalized_data.get(group)
+            if isinstance(group_data, dict):
+                normalized_data[group] = {"Key": normalize_mss_plan_key(group_data)}
         return await super().load(normalized_data)
 
 
@@ -5056,6 +5164,7 @@ class GlobalConfig(ConfigBase):
         MaaUserConfig.related_config["PlanConfig"] = self.PlanConfig
         MaaEndUserConfig.related_config["PlanConfig"] = self.PlanConfig
         BAAHUserConfig.related_config["PlanConfig"] = self.PlanConfig
+        MSSUserConfig.related_config["PlanConfig"] = self.PlanConfig
         QueueItem.related_config["ScriptConfig"] = self.ScriptConfig
         HSRUserConfig.related_config["ScriptConfig"] = self.ScriptConfig
 
@@ -5304,6 +5413,7 @@ CLASS_BOOK = {
     "BetterGI": BetterGIConfig,
     "ZzzOd": ZzzOdConfig,
     "BAAH": BAAHConfig,
+    "MSS": MSSConfig,
 }
 """配置类映射表: 脚本类型键 → 配置类, GlobalConfig 的脚本配置列表由此派生"""
 
@@ -5331,6 +5441,15 @@ PLAN_BOOK = {
         "consumer": PLAN_CONSUMER_VALUES[2],
         "script_class": BAAHConfig,
         "field_name": "StageMode",
+    },
+    "MSSPlanConfig": {
+        "create_type": "MSSPlan",
+        "config_class": MSSPlanConfig,
+        "schema_class": schema_model.MSSPlanConfig,
+        # MSS 排在 baah 之后，位置索引跟着往后挪一位
+        "consumer": PLAN_CONSUMER_VALUES[3],
+        "script_class": MSSConfig,
+        "field_name": "PlanMode",
     },
 }
 """计划表注册表"""

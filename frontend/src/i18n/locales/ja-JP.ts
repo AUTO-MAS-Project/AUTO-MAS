@@ -753,6 +753,24 @@ export default {
     stringSplittingGuide: '文字列分割のガイド',
     done: '完了',
     createFirstUser: '最初のユーザーを作成！',
+    shellImportTitle: '既存の設定をユーザーとして取り込む',
+    shellImportHint:
+      'プロジェクトフォルダーに {source} の設定が {count} 件見つかりました。チェックした設定ごとにユーザーを作成し、ユーザー名は設定名、タスクキューとタスクオプションも取り込みます。チェックしなければ空のユーザーを 1 人だけ作成します。',
+    shellImportSelectAll: 'すべて選択',
+    shellImportSelectedCount: '{selected} / {total} 件選択',
+    shellImportActive: '使用中',
+    shellImportTaskCount: 'タスク {count} 件',
+    shellImportUserName: 'ユーザー名：{name}',
+    shellImportButton: '{count} 人のユーザーを取り込む',
+    shellImporting: '取り込み中…',
+    shellImportFailedHead: '{count} 件の設定を取り込めませんでした：',
+    shellImportFailedLine: '「{name}」：{reason}',
+    shellImportSkippedLine: '「{name}」で {count} 項目をスキップしました：{items}',
+    shellImportSkippedLineMore: '「{name}」で {items} など {count} 項目をスキップしました',
+    shellImportListSeparator: '、',
+    shellImportAllFailed: '既存の設定を取り込めなかったため、空のユーザーを作成します',
+    shellImportAllFailedWithReason:
+      '既存の設定を取り込めなかったため、空のユーザーを作成します：{reason}',
     wutheringWavesWillBe:
       '選択したサーバーで鳴潮の更新を確認・実行します。数 GB のダウンロードが発生する場合があるため、ゲームが起動していないことを確認してください',
     turnAutomaticRelicSalvage:
@@ -770,7 +788,7 @@ export default {
     checkUpdates2: '更新を確認',
     emulator2: 'エミュレータ',
     regexGuide: '正規表現のガイド',
-    loadingMfwInterface: 'MFW インターフェースを読み込んでいます',
+    loadingMfwInterface: 'プロジェクトのインターフェースを読み込んでいます',
     loadingMaafwProjectInterface: 'MaaFW プロジェクトのインターフェースを読み込んでいます',
     clear: 'クリア',
     switchAccountDirectly: 'そのままアカウントを切り替える',
@@ -1435,7 +1453,7 @@ export default {
     saveUserBeforeImporting: '設定をインポートする前に、ユーザーを保存してください',
     createUserBeforeConfiguring: 'OK-NTE を設定する前に、ユーザーを作成してください',
     setLogFilePath: '先にスクリプト設定でログファイルのパスを設定してください',
-    importMfwProjectScript: '先にスクリプトページで MFW プロジェクトをインポートしてください',
+    importMfwProjectScript: '先にスクリプトページでプロジェクトをインポートしてください',
     addEnableUserBefore: '更新を確認する前に、ユーザーを追加して有効にしてください',
     finishSetupOkWw: 'ok-ww の画面で設定を完了してください。',
     readingControllersResourcesTasks:
@@ -1505,8 +1523,8 @@ export default {
     trackedProcessCommandLine: '追跡対象プロセスのコマンドライン引数',
     pickEndfieldExePath: 'Endfield.exe のパスを選択',
     pickMfwResourceLeave:
-      'MFW のリソースを選びます。空の場合は、現在の制御方式に合う最初のリソースが自動で選ばれます',
-    pickMfwProject: 'MFW プロジェクトを選択',
+      'リソースを選びます。空の場合は、現在の制御方式に合う最初のリソースが自動で選ばれます',
+    pickMfwProject: 'プロジェクトを選択',
     pickDirectoryHoldingMaaend2: 'MaaEnd.exe があるフォルダを選択',
     pickExe: 'exe を選択',
     pickDirectoryHoldingOk3: 'ok-nte.exe があるフォルダを選択',
@@ -1534,6 +1552,24 @@ export default {
       'アカウントを入力すると「アカウント切替」タスクが自動で追加されます（公式サーバーのみ）。パスワードはローカルのメモ用で、スクリプトには渡されません',
     m9aFlavorQueueHint:
       'ゲーム起動・ゲーム終了・アカウント切替は M9A 専用処理が自動で追加します。手動で追加する必要はありません',
+    mssFlavorScriptTitle: 'MSS スクリプトを編集',
+    mssFlavorSourceDirectory: 'MSS プログラムディレクトリ',
+    mssFlavorSourceHint: 'interface.json を含む MaaStellaSora ディレクトリを選択します',
+    mssFlavorSourcePlaceholder: 'interface.json を含む MaaStellaSora ディレクトリを選択',
+    mssFlavorControllerHint:
+      'エミュレーター版の『ステラソラ』はゲームを起動できない問題があるため、MSS はデスクトップ版のみに対応しています。デスクトップのコントローラーを選んでください。問題が修正されない限りエミュレーターには対応しません',
+    mssFlavorQueueHint:
+      '· タスクキューに「イベントクイックバトル」があると、イベント期間中は先頭に移動して先に実行し、期間外は自動でスキップします\n' +
+      '· タスクキューが空でプランも選んでいない場合は実行できるタスクがありません。少なくとも「懸賞試練クイックバトル」にチェックを入れるか、プランを選んでください（プランを選ぶと自動で追加されます）\n' +
+      '· 新しい塔登りは最後に回します。週に一度だけ実行するには、スクリプトの「実行設定」の「今週完了したらスキップ」に追加してください',
+    mssFlavorQueueEmpty: 'タスクキューが空で、プランも「固定」のままです。この実行にはタスクがないので、少なくとも 1 つ追加するかプランを選んでください',
+    mssFlavorActivityFirst: 'イベント優先',
+    mssFlavorActivityFirstHint:
+      'オンにすると、キューにイベントタスクがなくてもイベント期間中は自動で追加して先頭に移動します。イベント情報が取れないときは追加しません',
+    mssFlavorPlanHint:
+      'プランを選ぶと、実行のたびに当日のスロットに従って「懸賞試練クイックバトル」のステージ・難易度・回数を書き換えます。キューにない場合は自動で追加します。「固定」はタスクキューの設定どおりに実行します',
+    maafwFlavorPlanMode: 'プラン',
+    maafwFlavorPlanFixed: '固定（タスクキューの設定を使用）',
     pickHowGameControlled: 'ゲームの制御方式を選びます',
     pickUserWhoseServer: '更新確認に使うサーバーのユーザーを選びます',
     chooseWhetherMasSwitches:
@@ -2404,6 +2440,7 @@ export default {
       nte: 'Neverness to Everness のイベント情報',
       reverse1999: 'リバース：1999 のイベント情報',
       bluearchive: 'ブルーアーカイブのイベント情報',
+      stellasora: 'ステラソラのイベント情報',
       arknights: 'アークナイツのイベント情報',
       activities: 'ゲームイベントのカルーセル',
     },
@@ -2416,6 +2453,7 @@ export default {
       nte: 'Neverness to Everness',
       reverse1999: 'リバース：1999',
       bluearchive: 'ブルーアーカイブ',
+      stellasora: 'ステラソラ',
       arknights: 'アークナイツ',
     },
     carousel: {
@@ -2426,6 +2464,7 @@ export default {
       loading: 'イベント情報を取得しています…',
       noActivity: '開催中のイベントはありません',
       unavailable: 'イベント情報を取得できません',
+      endedNote: '次のイベントがまもなく始まります',
       allHidden: 'カルーセル内のゲームがすべてオフです。「ホーム画面のカスタマイズ」で戻せます',
     },
     empty: {
@@ -2711,6 +2750,7 @@ export default {
       maa: 'MAA プラン',
       maaEnd: 'MaaEnd プラン',
       baah: 'BAAH プラン',
+      mss: 'MSS プラン',
     },
     week: {
       ALL: '全体',
@@ -2729,6 +2769,11 @@ export default {
       currentTask: '現在のタスク',
       rewardsSet: '報酬グループ',
       sanityTask: '理性タスク',
+      tribulationStage: '懸賞試練ステージ',
+      skipDifficulty: '難易度選択をスキップ',
+      difficulty: '難易度',
+      consumeAllEnergy: 'やる気をすべて消費',
+      fightTimes: '作戦回数',
       globalControl: '一括操作',
       stage: 'ステージ',
       on: 'オン',
@@ -3074,6 +3119,7 @@ export default {
       HSR: 'HSR',
       BetterGI: 'BetterGI',
       BAAH: 'BAAH',
+      MSS: 'MSS',
       General: '汎用',
     },
     typeDesc: {
@@ -3087,6 +3133,7 @@ export default {
       HSR: '崩壊：スターレイル — 三月なのか / SRA の 2 種類に対応',
       BetterGI: '原神 BGI 専用の一条龍自動化スクリプト',
       BAAH: 'ブルーアーカイブのデイリータスク自動化。複数アカウント（インスタンス）管理に対応',
+      MSS: 'ステラソラ（MaaStellaSora）のデイリータスク自動化。複数アカウント（インスタンス）管理に対応',
       General: 'ログファイルを出力するあらゆるスクリプトに使える汎用の自動化',
     },
     mask: {
@@ -3211,6 +3258,7 @@ export default {
         HSR: '三月なのか / SRA の 2 種類に対応',
         BetterGI: '原神 BGI 専用の一条龍自動化スクリプト',
         BAAH: 'ブルーアーカイブのデイリータスク自動化と複数アカウント管理',
+        MSS: 'ステラソラ（MaaStellaSora）のデイリータスク自動化と複数アカウント管理',
       },
     },
     toast: {

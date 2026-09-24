@@ -84,6 +84,13 @@ const routes = [
     meta: { title: '编辑M9A脚本', scriptType: 'M9A' },
   },
   {
+    // MSS 同为 MaaFW 的特调类型，同上
+    path: '/scripts/:id/edit/mss',
+    name: 'MSSScriptEdit',
+    component: () => import('../views/EditView/Script/MaaFWScriptEdit.vue'),
+    meta: { title: '编辑MSS脚本', scriptType: 'MSS' },
+  },
+  {
     path: '/scripts/:id/edit/maafw',
     name: 'MaaFWScriptEdit',
     component: () => import('../views/EditView/Script/MaaFWScriptEdit.vue'),
@@ -181,6 +188,12 @@ const routes = [
     meta: { title: '添加M9A用户', scriptType: 'M9A' },
   },
   {
+    path: '/scripts/:scriptId/users/add/mss',
+    name: 'MSSUserAdd',
+    component: () => import('../views/EditView/User/MaaFWUserEdit.vue'),
+    meta: { title: '添加MSS用户', scriptType: 'MSS' },
+  },
+  {
     path: '/scripts/:scriptId/users/add/maafw',
     name: 'MaaFWUserAdd',
     component: () => import('../views/EditView/User/MaaFWUserEdit.vue'),
@@ -209,6 +222,12 @@ const routes = [
     name: 'M9AUserEdit',
     component: () => import('../views/EditView/User/MaaFWUserEdit.vue'),
     meta: { title: '编辑M9A用户', scriptType: 'M9A' },
+  },
+  {
+    path: '/scripts/:scriptId/users/:userId/edit/mss',
+    name: 'MSSUserEdit',
+    component: () => import('../views/EditView/User/MaaFWUserEdit.vue'),
+    meta: { title: '编辑MSS用户', scriptType: 'MSS' },
   },
   {
     path: '/scripts/:scriptId/users/:userId/edit/maafw',

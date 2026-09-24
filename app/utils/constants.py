@@ -46,11 +46,32 @@ TYPE_BOOK = {
     "BetterGIConfig": "BetterGI",
     "ZzzOdConfig": "ZZZ-OD",
     "BAAHConfig": "BAAH",
+    "MSSConfig": "MSS",
 }
 """配置类型映射表"""
 
-PLAN_CONSUMER_VALUES = ("maa", "maaend", "baah")
+PLAN_CONSUMER_VALUES = ("maa", "maaend", "baah", "mss")
 """计划表消费方列表；PLAN_BOOK 按下标引用此项，新消费方只能追加到末尾"""
+
+MSS_TRIBULATION_STAGES = (
+    "基础试炼",
+    "晋升试炼-怪诞舞者",
+    "晋升试炼-终宵萤辉",
+    "晋升试炼-热嘟噜噗男爵",
+    "技巧试炼-节奏游戏卡带",
+    "技巧试炼-射击游戏卡带",
+    "技巧试炼-格斗游戏卡带",
+    "纹章试炼-好市民点数",
+    "纹章试炼-协会贡献证",
+    "纹章试炼-恩赐消费券",
+)
+"""MSS 悬赏试炼关卡：与外壳 interface 的 `悬赏试炼关卡` 选项逐一对应（v1.4.4 共 10 项）
+
+**上游加关卡或改名时必须同步这里**，否则计划表里存的旧关卡会被折算回默认值。
+"""
+
+MSS_DEFAULT_TRIBULATION_STAGE = MSS_TRIBULATION_STAGES[0]
+"""MSS 悬赏试炼的默认关卡"""
 
 MAA_RUN_MOOD_BOOK = {
     "GreenTicketStore": "绿票商店",

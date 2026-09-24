@@ -12,7 +12,7 @@ export type MaaFWEmbeddedSourceItem = {
      */
     name?: string;
     /**
-     * 脚本类型（MaaFW / M9A）
+     * 脚本类型（MaaFW / M9A / MSS）
      */
     type?: string;
     /**

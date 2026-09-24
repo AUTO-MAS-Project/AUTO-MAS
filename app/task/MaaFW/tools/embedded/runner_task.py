@@ -2278,9 +2278,9 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 / f"history/{dt.strftime('%Y-%m-%d')}/{self.cur_user_item.name}/{dt.strftime('%H-%M-%S')}.log"
             )
             if not log_item.content:
-                log_item.content = ["未捕获到任何 MaaFW 运行日志"]
+                log_item.content = ["未捕获到任何运行日志"]
             if log_item.status == "未开始监看日志":
-                log_item.status = "MaaFW 任务被中止"
+                log_item.status = "任务被中止"
             await Config.save_general_log(log_path, log_item.content, log_item.status)
             statistic_paths.append(log_path.with_suffix(".json"))
         return statistic_paths

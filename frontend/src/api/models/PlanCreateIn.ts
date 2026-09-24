@@ -10,6 +10,7 @@ export namespace PlanCreateIn {
         MAA_PLAN = 'MaaPlan',
         MAA_END_PLAN = 'MaaEndPlan',
         BAAHPLAN = 'BAAHPlan',
+        MSSPLAN = 'MSSPlan',
     }
 }
 

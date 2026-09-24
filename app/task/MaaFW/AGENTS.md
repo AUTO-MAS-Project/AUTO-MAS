@@ -9,14 +9,15 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
 - `embedded_manager.py`：宿主侧管理器——任务调度、更新时机、运行环境确认、用户配置副本与写回。
 - `api_service/`：`/api/scripts/maafw/*` 端点背后的全部业务（`common` 脚本解析 / 有效项目根 /
   同组候选，`embedded` 副本状态 / 导入 / 克隆 / 候选来源，`interface` 预览 / 包名 / 图片资源，
-  `update` 手动更新，`agent_env` 预备运行环境）。**MFW 的 API 业务一律在这里实现，
+  `update` 手动更新，`agent_env` 预备运行环境，`shell_instances` 外壳配置实例导入成用户）。
+  **MFW 的 API 业务一律在这里实现，
   `app/api/scripts.py` 只放薄端点**：取参数 → 调这里的一个函数 → `XxxOut(**reply.out_fields())`
   （`MaaFWApiReply`）或把异常映射成 HTTP 错误；不在 API 层定义 MFW 私有辅助函数、常量或锁。
   依赖只能 `app.api` → `api_service`，反向导入 `app.api` 禁止；worker 导入闭包不得碰它。
   端点 docstring 会进 OpenAPI 生成物，搬业务时留在端点上原样不动。
 - `tools/embedded/`：宿主与核心包之间**唯一**的接缝（`runner_task`、`runtime_route`、
   `update_credentials`、`update_mirrors`、`project_path`、`env_cache`、`game_package`、
-  `game_resolution`、`update_progress`、`embedded_project`、`option_secrets`）。
+  `game_resolution`、`update_progress`、`embedded_project`、`option_secrets`、`shell_instances`）。
   要读 `Config`、发通知、碰宿主模型，只能在这里和 `embedded_manager.py` 里做。
 - `tools/core/`：六个核心包（interface / runner / runtime_pool / agent_env /
   project_update / controller_win32），按零宿主耦合设计。已知例外只有

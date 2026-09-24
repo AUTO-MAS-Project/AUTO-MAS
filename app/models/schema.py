@@ -1655,6 +1655,7 @@ class ScriptIndexItem(BaseModel):
         "BetterGIConfig",
         "ZzzOdConfig",
         "BAAHConfig",
+        "MSSConfig",
     ] = Field(..., description="配置类型")
 
 
@@ -1673,6 +1674,7 @@ class UserIndexItem(BaseModel):
         "BetterGIUserConfig",
         "ZzzOdUserConfig",
         "BAAHUserConfig",
+        "MSSUserConfig",
     ] = Field(..., description="配置类型")
 
 
@@ -3828,6 +3830,26 @@ class M9AConfig(MaaFWConfig):
     """M9A 脚本配置：与 MaaFW 脚本配置同形（M9A 是 MaaFW 的特调类型）。"""
 
 
+class MSSUserConfig_Info(MaaFWUserConfig_Info):
+    PlanMode: Optional[str] = Field(
+        default=None, description="悬赏试炼关卡来源（Fixed 或 MSS 计划表 UID）"
+    )
+    IfActivityFirst: Optional[bool] = Field(
+        default=None,
+        description="队列里没加活动任务时，是否在活动期间自动加入并排到最前",
+    )
+
+
+class MSSUserConfig(MaaFWUserConfig):
+    """MSS 用户配置：MaaFW 用户配置再加计划表引用（MSS 是 MaaFW 的特调类型）。"""
+
+    Info: Optional[MSSUserConfig_Info] = Field(default=None, description="基础信息")
+
+
+class MSSConfig(MaaFWConfig):
+    """MSS 脚本配置：与 MaaFW 脚本配置同形（MSS 是 MaaFW 的特调类型）。"""
+
+
 class MaaFWInterfacePreviewIn(BaseModel):
     path: str = Field(default="", description="MaaFW 项目根目录，应包含 interface.json")
     scriptId: Optional[str] = Field(
@@ -4094,7 +4116,7 @@ class MaaFWEmbeddedSourcesIn(BaseModel):
 class MaaFWEmbeddedSourceItem(BaseModel):
     scriptId: str = Field(..., description="可作为克隆来源的 MFW 脚本 ID")
     name: str = Field(default="", description="脚本名")
-    type: str = Field(default="MaaFW", description="脚本类型（MaaFW / M9A）")
+    type: str = Field(default="MaaFW", description="脚本类型（MaaFW / M9A / MSS）")
     projectName: str = Field(default="", description="副本 interface 里的项目名")
     version: str = Field(default="", description="副本 interface 里的版本")
     busy: bool = Field(default=False, description="源脚本正在运行，此刻不能克隆")
@@ -4147,6 +4169,58 @@ class MaaFWEmbeddedStatusData(BaseModel):
 class MaaFWEmbeddedStatusOut(OutBase):
     data: Optional[MaaFWEmbeddedStatusData] = Field(
         default=None, description="内嵌状态"
+    )
+
+
+class MaaFWShellInstancesIn(BaseModel):
+    scriptId: str = Field(..., min_length=1, description="MFW 脚本 ID")
+
+
+class MaaFWShellInstanceItem(BaseModel):
+    id: str = Field(..., description="实例 ID（导入时原样传回）")
+    name: str = Field(..., description="外壳里的实例名")
+    userName: str = Field(
+        ...,
+        description="导入后的用户名（与已有用户、同名实例重名时带「 (2)」这类后缀）",
+    )
+    source: Literal["MFAAvalonia", "MXU", "MFW-PyQt6"] = Field(
+        ..., description="实例来自哪个外壳"
+    )
+    active: bool = Field(default=False, description="是否是外壳上次使用的实例")
+    taskCount: int = Field(default=0, description="实例队列里勾选着的任务数")
+    controller: str = Field(default="", description="实例的控制方式（给人看的名字）")
+    resource: str = Field(default="", description="实例的资源（给人看的名字）")
+
+
+class MaaFWShellInstancesOut(OutBase):
+    data: List[MaaFWShellInstanceItem] = Field(
+        default_factory=list, description="项目目录里找到的外壳配置实例"
+    )
+
+
+class MaaFWShellInstanceImportIn(BaseModel):
+    scriptId: str = Field(..., min_length=1, description="MFW 脚本 ID")
+    instanceIds: List[str] = Field(
+        ..., min_length=1, description="要导入的实例 ID，每个建一个用户"
+    )
+
+
+class MaaFWShellInstanceImportItem(BaseModel):
+    instanceId: str = Field(..., description="实例 ID")
+    instanceName: str = Field(default="", description="外壳里的实例名")
+    success: bool = Field(default=False, description="是否建成了用户")
+    userId: str = Field(default="", description="新用户 ID（失败时为空）")
+    name: str = Field(default="", description="新用户名")
+    importedTaskCount: int = Field(default=0, description="导入进队列的任务数")
+    skipped: List[str] = Field(
+        default_factory=list, description="当前项目里对不上、没导入的任务 / 选项 / 取值"
+    )
+    error: str = Field(default="", description="失败原因（成功时为空）")
+
+
+class MaaFWShellInstanceImportOut(OutBase):
+    data: List[MaaFWShellInstanceImportItem] = Field(
+        default_factory=list, description="逐个实例的导入结果，顺序同请求"
     )
 
 
@@ -4259,8 +4333,10 @@ class MaaFWAgentEnvPrepareOut(OutBase):
     )
 
 
-PlanConfigType = Literal["MaaPlanConfig", "MaaEndPlanConfig", "BAAHPlanConfig"]
-PlanComboxConsumer = Literal["maa", "maaend", "baah"]
+PlanConfigType = Literal[
+    "MaaPlanConfig", "MaaEndPlanConfig", "BAAHPlanConfig", "MSSPlanConfig"
+]
+PlanComboxConsumer = Literal["maa", "maaend", "baah", "mss"]
 
 
 class PlanIndexItem(BaseModel):
@@ -4579,8 +4655,43 @@ class BAAHPlanConfig(WeeklyPlanConfig[BAAHPlanConfig_Info, BAAHPlanConfig_Item])
     model_config = ConfigDict(extra="forbid")
 
 
-PlanCreateType = Literal["MaaPlan", "MaaEndPlan", "BAAHPlan"]
-PlanConfigData = MaaPlanConfig | MaaEndPlanConfig | BAAHPlanConfig
+class MSSPlanConfig_Info(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    Name: str = Field(default="新 MSS 计划表", description="计划表名称")
+    Mode: Literal["ALL", "Weekly"] = Field(default="ALL", description="计划表模式")
+
+
+class MSSPlanKey(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    TribulationStage: str = Field(
+        default="基础试炼",
+        description="悬赏试炼关卡（取值见 constants.MSS_TRIBULATION_STAGES）",
+    )
+    SkipDifficulty: bool = Field(default=False, description="悬赏试炼是否跳过难度选择")
+    Difficulty: int = Field(default=1, description="悬赏试炼难度")
+    ConsumeAllEnergy: bool = Field(
+        default=False, description="悬赏试炼是否消耗所有干劲"
+    )
+    FightTimes: int = Field(default=1, description="自定义快速作战次数")
+
+
+class MSSPlanConfig_Item(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    Key: MSSPlanKey = Field(
+        default_factory=MSSPlanKey,
+        description="MSS 计划表专项 key",
+    )
+
+
+class MSSPlanConfig(WeeklyPlanConfig[MSSPlanConfig_Info, MSSPlanConfig_Item]):
+    model_config = ConfigDict(extra="forbid")
+
+
+PlanCreateType = Literal["MaaPlan", "MaaEndPlan", "BAAHPlan", "MSSPlan"]
+PlanConfigData = MaaPlanConfig | MaaEndPlanConfig | BAAHPlanConfig | MSSPlanConfig
 
 
 class HistoryIndexItem(BaseModel):
@@ -4640,9 +4751,10 @@ class ScriptCreateIn(BaseModel):
         "BetterGI",
         "ZzzOd",
         "BAAH",
+        "MSS",
     ] = Field(
         ...,
-        description="脚本类型: MAA脚本, 通用脚本, OK-WW脚本, OK-NTE脚本, SRC脚本, MaaEnd脚本, M9A脚本, MaaFW脚本, HSR脚本, BetterGI脚本, ZZZ-OD脚本, BAAH脚本",
+        description="脚本类型: MAA脚本, 通用脚本, OK-WW脚本, OK-NTE脚本, SRC脚本, MaaEnd脚本, M9A脚本, MaaFW脚本, HSR脚本, BetterGI脚本, ZZZ-OD脚本, BAAH脚本, MSS脚本",
     )
     scriptId: str | None = Field(
         default=None, description="直接从该脚本ID复制创建, 仅在复制创建时使用"
@@ -4664,6 +4776,7 @@ class ScriptCreateOut(OutBase):
         BetterGIConfig,
         ZzzOdConfig,
         BAAHConfig,
+        MSSConfig,
     ] = Field(..., description="脚本配置数据")
 
 
@@ -4690,6 +4803,7 @@ class ScriptGetOut(OutBase):
             BetterGIConfig,
             ZzzOdConfig,
             BAAHConfig,
+            MSSConfig,
         ],
     ] = Field(..., description="脚本数据字典, key来自于index列表的uid")
 
@@ -4709,6 +4823,7 @@ class ScriptUpdateIn(BaseModel):
         BetterGIConfig,
         ZzzOdConfig,
         BAAHConfig,
+        MSSConfig,
     ] = Field(..., description="脚本更新数据")
 
 
@@ -4765,6 +4880,7 @@ class UserGetOut(OutBase):
             BetterGIUserConfig,
             ZzzOdUserConfig,
             BAAHUserConfig,
+            MSSUserConfig,
         ],
     ] = Field(..., description="用户数据字典, key来自于index列表的uid")
 
@@ -4784,6 +4900,7 @@ class UserCreateOut(OutBase):
         BetterGIUserConfig,
         ZzzOdUserConfig,
         BAAHUserConfig,
+        MSSUserConfig,
     ] = Field(..., description="用户配置数据")
 
 
@@ -4802,6 +4919,7 @@ class UserUpdateIn(UserInBase):
         BetterGIUserConfig,
         ZzzOdUserConfig,
         BAAHUserConfig,
+        MSSUserConfig,
     ] = Field(..., description="用户更新数据")
 
 

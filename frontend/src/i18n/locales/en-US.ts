@@ -806,6 +806,25 @@ export default {
     stringSplittingGuide: 'String splitting guide',
     done: 'Done',
     createFirstUser: 'Create the first user!',
+    shellImportTitle: 'Import existing configurations as users',
+    shellImportHint:
+      'Found {count} {source} configuration(s) in the project folder. Each one you check becomes a user named after it, with its task queue and task options imported. Leave all unchecked to create a single empty user.',
+    shellImportSelectAll: 'Select all',
+    shellImportSelectedCount: '{selected} / {total} selected',
+    shellImportActive: 'In use',
+    shellImportTaskCount: '{count} task(s)',
+    shellImportUserName: 'User name: {name}',
+    shellImportButton: 'Import {count} user(s)',
+    shellImporting: 'Importing…',
+    shellImportFailedHead: '{count} configuration(s) could not be imported:',
+    shellImportFailedLine: '"{name}": {reason}',
+    shellImportSkippedLine: '"{name}" skipped {count} item(s): {items}',
+    shellImportSkippedLineMore: '"{name}" skipped {count} item(s): {items} and {rest} more',
+    shellImportListSeparator: ', ',
+    shellImportAllFailed:
+      'Could not import the existing configurations; creating an empty user instead',
+    shellImportAllFailedWithReason:
+      'Could not import the existing configurations; creating an empty user instead: {reason}',
     wutheringWavesWillBe:
       'Wuthering Waves will be checked and updated on the selected server. The update may download several GB, so make sure the game is not running',
     turnAutomaticRelicSalvage:
@@ -822,7 +841,7 @@ export default {
     checkUpdates2: 'Check for updates',
     emulator2: 'Emulator',
     regexGuide: 'Regex guide',
-    loadingMfwInterface: 'Loading the MFW interface',
+    loadingMfwInterface: 'Loading the project interface',
     loadingMaafwProjectInterface: 'Loading the MaaFW project interface',
     clear: 'Clear',
     switchAccountDirectly: 'Switch the account directly',
@@ -1549,7 +1568,7 @@ export default {
     saveUserBeforeImporting: 'Save the user before importing a configuration',
     createUserBeforeConfiguring: 'Create the user before configuring OK-NTE',
     setLogFilePath: 'Set the log file path in the script configuration first',
-    importMfwProjectScript: 'Import the MFW project on the script page first',
+    importMfwProjectScript: 'Import the project on the script page first',
     addEnableUserBefore: 'Add and enable a user before checking for updates',
     finishSetupOkWw: 'Finish the setup in the ok-ww window.',
     readingControllersResourcesTasks:
@@ -1617,8 +1636,8 @@ export default {
     trackedProcessCommandLine: 'Tracked process command line',
     pickEndfieldExePath: 'Pick the Endfield.exe path',
     pickMfwResourceLeave:
-      'Pick the MFW resource; leave empty to auto-pick the first resource matching the control method',
-    pickMfwProject: 'Pick the MFW project',
+      'Pick the resource; leave empty to auto-pick the first resource matching the control method',
+    pickMfwProject: 'Pick the project',
     pickDirectoryHoldingMaaend2: 'Pick the directory holding MaaEnd.exe',
     pickExe: 'Pick an exe',
     pickDirectoryHoldingOk3: 'Pick the directory holding ok-nte.exe',
@@ -1646,6 +1665,24 @@ export default {
       'When the account is filled, a “Switch account” task is added automatically (CN official server only); the password is a local note only and is never passed to the script',
     m9aFlavorQueueHint:
       'Start game, close game and switch account are added automatically by the M9A adapter; no need to add them by hand',
+    mssFlavorScriptTitle: 'Edit MSS script',
+    mssFlavorSourceDirectory: 'MSS program directory',
+    mssFlavorSourceHint: 'Pick the MaaStellaSora directory that contains interface.json',
+    mssFlavorSourcePlaceholder: 'Pick the MaaStellaSora directory that contains interface.json',
+    mssFlavorControllerHint:
+      'The emulator build of Stella Sora cannot launch the game, so MSS supports the desktop build only; pick the desktop controller. Emulators will not be supported unless that problem is fixed',
+    mssFlavorQueueHint:
+      '· With "Event quick battle" in the task queue it is moved to the front and runs first while an event is live, and skipped when none is running\n' +
+      '· With an empty queue and no plan selected there is nothing to run: tick at least "Bounty Trial quick battle", or pick a plan (which adds it automatically)\n' +
+      '· The new tower climb is moved to the end; to climb only once a week, add it to "Skip once done this week" in the script\'s Run configuration',
+    mssFlavorQueueEmpty: 'The task queue is empty and the plan is still Fixed: this run has nothing to execute — add at least one task or pick a plan',
+    mssFlavorActivityFirst: 'Activity first',
+    mssFlavorActivityFirstHint:
+      'When on, the event task is added and moved to the front while an event is live even if the queue does not have it; nothing is added when the event data cannot be fetched',
+    mssFlavorPlanHint:
+      'With a plan selected, each run rewrites the stage, difficulty and count of "Bounty Trial quick battle" from today\'s slot, adding the task if it is not queued; "Fixed" runs the options set in the task queue',
+    maafwFlavorPlanMode: 'Plan',
+    maafwFlavorPlanFixed: 'Fixed (use the task queue options)',
     pickHowGameControlled: 'Pick how the game is controlled',
     pickUserWhoseServer: 'Pick the user whose server is checked for updates',
     chooseWhetherMasSwitches:
@@ -2939,6 +2976,7 @@ export default {
       nte: 'Neverness to Everness events',
       reverse1999: 'Reverse: 1999 events',
       bluearchive: 'Blue Archive events',
+      stellasora: 'Stella Sora events',
       arknights: 'Arknights events',
       activities: 'Game event carousel',
     },
@@ -2951,6 +2989,7 @@ export default {
       nte: 'Neverness to Everness',
       reverse1999: 'Reverse: 1999',
       bluearchive: 'Blue Archive',
+      stellasora: 'Stella Sora',
       arknights: 'Arknights',
     },
     carousel: {
@@ -2961,6 +3000,7 @@ export default {
       loading: 'Loading events…',
       noActivity: 'No events running',
       unavailable: 'Event data is unavailable',
+      endedNote: 'More events are coming soon',
       allHidden: 'Every game in the carousel is off. Turn one back on under Customize layout.',
     },
     activityNotes: {
@@ -3265,6 +3305,7 @@ export default {
       maa: 'MAA plan',
       maaEnd: 'MaaEnd plan',
       baah: 'BAAH plan',
+      mss: 'MSS plan',
     },
     week: {
       ALL: 'All',
@@ -3283,6 +3324,11 @@ export default {
       currentTask: 'Current task',
       rewardsSet: 'Reward set',
       sanityTask: 'Sanity task',
+      tribulationStage: 'Bounty trial stage',
+      skipDifficulty: 'Skip difficulty',
+      difficulty: 'Difficulty',
+      consumeAllEnergy: 'Spend all energy',
+      fightTimes: 'Battle count',
       globalControl: 'All',
       stage: 'Stage',
       on: 'On',
@@ -3624,6 +3670,7 @@ export default {
       BetterGI: 'BetterGI',
       ZzzOd: 'ZZZ-OD',
       BAAH: 'BAAH',
+      MSS: 'MSS',
       General: 'General',
     },
     typeDesc: {
@@ -3637,6 +3684,7 @@ export default {
       BetterGI: 'Genshin OneDragon automation script (BetterGI)',
       ZzzOd: 'Zenless Zone Zero OneDragon · daily automation with instance (account) management',
       BAAH: 'Blue Archive Aris Helper · daily task automation with instance (account) management',
+      MSS: 'Stella Sora (MaaStellaSora) · daily task automation with instance (account) management',
       General: 'Generic automation for any script that writes a log file',
     },
     mask: {
@@ -3753,6 +3801,7 @@ export default {
         BetterGI: 'Genshin OneDragon automation script (BetterGI)',
         ZzzOd: 'Zenless Zone Zero OneDragon · daily automation with instance management',
         BAAH: 'Blue Archive Aris Helper · daily task automation with instance management',
+        MSS: 'Stella Sora (MaaStellaSora) · daily task automation with instance management',
       },
     },
     toast: {

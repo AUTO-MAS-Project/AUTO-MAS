@@ -8,10 +8,10 @@ export type ConfigMode = 'template' | 'custom'
 export type MfwSourceMode = 'new' | 'reuse'
 export type CreateStepKey = 'type' | 'config'
 
-/** 由 MaaFW 引擎运行的类型（M9A 是它的特调类型，类型最终由项目决定） */
-export type MfwFamilyType = 'MaaFW' | 'M9A'
+/** 由 MaaFW 引擎运行的类型（M9A / MSS 是它的特调类型，类型最终由项目决定） */
+export type MfwFamilyType = 'MaaFW' | 'M9A' | 'MSS'
 export const isMfwFamily = (type: ScriptType): type is MfwFamilyType =>
-  type === 'MaaFW' || type === 'M9A'
+  type === 'MaaFW' || type === 'M9A' || type === 'MSS'
 type ScriptTypeGroup = 'all' | 'specialized' | 'general'
 
 interface ScriptTypeOption {
@@ -142,6 +142,14 @@ export const SCRIPT_TYPE_OPTIONS: ScriptTypeOption[] = [
     group: 'specialized',
     icon: SCRIPT_LOGOS.BAAH,
   },
+  {
+    value: 'MSS',
+    titleKey: 'scripts.type.MSS',
+    descriptionKey: 'scripts.create.typeDesc.MSS',
+    keywords: ['mss', 'maastellasora', '星塔旅人', 'stella', 'maaframework'],
+    group: 'specialized',
+    icon: SCRIPT_LOGOS.MSS,
+  },
 ]
 
 /** 第二步列表里的一行「已导入的项目」：同一项目开了几个脚本只列一行，克隆源取其中一个 */
@@ -246,6 +254,7 @@ const EDIT_SEGMENT_BY_TYPE: Record<ScriptType, string> = {
   BetterGI: 'bettergi',
   ZzzOd: 'zzzod',
   BAAH: 'baah',
+  MSS: 'mss',
   General: 'general',
 }
 
