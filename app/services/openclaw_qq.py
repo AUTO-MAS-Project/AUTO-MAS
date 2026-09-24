@@ -362,7 +362,11 @@ class OpenClawQQManager:
         return QrStartResult(session_id=session_id, qr_url=qr_url)
 
     async def check_login(self, session_id: str) -> QrCheckResult:
-        """轮询扫码绑定任务，完成后保存官方机器人凭据。"""
+        """轮询扫码与网关状态；确认绑定后先保存凭据，再等待网关就绪。
+
+        凭据已保存但网关未就绪时返回 connecting；网关 READY 后才返回
+        connected=True。等待超时不会清除已保存的凭据，后台仍会重连。
+        """
 
         async with self._session_lock:
             session = self._sessions.get(session_id)
