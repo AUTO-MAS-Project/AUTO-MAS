@@ -21,23 +21,20 @@
 
 
 import asyncio
-import json
 import re
 import shlex
-
-from app.utils.platform import IS_WINDOWS
-
-if IS_WINDOWS:
-    import keyboard
-    import win32gui
 import time
 from pathlib import Path
 from typing import Dict
 
+import psutil
+
 from app.models.config import EmulatorConfig
 from app.models.emulator import DeviceBase, DeviceInfo, DeviceStatus
 from app.utils import get_logger
-from app.utils.ProcessManager import ProcessManager
+from app.utils.platform import IS_WINDOWS
+from app.utils.platform import window as platform_window
+from app.utils.ProcessManager import ProcessManager, get_main_window_handle
 
 logger = get_logger("通用模拟器管理")
 
@@ -139,29 +136,71 @@ class GeneralDeviceManager(DeviceBase):
             logger.warning(f"设备{idx}未在线，当前状态码: {status}")
             return status
 
+        # 按本实例进程树的窗口句柄精确切换, 不发全局老板键:
+        # 老板键不带实例信息, 多开时会把别的实例一起翻过去 (#948)
         deadline = time.monotonic() + self.config.get("Info", "MaxWaitTime")
         while time.monotonic() < deadline:
+            hwnd = self._find_window(idx)
+            if hwnd is None:
+                # 窗口可能还没建出来, 等一会儿重新查找
+                await asyncio.sleep(0.5)
+                continue
+
             # 检查窗口可见性是否符合预期
-            if self.process_managers[idx].main_pid is not None and (
-                win32gui.IsWindowVisible(self.process_managers[idx].main_pid)
-                == is_visible
-            ):
+            if platform_window.is_visible(hwnd) == is_visible:
                 return status
 
             try:
-                keyboard.press_and_release(
-                    "+".join(
-                        _.strip().lower()
-                        for _ in json.loads(self.config.get("Info", "BossKey"))
-                    )
-                )  # 老板键
+                if is_visible:
+                    platform_window.show_window(hwnd)
+                else:
+                    platform_window.hide_window(hwnd)
             except Exception as e:
-                logger.error(f"发送BOSS键失败: {e}")
+                logger.error(f"切换设备{idx}窗口可见性失败: {e}")
 
             await asyncio.sleep(0.5)
 
         else:
             raise RuntimeError(f"隐藏设备{idx}窗口超时")
+
+    def _find_window(self, idx: str) -> int | None:
+        """在本实例启动的进程及其子孙进程里找主窗口句柄。
+
+        模拟器常由启动器派生子进程再建窗口, 只看启动进程会找不到。
+        各进程先各取一个主窗口, 再按「可见优先、面积次之」挑一个;
+        启动器已退出、窗口挂在别的进程名下时找不到, 返回 None。
+        """
+
+        main_pid = self.process_managers[idx].main_pid
+        if main_pid is None:
+            return None
+
+        pids = [main_pid]
+        try:
+            pids.extend(
+                child.pid for child in psutil.Process(main_pid).children(recursive=True)
+            )
+        except psutil.Error:
+            pass
+
+        best_hwnd: int | None = None
+        best_score: tuple[bool, int] | None = None
+        for pid in pids:
+            hwnd = get_main_window_handle(pid)
+            if hwnd is None:
+                continue
+            try:
+                left, top, right, bottom = platform_window.get_window_rect(hwnd)
+                score = (
+                    platform_window.is_visible(hwnd),
+                    max(0, right - left) * max(0, bottom - top),
+                )
+            except Exception:
+                continue
+            if best_score is None or score > best_score:
+                best_hwnd, best_score = hwnd, score
+
+        return best_hwnd
 
     def parse_index(self, idx: str):
 

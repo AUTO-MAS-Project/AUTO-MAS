@@ -21,14 +21,13 @@
 
 
 import asyncio
-import json
 
 import psutil
 
 from app.utils.platform import IS_WINDOWS
+from app.utils.platform import window as platform_window
 
 if IS_WINDOWS:
-    import keyboard
     import win32gui
 import time
 from pathlib import Path
@@ -324,21 +323,28 @@ class LDManager(DeviceBase):
 
         result = (await self.get_device_info(idx))[idx]
 
+        # 按 list2 给出的该实例顶层窗口句柄精确切换, 不发全局老板键:
+        # 老板键不带实例信息, 多开时会把别的实例一起翻过去 (#948)
         deadline = time.monotonic() + self.config.get("Info", "MaxWaitTime")
         while time.monotonic() < deadline:
+            hwnd = result.top_hwnd
+            if hwnd <= 0 or not win32gui.IsWindow(hwnd):
+                # 实例刚启动时窗口可能还没建出来, 等一会儿重新读取
+                await asyncio.sleep(0.5)
+                result = (await self.get_device_info(idx))[idx]
+                continue
+
             # 检查窗口可见性是否符合预期
-            if win32gui.IsWindowVisible(result.top_hwnd) == is_visible:
+            if platform_window.is_visible(hwnd) == is_visible:
                 return status
 
             try:
-                keyboard.press_and_release(
-                    "+".join(
-                        _.strip().lower()
-                        for _ in json.loads(self.config.get("Info", "BossKey"))
-                    )
-                )  # 老板键
+                if is_visible:
+                    platform_window.show_window(hwnd)
+                else:
+                    platform_window.hide_window(hwnd)
             except Exception as e:
-                logger.error(f"发送BOSS键失败: {e}")
+                logger.error(f"切换设备{idx}窗口可见性失败: {e}")
 
             await asyncio.sleep(0.5)
 
