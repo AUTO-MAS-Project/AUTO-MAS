@@ -26,12 +26,17 @@
   ``data/apps/<应用名>/app.json`` 记录应用名与当前版本（``current_version``），
   ``repo/`` 是项目源码，``working/`` 是运行目录（``configs/``、``logs/ok-script.log``），
   ``python/`` 是运行时。布局变了 → 识别失败并提示选择安装根目录。
-- 一次性任务列表来自项目 ``src/config.py`` 的 ``config["onetime_tasks"]``：ok-script
-  的 ``-t N`` 按这个列表从 1 编号（ok-end-field README「命令行参数」一节）。只做字面量
-  解析（ast），不导入、不执行上游代码；不是字面量声明 → 提示暂不支持该版本。
+- 一次性任务列表来自项目 ``src/config.py`` 的 ``config["onetime_tasks"]``（ok-end-field
+  README「命令行参数」一节：``-t`` 选的就是这个列表里的任务）。列表里的每一项都是可选的
+  一次性任务，以 ``模块.类名`` 作任务 ID。只做字面量解析（ast），不导入、不执行上游代码；
+  不是字面量声明 → 提示暂不支持该版本。
+- 启动时传 ``-t <模块.类名>`` 而不是列表序号：pyappify 启动器首次加载可能先自动更新再
+  拉起项目，更新若调换了列表顺序，启动前算出的序号会指向别的任务，而框架的完成标记不带
+  任务名，跑错了也会被当成完成。ok-script 2.0.7b1 起 ``parse_arguments_to_map`` 把非数字的
+  ``-t`` 保留为字符串，``OK.find_task_by_name`` 第一步按 ``f"{__module__}.{__name__}"``
+  精确匹配；更老的版本 ``-t`` 只收整数，argparse 报参数错直接退出 → 判为失败（响亮失败）。
 - 任务显示名取任务类 ``__init__`` 里的 ``self.name = "..."`` 字面量（即上游界面里的
-  任务名），取不到就回退为类名，只影响显示。继承 ``TriggerTask`` 的任务是持续触发任务，
-  本专项暂不运行它们，据此标出。
+  任务名），取不到就回退为类名，只影响显示。
 """
 
 from __future__ import annotations
@@ -50,9 +55,6 @@ DEDICATED_ADAPTERS: dict[str, str] = {
 # 已按真实发行包核对过目录布局、任务列表与完成标记的项目
 VERIFIED_APPS: frozenset[str] = frozenset({"ok-ef"})
 
-# 持续触发任务的基类名（ok-script ``ok.task.task.TriggerTask``）
-_TRIGGER_TASK_BASE = "TriggerTask"
-
 
 class OkScriptProjectError(Exception):
     """安装目录无法识别为可运行的 ok-script 项目；消息直接给用户看。"""
@@ -63,16 +65,15 @@ class OkScriptTask:
     """一次性任务。
 
     Attributes:
-        task_id: ``模块.类名``，版本更新调整列表顺序时依然能对上同一个任务。
-        index: 在 ``onetime_tasks`` 中的序号（从 1 开始），即 ``-t N`` 的 N。
+        task_id: ``模块.类名``，即启动参数 ``-t`` 的值；版本更新调整列表顺序时依然
+            指向同一个任务。
+        index: 在 ``onetime_tasks`` 中的序号（从 1 开始），只用于展示排序。
         name: 上游界面里的任务名，取不到时为类名。
-        continuous: 是否为持续触发任务（不会自行结束）。
     """
 
     task_id: str
     index: int
     name: str
-    continuous: bool
 
 
 @dataclass(frozen=True)
@@ -171,7 +172,7 @@ def probe_project(root: Path | str) -> OkScriptProject:
         OkScriptTask(
             task_id=f"{module}.{class_name}",
             index=index,
-            **_read_task_meta(repo_dir, module, class_name),
+            name=_read_task_name(repo_dir, module, class_name),
         )
         for index, (module, class_name) in enumerate(entries, start=1)
     )
@@ -274,10 +275,10 @@ def _literal_task_list(config: ast.Dict) -> list[tuple[str, str]] | None:
     return None
 
 
-def _read_task_meta(repo_dir: Path, module: str, class_name: str) -> dict[str, object]:
-    """取任务显示名与是否持续触发；源码读不到或结构不认识时回退为类名。"""
+def _read_task_name(repo_dir: Path, module: str, class_name: str) -> str:
+    """取任务显示名；源码读不到或结构不认识时回退为类名（只影响显示）。"""
 
-    fallback: dict[str, object] = {"name": class_name, "continuous": False}
+    fallback = class_name
     relative = Path(*module.split("."))
     for candidate in (
         repo_dir / relative.with_suffix(".py"),
@@ -295,12 +296,7 @@ def _read_task_meta(repo_dir: Path, module: str, class_name: str) -> dict[str, o
 
     for node in tree.body:
         if isinstance(node, ast.ClassDef) and node.name == class_name:
-            return {
-                "name": _task_display_name(node) or class_name,
-                "continuous": any(
-                    _base_name(base) == _TRIGGER_TASK_BASE for base in node.bases
-                ),
-            }
+            return _task_display_name(node) or class_name
     return fallback
 
 
@@ -322,12 +318,4 @@ def _task_display_name(class_def: ast.ClassDef) -> str | None:
                     and node.value.value.strip()
                 ):
                     return node.value.value.strip()
-    return None
-
-
-def _base_name(base: ast.expr) -> str | None:
-    if isinstance(base, ast.Name):
-        return base.id
-    if isinstance(base, ast.Attribute):
-        return base.attr
     return None

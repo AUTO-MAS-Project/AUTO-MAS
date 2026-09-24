@@ -1357,7 +1357,6 @@ async def probe_okscript_project_api(
                     taskId=task.task_id,
                     index=task.index,
                     name=task.name,
-                    continuous=task.continuous,
                 )
                 for task in project.tasks
             ],

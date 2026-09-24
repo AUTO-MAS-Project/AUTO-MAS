@@ -1628,7 +1628,7 @@ export default {
       'タスクの詳細はプロジェクト自身の設定をそのまま使います。ネイティブ画面で変更してください。本ソフトは変更しません',
     okscriptOpenNative: 'ネイティブ画面を開く',
     okscriptRunTimeLimitHint:
-      'プロジェクトのログがこの時間更新されず完了もしない場合、完了を確認できないとして実行を終了します',
+      'プロジェクト起動から数えて、この時間内に完了マーカーが出なければプロジェクトを終了し、完了を確認できないと判定します（成功には数えません）',
     okscriptSessionTitle: '{name} のネイティブ画面を使用中',
     okscriptSessionDesc: 'プロジェクト画面で設定してください。設定はプロジェクト自身が保存します。',
     okscriptSessionDesc2: '終わったら「ネイティブ画面を閉じる」を押してください。',
@@ -1645,7 +1645,6 @@ export default {
     okscriptTaskPlaceholder: '実行するタスクを選択してください',
     okscriptTaskMissing:
       '選択中のタスク「{name}」は現在のバージョンにありません。選び直してください',
-    okscriptContinuousTask: '常駐タスクのため未対応',
     okscriptRootPathMissing: '先にスクリプト設定で ok-script のインストール先を選択してください',
     okscriptUserTag: 'ユーザータグ',
     okscriptUserTagHint: '実行状況から本ソフトが自動生成します。閲覧のみ',

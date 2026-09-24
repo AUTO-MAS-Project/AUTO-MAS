@@ -5170,7 +5170,7 @@ class OkScriptUserConfig(ConfigBase):
         )
 
         ## Task ------------------------------------------------------------
-        ## 要运行的一次性任务（上游 onetime_tasks 里的「模块.类名」，运行时换算成 -t 序号）
+        ## 要运行的一次性任务（上游 onetime_tasks 里的「模块.类名」，原样作为 -t 参数）
         self.Task_TaskId = ConfigItem("Task", "TaskId", "")
         ## 任务显示名（选择任务时记下，只用于标签展示）
         self.Task_TaskName = ConfigItem("Task", "TaskName", "")
@@ -5257,9 +5257,10 @@ class OkScriptConfig(ConfigBase):
         self.Run_RunTimesLimit = ConfigItem(
             "Run", "RunTimesLimit", 2, RangeValidator(1, 9999)
         )
-        ## 日志停止更新的最长等待时间（分钟），超过即判为无法确认完成
+        ## 单次运行时间上限（分钟），与 MaaFW 同口径的硬超时：从拉起项目起算，到点仍无
+        ## 完成标记就结束进程树并判为无法确认完成。一轮日常常要几十分钟，默认给 120
         self.Run_RunTimeLimit = ConfigItem(
-            "Run", "RunTimeLimit", 30, RangeValidator(1, 9999)
+            "Run", "RunTimeLimit", 120, RangeValidator(1, 9999)
         )
 
         self.UserData = MultipleConfig([OkScriptUserConfig])

@@ -1841,7 +1841,7 @@ export default {
       '任务的具体设置直接使用项目自己的配置，请在项目原生界面里修改，本软件不会改动它们',
     okscriptOpenNative: '打开原生界面',
     okscriptRunTimeLimitHint:
-      '项目日志停止更新超过该时长仍未完成，即判为无法确认完成并结束本次运行',
+      '从拉起项目起算，超过该时长仍没有完成标记就结束项目并判为无法确认完成（不计为成功）',
     okscriptSessionTitle: '正在使用 {name} 原生界面',
     okscriptSessionDesc: '请在项目界面中完成设置，项目会自行保存。',
     okscriptSessionDesc2: '完成后点击「关闭原生界面」。',
@@ -1856,7 +1856,6 @@ export default {
     okscriptTaskHint: '每次代理运行的一次性任务；项目更新调整任务顺序后会自动对应',
     okscriptTaskPlaceholder: '请选择要运行的任务',
     okscriptTaskMissing: '已选任务「{name}」在当前版本中不存在，请重新选择',
-    okscriptContinuousTask: '持续运行，暂不支持',
     okscriptRootPathMissing: '请先在脚本配置中选择 ok-script 项目的安装目录',
     okscriptUserTag: '用户标签',
     okscriptUserTagHint: '由本软件按运行情况自动生成，仅供查看',

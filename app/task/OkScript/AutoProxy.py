@@ -18,7 +18,11 @@
 
 #   Contact: DLmaster_361@163.com
 
-"""OkScript 自动代理：以 ``-t N -e`` 启动 ok-script 项目并按框架日志判定结果。
+"""OkScript 自动代理：以 ``-t <模块.类名> -e`` 启动 ok-script 项目并按框架日志判定结果。
+
+任务按 ``模块.类名`` 指定而不是按列表序号：启动器可能在拉起项目前先自动更新，更新若调换了
+``onetime_tasks`` 的顺序，启动前算出的序号会跑到别的任务上，而完成标记不带任务名，无法
+事后识别（详见 ``project.py``）。
 
 配置来源只有「直接使用项目原生配置」：运行前不下发、不覆盖任何任务配置，唯一的写入是
 启动器 ``app.json`` 的 ``auto_start``（缺省才补，否则启动器停在自己的界面上不拉起项目，
@@ -30,7 +34,8 @@
   时才会打出，是唯一的完成依据；
 - ``<任务名> exception stopped``：任务抛异常中止 → 失败；
 - ``TaskDisabledException, continue <任务对象>``：任务在项目界面里被停止 → 中止；
-- 进程在完成标记前退出 → 失败；日志停止更新超过设定时长 → 无法确认完成。
+- 进程在完成标记前退出 → 失败；单次运行超过 ``Run.RunTimeLimit`` 分钟仍无完成标记 →
+  结束进程树并判为无法确认完成（兜住会一直运行的任务与卡死的进程）。
 
 进程退出码与日志最后一行都不作为完成依据。
 """
@@ -101,8 +106,8 @@ def judge_run(
     app_name: str,
     task: OkScriptTask,
     process_exited: bool,
-    stalled: bool,
-    stall_minutes: int,
+    timed_out: bool,
+    time_limit_minutes: int,
 ) -> RunVerdict | None:
     """按 ok-script 框架日志判定一次运行；仍在运行时返回 None。
 
@@ -111,8 +116,8 @@ def judge_run(
         app_name: 项目名，用于提示文案。
         task: 本次运行的任务。
         process_exited: 项目进程是否已退出（已扣除读日志的宽限时间）。
-        stalled: 日志是否已停止更新超过 ``stall_minutes`` 分钟。
-        stall_minutes: 日志停滞阈值（分钟），用于提示文案。
+        timed_out: 本次运行是否已超过 ``time_limit_minutes`` 分钟。
+        time_limit_minutes: 单次运行时间上限（分钟），用于提示文案。
     """
 
     class_name = task.task_id.rsplit(".", 1)[-1]
@@ -132,10 +137,11 @@ def judge_run(
             return RunVerdict("中止", f"任务在 {app_name} 界面中被停止")
     if process_exited:
         return RunVerdict("失败", f"{app_name} 在任务完成前退出，日志中没有完成标记")
-    if stalled:
+    if timed_out:
         return RunVerdict(
             "无法确认",
-            f"{app_name} 日志超过 {stall_minutes} 分钟没有更新，无法确认任务是否完成",
+            f"{app_name} 运行超过 {time_limit_minutes} 分钟仍没有完成标记，"
+            "已结束进程，无法确认任务是否完成",
         )
     return None
 
@@ -216,6 +222,8 @@ class AutoProxyTask(TaskExecuteBase):
         self.task: OkScriptTask | None = None
         self.process_manager: ProcessManager | None = None
         self.launched_at = 0.0
+        # 本次运行拉起项目时的单调时钟读数，单次运行时间上限从这里起算
+        self.run_started_at = 0.0
         self.log_monitor: LogMonitor | None = None
         self.wait_event: asyncio.Event | None = None
         self.verdict: RunVerdict | None = None
@@ -246,8 +254,6 @@ class AutoProxyTask(TaskExecuteBase):
                 f"所选任务「{task_name}」在当前 {self.project.app_name} "
                 f"{self.project.version} 中已不存在，请在用户配置中重新选择"
             )
-        if task.continuous:
-            return f"「{task.name}」是持续运行的任务，暂不支持由本软件调度"
         self.task = task
         return "Pass"
 
@@ -329,10 +335,11 @@ class AutoProxyTask(TaskExecuteBase):
             )
             return
 
-        args = ["-t", str(task.index), "-e"]
+        # 按「模块.类名」指定任务，不传列表序号（见模块说明）
+        args = ["-t", task.task_id, "-e"]
         await push_dispatch_log(
             self.script_info,
-            f"启动 {project.app_name}：{task.name}（-t {task.index} -e）",
+            f"启动 {project.app_name}：{task.name}（-t {task.task_id} -e）",
         )
         logger.info(f"启动 {project.app_name}: {project.exe_path} {' '.join(args)}")
 
@@ -340,6 +347,7 @@ class AutoProxyTask(TaskExecuteBase):
         launched_at = time.time()
         try:
             await self.process_manager.open_process(project.exe_path, *args)
+            self.run_started_at = time.monotonic()
         except Exception as e:
             logger.opt(exception=True).warning(f"启动 {project.app_name} 失败: {e}")
             self._set_verdict(RunVerdict("失败", f"启动 {project.app_name} 失败：{e}"))
@@ -424,14 +432,14 @@ class AutoProxyTask(TaskExecuteBase):
             self.exit_seen_at is not None
             and time.monotonic() - self.exit_seen_at >= _EXIT_GRACE_SECONDS
         )
-        stall_minutes = int(self.script_config.get("Run", "RunTimeLimit"))
+        time_limit = int(self.script_config.get("Run", "RunTimeLimit"))
         verdict = judge_run(
             log_content,
             app_name=self.project.app_name,
             task=self.task,
             process_exited=process_exited,
-            stalled=self.is_log_stalled(latest_time, minutes=stall_minutes),
-            stall_minutes=stall_minutes,
+            timed_out=time.monotonic() - self.run_started_at > time_limit * 60,
+            time_limit_minutes=time_limit,
         )
         if verdict is not None:
             self._set_verdict(verdict)

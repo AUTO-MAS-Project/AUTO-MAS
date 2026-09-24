@@ -329,16 +329,13 @@ const project = ref<OkScriptProjectInfo | null>(null)
 const probeError = ref('')
 const probing = ref(false)
 
-const taskLabel = (task: OkScriptTaskItem) =>
-  task.continuous
-    ? `${task.index}. ${task.name}（${t('edit.okscriptContinuousTask')}）`
-    : `${task.index}. ${task.name}`
+// 序号只用于展示，运行时按任务 ID（模块.类名）启动
+const taskLabel = (task: OkScriptTaskItem) => `${task.index}. ${task.name}`
 
 const taskOptions = computed(() =>
   (project.value?.tasks ?? []).map(task => ({
     label: taskLabel(task),
     value: task.taskId,
-    disabled: task.continuous,
   }))
 )
 
@@ -443,11 +440,11 @@ const handleFieldSave = async (key: string, value: unknown) => {
   await saveUserData(userData, key)
 }
 
-// 任务 ID 与显示名一起保存：显示名只用于标签，运行时按 ID 对应当前版本的序号
+// 任务 ID 与显示名一起保存：显示名只用于标签，运行时直接以任务 ID 作 -t 参数
 const handleTaskChange = async (value: unknown) => {
   if (configLocked.value || typeof value !== 'string') return
   const task = project.value?.tasks.find(item => item.taskId === value)
-  if (!task || task.continuous) return
+  if (!task) return
   const previous = { ...formData.Task }
   formData.Task.TaskId = task.taskId
   formData.Task.TaskName = task.name

@@ -12,7 +12,7 @@ export type OkScriptConfig_Run = {
      */
     RunTimesLimit?: (number | null);
     /**
-     * 日志停止更新的最长等待时间（分钟），超过即判为无法确认完成
+     * 单次运行时间上限（分钟），超时仍无完成标记即结束并判为无法确认完成
      */
     RunTimeLimit?: (number | null);
 };

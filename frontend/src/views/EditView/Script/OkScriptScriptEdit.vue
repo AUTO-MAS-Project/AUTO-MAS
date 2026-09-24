@@ -212,7 +212,7 @@
               <a-form-item>
                 <template #label>
                   <span class="form-label">
-                    {{ t('edit.runTimeoutMinutes') }}
+                    {{ t('edit.singleRunTimeLimit') }}
                     <a-tooltip :title="t('edit.okscriptRunTimeLimitHint')">
                       <QuestionCircleOutlined class="help-icon" />
                     </a-tooltip>
@@ -296,7 +296,7 @@ interface OkScriptScriptConfigForm {
 // 与后端 OkScriptConfig 的默认值保持一致
 const okScriptConfig = reactive<OkScriptScriptConfigForm>({
   Info: { Name: '', RootPath: '' },
-  Run: { ProxyTimesLimit: 0, RunTimesLimit: 2, RunTimeLimit: 30 },
+  Run: { ProxyTimesLimit: 0, RunTimesLimit: 2, RunTimeLimit: 120 },
 })
 
 // 表单绑定代理：直接读写 okScriptConfig，避免出现两份真相
@@ -324,9 +324,7 @@ const project = ref<OkScriptProjectInfo | null>(null)
 const probeError = ref('')
 const probing = ref(false)
 const projectName = computed(() => project.value?.appName || 'ok-script')
-const runnableTaskCount = computed(
-  () => project.value?.tasks.filter(task => !task.continuous).length ?? 0
-)
+const runnableTaskCount = computed(() => project.value?.tasks.length ?? 0)
 
 const probe = async (rootPath: string): Promise<OkScriptProjectInfo | null> => {
   probing.value = true

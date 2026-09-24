@@ -2711,7 +2711,7 @@ class OkScriptConfig_Run(BaseModel):
     )
     RunTimeLimit: Optional[int] = Field(
         default=None,
-        description="日志停止更新的最长等待时间（分钟），超过即判为无法确认完成",
+        description="单次运行时间上限（分钟），超时仍无完成标记即结束并判为无法确认完成",
     )
 
 
@@ -2727,12 +2727,11 @@ class OkScriptProbeIn(BaseModel):
 
 
 class OkScriptTaskItem(BaseModel):
-    taskId: str = Field(..., description="任务 ID（项目任务列表里的「模块.类名」）")
-    index: int = Field(..., description="任务序号，即启动参数 -t 的值（从 1 开始）")
-    name: str = Field(..., description="任务显示名")
-    continuous: bool = Field(
-        ..., description="是否为持续触发任务（不会自行结束，暂不支持运行）"
+    taskId: str = Field(
+        ..., description="任务 ID（项目任务列表里的「模块.类名」，即启动参数 -t 的值）"
     )
+    index: int = Field(..., description="任务在列表中的序号（从 1 开始，仅用于展示）")
+    name: str = Field(..., description="任务显示名")
 
 
 class OkScriptProjectInfo(BaseModel):
