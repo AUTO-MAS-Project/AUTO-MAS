@@ -52,6 +52,18 @@
         {{ t('comp.configuring') }}
       </a-button>
 
+      <a-button
+        v-if="showFolderButton"
+        size="large"
+        :loading="folderLoading"
+        @click="handleOpenFolder"
+      >
+        <template #icon>
+          <FolderOpenOutlined />
+        </template>
+        {{ t('comp.openConfigFolder') }}
+      </a-button>
+
       <a-button size="large" class="cancel-button" @click="emit('cancel')">
         <template #icon>
           <ArrowLeftOutlined />
@@ -65,7 +77,8 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
 import { computed } from 'vue'
-import { ArrowLeftOutlined, SettingOutlined } from '@ant-design/icons-vue'
+import { ArrowLeftOutlined, FolderOpenOutlined, SettingOutlined } from '@ant-design/icons-vue'
+import { useUserApi } from '@/composables/useUserApi'
 
 const { t } = useI18n()
 
@@ -93,6 +106,8 @@ const props = withDefaults(
     configDisabled?: boolean
     /** 是否展示配置按钮，用于「简洁」模式下整体隐藏 */
     configVisible?: boolean
+    /** 当前用户 ID，编辑已有用户时提供，用于渲染「配置文件夹」按钮 */
+    userId?: string
   }>(),
   {
     currentLabel: undefined,
@@ -102,6 +117,7 @@ const props = withDefaults(
     configActive: false,
     configDisabled: false,
     configVisible: true,
+    userId: undefined,
   }
 )
 
@@ -112,6 +128,18 @@ const emit = defineEmits<{
 
 /** 只有声明了文字且未被显式隐藏时才渲染配置按钮 */
 const showConfigButton = computed(() => Boolean(props.configLabel) && props.configVisible)
+
+/** 已有用户才提供「配置文件夹」快捷入口，新增用户此时还没有配置目录 */
+const showFolderButton = computed(() => Boolean(props.userId))
+
+const { loading: folderLoading, openUserConfigFolder } = useUserApi()
+
+const handleOpenFolder = async () => {
+  const userId = props.userId
+  if (!userId) return
+  await openUserConfigFolder(props.scriptId, userId)
+}
+
 </script>
 
 <style scoped>

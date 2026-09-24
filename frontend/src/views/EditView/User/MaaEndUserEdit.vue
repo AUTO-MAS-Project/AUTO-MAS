@@ -36,6 +36,7 @@
       :script-id="scriptId"
       :script-name="scriptName"
       :is-edit="isEdit"
+      :user-id="userId"
       @handle-cancel="handleCancel"
     />
 

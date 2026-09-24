@@ -32,6 +32,17 @@
     </div>
 
     <a-space>
+      <a-button
+        v-if="props.userId"
+        size="large"
+        :loading="folderLoading"
+        @click="handleOpenFolder"
+      >
+        <template #icon>
+          <FolderOpenOutlined />
+        </template>
+        {{ t('comp.openConfigFolder') }}
+      </a-button>
       <a-button size="large" @click="emit('cancel')">
         <template #icon>
           <ArrowLeftOutlined />
@@ -48,22 +59,32 @@ import {
   ArrowLeftOutlined,
   CheckCircleOutlined,
   CloseCircleOutlined,
+  FolderOpenOutlined,
   LoadingOutlined,
 } from '@ant-design/icons-vue'
+import { useUserApi } from '@/composables/useUserApi'
 
 const { t } = useI18n()
 
-defineProps<{
+const props = defineProps<{
   saveStatus: 'idle' | 'saving' | 'saved' | 'error'
   saveErrorMessage: string
   scriptId: string
   scriptName: string
   isEdit: boolean
+  userId?: string
 }>()
 
 const emit = defineEmits<{
   cancel: []
 }>()
+
+const { loading: folderLoading, openUserConfigFolder } = useUserApi()
+
+const handleOpenFolder = async () => {
+  if (!props.userId) return
+  await openUserConfigFolder(props.scriptId, props.userId)
+}
 </script>
 
 <style scoped>
