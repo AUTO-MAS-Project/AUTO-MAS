@@ -121,7 +121,7 @@ const activePlanId = ref<string>('')
 const planDataMap = ref<Record<string, PlanConfigData>>({})
 
 const planNameById = computed(() =>
-  Object.fromEntries(planList.value.map(plan => [plan.id, plan.name])),
+  Object.fromEntries(planList.value.map(plan => [plan.id, plan.name]))
 )
 
 const currentPlanName = ref<string>('')

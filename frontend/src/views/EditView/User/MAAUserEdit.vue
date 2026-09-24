@@ -650,8 +650,8 @@ const activityStageState = computed(() =>
   resolveActivityStageState(
     formData.Task.ActivityStageIntent ?? '',
     serverStageLists.value.activity,
-    serverStageLists.value.preview,
-  ),
+    serverStageLists.value.preview
+  )
 )
 
 // 折叠态摘要：不展开也能确认当前生效的关卡配置
@@ -944,8 +944,7 @@ const applyServerStageOptions = () => {
   }))
   appendConfiguredCustomStages()
   // 进行中优先，间隙期用下期预览（选项不消失，可提前布阵；预览不注入）
-  const source =
-    stageOverview.Activity.length > 0 ? stageOverview.Activity : stageOverview.Preview
+  const source = stageOverview.Activity.length > 0 ? stageOverview.Activity : stageOverview.Preview
   activityPeriod.value =
     stageOverview.Activity.length > 0
       ? 'ongoing'

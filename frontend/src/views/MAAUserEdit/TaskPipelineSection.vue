@@ -476,8 +476,7 @@ const activityFirst = computed(() => formData.value.Task.IfActivityFirst)
 
 const handleActivityToggle = (checked: boolean) => emitSave('Task.IfActivityFirst', checked)
 
-const handleActivityStageChange = (value: string) =>
-  emitSave('Task.ActivityStageIntent', value)
+const handleActivityStageChange = (value: string) => emitSave('Task.ActivityStageIntent', value)
 
 const activitySummary = computed(() =>
   summarizeActivity({

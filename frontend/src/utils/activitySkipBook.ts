@@ -41,7 +41,7 @@ function isSkipActive(entry?: ActivitySkipEntry, today = activityToday()): boole
 /** 命中闸门的条目（连错最多的一条；无命中返回 null） */
 export function activeSkipEntry(
   book: ActivitySkipBook,
-  today = activityToday(),
+  today = activityToday()
 ): { name: string; entry: ActivitySkipEntry } | null {
   let hit: { name: string; entry: ActivitySkipEntry } | null = null
   for (const [name, entry] of Object.entries(book)) {

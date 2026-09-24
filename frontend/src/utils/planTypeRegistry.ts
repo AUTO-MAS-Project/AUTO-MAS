@@ -54,7 +54,7 @@ export const PLAN_TYPE_REGISTRY: Record<PlanConfigType, PlanTypeDescriptor> = {
     reloadAfterSave: true,
     tableComponent: defineAsyncComponent(() => import('@/views/plan/tables/MaaPlanTable.vue')),
     headerComponent: defineAsyncComponent(
-      () => import('@/views/plan/components/ActivityStageSection.vue'),
+      () => import('@/views/plan/components/ActivityStageSection.vue')
     ),
   },
   [PLAN_CONFIG_TYPES.MAA_END]: {

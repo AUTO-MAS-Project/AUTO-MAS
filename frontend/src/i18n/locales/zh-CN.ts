@@ -291,7 +291,8 @@ export default {
     maaEventFirst: '活动关优先',
     maaEventFirstHint: '这是日常流程中的独立合成任务，会在普通理智作战之前执行',
     maaEventStage: '活动关卡',
-    maaEventStageHint: '保存选关意图（搓玉 / 倒数第N关），下期活动按同一意图自动解析，本期无匹配关时跳过并提示',
+    maaEventStageHint:
+      '保存选关意图（搓玉 / 倒数第N关），下期活动按同一意图自动解析，本期无匹配关时跳过并提示',
     maaStageNotStarted: '未开始',
     activityStateOk: '本期：{stage} · {mat}（{name}）· 正常注入',
     activityStatePreview: '下期：{stage} · {mat}（{name}）· 待开启，开启后自动注入',
@@ -3186,7 +3187,8 @@ export default {
       ongoing: '进行中',
       partialLoad: '部分脚本的用户数据获取失败，当前展示为部分数据',
       hint: '「倒N」= 从本期最高编号材料关往下数（倒1 即最高关）；搓玉自动识别、单列一行；指派保存在各用户配置中，此处为批量视图，改动立即生效；每个用户只会在一个槽位。',
-      previewBanner: '当前没有进行中的活动 · 下期「{name}」已录入，指派按下期关卡预解析（{start} 开启），开启后自动生效；预览不参与注入',
+      previewBanner:
+        '当前没有进行中的活动 · 下期「{name}」已录入，指派按下期关卡预解析（{start} 开启），开启后自动生效；预览不参与注入',
       gapBanner: '当前没有进行中的活动 · 下期活动 MAA 尚未录入，录入后此处可直接提前布阵',
       colSlot: '槽位',
       colStage: '本期关卡',

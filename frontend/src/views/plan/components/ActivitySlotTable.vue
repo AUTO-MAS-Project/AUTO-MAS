@@ -41,7 +41,9 @@
             :disabled="saving"
             :title="t('plan.activity.remove')"
             @click="emit('remove', item.user)"
-          >✕</button>
+          >
+            ✕
+          </button>
         </span>
 
         <a-popover
@@ -89,8 +91,7 @@
             <div
               class="pk-head"
               v-if="
-                !record.candidates.unassigned.length &&
-                !record.candidates.fromOtherSlots.length
+                !record.candidates.unassigned.length && !record.candidates.fromOtherSlots.length
               "
             >
               {{ t('plan.activity.noCandidates') }}

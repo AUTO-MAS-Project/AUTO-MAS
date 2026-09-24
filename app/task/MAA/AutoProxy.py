@@ -1524,7 +1524,8 @@ class AutoProxyTask(TaskExecuteBase):
                     (
                         stage
                         for stage in activity_entries
-                        if isinstance(stage, dict) and stage.get("Value") == activity_stage
+                        if isinstance(stage, dict)
+                        and stage.get("Value") == activity_stage
                     ),
                     None,
                 )
@@ -2135,9 +2136,7 @@ class AutoProxyTask(TaskExecuteBase):
             return
         # 写簿成功后才落闩并提示，保证一条出错只提示一次
         self._activity_stage_failed = True
-        skip_hint = (
-            "已跳过至活动结束" if days >= 2 else "今日不再注入活动关"
-        )
+        skip_hint = "已跳过至活动结束" if days >= 2 else "今日不再注入活动关"
         logger.warning(
             f"用户 {self.cur_user_item.name} 活动关任务出错（连错 {days} 天），{skip_hint}"
         )

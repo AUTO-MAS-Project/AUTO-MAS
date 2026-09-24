@@ -39,7 +39,12 @@
       <template v-else>
         <p class="hint">{{ t('plan.activity.hint') }}</p>
 
-        <a-alert v-if="period === 'preview' && previewMeta" type="info" class="gap-banner" show-icon>
+        <a-alert
+          v-if="period === 'preview' && previewMeta"
+          type="info"
+          class="gap-banner"
+          show-icon
+        >
           <template #message>
             {{
               t('plan.activity.previewBanner', {
@@ -121,7 +126,7 @@ watch(
       collapsed.value = false
     }
   },
-  { immediate: true },
+  { immediate: true }
 )
 </script>
 

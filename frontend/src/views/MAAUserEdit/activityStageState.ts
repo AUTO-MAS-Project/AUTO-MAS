@@ -16,7 +16,7 @@ export interface ActivityStageState {
 export function resolveActivityStageState(
   intent: string,
   activity: ActivityItem[],
-  preview: ActivityItem[],
+  preview: ActivityItem[]
 ): ActivityStageState {
   if (!intent) {
     return {
@@ -48,8 +48,7 @@ export function resolveActivityStageState(
     }
     return {
       tone: common.tone,
-      messageKey:
-        period === 'preview' ? 'edit.activityStatePreview' : 'edit.activityStateOk',
+      messageKey: period === 'preview' ? 'edit.activityStatePreview' : 'edit.activityStateOk',
       params: { stage: jade.Value, mat: jade.DropName, name: common.name },
     }
   }
@@ -67,8 +66,7 @@ export function resolveActivityStageState(
     const dropName = stages.find(item => item.Value === stage)?.DropName ?? ''
     return {
       tone: common.tone,
-      messageKey:
-        period === 'preview' ? 'edit.activityStatePreview' : 'edit.activityStateOk',
+      messageKey: period === 'preview' ? 'edit.activityStatePreview' : 'edit.activityStateOk',
       params: { stage, mat: dropName, name: common.name },
     }
   }

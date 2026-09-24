@@ -57,7 +57,7 @@ export interface StageSlotRow {
 export function buildSlotRows(
   stages: ActivityItem[],
   assignedIntents: string[],
-  notStarted: boolean,
+  notStarted: boolean
 ): StageSlotRow[] {
   const rows: StageSlotRow[] = []
 
@@ -66,14 +66,12 @@ export function buildSlotRows(
     .sort((a, b) => stageNumber(b.Value) - stageNumber(a.Value))
   const jade = stages.find(stage => isJadeStage(stage))
 
-  const assignedKeys = new Set(
-    assignedIntents.map(slotKeyOfIntent).filter(key => key !== ''),
-  )
+  const assignedKeys = new Set(assignedIntents.map(slotKeyOfIntent).filter(key => key !== ''))
   const maxAssignedLast = Math.max(
     0,
     ...[...assignedKeys]
       .filter((key): key is string => key.startsWith('last:'))
-      .map(key => parseInt(key.slice(5), 10) || 0),
+      .map(key => parseInt(key.slice(5), 10) || 0)
   )
 
   // 无任何关卡数据（间隙期且下期未录入）时给默认骨架 倒1~倒3 + 搓玉，
@@ -127,7 +125,7 @@ export interface UserInjectStatus {
 export function resolveUserInjectStatus(
   user: ActivityUserRow,
   stages: ActivityItem[],
-  period: 'ongoing' | 'preview' | 'gap',
+  period: 'ongoing' | 'preview' | 'gap'
 ): UserInjectStatus {
   if (!user.followsPlan) return { willInject: false, reason: 'not-following' }
   if (!user.status) return { willInject: false, reason: 'user-disabled' }

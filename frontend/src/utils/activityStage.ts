@@ -30,10 +30,7 @@ export function isJadeStage(stage: Pick<ActivityItem, 'RawDrop' | 'Drop'>): bool
 }
 
 /** 意图 → 关卡码（与后端 _resolve_activity_stage 同语义） */
-export function resolveIntentStage(
-  intent: string,
-  stages: ActivityItem[],
-): string | null {
+export function resolveIntentStage(intent: string, stages: ActivityItem[]): string | null {
   if (!intent) return null
   if (intent === 'jade') {
     return stages.find(stage => isJadeStage(stage))?.Value ?? null

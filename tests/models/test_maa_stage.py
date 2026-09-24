@@ -29,7 +29,11 @@ def _stage_data(now: datetime) -> str:
                         },
                         "Stages": [
                             {"Display": "SR-8", "Value": "SR-8", "Drop": "30031"},
-                            {"Display": "SR-5", "Value": "SR-5", "Drop": "搓玉效率0.91"},
+                            {
+                                "Display": "SR-5",
+                                "Value": "SR-5",
+                                "Drop": "搓玉效率0.91",
+                            },
                             {
                                 "Display": "SSReopen-SR",
                                 "Value": "SSReopen-SR",
@@ -113,10 +117,7 @@ class GetStageDualViewTestCase(unittest.TestCase):
         for entry in self.stage["Info"] + self.stage["Preview"]:
             self.assertNotIn("SSReopen", entry["Value"])
         self.assertTrue(
-            any(
-                option["value"] == "SSReopen-SR"
-                for option in self.stage["ALL"]
-            )
+            any(option["value"] == "SSReopen-SR" for option in self.stage["ALL"])
         )
 
     def test_resolver_anchors_on_stage_number(self) -> None:

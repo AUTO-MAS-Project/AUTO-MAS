@@ -384,7 +384,7 @@ const allOfferedStages = computed(() => {
   TIME_KEYS.forEach(timeKey =>
     getCachedStageOptions(timeKey).forEach(option => {
       if (option.value) offered.add(option.value)
-    }),
+    })
   )
   return offered
 })
@@ -419,9 +419,7 @@ const getSelectOptions = (
       /^[A-Za-z]{1,3}-\d+$/.test(stageName) &&
       !/^(LS|CE|AP|CA|SK)-/i.test(stageName)
     baseOptions.push({
-      label: isEndedActivity
-        ? t('plan.table.endedSuffix', { label: stageName })
-        : stageName,
+      label: isEndedActivity ? t('plan.table.endedSuffix', { label: stageName }) : stageName,
       value: stageName,
     })
   })

@@ -9,11 +9,7 @@ import { Service } from '@/api'
 import { useScriptApi } from '@/composables/useScriptApi'
 import { useUserApi } from '@/composables/useUserApi'
 import type { ActivityItem } from '@/types/home'
-import {
-  readActivityMeta,
-  slotKeyOfIntent,
-  stageServerOf,
-} from '@/utils/activityStage'
+import { readActivityMeta, slotKeyOfIntent, stageServerOf } from '@/utils/activityStage'
 import { getServerDisplayName } from '@/utils/serverLabel'
 import {
   activeSkipEntry,
@@ -109,7 +105,7 @@ export function useActivityStageAssignment(props: ActivityAssignmentProps) {
       ...user,
       followsPlan: user.stageMode === props.planId,
       planLabel: planLabelFor(user),
-    })),
+    }))
   )
 
   const followingUsers = computed(() => usersView.value.filter(user => user.followsPlan))
@@ -132,10 +128,10 @@ export function useActivityStageAssignment(props: ActivityAssignmentProps) {
   })
 
   const activityStages = computed(
-    () => activityByServer.value[stageServerOf(anchorServer.value)] ?? [],
+    () => activityByServer.value[stageServerOf(anchorServer.value)] ?? []
   )
   const previewStages = computed(
-    () => previewByServer.value[stageServerOf(anchorServer.value)] ?? [],
+    () => previewByServer.value[stageServerOf(anchorServer.value)] ?? []
   )
   const period = computed<'ongoing' | 'preview' | 'gap'>(() => {
     if (activityStages.value.length) return 'ongoing'
@@ -143,17 +139,17 @@ export function useActivityStageAssignment(props: ActivityAssignmentProps) {
     return 'gap'
   })
   const displayStages = computed(() =>
-    period.value === 'ongoing' ? activityStages.value : previewStages.value,
+    period.value === 'ongoing' ? activityStages.value : previewStages.value
   )
   const ongoingMeta = computed(() => readActivityMeta(activityStages.value))
   const previewMeta = computed(() => readActivityMeta(previewStages.value))
 
   const assignedIntents = computed(() =>
-    followingUsers.value.map(user => user.intent).filter(intent => intent !== ''),
+    followingUsers.value.map(user => user.intent).filter(intent => intent !== '')
   )
 
   const slotRows = computed(() =>
-    buildSlotRows(displayStages.value, assignedIntents.value, period.value === 'preview'),
+    buildSlotRows(displayStages.value, assignedIntents.value, period.value === 'preview')
   )
 
   /** 用户自己服务器的期间态：注入判定必须按各服真实数据，不能用锚定服 */
@@ -180,7 +176,7 @@ export function useActivityStageAssignment(props: ActivityAssignmentProps) {
         status: resolveUserInjectStatus(
           user,
           stagesForUser(user.server),
-          periodForUser(user.server),
+          periodForUser(user.server)
         ),
       }))
 
@@ -197,17 +193,11 @@ export function useActivityStageAssignment(props: ActivityAssignmentProps) {
 
   /** 行内需要黄字提示的用户：预览行与骨架行的 gap 是「待开启」不算警告 */
   const rowBlockingItems = (row: StageSlotRow, items: UserSlotItem[]): UserSlotItem[] => {
-    const warnReasons = [
-      'no-match',
-      'switch-off',
-      'no-quick-config',
-      'user-disabled',
-      'skipped',
-    ]
+    const warnReasons = ['no-match', 'switch-off', 'no-quick-config', 'user-disabled', 'skipped']
     return items.filter(
       item =>
         warnReasons.includes(item.status.reason) ||
-        (item.status.reason === 'gap' && !row.notStarted),
+        (item.status.reason === 'gap' && !row.notStarted)
     )
   }
 
@@ -309,11 +299,11 @@ export function useActivityStageAssignment(props: ActivityAssignmentProps) {
         users: items.map(toSlotUser),
         candidates: candidatesFor(row.key),
       }
-    }),
+    })
   )
 
   const warningCount = computed(
-    () => slotViewRows.value.filter(row => row.statusClass === 'warn').length,
+    () => slotViewRows.value.filter(row => row.statusClass === 'warn').length
   )
 
   const assignedCount = computed(() => followingUsers.value.filter(user => user.intent).length)
@@ -359,12 +349,12 @@ export function useActivityStageAssignment(props: ActivityAssignmentProps) {
    */
   const resolveSkipState = (
     user: { Info: { Server: string }; Data?: { ActivitySkipBook?: string } },
-    activityMap: Record<string, ActivityItem[]>,
+    activityMap: Record<string, ActivityItem[]>
   ): { skipActive: boolean; skipDays: number; skipSummary: string } => {
     const serverStages = activityMap[stageServerOf(user.Info.Server)] ?? []
     const ongoingHere: ActivitySkipBook = {}
     for (const [name, entry] of Object.entries(
-      parseActivitySkipBook(user.Data?.ActivitySkipBook),
+      parseActivitySkipBook(user.Data?.ActivitySkipBook)
     )) {
       if (serverStages.some(stage => stage.Activity?.StageName === name)) {
         ongoingHere[name] = entry
@@ -400,10 +390,7 @@ export function useActivityStageAssignment(props: ActivityAssignmentProps) {
       const stageByServer =
         (
           overviewResponse.data as {
-            StageByServer?: Record<
-              string,
-              { Activity?: ActivityItem[]; Preview?: ActivityItem[] }
-            >
+            StageByServer?: Record<string, { Activity?: ActivityItem[]; Preview?: ActivityItem[] }>
           }
         ).StageByServer ?? {}
       const activityMap: Record<string, ActivityItem[]> = {}
@@ -459,7 +446,7 @@ export function useActivityStageAssignment(props: ActivityAssignmentProps) {
       if (!ok) return false
       // 写回原始行（视图行是派生副本，改它会在下次重算时丢失）
       const raw = users.value.find(
-        row => row.scriptId === user.scriptId && row.userId === user.userId,
+        row => row.scriptId === user.scriptId && row.userId === user.userId
       )
       if (raw) raw.intent = intent
       return true

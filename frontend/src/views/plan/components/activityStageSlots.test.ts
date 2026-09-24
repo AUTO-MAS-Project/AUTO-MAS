@@ -1,15 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { ActivityItem } from '@/types/home'
-import {
-  formatActivityTime,
-  resolveIntentStage,
-  slotKeyOfIntent,
-} from '@/utils/activityStage'
-import {
-  buildSlotRows,
-  resolveUserInjectStatus,
-  type ActivityUserRow,
-} from './activityStageSlots'
+import { formatActivityTime, resolveIntentStage, slotKeyOfIntent } from '@/utils/activityStage'
+import { buildSlotRows, resolveUserInjectStatus, type ActivityUserRow } from './activityStageSlots'
 
 const stage = (value: string, rawDrop: string, dropName = rawDrop): ActivityItem => ({
   Display: value,
@@ -146,35 +138,41 @@ describe('resolveIntentStage', () => {
 
 describe('resolveUserInjectStatus', () => {
   it('reports the first blocking reason per user', () => {
-    expect(
-      resolveUserInjectStatus(user({ followsPlan: false }), srStages, 'ongoing'),
-    ).toEqual({ willInject: false, reason: 'not-following' })
+    expect(resolveUserInjectStatus(user({ followsPlan: false }), srStages, 'ongoing')).toEqual({
+      willInject: false,
+      reason: 'not-following',
+    })
     expect(resolveUserInjectStatus(user({ status: false }), srStages, 'ongoing')).toEqual({
       willInject: false,
       reason: 'user-disabled',
     })
-    expect(
-      resolveUserInjectStatus(user({ ifActivityFirst: false }), srStages, 'ongoing'),
-    ).toEqual({ willInject: false, reason: 'switch-off' })
-    expect(
-      resolveUserInjectStatus(user({ ifQuickConfig: false }), srStages, 'ongoing'),
-    ).toEqual({ willInject: false, reason: 'no-quick-config' })
+    expect(resolveUserInjectStatus(user({ ifActivityFirst: false }), srStages, 'ongoing')).toEqual({
+      willInject: false,
+      reason: 'switch-off',
+    })
+    expect(resolveUserInjectStatus(user({ ifQuickConfig: false }), srStages, 'ongoing')).toEqual({
+      willInject: false,
+      reason: 'no-quick-config',
+    })
     expect(resolveUserInjectStatus(user({ intent: '' }), srStages, 'ongoing')).toEqual({
       willInject: false,
       reason: 'no-intent',
     })
+    expect(resolveUserInjectStatus(user({ intent: 'last:9' }), srStages, 'ongoing')).toEqual({
+      willInject: false,
+      reason: 'no-match',
+    })
+    expect(resolveUserInjectStatus(user({ intent: 'last:1' }), srStages, 'preview')).toEqual({
+      willInject: false,
+      reason: 'gap',
+    })
     expect(
-      resolveUserInjectStatus(user({ intent: 'last:9' }), srStages, 'ongoing'),
-    ).toEqual({ willInject: false, reason: 'no-match' })
-    expect(
-      resolveUserInjectStatus(user({ intent: 'last:1' }), srStages, 'preview'),
-    ).toEqual({ willInject: false, reason: 'gap' })
-    expect(
-      resolveUserInjectStatus(user({ intent: 'last:1', skipActive: true }), srStages, 'ongoing'),
+      resolveUserInjectStatus(user({ intent: 'last:1', skipActive: true }), srStages, 'ongoing')
     ).toEqual({ willInject: false, reason: 'skipped' })
-    expect(
-      resolveUserInjectStatus(user({ intent: 'last:1' }), srStages, 'ongoing'),
-    ).toEqual({ willInject: true, reason: 'ok' })
+    expect(resolveUserInjectStatus(user({ intent: 'last:1' }), srStages, 'ongoing')).toEqual({
+      willInject: true,
+      reason: 'ok',
+    })
   })
 })
 

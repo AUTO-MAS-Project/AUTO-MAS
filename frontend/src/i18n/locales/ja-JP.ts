@@ -2731,8 +2731,8 @@ export default {
       stagePlaceholder: 'ステージ番号を入力',
       noSwitch: '変更しない',
       usedSuffix: '{label}（選択済み）',
-    activityTag: 'イベント',
-    endedSuffix: '{label}（終了）',
+      activityTag: 'イベント',
+      endedSuffix: '{label}（終了）',
     },
     toast: {
       created: '新しい{type}「{name}」を作成しました',
