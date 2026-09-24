@@ -25,7 +25,7 @@
     </a-space>
   </div>
 
-  <div class="script-edit-content">
+  <ConfigLockPanel :script-id="scriptId" content-class="script-edit-content">
     <a-card
       :title="`${projectDisplayName} ${isWizard ? '项目引导' : '项目配置'}`"
       :loading="pageLoading"
@@ -54,33 +54,18 @@
             :preview-project-title="previewProjectTitle"
             :interface-stats="interfaceStats"
             :update-applying="updateApplying"
+            :env-preparing="envPreparing"
+            :env-ready="envReady"
+            :env-failed="envFailed"
+            :env-message="envMessage"
+            :env-percent="envPercent"
+            :env-logs="envLogs"
+            :env-agents="envAgents"
+            :env-outcome="envOutcome"
             @change="handleChange"
             @select-path="selectMaaFWPath"
             @preview-interface="handlePreviewInterface"
           />
-
-          <a-alert
-            v-if="envPreparing || envReady || envMessage"
-            class="env-prepare-alert"
-            :type="envPreparing ? 'info' : envReady ? 'success' : 'error'"
-            show-icon
-            :message="envMessage"
-          >
-            <template v-if="envPreparing" #icon>
-              <LoadingOutlined spin />
-            </template>
-            <template v-if="envReady && envAgents.length" #description>
-              已就绪的 Agent：{{ envAgents.map(a => a.runtimeKind || '未知').join('、') }}
-            </template>
-            <template v-if="envFailed" #description>
-              运行环境没准备好，后面几步配了也跑不起来。请检查网络与项目路径后重试。
-            </template>
-            <template v-if="envFailed" #action>
-              <a-button size="small" :loading="envPreparing" @click="retryAgentEnvPrepare">
-                重试
-              </a-button>
-            </template>
-          </a-alert>
         </div>
 
         <div v-show="!isWizard || currentStep === 1">
@@ -100,15 +85,12 @@
             :is-adb-controller="isAdbController"
             :is-desktop-controller="isDesktopController"
             :resource-options="resourceOptions"
-            :unsupported-controller-options="unsupportedControllerOptions"
-            :unsupported-controller-message="unsupportedControllerMessage"
-            :adb-control-strategy-message="adbControlStrategyMessage"
             :adb-control-strategy-items="adbControlStrategyItems"
             :selected-emulator-label="selectedEmulatorLabel"
             :interface-dependent-disabled="interfaceDependentDisabled"
             @change="handleChange"
             @controller-change="handleControllerChange"
-            @resource-change="handleResourceChange"
+            @resource-change="handleResourceChangeWithPackage"
             @emulator-select-change="handleEmulatorSelectChange"
             @select-launch-path="selectLaunchPath"
           />
@@ -123,6 +105,8 @@
             :update-applying="updateApplying"
             :update-error="updateError"
             :update-result="updateResult"
+            :update-progress="updateProgress"
+            :cdk-prefilled="cdkPrefilled"
             :update-source-options="updateSourceOptions"
             :update-channel-options="updateChannelOptions"
             @change="handleChange"
@@ -161,10 +145,11 @@
         }}</a-button>
       </div>
     </a-card>
-  </div>
+  </ConfigLockPanel>
 </template>
 
 <script setup lang="ts">
+import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
 import DocLink from '@/components/DocLink.vue'
 import { MAS_DOC_URLS } from '@/utils/openExternal'
 import { useI18n } from 'vue-i18n'
@@ -172,11 +157,22 @@ import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import type { FormInstance } from 'ant-design-vue'
 import { message } from 'ant-design-vue'
-import { ArrowLeftOutlined, LoadingOutlined } from '@ant-design/icons-vue'
+import { ArrowLeftOutlined } from '@ant-design/icons-vue'
+import { GetService, MaaFwService } from '@/api'
 import { subscribe, unsubscribe } from '@/composables/useWebSocket'
-import { WS_MAAFW_ENV_PREPARE_PROGRESS } from '@/services/websocket/types'
+import {
+  WS_MAAFW_ENV_PREPARE_PROGRESS,
+  WS_MAAFW_PROJECT_UPDATE_PROGRESS,
+} from '@/services/websocket/types'
 import { useScriptApi } from '@/composables/useScriptApi'
+import { useSaveQueue } from '@/composables/useSaveQueue'
 import { useMaaFWUpdateApi, type MaaFWUpdateResult } from '@/composables/useMaaFWUpdateApi'
+import {
+  createUpdateProgressState,
+  finishUpdateProgress,
+  reduceUpdateProgress,
+  type MaaFWUpdateProgressState,
+} from './MaaFWScriptEdit/updateProgress'
 import {
   getDefaultMaaFWScriptConfig,
   isMaaFWUpdateChannel,
@@ -192,7 +188,7 @@ import type {
   MaaFWTaskInfo,
   ScriptType,
 } from '@/types/script'
-import BasicInfoSection from './MaaFWScriptEdit/BasicInfoSection.vue'
+import BasicInfoSection, { type MaaFWEnvOutcome } from './MaaFWScriptEdit/BasicInfoSection.vue'
 import ControlConfigSection from './MaaFWScriptEdit/ControlConfigSection.vue'
 import UpdateSettingsSection from './MaaFWScriptEdit/UpdateSettingsSection.vue'
 import RunConfigSection from './MaaFWScriptEdit/RunConfigSection.vue'
@@ -233,11 +229,12 @@ const stepItems = [
 // 失败时（离线、镜像不通、解释器坏）后面每一步都是白填。失败不是死路，
 // 提示条里有「重试」。
 const canLeaveCurrentStep = computed(
-  () => currentStep.value !== 0 || (previewData.value !== null && envReady.value),
+  () => currentStep.value !== 0 || (previewData.value !== null && envReady.value)
 )
 const pageLoading = ref(false)
 const isInitializing = ref(true)
-const isSaving = ref(false)
+// 保存串行队列：连续改动按序写回，不再被布尔互斥丢掉
+const { enqueue } = useSaveQueue()
 
 const formRef = ref<FormInstance>()
 const previewLoading = ref(false)
@@ -269,16 +266,18 @@ const rules = {
 }
 
 const handleChange = async (category: keyof MaaFWScriptConfig, key: string, value: unknown) => {
-  if (isInitializing.value || isSaving.value) return
-  isSaving.value = true
-  try {
-    const success = await updateScript(scriptId, { [category]: { [key]: value } })
-    if (success) logger.info(`配置已保存: ${String(category)}.${key}`)
-  } catch (error) {
-    logger.error(`保存失败: ${error instanceof Error ? error.message : String(error)}`)
-  } finally {
-    isSaving.value = false
-  }
+  if (isInitializing.value) return
+  await enqueue(
+    async () => {
+      try {
+        const success = await updateScript(scriptId, { [category]: { [key]: value } })
+        if (success) logger.info(`配置已保存: ${String(category)}.${key}`)
+      } catch (error) {
+        logger.error(`保存失败: ${error instanceof Error ? error.message : String(error)}`)
+      }
+    },
+    `${String(category)}.${key}`
+  )
 }
 
 const {
@@ -289,8 +288,6 @@ const {
   emulatorDeviceOptions,
   emulatorTypeById,
   controllerOptions,
-  unsupportedControllerOptions,
-  unsupportedControllerMessage,
   effectiveControllerName,
   effectiveControllerType,
   isAdbController,
@@ -298,10 +295,10 @@ const {
   resourceOptions,
   interfaceDependentDisabled,
   selectedEmulatorLabel,
-  adbControlStrategyMessage,
   adbControlStrategyItems,
   handleControllerChange,
   handleResourceChange,
+  resolveResourceName,
   handleEmulatorSelectChange,
   syncControllerResourceSelection,
   loadEmulatorOptions,
@@ -416,7 +413,7 @@ const applyScriptConfig = (config: Partial<MaaFWScriptConfig> | null | undefined
   monthlyOnceTasks.value = parseTaskNameList(maafwConfig.Run.MonthlyOnceTasks)
 }
 
-const runPreview = async () => {
+const runPreview = async (options: { forceEnv?: boolean } = {}) => {
   const path = maafwConfig.Info.Path.trim()
   if (!path) {
     previewData.value = null
@@ -435,7 +432,7 @@ const runPreview = async () => {
     await prunePeriodTaskSelections()
     // 读到 interface 就把运行环境备好。四个调用方（读取按钮 / 选目录 /
     // 路径变更 / 页面加载）都会经过这里，放在 runPreview 里才不会漏。
-    void runAgentEnvPrepare(path)
+    void runAgentEnvPrepare(path, options.forceEnv === true)
   } catch (error) {
     previewData.value = null
     message.error(error instanceof Error ? error.message : String(error))
@@ -444,10 +441,12 @@ const runPreview = async () => {
   }
 }
 
+// 「准备运行环境」按钮（失败时即「重试」）：interface 再读一遍，运行环境不吃指纹缓存、
+// 真的重新准备一次——用户点它就是因为环境实际不好使，而指纹只看项目文件动没动，看不出
+// venv 内部坏了。进度与结论都在右侧面板里，不再弹「已读取 xxx」的 toast。
 const handlePreviewInterface = async () => {
-  await runPreview()
-  if (!previewData.value) return
-  message.success(t('edit.readP0', { p0: previewProjectTitle.value }))
+  envPreparedPath.value = ''
+  await runPreview({ forceEnv: true })
 }
 
 // 读到 interface 之后立刻把运行环境备好（下载 MaaFramework、建 agent 环境）。
@@ -459,6 +458,8 @@ const envMessage = ref('')
 const envPercent = ref<number | null>(null)
 const envLogs = ref<string[]>([])
 const envAgents = ref<{ runtimeKind?: string | null; executable: string }[]>([])
+// 成功时是哪一种：首次准备 / 更新了已有环境 / 项目没变直接沿用，面板按它选状态词
+const envOutcome = ref<MaaFWEnvOutcome | null>(null)
 let envSubscriptionId: string | null = null
 
 // 准备过程可能几分钟，全程订阅后端推来的阶段与日志
@@ -468,6 +469,10 @@ const ensureEnvSubscription = () => {
     { id: scriptId, type: WS_MAAFW_ENV_PREPARE_PROGRESS },
     wsMessage => {
       const data = wsMessage.data
+      // 响应处理完就不再理会 WS：它走的是另一条路，可能比响应还晚到——日志行会把
+      // 最后几行写成两遍，ready 事件那句「MFW 运行环境已就绪」会把响应里写好的
+      // 「MaaFramework x.y.z」盖掉
+      if (!envPreparing.value) return
       if (data.log) {
         envLogs.value = [...envLogs.value.slice(-199), data.log]
       }
@@ -482,33 +487,57 @@ const ensureEnvSubscription = () => {
   )
 }
 
+// 手动更新过程（检查 / 下载 / 覆盖 / 校验 + 逐行日志）同样由后端推过来，
+// 折叠成一份面板状态交给「项目更新」区块显示。
+const updateProgress = ref<MaaFWUpdateProgressState>(createUpdateProgressState())
+let updateSubscriptionId: string | null = null
+
+const ensureUpdateSubscription = () => {
+  if (updateSubscriptionId) return
+  updateSubscriptionId = subscribe(
+    { id: scriptId, type: WS_MAAFW_PROJECT_UPDATE_PROGRESS },
+    wsMessage => {
+      updateProgress.value = reduceUpdateProgress(updateProgress.value, wsMessage.data)
+    }
+  )
+}
+
 onBeforeUnmount(() => {
   if (envSubscriptionId) {
     unsubscribe(envSubscriptionId)
     envSubscriptionId = null
   }
+  if (updateSubscriptionId) {
+    unsubscribe(updateSubscriptionId)
+    updateSubscriptionId = null
+  }
 })
 
 const envPreparedPath = ref('')
 
-const runAgentEnvPrepare = async (targetPath?: string) => {
+const runAgentEnvPrepare = async (targetPath?: string, force = false) => {
   const path = (targetPath ?? maafwConfig.Info.Path).trim()
   if (!path) return
   if (envPreparing.value) return
-  // 同一个项目已经备好过就不重复跑；换了目录才重新准备
-  if (envReady.value && envPreparedPath.value === path) return
+  // 同一个项目已经备好过就不重复跑；换了目录才重新准备。
+  // 这层只挡住本次停留在页面上的重复调用；跨页面进出由后端比项目指纹来挡。
+  if (!force && envReady.value && envPreparedPath.value === path) return
   ensureEnvSubscription()
   envPreparing.value = true
   envReady.value = false
   envFailed.value = false
   envPercent.value = null
   envLogs.value = []
-  envMessage.value = '正在准备运行环境，首次需要下载 MaaFramework，可能要几分钟'
+  envOutcome.value = null
+  envMessage.value = t('edit.envPreparingHint')
   try {
-    const response = await prepareMaaFWAgentEnv(path, scriptId)
+    const response = await prepareMaaFWAgentEnv(path, scriptId, force)
     if (!response || response.code !== 200 || !response.data) {
       envFailed.value = true
-      envMessage.value = response?.message || 'MFW 运行环境准备失败'
+      envMessage.value = response?.message || t('edit.envStatusFailed')
+      // 失败响应里同样带着逐行日志，而且这才是最需要它的时候：原先这里直接
+      // return，把唯一一份失败原因扔了，用户只剩一句「准备失败」。
+      if (response?.data?.logs?.length) envLogs.value = response.data.logs
       message.error(envMessage.value)
       return
     }
@@ -519,7 +548,13 @@ const runAgentEnvPrepare = async (targetPath?: string) => {
     // 后端返回的完整日志兜底：WS 断连时至少事后能看到
     if (response.data.logs?.length) envLogs.value = response.data.logs
     const version = response.data.maafwVersion
-    envMessage.value = version ? `运行环境已就绪，MaaFramework ${version}` : '运行环境已就绪'
+    envMessage.value = version ? `MaaFramework ${version}` : ''
+    // 旧后端没有 previouslyPrepared 字段：读不到就按首次准备算
+    envOutcome.value = response.data.cached
+      ? 'cached'
+      : response.data.previouslyPrepared
+        ? 'updated'
+        : 'prepared'
   } catch (error) {
     envFailed.value = true
     envMessage.value = error instanceof Error ? error.message : String(error)
@@ -527,12 +562,6 @@ const runAgentEnvPrepare = async (targetPath?: string) => {
   } finally {
     envPreparing.value = false
   }
-}
-
-// 重试要清掉「这个路径已经备好过」的记忆，否则 runAgentEnvPrepare 会直接跳过。
-const retryAgentEnvPrepare = async () => {
-  envPreparedPath.value = ''
-  await runAgentEnvPrepare()
 }
 
 const selectMaaFWPath = async () => {
@@ -558,14 +587,30 @@ const updateApplying = ref(false)
 const updateError = ref('')
 const updateResult = ref<MaaFWUpdateResult | null>(null)
 
+// 每次点「检查更新」或「更新」都从头显示过程；订阅要在请求发出前就挂上，
+// 否则后端最先推的那几条（检查中 / 首行日志）会漏掉。
+const beginUpdateProgress = () => {
+  ensureUpdateSubscription()
+  updateProgress.value = createUpdateProgressState('checking')
+}
+
+// HTTP 响应回来后兜底收尾：WS 断连时面板也要能落到终态，
+// 已由 WS 收尾的不改（后端那句更具体）。
+const settleUpdateProgress = (success: boolean, text: string) => {
+  updateProgress.value = finishUpdateProgress(updateProgress.value, { success, message: text })
+}
+
 const runUpdateCheck = async () => {
   updateChecking.value = true
   updateError.value = ''
+  beginUpdateProgress()
   try {
     updateResult.value = await checkMaaFWUpdate(scriptId)
+    settleUpdateProgress(true, updateResult.value.message)
   } catch (error) {
     updateResult.value = null
     updateError.value = error instanceof Error ? error.message : String(error)
+    settleUpdateProgress(false, updateError.value)
   } finally {
     updateChecking.value = false
   }
@@ -574,15 +619,68 @@ const runUpdateCheck = async () => {
 const runUpdateApply = async () => {
   updateApplying.value = true
   updateError.value = ''
+  beginUpdateProgress()
   try {
     updateResult.value = await applyMaaFWUpdate(scriptId)
+    settleUpdateProgress(true, updateResult.value.message)
     if (updateResult.value.updated && maafwConfig.Info.Path) {
       await runPreview()
     }
   } catch (error) {
     updateError.value = error instanceof Error ? error.message : String(error)
+    settleUpdateProgress(false, updateError.value)
   } finally {
     updateApplying.value = false
+  }
+}
+
+// 游戏包名：按所选 resource 的 pipeline 推断，推出来就直接填进表单并落盘。
+// 首次读到 interface 时只补空的；切换 resource 时覆盖——包名本来就跟服务器走
+// （官服 / B 服不是一个包）。推不出或多个候选就不动，占位符继续写「留空则自动识别」。
+const syncGamePackageName = async (overwrite: boolean) => {
+  const path = maafwConfig.Info.Path.trim()
+  const resource = resolveResourceName(maafwConfig.Info.Resource)
+  if (!path || !resource) return
+  if (!overwrite && maafwConfig.Game.PackageName.trim()) return
+  try {
+    const response = await MaaFwService.resolveMaafwGamePackageApiScriptsMaafwGamePackagePost({
+      path,
+      resource,
+    })
+    const resolved = response.code === 200 && response.data?.reason === 'resolved'
+    const packageName = resolved ? (response.data?.package ?? '').trim() : ''
+    if (!packageName || packageName === maafwConfig.Game.PackageName) return
+    maafwConfig.Game.PackageName = packageName
+    await handleChange('Game', 'PackageName', packageName)
+  } catch (error) {
+    logger.warn(`推断游戏包名失败: ${error instanceof Error ? error.message : String(error)}`)
+  }
+}
+
+const handleResourceChangeWithPackage = async () => {
+  await handleResourceChange()
+  await syncGamePackageName(true)
+}
+
+// Mirror 酱 CDK：脚本级为空时把 MAS 更新设置里填过的那份直接填进来并落盘，
+// 用户不用在两处各填一遍。已填过的脚本一律不动；后端仍只看脚本级配置。
+const cdkPrefilled = ref(false)
+
+const prefillMirrorChyanCdk = async () => {
+  if (maafwConfig.Update.MirrorChyanCDK.trim()) return
+  try {
+    // 直接调生成的客户端而不是 useSettingsApi().getSettings()：后者失败时会弹
+    // 「获取设置失败」的红色提示，与本页无关，预填只是锦上添花，静默跳过即可。
+    const response = await GetService.getScriptsApiSettingGetPost()
+    if (response.code !== 200) return
+    const globalCdk = (response.data?.Update?.MirrorChyanCDK ?? '').trim()
+    // 等待期间用户可能已经自己敲进去了，再查一次
+    if (!globalCdk || maafwConfig.Update.MirrorChyanCDK.trim()) return
+    maafwConfig.Update.MirrorChyanCDK = globalCdk
+    cdkPrefilled.value = true
+    await handleChange('Update', 'MirrorChyanCDK', globalCdk)
+  } catch (error) {
+    logger.warn(`读取全局 CDK 失败: ${error instanceof Error ? error.message : String(error)}`)
   }
 }
 
@@ -592,6 +690,7 @@ const handleCancel = () => {
 
 onMounted(async () => {
   pageLoading.value = true
+  let scriptLoaded = false
   try {
     const [scriptDetail] = await Promise.all([getScript(scriptId), loadEmulatorOptions()])
     if (!scriptDetail) {
@@ -600,6 +699,7 @@ onMounted(async () => {
       return
     }
     applyScriptConfig(scriptDetail.config as Partial<MaaFWScriptConfig>)
+    scriptLoaded = true
     if (!maafwConfig.Info.Name) {
       maafwConfig.Info.Name = scriptDetail.name ?? '新 MFW 脚本'
       formData.name = maafwConfig.Info.Name
@@ -619,36 +719,16 @@ onMounted(async () => {
     pageLoading.value = false
     isInitializing.value = false
   }
+  // 放在 isInitializing 复位之后：handleChange 在初始化期间不落盘，
+  // 预填要真正写进脚本配置而不是只改本地草稿。
+  if (scriptLoaded) {
+    await prefillMirrorChyanCdk()
+    await syncGamePackageName(false)
+  }
 })
 </script>
 
 <style scoped>
-.env-prepare-alert {
-  margin-top: 4px;
-}
-
-.env-agent-line {
-  margin-top: 6px;
-}
-
-.env-log-box {
-  margin-top: 8px;
-  max-height: 180px;
-  overflow-y: auto;
-  padding: 8px 10px;
-  border-radius: 6px;
-  background: var(--ant-color-fill-quaternary);
-  font-family: var(--ant-font-family-code, monospace);
-  font-size: 12px;
-  line-height: 1.6;
-}
-
-.env-log-line {
-  white-space: pre-wrap;
-  word-break: break-all;
-  color: var(--ant-color-text-secondary);
-}
-
 .wizard-steps {
   margin-bottom: 28px;
 }

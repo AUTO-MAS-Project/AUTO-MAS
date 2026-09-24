@@ -207,6 +207,7 @@ class _MaaFWManager:
 
         return tasker
 
+
 MaaFWManager = _MaaFWManager()
 
 

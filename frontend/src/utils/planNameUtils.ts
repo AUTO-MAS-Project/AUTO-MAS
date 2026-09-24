@@ -4,7 +4,7 @@
 
 import { getPlanTypeDescriptor } from './planTypeRegistry'
 
-export interface PlanNameValidationResult {
+interface PlanNameValidationResult {
   isValid: boolean
   /** 词表 key，由调用方解析 */
   messageKey?: string

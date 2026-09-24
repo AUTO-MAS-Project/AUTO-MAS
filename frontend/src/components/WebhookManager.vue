@@ -747,13 +747,9 @@ onMounted(() => {
 })
 
 // 监听props变化，重新加载数据
-watch(
-  [() => props.scriptId, () => props.userId, () => props.mode],
-  () => {
-    loadWebhooks()
-  },
-  { deep: true }
-)
+watch([() => props.scriptId, () => props.userId, () => props.mode], () => {
+  loadWebhooks()
+})
 </script>
 
 <style scoped>

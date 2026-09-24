@@ -20,6 +20,8 @@
 #   Contact: DLmaster_361@163.com
 
 
+import copy
+import json
 from pathlib import Path
 from typing import Any
 
@@ -30,7 +32,12 @@ from app.utils.io import read_file, write_file
 async def agree_bilibili(maa_tasks_path: Path, if_agree: bool):
     """向MAA写入Bilibili协议相关任务"""
 
-    data: Any = read_file(maa_tasks_path, format=".json5")
+    # tasks.json 通常是严格 JSON, json5 解析要慢近千倍, 仅在严格解析失败时回退
+    try:
+        data: Any = read_file(maa_tasks_path, format=".json")
+    except json.JSONDecodeError:
+        data = read_file(maa_tasks_path, format=".json5")
+    original = copy.deepcopy(data)
     if if_agree and Config.get("Function", "IfAgreeBilibili"):
         data["BilibiliAgreement_AUTO"] = {
             "algorithm": "OcrDetect",
@@ -47,4 +54,5 @@ async def agree_bilibili(maa_tasks_path: Path, if_agree: bool):
             data.pop("BilibiliAgreement_AUTO")
         if "BilibiliAgreement_AUTO" in data["StartUpThemes"]["next"]:
             data["StartUpThemes"]["next"].remove("BilibiliAgreement_AUTO")
-    write_file(maa_tasks_path, data)
+    if data != original:
+        write_file(maa_tasks_path, data)

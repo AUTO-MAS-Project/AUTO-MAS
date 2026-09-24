@@ -32,7 +32,7 @@ $frontendPackageFile = Join-Path $frontendRoot "package.json"
 $backendConfigFile = Join-Path $repoRoot "app\core\config.py"
 $pyprojectFile = Join-Path $repoRoot "pyproject.toml"
 $uvLockFile = Join-Path $repoRoot "uv.lock"
-$buildWorkflowFile = Join-Path $repoRoot ".github\workflows\build-app.yml"
+$runtimeVersionFile = Join-Path $repoRoot "res\runtime-version.txt"
 
 foreach ($requiredFile in @(
         $versionFile,
@@ -40,7 +40,7 @@ foreach ($requiredFile in @(
         $backendConfigFile,
         $pyprojectFile,
         $uvLockFile,
-        $buildWorkflowFile
+        $runtimeVersionFile
     )) {
     if (-not (Test-Path -LiteralPath $requiredFile -PathType Leaf)) {
         throw "缺少打包所需文件：$requiredFile"
@@ -54,59 +54,29 @@ if (-not (Get-Command yarn -ErrorAction SilentlyContinue)) {
     throw "未找到 Yarn，请先执行：corepack prepare yarn@4.9.1 --activate"
 }
 
-# 第一步：确认所有版本来源一致，避免打出版本信息互相冲突的安装包。
+# 版本一致性由 scripts/changelog.py 判定，这里需要一个可用的 Python。
+$venvPython = Join-Path $repoRoot ".venv\Scripts\python.exe"
+$pythonExe = if (Test-Path -LiteralPath $venvPython) { $venvPython } else { "python" }
+if (-not (Get-Command $pythonExe -ErrorAction SilentlyContinue)) {
+    throw "未找到 Python，请先安装项目要求的 Python 3.12 环境，或在仓库根创建 .venv。"
+}
+
+# 第一步：确认版本信息与 CHANGELOG.md 一致，避免打出版本信息互相冲突的安装包。
+# 版本号的唯一手写来源是 CHANGELOG.md，res/version.json 等五处都由 scripts/changelog.py
+# 生成；这里只调用它，不重复实现规则。
+& $pythonExe (Join-Path $repoRoot "scripts\changelog.py") check
+if ($LASTEXITCODE -ne 0) {
+    throw "版本信息与 CHANGELOG.md 不一致，请先运行：python scripts/changelog.py sync"
+}
+
 $versionConfig = Get-Content -LiteralPath $versionFile -Raw | ConvertFrom-Json
-$frontendPackage = Get-Content -LiteralPath $frontendPackageFile -Raw | ConvertFrom-Json
 $appVersion = [string]$versionConfig.version
-
-if ($appVersion -notmatch '^v\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$') {
-    throw "res/version.json 中的版本格式无效：$appVersion"
-}
-if ([string]$frontendPackage.version -ne $appVersion) {
-    throw "frontend/package.json 版本不一致：$($frontendPackage.version)，预期 $appVersion"
-}
-
-$backendConfigText = Get-Content -LiteralPath $backendConfigFile -Raw
-$backendVersionMatch = [regex]::Match(
-    $backendConfigText,
-    '(?m)^\s*VERSION\s*=\s*"(?<version>v[^"]+)"'
-)
-if (-not $backendVersionMatch.Success -or $backendVersionMatch.Groups['version'].Value -ne $appVersion) {
-    throw "app/core/config.py 版本与 $appVersion 不一致。"
-}
-
 $pythonVersion = $appVersion.Substring(1)
-$pyprojectText = Get-Content -LiteralPath $pyprojectFile -Raw
-$pyprojectVersionMatch = [regex]::Match(
-    $pyprojectText,
-    '(?m)^version\s*=\s*"(?<version>[^"]+)"'
-)
-if (-not $pyprojectVersionMatch.Success -or $pyprojectVersionMatch.Groups['version'].Value -ne $pythonVersion) {
-    throw "pyproject.toml 版本与 $pythonVersion 不一致。"
-}
 
-$expectedLockVersion = $pythonVersion `
-    -replace '-alpha\.', 'a' `
-    -replace '-beta\.', 'b' `
-    -replace '-rc\.', 'rc'
-$uvLockText = Get-Content -LiteralPath $uvLockFile -Raw
-$uvVersionMatch = [regex]::Match(
-    $uvLockText,
-    '(?ms)^\[\[package\]\]\r?\nname = "auto-mas"\r?\nversion = "(?<version>[^"]+)"'
-)
-if (-not $uvVersionMatch.Success -or $uvVersionMatch.Groups['version'].Value -ne $expectedLockVersion) {
-    throw "uv.lock 中 auto-mas 的版本与 $expectedLockVersion 不一致，请先运行 uv lock。"
+$runtimeVersion = (Get-Content -LiteralPath $runtimeVersionFile -Raw).Trim()
+if ($runtimeVersion -notmatch '^v\d+(\.\d+)*([-+][0-9A-Za-z.-]+)?$') {
+    throw "Runtime 版本格式无效：$runtimeVersion"
 }
-
-$workflowText = Get-Content -LiteralPath $buildWorkflowFile -Raw
-$runtimeVersionMatch = [regex]::Match(
-    $workflowText,
-    '(?m)^\s*RUNTIME_VERSION:\s*["'']?(?<version>v[0-9A-Za-z.-]+)["'']?\s*$'
-)
-if (-not $runtimeVersionMatch.Success) {
-    throw "无法从 .github/workflows/build-app.yml 读取 RUNTIME_VERSION。"
-}
-$runtimeVersion = $runtimeVersionMatch.Groups['version'].Value
 
 Write-Host "应用版本：$appVersion"
 Write-Host "Runtime 版本：$runtimeVersion"

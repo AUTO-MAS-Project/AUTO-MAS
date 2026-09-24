@@ -32,6 +32,7 @@ from .models import (
     build_pretask_task_name,
     is_pretask_task_name,
     iter_pretasks,
+    resolve_task_instance_name,
 )
 
 CUSTOM_PRESET_NAME = "__auto_mas_custom_preset__"
@@ -107,19 +108,23 @@ def normalize_snapshot(
         build_pretask_task_name(pretask) for pretask in iter_pretasks(interface_model)
     ]
     all_task_ids = [*pretask_task_order, *default_task_order]
-    valid_task_ids = set(all_task_ids)
+    valid_task_names = _build_valid_task_names(interface_model)
     normalized_order: list[str] = []
     seen_task_ids: set[str] = set()
     raw_snapshot = _normalize_raw_snapshot(snapshot)
 
+    # 同一个任务可以被重复加入队列，队列元素是“实例 id”而不是任务名：
+    # 首份沿用裸任务名，第二份起是 ``<任务名>__MAS_DUP__<后缀>``。
     raw_task_order = [
-        task_id for task_id in raw_snapshot["taskOrder"] if task_id in valid_task_ids
+        task_id
+        for task_id in raw_snapshot["taskOrder"]
+        if resolve_task_instance_name(task_id, valid_task_names) in valid_task_names
     ]
     partitioned_task_order = [
         task_id for task_id in raw_task_order if is_pretask_task_name(task_id)
     ] + [task_id for task_id in raw_task_order if not is_pretask_task_name(task_id)]
     for task_id in partitioned_task_order:
-        if task_id in valid_task_ids and task_id not in seen_task_ids:
+        if task_id not in seen_task_ids:
             normalized_order.append(task_id)
             seen_task_ids.add(task_id)
 
@@ -128,8 +133,10 @@ def normalize_snapshot(
             normalized_order.append(task_id)
 
     normalized_checked = {task_id: False for task_id in all_task_ids}
+    for task_id in normalized_order:
+        normalized_checked.setdefault(task_id, False)
     for task_id, checked in raw_snapshot["taskChecked"].items():
-        if task_id in valid_task_ids:
+        if task_id in normalized_checked:
             normalized_checked[task_id] = bool(checked)
 
     normalized_options = normalize_task_options_by_task(
@@ -146,7 +153,7 @@ def normalize_snapshot(
 
 def normalize_task_options_by_task(
     raw_task_options: dict[str, Any] | None,
-    task_names: list[str],
+    task_ids: list[str],
     interface_model: MaaFWInterface,
     *,
     controller_name: str | None = None,
@@ -157,18 +164,21 @@ def normalize_task_options_by_task(
         controller_name=controller_name,
         resource_name=resource_name,
     )
+    valid_task_names = _build_valid_task_names(interface_model)
     normalized: MaaFWTaskOptionsByTask = {}
 
-    for task_name in [item for item in task_names if isinstance(item, str)]:
+    # 选项按实例 id 存放：同一个任务的两份副本各自持有独立的一套选项值。
+    for task_id in [item for item in task_ids if isinstance(item, str)]:
+        task_name = resolve_task_instance_name(task_id, valid_task_names)
         option_map = task_option_maps.get(task_name, {})
         defaults, value_types = _build_option_defaults(option_map)
         case_name_sets = _build_option_case_name_sets(option_map)
         raw_options_for_task = (
-            raw_task_options.get(task_name)
+            raw_task_options.get(task_id)
             if isinstance(raw_task_options, dict)
             else None
         )
-        normalized[task_name] = _normalize_options_for_task(
+        normalized[task_id] = _normalize_options_for_task(
             raw_options_for_task,
             option_map,
             defaults,
@@ -187,33 +197,28 @@ def normalize_task_execution_payload(
     controller_name: str | None = None,
     resource_name: str | None = None,
 ) -> tuple[list[str], MaaFWTaskOptionsByTask]:
-    pretask_task_names = [
-        build_pretask_task_name(pretask) for pretask in iter_pretasks(interface_model)
-    ]
-    valid_task_names = {
-        *pretask_task_names,
-        *(task.name for task in interface_model.task),
-    }
+    valid_task_names = _build_valid_task_names(interface_model)
     normalized_task_list: list[str] = []
-    seen_task_names: set[str] = set()
+    seen_task_ids: set[str] = set()
 
     if isinstance(raw_task_list, list):
-        for task_name in raw_task_list:
-            if not isinstance(task_name, str):
+        for task_id in raw_task_list:
+            if not isinstance(task_id, str):
                 continue
-            if task_name not in valid_task_names or task_name in seen_task_names:
+            if task_id in seen_task_ids:
                 continue
-            normalized_task_list.append(task_name)
-            seen_task_names.add(task_name)
+            if (
+                resolve_task_instance_name(task_id, valid_task_names)
+                not in valid_task_names
+            ):
+                continue
+            normalized_task_list.append(task_id)
+            seen_task_ids.add(task_id)
 
     normalized_task_list = [
-        task_name
-        for task_name in normalized_task_list
-        if is_pretask_task_name(task_name)
+        task_id for task_id in normalized_task_list if is_pretask_task_name(task_id)
     ] + [
-        task_name
-        for task_name in normalized_task_list
-        if not is_pretask_task_name(task_name)
+        task_id for task_id in normalized_task_list if not is_pretask_task_name(task_id)
     ]
 
     normalized_task_options = normalize_task_options_by_task(
@@ -363,6 +368,18 @@ def _normalize_preset_name(value: Any) -> str:
 
 def _build_default_task_order(interface_model: MaaFWInterface) -> list[str]:
     return [task.name for task in interface_model.task]
+
+
+def _build_valid_task_names(interface_model: MaaFWInterface) -> set[str]:
+    """ProjectInterface 声明的全部任务名（含 pretask 伪任务名）。"""
+
+    return {
+        *(
+            build_pretask_task_name(pretask)
+            for pretask in iter_pretasks(interface_model)
+        ),
+        *(task.name for task in interface_model.task),
+    }
 
 
 def _build_task_option_maps(

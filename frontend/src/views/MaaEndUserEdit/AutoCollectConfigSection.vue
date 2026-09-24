@@ -11,7 +11,7 @@
               </a-tooltip>
             </span>
           </template>
-          <a-switch v-model:checked="enabled" :disabled="loading" @change="handleEnabledChange" />
+          <a-switch :checked="enabled" :disabled="loading" @change="handleEnabledChange" />
         </a-form-item>
       </a-col>
       <a-col v-if="enabled" :span="8">
@@ -25,7 +25,7 @@
             </span>
           </template>
           <a-select
-            v-model:value="mode"
+            :value="mode"
             :options="modeOptions"
             :disabled="loading"
             size="large"
@@ -35,179 +35,99 @@
       </a-col>
     </a-row>
 
-    <template v-if="enabled">
-      <a-form-item :label="t('edit.maaEndAutoCollectRoutes')">
-        <div class="route-panel-list">
-          <div v-for="panel in regionPanels" :key="panel.key" class="route-panel">
-            <div class="route-panel-header">
-              <span class="route-panel-name">{{ panel.label }}</span>
-              <span class="route-panel-count">
-                {{
-                  t('edit.maaEndRouteSelectedCount', {
-                    n: panelSelectedCount(panel),
-                    m: panel.options.length,
-                  })
-                }}
-              </span>
-              <span class="route-panel-actions">
-                <a-button
-                  type="link"
-                  size="small"
-                  :disabled="loading"
-                  @click="handleSelectAll(panel)"
-                >
-                  {{ t('edit.maaEndRouteSelectAll') }}
-                </a-button>
-                <a-button
-                  type="link"
-                  size="small"
-                  :disabled="loading"
-                  @click="handleClear(panel)"
-                >
-                  {{ t('edit.maaEndRouteClear') }}
-                </a-button>
-              </span>
-            </div>
-            <div class="route-card-grid">
-              <button
-                v-for="option in panel.options"
-                :key="option.value"
-                type="button"
-                class="route-card"
-                :class="{ selected: isRouteSelected(option.value) }"
-                :disabled="loading"
-                :aria-pressed="isRouteSelected(option.value)"
-                @click="toggleRoute(panel, option.value)"
+    <a-spin v-if="enabled" :spinning="optionsLoading">
+      <a-alert
+        v-if="!optionsLoading && !groups.length"
+        type="warning"
+        show-icon
+        :message="t('edit.maaEndAutoCollectOptionsUnavailable')"
+      />
+      <div class="route-panel-list">
+        <div v-for="panel in groups" :key="panel.value" class="route-panel">
+          <div class="route-panel-header">
+            <span class="route-panel-name">{{
+              [panel.regionLabel, panel.label].filter(Boolean).join(' · ')
+            }}</span>
+            <span class="route-panel-count">{{
+              t('edit.maaEndRouteSelectedCount', {
+                n: panelValues(panel).length,
+                m: panel.options.length,
+              })
+            }}</span>
+            <span class="route-panel-actions">
+              <a-button
+                type="link"
+                size="small"
+                :disabled="controlsDisabled"
+                @click="
+                  applyValues(
+                    panel,
+                    panel.options.map(option => String(option.value))
+                  )
+                "
+                >{{ t('edit.maaEndRouteSelectAll') }}</a-button
               >
-                <span class="route-card-label">{{ option.label }}</span>
-                <CheckCircleFilled v-if="isRouteSelected(option.value)" class="route-card-check" />
-              </button>
-            </div>
+              <a-button
+                type="link"
+                size="small"
+                :disabled="controlsDisabled"
+                @click="applyValues(panel, [])"
+                >{{ t('edit.maaEndRouteClear') }}</a-button
+              >
+            </span>
+          </div>
+          <div class="route-card-grid">
+            <button
+              v-for="option in panel.options"
+              :key="String(option.value)"
+              type="button"
+              class="route-card"
+              :class="{ selected: panelValues(panel).includes(String(option.value)) }"
+              :disabled="controlsDisabled"
+              :aria-pressed="panelValues(panel).includes(String(option.value))"
+              @click="toggleRoute(panel, String(option.value))"
+            >
+              <span class="route-card-label">{{ option.label }}</span>
+              <CheckCircleFilled
+                v-if="panelValues(panel).includes(String(option.value))"
+                class="route-card-check"
+              />
+            </button>
           </div>
         </div>
-      </a-form-item>
-
-      <a-form-item>
-        <div class="route-panel-list">
-          <div class="route-panel">
-            <div class="route-panel-header">
-              <span class="route-panel-name">{{ t('edit.maaEndAutoCollectCommonRoutes') }}</span>
-              <span class="route-panel-count">
-                {{
-                  t('edit.maaEndRouteSelectedCount', {
-                    n: commonSelectedCount,
-                    m: commonRouteOptions.length,
-                  })
-                }}
-              </span>
-              <span class="route-panel-actions">
-                <a-button
-                  type="link"
-                  size="small"
-                  :disabled="loading"
-                  @click="handleCommonSelectAll"
-                >
-                  {{ t('edit.maaEndRouteSelectAll') }}
-                </a-button>
-                <a-button
-                  type="link"
-                  size="small"
-                  :disabled="loading"
-                  @click="handleCommonClear"
-                >
-                  {{ t('edit.maaEndRouteClear') }}
-                </a-button>
-              </span>
-            </div>
-            <div class="route-card-grid">
-              <button
-                v-for="option in commonRouteOptions"
-                :key="option.value"
-                type="button"
-                class="route-card"
-                :class="{ selected: isCommonRouteSelected(option.value) }"
-                :disabled="loading"
-                :aria-pressed="isCommonRouteSelected(option.value)"
-                @click="toggleCommonRoute(option.value)"
-              >
-                <span class="route-card-label">{{ option.label }}</span>
-                <CheckCircleFilled
-                  v-if="isCommonRouteSelected(option.value)"
-                  class="route-card-check"
-                />
-              </button>
-            </div>
-          </div>
-        </div>
-      </a-form-item>
-    </template>
+      </div>
+    </a-spin>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { CheckCircleFilled, QuestionCircleOutlined } from '@ant-design/icons-vue'
+import type { MaaEndAutoCollectGroup } from '@/api'
+import type { MaaEndTaskConfig } from '@/types/script'
 import {
-  MAAEND_AUTO_COLLECT_COMMON_ROUTE_OPTIONS,
   MAAEND_AUTO_COLLECT_MODE_OPTIONS,
-  MAAEND_AUTO_COLLECT_ROUTE_OPTIONS,
-  MAAEND_AUTO_COLLECT_ROUTE_REGIONS,
-  type MaaEndAutoCollectCommonRoute,
   type MaaEndAutoCollectMode,
-  type MaaEndAutoCollectRegionKey,
-  type MaaEndAutoCollectRoute,
 } from '@/utils/maaEndProtocolSpace'
 
-const { t } = useI18n()
-
 const props = defineProps<{
-  formData: any
+  formData: {
+    Task?: Partial<
+      Pick<MaaEndTaskConfig, 'IfAutoCollect' | 'AutoCollectRoutes' | 'AutoCollectCommonRoutes'>
+    > & { AutoCollectMode?: string }
+  }
   loading: boolean
+  optionsLoading: boolean
+  groups: MaaEndAutoCollectGroup[]
 }>()
-
-const emit = defineEmits<{
-  save: [key: string, value: any]
-}>()
-
-const normalizeRoutes = <T extends string>(
-  value: unknown,
-  options: readonly { value: T }[]
-): T[] => {
-  if (!Array.isArray(value)) return options.map(option => option.value)
-  const allowed = new Set(options.map(option => option.value))
-  return value.filter((item): item is T => typeof item === 'string' && allowed.has(item as T))
-}
-
-const enabled = ref(Boolean(props.formData.Task?.IfAutoCollect))
-const mode = ref<MaaEndAutoCollectMode>(
-  props.formData.Task?.AutoCollectMode === 'Concentrated' ? 'Concentrated' : 'Distributed'
-)
-const routes = ref<MaaEndAutoCollectRoute[]>(
-  normalizeRoutes(props.formData.Task?.AutoCollectRoutes, MAAEND_AUTO_COLLECT_ROUTE_OPTIONS)
-)
-const commonRoutes = ref<MaaEndAutoCollectCommonRoute[]>(
-  normalizeRoutes(
-    props.formData.Task?.AutoCollectCommonRoutes,
-    MAAEND_AUTO_COLLECT_COMMON_ROUTE_OPTIONS
-  )
-)
-
+const emit = defineEmits<{ save: [key: string, value: boolean | string | string[]] }>()
+const { t } = useI18n()
+const enabled = computed(() => Boolean(props.formData.Task?.IfAutoCollect))
+const mode = computed(() => props.formData.Task?.AutoCollectMode ?? 'Distributed')
+const controlsDisabled = computed(() => props.loading || props.optionsLoading)
 const modeOptions = computed(() =>
   MAAEND_AUTO_COLLECT_MODE_OPTIONS.map(option => ({
-    value: option.value,
-    label: t(option.labelKey),
-  }))
-)
-const routeOptions = computed(() =>
-  MAAEND_AUTO_COLLECT_ROUTE_OPTIONS.map(option => ({
-    value: option.value,
-    label: t(option.labelKey),
-    regionKey: option.regionKey,
-  }))
-)
-const commonRouteOptions = computed(() =>
-  MAAEND_AUTO_COLLECT_COMMON_ROUTE_OPTIONS.map(option => ({
     value: option.value,
     label: t(option.labelKey),
   }))
@@ -218,129 +138,34 @@ const modeHint = computed(() =>
     : t('edit.maaEndAutoCollectModeDistributedHint')
 )
 
-interface RegionPanel {
-  key: MaaEndAutoCollectRegionKey
-  label: string
-  options: Array<{ value: MaaEndAutoCollectRoute; label: string }>
+const selectedValues = (panel: MaaEndAutoCollectGroup): string[] =>
+  props.formData.Task?.[panel.configKey] ??
+  props.groups
+    .filter(group => group.configKey === panel.configKey)
+    .flatMap(group => group.defaultCases)
+const panelValues = (panel: MaaEndAutoCollectGroup) =>
+  panel.options
+    .map(option => String(option.value))
+    .filter(value => selectedValues(panel).includes(value))
+
+const applyValues = (panel: MaaEndAutoCollectGroup, values: string[]) => {
+  // 只替换当前分类的选择；保留其他地区及暂时不可见的旧选项。
+  const panelSet = new Set(panel.options.map(option => String(option.value)))
+  const next = [
+    ...new Set([...selectedValues(panel).filter(value => !panelSet.has(value)), ...values]),
+  ]
+  emit('save', `Task.${panel.configKey}`, next)
 }
-
-const regionPanels = computed<RegionPanel[]>(() =>
-  MAAEND_AUTO_COLLECT_ROUTE_REGIONS.map(regionKey => ({
-    key: regionKey,
-    label: t(regionKey),
-    options: routeOptions.value.filter(option => option.regionKey === regionKey),
-  }))
-)
-
-const panelValues = (panel: RegionPanel) =>
-  panel.options.filter(option => routes.value.includes(option.value)).map(option => option.value)
-
-const panelSelectedCount = (panel: RegionPanel) => panelValues(panel).length
-
-const commonSelectedCount = computed(
-  () =>
-    commonRouteOptions.value.filter(option => commonRoutes.value.includes(option.value)).length
-)
-
-// 区域勾选结果与其余区域已选合并后按选项源顺序重组，保证保存的始终是完整有序数组
-const applyRegionValues = (panel: RegionPanel, values: Array<string | number>) => {
-  const regionValueSet = new Set<string>(panel.options.map(option => option.value))
-  const nextSet = new Set<string>([
-    ...routes.value.filter(value => !regionValueSet.has(value)),
-    ...values.map(String),
-  ])
-  routes.value = MAAEND_AUTO_COLLECT_ROUTE_OPTIONS.map(option => option.value).filter(value =>
-    nextSet.has(value)
-  )
-  emit('save', 'Task.AutoCollectRoutes', routes.value)
-}
-
-const isRouteSelected = (value: MaaEndAutoCollectRoute) => routes.value.includes(value)
-
-const isCommonRouteSelected = (value: MaaEndAutoCollectCommonRoute) =>
-  commonRoutes.value.includes(value)
-
-const toggleRoute = (panel: RegionPanel, value: MaaEndAutoCollectRoute) => {
+const toggleRoute = (panel: MaaEndAutoCollectGroup, value: string) => {
   const current = panelValues(panel)
-  const next = current.includes(value)
-    ? current.filter(item => item !== value)
-    : [...current, value]
-  applyRegionValues(panel, next)
-}
-
-const toggleCommonRoute = (value: MaaEndAutoCollectCommonRoute) => {
-  const next = commonRoutes.value.includes(value)
-    ? commonRoutes.value.filter(item => item !== value)
-    : [...commonRoutes.value, value]
-  applyCommonRoutes(next)
-}
-
-const handleSelectAll = (panel: RegionPanel) => {
-  applyRegionValues(
+  applyValues(
     panel,
-    panel.options.map(option => option.value)
+    current.includes(value) ? current.filter(item => item !== value) : [...current, value]
   )
 }
-
-const handleClear = (panel: RegionPanel) => {
-  applyRegionValues(panel, [])
-}
-
-const applyCommonRoutes = (values: MaaEndAutoCollectCommonRoute[]) => {
-  const nextSet = new Set<string>(values)
-  commonRoutes.value = MAAEND_AUTO_COLLECT_COMMON_ROUTE_OPTIONS.map(option =>
-    option.value
-  ).filter(value => nextSet.has(value))
-  emit('save', 'Task.AutoCollectCommonRoutes', commonRoutes.value)
-}
-
-const handleCommonSelectAll = () => {
-  applyCommonRoutes(commonRouteOptions.value.map(option => option.value))
-}
-
-const handleCommonClear = () => {
-  applyCommonRoutes([])
-}
-
-watch(
-  () => props.formData.Task?.IfAutoCollect,
-  value => {
-    enabled.value = Boolean(value)
-  }
-)
-
-watch(
-  () => props.formData.Task?.AutoCollectMode,
-  value => {
-    mode.value = value === 'Concentrated' ? 'Concentrated' : 'Distributed'
-  }
-)
-
-watch(
-  () => props.formData.Task?.AutoCollectRoutes,
-  value => {
-    routes.value = normalizeRoutes(value, MAAEND_AUTO_COLLECT_ROUTE_OPTIONS)
-  },
-  { deep: true }
-)
-
-watch(
-  () => props.formData.Task?.AutoCollectCommonRoutes,
-  value => {
-    commonRoutes.value = normalizeRoutes(value, MAAEND_AUTO_COLLECT_COMMON_ROUTE_OPTIONS)
-  },
-  { deep: true }
-)
-
-const handleEnabledChange = (value: boolean) => {
-  enabled.value = value
-  emit('save', 'Task.IfAutoCollect', value)
-}
-
-const handleModeChange = (value: MaaEndAutoCollectMode) => {
-  mode.value = value
+const handleEnabledChange = (value: boolean) => emit('save', 'Task.IfAutoCollect', value)
+const handleModeChange = (value: MaaEndAutoCollectMode) =>
   emit('save', 'Task.AutoCollectMode', value)
-}
 </script>
 
 <style scoped>

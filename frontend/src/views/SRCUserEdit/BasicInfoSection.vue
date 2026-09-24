@@ -143,27 +143,14 @@
     </a-row>
 
     <a-row :gutter="24">
-      <a-col :span="12">
-        <a-form-item name="mode">
-          <template #label>
-            <a-tooltip :title="t('edit.scriptUsesGlobalConfiguration')">
-              <span class="form-label">
-                {{ t('edit.configurationSource') }}
-                <QuestionCircleOutlined class="help-icon" />
-              </span>
-            </a-tooltip>
-          </template>
-          <a-select
-            v-model:value="formData.Info.Mode"
-            :options="[
-              { label: t('edit.script'), value: '脚本' },
-              { label: t('edit.user'), value: '用户' },
-            ]"
-            :disabled="loading"
-            size="large"
-            @change="emitSave('Info.Mode', formData.Info.Mode)"
-          />
-        </a-form-item>
+      <a-col :span="24">
+        <GeneralConfigModeSelector
+          :model-value="formData.Info.Mode"
+          :options="srcConfigModeOptions"
+          :disabled="loading"
+          :alert-message="t('edit.configSourceHintBase')"
+          @change="emit('modeChange', $event)"
+        />
       </a-col>
     </a-row>
 
@@ -191,6 +178,7 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
 import { QuestionCircleOutlined } from '@ant-design/icons-vue'
+import GeneralConfigModeSelector from '@/views/EditView/User/GeneralConfigModeSelector.vue'
 
 const { t } = useI18n()
 
@@ -201,8 +189,40 @@ defineProps<{
   serverOptions: any[]
 }>()
 
+// 配置来源三态卡片（value 为后端 Info.Mode 取值，驱动逻辑需保持原样；文案走词表）
+const srcConfigModeOptions: Array<{
+  label: string
+  value: '脚本' | '用户' | '直控'
+  title: string
+  description: string
+  icon: 'file' | 'database' | 'setting'
+}> = [
+  {
+    label: t('edit.script'),
+    value: '脚本',
+    title: t('edit.script'),
+    description: t('edit.useSharedScriptLevel'),
+    icon: 'file',
+  },
+  {
+    label: t('edit.user'),
+    value: '用户',
+    title: t('edit.user'),
+    description: t('edit.useThisUserS'),
+    icon: 'database',
+  },
+  {
+    label: t('edit.directControl'),
+    value: '直控',
+    title: t('edit.directControl'),
+    description: t('edit.nativeConfigSourceDescription'),
+    icon: 'setting',
+  },
+]
+
 const emit = defineEmits<{
   save: [key: string, value: any]
+  modeChange: [value: boolean | string]
 }>()
 
 const emitSave = (key: string, value: any) => {

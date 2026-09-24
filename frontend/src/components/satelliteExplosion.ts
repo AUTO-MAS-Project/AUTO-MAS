@@ -21,7 +21,7 @@ export interface ExplosionFragmentMotion {
   rotationSpeedZ: number
 }
 
-export interface ExplosionPhase {
+interface ExplosionPhase {
   isReassembling: boolean
   progress: number
   complete: boolean

@@ -1,0 +1,8 @@
+{
+  "name": "MAS一条龙执行层",
+  "version": "0.1.0",
+  "description": "MAS 自编排一条龙执行层（路径 B）：战斗 4 项直连 BetterGI 原生任务",
+  "main": "main.js",
+  "bgi_version": "0.64.0",
+  "settings_ui": "settings.json"
+}

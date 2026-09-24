@@ -27,15 +27,6 @@ export const TAB_STATUS_COLOR: Record<SchedulerStatus, string> = {
   异常: 'error',
 }
 
-// 队列状态 -> 颜色
-export const getQueueStatusColor = (status: string): string => {
-  if (/成功|完成|已完成/.test(status)) return 'green'
-  if (/失败|错误|异常/.test(status)) return 'red'
-  if (/等待|排队|挂起/.test(status)) return 'orange'
-  if (/进行|执行|运行/.test(status)) return 'blue'
-  return 'default'
-}
-
 // 任务模式选项（直接复用后端枚举值）
 export const TASK_MODE_OPTIONS = [
   { labelKey: 'scheduler.mode.autoProxy', value: TaskCreateIn.mode.AUTO_PROXY },
@@ -58,26 +49,6 @@ export const POWER_ACTION_LABEL_KEY: Record<PowerIn.signal, string> = {
   [PowerIn.signal.KILL_SELF]: 'scheduler.power.killSelf',
   [PowerIn.signal.LOGOFF]: 'scheduler.power.logoff',
 }
-export const getPowerActionLabelKey = (action: PowerIn.signal) =>
-  POWER_ACTION_LABEL_KEY[action] || 'scheduler.power.noAction'
-
-// 日志相关
-export const LOG_MAX_LENGTH = 2000 // 最多保留日志条数
-
-export type LogType = 'info' | 'error' | 'warning' | 'success'
-
-export interface QueueItem {
-  name: string
-  status: string
-}
-
-export interface LogEntry {
-  time: string
-  message: string
-  type: LogType
-  timestamp: number
-}
-
 export interface SchedulerTab {
   key: string
   title: string
@@ -94,10 +65,10 @@ export interface SchedulerTab {
   userOptionsLoading?: boolean
   taskId: string | null
   subscriptionIds?: string[]
-  taskQueue: QueueItem[]
-  userQueue: QueueItem[]
-  logs: LogEntry[]
-  isLogAtBottom: boolean
+  // 日志增量协议的 buffer 与 seq，语义见 schedulerLogBuffer.ts
+  logBuffer: string
+  logSeq?: number
+  // 送给日志面板渲染的内容（logBuffer 再裁到 120,000）
   lastLogContent: string
   // 新增：任务总览快照（用于路由返回时快速恢复显示）
   overviewData?: Script[]

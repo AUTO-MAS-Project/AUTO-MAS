@@ -1,10 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import {
-  resolveAutoUpdateMode,
-  resolveCdkExpiry,
-  resolveCdkWarning,
-} from './useMaaFWProjectUpdate'
+import { resolveAutoUpdateMode, resolveCdkExpiry, resolveCdkWarning } from './useMaaFWProjectUpdate'
 
 describe('resolveAutoUpdateMode', () => {
   it('新字段合法时直接采用', () => {

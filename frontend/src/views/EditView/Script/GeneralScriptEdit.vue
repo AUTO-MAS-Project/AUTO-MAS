@@ -31,7 +31,7 @@
     </a-space>
   </div>
 
-  <div class="script-edit-content">
+  <ConfigLockPanel :script-id="scriptId" content-class="script-edit-content">
     <a-card
       :title="t('edit.generalScriptConfiguration')"
       :loading="pageLoading"
@@ -856,7 +856,7 @@
         </div>
       </a-form>
     </a-card>
-  </div>
+  </ConfigLockPanel>
 
   <!-- 上传脚本弹窗 -->
   <a-modal
@@ -922,6 +922,7 @@
 </template>
 
 <script setup lang="ts">
+import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
 import { useI18n } from 'vue-i18n'
 import { computed, onMounted, reactive, ref, watch, nextTick } from 'vue'
 import DocLink from '@/components/DocLink.vue'
@@ -932,6 +933,7 @@ import { message } from 'ant-design-vue'
 import type { GeneralScriptConfig, ScriptType } from '@/types/script.ts'
 import { useEmulatorDeviceOptions } from '@/composables/useEmulatorDeviceOptions.ts'
 import { useScriptApi } from '@/composables/useScriptApi.ts'
+import { useSaveQueue } from '@/composables/useSaveQueue'
 import { Service, type ComboBoxItem } from '@/api'
 import type { ScriptUploadIn } from '@/api'
 import {
@@ -958,9 +960,8 @@ const { getScript, updateScript } = useScriptApi()
 const formRef = ref<FormInstance>()
 const uploadFormRef = ref<FormInstance>()
 const isInitializing = ref(true) // 标记是否正在初始化
-const isSaving = ref(false) // 标记是否正在保存
-// 保存进行中触发的新变更，串行合并保存（避免静默丢弃）
-const pendingChange = ref<{ category: string; key: string; value: any } | null>(null)
+// 保存串行队列：连续改动按序写回，同一字段的连续改动只保留最后一次，不再被布尔互斥丢掉
+const { enqueue } = useSaveQueue()
 
 // 路径处理工具函数
 const pathUtils = {
@@ -1466,113 +1467,79 @@ const setupConfigPathModeWatcher = () => {
 
         // 保存被重置的 ConfigPath（ConfigPathMode 已经通过 @change 保存了）
         // 使用即时保存模式，而非 watch 自动保存
-        if (!isInitializing.value && !isSaving.value) {
-          isSaving.value = true
-          try {
-            const updateData = { Script: { ConfigPath: newConfigPath } }
-            const success = await updateScript(scriptId, updateData)
-            if (success) {
-              logger.info('配置路径已重置并保存')
-              await refreshScript()
+        if (!isInitializing.value) {
+          await enqueue(async () => {
+            try {
+              const updateData = { Script: { ConfigPath: newConfigPath } }
+              const success = await updateScript(scriptId, updateData)
+              if (success) {
+                logger.info('配置路径已重置并保存')
+              }
+            } catch (error) {
+              const errorMsg = error instanceof Error ? error.message : String(error)
+              logger.error(`保存配置路径失败: ${errorMsg}`)
             }
-          } catch (error) {
-            const errorMsg = error instanceof Error ? error.message : String(error)
-            logger.error(`保存配置路径失败: ${errorMsg}`)
-          } finally {
-            isSaving.value = false
-          }
+          }, 'Script.ConfigPath')
         }
       }
     }
   )
 }
 
-// 即时保存函数 - 只发送修改的字段（遵循最小原则）；保存进行中的新变更串行合并，
-// 避免 isSaving 为 true 时静默丢弃，也防止 refreshScript 覆盖尚未落盘的编辑
+// 即时保存函数 - 只发送修改的字段（遵循最小原则）；连续变更进保存队列按序写回，
+// 同一字段的连续变更只保留最后一次
+// 后端会把这些路径字段规范化（相对路径转绝对、展开 %APPDATA%、解析 .lnk 等），
+// 保存后只回读这一个字段，界面才与落盘值一致；其余字段保存即生效不再整份回读
+const FIELDS_REQUIRE_REFRESH_AFTER_SAVE = new Set<string>([
+  'Info.RootPath',
+  'Script.ScriptPath',
+  'Script.ConfigPath',
+  'Script.LogPath',
+  'Game.Path',
+])
+
+const refreshNormalizedField = async (category: string, key: string) => {
+  const scriptDetail = await getScript(scriptId)
+  const normalized = (scriptDetail?.config as Record<string, any> | undefined)?.[category]?.[key]
+  if (normalized !== undefined) {
+    ;(generalConfig as Record<string, any>)[category][key] = normalized
+  }
+}
+
 const handleChange = async (category: string, key: string, value: any) => {
   if (isInitializing.value) return
 
-  // 保存进行中：暂存最新一次的变更，待当前循环轮询继续保存
-  if (isSaving.value) {
-    pendingChange.value = { category, key, value }
-    return
-  }
-
-  isSaving.value = true
-  try {
-    let next: { category: string; key: string; value: any } | null = {
-      category,
-      key,
-      value,
-    }
-    // 串行合并：依次保存当前与排队的最新变更，直到队列清空
-    while (next) {
-      const updateData: any = { [next.category]: { [next.key]: next.value } }
+  await enqueue(async () => {
+    try {
+      const updateData: any = { [category]: { [key]: value } }
       const success = await updateScript(scriptId, updateData)
       if (success) {
-        logger.info(`配置已保存: ${next.category}.${next.key}`)
-      }
-      const queued = pendingChange.value
-      pendingChange.value = null
-      next = queued
-    }
-    // 全部落盘后刷新一次最新数据
-    await refreshScript()
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`保存失败: ${errorMsg}`)
-  } finally {
-    isSaving.value = false
-  }
-}
-
-// 刷新脚本配置
-const refreshScript = async () => {
-  try {
-    const scriptDetail = await getScript(scriptId)
-    if (scriptDetail) {
-      Object.assign(generalConfig, scriptDetail.config as GeneralScriptConfig)
-      formData.name = scriptDetail.name
-    }
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`刷新配置失败: ${errorMsg}`)
-  }
-}
-
-// 一次性批量保存入口（模拟器/游戏切换、根路径选择等）：与 handleChange 共用同一套
-// isSaving 互斥与保存队列。保存期间 handleChange 排入的 pendingChange 在此一并落盘，
-// 避免其被随后的 refreshScript 覆盖，也防止队列内容残留到下一次用户变更。
-// 全部落盘后再刷新，保证界面与后端状态一致。
-const persistAndRefresh = async (updateData: Record<string, any>, label: string) => {
-  isSaving.value = true
-  let success = false
-  try {
-    success = await updateScript(scriptId, updateData)
-    if (success) {
-      // 排空保存期间排队的最新变更
-      let queued = pendingChange.value
-      pendingChange.value = null
-      while (queued) {
-        const q: Record<string, any> = {
-          [queued.category]: { [queued.key]: queued.value },
+        logger.info(`配置已保存: ${category}.${key}`)
+        if (FIELDS_REQUIRE_REFRESH_AFTER_SAVE.has(`${category}.${key}`)) {
+          await refreshNormalizedField(category, key)
         }
-        success = await updateScript(scriptId, q)
-        queued = pendingChange.value
-        pendingChange.value = null
       }
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error)
+      logger.error(`保存失败: ${errorMsg}`)
     }
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`保存${label}失败: ${errorMsg}`)
-  } finally {
-    isSaving.value = false
-  }
-  // 待处理变更全部落盘后再刷新，避免覆盖界面上的编辑
-  if (success) {
-    logger.info(`${label}已保存`)
-    await refreshScript()
-  }
+  }, `${category}.${key}`)
+}
+
+// 一次性批量保存入口（模拟器/游戏切换、根路径选择等）：与 handleChange 共用同一条保存队列，
+// 本地状态已由调用方先行更新，写回成功即视为一致，不再整份拉回。
+const persistFields = async (updateData: Record<string, any>, label: string) => {
+  await enqueue(async () => {
+    try {
+      const success = await updateScript(scriptId, updateData)
+      if (success) {
+        logger.info(`${label}已保存`)
+      }
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error)
+      logger.error(`保存${label}失败: ${errorMsg}`)
+    }
+  })
 }
 
 // 监听根目录变化，自动调整其他路径以保持相对关系
@@ -1641,9 +1608,8 @@ const loadScript = async () => {
       }
 
       // 对于 General 类型，在加载完成后初始化相对路径关系
-      setTimeout(() => {
-        updatePathRelations()
-      }, 100)
+      await nextTick()
+      updatePathRelations()
 
       // 如果已经有选择的模拟器，且游戏类型为模拟器，则加载对应的设备选项
       if (generalConfig.Game?.Type === 'Emulator' && generalConfig.Game?.EmulatorId) {
@@ -1664,9 +1630,8 @@ const loadScript = async () => {
 
       Object.assign(generalConfig, scriptDetail.config as GeneralScriptConfig)
       // 对于 General 类型，在加载完成后初始化相对路径关系
-      setTimeout(() => {
-        updatePathRelations()
-      }, 100)
+      await nextTick()
+      updatePathRelations()
 
       // 如果已经有选择的模拟器，且游戏类型为模拟器，则加载对应的设备选项
       if (generalConfig.Game?.Type === 'Emulator' && generalConfig.Game?.EmulatorId) {
@@ -1720,8 +1685,8 @@ const handleEmulatorChange = async (emulatorId: string) => {
     clearEmulatorDeviceOptions()
   }
 
-  // 保存模拟器选择和清空的实例字段（与其他保存入口共用串行保存，落盘并刷新界面）
-  await persistAndRefresh(
+  // 保存模拟器选择和清空的实例字段（与其他保存入口共用串行保存）
+  await persistFields(
     {
       Game: {
         EmulatorId: emulatorId,
@@ -1787,8 +1752,8 @@ const handleGameTypeChange = async (gameType: string) => {
     }
   }
 
-  // 保存所有更改的字段（共用串行保存，落盘并刷新界面）
-  await persistAndRefresh({ Game: updateFields }, '游戏配置')
+  // 保存所有更改的字段（共用串行保存）
+  await persistFields({ Game: updateFields }, '游戏配置')
 }
 
 const selectRootPath = async () => {
@@ -1836,12 +1801,12 @@ const selectRootPath = async () => {
           scriptPathUpdates.TrackProcessExe = generalConfig.Script.TrackProcessExe
         }
 
-        // 保存所有更改（共用串行保存，落盘并刷新界面）
+        // 保存所有更改（共用串行保存）
         const updateData: any = { Info: updateFields }
         if (Object.keys(scriptPathUpdates).length > 0) {
           updateData.Script = scriptPathUpdates
         }
-        await persistAndRefresh(updateData, '根路径及关联路径')
+        await persistFields(updateData, '根路径及关联路径')
         message.success(t('edit.rootPathSelectedOther'))
       } else {
         // 保存根目录更改

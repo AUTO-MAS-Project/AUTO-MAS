@@ -24,6 +24,7 @@
 from .core import router as core_router
 from .dispatch import router as dispatch_router
 from .emulator import router as emulator_router
+from .emulator2 import router as emulator2_router
 from .history import router as history_router
 from .info import router as info_router
 from .ocr import router as ocr_router
@@ -34,6 +35,7 @@ from .qr_login import router as qr_login_router
 from .queue import router as queue_router
 from .scripts import router as scripts_router
 from .setting import router as setting_router
+from .skland_qr import router as skland_qr_router
 from .tools import router as tools_router
 from .update import router as update_router
 
@@ -43,6 +45,7 @@ __all__ = [
     "scripts_router",
     "plan_router",
     "emulator_router",
+    "emulator2_router",
     "queue_router",
     "dispatch_router",
     "history_router",
@@ -53,4 +56,5 @@ __all__ = [
     "openclaw_qq_router",
     "openclaw_weixin_router",
     "qr_login_router",
+    "skland_qr_router",
 ]

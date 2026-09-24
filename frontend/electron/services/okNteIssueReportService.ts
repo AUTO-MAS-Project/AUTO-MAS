@@ -18,10 +18,7 @@ const logger = getLogger('OK-NTE问题包')
 // 与 app/task/OkNte/AutoProxy.py 的 script_log_path 默认值保持同步
 const OKNTE_REL_LOG_FILE = 'data/apps/ok-nte/working/logs/ok-script.log'
 
-function addLatestOkNteScriptLog(
-  state: CollectorState,
-  installations: Installation[]
-): void {
+function addLatestOkNteScriptLog(state: CollectorState, installations: Installation[]): void {
   let latest: { sourcePath: string; archivePath: string; mtimeMs: number } | undefined
 
   for (const installation of installations) {
@@ -45,7 +42,7 @@ function addLatestOkNteScriptLog(
   }
 }
 
-export interface OkNteIssueReportResult {
+interface OkNteIssueReportResult {
   success: boolean
   message?: string
   zipPath?: string

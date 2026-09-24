@@ -40,9 +40,13 @@ HSR 直接读写两个上游的真实配置文件。当前备份覆盖 M7A 的 `
 
 - **仅 `AutoProxy` 支持直控**，其他模式 `check()` 直接返回错误。
 - 直控用户必须至少启用一个引擎开关。
-- **直控默认直接使用脚本当前的原生配置**（SRA 把 `--inline run` 指向真实 profile，M7A 以真实安装根目录启动），零配置可跑，不复制、不建隔离目录——这就是 SKILL.md 里「直控＝直接使用脚本原有配置、由原生 GUI 维护」的落地。`check()` 要求 CLI/Assistant 可执行，且**没有快照的用户**还要求原生配置文件存在。
+- **直控默认直接使用脚本当前的原生配置**（SRA 把 `--inline run` 指向真实 profile，M7A 以真实安装根目录启动），零配置可跑，不复制、不建隔离目录——这就是 SKILL.md 里「直控＝直接使用外侧脚本原生配置，由原生 GUI 或上游入口维护」的落地。`check()` 要求 CLI/Assistant 可执行，且**没有快照的用户**还要求原生配置文件存在。
 - 快照（`Direct.*Config` 加密内容 + `*ImportedAt` / `*Source` 元数据）是**可选覆盖**，只服务「一个脚本挂多个游戏账号、各 MAS 用户要跑不同计划」的场景。有快照时写进隔离目录运行，可脱离当前原生配置文件；快照冻结在导入那一刻，不跟随脚本里的后续改动，UI 上要能一键清掉退回活配置。**不要再把「必须先导入快照」写成直控的前置条件。**
 - 普通用户配置 API 只返回非敏感元数据，**不返回加密快照内容**。
+
+## 快速配置：明确不支持（方案 B）
+
+**HSR 不支持快速配置**：SRA/M7A 的原生配置由脚本 GUI 维护，MAS 侧托管字段（每日关卡等）的写入深度耦合托管运行器（临时配置覆盖而非直接写原生文件），不存在可独立下发的快速配置子集，故 `Info.IfQuickConfig` 开关不产生任何行为差异，前端不渲染该开关（死开关；声明见 `app/task/HSR/tools/native_control.py` 的 `resolve_user_control`）。不要按普适承诺给 HSR 加快速配置面板，也不要在实现中把「直控+开启」与「直控+关闭」造出差异。
 
 ## 其他必守规则
 
@@ -55,6 +59,16 @@ HSR 直接读写两个上游的真实配置文件。当前备份覆盖 M7A 的 `
 - 托管字段运行时动态渲染，**新增字段扩展后端字段定义，不在 Vue 里加分支**。
 - 不新增 `ScriptConfig.py` 或原生编辑器遮罩会话，除非产品明确改变 HSR 的配置 owner 模型。
 
+## 配置恢复接入要求
+
+已接入通用配置恢复（mas/native 双池 + 字段侧车，无会话），机制见 [config-restore.md](config-restore.md)；后续改动**必须符合**：
+
+- **mas 池是纯字段侧车（MAS 用户配置全量）**：HSR 无 per-user 目录，用户配置即字段——收录 Info（Mode 仅预览不回填，防静默翻转配置来源；Name/Status/Server/RemainedDay/前后脚本/Notes）、TaskSwitch 任务开关、Stage 副本配置（含原生关卡 JSON）、TaskOpt、Notify、Control 引擎开关、Managed.TaskMapping/Options（运行时物化进原生）、Direct 快照**元数据**（*ImportedAt/*Source）。侧车平铺键为 ``组.键``（Info.Mode 与 Control.Mode 历史同名，裸键会撞）。**不收录** Info.Id/Password 与 Direct 加密快照内容（凭据/密文不进侧车，Notify.ToAddress/ServerChanKey 回填但预览脱敏）、Data.* 运行统计、Notify.CustomWebhooks 子表；恢复 = 回填 UserData。
+- **native 池按 SRA appdata 根 + M7A 安装根组合指纹分桶**：SRA appdata 是多脚本共享目录，必须 `config_root_key` 分桶跨脚本共享、不随脚本删除；M7A `config.yaml` 随 SRA 池一并归档——只按 SRA 分桶会把不同 M7A 安装的 config.yaml 混进同一历史，跨实例恢复会写错安装，故 key 为两根指纹组合（M7A 未配置时仅按 SRA）。目标按归档内相对键 `M7A/*`、`SRA/*` 写回，只覆盖归档内包含的文件。
+- **归档时机与 MAA 同型**：任务启动（manager `prepare`）归档 native（运行会写托管字段、崩溃残留会污染原生）；编辑页进入归档 native（MAS 触碰前原始态）、退出归档 mas（编辑会话包络终态）。无遮罩会话，无 viewOnly 分支。
+- **预览口径**：mas 分区行（MAS 独有 = 配置来源/服务器/脚本/直控引擎；任务配置 = 任务开关/副本；通知；托管配置 = 任务映射/覆盖；直控快照 = 导入元数据），native 反读归档内**常用字段**（词表固化、零本体运行时依赖，只收录 MAS 托管白名单概念内的键）——M7A config.yaml 平铺键（清体力/副本/历战余响/体力补充/领取奖励/差分宇宙/货币战争等，键名即 MAS patch 白名单）、SRA 档案每文件一节（键形为顶层 camelCase 段 + 段内平铺点号键，见 SRA `SRACore/models/tasks_config.py`，与 MAS `_build_sra_base_config` 同口径；奖励开关兼容索引式与命名键，顺序对齐 `managed_config.SRA_REWARD_LABELS`）；`settings.json`/`cache.json` 结构未经现场核实（后者为运行缓存）**不反读内容**。两池预览载荷都带标准 `files` 字段（§3.4 基座兜底），sections 不渲染文件清单节。新增引擎/配置文件要反读时，先按上游源码核实键形再进词表，不臆造。
+- **新增引擎/配置文件必须同步扩展 `collect_native_files`**——只归档不恢复等于备份了个寂寞，只恢复不归档等于永久改坏用户的原生配置。
+
 ## 现状缺陷（别照抄，也别再加一处）
 
 HSR 用户编辑 Section **同时存在于两处目录**（`views/EditView/User/HSRUserEdit/` 与 `views/HSRUserEdit/`）。这是现状不是规范——新增 Section 先确认相邻文件在哪一处，**不要制造第三处**。
@@ -65,6 +79,7 @@ HSR 用户编辑 Section **同时存在于两处目录**（`views/EditView/User/
 - [ ] 四级回落都能取到合法引擎，每级过 `supported_scripts` 校验
 - [ ] `check()` 覆盖引擎路径缺失、exe 缺失、模块分配非法、直控前置条件
 - [ ] 直控仅在 `AutoProxy` 可用，且要求至少一个引擎开关
+- [ ] HSR 不支持快速配置：未给 HSR 加快速配置面板/开关，`Info.IfQuickConfig` 无运行时消费
 - [ ] 备份清单覆盖本次改动涉及的所有原生配置文件
 - [ ] `existed=False` 的目标在恢复阶段被清理而非跳过
 - [ ] `final_task` 与 `on_crash` 都恢复外部配置并释放路径锁

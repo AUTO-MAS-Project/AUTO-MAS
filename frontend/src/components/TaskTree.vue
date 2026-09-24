@@ -150,37 +150,19 @@ const updateExpandedScripts = () => {
   )
 }
 
-// 监听 taskData 变化 - 移除防抖，直接比较数据差异
+// 展开状态只跟脚本集合有关，只监听脚本 id 列表；用户状态每秒都在变，不必整棵 deep 监听
 watch(
-  () => props.taskData,
-  (newData, oldData) => {
-    const newScriptCount = newData?.length ?? 0
-    const oldScriptCount = oldData?.length ?? 0
-    const newUserCount =
-      newData?.reduce((total, script) => total + (script.user_list?.length || 0), 0) ?? 0
-    const oldUserCount =
-      oldData?.reduce((total, script) => total + (script.user_list?.length || 0), 0) ?? 0
-
-    if (newScriptCount !== oldScriptCount || newUserCount !== oldUserCount) {
-      logger.debug(
-        `TaskData 变化: 脚本数=${newScriptCount} (原=${oldScriptCount}), 用户数=${newUserCount} (原=${oldUserCount})`
-      )
-    }
-
-    if (newData && newData.length > 0) {
-      // 只有在脚本数量发生变化时才更新展开状态
-      const oldScriptIds = new Set(oldData?.map(s => s.script_id) || [])
-      const newScriptIds = new Set(newData.map(s => s.script_id))
-
-      // 检查是否有新的脚本
-      const hasNewScripts = [...newScriptIds].some(id => !oldScriptIds.has(id))
-
-      if (hasNewScripts || oldData?.length !== newData.length) {
-        updateExpandedScripts()
-      }
+  () => props.taskData.map(script => script.script_id),
+  (newScriptIds, oldScriptIds) => {
+    if (newScriptIds.length === 0) return
+    const oldIdSet = new Set(oldScriptIds ?? [])
+    const hasNewScripts = newScriptIds.some(id => !oldIdSet.has(id))
+    if (hasNewScripts || oldScriptIds?.length !== newScriptIds.length) {
+      logger.debug(`脚本列表变化: ${oldScriptIds?.length ?? 0} -> ${newScriptIds.length}`)
+      updateExpandedScripts()
     }
   },
-  { immediate: true, deep: true } // 改回deep watch确保能检测到所有变化
+  { immediate: true }
 )
 
 // 移除定时器和未使用变量

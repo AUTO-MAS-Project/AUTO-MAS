@@ -50,14 +50,6 @@ class HSRGameResolutionOverride:
         self._active = False
         self._owner = id(self)
 
-    @property
-    def active(self) -> bool:
-        return self._active
-
-    @property
-    def target_count(self) -> int:
-        return len(self._snapshots)
-
     def apply(self) -> bool:
         """只在首次启动前快照，并在重启前再次写入目标值。"""
 

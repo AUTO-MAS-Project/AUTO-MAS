@@ -4,11 +4,25 @@
 /* eslint-disable */
 import type { ADBScreenshotIn } from '../models/ADBScreenshotIn';
 import type { ADBScreenshotOut } from '../models/ADBScreenshotOut';
+import type { BlueArchiveActivityIn } from '../models/BlueArchiveActivityIn';
+import type { Body_get_maa_cultivate_operators_api_scripts_maa_cultivate_operators_post } from '../models/Body_get_maa_cultivate_operators_api_scripts_maa_cultivate_operators_post';
+import type { Body_get_maa_depot_inventory_api_scripts_maa_depot_inventory_post } from '../models/Body_get_maa_depot_inventory_api_scripts_maa_depot_inventory_post';
+import type { Body_get_maa_depot_stage_candidates_api_scripts_maa_depot_stage_candidates_post } from '../models/Body_get_maa_depot_stage_candidates_api_scripts_maa_depot_stage_candidates_post';
 import type { CheckImageAllIn } from '../models/CheckImageAllIn';
 import type { CheckImageAnyIn } from '../models/CheckImageAnyIn';
 import type { CheckImageIn } from '../models/CheckImageIn';
 import type { CheckImageOut } from '../models/CheckImageOut';
 import type { ComboBoxOut } from '../models/ComboBoxOut';
+import type { CultivatePreviewIn } from '../models/CultivatePreviewIn';
+import type { CultivatePreviewOut } from '../models/CultivatePreviewOut';
+import type { Emulator2DevicesIn } from '../models/Emulator2DevicesIn';
+import type { Emulator2DevicesOut } from '../models/Emulator2DevicesOut';
+import type { Emulator2InstanceDeleteIn } from '../models/Emulator2InstanceDeleteIn';
+import type { Emulator2InstanceDeletePreviewOut } from '../models/Emulator2InstanceDeletePreviewOut';
+import type { Emulator2PathRemoveIn } from '../models/Emulator2PathRemoveIn';
+import type { Emulator2PathRemovePreviewOut } from '../models/Emulator2PathRemovePreviewOut';
+import type { Emulator2SearchIn } from '../models/Emulator2SearchIn';
+import type { Emulator2SearchOut } from '../models/Emulator2SearchOut';
 import type { EmulatorDeleteIn } from '../models/EmulatorDeleteIn';
 import type { EmulatorGetIn } from '../models/EmulatorGetIn';
 import type { EmulatorGetOut } from '../models/EmulatorGetOut';
@@ -20,6 +34,8 @@ import type { HistoryDataGetOut } from '../models/HistoryDataGetOut';
 import type { HistorySearchIn } from '../models/HistorySearchIn';
 import type { HistorySearchOut } from '../models/HistorySearchOut';
 import type { InfoOut } from '../models/InfoOut';
+import type { MaaCultivateOperatorsOut } from '../models/MaaCultivateOperatorsOut';
+import type { MaaDepotInventoryOut } from '../models/MaaDepotInventoryOut';
 import type { MaaEndOptionsOut } from '../models/MaaEndOptionsOut';
 import type { NoticeOut } from '../models/NoticeOut';
 import type { OCRScreenshotIn } from '../models/OCRScreenshotIn';
@@ -47,7 +63,10 @@ import type { UpdateDownloadSnapshot } from '../models/UpdateDownloadSnapshot';
 import type { UserDeleteIn } from '../models/UserDeleteIn';
 import type { UserGetIn } from '../models/UserGetIn';
 import type { UserGetOut } from '../models/UserGetOut';
+import type { UserInfrastPlanComboxOut } from '../models/UserInfrastPlanComboxOut';
+import type { UserInfrastPlanSelectOut } from '../models/UserInfrastPlanSelectOut';
 import type { VersionOut } from '../models/VersionOut';
+import type { VirtualDisplayCheckOut } from '../models/VirtualDisplayCheckOut';
 import type { WebhookGetIn } from '../models/WebhookGetIn';
 import type { WebhookGetOut } from '../models/WebhookGetOut';
 import type { CancelablePromise } from '../core/CancelablePromise';
@@ -189,6 +208,29 @@ export class GetService {
         });
     }
     /**
+     * 获取碧蓝档案活动数据（Kivo 中转）
+     * 按服务器取回碧蓝档案的活动时间轴。
+     *
+     * 这里只做转发：把 Kivo 的响应原样交给前端，筛选与格式转换都由前端完成。
+     * 之所以要绕一道后端，是因为 Kivo 的接口校验 Origin，浏览器直连必定 403。
+     * @param requestBody
+     * @returns InfoOut Successful Response
+     * @throws ApiError
+     */
+    public static getBluearchiveActivityApiInfoBluearchiveActivityPost(
+        requestBody: BlueArchiveActivityIn,
+    ): CancelablePromise<InfoOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/info/bluearchive/activity',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
      * 查询脚本配置信息
      * @param requestBody
      * @returns ScriptGetOut Successful Response
@@ -246,14 +288,33 @@ export class GetService {
         });
     }
     /**
+     * 获取当前基建班次
+     * @param requestBody
+     * @returns UserInfrastPlanSelectOut Successful Response
+     * @throws ApiError
+     */
+    public static getInfrastPlanSelectApiScriptsUserInfrastructurePlanSelectGetPost(
+        requestBody: UserDeleteIn,
+    ): CancelablePromise<UserInfrastPlanSelectOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/user/infrastructure/plan-select/get',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
      * 用户自定义基建排班可选项
      * @param requestBody
-     * @returns ComboBoxOut Successful Response
+     * @returns UserInfrastPlanComboxOut Successful Response
      * @throws ApiError
      */
     public static getUserComboxInfrastructureApiScriptsUserComboxInfrastructurePost(
         requestBody: UserDeleteIn,
-    ): CancelablePromise<ComboBoxOut> {
+    ): CancelablePromise<UserInfrastPlanComboxOut> {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/scripts/user/combox/infrastructure',
@@ -276,6 +337,93 @@ export class GetService {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/scripts/maa/depot/items',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * MAA 库存保持关卡候选（掉落指定材料，按单件期望理智升序，label 为 xx 理智/件）
+     * @param requestBody
+     * @returns ComboBoxOut Successful Response
+     * @throws ApiError
+     */
+    public static getMaaDepotStageCandidatesApiScriptsMaaDepotStageCandidatesPost(
+        requestBody: Body_get_maa_depot_stage_candidates_api_scripts_maa_depot_stage_candidates_post,
+    ): CancelablePromise<ComboBoxOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/maa/depot/stage/candidates',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * MAA 仓库库存（当前用户档案；label=数量字符串，value=物品ID）
+     * @param requestBody
+     * @returns MaaDepotInventoryOut Successful Response
+     * @throws ApiError
+     */
+    public static getMaaDepotInventoryApiScriptsMaaDepotInventoryPost(
+        requestBody: Body_get_maa_depot_inventory_api_scripts_maa_depot_inventory_post,
+    ): CancelablePromise<MaaDepotInventoryOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/maa/depot/inventory',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 森空岛绑定角色列表（遍历已配置森空岛凭据的签到账号组，明日方舟）
+     * @returns ComboBoxOut Successful Response
+     * @throws ApiError
+     */
+    public static getMaaCultivateSklandBindingsApiScriptsMaaCultivateSklandBindingsPost(): CancelablePromise<ComboBoxOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/maa/cultivate/skland/bindings',
+        });
+    }
+    /**
+     * MAA 干员养成选择器目录（含技能/模组名称目录，稀有度降序）
+     * @param requestBody
+     * @returns MaaCultivateOperatorsOut Successful Response
+     * @throws ApiError
+     */
+    public static getMaaCultivateOperatorsApiScriptsMaaCultivateOperatorsPost(
+        requestBody: Body_get_maa_cultivate_operators_api_scripts_maa_cultivate_operators_post,
+    ): CancelablePromise<MaaCultivateOperatorsOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/maa/cultivate/operators',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * MAA 养成计划预览（纯计算不落库）
+     * @param requestBody
+     * @returns CultivatePreviewOut Successful Response
+     * @throws ApiError
+     */
+    public static getMaaCultivatePreviewApiScriptsMaaCultivatePreviewPost(
+        requestBody: CultivatePreviewIn,
+    ): CancelablePromise<CultivatePreviewOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/maa/cultivate/preview',
             body: requestBody,
             mediaType: 'application/json',
             errors: {
@@ -369,6 +517,89 @@ export class GetService {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/emulator/emulator/search',
+        });
+    }
+    /**
+     * 搜索可加入 Emulator 2.0 的模拟器
+     * 列出本机模拟器并逐条判定。不可添加的**也会列出**并给出原因枚举。
+     * @param requestBody
+     * @returns Emulator2SearchOut Successful Response
+     * @throws ApiError
+     */
+    public static searchEmulatorsApiEmulator2SearchPost(
+        requestBody?: Emulator2SearchIn,
+    ): CancelablePromise<Emulator2SearchOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/emulator2/search',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 预览移除模拟器路径的影响
+     * 只读。列出会失效的设备号与受影响的脚本，供确认页使用。
+     * @param requestBody
+     * @returns Emulator2PathRemovePreviewOut Successful Response
+     * @throws ApiError
+     */
+    public static previewRemovePathApiEmulator2PathsRemovePreviewPost(
+        requestBody: Emulator2PathRemoveIn,
+    ): CancelablePromise<Emulator2PathRemovePreviewOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/emulator2/paths/remove/preview',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 查询合并后的设备列表
+     * 合并多条安装的实例。键是设备号，另附模拟器自己的实例索引。
+     *
+     * 枚举失败的安装标 ``unavailable``——一次枚举失败不等于实例被删除，
+     * 既不写墓碑也不影响下次恢复。``withSettings=false`` 只取状态，给轮询用。
+     * @param requestBody
+     * @returns Emulator2DevicesOut Successful Response
+     * @throws ApiError
+     */
+    public static listDevicesApiEmulator2DevicesPost(
+        requestBody: Emulator2DevicesIn,
+    ): CancelablePromise<Emulator2DevicesOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/emulator2/devices',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 预览删除实例的影响
+     * 只读。列出绑定了该设备号的脚本，供确认页使用。
+     * @param requestBody
+     * @returns Emulator2InstanceDeletePreviewOut Successful Response
+     * @throws ApiError
+     */
+    public static previewDeleteInstanceApiEmulator2InstancesDeletePreviewPost(
+        requestBody: Emulator2InstanceDeleteIn,
+    ): CancelablePromise<Emulator2InstanceDeletePreviewOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/emulator2/instances/delete/preview',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
         });
     }
     /**
@@ -554,6 +785,37 @@ export class GetService {
             errors: {
                 422: `Validation Error`,
             },
+        });
+    }
+    /**
+     * 检测虚拟显示驱动
+     * 三段式检测虚拟显示驱动。
+     *
+     * 前两段验「能不能调用」，第三段真插一块屏再拆掉，验「有没有效果」——只做前两段
+     * 会出现「设置页显示检测通过、无人值守时照样失败」的假信号。第三段会真的改变桌面
+     * 拓扑，所以只挂在用户手动触发的按钮上，不在任务流程里自动跑。
+     * @returns VirtualDisplayCheckOut Successful Response
+     * @throws ApiError
+     */
+    public static checkVirtualDisplayApiSettingVirtualDisplayCheckPost(): CancelablePromise<VirtualDisplayCheckOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/setting/virtual-display/check',
+        });
+    }
+    /**
+     * 查询虚拟显示驱动状态
+     * 只查驱动装没装、能不能调，不改变桌面拓扑。
+     *
+     * 设置页打开时自动调用，用来决定开关能不能打开。不做缓存也不持久化：一次 0.2ms，
+     * 而存下来的状态只会变陈旧。
+     * @returns VirtualDisplayCheckOut Successful Response
+     * @throws ApiError
+     */
+    public static virtualDisplayStatusApiSettingVirtualDisplayStatusPost(): CancelablePromise<VirtualDisplayCheckOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/setting/virtual-display/status',
         });
     }
     /**

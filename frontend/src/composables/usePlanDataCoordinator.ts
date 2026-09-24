@@ -28,12 +28,8 @@ export const TIME_KEYS = [
 ] as const
 export type TimeKey = (typeof TIME_KEYS)[number]
 
-// 关卡槽位常量
-export const STAGE_SLOTS = ['Stage', 'Stage_1', 'Stage_2', 'Stage_3'] as const
-export type StageSlot = (typeof STAGE_SLOTS)[number]
-
 // 统一的数据结构
-export interface PlanDataState {
+interface PlanDataState {
   // 基础信息
   info: {
     name: string
@@ -52,7 +48,6 @@ export interface PlanDataState {
         backup1: string // Stage_1
         backup2: string // Stage_2
         backup3: string // Stage_3
-        remain: string // Stage_Remain
       }
     }
   >
@@ -66,13 +61,6 @@ export interface PlanDataState {
   }
 }
 
-// 关卡可用性信息
-export interface StageAvailability {
-  value: string
-  text: string
-  days: number[]
-}
-
 // 标准关卡选项缓存（按时间维度）
 const stageOptionsCache = ref<Record<string, ComboBoxItem[]>>({})
 let stageOptionsPreloadPromise: Promise<void> | null = null
@@ -80,7 +68,7 @@ let stageOptionsPreloadPromise: Promise<void> | null = null
 let stageOptionsGeneration = 0
 
 // 加载标准关卡选项
-export async function loadStageOptions(timeKey: TimeKey): Promise<ComboBoxItem[]> {
+async function loadStageOptions(timeKey: TimeKey): Promise<ComboBoxItem[]> {
   // 如果已缓存，直接返回
   if (stageOptionsCache.value[timeKey]) {
     return stageOptionsCache.value[timeKey]
@@ -205,7 +193,6 @@ export function usePlanDataCoordinator() {
           backup1: '-',
           backup2: '-',
           backup3: '-',
-          remain: '-',
         },
       }
     })
@@ -241,7 +228,6 @@ export function usePlanDataCoordinator() {
             backup1: timeData.Stage_1 || '-',
             backup2: timeData.Stage_2 || '-',
             backup3: timeData.Stage_3 || '-',
-            remain: timeData.Stage_Remain || '-',
           },
         }
       }
@@ -258,7 +244,7 @@ export function usePlanDataCoordinator() {
       const timeData = apiData[timeKey] as MaaPlanConfig_Item
       if (timeData) {
         // 检查所有关卡字段
-        const stageFields = ['Stage', 'Stage_1', 'Stage_2', 'Stage_3', 'Stage_Remain']
+        const stageFields = ['Stage', 'Stage_1', 'Stage_2', 'Stage_3']
         stageFields.forEach(field => {
           const stageValue = timeData[field as keyof MaaPlanConfig_Item] as string
           if (stageValue && stageValue !== '-') {
@@ -338,7 +324,6 @@ export function usePlanDataCoordinator() {
         Stage_1: config.stages.backup1,
         Stage_2: config.stages.backup2,
         Stage_3: config.stages.backup3,
-        Stage_Remain: config.stages.remain,
       }
     })
 
@@ -410,16 +395,6 @@ export function usePlanDataCoordinator() {
           ])
         ),
       },
-      {
-        key: 'Stage_Remain',
-        taskName: '剩余理智关卡',
-        ...Object.fromEntries(
-          TIME_KEYS.map(timeKey => [
-            timeKey,
-            planData.value.timeConfigs[timeKey]?.stages.remain || '-',
-          ])
-        ),
-      },
     ]
   })
 
@@ -483,8 +458,6 @@ export function usePlanDataCoordinator() {
       planData.value.timeConfigs[timeKey].stages.backup2 = value
     } else if (field === 'Stage_3') {
       planData.value.timeConfigs[timeKey].stages.backup3 = value
-    } else if (field === 'Stage_Remain') {
-      planData.value.timeConfigs[timeKey].stages.remain = value
     }
   }
 

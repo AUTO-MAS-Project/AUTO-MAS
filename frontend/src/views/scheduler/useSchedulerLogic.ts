@@ -1,5 +1,5 @@
 import { translate as t } from '@/i18n'
-import { computed, h, ref, watch } from 'vue'
+import { h, ref, watch } from 'vue'
 import { message, Modal, notification } from 'ant-design-vue'
 import { Service } from '@/api/services/Service'
 import { useMaaEndIssueReport } from '@/composables/useMaaEndIssueReport'
@@ -26,8 +26,8 @@ import {
   type WSTaskNoticeData,
 } from '@/services/websocket/types'
 import type { ComboBoxItem } from '@/api/models/ComboBoxItem'
-import type { QueueItem } from './schedulerConstants'
 import { type SchedulerTab, type SchedulerStatus, TASK_MODE_OPTIONS } from './schedulerConstants'
+import { applyTaskLogUpdate, trimLogBuffer } from './schedulerLogBuffer'
 import { toRunnableUserOptions } from './schedulerUserOptions'
 
 // 运行态里的脚本执行模式 → 词表标签；词表里没有的模式（如 Update）保留原值
@@ -51,14 +51,16 @@ const STOP_COMPLETION_GRACE_MS = 1500
 let storageSaveTimer: number | null = null
 const pendingLogUpdates = new Map<string, number>()
 const pendingLogContents = new Map<string, string>()
+// 序号断裂后正在等快照重建 buffer 的标签页，期间到达的增量直接丢弃、不重复拉快照
+const pendingLogResyncs = new Set<string>()
+// keep-alive 停用期间只更新 buffer，不往日志面板写；激活时一次性刷新
+let schedulerViewActive = true
 // MaaEnd 失败导出弹窗全局去重，避免同一批错误连环弹窗
 let maaEndFailureModalOpen = false
 
 const getDefaultTabRuntimeState = () => ({
-  taskQueue: [],
-  userQueue: [],
-  logs: [],
-  isLogAtBottom: true,
+  logBuffer: '',
+  logSeq: undefined,
   lastLogContent: '',
   overviewData: undefined,
   lastMessageHash: '',
@@ -154,10 +156,7 @@ const loadTabsFromStorage = (): SchedulerTab[] => {
       userOptions: [],
       userOptionsLoading: false,
       taskId: null,
-      taskQueue: [],
-      userQueue: [],
-      logs: [],
-      isLogAtBottom: true,
+      logBuffer: '',
       lastLogContent: '',
       logMode: 'follow',
     },
@@ -192,7 +191,6 @@ const saveTabsToStorage = (tabs: SchedulerTab[]) => {
 // 核心状态 - 模块级别单例
 const schedulerTabs = ref<SchedulerTab[]>(loadTabsFromStorage())
 const activeSchedulerTab = ref(schedulerTabs.value[0]?.key || 'main')
-const logRefs = ref(new Map<string, HTMLElement>())
 const overviewRefs = ref(new Map<string, any>()) // 任务总览面板引用
 
 // 从现有调度台中计算最大编号
@@ -296,15 +294,6 @@ export function useSchedulerLogic() {
     return newTab
   }
 
-  // 计算属性
-  const canChangePowerAction = computed(() => {
-    return !schedulerTabs.value.some(tab => tab.status === '运行')
-  })
-
-  const currentTab = computed(() => {
-    return schedulerTabs.value.find(tab => tab.key === activeSchedulerTab.value)
-  })
-
   // 监听调度台变化并保存到本地存储（只初始化一次）
   const watchTabsChanges = () => {
     if (_watchInitialized) return
@@ -349,10 +338,7 @@ export function useSchedulerLogic() {
       userOptions: [],
       userOptionsLoading: false,
       taskId: options?.taskId || null,
-      taskQueue: [],
-      userQueue: [],
-      logs: [],
-      isLogAtBottom: true,
+      logBuffer: '',
       lastLogContent: '',
     }
     schedulerTabs.value.push(tab)
@@ -431,8 +417,6 @@ export function useSchedulerLogic() {
         // 清理 WebSocket 订阅
         unsubscribeTab(tab)
 
-        // 清理日志引用
-        logRefs.value.delete(key)
         clearPendingLogUpdate(key)
 
         // 清理任务总览面板引用
@@ -472,8 +456,6 @@ export function useSchedulerLogic() {
           // 清理 WebSocket 订阅
           unsubscribeTab(tab)
 
-          // 清理日志引用
-          logRefs.value.delete(tab.key)
           clearPendingLogUpdate(tab.key)
 
           // 清理任务总览面板引用
@@ -640,8 +622,7 @@ export function useSchedulerLogic() {
     try {
       const response = await Service.getQueuesApiQueueGetPost({ queueId: tab.selectedTaskId })
       tab.isCycleQueue =
-        response.code === 200 &&
-        Boolean(response.data?.[tab.selectedTaskId]?.Info?.CycleEnabled)
+        response.code === 200 && Boolean(response.data?.[tab.selectedTaskId]?.Info?.CycleEnabled)
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error)
       logger.warn(`获取队列类型失败，按定时队列处理: ${errorMsg}`)
@@ -667,7 +648,8 @@ export function useSchedulerLogic() {
       if (tab.resumeFromScriptId) {
         requestBody.resumeFromScriptId = tab.resumeFromScriptId
       }
-      if (tab.selectedUserId) {
+      // 指定单个用户只对自动代理有意义，其他模式后端一律拒绝；切走模式后不再带上
+      if (tab.selectedUserId && tab.selectedMode === TaskCreateIn.mode.AUTO_PROXY) {
         requestBody.userId = tab.selectedUserId
       }
 
@@ -681,10 +663,9 @@ export function useSchedulerLogic() {
         unsubscribeTab(tab)
 
         // 清空之前的状态
-        tab.taskQueue.splice(0)
-        tab.userQueue.splice(0)
-        tab.logs.splice(0)
-        tab.isLogAtBottom = true
+        tab.logBuffer = ''
+        tab.logSeq = undefined
+        pendingLogResyncs.delete(tab.key)
         tab.lastLogContent = ''
         tab.cycleNextList = []
         tab.logMode = 'follow' // 任务开始时设置日志为保持最新模式
@@ -840,6 +821,9 @@ export function useSchedulerLogic() {
   const scheduleLogContentUpdate = (tab: SchedulerTab, content: string, immediate = false) => {
     pendingLogContents.set(tab.key, content)
 
+    // 页面停用期间只攒着，激活时由 setSchedulerViewActive 一次性写入
+    if (!schedulerViewActive) return
+
     if (immediate) {
       clearPendingLogUpdate(tab.key)
       applyLogContentUpdate(tab, content)
@@ -857,6 +841,18 @@ export function useSchedulerLogic() {
       pendingLogContents.delete(tab.key)
     }, LOG_RENDER_INTERVAL_MS)
     pendingLogUpdates.set(tab.key, timer)
+  }
+
+  // keep-alive 激活/停用：停用时不再驱动 Monaco 写入，激活时把攒下的内容一次性刷出
+  const setSchedulerViewActive = (active: boolean) => {
+    schedulerViewActive = active
+    if (!active) return
+    for (const tab of schedulerTabs.value) {
+      const content = pendingLogContents.get(tab.key)
+      if (content === undefined) continue
+      clearPendingLogUpdate(tab.key)
+      applyLogContentUpdate(tab, content)
+    }
   }
 
   const applyTaskInfoSnapshot = (tab: SchedulerTab, data: WSTaskInfoUpdatedData): boolean => {
@@ -886,44 +882,28 @@ export function useSchedulerLogic() {
       const errorMsg = e instanceof Error ? e.message : String(e)
       logger.warn(`维护 overviewData 快照时出现问题: ${errorMsg}`)
     }
-
-    const newTaskQueue = data.task_info.map(item => ({
-      name: item.name || t('scheduler.overview.unknownTask'),
-      status: item.status || '等待',
-    }))
-
-    const newUserQueue: QueueItem[] = []
-    data.task_info.forEach(taskItem => {
-      if (taskItem.userList && Array.isArray(taskItem.userList)) {
-        taskItem.userList.forEach(user => {
-          if (user.status === '运行') {
-            newUserQueue.push({
-              name: `${taskItem.name}-${user.name}`,
-              status: user.status,
-            })
-          }
-        })
-      }
-    })
-
-    tab.taskQueue.splice(0, tab.taskQueue.length, ...newTaskQueue)
-    tab.userQueue.splice(0, tab.userQueue.length, ...newUserQueue)
     return true
   }
 
+  // 序号对不上（没有基线或漏了消息）：丢掉本条，拉一次快照重建 buffer；
+  // 等待期间到达的增量也丢，快照到达后由 applyRuntimeTaskSnapshot 重置 seq
+  const requestLogResync = (tab: SchedulerTab, data: WSTaskLogUpdatedData) => {
+    if (pendingLogResyncs.has(tab.key)) return
+    pendingLogResyncs.add(tab.key)
+    logger.info(`日志序号不连续，重拉运行快照: key=${tab.key}, seq=${data.seq}`)
+    void refreshTaskRuntimeSnapshot().finally(() => pendingLogResyncs.delete(tab.key))
+  }
+
+  // 增量协议：append=false 整体替换；append=true 且 seq 连续则追加，否则重同步
   const handleTaskLogUpdated = (tab: SchedulerTab, data: WSTaskLogUpdatedData) => {
-    // 直接显示完整日志内容，覆盖上次显示的内容
-    if (typeof data.log !== 'string' || !data.log) return
-    const newContent = data.log
-    if (tab.lastLogContent !== newContent) {
-      scheduleLogContentUpdate(tab, newContent)
-      logger.debug(
-        `更新日志内容: ${JSON.stringify({
-          tabKey: tab.key,
-          contentLength: newContent.length,
-        })}`
-      )
+    if (typeof data.log !== 'string') return
+    const result = applyTaskLogUpdate(tab, data)
+    if (result === 'resync') {
+      requestLogResync(tab, data)
+      return
     }
+    if (result === 'replace') pendingLogResyncs.delete(tab.key)
+    scheduleLogContentUpdate(tab, tab.logBuffer)
   }
 
   const handleTaskNotice = async (tab: SchedulerTab, data: WSTaskNoticeData) => {
@@ -1084,18 +1064,6 @@ export function useSchedulerLogic() {
 
     // 触发Vue的响应式更新
     schedulerTabs.value = [...schedulerTabs.value]
-  }
-
-  const onLogScroll = (isAtBottom: boolean, tab: SchedulerTab) => {
-    tab.isLogAtBottom = isAtBottom
-  }
-
-  const setLogRef = (el: HTMLElement | null, key: string) => {
-    if (el) {
-      logRefs.value.set(key, el)
-    } else {
-      logRefs.value.delete(key)
-    }
   }
 
   const setOverviewRef = (el: any, key: string) => {
@@ -1294,7 +1262,9 @@ export function useSchedulerLogic() {
       task_info: state.taskInfo,
       cycleNextList: state.cycleNextList,
     })
-    subscribeToTask(tab)
+    // 这里只同步状态，不订阅：任务运行期每秒都会推送状态，在这里调用 subscribeToTask
+    // 只会每次都命中「订阅已存在」分支刷日志。订阅由建台、启动与恢复路径
+    // （createSchedulerTabForTask、trackStartedTask、startTask、initialize）负责。
   }
 
   const applyRuntimeTaskSnapshot = (state: TaskRuntimeState): void => {
@@ -1307,7 +1277,11 @@ export function useSchedulerLogic() {
       false
     )
     applyRuntimeStateToTab(tab, state)
-    if (state.log) scheduleLogContentUpdate(tab, state.log, true)
+    // 快照里的 log 是上次推送的完整日志尾部，直接作为 buffer 基线，与下一条增量衔接
+    tab.logBuffer = trimLogBuffer(state.log ?? '')
+    tab.logSeq = state.logSeq
+    pendingLogResyncs.delete(tab.key)
+    if (tab.logBuffer || tab.lastLogContent) scheduleLogContentUpdate(tab, tab.logBuffer, true)
   }
 
   const markRuntimeTaskRemoved = (taskId: string): void => {
@@ -1383,7 +1357,7 @@ export function useSchedulerLogic() {
   }
 
   // 初始化函数 - 使用单例标志确保核心初始化只执行一次
-  const initialize = () => {
+  const initialize = async () => {
     // 常驻订阅可能已在进入应用前注册，这里幂等兜底
     registerResidentSubscriptions()
 
@@ -1406,7 +1380,9 @@ export function useSchedulerLogic() {
     // 获取后端当前的电源状态
     getPowerState()
 
-    // 为已有调度台预加载恢复脚本 / 用户选项，确保刷新后恢复交互可用
+    // 为已有调度台预加载恢复脚本 / 用户选项，确保刷新后恢复交互可用。
+    // isQueueTask / isScriptTask 靠任务选项判断类型，所以要先把选项拉回来
+    await loadTaskOptions()
     schedulerTabs.value.forEach(tab => {
       if (tab.status === '运行') return
       if (isQueueTask(tab)) {
@@ -1437,21 +1413,6 @@ export function useSchedulerLogic() {
     }
   }
 
-  // 调试函数：检查所有调度台的订阅状态
-  const debugSubscriptionStatus = () => {
-    logger.info('当前调度台订阅状态:')
-    schedulerTabs.value.forEach(tab => {
-      logger.info(
-        `- Tab ${tab.key} (${tab.title}): ${JSON.stringify({
-          status: tab.status,
-          taskId: tab.taskId,
-          subscriptionIds: tab.subscriptionIds,
-        })}`
-      )
-    })
-    logger.info(`WebSocket状态: ${JSON.stringify(ws.state.value)}`)
-  }
-
   // 清理函数 - 由于keep-alive，这个函数只在组件真正销毁时调用
   // 路由切换时不会调用，所以所有订阅都保持活跃
   const cleanup = () => {
@@ -1465,6 +1426,8 @@ export function useSchedulerLogic() {
     pendingLogUpdates.forEach(timer => window.clearTimeout(timer))
     pendingLogUpdates.clear()
     pendingLogContents.clear()
+    pendingLogResyncs.clear()
+    schedulerViewActive = true
 
     // 移除电源状态变更事件监听器
     window.removeEventListener('power-state-changed', handlePowerStateChanged)
@@ -1491,16 +1454,9 @@ export function useSchedulerLogic() {
     // 状态
     schedulerTabs,
     activeSchedulerTab,
-    logRefs,
-    // 将“运行/运行中”的用户标记为“等待”，并据此推导脚本状态
-
     taskOptionsLoading,
     taskOptions,
     powerAction,
-
-    // 计算属性
-    canChangePowerAction,
-    currentTab,
 
     // Tab 管理
     addSchedulerTab,
@@ -1516,9 +1472,8 @@ export function useSchedulerLogic() {
     loadResumeScriptOptions,
     loadUserOptions,
 
-    // 日志操作
-    onLogScroll,
-    setLogRef,
+    // keep-alive 激活/停用
+    setSchedulerViewActive,
 
     // 电源操作
     onPowerActionChange,
@@ -1534,9 +1489,6 @@ export function useSchedulerLogic() {
 
     // 任务总览面板引用管理
     setOverviewRef,
-
-    // 调试功能
-    debugSubscriptionStatus,
   }
 }
 

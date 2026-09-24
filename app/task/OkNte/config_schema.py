@@ -38,6 +38,10 @@ from time import sleep
 from typing import Any
 from xml.etree import ElementTree
 
+from app.utils import get_logger
+
+logger = get_logger("OK-NTE 配置 Schema")
+
 # ─── OK-NTE 翻译文件自动加载 ─────────────────────────────────────────────────
 
 _OKNTE_CONFIG_WRITE_LOCK = Lock()
@@ -58,8 +62,8 @@ def _parse_po_file(po_path: Path) -> dict[str, str]:
             msgstr = match.group(2)
             if msgid and msgstr:
                 labels[msgid] = msgstr
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning(f"解析 OK-NTE 翻译文件失败，选项将显示英文: {po_path} ({e})")
     return labels
 
 
@@ -98,8 +102,8 @@ def _parse_mo_file(mo_path: Path) -> dict[str, str]:
         for orig, trans in zip(orig_strings, trans_strings):
             if orig and trans:
                 labels[orig] = trans
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning(f"解析 OK-NTE 翻译文件失败，选项将显示英文: {mo_path} ({e})")
     return labels
 
 
@@ -119,18 +123,32 @@ def _parse_ts_file(ts_path: Path) -> dict[str, str]:
                 and translation.attrib.get("type") != "unfinished"
             ):
                 labels[source.text] = translation.text
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning(f"解析 ok-script 翻译文件失败，选项将显示英文: {ts_path} ({e})")
     return labels
+
+
+# 标签解析缓存: 安装目录 -> (实际解析过的文件及其 mtime_ns, 标签); 每次请求重解析 .mo/.ts 太慢
+_OPTION_LABELS_CACHE: dict[
+    Path, tuple[tuple[tuple[Path, int], ...], dict[str, str]]
+] = {}
 
 
 def load_oknte_option_labels(root_path: Path | str) -> dict[str, str]:
     """从 OK-NTE 安装目录自动加载选项的英文→中文翻译映射。
 
     搜索优先级：ok.mo > ok.po，同时补充 ok-script 框架的 zh_CN.ts。
+    解析结果按实际读取过的文件 mtime 缓存。
     """
     root = Path(root_path)
+    cached = _OPTION_LABELS_CACHE.get(root)
+    if cached is not None and all(
+        f.is_file() and f.stat().st_mtime_ns == mtime for f, mtime in cached[0]
+    ):
+        return cached[1]
+
     labels: dict[str, str] = {}
+    used_files: list[tuple[Path, int]] = []
 
     i18n_candidates = [
         root / "i18n",
@@ -145,6 +163,7 @@ def load_oknte_option_labels(root_path: Path | str) -> dict[str, str]:
             loaded = _parse_mo_file(mo_file)
             if loaded:
                 labels.update(loaded)
+                used_files.append((mo_file, mo_file.stat().st_mtime_ns))
                 break
 
         po_file = i18n_dir / "zh_CN" / "LC_MESSAGES" / "ok.po"
@@ -152,6 +171,7 @@ def load_oknte_option_labels(root_path: Path | str) -> dict[str, str]:
             loaded = _parse_po_file(po_file)
             if loaded:
                 labels.update(loaded)
+                used_files.append((po_file, po_file.stat().st_mtime_ns))
                 break
 
     ts_candidates = [
@@ -164,8 +184,12 @@ def load_oknte_option_labels(root_path: Path | str) -> dict[str, str]:
             loaded = _parse_ts_file(ts_file)
             if loaded:
                 labels.update(loaded)
+                used_files.append((ts_file, ts_file.stat().st_mtime_ns))
                 break
 
+    # 没读到任何文件时不缓存, 否则安装完成后也不会再去找
+    if used_files:
+        _OPTION_LABELS_CACHE[root] = (tuple(used_files), labels)
     return labels
 
 

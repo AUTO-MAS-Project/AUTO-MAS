@@ -150,8 +150,6 @@ class HSRSRAControl:
             )
 
         return HSRRunItem(
-            user_item=user_item,
-            user_cfg=user_cfg,
             user_name=user_name,
             user_id=uid,
             phase=phase,
@@ -159,7 +157,6 @@ class HSRSRAControl:
             module_name="SRA 登录/切号",
             script="SRA",
             description=description,
-            timeout_seconds=timeout_seconds,
             run=run_sra_start,
         )
 
@@ -255,8 +252,6 @@ class HSRSRAControl:
                 )
 
         return HSRRunItem(
-            user_item=user_item,
-            user_cfg=user_cfg,
             user_name=user_name,
             user_id=uid,
             phase=phase,
@@ -264,7 +259,6 @@ class HSRSRAControl:
             module_name=module.name,
             script="SRA",
             description=description,
-            timeout_seconds=timeout_seconds,
             run=run_sra_module,
             on_success=on_success,
         )
@@ -313,12 +307,9 @@ class HSRSRAControl:
                 True,
                 result,
                 "SRA",
-                dedicated_run=True,
             )
 
         return HSRRunItem(
-            user_item=user_item,
-            user_cfg=user_cfg,
             user_name=user_name,
             user_id=uid,
             phase=phase,
@@ -326,7 +317,6 @@ class HSRSRAControl:
             module_name="历战余响",
             script="SRA",
             description=description,
-            timeout_seconds=timeout_seconds,
             run=run_sra_echo_of_war,
             on_success=on_success,
         )

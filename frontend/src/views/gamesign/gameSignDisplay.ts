@@ -1,5 +1,5 @@
 /**
- * 游戏签到标签云的纯展示逻辑。
+ * 游戏社区标签云的纯展示逻辑。
  *
  * 这里全部是纯函数，不依赖 Vue 响应式和后端接口，方便单测覆盖。
  * TabGameSign 的标签云（各社区已签/失败/风控状态）完全由这些函数推导，
@@ -13,6 +13,19 @@ export interface GameItem {
   status: string
   reward: string
   reason: string
+  details?: GameSignDetail[]
+}
+
+/** 合并前的游戏签到或账号共享的库洛币签到结果 */
+interface GameSignDetail {
+  kind: 'game' | 'community'
+  status: string
+  reward?: string
+  reason?: string
+}
+
+interface SignDetailItem extends Omit<GameItem, 'details'> {
+  kind: 'game' | 'community' | 'combined'
 }
 
 /** 同一社区下的一个账号组 */
@@ -28,7 +41,7 @@ export interface PlatformResult {
 }
 
 /** 标签云状态 */
-export type TagStatus = 'signed' | 'partial' | 'unsigned' | 'failed' | 'risk' | 'unconfigured'
+type TagStatus = 'signed' | 'partial' | 'unsigned' | 'failed' | 'risk' | 'unconfigured'
 
 /** 单个社区标签的聚合数据 */
 export interface PlatformTag {
@@ -46,16 +59,36 @@ export interface PlatformTag {
 export interface SignAccount {
   uid: string
   MiyousheToken?: string
+  CloudGenshinToken?: string
   KuroToken?: string
   SklandToken?: string
   TaygedoToken?: string
 }
 
 /** 标签云中社区的展示顺序 */
-export const SIGN_PLATFORMS = ['米游社', '森空岛', '库街区', '塔吉多', '云异环'] as const
+const SIGN_PLATFORMS = ['米游社', '森空岛', '库街区', '塔吉多', '云异环'] as const
 
 /** 视为「已签到」的状态文案 */
 const SIGNED_STATUSES = ['成功', '已签到']
+
+/** 库洛币项排在游戏之后；旧记录保留合并状态，不从错误文案猜测成功。 */
+export const getSignDetailItems = (games: readonly GameItem[]): SignDetailItem[] =>
+  games
+    .flatMap((game): SignDetailItem[] => {
+      const { details, ...combined } = game
+      if (!details?.length) return [{ ...combined, kind: 'combined' }]
+      return details.map(detail => ({
+        kind: detail.kind,
+        game: game.game,
+        account: detail.kind === 'community' ? undefined : game.account,
+        status: detail.status,
+        reward: detail.reward || '',
+        reason: detail.reason || '',
+      }))
+    })
+    .sort(
+      (first, second) => Number(first.kind === 'community') - Number(second.kind === 'community')
+    )
 
 /**
  * 解析后端存在 config.Result 里的 JSON 字符串。
@@ -73,7 +106,7 @@ export const parseSignResult = (resultStr?: string | null): PlatformResult => {
 }
 
 /** 塔吉多 Token 里同时藏了塔吉多与云异环两套凭据 */
-export interface TaygedoCredential {
+interface TaygedoCredential {
   taygedo: boolean
   cloud: boolean
 }
@@ -108,7 +141,7 @@ export const hasPlatformToken = (
 ): boolean => {
   switch (platform) {
     case '米游社':
-      return !!account.MiyousheToken
+      return !!(account.MiyousheToken || account.CloudGenshinToken)
     case '库街区':
       return !!account.KuroToken
     case '森空岛':
@@ -147,13 +180,19 @@ export const buildPlatformTag = (
   groups: AccountGroup[],
   games: GameItem[]
 ): PlatformTag => {
+  const steps = getSignDetailItems(games)
   const counts = {
-    totalCount: games.length,
-    signedCount: games.filter(g => SIGNED_STATUSES.includes(g.status)).length,
-    failedCount: games.filter(g => g.status === '失败').length,
-    riskCount: games.filter(g => g.status === '风控').length,
+    totalCount: steps.length,
+    signedCount: steps.filter(g => SIGNED_STATUSES.includes(g.status)).length,
+    failedCount: steps.filter(g => g.status === '失败').length,
+    riskCount: steps.filter(g => g.status === '风控').length,
   }
-  return { platform, groups, games, status: resolveTagStatus(counts), ...counts }
+  let status = resolveTagStatus(counts)
+  // 明确的分项结果可显示部分失败，旧记录仍按原有合并状态判定。
+  if (status === 'failed' && counts.signedCount > 0 && games.some(game => game.details?.length)) {
+    status = 'partial'
+  }
+  return { platform, groups, games, status, ...counts }
 }
 
 /** 计算单个用户的社区标签列表，顺序固定为 SIGN_PLATFORMS */

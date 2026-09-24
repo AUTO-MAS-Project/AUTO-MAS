@@ -1,5 +1,5 @@
 // Webhook 模板配置
-export interface WebhookTemplate {
+interface WebhookTemplate {
   name: string
   /** 词表 key：本文件是模块级常量，t() 在这里会被冻结在初始语言 */
   descriptionKey: string
@@ -33,7 +33,7 @@ export const WEBHOOK_TEMPLATES: WebhookTemplate[] = [
   {
     name: '企业微信机器人',
     descriptionKey: 'misc.wecomGroupBot',
-    template: '{"msgtype": "text", "text": {"content": "{title}\\n{content}"}}',
+    template: '{"msgtype": "markdown", "markdown": {"content": "**{title}**\\n{content}"}}',
     method: 'POST',
     example: 'https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=your_key',
     headers: {
@@ -102,6 +102,28 @@ export const WEBHOOK_TEMPLATES: WebhookTemplate[] = [
     },
   },
   {
+    name: 'OneBot 私聊（图片）',
+    descriptionKey: 'misc.qqDirectMessageOverImage',
+    template:
+      '{"user_id": "YOUR_QQ_NUMBER", "message": [{"type": "image", "data": {"file": "base64://{image_base64}"}}]}',
+    method: 'POST',
+    example: 'http://服务器IP:端口/send_private_msg?access_token=YOUR_ACCESS_TOKEN',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+  },
+  {
+    name: 'OneBot 私聊（文本+图片）',
+    descriptionKey: 'misc.qqDirectMessageOverTextImage',
+    template:
+      '{"user_id": "YOUR_QQ_NUMBER", "message": [{"type": "text", "data": {"text": "{title}\\n{content}"}}, {"type": "image", "data": {"file": "base64://{image_base64}"}}]}',
+    method: 'POST',
+    example: 'http://服务器IP:端口/send_private_msg?access_token=YOUR_ACCESS_TOKEN',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+  },
+  {
     name: '自定义JSON',
     descriptionKey: 'misc.customJsonPayload',
     template: '{"message": "{title}: {content}", "timestamp": "{datetime}"}',
@@ -125,6 +147,7 @@ export const WEBHOOK_TEMPLATES: WebhookTemplate[] = [
 export const TEMPLATE_VARIABLES = [
   { name: '{title}', description: '通知标题' },
   { name: '{content}', description: '通知内容' },
+  { name: '{image_base64}', description: '可选图片的 Base64 数据' },
   { name: '{datetime}', description: '完整日期时间 (YYYY-MM-DD HH:MM:SS)' },
   { name: '{date}', description: '日期 (YYYY-MM-DD)' },
   { name: '{time}', description: '时间 (HH:MM:SS)' },

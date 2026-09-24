@@ -16,7 +16,6 @@
 #   You should have received a copy of the GNU Affero General Public License
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
 
-import asyncio
 from contextlib import suppress
 from pathlib import Path
 
@@ -26,6 +25,7 @@ from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, TaskExecuteBase
 from app.services.wuthering_waves import check_wuthering_waves_update
 from app.services.wuthering_waves_updater import update_wuthering_waves
+from app.task.proxy_helpers import push_dispatch_log
 from app.utils import get_logger
 
 logger = get_logger("OK-WW 鸣潮更新")
@@ -56,9 +56,7 @@ class WuwaUpdateTask(TaskExecuteBase):
     async def _push_dispatch_log(self, line: str) -> None:
         """向调度台追加流程日志（赋值 script_info.log 会触发 WebSocket 推送）。"""
 
-        prev = self.script_info.log
-        self.script_info.log = f"{prev}\n{line}" if prev else line
-        await asyncio.sleep(0)
+        await push_dispatch_log(self.script_info, line)
 
     async def main_task(self) -> None:
         self.cur_user_item.status = "运行"
@@ -92,6 +90,9 @@ class WuwaUpdateTask(TaskExecuteBase):
             full_sync_limit=max(limit_gb, 1) * 1024**3,
         )
         self.cur_user_item.status = "完成"
+
+    async def final_task(self) -> None:
+        """一次性更新任务不持有需要释放的资源，结果状态由 main_task / on_crash 落定。"""
 
     async def on_crash(self, e: Exception) -> None:
         self.cur_user_item.status = "异常"

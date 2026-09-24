@@ -23,46 +23,58 @@ PUSH_LOG_MODE_OFF = "关闭"
 PUSH_LOG_MODE_SCATTER = "逐条"
 PUSH_LOG_MODE_AGGREGATE = "汇总"
 
-# 节点状态行：前缀（状态标记） + ": " + 节点名，用于汇总聚合分组
-_PUSH_STATUS_RE = re.compile(r"^(✅ 成功|⏭ 跳过|❌ 失败): (.*)$")
+# 节点状态行：可选「【账号】」前缀（多账号归属，见 ZZZ-OD） + 状态标记 + ": " + 节点名
+_PUSH_STATUS_RE = re.compile(
+    r"^(?:【(?P<acc>[^】]+)】)?(✅ 成功|⏭ 跳过|❌ 失败): (.*)$"
+)
 
 
 def _render_scatter(entries: list[tuple]) -> list[str]:
     """逐条式渲染：每条结果独占一行，加采集时间（HH:MM）前缀
 
-    无时间戳（通用脚本等旧式二元组条目）时仅输出文本原样，保持兼容。
+    无时间戳（通用脚本等旧式二元组条目）时仅输出文本原样，保持兼容；
+    带「【账号】」前缀的条目前缀置于时间之前。
     """
     lines: list[str] = []
     for entry in entries:
         text = entry[1]
         ts = entry[2] if len(entry) > 2 else None
+        prefix = ""
+        m = _PUSH_STATUS_RE.match(text)
+        if m is not None and m.group("acc"):
+            prefix = f"【{m.group('acc')}】"
+            text = f"{m.group(2)}: {m.group(3)}"
         if ts is not None:
             text = f"{datetime.fromtimestamp(ts).strftime('%H:%M')} - {text}"
-        lines.append(text)
+        lines.append(prefix + text)
     return lines
 
 
 def _render_aggregate(entries: list[tuple]) -> list[str]:
-    """汇总式渲染：按状态前缀分组合并节点名，同一状态合并为一行
+    """汇总式渲染：按（账号, 状态前缀）分组合并节点名，同组合并为一行
 
-    不具状态前缀的条目（如「⚡ 剩余体力: 30」）原样独占一行；分组顺序按状态首次
-    出现排列。
+    不具状态前缀的条目（如「⚡ 剩余体力: 30」）原样独占一行；分组顺序按状态
+    首次出现排列，带「【账号】」前缀的条目按账号各自成组。
     """
-    groups: dict[str, list[str]] = {}
-    order: list[str] = []
+    groups: dict[tuple[str | None, str], list[str]] = {}
+    order: list[tuple[str | None, str]] = []
     plain: list[str] = []
     for entry in entries:
         text = entry[1]
         m = _PUSH_STATUS_RE.match(text)
         if m:
-            status, node = m.group(1), m.group(2)
-            if status not in groups:
-                order.append(status)
-                groups[status] = []
-            groups[status].append(node)
+            key = (m.group("acc"), m.group(2))
+            if key not in groups:
+                order.append(key)
+                groups[key] = []
+            groups[key].append(m.group(3))
         else:
             plain.append(text)
-    return [f"{status}: {', '.join(groups[status])}" for status in order] + plain
+    lines = []
+    for acc, status in order:
+        prefix = f"【{acc}】" if acc else ""
+        lines.append(f"{prefix}{status}: {', '.join(groups[(acc, status)])}")
+    return lines + plain
 
 
 def build_user_result_text(users: Iterable, has_uncompleted: bool) -> str:

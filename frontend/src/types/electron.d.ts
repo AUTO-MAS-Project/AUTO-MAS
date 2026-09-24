@@ -150,12 +150,38 @@ export type RuntimeLaunchModeSetting = 'auto' | 'off' | 'development' | 'managed
 /** 最终生效值来自哪一级。 */
 export type RuntimeLaunchModeSource = 'env' | 'setting' | 'default'
 
+/** 日志页增量读取的返回，与主进程 electron/services/logFileReader.ts 一致 */
+export interface LogIncrement {
+  /** 新增内容；reset 为 true 时是当前全文 */
+  content: string
+  /** 读取后的字节偏移，下一次从这里继续 */
+  size: number
+  /** 文件变小或消失（轮转/清空）时为 true，应整体替换 */
+  reset: boolean
+}
+
+/** 与主进程 electron/services/backendService.ts 的 BackendStatus 一致 */
+export interface BackendStatus {
+  isRunning: boolean
+  pid?: number
+  startTime?: Date
+  error?: string
+  /** 本次生命周期是否走 Runtime 监督链路；true 时后端只能由 Electron 经 Runtime 停止。 */
+  runtimeSupervised: boolean
+}
+
 export interface RuntimeLaunchModeState {
   /** 持久化设置里存的原始值，用于回填选择控件。 */
   persisted: RuntimeLaunchModeSetting
   /** 本次实际生效的模式（`auto` 已被解析成具体值）。 */
   mode: 'off' | 'development' | 'managed'
   source: RuntimeLaunchModeSource
+}
+
+/** 真实显示器回来了但有任务在跑时，后端发来的询问数据（与 WSDisplayDetachPromptData 一致） */
+export interface VirtualDisplayPromptPayload {
+  returned: string[]
+  monitor?: { left: number; top: number; right: number; bottom: number } | null
 }
 
 export interface ElectronAPI {
@@ -188,7 +214,6 @@ export interface ElectronAPI {
   killAllProcesses: () => Promise<{ success: boolean; error?: string }>
 
   // 初始化相关API
-  checkEnvironment: () => Promise<unknown>
   checkCriticalFiles: () => Promise<{
     pythonExists: boolean
     gitExists: boolean
@@ -197,47 +222,8 @@ export interface ElectronAPI {
     /** doctor 的逐项检查，只有 Runtime 链路产生，供失败态的「运行诊断」展示。 */
     runtimeChecks?: RuntimeDoctorCheck[]
   }>
-  checkGitUpdate: () => Promise<{ hasUpdate: boolean; error?: string }>
-  downloadPython: (mirror?: string) => Promise<unknown>
-  downloadGit: () => Promise<unknown>
-  // installDependencies 的权威声明在下面的「单步初始化API」里，这里原有的一份签名已过时
-  cloneBackend: (repoUrl?: string) => Promise<unknown>
-  updateBackend: (repoUrl?: string) => Promise<unknown>
   startBackend: () => Promise<{ success: boolean; error?: string; logs?: string }>
   stopBackend: () => Promise<{ success: boolean; error?: string }>
-
-  // 快速安装相关
-  downloadQuickEnvironment: () => Promise<{ success: boolean; error?: string }>
-  extractQuickEnvironment: () => Promise<{ success: boolean; error?: string }>
-  downloadQuickSource: () => Promise<{ success: boolean; error?: string }>
-  extractQuickSource: () => Promise<{ success: boolean; error?: string }>
-  updateQuickSource: (repoUrl?: string) => Promise<{ success: boolean; error?: string }>
-
-  // 新增的git管理方法
-  checkRepoStatus: () => Promise<{
-    exists: boolean
-    isGitRepo: boolean
-    currentBranch?: string
-    currentCommit?: string
-    error?: string
-  }>
-  cleanRepo: () => Promise<{ success: boolean; error?: string }>
-  getRepoInfo: () => Promise<{
-    success: boolean
-    info?: {
-      repoExists: boolean
-      isGitRepo: boolean
-      currentBranch?: string
-      currentCommit?: string
-      remoteUrl?: string
-      lastUpdate?: string
-    }
-    error?: string
-  }>
-
-  // 管理员权限相关
-  checkAdmin: () => Promise<boolean>
-  restartAsAdmin: () => Promise<void>
 
   // 配置文件操作
   saveConfig: (config: unknown) => Promise<void>
@@ -290,14 +276,39 @@ export interface ElectronAPI {
     zipPath?: string
     error?: string
   }>
+  exportZzzOdIssueReport: () => Promise<{
+    success: boolean
+    message?: string
+    zipPath?: string
+    error?: string
+  }>
   exportDataBackup: () => Promise<{
     success: boolean
     message?: string
     zipPath?: string
     error?: string
   }>
-  getLogs: (lines?: number, fileName?: string) => Promise<string>
-  openLogWindow: () => Promise<void>
+  /** 不传 fromOffset 返回整份字符串；传了只返回该字节偏移之后的新增部分。 */
+  getLogs: {
+    (lines?: number, fileName?: string): Promise<string>
+    (lines: number, fileName: string, fromOffset: number): Promise<LogIncrement>
+  }
+  /** file 指定打开时选中哪一份日志，省略则沿用日志页自己的默认（后端日志）。 */
+  openLogWindow: (file?: 'app' | 'frontend') => Promise<{ success: boolean; error?: string }>
+  /** 日志窗已经开着时，主进程用它通知日志页换到请求的那一份。 */
+  onLogSelectFile?: (callback: (file: 'app' | 'frontend') => void) => void
+  removeLogSelectFileListener?: () => void
+
+  // 虚拟显示器询问弹窗：主窗口把后端消息转给主进程另开窗口放到真实屏右下角
+  showVirtualDisplayPrompt?: (
+    payload: VirtualDisplayPromptPayload
+  ) => Promise<{ success: boolean; error?: string }>
+  closeVirtualDisplayPrompt?: () => Promise<void>
+  /** 弹窗页面挂载后自己来取当前那一份数据；没有待处理的提示时为 null */
+  getVirtualDisplayPrompt?: () => Promise<VirtualDisplayPromptPayload | null>
+  onVirtualDisplayPromptData?: (
+    callback: (payload: VirtualDisplayPromptPayload) => void
+  ) => () => void
 
   // 获取模块化日志器（使用主进程配置）
   getLogger: (moduleName: string) => {
@@ -307,30 +318,13 @@ export interface ElectronAPI {
     error: (...args: unknown[]) => Promise<void>
   }
 
-  // 保留原有方法以兼容现有代码
-  saveLogsToFile: (logs: string) => Promise<void>
-  loadLogsFromFile: () => Promise<string | null>
-
   // 文件系统操作
-  openFile: (filePath: string) => Promise<void>
+  openFile: (filePath: string) => Promise<{ success: boolean; error?: string }>
   showItemInFolder: (filePath: string) => Promise<void>
   fileExists: (filePath: string) => Promise<boolean>
   readFile: (filePath: string) => Promise<string>
 
-  // 主题信息获取
-  getThemeInfo: () => Promise<{
-    themeMode: string
-    themeColor: string
-    actualTheme: string
-    systemTheme: string
-    isDark: boolean
-    primaryColor: string
-  }>
   getAppPath: (name: string) => Promise<string>
-
-  // 监听下载进度
-  onDownloadProgress: (callback: (progress: unknown) => void) => void
-  removeDownloadProgressListener: () => void
 
   // ==================== 初始化 API ====================
 
@@ -355,7 +349,6 @@ export interface ElectronAPI {
 
   // API 端点获取
   getApiEndpoint: (key: ElectronApiEndpointKey) => Promise<string>
-  getApiEndpoints: () => Promise<{ local: string; websocket: string }>
 
   // 完整初始化流程（Runtime 首次初始化与旧链路共用）
   initialize: (
@@ -370,28 +363,10 @@ export interface ElectronAPI {
     } & RuntimeFailureFields
   >
 
-  // 仅更新模式
-  updateOnly: (targetBranch?: string) => Promise<{
-    success: boolean
-    error?: string
-    completedStages: string[]
-    failedStage?: string
-  }>
-
   // 后端服务管理
   backendStart: () => Promise<InstallStageResult>
-  backendStop: () => Promise<{ success: boolean; error?: string }>
   backendRestart: () => Promise<InstallStageResult>
-  backendStatus: () => Promise<{
-    isRunning: boolean
-    pid?: number
-    startTime?: Date
-    wsConnected: boolean
-    lastPingTime?: Date
-    error?: string
-    /** 本次生命周期是否走 Runtime 监督链路；true 时后端只能由 Electron 经 Runtime 停止。 */
-    runtimeSupervised?: boolean
-  }>
+  backendStatus: () => Promise<BackendStatus>
   checkRuntimeBackendUpdate: () => Promise<{
     updateAvailable: boolean
     staged?: boolean
@@ -406,9 +381,6 @@ export interface ElectronAPI {
   cancelBackendUpdate: () => Promise<{ accepted: boolean; forwarded: boolean }>
   onBackendUpdateProgress: (callback: (progress: RuntimeUpdateProgress) => void) => void
   removeBackendUpdateProgressListener?: () => void
-
-  // 清理资源
-  cleanup: () => Promise<{ success: boolean }>
 
   // 监听单步进度
   onPythonProgress: (callback: (progress: unknown) => void) => void
@@ -436,21 +408,26 @@ export interface ElectronAPI {
       runtimeMode?: RuntimeInitMode
       /** 当前阶段没有可靠总量，应展示持续活动状态而不是精确百分比。 */
       indeterminate?: boolean
+      /** 产生本条进度的 Runtime stage 原文（`network.probe` / `uv.download` …）；旧链路不产生。 */
+      runtimeStage?: string
+      /** 产生本条进度的 Runtime progress.status 原文；旧链路不产生。 */
+      runtimeStatus?: string
+      /** 当前条目：正在下载的文件名，或测速时的源 key。 */
+      item?: string
+      /** 当前字节来自哪个源的 key。 */
+      source?: string
+      /** 最近 1 秒窗口的吞吐（字节/秒）。 */
+      bytesPerSecond?: number
+      /** 已下载字节数。 */
+      current?: number
+      /** 总字节数。 */
+      total?: number
     }) => void
   ) => void
   removeInitializationProgressListener?: () => void
 
   // 监听后端状态
-  onBackendStatus: (
-    callback: (status: {
-      isRunning: boolean
-      pid?: number
-      startTime?: Date
-      wsConnected: boolean
-      lastPingTime?: Date
-      error?: string
-    }) => void
-  ) => void
+  onBackendStatus: (callback: (status: BackendStatus) => void) => void
   removeBackendStatusListener?: () => void
 }
 

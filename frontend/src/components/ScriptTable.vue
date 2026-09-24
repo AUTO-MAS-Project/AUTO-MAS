@@ -81,6 +81,18 @@
                     alt="BetterGI"
                     class="script-logo"
                   />
+                  <img
+                    v-else-if="script.type === 'ZzzOd'"
+                    src="@/assets/zzz-od.ico"
+                    alt="ZZZ-OD"
+                    class="script-logo"
+                  />
+                  <img
+                    v-else-if="script.type === 'BAAH'"
+                    src="@/assets/baah.png"
+                    alt="BAAH"
+                    class="script-logo"
+                  />
                   <img v-else src="@/assets/AUTO-MAS.ico" alt="AUTO-MAS" class="script-logo" />
                 </div>
                 <div class="script-details">
@@ -316,6 +328,29 @@
                             {{ user.Info.Resource || '官服' }}
                           </a-tag>
 
+                          <!-- ZzzOd 脚本显示配置来源标签（用户/直控） -->
+                          <a-tag
+                            v-if="script.type === 'ZzzOd'"
+                            :color="getZzzOdModeTagColor(user)"
+                            class="server-tag"
+                          >
+                            {{ getZzzOdModeLabel(user) }}
+                          </a-tag>
+
+                          <!-- ZzzOd 用户模式显示区服/账号（直控事实源是一条龙原生配置，MAS 字段会失真，不显示避免歧义） -->
+                          <template v-if="script.type === 'ZzzOd' && isZzzOdUserMode(user)">
+                            <a-tag color="blue" class="server-tag">
+                              {{ getZzzOdRegionLabel(user) }}
+                            </a-tag>
+                            <a-tag
+                              color="blue"
+                              class="clickable-tag"
+                              @click="handleZzzOdAccountClick(user)"
+                            >
+                              {{ getZzzOdAccountText(user) }}
+                            </a-tag>
+                          </template>
+
                           <!-- 账号标签 (HSR 不显示账号/密码) -->
                           <a-tag
                             v-if="
@@ -379,7 +414,10 @@
                             script.type === 'General' ||
                             script.type === 'Okww' ||
                             script.type === 'OkNte' ||
-                            script.type === 'BetterGI'
+                            script.type === 'BetterGI' ||
+                            script.type === 'MaaFW' ||
+                            script.type === 'ZzzOd' ||
+                            script.type === 'BAAH'
                           "
                           class="user-info-tags"
                         >
@@ -564,8 +602,6 @@ interface Props {
   scripts: Script[]
   activeConnections: Map<string, { subscriptionIds: string[]; taskId: string }>
   copyingScriptId?: string | null
-  allPlansData?: Record<string, Record<string, unknown>>
-  currentPlanData?: Record<string, unknown>
   searching?: boolean
 }
 
@@ -584,17 +620,11 @@ interface Emits {
 
   (e: 'startMaaConfig', script: Script): void
 
-  (e: 'saveMaaConfig', script: Script): void
-
   (e: 'startSrcConfig', script: Script): void
-
-  (e: 'saveSrcConfig', script: Script): void
 
   (e: 'startMaaEndConfig', script: Script): void
 
   (e: 'startMaaEndUserConfig', script: Script, user: User): void
-
-  (e: 'saveMaaEndConfig', script: Script): void
 
   (e: 'startOkwwConfig', script: Script): void
 
@@ -646,13 +676,14 @@ const isUsersCollapsed = (scriptId: string) =>
 const expandedUserIds = ref<Set<string>>(new Set())
 const expandedUserPasswords = ref<Set<string>>(new Set())
 
-// 监听props变化，更新本地状态
+// 监听 props 变化，更新本地状态。只关心数组引用（增删、父级回写的新顺序），
+// 不能 deep：父级改共享对象（启停用户、删用户）时会用未重排的父数组把拖拽顺序覆盖回去
 watch(
   () => props.scripts,
   newScripts => {
     localScripts.value = [...newScripts]
   },
-  { immediate: true, deep: true }
+  { immediate: true }
 )
 
 const handleEdit = (script: Script) => {
@@ -739,10 +770,6 @@ const shouldShowMaaEndUserConfigButton = (script: Script, user: User) => {
   return script.type === 'MaaEnd' && user.Info?.Mode !== '脚本'
 }
 
-const handleSaveMaaEndConfig = (script: Script) => {
-  emit('saveMaaEndConfig', script)
-}
-
 const handleStartOkwwConfig = (script: Script) => {
   emit('startOkwwConfig', script)
 }
@@ -767,6 +794,8 @@ const SCRIPT_TYPE_TAG_COLORS: Record<Script['type'], string> = {
   OkNte: 'blue',
   HSR: 'purple',
   BetterGI: 'gold',
+  ZzzOd: 'volcano',
+  BAAH: 'magenta',
   General: 'green',
 }
 
@@ -938,6 +967,64 @@ const getServerDisplayName = (server: string): string => {
 // M9A服务器标签颜色映射
 const getM9AServerTagColor = (_resource: string): string => {
   return 'blue'
+}
+
+// ZzzOd：配置来源标签（用户模式/直控模式）
+const getZzzOdModeLabel = (user: User): string =>
+  user.Info.Mode === '直控' ? '直控模式' : '用户模式'
+
+const getZzzOdModeTagColor = (user: User): string => (user.Info.Mode === '直控' ? 'gold' : 'blue')
+
+// ZzzOd：字段类标签仅在用户模式展示（直控的事实源是一条龙原生配置）
+const isZzzOdUserMode = (user: User): boolean => user.Info.Mode !== '直控'
+
+const getZzzOdRegion = (user: User): string => user.Game?.GameRegion || 'cn'
+
+const getZzzOdRegionLabel = (user: User): string => {
+  // 区服文案复用编辑页的 i18n 键，避免英文界面下标签显示中文
+  const labels: Record<string, string> = {
+    cn: t('edit.zzzodRegionCn'),
+    cn_b: t('edit.zzzodRegionCnB'),
+    us: t('edit.zzzodRegionUs'),
+    eu: t('edit.zzzodRegionEu'),
+    asia: t('edit.zzzodRegionAsia'),
+    twhkmo: t('edit.zzzodRegionTwHkMo'),
+  }
+  return labels[getZzzOdRegion(user)] ?? labels.cn
+}
+
+// ZzzOd：B服账号名存 BilibiliAccountName，其余区服存 Account
+const getZzzOdAccountValue = (user: User): string =>
+  getZzzOdRegion(user) === 'cn_b' ? user.Game?.BilibiliAccountName || '' : user.Game?.Account || ''
+
+// 处理 ZzzOd 账号点击（展开并复制）
+const handleZzzOdAccountClick = async (user: User) => {
+  const userId = user.id
+  if (expandedUserIds.value.has(userId)) {
+    expandedUserIds.value.delete(userId)
+  } else {
+    expandedUserIds.value.add(userId)
+  }
+
+  const accountValue = getZzzOdAccountValue(user)
+  if (accountValue) {
+    try {
+      await navigator.clipboard.writeText(accountValue)
+      message.success(t('comp.accountCopiedClipboard'))
+    } catch {
+      message.error(t('comp.copyFailed'))
+    }
+  }
+}
+
+const getZzzOdAccountText = (user: User): string => {
+  const accountValue = getZzzOdAccountValue(user)
+  if (expandedUserIds.value.has(user.id)) {
+    // 展开状态：显示完整账号或未设置
+    return accountValue ? `账号: ${accountValue}` : '账号: 未设置'
+  }
+  // 收起状态：只显示 4 位尾号以压缩卡片内展示宽度（账号本就明文可见，非脱敏）
+  return accountValue ? accountValue.slice(-4) : '账号: 未设置'
 }
 
 const getM9ATodayString = (): string => {

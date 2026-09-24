@@ -194,9 +194,7 @@ const modeOptions = computed(() =>
   getTaskModeOptions(props.isCycleQueue ? null : [TaskCreateIn.mode.AUTO_PROXY])
 )
 
-const cyclePreview = computed(() =>
-  props.status === '运行' ? (props.cycleNextList ?? []) : []
-)
+const cyclePreview = computed(() => (props.status === '运行' ? (props.cycleNextList ?? []) : []))
 
 // 仅当选中队列任务时显示恢复脚本下拉框。
 // 注：通过任务选项 label 的 "队列 - " 前缀判断，与 useSchedulerLogic.isQueueTask 保持同步。
@@ -208,8 +206,12 @@ const showResumeScriptSelect = computed(() => {
   return Boolean(taskOption?.label.startsWith('队列 - '))
 })
 
-// 用户下拉只在脚本任务且有可运行用户时出现；不选即按脚本自身筛选跑全部用户
-const showUserSelect = computed(() => (props.userOptions?.length ?? 0) > 0)
+// 用户下拉只在自动代理模式、且是脚本任务并有可运行用户时出现；不选即按脚本自身筛选跑全部用户。
+// 指定单个用户只对自动代理有意义，脚本设置 / 更新模式下后端一律拒绝，所以切走模式就收起。
+const showUserSelect = computed(
+  () =>
+    localSelectedMode.value === TaskCreateIn.mode.AUTO_PROXY && (props.userOptions?.length ?? 0) > 0
+)
 
 // 运行时的显示文本 - 直接使用 props，不再需要本地 ref
 // const runningTaskLabel = ref('')

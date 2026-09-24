@@ -24,7 +24,9 @@
 
 from __future__ import annotations
 
+import copy
 import json
+import re
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -51,6 +53,10 @@ M7A_MANAGED_STAGE_KEYS: frozenset[str] = frozenset(
         "echo_of_war_timestamp",
         "echo_of_war_start_day_of_week",
         "currencywars_remembrance_trailblazer_name",
+        # 与 echo_of_war_timestamp 同理：MAS 在 patch 里把这两个周常时间戳归零，
+        # 这里挡住 _apply_managed_patch 用 native config.yaml 的值把它们覆盖回去。
+        "weekly_divergent_timestamp",
+        "currencywars_timestamp",
     }
 )
 
@@ -462,8 +468,43 @@ M7A_CURRENCY_WARS_FAST_MODE: bool = False
 M7A_CURRENCY_WARS_BONUS_ENABLE: bool = True  # 积分奖励启用
 
 
+# PyYAML 默认按 YAML 1.1 把未加引号的 ``4:00`` 解析成六十进制整数 240，整份读写回
+# 会把 M7A 的 scheduled_time 改成整数，M7A 再 ``.split(":")`` 即崩。这里去掉 int 规则
+# 里的六十进制分支，其余整数写法（十进制 / 0x / 0b / 0 开头八进制）保持不变。
+_INT_WITHOUT_SEXAGESIMAL = re.compile(
+    r"^(?:[-+]?0b[0-1_]+|[-+]?0[0-7_]+|[-+]?(?:0|[1-9][0-9_]*)|[-+]?0x[0-9a-fA-F_]+)$"
+)
+
+
+class _M7AYamlLoader(yaml.SafeLoader):
+    """读 M7A config.yaml 用的 SafeLoader：未加引号的 ``HH:MM`` 保持字符串。"""
+
+
+_M7AYamlLoader.yaml_implicit_resolvers = {
+    first: [
+        (tag, regexp) for tag, regexp in resolvers if tag != "tag:yaml.org,2002:int"
+    ]
+    for first, resolvers in yaml.SafeLoader.yaml_implicit_resolvers.items()
+}
+_M7AYamlLoader.add_implicit_resolver(
+    "tag:yaml.org,2002:int", _INT_WITHOUT_SEXAGESIMAL, list("-+0123456789")
+)
+
+
+def load_m7a_yaml(text: str) -> dict[str, Any]:
+    """解析 M7A config.yaml 文本，空文档返回 ``{}``。"""
+    return yaml.load(text, Loader=_M7AYamlLoader) or {}
+
+
+# config.yaml 解析缓存: 路径 -> (mtime_ns, 解析结果); 每用户一轮会读同一份十余次
+_NATIVE_CONFIG_CACHE: dict[Path, tuple[int, dict[str, Any]]] = {}
+
+
 def load_m7a_native_config(script_config: Any) -> dict[str, Any]:
-    """Load the M7A config.yaml referenced by old-dev Info.M7APath."""
+    """Load the M7A config.yaml referenced by old-dev Info.M7APath.
+
+    结果按文件 mtime 缓存, 返回深拷贝, 调用方可放心修改。
+    """
 
     if script_config is None:
         raise ValueError("缺少 HSR 脚本配置")
@@ -478,14 +519,19 @@ def load_m7a_native_config(script_config: Any) -> dict[str, Any]:
     if not path.is_file():
         raise FileNotFoundError(f"三月七助手原生配置不存在：{path}")
     try:
-        data = yaml.safe_load(path.read_text(encoding="utf-8-sig")) or {}
+        mtime_ns = path.stat().st_mtime_ns
+        cached = _NATIVE_CONFIG_CACHE.get(path)
+        if cached is not None and cached[0] == mtime_ns:
+            return copy.deepcopy(cached[1])
+        data = load_m7a_yaml(path.read_text(encoding="utf-8-sig"))
     except OSError as exc:
         raise FileNotFoundError(f"无法读取三月七助手原生配置：{path}") from exc
     except yaml.YAMLError as exc:
         raise ValueError(f"三月七助手原生配置不是有效 YAML：{path}") from exc
     if not isinstance(data, dict):
         raise ValueError(f"三月七助手原生配置顶层必须是对象：{path}")
-    return data
+    _NATIVE_CONFIG_CACHE[path] = (mtime_ns, data)
+    return copy.deepcopy(data)
 
 
 def resolve_m7a_managed_options(
@@ -635,10 +681,7 @@ def build_divergent_universe_patch(
     native_options = resolve_m7a_managed_options(
         script_config, user_config, "DivergentUniverse"
     )
-    try:
-        low_perf_value = script_config.get("Run", "LowPerformanceMode")
-    except (AttributeError, KeyError, TypeError):
-        low_perf_value = None
+    low_perf_value = script_config.get("Run", "LowPerformanceMode")
     low_perf_mode = (
         M7A_WEEKLY_DIVERGENT_STABLE_MODE_DEFAULT
         if low_perf_value is None
@@ -661,6 +704,11 @@ def build_divergent_universe_patch(
             )
         ),
         "weekly_divergent_stable_mode": low_perf_mode,
+        # M7A 的周常时间戳按安装目录存、不按游戏账号存：上一个用户打满后写进共享的
+        # config.yaml，下一个用户的 patch 以这份文件为底合并，M7A 就跳过积分复核、
+        # 不再打印 MAS 唯一认的完成 marker，于是第二个用户起永远记不到完成、天天重跑。
+        # 与日常 patch 归零 echo_of_war_timestamp 是同一口径。
+        "weekly_divergent_timestamp": 0,
     }
     if patch["weekly_divergent_bonus_enable"] and ornament_stage_name:
         patch["instance_names"] = {
@@ -716,6 +764,9 @@ def build_currency_wars_patch(
                 "currencywars_bonus_enable", M7A_CURRENCY_WARS_BONUS_ENABLE
             )
         ),
+        # 同 weekly_divergent_timestamp：按安装目录存的时间戳会让共用一套 M7A 的
+        # 第二个用户起永远记不到完成。
+        "currencywars_timestamp": 0,
     }
     if patch["currencywars_bonus_enable"] and ornament_stage_name:
         patch["instance_names"] = {
@@ -747,6 +798,10 @@ M7A_COSMIC_STRIFE_PATCH_WHITELIST: frozenset[str] = frozenset(
         "currencywars_bonus_enable",
         "instance_names",
         "cloud_game_enable",
+        # 两个周常时间戳必须在白名单里，否则 write_m7a_patch 的 merge_whitelist
+        # 会把 patch 里归零的值直接丢掉，写不进 config.yaml
+        "weekly_divergent_timestamp",
+        "currencywars_timestamp",
     }
 )
 

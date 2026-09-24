@@ -7,7 +7,10 @@ import {
   QuestionCircleOutlined,
 } from '@ant-design/icons-vue'
 import { message } from 'ant-design-vue'
+import { computed, ref } from 'vue'
 import type { GlobalConfig, VersionOut } from '@/api'
+import ChangelogView from '@/components/ChangelogView.vue'
+import type { ChangelogData } from '@/utils/changelog'
 import { MAS_QQ_GROUP_URL, handleExternalLink } from '@/utils/openExternal'
 
 const logger = window.electronAPI.getLogger('设置-其他')
@@ -31,6 +34,22 @@ const {
   handleSettingChange: (category: keyof GlobalConfig, key: string, value: any) => Promise<void>
   checkUpdate: () => Promise<void>
 }>()
+
+// MFW 项目包的 GitHub 加速镜像：与后端 Update.GitHubMirror 的 OptionsValidator 一致，
+// 多给一项用户选了就会被静默纠回
+const githubMirrorOptions = computed(() => [
+  { label: t('setting.others.githubMirrorAuto'), value: 'Auto' },
+  { label: t('setting.others.githubMirrorOff'), value: 'Off' },
+])
+
+// 当前版本的更新日志在编译期从 res/version.json 注入（res/ 不进 Electron 产物）
+const changelogVisible = ref(false)
+const unreleasedChangelog = import.meta.env.VITE_APP_CHANGELOG_UNRELEASED ?? {}
+const currentChangelog: ChangelogData = {
+  [version]: import.meta.env.VITE_APP_CHANGELOG ?? {},
+  // 开发构建里把还没进版本的「未发布」段也列出来，发布构建没有这一段
+  ...(Object.keys(unreleasedChangelog).length > 0 ? { 未发布: unreleasedChangelog } : {}),
+}
 
 const buildCopyText = () =>
   [
@@ -139,7 +158,7 @@ const copyAllInfo = async () => {
         </a-col>
       </a-row>
       <a-row :gutter="24">
-        <a-col :span="12">
+        <a-col :span="8">
           <div class="form-item-vertical">
             <div class="form-label-wrapper">
               <span class="form-label">{{ t('setting.others.proxy') }}</span>
@@ -155,7 +174,25 @@ const copyAllInfo = async () => {
             />
           </div>
         </a-col>
-        <a-col :span="12">
+        <a-col :span="8">
+          <div class="form-item-vertical">
+            <div class="form-label-wrapper">
+              <span class="form-label">{{ t('setting.others.githubMirror') }}</span>
+              <a-tooltip :title="t('setting.others.githubMirrorTip')">
+                <QuestionCircleOutlined class="help-icon" />
+              </a-tooltip>
+            </div>
+            <!-- 只管 MFW 项目包从 GitHub Release 下载；MAS 自身更新与 Mirror 酱源不受影响 -->
+            <a-select
+              :value="settings.Update?.GitHubMirror ?? 'Auto'"
+              :options="githubMirrorOptions"
+              size="large"
+              style="width: 100%"
+              @change="(value: any) => handleSettingChange('Update', 'GitHubMirror', value)"
+            />
+          </div>
+        </a-col>
+        <a-col :span="8">
           <div class="form-item-vertical">
             <div class="form-label-wrapper">
               <span class="form-label">{{ t('setting.others.cdk') }}</span>
@@ -275,6 +312,14 @@ const copyAllInfo = async () => {
             <a-tag color="blue" class="info-badge" @click="copyAllInfo">
               {{ version }}
             </a-tag>
+            <a-button
+              type="link"
+              size="small"
+              class="changelog-button"
+              @click="changelogVisible = true"
+            >
+              {{ t('setting.others.viewChangelog') }}
+            </a-button>
           </div>
           <div class="info-item">
             <span class="info-label">{{ t('setting.others.backendHash') }}</span>
@@ -290,9 +335,36 @@ const copyAllInfo = async () => {
       </div>
     </div>
   </div>
+
+  <a-modal
+    v-model:open="changelogVisible"
+    :title="t('setting.others.changelogTitle', { version })"
+    :width="800"
+    :footer="null"
+    class="changelog-modal"
+  >
+    <div class="changelog-modal-body">
+      <ChangelogView :data="currentChangelog" />
+    </div>
+  </a-modal>
 </template>
 
 <style scoped>
+.changelog-button {
+  padding: 0 4px;
+  height: auto;
+}
+
+.changelog-modal :deep(.ant-modal-body) {
+  padding: 16px 24px;
+}
+
+.changelog-modal-body {
+  max-height: 60vh;
+  overflow-y: auto;
+  padding-right: 8px;
+}
+
 .section-update-button {
   display: inline-flex;
   align-items: center;

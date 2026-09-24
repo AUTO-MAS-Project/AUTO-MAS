@@ -83,7 +83,7 @@ export interface BackendStartResult {
 }
 
 /** 渲染进程实际使用的后端地址。 */
-export interface BackendApiEndpoints {
+interface BackendApiEndpoints {
   local: string
   websocket: string
 }
@@ -100,7 +100,7 @@ export interface BackendStopResult {
   error?: string
 }
 
-export interface RuntimeBackendUpdateCheck {
+interface RuntimeBackendUpdateCheck {
   updateAvailable: boolean
   staged?: boolean
   currentCommit?: string
@@ -556,6 +556,22 @@ export class BackendService {
     if (isRuntimeClientError(reason)) {
       const logs = this.formatRuntimeStartupLogs(stdoutLines, stderrLines, reason.details.stderr)
       logger.error(`Runtime 调用失败: ${reason.code} ${reason.message}`)
+      // details 里带着每次尝试的来源与失败种类（git 克隆会先试 cnb 再试 github）。
+      // 只打 code + message 的话，日志里看不出是哪个源为什么挂——例如 cnb 秒答但缺
+      // 目标分支、github 连接超时，最终只显示后者，真根因被盖住。stderr 已并进 logs，
+      // 这里排掉避免重复整块输出。
+      const diagnostics = Object.fromEntries(
+        Object.entries(reason.details).filter(([key]) => key !== 'stderr')
+      )
+      if (Object.keys(diagnostics).length > 0) {
+        let rendered: string
+        try {
+          rendered = JSON.stringify(diagnostics)
+        } catch {
+          rendered = String(diagnostics)
+        }
+        logger.error(`Runtime 失败详情: ${rendered}`)
+      }
       return {
         success: false,
         error: reason.message,

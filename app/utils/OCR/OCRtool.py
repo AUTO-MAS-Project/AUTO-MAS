@@ -79,16 +79,6 @@ class OCRTool:
         """
         cls.title = title
 
-    @classmethod
-    def get_title(cls) -> str | None:
-        """
-        获取全局窗口标题。
-
-        Returns:
-            str | None: 当前设置的窗口标题
-        """
-        return cls.title
-
     def get_system_dpi_scaling(self) -> float:
         """
         获取主显示器的 DPI 缩放比例。

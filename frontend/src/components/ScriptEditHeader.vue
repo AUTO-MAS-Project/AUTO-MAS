@@ -54,7 +54,9 @@ const emit = defineEmits<{ cancel: [] }>()
 
 const logoSrc = computed(() => SCRIPT_LOGOS[props.scriptType])
 const logoAlt = computed(() => SCRIPT_LABELS[props.scriptType])
-const docUrl = computed(() => MAS_DOC_URLS.scriptTypes[props.scriptType as keyof typeof MAS_DOC_URLS.scriptTypes])
+const docUrl = computed(
+  () => MAS_DOC_URLS.scriptTypes[props.scriptType as keyof typeof MAS_DOC_URLS.scriptTypes]
+)
 </script>
 
 <style scoped>

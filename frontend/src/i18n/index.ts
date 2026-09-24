@@ -10,7 +10,7 @@ import zhCN from './locales/zh-CN'
 export type AppLocale = 'zh-CN' | 'en-US' | 'ja-JP'
 
 /** 词表源语言：英文词表缺 key 时回退到这里。 */
-export const SOURCE_LOCALE: AppLocale = 'zh-CN'
+const SOURCE_LOCALE: AppLocale = 'zh-CN'
 
 /**
  * 语言标记无法识别时使用的界面语言。

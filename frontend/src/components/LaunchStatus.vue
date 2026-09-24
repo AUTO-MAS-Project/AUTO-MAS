@@ -14,6 +14,10 @@
       <span :style="hasProgress ? { width: `${clampedProgress}%` } : undefined"></span>
     </div>
 
+    <ul v-if="details" class="launch-details" aria-live="off">
+      <li v-for="(line, index) in details" :key="index" class="launch-detail">{{ line }}</li>
+    </ul>
+
     <ol v-if="steps.length > 0" class="launch-track">
       <li
         v-for="(step, index) in steps"
@@ -53,6 +57,13 @@ interface Props {
   hint?: string
   /** 0–100 的真实进度；后端给不出时留空走不定态，不显示百分比。 */
   progress?: number
+  /**
+   * 进度条下面的细节行，例如正在下载的文件名与速度。
+   *
+   * 传了数组（哪怕为空）就把两行的位置固定留出来：细节随事件一条条出现又消失，
+   * 不留位的话整块居中内容会跟着上下跳。不传就完全不占位。
+   */
+  details?: string[]
   steps?: LaunchStep[]
   /** 可点的出口文案，例如「查看日志」。 */
   actionLabel?: string
@@ -61,6 +72,7 @@ interface Props {
 const props = withDefaults(defineProps<Props>(), {
   hint: '',
   progress: undefined,
+  details: undefined,
   steps: () => [],
   actionLabel: '',
 })
@@ -106,6 +118,22 @@ const clampedProgress = computed(() => Math.min(100, Math.max(0, Math.round(prop
 
 .launch-rail.determinate span {
   transition: width 0.4s ease;
+}
+
+.launch-details {
+  /* 两行的位置固定留出来，细节出现和消失时下面的步骤条不会上下跳。 */
+  min-height: calc(2 * 12px * 1.7);
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+  color: var(--ant-color-text-tertiary);
+  font-size: 12px;
+  line-height: 1.7;
+}
+
+.launch-detail {
+  /* 文件名没有空格可断，让它在任意位置折行而不是撑宽整块。 */
+  overflow-wrap: anywhere;
 }
 
 @keyframes launch-sweep {

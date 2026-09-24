@@ -46,7 +46,7 @@ interface RawPool {
   sortId?: number
 }
 
-export interface ResolvedEndfieldActivity {
+interface ResolvedEndfieldActivity {
   activityId: string
   name: string
   startTime: Date | null
@@ -56,7 +56,7 @@ export interface ResolvedEndfieldActivity {
   sortId: number
 }
 
-export interface ResolvedEndfieldPool {
+interface ResolvedEndfieldPool {
   poolId: string
   name: string
   poolType: string
@@ -113,7 +113,7 @@ export interface AkedataManifest {
   versions?: { id: string; tableCfgPath: string }[]
 }
 
-export const AKEDATA_SOURCE_URL = 'https://www.akedata.wiki'
+const AKEDATA_SOURCE_URL = 'https://www.akedata.wiki'
 
 const parseActivityTime = (value: string | null | undefined): Date | null => {
   if (!value) {
@@ -168,11 +168,11 @@ const formatDateTime = (date: Date): string => {
  * 此处用 Number 归一化索引回退匹配——引用端与键端经历同一舍入，必然命中；
  * 实测当前数据 140787 键归一化零碰撞，精确键直查优先，归一化仅作回退。
  */
-export interface NormalizedLookup<T> {
+interface NormalizedLookup<T> {
   get: (id: string | number) => T | undefined
 }
 
-export const buildNormalizedLookup = <T>(table: Record<string, T>): NormalizedLookup<T> => {
+const buildNormalizedLookup = <T>(table: Record<string, T>): NormalizedLookup<T> => {
   const byNumber = new Map<string, string>()
   for (const key of Object.keys(table)) {
     const normalized = String(Number(key))
@@ -218,7 +218,7 @@ const firstTimeRange = (
 }
 
 /** 源站表格的宽松输入形态（原始 JSON 由 fetch 得到，具体字段在函数内推断） */
-export interface EndfieldTables {
+interface EndfieldTables {
   activities: unknown
   timeRanges: unknown
   activityTags: unknown
@@ -302,7 +302,7 @@ export const resolveEndfieldSourceData = (
 }
 
 // 与 types/home.ts 的 EndfieldActivityOverview 结构一致（刻意零依赖，便于校验脚本直跑）
-export interface EndfieldActivityOverviewLike {
+interface EndfieldActivityOverviewLike {
   Available: boolean
   Stale: boolean
   Message: string

@@ -10,7 +10,7 @@ export interface WebConfigTemplate {
   downloadUrl: string
 }
 
-export interface WebConfigResponse {
+interface WebConfigResponse {
   code: number
   status: string
   message: string

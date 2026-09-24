@@ -2,6 +2,7 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
+import type { BAAHConfig } from './BAAHConfig';
 import type { BetterGIConfig } from './BetterGIConfig';
 import type { GeneralConfig } from './GeneralConfig';
 import type { HSRConfig } from './HSRConfig';
@@ -12,6 +13,7 @@ import type { MaaFWConfig } from './MaaFWConfig';
 import type { OkNteConfig } from './OkNteConfig';
 import type { OkwwConfig } from './OkwwConfig';
 import type { SrcConfig } from './SrcConfig';
+import type { ZzzOdConfig } from './ZzzOdConfig';
 export type ScriptUpdateIn = {
     /**
      * 脚本ID
@@ -20,6 +22,6 @@ export type ScriptUpdateIn = {
     /**
      * 脚本更新数据
      */
-    data: (MaaConfig | SrcConfig | GeneralConfig | OkwwConfig | OkNteConfig | MaaEndConfig | M9AConfig | MaaFWConfig | HSRConfig | BetterGIConfig);
+    data: (MaaConfig | SrcConfig | GeneralConfig | OkwwConfig | OkNteConfig | MaaEndConfig | M9AConfig | MaaFWConfig | HSRConfig | BetterGIConfig | ZzzOdConfig | BAAHConfig);
 };
 

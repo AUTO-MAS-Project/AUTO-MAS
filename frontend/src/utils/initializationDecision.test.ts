@@ -11,6 +11,7 @@ describe('decideFailureActions', () => {
   it('retry 与 retry-sync 都收敛成同一个「重试」', () => {
     expect(kinds({ code: 'DIRECTORY_OCCUPIED', retryable: true, remediation: ['retry'] })).toEqual([
       'retry',
+      'open-log',
     ])
     expect(
       kinds({
@@ -19,7 +20,7 @@ describe('decideFailureActions', () => {
         remediation: ['retry-sync'],
         stage: 'repository',
       })
-    ).toEqual(['retry'])
+    ).toEqual(['retry', 'open-log'])
   })
 
   it('retry-other-mirror 给出换镜像按钮并展开镜像面板', () => {
@@ -31,7 +32,7 @@ describe('decideFailureActions', () => {
       runtimeMode: 'managed',
     })
 
-    expect(plan.actions.map(action => action.kind)).toEqual(['retry-other-mirror'])
+    expect(plan.actions.map(action => action.kind)).toEqual(['retry-other-mirror', 'open-log'])
     expect(plan.actions[0].labelKey).toBe('init.failure.retryOtherMirror')
     expect(plan.showMirrorSelection).toBe(true)
     expect(plan.legacy).toBe(false)
@@ -48,7 +49,7 @@ describe('decideFailureActions', () => {
       runtimeMode: 'managed',
     })
 
-    expect(plan.actions.map(action => action.kind)).toEqual(['retry-other-mirror'])
+    expect(plan.actions.map(action => action.kind)).toEqual(['retry-other-mirror', 'open-log'])
     expect(plan.showMirrorSelection).toBe(true)
   })
 
@@ -62,7 +63,7 @@ describe('decideFailureActions', () => {
       runtimeMode: 'managed',
     })
 
-    expect(plan.actions.map(action => action.kind)).toEqual(['retry'])
+    expect(plan.actions.map(action => action.kind)).toEqual(['retry', 'open-log'])
     expect(plan.showMirrorSelection).toBe(false)
   })
 
@@ -154,11 +155,12 @@ describe('decideFailureActions', () => {
     expect(plan.legacy).toBe(false)
   })
 
-  it('旧链路缺字段时保持现有行为：重试加镜像面板', () => {
+  it('旧链路缺字段时保持恢复行为，同时保留日志入口', () => {
     const plan = decideFailureActions({ stage: 'python' })
 
     expect(plan.actions).toEqual([
       { kind: 'retry-other-mirror', labelKey: 'init.step.retryWithMirror' },
+      { kind: 'open-log', labelKey: 'launch.viewLog' },
     ])
     expect(plan.showMirrorSelection).toBe(true)
     expect(plan.legacy).toBe(true)

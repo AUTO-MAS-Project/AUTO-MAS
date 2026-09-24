@@ -47,33 +47,6 @@ export function registerFileHandlers() {
     }
   })
 
-  // ==================== 写入文件 ====================
-  ipcMain.handle('write-file', async (event, filePath: string, data: string) => {
-    try {
-      // 安全检查：防止路径遍历攻击
-      const resolvedPath = path.resolve(filePath)
-
-      // 检查父目录是否存在，如果不存在则创建
-      const dirPath = path.dirname(resolvedPath)
-      try {
-        await fsPromises.access(dirPath)
-      } catch {
-        // 如果目录不存在，尝试创建目录
-        await fsPromises.mkdir(dirPath, { recursive: true })
-      }
-
-      // 写入文件
-      await fsPromises.writeFile(resolvedPath, data, 'utf-8')
-
-      logger.info(`成功写入文件: ${filePath}`)
-      return { success: true }
-    } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : String(error)
-      logger.error(`写入文件失败 ${filePath}: ${errorMsg}`)
-      return { success: false, error: errorMsg }
-    }
-  })
-
   // ==================== 检查文件是否存在 ====================
   ipcMain.handle('file-exists', async (event, filePath: string) => {
     try {

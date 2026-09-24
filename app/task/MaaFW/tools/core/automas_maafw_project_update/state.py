@@ -29,7 +29,6 @@ from urllib.parse import urlsplit
 DEFAULT_OPERATION_ROOT = Path.cwd() / "data" / "maafw_update_operations"
 DEFAULT_CACHE_ROOT = Path.cwd() / "data" / "maafw_update_cache"
 DEFAULT_PROJECT_LOCK_ROOT = Path.cwd() / "data" / "maafw_project_locks"
-DEFAULT_PLAN_ROOT = Path.cwd() / "data" / "maafw_update_plans"
 LOCK_STALE_SECONDS = 30 * 60
 _SAFE_ID_RE = re.compile(r"^[0-9a-fA-F]{24,128}$")
 _URL_RE = re.compile(r"https?://[^\s\"'<>]+", re.IGNORECASE)
@@ -469,16 +468,6 @@ class UpdateOperationStore:
             handle.flush()
             os.fsync(handle.fileno())
 
-    def request(
-        self, *, pause: bool | None = None, cancel: bool | None = None
-    ) -> dict[str, Any]:
-        fields: dict[str, Any] = {}
-        if pause is not None:
-            fields["pauseRequested"] = bool(pause)
-        if cancel is not None:
-            fields["cancelRequested"] = bool(cancel)
-        return self.update(**fields)
-
     def mark_recovery_required(self, error: str) -> dict[str, Any]:
         """Persist a fail-closed state even when the journal is corrupt."""
 
@@ -498,85 +487,6 @@ class UpdateOperationStore:
             return state
 
 
-@dataclass
-class UpdatePlanStore:
-    """Durable, URL-free update plan used between discovery and execution."""
-
-    plan_id: str
-    root: Path = DEFAULT_PLAN_ROOT
-
-    def __post_init__(self) -> None:
-        self.plan_id = _safe_id(self.plan_id, label="plan id")
-        self.root = self.root.expanduser().resolve(strict=False)
-
-    @property
-    def directory(self) -> Path:
-        directory = (self.root / self.plan_id).resolve(strict=False)
-        if not directory.is_relative_to(self.root):
-            raise ValueError("plan directory escapes plan root")
-        return directory
-
-    @property
-    def state_path(self) -> Path:
-        return self.directory / "plan.json"
-
-    @classmethod
-    def create(
-        cls,
-        *,
-        root: Path | None = None,
-        plan_id: str | None = None,
-        **initial: Any,
-    ) -> "UpdatePlanStore":
-        value = _safe_id(str(plan_id or uuid.uuid4().hex), label="plan id")
-        store = cls(value, root or DEFAULT_PLAN_ROOT)
-        state = _redact_payload(
-            {
-                "schemaVersion": 1,
-                "planId": value,
-                "createdAt": time.time(),
-                "updatedAt": time.time(),
-                "status": "planned",
-                **initial,
-            }
-        )
-        store.directory.mkdir(parents=True, exist_ok=True)
-        with plan_lock(store.root, store.plan_id, timeout=None):
-            if store.state_path.exists():
-                raise FileExistsError(f"update plan already exists: {value}")
-            _atomic_json_write(store.state_path, state)
-        return store
-
-    @classmethod
-    def open(cls, plan_id: str, *, root: Path | None = None) -> "UpdatePlanStore":
-        store = cls(_safe_id(plan_id, label="plan id"), root or DEFAULT_PLAN_ROOT)
-        if not store.state_path.is_file():
-            raise FileNotFoundError(f"update plan does not exist: {plan_id}")
-        return store
-
-    def read(self) -> dict[str, Any]:
-        try:
-            value = json.loads(self.state_path.read_text(encoding="utf-8"))
-        except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
-            raise RuntimeError(
-                f"update plan state is unreadable: {self.plan_id}"
-            ) from exc
-        if not isinstance(value, dict) or value.get("planId") != self.plan_id:
-            raise RuntimeError(f"update plan state is invalid: {self.plan_id}")
-        return value
-
-    def update(self, status: str | None = None, **fields: Any) -> dict[str, Any]:
-        with plan_lock(self.root, self.plan_id, timeout=None):
-            state = self.read()
-            if status:
-                state["status"] = status
-            state.update(_redact_payload(fields))
-            state["updatedAt"] = time.time()
-            state = _redact_payload(state)
-            _atomic_json_write(self.state_path, state)
-            return state
-
-
 def operation_lock(
     root: Path, operation_id: str, *, timeout: float | None = None
 ) -> DurableFileLock:
@@ -589,17 +499,6 @@ def operation_lock(
         path,
         timeout=timeout,
     )
-
-
-def plan_lock(
-    root: Path, plan_id: str, *, timeout: float | None = None
-) -> DurableFileLock:
-    safe_plan_id = _safe_id(plan_id, label="plan id")
-    plan_root = root.expanduser().resolve(strict=False)
-    path = (plan_root / safe_plan_id / "plan.lock").resolve(strict=False)
-    if not path.is_relative_to(plan_root):
-        raise ValueError("plan lock escapes plan root")
-    return DurableFileLock(path, timeout=timeout)
 
 
 def artifact_lock(
@@ -631,104 +530,13 @@ def project_lock(
     )
 
 
-def request_update_pause(
-    operation_id: str, *, root: Path | None = None
-) -> dict[str, Any]:
-    return UpdateOperationStore.open(operation_id, root=root).request(pause=True)
-
-
-def resume_update(operation_id: str, *, root: Path | None = None) -> dict[str, Any]:
-    return UpdateOperationStore.open(operation_id, root=root).request(
-        pause=False, cancel=False
-    )
-
-
-def cancel_update(operation_id: str, *, root: Path | None = None) -> dict[str, Any]:
-    return UpdateOperationStore.open(operation_id, root=root).request(cancel=True)
-
-
-def discard_update_artifact(
-    operation_id: str,
-    *,
-    root: Path | None = None,
-    cache_root: Path | None = None,
-) -> dict[str, Any]:
-    store = UpdateOperationStore.open(operation_id, root=root)
-    state = store.read()
-    if int(state.get("leaseCount") or 0) > 0 or state.get("references"):
-        raise RuntimeError("update artifact is still referenced")
-    raw_artifact_dir = str(state.get("artifactDir") or "").strip()
-    if not raw_artifact_dir:
-        return store.update("cancelled", cancelRequested=False, discarded=True)
-    raw_artifact_dir_path = Path(raw_artifact_dir).expanduser()
-    if raw_artifact_dir_path.is_symlink():
-        raise RuntimeError("update artifact path cannot be a symlink")
-    artifact_dir = raw_artifact_dir_path.resolve(strict=False)
-    cache = (cache_root or DEFAULT_CACHE_ROOT).resolve()
-    if (
-        not artifact_dir.is_absolute()
-        or not artifact_dir.is_relative_to(cache)
-        or artifact_dir.parent != cache
-    ):
-        raise RuntimeError("update artifact path is outside cache")
-    with artifact_lock(cache, artifact_dir.name, timeout=None):
-        latest = store.read()
-        if int(latest.get("leaseCount") or 0) > 0 or latest.get("references"):
-            raise RuntimeError("update artifact is still referenced")
-        if artifact_dir.exists() or artifact_dir.is_symlink():
-            _remove_tree_within(artifact_dir, cache)
-        return store.update("cancelled", cancelRequested=False, discarded=True)
-
-
-def _remove_tree_within(path: Path, root: Path) -> None:
-    base = root.expanduser().resolve(strict=False)
-    raw = path.expanduser().absolute()
-    if raw.is_symlink():
-        if not raw.is_relative_to(base) or raw == base:
-            raise RuntimeError("refusing to remove symlink outside cache root")
-        raw.unlink(missing_ok=True)
-        return
-    target = raw.resolve(strict=False)
-    if not target.is_absolute() or not target.is_relative_to(base) or target == base:
-        raise RuntimeError("refusing to remove path outside cache root")
-    if target.is_file():
-        target.unlink(missing_ok=True)
-        return
-    if target.is_dir():
-        for child in target.iterdir():
-            _remove_tree_within(child, base)
-        target.rmdir()
-
-
-def list_recovery_operations(root: Path | None = None) -> list[UpdateOperationStore]:
-    operation_root = (root or DEFAULT_OPERATION_ROOT).resolve()
-    if not operation_root.is_dir():
-        return []
-    result: list[UpdateOperationStore] = []
-    for directory in operation_root.iterdir():
-        if directory.is_dir() and (directory / "state.json").is_file():
-            try:
-                result.append(UpdateOperationStore(directory.name, operation_root))
-            except ValueError:
-                continue
-    return result
-
-
 __all__ = [
     "DEFAULT_CACHE_ROOT",
     "DEFAULT_OPERATION_ROOT",
-    "DEFAULT_PLAN_ROOT",
     "DEFAULT_PROJECT_LOCK_ROOT",
     "DurableFileLock",
     "UpdateOperationStore",
-    "UpdatePlanStore",
     "artifact_lock",
-    "cancel_update",
-    "discard_update_artifact",
-    "list_recovery_operations",
     "operation_lock",
-    "plan_lock",
     "project_lock",
-    "request_update_pause",
-    "resume_update",
 ]

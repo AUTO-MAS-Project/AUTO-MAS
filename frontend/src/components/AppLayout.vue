@@ -120,16 +120,42 @@ const bottomMenuItems = computed(() => [
   { key: '/settings', label: t('comp.settings'), icon: icon(SettingOutlined) },
 ])
 
+type MenuEntry = NonNullable<MenuProps['items']>[number]
+type KeyedMenuEntry = Exclude<MenuEntry, null> & { key: string | number }
+
+const hasMenuKey = (item: MenuEntry): item is KeyedMenuEntry =>
+  item !== null && 'key' in item && item.key !== undefined
+
+const flattenMenuItems = (items: readonly MenuEntry[]): MenuEntry[] => {
+  const flattened: MenuEntry[] = []
+  for (const item of items) {
+    if (!item) continue
+    flattened.push(item)
+    if ('children' in item && item.children) {
+      flattened.push(...flattenMenuItems(item.children))
+    }
+  }
+  return flattened
+}
+
 const allItems = computed(() => [
   ...mainMenuItems.value,
   ...(isDevelopment.value ? devMenuItems.value : []),
   ...bottomMenuItems.value,
 ])
 
-// 选中项：根据当前路径前缀匹配
+const flatItems = computed(() => flattenMenuItems(allItems.value))
+
+// 选中项：优先精确匹配，再按路径边界匹配当前菜单。
 const selectedKeys = computed(() => {
   const path = route.path
-  const matched = allItems.value.find(i => path.startsWith(String(i.key)))
+  const matched = flatItems.value
+    .filter(hasMenuKey)
+    .filter(item => {
+      const key = String(item.key)
+      return path === key || path.startsWith(`${key}/`)
+    })
+    .sort((left, right) => String(right.key).length - String(left.key).length)[0]
   return [matched?.key || '/home']
 })
 
@@ -194,6 +220,49 @@ const onMenuClick: MenuProps['onClick'] = info => {
     background 0.16s ease,
     color 0.16s ease;
   text-align: left;
+}
+
+.sider-content :deep(.ant-menu .ant-menu-submenu) {
+  width: calc(100% - 16px);
+  margin: 2px auto;
+  border-radius: 6px;
+}
+
+.sider-content :deep(.ant-menu .ant-menu-submenu-title) {
+  height: 40px;
+  margin: 0;
+  padding: 5px 16px !important;
+  line-height: 30px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--ant-color-text);
+  transition:
+    background 0.16s ease,
+    color 0.16s ease;
+}
+
+.sider-content :deep(.ant-menu .ant-menu-submenu-title .anticon) {
+  color: var(--ant-color-text-secondary);
+  font-size: 18px;
+}
+
+.sider-content :deep(.ant-menu .ant-menu-submenu-title:hover) {
+  background: var(--ant-color-primary-bg);
+  color: var(--ant-color-text);
+}
+
+.sider-content :deep(.ant-menu .ant-menu-submenu > .ant-menu) {
+  background: transparent !important;
+}
+
+.sider-content :deep(.ant-menu .ant-menu-submenu .ant-menu-item) {
+  width: calc(100% - 8px);
+  margin: 2px 4px;
+  padding-left: 40px !important;
+  height: 36px;
+  line-height: 32px;
 }
 
 .sider-content :deep(.ant-menu .ant-menu-item .anticon) {

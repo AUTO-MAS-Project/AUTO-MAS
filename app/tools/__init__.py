@@ -19,12 +19,16 @@
 #   Contact: DLmaster_361@163.com
 
 
-from .game_sign import format_sign_results, run_all_sign_in
-from .skland import login_skland_with_password, skland_sign_in
+from .community import (
+    format_community_sign_results,
+    has_community_credentials,
+    run_community_sign_in,
+)
+from .skland import skland_sign_in
 
 __all__ = [
-    "login_skland_with_password",
+    "format_community_sign_results",
+    "has_community_credentials",
+    "run_community_sign_in",
     "skland_sign_in",
-    "run_all_sign_in",
-    "format_sign_results",
 ]

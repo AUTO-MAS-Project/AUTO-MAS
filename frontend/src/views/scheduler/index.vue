@@ -110,11 +110,7 @@
               <div class="log-panel-container">
                 <SchedulerLogPanel
                   :log-content="tab.lastLogContent"
-                  :tab-key="tab.key"
-                  :is-log-at-bottom="tab.isLogAtBottom"
                   :external-log-mode="tab.logMode"
-                  @scroll="(isAtBottom: boolean) => onLogScroll(isAtBottom, tab)"
-                  @set-ref="setLogRef"
                 />
               </div>
             </div>
@@ -183,9 +179,8 @@ const {
   loadResumeScriptOptions,
   loadUserOptions,
 
-  // 日志操作
-  onLogScroll,
-  setLogRef,
+  // keep-alive 激活/停用
+  setSchedulerViewActive,
 
   // 电源操作
   onPowerActionChange,
@@ -264,8 +259,7 @@ const onSchedulerTabEdit = (targetKey: string | MouseEvent, action: 'add' | 'rem
 // 生命周期
 onMounted(() => {
   logger.info('调度中心组件首次挂载')
-  initialize() // 初始化TaskManager订阅
-  loadTaskOptions()
+  void initialize() // 初始化TaskManager订阅（内部会先加载任务选项）
 
   // 开发环境下导入调试工具
   if (process.env.NODE_ENV === 'development') {
@@ -283,10 +277,12 @@ onUnmounted(() => {
 // keep-alive 生命周期钩子
 onActivated(() => {
   logger.info('调度中心组件激活（路由切回）')
+  setSchedulerViewActive(true)
 })
 
 onDeactivated(() => {
   logger.info('调度中心组件停用（路由切走），但组件保持存活，WebSocket订阅继续运行')
+  setSchedulerViewActive(false)
 })
 </script>
 

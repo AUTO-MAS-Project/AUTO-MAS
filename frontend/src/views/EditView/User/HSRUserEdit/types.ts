@@ -46,20 +46,20 @@ export type HSRPerEngineStageStore<T> = {
   byEngine?: Partial<Record<HSRStageEngine, T>>
 }
 
-export type HSRUserControlMode = 'managed' | 'direct'
+type HSRUserControlMode = 'managed' | 'direct'
 
-export type HSRUserControl = {
+type HSRUserControl = {
   Mode?: HSRUserControlMode | null
   SRA?: boolean | null
   M7A?: boolean | null
 }
 
-export type HSRUserManagedConfig = {
+type HSRUserManagedConfig = {
   TaskMapping?: Record<string, HSRStageEngine | string> | null
   Options?: Record<string, Record<string, Record<string, unknown>>> | null
 }
 
-export type HSRUserDirectConfig = {
+type HSRUserDirectConfig = {
   SRAImportedAt?: string | null
   M7AImportedAt?: string | null
   SRASource?: string | null

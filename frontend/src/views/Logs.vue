@@ -1,13 +1,15 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, computed, watch, nextTick } from 'vue'
+import { useRoute } from 'vue-router'
 import { message } from 'ant-design-vue'
-import { DownloadOutlined, SyncOutlined } from '@ant-design/icons-vue'
+import { useI18n } from 'vue-i18n'
+import { FileZipOutlined, SyncOutlined } from '@ant-design/icons-vue'
 import { VueMonacoEditor } from '@guolao/vue-monaco-editor'
-import { useTheme } from '@/composables/useTheme'
-import { useMaaEndIssueReport } from '@/composables/useMaaEndIssueReport'
+import { useLogHighlight } from '@/composables/useLogHighlight'
 const logger = window.electronAPI.getLogger('日志查看')
-const { isDark } = useTheme()
-const { exporting, exportMaaEndIssueReport } = useMaaEndIssueReport(logger)
+const route = useRoute()
+const { t } = useI18n()
+const { registerLogLanguage, editorTheme } = useLogHighlight()
 
 defineOptions({ name: 'LogViewer' })
 
@@ -15,15 +17,30 @@ defineOptions({ name: 'LogViewer' })
 type LogMode = 'follow' | 'browse'
 
 const logs = ref<string>('')
-const loading = ref(false)
+// 首次 loadLogs 之前就先算加载中，否则空日志的提示会在挂载那一帧闪一下
+const loading = ref(true)
 const logMode = ref<LogMode>('follow')
-const selectedLogFile = ref<'app' | 'frontend'>('app')
+// 主进程用 `#/logs?file=frontend` 指定落地时选中哪一份；启动路径要的是前端日志，
+// 那时后端还没起来，app.log 打开就是空的。没带参数时维持原来的默认。
+const selectedLogFile = ref<'app' | 'frontend'>(
+  route.query.file === 'frontend' ? 'frontend' : 'app'
+)
 const realTimeEnabled = ref(true)
+const exportingLogs = ref(false)
 let editorInstance: any = null
 let refreshInterval: ReturnType<typeof setInterval> | null = null
+// 已拿到的日志字节数，下一次只读这之后的新增部分；整份重载时归零
+let logOffset = 0
+// 换文件时让在途的旧请求作废
+let loadSeq = 0
+const REFRESH_INTERVAL_MS = 2000
 
-// Monaco Editor 主题（isDark 由 useTheme 响应式驱动，system 模式下跟随系统变化）
-const editorTheme = computed(() => (isDark.value ? 'vs-dark' : 'vs'))
+// 文件不存在时主进程返回空串。直接把空串塞进编辑器只会得到一片白，说一句人话。
+const emptyHint = computed(() =>
+  selectedLogFile.value === 'app'
+    ? '后端日志还是空的。后端这一程可能还没启动起来，先看「前端日志」。'
+    : '前端日志还是空的。'
+)
 
 // Monaco Editor 配置
 const editorOptions = {
@@ -74,22 +91,67 @@ const toggleLogMode = () => {
   }
 }
 
-// 加载日志
+// 整体替换编辑器内容
+const replaceLogs = (content: string) => {
+  logs.value = content
+  // logs 没变时 value 监听不会写编辑器，但模型里已经追加过增量，直接对齐
+  const model = editorInstance?.getModel?.()
+  if (model && model.getValue() !== content) {
+    model.setValue(content)
+  }
+  if (logMode.value === 'follow') {
+    nextTick(() => scrollToBottom())
+  }
+}
+
+// 只把新增部分追加到文末，不再整份 setValue
+const appendLogs = (delta: string) => {
+  const model = editorInstance?.getModel?.()
+  if (!model) {
+    // 编辑器还没挂上（Monaco 异步加载中），先合进 value，挂载时一并带入
+    replaceLogs(logs.value + delta)
+    return
+  }
+  const lastLine = model.getLineCount()
+  const lastColumn = model.getLineMaxColumn(lastLine)
+  model.applyEdits([
+    {
+      range: {
+        startLineNumber: lastLine,
+        startColumn: lastColumn,
+        endLineNumber: lastLine,
+        endColumn: lastColumn,
+      },
+      text: delta,
+    },
+  ])
+  if (logMode.value === 'follow') {
+    nextTick(() => scrollToBottom())
+  }
+}
+
+// 加载日志：首次整份读取，之后只取增量
 const loadLogs = async (silent = false) => {
   if (!silent) {
     loading.value = true
+    logOffset = 0
   }
+  const seq = ++loadSeq
   try {
     const fileName = selectedLogFile.value === 'app' ? 'app.log' : 'frontend.log'
-    const logContent = await (window as any).electronAPI?.getLogs?.(0, fileName)
-    if (logContent) {
-      logs.value = logContent
-      // 只在保持最新模式下自动滚动
-      if (logMode.value === 'follow') {
-        nextTick(() => scrollToBottom())
-      }
-    } else {
-      logs.value = ''
+    const result = await window.electronAPI.getLogs?.(0, fileName, logOffset)
+    if (seq !== loadSeq) {
+      return
+    }
+    if (!result) {
+      replaceLogs('')
+      return
+    }
+    logOffset = result.size
+    if (!silent || result.reset || !logs.value) {
+      replaceLogs(result.content)
+    } else if (result.content) {
+      appendLogs(result.content)
     }
   } catch (error) {
     if (!silent) {
@@ -98,7 +160,7 @@ const loadLogs = async (silent = false) => {
       message.error('加载日志失败')
     }
   } finally {
-    if (!silent) {
+    if (!silent && seq === loadSeq) {
       loading.value = false
     }
   }
@@ -106,12 +168,14 @@ const loadLogs = async (silent = false) => {
 
 // 开始实时刷新
 const startRealTimeRefresh = () => {
-  if (refreshInterval) {
-    clearInterval(refreshInterval)
+  stopRealTimeRefresh()
+  // 窗口不可见时不刷，visibilitychange 回来时再起
+  if (document.hidden) {
+    return
   }
   refreshInterval = setInterval(() => {
-    loadLogs(true) // 静默刷新
-  }, 2000) // 每2秒刷新一次
+    void loadLogs(true) // 静默刷新
+  }, REFRESH_INTERVAL_MS)
 }
 
 // 停止实时刷新
@@ -134,15 +198,69 @@ const toggleRealTime = () => {
   }
 }
 
+// 打包当前应用日志目录
+const packageLogs = async () => {
+  if (exportingLogs.value) return
+
+  exportingLogs.value = true
+  try {
+    const result = await window.electronAPI.exportLogs?.()
+    if (!result) {
+      message.error(t('logs.toast.packageNoResponse'))
+      logger.error('打包日志失败: 未收到响应')
+      return
+    }
+    if (result.success) {
+      message.success(t('logs.toast.packageExported'))
+      logger.info(`日志打包成功: ${result.zipPath}`)
+      if (result.zipPath) {
+        try {
+          await window.electronAPI.showItemInFolder?.(result.zipPath)
+        } catch (error) {
+          const errorMsg = error instanceof Error ? error.message : String(error)
+          logger.error(`打开压缩包所在文件夹失败: ${errorMsg}`)
+          message.error(t('logs.toast.openFolderFailed'))
+        }
+      }
+    } else if (result.error === '用户取消') {
+      // 主进程对保存对话框取消统一返回该中文文案，静默即可
+      logger.info('用户取消了日志打包')
+    } else {
+      logger.error(`打包日志失败: ${result.error}`)
+      const errorMsg = result.error || t('logs.toast.packageFailed')
+      message.error(errorMsg)
+    }
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`打包日志失败: ${errorMsg}`)
+    message.error(t('logs.toast.packageError', { error: errorMsg }))
+  } finally {
+    exportingLogs.value = false
+  }
+}
+
 // 切换日志文件
 const onLogFileChange = () => {
   loadLogs()
 }
 
-// 监听日志内容变化
-watch(logs, () => {
-  if (logMode.value === 'follow') {
-    nextTick(() => scrollToBottom())
+// 隐藏时停掉定时器，回到可见先补一次再继续
+const handleVisibilityChange = () => {
+  if (!realTimeEnabled.value) {
+    return
+  }
+  if (document.hidden) {
+    stopRealTimeRefresh()
+  } else {
+    void loadLogs(true)
+    startRealTimeRefresh()
+  }
+}
+
+// 内容清空时编辑器整个被 v-else 卸载，留着旧实例会拿到已 dispose 的 model
+watch(logs, value => {
+  if (!value) {
+    editorInstance = null
   }
 })
 
@@ -151,10 +269,18 @@ onMounted(() => {
   if (realTimeEnabled.value) {
     startRealTimeRefresh()
   }
+  document.addEventListener('visibilitychange', handleVisibilityChange)
+  // 窗口已经开着时主进程不会重新载入，靠这条推送换文件
+  window.electronAPI.onLogSelectFile?.(file => {
+    selectedLogFile.value = file
+    void loadLogs()
+  })
 })
 
 onUnmounted(() => {
   stopRealTimeRefresh()
+  document.removeEventListener('visibilitychange', handleVisibilityChange)
+  window.electronAPI.removeLogSelectFileListener?.()
 })
 </script>
 
@@ -163,7 +289,7 @@ onUnmounted(() => {
     <div class="logs-header">
       <h1 class="page-title">日志查看</h1>
       <div class="header-actions">
-        <a-space :size="12">
+        <a-space :size="12" wrap>
           <a-radio-group
             v-model:value="selectedLogFile"
             button-style="solid"
@@ -184,11 +310,11 @@ onUnmounted(() => {
             {{ realTimeEnabled ? '自动更新' : '停止更新' }}
           </a-button>
 
-          <a-button :loading="exporting" type="primary" @click="exportMaaEndIssueReport">
+          <a-button :loading="exportingLogs" @click="packageLogs">
             <template #icon>
-              <DownloadOutlined />
+              <FileZipOutlined />
             </template>
-            导出 MaaEnd 问题包
+            {{ t('logs.package') }}
           </a-button>
         </a-space>
       </div>
@@ -197,12 +323,15 @@ onUnmounted(() => {
     <div class="logs-content">
       <a-spin :spinning="loading" tip="加载日志中...">
         <div class="editor-container" :class="{ 'log-locked': logMode === 'follow' }">
+          <p v-if="!loading && !logs" class="log-empty">{{ emptyHint }}</p>
           <vue-monaco-editor
-            v-model:value="logs"
-            language="log"
+            v-else
+            :value="logs"
+            language="logfile"
             :theme="editorTheme"
             :options="editorOptions"
             class="log-editor"
+            @before-mount="registerLogLanguage"
             @mount="handleEditorMount"
           />
         </div>
@@ -242,6 +371,8 @@ onUnmounted(() => {
 .header-actions {
   display: flex;
   gap: 12px;
+  min-width: 0;
+  justify-content: flex-end;
 }
 
 .logs-content {
@@ -275,6 +406,16 @@ onUnmounted(() => {
 .log-editor {
   flex: 1;
   min-height: 0;
+}
+
+.log-empty {
+  flex: 1;
+  display: grid;
+  place-items: center;
+  margin: 0;
+  padding: 24px;
+  color: var(--ant-color-text-tertiary);
+  text-align: center;
 }
 
 :deep(.monaco-editor) {
