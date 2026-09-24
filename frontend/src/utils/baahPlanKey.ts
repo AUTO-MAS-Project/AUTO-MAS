@@ -136,6 +136,13 @@ export type BAAHDayFields = Partial<Record<BAAHKeyFieldName, number[]>>
 /** 「每天一类」那三行分别是打哪类、第几关、打几次 */
 export type BAAHSingleRowKind = 'stage' | 'times'
 
+/**
+ * 「关卡名称」与「战斗次数」做成下拉，-1 那一项分别读作「最高关」与「最大」，
+ * 其余是 1 到上限的正整数。上限按游戏里实际能选到的范围给，够用即可。
+ */
+export const BAAH_STAGE_OPTION_MAX = 15
+export const BAAH_TIMES_OPTION_MAX = 10
+
 export interface BAAHSingleCell {
   kind: BAAHKeyFieldName | ''
   stage: number
@@ -241,6 +248,16 @@ export const readFieldValues = (
  */
 export const partIndexOf = (spec: BAAHKeyField, rowKind: BAAHSingleRowKind): number =>
   rowKind === 'stage' ? spec.parts.length - 2 : spec.parts.length - 1
+
+/**
+ * 这一类的关卡位能不能选「最高关」（-1）。
+ * 悬赏通缉 / 特殊任务 / 学园交流会可以，困难与普通关卡走上游的滚动选择，只能填具体关卡号。
+ */
+export const allowsHighestStage = (kind: BAAHKeyFieldName | ''): boolean => {
+  const spec = kind ? BAAH_KEY_FIELD_BY_NAME[kind] : undefined
+  if (!spec) return false
+  return spec.parts[partIndexOf(spec, 'stage')].min === -1
+}
 
 /** 每天一类：一格读成三行要显示的那三个值 */
 export const readSingleCell = (fields: BAAHDayFields | undefined): BAAHSingleCell => {

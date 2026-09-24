@@ -3320,8 +3320,11 @@ export default {
       rowTimes: 'Battle count',
       rowKindHint: 'Which stage kind to run today; "None" runs none of the six',
       rowStageHint:
-        'Which stage of that kind to run; bounty hunt, special task and academy exchange accept -1 (last stage), while hard and normal stages start at 1',
-      rowTimesHint: 'How many times to run it; -1 means the maximum',
+        'Which stage of that kind to run; bounty hunt, special task and academy exchange can pick the last stage, while hard and normal stages only take a concrete stage number',
+      rowTimesHint: 'How many times to run it; "Maximum" finishes the available runs',
+      // The dropdown entry that stands for -1: the last stage, or the maximum
+      stageHighest: 'Last stage',
+      timesMax: 'Maximum',
     },
     toast: {
       created: 'Created a new {type}: "{name}"',

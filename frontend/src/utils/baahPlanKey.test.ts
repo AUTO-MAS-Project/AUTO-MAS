@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   BAAH_KEY_FIELD_BY_NAME,
+  allowsHighestStage,
   applyMixedPart,
   applySingleNumber,
   buildSingleDayKey,
@@ -189,5 +190,26 @@ describe('applyMixedPart', () => {
     const write = applyMixedPart({ Normal: [1, 2, 3] }, 'Normal', 1, 0)
     expect(write.fields.Normal).toEqual([1, 1, 3])
     expect(write.corrected).toBe(true)
+  })
+})
+
+describe('allowsHighestStage', () => {
+  it('悬赏通缉、特殊任务、学园交流会可以选「最高关」', () => {
+    expect(allowsHighestStage('Wanted')).toBe(true)
+    expect(allowsHighestStage('Special')).toBe(true)
+    expect(allowsHighestStage('Exchange')).toBe(true)
+  })
+
+  it('困难与普通关卡的关卡位不能填 -1', () => {
+    expect(allowsHighestStage('Hard')).toBe(false)
+    expect(allowsHighestStage('Normal')).toBe(false)
+  })
+
+  it('活动关卡没有「最高关」这一说', () => {
+    expect(allowsHighestStage('Event')).toBe(false)
+  })
+
+  it('还没选类时不出现「最高关」', () => {
+    expect(allowsHighestStage('')).toBe(false)
   })
 })

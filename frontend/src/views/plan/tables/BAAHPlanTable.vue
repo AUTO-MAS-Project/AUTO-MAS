@@ -29,29 +29,22 @@
             size="small"
             :bordered="false"
             :value="singleCells[asTimeKey(column.key)].kind"
+            :options="kindOptions"
             :disabled="isColumnDisabled(asTimeKey(column.key))"
             :aria-label="cellLabel(record.fieldName, column.key)"
             @update:value="handleSingleKindChange(asTimeKey(column.key), $event)"
-          >
-            <a-select-option
-              v-for="option in kindOptions"
-              :key="option.value"
-              :value="option.value"
-            >
-              {{ option.label }}
-            </a-select-option>
-          </a-select>
+          />
         </template>
 
+        <!-- 关卡名称与战斗次数都是下拉：-1 那项读作「最高关」或「最大」，其余是具体数字 -->
         <template v-else-if="record.rowKind === 'stage' || record.rowKind === 'times'">
-          <a-input-number
-            class="config-input-number"
+          <a-select
+            class="config-select"
             size="small"
             :bordered="false"
-            :controls="false"
-            :precision="0"
+            placeholder="-"
             :value="singleCellValue(asTimeKey(column.key), record.rowKind)"
-            :min="singleCellMin(asTimeKey(column.key), record.rowKind)"
+            :options="rowOptions(asTimeKey(column.key), record.rowKind)"
             :disabled="singleCellNumberDisabled(asTimeKey(column.key))"
             :aria-label="cellLabel(record.fieldName, column.key)"
             @update:value="handleSingleNumberChange(asTimeKey(column.key), record.rowKind, $event)"
@@ -89,14 +82,16 @@ import { message } from 'ant-design-vue'
 import { QuestionCircleOutlined } from '@ant-design/icons-vue'
 import type { PlanChangeHandler } from '@/utils/planTypeRegistry'
 import {
+  allowsHighestStage,
   BAAH_KEY_FIELD_BY_NAME,
   BAAH_PLAN_KEY_FIELDS,
   BAAH_PLAN_TIME_KEYS,
+  BAAH_STAGE_OPTION_MAX,
+  BAAH_TIMES_OPTION_MAX,
   applyMixedPart,
   applySingleNumber,
   buildSingleDayKey,
   fillDayFields,
-  partIndexOf,
   readDayFields,
   readSingleCell,
   type BAAHDayFields,
@@ -117,7 +112,7 @@ interface Props {
    */
   viewMode: 'config' | 'simple'
   /**
-   * 关卡安排：多类混打（六类都填）或每天一类（每天只选一类）。
+   * 关卡安排：每天一类（默认，三行各管一件事）或多类混打（六类都填）。
    * 多类混打一行一类、一格 2~3 个数字；每天一类三行各管一件事，一格一个控件。
    * 两种排法只在「一格怎么渲染、整份 key 怎么组」上分叉，表格方向都是列 = 全局 / 周一~周日。
    */
@@ -181,17 +176,33 @@ const singleCells = computed(
     ) as Record<PlanTimeKey, BAAHSingleCell>
 )
 
+/** 没选今天打哪一类时这一格没有值，下拉显示占位符 */
 const singleCellValue = (timeKey: PlanTimeKey, rowKind: BAAHSingleRowKind) =>
-  singleCells.value[timeKey][rowKind]
+  singleCells.value[timeKey].kind ? singleCells.value[timeKey][rowKind] : undefined
 
-const singleCellMin = (timeKey: PlanTimeKey, rowKind: BAAHSingleRowKind) => {
+const rangeOptions = (max: number) =>
+  Array.from({ length: max }, (_, index) => ({ value: index + 1, label: String(index + 1) }))
+
+/** 关卡名称：-1 读作「最高关」，困难图与普通图没有这一项 */
+const stageOptions = (timeKey: PlanTimeKey) => {
   const { kind } = singleCells.value[timeKey]
-  if (!kind) return 1
-  const spec = BAAH_KEY_FIELD_BY_NAME[kind]
-  return spec.parts[partIndexOf(spec, rowKind)].min
+
+  return [
+    ...(allowsHighestStage(kind) ? [{ value: -1, label: t('plan.baah.stageHighest') }] : []),
+    ...rangeOptions(BAAH_STAGE_OPTION_MAX),
+  ]
 }
 
-/** 还没选今天打哪一类时，关卡与次数无从填起，输入框跟着禁用 */
+/** 战斗次数：-1 读作「最大」 */
+const timesOptions = computed(() => [
+  { value: -1, label: t('plan.baah.timesMax') },
+  ...rangeOptions(BAAH_TIMES_OPTION_MAX),
+])
+
+const rowOptions = (timeKey: PlanTimeKey, rowKind: BAAHSingleRowKind) =>
+  rowKind === 'stage' ? stageOptions(timeKey) : timesOptions.value
+
+/** 还没选今天打哪一类时，关卡与次数无从填起，下拉跟着禁用 */
 const singleCellNumberDisabled = (timeKey: PlanTimeKey) =>
   isColumnDisabled(timeKey) || !singleCells.value[timeKey].kind
 
