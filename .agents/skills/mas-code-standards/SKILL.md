@@ -23,7 +23,7 @@ Use these samples as style lenses only. For frontend engineering or UI decisions
 4. Match nearby naming, logging tone, comment style, and result contracts.
 5. Prefer minimal edits that blend into surrounding code rather than style-driven rewrites.
 6. If recent maintainer review comments are available for the same area, treat them as the strongest style signal.
-7. Before completing a user-visible feature or fix, add exactly one changelog fragment under `changelog.d/` (`<PR number or branch>.<feat|change|fix|breaking|remove|security|dev>.md`; first line `project: <key>` from the project table in `changelog.d/README.md` — 12 adapters plus home / scheduler / emulator / notify / tools / settings / update / runtime, no catch-all, pick the nearest per the README; only `dev` fragments may omit it; then one user-facing sentence of at most 50 characters without project prefix, PR number or signature; `python scripts/changelog.py add <type> <project> "<sentence>"` creates it, with `-` as the project for `dev`). Before writing a fix or change fragment, decide which release introduced the feature you touch: a feature absent from the previous stable release's notes was introduced in the current X.Y.0 cycle (for 5.5.0: Runtime initialization, virtual display, Emulator 2.0, MFW, BetterGI, BAAH, ZZZ-OD, config restore, operator cultivation). Every later fix, maintenance or supplementary change to such a feature (bug fixes, turning something into a prompt, extra hints, default tweaks, layout changes, i18n wiring, cleanup) is beta-only: if the feature's entry is still in the top `## [未发布]` section or its fragment is still in `changelog.d/`, add no fragment and label the PR `skip-changelog` (describe any wording change in the PR for a maintainer to apply); if it shipped in an earlier beta of the cycle, add the header line `beta-only: true` so the entry is dropped from the stable roll-up. Sub-features added to it later are beta-only as well: in the stable notes a new adapter is exactly one line (`【bgi】新增 bgi 专项`) and a new feature is its single introduction entry; fixes and changes to features that shipped in the previous stable are normal. Project keys use the short names `bgi` (BetterGI) and `end` (MaaEnd). A PR with several human authors lists them all in the header line `author: a, b` (the script never reads Co-authored-by). Maintainers may add `highlight: true` to route an entry into 「本次亮点」; treat it as part of the implementation rather than a reminder. Condense all changes of the PR into that one sentence. Never edit `CHANGELOG.md`, `res/version.json` or any version number: they are written only by the release PR.
+7. Add exactly one concise entry per PR under the top (unreleased) version in `CHANGELOG.md`, using `开发流程` for contributor-only changes and the matching category for user-visible changes. Run `python scripts/changelog.py sync` and never edit generated version files by hand.
 
 ## Commit Lenses
 1. `e541fa5f`: small cleanup.
@@ -75,7 +75,7 @@ Protect these comments especially:
 7. Do not split equivalent behavior into multiple methods or API routes when a dict selector or type field represents the difference directly.
 8. Do not leave dead support paths for future detailed/raw config when there is no complete UI-to-runtime path yet.
 9. Do not add maintainer-facing "safety" code that only repeats guarantees already enforced by base classes or validators.
-10. Do not complete a user-visible feature or fix without adding its changelog fragment under `changelog.d/`.
+10. Do not complete a PR without adding exactly one matching `CHANGELOG.md` entry under the top (unreleased) version and synchronizing generated version files.
 11. Do not delete useful comments just to make a diff look cleaner.
 
 ## Review Checklist
@@ -91,4 +91,4 @@ Protect these comments especially:
 10. Commit messages and scopes follow the project convention when preparing commits.
 11. Backend comments and config-class annotations use the project style rather than ad hoc prose.
 12. Existing useful comments were preserved or updated accurately, not removed as noise.
-13. User-visible features and fixes include exactly one changelog fragment under `changelog.d/`; `CHANGELOG.md`, `res/version.json` and version numbers stay untouched.
+13. The PR includes exactly one matching `CHANGELOG.md` entry under the top (unreleased) version, with generated version files synchronized.
