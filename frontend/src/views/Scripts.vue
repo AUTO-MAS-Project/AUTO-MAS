@@ -146,6 +146,7 @@ import {
 import { useScriptApi } from '@/composables/useScriptApi'
 import { useUserApi } from '@/composables/useUserApi'
 import { useWebSocket } from '@/composables/useWebSocket'
+import { onTaskRuntimeEvent } from '@/composables/useTaskRuntimeState'
 import {
   WS_TASK_COMPLETED,
   WS_TASK_NOTICE,
@@ -289,12 +290,28 @@ const activeConnections = ref<
   >
 >(new Map())
 
+// 定时队列等别处发起的任务结束后，用户的代理状态已在后端更新，防抖后重新拉一次列表；
+// removed 是断线期间结束、没收到完成通知的任务
+const TASK_COMPLETED_RELOAD_DELAY_MS = 1000
+let taskCompletedReloadTimer: ReturnType<typeof setTimeout> | undefined
+let disposeTaskRuntimeListener: (() => void) | undefined
+
 onMounted(() => {
   loadScripts()
+  disposeTaskRuntimeListener = onTaskRuntimeEvent(event => {
+    const ended =
+      event.type === 'removed' ||
+      (event.type === 'completed' && event.state.mode !== 'ScriptConfig')
+    if (!ended) return
+    clearTimeout(taskCompletedReloadTimer)
+    taskCompletedReloadTimer = setTimeout(() => void loadScripts(), TASK_COMPLETED_RELOAD_DELAY_MS)
+  })
 })
 
 // 离开页面时释放全部配置会话订阅并清掉超时定时器，不会在其他页面弹出提示
 onUnmounted(() => {
+  disposeTaskRuntimeListener?.()
+  clearTimeout(taskCompletedReloadTimer)
   for (const connection of activeConnections.value.values()) {
     for (const subscriptionId of connection.subscriptionIds) {
       unsubscribe(subscriptionId)
