@@ -200,6 +200,7 @@ export default {
     backendUpdateFailedBootstrap: '源码或依赖同步失败，可用下面的方式重试',
     backendUpdateFailedRestart: '源码与依赖已就位，但新后端没能启动',
     backendUpdateUnsupportedMode: '当前模式不支持自动更新后端',
+    backendUpdateRetryBootstrap: '重新开始更新',
     backendUpdateRetryWorkspaceSync: '重新同步源码',
     backendUpdateRetryDependenciesSync: '重试依赖同步',
     backendUpdateRetryDependenciesRebuild: '重建依赖环境',
@@ -786,6 +787,7 @@ export default {
     failure: '失败时',
     stringSplittingGuide: '字符串切割指南',
     done: '完成',
+    createFirstUser: '创建第一个用户！',
     wutheringWavesWillBe:
       '将按所选服务器检查并更新鸣潮，更新过程可能下载数 GB 数据，请确保游戏未在运行',
     turnAutomaticRelicSalvage:
@@ -2346,6 +2348,9 @@ export default {
     bossKeyUnsupported: 'MuMu模拟器无需配置老板键',
     forceCloseLabel: '强力关闭',
     forceCloseTip: '按进程名清理 MuMu 残留进程，可能影响其他实例，多开慎用',
+    forceCleanLaunchLabel: '启动前强力清理',
+    forceCleanLaunchTip:
+      '启动实例前先关闭所有已开启的 MuMu 实例并清理残留进程，解决已有普通权限实例时无法以管理员身份启动的问题；会关闭正在运行的全部 MuMu 实例，未保存的数据可能丢失，多开慎用',
     on: '开',
     off: '关',
     deviceList: '设备列表',

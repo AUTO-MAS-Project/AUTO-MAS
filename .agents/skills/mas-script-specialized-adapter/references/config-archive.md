@@ -138,17 +138,21 @@ def native_backup_root(config_path: Path) -> Path:
     """项目级原生池：data/OkNteBackups/native/{物理根指纹}，跨脚本共享。"""
     return project_backup_root() / "native" / config_root_key(config_path)
 
+
 def archive_native_backup(config_path: Path, mode: str):
     files = collect_config_files(config_path, mode)
     if files is None:
         return None
     return archive_files(files, native_backup_root(config_path), keep=KEEP_COUNT)
 
+
 def restore_native_backup(config_path: Path, ts: str, mode: str) -> None:
     # 1) 恢复前 force 归档当前（误恢复可找回）
     archive_files(
         collect_config_files(config_path, mode) or {},
-        native_backup_root(config_path), keep=KEEP_COUNT, force=True,
+        native_backup_root(config_path),
+        keep=KEEP_COUNT,
+        force=True,
     )
     # 2) 回写：Folder 用 restore_dir 整目录替换；File 把备份内对应文件抄回
     #    配置路径（只取与 config_path.name 匹配项或首个文件，不是全目录撒回）
@@ -162,6 +166,7 @@ def restore_native_backup(config_path: Path, ts: str, mode: str) -> None:
         src = files.get(config_path.name) or next(iter(files.values()))
         shutil.copyfile(src, config_path)
     # 3) 恢复后语义（如有）放这里：字段回填 / 重建视图 / 清残留（原语不管）
+
 
 def archive_mas_runtime_backup(script_id, user_id) -> None:
     """运行/会话下发前归档 mas 下发源；失败只记日志，绝不抛出。"""

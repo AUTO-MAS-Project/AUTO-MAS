@@ -32,10 +32,11 @@ AUTO-MAS Build Trigger Script
 用于触发 CNB 构建的 Python 脚本
 """
 
-import requests
+import argparse
 import json
 import sys
-import argparse
+
+import requests
 
 
 def build_cnb_headers(token: str) -> dict[str, str]:
@@ -72,7 +73,7 @@ def trigger_build(
     Returns:
         dict: API响应结果
     """
-    url = f"https://api.cnb.cool/AUTO-MAS-Project/AUTO-MAS/-/build/start"
+    url = "https://api.cnb.cool/AUTO-MAS-Project/AUTO-MAS/-/build/start"
 
     headers = build_cnb_headers(token)
 
@@ -91,7 +92,7 @@ def trigger_build(
         data["env"] = env
 
     try:
-        print(f"正在发起构建请求...")
+        print("正在发起构建请求...")
         print(f"URL: {url}")
 
         print(f"请求体: {json.dumps(data, indent=2, ensure_ascii=False)}")
