@@ -3139,8 +3139,10 @@ BAAH_PLAN_KEY_SHAPE = {
 
 
 def default_baah_plan_key() -> dict[str, Any]:
-    """返回 BAAH 计划表默认 key。
+    """返回 BAAH 计划表默认 key，六个字段都给具体值。
 
+    新建的计划表默认按「多类混打」排：每一类都有值，用户拿到的是一张和以前一样的
+    表。**不能**返回空 key——那表示六类全都不干预，新计划表会变成「什么都不管」。
     校验器与 BAAHPlanConfig 的 default_key 都用它生成，避免默认值在两处各写
     一份后漂移。
     """
@@ -3154,6 +3156,9 @@ def default_baah_plan_key() -> dict[str, Any]:
 def normalize_baah_plan_key(raw_key: object) -> dict[str, Any]:
     """将固定配置或旧计划表日期槽位转换为 BAAH key，任何输入都不抛异常。
 
+    输入里没有的字段，结果里**也不会出现**：缺席表示「今天这一类不干预」，由 BAAH
+    沿用自己配置里的关卡与开关；在这里补齐默认值会把它静默改成「按默认关卡打」。
+
     越界的位按 schema 的逐位规则修正到最近的合法值（困难图关卡 0/-1 修成 1、
     次数小于 -1 修成 -1、开关位非 0/1 修成 1），存量的脏配置因此也能过校验。
     """
@@ -3164,9 +3169,21 @@ def normalize_baah_plan_key(raw_key: object) -> dict[str, Any]:
 
     result: dict[str, Any] = {}
     for field, (default, minimum, maximum) in BAAH_PLAN_KEY_SHAPE.items():
-        value = data.get(field)
+        if field not in data:
+            continue
+
+        value = data[field]
+        if value is None:
+            # 显式 null 与字段缺失同义：都不干预这一类
+            continue
+
         if not isinstance(value, list):
             result[field] = list(default)
+            continue
+
+        if not value:
+            # 空数组表示「今天不打这一类」，补成默认值就变成照默认关卡打了
+            result[field] = []
             continue
 
         try:
@@ -3194,9 +3211,15 @@ def normalize_baah_plan_key(raw_key: object) -> dict[str, Any]:
 
 
 def validate_baah_plan_key(raw_key: object) -> dict[str, Any]:
-    """严格校验并返回规范化的 BAAH key，不合法时抛 ValueError。"""
+    """严格校验并返回规范化的 BAAH key，不合法时抛 ValueError。
 
-    return schema_model.BAAHPlanConfig_Item(Key=raw_key).Key.model_dump()
+    ``exclude_none=True`` 是必需的：缺席字段不能被 dump 成 ``None``，否则
+    「今天不干预这一类」会跟着 key 一起落盘，语义与「不打这一类」混在一起。
+    """
+
+    return schema_model.BAAHPlanConfig_Item(Key=raw_key).Key.model_dump(
+        exclude_none=True
+    )
 
 
 class BAAHPlanKeyValidator(ValidatorBase):
@@ -3228,7 +3251,9 @@ class BAAHPlanConfig(WeeklyKeyPlanConfig):
         normalized_data = deepcopy(data) if isinstance(data, dict) else {}
         for group in ["ALL", *calendar.day_name]:
             group_data = normalized_data.get(group)
-            if isinstance(group_data, dict):
+            # 空槽位不在这里包 Key：包出来是一份「六类全都不干预」的 key，而不包则
+            # 沿用槽位默认值（多类混打那六项），与迁移前的行为一致
+            if isinstance(group_data, dict) and group_data:
                 normalized_data[group] = {"Key": normalize_baah_plan_key(group_data)}
         return await super().load(normalized_data)
 

@@ -98,6 +98,17 @@ _PROCESS_GRACE_SECONDS = 60
 ## BAAH 的「活动关卡」任务名（上游 modules/AllTask/myAllTask.py 的 TaskName.EVENT）
 BAAH_EVENT_TASK_NAME = "活动关卡"
 
+## 计划表六类关卡字段与 BAAH 配置项的对应关系。键名沿用上游既有拼写
+## （SPECIAL_HIGHTEST_LEVEL 少一个 E），不要照着拼写习惯改。
+BAAH_STAGE_OPTIONS: dict[str, str] = {
+    "Event": "EVENT_QUEST_LEVEL",
+    "Wanted": "WANTED_HIGHEST_LEVEL",
+    "Special": "SPECIAL_HIGHTEST_LEVEL",
+    "Exchange": "EXCHANGE_HIGHEST_LEVEL",
+    "Hard": "HARD",
+    "Normal": "NORMAL",
+}
+
 
 def prioritize_event_quest(
     task_order_group: object,
@@ -445,11 +456,17 @@ class AutoProxyTask(TaskExecuteBase):
         ``Info.StageMode`` 为 ``Fixed`` 时**一个字节都不动**，用户在 BAAH 界面里自己配的
         多天轮换原样保留；选了计划表才用计划表当天那一格的 key 覆盖。
 
-        **这六个字段都必须写成单元素数组**：BAAH 取槽位的方式是
+        计划表一天的 key 里，六个字段各有三种状态，写进 BAAH 的方式也不同：
+        缺席（字段不在 key 里）＝这一项根本不写，BAAH 沿用自己配置里的关卡与开关；
+        空数组＝今天这一类不打，直接写空数组（BAAH 六类都用「数组长度不为 0」判断
+        要不要做，空数组会被它跳过）；有值＝按下面的单元素数组写。
+
+        **有值时这六个字段都必须写成单元素数组**：BAAH 取槽位的方式是
         ``time.localtime().tm_mday % len(数组)``（本月第几天对数组长度取模）。数组长度
         为 1 时 ``today % 1 == 0``，永远命中第 0 项，「今天打什么」就完全由计划表决定；
         若照抄计划表那套多天数组，1~31 号会与计划表的「周几」整体错位，每天都在打别的
-        天该打的关卡。这一段是最容易被改错的地方。
+        天该打的关卡。空数组同样不能包成单元素数组：BAAH 会把那个空列表当成当天的
+        关卡列表去跑，而不是「今天不打」。
         """
 
         stage_mode = str(self.cur_user_config.get("Info", "StageMode"))
@@ -473,20 +490,35 @@ class AutoProxyTask(TaskExecuteBase):
 
         try:
             key = plan.get_current_key()
-            return {
-                "EVENT_QUEST_LEVEL": [[key["Event"]]],
-                "WANTED_HIGHEST_LEVEL": [[key["Wanted"]]],
-                "SPECIAL_HIGHTEST_LEVEL": [[key["Special"]]],
-                "EXCHANGE_HIGHEST_LEVEL": [[key["Exchange"]]],
-                "HARD": [[key["Hard"]]],
-                "NORMAL": [[key["Normal"]]],
-            }
         except (KeyError, TypeError) as e:
             logger.warning(
                 f"关卡计划表 {stage_mode} 取不到当天关卡, "
                 f"本次按 BAAH 里的关卡配置运行: {e}"
             )
             return {}
+
+        if not isinstance(key, dict):
+            logger.warning(
+                f"关卡计划表 {stage_mode} 当天的 key 不是键值对象, "
+                "本次按 BAAH 里的关卡配置运行"
+            )
+            return {}
+
+        runtime_values: dict[str, Any] = {}
+        for field, option_name in BAAH_STAGE_OPTIONS.items():
+            if field not in key:
+                ## 缺席：这一项不写，不覆盖 BAAH 自己配置里的关卡与开关
+                continue
+
+            stage_value = key[field]
+            if not stage_value:
+                ## 空数组：今天不打这一类
+                runtime_values[option_name] = []
+                continue
+
+            runtime_values[option_name] = [[stage_value]]
+
+        return runtime_values
 
     async def _event_first_runtime_values(self) -> dict[str, Any]:
         """活动关优先：碧蓝档案有进行中的活动时，把「活动关卡」排到任务线最前。

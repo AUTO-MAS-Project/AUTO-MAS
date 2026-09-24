@@ -3252,6 +3252,16 @@ export default {
     viewLabel: 'View:',
     viewConfig: 'Configuration',
     viewSimple: 'Simplified',
+    // Stage layout: the two ways a BAAH plan can be arranged
+    baahLayout: {
+      label: 'Layout:',
+      mixed: 'Mixed stages',
+      single: 'One type per day',
+      singleRowLabel: 'Stage type for today',
+      emptyOption: 'Blank (no stages today)',
+      singleHint:
+        'Pick one stage type per day: the chosen type uses the stages and switches from your BAAH config, and blank means no stages today. Cells arranged as mixed stages show up as blank and only switch to one-type-per-day after you pick again.',
+    },
     typeFallback: 'plan',
     type: {
       maa: 'MAA plan',

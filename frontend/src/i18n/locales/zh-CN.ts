@@ -3125,6 +3125,16 @@ export default {
     viewLabel: '视图：',
     viewConfig: '配置视图',
     viewSimple: '简化视图',
+    // 关卡安排：BAAH 计划表的两种排法，切换只影响表格怎么排、整份 key 怎么组
+    baahLayout: {
+      label: '关卡：',
+      mixed: '多类混打',
+      single: '每天一类',
+      singleRowLabel: '今天打哪类关卡',
+      emptyOption: '留空（今天不打关卡）',
+      singleHint:
+        '每天只选一类关卡：选中的那一类沿用 BAAH 配置里的关卡与开关，留空表示今天什么关卡都不打。以前按多类混打排的格子会显示为留空，重新选择后才按每天一类保存。',
+    },
     typeFallback: '计划表',
     type: {
       maa: 'MAA 计划表',

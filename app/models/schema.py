@@ -4487,55 +4487,77 @@ def fix_baah_plan_slot(field: str, index: int, value: int) -> int:
     return value
 
 
+# key 里每个字段非空时的最短长度。每一位的含义固定（地区 / 关卡 / 次数），只写一位
+# 会让后面的位整体错位。下限不能写在 Field 的 min_length 上：空数组是合法取值
+# （今天不打这一类），min_length 会把空数组一起拒掉，只能在下面逐位校验里判断。
+BAAH_PLAN_KEY_MIN_LENGTH = 2
+
+
 class BAAHPlanKey(BaseModel):
+    """BAAH 计划表某一天要打的关卡。
+
+    六个字段各自有三种状态，缺一不可地区分：
+    缺席（字段不在 key 里）＝今天这一类不干预，BAAH 沿用自己配置文件里的关卡与开关；
+    空数组＝今天不打这一类；有值（如 ``[3, -1, 1]``）＝今天按这个参数打这一类。
+    因此默认值是 ``None`` 而不是某套具体关卡：补成默认值会把「不干预」静默变成
+    「按默认关卡打」。
+    """
+
     model_config = ConfigDict(extra="forbid")
 
-    Event: list[int] = Field(
-        default_factory=lambda: [1, 1],
-        min_length=2,
+    Event: Optional[list[int]] = Field(
+        default=None,
         max_length=3,
-        description="活动关卡：关卡序号、扫荡次数",
+        description="活动关卡：关卡序号、扫荡次数；缺席表示今天不干预这一类",
     )
-    Wanted: list[int] = Field(
-        default_factory=lambda: [1, -1, 1],
-        min_length=2,
+    Wanted: Optional[list[int]] = Field(
+        default=None,
         max_length=4,
-        description="悬赏通缉：地区、关卡、次数",
+        description="悬赏通缉：地区、关卡、次数；缺席表示今天不干预这一类",
     )
-    Special: list[int] = Field(
-        default_factory=lambda: [1, -1, 1],
-        min_length=2,
+    Special: Optional[list[int]] = Field(
+        default=None,
         max_length=4,
-        description="特殊任务：地区、关卡、次数",
+        description="特殊任务：地区、关卡、次数；缺席表示今天不干预这一类",
     )
-    Exchange: list[int] = Field(
-        default_factory=lambda: [1, -1, 1],
-        min_length=2,
+    Exchange: Optional[list[int]] = Field(
+        default=None,
         max_length=4,
-        description="学园交流会：学院、关卡、次数",
+        description="学园交流会：学院、关卡、次数；缺席表示今天不干预这一类",
     )
-    Hard: list[int] = Field(
-        default_factory=lambda: [1, 1, -1],
-        min_length=2,
+    Hard: Optional[list[int]] = Field(
+        default=None,
         max_length=4,
-        description="困难图扫荡：章节、关卡、次数",
+        description="困难图扫荡：章节、关卡、次数；缺席表示今天不干预这一类",
     )
-    Normal: list[int] = Field(
-        default_factory=lambda: [1, 1, -1],
-        min_length=2,
+    Normal: Optional[list[int]] = Field(
+        default=None,
         max_length=4,
-        description="普通图扫荡：章节、关卡、次数",
+        description="普通图扫荡：章节、关卡、次数；缺席表示今天不干预这一类",
     )
 
     @field_validator("Event", "Wanted", "Special", "Exchange", "Hard", "Normal")
     @classmethod
-    def validate_slot_values(cls, value: list[int], info: ValidationInfo) -> list[int]:
-        """逐位校验取值。
+    def validate_slot_values(
+        cls, value: Optional[list[int]], info: ValidationInfo
+    ) -> Optional[list[int]]:
+        """逐位校验取值，并检查非空值的长度下限。
 
         只限制长度挡不住负数与 0，而它们会被原样传给 BAAH：悬赏通缉/特殊任务/
         学园交流会的关卡位 0 会让上游提示「关卡序号为0，无法扫荡」，困难图与普通
         图的关卡位走滚动选择，负数算不出坐标。规则表见 BAAH_PLAN_KEY_SLOT_RULES。
+
+        ``None``（缺席）与空数组（今天不打这一类）都是合法取值，直接放行。
         """
+
+        if value is None or len(value) == 0:
+            return value
+
+        if len(value) < BAAH_PLAN_KEY_MIN_LENGTH:
+            raise ValueError(
+                f"{info.field_name} 至少要写 {BAAH_PLAN_KEY_MIN_LENGTH} 位"
+                f"（每一位含义固定），当前为 {value}"
+            )
 
         for index, item in enumerate(value):
             error = baah_plan_slot_error(info.field_name, index, item)
