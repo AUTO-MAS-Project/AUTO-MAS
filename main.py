@@ -292,8 +292,8 @@ def main():
 
             lifespan 提前 yield 后 uvicorn 立即打印 "Uvicorn running"，
             让前端等待就绪的耗时只包含核心配置初始化。
-            各步骤互不连带：主定时器失败时 background_status 为 failed，其余步骤失败时
-            仍为 ready，失败步骤写进 background_error。
+            各步骤互不连带：主定时器失败时 background_status 为 failed 并写 background_error；
+            其余步骤失败时仍为 ready，失败步骤只写进 background_warnings。
             """
 
             def _patch_fastapi_mcp_ref_recursion(max_depth: int = 96) -> None:
@@ -341,20 +341,30 @@ def main():
                 _fm_utils.resolve_schema_references = resolve_with_depth_limit
                 _fm_convert.resolve_schema_references = resolve_with_depth_limit
 
-            # 各步骤各自容错：任一步抛异常只记入失败清单，不连带跳过后面的步骤，
+            # 各步骤各自容错：任一步抛异常只记日志，不连带跳过后面的步骤，
             # 尤其不能跳过主定时器（队列定时按分钟精确匹配，没起来就整夜不触发）。
-            failed_steps: list[str] = []
+            warnings: list[str] = []
 
-            async def run_step(name: str, step: Callable[[], Awaitable[Any]]) -> bool:
+            async def run_step(
+                name: str, step: Callable[[], Awaitable[Any]]
+            ) -> str | None:
+                """执行一个初始化步骤，失败时返回「步骤名（异常）」，成功返回 None。"""
+
                 try:
                     await step()
                 except asyncio.CancelledError:
                     raise
                 except Exception as error:
-                    failed_steps.append(f"{name}（{type(error).__name__}: {error}）")
                     logger.exception(f"后台初始化步骤失败: {name}")
-                    return False
-                return True
+                    return f"{name}（{type(error).__name__}: {error}）"
+                return None
+
+            async def run_optional_step(
+                name: str, step: Callable[[], Awaitable[Any]]
+            ) -> None:
+                failure = await run_step(name, step)
+                if failure is not None:
+                    warnings.append(failure)
 
             async def mount_mcp() -> None:
                 import importlib
@@ -431,9 +441,9 @@ def main():
 
             app.state.background_status = "running"
             try:
-                await run_step("MCP 服务挂载", mount_mcp)
-                await run_step("活动关卡信息获取", Config.get_stage)
-                await run_step("历史记录清理", Config.clean_old_history)
+                await run_optional_step("MCP 服务挂载", mount_mcp)
+                await run_optional_step("活动关卡信息获取", Config.get_stage)
+                await run_optional_step("历史记录清理", Config.clean_old_history)
 
                 async def _maafw_startup_maintenance() -> None:
                     # 老副本一次性采纳成「载荷 + 视图」要几分钟：连同它后面依赖终态布局的
@@ -455,24 +465,26 @@ def main():
                 app.state.maafw_startup_maintenance = asyncio.create_task(
                     _maafw_startup_maintenance()
                 )
-                await run_step("诊断文件清理", Config.clean_debug_diagnostics)
-                await run_step(
+                await run_optional_step("诊断文件清理", Config.clean_debug_diagnostics)
+                await run_optional_step(
                     "MaaFW 原生日志清理", Config.clean_maafw_native_debug_logs
                 )
 
                 if IS_WINDOWS:
-                    await run_step("明日方舟 PC 工具初始化", init_arknight_win32)
+                    await run_optional_step(
+                        "明日方舟 PC 工具初始化", init_arknight_win32
+                    )
 
                 # 显示输出守卫要早于主定时器：定时器可能立刻拉起一轮任务，而任务开跑前
                 # 会要求守卫强制巡检一次，守卫没起来那次巡检就是空转。守卫失败不拦定时器：
                 # 空转一次巡检远比定时任务整夜不触发轻。
-                await run_step("桌面显示输出守卫", start_desktop_guard)
-                timer_started = await run_step("主业务定时器", MainTimer.start)
+                await run_optional_step("桌面显示输出守卫", start_desktop_guard)
+                timer_error = await run_step("主业务定时器", MainTimer.start)
 
                 # 微信按需发送；QQ 同时维持官方网关连接以完成扫码绑定。
-                await run_step("微信通知通道", start_openclaw_weixin)
-                await run_step("QQ 通知通道", start_openclaw_qq)
-                await run_step("Koishi 客户端", start_koishi)
+                await run_optional_step("微信通知通道", start_openclaw_weixin)
+                await run_optional_step("QQ 通知通道", start_openclaw_qq)
+                await run_optional_step("Koishi 客户端", start_koishi)
 
                 if (Path.cwd() / "AUTO-MAS-Setup.exe").exists():
                     try:
@@ -485,17 +497,20 @@ def main():
                     except Exception as e:
                         logger.error(f"删除AUTO_MAA.exe失败: {e}")
 
-                # 不新增状态字面量：AUTO-MAS-Runtime 按封闭集合校验 backgroundStatus。
-                # 主定时器起来了就是 ready，可选步骤的失败写进 backgroundError 供前端提示；
-                # 主定时器没起来才是 failed。
-                if failed_steps:
-                    app.state.background_error = "；".join(failed_steps)
-                    logger.error(
-                        f"后端后台初始化部分失败: {app.state.background_error}"
-                    )
-                app.state.background_status = "ready" if timer_started else "failed"
-                if not failed_steps:
-                    logger.info("后端后台初始化完成")
+                # AUTO-MAS-Runtime 把 backgroundError 非空或 failed 判为启动失败并收掉进程，
+                # 所以可选步骤的失败只进 background_warnings（前端据此提示），状态仍是 ready；
+                # 只有主定时器没起来才是 failed。
+                app.state.background_warnings = warnings
+                if warnings:
+                    logger.warning(f"部分后台服务启动失败: {'；'.join(warnings)}")
+                if timer_error is not None:
+                    app.state.background_error = timer_error
+                    app.state.background_status = "failed"
+                    logger.error(f"后台初始化失败: {timer_error}")
+                else:
+                    app.state.background_status = "ready"
+                    if not warnings:
+                        logger.info("后端后台初始化完成")
             except asyncio.CancelledError:
                 app.state.background_status = "cancelled"
                 raise
@@ -506,6 +521,7 @@ def main():
 
         app.state.background_status = "starting"
         app.state.background_error = None
+        app.state.background_warnings = []
         background_task = asyncio.create_task(initialize_background_services())
 
         async def shutdown_services() -> None:

@@ -18,10 +18,15 @@ const logger = { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() }
 
 type Module = typeof import('./backgroundInitNotice')
 
-const health = (backgroundStatus: string, backgroundError: string | null = null) => ({
+const health = (
+  backgroundStatus: string,
+  backgroundWarnings: string[] = [],
+  backgroundError: string | null = null
+) => ({
   ready: true,
   backgroundStatus,
   backgroundError,
+  backgroundWarnings,
   protocol: 1,
   version: 'v0.0.0',
   commit: '',
@@ -57,19 +62,27 @@ describe('backgroundInitNotice', () => {
       expect(mod.resolveBackgroundInit(health('running'))).toEqual({ kind: 'pending' })
     })
 
-    it('ready 且无错误为正常，带错误为降级', () => {
+    it('ready 且无警告为正常，带警告为降级', () => {
       expect(mod.resolveBackgroundInit(health('ready'))).toEqual({ kind: 'ok' })
-      expect(mod.resolveBackgroundInit(health('ready', '  '))).toEqual({ kind: 'ok' })
-      expect(mod.resolveBackgroundInit(health('ready', 'MCP 服务挂载（X: y）'))).toEqual({
+      expect(mod.resolveBackgroundInit(health('ready', ['  ']))).toEqual({ kind: 'ok' })
+      expect(
+        mod.resolveBackgroundInit(health('ready', ['MCP 服务挂载（X: y）', 'QQ 通知通道（E: q）']))
+      ).toEqual({
         kind: 'degraded',
-        detail: 'MCP 服务挂载（X: y）',
+        detail: 'MCP 服务挂载（X: y）；QQ 通知通道（E: q）',
       })
     })
 
+    it('老后端没有 backgroundWarnings 字段时按正常处理', () => {
+      expect(
+        mod.resolveBackgroundInit({ backgroundStatus: 'ready', backgroundError: null })
+      ).toEqual({ kind: 'ok' })
+    })
+
     it('failed 为失败，cancelled 与未知取值不提示', () => {
-      expect(mod.resolveBackgroundInit(health('failed', 'boom'))).toEqual({
+      expect(mod.resolveBackgroundInit(health('failed', ['QQ 通知通道（E: q）'], 'boom'))).toEqual({
         kind: 'failed',
-        detail: 'boom',
+        detail: 'boom；QQ 通知通道（E: q）',
       })
       expect(mod.resolveBackgroundInit(health('failed'))).toEqual({ kind: 'failed', detail: '' })
       expect(mod.resolveBackgroundInit(health('cancelled'))).toEqual({ kind: 'ignored' })
@@ -80,7 +93,7 @@ describe('backgroundInitNotice', () => {
   describe('checkBackgroundInit', () => {
     it('可选步骤失败时给出警告通知，写明定时任务已启动和失败项，且不自动消失', async () => {
       getHealth.mockResolvedValue(
-        health('ready', '明日方舟 PC 工具初始化（ModuleNotFoundError: x）')
+        health('ready', ['明日方舟 PC 工具初始化（ModuleNotFoundError: x）'])
       )
 
       await mod.checkBackgroundInit()
@@ -102,7 +115,7 @@ describe('backgroundInitNotice', () => {
     })
 
     it('主定时器失败时给出错误通知，写明定时任务可能未启动', async () => {
-      getHealth.mockResolvedValue(health('failed', '主业务定时器（RuntimeError: t）'))
+      getHealth.mockResolvedValue(health('failed', [], '主业务定时器（RuntimeError: t）'))
 
       await mod.checkBackgroundInit()
 
@@ -127,7 +140,7 @@ describe('backgroundInitNotice', () => {
       getHealth
         .mockResolvedValueOnce(health('starting'))
         .mockResolvedValueOnce(health('running'))
-        .mockResolvedValue(health('ready', 'QQ 通知通道（OSError: q）'))
+        .mockResolvedValue(health('ready', ['QQ 通知通道（OSError: q）']))
 
       const done = mod.checkBackgroundInit()
       await vi.runAllTimersAsync()
@@ -160,22 +173,22 @@ describe('backgroundInitNotice', () => {
     })
 
     it('同一份失败内容重连后不重复弹，内容变了才再弹', async () => {
-      getHealth.mockResolvedValue(health('ready', 'A（E: 1）'))
+      getHealth.mockResolvedValue(health('ready', ['A（E: 1）']))
       await mod.checkBackgroundInit()
       await mod.checkBackgroundInit()
       expect(notificationMocks.warning).toHaveBeenCalledTimes(1)
 
-      getHealth.mockResolvedValue(health('ready', 'B（E: 2）'))
+      getHealth.mockResolvedValue(health('ready', ['B（E: 2）']))
       await mod.checkBackgroundInit()
       expect(notificationMocks.warning).toHaveBeenCalledTimes(2)
     })
 
     it('恢复正常后再出同样的失败会重新提示', async () => {
-      getHealth.mockResolvedValue(health('ready', 'A（E: 1）'))
+      getHealth.mockResolvedValue(health('ready', ['A（E: 1）']))
       await mod.checkBackgroundInit()
       getHealth.mockResolvedValue(health('ready'))
       await mod.checkBackgroundInit()
-      getHealth.mockResolvedValue(health('ready', 'A（E: 1）'))
+      getHealth.mockResolvedValue(health('ready', ['A（E: 1）']))
       await mod.checkBackgroundInit()
 
       expect(notificationMocks.warning).toHaveBeenCalledTimes(2)
@@ -184,7 +197,7 @@ describe('backgroundInitNotice', () => {
     it('作废后进行中的等待不再提示', async () => {
       getHealth
         .mockResolvedValueOnce(health('running'))
-        .mockResolvedValue(health('ready', 'A（E: 1）'))
+        .mockResolvedValue(health('ready', ['A（E: 1）']))
 
       const done = mod.checkBackgroundInit()
       mod.cancelBackgroundInitCheck()

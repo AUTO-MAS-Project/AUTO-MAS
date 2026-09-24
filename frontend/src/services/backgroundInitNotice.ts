@@ -1,6 +1,7 @@
 // 后端后台初始化结果提示
 // 后端 lifespan 先让核心 API 就绪，再在后台挂 MCP、清理历史、起主定时器等；任一步失败
-// 只体现在 /api/core/health 的 backgroundStatus / backgroundError 里。主连接建立（含重连）
+// 只体现在 /api/core/health 的 backgroundStatus / backgroundError / backgroundWarnings 里。
+// 主连接建立（含重连）
 // 后查一次：初始化还没跑完就按固定间隔等到终态，超过上限不再等，不做常驻轮询。
 
 import { h } from 'vue'
@@ -25,24 +26,33 @@ export type BackgroundInitOutcome =
   | { kind: 'failed'; detail: string }
   | { kind: 'ignored' }
 
+const joinItems = (items: Array<string | null | undefined>): string =>
+  items
+    .map(item => item?.trim() ?? '')
+    .filter(Boolean)
+    .join('；')
+
 /**
  * 把 health 响应归类成前端要不要提示、提示什么。
  *
  * backgroundStatus 取值与 AUTO-MAS-Runtime 共用（starting / running / ready / failed /
- * cancelled）；ready 时 backgroundError 非空表示部分可选步骤失败。
+ * cancelled）。可选步骤的失败只放在 backgroundWarnings 里、状态仍是 ready——Runtime 把
+ * backgroundError 非空判为启动失败，所以降级不能走 backgroundError。
  */
 export function resolveBackgroundInit(
-  health: Pick<BackendHealthOut, 'backgroundStatus' | 'backgroundError'>
+  health: Pick<BackendHealthOut, 'backgroundStatus' | 'backgroundError' | 'backgroundWarnings'>
 ): BackgroundInitOutcome {
-  const detail = health.backgroundError?.trim() ?? ''
+  const warnings = health.backgroundWarnings ?? []
   switch (health.backgroundStatus) {
     case 'starting':
     case 'running':
       return { kind: 'pending' }
-    case 'ready':
+    case 'ready': {
+      const detail = joinItems(warnings)
       return detail ? { kind: 'degraded', detail } : { kind: 'ok' }
+    }
     case 'failed':
-      return { kind: 'failed', detail }
+      return { kind: 'failed', detail: joinItems([health.backgroundError, ...warnings]) }
     default:
       // cancelled 只出现在后端关闭途中；未知取值不猜
       return { kind: 'ignored' }
