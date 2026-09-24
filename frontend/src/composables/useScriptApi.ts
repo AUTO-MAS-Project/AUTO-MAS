@@ -711,96 +711,6 @@ export function useScriptApi() {
                             : '未知',
                       },
                     }
-                  } else if (userIndex.type === 'M9AUserConfig' && userData) {
-                    const m9aUserData = userData as unknown as LooseUserConfig
-                    return {
-                      id: userIndex.uid,
-                      name: m9aUserData.Info?.Name || `用户${userIndex.uid}`,
-                      Info: {
-                        Name:
-                          m9aUserData.Info?.Name !== undefined
-                            ? m9aUserData.Info.Name
-                            : `用户${userIndex.uid}`,
-                        Status:
-                          m9aUserData.Info?.Status !== undefined ? m9aUserData.Info.Status : true,
-                        RemainedDay:
-                          m9aUserData.Info?.RemainedDay !== undefined
-                            ? m9aUserData.Info.RemainedDay
-                            : -1,
-                        Notes: m9aUserData.Info?.Notes !== undefined ? m9aUserData.Info.Notes : '',
-                        Tag: m9aUserData.Info?.Tag !== undefined ? m9aUserData.Info.Tag : null,
-                        Resource:
-                          m9aUserData.Info?.Resource !== undefined
-                            ? m9aUserData.Info.Resource
-                            : '官服',
-                        Account:
-                          m9aUserData.Info?.Account !== undefined ? m9aUserData.Info.Account : '',
-                        EmulatorId:
-                          m9aUserData.Info?.EmulatorId !== undefined
-                            ? m9aUserData.Info.EmulatorId
-                            : '',
-                        EmulatorIndex:
-                          m9aUserData.Info?.EmulatorIndex !== undefined
-                            ? m9aUserData.Info.EmulatorIndex
-                            : 0,
-                      },
-                      Task: {
-                        AvailableTasks:
-                          m9aUserData.Task?.AvailableTasks !== undefined
-                            ? m9aUserData.Task.AvailableTasks
-                            : '[]',
-                        Queue:
-                          m9aUserData.Task?.Queue !== undefined ? m9aUserData.Task.Queue : '[]',
-                      },
-                      Notify: {
-                        Enabled:
-                          m9aUserData.Notify?.Enabled !== undefined
-                            ? m9aUserData.Notify.Enabled
-                            : false,
-                        IfSendStatistic:
-                          m9aUserData.Notify?.IfSendStatistic !== undefined
-                            ? m9aUserData.Notify.IfSendStatistic
-                            : false,
-                        IfSendMail:
-                          m9aUserData.Notify?.IfSendMail !== undefined
-                            ? m9aUserData.Notify.IfSendMail
-                            : false,
-                        ToAddress:
-                          m9aUserData.Notify?.ToAddress !== undefined
-                            ? m9aUserData.Notify.ToAddress
-                            : '',
-                        IfServerChan:
-                          m9aUserData.Notify?.IfServerChan !== undefined
-                            ? m9aUserData.Notify.IfServerChan
-                            : false,
-                        ServerChanKey:
-                          m9aUserData.Notify?.ServerChanKey !== undefined
-                            ? m9aUserData.Notify.ServerChanKey
-                            : '',
-                      },
-                      Data: {
-                        LastProxyDate:
-                          m9aUserData.Data?.LastProxyDate !== undefined
-                            ? m9aUserData.Data.LastProxyDate
-                            : '2000-01-01',
-                        LastPsychubeDate:
-                          m9aUserData.Data?.LastPsychubeDate !== undefined
-                            ? m9aUserData.Data.LastPsychubeDate
-                            : '',
-                        LastLimboMonth:
-                          m9aUserData.Data?.LastLimboMonth !== undefined
-                            ? m9aUserData.Data.LastLimboMonth
-                            : '',
-                        LastLucidscapeMonth:
-                          m9aUserData.Data?.LastLucidscapeMonth !== undefined
-                            ? m9aUserData.Data.LastLucidscapeMonth
-                            : '',
-                        ProxyTimes:
-                          m9aUserData.Data?.ProxyTimes !== undefined
-                            ? m9aUserData.Data.ProxyTimes
-                            : 0,
-                      },
-                    }
                   } else if (
                     (userIndex.type === 'OkwwUserConfig' || userIndex.type === 'OkNteUserConfig') &&
                     userData
@@ -910,7 +820,11 @@ export function useScriptApi() {
                             : '未知',
                       },
                     }
-                  } else if (userIndex.type === 'MaaFWUserConfig' && userData) {
+                  } else if (
+                    (userIndex.type === 'MaaFWUserConfig' || userIndex.type === 'M9AUserConfig') &&
+                    userData
+                  ) {
+                    // M9AUserConfig 是 MaaFWUserConfig 的同形子类，归一化走同一条路
                     const maafwUserData = userData as unknown as LooseUserConfig
                     return {
                       id: userIndex.uid,
@@ -1424,9 +1338,13 @@ export function useScriptApi() {
   }
 
   // 预览 MaaFW 项目 interface：返回后端原始响应，让编辑页把 code=400 的 message 原样呈现
-  const previewMaaFWInterface = async (path: string): Promise<MaaFWInterfacePreviewOut | null> => {
+  const previewMaaFWInterface = async (
+    path: string,
+    scriptId?: string
+  ): Promise<MaaFWInterfacePreviewOut | null> => {
     try {
-      return await MaaFwService.previewMaafwInterfaceApiScriptsMaafwPreviewPost({ path })
+      // 带 scriptId 时后端按脚本解析有效根（内嵌副本优先），path 只是兜底。
+      return await MaaFwService.previewMaafwInterfaceApiScriptsMaafwPreviewPost({ path, scriptId })
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : String(err)
       logger.error(`预览 MaaFW interface 失败: ${errorMsg}`)

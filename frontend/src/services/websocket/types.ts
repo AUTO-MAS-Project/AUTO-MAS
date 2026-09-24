@@ -70,6 +70,9 @@ export const WS_EMULATOR_OPERATION_FINISHED = 'emulator.operation.finished'
 export const WS_DISPLAY_DETACH_PROMPT = 'display.detach.prompt'
 export const WS_DISPLAY_DETACH_PROMPT_CLOSED = 'display.detach.prompt.closed'
 
+// 系统通知（id=Main）：后端启动期攒下的通知（如 M9A 配置迁移结果），主连接建立后发一次
+export const WS_SYSTEM_NOTICE = 'system.notice'
+
 // ==================== 关键消息数据类型 ====================
 
 /** 任务提示消息数据 (type=task.notice) */
@@ -246,6 +249,14 @@ export interface WSDisplayDetachPromptData {
   monitor?: WSDisplayMonitorRectData | null
 }
 
+/** 系统通知数据 (type=system.notice, id=Main) */
+export interface WSSystemNoticeData {
+  level: 'info' | 'warning' | 'error'
+  title: string
+  /** 正文，每项一行 */
+  lines: string[]
+}
+
 type WSEmptyData = Record<string, never>
 
 /** 已知关键消息的 type → data 映射。未知消息回退到 WSJsonObject。 */
@@ -272,6 +283,7 @@ interface WSMessageDataMap {
   [WS_EMULATOR_OPERATION_FINISHED]: WSEmulatorOperationData
   [WS_DISPLAY_DETACH_PROMPT]: WSDisplayDetachPromptData
   [WS_DISPLAY_DETACH_PROMPT_CLOSED]: WSEmptyData
+  [WS_SYSTEM_NOTICE]: WSSystemNoticeData
 }
 
 type WSKnownMessageType = keyof WSMessageDataMap

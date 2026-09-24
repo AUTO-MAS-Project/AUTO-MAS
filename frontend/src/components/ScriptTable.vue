@@ -319,15 +319,6 @@
                             }}
                           </a-tag>
 
-                          <!-- M9A 脚本显示服务器标签 -->
-                          <a-tag
-                            v-if="script.type === 'M9A'"
-                            :color="getM9AServerTagColor(user.Info.Resource)"
-                            class="server-tag"
-                          >
-                            {{ user.Info.Resource || '官服' }}
-                          </a-tag>
-
                           <!-- ZzzOd 脚本显示配置来源标签（用户/直控） -->
                           <a-tag
                             v-if="script.type === 'ZzzOd'"
@@ -416,49 +407,13 @@
                             script.type === 'OkNte' ||
                             script.type === 'BetterGI' ||
                             script.type === 'MaaFW' ||
+                            script.type === 'M9A' ||
                             script.type === 'ZzzOd' ||
                             script.type === 'BAAH'
                           "
                           class="user-info-tags"
                         >
                           <!-- 直接使用后端提供的Tag字段 -->
-                          <a-tag
-                            v-for="(tag, index) in parseStatusTagList(user.Info.Tag)"
-                            :key="index"
-                            :title="tag.text"
-                            class="info-tag"
-                            :color="tag.color"
-                          >
-                            {{ tag.text }}
-                          </a-tag>
-                        </div>
-                        <!-- 用户详细信息 - M9A脚本用户 -->
-                        <div v-if="script.type === 'M9A'" class="user-info-tags">
-                          <!-- 显示备注（仅当有值时）-->
-                          <a-tag
-                            v-if="
-                              user.Info.Notes &&
-                              user.Info.Notes !== '无' &&
-                              user.Info.Notes.trim() !== ''
-                            "
-                            color="geekblue"
-                            class="info-tag"
-                            :title="user.Info.Notes"
-                          >
-                            {{ truncateText(user.Info.Notes, 10) }}
-                          </a-tag>
-
-                          <a-tag
-                            v-for="(tag, index) in getM9AOnceStatusTags(script, user)"
-                            :key="`m9a-once-${index}`"
-                            :title="tag.text"
-                            class="info-tag"
-                            :color="tag.color"
-                          >
-                            {{ tag.text }}
-                          </a-tag>
-
-                          <!-- 后端提供的Tag字段 -->
                           <a-tag
                             v-for="(tag, index) in parseStatusTagList(user.Info.Tag)"
                             :key="index"
@@ -578,7 +533,7 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
 import type { Script, User } from '../types/script'
-import type { M9AConfig, MaaEndConfig } from '@/api'
+import type { MaaEndConfig } from '@/api'
 import {
   CopyOutlined,
   DeleteOutlined,
@@ -632,10 +587,6 @@ interface Emits {
 
   (e: 'scriptsReordered', scripts: Script[]): void
 }
-
-const M9A_PSYCHUBE_NAMES = ['每日心相（意志解析）', '每日心相']
-const M9A_LIMBO_NAMES = ['自动深眠']
-const M9A_LUCIDSCAPE_NAMES = ['自动醒梦']
 
 const props = defineProps<Props>()
 const emit = defineEmits<Emits>()
@@ -965,11 +916,6 @@ const getServerDisplayName = (server: string): string => {
   }
 }
 
-// M9A服务器标签颜色映射
-const getM9AServerTagColor = (_resource: string): string => {
-  return 'blue'
-}
-
 // ZzzOd：配置来源标签（用户模式/直控模式）
 const getZzzOdModeLabel = (user: User): string =>
   user.Info.Mode === '直控' ? '直控模式' : '用户模式'
@@ -1026,65 +972,6 @@ const getZzzOdAccountText = (user: User): string => {
   }
   // 收起状态：只显示 4 位尾号以压缩卡片内展示宽度（账号本就明文可见，非脱敏）
   return accountValue ? accountValue.slice(-4) : '账号: 未设置'
-}
-
-const getM9ATodayString = (): string => {
-  return new Date(Date.now() + 4 * 60 * 60 * 1000).toISOString().slice(0, 10)
-}
-
-const getM9ACurrentMonthString = (): string => {
-  return getM9ATodayString().slice(0, 7)
-}
-
-const parseM9ATaskQueue = (queue: unknown): Array<{ name?: string }> => {
-  if (Array.isArray(queue)) return queue as Array<{ name?: string }>
-  if (typeof queue !== 'string') return []
-
-  try {
-    const parsed = JSON.parse(queue)
-    return Array.isArray(parsed) ? parsed : []
-  } catch {
-    return []
-  }
-}
-
-const hasM9ATaskInQueue = (queue: Array<{ name?: string }>, names: string[]): boolean => {
-  return queue.some(item => item.name && names.includes(item.name))
-}
-
-const getM9AOnceStatusTags = (script: Script, user: User) => {
-  if (script.type !== 'M9A') return []
-
-  const runConfig = (script.config as M9AConfig).Run ?? {}
-  const queue = parseM9ATaskQueue(user.Task?.Queue)
-  const data = user.Data ?? {}
-  const tags: Array<{ text: string; color: string }> = []
-
-  if (runConfig.IfPsychubeDailyOnce && hasM9ATaskInQueue(queue, M9A_PSYCHUBE_NAMES)) {
-    const completed = data.LastPsychubeDate === getM9ATodayString()
-    tags.push({
-      text: `每日心相：${completed ? '已完成' : '未完成'}`,
-      color: completed ? 'green' : 'orange',
-    })
-  }
-
-  if (runConfig.IfSleepDreamMonthlyOnce) {
-    const hasLimbo = hasM9ATaskInQueue(queue, M9A_LIMBO_NAMES)
-    const hasLucidscape = hasM9ATaskInQueue(queue, M9A_LUCIDSCAPE_NAMES)
-    if (hasLimbo || hasLucidscape) {
-      const currentMonth = getM9ACurrentMonthString()
-      const completed =
-        (!hasLimbo || data.LastLimboMonth === currentMonth) &&
-        (!hasLucidscape || data.LastLucidscapeMonth === currentMonth)
-
-      tags.push({
-        text: `深眠浅梦：${completed ? '已完成' : '未完成'}`,
-        color: completed ? 'green' : 'orange',
-      })
-    }
-  }
-
-  return tags
 }
 
 const { reorderScript } = useScriptApi()

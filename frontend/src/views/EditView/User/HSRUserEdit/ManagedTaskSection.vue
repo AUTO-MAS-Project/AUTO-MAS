@@ -1,32 +1,14 @@
 <template>
   <div class="managed-task-section">
-    <div class="section-header section-header-with-action">
+    <div class="section-header">
       <h3>{{ t('edit.tasksManagedByMas') }}</h3>
-      <div class="section-header-action">
-        <a-typography-text type="secondary" class="reset-hint">
-          {{ t('edit.resetManagedOverridesHint') }}
-        </a-typography-text>
-        <a-popconfirm
-          :title="t('edit.resetManagedOverridesConfirmTitle')"
-          :description="t('edit.resetManagedOverridesConfirmDesc')"
-          :ok-text="t('edit.ok')"
-          :cancel-text="t('edit.cancel')"
-          ok-type="danger"
-          :disabled="loading || saving"
-          @confirm="emit('resetOverrides')"
-        >
-          <a-button danger :loading="loading" :disabled="saving">
-            {{ t('edit.resetManagedOverrides') }}
-          </a-button>
-        </a-popconfirm>
-      </div>
     </div>
+    <!-- 快照诊断合成一条：区块内最多一条提示 -->
     <a-alert
-      v-for="warning in snapshot?.warnings || []"
-      :key="warning"
+      v-if="snapshotWarnings.length"
       type="warning"
       show-icon
-      :message="warning"
+      :message="snapshotWarnings.length === 1 ? snapshotWarnings[0] : snapshotWarnings.join('；')"
       class="snapshot-warning"
     />
 
@@ -90,13 +72,34 @@
                 <div class="selected-task-title">{{ selectedTask.name }}</div>
                 <div class="selected-task-description">{{ selectedTask.description }}</div>
               </div>
-              <a-tag :color="engineColor(selectedEngine)">{{ engineLabel(selectedEngine) }}</a-tag>
+              <!-- 原生配置来源（读取自哪个文件）收进引擎标签的悬停提示 -->
+              <a-tooltip
+                :title="
+                  selectedForm?.source
+                    ? t('edit.hsrReadFrom', { source: selectedForm.source })
+                    : undefined
+                "
+              >
+                <a-tag :color="engineColor(selectedEngine)">{{
+                  engineLabel(selectedEngine)
+                }}</a-tag>
+              </a-tooltip>
             </div>
 
+            <!-- 云·星穹铁道恒由三月七执行；客户端只有该模块真有两个可选引擎时才给分段控件，
+                 否则一行说明由谁执行 -->
+            <a-typography-text
+              v-if="cloud"
+              type="secondary"
+              class="engine-only-line"
+              data-testid="hsr-cloud-engine-line"
+            >
+              {{ t('edit.hsrCloudRunByM7a') }}
+            </a-typography-text>
             <a-form-item
-              v-if="engineOptions.length > 1"
+              v-else-if="engineOptions.length > 1"
               :label="t('edit.engine')"
-              :extra="t('edit.hsrEngineSwitchHint')"
+              :extra="shared ? t('edit.hsrSharedEngineSwitchHint') : t('edit.hsrEngineSwitchHint')"
             >
               <a-segmented
                 :value="selectedEngine"
@@ -106,12 +109,17 @@
                 @change="handleEngineChange"
               />
             </a-form-item>
+            <a-typography-text v-else-if="selectedEngine" type="secondary" class="engine-only-line">
+              {{ t('edit.hsrRunByEngine', { engine: engineLabel(selectedEngine) }) }}
+            </a-typography-text>
 
             <a-alert
               v-if="!Boolean(taskSwitch[selectedTask.key])"
               type="info"
               show-icon
-              :message="t('edit.thisModuleNotEnabled')"
+              :message="
+                shared ? t('edit.hsrSharedModuleNotEnabled') : t('edit.thisModuleNotEnabled')
+              "
               class="panel-alert"
             />
 
@@ -124,9 +132,6 @@
                 :message="warning"
                 class="panel-alert"
               />
-              <a-typography-text type="secondary" class="source-line">
-                {{ t('edit.hsrReadFrom', { source: selectedForm.source }) }}
-              </a-typography-text>
               <a-alert
                 v-if="selectedDroppedOverrides.length"
                 type="warning"
@@ -175,6 +180,30 @@
               />
             </template>
             <a-alert v-else type="warning" show-icon :message="t('edit.engineReturnedNoDynamic')" />
+
+            <!-- 重置覆盖是低频的清理操作，放在详情面板底部、用次要样式 -->
+            <div class="reset-footer">
+              <a-popconfirm
+                :title="t('edit.resetManagedOverridesConfirmTitle')"
+                :description="
+                  shared
+                    ? t('edit.hsrResetSharedOverridesConfirmDesc')
+                    : t('edit.resetManagedOverridesConfirmDesc')
+                "
+                :ok-text="t('edit.ok')"
+                :cancel-text="t('edit.cancel')"
+                ok-type="danger"
+                :disabled="loading || saving"
+                @confirm="emit('resetOverrides')"
+              >
+                <a-button type="link" danger size="small" :loading="loading" :disabled="saving">
+                  {{ t('edit.resetManagedOverrides') }}
+                </a-button>
+              </a-popconfirm>
+              <a-typography-text type="secondary" class="reset-hint">
+                {{ t('edit.resetManagedOverridesHint') }}
+              </a-typography-text>
+            </div>
           </div>
           <div v-else class="task-option-empty">
             <a-empty :description="t('edit.nothingConfigure')" />
@@ -206,10 +235,16 @@ const props = defineProps<{
   taskSwitch: Record<string, boolean | null | undefined>
   saving: boolean
   loading: boolean
+  /** 当前编辑的是脚本共享计划（「脚本」来源）：只影响提示与确认文案。 */
+  shared?: boolean
+  /** 云·星穹铁道：引擎恒为三月七，不给引擎分段控件。 */
+  cloud?: boolean
+  /** 页面顶部已经显示过的能力提示，快照里重复的同一句不再在本区块显示。 */
+  shownWarnings?: readonly string[]
 }>()
 
 const emit = defineEmits<{
-  /** 清空这个用户的全部 Managed.Options 覆盖值，重新按源配置读取。 */
+  /** 清空当前计划的全部 Managed.Options 覆盖值，重新按源配置读取。 */
   resetOverrides: []
   taskToggle: [task: string, enabled: boolean]
   mappingChange: [task: string, engine: HSREngine]
@@ -232,6 +267,10 @@ watch(
     }
   },
   { immediate: true }
+)
+
+const snapshotWarnings = computed(() =>
+  (props.snapshot?.warnings ?? []).filter(warning => !props.shownWarnings?.includes(warning))
 )
 
 const selectedTask = computed(
@@ -342,7 +381,6 @@ const handleFieldChange = (key: string, value: unknown) => {
   border-bottom: 1px solid var(--ant-color-border-secondary);
 }
 
-.section-header-with-action,
 .column-header,
 .selected-task-header,
 .task-row {
@@ -359,16 +397,28 @@ const handleFieldChange = (key: string, value: unknown) => {
   background: var(--ant-color-primary);
 }
 
-.section-header-action {
+.engine-only-line {
+  display: block;
+  margin-bottom: 16px;
+  font-size: 13px;
+}
+
+.reset-footer {
   display: flex;
   align-items: center;
-  gap: 12px;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid var(--ant-color-border-secondary);
+}
+
+.reset-footer :deep(.ant-btn-link) {
+  padding-inline: 0;
 }
 
 .reset-hint {
-  max-width: 360px;
   font-size: 12px;
-  text-align: right;
 }
 
 .snapshot-warning,
@@ -467,8 +517,7 @@ const handleFieldChange = (key: string, value: unknown) => {
 }
 
 .task-row-summary,
-.selected-task-description,
-.source-line {
+.selected-task-description {
   color: var(--ant-color-text-tertiary);
   font-size: 12px;
 }
@@ -503,14 +552,6 @@ const handleFieldChange = (key: string, value: unknown) => {
 
 .selected-task-description {
   margin-top: 4px;
-}
-
-.source-line {
-  display: block;
-  overflow: hidden;
-  margin-bottom: 12px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .task-option-empty {

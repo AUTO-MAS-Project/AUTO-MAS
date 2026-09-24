@@ -23,7 +23,6 @@
 
 import asyncio
 import uuid
-from collections.abc import Mapping
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Literal
@@ -33,54 +32,18 @@ from fastapi.responses import FileResponse
 
 from app.core import Config
 from app.models.config import BetterGIConfig as RuntimeBetterGIConfig
-from app.models.config import HSRConfig as RuntimeHSRConfig
-from app.models.config import MaaFWConfig as RuntimeMaaFWConfig
 from app.models.config import OkNteConfig as RuntimeOkNteConfig
 from app.models.schema import *
-from app.task.MaaFW.tools.core.automas_maafw_interface.loader import (
-    MaaFWInterfaceLoadError,
-    load_interface_model_cached,
-)
-from app.task.MaaFW.tools.core.automas_maafw_interface.preview import (
-    build_interface_preview_data,
-)
-from app.task.MaaFW.tools.core.automas_maafw_project_update import (
-    MaaFWProjectUpdateError,
-    discover_maafw_project_update,
-    update_maafw_project_if_needed,
-)
-from app.task.MaaFW.tools.core.automas_maafw_project_update.updater import (
-    _public_package_source,
-    detect_maafw_project_shell_hint,
-)
-from app.task.MaaFW.tools.embedded.game_package import (
-    resolve_game_package,
-    resource_paths_for,
-)
-from app.task.MaaFW.tools.embedded.update_credentials import (
-    resolve_update_credentials,
-    resolve_update_proxy_url,
-)
-from app.task.MaaFW.tools.embedded.update_progress import (
-    MaaFWUpdateProgressTracker,
-)
+from app.task.MaaFW.api_service import agent_env as maafw_agent_env_api
+from app.task.MaaFW.api_service import embedded as maafw_embedded_api
+from app.task.MaaFW.api_service import interface as maafw_interface_api
+from app.task.MaaFW.api_service import update as maafw_update_api
 from app.utils import get_logger
 from app.utils.constants import UTC8
 from app.utils.io import ConfigCorruptedError
-from app.utils.paths import SOURCE_ROOT
-from app.utils.security import sanitize_log_message
 
 router = APIRouter(prefix="/api/scripts", tags=["脚本管理"])
 logger = get_logger("脚本管理 API")
-
-
-def _hsr_script_config(script_id: str):
-    """Resolve an HSR script and reject cross-type IDs before domain access."""
-
-    script_config = Config.ScriptConfig[uuid.UUID(script_id)]
-    if not isinstance(script_config, RuntimeHSRConfig):
-        raise TypeError("脚本配置类型错误, 不是 HSR 类型")
-    return script_config
 
 
 def _bettergi_script_config(script_id: str):
@@ -194,11 +157,6 @@ def _combat_target_group(source: str, group: str) -> str:
     )
 
 
-def _hsr_user_config(script_config: RuntimeHSRConfig, user_id: str):
-    user_config = script_config.UserData[uuid.UUID(user_id)]
-    return user_config
-
-
 def _oknte_script_config(script_id: str) -> tuple[uuid.UUID, RuntimeOkNteConfig]:
     script_uid = uuid.UUID(script_id)
     script_config = Config.ScriptConfig[script_uid]
@@ -224,134 +182,6 @@ def _oknte_config_file_path(config_dir: Path, filename: str) -> Path:
     if file_path.name != filename or file_path.is_absolute() or ".." in file_path.parts:
         raise ValueError("配置文件名非法")
     return config_dir / filename
-
-
-def _maafw_script_config(script_id: str) -> RuntimeMaaFWConfig:
-    """Resolve a MaaFW script and reject cross-type IDs before domain access."""
-
-    script_config = Config.ScriptConfig[uuid.UUID(script_id)]
-    if not isinstance(script_config, RuntimeMaaFWConfig):
-        raise TypeError("脚本配置类型错误, 不是 MFW 类型")
-    return script_config
-
-
-# 这两种 CDK 状态不需要额外提示：ok 是正常，absent 在选 GitHub 源时本就无关。
-_MAAFW_CDK_QUIET_STATUSES = frozenset({"ok", "absent"})
-_maafw_update_logger = get_logger("MaaFW 项目更新")
-_maafw_env_logger = get_logger("MFW 运行环境")
-# 手动更新拿项目锁的限时：另一次自动更新 / 预检正持有时回 409，不让同步请求
-# 跟着等几分钟。自动路径不限时。
-_MAAFW_MANUAL_UPDATE_LOCK_TIMEOUT_SECONDS = 5.0
-
-
-def _maafw_httpx_proxy(proxy_url: str | None) -> Any:
-    """代理地址字符串 → ``httpx.Proxy``；没配或填错回 None（本次直连）。
-
-    地址里可能有账号密码，报错时也只说类型，不回显地址。
-    """
-
-    if not proxy_url:
-        return None
-    import httpx
-
-    try:
-        return httpx.Proxy(proxy_url)
-    except Exception as exc:  # noqa: BLE001 - 代理填错不该让整次更新 500
-        _maafw_update_logger.warning(
-            f"MFW 项目更新代理地址无效（{type(exc).__name__}），本次直连"
-        )
-        return None
-
-
-def _maafw_update_extra_fields(result: Any) -> dict[str, Any]:
-    """按核心包约定的属性名读取 CDK / 版本附加字段，缺字段一律 None。
-
-    核心包返回对象（discovery 或 result）带 ``version_name`` / ``source`` /
-    ``cdk_status`` / ``cdk_message`` / ``cdk_expired_time`` / ``skipped_reason``；
-    此处用 ``getattr(..., None)`` 读取，核心包尚未补齐时也能返回。
-    """
-
-    def _text(name: str) -> str | None:
-        value = getattr(result, name, None)
-        if value is None:
-            return None
-        text = str(value).strip()
-        return text or None
-
-    expired_raw = getattr(result, "cdk_expired_time", None)
-    expired_time: int | None
-    if isinstance(expired_raw, bool) or expired_raw is None:
-        expired_time = None
-    else:
-        try:
-            expired_time = int(expired_raw)
-        except (TypeError, ValueError):
-            expired_time = None
-
-    return {
-        "versionName": _text("version_name"),
-        "cdkStatus": _text("cdk_status"),
-        "cdkMessage": _text("cdk_message"),
-        "cdkExpiredTime": expired_time,
-        "skippedReason": _text("skipped_reason"),
-    }
-
-
-def _maafw_update_message_with_cdk(message: str, extra: dict[str, Any]) -> str:
-    """CDK 状态异常时把提示原文附到摘要里。
-
-    仍按成功返回（HTTP 200）：CDK 有问题只是这次装不了，脚本本身照常能跑，
-    用户看到原因后可以去续期或改用 GitHub 源。
-    """
-
-    status = extra.get("cdkStatus")
-    cdk_message = extra.get("cdkMessage")
-    if status and status not in _MAAFW_CDK_QUIET_STATUSES and cdk_message:
-        return f"{message}（{cdk_message}）"
-    return message
-
-
-def _config_text(config: Any, group: str, name: str) -> str:
-    """读取一个可能不存在的配置项并归一为去空白字符串。"""
-
-    try:
-        return str(config.get(group, name) or "").strip()
-    except AttributeError:
-        return ""
-
-
-def _maafw_update_source_config(script_config: RuntimeMaaFWConfig) -> dict[str, str]:
-    """组装 MaaFW 项目更新实现所需的 source_config。
-
-    只包含用户可配置的三项：``package_source``（脚本级 ``Update.Source``，
-    Mirror 酱 / GitHub）、``mirror_cdk``、``channel``。三项**都只看脚本级、
-    不做全局兜底**，与 ``tools/embedded/update_credentials.py`` 用的是同一个
-    解析函数，保证手动更新与运行时自动更新的行为一致。
-
-    仓库、tag、资产文件名等 GitHub 参数不再由用户填写，由核心包从
-    ``interface.json`` 与目录名自行推断。
-
-    额外注入 ``project_shell_hint``：GitHub 发行版常按 UI 外壳分包
-    （如 M9A 同版本同时发 ``*-MFAA.zip`` 与 ``*-MXU.zip``），选包实现
-    在项目名/平台收窄后需要外壳家族才能消歧。本 API 直连
-    ``discover_maafw_project_update``，而该函数**自身不做兜底识别**
-    （兜底在 ``update_maafw_project_if_needed`` 里），故必须在此补上。
-    """
-
-    # 三项都只看脚本级，不做全局兜底（与 embedded 侧的 resolve_update_credentials
-    # 一致）：全局那两项服务的是 MAS 自身的更新，语义不同。
-    credentials = resolve_update_credentials(script_config)
-    config = {
-        "mirror_cdk": credentials.cdk,
-        "channel": credentials.channel,
-        "package_source": credentials.package_source,
-    }
-    project_path = _config_text(script_config, "Info", "Path")
-    if project_path:
-        shell_hint = detect_maafw_project_shell_hint(Path(project_path))
-        if shell_hint:
-            config["project_shell_hint"] = shell_hint
-    return config
 
 
 SCRIPT_BOOK = {
@@ -1125,6 +955,85 @@ async def delete_webhook(webhook: WebhookDeleteIn = Body(...)) -> OutBase:
 
 
 @router.post(
+    "/maafw/embedded/status",
+    tags=["MaaFW"],
+    summary="查看 MFW 脚本的内嵌副本状态",
+    response_model=MaaFWEmbeddedStatusOut,
+    status_code=200,
+)
+async def get_maafw_embedded_status(
+    payload: MaaFWEmbeddedIn = Body(...),
+) -> MaaFWEmbeddedStatusOut:
+    reply = await maafw_embedded_api.get_embedded_status(payload.scriptId)
+    return MaaFWEmbeddedStatusOut(**reply.out_fields())
+
+
+@router.post(
+    "/maafw/embedded/reimport",
+    tags=["MaaFW"],
+    summary="按来源目录导入（或重新导入）副本",
+    response_model=MaaFWEmbeddedStatusOut,
+    status_code=200,
+)
+async def reimport_maafw_embedded(
+    payload: MaaFWEmbeddedReimportIn = Body(...),
+) -> MaaFWEmbeddedStatusOut:
+    """脚本页选目录就是走这里：第一次是导入，之后是换来源或按当前来源重导。
+
+    导入成功才把来源写进 Info.Path；失败时旧副本与旧来源都原样不动。
+    """
+
+    reply = await maafw_embedded_api.reimport_embedded(
+        payload.scriptId, payload.sourcePath
+    )
+    return MaaFWEmbeddedStatusOut(**reply.out_fields())
+
+
+@router.post(
+    "/maafw/embedded/sources",
+    tags=["MaaFW"],
+    summary="列出可作为克隆来源的其它 MFW 脚本",
+    response_model=MaaFWEmbeddedSourcesOut,
+    status_code=200,
+)
+async def list_maafw_embedded_sources(
+    payload: MaaFWEmbeddedSourcesIn = Body(default_factory=MaaFWEmbeddedSourcesIn),
+) -> MaaFWEmbeddedSourcesOut:
+    """新建脚本对话框里「复用已有脚本的项目」的候选：有健康副本的 MFW / M9A 脚本。
+
+    新建时脚本还没建出来，所以不要求 ``scriptId``；传了就把它自己排除掉。
+    """
+
+    reply = await maafw_embedded_api.list_embedded_sources(payload.scriptId)
+    return MaaFWEmbeddedSourcesOut(**reply.out_fields())
+
+
+@router.post(
+    "/maafw/embedded/clone",
+    tags=["MaaFW"],
+    summary="从另一个 MFW 脚本的副本克隆，同一项目再建一个脚本",
+    response_model=MaaFWEmbeddedStatusOut,
+    status_code=200,
+)
+async def clone_maafw_embedded(
+    payload: MaaFWEmbeddedCloneIn = Body(...),
+) -> MaaFWEmbeddedStatusOut:
+    """同一个项目要开第二、第三个脚本（不同模拟器并行跑）时走这里，不用再选目录
+    重新投影，来源目录已经删了也能建。
+
+    副本从源脚本的副本硬链接克隆（运行时、模型与其它副本共用，只多小文件），
+    ``Info.Path`` 与 ``Embedded.*`` 沿用源脚本的记录；类型随项目（M9A 项目 → M9A）。
+    用户、任务队列与运行设置不带——那是「复制脚本」的事。
+    """
+    # docstring 会进 OpenAPI 生成物，保持原文；现行的载荷 + 视图口径见 clone_embedded。
+
+    reply = await maafw_embedded_api.clone_embedded(
+        payload.scriptId, payload.sourceScriptId
+    )
+    return MaaFWEmbeddedStatusOut(**reply.out_fields())
+
+
+@router.post(
     "/maafw/game-package",
     tags=["MaaFW"],
     summary="按所选 resource 推断 MFW 项目的安卓游戏包名",
@@ -1140,29 +1049,10 @@ async def resolve_maafw_game_package(
     运行计划）；推不出或多个候选都按原样返回，由前端决定不填。
     """
 
-    try:
-        root_path = Path(payload.path).resolve()
-        interface = await asyncio.to_thread(load_interface_model_cached, root_path)
-        paths = await asyncio.to_thread(
-            resource_paths_for, root_path, interface, payload.resource
-        )
-        resolution = await asyncio.to_thread(resolve_game_package, paths)
-    except MaaFWInterfaceLoadError as exc:
-        return MaaFWGamePackageOut(code=400, status="error", message=str(exc))
-    except Exception as exc:
-        logger.opt(exception=True).warning(
-            f"resolve_maafw_game_package失败: {type(exc).__name__}: {exc}"
-        )
-        return MaaFWGamePackageOut(
-            code=500, status="error", message=f"推断游戏包名失败: {exc}"
-        )
-    return MaaFWGamePackageOut(
-        data=MaaFWGamePackageData(
-            reason=resolution.reason,
-            package=resolution.package,
-            candidates=list(resolution.candidates),
-        )
+    reply = await maafw_interface_api.resolve_project_game_package(
+        payload.scriptId, payload.path, payload.resource
     )
+    return MaaFWGamePackageOut(**reply.out_fields())
 
 
 @router.post(
@@ -1177,37 +1067,10 @@ async def preview_maafw_interface(
 ) -> MaaFWInterfacePreviewOut:
     """读取 MaaFW 项目 interface，并返回 controller/resource/task 摘要。"""
 
-    try:
-        root_path = Path(payload.path).resolve()
-        interface = await asyncio.to_thread(load_interface_model_cached, root_path)
-        preview = await asyncio.to_thread(
-            build_interface_preview_data,
-            root_path,
-            interface,
-        )
-        data = MaaFWInterfacePreviewData.model_validate(preview.model_dump(mode="json"))
-    except MaaFWInterfaceLoadError as exc:
-        return MaaFWInterfacePreviewOut(
-            code=400,
-            status="error",
-            message=str(exc),
-            data=None,
-        )
-    except Exception as exc:
-        logger.opt(exception=True).warning(
-            f"preview_maafw_interface失败: {type(exc).__name__}: {exc}"
-        )
-        return MaaFWInterfacePreviewOut(
-            code=500,
-            status="error",
-            message=f"MFW interface 预览失败: {exc}",
-            data=None,
-        )
-
-    return MaaFWInterfacePreviewOut(
-        message=f"已读取 MFW 项目 {data.project.name}，共 {len(data.tasks)} 个任务",
-        data=data,
+    reply = await maafw_interface_api.preview_project_interface(
+        payload.scriptId, payload.path
     )
+    return MaaFWInterfacePreviewOut(**reply.out_fields())
 
 
 @router.post(
@@ -1226,326 +1089,8 @@ async def update_maafw_project(
     ``action=apply`` 触发下载并原地应用更新包。失败时返回明确 ``message``。
     """
 
-    try:
-        script_config = _maafw_script_config(payload.scriptId)
-    except (KeyError, ValueError, TypeError) as exc:
-        return MaaFWProjectUpdateOut(
-            code=400, status="error", message=f"MFW 脚本无效: {exc}"
-        )
-
-    project_value = str(script_config.get("Info", "Path") or "").strip()
-    if not project_value:
-        return MaaFWProjectUpdateOut(
-            code=400, status="error", message="请先设置 MFW 项目路径"
-        )
-    root_path = Path(project_value).resolve()
-    if not root_path.is_dir():
-        return MaaFWProjectUpdateOut(
-            code=400,
-            status="error",
-            message="MFW 项目路径不是有效目录，请检查 Info.Path",
-        )
-
-    try:
-        interface = await asyncio.to_thread(load_interface_model_cached, root_path)
-    except MaaFWInterfaceLoadError as exc:
-        return MaaFWProjectUpdateOut(
-            code=400, status="error", message=f"MFW interface 读取失败: {exc}"
-        )
-    except Exception as exc:
-        logger.opt(exception=True).warning(
-            f"update_maafw_project失败: {type(exc).__name__}: {exc}"
-        )
-        return MaaFWProjectUpdateOut(
-            code=500, status="error", message=f"MFW interface 读取失败: {exc}"
-        )
-
-    current_version = str(interface.version or "")
-    source_config = _maafw_update_source_config(script_config)
-    # 代理按脚本级解析（留空跟随全局），与运行前自动更新同一口径；地址可能带
-    # user:pw，不进日志，也不走 ``Config.proxy``（它每次访问都记一行地址）。
-    proxy_url = resolve_update_proxy_url(script_config)
-    proxy = _maafw_httpx_proxy(proxy_url)
-    if proxy_url and proxy is None:
-        # 地址填错：下载已按直连，预检的 uv / pip 也整条直连，别把一个
-        # httpx 都不认的串再塞进子进程环境变量。
-        proxy_url = ""
-    # CDK 值绝不进日志：只记录「有没有」。
-    _maafw_update_logger.info(
-        f"MFW 项目更新({payload.action}): script={payload.scriptId} "
-        f"channel={source_config['channel']} "
-        f"cdk={'已配置' if source_config['mirror_cdk'] else '未配置'}"
-    )
-
-    from app.core.ws import protocol as ws_protocol
-    from app.core.ws.publisher import Publisher
-
-    # 编辑页「更新过程」面板：阶段、下载 / 覆盖进度与逐行日志全程推给前端。
-    # 更新实现的回调既会从事件循环里来（下载在协程里跑），也会从工作线程里来
-    # （apply_package_transaction 跑在 to_thread 里），统一跨回循环再发。
-    tracker = MaaFWUpdateProgressTracker()
-    loop = asyncio.get_running_loop()
-
-    def publish_progress(data: WSMaaFWProjectUpdateProgressData | None) -> None:
-        if data is None:
-            return
-        asyncio.run_coroutine_threadsafe(
-            Publisher.send(
-                id=payload.scriptId,
-                type=ws_protocol.MAAFW_PROJECT_UPDATE_PROGRESS,
-                data=data,
-            ),
-            loop,
-        )
-
-    def send_update_log(line: str) -> None:
-        # 写日志前先打码，避免 CDK 等敏感值落盘；WS 通道走同一份打码结果。
-        text = sanitize_log_message(str(line))
-        _maafw_update_logger.info(text)
-        publish_progress(tracker.log(text))
-
-    def report_progress(event: dict[str, Any]) -> None:
-        publish_progress(tracker.event(event))
-
-    if payload.action == "check":
-        publish_progress(tracker.checking())
-        try:
-            discovery = await discover_maafw_project_update(
-                interface,
-                current_version=current_version,
-                source_config=source_config,
-                proxy=proxy,
-                send_log=send_update_log,
-                # 只问有没有新版本：带 CDK 去换下载地址会扣一次今日额度，
-                # 而用户可能只是随手点了下「检查更新」。真更新时再取。
-                version_only=True,
-            )
-        except MaaFWProjectUpdateError as exc:
-            message = f"MFW 更新检查失败: {exc}"
-            publish_progress(tracker.finished(success=False, message=message))
-            return MaaFWProjectUpdateOut(code=400, status="error", message=message)
-        except Exception as exc:
-            logger.opt(exception=True).warning(
-                f"update_maafw_project失败: {type(exc).__name__}: {exc}"
-            )
-            message = f"MFW 更新检查失败: {exc}"
-            publish_progress(tracker.finished(success=False, message=message))
-            return MaaFWProjectUpdateOut(code=500, status="error", message=message)
-
-        if discovery is None:
-            message = f"MFW 项目已是最新版本: {current_version or '未知'}"
-            publish_progress(tracker.finished(success=True, message=message))
-            return MaaFWProjectUpdateOut(
-                message=message,
-                data=MaaFWProjectUpdateData(
-                    checked=True, currentVersion=current_version
-                ),
-            )
-
-        extra = _maafw_update_extra_fields(discovery)
-        candidate = getattr(discovery, "candidate", None)
-        # discovery.source 是版本元数据来源（恒为 Mirror 酱）；响应里的 source
-        # 要回答「会从哪里下载」：优先候选包来源，其次核心包的 package_source。
-        # 一律用对外名（mirrorchyan / github）：candidate.source 是核心包的内部
-        # 名（github_release），直接回给前端会让「下载来源」显示成 github_release。
-        candidate_source = _public_package_source(
-            (getattr(candidate, "source", None) if candidate is not None else None)
-            or getattr(discovery, "package_source", None)
-            or getattr(discovery, "source", None)
-        )
-        installable = bool(getattr(discovery, "installable", False))
-        latest_version = getattr(discovery, "version", None) or extra["versionName"]
-        extra["versionName"] = extra["versionName"] or latest_version
-        message = (
-            f"发现 MFW 项目新版本: {current_version or '未知'} -> {latest_version}"
-        )
-        unavailable_reason = getattr(discovery, "unavailable_reason", "")
-        if not installable and unavailable_reason:
-            message = f"{message}（暂无可安装更新包: {unavailable_reason}）"
-        publish_progress(
-            tracker.finished(
-                success=True,
-                message=_maafw_update_message_with_cdk(message, extra),
-                package_kind=(
-                    getattr(candidate, "package_type", None)
-                    if candidate is not None
-                    else None
-                ),
-            )
-        )
-        return MaaFWProjectUpdateOut(
-            message=_maafw_update_message_with_cdk(message, extra),
-            data=MaaFWProjectUpdateData(
-                checked=True,
-                updateAvailable=True,
-                installable=installable,
-                currentVersion=current_version,
-                latestVersion=latest_version,
-                source=candidate_source,
-                **extra,
-            ),
-        )
-
-    # 手动更新后跑不起来和自动更新是同一种坏：提交前同样真建一次运行环境，
-    # 建不出来就回滚（预检失败也写备忘，但手动路径不读备忘——它就是强制重试）。
-    # 这几个模块会拉起 runtime_pool 与 agent_env，只在真要用时导入。
-    import functools
-    import threading
-
-    from app.task.MaaFW.embedded_manager import MaaFWEmbeddedManager
-    from app.task.MaaFW.tools.core.automas_maafw_project_update import (
-        clear_runtime_precheck,
-    )
-    from app.task.MaaFW.tools.core.automas_maafw_runtime_pool import (
-        MaaFWRuntimePoolService,
-    )
-    from app.task.MaaFW.tools.embedded.precheck import (
-        build_precheck_validator,
-        precheck_agent_root,
-    )
-    from app.task.MaaFW.tools.embedded.runtime_route import (
-        runtime_pool_route_from_service,
-    )
-    from app.task.MaaFW.tools.embedded.update_mirrors import (
-        github_release_mirror_urls,
-    )
-
-    route = await asyncio.to_thread(
-        lambda: runtime_pool_route_from_service(MaaFWRuntimePoolService())
-    )
-    precheck_failure: dict[str, Any] = {}
-    # 不把 report_progress 交给环境准备：它的收尾事件 completed / failed 会被
-    # 进度跟踪器当成更新终态，而事务此时还在 post_validating。
-    post_validate = build_precheck_validator(
-        # 预检里的 uv / pip 子进程也走脚本级代理；用 partial 绑上去，
-        # ``PrepareProjectEnvironment`` 的签名不变。
-        prepare=functools.partial(
-            MaaFWEmbeddedManager._prepare_project_environment_sync,
-            proxy_url=proxy_url,
-        ),
-        cancel_event=threading.Event(),
-        send_log=send_update_log,
-        agent_env_root=precheck_agent_root(route.root),
-        failure=precheck_failure,
-        previous_version=current_version,
-        project_name=getattr(interface, "name", None),
-    )
-
-    try:
-        # 仓库、tag、资产名等 GitHub 参数不再传入：核心包从 interface.json 与
-        # 目录名自行推断。**source_config 必须传**：它带着用户选定的下载源，
-        # 漏了就会退回缺省的 GitHub——check 说走 Mirror 酱、apply 却从 GitHub
-        # 下载，正是本次设计要禁掉的静默换源。
-        # 检查 / 下载 / 覆盖 / 校验的收尾事件（completed / failed）由更新实现
-        # 自己经 progress 发出，这里不再补发。
-        result = await update_maafw_project_if_needed(
-            root_path,
-            interface,
-            mirror_cdk=source_config["mirror_cdk"],
-            channel=source_config["channel"],
-            source_config=source_config,
-            proxy=proxy,
-            send_log=send_update_log,
-            progress=report_progress,
-            post_validate=post_validate,
-            # 同步 HTTP 请求不该跟着另一次自动更新 / 预检等几分钟。
-            project_lock_timeout=_MAAFW_MANUAL_UPDATE_LOCK_TIMEOUT_SECONDS,
-            # 手动更新与运行前自动更新用同一套加速镜像，否则「手动快、自动慢」。
-            github_mirror_urls=github_release_mirror_urls,
-        )
-    except MaaFWProjectUpdateError as exc:
-        if exc.project_lock_busy:
-            return MaaFWProjectUpdateOut(
-                code=409,
-                status="error",
-                message="MFW 项目正在自动更新/预检中，请稍后再试",
-            )
-        return MaaFWProjectUpdateOut(
-            code=400, status="error", message=f"MFW 项目更新失败: {exc}"
-        )
-    except Exception as exc:
-        logger.opt(exception=True).warning(
-            f"update_maafw_project失败: {type(exc).__name__}: {exc}"
-        )
-        return MaaFWProjectUpdateOut(
-            code=500, status="error", message=f"MFW 项目更新失败: {exc}"
-        )
-
-    if bool(getattr(result, "updated", False)):
-        # 提交成功即预检建出了环境，上次运行前更新留下的备忘（若有）作废。
-        try:
-            await asyncio.to_thread(clear_runtime_precheck, root_path)
-        except Exception as exc:  # noqa: BLE001
-            _maafw_update_logger.warning(f"清理运行环境预检备忘失败: {exc}")
-
-    extra = _maafw_update_extra_fields(result)
-    message = str(getattr(result, "message", "") or "") or "MFW 项目更新完成"
-    return MaaFWProjectUpdateOut(
-        message=_maafw_update_message_with_cdk(message, extra),
-        data=MaaFWProjectUpdateData(
-            checked=bool(getattr(result, "checked", True)),
-            updated=bool(getattr(result, "updated", False)),
-            updateAvailable=bool(getattr(result, "update_available", False)),
-            installable=bool(getattr(result, "installable", False)),
-            currentVersion=(
-                getattr(result, "current_version", None)
-                or getattr(result, "previous_version", None)
-                or current_version
-            ),
-            latestVersion=getattr(result, "latest_version", None)
-            or extra["versionName"],
-            source=getattr(result, "source", None),
-            **extra,
-        ),
-    )
-
-
-def _maafw_agent_env_prepare_data(
-    root_path: Path,
-    result: Mapping[str, Any],
-    logs: list[str],
-    *,
-    cached: bool,
-    previously_prepared: bool = False,
-) -> MaaFWAgentEnvPrepareData:
-    """把 ``prepare_project_environment()`` 的结果摊平成响应体。
-
-    缓存命中与实际准备两条路共用，免得两边的字段各写一份、慢慢长歪。
-    """
-
-    runtime = result.get("runtime")
-    runtime = runtime if isinstance(runtime, Mapping) else {}
-    agent_payload = result.get("agents")
-    agent_payload = agent_payload if isinstance(agent_payload, Mapping) else {}
-    raw_plans = agent_payload.get("plans")
-    raw_plans = raw_plans if isinstance(raw_plans, list) else []
-
-    agents = [
-        MaaFWAgentEnvInfo(
-            childExec=str(plan.get("childExec") or ""),
-            executable=str(plan.get("executable") or ""),
-            runtimeKind=plan.get("runtimeKind"),
-            isolatedVenvPath=plan.get("isolatedVenvPath"),
-            fallbackReason=plan.get("fallbackReason"),
-        )
-        for plan in raw_plans
-        if isinstance(plan, Mapping)
-    ]
-
-    return MaaFWAgentEnvPrepareData(
-        path=str(root_path),
-        agentCount=len(agents),
-        agents=agents,
-        logs=logs,
-        runtimeId=runtime.get("runtimeId"),
-        poolId=runtime.get("poolId"),
-        pythonExecutable=runtime.get("pythonExecutable"),
-        venvPath=runtime.get("venvPath"),
-        maafwVersion=runtime.get("maafwVersion"),
-        cached=cached,
-        previouslyPrepared=previously_prepared,
-        preparedAt=result.get("preparedAt"),
-    )
+    reply = await maafw_update_api.update_project(payload.scriptId, payload.action)
+    return MaaFWProjectUpdateOut(**reply.out_fields())
 
 
 @router.post(
@@ -1569,271 +1114,10 @@ async def prepare_maafw_agent_env(
     时前端带 ``force``，跳过这层缓存。
     """
 
-    # 这些模块会拉起 runtime_pool 与 agent_env，放在函数内延迟导入，
-    # 避免所有 API 请求都为它们付出导入成本。
-    from app.core.ws import protocol as ws_protocol
-    from app.core.ws.publisher import Publisher
-    from app.task.MaaFW.tools.core.automas_maafw_runner.service import (
-        MaaFWRunnerService,
-        project_environment_fingerprint,
+    reply = await maafw_agent_env_api.prepare_agent_env(
+        payload.scriptId, payload.path, payload.force
     )
-    from app.task.MaaFW.tools.core.automas_maafw_runtime_pool import (
-        MaaFWRuntimePoolService,
-    )
-    from app.task.MaaFW.tools.core.automas_maafw_runtime_pool.host_environment import (
-        subprocess_proxy_scope,
-    )
-    from app.task.MaaFW.tools.embedded.env_cache import (
-        has_prepared_environment,
-        load_prepared_environment,
-        store_prepared_environment,
-    )
-    from app.task.MaaFW.tools.embedded.project_path import (
-        release_project_path,
-        try_reserve_project_path,
-    )
-    from app.task.MaaFW.tools.embedded.runtime_route import (
-        runtime_pool_route_from_service,
-    )
-
-    logs: list[str] = []
-    # 准备过程可能持续数分钟（首次要下载 MaaFramework），全程把阶段、百分比
-    # 与新增日志行推给前端。progress_id 留空时只落日志、不推送。
-    progress_id = str(payload.scriptId or "").strip()
-    loop = asyncio.get_running_loop()
-
-    def publish_progress(event: dict) -> None:
-        if not progress_id:
-            return
-        data = WSMaaFWEnvPrepareProgressData(
-            stage=str(event.get("stage") or ""),
-            status=str(event.get("status") or "running"),
-            message=str(event.get("message") or ""),
-            percent=event.get("percent"),
-            log=event.get("log"),
-        )
-        # 准备跑在工作线程里，回调要跨回事件循环才能发 WS
-        asyncio.run_coroutine_threadsafe(
-            Publisher.send(
-                id=progress_id,
-                type=ws_protocol.MAAFW_ENV_PREPARE_PROGRESS,
-                data=data,
-            ),
-            loop,
-        )
-
-    def append_log(line: str) -> None:
-        logs.append(line)
-        publish_progress(
-            {
-                "stage": "log",
-                "status": "running",
-                "message": line,
-                "log": line,
-            }
-        )
-
-    project_value = str(payload.path or "").strip()
-    if not project_value:
-        return MaaFWAgentEnvPrepareOut(
-            code=400, status="error", message="请先设置 MFW 项目路径"
-        )
-    root_path = Path(project_value).resolve()
-    if not root_path.is_dir():
-        return MaaFWAgentEnvPrepareOut(
-            code=400,
-            status="error",
-            message="MFW 项目路径不是有效目录，请检查项目目录",
-        )
-
-    # 与运行、更新共用同一把项目锁：同一目录同时准备/运行会互相踩。
-    reservation_key = await try_reserve_project_path(root_path)
-    if reservation_key is None:
-        return MaaFWAgentEnvPrepareOut(
-            code=409,
-            status="error",
-            message="该 MFW 项目正在运行、更新或准备环境，请稍后重试",
-            data=MaaFWAgentEnvPrepareData(path=str(root_path), logs=logs),
-        )
-
-    try:
-        # 指纹哈希的是 interface / requirements / uv.lock 这些「脚本更新了没」
-        # 的输入，所以项目一更新缓存自然失效。放在拿到项目锁之后：此刻没人在
-        # 更新这个目录，算出来的指纹不会是半个更新中间态。
-        fingerprint = await asyncio.to_thread(
-            project_environment_fingerprint, root_path
-        )
-        # 界面要分「首次准备完成」和「运行环境更新完成」两句话，在写入新缓存前先看一眼
-        previously_prepared = await asyncio.to_thread(
-            has_prepared_environment, root_path
-        )
-        if not payload.force:
-            cached_result = await asyncio.to_thread(
-                load_prepared_environment, root_path, fingerprint
-            )
-            if cached_result is not None:
-                prepared_at = str(cached_result.get("preparedAt") or "")
-                append_log(
-                    "项目文件自上次准备以来没有变化，沿用已就绪的运行环境"
-                    + (f"（上次准备于 {prepared_at}）" if prepared_at else "")
-                )
-                # 命中时不推 ready 进度：没有进度可言，而那条 WS 与本次响应
-                # 抢着写同一行提示，谁后到谁说了算——推了反而会把响应里带
-                # MaaFramework 版本号的那句盖成一句干巴巴的「已就绪」。
-                return MaaFWAgentEnvPrepareOut(
-                    message="MFW 运行环境已就绪",
-                    data=_maafw_agent_env_prepare_data(
-                        root_path, cached_result, logs, cached=True
-                    ),
-                )
-
-        try:
-            interface = await asyncio.to_thread(load_interface_model_cached, root_path)
-        except MaaFWInterfaceLoadError as exc:
-            return MaaFWAgentEnvPrepareOut(
-                code=400,
-                status="error",
-                message=f"MFW interface 读取失败: {exc}",
-                data=MaaFWAgentEnvPrepareData(path=str(root_path), logs=logs),
-            )
-
-        route = await asyncio.to_thread(
-            lambda: runtime_pool_route_from_service(MaaFWRuntimePoolService())
-        )
-        # 这个端点按请求里的 path 定位项目、不经脚本配置（见 MaaFW/AGENTS.md），
-        # 所以代理只在 scriptId 能解析到一份 MFW 脚本配置时才按脚本级取；
-        # 编辑页新建项目还没有脚本时落回全局。
-        proxy_url = Config.proxy_url
-        if progress_id:
-            try:
-                proxy_url = resolve_update_proxy_url(_maafw_script_config(progress_id))
-            except (KeyError, ValueError, TypeError):
-                pass
-
-        def _prepare_with_proxy() -> dict[str, Any]:
-            # 代理作用域按线程登记，必须在 to_thread 的目标函数体内进入，
-            # uv / pip 子进程环境才带上用户在 MAS 里填的代理。
-            with subprocess_proxy_scope(proxy_url):
-                return MaaFWRunnerService().prepare_project_environment(
-                    root_path,
-                    interface,
-                    runtime_pool_root=route.root,
-                    runtime_pool_id=route.pool_id,
-                    # worker 子进程跑在隔离 venv 里，代码要靠 PYTHONPATH 找到本仓；
-                    # 受监督时 cwd 是 <app-root>，源码在 <app-root>/repo/，只能用源码根
-                    import_paths=[SOURCE_ROOT],
-                    send_log=append_log,
-                    progress=publish_progress,
-                )
-
-        try:
-            result = await asyncio.to_thread(_prepare_with_proxy)
-        except Exception as exc:
-            # 失败原因此前只活在响应体与 WS 事件里，两边都不落盘：用户报障时
-            # app.log 里一行都没有，只能对着界面截图猜。准备过程的逐行日志
-            # （pip 的 stderr 就在里面）一并记下来，别再丢。
-            _maafw_env_logger.error(f"MFW 运行环境准备失败: {exc}")
-            if logs:
-                detail = "\n".join(sanitize_log_message(str(line)) for line in logs)
-                _maafw_env_logger.error(f"MFW 运行环境准备日志:\n{detail}")
-            publish_progress(
-                {
-                    "stage": "failed",
-                    "status": "failed",
-                    "message": f"MFW 运行环境准备失败: {exc}",
-                }
-            )
-            return MaaFWAgentEnvPrepareOut(
-                code=500,
-                status="error",
-                message=f"MFW 运行环境准备失败: {exc}",
-                data=MaaFWAgentEnvPrepareData(path=str(root_path), logs=logs),
-            )
-        # 用准备流程自己回报的指纹：它在准备前后各算了一次，确认这期间项目文件
-        # 没被动过；本地这份只在它没回报时兜底。
-        # 写在项目锁内：写完才放行下一个准备/更新请求，免得它读到半份缓存。
-        await asyncio.to_thread(
-            store_prepared_environment,
-            root_path,
-            str(result.get("projectFingerprint") or "") or fingerprint,
-            result,
-        )
-    finally:
-        await release_project_path(reservation_key)
-
-    publish_progress(
-        {
-            "stage": "ready",
-            "status": "success",
-            "message": "MFW 运行环境已就绪",
-            "percent": 100.0,
-        }
-    )
-    return MaaFWAgentEnvPrepareOut(
-        message="MFW 运行环境已就绪",
-        data=_maafw_agent_env_prepare_data(
-            root_path,
-            result,
-            logs,
-            cached=False,
-            previously_prepared=previously_prepared,
-        ),
-    )
-
-
-@router.post(
-    "/m9a/tasks/available",
-    tags=["M9A"],
-    summary="获取 M9A 可用任务列表（排除 standalone 任务）",
-    status_code=200,
-)
-async def get_m9a_available_tasks(script_id: str):
-    """
-    获取 M9A 可用任务列表（排除 standalone 任务）
-
-    前端调用此接口获取可选择的任务列表，
-    用于展示在用户编辑界面的任务选择区域。
-
-    Args:
-        script_id: M9A 脚本 ID
-
-    Returns:
-        dict: 包含任务列表的响应
-    """
-    from pathlib import Path
-
-    from app.task.M9A.task_loader import M9ATaskLoader
-
-    try:
-        script_config = Config.ScriptConfig[uuid.UUID(script_id)]
-        m9a_path = Path(script_config.get("Info", "Path"))
-        loader = await asyncio.to_thread(M9ATaskLoader.get_cached, m9a_path)
-
-        # 获取可用任务，并添加完整定义（包括 option 和 _option_definitions）
-        available_tasks = loader.get_available_tasks()
-        result_tasks = []
-
-        for task in available_tasks:
-            full_def = loader.get_full_definition(task["name"])
-            if full_def:
-                result_tasks.append(full_def)
-
-        return {
-            "code": 200,
-            "status": "success",
-            "message": f"共 {len(result_tasks)} 个可用任务",
-            "data": result_tasks,
-        }
-    except Exception as e:
-        logger.opt(exception=True).warning(
-            f"get_m9a_available_tasks失败: {type(e).__name__}: {e}"
-        )
-        return {
-            "code": 500,
-            "status": "error",
-            "message": f"{type(e).__name__}: {str(e)}",
-            "data": [],
-        }
+    return MaaFWAgentEnvPrepareOut(**reply.out_fields())
 
 
 @router.get(
@@ -1855,36 +1139,10 @@ async def get_hsr_stage_options_api(
     按引擎统一返回，不按 slot 生成不同结果。
     """
 
-    try:
-        if not scriptId:
-            return HSRStageOptionsOut(
-                code=400,
-                status="error",
-                message="缺少 scriptId",
-            )
+    from app.task.HSR import api_service as hsr_api
 
-        script_config = _hsr_script_config(scriptId)
-        if userId:
-            _hsr_user_config(script_config, userId)
-        from app.task.HSR.tools.api import build_stage_options
-
-        data = HSRStageOptionsData(**build_stage_options(script_config, engine))
-        option_count = sum(len(category.options) for category in data.categories)
-        return HSRStageOptionsOut(
-            message=f"共 {option_count} 个 HSR 体力副本选项",
-            data=data,
-        )
-    except Exception as e:
-        logger.opt(exception=True).warning(
-            f"get_hsr_stage_options_api失败: {type(e).__name__}: {e}"
-        )
-        return HSRStageOptionsOut(
-            code=400
-            if isinstance(e, (ValueError, KeyError, TypeError, RuntimeError))
-            else 500,
-            status="error",
-            message=f"{type(e).__name__}: {str(e)}",
-        )
+    reply = await hsr_api.get_stage_options(scriptId, engine, userId)
+    return HSRStageOptionsOut(**reply.out_fields())
 
 
 @router.get(
@@ -3761,31 +3019,10 @@ async def import_zzzod_config_api(
 async def get_hsr_capabilities_api(scriptId: str | None = None) -> HSRCapabilitiesOut:
     """返回内置 HSR 的能力快照，不暴露原生编辑器会话。"""
 
-    try:
-        if not scriptId:
-            return HSRCapabilitiesOut(code=400, status="error", message="缺少 scriptId")
-        script_config = _hsr_script_config(scriptId)
-        from app.task.HSR.tools.api import build_capabilities
+    from app.task.HSR import api_service as hsr_api
 
-        # 走线程：里面要起一次 SRA-cli.exe --version 读版本号，正常 0.09 秒，
-        # 但异常构建或杀毒扫描时能卡到超时，直接调会连 WebSocket 一起冻住。
-        data = HSRCapabilitiesData(
-            **await asyncio.to_thread(build_capabilities, script_config)
-        )
-        return HSRCapabilitiesOut(data=data)
-    except Exception as e:
-        logger.opt(exception=True).warning(
-            f"get_hsr_capabilities_api失败: {type(e).__name__}: {e}"
-        )
-        return HSRCapabilitiesOut(
-            code=400
-            if isinstance(
-                e, (FileNotFoundError, OSError, RuntimeError, ValueError, KeyError)
-            )
-            else 500,
-            status="error",
-            message=f"{type(e).__name__}: {str(e)}",
-        )
+    reply = await hsr_api.get_capabilities(scriptId)
+    return HSRCapabilitiesOut(**reply.out_fields())
 
 
 @router.post(
@@ -3802,100 +3039,31 @@ async def post_hsr_update_api(data: HSRUpdateIn) -> HSRUpdateOut:
     这个接口是唯一不必等一轮任务就能更新的入口。
     """
 
-    try:
-        script_config = _hsr_script_config(data.scriptId)
-        from app.task.HSR.tools.native_control import resolve_script_path
-        from app.task.HSR.tools.update import (
-            check_engine_update,
-            update_engine_if_needed,
-        )
+    from app.task.HSR import api_service as hsr_api
 
-        root = resolve_script_path(script_config, data.engine)
-        if not root:
-            return HSRUpdateOut(
-                code=400, status="error", message=f"未配置 {data.engine} 路径"
-            )
+    reply = await hsr_api.update_engine(data.scriptId, data.engine, data.action)
+    return HSRUpdateOut(**reply.out_fields())
 
-        source = str(script_config.get("Update", f"{data.engine}Source") or "")
-        channel = str(script_config.get("Update", "Channel") or "stable")
-        cdk = str(script_config.get("Update", "MirrorChyanCDK") or "")
 
-        if data.action == "check":
-            result = await check_engine_update(
-                data.engine,
-                Path(root),
-                source=source,
-                channel=channel,
-                cdk=cdk,
-                proxy=Config.proxy,
-            )
-            return HSRUpdateOut(
-                data=HSRUpdateData(
-                    engine=data.engine,
-                    checked=True,
-                    updated=False,
-                    current_version=result.current_version,
-                    latest_version=result.latest_version,
-                    update_available=result.update_available,
-                    installable=result.installable,
-                    message=result.blocked_reason or "",
-                )
-            )
+@router.post(
+    "/hsr/cloud-login",
+    tags=["HSR"],
+    summary="为 HSR 用户登录云·星穹铁道",
+    response_model=HSRCloudLoginOut,
+    status_code=200,
+)
+async def post_hsr_cloud_login_api(data: HSRCloudLoginIn) -> HSRCloudLoginOut:
+    """起该用户的云浏览器并用三月七的 ``game`` 任务等用户在窗口里登录。
 
-        # apply：目录锁必须以非阻塞方式拿，正在跑任务时立刻告诉用户，
-        # 而不是把 HTTP 请求挂在那里等。
-        from app.task.HSR.tools.external_locks import (
-            HSRExternalPathBusyError,
-            acquire_external_path_locks,
-            resolve_external_lock_paths,
-        )
+    阻塞到三月七退出为止（最长为登录等待 + 最长排队 + 余量），与正在运行的
+    任务互斥：脚本运行中或三月七目录被占用时返回 409。成功后写
+    ``Cloud.LastLogin``。
+    """
 
-        try:
-            lease = await acquire_external_path_locks(
-                resolve_external_lock_paths(script_config, (data.engine,)),
-                wait=False,
-            )
-        except HSRExternalPathBusyError as e:
-            return HSRUpdateOut(code=409, status="error", message=str(e))
+    from app.task.HSR import api_service as hsr_api
 
-        try:
-            outcome = await update_engine_if_needed(
-                data.engine,
-                Path(root),
-                source=source,
-                channel=channel,
-                cdk=cdk,
-                proxy=Config.proxy,
-                download_dir=Path.cwd() / "data" / "hsr_update",
-            )
-        finally:
-            lease.release()
-
-        return HSRUpdateOut(
-            data=HSRUpdateData(
-                engine=data.engine,
-                checked=outcome.checked,
-                updated=outcome.updated,
-                current_version=outcome.current_version,
-                latest_version=outcome.latest_version,
-                update_available=outcome.update_available,
-                installable=outcome.updated or not outcome.message,
-                message=outcome.message,
-            )
-        )
-    except Exception as e:
-        logger.opt(exception=True).warning(
-            f"post_hsr_update_api失败: {type(e).__name__}: {e}"
-        )
-        return HSRUpdateOut(
-            code=400
-            if isinstance(
-                e, (FileNotFoundError, OSError, RuntimeError, ValueError, KeyError)
-            )
-            else 500,
-            status="error",
-            message=f"{type(e).__name__}: {str(e)}",
-        )
+    reply = await hsr_api.cloud_login(data.scriptId, data.userId)
+    return HSRCloudLoginOut(**reply.out_fields())
 
 
 @router.get(
@@ -3908,34 +3076,17 @@ async def post_hsr_update_api(data: HSRUpdateIn) -> HSRUpdateOut:
 async def get_hsr_managed_config_api(
     scriptId: str | None = None, userId: str | None = None
 ) -> HSRManagedConfigOut:
-    """返回原生动态托管字段；用户 ID 只负责归属校验。"""
+    """返回原生动态托管字段。
 
-    try:
-        if not scriptId:
-            return HSRManagedConfigOut(
-                code=400, status="error", message="缺少 scriptId"
-            )
-        script_config = _hsr_script_config(scriptId)
-        user_config = None
-        if userId:
-            user_config = _hsr_user_config(script_config, userId)
-        from app.task.HSR.tools.api import build_managed_config
+    传了用户 ID 时先做归属校验，再按该用户的配置来源决定表单读哪份计划：
+    「脚本」读脚本共享计划，「用户」读该用户自己的计划；不传用户 ID 时读
+    脚本共享计划。响应的 ``plan_owner`` 指明保存目标。
+    """
 
-        data = HSRManagedConfigData(**build_managed_config(script_config, user_config))
-        return HSRManagedConfigOut(data=data)
-    except Exception as e:
-        logger.opt(exception=True).warning(
-            f"get_hsr_managed_config_api失败: {type(e).__name__}: {e}"
-        )
-        return HSRManagedConfigOut(
-            code=400
-            if isinstance(
-                e, (FileNotFoundError, OSError, RuntimeError, ValueError, KeyError)
-            )
-            else 500,
-            status="error",
-            message=f"{type(e).__name__}: {str(e)}",
-        )
+    from app.task.HSR import api_service as hsr_api
+
+    reply = await hsr_api.get_managed_config(scriptId, userId)
+    return HSRManagedConfigOut(**reply.out_fields())
 
 
 @router.get(
@@ -3948,110 +3099,10 @@ async def get_hsr_managed_config_api(
 async def get_hsr_sra_profiles_api(scriptId: str | None = None) -> HSRSRAProfilesOut:
     """列出 ``%APPDATA%/SRA/configs`` 下的配置档案，并标出脚本当前生效的那份。"""
 
-    try:
-        if not scriptId:
-            return HSRSRAProfilesOut(code=400, status="error", message="缺少 scriptId")
-        script_config = _hsr_script_config(scriptId)
-        from app.task.HSR.tools.api import build_sra_profiles
+    from app.task.HSR import api_service as hsr_api
 
-        data = HSRSRAProfilesData(**build_sra_profiles(script_config))
-        return HSRSRAProfilesOut(
-            message=f"共 {len(data.profiles)} 份 SRA 配置档案",
-            data=data,
-        )
-    except Exception as e:
-        logger.opt(exception=True).warning(
-            f"get_hsr_sra_profiles_api失败: {type(e).__name__}: {e}"
-        )
-        return HSRSRAProfilesOut(
-            code=400
-            if isinstance(e, (ValueError, KeyError, TypeError, RuntimeError))
-            else 500,
-            status="error",
-            message=f"{type(e).__name__}: {str(e)}",
-        )
-
-
-@router.post(
-    "/hsr/direct-config/import",
-    tags=["HSR"],
-    summary="导入 HSR 原生配置快照",
-    response_model=HSRDirectConfigImportOut,
-    status_code=200,
-)
-async def import_hsr_direct_config_api(
-    request: HSRDirectConfigImportIn = Body(...),
-) -> HSRDirectConfigImportOut:
-    from app.task.HSR.tools.api import import_direct_config
-    from app.task.HSR.tools.external_locks import HSRExternalPathBusyError
-
-    try:
-        script_config = _hsr_script_config(request.scriptId)
-        # 先校验用户归属，再让 provider 读取原生文件，避免无效请求触碰用户配置。
-        _hsr_user_config(script_config, request.userId)
-
-        result = await import_direct_config(
-            script_config,
-            request.engine,
-            script_id=request.scriptId,
-            user_id=request.userId,
-            update_user=Config.update_user,
-        )
-        return HSRDirectConfigImportOut(
-            message=f"{request.engine} 原生配置已导入",
-            data=HSRDirectConfigImportData(**result),
-        )
-    except HSRExternalPathBusyError as e:
-        return HSRDirectConfigImportOut(
-            code=409, status="error", message=f"{type(e).__name__}: {str(e)}"
-        )
-    except (FileNotFoundError, KeyError, TypeError, ValueError, RuntimeError) as e:
-        return HSRDirectConfigImportOut(
-            code=400, status="error", message=f"{type(e).__name__}: {str(e)}"
-        )
-    except OSError as e:
-        return HSRDirectConfigImportOut(
-            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
-        )
-
-
-@router.post(
-    "/hsr/direct-config/clear",
-    tags=["HSR"],
-    summary="清除 HSR 用户的直控配置快照",
-    response_model=HSRDirectConfigImportOut,
-    status_code=200,
-)
-async def clear_hsr_direct_config_api(
-    request: HSRDirectConfigImportIn = Body(...),
-) -> HSRDirectConfigImportOut:
-    """清掉该用户导入的快照，直控回到直接使用脚本当前原生配置。"""
-
-    from app.task.HSR.tools.api import clear_direct_config
-
-    try:
-        script_config = _hsr_script_config(request.scriptId)
-        _hsr_user_config(script_config, request.userId)
-
-        result = await clear_direct_config(
-            script_config,
-            request.engine,
-            script_id=request.scriptId,
-            user_id=request.userId,
-            update_user=Config.update_user,
-        )
-        return HSRDirectConfigImportOut(
-            message=f"{request.engine} 已改回使用脚本当前配置",
-            data=HSRDirectConfigImportData(**result),
-        )
-    except (KeyError, TypeError, ValueError) as e:
-        return HSRDirectConfigImportOut(
-            code=400, status="error", message=f"{type(e).__name__}: {str(e)}"
-        )
-    except OSError as e:
-        return HSRDirectConfigImportOut(
-            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
-        )
+    reply = await hsr_api.get_sra_profiles(scriptId)
+    return HSRSRAProfilesOut(**reply.out_fields())
 
 
 @router.post(
@@ -4395,53 +3446,6 @@ async def get_config_backup_file_api(
         )
 
 
-_MAAFW_IMAGE_SUFFIXES = {
-    ".avif",
-    ".bmp",
-    ".gif",
-    ".ico",
-    ".jpeg",
-    ".jpg",
-    ".png",
-    ".svg",
-    ".webp",
-}
-"""允许外发的图片后缀。
-
-白名单而非黑名单：``/maafw/asset`` 的 root 由请求方给定，等于把「读任意目录下的
-文件」的能力暴露出去了，只能靠「必须在 root 内」+「必须是图片」两道闸门把它收窄
-成「读项目内的图片」。放开成任意后缀就变成了任意文件读取。
-"""
-
-
-def _maafw_asset_file_path(root: str, asset_path: str) -> Path:
-    """把 (项目根, 项目内相对路径) 解析成一个可安全外发的图片绝对路径。"""
-
-    root_path = Path(root).resolve()
-    if not root_path.is_dir():
-        raise ValueError("MFW 项目目录不存在")
-
-    normalized_asset_path = asset_path.replace("\\", "/").strip()
-    relative_path = Path(normalized_asset_path)
-    if (
-        not normalized_asset_path
-        or relative_path.is_absolute()
-        or ".." in relative_path.parts
-    ):
-        raise ValueError("MFW 资源路径非法")
-
-    file_path = (root_path / relative_path).resolve()
-    # 逐段比对而不是比字符串前缀：符号链接与 ..（上面已挡）之外，
-    # 大小写与短路径名的差异也会让前缀比较判错。
-    if root_path not in file_path.parents:
-        raise ValueError("MFW 资源路径越界")
-    if file_path.suffix.casefold() not in _MAAFW_IMAGE_SUFFIXES:
-        raise ValueError("仅支持 MFW 图片资源")
-    if not file_path.is_file():
-        raise FileNotFoundError("MFW 图片资源不存在")
-    return file_path
-
-
 @router.get(
     "/maafw/asset",
     tags=["MaaFW"],
@@ -4462,7 +3466,7 @@ async def get_maafw_asset(
     """
 
     try:
-        file_path = _maafw_asset_file_path(root, path)
+        file_path = maafw_interface_api.maafw_asset_file_path(root, path)
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:
