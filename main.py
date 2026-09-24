@@ -25,7 +25,9 @@ import ctypes
 import logging
 import os
 import sys
+from collections.abc import Awaitable, Callable
 from pathlib import Path
+from typing import Any
 
 current_dir = Path(__file__).resolve().parent
 if str(current_dir) not in sys.path:
@@ -290,6 +292,8 @@ def main():
 
             lifespan 提前 yield 后 uvicorn 立即打印 "Uvicorn running"，
             让前端等待就绪的耗时只包含核心配置初始化。
+            各步骤互不连带：主定时器失败时 background_status 为 failed，其余步骤失败时
+            仍为 ready，失败步骤写进 background_error。
             """
 
             def _patch_fastapi_mcp_ref_recursion(max_depth: int = 96) -> None:
@@ -297,7 +301,7 @@ def main():
 
                 库实现（openapi.utils.resolve_schema_references）在模型互相
                 $ref 引用时会无限展开（A→B→A…），递归 ~1000 层即 RecursionError，
-                导致整个后台初始化失败（MainTimer / 通知管理器等后续服务全部跳过）。
+                导致 MCP 挂载失败。
                 这里以相同逻辑但带深度上限的实现替换；超限的 $ref 原样保留，
                 仅影响 MCP 工具 schema 的展示完整度，不再炸初始化。
                 需同时替换 utils 与 convert 两处按名绑定的引用。
@@ -337,8 +341,22 @@ def main():
                 _fm_utils.resolve_schema_references = resolve_with_depth_limit
                 _fm_convert.resolve_schema_references = resolve_with_depth_limit
 
-            app.state.background_status = "running"
-            try:
+            # 各步骤各自容错：任一步抛异常只记入失败清单，不连带跳过后面的步骤，
+            # 尤其不能跳过主定时器（队列定时按分钟精确匹配，没起来就整夜不触发）。
+            failed_steps: list[str] = []
+
+            async def run_step(name: str, step: Callable[[], Awaitable[Any]]) -> bool:
+                try:
+                    await step()
+                except asyncio.CancelledError:
+                    raise
+                except Exception as error:
+                    failed_steps.append(f"{name}（{type(error).__name__}: {error}）")
+                    logger.exception(f"后台初始化步骤失败: {name}")
+                    return False
+                return True
+
+            async def mount_mcp() -> None:
                 import importlib
 
                 # MCP 构建需要遍历完整 OpenAPI schema (约 1s)，后移到后台
@@ -374,8 +392,48 @@ def main():
                 else:
                     logger.info("MCP 服务未启用，跳过路由挂载")
 
-                await Config.get_stage()
-                await Config.clean_old_history()
+            async def init_arknight_win32() -> None:
+                import importlib
+
+                for adapter in ("app.MaaFW.ArknightWin32",):
+                    await asyncio.to_thread(importlib.import_module, adapter)
+
+                from app.MaaFW.ArknightWin32 import ArknightWin32Toolkit
+
+                await ArknightWin32Toolkit.init()
+
+            async def start_desktop_guard() -> None:
+                from app.core.desktop_guard import DesktopGuard
+
+                await DesktopGuard.start()
+
+            async def start_openclaw_weixin() -> None:
+                from app.services.openclaw_weixin import openclaw_weixin_manager
+
+                await openclaw_weixin_manager.start()
+
+            async def start_openclaw_qq() -> None:
+                from app.services.openclaw_qq import openclaw_qq_manager
+
+                await openclaw_qq_manager.start()
+
+            async def start_koishi() -> None:
+                # 初始化 Koishi 系统客户端（如果已启用）
+                if not Config.get("Notify", "IfKoishiSupport"):
+                    return
+
+                from app.api.ws_command import execute_ws_command
+                from app.utils.websocket import ws_client_manager
+
+                # 出站客户端不再反射导入 API，命令执行器需显式注入
+                ws_client_manager.set_command_executor(execute_ws_command)
+                await ws_client_manager.init_system_client_koishi()
+
+            app.state.background_status = "running"
+            try:
+                await run_step("MCP 服务挂载", mount_mcp)
+                await run_step("活动关卡信息获取", Config.get_stage)
+                await run_step("历史记录清理", Config.clean_old_history)
 
                 async def _maafw_startup_maintenance() -> None:
                     # 老副本一次性采纳成「载荷 + 视图」要几分钟：连同它后面依赖终态布局的
@@ -397,39 +455,24 @@ def main():
                 app.state.maafw_startup_maintenance = asyncio.create_task(
                     _maafw_startup_maintenance()
                 )
-                await Config.clean_debug_diagnostics()
-                await Config.clean_maafw_native_debug_logs()
+                await run_step("诊断文件清理", Config.clean_debug_diagnostics)
+                await run_step(
+                    "MaaFW 原生日志清理", Config.clean_maafw_native_debug_logs
+                )
 
                 if IS_WINDOWS:
-                    for adapter in ("app.MaaFW.ArknightWin32",):
-                        await asyncio.to_thread(importlib.import_module, adapter)
-
-                    from app.MaaFW.ArknightWin32 import ArknightWin32Toolkit
-
-                    await ArknightWin32Toolkit.init()
+                    await run_step("明日方舟 PC 工具初始化", init_arknight_win32)
 
                 # 显示输出守卫要早于主定时器：定时器可能立刻拉起一轮任务，而任务开跑前
-                # 会要求守卫强制巡检一次，守卫没起来那次巡检就是空转。
-                from app.core.desktop_guard import DesktopGuard
-
-                await DesktopGuard.start()
-                await MainTimer.start()
+                # 会要求守卫强制巡检一次，守卫没起来那次巡检就是空转。守卫失败不拦定时器：
+                # 空转一次巡检远比定时任务整夜不触发轻。
+                await run_step("桌面显示输出守卫", start_desktop_guard)
+                timer_started = await run_step("主业务定时器", MainTimer.start)
 
                 # 微信按需发送；QQ 同时维持官方网关连接以完成扫码绑定。
-                from app.services.openclaw_qq import openclaw_qq_manager
-                from app.services.openclaw_weixin import openclaw_weixin_manager
-
-                await openclaw_weixin_manager.start()
-                await openclaw_qq_manager.start()
-
-                # 初始化 Koishi 系统客户端（如果已启用）
-                if Config.get("Notify", "IfKoishiSupport"):
-                    from app.api.ws_command import execute_ws_command
-                    from app.utils.websocket import ws_client_manager
-
-                    # 出站客户端不再反射导入 API，命令执行器需显式注入
-                    ws_client_manager.set_command_executor(execute_ws_command)
-                    await ws_client_manager.init_system_client_koishi()
+                await run_step("微信通知通道", start_openclaw_weixin)
+                await run_step("QQ 通知通道", start_openclaw_qq)
+                await run_step("Koishi 客户端", start_koishi)
 
                 if (Path.cwd() / "AUTO-MAS-Setup.exe").exists():
                     try:
@@ -442,8 +485,17 @@ def main():
                     except Exception as e:
                         logger.error(f"删除AUTO_MAA.exe失败: {e}")
 
-                app.state.background_status = "ready"
-                logger.info("后端后台初始化完成")
+                # 不新增状态字面量：AUTO-MAS-Runtime 按封闭集合校验 backgroundStatus。
+                # 主定时器起来了就是 ready，可选步骤的失败写进 backgroundError 供前端提示；
+                # 主定时器没起来才是 failed。
+                if failed_steps:
+                    app.state.background_error = "；".join(failed_steps)
+                    logger.error(
+                        f"后端后台初始化部分失败: {app.state.background_error}"
+                    )
+                app.state.background_status = "ready" if timer_started else "failed"
+                if not failed_steps:
+                    logger.info("后端后台初始化完成")
             except asyncio.CancelledError:
                 app.state.background_status = "cancelled"
                 raise
