@@ -821,8 +821,8 @@ export default {
     checkUpdates2: 'Check for updates',
     emulator2: 'Emulator',
     regexGuide: 'Regex guide',
-    loadingMfwInterface: 'Loading the MFW interface',
-    loadingMaafwProjectInterface: 'Loading the MaaFW project interface',
+    loadingMfwInterface: 'Loading the project interface',
+    loadingMaafwProjectInterface: 'Loading project tasks',
     clear: 'Clear',
     switchAccountDirectly: 'Switch the account directly',
     seconds: 'seconds',
@@ -1482,7 +1482,7 @@ export default {
       'Root directory of the script; every other path is adjusted relative to it',
     scriptDirectControl: 'Script-direct control',
     scriptDirectConfiguration: 'Script-direct configuration',
-    scriptTypeNotMfw: 'The script type is not MFW',
+    scriptTypeNotMfw: 'The script type is not MFW / M9A / MSS',
     scriptTypeNotOk: 'The script type is not OK-NTE',
     scriptTypeNotOk2: 'The script type is not ok-ww',
     whetherGameProcessForce: 'Whether the game process is force-closed after the script finishes',
@@ -1534,7 +1534,7 @@ export default {
     envRetry: 'Retry',
     mfwUnityResolutionOff: 'Leave unchanged',
     mfwWaitTimeTip:
-      'Both waits when MAS launches the game share this cap: first for the window to appear, then for the screen to settle. The screen is sampled once a second and tasks start early once it has content and stays unchanged for 5 seconds; MaaFW initialisation runs in parallel. Unity games are usually still on a black loading screen when the window shows up, and posting tasks too early makes the script report a recognition failure. Not applied to the screen wait when the game is already running.',
+      'Both waits when MAS launches the game share this cap: first for the window to appear, then for the screen to settle. The screen is sampled once a second and tasks start early once it has content and stays unchanged for 5 seconds; script initialisation runs in parallel. Unity games are usually still on a black loading screen when the window shows up, and posting tasks too early makes the script report a recognition failure. Not applied to the screen wait when the game is already running.',
     mfwUnityResolutionTip:
       'Unity games only: before launching, MAS looks up the game registry key from the exe path and temporarily switches to the chosen windowed size, restoring the original values after the game closes; nothing is changed if the game is already running.',
     thisNameAlsoWritten:
@@ -1548,7 +1548,7 @@ export default {
     saveUserBeforeImporting: 'Save the user before importing a configuration',
     createUserBeforeConfiguring: 'Create the user before configuring OK-NTE',
     setLogFilePath: 'Set the log file path in the script configuration first',
-    importMfwProjectScript: 'Import the MFW project on the script page first',
+    importMfwProjectScript: 'Import the project on the script page first',
     addEnableUserBefore: 'Add and enable a user before checking for updates',
     finishSetupOkWw: 'Finish the setup in the ok-ww window.',
     readingControllersResourcesTasks:
@@ -1616,8 +1616,8 @@ export default {
     trackedProcessCommandLine: 'Tracked process command line',
     pickEndfieldExePath: 'Pick the Endfield.exe path',
     pickMfwResourceLeave:
-      'Pick the MFW resource; leave empty to auto-pick the first resource matching the control method',
-    pickMfwProject: 'Pick the MFW project',
+      'Pick the resource; leave empty to auto-pick the first resource matching the control method',
+    pickMfwProject: 'Pick the project',
     pickDirectoryHoldingMaaend2: 'Pick the directory holding MaaEnd.exe',
     pickExe: 'Pick an exe',
     pickDirectoryHoldingOk3: 'Pick the directory holding ok-nte.exe',

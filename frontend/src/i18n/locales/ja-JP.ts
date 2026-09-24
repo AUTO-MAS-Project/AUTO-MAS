@@ -769,8 +769,8 @@ export default {
     checkUpdates2: '更新を確認',
     emulator2: 'エミュレータ',
     regexGuide: '正規表現のガイド',
-    loadingMfwInterface: 'MFW インターフェースを読み込んでいます',
-    loadingMaafwProjectInterface: 'MaaFW プロジェクトのインターフェースを読み込んでいます',
+    loadingMfwInterface: 'プロジェクトのインターフェースを読み込んでいます',
+    loadingMaafwProjectInterface: 'プロジェクトのタスクを読み込んでいます',
     clear: 'クリア',
     switchAccountDirectly: 'そのままアカウントを切り替える',
     seconds: '秒',
@@ -1369,7 +1369,7 @@ export default {
       'スクリプトのルートフォルダのパス。他のパスはこれを基準に自動調整されます',
     scriptDirectControl: 'スクリプト直接制御',
     scriptDirectConfiguration: 'スクリプト直接制御の設定',
-    scriptTypeNotMfw: 'スクリプトの種別が MFW ではありません',
+    scriptTypeNotMfw: 'スクリプトの種別が MFW / M9A / MSS ではありません',
     scriptTypeNotOk: 'スクリプトの種別が OK-NTE ではありません',
     scriptTypeNotOk2: 'スクリプトの種別が ok-ww ではありません',
     whetherGameProcessForce: 'スクリプト終了後にゲームのプロセスを強制終了するかどうか',
@@ -1421,7 +1421,7 @@ export default {
     envRetry: '再試行',
     mfwUnityResolutionOff: '変更しない',
     mfwWaitTimeTip:
-      'MAS がゲームを起動する際の 2 段階の待機はこの上限を共有します。まずウィンドウの表示を待ち、次に画面の安定を待ちます。待機中は毎秒画面を確認し、内容があり 5 秒間変化がなければ早めにタスクを開始します。MaaFW の初期化は並行して進みます。Unity 製ゲームはウィンドウが出た時点ではまだ黒画面で読み込み中のことが多く、早すぎるとスクリプト側で認識異常と判定されます。ゲームが既に起動している場合は画面を待ちません。',
+      'MAS がゲームを起動する際の 2 段階の待機はこの上限を共有します。まずウィンドウの表示を待ち、次に画面の安定を待ちます。待機中は毎秒画面を確認し、内容があり 5 秒間変化がなければ早めにタスクを開始します。スクリプトの初期化は並行して進みます。Unity 製ゲームはウィンドウが出た時点ではまだ黒画面で読み込み中のことが多く、早すぎるとスクリプト側で認識異常と判定されます。ゲームが既に起動している場合は画面を待ちません。',
     mfwUnityResolutionTip:
       'Unity 製ゲームのみ有効：MAS は起動前に exe のパスからゲームのレジストリを逆引きし、解像度を一時的に選択したサイズのウィンドウモードに変更、ゲーム終了後に元の値へ戻します。ゲームがすでに起動している場合は変更しません。',
     thisNameAlsoWritten: 'この名前は、貨幣戦争の開拓者名として M7A/SRA にも書き込まれます',
@@ -1434,7 +1434,7 @@ export default {
     saveUserBeforeImporting: '設定をインポートする前に、ユーザーを保存してください',
     createUserBeforeConfiguring: 'OK-NTE を設定する前に、ユーザーを作成してください',
     setLogFilePath: '先にスクリプト設定でログファイルのパスを設定してください',
-    importMfwProjectScript: '先にスクリプトページで MFW プロジェクトをインポートしてください',
+    importMfwProjectScript: '先にスクリプトページでプロジェクトをインポートしてください',
     addEnableUserBefore: '更新を確認する前に、ユーザーを追加して有効にしてください',
     finishSetupOkWw: 'ok-ww の画面で設定を完了してください。',
     readingControllersResourcesTasks:
@@ -1504,8 +1504,8 @@ export default {
     trackedProcessCommandLine: '追跡対象プロセスのコマンドライン引数',
     pickEndfieldExePath: 'Endfield.exe のパスを選択',
     pickMfwResourceLeave:
-      'MFW のリソースを選びます。空の場合は、現在の制御方式に合う最初のリソースが自動で選ばれます',
-    pickMfwProject: 'MFW プロジェクトを選択',
+      'リソースを選びます。空の場合は、現在の制御方式に合う最初のリソースが自動で選ばれます',
+    pickMfwProject: 'プロジェクトを選択',
     pickDirectoryHoldingMaaend2: 'MaaEnd.exe があるフォルダを選択',
     pickExe: 'exe を選択',
     pickDirectoryHoldingOk3: 'ok-nte.exe があるフォルダを選択',
