@@ -805,6 +805,7 @@ export default {
     failure: 'On failure',
     stringSplittingGuide: 'String splitting guide',
     done: 'Done',
+    createFirstUser: 'Create the first user!',
     wutheringWavesWillBe:
       'Wuthering Waves will be checked and updated on the selected server. The update may download several GB, so make sure the game is not running',
     turnAutomaticRelicSalvage:

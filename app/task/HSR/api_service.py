@@ -158,6 +158,7 @@ async def update_engine(script_id: str, engine: str, action: str) -> HSRApiReply
 
     try:
         script_config = hsr_script_config(script_id)
+        from app.task.HSR.task_mapping import engine_label
         from app.task.HSR.tools.native_control import resolve_script_path
         from app.task.HSR.tools.update import (
             check_engine_update,
@@ -166,7 +167,7 @@ async def update_engine(script_id: str, engine: str, action: str) -> HSRApiReply
 
         root = resolve_script_path(script_config, engine)
         if not root:
-            return HSRApiReply.error(400, f"未配置 {engine} 路径")
+            return HSRApiReply.error(400, f"未配置{engine_label(engine)}路径")
 
         source = str(script_config.get("Update", f"{engine}Source") or "")
         channel = str(script_config.get("Update", "Channel") or "stable")
