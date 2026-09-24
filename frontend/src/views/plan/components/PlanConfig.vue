@@ -52,14 +52,14 @@
             @change="$emit('update:view-mode', $event)"
           />
         </template>
-        <!-- 关卡安排：只有 BAAH 的 key 分「多类混打」与「每天一类」两种排法 -->
+        <!-- 关卡安排：只有 BAAH 的 key 分「每天一类」与「多类混打」两种排法 -->
         <template v-if="supportsLayoutMode">
           <span class="layout-label">{{ t('plan.baahLayout.label') }}</span>
           <a-segmented
             :value="baahLayout"
             :options="[
-              { label: t('plan.baahLayout.mixed'), value: 'mixed' },
               { label: t('plan.baahLayout.single'), value: 'single' },
+              { label: t('plan.baahLayout.mixed'), value: 'mixed' },
             ]"
             @change="$emit('update:baah-layout', $event)"
           />

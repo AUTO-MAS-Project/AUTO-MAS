@@ -121,9 +121,9 @@ const planDataMap = ref<Record<string, PlanConfigData>>({})
 const currentPlanName = ref<string>('')
 const currentMode = ref<'ALL' | 'Weekly'>('ALL')
 const viewMode = ref<'config' | 'simple'>('config')
-// BAAH 计划表的关卡安排：多类混打（六类都填，默认）或每天一类（每天只选一类）。
+// BAAH 计划表的关卡安排：每天一类（默认，三行各管一件事）或多类混打（六类都填）。
 // 与 viewMode 一样只是当前页面的显示状态，各计划表共用同一个选择
-const baahLayout = ref<'mixed' | 'single'>('mixed')
+const baahLayout = ref<'mixed' | 'single'>('single')
 
 const isEditingPlanName = ref<boolean>(false)
 const loading = ref(true)
