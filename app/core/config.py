@@ -112,6 +112,7 @@ from app.utils.constants import (
     TYPE_BOOK,
     UTC4,
     UTC8,
+    game_now,
 )
 from app.utils.io import ConfigCorruptedError, force_rmtree, write_file
 from app.utils.paths import SOURCE_ROOT
@@ -3677,6 +3678,9 @@ class AppConfig(GlobalConfig):
             maa_data_dir=archive_dir,
             config_path=self.config_path,
             proxy=self.proxy,
+            today=game_now(
+                script_config.UserData[uuid.UUID(user_id)].get("Info", "Server")
+            ).date(),
             skland=skland,
         )
         # 目标干员当前练度（编辑器"当前等级 → 目标等级"展示用）；
@@ -4430,11 +4434,13 @@ class AppConfig(GlobalConfig):
         """获取关卡信息"""
 
         stage_by_server = await self.get_stage(refresh=refresh)
+        # 开放日按区服的游戏日判断
+        game_today = game_now(server)
         server = "Official" if server == "Bilibili" else server
         stage_data = stage_by_server.get(server, {})
 
         if type == "Info":
-            today = datetime.now(tz=UTC4).isoweekday()
+            today = game_today.isoweekday()
             res_stage_info = []
             for stage in RESOURCE_STAGE_INFO:
                 if (
@@ -4460,7 +4466,7 @@ class AppConfig(GlobalConfig):
                 )
             return data
         elif type == "Today":
-            return stage_data.get(datetime.now(tz=UTC4).strftime("%A"), [])
+            return stage_data.get(game_today.strftime("%A"), [])
         else:
             return stage_data.get(type, [])
 
