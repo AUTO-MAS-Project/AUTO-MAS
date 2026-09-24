@@ -3,15 +3,9 @@ import { describe, expect, it } from 'vitest'
 
 // 锁定配置弹窗层级方案：z-index 900 压在标题栏之下 + 嵌套浮层挂 wrap 容器。
 // 这些约束没有运行时断言点，只能用源码文本锁（照 ScriptCreateDialog.test.ts）。
-const source = readFileSync(
-  new URL('./components/NotifyChannelModal.vue', import.meta.url),
-  'utf8'
-)
+const source = readFileSync(new URL('./components/NotifyChannelModal.vue', import.meta.url), 'utf8')
 const tabSource = readFileSync(new URL('./TabNotify.vue', import.meta.url), 'utf8')
-const clawSource = readFileSync(
-  new URL('./components/ClawBinding.vue', import.meta.url),
-  'utf8'
-)
+const clawSource = readFileSync(new URL('./components/ClawBinding.vue', import.meta.url), 'utf8')
 
 describe('通知配置弹窗层级方案', () => {
   it('弹窗连同遮罩整体压在标题栏（1000）之下', () => {

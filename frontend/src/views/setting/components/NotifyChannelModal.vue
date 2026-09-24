@@ -53,9 +53,7 @@ const groupTag = computed(() =>
     ? t('setting.notify.customGroup')
     : t('setting.notify.channelsGroup')
 )
-const fields = computed(() =>
-  props.channel ? scopeFields(props.channel, props.scope) : []
-)
+const fields = computed(() => (props.channel ? scopeFields(props.channel, props.scope) : []))
 const enableGroup = computed(() => props.channel?.enableField?.[0] ?? null)
 const enableName = computed(() => props.channel?.enableField?.[1] ?? null)
 const enabled = computed(() => {
@@ -68,15 +66,11 @@ const clawConnected = computed(() => !!props.clawBinding?.status?.connected)
 const switchDisabled = computed(() => {
   if (props.controlsDisabled) return true
   if (isClaw.value && props.clawBinding) {
-    return !clawConnected.value ||
-      props.clawBinding.statusLoading ||
-      props.clawBinding.unbinding
+    return !clawConnected.value || props.clawBinding.statusLoading || props.clawBinding.unbinding
   }
   return false
 })
-const clawChannel = computed(() =>
-  props.channel?.customBlock === 'claw:qq' ? 'qq' : 'weixin'
-)
+const clawChannel = computed(() => (props.channel?.customBlock === 'claw:qq' ? 'qq' : 'weixin'))
 const webhookMode = computed(() => (props.scope === 'user' ? 'user' : 'global'))
 
 const saving = ref(false)
@@ -94,7 +88,10 @@ const saveField = (group: string, name: string, value: unknown) => props.save(gr
 
 // Webhook 摘要：条目名缺省时用 uid 兜底，避免出现空名字串在列表里
 const onWebhookListed = (items: { name: string; uid: string }[]) =>
-  emit('listed', items.map(item => item.name || item.uid))
+  emit(
+    'listed',
+    items.map(item => item.name || item.uid)
+  )
 </script>
 
 <template>
@@ -186,7 +183,6 @@ const onWebhookListed = (items: { name: string; uid: string }[]) =>
           :get-popup-container="getPopupContainer"
           @save="value => saveField(field.group, field.name, value)"
         />
-
       </div>
     </div>
   </a-modal>
@@ -308,4 +304,3 @@ const onWebhookListed = (items: { name: string; uid: string }[]) =>
   color: var(--ant-color-text-tertiary);
 }
 </style>
-

@@ -52,9 +52,20 @@ describe('groupChannels', () => {
       customBlock: 'claw:weixin',
       enableField: ['Notify', 'IfOpenClawWeixin'],
     }),
-    channel({ key: 'webhook', order: 50, group: 'custom', kind: 'custom', customBlock: 'webhook_list' }),
+    channel({
+      key: 'webhook',
+      order: 50,
+      group: 'custom',
+      kind: 'custom',
+      customBlock: 'webhook_list',
+    }),
     channel({ key: 'policy', order: 90, kind: 'policy' }),
-    channel({ key: 'user_only', order: 95, scopes: ['user'], enableField: ['Notify', 'IfSendMail'] }),
+    channel({
+      key: 'user_only',
+      order: 95,
+      scopes: ['user'],
+      enableField: ['Notify', 'IfSendMail'],
+    }),
   ]
 
   it('按开关分到已激活/未激活，policy 与 custom 单列，过滤未知作用域', () => {
@@ -93,23 +104,43 @@ describe('channelSummary', () => {
   }
 
   it('插值参与字段；任一为空即降级到 Empty 变体，不出现半截串', () => {
-    const mail = channel({ summaryKey: 'setting.notify.summary.mail', summaryFields: ['SMTPServerAddress', 'ToAddress'] })
-    expect(channelSummary(mail, { SMTPServerAddress: 'smtp.qq.com', ToAddress: 'me@qq.com' }, t, CLAW_EXTRAS)).toBe(
-      'SMTP: smtp.qq.com · 收信: me@qq.com'
+    const mail = channel({
+      summaryKey: 'setting.notify.summary.mail',
+      summaryFields: ['SMTPServerAddress', 'ToAddress'],
+    })
+    expect(
+      channelSummary(
+        mail,
+        { SMTPServerAddress: 'smtp.qq.com', ToAddress: 'me@qq.com' },
+        t,
+        CLAW_EXTRAS
+      )
+    ).toBe('SMTP: smtp.qq.com · 收信: me@qq.com')
+    expect(
+      channelSummary(mail, { SMTPServerAddress: '', ToAddress: 'me@qq.com' }, t, CLAW_EXTRAS)
+    ).toBe('邮箱配置不完整')
+    expect(channelSummary(mail, { SMTPServerAddress: '', ToAddress: '' }, t, CLAW_EXTRAS)).toBe(
+      '邮箱配置不完整'
     )
-    expect(channelSummary(mail, { SMTPServerAddress: '', ToAddress: 'me@qq.com' }, t, CLAW_EXTRAS)).toBe('邮箱配置不完整')
-    expect(channelSummary(mail, { SMTPServerAddress: '', ToAddress: '' }, t, CLAW_EXTRAS)).toBe('邮箱配置不完整')
   })
 
   it('没有参与字段的静态摘要不降级；键缺失时返回空串', () => {
-    const serverchan = channel({ summaryKey: 'setting.notify.summary.serverchan', summaryFields: [] })
+    const serverchan = channel({
+      summaryKey: 'setting.notify.summary.serverchan',
+      summaryFields: [],
+    })
     expect(channelSummary(serverchan, {}, t, CLAW_EXTRAS)).toBe('SendKey 已配置')
     expect(channelSummary(channel({ summaryKey: null }), {}, t, CLAW_EXTRAS)).toBe('')
   })
 
   it('Webhook 例外：非空拼接条目名，空列表用 Empty 变体', () => {
-    const webhook = channel({ customBlock: 'webhook_list', summaryKey: 'setting.notify.summary.webhook' })
+    const webhook = channel({
+      customBlock: 'webhook_list',
+      summaryKey: 'setting.notify.summary.webhook',
+    })
     expect(channelSummary(webhook, {}, t, CLAW_EXTRAS)).toBe('飞书群机器人、自建 ntfy')
-    expect(channelSummary(webhook, {}, t, { ...CLAW_EXTRAS, webhookNames: [] })).toBe('尚未添加 Webhook')
+    expect(channelSummary(webhook, {}, t, { ...CLAW_EXTRAS, webhookNames: [] })).toBe(
+      '尚未添加 Webhook'
+    )
   })
 })

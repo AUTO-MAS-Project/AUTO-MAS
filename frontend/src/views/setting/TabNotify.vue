@@ -66,9 +66,7 @@ const notifyValues = computed<Record<string, unknown>>(
 // Claw 绑定状态提升到本组件：a-tab-pane 懒挂载且挂载后常驻，只有这里调用
 // useClawBinding 才能保证每渠道单实例；提到更上层会在用户停留在别的设置页时查询并回写。
 const weixinBinding = reactive(
-  useClawBinding('weixin', value =>
-    props.handleSettingChange('Notify', 'IfOpenClawWeixin', value)
-  )
+  useClawBinding('weixin', value => props.handleSettingChange('Notify', 'IfOpenClawWeixin', value))
 )
 const qqBinding = reactive(
   useClawBinding('qq', value => props.handleSettingChange('Notify', 'IfOpenClawQQ', value))
@@ -91,17 +89,13 @@ const loadWebhookNames = async () => {
       webhookId: null,
     })
     if (response.code !== 200) return
-    webhookNames.value = response.index.map(
-      item => response.data[item.uid]?.Info?.Name || item.uid
-    )
+    webhookNames.value = response.index.map(item => response.data[item.uid]?.Info?.Name || item.uid)
   } catch {
     // 摘要失败不影响页面，打开弹窗后由列表重载补上
   }
 }
 
-const groups = computed(() =>
-  groupChannels(channels.value, 'global', notifyValues.value)
-)
+const groups = computed(() => groupChannels(channels.value, 'global', notifyValues.value))
 
 const summaryOf = (channel: NotifyChannelOut) =>
   channelSummary(channel, notifyValues.value, t, {
@@ -117,9 +111,7 @@ const policyFields = computed(() => {
 })
 
 const policyTitle = computed(() =>
-  groups.value.policy
-    ? t(groups.value.policy.nameKey)
-    : t('setting.notify.contentSection')
+  groups.value.policy ? t(groups.value.policy.nameKey) : t('setting.notify.contentSection')
 )
 
 // ==================== 配置弹窗 ====================
@@ -171,7 +163,6 @@ const onWebhookListed = (names: string[]) => {
 // 二维码/表单弹窗与下拉都随之压在标题栏之下
 const modalPopupContainer = () =>
   document.querySelector<HTMLElement>('.notify-channel-modal') ?? document.body
-
 </script>
 
 <template>
@@ -185,12 +176,7 @@ const modalPopupContainer = () =>
         >
           {{ t('setting.notify.usageDoc') }}
         </a>
-        <a-button
-          type="primary"
-          :loading="testingNotify"
-          size="middle"
-          @click="testNotify"
-        >
+        <a-button type="primary" :loading="testingNotify" size="middle" @click="testNotify">
           {{ t('setting.notify.sendTest') }}
         </a-button>
       </div>
@@ -232,7 +218,9 @@ const modalPopupContainer = () =>
       <section class="panel">
         <div class="panel-head">
           <i class="dot" />
-          <h3 class="count">{{ t('setting.notify.countTemplate', { n: groups.active.length }) }}</h3>
+          <h3 class="count">
+            {{ t('setting.notify.countTemplate', { n: groups.active.length }) }}
+          </h3>
         </div>
         <div v-if="groups.active.length" class="cards">
           <NotifyChannelCard
@@ -246,7 +234,11 @@ const modalPopupContainer = () =>
             @open="openChannel"
           />
         </div>
-        <a-empty v-else :description="t('setting.notify.activeEmpty')" :image-style="{ height: '48px' }" />
+        <a-empty
+          v-else
+          :description="t('setting.notify.activeEmpty')"
+          :image-style="{ height: '48px' }"
+        />
       </section>
 
       <section class="panel dashed">
@@ -260,13 +252,21 @@ const modalPopupContainer = () =>
             :key="channel.key"
             :channel="channel"
             variant="row"
-            :state-text="t(`setting.notify.${idleStateKey(channel, { clawConnected: clawConnected, webhookNames: [] })}`)"
+            :state-text="
+              t(
+                `setting.notify.${idleStateKey(channel, { clawConnected: clawConnected, webhookNames: [] })}`
+              )
+            "
             :state-active="false"
             :summary="''"
             @open="openChannel"
           />
         </div>
-        <a-empty v-else :description="t('setting.notify.idleEmpty')" :image-style="{ height: '48px' }" />
+        <a-empty
+          v-else
+          :description="t('setting.notify.idleEmpty')"
+          :image-style="{ height: '48px' }"
+        />
       </section>
 
       <section class="panel">
@@ -286,7 +286,11 @@ const modalPopupContainer = () =>
             @open="openChannel"
           />
         </div>
-        <a-empty v-else :description="t('setting.notify.customEmpty')" :image-style="{ height: '48px' }" />
+        <a-empty
+          v-else
+          :description="t('setting.notify.customEmpty')"
+          :image-style="{ height: '48px' }"
+        />
       </section>
     </template>
 

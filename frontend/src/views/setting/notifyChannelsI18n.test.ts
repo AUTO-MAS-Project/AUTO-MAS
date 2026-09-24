@@ -48,9 +48,7 @@ describe('通知渠道描述表的词表键', () => {
     expect(keys.length).toBeGreaterThan(20)
     // Webhook 的正文摘要不渲染（非空时直接拼条目名），词表只放 Empty 变体
     const unrendered = ['setting.notify.summary.webhook']
-    const missing = [...new Set(keys)].filter(
-      key => !zhKeys.has(key) && !unrendered.includes(key)
-    )
+    const missing = [...new Set(keys)].filter(key => !zhKeys.has(key) && !unrendered.includes(key))
     expect(missing).toEqual([])
   })
 
@@ -69,9 +67,7 @@ describe('通知渠道描述表的词表键', () => {
         expect(zhKeys.has(summaryKey), `${key} 缺正文键 ${summaryKey}`).toBe(true)
       }
       if (needsEmpty) {
-        expect(zhKeys.has(`${summaryKey}Empty`), `${key} 缺空值变体 ${summaryKey}Empty`).toBe(
-          true
-        )
+        expect(zhKeys.has(`${summaryKey}Empty`), `${key} 缺空值变体 ${summaryKey}Empty`).toBe(true)
       }
     }
   })

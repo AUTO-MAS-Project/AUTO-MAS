@@ -107,9 +107,7 @@
       :get-container="getPopupContainer"
       :z-index="compact ? 1050 : undefined"
       :centered="compact"
-      :body-style="
-        compact ? { maxHeight: 'calc(100vh - 220px)', overflowY: 'auto' } : undefined
-      "
+      :body-style="compact ? { maxHeight: 'calc(100vh - 220px)', overflowY: 'auto' } : undefined"
       :ok-text="isEditing ? '更新' : '添加'"
       :confirm-loading="submitting"
       @ok="handleSubmit"
