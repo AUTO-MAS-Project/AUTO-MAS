@@ -1748,7 +1748,7 @@ class MaaUserConfig_Data(BaseModel):
     )
     ActivitySkipBook: Optional[str] = Field(
         default=None,
-        description="活动关跳过簿 JSON（{活动名: {date, days, detail}}，连错自动跳过整期）",
+        description="活动关跳过簿 JSON（{活动名: {date, detail}}，出错当天不再注入）",
     )
     LastResVersion: Optional[str] = Field(
         default=None, description="上次成功代理时服务端的游戏资源版本"

@@ -553,7 +553,7 @@ export interface User {
     LastProxyDate: string
     GreenTicketStoreMonth?: string
     ProxyTimes: number
-    /** 活动关跳过簿 JSON（{活动名: {date, days, detail}}，连错自动跳过整期） */
+    /** 活动关跳过簿 JSON（{活动名: {date, detail}}，出错当天不再注入） */
     ActivitySkipBook?: string
   }
   Info: {

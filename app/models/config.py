@@ -1046,7 +1046,7 @@ class MaaUserConfig(ConfigBase):
         self.Data_GreenTicketStoreMonth = ConfigItem(
             "Data", "GreenTicketStoreMonth", "2000-01", DateTimeValidator("%Y-%m")
         )
-        ## 活动关跳过簿（{活动名: {date, days, detail}}，连错自动跳过整期）
+        ## 活动关跳过簿（{活动名: {date, detail}}，出错当天不再注入）
         self.Data_ActivitySkipBook = ConfigItem(
             "Data", "ActivitySkipBook", "{ }", JSONValidator()
         )

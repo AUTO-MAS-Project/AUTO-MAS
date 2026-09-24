@@ -1542,32 +1542,13 @@ class AutoProxyTask(TaskExecuteBase):
                     or activity_stage
                 )
             self._activity_stage_name = activity_name
-            # 跳过簿：先修剪已结束活动的条目（徽标随之下架），再查闸门。
-            # 关卡数据为空（离线/解析失败）时视为"未知"，不修剪——
-            # 否则一次网络抖动就会把连错计数整个清掉
-            skip_book = self._load_activity_skip_book()
-            ongoing_names = {
-                str(stage.get("Activity", {}).get("StageName"))
-                for stage in activity_entries
-                if isinstance(stage, dict) and stage.get("Activity")
-            }
-            stale_keys = [key for key in skip_book if key not in ongoing_names]
-            if activity_entries and stale_keys:
-                for key in stale_keys:
-                    del skip_book[key]
-                try:
-                    await self.cur_user_config.set(
-                        "Data",
-                        "ActivitySkipBook",
-                        json.dumps(skip_book, ensure_ascii=False),
-                    )
-                except Exception as e:
-                    # 修剪只是记账，不能拦住注入主链路（gui.json 装配在本函数
-                    # 之后）：配置侧仍是未修剪的旧值，下轮重新修剪
-                    logger.opt(exception=True).warning(
-                        f"用户 {self.cur_user_item.name} 活动关跳过簿修剪写入失败: {e}"
-                    )
-            skip_entry = skip_book.get(activity_name) if activity_name else None
+            # 跳过簿闸门只看出错日期是不是今天：过期条目既不拦注入、也不会被
+            # 前端展示，留着无害，因此这里不再做已结束活动的修剪
+            skip_entry = (
+                self._load_activity_skip_book().get(activity_name)
+                if activity_name
+                else None
+            )
             skip_notice = ""
             if skip_entry and skip_entry.get("date") == _current_day_marker(
                 datetime.now(tz=UTC4)
@@ -2110,37 +2091,22 @@ class AutoProxyTask(TaskExecuteBase):
             return {}
         if not isinstance(book, dict):
             return {}
-        normalized = {}
-        for key, entry in book.items():
-            if not isinstance(entry, dict):
-                continue
-            try:
-                days = int(entry.get("days", 0))
-            except (TypeError, ValueError, OverflowError):
-                days = 0
-            normalized[str(key)] = {**entry, "days": days}
-        return normalized
+        return {
+            str(key): entry for key, entry in book.items() if isinstance(entry, dict)
+        }
 
     async def _record_activity_stage_failure(self) -> None:
         """活动关任务出错：记跳过簿（当日不再注入）并提示。
 
-        `days` 只用于提示里说明「这是连着第几天出错」，不参与闸门——闸门只看
-        `date`，次日自动重试，成功即清条目，没有需要人工解锁的状态。
+        条目只存出错日期与当时指派摘要：闸门只看日期，次日自动重试，
+        成功与否都不需要清条目，没有需要人工解锁的状态。
         """
 
         if not self._activity_stage_name or self._activity_stage_failed:
             return
         book = self._load_activity_skip_book()
-        entry = book.get(self._activity_stage_name) or {}
-        today = _current_day_marker(datetime.now(tz=UTC4))
-        days = (
-            max(entry.get("days", 0), 1)
-            if entry.get("date") == today
-            else entry.get("days", 0) + 1
-        )
         book[self._activity_stage_name] = {
-            "date": today,
-            "days": days,
+            "date": _current_day_marker(datetime.now(tz=UTC4)),
             "detail": self._activity_stage_summary,
         }
         try:
@@ -2156,8 +2122,7 @@ class AutoProxyTask(TaskExecuteBase):
         # 写簿成功后才落闩并提示，保证一条出错只提示一次
         self._activity_stage_failed = True
         logger.warning(
-            f"用户 {self.cur_user_item.name} 活动关任务出错"
-            f"（连错 {days} 天），今日不再注入活动关"
+            f"用户 {self.cur_user_item.name} 活动关任务出错，今日不再注入活动关"
         )
         await Publisher.send(
             id=self.task_info.task_id,
@@ -2165,34 +2130,11 @@ class AutoProxyTask(TaskExecuteBase):
             data=WSTaskNoticeData(
                 level="warning",
                 message=(
-                    f"用户 {self.cur_user_item.name} 活动关未打：任务出错"
-                    f"（连错 {days} 天），今日不再注入活动关"
+                    f"用户 {self.cur_user_item.name} 活动关未打：任务出错，"
+                    f"今日不再注入活动关"
                 ),
             ),
         )
-
-    async def _clear_activity_skip_entry(self) -> None:
-        """活动关任务打成功：清掉该活动的出错条目（计数与徽标口径的复位）。
-
-        次日闸门本就不再拦（只看日期），清条目是为了让「连错 N 天」不撒谎：
-        中间打过成功就不算连错。
-        """
-
-        if not self._activity_stage_name:
-            return
-        book = self._load_activity_skip_book()
-        if self._activity_stage_name not in book:
-            return
-        del book[self._activity_stage_name]
-        try:
-            await self.cur_user_config.set(
-                "Data", "ActivitySkipBook", json.dumps(book, ensure_ascii=False)
-            )
-        except Exception as e:
-            # 清条目只是记账，失败不影响本轮注入：条目留着，下轮成功再清
-            logger.opt(exception=True).warning(
-                f"用户 {self.cur_user_item.name} 活动关跳过簿清理写入失败: {e}"
-            )
 
     async def check_log(self, log_content: list[str], latest_time: datetime) -> None:
         """日志回调"""
@@ -2258,14 +2200,9 @@ class AutoProxyTask(TaskExecuteBase):
             await self._collect_cultivate_archive(log)
 
         # 活动关任务出错：MAA 会继续跑完队列（活动关失败不算整轮失败），
-        # 这里只负责让失败可见并记跳过簿；打成功则清掉连错条目，
-        # 只有「连续两次出错」才整期跳过（#868），中间成功过就不算连错
+        # 这里只负责让失败可见并记跳过簿；跳过只到当日，次日自动重试
         if _task_failed(log, _MAA_ACTIVITY_TASK_NAME) and self._activity_stage_name:
             await self._record_activity_stage_failure()
-        elif (
-            f"完成任务: {_MAA_ACTIVITY_TASK_NAME}" in log and self._activity_stage_name
-        ):
-            await self._clear_activity_skip_entry()
 
         if "未选择任务" in log:
             self.cur_user_log.status = "MAA 未选择任何任务"
@@ -2376,15 +2313,6 @@ class AutoProxyTask(TaskExecuteBase):
             statistics["cultivate_achievement"] = "、".join(
                 self._cultivate_achievement_summary
             )
-
-        # 活动关解析摘要随统计报告带出（本轮未开活动关优先时为空不占位；
-        # 本轮任务出错时标注未打，结果与通知可见；间隙期没活动不打这一行）
-        if (
-            self._activity_stage_summary
-            and self._activity_stage_summary != _ACTIVITY_NO_ONGOING_REASON
-        ):
-            suffix = "（本轮未打）" if self._activity_stage_failed else ""
-            statistics["activity_stage"] = f"{self._activity_stage_summary}{suffix}"
 
         # 判断是否成功
         if_success = self.run_book["Annihilation"] and self.run_book["Routine"]

@@ -5,8 +5,8 @@ import { activeSkipEntry, activityToday, ongoingSkipBook } from './activitySkipB
 
 describe('ongoingSkipBook', () => {
   const book = {
-    本期活动: { days: 2, date: '2026-09-10', detail: '倒1 → SR-8' },
-    上期活动: { days: 2, date: '2026-08-01', detail: '倒2 → AT-7' },
+    本期活动: { date: '2026-09-10', detail: '倒1 → SR-8' },
+    上期活动: { date: '2026-08-01', detail: '倒2 → AT-7' },
   }
 
   it('drops entries whose activity is no longer ongoing', () => {
@@ -26,19 +26,13 @@ describe('activeSkipEntry', () => {
   // 非当日用远早固定日期，避免测试恰在那天跑时把旧条目也算命中
   const oldDay = '2020-01-01'
   const book = {
-    今日出错: { days: 1, date: today, detail: '倒1 → SR-8' },
-    昨日出错: { days: 2, date: oldDay, detail: '倒2 → SR-7' },
+    今日出错: { date: today, detail: '倒1 → SR-8' },
+    昨日出错: { date: oldDay, detail: '倒2 → SR-7' },
   }
 
   it('hits only the entry recorded today', () => {
     // 闸门只看到当日为止：次日自动重试，不需要人工解锁
     expect(activeSkipEntry({ 今日出错: book.今日出错 }, today)?.name).toBe('今日出错')
     expect(activeSkipEntry({ 昨日出错: book.昨日出错 }, today)).toBeNull()
-  })
-
-  it('reports the entry with the most consecutive errors when several hit today', () => {
-    const sameDay = { ...book.今日出错, days: 3 }
-    const hit = activeSkipEntry({ 今日出错: book.今日出错, 连错三天: sameDay }, today)
-    expect(hit?.name).toBe('连错三天')
   })
 })

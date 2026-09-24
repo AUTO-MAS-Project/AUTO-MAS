@@ -74,12 +74,7 @@
           @update:value="(value: string) => emit('intent', record, value)"
         />
 
-        <span
-          v-else-if="column.key === 'status'"
-          class="state"
-          :class="`state-${record.state}`"
-          :title="record.skipDetail"
-        >
+        <span v-else-if="column.key === 'status'" class="state" :class="`state-${record.state}`">
           <span class="dot"></span>{{ record.stateText }}
         </span>
       </template>

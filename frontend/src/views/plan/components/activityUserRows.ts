@@ -11,21 +11,16 @@ import { isJadeStage, resolveIntentStage, stageNumber } from '@/utils/activitySt
 /** 表格行的用户模型（来自 MAA 脚本用户配置扫描） */
 export interface ActivityUserRow {
   scriptId: string
-  scriptName: string
   userId: string
   userName: string
   server: string
   /** Info.Status：停用用户不参与调度 */
   status: boolean
-  /** Info.StageMode：本表 = 该计划表 id；'Fixed' = 用户级固定模式 */
-  stageMode: string
   ifQuickConfig: boolean
   ifActivityFirst: boolean
   intent: string
   /** 跳过簿当日命中：后端本轮不会注入 */
   skipToday: boolean
-  /** 跳过簿连错天数（0=未命中，仅供提示） */
-  skipDays: number
   /** 跳过簿记录的在打关卡摘要 */
   skipSummary: string
 }
@@ -171,8 +166,6 @@ export interface ActivityUserRowView {
   period: 'ongoing' | 'preview' | 'gap'
   /** 该行自己服务器的当期（或下期预览）关卡选项 */
   options: IntentOptionView[]
-  /** 跳过条目的提示原文（列表 title 用） */
-  skipDetail: string
 }
 
 export interface ActivityRowSummary {

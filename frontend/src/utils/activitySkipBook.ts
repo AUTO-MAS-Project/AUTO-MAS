@@ -2,10 +2,9 @@
 // 脚本页用户徽标与计划表活动关指派表共用同一套解析与闸门判定。
 // 日期锚点必须与后端 AutoProxy._current_day_marker 一致：东四区日期（与代理统计同锚）。
 
-/** 跳过簿单条目：date=最后一次出错日、days=连错天数（打成功即清零，仅供提示）、detail=当时指派摘要 */
+/** 跳过簿单条目：date=最后一次出错日（闸门只看它）、detail=当时指派摘要 */
 export interface ActivitySkipEntry {
   date?: string
-  days?: number
   detail?: string
 }
 
@@ -38,17 +37,15 @@ function isSkipActive(entry?: ActivitySkipEntry, today = activityToday()): boole
   return entry.date === today
 }
 
-/** 命中闸门的条目（当日出错的那些里取连错最多的一条；无命中返回 null） */
+/** 命中闸门的条目（当日出错的；无命中返回 null） */
 export function activeSkipEntry(
   book: ActivitySkipBook,
   today = activityToday()
 ): { name: string; entry: ActivitySkipEntry } | null {
-  let hit: { name: string; entry: ActivitySkipEntry } | null = null
   for (const [name, entry] of Object.entries(book)) {
-    if (!isSkipActive(entry, today)) continue
-    if (!hit || (entry.days ?? 0) > (hit.entry.days ?? 0)) hit = { name, entry }
+    if (isSkipActive(entry, today)) return { name, entry }
   }
-  return hit
+  return null
 }
 
 /**

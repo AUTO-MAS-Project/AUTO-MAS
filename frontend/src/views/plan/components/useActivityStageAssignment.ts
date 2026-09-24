@@ -12,12 +12,7 @@ import { Service } from '@/api'
 import { useScriptApi } from '@/composables/useScriptApi'
 import { useUserApi } from '@/composables/useUserApi'
 import type { ActivityItem } from '@/types/home'
-import {
-  ongoingSkipBook,
-  activeSkipEntry,
-  parseActivitySkipBook,
-  skipSummary,
-} from '@/utils/activitySkipBook'
+import { activeSkipEntry, parseActivitySkipBook, skipSummary } from '@/utils/activitySkipBook'
 import { readActivityMeta, stageServerOf } from '@/utils/activityStage'
 import {
   buildIntentOptions,
@@ -107,22 +102,11 @@ export function useActivityStageAssignment(props: ActivityAssignmentProps) {
   const resolveSkipState = (user: {
     Info: { Server: string }
     Data?: { ActivitySkipBook?: string }
-  }): Pick<ActivityUserRow, 'skipToday' | 'skipDays' | 'skipSummary'> => {
-    const serverKey = stageServerOf(user.Info.Server)
-    const ongoingNames = new Set(
-      (activityByServer.value[serverKey] ?? [])
-        .map(stage => stage.Activity?.StageName)
-        .filter((name): name is string => Boolean(name))
-    )
-    const hit = activeSkipEntry(
-      ongoingSkipBook(parseActivitySkipBook(user.Data?.ActivitySkipBook), ongoingNames)
-    )
-    if (!hit) return { skipToday: false, skipDays: 0, skipSummary: '' }
-    return {
-      skipToday: true,
-      skipDays: hit.entry.days ?? 0,
-      skipSummary: skipSummary(hit.entry),
-    }
+  }): Pick<ActivityUserRow, 'skipToday' | 'skipSummary'> => {
+    // 闸门只认当日条目，过期条目（含上期遗留）日期不是今天，天然不会命中
+    const hit = activeSkipEntry(parseActivitySkipBook(user.Data?.ActivitySkipBook))
+    if (!hit) return { skipToday: false, skipSummary: '' }
+    return { skipToday: true, skipSummary: skipSummary(hit.entry) }
   }
 
   const labelOfOption = (option: IntentOption) => t(option.labelKey, option.labelParams)
@@ -145,11 +129,6 @@ export function useActivityStageAssignment(props: ActivityAssignmentProps) {
           ...option,
           label: labelOfOption(option),
         })),
-        skipDetail: row.skipToday
-          ? [row.skipSummary, row.skipDays > 1 ? `连错 ${row.skipDays} 天` : '']
-              .filter(Boolean)
-              .join(' · ')
-          : '',
       }
     })
   )
@@ -252,12 +231,10 @@ export function useActivityStageAssignment(props: ActivityAssignmentProps) {
           }
           rows.push({
             scriptId: script.uid,
-            scriptName: script.name,
             userId: user.id,
             userName: user.Info.Name,
             server: user.Info.Server,
             status: user.Info.Status,
-            stageMode: user.Info.StageMode,
             ifQuickConfig: user.Info.IfQuickConfig ?? true,
             ifActivityFirst: user.Task?.IfActivityFirst ?? false,
             intent: user.Task?.ActivityStageIntent ?? '',

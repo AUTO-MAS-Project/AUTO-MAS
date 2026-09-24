@@ -33,17 +33,14 @@ const srStages = [
 
 const user = (overrides: Partial<ActivityUserRow> = {}): ActivityUserRow => ({
   scriptId: 's1',
-  scriptName: 'MAA 脚本',
   userId: 'u1',
   userName: '账号01',
   server: 'Official',
   status: true,
-  stageMode: 'p1',
   ifQuickConfig: true,
   ifActivityFirst: true,
   intent: 'last:1',
   skipToday: false,
-  skipDays: 0,
   skipSummary: '',
   ...overrides,
 })
