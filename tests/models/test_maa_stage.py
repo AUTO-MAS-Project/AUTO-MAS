@@ -4,14 +4,31 @@
 
 import json
 import unittest
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
-from app.models.config import ActivityStageIntentValidator, GlobalConfig
+from app.models.config import (
+    ActivityStageIntentValidator,
+    GlobalConfig,
+    MaaUserConfig,
+)
 from app.task.MAA.AutoProxy import _resolve_activity_stage
+
+UTC8 = timezone(timedelta(hours=8))
 
 
 def _fmt(value: datetime) -> str:
     return value.strftime("%Y/%m/%d %H:%M:%S")
+
+
+def _now_utc8() -> datetime:
+    """按活动时区（+8）取当前时刻。
+
+    getStage 用活动自带的 TimeZone 把时间串还原成绝对时刻，夹具若按本机时区
+    生成，窗口就跟着机器漂移（UTC 机器上活动会被判成未开始），结果取决于跑测
+    试的机器。
+    """
+
+    return datetime.now(tz=UTC8)
 
 
 def _stage_data(now: datetime) -> str:
@@ -69,7 +86,7 @@ class GetStageDualViewTestCase(unittest.TestCase):
     def setUp(self) -> None:
         self.config = GlobalConfig()
         self.config._config_item_index["Data"]["StageData"].setValue(
-            _stage_data(datetime.now())
+            _stage_data(_now_utc8())
         )
         self.stage = json.loads(self.config.get("Data", "Stage"))["Official"]
 
@@ -94,7 +111,7 @@ class GetStageDualViewTestCase(unittest.TestCase):
 
     def test_preview_keeps_only_the_nearest_of_several_future_activities(self) -> None:
         # 多期都未开始时只取最近一期：槽位、banner 与文案都是「下期」单数口径
-        now = datetime.now()
+        now = _now_utc8()
         data = json.loads(_stage_data(now))
         data["Official"]["sideStoryStage"]["later"] = {
             "Activity": {
@@ -131,20 +148,28 @@ class GetStageDualViewTestCase(unittest.TestCase):
         code, _ = _resolve_activity_stage([], "last:1")
         self.assertIsNone(code)
 
-    def test_resolver_keeps_legacy_jade_index_farming_jade(self) -> None:
-        # 旧版按 MAA 列表位置计号，末位 SR-5 是玉关；迁移出的 last:2 越界，
-        # 该位置确为玉关时按搓玉解析，旧序号用户不会整期不注入
+    def test_resolver_keeps_legacy_index_on_the_same_list_position(self) -> None:
+        # 旧版按 MAA 列表位置计号、末位 SR-5 是玉关；如实迁成 pos:N 后按位置取，
+        # 与「倒数名次」各按各的口径，旧用户照旧能刷到当时选的关
         self.assertEqual(
-            _resolve_activity_stage(self.stage["Info"], "last:2"),
-            ("SR-5", "搓玉 → SR-5（旧序号迁移）"),
+            _resolve_activity_stage(self.stage["Info"], "pos:1"),
+            ("SR-8", "旧版第1关 → SR-8 · 酯原料"),
         )
-        # 末位不是玉关时保持越界，不复活旧版位置回退
-        plain = [
-            {"Value": "PA-8", "RawDrop": "30063", "DropName": "晶体元件"},
-            {"Value": "PA-7", "RawDrop": "31015", "DropName": "聚酸酯组"},
-        ]
-        code, _ = _resolve_activity_stage(plain, "last:3")
+        self.assertEqual(
+            _resolve_activity_stage(self.stage["Info"], "pos:2"),
+            ("SR-5", "旧版第2关 → SR-5 · 搓玉效率0.91"),
+        )
+        # 越界不回退首关
+        code, reason = _resolve_activity_stage(self.stage["Info"], "pos:3")
         self.assertIsNone(code)
+        self.assertEqual(reason, "旧版序号第3关超出本期范围")
+
+    def test_new_style_last_intent_is_not_read_as_legacy(self) -> None:
+        # 同一期选的「倒2」（2 个材料关 + 玉关时的末位材料关），下期只剩 1 个
+        # 材料关时不再被旧值兜底认领去刷玉关，而是如实判越界并提示
+        code, reason = _resolve_activity_stage(self.stage["Info"], "last:2")
+        self.assertIsNone(code)
+        self.assertEqual(reason, "倒数第2关超出本期范围")
 
 
 class ActivityStageIntentValidatorTestCase(unittest.TestCase):
@@ -152,16 +177,71 @@ class ActivityStageIntentValidatorTestCase(unittest.TestCase):
         self.validator = ActivityStageIntentValidator()
 
     def test_accepts_valid_intents_and_empty(self) -> None:
-        for value in ("", "jade", "last:1", "last:9999"):
+        for value in ("", "jade", "last:1", "last:9999", "pos:1", "pos:9999"):
             self.assertTrue(self.validator.validate(value), value)
 
-    def test_normalizes_legacy_index_to_last_n(self) -> None:
-        for raw, expect in ((3, "last:3"), (2.0, "last:2"), (" 2 ", "last:2")):
+    def test_normalizes_legacy_index_to_pos_n(self) -> None:
+        # 旧序号原义是 MAA 列表位置，如实迁成 pos:N（不是近似成 last:N）
+        for raw, expect in ((3, "pos:3"), (2.0, "pos:2"), (" 2 ", "pos:2")):
             self.assertEqual(self.validator.correct(raw), expect, raw)
 
     def test_neutralizes_invalid_values_including_legacy_mat(self) -> None:
-        for raw in ("mat:30023", "bogus", "last:0", "last:10000", 0, True, None, "²"):
+        for raw in (
+            "mat:30023",
+            "bogus",
+            "last:0",
+            "last:10000",
+            "pos:0",
+            0,
+            True,
+            None,
+            "²",
+        ):
             self.assertEqual(self.validator.correct(raw), "", repr(raw))
+
+
+class ActivityStageIntentMigrationTestCase(unittest.IsolatedAsyncioTestCase):
+    """旧序号 → 意图的迁移与总开关联动（配置加载期）。"""
+
+    async def _load_task(self, task: dict) -> str:
+        config = MaaUserConfig()
+        await config.load({"Task": task})
+        return config.get("Task", "ActivityStageIntent")
+
+    async def test_default_index_with_switch_off_stays_unassigned(self) -> None:
+        # v5.4.0 起旧字段默认 1 且照常落盘：开关没开时它只是默认值，迁成
+        # pos:1 会把没碰过活动关的用户全算成已指派
+        for task in (
+            {"IfActivityFirst": False, "ActivityStageIndex": 1},
+            {"ActivityStageIndex": 1},
+            {"IfActivityFirst": False, "ActivityStageIndex": "1"},
+        ):
+            self.assertEqual(await self._load_task(task), "", task)
+
+    async def test_index_migrates_when_switch_is_on(self) -> None:
+        self.assertEqual(
+            await self._load_task({"IfActivityFirst": True, "ActivityStageIndex": 1}),
+            "pos:1",
+        )
+
+    async def test_deliberate_index_migrates_even_with_switch_off(self) -> None:
+        # 非默认序号是用户真选过的，开关关着也保留，别把选择丢掉
+        self.assertEqual(
+            await self._load_task({"IfActivityFirst": False, "ActivityStageIndex": 3}),
+            "pos:3",
+        )
+
+    async def test_existing_intent_is_never_overwritten(self) -> None:
+        self.assertEqual(
+            await self._load_task(
+                {
+                    "IfActivityFirst": False,
+                    "ActivityStageIndex": 3,
+                    "ActivityStageIntent": "last:2",
+                }
+            ),
+            "last:2",
+        )
 
 
 if __name__ == "__main__":

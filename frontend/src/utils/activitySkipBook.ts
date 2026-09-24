@@ -2,7 +2,7 @@
 // 脚本页用户徽标与计划表活动关指派表共用同一套解析与闸门判定。
 // 日期锚点必须与后端 AutoProxy._current_day_marker 一致：东四区日期（与代理统计同锚）。
 
-/** 跳过簿单条目：date=最后一次出错日、days=跨日连错天数、detail=当时指派摘要 */
+/** 跳过簿单条目：date=最后一次出错日、days=连错天数（打成功即清零）、detail=当时指派摘要 */
 export interface ActivitySkipEntry {
   date?: string
   days?: number

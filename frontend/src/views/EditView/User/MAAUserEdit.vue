@@ -91,6 +91,7 @@
             :loading="loading"
             :stage-options="stageOptions"
             :activity-stage-options="activityStageOptions"
+            :legacy-activity-stage-option="legacyActivityStageOption"
             :activity-stage-loading="activityStageLoading"
             :activity-stage-error="activityStageError"
             :display-activity-stage-intent="displayActivityStageIntent"
@@ -627,9 +628,26 @@ const formData = reactive({
   ...getDefaultMAAUserData(),
 })
 
+/** 旧版序号（pos:N，MAA 列表位置）不是本期的倒N/搓玉选项：当前值就是它时补一条
+ * 选项，否则下拉显示占位符、下方状态行却报正常注入，两边对不上 */
+const legacyActivityStageOption = computed<{ label: string; value: string } | null>(() => {
+  const configuredIntent = formData.Task.ActivityStageIntent ?? ''
+  if (
+    !configuredIntent.startsWith('pos:') ||
+    activityStageOptions.value.some(option => option.value === configuredIntent)
+  ) {
+    return null
+  }
+  return {
+    label: t('edit.activityStageLegacyOption', { n: configuredIntent.slice(4) }),
+    value: configuredIntent,
+  }
+})
+
 const displayActivityStageIntent = computed(() => {
   const configuredIntent = formData.Task.ActivityStageIntent
   // 未配置或本期选项对不上（如旧版遗留意图）时显示占位符，不假装已选
+  if (legacyActivityStageOption.value) return configuredIntent
   return activityStageOptions.value.some(option => option.value === configuredIntent)
     ? configuredIntent
     : undefined

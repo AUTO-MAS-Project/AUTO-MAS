@@ -260,13 +260,32 @@ _INFRAST_MODE_LABELS = {"Normal": "标准", "Rotation": "轮换", "Custom": "自
 
 
 def _intent_display(value: str) -> str:
-    """活动关意图转人话（jade / last:N，空串=未指派）。"""
+    """活动关意图转人话（jade / last:N / pos:N，空串=未指派）。"""
 
     if value == "jade":
         return "搓玉"
     if value.startswith("last:"):
         return f"倒数第{value[5:]}关"
+    if value.startswith("pos:"):
+        return f"旧版序号第{value[4:]}关"
     return value or "未指派"
+
+
+def _translate_legacy_stage_index(overlay: dict) -> str:
+    """旧版侧车的活动关序号 → 意图（与配置加载同一口径，预览与恢复共用）。
+
+    开关没开时序号只是默认值 1，迁成 pos:1 会把这批用户算成已指派，不迁；
+    其余按 MAA 列表位置如实迁成 pos:N。已有 ActivityStageIntent 键则不动。
+    """
+
+    if "ActivityStageIntent" in overlay:
+        return ""
+    raw = overlay.get("ActivityStageIndex")
+    if raw is None:
+        return ""
+    if not overlay.get("IfActivityFirst", False) and str(raw).strip() == "1":
+        return ""
+    return ActivityStageIntentValidator().correct(raw)
 
 
 def read_overlay_values(config) -> dict:
@@ -295,12 +314,10 @@ def group_overlay(overlay: dict) -> dict[str, dict]:
     for key, value in overlay.items():
         if key in _OVERLAY_PREVIEW_ONLY_KEYS:
             continue
-        # 旧版侧车的活动关卡序号按编号降序近似转为意图键：指向末位玉关的旧值
-        # 会转成越界意图，运行时由旧序号兼容分支按搓玉解析
+        # 旧版侧车的活动关卡序号如实转成 pos:N（MAA 列表位置）；开关没开且是
+        # 默认序号时视为没选过，不迁（与配置加载同一口径）
         if key == "ActivityStageIndex":
-            if "ActivityStageIntent" in overlay:
-                continue
-            value = ActivityStageIntentValidator().correct(value)
+            value = _translate_legacy_stage_index(overlay)
             if not value:
                 continue
             key = "ActivityStageIntent"
@@ -852,9 +869,7 @@ def build_overlay_summary(overlay: dict) -> list[dict]:
             if key == "ActivityStageIntent" and key not in overlay:
                 # 旧版侧车只有序号键：预览按恢复时同一规则翻译，避免
                 # 「恢复会生效的值预览里看不到」
-                translated = ActivityStageIntentValidator().correct(
-                    overlay.get("ActivityStageIndex")
-                )
+                translated = _translate_legacy_stage_index(overlay)
                 if translated:
                     rows.append(
                         {
@@ -872,8 +887,12 @@ def build_overlay_summary(overlay: dict) -> list[dict]:
                 continue
             value = overlay[key]
             if key == "ActivityStageIntent":
-                # 预览与恢复走同一校验器：非法值显示归一结果而非原始串
+                # 预览与恢复同一口径：非法值显示归一结果而非原始串；空意图不参与
+                # 回填（恢复是部分更新，保留当前意图），预览也不显示「未指派」，
+                # 免得看起来像恢复后会被清空
                 value = ActivityStageIntentValidator().correct(str(value))
+                if not value:
+                    continue
             if isinstance(value, list):
                 joined = "、".join(
                     _overlay_value(key, item)

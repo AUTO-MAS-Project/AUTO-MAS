@@ -109,7 +109,8 @@ const {
   removeUser,
 } = useActivityStageAssignment(props)
 
-// 折叠状态只记会话内组件状态（方案 §4.1，不进 localStorage）
+// 折叠状态只记组件内（方案 §4.1，不进 localStorage）：切计划表类型会重建组件，
+// 届时回到默认收起
 const collapsed = ref(true)
 const userTouched = ref(false)
 
@@ -118,7 +119,8 @@ const onToggle = () => {
   collapsed.value = !collapsed.value
 }
 
-// 出现需关注事项时自动展开一次（会话内一次性，不覆盖用户手动收起）
+// 出现需关注事项时自动展开一次（每次进入页面最多一次，不覆盖用户手动收起；
+// 事项未解决前每次进来都会再展开，避免问题被折叠藏住）
 watch(
   [loading, warningCount],
   ([isLoading, warnings]) => {

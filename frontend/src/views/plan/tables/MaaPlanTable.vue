@@ -412,9 +412,11 @@ const getSelectOptions = (
   // 添加自定义关卡选项（使用计算属性以确保响应式）；
   // 形似活动关码、且所有星期都不在选项里的自定义值多半是上期活动遗留，
   // 标注已结束。永久资源关（理智本/技能本等）只在其开放星期出现，
-  // 不代表已结束，按前缀豁免
+  // 不代表已结束，按前缀豁免；关卡选项缓存没到位时（合集为空）一律不标，
+  // 否则缓存加载完成前的那一帧会把所有自定义关卡都标成已结束
   currentCustomStages.value.forEach(stageName => {
     const isEndedActivity =
+      allOfferedStages.value.size > 0 &&
       !allOfferedStages.value.has(stageName) &&
       /^[A-Za-z]{1,3}-\d+$/.test(stageName) &&
       !/^(LS|CE|AP|CA|SK)-/i.test(stageName)

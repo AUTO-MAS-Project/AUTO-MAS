@@ -60,6 +60,20 @@ describe('resolveActivityStageState', () => {
     })
   })
 
+  it('resolves the legacy pos:N by list position and keeps its own out-of-range wording', () => {
+    // 旧版序号按 MAA 列表位置取（末位 SR-5 是玉关），越界不借用「倒数第N关」的文案
+    const state = resolveActivityStageState('pos:3', ongoing, [])
+    expect(state.tone).toBe('ok')
+    expect(state.messageKey).toBe('edit.activityStateOk')
+    expect(state.params).toEqual({ stage: 'SR-5', mat: '搓玉效率0.91', name: '测试活动' })
+
+    expect(resolveActivityStageState('pos:9', ongoing, [])).toEqual({
+      tone: 'muted',
+      messageKey: 'edit.activityStateLegacyNoStage',
+      params: { n: 9 },
+    })
+  })
+
   it('switches to info tone with 下期 prefix during the preview period', () => {
     const state = resolveActivityStageState('last:1', [], ongoing)
     expect(state.tone).toBe('info')

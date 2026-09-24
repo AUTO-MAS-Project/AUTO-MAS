@@ -48,6 +48,8 @@ describe('slotKeyOfIntent', () => {
   it('maps intents to slot keys and drops unknown intents', () => {
     expect(slotKeyOfIntent('jade')).toBe('jade')
     expect(slotKeyOfIntent('last:2')).toBe('last:2')
+    // 旧版序号是独立的槽位键：与倒N 同形不同义，不能被并进 last:N 槽
+    expect(slotKeyOfIntent('pos:2')).toBe('pos:2')
     expect(slotKeyOfIntent('')).toBe('')
     expect(slotKeyOfIntent('bogus')).toBe('')
   })
@@ -116,15 +118,22 @@ describe('resolveIntentStage', () => {
   it('keeps out-of-range intents unmatched', () => {
     expect(resolveIntentStage('last:3', srStages)).toBe('SR-6')
     expect(resolveIntentStage('last:5', srStages)).toBeNull()
-    // 末位非玉关时不启用旧序号兼容（不复活位置回退）
-    const noJade = [stage('PA-8', '30063', '晶体元件'), stage('PA-7', '31015', '聚酸酯组')]
-    expect(resolveIntentStage('last:3', noJade)).toBeNull()
   })
 
-  it('resolves the legacy last-position index onto the jade stage', () => {
-    // 旧版编号是 MAA 列表位置，末位 SR-5 是玉关；迁移出的 last:4 越界后
-    // 按搓玉解析（与后端 _resolve_activity_stage 的旧序号兼容同规则）
-    expect(resolveIntentStage('last:4', srStages)).toBe('SR-5')
+  it('does not read a new-style last:N as the legacy index', () => {
+    // 同一期选的「倒3」在下期只剩 2 个材料关 + 玉关时，曾被旧序号兜底认领去
+    // 刷玉关；现在如实判越界，把玉关留给显式的「搓玉」
+    const shrunk = [stage('SR-8', '30031', '异铁组'), stage('SR-5', '搓玉效率0.91')]
+    expect(resolveIntentStage('last:3', shrunk)).toBeNull()
+    expect(resolveIntentStage('jade', shrunk)).toBe('SR-5')
+  })
+
+  it('resolves the legacy index by list position', () => {
+    // 旧版编号是 MAA 列表位置（末位 SR-5 是玉关），迁移值 pos:N 按位置取，
+    // 与后端 _resolve_activity_stage 的 pos 分支同规则
+    expect(resolveIntentStage('pos:1', srStages)).toBe('SR-8')
+    expect(resolveIntentStage('pos:4', srStages)).toBe('SR-5')
+    expect(resolveIntentStage('pos:5', srStages)).toBeNull()
   })
 
   it('detects jade by raw drop even when the normalized id collides', () => {

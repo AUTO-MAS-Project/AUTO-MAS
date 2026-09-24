@@ -53,13 +53,16 @@ export function resolveActivityStageState(
     }
   }
 
-  if (intent.startsWith('last:')) {
-    const index = Number(intent.slice(5)) || 0
+  if (intent.startsWith('last:') || intent.startsWith('pos:')) {
+    // pos:N 是旧版序号（MAA 列表位置），与倒N 同形不同义：按位置解析，
+    // 越界时给旧版口径的提示，不与「倒数第N关」混用一句话
+    const legacy = intent.startsWith('pos:')
+    const index = Number(intent.slice(intent.indexOf(':') + 1)) || 0
     const stage = resolveIntentStage(intent, stages)
     if (!stage) {
       return {
         tone: 'muted',
-        messageKey: 'edit.activityStateNoStage',
+        messageKey: legacy ? 'edit.activityStateLegacyNoStage' : 'edit.activityStateNoStage',
         params: { n: index },
       }
     }

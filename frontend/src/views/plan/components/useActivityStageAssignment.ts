@@ -186,6 +186,7 @@ export function useActivityStageAssignment(props: ActivityAssignmentProps) {
     const key = slotKeyOfIntent(intent)
     if (key === 'jade') return t('plan.activity.slotJade')
     if (key.startsWith('last:')) return t('plan.activity.slotLast', { n: key.slice(5) })
+    if (key.startsWith('pos:')) return t('plan.activity.slotLegacy', { n: key.slice(4) })
     return key
   }
 

@@ -11,10 +11,10 @@ export function stageServerOf(server: string): string {
   return server === 'Bilibili' ? 'Official' : server
 }
 
-/** 槽位键：意图 → 归并键 */
+/** 槽位键：意图 → 归并键（pos: 是旧版列表位置，与倒N 同形不同义，各占一槽） */
 export function slotKeyOfIntent(intent: string): string {
   if (intent === 'jade') return 'jade'
-  if (intent.startsWith('last:')) return intent
+  if (intent.startsWith('last:') || intent.startsWith('pos:')) return intent
   return ''
 }
 
@@ -35,19 +35,21 @@ export function resolveIntentStage(intent: string, stages: ActivityItem[]): stri
   if (intent === 'jade') {
     return stages.find(stage => isJadeStage(stage))?.Value ?? null
   }
+  if (intent.startsWith('pos:')) {
+    // 旧版序号：MAA 列表位置（迁移值，末位通常是玉关），越界不回退首关
+    const index = parseInt(intent.slice(4), 10)
+    if (!Number.isFinite(index) || index < 1) return null
+    return stages[index - 1]?.Value ?? null
+  }
   if (intent.startsWith('last:')) {
     const index = parseInt(intent.slice(5), 10)
     if (!Number.isFinite(index) || index < 1) return null
     const ranked = stages
       .filter(stage => !isJadeStage(stage))
       .sort((a, b) => stageNumber(b.Value) - stageNumber(a.Value))
-    const rankedStage = ranked[index - 1]
-    if (rankedStage) return rankedStage.Value
-    // 旧序号兼容（与后端 _resolve_activity_stage 同一规则）：旧版编号是列表
-    // 位置、末位是玉关，迁移出的 last:N 必然越界——该位置确为玉关时按搓玉解析
-    const last = stages[stages.length - 1]
-    if (index === stages.length && last && isJadeStage(last)) return last.Value
-    return null
+    // 越界即无匹配：旧序号已如实迁成 pos:，这里不再对 last: 做旧值兼容，
+    // 否则同一期选的「倒3」在下期只有 2 个材料关时会被当成旧值改刷玉关
+    return ranked[index - 1]?.Value ?? null
   }
   return null
 }

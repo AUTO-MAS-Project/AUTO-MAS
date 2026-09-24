@@ -1253,7 +1253,11 @@ export function useScriptApi() {
                 users,
               }
             } else {
-              // 如果获取用户失败，返回空用户列表的脚本
+              // 非 200 与抛异常同一口径：置 error 让调用方呈现降级提示，
+              // 否则该脚本的用户会静默从消费方（如活动关指派表）里消失
+              const errorMsg = userResponse.message || String(userResponse.code)
+              logger.warn(`获取脚本 ${script.uid} 的用户数据失败: ${errorMsg}`)
+              error.value = errorMsg
               return {
                 ...script,
                 users: [],

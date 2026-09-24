@@ -133,7 +133,7 @@
               </template>
               <a-select
                 :value="displayActivityStageIntent"
-                :options="activityStageOptions"
+                :options="activityStageSelectOptions"
                 :loading="activityStageLoading"
                 :disabled="loading || activityStageLoading || activityStageOptions.length === 0"
                 :placeholder="
@@ -387,6 +387,8 @@ const props = defineProps<{
   loading: boolean
   stageOptions: any[]
   activityStageOptions: Array<{ label: string; value: string }>
+  /** 当前值为旧版序号（pos:N）时补的下拉项；只影响展示，不计入「有无可刷关卡」 */
+  legacyActivityStageOption?: { label: string; value: string } | null
   activityStageLoading: boolean
   activityStageError: string
   displayActivityStageIntent?: string
@@ -478,12 +480,19 @@ const handleActivityToggle = (checked: boolean) => emitSave('Task.IfActivityFirs
 
 const handleActivityStageChange = (value: string) => emitSave('Task.ActivityStageIntent', value)
 
+/** 下拉选项：正文选项前补一条当前值的旧版序号项（不参与「当前无可刷活动关」判定） */
+const activityStageSelectOptions = computed(() =>
+  props.legacyActivityStageOption
+    ? [props.legacyActivityStageOption, ...props.activityStageOptions]
+    : props.activityStageOptions
+)
+
 const activitySummary = computed(() =>
   summarizeActivity({
     enabled: activityFirst.value,
     loading: props.activityStageLoading,
     optionCount: props.activityStageOptions.length,
-    stageLabel: props.activityStageOptions.find(
+    stageLabel: activityStageSelectOptions.value.find(
       option => option.value === props.displayActivityStageIntent
     )?.label,
     medicine: formData.value.Task.ActivityMedicineNumb ?? 0,

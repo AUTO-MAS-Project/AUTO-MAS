@@ -864,15 +864,18 @@ def _tag_notes(config: ConfigBase) -> dict:
     }
 
 
-_ACTIVITY_STAGE_INTENT_PATTERN = re.compile(r"jade|last:[1-9][0-9]{0,3}")
+_ACTIVITY_STAGE_INTENT_PATTERN = re.compile(
+    r"jade|last:[1-9][0-9]{0,3}|pos:[1-9][0-9]{0,3}"
+)
 
 
 class ActivityStageIntentValidator(ValidatorBase):
-    """活动关选关意图验证器：jade=搓玉 / last:N=倒数第N关，空串表示未指派。
+    """活动关选关意图验证器：jade=搓玉 / last:N=倒数第N关 / pos:N=旧版列表位置。
 
-    兼容旧版关卡序号：整型或纯数字串按编号降序近似转为 last:N——旧序号是 MAA
-    列表位置，两者仅在列表按编号降序时逐位等价；指向末位玉关的旧值会越界，由
-    AutoProxy 的旧序号兼容分支按搓玉解析。
+    空串表示未指派。旧版关卡序号（整型或纯数字串）原义是 MAA 列表位置，如实迁
+    成 pos:N 而不是按编号降序近似成 last:N：同一期 3 个材料关时选的「倒3」在下期
+    只剩 2 个材料关时就与「旧序号」同形，近似迁移后会被旧值兜底认领、静默改刷其
+    它关；pos 自带「这是列表位置」的语义，两种口径从此不再互相污染。
     """
 
     def validate(self, value: Any) -> bool:
@@ -886,14 +889,14 @@ class ActivityStageIntentValidator(ValidatorBase):
         if isinstance(value, bool):
             return ""
         if isinstance(value, int) and 1 <= value <= 9999:
-            return f"last:{value}"
+            return f"pos:{value}"
         if isinstance(value, float) and value.is_integer() and 1 <= value <= 9999:
-            return f"last:{int(value)}"
+            return f"pos:{int(value)}"
         if isinstance(value, str):
             text = value.strip()
             # isdecimal 而非 isdigit：上标数字等 isdigit 为真但 int() 不收
             if text.isdecimal() and 1 <= int(text) <= 9999:
-                return f"last:{int(text)}"
+                return f"pos:{int(text)}"
             if self.validate(text):
                 return text
         return ""
@@ -1094,7 +1097,7 @@ class MaaUserConfig(ConfigBase):
         self.Task_IfActivityFirst = ConfigItem(
             "Task", "IfActivityFirst", False, BoolValidator()
         )
-        ## 优先刷取的活动关卡意图（jade / last:N；旧序号按编号降序近似迁移）
+        ## 优先刷取的活动关卡意图（jade / last:N；旧序号如实迁为 pos:N 列表位置）
         self.Task_ActivityStageIntent = ConfigItem(
             "Task",
             "ActivityStageIntent",
@@ -1163,6 +1166,28 @@ class MaaUserConfig(ConfigBase):
         self.Notify_CustomWebhooks = MultipleConfig([Webhook])
 
         super().__init__()
+
+    async def load(self, data: dict) -> bool:
+        """加载配置，并处理活动关旧序号与总开关的联动迁移。
+
+        旧版 `ActivityStageIndex` 自 v5.4.0 起默认 1 且照常落盘，没碰过活动关的
+        用户也带着这个值。总开关没开时选关本来不生效，直接迁成 pos:1 会把这批
+        用户算成「已指派」（计划表页按已指派统计、要人工逐个移出），因此只有开关
+        真开着、或序号不是默认值 1 时才迁移；其余不迁，等用户开开关时现场选一次。
+        """
+
+        task_data = data.get("Task") if isinstance(data, dict) else None
+        if isinstance(task_data, dict):
+            legacy_index = task_data.get("ActivityStageIndex")
+            if (
+                legacy_index is not None
+                and "ActivityStageIntent" not in task_data
+                and not task_data.get("IfActivityFirst", False)
+                and str(legacy_index).strip() == "1"
+            ):
+                # 弹出旧键即视为用户没选过：字段保持默认空串（未指派）
+                task_data.pop("ActivityStageIndex")
+        return await super().load(data)
 
     def getInfrastName(self) -> str:
 

@@ -109,6 +109,9 @@ _ANNIHILATION_PROGRESS_RE = re.compile(
 _MAA_SANITY_RECOGNITION_RE = re.compile(r"理智\s*[:：]\s*\d+\s*/\s*\d+")
 # 活动关优先任务名（注入队列名与日志锚点共用，与 MAA 任务名同字，勿改）
 _MAA_ACTIVITY_TASK_NAME = "活动关优先"
+# 解析不到活动关的原因文本之一：间隙期没有进行中的活动，属常态而非异常，
+# 通知与统计按它降噪（不弹窗、不进统计行）
+_ACTIVITY_NO_ONGOING_REASON = "当前无进行中的活动关卡"
 # MAA 走到能看到理智的界面（进到副本门口）后，gui.log 才会出现无时间戳的
 # 「理智: X/Y」识别行（v6.17.5 国服实测，繁服同字）；其余界面语言样本未核实，
 # 命中不到时一律视为未进入战斗流程。
@@ -731,10 +734,9 @@ def _resolve_activity_stage(
 ) -> tuple[str | None, str]:
     """按用户选关意图解析当前活动关，返回 (关卡码, 解析摘要)。
 
-    jade=含玉关；last:N=非玉关按关卡号降序第 N 项（倒1=最高编号关）。旧版序号
-    按 MAA 列表位置计号、末位是玉关，迁移成 last:N 时会越界，因此该位置确为
-    玉关时仍按搓玉解析（新 UI 的倒数上限是 len(ranked)，此值只来自旧配置）。
-    其余失配返回 (None, 原因)，由调用方决定跳过与提示。
+    jade=含玉关；last:N=非玉关按关卡号降序第 N 项（倒1=最高编号关）；pos:N=旧版
+    MAA 列表位置（迁移值，末位通常是玉关，与倒数名次同形不同义，各按各的口径
+    取）。越界一律不注入、不回退首关，返回 (None, 原因) 由调用方决定提示。
     """
 
     stages = [
@@ -749,13 +751,24 @@ def _resolve_activity_stage(
         and stage["Value"]
     ]
     if not stages:
-        return None, "当前无进行中的活动关卡"
+        return None, _ACTIVITY_NO_ONGOING_REASON
 
     if intent == "jade":
         for value, raw_drop, drop_name in stages:
             if "玉" in raw_drop:
                 return value, f"搓玉 → {value}"
         return None, "本期无搓玉关"
+
+    if intent.startswith("pos:"):
+        # 旧版序号按列表位置取（末位即玉关），越界不回落首关
+        try:
+            index = int(intent[4:])
+        except ValueError:
+            return None, "活动关意图无效"
+        if not (1 <= index <= len(stages)):
+            return None, f"旧版序号第{index}关超出本期范围"
+        value, _raw_drop, drop_name = stages[index - 1]
+        return value, f"旧版第{index}关 → {value} · {drop_name}"
 
     if intent.startswith("last:"):
         try:
@@ -772,11 +785,6 @@ def _resolve_activity_stage(
             reverse=True,
         )
         if not (1 <= index <= len(ranked)):
-            # 旧序号兼容：旧版编号即 MAA 列表位置，末位玉关会迁移成越界的
-            # last:N（见 ActivityStageIntentValidator）；该位置确为玉关时按搓玉
-            # 解析，不让这批用户整期不注入。其余越界照旧提示
-            if index == len(stages) and "玉" in stages[-1][1]:
-                return stages[-1][0], f"搓玉 → {stages[-1][0]}（旧序号迁移）"
             return None, f"倒数第{index}关超出本期范围"
         value, drop_name = ranked[index - 1]
         return value, f"倒{index} → {value} · {drop_name}"
@@ -1587,11 +1595,19 @@ class AutoProxyTask(TaskExecuteBase):
                 activity_stage = None
                 activity_summary = f"{activity_name} · {skip_reason}"
 
-            # 失配一律整期不注入（废除旧版越界静默回退第一关），结果与通知可见
-            if activity_stage is None:
-                if not skip_entry:
+            # 失配一律整期不注入（废除旧版越界静默回退第一关），结果与通知可见；
+            # 间隙期「当前无进行中的活动关卡」是常态而不是异常：只记 info、不发
+            # 通知（调度台对 warning 会弹通知、开语音还会播报，重试轮还会再发一遍）
+            if activity_stage is None and not skip_entry:
+                if activity_summary == _ACTIVITY_NO_ONGOING_REASON:
+                    logger.info(
+                        f"用户 {self.cur_user_item.name} 活动关未注入: "
+                        f"{activity_summary}"
+                    )
+                else:
                     logger.warning(
-                        f"用户 {self.cur_user_item.name} 活动关未注入: {activity_summary}"
+                        f"用户 {self.cur_user_item.name} 活动关未注入: "
+                        f"{activity_summary}"
                     )
                     await Publisher.send(
                         id=self.task_info.task_id,
@@ -2107,7 +2123,7 @@ class AutoProxyTask(TaskExecuteBase):
         return normalized
 
     async def _record_activity_stage_failure(self) -> None:
-        """活动关任务出错：记跳过簿（首错跳当日，跨日再错整期跳过）并提示。"""
+        """活动关任务出错：记跳过簿（首错跳当日，连续再错整期跳过）并提示。"""
 
         if not self._activity_stage_name or self._activity_stage_failed:
             return
@@ -2150,6 +2166,29 @@ class AutoProxyTask(TaskExecuteBase):
                 ),
             ),
         )
+
+    async def _clear_activity_skip_entry(self) -> None:
+        """活动关任务打成功：清掉该活动的连错条目（「连续出错」的复位）。
+
+        判据是「连续两次出错」（#868）：中间打过成功就不算连错，否则一次临时故障
+        会和十天后的另一次拼成整期跳过，用户剩下的日子再也打不了活动关。
+        """
+
+        if not self._activity_stage_name:
+            return
+        book = self._load_activity_skip_book()
+        if self._activity_stage_name not in book:
+            return
+        del book[self._activity_stage_name]
+        try:
+            await self.cur_user_config.set(
+                "Data", "ActivitySkipBook", json.dumps(book, ensure_ascii=False)
+            )
+        except Exception as e:
+            # 清条目只是记账，失败不影响本轮注入：条目留着，下轮成功再清
+            logger.opt(exception=True).warning(
+                f"用户 {self.cur_user_item.name} 活动关跳过簿清理写入失败: {e}"
+            )
 
     async def check_log(self, log_content: list[str], latest_time: datetime) -> None:
         """日志回调"""
@@ -2215,9 +2254,14 @@ class AutoProxyTask(TaskExecuteBase):
             await self._collect_cultivate_archive(log)
 
         # 活动关任务出错：MAA 会继续跑完队列（活动关失败不算整轮失败），
-        # 这里只负责让失败可见并记跳过簿；错误后又完成任务视为已恢复
+        # 这里只负责让失败可见并记跳过簿；打成功则清掉连错条目，
+        # 只有「连续两次出错」才整期跳过（#868），中间成功过就不算连错
         if _task_failed(log, _MAA_ACTIVITY_TASK_NAME) and self._activity_stage_name:
             await self._record_activity_stage_failure()
+        elif (
+            f"完成任务: {_MAA_ACTIVITY_TASK_NAME}" in log and self._activity_stage_name
+        ):
+            await self._clear_activity_skip_entry()
 
         if "未选择任务" in log:
             self.cur_user_log.status = "MAA 未选择任何任务"
@@ -2330,8 +2374,11 @@ class AutoProxyTask(TaskExecuteBase):
             )
 
         # 活动关解析摘要随统计报告带出（本轮未开活动关优先时为空不占位；
-        # 本轮任务出错时标注未打，结果与通知可见）
-        if self._activity_stage_summary:
+        # 本轮任务出错时标注未打，结果与通知可见；间隙期没活动不打这一行）
+        if (
+            self._activity_stage_summary
+            and self._activity_stage_summary != _ACTIVITY_NO_ONGOING_REASON
+        ):
             suffix = "（本轮未打）" if self._activity_stage_failed else ""
             statistics["activity_stage"] = f"{self._activity_stage_summary}{suffix}"
 
