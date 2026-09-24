@@ -225,7 +225,9 @@ class M9AManager(TaskExecuteBase):
             try:
                 archive_native_backup(self.m9a_config_path)
             except Exception:
-                logger.opt(exception=True).warning("M9A 运行前原生配置归档失败，已跳过（不阻断任务）")
+                logger.opt(exception=True).warning(
+                    "M9A 运行前原生配置归档失败，已跳过（不阻断任务）"
+                )
 
         # 构建用户列表
         self.script_info.user_list = [

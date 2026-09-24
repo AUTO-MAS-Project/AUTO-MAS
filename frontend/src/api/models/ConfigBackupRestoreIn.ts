@@ -22,5 +22,9 @@ export type ConfigBackupRestoreIn = {
      * 恢复目标（如 zzz-od 的 mas/onedragon、ok-nte 的 mas/native）；非法值返回 400
      */
     target: string;
+    /**
+     * 源配置损坏时是否强制恢复（False 时返回 409 由前端二次确认，True 跳过损坏文件相关的保护步骤）
+     */
+    force?: boolean;
 };
 

@@ -184,13 +184,8 @@ export interface MaaEndScriptConfig {
     EmulatorIndex: string
     SetResolution: boolean
     CloseOnFinish: boolean
-    RestoreResolution:
-      | 'Off'
-      | '1920x1080'
-      | '2560x1440'
-      | '3840x2160'
-      | 'Fullscreen'
-      | 'Custom'
+    RestoreDisplayType: 'Window' | 'Fullscreen'
+    RestoreResolution: 'Off' | 'Original' | '1920x1080' | '2560x1440' | '3840x2160' | 'Custom'
     RestoreResolutionWidth: number
     RestoreResolutionHeight: number
   }
@@ -266,7 +261,6 @@ export interface MaaFWScriptConfig {
     Arguments: string
     WaitTime: number
     /** 由 MAS 启动游戏时，窗口出现后至少再等多少秒才下发第一个任务；0 关闭。 */
-    StartupSettleTime: number
     /** DirectExe 下启动前按 exe 反查 Unity 注册表，临时改成所选窗口尺寸，关闭后恢复。 */
     UnityResolution: MaaFWUnityResolution
   }
@@ -279,6 +273,11 @@ export interface MaaFWScriptConfig {
     Channel: 'stable' | 'beta'
     /** 脚本自己的 Mirror 酱 CDK，选 Mirror 酱作为更新源时必填；不从全局设置兜底。 */
     MirrorChyanCDK: string
+    /**
+     * 只对这个项目生效的网络代理，`host:port` 或带协议；更新包下载与运行环境安装走它。
+     * 留空跟随全局（设置 → 其他 → 网络代理），兜底在后端合并，前端不做预填。
+     */
+    ProxyAddress: string
     /**
      * @deprecated 后端已改用 AutoUpdateMode；旧配置可能只有这个字段，仅供读取时映射，
      * 前端不再写入。见 useMaaFWProjectUpdate.resolveAutoUpdateMode。
@@ -612,7 +611,6 @@ export interface User {
     Stage_1: string
     Stage_2: string
     Stage_3: string
-    Stage_Remain: string
     Status: boolean
     /** 快速配置：独立于配置来源的用户级开关 */
     IfQuickConfig?: boolean
@@ -636,13 +634,11 @@ export interface User {
     BilibiliAccountName?: string | null
   }
   Task: {
-    IfRoguelike: boolean
     IfInfrast: boolean
     IfFight: boolean
     IfMall: boolean
     IfAward: boolean
     IfSwitchTheme: boolean
-    IfReclamation: boolean
     IfRecruit: boolean
     IfStartUp: boolean
     Queue?: unknown
@@ -650,8 +646,8 @@ export interface User {
     ActivityStageIntent?: string
     ActivityMedicineNumb?: number
     IfDepotMaintain?: boolean
-    IfGreenTicketStore?: boolean
     DepotMaintainPlans?: string
+    IfGreenTicketStore?: boolean
     SanityTaskType?: MaaEndTaskConfig['SanityTaskType']
     OperatorProgression?: MaaEndTaskConfig['OperatorProgression']
     WeaponProgression?: MaaEndTaskConfig['WeaponProgression']

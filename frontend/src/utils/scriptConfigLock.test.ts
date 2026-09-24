@@ -65,8 +65,22 @@ describe('isScriptConfigLocked', () => {
         { scriptId: 'script-2', scriptType: 'SRC' },
       ],
       cycleNextList: [
-        { queueItemId: 'item-1', scriptId: 'script-1', scriptName: 'MAA', nextRunAt: '', isDue: true, isRunning: true },
-        { queueItemId: 'item-2', scriptId: 'script-2', scriptName: 'SRC', nextRunAt: '', isDue: false, isRunning: false },
+        {
+          queueItemId: 'item-1',
+          scriptId: 'script-1',
+          scriptName: 'MAA',
+          nextRunAt: '',
+          isDue: true,
+          isRunning: true,
+        },
+        {
+          queueItemId: 'item-2',
+          scriptId: 'script-2',
+          scriptName: 'SRC',
+          nextRunAt: '',
+          isDue: false,
+          isRunning: false,
+        },
       ],
     })
 
@@ -75,8 +89,6 @@ describe('isScriptConfigLocked', () => {
   })
 
   it('unlocks scripts after the task completes', () => {
-    expect(
-      isScriptConfigLocked([createTask({ phase: 'completed' })], 'script-1')
-    ).toBe(false)
+    expect(isScriptConfigLocked([createTask({ phase: 'completed' })], 'script-1')).toBe(false)
   })
 })

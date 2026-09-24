@@ -36,7 +36,7 @@ import threading
 from pathlib import Path
 from typing import Any, Callable
 
-from app.utils.io import read_file, replace_dir, write_file
+from app.utils.io import read_dict_file, read_file, replace_dir, write_file
 from app.utils.logger import get_logger
 
 logger = get_logger("绝区零一条龙配置")
@@ -89,10 +89,9 @@ DEFAULT_GAME_ACCOUNT: dict[str, Any] = {
 # 实例目录内的运行态目录：不属于配置包，注入/回读时排除、注入前清理
 _RUN_RECORD_DIR = "app_run_record"
 
-# 运行记录里的脏字节：一条龙用 non-atomic 写落盘，进程被杀/断电会在文件里留下
-# NUL 填充；YAML 解析器遇到 NUL 直接抛 ReaderError。读侧只取 run_status，
-# 丢掉这些不可见字符即可，不因一个坏文件让整个任务崩掉
-_INVALID_YAML_CHARS = dict.fromkeys(range(0x20), None)
+# 一条龙用 non-atomic 写落盘，进程被杀/断电会在 YAML 里留下 NUL 填充，YAML
+# 解析器遇到 NUL 直接抛 ReaderError；读侧一律按 ``.sanitized.yaml`` 容错读
+# （见 ``app.utils.io``），把这类残留当正常可读回，不因一个坏文件让整个任务崩掉
 
 # 进程内读-改-写串行锁：write_file 只保证单次写原子，读-改-写整体在此串行，
 # 避免切实例 / 写任务编排 / 写账号并发交错丢更新。使用可重入锁：直控保存等
@@ -102,6 +101,23 @@ _YAML_LOCK = threading.RLock()
 
 def _one_dragon_file(root: Path) -> Path:
     return root / "config" / "one_dragon.yml"
+
+
+def _read_registry(root: Path) -> dict[str, Any]:
+    """读当前生效的 ``config/one_dragon.yml`` 全文。
+
+    与备份口径的 ``read_native_registry`` 是同一份文件的两个视角：本函数读
+    **现场文件**（会话/运行窗口内即 MAS 合成视图），备份读 sidecar 原件。
+
+    上游 non-atomic 写残留的 NUL 属正常可读回，按 ``.sanitized.yaml`` 容错读；
+    其余坏档由 :func:`read_dict_file` 抛 :class:`ConfigCorruptedError`（带路径），
+    不再让解析器的原始异常或「退回原始字符串」在调用方炸出与内容无关的错误。
+
+    Raises:
+        ConfigCorruptedError: 文件存在但解析失败或根节点非映射。
+    """
+
+    return read_dict_file(_one_dragon_file(root), format=".sanitized.yaml")
 
 
 def instance_dir(root: Path, idx: int) -> Path:
@@ -142,9 +158,13 @@ def validate_root(root: Path) -> None:
 
 
 def list_instances(root: Path) -> list[dict]:
-    """读取实例（账号）列表，元素含 idx/name/active/active_in_od 等原生字段。"""
+    """读取实例（账号）列表，元素含 idx/name/active/active_in_od 等原生字段。
 
-    data = read_file(_one_dragon_file(root)) or {}
+    列表为空是合法答案（尚未建实例 / 已删光），不做结构判据；文件读不动时
+    ``_read_registry`` 会抛 :class:`ConfigCorruptedError`，不按空列表蒙混。
+    """
+
+    data = _read_registry(root)
     return [
         dict(item)
         for item in (data.get("instance_list") or [])
@@ -164,29 +184,100 @@ def find_active_instance(root: Path) -> dict | None:
 def read_instance_run(root: Path) -> str | None:
     """读取 instance_run 原值（仅运行当前 / 全部实例）。"""
 
-    data = read_file(_one_dragon_file(root)) or {}
+    data = _read_registry(root)
     value = data.get("instance_run")
     return str(value) if value is not None else None
+
+
+def instance_run_is_all(root: Path) -> bool:
+    """上游口径：本次运行目标是否为「全部实例」。
+
+    镜像上游 ``one_dragon_config.instance_run`` 属性的
+    ``data.get('instance_run', 默认值)`` 与 ``handle_init`` 的 ``== 全部实例``
+    判定：**只有键缺失**才回落默认「全部实例」；键存在但值为 null / 空串等
+    非法值时，上游走单实例分支。:func:`read_instance_run` 返回原值（键缺失
+    与值为 null 都是 ``None``），区分不了这两种情况，故单列本判定。
+    """
+
+    return _read_registry(root).get("instance_run", INSTANCE_RUN_ALL) == (
+        INSTANCE_RUN_ALL
+    )
+
+
+def read_after_done(root: Path) -> str:
+    """读取 after_done 原值（无/关闭游戏/关机）。
+
+    键缺失回落「无」——对齐上游 ``one_dragon_config.after_done`` 的 get 默认。
+    会话窗口内读的是合成视图（视图由会话注入该键），还原后读的是原生值。
+    """
+
+    data = _read_registry(root)
+    return str(data.get("after_done") or "无")
+
+
+def write_after_done(root: Path, value: str) -> None:
+    """落盘 after_done（直控页直写原生设置；白名单校验由 native_config 层负责）。"""
+
+    with _YAML_LOCK:
+        data = _read_registry(root)
+        data["after_done"] = value
+        write_file(_one_dragon_file(root), data)
 
 
 def write_instance_run(root: Path, value: str) -> None:
     """落盘 instance_run（配合 ``--instance`` 注入运行临时切换，结束后恢复）。"""
 
     with _YAML_LOCK:
-        data = read_file(_one_dragon_file(root)) or {}
+        data = _read_registry(root)
         data["instance_run"] = value
         write_file(_one_dragon_file(root), data)
 
 
-def find_free_instance_idx(root: Path, used_idxs: set[int] | None = None) -> int:
-    """返回最小空闲实例 idx。
+MAS_SLOT_BASE = 1001
+"""MAS 用户槽的起始槽号（``config/1001`` 起）。
+
+一条龙的「新增实例」（``create_new_instance``）只在自己的注册表里找最小空号，
+**不扫盘上的 ``config/NN``**；而 MAS 槽刻意不进原生注册表（只在运行/会话窗口
+以合成视图出现），所以低号段随时可能被一条龙抢走并覆盖。把 MAS 槽固定在远高于
+任何实际原生实例数的高位段，一条龙的升序找号就够不到它们，低号段整体交还给
+一条龙。
+
+直控页新建的**原生**实例仍走 :func:`find_free_instance_idx` 的默认起点 1，与
+一条龙自己新增实例的口径一致（它在注册表里，不会被抢）。
+"""
+
+MAS_SLOT_MAX = 9999
+"""MAS 用户槽的槽号上限（与用户配置 ``Info.SlotIdx`` 的 ``RangeValidator`` 一致）。
+
+越过上限的号会与绑定号校验范围脱节：``SlotIdx`` 被静默夹到上限、槽目录名却是
+原值，读写错位。回收池恢复的 ``targetSlot`` 同样受此约束。
+"""
+
+
+def find_free_instance_idx(
+    root: Path,
+    used_idxs: set[int] | None = None,
+    *,
+    base: int = 1,
+    limit: int | None = None,
+) -> int:
+    """返回不小于 ``base`` 的最小空闲实例 idx。
 
     占位集合（按以下顺序合并，确保新槽不与任何已有槽冲突）：
     1. 原生 ``instance_list`` 的 idx
     2. 盘上 ``config/NN`` 目录（覆盖 finalize 失败导致 deepcopy 未回写、
        但实例目录已创建的情况——保证后续用户不会分配到同一槽）
     3. ``used_idxs``（本次会话内已分配 / 跨脚本 MAS 用户已绑定的槽）
-    对齐 zzz-od ``create_new_instance`` 的最小正整数规则。
+
+    ``base=1`` 对齐 zzz-od ``create_new_instance`` 的最小正整数规则（原生实例
+    用）；MAS 用户槽传 :data:`MAS_SLOT_BASE`，退到高位段避开一条龙的找号范围。
+
+    ``limit`` 给出上限时，超出即报错而不是返回越界号：MAS 槽号要写进
+    ``Info.SlotIdx``，越过 :data:`MAS_SLOT_MAX` 会被 ``RangeValidator`` 静默
+    夹到上限，槽目录名与绑定号错位。原生实例不传（一条龙自身对 idx 无上限）。
+
+    Raises:
+        ValueError: 号段已用满（``limit`` 内找不到空号）。
     """
 
     used: set[int] = set()
@@ -199,9 +290,11 @@ def find_free_instance_idx(root: Path, used_idxs: set[int] | None = None) -> int
             used.add(int(child.name))
     if used_idxs:
         used |= {int(i) for i in used_idxs}
-    idx = 1
+    idx = max(1, int(base))
     while idx in used:
         idx += 1
+    if limit is not None and idx > int(limit):
+        raise ValueError(f"实例槽号段已用满（{base}~{limit}）")
     return idx
 
 
@@ -209,7 +302,7 @@ def _registry_rmw(root: Path, mutator: Callable[[list[dict]], None]) -> None:
     """锁内读-改-写 one_dragon.yml 的 instance_list（保留其他原生字段）。"""
 
     with _YAML_LOCK:
-        data = read_file(_one_dragon_file(root)) or {}
+        data = _read_registry(root)
         entries = [
             dict(item)
             for item in (data.get("instance_list") or [])
@@ -378,6 +471,7 @@ def write_instance_view(
     active_idx: int | None = None,
     instance_run: str = INSTANCE_RUN_ALL,
     force_login: bool = False,
+    after_done: str | None = None,
 ) -> None:
     """把 one_dragon.yml 替换为合成视图（仅含给定 MAS 槽）。
 
@@ -412,10 +506,16 @@ def write_instance_view(
         for idx, name in slots
     ]
     with _YAML_LOCK:
-        write_file(
-            original,
-            {"instance_list": entries, "instance_run": instance_run},
-        )
+        payload: dict[str, Any] = {
+            "instance_list": entries,
+            "instance_run": instance_run,
+        }
+        # 会话注入 MAS 侧「游戏结束后操作」：视图期间 GUI 读的就是这份文件，
+        # 带 guarantees GUI 所见即 MAS 下拉；关闭时经 read_after_done 回读。
+        # None（查看会话/运行）不写该键，GUI 按上游默认显示。
+        if after_done is not None:
+            payload["after_done"] = after_done
+        write_file(original, payload)
 
 
 def restore_instance_view(root: Path) -> None:

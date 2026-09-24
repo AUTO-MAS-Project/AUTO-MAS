@@ -313,6 +313,9 @@ class AutoProxyTask(TaskExecuteBase):
             tuple[tuple, list[dict[str, object]] | None] | None
         ) = None
         self.first_run_mode: str | None = None
+        # 在首阶段预任务执行前读取，后续阶段复用同一份游戏显示设置。
+        self.original_game_settings: tuple[int, int, str] | None = None
+        self.original_game_settings_read = False
         self.curdate = datetime.now(tz=UTC4).strftime("%Y-%m-%d")
         self.auto_collect_run_at: datetime | None = None
         self.auto_collect_routes: dict[str, list[str]] = {}
@@ -931,13 +934,6 @@ class AutoProxyTask(TaskExecuteBase):
                             )
                     else:
                         # Win32 游戏由 MXU 在 GameSetting pretask 完成后作为前置程序启动。
-                        if self.mode == self.first_run_mode and is_process_running(
-                            "Endfield.exe"
-                        ):
-                            logger.info(
-                                "关闭已运行的终末地，准备执行 MaaEnd 游戏设置预任务"
-                            )
-                            await self.kill_game_process()
                         logger.info("终末地将由 MaaEnd 前置程序启动")
                     emulator_info = None
                 else:
@@ -984,6 +980,16 @@ class AutoProxyTask(TaskExecuteBase):
                     else "将由 MAAEND 启动游戏，未配置账号，跳过账号切换"
                 )
 
+            if (
+                self.emulator_manager is None
+                and self.mode == self.first_run_mode
+                and bool(self.script_config.get("Game", "SetResolution"))
+            ):
+                logger.info(
+                    "启动时设置分辨率：关闭终末地，准备执行 MaaEnd 游戏设置预任务"
+                )
+                await self.kill_game_process()
+
             await self.set_maaend(emulator_info)
 
             if not any(any(tasks.values()) for tasks in self.task_dict.values()):
@@ -1010,12 +1016,6 @@ class AutoProxyTask(TaskExecuteBase):
                     logger.success("静默模式: 成功隐藏 MaaEnd 窗口")
                 else:
                     logger.warning("静默模式: 隐藏 MaaEnd 窗口失败")
-            if self.emulator_manager is None:
-                if await self.game_process_manager.activate_window():
-                    logger.success("前置 Endfield 窗口成功")
-                else:
-                    logger.warning("前置 Endfield 窗口失败")
-
             await asyncio.sleep(1)
             await self._wait_maaend_stage()
 
@@ -1126,7 +1126,10 @@ class AutoProxyTask(TaskExecuteBase):
                 await System.kill_process(self.script_config.get("Game", "Path"))
             else:
                 logger.info("中止模拟器进程")
-                await close_emulator(self)
+                await close_emulator(
+                    self,
+                    index=self.script_config.get("Game", "EmulatorIndex"),
+                )
         except Exception as e:
             logger.opt(exception=True).warning(f"关闭游戏或模拟器失败: {e}")
 
@@ -1369,6 +1372,9 @@ class AutoProxyTask(TaskExecuteBase):
             or self.emulator_manager is not None
         ):
             return None
+        original = (
+            self._read_original_game_settings() if resolution == "Original" else None
+        )
         stages = list(MAAEND_RUN_MOOD_BOOK)
         is_last_stage = all(
             self.run_book[stage] for stage in stages[stages.index(self.mode) + 1 :]
@@ -1382,12 +1388,19 @@ class AutoProxyTask(TaskExecuteBase):
                     "value": False,
                 }
             return None
+        if resolution == "Original" and original is None:
+            logger.warning("无法读取启动前的终末地注册表显示设置，本轮跳过关闭时恢复")
+            for task in close_tasks:
+                task.setdefault("optionValues", {})["CloseGamePCApplyGameSetting"] = {
+                    "type": "switch",
+                    "value": False,
+                }
+            return None
         required_options = (
             "CloseGamePCApplyGameSetting",
+            "CloseGamePCGameSettingDisplayType",
             "CloseGamePCGameSettingResolution",
         )
-        if resolution == "Fullscreen":
-            required_options += ("CloseGamePCGameSettingDisplayType",)
         if self._maaend_task_supported("CloseGamePC") is not True or not all(
             self._maaend_task_option_supported("CloseGamePC", name)
             for name in required_options
@@ -1413,23 +1426,27 @@ class AutoProxyTask(TaskExecuteBase):
             str(self.script_config.get("Game", "ControllerType"))
         ] = True
         tasks.append(close_task)
-        if resolution == "Custom":
+        display_type = (
+            original[2]
+            if original is not None
+            else str(self.script_config.get("Game", "RestoreDisplayType") or "Window")
+        )
+        if display_type not in {"Window", "Fullscreen"}:
+            display_type = "Window"
+        if resolution == "Original":
+            assert original is not None
+            width, height = str(original[0]), str(original[1])
+        elif resolution == "Custom":
             width = str(self.script_config.get("Game", "RestoreResolutionWidth"))
             height = str(self.script_config.get("Game", "RestoreResolutionHeight"))
-        elif resolution == "Fullscreen":
-            width, height = "1920", "1080"
         else:
             width, height = resolution.split("x")
         values = close_task.setdefault("optionValues", {})
         values["CloseGamePCApplyGameSetting"] = {"type": "switch", "value": True}
-        if resolution == "Fullscreen":
-            values["CloseGamePCGameSettingDisplayType"] = {
-                "type": "select",
-                "caseName": "Fullscreen",
-            }
-        else:
-            # 固定或自定义分辨率沿用 MaaEnd 默认的窗口模式，避免残留旧的全屏选项。
-            values.pop("CloseGamePCGameSettingDisplayType", None)
+        values["CloseGamePCGameSettingDisplayType"] = {
+            "type": "select",
+            "caseName": display_type,
+        }
         values["CloseGamePCGameSettingResolution"] = {
             "type": "input",
             "values": {
@@ -1438,6 +1455,30 @@ class AutoProxyTask(TaskExecuteBase):
             },
         }
         return close_task
+
+    def _read_original_game_settings(self) -> tuple[int, int, str] | None:
+        """读取并缓存本轮启动前的注册表分辨率和显示模式。"""
+
+        if self.original_game_settings_read:
+            return self.original_game_settings
+        self.original_game_settings_read = True
+
+        from app.task.MaaFW.tools.embedded.game_resolution import (
+            read_unity_display_type,
+            read_unity_resolution,
+        )
+
+        game_path = str(self.script_config.get("Game", "Path") or "").strip()
+        if not game_path:
+            return None
+        exe_path = Path(game_path)
+        resolution = read_unity_resolution(exe_path)
+        display_type = read_unity_display_type(
+            exe_path, preferred_value_name="video_full_screen_h1998742411"
+        )
+        if resolution is not None and display_type is not None:
+            self.original_game_settings = (*resolution, display_type)
+        return self.original_game_settings
 
     async def set_maaend(self, device_info: DeviceInfo | None) -> None:
         """写入 MaaEnd 运行前配置"""
@@ -1739,7 +1780,9 @@ class AutoProxyTask(TaskExecuteBase):
                 continue
 
             if task_name_value != _MAAEND_CLOSE_GAME_TASK:
-                task["enabled"] = self.task_dict.get(task_name, {}).get(task["id"], False)
+                task["enabled"] = self.task_dict.get(task_name, {}).get(
+                    task["id"], False
+                )
 
             if restore_task is task:
                 # 独立送货/采集阶段也须在末尾执行恢复；重试时同样不能漏掉。
@@ -1918,7 +1961,14 @@ class AutoProxyTask(TaskExecuteBase):
             self.retryable = False
         elif any(
             message in log
-            for message in ("没有可以启动的任务", "没有启用的任务", "没有可执行任务")
+            # MXU 现行文案为「没有可执行的任务」，与旧文案并列；不用公共前缀，
+            # 避免误命中「没有可执行路径点」「没有可执行的子任务」等运行期文案
+            for message in (
+                "没有可以启动的任务",
+                "没有启用的任务",
+                "没有可执行任务",
+                "没有可执行的任务",
+            )
         ):
             self.cur_user_log.status = "MaaEnd 没有可执行任务，请检查任务配置"
             self.retryable = False
@@ -1959,7 +2009,10 @@ class AutoProxyTask(TaskExecuteBase):
                                 self.task_name_map.get(task_name, task_name)
                             )
                             task_index[task_name]["index"] += 1
-                        elif f"任务失败: {task_name}" in log_line:
+                        elif (
+                            task_name in task_index
+                            and f"任务失败: {task_name}" in log_line
+                        ):
                             task_index[task_name]["index"] += 1
 
                     await self._mark_daily_once_tasks_completed(completed_task_names)

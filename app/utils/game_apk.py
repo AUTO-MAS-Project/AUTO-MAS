@@ -174,9 +174,7 @@ async def download_apk(
     try:
         async with asyncio.timeout(timeout):
             async with httpx.AsyncClient(follow_redirects=True) as client:
-                async with client.stream(
-                    "GET", url, timeout=60.0
-                ) as response:
+                async with client.stream("GET", url, timeout=60.0) as response:
                     response.raise_for_status()
                     total = int(response.headers.get("content-length", 0) or 0)
 

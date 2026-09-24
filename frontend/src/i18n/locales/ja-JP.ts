@@ -355,6 +355,7 @@ export default {
     maaCultivateStateAchieved: '達成済み',
     maaCultivateStatePending: '確認待ち',
     maaDepot: '在庫維持',
+    maaDepotHint: '素材ごとに保有数を設定し、不足時に自動で補充します',
     maaCombat: '理性作戦',
     maaInfrast: '基地シフト',
     maaInfrastMode: '基地モード',
@@ -368,8 +369,6 @@ export default {
     maaSwitchTheme: 'テーマ変更',
     maaSwitchThemeHint:
       'テーマ名は MAA の「テーマ変更」タスクで設定します。複数指定すると実行ごとに 1 つランダムに切り替わり、空の場合はスキップされます。MAA v6.17.3 以降が必要です',
-    maaRoguelike: '自動ローグライク',
-    maaRoguelikeHint: '長時間の実行はタイムアウトと誤判定される場合があります',
     maaGreenTicketStore: '緑チケット商店',
     maaGreenTicketStoreHint:
       '毎月一度だけ単独で MAA を起動し、殲滅より先に購入します。1階は全部購入、2階はスカウト券と求人票のみ。今月すでに購入済みならスキップし、失敗しても後続のタスクには影響しません。MAA v6.3.0 以降が必要です',
@@ -493,11 +492,11 @@ export default {
       'タスクが当日に正常完了した後、同日の後続実行では自動的にスキップします。空欄なら毎回実行します',
     maaEndDailyOnceTasksPlaceholder: '1日1回だけ実行するタスクを選択',
     maaEndSetResolution: '起動時に解像度を設定',
-    maaEndSetResolutionHint:
-      '既定ではオフです。オンにすると、最初のゲーム起動前に MaaEnd の解像度設定プレタスクを実行します。',
+    maaEndRestoreDisplayType: 'ゲーム終了時の表示モード',
     maaEndRestoreResolution: 'ゲーム終了時に解像度を復元',
-    maaEndRestoreResolutionHint:
-      '最後のステージ終了時に MaaEnd が次回起動用の設定を復元します。実行後にゲームを終了する場合のみ有効です。',
+    maaEndResolutionWindow: 'ウィンドウ',
+    maaEndResolutionOriginal: '元に戻す（{displayType} {resolution}）',
+    maaEndResolutionRestoreOriginal: '元に戻す',
     maaEndResolutionWidth: '幅',
     maaEndResolutionHeight: '高さ',
     maaEndResolutionUnchanged: '変更しない',
@@ -1157,7 +1156,6 @@ export default {
       '必須。空にするとこのルールは無効になります。Python の正規表現でログ 1 行全体に照合します',
     requiredEmptyValueDisables4:
       '必須。空にするとこのルールは無効になります。行を絞り込むための正規表現です',
-    updateNow: '今すぐ更新',
     treatRunAsTimed2:
       '代行タスク実行中、SRC のログがこの時間だけ変化しなければタイムアウトとみなします',
     treatAnnihilationRunAs:
@@ -1330,10 +1328,14 @@ export default {
     leaveEmptySkipTrailing: '空にすると末尾を切り取りません',
     leaveEmptySkipLeading: '空にすると先頭を切り取りません',
     cdkTip:
-      'MAS の更新設定にある CDK が自動で入ります。このスクリプト専用のものに置き換えても構いません。更新の取得元に MirrorChyan を選んだ場合は必須です',
+      'MAS の更新設定にある CDK が自動で入ります。このスクリプト専用のものに置き換えても構いません。更新の取得元に MirrorChyan を選んだ場合は必須です。「?」をクリックすると MirrorChyan で取得できます：',
     cdkPlaceholder: 'MirrorChyan CDK を入力してください',
     cdkPrefilledFromGlobal:
       'MAS 更新設定の CDK を自動入力しました。そのまま使うか、このスクリプト専用のものに置き換えてください',
+    proxyAddress: 'プロキシアドレス',
+    proxyAddressTip:
+      'このプロジェクトだけに適用されるネットワークプロキシです。空欄のときは全体設定（設定 → その他 → ネットワークプロキシ）に従います。入力すると、このプロジェクトの更新ダウンロードと実行環境のインストールはここのプロキシだけを経由します',
+    proxyAddressPlaceholder: '例 127.0.0.1:7890、空欄なら全体設定に従います',
     notDeclared: '未宣言',
     updateProcess: '更新の進行',
     updateProcessPlaceholder:
@@ -1432,9 +1434,8 @@ export default {
     envReadyAgents: '準備済みの Agent',
     envRetry: '再試行',
     mfwUnityResolutionOff: '変更しない',
-    mfwStartupSettleSeconds: '起動後の待機（秒）',
-    mfwStartupSettleTip:
-      'MAS がゲームを起動した場合のみ：ウィンドウ表示後、最初のタスクを投入するまで少なくともこの秒数待ちます。MaaFW の初期化は並行して進みます。Unity 製ゲームはウィンドウが出た時点ではまだ黒画面で読み込み中のことが多く、早すぎるとスクリプト側で認識異常と判定されます。ゲームが既に起動している場合は待ちません。0 で無効。',
+    mfwWaitTimeTip:
+      'MAS がゲームを起動する際の 2 段階の待機はこの上限を共有します。まずウィンドウの表示を待ち、次に画面の安定を待ちます。待機中は毎秒画面を確認し、内容があり 5 秒間変化がなければ早めにタスクを開始します。MaaFW の初期化は並行して進みます。Unity 製ゲームはウィンドウが出た時点ではまだ黒画面で読み込み中のことが多く、早すぎるとスクリプト側で認識異常と判定されます。ゲームが既に起動している場合は画面を待ちません。',
     mfwUnityResolutionTip:
       'Unity 製ゲームのみ有効：MAS は起動前に exe のパスからゲームのレジストリを逆引きし、解像度を一時的に選択したサイズのウィンドウモードに変更、ゲーム終了後に元の値へ戻します。ゲームがすでに起動している場合は変更しません。',
     thisNameAlsoWritten: 'この名前は、貨幣戦争の開拓者名として M7A/SRA にも書き込まれます',
@@ -1562,6 +1563,51 @@ export default {
     wutheringWavesUpdateTimed: '鳴潮の更新がタイムアウトしたため、自動的に停止しました',
     k60SecondsRecommendedDefault: '既定の待機時間は 60 秒への変更をおすすめします。',
     whichSpellsOutEvery: 'には設定手順がすべて明記されています。',
+    // BAAH 専用
+    baahScriptConfiguration: 'BAAH スクリプト設定',
+    baahScriptNameHint: '複数の BAAH スクリプトインスタンスを区別するための名前です',
+    baahScriptPathHint:
+      'BAAH 本体（BAAH.exe）のフルパスです。プログラムフォルダー・設定フォルダー・ログフォルダーはすべてこの場所から導出されるため、別途指定する必要はありません',
+    baahManageConfig: '重要な設定項目を管理する',
+    baahManageConfigHint:
+      '有効にすると、実行前に BAAH の動作に必要な設定（終了後に自動終了、ログのファイル出力）を本ソフトが自動で書き込み、実行後に元の値へ戻します',
+    baahAutoStartNotice:
+      'BAAH 側でエミュレーターの自動起動をオフにしてください：BAAH の「エミュレーターのパス」を空にし、エミュレーターは本ソフトに起動させます。上の「重要な設定項目を管理する」を有効にすると本ソフトが自動で空にします。「いいえ」にした場合は BAAH のエミュレーター設定でご自身で空にしてください。そうしないと両方が別々にエミュレーターを起動して取り合いになります',
+    baahPushLogEnabled: 'タスクノードの詳細を通知する',
+    baahPushLogEnabledHint:
+      '有効にすると、今回の実行の BAAH タスクノード（成功／スキップ／失敗）がタスクレポートと一緒に通知されます。無効にしてもタスクノードを収集しないだけで、タスクログの記録と結果判定には影響しません',
+    baahEmulatorHint:
+      '本ソフトが起動を管理するエミュレーターを選択します。実行前に本ソフトが起動してデバイスの準備完了を待ち、BAAH は接続するだけです。BAAH 側でエミュレーターのパスとポートを入力する必要はありません',
+    baahNotBaahScript: 'このスクリプトは BAAH ではありません',
+    baahRunTimesLimitHint: 'この回数を超えても失敗した場合は今回の実行を中止します',
+    baahRunTimeLimitHint:
+      '実行中にログの更新が止まってから待つ最大時間（分）。超えると実行失敗として扱います',
+    baahConfigName: '既定の設定名',
+    baahConfigNameHint:
+      '通常使用する BAAH 設定です。本ソフトはこれを使って BAAH.exe <名前>.json を起動します。イベント対応を有効にすると、イベント期間中は「イベント期間中の設定ファイル名」に置き換わります',
+    baahConfigNamePlaceholder: '通常使用する設定を選択してください',
+    baahActivityConfigName: 'イベント期間中の設定ファイル名',
+    baahActivityConfigNameHint:
+      '上の「イベント対応」を有効にすると、ブルーアーカイブで開催中のイベントがある間はこの設定で BAAH を起動します。空欄の場合やイベント日程を取得できない場合は既定の設定名を使用します',
+    baahActivityConfigNamePlaceholder: '空欄の場合は常に既定の設定を使用します',
+    baahIfActivityAdapt: 'イベント対応',
+    baahIfActivityAdaptHint:
+      '有効にするとブルーアーカイブのイベント日程に応じて設定ファイルを切り替えます。イベント中は「イベント期間中の設定ファイル名」、イベントがないときは「既定の設定名」を使用します',
+    baahActivityLineType: 'イベント日程のサーバー',
+    baahActivityLineTypeHint:
+      'どのサーバーの日程でイベントの有無を判定するかを選びます。サーバーごとにイベント時期が異なるため、お使いのアカウントのサーバーを選んでください',
+    baahActivityLineCN: '中国版',
+    baahActivityLineJP: '日本版',
+    baahActivityLineGloble: 'グローバル版',
+    baahActivityRunning: '開催中：',
+    baahActivityUpcoming: '次のイベント：',
+    baahActivityNone: '現在開催中または開始予定のイベントはありません',
+    baahActivityUnavailable: 'イベント日程を取得できませんでした',
+    baahUserTag: 'ユーザータグ',
+    baahUserTagHint: '本ソフトが実行状況に応じて自動生成します。閲覧のみ',
+    baahLastProxyDate: '前回の実行日',
+    baahProxyTimes: '実行回数',
+    baahDataReadOnlyHint: '本ソフトが自動で集計します。閲覧のみ',
     // BetterGI 专项
     bettergiScriptConfiguration: 'BetterGI スクリプト設定',
     bettergiInstanceNameHint: '複数の BetterGI スクリプトインスタンスを区別するための名前です',
@@ -2375,6 +2421,7 @@ export default {
     },
     carousel: {
       remaining: '残り時間',
+      startsIn: '開始まで',
       prev: '前のゲーム',
       next: '次のゲーム',
       loading: 'イベント情報を取得しています…',
@@ -2425,7 +2472,9 @@ export default {
     bluearchive: {
       versionBadge: '{version}',
       endsAt: '{time} 終了',
+      startsAt: '{time} 開始',
       versionRemaining: 'イベントの残り時間',
+      startsIn: '開始まで',
       nextVersionSoon: '次のイベントがまもなく始まります',
       versionTime: 'イベント期間：',
       serverLabel: 'サーバー',
@@ -3098,7 +3147,7 @@ export default {
         General: 'ログファイルを出力するあらゆる自動化スクリプト向け',
         MAA: 'アークナイツの自動化と複数アカウントの日課代行',
         SRC: 'スターレイルの自動化と複数アカウント代行',
-        MaaEnd: 'MFW 専用アダプター',
+        MaaEnd: 'アークナイツ：エンドフィールドの自動化と複数アカウント代行',
         M9A: 'リバース：1999 の自動化',
         MaaFW: 'interface.json を持つ MaaFramework プロジェクトをそのまま実行',
         Okww: 'ok-script 専用のタスクランナー',
@@ -3388,7 +3437,9 @@ export default {
       openclawQqUnbindConfirm:
         '連携を解除すると、この端末に保存した QQ ログイン状態が消去されます。続行しますか？',
       openclawQqStatusRetry: '連携状態を再取得',
-      openclawQqBound: '連携済み',
+      openclawQqBound: '接続済み',
+      openclawQqConnecting: '接続中',
+      openclawQqReconnecting: '再接続中',
       openclawQqUnbound: '未連携',
       openclawQqBindSuccess: 'QQ 公式ボットを連携しました',
       openclawQqUnbindSuccess: 'QQ 公式ボットの連携を解除しました',
@@ -3440,6 +3491,11 @@ export default {
       proxyTip:
         'プロキシを使っていて接続に問題がある場合は、ここにプロキシアドレスを設定してください。全体に適用されます。',
       proxyPlaceholder: 'プロキシアドレスを入力してください',
+      githubMirror: 'GitHub ダウンロードミラー',
+      githubMirrorTip:
+        'MFW スクリプトが GitHub Releases から更新パッケージを取得するときだけ有効です。自動では gh-proxy 系ミラーを順に試し、すべて失敗すると直接接続に戻ります。オフでは常に直接接続します。sha256 ダイジェストのない資産はミラーを使いません',
+      githubMirrorAuto: '自動（ミラー優先、失敗時は直接接続）',
+      githubMirrorOff: 'オフ（GitHub に直接接続）',
       cdk: 'MirrorChyan CDK',
       cdkIntro:
         'MirrorChyan CDK は Mirror ソースから高速ダウンロードするための認証情報です。取得はこちら：',

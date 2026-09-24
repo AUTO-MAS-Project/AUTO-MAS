@@ -522,11 +522,9 @@ async function forceQuitAfterRendererTimeout(reason: string): Promise<void> {
     })
     forceQuitInProgress = retryableState.forceQuitInProgress
     quitRequestInFlight = retryableState.quitRequestInFlight
-    dialog.showErrorBox(
-      'AUTO-MAS 无法安全退出',
-      `未能确认后端进程已退出，前端将保持运行以避免遗留后台进程。\n\n${errorMsg}`
-    )
-    if ((!mainWindow || mainWindow.isDestroyed()) && app.isReady()) {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      showMainWindow()
+    } else if (app.isReady()) {
       try {
         createWindow()
       } catch (windowError) {
@@ -535,6 +533,10 @@ async function forceQuitAfterRendererTimeout(reason: string): Promise<void> {
         logger.error(`强制清理失败后重建窗口失败: ${windowErrorMsg}`)
       }
     }
+    dialog.showErrorBox(
+      'AUTO-MAS 无法安全退出',
+      `未能确认后端进程已退出，前端将保持运行以避免遗留后台进程。\n\n${errorMsg}`
+    )
   }
 }
 
@@ -548,6 +550,9 @@ function requestRendererClose(reason: string): void {
   }
 
   quitRequestInFlight = true
+  // 先让用户看到窗口已经关闭，renderer 保留在后台继续完成后端清理。
+  win.setSkipTaskbar(true)
+  win.hide()
   logger.info(`请求 renderer 执行协调退出: ${reason}`)
   win.webContents.send('app-close-requested')
   quitFallbackTimer = setTimeout(() => {

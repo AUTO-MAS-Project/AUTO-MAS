@@ -8,8 +8,8 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
 
 - `embedded_manager.py`：宿主侧管理器——任务调度、更新时机、运行环境确认、用户配置副本与写回。
 - `tools/embedded/`：宿主与核心包之间**唯一**的接缝（`runner_task`、`runtime_route`、
-  `update_credentials`、`project_path`、`env_cache`、`game_package`、`game_resolution`、
-  `update_progress`）。
+  `update_credentials`、`update_mirrors`、`project_path`、`env_cache`、`game_package`、
+  `game_resolution`、`update_progress`）。
   要读 `Config`、发通知、碰宿主模型，只能在这里和 `embedded_manager.py` 里做。
 - `tools/core/automas_maafw_*`：六个核心包（interface / runner / runtime_pool / agent_env /
   project_update / controller_win32），按零宿主耦合设计。已知例外只有
@@ -47,11 +47,16 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   `game_resolution.py`：按 `<exe>_Data/app.info` 反查 `HKCU\Software\<公司>\<产品>`，
   只改 Unity 播放器的 `Screenmanager *` 值，不碰游戏自有的那层（星铁的
   `GraphicsSettings_PCResolution`、终末地的 `video_resolution_*`），效果要实机验证。
-- `Game.StartupSettleTime`：游戏是**本轮刚起来的**（MAS 拉起，或接管时窗口是等出来的）才生效，
-  从窗口出现起算，宿主把「最早可下发时刻」写进 job（`taskStartNotBefore`），worker 在资源 /
-  controller / agent 初始化完成后补足剩余等待。游戏早就在跑、重试轮次、AttachOnly 都不等。
-  背景：终末地窗口出现后登录界面要 22~31s 才渲染，MaaEnd 的 SceneManager 见画面十几秒不变
-  就判「环境识别异常」失败，beta.5 runner 启动变快（窗口→下发 7~9s）后每次冷启动都撞上。
+- 启动后再等（#889 起没有单独的键，上限就是 `Game.WaitTime`）：游戏是**本轮刚起来的**（MAS
+  拉起，或接管时窗口是等出来的）才生效，从窗口出现起算，宿主把「最早可下发时刻」写进 job
+  （`taskStartNotBefore`），worker 在资源 / controller / agent 初始化完成后每秒截一帧，两条提前
+  放行：连续 5s 画面没变（静态登录页）；或连续 20s 有内容哪怕一直在动（`runner.py` 的
+  `STARTUP_SCREEN_CONTENT_SECONDS`）。黑屏 / 纯色把两个计数都清零，截不到图就等满上限。
+  游戏早就在跑、重试轮次、AttachOnly 都不等。真机数据（2026-09-19）：终末地主界面每秒 3~6%
+  抽样点在动、崩坏三登录页 22~38%，「没变」对它们永远不成立；终末地在窗口后 22s、主界面
+  还没出来时下发首个任务照样成功。背景：终末地窗口出现后登录界面要 22~31s 才渲染，MaaEnd 的
+  SceneManager 见画面十几秒不变就判「环境识别异常」失败，beta.5 runner 启动变快（窗口→下发
+  7~9s）后每次冷启动都撞上。
 - 用户配置在 `check()` 时深拷贝成副本跑，`final_task` 解锁后**整表写回**（#720 / #737）。
   改任何运行期写用户字段的逻辑，都要用落盘探针验证，只看内存会误判成已生效。
 
@@ -70,6 +75,16 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
 - 下载源 / CDK / 渠道 / 时机**只看脚本级 `Update.*`，不做全局兜底**
   （`tools/embedded/update_credentials.py`）；全局的 `Update.MirrorChyanCDK` / `Update.Channel`
   服务的是 MAS 自身更新。
+- **唯一带全局兜底的是代理**：脚本级 `Update.ProxyAddress` 留空跟随全局（设置 → 其他 →
+  网络代理），填了只走自己的，同时管更新包下载与运行环境安装（池的 uv / pip、agent venv）。
+  解析走 `resolve_update_proxy_url`，日志里只能出现 `describe_proxy` 的「脚本级 / 全局 /
+  未配置」——地址可能带 `user:pw@`。别改用 `Config.proxy`：那个属性每次访问都往日志写一行
+  「使用代理: <地址>」。
+- GitHub 加速镜像是**只有全局**的一项：`Update.GitHubMirror`（`Auto` / `Off`），脚本级没有
+  对应字段。清单在 `tools/embedded/update_mirrors.py`，与前端 `mirrorService.ts` 的 gh-proxy
+  组同源，改一处要同步另一处。只对 `github.com/<owner>/<repo>/releases/download/...` 生效，
+  Mirror 酱的一次性签名地址套前缀会把签名打坏，所以按源分流而不是按地址。
+  **没有 sha256 摘要时核心包整个忽略镜像**：经第三方转发的字节必须能校验。
 - 项目指纹在本地算（`project_update/contracts.py: project_fingerprint`），只用来防"计划与落地
   之间树被改动"，发布方不参与；差量包的基线校验用的是 MAS 自己上次落地记下的清单
   （`apply.py: _validate_plan_base`）。`.mas-update` / `.mas-update-cache` 是更新器的保留目录，

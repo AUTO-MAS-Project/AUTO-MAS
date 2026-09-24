@@ -353,6 +353,7 @@ export default {
     maaCultivateStateAchieved: 'Achieved',
     maaCultivateStatePending: 'Pending',
     maaDepot: 'Depot maintenance',
+    maaDepotHint: 'Set target stock per material; farmed automatically when short',
     maaCombat: 'Sanity combat',
     maaInfrast: 'Infrastructure shift',
     maaInfrastMode: 'Infrastructure mode',
@@ -362,7 +363,7 @@ export default {
     maaCustomInfrastPlan: 'Custom infrastructure shift',
     maaCustomInfrastPlanHint: 'Pick the shift to use from the imported config',
     maaCustomInfrastPlanHintPeriod:
-      'Shifts carry time periods: auto mode picks by time; picking a shift starts rotation from it',
+      'Shifts carry time periods: MAA picks the shift by time; manual selection is not available',
     maaCustomInfrastPlanHintRotate:
       'Shifts have no time periods: auto rotation starts from the first shift; picking a shift starts rotation from it',
     maaCustomInfrastPlanHintMixed:
@@ -380,8 +381,6 @@ export default {
     maaSwitchTheme: 'Switch theme',
     maaSwitchThemeHint:
       'Theme names are configured in MAA\'s "Switch Theme" task. Multiple names are picked at random each run; an empty list skips the task. Requires MAA v6.17.3 or later',
-    maaRoguelike: 'Integrated Strategies',
-    maaRoguelikeHint: 'A long run may be mistaken for a timeout',
     maaGreenTicketStore: 'Green Ticket Store',
     maaGreenTicketStoreHint:
       'Starts its own MAA session once a month, before annihilation, buying everything on the 1st floor plus Headhunting Permits and Recruitment Permits on the 2nd floor. Skipped once bought this month, and a failure does not affect the later tasks. Requires MAA v6.3.0 or newer',
@@ -510,11 +509,11 @@ export default {
     maaEndDailyOnceTasksPlaceholder: 'Choose tasks to run once per day',
     maaEndAutoCollectConfig: 'Auto-collect configuration',
     maaEndSetResolution: 'Set resolution on launch',
-    maaEndSetResolutionHint:
-      'Off by default. When enabled, MaaEnd runs its resolution-setting pretask before the first game launch.',
+    maaEndRestoreDisplayType: 'Display mode when closing the game',
     maaEndRestoreResolution: 'Restore resolution when closing the game',
-    maaEndRestoreResolutionHint:
-      'MaaEnd restores it at the end of the last stage for the next launch; it only applies when the game is closed after the run.',
+    maaEndResolutionWindow: 'Window',
+    maaEndResolutionOriginal: 'Restore original ({displayType} {resolution})',
+    maaEndResolutionRestoreOriginal: 'Restore original',
     maaEndResolutionWidth: 'Width',
     maaEndResolutionHeight: 'Height',
     maaEndResolutionUnchanged: 'Do not change',
@@ -1256,7 +1255,6 @@ export default {
       'Required; an empty value disables the rule. Matched against the whole log line as a Python regex',
     requiredEmptyValueDisables4:
       'Required; an empty value disables the rule. Regex used to filter lines',
-    updateNow: 'Update now',
     treatRunAsTimed2: 'Treat the run as timed out when the SRC log has not changed for this long',
     treatAnnihilationRunAs:
       'Treat the annihilation run as timed out when the MAA log has not changed for this long',
@@ -1439,12 +1437,15 @@ export default {
       'MirrorChyan: needs a CDK, fast downloads with sha256 verification; GitHub: no setup, downloads straight from the project GitHub Release',
     updateChannel: 'Update channel',
     cdkTip:
-      'Prefilled from the CDK in MAS update settings and can be replaced with one just for this script; required when MirrorChyan is the update source',
+      'Prefilled from the CDK in MAS update settings and can be replaced with one just for this script; required when MirrorChyan is the update source. Click the question mark to get one on MirrorChyan:',
     cdkPlaceholder: 'Enter the MirrorChyan CDK',
-    cdkHint: 'Required when MirrorChyan is the update source; get one on the MirrorChyan site',
     cdkGetLink: 'Get a MirrorChyan CDK',
     cdkMissingForMirror:
       'MirrorChyan is selected as the update source but no CDK is set, so the update cannot be downloaded from MirrorChyan',
+    proxyAddress: 'Proxy address',
+    proxyAddressTip:
+      'Network proxy used by this project only. Leave it empty to follow the global setting (Settings → Other → Network proxy); once set, update downloads and runtime environment installs for this project go through this proxy only',
+    proxyAddressPlaceholder: 'e.g. 127.0.0.1:7890, empty follows the global proxy',
     updateResultVersion: 'Latest version',
     updateResultSource: 'Download source',
     cdkPrefilledFromGlobal:
@@ -1553,9 +1554,8 @@ export default {
     envReadyAgents: 'Ready agents',
     envRetry: 'Retry',
     mfwUnityResolutionOff: 'Leave unchanged',
-    mfwStartupSettleSeconds: 'Settle after launch (s)',
-    mfwStartupSettleTip:
-      'Only when MAS launches the game: after the window appears, wait at least this many seconds before the first task is posted; MaaFW initialisation runs in parallel. Unity games are usually still on a black loading screen when the window shows up, and posting tasks too early makes the script report a recognition failure. Not applied when the game is already running; 0 disables.',
+    mfwWaitTimeTip:
+      'Both waits when MAS launches the game share this cap: first for the window to appear, then for the screen to settle. The screen is sampled once a second and tasks start early once it has content and stays unchanged for 5 seconds; MaaFW initialisation runs in parallel. Unity games are usually still on a black loading screen when the window shows up, and posting tasks too early makes the script report a recognition failure. Not applied to the screen wait when the game is already running.',
     mfwUnityResolutionTip:
       'Unity games only: before launching, MAS looks up the game registry key from the exe path and temporarily switches to the chosen windowed size, restoring the original values after the game closes; nothing is changed if the game is already running.',
     thisNameAlsoWritten:
@@ -1893,10 +1893,27 @@ export default {
     baahRunTimesLimitHint: 'Stop the run when this many attempts still fail',
     baahRunTimeLimitHint:
       'Longest the run may go without new log output, in minutes; exceeding it counts as a failed run',
-    baahConfigName: 'BAAH config file name',
+    baahConfigName: 'Default config name',
     baahConfigNameHint:
-      'Enter an existing config file name from the BAAH UI (for example the bundled example); this app launches it as BAAH.exe example.json',
-    baahConfigNamePlaceholder: 'e.g. example',
+      'The config used normally; this app launches it as BAAH.exe <name>.json. With activity adaptation enabled it is replaced by the "Event-period config file name" while an event is running',
+    baahConfigNamePlaceholder: 'Pick the config used normally',
+    baahActivityConfigName: 'Event-period config file name',
+    baahActivityConfigNameHint:
+      'With "Activity adaptation" enabled above, BAAH is started with this config while Blue Archive has an ongoing event; leave it empty, or when the event schedule cannot be fetched, the default config name is used instead',
+    baahActivityConfigNamePlaceholder: 'Leave empty to always use the default config',
+    baahIfActivityAdapt: 'Activity adaptation',
+    baahIfActivityAdaptHint:
+      'Switch the config file by the Blue Archive event schedule: the "Event-period config file name" while an event is running, otherwise the "Default config name"',
+    baahActivityLineType: 'Event schedule server',
+    baahActivityLineTypeHint:
+      'Which server schedule decides whether an event is running; servers hold events at different times, so pick the one your account plays on',
+    baahActivityLineCN: 'CN',
+    baahActivityLineJP: 'JP',
+    baahActivityLineGloble: 'Global',
+    baahActivityRunning: 'Running: ',
+    baahActivityUpcoming: 'Next event: ',
+    baahActivityNone: 'No event is running or scheduled',
+    baahActivityUnavailable: 'Event schedule unavailable',
     baahUserTag: 'User tags',
     baahUserTagHint: 'Generated by this app from run results, read-only',
     baahLastProxyDate: 'Last run date',
@@ -2012,6 +2029,11 @@ export default {
     configRestoreConfirmTitle: 'Overwrite current config',
     configRestoreConfirmDesc:
       'Restores the config at this point in time to its location. The current config is backed up automatically before restoring and can be recovered anytime via "Config restore". Continue?',
+    // 源配置损坏（后端 409）：写明损坏位置，二次确认后携带 force 强制恢复
+    configRestoreCorruptedTitle: 'Source config file is corrupted',
+    configRestoreCorruptedDesc:
+      'Force restore skips the safety checks related to this file (pre-restore backup and occupancy guard) and may overwrite existing configs. Continue?',
+    configRestoreForceAction: 'Force restore',
     // 备份列表的配置来源标签（备份时点 Info.Mode）
     configRestoreModeScript: 'Script-level',
     configRestoreModeUser: 'User-level',
@@ -2172,6 +2194,71 @@ export default {
     zzzodBackupFailed:
       'Could not back up the direct-control config; check Config restore for a recovery point',
     zzzodLoadInstancesFailed: 'Could not load the instance list',
+    zzzodSlotsManage: 'MAS instance slots',
+    zzzodSlotsManageHint:
+      'Slot directories are instance folders MAS creates inside the one-dragon install; the one-dragon registry and UI never show them. This table shows who owns each slot: a bound user that has not run yet has a slot number but no directory, and an unowned leftover is an old slot no user claims.',
+    zzzodSlotsRefresh: 'Refresh',
+    zzzodSlotsClean: 'Clean unowned slots',
+    zzzodSlotsCleanConfirm:
+      'Recycle {count} unowned slot(s)? Contents are archived to the recycle pool first and can be restored.',
+    zzzodSlotsCleanDone: 'Recycled {count} unowned slot(s)',
+    zzzodSlotsCleanNone: 'No unowned slot to clean',
+    zzzodSlotsCleanFailed: 'Could not clean the unowned slots',
+    zzzodSlotsLoadFailed: 'Could not load the instance slots',
+    zzzodSlotTabSlots: 'Instance slots',
+    zzzodSlotTabRecycle: 'Recycle pool',
+    zzzodSlotColIdx: 'Slot',
+    zzzodSlotColKind: 'Kind',
+    zzzodSlotColOwner: 'Owner',
+    zzzodSlotColDir: 'Directory',
+    zzzodSlotColSize: 'Size',
+    zzzodSlotKindNative: 'Native instance',
+    zzzodSlotKindMas: 'MAS bound',
+    zzzodSlotKindOrphan: 'Unowned',
+    zzzodSlotOwnerModeScript: 'script config',
+    zzzodSlotOwnerModeUser: 'user config',
+    zzzodSlotOwnerModeDirect: 'direct control',
+    zzzodSlotNativeConflict: 'MAS binding conflict',
+    zzzodSlotOwnerItem: '{user} ({script} · {mode})',
+    zzzodSlotOwnerJoiner: ', ',
+    zzzodSlotNativeConflictHint:
+      'This slot number has been taken by a native OneDragon instance (adding an instance there does not scan the disk, so MAS slots look free). The MAS user is rebound to a free high slot on the next run; the leftover MAS content is archived into the recycle pool first and can be recovered from there.',
+    zzzodSlotHasDir: 'Yes',
+    zzzodSlotNoDir: 'No',
+    zzzodSlotEmpty: 'No instance slot',
+    zzzodRecycleColSlot: 'Slot',
+    zzzodRecycleColKind: 'Kind',
+    zzzodRecycleColTime: 'Archived at',
+    zzzodRecycleColFiles: 'Files',
+    zzzodRecycleColSize: 'Size',
+    zzzodRecycleColOps: 'Actions',
+    zzzodRecycleKindSlot: 'Slot content',
+    zzzodRecycleKindMas: 'Backup pool',
+    zzzodRecycleHint:
+      'Slot contents left by deleted users/scripts and by manual cleaning are archived here (grouped by slot, shared across scripts). Restore puts a snapshot back into a user bound slot (or a newly created user); to roll back a config while the user still exists, use Config restore on the user page.',
+    zzzodRecycleEmpty: 'The recycle pool is empty',
+    zzzodRecycleRestore: 'Restore',
+    zzzodRecycleOpen: 'Open',
+    zzzodRecycleOpenFailed: 'Could not open the directory',
+    zzzodRecycleClear: 'Clear recycle pool',
+    zzzodRecycleClearConfirm:
+      'Delete all {count} record(s) ({size} total) in the recycle pool? Restore history is cleared too and cannot be recovered.',
+    zzzodRecycleClearDone: 'Recycle pool cleared ({count} record(s))',
+    zzzodRecycleClearFailed: 'Could not clear the recycle pool',
+    zzzodRecycleRestoreConfirm:
+      'Restore this snapshot (slot {slot}) into a user slot? If the target user already has a bound slot, its current content is archived first.',
+    zzzodRecycleRestoreTargetHint: 'Snapshot: slot {slot} · {ts}',
+    zzzodRecycleRestoreToUser: 'Restore into an existing user',
+    zzzodRecycleRestoreToNewUser: 'Create a new user',
+    zzzodRecycleRestoreUserPlaceholder: 'Pick a user',
+    zzzodRecycleRestoreNewUserName: 'New user name',
+    zzzodRecycleRestoreNewUserNameDefault: 'Restored user',
+    zzzodRecycleRestoreOverwriteHint:
+      'This user currently uses slot {slot}; restoring replaces its content (archived first, recoverable from the recycle pool).',
+    zzzodRecycleRestoreUserRequired: 'Pick a target user first',
+    zzzodRecycleRestoreNameRequired: 'Enter a name for the new user',
+    zzzodRecycleRestoreDone: 'Restored',
+    zzzodRecycleRestoreFailed: 'Could not restore the slot content',
     zzzodGameRegion: 'Game region',
     zzzodGameRegionHint:
       'The region of this account; regions differ in client and daily reset time',
@@ -2206,6 +2293,12 @@ export default {
       'One-dragon series tasks on one screen: flip a switch to include a task in the run, and it stays in place when turned off; drag the card handle to adjust the run order.',
     zzzodLoadOneDragonFailed: 'Could not load the one-dragon task list',
     zzzodPushLogModeHint: 'How per-task results (success/failure/skipped) appear in the run report',
+    zzzodAfterDone: 'Action after run',
+    zzzodAfterDoneHint:
+      'Action to run after the OneDragon run finishes, same as the OneDragon "After run" dropdown. In user mode it stays in sync with the OneDragon UI via the config session; in direct-control mode it reads and writes the OneDragon native setting. Delivered by MAS as launch arguments (only applies when the run finishes successfully)',
+    zzzodAfterDoneNone: 'None',
+    zzzodAfterDoneCloseGame: 'Close game',
+    zzzodAfterDoneShutdown: 'Shut down',
     zzzodLaunchArgsTitle: 'Launch Arguments',
     zzzodLaunchArgsDetail: 'Details',
     zzzodLaunchArgsDesc:
@@ -2600,6 +2693,11 @@ export default {
       queryFailed: 'Could not query daily notes',
       empty: 'No daily notes to show',
       drag: 'Drag to reorder',
+      edit: 'Edit',
+      editTitle: 'Choose which games to show',
+      editGame: 'Show {game} daily notes',
+      switchTitle: 'Switch game to view its daily notes',
+      allHidden: 'All games are closed. Use Edit to turn them back on.',
       dailyProgress: 'Daily status',
       tasks: 'Daily tasks',
       noteTasks: 'Tasks and recurring',
@@ -2645,6 +2743,9 @@ export default {
       enableDesc: 'Runs community check-ins with the MAS task scheduler.',
       activityEnable: 'Enable daily notes',
       activityEnableDesc: 'Show daily game data; turn off to skip daily-data queries.',
+      homeActivityEnable: 'Show sign-in status and daily notes on home',
+      homeActivityEnableDesc:
+        'Shows the current game’s sign-in status and daily note under the home event carousel when enabled.',
       notify: 'Notify on completion',
       notifyDesc: 'Push the result through your configured notification channels',
       runOnStartup: 'Check in at startup',
@@ -2738,6 +2839,8 @@ export default {
       signDone: 'Check-in finished',
       signError: 'Check-in failed: {error}',
       externalLinkFailed: 'Could not open the external link. Try again shortly.',
+      homeActivityEnableSaveFailed:
+        'Could not save the home sign-in status and daily-notes switch.',
     },
   },
   history: {
@@ -2861,12 +2964,29 @@ export default {
     },
     carousel: {
       remaining: 'Time left',
+      startsIn: 'Starts in',
       prev: 'Previous game',
       next: 'Next game',
       loading: 'Loading events…',
       noActivity: 'No events running',
       unavailable: 'Event data is unavailable',
       allHidden: 'Every game in the carousel is off. Turn one back on under Customize layout.',
+    },
+    activityNotes: {
+      title: 'Daily notes',
+      selectUser: 'Select a user or character for daily notes',
+      sign: 'Check-ins ({signed}/{total})',
+      user: 'User',
+      signed: 'Check-in successful',
+      alreadySigned: 'Already checked in',
+      failed: 'Check-in failed',
+      noRecord: 'No check-in record',
+      expand: 'Show {count} more users',
+      collapse: 'Show less',
+      latestResult: 'Latest check-in results',
+      loading: 'Loading daily notes…',
+      unknown: 'No check-in record for {count} account(s)',
+      signFailed: 'Could not load check-in results. Please retry.',
     },
     empty: {
       starrail: 'No Star Rail events running',
@@ -2911,7 +3031,9 @@ export default {
     bluearchive: {
       versionBadge: '{version}',
       endsAt: 'Ends {time}',
+      startsAt: 'Starts {time}',
       versionRemaining: 'Event time remaining',
+      startsIn: 'Starts in',
       nextVersionSoon: 'More events are coming soon',
       versionTime: 'Event period:',
       serverLabel: 'Server',
@@ -2965,6 +3087,9 @@ export default {
       activityGroup: 'Games in the carousel',
       carouselAutoplay: 'Auto-rotate',
       carouselAutoplayVisibility: 'Auto-rotate the event carousel',
+      activityNotesGroup: 'Sign-in status and daily notes on home',
+      activityNoteVisibility: 'Show sign-in status and daily notes for {name}',
+      activityNotesMasterOff: 'Turn it on in Game Community settings to take effect',
     },
     scrollHint: {
       aria: 'Scroll down for more',
@@ -3568,7 +3693,7 @@ export default {
         General: 'For any automation script that writes a log file',
         MAA: 'Arknights automation and multi-account daily runs',
         SRC: 'Star Rail automation and multi-account runs',
-        MaaEnd: 'Dedicated MFW adapter',
+        MaaEnd: 'Arknights: Endfield automation and multi-account runs',
         M9A: 'Reverse: 1999 automation',
         MaaFW: 'Runs any MaaFramework project that ships an interface.json',
         Okww: 'Dedicated ok-script task runner',
@@ -3854,7 +3979,9 @@ export default {
       openclawQqUnbind: 'Unbind',
       openclawQqUnbindConfirm: 'Unbinding clears the saved QQ login on this device. Continue?',
       openclawQqStatusRetry: 'Refresh binding status',
-      openclawQqBound: 'Bound',
+      openclawQqBound: 'Connected',
+      openclawQqConnecting: 'Connecting',
+      openclawQqReconnecting: 'Reconnecting',
       openclawQqUnbound: 'Not bound',
       openclawQqBindSuccess: 'QQ Official Bot bound successfully',
       openclawQqUnbindSuccess: 'QQ Official Bot unbound',
@@ -3907,6 +4034,11 @@ export default {
       proxyTip:
         'If you use a proxy and run into connection problems, set the proxy address here. It applies everywhere.',
       proxyPlaceholder: 'Enter the proxy address',
+      githubMirror: 'GitHub download mirror',
+      githubMirrorTip:
+        'Only affects MFW scripts downloading project update packages from GitHub Releases: Auto tries gh-proxy mirrors in turn and falls back to a direct connection when all fail; Off always connects directly. Assets without a sha256 digest never use a mirror',
+      githubMirrorAuto: 'Auto (mirrors first, direct on failure)',
+      githubMirrorOff: 'Off (direct GitHub only)',
       cdk: 'MirrorChyan CDK',
       cdkIntro:
         'The MirrorChyan CDK unlocks high-speed downloads from the Mirror source. Get one at',
