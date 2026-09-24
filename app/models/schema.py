@@ -3832,6 +3832,22 @@ class M9AConfig(MaaFWConfig):
     """M9A 脚本配置：与 MaaFW 脚本配置同形（M9A 是 MaaFW 的特调类型）。"""
 
 
+class MSSUserConfig_Info(MaaFWUserConfig_Info):
+    PlanMode: Optional[str] = Field(
+        default=None, description="悬赏试炼关卡来源（Fixed 或 MSS 计划表 UID）"
+    )
+
+
+class MSSUserConfig(MaaFWUserConfig):
+    """MSS 用户配置：MaaFW 用户配置再加计划表引用（MSS 是 MaaFW 的特调类型）。"""
+
+    Info: Optional[MSSUserConfig_Info] = Field(default=None, description="基础信息")
+
+
+class MSSConfig(MaaFWConfig):
+    """MSS 脚本配置：与 MaaFW 脚本配置同形（MSS 是 MaaFW 的特调类型）。"""
+
+
 class MaaFWInterfacePreviewIn(BaseModel):
     path: str = Field(default="", description="MaaFW 项目根目录，应包含 interface.json")
     scriptId: Optional[str] = Field(
@@ -4098,7 +4114,7 @@ class MaaFWEmbeddedSourcesIn(BaseModel):
 class MaaFWEmbeddedSourceItem(BaseModel):
     scriptId: str = Field(..., description="可作为克隆来源的 MFW 脚本 ID")
     name: str = Field(default="", description="脚本名")
-    type: str = Field(default="MaaFW", description="脚本类型（MaaFW / M9A）")
+    type: str = Field(default="MaaFW", description="脚本类型（MaaFW / M9A / MSS）")
     projectName: str = Field(default="", description="副本 interface 里的项目名")
     version: str = Field(default="", description="副本 interface 里的版本")
     busy: bool = Field(default=False, description="源脚本正在运行，此刻不能克隆")

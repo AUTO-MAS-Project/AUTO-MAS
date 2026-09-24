@@ -44,7 +44,6 @@ _LAZY_EXPORTS = {
     "BetterGIManager": (".BetterGI", "BetterGIManager"),
     "ZzzOdManager": (".ZzzOd", "ZzzOdManager"),
     "BAAHManager": (".BAAH", "BAAHManager"),
-    "MSSManager": (".MSS", "MSSManager"),
     "MaaFWEmbeddedManager": (".MaaFW.embedded_manager", "MaaFWEmbeddedManager"),
 }
 
@@ -72,6 +71,5 @@ __all__ = [
     "HSRManager",
     "BetterGIManager",
     "ZzzOdManager",
-    "MSSManager",
     "MaaFWEmbeddedManager",
 ]

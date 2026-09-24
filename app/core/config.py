@@ -70,9 +70,6 @@ from app.models.config import (
     HSRUserConfig,
     M9AConfig,
     M9AUserConfig,
-    MSSConfig,
-    MSSPlanConfig,
-    MSSUserConfig,
     MaaConfig,
     MaaEndConfig,
     MaaEndPlanConfig,
@@ -81,6 +78,9 @@ from app.models.config import (
     MaaFWUserConfig,
     MaaPlanConfig,
     MaaUserConfig,
+    MSSConfig,
+    MSSPlanConfig,
+    MSSUserConfig,
     OkNteConfig,
     OkNteUserConfig,
     OkwwConfig,
@@ -862,6 +862,7 @@ class AppConfig(GlobalConfig):
             "BetterGI",
             "ZzzOd",
             "BAAH",
+            "MSS",
         ],
         script_id: str | None = None,
     ) -> tuple[
@@ -1275,7 +1276,7 @@ class AppConfig(GlobalConfig):
         elif isinstance(script_config, MaaEndConfig):
             uid, config = await script_config.UserData.add(MaaEndUserConfig)
         elif isinstance(script_config, MaaFWConfig):
-            # 含特调子类（M9A）：用户类由脚本类的 USER_CONFIG_CLASS 决定。
+            # 含特调子类（M9A / MSS）：用户类由脚本类的 USER_CONFIG_CLASS 决定。
             uid, config = await script_config.UserData.add(
                 script_config.USER_CONFIG_CLASS
             )
@@ -1287,8 +1288,6 @@ class AppConfig(GlobalConfig):
             uid, config = await script_config.UserData.add(ZzzOdUserConfig)
         elif isinstance(script_config, BAAHConfig):
             uid, config = await script_config.UserData.add(BAAHUserConfig)
-        elif isinstance(script_config, MSSConfig):
-            uid, config = await script_config.UserData.add(MSSUserConfig)
         else:
             raise TypeError(f"不支持的脚本配置类型: {type(script_config)}")
 
