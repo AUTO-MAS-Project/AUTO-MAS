@@ -168,16 +168,25 @@ def migrate_legacy_m9a_scripts(
 
     stamp = (now or datetime.now()).strftime("%Y%m%d%H%M%S")
     backup = path.with_name(f"{path.name}{LEGACY_BACKUP_SUFFIX}{stamp}.bak")
+    tmp = path.with_name(f"{path.name}.m9a-migrating")
     try:
         shutil.copyfile(path, backup)
         report.backup_path = backup
         _prune_backups(path)
-        tmp = path.with_name(f"{path.name}.m9a-migrating")
         tmp.write_text(json.dumps(data, ensure_ascii=False, indent=4), encoding="utf-8")
         os.replace(tmp, path)
     except OSError as exc:
         logger.opt(exception=True).warning(f"M9A 迁移写回失败，配置未改动：{exc}")
-        return MigrationReport()
+        # 与迁移函数抛异常同一口径：文件没写回，「已迁移」一条也不能报；但紧接着
+        # connect() 会按新类加载、旧键当场丢掉，所以失败与备份要带进启动通知。
+        try:
+            tmp.unlink(missing_ok=True)
+        except OSError:
+            pass
+        return MigrationReport(
+            failure=f"写回失败：{type(exc).__name__}: {exc}",
+            backup_path=report.backup_path,
+        )
     for line in report.summary_lines():
         logger.info(f"M9A 迁移：{line}")
     return report
