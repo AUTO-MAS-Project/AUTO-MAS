@@ -3772,6 +3772,10 @@ class MaaFWConfig_Run(BaseModel):
     MonthlyOnceTasks: Optional[Union[str, List[str]]] = Field(
         default=None, description="每月正常完成一次后本月跳过的 MaaFW 任务名列表"
     )
+    GameUpdateMode: Optional[Literal["Off", "Check", "AutoInstall"]] = Field(
+        default=None,
+        description="游戏客户端更新：Off 不检查 / Check 落后时提示手动更新 / AutoInstall 落后时自动下载安装；仅支持的特调类型生效",
+    )
 
 
 class MaaFWConfig_Embedded(BaseModel):

@@ -70,7 +70,7 @@ from app.utils.io import migrate_legacy_dir
 from app.utils.paths import SOURCE_ROOT
 
 from .embedded_project import resolve_maafw_project_root
-from .flavor import resolve_flavor
+from .flavor import resolve_flavor, resolve_game_update_hook
 from .game_package import resolve_game_package
 from .game_resolution import UnityGameResolutionOverride, parse_resolution_option
 from .option_secrets import (
@@ -284,6 +284,10 @@ class _MaaFWRunTimeoutError(RuntimeError):
     """worker 在宽限期内也没停下，宿主强杀了它。"""
 
 
+class _MaaFWGameUpdateRequired(RuntimeError):
+    """特调的游戏更新钩子判定客户端要手动更新：本用户本次判失败，不重试。"""
+
+
 class _FrameworkLogWriter:
     """在专用线程中按提交顺序写入一次运行的框架日志。"""
 
@@ -427,6 +431,10 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         self._cached_device_info: DeviceInfo | None = None
         self._cached_adb_path: str | None = None
         self._cached_adb_profile: MaaFWAdbControlProfile | None = None
+        # 随模拟器拉起的游戏包名（空串表示没拉起），交给特调的游戏更新钩子
+        self._launched_package_name = ""
+        # 游戏更新钩子每个用户每次运行只调一次，重试重新开模拟器时不再查
+        self._game_update_checked = False
         self.maafw_runtime_pool_root: Path | None = None
         self.maafw_runtime_pool_id: str | None = None
 
@@ -568,6 +576,26 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                         self.interface_model,
                     )
                     result = await self._run_maafw(device_config)
+                except _MaaFWGameUpdateRequired as exc:
+                    # 游戏客户端要手动更新：重试多少次都一样，本用户本次直接判失败。
+                    # 说明已由 _ensure_game_updated 写进运行日志，这里不再重复。
+                    message = str(exc)
+                    self._record_attempt(index + 1, [], message)
+                    if self.cur_user_log is not None:
+                        self.cur_user_log.status = message
+                    await Publisher.send(
+                        id=self.task_info.task_id,
+                        type=protocol.TASK_NOTICE,
+                        data=WSTaskNoticeData(level="error", message=message),
+                    )
+                    with suppress(Exception):
+                        await Notify.push_plyer(
+                            "游戏需要手动更新！",
+                            message,
+                            f"{self.cur_user_item.name}的游戏需要手动更新",
+                            3,
+                        )
+                    break
                 except Exception as exc:
                     message = f"MaaFW 运行异常: {exc}"
                     self._append_log(message)
@@ -873,6 +901,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         if plan.controllerType == "Adb":
             address, device_info = await self._resolve_adb_address()
             adb_path = await self._resolve_adb_path(address, device_info)
+            await self._ensure_game_updated(address, adb_path)
             adb_profile = await self._build_adb_control_profile()
             return MaaFWDeviceConfig(
                 type="Adb",
@@ -983,6 +1012,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             raise RuntimeError("当前 controller 需要 ADB，请在脚本管理页选择模拟器实例")
 
         package_name = await self._resolve_game_package()
+        self._launched_package_name = package_name
         self._append_log(f"正在启动模拟器: {emulator_index}")
         self.opened_emulator = True
         device_info = await self.emulator_manager.open(emulator_index, package_name)
@@ -1042,6 +1072,44 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             f"主程序未解析到 ADB 路径{title}，将由 MaaFW Runner 按设备地址发现"
         )
         return None
+
+    async def _ensure_game_updated(self, address: str, adb_path: str | None) -> None:
+        """模拟器启动后、第一个任务下发前，调特调的游戏更新钩子（契约见 flavor.py）。
+
+        每个用户每次运行只调一次。钩子判定要手动更新时抛 ``_MaaFWGameUpdateRequired``，
+        由 main_task 判失败且不重试；钩子自己出错只记警告，照常运行。
+        """
+
+        if self._game_update_checked:
+            return
+        self._game_update_checked = True
+        mode = str(self.script_config.get("Run", "GameUpdateMode") or "Off")
+        hook = resolve_game_update_hook(self.script_config)
+        if mode == "Off" or hook is None or self.run_plan is None:
+            return
+
+        async def report(text: str) -> None:
+            self._append_log(text)
+
+        self._append_log("正在检查游戏客户端更新")
+        try:
+            result = await hook(
+                script_config=self.script_config,
+                resource_name=self.run_plan.resourceName,
+                package_name=self._launched_package_name,
+                adb_path=adb_path,
+                adb_address=address,
+                if_auto_install=mode == "AutoInstall",
+                progress=report,
+            )
+        except Exception as exc:
+            logger.opt(exception=True).warning(f"游戏更新检查异常: {exc}")
+            self._append_log(f"游戏更新检查出错，本次照常运行: {exc}")
+            return
+
+        self._append_log(result.message)
+        if result.status == "NeedManualUpdate":
+            raise _MaaFWGameUpdateRequired(result.message)
 
     def _derive_adb_path_from_emulator_config(self) -> Path | None:
         emulator_id = self.script_config.get("Emulator", "Id")

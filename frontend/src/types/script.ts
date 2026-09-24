@@ -210,6 +210,9 @@ export type MaaFWUnityResolution = 'Off' | '1920x1080' | '1280x720'
 /** MaaFW 项目自动更新时机；解析与兼容映射见 composables/useMaaFWProjectUpdate.ts。 */
 export type MaaFWAutoUpdateMode = 'Off' | 'BeforeRun' | 'AfterRun'
 
+/** 游戏客户端更新：不检查 / 只检查（落后时本次失败并提示手动更新）/ 自动下载安装。 */
+export type MaaFWGameUpdateMode = 'Off' | 'Check' | 'AutoInstall'
+
 export interface MaaFWScriptConfig {
   Info: {
     Name: string
@@ -286,6 +289,8 @@ export interface MaaFWScriptConfig {
     DailyOnceTasks: string | string[]
     WeeklyOnceTasks: string | string[]
     MonthlyOnceTasks: string | string[]
+    /** 只有 flavor 支持游戏更新（M9A）时才在编辑页出现；通用 MaaFW 后端不读。 */
+    GameUpdateMode: MaaFWGameUpdateMode
   }
   /**
    * 阶段性保留：manager.py 仍从 Selection.* 读取运行范围。

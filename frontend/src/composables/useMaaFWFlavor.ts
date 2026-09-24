@@ -37,6 +37,11 @@ export interface MaaFWFlavor {
   planConsumer: PlanComboxIn.consumer | null
   /** 计划表下拉下方的说明（计划表改写了哪些任务选项）；为空则不显示 */
   planHintKey: string | null
+  /**
+   * 脚本页「游戏更新」下拉的问号提示；为空表示这个类型的后端特调没有游戏更新钩子，
+   * 下拉整个不显示（游戏包名独占一行，布局与通用 MaaFW 相同）
+   */
+  gameUpdateHintKey: string | null
 }
 
 const MAAFW_FLAVOR: MaaFWFlavor = {
@@ -55,6 +60,7 @@ const MAAFW_FLAVOR: MaaFWFlavor = {
   queueHintKey: null,
   planConsumer: null,
   planHintKey: null,
+  gameUpdateHintKey: null,
 }
 
 const M9A_FLAVOR: MaaFWFlavor = {
@@ -73,6 +79,7 @@ const M9A_FLAVOR: MaaFWFlavor = {
   queueHintKey: 'edit.m9aFlavorQueueHint',
   planConsumer: null,
   planHintKey: null,
+  gameUpdateHintKey: 'edit.m9aFlavorGameUpdateHint',
 }
 
 const MSS_FLAVOR: MaaFWFlavor = {
@@ -91,6 +98,7 @@ const MSS_FLAVOR: MaaFWFlavor = {
   queueHintKey: 'edit.mssFlavorQueueHint',
   planConsumer: PlanComboxIn.consumer.MSS,
   planHintKey: 'edit.mssFlavorPlanHint',
+  gameUpdateHintKey: null,
 }
 
 const FLAVOR_BY_TYPE: Partial<Record<string, MaaFWFlavor>> = {

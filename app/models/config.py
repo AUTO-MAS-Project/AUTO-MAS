@@ -2761,7 +2761,7 @@ class MaaFWConfig(ConfigBase):
     ## 用户配置类（子类换成自己的同形子类，ScriptConfig.json 里 type 才对得上）
     USER_CONFIG_CLASS: type[ConfigBase] = MaaFWUserConfig
     ## 特调钩子：``"模块路径:属性名"``，运行期由 MaaFW 引擎按需导入（避免 models 反向依赖 task）；
-    ## 通用 MaaFW 为 None。钩子只装饰任务选择，引擎里不出现任何专项名字。
+    ## 通用 MaaFW 为 None。钩子装饰任务选择（可选再接管游戏客户端更新），引擎里不出现任何专项名字。
     FLAVOR: str | None = None
 
     def __init__(self) -> None:
@@ -2968,6 +2968,16 @@ class MaaFWConfig(ConfigBase):
         ## 每月正常完成一次后，本月剩余时间跳过的 MaaFW 任务名列表
         self.Run_MonthlyOnceTasks = ConfigItem(
             "Run", "MonthlyOnceTasks", "[ ]", JSONValidator(list)
+        )
+        ## 游戏客户端更新：Off 不检查 / Check 只检查，落后时本次判失败并提示手动更新 /
+        ## AutoInstall 落后时自动下载安装包并 adb 安装（保留游戏数据）。只在特调实现了
+        ## 游戏更新钩子（当前只有 M9A）且 controller 是 ADB 时生效，通用 MaaFW 不读。
+        ## Off 必须排第一：OptionsValidator 纠错回退的是 options[0]。
+        self.Run_GameUpdateMode = ConfigItem(
+            "Run",
+            "GameUpdateMode",
+            "Off",
+            OptionsValidator(["Off", "Check", "AutoInstall"]),
         )
 
         ## Selection -------------------------------------------------------

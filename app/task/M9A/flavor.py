@@ -21,21 +21,29 @@
 运行前把用户勾选的任务列表装饰一遍：队列头加「启动游戏」（entry ``StartUp``），脚本资源
 为官服且用户填了 ``Info.Account`` 时紧接着加「切换账号」（entry ``SwitchAccount``，账号填进
 它唯一的 input 选项），队列尾加「关闭游戏」（entry ``Close1999``）。队列里已经有的不重复加、
-也不改用户自己配的选项。除此之外 M9A 与通用 MaaFW 没有任何运行期差别。
+也不改用户自己配的选项。
 
 按 entry 而不是按任务名找：任务名会随 M9A 的版本与语言变，entry 是它的 pipeline 入口，稳定。
+
+另实现了引擎的可选钩子 ``ensure_game_updated``：脚本开了游戏更新时，模拟器启动后比对官服
+客户端版本，落后就提示或下载安装（``game_update.py``）。除此之外 M9A 与通用 MaaFW 没有
+任何运行期差别。
 """
 
 from __future__ import annotations
 
 import re
-from collections.abc import Callable
-from typing import Any
+from collections.abc import Awaitable, Callable
+from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
 from app.task.MaaFW.tools.core.interface.models import (
     MaaFWInterface,
     resolve_task_instance_name,
 )
+
+if TYPE_CHECKING:
+    from app.utils.game_apk import GameUpdateResult
 
 TYPE_KEY = "M9A"
 STARTUP_ENTRY = "StartUp"
@@ -187,6 +195,34 @@ class M9AFlavor:
         if added:
             log(f"[M9A] 已自动补上：{' / '.join(added)}")
         return ids, options
+
+    async def ensure_game_updated(
+        self,
+        *,
+        script_config: Any,
+        resource_name: str | None,
+        package_name: str,
+        adb_path: str | None,
+        adb_address: str,
+        if_auto_install: bool,
+        progress: Callable[[str], Awaitable[None]] | None,
+    ) -> GameUpdateResult:
+        """引擎的可选游戏更新钩子：只查官服，契约见 MaaFW 的 ``flavor.py`` 模块说明。"""
+
+        # 按需导入：本包在导入期不拉起网络与 adb 相关模块（迁移也会导入 flavor）
+        from .game_update import ensure_game_updated
+
+        del script_config  # 资源名由引擎按脚本配置解析后传入
+        return await ensure_game_updated(
+            adb_path=Path(adb_path) if adb_path else None,
+            adb_address=adb_address,
+            resource_name=resource_name,
+            package_name=package_name,
+            official_resource_name=OFFICIAL_RESOURCE_NAME,
+            apk_dir=Path.cwd() / "data/GameApk",
+            if_auto_install=if_auto_install,
+            progress=progress,
+        )
 
 
 def _account_option(
