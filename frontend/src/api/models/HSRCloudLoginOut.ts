@@ -2,8 +2,8 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-import type { HSRDirectConfigImportData } from './HSRDirectConfigImportData';
-export type HSRDirectConfigImportOut = {
+import type { HSRCloudLoginData } from './HSRCloudLoginData';
+export type HSRCloudLoginOut = {
     /**
      * 状态码
      */
@@ -17,8 +17,8 @@ export type HSRDirectConfigImportOut = {
      */
     message?: string;
     /**
-     * 直连配置导入结果
+     * 登录结果
      */
-    data?: (HSRDirectConfigImportData | null);
+    data?: (HSRCloudLoginData | null);
 };
 

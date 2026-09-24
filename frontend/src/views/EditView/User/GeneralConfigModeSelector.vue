@@ -48,7 +48,14 @@
       </a-tooltip>
     </a-radio-group>
 
-    <a-alert class="config-mode-alert" type="info" show-icon :message="alertMessage" />
+    <!-- 调用方显式传空串表示卡片描述已够用、不挂来源提示（HSR）；不传仍用默认文案 -->
+    <a-alert
+      v-if="alertMessage"
+      class="config-mode-alert"
+      type="info"
+      show-icon
+      :message="alertMessage"
+    />
 
     <!--
       快速配置：独立于配置来源的用户级开关（与 Info.Mode 无耦合，任一来源均可开关）。

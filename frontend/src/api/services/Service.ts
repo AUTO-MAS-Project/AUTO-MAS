@@ -55,8 +55,8 @@ import type { HistoryDataGetOut } from '../models/HistoryDataGetOut';
 import type { HistorySearchIn } from '../models/HistorySearchIn';
 import type { HistorySearchOut } from '../models/HistorySearchOut';
 import type { HSRCapabilitiesOut } from '../models/HSRCapabilitiesOut';
-import type { HSRDirectConfigImportIn } from '../models/HSRDirectConfigImportIn';
-import type { HSRDirectConfigImportOut } from '../models/HSRDirectConfigImportOut';
+import type { HSRCloudLoginIn } from '../models/HSRCloudLoginIn';
+import type { HSRCloudLoginOut } from '../models/HSRCloudLoginOut';
 import type { HSRManagedConfigOut } from '../models/HSRManagedConfigOut';
 import type { HSRSRAProfilesOut } from '../models/HSRSRAProfilesOut';
 import type { HSRStageOptionsOut } from '../models/HSRStageOptionsOut';
@@ -2191,8 +2191,36 @@ export class Service {
         });
     }
     /**
+     * 为 HSR 用户登录云·星穹铁道
+     * 起该用户的云浏览器并用三月七的 ``game`` 任务等用户在窗口里登录。
+     *
+     * 阻塞到三月七退出为止（最长为登录等待 + 最长排队 + 余量），与正在运行的
+     * 任务互斥：脚本运行中或三月七目录被占用时返回 409。成功后写
+     * ``Cloud.LastLogin``。
+     * @param requestBody
+     * @returns HSRCloudLoginOut Successful Response
+     * @throws ApiError
+     */
+    public static postHsrCloudLoginApiApiScriptsHsrCloudLoginPost(
+        requestBody: HSRCloudLoginIn,
+    ): CancelablePromise<HSRCloudLoginOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/hsr/cloud-login',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
      * 获取 HSR 托管配置字段
-     * 返回原生动态托管字段；用户 ID 只负责归属校验。
+     * 返回原生动态托管字段。
+     *
+     * 传了用户 ID 时先做归属校验，再按该用户的配置来源决定表单读哪份计划：
+     * 「脚本」读脚本共享计划，「用户」读该用户自己的计划；不传用户 ID 时读
+     * 脚本共享计划。响应的 ``plan_owner`` 指明保存目标。
      * @param scriptId
      * @param userId
      * @returns HSRManagedConfigOut Successful Response
@@ -2230,45 +2258,6 @@ export class Service {
             query: {
                 'scriptId': scriptId,
             },
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 导入 HSR 原生配置快照
-     * @param requestBody
-     * @returns HSRDirectConfigImportOut Successful Response
-     * @throws ApiError
-     */
-    public static importHsrDirectConfigApiApiScriptsHsrDirectConfigImportPost(
-        requestBody: HSRDirectConfigImportIn,
-    ): CancelablePromise<HSRDirectConfigImportOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/scripts/hsr/direct-config/import',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 清除 HSR 用户的直控配置快照
-     * 清掉该用户导入的快照，直控回到直接使用脚本当前原生配置。
-     * @param requestBody
-     * @returns HSRDirectConfigImportOut Successful Response
-     * @throws ApiError
-     */
-    public static clearHsrDirectConfigApiApiScriptsHsrDirectConfigClearPost(
-        requestBody: HSRDirectConfigImportIn,
-    ): CancelablePromise<HSRDirectConfigImportOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/scripts/hsr/direct-config/clear',
-            body: requestBody,
-            mediaType: 'application/json',
             errors: {
                 422: `Validation Error`,
             },

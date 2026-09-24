@@ -398,7 +398,6 @@ export default {
     stringSplitting: 'String splitting',
     gotIt: 'Got it',
     expression: 'Expression',
-    masManaged: 'MAS managed',
     none: 'None',
     drop: 'Drop',
     dropLine: 'Drop the line',
@@ -429,9 +428,6 @@ export default {
     srcConfigurationFailedP0: 'SRC configuration failed: {p0}',
     okWwSetupFailed: 'ok-ww setup failed: {p0}',
     p0NotValidJson: '{p0} is not valid JSON',
-    nativeP0ConfigurationWas:
-      'The current {p0} configuration was pinned as a snapshot for this user',
-    couldNotImportP0: 'Could not import the {p0} configuration: {p1}',
     p0MustSitUnder: '{p0} must sit under the script root directory or AppData',
     p0HasNoMatch: '{p0} has no match pattern, so it was saved as disabled',
     matchPatternP0Has: 'The match pattern of {p0} has a syntax error and will not run',
@@ -724,8 +720,6 @@ export default {
     reset: 'Reset',
     hsrMarch7thSra: 'HSR (March7th / SRA)',
     iniFiles: 'INI files',
-    masRunsThisUser:
-      'MAS runs this user with their task switches, dynamic native options, and engine.',
     pcClient: 'PC client',
     tomlFiles: 'TOML files',
     urlProtocolEG: 'URL protocol (e.g. Starward)',
@@ -752,6 +746,8 @@ export default {
     sanityScriptChangedPick: 'The sanity script changed — pick the stage again.',
     hsrEngineSwitchHint:
       'Switching the engine swaps in the native options and stages of that engine. Values changed under the current engine are not carried over, but they are kept and come back when you switch back.',
+    hsrSharedEngineSwitchHint:
+      "This changes the script-level engine assignment: every user on this script with the Script source, and every User-source user who has not picked an engine, switches to this engine. That engine's own native options and stages then apply.",
     hsrStageMissingForEngine:
       'The trailblaze power engine is now {engine}, and no stage is selected under it. Stages are stored per engine, so stages picked under the other engine are not carried over — pick them again. Switching back restores the previous selection.',
     editHsrUser: 'Edit the HSR user',
@@ -762,6 +758,43 @@ export default {
     hsrLastCompleted: 'Last completed: {date}',
     hsrDynamicTaskCount: '{n} dynamic modules',
     hsrReadFrom: 'Read from: {source}',
+    hsrUseScriptShared: 'All users set to Script under this script share one task configuration.',
+    hsrSharedPlanHint:
+      'You are editing the shared task configuration of this script; changes affect every user set to Script.',
+    hsrDirectControlHint:
+      'Direct control runs whatever is currently saved in SRA / March7th Assistant. MAS only launches the game and tracks the process; account, stages, and task switches have no effect in this mode.',
+    hsrActiveStageExtra: 'Active: {stage}',
+    hsrRunByEngine: 'Run by {engine}',
+    hsrGamePlatform: 'Game platform',
+    hsrGamePlatformTip:
+      'Client: MAS launches the local Star Rail with the settings below. Cloud Star Rail: MAS hosts a browser and March 7th runs inside it',
+    hsrPlatformClient: 'Client',
+    hsrPlatformCloud: 'Cloud Star Rail',
+    hsrCloudIntro:
+      'Cloud Star Rail is run by March 7th in a browser hosted by MAS. Each version grants 10 hours of free play time, which usually does not cover all dailies; each user must sign in once in the pop-up window the first time.',
+    hsrCloudNoSra: 'Cloud Star Rail does not use SRA',
+    hsrCloudUsePaidTime: 'Use paid time',
+    hsrCloudUsePaidTimeHint: 'Spends Nebula Coins to use the fast queue',
+    hsrCloudMaxQueue: 'Max queue time',
+    hsrCloudMaxQueueTip:
+      'If queuing takes longer than this, the round fails without retries; each module timeout also includes this queue time',
+    hsrCloudLoginWait: 'Sign-in wait',
+    hsrCloudLoginWaitTip:
+      'How long to wait for you to sign in in the pop-up window; when it runs out, the round fails without retries',
+    hsrCloudMinutes: 'min',
+    hsrCloudLogin: 'Cloud sign-in',
+    hsrCloudLoggedIn: 'Signed in ({time})',
+    hsrCloudNotLoggedIn: 'Not signed in',
+    hsrCloudLoginButton: 'Sign in to cloud game',
+    hsrCloudLoginTip:
+      "Opens this user's Cloud Star Rail window; sign in to your HoYoverse account there. After confirming the sign-in, March 7th enters the game once and exits",
+    hsrCloudLoginSuccess: 'Signed in to Cloud Star Rail',
+    hsrCloudLoginFailed: 'Cloud game sign-in failed: {reason}',
+    hsrCloudRunByM7a: 'Cloud Star Rail is run by March 7th',
+    hsrSharedModuleNotEnabled:
+      'This module is not enabled in the shared task configuration; settings are saved but it will not run this round.',
+    hsrResetSharedOverridesConfirmDesc:
+      'This deletes every override changed in the shared task configuration (all modules, all fields); every user set to Script will then show and run the current SRA / March7th Assistant configuration. The source configuration files are not modified. This cannot be undone.',
     daily: 'Daily',
     hsrEngineUnavailable: 'Unavailable',
     hsrNativeConfigNotLoaded: 'Native configuration not loaded',
@@ -803,38 +836,18 @@ export default {
     switchAccountDirectly: 'Switch the account directly',
     seconds: 'seconds',
     restoreOriginalRegistryValue: 'Restore the original registry value afterwards',
-    scriptDirectControlIgnores:
-      "Script-direct control ignores this user's account, sanity stages, and MAS task switches.",
-    directLiveConfigTitle: "Using the script's current configuration (recommended)",
-    directLiveConfigHint:
-      'Runs whatever is currently saved in {p0}; changes made in the script take effect immediately, no import needed.',
-    directSnapshotTitle: 'Pinned to a configuration snapshot for this user',
-    directSnapshotMeta: 'Pinned at {p0} - source {p1}',
-    directSnapshotStaleHint:
-      'The snapshot does not follow later changes made in the script; re-pin it to update, or switch back to the current configuration.',
-    directPinSnapshot: 'Pin the current configuration as a snapshot (optional)',
-    directRepinSnapshot: 'Re-pin to the current configuration',
-    directUseLiveConfig: "Switch back to the script's current configuration",
-    directSnapshotCleared: "{p0} now uses the script's current configuration",
-    couldNotClearP0: 'Could not clear the {p0} snapshot: {p1}',
     directEngineSra: 'SRA',
     directEngineM7a: 'March7th Assistant',
-    directEngineDescSra:
-      "Runs SRA's currently selected profile; users with a pinned snapshot run the snapshot instead.",
-    directEngineDescM7a:
-      "Runs March7th Assistant's current config.yaml; users with a pinned snapshot run the snapshot instead.",
+    directEngineDescSra: "Runs SRA's currently selected profile.",
+    directEngineDescM7a: "Runs March7th Assistant's current config.yaml.",
     pathFolderHoldingScript: 'Path to the folder holding the script configuration files',
     pathScriptConfigurationFile: 'Path to the script configuration file',
     expressionGuide: 'Expression guide',
     thisModuleNotEnabled:
       'This module is not enabled for this user; the configuration is saved but will not run this time.',
-    finishNativeSetupSra:
-      "Script-direct control runs whatever is currently saved in SRA / March7th Assistant, so finish the setup in the script's own UI first. MAS only launches the game, tracks and stops the script process, and cleans up afterwards. Pin a snapshot only when several users under the same script each need their own configuration.",
-    enableAtLeastOne: 'Enable at least one direct-control script.',
     pickConfigurationFile: 'Pick a configuration file',
     pickConfigurationFolder: 'Pick a configuration folder',
     skip2: 'Skip',
-    runModeTaskConfiguration: 'Run mode and task configuration moved to the user configuration',
     configurationFiles: 'Configuration files',
     restartArknights: 'Restart Arknights',
     restartGame: 'Restart the game',
@@ -984,7 +997,6 @@ export default {
     masOnlyTakesOver: 'The script or you start and stop it; MAS only takes over the running window',
     howLongMasWaits: 'How long MAS waits after launching the game before it is playable',
     tasksManagedByMas: 'Tasks managed by MAS',
-    masManagedConfigurationOff: 'MAS-managed configuration is off',
     masManagesGame: 'MAS manages the game',
     mfwGamePackageName: 'Game package name',
     mfwGamePackageNamePassed:
@@ -1007,7 +1019,6 @@ export default {
     sraProfileTooltip:
       'SRA saves its settings as profiles under %APPDATA%/SRA/configs. The one chosen here is what the MAS-managed form reflects, what direct control runs with, and what a snapshot import copies. "Auto" prefers Default, otherwise the first profile by file name',
     sraProfileAuto: 'Auto ({name})',
-    sraProfileNeedPath: 'Set the SRA path first',
     sraProfileLoadFailed: 'Could not read the SRA config profiles: {reason}',
     srcScriptConfiguration: 'SRC script configuration',
     srcPath: 'SRC path',
@@ -1054,8 +1065,6 @@ export default {
     failureLog: 'Failure log',
     taskNumbersMatchOk: 'Task numbers match the OK-NTE task list',
     taskNumbersMatchOk2: 'Task numbers match the ok-ww task list',
-    taskSwitchesAccountsSanity:
-      'Task switches, accounts, sanity stages, and dynamic options have no effect in script-direct mode.',
     whetherMasLaunchesGame: 'Whether MAS launches the game and waits before the task starts',
     successLog: 'Success log',
     whetherMasClosesGame:
@@ -1151,7 +1160,7 @@ export default {
     gamePathMatchedHtgame: 'Game path matched to NTEGame.exe launcher automatically',
     applyPreset2: 'Apply the preset',
     turnThisOffWhen:
-      'Turn this off when the script controls the game directly and you use cloud gaming',
+      'When off, MAS does not start or close the game client or change its resolution. Open the game yourself first.',
     on: 'On',
     treatScriptAsFinished: 'Treat the script as finished only when its child processes exit',
     whenTaskProgressCollected:
@@ -1572,8 +1581,6 @@ export default {
     importMfwProjectScript: 'Import the MFW project on the script page first',
     addEnableUserBefore: 'Add and enable a user before checking for updates',
     finishSetupOkWw: 'Finish the setup in the ok-ww window.',
-    userPageChooseMas:
-      'On the user page, choose "MAS managed" or "Script direct". Whether MAS launches, closes, restarts, and watches the game is decided by the switches below; the script page still holds the install path and shared run arguments.',
     readingControllersResourcesTasks:
       'Reading the controllers, resources, tasks, and options defined in interface.json...',
     readingTaskOptionPreset: 'Reading the task, option, and preset definitions...',
@@ -1622,10 +1629,6 @@ export default {
     invalidPath: 'Invalid path',
     updateAutomaticallyBeforeRun: 'Update automatically before a run',
     run1920x1080WindowedMode: 'Run in 1920x1080 windowed mode',
-    runMode: 'Run mode',
-    hsrRunModeHint:
-      'Run mode and config source are two independent axes: config source decides config ownership (script/user/direct control), run mode decides whether MAS manages the HSR native config (managed = MAS writes managed fields, direct = use the live native config). Under direct-control source the runtime always resolves to direct.',
-    couldNotSaveRun: 'Could not save the run mode — try again',
     runTimeoutMinutes2: 'Run timeout (minutes)',
     backScriptList: 'Back to the script list',
     progressReset: 'Progress and reset',

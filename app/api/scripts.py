@@ -33,7 +33,6 @@ from fastapi.responses import FileResponse
 
 from app.core import Config
 from app.models.config import BetterGIConfig as RuntimeBetterGIConfig
-from app.models.config import HSRConfig as RuntimeHSRConfig
 from app.models.config import MaaFWConfig as RuntimeMaaFWConfig
 from app.models.config import OkNteConfig as RuntimeOkNteConfig
 from app.models.schema import *
@@ -72,15 +71,6 @@ from app.utils.security import sanitize_log_message
 
 router = APIRouter(prefix="/api/scripts", tags=["脚本管理"])
 logger = get_logger("脚本管理 API")
-
-
-def _hsr_script_config(script_id: str):
-    """Resolve an HSR script and reject cross-type IDs before domain access."""
-
-    script_config = Config.ScriptConfig[uuid.UUID(script_id)]
-    if not isinstance(script_config, RuntimeHSRConfig):
-        raise TypeError("脚本配置类型错误, 不是 HSR 类型")
-    return script_config
 
 
 def _bettergi_script_config(script_id: str):
@@ -192,11 +182,6 @@ def _combat_target_group(source: str, group: str) -> str:
     return {"globalStygian": "自动幽境危战", "globalDomain": "自动秘境"}.get(
         source, group
     )
-
-
-def _hsr_user_config(script_config: RuntimeHSRConfig, user_id: str):
-    user_config = script_config.UserData[uuid.UUID(user_id)]
-    return user_config
 
 
 def _oknte_script_config(script_id: str) -> tuple[uuid.UUID, RuntimeOkNteConfig]:
@@ -1855,36 +1840,10 @@ async def get_hsr_stage_options_api(
     按引擎统一返回，不按 slot 生成不同结果。
     """
 
-    try:
-        if not scriptId:
-            return HSRStageOptionsOut(
-                code=400,
-                status="error",
-                message="缺少 scriptId",
-            )
+    from app.task.HSR import api_service as hsr_api
 
-        script_config = _hsr_script_config(scriptId)
-        if userId:
-            _hsr_user_config(script_config, userId)
-        from app.task.HSR.tools.api import build_stage_options
-
-        data = HSRStageOptionsData(**build_stage_options(script_config, engine))
-        option_count = sum(len(category.options) for category in data.categories)
-        return HSRStageOptionsOut(
-            message=f"共 {option_count} 个 HSR 体力副本选项",
-            data=data,
-        )
-    except Exception as e:
-        logger.opt(exception=True).warning(
-            f"get_hsr_stage_options_api失败: {type(e).__name__}: {e}"
-        )
-        return HSRStageOptionsOut(
-            code=400
-            if isinstance(e, (ValueError, KeyError, TypeError, RuntimeError))
-            else 500,
-            status="error",
-            message=f"{type(e).__name__}: {str(e)}",
-        )
+    reply = await hsr_api.get_stage_options(scriptId, engine, userId)
+    return HSRStageOptionsOut(**reply.out_fields())
 
 
 @router.get(
@@ -3761,31 +3720,10 @@ async def import_zzzod_config_api(
 async def get_hsr_capabilities_api(scriptId: str | None = None) -> HSRCapabilitiesOut:
     """返回内置 HSR 的能力快照，不暴露原生编辑器会话。"""
 
-    try:
-        if not scriptId:
-            return HSRCapabilitiesOut(code=400, status="error", message="缺少 scriptId")
-        script_config = _hsr_script_config(scriptId)
-        from app.task.HSR.tools.api import build_capabilities
+    from app.task.HSR import api_service as hsr_api
 
-        # 走线程：里面要起一次 SRA-cli.exe --version 读版本号，正常 0.09 秒，
-        # 但异常构建或杀毒扫描时能卡到超时，直接调会连 WebSocket 一起冻住。
-        data = HSRCapabilitiesData(
-            **await asyncio.to_thread(build_capabilities, script_config)
-        )
-        return HSRCapabilitiesOut(data=data)
-    except Exception as e:
-        logger.opt(exception=True).warning(
-            f"get_hsr_capabilities_api失败: {type(e).__name__}: {e}"
-        )
-        return HSRCapabilitiesOut(
-            code=400
-            if isinstance(
-                e, (FileNotFoundError, OSError, RuntimeError, ValueError, KeyError)
-            )
-            else 500,
-            status="error",
-            message=f"{type(e).__name__}: {str(e)}",
-        )
+    reply = await hsr_api.get_capabilities(scriptId)
+    return HSRCapabilitiesOut(**reply.out_fields())
 
 
 @router.post(
@@ -3802,100 +3740,31 @@ async def post_hsr_update_api(data: HSRUpdateIn) -> HSRUpdateOut:
     这个接口是唯一不必等一轮任务就能更新的入口。
     """
 
-    try:
-        script_config = _hsr_script_config(data.scriptId)
-        from app.task.HSR.tools.native_control import resolve_script_path
-        from app.task.HSR.tools.update import (
-            check_engine_update,
-            update_engine_if_needed,
-        )
+    from app.task.HSR import api_service as hsr_api
 
-        root = resolve_script_path(script_config, data.engine)
-        if not root:
-            return HSRUpdateOut(
-                code=400, status="error", message=f"未配置 {data.engine} 路径"
-            )
+    reply = await hsr_api.update_engine(data.scriptId, data.engine, data.action)
+    return HSRUpdateOut(**reply.out_fields())
 
-        source = str(script_config.get("Update", f"{data.engine}Source") or "")
-        channel = str(script_config.get("Update", "Channel") or "stable")
-        cdk = str(script_config.get("Update", "MirrorChyanCDK") or "")
 
-        if data.action == "check":
-            result = await check_engine_update(
-                data.engine,
-                Path(root),
-                source=source,
-                channel=channel,
-                cdk=cdk,
-                proxy=Config.proxy,
-            )
-            return HSRUpdateOut(
-                data=HSRUpdateData(
-                    engine=data.engine,
-                    checked=True,
-                    updated=False,
-                    current_version=result.current_version,
-                    latest_version=result.latest_version,
-                    update_available=result.update_available,
-                    installable=result.installable,
-                    message=result.blocked_reason or "",
-                )
-            )
+@router.post(
+    "/hsr/cloud-login",
+    tags=["HSR"],
+    summary="为 HSR 用户登录云·星穹铁道",
+    response_model=HSRCloudLoginOut,
+    status_code=200,
+)
+async def post_hsr_cloud_login_api(data: HSRCloudLoginIn) -> HSRCloudLoginOut:
+    """起该用户的云浏览器并用三月七的 ``game`` 任务等用户在窗口里登录。
 
-        # apply：目录锁必须以非阻塞方式拿，正在跑任务时立刻告诉用户，
-        # 而不是把 HTTP 请求挂在那里等。
-        from app.task.HSR.tools.external_locks import (
-            HSRExternalPathBusyError,
-            acquire_external_path_locks,
-            resolve_external_lock_paths,
-        )
+    阻塞到三月七退出为止（最长为登录等待 + 最长排队 + 余量），与正在运行的
+    任务互斥：脚本运行中或三月七目录被占用时返回 409。成功后写
+    ``Cloud.LastLogin``。
+    """
 
-        try:
-            lease = await acquire_external_path_locks(
-                resolve_external_lock_paths(script_config, (data.engine,)),
-                wait=False,
-            )
-        except HSRExternalPathBusyError as e:
-            return HSRUpdateOut(code=409, status="error", message=str(e))
+    from app.task.HSR import api_service as hsr_api
 
-        try:
-            outcome = await update_engine_if_needed(
-                data.engine,
-                Path(root),
-                source=source,
-                channel=channel,
-                cdk=cdk,
-                proxy=Config.proxy,
-                download_dir=Path.cwd() / "data" / "hsr_update",
-            )
-        finally:
-            lease.release()
-
-        return HSRUpdateOut(
-            data=HSRUpdateData(
-                engine=data.engine,
-                checked=outcome.checked,
-                updated=outcome.updated,
-                current_version=outcome.current_version,
-                latest_version=outcome.latest_version,
-                update_available=outcome.update_available,
-                installable=outcome.updated or not outcome.message,
-                message=outcome.message,
-            )
-        )
-    except Exception as e:
-        logger.opt(exception=True).warning(
-            f"post_hsr_update_api失败: {type(e).__name__}: {e}"
-        )
-        return HSRUpdateOut(
-            code=400
-            if isinstance(
-                e, (FileNotFoundError, OSError, RuntimeError, ValueError, KeyError)
-            )
-            else 500,
-            status="error",
-            message=f"{type(e).__name__}: {str(e)}",
-        )
+    reply = await hsr_api.cloud_login(data.scriptId, data.userId)
+    return HSRCloudLoginOut(**reply.out_fields())
 
 
 @router.get(
@@ -3908,34 +3777,17 @@ async def post_hsr_update_api(data: HSRUpdateIn) -> HSRUpdateOut:
 async def get_hsr_managed_config_api(
     scriptId: str | None = None, userId: str | None = None
 ) -> HSRManagedConfigOut:
-    """返回原生动态托管字段；用户 ID 只负责归属校验。"""
+    """返回原生动态托管字段。
 
-    try:
-        if not scriptId:
-            return HSRManagedConfigOut(
-                code=400, status="error", message="缺少 scriptId"
-            )
-        script_config = _hsr_script_config(scriptId)
-        user_config = None
-        if userId:
-            user_config = _hsr_user_config(script_config, userId)
-        from app.task.HSR.tools.api import build_managed_config
+    传了用户 ID 时先做归属校验，再按该用户的配置来源决定表单读哪份计划：
+    「脚本」读脚本共享计划，「用户」读该用户自己的计划；不传用户 ID 时读
+    脚本共享计划。响应的 ``plan_owner`` 指明保存目标。
+    """
 
-        data = HSRManagedConfigData(**build_managed_config(script_config, user_config))
-        return HSRManagedConfigOut(data=data)
-    except Exception as e:
-        logger.opt(exception=True).warning(
-            f"get_hsr_managed_config_api失败: {type(e).__name__}: {e}"
-        )
-        return HSRManagedConfigOut(
-            code=400
-            if isinstance(
-                e, (FileNotFoundError, OSError, RuntimeError, ValueError, KeyError)
-            )
-            else 500,
-            status="error",
-            message=f"{type(e).__name__}: {str(e)}",
-        )
+    from app.task.HSR import api_service as hsr_api
+
+    reply = await hsr_api.get_managed_config(scriptId, userId)
+    return HSRManagedConfigOut(**reply.out_fields())
 
 
 @router.get(
@@ -3948,110 +3800,10 @@ async def get_hsr_managed_config_api(
 async def get_hsr_sra_profiles_api(scriptId: str | None = None) -> HSRSRAProfilesOut:
     """列出 ``%APPDATA%/SRA/configs`` 下的配置档案，并标出脚本当前生效的那份。"""
 
-    try:
-        if not scriptId:
-            return HSRSRAProfilesOut(code=400, status="error", message="缺少 scriptId")
-        script_config = _hsr_script_config(scriptId)
-        from app.task.HSR.tools.api import build_sra_profiles
+    from app.task.HSR import api_service as hsr_api
 
-        data = HSRSRAProfilesData(**build_sra_profiles(script_config))
-        return HSRSRAProfilesOut(
-            message=f"共 {len(data.profiles)} 份 SRA 配置档案",
-            data=data,
-        )
-    except Exception as e:
-        logger.opt(exception=True).warning(
-            f"get_hsr_sra_profiles_api失败: {type(e).__name__}: {e}"
-        )
-        return HSRSRAProfilesOut(
-            code=400
-            if isinstance(e, (ValueError, KeyError, TypeError, RuntimeError))
-            else 500,
-            status="error",
-            message=f"{type(e).__name__}: {str(e)}",
-        )
-
-
-@router.post(
-    "/hsr/direct-config/import",
-    tags=["HSR"],
-    summary="导入 HSR 原生配置快照",
-    response_model=HSRDirectConfigImportOut,
-    status_code=200,
-)
-async def import_hsr_direct_config_api(
-    request: HSRDirectConfigImportIn = Body(...),
-) -> HSRDirectConfigImportOut:
-    from app.task.HSR.tools.api import import_direct_config
-    from app.task.HSR.tools.external_locks import HSRExternalPathBusyError
-
-    try:
-        script_config = _hsr_script_config(request.scriptId)
-        # 先校验用户归属，再让 provider 读取原生文件，避免无效请求触碰用户配置。
-        _hsr_user_config(script_config, request.userId)
-
-        result = await import_direct_config(
-            script_config,
-            request.engine,
-            script_id=request.scriptId,
-            user_id=request.userId,
-            update_user=Config.update_user,
-        )
-        return HSRDirectConfigImportOut(
-            message=f"{request.engine} 原生配置已导入",
-            data=HSRDirectConfigImportData(**result),
-        )
-    except HSRExternalPathBusyError as e:
-        return HSRDirectConfigImportOut(
-            code=409, status="error", message=f"{type(e).__name__}: {str(e)}"
-        )
-    except (FileNotFoundError, KeyError, TypeError, ValueError, RuntimeError) as e:
-        return HSRDirectConfigImportOut(
-            code=400, status="error", message=f"{type(e).__name__}: {str(e)}"
-        )
-    except OSError as e:
-        return HSRDirectConfigImportOut(
-            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
-        )
-
-
-@router.post(
-    "/hsr/direct-config/clear",
-    tags=["HSR"],
-    summary="清除 HSR 用户的直控配置快照",
-    response_model=HSRDirectConfigImportOut,
-    status_code=200,
-)
-async def clear_hsr_direct_config_api(
-    request: HSRDirectConfigImportIn = Body(...),
-) -> HSRDirectConfigImportOut:
-    """清掉该用户导入的快照，直控回到直接使用脚本当前原生配置。"""
-
-    from app.task.HSR.tools.api import clear_direct_config
-
-    try:
-        script_config = _hsr_script_config(request.scriptId)
-        _hsr_user_config(script_config, request.userId)
-
-        result = await clear_direct_config(
-            script_config,
-            request.engine,
-            script_id=request.scriptId,
-            user_id=request.userId,
-            update_user=Config.update_user,
-        )
-        return HSRDirectConfigImportOut(
-            message=f"{request.engine} 已改回使用脚本当前配置",
-            data=HSRDirectConfigImportData(**result),
-        )
-    except (KeyError, TypeError, ValueError) as e:
-        return HSRDirectConfigImportOut(
-            code=400, status="error", message=f"{type(e).__name__}: {str(e)}"
-        )
-    except OSError as e:
-        return HSRDirectConfigImportOut(
-            code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
-        )
+    reply = await hsr_api.get_sra_profiles(scriptId)
+    return HSRSRAProfilesOut(**reply.out_fields())
 
 
 @router.post(
