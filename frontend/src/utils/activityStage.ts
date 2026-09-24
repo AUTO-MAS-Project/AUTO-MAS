@@ -1,6 +1,6 @@
 // 活动关选关意图的共享纯逻辑：意图解析、判玉、活动时间。
 // 排序与判玉规则必须与后端 _resolve_activity_stage / getStage 保持同锚；
-// 计划表页槽位逻辑（activityStageSlots.ts）与用户编辑页状态机共用本模块。
+// 计划表页的行状态（activityUserRows.ts）与用户编辑页状态机共用本模块。
 
 import type { ActivityItem } from '@/types/home'
 
@@ -9,13 +9,6 @@ export type { ActivityItem } from '@/types/home'
 /** B服关卡数据与官服同源（后端 Bilibili→Official 归一），按服务器取关卡数据前先归一 */
 export function stageServerOf(server: string): string {
   return server === 'Bilibili' ? 'Official' : server
-}
-
-/** 槽位键：意图 → 归并键（pos: 是旧版列表位置，与倒N 同形不同义，各占一槽） */
-export function slotKeyOfIntent(intent: string): string {
-  if (intent === 'jade') return 'jade'
-  if (intent.startsWith('last:') || intent.startsWith('pos:')) return intent
-  return ''
 }
 
 /** 提取关卡码尾部编号（SR-8 → 8），与后端 _stage_number_key 一致 */
@@ -52,19 +45,6 @@ export function resolveIntentStage(intent: string, stages: ActivityItem[]): stri
     return ranked[index - 1]?.Value ?? null
   }
   return null
-}
-
-/** 各服当期进行中的活动名集合（跳过簿条目按活动名归属，脚本页与计划表页共用同一判据） */
-export function ongoingActivityNames(
-  activityByServer: Record<string, ActivityItem[]> | undefined
-): Record<string, Set<string>> {
-  const byServer: Record<string, Set<string>> = {}
-  for (const [server, stages] of Object.entries(activityByServer ?? {})) {
-    byServer[server] = new Set(
-      stages.map(stage => stage.Activity?.StageName).filter((name): name is string => Boolean(name))
-    )
-  }
-  return byServer
 }
 
 /** 活动元信息（名称/起止文本）取自该组关卡第一条的 Activity 描述 */

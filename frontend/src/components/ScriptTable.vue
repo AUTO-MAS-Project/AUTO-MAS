@@ -319,31 +319,6 @@
                             }}
                           </a-tag>
 
-                          <!-- MAA 活动关连错跳过徽标（后端在活动结束后自动修剪条目）；
-                               重置按钮独立于标签，标签只承载状态 -->
-                          <span
-                            v-if="script.type === 'MAA' && activitySkipEntry(user)"
-                            class="skip-badge"
-                          >
-                            <a-tooltip>
-                              <template #title>
-                                <div>{{ skipSummary(activitySkipEntry(user) ?? undefined) }}</div>
-                                <div>{{ t('comp.activitySkipResetHint') }}</div>
-                              </template>
-                              <a-tag color="warning" class="server-tag">
-                                {{ activitySkipLabel(activitySkipEntry(user)!) }}
-                              </a-tag>
-                            </a-tooltip>
-                            <a-button
-                              type="link"
-                              size="small"
-                              class="skip-reset-btn"
-                              @click.stop="emit('resetActivitySkip', user)"
-                            >
-                              {{ t('comp.activitySkipReset') }}
-                            </a-button>
-                          </span>
-
                           <!-- ZzzOd 脚本显示配置来源标签（用户/直控） -->
                           <a-tag
                             v-if="script.type === 'ZzzOd'"
@@ -576,14 +551,6 @@ import { useScriptApi } from '@/composables/useScriptApi'
 import { useUserApi } from '@/composables/useUserApi'
 import { parseStatusTagList } from '@/composables/useStatusTag'
 import { getServerDisplayName } from '@/utils/serverLabel'
-import { stageServerOf } from '@/utils/activityStage'
-import {
-  activeSkipEntry,
-  ongoingSkipBook,
-  parseActivitySkipBook,
-  skipSummary,
-  type ActivitySkipEntry,
-} from '@/utils/activitySkipBook'
 
 const { t } = useI18n()
 
@@ -592,8 +559,6 @@ interface Props {
   activeConnections: Map<string, { subscriptionIds: string[]; taskId: string }>
   copyingScriptId?: string | null
   searching?: boolean
-  /** 各服当期进行中的活动名（归一后的服）：对不上的跳过簿条目不加徽标 */
-  ongoingActivityNames?: Record<string, Set<string>>
 }
 
 interface Emits {
@@ -620,8 +585,6 @@ interface Emits {
   (e: 'startOkwwConfig', script: Script): void
 
   (e: 'toggleUserStatus', user: User): void
-
-  (e: 'resetActivitySkip', user: User): void
 
   (e: 'scriptsReordered', scripts: Script[]): void
 }
@@ -767,35 +730,6 @@ const handleStartOkwwConfig = (script: Script) => {
 const handleToggleUserStatus = (user: User) => {
   emit('toggleUserStatus', user)
 }
-
-// ==================== MAA 活动关跳过簿徽标 ====================
-
-/** 用户 id → 生效的跳过条目；每行渲染要读三处，先整表解析一次避免重复 JSON.parse */
-const activitySkips = computed(() => {
-  const map = new Map<string, ActivitySkipEntry>()
-  for (const script of props.scripts) {
-    for (const user of script.users ?? []) {
-      // 与计划表页同一判据：只认该用户自己服务器上仍在进行的活动条目——活动
-      // 结束后后端要等下一轮运行才修剪，这里先自行排除，不让徽标继续报「已跳过」
-      const hit = activeSkipEntry(
-        ongoingSkipBook(
-          parseActivitySkipBook(user.Data?.ActivitySkipBook),
-          props.ongoingActivityNames?.[stageServerOf(user.Info.Server)]
-        )
-      )
-      if (hit) map.set(user.id, hit.entry)
-    }
-  }
-  return map
-})
-
-const activitySkipEntry = (user: User): ActivitySkipEntry | null =>
-  activitySkips.value.get(user.id) ?? null
-
-const activitySkipLabel = (entry: ActivitySkipEntry): string =>
-  (entry.days ?? 0) >= 2
-    ? t('comp.activitySkipBadgePeriod', { n: entry.days ?? 0 })
-    : t('comp.activitySkipBadgeToday')
 
 const getScriptTypeLabel = (type: Script['type']) => {
   if (type === 'Okww') return 'ok-ww'
@@ -1345,18 +1279,6 @@ const onUserDragEnd = async (script: Script) => {
 }
 
 /* 跳过徽标与重置按钮成组，保持与其它标签一致的间距节奏 */
-.skip-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.skip-reset-btn {
-  height: auto;
-  padding: 0 2px;
-  font-size: 11px;
-}
-
 .user-controls {
   display: flex;
   align-items: center;
