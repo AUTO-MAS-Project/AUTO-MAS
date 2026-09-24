@@ -1,6 +1,6 @@
 <template>
-  <div class="webhook-manager">
-    <div class="webhook-header">
+  <div class="webhook-manager" :class="{ compact }">
+    <div v-if="!compact" class="webhook-header">
       <h3>{{ t('comp.customWebhooks') }}</h3>
       <a-button type="primary" size="middle" @click="showAddModal">
         <template #icon>
@@ -16,49 +16,67 @@
         v-for="webhook in displayWebhooks"
         :key="webhook.uid"
         class="webhook-item"
-        :class="{ 'webhook-disabled': !webhook.enabled }"
+        :class="{ 'webhook-disabled': !webhook.enabled, compact }"
       >
         <div class="webhook-info">
           <div class="webhook-name">
             <span class="name-text">{{ webhook.name }}</span>
-            <a-tag :color="webhook.enabled ? 'green' : 'red'" size="small">
+            <a-tag v-if="!compact" :color="webhook.enabled ? 'green' : 'red'" size="small">
               {{ webhook.enabled ? '启用' : '禁用' }}
             </a-tag>
           </div>
-          <div class="webhook-url">{{ webhook.url }}</div>
+          <div class="webhook-url" :title="webhook.url">{{ webhook.url }}</div>
         </div>
-        <div class="webhook-actions">
+        <div class="webhook-actions" :class="{ compact }">
           <a-switch
             v-model:checked="webhook.enabled"
             size="small"
-            :checked-children="'启用'"
-            :un-checked-children="'禁用'"
+            :checked-children="compact ? undefined : '启用'"
+            :un-checked-children="compact ? undefined : '禁用'"
             class="webhook-switch"
             @change="toggleWebhookEnabled(webhook)"
           />
-          <a-button
-            type="text"
-            size="small"
-            :loading="testingWebhooks[webhook.uid]"
-            @click="testWebhook(webhook)"
-          >
-            <template #icon>
-              <PlayCircleOutlined />
-            </template>
-            {{ t('comp.test') }}
-          </a-button>
-          <a-button type="text" size="small" @click="editWebhook(webhook)">
-            <template #icon>
-              <EditOutlined />
-            </template>
-            {{ t('comp.edit') }}
-          </a-button>
-          <a-button type="text" size="small" danger @click="deleteWebhook(webhook)">
-            <template #icon>
-              <DeleteOutlined />
-            </template>
-            {{ t('comp.delete') }}
-          </a-button>
+          <template v-if="compact">
+            <a-button
+              type="text"
+              size="small"
+              :loading="testingWebhooks[webhook.uid]"
+              @click="testWebhook(webhook)"
+            >
+              {{ t('comp.test') }}
+            </a-button>
+            <a-button type="text" size="small" @click="editWebhook(webhook)">
+              {{ t('comp.edit') }}
+            </a-button>
+            <a-button type="text" size="small" danger @click="deleteWebhook(webhook)">
+              {{ t('comp.delete') }}
+            </a-button>
+          </template>
+          <template v-else>
+            <a-button
+              type="text"
+              size="small"
+              :loading="testingWebhooks[webhook.uid]"
+              @click="testWebhook(webhook)"
+            >
+              <template #icon>
+                <PlayCircleOutlined />
+              </template>
+              {{ t('comp.test') }}
+            </a-button>
+            <a-button type="text" size="small" @click="editWebhook(webhook)">
+              <template #icon>
+                <EditOutlined />
+              </template>
+              {{ t('comp.edit') }}
+            </a-button>
+            <a-button type="text" size="small" danger @click="deleteWebhook(webhook)">
+              <template #icon>
+                <DeleteOutlined />
+              </template>
+              {{ t('comp.delete') }}
+            </a-button>
+          </template>
         </div>
       </div>
     </div>
@@ -68,14 +86,28 @@
         <ApiOutlined />
       </div>
       <div class="empty-text">{{ t('comp.noCustomWebhooks') }}</div>
-      <div class="empty-description">{{ t('comp.useButtonAboveAdd') }}</div>
+      <div v-if="!compact" class="empty-description">
+        {{ t('comp.useButtonAboveAdd') }}
+      </div>
     </div>
+
+    <!-- 紧凑模式（通知配置弹窗里）添加按钮挪到底部虚线按钮 -->
+    <a-button v-if="compact" type="dashed" class="add-hook" @click="showAddModal">
+      <template #icon>
+        <PlusOutlined />
+      </template>
+      {{ t('comp.addWebhook') }}
+    </a-button>
 
     <!-- 添加/编辑 Webhook 弹窗 -->
     <a-modal
       v-model:open="modalVisible"
       :title="isEditing ? '编辑 Webhook' : '添加 Webhook'"
-      width="800px"
+      :width="compact ? '560px' : '800px'"
+      :get-container="getPopupContainer"
+      :z-index="compact ? 1050 : undefined"
+      :centered="compact"
+      :body-style="compact ? { maxHeight: 'calc(100vh - 220px)', overflowY: 'auto' } : undefined"
       :ok-text="isEditing ? '更新' : '添加'"
       :confirm-loading="submitting"
       @ok="handleSubmit"
@@ -87,6 +119,7 @@
           <a-select
             v-model:value="selectedTemplate"
             :placeholder="t('comp.pickPresetTemplateWrite')"
+            :get-popup-container="getPopupContainer"
             allow-clear
             @change="applyTemplate"
           >
@@ -208,6 +241,19 @@ const { t } = useI18n()
 
 const logger = window.electronAPI.getLogger('Webhook管理器')
 
+// update/test 接口的载荷形状：开关切换、提交保存、测试三处写入共用
+const toWebhookPayload = (
+  name: string,
+  url: string,
+  template: string,
+  method: 'POST' | 'GET',
+  enabled: boolean,
+  headers: string | null
+) => ({
+  Info: { Name: name, Enabled: enabled },
+  Data: { Url: url, Template: template, Method: method, Headers: headers },
+})
+
 // 定义Webhook类型（兼容旧props用）
 interface CustomWebhook {
   id: string
@@ -230,16 +276,33 @@ interface WebhookItem {
   headers?: Record<string, string>
 }
 
-const props = defineProps<{
-  webhooks?: CustomWebhook[]
-  scriptId?: string | null
-  userId?: string | null
-  mode?: 'global' | 'user'
-}>()
+const props = withDefaults(
+  defineProps<{
+    webhooks?: CustomWebhook[]
+    scriptId?: string | null
+    userId?: string | null
+    mode?: 'global' | 'user'
+    /** 紧凑排版：不渲染自带标题与右上角添加按钮，条目两行 + 文字链接操作 */
+    compact?: boolean
+    /** 弹窗挂载容器；通知配置弹窗场景传其 wrap 节点，默认挂 body（12 个用户编辑页不变） */
+    getPopupContainer?: () => HTMLElement
+  }>(),
+  {
+    webhooks: undefined,
+    scriptId: null,
+    userId: null,
+    // mode 显式默认 undefined：保持与既有调用点的 undefined 语义一致
+    mode: undefined,
+    compact: false,
+    getPopupContainer: undefined,
+  }
+)
 
 const emit = defineEmits<{
   'update:webhooks': [webhooks: CustomWebhook[]]
   change: []
+  /** 列表重载后透传条目，供宿主（通知卡片摘要）使用 */
+  listed: [webhooks: WebhookItem[]]
 }>()
 
 // 响应式数据
@@ -326,6 +389,7 @@ const loadWebhooks = async () => {
           headers: webhookData.Data?.Headers ? JSON.parse(webhookData.Data.Headers) : undefined,
         }
       })
+      emit('listed', apiWebhooks.value)
     }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
@@ -337,49 +401,11 @@ const loadWebhooks = async () => {
 }
 
 // 显示添加弹窗
-const showAddModal = async () => {
+const showAddModal = () => {
   isEditing.value = false
-  // 先重置表单，确保清空之前的内容
+  // 先重置表单，确保清空之前的内容。
+  // 记录延迟到确认提交时才创建：取消（点遮罩/Esc）不产生任何空记录。
   resetForm()
-
-  if (props.mode === 'global' || (props.scriptId && props.userId)) {
-    // API模式：先调用添加接口获取webhookId
-    try {
-      let response
-
-      if (props.mode === 'global') {
-        // 全局模式：使用setting接口
-        response = await Service.addWebhookApiSettingWebhookAddPost()
-      } else {
-        // 用户模式：使用scripts接口
-        response = await Service.addWebhookApiScriptsWebhookAddPost({
-          scriptId: props.scriptId || null,
-          userId: props.userId || null,
-        })
-      }
-
-      if (response.code === 200) {
-        // 只使用返回的webhookId，其他字段使用空白默认值
-        formData.uid = response.webhookId
-
-        // 强制使用空白默认值，不管后端返回什么数据
-        formData.name = ''
-        formData.url = ''
-        formData.template = ''
-        formData.method = 'POST'
-        formData.enabled = true
-        formData.headersList = []
-
-        logger.info(`创建新Webhook，ID: ${response.webhookId}`)
-      }
-    } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : String(error)
-      logger.error(`创建Webhook失败: ${errorMsg}`)
-      message.error(t('comp.couldNotCreateWebhook'))
-      return
-    }
-  }
-
   modalVisible.value = true
 }
 
@@ -415,18 +441,14 @@ const toggleWebhookEnabled = async (webhook: WebhookItem) => {
           scriptId: null,
           userId: null,
           webhookId: webhook.uid,
-          data: {
-            Info: {
-              Name: webhook.name,
-              Enabled: newEnabled,
-            },
-            Data: {
-              Url: webhook.url,
-              Template: webhook.template,
-              Method: webhook.method,
-              Headers: headers,
-            },
-          },
+          data: toWebhookPayload(
+            webhook.name,
+            webhook.url,
+            webhook.template,
+            webhook.method,
+            newEnabled,
+            headers
+          ),
         })
       } else {
         // 用户模式：使用scripts接口
@@ -434,18 +456,14 @@ const toggleWebhookEnabled = async (webhook: WebhookItem) => {
           scriptId: props.scriptId || null,
           userId: props.userId || null,
           webhookId: webhook.uid,
-          data: {
-            Info: {
-              Name: webhook.name,
-              Enabled: newEnabled,
-            },
-            Data: {
-              Url: webhook.url,
-              Template: webhook.template,
-              Method: webhook.method,
-              Headers: headers,
-            },
-          },
+          data: toWebhookPayload(
+            webhook.name,
+            webhook.url,
+            webhook.template,
+            webhook.method,
+            newEnabled,
+            headers
+          ),
         })
       }
 
@@ -479,6 +497,10 @@ const deleteWebhook = (webhook: WebhookItem) => {
     okText: t('comp.confirmDeletion'),
     okType: 'danger',
     cancelText: t('comp.cancel'),
+    // 确认框挂 body（z 950：在渠道配置弹窗 900 之上、标题栏 1000 之下）——
+    // 挂进弹窗 wrap 会按普通流布局排到 wrap 顶部，被标题栏盖住不可见
+    zIndex: props.compact ? 950 : undefined,
+    centered: props.compact,
     async onOk() {
       if (props.mode === 'global' || (props.scriptId && props.userId)) {
         // API模式：调用删除接口
@@ -528,18 +550,14 @@ const testWebhook = async (webhook: WebhookItem) => {
     const response = await Service.testWebhookApiSettingWebhookTestPost({
       scriptId: props.mode === 'global' ? null : props.scriptId || null,
       userId: props.mode === 'global' ? null : props.userId || null,
-      data: {
-        Info: {
-          Name: webhook.name,
-          Enabled: webhook.enabled,
-        },
-        Data: {
-          Url: webhook.url,
-          Template: webhook.template,
-          Method: webhook.method,
-          Headers: headersJson,
-        },
-      },
+      data: toWebhookPayload(
+        webhook.name,
+        webhook.url,
+        webhook.template,
+        webhook.method,
+        webhook.enabled,
+        headersJson
+      ),
     })
 
     if (response.code === 200) {
@@ -619,8 +637,23 @@ const handleSubmit = async () => {
     })
 
     if (props.mode === 'global' || (props.scriptId && props.userId)) {
-      // API模式：调用更新接口
+      // API模式：新增时先创建记录拿到 uid，再写入表单内容
       try {
+        if (!isEditing.value) {
+          const addResponse =
+            props.mode === 'global'
+              ? await Service.addWebhookApiSettingWebhookAddPost()
+              : await Service.addWebhookApiScriptsWebhookAddPost({
+                  scriptId: props.scriptId || null,
+                  userId: props.userId || null,
+                })
+          if (addResponse.code !== 200) {
+            throw new Error(addResponse.message || '')
+          }
+          formData.uid = addResponse.webhookId
+          logger.info(`创建新Webhook，ID: ${addResponse.webhookId}`)
+        }
+
         const headersJson = Object.keys(headers).length > 0 ? JSON.stringify(headers) : null
 
         if (props.mode === 'global') {
@@ -629,18 +662,14 @@ const handleSubmit = async () => {
             scriptId: null,
             userId: null,
             webhookId: formData.uid,
-            data: {
-              Info: {
-                Name: formData.name,
-                Enabled: formData.enabled,
-              },
-              Data: {
-                Url: formData.url,
-                Template: formData.template,
-                Method: formData.method,
-                Headers: headersJson,
-              },
-            },
+            data: toWebhookPayload(
+              formData.name,
+              formData.url,
+              formData.template,
+              formData.method,
+              formData.enabled,
+              headersJson
+            ),
           })
         } else {
           // 用户模式：使用scripts接口
@@ -648,18 +677,14 @@ const handleSubmit = async () => {
             scriptId: props.scriptId || null,
             userId: props.userId || null,
             webhookId: formData.uid,
-            data: {
-              Info: {
-                Name: formData.name,
-                Enabled: formData.enabled,
-              },
-              Data: {
-                Url: formData.url,
-                Template: formData.template,
-                Method: formData.method,
-                Headers: headersJson,
-              },
-            },
+            data: toWebhookPayload(
+              formData.name,
+              formData.url,
+              formData.template,
+              formData.method,
+              formData.enabled,
+              headersJson
+            ),
           })
         }
 
@@ -723,17 +748,8 @@ const handleSubmit = async () => {
 }
 
 // 取消操作
-const handleCancel = async () => {
+const handleCancel = () => {
   modalVisible.value = false
-
-  // 如果是添加模式且已经创建了webhook，需要重新加载数据显示新创建的记录
-  if (
-    !isEditing.value &&
-    formData.uid &&
-    (props.mode === 'global' || (props.scriptId && props.userId))
-  ) {
-    await loadWebhooks()
-  }
 
   // 延迟重置表单，确保弹窗完全关闭后再重置
   setTimeout(() => {
@@ -871,6 +887,41 @@ watch([() => props.scriptId, () => props.userId, () => props.mode], () => {
 
 .header-row:last-child {
   margin-bottom: 0;
+}
+
+.webhook-manager.compact {
+  margin-top: 0;
+}
+
+/* 紧凑模式（通知配置弹窗里）：URL 截断不折行，操作收成一行文字链接 */
+.webhook-item.compact {
+  padding: 10px 12px;
+}
+
+.webhook-item.compact .webhook-name {
+  margin-bottom: 2px;
+}
+
+.webhook-item.compact .webhook-url {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  word-break: normal;
+}
+
+.webhook-actions.compact .webhook-switch {
+  order: 2;
+  margin-right: 0;
+  margin-left: 4px;
+}
+
+.webhook-actions.compact .ant-btn {
+  padding-inline: 6px;
+}
+
+.add-hook {
+  width: 100%;
+  margin-top: 12px;
 }
 
 /* 响应式设计 */

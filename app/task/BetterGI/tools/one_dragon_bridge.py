@@ -109,7 +109,9 @@ def build_combat_project(plan_steps: list[dict[str, Any]]) -> dict[str, Any]:
     return project
 
 
-def custom_exec_names(queue: list[dict[str, Any]], custom_kinds: frozenset[str]) -> list[str]:
+def custom_exec_names(
+    queue: list[dict[str, Any]], custom_kinds: frozenset[str]
+) -> list[str]:
     """按队列顺序取出「交由执行层接管的自定义项」名。
 
     与 ``one_dragon.apply_groups`` 写入 ``TaskDefinitions`` 的取值一致：
@@ -210,7 +212,9 @@ def build_execution_segments(
     # 兜底：队列里没有战斗项（如空队列 / 战斗项全被禁用）但仍有 Plan 时，
     # 仍要跑战斗段——与旧行为（战斗先跑）一致，插到最前面。
     if plan_steps and not combat_placed:
-        segments.insert(0, {"config": None, "projects": [build_combat_project(plan_steps)]})
+        segments.insert(
+            0, {"config": None, "projects": [build_combat_project(plan_steps)]}
+        )
     return segments
 
 

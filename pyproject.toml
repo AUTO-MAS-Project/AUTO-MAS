@@ -1,6 +1,6 @@
 [project]
 name = "auto-mas"
-version = "5.5.0b6"
+version = "5.5.0"
 description = "AUTO-MAS 多脚本、多配置管理与自动化软件"
 readme = "README.md"
 requires-python = ">=3.12,<3.13"
@@ -49,6 +49,7 @@ Repository = "https://github.com/AUTO-MAS-Project/AUTO-MAS"
 dev = [
     "pytest==9.1.1",
     "pytest-asyncio==1.4.0",
+    "ruff==0.16.8",
 ]
 
 [tool.ruff]

@@ -47,5 +47,9 @@ export type EmulatorConfig_Info = {
      * 关闭 MuMu 时强力清理残留进程
      */
     ForceKillOnClose?: (boolean | null);
+    /**
+     * 启动 MuMu 前先关闭已在运行的实例并强力清理残留进程
+     */
+    ForceKillBeforeLaunch?: (boolean | null);
 };
 

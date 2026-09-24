@@ -2,7 +2,7 @@
 name: mas-script-specialized-adapter
 description: >-
   Review, add, or refactor AUTO-MAS specialized script adapters by upstream
-  architecture, including MAA, SRC, MaaEnd/MXU, M9A/MFAA, General, ok-script
+  architecture, including MAA, SRC, MaaEnd/MXU, General, ok-script
   adapters such as Okww and OkNte, multi-engine adapters such as HSR, and the
   one-dragon line such as BetterGI. Use when lowering user setup friction,
   judging whether a change stays inside the black-box boundary (barrier first,
@@ -53,7 +53,7 @@ description: >-
 3. 读 [代码规范](references/adapter-code-norms.md)（必遵守）+ 对应案例：
    [SRC](references/examples-src.md) ·
    [MaaEnd/MXU](references/examples-maaend.md) ·
-   [M9A/MFAA](references/examples-m9a.md) ·
+   [M9A（MaaFW 特调，不是专项）](references/examples-m9a.md) ·
    [Okww](references/examples-okww.md) ·
    [OkNte](references/examples-oknte.md) ·
    [HSR](references/examples-hsr.md) ·
@@ -73,7 +73,7 @@ description: >-
 **不要机械要求所有类型拥有相同文件**——先确认架构契约，再补真实调用链。
 
 - 配置与 schema：`app/models/config.py`、`app/models/schema.py`
-- 注册与 API：`app/core/config.py`、`app/api/scripts.py`、`app/core/task_manager.py`、`app/utils/constants.py`
+- 注册与 API：`app/core/config.py`、`app/api/scripts.py`、`app/core/task_manager.py`、`app/utils/constants.py`；`scripts.py` 只放薄端点，业务在任务模块里实现
 - 任务模块：`app/task/Xxx/` 的 `manager`、`AutoProxy`，按架构需要增加 `ScriptConfig`
 - 日志采集推送：需要把脚本运行日志关键节点推送至任务报告时，用通用组件 `log_box`（用法见 [logbox-api.md](references/logbox-api.md)），专项只喂参数（日志路径/规则/处理器）并注入 sink。**接入前确认脚本日志滚动行为**：有 inode（本地 NTFS）时一律按 inode 找回，与运行日志监控 LogMonitor 同逻辑，宁缺勿错不猜名字；**仅文件系统不提供 inode（FAT32/exFAT/网络盘）时需要传 `rotated_name` strftime 模板**（日期式滚动的唯一兜底，通用组件不猜测任何日期格式）；`.bak` 式无需声明；删除重建/截断式滚动无法自动找回（见 logbox-api「日志轮转补偿」）。「是否展示节点详情」由专项（或其用户配置）的开关在**是否创建/启用 log_box 的入口**消费（关闭即不创建，省采集开销），不要给 log_box 加通用开关，也不要在聚合层采后过滤（参考 okww 用户级 `Notify.PushLogMode`）。**报告注入是硬约束**：只采集不注入，报告就只有总体状态、看不到节点——采集结果必须进入最终报告正文且保留各用户节点归属（多账号时用户结果行与节点详情按用户交错）；聚合统一复用通用工具 `app/tools/push_log.py` 的 `build_user_result_text`（按用户交错组装「用户结果行+节点」并入 result），专项不要自行拼接实现。具体注入端点现场反查参考实现。
 - 视觉识别：专项需要画面文本识别时，**新逻辑用共享工具 `app/tools/ocr.py`**（用法见 [ocr-tools.md](references/ocr-tools.md)），交互层（截图/激活/点击）专项自持；MaaEnd 登录仍为历史私有 OCR，未迁移前不强制改造
@@ -104,20 +104,22 @@ description: >-
 | General | 脚本 / 用户 / 直控 三态 |
 | MaaEnd | 脚本 / 用户 / 直控 三态 |
 | MaaFW | 仅用户；`Info.IfQuickConfig` 开关有效，`Info.Mode` 三态无代码消费，不要按三态写逻辑 |
-| M9A | 脚本 / 用户 / 直控 三态 |
+| M9A | 不是专项：MaaFW 的特调类型，与 MaaFW 同（见 `app/task/M9A/AGENTS.md`） |
 | Okww | 脚本 / 用户 / 直控 三态 |
 | OkNte | 脚本 / 用户 / 直控 三态 |
-| HSR | 脚本 / 用户 / 直控 三态（**不支持快速配置**，见下） |
+| HSR | 脚本 / 用户 / 直控 三态（脚本态 = `HSRConfig` 同名组共享计划；**不支持快速配置**，见下） |
 | BetterGI | 脚本 / 用户 / 直控 三态 |
 | ZzzOd | 脚本 / 用户 / 直控 三态（物理布局见 examples-zzzod） |
 | BAAH | 脚本 / 用户 / 直控 三态 |
 
 **三态只决定配置 owner**：**脚本**=脚本级共享配置；**用户**=当前用户独立配置；**直控**=直接使用外侧脚本原生配置，由原生 GUI 或上游入口维护。
 
-**快速配置是独立于来源的用户级布尔开关与配置面板**，三种来源均可启用：开启时 MAS 尝试用该用户快速配置覆盖原生便捷配置；关闭时不覆盖来源配置。例外：**HSR 不支持快速配置**——SRA/M7A 原生配置由脚本 GUI 维护，MAS 托管字段写入耦合托管运行器，不存在可独立下发的快速配置子集，开关不渲染（方案 B 声明见 [examples-hsr](references/examples-hsr.md) 与 native_control.py）。
+**快速配置是独立于来源的用户级布尔开关与配置面板**，三种来源均可启用：开启时 MAS 尝试用该用户快速配置覆盖原生便捷配置；关闭时不覆盖来源配置。例外：**HSR 不支持快速配置**——SRA/M7A 原生配置由脚本 GUI 维护，MAS 托管字段写入耦合托管运行器，不存在可独立下发的快速配置子集，开关不渲染（方案 B 声明见 [examples-hsr](references/examples-hsr.md) 与 native_control.py）；**ZzzOd 快速配置已封锁**（2026-09 维护者决策：唯一消费点「直控覆盖写槽」与直控=MAS 零写入相悖，曾把切直控时清空的 AppList 写进运行槽导致全部任务跳过——开关 UI 不渲染，后端 load/update 把直控存量值归一为关，消费点已删除，直控恒为纯原生裸跑）。
 
-- **直控 + 关闭**：完全使用外侧原生配置，MAS 仅保留必要的模拟器、启动参数或命令行注入，以及运行时必需的启动器默认值补齐（缺省才补、无事零写入，如 Okww 的 `app.json`）。
+- **直控 + 关闭**：完全使用外侧原生配置，MAS 仅保留必要的模拟器、启动参数或命令行注入，以及运行时必需的启动器默认值补齐（缺省才补、无事零写入，如 Okww 的 `app.json` 的 `auto_start`/`update_method`）。
 - **直控 + 开启**：任务前把面板值写入原生配置，任务结束沿用现有快照机制恢复任务前原生配置。
+- **判据只有一条：这次写入任务结束能不能还原。** 能还原的写入属 overlay——覆盖 base、结束还原，**与来源无关**，三态一律适用；不能还原的才是越界写入。overlay 不限于「面板字段」：运行期需要、且落在快照覆盖范围内的值同样按 overlay 处理（如 Okww 的 `Basic Options.json`）。反之，**不在整目录快照范围内**的目标（如 Okww 的 `app.json`，与 `working/configs` 同级）必须自带键级快照，否则不可还原。
+- **配置会话（`ScriptConfig`）不得注入 overlay 值**：会话结束时原生目录会整目录回写 base，且会话没有还原路径——写进去就是永久固化，会污染 base。
 - 凡触碰原生配置一律沿用现有快照策略，覆盖成功、失败、取消、超时、异常和崩溃；发现外侧新修改时保护该修改，不予覆盖。
 
 两态来源「脚本 / 用户」及其旧值「简洁 / 详细」仅为历史兼容，不是新实现的选型依据（见 [代码规范](references/adapter-code-norms.md)）。

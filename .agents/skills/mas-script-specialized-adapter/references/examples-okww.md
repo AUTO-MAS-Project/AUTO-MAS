@@ -26,24 +26,24 @@ Okww 与 [OkNte](./examples-oknte.md) 同属 `ok-script` 家族、同用 `-t N -
 
 配置初始化、AutoProxy、ScriptConfig 三处必须用**同一套来源规则**；直控不得为了"字段齐全"复制脚本全量配置。
 
-## 直控下的原生配置写入：例外与来源守卫
+## 原生配置写入：overlay 覆盖一律可还原
 
-直控**不等于** MAS 对原生配置零写入。为让 OK-WW 按用户所选 `Info.Resource` 正确启动，`set_okww()` 在直控判定**之前**无条件调用 `_configure_okww_launcher()`，直控用户同样会走到。这是经裁定的**运行时必需写入**，不是覆盖用户配置。
+**判据只有一条：这次写入任务结束能不能还原。** 能还原的写入属 overlay（覆盖 base、结束还原），与来源无关，三态一律适用；不能还原的才是越界写入。
 
-| 原生目标 | 写入内容 | 触发条件 |
-| --- | --- | --- |
-| `data/apps/ok-ww/app.json` | `auto_start=True` | 缺省才补（已是 `True` 不写） |
-| 同上 | `update_method=AUTO_UPDATE` | 键不存在才补 |
-| 同上 | `current_profile`（按 `Resource` 映射官服/国际服） | 与目标 profile 不同才写 |
+`working/configs` 整目录由 manager 的既有快照覆盖（成功/失败/取消/超时/异常/崩溃全路径），因此**写进该目录的一切都是 overlay**。
 
-三项共用 `changed` 标志：无事即**零写入**并直接返回，属幂等最小补齐。写入经 `write_file` 原子落盘（tmp + rename），不会产生半写文件。
+| 写入目标 | 内容 | 语义 | 还原方式 |
+| --- | --- | --- | --- |
+| `app.json` | `auto_start=True` | 启动器默认值，**缺省才补** | 不需要（缺省补齐不是覆盖） |
+| \`app.json\` | `update_method=AUTO_UPDATE` | 同上，键不存在才补 | 不需要 |
+| \`app.json\` | `current_profile` | **MAS 不接管** | 不写（发行渠道与游戏区服无关） |
+| `working/configs/Basic Options.json` | `Exit App when Game Exits: True` | **overlay 覆盖**（非面板字段，但运行期需要） | 整目录快照 |
+| `working/configs/DailyTask.json` | 面板任务字段 | **overlay 覆盖**（面板子集） | 整目录快照，由 `Info.IfQuickConfig` 守卫 |
 
-**判别判据（最易混淆处）**：区分「例外」与「来源守卫」看的是**幂等最小补齐 vs 按来源条件写入**，不是代码位置或先后顺序。
-
-- `_configure_okww_launcher()`（于 `set_okww()` 内调用）→ **真例外**：缺省才补 + `changed` 早退 + 原子落盘，无事零写入，属运行时必需，保留。
-- `_apply_mas_overrides()` 对 `Basic Options.json` 的写入（`Exit App when Game Exits: True`）→ **已纳入来源守卫（F13 已修复）**：该文件是全局运行选项、不属于快速配置子集，只有脚本/用户来源（MAS 配置整体落盘）才写它，直控来源下零写入。
-
-修复后的守卫行为：直控下 `Basic Options.json` 写入次数必须为 0（`Info.IfQuickConfig` 开与关都为 0）；`DailyTask.json` 是快速配置子集，由 `Info.IfQuickConfig` 守卫、与来源独立——直控+开启写入、直控+关闭零写入，任务结束由 manager 既有快照恢复。
+- `current_profile` 是**发行/更新渠道**（`China`=阿里云+腾讯CNB、`Global`=GitHub+PyPi 更新源，见上游 `pyappify.yml` 与 `build.yml` 发行说明），**与游戏区服（官服/国际服）无关**——ok-ww 本体不消费它（仅 ok-script 用于窗口标题）。MAS 不写它、不接管：用户安装哪个包就保持哪个更新渠道，避免静默改指向另一 git 源。真正按区服区分的是 MAS 自己的鸣潮更新器（`app/services/wuthering_waves.py` 两个官方 index.json）。
+- `auto_start` / `update_method` 是「缺省才补」的启动器默认值，无事零写入、不需要还原。
+- `Basic Options.json` 与 `DailyTask.json` 都在换入后的 working 目录里，**三态一律覆盖**（直控同样覆盖），任务结束由整目录快照还原——因此不会固化进任何来源的 base。
+- **配置会话（`ScriptConfig`）不得注入 overlay 值**：会话结束时原生目录会整目录回写 base，且会话没有还原路径，写进去就是永久固化。base 只保留用户在 ok-ww GUI 里的设置。
 
 ## 哨兵契约
 
@@ -101,8 +101,9 @@ ok-ww 已接入通用配置恢复（`ConfigRestoreSection`），mas 池形态与
 - [ ] 三态映射到正确 owner；旧简洁/详细迁移不改变实际来源
 - [ ] 快速配置开关真实控制是否覆盖高频字段
 - [ ] 直控直接读脚本原配置，任务前后保留原配置快照
-- [ ] 直控下的写入区分「例外」与「来源守卫」：启动器补齐属幂等最小补齐（缺省才写、无事零写入），是例外；`Basic Options.json` 属全局运行选项、仅脚本/用户来源写入
-- [x] 直控下 `Basic Options.json` 写入次数为 0（开关皆然）；直控+开启只写 `DailyTask.json` 快速配置子集（F13 已修复）
+- [ ] 原生配置写入一律可还原：`working/configs` 内靠整目录快照，`app.json` 靠键级快照；只有「缺省才补」的启动器默认值可无快照
+- [ ] `app.json` 的 `current_profile` 覆盖后，任务结束（含异常/崩溃）必须回到任务前原值；任务期外部改动不被回滚
+- [ ] 配置会话（`ScriptConfig`）不注入 overlay 值（会话回写 base 且无还原路径）
 - [ ] 自动发现与手动选择校验同一组哨兵
 - [ ] 启动器路径与客户端进程路径职责分离
 - [ ] `app.json` profile 与用户资源一致，GUI 配置时保留当前 profile

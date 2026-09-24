@@ -64,4 +64,11 @@ async def push_notification(
             statistic_targets(user_config),
         )
 
+    if mode == "云登录提醒":
+        # 需人工介入的即时提醒：用户不在电脑前时靠它知道要去扫码/登录。
+        return await dispatch(
+            NotifyPayload(title=title, text=str(message.get("message", ""))),
+            statistic_targets(user_config),
+        )
+
     return DispatchResult()

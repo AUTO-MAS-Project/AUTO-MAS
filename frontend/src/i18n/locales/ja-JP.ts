@@ -203,6 +203,7 @@ export default {
     backendUpdateFailedRestart:
       'ソースと依存関係は揃いましたが、新しいバックエンドを起動できませんでした',
     backendUpdateUnsupportedMode: '現在のモードではバックエンドの自動更新に対応していません',
+    backendUpdateRetryBootstrap: '更新をやり直す',
     backendUpdateRetryWorkspaceSync: 'ソースを同期し直す',
     backendUpdateRetryDependenciesSync: '依存関係の同期を再試行',
     backendUpdateRetryDependenciesRebuild: '依存環境を再構築',
@@ -356,6 +357,7 @@ export default {
     maaCultivateStateAchieved: '達成済み',
     maaCultivateStatePending: '確認待ち',
     maaDepot: '在庫維持',
+    maaDepotHint: '素材ごとに保有数を設定し、不足時に自動で補充します',
     maaCombat: '理性作戦',
     maaInfrast: '基地シフト',
     maaInfrastMode: '基地モード',
@@ -369,8 +371,6 @@ export default {
     maaSwitchTheme: 'テーマ変更',
     maaSwitchThemeHint:
       'テーマ名は MAA の「テーマ変更」タスクで設定します。複数指定すると実行ごとに 1 つランダムに切り替わり、空の場合はスキップされます。MAA v6.17.3 以降が必要です',
-    maaRoguelike: '自動ローグライク',
-    maaRoguelikeHint: '長時間の実行はタイムアウトと誤判定される場合があります',
     maaGreenTicketStore: '緑チケット商店',
     maaGreenTicketStoreHint:
       '毎月一度だけ単独で MAA を起動し、殲滅より先に購入します。1階は全部購入、2階はスカウト券と求人票のみ。今月すでに購入済みならスキップし、失敗しても後続のタスクには影響しません。MAA v6.3.0 以降が必要です',
@@ -388,7 +388,6 @@ export default {
     stringSplitting: '文字列分割',
     gotIt: '了解',
     expression: '式',
-    masManaged: 'MAS 管理',
     none: '選択しない',
     drop: '破棄',
     dropLine: '行を破棄',
@@ -419,8 +418,6 @@ export default {
     srcConfigurationFailedP0: 'SRC の設定に失敗しました: {p0}',
     okWwSetupFailed: 'ok-ww の設定に失敗しました: {p0}',
     p0NotValidJson: '{p0} は有効な JSON ではありません',
-    nativeP0ConfigurationWas: '{p0} の現在の設定をこのユーザーのスナップショットとして固定しました',
-    couldNotImportP0: '{p0} の設定をインポートできませんでした：{p1}',
     p0MustSitUnder: '{p0}はスクリプトのルートフォルダまたは AppData 配下である必要があります',
     p0HasNoMatch: '{p0}にマッチ用の正規表現が未入力のため、無効として保存しました',
     matchPatternP0Has: '{p0}のマッチ用正規表現に構文エラーがあり、実行時には適用されません',
@@ -433,7 +430,6 @@ export default {
     startedSrcSetupUser: 'ユーザー {p0} の SRC 設定を開始しました',
     startedGeneralSetupUser: 'ユーザー {p0} の汎用設定を開始しました',
     readP0: '{p0} を読み込みました',
-    addedP0Tasks: 'タスクを {p0} 件追加しました',
     configurationSessionUserP02:
       'ユーザー {p0} の設定セッションが 30 分でタイムアウトしました。設定を自動保存しています...',
     configurationUserP0Was: 'ユーザー {p0} の設定を保存しました',
@@ -477,7 +473,6 @@ export default {
     annihilationDailyRunStart: '殲滅と日課で MAA を 2 回起動します。グループ内は実行順に並びます',
     annihilationDailyTasksEach: '殲滅作戦と日課タスクは、それぞれ別に MAA を起動します',
     annihilationStage: '殲滅ステージ',
-    couldNotLoadAvailable: '利用できるタスクを読み込めませんでした',
     rewardGroupsProtocolSpace: 'プロトコル空間の報酬タスクは、ここで報酬グループを選べます',
     rewardGroup: '報酬グループ',
     annihilationMaaStartsOnce:
@@ -494,11 +489,11 @@ export default {
       'タスクが当日に正常完了した後、同日の後続実行では自動的にスキップします。空欄なら毎回実行します',
     maaEndDailyOnceTasksPlaceholder: '1日1回だけ実行するタスクを選択',
     maaEndSetResolution: '起動時に解像度を設定',
-    maaEndSetResolutionHint:
-      '既定ではオフです。オンにすると、最初のゲーム起動前に MaaEnd の解像度設定プレタスクを実行します。',
+    maaEndRestoreDisplayType: 'ゲーム終了時の表示モード',
     maaEndRestoreResolution: 'ゲーム終了時に解像度を復元',
-    maaEndRestoreResolutionHint:
-      '最後のステージ終了時に MaaEnd が次回起動用の設定を復元します。実行後にゲームを終了する場合のみ有効です。',
+    maaEndResolutionWindow: 'ウィンドウ',
+    maaEndResolutionOriginal: '元に戻す（{displayType} {resolution}）',
+    maaEndResolutionRestoreOriginal: '元に戻す',
     maaEndResolutionWidth: '幅',
     maaEndResolutionHeight: '高さ',
     maaEndResolutionUnchanged: '変更しない',
@@ -506,7 +501,6 @@ export default {
     maaEndResolutionCustom: 'カスタム',
     markAsDone2: '完了としてマーク',
     takeOverTaskConfiguration: 'タスク設定を引き継ぐ',
-    usedWhenThereNo: 'イベントがないときやショップを買い切ったときに使う、通常の周回です',
     whetherReservedTrailblazePower: '備蓄開拓力を使うかどうか',
     whetherFuelUsed: '燃料を使うかどうか',
     ascensionMaterialIce: '昇格素材：氷（三月七 / 黑塔 / 杰帕德 / 佩拉）',
@@ -570,9 +564,6 @@ export default {
       'アカウント切り替えに使います。中国本土サーバーでは電話番号を入力します。どちらの方式でもアカウント末尾 4 桁で照合します。切り替えない場合は空のままにしてください',
     userSPasswordWhen:
       'ユーザーのパスワードです。入力すると、アカウントとパスワードによるログインを代替手段として使います。空の場合はログイン済みアカウント一覧からの選択のみを行います',
-    leaveEmptySkipAccount: '空のままにするとアカウントを切り替えません',
-    thisCurrentlyWorksCn:
-      '現在この機能は中国本土サーバーのみ、かつ拡大縮小なしの 1280×720 解像度のみに対応しています',
     accountEmailPhoneNumber: 'サイトのアカウント / メールアドレス / 電話番号。',
     accountEmailPhoneNumber2:
       "サイトのアカウント / メールアドレス / 電話番号を「{'|'}」で区切って入力します。アカウントとパスワードでログインする際は B",
@@ -614,12 +605,10 @@ export default {
     pickCustomBaseLayout: 'カスタム基地のシフトを選択してください',
     pickRelicStage: '遺物ステージを選択してください',
     pickOrnamentStage: 'オーナメントステージを選択してください',
-    accountInfo: 'アカウント情報',
     enterCustomStageE: 'カスタムステージを入力（例: 11-8）',
     pickStage: 'ステージを選択',
     pickImport: '選んでインポート',
     pickSanityTaskType: '実行する理性タスクの種類を選びます',
-    pickGameServerThis2: 'このユーザーがプレイするゲームサーバーを選びます',
     pickItem: 'アイテムを選択',
     pickStageTypeFarm: '周回するステージの種類を選びます',
     pickMaterialStageFarm: '周回する素材ステージを選びます',
@@ -629,7 +618,6 @@ export default {
     pickSimulatedUniverseWorld2: '挑戦する模擬宇宙の世界を選びます',
     relic: '遺物',
     relicStage: '遺物ステージ',
-    someTasksHadNo: '対応するスクリプトが見つからないタスクは自動的にスキップしました',
     configurationSource: '設定ファイルの取得元',
     resetState: '状態をリセット',
     ornament: 'オーナメント',
@@ -646,7 +634,6 @@ export default {
     pickMaaendPath: 'MaaEnd のパスを選択してください',
     pickOkNtePath: 'OK-NTE のパスを選択してください',
     pickOkWwPath: 'ok-ww のパスを選択してください',
-    pickM9aPath: 'M9A のパスを選択してください',
     pickMaaPath: 'MAA のパスを選択してください',
     pickSrcPath: 'SRC のパスを選択してください',
     pickMainProgramPath: 'メインプログラムのパスを選択してください',
@@ -673,8 +660,6 @@ export default {
     reset: 'リセット',
     hsrMarch7thSra: 'HSR（三月なのか / SRA）',
     iniFiles: 'INI ファイル',
-    masRunsThisUser:
-      'このユーザーのタスク設定・動的なネイティブオプション・実行エンジンに従って MAS が実行します。',
     pcClient: 'PC クライアント',
     tomlFiles: 'TOML ファイル',
     urlProtocolEG: 'URL プロトコル（Starward など）',
@@ -699,6 +684,8 @@ export default {
     sanityScriptChangedPick: '理性タスクのスクリプトが変わりました。ステージを選び直してください。',
     hsrEngineSwitchHint:
       '実行エンジンを切り替えると、そのエンジン固有のネイティブ設定項目とステージに切り替わります。現在のエンジンで変更した値は引き継がれませんが保持され、戻すと再び表示されます。',
+    hsrSharedEngineSwitchHint:
+      'ここではスクリプト単位のエンジン割り当てを変更します。このスクリプトの「スクリプト」ソースのユーザー全員と、エンジンを個別指定していない「ユーザー」ソースのユーザーがこのエンジンを使います。切り替え後はそのエンジン固有のネイティブ設定項目とステージが適用されます。',
     hsrStageMissingForEngine:
       '現在の開拓力エンジンは {engine} で、このエンジンではまだステージが選ばれていません。ステージはエンジンごとに保存されるため、別のエンジンで選んだステージは引き継がれません。選び直してください。元のエンジンに戻すと以前の選択が復元されます。',
     editHsrUser: 'HSR ユーザーを編集',
@@ -709,6 +696,44 @@ export default {
     hsrLastCompleted: '最終完了：{date}',
     hsrDynamicTaskCount: '動的 {n} 件',
     hsrReadFrom: '読み込み元：{source}',
+    hsrUseScriptShared:
+      'このスクリプトで「スクリプト」を選んだユーザー全員が 1 つのタスク設定を共有します。',
+    hsrSharedPlanHint:
+      'スクリプト共有のタスク設定を編集しています。変更はこのスクリプトで「スクリプト」を選んだ全ユーザーに反映されます。',
+    hsrDirectControlHint:
+      '直接制御は SRA / 三月なのかアシスタントで現在保存されている設定をそのまま実行します。MAS はゲームの起動とプロセスの追跡のみを担当し、アカウント・ステージ・タスクのオン・オフはこのモードでは反映されません。',
+    hsrActiveStageExtra: '現在の対象：{stage}',
+    hsrRunByEngine: '{engine} が実行します',
+    hsrGamePlatform: 'ゲームプラットフォーム',
+    hsrGamePlatformTip:
+      'クライアント：MAS が下の設定でローカルのスターレイルを起動します。クラウド・スターレイル：MAS がブラウザを管理し、その中で三月七が実行します',
+    hsrPlatformClient: 'クライアント',
+    hsrPlatformCloud: 'クラウド・スターレイル',
+    hsrCloudIntro:
+      'クラウド・スターレイルは MAS が管理するブラウザ内で三月七が実行します。バージョンごとに無料時間は 10 時間で、デイリーをすべて賄うには通常足りません。各ユーザーは初回のみ表示されるウィンドウでログインが必要です。',
+    hsrCloudNoSra: 'クラウド・スターレイルでは SRA を使用しません',
+    hsrCloudUsePaidTime: '有料時間を使用',
+    hsrCloudUsePaidTimeHint: '有効にすると星雲コインを消費して優先キューを使います',
+    hsrCloudMaxQueue: '最大待機時間',
+    hsrCloudMaxQueueTip:
+      '待機がこの時間を超えるとこの回は失敗となり再試行しません。各モジュールのタイムアウトにもこの待機時間が加算されます',
+    hsrCloudLoginWait: 'ログイン待機',
+    hsrCloudLoginWaitTip:
+      '未ログイン時に表示されるウィンドウでログインを待つ時間です。超えるとこの回は失敗となり再試行しません',
+    hsrCloudMinutes: '分',
+    hsrCloudLogin: 'クラウドログイン',
+    hsrCloudLoggedIn: 'ログイン済み（{time}）',
+    hsrCloudNotLoggedIn: '未ログイン',
+    hsrCloudLoginButton: 'クラウドゲームにログイン',
+    hsrCloudLoginTip:
+      'このユーザーのクラウド・スターレイルのウィンドウを開きます。そこで HoYoverse アカウントにログインしてください。ログイン確認後、三月七が一度ゲームに入ってから終了します',
+    hsrCloudLoginSuccess: 'クラウド・スターレイルにログインしました',
+    hsrCloudLoginFailed: 'クラウドゲームへのログインに失敗しました：{reason}',
+    hsrCloudRunByM7a: 'クラウド・スターレイルは三月七が実行します',
+    hsrSharedModuleNotEnabled:
+      '共有タスク設定ではこのモジュールが無効です。設定は保存されますが、今回は実行されません。',
+    hsrResetSharedOverridesConfirmDesc:
+      '共有タスク設定で変更したすべての上書き値（全モジュール・全項目）を削除します。以後、「スクリプト」を選んだ全ユーザーが SRA / 三月なのかアシスタントの現在の設定で表示・実行されます。元の設定ファイルは変更されません。この操作は元に戻せません。',
     daily: '日課',
     hsrEngineUnavailable: '利用不可',
     hsrNativeConfigNotLoaded: 'ネイティブ設定を読み込めませんでした',
@@ -728,6 +753,7 @@ export default {
     failure: '失敗時',
     stringSplittingGuide: '文字列分割のガイド',
     done: '完了',
+    createFirstUser: '最初のユーザーを作成！',
     wutheringWavesWillBe:
       '選択したサーバーで鳴潮の更新を確認・実行します。数 GB のダウンロードが発生する場合があるため、ゲームが起動していないことを確認してください',
     turnAutomaticRelicSalvage:
@@ -751,38 +777,18 @@ export default {
     switchAccountDirectly: 'そのままアカウントを切り替える',
     seconds: '秒',
     restoreOriginalRegistryValue: '終了後にレジストリの値を元に戻す',
-    scriptDirectControlIgnores:
-      'スクリプト直接制御では、このユーザーのアカウント・理性ステージ・MAS のタスク設定は参照されません。',
-    directLiveConfigTitle: 'スクリプトの現在の設定を使用（推奨）',
-    directLiveConfigHint:
-      '実行時に {p0} で現在保存されている設定をそのまま読み込みます。スクリプト側の変更はすぐに反映され、インポートは不要です。',
-    directSnapshotTitle: 'このユーザー用の設定スナップショットに固定済み',
-    directSnapshotMeta: '{p0} に固定 ・ 取得元 {p1}',
-    directSnapshotStaleHint:
-      'スナップショットはスクリプト側のその後の変更に追従しません。更新するには再度固定するか、現在の設定を使う状態に戻してください。',
-    directPinSnapshot: '現在の設定をスナップショットとして固定（任意）',
-    directRepinSnapshot: '現在の設定で再固定',
-    directUseLiveConfig: 'スクリプトの現在の設定を使う状態に戻す',
-    directSnapshotCleared: '{p0} はスクリプトの現在の設定を使うようになりました',
-    couldNotClearP0: '{p0} のスナップショットを削除できませんでした：{p1}',
     directEngineSra: 'SRA',
     directEngineM7a: '三月なのかアシスタント',
-    directEngineDescSra:
-      'SRA で現在選択中の設定ファイルを実行します。スナップショットを固定したユーザーはそのスナップショットを実行します。',
-    directEngineDescM7a:
-      '三月なのかアシスタントの現在の config.yaml を実行します。スナップショットを固定したユーザーはそのスナップショットを実行します。',
+    directEngineDescSra: 'SRA で現在選択中の設定ファイルを実行します。',
+    directEngineDescM7a: '三月なのかアシスタントの現在の config.yaml を実行します。',
     pathFolderHoldingScript: 'スクリプトの設定ファイルが置かれているフォルダのパス',
     pathScriptConfigurationFile: 'スクリプトの設定ファイルのパス',
     expressionGuide: '式のガイド',
     thisModuleNotEnabled:
       'このユーザーではこのモジュールが有効になっていません。設定は保存されますが、今回は実行されません。',
-    finishNativeSetupSra:
-      'スクリプト直接制御は、SRA / 三月なのかアシスタントで現在保存されている設定をそのまま実行します。先にスクリプト自身の画面で設定を済ませてください。MAS はゲームの起動、スクリプトプロセスの追跡・停止、後片付けのみを担当します。同じスクリプトの複数ユーザーがそれぞれ別の設定で動く必要がある場合だけ、設定をスナップショットとして固定してください。',
-    enableAtLeastOne: '直接制御するスクリプトを 1 つ以上有効にしてください。',
     pickConfigurationFile: '設定ファイルを選択してください',
     pickConfigurationFolder: '設定フォルダを選択してください',
     skip2: 'スキップ',
-    runModeTaskConfiguration: '実行モードとタスク設定はユーザー設定に移動しました',
     configurationFiles: '設定ファイル',
     restartArknights: 'アークナイツを再起動',
     restartGame: 'ゲームを再起動',
@@ -906,6 +912,11 @@ export default {
     readInterface: 'インターフェースを読み込む',
     debug: 'デバッグ',
     accountSwitchingMethod: 'アカウントの切り替え方法',
+    accountSwitchMethodMas: 'MAS の自動切り替え',
+    accountSwitchMethodMaaend: 'MAAEND 内蔵切り替え',
+    maaendMasAccountSwitchWarningTitle: 'MAS のアカウント切り替えに関する注意',
+    maaendMasAccountSwitchWarning:
+      'MAS の自動切り替えでは滑索データが混在する可能性があります。使用前に「滑索座標のインポート／更新」機能を無効にしてください。',
     giveUpAfterThis: 'この回数を超えて失敗した場合は中止します',
     pickGameResourceThis: 'このユーザーが使うゲームリソースを選びます',
     clickSaveConfigurationWhen:
@@ -917,10 +928,6 @@ export default {
     echoDomainNumberF2: 'F2 リスト内の凝素領域の番号',
     sonanceCasketNumberF2: 'F2 リスト内の無音区の番号',
     hsrScriptConfiguration: 'HSR スクリプト設定',
-    m9aConfigurationGuide: 'M9A 公式の設定ガイド',
-    m9aScriptConfiguration: 'M9A スクリプト設定',
-    m9aPath: 'M9A のパス',
-    m9aPathSelected: 'M9A のパスを選択しました',
     maaAdapterSupportsEmulators:
       'MAA 専用アダプターはエミュレータのみ対応です。PC 版には汎用スクリプトをお使いください。',
     maaScriptConfiguration: 'MAA スクリプト設定',
@@ -929,7 +936,6 @@ export default {
     masOnlyTakesOver: 'スクリプトか自分で起動・終了し、MAS は起動中のウィンドウだけを引き継ぎます',
     howLongMasWaits: 'MAS がゲームを起動してから操作可能になるまで待つ最大時間',
     tasksManagedByMas: 'MAS が管理するタスク',
-    masManagedConfigurationOff: 'MAS 管理の設定は無効になっています',
     masManagesGame: 'MAS がゲームを管理',
     mfwGamePackageName: 'ゲームのパッケージ名',
     mfwGamePackageNamePassed:
@@ -951,7 +957,6 @@ export default {
     sraProfileTooltip:
       'SRA は設定を %APPDATA%/SRA/configs 配下の複数のプロファイルとして保存します。ここで選んだものが MAS 管理フォームの表示、スクリプト直接制御の実行、スナップショット取り込みの元になります。「自動」は Default を優先し、なければファイル名順の先頭を使います',
     sraProfileAuto: '自動（{name}）',
-    sraProfileNeedPath: '先に SRA のパスを設定してください',
     sraProfileLoadFailed: 'SRA 設定プロファイルを読み取れませんでした：{reason}',
     srcScriptConfiguration: 'SRC スクリプト設定',
     srcPath: 'SRC のパス',
@@ -999,8 +1004,6 @@ export default {
     failureLog: 'タスク失敗ログ',
     taskNumbersMatchOk: 'タスク番号は OK-NTE のタスク一覧と一致します',
     taskNumbersMatchOk2: 'タスク番号は ok-ww のタスク一覧と一致します',
-    taskSwitchesAccountsSanity:
-      'スクリプト直接制御では、タスクのオン・オフ、アカウント、理性ステージ、動的オプションはいずれも反映されません。',
     whetherMasLaunchesGame: 'タスク開始前に MAS がゲームを起動して待機するかどうか',
     successLog: 'タスク成功ログ',
     whetherMasClosesGame:
@@ -1058,6 +1061,8 @@ export default {
     optional: '任意',
     couldNotStartSrc: 'SRC の設定を開始できませんでした',
     checkGameUpdateBefore: '起動前にゲームの更新を確認',
+    checkGameUpdateBeforeLogin:
+      '有効にすると、ゲームにログインする前にサーバーとエミュレーター内のゲームクライアントのバージョンを比較します。クライアントが古いと強制更新画面でログインが止まります',
     updateAutomaticallyBeforeLaunching: '起動前に自動更新',
     waitAfterLaunchSeconds: '起動後の待機時間（秒）',
     launchMode: '起動方式',
@@ -1093,7 +1098,7 @@ export default {
     gamePathMatchedHtgame: 'ゲームのパスを NTEGame.exe ランチャーに自動で合わせました',
     applyPreset2: 'プリセットを適用',
     turnThisOffWhen:
-      'スクリプト直接制御でクラウドゲームを使う場合は、このスイッチをオフにすることをおすすめします',
+      'オフにすると、MAS はゲームクライアントの起動・終了や解像度の変更を行いません。先にご自身でゲームを起動してください。',
     on: 'オン',
     treatScriptAsFinished:
       'オンにすると、スクリプトの子プロセスが終了した時点で初めてスクリプトの終了とみなします',
@@ -1112,16 +1117,10 @@ export default {
       'オンにすると、代行でゲームを起動する前に MAS が公式のバージョンを確認して更新します。オフの場合はそのままゲームを起動します',
     overridesCurrentScriptConfiguration:
       'オンにすると、下のクイック設定パネルにある主要なタスク項目で現在のスクリプト設定を上書きします。オフにすると、スクリプト設定側のタスク設定をそのまま使います',
-    onceThisUserS:
-      'オンにすると、同じユーザーで当日の「日々の心相」が成功していた場合、その日それ以降の実行ではこのタスクをスキップします',
-    onceAutoDeepSleep:
-      'オンにすると、同じユーザーで自動深眠または自動覚醒が今月成功していた場合、今月それ以降の実行では該当タスクをそれぞれスキップします',
     beforeStartingMaaCompare:
       'オンにすると、MAA を起動する前にサーバー側とエミュレータ内のゲームクライアントのバージョンを照合します。クライアントが古いと MAA は強制更新画面を越えられず、タイムアウトまで止まったままになります',
-    whenThisScriptRuns:
-      'オンにすると、このスクリプトがキューで実行される際、すべてのユーザーのタスク完了後に M9A のリソースバージョンを自動更新します。あらかじめ M9A を開いて更新元を設定しておいてください',
     whenClientDetectedAs:
-      'オンにすると、クライアントが古いと判定された場合に MAS がインストーラーをダウンロードして ADB 経由でインストールし、完了後に代行を続けます。中国本土サーバーのみ対応で、インストーラーは約 2 GB あるためディスク空き容量にご注意ください',
+      'オンにすると、クライアントが古いと判定された場合に MAS がインストーラーをダウンロードして ADB 経由でインストールし、完了後に代行を続けます。中国本土公式サーバーのみ対応で、インストーラーは約 2 GB あるためディスク空き容量にご注意ください',
     updateAutomaticallyBeforeEvery: '実行前に毎回自動更新しますか？',
     forceGameClose: 'ゲームを強制終了',
     currentOkWwInstall:
@@ -1151,14 +1150,11 @@ export default {
       '必須。空にするとこのルールは無効になります。Python の正規表現でログ 1 行全体に照合します',
     requiredEmptyValueDisables4:
       '必須。空にするとこのルールは無効になります。行を絞り込むための正規表現です',
-    updateNow: '今すぐ更新',
     treatRunAsTimed2:
       '代行タスク実行中、SRC のログがこの時間だけ変化しなければタイムアウトとみなします',
     treatAnnihilationRunAs:
       '殲滅代行タスク実行中、MAA のログがこの時間だけ変化しなければタイムアウトとみなします',
     engine: '実行エンジン',
-    treatDailyRunAs:
-      '日課代行タスク実行中、M9A のログがこの時間だけ変化しなければタイムアウトとみなします',
     treatDailyRunAs2:
       '日課代行タスク実行中、MAA のログがこの時間だけ変化しなければタイムアウトとみなします',
     update: '更新を実行',
@@ -1230,7 +1226,6 @@ export default {
     pushCollectionOffRules: '送信の収集は無効です。ルールは実行されません。',
     description: '説明',
     tipFAcceptsBoth: 'ヒント：%f は 3 桁のミリ秒（例 123）と 6 桁のマイクロ秒（例',
-    reminderIfYouRun: 'お困りの際はこちらもご覧ください：',
     searchSettings: '設定項目を検索…',
     recipient: '宛先アドレス',
     wholeFileSyncLimit: 'ファイル全体同期の上限（GB）',
@@ -1256,7 +1251,6 @@ export default {
     maximumLines: '最大行数',
     youHaveUnsavedChanges: '保存していない変更があります',
     server: 'サーバー',
-    localProjectDirectory: 'ローカルのプロジェクトフォルダ',
     readExtractionPatternReference: 'ログ抽出式のリファレンスを見る',
     rootPathSelected: 'ルートパスを選択しました',
     rootPathSelectedOther:
@@ -1277,12 +1271,10 @@ export default {
     skipOnceDoneThis: '今週完了したらスキップ',
     extraTasksThatRun: '日課のあとに実行する追加タスク',
     skipOnceDoneToday: '今日完了したらスキップ',
-    dailyInsightRunsOnce: '日々の心相は 1 日 1 回のみ実行します',
     skipOnceDoneThis2: '今月完了したらスキップ',
     exampleStarrailExe: '例: StarRail.exe',
     nothingConfigure: '設定できるタスクがありません',
     spendSanityFarm: '理性を消費して周回',
-    deepSleepRunsOnce: '深眠・浅夢は月 1 回のみ実行します',
     addTask: 'タスクを追加',
     added: '追加しました',
     clearSraPath: 'SRA のパスをクリア',
@@ -1324,10 +1316,14 @@ export default {
     leaveEmptySkipTrailing: '空にすると末尾を切り取りません',
     leaveEmptySkipLeading: '空にすると先頭を切り取りません',
     cdkTip:
-      'MAS の更新設定にある CDK が自動で入ります。このスクリプト専用のものに置き換えても構いません。更新の取得元に MirrorChyan を選んだ場合は必須です',
+      'MAS の更新設定にある CDK が自動で入ります。このスクリプト専用のものに置き換えても構いません。更新の取得元に MirrorChyan を選んだ場合は必須です。「?」をクリックすると MirrorChyan で取得できます：',
     cdkPlaceholder: 'MirrorChyan CDK を入力してください',
     cdkPrefilledFromGlobal:
       'MAS 更新設定の CDK を自動入力しました。そのまま使うか、このスクリプト専用のものに置き換えてください',
+    proxyAddress: 'プロキシアドレス',
+    proxyAddressTip:
+      'このプロジェクトだけに適用されるネットワークプロキシです。空欄のときは全体設定（設定 → その他 → ネットワークプロキシ）に従います。入力すると、このプロジェクトの更新ダウンロードと実行環境のインストールはここのプロキシだけを経由します',
+    proxyAddressPlaceholder: '例 127.0.0.1:7890、空欄なら全体設定に従います',
     notDeclared: '未宣言',
     updateProcess: '更新の進行',
     updateProcessPlaceholder:
@@ -1386,7 +1382,7 @@ export default {
     scriptConfigurationFileType: 'スクリプトの設定ファイルの種類',
     automaticSaveFailedSave: '自動保存に失敗しました。手動で保存してください',
     installGamePackageAutomatically:
-      'ゲームインストーラーを自動インストール（中国本土サーバーのみ）',
+      'ゲームインストーラーを自動インストール（中国本土公式サーバーのみ）',
     whetherGameClosesAfter: '自動ログインのタスク終了後にゲームを閉じるかどうか',
     urlCustomProtocol: 'カスタムプロトコルの URL',
     ifFailureLogAppears:
@@ -1426,9 +1422,8 @@ export default {
     envReadyAgents: '準備済みの Agent',
     envRetry: '再試行',
     mfwUnityResolutionOff: '変更しない',
-    mfwStartupSettleSeconds: '起動後の待機（秒）',
-    mfwStartupSettleTip:
-      'MAS がゲームを起動した場合のみ：ウィンドウ表示後、最初のタスクを投入するまで少なくともこの秒数待ちます。MaaFW の初期化は並行して進みます。Unity 製ゲームはウィンドウが出た時点ではまだ黒画面で読み込み中のことが多く、早すぎるとスクリプト側で認識異常と判定されます。ゲームが既に起動している場合は待ちません。0 で無効。',
+    mfwWaitTimeTip:
+      'MAS がゲームを起動する際の 2 段階の待機はこの上限を共有します。まずウィンドウの表示を待ち、次に画面の安定を待ちます。待機中は毎秒画面を確認し、内容があり 5 秒間変化がなければ早めにタスクを開始します。MaaFW の初期化は並行して進みます。Unity 製ゲームはウィンドウが出た時点ではまだ黒画面で読み込み中のことが多く、早すぎるとスクリプト側で認識異常と判定されます。ゲームが既に起動している場合は画面を待ちません。',
     mfwUnityResolutionTip:
       'Unity 製ゲームのみ有効：MAS は起動前に exe のパスからゲームのレジストリを逆引きし、解像度を一時的に選択したサイズのウィンドウモードに変更、ゲーム終了後に元の値へ戻します。ゲームがすでに起動している場合は変更しません。',
     thisNameAlsoWritten: 'この名前は、貨幣戦争の開拓者名として M7A/SRA にも書き込まれます',
@@ -1444,8 +1439,6 @@ export default {
     importMfwProjectScript: '先にスクリプトページで MFW プロジェクトをインポートしてください',
     addEnableUserBefore: '更新を確認する前に、ユーザーを追加して有効にしてください',
     finishSetupOkWw: 'ok-ww の画面で設定を完了してください。',
-    userPageChooseMas:
-      'ユーザーページで「MAS 管理」か「スクリプト直接制御」を選んでください。ゲームの起動・終了・再起動・監視を MAS が行うかどうかは下のスイッチで決まります。スクリプトページでは引き続きインストールパスと共通の実行引数を管理します。',
     readingControllersResourcesTasks:
       'interface.json 内のコントローラー・リソース・タスク・オプションの定義を解析しています。しばらくお待ちください',
     readingTaskOptionPreset:
@@ -1459,6 +1452,14 @@ export default {
     enterRecipientEmailAddress: '宛先のメールアドレスを入力してください',
     enterNumber: '数値を入力してください',
     enterWholeNumber: '整数を入力してください',
+    ungrouped: '未分類',
+    maafwPasswordSaved: '設定済み・入力で置換',
+    maafwPasswordClear: 'クリア',
+    maafwCheckboxCountRange: '{min}〜{max} 個を選択してください',
+    maafwCheckboxCountExact: '{count} 個を選択してください',
+    maafwCheckboxCountMin: '{min} 個以上選択してください',
+    maafwCheckboxCountMax: '{max} 個まで選択できます',
+    maafwCheckboxCountCurrent: '（現在 {count} 個）',
     enterEmulatorInstanceIndex: 'エミュレータのインスタンス番号を入力してください',
     enterUserName: 'ユーザー名を入力してください…',
     enterScriptLaunchArguments: 'スクリプトの起動引数を入力してください',
@@ -1471,7 +1472,6 @@ export default {
     pickSraFolderContains: 'SRA のフォルダを選択してください（SRA-cli.exe を含む）',
     pickDirectoryHoldingOk: 'ok-nte.exe があるフォルダを選択してください',
     pickDirectoryHoldingOk2: 'ok-ww.exe があるフォルダを選択してください',
-    pickFolderHoldingM9a: 'M9A があるフォルダを選択してください',
     pickFolderHoldingMaa: 'MAA.exe があるフォルダを選択してください',
     pickFolderHoldingSrc: 'SRC.exe があるフォルダを選択してください',
     pickMarch7thFolderContains:
@@ -1496,10 +1496,6 @@ export default {
     invalidPath: 'パスが無効です',
     updateAutomaticallyBeforeRun: '実行前に自動更新',
     run1920x1080WindowedMode: '実行時に 1920×1080 のウィンドウモードにする',
-    runMode: '実行モード',
-    hsrRunModeHint:
-      '実行モードと設定ソースは独立した2つの軸です：設定ソースは設定の帰属（スクリプト/ユーザー/直接制御）を決め、実行モードはMASがHSRのネイティブ設定を管理するかどうか（管理=管理フィールドに書き込み、直接=元のライブ設定を使用）を決めます。直接制御ソースでは実行時は常に直接になります。',
-    couldNotSaveRun: '実行モードを保存できませんでした。もう一度お試しください',
     runTimeoutMinutes2: '実行のタイムアウト（分）',
     backScriptList: 'スクリプト一覧に戻る',
     progressReset: '進捗とリセット',
@@ -1516,14 +1512,29 @@ export default {
     pickExe: 'exe を選択',
     pickDirectoryHoldingOk3: 'ok-nte.exe があるフォルダを選択',
     pickDirectoryHoldingOk4: 'ok-ww.exe があるフォルダを選択',
-    pickFolderHoldingM9a2: 'M9A があるフォルダを選択',
     pickFolderHoldingMaa2: 'MAA.exe があるフォルダを選択',
     pickFolderHoldingSrc2: 'SRC.exe があるフォルダを選択',
-    pickMfwProjectDirectory: 'interface.json を含む MFW プロジェクトのフォルダを選択',
     pickProjectDirectoryContaining:
       'interface.json を含むプロジェクトフォルダを選ぶと、コントローラー・リソース・タスクを読み込みます。',
     pickImportPath: 'インポート元のパスを選択',
     pickLocalDirectory: 'ローカルフォルダを選択',
+    localProjectDirectory: 'ローカルのプロジェクトフォルダ',
+    pickMfwProjectDirectory: 'interface.json を含む MFW プロジェクトのフォルダを選択',
+    maafwDirectoryLockedHint:
+      'プロジェクトは AUTO-MAS 自身のフォルダへ取り込み済みで、実行も更新もそこで行います。元フォルダは削除しても構いません。別のプロジェクトを使うには新しいスクリプトを作成してください',
+    maafwImportingCopy: 'プロジェクトを取り込み中...',
+    maafwAccountRecordTooltip:
+      'アカウント / パスワードはローカルのメモ用で、スクリプトには自動で渡されません。渡す必要がある場合は下のタスクオプションで設定してください',
+    m9aFlavorScriptTitle: 'M9A スクリプトを編集',
+    m9aFlavorSourceDirectory: 'M9A プログラムディレクトリ',
+    m9aFlavorSourceHint: 'interface.json を含む M9A ディレクトリを選択します',
+    m9aFlavorSourcePlaceholder: 'interface.json を含む M9A ディレクトリを選択',
+    m9aFlavorAccountPlaceholder:
+      '入力すると「アカウント切替」タスクが自動で追加されます（公式サーバーのみ）',
+    m9aFlavorAccountTooltip:
+      'アカウントを入力すると「アカウント切替」タスクが自動で追加されます（公式サーバーのみ）。パスワードはローカルのメモ用で、スクリプトには渡されません',
+    m9aFlavorQueueHint:
+      'ゲーム起動・ゲーム終了・アカウント切替は M9A 専用処理が自動で追加します。手動で追加する必要はありません',
     pickHowGameControlled: 'ゲームの制御方式を選びます',
     pickUserWhoseServer: '更新確認に使うサーバーのユーザーを選びます',
     chooseWhetherMasSwitches:
@@ -1547,7 +1558,6 @@ export default {
     configurationFilePath: '設定ファイルのパス',
     mxuLogsNamedBy:
       'mxu の「日付＋連番」形式のログ向け：末尾に ****** を付けると mxu のログ接頭辞マッチが有効になります（例: %Y-%m-%d******）',
-    updateAutomaticallyAfterQueue: 'キュー終了後に自動更新',
     useNightmareNestDaily: '必要に応じてナイトメアネストで日課の音骸を消化する',
     projectUpdate: 'プロジェクトの更新',
     ornamentExtraction: 'オーナメント抽出',
@@ -1555,7 +1565,51 @@ export default {
     wutheringWavesUpdateTask: '鳴潮の更新タスクが終了しました',
     wutheringWavesUpdateTimed: '鳴潮の更新がタイムアウトしたため、自動的に停止しました',
     k60SecondsRecommendedDefault: '既定の待機時間は 60 秒への変更をおすすめします。',
-    whichSpellsOutEvery: 'には設定手順がすべて明記されています。',
+    // BAAH 専用
+    baahScriptConfiguration: 'BAAH スクリプト設定',
+    baahScriptNameHint: '複数の BAAH スクリプトインスタンスを区別するための名前です',
+    baahScriptPathHint:
+      'BAAH 本体（BAAH.exe）のフルパスです。プログラムフォルダー・設定フォルダー・ログフォルダーはすべてこの場所から導出されるため、別途指定する必要はありません',
+    baahManageConfig: '重要な設定項目を管理する',
+    baahManageConfigHint:
+      '有効にすると、実行前に BAAH の動作に必要な設定（終了後に自動終了、ログのファイル出力）を本ソフトが自動で書き込み、実行後に元の値へ戻します',
+    baahAutoStartNotice:
+      'BAAH 側でエミュレーターの自動起動をオフにしてください：BAAH の「エミュレーターのパス」を空にし、エミュレーターは本ソフトに起動させます。上の「重要な設定項目を管理する」を有効にすると本ソフトが自動で空にします。「いいえ」にした場合は BAAH のエミュレーター設定でご自身で空にしてください。そうしないと両方が別々にエミュレーターを起動して取り合いになります',
+    baahPushLogEnabled: 'タスクノードの詳細を通知する',
+    baahPushLogEnabledHint:
+      '有効にすると、今回の実行の BAAH タスクノード（成功／スキップ／失敗）がタスクレポートと一緒に通知されます。無効にしてもタスクノードを収集しないだけで、タスクログの記録と結果判定には影響しません',
+    baahEmulatorHint:
+      '本ソフトが起動を管理するエミュレーターを選択します。実行前に本ソフトが起動してデバイスの準備完了を待ち、BAAH は接続するだけです。BAAH 側でエミュレーターのパスとポートを入力する必要はありません',
+    baahNotBaahScript: 'このスクリプトは BAAH ではありません',
+    baahRunTimesLimitHint: 'この回数を超えても失敗した場合は今回の実行を中止します',
+    baahRunTimeLimitHint:
+      '実行中にログの更新が止まってから待つ最大時間（分）。超えると実行失敗として扱います',
+    baahConfigName: '既定の設定名',
+    baahConfigNameHint:
+      '通常使用する BAAH 設定です。本ソフトはこれを使って BAAH.exe <名前>.json を起動します。イベント対応を有効にすると、イベント期間中は「イベント期間中の設定ファイル名」に置き換わります',
+    baahConfigNamePlaceholder: '通常使用する設定を選択してください',
+    baahActivityConfigName: 'イベント期間中の設定ファイル名',
+    baahActivityConfigNameHint:
+      '上の「イベント対応」を有効にすると、ブルーアーカイブで開催中のイベントがある間はこの設定で BAAH を起動します。空欄の場合やイベント日程を取得できない場合は既定の設定名を使用します',
+    baahActivityConfigNamePlaceholder: '空欄の場合は常に既定の設定を使用します',
+    baahIfActivityAdapt: 'イベント対応',
+    baahIfActivityAdaptHint:
+      '有効にするとブルーアーカイブのイベント日程に応じて設定ファイルを切り替えます。イベント中は「イベント期間中の設定ファイル名」、イベントがないときは「既定の設定名」を使用します',
+    baahActivityLineType: 'イベント日程のサーバー',
+    baahActivityLineTypeHint:
+      'どのサーバーの日程でイベントの有無を判定するかを選びます。サーバーごとにイベント時期が異なるため、お使いのアカウントのサーバーを選んでください',
+    baahActivityLineCN: '中国版',
+    baahActivityLineJP: '日本版',
+    baahActivityLineGloble: 'グローバル版',
+    baahActivityRunning: '開催中：',
+    baahActivityUpcoming: '次のイベント：',
+    baahActivityNone: '現在開催中または開始予定のイベントはありません',
+    baahActivityUnavailable: 'イベント日程を取得できませんでした',
+    baahUserTag: 'ユーザータグ',
+    baahUserTagHint: '本ソフトが実行状況に応じて自動生成します。閲覧のみ',
+    baahLastProxyDate: '前回の実行日',
+    baahProxyTimes: '実行回数',
+    baahDataReadOnlyHint: '本ソフトが自動で集計します。閲覧のみ',
     // BetterGI 专项
     bettergiScriptConfiguration: 'BetterGI スクリプト設定',
     bettergiInstanceNameHint: '複数の BetterGI スクリプトインスタンスを区別するための名前です',
@@ -1883,6 +1937,9 @@ export default {
     forceCloseLabel: '強制終了',
     forceCloseTip:
       'プロセス名で MuMu の残留プロセスを終了します。他のインスタンスに影響する場合があるため、多重起動時は注意してください。',
+    forceCleanLaunchLabel: '起動前に強制クリーンアップ',
+    forceCleanLaunchTip:
+      '起動前に実行中の MuMu インスタンスをすべて終了し、残留プロセスを終了します。通常権限のインスタンスが残っていて管理者権限で起動できない問題に対処します。実行中の MuMu インスタンスはすべて閉じられ、未保存のデータは失われる可能性があります。',
     on: 'オン',
     off: 'オフ',
     deviceList: 'デバイス一覧',
@@ -2369,6 +2426,7 @@ export default {
     },
     carousel: {
       remaining: '残り時間',
+      startsIn: '開始まで',
       prev: '前のゲーム',
       next: '次のゲーム',
       loading: 'イベント情報を取得しています…',
@@ -2419,7 +2477,9 @@ export default {
     bluearchive: {
       versionBadge: '{version}',
       endsAt: '{time} 終了',
+      startsAt: '{time} 開始',
       versionRemaining: 'イベントの残り時間',
+      startsIn: '開始まで',
       nextVersionSoon: '次のイベントがまもなく始まります',
       versionTime: 'イベント期間：',
       serverLabel: 'サーバー',
@@ -3051,6 +3111,7 @@ export default {
       step: {
         type: 'スクリプト種別',
         config: '設定の元',
+        mfwSource: 'プロジェクトの取得元',
       },
       typeHeading: 'スクリプト種別を選択',
       typeHeadingDesc: '名前・ゲーム・自動化フレームワークから検索できます。',
@@ -3085,12 +3146,26 @@ export default {
       back: '戻る',
       createAndConfigure: '作成して設定へ',
       createFromTemplate: 'テンプレートから作成',
+      mfwSourceHeading: 'プロジェクトの取得元',
+      mfwSourceHeadingDesc:
+        '取り込み済みのプロジェクトはそのまま再利用でき、同じプロジェクトで何本スクリプトを作ってもフォルダを選び直す必要はありません。別のプロジェクトを新しく取り込むこともできます。',
+      mfwNewProject: '別のプロジェクトを取り込む：ローカルフォルダを選択',
+      mfwNewProjectDesc: 'ガイドで interface.json を含むプロジェクトフォルダを選んで取り込みます',
+      mfwReuse: '取り込み済みのプロジェクトを再利用',
+      mfwReuseDesc:
+        'そのスクリプトのプロジェクトをそのまま使います。ランタイムとモデルは共有され追加容量を取りません。ユーザーと実行設定は引き継ぎません',
+      mfwReuseFrom: 'スクリプト「{name}」より',
+      mfwReuseFromMany: 'スクリプト「{name}」ほか計 {count} 本より',
+      mfwReuseLoading: '取り込み済みのプロジェクトを読み込み中...',
+      mfwReuseEmpty: '{type} プロジェクトはまだ取り込まれていません',
+      mfwReuseBusy: '実行中',
+      createAndReuse: '作成してプロジェクトを再利用',
       next: '次へ',
       typeDesc: {
         General: 'ログファイルを出力するあらゆる自動化スクリプト向け',
         MAA: 'アークナイツの自動化と複数アカウントの日課代行',
         SRC: 'スターレイルの自動化と複数アカウント代行',
-        MaaEnd: 'MFW 専用アダプター',
+        MaaEnd: 'アークナイツ：エンドフィールドの自動化と複数アカウント代行',
         M9A: 'リバース：1999 の自動化',
         MaaFW: 'interface.json を持つ MaaFramework プロジェクトをそのまま実行',
         Okww: 'ok-script 専用のタスクランナー',
@@ -3108,6 +3183,9 @@ export default {
       selectTemplate: '先にテンプレートを選んでください',
       templateCreateFailed: 'テンプレートからスクリプトを作成できませんでした: {error}',
       copied: 'スクリプト「{name}」を複製しました',
+      reuseFailed:
+        'プロジェクトを再利用できませんでした：{reason}。スクリプトは作成済みです。ガイドでプロジェクトフォルダを選んでください',
+      mfwSourcesFailed: '再利用できるスクリプトを読み込めませんでした：{error}',
       scriptNotFound: '該当するスクリプトが見つかりません',
       alreadyConfiguring: 'このスクリプトは設定中です。先にその設定を保存してください',
       targetConfiguring: 'この対象は設定中です。先にその設定を保存してください',
@@ -3380,7 +3458,9 @@ export default {
       openclawQqUnbindConfirm:
         '連携を解除すると、この端末に保存した QQ ログイン状態が消去されます。続行しますか？',
       openclawQqStatusRetry: '連携状態を再取得',
-      openclawQqBound: '連携済み',
+      openclawQqBound: '接続済み',
+      openclawQqConnecting: '接続中',
+      openclawQqReconnecting: '再接続中',
       openclawQqUnbound: '未連携',
       openclawQqBindSuccess: 'QQ 公式ボットを連携しました',
       openclawQqUnbindSuccess: 'QQ 公式ボットの連携を解除しました',
@@ -3432,6 +3512,11 @@ export default {
       proxyTip:
         'プロキシを使っていて接続に問題がある場合は、ここにプロキシアドレスを設定してください。全体に適用されます。',
       proxyPlaceholder: 'プロキシアドレスを入力してください',
+      githubMirror: 'GitHub ダウンロードミラー',
+      githubMirrorTip:
+        'MFW スクリプトが GitHub Releases から更新パッケージを取得するときだけ有効です。自動では gh-proxy 系ミラーを順に試し、すべて失敗すると直接接続に戻ります。オフでは常に直接接続します。sha256 ダイジェストのない資産はミラーを使いません',
+      githubMirrorAuto: '自動（ミラー優先、失敗時は直接接続）',
+      githubMirrorOff: 'オフ（GitHub に直接接続）',
       cdk: 'MirrorChyan CDK',
       cdkIntro:
         'MirrorChyan CDK は Mirror ソースから高速ダウンロードするための認証情報です。取得はこちら：',

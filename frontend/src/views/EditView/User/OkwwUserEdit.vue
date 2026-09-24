@@ -227,32 +227,7 @@
         <a-form :model="formData" layout="vertical" class="config-form">
           <div class="form-section">
             <a-row :gutter="24">
-              <a-col :span="12">
-                <a-form-item>
-                  <template #label>
-                    <span class="form-label">
-                      {{ t('edit.startTaskTN') }}
-                      <a-tooltip :title="t('edit.taskNumbersMatchOk2')">
-                        <QuestionCircleOutlined class="help-icon" />
-                      </a-tooltip>
-                    </span>
-                  </template>
-                  <a-select
-                    v-model:value="formData.Task.TaskIndex"
-                    size="large"
-                    @change="handleTaskIndexChange"
-                  >
-                    <a-select-option
-                      v-for="item in okwwTaskOptions"
-                      :key="item.value"
-                      :value="item.value"
-                    >
-                      {{ item.label }}
-                    </a-select-option>
-                  </a-select>
-                </a-form-item>
-              </a-col>
-              <a-col :span="12">
+              <a-col :span="24">
                 <a-form-item>
                   <template #label>
                     <span class="form-label">
@@ -391,7 +366,7 @@
 import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
 import { useScriptConfigLock } from '@/composables/useScriptConfigLock'
 import { useI18n } from 'vue-i18n'
-import { computed, h, nextTick, onMounted, onUnmounted, reactive, ref } from 'vue'
+import { h, nextTick, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { message, Modal } from 'ant-design-vue'
 import {
@@ -484,11 +459,6 @@ const okwwConfigModeOptions: Array<{
   },
 ]
 
-const okwwTaskOptions = [
-  { label: '1 - DailyTask（日常）', value: 1 },
-  { label: '7 - MultiAccountDailyTask（多账号日常）', value: 7 },
-]
-
 const farmOptions = [
   { label: '无音区', value: 'Tacet Suppression' },
   { label: '凝素领域', value: 'Forgery Challenge' },
@@ -538,7 +508,6 @@ const getDefaultUserData = (): Omit<OkwwUserFormData, 'userName'> => ({
     Tag: '',
   },
   Task: {
-    TaskIndex: 1,
     WhichToFarm: 'Tacet Suppression',
     WhichTacetSuppressionToFarm: 1,
     WhichForgeryChallengeToFarm: 1,
@@ -568,7 +537,8 @@ const formData = reactive<OkwwUserFormData>({
   ...getDefaultUserData(),
 })
 
-const currentStartupArguments = computed(() => `-t ${formData.Task.TaskIndex || 1} -e`)
+// ok-ww 只调度日常任务（-t 1 = DailyTask）；账号切换由 MAS 侧实现
+const currentStartupArguments = '-t 1 -e'
 
 const handleConfigModeChange = async (value: boolean | string) => {
   if (typeof value !== 'string' || !['脚本', '用户', '直控'].includes(value)) return
@@ -647,7 +617,6 @@ const saveTaskConfig = async () => {
   await enqueue(() =>
     updateUser(scriptId, userId.value, {
       Task: {
-        TaskIndex: formData.Task.TaskIndex,
         WhichToFarm: formData.Task.WhichToFarm,
         WhichTacetSuppressionToFarm: formData.Task.WhichTacetSuppressionToFarm,
         WhichForgeryChallengeToFarm: formData.Task.WhichForgeryChallengeToFarm,
@@ -657,15 +626,6 @@ const saveTaskConfig = async () => {
       },
     })
   )
-}
-
-const handleTaskIndexChange = async (value: 1 | 7) => {
-  formData.Task.TaskIndex = value
-  try {
-    await saveTaskConfig()
-  } catch (e) {
-    logger.error(e instanceof Error ? e.message : String(e))
-  }
 }
 
 const handleOkwwConfig = async () => {

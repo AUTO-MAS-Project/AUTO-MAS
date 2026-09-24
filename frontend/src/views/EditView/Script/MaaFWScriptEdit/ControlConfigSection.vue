@@ -261,7 +261,12 @@
           <a-col :span="6">
             <a-form-item>
               <template #label>
-                <span class="form-label">{{ t('edit.waitTimeSeconds') }}</span>
+                <a-tooltip :title="t('edit.mfwWaitTimeTip')">
+                  <span class="form-label">
+                    {{ t('edit.waitTimeSeconds') }}
+                    <QuestionCircleOutlined class="help-icon" aria-hidden="true" />
+                  </span>
+                </a-tooltip>
               </template>
               <a-input-number
                 v-model:value="maafwConfig.Game.WaitTime"
@@ -270,28 +275,6 @@
                 size="large"
                 style="width: 100%"
                 @blur="emit('change', 'Game', 'WaitTime', maafwConfig.Game.WaitTime)"
-              />
-            </a-form-item>
-          </a-col>
-          <a-col :span="6">
-            <a-form-item>
-              <template #label>
-                <a-tooltip :title="t('edit.mfwStartupSettleTip')">
-                  <span class="form-label">
-                    {{ t('edit.mfwStartupSettleSeconds') }}
-                    <QuestionCircleOutlined class="help-icon" aria-hidden="true" />
-                  </span>
-                </a-tooltip>
-              </template>
-              <a-input-number
-                v-model:value="maafwConfig.Game.StartupSettleTime"
-                :min="0"
-                :max="600"
-                size="large"
-                style="width: 100%"
-                @blur="
-                  emit('change', 'Game', 'StartupSettleTime', maafwConfig.Game.StartupSettleTime)
-                "
               />
             </a-form-item>
           </a-col>

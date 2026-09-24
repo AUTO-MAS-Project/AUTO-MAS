@@ -57,8 +57,15 @@ from .project_path import normalize_project_path
 
 logger = get_logger("MFW 运行环境缓存")
 
-# 缓存结构变更时递增：读到不认识的版本一律当没有缓存。
-CACHE_FORMAT_VERSION = 2
+# 缓存结构变更时递增：读到不认识的版本一律当没有缓存。MAS 自己的准备规则变了也在
+# 这里递增——指纹只看项目文件，规则变了项目没动，旧缓存会一直命中。
+# 3：没有 requirements.txt 的 Python agent 开始在隔离 venv 里装 maafw（FOS 类项目），
+#    此前按旧规则备好的 venv 里没有 binding，必须重备一次。
+# 4：运行池改成唯一 base venv + 按版本存放的 binding / native 目录，结果里多了
+#    bindingDir / bindingVersion / nativeDir；旧缓存指向的是 maafw 装在 venv 里的旧
+#    布局，整体作废、每脚本重备一次。指纹同时纳入项目自带 DLL 的版本（见
+#    project_environment_fingerprint）：DLL 换了、interface 没变时不能命中旧 binding。
+CACHE_FORMAT_VERSION = 4
 
 
 def _host_python_identity() -> dict[str, str]:
@@ -95,6 +102,15 @@ def _paths_still_present(result: Mapping[str, Any]) -> bool:
 
     venv_path = str(runtime.get("venvPath") or "")
     if venv_path and not Path(venv_path).is_dir():
+        return False
+
+    # binding / native 目录不只看在不在：清单文件与 DLL 本体都得在（目录被回收
+    # 到一半、或 rename-first 只挪走了一部分时，is_dir 还是真的）。
+    binding_dir = str(runtime.get("bindingDir") or "")
+    if not binding_dir or not (Path(binding_dir) / "binding.json").is_file():
+        return False
+    native_dir = str(runtime.get("nativeDir") or "")
+    if native_dir and not (Path(native_dir) / "MaaFramework.dll").is_file():
         return False
 
     agents = result.get("agents")

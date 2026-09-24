@@ -4,7 +4,6 @@
 /* eslint-disable */
 import type { HSRUserConfig_Control } from './HSRUserConfig_Control';
 import type { HSRUserConfig_Data } from './HSRUserConfig_Data';
-import type { HSRUserConfig_Direct } from './HSRUserConfig_Direct';
 import type { HSRUserConfig_Info } from './HSRUserConfig_Info';
 import type { HSRUserConfig_Managed } from './HSRUserConfig_Managed';
 import type { HSRUserConfig_Notify } from './HSRUserConfig_Notify';
@@ -44,9 +43,5 @@ export type HSRUserConfig = {
      * 托管配置
      */
     Managed?: (HSRUserConfig_Managed | null);
-    /**
-     * 直连快照
-     */
-    Direct?: (HSRUserConfig_Direct | null);
 };
 

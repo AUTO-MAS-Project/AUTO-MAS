@@ -12,7 +12,7 @@ export type HSRConfig_Update = {
      */
     Channel?: ('stable' | 'beta' | null);
     /**
-     * 三月七助手更新包下载源：GitHub / Mirror 酱（需自行填写 CDK）
+     * 三月七更新包下载源：GitHub / Mirror 酱（需自行填写 CDK）
      */
     M7ASource?: ('GitHub' | 'MirrorChyan' | null);
     /**

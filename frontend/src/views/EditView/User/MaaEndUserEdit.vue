@@ -4,8 +4,8 @@
     <GuiSessionMask
       :open="showMaaEndConfigMask"
       :icon="SettingOutlined"
-      :title="t('edit.maaendConfigurationProgress')"
-      :description="`${t('edit.maaendConfigurationWindowOpen')}\n${t('edit.clickSaveConfigurationWhen')}`"
+      :title="maaEndConfigMaskTitle"
+      :description="`${maaEndConfigMaskDesc}\n${t('edit.clickSaveConfigurationWhen')}`"
     >
       <template #actions>
         <a-button v-if="maaEndTaskId" type="primary" size="large" @click="handleSaveMaaEndConfig">
@@ -391,6 +391,7 @@ const getDefaultMaaEndUserData = () => ({
   },
   Notify: {
     Enabled: false,
+    PushLogMode: '汇总',
     IfSendStatistic: false,
     IfSendMail: false,
     ToAddress: '',
@@ -434,6 +435,20 @@ const formData = reactive({
   userName: '',
   ...getDefaultMaaEndUserData(),
 })
+
+// 遮罩文案按配置来源区分：脚本=脚本级共享配置、用户=当前用户独立配置。
+// 直控直接用 MaaEnd 原有配置，在 MaaEnd 里改，MAS 不给配置入口，走不到这里。
+const maaEndConfigMaskTitle = computed(() =>
+  formData.Info.Mode === '用户'
+    ? t('scripts.mask.maaEndUserTitle')
+    : t('scripts.mask.maaEndScriptTitle')
+)
+
+const maaEndConfigMaskDesc = computed(() =>
+  formData.Info.Mode === '用户'
+    ? t('scripts.mask.maaEndUserDesc', { name: formData.Info.Name || '' })
+    : t('scripts.mask.maaEndScriptDesc')
+)
 
 const rules = computed<Record<string, Rule[]>>(() => ({
   userName: [

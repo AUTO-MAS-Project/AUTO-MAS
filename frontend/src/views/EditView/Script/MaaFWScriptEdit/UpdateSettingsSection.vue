@@ -64,10 +64,25 @@
       <a-col :span="12">
         <a-form-item>
           <template #label>
-            <a-tooltip :title="t('edit.cdkTip')">
+            <!-- 说明全在问号里：悬停看文案，点问号直接去 Mirror 酱取 CDK；输入框下面不再放解释行，
+                 只在「选了 Mirror 酱却没填」时冒一行警告 -->
+            <a-tooltip>
+              <template #title>
+                {{ t('edit.cdkTip') }}
+                <a :href="MIRRORCHYAN_CDK_URL" class="tooltip-link" @click="handleExternalLink">{{
+                  t('edit.cdkGetLink')
+                }}</a>
+              </template>
               <span class="form-label">
                 {{ t('edit.mirrorchyanCdk') }}
-                <QuestionCircleOutlined class="help-icon" aria-hidden="true" />
+                <a
+                  :href="MIRRORCHYAN_CDK_URL"
+                  class="help-link"
+                  :aria-label="t('edit.cdkGetLink')"
+                  @click.stop="handleExternalLink"
+                >
+                  <QuestionCircleOutlined class="help-icon" aria-hidden="true" />
+                </a>
               </span>
             </a-tooltip>
           </template>
@@ -79,31 +94,30 @@
             autocomplete="off"
             @blur="emit('change', 'Update', 'MirrorChyanCDK', maafwConfig.Update.MirrorChyanCDK)"
           />
-          <div class="form-hint" :class="{ 'form-hint--warning': isCdkMissingForMirror }">
-            {{ t('edit.cdkHint') }}
-            <a :href="MIRRORCHYAN_CDK_URL" class="form-hint-link" @click="handleExternalLink">{{
-              t('edit.cdkGetLink')
-            }}</a>
+          <div v-if="isCdkMissingForMirror" class="form-hint form-hint--warning">
+            {{ t('edit.cdkMissingForMirror') }}
           </div>
           <div v-if="cdkPrefilled" class="form-hint">{{ t('edit.cdkPrefilledFromGlobal') }}</div>
         </a-form-item>
       </a-col>
       <a-col :span="12">
-        <a-form-item :label="t('edit.updateNow')">
-          <a-space wrap>
-            <a-button size="large" :loading="updateChecking" @click="emit('check-update')">{{
-              t('edit.checkUpdates2')
-            }}</a-button>
-            <a-button
-              v-if="updateResult && updateResult.installable"
-              type="primary"
-              size="large"
-              :loading="updateApplying"
-              @click="emit('apply-update')"
-            >
-              {{ t('edit.update') }}
-            </a-button>
-          </a-space>
+        <a-form-item>
+          <template #label>
+            <a-tooltip :title="t('edit.proxyAddressTip')">
+              <span class="form-label">
+                {{ t('edit.proxyAddress') }}
+                <QuestionCircleOutlined class="help-icon" aria-hidden="true" />
+              </span>
+            </a-tooltip>
+          </template>
+          <a-input
+            v-model:value="maafwConfig.Update.ProxyAddress"
+            :placeholder="t('edit.proxyAddressPlaceholder')"
+            size="large"
+            class="modern-input"
+            autocomplete="off"
+            @blur="emit('change', 'Update', 'ProxyAddress', maafwConfig.Update.ProxyAddress)"
+          />
         </a-form-item>
       </a-col>
     </a-row>
@@ -147,6 +161,30 @@
         <div class="update-process-header">
           <span class="update-process-title">{{ t('edit.updateProcess') }}</span>
           <a-tag v-if="packageKindLabel" class="update-process-kind">{{ packageKindLabel }}</a-tag>
+          <!-- 检查 / 更新的入口就放在过程面板标题行右侧：点完按钮，结果就在下面这个日志框里，
+               与「运行环境」面板把「准备运行环境」放标题行右侧同一口径 -->
+          <div class="update-process-actions">
+            <!-- 检查与更新共用下面这个过程面板：一个在跑时另一个不能点，否则后点的那次把面板
+                 重置并先以终态收尾，正在跑的那次之后的进度全被当成迟到事件丢掉 -->
+            <a-button
+              size="small"
+              :loading="updateChecking"
+              :disabled="updateApplying"
+              @click="emit('check-update')"
+              >{{ t('edit.checkUpdates2') }}</a-button
+            >
+            <!-- apply 的响应沿用检查结果的 installable=true，更新成功后按钮还挂在那；updated 为真时隐藏 -->
+            <a-button
+              v-if="updateResult && updateResult.installable && !updateResult.updated"
+              type="primary"
+              size="small"
+              :loading="updateApplying"
+              :disabled="updateChecking"
+              @click="emit('apply-update')"
+            >
+              {{ t('edit.update') }}
+            </a-button>
+          </div>
         </div>
         <!-- 日志框一直在：面板高度不随「有没有开始更新」跳动；结论作为最后一行用强调色写出来 -->
         <div ref="logBoxRef" class="update-log-box">
@@ -412,14 +450,18 @@ watch(
   color: var(--ant-color-warning);
 }
 
-.form-hint-link {
-  margin-left: 4px;
-  color: var(--ant-color-primary);
-  text-decoration: underline;
+/* 问号本身就是去 Mirror 酱的入口：样式与旁边的问号一致，只多一个手型 */
+.help-link {
+  display: inline-flex;
+  color: inherit;
+  cursor: pointer;
 }
 
-.form-hint-link:hover {
-  color: var(--ant-color-primary-hover);
+/* 提示气泡是深底白字，链接不能用主色（看不见），下划线就够 */
+.tooltip-link {
+  margin-left: 4px;
+  color: inherit;
+  text-decoration: underline;
 }
 
 .update-config-row {
@@ -494,6 +536,14 @@ watch(
 
 .update-process-kind {
   margin-inline-end: 0;
+}
+
+/* 按钮靠右贴边，用 margin-left 顶开，标题和包类型标签仍然紧挨在左边 */
+.update-process-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
 }
 
 /* 定高、内部滚动：日志再长面板也不长个，左列小框才对得齐 */

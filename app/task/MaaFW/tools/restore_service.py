@@ -36,6 +36,9 @@ import json
 import uuid
 from pathlib import Path
 
+from app.task.MaaFW.tools.embedded.embedded_project import (
+    resolve_maafw_project_root,
+)
 from app.utils import get_logger
 from app.utils.config_restore import ConfigRestorePool, RestoreContext
 
@@ -66,10 +69,14 @@ def _user_guard(ctx: RestoreContext) -> None:
 
 
 def _project_path(ctx: RestoreContext) -> Path | None:
-    """MaaFW 项目根目录（含 interface.json）；未配置脚本路径返回 ``None``。"""
+    """MaaFW 项目根目录（含 interface.json）；未配置脚本路径返回 ``None``。
 
-    raw = str(ctx.script_config.get("Info", "Path") or "").strip()
-    return Path(raw) if raw else None
+    内嵌脚本的有效根是副本：运行时物化写在副本里，恢复也只能写回副本——来源目录
+    一个字节不动。
+    """
+
+    root = resolve_maafw_project_root(ctx.script_id, ctx.script_config)
+    return root if str(root).strip() and str(root) != "." else None
 
 
 # ══════════════════ mas 池（声明式 + 定制预览/恢复） ══════════════════

@@ -154,7 +154,6 @@
 import { useI18n } from 'vue-i18n'
 import {
   beginIntentionalBackendRestart,
-  closeApp,
   endIntentionalBackendRestart,
 } from '@/composables/useAppLifecycle'
 import { useTheme } from '@/composables/useTheme'
@@ -243,6 +242,7 @@ const updateActions = computed(() => resolveBackendUpdateActions(updateOutcome.v
 
 // 常量数组要放进 computed，否则切换语言后按钮文案不跟着变。
 const retryActionLabels = computed<Record<RuntimeUpdateRetryAction, string>>(() => ({
+  bootstrap: t('comp.backendUpdateRetryBootstrap'),
   'workspace-sync': t('comp.backendUpdateRetryWorkspaceSync'),
   'dependencies-sync': t('comp.backendUpdateRetryDependenciesSync'),
   'dependencies-rebuild': t('comp.backendUpdateRetryDependenciesRebuild'),
@@ -387,11 +387,11 @@ const toggleMaximize = async () => {
   }
 }
 
-// 执行实际的关闭操作：交给生命周期协调器执行"退出并关闭后端"流程
+// 先由主进程隐藏窗口，再让生命周期协调器在后台执行关闭流程
 const doCloseWindow = async () => {
   try {
     logger.info('开始关闭应用...')
-    await closeApp()
+    await window.electronAPI?.windowClose()
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`关闭应用失败: ${errorMsg}`)

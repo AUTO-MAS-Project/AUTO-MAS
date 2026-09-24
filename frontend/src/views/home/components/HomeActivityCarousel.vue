@@ -11,20 +11,24 @@
     </a-card>
 
     <template v-else>
-      <!-- 没做 tablist 的方向键漫游焦点，就别用 tab 语义许下做不到的承诺 -->
-      <div v-if="items.length > 1" class="banner-switcher">
-        <button
-          v-for="(item, index) in items"
-          :key="item.key"
-          type="button"
-          class="switcher-chip"
-          :class="{ 'is-active': index === activeIndex }"
-          :style="index === activeIndex ? activeChipStyle(item) : undefined"
-          :aria-current="index === activeIndex ? 'true' : undefined"
-          @click="select(index)"
-        >
-          {{ item.title }}
-        </button>
+      <div class="activity-sticky-header">
+        <!-- 没做 tablist 的方向键漫游焦点，就别用 tab 语义许下做不到的承诺 -->
+        <div v-if="items.length > 1" class="banner-switcher">
+          <button
+            v-for="(item, index) in items"
+            :key="item.key"
+            type="button"
+            class="switcher-chip"
+            :class="{ 'is-active': index === activeIndex }"
+            :style="index === activeIndex ? activeChipStyle(item) : undefined"
+            :aria-current="index === activeIndex ? 'true' : undefined"
+            @click="select(index)"
+          >
+            {{ item.title }}
+          </button>
+        </div>
+
+        <slot v-if="activeKey" name="community" :module-key="activeKey" />
       </div>
 
       <div v-if="activeItem && !isCompact" class="banner-viewport">
@@ -53,10 +57,10 @@
               </div>
 
               <div v-if="item.endTime" class="banner-remaining">
-                <div class="remaining-label">{{ t('home.carousel.remaining') }}</div>
+                <div class="remaining-label">{{ countdownLabel(item) }}</div>
                 <a-statistic-countdown
-                  :value="countdownValue(item.endTime)"
-                  :format="countdownFormat(item.endTime)"
+                  :value="countdownValue(countdownTarget(item))"
+                  :format="countdownFormat(item)"
                   :value-style="remainingStyle"
                 />
               </div>
@@ -217,8 +221,22 @@ const countdownValue = (time: string) => {
   return Number.isNaN(timestamp) ? Date.now() : timestamp
 }
 
-const countdownFormat = (time: string) => {
-  return countdownValue(time) - Date.now() <= 0 ? t('home.countdown.ended') : t('home.countdown.dh')
+/** 活动间隙可能轮到还没开始的那一场，此时倒计时要数到开始时间 */
+const isUpcoming = (item: ActivityBannerItem) =>
+  Boolean(item.startTime) &&
+  countdownValue(item.startTime) > Date.now() &&
+  countdownValue(item.endTime) > Date.now()
+
+const countdownTarget = (item: ActivityBannerItem) =>
+  isUpcoming(item) ? item.startTime : item.endTime
+
+const countdownLabel = (item: ActivityBannerItem) =>
+  isUpcoming(item) ? t('home.carousel.startsIn') : t('home.carousel.remaining')
+
+const countdownFormat = (item: ActivityBannerItem) => {
+  return countdownValue(countdownTarget(item)) - Date.now() <= 0
+    ? t('home.countdown.ended')
+    : t('home.countdown.dh')
 }
 
 const goTo = (index: number) => {
@@ -277,6 +295,16 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   gap: 12px;
+}
+
+.activity-sticky-header {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: var(--ant-color-bg-layout);
 }
 
 .banner-viewport {

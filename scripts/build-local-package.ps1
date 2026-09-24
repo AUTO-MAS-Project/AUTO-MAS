@@ -107,6 +107,9 @@ try {
         $localRuntime = (Resolve-Path -LiteralPath $LocalRuntimePath -ErrorAction Stop).Path
         $expectedRuntimeHash = (Get-FileHash -LiteralPath $localRuntime -Algorithm SHA256).Hash
         Copy-Item -LiteralPath $localRuntime -Destination $runtimePath
+        # 桌面端按 repo/res/runtime-version.txt 的钉扎核对 exe 自报版本，本地构建的 Runtime 对不上就会
+        # 在首次 managed 启动时被发布版覆盖；安装包不带钉扎文件，这里改不了它，只能提醒。
+        Write-Warning "本地 Runtime 与 res/runtime-version.txt 钉扎的 $runtimeVersion 不同：运行打出来的包之前必须设置 AUTO_MAS_RUNTIME_EXE=$localRuntime，否则桌面端会在首次启动时把它换成 $runtimeVersion（见 scripts/README.md）。"
     } else {
         Write-Host "正在下载 Runtime……"
         Invoke-WebRequest -Uri "$releaseBaseUrl/$runtimeAssetName" -OutFile $runtimePath
@@ -258,6 +261,9 @@ try {
     Write-Host "解压运行：$(Join-Path $outputUnpacked 'AUTO-MAS.exe')"
     Write-Host "安装包 SHA-256：$installerHash"
     Write-Host "Runtime SHA-256：$expectedRuntimeHash"
+    if ($LocalRuntimePath) {
+        Write-Warning "运行前请先设置 AUTO_MAS_RUNTIME_EXE=$localRuntime，否则本地 Runtime 会在首次启动时被换成钉扎的 $runtimeVersion。"
+    }
 } finally {
     foreach ($name in $savedEnvironment.Keys) {
         [Environment]::SetEnvironmentVariable($name, $savedEnvironment[$name], "Process")

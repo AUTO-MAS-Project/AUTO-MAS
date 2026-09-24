@@ -8,7 +8,6 @@ import type {
   OkNteConfig,
   SrcConfig,
   MaaEndConfig,
-  M9AConfig,
   BetterGIConfig,
   ZzzOdConfig,
   BAAHConfig,
@@ -131,6 +130,9 @@ export interface SRCScriptConfig {
     ProxyTimesLimit: number
     RunTimesLimit: number
     RunTimeLimit: number
+    IfCheckGameUpdate: boolean
+    IfAutoInstallGameApk: boolean
+    GameUpdateTimeLimit: number
   }
   Emulator: {
     Id: string
@@ -181,42 +183,16 @@ export interface MaaEndScriptConfig {
     EmulatorIndex: string
     SetResolution: boolean
     CloseOnFinish: boolean
-    RestoreResolution:
-      | 'Off'
-      | '1920x1080'
-      | '2560x1440'
-      | '3840x2160'
-      | 'Fullscreen'
-      | 'Custom'
+    RestoreDisplayType: 'Window' | 'Fullscreen'
+    RestoreResolution: 'Off' | 'Original' | '1920x1080' | '2560x1440' | '3840x2160' | 'Custom'
     RestoreResolutionWidth: number
     RestoreResolutionHeight: number
   }
 }
 
-// M9A脚本配置
-export interface M9AScriptConfig {
-  Info: {
-    Name: string
-    Path: string
-  }
-  Emulator: {
-    Id: string
-    Index: string
-  }
-  Run: {
-    ProxyTimesLimit: number
-    RunTimesLimit: number
-    RunTimeLimit: number
-    IfAutoUpdateAfterQueue: boolean
-    IfPsychubeDailyOnce: boolean
-    IfSleepDreamMonthlyOnce: boolean
-  }
-  SubConfigsInfo: {
-    UserData: {
-      instances: unknown[]
-    }
-  }
-}
+// M9A 是 MaaFW 引擎的特调类型：配置模型与 MaaFW 同形（后端 M9AConfig 是 MaaFWConfig 的同形子类），
+// 页面与类型都直接复用 MaaFW 的；这里只留一个别名，方便按名字找到它。
+export type M9AScriptConfig = MaaFWScriptConfig
 
 // HSR 脚本配置（后端已通过 HSRConfig OpenAPI 暴露类型）
 export type HSRScriptConfig = HSRConfig
@@ -263,7 +239,6 @@ export interface MaaFWScriptConfig {
     Arguments: string
     WaitTime: number
     /** 由 MAS 启动游戏时，窗口出现后至少再等多少秒才下发第一个任务；0 关闭。 */
-    StartupSettleTime: number
     /** DirectExe 下启动前按 exe 反查 Unity 注册表，临时改成所选窗口尺寸，关闭后恢复。 */
     UnityResolution: MaaFWUnityResolution
   }
@@ -277,37 +252,27 @@ export interface MaaFWScriptConfig {
     /** 脚本自己的 Mirror 酱 CDK，选 Mirror 酱作为更新源时必填；不从全局设置兜底。 */
     MirrorChyanCDK: string
     /**
+     * 只对这个项目生效的网络代理，`host:port` 或带协议；更新包下载与运行环境安装走它。
+     * 留空跟随全局（设置 → 其他 → 网络代理），兜底在后端合并，前端不做预填。
+     */
+    ProxyAddress: string
+    /**
      * @deprecated 后端已改用 AutoUpdateMode；旧配置可能只有这个字段，仅供读取时映射，
      * 前端不再写入。见 useMaaFWProjectUpdate.resolveAutoUpdateMode。
      */
     IfAutoUpdate?: boolean
   }
-  Managed: {
-    Enabled: boolean
-    ProjectId: string
-    StoreId: string
-    Version: string
-    RuntimeConstraint: string
-    ProjectManifest: string
-    CheckoutPath: string
-    PendingUpgrade: string
-    LastOperation: string
-  }
-  ManagedRuntime: {
-    RuntimeId: string
-    PoolId: string
-    PythonExecutable: string
-    VenvPath: string
-    RuntimeBinding: string
-  }
-  ManagedRemote: {
-    Source: 'MirrorChyan' | 'GitHub'
-    Channel: 'stable' | 'beta'
-    MirrorChyanRID: string
-    MirrorChyanCDK: string
-    GitHubRepo: string
-    GitHubTag: string
-    GitHubAssetPattern: string
+  /**
+   * 内嵌副本：运行、预览、更新都在 AUTO-MAS 自己投影出的瘦副本上，没有开关。
+   * 副本路径由脚本 ID 推出，不在这里、也不可手改；`Info.Path` 只是用户选的来源目录。
+   */
+  Embedded: {
+    /** 导入时来源的 interface 版本，仅展示。 */
+    SourceVersion: string
+    /** 导入时间，仅展示。 */
+    ImportedAt: string
+    /** 投影报告 JSON 文本；结构见 MaaFWEmbeddedProjection。 */
+    Report: string
   }
   Run: {
     ProxyTimesLimit: number
@@ -453,6 +418,8 @@ export interface MaaFWTaskInfo {
   resource: string[]
   option: string[]
   defaultCheck: boolean
+  /** 加入任务队列时展开成几份（interface 的 repeatable / repeat_count），缺省 1 */
+  repeatCount?: number
 }
 
 export interface MaaFWOptionCaseInfo {
@@ -473,6 +440,8 @@ export interface MaaFWOptionInputInfo {
   verify?: string | null
   verifyError?: string | null
   patternMsg?: string | null
+  /** PI v2.10.0：密码 / 密钥字段，掩码输入，保存后只拿得到密文 */
+  password?: boolean
 }
 
 export interface MaaFWOptionInfo {
@@ -492,6 +461,9 @@ export interface MaaFWOptionInfo {
     default?: string | null
   }>
   defaultCase?: string | string[] | null
+  /** PI v2.10.1：checkbox 最少 / 最多选择数，后端已放宽成自洽值；null 为不限 */
+  minCount?: number | null
+  maxCount?: number | null
 }
 
 export interface MaaFWAdbEmulatorExtraCapabilityInfo {
@@ -566,7 +538,6 @@ export interface Script {
     | OkNteConfig
     | SrcConfig
     | MaaEndConfig
-    | M9AConfig
     | MaaFWScriptConfig
     | HSRConfig
     | BetterGIConfig
@@ -580,9 +551,6 @@ export interface User {
   name: string
   Data: {
     LastProxyDate: string
-    LastPsychubeDate?: string
-    LastLimboMonth?: string
-    LastLucidscapeMonth?: string
     GreenTicketStoreMonth?: string
     ProxyTimes: number
   }
@@ -607,7 +575,6 @@ export interface User {
     Stage_1: string
     Stage_2: string
     Stage_3: string
-    Stage_Remain: string
     Status: boolean
     Tag?: string | null // 用户标签列表（JSON字符串，TagItem的dict列表）
   }
@@ -629,13 +596,11 @@ export interface User {
     BilibiliAccountName?: string | null
   }
   Task: {
-    IfRoguelike: boolean
     IfInfrast: boolean
     IfFight: boolean
     IfMall: boolean
     IfAward: boolean
     IfSwitchTheme: boolean
-    IfReclamation: boolean
     IfRecruit: boolean
     IfStartUp: boolean
     Queue?: unknown
@@ -643,8 +608,8 @@ export interface User {
     ActivityStageIndex?: number
     ActivityMedicineNumb?: number
     IfDepotMaintain?: boolean
-    IfGreenTicketStore?: boolean
     DepotMaintainPlans?: string
+    IfGreenTicketStore?: boolean
     SanityTaskType?: MaaEndTaskConfig['SanityTaskType']
     OperatorProgression?: MaaEndTaskConfig['OperatorProgression']
     WeaponProgression?: MaaEndTaskConfig['WeaponProgression']
@@ -690,7 +655,6 @@ export interface ScriptDetail {
     | OkNteConfig
     | SrcConfig
     | MaaEndConfig
-    | M9AConfig
     | MaaFWScriptConfig
     | HSRConfig
     | BetterGIConfig
@@ -698,19 +662,4 @@ export interface ScriptDetail {
     | BAAHConfig
   users?: User[]
   createTime?: string
-}
-
-// M9A 任务选项类型
-export interface M9ATaskOption {
-  name: string
-  index: number
-  sub_options?: M9ATaskOption[]
-  input_values?: Record<string, string | number>
-  selected_cases?: string[]
-}
-
-// M9A 任务队列项类型
-export interface M9ATaskQueueItem {
-  name: string
-  options: M9ATaskOption[]
 }

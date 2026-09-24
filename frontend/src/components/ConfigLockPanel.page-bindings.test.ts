@@ -6,7 +6,6 @@ const editPages = [
   'Script/BetterGIScriptEdit.vue',
   'Script/GeneralScriptEdit.vue',
   'Script/HSRScriptEdit.vue',
-  'Script/M9AScriptEdit.vue',
   'Script/MAAScriptEdit.vue',
   'Script/MaaEndScriptEdit.vue',
   'Script/MaaFWScriptEdit.vue',
@@ -18,7 +17,6 @@ const editPages = [
   'User/BetterGIUserEdit.vue',
   'User/GeneralUserEdit.vue',
   'User/HSRUserEdit.vue',
-  'User/M9AUserEdit.vue',
   'User/MAAUserEdit.vue',
   'User/MaaEndUserEdit.vue',
   'User/MaaFWUserEdit.vue',
@@ -30,7 +28,8 @@ const editPages = [
 
 describe('ConfigLockPanel edit page bindings', () => {
   it('binds every edit page to the route script id', () => {
-    expect(editPages).toHaveLength(24)
+    // M9A 没有专用页面（MaaFW 的特调类型，走 MaaFW 的两个页面）
+    expect(editPages).toHaveLength(22)
     for (const filename of editPages) {
       const pageUrl = `../views/EditView/${filename}`
       const pageSource = readFileSync(new URL(pageUrl, import.meta.url), 'utf8')
@@ -45,14 +44,8 @@ describe('ConfigLockPanel edit page bindings', () => {
         ':disabled="pageLoading || !userId || configLocked"',
         'if (configLocked.value) return',
       ],
-      'User/GeneralUserEdit.vue': [
-        ':disabled="configLocked"',
-        'if (configLocked.value) return',
-      ],
-      'User/MAAUserEdit.vue': [
-        ':config-locked="configLocked"',
-        'if (configLocked.value) return',
-      ],
+      'User/GeneralUserEdit.vue': [':disabled="configLocked"', 'if (configLocked.value) return'],
+      'User/MAAUserEdit.vue': [':config-locked="configLocked"', 'if (configLocked.value) return'],
       'User/MaaEndUserEdit.vue': ['if (configLocked.value) return'],
       'User/OkNteUserEdit.vue': [
         ':config-disabled="pageLoading || !activeUserId || configLocked"',
@@ -62,10 +55,7 @@ describe('ConfigLockPanel edit page bindings', () => {
         ':config-disabled="pageLoading || !userId || configLocked"',
         'if (configLocked.value) return',
       ],
-      'User/SRCUserEdit.vue': [
-        ':config-locked="configLocked"',
-        'if (configLocked.value) return',
-      ],
+      'User/SRCUserEdit.vue': [':config-locked="configLocked"', 'if (configLocked.value) return'],
       'User/ZzzOdUserEdit.vue': [
         ':disabled="pageLoading || !userId || configLocked"',
         'if (configLocked.value) return',

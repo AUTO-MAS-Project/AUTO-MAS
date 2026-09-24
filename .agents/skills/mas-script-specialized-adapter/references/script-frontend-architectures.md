@@ -8,10 +8,10 @@
 
 | 上游信号 | 架构线 | 本仓参照 |
 | --- | --- | --- |
-| 任何带 `interface.json` 的 MaaFramework 项目 | **先用通用 `MaaFW` 类型**，它能直接运行；需要更精细的控制时（原生编辑器会话、登录/切号、按游戏语义组织的专属界面、动态读取上游资源文件等）再按下面两线立专项，并写明比通用 MaaFW 多控制了什么 | `MaaFW`（见 `app/task/MaaFW/AGENTS.md`）；已立专项的例子：`MaaEnd`、`M9A` |
+| 任何带 `interface.json` 的 MaaFramework 项目 | **先用通用 `MaaFW` 类型**，它能直接运行；需要更精细的控制时（原生编辑器会话、登录/切号、按游戏语义组织的专属界面、动态读取上游资源文件等）再按下面两线立专项，并写明比通用 MaaFW 多控制了什么 | `MaaFW`（见 `app/task/MaaFW/AGENTS.md`）；已立专项的例子：`MaaEnd`（`M9A` 不是专项，是 MaaFW 的特调类型，见 `app/task/M9A/AGENTS.md`） |
 | `from ok import OK`、`ok-script`、README 含 `-t` / `-e` | **ok-script 线** | `Okww`（鸣潮）、`OkNte`（异环） |
 | README/依赖写明 MXU、PI V2、`interface.json`，或 Tauri + React/TS 壳 | **MXU 线** | `MaaEnd` |
-| Avalonia / MFAA，`interface.json` + C# 客户端 | **MFAA 线** | `M9A` |
+| Avalonia / MFAA，`interface.json` + C# 客户端 | **MFAA 线** | 暂无专项（原先的 `M9A` 已是 MaaFW 特调；带 `interface.json` 的先用 `MaaFW`） |
 | Alas / `webapp` / `module` / `tasks` 布局，或 SRC.exe 生态 | **SRC 线** | `SRC` |
 | 对外说明为 MAA 助手、关卡/理智/方舟生态 | **MAA 线** | `MAA` |
 | 同一游戏有多个成熟且功能重叠的上游，用户按任务挑用不同脚本 | **多引擎编排线** | `HSR` |
@@ -43,11 +43,11 @@
 | 线 | 自动跑 | 用户改配置 |
 | --- | --- | --- |
 | ok-script | 以子项目实际 CLI 为准；Okww / OkNte 当前均为 `-t N -e` | **按子项目分两路**：Okww 仅 ScriptConfig 遮罩调本体 GUI；OkNte 动态表单 REST + 遮罩并存 |
-| MFAA（M9A） | **不宜依赖单条 CLI 跑完队列**；写任务/运行 JSON 再启 exe | 不用 ScriptConfig 调 Avalonia 壳；Vue 改 config、后端写盘 |
+| MFAA | **不宜依赖单条 CLI 跑完队列**；写任务/运行 JSON 再启 exe | 不用 ScriptConfig 调 Avalonia 壳；Vue 改 config、后端写盘 |
 | MXU（MaaEnd） | `mxu-*.json` 可设 autoRun 类字段；必要时对照壳 CLI | 常 ScriptConfig 拉起本体会话；日常字段走 Section |
 | MAA | 依 MAA 文档，常见 ScriptConfig 路径 | ScriptConfig 调本体 + 关卡/plan Section |
 | SRC | 依 SRC.exe / Alas 文档 | 多为大表单 + Section 写映射配置 |
-| HSR（多引擎） | 按模块先定引擎再分别调用；切号统一走 SRA | **无** ScriptConfig；托管字段后端下发前端动态渲染，直控默认直接用脚本当前配置、加密快照仅为可选覆盖 |
+| HSR（多引擎） | 按模块先定引擎再分别调用；切号统一走 SRA | **无** ScriptConfig；托管字段后端下发前端动态渲染；三态只换计划 owner（脚本态 = `HSRConfig` 同名组共享计划），直控原样跑脚本当前配置 |
 | General | 先最小 `open_process` + 日志，再按上游补 argv | 通用路径与简单字段 |
 
 **实施顺序建议**：先用 `General` 验证对接可行 → 再新增专项 `ScriptType` 承载默认值与 UI → 最后删掉 General 页的临时预设入口。
@@ -61,13 +61,15 @@
 
 ## 各线前端承接差异
 
-| 维度 | MAA | SRC | MaaEnd | M9A | Okww | OkNte | HSR |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| 外部程序数 | 1 | 1 | 1 | 1 | 1 | 1 | **2** |
-| ScriptConfig 遮罩 | 有 | 视需求 | 有 | 通常无 | 有（脚本级+用户级+直控） | **有，且另有 REST 动态表单** | **无** |
-| 计划表 | 有 | 无 | 有 | 无 | 无 | 无 | 无 |
-| 任务/队列 UI | 关卡理智 Section | Stage Section | TaskConfig + Skyland | **队列 JSON + draggable** | TaskIndex + 高频字段 | 动态表单（后端下发字段） | 后端下发托管字段动态渲染 |
-| 后端侧重 | 进程与实例 | 任务栈、模拟器、Stage | runtime_bridge、MXU 路径、切号 | 管线、实例目录、队列消费 | 三态来源、working 备份恢复 | 半自动 schema、双通道配置 | 模块→引擎分配、双份配置备份、路径锁 |
+| 维度 | MAA | SRC | MaaEnd | Okww | OkNte | HSR |
+| --- | --- | --- | --- | --- | --- | --- |
+| 外部程序数 | 1 | 1 | 1 | 1 | 1 | **2** |
+| ScriptConfig 遮罩 | 有 | 视需求 | 有 | 有（脚本级+用户级+直控） | **有，且另有 REST 动态表单** | **无** |
+| 计划表 | 有 | 无 | 有 | 无 | 无 | 无 |
+| 任务/队列 UI | 关卡理智 Section | Stage Section | TaskConfig + Skyland | 高频字段（固定 -t 1 日常） | 动态表单（后端下发字段） | 后端下发托管字段动态渲染（脚本 / 用户来源各写各的 owner） |
+| 后端侧重 | 进程与实例 | 任务栈、模拟器、Stage | runtime_bridge、MXU 路径、切号 | 三态来源、working 备份恢复 | 半自动 schema、双通道配置 | 模块→引擎分配、双份配置备份、路径锁 |
+
+M9A 不在此表：它是 MaaFW 的特调类型，前端用 MaaFW 的组件（见 `app/task/M9A/AGENTS.md`）。
 
 ## 前端表面通用约定
 
