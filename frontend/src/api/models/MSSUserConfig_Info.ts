@@ -24,26 +24,6 @@ export type MSSUserConfig_Info = {
      */
     IfQuickConfig?: (boolean | null);
     /**
-     * 悬赏试炼关卡来源（Fixed 或计划表 UID）
-     */
-    PlanMode?: (string | null);
-    /**
-     * 活动期间是否先打活动
-     */
-    IfActivityFirst?: (boolean | null);
-    /**
-     * 周常模式
-     */
-    ClimbMode?: ('Close' | 'Auto' | null);
-    /**
-     * 周常允许开始的星期
-     */
-    ClimbStartWeekday?: ('Monday' | 'Tuesday' | 'Wednesday' | 'Thursday' | 'Friday' | 'Saturday' | 'Sunday' | null);
-    /**
-     * 周常爬塔次数
-     */
-    ClimbTimes?: (number | null);
-    /**
      * 是否在任务前执行脚本
      */
     IfScriptBeforeTask?: (boolean | null);
@@ -67,5 +47,25 @@ export type MSSUserConfig_Info = {
      * 用户标签信息
      */
     Tag?: (string | null);
+    /**
+     * 账号信息，仅用于 AUTO-MAS 记录
+     */
+    Account?: (string | null);
+    /**
+     * 密码信息，仅用于 AUTO-MAS 记录
+     */
+    Password?: (string | null);
+    /**
+     * 用户覆盖的 MaaFW controller 名称
+     */
+    Controller?: (string | null);
+    /**
+     * 用户覆盖的 MaaFW resource 名称
+     */
+    Resource?: (string | null);
+    /**
+     * 悬赏试炼关卡来源（Fixed 或 MSS 计划表 UID）
+     */
+    PlanMode?: (string | null);
 };
 

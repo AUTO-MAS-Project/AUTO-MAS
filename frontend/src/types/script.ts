@@ -11,7 +11,6 @@ import type {
   BetterGIConfig,
   ZzzOdConfig,
   BAAHConfig,
-  MSSConfig,
 } from '@/api'
 import type {
   AutoEssenceLocation,
@@ -196,57 +195,9 @@ export interface MaaEndScriptConfig {
 // 页面与类型都直接复用 MaaFW 的；这里只留一个别名，方便按名字找到它。
 export type M9AScriptConfig = MaaFWScriptConfig
 
-// MSS（MaaStellaSora / 星塔旅人）脚本配置：Info.Path 是 MSS 根目录
-// （含 MFAAvalonia.exe 与 interface.json），模拟器与运行上限由 MAS 调度
-export type MSSScriptConfig = MSSConfig
-
-/** MSS 周常允许开始的星期，与后端 ClimbStartWeekday 的枚举一致 */
-export type MSSWeekday =
-  | 'Monday'
-  | 'Tuesday'
-  | 'Wednesday'
-  | 'Thursday'
-  | 'Friday'
-  | 'Saturday'
-  | 'Sunday'
-
-export interface MSSUserConfig {
-  Info: {
-    Name: string
-    Status: boolean
-    RemainedDay: number
-    Mode: '脚本' | '用户' | '直控'
-    IfQuickConfig: boolean
-    /** 悬赏试炼关卡来源：Fixed 用外壳里配的，否则是计划表 UUID */
-    PlanMode: string
-    /** 活动期间是否先打活动快速战斗 */
-    IfActivityFirst: boolean
-    /** 周常模式：Auto 时每周自动刷一次新版爬塔 */
-    ClimbMode: 'Close' | 'Auto'
-    ClimbStartWeekday: MSSWeekday
-    ClimbTimes: number
-    IfScriptBeforeTask: boolean
-    ScriptBeforeTask: string
-    IfScriptAfterTask: boolean
-    ScriptAfterTask: string
-    Notes: string
-    Tag?: string | null
-  }
-  Data: {
-    LastProxyDate: string
-    ProxyTimes: number
-    /** 周常跑完的 ISO 周，形如 2026-W34 */
-    ClimbCompletedWeek: string
-  }
-  Notify: {
-    Enabled: boolean
-    IfSendStatistic: boolean
-    IfSendMail: boolean
-    ToAddress: string
-    IfServerChan: boolean
-    ServerChanKey: string
-  }
-}
+// MSS（MaaStellaSora / 星塔旅人）同样是 MaaFW 的特调类型，脚本配置与 MaaFW 同形；
+// 用户配置只多一项 Info.PlanMode（见 MaaFWUserConfig）。
+export type MSSScriptConfig = MaaFWScriptConfig
 
 // HSR 脚本配置（后端已通过 HSRConfig OpenAPI 暴露类型）
 export type HSRScriptConfig = HSRConfig
@@ -385,6 +336,8 @@ export interface MaaFWUserConfig {
     Mode?: '脚本' | '用户' | '直控'
     /** 快速配置：独立于配置来源的用户级开关 */
     IfQuickConfig?: boolean
+    /** 仅 MSS 用户携带：悬赏试炼关卡来源（Fixed 或 MSS 计划表 UUID） */
+    PlanMode?: string
   }
   Task: {
     SelectedPreset: string
@@ -596,7 +549,6 @@ export interface Script {
     | HSRConfig
     | BetterGIConfig
     | BAAHConfig
-    | MSSConfig
   users: User[]
 }
 
@@ -607,8 +559,6 @@ export interface User {
   Data: {
     LastProxyDate: string
     GreenTicketStoreMonth?: string
-    /** 仅 MSS 用户携带：周常跑完的 ISO 周 */
-    ClimbCompletedWeek?: string
     ProxyTimes: number
   }
   Info: {
@@ -624,14 +574,6 @@ export interface User {
     Password: string
     Resource?: string
     RemainedDay: number
-    /** 仅 MSS 用户携带：悬赏试炼关卡来源（Fixed 或计划表 UUID） */
-    PlanMode?: string
-    /** 仅 MSS 用户携带：活动期间是否先打活动 */
-    IfActivityFirst?: boolean
-    /** 仅 MSS 用户携带：周常模式与设置 */
-    ClimbMode?: string
-    ClimbStartWeekday?: string
-    ClimbTimes?: number
     IfUseMasConfig?: boolean
     SeriesNumb: string
     Server: string
@@ -726,7 +668,6 @@ export interface ScriptDetail {
     | BetterGIConfig
     | ZzzOdConfig
     | BAAHConfig
-    | MSSConfig
   users?: User[]
   createTime?: string
 }

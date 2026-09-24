@@ -823,10 +823,12 @@ export function useScriptApi() {
                       },
                     }
                   } else if (
-                    (userIndex.type === 'MaaFWUserConfig' || userIndex.type === 'M9AUserConfig') &&
+                    (userIndex.type === 'MaaFWUserConfig' ||
+                      userIndex.type === 'M9AUserConfig' ||
+                      userIndex.type === 'MSSUserConfig') &&
                     userData
                   ) {
-                    // M9AUserConfig 是 MaaFWUserConfig 的同形子类，归一化走同一条路
+                    // M9A / MSS 的用户类是 MaaFWUserConfig 的子类，归一化走同一条路
                     const maafwUserData = userData as unknown as LooseUserConfig
                     return {
                       id: userIndex.uid,
@@ -1234,87 +1236,6 @@ export function useScriptApi() {
                           baahUserData.Data?.ProxyTimes !== undefined
                             ? baahUserData.Data.ProxyTimes
                             : 0,
-                      },
-                    }
-                  } else if (userIndex.type === 'MSSUserConfig' && userData) {
-                    const mssUserData = userData as unknown as LooseUserConfig
-                    return {
-                      id: userIndex.uid,
-                      name: mssUserData.Info?.Name || `用户${userIndex.uid}`,
-                      Info: {
-                        Name:
-                          mssUserData.Info?.Name !== undefined
-                            ? mssUserData.Info.Name
-                            : `用户${userIndex.uid}`,
-                        Status:
-                          mssUserData.Info?.Status !== undefined ? mssUserData.Info.Status : true,
-                        RemainedDay:
-                          mssUserData.Info?.RemainedDay !== undefined
-                            ? mssUserData.Info.RemainedDay
-                            : -1,
-                        Mode: mssUserData.Info?.Mode !== undefined ? mssUserData.Info.Mode : '用户',
-                        PlanMode:
-                          mssUserData.Info?.PlanMode !== undefined
-                            ? mssUserData.Info.PlanMode
-                            : 'Fixed',
-                        IfActivityFirst:
-                          mssUserData.Info?.IfActivityFirst !== undefined
-                            ? mssUserData.Info.IfActivityFirst
-                            : true,
-                        ClimbMode:
-                          mssUserData.Info?.ClimbMode !== undefined
-                            ? mssUserData.Info.ClimbMode
-                            : 'Close',
-                        ClimbStartWeekday:
-                          mssUserData.Info?.ClimbStartWeekday !== undefined
-                            ? mssUserData.Info.ClimbStartWeekday
-                            : 'Monday',
-                        ClimbTimes:
-                          mssUserData.Info?.ClimbTimes !== undefined
-                            ? mssUserData.Info.ClimbTimes
-                            : 5,
-                        Notes: mssUserData.Info?.Notes !== undefined ? mssUserData.Info.Notes : '',
-                        Tag: mssUserData.Info?.Tag !== undefined ? mssUserData.Info.Tag : null,
-                      },
-                      Notify: {
-                        Enabled:
-                          mssUserData.Notify?.Enabled !== undefined
-                            ? mssUserData.Notify.Enabled
-                            : false,
-                        IfSendStatistic:
-                          mssUserData.Notify?.IfSendStatistic !== undefined
-                            ? mssUserData.Notify.IfSendStatistic
-                            : false,
-                        IfSendMail:
-                          mssUserData.Notify?.IfSendMail !== undefined
-                            ? mssUserData.Notify.IfSendMail
-                            : false,
-                        ToAddress:
-                          mssUserData.Notify?.ToAddress !== undefined
-                            ? mssUserData.Notify.ToAddress
-                            : '',
-                        IfServerChan:
-                          mssUserData.Notify?.IfServerChan !== undefined
-                            ? mssUserData.Notify.IfServerChan
-                            : false,
-                        ServerChanKey:
-                          mssUserData.Notify?.ServerChanKey !== undefined
-                            ? mssUserData.Notify.ServerChanKey
-                            : '',
-                      },
-                      Data: {
-                        LastProxyDate:
-                          mssUserData.Data?.LastProxyDate !== undefined
-                            ? mssUserData.Data.LastProxyDate
-                            : '',
-                        ProxyTimes:
-                          mssUserData.Data?.ProxyTimes !== undefined
-                            ? mssUserData.Data.ProxyTimes
-                            : 0,
-                        ClimbCompletedWeek:
-                          mssUserData.Data?.ClimbCompletedWeek !== undefined
-                            ? mssUserData.Data.ClimbCompletedWeek
-                            : '',
                       },
                     }
                   }

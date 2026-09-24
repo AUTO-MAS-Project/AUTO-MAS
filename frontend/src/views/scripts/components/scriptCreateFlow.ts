@@ -8,10 +8,10 @@ export type ConfigMode = 'template' | 'custom'
 export type MfwSourceMode = 'new' | 'reuse'
 export type CreateStepKey = 'type' | 'config'
 
-/** 由 MaaFW 引擎运行的类型（M9A 是它的特调类型，类型最终由项目决定） */
-export type MfwFamilyType = 'MaaFW' | 'M9A'
+/** 由 MaaFW 引擎运行的类型（M9A / MSS 是它的特调类型，类型最终由项目决定） */
+export type MfwFamilyType = 'MaaFW' | 'M9A' | 'MSS'
 export const isMfwFamily = (type: ScriptType): type is MfwFamilyType =>
-  type === 'MaaFW' || type === 'M9A'
+  type === 'MaaFW' || type === 'M9A' || type === 'MSS'
 type ScriptTypeGroup = 'all' | 'specialized' | 'general'
 
 interface ScriptTypeOption {

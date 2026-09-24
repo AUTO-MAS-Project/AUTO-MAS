@@ -1533,6 +1533,18 @@ export default {
       'アカウントを入力すると「アカウント切替」タスクが自動で追加されます（公式サーバーのみ）。パスワードはローカルのメモ用で、スクリプトには渡されません',
     m9aFlavorQueueHint:
       'ゲーム起動・ゲーム終了・アカウント切替は M9A 専用処理が自動で追加します。手動で追加する必要はありません',
+    mssFlavorScriptTitle: 'MSS スクリプトを編集',
+    mssFlavorSourceDirectory: 'MSS プログラムディレクトリ',
+    mssFlavorSourceHint: 'interface.json を含む MaaStellaSora ディレクトリを選択します',
+    mssFlavorSourcePlaceholder: 'interface.json を含む MaaStellaSora ディレクトリを選択',
+    mssFlavorControllerHint:
+      'エミュレーター版の『ステラソラ』はゲームを起動できない問題があるため、MSS はデスクトップ版のみに対応しています。デスクトップのコントローラーを選んでください。問題が修正されない限りエミュレーターには対応しません',
+    mssFlavorQueueHint:
+      'イベントのクイックバトルはイベント期間中のみ、懸賞試練より先に実行します。新しい塔登りは最後に回します。週に一度だけ実行するには、スクリプトの「実行設定」の「今週完了したらスキップ」に追加してください',
+    mssFlavorPlanHint:
+      'プランを選ぶと、実行のたびに当日のスロットに従って「懸賞試練クイックバトル」のステージ・難易度・回数を書き換えます。キューにない場合は自動で追加します。「固定」はタスクキューの設定どおりに実行します',
+    maafwFlavorPlanMode: 'プラン',
+    maafwFlavorPlanFixed: '固定（タスクキューの設定を使用）',
     pickHowGameControlled: 'ゲームの制御方式を選びます',
     pickUserWhoseServer: '更新確認に使うサーバーのユーザーを選びます',
     chooseWhetherMasSwitches:

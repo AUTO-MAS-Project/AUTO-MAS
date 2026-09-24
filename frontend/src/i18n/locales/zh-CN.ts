@@ -1572,6 +1572,18 @@ export default {
     m9aFlavorAccountTooltip:
       '账号填写后会自动加入「切换账号」任务（官服有效）；密码仅用于本地记录，不会传入脚本',
     m9aFlavorQueueHint: '启动游戏、关闭游戏与切换账号由 M9A 专项自动加入，无需手动添加',
+    mssFlavorScriptTitle: '编辑 MSS 脚本',
+    mssFlavorSourceDirectory: 'MSS 程序目录',
+    mssFlavorSourceHint: '选择包含 interface.json 的 MaaStellaSora（星塔助手）目录',
+    mssFlavorSourcePlaceholder: '选择包含 interface.json 的 MaaStellaSora 目录',
+    mssFlavorControllerHint:
+      '模拟器端的《星塔旅人》存在无法启动游戏的问题，MSS 只适配桌面端，请选择「桌面端」控制方式；除非该问题被修复，否则不会适配模拟器',
+    mssFlavorQueueHint:
+      '活动快速战斗只在活动期间执行，并排在悬赏试炼之前；新版爬塔会排到最后，想每周只跑一次，在脚本「运行配置」的「每周完成后跳过」里选上它',
+    mssFlavorPlanHint:
+      '选择计划表后，每次运行按当天的设置改写「悬赏试炼快速战斗」的关卡、难度与次数，队列里没有它时会自动加入；「固定」则按任务队列里配的选项执行',
+    maafwFlavorPlanMode: '计划表',
+    maafwFlavorPlanFixed: '固定（按任务队列里的选项）',
     pickHowGameControlled: '选择游戏控制方式',
     pickUserWhoseServer: '选择用户（按该用户的服务器检查更新）',
     chooseWhetherMasSwitches:
@@ -1822,64 +1834,6 @@ export default {
     baahLastProxyDate: '上次代理日期',
     baahProxyTimes: '代理次数',
     baahDataReadOnlyHint: '由本软件自动统计，仅供查看',
-    // MSS 专项
-    mssScriptConfiguration: 'MSS 脚本配置',
-    mssScriptNameHint: '用于区分不同的 MSS 脚本实例',
-    mssRootPath: 'MSS 根目录',
-    mssRootPathHint:
-      '选择 MSS 发行包的根目录（应同时包含 MFAAvalonia.exe 与 interface.json）；实例配置与日志目录都从它派生，无需另行选择',
-    mssGameSection: '游戏（桌面端）',
-    mssLaunchModeHint:
-      'DirectExe 由本软件启动游戏并在本轮结束后关闭；AttachOnly 只接管已运行的游戏窗口，不启动也不关闭',
-    mssLaunchModeDirect: '由本软件启动',
-    mssLaunchModeAttach: '只接管已运行的游戏',
-    mssLaunchPathHint:
-      'DirectExe 模式下要启动的游戏 exe，填游戏本体的可执行文件，不要填 MFAAvalonia.exe 外壳',
-    mssGameArguments: '游戏启动参数',
-    mssGameWaitTime: '等待窗口就绪（秒）',
-    mssUnityResolution: '窗口分辨率',
-    mssUnityResolutionHint:
-      '启动游戏前按 exe 反查 Unity 注册表，临时改成所选尺寸的窗口模式，游戏关闭后恢复；只对 Unity 引擎有效。MSS 官方只支持 16:9 的客户端',
-    mssEmulatorUnsupported:
-      '模拟器端的《星塔旅人》存在无法启动游戏的 bug，本脚本因此不适配模拟器，请使用桌面端；除非该问题被修复，否则不会进行适配',
-    mssRunTimesLimitHint: '超过该次数仍失败则终止本次运行',
-    mssRunTimeLimitHint: '单次运行中日志停止更新的最长等待时间（分钟）；超过则按运行失败处理',
-    mssUseAdmin: '以管理员权限启动',
-    mssUseAdminHint:
-      'MSS 的桌面端控制器需要管理员权限才能操作游戏窗口；开启后由本软件提权启动外壳（本软件已是管理员时不会重复触发 UAC）',
-    mssNotMssScript: '脚本类型不是 MSS',
-    mssLastProxyDate: '上次代理日期',
-    mssProxyTimes: '代理次数',
-    mssDataReadOnlyHint: '由本软件自动统计，仅供查看',
-    mssUserTag: '用户标签',
-    mssUserTagHint: '由本软件按运行情况自动生成，仅供查看',
-    mssOrchestration: '任务编排',
-    mssOrchestrationHint:
-      '本软件会在每次运行前按下面的设置改写星塔旅人外壳里的任务勾选与关卡，跑完自动恢复原样',
-    mssPlanMode: '悬赏试炼关卡',
-    mssPlanModeHint: '「默认」表示用外壳里配好的关卡；选择计划表则按当天槽位改关卡',
-    mssPlanFixed: '默认（用外壳里配的）',
-    mssActivityFirst: '活动优先',
-    mssActivityFirstHint:
-      '开启后，活动期间会先打活动快速战斗，再按上面的设置刷悬赏试炼；关闭则完全不动活动任务',
-    mssClimbMode: '周常爬塔',
-    mssClimbModeHint: '开启后每周自动把新版爬塔刷满一次，跑完那周不再重复',
-    mssClimbClose: '关闭',
-    mssClimbAuto: '自动',
-    mssClimbStartWeekday: '周常开始日',
-    mssClimbStartWeekdayHint: '没到这天不跑周常；例如选周三，则周一到周二不刷',
-    mssClimbTimes: '爬塔次数',
-    mssClimbTimesHint: '每周周常要刷的次数，按新版爬塔的「爬塔次数」项写入',
-    mssClimbCompletedWeek: '周常完成周',
-    weekday: {
-      Monday: '周一',
-      Tuesday: '周二',
-      Wednesday: '周三',
-      Thursday: '周四',
-      Friday: '周五',
-      Saturday: '周六',
-      Sunday: '周日',
-    },
     // ZZZ-OD 专项
     zzzodScriptConfiguration: 'ZZZ-OD 脚本配置',
     zzzodScriptNameHint: '用于区分不同的 ZZZ-OD 脚本实例',

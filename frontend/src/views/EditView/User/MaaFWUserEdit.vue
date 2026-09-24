@@ -66,6 +66,21 @@
             show-icon
             :message="t(flavor.queueHintKey)"
           />
+          <!-- 特调类型（MSS）的用户可以引用计划表：运行前由特调钩子按当天槽位改写任务选项 -->
+          <a-form-item
+            v-if="flavor.planConsumer"
+            class="flavor-plan-mode"
+            :label="t('edit.maafwFlavorPlanMode')"
+            :extra="flavor.planHintKey ? t(flavor.planHintKey) : undefined"
+          >
+            <a-select
+              v-model:value="formData.Info.PlanMode"
+              :options="planModeOptions"
+              :disabled="loading"
+              class="flavor-plan-select"
+              @change="handleFieldSave('Info.PlanMode', formData.Info.PlanMode)"
+            />
+          </a-form-item>
           <TaskQueueSection
             v-model:add-task-cascader-value="addTaskCascaderValue"
             v-model:show-preset-modal="showPresetModal"
@@ -317,6 +332,7 @@ const getDefaultMaaFWUserData = (): MaaFWUserConfig => ({
     Tag: '',
     Account: '',
     Password: '',
+    PlanMode: 'Fixed',
   },
   Task: {
     SelectedPreset: '',
@@ -352,6 +368,29 @@ const rules = computed<Record<string, Rule[]>>(() => ({
 }))
 
 const accountRecordTooltip = computed(() => t(flavor.value.accountTooltipKey))
+
+// 计划表下拉（只有 flavor 声明了计划表消费方的类型才显示）：固定 + 该消费方的计划表
+const planModeOptions = ref<Array<{ label: string; value: string }>>([
+  { label: t('edit.maafwFlavorPlanFixed'), value: 'Fixed' },
+])
+const loadPlanModeOptions = async () => {
+  const consumer = flavor.value.planConsumer
+  if (!consumer) return
+  try {
+    const response = await Service.getPlanComboxApiInfoComboxPlanPost({ consumer })
+    if (response?.code !== 200 || !response.data) return
+    planModeOptions.value = response.data
+      .filter(item => Boolean(item.value))
+      .map(item =>
+        item.value === 'Fixed'
+          ? { label: t('edit.maafwFlavorPlanFixed'), value: 'Fixed' }
+          : { label: item.label ?? '', value: String(item.value) }
+      )
+  } catch (error) {
+    // 取不到计划表时只留「固定」一项，其它设置照常能改
+    logger.error(`加载计划表选项失败: ${error instanceof Error ? error.message : String(error)}`)
+  }
+}
 
 const controllerOptions = computed(() =>
   (previewData.value?.controllers || []).filter(controller =>
@@ -838,8 +877,8 @@ const loadScriptInfo = async () => {
       handleCancel()
       return
     }
-    // M9A 是 MaaFW 的特调类型，配置同形，同一个页面
-    if (script.type !== 'MaaFW' && script.type !== 'M9A') {
+    // M9A / MSS 是 MaaFW 的特调类型，同一个页面
+    if (script.type !== 'MaaFW' && script.type !== 'M9A' && script.type !== 'MSS') {
       message.error(t('edit.scriptTypeNotMfw'))
       handleCancel()
       return
@@ -853,7 +892,7 @@ const loadScriptInfo = async () => {
     preferAdbController.value = Boolean(
       loadedScriptConfig.Emulator?.Id && loadedScriptConfig.Emulator.Id !== '-'
     )
-    await reloadInterface(false)
+    await Promise.all([reloadInterface(false), loadPlanModeOptions()])
 
     if (isEdit.value) {
       await loadUserData()
@@ -906,9 +945,11 @@ const loadUserData = async () => {
       const userIndex = userResponse.index.find(index => index.uid === userId)
       const userData = userResponse.data[userId] as Partial<MaaFWUserConfig> | undefined
 
-      // M9AUserConfig 是 MaaFWUserConfig 的同形子类，同一个页面
+      // M9A / MSS 的用户类是 MaaFWUserConfig 的子类（MSS 多一项 Info.PlanMode），同一个页面
       const isMaaFWUser =
-        userIndex?.type === 'MaaFWUserConfig' || userIndex?.type === 'M9AUserConfig'
+        userIndex?.type === 'MaaFWUserConfig' ||
+        userIndex?.type === 'M9AUserConfig' ||
+        userIndex?.type === 'MSSUserConfig'
       if (isMaaFWUser && userData) {
         applyUserData(userData)
         taskSnapshot.value = normalizeTaskSnapshot(formData.Task.TaskSnapshot, previewData.value)
@@ -1094,6 +1135,11 @@ onUnmounted(() => {
 <style scoped>
 .flavor-queue-hint {
   margin-bottom: 16px;
+}
+
+.flavor-plan-select {
+  width: 100%;
+  max-width: 360px;
 }
 
 .user-edit-container {
