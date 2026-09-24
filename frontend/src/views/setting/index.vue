@@ -110,9 +110,7 @@ const ELECTRON_SYNCED_CATEGORIES = new Set<keyof GlobalConfig>([
 // 后端会规范化这些字段的值（加密存储 / URL 校验），保存后要回读；其余字段本地应用即可
 const NORMALIZED_SETTING_KEYS = new Set([
   'Notify.KoishiServerAddress',
-  'Notify.OpenClawWeixinServerAddress',
   'Notify.OpenClawQQClientSecret',
-  'Notify.OpenClawWeixinBotToken',
   'Notify.AuthorizationCode',
   'Update.MirrorChyanCDK',
 ])
@@ -330,7 +328,7 @@ const testNotify = async () => {
     const res = await Service.testNotifyApiSettingTestNotifyPost()
     if (res?.code && res.code !== 200)
       message.warning(res?.message || t('setting.toast.testUnknown'))
-    else message.success(t('setting.toast.testSent'))
+    else message.success(res?.message || t('setting.toast.testSent'))
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`测试通知发送失败: ${errorMsg}`)

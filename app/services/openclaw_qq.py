@@ -311,7 +311,7 @@ class OpenClawQQManager:
                 else "connecting"
             )
             message = (
-                "QQ 官方机器人已连接，通知可以发送"
+                "QQ 官方机器人消息网关已连接；发送通知仍需与机器人建立好友关系"
                 if self._gateway_online
                 else "QQ 官方机器人已绑定，正在连接消息网关"
             )
@@ -889,9 +889,24 @@ class OpenClawQQManager:
                 response.raise_for_status()
                 payload = response.json()
         except httpx.HTTPStatusError as exc:
+            details: list[str] = []
+            try:
+                error_payload = exc.response.json()
+            except ValueError:
+                error_payload = None
+            if isinstance(error_payload, dict):
+                code = _business_code(error_payload)
+                if code is not None:
+                    details.append(f"QQ 错误码 {code}")
+                reason = _business_message(error_payload)
+                if reason != "未知错误":
+                    details.append(" ".join(reason.split())[:160])
+                if code == 40054004:
+                    details.append("请先在扫码所用 QQ 中添加该机器人为好友，再重试通知")
+            suffix = f"，{'，'.join(details)}" if details else ""
             raise RemoteHTTPError(
                 exc.response.status_code,
-                f"QQ 官方机器人 HTTP 请求失败（状态码 {exc.response.status_code}）",
+                f"QQ 官方机器人 HTTP 请求失败（状态码 {exc.response.status_code}{suffix}）",
             ) from exc
         except httpx.HTTPError as exc:
             raise RuntimeError("QQ 官方机器人网络请求失败") from exc

@@ -3,14 +3,13 @@ import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { CheckCircleOutlined, QrcodeOutlined, ReloadOutlined } from '@ant-design/icons-vue'
 import type { UnwrapNestedRefs } from 'vue'
-import type { useClawBinding, ClawChannel } from '../useClawBinding'
+import type { useClawBinding } from '../useClawBinding'
 
 // 提升后的绑定状态：useClawBinding 的返回值经 reactive() 包一层传入，
 // 嵌套 ref 在模板里自动解包。整个对象只由 TabNotify 构造一份。
 export type ClawBindingState = UnwrapNestedRefs<ReturnType<typeof useClawBinding>>
 
 const props = defineProps<{
-  channel: ClawChannel
   binding: ClawBindingState
   // 二维码弹窗容器；通知配置弹窗场景传其 wrap 节点，其余挂 body
   getContainer?: () => HTMLElement
@@ -34,17 +33,17 @@ const onEscCapture = (event: KeyboardEvent) => {
 const connected = computed(() => !!binding.value.status?.connected)
 const statusLabel = computed(() => {
   if (!connected.value) return binding.value.label('Unbound')
-  if (props.channel === 'qq' && binding.value.status?.state === 'reconnecting') {
+  if (binding.value.status?.state === 'reconnecting') {
     return binding.value.label('Reconnecting')
   }
-  if (props.channel === 'qq' && binding.value.status?.state === 'connecting') {
+  if (binding.value.status?.state === 'connecting') {
     return binding.value.label('Connecting')
   }
   return binding.value.label('Bound')
 })
 const statusColor = computed(() => {
   if (!connected.value) return 'default'
-  return props.channel === 'qq' && binding.value.status?.state !== 'connected'
+  return binding.value.status?.state !== 'connected'
     ? 'processing'
     : 'success'
 })
@@ -132,30 +131,6 @@ const statusColor = computed(() => {
         role="status"
         class="qr-hint"
       />
-      <a-form
-        v-if="props.channel === 'weixin' && binding.state === 'need_verify_code'"
-        layout="vertical"
-        class="qr-hint"
-        @finish="binding.submitCode"
-      >
-        <a-form-item :label="binding.label('VerifyCodePlaceholder')">
-          <a-input
-            v-model:value="binding.verifyCode"
-            maxlength="32"
-            autocomplete="one-time-code"
-            :disabled="binding.checking"
-          />
-        </a-form-item>
-        <a-button
-          type="primary"
-          html-type="submit"
-          block
-          :loading="binding.checking"
-          :disabled="!binding.verifyCode.trim()"
-        >
-          {{ binding.label('VerifyCodeSubmit') }}
-        </a-button>
-      </a-form>
       <a-button v-if="binding.state === 'connected'" type="primary" block @click="binding.close">{{
         t('common.confirm')
       }}</a-button>
