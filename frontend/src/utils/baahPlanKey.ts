@@ -137,11 +137,15 @@ export type BAAHDayFields = Partial<Record<BAAHKeyFieldName, number[]>>
 export type BAAHSingleRowKind = 'stage' | 'times'
 
 /**
- * 「关卡名称」与「战斗次数」做成下拉，-1 那一项分别读作「最高关」与「最大」，
- * 其余是 1 到上限的正整数。上限按游戏里实际能选到的范围给，够用即可。
+ * 每一位在下拉里能选到几：次数最少，章节最多，地区与学院居中，其余按关卡给。
+ * -1（倒数第一个可扫荡关卡 / 最大次数）不在这里，由各位自己的 min 决定要不要列。
  */
-export const BAAH_STAGE_OPTION_MAX = 15
-export const BAAH_TIMES_OPTION_MAX = 10
+export const partOptionMax = (hintKey: string): number => {
+  if (hintKey === 'plan.baah.partTimes') return 10
+  if (hintKey === 'plan.baah.partRegion' || hintKey === 'plan.baah.partAcademy') return 10
+  if (hintKey === 'plan.baah.partChapter') return 30
+  return 15
+}
 
 export interface BAAHSingleCell {
   kind: BAAHKeyFieldName | ''

@@ -7,6 +7,7 @@ import {
   buildSingleDayKey,
   fillDayFields,
   partIndexOf,
+  partOptionMax,
   readDayFields,
   readSingleCell,
   resolveDayKind,
@@ -209,7 +210,28 @@ describe('allowsHighestStage', () => {
     expect(allowsHighestStage('Event')).toBe(false)
   })
 
-  it('还没选类时不出现「最高关」', () => {
+  it('还没选类时不出现「倒数第一个」', () => {
     expect(allowsHighestStage('')).toBe(false)
+  })
+})
+
+describe('partOptionMax', () => {
+  it('次数位给到 10', () => {
+    expect(partOptionMax('plan.baah.partTimes')).toBe(10)
+  })
+
+  it('地区与学院给到 10', () => {
+    expect(partOptionMax('plan.baah.partRegion')).toBe(10)
+    expect(partOptionMax('plan.baah.partAcademy')).toBe(10)
+  })
+
+  it('章节位给到 30', () => {
+    expect(partOptionMax('plan.baah.partChapter')).toBe(30)
+  })
+
+  it('关卡位与关卡序号给到 15', () => {
+    expect(partOptionMax('plan.baah.partLevel')).toBe(15)
+    expect(partOptionMax('plan.baah.partLevelHighest')).toBe(15)
+    expect(partOptionMax('plan.baah.partStageIndex')).toBe(15)
   })
 })

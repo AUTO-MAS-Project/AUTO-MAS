@@ -46,16 +46,14 @@
           />
         </template>
 
-        <!-- 多类混打：每类关卡的每一位各占一行，一格只放一个数字 -->
+        <!-- 多类混打：每类关卡的每一位各占一行，一格一个下拉，与每天一类同一套控件 -->
         <template v-else>
-          <a-input-number
-            class="config-input-number"
+          <a-select
+            class="config-select"
             size="small"
             :bordered="false"
-            :controls="false"
-            :precision="0"
             :value="record[column.key]"
-            :min="record.min"
+            :options="partOptions(record.hintKey, record.min)"
             :disabled="isColumnDisabled(asTimeKey(column.key))"
             :aria-label="cellLabel(record.fieldName, column.key)"
             @update:value="
@@ -78,12 +76,12 @@ import {
   BAAH_KEY_FIELD_BY_NAME,
   BAAH_PLAN_KEY_FIELDS,
   BAAH_PLAN_TIME_KEYS,
-  BAAH_STAGE_OPTION_MAX,
-  BAAH_TIMES_OPTION_MAX,
   applyMixedPart,
   applySingleNumber,
   buildSingleDayKey,
   fillDayFields,
+  partIndexOf,
+  partOptionMax,
   readDayFields,
   readSingleCell,
   type BAAHDayFields,
@@ -99,14 +97,14 @@ interface Props {
   tableData: Record<string, any> | null
   currentMode: 'ALL' | 'Weekly'
   /**
-   * BAAH 两种排法都挤不进「简化视图」：多类混打一格 2~3 个数字，每天一类一格三行，
+   * BAAH 两种排法都挤不进「简化视图」：多类混打 17 行、每天一类 3 行，
    * 转置只会更难读，所以配置视图与简化视图共用这一张表。
    */
   viewMode: 'config' | 'simple'
   /**
-   * 关卡安排：每天一类（默认，三行各管一件事）或多类混打（六类都填）。
-   * 多类混打一行一类、一格 2~3 个数字；每天一类三行各管一件事，一格一个控件。
-   * 两种排法只在「一格怎么渲染、整份 key 怎么组」上分叉，表格方向都是列 = 全局 / 周一~周日。
+   * 关卡安排：每天一类（默认，三行各管一件事）或多类混打（每一位一行，共 17 行）。
+   * 两种排法都是一格一个下拉，只在「一行代表什么、整份 key 怎么组」上分叉，
+   * 表格方向都是列 = 全局 / 周一~周日。
    */
   baahLayout: 'mixed' | 'single'
   planId?: string
@@ -176,24 +174,38 @@ const singleCellValue = (timeKey: PlanTimeKey, rowKind: BAAHSingleRowKind) =>
 const rangeOptions = (max: number) =>
   Array.from({ length: max }, (_, index) => ({ value: index + 1, label: String(index + 1) }))
 
-/** 关卡名称：-1 读作「最高关」，困难图与普通图没有这一项 */
+/**
+ * 一位的下拉：允许负数时先给一项文本（关卡位是「倒数第一个」，次数位是「最大次数」），
+ * 再按这一位的上限列出具体数字。
+ */
+const partOptions = (hintKey: string, min: number) => [
+  ...(min === -1
+    ? [
+        {
+          value: -1,
+          label: t(
+            hintKey === 'plan.baah.partTimes' ? 'plan.baah.timesMax' : 'plan.baah.stageHighest'
+          ),
+        },
+      ]
+    : []),
+  ...rangeOptions(partOptionMax(hintKey)),
+]
+
+/** 关卡名称：困难图与普通图的关卡位不能填负数，选项里就没有「倒数第一个」 */
 const stageOptions = (timeKey: PlanTimeKey) => {
   const { kind } = singleCells.value[timeKey]
+  const spec = kind ? BAAH_KEY_FIELD_BY_NAME[kind] : undefined
+  const part = spec?.parts[partIndexOf(spec, 'stage')]
 
-  return [
-    ...(allowsHighestStage(kind) ? [{ value: -1, label: t('plan.baah.stageHighest') }] : []),
-    ...rangeOptions(BAAH_STAGE_OPTION_MAX),
-  ]
+  return partOptions(part?.hintKey ?? 'plan.baah.partLevel', allowsHighestStage(kind) ? -1 : 1)
 }
 
-/** 战斗次数：-1 读作「最大」 */
-const timesOptions = computed(() => [
-  { value: -1, label: t('plan.baah.timesMax') },
-  ...rangeOptions(BAAH_TIMES_OPTION_MAX),
-])
+/** 战斗次数：固定带「最大次数」 */
+const timesOptions = () => partOptions('plan.baah.partTimes', -1)
 
 const rowOptions = (timeKey: PlanTimeKey, rowKind: BAAHSingleRowKind) =>
-  rowKind === 'stage' ? stageOptions(timeKey) : timesOptions.value
+  rowKind === 'stage' ? stageOptions(timeKey) : timesOptions()
 
 /** 还没选今天打哪一类时，关卡与次数无从填起，下拉跟着禁用 */
 const singleCellNumberDisabled = (timeKey: PlanTimeKey) =>
@@ -239,6 +251,7 @@ const configRows = computed(() => {
       rowKind: 'part',
       field: field.field,
       index,
+      hintKey: part.hintKey,
       min: part.min,
       fieldName: `${t(field.labelKey)} · ${t(part.hintKey)}`,
       fieldHint: t(field.hintKey),
@@ -345,25 +358,5 @@ const handleSingleNumberChange = async (
   width: 100%;
   text-align: center;
   margin-inline-start: 0 !important;
-}
-
-.config-input-number {
-  width: 100%;
-  min-width: 100px;
-  border: none !important;
-  background: transparent !important;
-  box-shadow: none !important;
-}
-
-.config-input-number input {
-  text-align: center;
-}
-
-.config-input-number :deep(.ant-input-number-input) {
-  text-align: center;
-}
-
-.config-input-number :deep(.ant-input-number-handler-wrap) {
-  display: none;
 }
 </style>
