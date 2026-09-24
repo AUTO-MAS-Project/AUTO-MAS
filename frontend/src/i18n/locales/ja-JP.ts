@@ -386,7 +386,6 @@ export default {
     stringSplitting: '文字列分割',
     gotIt: '了解',
     expression: '式',
-    masManaged: 'MAS 管理',
     none: '選択しない',
     drop: '破棄',
     dropLine: '行を破棄',
@@ -417,8 +416,6 @@ export default {
     srcConfigurationFailedP0: 'SRC の設定に失敗しました: {p0}',
     okWwSetupFailed: 'ok-ww の設定に失敗しました: {p0}',
     p0NotValidJson: '{p0} は有効な JSON ではありません',
-    nativeP0ConfigurationWas: '{p0} の現在の設定をこのユーザーのスナップショットとして固定しました',
-    couldNotImportP0: '{p0} の設定をインポートできませんでした：{p1}',
     p0MustSitUnder: '{p0}はスクリプトのルートフォルダまたは AppData 配下である必要があります',
     p0HasNoMatch: '{p0}にマッチ用の正規表現が未入力のため、無効として保存しました',
     matchPatternP0Has: '{p0}のマッチ用正規表現に構文エラーがあり、実行時には適用されません',
@@ -661,8 +658,6 @@ export default {
     reset: 'リセット',
     hsrMarch7thSra: 'HSR（三月なのか / SRA）',
     iniFiles: 'INI ファイル',
-    masRunsThisUser:
-      'このユーザーのタスク設定・動的なネイティブオプション・実行エンジンに従って MAS が実行します。',
     pcClient: 'PC クライアント',
     tomlFiles: 'TOML ファイル',
     urlProtocolEG: 'URL プロトコル（Starward など）',
@@ -687,6 +682,8 @@ export default {
     sanityScriptChangedPick: '理性タスクのスクリプトが変わりました。ステージを選び直してください。',
     hsrEngineSwitchHint:
       '実行エンジンを切り替えると、そのエンジン固有のネイティブ設定項目とステージに切り替わります。現在のエンジンで変更した値は引き継がれませんが保持され、戻すと再び表示されます。',
+    hsrSharedEngineSwitchHint:
+      'ここではスクリプト単位のエンジン割り当てを変更します。このスクリプトの「スクリプト」ソースのユーザー全員と、エンジンを個別指定していない「ユーザー」ソースのユーザーがこのエンジンを使います。切り替え後はそのエンジン固有のネイティブ設定項目とステージが適用されます。',
     hsrStageMissingForEngine:
       '現在の開拓力エンジンは {engine} で、このエンジンではまだステージが選ばれていません。ステージはエンジンごとに保存されるため、別のエンジンで選んだステージは引き継がれません。選び直してください。元のエンジンに戻すと以前の選択が復元されます。',
     editHsrUser: 'HSR ユーザーを編集',
@@ -697,6 +694,44 @@ export default {
     hsrLastCompleted: '最終完了：{date}',
     hsrDynamicTaskCount: '動的 {n} 件',
     hsrReadFrom: '読み込み元：{source}',
+    hsrUseScriptShared:
+      'このスクリプトで「スクリプト」を選んだユーザー全員が 1 つのタスク設定を共有します。',
+    hsrSharedPlanHint:
+      'スクリプト共有のタスク設定を編集しています。変更はこのスクリプトで「スクリプト」を選んだ全ユーザーに反映されます。',
+    hsrDirectControlHint:
+      '直接制御は SRA / 三月なのかアシスタントで現在保存されている設定をそのまま実行します。MAS はゲームの起動とプロセスの追跡のみを担当し、アカウント・ステージ・タスクのオン・オフはこのモードでは反映されません。',
+    hsrActiveStageExtra: '現在の対象：{stage}',
+    hsrRunByEngine: '{engine} が実行します',
+    hsrGamePlatform: 'ゲームプラットフォーム',
+    hsrGamePlatformTip:
+      'クライアント：MAS が下の設定でローカルのスターレイルを起動します。クラウド・スターレイル：MAS がブラウザを管理し、その中で三月七が実行します',
+    hsrPlatformClient: 'クライアント',
+    hsrPlatformCloud: 'クラウド・スターレイル',
+    hsrCloudIntro:
+      'クラウド・スターレイルは MAS が管理するブラウザ内で三月七が実行します。バージョンごとに無料時間は 10 時間で、デイリーをすべて賄うには通常足りません。各ユーザーは初回のみ表示されるウィンドウでログインが必要です。',
+    hsrCloudNoSra: 'クラウド・スターレイルでは SRA を使用しません',
+    hsrCloudUsePaidTime: '有料時間を使用',
+    hsrCloudUsePaidTimeHint: '有効にすると星雲コインを消費して優先キューを使います',
+    hsrCloudMaxQueue: '最大待機時間',
+    hsrCloudMaxQueueTip:
+      '待機がこの時間を超えるとこの回は失敗となり再試行しません。各モジュールのタイムアウトにもこの待機時間が加算されます',
+    hsrCloudLoginWait: 'ログイン待機',
+    hsrCloudLoginWaitTip:
+      '未ログイン時に表示されるウィンドウでログインを待つ時間です。超えるとこの回は失敗となり再試行しません',
+    hsrCloudMinutes: '分',
+    hsrCloudLogin: 'クラウドログイン',
+    hsrCloudLoggedIn: 'ログイン済み（{time}）',
+    hsrCloudNotLoggedIn: '未ログイン',
+    hsrCloudLoginButton: 'クラウドゲームにログイン',
+    hsrCloudLoginTip:
+      'このユーザーのクラウド・スターレイルのウィンドウを開きます。そこで HoYoverse アカウントにログインしてください。ログイン確認後、三月七が一度ゲームに入ってから終了します',
+    hsrCloudLoginSuccess: 'クラウド・スターレイルにログインしました',
+    hsrCloudLoginFailed: 'クラウドゲームへのログインに失敗しました：{reason}',
+    hsrCloudRunByM7a: 'クラウド・スターレイルは三月七が実行します',
+    hsrSharedModuleNotEnabled:
+      '共有タスク設定ではこのモジュールが無効です。設定は保存されますが、今回は実行されません。',
+    hsrResetSharedOverridesConfirmDesc:
+      '共有タスク設定で変更したすべての上書き値（全モジュール・全項目）を削除します。以後、「スクリプト」を選んだ全ユーザーが SRA / 三月なのかアシスタントの現在の設定で表示・実行されます。元の設定ファイルは変更されません。この操作は元に戻せません。',
     daily: '日課',
     hsrEngineUnavailable: '利用不可',
     hsrNativeConfigNotLoaded: 'ネイティブ設定を読み込めませんでした',
@@ -739,38 +774,18 @@ export default {
     switchAccountDirectly: 'そのままアカウントを切り替える',
     seconds: '秒',
     restoreOriginalRegistryValue: '終了後にレジストリの値を元に戻す',
-    scriptDirectControlIgnores:
-      'スクリプト直接制御では、このユーザーのアカウント・理性ステージ・MAS のタスク設定は参照されません。',
-    directLiveConfigTitle: 'スクリプトの現在の設定を使用（推奨）',
-    directLiveConfigHint:
-      '実行時に {p0} で現在保存されている設定をそのまま読み込みます。スクリプト側の変更はすぐに反映され、インポートは不要です。',
-    directSnapshotTitle: 'このユーザー用の設定スナップショットに固定済み',
-    directSnapshotMeta: '{p0} に固定 ・ 取得元 {p1}',
-    directSnapshotStaleHint:
-      'スナップショットはスクリプト側のその後の変更に追従しません。更新するには再度固定するか、現在の設定を使う状態に戻してください。',
-    directPinSnapshot: '現在の設定をスナップショットとして固定（任意）',
-    directRepinSnapshot: '現在の設定で再固定',
-    directUseLiveConfig: 'スクリプトの現在の設定を使う状態に戻す',
-    directSnapshotCleared: '{p0} はスクリプトの現在の設定を使うようになりました',
-    couldNotClearP0: '{p0} のスナップショットを削除できませんでした：{p1}',
     directEngineSra: 'SRA',
     directEngineM7a: '三月なのかアシスタント',
-    directEngineDescSra:
-      'SRA で現在選択中の設定ファイルを実行します。スナップショットを固定したユーザーはそのスナップショットを実行します。',
-    directEngineDescM7a:
-      '三月なのかアシスタントの現在の config.yaml を実行します。スナップショットを固定したユーザーはそのスナップショットを実行します。',
+    directEngineDescSra: 'SRA で現在選択中の設定ファイルを実行します。',
+    directEngineDescM7a: '三月なのかアシスタントの現在の config.yaml を実行します。',
     pathFolderHoldingScript: 'スクリプトの設定ファイルが置かれているフォルダのパス',
     pathScriptConfigurationFile: 'スクリプトの設定ファイルのパス',
     expressionGuide: '式のガイド',
     thisModuleNotEnabled:
       'このユーザーではこのモジュールが有効になっていません。設定は保存されますが、今回は実行されません。',
-    finishNativeSetupSra:
-      'スクリプト直接制御は、SRA / 三月なのかアシスタントで現在保存されている設定をそのまま実行します。先にスクリプト自身の画面で設定を済ませてください。MAS はゲームの起動、スクリプトプロセスの追跡・停止、後片付けのみを担当します。同じスクリプトの複数ユーザーがそれぞれ別の設定で動く必要がある場合だけ、設定をスナップショットとして固定してください。',
-    enableAtLeastOne: '直接制御するスクリプトを 1 つ以上有効にしてください。',
     pickConfigurationFile: '設定ファイルを選択してください',
     pickConfigurationFolder: '設定フォルダを選択してください',
     skip2: 'スキップ',
-    runModeTaskConfiguration: '実行モードとタスク設定はユーザー設定に移動しました',
     configurationFiles: '設定ファイル',
     restartArknights: 'アークナイツを再起動',
     restartGame: 'ゲームを再起動',
@@ -918,7 +933,6 @@ export default {
     masOnlyTakesOver: 'スクリプトか自分で起動・終了し、MAS は起動中のウィンドウだけを引き継ぎます',
     howLongMasWaits: 'MAS がゲームを起動してから操作可能になるまで待つ最大時間',
     tasksManagedByMas: 'MAS が管理するタスク',
-    masManagedConfigurationOff: 'MAS 管理の設定は無効になっています',
     masManagesGame: 'MAS がゲームを管理',
     mfwGamePackageName: 'ゲームのパッケージ名',
     mfwGamePackageNamePassed:
@@ -940,7 +954,6 @@ export default {
     sraProfileTooltip:
       'SRA は設定を %APPDATA%/SRA/configs 配下の複数のプロファイルとして保存します。ここで選んだものが MAS 管理フォームの表示、スクリプト直接制御の実行、スナップショット取り込みの元になります。「自動」は Default を優先し、なければファイル名順の先頭を使います',
     sraProfileAuto: '自動（{name}）',
-    sraProfileNeedPath: '先に SRA のパスを設定してください',
     sraProfileLoadFailed: 'SRA 設定プロファイルを読み取れませんでした：{reason}',
     srcScriptConfiguration: 'SRC スクリプト設定',
     srcPath: 'SRC のパス',
@@ -988,8 +1001,6 @@ export default {
     failureLog: 'タスク失敗ログ',
     taskNumbersMatchOk: 'タスク番号は OK-NTE のタスク一覧と一致します',
     taskNumbersMatchOk2: 'タスク番号は ok-ww のタスク一覧と一致します',
-    taskSwitchesAccountsSanity:
-      'スクリプト直接制御では、タスクのオン・オフ、アカウント、理性ステージ、動的オプションはいずれも反映されません。',
     whetherMasLaunchesGame: 'タスク開始前に MAS がゲームを起動して待機するかどうか',
     successLog: 'タスク成功ログ',
     whetherMasClosesGame:
@@ -1084,7 +1095,7 @@ export default {
     gamePathMatchedHtgame: 'ゲームのパスを NTEGame.exe ランチャーに自動で合わせました',
     applyPreset2: 'プリセットを適用',
     turnThisOffWhen:
-      'スクリプト直接制御でクラウドゲームを使う場合は、このスイッチをオフにすることをおすすめします',
+      'オフにすると、MAS はゲームクライアントの起動・終了や解像度の変更を行いません。先にご自身でゲームを起動してください。',
     on: 'オン',
     treatScriptAsFinished:
       'オンにすると、スクリプトの子プロセスが終了した時点で初めてスクリプトの終了とみなします',
@@ -1425,8 +1436,6 @@ export default {
     importMfwProjectScript: '先にスクリプトページで MFW プロジェクトをインポートしてください',
     addEnableUserBefore: '更新を確認する前に、ユーザーを追加して有効にしてください',
     finishSetupOkWw: 'ok-ww の画面で設定を完了してください。',
-    userPageChooseMas:
-      'ユーザーページで「MAS 管理」か「スクリプト直接制御」を選んでください。ゲームの起動・終了・再起動・監視を MAS が行うかどうかは下のスイッチで決まります。スクリプトページでは引き続きインストールパスと共通の実行引数を管理します。',
     readingControllersResourcesTasks:
       'interface.json 内のコントローラー・リソース・タスク・オプションの定義を解析しています。しばらくお待ちください',
     readingTaskOptionPreset:
@@ -1484,10 +1493,6 @@ export default {
     invalidPath: 'パスが無効です',
     updateAutomaticallyBeforeRun: '実行前に自動更新',
     run1920x1080WindowedMode: '実行時に 1920×1080 のウィンドウモードにする',
-    runMode: '実行モード',
-    hsrRunModeHint:
-      '実行モードと設定ソースは独立した2つの軸です：設定ソースは設定の帰属（スクリプト/ユーザー/直接制御）を決め、実行モードはMASがHSRのネイティブ設定を管理するかどうか（管理=管理フィールドに書き込み、直接=元のライブ設定を使用）を決めます。直接制御ソースでは実行時は常に直接になります。',
-    couldNotSaveRun: '実行モードを保存できませんでした。もう一度お試しください',
     runTimeoutMinutes2: '実行のタイムアウト（分）',
     backScriptList: 'スクリプト一覧に戻る',
     progressReset: '進捗とリセット',

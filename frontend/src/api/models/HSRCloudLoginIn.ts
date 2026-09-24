@@ -2,14 +2,14 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-export type HSRUserConfig_Control = {
+export type HSRCloudLoginIn = {
     /**
-     * 直控时是否运行 SRA
+     * HSR 脚本配置 ID
      */
-    SRA?: (boolean | null);
+    scriptId: string;
     /**
-     * 直控时是否运行三月七
+     * 要登录云·星穹铁道的用户 ID
      */
-    M7A?: (boolean | null);
+    userId: string;
 };
 

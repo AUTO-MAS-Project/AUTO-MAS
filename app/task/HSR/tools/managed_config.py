@@ -59,7 +59,7 @@ class HSRManagedField:
 class HSRManagedModule:
     """一个引擎下一个模块的托管表单。
 
-    ``warnings`` 只放人类可读的表单级提示（如三月七助手缺配置说明文件）；
+    ``warnings`` 只放人类可读的表单级提示（如三月七缺配置说明文件）；
     ``dropped_overrides`` 记录该模块被忽略的 ``Managed.Options`` 覆盖键，
     前端据此提示并提供清理入口。
     """
@@ -162,6 +162,17 @@ SRA_REWARD_LABELS = (
 )
 """SRA receiveRewards 奖励开关的顺序词表（索引式 ``rewards.<i>`` 与命名键
 ``rewards.<name>`` 共用同一顺序，顺序以 SRA TasksConfig 为准）"""
+SRA_REWARD_NAMED_KEYS = (
+    "rewards.trailblazeProfile",
+    "rewards.assignments",
+    "rewards.mail",
+    "rewards.dailyTraining",
+    "rewards.namelessHonor",
+    "rewards.giftOfOdyssey",
+    "rewards.redeemCode",
+)
+"""SRA 2.22.0 起的具名奖励键，顺序同 ``ReceiveRewardsConfig.to_dict``"""
+_SRA_LABELS.update(zip(SRA_REWARD_NAMED_KEYS, SRA_REWARD_LABELS, strict=True))
 _SRA_REROLL_ONLY = "仅「博弈类别」为「刷开局」时生效。"
 # 说明只写能从 SRA 源码（tasks/CosmicStrifeTask.py、tasks/currency_wars/RerollStart.py、
 # tasks/TrailblazePowerTask.py）里确认的格式；拿不准的一律指回 SRA 内的同名设置。
@@ -431,7 +442,7 @@ def list_m7a_managed_modules(
     root = Path(raw_root)
     source = root / "config.yaml"
     if not source.is_file():
-        raise FileNotFoundError(f"三月七助手原生配置不存在：{source}")
+        raise FileNotFoundError(f"三月七原生配置不存在：{source}")
     payload = load_m7a_native_config(script_config)
     example_path = root / "assets" / "config" / "config.example.yaml"
     comments = _load_m7a_comments(example_path)
@@ -440,8 +451,8 @@ def list_m7a_managed_modules(
         # 字段名称与说明都取自这份带注释的样例；缺了只能退化成原始键名，
         # 要让用户知道为什么表单看起来像一堆变量名。
         module_warnings = (
-            f"未找到三月七助手的配置说明文件 {example_path}，"
-            "配置项只能显示原始键名、没有说明；请检查三月七助手安装是否完整",
+            f"未找到三月七的配置说明文件 {example_path}，"
+            "配置项只能显示原始键名、没有说明；请检查三月七安装是否完整",
         )
     buckets: dict[str, list[HSRManagedField]] = {
         key: []
