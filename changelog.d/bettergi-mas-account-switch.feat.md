@@ -1,3 +1,2 @@
 project: bgi
-beta-only: true
 新增 MAS 切号方式与用户级游戏客户端配置，支持官服/B服登录界面切换账号
