@@ -34,6 +34,7 @@ from typing import Any
 
 from app.utils.logger import get_logger
 
+from ...task_mapping import engine_label
 from .discover import HSRUpdateError
 from .engines import get_spec
 
@@ -140,7 +141,9 @@ def apply_package(
     try:
         _commit(plan, source_root, install_root, backup)
     except Exception as exc:  # noqa: BLE001 - 任何失败都要尝试回滚
-        logger.opt(exception=True).error(f"HSR 更新：应用 {engine} 更新失败，开始回滚")
+        logger.opt(exception=True).error(
+            f"HSR 更新：应用{engine_label(engine)}更新失败，开始回滚"
+        )
         try:
             rollback(install_root)
         except Exception as rollback_exc:  # noqa: BLE001
