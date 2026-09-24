@@ -142,10 +142,6 @@ class MSSFlavor:
             if send_log is not None:
                 send_log(message)
 
-        if not task_ids:
-            # 一个任务都没勾：不替用户补任务，空队列交给引擎原有处理。
-            return list(task_ids), dict(task_options)
-
         valid_names = {task.name for task in interface_model.task}
 
         def name_of(task_id: str) -> str:
@@ -158,9 +154,15 @@ class MSSFlavor:
         tribulation = task_name_for_entry(interface_model, TRIBULATION_ENTRY)
         climb = task_name_for_entry(interface_model, CLIMB_ENTRY)
 
-        ## 最终顺序是「活动 → 日常 → 周常」。先按计划表补上 / 改好悬赏试炼，活动才有锚点
-        ## 可以插在它前面；爬塔最后挪到队尾。
+        ## 一个任务都没勾、也没选计划表：手上没有任何可执行任务，交给引擎按原有语义报错。
+        ## 选了计划表就不算空队列——下面 _apply_plan 会把悬赏试炼补上，和用户页那句
+        ## 「队列里没有它时会自动加入」保持一致（这条以前被空队列提前返回挡住了）。
+        ## 顺序是「活动 → 日常 → 周常」：先补好悬赏试炼，活动才有锚点插在它前面；
+        ## 爬塔最后挪到队尾。
         plan_key = _current_plan_key(user_config, log)
+        if not ids and plan_key is None:
+            return list(ids), dict(options)
+
         if plan_key is not None:
             ids, options = _apply_plan(
                 interface_model, ids, options, tribulation, plan_key, name_of, log
