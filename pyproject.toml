@@ -52,6 +52,14 @@ dev = [
     "ruff==0.16.8",
 ]
 
+# uv.lock 记录的索引是 PyPI。把默认索引钉在项目里，用户级 uv.toml 配的镜像就不会让
+# `uv lock --check` / `uv sync --locked` 误判锁文件过期（#676）。它同样压过
+# `--index-url` / `UV_INDEX_URL`，只有 `--default-index` / `UV_DEFAULT_INDEX` 能覆盖。
+# 用户侧依赖由 Runtime 以 UV_NO_CONFIG 安装、改写锁副本换镜像，不读这一段。
+[[tool.uv.index]]
+url = "https://pypi.org/simple"
+default = true
+
 [tool.ruff]
 line-length = 88
 target-version = "py312"
