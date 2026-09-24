@@ -194,7 +194,7 @@ def _build_m7a_options_from_assets(assets_dir: Path) -> dict[str, Any]:
         )
 
     if not categories:
-        raise ValueError("M7A 动态副本配置为空")
+        raise ValueError("三月七动态副本配置为空")
 
     return {
         "engine": HSR_STAGE_ENGINE_M7A,

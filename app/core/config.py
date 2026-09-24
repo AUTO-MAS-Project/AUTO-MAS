@@ -454,8 +454,12 @@ class AppConfig(GlobalConfig):
             self.config_path / "ScriptConfig.json",
             global_mirror_cdk=str(self.get("Update", "MirrorChyanCDK") or ""),
         )
+        # HSR 旧直控快照（Direct.*）已删字段，同理必须在 connect 之前另存原始密文
+        await self._archive_legacy_hsr_direct_snapshots(
+            self.config_path / "ScriptConfig.json"
+        )
         await self.ScriptConfig.connect(self.config_path / "ScriptConfig.json")
-        if m9a_migration.changed:
+        if m9a_migration.changed or m9a_migration.failure:
             await self._settle_m9a_migration(m9a_migration)
         await self.QueueConfig.connect(self.config_path / "QueueConfig.json")
         await self.ToolsConfig.connect(self.config_path / "ToolsConfig.json")
@@ -5414,7 +5418,8 @@ class AppConfig(GlobalConfig):
             )
         if archived:
             lines.append("原先有归档的脚本已按新格式归档一次：" + "、".join(archived))
-        if report.backup_path is not None:
+        # 失败行已经带了备份文件名（或「备份也失败」），不再重复一遍
+        if report.backup_path is not None and not report.failure:
             lines.append(f"迁移前的配置已备份为 {report.backup_path.name}")
         self.startup_notices.append(
             {
@@ -5426,12 +5431,44 @@ class AppConfig(GlobalConfig):
                     or report.degraded_scripts
                 )
                 else "info",
-                "title": "M9A 脚本已并入 MFW 引擎"
-                if report.migrated_scripts or report.failure
+                "title": "M9A 脚本迁移失败"
+                if report.failure
+                else "M9A 脚本已并入 MFW 引擎"
+                if report.migrated_scripts
                 else "已按项目识别出 M9A 脚本",
                 "lines": lines,
             }
         )
+
+    async def _archive_legacy_hsr_direct_snapshots(
+        self, script_config_path: Path
+    ) -> None:
+        """HSR 旧直控快照停用前的留档，结果攒成启动通知；见 ``app.task.HSR.tools.legacy_direct``。
+
+        没有 HSR 脚本时不导入 HSR 专项（导入要近 1 秒），先按字节找一次类型标签。
+        """
+
+        def _has_hsr_script() -> bool:
+            try:
+                return b'"HSRConfig"' in script_config_path.read_bytes()
+            except OSError:
+                return False
+
+        try:
+            if not await asyncio.to_thread(_has_hsr_script):
+                return
+            from app.task.HSR.tools.legacy_direct import (
+                archive_legacy_direct_snapshots,
+            )
+
+            report = await asyncio.to_thread(
+                archive_legacy_direct_snapshots, script_config_path
+            )
+        except Exception as exc:  # noqa: BLE001 - 留档失败不该挡住启动
+            logger.opt(exception=True).warning(f"HSR 旧直控快照留档失败：{exc}")
+            return
+        if report.needs_notice:
+            self.startup_notices.append(report.notice())
 
     async def push_system_notice(
         self, *, level: str, title: str, lines: list[str]
@@ -5455,18 +5492,33 @@ class AppConfig(GlobalConfig):
             self.startup_notices.append(notice)
 
     async def flush_startup_notices(self) -> None:
-        """主 WebSocket 连上后把启动期攒下的系统通知发出去，只发一次。"""
+        """主 WebSocket 连上后把启动期攒下的系统通知发出去，发成功的只发一次。
+
+        连接刚建立就被替换 / 断开时发送返回 False，断开还会取消这个回调；没发出去的
+        （含正在发的那条）按原顺序放回队列，由下一次连接再发，不在这里重试。
+        """
 
         from app.core.ws import Publisher, protocol
         from app.models.schema import WSSystemNoticeData
 
-        notices, self.startup_notices = self.startup_notices, []
-        for notice in notices:
-            await Publisher.send(
-                id=protocol.ID_MAIN,
-                type=protocol.SYSTEM_NOTICE,
-                data=WSSystemNoticeData(**notice),
-            )
+        pending, self.startup_notices = self.startup_notices, []
+        try:
+            while pending:
+                try:
+                    sent = await Publisher.send(
+                        id=protocol.ID_MAIN,
+                        type=protocol.SYSTEM_NOTICE,
+                        data=WSSystemNoticeData(**pending[0]),
+                    )
+                except Exception as exc:  # noqa: BLE001 - 与 push_system_notice 一致
+                    logger.warning(f"系统通知发送失败，改为下次连接时发送：{exc}")
+                    sent = False
+                if not sent:
+                    break
+                pending.pop(0)
+        finally:
+            # 发送期间 push_system_notice 可能又攒进来新的，放在它们前面保持顺序
+            self.startup_notices[:0] = pending
 
     async def clean_maafw_embedded_copies(self) -> None:
         """清掉内嵌副本目录下的两类垃圾：staging 半成品、脚本已不存在的副本。

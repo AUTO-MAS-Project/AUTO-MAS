@@ -438,7 +438,7 @@ def list_m7a_managed_modules(
 ) -> tuple[HSRManagedModule, ...]:
     raw_root = _script_path(script_config, "M7A")
     if not raw_root:
-        raise FileNotFoundError("请先设置 M7A 路径")
+        raise FileNotFoundError("请先设置三月七路径")
     root = Path(raw_root)
     source = root / "config.yaml"
     if not source.is_file():

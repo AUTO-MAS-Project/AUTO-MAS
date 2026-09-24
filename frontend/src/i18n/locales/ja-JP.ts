@@ -202,6 +202,7 @@ export default {
     backendUpdateFailedRestart:
       'ソースと依存関係は揃いましたが、新しいバックエンドを起動できませんでした',
     backendUpdateUnsupportedMode: '現在のモードではバックエンドの自動更新に対応していません',
+    backendUpdateRetryBootstrap: '更新をやり直す',
     backendUpdateRetryWorkspaceSync: 'ソースを同期し直す',
     backendUpdateRetryDependenciesSync: '依存関係の同期を再試行',
     backendUpdateRetryDependenciesRebuild: '依存環境を再構築',
@@ -751,6 +752,7 @@ export default {
     failure: '失敗時',
     stringSplittingGuide: '文字列分割のガイド',
     done: '完了',
+    createFirstUser: '最初のユーザーを作成！',
     wutheringWavesWillBe:
       '選択したサーバーで鳴潮の更新を確認・実行します。数 GB のダウンロードが発生する場合があるため、ゲームが起動していないことを確認してください',
     turnAutomaticRelicSalvage:

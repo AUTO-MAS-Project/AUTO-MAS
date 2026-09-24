@@ -22,13 +22,18 @@
 
 import re
 
-from app.utils.platform.secret import dpapi_decrypt, dpapi_encrypt
+from app.utils.platform.secret import (
+    dpapi_decrypt,
+    dpapi_encrypt,
+    looks_like_dpapi_blob,
+)
 
 __all__ = [
     "sanitize_log_message",
     "format_exception_reason",
     "dpapi_encrypt",
     "dpapi_decrypt",
+    "looks_like_dpapi_blob",
 ]
 
 

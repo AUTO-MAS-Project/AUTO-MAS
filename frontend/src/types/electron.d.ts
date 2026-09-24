@@ -51,6 +51,7 @@ export type RuntimeLaunchMode = 'off' | 'development' | 'managed'
 export type RuntimeUpdatePhase = 'shutdown' | 'bootstrap' | 'restart'
 
 export type RuntimeUpdateRetryAction =
+  | 'bootstrap'
   | 'workspace-sync'
   | 'dependencies-sync'
   | 'dependencies-rebuild'

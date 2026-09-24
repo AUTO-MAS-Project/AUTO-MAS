@@ -48,6 +48,7 @@ const isApiEndpointKey = (value: unknown): value is keyof ApiEndpoints =>
 const BACKEND_UPDATE_PROGRESS_CHANNEL = 'backend-update-progress'
 
 const retryActions = new Set<RuntimeUpdateRetryAction>([
+  'bootstrap',
   'workspace-sync',
   'dependencies-sync',
   'dependencies-rebuild',

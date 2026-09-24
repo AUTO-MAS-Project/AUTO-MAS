@@ -199,6 +199,7 @@ export default {
     backendUpdateFailedRestart:
       'The source and the dependencies are in place, but the new backend did not start',
     backendUpdateUnsupportedMode: 'This mode does not support updating the backend automatically',
+    backendUpdateRetryBootstrap: 'Start the update again',
     backendUpdateRetryWorkspaceSync: 'Sync the source again',
     backendUpdateRetryDependenciesSync: 'Retry the dependency sync',
     backendUpdateRetryDependenciesRebuild: 'Rebuild the dependency environment',
@@ -804,6 +805,7 @@ export default {
     failure: 'On failure',
     stringSplittingGuide: 'String splitting guide',
     done: 'Done',
+    createFirstUser: 'Create the first user!',
     wutheringWavesWillBe:
       'Wuthering Waves will be checked and updated on the selected server. The update may download several GB, so make sure the game is not running',
     turnAutomaticRelicSalvage:

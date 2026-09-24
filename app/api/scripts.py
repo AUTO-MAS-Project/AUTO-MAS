@@ -39,8 +39,8 @@ from app.task.MaaFW.api_service import embedded as maafw_embedded_api
 from app.task.MaaFW.api_service import interface as maafw_interface_api
 from app.task.MaaFW.api_service import update as maafw_update_api
 from app.utils import get_logger
-from app.utils.io import ConfigCorruptedError
 from app.utils.constants import UTC8
+from app.utils.io import ConfigCorruptedError
 
 router = APIRouter(prefix="/api/scripts", tags=["脚本管理"])
 logger = get_logger("脚本管理 API")
