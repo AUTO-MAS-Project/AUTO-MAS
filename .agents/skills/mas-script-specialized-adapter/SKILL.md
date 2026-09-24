@@ -104,7 +104,7 @@ description: >-
 | General | 脚本 / 用户 / 直控 三态 |
 | MaaEnd | 脚本 / 用户 / 直控 三态 |
 | MaaFW | 仅用户；`Info.IfQuickConfig` 开关有效，`Info.Mode` 三态无代码消费，不要按三态写逻辑 |
-| M9A | 脚本 / 用户 / 直控 三态 |
+| M9A | 不是专项：MaaFW 的特调类型，与 MaaFW 同（见 `app/task/M9A/AGENTS.md`） |
 | Okww | 脚本 / 用户 / 直控 三态 |
 | OkNte | 脚本 / 用户 / 直控 三态 |
 | HSR | 脚本 / 用户 / 直控 三态（脚本态 = `HSRConfig` 同名组共享计划；**不支持快速配置**，见下） |

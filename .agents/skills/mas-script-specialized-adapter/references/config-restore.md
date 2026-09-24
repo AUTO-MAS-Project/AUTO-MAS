@@ -39,10 +39,10 @@
 >   `useMaaEndGuiSession.ts` + `MaaEndUserEdit.vue`——mas 池带快速配置覆盖层
 >   侧车（对齐 ok-ww），脚本/用户/直控三态（直控无 mas 池，见 §1.1.1）；
 >   预览为「任务启用罗列 + 配置内容表单」结构，专项要求见 examples-maaend.md
-> - **M9A（自包含式 + 纯字段侧车，无会话）**：`app/task/M9A/tools/restore_service.py` +
->   `M9AUserEdit.vue`——MFAA 线无 per-user ConfigFile 目录、无遮罩会话：
->   mas 池是**纯字段侧车**（无目录部分，见 §1.1.4），恢复即字段回填；
->   不提供「查看详细配置」（无 viewOnly 会话可挂，onDetail 不传即不渲染）
+> - **M9A（不是专项，走下面的 MaaFW 分支）**：M9A 是 MaaFW 的特调类型，
+>   没有自己的 restore_service 与编辑页，备份恢复用 MaaFW 的两个池
+>   （`data/<sid>/MaaFWBackups/{mas,native}`）；旧 `M9ABackups/` 不再被列出、
+>   不支持恢复、原地保留（见 `app/task/M9A/AGENTS.md`）
 > - **General（自包含式 + 无侧车目录池，有会话）**：`app/task/general/tools/restore_service.py` +
 >   `GeneralUserEdit.vue`——ConfigFile 恒按用户（无 owner 解耦、无侧车：
 >   MAS 编辑页字段不注入原生配置，不属于配置内容，见 §1.1.4 末段）；原生
