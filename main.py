@@ -83,6 +83,10 @@ DEV_HTTP_PORT = 36164
 # 受 AUTO-MAS-Runtime 监督时由监督器注入的监听端口；受监督时只认它
 SUPERVISED_PORT_ENV = "AUTO_MAS_SUPERVISED_PORT"
 SUPERVISED_PORT_MIN = 1024
+# /api/core/health 里后台初始化失败项的长度上限：Runtime 拒收超过 64 KiB 的健康响应正文，
+# 单条异常信息与失败项条数都要封顶
+BACKGROUND_ERROR_MESSAGE_MAX = 300
+BACKGROUND_WARNINGS_MAX = 20
 
 
 class InterceptHandler(logging.Handler):
@@ -356,7 +360,11 @@ def main():
                     raise
                 except Exception as error:
                     logger.exception(f"后台初始化步骤失败: {name}")
-                    return f"{name}（{type(error).__name__}: {error}）"
+                    # 完整堆栈已进日志；health 里只放截断后的摘要，正文有上限
+                    message = str(error)
+                    if len(message) > BACKGROUND_ERROR_MESSAGE_MAX:
+                        message = message[:BACKGROUND_ERROR_MESSAGE_MAX] + "…"
+                    return f"{name}（{type(error).__name__}: {message}）"
                 return None
 
             async def run_optional_step(
@@ -500,6 +508,11 @@ def main():
                 # AUTO-MAS-Runtime 把 backgroundError 非空或 failed 判为启动失败并收掉进程，
                 # 所以可选步骤的失败只进 background_warnings（前端据此提示），状态仍是 ready；
                 # 只有主定时器没起来才是 failed。
+                if len(warnings) > BACKGROUND_WARNINGS_MAX:
+                    omitted = len(warnings) - (BACKGROUND_WARNINGS_MAX - 1)
+                    warnings[BACKGROUND_WARNINGS_MAX - 1 :] = [
+                        f"另有 {omitted} 项失败，详见日志"
+                    ]
                 app.state.background_warnings = warnings
                 if warnings:
                     logger.warning(f"部分后台服务启动失败: {'；'.join(warnings)}")
