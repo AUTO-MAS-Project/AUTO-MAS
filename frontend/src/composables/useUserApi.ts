@@ -250,15 +250,14 @@ export function useUserApi() {
 
       if (response.code !== 200) {
         const errorMsg = response.message || '获取用户配置目录失败'
-        message.error(errorMsg)
         throw new Error(errorMsg)
       }
 
-      const result = await window.electronAPI.openFile(response.path ?? '')
       if (!response.path) {
-        const errorMsg = response.message || '获取用户配置目录失败'
-        throw new Error(errorMsg)
+        throw new Error('获取用户配置目录失败')
       }
+
+      const result = await window.electronAPI.openFile(response.path)
       if (!result.success) {
         const openError = result.error || '打开用户配置目录失败'
         logger.error(`打开用户配置目录失败: ${openError}`)
