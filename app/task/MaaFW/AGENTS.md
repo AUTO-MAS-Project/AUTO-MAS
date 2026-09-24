@@ -179,12 +179,14 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   运行计划里不满足就报错（`MaaFWCheckboxCountError`），不静默截断。密码原文会随 override 进
   MaaFramework 自己写的项目日志 `debug/maafw.log`：`Tasker::post_task` 用
   `LogInfo << VAR(pipeline_override)` 记整份 override（INFO 级，不是只在 DBG 下），覆盖失败时
-  `LogError` 再记一遍。**这份文件由框架直接写，MAS 管不了**，里面的密码是原文。MAS 自己的出口都
-  已打码（`option_secrets.redact_secret_text`，占位「<已隐藏>」）：`runner_task` 复制到
+  `LogError` 再记一遍。**这份文件由框架直接写，MAS 管不了**，里面的密码是原文。MAS 自己的出口对
+  **长度至少 4 个字符**（`MIN_REDACTED_SECRET_LENGTH`）的密码值都已打码
+  （`option_secrets.redact_secret_text`，按文本全局替换成「<已隐藏>」）：`runner_task` 复制到
   `history/…/*.maafw.log` 的原生日志副本、转发的 worker stdout（协议行先解析、只打码给人读的
-  文本，见 `_parse_worker_protocol_line`）与 stderr、`.worker.log`、pretask 输出；input 值下发
-  失败的计划告警对密码字段不带原值（`MaaFWInputValueError(secret=True)`）。新增任何落盘 / 转发
-  日志的路径都要过它；agent 进程自己写的日志同样不在 MAS 控制内。
+  文本，见 `_parse_worker_protocol_line`）与 stderr、`.worker.log`、pretask 输出。更短的值**不打码**
+  （有意为之，本地测试钉住）：一两个字符全局替换会把日志里所有同样的字符都换掉，日志就没法看了。
+  input 值下发失败的计划告警对密码字段一律不带原值、与长度无关（`MaaFWInputValueError(secret=True)`）。
+  新增任何落盘 / 转发日志的路径都要过它；agent 进程自己写的日志同样不在 MAS 控制内。
 - 加载器写的告警（`logger.warning`）由加载器旁听收集、挂在模型上（`interface_load_warnings`），
   随磁盘缓存保存，进运行计划的 `warnings`（运行日志开头）与导入报告；只给后端看的用
   `extra=_LOG_ONLY`。发行包的毛病能降级就降级：缺 import 文件、scan_dir 不在、缺
