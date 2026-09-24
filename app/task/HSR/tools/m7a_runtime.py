@@ -321,7 +321,7 @@ class M7ARunner:
                 asyncio.create_task(
                     self._read_stream_live(
                         stdout_stream,
-                        "M7A",
+                        "三月七",
                         stdout_lines,
                         completion_event,
                     )
