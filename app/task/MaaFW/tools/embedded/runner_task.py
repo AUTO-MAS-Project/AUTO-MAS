@@ -2851,9 +2851,10 @@ def _copy_native_debug_log_delta(
     覆盖：同一次代理的几轮重试共用一个文件名，每轮的分片挨着放，原生日志自己的
     「MAA Process Start」头就是分界。逐个分片流式复制，一份可能有几十 MB。
 
-    唯一的改动是 ``secrets``（密码字段的原文及其 JSON 转义写法）：原生日志按 DBG 级别
-    记下整份 ``pipeline_override``（``MaaTaskerPostTask`` 的 ``[pipeline_override={...}]``），
-    密码会原样出现；给了就逐行换成占位（按 UTF-8 字节替换，其余字节不动）。
+    唯一的改动是 ``secrets``（密码字段的原文及其 JSON 转义写法）：框架在
+    ``Tasker::post_task`` 里按 INFO 级别记下整份 ``pipeline_override``（``[pipeline_override={...}]``），
+    密码会原样出现；给了就逐行换成占位（按 UTF-8 字节替换，其余字节不动）。项目目录里框架
+    自己写的 ``debug/maafw.log`` 不归 MAS 管，那份仍是原文。
     """
 
     secret_pairs = [

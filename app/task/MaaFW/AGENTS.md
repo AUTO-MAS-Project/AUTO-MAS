@@ -177,8 +177,14 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   `runner_task` 建计划前只在内存副本里解密；前端只看到密文、显示「已设置」。没有前缀的是旧明文，
   照常使用、下次保存时加密。checkbox 的 `min_count` / `max_count`（v2.10.1）由加载器放宽成自洽值，
   运行计划里不满足就报错（`MaaFWCheckboxCountError`），不静默截断。密码原文会随 override 进
-  原生日志（`MaaTaskerPostTask` 按 DBG 记整份 override），`runner_task` 复制原生日志、转发
-  worker 输出时按 `option_secrets.redact_secret_text` 换成占位；新增任何落盘 / 转发日志的路径都要过它。
+  MaaFramework 自己写的项目日志 `debug/maafw.log`：`Tasker::post_task` 用
+  `LogInfo << VAR(pipeline_override)` 记整份 override（INFO 级，不是只在 DBG 下），覆盖失败时
+  `LogError` 再记一遍。**这份文件由框架直接写，MAS 管不了**，里面的密码是原文。MAS 自己的出口都
+  已打码（`option_secrets.redact_secret_text`，占位「<已隐藏>」）：`runner_task` 复制到
+  `history/…/*.maafw.log` 的原生日志副本、转发的 worker stdout（协议行先解析、只打码给人读的
+  文本，见 `_parse_worker_protocol_line`）与 stderr、`.worker.log`、pretask 输出；input 值下发
+  失败的计划告警对密码字段不带原值（`MaaFWInputValueError(secret=True)`）。新增任何落盘 / 转发
+  日志的路径都要过它；agent 进程自己写的日志同样不在 MAS 控制内。
 - 加载器写的告警（`logger.warning`）由加载器旁听收集、挂在模型上（`interface_load_warnings`），
   随磁盘缓存保存，进运行计划的 `warnings`（运行日志开头）与导入报告；只给后端看的用
   `extra=_LOG_ONLY`。发行包的毛病能降级就降级：缺 import 文件、scan_dir 不在、缺
