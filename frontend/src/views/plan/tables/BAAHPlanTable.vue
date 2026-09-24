@@ -14,12 +14,7 @@
     >
       <template #bodyCell="{ column, record }">
         <template v-if="column.key === 'fieldName'">
-          <a-tooltip :title="record.fieldHint">
-            <span class="field-label">
-              {{ record.fieldName }}
-              <QuestionCircleOutlined class="help-icon" />
-            </span>
-          </a-tooltip>
+          <a-tooltip :title="record.fieldHint">{{ record.fieldName }}</a-tooltip>
         </template>
 
         <!-- 每天一类：选今天打哪一类，选中后下面两行填这一类的关卡与次数 -->
@@ -79,7 +74,6 @@
 import { useI18n } from 'vue-i18n'
 import { computed, ref, watch } from 'vue'
 import { message } from 'ant-design-vue'
-import { QuestionCircleOutlined } from '@ant-design/icons-vue'
 import type { PlanChangeHandler } from '@/utils/planTypeRegistry'
 import {
   allowsHighestStage,
@@ -384,22 +378,5 @@ const handleSingleNumberChange = async (
 .part-cell .config-input-number {
   width: 42px;
   min-width: 0;
-}
-
-.field-label {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-}
-
-.help-icon {
-  color: var(--ant-color-text-tertiary);
-  font-size: 13px;
-  cursor: help;
-}
-
-.help-icon:hover {
-  color: var(--ant-color-primary);
 }
 </style>
