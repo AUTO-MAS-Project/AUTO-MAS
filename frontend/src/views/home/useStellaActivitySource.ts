@@ -1,11 +1,7 @@
 import { onScopeDispose, ref } from 'vue'
 import { GetService } from '@/api'
 import { createEmptyStellaActivityOverview } from '@/types/home'
-import type {
-  StellaActivityItem,
-  StellaActivityOverview,
-  StellaOfficialBanner,
-} from '@/types/home'
+import type { StellaActivityItem, StellaActivityOverview, StellaOfficialBanner } from '@/types/home'
 
 const logger = window.electronAPI.getLogger('活动数据')
 
@@ -38,7 +34,12 @@ export const useStellaActivitySource = () => {
     if (disposed) return
     try {
       const response = await GetService.getStellaActivityApiInfoStellaActivityPost()
-      const payload = (response?.data ?? {}) as Partial<StellaActivityOverview>
+      // 生成的客户端对 200 响应一律 resolve，后端用 code=500 表达取数失败，
+      // 不查这一层就会把失败当成「拿到了空排期」，卡片显示「暂无进行中的活动」
+      if (response.code !== 200) {
+        throw new Error(response.message || 'HTTP ' + response.code)
+      }
+      const payload = (response.data ?? {}) as Partial<StellaActivityOverview>
       overview.value = {
         current: (payload.current ?? []) as StellaActivityItem[],
         upcoming: (payload.upcoming ?? []) as StellaActivityItem[],
@@ -46,6 +47,7 @@ export const useStellaActivitySource = () => {
         official: (payload.official ?? []) as StellaOfficialBanner[],
         // 请求成功就算取到排期：站点返回空组只说明眼下没有活动，不是「拿不到数据」
         Available: true,
+        Stale: false,
       }
       hasData.value = true
       retryCount = 0
@@ -55,11 +57,10 @@ export const useStellaActivitySource = () => {
         requestError instanceof Error ? requestError.message : String(requestError)
       logger.warn('获取星塔旅人活动数据失败: ' + errorMessage)
 
-      if (hasData.value) {
-        // 保留上一次的内容，交给卡片按 stale 处理
-      } else {
-        overview.value = createEmptyStellaActivityOverview()
-      }
+      overview.value = hasData.value
+        ? // 保留上一次的内容并挂上 stale 标记，卡片据此提示数据可能已过期
+          { ...overview.value, Stale: true }
+        : createEmptyStellaActivityOverview()
 
       if (retryCount < MAX_RETRIES) {
         retryCount += 1

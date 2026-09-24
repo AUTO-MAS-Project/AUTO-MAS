@@ -179,6 +179,8 @@ export interface StellaActivityOverview {
    * 卡片据此显示「暂无进行中的活动」而不是「数据不可用」。
    */
   Available: boolean
+  /** 展示的是上一次取到的内容（本次刷新失败），卡片据此提示数据可能已过期 */
+  Stale?: boolean
 }
 
 export const createEmptyStellaActivityOverview = (): StellaActivityOverview => ({
@@ -187,6 +189,7 @@ export const createEmptyStellaActivityOverview = (): StellaActivityOverview => (
   ended: [],
   official: [],
   Available: false,
+  Stale: false,
 })
 
 /** 碧蓝档案的三个服务器；与数据源的 line_type 一一对应 */

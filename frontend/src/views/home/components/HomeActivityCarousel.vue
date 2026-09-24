@@ -42,7 +42,7 @@
                 class="banner-cover"
                 :class="[`is-${coverMode(item)}`, { 'is-measured': coverModes.has(coverOf(item)) }]"
                 referrerpolicy="no-referrer"
-                @load="onCoverLoad(coverOf(item), $event)"
+                @load="onCoverLoad(item, $event)"
                 @error="onCoverError(item)"
               />
               <div class="banner-overlay" />
@@ -195,26 +195,37 @@ const onCoverError = (item: ActivityBannerItem) => {
   failedCovers.value = new Set(failedCovers.value).add(item.key)
 }
 
-const resolveCoverMode = (width: number, height: number): CoverMode => {
+const resolveCoverMode = (width: number, height: number, key: HomeModuleKey): CoverMode => {
   // 无固有尺寸（例如没写 viewBox 的 SVG）就按满幅铺，别让它卡在透明状态
   if (!width || !height) {
     return 'cover'
   }
-  // 640 以下才算「小图」——那才是图标、缩略图的量级。
-  // 门槛原先是 800，结果星塔旅人官网那张 795×510 的活动主视觉只差 5px 就被当成贴片，
-  // 卡片看着像没有图。
+  // 「小图」门槛默认 800——那才是图标、缩略图的量级。星塔旅人单独放宽到 640：
+  // 它官网那张 795×510 的活动主视觉只差 5px 就会被当成贴片，卡片看着像没有图。
+  // 只放这一张卡的口径，别的游戏维持原门槛，免得铺法跟着变。
+  const insetWidth = key === 'stellasora' ? 640 : 800
   const ratio = width / height
-  if (width < 640 || (ratio >= 0.7 && ratio <= 1.5)) {
+  if (width < insetWidth || (ratio >= 0.7 && ratio <= 1.5)) {
     return 'inset'
   }
   return ratio < 0.7 ? 'tall' : 'cover'
 }
 
-const onCoverLoad = (cover: string, event: Event) => {
+const onCoverLoad = (item: ActivityBannerItem, event: Event) => {
   const image = event.target as HTMLImageElement
-  const mode = resolveCoverMode(image.naturalWidth, image.naturalHeight)
-  coverModes.value = new Map(coverModes.value).set(cover, mode)
+  const mode = resolveCoverMode(image.naturalWidth, image.naturalHeight, item.key)
+  coverModes.value = new Map(coverModes.value).set(coverOf(item), mode)
 }
+
+// 候选图整批换掉（刷新后拿到新的活动）就清空游标与失败标记：
+// 否则游标会停在上一批的下标上，或者被已经不在列表里的图永久拉黑
+watch(
+  () => props.items.map(item => coverCandidatesOf(item).join('\u0000')).join('\u0001'),
+  () => {
+    coverIndexes.value = new Map()
+    failedCovers.value = new Set()
+  }
+)
 
 // 按封面地址记而不是按游戏记：版本更新换图后要重新量，不能沿用上一张的铺法
 const coverMode = (item: ActivityBannerItem): CoverMode =>
