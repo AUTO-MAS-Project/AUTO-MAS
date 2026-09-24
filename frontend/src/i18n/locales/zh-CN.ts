@@ -2346,6 +2346,9 @@ export default {
     bossKeyUnsupported: 'MuMu模拟器无需配置老板键',
     forceCloseLabel: '强力关闭',
     forceCloseTip: '按进程名清理 MuMu 残留进程，可能影响其他实例，多开慎用',
+    forceCleanLaunchLabel: '启动前强力清理',
+    forceCleanLaunchTip:
+      '启动实例前先关闭所有已开启的 MuMu 实例并清理残留进程，解决已有普通权限实例时无法以管理员身份启动的问题；会关闭正在运行的全部 MuMu 实例，未保存的数据可能丢失，多开慎用',
     on: '开',
     off: '关',
     deviceList: '设备列表',
