@@ -3256,6 +3256,13 @@ export default {
     anotherWindowTookOverBackend: 'Another window took over the backend connection',
     thisWindowStoppedReconnecting:
       'This window stopped reconnecting so the two windows do not keep replacing each other.',
+    backgroundInitDegradedTitle: 'Some background services failed to start',
+    backgroundInitFailedTitle: 'Background services failed to start',
+    backgroundInitTimerStarted:
+      'Scheduled tasks started normally. The features below may be unavailable until the app is restarted.',
+    backgroundInitTimerNotStarted:
+      'Scheduled tasks may not have started, so queues will not run at their scheduled times. Please restart the app.',
+    backgroundInitFailedSteps: 'Failed: {steps}',
     couldNotAddAccount: 'Could not add the account group',
     gotIt: 'Got it',
     continueDownload: 'Continue the download',
