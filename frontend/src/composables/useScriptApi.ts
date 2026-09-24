@@ -46,6 +46,7 @@ const SCRIPT_CREATE_TYPE_BY_SCRIPT_TYPE: Record<ScriptType, ScriptCreateIn.type>
   BetterGI: ScriptCreateIn.type.BETTER_GI,
   ZzzOd: ScriptCreateIn.type.ZZZ_OD,
   BAAH: ScriptCreateIn.type.BAAH,
+  OkScript: ScriptCreateIn.type.OK_SCRIPT,
   General: ScriptCreateIn.type.GENERAL,
 }
 
@@ -61,6 +62,7 @@ const SCRIPT_TYPE_BY_CONFIG_TYPE: Record<string, ScriptType> = {
   BetterGIConfig: 'BetterGI',
   ZzzOdConfig: 'ZzzOd',
   BAAHConfig: 'BAAH',
+  OkScriptConfig: 'OkScript',
 }
 
 const resolveScriptType = (configType: string): ScriptType => {
@@ -1232,6 +1234,31 @@ export function useScriptApi() {
                           baahUserData.Data?.ProxyTimes !== undefined
                             ? baahUserData.Data.ProxyTimes
                             : 0,
+                      },
+                    }
+                  } else if (userIndex.type === 'OkScriptUserConfig' && userData) {
+                    const okScriptUserData = userData as unknown as LooseUserConfig
+                    return {
+                      id: userIndex.uid,
+                      name: okScriptUserData.Info?.Name || `用户${userIndex.uid}`,
+                      Info: {
+                        Name: okScriptUserData.Info?.Name ?? `用户${userIndex.uid}`,
+                        Status: okScriptUserData.Info?.Status ?? true,
+                        RemainedDay: okScriptUserData.Info?.RemainedDay ?? -1,
+                        Notes: okScriptUserData.Info?.Notes ?? '',
+                        Tag: okScriptUserData.Info?.Tag ?? null,
+                      },
+                      Notify: {
+                        Enabled: okScriptUserData.Notify?.Enabled ?? false,
+                        IfSendStatistic: okScriptUserData.Notify?.IfSendStatistic ?? false,
+                        IfSendMail: okScriptUserData.Notify?.IfSendMail ?? false,
+                        ToAddress: okScriptUserData.Notify?.ToAddress ?? '',
+                        IfServerChan: okScriptUserData.Notify?.IfServerChan ?? false,
+                        ServerChanKey: okScriptUserData.Notify?.ServerChanKey ?? '',
+                      },
+                      Data: {
+                        LastProxyDate: okScriptUserData.Data?.LastProxyDate ?? '',
+                        ProxyTimes: okScriptUserData.Data?.ProxyTimes ?? 0,
                       },
                     }
                   }

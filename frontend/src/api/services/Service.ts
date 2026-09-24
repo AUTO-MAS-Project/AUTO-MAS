@@ -82,6 +82,8 @@ import type { MaaFWProjectUpdateIn } from '../models/MaaFWProjectUpdateIn';
 import type { MaaFWProjectUpdateOut } from '../models/MaaFWProjectUpdateOut';
 import type { NoticeOut } from '../models/NoticeOut';
 import type { NotifyChannelsOut } from '../models/NotifyChannelsOut';
+import type { OkScriptProbeIn } from '../models/OkScriptProbeIn';
+import type { OkScriptProbeOut } from '../models/OkScriptProbeOut';
 import type { OutBase } from '../models/OutBase';
 import type { PatternDebugIn } from '../models/PatternDebugIn';
 import type { PatternDebugOut } from '../models/PatternDebugOut';
@@ -1234,6 +1236,26 @@ export class Service {
             query: {
                 'lineType': lineType,
             },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 识别 ok-script 项目
+     * 识别安装目录里的 ok-script 项目，返回项目名、版本与一次性任务列表。
+     * @param requestBody
+     * @returns OkScriptProbeOut Successful Response
+     * @throws ApiError
+     */
+    public static probeOkscriptProjectApiApiScriptsOkscriptProbePost(
+        requestBody: OkScriptProbeIn,
+    ): CancelablePromise<OkScriptProbeOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/okscript/probe',
+            body: requestBody,
+            mediaType: 'application/json',
             errors: {
                 422: `Validation Error`,
             },

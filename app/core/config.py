@@ -80,6 +80,8 @@ from app.models.config import (
     MaaUserConfig,
     OkNteConfig,
     OkNteUserConfig,
+    OkScriptConfig,
+    OkScriptUserConfig,
     OkwwConfig,
     OkwwUserConfig,
     QueueConfig,
@@ -859,6 +861,7 @@ class AppConfig(GlobalConfig):
             "BetterGI",
             "ZzzOd",
             "BAAH",
+            "OkScript",
         ],
         script_id: str | None = None,
     ) -> tuple[
@@ -874,7 +877,8 @@ class AppConfig(GlobalConfig):
         | HSRConfig
         | BetterGIConfig
         | ZzzOdConfig
-        | BAAHConfig,
+        | BAAHConfig
+        | OkScriptConfig,
     ]:
         """添加脚本配置"""
 
@@ -1238,7 +1242,8 @@ class AppConfig(GlobalConfig):
         | HSRUserConfig
         | BetterGIUserConfig
         | ZzzOdUserConfig
-        | BAAHUserConfig,
+        | BAAHUserConfig
+        | OkScriptUserConfig,
     ]:
         """添加用户配置"""
 
@@ -1282,6 +1287,8 @@ class AppConfig(GlobalConfig):
             uid, config = await script_config.UserData.add(ZzzOdUserConfig)
         elif isinstance(script_config, BAAHConfig):
             uid, config = await script_config.UserData.add(BAAHUserConfig)
+        elif isinstance(script_config, OkScriptConfig):
+            uid, config = await script_config.UserData.add(OkScriptUserConfig)
         else:
             raise TypeError(f"不支持的脚本配置类型: {type(script_config)}")
 

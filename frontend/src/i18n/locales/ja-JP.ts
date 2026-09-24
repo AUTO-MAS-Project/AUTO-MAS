@@ -1608,6 +1608,50 @@ export default {
     baahLastProxyDate: '前回の実行日',
     baahProxyTimes: '実行回数',
     baahDataReadOnlyHint: '本ソフトが自動で集計します。閲覧のみ',
+    // OkScript 汎用
+    okscriptScriptConfiguration: 'OkScript スクリプト設定',
+    okscriptScriptNameHint: 'OkScript スクリプトのインスタンスを見分けるための名前',
+    okscriptNotOkScript: 'スクリプトの種類が OkScript ではありません',
+    okscriptProject: 'ok-script プロジェクト',
+    okscriptRootPath: 'インストール先',
+    okscriptRootPathHint:
+      'ok-script プロジェクト（現在は ok-ef のみ対応）のインストール先。「プロジェクト名.exe」と data フォルダがある階層を選んでください',
+    okscriptPickRootPath: 'ok-script プロジェクトのインストール先を選択してください',
+    okscriptProbeFailed: 'このフォルダを認識できません',
+    okscriptProbeSucceeded: '{name} {version} を認識しました',
+    okscriptProjectName: 'プロジェクト',
+    okscriptProjectVersion: 'バージョン',
+    okscriptTaskCount: '実行できる単発タスク',
+    okscriptUnverified:
+      '{name} は未検証です（現在は ok-ef のみ保証）。実行結果の判定が不正確な場合があります',
+    okscriptNativeConfigHint:
+      'タスクの詳細はプロジェクト自身の設定をそのまま使います。ネイティブ画面で変更してください。本ソフトは変更しません',
+    okscriptOpenNative: 'ネイティブ画面を開く',
+    okscriptRunTimeLimitHint:
+      'プロジェクト起動から数えて、この時間内に完了マーカーが出なければプロジェクトを終了し、完了を確認できないと判定します（成功には数えません）',
+    okscriptSessionTitle: '{name} のネイティブ画面を使用中',
+    okscriptSessionDesc: 'プロジェクト画面で設定してください。設定はプロジェクト自身が保存します。',
+    okscriptSessionDesc2: '終わったら「ネイティブ画面を閉じる」を押してください。',
+    okscriptSessionClose: 'ネイティブ画面を閉じる',
+    okscriptSessionOpened: 'ネイティブ画面を開きました',
+    okscriptSessionClosed: 'ネイティブ画面を閉じました',
+    okscriptSessionStartFailed: 'ネイティブ画面を開けませんでした',
+    okscriptSessionStopFailed: 'ネイティブ画面を閉じられませんでした',
+    okscriptSessionSetupFailed: 'ネイティブ画面でエラーが発生しました: {p0}',
+    okscriptSessionTimeoutWarn: 'ネイティブ画面を長く開いています。30 秒後に自動で閉じます',
+    okscriptTask: '実行するタスク',
+    okscriptTaskHint:
+      '代理実行ごとに走らせる単発タスク。更新でタスクの順番が変わっても自動で対応します',
+    okscriptTaskPlaceholder: '実行するタスクを選択してください',
+    okscriptTaskMissing:
+      '選択中のタスク「{name}」は現在のバージョンにありません。選び直してください',
+    okscriptRootPathMissing: '先にスクリプト設定で ok-script のインストール先を選択してください',
+    okscriptUserTag: 'ユーザータグ',
+    okscriptUserTagHint: '実行状況から本ソフトが自動生成します。閲覧のみ',
+    okscriptLastProxyDate: '前回の代理日',
+    okscriptProxyTimes: '代理回数',
+    okscriptLastProxyStatus: '前回の代理結果',
+    okscriptDataReadOnlyHint: '本ソフトが自動で集計します。閲覧のみ',
     // BetterGI 专项
     bettergiScriptConfiguration: 'BetterGI スクリプト設定',
     bettergiInstanceNameHint: '複数の BetterGI スクリプトインスタンスを区別するための名前です',
@@ -3034,6 +3078,7 @@ export default {
       HSR: 'HSR',
       BetterGI: 'BetterGI',
       BAAH: 'BAAH',
+      OkScript: 'OkScript 汎用',
       General: '汎用',
     },
     typeDesc: {
@@ -3047,6 +3092,7 @@ export default {
       HSR: '崩壊：スターレイル — 三月なのか / SRA の 2 種類に対応',
       BetterGI: '原神 BGI 専用の一条龍自動化スクリプト',
       BAAH: 'ブルーアーカイブのデイリータスク自動化。複数アカウント（インスタンス）管理に対応',
+      OkScript: 'ok-ef などの ok-script プロジェクトをまとめて扱い、単発タスクを実行します',
       General: 'ログファイルを出力するあらゆるスクリプトに使える汎用の自動化',
     },
     mask: {
@@ -3171,6 +3217,7 @@ export default {
         HSR: '三月なのか / SRA の 2 種類に対応',
         BetterGI: '原神 BGI 専用の一条龍自動化スクリプト',
         BAAH: 'ブルーアーカイブのデイリータスク自動化と複数アカウント管理',
+        OkScript: 'ok-ef などの ok-script プロジェクトをまとめて扱う',
       },
     },
     toast: {

@@ -8,7 +8,7 @@ import type { ScriptType } from '@/types/script'
  * 原因是这里维护了一份和 SCRIPT_LOGOS 平行的脚本类型清单，少一个不会报错。现在图标统一
  * 从 SCRIPT_LOGOS 取，这些用例负责钉住「除显式排除的以外，每个脚本类型都有卫星」。
  */
-const EXPECTED_EXCLUSIONS: readonly ScriptType[] = ['General']
+const EXPECTED_EXCLUSIONS: readonly ScriptType[] = ['General', 'OkScript']
 
 describe('satellite icon config', () => {
   it('中心图标可用', () => {
@@ -32,6 +32,11 @@ describe('satellite icon config', () => {
   it('通用脚本不上轨道，因为它的图标就是中心图标', () => {
     expect(satelliteModules.some(module => module.scriptType === 'General')).toBe(false)
     expect(SCRIPT_LOGOS.General).toBe(centerIconUrl)
+  })
+
+  it('ok-script 通用专项暂用中心图标，同样不上轨道', () => {
+    expect(satelliteModules.some(module => module.scriptType === 'OkScript')).toBe(false)
+    expect(SCRIPT_LOGOS.OkScript).toBe(centerIconUrl)
   })
 
   it('MAA 排在第一位，未列入顺序表的类型排在后面', () => {

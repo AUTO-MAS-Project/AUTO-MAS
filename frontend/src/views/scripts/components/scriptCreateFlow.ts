@@ -63,6 +63,15 @@ export const SCRIPT_TYPE_OPTIONS: ScriptTypeOption[] = [
     icon: SCRIPT_LOGOS.MaaFW,
   },
   {
+    // 与 MaaFW 同理：任何 ok-script 项目（首批 ok-ef）都从这一个入口接入，和「通用脚本」并列。
+    value: 'OkScript',
+    titleKey: 'scripts.type.OkScript',
+    descriptionKey: 'scripts.create.typeDesc.OkScript',
+    keywords: ['okscript', 'ok-script', 'ok-ef', 'okef', '终末地', 'endfield', '通用'],
+    group: 'general',
+    icon: SCRIPT_LOGOS.OkScript,
+  },
+  {
     value: 'MAA',
     titleKey: 'scripts.type.MAA',
     descriptionKey: 'scripts.create.typeDesc.MAA',
@@ -246,6 +255,7 @@ const EDIT_SEGMENT_BY_TYPE: Record<ScriptType, string> = {
   BetterGI: 'bettergi',
   ZzzOd: 'zzzod',
   BAAH: 'baah',
+  OkScript: 'okscript',
   General: 'general',
 }
 

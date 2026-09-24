@@ -46,6 +46,7 @@ TYPE_BOOK = {
     "BetterGIConfig": "BetterGI",
     "ZzzOdConfig": "ZZZ-OD",
     "BAAHConfig": "BAAH",
+    "OkScriptConfig": "OkScript",
 }
 """配置类型映射表"""
 

@@ -23,6 +23,8 @@ export const SCRIPT_LOGOS: Record<ScriptType, string> = {
   MaaEnd: maaEndIcon,
   MaaFW: maafwIcon,
   OkNte: okNteIcon,
+  // ok-script 通用专项暂无自己的图标，沿用本软件图标（主页卫星轨道里已排除）
+  OkScript: generalIcon,
   Okww: okwwIcon,
   SRC: srcIcon,
   ZzzOd: zzzOdIcon,
@@ -39,6 +41,7 @@ export const SCRIPT_LABELS: Record<ScriptType, string> = {
   MaaEnd: 'MaaEnd',
   MaaFW: 'MFW',
   OkNte: 'OK-NTE',
+  OkScript: 'ok-script',
   Okww: 'ok-ww',
   SRC: 'SRC',
   ZzzOd: 'ZZZ-OD',

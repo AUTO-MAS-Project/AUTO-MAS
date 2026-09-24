@@ -115,6 +115,12 @@ const routes = [
     meta: { title: '编辑BAAH脚本' },
   },
   {
+    path: '/scripts/:id/edit/okscript',
+    name: 'OkScriptScriptEdit',
+    component: () => import('../views/EditView/Script/OkScriptScriptEdit.vue'),
+    meta: { title: '编辑OkScript脚本' },
+  },
+  {
     path: '/scripts/:id/edit/okww',
     name: 'OkwwScriptEdit',
     component: () => import('../views/EditView/Script/OkwwScriptEdit.vue'),
@@ -245,6 +251,18 @@ const routes = [
     name: 'BAAHUserEdit',
     component: () => import('../views/EditView/User/BAAHUserEdit.vue'),
     meta: { title: '编辑BAAH用户' },
+  },
+  {
+    path: '/scripts/:scriptId/users/add/okscript',
+    name: 'OkScriptUserAdd',
+    component: () => import('../views/EditView/User/OkScriptUserEdit.vue'),
+    meta: { title: '添加OkScript用户' },
+  },
+  {
+    path: '/scripts/:scriptId/users/:userId/edit/okscript',
+    name: 'OkScriptUserEdit',
+    component: () => import('../views/EditView/User/OkScriptUserEdit.vue'),
+    meta: { title: '编辑OkScript用户' },
   },
   {
     path: '/scripts/:scriptId/users/add/okww',
