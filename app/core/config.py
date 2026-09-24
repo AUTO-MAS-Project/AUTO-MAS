@@ -454,6 +454,10 @@ class AppConfig(GlobalConfig):
             self.config_path / "ScriptConfig.json",
             global_mirror_cdk=str(self.get("Update", "MirrorChyanCDK") or ""),
         )
+        # HSR 旧直控快照（Direct.*）已删字段，同理必须在 connect 之前另存原始密文
+        await self._archive_legacy_hsr_direct_snapshots(
+            self.config_path / "ScriptConfig.json"
+        )
         await self.ScriptConfig.connect(self.config_path / "ScriptConfig.json")
         if m9a_migration.changed:
             await self._settle_m9a_migration(m9a_migration)
@@ -5431,6 +5435,36 @@ class AppConfig(GlobalConfig):
                 "lines": lines,
             }
         )
+
+    async def _archive_legacy_hsr_direct_snapshots(
+        self, script_config_path: Path
+    ) -> None:
+        """HSR 旧直控快照停用前的留档，结果攒成启动通知；见 ``app.task.HSR.tools.legacy_direct``。
+
+        没有 HSR 脚本时不导入 HSR 专项（导入要近 1 秒），先按字节找一次类型标签。
+        """
+
+        def _has_hsr_script() -> bool:
+            try:
+                return b'"HSRConfig"' in script_config_path.read_bytes()
+            except OSError:
+                return False
+
+        try:
+            if not await asyncio.to_thread(_has_hsr_script):
+                return
+            from app.task.HSR.tools.legacy_direct import (
+                archive_legacy_direct_snapshots,
+            )
+
+            report = await asyncio.to_thread(
+                archive_legacy_direct_snapshots, script_config_path
+            )
+        except Exception as exc:  # noqa: BLE001 - 留档失败不该挡住启动
+            logger.opt(exception=True).warning(f"HSR 旧直控快照留档失败：{exc}")
+            return
+        if report.needs_notice:
+            self.startup_notices.append(report.notice())
 
     async def push_system_notice(
         self, *, level: str, title: str, lines: list[str]
