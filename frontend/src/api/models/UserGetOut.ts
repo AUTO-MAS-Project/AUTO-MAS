@@ -15,6 +15,7 @@ import type { OkNteUserConfig } from './OkNteUserConfig';
 import type { OkwwUserConfig } from './OkwwUserConfig';
 import type { SrcUserConfig } from './SrcUserConfig';
 import type { UserIndexItem } from './UserIndexItem';
+import type { WhimboxUserConfig } from './WhimboxUserConfig';
 import type { ZzzOdUserConfig } from './ZzzOdUserConfig';
 export type UserGetOut = {
     /**
@@ -36,6 +37,6 @@ export type UserGetOut = {
     /**
      * 用户数据字典, key来自于index列表的uid
      */
-    data: Record<string, (MaaUserConfig | SrcUserConfig | GeneralUserConfig | OkwwUserConfig | OkNteUserConfig | MaaEndUserConfig | M9AUserConfig | MaaFWUserConfig | HSRUserConfig | BetterGIUserConfig | ZzzOdUserConfig | BAAHUserConfig | MSSUserConfig)>;
+    data: Record<string, (MaaUserConfig | SrcUserConfig | GeneralUserConfig | OkwwUserConfig | OkNteUserConfig | MaaEndUserConfig | M9AUserConfig | MaaFWUserConfig | HSRUserConfig | BetterGIUserConfig | ZzzOdUserConfig | BAAHUserConfig | WhimboxUserConfig | MSSUserConfig)>;
 };
 

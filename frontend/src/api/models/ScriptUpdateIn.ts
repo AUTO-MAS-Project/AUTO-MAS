@@ -14,6 +14,7 @@ import type { MSSConfig } from './MSSConfig';
 import type { OkNteConfig } from './OkNteConfig';
 import type { OkwwConfig } from './OkwwConfig';
 import type { SrcConfig } from './SrcConfig';
+import type { WhimboxConfig } from './WhimboxConfig';
 import type { ZzzOdConfig } from './ZzzOdConfig';
 export type ScriptUpdateIn = {
     /**
@@ -23,6 +24,6 @@ export type ScriptUpdateIn = {
     /**
      * 脚本更新数据
      */
-    data: (MaaConfig | SrcConfig | GeneralConfig | OkwwConfig | OkNteConfig | MaaEndConfig | M9AConfig | MaaFWConfig | HSRConfig | BetterGIConfig | ZzzOdConfig | BAAHConfig | MSSConfig);
+    data: (MaaConfig | SrcConfig | GeneralConfig | OkwwConfig | OkNteConfig | MaaEndConfig | M9AConfig | MaaFWConfig | HSRConfig | BetterGIConfig | ZzzOdConfig | BAAHConfig | WhimboxConfig | MSSConfig);
 };
 

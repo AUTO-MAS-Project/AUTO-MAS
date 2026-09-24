@@ -143,6 +143,14 @@ export const SCRIPT_TYPE_OPTIONS: ScriptTypeOption[] = [
     icon: SCRIPT_LOGOS.BAAH,
   },
   {
+    value: 'Whimbox',
+    titleKey: 'scripts.type.Whimbox',
+    descriptionKey: 'scripts.create.typeDesc.Whimbox',
+    keywords: ['whimbox', '奇想盒', '无限暖暖', 'nikki'],
+    group: 'specialized',
+    icon: SCRIPT_LOGOS.Whimbox,
+  },
+  {
     value: 'MSS',
     titleKey: 'scripts.type.MSS',
     descriptionKey: 'scripts.create.typeDesc.MSS',
@@ -254,6 +262,7 @@ const EDIT_SEGMENT_BY_TYPE: Record<ScriptType, string> = {
   BetterGI: 'bettergi',
   ZzzOd: 'zzzod',
   BAAH: 'baah',
+  Whimbox: 'whimbox',
   MSS: 'mss',
   General: 'general',
 }

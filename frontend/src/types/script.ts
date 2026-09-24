@@ -11,6 +11,7 @@ import type {
   BetterGIConfig,
   ZzzOdConfig,
   BAAHConfig,
+  WhimboxConfig,
 } from '@/api'
 import type {
   AutoEssenceLocation,
@@ -36,6 +37,7 @@ export type ScriptType =
   | 'BetterGI'
   | 'ZzzOd'
   | 'BAAH'
+  | 'Whimbox'
   | 'MSS'
 
 // MAA脚本配置
@@ -551,6 +553,7 @@ export interface Script {
     | HSRConfig
     | BetterGIConfig
     | BAAHConfig
+    | WhimboxConfig
   users: User[]
 }
 
@@ -650,6 +653,7 @@ export interface ScriptIndexItem {
     | 'BetterGIConfig'
     | 'ZzzOdConfig'
     | 'BAAHConfig'
+    | 'WhimboxConfig'
     | 'MSSConfig'
 }
 
@@ -670,6 +674,7 @@ export interface ScriptDetail {
     | BetterGIConfig
     | ZzzOdConfig
     | BAAHConfig
+    | WhimboxConfig
   users?: User[]
   createTime?: string
 }
