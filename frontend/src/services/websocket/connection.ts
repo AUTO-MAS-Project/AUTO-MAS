@@ -451,6 +451,12 @@ export function scheduleReconnect(delayMs: number = RECONNECT_DELAY_MAX): void {
   if (state.value === 'closed' || state.value === 'superseded') return
   automaticReconnectEnabled = true
   clearReconnectTimer()
+  // 协调器可能在 await 期间连接已自行恢复后才来安排重连：连接可用就什么都不做，
+  // 否则状态被降成 reconnecting，关闭流程会把可用的连接误判成断线
+  if (socket && socket.readyState === WebSocket.OPEN) {
+    logger.info('主 WebSocket 已连接，忽略安排的重连')
+    return
+  }
   state.value = 'reconnecting'
   reconnectTimer = window.setTimeout(() => {
     reconnectTimer = undefined

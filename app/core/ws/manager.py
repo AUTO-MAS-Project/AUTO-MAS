@@ -153,8 +153,10 @@ class _MainConnectionManager:
         try:
             return await asyncio.wait_for(_send(), timeout=self.send_timeout)
         except asyncio.TimeoutError:
+            # 超时可能发生在等锁期间（未发出），也可能发生在 drain 期间（帧已进缓冲区、
+            # 之后仍可能送达），这里无法区分，只能记为未确认送达
             logger.warning(
-                f"主 WebSocket 发送超时({self.send_timeout:g}秒)，消息已丢弃: "
+                f"主 WebSocket 发送超时({self.send_timeout:g}秒)，消息未确认送达: "
                 f"type={message.get('type')}"
             )
             return False

@@ -194,6 +194,16 @@ const handlePowerCountdownCancelled = (): void => {
   powerCountdownDisconnected.value = false
 }
 
+/**
+ * 经 HTTP 取消电源倒计时，成功后立即在本地清除展示状态。
+ * 主连接断开期间后端回发的 power.countdown.cancelled 收不到，不能只等它来关弹窗。
+ * 请求失败时向调用方抛出，展示状态不变。
+ */
+const cancelPowerCountdown = async (): Promise<void> => {
+  await Service.cancelPowerTaskApiDispatchCancelPowerPost()
+  handlePowerCountdownCancelled()
+}
+
 const refreshLifecycleSnapshots = async (): Promise<void> => {
   const generation = ++lifecycleSnapshotGeneration
   const powerSequenceAtStart = powerMutationSequence
@@ -406,7 +416,7 @@ const runCloseFlow = async (): Promise<void> => {
   }
 
   // 主连接不在 open（断线中，或初始化阶段从未建立）时 ready 无从送达，也不会再有断开事件
-  // 替它解除等待：不空等超时，POST /close 后直接进入确认进程退出 / taskkill 分支
+  // 替它解除等待：不等 ready，POST /close 后改以后端进程退出作为收尾完成的信号
   const connectionOpen = connectionState().value === 'open'
   if (!connectionOpen) {
     logger.warn(`主 WebSocket 未连接（${connectionState().value}），不等待 backend.shutdown.ready`)
@@ -433,10 +443,11 @@ const runCloseFlow = async (): Promise<void> => {
   } else if (ready || !connectionOpen) {
     // ready 表示 teardown 已完成；从此刻起给进程完整的正常退出窗口，
     // 不能让 ready 到达较晚而把退出观察期压缩到接近 0。
-    // 主连接未连接时收不到 ready：后端若已崩溃这里立即确认退出；若仍存活，
-    // POST /close 触发的 teardown 完成后它会自行退出，同样给一个正常退出窗口再 taskkill
+    // 主连接未连接时收不到 ready：后端若已崩溃，第一次轮询即确认退出；若仍存活，
+    // /close 立即返回、teardown 在后台进行（停止全部任务、关模拟器与游戏），完成后后端自行退出。
+    // 这时进程退出就是 ready 的替身，等待时限沿用 ready 的时限，不能提前 taskkill 打断收尾
     logger.info('等待后端进程正常退出')
-    const exited = await waitForBackendExit(PROCESS_EXIT_TIMEOUT)
+    const exited = await waitForBackendExit(ready ? PROCESS_EXIT_TIMEOUT : CLOSE_READY_TIMEOUT)
     backendExitConfirmed = exited
     if (!backendExitConfirmed) {
       logger.warn('后端进程未在规定时间内退出')
@@ -935,6 +946,7 @@ export function useAppLifecycle() {
     backendStatus,
     powerCountdown,
     powerCountdownDisconnected,
+    cancelPowerCountdown,
     connectionState: connectionState(),
   }
 }

@@ -25,10 +25,12 @@ vi.mock('@/i18n', () => ({ translate: (key: string) => key }))
 
 const closePost = vi.hoisted(() => vi.fn())
 const getWsMeta = vi.hoisted(() => vi.fn())
+const cancelPowerPost = vi.hoisted(() => vi.fn())
 vi.mock('@/api', () => ({
   Service: {
     closeApiCoreClosePost: closePost,
     getWsMetaApiCoreWsMetaGet: getWsMeta,
+    cancelPowerTaskApiDispatchCancelPowerPost: cancelPowerPost,
   },
 }))
 
@@ -170,7 +172,24 @@ describe('主连接不在 open 时关闭不空等 ready', () => {
     expect(appQuit).toHaveBeenCalledTimes(1)
   })
 
-  it('WS 从未建立而后端仍在运行：给正常退出窗口后 taskkill，远早于 30 秒', async () => {
+  it('断线但后端仍在收尾：等它自行退出，不提前 taskkill 打断停止任务的收尾', async () => {
+    connectionStateRef.value = 'reconnecting'
+    backendStatus.mockResolvedValue({ isRunning: true, runtimeSupervised: false })
+    const mod = await loadLifecycle()
+
+    void mod.closeApp()
+    // 收尾（关模拟器、关游戏）耗时超过进程退出时限 5 秒
+    await vi.advanceTimersByTimeAsync(12000)
+    expect(killAllProcesses).not.toHaveBeenCalled()
+
+    // teardown 完成后后端自行退出
+    backendStatus.mockResolvedValue({ isRunning: false, runtimeSupervised: false })
+    await vi.advanceTimersByTimeAsync(1000)
+    expect(killAllProcesses).not.toHaveBeenCalled()
+    expect(appQuit).toHaveBeenCalledTimes(1)
+  })
+
+  it('WS 从未建立而后端始终不退出：等满 ready 的时限后 taskkill', async () => {
     connectionStateRef.value = 'idle'
     backendStatus.mockResolvedValue({ isRunning: true, runtimeSupervised: false })
     killAllProcesses.mockImplementation(async () => {
@@ -180,10 +199,10 @@ describe('主连接不在 open 时关闭不空等 ready', () => {
     const mod = await loadLifecycle()
 
     void mod.closeApp()
-    await vi.advanceTimersByTimeAsync(4000)
+    await vi.advanceTimersByTimeAsync(29000)
     expect(killAllProcesses).not.toHaveBeenCalled()
 
-    await vi.advanceTimersByTimeAsync(2000)
+    await vi.advanceTimersByTimeAsync(1500)
     expect(killAllProcesses).toHaveBeenCalledTimes(1)
     await vi.advanceTimersByTimeAsync(1000)
     expect(appQuit).toHaveBeenCalledTimes(1)
@@ -360,6 +379,40 @@ describe('电源倒计时', () => {
     pushMessage('power.countdown.updated', { operation: 'Shutdown', remaining: 10 })
     expect(powerCountdown.value).toEqual({ operation: 'Shutdown', remaining: 10 })
     expect(powerCountdownDisconnected.value).toBe(false)
+  })
+
+  it('断线期间经 HTTP 取消成功后本地立即关闭弹窗，不依赖收不到的取消事件', async () => {
+    connectionStateRef.value = 'open'
+    cancelPowerPost.mockResolvedValue({ code: 200 })
+    const mod = await loadLifecycle()
+    const { powerCountdown, powerCountdownDisconnected, cancelPowerCountdown } =
+      mod.useAppLifecycle()
+
+    pushMessage('power.countdown.updated', COUNTDOWN)
+    connectionStateRef.value = 'reconnecting'
+    await vi.advanceTimersByTimeAsync(6000)
+    expect(powerCountdownDisconnected.value).toBe(true)
+
+    await cancelPowerCountdown()
+    expect(cancelPowerPost).toHaveBeenCalledTimes(1)
+    expect(powerCountdown.value).toBeNull()
+    expect(powerCountdownDisconnected.value).toBe(false)
+
+    // 之后不会被残留的计时器重新标记
+    await vi.advanceTimersByTimeAsync(10000)
+    expect(powerCountdown.value).toBeNull()
+    expect(powerCountdownDisconnected.value).toBe(false)
+  })
+
+  it('取消请求失败时保留弹窗并把错误抛给调用方', async () => {
+    connectionStateRef.value = 'open'
+    cancelPowerPost.mockRejectedValue(new Error('ECONNREFUSED'))
+    const mod = await loadLifecycle()
+    const { powerCountdown, cancelPowerCountdown } = mod.useAppLifecycle()
+
+    pushMessage('power.countdown.updated', COUNTDOWN)
+    await expect(cancelPowerCountdown()).rejects.toThrow('ECONNREFUSED')
+    expect(powerCountdown.value).toEqual(COUNTDOWN)
   })
 
   it('重新连上后没有新推送时按正常时限清除，不永久残留', async () => {
