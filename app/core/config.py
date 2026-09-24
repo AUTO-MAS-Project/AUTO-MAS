@@ -5454,18 +5454,33 @@ class AppConfig(GlobalConfig):
             self.startup_notices.append(notice)
 
     async def flush_startup_notices(self) -> None:
-        """主 WebSocket 连上后把启动期攒下的系统通知发出去，只发一次。"""
+        """主 WebSocket 连上后把启动期攒下的系统通知发出去，发成功的只发一次。
+
+        连接刚建立就被替换 / 断开时发送返回 False，断开还会取消这个回调；没发出去的
+        （含正在发的那条）按原顺序放回队列，由下一次连接再发，不在这里重试。
+        """
 
         from app.core.ws import Publisher, protocol
         from app.models.schema import WSSystemNoticeData
 
-        notices, self.startup_notices = self.startup_notices, []
-        for notice in notices:
-            await Publisher.send(
-                id=protocol.ID_MAIN,
-                type=protocol.SYSTEM_NOTICE,
-                data=WSSystemNoticeData(**notice),
-            )
+        pending, self.startup_notices = self.startup_notices, []
+        try:
+            while pending:
+                try:
+                    sent = await Publisher.send(
+                        id=protocol.ID_MAIN,
+                        type=protocol.SYSTEM_NOTICE,
+                        data=WSSystemNoticeData(**pending[0]),
+                    )
+                except Exception as exc:  # noqa: BLE001 - 与 push_system_notice 一致
+                    logger.warning(f"系统通知发送失败，改为下次连接时发送：{exc}")
+                    sent = False
+                if not sent:
+                    break
+                pending.pop(0)
+        finally:
+            # 发送期间 push_system_notice 可能又攒进来新的，放在它们前面保持顺序
+            self.startup_notices[:0] = pending
 
     async def clean_maafw_embedded_copies(self) -> None:
         """清掉内嵌副本目录下的两类垃圾：staging 半成品、脚本已不存在的副本。
