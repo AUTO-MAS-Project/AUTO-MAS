@@ -143,12 +143,9 @@
         >
           {{ t('edit.next') }}
         </a-button>
-        <template v-else>
-          <a-button size="large" @click="handleCancel">{{ t('edit.done') }}</a-button>
-          <a-button type="primary" size="large" @click="handleCreateFirstUser">
-            {{ t('edit.createFirstUser') }}
-          </a-button>
-        </template>
+        <a-button v-else type="primary" size="large" @click="handleCreateFirstUser">
+          {{ t('edit.createFirstUser') }}
+        </a-button>
       </div>
     </a-card>
   </ConfigLockPanel>
