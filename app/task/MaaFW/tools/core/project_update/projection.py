@@ -1623,14 +1623,31 @@ def _looks_like_frozen_python_package_dir(view: _FileView, directory: Path) -> b
 def _looks_like_offline_dependency_dir(view: _FileView, directory: Path) -> bool:
     """顶层目录里有 ``*.whl`` 或 ``get-pip.py``：项目的离线依赖包（deps/、wheels/ 之类）。
 
-    ``ensurepip/_bundled`` 里的 wheel 不算：完整的 CPython 目录都自带 pip / setuptools 的
-    wheel，按它判会把一个没声明、超过 64 MB 的解释器目录整棵带走。
+    CPython 自带的 wheel 不算：``ensurepip/_bundled``（venv / 安装器附带 pip），以及
+    python.org 安装器默认装上的测试套件 ``Lib/test/**``（``wheeldata``、
+    ``test_importlib/data`` 里都有 .whl）。目录本身就是一个 Python 解释器
+    （``_is_python_interpreter_dir``）时也不算——那是没声明的运行时，不是依赖包；
+    否则一个没声明、超过 64 MB 的解释器目录会被整棵带走。
     """
 
+    if _is_python_interpreter_dir(view, directory):
+        return False
     return any(
         (path.suffix.casefold() == ".whl" or path.name.casefold() == "get-pip.py")
-        and not any(part.casefold() == "ensurepip" for part in path.parts)
+        and not _is_cpython_bundled_file(path)
         for path in view.walk_files(directory)
+    )
+
+
+def _is_cpython_bundled_file(path: Path) -> bool:
+    """路径在 CPython 自带的 ``ensurepip/`` 或标准库测试套件 ``Lib/test/`` 之下。"""
+
+    parts = [part.casefold() for part in path.parts]
+    if "ensurepip" in parts:
+        return True
+    return any(
+        part == "lib" and following == "test"
+        for part, following in zip(parts, parts[1:])
     )
 
 
