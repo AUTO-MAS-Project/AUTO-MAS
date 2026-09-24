@@ -1263,27 +1263,37 @@ describe('单步重试', () => {
     expect(FakeRuntimeClient.calls[1].command).toEqual(['dependencies', 'rebuild'])
   })
 
-  const pythonMismatchResult = (stage: string) =>
-    ({
-      ...base,
-      type: 'result',
-      sequence: 4,
-      success: false,
+  // 照抄 Runtime v0.1.10 真机输出：`dependencies sync` / `rebuild` 在受管 Python 缺失时，
+  // state、error、result 三个事件的 stage 都是 `python.check`，不是命令自己的 stage。
+  const pythonMismatchEvents = (): RuntimeEvent[] => {
+    const failure = {
       code: 'PYTHON_VERSION_MISMATCH',
-      stage,
-      status: 'environment_broken',
+      stage: 'python.check',
       message: '受管 Python 版本复核失败',
       retryable: true,
       remediation: ['rebuild-environment'],
       details: { exitCode: 2, pythonVersion: '3.12.13' },
-    }) as unknown as RuntimeEvent
+    }
+    return [
+      {
+        ...base,
+        type: 'state',
+        sequence: 3,
+        stage: 'python.check',
+        status: 'environment_broken',
+        message: '运行环境已损坏',
+        details: {},
+      },
+      { ...base, type: 'error', sequence: 4, ...failure },
+      { ...base, type: 'result', sequence: 5, success: false, status: 'failed', ...failure },
+    ] as unknown as RuntimeEvent[]
+  }
 
   for (const mode of ['auto', 'rebuild'] as const) {
     it(`依赖段报受管 Python 缺失时（${mode}）先 environment repair 再 dependencies sync`, async () => {
       const service = createService()
-      const failed = mode === 'rebuild' ? 'dependencies.rebuild' : 'dependencies.sync'
       FakeRuntimeClient.scripts = [
-        { events: [helloEvent, pythonMismatchResult(failed)] },
+        { events: [helloEvent, ...pythonMismatchEvents()] },
         { events: [helloEvent, okResult('repair')] },
         { events: [helloEvent, okResult('dependencies.sync')] },
       ]
@@ -1302,7 +1312,7 @@ describe('单步重试', () => {
 
   it('依赖段补装受管 Python 失败时停下，报 environment repair 的失败', async () => {
     FakeRuntimeClient.scripts = [
-      { events: [helloEvent, pythonMismatchResult('dependencies.sync')] },
+      { events: [helloEvent, ...pythonMismatchEvents()] },
       {
         events: [
           helloEvent,
