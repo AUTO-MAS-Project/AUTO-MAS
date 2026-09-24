@@ -59,6 +59,7 @@ from app.utils.io import mark_native_config_injected, swap_in_dir
 from app.utils.LogPatternExtractor import LOG_TYPE_NORMAL
 
 from .tools import execute_script_task, push_notification
+from .tools.game_update import handle_genshin_game_update
 
 logger = get_logger("通用脚本自动代理")
 
@@ -316,6 +317,12 @@ class AutoProxyTask(TaskExecuteBase):
             return
 
         await self.prepare()
+
+        # 启动游戏前接管原神客户端更新；更新没成就不再往下跑，
+        # 让旧客户端跑一条龙只会浪费一次代理次数
+        if not await handle_genshin_game_update(self.script_config, self.script_info):
+            self.cur_user_item.status = "异常"
+            return
 
         logger.info(f"开始代理用户: {self.cur_user_uid}")
         self.cur_user_item.status = "运行"

@@ -79,6 +79,10 @@ export interface GeneralScriptConfig {
     EmulatorIndex: string
     URL: string
     ProcessName: string
+    /** 启动前由 MAS 接管原神客户端更新；仅当 Path 是官服/国际服 exe 时生效。 */
+    IfAutoUpdate: boolean
+    /** 更新时限（分钟），超时中止本轮；已完成的部分保留，下次续传。 */
+    UpdateTimeLimit: number
   }
   Info: {
     Name: string
@@ -372,6 +376,16 @@ export interface MaaFWProjectInfo {
   mirrorchyanMultiplatform?: boolean | null
   description?: string | null
   icon?: string | null
+}
+
+/**
+ * 路径指向的是不是原神客户端可执行文件。官服与 B服 共用 YuanShen.exe，
+ * 所以文件名只区分国服与国际服，B服 只靠配置页提示约束用户；
+ * 手输的路径可能带包裹引号，先剥掉再取名。
+ */
+export const isGenshinClientExe = (path?: string) => {
+  const name = (path ?? '').trim().replace(/^"|"$/g, '').split(/[\\/]/).pop()?.toLowerCase() ?? ''
+  return ['yuanshen.exe', 'genshinimpact.exe'].includes(name)
 }
 
 const MAAFW_SUPPORTED_CONTROLLER_TYPES = ['Adb', 'Win32', 'Gamepad', 'PlayCover'] as const

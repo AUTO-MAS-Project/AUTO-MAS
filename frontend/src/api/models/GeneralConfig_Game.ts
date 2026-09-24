@@ -43,5 +43,13 @@ export type GeneralConfig_Game = {
      * 模拟器多开实例索引
      */
     EmulatorIndex?: (string | null);
+    /**
+     * 是否在启动游戏前由 MAS 检查并接管原神客户端更新（仅当游戏路径是官服/国际服 exe 时生效）
+     */
+    IfAutoUpdate?: (boolean | null);
+    /**
+     * 更新时限（分钟）
+     */
+    UpdateTimeLimit?: (number | null);
 };
 

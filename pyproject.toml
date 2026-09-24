@@ -39,6 +39,7 @@ dependencies = [
     "sentry-sdk==2.66.1",
     "tomli_w==1.2.0",
     "tzdata==2026.3",
+    "zstandard==0.25.0",
 ]
 
 [project.urls]

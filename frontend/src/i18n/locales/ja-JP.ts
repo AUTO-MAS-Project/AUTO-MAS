@@ -1082,6 +1082,18 @@ export default {
     checkGameUpdateBeforeLogin:
       '有効にすると、ゲームにログインする前にサーバーとエミュレーター内のゲームクライアントのバージョンを比較します。クライアントが古いと強制更新画面でログインが止まります',
     updateAutomaticallyBeforeLaunching: '起動前に自動更新',
+    genshinUpdateAuto: '起動前に原神を自動更新',
+    genshinUpdateAutoHint:
+      'タスクがゲームを起動する前に、MAS がバージョン確認・ダウンロード・インストールまで自行完了し、公式ランチャーは不要です。増分パッチのみ自動適用し、無い場合は停止して公式ランチャーに任せます。Bサーバー（bili服）は非対応のため、公式ランチャーで各自更新してください',
+    genshinUpdateExe: '原神ゲームプログラム',
+    genshinUpdateExeHint:
+      'YuanShen.exe と GenshinImpact.exe のみ受け付けます。サーバーはファイル名から自動判定し、インストール先は同じフォルダになります',
+    genshinUpdateExePlaceholder: 'YuanShen.exe または GenshinImpact.exe を選択',
+    genshinUpdateExePick: '選択',
+    genshinUpdateExeRejected: 'YuanShen.exe または GenshinImpact.exe のみ選択できます',
+    genshinUpdateTimeLimit: '更新時間制限（分）',
+    genshinUpdateTimeLimitHint:
+      '超過すると今回の更新を中止します。完了済みのファイルは残り、次回その続きから再開します',
     waitAfterLaunchSeconds: '起動後の待機時間（秒）',
     launchMode: '起動方式',
     howLongWaitAfter2: 'ゲーム起動後に待つ時間',

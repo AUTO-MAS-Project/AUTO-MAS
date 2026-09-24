@@ -759,6 +759,12 @@
               </a-form-item>
             </a-col>
           </a-row>
+
+          <GameUpdateFields
+            v-if="isGenshinClientPath"
+            :model="generalConfig.Game"
+            @field-change="(key, value) => handleChange('Game', key, value)"
+          />
         </div>
 
         <!-- 自定义协议独有的选项 -->
@@ -947,6 +953,8 @@ import {
 import LogTimestampSelector from '@/components/LogTimestampSelector.vue'
 import LogHookConfig from './components/LogHookConfig.vue'
 import PushLogConfig from './components/PushLogConfig.vue'
+import GameUpdateFields from './components/GameUpdateFields.vue'
+import { isGenshinClientExe } from '@/types/script'
 import { validateRegexPattern } from './logRegex'
 
 const { t } = useI18n()
@@ -1309,6 +1317,8 @@ const generalConfig = reactive<GeneralScriptConfig>({
     EmulatorIndex: '',
     URL: '',
     ProcessName: '',
+    IfAutoUpdate: false,
+    UpdateTimeLimit: 180,
   },
   Info: {
     Name: '',
@@ -1349,6 +1359,13 @@ const generalConfig = reactive<GeneralScriptConfig>({
     },
   },
 })
+
+// 只有「游戏路径」填的是原神官服/国际服客户端时，才显示并接管原神自动更新；
+// 通用脚本要服务别的游戏，不能为这一个副功能对所有人摊开字段。B服与官服同名
+// YuanShen.exe 无法从文件名区分，不做技术识别，仅靠提示 + 用户自觉。
+const isGenshinClientPath = computed(
+  () => generalConfig.Game.Type === 'Client' && isGenshinClientExe(generalConfig.Game.Path)
+)
 
 // ==================== 表单校验规则 ====================
 const rules = {

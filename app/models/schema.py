@@ -2423,6 +2423,11 @@ class GeneralConfig_Game(BaseModel):
     )
     EmulatorId: Optional[str] = Field(default=None, description="模拟器ID")
     EmulatorIndex: Optional[str] = Field(default=None, description="模拟器多开实例索引")
+    IfAutoUpdate: Optional[bool] = Field(
+        default=None,
+        description="是否在启动游戏前由 MAS 检查并接管原神客户端更新（仅当游戏路径是官服/国际服 exe 时生效）",
+    )
+    UpdateTimeLimit: Optional[int] = Field(default=None, description="更新时限（分钟）")
 
 
 class GeneralConfig_Run(BaseModel):
@@ -2555,6 +2560,12 @@ class BetterGIConfig_Game(BaseModel):
     CloseOnFinish: Optional[bool] = Field(
         default=None, description="任务结束后是否关闭游戏"
     )
+    IfAutoUpdate: Optional[bool] = Field(
+        default=None,
+        description="是否在启动 BetterGI 前由 MAS 检查并接管原神客户端更新",
+    )
+    UpdateExe: Optional[str] = Field(default=None, description="原神游戏程序（exe）")
+    UpdateTimeLimit: Optional[int] = Field(default=None, description="更新时限（分钟）")
 
 
 class BetterGIConfig(BaseModel):
