@@ -787,6 +787,7 @@ export default {
     failure: '失败时',
     stringSplittingGuide: '字符串切割指南',
     done: '完成',
+    createFirstUser: '创建第一个用户',
     wutheringWavesWillBe:
       '将按所选服务器检查并更新鸣潮，更新过程可能下载数 GB 数据，请确保游戏未在运行',
     turnAutomaticRelicSalvage:

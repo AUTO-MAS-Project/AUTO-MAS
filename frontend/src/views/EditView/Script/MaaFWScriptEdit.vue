@@ -28,7 +28,7 @@
   <ConfigLockPanel :script-id="scriptId" content-class="script-edit-content">
     <a-card :title="pageTitle" :loading="pageLoading" class="config-card">
       <template #extra>
-        <a-tag :color="flavor.typeTagColor" class="type-tag">{{ flavor.typeTagLabel }}</a-tag>
+        <a-tag :color="flavor.typeTagColor" class="type-tag">{{ typeTagLabel }}</a-tag>
       </template>
 
       <a-steps
@@ -143,9 +143,12 @@
         >
           {{ t('edit.next') }}
         </a-button>
-        <a-button v-else type="primary" size="large" @click="handleCancel">{{
-          t('edit.done')
-        }}</a-button>
+        <template v-else>
+          <a-button size="large" @click="handleCancel">{{ t('edit.done') }}</a-button>
+          <a-button type="primary" size="large" @click="handleCreateFirstUser">
+            {{ t('edit.createFirstUser') }}
+          </a-button>
+        </template>
       </div>
     </a-card>
   </ConfigLockPanel>
@@ -190,6 +193,7 @@ import {
 } from '@/composables/useMaaFWScriptConfig'
 import { resolveAutoUpdateMode } from '@/composables/useMaaFWProjectUpdate'
 import { useMaaFWFlavor } from '@/composables/useMaaFWFlavor'
+import { resolveMaaFWProjectName } from '@/utils/maafwProjectName'
 import type {
   MaaFWInterfacePreviewData,
   MaaFWScriptConfig,
@@ -335,20 +339,51 @@ const isAutoUpdateDisabled = computed(() =>
   Boolean(previewData.value && !previewData.value.project.version)
 )
 
+// 项目实际的名字（「识宝小助手 Oᴗoಣ」而不是整条窗口标题或 MAA_bbb）：读到 interface 就按它算，
+// 没读到时用上次记下的 Info.ProjectLabel
+const projectName = computed(
+  () =>
+    (previewData.value ? resolveMaaFWProjectName(previewData.value.project) : '') ||
+    maafwConfig.Info.ProjectLabel?.trim() ||
+    ''
+)
+
 const previewProjectTitle = computed(() => {
   if (!previewData.value) return '-'
-  const project = previewData.value.project
-  return project.title || project.label || project.name
+  return projectName.value || previewData.value.project.name
 })
 
-const projectDisplayName = computed(() => {
-  const candidates = [
-    previewData.value ? previewProjectTitle.value : '',
-    maafwConfig.Info.ProjectLabel,
-    maafwConfig.Info.Name,
-  ]
-  return candidates.find(value => typeof value === 'string' && value.trim())?.trim() || 'MFW'
-})
+const projectDisplayName = computed(
+  () => projectName.value || maafwConfig.Info.Name?.trim() || 'MFW'
+)
+
+// 卡片右上角的类型标签：有项目名就显示项目名，没有才显示 MFW / M9A
+const typeTagLabel = computed(() => projectName.value || flavor.value.typeTagLabel)
+
+// 新建脚本时后端给的默认名（MaaFWConfig / M9AConfig 的 DEFAULT_SCRIPT_NAME）
+const DEFAULT_SCRIPT_NAMES = new Set(['新 MFW 脚本', '新 M9A 脚本'])
+
+// 读到 interface 后把项目名记进 Info.ProjectLabel（脚本列表的类型标签用它）；
+// 脚本名还是默认名、空、或是上次自动起的项目名时，一并改成项目名，用户自己起的名字不动。
+// 初始化期间 handleChange 不落盘，由 onMounted 在初始化结束后再调一次。
+const syncProjectName = async () => {
+  if (isInitializing.value) return
+  const name = previewData.value ? resolveMaaFWProjectName(previewData.value.project) : ''
+  if (!name) return
+  const previousLabel = maafwConfig.Info.ProjectLabel?.trim() ?? ''
+  const currentName = maafwConfig.Info.Name.trim()
+  const autoNamed =
+    !currentName || DEFAULT_SCRIPT_NAMES.has(currentName) || currentName === previousLabel
+  if (autoNamed && currentName !== name) {
+    maafwConfig.Info.Name = name
+    formData.name = name
+    await handleChange('Info', 'Name', name)
+  }
+  if (previousLabel !== name) {
+    maafwConfig.Info.ProjectLabel = name
+    await handleChange('Info', 'ProjectLabel', name)
+  }
+}
 
 // 通用 MaaFW 用「<项目名> 项目配置 / 项目引导」；特调类型（M9A）用它自己那句标题
 const pageTitle = computed(() =>
@@ -463,6 +498,7 @@ const runPreview = async (options: { forceEnv?: boolean } = {}) => {
     previewData.value = response.data as MaaFWInterfacePreviewData
     await syncControllerResourceSelection(true)
     await prunePeriodTaskSelections()
+    await syncProjectName()
     // 读到 interface 就把运行环境备好。四个调用方（读取按钮 / 选目录 /
     // 路径变更 / 页面加载）都会经过这里，放在 runPreview 里才不会漏。
     void runAgentEnvPrepare(path, options.forceEnv === true)
@@ -783,6 +819,12 @@ const handleCancel = () => {
   router.push('/scripts')
 }
 
+// 引导最后一步直接去建第一个用户；先等排队中的保存写完，用户页读到的才是刚配好的脚本
+const handleCreateFirstUser = async () => {
+  await enqueue(async () => undefined)
+  router.push(`/scripts/${scriptId}/users/add/${flavor.value.type === 'M9A' ? 'm9a' : 'maafw'}`)
+}
+
 onMounted(async () => {
   pageLoading.value = true
   let scriptLoaded = false
@@ -822,6 +864,7 @@ onMounted(async () => {
   // 放在 isInitializing 复位之后：handleChange 在初始化期间不落盘，
   // 预填要真正写进脚本配置而不是只改本地草稿。
   if (scriptLoaded) {
+    await syncProjectName()
     await prefillMirrorChyanCdk()
     await syncGamePackageName(false)
   }
