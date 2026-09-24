@@ -630,16 +630,15 @@ class AutoProxyTask(TaskExecuteBase):
         # 日常 4 项不在战斗集合内，仍按 OneDragon.Groups 在原生一条龙启停（单开关已对齐）。
         _exclude: set[str] = set(exclude_task_names or ())
         if self.use_execution_layer:
-            _queue_combat_bases = {
-                resolve_base_name(str(q.get("name", "")))
-                for q in (self.one_dragon_queue or [])
-                if str(q.get("name", "")).strip()
-            }
-            _exclude |= (
-                self.plan_combat_bases & _queue_combat_bases
-                if _queue_combat_bases
-                else set(self.plan_combat_bases)
-            )
+            if self.one_dragon_queue:
+                _queue_bases = {
+                    base
+                    for q in self.one_dragon_queue
+                    if (base := resolve_base_name(str(q.get("name", ""))))
+                }
+                _exclude |= self.plan_combat_bases & _queue_bases
+            else:
+                _exclude |= set(self.plan_combat_bases)
         # 执行层接管的自定义项同样从原生副本剔除：它们改由执行层「段」承载
         # （见下方 build_execution_segments），不剔除会与原生一条龙重复执行。
         if self.custom_exec_enabled:
