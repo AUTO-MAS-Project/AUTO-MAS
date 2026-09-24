@@ -440,7 +440,6 @@ export default {
     startedSrcSetupUser: 'Started the SRC setup for user {p0}',
     startedGeneralSetupUser: 'Started the general setup for user {p0}',
     readP0: 'Read {p0}',
-    addedP0Tasks: 'Added {p0} tasks',
     configurationSessionUserP02:
       'The configuration session for user {p0} timed out after 30 minutes; saving automatically...',
     configurationUserP0Was: 'The configuration for user {p0} was saved',
@@ -485,7 +484,6 @@ export default {
       'Annihilation and the daily run start MAA twice; within a group they run in order',
     annihilationDailyTasksEach: 'Annihilation and the daily tasks each start their own MAA session',
     annihilationStage: 'Annihilation stage',
-    couldNotLoadAvailable: 'Could not load the available tasks',
     rewardGroupsProtocolSpace: 'Reward groups for protocol-space reward tasks are chosen here',
     rewardGroup: 'Reward group',
     annihilationMaaStartsOnce:
@@ -552,7 +550,6 @@ export default {
     maaEndAutoCollectCommonRoute8: 'Route 8: Golden Stone Rice',
     markAsDone2: 'Mark as done',
     takeOverTaskConfiguration: 'Take over the task configuration',
-    usedWhenThereNo: 'Used when there is no event, or the shop is cleared — a normal farming run',
     whetherReservedTrailblazePower: 'Whether reserved Trailblaze Power is used',
     whetherFuelUsed: 'Whether fuel is used',
     ascensionMaterialIce: 'Ascension material: Ice (三月七 / 黑塔 / 杰帕德 / 佩拉)',
@@ -617,9 +614,6 @@ export default {
       'Used to switch accounts. On CN servers enter the phone number; either way matching uses the last four digits. Leave empty if you do not switch',
     userSPasswordWhen:
       "The user's password. When set, signing in with the account and password is used as a fallback; when empty, only the already-signed-in account list is used",
-    leaveEmptySkipAccount: 'Leave empty to skip account switching',
-    thisCurrentlyWorksCn:
-      'This currently works on CN servers only, and only at an unscaled 1280x720 resolution',
     accountEmailPhoneNumber: 'account / email / phone number.',
     accountEmailPhoneNumber2:
       "account / email / phone number, separated by '{'|'}'. Signing in with a password prefers the B",
@@ -661,12 +655,10 @@ export default {
     pickCustomBaseLayout: 'Pick a custom base layout',
     pickRelicStage: 'Pick a relic stage',
     pickOrnamentStage: 'Pick an ornament stage',
-    accountInfo: 'Account info',
     enterCustomStageE: 'Enter a custom stage, e.g. 11-8',
     pickStage: 'Pick a stage',
     pickImport: 'Pick and import',
     pickSanityTaskType: 'Pick the sanity task type to run',
-    pickGameServerThis2: 'Pick the game server this user plays on',
     pickItem: 'Pick an item',
     pickStageTypeFarm: 'Pick the stage type to farm',
     pickMaterialStageFarm: 'Pick the material stage to farm',
@@ -676,7 +668,6 @@ export default {
     pickSimulatedUniverseWorld2: 'Pick the Simulated Universe world to run',
     relic: 'Relic',
     relicStage: 'Relic stage',
-    someTasksHadNo: 'Some tasks had no matching script and were skipped',
     configurationSource: 'Configuration source',
     resetState: 'Reset the state',
     ornament: 'Ornament',
@@ -693,7 +684,6 @@ export default {
     pickMaaendPath: 'Pick the MaaEnd path',
     pickOkNtePath: 'Pick the OK-NTE path',
     pickOkWwPath: 'Pick the ok-ww path',
-    pickM9aPath: 'Pick the M9A path',
     pickMaaPath: 'Pick the MAA path',
     pickSrcPath: 'Pick the SRC path',
     pickMainProgramPath: 'Pick the main program path',
@@ -985,10 +975,6 @@ export default {
     echoDomainNumberF2: 'Echo Domain number in the F2 list',
     sonanceCasketNumberF2: 'Sonance Casket number in the F2 list',
     hsrScriptConfiguration: 'HSR script configuration',
-    m9aConfigurationGuide: 'M9A configuration guide',
-    m9aScriptConfiguration: 'M9A script configuration',
-    m9aPath: 'M9A path',
-    m9aPathSelected: 'M9A path selected',
     maaAdapterSupportsEmulators:
       'The MAA adapter supports emulators only; use a general script for the PC version.',
     maaScriptConfiguration: 'MAA script configuration',
@@ -1178,14 +1164,8 @@ export default {
       'Before launching the game for a run, MAS checks the official version and updates it; when off the game is launched directly',
     overridesCurrentScriptConfiguration:
       'Overrides the current script configuration with the high-traffic task fields from the quick-configuration panel below; when off the full task settings from the script configuration are kept',
-    onceThisUserS:
-      "Once this user's daily insight succeeds on a given day, later runs that day skip the task",
-    onceAutoDeepSleep:
-      'Once auto deep-sleep or auto wake succeeds this month for this user, later runs this month skip the matching task',
     beforeStartingMaaCompare:
       "Before starting MAA, compare the server's game client version with the one in the emulator. When the client is behind, MAA cannot get past the forced-update screen and just hangs until it times out",
-    whenThisScriptRuns:
-      'When this script runs in a queue, the M9A resource version is updated after every user task finishes. Open M9A first and configure the update source',
     whenClientDetectedAs:
       'When the client is detected as out of date, MAS downloads the package and installs it over ADB, then continues the run. CN official server only; the package is around 2 GB, so make sure you have the disk space',
     updateAutomaticallyBeforeEvery: 'Update automatically before every run?',
@@ -1197,11 +1177,6 @@ export default {
     // MaaEnd 原生配置备份的描述覆写（归档时机与通用措辞不同）
     maaendConfigRestoreScriptDesc:
       'Backups of the MaaEnd native config; restoring applies directly to MaaEnd itself. Created automatically (dedup) when opening this edit page, before running MaaEnd or opening its config UI, latest 10 kept',
-    // M9A 配置恢复（无遮罩会话，措辞按实际归档时机）
-    m9aConfigRestoreUserDesc:
-      'Backups of the core MAS edit-page fields (task queue, server resource, etc.); restoring applies directly to the MAS config page. Created automatically (dedup) when leaving this edit page, latest 10 kept',
-    m9aConfigRestoreScriptDesc:
-      'Backups of the M9A native config; restoring applies directly to M9A itself. Created automatically (dedup) when opening this edit page or before running M9A, latest 10 kept',
     // 通用脚本配置恢复（配置格式任意，预览为文件清单；有遮罩会话）
     generalConfigRestoreUserDesc:
       'Backups of this user script config; restoring applies directly to the MAS config page. Created automatically (dedup) before running or opening the config UI, latest 10 kept',
@@ -1268,8 +1243,6 @@ export default {
     treatAnnihilationRunAs:
       'Treat the annihilation run as timed out when the MAA log has not changed for this long',
     engine: 'Engine',
-    treatDailyRunAs:
-      'Treat the daily run as timed out when the M9A log has not changed for this long',
     treatDailyRunAs2:
       'Treat the daily run as timed out when the MAA log has not changed for this long',
     update: 'Update',
@@ -1343,7 +1316,6 @@ export default {
     description: 'Description',
     tipFAcceptsBoth:
       'Tip: %f accepts both 3-digit milliseconds (e.g. 123) and 6-digit microseconds (e.g.',
-    reminderIfYouRun: 'A reminder: if you run into trouble, take a look at',
     searchSettings: 'Search settings...',
     recipient: 'Recipient',
     wholeFileSyncLimit: 'Whole-file sync limit (GB)',
@@ -1369,7 +1341,6 @@ export default {
     maximumLines: 'Maximum lines',
     youHaveUnsavedChanges: 'You have unsaved changes',
     server: 'Server',
-    localProjectDirectory: 'Local project directory',
     readExtractionPatternReference: 'Read the extraction-pattern reference',
     rootPathSelected: 'Root path selected',
     rootPathSelectedOther:
@@ -1389,12 +1360,10 @@ export default {
     skipOnceDoneThis: 'Skip once done this week',
     extraTasksThatRun: 'Extra tasks that run after the daily tasks',
     skipOnceDoneToday: 'Skip once done today',
-    dailyInsightRunsOnce: 'Daily insight runs once a day',
     skipOnceDoneThis2: 'Skip once done this month',
     exampleStarrailExe: 'For example StarRail.exe',
     nothingConfigure: 'Nothing to configure',
     spendSanityFarm: 'Spend sanity to farm',
-    deepSleepRunsOnce: 'Deep sleep runs once a month',
     addTask: 'Add a task',
     added: 'Added',
     clearSraPath: 'Clear the SRA path',
@@ -1594,6 +1563,14 @@ export default {
     enterRecipientEmailAddress: 'Enter the recipient email address',
     enterNumber: 'Enter a number',
     enterWholeNumber: 'Enter a whole number',
+    ungrouped: 'Ungrouped',
+    maafwPasswordSaved: 'Saved · type to replace',
+    maafwPasswordClear: 'Clear',
+    maafwCheckboxCountRange: 'Select {min}–{max}',
+    maafwCheckboxCountExact: 'Select exactly {count}',
+    maafwCheckboxCountMin: 'Select at least {min}',
+    maafwCheckboxCountMax: 'Select at most {max}',
+    maafwCheckboxCountCurrent: ' (currently {count})',
     enterEmulatorInstanceIndex: 'Enter the emulator instance index',
     enterUserName: 'Enter a user name...',
     enterScriptLaunchArguments: 'Enter the script launch arguments',
@@ -1606,7 +1583,6 @@ export default {
     pickSraFolderContains: 'Pick the SRA folder (contains SRA-cli.exe)',
     pickDirectoryHoldingOk: 'Pick the directory holding ok-nte.exe',
     pickDirectoryHoldingOk2: 'Pick the directory holding ok-ww.exe',
-    pickFolderHoldingM9a: 'Pick the folder holding M9A',
     pickFolderHoldingMaa: 'Pick the folder holding MAA.exe',
     pickFolderHoldingSrc: 'Pick the folder holding SRC.exe',
     pickMarch7thFolderContains: 'Pick the March7th folder (contains March7th Assistant.exe)',
@@ -1645,14 +1621,29 @@ export default {
     pickExe: 'Pick an exe',
     pickDirectoryHoldingOk3: 'Pick the directory holding ok-nte.exe',
     pickDirectoryHoldingOk4: 'Pick the directory holding ok-ww.exe',
-    pickFolderHoldingM9a2: 'Pick the folder holding M9A',
     pickFolderHoldingMaa2: 'Pick the folder holding MAA.exe',
     pickFolderHoldingSrc2: 'Pick the folder holding SRC.exe',
-    pickMfwProjectDirectory: 'Pick the MFW project directory containing interface.json',
     pickProjectDirectoryContaining:
       'Pick the project directory containing interface.json to read its controllers, resources, and tasks.',
     pickImportPath: 'Pick the import path',
     pickLocalDirectory: 'Pick a local directory',
+    localProjectDirectory: 'Local project directory',
+    pickMfwProjectDirectory: 'Pick the MFW project directory containing interface.json',
+    maafwDirectoryLockedHint:
+      'The project has been imported into AUTO-MAS’s own directory; runs and updates happen there and the source directory can be deleted. Create a new script to use another project',
+    maafwImportingCopy: 'Importing project...',
+    maafwAccountRecordTooltip:
+      'Account / password are local notes only and are never passed to the script; use the task options below if a task needs them',
+    m9aFlavorScriptTitle: 'Edit M9A script',
+    m9aFlavorSourceDirectory: 'M9A program directory',
+    m9aFlavorSourceHint: 'Pick the M9A directory that contains interface.json',
+    m9aFlavorSourcePlaceholder: 'Pick the M9A directory that contains interface.json',
+    m9aFlavorAccountPlaceholder:
+      'When filled, a “Switch account” task is added automatically (CN official server only)',
+    m9aFlavorAccountTooltip:
+      'When the account is filled, a “Switch account” task is added automatically (CN official server only); the password is a local note only and is never passed to the script',
+    m9aFlavorQueueHint:
+      'Start game, close game and switch account are added automatically by the M9A adapter; no need to add them by hand',
     pickHowGameControlled: 'Pick how the game is controlled',
     pickUserWhoseServer: 'Pick the user whose server is checked for updates',
     chooseWhetherMasSwitches:
@@ -1675,7 +1666,6 @@ export default {
     configurationFilePath: 'Configuration file path',
     mxuLogsNamedBy:
       'For mxu logs named by date plus a counter: add ****** at the end to turn on mxu log prefix matching (e.g. %Y-%m-%d******)',
-    updateAutomaticallyAfterQueue: 'Update automatically after the queue finishes',
     useNightmareNestDaily: 'Use Nightmare Nest for daily echoes when needed',
     projectUpdate: 'Project update',
     ornamentExtraction: 'Ornament Extraction',
@@ -1683,7 +1673,6 @@ export default {
     wutheringWavesUpdateTask: 'The Wuthering Waves update task finished',
     wutheringWavesUpdateTimed: 'The Wuthering Waves update timed out and was stopped',
     k60SecondsRecommendedDefault: '60 seconds is the recommended default wait.',
-    whichSpellsOutEvery: ', which spells out every configuration step.',
     // BetterGI 专项
     bettergiScriptConfiguration: 'BetterGI script settings',
     bettergiInstanceNameHint: 'Used to tell different BetterGI script instances apart',
@@ -3657,7 +3646,7 @@ export default {
     },
     create: {
       title: 'New script',
-      step: { type: 'Script type', config: 'Configuration source' },
+      step: { type: 'Script type', config: 'Configuration source', mfwSource: 'Project source' },
       typeHeading: 'Pick a script type',
       typeHeadingDesc: 'Search by name, game, or automation framework.',
       typeSearch: 'Search script types',
@@ -3689,6 +3678,21 @@ export default {
       back: 'Back',
       createAndConfigure: 'Create and configure',
       createFromTemplate: 'Create from template',
+      mfwSourceHeading: 'Where does the project come from',
+      mfwSourceHeadingDesc:
+        'Projects imported before can be reused directly, so several scripts of one project never need the directory picked again; or start another project.',
+      mfwNewProject: 'Another project: pick a local directory',
+      mfwNewProjectDesc:
+        'Go to the guide and pick a project directory with interface.json to import',
+      mfwReuse: 'Reuse an imported project',
+      mfwReuseDesc:
+        'Use that script’s project as is: runtime and model files are shared and take no extra space; users and run settings are not carried over',
+      mfwReuseFrom: 'From script “{name}”',
+      mfwReuseFromMany: 'From script “{name}” and {count} scripts in total',
+      mfwReuseLoading: 'Loading imported projects...',
+      mfwReuseEmpty: 'No {type} project has been imported yet',
+      mfwReuseBusy: 'running',
+      createAndReuse: 'Create and reuse project',
       next: 'Next',
       typeDesc: {
         General: 'For any automation script that writes a log file',
@@ -3713,6 +3717,9 @@ export default {
       selectTemplate: 'Pick a template first',
       templateCreateFailed: 'Could not create the script from the template: {error}',
       copied: 'Copied script "{name}"',
+      reuseFailed:
+        'Could not reuse the project: {reason}. The script was created; pick a project directory in the guide',
+      mfwSourcesFailed: 'Could not load reusable scripts: {error}',
       scriptNotFound: 'Could not find that script',
       alreadyConfiguring: 'This script is already being configured — save that configuration first',
       targetConfiguring: 'This target is already being configured — save that configuration first',

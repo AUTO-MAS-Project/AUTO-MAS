@@ -59,11 +59,12 @@ _STAGE_MESSAGES: dict[str, str] = {
     "checking": "正在检查更新",
     "downloading": "正在下载更新包",
     "downloaded": "更新包下载完成",
-    "plan_validated": "更新计划校验通过，正在备份将被覆盖的文件",
-    "staged": "备份完成，开始覆盖文件",
-    "applying": "正在覆盖文件",
-    "post_validating": "正在校验更新结果",
-    "committed": "更新已写入项目目录",
+    "plan_validated": "更新计划校验通过，正在准备新版本",
+    "staged": "已从当前版本复制出新版本骨架，开始套用更新包",
+    "applying": "正在套用更新包",
+    "post_validating": "正在预检新版本的运行环境",
+    "committed": "新版本已登记，正在切换脚本",
+    # 不再发出：新版本只在 staging 里建，失败就丢掉，没有回滚。词表项留着兼容。
     "rolled_back": "更新失败，已回滚到更新前状态",
 }
 

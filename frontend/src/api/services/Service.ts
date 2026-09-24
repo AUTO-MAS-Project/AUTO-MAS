@@ -68,6 +68,12 @@ import type { MaaDepotInventoryOut } from '../models/MaaDepotInventoryOut';
 import type { MaaEndOptionsOut } from '../models/MaaEndOptionsOut';
 import type { MaaFWAgentEnvPrepareIn } from '../models/MaaFWAgentEnvPrepareIn';
 import type { MaaFWAgentEnvPrepareOut } from '../models/MaaFWAgentEnvPrepareOut';
+import type { MaaFWEmbeddedCloneIn } from '../models/MaaFWEmbeddedCloneIn';
+import type { MaaFWEmbeddedIn } from '../models/MaaFWEmbeddedIn';
+import type { MaaFWEmbeddedReimportIn } from '../models/MaaFWEmbeddedReimportIn';
+import type { MaaFWEmbeddedSourcesIn } from '../models/MaaFWEmbeddedSourcesIn';
+import type { MaaFWEmbeddedSourcesOut } from '../models/MaaFWEmbeddedSourcesOut';
+import type { MaaFWEmbeddedStatusOut } from '../models/MaaFWEmbeddedStatusOut';
 import type { MaaFWGamePackageIn } from '../models/MaaFWGamePackageIn';
 import type { MaaFWGamePackageOut } from '../models/MaaFWGamePackageOut';
 import type { MaaFWInterfacePreviewIn } from '../models/MaaFWInterfacePreviewIn';
@@ -922,6 +928,94 @@ export class Service {
         });
     }
     /**
+     * 查看 MFW 脚本的内嵌副本状态
+     * @param requestBody
+     * @returns MaaFWEmbeddedStatusOut Successful Response
+     * @throws ApiError
+     */
+    public static getMaafwEmbeddedStatusApiScriptsMaafwEmbeddedStatusPost(
+        requestBody: MaaFWEmbeddedIn,
+    ): CancelablePromise<MaaFWEmbeddedStatusOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/maafw/embedded/status',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 按来源目录导入（或重新导入）副本
+     * 脚本页选目录就是走这里：第一次是导入，之后是换来源或按当前来源重导。
+     *
+     * 导入成功才把来源写进 Info.Path；失败时旧副本与旧来源都原样不动。
+     * @param requestBody
+     * @returns MaaFWEmbeddedStatusOut Successful Response
+     * @throws ApiError
+     */
+    public static reimportMaafwEmbeddedApiScriptsMaafwEmbeddedReimportPost(
+        requestBody: MaaFWEmbeddedReimportIn,
+    ): CancelablePromise<MaaFWEmbeddedStatusOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/maafw/embedded/reimport',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 列出可作为克隆来源的其它 MFW 脚本
+     * 新建脚本对话框里「复用已有脚本的项目」的候选：有健康副本的 MFW / M9A 脚本。
+     *
+     * 新建时脚本还没建出来，所以不要求 ``scriptId``；传了就把它自己排除掉。
+     * @param requestBody
+     * @returns MaaFWEmbeddedSourcesOut Successful Response
+     * @throws ApiError
+     */
+    public static listMaafwEmbeddedSourcesApiScriptsMaafwEmbeddedSourcesPost(
+        requestBody?: MaaFWEmbeddedSourcesIn,
+    ): CancelablePromise<MaaFWEmbeddedSourcesOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/maafw/embedded/sources',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 从另一个 MFW 脚本的副本克隆，同一项目再建一个脚本
+     * 同一个项目要开第二、第三个脚本（不同模拟器并行跑）时走这里，不用再选目录
+     * 重新投影，来源目录已经删了也能建。
+     *
+     * 副本从源脚本的副本硬链接克隆（运行时、模型与其它副本共用，只多小文件），
+     * ``Info.Path`` 与 ``Embedded.*`` 沿用源脚本的记录；类型随项目（M9A 项目 → M9A）。
+     * 用户、任务队列与运行设置不带——那是「复制脚本」的事。
+     * @param requestBody
+     * @returns MaaFWEmbeddedStatusOut Successful Response
+     * @throws ApiError
+     */
+    public static cloneMaafwEmbeddedApiScriptsMaafwEmbeddedClonePost(
+        requestBody: MaaFWEmbeddedCloneIn,
+    ): CancelablePromise<MaaFWEmbeddedStatusOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/maafw/embedded/clone',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
      * 按所选 resource 推断 MFW 项目的安卓游戏包名
      * 脚本编辑页读完 interface / 切换 resource 时调用，把推出来的包名直接填进表单。
      *
@@ -1010,36 +1104,6 @@ export class Service {
             url: '/api/scripts/maafw/agent-env/prepare',
             body: requestBody,
             mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 获取 M9A 可用任务列表（排除 standalone 任务）
-     * 获取 M9A 可用任务列表（排除 standalone 任务）
-     *
-     * 前端调用此接口获取可选择的任务列表，
-     * 用于展示在用户编辑界面的任务选择区域。
-     *
-     * Args:
-     * script_id: M9A 脚本 ID
-     *
-     * Returns:
-     * dict: 包含任务列表的响应
-     * @param scriptId
-     * @returns any Successful Response
-     * @throws ApiError
-     */
-    public static getM9AAvailableTasksApiScriptsM9ATasksAvailablePost(
-        scriptId: string,
-    ): CancelablePromise<any> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/scripts/m9a/tasks/available',
-            query: {
-                'script_id': scriptId,
-            },
             errors: {
                 422: `Validation Error`,
             },
