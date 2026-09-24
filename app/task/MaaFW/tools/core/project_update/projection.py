@@ -1621,10 +1621,15 @@ def _looks_like_frozen_python_package_dir(view: _FileView, directory: Path) -> b
 
 
 def _looks_like_offline_dependency_dir(view: _FileView, directory: Path) -> bool:
-    """顶层目录里有 ``*.whl`` 或 ``get-pip.py``：项目的离线依赖包（deps/、wheels/ 之类）。"""
+    """顶层目录里有 ``*.whl`` 或 ``get-pip.py``：项目的离线依赖包（deps/、wheels/ 之类）。
+
+    ``ensurepip/_bundled`` 里的 wheel 不算：完整的 CPython 目录都自带 pip / setuptools 的
+    wheel，按它判会把一个没声明、超过 64 MB 的解释器目录整棵带走。
+    """
 
     return any(
-        path.suffix.casefold() == ".whl" or path.name.casefold() == "get-pip.py"
+        (path.suffix.casefold() == ".whl" or path.name.casefold() == "get-pip.py")
+        and not any(part.casefold() == "ensurepip" for part in path.parts)
         for path in view.walk_files(directory)
     )
 
