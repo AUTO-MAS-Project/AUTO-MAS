@@ -806,6 +806,23 @@ export default {
     stringSplittingGuide: 'String splitting guide',
     done: 'Done',
     createFirstUser: 'Create the first user!',
+    shellImportTitle: 'Import existing configurations as users',
+    shellImportHint:
+      'Found {count} {source} configuration(s) in the project folder. Each one you check becomes a user named after it, with its task queue and task options imported. Leave all unchecked to create a single empty user.',
+    shellImportSelectAll: 'Select all',
+    shellImportSelectedCount: '{selected} / {total} selected',
+    shellImportActive: 'In use',
+    shellImportTaskCount: '{count} task(s)',
+    shellImportUserName: 'User name: {name}',
+    shellImportButton: 'Import {count} user(s)',
+    shellImporting: 'Importing…',
+    shellImportFailedHead: '{count} configuration(s) could not be imported:',
+    shellImportFailedLine: '"{name}": {reason}',
+    shellImportSkippedLine: '"{name}" skipped {count} item(s): {items}',
+    shellImportSkippedLineMore: '"{name}" skipped {count} item(s): {items} and {rest} more',
+    shellImportListSeparator: ', ',
+    shellImportAllFailed:
+      'Could not import the existing configurations; creating an empty user instead',
     wutheringWavesWillBe:
       'Wuthering Waves will be checked and updated on the selected server. The update may download several GB, so make sure the game is not running',
     turnAutomaticRelicSalvage:

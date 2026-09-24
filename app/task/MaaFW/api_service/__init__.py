@@ -24,6 +24,7 @@
 - ``interface``：interface 预览、游戏包名推断、项目内图片资源。
 - ``update``：手动检查 / 应用项目更新。
 - ``agent_env``：预备运行环境。
+- ``shell_instances``：外壳（MFAAvalonia / MXU）配置实例的列出与导入成用户。
 
 依赖方向只能是 ``app.api`` → 这里，不得反向导入 ``app.api``；worker 子进程的导入闭包
 也不得拉进这个包（见 ``app/task/MaaFW/AGENTS.md``）。这里不 re-export，调用方按模块导入。

@@ -132,8 +132,23 @@
         </div>
       </a-form>
 
+      <!-- 只在引导最后一步出现：外壳里配好的实例导入成用户，扫不到就整块不显示 -->
+      <ShellInstanceImportSection
+        v-if="isWizard && currentStep === stepItems.length - 1 && shellInstances.length > 0"
+        v-model:selected-ids="selectedShellInstanceIds"
+        :instances="shellInstances"
+        :disabled="shellImporting"
+      />
+
       <div v-if="isWizard" class="wizard-actions">
-        <a-button v-if="currentStep > 0" size="large" @click="currentStep -= 1"> 上一步 </a-button>
+        <a-button
+          v-if="currentStep > 0"
+          size="large"
+          :disabled="shellImporting"
+          @click="currentStep -= 1"
+        >
+          上一步
+        </a-button>
         <a-button
           v-if="currentStep < stepItems.length - 1"
           type="primary"
@@ -143,8 +158,14 @@
         >
           {{ t('edit.next') }}
         </a-button>
-        <a-button v-else type="primary" size="large" @click="handleCreateFirstUser">
-          {{ t('edit.createFirstUser') }}
+        <a-button
+          v-else
+          type="primary"
+          size="large"
+          :loading="shellImporting"
+          @click="handleFinishWizard"
+        >
+          {{ finishButtonLabel }}
         </a-button>
       </div>
     </a-card>
@@ -155,7 +176,7 @@
 import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
 import DocLink from '@/components/DocLink.vue'
 import { useI18n } from 'vue-i18n'
-import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+import { computed, h, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import type { FormInstance } from 'ant-design-vue'
 import { message } from 'ant-design-vue'
@@ -190,7 +211,9 @@ import {
 } from '@/composables/useMaaFWScriptConfig'
 import { resolveAutoUpdateMode } from '@/composables/useMaaFWProjectUpdate'
 import { useMaaFWFlavor } from '@/composables/useMaaFWFlavor'
+import { useMaaFWShellInstanceApi } from '@/composables/useMaaFWShellInstanceApi'
 import { resolveMaaFWProjectName } from '@/utils/maafwProjectName'
+import type { MaaFWShellInstanceItem } from '@/api'
 import type {
   MaaFWInterfacePreviewData,
   MaaFWScriptConfig,
@@ -201,6 +224,12 @@ import BasicInfoSection, { type MaaFWEnvOutcome } from './MaaFWScriptEdit/BasicI
 import ControlConfigSection from './MaaFWScriptEdit/ControlConfigSection.vue'
 import UpdateSettingsSection from './MaaFWScriptEdit/UpdateSettingsSection.vue'
 import RunConfigSection from './MaaFWScriptEdit/RunConfigSection.vue'
+import ShellInstanceImportSection from './MaaFWScriptEdit/ShellInstanceImportSection.vue'
+import {
+  buildShellImportReportLines,
+  summarizeShellImport,
+  type ShellImportSummary,
+} from './MaaFWScriptEdit/shellInstanceImport'
 
 const { t } = useI18n()
 
@@ -221,6 +250,7 @@ const router = useRouter()
 const { getScript, updateScript, previewMaaFWInterface, prepareMaaFWAgentEnv } = useScriptApi()
 const { checkMaaFWUpdate, applyMaaFWUpdate } = useMaaFWUpdateApi()
 const { getEmbeddedStatus, reimportEmbedded } = useMaaFWEmbeddedApi()
+const { listShellInstances, importShellInstances } = useMaaFWShellInstanceApi()
 
 const scriptId = route.params.id as string
 
@@ -820,6 +850,105 @@ const handleCancel = () => {
 const handleCreateFirstUser = async () => {
   await enqueue(async () => undefined)
   router.push(`/scripts/${scriptId}/users/add/${flavor.value.type === 'M9A' ? 'm9a' : 'maafw'}`)
+}
+
+// ---- 引导最后一步：外壳（MFAAvalonia / MXU）配置导入成用户 ----
+// 只在引导形态、进入最后一步时扫描；扫不到或扫描失败都只记日志，区块不显示。
+const shellInstances = ref<MaaFWShellInstanceItem[]>([])
+const selectedShellInstanceIds = ref<string[]>([])
+const shellImporting = ref(false)
+
+const loadShellInstances = async () => {
+  try {
+    const list = await listShellInstances(scriptId)
+    // 回到这一步时保留用户之前的勾选；新出现的实例默认勾上
+    const previous = new Set(shellInstances.value.map(item => item.id))
+    const selected = new Set(selectedShellInstanceIds.value)
+    shellInstances.value = list
+    selectedShellInstanceIds.value = list
+      .filter(item => !previous.has(item.id) || selected.has(item.id))
+      .map(item => item.id)
+  } catch (error) {
+    shellInstances.value = []
+    selectedShellInstanceIds.value = []
+    logger.warn(`扫描外壳配置失败: ${error instanceof Error ? error.message : String(error)}`)
+  }
+}
+
+watch(
+  () => isWizard.value && currentStep.value === stepItems.length - 1,
+  onLastStep => {
+    if (onLastStep) void loadShellInstances()
+  }
+)
+
+const finishButtonLabel = computed(() => {
+  if (shellImporting.value) return t('edit.shellImporting')
+  const count = selectedShellInstanceIds.value.length
+  return count > 0 ? t('edit.shellImportButton', { count }) : t('edit.createFirstUser')
+})
+
+const userRouteSuffix = () => (flavor.value.type === 'M9A' ? 'm9a' : 'maafw')
+
+// 勾了实例就导入，一个都没勾就是原来的「创建第一个用户！」。导入失败不能把用户卡在引导页：
+// 一个用户都没建成就报错并退回建空用户；部分失败 / 导不全合并成一条提示，照常往下走。
+const handleFinishWizard = async () => {
+  const instanceIds = [...selectedShellInstanceIds.value]
+  if (instanceIds.length === 0) {
+    await handleCreateFirstUser()
+    return
+  }
+  shellImporting.value = true
+  try {
+    await enqueue(async () => undefined)
+    let summary: ShellImportSummary
+    try {
+      summary = summarizeShellImport(await importShellInstances(scriptId, instanceIds))
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error)
+      logger.error(`导入外壳配置失败: ${reason}`)
+      message.error(`${t('edit.shellImportAllFailed')}：${reason}`)
+      await handleCreateFirstUser()
+      return
+    }
+    for (const item of [...summary.failed, ...summary.partial]) {
+      logger.warn(
+        `导入外壳配置「${item.instanceName || item.instanceId}」：` +
+          (item.error ? `失败 ${item.error}` : `跳过 ${(item.skipped ?? []).join('、')}`)
+      )
+    }
+    if (summary.created.length === 0) {
+      const lines = buildShellImportReportLines(summary, t)
+      message.error({
+        content: h(
+          'div',
+          [t('edit.shellImportAllFailed'), ...lines].map(line => h('div', line))
+        ),
+        duration: 8,
+      })
+      await handleCreateFirstUser()
+      return
+    }
+    const lines = buildShellImportReportLines(summary, t)
+    if (lines.length > 0) {
+      const notify = summary.failed.length > 0 ? message.error : message.warning
+      notify({
+        content: h(
+          'div',
+          lines.map(line => h('div', line))
+        ),
+        duration: 8,
+      })
+    }
+    const [only] = summary.created
+    if (summary.created.length === 1 && only.userId) {
+      router.push(`/scripts/${scriptId}/users/${only.userId}/edit/${userRouteSuffix()}`)
+    } else {
+      router.push('/scripts')
+    }
+  } finally {
+    shellImporting.value = false
+  }
 }
 
 onMounted(async () => {

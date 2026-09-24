@@ -753,6 +753,22 @@ export default {
     stringSplittingGuide: '文字列分割のガイド',
     done: '完了',
     createFirstUser: '最初のユーザーを作成！',
+    shellImportTitle: '既存の設定をユーザーとして取り込む',
+    shellImportHint:
+      'プロジェクトフォルダーに {source} の設定が {count} 件見つかりました。チェックした設定ごとにユーザーを作成し、ユーザー名は設定名、タスクキューとタスクオプションも取り込みます。チェックしなければ空のユーザーを 1 人だけ作成します。',
+    shellImportSelectAll: 'すべて選択',
+    shellImportSelectedCount: '{selected} / {total} 件選択',
+    shellImportActive: '使用中',
+    shellImportTaskCount: 'タスク {count} 件',
+    shellImportUserName: 'ユーザー名：{name}',
+    shellImportButton: '{count} 人のユーザーを取り込む',
+    shellImporting: '取り込み中…',
+    shellImportFailedHead: '{count} 件の設定を取り込めませんでした：',
+    shellImportFailedLine: '「{name}」：{reason}',
+    shellImportSkippedLine: '「{name}」で {count} 項目をスキップしました：{items}',
+    shellImportSkippedLineMore: '「{name}」で {items} など {count} 項目をスキップしました',
+    shellImportListSeparator: '、',
+    shellImportAllFailed: '既存の設定を取り込めなかったため、空のユーザーを作成します',
     wutheringWavesWillBe:
       '選択したサーバーで鳴潮の更新を確認・実行します。数 GB のダウンロードが発生する場合があるため、ゲームが起動していないことを確認してください',
     turnAutomaticRelicSalvage:
