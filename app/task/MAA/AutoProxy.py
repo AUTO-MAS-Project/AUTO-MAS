@@ -154,6 +154,11 @@ _MAA_STALL_NOTICE_MARKERS = (
     # latest_time，故取带时间戳那半行的固定结尾。
     "분째 실행 중입니다",
 )
+# MAA v6.17 起内存不足走专属提示，不再带「任务出错:」前缀，实际文案是
+# 「{任务链名}」+ 下面这段。只认整段：MAA 的 MirrorChyan 更新说明里也有
+# 「任务因内存不足停止时给出专门提示…」这一条，资源热更新会把整份说明写进被监控的
+# gui.log，只用前缀匹配会把更新中途的正常运行判成内存不足，代理随即中止并反复重试。
+_MAA_OUT_OF_MEMORY_MARKER = "任务因内存不足停止，请关闭部分程序或重启 MAA 后重试"
 
 
 def _current_week_marker(now: datetime) -> str:
@@ -554,6 +559,67 @@ def _repair_maa_task_queue(source_queue: list[dict]) -> list[dict]:
         _with_type_first(task) if isinstance(task, dict) else task
         for task in source_queue
     ]
+
+
+def _build_depot_maintain_task(
+    plans_json: str,
+    source_task: dict | None = None,
+) -> dict:
+    """生成 MAA 库存保持任务配置。
+
+    只覆盖 MAS 面板管理的 Stage/DropId/DropCount；其余字段（含用户在 MAA 里设的
+    UseMedicine/UseStone 等）从来源任务整条透传——上游私有格式只做值经手，
+    不按 MAS 口径改写其语义。
+    """
+
+    source_task = source_task or {}
+    source_plans = source_task.get("PlanList") or []
+    if not isinstance(source_plans, list):
+        source_plans = []
+
+    plans = []
+    for plan in json.loads(plans_json):
+        if (
+            isinstance(plan, dict)
+            and isinstance(plan.get("Stage"), str)
+            and bool(plan["Stage"])
+            and isinstance(plan.get("DropId"), str)
+            and bool(plan["DropId"])
+            and isinstance(plan.get("DropCount"), int)
+            and not isinstance(plan.get("DropCount"), bool)
+            and plan["DropCount"] > 0
+        ):
+            source_plan = next(
+                (
+                    item
+                    for item in source_plans
+                    if isinstance(item, dict)
+                    and item.get("Stage") == plan["Stage"]
+                    and item.get("DropId") == plan["DropId"]
+                ),
+                {},
+            )
+            plans.append(
+                {
+                    **deepcopy(source_plan),
+                    "Stage": plan["Stage"],
+                    "DropId": plan["DropId"],
+                    "DropCount": plan["DropCount"],
+                }
+            )
+
+    # 必须走 _with_type_first：MAA 用 System.Text.Json 的多态元数据读条目，
+    # $type 不在第一个属性就整个配置反序列化失败并静默退回 .bak（旧值）。
+    # 下方注入点在 _repair_maa_task_queue 之后执行，不能指望队列级修复兜底。
+    return _with_type_first(
+        {
+            **deepcopy(source_task),
+            "Name": "库存保持",
+            "IsEnable": True,
+            "TaskType": "DepotMaintain",
+            "PlanList": plans,
+        }
+    )
 
 
 def _build_cultivate_task(
@@ -1438,10 +1504,16 @@ class AutoProxyTask(TaskExecuteBase):
             source_queue, "活动关优先", "Fight", allow_type_fallback=False
         )
 
-        # 库存保持的高级设置（计划列表）由 MAA 自己的 GUI 维护，MAS 只负责开关：
-        # task_set["DepotMaintain"] 原样来自来源配置，计划列表不经手、不翻译。
+        # 库存保持计划：MAS 快速配置面板维护的计划写回原生 PlanList。只覆盖
+        # MAS 管理的三项（Stage/DropId/DropCount），其余原生字段（含用户在 MAA 里
+        # 设的药/石开关）整条透传，不按 #927 前的口径硬编码 UseMedicine/UseStone。
         # 养成计划是 MAS 自有能力，仍由 _build_cultivate_task 单独注入一条同类型
         # 任务（Name 不同，MAA 按名称区分）。
+        if "DepotMaintain" in task_set:
+            task_set["DepotMaintain"] = _build_depot_maintain_task(
+                self.cur_user_config.get("Task", "DepotMaintainPlans"),
+                source_task=task_set["DepotMaintain"],
+            )
 
         # 加载关卡号配置
         if self.cur_user_config.get("Info", "StageMode") == "Fixed":
@@ -1658,8 +1730,10 @@ class AutoProxyTask(TaskExecuteBase):
             global_set["GUI.UseTray"] = "True"
             global_set["GUI.MinimizeToTray"] = "True"
             global_set["Start.MinimizeDirectly"] = "True"
+            # 启动即最小化是同一开关的新旧两通道，两个文件都要写：新版 MAA 读
+            # gui.new.json，只写 gui.json 那一半时它启动后仍会弹窗。
             gui_new_set.setdefault("Gui", {}).update(
-                {"UseTray": True, "MinimizeToTray": True}
+                {"UseTray": True, "MinimizeToTray": True, "MinimizeOnStartup": True}
             )
             # 无人值守运行，公告与更新后首启的版本说明弹窗一并关闭
             global_set["Announcement.DoNotShowAnnouncement"] = "True"
@@ -1931,8 +2005,7 @@ class AutoProxyTask(TaskExecuteBase):
             self.cur_user_log.status = "MAA 的 ADB 连接异常"
         elif "未检测到任何模拟器" in log:
             self.cur_user_log.status = "MAA 未检测到任何模拟器"
-        elif "任务因内存不足停止" in log:
-            # v6.17 起 MAA 内存不足走专属提示，不再带「任务出错:」前缀
+        elif _MAA_OUT_OF_MEMORY_MARKER in log:
             self.cur_user_log.status = "MAA 因内存不足停止，请关闭部分程序后重试"
         elif "已停止" in log:
             self.cur_user_log.status = "MAA 在完成任务前中止"

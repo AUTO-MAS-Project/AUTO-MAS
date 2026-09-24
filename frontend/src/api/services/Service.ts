@@ -75,6 +75,7 @@ import type { MaaFWInterfacePreviewOut } from '../models/MaaFWInterfacePreviewOu
 import type { MaaFWProjectUpdateIn } from '../models/MaaFWProjectUpdateIn';
 import type { MaaFWProjectUpdateOut } from '../models/MaaFWProjectUpdateOut';
 import type { NoticeOut } from '../models/NoticeOut';
+import type { NotifyChannelsOut } from '../models/NotifyChannelsOut';
 import type { OutBase } from '../models/OutBase';
 import type { PatternDebugIn } from '../models/PatternDebugIn';
 import type { PatternDebugOut } from '../models/PatternDebugOut';
@@ -3320,6 +3321,18 @@ export class Service {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/setting/test_notify',
+        });
+    }
+    /**
+     * 查询通知渠道描述
+     * 返回通知渠道描述表，仅展示元数据，不含任何配置值。
+     * @returns NotifyChannelsOut Successful Response
+     * @throws ApiError
+     */
+    public static getNotifyChannelsApiSettingNotifyChannelsGet(): CancelablePromise<NotifyChannelsOut> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/setting/notify/channels',
         });
     }
     /**

@@ -1340,6 +1340,60 @@ class GlobalConfig_Notify(BaseModel):
     )
 
 
+class NotifyChannelOptionOut(BaseModel):
+    """渠道下拉选项的取值与文案键；取值保持后端配置字面量（含布尔）。"""
+
+    value: Union[bool, str] = Field(..., description="选项值，保持后端配置字面量")
+    labelKey: str = Field(..., description="选项文案的词表键")
+
+
+class NotifyChannelFieldOut(BaseModel):
+    """渠道在某个作用域暴露的一个配置字段描述。"""
+
+    group: str = Field(..., description="配置组，如 Notify")
+    name: str = Field(..., description="配置字段名")
+    labelKey: str = Field(..., description="字段标签词表键")
+    control: str = Field(
+        ..., description="控件类型：bool/text/password/url/select/json"
+    )
+    options: List[NotifyChannelOptionOut] = Field(default=[], description="下拉选项")
+    placeholderKey: str = Field(default="", description="占位文案词表键")
+    tipKey: str = Field(default="", description="提示文案词表键")
+
+
+class NotifyChannelOut(BaseModel):
+    """一个通知渠道的展示元数据；服务无鉴权，负载不得出现任何配置值。"""
+
+    key: str = Field(..., description="渠道标识")
+    nameKey: str = Field(..., description="渠道名称词表键")
+    descKey: str = Field(default="", description="渠道一句话说明词表键")
+    icon: str = Field(default="", description="图标标识，policy 段为空串")
+    group: str = Field(..., description="分组：builtin/custom")
+    order: int = Field(..., description="排序值，与投递顺序一致")
+    docUrl: Optional[str] = Field(default=None, description="使用文档链接")
+    scopes: List[str] = Field(default=[], description="可用作用域：global/user")
+    kind: str = Field(..., description="渲染类型：fields/custom/policy")
+    customBlock: Optional[str] = Field(
+        default=None, description="自定义块标识：claw:weixin/claw:qq/webhook_list"
+    )
+    enableField: Optional[List[str]] = Field(
+        default=None, description="启用开关的 [配置组, 字段名]"
+    )
+    summaryKey: Optional[str] = Field(default=None, description="卡片摘要词表键")
+    summaryFields: List[str] = Field(
+        default=[], description="参与摘要插值与空值判定的字段名"
+    )
+    fields: Dict[str, List[NotifyChannelFieldOut]] = Field(
+        default={}, description="按作用域分组的字段列表"
+    )
+
+
+class NotifyChannelsOut(OutBase):
+    """通知渠道描述表。"""
+
+    channels: List[NotifyChannelOut] = Field(default=[], description="渠道描述列表")
+
+
 class OpenClawWeixinQrStartOut(OutBase):
     """微信 Claw 二维码创建响应。"""
 
@@ -1386,11 +1440,16 @@ class OpenClawQQQrCheckIn(BaseModel):
 
 
 class OpenClawQQQrCheckOut(OutBase):
-    """QQ 官方机器人二维码状态查询响应。"""
+    """QQ 官方机器人二维码及消息网关状态查询响应。"""
 
     sessionId: str = Field(default="", description="二维码登录会话 ID")
-    state: str = Field(default="", description="二维码状态")
-    connected: bool = Field(default=False, description="是否已完成账号绑定")
+    state: str = Field(
+        default="",
+        description="轮询状态：waiting、scanned、connecting（已绑定，网关连接中）、connected（网关已就绪）、expired 或 error",
+    )
+    connected: bool = Field(
+        default=False, description="消息网关是否已就绪；绑定成功但仍在连接时为 false"
+    )
 
 
 class OpenClawQQStatusOut(OutBase):
@@ -1398,7 +1457,10 @@ class OpenClawQQStatusOut(OutBase):
 
     enabled: bool = Field(default=False, description="是否启用 QQ 官方机器人通知")
     connected: bool = Field(default=False, description="是否已绑定 QQ 官方机器人")
-    state: str = Field(default="disconnected", description="当前连接状态")
+    state: str = Field(
+        default="disconnected",
+        description="消息网关状态：disconnected、connecting、connected 或 reconnecting",
+    )
 
 
 class GlobalConfig_Update(BaseModel):
@@ -1685,8 +1747,10 @@ class MaaUserConfig_Task(BaseModel):
     IfMall: Optional[bool] = Field(default=None, description="信用收支")
     IfAward: Optional[bool] = Field(default=None, description="领取奖励")
     IfSwitchTheme: Optional[bool] = Field(default=None, description="更换主题")
-    IfReclamation: Optional[bool] = Field(default=None, description="生息演算")
     IfDepotMaintain: Optional[bool] = Field(default=None, description="库存保持")
+    DepotMaintainPlans: Optional[str] = Field(
+        default=None, description="库存保持计划 JSON"
+    )
     IfGreenTicketStore: Optional[bool] = Field(default=None, description="绿票商店")
     IfActivityFirst: Optional[bool] = Field(
         default=None, description="活动期间优先刷活动关"

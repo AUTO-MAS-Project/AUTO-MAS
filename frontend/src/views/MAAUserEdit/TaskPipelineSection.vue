@@ -197,14 +197,29 @@
         />
       </PipelineRow>
 
-      <!-- 库存保持：MAS 只管开关，计划列表等高级设置交给 MAA 自己的界面 -->
+      <!-- 库存保持：日常流程中的独立任务，固定与计划表模式下均可启用 -->
       <PipelineRow
         :name="t('edit.maaDepot')"
-        :summary="t('edit.maaDepotHint')"
+        :summary="depotSummary"
         :checked="formData.Task.IfDepotMaintain"
         :disabled="loading"
         @change="emitSave('Task.IfDepotMaintain', $event)"
-      />
+      >
+        <DepotMaintainPlanEditor
+          :form-data="formData"
+          :loading="loading"
+          :stage-options="stageOptions"
+          :item-options="depotItemOptions"
+          :item-options-loading="depotItemOptionsLoading"
+          :item-options-error="depotItemOptionsError"
+          :stage-candidates="depotStageCandidates"
+          :stage-candidates-loading="depotStageCandidatesLoading"
+          :inventory="depotInventory"
+          :depot-inventory-time="depotInventoryTime"
+          :load-stage-candidates="loadDepotStageCandidates"
+          @save="emitSave"
+        />
+      </PipelineRow>
 
       <!-- 理智作战 -->
       <PipelineRow
@@ -328,6 +343,7 @@ import { useI18n } from 'vue-i18n'
 import { computed } from 'vue'
 import PipelineRow from './PipelineRow.vue'
 import LabelWithHint from './LabelWithHint.vue'
+import DepotMaintainPlanEditor from './DepotMaintainPlanEditor.vue'
 
 import CultivateTargetEditor from './CultivateTargetEditor.vue'
 import type {
@@ -343,6 +359,7 @@ import {
   summarizeActivity,
   summarizeAnnihilation,
   summarizeCultivate,
+  summarizeDepot,
   summarizeInfrast,
 } from './taskSummaries'
 
@@ -524,6 +541,10 @@ const infrastSummary = computed(() => {
 
 const cultivateSummary = computed(() =>
   summarizeCultivate(formData.value.Task.IfCultivate, formData.value.Task.CultivateTargets)
+)
+
+const depotSummary = computed(() =>
+  summarizeDepot(formData.value.Task.IfDepotMaintain, formData.value.Task.DepotMaintainPlans)
 )
 
 const greenTicketStoreDoneThisMonth = computed(
