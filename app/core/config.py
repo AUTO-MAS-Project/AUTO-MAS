@@ -5413,7 +5413,8 @@ class AppConfig(GlobalConfig):
             )
         if archived:
             lines.append("原先有归档的脚本已按新格式归档一次：" + "、".join(archived))
-        if report.backup_path is not None:
+        # 失败行已经带了备份文件名（或「备份也失败」），不再重复一遍
+        if report.backup_path is not None and not report.failure:
             lines.append(f"迁移前的配置已备份为 {report.backup_path.name}")
         self.startup_notices.append(
             {
@@ -5425,8 +5426,10 @@ class AppConfig(GlobalConfig):
                     or report.degraded_scripts
                 )
                 else "info",
-                "title": "M9A 脚本已并入 MFW 引擎"
-                if report.migrated_scripts or report.failure
+                "title": "M9A 脚本迁移失败"
+                if report.failure
+                else "M9A 脚本已并入 MFW 引擎"
+                if report.migrated_scripts
                 else "已按项目识别出 M9A 脚本",
                 "lines": lines,
             }
