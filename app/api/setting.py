@@ -28,11 +28,15 @@ from fastapi import APIRouter, Body
 from fastapi.responses import FileResponse, JSONResponse
 from starlette.background import BackgroundTask
 
-from app.core import Config
+from app.core import Config, notify_channels
 from app.core.notify import send_test_notification
 from app.models.config import Webhook as WebhookConfig
 from app.models.schema import (
     GlobalConfig,
+    NotifyChannelFieldOut,
+    NotifyChannelOptionOut,
+    NotifyChannelOut,
+    NotifyChannelsOut,
     OutBase,
     PatternDebugIn,
     PatternDebugOut,
@@ -170,6 +174,68 @@ async def test_notify() -> OutBase:
             message=f"部分通知发送失败: {'、'.join(result.failed)}",
         )
     return OutBase()
+
+
+@router.get(
+    "/notify/channels",
+    tags=["Get"],
+    summary="查询通知渠道描述",
+    response_model=NotifyChannelsOut,
+    status_code=200,
+)
+async def get_notify_channels() -> NotifyChannelsOut:
+    """返回通知渠道描述表，仅展示元数据，不含任何配置值。"""
+
+    try:
+        channels = [
+            NotifyChannelOut(
+                key=channel.key,
+                nameKey=channel.name_key,
+                descKey=channel.desc_key,
+                icon=channel.icon,
+                group=channel.group,
+                order=channel.order,
+                docUrl=channel.doc_url,
+                scopes=sorted(channel.scopes),
+                kind=channel.kind,
+                customBlock=channel.custom_block,
+                enableField=list(channel.enable_field)
+                if channel.enable_field
+                else None,
+                summaryKey=channel.summary_key,
+                summaryFields=list(channel.summary_fields),
+                fields={
+                    scope: [
+                        NotifyChannelFieldOut(
+                            group=item.group,
+                            name=item.name,
+                            labelKey=item.label_key,
+                            control=item.control,
+                            options=[
+                                NotifyChannelOptionOut(value=value, labelKey=label_key)
+                                for value, label_key in item.options
+                            ],
+                            placeholderKey=item.placeholder_key,
+                            tipKey=item.tip_key,
+                        )
+                        for item in items
+                    ]
+                    for scope, items in channel.fields.items()
+                },
+            )
+            for channel in notify_channels.get_notify_channels()
+        ]
+    except Exception as e:
+        logger.opt(exception=True).warning(
+            f"get_notify_channels失败: {type(e).__name__}: {e}"
+        )
+        return NotifyChannelsOut(
+            code=500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+            channels=[],
+        )
+    return NotifyChannelsOut(channels=channels)
 
 
 @router.post(

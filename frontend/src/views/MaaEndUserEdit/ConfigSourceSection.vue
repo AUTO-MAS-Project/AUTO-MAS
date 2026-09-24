@@ -17,6 +17,7 @@
         <a-form-item :label="t('edit.maaEndConfigActions')">
           <div class="config-source-control">
             <a-button
+              v-if="formData.Info.Mode !== '直控'"
               type="primary"
               ghost
               :loading="configLoading"
@@ -109,11 +110,9 @@ const maaEndConfigModeOptions: Array<{
   },
 ]
 
-const currentConfigModeLabel = computed(() => {
-  if (formData.value.Info.Mode === '直控') return '脚本直控'
-  if (formData.value.Info.Mode === '用户') return '用户独立'
-  return '脚本共享'
-})
+const currentConfigModeLabel = computed(() =>
+  formData.value.Info.Mode === '用户' ? '用户独立' : '脚本共享'
+)
 </script>
 
 <style scoped>

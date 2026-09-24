@@ -374,6 +374,16 @@ def main():
                         exclude_tags=["Delete"],
                     )
                     mcp.mount_http()
+                    # 通知渠道描述只服务设置页渲染，不作为 MCP 工具暴露。
+                    # fastapi-mcp==0.4.0 的 exclude_operations 与 exclude_tags 取并集，
+                    # 两者同时传会让两个排除都失效（Delete 路由也会漏出去），只能在
+                    # 挂载后从工具清单里剪掉；handle_list_tools / handle_call_tool
+                    # 实时读这两个属性，剪除即生效。
+                    notify_channels_op = (
+                        "get_notify_channels_api_setting_notify_channels_get"
+                    )
+                    mcp.tools = [t for t in mcp.tools if t.name != notify_channels_op]
+                    mcp.operation_map.pop(notify_channels_op, None)
                     logger.info("MCP 服务已挂载")
 
                 await _optional_step("MCP 服务挂载", _mount_mcp())
@@ -413,7 +423,7 @@ def main():
                 await MainTimer.start()
 
                 async def _start_openclaw() -> None:
-                    # Claw 通知管理器只维护扫码会话和凭据，消息请求按需发起。
+                    # 微信按需发送；QQ 同时维持官方网关连接以完成扫码绑定。
                     from app.services.openclaw_qq import openclaw_qq_manager
                     from app.services.openclaw_weixin import openclaw_weixin_manager
 
