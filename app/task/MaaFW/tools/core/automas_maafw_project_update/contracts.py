@@ -9,24 +9,22 @@ from pathlib import Path
 from typing import Any, Literal
 
 ArtifactType = Literal["full", "delta"]
-UpdateStatus = Literal[
-    "discovered",
-    "plan_validated",
-    "downloading",
-    "paused",
-    "downloaded",
-    "verified",
-    "staged",
-    "applying",
-    "post_validating",
-    "committed",
-    "cancelled",
-    "failed",
-    "rolled_back",
-    "recovery_required",
-]
-
 RESERVED_PROJECT_DIRS = frozenset({".mas-update", ".mas-update-cache"})
+
+# 指纹只回答「项目是否还是我们装下去的那份」，必须排除运行期产物：MaaFW 每次启动都往
+# 项目目录写 debug/ 日志，runner 还会重写 config/maa_option.json，Python agent 会留下
+# __pycache__。把它们算进哈希，项目跑过一次后差量更新的基线校验就永远对不上，而那条
+# 路径没有回退全量包的分支——Mirror 酱源于是再也装不上更新。
+# 与 RESERVED_PROJECT_DIRS 分开：那个还用于拒绝更新包写入保留路径，把运行期目录塞进去
+# 会让本来就带 config/ 的合法包直接装不上。
+FINGERPRINT_IGNORED_DIRS = frozenset({"debug", "logs", "temp", "__pycache__"})
+FINGERPRINT_IGNORED_FILES = frozenset({"config/maa_option.json"})
+
+# 受管项目跑起来时，runner 会往 <项目>/maafw/ 铺一层共享的 MaaFramework 原生运行时，
+# 并留下这个标记文件。带标记的 maafw/ 是运行期产物，同样要排除；没有标记的 maafw/ 是
+# 发行包自带的，必须照常算进指纹。
+NATIVE_RUNTIME_OVERLAY_DIR = "maafw"
+NATIVE_RUNTIME_OVERLAY_MARKER = ".auto_mas_maafw_native_runtime.json"
 
 
 def artifact_id_for(
@@ -71,6 +69,9 @@ def project_fingerprint(project_path: str | Path) -> str | None:
     if not root.is_dir():
         return None
     digest = hashlib.sha256()
+    ignored_dirs = set(FINGERPRINT_IGNORED_DIRS)
+    if (root / NATIVE_RUNTIME_OVERLAY_DIR / NATIVE_RUNTIME_OVERLAY_MARKER).is_file():
+        ignored_dirs.add(NATIVE_RUNTIME_OVERLAY_DIR)
     files: list[Path] = []
     for candidate in root.rglob("*"):
         try:
@@ -78,6 +79,10 @@ def project_fingerprint(project_path: str | Path) -> str | None:
         except ValueError:
             continue
         if any(part in RESERVED_PROJECT_DIRS for part in relative.parts):
+            continue
+        if any(part in ignored_dirs for part in relative.parts):
+            continue
+        if relative.as_posix().casefold() in FINGERPRINT_IGNORED_FILES:
             continue
         if candidate.is_symlink():
             return None
@@ -128,8 +133,11 @@ def safe_relative_path(raw_path: str) -> str:
 
 __all__ = [
     "ArtifactType",
+    "FINGERPRINT_IGNORED_DIRS",
+    "FINGERPRINT_IGNORED_FILES",
+    "NATIVE_RUNTIME_OVERLAY_DIR",
+    "NATIVE_RUNTIME_OVERLAY_MARKER",
     "RESERVED_PROJECT_DIRS",
-    "UpdateStatus",
     "artifact_id_for",
     "canonical_json",
     "is_within",

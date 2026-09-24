@@ -12,7 +12,7 @@ import { RUNTIME_EXE_ENV, RUNTIME_MODE_ENV, RuntimeClient } from './runtime'
 vi.mock('child_process', () => ({ spawn: vi.fn() }))
 // resolveRuntimeLaunchMode 的构建默认值这一级要读 app.isPackaged；本文件全部用例都显式
 // 设置 RUNTIME_MODE_ENV 走环境变量这一级，isPackaged 固定 false 即可，不需要逐用例切换。
-vi.mock('electron', () => ({ app: { isPackaged: false } }))
+vi.mock('electron', () => ({ app: { isPackaged: false, getVersion: () => '5.5.0-beta.3' } }))
 vi.mock('../utils/processManager', () => ({
   killAllRelatedProcesses: vi.fn(async () => undefined),
 }))
@@ -199,6 +199,21 @@ async function passEnvironmentEnsure(): Promise<FakeChild> {
   ensure.stdout.feed(fixtureLines('environment-ensure.ndjson').join(''))
   ensure.close(0)
   return waitForSpawn(1)
+}
+
+/**
+ * managed 模式的 supervise 之前先跑两次 preparation（workspace check 与
+ * bootstrap --if-needed，各 spawn 一次），用真实成功夹具让它们结束，
+ * 再返回随后 spawn 出来的 backend supervise 子进程。
+ */
+async function passManagedPreparation(): Promise<FakeChild> {
+  const check = await waitForSpawn(0)
+  check.stdout.feed(fixtureLines('bootstrap-success.ndjson').join(''))
+  check.close(0)
+  const bootstrap = await waitForSpawn(1)
+  bootstrap.stdout.feed(fixtureLines('bootstrap-success.ndjson').join(''))
+  bootstrap.close(0)
+  return waitForSpawn(2)
 }
 
 const fetchMock = vi.fn()
@@ -697,16 +712,19 @@ describe('managed 模式', () => {
     mockSpawn()
 
     const pending = service.startBackend()
-    // managed 的 bootstrap 已包含 uv 准备，第一次 spawn 直接就是 supervise。
-    const child = await waitForSpawn()
+    // managed 的 supervise 之前先跑 workspace check 与 bootstrap 两次准备，
+    // 各自 spawn 一次；第三次 spawn 才是 backend supervise。
+    const child = await passManagedPreparation()
+    child.stdout.feed(helloLine + runningStateLine)
     child.stdout.feed(helloLine + runningStateLine)
 
     expect(await pending).toEqual({ success: true })
-    expect(spawnMock).toHaveBeenCalledTimes(1)
-    expect(spawnedArgs().slice(0, 2)).toEqual(['--app-root', appRoot])
-    expect(spawnedArgs().slice(-4)).toEqual(['backend', 'supervise', '--mode', 'managed'])
-    expect(spawnedArgs()).not.toContain('--repo')
-    expect(spawnedEnv().AUTO_MAS_ENV).toBeUndefined()
+    expect(spawnMock).toHaveBeenCalledTimes(3)
+    // managed 模式 --app-root 就是用户数据根（与 dataRoot 相同），不是仓外的 runtime 目录。
+    expect(spawnedArgs(2).slice(0, 2)).toEqual(['--app-root', appRoot])
+    expect(spawnedArgs(2).slice(-4)).toEqual(['backend', 'supervise', '--mode', 'managed'])
+    expect(spawnedArgs(2)).not.toContain('--repo')
+    expect(spawnedEnv(2).AUTO_MAS_ENV).toBeUndefined()
     expect(existsSync(runtimeRoot)).toBe(false)
 
     child.stdout.feed(stoppedResultLine)

@@ -568,28 +568,6 @@ class M9ATaskLoader:
 
         return result
 
-    def get_task_definition(self, task_name: str) -> dict | None:
-        """
-        获取单个任务的定义（兼容旧接口）
-
-        Args:
-            task_name: 任务名称
-
-        Returns:
-            任务定义字典，如果不存在返回 None
-        """
-        task_def = self._task_cache.get(task_name)
-        return deepcopy(task_def) if task_def else None
-
-    def get_all_task_names(self) -> list[str]:
-        """
-        获取所有任务名称列表（包括 standalone）
-
-        Returns:
-            任务名称列表
-        """
-        return list(self._task_cache.keys())
-
     def get_all_tasks_with_entry(self) -> list[dict]:
         """
         获取所有任务及其 entry（用于构建 CurrentTasks）
@@ -601,19 +579,3 @@ class M9ATaskLoader:
             {"name": name, "entry": task.get("entry", name)}
             for name, task in self._task_cache.items()
         ]
-
-    def reload(self):
-        """重新加载所有任务（用于热更新）"""
-        self._task_cache.clear()
-        self._raw_data_cache.clear()
-        self._dependency_paths.clear()
-        self._scan_select_specs.clear()
-        self._loaded_from_interface = False
-        self._load_all_tasks()
-        with self._cache_lock:
-            if self._task_cache:
-                signature = self._current_signature()
-                self._loader_cache[self.root_path] = (signature, self)
-                self._save_disk_cache(signature)
-            else:
-                self._loader_cache.pop(self.root_path, None)

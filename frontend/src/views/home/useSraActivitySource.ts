@@ -1,4 +1,5 @@
 import { onScopeDispose, ref } from 'vue'
+import { createEmptySraActivityOverview } from '@/types/home'
 import type { SraActivityItem, SraActivityOverview } from '@/types/home'
 
 const logger = window.electronAPI.getLogger('活动数据')
@@ -20,17 +21,6 @@ interface SraSourceData {
 
 const SOURCE_BASE = 'https://starrailassistant.top/api/v1/activity'
 
-const createEmptyOverview = (message: string): SraActivityOverview => ({
-  Available: false,
-  Stale: false,
-  Message: message,
-  version: '',
-  versionName: '',
-  startTime: '',
-  endTime: '',
-  activities: [],
-})
-
 const snapshotKey = (game: string) => 'auto-mas.home.sra-snapshot.' + game
 
 /**
@@ -41,7 +31,7 @@ const snapshotKey = (game: string) => 'auto-mas.home.sra-snapshot.' + game
  * 独立失败态——任一源异常只影响本卡片，不阻塞其它卡片。
  */
 export const useSraActivitySource = (game: string, displayName: string) => {
-  const overview = ref<SraActivityOverview>(createEmptyOverview(''))
+  const overview = ref<SraActivityOverview>(createEmptySraActivityOverview())
   const loading = ref(false)
   const hasData = ref(false)
   let retryTimer: number | null = null
@@ -101,19 +91,54 @@ export const useSraActivitySource = (game: string, displayName: string) => {
           Message: '正在使用上次成功获取的活动数据',
         }
       } else {
-        overview.value = createEmptyOverview(displayName + '活动数据暂不可用')
+        overview.value = createEmptySraActivityOverview(displayName + '活动数据暂不可用')
       }
       if (retryCount < MAX_RETRIES) {
         retryCount += 1
-        retryTimer = window.setTimeout(() => {
-          retryTimer = null
-          void load()
-        }, RETRY_DELAY_MS)
+        if (active) {
+          scheduleRetry()
+        } else {
+          // 模块隐藏期间不重试，重新可见时补一次
+          retryPending = true
+        }
       }
     } finally {
       if (!disposed) {
         loading.value = false
       }
+    }
+  }
+
+  // 模块可见时才发请求；隐藏时停掉重试定时器，重新可见时把攒下的重试补上
+  let active = false
+  let started = false
+  let retryPending = false
+
+  const scheduleRetry = () => {
+    retryTimer = window.setTimeout(() => {
+      retryTimer = null
+      void load()
+    }, RETRY_DELAY_MS)
+  }
+
+  const start = () => {
+    if (disposed) return
+    active = true
+    if (!started) {
+      started = true
+      void load()
+    } else if (retryPending) {
+      retryPending = false
+      void load()
+    }
+  }
+
+  const stop = () => {
+    active = false
+    if (retryTimer !== null) {
+      window.clearTimeout(retryTimer)
+      retryTimer = null
+      retryPending = true
     }
   }
 
@@ -125,11 +150,11 @@ export const useSraActivitySource = (game: string, displayName: string) => {
     }
   })
 
-  void load()
-
   return {
     overview,
     loading,
+    start,
+    stop,
     refresh: () => {
       retryCount = 0
       void load()

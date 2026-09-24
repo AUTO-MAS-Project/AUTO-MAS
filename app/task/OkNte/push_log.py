@@ -53,8 +53,10 @@ OKNTE_PUSH_RULES: list[tuple[str, str] | tuple[str, str, str]] = [
     # 体力追踪：当前体力 + 刷本实际消耗；resolve 按「最后当前体力 − 其后消耗」算剩余
     (r"当前体力 (\d+)", r'"CUR:" + $((?:当前体力 )(\d+))'),
     # 异象界域：双倍/单倍次数（两捕获组换行拼接为 D\nS）
-    (r"双倍次数: (\d+), 单倍次数: (\d+)",
-     r'"UNITS:" + $((?:双倍次数: )(\d+), 单倍次数: (\d+))'),
+    (
+        r"双倍次数: (\d+), 单倍次数: (\d+)",
+        r'"UNITS:" + $((?:双倍次数: )(\d+), 单倍次数: (\d+))',
+    ),
     # 异象追猎：收尾直接给出实际消耗体力
     (r"共计消耗体力: (\d+)", r'"CONSUME:" + $((?:共计消耗体力: )(\d+))'),
 ]
@@ -80,7 +82,7 @@ def _oknte_parse_skip_list(payload: str) -> list[str]:
 
 
 def oknte_resolve(
-    results: list[tuple[str, str, float]]
+    results: list[tuple[str, str, float]],
 ) -> list[tuple[str, str, float]]:
     """后处理：按节点解析最终状态（失败 > 跳过 > 成功），保持最后一次出现顺序
 
@@ -114,14 +116,14 @@ def oknte_resolve(
         if m:
             _mark(m.group(1), m.group(2), ts)
         elif text.startswith("SKIP:"):
-            for node in _oknte_parse_skip_list(text[len("SKIP:"):]):
+            for node in _oknte_parse_skip_list(text[len("SKIP:") :]):
                 _mark("⏭ 跳过", node, ts)
         elif text == "NO_REWARD":
             # 当日活跃度奖励已领取（无可领取项）：不产出节点，仅记标记
             daily_claim_no_reward = True
         elif text.startswith("CUR:"):
             try:
-                cur_stamina = int(text[len("CUR:"):])
+                cur_stamina = int(text[len("CUR:") :])
                 # 新读数已包含此前全部消耗，之后只累计本次读数之后的刷本消耗
                 consumed_after_cur = 0
                 stamina_ts = ts
@@ -130,20 +132,16 @@ def oknte_resolve(
         elif text.startswith("UNITS:"):
             # 异象界域：双倍/单倍次数（换行拼接 D\\nS），消耗 = (双倍×2+单倍)×单把
             try:
-                double, single = (
-                    int(x) for x in text[len("UNITS:"):].split("\n")
-                )
+                double, single = (int(x) for x in text[len("UNITS:") :].split("\n"))
             except ValueError:
                 pass
             else:
-                consumed_after_cur += (
-                    double * 2 + single
-                ) * _ANOMALY_TASK_COST
+                consumed_after_cur += (double * 2 + single) * _ANOMALY_TASK_COST
                 stamina_ts = ts
         elif text.startswith("CONSUME:"):
             # 异象追猎：日志直接给出实际消耗体力
             try:
-                consumed_after_cur += int(text[len("CONSUME:"):])
+                consumed_after_cur += int(text[len("CONSUME:") :])
             except ValueError:
                 pass
             else:
@@ -173,7 +171,5 @@ def oknte_resolve(
     # 即最后一次当前体力。
     if cur_stamina is not None:
         remaining = max(cur_stamina - consumed_after_cur, 0)
-        result.append(
-            (LogType.NORMAL, f"⚡ 剩余体力: {remaining}", stamina_ts)
-        )
+        result.append((LogType.NORMAL, f"⚡ 剩余体力: {remaining}", stamina_ts))
     return result

@@ -2,6 +2,7 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
+import type { BAAHUserConfig } from './BAAHUserConfig';
 import type { BetterGIUserConfig } from './BetterGIUserConfig';
 import type { GeneralUserConfig } from './GeneralUserConfig';
 import type { HSRUserConfig } from './HSRUserConfig';
@@ -13,6 +14,7 @@ import type { OkNteUserConfig } from './OkNteUserConfig';
 import type { OkwwUserConfig } from './OkwwUserConfig';
 import type { SrcUserConfig } from './SrcUserConfig';
 import type { UserIndexItem } from './UserIndexItem';
+import type { ZzzOdUserConfig } from './ZzzOdUserConfig';
 export type UserGetOut = {
     /**
      * 状态码
@@ -33,6 +35,6 @@ export type UserGetOut = {
     /**
      * 用户数据字典, key来自于index列表的uid
      */
-    data: Record<string, (MaaUserConfig | SrcUserConfig | GeneralUserConfig | OkwwUserConfig | OkNteUserConfig | MaaEndUserConfig | M9AUserConfig | MaaFWUserConfig | HSRUserConfig | BetterGIUserConfig)>;
+    data: Record<string, (MaaUserConfig | SrcUserConfig | GeneralUserConfig | OkwwUserConfig | OkNteUserConfig | MaaEndUserConfig | M9AUserConfig | MaaFWUserConfig | HSRUserConfig | BetterGIUserConfig | ZzzOdUserConfig | BAAHUserConfig)>;
 };
 

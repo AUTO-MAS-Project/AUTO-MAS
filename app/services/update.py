@@ -53,6 +53,7 @@ logger = get_logger("更新服务")
 # 延迟加载 Config，避免 app.services 初始化期间触发 app.core 循环导入
 Config = LazyProxy("app.core", "Config")
 
+
 @dataclass(frozen=True)
 class _DownloadJob:
     """下载任务启动时冻结的版本、来源与 URL。"""
@@ -62,6 +63,90 @@ class _DownloadJob:
     mirror_chyan_download_url: Optional[str]
     download_url: Optional[str]
 
+
+def _describe_version_section_error(section: object) -> Optional[str]:
+    """返回版本段不合法的原因，合法时返回 None。
+
+    版本段必须是「分类名 -> 字符串列表」的映射。更新日志会原样交给
+    `/update/check` 的响应模型，形状不对的版本段会让响应校验抛异常，
+    用户连「检测到更新」都看不到，因此形状不对的版本段进不了响应。
+    """
+
+    if not isinstance(section, dict):
+        return "版本段不是字典"
+
+    for category, notes in section.items():
+        if not isinstance(notes, list):
+            return f"分类 {category!r} 的内容不是列表"
+        if not all(isinstance(note, str) for note in notes):
+            return f"分类 {category!r} 的列表里混有非字符串内容"
+
+    return None
+
+
+def select_newer_version_info(
+    version_info: Dict[str, Any], current_version: str
+) -> Dict[str, Dict[str, List[str]]]:
+    """挑出比当前版本新的版本段，按版本号降序排列，保留每段的分类归属。
+
+    版本号用 packaging 比较而不是字符串比较，否则 beta.10 会排到 beta.2 前面。
+    认不出是版本号的键、或内部形状不是「分类名 -> 字符串列表」的版本段直接跳过：
+    更新日志来自 Mirror 酱，内容坏掉时只该丢日志，不该让整条更新检查失败。
+    """
+
+    current = version.parse(current_version)
+    newer = []
+    for raw_version, info in version_info.items():
+        try:
+            parsed = version.parse(raw_version)
+        except version.InvalidVersion:
+            logger.warning(f"更新日志里的版本号无法识别, 已跳过: {raw_version!r}")
+            continue
+        section_error = _describe_version_section_error(info)
+        if section_error is not None:
+            logger.warning(
+                f"更新日志的版本段结构异常, 已跳过 {raw_version!r}: {section_error}"
+            )
+            continue
+        if parsed > current:
+            newer.append((parsed, raw_version, info))
+
+    newer.sort(key=lambda item: item[0], reverse=True)
+    return {ver: info for _, ver, info in newer}
+
+
+def parse_release_note(release_note: object) -> Dict[str, Any]:
+    """解析 Mirror 酱返回的更新日志。
+
+    只保证解析出 JSON 对象，不保证版本段的内部形状，形状校验留给
+    `select_newer_version_info`，避免同一处坏数据被记两次警告。
+
+    日志正文是 release_note 首行里一条被 HTML 注释包裹的 JSON。Mirror 酱对
+    release_note 有长度上限，日志过长时它返回的首行是截断过的、不完整的 JSON，
+    此时只丢掉更新日志本身：「检测到更新」这个结论必须留住，否则用户连新版本
+    提示都看不到。
+    """
+
+    if not isinstance(release_note, str) or not release_note.strip():
+        logger.warning("Mirror 酱未返回更新日志")
+        return {}
+
+    first_line = release_note.splitlines()[0].strip()
+    try:
+        parsed = json.loads(re.sub(r"^<!--\s*(.*?)\s*-->$", r"\1", first_line))
+    except json.JSONDecodeError as error:
+        logger.warning(
+            f"更新日志无法解析, 本次只提示更新: {type(error).__name__}: {error}"
+        )
+        return {}
+
+    if not isinstance(parsed, dict):
+        logger.warning("更新日志不是预期的版本字典格式, 本次只提示更新")
+        return {}
+
+    return parsed
+
+
 class _UpdateHandler:
     def __init__(self) -> None:
         self.is_locked: bool = False
@@ -70,7 +155,11 @@ class _UpdateHandler:
         self.remote_version: Optional[str] = None
         self.current_version: Optional[str] = None
         self.last_check_time: Optional[datetime] = None
-        self.update_version_info: Optional[Dict[str, List[str]]] = None
+        self.update_version_info: Optional[Dict[str, Dict[str, List[str]]]] = None
+        # 非强制检查的结果缓存: (当前版本, 检查结果, 检查时间)
+        self._check_cache: Optional[
+            tuple[str, tuple[bool, str, Dict[str, Dict[str, List[str]]]], datetime]
+        ] = None
         self.mirror_chyan_download_url: Optional[str] = None
         self._download_task_job: Optional[_DownloadJob] = None
         self._download_snapshot = UpdateDownloadSnapshot()
@@ -265,7 +354,7 @@ class _UpdateHandler:
             raise ValueError("未检测到可用的远程版本, 请先检查更新")
 
         if source == "GitHub":
-            return f"https://github.com/AUTO-MAS-Project/AUTO-MAS/releases/download/{remote_version}/AUTO-MAS-Lite-Setup-{remote_version}-x64.zip"
+            return f"https://github.com/AUTO-MAS-Project/AUTO-MAS/releases/download/{remote_version}/AUTO-MAS-Setup-{remote_version}-x64.zip"
 
         if source == "MirrorChyan":
             mirror_url = (
@@ -275,14 +364,14 @@ class _UpdateHandler:
             )
             if mirror_url is None:
                 logger.warning("MirrorChyan 未返回下载链接, 使用自建下载站")
-                return f"https://download.auto-mas.top/d/AUTO-MAS/AUTO-MAS-Lite-Setup-{remote_version}-x64.zip"
+                return f"https://download.auto-mas.top/d/AUTO-MAS/AUTO-MAS-Setup-{remote_version}-x64.zip"
             return mirror_url
 
         if source == "AutoSite":
-            return f"https://download.auto-mas.top/d/AUTO-MAS/AUTO-MAS-Lite-Setup-{remote_version}-x64.zip"
+            return f"https://download.auto-mas.top/d/AUTO-MAS/AUTO-MAS-Setup-{remote_version}-x64.zip"
 
         if source == "CNB":
-            return f"https://cnb.cool/AUTO-MAS-Project/AUTO-MAS/-/releases/download/{remote_version}/AUTO-MAS-Lite-Setup-{remote_version}-x64.zip"
+            return f"https://cnb.cool/AUTO-MAS-Project/AUTO-MAS/-/releases/download/{remote_version}/AUTO-MAS-Setup-{remote_version}-x64.zip"
 
         raise ValueError(f"未知的下载源: {source}, 请检查配置文件")
 
@@ -300,7 +389,8 @@ class _UpdateHandler:
 
         try:
             version_info = await self._request_version_info(self.current_version)
-            download_url = version_info["data"].get("url")
+            data = version_info.get("data")
+            download_url = data.get("url") if isinstance(data, dict) else None
         except Exception as error:
             logger.warning(
                 f"刷新 Mirror 酱下载地址失败: {type(error).__name__}: {error}"
@@ -345,25 +435,19 @@ class _UpdateHandler:
 
     async def check_update(
         self, current_version: str, if_force: bool = False
-    ) -> tuple[bool, str, Dict[str, List[str]]]:
+    ) -> tuple[bool, str, Dict[str, Dict[str, List[str]]]]:
 
         self.current_version = current_version
 
-        if (
-            not if_force
-            and self.remote_version is not None
-            and self.last_check_time is not None
-            and self.update_version_info is not None
-            and self.last_check_time > datetime.now() - timedelta(hours=4)
-        ):
-            logger.info("四小时内已进行过一次检查, 直接使用缓存的版本更新信息")
-            return (
-                bool(
-                    version.parse(self.remote_version) > version.parse(current_version)
-                ),
-                self.remote_version,
-                self.update_version_info,
-            )
+        # 标题栏每 10 分钟轮询一次, 非强制检查一小时内直接复用上次结果
+        if not if_force and self._check_cache is not None:
+            cached_version, cached_result, checked_at = self._check_cache
+            if (
+                cached_version == current_version
+                and checked_at > datetime.now() - timedelta(hours=1)
+            ):
+                logger.info("一小时内已进行过一次检查, 直接使用缓存的版本更新信息")
+                return cached_result
 
         logger.info("开始检查更新")
 
@@ -372,36 +456,28 @@ class _UpdateHandler:
         logger.success("获取版本信息成功")
         self.last_check_time = datetime.now()
 
-        self.remote_version = version_info["data"]["version_name"]
+        data = version_info.get("data")
+        if not isinstance(data, dict):
+            raise Exception("Mirror 酱返回的数据不完整, 请稍后重试")
+
+        self.remote_version = data.get("version_name")
         if self.remote_version is None:
             raise Exception("Mirror 酱未返回版本号, 请稍后重试")
-        self.mirror_chyan_download_url = version_info["data"].get("url")
+        self.mirror_chyan_download_url = data.get("url")
 
         if version.parse(self.remote_version) > version.parse(current_version):
-            # 版本更新信息
-            version_info_json: Dict[str, Dict[str, List[str]]] = json.loads(
-                re.sub(
-                    r"^<!--\s*(.*?)\s*-->$",
-                    r"\1",
-                    version_info["data"]["release_note"].splitlines()[0].strip(),
-                )
+            # 版本更新信息: 更新日志读取失败只丢日志, 不影响「需要更新」这个结论
+            self.update_version_info = select_newer_version_info(
+                parse_release_note(data.get("release_note")), current_version
             )
 
-            self.update_version_info = {}
-            for v_i in [
-                info
-                for ver, info in version_info_json.items()
-                if version.parse(ver) > version.parse(current_version)
-            ]:
-                for key, value in v_i.items():
-                    if key not in self.update_version_info:
-                        self.update_version_info[key] = []
-                    self.update_version_info[key] += value
-
-            return True, self.remote_version, self.update_version_info
+            result = (True, self.remote_version, self.update_version_info)
 
         else:
-            return False, current_version, {}
+            result = (False, current_version, {})
+
+        self._check_cache = (current_version, result, self.last_check_time)
+        return result
 
     async def download_update(self, *, job: Optional[_DownloadJob] = None) -> None:
 
@@ -593,7 +669,7 @@ class _UpdateHandler:
 
         try:
             with zipfile.ZipFile(update_package, "r") as zip_ref:
-                zip_ref.extractall(Path.cwd())
+                await asyncio.to_thread(zip_ref.extractall, Path.cwd())
         except Exception as e:
             logger.error(f"解压失败, {type(e).__name__}: {e}")
             await Publisher.send(

@@ -18,10 +18,13 @@ import {
 import type { EmulatorConfigIndexItem, EmulatorSearchResult } from '@/api'
 import { EmulatorOperateIn, Service } from '@/api'
 import DocLink from '@/components/DocLink.vue'
+import Emulator2Panel from '@/views/Emulator/Emulator2Panel.vue'
 import { MAS_DOC_URLS } from '@/utils/openExternal'
+import { usePerformanceStore } from '@/stores/performance'
 const { t } = useI18n()
 
 const logger = window.electronAPI.getLogger('模拟器管理')
+const performanceStore = usePerformanceStore()
 
 defineOptions({ name: 'EmulatorManager' })
 
@@ -33,6 +36,8 @@ interface EmulatorInfo {
   max_wait_time: number
   boss_keys: string[]
   force_kill_on_close: boolean
+  stable_mode: boolean
+  config_guard: boolean
 }
 
 // 安全的 JSON 解析函数
@@ -49,10 +54,14 @@ const safeJsonParse = (jsonString: string | null | undefined, fallback: any = []
 
 // 模拟器类型映射
 // label 随语言变，所以必须是 computed；常量数组在切换语言后不会更新
+const isEmulator2 = (uid: string) => getEditingData(uid).type === 'emulator2'
+
 const emulatorTypeOptions = computed(() => [
   { value: 'general', label: t('emulator.type.general') },
   { value: 'mumu', label: t('emulator.type.mumu') },
   { value: 'ldplayer', label: t('emulator.type.ldplayer') },
+  // Emulator 2.0: 一条配置纳管多条模拟器路径, 实例合并成一张设备表
+  { value: 'emulator2', label: t('emulator.type.emulator2') },
   // { value: 'nox', label: '夜神模拟器' },
   // { value: 'memu', label: '逍遥模拟器' },
   // { value: 'blueStacks', label: 'BlueStacks' },
@@ -86,30 +95,24 @@ const showingDevices = ref<Set<string>>(new Set())
 
 // 轮询相关状态
 const pollingTimer = ref<ReturnType<typeof setTimeout> | null>(null)
-const POLLING_INTERVAL = 5000 // 5秒轮询一次
+const POLLING_INTERVAL = 10000 // 10 秒轮询一次
 
 // 路由监听
 const route = useRoute()
 
-// 轮询获取所有模拟器的设备状态
+// 只轮询当前激活页签的模拟器；emulator2 类型由 Emulator2Panel 自己刷新
 const pollDevicesStatus = async () => {
-  // 只在有模拟器时轮询
-  if (emulatorIndex.value.length === 0) {
+  const uid = activeKey.value
+  if (!uid || !emulatorIndex.value.some(e => e.uid === uid) || isEmulator2(uid)) {
     return
   }
 
   // 静默获取设备状态，不显示loading
   try {
-    for (const emulator of emulatorIndex.value) {
-      const response = await Service.getStatusApiEmulatorStatusPost({
-        emulatorId: emulator.uid,
-      })
-
-      if (response.code === 200) {
-        const allDevicesData = response.data || {}
-        const currentDevices = allDevicesData[emulator.uid] || {}
-        devicesData.value[emulator.uid] = currentDevices
-      }
+    const response = await Service.getStatusApiEmulatorStatusPost({ emulatorId: uid })
+    if (response.code === 200) {
+      const allDevicesData = response.data || {}
+      devicesData.value[uid] = allDevicesData[uid] || {}
     }
   } catch (e) {
     // 轮询时的错误静默处理，避免频繁弹错误提示
@@ -118,10 +121,13 @@ const pollDevicesStatus = async () => {
   }
 }
 
-// 启动轮询
+// 启动轮询；窗口在后台时不起，回到前台由 isBackgrounded 监听重新起
 const startPolling = () => {
   if (pollingTimer.value) {
     clearInterval(pollingTimer.value)
+  }
+  if (performanceStore.isBackgrounded) {
+    return
   }
   pollingTimer.value = setInterval(pollDevicesStatus, POLLING_INTERVAL)
   logger.info('模拟器页面轮询已启动')
@@ -195,6 +201,71 @@ const canStopDevice = (status: number) => {
   return status === DeviceStatus.ONLINE || status === DeviceStatus.STARTING
 }
 
+// Emulator 2.0 面板的实例引用：路径管理弹窗的入口在本页的「路径」那一行
+const emulator2Panels = ref<Record<string, any>>({})
+const setEmulator2Panel = (uuid: string, el: any) => {
+  if (el) emulator2Panels.value[uuid] = el
+  else delete emulator2Panels.value[uuid]
+}
+
+const openEmulator2Paths = (uuid: string) => {
+  emulator2Panels.value[uuid]?.openPaths?.()
+}
+
+/**
+ * 稳定模式开关。
+ *
+ * 它是**配置级**设置：存进配置后每次启动实例都会顺带确保一次，所以在模拟器自己
+ * 那边新建的实例也会跟着进入安全状态。打开时额外把现有设备立刻压一遍，
+ * 免得点完开关看不到任何变化。
+ *
+ * 关掉只是不再确保，**不会把那些项改回去**——不知道用户原本想要什么值。
+ */
+const stableSwitching = ref<Set<string>>(new Set())
+
+const toggleStableMode = async (uuid: string, checked: boolean) => {
+  stableSwitching.value = new Set(stableSwitching.value).add(uuid)
+  try {
+    getEditingData(uuid).stable_mode = checked
+    await handleSaveChange(uuid, 'stable_mode', checked)
+    if (checked) {
+      const count = await emulator2Panels.value[uuid]?.applyStableMode?.()
+      if (typeof count === 'number') {
+        message.success(t('emulator2.toast.stableOk', { count }))
+      }
+    }
+  } finally {
+    const next = new Set(stableSwitching.value)
+    next.delete(uuid)
+    stableSwitching.value = next
+  }
+}
+
+/**
+ * 配置守卫开关。
+ *
+ * 打开时先把当前设置记成基准，之后每次启动前和关闭后各核验一次，对不上就按基准
+ * 写回去。必须先记基准再开——否则守卫没有「应该是什么」可依据，等于没开。
+ */
+const guardSwitching = ref<Set<string>>(new Set())
+
+const toggleConfigGuard = async (uuid: string, checked: boolean) => {
+  guardSwitching.value = new Set(guardSwitching.value).add(uuid)
+  try {
+    if (checked) {
+      const count = await emulator2Panels.value[uuid]?.captureBaselines?.()
+      if (count === null || count === undefined) return
+      message.success(t('emulator2.toast.guardOk', { count }))
+    }
+    getEditingData(uuid).config_guard = checked
+    await handleSaveChange(uuid, 'config_guard', checked)
+  } finally {
+    const next = new Set(guardSwitching.value)
+    next.delete(uuid)
+    guardSwitching.value = next
+  }
+}
+
 const buildEditingData = (configData: any): EmulatorInfo => ({
   name: configData?.Info?.Name || '',
   type: configData?.Info?.Type || '',
@@ -202,6 +273,8 @@ const buildEditingData = (configData: any): EmulatorInfo => ({
   max_wait_time: configData?.Info?.MaxWaitTime || 300,
   boss_keys: safeJsonParse(configData?.Info?.BossKey, []),
   force_kill_on_close: configData?.Info?.ForceKillOnClose === true,
+  stable_mode: configData?.Info?.StableMode === true,
+  config_guard: configData?.Info?.ConfigGuard === true,
 })
 
 // 获取当前模拟器的编辑数据
@@ -348,6 +421,10 @@ const handleSaveChange = async (uuid: string, key: string, value: any) => {
       configData = { Info: { MaxWaitTime: value } }
     } else if (key === 'boss_keys') {
       configData = { Info: { BossKey: JSON.stringify(value) } }
+    } else if (key === 'stable_mode') {
+      configData = { Info: { StableMode: value } }
+    } else if (key === 'config_guard') {
+      configData = { Info: { ConfigGuard: value } }
     } else if (key === 'force_kill_on_close') {
       configData = { Info: { ForceKillOnClose: value } }
     }
@@ -723,6 +800,22 @@ watch(
   { immediate: true }
 )
 
+// 窗口进后台时停掉轮询，回到前台立即拉一次再继续
+watch(
+  () => performanceStore.isBackgrounded,
+  backgrounded => {
+    if (route.path !== '/emulators') {
+      return
+    }
+    if (backgrounded) {
+      stopPolling()
+    } else {
+      void pollDevicesStatus()
+      startPolling()
+    }
+  }
+)
+
 onMounted(async () => {
   await loadEmulators()
   await onEmulatorsLoaded()
@@ -763,17 +856,6 @@ onUnmounted(() => {
   stopPolling()
   // 即时保存模式下，无需额外保存，数据已在编辑完成时保存
 })
-
-// 重写 handleAdd:添加后自动切换到新Tab并加载
-const handleAddWithSwitch = async () => {
-  await handleAdd()
-  if (emulatorIndex.value.length > 0) {
-    const newEmulator = emulatorIndex.value[emulatorIndex.value.length - 1]
-    activeKey.value = newEmulator.uid
-    saveActiveKey(activeKey.value)
-    await loadDevices(newEmulator.uid)
-  }
-}
 
 // 重写 handleSearch:搜索并在模态框导入后自动切换
 const handleSearchAndImport = async (result: EmulatorSearchResult) => {
@@ -843,7 +925,7 @@ const handleBossKeyInputChange = (uuid: string) => {
             >
               {{ t('emulator.autoSearch') }}
             </a-button>
-            <a-button size="large" :icon="h(PlusOutlined)" @click="handleAddWithSwitch">
+            <a-button size="large" :icon="h(PlusOutlined)" @click="handleAdd">
               {{ t('emulator.manualAdd') }}
             </a-button>
           </a-space>
@@ -919,7 +1001,30 @@ const handleBossKeyInputChange = (uuid: string) => {
                         @change="handleSaveChange(element.uid, 'type', $event)"
                       />
                     </a-descriptions-item>
-                    <a-descriptions-item :label="t('emulator.pathLabel')" :span="2">
+                    <a-descriptions-item
+                      v-if="isEmulator2(element.uid)"
+                      :label="t('emulator.pathLabel')"
+                      :span="2"
+                    >
+                      <div class="emulator2-path-entry">
+                        <span class="emulator2-path-summary">
+                          {{ t('emulator2.pathsEntryHint') }}
+                        </span>
+                        <a-button
+                          size="small"
+                          type="link"
+                          :icon="h(FolderOpenOutlined)"
+                          @click="openEmulator2Paths(element.uid)"
+                        >
+                          {{ t('emulator2.managePaths') }}
+                        </a-button>
+                      </div>
+                    </a-descriptions-item>
+                    <a-descriptions-item
+                      v-if="!isEmulator2(element.uid)"
+                      :label="t('emulator.pathLabel')"
+                      :span="2"
+                    >
                       <a-input
                         v-model:value="getEditingData(element.uid).path"
                         :placeholder="t('emulator.pathPlaceholder')"
@@ -961,7 +1066,35 @@ const handleBossKeyInputChange = (uuid: string) => {
                         "
                       />
                     </a-descriptions-item>
-                    <a-descriptions-item>
+                    <a-descriptions-item v-if="isEmulator2(element.uid)">
+                      <template #label>
+                        <span>{{ t('emulator2.stableMode') }}</span>
+                        <a-tooltip :title="t('emulator2.stableSwitchTip')">
+                          <QuestionCircleOutlined style="margin-left: 4px" />
+                        </a-tooltip>
+                      </template>
+                      <a-switch
+                        :checked="getEditingData(element.uid).stable_mode"
+                        :loading="stableSwitching.has(element.uid)"
+                        size="small"
+                        @change="(checked: any) => toggleStableMode(element.uid, !!checked)"
+                      />
+                    </a-descriptions-item>
+                    <a-descriptions-item v-if="isEmulator2(element.uid)">
+                      <template #label>
+                        <span>{{ t('emulator2.configGuard') }}</span>
+                        <a-tooltip :title="t('emulator2.guardTip')">
+                          <QuestionCircleOutlined style="margin-left: 4px" />
+                        </a-tooltip>
+                      </template>
+                      <a-switch
+                        :checked="getEditingData(element.uid).config_guard"
+                        :loading="guardSwitching.has(element.uid)"
+                        size="small"
+                        @change="(checked: any) => toggleConfigGuard(element.uid, !!checked)"
+                      />
+                    </a-descriptions-item>
+                    <a-descriptions-item v-if="!isEmulator2(element.uid)">
                       <template #label>
                         <span>{{ t('emulator.bossKeyLabel') }}</span>
                         <a-tooltip :title="t('emulator.bossKeyTip')">
@@ -1003,7 +1136,7 @@ const handleBossKeyInputChange = (uuid: string) => {
                           </a-button>
                         </template>
                       </a-input>
-                      <span v-else style="color: var(--text-color-tertiary); font-size: 12px">
+                      <span v-else style="color: var(--ant-color-text-tertiary); font-size: 12px">
                         {{ t('emulator.bossKeyUnsupported') }}
                       </span>
                     </a-descriptions-item>
@@ -1026,7 +1159,16 @@ const handleBossKeyInputChange = (uuid: string) => {
               </div>
 
               <!-- 设备列表区域 -->
-              <div class="devices-panel">
+              <!-- Emulator 2.0：多路径 + 合并设备表 -->
+              <div v-if="isEmulator2(element.uid)" class="devices-panel">
+                <Emulator2Panel
+                  :ref="(el: any) => setEmulator2Panel(element.uid, el)"
+                  :emulator-id="element.uid"
+                  :active="activeKey === element.uid"
+                />
+              </div>
+
+              <div v-else class="devices-panel">
                 <div class="panel-header">
                   <h4 class="panel-title">{{ t('emulator.deviceList') }}</h4>
                 </div>
@@ -1154,12 +1296,7 @@ const handleBossKeyInputChange = (uuid: string) => {
                 >
                   {{ t('emulator.autoSearch') }}
                 </a-button>
-                <a-button
-                  type="primary"
-                  size="middle"
-                  :icon="h(PlusOutlined)"
-                  @click="handleAddWithSwitch"
-                >
+                <a-button type="primary" size="middle" :icon="h(PlusOutlined)" @click="handleAdd">
                   {{ t('emulator.manualAddMulti') }}
                 </a-button>
               </a-space>
@@ -1360,21 +1497,21 @@ const handleBossKeyInputChange = (uuid: string) => {
 
 .config-form :deep(.ant-input-borderless:hover),
 .config-form :deep(.ant-input-number-borderless:hover) {
-  background: var(--bg-color-elevated);
+  background: var(--ant-color-bg-elevated);
 }
 
 .config-form :deep(.ant-input-borderless:focus),
 .config-form :deep(.ant-input-number-borderless:focus) {
-  background: var(--bg-color-elevated);
+  background: var(--ant-color-bg-elevated);
   box-shadow: none;
 }
 
 .config-form :deep(.ant-select-borderless:hover .ant-select-selector) {
-  background: var(--bg-color-elevated) !important;
+  background: var(--ant-color-bg-elevated) !important;
 }
 
 .config-form :deep(.ant-select-focused.ant-select-borderless .ant-select-selector) {
-  background: var(--bg-color-elevated) !important;
+  background: var(--ant-color-bg-elevated) !important;
   box-shadow: none !important;
 }
 
@@ -1474,7 +1611,7 @@ const handleBossKeyInputChange = (uuid: string) => {
 
 .devices-grid :deep(.ant-table-thead > tr > th) {
   padding: 8px 12px;
-  background: var(--bg-color-container);
+  background: var(--ant-color-bg-container);
   font-weight: 500;
   position: sticky;
   top: 0;
@@ -1486,7 +1623,7 @@ const handleBossKeyInputChange = (uuid: string) => {
 }
 
 .devices-grid :deep(.ant-table-tbody > tr:hover > td) {
-  background: var(--bg-color-elevated);
+  background: var(--ant-color-bg-elevated);
 }
 
 /* 老板键列表 */
@@ -1497,28 +1634,6 @@ const handleBossKeyInputChange = (uuid: string) => {
 }
 
 /* 暗色模式支持 */
-:root {
-  --bg-color-container: #f9f9f9;
-  --bg-color-elevated: #ffffff;
-  --border-color: #e8e8e8;
-  --border-color-hover: #d9d9d9;
-  --text-color-primary: rgba(0, 0, 0, 0.88);
-  --text-color-secondary: rgba(0, 0, 0, 0.65);
-  --text-color-tertiary: rgba(0, 0, 0, 0.45);
-  --primary-color: #1890ff;
-}
-
-html.dark {
-  --bg-color-container: #1f1f1f;
-  --bg-color-elevated: #141414;
-  --border-color: #303030;
-  --border-color-hover: #434343;
-  --text-color-primary: rgba(255, 255, 255, 0.88);
-  --text-color-secondary: rgba(255, 255, 255, 0.65);
-  --text-color-tertiary: rgba(255, 255, 255, 0.45);
-  --primary-color: #1890ff;
-}
-
 html.dark .config-section,
 html.dark .devices-section {
   background: #1a1a1a;

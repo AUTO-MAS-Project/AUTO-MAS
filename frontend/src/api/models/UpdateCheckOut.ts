@@ -24,8 +24,8 @@ export type UpdateCheckOut = {
      */
     latest_version: string;
     /**
-     * 版本更新信息字典
+     * 版本更新信息：版本号 -> 分类 -> 条目，只含比当前版本新的版本段，按版本号降序
      */
-    update_info: Record<string, Array<string>>;
+    update_info: Record<string, Record<string, Array<string>>>;
 };
 

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Literal
 
 HSREngine = Literal["M7A", "SRA"]
@@ -50,6 +51,25 @@ def _inspect_engine(script_config: Any, engine: HSREngine) -> dict[str, Any]:
             "direct_run_reason": str(exc),
         }
     return snapshot if isinstance(snapshot, dict) else {}
+
+
+def _installed_version(script_config: Any, engine: HSREngine) -> str | None:
+    """已安装的外部脚本版本，读不到就是 ``None``（未配置或目录不完整）。
+
+    M7A 读版本标记文件，SRA 要起一次 ``SRA-cli.exe --version``（实测 0.09 秒、
+    不弹 UAC）。这个函数在 capabilities 接口里同步调用，故不做任何网络请求。
+    """
+
+    from .native_control import resolve_script_path
+    from .update.engines import get_spec, read_installed_version
+
+    root = resolve_script_path(script_config, engine)
+    if not root:
+        return None
+    try:
+        return read_installed_version(get_spec(engine), Path(root))
+    except Exception:  # noqa: BLE001 - 版本读不出不该让能力接口挂掉
+        return None
 
 
 def _task_strategies(module: Any, engines: list[HSREngine]) -> dict[str, list[str]]:
@@ -107,7 +127,7 @@ def build_capabilities(script_config: Any) -> dict[str, Any]:
                 "display_name": "三月七助手"
                 if engine == "M7A"
                 else "StarRailAssistant",
-                "version": None,
+                "version": _installed_version(script_config, engine),
                 "supported_modes": ["managed", "direct"],
                 "capabilities": {
                     "native_import": bool(import_ready),

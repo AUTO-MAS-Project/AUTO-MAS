@@ -1,8 +1,9 @@
 # 本地打包
 
-使用 PowerShell 7。后台更新需要桌面和 Runtime 同时使用新代码；当前工作流固定的旧 Runtime
-版本尚未包含该能力，发布前须先发布新 Runtime，再更新 `.github/workflows/build-app.yml`
-的 `RUNTIME_VERSION`。CI 会拒绝缺少后台更新协议的二进制，防止生成无法正常启动的安装包。
+使用 PowerShell 7。随桌面安装包分发的 Runtime 版本独立记录在
+`res/runtime-version.txt`。Runtime 有自己的发布节奏，因此这里钉死具体版本、不追 `latest`；
+需要升级时，先发布并完成联调，再在要构建的分支更新该文件。CI 会从本次构建所选分支读取版本，
+并拒绝缺少后台更新协议的二进制，防止生成无法正常启动的安装包。
 
 本地验证可直接使用本次源码构建的 Runtime，不必等待 Release：
 

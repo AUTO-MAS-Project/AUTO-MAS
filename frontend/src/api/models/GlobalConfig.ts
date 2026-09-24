@@ -2,6 +2,7 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
+import type { GlobalConfig_Display } from './GlobalConfig_Display';
 import type { GlobalConfig_Function } from './GlobalConfig_Function';
 import type { GlobalConfig_Notify } from './GlobalConfig_Notify';
 import type { GlobalConfig_Start } from './GlobalConfig_Start';
@@ -13,6 +14,10 @@ export type GlobalConfig = {
      * 功能相关配置
      */
     Function?: (GlobalConfig_Function | null);
+    /**
+     * 显示器相关配置
+     */
+    Display?: (GlobalConfig_Display | null);
     /**
      * 语音相关配置
      */

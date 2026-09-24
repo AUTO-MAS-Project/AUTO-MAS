@@ -2,6 +2,10 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
+import type { Emulator2InstanceCreateIn } from '../models/Emulator2InstanceCreateIn';
+import type { Emulator2InstanceCreateOut } from '../models/Emulator2InstanceCreateOut';
+import type { Emulator2PathAddIn } from '../models/Emulator2PathAddIn';
+import type { Emulator2PathAddOut } from '../models/Emulator2PathAddOut';
 import type { EmulatorCreateOut } from '../models/EmulatorCreateOut';
 import type { PlanCreateIn } from '../models/PlanCreateIn';
 import type { PlanCreateOut } from '../models/PlanCreateOut';
@@ -104,6 +108,51 @@ export class AddService {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/emulator/add',
+        });
+    }
+    /**
+     * 添加模拟器路径
+     * 探测版本 → 落库 → 为该安装的实例分配设备号。
+     *
+     * 版本不合要求时返回 ``ok=False`` 与原因枚举，而不是抛错。
+     * @param requestBody
+     * @returns Emulator2PathAddOut Successful Response
+     * @throws ApiError
+     */
+    public static addPathApiEmulator2PathsAddPost(
+        requestBody: Emulator2PathAddIn,
+    ): CancelablePromise<Emulator2PathAddOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/emulator2/paths/add',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 新建模拟器实例
+     * 在某条模拟器安装下新建一个实例，并给它分配设备号。
+     *
+     * 新建成功与否**不看命令返回码**——雷电新建成功时返回码也不为 0，
+     * 判据是列表里有没有多出实例。
+     * @param requestBody
+     * @returns Emulator2InstanceCreateOut Successful Response
+     * @throws ApiError
+     */
+    public static createInstanceApiEmulator2InstancesCreatePost(
+        requestBody: Emulator2InstanceCreateIn,
+    ): CancelablePromise<Emulator2InstanceCreateOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/emulator2/instances/create',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
         });
     }
     /**

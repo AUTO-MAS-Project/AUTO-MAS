@@ -9,6 +9,7 @@ import type { GlobalConfig } from '@/api'
 import type { CursorEffect } from '@/types/cursorEffect'
 import { normalizeCursorEffect } from '@/types/cursorEffect'
 import { useSettingsApi } from '@/composables/useSettingsApi'
+import { invalidateVoiceSettingsCache } from '@/composables/useAudioPlayer'
 import { setTelemetryEnabled } from '@/utils/sentry'
 import { useUiPreferences } from '@/composables/useUiPreferences'
 import { useUpdateChecker } from '@/composables/useUpdateChecker.ts'
@@ -105,28 +106,48 @@ const cursorEffectOptions = computed<{ label: string; value: CursorEffect }[]>((
   { label: t('setting.cursor.fluid'), value: 'fluid' },
 ])
 
+// 这几类配置 Electron 主进程也要用（托盘、自启、更新源等），保存后同步过去
+const ELECTRON_SYNCED_CATEGORIES = new Set<keyof GlobalConfig>([
+  'UI',
+  'Start',
+  'Update',
+  'Function',
+])
+
+// 后端会规范化这些字段的值（加密存储 / URL 校验），保存后要回读；其余字段本地应用即可
+const NORMALIZED_SETTING_KEYS = new Set([
+  'Notify.KoishiServerAddress',
+  'Notify.OpenClawWeixinServerAddress',
+  'Notify.OpenClawQQClientSecret',
+  'Notify.OpenClawWeixinBotToken',
+  'Notify.AuthorizationCode',
+  'Update.MirrorChyanCDK',
+])
+
+const syncConfigToElectron = async (data: GlobalConfig) => {
+  try {
+    if (window.electronAPI?.syncBackendConfig) {
+      await window.electronAPI.syncBackendConfig({
+        UI: data.UI,
+        Start: data.Start,
+        Update: data.Update,
+        Function: data.Function,
+      })
+      logger.info('配置已同步到 Electron')
+    }
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`同步配置到 Electron 失败: ${errorMsg}`)
+  }
+}
+
 // 加载和保存
 const loadSettings = async () => {
   const data = await getSettings()
   if (data) {
     Object.assign(settings, data)
     syncUiPreferences(data.UI)
-
-    // 同步配置到 Electron 主进程
-    try {
-      if (window.electronAPI?.syncBackendConfig) {
-        await window.electronAPI.syncBackendConfig({
-          UI: data.UI,
-          Start: data.Start,
-          Update: data.Update,
-          Function: data.Function,
-        })
-        logger.info('后端配置已同步到 Electron')
-      }
-    } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : String(error)
-      logger.error(`同步配置到 Electron 失败: ${errorMsg}`)
-    }
+    await syncConfigToElectron(data)
   }
 }
 
@@ -148,29 +169,26 @@ const saveSettings = async (category: keyof GlobalConfig, changes: any): Promise
   }
 }
 
-// 刷新设置数据
+// 刷新设置数据（只在后端会改写值的字段保存后才需要整份回读）
 const refreshSettings = async () => {
   const data = await getSettings()
   if (data) {
     Object.assign(settings, data)
     syncUiPreferences(data.UI)
-
-    // 同步所有配置到 Electron
-    try {
-      if (window.electronAPI?.syncBackendConfig) {
-        await window.electronAPI.syncBackendConfig({
-          UI: data.UI,
-          Start: data.Start,
-          Update: data.Update,
-          Function: data.Function,
-        })
-        logger.info('所有配置已同步到 Electron')
-      }
-    } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : String(error)
-      logger.error(`同步配置到 Electron 失败: ${errorMsg}`)
-    }
+    await syncConfigToElectron(data)
   }
+}
+
+// 保存成功后本地应用这次变更，不再整份回读
+const applyLocalSettingChange = async (category: keyof GlobalConfig, key: string, value: any) => {
+  const section = settings[category] as Record<string, unknown> | undefined
+  if (!section) {
+    await refreshSettings()
+    return
+  }
+  section[key] = value
+  if (category === 'UI') syncUiPreferences(settings.UI)
+  if (ELECTRON_SYNCED_CATEGORIES.has(category)) await syncConfigToElectron(settings)
 }
 
 const handleSettingChange = async (category: keyof GlobalConfig, key: string, value: any) => {
@@ -182,8 +200,13 @@ const handleSettingChange = async (category: keyof GlobalConfig, key: string, va
     return
   }
 
-  // 更新成功后重新获取最新配置（会自动同步到 Electron）
-  await refreshSettings()
+  if (NORMALIZED_SETTING_KEYS.has(`${category}.${key}`)) {
+    await refreshSettings()
+  } else {
+    await applyLocalSettingChange(category, key, value)
+  }
+  // 音频播放器缓存了语音设置，改了就让它下次重读
+  if (category === 'Voice') invalidateVoiceSettingsCache()
 
   if (category === 'Function' && key === 'IfEnableTelemetry') {
     setTelemetryEnabled(Boolean(value))

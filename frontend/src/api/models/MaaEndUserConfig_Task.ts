@@ -28,6 +28,14 @@ export type MaaEndUserConfig_Task = {
      */
     AutoEssenceSpecifiedLocation?: (string | null);
     /**
+     * 基质刷取模式
+     */
+    AutoEssenceMenu?: ('Random' | 'Location' | 'Target' | null);
+    /**
+     * 基质目标武器 ID 列表
+     */
+    AutoEssenceTargetWeapons?: (Array<string> | null);
+    /**
      * 理智任务
      */
     IfSanity?: (boolean | null);
@@ -98,11 +106,11 @@ export type MaaEndUserConfig_Task = {
     /**
      * 自动采集区域资源路线
      */
-    AutoCollectRoutes?: (Array<'Route1' | 'Route2' | 'Route3' | 'Route4' | 'Route5' | 'Route6' | 'Route7' | 'Route8' | 'Route9' | 'Route10' | 'Route11' | 'Route12' | 'Route13' | 'Route14' | 'Route15'> | null);
+    AutoCollectRoutes?: (Array<string> | null);
     /**
      * 自动采集通用资源路线
      */
-    AutoCollectCommonRoutes?: (Array<'CommonRoute1' | 'CommonRoute2' | 'CommonRoute3' | 'CommonRoute4' | 'CommonRoute5' | 'CommonRoute6' | 'CommonRoute7' | 'CommonRoute8'> | null);
+    AutoCollectCommonRoutes?: (Array<string> | null);
     /**
      * 每日正常完成一次后当天跳过的 MaaEnd 任务名列表（JSON 字符串）
      */

@@ -18,6 +18,7 @@
 
 import asyncio
 import shutil
+import uuid
 from contextlib import suppress
 from pathlib import Path
 
@@ -27,13 +28,27 @@ from app.models.ConfigBase import MultipleConfig
 from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, TaskExecuteBase
 from app.services import System
+from app.task.proxy_helpers import read_config_source, user_uses_quick_config
 from app.utils import ProcessManager, get_logger
+from app.utils.io import mark_native_config_injected, swap_in_dir
+
+from .tools.backup_archive import (
+    archive_mas_runtime_backup,
+    ensure_quick_config_dir,
+    mas_config_dir,
+)
 
 logger = get_logger("OK-NTE 脚本设置")
 
 
 class ScriptConfigTask(TaskExecuteBase):
-    """OK-NTE GUI 配置会话"""
+    """拉起 OK-NTE 原生 GUI；用户会话把 MAS 侧配置下发到读取目录，关闭回写。
+
+    view_only=True 时为查看会话：只读预览（如「查看历史备份」）——用户级
+    会话下发的 MAS 目录即刚恢复的备份（所见即备份），脚本级会话跳过下发
+    （原生目录即备份）；结束不回写 MAS 配置，原生目录由 manager 的任务前
+    快照还原（临时注入，看完还原）。
+    """
 
     def __init__(
         self,
@@ -41,6 +56,7 @@ class ScriptConfigTask(TaskExecuteBase):
         script_config: OkNteConfig,
         user_config: MultipleConfig[OkNteUserConfig],
         game_manager: ProcessManager | None,
+        view_only: bool = False,
     ):
         super().__init__()
 
@@ -52,6 +68,8 @@ class ScriptConfigTask(TaskExecuteBase):
         self.script_config = script_config
         self.user_config = user_config
         self.game_manager = game_manager
+        # 查看会话：只读预览（如「查看历史备份」），结束不回写 MAS 配置
+        self.view_only = view_only
         self.cur_user_item = self.script_info.user_list[self.script_info.current_index]
         self.oknte_process_manager: ProcessManager = ProcessManager()
         self.wait_event: asyncio.Event = asyncio.Event()
@@ -62,13 +80,23 @@ class ScriptConfigTask(TaskExecuteBase):
         self.script_config_path: Path = Path(
             self.script_config.get("Script", "ConfigPath")
         )
-        self.mas_config_dir: Path = (
-            Path.cwd()
-            / "data"
-            / self.script_info.script_id
-            / self.cur_user_item.user_id
-            / "ConfigFile"
+        self.mas_config_dir: Path | None = mas_config_dir(
+            self.script_info.script_id, self.cur_user_item.user_id
         )
+        if self.cur_user_item.user_id != "Default":
+            cfg = self.user_config[uuid.UUID(self.cur_user_item.user_id)]
+            if self.view_only or user_uses_quick_config(cfg):
+                self.mas_config_dir = ensure_quick_config_dir(
+                    self.script_info.script_id,
+                    self.cur_user_item.user_id,
+                    script_config,
+                )
+            elif read_config_source(cfg) == "直控":
+                self.mas_config_dir = None
+            elif read_config_source(cfg) == "脚本":
+                self.mas_config_dir = mas_config_dir(
+                    self.script_info.script_id, "Default"
+                )
 
     async def check(self) -> str:
         return "Pass"
@@ -88,23 +116,43 @@ class ScriptConfigTask(TaskExecuteBase):
         await self.wait_event.wait()
 
     async def set_oknte(self) -> None:
-        """将 AUTO-MAS 侧用户配置下发到 OK-NTE GUI 读取目录。"""
+        """将 AUTO-MAS 侧用户配置下发到 OK-NTE GUI 读取目录。
+
+        查看会话（view_only）的脚本级入口跳过下发——原生目录就是刚恢复的
+        备份；用户级入口照常下发（MAS 目录即备份内容，下发是查看的必经
+        复制，GUI 所见即备份）。
+        """
 
         logger.info(f"开始配置 OK-NTE GUI: 设置脚本 {self.cur_user_item.user_id}")
         await self._kill_oknte_process()
 
-        if not self.mas_config_dir.exists() or not any(self.mas_config_dir.iterdir()):
+        # 下发前归档 MAS 用户配置（下发源；指纹去重，失败不阻断会话）——
+        # MAS 目录缺失时 GUI 会直接改原生配置、final_task 还会回写覆盖 MAS 目录。
+        # native 池由 manager.prepare 在任务级一次性归档，此处不重复
+        archive_mas_runtime_backup(
+            self.script_info.script_id, self.cur_user_item.user_id
+        )
+
+        # 查看会话的脚本级入口：原生目录即所选备份，跳过下发
+        if self.view_only and self.cur_user_item.user_id == "Default":
+            logger.info("OK-NTE 查看会话跳过配置下发: 原生目录即所选备份")
+            return
+
+        if (
+            self.mas_config_dir is None
+            or not self.mas_config_dir.exists()
+            or not any(self.mas_config_dir.iterdir())
+        ):
             logger.info("未找到用户级 OK-NTE 配置，使用脚本当前配置启动 GUI")
             return
 
         if self.script_config.get("Script", "ConfigPathMode") == "Folder":
-            tmp_dst = self.script_config_path.with_name(
-                self.script_config_path.name + ".tmp"
+            swap_in_dir(self.mas_config_dir, self.script_config_path)
+            mark_native_config_injected(
+                Path.cwd() / f"data/{self.script_info.script_id}/Temp",
+                self.script_config_path,
+                script_id=self.script_info.script_id,
             )
-            shutil.rmtree(tmp_dst, ignore_errors=True)
-            shutil.copytree(self.mas_config_dir, tmp_dst, dirs_exist_ok=True)
-            shutil.rmtree(self.script_config_path, ignore_errors=True)
-            tmp_dst.rename(self.script_config_path)
         elif self.script_config.get("Script", "ConfigPathMode") == "File":
             src_file = self.mas_config_dir / self.script_config_path.name
             if src_file.exists():
@@ -120,6 +168,18 @@ class ScriptConfigTask(TaskExecuteBase):
     async def final_task(self) -> None:
         await self._kill_oknte_process()
 
+        # 查看会话：只读预览，不把原生目录回写 MAS 配置（原生现场由 manager
+        # 的任务前快照还原）；GUI 内的改动一律丢弃
+        if self.view_only:
+            logger.success("OK-NTE 查看结束（只读，不回写配置）")
+            self.cur_user_item.status = "完成"
+            return
+
+        if self.mas_config_dir is None:
+            # 直控 GUI 的保存属于原生来源，不能被 manager 的任务快照撤销。
+            self.cur_user_item.status = "完成"
+            return
+
         self.mas_config_dir.parent.mkdir(parents=True, exist_ok=True)
         if self.script_config.get("Script", "ConfigPathMode") == "Folder":
             if not self.script_config_path.exists():
@@ -127,11 +187,7 @@ class ScriptConfigTask(TaskExecuteBase):
                     "未找到 OK-NTE 配置目录，请在 GUI 中保存后再点击保存配置"
                 )
 
-            tmp_dst = self.mas_config_dir.with_name(self.mas_config_dir.name + ".tmp")
-            shutil.rmtree(tmp_dst, ignore_errors=True)
-            shutil.copytree(self.script_config_path, tmp_dst, dirs_exist_ok=True)
-            shutil.rmtree(self.mas_config_dir, ignore_errors=True)
-            tmp_dst.rename(self.mas_config_dir)
+            swap_in_dir(self.script_config_path, self.mas_config_dir)
             logger.success(f"OK-NTE 配置已保存到: {self.mas_config_dir}")
         elif self.script_config.get("Script", "ConfigPathMode") == "File":
             if not self.script_config_path.exists():

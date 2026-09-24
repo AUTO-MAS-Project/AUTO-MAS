@@ -21,8 +21,9 @@ import subprocess
 
 import pytest
 
-
-pytestmark = pytest.mark.skipif(os.name != "nt", reason="Job Object 脱离仅 Windows 概念")
+pytestmark = pytest.mark.skipif(
+    os.name != "nt", reason="Job Object 脱离仅 Windows 概念"
+)
 
 
 class _FakeProcess:
@@ -99,9 +100,7 @@ def test_open_process_breakaway_adds_flag(monkeypatch: pytest.MonkeyPatch) -> No
     calls = _install_fake_spawn(monkeypatch)
 
     asyncio.run(
-        ProcessManager().open_process(
-            "C:/fake/does-not-exist/game.exe", breakaway=True
-        )
+        ProcessManager().open_process("C:/fake/does-not-exist/game.exe", breakaway=True)
     )
 
     assert len(calls) == 1

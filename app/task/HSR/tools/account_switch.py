@@ -48,31 +48,20 @@ HSR_GAME_PROCESS_NAME = "StarRail.exe"
 def _script_path(script_config: Any, engine: str) -> str:
     """Resolve the old-dev engine root from ``Info`` only."""
 
-    try:
-        value = script_config.get("Info", f"{engine}Path")
-    except (AttributeError, KeyError, TypeError):
-        value = ""
-    return str(value or "").strip()
+    return str(script_config.get("Info", f"{engine}Path") or "").strip()
 
 
 def is_game_management_enabled(script_config: Any) -> bool:
     """读取 MAS 游戏管理开关；旧配置缺少该字段时默认开启。"""
 
-    try:
-        value = script_config.get("Game", "Enabled")
-    except (AttributeError, KeyError, TypeError, ValueError):
-        return True
+    value = script_config.get("Game", "Enabled")
     return True if value is None else bool(value)
 
 
 def _user_credential(user_config: Any, key: str) -> str:
     """Read the old-dev account credential from ``Info``."""
 
-    try:
-        value = user_config.get("Info", key)
-    except (AttributeError, KeyError, TypeError):
-        value = ""
-    return str(value or "")
+    return str(user_config.get("Info", key) or "")
 
 
 def _is_config_value_readable(user_config: Any, group: str, key: str) -> bool:
@@ -95,10 +84,7 @@ def resolve_game_executable_path(script_config: Any) -> Path:
 def _force_resolution_enabled(script_config: Any) -> bool:
     """读取脚本页的临时 1920×1080 开关；旧配置缺字段时保持关闭。"""
 
-    try:
-        return bool(script_config.get("Game", "ForceResolution1920x1080"))
-    except (AttributeError, KeyError, TypeError, ValueError):
-        return False
+    return bool(script_config.get("Game", "ForceResolution1920x1080"))
 
 
 def prepare_game_resolution_if_needed(
@@ -467,9 +453,6 @@ class HSRAccountSwitcher:
             await self.ensure_game_started_by_mas()
         finally:
             self.runtime.game_transitioning = False
-
-    async def close_game_if_needed(self) -> None:
-        await close_game_if_needed(self.runtime, self.script_config, self._append_log)
 
     async def run_sra_task(
         self,

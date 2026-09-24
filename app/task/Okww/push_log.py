@@ -82,6 +82,9 @@ OKWW_PUSH_RULES: list[tuple[str, str]] = [
     (r"must_use completed", r'"体力刷本"'),
     # 当前体力：反复记录的 `info_set current_stamina N` 是游戏界面读取的真实值，
     # 保留最后一次作为刷完剩余（体力不足以刷一次的数值也会被记录到）。
+    # 上游 ok.po 自 v3.0.0 起把 current_stamina 译作「当前体力」，翻译后行须匹配
+    # 译文；英文原行规则保留兜底（翻译文件缺失或上游回退时生效）。
+    (r"当前体力 (\d+)", r'"体力当前:" + $((?:当前体力 )(\d+))'),
     (r"current_stamina (\d+)", r'"体力当前:" + $((?:current_stamina )(\d+))'),
     (r"每日任务已完成", r'"✅ 成功: 每日完成"'),
     (r"MainWindow:退出", r'"✅ 成功: 退出"'),
@@ -123,7 +126,7 @@ def okww_resolve(results: list[tuple[str, str, float]]) -> list[tuple[str, str, 
         # 当前体力：仅记录最后一次，结束后据此输出「⚡ 剩余体力: N」
         if text.startswith("体力当前:"):
             try:
-                last_stamina = int(text[len("体力当前:"):])
+                last_stamina = int(text[len("体力当前:") :])
                 last_stamina_ts = ts
             except ValueError:
                 pass
@@ -137,8 +140,7 @@ def okww_resolve(results: list[tuple[str, str, float]]) -> list[tuple[str, str, 
     # 规则均为二元组，经 LogCollect.collect 后 log_type 恒为 LogType.NORMAL；
     # 节点级失败由文本「❌ 失败:」体现，不依赖逐条类型过滤，故直接输出普通
     status_lines = [
-        (LogType.NORMAL, f"{states[node][1]}: {node}", ts_of[node])
-        for node in order
+        (LogType.NORMAL, f"{states[node][1]}: {node}", ts_of[node]) for node in order
     ]
     if last_stamina is not None:
         status_lines.append(

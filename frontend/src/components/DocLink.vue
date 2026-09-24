@@ -1,5 +1,12 @@
 <template>
-  <a class="doc-link" :href="localizedUrl" target="_blank" rel="noreferrer" :aria-label="t('common.viewPageDocs')" @click="handleExternalLink">
+  <a
+    class="doc-link"
+    :href="localizedUrl"
+    target="_blank"
+    rel="noreferrer"
+    :aria-label="t('common.viewPageDocs')"
+    @click="handleExternalLink"
+  >
     <BookOutlined />
     {{ t('common.viewPageDocs') }}
     <ExportOutlined />
@@ -21,5 +28,11 @@ const localizedUrl = computed(() => localizeDocUrl(props.url, locale.value))
 </script>
 
 <style scoped>
-.doc-link { display: inline-flex; align-items: center; gap: 4px; color: var(--ant-color-primary); white-space: nowrap; }
+.doc-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--ant-color-primary);
+  white-space: nowrap;
+}
 </style>

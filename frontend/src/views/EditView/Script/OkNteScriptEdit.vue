@@ -24,7 +24,7 @@
     </a-space>
   </div>
 
-  <div class="script-edit-content">
+  <ConfigLockPanel :script-id="scriptId" content-class="script-edit-content">
     <a-card :title="t('edit.okNteScriptConfiguration')" :loading="pageLoading" class="config-card">
       <template #extra>
         <a-tag color="blue" class="type-tag">OK-NTE</a-tag>
@@ -161,7 +161,9 @@
             <a-col :span="12">
               <a-form-item>
                 <template #label>
-                  <a-tooltip title="开启「任务前启动游戏」后，游戏启动成功后在运行 ok-nte 前按用户手机号后 4 位强制切换登录账号；用户未填写账号则不切换。未开启「任务前启动游戏」时本开关不可用">
+                  <a-tooltip
+                    title="开启「任务前启动游戏」后，游戏启动成功后在运行 ok-nte 前按用户手机号后 4 位强制切换登录账号；用户未填写账号则不切换。未开启「任务前启动游戏」时本开关不可用"
+                  >
                     <span class="form-label">
                       运行前强制切换账号
                       <QuestionCircleOutlined class="help-icon" />
@@ -330,10 +332,11 @@
         </div>
       </a-form>
     </a-card>
-  </div>
+  </ConfigLockPanel>
 </template>
 
 <script setup lang="ts">
+import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
 import { useI18n } from 'vue-i18n'
 import { onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -351,6 +354,7 @@ import {
   type OkNteConfig_Script,
 } from '@/api'
 import { useScriptApi } from '@/composables/useScriptApi'
+import { useSaveQueue } from '@/composables/useSaveQueue'
 
 const { t } = useI18n()
 
@@ -361,7 +365,8 @@ const { getScript, updateScript } = useScriptApi()
 
 const scriptId = route.params.id as string
 const pageLoading = ref(true)
-const isSaving = ref(false)
+// 保存串行队列：连续改动按序写回，不再被布尔互斥丢掉
+const { isSaving, enqueue } = useSaveQueue()
 const isInitializing = ref(true)
 
 const formData = reactive({
@@ -444,20 +449,19 @@ const handleGameEnabledChange = async (enabled: boolean) => {
 }
 
 const handleChange = async (category: string, key: string, value: unknown) => {
-  if (isInitializing.value || isSaving.value) return
-  isSaving.value = true
-  try {
-    const updateData = { [category]: { [key]: value } } as Record<string, Record<string, unknown>>
-    const success = await updateScript(scriptId, updateData)
-    if (success) {
-      logger.info(`配置已保存: ${category}.${key}`)
+  if (isInitializing.value) return
+  await enqueue(async () => {
+    try {
+      const updateData = { [category]: { [key]: value } } as Record<string, Record<string, unknown>>
+      const success = await updateScript(scriptId, updateData)
+      if (success) {
+        logger.info(`配置已保存: ${category}.${key}`)
+      }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e)
+      logger.error(msg)
     }
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e)
-    logger.error(msg)
-  } finally {
-    isSaving.value = false
-  }
+  }, `${category}.${key}`)
 }
 
 const buildAutoPaths = (rootPath: string) => {
@@ -491,8 +495,7 @@ const applyRootPathDefaults = async (rootPath: string) => {
   oknteConfig.Script.TrackProcessExe = trackProcessExe
   oknteConfig.Script.TrackProcessCmdline = ''
 
-  isSaving.value = true
-  try {
+  await enqueue(async () => {
     const success = await updateScript(scriptId, {
       Info: { RootPath: norm },
       Script: {
@@ -511,9 +514,7 @@ const applyRootPathDefaults = async (rootPath: string) => {
     if (success) {
       message.success(t('edit.okNtePathMatched'))
     }
-  } finally {
-    isSaving.value = false
-  }
+  })
 }
 
 const loadScript = async () => {
@@ -541,10 +542,7 @@ const loadScript = async () => {
     // 旧配置 Game.Path 存的是 HTGame.exe：展示层自动升级为同安装根下的启动器
     // （运行时后端也会按同一规则反推，此处仅为回显正确）
     const gamePath = (oknteConfig.Game.Path || '').replace(/\\/g, '/')
-    if (
-      oknteConfig.Game.Enabled &&
-      gamePath.toLowerCase().endsWith(`/${NTE_CLIENT_EXE}`)
-    ) {
+    if (oknteConfig.Game.Enabled && gamePath.toLowerCase().endsWith(`/${NTE_CLIENT_EXE}`)) {
       const clientIdx = gamePath.toLowerCase().lastIndexOf('/client/')
       if (clientIdx !== -1) {
         const installRoot = gamePath.substring(0, clientIdx)
@@ -601,7 +599,7 @@ const selectGameRootPath = async () => {
   // 截断锚点之后的内容，拼接启动器候选相对路径（国服/国际/台服）
   const prefix = normalized.substring(0, idx)
   const launcherCandidates = NTE_LAUNCHER_EXES.map(
-    (exe) => `${prefix}${NTE_GAME_ANCHOR}/${NTE_LAUNCHER_DIR}/${exe}`
+    exe => `${prefix}${NTE_GAME_ANCHOR}/${NTE_LAUNCHER_DIR}/${exe}`
   )
 
   let candidateLauncher: string | null = null
@@ -621,8 +619,7 @@ const selectGameRootPath = async () => {
 
   oknteConfig.Game.Path = candidateLauncher
   oknteConfig.Game.Type = 'Client'
-  isSaving.value = true
-  try {
+  await enqueue(async () => {
     await updateScript(scriptId, {
       Game: {
         Path: oknteConfig.Game.Path,
@@ -630,9 +627,7 @@ const selectGameRootPath = async () => {
       },
     })
     message.success(t('edit.gamePathMatchedHtgame'))
-  } finally {
-    isSaving.value = false
-  }
+  })
 }
 
 onMounted(loadScript)

@@ -1,0 +1,7 @@
+[
+  {
+    "name": "plan",
+    "type": "input-text",
+    "label": "MAS 一条龙 Plan（由 MAS 自动注入，请勿编辑）"
+  }
+]

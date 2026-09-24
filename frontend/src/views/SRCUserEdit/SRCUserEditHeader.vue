@@ -18,11 +18,12 @@
 
     <a-space size="middle">
       <a-button
-        v-if="userMode !== '脚本' && !showSrcConfigMask"
+        v-if="userMode === '用户' && !showSrcConfigMask"
         type="primary"
         ghost
         size="large"
         :loading="srcConfigLoading"
+        :disabled="configLocked"
         @click="$emit('handleSRCConfig')"
       >
         <template #icon>
@@ -31,7 +32,7 @@
         {{ t('edit.srcConfiguration') }}
       </a-button>
       <a-button
-        v-if="userMode !== '脚本' && showSrcConfigMask"
+        v-if="userMode === '用户' && showSrcConfigMask"
         type="default"
         size="large"
         disabled
@@ -66,6 +67,7 @@ defineProps<{
   srcConfigLoading: boolean
   showSrcConfigMask: boolean
   loading: boolean
+  configLocked: boolean
 }>()
 
 defineEmits<{

@@ -4,9 +4,9 @@ import { SCRIPT_LOGOS } from '@/utils/scriptLogos'
 
 export type ConfigMode = 'template' | 'custom'
 export type CreateStepKey = 'type' | 'config'
-export type ScriptTypeGroup = 'all' | 'specialized' | 'general'
+type ScriptTypeGroup = 'all' | 'specialized' | 'general'
 
-export interface ScriptTypeOption {
+interface ScriptTypeOption {
   value: ScriptType
   titleKey: string
   descriptionKey: string
@@ -16,12 +16,12 @@ export interface ScriptTypeOption {
   icon: string
 }
 
-export interface CreateStep {
+interface CreateStep {
   key: CreateStepKey
   titleKey: string
 }
 
-export interface CreateRequestState {
+interface CreateRequestState {
   type: ScriptType
   configMode: ConfigMode
   template: WebConfigTemplate | null
@@ -40,6 +40,15 @@ export const SCRIPT_TYPE_OPTIONS: ScriptTypeOption[] = [
     keywords: ['general', '通用', '自定义'],
     group: 'general',
     icon: SCRIPT_LOGOS.General,
+  },
+  {
+    // MaaFW 是通用引擎，不是专项：任何带 interface.json 的项目都由它运行，和「通用脚本」并列。
+    value: 'MaaFW',
+    titleKey: 'scripts.type.MaaFW',
+    descriptionKey: 'scripts.create.typeDesc.MaaFW',
+    keywords: ['maafw', 'maaframework', 'framework', 'mfw', 'interface.json', '通用'],
+    group: 'general',
+    icon: SCRIPT_LOGOS.MaaFW,
   },
   {
     value: 'MAA',
@@ -61,7 +70,7 @@ export const SCRIPT_TYPE_OPTIONS: ScriptTypeOption[] = [
     value: 'MaaEnd',
     titleKey: 'scripts.type.MaaEnd',
     descriptionKey: 'scripts.create.typeDesc.MaaEnd',
-    keywords: ['maaend', 'maaframework'],
+    keywords: ['maaend', 'maaframework', '终末地', 'endfield'],
     group: 'specialized',
     icon: SCRIPT_LOGOS.MaaEnd,
   },
@@ -72,14 +81,6 @@ export const SCRIPT_TYPE_OPTIONS: ScriptTypeOption[] = [
     keywords: ['m9a', '1999', '重返未来'],
     group: 'specialized',
     icon: SCRIPT_LOGOS.M9A,
-  },
-  {
-    value: 'MaaFW',
-    titleKey: 'scripts.type.MaaFW',
-    descriptionKey: 'scripts.create.typeDesc.MaaFW',
-    keywords: ['maafw', 'maaframework', 'framework', 'mfw'],
-    group: 'specialized',
-    icon: SCRIPT_LOGOS.MaaFW,
   },
   {
     value: 'Okww',
@@ -112,6 +113,22 @@ export const SCRIPT_TYPE_OPTIONS: ScriptTypeOption[] = [
     keywords: ['bettergi', 'better-gi', '原神', 'genshin'],
     group: 'specialized',
     icon: SCRIPT_LOGOS.BetterGI,
+  },
+  {
+    value: 'ZzzOd',
+    titleKey: 'scripts.type.ZzzOd',
+    descriptionKey: 'scripts.create.typeDesc.ZzzOd',
+    keywords: ['zzz-od', 'zzz', '绝区零', 'zenless', '一条龙'],
+    group: 'specialized',
+    icon: SCRIPT_LOGOS.ZzzOd,
+  },
+  {
+    value: 'BAAH',
+    titleKey: 'scripts.type.BAAH',
+    descriptionKey: 'scripts.create.typeDesc.BAAH',
+    keywords: ['baah', '碧蓝档案', '蔚蓝档案', 'bluearchive', '爱丽丝助手'],
+    group: 'specialized',
+    icon: SCRIPT_LOGOS.BAAH,
   },
 ]
 
@@ -161,6 +178,8 @@ const EDIT_SEGMENT_BY_TYPE: Record<ScriptType, string> = {
   OkNte: 'oknte',
   HSR: 'hsr',
   BetterGI: 'bettergi',
+  ZzzOd: 'zzzod',
+  BAAH: 'baah',
   General: 'general',
 }
 

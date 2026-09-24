@@ -140,18 +140,19 @@ class _SystemHandler:
         if mode in {"Shutdown", "Reboot", "Logoff"}:
             await self.kill_emulator_processes()
         logger.info(f"执行电源操作: {mode}")
-        await self._request_frontend_close()
+        # 系统电源动作必须先于前端关闭执行：请求前端退出会让 Electron 退出并连带结束后端进程，
+        # 若先等前端断开，关机/重启等命令将永远没有机会执行（issue #611）。
         await power.execute(mode)
 
     async def _request_frontend_close(self) -> None:
-        """请求前端退出，并等待主会话断开后才允许执行系统动作。"""
+        """请求前端退出，并等待主会话断开（仅用于后端自行退出的 KillSelf 场景）。"""
 
         sent = await Publisher.send(
             id=protocol.ID_MAIN, type=protocol.FRONTEND_CLOSE_REQUESTED
         )
         if not sent:
             # 当前没有前端会话，本身已满足“前端关闭”前置条件。
-            logger.info("当前无前端主连接，继续执行系统电源操作")
+            logger.info("当前无前端主连接，继续退出主程序")
             return
 
         disconnected = await MainConnection.wait_until_disconnected(
@@ -263,15 +264,18 @@ class _SystemHandler:
         logger.info("正在清除模拟器进程")
 
         keywords = ["Nemu", "nemu", "emulator", "MuMu"]
-        for proc in psutil.process_iter(["pid", "name"]):
-            try:
-                pname = proc.info["name"].lower()
-                if any(keyword.lower() in pname for keyword in keywords):
-                    proc.kill()
-                    logger.info(f"已关闭 MuMu 模拟器进程: {proc.info['name']}")
-            except (psutil.NoSuchProcess, psutil.AccessDenied):
-                continue
 
+        def _kill_all() -> None:
+            for proc in psutil.process_iter(["pid", "name"]):
+                try:
+                    pname = proc.info["name"].lower()
+                    if any(keyword.lower() in pname for keyword in keywords):
+                        proc.kill()
+                        logger.info(f"已关闭 MuMu 模拟器进程: {proc.info['name']}")
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                    continue
+
+        await asyncio.to_thread(_kill_all)
         logger.success("模拟器进程清除完成")
 
     async def kill_process(self, path: Path | str, *, kill_tree: bool = True) -> bool:
@@ -345,30 +349,33 @@ class _SystemHandler:
         path = Path(path)
         pids: list[int] = []
         uncertain_pids: list[int] = []
-        complete = True
         target_path = str(path).casefold()
         target_name = path.name.casefold()
 
-        try:
-            processes = psutil.process_iter(["pid", "name", "exe"])
-            for proc in processes:
-                try:
-                    info = proc.info
-                except (psutil.NoSuchProcess, psutil.ZombieProcess):
-                    continue
+        def _scan() -> bool:
+            try:
+                processes = psutil.process_iter(["pid", "name", "exe"])
+                for proc in processes:
+                    try:
+                        info = proc.info
+                    except (psutil.NoSuchProcess, psutil.ZombieProcess):
+                        continue
 
-                process_path = info.get("exe")
-                if process_path:
-                    if str(process_path).casefold() == target_path:
-                        pids.append(info["pid"])
-                    continue
+                    process_path = info.get("exe")
+                    if process_path:
+                        if str(process_path).casefold() == target_path:
+                            pids.append(info["pid"])
+                        continue
 
-                process_name = info.get("name")
-                if process_name and str(process_name).casefold() == target_name:
-                    uncertain_pids.append(info["pid"])
-        except (psutil.AccessDenied, OSError) as e:
-            complete = False
-            logger.warning(f"扫描进程路径失败: {e}")
+                    process_name = info.get("name")
+                    if process_name and str(process_name).casefold() == target_name:
+                        uncertain_pids.append(info["pid"])
+            except (psutil.AccessDenied, OSError) as e:
+                logger.warning(f"扫描进程路径失败: {e}")
+                return False
+            return True
+
+        complete = await asyncio.to_thread(_scan)
 
         return _ProcessPathScan(
             pids=pids,

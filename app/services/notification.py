@@ -25,8 +25,11 @@ import ipaddress
 import json
 import re
 import smtplib
+from collections.abc import Sequence
+from dataclasses import dataclass
 from datetime import datetime
 from email.header import Header
+from email.mime.image import MIMEImage
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.utils import formataddr
@@ -46,6 +49,24 @@ logger = get_logger("通知服务")
 Config = LazyProxy("app.core", "Config")
 
 SMTP_TIMEOUT_SECONDS = 15
+DEFAULT_WEBHOOK_TEMPLATE = '{"title": "{title}", "content": "{content}"}'
+# OneBot 图片段里的占位写法，前端预设与这里必须一致。
+WEBHOOK_IMAGE_PLACEHOLDER = "base64://{image_base64}"
+
+
+@dataclass(frozen=True)
+class MailInlineImage:
+    """随网页邮件一起发送的内嵌图片，正文用 ``<img src="cid:{cid}">`` 引用。
+
+    走 ``multipart/related`` + Content-ID，而不是把 base64 直接写进 ``<img src>``：
+    data URI 在 QQ 邮箱、Gmail、Outlook 里都会被拦掉，六星喜报以前就是这么
+    失效的（c8d3c41e6 改成了外链）。
+    """
+
+    cid: str
+    data: bytes
+    subtype: str = "png"
+
 
 # Windows 通知最终写入 NOTIFYICONDATA 的定长字段：标题落在 szInfoTitle（64 个
 # UTF-16 代码单元）、正文落在 szInfo（256 个）。plyer 直接把字符串塞进 ctypes 定长
@@ -80,6 +101,47 @@ def clip_notify_text(text: str, limit: int) -> str:
     return f"{clipped}…"
 
 
+def webhook_body_failure(text: str, url: str = "") -> str | None:
+    """从 HTTP 2xx 的响应体里识别机器人平台的业务失败。
+
+    钉钉、企业微信自定义机器人被关键词/签名校验拦下、飞书 token 无效、OneBot
+    动作失败时都回 200，只在 JSON 里写 ``errcode`` / ``code`` / ``status``；
+    只看状态码会把这些记成「推送成功」，用户以为通知没发。识别出失败时返回
+    平台给的原因，正常或看不懂的响应返回 None。
+    """
+
+    if not text:
+        return None
+    try:
+        body = json.loads(text)
+    except (ValueError, TypeError):
+        return None
+    if not isinstance(body, dict):
+        return None
+
+    def _reason(*keys: str) -> str:
+        for key in keys:
+            value = body.get(key)
+            if value:
+                return str(value)
+        return text[:200]
+
+    # 钉钉 / 企业微信：成功一律 errcode 0。
+    errcode = body.get("errcode")
+    if isinstance(errcode, int) and not isinstance(errcode, bool) and errcode != 0:
+        return f"errcode={errcode} {_reason('errmsg', 'msg')}"
+    # OneBot v11：status 为 failed 才算失败，retcode 只是补充。
+    if str(body.get("status", "")).lower() == "failed":
+        return f"retcode={body.get('retcode')} {_reason('msg', 'message', 'wording')}"
+    # 飞书：只在飞书域名下解读 code，别的服务常拿 code=200 当成功。
+    host = (urlparse(url).hostname or "").lower()
+    if host.endswith(("feishu.cn", "larksuite.com")):
+        code = body.get("code")
+        if isinstance(code, int) and not isinstance(code, bool) and code != 0:
+            return f"code={code} {_reason('msg', 'message')}"
+    return None
+
+
 def _webhook_client_kwargs(url: str) -> dict:
     """根据 Webhook 目标地址生成 httpx 客户端参数。
 
@@ -96,6 +158,17 @@ def _webhook_client_kwargs(url: str) -> dict:
     if is_local:
         return {"timeout": 10, "trust_env": False}
     return {"timeout": 10, "proxy": Config.proxy}
+
+
+def _is_webhook_image_placeholder(obj: object) -> bool:
+    """是不是 OneBot 预设里那段 ``base64://{image_base64}`` 图片。"""
+
+    return (
+        isinstance(obj, dict)
+        and obj.get("type") == "image"
+        and isinstance(obj.get("data"), dict)
+        and obj["data"].get("file") == WEBHOOK_IMAGE_PLACEHOLDER
+    )
 
 
 class Notification:
@@ -135,7 +208,13 @@ class Notification:
             raise RuntimeError("plyer.notification 未正确导入，无法推送系统通知")
 
     async def send_mail(
-        self, mode: Literal["文本", "网页"], title: str, content: str, to_address: str
+        self,
+        mode: Literal["文本", "网页"],
+        title: str,
+        content: str,
+        to_address: str,
+        *,
+        images: Sequence[MailInlineImage] = (),
     ) -> None:
         """
         推送邮件通知
@@ -150,6 +229,8 @@ class Notification:
             邮件内容
         to_address: str
             收件人地址
+        images: Sequence[MailInlineImage], optional
+            网页模式下随信内嵌的图片；文本模式忽略
         """
 
         if Config.get("Notify", "SMTPServerAddress") == "":
@@ -174,6 +255,8 @@ class Notification:
         # 定义邮件正文
         if mode == "文本":
             message = MIMEText(content, "plain", "utf-8")
+        elif mode == "网页" and images:
+            message = MIMEMultipart("related")
         elif mode == "网页":
             message = MIMEMultipart("alternative")
         message["From"] = formataddr(
@@ -189,6 +272,15 @@ class Notification:
 
         if mode == "网页":
             message.attach(MIMEText(content, "html", "utf-8"))
+            for image in images:
+                part = MIMEImage(image.data, _subtype=image.subtype)
+                part.add_header("Content-ID", f"<{image.cid}>")
+                part.add_header(
+                    "Content-Disposition",
+                    "inline",
+                    filename=f"{image.cid}.{image.subtype}",
+                )
+                message.attach(part)
 
         smtp_server = Config.get("Notify", "SMTPServerAddress")
         from_address = Config.get("Notify", "FromAddress")
@@ -246,6 +338,18 @@ class Notification:
         else:
             raise Exception(f"ServerChan 推送通知失败: {response.text}")
 
+    async def send_cmcc_newmsg(self, title: str, content: str, api_key: str) -> None:
+        """通过中国移动新消息（5G 消息）提交通知。"""
+
+        from app.services.cmcc_newmsg import send_cmcc_newmsg
+
+        await send_cmcc_newmsg(
+            api_key=api_key,
+            content=content,
+            proxy=Config.proxy,
+        )
+        logger.success(f"中国移动5G短信通知已提交: {title}")
+
     async def send_openclaw_weixin(self, title: str, content: str) -> None:
         """通过微信 Claw 通道推送通知。
 
@@ -282,7 +386,14 @@ class Notification:
 
         await openclaw_qq_manager.send(title=title, content=content)
 
-    async def WebhookPush(self, title: str, content: str, webhook: Webhook) -> None:
+    async def WebhookPush(
+        self,
+        title: str,
+        content: str,
+        webhook: Webhook,
+        *,
+        image_base64: str = "",
+    ) -> None:
         """
         Webhook 推送通知
 
@@ -294,6 +405,8 @@ class Notification:
             通知内容
         webhook: Webhook
             Webhook配置对象
+        image_base64: str, optional
+            可选图片的纯 Base64 数据，供 OneBot 等协议使用
         """
         if not webhook.get("Info", "Enabled"):
             return
@@ -302,10 +415,7 @@ class Notification:
             raise ValueError("Webhook URL 不能为空")
 
         # 解析模板
-        template = (
-            webhook.get("Data", "Template")
-            or '{"title": "{title}", "content": "{content}"}'
-        )
+        template = webhook.get("Data", "Template") or DEFAULT_WEBHOOK_TEMPLATE
 
         # 替换模板变量
         try:
@@ -313,6 +423,7 @@ class Notification:
             template_vars = {
                 "title": title,
                 "content": content,
+                "image_base64": image_base64,
                 "datetime": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 "date": datetime.now().strftime("%Y-%m-%d"),
                 "time": datetime.now().strftime("%H:%M:%S"),
@@ -331,8 +442,23 @@ class Notification:
                 # 递归替换JSON对象中的变量
                 def replace_variables(obj):
                     if isinstance(obj, dict):
+                        # 普通任务报告没有图片时，OneBot 图片模板仍需投递可读正文。
+                        if not image_base64 and _is_webhook_image_placeholder(obj):
+                            return {
+                                "type": "text",
+                                "data": {"text": f"{title}\n\n{content}"},
+                            }
                         return {k: replace_variables(v) for k, v in obj.items()}
                     elif isinstance(obj, list):
+                        # 「文本 + 图片」模板没图时只去掉图片段，别把正文发两遍。
+                        if not image_base64 and any(
+                            not _is_webhook_image_placeholder(item) for item in obj
+                        ):
+                            obj = [
+                                item
+                                for item in obj
+                                if not _is_webhook_image_placeholder(item)
+                            ]
                         return [replace_variables(item) for item in obj]
                     elif isinstance(obj, str):
                         result = obj
@@ -400,14 +526,16 @@ class Notification:
                 response = await client.get(url=url, params=params, headers=headers)
 
         # 检查响应
-        if response.status_code == 200:
-            logger.success(
-                f"自定义Webhook推送成功: {webhook.get('Info', 'Name')} - {title}"
-            )
-        else:
+        if not response.is_success:
             raise Exception(
                 f"[{webhook.get('Info', 'Name')}] HTTP {response.status_code}: {response.text}"
             )
+        failure = webhook_body_failure(response.text, url)
+        if failure is not None:
+            raise Exception(f"[{webhook.get('Info', 'Name')}] 服务端拒绝: {failure}")
+        logger.success(
+            f"自定义Webhook推送成功: {webhook.get('Info', 'Name')} - {title}"
+        )
 
     async def send_koishi(
         self,

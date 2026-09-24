@@ -6,7 +6,7 @@ export type MaaFWConfig_ManagedRemote = {
     /**
      * 托管资源远程来源
      */
-    Source?: ('MirrorChyan' | 'GitHub' | null);
+    Source?: ('GitHub' | 'MirrorChyan' | null);
     /**
      * 托管资源更新渠道
      */

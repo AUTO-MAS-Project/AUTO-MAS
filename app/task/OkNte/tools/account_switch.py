@@ -80,6 +80,7 @@ def _write_diagnostic(text: str) -> None:
         except OSError:
             pass
 
+
 # ── 异环客户端窗口识别（与 OkNte/AutoProxy 的 _NTE_CLIENT_PROCESS 一致）──
 _NTE_CLIENT_PROCESS = "HTGame.exe"
 
@@ -201,13 +202,10 @@ def _find_game_hwnd(*, wait: bool = True) -> int:
         if not wait or time.monotonic() >= deadline:
             break
         logger.info(
-            "异环游戏进程已启动但窗口暂未就绪，"
-            f"{_WINDOW_POLL_INTERVAL:g} 秒后重试..."
+            f"异环游戏进程已启动但窗口暂未就绪，{_WINDOW_POLL_INTERVAL:g} 秒后重试..."
         )
         time.sleep(_WINDOW_POLL_INTERVAL)
-    raise RuntimeError(
-        f"未找到异环游戏窗口（进程 {_NTE_CLIENT_PROCESS}）"
-    )
+    raise RuntimeError(f"未找到异环游戏窗口（进程 {_NTE_CLIENT_PROCESS}）")
 
 
 # ── 截图 / 交互（前台 pyautogui + DPI 适配）─────────────────────────────
@@ -219,7 +217,9 @@ def _activate_window(hwnd: int) -> None:
     show_command = (
         win32con.SW_RESTORE
         if win32gui.IsIconic(hwnd)
-        else win32con.SW_SHOW if not win32gui.IsWindowVisible(hwnd) else None
+        else win32con.SW_SHOW
+        if not win32gui.IsWindowVisible(hwnd)
+        else None
     )
     if show_command is not None:
         win32gui.ShowWindow(hwnd, show_command)
@@ -253,9 +253,7 @@ def _client_size(hwnd: int) -> tuple[int, int]:
     if width <= 0 or height <= 0:
         raise RuntimeError("异环游戏窗口尺寸异常")
     if abs(width / height - 16 / 9) > 0.02:
-        logger.warning(
-            f"异环窗口非 16:9（{width}x{height}），账号切换坐标可能偏移"
-        )
+        logger.warning(f"异环窗口非 16:9（{width}x{height}），账号切换坐标可能偏移")
     return width, height
 
 
@@ -329,9 +327,7 @@ def _click_box(
         pyautogui.moveTo(*original_position)
 
 
-def _click_point(
-    hwnd: int, px: int, py: int, *, after_sleep: float = 0.3
-) -> None:
+def _click_point(hwnd: int, px: int, py: int, *, after_sleep: float = 0.3) -> None:
     _click_box(hwnd, (px, py, 1, 1), after_sleep=after_sleep)
 
 
@@ -381,9 +377,7 @@ def _reacquire_game_hwnd(on_log: Callable[[str], None]) -> int:
     return _find_game_hwnd(wait=True)
 
 
-def _wait_for_actionable_state(
-    hwnd: int, on_log: Callable[[str], None]
-) -> int:
+def _wait_for_actionable_state(hwnd: int, on_log: Callable[[str], None]) -> int:
     """等待进入可执行的切号态（标题界面或登录面板），返回当前有效的游戏窗口句柄。
 
     游戏窗口刚出现时可能仍停在启动过渡帧（splash/加载），而异环更新频繁，点「开始
@@ -400,11 +394,17 @@ def _wait_for_actionable_state(
     deadline = time.monotonic() + _IN_GAME_UPDATE_TIMEOUT
     last_progress = time.monotonic()
     last_sig: int | None = None
+    items: list[OCRItem] = []
     iter_count = 0
     while time.monotonic() < deadline:
         try:
             frame = _capture_window(hwnd, activate=False)
-            items = ocr_image(frame)
+            sig = _frame_signature(frame)
+            if sig != last_sig:
+                # 画面有变化才跑全帧 OCR；帧哈希未变时沿用上次识别结果
+                items = ocr_image(frame)
+                last_sig = sig
+                last_progress = time.monotonic()
         except RuntimeError:
             # 窗口句柄失效：可能是游戏内更新触发客户端重启，重找新窗口继续而非中止。
             hwnd = _reacquire_game_hwnd(on_log)
@@ -419,10 +419,6 @@ def _wait_for_actionable_state(
             or _find_text(items, _LOADED_BADGE_TEXTS) is not None
         ):
             return hwnd
-        sig = _frame_signature(frame)
-        if sig != last_sig:
-            last_sig = sig
-            last_progress = time.monotonic()
         if time.monotonic() - last_progress >= _IN_GAME_STALL_SECONDS:
             break
         if iter_count % 5 == 0:
@@ -598,9 +594,7 @@ def _wait_login_success(hwnd: int, *, timeout: int = 120) -> None:
     raise RuntimeError("等待登录完成超时（登录面板未消失）")
 
 
-def _select_and_login(
-    hwnd: int, suffix: str, on_log: Callable[[str], None]
-) -> None:
+def _select_and_login(hwnd: int, suffix: str, on_log: Callable[[str], None]) -> None:
     pattern = re.compile(rf"\d+\*+{re.escape(suffix)}")
     max_retries = 3
     for attempt in range(1, max_retries + 1):
@@ -643,9 +637,7 @@ def _save_error_screenshot(hwnd: int) -> None:
         screenshot_path = screenshot_dir / (
             f"switch-error-{datetime.now().strftime('%Y%m%d-%H%M%S-%f')}.png"
         )
-        _capture_window_image(hwnd, activate=False).save(
-            screenshot_path, format="PNG"
-        )
+        _capture_window_image(hwnd, activate=False).save(screenshot_path, format="PNG")
         logger.warning(f"账号切换错误截图已保存: {screenshot_path}")
     except Exception as error:
         # 截图是诊断旁路，失败时不能覆盖原始切换异常

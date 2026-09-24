@@ -126,7 +126,8 @@ export function useHistoryLogic() {
 
         const { useAudioPlayer } = await import('@/composables/useAudioPlayer')
         const { playSound } = useAudioPlayer()
-        await playSound('history_query')
+        // 提示不等音频：播放前还要查设置、探文件，用户只关心结果已经出来了
+        void playSound('history_query')
 
         if (!isMounted) return
         message.success(t('history.toast.searchDone'))
@@ -223,8 +224,13 @@ export function useHistoryLogic() {
     try {
       const logFilePath = currentJsonFile.value.replace(/\.json$/, '.log')
       if (window.electronAPI && window.electronAPI.openFile) {
-        await window.electronAPI.openFile(logFilePath)
-        message.success(t('history.toast.logOpened'))
+        const result = await window.electronAPI.openFile(logFilePath)
+        if (result.success) {
+          message.success(t('history.toast.logOpened'))
+        } else {
+          logger.error(`打开日志文件失败: ${result.error}`)
+          message.error(t('history.toast.openFileFailed', { error: result.error ?? '' }))
+        }
       } else {
         message.error(t('history.toast.openFileUnsupported'))
       }

@@ -11,5 +11,13 @@ export type MaaEndAutoEssencePlanKey = {
      * 基质刷取指定地点
      */
     AutoEssenceSpecifiedLocation?: string;
+    /**
+     * 基质刷取模式
+     */
+    AutoEssenceMenu?: ('Random' | 'Location' | 'Target' | null);
+    /**
+     * 基质目标武器 ID 列表
+     */
+    AutoEssenceTargetWeapons?: Array<string>;
 };
 

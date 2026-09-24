@@ -27,6 +27,10 @@ import zipfile
 from contextlib import closing
 from pathlib import Path
 
+# 不进备份包: MaaFW 运行环境池 (可重建, 生产可达 GB 级) 与原生日志 (单个可达百 MB)
+_EXCLUDED_DIRS = {"config/maafw_runtime_pool"}
+_EXCLUDED_SUFFIX = ".maafw.log"
+
 _DATABASE_FILES = {
     "data/data.db",
     "data/data.db-journal",
@@ -71,6 +75,12 @@ def create_data_backup(root: Path | None = None) -> Path:
                     for path in source_directory.rglob("*"):
                         archive_name = path.relative_to(root).as_posix()
                         if path.is_symlink() or archive_name in _DATABASE_FILES:
+                            continue
+                        if archive_name in _EXCLUDED_DIRS or any(
+                            archive_name.startswith(f"{d}/") for d in _EXCLUDED_DIRS
+                        ):
+                            continue
+                        if path.name.endswith(_EXCLUDED_SUFFIX):
                             continue
                         if path.is_dir():
                             archive.writestr(f"{archive_name}/", b"")

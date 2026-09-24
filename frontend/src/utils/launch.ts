@@ -10,10 +10,19 @@
  */
 export const SLOW_LAUNCH_THRESHOLD_MS = 20_000
 
-/** 启动卡住时唯一能给用户的出口：把日志窗口打开。 */
+/**
+ * 启动卡住时唯一能给用户的出口：把日志窗口打开。
+ *
+ * 固定落在前端日志：这一路径上后端多半还没起来，`debug/app.log` 要么不存在、要么还停在
+ * 上一轮，日志页默认选中它的话打开就是一片空白；启动这一程的记录全在主进程写的
+ * `debug/frontend.log` 里。
+ */
 export async function openLaunchLogWindow(scope: string): Promise<void> {
   try {
-    await window.electronAPI.openLogWindow?.()
+    const result = await window.electronAPI.openLogWindow?.('frontend')
+    if (result?.success === false) {
+      window.electronAPI.getLogger(scope).error(`打开日志窗口失败: ${result.error ?? '未知原因'}`)
+    }
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error)
     window.electronAPI.getLogger(scope).error(`打开日志窗口失败: ${errorMessage}`)

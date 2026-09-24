@@ -13,6 +13,7 @@ import { useSatelliteStatus, type SatelliteModuleStatus } from '@/composables/us
 import type { ScriptType } from '@/types/script'
 import { requestUpdateCheck } from '@/composables/useUpdateChecker'
 import { usePerformanceStore } from '@/stores/performance'
+import { connectionState, onConnected } from '@/services/websocket/connection'
 import { createAnimationFrameScheduler } from './satelliteAnimationLoop'
 import {
   createExplosionFragmentMotion,
@@ -146,12 +147,30 @@ function stopStatusPolling() {
 }
 
 function startStatusPolling() {
-  if (performanceStore.isBackgrounded || updateInterval !== null) {
+  if (
+    performanceStore.isBackgrounded ||
+    updateInterval !== null ||
+    connectionState().value === 'open'
+  ) {
     return
   }
 
-  // 周期性 HTTP 快照兜底：WS 断开期间也能拉回权威状态
+  // 周期性 HTTP 快照兜底：只在主 WS 没开着时轮询；WS 开着靠 task.* 事件推送
   updateInterval = setInterval(() => void refreshSatelliteStatuses(), CONFIG.statusUpdateInterval)
+}
+
+// 后端未就绪（主 WS 未 open）时不发请求：启动遮罩期间立即初始化会把脚本列表与
+// 运行快照打向尚未监听的端口，请求直接以 "Network Error" 弹错，卫星也会整场不渲染。
+let disposeBackendReadyListener: (() => void) | null = null
+
+function waitBackendReady(): Promise<void> {
+  if (connectionState().value === 'open') return Promise.resolve()
+  return new Promise(resolve => {
+    disposeBackendReadyListener = onConnected(() => {
+      disposeBackendReadyListener = null
+      resolve()
+    })
+  })
 }
 
 function showCardsImmediately() {
@@ -233,6 +252,7 @@ function disposeCardMesh(card: CardMesh) {
 
 onUnmounted(() => {
   isUnmounted = true
+  disposeBackendReadyListener?.()
   window.removeEventListener('resize', handleResize)
   disposeScene()
 })
@@ -1273,6 +1293,17 @@ watch(
   }
 )
 
+// WS 打开时事件推送足够，停掉 HTTP 轮询（运行态资源在 onConnected 里已重拉一次快照）；
+// 掉线期间再靠轮询兜底
+watch(connectionState(), state => {
+  if (isUnmounted || performanceStore.isBackgrounded) return
+  if (state === 'open') {
+    stopStatusPolling()
+  } else {
+    startStatusPolling()
+  }
+})
+
 watch(
   () => performanceStore.isBackgrounded,
   async isBackgrounded => {
@@ -1297,13 +1328,18 @@ watch(
       startAnimation()
     }
     updateSatelliteStates()
-    void refreshSatelliteStatuses()
-    startStatusPolling()
+    void waitBackendReady().then(() => {
+      if (isUnmounted || performanceStore.isBackgrounded) return
+      void refreshSatelliteStatuses()
+      startStatusPolling()
+    })
   }
 )
 
 onMounted(async () => {
   isUnmounted = false
+  await waitBackendReady()
+  if (isUnmounted) return
   try {
     await initScene()
   } catch (e) {

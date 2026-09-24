@@ -17,8 +17,12 @@ export function useUpdateDownloadDevtools() {
     assertDevelopment()
     updateModal.showUpdateModal(
       {
-        新功能: ['更新下载测试页模拟的版本更新'],
-        修复: ['取消、后台下载、失败恢复与切源状态'],
+        [version]: {
+          破坏性变更: ['更新下载测试页模拟的破坏性变更条目'],
+          本次亮点: ['更新下载测试页模拟的亮点条目'],
+          新增: ['更新下载测试页模拟的版本更新'],
+          修复: ['取消、后台下载、失败恢复与切源状态'],
+        },
       },
       version
     )

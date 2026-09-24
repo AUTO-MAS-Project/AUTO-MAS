@@ -158,6 +158,7 @@ watch(
 <style scoped>
 .launch-failure {
   display: flex;
+  inline-size: 100%;
   height: 100%;
   min-height: 0;
   justify-content: center;
@@ -165,9 +166,11 @@ watch(
   padding: 44px 32px;
 }
 
+/* 与等待态同一个视觉锚点：内容放得下就上下居中，放不下时自动外边距归零，
+   从顶部开始滚动（`align-items: center` 在溢出时会把顶部裁掉，不能用）。 */
 .failure-body {
   inline-size: min(100%, 520px);
-  align-self: flex-start;
+  margin-block: auto;
 }
 
 .failure-title {

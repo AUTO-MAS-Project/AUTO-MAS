@@ -25,7 +25,7 @@
     </a-space>
   </div>
 
-  <div class="script-edit-content">
+  <ConfigLockPanel :script-id="scriptId" content-class="script-edit-content">
     <a-card :title="t('edit.m9aScriptConfiguration')" :loading="pageLoading" class="config-card">
       <template #extra>
         <a-tag color="cyan" class="type-tag"> M9A </a-tag>
@@ -312,10 +312,11 @@
         </div>
       </div>
     </div>
-  </div>
+  </ConfigLockPanel>
 </template>
 
 <script setup lang="ts">
+import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
 import { useI18n } from 'vue-i18n'
 import { onMounted, reactive, ref } from 'vue'
 import DocLink from '@/components/DocLink.vue'
@@ -326,6 +327,7 @@ import { message } from 'ant-design-vue'
 import type { M9AScriptConfig, ScriptType } from '../../../types/script.ts'
 import { useEmulatorDeviceOptions } from '@/composables/useEmulatorDeviceOptions.ts'
 import { useScriptApi } from '../../../composables/useScriptApi.ts'
+import { useSaveQueue } from '@/composables/useSaveQueue'
 import { Service, type ComboBoxItem } from '../../../api'
 import {
   ArrowLeftOutlined,
@@ -351,7 +353,8 @@ const formRef = ref<FormInstance>()
 const pageLoading = ref(false)
 const scriptId = route.params.id as string
 const isInitializing = ref(true)
-const isSaving = ref(false)
+// 保存串行队列：连续改动按序写回，不再被布尔互斥丢掉
+const { enqueue } = useSaveQueue()
 
 const formData = reactive({
   name: '',
@@ -397,42 +400,42 @@ const rules = {
 const emulatorLoading = ref(false)
 const emulatorOptions = ref<ComboBoxItem[]>([])
 
-const handleChange = async (category: string, key: string, value: any) => {
-  if (isInitializing.value || isSaving.value) return
+// 后端会把这些路径字段规范化（相对路径转绝对、展开 %APPDATA%、解析 .lnk 等），
+// 保存后只回读这一个字段，界面才与落盘值一致；其余字段保存即生效不再整份回读
+const FIELDS_REQUIRE_REFRESH_AFTER_SAVE = new Set<string>(['Info.Path'])
 
-  isSaving.value = true
-  try {
-    const updateData: any = { [category]: { [key]: value } }
-
-    const success = await updateScript(scriptId, updateData)
-    if (success) {
-      logger.info(`配置已保存: ${category}.${key}`)
-      await refreshScript()
-    }
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`保存失败: ${errorMsg}`)
-  } finally {
-    isSaving.value = false
+const refreshNormalizedField = async (category: string, key: string) => {
+  const scriptDetail = await getScript(scriptId)
+  const normalized = (scriptDetail?.config as Record<string, any> | undefined)?.[category]?.[key]
+  if (normalized !== undefined) {
+    ;(m9aConfig as Record<string, any>)[category][key] = normalized
   }
 }
 
-const refreshScript = async () => {
-  try {
-    const scriptDetail = await getScript(scriptId)
-    if (scriptDetail) {
-      Object.assign(m9aConfig, scriptDetail.config as M9AScriptConfig)
-      formData.name = scriptDetail.name
+const handleChange = async (category: string, key: string, value: any) => {
+  if (isInitializing.value) return
+
+  await enqueue(async () => {
+    try {
+      const updateData: any = { [category]: { [key]: value } }
+
+      const success = await updateScript(scriptId, updateData)
+      if (success) {
+        logger.info(`配置已保存: ${category}.${key}`)
+        if (FIELDS_REQUIRE_REFRESH_AFTER_SAVE.has(`${category}.${key}`)) {
+          await refreshNormalizedField(category, key)
+        }
+      }
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error)
+      logger.error(`保存失败: ${errorMsg}`)
     }
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`刷新配置失败: ${errorMsg}`)
-  }
+  }, `${category}.${key}`)
 }
 
 onMounted(async () => {
-  await loadScript()
-  await loadEmulatorOptions()
+  // 两个请求互不依赖, 并行发出
+  await Promise.all([loadScript(), loadEmulatorOptions()])
   isInitializing.value = false
 })
 
@@ -511,25 +514,23 @@ const handleEmulatorSelectChange = async (emulatorId: string) => {
     clearEmulatorDeviceOptions()
   }
 
-  isSaving.value = true
-  try {
-    const updateData = {
-      Emulator: {
-        Id: emulatorId,
-        Index: '',
-      },
+  await enqueue(async () => {
+    try {
+      const updateData = {
+        Emulator: {
+          Id: emulatorId,
+          Index: '',
+        },
+      }
+      const success = await updateScript(scriptId, updateData)
+      if (success) {
+        logger.info('模拟器配置已保存')
+      }
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error)
+      logger.error(`保存模拟器配置失败: ${errorMsg}`)
     }
-    const success = await updateScript(scriptId, updateData)
-    if (success) {
-      logger.info('模拟器配置已保存')
-      await refreshScript()
-    }
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`保存模拟器配置失败: ${errorMsg}`)
-  } finally {
-    isSaving.value = false
-  }
+  })
 }
 
 const selectM9APath = async () => {

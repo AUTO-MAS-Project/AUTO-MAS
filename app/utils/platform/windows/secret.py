@@ -53,6 +53,7 @@ def supports_secret_storage() -> bool:
 def is_secret_storage_error(error: BaseException) -> bool:
     """判断异常是否表示平台不支持密文存储。"""
 
-    return isinstance(error, UnsupportedPlatformError) and getattr(
-        error, "capability", None
-    ) == "secret"
+    return (
+        isinstance(error, UnsupportedPlatformError)
+        and getattr(error, "capability", None) == "secret"
+    )

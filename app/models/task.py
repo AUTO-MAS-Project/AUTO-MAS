@@ -30,6 +30,9 @@ from datetime import datetime
 from typing import List, Literal, Optional
 
 from app.runtime_tasks import RuntimeTasks
+from app.utils.logger import get_logger
+
+logger = get_logger("任务执行")
 
 TaskTriggerSource = Literal[
     "scheduled_task",
@@ -136,16 +139,41 @@ class TaskItem(ABC):
     current_index: int = -1  # 当前执行的脚本索引，-1 表示未开始
     resume_from_script_id: str | None = None  # 可选：从指定脚本ID开始执行（仅队列任务）
     is_cycle: bool = False  # 是否为循环运行任务（按队列项各自的周期持续运行）
+    view_only: bool = False  # 配置查看会话：只读打开原生界面，不注入基线也不回读字段
+    instance_idx: int | None = None  # 配置会话（直控）：会话窗口临时切换到的原生实例
     cycle_next_list: List[dict] = field(
         default_factory=list, repr=False
     )  # 循环运行的待运行条目预览
     trigger_source: TaskTriggerSource = "manual_task"  # MAS 任务触发来源
-    game_sign_results: list[dict] = field(default_factory=list, repr=False)
+    game_sign_results: list[dict[str, object]] = field(default_factory=list, repr=False)
     game_sign_summary_consumed: bool = field(default=False, repr=False)
     _change_task: asyncio.Task[None] | None = field(
         default=None, init=False, repr=False, compare=False
     )
     _change_dirty: bool = field(default=False, init=False, repr=False, compare=False)
+    # 日志增量推送状态: 上次推送的完整日志 (不截断) 与推送序号, 见 TaskInfo.on_change
+    _last_pushed_log: str = field(default="", init=False, repr=False, compare=False)
+    _log_seq: int = field(default=0, init=False, repr=False, compare=False)
+
+    @property
+    def community_results(self) -> list[dict[str, object]]:
+        """读取社区签到结果，底层继续使用历史任务字段。"""
+
+        return self.game_sign_results
+
+    @community_results.setter
+    def community_results(self, value: list[dict[str, object]]) -> None:
+        self.game_sign_results = value
+
+    @property
+    def community_summary_consumed(self) -> bool:
+        """读取社区汇总消费状态，保持旧任务协议字段不变。"""
+
+        return self.game_sign_summary_consumed
+
+    @community_summary_consumed.setter
+    def community_summary_consumed(self, value: bool) -> None:
+        self.game_sign_summary_consumed = value
 
     def __setattr__(self, name, value):
         super().__setattr__(name, value)
@@ -320,6 +348,8 @@ class TaskExecuteBase(ABC):
         finally:
             self._task_group = None
             try:
+                started_at = time.monotonic()
+                logger.info(f"任务执行结束，开始收尾: {type(self).__name__}")
                 if self.wait_for_finalizer_on_cancel:
                     await self._run_final_task()
                 else:
@@ -328,6 +358,10 @@ class TaskExecuteBase(ABC):
                     except Exception as e:
                         await self.on_crash(e)
             finally:
+                logger.info(
+                    f"任务收尾完成: {type(self).__name__} - 用时: "
+                    f"{time.monotonic() - started_at:.3f}秒"
+                )
                 self.accomplish.set()
 
     async def _run_final_task(self) -> None:

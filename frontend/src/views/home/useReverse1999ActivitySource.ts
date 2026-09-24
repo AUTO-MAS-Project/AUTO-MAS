@@ -46,36 +46,63 @@ const parseTime = (value: unknown): Date | null => {
   return Number.isNaN(d.getTime()) ? null : d
 }
 
-const formatTime = (date: Date | null): string =>
-  date ? date.toISOString().slice(0, 19) : ''
+// 必须保留 toISOString() 末尾的 Z：切成裸 ISO 串后，消费端的 new Date(value) 会按
+// 本机时区解析，倒计时与「已结束」判定整体提前一个时区偏移量（东八区提前 8 小时）。
+// 被 #497 删掉的后端接口输出的也是带 +08:00 偏移的时间。
+const formatTime = (date: Date | null): string => (date ? date.toISOString() : '')
 
 /** 复刻后端的版本选择：进行中 > 即将开始 > 已结束 */
 const selectVersion = (data: Record<string, RawVersion>): RawVersion | null => {
   const now = Date.now()
   const versions = Object.entries(data)
-    .map(([key, version]) => ({ key, version, s: parseTime(version.start_time), e: parseTime(version.end_time) }))
+    .map(([key, version]) => ({
+      key,
+      version,
+      s: parseTime(version.start_time),
+      e: parseTime(version.end_time),
+    }))
     .filter(item => item.version && typeof item.version === 'object')
   const active = versions.filter(v => v.s && v.e && v.s.getTime() <= now && now <= v.e.getTime())
   if (active.length > 0) return active[0].version
   const upcoming = versions.filter(v => v.s && v.s.getTime() > now)
-  if (upcoming.length > 0) return upcoming.sort((a, b) => (a.s?.getTime() ?? 0) - (b.s?.getTime() ?? 0))[0].version
+  if (upcoming.length > 0)
+    return upcoming.sort((a, b) => (a.s?.getTime() ?? 0) - (b.s?.getTime() ?? 0))[0].version
   const ended = versions.filter(v => v.e && v.e.getTime() <= now)
-  if (ended.length > 0) return ended.sort((a, b) => (b.e?.getTime() ?? 0) - (a.e?.getTime() ?? 0))[0].version
+  if (ended.length > 0)
+    return ended.sort((a, b) => (b.e?.getTime() ?? 0) - (a.e?.getTime() ?? 0))[0].version
   return null
 }
 
 const formatActivity = (activity: RawActivity, key: string): SraActivityItem => ({
-  name: activity.name || activity.alias || EVENT_TYPE_NAME[activity.event_type || ''] || ACTIVITY_KEY_FALLBACK[key] || key,
+  name:
+    activity.name ||
+    activity.alias ||
+    EVENT_TYPE_NAME[activity.event_type || ''] ||
+    ACTIVITY_KEY_FALLBACK[key] ||
+    key,
   description: EVENT_TYPE_NAME[activity.event_type || ''] ?? '',
   startTime: formatTime(parseTime(activity.start_time)),
   endTime: formatTime(parseTime(activity.end_time)),
   cover: '',
 })
 
-const buildOverview = (data: Record<string, RawVersion>, versionId: string): SraActivityOverview => {
+const buildOverview = (
+  data: Record<string, RawVersion>,
+  versionId: string
+): SraActivityOverview => {
   const version = selectVersion(data)
   if (!version) {
-    return { Available: false, Stale: false, Message: '', version: '', versionName: '', cover: '', startTime: '', endTime: '', activities: [] }
+    return {
+      Available: false,
+      Stale: false,
+      Message: '',
+      version: '',
+      versionName: '',
+      cover: '',
+      startTime: '',
+      endTime: '',
+      activities: [],
+    }
   }
   return {
     Available: true,
@@ -86,7 +113,9 @@ const buildOverview = (data: Record<string, RawVersion>, versionId: string): Sra
     cover: BANNER_URL,
     startTime: formatTime(parseTime(version.start_time)),
     endTime: formatTime(parseTime(version.end_time)),
-    activities: Object.entries(version.activity || {}).map(([key, activity]) => formatActivity(activity, key)),
+    activities: Object.entries(version.activity || {}).map(([key, activity]) =>
+      formatActivity(activity, key)
+    ),
   }
 }
 
@@ -122,7 +151,10 @@ export const useReverse1999ActivitySource = () => {
       const timer = window.setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS)
       let response: Response
       try {
-        response = await fetch(SOURCE_URL, { signal: controller.signal, headers: { Accept: 'application/json' } })
+        response = await fetch(SOURCE_URL, {
+          signal: controller.signal,
+          headers: { Accept: 'application/json' },
+        })
       } finally {
         window.clearTimeout(timer)
       }
@@ -131,7 +163,8 @@ export const useReverse1999ActivitySource = () => {
       const versionId = (() => {
         const now = Date.now()
         for (const [key, v] of Object.entries(data)) {
-          const s = parseTime(v?.start_time), e = parseTime(v?.end_time)
+          const s = parseTime(v?.start_time),
+            e = parseTime(v?.end_time)
           if (s && e && s.getTime() <= now && now <= e.getTime()) return key
         }
         return Object.keys(data)[0] ?? ''
@@ -139,32 +172,89 @@ export const useReverse1999ActivitySource = () => {
       overview.value = buildOverview(data, versionId)
       hasData.value = true
       retryCount = 0
-      try { localStorage.setItem(snapshotKey, JSON.stringify({ versionId, data })) } catch { /* 跳过快照 */ }
+      try {
+        localStorage.setItem(snapshotKey, JSON.stringify({ versionId, data }))
+      } catch {
+        /* 跳过快照 */
+      }
     } catch (requestError) {
       if (disposed) return
-      const errorMessage = requestError instanceof Error ? requestError.message : String(requestError)
+      const errorMessage =
+        requestError instanceof Error ? requestError.message : String(requestError)
       logger.warn('获取' + DISPLAY_NAME + '活动数据失败: ' + errorMessage)
       if (hasData.value) {
-        overview.value = { ...overview.value, Stale: true, Message: '正在使用上次成功获取的活动数据' }
+        overview.value = {
+          ...overview.value,
+          Stale: true,
+          Message: '正在使用上次成功获取的活动数据',
+        }
       } else {
         overview.value = buildOverview({}, '')
         overview.value.Message = DISPLAY_NAME + '活动数据暂不可用'
       }
       if (retryCount < MAX_RETRIES) {
         retryCount += 1
-        retryTimer = window.setTimeout(() => { retryTimer = null; void load() }, RETRY_DELAY_MS)
+        if (active) {
+          scheduleRetry()
+        } else {
+          // 模块隐藏期间不重试，重新可见时补一次
+          retryPending = true
+        }
       }
     } finally {
       if (!disposed) loading.value = false
     }
   }
 
+  // 模块可见时才发请求；隐藏时停掉重试定时器，重新可见时把攒下的重试补上
+  let active = false
+  let started = false
+  let retryPending = false
+
+  const scheduleRetry = () => {
+    retryTimer = window.setTimeout(() => {
+      retryTimer = null
+      void load()
+    }, RETRY_DELAY_MS)
+  }
+
+  const start = () => {
+    if (disposed) return
+    active = true
+    if (!started) {
+      started = true
+      void load()
+    } else if (retryPending) {
+      retryPending = false
+      void load()
+    }
+  }
+
+  const stop = () => {
+    active = false
+    if (retryTimer !== null) {
+      window.clearTimeout(retryTimer)
+      retryTimer = null
+      retryPending = true
+    }
+  }
+
   onScopeDispose(() => {
     disposed = true
-    if (retryTimer !== null) { window.clearTimeout(retryTimer); retryTimer = null }
+    if (retryTimer !== null) {
+      window.clearTimeout(retryTimer)
+      retryTimer = null
+    }
   })
 
-  void load()
-
-  return { overview, loading, refresh: () => { retryCount = 0; void load() } }
+  return {
+    overview,
+    loading,
+    start,
+    stop,
+    refresh: () => {
+      retryCount = 0
+      void load()
+    },
+  }
 }

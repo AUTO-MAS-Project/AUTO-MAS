@@ -12,9 +12,13 @@ export type MaaUserConfig_Info = {
      */
     Id?: (string | null);
     /**
-     * 配置来源（脚本/用户）
+     * 配置来源（脚本共享、用户独立、直控使用脚本原生配置）
      */
-    Mode?: ('脚本' | '用户' | null);
+    Mode?: ('脚本' | '用户' | '直控' | null);
+    /**
+     * 是否启用快速配置（与配置来源独立）
+     */
+    IfQuickConfig?: (boolean | null);
     /**
      * 关卡配置模式
      */
@@ -47,10 +51,6 @@ export type MaaUserConfig_Info = {
      * 基建方案名称
      */
     InfrastName?: (string | null);
-    /**
-     * 基建方案索引
-     */
-    InfrastIndex?: (string | null);
     /**
      * 密码
      */
@@ -99,10 +99,6 @@ export type MaaUserConfig_Info = {
      * 备选关卡 - 3
      */
     Stage_3?: (string | null);
-    /**
-     * 剩余理智关卡
-     */
-    Stage_Remain?: (string | null);
     /**
      * 状态标签列表
      */

@@ -1,18 +1,24 @@
 import { translate as t } from '@/i18n'
 import { computed, ref, type Ref } from 'vue'
 import { message } from 'ant-design-vue'
-import { Service, type ComboBoxItem } from '@/api'
+import { Emulator20Service, Service, type ComboBoxItem } from '@/api'
 import type { MaaFWInterfacePreviewData, MaaFWScriptConfig } from '@/types/script'
 
 const logger = window.electronAPI.getLogger('MaaFW脚本编辑')
 
-export type EmulatorType = 'general' | 'mumu' | 'ldplayer'
+export type EmulatorType = 'general' | 'mumu' | 'ldplayer' | 'emulator2'
 
 const EMULATOR_TYPE_LABELS: Record<EmulatorType, string> = {
   general: '通用模拟器',
   mumu: 'MuMu 模拟器',
   ldplayer: '雷电模拟器',
+  emulator2: 'Emulator 2.0',
 }
+
+// Emulator 2.0 一条配置纳管多个模拟器安装，配置上的类型不等于某台设备的真实类型，
+// 所以不能按配置类型去查 EmulatorExtras 能力——那样会对雷电设备报「没有可用能力」，
+// 与运行时的真实行为正好相反。真实能力按设备解析，运行时由后端决定。
+const MULTI_EMULATOR_TYPES: ReadonlySet<string> = new Set<string>(['emulator2'])
 
 type MaaFWProjectUpdateSource = MaaFWScriptConfig['Update']['Source']
 type MaaFWProjectUpdateChannel = MaaFWScriptConfig['Update']['Channel']
@@ -77,17 +83,19 @@ export const getDefaultMaaFWScriptConfig = (): MaaFWScriptConfig => ({
     PlayCoverUuid: '',
   },
   Game: {
-    LaunchMode: 'AttachOnly',
+    LaunchMode: 'DirectExe',
     LaunchPath: '',
+    PackageName: '',
     Arguments: '',
     WaitTime: 60,
-    CloseOnFinish: true,
+    UnityResolution: 'Off',
   },
   Update: {
     AutoUpdateMode: 'BeforeRun',
     Source: 'GitHub',
     Channel: 'stable',
     MirrorChyanCDK: '',
+    ProxyAddress: '',
   },
   Managed: {
     Enabled: false,
@@ -118,8 +126,8 @@ export const getDefaultMaaFWScriptConfig = (): MaaFWScriptConfig => ({
   },
   Run: {
     ProxyTimesLimit: 0,
-    RunTimesLimit: 1,
-    RunTimeLimit: 30,
+    RunTimesLimit: 3,
+    RunTimeLimit: 120,
     DailyOnceTasks: '[ ]',
     WeeklyOnceTasks: '[ ]',
     MonthlyOnceTasks: '[ ]',
@@ -155,6 +163,10 @@ export function useMaaFWControlConfig(
   let emulatorOptionsPromise: Promise<void> | null = null
   const emulatorDeviceOptionsCache = new Map<string, ComboBoxItem[]>()
   const emulatorDeviceRequests = new Map<string, Promise<ComboBoxItem[] | null>>()
+  // Emulator 2.0：设备号 → 该设备的真实模拟器类型（ldplayer / mumu）。配置本身没有类型，
+  // 但选中具体设备后类型是确定的，EmulatorExtras 能力就能按它查，不必再写「运行时判定」
+  const emulator2DeviceTypeBySlot = ref<Record<string, string>>({})
+  const emulator2DeviceTypeCache = new Map<string, Record<string, string>>()
 
   // ---- Controller / Resource helpers ----
 
@@ -162,16 +174,6 @@ export function useMaaFWControlConfig(
   const directControllerOptions = computed(() =>
     controllerOptions.value.filter(controller => isDirectControllerType(controller.type))
   )
-  const unsupportedControllerOptions = computed(() =>
-    controllerOptions.value.filter(controller => !isDirectControllerType(controller.type))
-  )
-  const unsupportedControllerMessage = computed(() => {
-    const names = unsupportedControllerOptions.value
-      .map(controller => `${controller.label || controller.name}(${controller.type})`)
-      .join('、')
-    return `AUTO-MAS MaaFW Direct 只联动 ADB / Win32；${names} 建议使用项目原 UI。`
-  })
-
   const getDefaultControllerName = () => {
     const wantsAdb = maafwConfig.Emulator.Id && maafwConfig.Emulator.Id !== '-'
     if (wantsAdb) {
@@ -227,6 +229,15 @@ export function useMaaFWControlConfig(
     maafwConfig.Info.Resource = nextResource
     await handleChange('Info', 'Controller', maafwConfig.Info.Controller)
     await handleChange('Info', 'Resource', maafwConfig.Info.Resource)
+
+    // 切到非 ADB 控制方式时把模拟器选择清掉：模拟器下拉只在 ADB 分支渲染，留着
+    // 旧值用户既看不到也删不掉，而后端会把「配了模拟器」当成要用 ADB 的信号。
+    if (!isAdbController.value && maafwConfig.Emulator.Id !== '-') {
+      maafwConfig.Emulator.Id = '-'
+      maafwConfig.Emulator.Index = '-'
+      await handleChange('Emulator', 'Id', '-')
+      await handleChange('Emulator', 'Index', '-')
+    }
   }
 
   const handleResourceChange = async () => {
@@ -262,49 +273,43 @@ export function useMaaFWControlConfig(
     return emulatorType ? EMULATOR_TYPE_LABELS[emulatorType] : '模拟器类型加载中'
   })
 
+  // 配置纳管多个模拟器安装时，能力只能按设备判定，这里不做配置级判断
+  const isMultiEmulatorConfig = computed(() =>
+    MULTI_EMULATOR_TYPES.has(selectedEmulatorType.value ?? '')
+  )
+
+  // Emulator 2.0 下选中了具体设备时，用那台设备的真实类型；没选（-）就只能等运行时
+  const selectedDeviceRealType = computed(() => {
+    if (!isMultiEmulatorConfig.value) return null
+    const slot = maafwConfig.Emulator.Index
+    if (!slot || slot === '-') return null
+    return emulator2DeviceTypeBySlot.value[slot] ?? null
+  })
+
   const selectedEmulatorCapability = computed(() => {
-    const emulatorType = selectedEmulatorType.value
+    const emulatorType = isMultiEmulatorConfig.value
+      ? selectedDeviceRealType.value
+      : selectedEmulatorType.value
     if (!emulatorType) return null
     return previewData.value?.controlCapabilities.emulatorExtras[emulatorType] || null
   })
 
-  const adbControlStrategyMessage = computed(() => {
-    if (!maafwConfig.Emulator.Id || maafwConfig.Emulator.Id === '-') {
-      return '未选择模拟器时，ADB controller 将使用 MaaFW 默认 ADB 控制策略'
-    }
-    if (!previewData.value) {
-      return '读取 interface 后会展示当前 MaaFW 包可用的模拟器增强能力'
-    }
-
-    const capability = selectedEmulatorCapability.value
-    if (capability?.screencap || capability?.input) {
-      return `已根据 ${selectedEmulatorLabel.value} 和当前 MaaFW 包能力启用可用的 EmulatorExtras`
-    }
-    return `${selectedEmulatorLabel.value} 当前没有可用的 EmulatorExtras 能力，运行时使用 MaaFW 默认 ADB 控制策略`
-  })
-
   const adbControlStrategyItems = computed(() => {
     const capability = selectedEmulatorCapability.value
+    const perDevice = isMultiEmulatorConfig.value && !selectedDeviceRealType.value
     const screencapWithExtras = Boolean(capability?.screencap)
     const inputWithExtras = Boolean(capability?.input)
 
+    // 只列截图与输入两行，值只给一个词：模拟器是上面刚选的，不必再重复；集合怎么组的不解释
+    const pick = (withExtras: boolean) =>
+      perDevice
+        ? t('edit.adbStrategyPerDevice')
+        : withExtras
+          ? t('edit.adbStrategyEmulatorExtras')
+          : t('edit.adbStrategyDefault')
     return [
-      {
-        label: t('misc.emulator'),
-        value: selectedEmulatorLabel.value,
-      },
-      {
-        label: t('misc.screenshot'),
-        value: screencapWithExtras
-          ? 'MaaFW 默认截图集合（包含 EmulatorExtras）'
-          : 'MaaFW 默认截图集合（不启用 EmulatorExtras）',
-      },
-      {
-        label: t('misc.input'),
-        value: inputWithExtras
-          ? 'MaaFW 全量输入集合（优先 EmulatorExtras）'
-          : 'MaaFW 默认输入集合（不启用 EmulatorExtras）',
-      },
+      { label: t('misc.screenshot'), value: pick(screencapWithExtras) },
+      { label: t('misc.input'), value: pick(inputWithExtras) },
     ]
   })
 
@@ -367,10 +372,12 @@ export function useMaaFWControlConfig(
     if (cachedOptions) {
       if (maafwConfig.Emulator.Id === emulatorId) {
         emulatorDeviceOptions.value = [...cachedOptions]
+        emulator2DeviceTypeBySlot.value = emulator2DeviceTypeCache.get(emulatorId) ?? {}
         emulatorDeviceLoading.value = false
       }
       return
     }
+    void loadEmulator2DeviceTypes(emulatorId)
 
     emulatorDeviceLoading.value = true
     let request = emulatorDeviceRequests.get(emulatorId)
@@ -405,9 +412,33 @@ export function useMaaFWControlConfig(
     }
   }
 
+  // Emulator 2.0 的设备表里带 realType；下拉只有名字，类型要单独问一次。失败就当没有，
+  // 策略表退回「运行时判定」，不影响选实例。
+  const loadEmulator2DeviceTypes = async (emulatorId: string) => {
+    if (emulatorTypeById.value[emulatorId] !== 'emulator2') return
+    try {
+      const response = await Emulator20Service.listDevicesApiEmulator2DevicesPost({
+        emulatorId,
+        withSettings: false,
+      })
+      if (response?.code !== 200) return
+      const typeBySlot: Record<string, string> = {}
+      for (const device of response.devices ?? []) {
+        if (device.slot && device.realType) typeBySlot[device.slot] = device.realType
+      }
+      emulator2DeviceTypeCache.set(emulatorId, typeBySlot)
+      if (maafwConfig.Emulator.Id === emulatorId) emulator2DeviceTypeBySlot.value = typeBySlot
+    } catch (error) {
+      logger.warn(
+        `加载 Emulator 2.0 设备类型失败: ${error instanceof Error ? error.message : String(error)}`
+      )
+    }
+  }
+
   const handleEmulatorSelectChange = async (emulatorId: string) => {
     maafwConfig.Emulator.Index = '-'
     emulatorDeviceOptions.value = []
+    emulator2DeviceTypeBySlot.value = {}
     await handleChange('Emulator', 'Id', emulatorId)
     await handleChange('Emulator', 'Index', '-')
     await loadEmulatorDeviceOptions(emulatorId)
@@ -446,9 +477,8 @@ export function useMaaFWControlConfig(
     emulatorOptions,
     emulatorDeviceOptions,
     emulatorTypeById,
+    isMultiEmulatorConfig,
     controllerOptions,
-    unsupportedControllerOptions,
-    unsupportedControllerMessage,
     effectiveControllerName,
     effectiveControllerType,
     isAdbController,
@@ -456,7 +486,6 @@ export function useMaaFWControlConfig(
     resourceOptions,
     interfaceDependentDisabled,
     selectedEmulatorLabel,
-    adbControlStrategyMessage,
     adbControlStrategyItems,
     resolveControllerName,
     resolveResourceName,

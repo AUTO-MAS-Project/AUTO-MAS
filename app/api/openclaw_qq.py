@@ -32,8 +32,10 @@ from app.models.schema import (
     OutBase,
 )
 from app.services.openclaw_qq import openclaw_qq_manager
+from app.utils import get_logger
 
 router = APIRouter(prefix="/api/setting/openclaw-qq", tags=["QQ 官方机器人通知"])
+logger = get_logger("QQ 机器人通知 API")
 
 
 @router.post(
@@ -47,6 +49,9 @@ async def get_status() -> OpenClawQQStatusOut:
     try:
         state = openclaw_qq_manager.status()
     except Exception as exc:
+        logger.opt(exception=True).warning(
+            f"get_status失败: {type(exc).__name__}: {exc}"
+        )
         return OpenClawQQStatusOut(
             code=500,
             status="error",
@@ -73,6 +78,9 @@ async def start_login() -> OpenClawQQQrStartOut:
     except ValueError as exc:
         return OpenClawQQQrStartOut(code=400, status="error", message=str(exc))
     except Exception as exc:
+        logger.opt(exception=True).warning(
+            f"start_login失败: {type(exc).__name__}: {exc}"
+        )
         return OpenClawQQQrStartOut(
             code=500,
             status="error",
@@ -98,6 +106,9 @@ async def check_login(
     try:
         result = await openclaw_qq_manager.check_login(session_id=body.sessionId)
     except Exception as exc:
+        logger.opt(exception=True).warning(
+            f"check_login失败: {type(exc).__name__}: {exc}"
+        )
         return OpenClawQQQrCheckOut(
             code=500,
             status="error",
@@ -124,6 +135,7 @@ async def unbind() -> OutBase:
     try:
         await openclaw_qq_manager.unbind()
     except Exception as exc:
+        logger.opt(exception=True).warning(f"unbind失败: {type(exc).__name__}: {exc}")
         return OutBase(
             code=500,
             status="error",

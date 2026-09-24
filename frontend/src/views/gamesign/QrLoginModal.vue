@@ -1,11 +1,5 @@
 <template>
-  <a-modal
-    :open="open"
-    :title="t('gamesign.qr.title')"
-    :footer="null"
-    :width="360"
-    @cancel="emit('cancel')"
-  >
+  <a-modal :open="open" :title="modalTitle" :footer="null" :width="360" @cancel="emit('cancel')">
     <div class="qr-login-container">
       <!-- 二维码 -->
       <div
@@ -23,20 +17,28 @@
 
       <!-- 状态提示 -->
       <div v-if="status !== 'loading'" class="qr-status">
-        <span v-if="status === 'waiting'" class="qr-status-primary"> ⏳ {{ statusText }} </span>
+        <span v-if="status === 'waiting'" class="qr-status-primary">
+          <ClockCircleOutlined class="qr-status-icon" />{{ statusText }}
+        </span>
         <span v-else-if="status === 'scanned'" class="qr-status-warning">
-          📱 {{ statusText }}
+          <MobileOutlined class="qr-status-icon" />{{ statusText }}
         </span>
         <span v-else-if="status === 'exchanging'" class="qr-status-primary">
-          ⚙️ {{ statusText }}
+          <SettingOutlined class="qr-status-icon" />{{ statusText }}
         </span>
-        <span v-else-if="status === 'done'" class="qr-status-success"> ✅ {{ statusText }} </span>
-        <span v-else-if="status === 'expired'" class="qr-status-error"> ⚠️ {{ statusText }} </span>
-        <span v-else-if="status === 'error'" class="qr-status-error"> ❌ {{ statusText }} </span>
+        <span v-else-if="status === 'done'" class="qr-status-success">
+          <CheckCircleOutlined class="qr-status-icon" />{{ statusText }}
+        </span>
+        <span v-else-if="status === 'expired'" class="qr-status-error">
+          <WarningOutlined class="qr-status-icon" />{{ statusText }}
+        </span>
+        <span v-else-if="status === 'error'" class="qr-status-error">
+          <CloseCircleOutlined class="qr-status-icon" />{{ statusText }}
+        </span>
       </div>
 
       <div v-if="status === 'waiting' || status === 'scanned'" class="qr-hint">
-        {{ t('gamesign.qr.hint') }}
+        {{ modalHint }}
       </div>
 
       <div v-if="status === 'expired' || status === 'error'" class="qr-actions">
@@ -50,26 +52,43 @@
 </template>
 
 <script setup lang="ts">
+import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { ReloadOutlined } from '@ant-design/icons-vue'
-import type { QrLoginStatus } from './useQrLogin'
+import {
+  CheckCircleOutlined,
+  ClockCircleOutlined,
+  CloseCircleOutlined,
+  MobileOutlined,
+  ReloadOutlined,
+  SettingOutlined,
+  WarningOutlined,
+} from '@ant-design/icons-vue'
+import type { QrLoginProvider, QrLoginStatus } from './useQrLogin'
 
-const { t } = useI18n()
-
-/**
- * 米游社扫码登录弹窗：纯展示 + 把用户操作转发出去。
- *
- * 会话状态全部由 useQrLogin 持有，这里刻意不做 v-model:open——
- * 关闭必须走 cancel 事件，让 composable 有机会清定时器、abort 在途请求。
- */
-defineProps<{
+const props = defineProps<{
   open: boolean
   status: QrLoginStatus
   statusText: string
   qrCodeDataUrl: string
   loading: boolean
+  provider?: QrLoginProvider
 }>()
 
+const { t } = useI18n()
+
+const modalTitle = computed(() =>
+  t(props.provider === 'skland' ? 'gamesign.qr.sklandTitle' : 'gamesign.qr.title')
+)
+const modalHint = computed(() =>
+  t(props.provider === 'skland' ? 'gamesign.qr.sklandHint' : 'gamesign.qr.hint')
+)
+
+/**
+ * 米游社 / 森空岛扫码登录弹窗：纯展示 + 把用户操作转发出去。
+ *
+ * 会话状态全部由 useQrLogin 持有，这里刻意不做 v-model:open——
+ * 关闭必须走 cancel 事件，让 composable 有机会清定时器、abort 在途请求。
+ */
 const emit = defineEmits<{
   (e: 'cancel'): void
 
@@ -105,6 +124,10 @@ const emit = defineEmits<{
 
 .qr-status-primary {
   color: var(--ant-color-primary);
+}
+
+.qr-status-icon {
+  margin-right: 4px;
 }
 
 .qr-status-warning {

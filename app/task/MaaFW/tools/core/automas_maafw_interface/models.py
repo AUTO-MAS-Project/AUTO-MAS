@@ -17,6 +17,7 @@
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
 
 
+from collections.abc import Collection
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -29,6 +30,10 @@ MaaFWTaskOptionsByTask = dict[str, dict[str, MaaFWTaskOptionValue]]
 
 PRETASK_TASK_PREFIX = "__MXU_PRETASK__"
 PRETASK_TASK_ENTRY = "MXU_PRETASK"
+# Extra copies of a task queued more than once are persisted as
+# "<name>__MAS_DUP__<suffix>"; the first copy keeps the bare task name, so
+# configurations written before duplicates were supported need no migration.
+DUPLICATE_TASK_SUFFIX_SEPARATOR = "__MAS_DUP__"
 SUPPORTED_OPTION_TYPES = frozenset(
     {"select", "checkbox", "input", "hotkey", "switch", "scan_select"}
 )
@@ -327,3 +332,30 @@ def find_pretask_by_task_name(
         ),
         None,
     )
+
+
+def build_duplicate_task_id(task_name: str, suffix: str) -> str:
+    """Build the persisted id of a duplicated task instance.
+
+    The first instance of a task keeps the bare ProjectInterface task name as
+    its id, so configurations written before duplicates were supported stay
+    valid without migration.  Every extra copy gets ``<name>__MAS_DUP__<suffix>``.
+    """
+
+    return f"{task_name}{DUPLICATE_TASK_SUFFIX_SEPARATOR}{suffix}"
+
+
+def resolve_task_instance_name(task_id: str, valid_task_names: Collection[str]) -> str:
+    """Resolve a persisted task instance id back to its task name.
+
+    A task whose own name happens to contain the separator still wins over the
+    duplicate reading, so ids are never mis-resolved for such projects.
+    """
+
+    if task_id in valid_task_names:
+        return task_id
+
+    head, separator, _ = task_id.rpartition(DUPLICATE_TASK_SUFFIX_SEPARATOR)
+    if separator and head in valid_task_names:
+        return head
+    return task_id
