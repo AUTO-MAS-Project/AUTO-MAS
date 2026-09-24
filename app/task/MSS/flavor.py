@@ -169,13 +169,25 @@ class MSSFlavor:
         if activity is not None and any(name_of(i) == activity for i in ids):
             running = self._activity_probe()
             if running is False:
-                ids = [i for i in ids if name_of(i) != activity]
-                log(f"[MSS] 当前没有进行中的活动，本轮跳过「{activity}」")
+                remaining = [i for i in ids if name_of(i) != activity]
+                if remaining:
+                    ids = remaining
+                    log(f"[MSS] 当前没有进行中的活动，本轮跳过「{activity}」")
+                else:
+                    ## 队列里只有活动任务：摘空后引擎会把这一轮判成「无法构建运行计划」的异常，
+                    ## 比照活动数据取不到的处理，按队列原样执行。
+                    log(
+                        f"[MSS] 当前没有进行中的活动，但队列里只有「{activity}」，按队列原样执行"
+                    )
             elif running is None:
                 log(f"[MSS] 取不到星塔旅人活动数据，「{activity}」按队列原样执行")
             else:
-                ids = _move_before(ids, activity, tribulation, name_of)
-                log(f"[MSS] 活动进行中，先打「{activity}」")
+                moved = _move_before(ids, activity, tribulation, name_of)
+                if moved != ids:
+                    ids = moved
+                    log(f"[MSS] 活动进行中，「{activity}」已挪到「{tribulation}」之前")
+                else:
+                    log(f"[MSS] 活动进行中，「{activity}」按队列顺序执行")
 
         if climb is not None and any(name_of(i) == climb for i in ids):
             reordered = [i for i in ids if name_of(i) != climb] + [
