@@ -37,6 +37,7 @@ from app.models.schema import *
 from app.task.MaaFW.api_service import agent_env as maafw_agent_env_api
 from app.task.MaaFW.api_service import embedded as maafw_embedded_api
 from app.task.MaaFW.api_service import interface as maafw_interface_api
+from app.task.MaaFW.api_service import shell_config as maafw_shell_config_api
 from app.task.MaaFW.api_service import update as maafw_update_api
 from app.utils import get_logger
 from app.utils.io import ConfigCorruptedError
@@ -1006,6 +1007,50 @@ async def list_maafw_embedded_sources(
 
     reply = await maafw_embedded_api.list_embedded_sources(payload.scriptId)
     return MaaFWEmbeddedSourcesOut(**reply.out_fields())
+
+
+@router.post(
+    "/maafw/shell-configs",
+    tags=["MaaFW"],
+    summary="列出 MFAAvalonia 外壳里可导入的实例配置",
+    response_model=MaaFWShellConfigsOut,
+    status_code=200,
+)
+async def list_maafw_shell_configs(
+    payload: MaaFWShellConfigsIn = Body(default_factory=MaaFWShellConfigsIn),
+) -> MaaFWShellConfigsOut:
+    """列出外壳（MFAAvalonia）项目里可导入的实例配置。
+
+    外壳的实例配置在项目 ``config/instances/`` 下，属于投影排除目录、不进内嵌副本，
+    所以只能从脚本记着的**项目来源目录**读；来源没设或已删时返回一句可照做的提示。
+    """
+
+    reply = await maafw_shell_config_api.list_shell_configs(
+        payload.scriptId, payload.path
+    )
+    return MaaFWShellConfigsOut(**reply.out_fields())
+
+
+@router.post(
+    "/maafw/shell-config/import",
+    tags=["MaaFW"],
+    summary="从外壳实例配置导入任务队列",
+    response_model=MaaFWShellConfigImportOut,
+    status_code=200,
+)
+async def import_maafw_shell_config(
+    payload: MaaFWShellConfigImportIn = Body(...),
+) -> MaaFWShellConfigImportOut:
+    """把一个外壳实例的任务与选项翻译成 MAS 的任务队列，供用户页导入。
+
+    只读外壳文件，不写；写盘由前端拿到结果后按 MAS 自己的用户配置走。
+    项目里没有的任务名、翻不回 case 名的下标都会跳过并在 ``skipped`` 里说明。
+    """
+
+    reply = await maafw_shell_config_api.import_shell_config(
+        payload.scriptId, payload.path, payload.instanceId
+    )
+    return MaaFWShellConfigImportOut(**reply.out_fields())
 
 
 @router.post(

@@ -4108,6 +4108,60 @@ class MaaFWEmbeddedSourcesOut(OutBase):
     )
 
 
+class MaaFWShellConfigItem(BaseModel):
+    id: str = Field(..., description="外壳实例 ID")
+    name: str = Field(default="", description="外壳实例名")
+    taskCount: int = Field(default=0, description="该实例勾选的任务数")
+    active: bool = Field(default=False, description="外壳当前激活的实例")
+
+
+class MaaFWShellConfigsIn(BaseModel):
+    scriptId: Optional[str] = Field(
+        default=None, description="MFW 脚本 ID（项目来源目录从它取）"
+    )
+    path: str = Field(default="", description="没有脚本时兜底的项目目录")
+
+
+class MaaFWShellConfigsData(BaseModel):
+    instances: List[MaaFWShellConfigItem] = Field(
+        default_factory=list, description="外壳里的实例配置"
+    )
+
+
+class MaaFWShellConfigsOut(OutBase):
+    data: MaaFWShellConfigsData = Field(..., description="外壳实例列表")
+
+
+class MaaFWShellConfigTask(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(..., description="任务名，与项目 interface 一致")
+    options: Dict[str, Any] = Field(
+        default_factory=dict, description="该任务的选项（select 已翻回 case 名）"
+    )
+
+
+class MaaFWShellConfigImportIn(BaseModel):
+    scriptId: Optional[str] = Field(
+        default=None, description="MFW 脚本 ID（项目来源目录从它取）"
+    )
+    path: str = Field(default="", description="没有脚本时兜底的项目目录")
+    instanceId: str = Field(..., description="要导入的外壳实例 ID")
+
+
+class MaaFWShellConfigImportData(BaseModel):
+    tasks: List[MaaFWShellConfigTask] = Field(
+        default_factory=list, description="按外壳顺序排好的任务队列"
+    )
+    skipped: List[str] = Field(
+        default_factory=list, description="项目里没有、或取值不认识而跳过的项"
+    )
+
+
+class MaaFWShellConfigImportOut(OutBase):
+    data: MaaFWShellConfigImportData = Field(..., description="导入结果")
+
+
 class MaaFWEmbeddedProjection(BaseModel):
     sourceSizeBytes: int = Field(default=0, description="来源目录字节数")
     payloadSizeBytes: int = Field(default=0, description="副本字节数")
