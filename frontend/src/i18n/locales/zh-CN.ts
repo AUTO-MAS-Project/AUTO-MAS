@@ -200,6 +200,7 @@ export default {
     backendUpdateFailedBootstrap: '源码或依赖同步失败，可用下面的方式重试',
     backendUpdateFailedRestart: '源码与依赖已就位，但新后端没能启动',
     backendUpdateUnsupportedMode: '当前模式不支持自动更新后端',
+    backendUpdateRetryBootstrap: '重新开始更新',
     backendUpdateRetryWorkspaceSync: '重新同步源码',
     backendUpdateRetryDependenciesSync: '重试依赖同步',
     backendUpdateRetryDependenciesRebuild: '重建依赖环境',

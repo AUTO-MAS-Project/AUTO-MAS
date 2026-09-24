@@ -15,6 +15,13 @@ import {
 } from './runtimeUpdateService'
 import { RuntimeInitializationService } from './runtimeInitializationService'
 import type { RuntimeEvent, RuntimeLaunchConfig, RuntimeRunOptions } from './runtime'
+import {
+  RUNTIME_BINARY_CANCELLED,
+  RUNTIME_BINARY_DOWNLOAD_FAILED,
+  RUNTIME_PIN_UNAVAILABLE,
+  type RuntimeBinaryAlignOptions,
+  type RuntimeBinaryAlignResult,
+} from './runtimeBinaryService'
 
 vi.mock('electron', () => ({ app: { getVersion: () => '5.5.0-beta.3' } }))
 vi.mock('./logger', () => ({
@@ -231,6 +238,24 @@ function developmentConfig(): RuntimeLaunchConfig {
   return { mode: 'development', runtimePath: RUNTIME_PATH, appRoot: APP_ROOT, repo: APP_ROOT }
 }
 
+/**
+ * 第 0 步（Runtime 对齐）的桩：走真实实现要联网、要碰磁盘，这里只关心它被怎么调用、
+ * 结果怎么影响编排。`hold` 让它停住，用来验证取消。
+ */
+const alignStub = {
+  calls: [] as RuntimeBinaryAlignOptions[],
+  result: { status: 'unpinned' } as RuntimeBinaryAlignResult,
+  hold: null as Promise<void> | null,
+  /** 顺序断言要看它时打开；缺省不进流水，免得每条既有断言都要改。 */
+  logCalls: false,
+  async run(options: RuntimeBinaryAlignOptions): Promise<RuntimeBinaryAlignResult> {
+    alignStub.calls.push(options)
+    if (alignStub.logCalls) callLog.push('alignRuntime')
+    if (alignStub.hold) await alignStub.hold
+    return alignStub.result
+  },
+}
+
 function createDeps(backend: BackendUpdateController, launchConfig: RuntimeLaunchConfig) {
   return {
     backend,
@@ -241,6 +266,7 @@ function createDeps(backend: BackendUpdateController, launchConfig: RuntimeLaunc
       new RuntimeInitializationService({
         ...options,
         createClient: clientOptions => new FakeRuntimeClient(clientOptions) as never,
+        alignRuntimeBinary: alignOptions => alignStub.run(alignOptions),
       }),
   }
 }
@@ -253,6 +279,10 @@ const collect = (update: RuntimeUpdateProgress): void => {
 beforeEach(() => {
   callLog = []
   progressUpdates.length = 0
+  alignStub.calls = []
+  alignStub.result = { status: 'unpinned' }
+  alignStub.hold = null
+  alignStub.logCalls = false
   FakeRuntimeClient.scripts = [[helloEvent, okResult()]]
   FakeRuntimeClient.index = 0
   FakeRuntimeClient.gate = null
@@ -471,6 +501,13 @@ describe('bootstrap 失败的两种现场', () => {
     ])
     expect(resolveRetryActions('python')).toEqual(['repair'])
     expect(resolveRetryActions(undefined)).toEqual(['repair'])
+  })
+
+  it('第 0 步（Runtime 对齐）失败时只给整条重来，不给修复运行环境', () => {
+    expect(resolveRetryActions('python', RUNTIME_PIN_UNAVAILABLE)).toEqual(['bootstrap'])
+    expect(resolveRetryActions('python', RUNTIME_BINARY_DOWNLOAD_FAILED)).toEqual(['bootstrap'])
+    // Runtime 自己的结果码不受影响。
+    expect(resolveRetryActions('python', 'PYTHON_VERSION_MISMATCH')).toEqual(['repair'])
   })
 })
 
@@ -851,5 +888,143 @@ describe('模式分流', () => {
 
     expect(outcome.unsupported).toBe(true)
     expect(callLog).toEqual([])
+  })
+})
+
+// ==================== 第 0 步：Runtime 对齐到目标版本 ====================
+
+describe('第 0 步：Runtime 对齐到目标版本', () => {
+  it('停机之后、bootstrap 命令之前按目标版本对齐 Runtime', async () => {
+    alignStub.logCalls = true
+    alignStub.result = { status: 'upgraded', pin: { version: 'v0.1.10' }, pinSource: 'cnb' }
+
+    const outcome = await updateBackendViaRuntime(
+      TARGET,
+      collect,
+      createDeps(createBackend(), managedConfig())
+    )
+
+    expect(outcome.success).toBe(true)
+    expect(callLog).toEqual([
+      'stopBackend',
+      'alignRuntime',
+      'run:bootstrap --version v5.6.0',
+      'startBackend',
+    ])
+    expect(alignStub.calls[0]).toMatchObject({
+      version: TARGET,
+      runtimePath: RUNTIME_PATH,
+      appRoot: APP_ROOT,
+    })
+  })
+
+  it('第 0 步失败：结局是 bootstrap、只给整条重来一个入口，源码没动也不重启后端', async () => {
+    alignStub.result = {
+      status: 'failed',
+      code: RUNTIME_PIN_UNAVAILABLE,
+      error: '无法确认 v5.6.0 需要的 Runtime 版本：CNB 与 GitHub 都没有给出结果',
+    }
+
+    const outcome = await updateBackendViaRuntime(
+      TARGET,
+      collect,
+      createDeps(createBackend(), managedConfig())
+    )
+
+    expect(outcome).toMatchObject({
+      success: false,
+      phase: 'bootstrap',
+      code: RUNTIME_PIN_UNAVAILABLE,
+      error: '无法确认 v5.6.0 需要的 Runtime 版本：CNB 与 GitHub 都没有给出结果',
+      retryable: true,
+      retryActions: ['bootstrap'],
+      supportRequired: false,
+    })
+    expect(callLog).toEqual(['stopBackend'])
+    expect(progressUpdates.at(-1)).toMatchObject({ stage: 'python', status: 'failed' })
+  })
+
+  it('整条重来：在同一会话里重跑 bootstrap（含第 0 步），成功后重启后端', async () => {
+    alignStub.result = {
+      status: 'failed',
+      code: RUNTIME_BINARY_DOWNLOAD_FAILED,
+      error: '没能下载到本版本需要的 Runtime v0.1.10',
+    }
+    await updateBackendViaRuntime(TARGET, collect, createDeps(createBackend(), managedConfig()))
+    expect(describeRetryAction('bootstrap')).toEqual(['bootstrap', '--version', 'v5.6.0'])
+
+    callLog = []
+    alignStub.logCalls = true
+    alignStub.result = { status: 'upgraded', pin: { version: 'v0.1.10' } }
+    const retried = await retryBackendUpdate('bootstrap', collect)
+
+    expect(retried.success).toBe(true)
+    expect(callLog).toEqual(['alignRuntime', 'run:bootstrap --version v5.6.0', 'startBackend'])
+  })
+
+  it('第 0 步期间取消：结局是取消，旧后端被拉回来', async () => {
+    let release: (() => void) | undefined
+    alignStub.hold = new Promise(resolve => {
+      release = resolve
+    })
+    alignStub.result = { status: 'cancelled', code: RUNTIME_BINARY_CANCELLED }
+
+    const pending = updateBackendViaRuntime(
+      TARGET,
+      collect,
+      createDeps(createBackend(), managedConfig())
+    )
+    await vi.waitFor(() => expect(alignStub.calls).toHaveLength(1))
+    const cancel = cancelBackendUpdate()
+    expect(alignStub.calls[0].isCancelled?.()).toBe(true)
+    release?.()
+    const outcome = await pending
+
+    expect(cancel.accepted).toBe(true)
+    expect(outcome.cancelled).toBe(true)
+    expect(outcome.success).toBe(false)
+    expect(callLog).toEqual(['stopBackend', 'startBackend'])
+  })
+
+  it('目标分支没有钉扎、或 Runtime 已一致时照常更新', async () => {
+    for (const result of [
+      { status: 'unpinned' },
+      { status: 'current', pin: { version: 'v0.1.10' } },
+    ] as RuntimeBinaryAlignResult[]) {
+      callLog = []
+      resetRuntimeUpdateSession()
+      alignStub.result = result
+
+      const outcome = await updateBackendViaRuntime(
+        TARGET,
+        collect,
+        createDeps(createBackend(), managedConfig())
+      )
+
+      expect(outcome.success).toBe(true)
+      expect(callLog).toEqual(['stopBackend', 'run:bootstrap --version v5.6.0', 'startBackend'])
+    }
+  })
+
+  it('修复运行环境的重试入口同样先过第 0 步', async () => {
+    FakeRuntimeClient.scripts = [
+      [
+        helloEvent,
+        ...failResult({
+          stage: 'python.check',
+          code: 'PYTHON_VERSION_MISMATCH',
+          message: '环境内 Python 版本与目标不一致',
+          remediation: ['rebuild-environment'],
+        }),
+      ],
+      [helloEvent, okResult('repair')],
+    ]
+    await updateBackendViaRuntime(TARGET, collect, createDeps(createBackend(), managedConfig()))
+    expect(alignStub.calls).toHaveLength(1)
+
+    const retried = await retryBackendUpdate('repair', collect)
+
+    expect(retried.success).toBe(true)
+    expect(alignStub.calls).toHaveLength(2)
   })
 })
