@@ -35,6 +35,7 @@ from .qr_login import router as qr_login_router
 from .queue import router as queue_router
 from .scripts import router as scripts_router
 from .setting import router as setting_router
+from .share import router as share_router
 from .skland_qr import router as skland_qr_router
 from .tools import router as tools_router
 from .update import router as update_router
@@ -51,6 +52,7 @@ __all__ = [
     "history_router",
     "tools_router",
     "setting_router",
+    "share_router",
     "update_router",
     "ocr_router",
     "openclaw_qq_router",

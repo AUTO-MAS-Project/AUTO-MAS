@@ -1027,10 +1027,25 @@ class AppConfig(GlobalConfig):
 
         await self.ScriptConfig.setOrder([uuid.UUID(_) for _ in index_list])
 
-    async def import_script_from_web(self, script_id: str, url: str):
-        """从「AUTO-MAS 配置分享中心」导入配置"""
+    async def import_script_from_share(
+        self, script_id: str, config_key: str, version_no: Optional[int]
+    ) -> None:
+        """从「AUTO-MAS 配置中心」导入通用脚本配置。
 
-        logger.info(f"从网络加载脚本配置: {script_id} - {url}")
+        Args:
+            script_id: 目标通用脚本ID。
+            config_key: 配置中心的配置标识。
+            version_no: 版本号, 为空表示已发布的最新版本。
+
+        Raises:
+            KeyError: 脚本不存在。
+            TypeError: 脚本不是通用脚本配置。
+            ConfigCenterError: 下载失败或内容不是通用脚本配置。
+        """
+
+        from app.services import ConfigCenter
+
+        logger.info(f"从配置中心加载脚本配置: {script_id} - {config_key}")
         uid = uuid.UUID(script_id)
 
         if uid not in self.ScriptConfig:
@@ -1040,41 +1055,30 @@ class AppConfig(GlobalConfig):
             logger.error(f"{script_id} 不是通用脚本配置")
             raise TypeError(f"脚本 {script_id} 不是通用脚本配置")
 
-        # 使用 httpx 异步请求
-        async with httpx.AsyncClient(
-            proxy=Config.proxy, follow_redirects=True
-        ) as client:
-            try:
-                response = await client.get(url)
-                if response.status_code == 200:
-                    data = response.json()
-                else:
-                    logger.warning(
-                        f"无法从 AUTO-MAS 服务器获取配置内容: {response.text}"
-                    )
-                    raise ConnectionError(
-                        f"无法从 AUTO-MAS 服务器获取配置内容: {response.status_code}"
-                    )
-            except httpx.RequestError as e:
-                logger.warning(f"无法从 AUTO-MAS 服务器获取配置内容: {e}")
-                raise ConnectionError(f"无法从 AUTO-MAS 服务器获取配置内容: {e}")
-
-        if data.get("code", 200) == 500:
-            logger.error(f"从 AUTO-MAS 服务器获取配置内容失败: {data.get('message')}")
-            raise ConnectionError(
-                f"从 AUTO-MAS 服务器获取配置内容失败: {data.get('message')}"
-            )
-
+        data = await ConfigCenter.download_template(config_key, version_no)
         await self.ScriptConfig[uid].load(data)
 
         logger.success(f"{script_id} 配置加载成功")
 
-    async def upload_script_to_web(
-        self, script_id: str, config_name: str, author: str, description: str
-    ):
-        """上传配置到「AUTO-MAS 配置分享中心」"""
+    async def build_share_config(
+        self, script_id: str, config_name: str
+    ) -> tuple[dict, List[Dict[str, str]]]:
+        """整理待分享的通用脚本配置。
 
-        logger.info(f"上传配置到网络: {script_id} - {config_name} - {author}")
+        用户数据（SubConfigsInfo）整体丢弃, 路径类配置项做占位替换, 剩下仍然可疑的内容
+        以风险项返回, 由用户确认后才允许上传。
+
+        Args:
+            script_id: 目标通用脚本ID。
+            config_name: 分享时使用的配置名称。
+
+        Returns:
+            脱敏后的配置字典, 以及仍需用户确认的风险项列表。
+
+        Raises:
+            KeyError: 脚本不存在。
+            TypeError: 脚本不是通用脚本配置。
+        """
 
         uid = uuid.UUID(script_id)
 
@@ -1089,35 +1093,33 @@ class AppConfig(GlobalConfig):
         temp.pop("SubConfigsInfo", None)
         temp = await self.remove_privacy_info(temp, config_name)
 
-        files = {
-            "file": (
-                f"{config_name}&&{int(datetime.now(tz=UTC8).timestamp() * 1000)}.json",
-                json.dumps(temp, ensure_ascii=False),
-                "application/json",
-            )
-        }
-        data = {"username": author, "description": description}
+        return temp, self.scan_privacy_risks(temp)
 
-        async with httpx.AsyncClient(
-            proxy=Config.proxy, follow_redirects=True
-        ) as client:
-            try:
-                response = await client.post(
-                    "https://share.auto-mas.top/api/upload/share",
-                    files=files,
-                    data=data,
-                )
+    async def upload_script_to_share(
+        self, script_id: str, config_name: str, description: str, acknowledged: bool
+    ) -> None:
+        """以当前授权用户的身份把配置提交到「AUTO-MAS 配置中心」等待审核。
 
-                if response.status_code == 200:
-                    logger.success("配置上传成功")
-                else:
-                    logger.error(f"无法上传配置到 AUTO-MAS 服务器: {response.text}")
-                    raise ConnectionError(
-                        f"无法上传配置到 AUTO-MAS 服务器: {response.status_code} - {response.text}"
-                    )
-            except httpx.RequestError as e:
-                logger.error(f"无法上传配置到 AUTO-MAS 服务器: {e}")
-                raise ConnectionError(f"无法上传配置到 AUTO-MAS 服务器: {e}")
+        Args:
+            script_id: 目标通用脚本ID。
+            config_name: 配置名称。
+            description: 配置描述。
+            acknowledged: 用户是否已确认分享前检查出的风险项。
+
+        Raises:
+            ConfigCenterError: 未授权、存在未确认的风险项或上传被拒绝。
+        """
+
+        from app.services import ConfigCenter, ConfigCenterError
+
+        logger.info(f"上传配置到配置中心: {script_id} - {config_name}")
+
+        config, risks = await self.build_share_config(script_id, config_name)
+        if risks and not acknowledged:
+            logger.warning(f"分享前检查到 {len(risks)} 项待确认内容, 已阻止上传")
+            raise ConfigCenterError("配置中仍有可能泄露隐私的内容, 请确认后再分享")
+
+        await ConfigCenter.upload_config(config_name, description, config)
 
     async def remove_privacy_info(self, config: dict, name: str) -> dict:
         """移除配置中可能存在的隐私信息"""
@@ -1141,7 +1143,82 @@ class AppConfig(GlobalConfig):
                 )
         config["Info"]["RootPath"] = str(Path(r"C:/脚本根目录"))
 
+        # 上面只覆盖脚本自身的路径项；游戏路径、命令行等自由文本同样会带出本机用户名，统一打码
+        for items in config.values():
+            if not isinstance(items, dict):
+                continue
+            for key, value in items.items():
+                if isinstance(value, str) and value:
+                    items[key] = self._mask_home_path(value)
+
         return config
+
+    @staticmethod
+    def _mask_home_path(value: str) -> str:
+        """把值里出现的本机用户目录替换成占位符"""
+
+        home = str(Path.home())
+        if not home:
+            return value
+
+        masked = value
+        for candidate in {home, home.replace("\\", "/")}:
+            # 要求用户目录后面是分隔符或行尾, 否则 C:\Users\qiyin 会切掉 C:\Users\qiyinxi 的一截
+            masked = re.sub(
+                rf"{re.escape(candidate)}(?=[\\/]|$)",
+                "%USERPROFILE%",
+                masked,
+                flags=re.IGNORECASE,
+            )
+        return masked
+
+    def scan_privacy_risks(self, config: dict) -> List[Dict[str, str]]:
+        """检查脱敏后的配置里是否还残留不该分享的内容。
+
+        自动脱敏只能处理已知的路径项, 命令行参数、日志规则这类自由文本仍可能带出账号、
+        密码、令牌或本机绝对路径, 这里把它们挑出来交给用户确认。
+
+        Args:
+            config: 已经过 remove_privacy_info 处理的配置字典。
+
+        Returns:
+            风险项列表, 每项包含配置项名称与风险说明。
+        """
+
+        placeholders = ("C:\\脚本根目录", "C:/脚本根目录", "%APPDATA%", "%USERPROFILE%")
+        user_name = Path.home().name
+        risks: List[Dict[str, str]] = []
+
+        for group, items in config.items():
+            if not isinstance(items, dict):
+                continue
+            for key, value in items.items():
+                if not isinstance(value, str) or not value.strip():
+                    continue
+
+                field = f"{group}.{key}"
+                if re.search(
+                    r"(?i)(password|passwd|pwd|token|secret|api[_-]?key|cookie|session"
+                    r"|密码|密钥|口令)\s*[=:\s]\s*\S",
+                    value,
+                ):
+                    risks.append({"field": field, "reason": "疑似包含账号、密码或令牌"})
+                    continue
+                if re.search(r"://[^/\s:@]+:[^/\s@]+@", value):
+                    risks.append({"field": field, "reason": "链接中带有账号密码"})
+                    continue
+                if len(user_name) > 2 and user_name.lower() in value.lower():
+                    risks.append({"field": field, "reason": "包含本机用户名"})
+                    continue
+
+                probe = value
+                for placeholder in placeholders:
+                    probe = probe.replace(placeholder, "")
+                # 盘符前不能再跟字母, 否则 https:// 这类协议头会被当成 C:\ 一样的盘符路径
+                if re.search(r"(?<![A-Za-z])[A-Za-z]:[\\/]", probe) or "\\\\" in probe:
+                    risks.append({"field": field, "reason": "包含本机绝对路径"})
+
+        return risks
 
     async def get_user(
         self, script_id: str, user_id: Optional[str]
@@ -4637,49 +4714,6 @@ class AppConfig(GlobalConfig):
         return self.get("Data", "IfShowNotice"), json.loads(
             self.get("Data", "Notice")
         ).get("notice_dict", {})
-
-    async def get_web_config(self):
-        """获取「AUTO-MAS 配置分享中心」配置"""
-
-        local_web_config = json.loads(self.get("Data", "WebConfig"))
-        if datetime.now() - timedelta(hours=1) < datetime.strptime(
-            self.get("Data", "LastWebConfigUpdated"), "%Y-%m-%d %H:%M:%S"
-        ):
-            logger.info("一小时内已进行过一次检查, 直接使用缓存的配置分享中心信息")
-            return local_web_config
-
-        logger.info("开始从 AUTO-MAS 服务器获取配置分享中心信息")
-
-        try:
-            async with httpx.AsyncClient(
-                proxy=self.proxy, follow_redirects=True
-            ) as client:
-                response = await client.get(
-                    "https://share.auto-mas.top/api/list/config/general"
-                )
-                if response.status_code == 200:
-                    remote_web_config = response.json()
-                else:
-                    logger.warning(
-                        f"无法从 AUTO-MAS 服务器获取配置分享中心信息:{response.text}"
-                    )
-                    remote_web_config = None
-        except Exception as e:
-            logger.warning(f"无法从 AUTO-MAS 服务器获取配置分享中心信息: {e}")
-            remote_web_config = None
-
-        if remote_web_config is None:
-            logger.warning("使用本地配置分享中心信息")
-            return local_web_config
-
-        await self.set(
-            "Data", "LastWebConfigUpdated", datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        )
-        await self.set(
-            "Data", "WebConfig", json.dumps(remote_web_config, ensure_ascii=False)
-        )
-
-        return remote_web_config
 
     def build_history_log_path(
         self, *, script_name: str, user_name: str, log_time: datetime
