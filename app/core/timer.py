@@ -20,7 +20,9 @@
 #   Contact: DLmaster_361@163.com
 
 import asyncio
+from collections.abc import Awaitable, Callable
 from datetime import datetime
+from typing import Any
 
 from app.services import Matomo
 from app.utils import get_logger
@@ -45,6 +47,8 @@ class _MainTimer:
         self.second_timer: asyncio.Task[None] | None = None
         self.hour_timer: asyncio.Task[None] | None = None
         self.community_sign_task: asyncio.Task | None = None
+        # 定时循环里各步骤最近一次的异常摘要，用于同一错误只记一次日志
+        self._loop_errors: dict[str, str] = {}
 
     async def start(self):
         """启动定时器"""
@@ -92,14 +96,17 @@ class _MainTimer:
         """每秒定期任务"""
         logger.info("每秒定期任务启动")
 
-        while True:
-            await self.timed_start()
-
+        async def arknights_pc_tick() -> None:
             if IS_WINDOWS and Config.ToolsConfig.get("ArknightsPC", "Enabled"):
+                # 懒导入：启动期导入失败（如更新后端撞上 app/ 重拷窗口）时这里会再抛，
+                # 不能让它把整个每秒循环带走，否则定时队列跟着停摆（#738）
                 from app.MaaFW.ArknightWin32 import ArknightWin32Toolkit
 
                 await ArknightWin32Toolkit.scheduled_task()
 
+        while True:
+            await self._run_loop_step("定时启动检查", self.timed_start)
+            await self._run_loop_step("明日方舟 PC 工具巡检", arknights_pc_tick)
             await asyncio.sleep(1)
 
     async def hour_task(self):
@@ -107,7 +114,7 @@ class _MainTimer:
 
         logger.info("每小时定期任务启动")
 
-        while True:
+        async def upload_statistics() -> None:
             if (
                 datetime.strptime(
                     Config.get("Data", "LastStatisticsUpload"), "%Y-%m-%d %H:%M:%S"
@@ -126,7 +133,33 @@ class _MainTimer:
                     datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 )
 
+        while True:
+            await self._run_loop_step("统计上报", upload_statistics)
             await asyncio.sleep(3600)
+
+    async def _run_loop_step(
+        self, name: str, step: Callable[[], Awaitable[Any]]
+    ) -> None:
+        """执行定时循环里的一步，异常只记日志、不让整个循环退出。
+
+        每秒循环里同一个错误会反复出现：同一步骤连续抛出相同的异常摘要时只记第一次，
+        恢复正常后记一条恢复日志，之后再出错重新记录。
+        """
+
+        try:
+            await step()
+        except asyncio.CancelledError:
+            raise
+        except Exception as error:
+            signature = f"{type(error).__name__}: {error}"
+            if self._loop_errors.get(name) != signature:
+                self._loop_errors[name] = signature
+                logger.opt(exception=error).error(
+                    f"{name}异常，定时循环继续运行: {signature}"
+                )
+        else:
+            if self._loop_errors.pop(name, None) is not None:
+                logger.info(f"{name}已恢复正常")
 
     @logger.catch()
     async def timed_start(self):

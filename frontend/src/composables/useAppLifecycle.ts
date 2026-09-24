@@ -10,6 +10,7 @@ import { Service } from '@/api'
 import { useAppClosing } from '@/composables/useAppClosing'
 import { useUpdateChecker } from '@/composables/useUpdateChecker'
 import { clearStageOptionsCache } from '@/composables/usePlanDataCoordinator'
+import { cancelBackgroundInitCheck, checkBackgroundInit } from '@/services/backgroundInitNotice'
 import { realtimeSnapshotApi } from '@/services/realtimeSnapshotApi'
 import {
   bootstrapResidentResources,
@@ -210,6 +211,8 @@ const handleConnected = async (): Promise<void> => {
   dismissDisconnectIncident()
   // 后端重启/重连后关卡数据可能已变，让计划页下次重新拉关卡选项
   clearStageOptionsCache()
+  // 后台初始化（主定时器等）失败时 UI 其余部分照常可用，只能靠这里提示出来
+  void checkBackgroundInit()
   await refreshLifecycleSnapshots()
 }
 
@@ -333,6 +336,7 @@ export function disposeAppLifecycle(): void {
     unsubscribe(subscriptionId)
   }
   disposeResidentResources()
+  cancelBackgroundInitCheck()
   if (powerCountdownStaleTimer !== undefined) {
     window.clearTimeout(powerCountdownStaleTimer)
     powerCountdownStaleTimer = undefined
