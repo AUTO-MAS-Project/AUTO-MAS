@@ -53,9 +53,10 @@
           @finish-edit-plan-name="finishEditPlanName"
           @mode-change="onModeChange"
         >
-          <!-- MAA 计划表：活动关批量指派表（派生视图，位于计划表本体上方） -->
-          <ActivityStageSection
-            v-if="currentPlanDescriptor.createType === 'MaaPlan'"
+          <!-- 类型专属的表格上方区块（活动关指派表等）：按注册表分派，共享页不判断类型 -->
+          <component
+            :is="currentPlanDescriptor.headerComponent"
+            v-if="currentPlanDescriptor.headerComponent"
             :plan-id="activePlanId"
             :plan-names="planNameById"
           />
@@ -97,7 +98,6 @@ import {
 import PlanHeader from './components/PlanHeader.vue'
 import PlanSelector from './components/PlanSelector.vue'
 import PlanConfig from './components/PlanConfig.vue'
-import ActivityStageSection from './components/ActivityStageSection.vue'
 
 const { t } = useI18n()
 

@@ -84,6 +84,11 @@ class TagItem(BaseModel):
 class ComboBoxItem(BaseModel):
     label: str = Field(..., description="展示值")
     value: Optional[str] = Field(..., description="实际值")
+
+
+class StageComboBoxItem(ComboBoxItem):
+    """关卡下拉选项。活动关标记属关卡语义，只挂在这里，不上跨专项共享的 ComboBoxItem"""
+
     activity: Optional[bool] = Field(
         default=None, description="是否为进行中的活动关（仅关卡下拉选项携带）"
     )
@@ -91,6 +96,10 @@ class ComboBoxItem(BaseModel):
 
 class ComboBoxOut(OutBase):
     data: List[ComboBoxItem] = Field(..., description="下拉框选项")
+
+
+class StageComboBoxOut(OutBase):
+    data: List[StageComboBoxItem] = Field(..., description="关卡下拉框选项")
 
 
 class MaaDepotInventoryOut(OutBase):

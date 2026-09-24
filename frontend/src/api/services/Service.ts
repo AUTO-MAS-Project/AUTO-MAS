@@ -122,6 +122,7 @@ import type { SklandQrCheckIn } from '../models/SklandQrCheckIn';
 import type { SklandQrCheckOut } from '../models/SklandQrCheckOut';
 import type { SklandQrCreateOut } from '../models/SklandQrCreateOut';
 import type { SklandQrSaveIn } from '../models/SklandQrSaveIn';
+import type { StageComboBoxOut } from '../models/StageComboBoxOut';
 import type { TaskCreateIn } from '../models/TaskCreateIn';
 import type { TaskCreateOut } from '../models/TaskCreateOut';
 import type { TaskRuntimeSnapshot } from '../models/TaskRuntimeSnapshot';
@@ -243,12 +244,12 @@ export class Service {
     /**
      * 获取关卡号下拉框信息
      * @param requestBody
-     * @returns ComboBoxOut Successful Response
+     * @returns StageComboBoxOut Successful Response
      * @throws ApiError
      */
     public static getStageComboxApiInfoComboxStagePost(
         requestBody: GetStageIn,
-    ): CancelablePromise<ComboBoxOut> {
+    ): CancelablePromise<StageComboBoxOut> {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/info/combox/stage',

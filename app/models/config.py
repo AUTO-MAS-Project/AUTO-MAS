@@ -865,7 +865,9 @@ _ACTIVITY_STAGE_INTENT_PATTERN = re.compile(r"jade|last:[1-9][0-9]{0,3}")
 class ActivityStageIntentValidator(ValidatorBase):
     """活动关选关意图验证器：jade=搓玉 / last:N=倒数第N关，空串表示未指派。
 
-    兼容旧版关卡序号：整型或纯数字串按同锚（自最高编号关倒数）转为 last:N。
+    兼容旧版关卡序号：整型或纯数字串按编号降序近似转为 last:N——旧序号是 MAA
+    列表位置，两者仅在列表按编号降序时逐位等价；指向末位玉关的旧值会越界，由
+    AutoProxy 的旧序号兼容分支按搓玉解析。
     """
 
     def validate(self, value: Any) -> bool:
@@ -1087,7 +1089,7 @@ class MaaUserConfig(ConfigBase):
         self.Task_IfActivityFirst = ConfigItem(
             "Task", "IfActivityFirst", False, BoolValidator()
         )
-        ## 优先刷取的活动关卡意图（jade / last:N；旧序号经 legacy 同锚迁移）
+        ## 优先刷取的活动关卡意图（jade / last:N；旧序号按编号降序近似迁移）
         self.Task_ActivityStageIntent = ConfigItem(
             "Task",
             "ActivityStageIntent",
@@ -5081,7 +5083,7 @@ class GlobalConfig(ConfigBase):
             for server, server_stage_data in stage_data_by_server.items():
                 activity_stage_drop_info = []
                 activity_stage_combox = []
-                activity_stage_preview = []
+                activity_stage_preview: list[tuple[datetime, list[dict]]] = []
 
                 for side_story in server_stage_data.values():
                     activity = side_story["Activity"]
@@ -5111,16 +5113,31 @@ class GlobalConfig(ConfigBase):
                                 )
                     elif activity_expire > now and now < activity_start:
                         # 未开始的活动进预览（下期提前布阵），仅显示不注入；
-                        # SSReopen 一键复刻伪关与剧情关不进槽位
-                        activity_stage_preview.extend(
-                            _stage_drop_entry(stage, activity)
-                            for stage in side_story["Stages"]
-                            if "SSReopen" not in stage["Display"]
+                        # SSReopen 一键复刻伪关与剧情关不进槽位。
+                        # 按期记下起始时刻：多期都未开始时只取最近一期，
+                        # 槽位、banner 与文案都是「下期」单数口径
+                        activity_stage_preview.append(
+                            (
+                                activity_start,
+                                [
+                                    _stage_drop_entry(stage, activity)
+                                    for stage in side_story["Stages"]
+                                    if "SSReopen" not in stage["Display"]
+                                ],
+                            )
                         )
+
+                if activity_stage_preview:
+                    # 只保留最近一期（跨时区比较的是绝对时刻，aware datetime 可比）
+                    preview_stages = min(
+                        activity_stage_preview, key=lambda item: item[0]
+                    )[1]
+                else:
+                    preview_stages = []
 
                 stage_data = {
                     "Info": activity_stage_drop_info,
-                    "Preview": activity_stage_preview,
+                    "Preview": preview_stages,
                 }
 
                 for day in range(0, 8):

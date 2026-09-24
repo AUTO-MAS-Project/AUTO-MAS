@@ -34,6 +34,11 @@ interface PlanTypeDescriptor {
   selectorTag: string
   reloadAfterSave: boolean
   tableComponent: Component
+  /**
+   * 表格上方的类型专属区块（可选）。共享页只按注册表分派，不判断类型；
+   * 实现组件需接受 `planId` / `planNames` 两个 prop。
+   */
+  headerComponent?: Component
 }
 
 // ==================== 注册表 ====================
@@ -48,6 +53,9 @@ export const PLAN_TYPE_REGISTRY: Record<PlanConfigType, PlanTypeDescriptor> = {
     selectorTag: 'MAA',
     reloadAfterSave: true,
     tableComponent: defineAsyncComponent(() => import('@/views/plan/tables/MaaPlanTable.vue')),
+    headerComponent: defineAsyncComponent(
+      () => import('@/views/plan/components/ActivityStageSection.vue'),
+    ),
   },
   [PLAN_CONFIG_TYPES.MAA_END]: {
     configType: PLAN_CONFIG_TYPES.MAA_END,

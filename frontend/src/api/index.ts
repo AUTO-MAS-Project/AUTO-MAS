@@ -382,6 +382,8 @@ export type { SrcUserConfig_Data } from './models/SrcUserConfig_Data';
 export type { SrcUserConfig_Info } from './models/SrcUserConfig_Info';
 export type { SrcUserConfig_Notify } from './models/SrcUserConfig_Notify';
 export type { SrcUserConfig_Stage } from './models/SrcUserConfig_Stage';
+export type { StageComboBoxItem } from './models/StageComboBoxItem';
+export type { StageComboBoxOut } from './models/StageComboBoxOut';
 export { TaskCreateIn } from './models/TaskCreateIn';
 export type { TaskCreateOut } from './models/TaskCreateOut';
 export type { TaskRuntimeSnapshot } from './models/TaskRuntimeSnapshot';

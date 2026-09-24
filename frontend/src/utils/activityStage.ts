@@ -6,6 +6,11 @@ import type { ActivityItem } from '@/types/home'
 
 export type { ActivityItem } from '@/types/home'
 
+/** B服关卡数据与官服同源（后端 Bilibili→Official 归一），按服务器取关卡数据前先归一 */
+export function stageServerOf(server: string): string {
+  return server === 'Bilibili' ? 'Official' : server
+}
+
 /** 槽位键：意图 → 归并键 */
 export function slotKeyOfIntent(intent: string): string {
   if (intent === 'jade') return 'jade'
@@ -39,7 +44,13 @@ export function resolveIntentStage(
     const ranked = stages
       .filter(stage => !isJadeStage(stage))
       .sort((a, b) => stageNumber(b.Value) - stageNumber(a.Value))
-    return ranked[index - 1]?.Value ?? null
+    const rankedStage = ranked[index - 1]
+    if (rankedStage) return rankedStage.Value
+    // 旧序号兼容（与后端 _resolve_activity_stage 同一规则）：旧版编号是列表
+    // 位置、末位是玉关，迁移出的 last:N 必然越界——该位置确为玉关时按搓玉解析
+    const last = stages[stages.length - 1]
+    if (index === stages.length && last && isJadeStage(last)) return last.Value
+    return null
   }
   return null
 }

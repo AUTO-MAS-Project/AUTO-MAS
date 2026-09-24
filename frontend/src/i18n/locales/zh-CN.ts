@@ -3224,6 +3224,7 @@ export default {
       metaOngoing: '{start} ~ {expire}',
       metaPreview: '下期数据 MAA 已录入，仅预览不注入',
       metaGap: '等待下期活动 · 指派保留',
+      refresh: '刷新',
       loadFailed: '加载活动关数据失败',
       assignDone: '已将 {name} 加入指派',
       removeDone: '已将 {name} 移出指派',

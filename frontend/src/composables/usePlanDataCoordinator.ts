@@ -9,7 +9,7 @@
  */
 
 import { ref, computed } from 'vue'
-import type { MaaPlanConfig, MaaPlanConfig_Item, ComboBoxItem } from '@/api'
+import type { MaaPlanConfig, MaaPlanConfig_Item, StageComboBoxItem } from '@/api'
 import { Service } from '@/api'
 import { GetStageIn } from '@/api'
 import { PLAN_CONFIG_TYPES } from '@/utils/planTypeRegistry'
@@ -62,13 +62,14 @@ interface PlanDataState {
 }
 
 // 标准关卡选项缓存（按时间维度）
-const stageOptionsCache = ref<Record<string, ComboBoxItem[]>>({})
+// 关卡下拉走 /combox/stage 的专项模型（比共享 ComboBoxItem 多 activity 标记）
+const stageOptionsCache = ref<Record<string, StageComboBoxItem[]>>({})
 let stageOptionsPreloadPromise: Promise<void> | null = null
 // 缓存代次：clearStageOptionsCache 自增，清缓存前发出的请求完成后不得写入新缓存
 let stageOptionsGeneration = 0
 
 // 加载标准关卡选项
-async function loadStageOptions(timeKey: TimeKey): Promise<ComboBoxItem[]> {
+async function loadStageOptions(timeKey: TimeKey): Promise<StageComboBoxItem[]> {
   // 如果已缓存，直接返回
   if (stageOptionsCache.value[timeKey]) {
     return stageOptionsCache.value[timeKey]
@@ -153,7 +154,7 @@ export function clearStageOptionsCache(): void {
 }
 
 // 获取缓存的关卡选项
-export function getCachedStageOptions(timeKey: TimeKey): ComboBoxItem[] {
+export function getCachedStageOptions(timeKey: TimeKey): StageComboBoxItem[] {
   return stageOptionsCache.value[timeKey] || []
 }
 

@@ -319,24 +319,30 @@
                             }}
                           </a-tag>
 
-                          <!-- MAA 活动关连错跳过徽标（后端在活动结束后自动修剪条目） -->
-                          <a-tooltip v-if="script.type === 'MAA' && activitySkipEntry(user)">
-                            <template #title>
-                              <div>{{ activitySkipTitle(user) }}</div>
-                              <div>{{ t('comp.activitySkipResetHint') }}</div>
-                            </template>
-                            <a-tag color="warning" class="server-tag skip-tag">
-                              {{ activitySkipLabel(user) }}
-                              <a-button
-                                type="link"
-                                size="small"
-                                class="skip-reset-btn"
-                                @click.stop="emit('resetActivitySkip', user)"
-                              >
-                                {{ t('comp.activitySkipReset') }}
-                              </a-button>
-                            </a-tag>
-                          </a-tooltip>
+                          <!-- MAA 活动关连错跳过徽标（后端在活动结束后自动修剪条目）；
+                               重置按钮独立于标签，标签只承载状态 -->
+                          <span
+                            v-if="script.type === 'MAA' && activitySkipEntry(user)"
+                            class="skip-badge"
+                          >
+                            <a-tooltip>
+                              <template #title>
+                                <div>{{ skipSummary(activitySkipEntry(user) ?? undefined) }}</div>
+                                <div>{{ t('comp.activitySkipResetHint') }}</div>
+                              </template>
+                              <a-tag color="warning" class="server-tag">
+                                {{ activitySkipLabel(activitySkipEntry(user)!) }}
+                              </a-tag>
+                            </a-tooltip>
+                            <a-button
+                              type="link"
+                              size="small"
+                              class="skip-reset-btn"
+                              @click.stop="emit('resetActivitySkip', user)"
+                            >
+                              {{ t('comp.activitySkipReset') }}
+                            </a-button>
+                          </span>
 
                           <!-- M9A 脚本显示服务器标签 -->
                           <a-tag
@@ -609,11 +615,18 @@ import {
   UserAddOutlined,
 } from '@ant-design/icons-vue'
 import draggable from 'vuedraggable'
-import { ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { message, Modal } from 'ant-design-vue'
 import { useScriptApi } from '@/composables/useScriptApi'
 import { useUserApi } from '@/composables/useUserApi'
 import { parseStatusTagList } from '@/composables/useStatusTag'
+import { getServerDisplayName } from '@/utils/serverLabel'
+import {
+  activeSkipEntry,
+  parseActivitySkipBook,
+  skipSummary,
+  type ActivitySkipEntry,
+} from '@/utils/activitySkipBook'
 
 const { t } = useI18n()
 
@@ -802,57 +815,25 @@ const handleToggleUserStatus = (user: User) => {
 
 // ==================== MAA 活动关跳过簿徽标 ====================
 
-interface ActivitySkipEntry {
-  date?: string
-  days?: number
-  detail?: string
-}
-
-const parseSkipBook = (user: User): Record<string, ActivitySkipEntry> => {
-  try {
-    const book: unknown = JSON.parse(user.Data?.ActivitySkipBook || '{ }')
-    if (!book || typeof book !== 'object') return {}
-    const result: Record<string, ActivitySkipEntry> = {}
-    for (const [key, entry] of Object.entries(book as Record<string, unknown>)) {
-      if (entry && typeof entry === 'object') {
-        result[key] = entry as ActivitySkipEntry
-      }
+/** 用户 id → 生效的跳过条目；每行渲染要读三处，先整表解析一次避免重复 JSON.parse */
+const activitySkips = computed(() => {
+  const map = new Map<string, ActivitySkipEntry>()
+  for (const script of props.scripts) {
+    for (const user of script.users ?? []) {
+      const hit = activeSkipEntry(parseActivitySkipBook(user.Data?.ActivitySkipBook))
+      if (hit) map.set(user.id, hit.entry)
     }
-    return result
-  } catch {
-    return {}
   }
-}
+  return map
+})
 
-/** 后端跳过簿日期锚点为东四区（与代理统计同锚），本地日期要偏移 4 小时对齐 */
-const activityToday = () =>
-  new Date(Date.now() + 4 * 3600_000).toISOString().slice(0, 10)
+const activitySkipEntry = (user: User): ActivitySkipEntry | null =>
+  activitySkips.value.get(user.id) ?? null
 
-/** 当前生效的跳过条目（连错最多的一条；过期条目由后端在下一轮运行时修剪） */
-const activitySkipEntry = (user: User): ActivitySkipEntry | null => {
-  const entries = Object.values(parseSkipBook(user))
-  if (!entries.length) return null
-  const today = activityToday()
-  const active = entries.filter(
-    entry => (entry.days ?? 0) >= 2 || entry.date === today,
-  )
-  if (!active.length) return null
-  return active.reduce((a, b) => ((b.days ?? 0) > (a.days ?? 0) ? b : a))
-}
-
-const activitySkipLabel = (user: User): string => {
-  const entry = activitySkipEntry(user)
-  if (!entry) return ''
-  return (entry.days ?? 0) >= 2
+const activitySkipLabel = (entry: ActivitySkipEntry): string =>
+  (entry.days ?? 0) >= 2
     ? t('comp.activitySkipBadgePeriod', { n: entry.days ?? 0 })
     : t('comp.activitySkipBadgeToday')
-}
-
-const activitySkipTitle = (user: User): string => {
-  const entry = activitySkipEntry(user)
-  if (!entry) return ''
-  return [entry.detail, entry.date].filter(Boolean).join(' · ')
-}
 
 const getScriptTypeLabel = (type: Script['type']) => {
   if (type === 'Okww') return 'ok-ww'
@@ -1001,42 +982,6 @@ const getServerTagColor = (server: string): string => {
       return 'gold'
     default:
       return 'gray'
-  }
-}
-
-// 获取服务器显示名称
-const getServerDisplayName = (server: string): string => {
-  switch (server) {
-    // MAA服务器
-    case 'Official':
-      return '官服'
-    case 'Bilibili':
-      return 'B服'
-    case 'YoStarEN':
-      return '国际服'
-    case 'YoStarJP':
-      return '日服'
-    case 'YoStarKR':
-      return '韩服'
-    case 'txwy':
-      return '繁中服'
-    // SRC服务器
-    case 'CN-Official':
-      return '官服'
-    case 'CN-Bilibili':
-      return 'B服'
-    case 'VN-Official':
-      return '越南服'
-    case 'OVERSEA-America':
-      return '美服'
-    case 'OVERSEA-Asia':
-      return '亚服'
-    case 'OVERSEA-Europe':
-      return '欧服'
-    case 'OVERSEA-TWHKMO':
-      return '港澳台服'
-    default:
-      return server || '未知'
   }
 }
 
@@ -1501,10 +1446,11 @@ const onUserDragEnd = async (script: Script) => {
   border: 1px solid rgba(0, 0, 0, 0.15);
 }
 
-.skip-tag {
+/* 跳过徽标与重置按钮成组，保持与其它标签一致的间距节奏 */
+.skip-badge {
   display: inline-flex;
   align-items: center;
-  gap: 2px;
+  gap: 4px;
 }
 
 .skip-reset-btn {

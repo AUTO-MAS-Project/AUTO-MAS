@@ -1,11 +1,13 @@
 import { describe, expect, it } from 'vitest'
+import type { ActivityItem } from '@/types/home'
 import {
-  buildSlotRows,
   formatActivityTime,
   resolveIntentStage,
-  resolveUserInjectStatus,
   slotKeyOfIntent,
-  type ActivityItem,
+} from '@/utils/activityStage'
+import {
+  buildSlotRows,
+  resolveUserInjectStatus,
   type ActivityUserRow,
 } from './activityStageSlots'
 
@@ -46,7 +48,7 @@ const user = (overrides: Partial<ActivityUserRow>): ActivityUserRow => ({
   intent: '',
   skipActive: false,
   skipDays: 0,
-  skipDetail: '',
+  skipSummary: '',
   ...overrides,
 })
 
@@ -117,7 +119,20 @@ describe('resolveIntentStage', () => {
     expect(resolveIntentStage('last:1', srStages)).toBe('SR-8')
     expect(resolveIntentStage('last:2', srStages)).toBe('SR-7')
     expect(resolveIntentStage('jade', srStages)).toBe('SR-5')
-    expect(resolveIntentStage('last:4', srStages)).toBeNull()
+  })
+
+  it('keeps out-of-range intents unmatched', () => {
+    expect(resolveIntentStage('last:3', srStages)).toBe('SR-6')
+    expect(resolveIntentStage('last:5', srStages)).toBeNull()
+    // 末位非玉关时不启用旧序号兼容（不复活位置回退）
+    const noJade = [stage('PA-8', '30063', '晶体元件'), stage('PA-7', '31015', '聚酸酯组')]
+    expect(resolveIntentStage('last:3', noJade)).toBeNull()
+  })
+
+  it('resolves the legacy last-position index onto the jade stage', () => {
+    // 旧版编号是 MAA 列表位置，末位 SR-5 是玉关；迁移出的 last:4 越界后
+    // 按搓玉解析（与后端 _resolve_activity_stage 的旧序号兼容同规则）
+    expect(resolveIntentStage('last:4', srStages)).toBe('SR-5')
   })
 
   it('detects jade by raw drop even when the normalized id collides', () => {

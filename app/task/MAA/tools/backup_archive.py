@@ -295,7 +295,8 @@ def group_overlay(overlay: dict) -> dict[str, dict]:
     for key, value in overlay.items():
         if key in _OVERLAY_PREVIEW_ONLY_KEYS:
             continue
-        # 旧版侧车的活动关卡序号按同锚转为意图键，恢复旧备份不丢活动关指派
+        # 旧版侧车的活动关卡序号按编号降序近似转为意图键：指向末位玉关的旧值
+        # 会转成越界意图，运行时由旧序号兼容分支按搓玉解析
         if key == "ActivityStageIndex":
             if "ActivityStageIntent" in overlay:
                 continue
@@ -303,6 +304,12 @@ def group_overlay(overlay: dict) -> dict[str, dict]:
             if not value:
                 continue
             key = "ActivityStageIntent"
+        if key == "ActivityStageIntent":
+            # 与预览同一校验器：非法值不参与回填（预览显示「未指派」，
+            # 回填也应什么都不写，而不是把原始串带进用户配置）
+            value = ActivityStageIntentValidator().correct(value)
+            if not value:
+                continue
         grouped.setdefault(_OVERLAY_KEY_GROUP.get(key, "Task"), {})[key] = value
     return grouped
 

@@ -88,6 +88,27 @@ class GetStageDualViewTestCase(unittest.TestCase):
         self.assertEqual([entry["Value"] for entry in preview], ["AT-8"])
         self.assertEqual(preview[0]["Activity"]["StageName"], "下期活动")
 
+    def test_preview_keeps_only_the_nearest_of_several_future_activities(self) -> None:
+        # 多期都未开始时只取最近一期：槽位、banner 与文案都是「下期」单数口径
+        now = datetime.now()
+        data = json.loads(_stage_data(now))
+        data["Official"]["sideStoryStage"]["later"] = {
+            "Activity": {
+                "StageName": "再下期活动",
+                "Tip": "",
+                "UtcStartTime": _fmt(now + timedelta(days=8)),
+                "UtcExpireTime": _fmt(now + timedelta(days=16)),
+                "TimeZone": 8,
+            },
+            "Stages": [{"Display": "ZZ-8", "Value": "ZZ-8", "Drop": "31015"}],
+        }
+        self.config._config_item_index["Data"]["StageData"].setValue(
+            json.dumps(data, ensure_ascii=False)
+        )
+        preview = json.loads(self.config.get("Data", "Stage"))["Official"]["Preview"]
+        self.assertEqual([entry["Value"] for entry in preview], ["AT-8"])
+        self.assertEqual(preview[0]["Activity"]["StageName"], "下期活动")
+
     def test_ssreopen_stays_out_of_slots(self) -> None:
         for entry in self.stage["Info"] + self.stage["Preview"]:
             self.assertNotIn("SSReopen", entry["Value"])
@@ -104,9 +125,24 @@ class GetStageDualViewTestCase(unittest.TestCase):
         self.assertEqual(
             _resolve_activity_stage(info, "last:1"), ("SR-8", "倒1 → SR-8 · 酯原料")
         )
-        code, _ = _resolve_activity_stage(info, "last:2")
+        code, _ = _resolve_activity_stage(info, "last:3")
         self.assertIsNone(code)
         code, _ = _resolve_activity_stage([], "last:1")
+        self.assertIsNone(code)
+
+    def test_resolver_keeps_legacy_jade_index_farming_jade(self) -> None:
+        # 旧版按 MAA 列表位置计号，末位 SR-5 是玉关；迁移出的 last:2 越界，
+        # 该位置确为玉关时按搓玉解析，旧序号用户不会整期不注入
+        self.assertEqual(
+            _resolve_activity_stage(self.stage["Info"], "last:2"),
+            ("SR-5", "搓玉 → SR-5（旧序号迁移）"),
+        )
+        # 末位不是玉关时保持越界，不复活旧版位置回退
+        plain = [
+            {"Value": "PA-8", "RawDrop": "30063", "DropName": "晶体元件"},
+            {"Value": "PA-7", "RawDrop": "31015", "DropName": "聚酸酯组"},
+        ]
+        code, _ = _resolve_activity_stage(plain, "last:3")
         self.assertIsNone(code)
 
 

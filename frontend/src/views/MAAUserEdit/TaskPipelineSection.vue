@@ -363,6 +363,7 @@ import type {
 } from './cultivateTargets'
 import type { CultivatePreviewOut } from '@/api'
 import { currentMonthMarker, currentWeekMarker } from './periodMarkers'
+import type { ActivityStageState } from './activityStageState'
 import {
   ANNIHILATION_STAGE_OPTIONS as annihilationStageOptions,
   ANNIHILATION_WEEKDAY_OPTIONS as annihilationWeekdayOptions,
@@ -389,12 +390,8 @@ const props = defineProps<{
   activityStageLoading: boolean
   activityStageError: string
   displayActivityStageIntent?: string
-  /** 选关下方状态行（统一状态机输出） */
-  activityStageState: {
-    tone: 'ok' | 'warn' | 'info' | 'muted'
-    messageKey: string
-    params: Record<string, string | number>
-  } | null
+  /** 选关下方状态行（统一状态机输出，类型取自状态机模块，勿手抄字段） */
+  activityStageState: ActivityStageState | null
   /** 当前活动关数据的期间态 */
   activityPeriod?: 'ongoing' | 'preview' | 'gap'
   depotItemOptions: SelectOption[]

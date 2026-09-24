@@ -95,17 +95,17 @@ async def get_git_version() -> VersionOut:
     "/combox/stage",
     tags=["Get"],
     summary="获取关卡号下拉框信息",
-    response_model=ComboBoxOut,
+    response_model=StageComboBoxOut,
     status_code=200,
 )
 async def get_stage_combox(
     stage: GetStageIn = Body(..., description="关卡号类型"),
-) -> ComboBoxOut:
+) -> StageComboBoxOut:
 
     try:
         raw_data = await Config.get_stage_info(stage.type)
         data = (
-            [ComboBoxItem(**item) for item in raw_data if isinstance(item, dict)]
+            [StageComboBoxItem(**item) for item in raw_data if isinstance(item, dict)]
             if raw_data
             else []
         )
@@ -113,10 +113,10 @@ async def get_stage_combox(
         logger.opt(exception=True).warning(
             f"get_stage_combox失败: {type(e).__name__}: {e}"
         )
-        return ComboBoxOut(
+        return StageComboBoxOut(
             code=500, status="error", message=f"{type(e).__name__}: {str(e)}", data=[]
         )
-    return ComboBoxOut(data=data)
+    return StageComboBoxOut(data=data)
 
 
 @router.post(

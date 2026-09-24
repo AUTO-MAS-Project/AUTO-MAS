@@ -4,23 +4,11 @@
 
 import type { ActivityItem } from '@/types/home'
 import {
-  formatActivityTime,
   isJadeStage,
-  readActivityMeta,
   resolveIntentStage,
   slotKeyOfIntent,
   stageNumber,
 } from '@/utils/activityStage'
-
-export type { ActivityItem } from '@/types/home'
-export {
-  formatActivityTime,
-  isJadeStage,
-  readActivityMeta,
-  resolveIntentStage,
-  slotKeyOfIntent,
-  stageNumber,
-}
 
 /** 派生表的用户行（来自 MAA 脚本用户配置扫描） */
 export interface ActivityUserRow {
@@ -44,14 +32,13 @@ export interface ActivityUserRow {
   skipActive: boolean
   /** 跳过簿连错天数（0=未命中） */
   skipDays: number
-  /** 跳过簿出错明细 */
-  skipDetail: string
+  /** 跳过簿记录的在打关卡摘要（后端 detail：如「倒1 → SR-8 · 异铁组」） */
+  skipSummary: string
 }
 
-/** 槽位行（倒N → 搓玉） */
+/** 槽位行（倒N → 搓玉）；标题文案由组件按 key 走词表（slotLabelOfIntent） */
 export interface StageSlotRow {
   key: string
-  label: string
   /** 本期关卡码（锚定服务器视角；null=本期无此关） */
   stageCode: string | null
   stageMat: string | null
@@ -64,8 +51,8 @@ export interface StageSlotRow {
 /**
  * 推导槽位行。stages = 当前显示视图关卡（进行中优先，间隙期用下期预览）；
  * notStarted 标记当前展示的是下期预览（间隙期预解析，仅显示不注入）；
- * assignedIntents = 跟随用户 currently 持有的全部意图（本期不存在的倒N
- * 有指派时保留置灰行，搓玉无玉期同理）。
+ * assignedIntents = 跟随用户当前持有的全部意图（本期不存在的倒N有指派时
+ * 保留置灰行，搓玉无玉期同理）。
  */
 export function buildSlotRows(
   stages: ActivityItem[],
@@ -97,7 +84,6 @@ export function buildSlotRows(
     const stage = ranked[index - 1]
     rows.push({
       key: `last:${index}`,
-      label: `倒${index}`,
       stageCode: stage?.Value ?? null,
       stageMat: stage?.DropName ?? null,
       notStarted: notStarted || skeleton,
@@ -109,7 +95,6 @@ export function buildSlotRows(
   if (jade || assignedKeys.has('jade') || skeleton) {
     rows.push({
       key: 'jade',
-      label: '搓玉',
       stageCode: jade?.Value ?? null,
       stageMat: jade?.DropName ?? null,
       notStarted: notStarted || skeleton,
