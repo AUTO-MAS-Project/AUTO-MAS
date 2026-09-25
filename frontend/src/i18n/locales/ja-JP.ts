@@ -3089,7 +3089,7 @@ export default {
       taskRunFailed: 'タスクが失敗しました',
       taskCancelled: 'タスクをキャンセルしました',
       taskDone: 'タスクが完了しました',
-      taskDoneWithFailedUsers: 'タスクが終了しました。{count} 人のユーザーが完了していません',
+      taskDoneWithFailedUsers: 'タスクが終了しました。{count} 人のユーザーで異常が発生しました',
       taskDoneWithFailedScripts:
         'タスクが終了しました。{count} 件のスクリプトでエラーが発生しました',
       powerActionFailed: '電源操作を設定できませんでした',

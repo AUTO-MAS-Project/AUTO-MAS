@@ -3634,7 +3634,7 @@ export default {
       taskRunFailed: 'The task failed',
       taskCancelled: 'Task cancelled',
       taskDone: 'Task finished',
-      taskDoneWithFailedUsers: 'Task ended; {count} user(s) did not finish',
+      taskDoneWithFailedUsers: 'Task ended; {count} user(s) ran into errors',
       taskDoneWithFailedScripts: 'Task ended; {count} script(s) ran into errors',
       powerActionFailed: 'Could not set the power action',
       fetchTaskListFailed: 'Could not load the task list',
