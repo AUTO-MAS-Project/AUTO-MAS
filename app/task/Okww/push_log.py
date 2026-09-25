@@ -65,7 +65,9 @@ OKWW_PUSH_RULES: list[tuple[str, str]] = [
     # 注意：ok.po 是「长键优先」的子串替换，会把类名里的裸 token 一并译掉，
     # 如 Echo→声骸 使 `MergeEchoTask` 变 `Merge声骸Task`。因此含类名的英文规则
     # 须写成「译文形式|英文原形式」，只写英文原形式在译文生效时永不命中
-    (r"先约电台已结束", r'"❌ 失败: 先约电台已结束"'),  # 须在成功前
+    # 战令失败与上面的开始标记同节点（「先约电台已结束」只是失败原因），按优先级
+    # 聚合为一条「❌ 失败: 先约电台」，不再另起一个「先约电台已结束」节点
+    (r"先约电台已结束", r'"❌ 失败: 先约电台"'),  # 须在成功前
     (r"NightmareNestTask Failed", r'"❌ 失败: 梦魇巢穴"'),
     (r"GardenTask Failed", r'"❌ 失败: 每周乐园"'),
     (r"Merge声骸Task Failed|MergeEchoTask Failed", r'"❌ 失败: 合并声骸"'),
