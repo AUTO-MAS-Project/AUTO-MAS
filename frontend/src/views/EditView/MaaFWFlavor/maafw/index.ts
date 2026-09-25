@@ -32,7 +32,9 @@ export const MAAFW_FLAVOR: MaaFWFlavor = {
   queueHintKey: null,
   gameUpdateHintKey: null,
   managedTaskEntries: [],
+  managedAccountTask: null,
   managedTaskWarningKey: null,
+  managedTaskNoticeKey: null,
   slots: {},
   prepareUserPage: null,
 }

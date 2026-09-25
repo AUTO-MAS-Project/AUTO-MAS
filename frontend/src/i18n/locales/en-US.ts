@@ -1672,7 +1672,9 @@ export default {
     m9aFlavorQueueHint:
       'Start game, switch account and close game are added by MAS from "Account" above (start first, switch right after, close last); they are not offered in "Add task" or presets',
     m9aFlavorManagedTaskWarning:
-      'The queue still contains {count} × "{tasks}". In M9A one user is one account: split them into separate users, fill one account into "Account" above for each, then delete these tasks from the queue. This user will not run until then',
+      'This queue has {count} "Switch account" tasks (accounts {accounts}). In M9A one user is one account: split into {count} users (fill one account into "Account" above for each), then delete these tasks from the queue. This user will not run until then',
+    m9aFlavorManagedTaskNotice:
+      '"{tasks}" are added by MAS from the info above and do not need to stay in the queue; runs use the fixed order anyway. They are removed the next time the queue is saved or AUTO-MAS restarts (a switch-account target goes into "Account" above)',
     m9aFlavorGameUpdateHint:
       'After the emulator starts, compare the game client with the latest version on the official site. Official server only (Bilibili and other resources are not checked). When outdated: "Check only" fails this run and asks you to update manually; "Download and install automatically" downloads the official package (about 2 GB) and installs it over the old client, keeping game data',
     mssFlavorScriptTitle: 'Edit MSS script',

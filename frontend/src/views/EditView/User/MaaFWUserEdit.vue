@@ -70,13 +70,14 @@
             show-icon
             :message="line"
           />
-          <!-- 队列里还残留受管任务（M9A 只可能是多个切换账号等用户拆分）：照常显示，这里提示怎么办 -->
+          <!-- 队列里还残留受管任务：照常显示。真要拆用户时是警告，其余（如刚导入成 M9A 带进来的
+               启动 / 关闭）是轻提示，下次保存或重启会移出队列 -->
           <a-alert
-            v-if="managedQueueWarning"
+            v-if="managedQueueAlert"
             class="flavor-queue-hint"
-            type="warning"
+            :type="managedQueueAlert.type"
             show-icon
-            :message="managedQueueWarning"
+            :message="managedQueueAlert.message"
           />
           <!-- 特调独有区块（如 MSS 的计划表与活动优先），由特调注册表按需加载 -->
           <MaaFWFlavorSlot
@@ -209,7 +210,7 @@ import TaskQueueSection from './MaaFWUserEdit/TaskQueueSection.vue'
 import { buildPresetAppliedSnapshot, selectPresetQueueEntries } from './maafwPresetQueue'
 import {
   isManagedMaaFWTask,
-  managedMaaFWQueueSummary,
+  managedMaaFWQueueState,
   withoutManagedMaaFWTasks,
 } from './maafwManagedTasks'
 import type {
@@ -507,15 +508,23 @@ const isManagedTaskId = (taskId: string) =>
 const availableTasks = computed(() =>
   withoutManagedMaaFWTasks(activeTasks.value, managedTaskEntries.value)
 )
-const managedQueueWarning = computed(() => {
-  const key = flavor.value.managedTaskWarningKey
-  if (!key) return ''
-  const summary = managedMaaFWQueueSummary(
-    orderedTasks.value.map(item => item.task),
-    managedTaskEntries.value,
-    task => getDisplayName(task)
-  )
-  return summary ? t(key, summary) : ''
+// 队列里残留的受管任务：只有真要拆用户（后端会拒绝运行）才给警告，其余是运行照常的轻提示
+const managedQueueAlert = computed<{ type: 'warning' | 'info'; message: string } | null>(() => {
+  const state = managedMaaFWQueueState(orderedTasks.value, {
+    managedEntries: managedTaskEntries.value,
+    accountTask: flavor.value.managedAccountTask,
+    resourceName: effectiveResourceName.value,
+    taskOptions: taskSnapshot.value.taskOptions,
+    options: previewData.value?.options || [],
+    displayName: task => getDisplayName(task),
+  })
+  if (state?.kind === 'split' && flavor.value.managedTaskWarningKey) {
+    return { type: 'warning', message: t(flavor.value.managedTaskWarningKey, state) }
+  }
+  if (state?.kind === 'notice' && flavor.value.managedTaskNoticeKey) {
+    return { type: 'info', message: t(flavor.value.managedTaskNoticeKey, state) }
+  }
+  return null
 })
 const groupByName = computed(() => {
   const entries = (previewData.value?.groups || []).map(group => [group.name, group] as const)

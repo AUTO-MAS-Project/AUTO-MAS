@@ -107,8 +107,15 @@ export interface MaaFWFlavor {
    * 在队列上方给一条警告。没有写 []
    */
   managedTaskEntries: readonly string[]
-  /** 队列里还有受管任务时的警告（插值 count：个数，tasks：任务名）；为空则不显示 */
+  /**
+   * 受管的切号任务：资源在 resources 里、队列里它的有效实例（目标账号非空）≥ 2 时，后端拒绝
+   * 运行该用户、要求拆成多个用户（与后端特调同一判据）。没有写 null
+   */
+  managedAccountTask: { entry: string; resources: readonly string[] } | null
+  /** 需要拆用户时的警告（插值 count：个数，accounts：各目标账号）；为空则不显示 */
   managedTaskWarningKey: string | null
+  /** 其余受管任务残留在队列里时的提示（插值 tasks：任务名；运行照常）；为空则不显示 */
+  managedTaskNoticeKey: string | null
 
   // ---- 独有区块与钩子 ----
   /** 插入点 → 组件（按数组顺序渲染）；没有独有区块写 {} */

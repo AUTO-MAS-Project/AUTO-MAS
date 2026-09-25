@@ -32,7 +32,10 @@ export const M9A_FLAVOR: MaaFWFlavor = {
   gameUpdateHintKey: 'edit.m9aFlavorGameUpdateHint',
   // 与后端 app/task/M9A/managed.py 的 MANAGED_ENTRIES 同一组
   managedTaskEntries: ['StartUp', 'SwitchAccount', 'Close1999'],
+  // 与 managed.py 同一判据：官服、有效切号 ≥ 2 才要拆用户
+  managedAccountTask: { entry: 'SwitchAccount', resources: ['官服'] },
   managedTaskWarningKey: 'edit.m9aFlavorManagedTaskWarning',
+  managedTaskNoticeKey: 'edit.m9aFlavorManagedTaskNotice',
   slots: {},
   prepareUserPage: null,
 }
