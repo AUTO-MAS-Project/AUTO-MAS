@@ -1008,6 +1008,11 @@ def host_architecture() -> str:
     return "x86"
 
 
+# 架构不符报错（describe_runtime_architecture_mismatch 的各种文案）里一定有其一；宿主侧
+# 靠它认出「重试也没用」，别只改文案不改这里。
+ARCHITECTURE_MISMATCH_MARKERS = ("架构，本机是 ", "架构的 MaaFramework，本机是 ")
+
+
 def describe_runtime_architecture_mismatch(
     runtime_path: Path | None,
     *,
