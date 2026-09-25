@@ -55,6 +55,10 @@ const IMPORT_LIST_PATTERN = /["']?import["']?\s*:\s*\[([^\]]*)\]/g
 const STRING_LITERAL_PATTERN = /"((?:[^"\\]|\\.)*)"|'((?:[^'\\]|\\.)*)'/g
 const MAX_INTERFACE_FILES = 64
 const SEALED_SECRET_PREFIX = 'mas-dpapi:'
+// 与 app/task/MaaFW/tools/embedded/option_secrets.py 的 LOG_REDACTION_MARKER 同步：有 password
+// 输入框的项目每次运行的 .worker.log 第一行以它开头，说明这次的 .worker.log / .maafw.log 写的时候
+// 就打过码
+const LOG_REDACTION_MARKER = '[MAS 日志打码]'
 const SEALED_SECRET_PATTERN = /mas-dpapi:[^"'\\\s]*/g
 
 // 通用脱敏之外，脚本配置里还要去掉的：通知渠道整段不收；账号、备注、游戏启动参数、
@@ -309,6 +313,14 @@ function workerLogViewDirName(run: HistoryRun): string | null {
     run.viewDirName = VIEW_PATH_PATTERN.exec(head)?.[1]?.toLowerCase() ?? null
   }
   return run.viewDirName
+}
+
+function workerLogRedactedAtWrite(run: HistoryRun): boolean {
+  if (!run.workerLog) {
+    return false
+  }
+  const [firstLine] = readHead(run.workerLog, WORKER_LOG_HEAD_BYTES).split('\n', 1)
+  return firstLine.includes(LOG_REDACTION_MARKER)
 }
 
 function readRunResult(run: HistoryRun): string | undefined {
@@ -627,8 +639,8 @@ async function createIssueReport(
       script,
       sourceKeysByDataRoot.get(script.dataRoot) ?? []
     )
-    // 项目有 password 输入框（或配置里已经有加密的密码值）时，.worker.log、.maafw.log 与项目
-    // debug 目录都可能带密码原文，一律不收，脚本配置里 input 选项的值也打码
+    // 项目有 password 输入框（或配置里已经有加密的密码值）时，日志里可能有密码原文，
+    // 脚本配置里 input 选项的值也打码
     const protectSecrets =
       JSON.stringify(script.config).includes(SEALED_SECRET_PREFIX) ||
       projectDeclaresPasswordInput(viewDir)
@@ -658,8 +670,19 @@ async function createIssueReport(
       }
     }
 
-    for (const { run } of selectedRuns) {
-      for (const filePath of [run.json, run.log, protectSecrets ? undefined : run.workerLog]) {
+    // 有 password 输入框的项目，.worker.log / .maafw.log 只收写的时候就打过码的那些
+    // （.worker.log 第一行是打码说明）；更早版本写的副本可能是原文
+    const frameworkLogsShareable = new Map(
+      selectedRuns.map(selected => [
+        selected,
+        !protectSecrets || workerLogRedactedAtWrite(selected.run),
+      ])
+    )
+
+    for (const selected of selectedRuns) {
+      const { run } = selected
+      const workerLog = frameworkLogsShareable.get(selected) ? run.workerLog : undefined
+      for (const filePath of [run.json, run.log, workerLog]) {
         if (filePath) {
           addDiagnosticFile(state, filePath, historyArchivePath(scriptRoot, run, filePath))
         }
@@ -668,14 +691,19 @@ async function createIssueReport(
 
     const focusRun = selectedRuns.find(selected => !selected.success) ?? selectedRuns[0]
     if (focusRun) {
-      await addRunHeavyFiles(state, scriptRoot, focusRun, !protectSecrets)
+      await addRunHeavyFiles(state, scriptRoot, focusRun, !!frameworkLogsShareable.get(focusRun))
     }
     deferred.push(
       ...selectedRuns
         .filter(selected => selected !== focusRun)
-        .map(selected => ({ scriptRoot, selected, includeNativeLog: !protectSecrets }))
+        .map(selected => ({
+          scriptRoot,
+          selected,
+          includeNativeLog: !!frameworkLogsShareable.get(selected),
+        }))
     )
 
+    // 项目 debug 目录是框架和 agent 自己写的，MAS 打不了码
     if (!protectSecrets) {
       projectDebugDirs.push({ viewDir, archiveRoot: `${scriptRoot}/project/debug` })
     }
@@ -687,14 +715,17 @@ async function createIssueReport(
       projectLabel: script.projectLabel,
       archiveRoot: scriptRoot,
       projectVersion: readViewVersion(viewDir),
-      frameworkLogs: protectSecrets
-        ? '未收集：项目带密码输入框，.worker.log、.maafw.log 与项目 debug 目录里可能有密码原文'
-        : '已收集（项目 debug 顶层的 maafw*.log 见 history 里各次的 .maafw.log）',
-      runs: selectedRuns.map(({ run, result, success, matchedBy }) => ({
-        history: `${run.date}/${run.user}/${run.stamp}`,
-        result: result ?? null,
-        success,
-        matchedBy,
+      projectDebug: protectSecrets
+        ? '未收集：项目带密码输入框，框架与 agent 自己写的日志里可能有密码原文'
+        : '已收集（顶层 maafw*.log 即 history 里各次的 .maafw.log，不重复收）',
+      runs: selectedRuns.map(selected => ({
+        history: `${selected.run.date}/${selected.run.user}/${selected.run.stamp}`,
+        result: selected.result ?? null,
+        success: selected.success,
+        matchedBy: selected.matchedBy,
+        frameworkLogs: frameworkLogsShareable.get(selected)
+          ? '已收集'
+          : '未收集：更早版本写的副本，可能有密码原文',
       })),
     })
   }

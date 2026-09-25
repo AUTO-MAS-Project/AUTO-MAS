@@ -79,6 +79,7 @@ from .game_resolution import UnityGameResolutionOverride, parse_resolution_optio
 from .option_secrets import (
     REDACTED_SECRET_TEXT,
     collect_plan_password_values,
+    log_redaction_notice,
     open_task_snapshot,
     redact_secret_text,
     secret_log_variants,
@@ -1567,6 +1568,11 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 return
             framework_log_writer.write(source, message)
 
+        # 项目有 password 输入框时第一行写打码说明：问题包导出凭它判断这份日志能不能往外发
+        redaction_notice = self._log_redaction_notice()
+        if redaction_notice:
+            write_framework_log("runner", redaction_notice)
+
         async def read_stdout() -> None:
             nonlocal result_payload
             if process.stdout is None:
@@ -1713,6 +1719,16 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             return []
         return secret_log_variants(
             collect_plan_password_values(self.run_plan, self.interface_model)
+        )
+
+    def _log_redaction_notice(self) -> str | None:
+        """项目有 password 输入框时写进 ``.worker.log`` 开头的打码说明（见 option_secrets）。"""
+
+        if self.run_plan is None or self.interface_model is None:
+            return None
+        return log_redaction_notice(
+            self.interface_model,
+            collect_plan_password_values(self.run_plan, self.interface_model),
         )
 
     async def _wait_worker_exit(
