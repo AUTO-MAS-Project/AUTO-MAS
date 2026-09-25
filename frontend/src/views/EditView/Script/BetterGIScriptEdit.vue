@@ -150,6 +150,12 @@
               </a-form-item>
             </a-col>
           </a-row>
+
+          <GameUpdateFields
+            :model="bettergiConfig.Game"
+            with-exe
+            @field-change="(key, value) => handleChange('Game', key, value)"
+          />
         </div>
 
         <div class="form-section">
@@ -227,6 +233,7 @@
 <script setup lang="ts">
 import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
 import DocLink from '@/components/DocLink.vue'
+import GameUpdateFields from './components/GameUpdateFields.vue'
 import { MAS_DOC_URLS } from '@/utils/openExternal'
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -270,6 +277,9 @@ interface BetterGIRunForm {
 interface BetterGIGameForm {
   Controller: string
   CloseOnFinish: boolean
+  IfAutoUpdate: boolean
+  UpdateExe: string
+  UpdateTimeLimit: number
 }
 
 interface BetterGIScriptConfigForm {
@@ -291,7 +301,13 @@ const formData = reactive({
 const bettergiConfig = reactive<BetterGIScriptConfigForm>({
   Info: { Name: '', RootPath: '.' },
   Run: { ProxyTimesLimit: 0, RunTimesLimit: 3, RunTimeLimit: 10, UseAdmin: true },
-  Game: { Controller: '电脑端-前台', CloseOnFinish: true },
+  Game: {
+    Controller: '电脑端-前台',
+    CloseOnFinish: true,
+    IfAutoUpdate: false,
+    UpdateExe: '',
+    UpdateTimeLimit: 180,
+  },
 })
 
 const rules = computed(() => ({

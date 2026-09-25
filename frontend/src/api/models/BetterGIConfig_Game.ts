@@ -14,5 +14,17 @@ export type BetterGIConfig_Game = {
      * 任务结束后是否关闭游戏
      */
     CloseOnFinish?: (boolean | null);
+    /**
+     * 是否在启动 BetterGI 前由 MAS 检查并接管原神客户端更新
+     */
+    IfAutoUpdate?: (boolean | null);
+    /**
+     * 原神游戏程序（exe）
+     */
+    UpdateExe?: (string | null);
+    /**
+     * 更新时限（分钟）
+     */
+    UpdateTimeLimit?: (number | null);
 };
 
