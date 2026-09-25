@@ -30,6 +30,7 @@ import { type SchedulerTab, type SchedulerStatus, TASK_MODE_OPTIONS } from './sc
 import { applyTaskLogUpdate, trimLogBuffer } from './schedulerLogBuffer'
 import { findReusableSchedulerTab } from './schedulerTabReuse'
 import { toRunnableUserOptions } from './schedulerUserOptions'
+import { resolveTaskCompletionFeedback } from '@/utils/taskFailures'
 
 // 运行态里的脚本执行模式 → 词表标签；词表里没有的模式（如 Update）保留原值
 const runtimeModeLabel = (mode: string | null): string | null => {
@@ -1066,8 +1067,11 @@ export function useSchedulerLogic() {
     tab.logMode = 'browse'
     logger.info('已切换日志模式为自由浏览')
 
+    // outcome 只反映任务级错误：用户 / 脚本跑失败时后端仍报 success，这里再看 task_info
+    const feedback = resolveTaskCompletionFeedback(data)
+
     // 使用Vue的响应式更新方式
-    tab.status = data.outcome === 'error' ? '异常' : '结束'
+    tab.status = feedback.kind === 'error' || feedback.kind === 'partialFailure' ? '异常' : '结束'
     tab.cycleNextList = []
     logger.info(`已更新tab.status，当前tab状态: ${JSON.stringify(tab.status)}`)
 
@@ -1088,11 +1092,19 @@ export function useSchedulerLogic() {
     }
 
     const { playSound } = useAudioPlayer()
-    if (data.outcome === 'error') {
+    if (feedback.kind === 'error') {
       await playSound('error_occurred')
       message.error(data.error || t('scheduler.toast.taskRunFailed'))
-    } else if (data.outcome === 'cancelled') {
+    } else if (feedback.kind === 'cancelled') {
       message.warning(t('scheduler.toast.taskCancelled'))
+    } else if (feedback.kind === 'partialFailure') {
+      await playSound('error_occurred')
+      const { users, scripts } = feedback.failures
+      message.warning(
+        users > 0
+          ? t('scheduler.toast.taskDoneWithFailedUsers', { count: users })
+          : t('scheduler.toast.taskDoneWithFailedScripts', { count: scripts })
+      )
     } else {
       await playSound('task_completed')
       message.success(t('scheduler.toast.taskDone'))
