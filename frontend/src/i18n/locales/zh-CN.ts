@@ -3495,6 +3495,8 @@ export default {
       taskRunFailed: '任务执行失败',
       taskCancelled: '任务已取消',
       taskDone: '任务完成',
+      taskDoneWithFailedUsers: '任务结束，{count} 个用户未完成',
+      taskDoneWithFailedScripts: '任务结束，{count} 个脚本运行异常',
       powerActionFailed: '设置电源操作失败',
       fetchTaskListFailed: '获取任务列表失败',
     },

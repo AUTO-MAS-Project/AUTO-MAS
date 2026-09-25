@@ -14,6 +14,7 @@ import {
   type WSTaskScriptIdentityData,
   type WSTaskScriptInfoData,
 } from '@/services/websocket/types'
+import { FAILED_TASK_STATUSES, scriptHasStatus } from '@/utils/taskFailures'
 
 const logger = window.electronAPI.getLogger('任务运行状态')
 
@@ -27,7 +28,6 @@ const SNAPSHOT_MUTATION_RETRY_LIMIT = 5
 const SNAPSHOT_FAILURE_RETRY_DELAY_MS = 3000
 const WAITING_STATUSES = new Set(['等待', '等待中'])
 const RUNNING_STATUSES = new Set(['运行', '运行中'])
-const FAILED_STATUSES = new Set(['异常'])
 
 export interface TaskRuntimeState {
   taskId: string
@@ -312,13 +312,6 @@ export function refreshTaskRuntimeSnapshot(): Promise<void> {
   return loadTaskRuntimeSnapshot(0, false)
 }
 
-const statusMatches = (status: string | undefined, values: ReadonlySet<string>) =>
-  Boolean(status && values.has(status))
-
-const scriptHasStatus = (script: WSTaskScriptInfoData, values: ReadonlySet<string>) =>
-  statusMatches(script.status, values) ||
-  (script.userList ?? []).some(user => statusMatches(user.status, values))
-
 const getOrCreateScriptStatus = (
   statuses: Map<string, ScriptRuntimeStatus>,
   scriptType: string
@@ -335,7 +328,9 @@ const updateLastTerminalFailures = (task: TaskRuntimeState): void => {
   if (task.mode === 'ScriptConfig') return
 
   const failedScriptIds = new Set(
-    task.taskInfo.filter(info => scriptHasStatus(info, FAILED_STATUSES)).map(info => info.script_id)
+    task.taskInfo
+      .filter(info => scriptHasStatus(info, FAILED_TASK_STATUSES))
+      .map(info => info.script_id)
   )
   const failAllTypes = task.outcome === 'error' && failedScriptIds.size === 0
   const failureByType = new Map<string, boolean>()
