@@ -12,7 +12,7 @@
     <!-- 副本类型 + 该类型下保存的副本：每类副本各存一项，切换类型时回到该类型之前的选择 -->
     <a-row :gutter="16">
       <a-col :span="8">
-        <a-form-item :extra="buildTargetHint">
+        <a-form-item>
           <template #label>
             <a-tooltip :title="t('edit.hsrStageTypeTip')">
               <span class="form-label">
@@ -53,6 +53,10 @@
         </a-form-item>
       </a-col>
     </a-row>
+    <!-- 培养目标会接管或兜底所选副本：整行显示，不挤在副本类型那一栏下面 -->
+    <a-typography-text v-if="buildTargetHint" type="secondary" class="build-target-hint">
+      {{ buildTargetHint }}
+    </a-typography-text>
 
     <a-row :gutter="16">
       <a-col :span="16">
@@ -337,6 +341,12 @@ const filterOption = (input: unknown, option?: { label?: unknown; children?: unk
 
 .stage-alert {
   margin-bottom: 12px;
+}
+
+.build-target-hint {
+  display: block;
+  margin: -12px 0 16px;
+  font-size: 13px;
 }
 
 .form-label {

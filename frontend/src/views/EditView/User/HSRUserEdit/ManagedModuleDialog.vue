@@ -2,9 +2,8 @@
   <a-modal
     :open="open"
     width="720px"
-    :footer="null"
     class="hsr-module-dialog"
-    :body-style="{ maxHeight: '70vh', overflowY: 'auto' }"
+    :body-style="{ maxHeight: '70vh', overflowY: 'auto', overflowX: 'hidden' }"
     @cancel="close"
   >
     <template #title>
@@ -89,6 +88,7 @@
               </li>
             </ul>
             <a-popconfirm
+              :overlay-style="{ maxWidth: '360px' }"
               :title="t('edit.clearInvalidManagedOverridesConfirm', { n: droppedOverrides.length })"
               :ok-text="t('edit.ok')"
               :cancel-text="t('edit.cancel')"
@@ -145,9 +145,13 @@
         </template>
       </template>
       <a-empty v-else :description="t('edit.engineReturnedNoDynamic')" />
+    </a-form>
 
-      <div class="dialog-footer">
+    <!-- 底栏放在弹窗 footer 里：正文滚动时「完成」与模块恢复始终可见 -->
+    <template #footer>
+      <div v-if="task" class="dialog-footer">
         <a-popconfirm
+          :overlay-style="{ maxWidth: '360px' }"
           :title="t('edit.hsrModuleResetConfirmTitle', { engine: engineName })"
           :description="
             shared ? t('edit.hsrModuleResetConfirmShared') : t('edit.hsrModuleResetConfirmUser')
@@ -163,7 +167,7 @@
         </a-popconfirm>
         <a-button type="primary" @click="close">{{ t('edit.hsrDialogDone') }}</a-button>
       </div>
-    </a-form>
+    </template>
   </a-modal>
 </template>
 
@@ -364,9 +368,6 @@ const close = () => {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  margin-top: 20px;
-  padding-top: 12px;
-  border-top: 1px solid var(--ant-color-border-secondary);
 }
 
 .module-reset {
