@@ -3456,6 +3456,7 @@ export default {
     },
     toast: {
       tabAutoCreated: '已自动创建调度台: {title}',
+      tabReused: '已在调度台 {title} 开始运行',
       mainTabUndeletable: '主调度台无法删除',
       tabDeleted: '调度台 "{title}" 已删除',
       noIdleTabs: '没有可删除的调度台',

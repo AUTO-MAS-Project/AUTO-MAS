@@ -3594,6 +3594,7 @@ export default {
     },
     toast: {
       tabAutoCreated: 'Console {title} created automatically',
+      tabReused: 'Started in console {title}',
       mainTabUndeletable: 'The main console cannot be closed',
       tabDeleted: 'Console "{title}" closed',
       noIdleTabs: 'No idle consoles to close',
