@@ -1683,7 +1683,8 @@ export default {
       '· With "Event quick battle" in the task queue it is moved to the front and runs first while an event is live, and skipped when none is running\n' +
       '· With an empty queue and no plan selected there is nothing to run: tick at least "Bounty Trial quick battle", or pick a plan (which adds it automatically)\n' +
       '· The new tower climb is moved to the end; to climb only once a week, add it to "Skip once done this week" in the script\'s Run configuration',
-    mssFlavorQueueEmpty: 'The task queue is empty and the plan is still Fixed: this run has nothing to execute — add at least one task or pick a plan',
+    mssFlavorQueueEmpty:
+      'The task queue is empty and the plan is still Fixed: this run has nothing to execute — add at least one task or pick a plan',
     mssFlavorActivityFirst: 'Activity first',
     mssFlavorActivityFirstHint:
       'When on, the event task is added and moved to the front while an event is live even if the queue does not have it; nothing is added when the event data cannot be fetched',
