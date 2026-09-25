@@ -3013,6 +3013,7 @@ export default {
       modeLabel: 'モード：',
       resumePlaceholder: '指定したスクリプトから再開（既定は先頭）',
       userPlaceholder: '指定ユーザーのみ実行（既定は全員）',
+      resumeUserPlaceholder: '指定したユーザーから開始（既定は先頭）',
       stop: '停止',
       start: '実行',
     },

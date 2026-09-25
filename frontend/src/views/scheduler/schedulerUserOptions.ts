@@ -18,3 +18,18 @@ export const toRunnableUserOptions = (
   })
   return options
 }
+
+export type UserScopeField = 'selectedUserId' | 'resumeFromUserId'
+
+/**
+ * 「单独运行指定用户」与「从指定用户开始」只能二选一，后端同时收到会拒绝。
+ * 选中其中一个时清掉另一个；清空时只清自己，不动另一个。返回需要写回的字段。
+ */
+export const exclusiveUserScope = (
+  field: UserScopeField,
+  value: string | null
+): Partial<Record<UserScopeField, string | null>> => {
+  if (!value) return { [field]: null }
+  const other: UserScopeField = field === 'selectedUserId' ? 'resumeFromUserId' : 'selectedUserId'
+  return { [field]: value, [other]: null }
+}

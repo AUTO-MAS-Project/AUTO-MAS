@@ -138,6 +138,10 @@ class TaskItem(ABC):
     script_list: List[ScriptItem] = field(default_factory=list)  # 脚本信息列表
     current_index: int = -1  # 当前执行的脚本索引，-1 表示未开始
     resume_from_script_id: str | None = None  # 可选：从指定脚本ID开始执行（仅队列任务）
+    # 可选：从指定用户开始执行（仅脚本的自动代理任务）；resume_user_ids 是创建任务时
+    # 按脚本用户顺序解析好的起始用户及其后的用户ID，None 表示不限
+    resume_from_user_id: str | None = None
+    resume_user_ids: frozenset[str] | None = field(default=None, repr=False)
     is_cycle: bool = False  # 是否为循环运行任务（按队列项各自的周期持续运行）
     view_only: bool = False  # 配置查看会话：只读打开原生界面，不注入基线也不回读字段
     instance_idx: int | None = None  # 配置会话（直控）：会话窗口临时切换到的原生实例
@@ -242,11 +246,15 @@ class TaskItem(ABC):
             user_id (str): 待判定的用户ID。
 
         Returns:
-            bool: 未指定单独运行的用户时恒为 True。
+            bool: 既未指定单独运行的用户、也未指定起始用户时恒为 True。
         """
 
+        if self.mode != "AutoProxy":
+            return True
         target = self.target_user_id
-        return target is None or user_id == target
+        if target is not None:
+            return user_id == target
+        return self.resume_user_ids is None or user_id in self.resume_user_ids
 
     @property
     def asdict(self) -> list:

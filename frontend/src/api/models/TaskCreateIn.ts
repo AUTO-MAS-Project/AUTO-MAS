@@ -20,6 +20,10 @@ export type TaskCreateIn = {
      */
     userId?: (string | null);
     /**
+     * 可选：仅对脚本的自动代理任务生效；从该用户开始按用户顺序运行其后的用户（之前的用户不参与），与 userId 互斥
+     */
+    resumeFromUserId?: (string | null);
+    /**
      * 可选：仅 ScriptConfig 生效；只读查看会话（不注入基线、不回读字段），用于预览历史备份
      */
     viewOnly?: boolean;

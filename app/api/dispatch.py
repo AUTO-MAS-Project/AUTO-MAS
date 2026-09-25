@@ -73,6 +73,7 @@ async def add_task(task: TaskCreateIn = Body(...)) -> TaskCreateOut:
             id=task.taskId,
             resume_from_script_id=task.resumeFromScriptId,
             user_id=task.userId,
+            resume_from_user_id=task.resumeFromUserId,
             view_only=task.viewOnly,
             instance_idx=task.instanceIdx,
         )

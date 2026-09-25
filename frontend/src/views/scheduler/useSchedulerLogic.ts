@@ -29,6 +29,7 @@ import type { ComboBoxItem } from '@/api/models/ComboBoxItem'
 import { type SchedulerTab, type SchedulerStatus, TASK_MODE_OPTIONS } from './schedulerConstants'
 import { applyTaskLogUpdate, trimLogBuffer } from './schedulerLogBuffer'
 import { toRunnableUserOptions } from './schedulerUserOptions'
+import { buildStartTaskRequest } from './schedulerStartRequest'
 
 // 运行态里的脚本执行模式 → 词表标签；词表里没有的模式（如 Update）保留原值
 const runtimeModeLabel = (mode: string | null): string | null => {
@@ -97,6 +98,7 @@ const toPersistedTab = (tab: SchedulerTab): SchedulerTab => ({
   resumeScriptOptions: tab.resumeScriptOptions ? [...tab.resumeScriptOptions] : [],
   resumeScriptLoading: false,
   selectedUserId: tab.selectedUserId ?? null,
+  resumeFromUserId: tab.resumeFromUserId ?? null,
   userOptions: tab.userOptions ? [...tab.userOptions] : [],
   userOptionsLoading: false,
   taskId: tab.taskId,
@@ -153,6 +155,7 @@ const loadTabsFromStorage = (): SchedulerTab[] => {
       resumeScriptOptions: [],
       resumeScriptLoading: false,
       selectedUserId: null,
+      resumeFromUserId: null,
       userOptions: [],
       userOptionsLoading: false,
       taskId: null,
@@ -335,6 +338,7 @@ export function useSchedulerLogic() {
       resumeScriptOptions: [],
       resumeScriptLoading: false,
       selectedUserId: null,
+      resumeFromUserId: null,
       userOptions: [],
       userOptionsLoading: false,
       taskId: options?.taskId || null,
@@ -562,6 +566,7 @@ export function useSchedulerLogic() {
     if (!tab.selectedTaskId || !isScriptTask(tab)) {
       tab.userOptions = []
       tab.selectedUserId = null
+      tab.resumeFromUserId = null
       tab.userOptionsLoading = false
       return
     }
@@ -580,6 +585,7 @@ export function useSchedulerLogic() {
       if (response.code !== 200) {
         tab.userOptions = []
         tab.selectedUserId = null
+        tab.resumeFromUserId = null
         return
       }
 
@@ -588,12 +594,16 @@ export function useSchedulerLogic() {
       if (tab.selectedUserId && !options.some(item => item.value === tab.selectedUserId)) {
         tab.selectedUserId = null
       }
+      if (tab.resumeFromUserId && !options.some(item => item.value === tab.resumeFromUserId)) {
+        tab.resumeFromUserId = null
+      }
     } catch (error) {
       if (isStale()) return
       const errorMsg = error instanceof Error ? error.message : String(error)
       logger.error(`加载脚本用户列表失败: ${errorMsg}`)
       tab.userOptions = []
       tab.selectedUserId = null
+      tab.resumeFromUserId = null
       message.error(t('scheduler.toast.loadScriptUsersFailed'))
     } finally {
       if (!isStale()) {
@@ -606,6 +616,7 @@ export function useSchedulerLogic() {
     tab.selectedTaskId = taskId
     tab.resumeFromScriptId = null
     tab.selectedUserId = null
+    tab.resumeFromUserId = null
     await Promise.all([loadResumeScriptOptions(tab), loadUserOptions(tab), loadCycleQueueFlag(tab)])
   }
 
@@ -641,17 +652,7 @@ export function useSchedulerLogic() {
     }
 
     try {
-      const requestBody: TaskCreateIn & { resumeFromScriptId?: string } = {
-        taskId: tab.selectedTaskId,
-        mode: tab.selectedMode,
-      }
-      if (tab.resumeFromScriptId) {
-        requestBody.resumeFromScriptId = tab.resumeFromScriptId
-      }
-      // 指定单个用户只对自动代理有意义，其他模式后端一律拒绝；切走模式后不再带上
-      if (tab.selectedUserId && tab.selectedMode === TaskCreateIn.mode.AUTO_PROXY) {
-        requestBody.userId = tab.selectedUserId
-      }
+      const requestBody = buildStartTaskRequest(tab.selectedTaskId, tab.selectedMode, tab)
 
       const response = await Service.addTaskApiDispatchStartPost(requestBody)
 

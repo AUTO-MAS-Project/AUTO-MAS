@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { toRunnableUserOptions } from './schedulerUserOptions'
+import { exclusiveUserScope, toRunnableUserOptions } from './schedulerUserOptions'
 
 const user = (uid: string, info: Record<string, unknown>) => ({ uid, info })
 
@@ -53,5 +53,26 @@ describe('toRunnableUserOptions', () => {
     const payload = build([user('a', { Name: '甲', Status: true, RemainedDay: -1 })])
     payload.index.push({ uid: 'ghost' } as (typeof payload.index)[number])
     expect(toRunnableUserOptions(payload)).toEqual([{ value: 'a', label: '甲' }])
+  })
+})
+
+describe('exclusiveUserScope', () => {
+  it('选中单独运行的用户时清掉起始用户', () => {
+    expect(exclusiveUserScope('selectedUserId', 'a')).toEqual({
+      selectedUserId: 'a',
+      resumeFromUserId: null,
+    })
+  })
+
+  it('选中起始用户时清掉单独运行的用户', () => {
+    expect(exclusiveUserScope('resumeFromUserId', 'b')).toEqual({
+      resumeFromUserId: 'b',
+      selectedUserId: null,
+    })
+  })
+
+  it('清空时只清自己，不动另一个', () => {
+    expect(exclusiveUserScope('resumeFromUserId', null)).toEqual({ resumeFromUserId: null })
+    expect(exclusiveUserScope('selectedUserId', null)).toEqual({ selectedUserId: null })
   })
 })
