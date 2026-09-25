@@ -113,12 +113,7 @@ M7A_MANAGED_FIELDS: dict[str, tuple[ManagedFieldSpec, ...]] = {
         *_specs(
             "team",
             "instance_team_enable",
-            ManagedFieldSpec(
-                "instance_team_number",
-                "team",
-                visible_when=_M7A_TEAM_ON,
-                description="没有匹配「指定副本队伍」规则的副本使用这个队伍编号。",
-            ),
+            ManagedFieldSpec("instance_team_number", "team", visible_when=_M7A_TEAM_ON),
             ManagedFieldSpec(
                 "instance_teams",
                 "team",
@@ -142,9 +137,7 @@ M7A_MANAGED_FIELDS: dict[str, tuple[ManagedFieldSpec, ...]] = {
                 "support",
                 visible_when=_M7A_BORROW_ON,
                 label="支援好友列表",
-                description=(
-                    "按顺序查找的支援角色与对应好友名称；角色为 None 的行会被跳过。"
-                ),
+                description="从上到下依次查找。",
                 type="json",
             ),
             ManagedFieldSpec(

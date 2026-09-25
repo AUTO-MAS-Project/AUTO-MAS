@@ -196,10 +196,7 @@ _SRA_DESCRIPTIONS = {
         "SRA 原生的自定义副本清单。MAS 运行时会按本模块「刷取副本」里选择的副本"
         "重新生成，此处的值不生效。"
     ),
-    "replenish.enabled": "开拓力不足时自动补充；补充资源与次数见「补充方式」「补充次数」。",
-    "replenish.times": "自动补充开拓力的次数上限，0 表示不补充。",
-    "replenish.way": "补充开拓力时消耗的资源。",
-    "useAssistant": "战斗时借用支援角色。",
+    "replenish.times": "0 表示不补充。",
     "useBuildTarget": (
         "开启后由 SRA 按游戏内「培养目标」自动决定要刷的副本，"
         "本模块「刷取副本」里选择的副本将被忽略。"
@@ -208,15 +205,10 @@ _SRA_DESCRIPTIONS = {
         "检测到双倍活动时改刷下方指定的活动关卡；开启后即使未选择体力副本也会运行。"
     ),
     "redeemCodes": "多个兑换码用空格分隔。",
-    "pointRewards.enabled": "差分宇宙结束后领取积分奖励。",
-    "divergentUniverse.mode": "常规演算或周期演算。",
-    "divergentUniverse.runtimes": "本次运行差分宇宙的局数。",
-    "divergentUniverse.useTechnique": "进入战斗前释放秘技。",
     "currencyWars.mode": (
         "标准博弈、超频博弈会打完整局；「刷开局」只按下方四个重开条件反复重开，"
         "直到开局满足条件为止，不会打完整局。"
     ),
-    "currencyWars.difficulty": "以最低难度还是最高难度进入。",
     "currencyWars.policy": "由 SRA 维护，格式见 SRA 内的同名设置。",
     "currencyWars.reroll.bossAffixes": (
         _SRA_REROLL_ONLY + "多个词条用空格分隔；词条前加 ! 表示出现该词条就重开，"
@@ -472,13 +464,40 @@ def _load_m7a_comments(path: Path) -> dict[str, str]:
     return comments
 
 
-def _m7a_label(key: str, comment: str) -> str:
-    label = _M7A_LABEL_FALLBACKS.get(key)
-    if label:
-        return label
-    first = re.split(r"[。；]", comment, maxsplit=1)[0].strip()
-    first = re.sub(r"^是否", "", first)
-    return first or key
+# 注释里交代取值的句子与分句：开关、下拉、数字框自己就表达了这些，照搬只是噪音
+_M7A_VALUE_SENTENCE = re.compile(r"^(true|false)\b", re.IGNORECASE)
+_M7A_VALUE_CLAUSE = re.compile(r"^(可选|取值范围|可以是)")
+
+
+def _m7a_texts(key: str, comment: str) -> tuple[str, str]:
+    """把 config.example.yaml 的注释拆成（标题, 说明）。
+
+    注释惯例是「是否XX。true 开启，false 关闭。」「XX，可选值：…」「XX，取值范围
+    1-6，…」：标题取第一句里取值分句之前的部分并去掉「是否」；说明只留标题之外
+    的补充，取值说明一律丢掉。没有补充时说明为空，前端就不挂问号。
+    """
+
+    sentences = [
+        text.strip()
+        for text in re.split(r"[。；]", comment)
+        if text.strip()
+        and not _M7A_VALUE_SENTENCE.match(text.strip())
+        and not _M7A_VALUE_CLAUSE.match(text.strip())
+    ]
+    label, extra = "", []
+    if sentences:
+        clauses = [clause.strip() for clause in sentences[0].split("，")]
+        cut = next(
+            (i for i, clause in enumerate(clauses) if _M7A_VALUE_CLAUSE.match(clause)),
+            len(clauses),
+        )
+        label = "，".join(clauses[:cut]).replace("是否", "")
+        rest = "，".join(
+            clause for clause in clauses[cut:] if not _M7A_VALUE_CLAUSE.match(clause)
+        )
+        extra = [rest, *sentences[1:]] if rest else sentences[1:]
+    description = "。".join(extra) + "。" if extra else ""
+    return _M7A_LABEL_FALLBACKS.get(key) or label or key, description
 
 
 def list_m7a_managed_modules(
@@ -520,13 +539,14 @@ def list_m7a_managed_modules(
             if key not in payload:
                 continue
             value = payload[key]
+            label, description = _m7a_texts(key, comments.get(key, ""))
             fields.append(
                 _field(
                     spec,
                     value,
                     effective.get(key, value),
-                    label=_m7a_label(key, comments.get(key, "")),
-                    description=comments.get(key, ""),
+                    label=label,
+                    description=description,
                     options=_M7A_SELECTS.get(key, ()),
                     minimum=_M7A_RANGES.get(key, (None, None))[0],
                     maximum=_M7A_RANGES.get(key, (None, None))[1],
