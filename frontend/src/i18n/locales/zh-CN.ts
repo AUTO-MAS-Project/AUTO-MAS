@@ -1594,7 +1594,10 @@ export default {
     m9aFlavorAccountPlaceholder: '填写后自动加入「切换账号」任务（官服有效）',
     m9aFlavorAccountTooltip:
       '账号填写后会自动加入「切换账号」任务（官服有效）；密码仅用于本地记录，不会传入脚本',
-    m9aFlavorQueueHint: '启动游戏、关闭游戏与切换账号由 M9A 专项自动加入，无需手动添加',
+    m9aFlavorQueueHint:
+      '启动游戏、切换账号、关闭游戏由 MAS 按上方「账号」自动加入（启动在前、切号紧跟、关闭在最后），无需手动添加，「添加任务」与预设里也不提供',
+    m9aFlavorManagedTaskWarning:
+      '任务队列里还有 {count} 个「{tasks}」。M9A 一个用户对应一个账号：请拆成多个用户，每个用户在上方「账号」填一个，再把这些任务从队列里删掉；拆分前该用户不会运行',
     m9aFlavorGameUpdateHint:
       '启动模拟器后比对游戏客户端与官网最新版本，只对官服生效（B 服等其他资源不检查）。落后时：「仅检查」让本次运行失败并提示手动更新；「自动下载安装」下载约 2 GB 的官方安装包并覆盖安装，保留游戏数据',
     mssFlavorScriptTitle: '编辑 MSS 脚本',

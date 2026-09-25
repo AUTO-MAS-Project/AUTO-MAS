@@ -41,6 +41,10 @@ describe('MaaFW flavor 文案表', () => {
     expect(maafw.scriptTitleKey).toBeNull()
     expect(m9a.queueHintKey).toBe('edit.m9aFlavorQueueHint')
     expect(maafw.queueHintKey).toBeNull()
+    // 受管任务与后端 app/task/M9A/managed.py 的 MANAGED_ENTRIES 同一组；通用 MaaFW 没有
+    expect([...m9a.managedTaskEntries].sort()).toEqual(['Close1999', 'StartUp', 'SwitchAccount'])
+    expect(maafw.managedTaskEntries).toEqual([])
+    expect(maafw.managedTaskWarningKey).toBeNull()
     // 两张表的字段集完全一致：组件只按同一组字段取值，没有任何 flavor 独有的键
     expect(Object.keys(m9a).sort()).toEqual(Object.keys(maafw).sort())
     for (const value of Object.values(m9a)) expect(typeof value === 'boolean').toBe(false)

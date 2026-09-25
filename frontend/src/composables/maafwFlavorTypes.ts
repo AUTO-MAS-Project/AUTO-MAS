@@ -100,6 +100,16 @@ export interface MaaFWFlavor {
    */
   gameUpdateHintKey: string | null
 
+  // ---- 受管任务 ----
+  /**
+   * 由后端特调全权控制、不许用户自己加的任务（interface 里任务的 entry）：用户页「添加任务」
+   * 与预设模板里都不出现。已经在队列里的照常显示（能看能删），并按 managedTaskWarningKey
+   * 在队列上方给一条警告。没有写 []
+   */
+  managedTaskEntries: readonly string[]
+  /** 队列里还有受管任务时的警告（插值 count：个数，tasks：任务名）；为空则不显示 */
+  managedTaskWarningKey: string | null
+
   // ---- 独有区块与钩子 ----
   /** 插入点 → 组件（按数组顺序渲染）；没有独有区块写 {} */
   slots: Partial<Record<MaaFWFlavorSlotName, MaaFWFlavorSlotComponent[]>>
