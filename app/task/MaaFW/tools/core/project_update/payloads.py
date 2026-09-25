@@ -965,7 +965,8 @@ def _same_version_rank(
 
 
 def settle_same_version_latest(root: Path, key: str, channel: str) -> str | None:
-    """``latest[channel]`` 所在版本有多份载荷时，按 :func:`_same_version_rank` 确定地挑一份。
+    """``latest[channel]`` 所在版本有多份载荷时，确定地挑一份：本机能加载自带 MaaFramework
+    的优先，其次按 :func:`_same_version_rank`。
 
     迁移先把全部副本登记完再调它（登记是「同版本保留先来的」，先来的可能是残缺的那份），
     然后才统一切换。返回换成的 id；没变返回 None。损坏（``damaged``）或目录不在的不参选。
@@ -992,9 +993,26 @@ def settle_same_version_latest(root: Path, key: str, channel: str) -> str | None
             manifests[payload_id] = manifest
         if len(manifests) < 2:
             return None
+        from app.task.MaaFW.tools.core.runner.environment import (
+            project_runtime_loadable_on_host,
+        )
+
+        # 最先看自带的 MaaFramework 在本机能不能加载（与 _replaces_unloadable_latest 同一
+        # 判据）：更新得来的坏 arm64 载荷不能因为「有清单背书」压过导入的好载荷。
+        loadable = {
+            pid: int(
+                project_runtime_loadable_on_host(payload_dir(root, key, pid))
+                is not False
+            )
+            for pid in manifests
+        }
         chosen = sorted(
             manifests,
-            key=lambda pid: (_same_version_rank(pid, manifests), _reverse_text(pid)),
+            key=lambda pid: (
+                loadable[pid],
+                _same_version_rank(pid, manifests),
+                _reverse_text(pid),
+            ),
             reverse=True,
         )[0]
         if chosen == str(entry["id"]):

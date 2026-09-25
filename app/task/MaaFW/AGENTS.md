@@ -122,8 +122,8 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   副本逐个采纳（`embedded_project.adopt_view`：**载荷内容以视图自身为准**——按视图自己的 interface
   算投影白名单，白名单内、不是已知运行期状态 / 日志的全部进载荷，内容取视图现状；更新器清单与来源
   目录只用来标 `origin`，不决定去留，否则「来源旧、视图新」会登记出残缺载荷）。全部采纳完再统一定
-  同版本的 latest（`settle_adopted_latest`：有清单背书的、文件集合是超集的、文件多的优先，与脚本
-  顺序无关），然后把每个组统一到 latest（运行中 `is_locked` 的脚本跳过，留给它的收尾同步或下次
+  同版本的 latest（`settle_adopted_latest`：自带 MaaFramework 在本机能加载的优先，其次有清单背书
+  的、文件集合是超集的、文件多的优先，与脚本顺序无关），然后把每个组统一到 latest（运行中 `is_locked` 的脚本跳过，留给它的收尾同步或下次
   运行前检查；切过的标记记 `switchedBy=迁移`）；同版本合并时被切视图独有、或同路径内容不同的文件
   旧内容进 `local-modified` 留档。采纳失败的原样保留、下次再试。导入与采纳都把脚本记着的来源目录记进
   `lineage.json.knownSources`：视图丢了反查谱系重建、整谱系回收认「脚本还在」都看它（更新得来的载荷
