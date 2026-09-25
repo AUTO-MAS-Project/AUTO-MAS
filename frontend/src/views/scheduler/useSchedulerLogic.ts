@@ -28,6 +28,7 @@ import {
 import type { ComboBoxItem } from '@/api/models/ComboBoxItem'
 import { type SchedulerTab, type SchedulerStatus, TASK_MODE_OPTIONS } from './schedulerConstants'
 import { applyTaskLogUpdate, trimLogBuffer } from './schedulerLogBuffer'
+import { findReusableSchedulerTab } from './schedulerTabReuse'
 import { toRunnableUserOptions } from './schedulerUserOptions'
 import { resolveTaskCompletionFeedback } from '@/utils/taskFailures'
 
@@ -54,6 +55,9 @@ const pendingLogUpdates = new Map<string, number>()
 const pendingLogContents = new Map<string, string>()
 // 序号断裂后正在等快照重建 buffer 的标签页，期间到达的增量直接丢弃、不重复拉快照
 const pendingLogResyncs = new Set<string>()
+// 手动启动还在等 /dispatch/start 返回的标签页：同队列的定时任务此时复用它的话，
+// 返回后会被手动任务的 taskId 覆盖，定时任务就没有调度台可显示了
+const startingTabKeys = new Set<string>()
 // keep-alive 停用期间只更新 buffer，不往日志面板写；激活时一次性刷新
 let schedulerViewActive = true
 // MaaEnd 失败导出弹窗全局去重，避免同一批错误连环弹窗
@@ -272,13 +276,16 @@ export function useSchedulerLogic() {
       return existing
     }
 
-    // 使用现有的addSchedulerTab函数创建新调度台，并传入特定的配置选项
-    const newTab = addSchedulerTab({
-      title: t('scheduler.tabName', { n: tabCounter }),
-      status: '运行',
-      taskId,
-      selectedTaskId: queueId, // 传入队列ID作为选中的任务ID
-    })
+    // 同一队列 / 脚本上次用过的调度台空着就接着用，没有才新建
+    const reusedTab = reuseSchedulerTab(taskId, queueId)
+    const newTab =
+      reusedTab ??
+      addSchedulerTab({
+        title: t('scheduler.tabName', { n: tabCounter }),
+        status: '运行',
+        taskId,
+        selectedTaskId: queueId, // 传入队列ID作为选中的任务ID
+      })
 
     // 设置运行时文本快照，确保自动启动的任务也能正确显示
     if (taskName) newTab.runningTaskLabel = taskName
@@ -288,8 +295,13 @@ export function useSchedulerLogic() {
     // 立即订阅该任务的WebSocket消息
     subscribeToTask(newTab)
 
-    logger.info(`已创建新的自动调度台: ${newTab.title}, 任务ID=${taskId}`)
-    if (notifyUser) message.success(t('scheduler.toast.tabAutoCreated', { title: newTab.title }))
+    if (reusedTab) {
+      logger.info(`已复用自动调度台: ${newTab.title}, 任务ID=${taskId}`)
+      if (notifyUser) message.success(t('scheduler.toast.tabReused', { title: newTab.title }))
+    } else {
+      logger.info(`已创建新的自动调度台: ${newTab.title}, 任务ID=${taskId}`)
+      if (notifyUser) message.success(t('scheduler.toast.tabAutoCreated', { title: newTab.title }))
+    }
 
     saveTabsToStorage(schedulerTabs.value)
     return newTab
@@ -348,6 +360,26 @@ export function useSchedulerLogic() {
     return tab
   }
 
+  // 把新任务挂到可复用的调度台上（判据见 findReusableSchedulerTab），先清掉上一轮的日志与总览；
+  // 没有可复用的返回 undefined，由调用方新建
+  const reuseSchedulerTab = (taskId: string, selectedTaskId?: string) => {
+    const tab = findReusableSchedulerTab(schedulerTabs.value, selectedTaskId, startingTabKeys)
+    if (!tab) return undefined
+
+    unsubscribeTab(tab)
+    clearPendingLogUpdate(tab.key)
+    pendingLogResyncs.delete(tab.key)
+    tab.status = '运行'
+    tab.taskId = taskId
+    tab.logBuffer = ''
+    tab.logSeq = undefined
+    tab.lastLogContent = ''
+    tab.overviewData = undefined
+    tab.cycleNextList = []
+    activeSchedulerTab.value = tab.key
+    return tab
+  }
+
   const trackStartedTask = ({
     taskId,
     selectedTaskId,
@@ -370,12 +402,14 @@ export function useSchedulerLogic() {
       return existingTab
     }
 
-    const tab = addSchedulerTab({
-      title: taskLabel,
-      status: '运行',
-      taskId,
-      selectedTaskId,
-    })
+    const tab =
+      reuseSchedulerTab(taskId, selectedTaskId) ??
+      addSchedulerTab({
+        title: taskLabel,
+        status: '运行',
+        taskId,
+        selectedTaskId,
+      })
     tab.selectedMode = selectedMode
     tab.runningTaskLabel = taskLabel
     tab.runningModeLabel = modeLabel
@@ -641,6 +675,7 @@ export function useSchedulerLogic() {
       return
     }
 
+    startingTabKeys.add(tab.key)
     try {
       const requestBody: TaskCreateIn & { resumeFromScriptId?: string } = {
         taskId: tab.selectedTaskId,
@@ -688,6 +723,8 @@ export function useSchedulerLogic() {
       const errorMsg = error instanceof Error ? error.message : String(error)
       logger.error(`启动任务失败: ${errorMsg}`)
       message.error(t('scheduler.toast.startTaskFailed'))
+    } finally {
+      startingTabKeys.delete(tab.key)
     }
   }
 
