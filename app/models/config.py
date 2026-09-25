@@ -4199,21 +4199,27 @@ class OkNteConfig(ConfigBase):
         super().__init__()
 
 
-def _migrate_bgi_account_switch_default(data: dict) -> dict:
+def _migrate_bgi_account_switch_default(data: dict) -> tuple[dict, bool]:
     """为存量 BetterGI 脚本固化旧默认切号方式 BGI。
 
     ``Run.AccountSwitchMethod`` 是 v5.6.0 新增字段且类默认值定为 MAS；
     5.5.0 升级上来的存量脚本配置里没有该键，若不补值会随新默认落到 MAS，
     使国际服/第三方登录等不被 MAS 切号支持的用户从「能跑」变「报错」。
-    load 前缺键注入 ``BGI``（升级前的唯一切号路径），由 ConfigBase 的
-    dirty 机制一次物化、幂等；新建脚本不经 load（``MultipleConfig.add``
-    直接构造并物化类默认 MAS），复制脚本经 load 时键必已物化，均不受影响。
+    故 load 前缺键注入 ``BGI``（升级前的唯一切号路径）：Run 段缺失（手工
+    编辑/截断文件）同样按存量处理；Run 段损坏（非 dict）时跳过注入交给
+    load 的纠错路径重建，不在此崩掉启动。显式保存过该键的配置原样保留。
+
+    Returns:
+        (迁移后的配置字典, 是否发生了注入)
     """
     normalized_data = deepcopy(data) if isinstance(data, dict) else {}
-    run = normalized_data.get("Run")
+    if "Run" not in normalized_data:
+        normalized_data["Run"] = {}
+    run = normalized_data["Run"]
     if isinstance(run, dict) and "AccountSwitchMethod" not in run:
         run["AccountSwitchMethod"] = "BGI"
-    return normalized_data
+        return normalized_data, True
+    return normalized_data, False
 
 
 class BetterGIConfig(ConfigBase):
@@ -4268,8 +4274,18 @@ class BetterGIConfig(ConfigBase):
         super().__init__()
 
     async def load(self, data: dict) -> bool:
-        """加载脚本配置前为存量脚本固化旧默认切号方式 BGI。"""
-        return await super().load(_migrate_bgi_account_switch_default(data))
+        """加载脚本配置前为存量脚本固化旧默认切号方式 BGI。
+
+        注入后子级数据与完整存量文件（仅缺新键）比对不再 dirty，落盘靠两级：
+        挂在 MultipleConfig 下时由父级整表比对发现缺键提交写盘；独立连接
+        文件时由这里的显式提交完成（对齐 MaaEndConfig.load 的迁移范式）。
+        返回值含迁移标记，不谎报「无写入」。
+        """
+        migrated_data, migrated = _migrate_bgi_account_switch_default(data)
+        is_dirty = await super().load(migrated_data)
+        if migrated and not is_dirty:
+            await self._commit_changes()
+        return is_dirty or migrated
 
 
 class ZzzOdUserConfig(ConfigBase):
