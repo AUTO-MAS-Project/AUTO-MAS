@@ -61,13 +61,11 @@ logger = get_logger("HSR SRA 运行器")
 SRA_GAME_CHANNEL_CLIENT = 0
 SRA_TRAILBLAZE_POWER_AUTO_DETECT = True
 
-SRA_DIVERGENT_UNIVERSE_MODE = 0
 SRA_DIVERGENT_UNIVERSE_RUNTIMES = 20
 SRA_DIVERGENT_UNIVERSE_USE_TECHNIQUE = False
 SRA_DIVERGENT_UNIVERSE_POINT_REWARDS = True
 
 SRA_CURRENCY_WARS_STRATEGY = "template"
-SRA_CURRENCY_WARS_STRATEGY_INDEX = 0
 SRA_CURRENCY_WARS_RUNTIMES = 2
 SRA_CURRENCY_WARS_STRATEGY_KEYWORDS = ("阿格莱雅", "aglaea")
 SRA_SETTINGS_SYSTEM_NOTIFY_KEY = "system.enabled"
@@ -357,12 +355,8 @@ def build_sra_module_config(
                     target = child
                 target[keys[-1]] = value
 
-    if module.key == "Daily":
-        config["trailblazePower"]["tasklist"] = _build_sra_trailblaze_tasklist(
-            plan, eow_enabled=daily_eow_enabled
-        )
-
-    elif module.key == "ReceiveRewards":
+    # Daily 的 tasklist 与各模块的 enabled 在 _apply_managed_options 之后统一写。
+    if module.key == "ReceiveRewards":
         # 领取项来自当前 SRA profile；Managed.Options 只覆盖已发现字段。
         # 具名键存在时表单只露出具名键，数组按具名值镜像，两种形态保持一致。
         native_options = resolve_sra_managed_options(module.key, script_config, plan)
@@ -377,10 +371,6 @@ def build_sra_module_config(
 
     elif module.key == "DivergentUniverse":
         native_options = resolve_sra_managed_options(module.key, script_config, plan)
-        config["cosmicStrife"]["divergentUniverse.enabled"] = True
-        config["cosmicStrife"]["divergentUniverse.mode"] = int(
-            native_options.get("divergentUniverse.mode", SRA_DIVERGENT_UNIVERSE_MODE)
-        )
         config["cosmicStrife"]["divergentUniverse.runtimes"] = int(
             native_options.get(
                 "divergentUniverse.runtimes", SRA_DIVERGENT_UNIVERSE_RUNTIMES
@@ -399,15 +389,8 @@ def build_sra_module_config(
 
     elif module.key == "CurrencyWars":
         native_options = resolve_sra_managed_options(module.key, script_config, plan)
-
-        config["cosmicStrife"]["currencyWars.enabled"] = True
         config["cosmicStrife"]["currencyWars.strategy"] = native_options.get(
             "currencyWars.strategy", _resolve_sra_currency_wars_strategy(script_config)
-        )
-        config["cosmicStrife"]["currencyWars.strategyIndex"] = int(
-            native_options.get(
-                "currencyWars.strategyIndex", SRA_CURRENCY_WARS_STRATEGY_INDEX
-            )
         )
         config["cosmicStrife"]["currencyWars.runtimes"] = int(
             native_options.get("currencyWars.runtimes", SRA_CURRENCY_WARS_RUNTIMES)
