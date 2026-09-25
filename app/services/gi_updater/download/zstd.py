@@ -37,6 +37,7 @@ import ctypes
 import glob
 import os
 import sys
+import threading
 from typing import Iterator, Optional
 
 __all__ = [
@@ -215,20 +216,29 @@ class _PurePythonZstd:
 
 
 class _BackendProxy:
-    """按优先级选择后端并统一接口。"""
+    """按优先级选择后端并统一接口。
+
+    Note:
+        ``zstandard.ZstdDecompressor`` 实例内部持有可复用的解压上下文，
+        **不是线程安全的**：chunk 下载是多线程并发解压，共享单例会出现
+        ``Data corruption detected`` / ``Unknown frame descriptor`` 之类的
+        交叉损坏（实测 2026-09-25）。因此 zstandard 后端改为每线程独享
+        一个实例（见 :func:`_zstd_impl`），ctypes 与纯 Python 后端本身就是
+        无状态调用，不需要隔离。
+    """
 
     def __init__(self) -> None:
         """按优先级探测并选定 zstd 后端。
 
         依次尝试 zstandard 包 → ctypes 加载 libzstd → 纯 Python 兜底，
-        并把选定结果记到 ``self.name``。
+        并把选定结果记到 ``self.name``；zstandard 的实例按线程惰性创建，
+        不放在 ``self._impl`` 里共享。
         """
         self.name = "none"
         self._impl: object = None
 
         if zstandard is not None:
             self.name = "zstandard"
-            self._impl = zstandard.ZstdDecompressor()
             return
 
         lib_path = _find_libzstd()
@@ -245,12 +255,12 @@ class _BackendProxy:
 
     @property
     def available(self) -> bool:
-        """后端是否成功初始化（``_impl`` 非 ``None``）。
+        """后端是否成功初始化。
 
         Returns:
             ``True`` 表示存在可用后端，``False`` 表示全部探测失败。
         """
-        return self._impl is not None
+        return self._impl is not None or self.name == "zstandard"
 
     def decompress(self, data: bytes) -> bytes:
         """用当前选定后端解压一段数据。
@@ -265,7 +275,7 @@ class _BackendProxy:
             ZstdError: 底层后端解压失败时（如 zstandard / libzstd 报错）。
         """
         if self.name == "zstandard":
-            return self._impl.decompress(data)  # type: ignore[union-attr]
+            return _zstd_impl().decompress(data)
         return self._impl.decompress(data)  # type: ignore[union-attr]
 
     def iter_decompress(self, stream, chunk_size: int = 65536) -> Iterator[bytes]:
@@ -283,7 +293,7 @@ class _BackendProxy:
             进内存**再整体解压、最后切块返回，大文件需留意峰值内存。
         """
         if self.name == "zstandard":
-            with self._impl.stream_reader(stream) as reader:  # type: ignore[union-attr]
+            with _zstd_impl().stream_reader(stream) as reader:
                 while True:
                     chunk = reader.read(chunk_size)
                     if not chunk:
@@ -297,6 +307,22 @@ class _BackendProxy:
         output = self.decompress(data)
         for offset in range(0, len(output), chunk_size):
             yield output[offset : offset + chunk_size]
+
+
+#: 线程各自的 zstandard 解压器（实例不可跨线程共享，见 :class:`_BackendProxy`）
+_ZSTD_LOCAL = threading.local()
+
+
+def _zstd_impl() -> "zstandard.ZstdDecompressor":
+    """返回当前线程独享的 ``zstandard.ZstdDecompressor``。
+
+    Returns:
+        惰性创建、绑定在当前线程上的解压器实例。
+    """
+    impl = getattr(_ZSTD_LOCAL, "impl", None)
+    if impl is None:
+        impl = _ZSTD_LOCAL.impl = zstandard.ZstdDecompressor()
+    return impl
 
 
 _BACKEND: Optional[_BackendProxy] = None
