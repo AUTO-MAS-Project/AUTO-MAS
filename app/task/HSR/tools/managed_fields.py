@@ -233,7 +233,7 @@ SRA_MANAGED_FIELDS: dict[str, tuple[ManagedFieldSpec, ...]] = {
             )
         ),
     ),
-    # redeemCodes 不露出：兑换码在 SRA 里维护。
+    # redeemCodes 不露出：兑换码在 SRA 里维护，开关生效时运行期原样拷进临时配置。
     "ReceiveRewards": _specs("common", *SRA_REWARD_NAMED_KEYS, *SRA_REWARD_LEGACY_KEYS),
     # 不露出 divergentUniverse.mode：SRA 2.21 起固定周期演算，不再读它。
     "DivergentUniverse": _specs(

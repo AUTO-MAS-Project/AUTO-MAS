@@ -180,6 +180,15 @@ def resolve_sra_managed_options(
     return effective
 
 
+def _native_redeem_codes(script_config: Any) -> str:
+    """原生 profile 的 ``receiveRewards.redeemCodes``；缺失或不是字符串时为空串。"""
+
+    _source, payload = load_sra_native_config(script_config)
+    section = payload.get("receiveRewards")
+    codes = section.get("redeemCodes") if isinstance(section, dict) else None
+    return codes if isinstance(codes, str) else ""
+
+
 def _reward_list_index(key: str) -> int | None:
     """``rewards.<下标>`` 返回数组下标；具名开关 ``rewards.<name>`` 与其它键返回 None。"""
 
@@ -429,8 +438,11 @@ def build_sra_module_config(
                 section[SRA_REWARD_REDEEM_CODE_KEY]
             ) and bool(redeem_codes_enabled)
             redeem_enabled = section[SRA_REWARD_REDEEM_CODE_KEY]
-        if not redeem_enabled:
-            section["redeemCodes"] = ""
+        # 兑换码在 SRA 里维护、不进托管表单；开关生效时把原生码原样送进临时配置
+        # （模板里是空串），与 redeem_code_fingerprint 按原生码算的指纹一致。
+        section["redeemCodes"] = (
+            _native_redeem_codes(script_config) if redeem_enabled else ""
+        )
     elif module.key == "DivergentUniverse":
         config["cosmicStrife"]["enabled"] = True
         config["cosmicStrife"]["divergentUniverse.enabled"] = True
