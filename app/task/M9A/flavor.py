@@ -221,6 +221,7 @@ class M9AFlavor:
         snapshot: dict[str, Any],
         *,
         script_config: Any,
+        resource_name: str | None,
         user_info: dict[str, Any],
     ) -> tuple[dict[str, Any], dict[str, Any]]:
         """引擎的可选钩子：写 ``Task.TaskSnapshot`` 前按 ``managed.py`` 的规则整理。
@@ -229,15 +230,13 @@ class M9AFlavor:
         备注只由启动整理写，这里不写（用户页上有常驻提示）。
         """
 
+        del script_config  # 资源由引擎按建运行计划的同一口径解析后传入
         entry_of, account_of = _entry_and_account_readers(interface_model)
-        resource = str(_get(script_config, "Info", "Resource") or "").strip()
-        if not resource and interface_model.resource:
-            resource = interface_model.resource[0].name  # 没选资源时运行期取第一个
         settlement = settle_snapshot(
             snapshot,
             entry_of=entry_of,
             account_of=account_of,
-            official=resource == OFFICIAL_RESOURCE_NAME,
+            official=str(resource_name or "").strip() == OFFICIAL_RESOURCE_NAME,
         )
         change = settle_user_info(
             settlement,

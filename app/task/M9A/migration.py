@@ -1160,13 +1160,22 @@ def _seed_update_source(source_path: str, global_mirror_cdk: str) -> tuple[str, 
 def _read_interface_dict(root: Path) -> dict[str, Any] | None:
     """按 MaaFW 的加载器读 interface（含 import 合并）；读不到返回 None。"""
 
+    return _dump_interface(_read_interface_model(root))
+
+
+def _read_interface_model(root: Path) -> Any | None:
     try:
         from app.task.MaaFW.tools.core.interface.service import (
             MaaFWInterfaceService,
         )
 
-        model = MaaFWInterfaceService().load(root)
+        return MaaFWInterfaceService().load(root)
     except Exception:  # noqa: BLE001 - 迁移只能降级，不能炸
+        return None
+
+
+def _dump_interface(model: Any | None) -> dict[str, Any] | None:
+    if model is None:
         return None
     try:
         return model.model_dump(mode="json")
@@ -1700,6 +1709,24 @@ def normalize_m9a_managed_entries(
     return report
 
 
+def _run_resource(model: Any, payload: dict[str, Any]) -> str | None:
+    """脚本运行时实际生效的资源：与建运行计划同一个 ``resolve_run_selection``（原始 JSON 版）。"""
+
+    from app.task.MaaFW.tools.core.runner.run_plan import resolve_run_selection
+
+    info = payload.get("Info") if isinstance(payload.get("Info"), dict) else {}
+    emulator = (
+        payload.get("Emulator") if isinstance(payload.get("Emulator"), dict) else {}
+    )
+    _, resource = resolve_run_selection(
+        model,
+        configured_controller=str(info.get("Controller") or ""),
+        emulator_selected=str(emulator.get("Id") or "-") != "-",
+        configured_resource=str(info.get("Resource") or ""),
+    )
+    return resource
+
+
 def _prune_managed_backups(path: Path) -> None:
     backups = sorted(
         path.parent.glob(f"{path.name}{MANAGED_BACKUP_SUFFIX}*.bak"),
@@ -1732,17 +1759,15 @@ def normalize_script_config_payload(
         ):
             continue  # 没有一个用户有队列：不必读 interface
         root = _project_root_for_detection(payload, uid)
-        index = _InterfaceIndex(_read_interface_dict(root) if root else None)
-        if root is None or not index.available:
+        model = _read_interface_model(root) if root else None
+        index = _InterfaceIndex(_dump_interface(model))
+        if model is None or not index.available:
             logger.info(
                 f"M9A 受管任务整理跳过「{_script_label(payload, uid)}」：读不到项目 interface"
             )
             continue
         script_label = _script_label(payload, uid)
-        resource = str((payload.get("Info") or {}).get("Resource") or "").strip()
-        # 没选资源时运行期取第一个（M9A 是官服）
-        resource = resource or (index.resources[0] if index.resources else "")
-        official = resource == OFFICIAL_RESOURCE_NAME
+        official = _run_resource(model, payload) == OFFICIAL_RESOURCE_NAME
         for user_uid in [
             str(item.get("uid") or "")
             for item in user_data.get("instances") or []

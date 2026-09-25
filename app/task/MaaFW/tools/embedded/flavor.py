@@ -34,9 +34,11 @@
   用户字段时，只要这次写入带 ``Task.TaskSnapshot``，就在加密密码字段之前经
   ``sanitize_user_task_update`` 调一次。读不到 interface（视图还没建）时不调、原样写入。
 - **签名**：``sanitize_task_snapshot(self, interface_model, snapshot, *, script_config,
-  user_info) -> tuple[dict, dict]``。``snapshot`` 是解析好的 ``{taskOrder, taskChecked,
-  taskOptions}``；``user_info`` 是这次写入之后该用户 ``Info`` 的样子（``Account`` / ``Notes``）。
-  返回整理后的快照与要一并写进 ``Info`` 的字段（没有就空字典）。不改入参。
+  resource_name, user_info) -> tuple[dict, dict]``。``snapshot`` 是解析好的 ``{taskOrder,
+  taskChecked, taskOptions}``；``resource_name`` 是运行时实际生效的资源（与建运行计划同一个
+  ``resolve_run_selection``，脚本资源留空时按控制器回落，特调不要自己再回落）；``user_info`` 是
+  这次写入之后该用户 ``Info`` 的样子（``Account`` / ``Notes``）。返回整理后的快照与要一并写进
+  ``Info`` 的字段（没有就空字典）。不改入参。
 - **用途**：特调把某些任务收归自己管（队列里不该有它们）时，保存入口据此把它们剔掉或换算
   成用户字段，与运行期、启动整理同一口径。
 
@@ -193,6 +195,16 @@ def sanitize_user_task_update(
         logger.debug(f"保存任务配置时读取 interface 失败，未按特调整理：{exc}")
         return False
 
+    from app.task.MaaFW.tools.core.runner.run_plan import resolve_run_selection
+
+    _, resource_name = resolve_run_selection(
+        interface_model,
+        configured_controller=str(
+            _config_value(script_config, "Info", "Controller") or ""
+        ),
+        emulator_selected=_config_value(script_config, "Emulator", "Id") != "-",
+        configured_resource=str(_config_value(script_config, "Info", "Resource") or ""),
+    )
     incoming_info = data.get("Info") if isinstance(data.get("Info"), dict) else {}
     user_info = {
         name: incoming_info[name]
@@ -205,6 +217,7 @@ def sanitize_user_task_update(
             interface_model,
             snapshot,
             script_config=script_config,
+            resource_name=resource_name,
             user_info=user_info,
         )
     except Exception as exc:  # noqa: BLE001 - 特调整理失败按原样保存
