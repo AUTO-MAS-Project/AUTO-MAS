@@ -76,3 +76,14 @@ deletefiles）对本包永远不可达，故未收录；全新安装（``SophonI
 再在 :mod:`~app.services.gi_updater.games` 的装配层注册，宿主侧仿
 :mod:`app.services.genshin_updater` 加一个门面。协议层与下载层零改动。
 """
+
+from app.services.gi_updater.games import GameUpdater, create_updater
+from app.services.gi_updater.install import InstallResult, UpdateKind, UpdatePlan
+
+__all__ = [
+    "GameUpdater",
+    "InstallResult",
+    "UpdateKind",
+    "UpdatePlan",
+    "create_updater",
+]
