@@ -1660,6 +1660,11 @@ export default {
     bettergiCloseGameOnFinishHint: '任务执行完毕后是否关闭游戏',
     bettergiRetryLimitHint: '超过该次数仍失败则终止',
     bettergiRunTimeoutHint: '日志长期无变化将判定超时',
+    bettergiAccountSwitchMethod: '账号切换方式',
+    bettergiAccountSwitchMethodHint:
+      'BetterGI 脚本=由 BetterGI「切换账号多模式」脚本执行切换；MAS=MAS 直接操控游戏切号（官服填密码走账号+密码、未填走下拉列表；B服按B站用户名匹配登录记录，暂不支持账密登录）。MAS 暂不支持国际服，国际服用户请沿用 BetterGI 脚本方式',
+    bettergiAccountSwitchMethodBgi: 'BetterGI 脚本',
+    bettergiAccountSwitchMethodMas: 'MAS（官服/B服，推荐）',
     useAdminLaunch: '以管理员权限启动',
     bettergiUseAdminHint:
       '默认开启（BetterGI 需要管理员权限）。MAS 非管理员运行时，每次启动都会弹一次 UAC，无人值守任务可关闭避免挂在授权上；MAS 已提权时开启也不会重复弹窗',
@@ -1677,10 +1682,27 @@ export default {
     bettergiAccount: '账户',
     bettergiEnterAccount: '请输入账号（用于切换账号，无需切换账号则留空）',
     bettergiAccountHint:
-      '用于切换账号，无需切换则留空；下拉列表模式填写完整手机号/邮箱，MAS 自动转换为游戏显示的打码形式',
+      '用于切换账号，无需切换则留空；官服填手机号/邮箱（MAS 自动打码匹配登录记录），B服填B站用户名',
     bettergiAccountUid: '账号 UID',
     bettergiEnterUid: '请输入 UID（切换账号建议填写）',
-    bettergiUidHint: '可不填；切换账号建议填写，填写后切换前识别一致将不执行切换动作',
+    bettergiUidHint:
+      '可不填，切换账号时建议填写；填写后切换前识别一致将不执行切换动作（仅 BetterGI 脚本方式生效）',
+    bettergiGameClient: '游戏客户端',
+    bettergiGameClientHint:
+      '官服/B服/国际服是三个互相隔离的客户端（B站账号只能登录B服客户端）。留空跟随 BetterGI 全局配置；填写后该用户运行时由 MAS 按此路径临时拉起游戏（不修改 BetterGI 配置），同脚本不同服务器的用户可各配各的客户端',
+    bettergiGameClientPlaceholder:
+      '请先在 BetterGI 设置中配置游戏路径，或选择该用户的游戏主程序（YuanShen.exe / GenshinImpact.exe）',
+    bettergiGameClientRestore: '恢复 BGI 默认',
+    bettergiGameClientInvalid: '请选择游戏主程序（YuanShen.exe 或 GenshinImpact.exe）',
+    bettergiGameClientUnknownWarning:
+      '无法识别游戏客户端渠道（config.ini 缺失或路径无效），请手动指定游戏服务器',
+    bettergiGameClientIntlWarning: '已识别为国际服客户端，无法自动确定区服，请手动指定游戏服务器',
+    bettergiGameClientSynced: '已根据客户端自动切换游戏服务器为 {server}',
+    bettergiServerMismatchWarning:
+      '所选服务器（{server}）与当前游戏客户端（{channel}）不一致，任务将无法正常执行，请调整其一',
+    bettergiChannelOfficial: '官服',
+    bettergiChannelBili: 'B服',
+    bettergiChannelGlobal: '国际服',
     bettergiPasswordHint:
       '没有填写密码时，默认为下拉列表切换账号。如果切换账号使用密码登录，必须填写密码',
     bettergiEnterPasswordPlaceholder: '请输入密码（没有填写密码时，默认为下拉列表切换账号）',
