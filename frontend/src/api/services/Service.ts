@@ -16,6 +16,9 @@ import type { BetterGIScriptDirsOut } from '../models/BetterGIScriptDirsOut';
 import type { BetterGIScriptGroupDetailOut } from '../models/BetterGIScriptGroupDetailOut';
 import type { BetterGIScriptGroupSaveIn } from '../models/BetterGIScriptGroupSaveIn';
 import type { BetterGIScriptReadmeOut } from '../models/BetterGIScriptReadmeOut';
+import type { BetterGIScriptRepoCatalogOut } from '../models/BetterGIScriptRepoCatalogOut';
+import type { BetterGIScriptRepoSubscribeIn } from '../models/BetterGIScriptRepoSubscribeIn';
+import type { BetterGIScriptRepoSubscribeOut } from '../models/BetterGIScriptRepoSubscribeOut';
 import type { BetterGIScriptSettingsUiOut } from '../models/BetterGIScriptSettingsUiOut';
 import type { BlueArchiveActivityIn } from '../models/BlueArchiveActivityIn';
 import type { BlueArchiveActivityStatusOut } from '../models/BlueArchiveActivityStatusOut';
@@ -1507,6 +1510,55 @@ export class Service {
             query: {
                 'scriptId': scriptId,
             },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 浏览 BetterGI 本地脚本仓库目录
+     * 解析 BetterGI 本地仓库索引（repo.json），返回分类与节点树，供「浏览脚本仓库」面板展示。
+     *
+     * 索引由 BetterGI 的 ``ScriptRepoUpdater`` 在用户打开脚本仓库时下载维护；若用户从未
+     * 在 BGI 内打开过脚本仓库，索引可能缺失，此时 ``repoExists=False``。
+     * @param scriptId
+     * @returns BetterGIScriptRepoCatalogOut Successful Response
+     * @throws ApiError
+     */
+    public static getBettergiScriptRepoCatalogApiApiScriptsBettergiScriptRepoCatalogGet(
+        scriptId: string,
+    ): CancelablePromise<BetterGIScriptRepoCatalogOut> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/scripts/bettergi/script-repo/catalog',
+            query: {
+                'scriptId': scriptId,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 订阅 BetterGI 脚本仓库中的脚本（默认仅记录，可选立即落地）
+     * 订阅指定脚本：写入 BGI 原生订阅清单，并视 ``immediate`` 决定是否立即落地。
+     *
+     * - ``immediate=False``（默认、轻量）：仅写入 BGI 原生订阅清单，脚本本体由 BetterGI
+     * 下次启动时按其原生订阅链路自动拉取，无需等待仓库压缩包下载。
+     * - ``immediate=True``（进阶、立即可用）：额外下载仓库压缩包（MAS 侧按索引时间缓存，
+     * 之后复用）并解压拷贝到 BGI 原生目录，脚本立刻可用。首次可能耗时较长。
+     * @param requestBody
+     * @returns BetterGIScriptRepoSubscribeOut Successful Response
+     * @throws ApiError
+     */
+    public static subscribeBettergiScriptRepoApiApiScriptsBettergiScriptRepoSubscribePost(
+        requestBody: BetterGIScriptRepoSubscribeIn,
+    ): CancelablePromise<BetterGIScriptRepoSubscribeOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/bettergi/script-repo/subscribe',
+            body: requestBody,
+            mediaType: 'application/json',
             errors: {
                 422: `Validation Error`,
             },

@@ -118,6 +118,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getLogs: (lines?: number, fileName?: string, fromOffset?: number) =>
     ipcRenderer.invoke('log:getContent', lines, fileName, fromOffset),
   openLogWindow: (file?: 'app' | 'frontend') => ipcRenderer.invoke('log:openWindow', file),
+  openBettergiScriptRepoWindow: (scriptId: string) =>
+    ipcRenderer.invoke('bettergi-script-repo:openWindow', scriptId),
 
   // 虚拟显示器询问弹窗：主窗口把后端消息转给主进程开窗；弹窗页面自己取数据、自己关
   showVirtualDisplayPrompt: (payload: unknown) => ipcRenderer.invoke('vdd-prompt:show', payload),
