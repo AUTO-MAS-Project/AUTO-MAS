@@ -428,6 +428,8 @@ class SophonPatcher:
     applied: Dict[str, int] = field(default_factory=dict)
     #: 因缺少 HDiff 实现而未能处理的项
     pending_hdiff: List[SophonPatchAsset] = field(default_factory=list)
+    #: 本轮未落盘成功的文件（含 pending_hdiff 与降级后仍失败的项）
+    failed: List[str] = field(default_factory=list)
 
     def __post_init__(self) -> None:
         """补默认日志器、补 ``patch_output_dir`` 与默认下载器。"""
@@ -463,7 +465,9 @@ class SophonPatcher:
         Returns:
             按补丁方式统计的计数字典（键为 ``DownloadOver`` / ``CopyOver`` /
             ``Patch`` / ``Remove``，值为成功处理数）。环境不支持 HDiff 时，
-            相关项记入 ``self.pending_hdiff`` 而非计入统计。
+            相关项记入 ``self.pending_hdiff`` 而非计入统计；旧文件缺失/不符
+            或 hpatchz 失败的项降级为整文件下载，仍失败则记入 ``self.failed``，
+            单文件异常不会中止整轮更新。
         """
         counts: Dict[str, int] = {method.value: 0 for method in SophonPatchMethod}
         # 一进来先复核本地：尺寸对得上的文件要读全文件算 MD5 才敢跳过，续传时
@@ -489,17 +493,26 @@ class SophonPatcher:
 
             # DownloadOver 已不再由 build_patch_assets 产出（差分没点名的文件本轮
             # 不动），留着是为了全量兜底路径能复用同一套分派
-            if asset.patch_method == SophonPatchMethod.DownloadOver:
-                ok = self._download_over(asset)
-            elif asset.patch_method == SophonPatchMethod.CopyOver:
-                ok = self._copy_over(asset)
-            else:
-                ok = self._patch_hdiff(asset)
+            try:
+                if asset.patch_method == SophonPatchMethod.DownloadOver:
+                    ok = self._download_over(asset)
+                elif asset.patch_method == SophonPatchMethod.CopyOver:
+                    ok = self._copy_over(asset)
+                else:
+                    ok = self._patch_hdiff(asset)
+            except UpdateAborted:
+                raise
+            except Exception as error:  # noqa: BLE001
+                # 单文件的异常（网络/磁盘/差分数据异常）不该中止整轮更新：
+                # 记为失败并继续处理余下文件，最后统一在结果里暴露
+                ok = False
+                self.logger.warning("处理 %s 异常：%s", asset.target_file_path, error)
 
             counts[asset.patch_method.value] += 1 if ok else 0
             if ok and self.progress:
                 self.progress.advance(0, count=1)
             if not ok:
+                self.failed.append(asset.target_file_path)
                 self.logger.warning(
                     "补丁失败：%s（%s）",
                     asset.target_file_path,
@@ -588,15 +601,56 @@ class SophonPatcher:
             asset: 待 Patch 的补丁资产（含 old/new 路径与 diff 坐标）。
 
         Returns:
-            ``True`` 表示补丁后文件完整（校验通过）；否则 ``False``。
+            ``True`` 表示补丁后文件完整（校验通过）；旧文件缺失/不符或补丁
+            失败时降级为整文件下载，仍失败返回 ``False``。
         """
         if self.dry_run:
             return True
 
-        chunk_data = self._fetch_patch_chunk(asset)
         old_path = _resolve_target_path(self.game_path, asset.original_file_path)
+        if not self._is_old_file_usable(old_path, asset):
+            # 旧文件缺失或与差分基线不符：hpatchz 必然失败（oldDataSize/oldMd5
+            # 校验，米哈游的差分不支持从空文件重建），直接降级为整文件下载，
+            # 连补丁段都不用取
+            self.logger.warning(
+                "旧文件缺失或不符，%s 降级为整文件下载",
+                asset.target_file_path,
+            )
+            return self._download_over(asset)
+
+        chunk_data = self._fetch_patch_chunk(asset)
         target = _resolve_target_path(self.game_path, asset.target_file_path)
         return self._apply_hdiff_bytes(chunk_data, old_path, target, asset)
+
+    def _is_old_file_usable(self, old_path: str, asset: SophonPatchAsset) -> bool:
+        """校验旧文件是否与差分基线一致（存在、大小、MD5）。
+
+        Args:
+            old_path: 旧文件路径。
+            asset: 补丁资产（提供 ``original_file_size`` / ``original_file_hash``）。
+
+        Returns:
+            ``True`` 表示可以直接打补丁；缺失或不符返回 ``False``。
+
+        Note:
+            HDiffPatch 按差分头里的 oldDataSize/oldMd5 校验旧文件：米哈游的
+            现网差分不支持从空文件重建（实测 2026-09-25），旧文件缺失时对空
+            ``.diff_ref`` 硬打必然报 ``oldDataSize`` 不符；内容不符则产出坏
+            文件。两种情形都应由调用方降级为整文件下载。
+        """
+        if not asset.original_file_path:
+            return True
+        if not os.path.isfile(old_path):
+            return False
+        if os.path.getsize(old_path) != asset.original_file_size:
+            return False
+        if not asset.original_file_hash:
+            return True
+        digest = hashlib.md5()
+        with open(old_path, "rb") as handle:
+            for block in iter(lambda: handle.read(1 << 20), b""):
+                digest.update(block)
+        return digest.hexdigest().lower() == asset.original_file_hash.lower()
 
     def _apply_hdiff_bytes(
         self,
@@ -615,7 +669,8 @@ class SophonPatcher:
 
         Returns:
             ``True`` 表示补丁后文件完整；若 hdiff 不可用则记入
-            ``pending_hdiff`` 并返回 ``False``。
+            ``pending_hdiff`` 并返回 ``False``；hpatchz 失败时降级为整文件
+            下载并按其结果返回。
 
         Note:
             先写 ``<target>.temp``，成功后删旧文件再原子替换；失败只留一个 temp
@@ -638,7 +693,9 @@ class SophonPatcher:
         stub_path = ""
         old_file = old_path
         if old_file is None or not os.path.isfile(old_file):
-            # 没有原文件时，写一个空的 .diff_ref 代表「从零重建」
+            # 没有原文件时，写一个空的 .diff_ref 代表「从零重建」。
+            # HDiffPatch 支持 oldSize=0 的差分；若现网差分并非此类，
+            # hpatchz 会失败，由下面的降级逻辑兜底
             old_file = stub_path = os.path.join(
                 self.patch_output_dir, _safe_name(asset.target_file_path) + ".diff_ref"
             )
@@ -646,7 +703,17 @@ class SophonPatcher:
                 pass
 
         try:
-            self.hdiff.patch(diff_path, old_file, temp_path)
+            try:
+                self.hdiff.patch(diff_path, old_file, temp_path)
+            except RuntimeError as error:
+                # 差分与旧文件对不上时 hpatchz 必失败；单文件异常不该中止
+                # 整轮更新，降级为按主清单整文件下载
+                self.logger.warning(
+                    "hpatchz 失败，%s 降级为整文件下载：%s",
+                    asset.target_file_path,
+                    error,
+                )
+                return self._download_over(asset)
             if os.path.isfile(target):
                 os.remove(target)
             os.replace(temp_path, target)

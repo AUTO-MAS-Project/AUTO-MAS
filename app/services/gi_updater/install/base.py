@@ -902,11 +902,12 @@ class InstallManagerBase:
             result: 复用并填充的执行结果。
 
         Returns:
-            含各补丁方式的 ``method_counts``、已完成数（剩余 HDiff 数
+            含各补丁方式的 ``method_counts``、已完成数（未落盘文件数
             记为失败）；成功后落盘写版本。
 
         Note:
-            失败定义为「仍有待处理的 HDiff 补丁」；字节数只计入被标记 ``needs_download``
+            失败定义为「仍有文件未落盘」（含 HDiff 不可用、降级后仍失败与
+            单文件异常的项）；字节数只计入被标记 ``needs_download``
             的资产，且按 ``patch_chunk_length``（真正要从网络取的字节）累加。
         """
         patcher = SophonPatcher(
@@ -923,7 +924,7 @@ class InstallManagerBase:
         counts = patcher.apply(plan.patch_assets, plan.removed_files)
         result.method_counts = counts
         result.file_done = sum(counts.values())
-        result.file_failed = len(patcher.pending_hdiff)
+        result.file_failed = len(patcher.failed)
         result.bytes_downloaded = sum(
             asset.patch_chunk_length
             for asset in plan.patch_assets
@@ -931,7 +932,7 @@ class InstallManagerBase:
         )
         result.success = result.file_failed == 0
         result.message = (
-            "" if result.success else f"{result.file_failed} 个 HDiff 补丁待处理"
+            "" if result.success else f"{result.file_failed} 个文件未能落盘"
         )
 
         if result.success:
