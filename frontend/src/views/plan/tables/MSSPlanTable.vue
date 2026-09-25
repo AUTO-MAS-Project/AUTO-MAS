@@ -125,8 +125,7 @@
               }))
             "
             :disabled="
-              isColumnDisabled(record.timeKey) ||
-              isOverriddenBySwitch('Difficulty', record.timeKey)
+              isColumnDisabled(record.timeKey) || isOverriddenBySwitch('Difficulty', record.timeKey)
             "
             @update:value="
               (value: number) => handleFieldChange(record.timeKey, { Difficulty: value })
@@ -139,8 +138,7 @@
             size="small"
             :disabled="isColumnDisabled(record.timeKey)"
             @change="
-              (checked: boolean) =>
-                handleFieldChange(record.timeKey, { [column.key]: checked })
+              (checked: boolean) => handleFieldChange(record.timeKey, { [column.key]: checked })
             "
           />
 
@@ -152,8 +150,7 @@
             :min="1"
             :max="99"
             :disabled="
-              isColumnDisabled(record.timeKey) ||
-              isOverriddenBySwitch('FightTimes', record.timeKey)
+              isColumnDisabled(record.timeKey) || isOverriddenBySwitch('FightTimes', record.timeKey)
             "
             @change="
               (value: number | null) =>
