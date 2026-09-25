@@ -3809,11 +3809,12 @@ class BetterGIUserConfig(ConfigBase):
             "官服",
             OptionsValidator(["官服", "B服", "亚服", "欧服", "美服", "港澳台服"]),
         )
-        ## 账号 UID（可不填，切换前识别一致将不执行切换动作）
+        ## 账号 UID（可不填，切换前识别一致将不执行切换动作；仅 BetterGI 脚本方式生效）
         self.Switch_Uid = ConfigItem("Switch", "Uid", "")
-        ## 游戏客户端路径（用户级覆盖，可空）：官服/B服/国际服是不同客户端，B站账号
-        ## 只能登录B服客户端。留空 = 使用 BetterGI 全局配置的游戏路径；填写后该用户
-        ## 运行时由 MAS 写入 BetterGI 配置并按此路径拉起（实现同脚本混服用户各用各的客户端）
+        ## 游戏客户端路径（用户级覆盖，可空）：官服/B服/国际服是三个互相隔离的客户端，
+        ## B站账号只能登录B服客户端。留空 = 跟随 BetterGI 全局配置的游戏路径；填写后该
+        ## 用户运行时由 MAS 按此路径临时拉起游戏（不修改 BetterGI 配置），实现同脚本
+        ## 混服用户各用各的客户端
         self.Switch_GamePath = ConfigItem("Switch", "GamePath", "", FileValidator())
 
         ## Data ------------------------------------------------------------
@@ -4222,8 +4223,8 @@ class BetterGIConfig(ConfigBase):
         ## MAS 自身已提权时，即使此处开启，也不会重复触发 UAC（子进程自动继承管理员令牌）。
         self.Run_UseAdmin = ConfigItem("Run", "UseAdmin", True, BoolValidator())
         ## 账号切换方式（脚本级，参考 MaaEnd Run.AccountSwitchMethod）：
-        ## BGI = BetterGI「切换账号多模式」脚本执行（B服/国际服）；MAS = MAS 侧前台 OCR
-        ## 直接操控游戏切号（当前仅官服，游戏由 MAS 托管启动）。
+        ## BGI = BetterGI「切换账号多模式」脚本执行（国际服请沿用此方式）；MAS = MAS 侧
+        ## 前台 OCR 直接操控游戏切号（官服/B服，游戏由 MAS 托管启动）。
         self.Run_AccountSwitchMethod = ConfigItem(
             "Run", "AccountSwitchMethod", "BGI", OptionsValidator(["BGI", "MAS"])
         )

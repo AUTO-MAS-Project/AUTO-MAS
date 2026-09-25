@@ -1765,7 +1765,7 @@ export default {
     bettergiAccountUid: 'Account UID',
     bettergiEnterUid: 'Enter the UID (recommended when switching accounts)',
     bettergiUidHint:
-      'Optional, but recommended for account switching: when it already matches before switching, the switch is skipped',
+      'Optional, but recommended for account switching: when it already matches before switching, the switch is skipped (BetterGI script method only)',
     bettergiGameClient: 'Game client',
     bettergiGameClientHint:
       'CN official / CN Bilibili / international are three isolated clients (a Bilibili account can only log into the Bilibili client). Leave empty to follow the BetterGI global config; when filled, MAS temporarily launches that client for this user at runtime (BetterGI config is not modified) — users on different servers of the same script can each have their own client',

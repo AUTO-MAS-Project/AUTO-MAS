@@ -182,17 +182,20 @@ async def _wait_bgi_exit(
     return remaining
 
 
-# BetterGI 管理的原神游戏进程名（不含 .exe），与 BetterGI 源码
-# TaskContext.GetGenshinGameProcessNameList() 保持一致；任务结束后按此顺序逐一尝试关闭。
+# BetterGI 管理的原神游戏进程名，取自 BetterGI 源码
+# TaskContext.GetGenshinGameProcessNameList()；任务结束后按此顺序逐一尝试关闭。
+# 上游给出的是不含后缀的主名，此处补成完整映像名——psutil 的 name 与 taskkill /IM
+# 要的都是完整映像名，只带主名会让 find_pids_by_name 的精确比较恒不命中
+# （ZzzOd / OkNte 同类常量同此口径）
 _BGI_GAME_PROCESS_NAMES: tuple[str, ...] = (
-    "YuanShen",  # 官服 / B服（国服）
-    "GenshinImpact",  # 国际服
-    "Genshin Impact Cloud Game",  # 云原神（国际）
-    "Genshin Impact Cloud",  # 云原神（备用进程名）
+    "YuanShen.exe",  # 官服 / B服（国服）
+    "GenshinImpact.exe",  # 国际服
+    "Genshin Impact Cloud Game.exe",  # 云原神（国际）
+    "Genshin Impact Cloud.exe",  # 云原神（备用进程名）
 )
 # 本地客户端进程名（官服/B服/国际服共用）：混服路径校验只针对本地客户端，
 # 云原神无本地安装路径概念，不参与存活客户端与用户路径的一致性比较
-_BGI_LOCAL_GAME_PROCESS_NAMES: tuple[str, ...] = ("YuanShen", "GenshinImpact")
+_BGI_LOCAL_GAME_PROCESS_NAMES: tuple[str, ...] = ("YuanShen.exe", "GenshinImpact.exe")
 
 # 用户服务器（Switch.Resource）→ 应使用的客户端渠道；客户端渠道由
 # game_info.detect_channel 识别（config.ini channel/cps + 主程序名）
@@ -1981,14 +1984,13 @@ class AutoProxyTask(TaskExecuteBase):
             pass
 
     async def _kill_game_processes(self, names: tuple[str, ...] | list[str]) -> None:
-        """按进程名逐一强制结束游戏进程（含子进程），失败必须落日志。
+        """按完整映像名（含 .exe）逐一强制结束游戏进程（含子进程），失败必须落日志。
 
         游戏对 WM_CLOSE 无响应：taskkill 不带 /F 的「优雅关闭」会一直等待进程
         退出直至 60s 超时抛异常，反而跳过后续的强制关闭（旧实现的游戏残留根因），
         故这里直接 /F 结束。
         """
-        for name in names:
-            image = f"{name}.exe"
+        for image in names:
             try:
                 result = await ProcessRunner.run_process(
                     "taskkill", "/IM", image, "/F", "/T"

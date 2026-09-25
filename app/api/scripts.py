@@ -2928,7 +2928,11 @@ async def get_bettergi_game_info_api(
     """
 
     try:
-        data = await Config.get_bettergi_game_info(scriptId, detectPath)
+        script_config = _bettergi_script_config(scriptId)
+        root = Path(script_config.get("Info", "RootPath")).expanduser()
+        from app.task.BetterGI.tools import game_info
+
+        data = game_info.read_game_info(root, detectPath)
         return BetterGIGameInfoOut(
             code=200,
             status="success",
@@ -2943,7 +2947,9 @@ async def get_bettergi_game_info_api(
             f"get_bettergi_game_info_api失败: {type(e).__name__}: {e}"
         )
         return BetterGIGameInfoOut(
-            code=500,
+            code=400
+            if isinstance(e, (ValueError, KeyError, TypeError, RuntimeError))
+            else 500,
             status="error",
             message=f"{type(e).__name__}: {str(e)}",
         )

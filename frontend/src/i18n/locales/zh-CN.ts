@@ -1685,7 +1685,8 @@ export default {
       '用于切换账号，无需切换则留空；官服填手机号/邮箱（MAS 自动打码匹配登录记录），B服填B站用户名',
     bettergiAccountUid: '账号 UID',
     bettergiEnterUid: '请输入 UID（切换账号建议填写）',
-    bettergiUidHint: '可不填；切换账号建议填写，填写后切换前识别一致将不执行切换动作',
+    bettergiUidHint:
+      '可不填，切换账号时建议填写；填写后切换前识别一致将不执行切换动作（仅 BetterGI 脚本方式生效）',
     bettergiGameClient: '游戏客户端',
     bettergiGameClientHint:
       '官服/B服/国际服是三个互相隔离的客户端（B站账号只能登录B服客户端）。留空跟随 BetterGI 全局配置；填写后该用户运行时由 MAS 按此路径临时拉起游戏（不修改 BetterGI 配置），同脚本不同服务器的用户可各配各的客户端',

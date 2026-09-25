@@ -29,11 +29,12 @@ OCR 复用通用工具集 `app.tools.ocr`）。登录界面部分元素没有文
     （游戏内滞留时：ESC → 派蒙菜单「退出游戏」→ 退出到标题）
     → 点标题右侧退出图标 → 「退出登录」弹窗选「退出并保留登录记录」→ 点「退出」
     → 有密码（填了密码时）: 点「登录其他账号」→ 点账号框剪贴板粘贴账号
-      → 点密码框剪贴板粘贴密码 → 点「进入游戏」
+      → 点密码框剪贴板粘贴密码 → 试勾协议（候选偏移 + 橙色校验，点偏不盲点）
+      → 点「进入游戏」
     → 无密码（未填密码时）: 点账号框展开下拉列表 → 按掩码（138******78）匹配
       目标账号（超出可见范围滚轮翻页）→ 点「进入游戏」
     → 协议未勾选时游戏弹「是否同意」确认框 → 点「同意」（登录等待循环统一
-      兜底，两版共用；勾选圆点过小不做预勾选）
+      兜底，两版共用）
     → 等待登录界面消失（登录成功，游戏保持运行交还 BGI 一条龙）
 
 B服流程（取自实机截图「B服切换流程」；暂不支持账密登录——验证码无法自动
@@ -126,7 +127,8 @@ def _sanitize_ocr_text(text: str) -> str:
     return _DIAGNOSTIC_EMAIL_RE.sub(r"\1****\2@***", text)
 
 
-# ── 原神客户端窗口识别（与 BetterGI/AutoProxy 的 _BGI_GAME_PROCESS_NAMES 一致）──
+# ── 原神客户端窗口识别（与 BetterGI/AutoProxy 的 _BGI_LOCAL_GAME_PROCESS_NAMES
+#    一致：仅本地客户端两个进程名，不含云原神）──
 _GENSHIN_PROCESS_NAMES = ("YuanShen.exe", "GenshinImpact.exe")
 
 # 游戏窗口就绪宽限期：MAS 托管拉起原神后窗口创建/亮相存在启动延迟（反作弊 +
@@ -900,10 +902,10 @@ def _detect_field_account(hwnd: int, pattern: re.Pattern[str]) -> bool:
 def _expand_account_list(hwnd: int, on_log: Callable[[str], None]) -> None:
     """点击当前账号框（或其下拉箭头）直至账号列表展开（出现多个掩码账号）。
 
-    若始终识别不到任何掩码账号，说明无法确认账号列表已打开（OCR 失败或
-    登录界面布局变化）；继续选号可能落在错误账号上，按失败抛出而非静默返回。
+    展开的判据是「掩码账号 ≥ 2 条」（账号框自身 1 条 + 列表项至少 1 条）；3 轮内
+    始终凑不够，说明无法确认账号列表已打开（OCR 失败或登录界面布局变化），继续
+    选号可能落在错误账号上，按失败抛出而非静默返回。
     """
-    found_masked = False
     for _ in range(3):
         items = _read_texts(hwnd)
         masked = [
@@ -914,17 +916,16 @@ def _expand_account_list(hwnd: int, on_log: Callable[[str], None]) -> None:
         if len(masked) >= 2:
             return
         if not masked:
-            # 可能 OCR 瞬时失败或列表已展开但只有一条记录，先点箭头兜底
+            # 可能 OCR 瞬时失败，先点箭头兜底
             on_log("未识别到掩码账号，点击账号框下拉箭头")
             _click_point(hwnd, *_DROPDOWN_ARROW_POINT, after_sleep=1)
             continue
-        found_masked = True
+        # 只识别到账号框自身那一条：点它尝试展开列表
         _click_box(hwnd, masked[0], after_sleep=1)
-    if not found_masked:
-        raise RuntimeError(
-            "未识别到任何掩码账号，无法确认账号列表已打开；"
-            "若目标账号从未在本机登录过（无登录记录），请改用填密码的账号+密码方式"
-        )
+    raise RuntimeError(
+        "未确认账号列表已展开（3 轮内未识别到 2 条及以上掩码账号）；"
+        "若目标账号从未在本机登录过（无登录记录），请改用填密码的账号+密码方式"
+    )
 
 
 def _click_target_account(
@@ -1082,10 +1083,15 @@ def _enter_with_password(
 ) -> None:
     """账密表单登录 → 直接点「进入游戏」→ 等待登录完成。
 
-    不点协议勾选框（勾选圆点过小、点偏有误触《用户协议》链接的风险）：
-    协议未勾选时点「进入游戏」会弹「是否同意」确认框，由登录等待循环统一
-    点「同意」继续——对下拉选号版同样生效，作为二重保障。
+    进入时先激活窗口：上一次 ``_activate_window`` 在 ``_wait_for_actionable_state``
+    之前，而该等待最长轮询 3600s，期间焦点可能被弹窗/通知/用户操作抢走——不再置前
+    就会把账密粘贴与后续点击落到当前前台窗口。
+
+    协议勾选由 ``_input_credentials`` 按候选偏移试勾（命中即停，点偏不盲点，避免
+    误触《用户协议》链接打开文档页）；仍勾不上时点「进入游戏」会弹「是否同意」确认
+    框，由登录等待循环统一点「同意」继续——对下拉选号版同样生效，作为二重保障。
     """
+    _activate_window(hwnd)
     _input_credentials(hwnd, account, password, on_log)
     on_log("正在点击「进入游戏」登录")
     items = _read_texts(hwnd)
@@ -1582,21 +1588,7 @@ def account_switch(
     else:
         mode_label = "账号+密码" if use_password else "下拉列表"
 
-    # 开启诊断记录：进度日志与各步骤 OCR 文本写入 debug/bgi-account-switch/，
-    # 供登录失败时用户反馈定位（文件随时间戳命名，一次切换一个文件）
-    global _DIAGNOSTIC_PATH
-    diagnostic_dir = Path.cwd() / "debug" / "bgi-account-switch"
-    diagnostic_dir.mkdir(parents=True, exist_ok=True)
-    _DIAGNOSTIC_PATH = diagnostic_dir / (
-        f"switch-detail-{datetime.now():%Y%m%d-%H%M%S-%f}.log"
-    )
-
-    def _on_log(msg: str) -> None:
-        _write_diagnostic(f"[{datetime.now():%H:%M:%S}] {msg}\n")
-        on_log(msg)
-
     display = _mask_nickname(account) if is_bili else mask_account(account)
-    _on_log(f"开始切换原神账号（{mode_label}）：{display}")
 
     # 互斥：并发切换会双线程抢占同一游戏窗口（僵尸线程 + 新流程互相踩踏），
     # 抢不到锁直接响亮失败
@@ -1605,6 +1597,23 @@ def account_switch(
             "上一个账号切换流程仍在执行中（可能因画面卡住而未退出），请重启任务后再试"
         )
     try:
+        # 开启诊断记录：进度日志与各步骤 OCR 文本写入 debug/bgi-account-switch/，
+        # 供登录失败时用户反馈定位（文件随时间戳命名，一次切换一个文件）。
+        # 必须在抢到锁之后才赋值——抢锁失败直接抛出、不走 finally，提前赋值会把仍在
+        # 运行的另一个流程的诊断改写进新文件
+        global _DIAGNOSTIC_PATH
+        diagnostic_dir = Path.cwd() / "debug" / "bgi-account-switch"
+        diagnostic_dir.mkdir(parents=True, exist_ok=True)
+        _DIAGNOSTIC_PATH = diagnostic_dir / (
+            f"switch-detail-{datetime.now():%Y%m%d-%H%M%S-%f}.log"
+        )
+
+        def _on_log(msg: str) -> None:
+            _write_diagnostic(f"[{datetime.now():%H:%M:%S}] {msg}\n")
+            on_log(msg)
+
+        _on_log(f"开始切换原神账号（{mode_label}）：{display}")
+
         # 屏保运行时截图全黑会导致 OCR 全盲，开工前先轻推鼠标退出（对齐 OK-NTE）
         _dismiss_screensaver()
         try:

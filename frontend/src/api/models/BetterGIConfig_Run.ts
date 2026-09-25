@@ -23,7 +23,7 @@ export type BetterGIConfig_Run = {
      */
     UseAdmin?: (boolean | null);
     /**
-     * 账号切换方式: BGI=BetterGI「切换账号多模式」脚本执行; MAS=MAS 前台直接操控游戏切号（仅官服，游戏由 MAS 托管启动）
+     * 账号切换方式: BGI=BetterGI「切换账号多模式」脚本执行; MAS=MAS 前台直接操控游戏切号（官服/B服，游戏由 MAS 托管启动）
      */
     AccountSwitchMethod?: ('BGI' | 'MAS' | null);
 };

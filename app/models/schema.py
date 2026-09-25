@@ -2032,14 +2032,16 @@ class BetterGIUserConfig_Switch(BaseModel):
         default=None, description="游戏服务器：官服/B服/亚服/欧服/美服/港澳台服"
     )
     Uid: Optional[str] = Field(
-        default=None, description="账号 UID（可不填，切换前识别一致将不执行切换动作）"
+        default=None,
+        description="账号 UID（可不填，切换前识别一致将不执行切换动作；仅 BetterGI 脚本方式生效）",
     )
     GamePath: Optional[str] = Field(
         default=None,
         description=(
-            "游戏客户端路径（用户级覆盖，可空）：官服/B服/国际服是不同客户端，"
-            "留空使用 BetterGI 全局配置；填写后该用户运行时由 MAS 写入 "
-            "BetterGI 配置并按此路径拉起"
+            "游戏客户端路径（用户级覆盖，可空）：官服/B服/国际服是三个互相隔离的"
+            "客户端（B站账号只能登录B服客户端）。留空跟随 BetterGI 全局配置；填写后"
+            "该用户运行时由 MAS 按此路径临时拉起游戏（不修改 BetterGI 配置），同脚本"
+            "不同服务器的用户可各配各的客户端"
         ),
     )
 
@@ -2593,7 +2595,7 @@ class BetterGIConfig_Run(GeneralConfig_Run):
         default=None,
         description=(
             "账号切换方式: BGI=BetterGI「切换账号多模式」脚本执行; "
-            "MAS=MAS 前台直接操控游戏切号（仅官服，游戏由 MAS 托管启动）"
+            "MAS=MAS 前台直接操控游戏切号（官服/B服，游戏由 MAS 托管启动）"
         ),
     )
 
