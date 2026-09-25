@@ -615,6 +615,7 @@ class OpenClawQQManager:
         identify_fail_count = 0
         while True:
             ready = False
+            rejected = False
             try:
                 token = await self._ensure_access_token(app_id, client_secret)
                 gateway = await self._request_json(
@@ -694,13 +695,13 @@ class OpenClawQQManager:
                                 )
                             elif op == 0 and payload.get("t") == "READY":
                                 ready = True
-                                identify_fail_count = 0
                                 self._gateway_online = True
                                 self._gateway_seen_ready = True
                                 self._gateway_ready.set()
                                 logger.info("QQ 官方机器人消息网关已连接")
                             elif op == 9:
                                 identify_fail_count += 1
+                                rejected = True
                                 if (
                                     identify_fail_count
                                     == GATEWAY_IDENTIFY_FALLBACK_AFTER
@@ -730,6 +731,9 @@ class OpenClawQQManager:
                 self._gateway_online = False
                 self._gateway_ready.clear()
             retry = 0 if ready else min(retry + 1, len(GATEWAY_RECONNECT_DELAYS) - 1)
+            if not rejected:
+                # 本轮未收到 op 9 时清零，计数只反映连续的鉴权拒绝。
+                identify_fail_count = 0
             await asyncio.sleep(GATEWAY_RECONNECT_DELAYS[retry])
 
     @staticmethod
