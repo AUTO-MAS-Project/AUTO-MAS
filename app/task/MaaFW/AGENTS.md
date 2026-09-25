@@ -34,7 +34,10 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   导入的来源，运行时不读它；导入完成后用户删掉来源也无妨。manager 三处、`runner_task`、
   `api_service/update.py`（`/maafw/update`）都走它；`/maafw/preview`、`/maafw/agent-env/prepare`、
   `/maafw/game-package` 带 `scriptId` 时也按脚本解析，`path` 只在没有脚本时兜底。
-  新增任何"读项目目录"的代码不要再各自读 `Info.Path`。视图可能还没建（刚选目录、来源换了目录、
+  新增任何"读项目目录"的代码不要再各自读 `Info.Path`。唯一的例外是 `runner_task` 的运行前架构自检
+  （`describe_project_runtime_architecture_mismatch`）：只在副本自带的 MaaFramework 与本机架构不符时，
+  只读地看一眼来源里有没有本机能用的那份，好在报错里说「重新导入即可」还是「换发行包」；不把来源
+  当项目根，来源不在也照常报错。视图可能还没建（刚选目录、来源换了目录、
   被手删），各入口先经 `ensure_embedded_copy`（调用方持该视图的项目预约）：视图不在或 `Info.Path`
   与导入报告里的 `sourcePath` 不是同一目录就导入一次；来源不在而视图健康时什么都不做；健康但
   没有标记的老副本就地采纳一次，采纳失败就报错、本次不运行。
