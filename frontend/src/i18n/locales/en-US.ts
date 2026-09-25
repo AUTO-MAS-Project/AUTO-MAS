@@ -731,26 +731,16 @@ export default {
     never: 'Never',
     sanityScriptChangedPick:
       'The engine of the Trailblaze Power module changed — pick the stage again.',
-    hsrEngineSwitchHint:
-      'Each engine has its own settings and stages; values under the other engine are kept and come back when you switch back.',
-    hsrSharedEngineSwitchHint:
-      'This changes the engine assignment of the script: users who chose Script, and User-source users who have not picked their own engine, switch along.',
-    hsrStageMissingForEngine:
-      'No stage is picked under {engine} yet. Stages are stored per engine; switching back restores the previous selection.',
+    hsrStageMissingForEngine: 'No stage picked under {engine}',
     editHsrUser: 'Edit the HSR user',
     addHsrUser: 'Add an HSR user',
-    hsrServerCnOfficial: 'CN official',
     hsrWeekDone: 'Done this week',
     hsrWeekNotDone: 'Not done this week',
     hsrLastCompleted: 'Last completed: {date}',
-    hsrReadFrom: 'Read from: {source}',
     hsrUseScriptShared:
       'Shares one task configuration with the other users on this script who chose Script.',
     hsrSharedPlanHint:
       'You are editing the shared task configuration of this script; changes affect every user who chose Script.',
-    hsrDirectControlHint:
-      'Direct control runs whatever is currently saved in SRA / March7th Assistant. MAS only launches the game and tracks the process; account, stages, and task switches have no effect in this mode.',
-    hsrRunByEngine: 'Run by {engine}',
     hsrGamePlatform: 'Game platform',
     hsrGamePlatformTip:
       'Client: MAS launches the local Star Rail with the settings below. Cloud Star Rail: MAS hosts a browser and March 7th runs inside it',
@@ -776,17 +766,12 @@ export default {
       "Opens this user's Cloud Star Rail window; sign in to your HoYoverse account there. After confirming the sign-in, March 7th enters the game once and exits",
     hsrCloudLoginSuccess: 'Signed in to Cloud Star Rail',
     hsrCloudLoginFailed: 'Cloud game sign-in failed: {reason}',
-    hsrCloudRunByM7a: 'Cloud Star Rail is run by March 7th',
-    hsrSharedModuleNotEnabled:
-      'This module is not enabled in the shared task configuration; settings are saved but it will not run this round.',
     daily: 'Daily',
     hsrEngineUnavailable: 'Unavailable',
     hsrNativeConfigNotLoaded: 'Settings from March7th Assistant / SRA not loaded yet',
-    hsrTaskNotEnabled: 'Not enabled',
     hsrRepickStage: 'Pick the stage again',
     hsrTaskConfig: 'Task configuration',
     hsrSharedPlanTag: 'Shared by script',
-    hsrModuleSettings: 'Settings',
     hsrSummaryNative: 'Uses the settings saved in {engine}',
     hsrSummaryItem: '{label}: {value}',
     hsrSummaryMore: '{text}, +{n} more',
@@ -796,15 +781,12 @@ export default {
     hsrDailySummary: '{type} · {stage} · Echo of War: {eow} ({weekday})',
     hsrStageNotPicked: 'No stage selected',
     hsrStageType: 'Stage type',
-    hsrStageTypeTip:
-      'The type of stage to farm this round. Each type remembers the stage you last picked for it.',
     hsrStage: 'Stage',
     hsrBuildTargetIgnoredSra:
       '"{label}" is on: SRA picks stages from your build targets, so the stage selected here is not run.',
     hsrBuildTargetFallbackM7a:
       '"{label}" is on: March7th Assistant farms your build targets first and only falls back to the stage selected here when it cannot recognize them.',
     hsrFieldOverridden: 'Changed',
-    hsrFieldOverriddenTip: 'Changed in MAS; this value is used at run time',
     hsrFieldNativeValue: 'Changed in MAS. Original value: {value}',
     hsrFieldReset: 'Restore',
     hsrFieldResetFailed: 'Could not restore the setting',
@@ -836,17 +818,10 @@ export default {
       'Removes what the shared task configuration changed for this module (current engine only); every user who chose Script is affected. The settings saved in March7th Assistant / SRA are not modified. This cannot be undone.',
     hsrModuleResetDone: 'This module now uses the {engine} settings',
     hsrModuleResetFailed: 'Could not restore this module to the {engine} settings',
-    hsrDialogDone: 'Done',
     hsrMarkNotDone: 'Mark as not done',
     hsrUseUserOwn: 'This user has its own task configuration; other users are not affected.',
     hsrUseDirect:
       'Runs whatever is saved in March7th Assistant / SRA; MAS only launches the game and wraps up. The task configuration on this page is not used.',
-    hsrModeSwitchedScript:
-      'Switched to the shared task configuration of this script. Your own configuration is kept; switch back to User to use it again.',
-    hsrModeSwitchedUser:
-      "Switched to this user's own task configuration. The shared configuration is not affected.",
-    hsrModeSwitchedDirect:
-      'The task configuration on this page is now off; runs use the settings saved in March7th Assistant / SRA.',
     hsrNoEnginePath: 'Fill in the March7th Assistant or SRA path in the script settings first.',
     hsrCapabilityFallback:
       'Could not read the engine status; showing engines by the paths in the script settings: {reason}',
@@ -910,8 +885,6 @@ export default {
     pathFolderHoldingScript: 'Path to the folder holding the script configuration files',
     pathScriptConfigurationFile: 'Path to the script configuration file',
     expressionGuide: 'Expression guide',
-    thisModuleNotEnabled:
-      'This module is not enabled for this user; the configuration is saved but will not run this time.',
     pickConfigurationFile: 'Pick a configuration file',
     pickConfigurationFolder: 'Pick a configuration folder',
     skip2: 'Skip',
@@ -1372,8 +1345,7 @@ export default {
     hsrUpdateCheckFailed: 'Could not check for {engine} updates',
     hsrUpdateRequestFailed: '{engine} update request failed',
     calyxCrimson: 'Calyx (Crimson)',
-    calyxCrimsonTraceMaterials:
-      'Calyx (Crimson): trace materials (gold and crimson are stored separately)',
+    calyxCrimsonTraceMaterials: 'Calyx (Crimson): trace materials',
     calyxGolden: 'Calyx (Golden)',
     calyxGoldenCharacterExp: 'Calyx (Golden): character EXP / light cone EXP / credits',
     formatLogFileName:
@@ -1743,7 +1715,6 @@ export default {
     pickUserWhoseServer: 'Pick the user whose server is checked for updates',
     chooseWhetherMasSwitches:
       "Choose whether MAS switches between the accounts saved in the game, or MAAEND's built-in task switches by the last four digits of the account",
-    pickEchoOfWarStage: 'Pick the Echo of War stage to run.',
     pickProjectDirectory: 'Pick the project directory',
     pickGameSOwn: "Pick the game's own exe; MAS closes it afterwards",
     generalScriptConfiguration: 'General script configuration',

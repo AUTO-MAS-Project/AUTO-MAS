@@ -7,7 +7,7 @@ import type {
 } from './types'
 
 /**
- * 体力副本在 Stage 里的存取（纯函数，供体力模块弹窗与模块摘要共用）。
+ * 体力副本在 Stage 里的存取（纯函数，供体力模块设置与模块摘要共用）。
  *
  * 存储结构不变：`Stage.Channel` 是当前要刷的副本类型；`Stage.ScriptStage` 按引擎、
  * 按副本类型各存一项（`{ version: 2, byEngine: { SRA: { engine, stages: { CalyxGolden: … } } } }`），

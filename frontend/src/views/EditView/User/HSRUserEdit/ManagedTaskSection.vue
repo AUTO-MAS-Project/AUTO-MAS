@@ -18,96 +18,93 @@
 
     <a-spin :spinning="loading">
       <a-empty v-if="!snapshot && !loading" :description="t('edit.nativeTaskConfigurationHas')" />
-      <div v-else-if="snapshot" class="module-list">
-        <div
-          v-for="task in snapshot.tasks"
-          :key="task.key"
-          class="module-row"
-          :class="{ 'module-row-disabled': !isEnabled(task) }"
-          role="button"
-          tabindex="0"
-          :data-testid="`hsr-module-${task.key}`"
-          @click="openTask(task.key)"
-          @keydown.enter.self="openTask(task.key)"
-        >
-          <span class="module-switch" @click.stop @keydown.stop>
-            <a-switch
-              :checked="isEnabled(task)"
-              :disabled="saving"
-              size="small"
-              :aria-label="task.name"
-              @change="emit('taskToggle', task.key, Boolean($event))"
-            />
-          </span>
-          <div class="module-main">
-            <div class="module-title">
-              <span class="module-name">{{ task.name }}</span>
-              <a-tag class="phase-tag">{{ phaseLabel(task.phase) }}</a-tag>
-              <a-tag :color="engineColor(mappedEngine(task))">
+      <!-- 与 MFW 任务队列同一种布局：左边模块列表、右边所选模块的设置，两栏定高各自滚动 -->
+      <a-row v-else-if="snapshot" :gutter="24" class="module-layout">
+        <a-col :xs="24" :lg="9" class="module-list-column">
+          <div class="module-list">
+            <div
+              v-for="task in snapshot.tasks"
+              :key="task.key"
+              class="module-row"
+              :class="{
+                'module-row-selected': selectedTask?.key === task.key,
+                'module-row-disabled': !isEnabled(task),
+              }"
+              role="button"
+              tabindex="0"
+              :data-testid="`hsr-module-${task.key}`"
+              @click="selectedKey = task.key"
+              @keydown.enter.self="selectedKey = task.key"
+            >
+              <div class="module-main">
+                <div class="module-title">
+                  <span class="module-name">{{ task.name }}</span>
+                  <a-tag class="phase-tag">{{ phaseLabel(task.phase) }}</a-tag>
+                  <a-tag v-if="droppedOverridesOf(task).length" color="warning">
+                    {{ t('edit.invalidOverridesCount', { n: droppedOverridesOf(task).length }) }}
+                  </a-tag>
+                </div>
+                <div class="module-summary" :title="taskSummary(task)">{{ taskSummary(task) }}</div>
+              </div>
+              <span class="module-switch" @click.stop @keydown.stop>
+                <a-switch
+                  :checked="isEnabled(task)"
+                  :disabled="saving"
+                  size="small"
+                  :aria-label="task.name"
+                  @change="emit('taskToggle', task.key, Boolean($event))"
+                />
+              </span>
+              <a-tag :color="engineColor(mappedEngine(task))" class="module-engine">
                 {{ engineLabel(mappedEngine(task)) }}
               </a-tag>
-              <a-tooltip v-if="!isEnabled(task)" :title="notEnabledTip">
-                <a-tag class="not-enabled-tag">{{ t('edit.hsrTaskNotEnabled') }}</a-tag>
-              </a-tooltip>
-              <a-tag v-if="droppedOverridesOf(task).length" color="warning">
-                {{ t('edit.invalidOverridesCount', { n: droppedOverridesOf(task).length }) }}
-              </a-tag>
             </div>
-            <div class="module-summary" :title="taskSummary(task)">{{ taskSummary(task) }}</div>
           </div>
-          <a-button size="small" class="module-settings" @click.stop="openTask(task.key)">
-            <template #icon>
-              <SettingOutlined />
+        </a-col>
+        <a-col :xs="24" :lg="15" class="module-panel-column">
+          <ManagedModulePanel
+            v-if="selectedTask"
+            :task="selectedTask"
+            :engine="selectedEngine"
+            :form="selectedForm"
+            :engine-options="engineOptions"
+            :engine-name="engineLabel(selectedEngine)"
+            :engine-color="engineColor(selectedEngine)"
+            :saving="saving"
+            :loading="loading"
+            :shared="shared"
+            :cloud="cloud"
+            @engine-change="handleEngineChange"
+            @field-change="handleFieldChange"
+            @field-reset="handleFieldReset"
+            @reset-module="handleModuleReset"
+            @clear-invalid="handleClearInvalidOverrides"
+          >
+            <template #extra>
+              <slot
+                name="module-extra"
+                :task="selectedTask"
+                :engine="selectedEngine"
+                :form="selectedForm"
+              />
             </template>
-            {{ t('edit.hsrModuleSettings') }}
-          </a-button>
-        </div>
-      </div>
+          </ManagedModulePanel>
+        </a-col>
+      </a-row>
     </a-spin>
-
-    <ManagedModuleDialog
-      :open="Boolean(openTaskKey && openedTask)"
-      :task="openedTask"
-      :engine="openedEngine"
-      :form="openedForm"
-      :engine-options="engineOptions"
-      :engine-name="engineLabel(openedEngine)"
-      :enabled="openedTask ? isEnabled(openedTask) : false"
-      :saving="saving"
-      :loading="loading"
-      :shared="shared"
-      :cloud="cloud"
-      @update:open="value => !value && (openTaskKey = '')"
-      @engine-change="handleEngineChange"
-      @field-change="handleFieldChange"
-      @field-reset="handleFieldReset"
-      @reset-module="handleModuleReset"
-      @clear-invalid="handleClearInvalidOverrides"
-    >
-      <template #extra>
-        <slot
-          v-if="openedTask"
-          name="module-extra"
-          :task="openedTask"
-          :engine="openedEngine"
-          :form="openedForm"
-        />
-      </template>
-    </ManagedModuleDialog>
   </div>
 </template>
 
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
 import { computed, ref } from 'vue'
-import { SettingOutlined } from '@ant-design/icons-vue'
 import {
   getHSRDroppedOverrides,
   type HSREngine,
   type HSRManagedConfigSnapshot,
   type HSRManagedTask,
 } from '@/composables/useHSRPluginApi'
-import ManagedModuleDialog from './ManagedModuleDialog.vue'
+import ManagedModulePanel from './ManagedModulePanel.vue'
 import { summarizeOverriddenFields } from './managedFields'
 
 const { t } = useI18n()
@@ -139,11 +136,7 @@ const emit = defineEmits<{
   clearInvalidOverrides: [engine: HSREngine, task: string, keys: string[]]
 }>()
 
-const openTaskKey = ref('')
-
-const openTask = (key: string) => {
-  openTaskKey.value = key
-}
+const selectedKey = ref('')
 
 const snapshotWarnings = computed(() =>
   (props.snapshot?.warnings ?? []).filter(warning => !props.shownWarnings?.includes(warning))
@@ -164,27 +157,27 @@ const mappedEngine = (task: HSRManagedTask): HSREngine | undefined => {
 const formOf = (task: HSRManagedTask, engine = mappedEngine(task)) =>
   engine ? task.forms?.[engine] : undefined
 
-const openedTask = computed(
-  () => props.snapshot?.tasks.find(task => task.key === openTaskKey.value) ?? null
+// 没选过或选中的模块已不在快照里时，默认显示第一个模块
+const selectedTask = computed(() => {
+  const tasks = props.snapshot?.tasks ?? []
+  return tasks.find(task => task.key === selectedKey.value) ?? tasks[0] ?? null
+})
+const selectedEngine = computed(() =>
+  selectedTask.value ? mappedEngine(selectedTask.value) : undefined
 )
-const openedEngine = computed(() => (openedTask.value ? mappedEngine(openedTask.value) : undefined))
-const openedForm = computed(() =>
-  openedTask.value ? formOf(openedTask.value, openedEngine.value) : undefined
+const selectedForm = computed(() =>
+  selectedTask.value ? formOf(selectedTask.value, selectedEngine.value) : undefined
 )
 
 const droppedOverridesOf = (task: HSRManagedTask) => getHSRDroppedOverrides(formOf(task))
 
 const engineOptions = computed(() =>
-  openedTask.value
-    ? availableEngines(openedTask.value).map(engine => ({
+  selectedTask.value
+    ? availableEngines(selectedTask.value).map(engine => ({
         value: engine,
         label: engineLabel(engine),
       }))
     : []
-)
-
-const notEnabledTip = computed(() =>
-  props.shared ? t('edit.hsrSharedModuleNotEnabled') : t('edit.thisModuleNotEnabled')
 )
 
 const phaseLabel = (phase: string) => (phase === 'weekly' ? t('edit.weekly') : t('edit.daily'))
@@ -216,28 +209,28 @@ const taskSummary = (task: HSRManagedTask) => {
 }
 
 const handleEngineChange = (engine: HSREngine) => {
-  if (!openedTask.value) return
-  emit('mappingChange', openedTask.value.key, engine)
+  if (!selectedTask.value) return
+  emit('mappingChange', selectedTask.value.key, engine)
 }
 
 const handleFieldChange = (key: string, value: unknown) => {
-  if (!openedTask.value || !openedEngine.value) return
-  emit('fieldChange', openedEngine.value, openedTask.value.key, key, value)
+  if (!selectedTask.value || !selectedEngine.value) return
+  emit('fieldChange', selectedEngine.value, selectedTask.value.key, key, value)
 }
 
 const handleFieldReset = (key: string) => {
-  if (!openedTask.value || !openedEngine.value) return
-  emit('fieldReset', openedEngine.value, openedTask.value.key, key)
+  if (!selectedTask.value || !selectedEngine.value) return
+  emit('fieldReset', selectedEngine.value, selectedTask.value.key, key)
 }
 
 const handleModuleReset = () => {
-  if (!openedTask.value || !openedEngine.value) return
-  emit('moduleReset', openedEngine.value, openedTask.value.key)
+  if (!selectedTask.value || !selectedEngine.value) return
+  emit('moduleReset', selectedEngine.value, selectedTask.value.key)
 }
 
 const handleClearInvalidOverrides = (keys: string[]) => {
-  if (!openedTask.value || !openedEngine.value || keys.length === 0) return
-  emit('clearInvalidOverrides', openedEngine.value, openedTask.value.key, keys)
+  if (!selectedTask.value || !selectedEngine.value || keys.length === 0) return
+  emit('clearInvalidOverrides', selectedEngine.value, selectedTask.value.key, keys)
 }
 </script>
 
@@ -272,8 +265,24 @@ const handleClearInvalidOverrides = (keys: string[]) => {
   margin-bottom: 12px;
 }
 
+/* 左右两栏等高、高度固定：体力模块设置再多也不把页面撑长，各自在框里滚 */
+.module-layout {
+  height: 640px;
+}
+
+.module-list-column,
+.module-panel-column {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
 .module-list {
-  overflow: hidden;
+  flex: 1;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
   border: 1px solid var(--ant-color-border-secondary);
   border-radius: 8px;
   background: var(--ant-color-bg-container);
@@ -282,7 +291,7 @@ const handleClearInvalidOverrides = (keys: string[]) => {
 .module-row {
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: 12px;
   padding: 14px 16px;
   border-bottom: 1px solid var(--ant-color-border-secondary);
   color: var(--ant-color-text);
@@ -300,9 +309,22 @@ const handleClearInvalidOverrides = (keys: string[]) => {
   outline: none;
 }
 
+.module-row-selected,
+.module-row-selected:hover {
+  padding-left: 13px;
+  border-left: 3px solid var(--ant-color-primary);
+  background: var(--ant-color-primary-bg);
+}
+
 .module-switch {
   display: inline-flex;
+  flex-shrink: 0;
   cursor: default;
+}
+
+.module-engine {
+  flex-shrink: 0;
+  margin-inline-end: 0;
 }
 
 .module-main {
@@ -330,10 +352,6 @@ const handleClearInvalidOverrides = (keys: string[]) => {
   color: var(--ant-color-text-tertiary);
 }
 
-.not-enabled-tag {
-  color: var(--ant-color-text-tertiary);
-}
-
 .module-summary {
   overflow: hidden;
   margin-top: 4px;
@@ -343,7 +361,20 @@ const handleClearInvalidOverrides = (keys: string[]) => {
   white-space: nowrap;
 }
 
-.module-settings {
-  flex-shrink: 0;
+/* 与 :lg 断点对齐：栅格在 992px 以下就折成上下两块，定高要在同一宽度放开，否则两栏叠在 640px 里溢出 */
+@media (max-width: 991px) {
+  /* 折成上下两块后整行不再定高，改成每一栏各自定高 */
+  .module-layout {
+    height: auto;
+    row-gap: 16px;
+  }
+
+  .module-list-column {
+    height: auto;
+  }
+
+  .module-panel-column {
+    height: 560px;
+  }
 }
 </style>

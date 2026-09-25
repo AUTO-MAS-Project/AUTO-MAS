@@ -42,6 +42,7 @@
                 </a-button>
               </div>
             </div>
+            <!-- 与其他专项一致：用户名 / 启用 / 剩余天数一行，备注单独一行 -->
             <a-row :gutter="24">
               <a-col :span="8">
                 <a-form-item>
@@ -59,21 +60,38 @@
                   />
                 </a-form-item>
               </a-col>
-              <a-col :span="4">
+              <a-col :span="8">
                 <a-form-item>
                   <template #label>
                     <span class="form-label">{{ t('edit.enabled2') }}</span>
                   </template>
-                  <a-switch
-                    v-model:checked="formData.Info.Status"
-                    :checked-children="t('edit.enabled3')"
-                    :un-checked-children="t('edit.disabled')"
-                    @change="handleFieldSave('Info.Status', formData.Info.Status)"
+                  <!-- 和同一行的其他控件一样用下拉，别一个开关孤零零地矮一截 -->
+                  <a-select v-model:value="statusValue" size="large" :options="statusOptions" />
+                </a-form-item>
+              </a-col>
+              <a-col :span="8">
+                <a-form-item>
+                  <template #label>
+                    <a-tooltip :title="t('edit.daysLeft1Means')">
+                      <span class="form-label"
+                        >{{ t('edit.daysLeft') }} <QuestionCircleOutlined class="help-icon"
+                      /></span>
+                    </a-tooltip>
+                  </template>
+                  <a-input-number
+                    v-model:value="formData.Info.RemainedDay"
+                    :min="-1"
+                    :max="9999"
+                    size="large"
+                    style="width: 100%"
+                    @blur="handleFieldSave('Info.RemainedDay', formData.Info.RemainedDay)"
                   />
                 </a-form-item>
               </a-col>
+            </a-row>
+            <a-row v-if="showCredentials" :gutter="24">
               <!-- 账号密码只给 SRA StartGame 切号用；云·星穹铁道按用户分浏览器登录态，不需要 -->
-              <a-col v-if="showCredentials" :span="6">
+              <a-col :span="8">
                 <a-form-item>
                   <template #label>
                     <span class="form-label">{{ t('edit.account') }}</span>
@@ -86,7 +104,7 @@
                   />
                 </a-form-item>
               </a-col>
-              <a-col v-if="showCredentials" :span="6">
+              <a-col :span="8">
                 <a-form-item>
                   <template #label>
                     <!-- 加密说明由原先的区块提示降为密码字段的悬停说明 -->
@@ -131,56 +149,19 @@
                 </div>
               </a-col>
             </a-row>
-            <a-row :gutter="24" style="margin-top: 8px">
-              <!-- 只有一个服务器可选时不渲染下拉（字段仍保留在后端，留作扩展口） -->
-              <a-col v-if="serverOptions.length > 1" :span="6">
-                <a-form-item>
-                  <template #label>
-                    <span class="form-label">{{ t('edit.server') }}</span>
-                  </template>
-                  <a-select
-                    v-model:value="formData.Info.Server"
-                    size="large"
-                    :options="serverOptions"
-                    @change="handleFieldSave('Info.Server', formData.Info.Server)"
-                  />
-                </a-form-item>
-              </a-col>
-              <a-col :span="6">
-                <a-form-item>
-                  <template #label>
-                    <a-tooltip :title="t('edit.daysLeft1Means')">
-                      <span class="form-label"
-                        >{{ t('edit.daysLeft') }} <QuestionCircleOutlined class="help-icon"
-                      /></span>
-                    </a-tooltip>
-                  </template>
-                  <a-input-number
-                    v-model:value="formData.Info.RemainedDay"
-                    :min="-1"
-                    :max="9999"
-                    size="large"
-                    style="width: 100%"
-                    @blur="handleFieldSave('Info.RemainedDay', formData.Info.RemainedDay)"
-                  />
-                </a-form-item>
-              </a-col>
-              <a-col :span="12">
-                <a-form-item>
-                  <template #label>
-                    <span class="form-label">{{ t('edit.note') }}</span>
-                  </template>
-                  <a-textarea
-                    v-model:value="formData.Info.Notes"
-                    :rows="2"
-                    allow-clear
-                    auto-size
-                    class="notes-textarea"
-                    @blur="handleFieldSave('Info.Notes', formData.Info.Notes)"
-                  />
-                </a-form-item>
-              </a-col>
-            </a-row>
+            <a-form-item>
+              <template #label>
+                <span class="form-label">{{ t('edit.note') }}</span>
+              </template>
+              <a-textarea
+                v-model:value="formData.Info.Notes"
+                :rows="2"
+                allow-clear
+                auto-size
+                class="notes-textarea"
+                @blur="handleFieldSave('Info.Notes', formData.Info.Notes)"
+              />
+            </a-form-item>
             <!-- 页面上唯一的模式控件；三张卡片自带描述，不再另挂来源提示 -->
             <GeneralConfigModeSelector
               :model-value="formData.Info.Mode ?? '脚本'"
@@ -193,7 +174,7 @@
           </div>
 
           <!-- 任务配置：「脚本」来源编辑脚本共享计划，「用户」来源编辑该用户自己的计划；
-               模块细节（含体力模块的刷取副本）都在各模块的设置弹窗里 -->
+               模块细节（含体力模块的刷取副本）在右侧所选模块的设置里 -->
           <div v-if="controlMode === 'managed'" class="control-mode-content">
             <ManagedTaskSection
               :snapshot="managedConfigSnapshot"
@@ -237,7 +218,7 @@
             />
           </div>
 
-          <!-- 进度（完成态恒按用户记，脚本 / 用户来源都显示；历战余响开始日在体力模块弹窗里） -->
+          <!-- 进度（完成态恒按用户记，脚本 / 用户来源都显示；历战余响开始日在体力模块设置里） -->
           <div v-if="formData.Info.Mode !== '直控'" class="form-section">
             <div class="section-header">
               <h3>{{ t('edit.progressReset') }}</h3>
@@ -594,9 +575,18 @@ const hsrStageOptions = ref<HSRDynamicStageOptionsData | null>(null)
 const hsrStageOptionsLoading = ref(false)
 const hsrStageOptionsError = ref('')
 
-const serverOptions = computed(() => [
-  { value: 'CN-Official', label: t('edit.hsrServerCnOfficial') },
+// 启用状态用下拉表达；a-select 的值只认字符串 / 数字，这里和布尔互转
+const statusOptions = computed(() => [
+  { label: t('edit.enabled3'), value: 'on' },
+  { label: t('edit.disabled'), value: 'off' },
 ])
+const statusValue = computed({
+  get: () => (formData.Info.Status ? 'on' : 'off'),
+  set: (value: string) => {
+    formData.Info.Status = value === 'on'
+    handleFieldSave('Info.Status', formData.Info.Status)
+  },
+})
 
 // 配置来源三态卡片（value 为后端 Info.Mode 取值，驱动逻辑需保持原样；文案走词表）
 // 脚本 = 本脚本下选了「脚本」的用户共用一份任务配置；用户 = 该用户自己一份；
@@ -630,13 +620,6 @@ const hsrConfigModeOptions: Array<{
     icon: 'setting',
   },
 ]
-
-// 切换配置来源后说一句「数据换了主人」
-const CONFIG_MODE_SWITCHED_KEYS: Record<'脚本' | '用户' | '直控', string> = {
-  脚本: 'edit.hsrModeSwitchedScript',
-  用户: 'edit.hsrModeSwitchedUser',
-  直控: 'edit.hsrModeSwitchedDirect',
-}
 
 type MutableRecord = Record<string, unknown>
 
@@ -933,7 +916,6 @@ const handleConfigModeChange = async (value: boolean | string) => {
     formData.Info.Mode = previousMode
     return
   }
-  message.info(t(CONFIG_MODE_SWITCHED_KEYS[formData.Info.Mode]))
   if (value === '直控') {
     await ensureDirectEnginesEnabled()
     return

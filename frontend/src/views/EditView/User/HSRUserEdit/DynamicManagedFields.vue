@@ -178,9 +178,10 @@ const numberValue = (value: unknown) => {
 
 const formatJson = (value: unknown) => JSON.stringify(value ?? null, null, 2)
 
+// 有原值才挂提示；没有原值时「已改」标签自己就说明白了
 const overrideTooltip = (field: HSRManagedField) =>
   field.native_value === undefined
-    ? t('edit.hsrFieldOverriddenTip')
+    ? undefined
     : t('edit.hsrFieldNativeValue', {
         value: formatManagedValue(field, field.native_value, {
           on: t('edit.hsrValueOn'),

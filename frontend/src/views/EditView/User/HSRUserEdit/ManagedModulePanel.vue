@@ -1,40 +1,20 @@
 <template>
-  <a-modal
-    :open="open"
-    width="720px"
-    class="hsr-module-dialog"
-    :body-style="{ maxHeight: '70vh', overflowY: 'auto', overflowX: 'hidden' }"
-    @cancel="close"
-  >
-    <template #title>
-      <div v-if="task" class="dialog-title">
-        <span>{{ task.name }}</span>
+  <div v-if="task" class="module-panel">
+    <div class="panel-header">
+      <div class="panel-title-line">
+        <span class="panel-title">{{ task.name }}</span>
         <a-tag>{{ phaseLabel }}</a-tag>
-        <a-tooltip v-if="!enabled" :title="notEnabledTip">
-          <a-tag class="not-enabled-tag">{{ t('edit.hsrTaskNotEnabled') }}</a-tag>
-        </a-tooltip>
+        <!-- 两个引擎都能选时下面有分段控件；只有一个时在这里标出是谁的设置 -->
+        <a-tag v-if="!showEngineSwitch && engine" :color="engineColor" class="panel-engine">
+          {{ engineName }}
+        </a-tag>
       </div>
-    </template>
+      <div v-if="task.description" class="panel-meta">{{ task.description }}</div>
+    </div>
 
-    <!-- 自己包一层竖排表单：弹窗里的表单项不挂到页面表单的模型上，且固定上标签下控件 -->
-    <a-form v-if="task" layout="vertical">
-      <div v-if="task.description" class="task-description">{{ task.description }}</div>
-
-      <!-- 执行引擎：云·星穹铁道恒由三月七执行；客户端只有真有两个可选引擎时才给分段控件 -->
-      <a-typography-text
-        v-if="cloud"
-        type="secondary"
-        class="engine-only-line"
-        data-testid="hsr-cloud-engine-line"
-      >
-        {{ t('edit.hsrCloudRunByM7a') }}
-      </a-typography-text>
-      <a-form-item
-        v-else-if="engineOptions.length > 1"
-        :label="t('edit.engine')"
-        :extra="shared ? t('edit.hsrSharedEngineSwitchHint') : t('edit.hsrEngineSwitchHint')"
-        class="engine-item"
-      >
+    <!-- 自己包一层竖排表单：面板里的表单项不挂到页面表单的模型上，且固定上标签下控件 -->
+    <a-form layout="vertical">
+      <a-form-item v-if="showEngineSwitch" :label="t('edit.engine')" class="engine-item">
         <a-segmented
           :value="engine"
           :options="engineOptions"
@@ -43,17 +23,12 @@
           @change="handleEngineChange"
         />
       </a-form-item>
-      <a-typography-text v-else-if="engine" type="secondary" class="engine-only-line">
-        <a-tooltip :title="sourceTip">
-          {{ t('edit.hsrRunByEngine', { engine: engineName }) }}
-        </a-tooltip>
-      </a-typography-text>
 
       <!-- 模块专属的设置（体力模块的刷取副本与历战余响）由页面通过插槽放进来 -->
       <slot name="extra" />
 
       <!-- 表单提示与失效覆盖合成一条，可展开看明细 -->
-      <a-alert v-if="noticeCount" type="warning" show-icon class="dialog-alert">
+      <a-alert v-if="noticeCount" type="warning" show-icon class="panel-alert">
         <template #message>
           <span>{{ noticeHeadline }}</span>
           <a-button
@@ -147,28 +122,24 @@
       <a-empty v-else :description="t('edit.engineReturnedNoDynamic')" />
     </a-form>
 
-    <!-- 底栏放在弹窗 footer 里：正文滚动时「完成」与模块恢复始终可见 -->
-    <template #footer>
-      <div v-if="task" class="dialog-footer">
-        <a-popconfirm
-          :overlay-style="{ maxWidth: '360px' }"
-          :title="t('edit.hsrModuleResetConfirmTitle', { engine: engineName })"
-          :description="
-            shared ? t('edit.hsrModuleResetConfirmShared') : t('edit.hsrModuleResetConfirmUser')
-          "
-          :ok-text="t('edit.ok')"
-          :cancel-text="t('edit.cancel')"
-          :disabled="loading || saving || !form"
-          @confirm="emit('resetModule')"
-        >
-          <a-button type="link" size="small" class="module-reset" :disabled="saving || !form">
-            {{ t('edit.hsrModuleReset', { engine: engineName }) }}
-          </a-button>
-        </a-popconfirm>
-        <a-button type="primary" @click="close">{{ t('edit.hsrDialogDone') }}</a-button>
-      </div>
-    </template>
-  </a-modal>
+    <div class="panel-footer">
+      <a-popconfirm
+        :overlay-style="{ maxWidth: '360px' }"
+        :title="t('edit.hsrModuleResetConfirmTitle', { engine: engineName })"
+        :description="
+          shared ? t('edit.hsrModuleResetConfirmShared') : t('edit.hsrModuleResetConfirmUser')
+        "
+        :ok-text="t('edit.ok')"
+        :cancel-text="t('edit.cancel')"
+        :disabled="loading || saving || !form"
+        @confirm="emit('resetModule')"
+      >
+        <a-button type="link" size="small" class="module-reset" :disabled="saving || !form">
+          {{ t('edit.hsrModuleReset', { engine: engineName }) }}
+        </a-button>
+      </a-popconfirm>
+    </div>
+  </div>
 </template>
 
 <script setup lang="ts">
@@ -187,14 +158,13 @@ import { splitFieldsByGroup } from './managedFields'
 const { t, te } = useI18n()
 
 const props = defineProps<{
-  open: boolean
   task: HSRManagedTask | null
   engine?: HSREngine
   form?: HSRManagedEngineForm
   engineOptions: { value: HSREngine; label: string }[]
   /** 引擎显示名（三月七 / SRA）。 */
   engineName: string
-  enabled: boolean
+  engineColor: string
   saving: boolean
   loading: boolean
   shared?: boolean
@@ -202,7 +172,6 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
-  'update:open': [open: boolean]
   engineChange: [engine: HSREngine]
   fieldChange: [key: string, value: unknown]
   fieldReset: [key: string]
@@ -224,16 +193,11 @@ watch(
   }
 )
 
+// 云·星穹铁道恒由三月七执行；客户端只有真有两个可选引擎时才给分段控件
+const showEngineSwitch = computed(() => !props.cloud && props.engineOptions.length > 1)
+
 const phaseLabel = computed(() =>
   props.task?.phase === 'weekly' ? t('edit.weekly') : t('edit.daily')
-)
-
-const notEnabledTip = computed(() =>
-  props.shared ? t('edit.hsrSharedModuleNotEnabled') : t('edit.thisModuleNotEnabled')
-)
-
-const sourceTip = computed(() =>
-  props.form?.source ? t('edit.hsrReadFrom', { source: props.form.source }) : undefined
 )
 
 const layout = computed(() => splitFieldsByGroup(props.form?.fields ?? []))
@@ -275,43 +239,57 @@ const handleEngineChange = (value: string | number) => {
 
 const handleFieldChange = (key: string, value: unknown) => emit('fieldChange', key, value)
 const handleFieldReset = (key: string) => emit('fieldReset', key)
-
-// 关闭前先让正在输入的文本框失焦：失焦即提交，关掉弹窗不丢刚打的字
-const close = () => {
-  const active = document.activeElement
-  if (active instanceof HTMLElement) active.blur()
-  emit('update:open', false)
-}
 </script>
 
 <style scoped>
-.dialog-title {
+.module-panel {
+  flex: 1;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding: 20px;
+  border: 1px solid var(--ant-color-border-secondary);
+  border-radius: 8px;
+  background: var(--ant-color-bg-container);
+}
+
+.panel-header {
+  margin-bottom: 20px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--ant-color-border-secondary);
+}
+
+.panel-title-line {
   display: flex;
   align-items: center;
   gap: 8px;
 }
 
-.not-enabled-tag {
-  color: var(--ant-color-text-tertiary);
+.panel-title-line :deep(.ant-tag) {
+  margin-inline-end: 0;
 }
 
-.task-description {
-  margin-bottom: 12px;
+.panel-title {
+  color: var(--ant-color-text);
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.panel-engine {
+  margin-left: auto;
+}
+
+.panel-meta {
+  margin-top: 4px;
   color: var(--ant-color-text-tertiary);
-  font-size: 12px;
+  font-size: 13px;
 }
 
 .engine-item {
   margin-bottom: 16px;
 }
 
-.engine-only-line {
-  display: block;
-  margin-bottom: 16px;
-  font-size: 13px;
-}
-
-.dialog-alert {
+.panel-alert {
   margin-bottom: 16px;
 }
 
@@ -363,11 +341,10 @@ const close = () => {
   font-weight: 400;
 }
 
-.dialog-footer {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
+.panel-footer {
+  margin-top: 20px;
+  padding-top: 12px;
+  border-top: 1px solid var(--ant-color-border-secondary);
 }
 
 .module-reset {

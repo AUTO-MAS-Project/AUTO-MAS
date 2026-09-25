@@ -679,26 +679,16 @@ export default {
     never: 'しない',
     sanityScriptChangedPick:
       '開拓力モジュールの実行エンジンが変わりました。ステージを選び直してください。',
-    hsrEngineSwitchHint:
-      'エンジンごとに設定とステージが別々に保存され、切り替えて戻すと元の値が復元されます。',
-    hsrSharedEngineSwitchHint:
-      'スクリプトのエンジン割り当てを変更します。「スクリプト」を選んだユーザーと、エンジンを個別指定していない「ユーザー」も一緒に切り替わります。',
-    hsrStageMissingForEngine:
-      '{engine} ではまだステージが選ばれていません。ステージはエンジンごとに保存され、元のエンジンに戻すと以前の選択が復元されます。',
+    hsrStageMissingForEngine: '{engine} ではステージが未選択です',
     editHsrUser: 'HSR ユーザーを編集',
     addHsrUser: 'HSR ユーザーを追加',
-    hsrServerCnOfficial: '公式サーバー',
     hsrWeekDone: '今週完了',
     hsrWeekNotDone: '今週未完了',
     hsrLastCompleted: '最終完了：{date}',
-    hsrReadFrom: '読み込み元：{source}',
     hsrUseScriptShared:
       'このスクリプトで「スクリプト」を選んだほかのユーザーと、同じタスク設定を共有します。',
     hsrSharedPlanHint:
       'スクリプト共有のタスク設定を編集しています。変更はこのスクリプトで「スクリプト」を選んだ全ユーザーに反映されます。',
-    hsrDirectControlHint:
-      '直接制御は SRA / 三月なのかアシスタントで現在保存されている設定をそのまま実行します。MAS はゲームの起動とプロセスの追跡のみを担当し、アカウント・ステージ・タスクのオン・オフはこのモードでは反映されません。',
-    hsrRunByEngine: '{engine} が実行します',
     hsrGamePlatform: 'ゲームプラットフォーム',
     hsrGamePlatformTip:
       'クライアント：MAS が下の設定でローカルのスターレイルを起動します。クラウド・スターレイル：MAS がブラウザを管理し、その中で三月七が実行します',
@@ -724,17 +714,12 @@ export default {
       'このユーザーのクラウド・スターレイルのウィンドウを開きます。そこで HoYoverse アカウントにログインしてください。ログイン確認後、三月七が一度ゲームに入ってから終了します',
     hsrCloudLoginSuccess: 'クラウド・スターレイルにログインしました',
     hsrCloudLoginFailed: 'クラウドゲームへのログインに失敗しました：{reason}',
-    hsrCloudRunByM7a: 'クラウド・スターレイルは三月七が実行します',
-    hsrSharedModuleNotEnabled:
-      '共有タスク設定ではこのモジュールが無効です。設定は保存されますが、今回は実行されません。',
     daily: '日課',
     hsrEngineUnavailable: '利用不可',
     hsrNativeConfigNotLoaded: '三月なのかアシスタント / SRA の設定をまだ読み込めていません',
-    hsrTaskNotEnabled: '無効',
     hsrRepickStage: 'ステージを選び直してください',
     hsrTaskConfig: 'タスク設定',
     hsrSharedPlanTag: 'スクリプト共有',
-    hsrModuleSettings: '設定',
     hsrSummaryNative: '{engine} の設定をそのまま使用',
     hsrSummaryItem: '{label}：{value}',
     hsrSummaryMore: '{text} ほか {n} 件',
@@ -744,14 +729,12 @@ export default {
     hsrDailySummary: '{type} · {stage}｜歴戦余韻：{eow}（{weekday}）',
     hsrStageNotPicked: 'ステージ未選択',
     hsrStageType: 'ステージの種類',
-    hsrStageTypeTip: '今回周回するステージの種類です。種類ごとに前回選んだステージを覚えています。',
     hsrStage: 'ステージ',
     hsrBuildTargetIgnoredSra:
       '「{label}」がオンです。SRA は育成目標から周回先を決めるため、ここで選んだステージは実行されません。',
     hsrBuildTargetFallbackM7a:
       '「{label}」がオンです。三月なのかアシスタントは育成目標を優先し、認識できなかったときだけここで選んだステージを周回します。',
     hsrFieldOverridden: '変更済み',
-    hsrFieldOverriddenTip: 'MAS で変更済み。実行時はこの値を使います',
     hsrFieldNativeValue: 'MAS で変更済み。元の値：{value}',
     hsrFieldReset: '元に戻す',
     hsrFieldResetFailed: '元に戻せませんでした',
@@ -783,17 +766,10 @@ export default {
       '共有タスク設定でこのモジュールに加えた変更を削除します（現在のエンジンのみ）。「スクリプト」を選んだユーザー全員に影響します。三月なのかアシスタント / SRA 側の設定は変更されません。元に戻せません。',
     hsrModuleResetDone: 'このモジュールを {engine} の設定に戻しました',
     hsrModuleResetFailed: 'このモジュールを {engine} の設定に戻せませんでした',
-    hsrDialogDone: '完了',
     hsrMarkNotDone: '未完了にする',
     hsrUseUserOwn: 'このユーザー専用のタスク設定です。ほかのユーザーには影響しません。',
     hsrUseDirect:
       '三月なのかアシスタント / SRA に保存された設定をそのまま実行します。MAS はゲームの起動と後処理のみを担当し、このページのタスク設定は使われません。',
-    hsrModeSwitchedScript:
-      'スクリプト共有のタスク設定に切り替えました。自分の設定は残っており、「ユーザー」に戻すと復元されます。',
-    hsrModeSwitchedUser:
-      'このユーザー専用のタスク設定に切り替えました。スクリプト共有の設定には影響しません。',
-    hsrModeSwitchedDirect:
-      'このページのタスク設定は無効になりました。実行時は三月なのかアシスタント / SRA の設定をそのまま使います。',
     hsrNoEnginePath: '先にスクリプト設定で三月なのかアシスタントか SRA のパスを入力してください。',
     hsrCapabilityFallback:
       'エンジンの状態を読み込めなかったため、スクリプト設定のパスをもとに表示しています：{reason}',
@@ -857,8 +833,6 @@ export default {
     pathFolderHoldingScript: 'スクリプトの設定ファイルが置かれているフォルダのパス',
     pathScriptConfigurationFile: 'スクリプトの設定ファイルのパス',
     expressionGuide: '式のガイド',
-    thisModuleNotEnabled:
-      'このユーザーではこのモジュールが有効になっていません。設定は保存されますが、今回は実行されません。',
     pickConfigurationFile: '設定ファイルを選択してください',
     pickConfigurationFolder: '設定フォルダを選択してください',
     skip2: 'スキップ',
@@ -1280,7 +1254,7 @@ export default {
     hsrUpdateCheckFailed: '{engine} の更新確認に失敗しました',
     hsrUpdateRequestFailed: '{engine} の更新リクエストに失敗しました',
     calyxCrimson: '疑似花萼（赤）',
-    calyxCrimsonTraceMaterials: '疑似花萼（赤）：軌跡素材（金と赤は別々に保存されます）',
+    calyxCrimsonTraceMaterials: '疑似花萼（赤）：軌跡素材',
     calyxGolden: '疑似花萼（金）',
     calyxGoldenCharacterExp: '疑似花萼（金）：キャラクター経験値 / 光円錐経験値 / 信用ポイント',
     formatLogFileName:
@@ -1631,7 +1605,6 @@ export default {
     pickUserWhoseServer: '更新確認に使うサーバーのユーザーを選びます',
     chooseWhetherMasSwitches:
       'ゲーム内に保存済みのアカウントを MAS が切り替えるか、MAAEND の内蔵タスクがアカウント末尾 4 桁で切り替えるかを選びます',
-    pickEchoOfWarStage: '挑戦する歴戦余韻のステージを選びます。',
     pickProjectDirectory: 'プロジェクトフォルダを選択',
     pickGameSOwn: 'ゲーム本体の exe を選択。終了後は MAS が閉じます',
     generalScriptConfiguration: '汎用スクリプト設定',

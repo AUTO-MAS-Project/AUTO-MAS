@@ -14,12 +14,7 @@
       <a-col :span="8">
         <a-form-item>
           <template #label>
-            <a-tooltip :title="t('edit.hsrStageTypeTip')">
-              <span class="form-label">
-                {{ t('edit.hsrStageType') }}
-                <QuestionCircleOutlined class="help-icon" />
-              </span>
-            </a-tooltip>
+            <span class="form-label">{{ t('edit.hsrStageType') }}</span>
           </template>
           <a-select
             :value="activeChannel"
@@ -63,9 +58,7 @@
         <a-form-item>
           <template #label>
             <!-- 遗器自动分解提醒放在悬停说明里 -->
-            <a-tooltip
-              :title="`${t('edit.pickEchoOfWarStage')} ${t('edit.turnAutomaticRelicSalvage')}`"
-            >
+            <a-tooltip :title="t('edit.turnAutomaticRelicSalvage')">
               <span class="form-label">
                 {{ t('edit.echoOfWar') }}
                 <QuestionCircleOutlined class="help-icon" />
@@ -140,7 +133,7 @@ const { t } = useI18n()
 
 type StageSectionFormData = Pick<HSRUserConfigData, 'Stage' | 'TaskOpt'>
 
-// 体力模块弹窗里的副本选择：只读写 Stage / TaskOpt；loading 用于保存中禁用下拉。
+// 体力模块设置里的副本选择：只读写 Stage / TaskOpt；loading 用于保存中禁用下拉。
 const props = defineProps<{
   formData: StageSectionFormData
   loading: boolean

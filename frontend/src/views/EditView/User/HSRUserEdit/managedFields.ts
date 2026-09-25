@@ -1,7 +1,7 @@
 import type { HSREngine, HSRManagedField } from '@/composables/useHSRPluginApi'
 
 /**
- * HSR 模块弹窗里字段的分组、显示条件与摘要。后端新加的 group / overridden /
+ * HSR 模块设置里字段的分组、显示条件与摘要。后端新加的 group / overridden /
  * native_value / visible_when 全部可选：没给时一律按「common、未覆盖、无原值、恒显示」退化。
  */
 
