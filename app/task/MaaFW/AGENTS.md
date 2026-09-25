@@ -72,7 +72,10 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   是自己一直在用的目录，里面早有这些文件）。切换方向无关：升级、改渠道降级、迁移统一都是这一条。
   例外中的例外是 `contracts.VERSION_BOUND_STATE_FILES`（M9A 热更新的 `data/manifest_cache.json`）：
   它和随版本发布的 `data/` 表成对，换到另一个载荷时只取新载荷那份（没有就不要），带视图这份会让
-  缓存比数据新、热更新一直跳过；同一载荷上重建视图（采纳、修复）时照常带。
+  缓存比数据新、热更新一直跳过；同一载荷上重建视图（采纳、修复）时照常带。自带解释器里的 maafw
+  binding（`…/site-packages/maa/`、`maafw-*.dist-info/`）也不按受管文件处理：它是准备运行环境
+  钉回的（或 agent 部署脚本升级的），切换时一律以新载荷为准，不留档、不当私有文件带过去，
+  下次准备再按新原生库钉回（`embedded_project._is_maafw_binding_path`）。
 - 内置运行从不启动项目自带的界面程序（MFW.exe / MFAAvalonia / MXU），副本去掉的只有外壳、
   .NET 托管库、界面用的运行时、缓存与日志。**项目自带的运行时原样带走**：MaaFramework 原生库
   目录（`maafw/`，MFAAvalonia 布局下是 `runtimes/win-x64/native`）与 agent 自带的解释器目录
@@ -143,6 +146,10 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   5.11.1/协议 7），表现只有一句「AgentClient 连接超时」。准备运行环境时对**内嵌视图 / 更新时新载荷的 staging**把它钉回
   原生库版本（副本是我们铺的；用户自己的目录只说明不动），环境指纹把该 dist-info 名算进去，
   否则钉回那一步会被缓存跳过；失败路径的诊断（`_describe_agent_maafw_mismatch`）两边都说清。
+  site-packages 里残留多份 `maafw-*.dist-info`（M9A v4.9.0 出厂就带 5.12.3 + 5.13.0）时，钉回前
+  先删掉版本不是最高的那些记录目录：pip 按目录顺序取第一份记录、我们取最高版本，不删的话 pip
+  要么说「已满足」什么都不做，要么只卸掉旧记录，两种结果下次准备都还要再钉、改了记录集合的那次
+  还会被当成并发改动「拒绝缓存旧运行环境」（`agent_env/env._stale_maafw_dist_infos`）。
 - `Run.RunTimeLimit` 是套在单个用户整次 MaaFW 运行上的**硬超时**（`asyncio.wait_for`），
   与其他专项的"日志停滞超时"不同义；超时会丢掉本轮进度。
 - Win32 下 `Game.LaunchMode` 只有两态：`DirectExe`（默认，MAS 启动、结束后一律关闭）与

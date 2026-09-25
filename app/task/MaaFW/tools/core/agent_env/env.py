@@ -242,15 +242,7 @@ def project_python_maafw_version(python_exe: str | Path) -> str | None:
     重装出来的文件脱离共用库。
     """
 
-    root = Path(python_exe).parent
-    for site in (
-        root / "Lib" / "site-packages",
-        *sorted(root.glob("lib/python*/site-packages")),
-    ):
-        try:
-            matches = sorted(site.glob("maafw-*.dist-info"))
-        except OSError:
-            continue
+    for matches in _iter_maafw_dist_info_groups(python_exe):
         versions = [
             text
             for text in (
@@ -270,6 +262,48 @@ def project_python_maafw_version(python_exe: str | Path) -> str | None:
             return max(parsed, key=lambda item: item[0])[1]
         return versions[0]
     return None
+
+
+def _iter_maafw_dist_info_groups(python_exe: str | Path):
+    """按查找顺序逐个 site-packages 给出其中的 ``maafw-*.dist-info``（排好序；空的跳过）。"""
+
+    root = Path(python_exe).parent
+    for site in (
+        root / "Lib" / "site-packages",
+        *sorted(root.glob("lib/python*/site-packages")),
+    ):
+        try:
+            matches = sorted(site.glob("maafw-*.dist-info"))
+        except OSError:
+            continue
+        if matches:
+            yield matches
+
+
+def _stale_maafw_dist_infos(python_exe: str | Path) -> list[Path]:
+    """与 :func:`project_python_maafw_version` 同一个 site-packages 里、版本不是最高的
+    那些 ``maafw-*.dist-info``——升级没卸干净留下的旧安装记录。
+
+    它们会让 pip 与我们对「装的是哪个版本」各说各的：pip 按目录顺序取第一个记录，
+    我们取最高版本。钉回前不清掉，``pip install maafw==<原生库版本>`` 要么把同版本的旧
+    记录当成已装好、什么都不做（M9A v4.9.0 带 5.12.3 + 5.13.0 两份，原生库是 5.12.3 时
+    就是这样），要么只卸掉旧记录、留下更高的那份；两种结果下次准备读到的都还不是原生库
+    版本，于是每次准备都重跑钉回，改了记录集合的那次还会被当成并发改动拒绝缓存。
+    """
+
+    for matches in _iter_maafw_dist_info_groups(python_exe):
+        parsed: list[tuple[Version, Path]] = []
+        for match in matches:
+            text = match.name[len("maafw-") : -len(".dist-info")]
+            try:
+                parsed.append((Version(text), match))
+            except InvalidVersion:
+                continue
+        if len(parsed) < 2:
+            return []
+        newest = max(parsed, key=lambda item: item[0])[1]
+        return [path for _, path in parsed if path != newest]
+    return []
 
 
 def _is_embedded_copy(project_path: Path) -> bool:
@@ -321,11 +355,37 @@ def _repin_project_python_binding(
         )
         return
     log(f"[Python环境] {mismatch}，把副本里的 binding 钉回 {native}")
+    removed: list[str] = []
+    for stale in _stale_maafw_dist_infos(python_exe):
+        # 只摘这份旧记录自己的目录，不按它的 RECORD 删文件：那些文件现在属于更高的版本，
+        # 由下面的 pip 按那份记录卸掉。目录里的小文件是视图私有的复制件，删目录项不写穿。
+        try:
+            shutil.rmtree(stale)
+        except OSError as exc:
+            log(f"[Python环境] 清理旧的 maafw 安装记录 {stale.name} 失败: {exc}")
+        else:
+            removed.append(stale.name)
+    if removed:
+        log(
+            f"[Python环境] 先清掉副本里残留的旧 maafw 安装记录 {', '.join(removed)}"
+            f"（实际装的是 {installed}），否则 pip 会认错已装版本"
+        )
     ok, detail = _pip_install(
         python_exe, [f"maafw=={native}"], cwd=str(project_path), env=env, log=log
     )
     if not ok:
         log(f"[Python环境] binding 钉回失败，agent 可能连不上: {detail[:200]}")
+        return
+    pinned = project_python_maafw_version(python_exe)
+    try:
+        pinned_ok = pinned is not None and Version(pinned) == Version(native)
+    except InvalidVersion:
+        pinned_ok = pinned == native
+    if not pinned_ok:
+        log(
+            f"[Python环境] 钉回后读到的 binding 仍是 {pinned or '未知'}，与原生库 {native} "
+            "不一致，agent 可能连不上"
+        )
 
 
 def _isolated_venv_lock(path: Path) -> threading.RLock:
