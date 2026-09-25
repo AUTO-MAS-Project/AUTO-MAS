@@ -15,6 +15,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
+from .m7a_config import _user_managed_options as _m7a_user_managed_options
 from .m7a_config import (
     load_m7a_native_config,
     overlay_m7a_managed_options,
@@ -22,7 +23,9 @@ from .m7a_config import (
 from .managed_fields import (
     SRA_REWARD_LABELS,
     SRA_REWARD_NAMED_KEYS,
+    HSRFieldGroup,
     ManagedFieldSpec,
+    ManagedFieldVisibleWhen,
     managed_field_specs,
 )
 from .managed_overlay import DroppedOverride
@@ -55,10 +58,21 @@ class HSRManagedField:
     minimum: float | None = None
     maximum: float | None = None
     readonly: bool = False
+    group: HSRFieldGroup = "common"
+    """分组；``common`` 平铺，其余各成一个默认收起的折叠面板"""
+    overridden: bool = False
+    """当前计划（``plan_owner`` 指向的那份 ``Managed.Options``）对该键有生效中的覆盖值"""
+    native_value: Any = None
+    """引擎原生配置里的值，重置单项后前端可直接显示"""
+    visible_when: ManagedFieldVisibleWhen | None = None
+    """同模块同引擎里另一字段取特定值时才显示"""
 
     def asdict(self) -> dict[str, Any]:
         data = asdict(self)
         data["options"] = [item.asdict() for item in self.options]
+        data["visible_when"] = (
+            self.visible_when.asdict() if self.visible_when is not None else None
+        )
         return data
 
 
@@ -110,6 +124,7 @@ def _field(
     options: tuple[HSRManagedFieldOption, ...] = (),
     minimum: float | None = None,
     maximum: float | None = None,
+    overridden: bool = False,
 ) -> HSRManagedField:
     return HSRManagedField(
         key=spec.key,
@@ -120,7 +135,20 @@ def _field(
         options=options,
         minimum=minimum,
         maximum=maximum,
+        group=spec.group,
+        overridden=overridden,
+        native_value=native_value,
+        visible_when=spec.visible_when,
     )
+
+
+def _effective_override_keys(
+    overrides: dict[str, Any], dropped: tuple[DroppedOverride, ...]
+) -> frozenset[str]:
+    """计划里对本模块生效中的覆盖键：保存过、且没被当成失效覆盖丢弃的。"""
+
+    dropped_keys = {item.key for item in dropped}
+    return frozenset(str(key) for key in overrides if str(key) not in dropped_keys)
 
 
 # 露出哪些键由 managed_fields.SRA_MANAGED_FIELDS 决定；这里只管显示文案。表外的
@@ -319,6 +347,7 @@ def list_sra_managed_modules(
             module_key, script_config, user_config
         )
         overrides = _sra_user_managed_options(user_config, module_key)
+        overridden_keys = _effective_override_keys(overrides, dropped)
         fields: list[HSRManagedField] = []
         for spec in managed_field_specs("SRA", module_key):
             key = spec.key
@@ -352,6 +381,7 @@ def list_sra_managed_modules(
                     ),
                     minimum=_SRA_RANGES.get(key, (None, None))[0],
                     maximum=_SRA_RANGES.get(key, (None, None))[1],
+                    overridden=key in overridden_keys,
                 )
             )
         result.append(
@@ -477,7 +507,10 @@ def list_m7a_managed_modules(
         for module_key in buckets
     }
     for module_key, fields in buckets.items():
-        effective = overlay_by_module[module_key][0]
+        effective, dropped = overlay_by_module[module_key]
+        overridden_keys = _effective_override_keys(
+            _m7a_user_managed_options(user_config, module_key), dropped
+        )
         for spec in managed_field_specs("M7A", module_key):
             key = spec.key
             if key not in payload:
@@ -493,6 +526,7 @@ def list_m7a_managed_modules(
                     options=_M7A_SELECTS.get(key, ()),
                     minimum=_M7A_RANGES.get(key, (None, None))[0],
                     maximum=_M7A_RANGES.get(key, (None, None))[1],
+                    overridden=key in overridden_keys,
                 )
             )
     return tuple(
