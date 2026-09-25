@@ -219,7 +219,9 @@ def okww_resolve(results: list[tuple[str, str, float]]) -> list[tuple[str, str, 
                 (LogType.NORMAL, f"{status}: {node}（{reason}）", ts_of[node])
             )
         else:
-            status_lines.append((LogType.NORMAL, f"{states[node][1]}: {node}", ts_of[node]))
+            status_lines.append(
+                (LogType.NORMAL, f"{states[node][1]}: {node}", ts_of[node])
+            )
     if last_stamina is not None:
         status_lines.append(
             (LogType.NORMAL, f"⚡ 剩余体力: {last_stamina}", last_stamina_ts)
