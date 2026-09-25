@@ -58,6 +58,9 @@ M7A_MANAGED_STAGE_KEYS: frozenset[str] = frozenset(
         # 这里挡住 _apply_managed_patch 用 native config.yaml 的值把它们覆盖回去。
         "weekly_divergent_timestamp",
         "currencywars_timestamp",
+        # 差分宇宙低性能模式以脚本级 Run.LowPerformanceMode 为准，不让原生值或
+        # 残留的用户覆盖把 build_divergent_universe_patch 写的值盖回去。
+        "weekly_divergent_stable_mode",
     }
 )
 
