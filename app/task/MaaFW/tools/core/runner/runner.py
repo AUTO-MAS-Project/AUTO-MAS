@@ -611,7 +611,9 @@ def _ensure_maafw_global_init(
             )
         # 架构不符时 Library.open 必然失败，但原生层的报错定位不到「装错了包」。
         # 提前判断只是把同一个失败说清楚，不会挡下原本能跑的情况。
-        architecture_error = describe_runtime_architecture_mismatch(runtime_path)
+        architecture_error = describe_runtime_architecture_mismatch(
+            runtime_path, project_path=project_path
+        )
         if architecture_error:
             raise RuntimeError(architecture_error)
         _ensure_maafw_client_library_mode(runtime_path)

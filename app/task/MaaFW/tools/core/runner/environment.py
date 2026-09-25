@@ -1008,14 +1008,23 @@ def host_architecture() -> str:
     return "x86"
 
 
-def describe_runtime_architecture_mismatch(runtime_path: Path | None) -> str | None:
+def describe_runtime_architecture_mismatch(
+    runtime_path: Path | None,
+    *,
+    project_path: Path | None = None,
+    source_path: Path | None = None,
+) -> str | None:
     """项目自带的原生库架构与本机不符时给出可读原因。
 
     不符时 ``Library.open`` 必然失败，但原生层报的错难以定位到「装错了包」。
     提前判断只是把同一个失败说清楚，不会挡下任何原本能跑的情况。
 
     典型场景：arm64 机器上装了 win-x86_64 的发行包（或反之）——MaaFramework
-    的项目普遍两种都发，选错了很难自己看出来。
+    的项目普遍两种都发，选错了很难自己看出来。另一种是 MAS 自己造成的：旧版在
+    来源 ``runtimes/`` 同时带 win-arm64 与 win-x64 时按名字选中 arm64，副本里只剩
+    arm64。给了 ``project_path``（副本）且原生库在它的 ``runtimes/`` 下时按这种情况
+    说；再给了 ``source_path``（导入来源 ``Info.Path``）就看来源里有没有本机能用的，
+    有就只让重新导入，没有就让换包。这里只说明、不动副本与载荷。
     """
 
     if runtime_path is None:
@@ -1027,9 +1036,54 @@ def describe_runtime_architecture_mismatch(runtime_path: Path | None) -> str | N
     expected = host_architecture()
     if found == expected:
         return None
+    source_loadable = (
+        project_runtime_loadable_on_host(source_path)
+        if source_path is not None and source_path.is_dir()
+        else None
+    )
+    if source_loadable is True:
+        return (
+            f"项目副本里只带了 {found} 架构的 MaaFramework，本机是 {expected}"
+            "（旧版 MAS 在来源目录同时带多种架构时选错了）。来源目录里有 "
+            f"{expected} 版，请在脚本页重新导入项目"
+        )
+    if source_loadable is False:
+        return (
+            f"项目自带的 MaaFramework 是 {found} 架构，本机是 {expected}，来源目录里"
+            f"也只有 {found} 版——请换成 {expected} 的发行包，再在脚本页重新导入"
+        )
+    if project_path is not None and _is_relative_to(
+        runtime_path, project_path / "runtimes"
+    ):
+        return (
+            f"项目副本里只带了 {found} 架构的 MaaFramework，本机是 {expected}"
+            "（旧版 MAS 在来源目录同时带多种架构时会选错），请在脚本页重新导入项目；"
+            f"若来源目录本身只有 {found} 版，请换成 {expected} 的发行包"
+        )
     return (
         f"项目自带的 MaaFramework 是 {found} 架构，本机是 {expected}——"
         "多半是下载了不匹配的发行包，请换成对应架构的包"
+    )
+
+
+def _is_relative_to(path: Path, parent: Path) -> bool:
+    try:
+        Path(path).resolve().relative_to(Path(parent).resolve())
+    except (OSError, ValueError):
+        return False
+    return True
+
+
+def describe_project_runtime_architecture_mismatch(
+    project_path: Path, *, source_path: Path | None = None
+) -> str | None:
+    """运行前自检用：项目（副本）自带的原生库与本机架构不符时的原因，见
+    :func:`describe_runtime_architecture_mismatch`；对得上或没自带时 None。"""
+
+    return describe_runtime_architecture_mismatch(
+        project_maafw_runtime_path(project_path),
+        project_path=project_path,
+        source_path=source_path,
     )
 
 

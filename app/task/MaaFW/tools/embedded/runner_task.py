@@ -43,6 +43,7 @@ from app.task.MaaFW.tools.core.interface.service import (
 )
 from app.task.MaaFW.tools.core.runner.environment import (
     MaaFWRunnerEnvironment,
+    describe_project_runtime_architecture_mismatch,
 )
 from app.task.MaaFW.tools.core.runner.models import (
     MaaFWDeviceConfig,
@@ -496,11 +497,26 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 self.cur_user_item.status = "异常"
                 return game_path_error
 
+            # 项目自带的 MaaFramework 与本机架构不符时 worker 里必然加载失败；在这里先说清楚
+            # （还没拉起游戏 / 模拟器），并按导入来源 Info.Path 判断重新导入能不能解决。
+            architecture_error = await asyncio.to_thread(
+                self._describe_runtime_architecture_mismatch
+            )
+            if architecture_error:
+                self.cur_user_item.status = "异常"
+                return architecture_error
+
             keep_reservation = True
             return "Pass"
         finally:
             if not keep_reservation:
                 await self._release_project_path()
+
+    def _describe_runtime_architecture_mismatch(self) -> str | None:
+        source = str(self.script_config.get("Info", "Path") or "").strip()
+        return describe_project_runtime_architecture_mismatch(
+            self.project_path, source_path=Path(source) if source else None
+        )
 
     async def prepare(self) -> None:
         start_time = datetime.now()
