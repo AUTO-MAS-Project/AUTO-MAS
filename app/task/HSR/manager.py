@@ -70,7 +70,7 @@ from .tools.external_locks import (
     resolve_external_lock_paths,
 )
 from .tools.extra_script import run_script_after_task, run_script_before_task
-from .tools.m7a_config import load_m7a_native_config
+from .tools.m7a_config import load_m7a_native_config, load_m7a_yaml
 from .tools.managed_config import list_managed_modules
 from .tools.native_control import (
     native_provider,
@@ -969,6 +969,7 @@ class HSRManager(TaskExecuteBase):
                             user_config,
                         )
                     else:
+                        self._reset_m7a_config_for_managed(user_item.name)
                         proxy = task_cls(
                             self.script_info,
                             self.script_config,
@@ -1200,6 +1201,35 @@ class HSRManager(TaskExecuteBase):
             )
             return
 
+    def _reset_m7a_config_for_managed(self, user_name: str) -> None:
+        """托管用户开跑前把三月七 config.yaml 还原成本轮运行期备份。
+
+        托管模块的 patch 直接写进真实 config.yaml，而下一个托管用户没在 MAS 里
+        覆盖的字段、活动子开关等「原生值」又从这份文件读——不还原就会继承上一个
+        用户的覆盖值。文件已与备份一致（本轮第一个用户、上一个用户没跑三月七）时
+        不动它。必须在任务前脚本之前（它在托管队列里跑），按账号换整份配置的
+        任务前脚本才不会被这里盖掉。还原失败只记日志，按当前文件继续。
+        """
+
+        target = self._m7a_backup_target()
+        if target is None:
+            return
+        label, source, backup, existed = target
+        if not existed:
+            return
+        try:
+            if source.read_bytes() == backup.read_bytes():
+                return
+            _restore_path_from_backup(label, source, backup)
+        except Exception as e:  # noqa: BLE001
+            logger.opt(exception=True).warning(f"托管用户开跑前还原三月七配置失败：{e}")
+            self._append_log(
+                f"用户「{user_name}」开跑前还原三月七 config.yaml 失败，"
+                f"将在当前文件上继续：{e}"
+            )
+            return
+        logger.info(f"用户「{user_name}」开跑前已把{label}还原为本轮运行期备份")
+
     def _m7a_backup_target(self) -> tuple[str, Path, Path, bool] | None:
         """外部配置备份表里三月七 config.yaml 那一项；本轮没备份它时为 None。"""
 
@@ -1250,7 +1280,20 @@ class HSRManager(TaskExecuteBase):
                     "整轮结束仍按本轮开始前的配置还原"
                 )
                 return
-            atomic_write(backup, source.read_bytes())
+            current = source.read_bytes()
+            # 三月七写配置不是原子写，超时被强杀可能留下截断的文件；只有能解析成
+            # 非空对象才当新备份，否则维持整轮还原，把损坏的文件修回去。
+            try:
+                parsed = load_m7a_yaml(current.decode("utf-8-sig"))
+            except Exception:  # noqa: BLE001
+                parsed = None
+            if not isinstance(parsed, dict) or not parsed:
+                self._append_log(
+                    f"用户「{user_name}」直控后三月七 config.yaml 不是有效配置，"
+                    "不刷新运行期备份，整轮结束按本轮开始前的配置还原"
+                )
+                return
+            atomic_write(backup, current)
         except Exception as e:  # noqa: BLE001
             logger.opt(exception=True).warning(f"直控后刷新{label}运行期备份失败：{e}")
             self._append_log(
