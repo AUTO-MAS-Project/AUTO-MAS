@@ -60,8 +60,8 @@
               {{ t('edit.configRestoreTitle') }}
             </a-button>
           </a-flex>
-          <!-- 特调类型（M9A）自动加首尾任务与切号，提醒用户不用手动加；不隐藏这三个任务，手动加了也只是被去重 -->
-          <!-- 一条提示一个框：挤在一个框里读起来还是一坨 -->
+          <!-- 特调类型（M9A）的受管任务（启动 / 切号 / 关闭）由后端全权控制：「添加任务」与预设里
+               都没有它们；一条提示一个框：挤在一个框里读起来还是一坨 -->
           <a-alert
             v-for="(line, index) in queueHintLines"
             :key="index"
@@ -69,6 +69,15 @@
             type="info"
             show-icon
             :message="line"
+          />
+          <!-- 队列里还残留受管任务：照常显示。真要拆用户时是警告，其余（如刚导入成 M9A 带进来的
+               启动 / 关闭）是轻提示，下次保存或重启会移出队列 -->
+          <a-alert
+            v-if="managedQueueAlert"
+            class="flavor-queue-hint"
+            :type="managedQueueAlert.type"
+            show-icon
+            :message="managedQueueAlert.message"
           />
           <!-- 特调独有区块（如 MSS 的计划表与活动优先），由特调注册表按需加载 -->
           <MaaFWFlavorSlot
@@ -199,6 +208,11 @@ import MaaFWUserEditHeader from './MaaFWUserEdit/MaaFWUserEditHeader.vue'
 import BasicInfoSection from './MaaFWUserEdit/BasicInfoSection.vue'
 import TaskQueueSection from './MaaFWUserEdit/TaskQueueSection.vue'
 import { buildPresetAppliedSnapshot, selectPresetQueueEntries } from './maafwPresetQueue'
+import {
+  isManagedMaaFWTask,
+  managedMaaFWQueueState,
+  withoutManagedMaaFWTasks,
+} from './maafwManagedTasks'
 import type {
   MaaFWGroupInfo,
   MaaFWInterfacePreviewData,
@@ -484,8 +498,34 @@ const applyQueuedTaskIds = (taskIds: string[]) => {
 const activeTasks = computed(() =>
   (previewData.value?.tasks || []).filter(task => isTaskActiveForCurrentContext(task))
 )
+// 特调受管的任务（M9A 的启动 / 切号 / 关闭）由后端控制，不进「添加任务」与预设模板
+const managedTaskEntries = computed<ReadonlySet<string>>(
+  () => new Set(flavor.value.managedTaskEntries)
+)
+const isManagedTaskId = (taskId: string) =>
+  isManagedMaaFWTask(getTaskInfoById(taskId), managedTaskEntries.value)
 // 已在队列里的任务仍然留在候选中：同一个任务可以再加一份，各自带独立的选项。
-const availableTasks = computed(() => activeTasks.value)
+const availableTasks = computed(() =>
+  withoutManagedMaaFWTasks(activeTasks.value, managedTaskEntries.value)
+)
+// 队列里残留的受管任务：只有真要拆用户（后端会拒绝运行）才给警告，其余是运行照常的轻提示
+const managedQueueAlert = computed<{ type: 'warning' | 'info'; message: string } | null>(() => {
+  const state = managedMaaFWQueueState(orderedTasks.value, {
+    managedEntries: managedTaskEntries.value,
+    accountTask: flavor.value.managedAccountTask,
+    resourceName: effectiveResourceName.value,
+    taskOptions: taskSnapshot.value.taskOptions,
+    options: previewData.value?.options || [],
+    displayName: task => getDisplayName(task),
+  })
+  if (state?.kind === 'split' && flavor.value.managedTaskWarningKey) {
+    return { type: 'warning', message: t(flavor.value.managedTaskWarningKey, state) }
+  }
+  if (state?.kind === 'notice' && flavor.value.managedTaskNoticeKey) {
+    return { type: 'info', message: t(flavor.value.managedTaskNoticeKey, state) }
+  }
+  return null
+})
 const groupByName = computed(() => {
   const entries = (previewData.value?.groups || []).map(group => [group.name, group] as const)
   return new Map<string, MaaFWGroupInfo>(entries)
@@ -588,7 +628,8 @@ const addTaskCascaderOptions = computed<AddTaskCascaderOption[]>(() => {
   }))
 })
 const presetTemplates = computed(() => {
-  const activeTaskByName = new Map(activeTasks.value.map(task => [task.name, task] as const))
+  // 预设里的受管任务（M9A 预设带着启动 / 关闭）不进队列：按「不可用」处理，应用时直接跳过
+  const activeTaskByName = new Map(availableTasks.value.map(task => [task.name, task] as const))
   return presetOptions.value
     .map(preset => {
       const snapshot = normalizeTaskSnapshot(preset.snapshot, previewData.value)
@@ -697,7 +738,7 @@ const syncControllerResourceSelection = async () => {
 }
 
 const addTaskToQueue = async (taskName: string) => {
-  if (!taskByName.value.has(taskName)) {
+  if (!taskByName.value.has(taskName) || isManagedTaskId(taskName)) {
     addTaskCascaderValue.value = []
     return
   }
@@ -858,6 +899,9 @@ const savePresetAndSnapshot = async () => {
 
   const taskSnapshotValue = JSON.stringify(taskSnapshot.value)
   const selectedPreset = formData.Task.SelectedPreset || ''
+  // 队列里还有受管任务时，后端保存会按特调规则改写（M9A：只剩一个切换账号就收进「账号」），
+  // 存完把后端的结果拉回来，别让页面上还显示着已经不在的任务
+  const hasManagedTasks = taskSnapshot.value.taskOrder.some(isManagedTaskId)
   formData.Task.TaskSnapshot = taskSnapshotValue
   await enqueueSave(async () => {
     const success = await updateUser(scriptId, userId, {
@@ -867,10 +911,28 @@ const savePresetAndSnapshot = async () => {
       },
     })
     if (!success) throw new Error('任务预设保存失败')
+    // 后面还排着保存时不拉：拉回来的是这次的结果，会盖掉页面上还没存的改动
+    if (hasManagedTasks && pendingSaves === 1) await reloadManagedUserFields()
   }).catch(error => {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`保存任务预设失败: ${errorMsg}`)
   })
+}
+
+/** 保存后按后端结果刷新受管任务会动到的字段：账号、备注与任务队列 */
+const reloadManagedUserFields = async () => {
+  const userResponse = await getUsers(scriptId, userId)
+  const userData = userResponse?.data?.[userId] as Partial<MaaFWUserConfig> | undefined
+  if (!userData) return
+  if (userData.Info) {
+    formData.Info.Account = userData.Info.Account ?? formData.Info.Account
+    formData.Info.Notes = userData.Info.Notes ?? formData.Info.Notes
+  }
+  const savedSnapshot = userData.Task?.TaskSnapshot
+  if (typeof savedSnapshot === 'string' && savedSnapshot !== formData.Task.TaskSnapshot) {
+    formData.Task.TaskSnapshot = savedSnapshot
+    taskSnapshot.value = normalizeTaskSnapshot(savedSnapshot, previewData.value)
+  }
 }
 
 const loadScriptInfo = async () => {

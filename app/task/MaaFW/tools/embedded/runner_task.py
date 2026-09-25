@@ -42,7 +42,9 @@ from app.task.MaaFW.tools.core.interface.service import (
     MaaFWInterfaceService,
 )
 from app.task.MaaFW.tools.core.runner.environment import (
+    ARCHITECTURE_MISMATCH_MARKERS,
     MaaFWRunnerEnvironment,
+    describe_project_runtime_architecture_mismatch,
 )
 from app.task.MaaFW.tools.core.runner.models import (
     MaaFWDeviceConfig,
@@ -52,6 +54,7 @@ from app.task.MaaFW.tools.core.runner.models import (
 )
 from app.task.MaaFW.tools.core.runner.run_plan import (
     MaaFWRunPlanError,
+    resolve_run_selection,
     select_snapshot_tasks,
 )
 from app.task.MaaFW.tools.core.runner.service import MaaFWRunnerService
@@ -170,6 +173,9 @@ _UNRETRYABLE_ENVIRONMENT_MARKERS = (
     "runtime Python identity could not be verified",
     "MaaFW Runner 环境准备失败",
     "MaaFW Runner 环境准备超时",
+    # 项目自带的 MaaFramework 与本机架构不符：换哪次尝试都是同一份库。运行前自检一般已
+    # 拦下，这里兜住 worker 侧才发现的情况（异常与任务失败两条路都认）。
+    *ARCHITECTURE_MISMATCH_MARKERS,
 )
 # worker 到点自己停任务、截图、回传结果需要一点时间；宿主的硬超时在此之后才到，
 # 只兜 worker 没能停下来的情况（原生层卡死、agent 自定义动作不返回）。
@@ -496,11 +502,26 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 self.cur_user_item.status = "异常"
                 return game_path_error
 
+            # 项目自带的 MaaFramework 与本机架构不符时 worker 里必然加载失败；在这里先说清楚
+            # （还没拉起游戏 / 模拟器），并按导入来源 Info.Path 判断重新导入能不能解决。
+            architecture_error = await asyncio.to_thread(
+                self._describe_runtime_architecture_mismatch
+            )
+            if architecture_error:
+                self.cur_user_item.status = "异常"
+                return architecture_error
+
             keep_reservation = True
             return "Pass"
         finally:
             if not keep_reservation:
                 await self._release_project_path()
+
+    def _describe_runtime_architecture_mismatch(self) -> str | None:
+        source = str(self.script_config.get("Info", "Path") or "").strip()
+        return describe_project_runtime_architecture_mismatch(
+            self.project_path, source_path=Path(source) if source else None
+        )
 
     async def prepare(self) -> None:
         start_time = datetime.now()
@@ -516,7 +537,8 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         self.check_result = await self.check()
         if self.check_result != "Pass":
             # 也记一行后端日志：否则只有 WS 通知，事后日志里只见「任务开始」紧接「任务结束」。
-            logger.info(
+            # 「异常」是失败，按 WARNING 记；「跳过」（次数用完、周期已完成）是正常分支。
+            (logger.warning if self.cur_user_item.status == "异常" else logger.info)(
                 f"MFW 用户运行前检查未通过（{self.cur_user_item.name}，{self.cur_user_item.status}）：{self.check_result}"
             )
             if self.cur_user_item.status == "异常":
@@ -607,14 +629,13 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                     break
                 except Exception as exc:
                     message = f"MaaFW 运行异常: {exc}"
-                    self._append_log(message)
+                    self._append_log(message, warning=True)
                     self._record_attempt(index + 1, [], message)
-                    unretryable = any(
-                        marker in message for marker in _UNRETRYABLE_ENVIRONMENT_MARKERS
-                    )
+                    unretryable = _is_unretryable_failure(message)
                     if unretryable:
                         self._append_log(
-                            "运行环境不可用，重试也不会有别的结果，已停止本轮"
+                            "运行环境不可用，重试也不会有别的结果，已停止本轮",
+                            warning=True,
                         )
                     if self.cur_user_log is not None:
                         self.cur_user_log.status = message
@@ -648,7 +669,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                         message = _failed_task_user_summary(result, self.run_plan)
                     if self.cur_user_log is not None:
                         self.cur_user_log.status = message
-                    self._append_log(message)
+                    self._append_log(message, warning=True)
                     self._record_attempt(
                         index + 1,
                         _format_completed_task_labels(
@@ -665,6 +686,14 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                             for shot in result.failureScreenshots
                         ],
                     )
+                    if _is_unretryable_failure(message):
+                        # worker 在任务里报的环境级失败（如原生库架构不符）：每轮都一样，
+                        # 不再为它起停模拟器 / 游戏重试。
+                        self._append_log(
+                            "运行环境不可用，重试也不会有别的结果，已停止本轮",
+                            warning=True,
+                        )
+                        break
                     await self._refresh_run_plan_after_period_update()
                     if self.run_plan is not None and not self.run_plan.tasks:
                         self.run_complete = True
@@ -809,8 +838,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         selected_preset = str(
             self.cur_user_config.get("Task", "SelectedPreset") or ""
         ).strip()
-        controller_name = self._select_controller_name(interface_model)
-        resource_name = self._select_resource_name(interface_model, controller_name)
+        controller_name, resource_name = self._select_run_selection(interface_model)
         effective_preset = (
             selected_preset if selected_preset and not task_snapshot else None
         )
@@ -857,50 +885,26 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         except Exception as exc:
             raise MaaFWRunPlanError(str(exc)) from exc
 
-    def _select_controller_name(self, interface_model: MaaFWInterface) -> str | None:
-        configured_controller = str(
-            self.script_config.get("Info", "Controller") or ""
-        ).strip()
+    def _select_run_selection(
+        self, interface_model: MaaFWInterface
+    ) -> tuple[str | None, str | None]:
+        """``(交给建计划的 controller 名, 实际生效的 resource 名)``，口径见 ``resolve_run_selection``。
 
-        # 用户在脚本页显式选的 controller 优先。这里曾把「配了模拟器」排在前面，于是
-        # 先在 ADB 模式下选过模拟器、之后把控制方式改成 Win32 的用户会被静默改回 ADB：
-        # Emulator.Id 还留着旧值（Win32 分支下模拟器下拉被隐藏，用户没有入口清它），
-        # 运行时回落到第一个 Adb controller，按 Win32 编排的任务被 run_plan 过滤掉，
-        # 或者直接报「当前 controller/resource 下没有可执行任务」。
-        if configured_controller:
-            with suppress(RuntimeError):
-                return _find_controller(interface_model, configured_controller).name
-            # 配置里的 controller 在当前 interface 中已不存在（项目更新改了名字），
-            # 落到下面按模拟器推断，保持旧的兜底行为
-        if self.script_config.get("Emulator", "Id") != "-":
-            adb_controller = next(
-                (
-                    controller
-                    for controller in interface_model.controller
-                    if controller.type == "Adb"
-                ),
-                None,
-            )
-            if adb_controller is not None:
-                return adb_controller.name
-        return configured_controller or None
+        用户在脚本页显式选的 controller 优先。这里曾把「配了模拟器」排在前面，于是先在 ADB
+        模式下选过模拟器、之后把控制方式改成 Win32 的用户会被静默改回 ADB：Emulator.Id 还留着
+        旧值（Win32 分支下模拟器下拉被隐藏，用户没有入口清它），运行时回落到第一个 Adb
+        controller，按 Win32 编排的任务被 run_plan 过滤掉，或者直接报「当前 controller/resource
+        下没有可执行任务」。特调在保存与启动期整理用户配置时用同一个函数判资源。
+        """
 
-    def _select_resource_name(
-        self,
-        interface_model: MaaFWInterface,
-        controller_name: str | None,
-    ) -> str | None:
-        configured_resource = str(
-            self.script_config.get("Info", "Resource") or ""
-        ).strip()
-        if configured_resource:
-            return configured_resource
-        if controller_name is None:
-            return None
-        for resource in interface_model.resource:
-            if not resource.controller or controller_name in resource.controller:
-                return resource.name
-        return None
+        return resolve_run_selection(
+            interface_model,
+            configured_controller=str(
+                self.script_config.get("Info", "Controller") or ""
+            ),
+            emulator_selected=self.script_config.get("Emulator", "Id") != "-",
+            configured_resource=str(self.script_config.get("Info", "Resource") or ""),
+        )
 
     async def _build_device_config(
         self,
@@ -1980,6 +1984,9 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             # 地址是随这次启动缓存的，关掉后下一轮要重新开、重新拿。
             self._cached_adb_address = None
             self._cached_device_info = None
+            # 雷电截图增强的 extras 里带着这次启动的 dnplayer pid；重开后还用旧 pid，
+            # MaaFW 建不出截图实例（Failed to create ld inst），这一轮当场 connect 失败。
+            self._cached_adb_profile = None
 
     async def _ensure_desktop_game_started(self) -> None:
         """Win32 场景下由 MAS 负责启动/激活桌面游戏客户端，供后续窗口解析使用。"""
@@ -2529,8 +2536,9 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         except Exception as exc:
             logger.warning(f"MaaFW 插件用户通知发送失败: {exc}")
 
-    def _append_log(self, message: str) -> None:
-        logger.info(message)
+    def _append_log(self, message: str, *, warning: bool = False) -> None:
+        # 失败类的用户日志按 WARNING 进 app.log，事后按级别筛得出来
+        (logger.warning if warning else logger.info)(message)
         if self.cur_user_log is not None:
             self.cur_user_log.content.append(_format_user_log_line(message))
             self.script_info.log = "".join(self.cur_user_log.content[-80:])
@@ -3006,6 +3014,10 @@ def _copy_native_debug_log_delta(
         if target_file is not None:
             target_file.close()
     return copied
+
+
+def _is_unretryable_failure(message: str) -> bool:
+    return any(marker in message for marker in _UNRETRYABLE_ENVIRONMENT_MARKERS)
 
 
 _FAILURE_REASON_MAX_CHARS = 200

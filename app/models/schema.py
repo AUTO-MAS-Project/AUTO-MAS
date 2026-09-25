@@ -2032,7 +2032,17 @@ class BetterGIUserConfig_Switch(BaseModel):
         default=None, description="游戏服务器：官服/B服/亚服/欧服/美服/港澳台服"
     )
     Uid: Optional[str] = Field(
-        default=None, description="账号 UID（可不填，切换前识别一致将不执行切换动作）"
+        default=None,
+        description="账号 UID（可不填，切换前识别一致将不执行切换动作；仅 BetterGI 脚本方式生效）",
+    )
+    GamePath: Optional[str] = Field(
+        default=None,
+        description=(
+            "游戏客户端路径（用户级覆盖，可空）：官服/B服/国际服是三个互相隔离的"
+            "客户端（B站账号只能登录B服客户端）。留空跟随 BetterGI 全局配置；填写后"
+            "该用户运行时由 MAS 按此路径临时拉起游戏（不修改 BetterGI 配置），同脚本"
+            "不同服务器的用户可各配各的客户端"
+        ),
     )
 
 
@@ -2067,6 +2077,23 @@ class OneDragonPlan(BaseModel):
     version: int = Field(default=1, description="Plan 结构版本")
     steps: List[OneDragonPlanStep] = Field(
         default_factory=list, description="有序步骤列表"
+    )
+
+
+class BetterGIGameInfoOut(OutBase):
+    """BetterGI 游戏客户端信息（用户页透传展示）"""
+
+    installPath: Optional[str] = Field(
+        default=None, description="生效游戏路径（用户级优先，否则 BGI 全局配置）"
+    )
+    globalPath: Optional[str] = Field(
+        default=None, description="BetterGI 全局配置的游戏路径原值"
+    )
+    channel: Optional[Literal["官服", "B服", "国际服"]] = Field(
+        default=None, description="识别到的客户端渠道，无法识别为 null"
+    )
+    source: Optional[Literal["用户", "全局"]] = Field(
+        default=None, description="生效路径来源"
     )
 
 
@@ -2557,9 +2584,25 @@ class BetterGIConfig_Game(BaseModel):
     )
 
 
+class BetterGIConfig_Run(GeneralConfig_Run):
+    """BetterGI 运行配置（通用字段 + BetterGI 专属字段）"""
+
+    UseAdmin: Optional[bool] = Field(
+        default=None,
+        description="是否以管理员权限启动 BetterGI（MAS 未提权时开启会触发 UAC）",
+    )
+    AccountSwitchMethod: Optional[Literal["BGI", "MAS"]] = Field(
+        default=None,
+        description=(
+            "账号切换方式: BGI=BetterGI「切换账号多模式」脚本执行; "
+            "MAS=MAS 前台直接操控游戏切号（官服/B服，游戏由 MAS 托管启动）"
+        ),
+    )
+
+
 class BetterGIConfig(BaseModel):
     Info: Optional[GeneralConfig_Info] = Field(default=None, description="脚本基础信息")
-    Run: Optional[GeneralConfig_Run] = Field(default=None, description="运行配置")
+    Run: Optional[BetterGIConfig_Run] = Field(default=None, description="运行配置")
     Game: Optional[BetterGIConfig_Game] = Field(default=None, description="游戏配置")
 
 

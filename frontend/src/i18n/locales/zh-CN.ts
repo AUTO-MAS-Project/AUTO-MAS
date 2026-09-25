@@ -1616,7 +1616,12 @@ export default {
     m9aFlavorAccountPlaceholder: '填写后自动加入「切换账号」任务（官服有效）',
     m9aFlavorAccountTooltip:
       '账号填写后会自动加入「切换账号」任务（官服有效）；密码仅用于本地记录，不会传入脚本',
-    m9aFlavorQueueHint: '启动游戏、关闭游戏与切换账号由 M9A 专项自动加入，无需手动添加',
+    m9aFlavorQueueHint:
+      '启动游戏、切换账号、关闭游戏由 MAS 按上方「账号」自动加入（启动在前、切号紧跟、关闭在最后），无需手动添加，「添加任务」与预设里也不提供',
+    m9aFlavorManagedTaskWarning:
+      '该用户队列里有 {count} 个切换账号（账号 {accounts}），M9A 一个用户对应一个账号：请拆成 {count} 个用户（每个用户在上方「账号」填一个），再把这些切换账号从队列里删掉；拆分前该用户不会运行',
+    m9aFlavorManagedTaskNotice:
+      '「{tasks}」由 MAS 按上方信息自动加入，不需要留在队列里，运行时也会按固定顺序执行；下次保存任务队列或重启 AUTO-MAS 时会移出队列（切换账号的目标账号会填进上方「账号」）',
     m9aFlavorGameUpdateHint:
       '启动模拟器后比对游戏客户端与官网最新版本，只对官服生效（B 服等其他资源不检查）。落后时：「仅检查」让本次运行失败并提示手动更新；「自动下载安装」下载约 2 GB 的官方安装包并覆盖安装，保留游戏数据',
     mssFlavorScriptTitle: '编辑 MSS 脚本',
@@ -1680,6 +1685,11 @@ export default {
     bettergiCloseGameOnFinishHint: '任务执行完毕后是否关闭游戏',
     bettergiRetryLimitHint: '超过该次数仍失败则终止',
     bettergiRunTimeoutHint: '日志长期无变化将判定超时',
+    bettergiAccountSwitchMethod: '账号切换方式',
+    bettergiAccountSwitchMethodHint:
+      'BetterGI 脚本=由 BetterGI「切换账号多模式」脚本执行切换；MAS=MAS 直接操控游戏切号（官服填密码走账号+密码、未填走下拉列表；B服按B站用户名匹配登录记录，暂不支持账密登录）。MAS 暂不支持国际服，国际服用户请沿用 BetterGI 脚本方式',
+    bettergiAccountSwitchMethodBgi: 'BetterGI 脚本',
+    bettergiAccountSwitchMethodMas: 'MAS（官服/B服，推荐）',
     useAdminLaunch: '以管理员权限启动',
     bettergiUseAdminHint:
       '默认开启（BetterGI 需要管理员权限）。MAS 非管理员运行时，每次启动都会弹一次 UAC，无人值守任务可关闭避免挂在授权上；MAS 已提权时开启也不会重复弹窗',
@@ -1697,10 +1707,27 @@ export default {
     bettergiAccount: '账户',
     bettergiEnterAccount: '请输入账号（用于切换账号，无需切换账号则留空）',
     bettergiAccountHint:
-      '用于切换账号，无需切换则留空；下拉列表模式填写完整手机号/邮箱，MAS 自动转换为游戏显示的打码形式',
+      '用于切换账号，无需切换则留空；官服填手机号/邮箱（MAS 自动打码匹配登录记录），B服填B站用户名',
     bettergiAccountUid: '账号 UID',
     bettergiEnterUid: '请输入 UID（切换账号建议填写）',
-    bettergiUidHint: '可不填；切换账号建议填写，填写后切换前识别一致将不执行切换动作',
+    bettergiUidHint:
+      '可不填，切换账号时建议填写；填写后切换前识别一致将不执行切换动作（仅 BetterGI 脚本方式生效）',
+    bettergiGameClient: '游戏客户端',
+    bettergiGameClientHint:
+      '官服/B服/国际服是三个互相隔离的客户端（B站账号只能登录B服客户端）。留空跟随 BetterGI 全局配置；填写后该用户运行时由 MAS 按此路径临时拉起游戏（不修改 BetterGI 配置），同脚本不同服务器的用户可各配各的客户端',
+    bettergiGameClientPlaceholder:
+      '请先在 BetterGI 设置中配置游戏路径，或选择该用户的游戏主程序（YuanShen.exe / GenshinImpact.exe）',
+    bettergiGameClientRestore: '恢复 BGI 默认',
+    bettergiGameClientInvalid: '请选择游戏主程序（YuanShen.exe 或 GenshinImpact.exe）',
+    bettergiGameClientUnknownWarning:
+      '无法识别游戏客户端渠道（config.ini 缺失或路径无效），请手动指定游戏服务器',
+    bettergiGameClientIntlWarning: '已识别为国际服客户端，无法自动确定区服，请手动指定游戏服务器',
+    bettergiGameClientSynced: '已根据客户端自动切换游戏服务器为 {server}',
+    bettergiServerMismatchWarning:
+      '所选服务器（{server}）与当前游戏客户端（{channel}）不一致，任务将无法正常执行，请调整其一',
+    bettergiChannelOfficial: '官服',
+    bettergiChannelBili: 'B服',
+    bettergiChannelGlobal: '国际服',
     bettergiPasswordHint:
       '没有填写密码时，默认为下拉列表切换账号。如果切换账号使用密码登录，必须填写密码',
     bettergiEnterPasswordPlaceholder: '请输入密码（没有填写密码时，默认为下拉列表切换账号）',
@@ -3476,6 +3503,7 @@ export default {
     },
     toast: {
       tabAutoCreated: '已自动创建调度台: {title}',
+      tabReused: '已在调度台 {title} 开始运行',
       mainTabUndeletable: '主调度台无法删除',
       tabDeleted: '调度台 "{title}" 已删除',
       noIdleTabs: '没有可删除的调度台',
@@ -3493,6 +3521,8 @@ export default {
       taskRunFailed: '任务执行失败',
       taskCancelled: '任务已取消',
       taskDone: '任务完成',
+      taskDoneWithFailedUsers: '任务结束，{count} 个用户运行异常',
+      taskDoneWithFailedScripts: '任务结束，{count} 个脚本运行异常',
       powerActionFailed: '设置电源操作失败',
       fetchTaskListFailed: '获取任务列表失败',
     },

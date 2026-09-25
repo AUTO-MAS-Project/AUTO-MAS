@@ -1,5 +1,5 @@
-// M9A（重返未来：1999）特调：差别只在文案与身份——账号绑成切号任务、
-// 首尾任务由专项自动加入、脚本页多一个「游戏更新」下拉。没有独有区块。
+// M9A（重返未来：1999）特调：差别只在文案与身份——账号绑成切号任务；启动游戏、切换账号、
+// 关闭游戏由后端特调全权控制（不能手动加），脚本页多一个「游戏更新」下拉。没有独有区块。
 import type { MaaFWFlavor } from '@/composables/maafwFlavorTypes'
 import { MAS_DOC_URLS } from '@/utils/openExternal'
 import { SCRIPT_LOGOS } from '@/utils/scriptLogos'
@@ -30,6 +30,12 @@ export const M9A_FLAVOR: MaaFWFlavor = {
   accountTooltipKey: 'edit.m9aFlavorAccountTooltip',
   queueHintKey: 'edit.m9aFlavorQueueHint',
   gameUpdateHintKey: 'edit.m9aFlavorGameUpdateHint',
+  // 与后端 app/task/M9A/managed.py 的 MANAGED_ENTRIES 同一组
+  managedTaskEntries: ['StartUp', 'SwitchAccount', 'Close1999'],
+  // 与 managed.py 同一判据：官服、有效切号 ≥ 2 才要拆用户
+  managedAccountTask: { entry: 'SwitchAccount', resources: ['官服'] },
+  managedTaskWarningKey: 'edit.m9aFlavorManagedTaskWarning',
+  managedTaskNoticeKey: 'edit.m9aFlavorManagedTaskNotice',
   slots: {},
   prepareUserPage: null,
 }

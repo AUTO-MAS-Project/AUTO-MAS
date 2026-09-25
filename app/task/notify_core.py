@@ -88,14 +88,17 @@ async def push_proxy_result(
         if task_info is not None and message.get("game_sign_summary")
         else ""
     )
+    # 有未完成的用户时系统通知不能再说「已完成！」；调用方显式给的 system_title 优先
+    system_title = message.get("system_title") or title.replace(
+        "报告", "存在异常" if message["uncompleted_count"] > 0 else "已完成！"
+    )
     return await dispatch_task_report(
         NotifyPayload(
             title=title,
             text=message_text,
             html=template.render(message),
             signature_sep=signature_sep,
-            system_title=message.get("system_title")
-            or title.replace("报告", "已完成！"),
+            system_title=system_title,
             system_message=counts,
             system_ticker=counts,
             system_timeout=10,
