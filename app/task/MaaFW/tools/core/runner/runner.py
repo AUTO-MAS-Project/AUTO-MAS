@@ -67,6 +67,7 @@ except ImportError:  # pragma: no cover - 只有很老的 binding 会走到
 from app.task.MaaFW.tools.core.agent_env import write_agent_compat_shims
 from app.task.MaaFW.tools.core.runner.environment import (
     describe_runtime_architecture_mismatch,
+    host_runtime_rid_dirs,
     project_maafw_runtime_path,
 )
 from app.task.MaaFW.tools.core.runtime_pool.host_environment import (
@@ -188,13 +189,6 @@ def agent_connect_budget_seconds(timeout: Any) -> float:
 ADB_READY_RETRY_COUNT = 180
 ADB_READY_RETRY_INTERVAL = 1.0
 ADB_COMMAND_TIMEOUT = 5
-AGENT_ENV_PATH_DIRS = (
-    (),
-    ("maafw",),
-    ("runtimes", "win-x64"),
-    ("libs",),
-    ("deps",),
-)
 # Agent 自举所需的最小依赖包（pip 发行名）
 # pip 健康检测超时（秒）
 # pip 安装/修复超时（秒）
@@ -566,6 +560,23 @@ def _assert_binding_origin() -> None:
         raise RuntimeError(
             f"maa 包不是从指定的 binding 目录加载的：实际 {actual}，期望在 {expected} 下"
         )
+
+
+def agent_env_path_dirs(project_path: Path) -> list[Path]:
+    """agent PATH 前置的项目目录（存在的才用）：根、``maafw/``、``runtimes/<本机 rid>``、
+    ``libs/``、``deps/``。
+
+    rid 按本机架构取（与 ``project_maafw_runtime_path`` 同一套判断），不写死 win-x64：
+    arm64 机器上带两种架构的发行包，agent 该看到的是 win-arm64。
+    """
+
+    return [
+        project_path,
+        project_path / "maafw",
+        *host_runtime_rid_dirs(project_path),
+        project_path / "libs",
+        project_path / "deps",
+    ]
 
 
 def _pool_native_runtime_path() -> Path | None:
@@ -1885,8 +1896,7 @@ class MaaFWRunner:
             if scripts_dir.is_dir():
                 path_items.append(str(scripts_dir))
         path_items.append(str(project_path))
-        for parts in AGENT_ENV_PATH_DIRS:
-            candidate = project_path.joinpath(*parts)
+        for candidate in agent_env_path_dirs(project_path):
             if candidate.is_dir():
                 path_items.append(str(candidate))
 
