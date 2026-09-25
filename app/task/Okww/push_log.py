@@ -12,10 +12,9 @@ OK-WW 专项作为 log_box 的一个实例：本模块只提供参数（i18n 翻
   - 裸节点名 = 开始/动作标记，默认成功，除非存在失败/跳过标记
   - "❌ 失败: 节点" = 失败（匹配源码 log_error 的专属失败日志，排除战斗噪音）
   - "⏭ 跳过: 节点" = 跳过（如每周乐园已完成）
-  - "NO_DISCARDED_ECHO" = 已弃置声骸不足 1000、这一次融合没有执行（上游该分支可达时
-    日志是提示行，else 不可达的版本走成异常）；收尾把「合并声骸」节点按「⏭ 跳过:
-    合并声骸（已弃置声骸不足 1000）」呈现，真正的异常仍判失败，且该标记只作用于
-    当次融合尝试（跨会话或重试不延续）
+  - "NO_DISCARDED_ECHO" / "BATTLE_PASS_ENDED" = 该节点这一次没做（已弃置声骸不足
+    1000、战令已结束，上游分别走提示行与 log_error），收尾按「⏭ 跳过: 节点（原因）」
+    呈现，真正的异常仍判失败，且标记只作用于当次尝试（跨会话或重试不延续）
   - "✅ 成功: 节点" = 明确成功（源码有成功/完成日志的节点）
   - "⚡ 剩余体力: N" = 刷完后的剩余体力（取最后一条 `体力当前:`；上游是领奖时
     才扣体力，故最后一次领奖的 `current stamina: N` 优先于开刷前的
@@ -65,9 +64,9 @@ OKWW_PUSH_RULES: list[tuple[str, str]] = [
     # 注意：ok.po 是「长键优先」的子串替换，会把类名里的裸 token 一并译掉，
     # 如 Echo→声骸 使 `MergeEchoTask` 变 `Merge声骸Task`。因此含类名的英文规则
     # 须写成「译文形式|英文原形式」，只写英文原形式在译文生效时永不命中
-    # 战令失败与上面的开始标记同节点（「先约电台已结束」只是失败原因），按优先级
-    # 聚合为一条「❌ 失败: 先约电台」，不再另起一个「先约电台已结束」节点
-    (r"先约电台已结束", r'"❌ 失败: 先约电台"'),  # 须在成功前
+    # 战令失败与开始标记同节点（「先约电台已结束」只是原因），收尾按 _REASON_MARKS
+    # 呈现为「⏭ 跳过: 先约电台（已结束）」，不再另起一个「先约电台已结束」节点
+    (r"先约电台已结束", r'"BATTLE_PASS_ENDED"'),  # 须在成功前
     (r"NightmareNestTask Failed", r'"❌ 失败: 梦魇巢穴"'),
     (r"GardenTask Failed", r'"❌ 失败: 每周乐园"'),
     (r"Merge声骸Task Failed|MergeEchoTask Failed", r'"❌ 失败: 合并声骸"'),
@@ -137,8 +136,14 @@ OKWW_PUSH_RULES: list[tuple[str, str]] = [
 # 状态优先级：失败 > 跳过 > 成功
 _STATUS_RANK = {"✅ 成功": 1, "⏭ 跳过": 2, "❌ 失败": 3}
 
-# 「合并声骸」节点名（规则产物与后处理共用；规则里是字面量，改名时须同步）
-_MERGE_ECHO_NODE = "合并声骸"
+# 带原因的节点标记：标记 → (节点名, 呈现状态, 原因)。这类情况是「该节点这一次没做」
+# （已弃置声骸不足 1000、战令已结束），既不是成功也不是失败，统一按「跳过」呈现并
+# 把原因附在节点名后；只作用于当次尝试——遇到该节点新的开始标记即清除对应标记。
+# 规则里节点名是字面量，改名时须同步
+_REASON_MARKS: dict[str, tuple[str, str, str]] = {
+    "NO_DISCARDED_ECHO": ("合并声骸", "⏭ 跳过", "已弃置声骸不足 1000"),
+    "BATTLE_PASS_ENDED": ("先约电台", "⏭ 跳过", "已结束"),
+}
 
 
 def okww_resolve(results: list[tuple[str, str, float]]) -> list[tuple[str, str, float]]:
@@ -149,19 +154,20 @@ def okww_resolve(results: list[tuple[str, str, float]]) -> list[tuple[str, str, 
     名（开始/动作标记，默认成功）与 "状态: 节点" 标记；另外 ``体力当前:`` 为
     体力刷本的当前体力追踪标记，只保留最后一次，结束后独立输出一行
     「⚡ 剩余体力: N」，不参与状态聚合。体力刷本收尾的必须成功标记与剩余体力
-    由同一条规则产出（换行拼接多个标记），故先按行拆分再逐行解析。合并声骸的
-    「已弃置声骸不足 1000」由 NO_DISCARDED_ECHO 标记标出，收尾把该节点按跳过
-    呈现（不论该节点此前是成功还是失败），其余异常仍判失败；该标记在遇到新的
-    「合并声骸」开始标记（新一次尝试）时清除，不跨会话/重试生效。同一节点多次
-    出现保留最高优先级状态，且节点顺序与时间戳都按最后一次出现排列（多会话日志
-    时取最后会话的流程顺序），同优先级后出现也刷新时间戳，与排序逻辑保持一致。
+    由同一条规则产出（换行拼接多个标记），故先按行拆分再逐行解析。「该节点这一次
+    没做」的情况（已弃置声骸不足 1000、战令已结束）由 _REASON_MARKS 的标记标出，
+    收尾按跳过呈现并把原因附在节点后（不论该节点此前是成功还是失败）；标记在遇到
+    该节点新的开始标记（新一次尝试）时清除，不跨会话/重试生效。其余异常仍判失败。
+    同一节点多次出现保留最高优先级状态，且节点顺序与时间戳都按最后一次出现排列
+    （多会话日志时取最后会话的流程顺序），同优先级后出现也刷新时间戳，与排序逻辑
+    保持一致。
     """
     order: list[str] = []
     states: dict[str, tuple[int, str]] = {}
     ts_of: dict[str, float] = {}
     last_stamina: int | None = None
     last_stamina_ts: float = 0.0
-    no_discarded_echo = False
+    active_marks: set[str] = set()
 
     def _mark(status: str, node: str, ts: float) -> None:
         rank = _STATUS_RANK[status]
@@ -184,33 +190,33 @@ def okww_resolve(results: list[tuple[str, str, float]]) -> list[tuple[str, str, 
                 except ValueError:
                     pass
                 continue
-            if marker == "NO_DISCARDED_ECHO":
-                # 已弃置声骸不足以融合：不产出节点，仅记标记供收尾呈现为跳过
-                no_discarded_echo = True
+            if marker in _REASON_MARKS:
+                # 「该节点这一次没做」：不产出节点，仅记标记供收尾呈现
+                active_marks.add(marker)
                 continue
             m = re.match(r"^(✅ 成功|⏭ 跳过|❌ 失败): (.*)$", marker)
             if m is None:
-                # 裸节点名 = 开始/动作标记
-                if marker == _MERGE_ECHO_NODE:
-                    # 「检查已弃置声骸」开始标记代表新一次融合尝试（跨会话或重试），
-                    # 上一轮的「不足 1000」标记不跨尝试生效
-                    no_discarded_echo = False
+                # 裸节点名 = 开始/动作标记；该节点新一次尝试开始，上一轮的标记作废
+                # （跨会话或重试时不让旧标记影响新结果）
+                active_marks = {
+                    key for key in active_marks if _REASON_MARKS[key][0] != marker
+                }
                 _mark("✅ 成功", marker, ts)
             else:
                 _mark(m.group(1), m.group(2), ts)
     # 规则均为二元组，经 LogCollect.collect 后 log_type 恒为 LogType.NORMAL；
     # 节点级失败由文本「❌ 失败:」体现，不依赖逐条类型过滤，故直接输出普通
+    forced: dict[str, tuple[str, str]] = {
+        node_name: (status, reason)
+        for key, (node_name, status, reason) in _REASON_MARKS.items()
+        if key in active_marks
+    }
     status_lines: list[tuple[str, str, float]] = []
     for node in order:
-        # 已弃置声骸不足 1000：这一次融合没有执行，节点按「跳过」呈现（上游该分支
-        # 可达时是提示行，else 不可达的版本走成异常，两者都归到这里）
-        if node == _MERGE_ECHO_NODE and no_discarded_echo:
+        if node in forced:
+            status, reason = forced[node]
             status_lines.append(
-                (
-                    LogType.NORMAL,
-                    f"⏭ 跳过: {node}（已弃置声骸不足 1000）",
-                    ts_of[node],
-                )
+                (LogType.NORMAL, f"{status}: {node}（{reason}）", ts_of[node])
             )
         else:
             status_lines.append((LogType.NORMAL, f"{states[node][1]}: {node}", ts_of[node]))
