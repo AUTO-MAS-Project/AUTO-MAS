@@ -35,12 +35,7 @@
     </div>
 
     <a-space>
-      <a-button
-        v-if="props.userId"
-        size="large"
-        :loading="folderLoading"
-        @click="handleOpenFolder"
-      >
+      <a-button v-if="props.userId" size="large" :loading="folderLoading" @click="handleOpenFolder">
         <template #icon>
           <FolderOpenOutlined />
         </template>

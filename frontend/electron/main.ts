@@ -2045,7 +2045,7 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
     if (canElectronExitImmediately({ coordinatedQuit, forceQuitInProgress, quitRequestInFlight })) {
       app.quit()
-    } else if (!forceQuitInProgress) {
+    } else if (!forceQuitInProgress && !quitRequestInFlight) {
       void forceQuitAfterRendererTimeout('所有 renderer 窗口意外关闭')
     }
   }
