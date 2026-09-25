@@ -300,6 +300,7 @@ M7A_DAILY_PATCH_WHITELIST: frozenset[str] = frozenset(
         "reward_achievement_enable",
         "reward_message_enable",
         "power_enable",
+        "power_plan",
         "echo_of_war_enable",
         "echo_of_war_timestamp",
         "build_target_enable",
@@ -375,6 +376,9 @@ def build_m7a_daily_patch(
         "use_reserved_trailblaze_power": False,
         "echo_of_war_start_day_of_week": eow_start_weekday,
         "cloud_game_enable": False,
+        # 三月七原生体力计划先于 MAS 选的副本执行、抢体力，整轮还原后又永远消耗
+        # 不完；托管运行一律清空，原生计划只在直控下生效。
+        "power_plan": [],
     }
 
     new_instance_names: dict[str, str] = {}
