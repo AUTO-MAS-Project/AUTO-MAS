@@ -321,6 +321,7 @@ export async function connect(): Promise<boolean> {
     return false
   }
   if (socket && socket.readyState === WebSocket.OPEN) {
+    state.value = 'open'
     return true
   }
   if (connectPromise) {

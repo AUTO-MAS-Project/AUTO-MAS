@@ -94,6 +94,7 @@ let disconnectRecoveryPromise: Promise<void> | null = null
 let resumeRecoveryPromise: Promise<void> | null = null
 let backendRestartAttempts = 0
 let restartFailureShown = false
+let closeRestartFailureModal: (() => void) | null = null
 let disconnectIncidentShown = false
 let closeDisconnectModal: (() => void) | null = null
 
@@ -159,7 +160,10 @@ const handlePowerCountdownUpdated = (data: WSPowerCountdownData): void => {
   }
   // 倒计时更新停止（已执行或后端消失）后清除展示状态
   powerCountdownStaleTimer = window.setTimeout(() => {
-    powerCountdown.value = null
+    powerCountdownStaleTimer = undefined
+    if (connectionState().value === 'open') {
+      powerCountdown.value = null
+    }
   }, POWER_COUNTDOWN_STALE_MS)
 }
 
@@ -205,6 +209,8 @@ const refreshLifecycleSnapshots = async (): Promise<void> => {
 const handleConnected = async (): Promise<void> => {
   backendRestartAttempts = 0
   restartFailureShown = false
+  closeRestartFailureModal?.()
+  closeRestartFailureModal = null
   backendStatus.value = 'running'
   endIntentionalBackendRestart('后端已重新连上')
   dismissDisconnectIncident()
@@ -217,6 +223,7 @@ const handleConnected = async (): Promise<void> => {
 
 const waitForShutdownReady = (timeoutMs: number): Promise<boolean> => {
   if (shutdownReadyReceived) return Promise.resolve(true)
+  if (connectionState().value !== 'open') return Promise.resolve(false)
   return new Promise<boolean>(resolve => {
     let settled = false
     let timer: number | undefined
@@ -337,6 +344,8 @@ export function disposeAppLifecycle(): void {
     window.clearTimeout(powerCountdownStaleTimer)
     powerCountdownStaleTimer = undefined
   }
+  closeRestartFailureModal?.()
+  closeRestartFailureModal = null
   endIntentionalBackendRestart('生命周期协调器释放')
   dismissDisconnectIncident()
   // 4 小时更新检查是应用级定时器，跟着生命周期一起停，不绑任何页面
@@ -494,7 +503,7 @@ const showRestartFailureModal = (): void => {
   backendStatus.value = 'error'
   stopReconnect()
 
-  Modal.error({
+  const modal = Modal.error({
     title: t('misc.couldNotRecoverBackend'),
     content: t('misc.backendStillCannotConnect'),
     okText: t('misc.restartApp'),
@@ -511,6 +520,9 @@ const showRestartFailureModal = (): void => {
       }
     },
   })
+  if (modal && typeof modal.destroy === 'function') {
+    closeRestartFailureModal = () => modal.destroy()
+  }
 }
 
 const restartBackendFlow = (allowDevMode: boolean = false): Promise<void> => {
@@ -755,7 +767,7 @@ const handleReconnectCycleFailed = async (): Promise<void> => {
 const handleSystemResume = (): Promise<void> => {
   if (resumeRecoveryPromise) return resumeRecoveryPromise
   resumeRecoveryPromise = (async () => {
-    if (isClosing() || isIntentionalRestart()) return
+    if (isClosing() || isIntentionalRestart() || restartFailureShown) return
     logger.info('检测到系统恢复，检查后端和主 WebSocket')
 
     const running = await queryBackendRunning()
@@ -767,7 +779,7 @@ const handleSystemResume = (): Promise<void> => {
       const errorMsg = error instanceof Error ? error.message : String(error)
       logger.warn(`系统恢复后 ws_meta 检查失败: ${errorMsg}`)
     }
-    if (isClosing()) return
+    if (isClosing() || restartFailureShown) return
 
     if (running === false || !httpReachable) {
       await restartBackendFlow()

@@ -214,6 +214,9 @@ class _MainConnectionManager:
                 raw = await websocket.receive_json()
             except WebSocketDisconnect:
                 break
+            except KeyError:
+                logger.warning("收到非文本 WebSocket 帧，已丢弃")
+                continue
             except json.JSONDecodeError as e:
                 logger.warning(f"入站消息解析失败: {e}")
                 continue

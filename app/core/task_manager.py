@@ -891,7 +891,7 @@ class _TaskManager:
         self._stop_all_lock = asyncio.Lock()
         self._stopping_all = False
         self._startup_queue_started = False
-        self._startup_queue_running = False
+        self._startup_queue_lock = asyncio.Lock()
 
     @staticmethod
     def _queue_script_entries(
@@ -1060,6 +1060,9 @@ class _TaskManager:
         Returns:
             uuid.UUID: 任务 UID
         """
+
+        if self._stopping_all:
+            raise RuntimeError("正在停止全部任务，请稍后重试")
 
         uid = uuid.UUID(id)
 
@@ -1249,7 +1252,11 @@ class _TaskManager:
                         if not task_item.is_closing:
                             task_item.cancel()
                             task_item.is_closing = True
-                        await task_item.accomplish.wait()
+
+                    await asyncio.gather(
+                        *(task_item.accomplish.wait() for task_item in task_item_list)
+                    )
+                    for task_item in task_item_list:
                         logger.info(f"子任务已结束: {task_item.task_id}")
                     cleanup_tasks = [
                         cleanup for cleanup in self._cleanup_tasks if not cleanup.done()
@@ -1283,16 +1290,11 @@ class _TaskManager:
     async def start_startup_queue(self):
         """开始运行启动时运行的调度队列"""
 
-        if self._startup_queue_started:
-            logger.info("启动时任务已触发，跳过重复运行")
-            return
-        if self._startup_queue_running:
-            logger.info("启动时任务正在等待运行，跳过重复触发")
-            return
+        async with self._startup_queue_lock:
+            if self._startup_queue_started:
+                logger.info("启动时任务已触发，跳过重复运行")
+                return
 
-        self._startup_queue_running = True
-
-        try:
             await asyncio.sleep(10)
 
             if not MainConnection.is_connected:
@@ -1354,9 +1356,6 @@ class _TaskManager:
                         logger.error(f"启动时队列 {uid} 无法创建任务：{error}")
                         continue
                     await queue.set("Data", "LastStartupTime", curday)
-
-        finally:
-            self._startup_queue_running = False
 
         logger.success("启动时任务开始运行")
 

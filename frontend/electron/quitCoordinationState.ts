@@ -2,6 +2,7 @@ interface QuitCoordinationState {
   coordinatedQuit: boolean
   forceQuitInProgress: boolean
   quitRequestInFlight: boolean
+  relaunchAfterQuit: boolean
 }
 
 export function canRequestRendererClose(state: QuitCoordinationState): boolean {
@@ -18,5 +19,6 @@ export function markForceQuitFailed(state: QuitCoordinationState): QuitCoordinat
     ...state,
     forceQuitInProgress: false,
     quitRequestInFlight: false,
+    relaunchAfterQuit: false,
   }
 }

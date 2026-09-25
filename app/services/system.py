@@ -130,9 +130,11 @@ class _SystemHandler:
 
         if mode == "KillSelf" and Config.server is not None:
             logger.info("执行退出主程序操作")
-            if not from_frontend:
-                await self._request_frontend_close()
-            Config.server.should_exit = True
+            try:
+                if not from_frontend:
+                    await self._request_frontend_close()
+            finally:
+                Config.server.should_exit = True
             return
 
         if mode not in power.supported_actions:
@@ -215,6 +217,17 @@ class _SystemHandler:
             self._power_cancelled_event_task = None
             power_task = asyncio.create_task(self._power_task(power_sign, delay))
             self.power_task = power_task
+
+            def _on_done(done_task: asyncio.Task[None]) -> None:
+                if done_task.cancelled():
+                    return
+                exception = done_task.exception()
+                if exception is not None:
+                    logger.opt(exception=exception).error(
+                        f"电源任务执行异常: {type(exception).__name__}: {exception}"
+                    )
+
+            power_task.add_done_callback(_on_done)
             logger.info(
                 f"电源任务已启动, {delay + self.countdown}秒后执行: {power_sign}"
             )
