@@ -830,6 +830,41 @@ class MaaFWRunner:
             self.send_log("; ".join(parts))
         else:
             self.send_log(f"已连接 controller: {self.plan.controllerName}")
+        self._prime_first_screencap()
+
+    def _prime_first_screencap(self) -> None:
+        """连上之后、投递任何任务之前先截一张图，顺带把截图耗时告诉用户。
+
+        控制器没截过图时 ``cached_image`` 直接抛 ``Failed to get cached image.``、
+        ``resolution`` 返回 (0, 0)。有的项目的 agent 在 tasker sink 里于任务
+        Starting 时读这两个值做分辨率检查（M9A v4.10.0 读到 0 就 post_stop），
+        不先截一张，第一个任务一开始就被项目自己停掉。MFAAvalonia 连上后也固定先截
+        一次（``MaaProcessor.MeasureScreencapPerformanceAsync``）。这是本次连接的第
+        一张图：启动画面判定在它之后才开始截，重试轮次是新的 worker、会重新连接再截。
+        截不到只记一行，不拦运行——任务管线自己还会截。
+        """
+
+        controller = self.controller
+        if controller is None:
+            return
+        started_at = time.perf_counter()
+        try:
+            job = controller.post_screencap()
+            job.wait()
+            failed = bool(job.failed)
+        except Exception as exc:  # noqa: BLE001 - 预热截图失败不该挡住运行
+            self.send_log(f"首张截图失败，继续运行: {exc}")
+            return
+        elapsed_ms = (time.perf_counter() - started_at) * 1000
+        if failed:
+            self.send_log(f"首张截图失败（{elapsed_ms:.0f} ms），继续运行")
+            return
+        try:
+            width, height = controller.resolution
+        except Exception:  # noqa: BLE001 - 只影响日志里的尺寸
+            width, height = 0, 0
+        size = f"{width}×{height}" if width > 0 and height > 0 else "分辨率未知"
+        self.send_log(f"首张截图完成（{size}，{elapsed_ms:.0f} ms）")
 
     def _resolve_adb_device(self, device_config: MaaFWDeviceConfig) -> None:
         """Fill a missing ADB path through the active MaaFW Toolkit."""
