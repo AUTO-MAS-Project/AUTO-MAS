@@ -83,33 +83,46 @@ def _specs(
     )
 
 
+def _on(key: str) -> ManagedFieldVisibleWhen:
+    """从属字段只在总开关 ``key`` 打开时显示（只影响表单，运行时照常套用）。"""
+
+    return ManagedFieldVisibleWhen(key, (True,))
+
+
 # ---------------------------------------------------------------- 三月七
+
+_M7A_BUILD_TARGET_ON = _on("build_target_enable")
+_M7A_TEAM_ON = _on("instance_team_enable")
+_M7A_BORROW_ON = _on("borrow_enable")
 
 M7A_MANAGED_FIELDS: dict[str, tuple[ManagedFieldSpec, ...]] = {
     # 不露出：power_plan_keep（体力计划不由 MAS 管）、calyx_golden_preference（三月七
     # 读点已注释掉）、power_limit（只有循环模式读）、activity_enable（MAS 按本模块
     # 三个活动子开关推导）。
     "Daily": (
-        *_specs(
-            "common",
-            "build_target_enable",
-            "build_target_scheme",
-            "build_target_ornament_weekly_count",
-            "build_target_use_user_instance_when_only_erosion_and_ornament",
-            "use_reserved_trailblaze_power",
-            "use_fuel",
+        ManagedFieldSpec("build_target_enable"),
+        *(
+            ManagedFieldSpec(key, visible_when=_M7A_BUILD_TARGET_ON)
+            for key in (
+                "build_target_scheme",
+                "build_target_ornament_weekly_count",
+                "build_target_use_user_instance_when_only_erosion_and_ornament",
+            )
         ),
+        *_specs("common", "use_reserved_trailblaze_power", "use_fuel"),
         *_specs(
             "team",
             "instance_team_enable",
             ManagedFieldSpec(
                 "instance_team_number",
                 "team",
+                visible_when=_M7A_TEAM_ON,
                 description="没有匹配「指定副本队伍」规则的副本使用这个队伍编号。",
             ),
             ManagedFieldSpec(
                 "instance_teams",
                 "team",
+                visible_when=_M7A_TEAM_ON,
                 label="指定副本队伍",
                 description=(
                     "为特定副本指定出战队伍，按副本名称匹配；"
@@ -121,22 +134,31 @@ M7A_MANAGED_FIELDS: dict[str, tuple[ManagedFieldSpec, ...]] = {
         *_specs(
             "support",
             "borrow_enable",
-            "borrow_character_enable",
+            ManagedFieldSpec(
+                "borrow_character_enable", "support", visible_when=_M7A_BORROW_ON
+            ),
             ManagedFieldSpec(
                 "borrow_friends",
                 "support",
+                visible_when=_M7A_BORROW_ON,
                 label="支援好友列表",
                 description=(
                     "按顺序查找的支援角色与对应好友名称；角色为 None 的行会被跳过。"
                 ),
                 type="json",
             ),
-            "borrow_scroll_times",
+            ManagedFieldSpec(
+                "borrow_scroll_times", "support", visible_when=_M7A_BORROW_ON
+            ),
         ),
         *_specs(
             "activity",
             "activity_gardenofplenty_enable",
-            "activity_gardenofplenty_instance_type",
+            ManagedFieldSpec(
+                "activity_gardenofplenty_instance_type",
+                "activity",
+                visible_when=_on("activity_gardenofplenty_enable"),
+            ),
             "activity_realmofthestrange_enable",
             "activity_planarfissure_enable",
         ),
@@ -145,7 +167,11 @@ M7A_MANAGED_FIELDS: dict[str, tuple[ManagedFieldSpec, ...]] = {
             "tp_before_instance",
             "break_down_level_four_relicset",
             "merge_immersifier",
-            "merge_immersifier_limit",
+            ManagedFieldSpec(
+                "merge_immersifier_limit",
+                "misc",
+                visible_when=_on("merge_immersifier"),
+            ),
         ),
     ),
     # 不露出：daily_tasks（运行状态）、activity_journey_highlights_notification_enable
@@ -215,13 +241,18 @@ SRA_REWARD_LEGACY_KEYS = tuple(
 """旧 profile 的数组式奖励开关（``receiveRewards.rewards[i]`` 展开成 ``rewards.<i>``）。
 与具名键同时存在时 SRA 以具名为准，只露出具名键。"""
 
-_SRA_ACTIVITY_ON = ManagedFieldVisibleWhen("activity.enabled", (True,))
+_SRA_ACTIVITY_ON = _on("activity.enabled")
+_SRA_REPLENISH_ON = _on("replenish.enabled")
 _SRA_REROLL_MODE = ManagedFieldVisibleWhen("currencyWars.mode", (2,))
 
 SRA_MANAGED_FIELDS: dict[str, tuple[ManagedFieldSpec, ...]] = {
     "Daily": (
         *_specs("common", "useBuildTarget", "useAssistant"),
-        *_specs("replenish", "replenish.enabled", "replenish.way", "replenish.times"),
+        ManagedFieldSpec("replenish.enabled", "replenish"),
+        *(
+            ManagedFieldSpec(key, "replenish", visible_when=_SRA_REPLENISH_ON)
+            for key in ("replenish.way", "replenish.times")
+        ),
         ManagedFieldSpec("activity.enabled", "activity"),
         *(
             ManagedFieldSpec(key, "activity", visible_when=_SRA_ACTIVITY_ON)
