@@ -35,7 +35,7 @@ from app.models.schema import WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem, TaskExecuteBase, UserItem
 from app.utils import get_logger
 from app.utils.constants import TASK_MODE_ZH, UTC4
-from app.utils.io import replace_dir
+from app.utils.io import atomic_write, replace_dir
 from app.utils.platform import is_admin
 
 from .AutoProxy import HSRAutoProxyTask, resolve_daily_native_modes
@@ -1131,7 +1131,13 @@ class HSRManager(TaskExecuteBase):
                 )
                 self._direct_sessions[engine] = session
                 try:
+                    m7a_before_run = (
+                        self._read_m7a_config_bytes() if engine == "M7A" else None
+                    )
                     result = await session.run(timeout_seconds)
+                    if engine == "M7A":
+                        # 成败都刷新：跑失败时三月七已经写回的状态同样是真实状态。
+                        self._refresh_m7a_backup_after_direct(user_name, m7a_before_run)
                     if not result.success:
                         raise RuntimeError(
                             result.error
@@ -1193,6 +1199,70 @@ class HSRManager(TaskExecuteBase):
                 f"用户「{user_name}」直控前已把三月七 config.yaml 还原为本轮开始前的原生配置"
             )
             return
+
+    def _m7a_backup_target(self) -> tuple[str, Path, Path, bool] | None:
+        """外部配置备份表里三月七 config.yaml 那一项；本轮没备份它时为 None。"""
+
+        for target in self._external_config_targets:
+            if target[0] == _M7A_CONFIG_LABEL:
+                return target
+        return None
+
+    def _read_m7a_config_bytes(self) -> bytes | None:
+        """直控开跑前三月七 config.yaml 的原始字节，读不到时为 None。"""
+
+        target = self._m7a_backup_target()
+        if target is None:
+            return None
+        try:
+            return target[1].read_bytes()
+        except OSError:
+            return None
+
+    def _refresh_m7a_backup_after_direct(
+        self, user_name: str, before_run: bytes | None
+    ) -> None:
+        """直控三月七跑完后，把本轮 config.yaml 的运行期备份刷新为当前文件。
+
+        直控前 :meth:`_reset_m7a_config_for_direct` 已把文件还原成本轮开始前的原生
+        配置，跑完的文件就是「原生配置 + 三月七自己写回的状态」（周常时间戳、
+        体力计划余量、每日实训记录等）。``final_task`` / ``on_crash`` 按备份整轮还原，
+        不刷新的话这些状态每轮都被抹掉，直控用户的周常每轮重进。同一轮后面的托管
+        用户仍在刷新后的文件上打 patch，整轮结束还原回刷新后的备份；后面的直控用户
+        直控前也还原成它。
+
+        只在开跑前的文件与备份逐字节一致时刷新：不一致说明任务前脚本改过它（按账号
+        切换整份配置的用法）或直控前还原失败，这时跑完的文件不是「原生 + 三月七状态」，
+        保持原先的整轮还原语义。刷新失败只记日志，不影响后续用户与收尾。
+        """
+
+        target = self._m7a_backup_target()
+        if target is None:
+            return
+        label, source, backup, existed = target
+        if not existed:
+            return
+        try:
+            if before_run is None or before_run != backup.read_bytes():
+                self._append_log(
+                    f"用户「{user_name}」直控前三月七 config.yaml 与本轮开始前的原生配置"
+                    "不一致（任务前脚本改过或直控前还原失败），不刷新运行期备份，"
+                    "整轮结束仍按本轮开始前的配置还原"
+                )
+                return
+            atomic_write(backup, source.read_bytes())
+        except Exception as e:  # noqa: BLE001
+            logger.opt(exception=True).warning(f"直控后刷新{label}运行期备份失败：{e}")
+            self._append_log(
+                f"用户「{user_name}」直控后刷新三月七 config.yaml 备份失败，"
+                f"整轮结束将按本轮开始前的配置还原：{e}"
+            )
+            return
+        logger.info(f"{label} 运行期备份已刷新为直控后的文件：{source} -> {backup}")
+        self._append_log(
+            f"用户「{user_name}」直控结束，三月七 config.yaml 的运行期备份已刷新，"
+            "整轮结束保留三月七自己写回的运行状态"
+        )
 
     def _log_ignored_m7a_after_finish(self) -> None:
         """直控下三月七的 ``after_finish`` 被运行环境钉成 None，配了别的值就说一声。"""
