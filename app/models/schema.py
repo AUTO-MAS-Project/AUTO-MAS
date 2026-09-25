@@ -2555,6 +2555,12 @@ class BetterGIConfig_Game(BaseModel):
     CloseOnFinish: Optional[bool] = Field(
         default=None, description="任务结束后是否关闭游戏"
     )
+    IfAutoUpdate: Optional[bool] = Field(
+        default=None,
+        description="是否在启动 BetterGI 前由 MAS 检查并接管原神客户端更新",
+    )
+    UpdateExe: Optional[str] = Field(default=None, description="原神游戏程序（exe）")
+    UpdateTimeLimit: Optional[int] = Field(default=None, description="更新时限（分钟）")
 
 
 class BetterGIConfig(BaseModel):

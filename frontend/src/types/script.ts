@@ -379,6 +379,16 @@ export interface MaaFWProjectInfo {
   icon?: string | null
 }
 
+/**
+ * 路径指向的是不是原神客户端可执行文件。官服与 B服 共用 YuanShen.exe，
+ * 所以文件名只区分国服与国际服，B服 只靠配置页提示约束用户；
+ * 手输的路径可能带包裹引号，先剥掉再取名。
+ */
+export const isGenshinClientExe = (path?: string) => {
+  const name = (path ?? '').trim().replace(/^"|"$/g, '').split(/[\\/]/).pop()?.toLowerCase() ?? ''
+  return ['yuanshen.exe', 'genshinimpact.exe'].includes(name)
+}
+
 const MAAFW_SUPPORTED_CONTROLLER_TYPES = ['Adb', 'Win32', 'Gamepad', 'PlayCover'] as const
 
 export const isSupportedMaaFWControllerType = (type: string) =>

@@ -4233,6 +4233,17 @@ class BetterGIConfig(ConfigBase):
             "Game", "CloseOnFinish", True, BoolValidator()
         )
 
+        ## 是否在启动 BetterGI 前由 MAS 检查并接管原神客户端更新
+        self.Game_IfAutoUpdate = ConfigItem(
+            "Game", "IfAutoUpdate", False, BoolValidator()
+        )
+        ## 原神游戏程序（YuanShen.exe 或 GenshinImpact.exe）；安装目录取它所在目录
+        self.Game_UpdateExe = ConfigItem("Game", "UpdateExe", "", FileValidator())
+        ## 更新时限（分钟），超时中止本轮；已完成的部分保留，下次续传
+        self.Game_UpdateTimeLimit = ConfigItem(
+            "Game", "UpdateTimeLimit", 180, RangeValidator(1, 9999)
+        )
+
         self.UserData = MultipleConfig([BetterGIUserConfig])
 
         super().__init__()
