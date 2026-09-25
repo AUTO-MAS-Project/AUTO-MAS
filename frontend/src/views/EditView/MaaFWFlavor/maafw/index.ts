@@ -31,6 +31,10 @@ export const MAAFW_FLAVOR: MaaFWFlavor = {
   accountTooltipKey: 'edit.maafwAccountRecordTooltip',
   queueHintKey: null,
   gameUpdateHintKey: null,
+  managedTaskEntries: [],
+  managedAccountTask: null,
+  managedTaskWarningKey: null,
+  managedTaskNoticeKey: null,
   slots: {},
   prepareUserPage: null,
 }
