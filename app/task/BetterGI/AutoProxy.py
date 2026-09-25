@@ -1375,9 +1375,9 @@ class AutoProxyTask(TaskExecuteBase):
         return result["success"]
 
     def _account_switch_method(self) -> str:
-        """读取脚本级账号切换方式；缺失或非法值沿用 BetterGI 脚本入口。"""
-        method = str(self.script_config.get("Run", "AccountSwitchMethod") or "BGI")
-        return method if method in {"BGI", "MAS"} else "BGI"
+        """读取脚本级账号切换方式；缺失或非法值回落默认 MAS。"""
+        method = str(self.script_config.get("Run", "AccountSwitchMethod") or "MAS")
+        return method if method in {"BGI", "MAS"} else "MAS"
 
     async def _switch_account(self) -> bool:
         """单独执行一次切号，返回是否切换成功。

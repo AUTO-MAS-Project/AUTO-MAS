@@ -4223,10 +4223,10 @@ class BetterGIConfig(ConfigBase):
         ## MAS 自身已提权时，即使此处开启，也不会重复触发 UAC（子进程自动继承管理员令牌）。
         self.Run_UseAdmin = ConfigItem("Run", "UseAdmin", True, BoolValidator())
         ## 账号切换方式（脚本级，参考 MaaEnd Run.AccountSwitchMethod）：
-        ## BGI = BetterGI「切换账号多模式」脚本执行（国际服请沿用此方式）；MAS = MAS 侧
-        ## 前台 OCR 直接操控游戏切号（官服/B服，游戏由 MAS 托管启动）。
+        ## BGI = BetterGI「切换账号多模式」脚本执行（国际服请改用此方式）；MAS = MAS 侧
+        ## 前台 OCR 直接操控游戏切号（官服/B服，游戏由 MAS 托管启动），官服/B服推荐。
         self.Run_AccountSwitchMethod = ConfigItem(
-            "Run", "AccountSwitchMethod", "BGI", OptionsValidator(["BGI", "MAS"])
+            "Run", "AccountSwitchMethod", "MAS", OptionsValidator(["BGI", "MAS"])
         )
 
         ## Game ------------------------------------------------------------

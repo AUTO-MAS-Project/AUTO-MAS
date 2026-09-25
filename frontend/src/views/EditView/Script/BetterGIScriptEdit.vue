@@ -323,7 +323,7 @@ const bettergiConfig = reactive<BetterGIScriptConfigForm>({
     RunTimesLimit: 3,
     RunTimeLimit: 10,
     UseAdmin: true,
-    AccountSwitchMethod: 'BGI',
+    AccountSwitchMethod: 'MAS',
   },
   Game: { Controller: '电脑端-前台', CloseOnFinish: true },
 })

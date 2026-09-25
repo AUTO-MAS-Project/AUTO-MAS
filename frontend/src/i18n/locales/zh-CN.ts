@@ -1664,7 +1664,7 @@ export default {
     bettergiAccountSwitchMethodHint:
       'BetterGI 脚本=由 BetterGI「切换账号多模式」脚本执行切换；MAS=MAS 直接操控游戏切号（官服填密码走账号+密码、未填走下拉列表；B服按B站用户名匹配登录记录，暂不支持账密登录）。MAS 暂不支持国际服，国际服用户请沿用 BetterGI 脚本方式',
     bettergiAccountSwitchMethodBgi: 'BetterGI 脚本',
-    bettergiAccountSwitchMethodMas: 'MAS（官服/B服）',
+    bettergiAccountSwitchMethodMas: 'MAS（官服/B服，推荐）',
     useAdminLaunch: '以管理员权限启动',
     bettergiUseAdminHint:
       '默认开启（BetterGI 需要管理员权限）。MAS 非管理员运行时，每次启动都会弹一次 UAC，无人值守任务可关闭避免挂在授权上；MAS 已提权时开启也不会重复弹窗',

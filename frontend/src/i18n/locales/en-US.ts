@@ -1741,7 +1741,7 @@ export default {
     bettergiAccountSwitchMethodHint:
       "BetterGI script = switch via the BetterGI 'SwitchAccountMultipleMode' script; MAS = MAS drives the game UI directly (CN official: with password uses account+password, otherwise the saved-accounts dropdown; CN Bilibili: matches the login records by Bilibili username, password login not supported yet). MAS does not support international clients yet — keep using the BetterGI script",
     bettergiAccountSwitchMethodBgi: 'BetterGI script',
-    bettergiAccountSwitchMethodMas: 'MAS (CN official / Bilibili)',
+    bettergiAccountSwitchMethodMas: 'MAS (CN official / Bilibili, recommended)',
     useAdminLaunch: 'Launch with administrator privileges',
     bettergiUseAdminHint:
       'On by default (BetterGI needs admin rights). If MAS runs without admin, each launch triggers a UAC prompt — turn this off for unattended tasks. When MAS itself is already elevated, keeping it on never re-prompts',
