@@ -45,10 +45,11 @@
                     alt="MaaEnd"
                     class="script-logo"
                   />
+                  <!-- MaaFW 与各特调的图标取自特调注册表 -->
                   <img
-                    v-else-if="script.type === 'M9A'"
-                    src="@/assets/M9A.png"
-                    alt="M9A"
+                    v-else-if="isMaaFWFamily(script.type)"
+                    :src="resolveMaaFWFlavor(script.type).logo"
+                    :alt="resolveMaaFWFlavor(script.type).typeTagLabel"
                     class="script-logo"
                   />
                   <img
@@ -67,12 +68,6 @@
                     v-else-if="script.type === 'HSR'"
                     src="@/assets/hsr.png"
                     alt="HSR"
-                    class="script-logo"
-                  />
-                  <img
-                    v-else-if="script.type === 'MaaFW'"
-                    src="@/assets/maafw.png"
-                    alt="MFW"
                     class="script-logo"
                   />
                   <img
@@ -98,7 +93,7 @@
                 <div class="script-details">
                   <h3 class="script-name">{{ script.name }}</h3>
                   <a-tag :color="getScriptTypeTagColor(script.type)" class="script-type">
-                    {{ getScriptTypeLabel(script.type) }}
+                    {{ getScriptTypeLabel(script) }}
                   </a-tag>
                 </div>
               </div>
@@ -319,15 +314,6 @@
                             }}
                           </a-tag>
 
-                          <!-- M9A 脚本显示服务器标签 -->
-                          <a-tag
-                            v-if="script.type === 'M9A'"
-                            :color="getM9AServerTagColor(user.Info.Resource)"
-                            class="server-tag"
-                          >
-                            {{ user.Info.Resource || '官服' }}
-                          </a-tag>
-
                           <!-- ZzzOd 脚本显示配置来源标签（用户/直控） -->
                           <a-tag
                             v-if="script.type === 'ZzzOd'"
@@ -415,50 +401,13 @@
                             script.type === 'Okww' ||
                             script.type === 'OkNte' ||
                             script.type === 'BetterGI' ||
-                            script.type === 'MaaFW' ||
+                            isMaaFWFamily(script.type) ||
                             script.type === 'ZzzOd' ||
                             script.type === 'BAAH'
                           "
                           class="user-info-tags"
                         >
                           <!-- 直接使用后端提供的Tag字段 -->
-                          <a-tag
-                            v-for="(tag, index) in parseStatusTagList(user.Info.Tag)"
-                            :key="index"
-                            :title="tag.text"
-                            class="info-tag"
-                            :color="tag.color"
-                          >
-                            {{ tag.text }}
-                          </a-tag>
-                        </div>
-                        <!-- 用户详细信息 - M9A脚本用户 -->
-                        <div v-if="script.type === 'M9A'" class="user-info-tags">
-                          <!-- 显示备注（仅当有值时）-->
-                          <a-tag
-                            v-if="
-                              user.Info.Notes &&
-                              user.Info.Notes !== '无' &&
-                              user.Info.Notes.trim() !== ''
-                            "
-                            color="geekblue"
-                            class="info-tag"
-                            :title="user.Info.Notes"
-                          >
-                            {{ truncateText(user.Info.Notes, 10) }}
-                          </a-tag>
-
-                          <a-tag
-                            v-for="(tag, index) in getM9AOnceStatusTags(script, user)"
-                            :key="`m9a-once-${index}`"
-                            :title="tag.text"
-                            class="info-tag"
-                            :color="tag.color"
-                          >
-                            {{ tag.text }}
-                          </a-tag>
-
-                          <!-- 后端提供的Tag字段 -->
                           <a-tag
                             v-for="(tag, index) in parseStatusTagList(user.Info.Tag)"
                             :key="index"
@@ -577,8 +526,8 @@
 
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
-import type { Script, User } from '../types/script'
-import type { M9AConfig, MaaEndConfig } from '@/api'
+import type { MaaFWScriptConfig, Script, User } from '../types/script'
+import type { MaaEndConfig } from '@/api'
 import {
   CopyOutlined,
   DeleteOutlined,
@@ -595,6 +544,11 @@ import { message, Modal } from 'ant-design-vue'
 import { useScriptApi } from '@/composables/useScriptApi'
 import { useUserApi } from '@/composables/useUserApi'
 import { parseStatusTagList } from '@/composables/useStatusTag'
+import {
+  isMaaFWFamily,
+  resolveMaaFWFlavor,
+  type MaaFWFlavorType,
+} from '@/composables/useMaaFWFlavor'
 
 const { t } = useI18n()
 
@@ -632,10 +586,6 @@ interface Emits {
 
   (e: 'scriptsReordered', scripts: Script[]): void
 }
-
-const M9A_PSYCHUBE_NAMES = ['每日心相（意志解析）', '每日心相']
-const M9A_LIMBO_NAMES = ['自动深眠']
-const M9A_LUCIDSCAPE_NAMES = ['自动醒梦']
 
 const props = defineProps<Props>()
 const emit = defineEmits<Emits>()
@@ -766,8 +716,9 @@ const isMaaEndPresetSupported = (script: Script) => {
   return script.type === 'MaaEnd' && controllerType === 'Win32-Front'
 }
 
+// 直控直接用 MaaEnd 原有配置，在 MaaEnd 里改，不给配置入口。
 const shouldShowMaaEndUserConfigButton = (script: Script, user: User) => {
-  return script.type === 'MaaEnd' && user.Info?.Mode !== '脚本'
+  return script.type === 'MaaEnd' && user.Info?.Mode === '用户'
 }
 
 const handleStartOkwwConfig = (script: Script) => {
@@ -778,18 +729,22 @@ const handleToggleUserStatus = (user: User) => {
   emit('toggleUserStatus', user)
 }
 
-const getScriptTypeLabel = (type: Script['type']) => {
+const getScriptTypeLabel = (script: Script) => {
+  const type = script.type
   if (type === 'Okww') return 'ok-ww'
   if (type === 'OkNte') return 'ok-nte'
+  // MFW 家族显示项目实际的名字（引导页读到 interface 时记进 Info.ProjectLabel），没记过才显示类型
+  if (isMaaFWFamily(type)) {
+    return (script.config as MaaFWScriptConfig).Info?.ProjectLabel?.trim() || type
+  }
   return type
 }
 
-const SCRIPT_TYPE_TAG_COLORS: Record<Script['type'], string> = {
+// MaaFW 与各特调的标签颜色取自特调注册表
+const SCRIPT_TYPE_TAG_COLORS: Record<Exclude<Script['type'], MaaFWFlavorType>, string> = {
   MAA: 'blue',
   SRC: 'purple',
   MaaEnd: 'blue',
-  M9A: 'cyan',
-  MaaFW: 'geekblue',
   Okww: 'blue',
   OkNte: 'blue',
   HSR: 'purple',
@@ -799,7 +754,10 @@ const SCRIPT_TYPE_TAG_COLORS: Record<Script['type'], string> = {
   General: 'green',
 }
 
-const getScriptTypeTagColor = (type: Script['type']) => SCRIPT_TYPE_TAG_COLORS[type] ?? 'green'
+const getScriptTypeTagColor = (type: Script['type']) =>
+  isMaaFWFamily(type)
+    ? resolveMaaFWFlavor(type).typeTagColor
+    : (SCRIPT_TYPE_TAG_COLORS[type] ?? 'green')
 
 const truncateText = (text: string, maxLength: number = 10): string => {
   if (!text || text.length === 0) return '无'
@@ -964,11 +922,6 @@ const getServerDisplayName = (server: string): string => {
   }
 }
 
-// M9A服务器标签颜色映射
-const getM9AServerTagColor = (_resource: string): string => {
-  return 'blue'
-}
-
 // ZzzOd：配置来源标签（用户模式/直控模式）
 const getZzzOdModeLabel = (user: User): string =>
   user.Info.Mode === '直控' ? '直控模式' : '用户模式'
@@ -1025,65 +978,6 @@ const getZzzOdAccountText = (user: User): string => {
   }
   // 收起状态：只显示 4 位尾号以压缩卡片内展示宽度（账号本就明文可见，非脱敏）
   return accountValue ? accountValue.slice(-4) : '账号: 未设置'
-}
-
-const getM9ATodayString = (): string => {
-  return new Date(Date.now() + 4 * 60 * 60 * 1000).toISOString().slice(0, 10)
-}
-
-const getM9ACurrentMonthString = (): string => {
-  return getM9ATodayString().slice(0, 7)
-}
-
-const parseM9ATaskQueue = (queue: unknown): Array<{ name?: string }> => {
-  if (Array.isArray(queue)) return queue as Array<{ name?: string }>
-  if (typeof queue !== 'string') return []
-
-  try {
-    const parsed = JSON.parse(queue)
-    return Array.isArray(parsed) ? parsed : []
-  } catch {
-    return []
-  }
-}
-
-const hasM9ATaskInQueue = (queue: Array<{ name?: string }>, names: string[]): boolean => {
-  return queue.some(item => item.name && names.includes(item.name))
-}
-
-const getM9AOnceStatusTags = (script: Script, user: User) => {
-  if (script.type !== 'M9A') return []
-
-  const runConfig = (script.config as M9AConfig).Run ?? {}
-  const queue = parseM9ATaskQueue(user.Task?.Queue)
-  const data = user.Data ?? {}
-  const tags: Array<{ text: string; color: string }> = []
-
-  if (runConfig.IfPsychubeDailyOnce && hasM9ATaskInQueue(queue, M9A_PSYCHUBE_NAMES)) {
-    const completed = data.LastPsychubeDate === getM9ATodayString()
-    tags.push({
-      text: `每日心相：${completed ? '已完成' : '未完成'}`,
-      color: completed ? 'green' : 'orange',
-    })
-  }
-
-  if (runConfig.IfSleepDreamMonthlyOnce) {
-    const hasLimbo = hasM9ATaskInQueue(queue, M9A_LIMBO_NAMES)
-    const hasLucidscape = hasM9ATaskInQueue(queue, M9A_LUCIDSCAPE_NAMES)
-    if (hasLimbo || hasLucidscape) {
-      const currentMonth = getM9ACurrentMonthString()
-      const completed =
-        (!hasLimbo || data.LastLimboMonth === currentMonth) &&
-        (!hasLucidscape || data.LastLucidscapeMonth === currentMonth)
-
-      tags.push({
-        text: `深眠浅梦：${completed ? '已完成' : '未完成'}`,
-        color: completed ? 'green' : 'orange',
-      })
-    }
-  }
-
-  return tags
 }
 
 const { reorderScript } = useScriptApi()

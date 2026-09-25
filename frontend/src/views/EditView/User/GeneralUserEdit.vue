@@ -18,6 +18,17 @@
 
     <a-space size="middle">
       <a-button
+        v-if="!!userId"
+        size="large"
+        :loading="folderLoading"
+        @click="handleOpenFolder"
+      >
+        <template #icon>
+          <FolderOpenOutlined />
+        </template>
+        {{ t('comp.openConfigFolder') }}
+      </a-button>
+      <a-button
         v-if="!showGeneralConfigMask"
         type="primary"
         ghost
@@ -244,6 +255,7 @@ import { message, Modal } from 'ant-design-vue'
 import {
   ArrowLeftOutlined,
   EyeOutlined,
+  FolderOpenOutlined,
   HistoryOutlined,
   QuestionCircleOutlined,
   SettingOutlined,
@@ -272,7 +284,14 @@ const logger = window.electronAPI.getLogger('通用用户编辑')
 
 const router = useRouter()
 const route = useRoute()
-const { addUser, updateUser, getUsers, loading: userLoading } = useUserApi()
+const {
+  addUser,
+  updateUser,
+  getUsers,
+  loading: userLoading,
+  openUserConfigFolder,
+  loading: folderLoading,
+} = useUserApi()
 const { getScript } = useScriptApi()
 const { subscribe, unsubscribe } = useWebSocket()
 
@@ -284,6 +303,11 @@ const { enqueue } = useSaveQueue()
 
 // 路由参数
 const scriptId = route.params.scriptId as string
+
+const handleOpenFolder = async () => {
+  if (!userId) return
+  await openUserConfigFolder(scriptId, userId)
+}
 let userId = route.params.userId as string
 const isEdit = ref(!!userId) // 使用 ref 以便在创建后更新
 const { configLocked } = useScriptConfigLock(() => scriptId)

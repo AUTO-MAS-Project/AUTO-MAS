@@ -276,6 +276,12 @@ class LogMonitor:
                 # 超时后调用回调函数
                 await self.do_callback()
                 continue
+            except ValueError:
+                # 单行超过 StreamReader 的读取上限（默认 64 KiB）时 readline 抛
+                # ValueError；已读入的超限部分在抛出前被丢弃，下一次 readline 可以接着读，
+                # 该行尚未到达的剩余部分会作为一条新行继续处理。
+                logger.warning("进程输出中有一行超过读取上限，已丢弃超限部分")
+                continue
 
             line = ANSI_ESCAPE_RE.sub("", decode_bytes(bline))
 

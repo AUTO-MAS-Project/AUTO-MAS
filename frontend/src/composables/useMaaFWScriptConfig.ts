@@ -97,32 +97,10 @@ export const getDefaultMaaFWScriptConfig = (): MaaFWScriptConfig => ({
     MirrorChyanCDK: '',
     ProxyAddress: '',
   },
-  Managed: {
-    Enabled: false,
-    ProjectId: '',
-    StoreId: '',
-    Version: '',
-    RuntimeConstraint: '',
-    ProjectManifest: '{ }',
-    CheckoutPath: '',
-    PendingUpgrade: '{ }',
-    LastOperation: '{ }',
-  },
-  ManagedRuntime: {
-    RuntimeId: '',
-    PoolId: '',
-    PythonExecutable: '',
-    VenvPath: '',
-    RuntimeBinding: '{ }',
-  },
-  ManagedRemote: {
-    Source: 'MirrorChyan',
-    Channel: 'stable',
-    MirrorChyanRID: '',
-    MirrorChyanCDK: '',
-    GitHubRepo: '',
-    GitHubTag: '',
-    GitHubAssetPattern: '\\.zip$',
+  Embedded: {
+    SourceVersion: '',
+    ImportedAt: '',
+    Report: '{ }',
   },
   Run: {
     ProxyTimesLimit: 0,
@@ -131,6 +109,7 @@ export const getDefaultMaaFWScriptConfig = (): MaaFWScriptConfig => ({
     DailyOnceTasks: '[ ]',
     WeeklyOnceTasks: '[ ]',
     MonthlyOnceTasks: '[ ]',
+    GameUpdateMode: 'Off',
   },
 })
 

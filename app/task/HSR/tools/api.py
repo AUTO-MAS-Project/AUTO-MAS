@@ -1,15 +1,13 @@
 """HSR API domain adapters for the old-dev host.
 
 The HTTP layer only validates script/user ownership and shapes the shared
-``OutBase`` responses.  This module keeps HSR registry snapshots, dynamic
-stage/managed configuration discovery, and direct-config imports next to the
-HSR task tools without exposing native editor sessions through the API.
+``OutBase`` responses.  This module keeps HSR registry snapshots and dynamic
+stage/managed configuration discovery next to the HSR task tools without
+exposing native editor sessions through the API.
 """
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Literal
 
@@ -91,6 +89,7 @@ def build_capabilities(script_config: Any) -> dict[str, Any]:
     """
 
     from app.task.HSR.task_mapping import (
+        ENGINE_DISPLAY_NAMES,
         HSR_TASK_MODULES,
         describe_script_fallback,
         resolve_script_assignment,
@@ -124,11 +123,8 @@ def build_capabilities(script_config: Any) -> dict[str, Any]:
         adapters.append(
             {
                 "engine": engine,
-                "display_name": "三月七助手"
-                if engine == "M7A"
-                else "StarRailAssistant",
+                "display_name": ENGINE_DISPLAY_NAMES.get(engine, engine),
                 "version": _installed_version(script_config, engine),
-                "supported_modes": ["managed", "direct"],
                 "capabilities": {
                     "native_import": bool(import_ready),
                     "direct_control": direct_ready,
@@ -175,7 +171,6 @@ def build_capabilities(script_config: Any) -> dict[str, Any]:
         "candidate_engines": list(_HSR_ENGINES),
         "configured_engines": configured,
         "effective_engines": effective,
-        "supported_modes": ["managed", "direct"],
         "adapters": adapters,
         "tasks": tasks,
         "warnings": warnings,
@@ -249,15 +244,30 @@ def build_managed_config(
     script_config: Any,
     user_config: Any | None = None,
 ) -> dict[str, Any]:
-    """Discover managed forms and merge script/user engine assignments."""
+    """Discover managed forms and merge script/user engine assignments.
+
+    表单值与引擎分配按该用户的计划 owner 取：「脚本」来源（以及未指定用户）
+    读脚本配置上的共享计划，「用户」来源读该用户自己的计划。直控用户没有
+    MAS 计划，这里按「用户」返回其残留字段，编辑页不会渲染它们。响应里的
+    ``plan_owner`` 告诉前端当前表单应保存到脚本配置还是用户配置。
+    """
 
     from app.task.HSR.task_mapping import (
         HSR_TASK_MODULES,
         describe_script_fallback,
+        engine_label,
         resolve_script_assignment,
     )
 
     from .managed_config import list_managed_modules
+    from .native_control import resolve_plan_owner
+
+    plan_owner: Literal["script", "user"] = (
+        "script"
+        if user_config is None or resolve_plan_owner(user_config) == "script"
+        else "user"
+    )
+    plan = script_config if plan_owner == "script" else user_config
 
     effective = _configured_engines(script_config)
     effective_set = set(effective)
@@ -271,9 +281,11 @@ def build_managed_config(
             warnings.append(fallback_note)
     for engine in effective:
         try:
-            modules = list_managed_modules(engine, script_config, user_config)
+            modules = list_managed_modules(engine, script_config, plan)
         except (FileNotFoundError, OSError, RuntimeError, ValueError, KeyError) as exc:
-            warnings.append(f"{engine} 动态托管字段不可用：{exc}")
+            warnings.append(
+                f"{engine_label(engine, left=False)}动态托管字段不可用：{exc}"
+            )
             continue
         for module in modules:
             task_forms.setdefault(module.key, {})[engine] = module.asdict()
@@ -288,7 +300,7 @@ def build_managed_config(
         assignment = resolve_script_assignment(
             module,
             script_config,
-            user_config=user_config,
+            user_config=plan,
             effective_engines=tuple(effective),
         )
         task_mapping[module.key] = assignment.script
@@ -316,92 +328,10 @@ def build_managed_config(
         )
     return {
         "revision": "old-dev",
+        "plan_owner": plan_owner,
         "tasks": tasks,
         "task_mapping": task_mapping,
         "warnings": warnings,
-    }
-
-
-async def import_direct_config(
-    script_config: Any,
-    engine: str,
-    *,
-    script_id: str,
-    user_id: str,
-    update_user: Callable[[str, str, dict[str, Any]], Awaitable[Any]],
-) -> dict[str, Any]:
-    """Export one native config while holding the shared external path lock.
-
-    The raw snapshot is passed only to the config persistence layer; the
-    returned API result contains source metadata and byte size, never content.
-    """
-
-    from .external_locks import acquire_external_path_locks, resolve_external_lock_paths
-    from .native_control import native_provider
-
-    normalized = _normalize_engine(engine)
-    lease = await acquire_external_path_locks(
-        resolve_external_lock_paths(script_config, (normalized,)),
-        wait=False,
-    )
-    try:
-        source_path, content = native_provider(normalized).export_config(script_config)
-        raw_content = content if isinstance(content, str) else str(content)
-        imported_at = datetime.now(timezone.utc).isoformat()
-        await update_user(
-            script_id,
-            user_id,
-            {
-                "Direct": {
-                    f"{normalized}Config": raw_content,
-                    f"{normalized}ImportedAt": imported_at,
-                    f"{normalized}Source": str(source_path),
-                }
-            },
-        )
-        return {
-            "engine": normalized,
-            "source": str(source_path),
-            "imported_at": imported_at,
-            "size": len(raw_content.encode("utf-8")),
-        }
-    finally:
-        lease.release()
-
-
-async def clear_direct_config(
-    script_config: Any,
-    engine: str,
-    *,
-    script_id: str,
-    user_id: str,
-    update_user: Callable[[str, str, dict[str, Any]], Awaitable[Any]],
-) -> dict[str, Any]:
-    """Drop one user's imported snapshot so direct control falls back to the
-    script's live native config.
-
-    与 :func:`import_direct_config` 对称：只清空 ``Direct.{engine}Config`` 及其
-    元数据，不碰任何外部文件，因此不需要外部路径锁。返回形状与导入结果一致，
-    ``source`` / ``imported_at`` 为空、``size`` 为 0 表示当前已无快照。
-    """
-
-    normalized = _normalize_engine(engine)
-    await update_user(
-        script_id,
-        user_id,
-        {
-            "Direct": {
-                f"{normalized}Config": "",
-                f"{normalized}ImportedAt": "",
-                f"{normalized}Source": "",
-            }
-        },
-    )
-    return {
-        "engine": normalized,
-        "source": None,
-        "imported_at": None,
-        "size": 0,
     }
 
 
@@ -410,6 +340,4 @@ __all__ = [
     "build_managed_config",
     "build_sra_profiles",
     "build_stage_options",
-    "clear_direct_config",
-    "import_direct_config",
 ]

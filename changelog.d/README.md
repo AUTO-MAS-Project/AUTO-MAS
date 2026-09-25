@@ -56,7 +56,8 @@ python scripts/changelog.py add fix maa "修复理智不足时剿灭被误记为
 | `okww` | ok-ww | `tools` | 工具 |
 | `oknte` | ok-nte | `settings` | 设置 |
 | `baah` | BAAH | `update` | 更新 |
-| `src` | SRC | `runtime` | Runtime |
+| `mss` | MSS | `runtime` | Runtime |
+| `src` | SRC |  |  |
 
 表在 `scripts/changelog.py` 的 `PROJECTS` 里，新专项加一行即可。没有兜底键，归不进的**就近归**：
 

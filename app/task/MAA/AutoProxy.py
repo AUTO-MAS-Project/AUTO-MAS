@@ -64,6 +64,7 @@ from app.utils.constants import (
     MAA_TASKS,
     MAA_TASKS_ZH,
     UTC4,
+    game_now,
 )
 from app.utils.io import mark_native_config_injected, read_file, write_file
 
@@ -871,7 +872,9 @@ class AutoProxyTask(TaskExecuteBase):
         if not self.run_book["GreenTicketStore"]:
             completed_month = self.cur_user_config.get("Data", "GreenTicketStoreMonth")
 
-            if completed_month == _current_month_marker(datetime.now(tz=UTC4)):
+            if completed_month == _current_month_marker(
+                game_now(self.cur_user_config.get("Info", "Server"))
+            ):
                 self.run_book["GreenTicketStore"] = True
                 logger.info(
                     f"用户 {self.cur_user_item.name} 本次跳过绿票商店："
@@ -879,7 +882,7 @@ class AutoProxyTask(TaskExecuteBase):
                 )
 
         if not self.run_book["Annihilation"]:
-            now = datetime.now(tz=UTC4)
+            now = game_now(self.cur_user_config.get("Info", "Server"))
             start_weekday = self.cur_user_config.get("Info", "AnnihilationStartWeekday")
 
             if not _should_run_annihilation(
@@ -900,8 +903,10 @@ class AutoProxyTask(TaskExecuteBase):
     async def main_task(self):
         """自动代理模式主逻辑"""
 
-        # 初始化每日代理状态
-        self.curdate = datetime.now(tz=UTC4).strftime("%Y-%m-%d")
+        # 初始化每日代理状态（按用户区服的游戏日换日）
+        self.curdate = game_now(self.cur_user_config.get("Info", "Server")).strftime(
+            "%Y-%m-%d"
+        )
         if self.cur_user_config.get("Data", "LastProxyDate") != self.curdate:
             await self.cur_user_config.set("Data", "LastProxyDate", self.curdate)
             await self.cur_user_config.set("Data", "ProxyTimes", 0)
@@ -1259,6 +1264,7 @@ class AutoProxyTask(TaskExecuteBase):
                 maa_data_dir=self._cultivate_archive_dir(),
                 config_path=Config.config_path,
                 proxy=Config.proxy,
+                today=game_now(self.cur_user_config.get("Info", "Server")).date(),
                 skland=skland,
             )
         except Exception as e:
@@ -1526,7 +1532,9 @@ class AutoProxyTask(TaskExecuteBase):
                 uuid.UUID(self.cur_user_config.get("Info", "StageMode"))
             ]
             plan_data = {
-                stage_key: plan.get_current_info(stage_key).getValue()
+                stage_key: plan.get_current_info(
+                    stage_key, server=self.cur_user_config.get("Info", "Server")
+                ).getValue()
                 for stage_key in MAA_STAGE_KEY
             }
 
@@ -1930,7 +1938,9 @@ class AutoProxyTask(TaskExecuteBase):
                     await self.cur_user_config.set(
                         "Data",
                         "AnnihilationCompletedWeek",
-                        _current_week_marker(datetime.now(tz=UTC4)),
+                        _current_week_marker(
+                            game_now(self.cur_user_config.get("Info", "Server"))
+                        ),
                     )
                     self._annihilation_weekly_completion_recorded = True
                     progress_text = (
@@ -1951,7 +1961,9 @@ class AutoProxyTask(TaskExecuteBase):
             await self.cur_user_config.set(
                 "Data",
                 "GreenTicketStoreMonth",
-                _current_month_marker(datetime.now(tz=UTC4)),
+                _current_month_marker(
+                    game_now(self.cur_user_config.get("Info", "Server"))
+                ),
             )
             logger.info(f"用户 {self.cur_user_item.name} 已完成本月绿票商店购买")
 

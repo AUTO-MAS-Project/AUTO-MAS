@@ -69,10 +69,12 @@ log_box 是**进程无关**的组件，结果落点由**宿主**决定：
 
 ```python
 col = log_box.get_collect(
-    paths=["workdir/logs/ok-script.log"],  # str | Path | 可迭代；None → 环境变量 MAS_SCRIPT_LOG_PATH
-    sink=None,                             # MAS 宿主注入 push_log 回调；缺省走 @@LOGBOX@@ 回传
-    start_from_end=True,                   # 从文件末尾起始采集，仅采会话内新增
-    rotated_name=None,                     # 轮转文件名 strftime 模板（见下节「日志轮转补偿」）
+    paths=[
+        "workdir/logs/ok-script.log"
+    ],  # str | Path | 可迭代；None → 环境变量 MAS_SCRIPT_LOG_PATH
+    sink=None,  # MAS 宿主注入 push_log 回调；缺省走 @@LOGBOX@@ 回传
+    start_from_end=True,  # 从文件末尾起始采集，仅采会话内新增
+    rotated_name=None,  # 轮转文件名 strftime 模板（见下节「日志轮转补偿」）
 )
 ```
 
@@ -245,6 +247,7 @@ def fn_suffix(text: str, args: list[Arg]) -> str:
     """suffix(str) — 追加后缀"""
     return text + (str(args[0]) if args else "")
 
+
 FUNCTIONS["suffix"] = fn_suffix  # 注册后表达式可用 .suffix(" 剩余电量")
 ```
 
@@ -269,12 +272,12 @@ from app.log_box import log_box, LogType
 
 self.log_collect = log_box.get_collect(
     paths=[self.script_log_path],  # 相对 RootPath 派生，不硬编码绝对路径
-    sink=self._append_push_log,    # 注入到 cur_user_item.push_log
+    sink=self._append_push_log,  # 注入到 cur_user_item.push_log
     start_from_end=True,
-    rotated_name=...,              # 仅无 inode 文件系统生效（日期式滚动唯一兜底）
+    rotated_name=...,  # 仅无 inode 文件系统生效（日期式滚动唯一兜底）
 )
-self.log_collect.open(translator.translate)          # 前置翻译
-for match_re, expr, log_type in PUSH_RULES:          # 喂规则参数（状态标记规则）
+self.log_collect.open(translator.translate)  # 前置翻译
+for match_re, expr, log_type in PUSH_RULES:  # 喂规则参数（状态标记规则）
     self.log_collect.collect(match_re, expr, log_type)
 # 结束时机（如进程关闭判定 / final_task）：col.close(resolve)
 ```
@@ -288,7 +291,9 @@ for match_re, expr, log_type in PUSH_RULES:          # 喂规则参数（状态�
 
 ```python
 import re
+
 _STATUS_RANK = {"✅ 成功": 1, "⏭ 跳过": 2, "❌ 失败": 3}
+
 
 def resolve(results):
     """输入/输出均为 (log_type, text, ts) 元组，日志类型与时间戳随元组一并保留"""
@@ -346,9 +351,9 @@ user_result_text = build_user_result_text(self.script_info.user_list, has_uncomp
 from app.log_box import log_box, LogType
 
 col = log_box.get_collect(paths=["workdir/logs/xxx.log"])
-col.open()                        # 记录起始位置（可选，close 收尾会自动兜底）
+col.open()  # 记录起始位置（可选，close 收尾会自动兜底）
 col.collect(r"DailyTask:open_daily", '"完成"')
-col.close()   # 脚本正常退出时 atexit 也会自动收尾
+col.close()  # 脚本正常退出时 atexit 也会自动收尾
 ```
 
 接通后结果经 `@@LOGBOX@@` 标记出现在任务推送报告。注意：`start_from_end=True`

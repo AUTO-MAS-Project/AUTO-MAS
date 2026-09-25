@@ -31,6 +31,7 @@ from .security import (
     dpapi_decrypt,
     dpapi_encrypt,
     format_exception_reason,
+    looks_like_dpapi_blob,
     sanitize_log_message,
 )
 from .supervision import is_backend_dev_mode, is_supervised
@@ -133,6 +134,7 @@ __all__ = [
     "get_logger",
     "dpapi_encrypt",
     "dpapi_decrypt",
+    "looks_like_dpapi_blob",
     "format_exception_reason",
     "sanitize_log_message",
     "is_backend_dev_mode",

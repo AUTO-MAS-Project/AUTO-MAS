@@ -10,6 +10,7 @@ import type { M9AConfig } from './M9AConfig';
 import type { MaaConfig } from './MaaConfig';
 import type { MaaEndConfig } from './MaaEndConfig';
 import type { MaaFWConfig } from './MaaFWConfig';
+import type { MSSConfig } from './MSSConfig';
 import type { OkNteConfig } from './OkNteConfig';
 import type { OkwwConfig } from './OkwwConfig';
 import type { SrcConfig } from './SrcConfig';
@@ -22,6 +23,6 @@ export type ScriptUpdateIn = {
     /**
      * 脚本更新数据
      */
-    data: (MaaConfig | SrcConfig | GeneralConfig | OkwwConfig | OkNteConfig | MaaEndConfig | M9AConfig | MaaFWConfig | HSRConfig | BetterGIConfig | ZzzOdConfig | BAAHConfig);
+    data: (MaaConfig | SrcConfig | GeneralConfig | OkwwConfig | OkNteConfig | MaaEndConfig | M9AConfig | MaaFWConfig | HSRConfig | BetterGIConfig | ZzzOdConfig | BAAHConfig | MSSConfig);
 };
 

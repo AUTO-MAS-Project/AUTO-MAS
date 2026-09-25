@@ -1014,6 +1014,9 @@ class EmulatorConfig_Info(BaseModel):
     ForceKillOnClose: Optional[bool] = Field(
         default=None, description="关闭 MuMu 时强力清理残留进程"
     )
+    ForceKillBeforeLaunch: Optional[bool] = Field(
+        default=None, description="启动 MuMu 前先关闭已在运行的实例并强力清理残留进程"
+    )
 
 
 class EmulatorConfig(BaseModel):
@@ -1340,6 +1343,60 @@ class GlobalConfig_Notify(BaseModel):
     )
 
 
+class NotifyChannelOptionOut(BaseModel):
+    """渠道下拉选项的取值与文案键；取值保持后端配置字面量（含布尔）。"""
+
+    value: Union[bool, str] = Field(..., description="选项值，保持后端配置字面量")
+    labelKey: str = Field(..., description="选项文案的词表键")
+
+
+class NotifyChannelFieldOut(BaseModel):
+    """渠道在某个作用域暴露的一个配置字段描述。"""
+
+    group: str = Field(..., description="配置组，如 Notify")
+    name: str = Field(..., description="配置字段名")
+    labelKey: str = Field(..., description="字段标签词表键")
+    control: str = Field(
+        ..., description="控件类型：bool/text/password/url/select/json"
+    )
+    options: List[NotifyChannelOptionOut] = Field(default=[], description="下拉选项")
+    placeholderKey: str = Field(default="", description="占位文案词表键")
+    tipKey: str = Field(default="", description="提示文案词表键")
+
+
+class NotifyChannelOut(BaseModel):
+    """一个通知渠道的展示元数据；服务无鉴权，负载不得出现任何配置值。"""
+
+    key: str = Field(..., description="渠道标识")
+    nameKey: str = Field(..., description="渠道名称词表键")
+    descKey: str = Field(default="", description="渠道一句话说明词表键")
+    icon: str = Field(default="", description="图标标识，policy 段为空串")
+    group: str = Field(..., description="分组：builtin/custom")
+    order: int = Field(..., description="排序值，与投递顺序一致")
+    docUrl: Optional[str] = Field(default=None, description="使用文档链接")
+    scopes: List[str] = Field(default=[], description="可用作用域：global/user")
+    kind: str = Field(..., description="渲染类型：fields/custom/policy")
+    customBlock: Optional[str] = Field(
+        default=None, description="自定义块标识：claw:weixin/claw:qq/webhook_list"
+    )
+    enableField: Optional[List[str]] = Field(
+        default=None, description="启用开关的 [配置组, 字段名]"
+    )
+    summaryKey: Optional[str] = Field(default=None, description="卡片摘要词表键")
+    summaryFields: List[str] = Field(
+        default=[], description="参与摘要插值与空值判定的字段名"
+    )
+    fields: Dict[str, List[NotifyChannelFieldOut]] = Field(
+        default={}, description="按作用域分组的字段列表"
+    )
+
+
+class NotifyChannelsOut(OutBase):
+    """通知渠道描述表。"""
+
+    channels: List[NotifyChannelOut] = Field(default=[], description="渠道描述列表")
+
+
 class OpenClawWeixinQrStartOut(OutBase):
     """微信 Claw 二维码创建响应。"""
 
@@ -1386,11 +1443,16 @@ class OpenClawQQQrCheckIn(BaseModel):
 
 
 class OpenClawQQQrCheckOut(OutBase):
-    """QQ 官方机器人二维码状态查询响应。"""
+    """QQ 官方机器人二维码及消息网关状态查询响应。"""
 
     sessionId: str = Field(default="", description="二维码登录会话 ID")
-    state: str = Field(default="", description="二维码状态")
-    connected: bool = Field(default=False, description="是否已完成账号绑定")
+    state: str = Field(
+        default="",
+        description="轮询状态：waiting、scanned、connecting（已绑定，网关连接中）、connected（网关已就绪）、expired 或 error",
+    )
+    connected: bool = Field(
+        default=False, description="消息网关是否已就绪；绑定成功但仍在连接时为 false"
+    )
 
 
 class OpenClawQQStatusOut(OutBase):
@@ -1398,7 +1460,10 @@ class OpenClawQQStatusOut(OutBase):
 
     enabled: bool = Field(default=False, description="是否启用 QQ 官方机器人通知")
     connected: bool = Field(default=False, description="是否已绑定 QQ 官方机器人")
-    state: str = Field(default="disconnected", description="当前连接状态")
+    state: str = Field(
+        default="disconnected",
+        description="消息网关状态：disconnected、connecting、connected 或 reconnecting",
+    )
 
 
 class GlobalConfig_Update(BaseModel):
@@ -1581,6 +1646,7 @@ class ScriptIndexItem(BaseModel):
         "BetterGIConfig",
         "ZzzOdConfig",
         "BAAHConfig",
+        "MSSConfig",
     ] = Field(..., description="配置类型")
 
 
@@ -1599,6 +1665,7 @@ class UserIndexItem(BaseModel):
         "BetterGIUserConfig",
         "ZzzOdUserConfig",
         "BAAHUserConfig",
+        "MSSUserConfig",
     ] = Field(..., description="配置类型")
 
 
@@ -3002,6 +3069,9 @@ class HSRConfig_Info(BaseModel):
 
 
 class HSRConfig_Game(BaseModel):
+    Platform: Optional[Literal["Client", "Cloud"]] = Field(
+        default=None, description="游戏平台：本地客户端 / 云·星穹铁道"
+    )
     Enabled: Optional[bool] = Field(default=None, description="是否由 MAS 管理游戏")
     Path: Optional[str] = Field(default=None, description="游戏路径")
     WaitTime: Optional[int] = Field(default=None, description="等待时间（秒）")
@@ -3010,6 +3080,22 @@ class HSRConfig_Game(BaseModel):
     )
     RedeemCodesOnlyWhenChanged: Optional[bool] = Field(
         default=None, description="仅在兑换码变化时执行兑换"
+    )
+
+
+class HSRConfig_Cloud(BaseModel):
+    UsePaidTime: Optional[bool] = Field(
+        default=None, description="云·星穹铁道是否消耗付费时长走快速排队通道"
+    )
+    MaxQueueMinutes: Optional[int] = Field(
+        default=None, description="云·星穹铁道最长排队时间（分钟）"
+    )
+    LoginTimeoutMinutes: Optional[int] = Field(
+        default=None, description="云·星穹铁道等待手动登录的时间（分钟）"
+    )
+    LastLogin: Optional[str] = Field(
+        default=None,
+        description="各用户最近一次确认已登录的时间 JSON（用户 ID → ISO 时间），只读",
     )
 
 
@@ -3053,7 +3139,7 @@ class HSRConfig_Update(BaseModel):
     )
     M7ASource: Optional[Literal["GitHub", "MirrorChyan"]] = Field(
         default=None,
-        description="三月七助手更新包下载源：GitHub / Mirror 酱（需自行填写 CDK）",
+        description="三月七更新包下载源：GitHub / Mirror 酱（需自行填写 CDK）",
     )
     SRASource: Optional[Literal["AutoSite", "GitHub", "MirrorChyan"]] = Field(
         default=None,
@@ -3067,15 +3153,69 @@ class HSRConfig_Update(BaseModel):
     )
 
 
+class HSRConfig_TaskSwitch(BaseModel):
+    Daily: Optional[bool] = Field(default=None, description="日常模块开关")
+    ReceiveRewards: Optional[bool] = Field(default=None, description="领取奖励模块开关")
+    DivergentUniverse: Optional[bool] = Field(
+        default=None, description="差分宇宙模块开关"
+    )
+    CurrencyWars: Optional[bool] = Field(default=None, description="货币战争模块开关")
+
+
+class HSRConfig_Stage(BaseModel):
+    Channel: Optional[Literal["CalyxGolden", "CalyxCrimson", "Relic", "Ornament"]] = (
+        Field(default=None, description="体力关卡通道")
+    )
+    ScriptStage: Optional[str] = Field(
+        default=None, description="主刷关卡脚本原生字段 JSON"
+    )
+    ScriptEchoOfWar: Optional[str] = Field(
+        default=None, description="历战余响脚本原生字段 JSON"
+    )
+
+
+class HSRConfig_TaskOpt(BaseModel):
+    EchoOfWarWeekday: Optional[
+        Literal[
+            "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"
+        ]
+    ] = Field(default=None, description="历战余响开始刷的星期（周一 ~ 周日）")
+
+
+class HSRConfig_Managed(BaseModel):
+    """脚本级共享计划的托管覆盖。
+
+    脚本级 ``Managed.TaskMapping`` 恒为空（引擎分配走 ``TaskMapping`` 组），
+    故不在接口里开放。
+    """
+
+    Options: Optional[str] = Field(default=None, description="托管任务选项 JSON")
+
+
 class HSRConfig(BaseModel):
     Info: Optional[HSRConfig_Info] = Field(default=None, description="脚本基础信息")
     Game: Optional[HSRConfig_Game] = Field(default=None, description="游戏配置")
+    Cloud: Optional[HSRConfig_Cloud] = Field(
+        default=None, description="云·星穹铁道配置"
+    )
     Run: Optional[HSRConfig_Run] = Field(default=None, description="运行配置")
     Update: Optional[HSRConfig_Update] = Field(
         default=None, description="外部脚本更新配置"
     )
     TaskMapping: Optional[HSRConfig_TaskMapping] = Field(
         default=None, description="模块脚本分配"
+    )
+    TaskSwitch: Optional[HSRConfig_TaskSwitch] = Field(
+        default=None, description="共享计划：模块执行开关（脚本来源用户共用）"
+    )
+    Stage: Optional[HSRConfig_Stage] = Field(
+        default=None, description="共享计划：关卡配置（脚本来源用户共用）"
+    )
+    TaskOpt: Optional[HSRConfig_TaskOpt] = Field(
+        default=None, description="共享计划：模块执行参数（脚本来源用户共用）"
+    )
+    Managed: Optional[HSRConfig_Managed] = Field(
+        default=None, description="共享计划：托管覆盖（脚本来源用户共用）"
     )
 
 
@@ -3168,25 +3308,13 @@ class HSRUserConfig_TaskOpt(BaseModel):
 
 
 class HSRUserConfig_Control(BaseModel):
-    Mode: Optional[Literal["managed", "direct"]] = Field(
-        default=None, description="托管或直连模式"
-    )
-    SRA: Optional[bool] = Field(default=None, description="是否允许 SRA")
-    M7A: Optional[bool] = Field(default=None, description="是否允许 M7A")
+    SRA: Optional[bool] = Field(default=None, description="直控时是否运行 SRA")
+    M7A: Optional[bool] = Field(default=None, description="直控时是否运行三月七")
 
 
 class HSRUserConfig_Managed(BaseModel):
     TaskMapping: Optional[str] = Field(default=None, description="托管任务映射 JSON")
     Options: Optional[str] = Field(default=None, description="托管任务选项 JSON")
-
-
-class HSRUserConfig_Direct(BaseModel):
-    """直连快照元数据；原生配置正文不会进入普通用户 GET 响应。"""
-
-    SRAImportedAt: Optional[str] = Field(default=None, description="SRA 导入时间")
-    M7AImportedAt: Optional[str] = Field(default=None, description="M7A 导入时间")
-    SRASource: Optional[str] = Field(default=None, description="SRA 快照来源")
-    M7ASource: Optional[str] = Field(default=None, description="M7A 快照来源")
 
 
 class HSRUserConfig_Notify(BaseModel):
@@ -3217,7 +3345,6 @@ class HSRUserConfig(BaseModel):
     Managed: Optional[HSRUserConfig_Managed] = Field(
         default=None, description="托管配置"
     )
-    Direct: Optional[HSRUserConfig_Direct] = Field(default=None, description="直连快照")
 
 
 class HSRDynamicStageM7A(BaseModel):
@@ -3283,9 +3410,6 @@ class HSRCapabilityAdapter(BaseModel):
     engine: Literal["M7A", "SRA"] = Field(..., description="原生脚本引擎")
     display_name: str = Field(..., description="引擎展示名称")
     version: Optional[str] = Field(default=None, description="引擎版本")
-    supported_modes: List[str] = Field(
-        default_factory=list, description="支持的运行模式"
-    )
     capabilities: Dict[str, Any] = Field(
         default_factory=dict, description="引擎能力集合"
     )
@@ -3305,9 +3429,6 @@ class HSRCapabilitiesData(BaseModel):
     )
     effective_engines: List[Literal["M7A", "SRA"]] = Field(
         default_factory=list, description="有效引擎"
-    )
-    supported_modes: List[str] = Field(
-        default_factory=list, description="支持的运行模式"
     )
     adapters: List[HSRCapabilityAdapter] = Field(
         default_factory=list, description="引擎适配器"
@@ -3344,6 +3465,23 @@ class HSRUpdateData(BaseModel):
 
 class HSRUpdateOut(OutBase):
     data: Optional[HSRUpdateData] = Field(default=None, description="更新结果")
+
+
+class HSRCloudLoginIn(BaseModel):
+    scriptId: str = Field(..., description="HSR 脚本配置 ID")
+    userId: str = Field(..., description="要登录云·星穹铁道的用户 ID")
+
+
+class HSRCloudLoginData(BaseModel):
+    logged_in: bool = Field(default=False, description="是否确认已登录")
+    last_login: Optional[str] = Field(
+        default=None, description="本次确认已登录的时间（ISO 8601）"
+    )
+    message: str = Field(default="", description="面向用户的结果说明")
+
+
+class HSRCloudLoginOut(OutBase):
+    data: Optional[HSRCloudLoginData] = Field(default=None, description="登录结果")
 
 
 class HSRManagedField(BaseModel):
@@ -3401,6 +3539,13 @@ class HSRManagedTask(BaseModel):
 
 class HSRManagedConfigData(BaseModel):
     revision: str = Field(default="old-dev", description="契约版本")
+    plan_owner: Literal["script", "user"] = Field(
+        default="script",
+        description=(
+            "任务计划的归属：script=脚本共享计划（保存到脚本配置），"
+            "user=该用户自己的计划（保存到用户配置）"
+        ),
+    )
     tasks: List[HSRManagedTask] = Field(default_factory=list, description="托管任务")
     task_mapping: Dict[str, Literal["M7A", "SRA"]] = Field(
         default_factory=dict, description="任务到引擎映射"
@@ -3439,127 +3584,6 @@ class HSRSRAProfilesOut(OutBase):
     data: Optional[HSRSRAProfilesData] = Field(
         default=None, description="SRA 配置档案列表"
     )
-
-
-class HSRDirectConfigImportIn(BaseModel):
-    scriptId: str = Field(..., description="HSR 脚本 ID")
-    userId: str = Field(..., description="HSR 用户 ID")
-    engine: Literal["M7A", "SRA"] = Field(..., description="原生脚本引擎")
-
-
-class HSRDirectConfigImportData(BaseModel):
-    engine: Literal["M7A", "SRA"] = Field(..., description="原生脚本引擎")
-    source: Optional[str] = Field(default=None, description="配置来源")
-    imported_at: Optional[str] = Field(default=None, description="导入时间")
-    size: int = Field(default=0, description="快照字节数")
-
-
-class HSRDirectConfigImportOut(OutBase):
-    data: Optional[HSRDirectConfigImportData] = Field(
-        default=None, description="直连配置导入结果"
-    )
-
-
-class M9AUserConfig_Info(BaseModel):
-    Name: Optional[str] = Field(default=None, description="用户名称")
-    Status: Optional[bool] = Field(default=None, description="是否启用")
-    RemainedDay: Optional[int] = Field(default=None, description="剩余天数")
-    Mode: Optional[Literal["脚本", "用户", "直控"]] = Field(
-        default=None, description="配置来源（用户独立、直控使用脚本原生配置）"
-    )
-    IfQuickConfig: Optional[bool] = Field(
-        default=None, description="是否启用快速配置（与配置来源独立）"
-    )
-    IfScriptBeforeTask: Optional[bool] = Field(
-        default=None, description="是否在任务前执行脚本"
-    )
-    ScriptBeforeTask: Optional[str] = Field(default=None, description="任务前脚本路径")
-    IfScriptAfterTask: Optional[bool] = Field(
-        default=None, description="是否在任务后执行脚本"
-    )
-    ScriptAfterTask: Optional[str] = Field(default=None, description="任务后脚本路径")
-    Notes: Optional[str] = Field(default=None, description="备注")
-    Tag: Optional[str] = Field(default=None, description="用户标签信息")
-    Resource: Optional[str] = Field(default=None, description="服务器资源名称")
-    Account: Optional[str] = Field(
-        default=None, description="账号信息（用于切换账号，仅官服生效）"
-    )
-
-
-class M9AUserConfig_Task(BaseModel):
-    AvailableTasks: Optional[Union[str, List]] = Field(
-        default=None, description="可用任务列表 JSON 数组字符串或数组"
-    )
-    Queue: Optional[Union[str, List]] = Field(
-        default=None, description="运行任务队列 JSON 数组字符串或数组"
-    )
-
-
-class M9AUserConfig_Data(BaseModel):
-    LastProxyDate: Optional[str] = Field(default=None, description="上次代理日期")
-    LastPsychubeDate: Optional[str] = Field(
-        default=None, description="上次完成每日心相日期，格式 YYYY-MM-DD"
-    )
-    LastLimboMonth: Optional[str] = Field(
-        default=None, description="上次完成自动深眠月份，格式 YYYY-MM"
-    )
-    LastLucidscapeMonth: Optional[str] = Field(
-        default=None, description="上次完成自动醒梦月份，格式 YYYY-MM"
-    )
-    ProxyTimes: Optional[int] = Field(default=None, description="代理次数")
-
-
-class M9AUserConfig_Notify(BaseModel):
-    Enabled: Optional[bool] = Field(default=None, description="是否启用通知")
-    IfSendStatistic: Optional[bool] = Field(
-        default=None, description="是否发送统计信息"
-    )
-    IfSendMail: Optional[bool] = Field(default=None, description="是否发送邮件")
-    ToAddress: Optional[str] = Field(default=None, description="收件地址")
-    IfServerChan: Optional[bool] = Field(default=None, description="是否启用 Server 酱")
-    ServerChanKey: Optional[str] = Field(default=None, description="Server 酱密钥")
-
-
-class M9AUserConfig(BaseModel):
-    Info: Optional[M9AUserConfig_Info] = Field(default=None, description="基础信息")
-    Task: Optional[M9AUserConfig_Task] = Field(default=None, description="任务配置")
-    Data: Optional[M9AUserConfig_Data] = Field(default=None, description="用户数据")
-    Notify: Optional[M9AUserConfig_Notify] = Field(default=None, description="单独通知")
-
-
-class M9AConfig_Info(BaseModel):
-    Name: Optional[str] = Field(default=None, description="M9A 脚本名称")
-    Path: Optional[str] = Field(default=None, description="M9A 路径")
-
-
-class M9AConfig_Emulator(BaseModel):
-    Id: Optional[str] = Field(default=None, description="模拟器 ID")
-    Index: Optional[str] = Field(default=None, description="模拟器索引")
-
-
-class M9AConfig_Run(BaseModel):
-    ProxyTimesLimit: Optional[int] = Field(default=None, description="代理次数限制")
-    RunTimesLimit: Optional[int] = Field(default=None, description="运行次数限制")
-    RunTimeLimit: Optional[int] = Field(
-        default=None, description="运行时间限制（分钟）"
-    )
-    IfAutoUpdateAfterQueue: Optional[bool] = Field(
-        default=None, description="是否在队列结束后自动更新M9A"
-    )
-    IfPsychubeDailyOnce: Optional[bool] = Field(
-        default=None, description="每日心相每日只执行一次"
-    )
-    IfSleepDreamMonthlyOnce: Optional[bool] = Field(
-        default=None, description="深眠浅梦每月只执行一次"
-    )
-
-
-class M9AConfig(BaseModel):
-    Info: Optional[M9AConfig_Info] = Field(default=None, description="脚本基础信息")
-    Emulator: Optional[M9AConfig_Emulator] = Field(
-        default=None, description="模拟器配置"
-    )
-    Run: Optional[M9AConfig_Run] = Field(default=None, description="脚本运行配置")
 
 
 class MaaFWUserConfig_Info(BaseModel):
@@ -3748,55 +3772,20 @@ class MaaFWConfig_Run(BaseModel):
     MonthlyOnceTasks: Optional[Union[str, List[str]]] = Field(
         default=None, description="每月正常完成一次后本月跳过的 MaaFW 任务名列表"
     )
-
-
-class MaaFWConfig_Managed(BaseModel):
-    Enabled: Optional[bool] = Field(default=None, description="是否启用托管资源")
-    ProjectId: Optional[str] = Field(default=None, description="Project Store 项目 ID")
-    StoreId: Optional[str] = Field(default=None, description="Project Store 实例身份")
-    Version: Optional[str] = Field(default=None, description="当前不可变项目版本")
-    RuntimeConstraint: Optional[str] = Field(
-        default=None, description="MaaFW 运行时约束"
-    )
-    ProjectManifest: Optional[str] = Field(
-        default=None, description="项目资源清单 JSON"
-    )
-    CheckoutPath: Optional[str] = Field(
-        default=None, description="脚本专属可写 checkout 路径"
-    )
-    PendingUpgrade: Optional[str] = Field(
-        default=None, description="待确认升级事务 JSON"
-    )
-    LastOperation: Optional[str] = Field(default=None, description="最近资源操作 JSON")
-
-
-class MaaFWConfig_ManagedRuntime(BaseModel):
-    RuntimeId: Optional[str] = Field(default=None, description="共享运行时 ID")
-    PoolId: Optional[str] = Field(default=None, description="Runtime Pool 实例身份")
-    PythonExecutable: Optional[str] = Field(
-        default=None, description="共享运行时 Python"
-    )
-    VenvPath: Optional[str] = Field(default=None, description="共享运行时虚拟环境")
-    RuntimeBinding: Optional[str] = Field(
-        default=None, description="共享运行时绑定 JSON"
+    GameUpdateMode: Optional[Literal["Off", "Check", "AutoInstall"]] = Field(
+        default=None,
+        description="游戏客户端更新：Off 不检查 / Check 落后时提示手动更新 / AutoInstall 落后时自动下载安装；仅支持的特调类型生效",
     )
 
 
-class MaaFWConfig_ManagedRemote(BaseModel):
-    Source: Optional[Literal["MirrorChyan", "GitHub"]] = Field(
-        default=None, description="托管资源远程来源"
+class MaaFWConfig_Embedded(BaseModel):
+    SourceVersion: Optional[str] = Field(
+        default=None, description="导入时来源的 interface 版本"
     )
-    Channel: Optional[Literal["stable", "beta"]] = Field(
-        default=None, description="托管资源更新渠道"
-    )
-    MirrorChyanRID: Optional[str] = Field(
-        default=None, description="MirrorChyan 资源 ID"
-    )
-    MirrorChyanCDK: Optional[str] = Field(default=None, description="MirrorChyan CDK")
-    GitHubRepo: Optional[str] = Field(default=None, description="GitHub 仓库")
-    GitHubTag: Optional[str] = Field(default=None, description="GitHub release tag")
-    GitHubAssetPattern: Optional[str] = Field(
-        default=None, description="GitHub asset 匹配模式"
+    ImportedAt: Optional[str] = Field(default=None, description="导入时间")
+    Report: Optional[str] = Field(
+        default=None,
+        description="投影报告 JSON 文本：省下多少、外壳家族、排除条数与原因",
     )
 
 
@@ -3830,14 +3819,8 @@ class MaaFWConfig(BaseModel):
     Update: Optional[MaaFWConfig_Update] = Field(
         default=None, description="项目更新配置"
     )
-    Managed: Optional[MaaFWConfig_Managed] = Field(
-        default=None, description="托管项目资源"
-    )
-    ManagedRuntime: Optional[MaaFWConfig_ManagedRuntime] = Field(
-        default=None, description="共享运行时绑定"
-    )
-    ManagedRemote: Optional[MaaFWConfig_ManagedRemote] = Field(
-        default=None, description="托管资源远程来源"
+    Embedded: Optional[MaaFWConfig_Embedded] = Field(
+        default=None, description="内嵌副本"
     )
     Run: Optional[MaaFWConfig_Run] = Field(default=None, description="脚本运行配置")
     Selection: Optional[MaaFWConfig_Selection] = Field(
@@ -3845,13 +3828,49 @@ class MaaFWConfig(BaseModel):
     )
 
 
+class M9AUserConfig(MaaFWUserConfig):
+    """M9A 用户配置：与 MaaFW 用户配置同形（M9A 是 MaaFW 的特调类型）。"""
+
+
+class M9AConfig(MaaFWConfig):
+    """M9A 脚本配置：与 MaaFW 脚本配置同形（M9A 是 MaaFW 的特调类型）。"""
+
+
+class MSSUserConfig_Info(MaaFWUserConfig_Info):
+    PlanMode: Optional[str] = Field(
+        default=None, description="悬赏试炼关卡来源（Fixed 或 MSS 计划表 UID）"
+    )
+    IfActivityFirst: Optional[bool] = Field(
+        default=None,
+        description="队列里没加活动任务时，是否在活动期间自动加入并排到最前",
+    )
+
+
+class MSSUserConfig(MaaFWUserConfig):
+    """MSS 用户配置：MaaFW 用户配置再加计划表引用（MSS 是 MaaFW 的特调类型）。"""
+
+    Info: Optional[MSSUserConfig_Info] = Field(default=None, description="基础信息")
+
+
+class MSSConfig(MaaFWConfig):
+    """MSS 脚本配置：与 MaaFW 脚本配置同形（MSS 是 MaaFW 的特调类型）。"""
+
+
 class MaaFWInterfacePreviewIn(BaseModel):
-    path: str = Field(..., description="MaaFW 项目根目录，应包含 interface.json")
+    path: str = Field(default="", description="MaaFW 项目根目录，应包含 interface.json")
+    scriptId: Optional[str] = Field(
+        default=None,
+        description="给了脚本 ID 就按脚本解析有效根（内嵌副本优先），忽略 path",
+    )
 
 
 class MaaFWGamePackageIn(BaseModel):
     path: str = Field(..., description="MaaFW 项目根目录，应包含 interface.json")
     resource: str = Field(..., description="要按哪个 resource 的 pipeline 推断包名")
+    scriptId: Optional[str] = Field(
+        default=None,
+        description="MaaFW 脚本 ID；给出时按脚本解析有效根（内嵌脚本读副本），path 只兜底",
+    )
 
 
 class MaaFWGamePackageData(BaseModel):
@@ -3943,6 +3962,10 @@ class MaaFWTaskInfo(BaseModel):
     resource: List[str] = Field(default_factory=list, description="适用资源")
     option: List[str] = Field(default_factory=list, description="任务选项")
     defaultCheck: bool = Field(default=False, description="是否默认勾选")
+    repeatCount: int = Field(
+        default=1,
+        description="加入任务队列时展开成几份（interface 的 repeatable / repeat_count）",
+    )
 
 
 class MaaFWOptionCaseInfo(BaseModel):
@@ -3963,6 +3986,9 @@ class MaaFWOptionInputInfo(BaseModel):
     verify: Optional[str] = Field(default=None, description="输入校验正则")
     verifyError: Optional[str] = Field(default=None, description="输入校验提示")
     patternMsg: Optional[str] = Field(default=None, description="输入校验提示")
+    password: bool = Field(
+        default=False, description="是否为密码 / 密钥字段（界面掩码，配置加密存储）"
+    )
 
 
 class MaaFWOptionHotkeyInfo(BaseModel):
@@ -3991,6 +4017,12 @@ class MaaFWOptionInfo(BaseModel):
     )
     defaultCase: Optional[Union[str, List[str]]] = Field(
         default=None, description="默认 case"
+    )
+    minCount: Optional[int] = Field(
+        default=None, description="checkbox 最少选择数，未限制为 None"
+    )
+    maxCount: Optional[int] = Field(
+        default=None, description="checkbox 最多选择数，未限制为 None"
     )
 
 
@@ -4058,6 +4090,146 @@ class MaaFWInterfacePreviewOut(OutBase):
     )
 
 
+class MaaFWEmbeddedIn(BaseModel):
+    scriptId: str = Field(..., min_length=1, description="MFW 脚本 ID")
+
+
+class MaaFWEmbeddedReimportIn(BaseModel):
+    scriptId: str = Field(..., min_length=1, description="MFW 脚本 ID")
+    sourcePath: str = Field(
+        ..., min_length=1, description="新的来源目录，会写入 Info.Path"
+    )
+
+
+class MaaFWEmbeddedCloneIn(BaseModel):
+    scriptId: str = Field(
+        ..., min_length=1, description="要建副本的 MFW 脚本 ID（新脚本）"
+    )
+    sourceScriptId: str = Field(
+        ...,
+        min_length=1,
+        description="从这个 MFW 脚本的副本克隆（同一项目再建一个脚本）",
+    )
+
+
+class MaaFWEmbeddedSourcesIn(BaseModel):
+    scriptId: Optional[str] = Field(
+        default=None,
+        description="要排除的脚本 ID（给已有脚本列候选时传；新建脚本对话框里还没有脚本，不传）",
+    )
+
+
+class MaaFWEmbeddedSourceItem(BaseModel):
+    scriptId: str = Field(..., description="可作为克隆来源的 MFW 脚本 ID")
+    name: str = Field(default="", description="脚本名")
+    type: str = Field(default="MaaFW", description="脚本类型（MaaFW / M9A / MSS）")
+    projectName: str = Field(default="", description="副本 interface 里的项目名")
+    version: str = Field(default="", description="副本 interface 里的版本")
+    busy: bool = Field(default=False, description="源脚本正在运行，此刻不能克隆")
+
+
+class MaaFWEmbeddedSourcesOut(OutBase):
+    data: List[MaaFWEmbeddedSourceItem] = Field(
+        default_factory=list, description="有健康副本的其它 MFW 脚本"
+    )
+
+
+class MaaFWEmbeddedProjection(BaseModel):
+    sourceSizeBytes: int = Field(default=0, description="来源目录字节数")
+    payloadSizeBytes: int = Field(default=0, description="副本字节数")
+    savedBytes: int = Field(default=0, description="省下的字节数")
+    savedPercent: float = Field(default=0.0, description="省下的比例")
+    excludedCount: int = Field(default=0, description="排除的路径数")
+    excludedReasons: Dict[str, str] = Field(
+        default_factory=dict, description="排除路径与原因（最多 128 条）"
+    )
+    excludedTruncated: bool = Field(default=False, description="排除清单是否被截断")
+    shellFamilies: List[str] = Field(default_factory=list, description="移除的外壳家族")
+    conservative: bool = Field(default=False, description="是否退回保守模式")
+    warnings: List[str] = Field(default_factory=list, description="投影警告")
+    bundledMaaFWVersion: str = Field(
+        default="",
+        description="项目自带 MaaFramework 的版本（PEP 440）；原生库目录原样带入副本",
+    )
+    bundledPythonVersion: str = Field(
+        default="",
+        description="agent 自带 Python 的大版本（如 3.13）；解释器目录原样带入副本",
+    )
+
+
+class MaaFWEmbeddedStatusData(BaseModel):
+    copyPath: str = Field(default="", description="副本目录（只读展示）")
+    copyHealthy: bool = Field(default=False, description="副本是否完整")
+    sourcePath: str = Field(default="", description="来源目录（Info.Path）")
+    sourceExists: bool = Field(
+        default=False,
+        description="来源目录是否还在；导入完成后来源可以删，不在只是不能重新导入",
+    )
+    sourceVersion: str = Field(default="", description="导入时来源的 interface 版本")
+    importedAt: str = Field(default="", description="导入时间")
+    report: Optional[MaaFWEmbeddedProjection] = Field(
+        default=None, description="投影报告"
+    )
+
+
+class MaaFWEmbeddedStatusOut(OutBase):
+    data: Optional[MaaFWEmbeddedStatusData] = Field(
+        default=None, description="内嵌状态"
+    )
+
+
+class MaaFWShellInstancesIn(BaseModel):
+    scriptId: str = Field(..., min_length=1, description="MFW 脚本 ID")
+
+
+class MaaFWShellInstanceItem(BaseModel):
+    id: str = Field(..., description="实例 ID（导入时原样传回）")
+    name: str = Field(..., description="外壳里的实例名")
+    userName: str = Field(
+        ...,
+        description="导入后的用户名（与已有用户、同名实例重名时带「 (2)」这类后缀）",
+    )
+    source: Literal["MFAAvalonia", "MXU", "MFW-PyQt6"] = Field(
+        ..., description="实例来自哪个外壳"
+    )
+    active: bool = Field(default=False, description="是否是外壳上次使用的实例")
+    taskCount: int = Field(default=0, description="实例队列里勾选着的任务数")
+    controller: str = Field(default="", description="实例的控制方式（给人看的名字）")
+    resource: str = Field(default="", description="实例的资源（给人看的名字）")
+
+
+class MaaFWShellInstancesOut(OutBase):
+    data: List[MaaFWShellInstanceItem] = Field(
+        default_factory=list, description="项目目录里找到的外壳配置实例"
+    )
+
+
+class MaaFWShellInstanceImportIn(BaseModel):
+    scriptId: str = Field(..., min_length=1, description="MFW 脚本 ID")
+    instanceIds: List[str] = Field(
+        ..., min_length=1, description="要导入的实例 ID，每个建一个用户"
+    )
+
+
+class MaaFWShellInstanceImportItem(BaseModel):
+    instanceId: str = Field(..., description="实例 ID")
+    instanceName: str = Field(default="", description="外壳里的实例名")
+    success: bool = Field(default=False, description="是否建成了用户")
+    userId: str = Field(default="", description="新用户 ID（失败时为空）")
+    name: str = Field(default="", description="新用户名")
+    importedTaskCount: int = Field(default=0, description="导入进队列的任务数")
+    skipped: List[str] = Field(
+        default_factory=list, description="当前项目里对不上、没导入的任务 / 选项 / 取值"
+    )
+    error: str = Field(default="", description="失败原因（成功时为空）")
+
+
+class MaaFWShellInstanceImportOut(OutBase):
+    data: List[MaaFWShellInstanceImportItem] = Field(
+        default_factory=list, description="逐个实例的导入结果，顺序同请求"
+    )
+
+
 class MaaFWProjectUpdateIn(BaseModel):
     scriptId: str = Field(..., min_length=1, description="MaaFW 脚本 ID")
     action: Literal["check", "apply"] = Field(
@@ -4103,8 +4275,11 @@ class MaaFWProjectUpdateOut(OutBase):
 
 
 class MaaFWAgentEnvPrepareIn(BaseModel):
-    path: str = Field(..., description="MFW 项目根目录，应包含 interface.json")
-    scriptId: Optional[str] = Field(default=None, description="脚本 ID，仅用于日志定位")
+    path: str = Field(default="", description="MFW 项目根目录，应包含 interface.json")
+    scriptId: Optional[str] = Field(
+        default=None,
+        description="脚本 ID；内嵌脚本按它解析副本目录，此时 path 可留空",
+    )
     force: bool = Field(
         default=False,
         description="忽略指纹缓存强制重新准备，供用户手动重试使用",
@@ -4164,8 +4339,8 @@ class MaaFWAgentEnvPrepareOut(OutBase):
     )
 
 
-PlanConfigType = Literal["MaaPlanConfig", "MaaEndPlanConfig"]
-PlanComboxConsumer = Literal["maa", "maaend"]
+PlanConfigType = Literal["MaaPlanConfig", "MaaEndPlanConfig", "MSSPlanConfig"]
+PlanComboxConsumer = Literal["maa", "maaend", "mss"]
 
 
 class PlanIndexItem(BaseModel):
@@ -4276,8 +4451,43 @@ class MaaEndPlanConfig(WeeklyPlanConfig[MaaEndPlanConfig_Info, MaaEndPlanConfig_
     model_config = ConfigDict(extra="forbid")
 
 
-PlanCreateType = Literal["MaaPlan", "MaaEndPlan"]
-PlanConfigData = MaaPlanConfig | MaaEndPlanConfig
+class MSSPlanConfig_Info(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    Name: str = Field(default="新 MSS 计划表", description="计划表名称")
+    Mode: Literal["ALL", "Weekly"] = Field(default="ALL", description="计划表模式")
+
+
+class MSSPlanKey(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    TribulationStage: str = Field(
+        default="基础试炼",
+        description="悬赏试炼关卡（取值见 constants.MSS_TRIBULATION_STAGES）",
+    )
+    SkipDifficulty: bool = Field(default=False, description="悬赏试炼是否跳过难度选择")
+    Difficulty: int = Field(default=1, description="悬赏试炼难度")
+    ConsumeAllEnergy: bool = Field(
+        default=False, description="悬赏试炼是否消耗所有干劲"
+    )
+    FightTimes: int = Field(default=1, description="自定义快速作战次数")
+
+
+class MSSPlanConfig_Item(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    Key: MSSPlanKey = Field(
+        default_factory=MSSPlanKey,
+        description="MSS 计划表专项 key",
+    )
+
+
+class MSSPlanConfig(WeeklyPlanConfig[MSSPlanConfig_Info, MSSPlanConfig_Item]):
+    model_config = ConfigDict(extra="forbid")
+
+
+PlanCreateType = Literal["MaaPlan", "MaaEndPlan", "MSSPlan"]
+PlanConfigData = MaaPlanConfig | MaaEndPlanConfig | MSSPlanConfig
 
 
 class HistoryIndexItem(BaseModel):
@@ -4337,9 +4547,10 @@ class ScriptCreateIn(BaseModel):
         "BetterGI",
         "ZzzOd",
         "BAAH",
+        "MSS",
     ] = Field(
         ...,
-        description="脚本类型: MAA脚本, 通用脚本, OK-WW脚本, OK-NTE脚本, SRC脚本, MaaEnd脚本, M9A脚本, MaaFW脚本, HSR脚本, BetterGI脚本, ZZZ-OD脚本, BAAH脚本",
+        description="脚本类型: MAA脚本, 通用脚本, OK-WW脚本, OK-NTE脚本, SRC脚本, MaaEnd脚本, M9A脚本, MaaFW脚本, HSR脚本, BetterGI脚本, ZZZ-OD脚本, BAAH脚本, MSS脚本",
     )
     scriptId: str | None = Field(
         default=None, description="直接从该脚本ID复制创建, 仅在复制创建时使用"
@@ -4361,6 +4572,7 @@ class ScriptCreateOut(OutBase):
         BetterGIConfig,
         ZzzOdConfig,
         BAAHConfig,
+        MSSConfig,
     ] = Field(..., description="脚本配置数据")
 
 
@@ -4387,6 +4599,7 @@ class ScriptGetOut(OutBase):
             BetterGIConfig,
             ZzzOdConfig,
             BAAHConfig,
+            MSSConfig,
         ],
     ] = Field(..., description="脚本数据字典, key来自于index列表的uid")
 
@@ -4406,6 +4619,7 @@ class ScriptUpdateIn(BaseModel):
         BetterGIConfig,
         ZzzOdConfig,
         BAAHConfig,
+        MSSConfig,
     ] = Field(..., description="脚本更新数据")
 
 
@@ -4439,6 +4653,16 @@ class ScriptConfigImportIn(UserInBase):
     )
 
 
+class UserConfigDirIn(UserInBase):
+    userId: str = Field(..., description="用户ID")
+
+
+class UserConfigDirOut(OutBase):
+    path: Optional[str] = Field(
+        default=None, description="用户配置目录绝对路径"
+    )
+
+
 class UserGetIn(UserInBase):
     userId: Optional[str] = Field(
         default=None, description="用户ID, 未携带时表示获取所有用户数据"
@@ -4462,6 +4686,7 @@ class UserGetOut(OutBase):
             BetterGIUserConfig,
             ZzzOdUserConfig,
             BAAHUserConfig,
+            MSSUserConfig,
         ],
     ] = Field(..., description="用户数据字典, key来自于index列表的uid")
 
@@ -4481,6 +4706,7 @@ class UserCreateOut(OutBase):
         BetterGIUserConfig,
         ZzzOdUserConfig,
         BAAHUserConfig,
+        MSSUserConfig,
     ] = Field(..., description="用户配置数据")
 
 
@@ -4499,6 +4725,7 @@ class UserUpdateIn(UserInBase):
         BetterGIUserConfig,
         ZzzOdUserConfig,
         BAAHUserConfig,
+        MSSUserConfig,
     ] = Field(..., description="用户更新数据")
 
 
@@ -5105,6 +5332,14 @@ class WSTaskNoticeData(BaseModel):
 
     level: Literal["info", "warning", "error"] = Field(..., description="提示级别")
     message: str = Field(..., description="提示内容")
+
+
+class WSSystemNoticeData(BaseModel):
+    """系统通知数据 (type=system.notice, id=Main)：启动期攒下、主连接建立后发出。"""
+
+    level: Literal["info", "warning", "error"] = Field(..., description="提示级别")
+    title: str = Field(..., description="标题")
+    lines: List[str] = Field(default_factory=list, description="正文，每项一行")
 
 
 class WSEmulatorOperationData(BaseModel):

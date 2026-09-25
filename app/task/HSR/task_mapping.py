@@ -115,7 +115,25 @@ def script_supports(module_key: str, script: ScriptType) -> bool:
     return script in module.supported_scripts
 
 
-ENGINE_DISPLAY_NAMES: dict[str, str] = {"M7A": "三月七助手", "SRA": "SRA"}
+ENGINE_DISPLAY_NAMES: dict[str, str] = {"M7A": "三月七", "SRA": "SRA"}
+
+
+def engine_label(engine: str, *, left: bool = True, right: bool = True) -> str:
+    """把引擎显示名嵌进中文句子：拉丁名（SRA）与相邻汉字之间留空格，中文名（三月七）不留。
+
+    ``left`` / ``right`` 表示该侧紧挨着汉字；挨着全角标点或句首句尾时传 False。
+    """
+
+    name = ENGINE_DISPLAY_NAMES.get(engine, engine)
+    if not name.isascii():
+        return name
+    return f"{' ' if left else ''}{name}{' ' if right else ''}"
+
+
+def engine_list(engines) -> str:
+    """一组引擎的显示名，用顿号连接（「三月七、SRA」）。"""
+
+    return "、".join(ENGINE_DISPLAY_NAMES.get(engine, engine) for engine in engines)
 
 
 @dataclass(frozen=True)
@@ -144,8 +162,14 @@ def resolve_script_assignment(
 ) -> HSRScriptAssignment:
     """解析模块执行脚本，并保留「是否回落、从哪个到哪个」供调用方呈现。
 
-    纯函数，不写日志。
+    云·星穹铁道只用三月七（SRA 接不上 MAS 托管的浏览器）：平台为云时不走
+    四级回落，用户覆盖与脚本 TaskMapping 一律忽略。纯函数，不写日志。
     """
+
+    from .tools.account_switch import is_cloud_platform
+
+    if is_cloud_platform(script_config):
+        return HSRScriptAssignment(script="M7A", requested="M7A")
 
     assigned = None
     if user_config is not None:
@@ -182,9 +206,9 @@ def describe_script_fallback(
 
     if not assignment.fallback:
         return None
-    requested = ENGINE_DISPLAY_NAMES.get(assignment.requested, assignment.requested)
-    actual = ENGINE_DISPLAY_NAMES.get(assignment.script, assignment.script)
+    requested = assignment.requested
     return (
-        f"模块「{module.name}」指派给 {requested}，但 {requested} 未配置路径，"
-        f"已改用 {actual} 执行"
+        f"模块「{module.name}」指派给{engine_label(requested, right=False)}，"
+        f"但{engine_label(requested)}未配置路径，"
+        f"已改用{engine_label(assignment.script)}执行"
     )

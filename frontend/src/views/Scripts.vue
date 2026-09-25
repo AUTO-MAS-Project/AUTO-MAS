@@ -114,7 +114,11 @@
     :submitting="addLoading || templateLoading"
     :template-loading="templateLoading"
     :template-error="templateError"
+    :mfw-sources="mfwSources"
+    :mfw-sources-loading="mfwSourcesLoading"
+    :mfw-sources-error="mfwSourcesError"
     @request-templates="loadTemplates"
+    @request-mfw-sources="loadMfwSources"
     @submit="handleSubmitScriptCreate"
   />
 </template>
@@ -136,11 +140,14 @@ import ScriptCreateDialog from '@/views/scripts/components/ScriptCreateDialog.vu
 import type { Script, ScriptType, User } from '@/types/script'
 import {
   getScriptEditSegment,
+  isMfwFamily,
   type ScriptCreateRequest,
 } from '@/views/scripts/components/scriptCreateFlow'
+import { maafwRouteSuffix } from '@/composables/useMaaFWFlavor'
 import { useScriptApi } from '@/composables/useScriptApi'
 import { useUserApi } from '@/composables/useUserApi'
 import { useWebSocket } from '@/composables/useWebSocket'
+import { onTaskRuntimeEvent } from '@/composables/useTaskRuntimeState'
 import {
   WS_TASK_COMPLETED,
   WS_TASK_NOTICE,
@@ -148,6 +155,8 @@ import {
   type WSTaskNoticeData,
 } from '@/services/websocket/types'
 import { useTemplateApi, type WebConfigTemplate } from '@/composables/useTemplateApi'
+import { useMaaFWEmbeddedApi } from '@/composables/useMaaFWEmbeddedApi'
+import type { MaaFWEmbeddedSourceItem } from '@/api'
 import { Service } from '@/api/services/Service'
 import { TaskCreateIn } from '@/api/models/TaskCreateIn'
 import DocLink from '@/components/DocLink.vue'
@@ -165,6 +174,7 @@ const { addScript, deleteScript, getScriptsWithUsers } = useScriptApi()
 const { updateUser, deleteUser } = useUserApi()
 const { subscribe, unsubscribe } = useWebSocket()
 const { getWebConfigTemplates, importScriptFromWeb, error: templateError } = useTemplateApi()
+const { listEmbeddedSources, cloneEmbedded } = useMaaFWEmbeddedApi()
 
 const scripts = ref<Script[]>([])
 const scriptSearchKeyword = ref('')
@@ -180,6 +190,10 @@ const templates = ref<WebConfigTemplate[]>([])
 const addLoading = ref(false)
 const copyingScriptId = ref<string | null>(null)
 const templateLoading = ref(false)
+// 新建 MFW 脚本第二步「复用已有脚本的项目」的候选：有健康副本的 MFW / M9A 脚本
+const mfwSources = ref<MaaFWEmbeddedSourceItem[]>([])
+const mfwSourcesLoading = ref(false)
+const mfwSourcesError = ref<string | null>(null)
 
 // 配置会话遮罩：同一时刻只会有一个配置会话在前台
 type ConfigMaskKind = 'MAA' | 'SRC' | 'MaaEnd' | 'Okww'
@@ -248,22 +262,8 @@ const handleSaveConfigMask = () => {
   }
 }
 
-const scriptEditPathMap: Record<ScriptType, string> = {
-  MAA: 'maa',
-  General: 'general',
-  Okww: 'okww',
-  OkNte: 'oknte',
-  SRC: 'src',
-  MaaEnd: 'maaend',
-  M9A: 'm9a',
-  MaaFW: 'maafw',
-  HSR: 'hsr',
-  BetterGI: 'bettergi',
-  ZzzOd: 'zzzod',
-  BAAH: 'baah',
-}
-
-const getScriptEditPath = (type: ScriptType) => scriptEditPathMap[type]
+// 与新建流程同一张表（MaaFW 与各特调的后缀取自特调注册表）
+const getScriptEditPath = (type: ScriptType) => getScriptEditSegment(type)
 
 // 配置会话超时：30 分钟没保存就自动断开
 const CONFIG_SESSION_TIMEOUT_MS = 30 * 60 * 1000
@@ -276,12 +276,28 @@ const activeConnections = ref<
   >
 >(new Map())
 
+// 定时队列等别处发起的任务结束后，用户的代理状态已在后端更新，防抖后重新拉一次列表；
+// removed 是断线期间结束、没收到完成通知的任务
+const TASK_COMPLETED_RELOAD_DELAY_MS = 1000
+let taskCompletedReloadTimer: ReturnType<typeof setTimeout> | undefined
+let disposeTaskRuntimeListener: (() => void) | undefined
+
 onMounted(() => {
   loadScripts()
+  disposeTaskRuntimeListener = onTaskRuntimeEvent(event => {
+    const ended =
+      event.type === 'removed' ||
+      (event.type === 'completed' && event.state.mode !== 'ScriptConfig')
+    if (!ended) return
+    clearTimeout(taskCompletedReloadTimer)
+    taskCompletedReloadTimer = setTimeout(() => void loadScripts(), TASK_COMPLETED_RELOAD_DELAY_MS)
+  })
 })
 
 // 离开页面时释放全部配置会话订阅并清掉超时定时器，不会在其他页面弹出提示
 onUnmounted(() => {
+  disposeTaskRuntimeListener?.()
+  clearTimeout(taskCompletedReloadTimer)
   for (const connection of activeConnections.value.values()) {
     for (const subscriptionId of connection.subscriptionIds) {
       unsubscribe(subscriptionId)
@@ -336,11 +352,10 @@ const navigateToCreatedScript = (
   data?: Record<string, unknown>
 ) => {
   const route = {
-    // MFW 新建后进分步引导；其余类型直接进编辑页
-    path:
-      type === 'MaaFW'
-        ? `/scripts/${scriptId}/setup/maafw`
-        : `/scripts/${scriptId}/edit/${getScriptEditSegment(type)}`,
+    // MFW 新建后进分步引导（各特调是 MaaFW 的特调类型，同一套引导）；其余类型直接进编辑页
+    path: isMfwFamily(type)
+      ? `/scripts/${scriptId}/setup/maafw`
+      : `/scripts/${scriptId}/edit/${getScriptEditSegment(type)}`,
     ...(data
       ? {
           state: {
@@ -359,9 +374,25 @@ const navigateToCreatedScript = (
 const handleSubmitScriptCreate = async (request: ScriptCreateRequest) => {
   addLoading.value = true
   try {
-    const type = request.kind === 'new' ? request.type : 'General'
+    const type = request.kind === 'new' || request.kind === 'mfw-reuse' ? request.type : 'General'
     const result = await addScript(type)
     if (!result) return
+
+    if (request.kind === 'mfw-reuse') {
+      // 同一个项目再建一个脚本：从源脚本的副本克隆，秒级可用；类型随项目（M9A → M9A）。
+      // 克隆失败脚本也已经建好了，照样进引导页让用户自己选目录。
+      try {
+        const { message: text } = await cloneEmbedded(result.scriptId, request.sourceScriptId)
+        if (text) message.success(text)
+      } catch (error) {
+        const reason = error instanceof Error ? error.message : String(error)
+        logger.error(`复用已有脚本的项目失败: ${reason}`)
+        message.error(t('scripts.toast.reuseFailed', { reason }))
+      }
+      scriptCreateVisible.value = false
+      navigateToCreatedScript(result.scriptId, type)
+      return
+    }
 
     if (request.kind === 'general-template') {
       const imported = await importScriptFromWeb(result.scriptId, request.template.downloadUrl)
@@ -380,6 +411,22 @@ const handleSubmitScriptCreate = async (request: ScriptCreateRequest) => {
     logger.error(`创建脚本失败: ${errorMsg}`)
   } finally {
     addLoading.value = false
+  }
+}
+
+const loadMfwSources = async () => {
+  mfwSourcesLoading.value = true
+  mfwSourcesError.value = null
+  try {
+    mfwSources.value = await listEmbeddedSources()
+  } catch (error) {
+    // 读失败不能伪装成「没有可复用的脚本」：对话框按错误态显示原因与重试
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`加载可复用的 MFW 脚本失败: ${errorMsg}`)
+    mfwSources.value = []
+    mfwSourcesError.value = t('scripts.toast.mfwSourcesFailed', { error: errorMsg })
+  } finally {
+    mfwSourcesLoading.value = false
   }
 }
 
@@ -424,16 +471,15 @@ const handleCopyScript = async (script: Script) => {
 
 const handleAddUser = (script: Script) => {
   // 根据脚本类型跳转到对应的用户添加页面
-  if (script.type === 'MAA') {
+  if (isMfwFamily(script.type)) {
+    // MaaFW 与各特调共用一个用户页，路由后缀取自特调注册表
+    router.push(`/scripts/${script.id}/users/add/${maafwRouteSuffix(script.type)}`)
+  } else if (script.type === 'MAA') {
     router.push(`/scripts/${script.id}/users/add/maa`)
   } else if (script.type === 'SRC') {
     router.push(`/scripts/${script.id}/users/add/src`)
   } else if (script.type === 'MaaEnd') {
     router.push(`/scripts/${script.id}/users/add/maaend`)
-  } else if (script.type === 'M9A') {
-    router.push(`/scripts/${script.id}/users/add/m9a`)
-  } else if (script.type === 'MaaFW') {
-    router.push(`/scripts/${script.id}/users/add/maafw`)
   } else if (script.type === 'Okww') {
     router.push(`/scripts/${script.id}/users/add/okww`)
   } else if (script.type === 'OkNte') {
@@ -456,16 +502,15 @@ const handleEditUser = (user: User) => {
   const script = scripts.value.find(s => s.users.some(u => u.id === user.id))
   if (script) {
     // 根据脚本类型跳转到对应的用户编辑页面
-    if (script.type === 'MAA') {
+    if (isMfwFamily(script.type)) {
+      // MaaFW 与各特调共用一个用户页，路由后缀取自特调注册表
+      router.push(`/scripts/${script.id}/users/${user.id}/edit/${maafwRouteSuffix(script.type)}`)
+    } else if (script.type === 'MAA') {
       router.push(`/scripts/${script.id}/users/${user.id}/edit/maa`)
     } else if (script.type === 'SRC') {
       router.push(`/scripts/${script.id}/users/${user.id}/edit/src`)
     } else if (script.type === 'MaaEnd') {
       router.push(`/scripts/${script.id}/users/${user.id}/edit/maaend`)
-    } else if (script.type === 'M9A') {
-      router.push(`/scripts/${script.id}/users/${user.id}/edit/m9a`)
-    } else if (script.type === 'MaaFW') {
-      router.push(`/scripts/${script.id}/users/${user.id}/edit/maafw`)
     } else if (script.type === 'Okww') {
       router.push(`/scripts/${script.id}/users/${user.id}/edit/okww`)
     } else if (script.type === 'OkNte') {

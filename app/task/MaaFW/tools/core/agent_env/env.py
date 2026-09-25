@@ -1,0 +1,965 @@
+from __future__ import annotations
+
+import hashlib
+import json
+import logging
+import os
+import shutil
+import subprocess
+import sys
+import threading
+import uuid
+from pathlib import Path
+from typing import Callable
+
+from packaging.version import InvalidVersion, Version
+
+from ..runtime_pool import runtime_managed_uv_executable
+from ..runtime_pool.host_environment import (
+    EMBEDDED_COPIES_DIR_PARTS,
+    set_project_pycache_prefix,
+    strip_host_python_environment,
+)
+from ..runtime_pool.installer import (
+    is_package_index_offline,
+    resolve_package_index_candidates,
+)
+from .models import MaaFWAgentCommandPlan, MaaFWAgentEnvPrepareResult
+from .planner import MaaFWAgentEnvError, venv_base_python_missing, venv_python_exe
+
+logger = logging.getLogger("automas.maafw.agent_env.env")
+
+AGENT_BOOTSTRAP_PACKAGE = "json-with-comments"
+AGENT_ENV_MANIFEST_NAME = ".auto_mas_agent_env.json"
+AGENT_COMPAT_SHIM_DIR_NAME = ".auto_mas_shims"
+PIP_HEALTH_CHECK_TIMEOUT = 15
+PROJECT_PYTHON_HEALTH_TIMEOUT = 15
+PIP_INSTALL_TIMEOUT = 120
+# pip install 本身单独给足余量：与运行池的 RUNTIME_INSTALL_TIMEOUT_SECONDS 对齐，
+# 且每个镜像候选各享一次完整超时。venv 创建与 ensurepip 仍用上面那个。
+PIP_INSTALL_PER_INDEX_TIMEOUT = 300
+VENV_PROBE_TIMEOUT = 30
+# uv 兜底可能需要下载 managed Python,给足余量
+UV_VENV_TIMEOUT = 300
+
+_ISOLATED_VENV_LOCKS_GUARD = threading.Lock()
+_ISOLATED_VENV_LOCKS: dict[str, threading.RLock] = {}
+
+
+def prepare_agent_envs(
+    project_path: str | Path,
+    plans: list[MaaFWAgentCommandPlan],
+    *,
+    send_log: Callable[[str], None] | None = None,
+    bootstrap_python: str | None = None,
+    install_dependencies: bool = True,
+    progress: Callable[[dict[str, object]], None] | None = None,
+) -> MaaFWAgentEnvPrepareResult:
+    resolved_project_path = Path(project_path).resolve()
+    messages: list[str] = []
+    prepared_venvs: list[str] = []
+    skipped: list[str] = []
+
+    def log(message: str) -> None:
+        messages.append(message)
+        if send_log is not None:
+            send_log(message)
+
+    for path_name in ("debug", "logs", "temp"):
+        (resolved_project_path / path_name).mkdir(exist_ok=True)
+
+    checked_python: set[str] = set()
+    total_plans = len(plans)
+    _report_agent_progress(
+        progress,
+        status="running",
+        message=f"准备 {total_plans} 个 MaaFW Agent 环境",
+        percent=0.0,
+        completed=0,
+        total=total_plans,
+    )
+
+    def report_plan_complete(index: int, plan: MaaFWAgentCommandPlan) -> None:
+        _report_agent_progress(
+            progress,
+            status="running",
+            message=f"Agent 环境准备完成: {plan.childExec}",
+            percent=((index + 1) * 100.0 / total_plans if total_plans else 100.0),
+            completed=index + 1,
+            total=total_plans,
+        )
+
+    for index, plan in enumerate(plans):
+        _report_agent_progress(
+            progress,
+            status="running",
+            message=f"正在准备 Agent: {plan.childExec}",
+            percent=(index * 100.0 / total_plans if total_plans else 100.0),
+            completed=index,
+            total=total_plans,
+        )
+        python_exe = plan.command[0] if plan.command else plan.executable
+        resolved_python = _safe_resolve_python(python_exe)
+        if resolved_python in checked_python:
+            log(f"[Python环境] 已检查过该 Python，跳过重复检查: {python_exe}")
+            report_plan_complete(index, plan)
+            continue
+
+        runtime_kind = plan.runtimeKind or "external"
+        log(f"[Python环境] Agent {plan.childExec} 使用 {runtime_kind}: {python_exe}")
+        if runtime_kind == "isolated_venv":
+            with _isolated_venv_lock(Path(plan.isolatedVenvPath or python_exe)):
+                prepared_path = _prepare_isolated_venv_env(
+                    plan,
+                    resolved_project_path,
+                    log,
+                    bootstrap_python=bootstrap_python,
+                    install_dependencies=install_dependencies,
+                )
+            prepared_venvs.append(str(prepared_path))
+            checked_python.add(resolved_python)
+            report_plan_complete(index, plan)
+            continue
+
+        if runtime_kind == "project_python":
+            _prepare_project_python_env(python_exe, resolved_project_path, log)
+            checked_python.add(resolved_python)
+            report_plan_complete(index, plan)
+            continue
+
+        if runtime_kind == "shared_runtime":
+            if not Path(resolved_python).is_file():
+                raise MaaFWAgentEnvError(
+                    f"共享 MaaFW runtime Python 不存在或不可用：{python_exe}"
+                )
+            checked_python.add(resolved_python)
+            log(f"[Python环境] 共享 MaaFW runtime Python 已就绪: {python_exe}")
+            report_plan_complete(index, plan)
+            continue
+
+        skipped.append(plan.childExec)
+        log(f"[Python环境] 跳过外部或非 Python 环境检测: {python_exe}")
+
+        report_plan_complete(index, plan)
+
+    _report_agent_progress(
+        progress,
+        status="ready",
+        message="MaaFW Agent 环境准备完成",
+        percent=100.0,
+        completed=total_plans,
+        total=total_plans,
+    )
+
+    return MaaFWAgentEnvPrepareResult(
+        projectPath=str(resolved_project_path),
+        plans=plans,
+        preparedVenvs=prepared_venvs,
+        skipped=skipped,
+        messages=messages,
+    )
+
+
+def build_agent_env_manifest(project_path: str | Path) -> dict[str, object]:
+    resolved_project_path = Path(project_path).resolve()
+    return {
+        "schemaVersion": 1,
+        "projectPath": str(resolved_project_path),
+        "interfaceHash": _project_interface_hash(resolved_project_path),
+        "requirementsHash": _project_agent_requirements_hash(resolved_project_path),
+        "requirements": _load_project_agent_requirements(resolved_project_path),
+    }
+
+
+def write_agent_compat_shims(venv_path: str | Path) -> Path:
+    shim_dir = Path(venv_path) / AGENT_COMPAT_SHIM_DIR_NAME
+    shim_dir.mkdir(parents=True, exist_ok=True)
+    shim_path = shim_dir / "sitecustomize.py"
+    content = "\n".join(
+        [
+            "def _patch_legacy_maafw_resource():",
+            "    try:",
+            "        import maa.resource as maa_resource_module",
+            "        if hasattr(maa_resource_module, 'resource'):",
+            "            return",
+            "        from maa.agent.agent_server import AgentServer",
+            "        maa_resource_module.resource = AgentServer",
+            "    except Exception:",
+            "        pass",
+            "",
+            "_patch_legacy_maafw_resource()",
+            "",
+        ]
+    )
+    try:
+        if shim_path.read_text(encoding="utf-8") == content:
+            return shim_dir
+    except (FileNotFoundError, OSError, UnicodeError):
+        pass
+
+    temporary_path = shim_path.with_name(f"{shim_path.name}.tmp-{uuid.uuid4().hex}")
+    try:
+        temporary_path.write_text(content, encoding="utf-8")
+        temporary_path.replace(shim_path)
+    finally:
+        temporary_path.unlink(missing_ok=True)
+    return shim_dir
+
+
+def _prepare_project_python_env(
+    python_exe: str,
+    project_path: Path,
+    log: Callable[[str], None],
+) -> None:
+    log(f"[Python环境] 检测项目 Python: {python_exe}")
+    test_env = _build_agent_env_for_pip(project_path)
+    if _check_project_python_health(
+        python_exe,
+        cwd=str(project_path),
+        env=test_env,
+        log=log,
+    ):
+        _repin_project_python_binding(python_exe, project_path, test_env, log)
+        return
+
+    raise MaaFWAgentEnvError(
+        "项目 Python 或 MaaFW Agent 模块不可用，请修复项目包后重试：\n"
+        f"  Python 路径: {python_exe}\n"
+        "  处理建议:\n"
+        "    方法1: 重新下载并解压完整 MaaFW 项目包\n"
+        "    方法2: 检查项目自带 Python 是否能导入 maa.agent.agent_server\n"
+        "  项目 Python 属于 release 内容，AUTO-MAS 不要求其提供 pip；"
+        "只在自己的内嵌副本里修它的 maafw binding 版本。"
+    )
+
+
+def project_python_maafw_version(python_exe: str | Path) -> str | None:
+    """项目自带解释器里装的 maafw binding 版本（读 dist-info 目录名，不起进程）。
+
+    同一 site-packages 里可能残留多个 ``maafw-*.dist-info``（M9A 发行包就同时带着
+    5.12.3 与 5.13.0，旧的是升级没卸干净留下的）：取 PEP 440 最高的那个。按名字
+    排序取第一个会读成旧版本，于是每次准备环境都去「钉回」一个本来就对的 binding，
+    重装出来的文件脱离共用库。
+    """
+
+    root = Path(python_exe).parent
+    for site in (
+        root / "Lib" / "site-packages",
+        *sorted(root.glob("lib/python*/site-packages")),
+    ):
+        try:
+            matches = sorted(site.glob("maafw-*.dist-info"))
+        except OSError:
+            continue
+        versions = [
+            text
+            for text in (
+                match.name[len("maafw-") : -len(".dist-info")] for match in matches
+            )
+            if text
+        ]
+        if not versions:
+            continue
+        parsed: list[tuple[Version, str]] = []
+        for text in versions:
+            try:
+                parsed.append((Version(text), text))
+            except InvalidVersion:
+                continue
+        if parsed:
+            return max(parsed, key=lambda item: item[0])[1]
+        return versions[0]
+    return None
+
+
+def _is_embedded_copy(project_path: Path) -> bool:
+    """项目目录是不是 AUTO-MAS 自己的内嵌副本（``data/mfw/<脚本 id>``）。"""
+
+    try:
+        project_path.resolve().relative_to(
+            Path.cwd().joinpath(*EMBEDDED_COPIES_DIR_PARTS).resolve()
+        )
+    except (ValueError, OSError):
+        return False
+    return True
+
+
+def _repin_project_python_binding(
+    python_exe: str,
+    project_path: Path,
+    env: dict[str, str],
+    log: Callable[[str], None],
+) -> None:
+    """自带解释器里的 maafw binding 与自带原生库版本不一致时，在副本里把它钉回去。
+
+    runner 加载的是项目自带的原生库（``project_maafw_runtime_path``），agent 侧的 binding
+    必须与之同版本，否则 AgentServer/Client 协议对不上、只表现为「连接超时」。项目自己的
+    部署脚本会把 binding ``pip install --upgrade`` 到 PyPI 最新（Maa_bbb v1.12.8 实测升到
+    5.13.1/协议 8，原生库还是 5.11.1/协议 7）。**只动内嵌副本**：那是 AUTO-MAS 自己铺的；
+    用户手上的项目目录仍然一个字节不碰，只把原因说清。任何一步失败只记日志，不拦准备。
+    """
+
+    from app.task.MaaFW.tools.core.runner.environment import (
+        probe_bundled_maafw_version,
+    )
+
+    installed = project_python_maafw_version(python_exe)
+    native = probe_bundled_maafw_version(project_path)
+    if not installed or not native:
+        return
+    try:
+        same = Version(installed) == Version(native)
+    except InvalidVersion:
+        same = installed == native
+    if same:
+        return
+    mismatch = f"项目自带 Python 里的 maafw 是 {installed}，项目自带的 MaaFramework 原生库是 {native}"
+    if not _is_embedded_copy(Path(project_path)):
+        log(
+            f"[Python环境] {mismatch}，Agent 协议会对不上；这是项目目录，AUTO-MAS 不改它，"
+            "请更新项目或自行把 binding 版本对齐"
+        )
+        return
+    log(f"[Python环境] {mismatch}，把副本里的 binding 钉回 {native}")
+    ok, detail = _pip_install(
+        python_exe, [f"maafw=={native}"], cwd=str(project_path), env=env, log=log
+    )
+    if not ok:
+        log(f"[Python环境] binding 钉回失败，agent 可能连不上: {detail[:200]}")
+
+
+def _isolated_venv_lock(path: Path) -> threading.RLock:
+    key = os.path.normcase(str(path.resolve())).casefold()
+    with _ISOLATED_VENV_LOCKS_GUARD:
+        return _ISOLATED_VENV_LOCKS.setdefault(key, threading.RLock())
+
+
+def _report_agent_progress(
+    callback: Callable[[dict[str, object]], None] | None,
+    *,
+    status: str,
+    message: str,
+    percent: float,
+    completed: int,
+    total: int,
+) -> None:
+    if callback is None:
+        return
+    try:
+        callback(
+            {
+                "stage": "preparing_agents",
+                "status": status,
+                "message": message,
+                "percent": percent,
+                "completed": completed,
+                "total": total,
+            }
+        )
+    except Exception:
+        # 进度只是旁观者，不能拖垮 Agent 环境准备；但要留痕，否则回调里的
+        # ``no running event loop`` 这类错误就此消失。
+        logger.warning("MaaFW Agent 环境进度回调失败: %s", status, exc_info=True)
+
+
+def _prepare_isolated_venv_env(
+    agent_plan: MaaFWAgentCommandPlan,
+    project_path: Path,
+    log: Callable[[str], None],
+    *,
+    bootstrap_python: str | None,
+    install_dependencies: bool,
+) -> Path:
+    if not agent_plan.isolatedVenvPath:
+        raise MaaFWAgentEnvError("隔离 venv 路径未提供，无法创建隔离环境")
+
+    venv_path = Path(agent_plan.isolatedVenvPath).resolve()
+    python_exe = (
+        agent_plan.command[0] if agent_plan.command else str(venv_python_exe(venv_path))
+    )
+
+    log(f"[Python环境] 准备隔离 venv: {venv_path}")
+    had_valid_venv = _is_valid_venv_path(venv_path)
+    if _should_rebuild_isolated_venv(venv_path, project_path, log):
+        _reset_isolated_venv(venv_path, log)
+        had_valid_venv = False
+    _ensure_isolated_venv(venv_path, log, bootstrap_python=bootstrap_python)
+    write_agent_compat_shims(venv_path)
+
+    test_env = _build_agent_env_for_pip(project_path)
+    test_env["PYTHONPATH"] = str(project_path)
+
+    if not _check_pip_health(python_exe, cwd=str(project_path), env=test_env, log=log):
+        log("[Python环境] 隔离 venv pip 异常，尝试 ensurepip 修复...")
+        if not _try_ensurepip(python_exe, cwd=str(project_path), env=test_env, log=log):
+            raise MaaFWAgentEnvError(f"隔离 venv pip 无法自动修复: {python_exe}")
+
+    if had_valid_venv and _is_isolated_venv_manifest_current(venv_path, project_path):
+        log("[Python环境] 隔离 venv 依赖清单未变化，跳过 pip install")
+        return venv_path
+
+    if install_dependencies:
+        packages = _load_project_agent_requirements(project_path)
+        log(f"[Python环境] 隔离 venv 安装项目依赖: {', '.join(packages)}")
+        installed, failure_detail = _pip_install(
+            python_exe, packages, cwd=str(project_path), env=test_env, log=log
+        )
+        if not installed:
+            # 原来只报解释器路径，用户拿它做不了任何事，真实原因还只写进一个
+            # 没人持久化的 list。带上原因，现有告警条就能自己说明白。
+            raise MaaFWAgentEnvError(
+                f"隔离 venv 依赖安装失败: {failure_detail or python_exe}"
+            )
+    else:
+        log("[Python环境] 当前调用禁用依赖安装，仅写入隔离 venv manifest")
+
+    _write_isolated_venv_manifest(venv_path, project_path)
+    return venv_path
+
+
+def _is_valid_venv_path(venv_path: Path) -> bool:
+    if not (
+        venv_python_exe(venv_path).is_file() and (venv_path / "pyvenv.cfg").is_file()
+    ):
+        return False
+    # 文件都在不代表能用：引导用的基解释器（受管模式下常是 sys.executable
+    # 所在的监督器管理 venv）事后被删掉重建过的话，这个 venv 也已经失效。
+    return not venv_base_python_missing(venv_path)
+
+
+def _ensure_isolated_venv(
+    venv_path: Path,
+    log: Callable[[str], None],
+    *,
+    bootstrap_python: str | None,
+) -> None:
+    if _is_valid_venv_path(venv_path):
+        log(f"[Python环境] 隔离 venv 已存在: {venv_path}")
+        return
+
+    if venv_path.exists():
+        _reset_isolated_venv(venv_path, log)
+
+    venv_path.parent.mkdir(parents=True, exist_ok=True)
+    python = bootstrap_python if bootstrap_python else _venv_bootstrap_python()
+    if python is not None and bootstrap_python and not _python_supports_venv(python):
+        # 调用方指定的引导解释器（如便携 embeddable Python）缺 venv，回退到自动挑选
+        log(f"[Python环境] 指定引导 Python 缺少 venv 模块，改为自动挑选: {python}")
+        python = _venv_bootstrap_python()
+
+    if python is None:
+        _create_venv_with_uv(venv_path, log)
+    else:
+        log(f"[Python环境] 创建隔离 venv: {venv_path} (引导 Python: {python})")
+        try:
+            result = subprocess.run(
+                [python, "-m", "venv", str(venv_path)],
+                capture_output=True,
+                timeout=PIP_INSTALL_TIMEOUT,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                # 引导解释器同样不能被宿主 PYTHONHOME / PYTHONPATH 带偏。
+                env=strip_host_python_environment(),
+            )
+        except subprocess.TimeoutExpired as exc:
+            raise MaaFWAgentEnvError(
+                f"创建隔离 venv 超时 ({PIP_INSTALL_TIMEOUT}s): {venv_path}"
+            ) from exc
+
+        if result.returncode != 0:
+            detail = (result.stderr or result.stdout or "").strip()
+            raise MaaFWAgentEnvError(
+                f"创建隔离 venv 失败 (exit={result.returncode}): {detail[:500]}"
+            )
+    if not _is_valid_venv_path(venv_path):
+        raise MaaFWAgentEnvError(f"创建隔离 venv 后结构不完整: {venv_path}")
+    log(f"[Python环境] 隔离 venv 创建成功: {venv_path}")
+
+
+def _create_venv_with_uv(venv_path: Path, log: Callable[[str], None]) -> None:
+    """所有候选解释器都缺 venv 时的兜底：用 uv 建环境（必要时自取 managed Python）。"""
+    uv_exe = _find_uv_executable()
+    if uv_exe is None:
+        raise MaaFWAgentEnvError(
+            "创建隔离 venv 失败：可用的 Python 均不含 venv 模块（便携版通常为 "
+            "embeddable 发行版），且未找到 uv 兜底。请安装完整 Python 或提供 uv。"
+        )
+
+    log(f"[Python环境] 引导 Python 均缺少 venv 模块，改用 uv 创建: {venv_path}")
+    try:
+        result = subprocess.run(
+            [uv_exe, "venv", "--seed", "--no-config", str(venv_path)],
+            capture_output=True,
+            timeout=UV_VENV_TIMEOUT,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            env=strip_host_python_environment(),
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise MaaFWAgentEnvError(
+            f"uv 创建隔离 venv 超时 ({UV_VENV_TIMEOUT}s): {venv_path}"
+        ) from exc
+
+    if result.returncode != 0:
+        detail = (result.stderr or result.stdout or "").strip()
+        raise MaaFWAgentEnvError(
+            f"uv 创建隔离 venv 失败 (exit={result.returncode}): {detail[:500]}"
+        )
+
+
+def _should_rebuild_isolated_venv(
+    venv_path: Path,
+    project_path: Path,
+    log: Callable[[str], None],
+) -> bool:
+    if venv_path.exists() and venv_base_python_missing(venv_path):
+        log(
+            f"[Python环境] 隔离 venv 的基解释器已不存在（pyvenv.cfg 的 home 已"
+            f"失效），将重建: {venv_path}"
+        )
+        return True
+    if venv_path.exists() and not _is_valid_venv_path(venv_path):
+        log("[Python环境] 隔离 venv 不完整，将重建")
+        return True
+    if not _is_valid_venv_path(venv_path):
+        return False
+
+    manifest_path = venv_path / AGENT_ENV_MANIFEST_NAME
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        log("[Python环境] 隔离 venv 缺少依赖清单，将重建")
+        return True
+    except Exception as exc:
+        log(f"[Python环境] 隔离 venv 依赖清单异常，将重建: {exc}")
+        return True
+
+    expected = build_agent_env_manifest(project_path)
+    if manifest.get("projectPath") != expected["projectPath"]:
+        log("[Python环境] 隔离 venv 项目路径已变化，将重建")
+        return True
+    if manifest.get("interfaceHash") != expected["interfaceHash"]:
+        log("[Python环境] MaaFW 项目 interface 已变化，将重建隔离 venv")
+        return True
+    if manifest.get("requirementsHash") != expected["requirementsHash"]:
+        log("[Python环境] MaaFW 项目 requirements 已变化，将重建隔离 venv")
+        return True
+    return False
+
+
+def _reset_isolated_venv(venv_path: Path, log: Callable[[str], None]) -> None:
+    if venv_path.parent.name != "maafw_agent_venvs" or not venv_path.name.startswith(
+        "maafw_venv_"
+    ):
+        raise MaaFWAgentEnvError(f"拒绝重建非托管隔离 venv: {venv_path}")
+    shutil.rmtree(venv_path, ignore_errors=True)
+    log(f"[Python环境] 已清理旧隔离 venv: {venv_path}")
+
+
+def _is_isolated_venv_manifest_current(venv_path: Path, project_path: Path) -> bool:
+    manifest_path = venv_path / AGENT_ENV_MANIFEST_NAME
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except Exception:
+        return False
+    expected = build_agent_env_manifest(project_path)
+    return (
+        manifest.get("projectPath") == expected["projectPath"]
+        and manifest.get("interfaceHash") == expected["interfaceHash"]
+        and manifest.get("requirementsHash") == expected["requirementsHash"]
+    )
+
+
+def _write_isolated_venv_manifest(venv_path: Path, project_path: Path) -> None:
+    manifest_path = venv_path / AGENT_ENV_MANIFEST_NAME
+    manifest_path.write_text(
+        json.dumps(
+            build_agent_env_manifest(project_path), ensure_ascii=False, indent=2
+        ),
+        encoding="utf-8",
+    )
+
+
+def _load_project_agent_requirements(project_path: Path) -> list[str]:
+    requirements_path = project_path / "requirements.txt"
+    packages: list[str] = []
+    declared = True
+    try:
+        with requirements_path.open("r", encoding="utf-8") as file:
+            for raw_line in file:
+                line = raw_line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                packages.append(line)
+    except FileNotFoundError:
+        declared = False
+
+    normalized = {item.split(";", 1)[0].strip().lower() for item in packages}
+    if not any(item.startswith(AGENT_BOOTSTRAP_PACKAGE) for item in normalized):
+        packages.append(AGENT_BOOTSTRAP_PACKAGE)
+    # agent 侧的 binding 必须与 runner 加载的原生库同版本，否则 AgentServer 与
+    # AgentClient 的协议版本对不上，握手被拒、在我们这边只表现为连不上。
+    # 延迟导入：``runner`` 的包初始化会 import ``run_plan``，而
+    # ``run_plan`` 反过来 import 本包，写成模块级导入会成环。
+    from app.task.MaaFW.tools.core.runner.environment import (
+        pin_agent_maafw_requirement,
+        resolve_project_maafw_requirement,
+    )
+
+    pinned = pin_agent_maafw_requirement(project_path, packages)
+    if not declared:
+        # 压根没有 requirements.txt 的 Python agent：MFW-PyQt6 的「嵌入式 Agent」
+        # 模式（FOS 这类，CFA_setting.json 里 embedded=true）把 maa 与 numpy 冻进了
+        # 外壳自己的程序里，发行包不写依赖。这份 venv 只会给 Python agent 用，里面
+        # 至少得有跟项目自带原生库同版本的 binding，否则 agent import maa 当场退出。
+        # 项目没自带原生库时拿不到版本，就还是原样。
+        requirement = resolve_project_maafw_requirement(project_path)
+        if requirement is not None:
+            pinned.append(requirement)
+    return pinned
+
+
+def _project_agent_requirements_hash(project_path: Path) -> str:
+    payload = json.dumps(
+        _load_project_agent_requirements(project_path),
+        ensure_ascii=False,
+        separators=(",", ":"),
+    )
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def _project_interface_hash(project_path: Path) -> str:
+    for name in ("interface.json", "interface.jsonc"):
+        path = project_path / name
+        if path.is_file():
+            return hashlib.sha256(path.read_bytes()).hexdigest()
+    return ""
+
+
+def _build_agent_env_for_pip(project_path: Path) -> dict[str, str]:
+    # 剔除名单与运行池 / worker 共用；隔离 venv 里的 pip 只认项目根这一条 PYTHONPATH。
+    env = strip_host_python_environment()
+    env["PYTHONPATH"] = str(project_path)
+    set_project_pycache_prefix(env, project_path)
+    return env
+
+
+def _check_pip_health(
+    python_exe: str,
+    *,
+    cwd: str | None,
+    env: dict[str, str],
+    log: Callable[[str], None],
+) -> bool:
+    try:
+        result = subprocess.run(
+            [python_exe, "-m", "pip", "--version"],
+            capture_output=True,
+            timeout=PIP_HEALTH_CHECK_TIMEOUT,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            cwd=cwd,
+            env=env,
+        )
+        if result.returncode != 0:
+            detail = (result.stderr or result.stdout or "").strip()
+            log(
+                f"[Python环境] pip --version 失败 (exit={result.returncode}): {detail[:500]}"
+            )
+            return False
+
+        install_check = subprocess.run(
+            [
+                python_exe,
+                "-c",
+                "from pip._internal.commands.install import InstallCommand; print('install command OK')",
+            ],
+            capture_output=True,
+            timeout=PIP_HEALTH_CHECK_TIMEOUT,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            cwd=cwd,
+            env=env,
+        )
+        if install_check.returncode == 0:
+            log(f"[Python环境] pip 健康: {result.stdout.strip()}")
+            return True
+
+        detail = (install_check.stderr or install_check.stdout or "").strip()
+        if "backports.zstd" in detail or "ZstdError" in detail:
+            log("[Python环境] pip install 子命令加载失败（backports.zstd 冲突）")
+        else:
+            log(
+                f"[Python环境] pip install 检测失败 (exit={install_check.returncode}): {detail[:500]}"
+            )
+        return False
+    except subprocess.TimeoutExpired:
+        log(f"[Python环境] pip 检测超时 ({PIP_HEALTH_CHECK_TIMEOUT}s)")
+        return False
+    except Exception as exc:
+        log(f"[Python环境] pip 检测异常: {exc}")
+        return False
+
+
+def _check_project_python_health(
+    python_exe: str,
+    *,
+    cwd: str | None,
+    env: dict[str, str],
+    log: Callable[[str], None],
+) -> bool:
+    """Probe a project-owned Agent runtime without requiring or invoking pip."""
+
+    probe = (
+        "import sys; "
+        "from maa.agent.agent_server import AgentServer; "
+        "print(f'Python {sys.version_info.major}.{sys.version_info.minor}; MaaFW Agent OK')"
+    )
+    try:
+        result = subprocess.run(
+            [python_exe, "-c", probe],
+            capture_output=True,
+            timeout=PROJECT_PYTHON_HEALTH_TIMEOUT,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            cwd=cwd,
+            env=env,
+        )
+    except subprocess.TimeoutExpired:
+        log(
+            "[Python环境] 项目 Python/Agent 健康检查超时 "
+            f"({PROJECT_PYTHON_HEALTH_TIMEOUT}s)"
+        )
+        return False
+    except Exception as exc:
+        log(f"[Python环境] 项目 Python/Agent 健康检查异常: {exc}")
+        return False
+
+    if result.returncode == 0:
+        detail = (result.stdout or "").strip()
+        log(f"[Python环境] 项目 Python/Agent 健康: {detail or python_exe}")
+        return True
+
+    detail = (result.stderr or result.stdout or "").strip()
+    log(
+        "[Python环境] 项目 Python/Agent 健康检查失败 "
+        f"(exit={result.returncode}): {detail[:500]}"
+    )
+    return False
+
+
+def _try_ensurepip(
+    python_exe: str,
+    *,
+    cwd: str | None,
+    env: dict[str, str],
+    log: Callable[[str], None],
+) -> bool:
+    log("[Python环境] 修复策略 A (ensurepip)...")
+    try:
+        result = subprocess.run(
+            [python_exe, "-m", "ensurepip", "--upgrade"],
+            capture_output=True,
+            timeout=PIP_INSTALL_TIMEOUT,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            cwd=cwd,
+            env=env,
+        )
+        if result.returncode == 0 and _check_pip_health(
+            python_exe, cwd=cwd, env=env, log=log
+        ):
+            log("[Python环境] ensurepip 修复成功")
+            return True
+        detail = (result.stderr or result.stdout or "").strip()
+        log(f"[Python环境] ensurepip 未成功: {detail[:300]}")
+    except subprocess.TimeoutExpired:
+        log(f"[Python环境] ensurepip 超时 ({PIP_INSTALL_TIMEOUT}s)")
+    except Exception as exc:
+        log(f"[Python环境] ensurepip 执行异常: {exc}")
+    return False
+
+
+def _pip_index_arg_candidates() -> list[tuple[str, list[str]]]:
+    """按序返回 pip 的索引候选 ``(日志标签, 参数)``，与运行池 installer 同源。
+
+    Runtime 经 AUTO_MAS_MIRROR_PACKAGE_INDEX 注入镜像列表；键存在但为空表示
+    要求完全离线，此时只跑一次 --no-index，绝不联网（运行池遵守这条契约，
+    这里此前不遵守，属于契约漏洞）。用户显式设了 PIP_INDEX_URL 就尊重它，
+    不参与候选轮换——参数留空交给 pip 自己解析，但标签要如实写出用的是哪个，
+    否则日志里会和「谁都没配」长得一模一样。
+    """
+
+    if is_package_index_offline():
+        return [("离线", ["--no-index"])]
+    user_index = str(os.environ.get("PIP_INDEX_URL") or "").strip()
+    if user_index:
+        return [(f"PIP_INDEX_URL={user_index}", [])]
+    candidates = resolve_package_index_candidates()
+    if not candidates:
+        return [("PyPI 默认索引", [])]
+    return [(candidate, ["--index-url", candidate]) for candidate in candidates]
+
+
+def _pip_install(
+    python_exe: str,
+    packages: list[str],
+    *,
+    cwd: str | None,
+    env: dict[str, str],
+    log: Callable[[str], None],
+) -> tuple[bool, str]:
+    """往 ``python_exe`` 里装包，返回 (是否成功, 最后一次失败原因)。
+
+    与运行池的 ``_run_with_source_rotation`` 有一处有意的分歧：那边超时直接抛出、
+    不换源，这里超时也接着试下一个候选。装不上的首要成因就是某个索引连不通，而
+    连不通的典型表现正是超时，不换源等于白轮换。反过来，解释器自己起不来
+    （``OSError``）与索引无关，立即停手，不必对着每个候选各失败一次。
+
+    项目自带的 Python 常是 embeddable 发行版，没有 pip（M9A 就是：``python -m pip``
+    报 ``No module named pip``）；遇到就换成 ``uv pip install --python <exe>`` 往同一个
+    解释器里装，同一个索引候选重试一次。
+    """
+
+    last_detail = ""
+    uv_exe: str | None = None
+    for label, index_args in _pip_index_arg_candidates():
+        while True:
+            if uv_exe is None:
+                command = [python_exe, "-m", "pip", "install", "--quiet"]
+                tool = "pip install"
+            else:
+                # uv 不认 PIP_INDEX_URL，用户配了就显式带上；--no-config 免得读到
+                # 用户目录里的 uv.toml / 项目 pyproject 的 uv 段
+                uv_index_args = list(index_args)
+                user_index = str(
+                    env.get("PIP_INDEX_URL") or os.environ.get("PIP_INDEX_URL") or ""
+                ).strip()
+                if not uv_index_args and user_index:
+                    uv_index_args = ["--index-url", user_index]
+                command = [
+                    uv_exe,
+                    "pip",
+                    "install",
+                    "--python",
+                    python_exe,
+                    "--no-config",
+                    "--quiet",
+                    *uv_index_args,
+                ]
+                index_args = []
+                tool = "uv pip install"
+            try:
+                result = subprocess.run(
+                    [*command, *index_args, *packages],
+                    capture_output=True,
+                    timeout=PIP_INSTALL_PER_INDEX_TIMEOUT,
+                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
+                    cwd=cwd,
+                    env=env,
+                )
+                if result.returncode == 0:
+                    log(f"[Python环境] {tool} 完成 ({label}): {', '.join(packages)}")
+                    return True, ""
+                last_detail = (result.stderr or result.stdout or "").strip()
+                if uv_exe is None and "No module named pip" in last_detail:
+                    uv_exe = _find_uv_executable()
+                    if uv_exe is None:
+                        log(
+                            "[Python环境] 解释器不带 pip（embeddable 发行版），"
+                            "也找不到可用的 uv，无法安装"
+                        )
+                        return False, last_detail[:300]
+                    log(
+                        "[Python环境] 解释器不带 pip（embeddable 发行版），改用 uv 安装"
+                    )
+                    continue
+                log(f"[Python环境] {tool} 未成功 ({label}): {last_detail[:300]}")
+            except subprocess.TimeoutExpired:
+                last_detail = f"{label} 超时 ({PIP_INSTALL_PER_INDEX_TIMEOUT}s)"
+                log(
+                    f"[Python环境] {tool} 超时 ({label}, {PIP_INSTALL_PER_INDEX_TIMEOUT}s)"
+                )
+            except OSError as exc:
+                # 起不了子进程（venv 被删、python.exe 不在了）与索引无关，别再轮换。
+                last_detail = f"无法启动 {command[0]}: {exc}"
+                log(f"[Python环境] {tool} 无法启动 ({label}): {exc}")
+                return False, last_detail[:300]
+            except Exception as exc:
+                last_detail = f"{label}: {exc}"
+                log(f"[Python环境] {tool} 异常 ({label}): {exc}")
+            break
+    return False, last_detail[:300]
+
+
+def _python_supports_venv(python: str) -> bool:
+    """探测解释器是否带 venv/ensurepip 标准库。
+
+    便携目录常见 embeddable 发行版（python3xx._pth），不带 venv 模块，
+    直接 `-m venv` 会报 "No module named venv"，必须先探测再用作引导。
+    """
+    try:
+        result = subprocess.run(
+            [python, "-c", "import venv, ensurepip"],
+            capture_output=True,
+            timeout=VENV_PROBE_TIMEOUT,
+            text=True,
+            # 宿主 PYTHONHOME 会让解释器起不来、PYTHONWARNINGS=error 会让探测误判成「不可用」。
+            env=strip_host_python_environment(),
+        )
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return result.returncode == 0
+
+
+def _find_uv_executable() -> str | None:
+    # 受管模式（AUTO-MAS-Runtime 监督后端）下没有便携 Python，监督器改为
+    # 用 AUTO_MAS_UV_EXE 注入它已校验过的 uv 路径，也不会把这个 uv 加进
+    # PATH——优先信它，找不到再退回便携路径与 PATH 查找。
+    configured_uv = os.environ.get("AUTO_MAS_UV_EXE")
+    if configured_uv:
+        configured_path = Path(configured_uv)
+        if configured_path.is_file():
+            return str(configured_path.resolve())
+
+    portable_uv = Path.cwd() / "environment" / "python" / "Scripts" / "uv.exe"
+    if portable_uv.is_file():
+        return str(portable_uv)
+
+    # 用户从受管模式回退到旧链路时监督器不再注入变量，但 Runtime 早已把 uv 装在
+    # runtime/tools/uv 下；和运行池共用同一份查找逻辑，免得两处各认一半。
+    runtime_uv = runtime_managed_uv_executable()
+    if runtime_uv is not None:
+        return runtime_uv
+    return shutil.which("uv")
+
+
+def _venv_bootstrap_python() -> str | None:
+    """返回第一个带 venv 模块的引导 Python；全部不可用时返回 None（改走 uv 兜底）。"""
+    candidates: list[str] = []
+    portable_python = Path.cwd() / "environment" / "python" / "python.exe"
+    if portable_python.is_file():
+        candidates.append(str(portable_python))
+    candidates.append(sys.executable)
+    path_python = shutil.which("python")
+    if path_python:
+        candidates.append(path_python)
+    for candidate in candidates:
+        if _python_supports_venv(candidate):
+            return candidate
+    return None
+
+
+def _safe_resolve_python(path: str) -> str:
+    try:
+        return str(Path(path).resolve())
+    except Exception:
+        return path

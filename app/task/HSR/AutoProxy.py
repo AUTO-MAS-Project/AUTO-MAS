@@ -22,7 +22,7 @@
 
 import asyncio
 import uuid
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from contextlib import suppress
 from datetime import datetime
 from pathlib import Path
@@ -40,6 +40,7 @@ from app.utils.constants import UTC4
 from .task_mapping import (
     HSR_TASK_MODULES,
     describe_script_fallback,
+    engine_label,
     resolve_script_assignment,
 )
 from .tools import push_notification
@@ -47,16 +48,25 @@ from .tools.account_switch import (
     HSR_GAME_PROCESS_NAME,
     HSR_GAME_READY_DELAY_SECONDS,
     HSRAccountSwitcher,
+    cloud_login_timeout_minutes,
+    cloud_max_queue_minutes,
+    configure_m7a_runner,
+    is_cloud_platform,
     is_game_management_enabled,
     resolve_game_executable_path,
     stop_external_processes,
     user_needs_account_switch,
 )
-from .tools.backup_archive import archive_mas_runtime_backup, read_overlay_values
+from .tools.backup_archive import archive_mas_runtime_backup, read_mas_overlay
 from .tools.extra_script import run_script_after_task, run_script_before_task
 from .tools.log_detect import (
+    HSR_CLOUD_REMAINING_WARN_MINUTES,
+    detect_cloud_login_required,
     detect_echo_of_war_completion,
     find_m7a_self_game_stop,
+    is_cloud_login_success,
+    is_m7a_self_browser_start,
+    parse_cloud_remaining,
     select_failure_summary_lines,
 )
 from .tools.m7a_control import HSRM7AControl
@@ -65,6 +75,7 @@ from .tools.managed_config import list_managed_modules, redeem_code_fingerprint
 from .tools.native_control import (
     resolve_configured_engines,
     resolve_phase_timeout_minutes,
+    resolve_plan,
     resolve_script_path,
 )
 from .tools.run_model import (
@@ -73,6 +84,7 @@ from .tools.run_model import (
     HSRLoginPlan,
     HSRModuleResult,
     HSRModuleResultStatus,
+    HSRNonRetryableTaskError,
     HSRPhase,
     HSRRetryableTaskError,
     HSRRunItem,
@@ -92,6 +104,7 @@ logger = get_logger("HSR 自动代理")
 # 队列中止时写给剩余未执行项的原因，用户会在任务报告里直接看到。
 HSR_ABORT_REASON_LOGIN_FAILED = "SRA 登录/切号失败，当前阶段未执行"
 HSR_ABORT_REASON_GAME_EXITED = "游戏进程已退出，当前阶段剩余模块未执行"
+HSR_ABORT_REASON_CLOUD = "云·星穹铁道无法继续，本轮剩余模块未执行"
 # 游戏进程消失后再等这么久才下结论：读输出的协程要把 M7A 关游戏前那行
 # ERROR 收进来；脚本自己关游戏后紧接着退出的，等它自然结束就不用杀。
 GAME_EXIT_SETTLE_SECONDS = 2
@@ -146,12 +159,10 @@ def _server_day_clock(now_dt: datetime | None = None) -> datetime:
     return now_dt.astimezone(UTC4)
 
 
-def _has_enabled_phase_module(user_config, phase: HSRPhase) -> bool:
-    """判断用户是否启用了指定周期的任一 HSR 模块。"""
+def _has_enabled_phase_module(plan, phase: HSRPhase) -> bool:
+    """判断计划是否启用了指定周期的任一 HSR 模块。"""
 
-    return any(
-        bool(user_config.get("TaskSwitch", key)) for key in MODULE_KEYS_BY_PHASE[phase]
-    )
+    return any(bool(plan.get("TaskSwitch", key)) for key in MODULE_KEYS_BY_PHASE[phase])
 
 
 class HSRAutoProxyTask(TaskExecuteBase):
@@ -186,6 +197,8 @@ class HSRAutoProxyTask(TaskExecuteBase):
             script_config=self.script_config,
             runtime=self.runtime,
             append_log=self._append_log,
+            script_id=self.script_info.script_id,
+            user_id=user_item.user_id,
         )
         self._sra_control = HSRSRAControl(
             script_config=self.script_config,
@@ -215,6 +228,11 @@ class HSRAutoProxyTask(TaskExecuteBase):
         self.crashed: bool = False
         self.error_message: str = ""
         self._managed_options_cache: dict[tuple[int, str, str], dict[str, object]] = {}
+        # 输出回调里派生的后台任务（如终止三月七），持有引用防止被回收。
+        self._background_tasks: set[asyncio.Task] = set()
+        # 本用户的 SRA 登录项工厂（按阶段）；登录计划不走 SRA StartGame 时为 None。
+        # 队列中途因模块失败重启游戏后，下一个 SRA 模块前要先用它登录一次。
+        self._restart_login_item_factory: Callable[[HSRPhase], HSRRunItem] | None = None
 
     def _append_log(self, message: str, *, max_lines: int = 500) -> None:
         text = str(message).strip()
@@ -314,9 +332,21 @@ class HSRAutoProxyTask(TaskExecuteBase):
         return self._timeout_seconds_for_phase(phase)
 
     async def _restart_game(self, user_name: str, reason: str) -> None:
-        """按开关决定是否由 MAS 关闭并重新启动游戏。"""
+        """按开关决定是否由 MAS 关闭并重新启动游戏。
+
+        云平台不重启浏览器：同一用户的模块之间浏览器保持在游戏画面里，三月七
+        下一次连回去不用重新登录、排队；这里只确认它还活着。
+        """
 
         await self._stop_external_processes()
+        if is_cloud_platform(self.script_config):
+            self.runtime.last_external_script = None
+            self.runtime.game_session_clean = False
+            self._append_log(
+                f"用户「{user_name}」{reason}，云·星穹铁道保持浏览器不重启"
+            )
+            await self._account_switcher.ensure_cloud_browser()
+            return
         if not is_game_management_enabled(self.script_config):
             self.runtime.game_launch_checked = True
             self.runtime.game_started_by_mas = False
@@ -494,7 +524,10 @@ class HSRAutoProxyTask(TaskExecuteBase):
         lines = ["模块执行情况："]
         for item in items:
             label = status_label.get(item.status, item.status)
-            text = f"{item.module_name}（{item.script}）：{label}"
+            text = (
+                f"{item.module_name}（{engine_label(item.script, left=False, right=False)}）"
+                f"：{label}"
+            )
             if item.reason and item.status != "completed":
                 text = f"{text}，{item.reason}"
             lines.append(text)
@@ -508,6 +541,9 @@ class HSRAutoProxyTask(TaskExecuteBase):
         module_result = self._format_current_user_module_results()
         if module_result:
             user_result = f"{user_result}\n\n{module_result}"
+        cloud_remaining = self._format_cloud_remaining(self.cur_user_item.user_id)
+        if cloud_remaining:
+            user_result = f"{user_result}\n\n{cloud_remaining}"
 
         statistics = {
             "user_info": self.cur_user_item.name,
@@ -537,6 +573,114 @@ class HSRAutoProxyTask(TaskExecuteBase):
                     message=f"推送 HSR 用户统计通知时出现异常: {e}",
                 ),
             )
+
+    async def _send_task_notice(self, level: str, message: str) -> None:
+        """调度台提示；发送失败不影响任务。"""
+
+        try:
+            await Publisher.send(
+                id=self.task_info.task_id,
+                type=protocol.TASK_NOTICE,
+                data=WSTaskNoticeData(level=level, message=message),
+            )
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"发送 HSR 调度台提示失败：{e}")
+
+    def _format_cloud_remaining(self, user_id: str) -> str:
+        """结束通知里的云·星穹铁道剩余时长；没读到时返回空串。"""
+
+        remaining = self.runtime.cloud_remaining.get(user_id)
+        if remaining is None:
+            return ""
+        total, paid, free = remaining
+        text = (
+            f"云·星穹铁道剩余时长：{total} 分钟（付费 {paid} 分钟，免费 {free} 分钟）"
+        )
+        if total < HSR_CLOUD_REMAINING_WARN_MINUTES:
+            text += f"\n剩余时长不足 {HSR_CLOUD_REMAINING_WARN_MINUTES} 分钟，下次可能跑不完"
+        return text
+
+    async def _on_m7a_output_line(self, line: str) -> None:
+        """三月七逐行输出：客户端照旧做截图窗口恢复；云平台识别登录与剩余时长。"""
+
+        await self._account_switcher.recover_game_window_if_screenshot_blocked(line)
+        if is_cloud_platform(self.script_config):
+            await self._handle_cloud_line(line)
+
+    async def _handle_cloud_line(self, line: str) -> None:
+        uid = self.cur_user_item.user_id
+        user_name = self.cur_user_item.name
+        runtime = self.runtime
+
+        if is_m7a_self_browser_start(line):
+            if runtime.cloud_self_browser_detected:
+                return
+            runtime.cloud_self_browser_detected = True
+            runtime.cloud_login_suppressed.add(uid)
+            runtime.cloud_login_times.pop(uid, None)
+            self._append_log(
+                f"用户「{user_name}」三月七没找到 MAS 托管的云浏览器，正准备自己新建"
+                "（通常是云游戏窗口被关掉后三月七重试启动）；已终止本次三月七，"
+                "下次尝试前由 MAS 重新启动该用户的浏览器，本轮不记录登录时间"
+            )
+            runner = runtime.m7a_runner
+            if runner is not None:
+                # 不在读输出的协程里等进程退出：管道要继续被读，交给独立任务终止。
+                task = asyncio.create_task(runner.terminate_process_tree())
+                self._background_tasks.add(task)
+                task.add_done_callback(self._background_tasks.discard)
+            return
+
+        login_required, timeout_minutes = detect_cloud_login_required(line)
+        if login_required:
+            if uid in runtime.cloud_login_notified:
+                return
+            runtime.cloud_login_notified.add(uid)
+            minutes = timeout_minutes or cloud_login_timeout_minutes(self.script_config)
+            message = (
+                f"用户「{user_name}」需要在 {self.script_info.name or 'HSR'} "
+                "弹出的云·星穹铁道浏览器窗口里登录米哈游通行证（扫码或密码均可），"
+                f"请在 {minutes} 分钟内完成"
+            )
+            self._append_log(message)
+            await self._send_task_notice("warning", message)
+            try:
+                await push_notification(
+                    "云登录提醒",
+                    f"{user_name} 需要登录云·星穹铁道",
+                    {"message": message},
+                    self.cur_user_config,
+                )
+            except Exception as e:  # noqa: BLE001
+                logger.opt(exception=True).warning(f"推送云登录提醒失败：{e}")
+            return
+
+        if is_cloud_login_success(line):
+            if uid in runtime.cloud_login_suppressed:
+                return
+            runtime.cloud_login_times[uid] = (
+                datetime.now().astimezone().isoformat(timespec="seconds")
+            )
+            if uid in runtime.cloud_login_notified:
+                runtime.cloud_login_notified.discard(uid)
+                message = f"用户「{user_name}」已登录云·星穹铁道"
+                self._append_log(message)
+                await self._send_task_notice("info", message)
+            return
+
+        remaining = parse_cloud_remaining(line)
+        if remaining is not None:
+            runtime.cloud_remaining[uid] = remaining
+            total, paid, free = remaining
+            self._append_log(
+                f"用户「{user_name}」云·星穹铁道剩余时长 {total} 分钟"
+                f"（付费 {paid} 分钟，免费 {free} 分钟）"
+            )
+            if total < HSR_CLOUD_REMAINING_WARN_MINUTES:
+                self._append_log(
+                    f"用户「{user_name}」云·星穹铁道剩余时长不足 "
+                    f"{HSR_CLOUD_REMAINING_WARN_MINUTES} 分钟，可能跑不完本轮任务"
+                )
 
     def _queue_eow_completion_if_confirmed(
         self,
@@ -616,9 +760,16 @@ class HSRAutoProxyTask(TaskExecuteBase):
     def _resolve_daily_params(
         user_config,
         now_dt: datetime | None = None,
+        *,
+        plan=None,
     ) -> tuple[bool, bool]:
-        """解析本周历战余响任务，不写用户 Data。"""
+        """解析本周历战余响任务，不写用户 Data。
 
+        开始日读 ``plan``（缺省即 ``user_config``），完成态读 ``user_config``。
+        """
+
+        if plan is None:
+            plan = user_config
         weekday_options = [
             "Monday",
             "Tuesday",
@@ -628,7 +779,7 @@ class HSRAutoProxyTask(TaskExecuteBase):
             "Saturday",
             "Sunday",
         ]
-        eow_target = user_config.get("TaskOpt", "EchoOfWarWeekday") or "Monday"
+        eow_target = plan.get("TaskOpt", "EchoOfWarWeekday") or "Monday"
         if eow_target not in weekday_options:
             eow_target = "Monday"
 
@@ -664,9 +815,16 @@ class HSRAutoProxyTask(TaskExecuteBase):
     def _resolve_weekly_skip(
         user_config,
         now_dt: datetime | None = None,
+        *,
+        plan=None,
     ) -> tuple[bool, str, bool]:
-        """解析周常是否本周已完成，不写用户 Data。"""
-        weekly_enabled = _has_enabled_phase_module(user_config, "weekly")
+        """解析周常是否本周已完成，不写用户 Data。
+
+        模块开关读 ``plan``（缺省即 ``user_config``），完成态读 ``user_config``。
+        """
+        weekly_enabled = _has_enabled_phase_module(
+            user_config if plan is None else plan, "weekly"
+        )
 
         # 游戏周边界是服务器时间周一 04:00 = UTC+4 零点，见 _period_markers
         now_dt = _server_day_clock(now_dt)
@@ -691,9 +849,15 @@ class HSRAutoProxyTask(TaskExecuteBase):
         return False, "", is_new_week_in_mem
 
     def _timeout_seconds_for_phase(self, phase: HSRPhase) -> int:
-        """按周期读取超时配置，返回秒。"""
+        """按周期读取超时配置，返回秒。
 
-        return resolve_phase_timeout_minutes(self.script_config, phase) * 60
+        云平台每个模块都可能先排队，超时再加上一份排队预算。
+        """
+
+        minutes = resolve_phase_timeout_minutes(self.script_config, phase)
+        if is_cloud_platform(self.script_config):
+            minutes += cloud_max_queue_minutes(self.script_config)
+        return minutes * 60
 
     def _phase_timeout_seconds(self, phase: HSRPhase) -> int:
         """按阶段读取超时配置，返回秒。"""
@@ -705,18 +869,18 @@ class HSRAutoProxyTask(TaskExecuteBase):
         *,
         assigned_script: str,
         module_key: str,
-        user_cfg,
+        plan,
     ) -> dict[str, object]:
-        """读取动态托管页展示的原生值，并允许用户覆盖。"""
+        """读取动态托管页展示的原生值，并叠加计划里的托管覆盖。"""
 
-        cache_key = (id(user_cfg), assigned_script, module_key)
+        cache_key = (id(plan), assigned_script, module_key)
         if cache_key in self._managed_options_cache:
             return dict(self._managed_options_cache[cache_key])
         try:
             modules = list_managed_modules(
                 assigned_script,
                 self.script_config,
-                user_cfg,
+                plan,
             )
             for module in modules:
                 if module.key == module_key:
@@ -730,13 +894,11 @@ class HSRAutoProxyTask(TaskExecuteBase):
         self._managed_options_cache[cache_key] = {}
         return {}
 
-    def _daily_native_modes(
-        self, *, assigned_script: str, user_cfg
-    ) -> tuple[bool, bool]:
+    def _daily_native_modes(self, *, assigned_script: str, plan) -> tuple[bool, bool]:
         values = self._managed_module_values(
             assigned_script=assigned_script,
             module_key="Daily",
-            user_cfg=user_cfg,
+            plan=plan,
         )
         return resolve_daily_native_modes(assigned_script, values)
 
@@ -745,12 +907,13 @@ class HSRAutoProxyTask(TaskExecuteBase):
         *,
         engine: str,
         user_cfg,
+        plan,
         user_name: str,
     ) -> tuple[bool, str | None]:
         values = self._managed_module_values(
             assigned_script=engine,
             module_key="ReceiveRewards",
-            user_cfg=user_cfg,
+            plan=plan,
         )
         if engine == "SRA":
             # SRA 2.22.0 起兑换码开关是具名键，旧 profile 仍是数组下标 6
@@ -763,8 +926,14 @@ class HSRAutoProxyTask(TaskExecuteBase):
         else:
             selected = bool(values.get("reward_redemption_code_enable", True))
         if not selected:
-            self._append_log(f"用户「{user_name}」已关闭 {engine} 兑换码奖励，本轮跳过")
+            self._append_log(
+                f"用户「{user_name}」已关闭{engine_label(engine)}兑换码奖励，本轮跳过"
+            )
             return False, None
+        if engine == "M7A":
+            # 三月七每日任务从在线码表取兑换码、按 already_used_codes 自行去重，
+            # 不读用户手填的 redemption_code；按手填列表算指纹会让在线新码永远不兑。
+            return True, None
         only_when_changed = self.script_config.get("Game", "RedeemCodesOnlyWhenChanged")
         if only_when_changed is False:
             return True, None
@@ -772,13 +941,15 @@ class HSRAutoProxyTask(TaskExecuteBase):
             fingerprint = redeem_code_fingerprint(engine, self.script_config)
         except (OSError, ValueError, TypeError) as exc:
             logger.warning(
-                f"用户「{user_name}」读取 {engine} 兑换码版本失败，保守执行：{exc}"
+                f"用户「{user_name}」读取{engine_label(engine)}兑换码版本失败，"
+                f"保守执行：{exc}"
             )
             return True, None
         previous = str(user_cfg.get("Data", f"{engine}RedeemCodeFingerprint") or "")
         if previous == fingerprint:
             self._append_log(
-                f"用户「{user_name}」{engine} 兑换码未变化，本轮跳过兑换码领取"
+                f"用户「{user_name}」{engine_label(engine, left=False)}兑换码未变化，"
+                "本轮跳过兑换码领取"
             )
             return False, fingerprint
         return True, fingerprint
@@ -787,7 +958,7 @@ class HSRAutoProxyTask(TaskExecuteBase):
         self,
         *,
         assigned_script: str,
-        user_cfg,
+        plan,
         user_name: str,
         uid: str,
         daily_eow_enabled: bool,
@@ -796,11 +967,11 @@ class HSRAutoProxyTask(TaskExecuteBase):
 
         cultivation_enabled, native_activity_enabled = self._daily_native_modes(
             assigned_script=assigned_script,
-            user_cfg=user_cfg,
+            plan=plan,
         )
 
         main_configured, eow_configured = resolve_configured_daily_stages(
-            user_cfg, assigned_script
+            plan, assigned_script
         )
 
         if cultivation_enabled or native_activity_enabled:
@@ -828,6 +999,7 @@ class HSRAutoProxyTask(TaskExecuteBase):
         phase: HSRPhase,
         user_item: UserItem,
         user_cfg,
+        plan,
         user_name: str,
         uid: str,
         m7a_path: str,
@@ -837,7 +1009,11 @@ class HSRAutoProxyTask(TaskExecuteBase):
         temp_files: list[Path],
         daily_eow_enabled: bool,
     ) -> list[HSRRunItem]:
-        """按阶段构建队列，保持 HSR_TASK_MODULES 中的业务顺序。"""
+        """按阶段构建队列，保持 HSR_TASK_MODULES 中的业务顺序。
+
+        模块开关、引擎分配、副本与托管覆盖读 ``plan``；兑换码指纹等完成态读
+        ``user_cfg``。
+        """
 
         items: list[HSRRunItem] = []
         effective_engines = resolve_configured_engines(self.script_config)
@@ -845,13 +1021,15 @@ class HSRAutoProxyTask(TaskExecuteBase):
         for module in HSR_TASK_MODULES:
             if module.category != phase:
                 continue
-            if not user_cfg.get("TaskSwitch", module.key):
+            if not plan.get("TaskSwitch", module.key):
                 continue
 
+            # 脚本来源时 plan 是脚本配置，其 Managed.TaskMapping 恒为空，
+            # 自然落到脚本级 TaskMapping。
             assignment = resolve_script_assignment(
                 module,
                 self.script_config,
-                user_config=user_cfg,
+                user_config=plan,
                 effective_engines=effective_engines,
             )
             assigned = assignment.script
@@ -865,7 +1043,7 @@ class HSRAutoProxyTask(TaskExecuteBase):
                 main_configured, module_daily_eow_enabled = (
                     self._resolve_daily_runnable_parts(
                         assigned_script=assigned,
-                        user_cfg=user_cfg,
+                        plan=plan,
                         user_name=user_name,
                         uid=uid,
                         daily_eow_enabled=daily_eow_enabled,
@@ -889,6 +1067,7 @@ class HSRAutoProxyTask(TaskExecuteBase):
                     self._resolve_redeem_code_policy(
                         engine=assigned,
                         user_cfg=user_cfg,
+                        plan=plan,
                         user_name=user_name,
                     )
                 )
@@ -899,13 +1078,13 @@ class HSRAutoProxyTask(TaskExecuteBase):
                 if module.key == "Daily" and module_daily_eow_enabled:
                     cultivation_enabled, _ = self._daily_native_modes(
                         assigned_script=assigned,
-                        user_cfg=user_cfg,
+                        plan=plan,
                     )
                     if cultivation_enabled:
                         items.append(
                             self._sra_control.create_echo_of_war_item(
                                 user_item=user_item,
-                                user_cfg=user_cfg,
+                                plan=plan,
                                 user_name=user_name,
                                 uid=uid,
                                 phase=phase,
@@ -918,6 +1097,7 @@ class HSRAutoProxyTask(TaskExecuteBase):
                 item = self._sra_control.create_module_item(
                     user_item=user_item,
                     user_cfg=user_cfg,
+                    plan=plan,
                     user_name=user_name,
                     uid=uid,
                     module=module,
@@ -947,7 +1127,7 @@ class HSRAutoProxyTask(TaskExecuteBase):
                             self._queue_data_writeback(
                                 user_id=uid,
                                 user_name=user_name,
-                                reason=f"{engine} 兑换码任务成功完成",
+                                reason=f"{engine_label(engine, left=False)}兑换码任务成功完成",
                                 fields=[
                                     (
                                         "Data",
@@ -963,6 +1143,7 @@ class HSRAutoProxyTask(TaskExecuteBase):
                 item = self._m7a_control.create_module_item(
                     user_item=user_item,
                     user_cfg=user_cfg,
+                    plan=plan,
                     user_name=user_name,
                     uid=uid,
                     module=module,
@@ -991,7 +1172,7 @@ class HSRAutoProxyTask(TaskExecuteBase):
                             self._queue_data_writeback(
                                 user_id=uid,
                                 user_name=user_name,
-                                reason=f"{engine} 兑换码任务成功完成",
+                                reason=f"{engine_label(engine, left=False)}兑换码任务成功完成",
                                 fields=[
                                     (
                                         "Data",
@@ -1012,9 +1193,15 @@ class HSRAutoProxyTask(TaskExecuteBase):
         user_cfg,
         sra_path: str,
     ) -> HSRLoginPlan:
-        """根据 SRA 可用性和账号密码生成本轮登录计划。"""
+        """根据 SRA 可用性和账号密码生成本轮登录计划。
+
+        云平台不走 SRA StartGame：按切号处理，由切换器换成本用户的云浏览器，
+        登录态在该用户自己的浏览器 profile 里。
+        """
 
         sra_exe_path = Path(sra_path) / "SRA-cli.exe"
+        if is_cloud_platform(self.script_config):
+            return HSRLoginPlan(mode="cloud", sra_exe_path=sra_exe_path)
         sra_available = bool(sra_path.strip()) and sra_exe_path.exists()
         if not sra_available:
             return HSRLoginPlan(
@@ -1152,11 +1339,11 @@ class HSRAutoProxyTask(TaskExecuteBase):
         *,
         login_plan: HSRLoginPlan,
     ) -> bool:
-        """补跑阶段有可用 SRA 时先登录；已有登录项时不重复插入。"""
+        """补跑阶段有可用 SRA 时先登录；开头已是登录项时不重复插入。"""
 
         if not login_plan.uses_sra_start_game:
             return False
-        return not any(item.module_key == "StartGame" for item in items)
+        return not (items and items[0].module_key == "StartGame")
 
     def _build_retry_queue_items(
         self,
@@ -1178,6 +1365,13 @@ class HSRAutoProxyTask(TaskExecuteBase):
             phase_items = [item for item in failed_items if item.phase == phase]
             if not phase_items:
                 continue
+            # 队列中途重启游戏后插入的登录项失败了也会进失败列表，落在中间：补跑前
+            # 游戏刚重启、停在标题画面，只有开头的登录项能救回来，中间那条不再单独补跑。
+            phase_items = [
+                item
+                for index, item in enumerate(phase_items)
+                if index == 0 or item.module_key != "StartGame"
+            ]
 
             if self._retry_phase_needs_login(
                 phase_items,
@@ -1218,6 +1412,7 @@ class HSRAutoProxyTask(TaskExecuteBase):
         *,
         user_item: UserItem,
         user_cfg,
+        plan,
         user_name: str,
         uid: str,
         m7a_path: str,
@@ -1227,11 +1422,17 @@ class HSRAutoProxyTask(TaskExecuteBase):
         script_id: str,
         temp_files: list[Path],
     ) -> list[HSRRunItem]:
-        """按用户构建本轮 HSR 执行队列。"""
+        """按用户构建本轮 HSR 执行队列。
 
-        daily_eow_enabled, eow_is_new_week = self._resolve_daily_params(user_cfg)
+        ``plan`` 是该用户生效的任务计划（脚本来源为脚本配置，用户来源为
+        ``user_cfg`` 本身）；``Data`` / ``Info`` 恒读 ``user_cfg``。
+        """
+
+        daily_eow_enabled, eow_is_new_week = self._resolve_daily_params(
+            user_cfg, plan=plan
+        )
         weekly_skip, weekly_skip_reason, weekly_is_new_week = self._resolve_weekly_skip(
-            user_cfg
+            user_cfg, plan=plan
         )
         logger.debug(
             f"用户「{user_name}」resolver: "
@@ -1245,6 +1446,7 @@ class HSRAutoProxyTask(TaskExecuteBase):
             phase="daily",
             user_item=user_item,
             user_cfg=user_cfg,
+            plan=plan,
             user_name=user_name,
             uid=uid,
             m7a_path=m7a_path,
@@ -1264,6 +1466,7 @@ class HSRAutoProxyTask(TaskExecuteBase):
                     phase="weekly",
                     user_item=user_item,
                     user_cfg=user_cfg,
+                    plan=plan,
                     user_name=user_name,
                     uid=uid,
                     m7a_path=m7a_path,
@@ -1313,6 +1516,27 @@ class HSRAutoProxyTask(TaskExecuteBase):
             candidate.last_error = reason
         return skipped
 
+    def _login_item_after_restart(self, item: HSRRunItem) -> HSRRunItem | None:
+        """队列中途重启游戏后，``item`` 之前是否要先补一次 SRA 登录。
+
+        只有 MAS 真的重启了本地客户端（客户端平台且管理游戏）、登录计划走 SRA
+        StartGame、且下一个是 SRA 的非登录模块时才需要：三月七自己会处理进入
+        游戏；紧跟着的若本来就是登录项也不重复插。
+        """
+
+        factory = getattr(self, "_restart_login_item_factory", None)
+        if factory is None or item.script != "SRA" or item.module_key == "StartGame":
+            return None
+        if is_cloud_platform(self.script_config) or not is_game_management_enabled(
+            self.script_config
+        ):
+            return None
+        self._append_log(
+            f"用户「{item.user_name}」游戏已重启，执行 SRA 模块「{item.module_name}」前"
+            "先登录进入游戏"
+        )
+        return factory(item.phase)
+
     async def _run_queue_items(
         self,
         items: list[HSRRunItem],
@@ -1321,6 +1545,10 @@ class HSRAutoProxyTask(TaskExecuteBase):
 
         failures: list[HSRRunItem] = []
         completed_phases: set[HSRPhase] = set()
+        # 模块失败（超时被终止、报错、判定失败）后画面停在哪里不可知，下一个模块
+        # 直接接着跑只会在脏画面上再失败一次：先由 MAS 重启游戏再继续。补跑同样
+        # 走这里，每个失败模块之后都重启，而不是每轮尝试只在开头重启一次。
+        restart_reason: str | None = None
         phases: tuple[HSRPhase, ...] = ("daily", "weekly")
         phase_labels = {
             "daily": "日常",
@@ -1335,18 +1563,67 @@ class HSRAutoProxyTask(TaskExecuteBase):
             user_name = phase_items[0].user_name
             if completed_phases:
                 await self._restart_game(user_name, f"进入{phase_labels[phase]}阶段前")
+                restart_reason = None
             completed_phases.add(phase)
 
-            for item_index, item in enumerate(phase_items):
+            item_index = -1
+            while item_index + 1 < len(phase_items):
+                item_index += 1
+                item = phase_items[item_index]
+                if restart_reason is not None:
+                    await self._restart_game(
+                        item.user_name,
+                        f"{restart_reason}，执行模块「{item.module_name}」前",
+                    )
+                    restart_reason = None
+                    # 重启后游戏停在标题 / 登录画面：SRA 的非登录任务从大世界或
+                    # ESC 菜单起步，先插一次登录；登录项失败时按登录失败中止后续。
+                    login_item = self._login_item_after_restart(item)
+                    if login_item is not None:
+                        phase_items.insert(item_index, login_item)
+                        item = login_item
                 item.attempts += 1
                 self._append_log(
-                    f"用户「{item.user_name}」执行 {item.script} "
+                    f"用户「{item.user_name}」执行{engine_label(item.script)}"
                     f"{item.module_name}：{item.description}"
                 )
                 try:
                     result = await self._run_item_with_game_guard(item)
                 except asyncio.CancelledError:
                     raise
+                except HSRNonRetryableTaskError as e:
+                    # 云·星穹铁道的登录超时、排队超时、时长耗尽、浏览器起不来：
+                    # 后面的模块和补跑都只会再撞一遍，本用户本轮直接判失败。
+                    item.last_error = str(e)
+                    item.retryable = False
+                    failures.append(item)
+                    self._append_log(
+                        f"用户「{item.user_name}」模块「{item.module_name}」执行失败"
+                        f"（不重试）：{item.last_error}"
+                    )
+                    remaining = self._remaining_items_after(
+                        items,
+                        phases=phases,
+                        phase_index=phase_index,
+                        phase_items=phase_items,
+                        item_index=item_index,
+                        failures=failures,
+                        reason=HSR_ABORT_REASON_CLOUD,
+                    )
+                    for skipped in remaining:
+                        skipped.retryable = False
+                    if remaining:
+                        self._append_log(
+                            f"用户「{item.user_name}」{HSR_ABORT_REASON_CLOUD}"
+                            f"（共 {len(remaining)} 项）"
+                        )
+                    failures.extend(remaining)
+                    await self._send_task_notice(
+                        "error",
+                        f"HSR 用户「{item.user_name}」{item.module_name}失败，"
+                        f"本轮不再补跑：{item.last_error}",
+                    )
+                    return failures
                 except HSRRetryableTaskError as e:
                     item.last_error = str(e)
                     failures.append(item)
@@ -1377,6 +1654,7 @@ class HSRAutoProxyTask(TaskExecuteBase):
                             )
                         failures.extend(remaining)
                         return failures
+                    restart_reason = f"模块「{item.module_name}」失败后"
                     continue
                 except Exception as e:  # noqa: BLE001
                     # 非 HSRRetryableTaskError 的异常是配置或代码错误, 补跑也不会
@@ -1411,6 +1689,7 @@ class HSRAutoProxyTask(TaskExecuteBase):
                             )
                         failures.extend(remaining)
                         return failures
+                    restart_reason = f"模块「{item.module_name}」异常后"
                     continue
 
                 if bool(getattr(result, "success", False)):
@@ -1458,6 +1737,7 @@ class HSRAutoProxyTask(TaskExecuteBase):
                     )
                     failures.extend(remaining)
                     return failures
+                restart_reason = f"模块「{item.module_name}」失败后"
 
         return failures
 
@@ -1466,7 +1746,11 @@ class HSRAutoProxyTask(TaskExecuteBase):
 
         run_task = asyncio.create_task(item.run())
         try:
-            if not is_game_management_enabled(self.script_config):
+            # 云平台没有 StarRail.exe；浏览器存活由每个三月七模块开跑前检查，
+            # 死了重起而不是判「游戏退出」。
+            if is_cloud_platform(self.script_config) or not is_game_management_enabled(
+                self.script_config
+            ):
                 return await run_task
 
             while not run_task.done():
@@ -1517,8 +1801,8 @@ class HSRAutoProxyTask(TaskExecuteBase):
                 )
                 detail = "\n".join(select_failure_summary_lines(recent))
                 return (
-                    f"M7A {cause}，已自行关闭游戏；"
-                    "MAS 已终止本次 M7A，补跑前会重新启动游戏。M7A 最后的报错："
+                    f"三月七{cause}，已自行关闭游戏；"
+                    "MAS 已终止本次三月七，补跑前会重新启动游戏。三月七最后的报错："
                     f"\n{detail}"
                 )
         return (
@@ -1537,7 +1821,8 @@ class HSRAutoProxyTask(TaskExecuteBase):
         for item in failures:
             parts.append(
                 f"用户「{item.user_name}」模块「{item.module_name}」"
-                f"（{item.script}，已尝试 {item.attempts} 次）："
+                f"（{engine_label(item.script, left=False, right=False)}，"
+                f"已尝试 {item.attempts} 次）："
                 f"{item.last_error or '未知错误'}"
             )
         return "\n".join(parts)
@@ -1569,6 +1854,10 @@ class HSRAutoProxyTask(TaskExecuteBase):
         uid = user_item.user_id
         user_cfg = self.cur_user_config
         user_name = user_cfg.get("Info", "Name")
+        # 直控用户由 HSRManager._run_direct_user 执行，不会进这里。
+        plan = resolve_plan(user_cfg, self.script_config)
+        if plan is None:
+            raise RuntimeError(f"用户「{user_name}」为直控来源，不能进入 MAS 托管队列")
         m7a_path = resolve_script_path(self.script_config, "M7A")
         sra_path = resolve_script_path(self.script_config, "SRA")
         script_id = self.script_info.script_id
@@ -1585,16 +1874,41 @@ class HSRAutoProxyTask(TaskExecuteBase):
                 ),
             )
             self.runtime.m7a_runner = m7a_runner
+        # 平台钉扎走环境变量（优先于 config.yaml），与 patch 里的平台字段一致。
+        configure_m7a_runner(m7a_runner, self.script_config)
+        # 运行器在用户之间复用，逐行回调要换成当前用户的（云登录提醒、剩余时长
+        # 与 LastLogin 都按当前用户记）。
+        m7a_runner.set_output_line_callback(self._on_m7a_output_line)
         login_plan = self._build_login_plan(user_cfg=user_cfg, sra_path=sra_path)
+        if login_plan.uses_sra_start_game:
+
+            def build_restart_login_item(phase: HSRPhase) -> HSRRunItem:
+                return self._create_start_game_item(
+                    user_item=user_item,
+                    user_cfg=user_cfg,
+                    user_name=user_name,
+                    uid=uid,
+                    phase=phase,
+                    login_plan=login_plan,
+                    script_id=script_id,
+                    temp_files=self.temp_files,
+                )
+
+            self._restart_login_item_factory = build_restart_login_item
+        else:
+            self._restart_login_item_factory = None
 
         # 物化前归档本用户字段侧车（_build_user_queue 会把托管字段注入原生
         # 配置；指纹去重，失败只记日志不阻断运行——native 池由 manager
         # prepare 在任务级一次性归档）
-        archive_mas_runtime_backup(script_id, uid, read_overlay_values(user_cfg))
+        archive_mas_runtime_backup(
+            script_id, uid, read_mas_overlay(user_cfg, self.script_config)
+        )
 
         full_queue = self._build_user_queue(
             user_item=user_item,
             user_cfg=user_cfg,
+            plan=plan,
             user_name=user_name,
             uid=uid,
             m7a_path=m7a_path,
@@ -1679,11 +1993,12 @@ class HSRAutoProxyTask(TaskExecuteBase):
             permanent_failures.extend(i for i in failed_items if not i.retryable)
             retryable_failures = [i for i in failed_items if i.retryable]
             if attempt < retry_limit and retryable_failures:
-                retry_action = (
-                    "将重新启动游戏后补跑"
-                    if is_game_management_enabled(self.script_config)
-                    else "MAS 未管理游戏，直接补跑"
-                )
+                if is_cloud_platform(self.script_config):
+                    retry_action = "云·星穹铁道保持浏览器，直接补跑"
+                elif is_game_management_enabled(self.script_config):
+                    retry_action = "将重新启动游戏后补跑"
+                else:
+                    retry_action = "MAS 未管理游戏，直接补跑"
                 self._append_log(
                     f"用户「{user_name}」第 {attempt}/{retry_limit} 次尝试后，"
                     f"仍有 {len(retryable_failures)} 个失败任务，{retry_action}"

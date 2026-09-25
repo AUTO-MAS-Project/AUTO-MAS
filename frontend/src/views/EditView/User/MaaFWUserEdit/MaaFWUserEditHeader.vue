@@ -6,7 +6,10 @@
           <router-link to="/scripts" class="breadcrumb-link">{{ t('edit.scripts') }}</router-link>
         </a-breadcrumb-item>
         <a-breadcrumb-item>
-          <router-link :to="`/scripts/${scriptId}/edit/maafw`" class="breadcrumb-link">
+          <router-link
+            :to="`/scripts/${scriptId}/edit/${scriptRouteSuffix}`"
+            class="breadcrumb-link"
+          >
             {{ scriptName || 'MFW' }}
           </router-link>
         </a-breadcrumb-item>
@@ -32,6 +35,17 @@
     </div>
 
     <a-space>
+      <a-button
+        v-if="props.userId"
+        size="large"
+        :loading="folderLoading"
+        @click="handleOpenFolder"
+      >
+        <template #icon>
+          <FolderOpenOutlined />
+        </template>
+        {{ t('comp.openConfigFolder') }}
+      </a-button>
       <a-button size="large" @click="emit('cancel')">
         <template #icon>
           <ArrowLeftOutlined />
@@ -48,22 +62,34 @@ import {
   ArrowLeftOutlined,
   CheckCircleOutlined,
   CloseCircleOutlined,
+  FolderOpenOutlined,
   LoadingOutlined,
 } from '@ant-design/icons-vue'
+import { useUserApi } from '@/composables/useUserApi'
 
 const { t } = useI18n()
 
-defineProps<{
+const props = defineProps<{
   saveStatus: 'idle' | 'saving' | 'saved' | 'error'
   saveErrorMessage: string
   scriptId: string
   scriptName: string
+  /** 脚本页路由后缀（maafw / m9a / mss，取自特调注册表） */
+  scriptRouteSuffix: string
   isEdit: boolean
+  userId?: string
 }>()
 
 const emit = defineEmits<{
   cancel: []
 }>()
+
+const { loading: folderLoading, openUserConfigFolder } = useUserApi()
+
+const handleOpenFolder = async () => {
+  if (!props.userId) return
+  await openUserConfigFolder(props.scriptId, props.userId)
+}
 </script>
 
 <style scoped>

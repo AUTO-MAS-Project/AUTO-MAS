@@ -32,6 +32,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Literal, Mapping
 
+from ..task_mapping import engine_label
+
 DroppedOverrideReason = Literal["unknown", "type"]
 
 
@@ -108,7 +110,7 @@ def log_dropped_overrides(
         return
     detail = "；".join(item.describe() for item in dropped)
     logger.warning(
-        f"{engine} {module_key} 忽略 {len(dropped)} 项失效的 MAS 覆盖配置，"
+        f"{engine_label(engine, left=False, right=False)} {module_key} 忽略 {len(dropped)} 项失效的 MAS 覆盖配置，"
         f"已按原生配置运行：{detail}"
     )
 

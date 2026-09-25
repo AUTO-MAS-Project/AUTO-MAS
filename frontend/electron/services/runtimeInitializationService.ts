@@ -17,6 +17,13 @@ import { app } from 'electron'
 import { getLogger } from './logger'
 import { MirrorConfig, MirrorService } from './mirrorService'
 import {
+  RUNTIME_BINARY_ALIGN_ERROR,
+  RUNTIME_BINARY_CANCELLED,
+  RuntimeBinaryAlignOptions,
+  RuntimeBinaryAlignResult,
+  alignRuntimeBinaryWithVersion,
+} from './runtimeBinaryService'
+import {
   CreateRuntimeClientOptions,
   RUNTIME_CLIENT_ERROR_DEFINITIONS,
   RuntimeClient,
@@ -70,10 +77,13 @@ export const INITIALIZATION_STAGE_INDEX: Readonly<Record<InitializationRunStage,
  * Runtime stage 前缀到界面段的显式对应。
  *
  * `uv.*` 与 `python.*` 都落在 `python` 段：新链路里 uv 是 Python 环境的一部分，界面上
- * 没有单独的「uv」步骤。`backend.*` 只可能出现在 `backend supervise` 里，列在这里是为了
- * 让映射函数对全量 stage 都有确定结果。
+ * 没有单独的「uv」步骤。`runtime.*` 不是 Runtime 发出的，是桌面端自己在 bootstrap 之前
+ * 核对、下载 Runtime 可执行文件那一步（第 0 步）合成的，同样归到「运行环境」这一段。
+ * `backend.*` 只可能出现在 `backend supervise` 里，列在这里是为了让映射函数对全量 stage
+ * 都有确定结果。
  */
 const RUNTIME_STAGE_PREFIX_MAP: readonly (readonly [string, InitializationRunStage])[] = [
+  ['runtime.', 'python'],
   ['uv.', 'python'],
   ['python.', 'python'],
   ['workspace.', 'repository'],
@@ -270,6 +280,22 @@ interface BootstrapProgressDetail {
 /** 下载前测速的 stage：它的 `current` / `total` 是源数不是字节，不能推进主进度条。 */
 export const NETWORK_PROBE_STAGE = 'network.probe'
 
+/**
+ * 第 0 步合成的两个 stage：核对 Runtime 版本、下载 Runtime 可执行文件。
+ *
+ * 它们发生在 bootstrap 之前，与 `uv.download` 共用「运行环境」段的进度条；段内进度只增
+ * 不减（见 {@link BootstrapProgressBridge}），要是让这十几兆的下载把段推到 99%，随后
+ * uv 与 Python 的真实进度就再也显示不出来了。所以它们像测速一样不推进主进度条，只把
+ * 文件名、来源、速度与字节数透传给网络细节行——那里本来就是给「正在下什么」用的。
+ */
+export const RUNTIME_BINARY_CHECK_STAGE = 'runtime.check'
+export const RUNTIME_BINARY_DOWNLOAD_STAGE = 'runtime.download'
+
+const DETAIL_ONLY_STAGES: ReadonlySet<string> = new Set([
+  RUNTIME_BINARY_CHECK_STAGE,
+  RUNTIME_BINARY_DOWNLOAD_STAGE,
+])
+
 /** bootstrap 实际经过的三个界面段，按现有界面的固定先后顺序排列。 */
 const RUNTIME_BOOTSTRAP_STAGE_ORDER: readonly InitializationRunStage[] = [
   'python',
@@ -348,7 +374,10 @@ export class BootstrapProgressBridge {
     if (this.closed) return
 
     const probing = stage === NETWORK_PROBE_STAGE
-    const percent = probing ? undefined : resolveProgressPercent(rawPercent, detail)
+    const percent =
+      probing || DETAIL_ONLY_STAGES.has(stage)
+        ? undefined
+        : resolveProgressPercent(rawPercent, detail)
     const extra: Partial<BootstrapProgressUpdate> = {
       runtimeStage: stage,
       runtimeStatus: detail.status,
@@ -474,6 +503,18 @@ export interface RuntimeStageOutcome {
   failedStage?: InitializationRunStage
 }
 
+/** 第 0 步被取消时的结局：与 Runtime 自己的取消同码，调用方按「源码一动没动」处置。 */
+function cancelledOutcome(): RuntimeStageOutcome {
+  return {
+    success: false,
+    error: '已取消',
+    code: RUNTIME_BINARY_CANCELLED,
+    retryable: true,
+    remediation: ['retry'],
+    failedStage: 'python',
+  }
+}
+
 /**
  * 从事件 details 里读 Runtime 自己的轮转日志路径。
  *
@@ -580,6 +621,8 @@ export interface RuntimeInitializationOptions {
    * `bootstrap` 与 `workspace sync` 的 `--version` 都跟着它走。
    */
   targetVersion?: string
+  /** 第 0 步的实现，测试注入；默认真的联网读钉扎、下载替换。 */
+  alignRuntimeBinary?: (options: RuntimeBinaryAlignOptions) => Promise<RuntimeBinaryAlignResult>
 }
 
 // 走统一工厂而不是裸 new RuntimeClient：遥测开关（AUTO_MAS_TELEMETRY）由 createRuntimeClient
@@ -599,10 +642,18 @@ export class RuntimeInitializationService {
   private readonly lastRemediation = new Map<InitializationRunStage, RuntimeRemediation[]>()
   /** 在途命令的控制入口，用于下发 stdin `cancel`；没有命令在跑时为 null。 */
   private activeControl: RuntimeRunControl | null = null
+  /** 第 0 步是否在途：它不是 Runtime 命令，取消要靠这个标志而不是 stdin。 */
+  private aligning = false
+  /** 本次 bootstrap / 重试期间是否收到过取消；每次开始时清零。 */
+  private cancelRequested = false
+  private readonly alignRuntimeBinary: NonNullable<
+    RuntimeInitializationOptions['alignRuntimeBinary']
+  >
 
   constructor(private readonly options: RuntimeInitializationOptions) {
     this.createClient = options.createClient ?? defaultClientFactory
     this.mirrorService = options.mirrorService
+    this.alignRuntimeBinary = options.alignRuntimeBinary ?? alignRuntimeBinaryWithVersion
   }
 
   get launchConfig(): RuntimeSupervisedLaunchConfig {
@@ -615,17 +666,25 @@ export class RuntimeInitializationService {
   }
 
   /**
-   * 向在途命令下发 stdin `cancel`；没有命令在跑时返回 false。
+   * 请求取消：向在途 Runtime 命令下发 stdin `cancel`，或让在途的第 0 步停下；两者都没有时
+   * 返回 false。
    *
    * 只是「请求」取消：Runtime 在提交点之后的迟到取消不会把已激活的现场伪装成取消，
-   * 最终结局仍以它给出的 `result` 为准。
+   * 最终结局仍以它给出的 `result` 为准；第 0 步在换源、换文件之间与下载中轮询这个请求。
    */
   cancel(): boolean {
+    this.cancelRequested = true
     const control = this.activeControl
-    if (!control) return false
-    control.cancel()
-    logger.info('已向在途 Runtime 命令下发 cancel')
-    return true
+    if (control) {
+      control.cancel()
+      logger.info('已向在途 Runtime 命令下发 cancel')
+      return true
+    }
+    if (this.aligning) {
+      logger.info('已要求第 0 步（Runtime 核对）停下')
+      return true
+    }
+    return false
   }
 
   /**
@@ -640,6 +699,14 @@ export class RuntimeInitializationService {
     const version = this.targetVersion
     const bridge = new BootstrapProgressBridge(onProgress)
     bridge.takeOver()
+    this.cancelRequested = false
+
+    // 第 0 步：先让 Runtime 自己对上目标版本的钉扎，再交给它去克隆源码。
+    const aligned = await this.alignRuntime(bridge)
+    if (!aligned.success) {
+      bridge.fail('python', aligned.error ?? '核对 Runtime 版本失败')
+      return aligned
+    }
 
     const outcome = await this.execute(['bootstrap', '--version', version], mirror, bridge)
     if (outcome.success) {
@@ -664,6 +731,8 @@ export class RuntimeInitializationService {
    *
    * `mode` 显式覆盖上一次失败留下的判断：初始化界面的「重建环境」按钮传 `rebuild`，
    * 普通「重试」按钮走默认的 `auto`，两个按钮才不会做同一件事。
+   *
+   * 依赖段报 `PYTHON_VERSION_MISMATCH` 时自动补装受管 Python，见 {@link repairMissingPython}。
    */
   async retryStage(
     stage: InitializationRunStage,
@@ -699,13 +768,56 @@ export class RuntimeInitializationService {
     }
 
     const bridge = new BootstrapProgressBridge(onProgress)
-    const outcome = await this.execute(command, mirror, bridge)
+    this.cancelRequested = false
+    // 「运行环境」段的重试同样先过第 0 步：上一次可能正是它失败的（钉扎取不到、下载
+    // 失败），不重做就等于跳过了失败的那件事；它没失败时只多问一次版本，几十毫秒。
+    if (stage === 'python') {
+      const aligned = await this.alignRuntime(bridge)
+      if (!aligned.success) {
+        bridge.fail('python', aligned.error ?? '核对 Runtime 版本失败')
+        return aligned
+      }
+    }
+    let outcome = await this.execute(command, mirror, bridge)
+    if (
+      !outcome.success &&
+      stage === 'dependency' &&
+      outcome.code === 'PYTHON_VERSION_MISMATCH' &&
+      !this.cancelRequested
+    ) {
+      outcome = await this.repairMissingPython(mirror, bridge)
+    }
     if (outcome.success) {
       onProgress({ stage, status: 'completed', progress: 100, message: '完成' })
     } else {
       bridge.fail(outcome.failedStage ?? stage, outcome.error ?? '重试失败')
     }
     return outcome
+  }
+
+  /**
+   * 依赖段报受管 Python 缺失或不符时，先 `environment repair` 装好受管 Python，再 `dependencies sync`。
+   *
+   * 受管 Python 只有 `bootstrap`、`repair` 与 `environment repair` 会装，`dependencies sync` /
+   * `rebuild` 只复核。bootstrap 在装 Python 之前失败（例如测速全挂被取消）后，单步重试链是
+   * `environment ensure` → `workspace sync` → `dependencies sync`，没有一步会装 Python，
+   * 依赖段就会一直报 `PYTHON_VERSION_MISMATCH`，「重建环境」换成 `dependencies rebuild`
+   * 也照样失败。
+   *
+   * 不用顶层 `repair`：Runtime v0.1.10 里它的重建 venv 一步与 `dependencies rebuild` 共用同一个
+   * 删除器，必然报 `ENVIRONMENT_REBUILD_FAILED`。`environment repair` 只重验 uv、重装受管
+   * Python，不碰 venv；随后的 `dependencies sync` 由 uv 按新解释器建好 venv 并同步锁定依赖。
+   * 两条命令都要求仓库完好，走到依赖段时仓库段已经过了，前提成立。
+   */
+  private async repairMissingPython(
+    mirror: RuntimeMirrorSelection | null | undefined,
+    bridge: BootstrapProgressBridge
+  ): Promise<RuntimeStageOutcome> {
+    logger.info('受管 Python 缺失或版本不符，先 environment repair 安装受管 Python，再同步依赖')
+    const repaired = await this.execute(['environment', 'repair'], null, bridge)
+    if (!repaired.success) return repaired
+    if (this.cancelRequested) return cancelledOutcome()
+    return this.execute(['dependencies', 'sync'], mirror, bridge)
   }
 
   /**
@@ -767,6 +879,99 @@ export class RuntimeInitializationService {
         `Runtime doctor 调用失败: ${error instanceof Error ? error.message : String(error)}`
       )
       return undefined
+    }
+  }
+
+  /**
+   * 第 0 步：把 Runtime 可执行文件对齐到目标版本的发布分支所钉扎的那一版。
+   *
+   * 只在 managed 模式做：development 模式监督的是开发者的检出，不由钉扎管；找不到 exe 时
+   * 交给随后的 {@link execute} 按 `RUNTIME_NOT_FOUND` 失败，这里不重复报。进度挂在
+   * 「运行环境」段上，字节进度只进网络细节行（见 {@link RUNTIME_BINARY_DOWNLOAD_STAGE}）。
+   *
+   * 失败转成与 Runtime 命令同一种失败形状，界面不用区分是谁失败的：`retryable` 一律为真
+   * （原因只会是网络与文件占用，都是重试能解决的），并给「重试」与「打开日志」两个入口。
+   */
+  private async alignRuntime(bridge: BootstrapProgressBridge): Promise<RuntimeStageOutcome> {
+    const outcome = await this.runAlignment(bridge)
+    // 对齐期间收到的取消不能丢：exe 本来就一致、目标分支没钉扎这些路径不会去看取消判据，
+    // 而此时 Runtime 命令还没起、stdin cancel 也没有去处，这里是它唯一的落点。
+    if (outcome.success && this.cancelRequested) {
+      logger.info('第 0 步结束时发现已被取消，不再进入 bootstrap')
+      return cancelledOutcome()
+    }
+    return outcome
+  }
+
+  private async runAlignment(bridge: BootstrapProgressBridge): Promise<RuntimeStageOutcome> {
+    const { mode, runtimePath, appRoot } = this.options.launchConfig
+    if (mode !== 'managed' || !runtimePath) return { success: true }
+
+    const version = this.targetVersion
+    this.aligning = true
+    let result: RuntimeBinaryAlignResult
+    try {
+      result = await this.alignRuntimeBinary({
+        version,
+        runtimePath,
+        appRoot,
+        isCancelled: () => this.cancelRequested,
+        onProgress: progress => {
+          const downloading = progress.item !== undefined
+          bridge.observe(
+            downloading ? RUNTIME_BINARY_DOWNLOAD_STAGE : RUNTIME_BINARY_CHECK_STAGE,
+            progress.message,
+            undefined,
+            {
+              status: 'running',
+              item: progress.item,
+              source: progress.source,
+              bytesPerSecond: progress.bytesPerSecond,
+              current: progress.current,
+              total: progress.total,
+            }
+          )
+        },
+      })
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      logger.error(`核对 Runtime 版本时出错: ${message}`)
+      return {
+        success: false,
+        error: `核对 Runtime 版本时出错（${message}），请重试；仍然失败时请带上日志反馈。`,
+        code: RUNTIME_BINARY_ALIGN_ERROR,
+        retryable: true,
+        remediation: ['retry', 'open-log'],
+        failedStage: 'python',
+      }
+    } finally {
+      this.aligning = false
+    }
+
+    switch (result.status) {
+      case 'upgraded':
+        logger.info(`Runtime 已按 ${version} 的钉扎更新到 ${result.pin?.version}`)
+        bridge.observe(RUNTIME_BINARY_CHECK_STAGE, `Runtime 已更新到 ${result.pin?.version}`)
+        return { success: true }
+      case 'current':
+        logger.info(`Runtime ${result.pin?.version} 已与 ${version} 的钉扎一致`)
+        return { success: true }
+      case 'unpinned':
+      case 'skipped':
+        return { success: true }
+      case 'cancelled':
+        logger.info('第 0 步被取消，源码一动没动')
+        return cancelledOutcome()
+      case 'failed':
+        logger.error(`第 0 步失败: ${result.code} ${result.error}`)
+        return {
+          success: false,
+          error: result.error,
+          code: result.code,
+          retryable: true,
+          remediation: ['retry', 'open-log'],
+          failedStage: 'python',
+        }
     }
   }
 

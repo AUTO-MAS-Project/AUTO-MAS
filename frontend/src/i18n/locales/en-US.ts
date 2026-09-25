@@ -93,6 +93,7 @@ export default {
     logFileLoadedP0: 'Log file loaded, {p0} lines',
     cancel: 'Cancel',
     configuring: 'Configuring',
+    openConfigFolder: 'Open config folder',
     dragReorder: 'Drag to reorder',
     confirmExit: 'Confirm exit',
     webhookDeleted: 'Webhook deleted',
@@ -146,6 +147,8 @@ export default {
     cancelDownload: 'Cancel the download',
     cancellingDeletesUnfinishedDownload: 'Cancelling deletes the unfinished download.',
     cancel2: 'Cancel',
+    powerCountdownConnectionLost:
+      'Lost connection to the backend. The countdown may still be running; the remaining time is no longer updated.',
     cancelUpdateDownload: 'Cancel the update download?',
     visualSelection: 'Visual selection',
     downloadBackground: 'Download in the background',
@@ -199,6 +202,7 @@ export default {
     backendUpdateFailedRestart:
       'The source and the dependencies are in place, but the new backend did not start',
     backendUpdateUnsupportedMode: 'This mode does not support updating the backend automatically',
+    backendUpdateRetryBootstrap: 'Start the update again',
     backendUpdateRetryWorkspaceSync: 'Sync the source again',
     backendUpdateRetryDependenciesSync: 'Retry the dependency sync',
     backendUpdateRetryDependenciesRebuild: 'Rebuild the dependency environment',
@@ -398,7 +402,6 @@ export default {
     stringSplitting: 'String splitting',
     gotIt: 'Got it',
     expression: 'Expression',
-    masManaged: 'MAS managed',
     none: 'None',
     drop: 'Drop',
     dropLine: 'Drop the line',
@@ -429,9 +432,6 @@ export default {
     srcConfigurationFailedP0: 'SRC configuration failed: {p0}',
     okWwSetupFailed: 'ok-ww setup failed: {p0}',
     p0NotValidJson: '{p0} is not valid JSON',
-    nativeP0ConfigurationWas:
-      'The current {p0} configuration was pinned as a snapshot for this user',
-    couldNotImportP0: 'Could not import the {p0} configuration: {p1}',
     p0MustSitUnder: '{p0} must sit under the script root directory or AppData',
     p0HasNoMatch: '{p0} has no match pattern, so it was saved as disabled',
     matchPatternP0Has: 'The match pattern of {p0} has a syntax error and will not run',
@@ -444,7 +444,6 @@ export default {
     startedSrcSetupUser: 'Started the SRC setup for user {p0}',
     startedGeneralSetupUser: 'Started the general setup for user {p0}',
     readP0: 'Read {p0}',
-    addedP0Tasks: 'Added {p0} tasks',
     configurationSessionUserP02:
       'The configuration session for user {p0} timed out after 30 minutes; saving automatically...',
     configurationUserP0Was: 'The configuration for user {p0} was saved',
@@ -489,7 +488,6 @@ export default {
       'Annihilation and the daily run start MAA twice; within a group they run in order',
     annihilationDailyTasksEach: 'Annihilation and the daily tasks each start their own MAA session',
     annihilationStage: 'Annihilation stage',
-    couldNotLoadAvailable: 'Could not load the available tasks',
     rewardGroupsProtocolSpace: 'Reward groups for protocol-space reward tasks are chosen here',
     rewardGroup: 'Reward group',
     annihilationMaaStartsOnce:
@@ -556,7 +554,6 @@ export default {
     maaEndAutoCollectCommonRoute8: 'Route 8: Golden Stone Rice',
     markAsDone2: 'Mark as done',
     takeOverTaskConfiguration: 'Take over the task configuration',
-    usedWhenThereNo: 'Used when there is no event, or the shop is cleared — a normal farming run',
     whetherReservedTrailblazePower: 'Whether reserved Trailblaze Power is used',
     whetherFuelUsed: 'Whether fuel is used',
     ascensionMaterialIce: 'Ascension material: Ice (三月七 / 黑塔 / 杰帕德 / 佩拉)',
@@ -621,9 +618,6 @@ export default {
       'Used to switch accounts. On CN servers enter the phone number; either way matching uses the last four digits. Leave empty if you do not switch',
     userSPasswordWhen:
       "The user's password. When set, signing in with the account and password is used as a fallback; when empty, only the already-signed-in account list is used",
-    leaveEmptySkipAccount: 'Leave empty to skip account switching',
-    thisCurrentlyWorksCn:
-      'This currently works on CN servers only, and only at an unscaled 1280x720 resolution',
     accountEmailPhoneNumber: 'account / email / phone number.',
     accountEmailPhoneNumber2:
       "account / email / phone number, separated by '{'|'}'. Signing in with a password prefers the B",
@@ -665,12 +659,10 @@ export default {
     pickCustomBaseLayout: 'Pick a custom base layout',
     pickRelicStage: 'Pick a relic stage',
     pickOrnamentStage: 'Pick an ornament stage',
-    accountInfo: 'Account info',
     enterCustomStageE: 'Enter a custom stage, e.g. 11-8',
     pickStage: 'Pick a stage',
     pickImport: 'Pick and import',
     pickSanityTaskType: 'Pick the sanity task type to run',
-    pickGameServerThis2: 'Pick the game server this user plays on',
     pickItem: 'Pick an item',
     pickStageTypeFarm: 'Pick the stage type to farm',
     pickMaterialStageFarm: 'Pick the material stage to farm',
@@ -680,7 +672,6 @@ export default {
     pickSimulatedUniverseWorld2: 'Pick the Simulated Universe world to run',
     relic: 'Relic',
     relicStage: 'Relic stage',
-    someTasksHadNo: 'Some tasks had no matching script and were skipped',
     configurationSource: 'Configuration source',
     resetState: 'Reset the state',
     ornament: 'Ornament',
@@ -697,7 +688,6 @@ export default {
     pickMaaendPath: 'Pick the MaaEnd path',
     pickOkNtePath: 'Pick the OK-NTE path',
     pickOkWwPath: 'Pick the ok-ww path',
-    pickM9aPath: 'Pick the M9A path',
     pickMaaPath: 'Pick the MAA path',
     pickSrcPath: 'Pick the SRC path',
     pickMainProgramPath: 'Pick the main program path',
@@ -724,8 +714,6 @@ export default {
     reset: 'Reset',
     hsrMarch7thSra: 'HSR (March7th / SRA)',
     iniFiles: 'INI files',
-    masRunsThisUser:
-      'MAS runs this user with their task switches, dynamic native options, and engine.',
     pcClient: 'PC client',
     tomlFiles: 'TOML files',
     urlProtocolEG: 'URL protocol (e.g. Starward)',
@@ -752,6 +740,8 @@ export default {
     sanityScriptChangedPick: 'The sanity script changed — pick the stage again.',
     hsrEngineSwitchHint:
       'Switching the engine swaps in the native options and stages of that engine. Values changed under the current engine are not carried over, but they are kept and come back when you switch back.',
+    hsrSharedEngineSwitchHint:
+      "This changes the script-level engine assignment: every user on this script with the Script source, and every User-source user who has not picked an engine, switches to this engine. That engine's own native options and stages then apply.",
     hsrStageMissingForEngine:
       'The trailblaze power engine is now {engine}, and no stage is selected under it. Stages are stored per engine, so stages picked under the other engine are not carried over — pick them again. Switching back restores the previous selection.',
     editHsrUser: 'Edit the HSR user',
@@ -762,6 +752,43 @@ export default {
     hsrLastCompleted: 'Last completed: {date}',
     hsrDynamicTaskCount: '{n} dynamic modules',
     hsrReadFrom: 'Read from: {source}',
+    hsrUseScriptShared: 'All users set to Script under this script share one task configuration.',
+    hsrSharedPlanHint:
+      'You are editing the shared task configuration of this script; changes affect every user set to Script.',
+    hsrDirectControlHint:
+      'Direct control runs whatever is currently saved in SRA / March7th Assistant. MAS only launches the game and tracks the process; account, stages, and task switches have no effect in this mode.',
+    hsrActiveStageExtra: 'Active: {stage}',
+    hsrRunByEngine: 'Run by {engine}',
+    hsrGamePlatform: 'Game platform',
+    hsrGamePlatformTip:
+      'Client: MAS launches the local Star Rail with the settings below. Cloud Star Rail: MAS hosts a browser and March 7th runs inside it',
+    hsrPlatformClient: 'Client',
+    hsrPlatformCloud: 'Cloud Star Rail',
+    hsrCloudIntro:
+      'Cloud Star Rail is run by March 7th in a browser hosted by MAS. Each version grants 10 hours of free play time, which usually does not cover all dailies; each user must sign in once in the pop-up window the first time.',
+    hsrCloudNoSra: 'Cloud Star Rail does not use SRA',
+    hsrCloudUsePaidTime: 'Use paid time',
+    hsrCloudUsePaidTimeHint: 'Spends Nebula Coins to use the fast queue',
+    hsrCloudMaxQueue: 'Max queue time',
+    hsrCloudMaxQueueTip:
+      'If queuing takes longer than this, the round fails without retries; each module timeout also includes this queue time',
+    hsrCloudLoginWait: 'Sign-in wait',
+    hsrCloudLoginWaitTip:
+      'How long to wait for you to sign in in the pop-up window; when it runs out, the round fails without retries',
+    hsrCloudMinutes: 'min',
+    hsrCloudLogin: 'Cloud sign-in',
+    hsrCloudLoggedIn: 'Signed in ({time})',
+    hsrCloudNotLoggedIn: 'Not signed in',
+    hsrCloudLoginButton: 'Sign in to cloud game',
+    hsrCloudLoginTip:
+      "Opens this user's Cloud Star Rail window; sign in to your HoYoverse account there. After confirming the sign-in, March 7th enters the game once and exits",
+    hsrCloudLoginSuccess: 'Signed in to Cloud Star Rail',
+    hsrCloudLoginFailed: 'Cloud game sign-in failed: {reason}',
+    hsrCloudRunByM7a: 'Cloud Star Rail is run by March 7th',
+    hsrSharedModuleNotEnabled:
+      'This module is not enabled in the shared task configuration; settings are saved but it will not run this round.',
+    hsrResetSharedOverridesConfirmDesc:
+      'This deletes every override changed in the shared task configuration (all modules, all fields); every user set to Script will then show and run the current SRA / March7th Assistant configuration. The source configuration files are not modified. This cannot be undone.',
     daily: 'Daily',
     hsrEngineUnavailable: 'Unavailable',
     hsrNativeConfigNotLoaded: 'Native configuration not loaded',
@@ -781,6 +808,26 @@ export default {
     failure: 'On failure',
     stringSplittingGuide: 'String splitting guide',
     done: 'Done',
+    createFirstUser: 'Create the first user!',
+    shellImportTitle: 'Import existing configurations as users',
+    shellImportHint:
+      'Found {count} {source} configuration(s) in the project folder. Each one you check becomes a user named after it, with its task queue and task options imported. Leave all unchecked to create a single empty user.',
+    shellImportSelectAll: 'Select all',
+    shellImportSelectedCount: '{selected} / {total} selected',
+    shellImportActive: 'In use',
+    shellImportTaskCount: '{count} task(s)',
+    shellImportUserName: 'User name: {name}',
+    shellImportButton: 'Import {count} user(s)',
+    shellImporting: 'Importing…',
+    shellImportFailedHead: '{count} configuration(s) could not be imported:',
+    shellImportFailedLine: '"{name}": {reason}',
+    shellImportSkippedLine: '"{name}" skipped {count} item(s): {items}',
+    shellImportSkippedLineMore: '"{name}" skipped {count} item(s): {items} and {rest} more',
+    shellImportListSeparator: ', ',
+    shellImportAllFailed:
+      'Could not import the existing configurations; creating an empty user instead',
+    shellImportAllFailedWithReason:
+      'Could not import the existing configurations; creating an empty user instead: {reason}',
     wutheringWavesWillBe:
       'Wuthering Waves will be checked and updated on the selected server. The update may download several GB, so make sure the game is not running',
     turnAutomaticRelicSalvage:
@@ -797,44 +844,24 @@ export default {
     checkUpdates2: 'Check for updates',
     emulator2: 'Emulator',
     regexGuide: 'Regex guide',
-    loadingMfwInterface: 'Loading the MFW interface',
+    loadingMfwInterface: 'Loading the project interface',
     loadingMaafwProjectInterface: 'Loading the MaaFW project interface',
     clear: 'Clear',
     switchAccountDirectly: 'Switch the account directly',
     seconds: 'seconds',
     restoreOriginalRegistryValue: 'Restore the original registry value afterwards',
-    scriptDirectControlIgnores:
-      "Script-direct control ignores this user's account, sanity stages, and MAS task switches.",
-    directLiveConfigTitle: "Using the script's current configuration (recommended)",
-    directLiveConfigHint:
-      'Runs whatever is currently saved in {p0}; changes made in the script take effect immediately, no import needed.',
-    directSnapshotTitle: 'Pinned to a configuration snapshot for this user',
-    directSnapshotMeta: 'Pinned at {p0} - source {p1}',
-    directSnapshotStaleHint:
-      'The snapshot does not follow later changes made in the script; re-pin it to update, or switch back to the current configuration.',
-    directPinSnapshot: 'Pin the current configuration as a snapshot (optional)',
-    directRepinSnapshot: 'Re-pin to the current configuration',
-    directUseLiveConfig: "Switch back to the script's current configuration",
-    directSnapshotCleared: "{p0} now uses the script's current configuration",
-    couldNotClearP0: 'Could not clear the {p0} snapshot: {p1}',
     directEngineSra: 'SRA',
     directEngineM7a: 'March7th Assistant',
-    directEngineDescSra:
-      "Runs SRA's currently selected profile; users with a pinned snapshot run the snapshot instead.",
-    directEngineDescM7a:
-      "Runs March7th Assistant's current config.yaml; users with a pinned snapshot run the snapshot instead.",
+    directEngineDescSra: "Runs SRA's currently selected profile.",
+    directEngineDescM7a: "Runs March7th Assistant's current config.yaml.",
     pathFolderHoldingScript: 'Path to the folder holding the script configuration files',
     pathScriptConfigurationFile: 'Path to the script configuration file',
     expressionGuide: 'Expression guide',
     thisModuleNotEnabled:
       'This module is not enabled for this user; the configuration is saved but will not run this time.',
-    finishNativeSetupSra:
-      "Script-direct control runs whatever is currently saved in SRA / March7th Assistant, so finish the setup in the script's own UI first. MAS only launches the game, tracks and stops the script process, and cleans up afterwards. Pin a snapshot only when several users under the same script each need their own configuration.",
-    enableAtLeastOne: 'Enable at least one direct-control script.',
     pickConfigurationFile: 'Pick a configuration file',
     pickConfigurationFolder: 'Pick a configuration folder',
     skip2: 'Skip',
-    runModeTaskConfiguration: 'Run mode and task configuration moved to the user configuration',
     configurationFiles: 'Configuration files',
     restartArknights: 'Restart Arknights',
     restartGame: 'Restart the game',
@@ -972,10 +999,6 @@ export default {
     echoDomainNumberF2: 'Echo Domain number in the F2 list',
     sonanceCasketNumberF2: 'Sonance Casket number in the F2 list',
     hsrScriptConfiguration: 'HSR script configuration',
-    m9aConfigurationGuide: 'M9A configuration guide',
-    m9aScriptConfiguration: 'M9A script configuration',
-    m9aPath: 'M9A path',
-    m9aPathSelected: 'M9A path selected',
     maaAdapterSupportsEmulators:
       'The MAA adapter supports emulators only; use a general script for the PC version.',
     maaScriptConfiguration: 'MAA script configuration',
@@ -984,12 +1007,14 @@ export default {
     masOnlyTakesOver: 'The script or you start and stop it; MAS only takes over the running window',
     howLongMasWaits: 'How long MAS waits after launching the game before it is playable',
     tasksManagedByMas: 'Tasks managed by MAS',
-    masManagedConfigurationOff: 'MAS-managed configuration is off',
     masManagesGame: 'MAS manages the game',
     mfwGamePackageName: 'Game package name',
     mfwGamePackageNamePassed:
       'Launch the game together with the emulator. Detected from the project pipeline and filled in when the interface is read or the resource changes; when detection finds nothing or several candidates it stays empty, the game is not launched, and you can fill it in here',
     mfwGamePackageNamePlaceholder: 'e.g. com.hypergryph.arknights',
+    mfwGameUpdateOff: 'Off',
+    mfwGameUpdateCheck: 'Check only (ask to update manually when outdated)',
+    mfwGameUpdateAutoInstall: 'Download and install automatically',
     maaendScriptConfiguration: 'MaaEnd script configuration',
     maaendPath: 'MaaEnd path',
     maaendAdapterStillUnder:
@@ -1007,7 +1032,6 @@ export default {
     sraProfileTooltip:
       'SRA saves its settings as profiles under %APPDATA%/SRA/configs. The one chosen here is what the MAS-managed form reflects, what direct control runs with, and what a snapshot import copies. "Auto" prefers Default, otherwise the first profile by file name',
     sraProfileAuto: 'Auto ({name})',
-    sraProfileNeedPath: 'Set the SRA path first',
     sraProfileLoadFailed: 'Could not read the SRA config profiles: {reason}',
     srcScriptConfiguration: 'SRC script configuration',
     srcPath: 'SRC path',
@@ -1054,8 +1078,6 @@ export default {
     failureLog: 'Failure log',
     taskNumbersMatchOk: 'Task numbers match the OK-NTE task list',
     taskNumbersMatchOk2: 'Task numbers match the ok-ww task list',
-    taskSwitchesAccountsSanity:
-      'Task switches, accounts, sanity stages, and dynamic options have no effect in script-direct mode.',
     whetherMasLaunchesGame: 'Whether MAS launches the game and waits before the task starts',
     successLog: 'Success log',
     whetherMasClosesGame:
@@ -1151,7 +1173,7 @@ export default {
     gamePathMatchedHtgame: 'Game path matched to NTEGame.exe launcher automatically',
     applyPreset2: 'Apply the preset',
     turnThisOffWhen:
-      'Turn this off when the script controls the game directly and you use cloud gaming',
+      'When off, MAS does not start or close the game client or change its resolution. Open the game yourself first.',
     on: 'On',
     treatScriptAsFinished: 'Treat the script as finished only when its child processes exit',
     whenTaskProgressCollected:
@@ -1169,14 +1191,8 @@ export default {
       'Before launching the game for a run, MAS checks the official version and updates it; when off the game is launched directly',
     overridesCurrentScriptConfiguration:
       'Overrides the current script configuration with the high-traffic task fields from the quick-configuration panel below; when off the full task settings from the script configuration are kept',
-    onceThisUserS:
-      "Once this user's daily insight succeeds on a given day, later runs that day skip the task",
-    onceAutoDeepSleep:
-      'Once auto deep-sleep or auto wake succeeds this month for this user, later runs this month skip the matching task',
     beforeStartingMaaCompare:
       "Before starting MAA, compare the server's game client version with the one in the emulator. When the client is behind, MAA cannot get past the forced-update screen and just hangs until it times out",
-    whenThisScriptRuns:
-      'When this script runs in a queue, the M9A resource version is updated after every user task finishes. Open M9A first and configure the update source',
     whenClientDetectedAs:
       'When the client is detected as out of date, MAS downloads the package and installs it over ADB, then continues the run. CN official server only; the package is around 2 GB, so make sure you have the disk space',
     updateAutomaticallyBeforeEvery: 'Update automatically before every run?',
@@ -1188,11 +1204,6 @@ export default {
     // MaaEnd 原生配置备份的描述覆写（归档时机与通用措辞不同）
     maaendConfigRestoreScriptDesc:
       'Backups of the MaaEnd native config; restoring applies directly to MaaEnd itself. Created automatically (dedup) when opening this edit page, before running MaaEnd or opening its config UI, latest 10 kept',
-    // M9A 配置恢复（无遮罩会话，措辞按实际归档时机）
-    m9aConfigRestoreUserDesc:
-      'Backups of the core MAS edit-page fields (task queue, server resource, etc.); restoring applies directly to the MAS config page. Created automatically (dedup) when leaving this edit page, latest 10 kept',
-    m9aConfigRestoreScriptDesc:
-      'Backups of the M9A native config; restoring applies directly to M9A itself. Created automatically (dedup) when opening this edit page or before running M9A, latest 10 kept',
     // 通用脚本配置恢复（配置格式任意，预览为文件清单；有遮罩会话）
     generalConfigRestoreUserDesc:
       'Backups of this user script config; restoring applies directly to the MAS config page. Created automatically (dedup) before running or opening the config UI, latest 10 kept',
@@ -1259,8 +1270,6 @@ export default {
     treatAnnihilationRunAs:
       'Treat the annihilation run as timed out when the MAA log has not changed for this long',
     engine: 'Engine',
-    treatDailyRunAs:
-      'Treat the daily run as timed out when the M9A log has not changed for this long',
     treatDailyRunAs2:
       'Treat the daily run as timed out when the MAA log has not changed for this long',
     update: 'Update',
@@ -1334,7 +1343,6 @@ export default {
     description: 'Description',
     tipFAcceptsBoth:
       'Tip: %f accepts both 3-digit milliseconds (e.g. 123) and 6-digit microseconds (e.g.',
-    reminderIfYouRun: 'A reminder: if you run into trouble, take a look at',
     searchSettings: 'Search settings...',
     recipient: 'Recipient',
     wholeFileSyncLimit: 'Whole-file sync limit (GB)',
@@ -1360,7 +1368,6 @@ export default {
     maximumLines: 'Maximum lines',
     youHaveUnsavedChanges: 'You have unsaved changes',
     server: 'Server',
-    localProjectDirectory: 'Local project directory',
     readExtractionPatternReference: 'Read the extraction-pattern reference',
     rootPathSelected: 'Root path selected',
     rootPathSelectedOther:
@@ -1380,12 +1387,10 @@ export default {
     skipOnceDoneThis: 'Skip once done this week',
     extraTasksThatRun: 'Extra tasks that run after the daily tasks',
     skipOnceDoneToday: 'Skip once done today',
-    dailyInsightRunsOnce: 'Daily insight runs once a day',
     skipOnceDoneThis2: 'Skip once done this month',
     exampleStarrailExe: 'For example StarRail.exe',
     nothingConfigure: 'Nothing to configure',
     spendSanityFarm: 'Spend sanity to farm',
-    deepSleepRunsOnce: 'Deep sleep runs once a month',
     addTask: 'Add a task',
     added: 'Added',
     clearSraPath: 'Clear the SRA path',
@@ -1569,11 +1574,9 @@ export default {
     saveUserBeforeImporting: 'Save the user before importing a configuration',
     createUserBeforeConfiguring: 'Create the user before configuring OK-NTE',
     setLogFilePath: 'Set the log file path in the script configuration first',
-    importMfwProjectScript: 'Import the MFW project on the script page first',
+    importMfwProjectScript: 'Import the project on the script page first',
     addEnableUserBefore: 'Add and enable a user before checking for updates',
     finishSetupOkWw: 'Finish the setup in the ok-ww window.',
-    userPageChooseMas:
-      'On the user page, choose "MAS managed" or "Script direct". Whether MAS launches, closes, restarts, and watches the game is decided by the switches below; the script page still holds the install path and shared run arguments.',
     readingControllersResourcesTasks:
       'Reading the controllers, resources, tasks, and options defined in interface.json...',
     readingTaskOptionPreset: 'Reading the task, option, and preset definitions...',
@@ -1587,6 +1590,14 @@ export default {
     enterRecipientEmailAddress: 'Enter the recipient email address',
     enterNumber: 'Enter a number',
     enterWholeNumber: 'Enter a whole number',
+    ungrouped: 'Ungrouped',
+    maafwPasswordSaved: 'Saved · type to replace',
+    maafwPasswordClear: 'Clear',
+    maafwCheckboxCountRange: 'Select {min}–{max}',
+    maafwCheckboxCountExact: 'Select exactly {count}',
+    maafwCheckboxCountMin: 'Select at least {min}',
+    maafwCheckboxCountMax: 'Select at most {max}',
+    maafwCheckboxCountCurrent: ' (currently {count})',
     enterEmulatorInstanceIndex: 'Enter the emulator instance index',
     enterUserName: 'Enter a user name...',
     enterScriptLaunchArguments: 'Enter the script launch arguments',
@@ -1599,7 +1610,6 @@ export default {
     pickSraFolderContains: 'Pick the SRA folder (contains SRA-cli.exe)',
     pickDirectoryHoldingOk: 'Pick the directory holding ok-nte.exe',
     pickDirectoryHoldingOk2: 'Pick the directory holding ok-ww.exe',
-    pickFolderHoldingM9a: 'Pick the folder holding M9A',
     pickFolderHoldingMaa: 'Pick the folder holding MAA.exe',
     pickFolderHoldingSrc: 'Pick the folder holding SRC.exe',
     pickMarch7thFolderContains: 'Pick the March7th folder (contains March7th Assistant.exe)',
@@ -1622,10 +1632,6 @@ export default {
     invalidPath: 'Invalid path',
     updateAutomaticallyBeforeRun: 'Update automatically before a run',
     run1920x1080WindowedMode: 'Run in 1920x1080 windowed mode',
-    runMode: 'Run mode',
-    hsrRunModeHint:
-      'Run mode and config source are two independent axes: config source decides config ownership (script/user/direct control), run mode decides whether MAS manages the HSR native config (managed = MAS writes managed fields, direct = use the live native config). Under direct-control source the runtime always resolves to direct.',
-    couldNotSaveRun: 'Could not save the run mode — try again',
     runTimeoutMinutes2: 'Run timeout (minutes)',
     backScriptList: 'Back to the script list',
     progressReset: 'Progress and reset',
@@ -1636,20 +1642,55 @@ export default {
     trackedProcessCommandLine: 'Tracked process command line',
     pickEndfieldExePath: 'Pick the Endfield.exe path',
     pickMfwResourceLeave:
-      'Pick the MFW resource; leave empty to auto-pick the first resource matching the control method',
-    pickMfwProject: 'Pick the MFW project',
+      'Pick the resource; leave empty to auto-pick the first resource matching the control method',
+    pickMfwProject: 'Pick the project',
     pickDirectoryHoldingMaaend2: 'Pick the directory holding MaaEnd.exe',
     pickExe: 'Pick an exe',
     pickDirectoryHoldingOk3: 'Pick the directory holding ok-nte.exe',
     pickDirectoryHoldingOk4: 'Pick the directory holding ok-ww.exe',
-    pickFolderHoldingM9a2: 'Pick the folder holding M9A',
     pickFolderHoldingMaa2: 'Pick the folder holding MAA.exe',
     pickFolderHoldingSrc2: 'Pick the folder holding SRC.exe',
-    pickMfwProjectDirectory: 'Pick the MFW project directory containing interface.json',
     pickProjectDirectoryContaining:
       'Pick the project directory containing interface.json to read its controllers, resources, and tasks.',
     pickImportPath: 'Pick the import path',
     pickLocalDirectory: 'Pick a local directory',
+    localProjectDirectory: 'Local project directory',
+    pickMfwProjectDirectory: 'Pick the MFW project directory containing interface.json',
+    maafwDirectoryLockedHint:
+      'The project has been imported into AUTO-MAS’s own directory; runs and updates happen there and the source directory can be deleted. Create a new script to use another project',
+    maafwImportingCopy: 'Importing project...',
+    maafwAccountRecordTooltip:
+      'Account / password are local notes only and are never passed to the script; use the task options below if a task needs them',
+    m9aFlavorScriptTitle: 'Edit M9A script',
+    m9aFlavorSourceDirectory: 'M9A program directory',
+    m9aFlavorSourceHint: 'Pick the M9A directory that contains interface.json',
+    m9aFlavorSourcePlaceholder: 'Pick the M9A directory that contains interface.json',
+    m9aFlavorAccountPlaceholder:
+      'When filled, a “Switch account” task is added automatically (CN official server only)',
+    m9aFlavorAccountTooltip:
+      'When the account is filled, a “Switch account” task is added automatically (CN official server only); the password is a local note only and is never passed to the script',
+    m9aFlavorQueueHint:
+      'Start game, close game and switch account are added automatically by the M9A adapter; no need to add them by hand',
+    m9aFlavorGameUpdateHint:
+      'After the emulator starts, compare the game client with the latest version on the official site. Official server only (Bilibili and other resources are not checked). When outdated: "Check only" fails this run and asks you to update manually; "Download and install automatically" downloads the official package (about 2 GB) and installs it over the old client, keeping game data',
+    mssFlavorScriptTitle: 'Edit MSS script',
+    mssFlavorSourceDirectory: 'MSS program directory',
+    mssFlavorSourceHint: 'Pick the MaaStellaSora directory that contains interface.json',
+    mssFlavorSourcePlaceholder: 'Pick the MaaStellaSora directory that contains interface.json',
+    mssFlavorControllerHint:
+      'The emulator build of Stella Sora cannot launch the game, so MSS supports the desktop build only; pick the desktop controller. Emulators will not be supported unless that problem is fixed',
+    mssFlavorQueueHint:
+      '· With "Event quick battle" in the task queue it is moved to the front and runs first while an event is live, and skipped when none is running\n' +
+      '· With an empty queue and no plan selected there is nothing to run: tick at least "Bounty Trial quick battle", or pick a plan (which adds it automatically)\n' +
+      '· The new tower climb is moved to the end; to climb only once a week, add it to "Skip once done this week" in the script\'s Run configuration',
+    mssFlavorQueueEmpty: 'The task queue is empty and the plan is still Fixed: this run has nothing to execute — add at least one task or pick a plan',
+    mssFlavorActivityFirst: 'Activity first',
+    mssFlavorActivityFirstHint:
+      'When on, the event task is added and moved to the front while an event is live even if the queue does not have it; nothing is added when the event data cannot be fetched',
+    mssFlavorPlanHint:
+      'With a plan selected, each run rewrites the stage, difficulty and count of "Bounty Trial quick battle" from today\'s slot, adding the task if it is not queued; "Fixed" runs the options set in the task queue',
+    maafwFlavorPlanMode: 'Plan',
+    maafwFlavorPlanFixed: 'Fixed (use the task queue options)',
     pickHowGameControlled: 'Pick how the game is controlled',
     pickUserWhoseServer: 'Pick the user whose server is checked for updates',
     chooseWhetherMasSwitches:
@@ -1672,7 +1713,6 @@ export default {
     configurationFilePath: 'Configuration file path',
     mxuLogsNamedBy:
       'For mxu logs named by date plus a counter: add ****** at the end to turn on mxu log prefix matching (e.g. %Y-%m-%d******)',
-    updateAutomaticallyAfterQueue: 'Update automatically after the queue finishes',
     useNightmareNestDaily: 'Use Nightmare Nest for daily echoes when needed',
     projectUpdate: 'Project update',
     ornamentExtraction: 'Ornament Extraction',
@@ -1680,7 +1720,6 @@ export default {
     wutheringWavesUpdateTask: 'The Wuthering Waves update task finished',
     wutheringWavesUpdateTimed: 'The Wuthering Waves update timed out and was stopped',
     k60SecondsRecommendedDefault: '60 seconds is the recommended default wait.',
-    whichSpellsOutEvery: ', which spells out every configuration step.',
     // BetterGI 专项
     bettergiScriptConfiguration: 'BetterGI script settings',
     bettergiInstanceNameHint: 'Used to tell different BetterGI script instances apart',
@@ -2473,6 +2512,9 @@ export default {
     forceCloseLabel: 'Force close',
     forceCloseTip:
       'Kill leftover MuMu processes by name. May affect other instances — use with care.',
+    forceCleanLaunchLabel: 'Force clean before launch',
+    forceCleanLaunchTip:
+      'Shut down every running MuMu instance and kill leftover processes before launching, so an existing non-admin instance no longer blocks an elevated launch. Closes all running MuMu instances — unsaved data may be lost.',
     on: 'On',
     off: 'Off',
     deviceList: 'Devices',
@@ -2948,6 +2990,7 @@ export default {
       nte: 'Neverness to Everness events',
       reverse1999: 'Reverse: 1999 events',
       bluearchive: 'Blue Archive events',
+      stellasora: 'Stella Sora events',
       arknights: 'Arknights events',
       activities: 'Game event carousel',
     },
@@ -2960,6 +3003,7 @@ export default {
       nte: 'Neverness to Everness',
       reverse1999: 'Reverse: 1999',
       bluearchive: 'Blue Archive',
+      stellasora: 'Stella Sora',
       arknights: 'Arknights',
     },
     carousel: {
@@ -2970,6 +3014,7 @@ export default {
       loading: 'Loading events…',
       noActivity: 'No events running',
       unavailable: 'Event data is unavailable',
+      endedNote: 'More events are coming soon',
       allHidden: 'Every game in the carousel is off. Turn one back on under Customize layout.',
     },
     activityNotes: {
@@ -3218,6 +3263,13 @@ export default {
     anotherWindowTookOverBackend: 'Another window took over the backend connection',
     thisWindowStoppedReconnecting:
       'This window stopped reconnecting so the two windows do not keep replacing each other.',
+    backgroundInitDegradedTitle: 'Some background services failed to start',
+    backgroundInitFailedTitle: 'Background services failed to start',
+    backgroundInitTimerStarted:
+      'Scheduled tasks started normally. The features below may be unavailable until the app is restarted.',
+    backgroundInitTimerNotStarted:
+      'Scheduled tasks may not have started, so queues will not run at their scheduled times. Please restart the app.',
+    backgroundInitFailedSteps: 'Failed: {steps}',
     couldNotAddAccount: 'Could not add the account group',
     gotIt: 'Got it',
     continueDownload: 'Continue the download',
@@ -3263,7 +3315,7 @@ export default {
     viewConfig: 'Configuration',
     viewSimple: 'Simplified',
     typeFallback: 'plan',
-    type: { maa: 'MAA plan', maaEnd: 'MaaEnd plan' },
+    type: { maa: 'MAA plan', maaEnd: 'MaaEnd plan', mss: 'MSS plan' },
     week: {
       ALL: 'All',
       Monday: 'Mon',
@@ -3281,6 +3333,11 @@ export default {
       currentTask: 'Current task',
       rewardsSet: 'Reward set',
       sanityTask: 'Sanity task',
+      tribulationStage: 'Bounty trial stage',
+      skipDifficulty: 'Skip difficulty',
+      difficulty: 'Difficulty',
+      consumeAllEnergy: 'Spend all energy',
+      fightTimes: 'Battle count',
       globalControl: 'All',
       stage: 'Stage',
       on: 'On',
@@ -3586,6 +3643,7 @@ export default {
       BetterGI: 'BetterGI',
       ZzzOd: 'ZZZ-OD',
       BAAH: 'BAAH',
+      MSS: 'MSS',
       General: 'General',
     },
     typeDesc: {
@@ -3599,6 +3657,7 @@ export default {
       BetterGI: 'Genshin OneDragon automation script (BetterGI)',
       ZzzOd: 'Zenless Zone Zero OneDragon · daily automation with instance (account) management',
       BAAH: 'Blue Archive Aris Helper · daily task automation with instance (account) management',
+      MSS: 'Stella Sora (MaaStellaSora) · daily task automation with instance (account) management',
       General: 'Generic automation for any script that writes a log file',
     },
     mask: {
@@ -3654,7 +3713,7 @@ export default {
     },
     create: {
       title: 'New script',
-      step: { type: 'Script type', config: 'Configuration source' },
+      step: { type: 'Script type', config: 'Configuration source', mfwSource: 'Project source' },
       typeHeading: 'Pick a script type',
       typeHeadingDesc: 'Search by name, game, or automation framework.',
       typeSearch: 'Search script types',
@@ -3686,6 +3745,21 @@ export default {
       back: 'Back',
       createAndConfigure: 'Create and configure',
       createFromTemplate: 'Create from template',
+      mfwSourceHeading: 'Where does the project come from',
+      mfwSourceHeadingDesc:
+        'Projects imported before can be reused directly, so several scripts of one project never need the directory picked again; or start another project.',
+      mfwNewProject: 'Another project: pick a local directory',
+      mfwNewProjectDesc:
+        'Go to the guide and pick a project directory with interface.json to import',
+      mfwReuse: 'Reuse an imported project',
+      mfwReuseDesc:
+        'Use that script’s project as is: runtime and model files are shared and take no extra space; users and run settings are not carried over',
+      mfwReuseFrom: 'From script “{name}”',
+      mfwReuseFromMany: 'From script “{name}” and {count} scripts in total',
+      mfwReuseLoading: 'Loading imported projects...',
+      mfwReuseEmpty: 'No {type} project has been imported yet',
+      mfwReuseBusy: 'running',
+      createAndReuse: 'Create and reuse project',
       next: 'Next',
       typeDesc: {
         General: 'For any automation script that writes a log file',
@@ -3700,6 +3774,7 @@ export default {
         BetterGI: 'Genshin OneDragon automation script (BetterGI)',
         ZzzOd: 'Zenless Zone Zero OneDragon · daily automation with instance management',
         BAAH: 'Blue Archive Aris Helper · daily task automation with instance management',
+        MSS: 'Stella Sora (MaaStellaSora) · daily task automation with instance management',
       },
     },
     toast: {
@@ -3710,6 +3785,9 @@ export default {
       selectTemplate: 'Pick a template first',
       templateCreateFailed: 'Could not create the script from the template: {error}',
       copied: 'Copied script "{name}"',
+      reuseFailed:
+        'Could not reuse the project: {reason}. The script was created; pick a project directory in the guide',
+      mfwSourcesFailed: 'Could not load reusable scripts: {error}',
       scriptNotFound: 'Could not find that script',
       alreadyConfiguring: 'This script is already being configured — save that configuration first',
       targetConfiguring: 'This target is already being configured — save that configuration first',
@@ -3977,7 +4055,9 @@ export default {
       openclawQqUnbind: 'Unbind',
       openclawQqUnbindConfirm: 'Unbinding clears the saved QQ login on this device. Continue?',
       openclawQqStatusRetry: 'Refresh binding status',
-      openclawQqBound: 'Bound',
+      openclawQqBound: 'Connected',
+      openclawQqConnecting: 'Connecting',
+      openclawQqReconnecting: 'Reconnecting',
       openclawQqUnbound: 'Not bound',
       openclawQqBindSuccess: 'QQ Official Bot bound successfully',
       openclawQqUnbindSuccess: 'QQ Official Bot unbound',

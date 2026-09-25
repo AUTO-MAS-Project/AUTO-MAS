@@ -108,7 +108,8 @@ async def execute_ws_command(
             try:
                 param_instance = command.params_model(**(params or {}))
             except (TypeError, ValidationError) as e:
-                # params 不是对象时 **(params or {}) 会抛 TypeError，统一按参数错误返回 400。
+                # params 不是对象时 **(params or {}) 直接抛 TypeError；对外统一按参数错误
+                # 回 400，别让它落到外层变成 500（issue #443）
                 logger.error(f"命令 {endpoint} 参数校验失败: {e}")
                 return {
                     "success": False,

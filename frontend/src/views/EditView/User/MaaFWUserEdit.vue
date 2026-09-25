@@ -5,7 +5,9 @@
       :save-error-message="saveErrorMessage"
       :script-id="scriptId"
       :script-name="scriptName"
+      :script-route-suffix="flavor.routeSuffix"
       :is-edit="isEdit"
+      :user-id="userId"
       @cancel="handleCancel"
     />
 
@@ -14,8 +16,8 @@
         <template #title>
           <div class="card-title">
             <img
-              :src="projectIconUrl || SCRIPT_LOGOS.MaaFW"
-              alt="MaaFW"
+              :src="projectIconUrl || flavor.logo"
+              :alt="flavor.typeTagLabel"
               width="22"
               height="22"
               class="title-logo"
@@ -37,6 +39,7 @@
             :form-data="formData"
             :interface-dependent-disabled="interfaceDependentDisabled"
             :account-record-tooltip="accountRecordTooltip"
+            :account-placeholder="t(flavor.accountPlaceholderKey)"
             @save="handleFieldSave"
           />
 
@@ -57,6 +60,23 @@
               {{ t('edit.configRestoreTitle') }}
             </a-button>
           </a-flex>
+          <!-- 特调类型（M9A）自动加首尾任务与切号，提醒用户不用手动加；不隐藏这三个任务，手动加了也只是被去重 -->
+          <!-- 一条提示一个框：挤在一个框里读起来还是一坨 -->
+          <a-alert
+            v-for="(line, index) in queueHintLines"
+            :key="index"
+            class="flavor-queue-hint"
+            type="info"
+            show-icon
+            :message="line"
+          />
+          <!-- 特调独有区块（如 MSS 的计划表与活动优先），由特调注册表按需加载 -->
+          <MaaFWFlavorSlot
+            name="userBeforeTaskQueue"
+            :flavor="flavor"
+            :context="flavorSlotContext"
+            @save="handleFieldSave"
+          />
           <TaskQueueSection
             v-model:add-task-cascader-value="addTaskCascaderValue"
             v-model:show-preset-modal="showPresetModal"
@@ -166,11 +186,19 @@ import { buildMaaFWAssetUrl, useMaaFWApi } from '@/composables/useMaaFWApi'
 import { useScriptApi } from '@/composables/useScriptApi'
 import { useUserApi } from '@/composables/useUserApi'
 import { isSupportedMaaFWControllerType } from '@/types/script'
-import { SCRIPT_LOGOS } from '@/utils/scriptLogos'
-import { buildMaaFWTaskInstanceId, resolveMaaFWTaskName } from '@/utils/maafwTaskInstance'
+import {
+  isMaaFWFamily,
+  maafwUserConfigTypes,
+  prepareMaaFWFlavorUserPage,
+  useMaaFWFlavor,
+  type MaaFWUserSlotContext,
+} from '@/composables/useMaaFWFlavor'
+import { buildMaaFWTaskInstanceIds, resolveMaaFWTaskName } from '@/utils/maafwTaskInstance'
+import MaaFWFlavorSlot from '@/views/EditView/MaaFWFlavor/MaaFWFlavorSlot.vue'
 import MaaFWUserEditHeader from './MaaFWUserEdit/MaaFWUserEditHeader.vue'
 import BasicInfoSection from './MaaFWUserEdit/BasicInfoSection.vue'
 import TaskQueueSection from './MaaFWUserEdit/TaskQueueSection.vue'
+import { buildPresetAppliedSnapshot, selectPresetQueueEntries } from './maafwPresetQueue'
 import type {
   MaaFWGroupInfo,
   MaaFWInterfacePreviewData,
@@ -180,6 +208,7 @@ import type {
   MaaFWTaskOptionValue,
   MaaFWTaskSnapshot,
   MaaFWUserConfig,
+  ScriptType,
 } from '@/types/script'
 
 const { t } = useI18n()
@@ -264,6 +293,9 @@ const { configLocked } = useScriptConfigLock(() => scriptId)
 
 const scriptName = ref('')
 const scriptPath = ref('')
+// flavor 文案以脚本当前类型为准（MaaFW / M9A / MSS ……），不看路由 meta
+const scriptType = ref<ScriptType>('MaaFW')
+const flavor = useMaaFWFlavor(scriptType)
 const scriptConfig = ref<MaaFWScriptConfig | null>(null)
 const preferAdbController = ref(false)
 const previewData = shallowRef<MaaFWInterfacePreviewData | null>(null)
@@ -276,7 +308,7 @@ const handleProjectIconError = (event: Event) => {
   const image = event.currentTarget as HTMLImageElement | null
   if (!image || image.dataset.maafwIconFallbackApplied === 'true') return
   image.dataset.maafwIconFallbackApplied = 'true'
-  image.src = SCRIPT_LOGOS.MaaFW
+  image.src = flavor.value.logo
 }
 const selectedTaskId = ref('')
 const addTaskCascaderValue = ref<string[]>([])
@@ -303,6 +335,7 @@ const getDefaultMaaFWUserData = (): MaaFWUserConfig => ({
     Tag: '',
     Account: '',
     Password: '',
+    PlanMode: 'Fixed',
   },
   Task: {
     SelectedPreset: '',
@@ -337,8 +370,15 @@ const rules = computed<Record<string, Rule[]>>(() => ({
   ],
 }))
 
-const accountRecordTooltip =
-  '账号 / 密码仅用于本地记录，不会自动传入脚本；需要传参请在下方任务选项中配置'
+/** 队列提示按条目给出（文案里用 \n 分行），渲染成列表而不是一坨文字 */
+const queueHintLines = computed(() =>
+  t(flavor.value.queueHintKey ?? '')
+    .split('\n')
+    .map(line => line.trim())
+    .filter(Boolean)
+)
+
+const accountRecordTooltip = computed(() => t(flavor.value.accountTooltipKey))
 
 const controllerOptions = computed(() =>
   (previewData.value?.controllers || []).filter(controller =>
@@ -451,7 +491,7 @@ const groupByName = computed(() => {
   return new Map<string, MaaFWGroupInfo>(entries)
 })
 const getGroupDisplayName = (groupName: string) => {
-  if (groupName === ADD_TASK_UNGROUPED_KEY) return '未分组'
+  if (groupName === ADD_TASK_UNGROUPED_KEY) return t('edit.ungrouped')
   const group = groupByName.value.get(groupName)
   return group?.label || groupName
 }
@@ -519,33 +559,48 @@ const addTaskMenuGroups = computed(() => {
 
   return Array.from(groupMap.values()).filter(group => group.taskCount > 0)
 })
-const addTaskCascaderOptions = computed<AddTaskCascaderOption[]>(() =>
-  addTaskMenuGroups.value.map(group => ({
+/** 分组里的项 → 级联选项：任务直接可选，二级分组再展开一层 */
+const toCascaderItems = (items: AddTaskMenuGroup['items']): AddTaskCascaderOption[] =>
+  items.map(item =>
+    item.type === 'task'
+      ? { value: `task:${item.task.name}`, label: item.label }
+      : {
+          value: item.key,
+          label: `${item.label} (${item.taskCount})`,
+          children: item.tasks.map(task => ({
+            value: `task:${task.name}`,
+            label: getDisplayName(task),
+          })),
+        }
+  )
+
+const addTaskCascaderOptions = computed<AddTaskCascaderOption[]>(() => {
+  const groups = addTaskMenuGroups.value
+  // interface 没给任务分组时只有一档「未分组」，再套一层级联就成了「左栏一个选项、
+  // 右栏一长条」，比直接铺开更难找。这种情况把任务提到顶层，去掉那层壳。
+  if (groups.length === 1 && groups[0].key === ADD_TASK_UNGROUPED_KEY) {
+    return toCascaderItems(groups[0].items)
+  }
+  return groups.map(group => ({
     value: `group:${group.key}`,
     label: `${group.label} (${group.taskCount})`,
-    children: group.items.map(item =>
-      item.type === 'task'
-        ? { value: `task:${item.task.name}`, label: item.label }
-        : {
-            value: item.key,
-            label: `${item.label} (${item.taskCount})`,
-            children: item.tasks.map(task => ({
-              value: `task:${task.name}`,
-              label: getDisplayName(task),
-            })),
-          }
-    ),
+    children: toCascaderItems(group.items),
   }))
-)
+})
 const presetTemplates = computed(() => {
-  const activeTaskNames = new Set(activeTasks.value.map(task => task.name))
+  const activeTaskByName = new Map(activeTasks.value.map(task => [task.name, task] as const))
   return presetOptions.value
     .map(preset => {
       const snapshot = normalizeTaskSnapshot(preset.snapshot, previewData.value)
-      const taskNames = snapshot.taskOrder.filter(taskName => activeTaskNames.has(taskName))
-      return { preset, taskNames }
+      // 预设里重复的任务是实例 id（`<任务名>__MAS_DUP__presetN`），按实例解析后再判断可用
+      const entries = selectPresetQueueEntries(
+        snapshot.taskOrder,
+        activeTaskByName,
+        validTaskNames.value
+      )
+      return { preset, entries, taskOptions: snapshot.taskOptions }
     })
-    .filter(template => template.taskNames.length > 0)
+    .filter(template => template.entries.length > 0)
 })
 const selectedQueuedTask = computed(
   () =>
@@ -599,6 +654,13 @@ const selectTask = (taskId: string) => {
   selectedTaskId.value = taskId
 }
 
+// 特调插入点的上下文：独有区块直接改 formData 草稿，落盘走 save 事件回到 handleFieldSave
+const flavorSlotContext = computed<MaaFWUserSlotContext>(() => ({
+  formData,
+  loading: loading.value,
+  queuedTaskCount: taskSnapshot.value.taskOrder.length,
+}))
+
 const persistQueuedSnapshot = async () => {
   taskSnapshot.value.taskOrder = partitionTaskOrder(taskSnapshot.value.taskOrder)
   const queuedTaskIdSet = new Set(taskSnapshot.value.taskOrder)
@@ -640,11 +702,18 @@ const addTaskToQueue = async (taskName: string) => {
     return
   }
 
-  const taskId = buildMaaFWTaskInstanceId(taskName, new Set(taskSnapshot.value.taskOrder))
-  taskSnapshot.value.taskOrder = partitionTaskOrder([...taskSnapshot.value.taskOrder, taskId])
-  taskSnapshot.value.taskChecked[taskId] = true
-  ensureTaskOptionMap(taskId)
-  selectedTaskId.value = taskId
+  // 任务声明了 repeatable / repeat_count 时一次加入 N 份，各自独立（与手动复制同一体系）
+  const taskIds = buildMaaFWTaskInstanceIds(
+    taskName,
+    taskByName.value.get(taskName)?.repeatCount,
+    taskSnapshot.value.taskOrder
+  )
+  taskSnapshot.value.taskOrder = partitionTaskOrder([...taskSnapshot.value.taskOrder, ...taskIds])
+  for (const taskId of taskIds) {
+    taskSnapshot.value.taskChecked[taskId] = true
+    ensureTaskOptionMap(taskId)
+  }
+  selectedTaskId.value = taskIds[0]
   addTaskCascaderValue.value = []
   await persistQueuedSnapshot()
 }
@@ -660,16 +729,16 @@ const applyPresetTemplate = async (presetName: string) => {
   const template = presetTemplates.value.find(item => item.preset.name === presetName)
   if (!template) return
 
-  const presetSnapshot = normalizeTaskSnapshot(template.preset.snapshot, previewData.value)
-  const pretaskIds = taskSnapshot.value.taskOrder.filter(taskId => isPretaskId(taskId))
-  const nextTaskIds = partitionTaskOrder([...pretaskIds, ...template.taskNames])
-  const nextTaskIdSet = new Set(nextTaskIds)
-  taskSnapshot.value.taskOrder = nextTaskIds
-  taskSnapshot.value.taskChecked = Object.fromEntries(nextTaskIds.map(taskId => [taskId, true]))
-  taskSnapshot.value.taskOptions = Object.fromEntries(
-    Object.entries(presetSnapshot.taskOptions).filter(([taskId]) => nextTaskIdSet.has(taskId))
+  const nextSnapshot = buildPresetAppliedSnapshot(
+    template.entries,
+    template.taskOptions,
+    taskSnapshot.value.taskOrder,
+    isPretaskId
   )
-  selectedTaskId.value = nextTaskIds[0] || ''
+  taskSnapshot.value.taskOrder = nextSnapshot.taskOrder
+  taskSnapshot.value.taskChecked = nextSnapshot.taskChecked
+  taskSnapshot.value.taskOptions = nextSnapshot.taskOptions
+  selectedTaskId.value = nextSnapshot.taskOrder[0] || ''
   formData.Task.SelectedPreset = presetName
   showPresetModal.value = false
   await savePresetAndSnapshot()
@@ -813,12 +882,14 @@ const loadScriptInfo = async () => {
       handleCancel()
       return
     }
-    if (script.type !== 'MaaFW') {
+    // MaaFW 与它的特调类型（M9A / MSS ……）都是同一个页面
+    if (!isMaaFWFamily(script.type)) {
       message.error(t('edit.scriptTypeNotMfw'))
       handleCancel()
       return
     }
 
+    scriptType.value = script.type
     scriptName.value = script.name
     const loadedScriptConfig = script.config as MaaFWScriptConfig
     scriptConfig.value = loadedScriptConfig
@@ -826,7 +897,8 @@ const loadScriptInfo = async () => {
     preferAdbController.value = Boolean(
       loadedScriptConfig.Emulator?.Id && loadedScriptConfig.Emulator.Id !== '-'
     )
-    await reloadInterface(false)
+    // 特调独有区块的数据与组件和 interface 一起备好，卡片出来时已经齐了
+    await Promise.all([reloadInterface(false), prepareMaaFWFlavorUserPage(flavor.value)])
 
     if (isEdit.value) {
       await loadUserData()
@@ -852,7 +924,10 @@ const createUserImmediately = async () => {
       userId = result.userId
       isEdit.value = true
       router.replace({
-        name: 'MaaFWUserEdit',
+        // 加用户路由与编辑路由成对（M9AUserAdd ↔ M9AUserEdit），跳回同一条线，别把 M9A 落到 MFW 的 URL 上。
+        name: String(route.name ?? '').endsWith('UserAdd')
+          ? String(route.name).replace(/UserAdd$/, 'UserEdit')
+          : 'MaaFWUserEdit',
         params: { ...route.params, userId: result.userId },
       })
       await loadUserData()
@@ -876,7 +951,9 @@ const loadUserData = async () => {
       const userIndex = userResponse.index.find(index => index.uid === userId)
       const userData = userResponse.data[userId] as Partial<MaaFWUserConfig> | undefined
 
-      if (userIndex?.type === 'MaaFWUserConfig' && userData) {
+      // 特调的用户类是 MaaFWUserConfig 的子类（如 MSS 多一项 Info.PlanMode），同一个页面
+      const isMaaFWUser = Boolean(userIndex && maafwUserConfigTypes().has(userIndex.type))
+      if (isMaaFWUser && userData) {
         applyUserData(userData)
         taskSnapshot.value = normalizeTaskSnapshot(formData.Task.TaskSnapshot, previewData.value)
         await syncControllerResourceSelection()
@@ -909,7 +986,7 @@ const reloadInterface = async (showMessage = true) => {
   }
 
   previewData.value = null
-  const data = await previewInterface(scriptPath.value)
+  const data = await previewInterface(scriptPath.value, scriptId)
   if (data) {
     previewData.value = markRaw(data)
     taskSnapshot.value = normalizeTaskSnapshot(taskSnapshot.value, data)
@@ -1059,6 +1136,15 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
+/* 每条提示一个框（文案里用 \n 分行），框之间留点空 */
+.flavor-queue-hint {
+  margin-bottom: 8px;
+}
+
+.flavor-queue-hint-last {
+  margin-bottom: 16px;
+}
+
 .user-edit-container {
   padding: 32px;
   min-height: 100vh;

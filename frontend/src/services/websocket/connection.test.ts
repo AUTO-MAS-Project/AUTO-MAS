@@ -116,6 +116,38 @@ describe('websocket connection 状态机', () => {
     expect(FakeWebSocket.instances.length).toBe(1)
   })
 
+  it('协调器对仍可用的连接安排重连时，状态保持 open、不重复建连', async () => {
+    const conn = await loadConnection()
+    const p = conn.connect()
+    await vi.waitFor(() => expect(FakeWebSocket.instances.length).toBe(1))
+    latestSocket().triggerOpen()
+    await p
+
+    // 例如一轮重连失败的处理在 await 期间连接已恢复，随后仍按原决策 scheduleReconnect
+    conn.scheduleReconnect(0)
+    expect(conn.connectionState().value).toBe('open')
+    expect(conn.connectionInfo()).toMatchObject({ hasReconnectTimer: false })
+
+    await new Promise(resolve => setTimeout(resolve, 10))
+    expect(conn.connectionState().value).toBe('open')
+    expect(FakeWebSocket.instances.length).toBe(1)
+    conn.shutdown()
+  })
+
+  it('状态被置为 reconnecting 而连接实际可用时，connect 早退前校正回 open', async () => {
+    const conn = await loadConnection()
+    const p = conn.connect()
+    await vi.waitFor(() => expect(FakeWebSocket.instances.length).toBe(1))
+    latestSocket().triggerOpen()
+    await p
+
+    conn.connectionState().value = 'reconnecting'
+    await expect(conn.connect()).resolves.toBe(true)
+    expect(conn.connectionState().value).toBe('open')
+    expect(FakeWebSocket.instances.length).toBe(1)
+    conn.shutdown()
+  })
+
   it('shutdown 后进入 closed 且拒绝新的 connect', async () => {
     const conn = await loadConnection()
     const p = conn.connect()

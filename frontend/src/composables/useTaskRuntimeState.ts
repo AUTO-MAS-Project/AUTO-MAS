@@ -19,6 +19,12 @@ const logger = window.electronAPI.getLogger('任务运行状态')
 
 const COMPLETED_STATE_RETENTION_MS = 5 * 60 * 1000
 const COMPLETED_STATE_CLEANUP_INTERVAL_MS = 30 * 1000
+// 快照请求期间有增量事件时隔一拍重取，避免高频增量下背靠背热请求；连续变动超过上限就放弃
+// 本轮对账，此时状态本来就在由增量事件持续刷新
+const SNAPSHOT_MUTATION_RETRY_DELAY_MS = 500
+const SNAPSHOT_MUTATION_RETRY_LIMIT = 5
+// 快照拉取失败后延时重试一次，避免状态陈旧到下次重连
+const SNAPSHOT_FAILURE_RETRY_DELAY_MS = 3000
 const WAITING_STATUSES = new Set(['等待', '等待中'])
 const RUNNING_STATUSES = new Set(['运行', '运行中'])
 const FAILED_STATUSES = new Set(['异常'])
@@ -69,6 +75,7 @@ const residentSubscriptionIds: string[] = []
 let bootstrapped = false
 let disposeConnectedListener: (() => void) | null = null
 let completedStateCleanupTimer: number | null = null
+let snapshotRetryTimer: number | null = null
 let snapshotGeneration = 0
 let mutationSequence = 0
 
@@ -218,14 +225,46 @@ const stateFromSnapshot = (
   completedAt: null,
 })
 
-export async function refreshTaskRuntimeSnapshot(): Promise<void> {
+const clearSnapshotRetryTimer = (): void => {
+  if (snapshotRetryTimer !== null) {
+    window.clearTimeout(snapshotRetryTimer)
+    snapshotRetryTimer = null
+  }
+}
+
+const scheduleSnapshotRetry = (delayMs: number, retry: () => void): void => {
+  clearSnapshotRetryTimer()
+  snapshotRetryTimer = window.setTimeout(() => {
+    snapshotRetryTimer = null
+    retry()
+  }, delayMs)
+}
+
+/**
+ * 拉取运行任务快照并与增量事件对账。
+ *
+ * @param mutationRetries 已因请求期间有增量事件而重取的次数
+ * @param failureRetried 本轮是否已做过失败重试
+ */
+const loadTaskRuntimeSnapshot = async (
+  mutationRetries: number,
+  failureRetried: boolean
+): Promise<void> => {
+  // 新一轮拉取取代尚未触发的重试
+  clearSnapshotRetryTimer()
   const generation = ++snapshotGeneration
   const startedAtMutation = mutationSequence
   try {
     const snapshot = await realtimeSnapshotApi.getRuntimeTasks()
     if (generation !== snapshotGeneration) return
     if (startedAtMutation !== mutationSequence) {
-      void refreshTaskRuntimeSnapshot()
+      if (mutationRetries >= SNAPSHOT_MUTATION_RETRY_LIMIT) {
+        logger.warn('运行任务快照请求期间持续有增量事件，放弃本轮对账')
+        return
+      }
+      scheduleSnapshotRetry(SNAPSHOT_MUTATION_RETRY_DELAY_MS, () => {
+        void loadTaskRuntimeSnapshot(mutationRetries + 1, failureRetried)
+      })
       return
     }
 
@@ -259,7 +298,18 @@ export async function refreshTaskRuntimeSnapshot(): Promise<void> {
     logger.warn(
       `读取运行任务 HTTP 快照失败: ${error instanceof Error ? error.message : String(error)}`
     )
+    // 已被新一轮拉取取代或已释放时不再重试；只重试一次，之后交给下次重连
+    if (generation !== snapshotGeneration || failureRetried) return
+    scheduleSnapshotRetry(SNAPSHOT_FAILURE_RETRY_DELAY_MS, () => {
+      // 期间又断开了：重新连上时 onConnected 会再拉一次
+      if (connectionState().value !== 'open') return
+      void loadTaskRuntimeSnapshot(0, true)
+    })
   }
+}
+
+export function refreshTaskRuntimeSnapshot(): Promise<void> {
+  return loadTaskRuntimeSnapshot(0, false)
 }
 
 const statusMatches = (status: string | undefined, values: ReadonlySet<string>) =>
@@ -368,6 +418,7 @@ export function bootstrapTaskRuntimeState(): void {
 
 export function disposeTaskRuntimeState(): void {
   snapshotGeneration++
+  clearSnapshotRetryTimer()
   disposeConnectedListener?.()
   disposeConnectedListener = null
   residentSubscriptionIds.splice(0).forEach(unsubscribe)
