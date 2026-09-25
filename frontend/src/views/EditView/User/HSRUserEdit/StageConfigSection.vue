@@ -1,151 +1,64 @@
 <template>
-  <div class="form-section form-section-flat">
-    <div class="section-header">
-      <h3>{{ t('edit.sanityConfiguration') }}</h3>
-      <div class="section-header-actions">
-        <a-button size="small" @click="emit('openRestore')">
-          <template #icon>
-            <HistoryOutlined />
-          </template>
-          {{ t('edit.configRestoreTitle') }}
-        </a-button>
-      </div>
-    </div>
-
+  <div class="stage-config">
     <!-- 区块内最多一条提示：选项读取失败优先，其次是引擎切换后要重选副本 -->
     <a-alert
       v-if="stageNotice"
       :type="stageNotice.type"
       show-icon
-      style="margin-bottom: 8px"
+      class="stage-alert"
       :message="stageNotice.message"
     />
 
-    <!-- 第一行：四个独立关卡下拉框。选项只来自当前执行脚本暴露的副本配置。 -->
-    <a-row :gutter="24">
-      <a-col :span="6">
-        <a-form-item>
-          <template #label>
-            <a-tooltip :title="t('edit.calyxGoldenCharacterExp')">
-              <span class="form-label">
-                {{ t('edit.calyxGolden') }}
-                <QuestionCircleOutlined class="help-icon" />
-              </span>
-            </a-tooltip>
-          </template>
-          <a-select
-            :value="stageValueByChannel.CalyxGolden"
-            size="large"
-            :placeholder="t('edit.skip')"
-            show-search
-            :filter-option="filterOption"
-            :disabled="isStageSelectDisabled('CalyxGolden')"
-            :loading="stageOptionsLoading"
-            :options="stageOptionsByChannel.CalyxGolden"
-            allow-clear
-            @change="handleStageSelectChange('CalyxGolden', $event)"
-          />
-        </a-form-item>
-      </a-col>
-      <a-col :span="6">
-        <a-form-item>
-          <template #label>
-            <a-tooltip :title="t('edit.calyxCrimsonTraceMaterials')">
-              <span class="form-label">
-                {{ t('edit.calyxCrimson') }}
-                <QuestionCircleOutlined class="help-icon" />
-              </span>
-            </a-tooltip>
-          </template>
-          <a-select
-            :value="stageValueByChannel.CalyxCrimson"
-            size="large"
-            :placeholder="t('edit.skip')"
-            show-search
-            :filter-option="filterOption"
-            :disabled="isStageSelectDisabled('CalyxCrimson')"
-            :loading="stageOptionsLoading"
-            :options="stageOptionsByChannel.CalyxCrimson"
-            allow-clear
-            @change="handleStageSelectChange('CalyxCrimson', $event)"
-          />
-        </a-form-item>
-      </a-col>
-      <a-col :span="6">
-        <a-form-item>
-          <template #label>
-            <a-tooltip :title="t('edit.cavernsCorrosionRelicDomains')">
-              <span class="form-label">
-                {{ t('edit.cavernsCorrosion') }}
-                <QuestionCircleOutlined class="help-icon" />
-              </span>
-            </a-tooltip>
-          </template>
-          <a-select
-            :value="stageValueByChannel.Relic"
-            size="large"
-            :placeholder="t('edit.skip')"
-            show-search
-            :filter-option="filterOption"
-            :disabled="isStageSelectDisabled('Relic')"
-            :loading="stageOptionsLoading"
-            :options="stageOptionsByChannel.Relic"
-            allow-clear
-            @change="handleStageSelectChange('Relic', $event)"
-          />
-        </a-form-item>
-      </a-col>
-      <a-col :span="6">
-        <a-form-item>
-          <template #label>
-            <a-tooltip :title="t('edit.ornamentExtractionPlanarOrnament')">
-              <span class="form-label">
-                {{ t('edit.ornamentExtraction') }}
-                <QuestionCircleOutlined class="help-icon" />
-              </span>
-            </a-tooltip>
-          </template>
-          <a-select
-            :value="stageValueByChannel.Ornament"
-            size="large"
-            :placeholder="t('edit.skip')"
-            show-search
-            :filter-option="filterOption"
-            :disabled="isStageSelectDisabled('Ornament')"
-            :loading="stageOptionsLoading"
-            :options="stageOptionsByChannel.Ornament"
-            allow-clear
-            @change="handleStageSelectChange('Ornament', $event)"
-          />
-        </a-form-item>
-      </a-col>
-    </a-row>
-
-    <!-- 第二行：刷取副本（extra 显示当前生效关卡） | 历战余响 | 历战余响开始日 -->
-    <a-row :gutter="24" style="margin-top: 8px">
+    <!-- 副本类型 + 该类型下保存的副本：每类副本各存一项，切换类型时回到该类型之前的选择 -->
+    <a-row :gutter="16">
       <a-col :span="8">
-        <a-form-item :extra="t('edit.hsrActiveStageExtra', { stage: currentStageDisplay })">
+        <a-form-item :extra="buildTargetHint">
           <template #label>
-            <a-tooltip :title="t('edit.pickStageFarmThis')">
+            <a-tooltip :title="t('edit.hsrStageTypeTip')">
               <span class="form-label">
-                {{ t('edit.farmStages') }}
+                {{ t('edit.hsrStageType') }}
                 <QuestionCircleOutlined class="help-icon" />
               </span>
             </a-tooltip>
           </template>
           <a-select
             :value="activeChannel"
-            size="large"
             :disabled="loading"
-            :options="activeChannelOptions"
+            :options="channelOptions"
             @change="handleActiveChannelChange"
           />
         </a-form-item>
       </a-col>
-      <a-col :span="8">
-        <a-form-item name="EchoOfWar">
+      <a-col :span="16">
+        <a-form-item>
           <template #label>
-            <!-- 遗器自动分解提醒由原先的区块提示降为这里的悬停说明 -->
+            <a-tooltip :title="t(CHANNEL_TIP_KEYS[activeChannel])">
+              <span class="form-label">
+                {{ t('edit.hsrStage') }}
+                <QuestionCircleOutlined class="help-icon" />
+              </span>
+            </a-tooltip>
+          </template>
+          <a-select
+            :value="activeStageValue"
+            :placeholder="t('edit.skip')"
+            show-search
+            :filter-option="filterOption"
+            :disabled="loading || stageOptionsLoading || !activeCategory"
+            :loading="stageOptionsLoading"
+            :options="activeStageOptions"
+            allow-clear
+            @change="handleStageSelectChange"
+          />
+        </a-form-item>
+      </a-col>
+    </a-row>
+
+    <a-row :gutter="16">
+      <a-col :span="16">
+        <a-form-item>
+          <template #label>
+            <!-- 遗器自动分解提醒放在悬停说明里 -->
             <a-tooltip
               :title="`${t('edit.pickEchoOfWarStage')} ${t('edit.turnAutomaticRelicSalvage')}`"
             >
@@ -157,7 +70,6 @@
           </template>
           <a-select
             :value="eowSelectValue"
-            size="large"
             :placeholder="t('edit.skip')"
             show-search
             :disabled="loading || stageOptionsLoading || !dynamicEowCategory"
@@ -181,9 +93,8 @@
           </template>
           <a-select
             :value="formData.TaskOpt.EchoOfWarWeekday ?? 'Monday'"
-            size="large"
             :disabled="loading"
-            :options="EOW_WEEKDAY_OPTIONS"
+            :options="eowWeekdayOptions"
             @change="handleEowWeekdayChange"
           />
         </a-form-item>
@@ -195,33 +106,37 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
 import { computed } from 'vue'
-import { HistoryOutlined, QuestionCircleOutlined } from '@ant-design/icons-vue'
+import { QuestionCircleOutlined } from '@ant-design/icons-vue'
 import type {
   HSRDynamicStageCategory,
   HSRDynamicStageOption,
   HSRDynamicStageOptionsData,
-  HSRPerEngineStageStore,
   HSRScriptStageContainer,
   HSRScriptStagePayload,
   HSRStageEngine,
   HSRUserConfigData,
 } from './types'
+import {
+  CATEGORY_KEYS_BY_CHANNEL,
+  CHANNEL_LABEL_KEYS,
+  EOW_WEEKDAY_LABEL_KEYS,
+  STAGE_CHANNELS,
+  hasLegacyEngineMismatch,
+  isEowCategory,
+  isStageMissingForEngine,
+  readChannelStage,
+  readEowStage,
+  readStageContainer,
+  resolveStageChannel,
+  writeEngineStage,
+  type HSRStageChannel,
+} from './stageState'
 
 const { t } = useI18n()
 
-const EOW_WEEKDAY_OPTIONS: { value: string; label: string }[] = [
-  { value: 'Monday', label: t('edit.mon') },
-  { value: 'Tuesday', label: t('edit.tue') },
-  { value: 'Wednesday', label: t('edit.wed') },
-  { value: 'Thursday', label: t('edit.thu') },
-  { value: 'Friday', label: t('edit.fri') },
-  { value: 'Saturday', label: t('edit.sat') },
-  { value: 'Sunday', label: t('edit.sun') },
-]
-
 type StageSectionFormData = Pick<HSRUserConfigData, 'Stage' | 'TaskOpt'>
 
-// HSR 专用：体力配置只读写 Stage / TaskOpt；loading 用于保存中禁用下拉，避免重复点击被父级 isSaving guard 吞掉。
+// 体力模块弹窗里的副本选择：只读写 Stage / TaskOpt；loading 用于保存中禁用下拉。
 const props = defineProps<{
   formData: StageSectionFormData
   loading: boolean
@@ -229,389 +144,182 @@ const props = defineProps<{
   stageOptions: HSRDynamicStageOptionsData | null
   stageOptionsLoading: boolean
   stageOptionsError: string
+  /** 引擎显示名（三月七 / SRA），文案里不出现原始代号。 */
+  engineLabel: string
+  /** 已开启的「培养目标」开关标签；null 表示没开。 */
+  buildTargetLabel?: string | null
 }>()
 
 const emit = defineEmits<{
   save: [key: string, value: unknown]
-  openRestore: []
 }>()
 
-const emitSave = (key: string, value: unknown) => {
-  emit('save', key, value)
+// 各副本类型的说明（原先四个下拉的悬停说明）
+const CHANNEL_TIP_KEYS: Record<HSRStageChannel, string> = {
+  CalyxGolden: 'edit.calyxGoldenCharacterExp',
+  CalyxCrimson: 'edit.calyxCrimsonTraceMaterials',
+  Relic: 'edit.cavernsCorrosionRelicDomains',
+  Ornament: 'edit.ornamentExtractionPlanarOrnament',
 }
 
-type ActiveChannel = 'CalyxGolden' | 'CalyxCrimson' | 'Relic' | 'Ornament'
+const eowWeekdayOptions = computed(() =>
+  Object.entries(EOW_WEEKDAY_LABEL_KEYS).map(([value, key]) => ({ value, label: t(key) }))
+)
 
-const emptyNativeStageValue: Record<string, never> = {}
+const channelOptions = computed(() =>
+  STAGE_CHANNELS.map(channel => ({ value: channel, label: t(CHANNEL_LABEL_KEYS[channel]) }))
+)
 
-const parseObject = (raw: unknown): Record<string, unknown> | null => {
-  if (typeof raw === 'string') {
-    const text = raw.trim()
-    if (!text || text === '{}' || text === '{ }') return null
-    try {
-      raw = JSON.parse(text)
-    } catch {
-      return null
-    }
-  }
-  if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
-    return raw as Record<string, unknown>
-  }
-  return null
-}
-
-const payloadMatchesEngine = (payload: HSRScriptStagePayload | null) => {
-  return payload?.engine === props.dailyEngine
-}
-
-const readEngineStage = <T extends HSRScriptStagePayload>(raw: unknown): T | null => {
-  const root = parseObject(raw)
-  if (!root) return null
-
-  const byEngine = parseObject(root.byEngine)
-  if (byEngine) {
-    return parseObject(byEngine[props.dailyEngine]) as T | null
-  }
-
-  if (root.engine === props.dailyEngine) return root as T
-
-  const legacyStages = parseObject(root.stages)
-  if (legacyStages) {
-    const containsCurrentEngine = Object.values(legacyStages).some(
-      payload => parseObject(payload)?.engine === props.dailyEngine
-    )
-    if (containsCurrentEngine) return root as T
-  }
-  return null
-}
-
-const scriptStageContainer = computed<HSRScriptStageContainer | null>(() => {
-  const payload = readEngineStage<HSRScriptStageContainer>(props.formData.Stage.ScriptStage)
-  if (!payload?.stages) return null
-  return payload
-})
-
-const isEowCategory = (categoryKey: string) => {
-  return categoryKey === 'echo_of_war' || categoryKey === '历战余响'
-}
+const activeChannel = computed(() => resolveStageChannel(props.formData?.Stage?.Channel))
 
 const dynamicCategories = computed(() => props.stageOptions?.categories ?? [])
 
-const activeChannels: ActiveChannel[] = ['CalyxGolden', 'CalyxCrimson', 'Relic', 'Ornament']
-
-const categoryKeysByChannel: Record<ActiveChannel, string[]> = {
-  CalyxGolden: ['calyx_golden', '拟造花萼（金）'],
-  CalyxCrimson: ['calyx_crimson', '拟造花萼（赤）'],
-  Relic: ['caver_of_corrosion', '侵蚀隧洞'],
-  Ornament: ['ornament_extraction', '饰品提取'],
+const categoryForChannel = (channel: HSRStageChannel): HSRDynamicStageCategory | null => {
+  const keys = CATEGORY_KEYS_BY_CHANNEL[channel]
+  return dynamicCategories.value.find(category => keys.includes(category.categoryKey)) ?? null
 }
 
-const dynamicCategoryByChannel = computed<Record<ActiveChannel, HSRDynamicStageCategory | null>>(
-  () => {
-    const findCategory = (channel: ActiveChannel) => {
-      const keys = categoryKeysByChannel[channel]
-      return dynamicCategories.value.find(category => keys.includes(category.categoryKey)) ?? null
-    }
-    return {
-      CalyxGolden: findCategory('CalyxGolden'),
-      CalyxCrimson: findCategory('CalyxCrimson'),
-      Relic: findCategory('Relic'),
-      Ornament: findCategory('Ornament'),
-    }
-  }
+const activeCategory = computed(() => categoryForChannel(activeChannel.value))
+
+const dynamicEowCategory = computed(
+  () => dynamicCategories.value.find(category => isEowCategory(category.categoryKey)) ?? null
 )
 
-const dynamicEowCategory = computed(() => {
-  return dynamicCategories.value.find(category => isEowCategory(category.categoryKey)) ?? null
-})
+const buildDynamicOptionLabel = (option: HSRDynamicStageOption) =>
+  option.detail ? `${option.label} | ${option.detail}` : option.label
 
-const selectedEowPayload = computed(() =>
-  readEngineStage<HSRScriptStagePayload>(props.formData.Stage.ScriptEchoOfWar)
-)
-
-const nativeEngineMismatch = computed(() => {
-  const main = parseObject(props.formData.Stage.ScriptStage)
-  const eow = parseObject(props.formData.Stage.ScriptEchoOfWar)
-  if (main?.byEngine || eow?.byEngine) return false
-  return (
-    (!!main?.engine && main.engine !== props.dailyEngine) ||
-    (!!eow?.engine && eow.engine !== props.dailyEngine)
-  )
-})
-
-const buildDynamicOptionLabel = (option: HSRDynamicStageOption) => {
-  return option.detail ? `${option.label} | ${option.detail}` : option.label
-}
+const toSelectOptions = (category: HSRDynamicStageCategory | null) =>
+  (category?.options ?? []).map(option => ({
+    value: option.value,
+    label: buildDynamicOptionLabel(option),
+  }))
 
 const findDynamicOption = (
   value: unknown,
-  categories: HSRDynamicStageCategory[]
+  category: HSRDynamicStageCategory | null
 ): HSRDynamicStageOption | null => {
-  if (typeof value !== 'string' || !value) return null
-  for (const category of categories) {
-    const option = category.options?.find(item => item.value === value)
-    if (option) return option
-  }
-  return null
+  if (typeof value !== 'string' || !value || !category) return null
+  return category.options?.find(item => item.value === value) ?? null
 }
 
-const buildNativeStagePayload = (option: HSRDynamicStageOption): HSRScriptStagePayload => {
-  return {
-    engine: props.dailyEngine,
-    category: option.categoryKey,
-    categoryLabel: option.categoryLabel,
-    label: option.label,
-    detail: option.detail ?? '',
-    value: option.value,
-    sra: option.sra
-      ? {
-          id: option.sra.id ?? '',
-          level: option.sra.level ?? null,
-        }
-      : undefined,
-    m7a: option.m7a
-      ? {
-          instanceType: option.m7a.instanceType ?? '',
-          instanceName: option.m7a.instanceName ?? '',
-        }
-      : undefined,
-  }
-}
+const activeStageOptions = computed(() => toSelectOptions(activeCategory.value))
 
-const getPayloadForChannel = (channel: ActiveChannel): HSRScriptStagePayload | null => {
-  const container = scriptStageContainer.value
-  const directPayload = container?.stages?.[channel]
-  return payloadMatchesEngine(directPayload ?? null) ? (directPayload ?? null) : null
-}
+// 下拉只显示当前引擎选项里真实存在的那一项，免得显示一个选不中的旧值
+const activeStageValue = computed(
+  () =>
+    findDynamicOption(
+      readChannelStage(props.formData.Stage, props.dailyEngine, activeChannel.value)?.value,
+      activeCategory.value
+    )?.value
+)
 
-const selectedDynamicOptionForChannel = (channel: ActiveChannel) => {
-  const category = dynamicCategoryByChannel.value[channel]
-  const payload = getPayloadForChannel(channel)
-  if (!category || !payload) return null
-  return findDynamicOption(payload?.value, [category])
-}
+const eowSelectOptions = computed(() => toSelectOptions(dynamicEowCategory.value))
 
-// 另一引擎名下已经存了副本，而当前引擎名下一个主关卡也没有——这是刚切换体力
-// 执行引擎后的典型状态；旧格式（无 byEngine 容器）的不匹配由 nativeEngineMismatch 负责。
-const otherEngineHasStages = computed(() => {
-  for (const raw of [props.formData.Stage.ScriptStage, props.formData.Stage.ScriptEchoOfWar]) {
-    const byEngine = parseObject(parseObject(raw)?.byEngine)
-    if (!byEngine) continue
-    for (const engine of ['SRA', 'M7A'] as const) {
-      if (engine !== props.dailyEngine && parseObject(byEngine[engine])) return true
-    }
-  }
-  return false
-})
-
-const currentEngineStageMissing = computed(() => {
-  if (nativeEngineMismatch.value) return false
-  const hasMain = activeChannels.some(channel => getPayloadForChannel(channel) !== null)
-  return !hasMain && otherEngineHasStages.value
-})
+const eowSelectValue = computed(
+  () =>
+    findDynamicOption(
+      readEowStage(props.formData.Stage, props.dailyEngine)?.value,
+      dynamicEowCategory.value
+    )?.value
+)
 
 const stageNotice = computed<{ type: 'error' | 'warning'; message: string } | null>(() => {
   if (props.stageOptionsError && !props.stageOptionsLoading) {
     return { type: 'error', message: props.stageOptionsError }
   }
-  if (nativeEngineMismatch.value) {
+  if (hasLegacyEngineMismatch(props.formData.Stage, props.dailyEngine)) {
     return { type: 'warning', message: t('edit.sanityScriptChangedPick') }
   }
-  if (currentEngineStageMissing.value) {
+  if (isStageMissingForEngine(props.formData.Stage, props.dailyEngine)) {
     return {
       type: 'warning',
-      message: t('edit.hsrStageMissingForEngine', { engine: props.dailyEngine }),
+      message: t('edit.hsrStageMissingForEngine', { engine: props.engineLabel }),
     }
   }
   return null
 })
 
-const dynamicOptionsForChannel = (channel: ActiveChannel) => {
-  const category = dynamicCategoryByChannel.value[channel]
-  return (category?.options ?? []).map(option => ({
-    value: option.value,
-    label: buildDynamicOptionLabel(option),
-  }))
-}
+// 开了培养目标时，这里选的副本只作兜底（三月七）或被忽略（SRA：MAS 会清空 tasklist）
+const buildTargetHint = computed(() => {
+  if (!props.buildTargetLabel) return undefined
+  return props.dailyEngine === 'SRA'
+    ? t('edit.hsrBuildTargetIgnoredSra', { label: props.buildTargetLabel })
+    : t('edit.hsrBuildTargetFallbackM7a', { label: props.buildTargetLabel })
+})
 
-const isStageSelectDisabled = (channel: ActiveChannel) => {
-  return props.loading || props.stageOptionsLoading || !dynamicCategoryByChannel.value[channel]
-}
-
-const stageOptionsByChannel = computed<Record<ActiveChannel, { value: string; label: string }[]>>(
-  () => ({
-    CalyxGolden: dynamicOptionsForChannel('CalyxGolden'),
-    CalyxCrimson: dynamicOptionsForChannel('CalyxCrimson'),
-    Relic: dynamicOptionsForChannel('Relic'),
-    Ornament: dynamicOptionsForChannel('Ornament'),
-  })
-)
-
-const stageValueByChannel = computed<Record<ActiveChannel, string | undefined>>(() => ({
-  CalyxGolden: selectedDynamicOptionForChannel('CalyxGolden')?.value,
-  CalyxCrimson: selectedDynamicOptionForChannel('CalyxCrimson')?.value,
-  Relic: selectedDynamicOptionForChannel('Relic')?.value,
-  Ornament: selectedDynamicOptionForChannel('Ornament')?.value,
-}))
-
-const writeEngineStage = <T extends HSRScriptStagePayload>(
-  raw: unknown,
-  value: T | null
-): HSRPerEngineStageStore<T> | Record<string, never> => {
-  const root = parseObject(raw)
-  const existingByEngine = parseObject(root?.byEngine)
-  const byEngine: Partial<Record<HSRStageEngine, T>> = {}
-
-  if (existingByEngine) {
-    for (const engine of ['SRA', 'M7A'] as const) {
-      const payload = parseObject(existingByEngine[engine])
-      if (payload) byEngine[engine] = payload as T
-    }
-  } else if (root?.engine === 'SRA' || root?.engine === 'M7A') {
-    byEngine[root.engine] = root as T
-  } else {
-    const legacyStages = parseObject(root?.stages)
-    if (legacyStages) {
-      for (const engine of ['SRA', 'M7A'] as const) {
-        const stages = Object.fromEntries(
-          Object.entries(legacyStages).filter(([, payload]) => {
-            return parseObject(payload)?.engine === engine
-          })
-        )
-        if (Object.keys(stages).length) {
-          byEngine[engine] = {
-            ...root,
-            engine,
-            stages,
-          } as unknown as T
-        }
+const buildNativeStagePayload = (option: HSRDynamicStageOption): HSRScriptStagePayload => ({
+  engine: props.dailyEngine,
+  category: option.categoryKey,
+  categoryLabel: option.categoryLabel,
+  label: option.label,
+  detail: option.detail ?? '',
+  value: option.value,
+  sra: option.sra
+    ? {
+        id: option.sra.id ?? '',
+        level: option.sra.level ?? null,
       }
-    }
-  }
+    : undefined,
+  m7a: option.m7a
+    ? {
+        instanceType: option.m7a.instanceType ?? '',
+        instanceName: option.m7a.instanceName ?? '',
+      }
+    : undefined,
+})
 
-  if (value) {
-    byEngine[props.dailyEngine] = value
-  } else {
-    delete byEngine[props.dailyEngine]
-  }
-
-  return Object.keys(byEngine).length ? { version: 2, byEngine } : emptyNativeStageValue
-}
-
-const saveNativeMainStage = (channel: ActiveChannel, option: HSRDynamicStageOption | null) => {
-  const container = scriptStageContainer.value
-  const stages: Partial<Record<ActiveChannel, HSRScriptStagePayload>> = {}
+const saveNativeMainStage = (channel: HSRStageChannel, option: HSRDynamicStageOption | null) => {
+  const container = readStageContainer(props.formData.Stage, props.dailyEngine)
+  const stages: Partial<Record<HSRStageChannel, HSRScriptStagePayload>> = {}
 
   if (container?.stages) {
-    for (const item of activeChannels) {
+    for (const item of STAGE_CHANNELS) {
       const payload = container.stages[item]
       if (payload) stages[item] = payload
     }
   }
 
-  if (option) {
-    stages[channel] = buildNativeStagePayload(option)
-  } else {
-    delete stages[channel]
-  }
+  if (option) stages[channel] = buildNativeStagePayload(option)
+  else delete stages[channel]
 
-  const currentValue = Object.keys(stages).length ? { engine: props.dailyEngine, stages } : null
-  const value = writeEngineStage<HSRScriptStageContainer>(
-    props.formData.Stage.ScriptStage,
-    currentValue
+  const currentValue: HSRScriptStageContainer | null = Object.keys(stages).length
+    ? { engine: props.dailyEngine, stages }
+    : null
+  emit(
+    'save',
+    'Stage.ScriptStage',
+    writeEngineStage(props.formData.Stage.ScriptStage, props.dailyEngine, currentValue)
   )
-
-  emitSave('Stage.ScriptStage', value)
 }
 
-const saveNativeEchoOfWarStage = (option: HSRDynamicStageOption | null) => {
-  const value = writeEngineStage<HSRScriptStagePayload>(
-    props.formData.Stage.ScriptEchoOfWar,
-    option ? buildNativeStagePayload(option) : null
-  )
-  emitSave('Stage.ScriptEchoOfWar', value)
+const handleStageSelectChange = (value: unknown) => {
+  const category = activeCategory.value
+  if (!category) return
+  saveNativeMainStage(activeChannel.value, findDynamicOption(value, category))
 }
-
-const handleStageSelectChange = (channel: ActiveChannel, value: unknown) => {
-  const category = dynamicCategoryByChannel.value[channel]
-  if (category) {
-    const option = findDynamicOption(value, [category])
-    saveNativeMainStage(channel, option)
-  }
-}
-
-const eowDynamicOptions = computed(() => {
-  return (dynamicEowCategory.value?.options ?? []).map(option => ({
-    value: option.value,
-    label: buildDynamicOptionLabel(option),
-  }))
-})
-
-const selectedEowOption = computed(() => {
-  const payload = selectedEowPayload.value
-  if (!payloadMatchesEngine(payload)) return null
-  const category = dynamicEowCategory.value
-  if (!category) return null
-  return findDynamicOption(payload?.value, [category])
-})
-
-const eowSelectOptions = computed(() => {
-  return eowDynamicOptions.value
-})
-
-const eowSelectValue = computed(() => {
-  return selectedEowOption.value?.value
-})
 
 const handleEowStageChange = (value: unknown) => {
-  if (dynamicEowCategory.value) {
-    const option = findDynamicOption(value, [dynamicEowCategory.value])
-    saveNativeEchoOfWarStage(option)
-  }
+  const category = dynamicEowCategory.value
+  if (!category) return
+  const option = findDynamicOption(value, category)
+  emit(
+    'save',
+    'Stage.ScriptEchoOfWar',
+    writeEngineStage<HSRScriptStagePayload>(
+      props.formData.Stage.ScriptEchoOfWar,
+      props.dailyEngine,
+      option ? buildNativeStagePayload(option) : null
+    )
+  )
 }
 
-const activeChannel = computed<ActiveChannel>(() => {
-  const ch = props.formData?.Stage?.Channel
-  if (ch === 'CalyxGolden' || ch === 'CalyxCrimson' || ch === 'Relic' || ch === 'Ornament') {
-    return ch
-  }
-  return 'CalyxGolden'
-})
-
-// 刷取副本下拉的可见选项（4 类）
-const activeChannelOptions = computed(() => [
-  { value: 'CalyxGolden', label: t('edit.calyxGolden') },
-  { value: 'CalyxCrimson', label: t('edit.calyxCrimson') },
-  { value: 'Relic', label: t('edit.cavernsCorrosion') },
-  { value: 'Ornament', label: t('edit.ornamentExtraction') },
-])
-
-// 当前生效关卡读取：根据 activeChannel 读对应字段
-const currentNativePayload = computed(() => {
-  return getPayloadForChannel(activeChannel.value)
-})
-
-// 当前生效关卡（显示在「刷取副本」下方的 extra）：副本类型 + 关卡名
-// 格式：拟造花萼（金） 材料：武器经验（以太之蕾 翁法罗斯）
-const currentStageDisplay = computed((): string => {
-  if (nativeEngineMismatch.value) return t('edit.hsrRepickStage')
-  const nativePayload = currentNativePayload.value
-  if (nativePayload?.label) {
-    return nativePayload.categoryLabel
-      ? `${nativePayload.categoryLabel} ${nativePayload.label}`
-      : nativePayload.label
-  }
-  return t('edit.notConfigured')
-})
-
-// 刷取副本
-const handleActiveChannelChange = (value: ActiveChannel) => {
+const handleActiveChannelChange = (value: HSRStageChannel) => {
   if (activeChannel.value === value) return
-  emitSave('Stage.Channel', value)
+  emit('save', 'Stage.Channel', value)
 }
 
 const handleEowWeekdayChange = (value: string) => {
-  emitSave('TaskOpt.EchoOfWarWeekday', value)
+  emit('save', 'TaskOpt.EchoOfWarWeekday', value)
 }
 
 const filterOption = (input: unknown, option?: { label?: unknown; children?: unknown }) => {
@@ -621,26 +329,25 @@ const filterOption = (input: unknown, option?: { label?: unknown; children?: unk
 </script>
 
 <style scoped>
-/* 与 HSRUserEdit.vue 主页面 section-header 保持一致：加粗标题 + 分割线 + before 装饰 */
-.section-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
+.stage-config {
+  margin-bottom: 8px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--ant-color-border-secondary);
+}
+
+.stage-alert {
   margin-bottom: 12px;
 }
 
-.section-header-actions {
-  display: flex;
+.form-label {
+  display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
+  font-weight: 600;
 }
 
-.section-header h3 {
-  font-size: 18px;
-}
-
-.section-header h3::before {
-  height: 22px;
-  background: var(--ant-color-primary);
+.help-icon {
+  color: var(--ant-color-text-tertiary);
+  font-size: 13px;
 }
 </style>

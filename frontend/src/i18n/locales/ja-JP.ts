@@ -666,45 +666,38 @@ export default {
     tomlFiles: 'TOML ファイル',
     urlProtocolEG: 'URL プロトコル（Starward など）',
     yamlFiles: 'YAML ファイル',
-    resetManagedOverrides: '元の設定にリセット',
-    resetManagedOverridesHint:
-      'MAS で変更した上書き値をすべて破棄し、現在の SRA / 三月なのかアシスタントの設定を読み直します',
-    resetManagedOverridesConfirmTitle: '元の設定にリセットしますか？',
-    resetManagedOverridesConfirmDesc:
-      'このユーザーが MAS で変更した上書き値（全モジュール・全項目）をすべて削除し、以後は現在の SRA / 三月なのかアシスタントの設定どおりに表示・実行します。元の設定ファイル自体は変更されません。この操作は取り消せません。',
-    invalidOverridesCount: '無効な上書き {n} 件',
+    invalidOverridesCount: '無効な変更 {n} 件',
     invalidManagedOverridesTitle:
-      '保存済みの上書き値 {n} 件が現在の元の設定では無効です。実行時は無視され、元の設定の値が使われます',
-    invalidManagedOverrideUnknown: '現在の元の設定にこの項目はもうありません',
-    invalidManagedOverrideType: '保存された値の型が現在の元の設定と一致しません',
+      'MAS で変更した設定のうち {n} 件が無効になっています。実行時は無視され、三月なのかアシスタント / SRA 側の設定が使われます',
+    invalidManagedOverrideUnknown: '三月なのかアシスタント / SRA 側にこの項目はもうありません',
+    invalidManagedOverrideType: '保存された値の型が三月なのかアシスタント / SRA 側と一致しません',
     invalidManagedOverrideSaved: '保存された値：{value}',
     clearInvalidManagedOverrides: '無効な上書きを削除',
     clearInvalidManagedOverridesConfirm:
-      'このユーザーの MAS 設定から無効な上書き {n} 件を削除しますか？元の設定ファイルは変更されません。',
+      '無効な設定 {n} 件を削除しますか？三月なのかアシスタント / SRA 側の設定は変更されません。',
     matchesOnly: '一致した行のみ表示',
     never: 'しない',
-    sanityScriptChangedPick: '理性タスクのスクリプトが変わりました。ステージを選び直してください。',
+    sanityScriptChangedPick:
+      '開拓力モジュールの実行エンジンが変わりました。ステージを選び直してください。',
     hsrEngineSwitchHint:
-      '実行エンジンを切り替えると、そのエンジン固有のネイティブ設定項目とステージに切り替わります。現在のエンジンで変更した値は引き継がれませんが保持され、戻すと再び表示されます。',
+      'エンジンごとに設定とステージが別々に保存され、切り替えて戻すと元の値が復元されます。',
     hsrSharedEngineSwitchHint:
-      'ここではスクリプト単位のエンジン割り当てを変更します。このスクリプトの「スクリプト」ソースのユーザー全員と、エンジンを個別指定していない「ユーザー」ソースのユーザーがこのエンジンを使います。切り替え後はそのエンジン固有のネイティブ設定項目とステージが適用されます。',
+      'スクリプトのエンジン割り当てを変更します。「スクリプト」を選んだユーザーと、エンジンを個別指定していない「ユーザー」も一緒に切り替わります。',
     hsrStageMissingForEngine:
-      '現在の開拓力エンジンは {engine} で、このエンジンではまだステージが選ばれていません。ステージはエンジンごとに保存されるため、別のエンジンで選んだステージは引き継がれません。選び直してください。元のエンジンに戻すと以前の選択が復元されます。',
+      '{engine} ではまだステージが選ばれていません。ステージはエンジンごとに保存され、元のエンジンに戻すと以前の選択が復元されます。',
     editHsrUser: 'HSR ユーザーを編集',
     addHsrUser: 'HSR ユーザーを追加',
     hsrServerCnOfficial: '公式サーバー',
     hsrWeekDone: '今週完了',
     hsrWeekNotDone: '今週未完了',
     hsrLastCompleted: '最終完了：{date}',
-    hsrDynamicTaskCount: '動的 {n} 件',
     hsrReadFrom: '読み込み元：{source}',
     hsrUseScriptShared:
-      'このスクリプトで「スクリプト」を選んだユーザー全員が 1 つのタスク設定を共有します。',
+      'このスクリプトで「スクリプト」を選んだほかのユーザーと、同じタスク設定を共有します。',
     hsrSharedPlanHint:
       'スクリプト共有のタスク設定を編集しています。変更はこのスクリプトで「スクリプト」を選んだ全ユーザーに反映されます。',
     hsrDirectControlHint:
       '直接制御は SRA / 三月なのかアシスタントで現在保存されている設定をそのまま実行します。MAS はゲームの起動とプロセスの追跡のみを担当し、アカウント・ステージ・タスクのオン・オフはこのモードでは反映されません。',
-    hsrActiveStageExtra: '現在の対象：{stage}',
     hsrRunByEngine: '{engine} が実行します',
     hsrGamePlatform: 'ゲームプラットフォーム',
     hsrGamePlatformTip:
@@ -734,16 +727,76 @@ export default {
     hsrCloudRunByM7a: 'クラウド・スターレイルは三月七が実行します',
     hsrSharedModuleNotEnabled:
       '共有タスク設定ではこのモジュールが無効です。設定は保存されますが、今回は実行されません。',
-    hsrResetSharedOverridesConfirmDesc:
-      '共有タスク設定で変更したすべての上書き値（全モジュール・全項目）を削除します。以後、「スクリプト」を選んだ全ユーザーが SRA / 三月なのかアシスタントの現在の設定で表示・実行されます。元の設定ファイルは変更されません。この操作は元に戻せません。',
     daily: '日課',
     hsrEngineUnavailable: '利用不可',
-    hsrNativeConfigNotLoaded: 'ネイティブ設定を読み込めませんでした',
-    hsrTaskEnabled: '有効',
+    hsrNativeConfigNotLoaded: '三月なのかアシスタント / SRA の設定をまだ読み込めていません',
     hsrTaskNotEnabled: '無効',
-    hsrTaskFieldCount: '設定 {n} 項目',
-    hsrTaskSwitchesOn: 'スイッチ {n} 個オン',
     hsrRepickStage: 'ステージを選び直してください',
+    hsrTaskConfig: 'タスク設定',
+    hsrSharedPlanTag: 'スクリプト共有',
+    hsrModuleSettings: '設定',
+    hsrSummaryNative: '{engine} の設定をそのまま使用',
+    hsrSummaryItem: '{label}：{value}',
+    hsrSummaryMore: '{text} ほか {n} 件',
+    hsrValueOn: 'オン',
+    hsrValueOff: 'オフ',
+    hsrValueEmpty: '（空）',
+    hsrDailySummary: '{type} · {stage}｜歴戦余韻：{eow}（{weekday}）',
+    hsrStageNotPicked: 'ステージ未選択',
+    hsrStageType: 'ステージの種類',
+    hsrStageTypeTip: '今回周回するステージの種類です。種類ごとに前回選んだステージを覚えています。',
+    hsrStage: 'ステージ',
+    hsrBuildTargetIgnoredSra:
+      '「{label}」がオンです。SRA は育成目標から周回先を決めるため、ここで選んだステージは実行されません。',
+    hsrBuildTargetFallbackM7a:
+      '「{label}」がオンです。三月なのかアシスタントは育成目標を優先し、認識できなかったときだけここで選んだステージを周回します。',
+    hsrFieldOverridden: '変更済み',
+    hsrFieldOverriddenTip: 'MAS で変更済み。実行時はこの値を使います',
+    hsrFieldNativeValue: 'MAS で変更済み。元の値：{value}',
+    hsrFieldReset: '元に戻す',
+    hsrFieldResetFailed: '元に戻せませんでした',
+    hsrListEmpty: 'まだ項目がありません',
+    hsrAddRow: '行を追加',
+    hsrRemoveRow: 'この行を削除',
+    hsrInstanceName: 'ステージ名',
+    hsrTeamNumber: 'チーム番号',
+    hsrBorrowCharacter: 'キャラクター名',
+    hsrBorrowFriend: 'フレンド名',
+    hsrFieldGroup: {
+      common: '基本',
+      team: 'チーム',
+      support: 'サポートキャラ',
+      activity: 'ドロップ2倍イベント',
+      replenish: '開拓力の補充',
+      reroll: 'リセマラ',
+      misc: 'その他',
+    },
+    hsrGroupOverriddenCount: '{n} 件変更済み',
+    hsrNoticeExpand: '詳細を表示',
+    hsrNoticeCollapse: '閉じる',
+    hsrModuleNotices: 'このモジュールに {n} 件のお知らせがあります',
+    hsrModuleReset: 'このモジュールを {engine} の設定に戻す',
+    hsrModuleResetConfirmTitle: 'このモジュールを {engine} の設定に戻しますか？',
+    hsrModuleResetConfirmUser:
+      'このユーザーが MAS でこのモジュールに加えた変更を削除します（現在のエンジンのみ）。三月なのかアシスタント / SRA 側の設定は変更されません。元に戻せません。',
+    hsrModuleResetConfirmShared:
+      '共有タスク設定でこのモジュールに加えた変更を削除します（現在のエンジンのみ）。「スクリプト」を選んだユーザー全員に影響します。三月なのかアシスタント / SRA 側の設定は変更されません。元に戻せません。',
+    hsrModuleResetDone: 'このモジュールを {engine} の設定に戻しました',
+    hsrModuleResetFailed: 'このモジュールを {engine} の設定に戻せませんでした',
+    hsrDialogDone: '完了',
+    hsrMarkNotDone: '未完了にする',
+    hsrUseUserOwn: 'このユーザー専用のタスク設定です。ほかのユーザーには影響しません。',
+    hsrUseDirect:
+      '三月なのかアシスタント / SRA に保存された設定をそのまま実行します。MAS はゲームの起動と後処理のみを担当し、このページのタスク設定は使われません。',
+    hsrModeSwitchedScript:
+      'スクリプト共有のタスク設定に切り替えました。自分の設定は残っており、「ユーザー」に戻すと復元されます。',
+    hsrModeSwitchedUser:
+      'このユーザー専用のタスク設定に切り替えました。スクリプト共有の設定には影響しません。',
+    hsrModeSwitchedDirect:
+      'このページのタスク設定は無効になりました。実行時は三月なのかアシスタント / SRA の設定をそのまま使います。',
+    hsrNoEnginePath: '先にスクリプト設定で三月なのかアシスタントか SRA のパスを入力してください。',
+    hsrCapabilityFallback:
+      'エンジンの状態を読み込めなかったため、スクリプト設定のパスをもとに表示しています：{reason}',
     notConfigured: '未設定',
     howUseThis: '使い方',
     whenSavingMasEncrypts:
@@ -783,7 +836,7 @@ export default {
     always: '常に',
     success: '成功時',
     engineReturnedNoDynamic:
-      '選択したエンジンからこのモジュールの動的設定が返りませんでした。ネイティブの設定ファイルとアダプターのバージョンを確認してください。',
+      'このエンジンからこのモジュールの設定を読み込めませんでした。そのエンジンで一度設定を保存してから、このページを再読み込みしてください。',
     run: '実行',
     folder: 'フォルダ',
     runOnceNewUser: '新規ユーザーは 1 回実行する',
@@ -955,7 +1008,6 @@ export default {
     maaPathSelected: 'MAA のパスを選択しました',
     masOnlyTakesOver: 'スクリプトか自分で起動・終了し、MAS は起動中のウィンドウだけを引き継ぎます',
     howLongMasWaits: 'MAS がゲームを起動してから操作可能になるまで待つ最大時間',
-    tasksManagedByMas: 'MAS が管理するタスク',
     masManagesGame: 'MAS がゲームを管理',
     mfwGamePackageName: 'ゲームのパッケージ名',
     mfwGamePackageNamePassed:
@@ -1018,7 +1070,6 @@ export default {
     pcControllersOnlySeconds: 'PC 側のコントローラーのみ設定が必要です。単位は秒',
     cutFromKeywordEnd:
       'キーワードから行末までを切り取ります。「含める」にチェックするとキーワードごと削除し、外すとキーワードは残します',
-    couldNotResetManagedOverrides: '元の設定にリセットできませんでした',
     couldNotClearInvalidManagedOverrides: '無効な上書きを削除できませんでした',
     cutFromStartLine:
       '行頭からキーワードまでを切り取ります。「含める」にチェックするとキーワードごと削除し、外すとキーワードは残します',
@@ -1035,7 +1086,6 @@ export default {
     closeGameAfterTask2: 'タスク終了後にゲームを終了',
     taskQueue: 'タスクキュー',
     taskQueueConfiguration: 'タスクキューの設定',
-    sanityConfiguration: '開拓力の設定',
     author: '作者',
     useThisUserS: 'このユーザー専用の設定を使い、スクリプトの設定とは切り離します。',
     useSharedScriptLevel: 'スクリプト単位の共有設定を、すべてのユーザーで使います。',
@@ -1061,8 +1111,7 @@ export default {
     shareThisConfigurationConfig: 'この設定を設定共有サイトに公開します',
     deleteThisTask: 'このタスクを削除',
     startDayIfIt:
-      '開始日になっても今週まだ完了していない場合、MAS は歴戦余韻を M7A/SRA に任せます。ログで完了が確認できた週は、以降スキップされます。',
-    farmStages: 'ステージを周回',
+      '開始日になっても今週まだ完了していない場合、MAS は歴戦余韻を三月なのかアシスタント / SRA に任せます。ログで完了が確認できた週は、以降スキップされます。',
     daysLeft1Means: '残り日数。-1 は無期限、0 は本日期限切れ、正の数はあと N 日を意味します',
     annihilationTimeoutMinutes: '殲滅代行のタイムアウト（分）',
     annihilationLaunchesItsOwn: '殲滅タスクは MAA を単独で 1 回起動します。',
@@ -1114,9 +1163,7 @@ export default {
     noOkWwSettings: 'ok-ww の設定はまだ生成されていません',
     interfaceJsonHasNot: 'interface.json はまだ読み込まれていません',
     nativeTaskConfigurationHas: 'ネイティブのタスク設定はまだ読み込まれていません',
-    managedOverridesReset:
-      '上書き値をすべて削除しました。現在の SRA / 三月なのかアシスタントの設定どおりに表示・実行します',
-    invalidManagedOverridesCleared: '無効な上書き {n} 件を削除しました',
+    invalidManagedOverridesCleared: '無効な設定 {n} 件を削除しました',
     scriptLevelMaaendConfiguration: 'スクリプト単位の MaaEnd 設定を開始しました',
     gamePathMatchedHtgame: 'ゲームのパスを NTEGame.exe ランチャーに自動で合わせました',
     applyPreset2: 'プリセットを適用',
@@ -1449,7 +1496,8 @@ export default {
       'MAS がゲームを起動する際の 2 段階の待機はこの上限を共有します。まずウィンドウの表示を待ち、次に画面の安定を待ちます。待機中は毎秒画面を確認し、内容があり 5 秒間変化がなければ早めにタスクを開始します。MaaFW の初期化は並行して進みます。Unity 製ゲームはウィンドウが出た時点ではまだ黒画面で読み込み中のことが多く、早すぎるとスクリプト側で認識異常と判定されます。ゲームが既に起動している場合は画面を待ちません。',
     mfwUnityResolutionTip:
       'Unity 製ゲームのみ有効：MAS は起動前に exe のパスからゲームのレジストリを逆引きし、解像度を一時的に選択したサイズのウィンドウモードに変更、ゲーム終了後に元の値へ戻します。ゲームがすでに起動している場合は変更しません。',
-    thisNameAlsoWritten: 'この名前は、貨幣戦争の開拓者名として M7A/SRA にも書き込まれます',
+    thisNameAlsoWritten:
+      'この名前は、貨幣戦争の開拓者名として三月なのかアシスタント / SRA にも書き込まれます',
     thisSubtaskHasNo: 'このサブタスクに編集できる項目はありません',
     thisConfigurationFileHas: 'この設定ファイルに編集できる項目はありません',
     details: '詳細設定',
@@ -1583,7 +1631,6 @@ export default {
     pickUserWhoseServer: '更新確認に使うサーバーのユーザーを選びます',
     chooseWhetherMasSwitches:
       'ゲーム内に保存済みのアカウントを MAS が切り替えるか、MAAEND の内蔵タスクがアカウント末尾 4 桁で切り替えるかを選びます',
-    pickStageFarmThis: '周回するステージを選びます。この項目は Stage.Channel に書き込まれます。',
     pickEchoOfWarStage: '挑戦する歴戦余韻のステージを選びます。',
     pickProjectDirectory: 'プロジェクトフォルダを選択',
     pickGameSOwn: 'ゲーム本体の exe を選択。終了後は MAS が閉じます',
