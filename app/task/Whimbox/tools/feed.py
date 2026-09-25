@@ -26,7 +26,7 @@
 - 结果块等消息内换行的续行没有时间列——越过运行起始时刻后监控器会原样
   采集（LogMonitor._consume_new_lines 的 if_log_start 语义）。
 
-事件模型是结构化的（kind/level/text/timestamp）——这是 RPC 结果面预留的
+事件模型是结构化的（text/timestamp）——这是 RPC 结果面预留的
 硬约束：Round 2 的 RpcEventFeed（订阅 ``event.run.log``）与文件行浅解析
 两侧语义对齐，高层零改动。
 """
@@ -116,7 +116,7 @@ class LoguruFileFeed:
             await result
 
     async def _on_log(self, log_content: list[str], latest_time: datetime) -> None:
-        """监控回调：把新增行转为事件（含无时间列的续行，level 浅解析）。
+        """监控回调：把新增行转为事件（含无时间列的续行）。
 
         上游日志是 CRLF，这里**就地**把新增行归一为 LF：下游（历史日志按平台换行
         写盘、通知正文）会再走一次换行翻译，CRLF 会变成 ``\\r\\r\\n``，读起来每行
@@ -137,10 +137,5 @@ class LoguruFileFeed:
                     WHIMBOX_LOG_TIME_FORMAT,
                     latest_time,
                 )
-            level = "error" if ("❌" in line or "🛑" in line) else "info"
-            await self._emit(
-                WhimboxRunEvent(
-                    kind="line", text=line, level=level, timestamp=timestamp
-                )
-            )
+            await self._emit(WhimboxRunEvent(text=line, timestamp=timestamp))
         self._emitted = len(log_content)

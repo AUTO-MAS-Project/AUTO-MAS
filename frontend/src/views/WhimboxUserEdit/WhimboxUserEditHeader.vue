@@ -37,6 +37,10 @@
 import { useI18n } from 'vue-i18n'
 import { ArrowLeftOutlined, HistoryOutlined } from '@ant-design/icons-vue'
 
+// 刻意不带「打开配置文件夹」入口（其余专项头组件均有）：通用 /user/config-dir
+// 指向 data/{scriptId}/{userId}，对奇想盒是空目录——它的双池备份实际位于
+// data/{scriptId}/WhimboxBackups/（见 app/task/Whimbox/tools/restore_service.py），
+// 通用端点指不到。要补入口需先扩端点，不在本 PR 范围。
 const { t } = useI18n()
 
 defineProps<{

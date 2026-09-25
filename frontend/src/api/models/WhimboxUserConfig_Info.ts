@@ -5,8 +5,9 @@
 /**
  * 奇想盒用户信息
  *
- * 配置来源只有两态：脚本=用 MAS 面板配置，直控=用奇想盒原生配置；不含「用户」
- * 态与快速配置开关（上游仅一份 config.json，「脚本」与「用户」行为一致）。
+ * base 来源三态（#879 语义）：「脚本/用户」=共享/独立 base（MAS 面板值，当前
+ * 运行行为一致、为后续特殊功能预留），「直控」=原生 base（奇想盒自带配置）；
+ * 覆写层（IfQuickConfig）为账号级独立开关，开启时原生态任务前也会物化面板覆盖集。
  */
 export type WhimboxUserConfig_Info = {
     /**
@@ -22,9 +23,13 @@ export type WhimboxUserConfig_Info = {
      */
     RemainedDay?: (number | null);
     /**
-     * 配置来源（脚本/直控）
+     * base 来源（脚本=共享/用户=独立/直控=原生）
      */
-    Mode?: ('脚本' | '直控' | null);
+    Mode?: ('脚本' | '用户' | '直控' | null);
+    /**
+     * 是否启用覆写层（快速配置，与来源独立；原生态开启时任务前写入面板覆盖集、结束还原）
+     */
+    IfQuickConfig?: (boolean | null);
     /**
      * 是否在任务前执行脚本
      */

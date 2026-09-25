@@ -78,8 +78,9 @@ describe('quick configuration panel visibility', () => {
     expect(source).toContain("formData.Info.IfQuickConfig = formData.Info.Mode !== '直控'")
   })
 
-  // Whimbox 也不接快速配置（两态来源 + 直控零写入），页面同样不得出现该开关
-  for (const name of ['General', 'HSR', 'BAAH', 'ZzzOd', 'Whimbox']) {
+  // Whimbox 已接入快速配置（2026-09 维护者决策，为后续特殊功能预留），
+  // 不再列进「无开关」名单；其绑定形态见下一条用例
+  for (const name of ['General', 'HSR', 'BAAH', 'ZzzOd']) {
     it(`${name} has no inactive or newly invented quick switch`, () => {
       const source = readFileSync(new URL(`./${name}UserEdit.vue`, import.meta.url), 'utf8')
       const template = parse(source).descriptor.template!.content
@@ -87,15 +88,19 @@ describe('quick configuration panel visibility', () => {
     })
   }
 
-  it('Whimbox section keeps the quick switch unbound', () => {
-    // 两态专项不接快速配置：Section 必须显式传 undefined 且不绑定任何字段，
-    // 否则会在 GeneralConfigModeSelector 里渲染出没有运行时的死开关
+  it('Whimbox binds the quick switch to the user field via the base selector', () => {
+    // 三态来源 + 快速配置：Section 把基座开关绑定到 Info.IfQuickConfig 并上抛变更，
+    // 页面处理器按字段路径保存（当前消费点：原生态任务前物化面板覆盖集、结束还原）
     const source = readFileSync(
       new URL('../../WhimboxUserEdit/BasicInfoSection.vue', import.meta.url),
       'utf8'
     )
     const template = parse(source).descriptor.template!.content
-    expect(template).toContain(':quick-config="undefined"')
-    expect(template).not.toMatch(/IfQuickConfig/)
+    expect(template).toContain(':quick-config="formData.Info.IfQuickConfig"')
+    expect(template).toContain('@quick-config-change=')
+
+    const page = readFileSync(new URL('./WhimboxUserEdit.vue', import.meta.url), 'utf8')
+    expect(page).toContain('handleQuickConfigChange')
+    expect(page).toContain("handleFieldSave('Info.IfQuickConfig', value)")
   })
 })

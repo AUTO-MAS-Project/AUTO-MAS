@@ -30,8 +30,7 @@ from contextlib import suppress
 from pathlib import Path
 
 from app.core.ws import Publisher, protocol
-from app.models.config import WhimboxConfig, WhimboxUserConfig
-from app.models.ConfigBase import MultipleConfig
+from app.models.config import WhimboxConfig
 from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, TaskExecuteBase
 from app.services import System
@@ -51,7 +50,6 @@ class ScriptConfigTask(TaskExecuteBase):
         self,
         script_info: ScriptItem,
         script_config: WhimboxConfig,
-        user_config: MultipleConfig[WhimboxUserConfig],
     ):
         super().__init__()
         if script_info.task_info is None:
@@ -59,7 +57,6 @@ class ScriptConfigTask(TaskExecuteBase):
         self.task_info = script_info.task_info
         self.script_info = script_info
         self.script_config = script_config
-        self.user_config = user_config
         self.cur_user_item = self.script_info.user_list[self.script_info.current_index]
         self.process_manager = ProcessManager()
         self.wait_event = asyncio.Event()

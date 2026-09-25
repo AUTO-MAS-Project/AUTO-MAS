@@ -40,6 +40,7 @@ from app.task.MaaFW.api_service import embedded as maafw_embedded_api
 from app.task.MaaFW.api_service import interface as maafw_interface_api
 from app.task.MaaFW.api_service import shell_instances as maafw_shell_instances_api
 from app.task.MaaFW.api_service import update as maafw_update_api
+from app.task.Whimbox.tools.upstream import WheelAssetsConfigSurface
 from app.utils import get_logger
 from app.utils.constants import UTC8
 from app.utils.io import ConfigCorruptedError
@@ -3247,8 +3248,6 @@ async def get_whimbox_task_catalog_api(
                 code=400, status="error", message="缺少 scriptId"
             )
         script_config = _whimbox_script_config(scriptId)
-        from app.task.Whimbox.tools.upstream import WheelAssetsConfigSurface
-
         surface = WheelAssetsConfigSurface(
             Path(str(script_config.get("Info", "RootPath") or ""))
         )

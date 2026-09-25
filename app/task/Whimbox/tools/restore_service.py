@@ -22,14 +22,14 @@
 ``list`` / ``snapshot`` / ``read_file`` / ``files`` 兜底全部由基座
 （``app.utils.config_restore``）从 ``files`` + ``backup_root`` 声明派生。
 
-- ``mas`` 池（用户级）：奇想盒没有 per-user ConfigFile 目录，MAS 面板的
-  一条龙覆盖集与流程开关都是**用户配置字段**（运行时才物化进上游
+- ``mas`` 池（账号级，#879 语义）：奇想盒没有 per-account ConfigFile 目录，
+  MAS 面板的一条龙覆盖集与流程开关都是**账号配置字段**（运行时才物化进上游
   ``configs/config.json``），故 mas 池是**纯字段侧车**——归档内唯一文件是
   ``_mas_overlay.json``（覆盖集原始值 + 流程开关 + 展示快照）。恢复 = 读
   侧车回填 ``WhimboxUserConfig``（配置来源只预览不回填，回填旧来源会静默
-  翻转 MAS 是否写入），回填后前端重拉表单。池恒按用户分桶——字段是用户级
-  数据，与来源态无关。
-- ``native`` 池（脚本级）：安装根 ``configs/config.json``，按物理路径指纹
+  翻转 MAS 是否写入），回填后前端重拉表单。池恒按账号分桶——字段是账号级
+  数据，与 base 来源无关。
+- ``native`` 池（共享）：安装根 ``configs/config.json``，按物理路径指纹
   分桶（项目级，跨脚本实例共享同池）。文件清单与「备份文件」查看由基座从
   ``files`` + ``backup_root`` 派生，专项不拼装。
 

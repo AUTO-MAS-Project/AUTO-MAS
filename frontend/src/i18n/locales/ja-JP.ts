@@ -261,6 +261,7 @@ export default {
     configureMaa: 'MAA を設定',
     configureSrc: 'SRC を設定',
     configureOkWw: 'ok-ww を設定',
+    configureWhimbox: 'Whimbox を設定',
     configurePerUserMaaend: 'ユーザー単位の MaaEnd を設定',
     restartingAutoMasStops: 'AUTO-MAS を再起動すると実行中のタスクが停止します。再起動しますか？',
     restartBackendUpdate: 'バックエンドを再起動して更新',
@@ -3160,6 +3161,11 @@ export default {
       okwwTitle: 'ok-ww の設定中です',
       okwwDesc: 'ok-ww の画面で設定を完了してください。',
       okwwUnlockTip: '終わったら「設定を保存」を押してこのセッションを終了してください。',
+      whimboxTitle: 'Whimbox のネイティブ設定中です',
+      whimboxDesc:
+        'Whimbox の画面で設定を完了してください：経路データのダウンロード、モデルやキーバインドの設定など。',
+      whimboxUnlockTip:
+        '終わったら「設定を保存」を押してこのセッションを終了してください（MAS はネイティブ設定に書き込まず、セッションの前後でスナップショットを取得します）。',
       saveConfig: '設定を保存',
       saveSettings: '設定を保存',
     },

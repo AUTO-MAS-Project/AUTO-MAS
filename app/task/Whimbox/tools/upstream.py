@@ -97,7 +97,8 @@ def parse_override_map(raw: object) -> dict:
     """把覆盖集 JSON（字符串或已解对象）安全解为 dict（损坏按空集）。
 
     覆盖集以 map 为最小语义单元（单键粒度无意义），损坏值按空集处理而不抛错：
-    读侧（物化、展示快照）遇到坏值走「没有覆盖」，不该被它拦下。
+    读侧（物化、展示快照）遇到坏值走「没有覆盖」，不该被它拦下。这是 MAS 侧
+    自己的存储（非上游文件），但静默丢配置同样不可接受——损坏必须留痕。
     """
 
     if isinstance(raw, dict):
@@ -105,8 +106,12 @@ def parse_override_map(raw: object) -> dict:
     try:
         data = json.loads(str(raw or "{}"))
     except json.JSONDecodeError:
+        logger.warning(f"奇想盒覆盖集 JSON 损坏，按空集处理: {str(raw)[:200]}")
         return {}
-    return data if isinstance(data, dict) else {}
+    if not isinstance(data, dict):
+        logger.warning(f"奇想盒覆盖集 JSON 非映射，按空集处理: {str(raw)[:200]}")
+        return {}
+    return data
 
 
 def _is_bool_string_template(default: object) -> bool:
@@ -503,9 +508,6 @@ class WheelAssetsConfigSurface:
         logger.info(f"已还原奇想盒 config.json（运行前归档 {ts}）")
 
     # ── 恢复池用的同族函数（供 tools/restore_service.py 复用同池原语） ──
-
-    def list_backups(self) -> list[str]:
-        return list_times(self.backup_root())
 
     def backup_dir_files(self, ts: str) -> dict[str, Path]:
         """归档条目内的文件集（预览用；目录式布局同 dir_files）。"""

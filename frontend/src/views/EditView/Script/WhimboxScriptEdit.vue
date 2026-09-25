@@ -7,7 +7,7 @@
         </a-breadcrumb-item>
         <a-breadcrumb-item>
           <div class="breadcrumb-current">
-            <img src="@/assets/whimbox.png" alt="奇想盒" class="breadcrumb-logo" />
+            <img src="@/assets/whimbox.png" :alt="SCRIPT_LABELS.Whimbox" class="breadcrumb-logo" />
             {{ t('edit.editScript') }}
           </div>
         </a-breadcrumb-item>
@@ -36,7 +36,7 @@
           <a-tag v-if="upstreamVersion" color="blue" class="type-tag">
             v{{ upstreamVersion }}
           </a-tag>
-          <a-tag color="pink" class="type-tag">奇想盒</a-tag>
+          <a-tag color="pink" class="type-tag">{{ SCRIPT_LABELS.Whimbox }}</a-tag>
         </a-space>
       </template>
 
@@ -209,6 +209,7 @@ import {
 import { useScriptApi } from '@/composables/useScriptApi'
 import { useSaveQueue } from '@/composables/useSaveQueue'
 import { useWhimboxTaskCatalog } from '@/composables/useWhimboxTaskCatalog'
+import { SCRIPT_LABELS } from '@/utils/scriptLogos'
 
 const { t } = useI18n()
 const logger = window.electronAPI.getLogger('奇想盒脚本编辑')
@@ -311,9 +312,10 @@ const applyRootPathDefaults = async (rootPath: string) => {
       }
       whimboxConfig.Info.RootPath = previousPath
       return false
-    } catch (error) {
+    } catch {
+      // updateScript 失败只返回 false 不抛错；此兜底防未来契约变化产生 unhandled rejection
       whimboxConfig.Info.RootPath = previousPath
-      throw error
+      return false
     }
   })
 }
@@ -337,6 +339,8 @@ const loadScript = async () => {
     const config = detail.config as Partial<WhimboxScriptConfigForm>
     Object.assign(whimboxConfig.Info, config.Info || {})
     Object.assign(whimboxConfig.Run, config.Run || {})
+    // 目录已配置时顺带拉一次目录接口，展示上游版本（refreshUpstreamVersion 自带空目录守卫）
+    void refreshUpstreamVersion()
   } catch {
     message.error(t('edit.couldNotLoadScript'))
   } finally {

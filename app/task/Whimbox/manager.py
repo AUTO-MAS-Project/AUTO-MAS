@@ -166,7 +166,6 @@ class WhimboxManager(TaskExecuteBase):
                 ScriptConfigTask(
                     self.script_info,
                     self.script_config,
-                    self.user_config,
                 )
             )
             return
@@ -183,9 +182,6 @@ class WhimboxManager(TaskExecuteBase):
             sub_check = await method.check()
             if sub_check != "Pass":
                 self.check_result = sub_check
-                current_user = self.script_info.user_list[
-                    self.script_info.current_index
-                ]
                 if current_user.status == "等待":
                     current_user.status = "异常"
                 await Publisher.send(

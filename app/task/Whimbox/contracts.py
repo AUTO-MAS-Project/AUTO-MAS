@@ -30,8 +30,8 @@ RPC 线预留边界（防后来人误预建）：只预留结果面——事件�
 （``WhimboxRunEvent``，非裸文本行）。上游 ``rpc_server.py`` 的 ``event.run.log``
 载荷是 ``{session_id, run_id, source, message, raw_message, level, type
 [, tool_call_id]}``（该推送面没写进 ``docs/protocol``，只有实现依据）：接 RPC 时
-``text`` 取 ``message``、``level`` 直取，``source`` / ``type`` / ``run_id`` 进事件
-上下文，不为对齐再加字段；执行模型（常驻进程/session/task.run）不预留，
+``text`` 取 ``message``，``source`` / ``type`` / ``run_id`` 等上下文真需求时再
+随具体实现加字段，不预建；执行模型（常驻进程/session/task.run）不预留，
 Round 2 真需求时从具体实现提炼。
 """
 
@@ -49,14 +49,8 @@ from typing import Protocol
 class WhimboxRunEvent:
     """运行期一条事件：v1 由日志行浅解析而来（RPC 事件面的取值约定见模块注释）。"""
 
-    kind: str
-    """事件类别：line=日志行，stopped=监控停止"""
-
     text: str = ""
     """事件文本（日志行原文）"""
-
-    level: str = "info"
-    """级别（对齐上游日志/RPC 推送的 level 语义；行浅解析只分 info/error）"""
 
     timestamp: datetime | None = None
     """行时间戳（取自日志行时间列；无时间戳的续行为 None）"""

@@ -118,17 +118,16 @@
 
     <a-row :gutter="24">
       <a-col :span="24">
-        <!-- 奇想盒不接「快速配置」：显式传 quick-config=undefined 表明「未接入该字段」。
-             基座已把该 prop 的默认值声明为 undefined（Boolean casting 的坑在基座内解决，
-             见 GeneralConfigModeSelector 的 props 注释），这里显式传是为了不依赖基座
-             默认值、意图一眼可见。 -->
+        <!-- 三态 base 来源卡片 + 覆写层开关（基座渲染，绑定账号级 Info.IfQuickConfig：
+             原生态开启时任务前物化面板覆盖集、结束还原；共享/独立态面板本就是 base） -->
         <GeneralConfigModeSelector
           :model-value="formData.Info.Mode"
           :options="whimboxConfigModeOptions"
           :disabled="loading"
-          :quick-config="undefined"
+          :quick-config="formData.Info.IfQuickConfig"
           :alert-message="t('edit.whimboxConfigSourceHint')"
           @change="(value: boolean | string) => emit('modeChange', value)"
+          @quick-config-change="(value: boolean) => emit('quickConfigChange', value)"
         />
       </a-col>
     </a-row>
@@ -152,6 +151,7 @@ const props = defineProps<{
       Name: string
       Status: boolean
       Mode: string
+      IfQuickConfig: boolean
       RemainedDay: number
       Notes: string
       Tag: string
@@ -163,6 +163,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   save: [key: string, value: unknown]
   modeChange: [value: boolean | string]
+  quickConfigChange: [value: boolean]
 }>()
 
 const formData = props.formData
@@ -170,17 +171,23 @@ const formData = props.formData
 // 只读标签：后端按运行情况生成的 JSON 字符串
 const userTags = computed(() => parseStatusTagList(formData.Info.Tag))
 
-// 配置来源两态卡片（脚本=用 MAS 面板配置 / 直控=用奇想盒原生配置）：
-// 上游只有一份 config.json 且无脚本级一条龙配置，故不设「用户」态与快速配置开关。
+// 配置来源三态卡片（#879 语义：base 来源=共享/独立/原生）：「脚本/用户」=共享/
+// 独立 base（本页面板值，当前运行行为一致、为后续特殊功能预留），「直控」=原生
+// base（奇想盒自带配置，MAS 零写入）。
 // 值域来自共享表（同时被页面的切换校验消费），新增状态会在本表漏写时报类型错。
 const modeMeta: Record<
   WhimboxConfigMode,
-  { title: string; description: string; icon: 'database' | 'setting' }
+  { title: string; description: string; icon: 'database' | 'file' | 'setting' }
 > = {
   脚本: {
     title: t('edit.script'),
     description: t('edit.whimboxModeScriptDesc'),
     icon: 'database',
+  },
+  用户: {
+    title: t('edit.user'),
+    description: t('edit.whimboxModeUserDesc'),
+    icon: 'file',
   },
   直控: {
     title: t('edit.directControl'),

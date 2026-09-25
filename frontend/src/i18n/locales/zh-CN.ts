@@ -1932,9 +1932,10 @@ export default {
       'MAS 面板的任务开关与目标参数（运行时写入奇想盒）的备份，恢复会直接作用于 MAS 配置页；退出本编辑页时自动去重创建，保留最近 10 份',
     whimboxConfigRestoreScriptDesc: '奇想盒原生配置（configs/config.json）的运行前快照',
     whimboxConfigSourceHint:
-      '选择「脚本」时使用本页配置并写入奇想盒；选择「直控」时直接用奇想盒里的原生配置，MAS 不写入。LLM 模型、键位、跑图路线等请用「直控」在奇想盒 app 中设置。',
-    whimboxModeScriptDesc: '使用本页配置，运行时写入奇想盒',
-    whimboxModeDirectDesc: '直接使用奇想盒里的原生配置，MAS 不写入',
+      '「脚本/用户」为共享/独立配置：使用本页设置并写入奇想盒；「直控」为原生配置：直接用奇想盒自带配置，MAS 不写入（开启快速配置后任务前写入面板覆盖集、任务结束还原）。LLM 模型、键位、跑图路线等请用「直控」在奇想盒 app 中设置。',
+    whimboxModeScriptDesc: '共享配置：使用本页设置，运行时写入奇想盒',
+    whimboxModeUserDesc: '独立配置：使用本页设置，运行时写入奇想盒（当前与脚本态一致）',
+    whimboxModeDirectDesc: '原生配置：直接使用奇想盒自带配置，MAS 不写入',
     whimboxCatalogFetchFailed: '获取奇想盒任务目录失败',
     // ZZZ-OD 专项
     zzzodScriptConfiguration: 'ZZZ-OD 脚本配置',

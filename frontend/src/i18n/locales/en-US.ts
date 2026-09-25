@@ -2027,9 +2027,11 @@ export default {
     whimboxConfigRestoreScriptDesc:
       'Pre-run snapshots of the native Whimbox config (configs/config.json)',
     whimboxConfigSourceHint:
-      "Script uses this page's configuration and writes it to Whimbox; Direct control uses the native Whimbox configuration and MAS writes nothing. Set the LLM model, keybinds and pathing routes in the Whimbox app via Direct control.",
-    whimboxModeScriptDesc: "Use this page's configuration; written to Whimbox at run time",
-    whimboxModeDirectDesc: 'Use the native Whimbox configuration; MAS writes nothing',
+      "'Script/User' are shared/independent bases: this page's settings are written to Whimbox at run time; 'Direct control' is a native base: Whimbox's own configuration, MAS writes nothing (with quick configuration enabled, panel overrides are written before the run and restored afterwards). Set the LLM model, keybinds and pathing routes in the Whimbox app via Direct control.",
+    whimboxModeScriptDesc: "Shared base: use this page's settings, written to Whimbox at run time",
+    whimboxModeUserDesc:
+      "Independent base: use this page's settings, written to Whimbox at run time (currently identical to Script)",
+    whimboxModeDirectDesc: "Native base: use Whimbox's own configuration; MAS writes nothing",
     whimboxCatalogFetchFailed: 'Failed to load the Whimbox OneDragon task catalog',
     // ZZZ-OD dedicated adapter
     zzzodScriptConfiguration: 'ZZZ-OD script settings',

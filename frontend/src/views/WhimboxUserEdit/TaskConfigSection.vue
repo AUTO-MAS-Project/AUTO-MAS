@@ -250,6 +250,8 @@ const optionGroups = computed<Array<{ prefix: string; items: WhimboxOptionCatalo
 })
 
 // 覆盖集以整张 map 为最小保存单元（单键粒度无意义），变更时上抛新 map
+// 步骤开关两端都落键（true/false 都写）：目录条目只带 key/display/section、
+// 不带上游默认值，前端无从得知「不覆盖」时上游默认是开还是关，删键回退不可用
 const toggleTask = (key: string, value: boolean) => {
   emit('tasksChange', { ...props.tasks, [key]: value })
 }

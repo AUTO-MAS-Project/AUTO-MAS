@@ -15,6 +15,7 @@
           :loading="loading"
           @save="handleFieldSave"
           @mode-change="handleConfigModeChange"
+          @quick-config-change="handleQuickConfigChange"
         />
 
         <TaskConfigSection
@@ -124,8 +125,8 @@ const { configLocked } = useScriptConfigLock(() => scriptId)
 // 脚本信息
 const scriptName = ref('')
 
-// 奇想盒专项统一名（文案参数化用）
-const WHIMBOX_DISPLAY_NAME = '奇想盒'
+// 奇想盒专项统一名（文案参数化用；对齐 baah/maaend/bettergi 的 Latin 小写惯例）
+const WHIMBOX_DISPLAY_NAME = 'whimbox'
 
 // ══ 任务目录（字段定义与值域全部来自后端下发，前端零硬编码步骤键）══
 const catalogSteps = computed<WhimboxTaskCatalogItem[]>(() => catalogData.value?.steps ?? [])
@@ -141,6 +142,7 @@ const getDefaultWhimboxUserData = () => ({
     Name: '',
     Status: true,
     Mode: '脚本',
+    IfQuickConfig: false,
     RemainedDay: -1,
     IfScriptBeforeTask: false,
     ScriptBeforeTask: '',
@@ -210,12 +212,19 @@ watch(
   }
 )
 
-// 配置来源切换：校验 value ∈ 两态白名单 → 赋值 Info.Mode → 保存
+// base 来源切换（共享/独立/原生）：校验 value ∈ 三态白名单 → 赋值 Info.Mode → 保存
 const handleConfigModeChange = async (value: boolean | string) => {
   if (typeof value !== 'string') return
   if (!(WHIMBOX_CONFIG_MODES as readonly string[]).includes(value)) return
   formData.Info.Mode = value
   await handleFieldSave('Info.Mode', formData.Info.Mode)
+}
+
+// 覆写层（快速配置）切换：与来源独立的账号级开关；原生态开启时任务前物化面板
+// 覆盖集、任务结束还原（overlay），共享/独立态面板本就是 base、开关暂无额外消费点
+const handleQuickConfigChange = (value: boolean) => {
+  formData.Info.IfQuickConfig = value
+  void handleFieldSave('Info.IfQuickConfig', value)
 }
 
 // 把覆盖集 JSON（字符串或已解对象）安全解为 dict
@@ -408,6 +417,8 @@ const loadScriptInfo = async () => {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`加载脚本信息失败: ${errorMsg}`)
     message.error(t('edit.couldNotLoadScript2'))
+    // 复位初始化标志：否则 loading 恒真、整页控件永久禁用（对齐 loadUserData 的 catch）
+    isInitializing.value = false
   }
 }
 

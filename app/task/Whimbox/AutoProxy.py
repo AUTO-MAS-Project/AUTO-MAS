@@ -144,9 +144,13 @@ class AutoProxyTask(TaskExecuteBase):
         ]
         self.cur_user_uid = uuid.UUID(self.cur_user_item.user_id)
         self.cur_user_config: WhimboxUserConfig = self.user_config[self.cur_user_uid]
-        # 两态来源：脚本=把面板值写入上游 config.json；直控=用上游原生配置、MAS 零写入
+        # base 来源三态（共享/独立/原生）：脚本/用户=把面板值写入上游 config.json
+        # （运行时物化）；直控=用上游原生配置、MAS 零写入——除非开启覆写层
+        # （快速配置，overlay：任务前物化面板覆盖集、结束还原，与家族「原生+开启」语义一致）
         self.config_mode = read_config_source(self.cur_user_config)
-        self.use_mas_config = self.config_mode != CONFIG_SOURCE_DIRECT
+        self.use_mas_config = self.config_mode != CONFIG_SOURCE_DIRECT or bool(
+            self.cur_user_config.get("Info", "IfQuickConfig")
+        )
 
         self.root_path = Path(str(self.script_config.get("Info", "RootPath") or ""))
         self.config_surface = config_surface or WheelAssetsConfigSurface(self.root_path)
@@ -213,9 +217,9 @@ class AutoProxyTask(TaskExecuteBase):
     def _takeover_config(self) -> None:
         """快照 → 物化：接管配置时把用户覆盖集写入上游 config.json。
 
-        归档无条件执行（运行前安全网）；物化与还原只在接管时——直控模式
-        MAS 零写入，上游运行期的自我迁移（合并默认键等）属其内部行为，
-        不予还原。
+        归档无条件执行（运行前安全网）；物化与还原只在接管时——原生态未开
+        覆写层时 MAS 零写入，上游运行期的自我迁移（合并默认键等）属其内部
+        行为，不予还原；原生态开启覆写层则任务前物化、结束还原（overlay）。
         """
 
         # 运行前强制归档（覆盖性物化前；失败即任务失败，不留无快照的覆写）

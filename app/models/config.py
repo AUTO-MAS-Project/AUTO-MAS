@@ -1293,8 +1293,7 @@ class ConfigSourceValidator(OptionsValidator):
     """配置来源校验器, 支持两态或三态, 并兼容旧版来源名。
 
     Args:
-        modes: 允许的配置来源。三态=脚本/用户/直控; 两态按上游形态定
-            （奇想盒为脚本/直控，见 ``WhimboxConfigModeValidator``）。
+        modes: 允许的配置来源。三态=脚本/用户/直控, 两态=用户/直控。
         legacy_map: 旧版来源名到新名的映射, 加载时自动归一。
     """
 
@@ -1325,18 +1324,6 @@ class UserDirectConfigModeValidator(ConfigSourceValidator):
 
     def __init__(self) -> None:
         super().__init__(("脚本", "用户", "直控"))
-
-
-class WhimboxConfigModeValidator(ConfigSourceValidator):
-    """脚本/直控两态配置来源。
-
-    奇想盒上游只有一份 config.json，且没有脚本级的独立一条龙配置，「脚本」与
-    「用户」在运行时行为一致（都写 MAS 面板值），故只保留两态：脚本=用 MAS 面板
-    配置，直控=用奇想盒原生配置。存量的「用户」归一到「脚本」（行为相同）。
-    """
-
-    def __init__(self) -> None:
-        super().__init__(("脚本", "直控"), {"用户": "脚本"})
 
 
 class MaaEndUserConfig(ConfigBase):
@@ -5348,9 +5335,18 @@ class WhimboxUserConfig(ConfigBase):
         ## Info ------------------------------------------------------------
         self.Info_Name = ConfigItem("Info", "Name", "新用户", UserNameValidator())
         self.Info_Status = ConfigItem("Info", "Status", True, BoolValidator())
-        ## 配置来源（脚本/直控两态）：脚本=用 MAS 面板配置，直控=直接用奇想盒原生配置
+        ## base 来源三态（共享/独立/原生，存储值沿用「脚本/用户/直控」）：共享/独立=
+        ## 用 MAS 面板配置（当前运行行为一致，为后续特殊功能预留），原生=直接用奇想盒
+        ## 自带配置（MAS 零写入）
         self.Info_Mode = ConfigItem(
-            "Info", "Mode", "脚本", WhimboxConfigModeValidator()
+            "Info", "Mode", "脚本", UserDirectConfigModeValidator()
+        )
+        ## 是否启用覆写层（快速配置，与来源独立，按账号保存，默认关）：开启时原生态
+        ## 也会在任务前把面板覆盖集写入奇想盒（overlay，任务结束还原）；共享/独立态
+        ## 面板本就是 base 来源，开关暂无额外消费点，为后续特殊功能预留。默认关保证
+        ## 「原生=零写入」与 _write_config_or_hint 报错里「切原生绕开写入」的出路成立
+        self.Info_IfQuickConfig = ConfigItem(
+            "Info", "IfQuickConfig", False, BoolValidator()
         )
         self.Info_RemainedDay = ConfigItem(
             "Info", "RemainedDay", -1, RangeValidator(-1, 9999)
