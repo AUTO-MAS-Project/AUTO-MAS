@@ -45,8 +45,9 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   视图根上的 `.auto_mas_view.json`（谱系、载荷、版本、物化时刻、`switchedBy`）是物化事实的唯一
   来源，不进指纹、不进任何清单，只随目录原子换入、不原地改（`switchedBy` 打完日志后清除除外）。
   谱系键 = `mirrorchyan_rid` > `github` > `name`；**组 = 谱系 + `Update.Channel`，同组永远挂同一个
-  载荷**（`lineage.json` 的 `latest[channel]` 只前进，同版本不换 id）。配置项零新增：谱系 / 载荷 /
-  版本都不进 `ScriptConfig.json`。
+  载荷**（`lineage.json` 的 `latest[channel]` 只前进，同版本不换 id——唯一例外是 latest
+  自带的 MaaFramework 在本机加载不了而新登记的能加载，见 `payloads._replaces_unloadable_latest`）。
+  配置项零新增：谱系 / 载荷 / 版本都不进 `ScriptConfig.json`。
 - **投影**：按 interface 白名单（`project_update/projection.py`），**白名单之外的顶层条目
   剩余 ≤ 64 MB 的也带走**（MaaEnd 的 `data/`、`locales/`，MaaYYs 的 `assets/答案.csv`，M9A 的
   `data/activity` 都没在 interface 里声明却是 agent 运行时要读的；更大的顶层目录、根上没声明的

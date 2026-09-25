@@ -767,6 +767,8 @@ def register(
     - ``latest[channel]`` **只在版本严格更高时前进**；版本相同而 id 不同时保留既有 id
       （新建的这份不登记为 latest，等启动期回收）。返回的 ``latest_id`` 就是调用方该把
       视图切到的那个。``latest`` 指向的目录丢了才无条件换成这份。
+    - 唯一的同版本例外：既有 latest 自带的 MaaFramework 在本机加载不了、这份能加载
+      （见 :func:`_replaces_unloadable_latest`），换成这份。
     """
 
     staging = Path(staging)
@@ -860,8 +862,16 @@ def register(
             advanced = True
         else:
             current_version = str(current_latest.get("version") or "")
-            if (lineage_dir(root, lineage) / str(current_latest["id"])).is_dir():
-                advanced = version_newer(version, current_version)
+            latest_dir = lineage_dir(root, lineage) / str(current_latest["id"])
+            if latest_dir.is_dir():
+                advanced = version_newer(
+                    version, current_version
+                ) or _replaces_unloadable_latest(
+                    latest_dir,
+                    target,
+                    same_id=str(current_latest["id"]) == payload_id,
+                    same_version=not version_newer(current_version, version),
+                )
             else:
                 # latest 指的目录丢了：只有新登记的不比它旧才顶上去，否则组会后退；
                 # 保留原 latest，缺失的载荷由自愈 / 迁移处理。
@@ -904,6 +914,28 @@ def register(
         manifest=manifest,
         latest_available=latest_available,
     )
+
+
+def _replaces_unloadable_latest(
+    latest_dir: Path, candidate_dir: Path, *, same_id: bool, same_version: bool
+) -> bool:
+    """同版本重新登记时，新的这份该不该顶替组的 latest。
+
+    只有一种情况：latest 自带的 MaaFramework 在本机加载不了（PE 架构不符——旧版在来源
+    ``runtimes/`` 同时带 win-arm64 与 win-x64 时按名字选中了 arm64，x64 机器上副本只剩
+    arm64），而这份能加载。不开这个口子，「在脚本页重新导入」永远换不掉坏的那份，只能等
+    项目出新版本。两边都读不出架构、或都能 / 都不能加载时照旧不换。
+    """
+
+    if same_id or not same_version:
+        return False
+    from app.task.MaaFW.tools.core.runner.environment import (
+        project_runtime_loadable_on_host,
+    )
+
+    if project_runtime_loadable_on_host(latest_dir) is not False:
+        return False
+    return project_runtime_loadable_on_host(candidate_dir) is True
 
 
 def _same_version_rank(

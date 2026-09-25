@@ -947,6 +947,22 @@ def _runtime_loadable_on_host(runtime_path: Path) -> bool:
     return found is None or found == host_architecture()
 
 
+def project_runtime_loadable_on_host(project_path: Path) -> bool | None:
+    """项目自带的 MaaFramework 在本机能不能加载。
+
+    Returns:
+        True / False；项目没自带原生库、或读不出它的架构时 None（不猜）。
+    """
+
+    runtime = project_maafw_runtime_path(project_path)
+    if runtime is None:
+        return None
+    found = detect_pe_architecture(runtime / PROJECT_MAAFW_DLL_NAME)
+    if found is None:
+        return None
+    return found == host_architecture()
+
+
 _PE_SIGNATURE = bytes((0x50, 0x45, 0x00, 0x00))  # PE signature
 # PE 头里的 machine 字段 -> 架构名。取值来自 PE/COFF 规范。
 _PE_MACHINE_ARCHITECTURES = {
