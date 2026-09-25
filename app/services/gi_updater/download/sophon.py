@@ -48,6 +48,7 @@ from typing import Any, Callable, Dict, Iterable, List, Optional
 from app.services.gi_updater.api.client import HttpClient
 from app.services.gi_updater.api.models import SophonManifestBuildBranch
 from app.services.gi_updater.common.logging import get_logger
+from app.services.gi_updater.common.paths import safe_join
 from app.services.gi_updater.common.progress import (
     ProgressBase,
     summarize_size,
@@ -796,10 +797,12 @@ class SophonDownloader:
 
 
 def _resolve_target_path(game_path: str, asset_name: str) -> str:
-    """把清单里的资产路径解析为本地绝对路径。
+    """把清单里的资产路径解析为本地绝对路径，越界即拒绝。
 
-    清单路径以 ``\\``（或 ``/``）分隔且相对游戏根目录，这里统一转成
-    当前系统的分隔符，并去掉开头的分隔符，避免 Windows 反斜杠路径问题。
+    清单路径以 ``\\``（或 ``/``）分隔且相对游戏根目录。清单是服务端下发的
+    不可信输入，这里走 :func:`common.paths.safe_join` 做防穿越校验——
+    ``..``、盘符、UNC 与解析后越出根目录的路径一律拒绝，与 Collapse 上游
+    的路径安全行为对齐。
 
     Args:
         game_path: 游戏根目录。
@@ -807,7 +810,8 @@ def _resolve_target_path(game_path: str, asset_name: str) -> str:
 
     Returns:
         拼接后的本地绝对路径。
+
+    Raises:
+        UnsafePathError: 路径形态非法或越出游戏根目录时。
     """
-    normalized = asset_name.replace("\\", os.sep).replace("/", os.sep)
-    normalized = normalized.lstrip(os.sep)
-    return os.path.join(game_path, normalized)
+    return safe_join(game_path, asset_name)
