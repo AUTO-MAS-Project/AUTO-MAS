@@ -1107,14 +1107,14 @@ export default {
     checkGameUpdateBeforeLogin:
       '开启后，登录游戏前先比对服务端与模拟器内的游戏客户端版本。客户端版本落后时游戏会停在强制更新界面，导致登录一直卡住',
     updateAutomaticallyBeforeLaunching: '启动前自动更新',
-    genshinUpdateAuto: '启动前自动更新原神',
+    genshinUpdateAuto: '自动更新原神（不支持B服）',
     genshinUpdateAutoHint:
       '任务启动游戏前，由 MAS 自己查版本并完成下载与安装，不必再开官方启动器；只自动应用增量包，拿不到增量时会停止并交给官方启动器。不支持 B服，B服请用官方启动器自行更新',
-    genshinUpdateExe: '原神游戏程序',
+    genshinUpdateExe: '游戏目录',
     genshinUpdateExeHint:
-      '只认 YuanShen.exe 与 GenshinImpact.exe；区服按文件名自动判定，安装目录取它所在目录',
+      '只认 YuanShen.exe 与 GenshinImpact.exe，安装目录取它所在目录，区服按文件名自动判定；不支持 B服，B服请用官方启动器自行更新',
     genshinUpdateExePlaceholder: '选择 YuanShen.exe 或 GenshinImpact.exe',
-    genshinUpdateExePick: '选择程序',
+    genshinUpdateExePick: '选择位置',
     genshinUpdateExeRejected: '只能选 YuanShen.exe 或 GenshinImpact.exe',
     genshinUpdateTimeLimit: '更新时限（分钟）',
     genshinUpdateTimeLimitHint: '超时即中止本轮；已完成的部分保留，下次从断点继续',

@@ -1,12 +1,12 @@
 <script setup lang="ts">
 /**
  * 原神客户端更新相关字段。通用脚本只要开关与时限（安装目录由「游戏路径」推导），
- * BetterGI 额外要选「原神游戏程序」。区服与语音都不让用户填：前者按程序文件名判定，
+ * BetterGI 额外要选「游戏目录」。区服与语音都不让用户填：前者按程序文件名判定，
  * 后者跟随客户端自己的清单。
  */
 import { useI18n } from 'vue-i18n'
 import { message } from 'ant-design-vue'
-import { FileOutlined, QuestionCircleOutlined } from '@ant-design/icons-vue'
+import { FolderOpenOutlined, QuestionCircleOutlined } from '@ant-design/icons-vue'
 
 import { isGenshinClientExe } from '@/types/script'
 
@@ -22,7 +22,7 @@ const props = defineProps<{
   model: GenshinUpdateFields
   /** 所在分区整体禁用（如任务运行中锁配置） */
   disabled?: boolean
-  /** 是否显示「原神游戏程序」行（BetterGI 需要；通用脚本用已有的游戏路径） */
+  /** 是否显示「游戏目录」行（BetterGI 需要；通用脚本用已有的游戏路径） */
   withExe?: boolean
 }>()
 
@@ -119,18 +119,18 @@ const pickExe = async () => {
             </a-tooltip>
           </span>
         </template>
-        <a-input-group compact>
+        <a-input-group compact class="path-input-group">
           <a-input
             v-model:value="model.UpdateExe"
             size="large"
+            class="path-input"
             :placeholder="t('edit.genshinUpdateExePlaceholder')"
             :disabled="disabled"
             readonly
-            style="width: calc(100% - 96px)"
           />
-          <a-button size="large" :disabled="disabled" @click="pickExe">
+          <a-button size="large" class="path-button" :disabled="disabled" @click="pickExe">
             <template #icon>
-              <FileOutlined />
+              <FolderOpenOutlined />
             </template>
             {{ t('edit.genshinUpdateExePick') }}
           </a-button>
@@ -139,3 +139,30 @@ const pickExe = async () => {
     </a-col>
   </a-row>
 </template>
+
+<style scoped>
+/* 与 BetterGIScriptEdit.vue 的「BetterGI 路径」选择目录行保持同一观感 */
+.path-input-group {
+  display: flex;
+  overflow: hidden;
+  border: 1px solid var(--ant-color-border);
+}
+
+.path-input {
+  flex: 1;
+  min-width: 0;
+  border: none !important;
+  border-radius: 0 !important;
+}
+
+.path-button {
+  flex-shrink: 0;
+  border: none;
+  border-radius: 0;
+  background: var(--ant-color-primary-bg);
+  color: var(--ant-color-primary);
+  font-weight: 600;
+  padding: 0 20px;
+  border-left: 1px solid var(--ant-color-border-secondary);
+}
+</style>

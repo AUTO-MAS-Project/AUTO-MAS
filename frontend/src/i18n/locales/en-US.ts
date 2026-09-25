@@ -1139,14 +1139,14 @@ export default {
     checkGameUpdateBeforeLogin:
       'When enabled, the game client version is compared between the server and the emulator before logging in. An outdated client gets stuck on the force-update screen during login',
     updateAutomaticallyBeforeLaunching: 'Update automatically before launching',
-    genshinUpdateAuto: 'Update Genshin before launching',
+    genshinUpdateAuto: 'Auto-update Genshin (Bilibili server not supported)',
     genshinUpdateAutoHint:
       'MAS checks the version and finishes downloading and installing on its own before the task starts the game, so the official launcher is not needed. Only incremental patches are applied automatically; when none is available it stops and defers to the official launcher. Bilibili server is not supported, update it with the official launcher',
-    genshinUpdateExe: 'Genshin game program',
+    genshinUpdateExe: 'Game directory',
     genshinUpdateExeHint:
-      'Only YuanShen.exe and GenshinImpact.exe are accepted; the server is decided from the file name and the install folder is its parent directory',
+      'Only YuanShen.exe and GenshinImpact.exe are accepted; the install folder is its parent directory and the server is decided from the file name. Bilibili server is not supported, update it with the official launcher',
     genshinUpdateExePlaceholder: 'Select YuanShen.exe or GenshinImpact.exe',
-    genshinUpdateExePick: 'Browse',
+    genshinUpdateExePick: 'Select location',
     genshinUpdateExeRejected: 'Only YuanShen.exe or GenshinImpact.exe can be selected',
     genshinUpdateTimeLimit: 'Update time limit (min)',
     genshinUpdateTimeLimitHint:
