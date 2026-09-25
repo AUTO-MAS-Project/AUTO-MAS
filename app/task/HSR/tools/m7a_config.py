@@ -34,6 +34,7 @@ import yaml
 
 from app.utils import get_logger
 
+from .managed_fields import M7A_MANAGED_FIELDS, managed_field_keys
 from .managed_overlay import (
     DroppedOverride,
     log_dropped_overrides,
@@ -62,42 +63,24 @@ M7A_MANAGED_STAGE_KEYS: frozenset[str] = frozenset(
 
 
 def managed_modules_for_key(key: str) -> tuple[str, ...]:
-    """Map a native M7A key to the MAS module that may override it."""
+    """Map a native M7A key to the MAS module that may override it.
 
-    if (
-        key in M7A_MANAGED_STAGE_KEYS
-        or key.endswith("_timestamp")
-        or key == "last_run_timestamp"
-    ):
+    以 :data:`M7A_MANAGED_FIELDS` 为准：字段表里没有的键不归任何模块。
+    """
+
+    if key in M7A_MANAGED_STAGE_KEYS:
         return ()
-    if key.startswith("weekly_divergent_"):
-        return () if key == "weekly_divergent_enable" else ("DivergentUniverse",)
-    if key.startswith("currencywars_"):
-        return () if key == "currencywars_enable" else ("CurrencyWars",)
-    if key == "activity_enable":
-        return ("Daily", "ReceiveRewards")
-    if key.startswith(("activity_dailycheckin_", "activity_journey_highlights_")):
-        return ("ReceiveRewards",)
-    if key.startswith("activity_"):
-        return ("Daily",)
-    if key.startswith("reward_") or key.startswith("daily_"):
-        return () if key in {"reward_enable", "daily_enable"} else ("ReceiveRewards",)
-    if key.startswith(
-        (
-            "power_",
-            "instance_",
-            "build_target_",
-            "tp_",
-            "borrow_",
-            "merge_immersifier",
-            "use_reserved_trailblaze_power",
-            "use_fuel",
-            "break_down_level_four_relicset",
-            "calyx_golden_preference",
-        )
-    ):
-        return ("Daily",)
-    return ()
+    return tuple(
+        module_key
+        for module_key, specs in M7A_MANAGED_FIELDS.items()
+        if any(spec.key == key for spec in specs)
+    )
+
+
+def m7a_managed_keys(module_key: str) -> frozenset[str]:
+    """某模块 MAS 允许覆盖的三月七原生键（即该模块托管表单的全部字段）。"""
+
+    return frozenset(managed_field_keys("M7A", module_key)) - M7A_MANAGED_STAGE_KEYS
 
 
 def _user_managed_options(user_config: Any, module_key: str) -> dict[str, Any]:
@@ -132,10 +115,9 @@ def overlay_m7a_managed_options(
     第二个返回值交给表单与运行日志，不再整体抛错。
     """
 
+    managed = m7a_managed_keys(module_key)
     native = {
-        str(key): value
-        for key, value in native_config.items()
-        if module_key in managed_modules_for_key(str(key))
+        str(key): value for key, value in native_config.items() if str(key) in managed
     }
     overrides = _user_managed_options(user_config, module_key)
     return overlay_managed_options(native, overrides)
@@ -332,7 +314,9 @@ M7A_DAILY_PATCH_WHITELIST: frozenset[str] = frozenset(
         "echo_of_war_start_day_of_week",
         "cloud_game_enable",
     }
-)
+) | m7a_managed_keys("Daily")
+"""Daily patch 能写进 config.yaml 的键：MAS 自己钉的键 + 体力模块字段表。
+字段表里的键必须全在这里，否则表单能改、运行时被 ``merge_whitelist`` 静默丢弃。"""
 
 M7A_DAILY_DEEP_MERGE_KEYS: frozenset[str] = frozenset(
     {
@@ -450,13 +434,26 @@ def build_m7a_daily_patch(
             )
         )
 
-    return _apply_managed_patch(
+    patch = _apply_managed_patch(
         patch,
         script_config=script_config,
         user_config=user_config,
         module_key="Daily",
         whitelist=M7A_DAILY_PATCH_WHITELIST,
     )
+    # 活动总开关不露出，按本模块三个双倍活动子开关推导；每日签到归领取奖励模块。
+    patch["activity_enable"] = any(
+        bool(patch.get(key)) for key in M7A_DAILY_ACTIVITY_SWITCH_KEYS
+    )
+    return patch
+
+
+M7A_DAILY_ACTIVITY_SWITCH_KEYS: tuple[str, ...] = (
+    "activity_gardenofplenty_enable",
+    "activity_realmofthestrange_enable",
+    "activity_planarfissure_enable",
+)
+"""体力模块里的三个双倍活动开关；任一打开时三月七才需要进活动页。"""
 
 
 def with_disabled_notifications(patch: Mapping[str, Any]) -> dict[str, Any]:
@@ -638,11 +635,11 @@ def build_receive_rewards_patch(
             ("daily_memory_one_enable", False),
         )
     )
+    # 活动总开关不在表单里，只在旧版三月七没有签到子开关时回落读原生值。
     daily_check_in = bool(
-        native_options.get(
-            "activity_dailycheckin_enable",
-            native_options.get("activity_enable", True),
-        )
+        native_options["activity_dailycheckin_enable"]
+        if "activity_dailycheckin_enable" in native_options
+        else load_m7a_native_config(script_config).get("activity_enable", True)
     )
     rewards = {
         "reward_dispatch_enable": bool(
@@ -860,7 +857,7 @@ M7A_COSMIC_STRIFE_PATCH_WHITELIST: frozenset[str] = frozenset(
         "weekly_divergent_timestamp",
         "currencywars_timestamp",
     }
-)
+) | (m7a_managed_keys("DivergentUniverse") | m7a_managed_keys("CurrencyWars"))
 
 
 M7A_RECEIVE_REWARDS_PATCH_WHITELIST: frozenset[str] = frozenset(
@@ -889,4 +886,4 @@ M7A_RECEIVE_REWARDS_PATCH_WHITELIST: frozenset[str] = frozenset(
         "reward_message_enable",
         "cloud_game_enable",
     }
-)
+) | m7a_managed_keys("ReceiveRewards")

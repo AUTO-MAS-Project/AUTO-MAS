@@ -40,6 +40,11 @@ from .log_detect import (
     emit_process_output,
     has_failure_output,
 )
+from .managed_fields import (
+    SRA_REWARD_NAMED_KEYS,
+    managed_field_keys,
+    select_sra_reward_keys,
+)
 from .managed_overlay import (
     DroppedOverride,
     log_dropped_overrides,
@@ -113,7 +118,11 @@ def discover_sra_managed_options(
     module_key: str,
     script_config: Any,
 ) -> tuple[dict[str, Any], str]:
-    """Discover native fields for one HSR module without applying overrides."""
+    """Discover native fields for one HSR module without applying overrides.
+
+    只返回 :data:`SRA_MANAGED_FIELDS` 里列出、且原生 profile 里确实存在的键，
+    顺序同字段表：表单露出什么，运行时就套用什么。
+    """
 
     if module_key == "Daily":
         section_name = "trailblazePower"
@@ -122,40 +131,23 @@ def discover_sra_managed_options(
     else:
         section_name = "cosmicStrife"
     _source, payload = load_sra_native_config(script_config)
-    if module_key == "Daily":
-
-        def predicate(key):
-            return key not in {"enabled", "tasklist"}
-
-    elif module_key == "ReceiveRewards":
-
-        def predicate(key):
-            return key not in {"enabled", "redeemCodes"}
-
-    else:
-        if module_key == "DivergentUniverse":
-
-            def predicate(key):
-                return (
-                    key == "pointRewards.enabled"
-                    or key.startswith("divergentUniverse.")
-                ) and key != "divergentUniverse.enabled"
-
-        else:
-
-            def predicate(key):
-                return key.startswith("currencyWars.") and key != "currencyWars.enabled"
-
     section = payload.get(section_name)
     if not isinstance(section, dict):
         return {}, section_name
-    options = {str(key): value for key, value in section.items() if predicate(str(key))}
+    available = {str(key): value for key, value in section.items()}
     if module_key == "ReceiveRewards":
-        rewards = options.pop("rewards", None)
+        rewards = available.pop("rewards", None)
         if isinstance(rewards, list):
-            options.update(
-                {f"rewards.{index}": value for index, value in enumerate(rewards)}
-            )
+            for index, value in enumerate(rewards):
+                available.setdefault(f"rewards.{index}", value)
+    keys = select_sra_reward_keys(
+        frozenset(managed_field_keys("SRA", module_key)) & available.keys()
+    )
+    options = {
+        key: available[key]
+        for key in managed_field_keys("SRA", module_key)
+        if key in keys
+    }
     return options, section_name
 
 
@@ -363,15 +355,15 @@ def build_sra_module_config(
 
     elif module.key == "ReceiveRewards":
         # 领取项来自当前 SRA profile；Managed.Options 只覆盖已发现字段。
+        # 具名键存在时表单只露出具名键，数组按具名值镜像，两种形态保持一致。
         native_options = resolve_sra_managed_options(module.key, script_config, plan)
         config["receiveRewards"]["rewards"] = [
-            bool(native_options.get("rewards.0", True)),
-            bool(native_options.get("rewards.1", True)),
-            bool(native_options.get("rewards.2", True)),
-            bool(native_options.get("rewards.3", True)),
-            bool(native_options.get("rewards.4", True)),
-            bool(native_options.get("rewards.5", True)),
-            bool(native_options.get("rewards.6", True)) and bool(redeem_codes_enabled),
+            bool(
+                native_options.get(
+                    named_key, native_options.get(f"rewards.{index}", True)
+                )
+            )
+            for index, named_key in enumerate(SRA_REWARD_NAMED_KEYS)
         ]
 
     elif module.key == "DivergentUniverse":

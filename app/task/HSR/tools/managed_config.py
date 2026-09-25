@@ -1,8 +1,9 @@
-"""从 SRA/M7A 原生配置发现 MAS 托管表单。
+"""从 SRA/M7A 原生配置生成 MAS 托管表单。
 
-这里不复制一份固定的脚本配置 schema：字段和值均来自用户当前安装的
-``config.json``/``config.yaml``，而 ``Managed.Options`` 只保存用户覆盖值。
-因此老 dev 没有新字段时仍返回空表单，已有旧配置执行路径不受影响。
+露出哪些键、按什么顺序与分组，由 ``managed_fields`` 的显式字段表决定（它同时是
+运行时白名单的来源）；值来自用户当前安装的 ``config.json``/``config.yaml``，
+``Managed.Options`` 只保存用户覆盖值。原生配置里不存在的键不显示，因此老版本
+引擎缺字段时表单相应变短，已有旧配置执行路径不受影响。
 """
 
 from __future__ import annotations
@@ -16,11 +17,17 @@ from typing import Any
 
 from .m7a_config import (
     load_m7a_native_config,
-    managed_modules_for_key,
     overlay_m7a_managed_options,
+)
+from .managed_fields import (
+    SRA_REWARD_LABELS,
+    SRA_REWARD_NAMED_KEYS,
+    ManagedFieldSpec,
+    managed_field_specs,
 )
 from .managed_overlay import DroppedOverride
 from .native_control import _script_path
+from .sra_runtime import _managed_options as _sra_user_managed_options
 from .sra_runtime import (
     discover_sra_managed_options,
     load_sra_native_config,
@@ -94,7 +101,7 @@ def _field_type(value: Any, options: tuple[HSRManagedFieldOption, ...]) -> str:
 
 
 def _field(
-    key: str,
+    spec: ManagedFieldSpec,
     native_value: Any,
     value: Any,
     *,
@@ -105,20 +112,19 @@ def _field(
     maximum: float | None = None,
 ) -> HSRManagedField:
     return HSRManagedField(
-        key=key,
-        label=label or key,
-        type=_field_type(native_value, options),
+        key=spec.key,
+        label=spec.label or label or spec.key,
+        type=spec.type or _field_type(native_value, options),
         value=value,
-        description=description,
+        description=(spec.description if spec.description is not None else description),
         options=options,
         minimum=minimum,
         maximum=maximum,
     )
 
 
-# 键集合来自已安装 SRA 的 TasksConfig（trailblazePower / receiveRewards /
-# cosmicStrife 三节，见 discover_sra_managed_options 的过滤规则）。被过滤掉的
-# enabled / tasklist / redeemCodes 也给了名称，免得 SRA 改了过滤口径后退化成裸键。
+# 露出哪些键由 managed_fields.SRA_MANAGED_FIELDS 决定；这里只管显示文案。表外的
+# enabled / tasklist / redeemCodes 等也给了名称，免得字段表调整后退化成裸键。
 _SRA_LABELS = {
     "enabled": "启用该任务",
     "tasklist": "自定义副本清单",
@@ -147,31 +153,11 @@ _SRA_LABELS = {
     "currencyWars.reroll.investEnvironments": "刷开局：投资环境条件",
     "currencyWars.reroll.investStrategies": "刷开局：投资策略条件",
     "currencyWars.runtimes": "运行次数",
-    "currencyWars.strategy": "策略文件",
+    "currencyWars.strategy": "攻略文件",
     "currencyWars.strategyIndex": "策略序号",
     "currencyWars.username": "开拓者名称",
 }
-SRA_REWARD_LABELS = (
-    "签证（支援）奖励",
-    "委托奖励",
-    "邮件奖励",
-    "每日实训奖励",
-    "无名勋礼奖励",
-    "巡星之礼",
-    "兑换码奖励",
-)
-"""SRA receiveRewards 奖励开关的顺序词表（索引式 ``rewards.<i>`` 与命名键
-``rewards.<name>`` 共用同一顺序，顺序以 SRA TasksConfig 为准）"""
-SRA_REWARD_NAMED_KEYS = (
-    "rewards.trailblazeProfile",
-    "rewards.assignments",
-    "rewards.mail",
-    "rewards.dailyTraining",
-    "rewards.namelessHonor",
-    "rewards.giftOfOdyssey",
-    "rewards.redeemCode",
-)
-"""SRA 2.22.0 起的具名奖励键，顺序同 ``ReceiveRewardsConfig.to_dict``"""
+# SRA_REWARD_LABELS / SRA_REWARD_NAMED_KEYS 定义在 managed_fields，这里沿用导出。
 _SRA_LABELS.update(zip(SRA_REWARD_NAMED_KEYS, SRA_REWARD_LABELS, strict=True))
 _SRA_REROLL_ONLY = "仅「博弈类别」为「刷开局」时生效。"
 # 说明只写能从 SRA 源码（tasks/CosmicStrifeTask.py、tasks/currency_wars/RerollStart.py、
@@ -222,12 +208,17 @@ _SRA_DESCRIPTIONS = {
     ),
     "currencyWars.runtimes": "本次运行货币战争的局数；刷开局模式下为重开次数上限。",
     "currencyWars.strategy": (
-        "SRA 使用的货币战争攻略文件，通常是 SRA 目录下 tasks/currency_wars/strategies"
-        " 内的 json 文件路径；建议在 SRA 中选好后再导入，不要手填。"
+        "SRA 使用的货币战争攻略文件名，对应 SRA 目录下 tasks/currency_wars/strategies"
+        " 里的同名 json（不带 .json 后缀）；带 .json 时按文件路径读取。"
+        "一般在 SRA 中选好即可，不要手填。"
     ),
     "currencyWars.strategyIndex": "由 SRA 维护的策略序号，一般无需修改；格式见 SRA 内的同名设置。",
-    "currencyWars.username": "游戏内显示的开拓者名称，SRA 用它在货币战争里识别自己的角色，必填。",
+    "currencyWars.username": (
+        "游戏内显示的开拓者名称，SRA 用它在货币战争里识别自己的角色。"
+        "留空时使用该用户在 MAS 中的用户名。"
+    ),
 }
+_SRA_USERNAME_KEY = "currencyWars.username"
 # 只给有依据的边界：次数、序号都是非负整数；没有可靠上界的不设上界，免得挡住用户。
 _SRA_RANGES: dict[str, tuple[float | None, float | None]] = {
     # 活动关卡序号平时是下拉（0 = 不刷）；SRA 关卡表读不到时退化成数字框，至少别让填负数。
@@ -327,37 +318,47 @@ def list_sra_managed_modules(
         effective, dropped = overlay_sra_managed_options(
             module_key, script_config, user_config
         )
-        fields = tuple(
-            _field(
-                key,
-                value,
-                effective.get(key, value),
-                label=(
-                    SRA_REWARD_LABELS[int(key.removeprefix("rewards."))]
-                    if key.startswith("rewards.")
-                    and key.removeprefix("rewards.").isdigit()
-                    and int(key.removeprefix("rewards.")) < len(SRA_REWARD_LABELS)
-                    else _SRA_LABELS.get(key, key)
-                ),
-                description=(
-                    _SRA_ACTIVITY_STAGE_DESCRIPTION
-                    if key in _SRA_ACTIVITY_STAGE_CATEGORIES
-                    else _SRA_DESCRIPTIONS.get(key, "")
-                ),
-                options=activity_stage_options.get(
-                    key,
-                    _SRA_SELECTS.get(key, ()),
-                ),
-                minimum=_SRA_RANGES.get(key, (None, None))[0],
-                maximum=_SRA_RANGES.get(key, (None, None))[1],
+        overrides = _sra_user_managed_options(user_config, module_key)
+        fields: list[HSRManagedField] = []
+        for spec in managed_field_specs("SRA", module_key):
+            key = spec.key
+            if key not in values:
+                continue
+            value = effective.get(key, values[key])
+            if key == _SRA_USERNAME_KEY and not overrides.get(key):
+                # 运行时没填覆盖值就用 MAS 用户名，不用原生 profile 里的名字；
+                # 表单显示为空，与说明「留空时使用 MAS 用户名」一致。
+                value = ""
+            fields.append(
+                _field(
+                    spec,
+                    values[key],
+                    value,
+                    label=(
+                        SRA_REWARD_LABELS[int(key.removeprefix("rewards."))]
+                        if key.startswith("rewards.")
+                        and key.removeprefix("rewards.").isdigit()
+                        and int(key.removeprefix("rewards.")) < len(SRA_REWARD_LABELS)
+                        else _SRA_LABELS.get(key, key)
+                    ),
+                    description=(
+                        _SRA_ACTIVITY_STAGE_DESCRIPTION
+                        if key in _SRA_ACTIVITY_STAGE_CATEGORIES
+                        else _SRA_DESCRIPTIONS.get(key, "")
+                    ),
+                    options=activity_stage_options.get(
+                        key,
+                        _SRA_SELECTS.get(key, ()),
+                    ),
+                    minimum=_SRA_RANGES.get(key, (None, None))[0],
+                    maximum=_SRA_RANGES.get(key, (None, None))[1],
+                )
             )
-            for key, value in values.items()
-        )
         result.append(
             HSRManagedModule(
                 module_key,
                 "SRA",
-                fields,
+                tuple(fields),
                 str(source),
                 dropped_overrides=dropped,
             )
@@ -387,18 +388,31 @@ _M7A_SELECTS = {
         HSRManagedFieldOption("current", "当前职级"),
         HSRManagedFieldOption("highest", "最高职级"),
     ),
+    # 三月七 GUI（setting_interface.py 货币战争策略）：默认 / 阿格莱雅 / 希儿【测试版】
     "currencywars_strategy": (
         HSRManagedFieldOption("default", "默认策略"),
         HSRManagedFieldOption("aglaea", "阿格莱雅策略"),
-        HSRManagedFieldOption("seele", "希儿策略"),
+        HSRManagedFieldOption("seele", "希儿策略（测试版）"),
+    ),
+    # 三月七 GUI 的默认队伍是 1–12 的 SpinBox，存成字符串（"6"）
+    "instance_team_number": tuple(
+        HSRManagedFieldOption(str(number), f"队伍{number}") for number in range(1, 13)
+    ),
+    # 三月七 GUI 的沉浸器上限下拉：字符串 "1"–"12"
+    "merge_immersifier_limit": tuple(
+        HSRManagedFieldOption(str(number), str(number)) for number in range(1, 13)
+    ),
+    "activity_gardenofplenty_instance_type": (
+        HSRManagedFieldOption("拟造花萼（金）", "拟造花萼（金）"),
+        HSRManagedFieldOption("拟造花萼（赤）", "拟造花萼（赤）"),
     ),
 }
-# 上界来自 config.example.yaml 注释里写明的取值范围；其余只给非负下界。
+# 上界来自 config.example.yaml 注释或三月七 GUI 控件写明的取值范围。
 _M7A_RANGES: dict[str, tuple[float | None, float | None]] = {
     "build_target_ornament_weekly_count": (0, 7),
     "weekly_divergent_level": (1, 6),
-    "borrow_scroll_times": (0, None),
-    "power_limit": (0, None),
+    # 三月七 GUI「滚动查找次数」RangeSettingCard1 [1, 10]
+    "borrow_scroll_times": (1, 10),
 }
 
 
@@ -462,20 +476,23 @@ def list_m7a_managed_modules(
         module_key: overlay_m7a_managed_options(payload, user_config, module_key)
         for module_key in buckets
     }
-    for key, value in payload.items():
-        modules = managed_modules_for_key(str(key))
-        for module_key in modules:
-            effective = overlay_by_module[module_key][0]
-            buckets[module_key].append(
+    for module_key, fields in buckets.items():
+        effective = overlay_by_module[module_key][0]
+        for spec in managed_field_specs("M7A", module_key):
+            key = spec.key
+            if key not in payload:
+                continue
+            value = payload[key]
+            fields.append(
                 _field(
-                    str(key),
+                    spec,
                     value,
-                    effective.get(str(key), value),
-                    label=_m7a_label(str(key), comments.get(str(key), "")),
-                    description=comments.get(str(key), ""),
-                    options=_M7A_SELECTS.get(str(key), ()),
-                    minimum=_M7A_RANGES.get(str(key), (None, None))[0],
-                    maximum=_M7A_RANGES.get(str(key), (None, None))[1],
+                    effective.get(key, value),
+                    label=_m7a_label(key, comments.get(key, "")),
+                    description=comments.get(key, ""),
+                    options=_M7A_SELECTS.get(key, ()),
+                    minimum=_M7A_RANGES.get(key, (None, None))[0],
+                    maximum=_M7A_RANGES.get(key, (None, None))[1],
                 )
             )
     return tuple(

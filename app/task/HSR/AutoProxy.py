@@ -69,6 +69,7 @@ from .tools.log_detect import (
     parse_cloud_remaining,
     select_failure_summary_lines,
 )
+from .tools.m7a_config import M7A_DAILY_ACTIVITY_SWITCH_KEYS
 from .tools.m7a_control import HSRM7AControl
 from .tools.m7a_runtime import M7ARunner
 from .tools.managed_config import list_managed_modules, redeem_code_fingerprint
@@ -128,17 +129,10 @@ def resolve_daily_native_modes(
         return bool(values.get("useBuildTarget", False)), bool(
             values.get("activity.enabled", False)
         )
-    activity_enabled = bool(values.get("activity_enable", False)) and any(
-        bool(value)
-        for key, value in values.items()
-        if key.startswith("activity_")
-        and key.endswith("_enable")
-        and key
-        not in {
-            "activity_enable",
-            "activity_dailycheckin_enable",
-            "activity_journey_highlights_notification_enable",
-        }
+    # 活动总开关 activity_enable 不在表单里，运行时按这三个子开关推导（见
+    # build_m7a_daily_patch），判定口径与之相同。
+    activity_enabled = any(
+        bool(values.get(key, False)) for key in M7A_DAILY_ACTIVITY_SWITCH_KEYS
     )
     return bool(values.get("build_target_enable", False)), activity_enabled
 

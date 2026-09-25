@@ -3500,7 +3500,10 @@ class HSRManagedDroppedOverride(BaseModel):
     key: str = Field(..., description="被忽略的 Managed.Options 覆盖键")
     reason: Literal["unknown", "type"] = Field(
         ...,
-        description="忽略原因：unknown=当前原生配置没有该字段；type=保存的值类型与原生配置不一致",
+        description=(
+            "忽略原因：unknown=当前原生配置没有该字段或该字段已不由 MAS 托管；"
+            "type=保存的值类型与原生配置不一致"
+        ),
     )
     value: Any = Field(default=None, description="用户保存的覆盖值")
     message: str = Field(default="", description="人类可读说明")
