@@ -353,15 +353,19 @@ def list_sra_managed_modules(
             key = spec.key
             if key not in values:
                 continue
-            value = effective.get(key, values[key])
-            if key == _SRA_USERNAME_KEY and not overrides.get(key):
+            native = values[key]
+            value = effective.get(key, native)
+            if key == _SRA_USERNAME_KEY:
                 # 运行时没填覆盖值就用 MAS 用户名，不用原生 profile 里的名字；
-                # 表单显示为空，与说明「留空时使用 MAS 用户名」一致。
-                value = ""
+                # 表单显示为空，与说明「留空时使用 MAS 用户名」一致。单项恢复后
+                # 前端显示 native_value，所以它也按空串给。
+                native = ""
+                if not overrides.get(key):
+                    value = ""
             fields.append(
                 _field(
                     spec,
-                    values[key],
+                    native,
                     value,
                     label=(
                         SRA_REWARD_LABELS[int(key.removeprefix("rewards."))]
