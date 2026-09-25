@@ -45,10 +45,11 @@
                     alt="MaaEnd"
                     class="script-logo"
                   />
+                  <!-- MaaFW 与各特调的图标取自特调注册表 -->
                   <img
-                    v-else-if="script.type === 'M9A'"
-                    src="@/assets/M9A.png"
-                    alt="M9A"
+                    v-else-if="isMaaFWFamily(script.type)"
+                    :src="resolveMaaFWFlavor(script.type).logo"
+                    :alt="resolveMaaFWFlavor(script.type).typeTagLabel"
                     class="script-logo"
                   />
                   <img
@@ -67,12 +68,6 @@
                     v-else-if="script.type === 'HSR'"
                     src="@/assets/hsr.png"
                     alt="HSR"
-                    class="script-logo"
-                  />
-                  <img
-                    v-else-if="script.type === 'MaaFW'"
-                    src="@/assets/maafw.png"
-                    alt="MFW"
                     class="script-logo"
                   />
                   <img
@@ -97,12 +92,6 @@
                     v-else-if="script.type === 'Whimbox'"
                     src="@/assets/whimbox.png"
                     alt="Whimbox"
-                    class="script-logo"
-                  />
-                  <img
-                    v-else-if="script.type === 'MSS'"
-                    src="@/assets/mss.png"
-                    alt="MSS"
                     class="script-logo"
                   />
                   <img v-else src="@/assets/AUTO-MAS.ico" alt="AUTO-MAS" class="script-logo" />
@@ -442,12 +431,10 @@
                             script.type === 'Okww' ||
                             script.type === 'OkNte' ||
                             script.type === 'BetterGI' ||
-                            script.type === 'MaaFW' ||
-                            script.type === 'M9A' ||
+                            isMaaFWFamily(script.type) ||
                             script.type === 'ZzzOd' ||
                             script.type === 'BAAH' ||
-                            script.type === 'Whimbox' ||
-                            script.type === 'MSS'
+                            script.type === 'Whimbox'
                           "
                           class="user-info-tags"
                         >
@@ -588,6 +575,11 @@ import { message, Modal } from 'ant-design-vue'
 import { useScriptApi } from '@/composables/useScriptApi'
 import { useUserApi } from '@/composables/useUserApi'
 import { parseStatusTagList } from '@/composables/useStatusTag'
+import {
+  isMaaFWFamily,
+  resolveMaaFWFlavor,
+  type MaaFWFlavorType,
+} from '@/composables/useMaaFWFlavor'
 
 const { t } = useI18n()
 
@@ -779,18 +771,17 @@ const getScriptTypeLabel = (script: Script) => {
   if (type === 'Okww') return 'ok-ww'
   if (type === 'OkNte') return 'ok-nte'
   // MFW 家族显示项目实际的名字（引导页读到 interface 时记进 Info.ProjectLabel），没记过才显示类型
-  if (type === 'MaaFW' || type === 'M9A') {
+  if (isMaaFWFamily(type)) {
     return (script.config as MaaFWScriptConfig).Info?.ProjectLabel?.trim() || type
   }
   return type
 }
 
-const SCRIPT_TYPE_TAG_COLORS: Record<Script['type'], string> = {
+// MaaFW 与各特调的标签颜色取自特调注册表
+const SCRIPT_TYPE_TAG_COLORS: Record<Exclude<Script['type'], MaaFWFlavorType>, string> = {
   MAA: 'blue',
   SRC: 'purple',
   MaaEnd: 'blue',
-  M9A: 'cyan',
-  MaaFW: 'geekblue',
   Okww: 'blue',
   OkNte: 'blue',
   HSR: 'purple',
@@ -798,11 +789,13 @@ const SCRIPT_TYPE_TAG_COLORS: Record<Script['type'], string> = {
   ZzzOd: 'volcano',
   BAAH: 'magenta',
   Whimbox: 'pink',
-  MSS: 'orange',
   General: 'green',
 }
 
-const getScriptTypeTagColor = (type: Script['type']) => SCRIPT_TYPE_TAG_COLORS[type] ?? 'green'
+const getScriptTypeTagColor = (type: Script['type']) =>
+  isMaaFWFamily(type)
+    ? resolveMaaFWFlavor(type).typeTagColor
+    : (SCRIPT_TYPE_TAG_COLORS[type] ?? 'green')
 
 const truncateText = (text: string, maxLength: number = 10): string => {
   if (!text || text.length === 0) return '无'

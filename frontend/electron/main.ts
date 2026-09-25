@@ -519,9 +519,11 @@ async function forceQuitAfterRendererTimeout(reason: string): Promise<void> {
       coordinatedQuit,
       forceQuitInProgress,
       quitRequestInFlight,
+      relaunchAfterQuit,
     })
     forceQuitInProgress = retryableState.forceQuitInProgress
     quitRequestInFlight = retryableState.quitRequestInFlight
+    relaunchAfterQuit = retryableState.relaunchAfterQuit
     if (mainWindow && !mainWindow.isDestroyed()) {
       showMainWindow()
     } else if (app.isReady()) {
@@ -2043,7 +2045,7 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
     if (canElectronExitImmediately({ coordinatedQuit, forceQuitInProgress, quitRequestInFlight })) {
       app.quit()
-    } else if (!forceQuitInProgress) {
+    } else if (!forceQuitInProgress && !quitRequestInFlight) {
       void forceQuitAfterRendererTimeout('所有 renderer 窗口意外关闭')
     }
   }

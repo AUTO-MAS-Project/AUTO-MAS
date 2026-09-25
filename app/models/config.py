@@ -24,7 +24,7 @@ import calendar
 import json
 import uuid
 from copy import deepcopy
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone, tzinfo
 from pathlib import Path
 from typing import Any, Callable
 
@@ -52,6 +52,8 @@ from app.utils.constants import (
     RESOURCE_STAGE_INFO,
     STARRAIL_STAGE_BOOK,
     UTC4,
+    game_now,
+    get_game_day_tz,
 )
 from app.utils.io import read_file
 
@@ -820,11 +822,11 @@ def _tag_last_status(status: object) -> str:
     return "未运行" if text in ("", "未知") else text
 
 
-def _tag_proxy(config: ConfigBase, label: str = "日常") -> dict:
-    """上次代理标签（使用东4区时间），label 区分日常/任务文案。"""
+def _tag_proxy(config: ConfigBase, label: str = "日常", tz: tzinfo = UTC4) -> dict:
+    """上次代理标签（默认使用东4区时间，tz 为游戏日时区），label 区分日常/任务文案。"""
     if (
         datetime.strptime(config.get("Data", "LastProxyDate"), "%Y-%m-%d").date()
-        == datetime.now(tz=UTC4).date()
+        == datetime.now(tz=tz).date()
     ):
         return {
             "text": f"{label}：已代理{config.get('Data', 'ProxyTimes')}次",
@@ -1144,8 +1146,8 @@ class MaaUserConfig(ConfigBase):
         """生成用户标签列表，返回JSON字符串格式的TagItem列表"""
         tags = []
 
-        # 日常代理标签（使用东4区时间）
-        tags.append(_tag_proxy(self))
+        # 日常代理标签（按区服的游戏日时区）
+        tags.append(_tag_proxy(self, tz=get_game_day_tz(self.get("Info", "Server"))))
 
         # 剩余天数标签
         tags.append(_tag_remained_days(self))
@@ -1179,7 +1181,9 @@ class MaaUserConfig(ConfigBase):
             if isinstance(plan, MaaPlanConfig):
                 plan_data = {
                     stage_key: self.get_stage_zh(
-                        plan.get_current_info(stage_key).getValue()
+                        plan.get_current_info(
+                            stage_key, server=self.get("Info", "Server")
+                        ).getValue()
                     )
                     for stage_key in MAA_STAGE_KEY[2:]
                 }
@@ -2774,7 +2778,7 @@ class MaaFWConfig(ConfigBase):
     ## 用户配置类（子类换成自己的同形子类，ScriptConfig.json 里 type 才对得上）
     USER_CONFIG_CLASS: type[ConfigBase] = MaaFWUserConfig
     ## 特调钩子：``"模块路径:属性名"``，运行期由 MaaFW 引擎按需导入（避免 models 反向依赖 task）；
-    ## 通用 MaaFW 为 None。钩子只装饰任务选择，引擎里不出现任何专项名字。
+    ## 通用 MaaFW 为 None。钩子装饰任务选择（可选再接管游戏客户端更新），引擎里不出现任何专项名字。
     FLAVOR: str | None = None
 
     def __init__(self) -> None:
@@ -2982,6 +2986,16 @@ class MaaFWConfig(ConfigBase):
         self.Run_MonthlyOnceTasks = ConfigItem(
             "Run", "MonthlyOnceTasks", "[ ]", JSONValidator(list)
         )
+        ## 游戏客户端更新：Off 不检查 / Check 只检查，落后时本次判失败并提示手动更新 /
+        ## AutoInstall 落后时自动下载安装包并 adb 安装（保留游戏数据）。只在特调实现了
+        ## 游戏更新钩子（当前只有 M9A）且 controller 是 ADB 时生效，通用 MaaFW 不读。
+        ## Off 必须排第一：OptionsValidator 纠错回退的是 options[0]。
+        self.Run_GameUpdateMode = ConfigItem(
+            "Run",
+            "GameUpdateMode",
+            "Off",
+            OptionsValidator(["Off", "Check", "AutoInstall"]),
+        )
 
         ## Selection -------------------------------------------------------
         ## 当前阶段保留：manager.py 仍从 Selection.* 读取运行范围，
@@ -3110,14 +3124,14 @@ class MaaPlanConfig(ConfigBase):
 
         super().__init__()
 
-    def get_current_info(self, name: str) -> ConfigItem:
-        """获取当前的计划表配置项"""
+    def get_current_info(self, name: str, server: str | None = None) -> ConfigItem:
+        """获取当前的计划表配置项，周模式按 server 区服的游戏日取当天配置"""
 
         if self.get("Info", "Mode") == "ALL":
             return self.config_item_dict["ALL"][name]
 
         elif self.get("Info", "Mode") == "Weekly":
-            today = datetime.now(tz=UTC4).strftime("%A")
+            today = game_now(server).strftime("%A")
 
             if today in self.config_item_dict:
                 return self.config_item_dict[today][name]
@@ -3808,8 +3822,13 @@ class BetterGIUserConfig(ConfigBase):
             "官服",
             OptionsValidator(["官服", "B服", "亚服", "欧服", "美服", "港澳台服"]),
         )
-        ## 账号 UID（可不填，切换前识别一致将不执行切换动作）
+        ## 账号 UID（可不填，切换前识别一致将不执行切换动作；仅 BetterGI 脚本方式生效）
         self.Switch_Uid = ConfigItem("Switch", "Uid", "")
+        ## 游戏客户端路径（用户级覆盖，可空）：官服/B服/国际服是三个互相隔离的客户端，
+        ## B站账号只能登录B服客户端。留空 = 跟随 BetterGI 全局配置的游戏路径；填写后该
+        ## 用户运行时由 MAS 按此路径临时拉起游戏（不修改 BetterGI 配置），实现同脚本
+        ## 混服用户各用各的客户端
+        self.Switch_GamePath = ConfigItem("Switch", "GamePath", "", FileValidator())
 
         ## Data ------------------------------------------------------------
         self.Data_LastProxyDate = ConfigItem(
@@ -4193,6 +4212,29 @@ class OkNteConfig(ConfigBase):
         super().__init__()
 
 
+def _migrate_bgi_account_switch_default(data: dict) -> tuple[dict, bool]:
+    """为存量 BetterGI 脚本固化旧默认切号方式 BGI。
+
+    ``Run.AccountSwitchMethod`` 是 v5.6.0 新增字段且类默认值定为 MAS；
+    5.5.0 升级上来的存量脚本配置里没有该键，若不补值会随新默认落到 MAS，
+    使国际服/第三方登录等不被 MAS 切号支持的用户从「能跑」变「报错」。
+    故 load 前缺键注入 ``BGI``（升级前的唯一切号路径）：Run 段缺失（手工
+    编辑/截断文件）同样按存量处理；Run 段损坏（非 dict）时跳过注入交给
+    load 的纠错路径重建，不在此崩掉启动。显式保存过该键的配置原样保留。
+
+    Returns:
+        (迁移后的配置字典, 是否发生了注入)
+    """
+    normalized_data = deepcopy(data) if isinstance(data, dict) else {}
+    if "Run" not in normalized_data:
+        normalized_data["Run"] = {}
+    run = normalized_data["Run"]
+    if isinstance(run, dict) and "AccountSwitchMethod" not in run:
+        run["AccountSwitchMethod"] = "BGI"
+        return normalized_data, True
+    return normalized_data, False
+
+
 class BetterGIConfig(ConfigBase):
     """BetterGI 配置（更好的原神，原生 GUI 直控 + 仅一条龙任务）"""
 
@@ -4216,6 +4258,14 @@ class BetterGIConfig(ConfigBase):
         ## 运行、又不希望每次启动 BGI 都弹 UAC（无人值守任务尤其容易挂在授权上），可关闭。
         ## MAS 自身已提权时，即使此处开启，也不会重复触发 UAC（子进程自动继承管理员令牌）。
         self.Run_UseAdmin = ConfigItem("Run", "UseAdmin", True, BoolValidator())
+        ## 账号切换方式（脚本级，参考 MaaEnd Run.AccountSwitchMethod）：
+        ## BGI = BetterGI「切换账号多模式」脚本执行（国际服请改用此方式）；MAS = MAS 侧
+        ## 前台 OCR 直接操控游戏切号（官服/B服，游戏由 MAS 托管启动），官服/B服推荐。
+        ## 默认值双轨：新建脚本取类默认 MAS；存量脚本（配置无该键）由 load 迁移固化
+        ## 旧默认 BGI（见 _migrate_bgi_account_switch_default），保持升级前行为。
+        self.Run_AccountSwitchMethod = ConfigItem(
+            "Run", "AccountSwitchMethod", "MAS", OptionsValidator(["BGI", "MAS"])
+        )
 
         ## Game ------------------------------------------------------------
         ## 控制器（游戏控制方式：电脑端-前台 / 电脑端-云原神 / 电脑端-桌面分身）
@@ -4235,6 +4285,20 @@ class BetterGIConfig(ConfigBase):
         self.UserData = MultipleConfig([BetterGIUserConfig])
 
         super().__init__()
+
+    async def load(self, data: dict) -> bool:
+        """加载脚本配置前为存量脚本固化旧默认切号方式 BGI。
+
+        注入后子级数据与完整存量文件（仅缺新键）比对不再 dirty，落盘靠两级：
+        挂在 MultipleConfig 下时由父级整表比对发现缺键提交写盘；独立连接
+        文件时由这里的显式提交完成（对齐 MaaEndConfig.load 的迁移范式）。
+        返回值含迁移标记，不谎报「无写入」。
+        """
+        migrated_data, migrated = _migrate_bgi_account_switch_default(data)
+        is_dirty = await super().load(migrated_data)
+        if migrated and not is_dirty:
+            await self._commit_changes()
+        return is_dirty or migrated
 
 
 class ZzzOdUserConfig(ConfigBase):

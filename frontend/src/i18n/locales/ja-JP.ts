@@ -150,6 +150,8 @@ export default {
     cancellingDeletesUnfinishedDownload:
       'キャンセルすると、未完了のダウンロードファイルは削除されます。',
     cancel2: 'キャンセル',
+    powerCountdownConnectionLost:
+      'バックエンドとの接続が切れました。カウントダウンは続いている可能性があり、残り秒数は更新されません。',
     cancelUpdateDownload: '更新のダウンロードをキャンセルしますか？',
     visualSelection: 'ビジュアル選択',
     downloadBackground: 'バックグラウンドでダウンロード',
@@ -959,6 +961,9 @@ export default {
     mfwGamePackageNamePassed:
       'エミュレータ起動と同時にゲームを起動します。interface の読み込み時やリソース切替時にプロジェクトの pipeline から判別して自動入力します。判別できない場合や候補が複数ある場合は空欄のままで起動せず、ここに手動で入力できます',
     mfwGamePackageNamePlaceholder: '例: com.hypergryph.arknights',
+    mfwGameUpdateOff: 'オフ',
+    mfwGameUpdateCheck: '確認のみ（古い場合は手動更新を案内）',
+    mfwGameUpdateAutoInstall: '自動でダウンロードしてインストール',
     maaendScriptConfiguration: 'MaaEnd スクリプト設定',
     maaendPath: 'MaaEnd のパス',
     maaendAdapterStillUnder: 'MaaEnd 専用アダプターはテスト中です。問題があれば参加してください：',
@@ -1552,7 +1557,13 @@ export default {
     m9aFlavorAccountTooltip:
       'アカウントを入力すると「アカウント切替」タスクが自動で追加されます（公式サーバーのみ）。パスワードはローカルのメモ用で、スクリプトには渡されません',
     m9aFlavorQueueHint:
-      'ゲーム起動・ゲーム終了・アカウント切替は M9A 専用処理が自動で追加します。手動で追加する必要はありません',
+      'ゲーム起動・アカウント切替・ゲーム終了は上の「アカウント」をもとに MAS が自動で追加します（起動が先頭、切替はその直後、終了は最後）。「タスクを追加」やプリセットには表示されません',
+    m9aFlavorManagedTaskWarning:
+      'このキューには「アカウント切替」が {count} 件あります（アカウント {accounts}）。M9A では 1 ユーザー = 1 アカウントです。{count} 人のユーザーに分けて（それぞれ上の「アカウント」に 1 つずつ入力）、これらのタスクをキューから削除してください。分けるまでこのユーザーは実行されません',
+    m9aFlavorManagedTaskNotice:
+      '「{tasks}」は上の情報をもとに MAS が自動で追加するため、キューに残す必要はありません（実行時も固定の順序で実行されます）。次にタスクキューを保存するか AUTO-MAS を再起動するとキューから外れます（アカウント切替の対象アカウントは上の「アカウント」に入ります）',
+    m9aFlavorGameUpdateHint:
+      'エミュレーター起動後、ゲームクライアントを公式サイトの最新版と比較します。公式サーバーのみ対象です（bilibili サーバーなど他のリソースは確認しません）。古い場合：「確認のみ」は今回の実行を失敗にして手動更新を案内し、「自動でダウンロードしてインストール」は約 2 GB の公式インストーラーをダウンロードして上書きインストールします（ゲームデータは保持されます）',
     mssFlavorScriptTitle: 'MSS スクリプトを編集',
     mssFlavorSourceDirectory: 'MSS プログラムディレクトリ',
     mssFlavorSourceHint: 'interface.json を含む MaaStellaSora ディレクトリを選択します',
@@ -1663,6 +1674,11 @@ export default {
     bettergiCloseGameOnFinishHint: 'タスクの実行が終わったときにゲームを終了するかどうか',
     bettergiRetryLimitHint: 'この回数を超えても失敗する場合は中止します',
     bettergiRunTimeoutHint: 'ログが長時間更新されない場合はタイムアウトと判定します',
+    bettergiAccountSwitchMethod: 'アカウント切り替え方式',
+    bettergiAccountSwitchMethodHint:
+      'BetterGI スクリプト=BetterGI「切替アカウント多重モード」スクリプトで切り替え。MAS=MAS がゲーム画面を直接操作して切り替え（中国公式：パスワード入力ならアカウント+パスワード、未入力ならドロップダウン一覧。B鯖：Bilibili ユーザー名でログイン記録を照合、パスワードログインは未対応）。MAS は国際サーバーに未対応のため、国際サーバーでは BetterGI スクリプト方式をご利用ください',
+    bettergiAccountSwitchMethodBgi: 'BetterGI スクリプト',
+    bettergiAccountSwitchMethodMas: 'MAS（中国公式 / B鯖・推奨）',
     useAdminLaunch: '管理者権限で起動',
     bettergiUseAdminHint:
       '既定で有効（BetterGI には管理者権限が必要）。MAS が非管理者で実行されている場合、起動のたびに UAC が表示されるため、無人実行時はオフにできます。MAS が既に管理者権限の場合は再表示されません',
@@ -1683,11 +1699,30 @@ export default {
     bettergiAccount: 'アカウント',
     bettergiEnterAccount: 'アカウントを入力してください（アカウント切り替え用。不要な場合は空欄）',
     bettergiAccountHint:
-      'アカウント切り替えに使用します。不要な場合は空欄のままにしてください。ドロップダウンモードでは電話番号またはメールアドレスを完全な形で入力すると、MAS がゲームの表示に合わせて伏せ字に変換します',
+      'アカウント切り替えに使用します。不要な場合は空欄のままにしてください。中国公式：電話番号またはメールアドレスを入力すると、MAS がゲームの表示に合わせて伏せ字に変換します。B鯖：Bilibili ユーザー名を入力してください',
     bettergiAccountUid: 'アカウント UID',
     bettergiEnterUid: 'UID を入力してください（アカウント切り替え時は推奨）',
     bettergiUidHint:
-      '任意項目です。アカウント切り替え時は入力を推奨します。切り替え前に一致が確認できた場合、切り替え処理は行われません',
+      '任意項目です。アカウント切り替え時は入力を推奨します。切り替え前に一致が確認できた場合、切り替え処理は行われません（BetterGI スクリプト方式のみ有効）',
+    bettergiGameClient: 'ゲームクライアント',
+    bettergiGameClientHint:
+      '中国公式 / B鯖 / グローバルは互いに独立したクライアントです（Bilibili アカウントは B鯖クライアントにのみログイン可能）。空欄の場合は BetterGI のグローバル設定に従います。入力すると、実行時に MAS がそのクライアントを一時的に起動します（BetterGI の設定は変更しません）。同じスクリプト内の異なるサーバーのユーザーは、それぞれ独自のクライアントを設定できます',
+    bettergiGameClientPlaceholder:
+      '先に BetterGI の設定でゲームパスを構成するか、このユーザーのゲーム実行ファイル（YuanShen.exe / GenshinImpact.exe）を選択してください',
+    bettergiGameClientRestore: 'BGI 既定に戻す',
+    bettergiGameClientInvalid:
+      'ゲーム実行ファイル（YuanShen.exe または GenshinImpact.exe）を選択してください',
+    bettergiGameClientUnknownWarning:
+      'ゲームクライアントのチャネルを識別できません（config.ini の欠損または無効なパス）。ゲームサーバーを手動で指定してください',
+    bettergiGameClientIntlWarning:
+      'グローバルクライアントを検出しましたが、具体的なサーバーを特定できません。ゲームサーバーを手動で指定してください',
+    bettergiGameClientSynced:
+      'クライアントに基づきゲームサーバーを {server} に自動切り替えしました',
+    bettergiServerMismatchWarning:
+      '選択したサーバー（{server}）と現在のゲームクライアント（{channel}）が一致せず、タスクは正常に実行できません。どちらかを調整してください',
+    bettergiChannelOfficial: '中国公式',
+    bettergiChannelBili: 'B鯖',
+    bettergiChannelGlobal: 'グローバル',
     bettergiPasswordHint:
       'パスワードが未入力の場合、アカウント切り替えはゲーム内のドロップダウンで行われます。パスワードログインで切り替える場合は必ず入力してください',
     bettergiEnterPasswordPlaceholder:
@@ -2701,6 +2736,13 @@ export default {
     anotherWindowTookOverBackend: '別のウィンドウがバックエンド接続を引き継ぎました',
     thisWindowStoppedReconnecting:
       'このウィンドウは再接続を停止しました。2 つのウィンドウが接続を奪い合わないようにするためです。',
+    backgroundInitDegradedTitle: '一部のバックグラウンドサービスを起動できませんでした',
+    backgroundInitFailedTitle: 'バックグラウンドサービスを起動できませんでした',
+    backgroundInitTimerStarted:
+      '定時タスクは正常に起動しました。以下の機能は再起動するまで使えない可能性があります。',
+    backgroundInitTimerNotStarted:
+      '定時タスクが起動していない可能性があり、キューは予定時刻に実行されません。アプリを再起動してください。',
+    backgroundInitFailedSteps: '失敗した項目：{steps}',
     couldNotAddAccount: 'アカウントグループを追加できませんでした',
     gotIt: '了解',
     continueDownload: 'ダウンロードを続ける',
@@ -3032,6 +3074,7 @@ export default {
     },
     toast: {
       tabAutoCreated: 'コンソール {title} を自動作成しました',
+      tabReused: 'コンソール {title} で実行を開始しました',
       mainTabUndeletable: 'メインコンソールは閉じられません',
       tabDeleted: 'コンソール「{title}」を閉じました',
       noIdleTabs: '閉じられるコンソールがありません',

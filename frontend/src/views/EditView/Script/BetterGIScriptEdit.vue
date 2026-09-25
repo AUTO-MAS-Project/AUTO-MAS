@@ -218,6 +218,33 @@
               </a-form-item>
             </a-col>
           </a-row>
+          <a-row :gutter="24">
+            <a-col :span="8">
+              <a-form-item>
+                <template #label>
+                  <span class="form-label">
+                    {{ t('edit.bettergiAccountSwitchMethod') }}
+                    <a-tooltip :title="t('edit.bettergiAccountSwitchMethodHint')">
+                      <QuestionCircleOutlined class="help-icon" />
+                    </a-tooltip>
+                  </span>
+                </template>
+                <a-select
+                  v-model:value="bettergiConfig.Run.AccountSwitchMethod"
+                  size="large"
+                  style="width: 100%"
+                  @change="handleAccountSwitchMethodChange"
+                >
+                  <a-select-option value="BGI">
+                    {{ t('edit.bettergiAccountSwitchMethodBgi') }}
+                  </a-select-option>
+                  <a-select-option value="MAS">
+                    {{ t('edit.bettergiAccountSwitchMethodMas') }}
+                  </a-select-option>
+                </a-select>
+              </a-form-item>
+            </a-col>
+          </a-row>
         </div>
       </a-form>
     </a-card>
@@ -265,6 +292,7 @@ interface BetterGIRunForm {
   RunTimesLimit: number
   RunTimeLimit: number
   UseAdmin: boolean
+  AccountSwitchMethod: 'BGI' | 'MAS'
 }
 
 interface BetterGIGameForm {
@@ -290,7 +318,13 @@ const formData = reactive({
 
 const bettergiConfig = reactive<BetterGIScriptConfigForm>({
   Info: { Name: '', RootPath: '.' },
-  Run: { ProxyTimesLimit: 0, RunTimesLimit: 3, RunTimeLimit: 10, UseAdmin: true },
+  Run: {
+    ProxyTimesLimit: 0,
+    RunTimesLimit: 3,
+    RunTimeLimit: 10,
+    UseAdmin: true,
+    AccountSwitchMethod: 'MAS',
+  },
   Game: { Controller: '电脑端-前台', CloseOnFinish: true },
 })
 
@@ -315,6 +349,12 @@ const handleChange = async (category: string, key: string, value: unknown) => {
       logger.error(msg)
     }
   }, `${category}.${key}`)
+}
+
+const handleAccountSwitchMethodChange = async (
+  value: BetterGIScriptConfigForm['Run']['AccountSwitchMethod']
+) => {
+  await handleChange('Run', 'AccountSwitchMethod', value)
 }
 
 const applyRootPathDefaults = async (rootPath: string) => {

@@ -18,6 +18,7 @@ import type { ScriptDetail, ScriptType, User } from '@/types/script'
 import { useAudioPlayer } from '@/composables/useAudioPlayer'
 import { getTaskRuntimeStates } from '@/composables/useTaskRuntimeState'
 import { isScriptConfigLocked } from '@/utils/scriptConfigLock'
+import { maafwScriptTypeByConfigType, maafwUserConfigTypes } from '@/composables/useMaaFWFlavor'
 
 const logger = window.electronAPI.getLogger('脚本API')
 
@@ -57,14 +58,13 @@ const SCRIPT_TYPE_BY_CONFIG_TYPE: Record<string, ScriptType> = {
   OkwwConfig: 'Okww',
   OkNteConfig: 'OkNte',
   MaaEndConfig: 'MaaEnd',
-  M9AConfig: 'M9A',
-  MaaFWConfig: 'MaaFW',
   HSRConfig: 'HSR',
   BetterGIConfig: 'BetterGI',
   ZzzOdConfig: 'ZzzOd',
   BAAHConfig: 'BAAH',
   WhimboxConfig: 'Whimbox',
-  MSSConfig: 'MSS',
+  // MaaFW 与各特调（M9A / MSS ……）的配置类名由特调注册表提供
+  ...maafwScriptTypeByConfigType(),
 }
 
 const resolveScriptType = (configType: string): ScriptType => {
@@ -824,13 +824,8 @@ export function useScriptApi() {
                             : '未知',
                       },
                     }
-                  } else if (
-                    (userIndex.type === 'MaaFWUserConfig' ||
-                      userIndex.type === 'M9AUserConfig' ||
-                      userIndex.type === 'MSSUserConfig') &&
-                    userData
-                  ) {
-                    // M9A / MSS 的用户类是 MaaFWUserConfig 的子类，归一化走同一条路
+                  } else if (maafwUserConfigTypes().has(userIndex.type) && userData) {
+                    // 特调（M9A / MSS ……）的用户类是 MaaFWUserConfig 的子类，归一化走同一条路
                     const maafwUserData = userData as unknown as LooseUserConfig
                     return {
                       id: userIndex.uid,

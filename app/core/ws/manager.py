@@ -47,6 +47,10 @@ class _MainConnectionManager:
     - 底层心跳依赖 WebSocket 协议层 ping/pong（uvicorn ws_ping_interval/ws_ping_timeout）
     """
 
+    # 单条消息（含排队等发送锁）的最长等待时间。对端僵死时发送方最多被拖这么久，
+    # 连接本身不在这里关闭，交给协议层 ping 超时判定，避免前端卡顿时被反复踢下线重连。
+    send_timeout: float = 5.0
+
     def __init__(self) -> None:
         self._websocket: Optional[WebSocket] = None
         self._send_lock = asyncio.Lock()
@@ -132,18 +136,30 @@ class _MainConnectionManager:
             message (Dict[str, JsonValue]): 消息体。
 
         Returns:
-            bool: 发送是否成功；未连接或发送异常时返回 False。
+            bool: 发送是否成功；未连接、发送超时或发送异常时返回 False。
         """
         websocket = self._websocket
         if websocket is None:
             return False
         send_lock = self._send_lock
-        try:
+
+        async def _send() -> bool:
             async with send_lock:
                 if self._websocket is not websocket or self._send_lock is not send_lock:
                     return False
                 await websocket.send_json(message)
                 return self._websocket is websocket and self._send_lock is send_lock
+
+        try:
+            return await asyncio.wait_for(_send(), timeout=self.send_timeout)
+        except asyncio.TimeoutError:
+            # 超时可能发生在等锁期间（未发出），也可能发生在 drain 期间（帧已进缓冲区、
+            # 之后仍可能送达），这里无法区分，只能记为未确认送达
+            logger.warning(
+                f"主 WebSocket 发送超时({self.send_timeout:g}秒)，消息未确认送达: "
+                f"type={message.get('type')}"
+            )
+            return False
         except Exception as e:
             logger.warning(f"主 WebSocket 发送失败: {type(e).__name__}: {e}")
             return False
@@ -214,8 +230,16 @@ class _MainConnectionManager:
                 raw = await websocket.receive_json()
             except WebSocketDisconnect:
                 break
+            except KeyError:
+                logger.warning("收到非文本 WebSocket 帧，已丢弃")
+                continue
             except json.JSONDecodeError as e:
                 logger.warning(f"入站消息解析失败: {e}")
+                continue
+            except (KeyError, TypeError):
+                # receive_json(mode="text") 读二进制帧时取不到 text 字段；
+                # 该帧已被消费，丢弃即可，不能因此断开主连接。
+                logger.warning("主 WebSocket 收到非文本帧，已丢弃")
                 continue
             except Exception as e:
                 logger.warning(f"主 WebSocket 接收异常: {type(e).__name__}: {e}")
