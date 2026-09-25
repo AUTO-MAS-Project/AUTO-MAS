@@ -8,6 +8,7 @@ import shutil
 import subprocess
 import sys
 import threading
+import time
 import uuid
 from pathlib import Path
 from typing import Callable
@@ -15,6 +16,7 @@ from typing import Callable
 from packaging.version import InvalidVersion, Version
 
 from ..runtime_pool import runtime_managed_uv_executable
+from ..runtime_pool._shared import remove_tree_best_effort
 from ..runtime_pool.host_environment import (
     EMBEDDED_COPIES_DIR_PARTS,
     set_project_pycache_prefix,
@@ -355,37 +357,88 @@ def _repin_project_python_binding(
         )
         return
     log(f"[Python环境] {mismatch}，把副本里的 binding 钉回 {native}")
-    removed: list[str] = []
-    for stale in _stale_maafw_dist_infos(python_exe):
-        # 只摘这份旧记录自己的目录，不按它的 RECORD 删文件：那些文件现在属于更高的版本，
-        # 由下面的 pip 按那份记录卸掉。目录里的小文件是视图私有的复制件，删目录项不写穿。
-        try:
-            shutil.rmtree(stale)
-        except OSError as exc:
-            log(f"[Python环境] 清理旧的 maafw 安装记录 {stale.name} 失败: {exc}")
-        else:
-            removed.append(stale.name)
-    if removed:
+    # 残留的旧安装记录先挪开（不删）：钉回成功才丢，失败就原样放回。dist-info 集合是
+    # 环境指纹的输入，失败时若集合变了、版本又没对上，准备会被当成并发改动拒绝缓存——
+    # 离线时本来能过的项目（M9A v4.9.0 出厂形态）会因此每次都失败。
+    stash, moved = _stash_stale_maafw_dist_infos(python_exe, Path(project_path), log)
+    if moved:
         log(
-            f"[Python环境] 先清掉副本里残留的旧 maafw 安装记录 {', '.join(removed)}"
-            f"（实际装的是 {installed}），否则 pip 会认错已装版本"
+            f"[Python环境] 先把副本里残留的旧 maafw 安装记录 "
+            f"{', '.join(original.name for original, _ in moved)} 挪开（实际装的是 "
+            f"{installed}），否则 pip 会认错已装版本"
         )
     ok, detail = _pip_install(
         python_exe, [f"maafw=={native}"], cwd=str(project_path), env=env, log=log
     )
-    if not ok:
-        log(f"[Python环境] binding 钉回失败，agent 可能连不上: {detail[:200]}")
-        return
-    pinned = project_python_maafw_version(python_exe)
+    pinned = project_python_maafw_version(python_exe) if ok else None
     try:
         pinned_ok = pinned is not None and Version(pinned) == Version(native)
     except InvalidVersion:
         pinned_ok = pinned == native
-    if not pinned_ok:
+    if ok and pinned_ok:
+        if stash is not None and not remove_tree_best_effort(stash):
+            log(f"[Python环境] 挪开的旧 maafw 安装记录没删干净，留在 {stash}")
+        return
+    if moved:
+        _restore_stashed_dist_infos(moved, log)
+    if stash is not None and not remove_tree_best_effort(stash):
+        log(f"[Python环境] 临时目录没删干净，留在 {stash}")
+    if not ok:
+        log(f"[Python环境] binding 钉回失败，agent 可能连不上: {detail[:200]}")
+    else:
         log(
             f"[Python环境] 钉回后读到的 binding 仍是 {pinned or '未知'}，与原生库 {native} "
             "不一致，agent 可能连不上"
         )
+
+
+#: 钉回期间暂放旧 maafw 安装记录的目录（副本根下，钉回结束即删）
+REPIN_STASH_PREFIX = ".maafw-repin-stash-"
+
+
+def _stash_stale_maafw_dist_infos(
+    python_exe: str, project_path: Path, log: Callable[[str], None]
+) -> tuple[Path | None, list[tuple[Path, Path]]]:
+    """把 :func:`_stale_maafw_dist_infos` 挪进副本根下的临时目录。
+
+    只挪记录目录本身，不按它的 RECORD 动文件：那些文件现在属于更高的版本，由 pip 按那份
+    记录卸。同一卷上是目录改名，目录里的小文件是视图私有的复制件，不写穿载荷。
+    返回（临时目录或 None, [(原位置, 暂放位置)]）。
+    """
+
+    stale = _stale_maafw_dist_infos(python_exe)
+    if not stale:
+        return None, []
+    stash = project_path / (
+        f"{REPIN_STASH_PREFIX}{time.strftime('%Y%m%d-%H%M%S')}-{uuid.uuid4().hex[:6]}"
+    )
+    moved: list[tuple[Path, Path]] = []
+    for original in stale:
+        target = stash / original.name
+        try:
+            stash.mkdir(parents=True, exist_ok=True)
+            os.rename(original, target)
+        except OSError as exc:
+            log(f"[Python环境] 挪开旧的 maafw 安装记录 {original.name} 失败: {exc}")
+            continue
+        moved.append((original, target))
+    return stash, moved
+
+
+def _restore_stashed_dist_infos(
+    moved: list[tuple[Path, Path]], log: Callable[[str], None]
+) -> None:
+    """钉回没成：把挪开的记录原样放回，dist-info 集合与指纹回到钉回前。"""
+
+    for original, stashed in moved:
+        if original.exists():
+            # pip 装出了同名记录（装上了却读不对版本）：以它为准，暂放的这份随临时目录删掉
+            log(f"[Python环境] {original.name} 已被 pip 重建，不放回旧记录")
+            continue
+        try:
+            os.rename(stashed, original)
+        except OSError as exc:
+            log(f"[Python环境] 放回旧的 maafw 安装记录 {original.name} 失败: {exc}")
 
 
 def _isolated_venv_lock(path: Path) -> threading.RLock:
