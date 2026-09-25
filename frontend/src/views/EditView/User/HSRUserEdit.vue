@@ -13,21 +13,20 @@
 
     <ConfigLockPanel :script-id="scriptId" content-class="user-edit-content">
       <a-card class="config-card">
+        <!-- 能力提示合成一条：第一句作标题，其余列在下面 -->
         <a-alert
-          v-if="capabilitySnapshot?.unavailable_reason && !visibleCapabilityWarnings.length"
+          v-if="pageWarnings.length"
           type="warning"
           show-icon
-          :message="capabilitySnapshot.unavailable_reason"
+          :message="pageWarnings[0]"
           style="margin-bottom: 12px"
-        />
-        <a-alert
-          v-for="warning in visibleCapabilityWarnings"
-          :key="warning"
-          type="warning"
-          show-icon
-          :message="warning"
-          style="margin-bottom: 12px"
-        />
+        >
+          <template v-if="pageWarnings.length > 1" #description>
+            <ul class="page-warning-list">
+              <li v-for="warning in pageWarnings.slice(1)" :key="warning">{{ warning }}</li>
+            </ul>
+          </template>
+        </a-alert>
         <a-form ref="formRef" :model="formData" layout="vertical" class="config-form">
           <!-- 基本信息 -->
           <div class="form-section form-section-flat">
@@ -269,8 +268,8 @@
                   <a-button size="small" :disabled="eowCompletedThisWeek" @click="markEowCompleted">
                     {{ t('edit.markAsDone') }}
                   </a-button>
-                  <a-button size="small" danger @click="resetEowProgress">{{
-                    t('edit.reset')
+                  <a-button size="small" @click="resetEowProgress">{{
+                    t('edit.hsrMarkNotDone')
                   }}</a-button>
                 </a-space>
               </a-col>
@@ -307,8 +306,8 @@
                   >
                     {{ t('edit.markAsDone') }}
                   </a-button>
-                  <a-button size="small" danger @click="resetWeeklyProgress">{{
-                    t('edit.reset')
+                  <a-button size="small" @click="resetWeeklyProgress">{{
+                    t('edit.hsrMarkNotDone')
                   }}</a-button>
                 </a-space>
               </a-col>
@@ -541,6 +540,12 @@ const capabilitySnapshot = ref<HSRCapabilitySnapshot | null>(null)
 const visibleCapabilityWarnings = computed(() =>
   filterHSRCapabilityWarnings(capabilitySnapshot.value?.warnings)
 )
+// 页面顶部只放一条能力提示：有警告列警告，没有时才显示不可用原因
+const pageWarnings = computed<string[]>(() => {
+  if (visibleCapabilityWarnings.value.length) return visibleCapabilityWarnings.value
+  const reason = capabilitySnapshot.value?.unavailable_reason
+  return reason ? [reason] : []
+})
 // 用户可见的引擎名：不出现 M7A 这类内部代号
 const engineDisplayName = (engine: HSREngine) =>
   engine === 'M7A' ? t('edit.directEngineM7a') : t('edit.directEngineSra')
@@ -594,7 +599,8 @@ const serverOptions = computed(() => [
 ])
 
 // 配置来源三态卡片（value 为后端 Info.Mode 取值，驱动逻辑需保持原样；文案走词表）
-// 脚本 = 本脚本下「脚本」来源用户共用一份任务配置；用户 = 该用户自己一份；直控 = 原样跑原生配置
+// 脚本 = 本脚本下选了「脚本」的用户共用一份任务配置；用户 = 该用户自己一份；
+// 直控 = 直接运行三月七 / SRA 里保存的设置
 const hsrConfigModeOptions: Array<{
   label: string
   value: '脚本' | '用户' | '直控'
@@ -613,17 +619,24 @@ const hsrConfigModeOptions: Array<{
     label: t('edit.user'),
     value: '用户',
     title: t('edit.user'),
-    description: t('edit.useThisUserS'),
+    description: t('edit.hsrUseUserOwn'),
     icon: 'database',
   },
   {
     label: t('edit.directControl'),
     value: '直控',
     title: t('edit.directControl'),
-    description: t('edit.useScriptSCurrent'),
+    description: t('edit.hsrUseDirect'),
     icon: 'setting',
   },
 ]
+
+// 切换配置来源后说一句「数据换了主人」
+const CONFIG_MODE_SWITCHED_KEYS: Record<'脚本' | '用户' | '直控', string> = {
+  脚本: 'edit.hsrModeSwitchedScript',
+  用户: 'edit.hsrModeSwitchedUser',
+  直控: 'edit.hsrModeSwitchedDirect',
+}
 
 type MutableRecord = Record<string, unknown>
 
@@ -920,6 +933,7 @@ const handleConfigModeChange = async (value: boolean | string) => {
     formData.Info.Mode = previousMode
     return
   }
+  message.info(t(CONFIG_MODE_SWITCHED_KEYS[formData.Info.Mode]))
   if (value === '直控') {
     await ensureDirectEnginesEnabled()
     return
@@ -1162,16 +1176,16 @@ const loadCapabilities = async () => {
     capabilitySnapshot.value = {
       revision: 0,
       available: configuredEngines.length > 0,
-      unavailable_reason: configuredEngines.length ? null : '未配置 M7A 或 SRA 路径',
+      unavailable_reason: configuredEngines.length ? null : t('edit.hsrNoEnginePath'),
       candidate_engines: configuredEngines,
       configured_engines: configuredEngines,
       effective_engines: configuredEngines,
       adapters: [],
       tasks: [],
       warnings: [
-        `HSR 能力端点不可用，已回退到内置脚本配置：${
-          error instanceof Error ? error.message : String(error)
-        }`,
+        t('edit.hsrCapabilityFallback', {
+          reason: error instanceof Error ? error.message : String(error),
+        }),
       ],
     }
   }
@@ -1464,6 +1478,11 @@ const loadUserData = async () => {
 
 .cloud-login-row {
   margin-top: 8px;
+}
+
+.page-warning-list {
+  margin: 0;
+  padding-left: 18px;
 }
 
 .cloud-login-line {

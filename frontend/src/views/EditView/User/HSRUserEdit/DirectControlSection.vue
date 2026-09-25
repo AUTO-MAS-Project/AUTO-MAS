@@ -1,7 +1,7 @@
 <template>
   <div class="direct-control-section">
     <div class="section-header">
-      <h3>{{ t('edit.scriptDirectControl') }}</h3>
+      <h3>{{ t('edit.directControl') }}</h3>
     </div>
     <!-- 直控区块唯一的一条提示：说明直控跑什么、MAS 管什么、哪些字段此时不生效 -->
     <a-alert type="info" show-icon :message="t('edit.hsrDirectControlHint')" class="direct-alert" />
