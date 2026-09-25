@@ -100,6 +100,23 @@ export interface MaaFWFlavor {
    */
   gameUpdateHintKey: string | null
 
+  // ---- 受管任务 ----
+  /**
+   * 由后端特调全权控制、不许用户自己加的任务（interface 里任务的 entry）：用户页「添加任务」
+   * 与预设模板里都不出现。已经在队列里的照常显示（能看能删），并按 managedTaskWarningKey
+   * 在队列上方给一条警告。没有写 []
+   */
+  managedTaskEntries: readonly string[]
+  /**
+   * 受管的切号任务：资源在 resources 里、队列里它的有效实例（目标账号非空）≥ 2 时，后端拒绝
+   * 运行该用户、要求拆成多个用户（与后端特调同一判据）。没有写 null
+   */
+  managedAccountTask: { entry: string; resources: readonly string[] } | null
+  /** 需要拆用户时的警告（插值 count：个数，accounts：各目标账号）；为空则不显示 */
+  managedTaskWarningKey: string | null
+  /** 其余受管任务残留在队列里时的提示（插值 tasks：任务名；运行照常）；为空则不显示 */
+  managedTaskNoticeKey: string | null
+
   // ---- 独有区块与钩子 ----
   /** 插入点 → 组件（按数组顺序渲染）；没有独有区块写 {} */
   slots: Partial<Record<MaaFWFlavorSlotName, MaaFWFlavorSlotComponent[]>>

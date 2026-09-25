@@ -479,6 +479,60 @@ def _select_resource(
     raise MaaFWRunPlanError(f"没有适用于 controller {controller.name} 的 resource")
 
 
+def resolve_run_selection(
+    interface_model: MaaFWInterface,
+    *,
+    configured_controller: str,
+    emulator_selected: bool,
+    configured_resource: str,
+) -> tuple[str | None, str | None]:
+    """运行时用哪个 controller / resource：``(交给建计划的 controller 名, 实际生效的 resource 名)``。
+
+    这是「脚本资源留空时到底跑哪个资源」的唯一口径：运行前检查、特调装饰，以及特调在
+    保存与启动期整理用户配置时都按它判断，别再各自回落到 ``interface.resource[0]``。
+
+    - controller：脚本上选的且 interface 里有 → 它；否则配了模拟器 → 第一个 Adb；否则原值
+      （可能是 None，建计划时回落到第一个 Adb / Win32）。
+    - resource：脚本上选了就用它；否则取第一个适用于上面那个 controller（None 时按建计划的
+      回落）的资源。找不到返回 None，由建计划报错。
+    """
+
+    configured = str(configured_controller or "").strip()
+    known = {item.name: item for item in interface_model.controller}
+    if configured in known:
+        controller_name: str | None = configured
+    else:
+        adb = next(
+            (item for item in interface_model.controller if item.type == "Adb"), None
+        )
+        # 配置里的 controller 在当前 interface 中已不存在（项目更新改了名字）时也走这里
+        if emulator_selected and adb is not None:
+            controller_name = adb.name
+        else:
+            controller_name = configured or None
+
+    resource = str(configured_resource or "").strip()
+    if resource:
+        return controller_name, resource
+    if controller_name is None:
+        controller = next(
+            (
+                item
+                for item in interface_model.controller
+                if item.type in MAAFW_DIRECT_CONTROLLER_TYPES
+            ),
+            None,
+        )
+    else:
+        controller = known.get(controller_name)
+    if controller is None:
+        return controller_name, None
+    for item in interface_model.resource:
+        if not item.controller or controller.name in item.controller:
+            return controller_name, item.name
+    return controller_name, None
+
+
 def select_snapshot_tasks(
     interface_model: MaaFWInterface,
     *,
