@@ -30,6 +30,13 @@
   - 开发流程：只影响贡献者、用户看不见的改动，不进公告。
 -->
 
+## [未发布]
+
+### 修复
+
+- 【MFW】修复 MFW 雷电重试重开模拟器后截图连接失败，第 2、3 次尝试直接作废 (#1035) by @qiyinxi
+- 【MFW】修复部分项目（如 M9A v4.10.0）第一个任务开始就被自身分辨率检查停止的问题 (#1036) by @qiyinxi
+
 ## [v5.6.0-beta.1] - 2026-09-25
 
 ### 新增
@@ -249,6 +256,7 @@
 - OK-NTE专项 修复任务结束后异环启动器进程残留并持续占用内存的问题 by @qiyinxi by @HarcoChen
 - MAA专项 修复开启活动关优先后普通理智作战的理智药额度被静默清零的问题，两个作战任务各自使用独立理智药额度 by @qiyinxi by @HarcoChen
 
+[未发布]: https://github.com/AUTO-MAS-Project/AUTO-MAS/compare/v5.6.0-beta.1...dev
 [v5.6.0-beta.1]: https://github.com/AUTO-MAS-Project/AUTO-MAS/compare/v5.5.0...v5.6.0-beta.1
 [v5.5.0]: https://github.com/AUTO-MAS-Project/AUTO-MAS/compare/v5.4.0...v5.5.0
 [v5.4.0]: https://github.com/AUTO-MAS-Project/AUTO-MAS/releases/tag/v5.4.0
