@@ -42,7 +42,9 @@ from app.task.MaaFW.tools.core.interface.service import (
     MaaFWInterfaceService,
 )
 from app.task.MaaFW.tools.core.runner.environment import (
+    ARCHITECTURE_MISMATCH_MARKERS,
     MaaFWRunnerEnvironment,
+    describe_project_runtime_architecture_mismatch,
 )
 from app.task.MaaFW.tools.core.runner.models import (
     MaaFWDeviceConfig,
@@ -171,6 +173,9 @@ _UNRETRYABLE_ENVIRONMENT_MARKERS = (
     "runtime Python identity could not be verified",
     "MaaFW Runner 环境准备失败",
     "MaaFW Runner 环境准备超时",
+    # 项目自带的 MaaFramework 与本机架构不符：换哪次尝试都是同一份库。运行前自检一般已
+    # 拦下，这里兜住 worker 侧才发现的情况（异常与任务失败两条路都认）。
+    *ARCHITECTURE_MISMATCH_MARKERS,
 )
 # worker 到点自己停任务、截图、回传结果需要一点时间；宿主的硬超时在此之后才到，
 # 只兜 worker 没能停下来的情况（原生层卡死、agent 自定义动作不返回）。
@@ -486,11 +491,26 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 self.cur_user_item.status = "异常"
                 return game_path_error
 
+            # 项目自带的 MaaFramework 与本机架构不符时 worker 里必然加载失败；在这里先说清楚
+            # （还没拉起游戏 / 模拟器），并按导入来源 Info.Path 判断重新导入能不能解决。
+            architecture_error = await asyncio.to_thread(
+                self._describe_runtime_architecture_mismatch
+            )
+            if architecture_error:
+                self.cur_user_item.status = "异常"
+                return architecture_error
+
             keep_reservation = True
             return "Pass"
         finally:
             if not keep_reservation:
                 await self._release_project_path()
+
+    def _describe_runtime_architecture_mismatch(self) -> str | None:
+        source = str(self.script_config.get("Info", "Path") or "").strip()
+        return describe_project_runtime_architecture_mismatch(
+            self.project_path, source_path=Path(source) if source else None
+        )
 
     async def prepare(self) -> None:
         start_time = datetime.now()
@@ -505,7 +525,8 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         self.check_result = await self.check()
         if self.check_result != "Pass":
             # 也记一行后端日志：否则只有 WS 通知，事后日志里只见「任务开始」紧接「任务结束」。
-            logger.info(
+            # 「异常」是失败，按 WARNING 记；「跳过」（次数用完、周期已完成）是正常分支。
+            (logger.warning if self.cur_user_item.status == "异常" else logger.info)(
                 f"MFW 用户运行前检查未通过（{self.cur_user_item.name}，{self.cur_user_item.status}）：{self.check_result}"
             )
             if self.cur_user_item.status == "异常":
@@ -571,14 +592,13 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                     result = await self._run_maafw(device_config)
                 except Exception as exc:
                     message = f"MaaFW 运行异常: {exc}"
-                    self._append_log(message)
+                    self._append_log(message, warning=True)
                     self._record_attempt(index + 1, [], message)
-                    unretryable = any(
-                        marker in message for marker in _UNRETRYABLE_ENVIRONMENT_MARKERS
-                    )
+                    unretryable = _is_unretryable_failure(message)
                     if unretryable:
                         self._append_log(
-                            "运行环境不可用，重试也不会有别的结果，已停止本轮"
+                            "运行环境不可用，重试也不会有别的结果，已停止本轮",
+                            warning=True,
                         )
                     if self.cur_user_log is not None:
                         self.cur_user_log.status = message
@@ -612,7 +632,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                         message = _failed_task_user_summary(result, self.run_plan)
                     if self.cur_user_log is not None:
                         self.cur_user_log.status = message
-                    self._append_log(message)
+                    self._append_log(message, warning=True)
                     self._record_attempt(
                         index + 1,
                         _format_completed_task_labels(
@@ -629,6 +649,14 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                             for shot in result.failureScreenshots
                         ],
                     )
+                    if _is_unretryable_failure(message):
+                        # worker 在任务里报的环境级失败（如原生库架构不符）：每轮都一样，
+                        # 不再为它起停模拟器 / 游戏重试。
+                        self._append_log(
+                            "运行环境不可用，重试也不会有别的结果，已停止本轮",
+                            warning=True,
+                        )
+                        break
                     await self._refresh_run_plan_after_period_update()
                     if self.run_plan is not None and not self.run_plan.tasks:
                         self.run_complete = True
@@ -2418,8 +2446,9 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         except Exception as exc:
             logger.warning(f"MaaFW 插件用户通知发送失败: {exc}")
 
-    def _append_log(self, message: str) -> None:
-        logger.info(message)
+    def _append_log(self, message: str, *, warning: bool = False) -> None:
+        # 失败类的用户日志按 WARNING 进 app.log，事后按级别筛得出来
+        (logger.warning if warning else logger.info)(message)
         if self.cur_user_log is not None:
             self.cur_user_log.content.append(_format_user_log_line(message))
             self.script_info.log = "".join(self.cur_user_log.content[-80:])
@@ -2895,6 +2924,10 @@ def _copy_native_debug_log_delta(
         if target_file is not None:
             target_file.close()
     return copied
+
+
+def _is_unretryable_failure(message: str) -> bool:
+    return any(marker in message for marker in _UNRETRYABLE_ENVIRONMENT_MARKERS)
 
 
 _FAILURE_REASON_MAX_CHARS = 200
