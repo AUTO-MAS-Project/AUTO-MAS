@@ -3070,6 +3070,7 @@ export default {
     },
     toast: {
       tabAutoCreated: 'コンソール {title} を自動作成しました',
+      tabReused: 'コンソール {title} で実行を開始しました',
       mainTabUndeletable: 'メインコンソールは閉じられません',
       tabDeleted: 'コンソール「{title}」を閉じました',
       noIdleTabs: '閉じられるコンソールがありません',
