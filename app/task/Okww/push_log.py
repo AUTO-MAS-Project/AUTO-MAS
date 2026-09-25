@@ -12,10 +12,10 @@ OK-WW 专项作为 log_box 的一个实例：本模块只提供参数（i18n 翻
   - 裸节点名 = 开始/动作标记，默认成功，除非存在失败/跳过标记
   - "❌ 失败: 节点" = 失败（匹配源码 log_error 的专属失败日志，排除战斗噪音）
   - "⏭ 跳过: 节点" = 跳过（如每周乐园已完成）
-  - "⏭ 跳过: 合并声骸（已弃置声骸不足 1000）" = 没到 1000 个已弃置声骸、没做融合。
-    上游该分支可达时直接打 `Must have 1000 discarded Echo to Run`；else 尚不可达的
-    版本只能靠 "NO_DISCARDED_ECHO"（traceback 回显的调用点源码行）把「合并声骸」的
-    失败降级为跳过，真正的异常仍判失败
+  - "NO_DISCARDED_ECHO" = 已弃置声骸不足 1000、这一次融合没有执行（上游该分支可达时
+    日志是提示行，else 不可达的版本走成异常）；收尾把「合并声骸」节点按「⏭ 跳过:
+    合并声骸（已弃置声骸不足 1000）」呈现，真正的异常仍判失败，且该标记只作用于
+    当次融合尝试（跨会话或重试不延续）
   - "✅ 成功: 节点" = 明确成功（源码有成功/完成日志的节点）
   - "⚡ 剩余体力: N" = 刷完后的剩余体力（取最后一条 `体力当前:`；上游是领奖时
     才扣体力，故最后一次领奖的 `current stamina: N` 优先于开刷前的
@@ -71,13 +71,15 @@ OKWW_PUSH_RULES: list[tuple[str, str]] = [
     (r"Merge声骸Task Failed|MergeEchoTask Failed", r'"❌ 失败: 合并声骸"'),
     # 合并声骸「不足 1000」不是异常：源码用 `if self.click_dialog_left_button():`
     # 判断融合弹窗是否出现，意图是没弹窗就走 else 提示 `Must have 1000 discarded
-    # Echo to Run` 后返回。若该 helper 找不到按钮时抛 CannotFindException，else 便成
-    # 死代码，「没到 1000 个」也以异常形式落进 `MergeEchoTask Failed`——此时只能靠
-    # traceback 回显的调用点源码行识别（该行文本只在 MergeEchoTask.py 出现，融合
-    # 流程内部报错回显的是别的行），resolve 据此把该节点的失败降级为跳过
+    # Echo to Run` 后返回。该 else 可达时日志直接给出提示行；若该 helper 找不到按钮
+    # 时抛 CannotFindException，else 便成死代码，「没到 1000 个」改以异常形式落进
+    # `MergeEchoTask Failed`——后者只能靠 traceback 回显的调用点源码行识别（该行
+    # 文本只在 MergeEchoTask.py 出现，融合流程内部报错回显的是别的行）。
+    # 两种签名统一产出 NO_DISCARDED_ECHO（不直接产出带后缀的节点名，否则会与开始
+    # 标记的「合并声骸」并存成两个节点），由 okww_resolve 把该节点按跳过呈现
     (
         r"Must have 1000 discarded 声骸 to Run|Must have 1000 discarded Echo to Run",
-        r'"⏭ 跳过: 合并声骸（已弃置声骸不足 1000）"',
+        r'"NO_DISCARDED_ECHO"',
     ),
     (r"if self\.click_dialog_left_button\(\):", r'"NO_DISCARDED_ECHO"'),
     # 多账号：切换账号环节失败（源码 _select_and_login_account 内 log_error/抛异常）
@@ -133,6 +135,9 @@ OKWW_PUSH_RULES: list[tuple[str, str]] = [
 # 状态优先级：失败 > 跳过 > 成功
 _STATUS_RANK = {"✅ 成功": 1, "⏭ 跳过": 2, "❌ 失败": 3}
 
+# 「合并声骸」节点名（规则产物与后处理共用；规则里是字面量，改名时须同步）
+_MERGE_ECHO_NODE = "合并声骸"
+
 
 def okww_resolve(results: list[tuple[str, str, float]]) -> list[tuple[str, str, float]]:
     """后处理：按节点解析最终状态（失败 > 跳过 > 成功），保持最后一次出现顺序
@@ -143,11 +148,11 @@ def okww_resolve(results: list[tuple[str, str, float]]) -> list[tuple[str, str, 
     体力刷本的当前体力追踪标记，只保留最后一次，结束后独立输出一行
     「⚡ 剩余体力: N」，不参与状态聚合。体力刷本收尾的必须成功标记与剩余体力
     由同一条规则产出（换行拼接多个标记），故先按行拆分再逐行解析。合并声骸的
-    「已弃置声骸不足 1000」在 else 不可达的上游版本里以异常形式出现（见
-    NO_DISCARDED_ECHO 规则），凭该标记把「合并声骸」的失败降级为跳过，其余异常
-    仍判失败。同一节点多次出现保留最高优先级状态，且节点顺序与时间戳都按最后
-    一次出现排列（多会话日志时取最后会话的流程顺序），同优先级后出现也刷新
-    时间戳，与排序逻辑保持一致。
+    「已弃置声骸不足 1000」由 NO_DISCARDED_ECHO 标记标出，收尾把该节点按跳过
+    呈现（不论该节点此前是成功还是失败），其余异常仍判失败；该标记在遇到新的
+    「合并声骸」开始标记（新一次尝试）时清除，不跨会话/重试生效。同一节点多次
+    出现保留最高优先级状态，且节点顺序与时间戳都按最后一次出现排列（多会话日志
+    时取最后会话的流程顺序），同优先级后出现也刷新时间戳，与排序逻辑保持一致。
     """
     order: list[str] = []
     states: dict[str, tuple[int, str]] = {}
@@ -178,23 +183,26 @@ def okww_resolve(results: list[tuple[str, str, float]]) -> list[tuple[str, str, 
                     pass
                 continue
             if marker == "NO_DISCARDED_ECHO":
-                # 已弃置声骸不足以融合：不产出节点，仅记标记供收尾降级
+                # 已弃置声骸不足以融合：不产出节点，仅记标记供收尾呈现为跳过
                 no_discarded_echo = True
                 continue
             m = re.match(r"^(✅ 成功|⏭ 跳过|❌ 失败): (.*)$", marker)
-            if m:
-                status, node = m.group(1), m.group(2)
+            if m is None:
+                # 裸节点名 = 开始/动作标记
+                if marker == _MERGE_ECHO_NODE:
+                    # 「检查已弃置声骸」开始标记代表新一次融合尝试（跨会话或重试），
+                    # 上一轮的「不足 1000」标记不跨尝试生效
+                    no_discarded_echo = False
+                _mark("✅ 成功", marker, ts)
             else:
-                status, node = "✅ 成功", marker
-            _mark(status, node, ts)
+                _mark(m.group(1), m.group(2), ts)
     # 规则均为二元组，经 LogCollect.collect 后 log_type 恒为 LogType.NORMAL；
     # 节点级失败由文本「❌ 失败:」体现，不依赖逐条类型过滤，故直接输出普通
     status_lines: list[tuple[str, str, float]] = []
     for node in order:
-        status = states[node][1]
-        # 已弃置声骸不足 1000：else 不可达的上游版本把该分支走成异常，此处按「跳过」
-        # 呈现（异常才是失败）
-        if no_discarded_echo and node == "合并声骸" and status == "❌ 失败":
+        # 已弃置声骸不足 1000：这一次融合没有执行，节点按「跳过」呈现（上游该分支
+        # 可达时是提示行，else 不可达的版本走成异常，两者都归到这里）
+        if node == _MERGE_ECHO_NODE and no_discarded_echo:
             status_lines.append(
                 (
                     LogType.NORMAL,
@@ -203,7 +211,7 @@ def okww_resolve(results: list[tuple[str, str, float]]) -> list[tuple[str, str, 
                 )
             )
         else:
-            status_lines.append((LogType.NORMAL, f"{status}: {node}", ts_of[node]))
+            status_lines.append((LogType.NORMAL, f"{states[node][1]}: {node}", ts_of[node]))
     if last_stamina is not None:
         status_lines.append(
             (LogType.NORMAL, f"⚡ 剩余体力: {last_stamina}", last_stamina_ts)
