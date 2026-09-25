@@ -3527,6 +3527,13 @@ class HSRCloudLoginOut(OutBase):
     data: Optional[HSRCloudLoginData] = Field(default=None, description="登录结果")
 
 
+class HSRManagedFieldVisibleWhen(BaseModel):
+    key: str = Field(..., description="依赖的同模块字段键")
+    values: List[Any] = Field(
+        default_factory=list, description="该字段取这些值之一时才显示"
+    )
+
+
 class HSRManagedField(BaseModel):
     key: str = Field(..., description="字段键")
     label: str = Field(default="", description="字段名称")
@@ -3537,13 +3544,31 @@ class HSRManagedField(BaseModel):
     minimum: Optional[float] = Field(default=None, description="最小值")
     maximum: Optional[float] = Field(default=None, description="最大值")
     readonly: bool = Field(default=False, description="是否只读")
+    group: Literal[
+        "common", "team", "support", "activity", "replenish", "reroll", "misc"
+    ] = Field(
+        default="common",
+        description="字段分组：common 平铺，其余各成一个默认收起的折叠面板",
+    )
+    overridden: bool = Field(
+        default=False,
+        description="当前计划（plan_owner 指向的那份）对该字段有生效中的覆盖值",
+    )
+    native_value: Any = Field(default=None, description="引擎原生配置里的值")
+    visible_when: Optional[HSRManagedFieldVisibleWhen] = Field(
+        default=None,
+        description="只有同模块同引擎里字段 key 的当前值在 values 中时才显示",
+    )
 
 
 class HSRManagedDroppedOverride(BaseModel):
     key: str = Field(..., description="被忽略的 Managed.Options 覆盖键")
     reason: Literal["unknown", "type"] = Field(
         ...,
-        description="忽略原因：unknown=当前原生配置没有该字段；type=保存的值类型与原生配置不一致",
+        description=(
+            "忽略原因：unknown=当前原生配置没有该字段或该字段已不由 MAS 托管；"
+            "type=保存的值类型与原生配置不一致"
+        ),
     )
     value: Any = Field(default=None, description="用户保存的覆盖值")
     message: str = Field(default="", description="人类可读说明")

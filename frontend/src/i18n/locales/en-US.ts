@@ -718,47 +718,29 @@ export default {
     tomlFiles: 'TOML files',
     urlProtocolEG: 'URL protocol (e.g. Starward)',
     yamlFiles: 'YAML files',
-    resetManagedOverrides: 'Reset to the source configuration',
-    resetManagedOverridesHint:
-      'Discards every override you changed in MAS and re-reads the current SRA / March7th Assistant configuration',
-    resetManagedOverridesConfirmTitle: 'Reset to the source configuration?',
-    resetManagedOverridesConfirmDesc:
-      'This deletes every override this user changed in MAS (all modules, all fields); everything will then be shown and run from the current SRA / March7th Assistant configuration. The source configuration file itself is not modified. This cannot be undone.',
-    invalidOverridesCount: '{n} stale overrides',
+    invalidOverridesCount: '{n} settings no longer valid',
     invalidManagedOverridesTitle:
-      '{n} saved overrides are no longer valid for the current source configuration; they are ignored at run time and the source values are used instead',
-    invalidManagedOverrideUnknown:
-      'This field no longer exists in the current source configuration',
-    invalidManagedOverrideType:
-      'The saved value type does not match the current source configuration',
+      '{n} settings changed in MAS are no longer valid; they are ignored at run time and the March7th Assistant / SRA settings are used instead',
+    invalidManagedOverrideUnknown: 'This setting no longer exists in March7th Assistant / SRA',
+    invalidManagedOverrideType: 'The saved value type does not match March7th Assistant / SRA',
     invalidManagedOverrideSaved: 'Saved value: {value}',
     clearInvalidManagedOverrides: 'Remove stale overrides',
     clearInvalidManagedOverridesConfirm:
-      'Remove these {n} stale overrides from this user’s MAS configuration? The source configuration file is not modified.',
+      'Remove these {n} invalid settings? The settings saved in March7th Assistant / SRA are not modified.',
     matchesOnly: 'Matches only',
     never: 'Never',
-    sanityScriptChangedPick: 'The sanity script changed — pick the stage again.',
-    hsrEngineSwitchHint:
-      'Switching the engine swaps in the native options and stages of that engine. Values changed under the current engine are not carried over, but they are kept and come back when you switch back.',
-    hsrSharedEngineSwitchHint:
-      "This changes the script-level engine assignment: every user on this script with the Script source, and every User-source user who has not picked an engine, switches to this engine. That engine's own native options and stages then apply.",
-    hsrStageMissingForEngine:
-      'The trailblaze power engine is now {engine}, and no stage is selected under it. Stages are stored per engine, so stages picked under the other engine are not carried over — pick them again. Switching back restores the previous selection.',
+    sanityScriptChangedPick:
+      'The engine of the Trailblaze Power module changed — pick the stage again.',
+    hsrStageMissingForEngine: 'No stage picked under {engine}',
     editHsrUser: 'Edit the HSR user',
     addHsrUser: 'Add an HSR user',
-    hsrServerCnOfficial: 'CN official',
     hsrWeekDone: 'Done this week',
     hsrWeekNotDone: 'Not done this week',
     hsrLastCompleted: 'Last completed: {date}',
-    hsrDynamicTaskCount: '{n} dynamic modules',
-    hsrReadFrom: 'Read from: {source}',
-    hsrUseScriptShared: 'All users set to Script under this script share one task configuration.',
+    hsrUseScriptShared:
+      'Shares one task configuration with the other users on this script who chose Script.',
     hsrSharedPlanHint:
-      'You are editing the shared task configuration of this script; changes affect every user set to Script.',
-    hsrDirectControlHint:
-      'Direct control runs whatever is currently saved in SRA / March7th Assistant. MAS only launches the game and tracks the process; account, stages, and task switches have no effect in this mode.',
-    hsrActiveStageExtra: 'Active: {stage}',
-    hsrRunByEngine: 'Run by {engine}',
+      'You are editing the shared task configuration of this script; changes affect every user who chose Script.',
     hsrGamePlatform: 'Game platform',
     hsrGamePlatformTip:
       'Client: MAS launches the local Star Rail with the settings below. Cloud Star Rail: MAS hosts a browser and March 7th runs inside it',
@@ -784,19 +766,65 @@ export default {
       "Opens this user's Cloud Star Rail window; sign in to your HoYoverse account there. After confirming the sign-in, March 7th enters the game once and exits",
     hsrCloudLoginSuccess: 'Signed in to Cloud Star Rail',
     hsrCloudLoginFailed: 'Cloud game sign-in failed: {reason}',
-    hsrCloudRunByM7a: 'Cloud Star Rail is run by March 7th',
-    hsrSharedModuleNotEnabled:
-      'This module is not enabled in the shared task configuration; settings are saved but it will not run this round.',
-    hsrResetSharedOverridesConfirmDesc:
-      'This deletes every override changed in the shared task configuration (all modules, all fields); every user set to Script will then show and run the current SRA / March7th Assistant configuration. The source configuration files are not modified. This cannot be undone.',
     daily: 'Daily',
     hsrEngineUnavailable: 'Unavailable',
-    hsrNativeConfigNotLoaded: 'Native configuration not loaded',
-    hsrTaskEnabled: 'Enabled',
-    hsrTaskNotEnabled: 'Not enabled',
-    hsrTaskFieldCount: '{n} options',
-    hsrTaskSwitchesOn: '{n} switches on',
+    hsrNativeConfigNotLoaded: 'Settings from March7th Assistant / SRA not loaded yet',
     hsrRepickStage: 'Pick the stage again',
+    hsrTaskConfig: 'Task configuration',
+    hsrSharedPlanTag: 'Shared by script',
+    hsrSummaryNative: 'Uses the settings saved in {engine}',
+    hsrSummaryItem: '{label}: {value}',
+    hsrSummaryMore: '{text}, +{n} more',
+    hsrValueOn: 'On',
+    hsrValueOff: 'Off',
+    hsrValueEmpty: '(empty)',
+    hsrDailySummary: '{type} · {stage} · Echo of War: {eow} ({weekday})',
+    hsrStageNotPicked: 'No stage selected',
+    hsrStageType: 'Stage type',
+    hsrStage: 'Stage',
+    hsrBuildTargetIgnoredSra:
+      '"{label}" is on: SRA picks stages from your build targets, so the stage selected here is not run.',
+    hsrBuildTargetFallbackM7a:
+      '"{label}" is on: March7th Assistant farms your build targets first and only falls back to the stage selected here when it cannot recognize them.',
+    hsrFieldOverridden: 'Changed',
+    hsrFieldNativeValue: 'Changed in MAS. Original value: {value}',
+    hsrFieldReset: 'Restore',
+    hsrFieldResetFailed: 'Could not restore the setting',
+    hsrListEmpty: 'No entries yet',
+    hsrAddRow: 'Add row',
+    hsrRemoveRow: 'Remove this row',
+    hsrInstanceName: 'Stage name',
+    hsrTeamNumber: 'Team',
+    hsrBorrowCharacter: 'Character',
+    hsrBorrowFriend: 'Friend',
+    hsrFieldGroup: {
+      common: 'Common',
+      team: 'Team',
+      support: 'Support character',
+      activity: 'Double-drop events',
+      replenish: 'Replenish Trailblaze Power',
+      reroll: 'Reroll start',
+      misc: 'Other',
+    },
+    hsrGroupOverriddenCount: '{n} changed',
+    hsrNoticeExpand: 'Show details',
+    hsrNoticeCollapse: 'Hide',
+    hsrModuleNotices: '{n} notices for this module',
+    hsrModuleReset: 'Restore this module to the {engine} settings',
+    hsrModuleResetConfirmTitle: 'Restore this module to the {engine} settings?',
+    hsrModuleResetConfirmUser:
+      'Removes what this user changed in MAS for this module (current engine only). The settings saved in March7th Assistant / SRA are not modified. This cannot be undone.',
+    hsrModuleResetConfirmShared:
+      'Removes what the shared task configuration changed for this module (current engine only); every user who chose Script is affected. The settings saved in March7th Assistant / SRA are not modified. This cannot be undone.',
+    hsrModuleResetDone: 'This module now uses the {engine} settings',
+    hsrModuleResetFailed: 'Could not restore this module to the {engine} settings',
+    hsrMarkNotDone: 'Mark as not done',
+    hsrUseUserOwn: 'This user has its own task configuration; other users are not affected.',
+    hsrUseDirect:
+      'Runs whatever is saved in March7th Assistant / SRA; MAS only launches the game and wraps up. The task configuration on this page is not used.',
+    hsrNoEnginePath: 'Fill in the March7th Assistant or SRA path in the script settings first.',
+    hsrCapabilityFallback:
+      'Could not read the engine status; showing engines by the paths in the script settings: {reason}',
     notConfigured: 'Not configured',
     howUseThis: 'How to use this',
     whenSavingMasEncrypts:
@@ -836,7 +864,7 @@ export default {
     always: 'Always',
     success: 'On success',
     engineReturnedNoDynamic:
-      'The engine returned no dynamic configuration for this module — check the native config file and the adapter version.',
+      'No settings were read from this engine for this module. Save the settings once in that engine, then reload this page.',
     run: 'Run',
     folder: 'Folder',
     runOnceNewUser: 'Run once for a new user',
@@ -857,8 +885,6 @@ export default {
     pathFolderHoldingScript: 'Path to the folder holding the script configuration files',
     pathScriptConfigurationFile: 'Path to the script configuration file',
     expressionGuide: 'Expression guide',
-    thisModuleNotEnabled:
-      'This module is not enabled for this user; the configuration is saved but will not run this time.',
     pickConfigurationFile: 'Pick a configuration file',
     pickConfigurationFolder: 'Pick a configuration folder',
     skip2: 'Skip',
@@ -1006,7 +1032,6 @@ export default {
     maaPathSelected: 'MAA path selected',
     masOnlyTakesOver: 'The script or you start and stop it; MAS only takes over the running window',
     howLongMasWaits: 'How long MAS waits after launching the game before it is playable',
-    tasksManagedByMas: 'Tasks managed by MAS',
     masManagesGame: 'MAS manages the game',
     mfwGamePackageName: 'Game package name',
     mfwGamePackageNamePassed:
@@ -1069,7 +1094,6 @@ export default {
     pcControllersOnlySeconds: 'PC controllers only, in seconds',
     cutFromKeywordEnd:
       'Cut from the keyword to the end of the line; tick "include" to remove the keyword too, otherwise keep it',
-    couldNotResetManagedOverrides: 'Could not reset to the source configuration',
     couldNotClearInvalidManagedOverrides: 'Could not remove the stale overrides',
     cutFromStartLine:
       'Cut from the start of the line to the keyword; tick "include" to remove the keyword too, otherwise keep it',
@@ -1086,7 +1110,6 @@ export default {
     closeGameAfterTask2: 'Close the game after the task',
     taskQueue: 'Task queue',
     taskQueueConfiguration: 'Task queue configuration',
-    sanityConfiguration: 'Trailblaze Power',
     author: 'Author',
     useThisUserS: "Use this user's own configuration, isolated from the script configuration.",
     useSharedScriptLevel: 'Use the shared script-level configuration for every user.',
@@ -1112,8 +1135,7 @@ export default {
     shareThisConfigurationConfig: 'Share this configuration on the config-sharing site',
     deleteThisTask: 'Delete this task',
     startDayIfIt:
-      'On the start day, if it is not done this week, MAS hands Echo of War to M7A/SRA; once the log confirms completion it is skipped for the rest of the week.',
-    farmStages: 'Farm stages',
+      'On the start day, if it is not done this week, MAS hands Echo of War to March7th Assistant / SRA; once the log confirms completion it is skipped for the rest of the week.',
     daysLeft1Means:
       'Days left; -1 means unlimited, 0 means it expires today, a positive number means N days remain',
     annihilationTimeoutMinutes: 'Annihilation timeout (minutes)',
@@ -1166,9 +1188,7 @@ export default {
     noOkWwSettings: 'No ok-ww settings have been generated yet',
     interfaceJsonHasNot: 'interface.json has not been read yet',
     nativeTaskConfigurationHas: 'The native task configuration has not been read yet',
-    managedOverridesReset:
-      'All overrides removed; showing and running from the current SRA / March7th Assistant configuration',
-    invalidManagedOverridesCleared: 'Removed {n} stale overrides',
+    invalidManagedOverridesCleared: 'Removed {n} invalid settings',
     scriptLevelMaaendConfiguration: 'Script-level MaaEnd configuration started',
     gamePathMatchedHtgame: 'Game path matched to NTEGame.exe launcher automatically',
     applyPreset2: 'Apply the preset',
@@ -1325,8 +1345,7 @@ export default {
     hsrUpdateCheckFailed: 'Could not check for {engine} updates',
     hsrUpdateRequestFailed: '{engine} update request failed',
     calyxCrimson: 'Calyx (Crimson)',
-    calyxCrimsonTraceMaterials:
-      'Calyx (Crimson): trace materials (gold and crimson are stored separately)',
+    calyxCrimsonTraceMaterials: 'Calyx (Crimson): trace materials',
     calyxGolden: 'Calyx (Golden)',
     calyxGoldenCharacterExp: 'Calyx (Golden): character EXP / light cone EXP / credits',
     formatLogFileName:
@@ -1564,7 +1583,7 @@ export default {
     mfwUnityResolutionTip:
       'Unity games only: before launching, MAS looks up the game registry key from the exe path and temporarily switches to the chosen windowed size, restoring the original values after the game closes; nothing is changed if the game is already running.',
     thisNameAlsoWritten:
-      'This name is also written to M7A/SRA as the Trailblazer name for Currency War',
+      'This name is also written to March7th Assistant / SRA as the Trailblazer name for Currency War',
     thisSubtaskHasNo: 'This subtask has no editable fields',
     thisConfigurationFileHas: 'This configuration file has no editable fields',
     details: 'Details',
@@ -1700,8 +1719,6 @@ export default {
     pickUserWhoseServer: 'Pick the user whose server is checked for updates',
     chooseWhetherMasSwitches:
       "Choose whether MAS switches between the accounts saved in the game, or MAAEND's built-in task switches by the last four digits of the account",
-    pickStageFarmThis: 'Pick the stage to farm; this field is written to Stage.Channel.',
-    pickEchoOfWarStage: 'Pick the Echo of War stage to run.',
     pickProjectDirectory: 'Pick the project directory',
     pickGameSOwn: "Pick the game's own exe; MAS closes it afterwards",
     generalScriptConfiguration: 'General script configuration',
@@ -1939,7 +1956,7 @@ export default {
     hsrConfigRestoreUserDesc:
       'Backups of the MAS config (task mapping and managed overrides); restoring applies directly to the MAS config. Created automatically (dedup) when leaving this edit page, latest 10 kept',
     hsrConfigRestoreScriptDesc:
-      'Backups of the HSR native config (M7A config.yaml and SRA settings/cache/configs); restoring overwrites the native config. Created automatically (dedup) when opening this edit page or before running, latest 10 kept',
+      'Backups of the HSR native config (March7th Assistant config.yaml and SRA settings/cache/configs); restoring overwrites the native config. Created automatically (dedup) when opening this edit page or before running, latest 10 kept',
     // BAAH dedicated adapter
     baahScriptConfiguration: 'BAAH script settings',
     baahScriptNameHint: 'Distinguishes this BAAH script instance from others',
