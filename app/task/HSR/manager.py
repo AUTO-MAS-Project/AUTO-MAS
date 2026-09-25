@@ -41,7 +41,6 @@ from app.utils.platform import is_admin
 from .AutoProxy import HSRAutoProxyTask, resolve_daily_native_modes
 from .task_mapping import (
     HSR_TASK_MODULES,
-    describe_script_fallback,
     engine_label,
     engine_list,
     resolve_script_assignment,
@@ -547,16 +546,12 @@ class HSRManager(TaskExecuteBase):
             for module in HSR_TASK_MODULES:
                 if plan.get("TaskSwitch", module.key):
                     enabled_module_keys.add(module.key)
-                    assignment = resolve_script_assignment(
+                    assigned = resolve_script_assignment(
                         module,
                         script_config,
                         user_config=plan,
                         effective_engines=effective_engines,
                     )
-                    assigned = assignment.script
-                    fallback_note = describe_script_fallback(module, assignment)
-                    if fallback_note:
-                        self._append_log(f"用户「{user_name}」{fallback_note}")
                     if module.key == "Daily":
                         daily_stage_checks.append(
                             (plan, user_config, user_name, assigned)

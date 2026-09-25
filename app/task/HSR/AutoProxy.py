@@ -39,7 +39,6 @@ from app.utils.constants import UTC4
 
 from .task_mapping import (
     HSR_TASK_MODULES,
-    describe_script_fallback,
     engine_label,
     resolve_script_assignment,
 )
@@ -1020,16 +1019,12 @@ class HSRAutoProxyTask(TaskExecuteBase):
 
             # 脚本来源时 plan 是脚本配置，其 Managed.TaskMapping 恒为空，
             # 自然落到脚本级 TaskMapping。
-            assignment = resolve_script_assignment(
+            assigned = resolve_script_assignment(
                 module,
                 self.script_config,
                 user_config=plan,
                 effective_engines=effective_engines,
             )
-            assigned = assignment.script
-            fallback_note = describe_script_fallback(module, assignment)
-            if fallback_note:
-                self._append_log(f"用户「{user_name}」{fallback_note}")
             module_daily_eow_enabled = daily_eow_enabled
             redeem_codes_enabled = True
             redeem_code_fingerprint: str | None = None
