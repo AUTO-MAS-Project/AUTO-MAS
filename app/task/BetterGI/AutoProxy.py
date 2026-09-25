@@ -1375,19 +1375,25 @@ class AutoProxyTask(TaskExecuteBase):
         return result["success"]
 
     def _account_switch_method(self) -> str:
-        """读取脚本级账号切换方式；缺失或非法值回落默认 MAS。"""
+        """读取脚本级账号切换方式；缺失或非法值回落类默认 MAS。
+
+        存量脚本（5.5.0 升级、配置无该键）由 ``BetterGIConfig.load`` 迁移固化
+        BGI，正常路径不会缺失；此兜底仅覆盖未走迁移的边缘场景。
+        """
         method = str(self.script_config.get("Run", "AccountSwitchMethod") or "MAS")
         return method if method in {"BGI", "MAS"} else "MAS"
 
     async def _switch_account(self) -> bool:
         """单独执行一次切号，返回是否切换成功。
 
-        按脚本级 ``Run.AccountSwitchMethod`` 分流：
+        按脚本级 ``Run.AccountSwitchMethod`` 分流（新建脚本默认 MAS、存量脚本
+        由配置迁移固化 BGI，取值口径见 ``BetterGIConfig.Run_AccountSwitchMethod``
+        注释）：
 
         - ``MAS``：MAS 托管游戏启动后，由 MAS 前台 OCR 直接操控游戏切号
           （官服按手机号/邮箱掩码或账密，B服按B站用户名，见
           ``_switch_account_mas``）；
-        - ``BGI``（默认）：走 BetterGI「切换账号多模式」脚本（--startGroups）。
+        - ``BGI``：走 BetterGI「切换账号多模式」脚本（--startGroups）。
 
         未配置账号时直接返回 True（无需切换）；失败/超时返回 False，
         由调用方决定是否继续执行一条龙。

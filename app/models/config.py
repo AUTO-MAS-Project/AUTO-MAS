@@ -4199,6 +4199,23 @@ class OkNteConfig(ConfigBase):
         super().__init__()
 
 
+def _migrate_bgi_account_switch_default(data: dict) -> dict:
+    """为存量 BetterGI 脚本固化旧默认切号方式 BGI。
+
+    ``Run.AccountSwitchMethod`` 是 v5.6.0 新增字段且类默认值定为 MAS；
+    5.5.0 升级上来的存量脚本配置里没有该键，若不补值会随新默认落到 MAS，
+    使国际服/第三方登录等不被 MAS 切号支持的用户从「能跑」变「报错」。
+    load 前缺键注入 ``BGI``（升级前的唯一切号路径），由 ConfigBase 的
+    dirty 机制一次物化、幂等；新建脚本不经 load（``MultipleConfig.add``
+    直接构造并物化类默认 MAS），复制脚本经 load 时键必已物化，均不受影响。
+    """
+    normalized_data = deepcopy(data) if isinstance(data, dict) else {}
+    run = normalized_data.get("Run")
+    if isinstance(run, dict) and "AccountSwitchMethod" not in run:
+        run["AccountSwitchMethod"] = "BGI"
+    return normalized_data
+
+
 class BetterGIConfig(ConfigBase):
     """BetterGI 配置（更好的原神，原生 GUI 直控 + 仅一条龙任务）"""
 
@@ -4225,6 +4242,8 @@ class BetterGIConfig(ConfigBase):
         ## 账号切换方式（脚本级，参考 MaaEnd Run.AccountSwitchMethod）：
         ## BGI = BetterGI「切换账号多模式」脚本执行（国际服请改用此方式）；MAS = MAS 侧
         ## 前台 OCR 直接操控游戏切号（官服/B服，游戏由 MAS 托管启动），官服/B服推荐。
+        ## 默认值双轨：新建脚本取类默认 MAS；存量脚本（配置无该键）由 load 迁移固化
+        ## 旧默认 BGI（见 _migrate_bgi_account_switch_default），保持升级前行为。
         self.Run_AccountSwitchMethod = ConfigItem(
             "Run", "AccountSwitchMethod", "MAS", OptionsValidator(["BGI", "MAS"])
         )
@@ -4247,6 +4266,10 @@ class BetterGIConfig(ConfigBase):
         self.UserData = MultipleConfig([BetterGIUserConfig])
 
         super().__init__()
+
+    async def load(self, data: dict) -> bool:
+        """加载脚本配置前为存量脚本固化旧默认切号方式 BGI。"""
+        return await super().load(_migrate_bgi_account_switch_default(data))
 
 
 class ZzzOdUserConfig(ConfigBase):
