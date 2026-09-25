@@ -283,6 +283,27 @@ export interface ElectronAPI {
     zipPath?: string
     error?: string
   }>
+  /** configTypes：要列出的脚本配置类名（MaaFW 特调注册表的 scriptConfigType） */
+  listMaaFWIssueReportScripts: (configTypes: string[]) => Promise<
+    Array<{
+      uid: string
+      type: string
+      name: string
+      projectLabel: string
+    }>
+  >
+  exportMaaFWIssueReport: (scriptId: string) => Promise<{
+    success: boolean
+    message?: string
+    zipPath?: string
+    error?: string
+  }>
+  exportM9AIssueReport: () => Promise<{
+    success: boolean
+    message?: string
+    zipPath?: string
+    error?: string
+  }>
   exportDataBackup: () => Promise<{
     success: boolean
     message?: string
