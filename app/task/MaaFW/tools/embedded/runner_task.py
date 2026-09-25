@@ -52,6 +52,7 @@ from app.task.MaaFW.tools.core.runner.models import (
 )
 from app.task.MaaFW.tools.core.runner.run_plan import (
     MaaFWRunPlanError,
+    resolve_run_selection,
     select_snapshot_tasks,
 )
 from app.task.MaaFW.tools.core.runner.service import MaaFWRunnerService
@@ -772,8 +773,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         selected_preset = str(
             self.cur_user_config.get("Task", "SelectedPreset") or ""
         ).strip()
-        controller_name = self._select_controller_name(interface_model)
-        resource_name = self._select_resource_name(interface_model, controller_name)
+        controller_name, resource_name = self._select_run_selection(interface_model)
         effective_preset = (
             selected_preset if selected_preset and not task_snapshot else None
         )
@@ -820,50 +820,26 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         except Exception as exc:
             raise MaaFWRunPlanError(str(exc)) from exc
 
-    def _select_controller_name(self, interface_model: MaaFWInterface) -> str | None:
-        configured_controller = str(
-            self.script_config.get("Info", "Controller") or ""
-        ).strip()
+    def _select_run_selection(
+        self, interface_model: MaaFWInterface
+    ) -> tuple[str | None, str | None]:
+        """``(交给建计划的 controller 名, 实际生效的 resource 名)``，口径见 ``resolve_run_selection``。
 
-        # 用户在脚本页显式选的 controller 优先。这里曾把「配了模拟器」排在前面，于是
-        # 先在 ADB 模式下选过模拟器、之后把控制方式改成 Win32 的用户会被静默改回 ADB：
-        # Emulator.Id 还留着旧值（Win32 分支下模拟器下拉被隐藏，用户没有入口清它），
-        # 运行时回落到第一个 Adb controller，按 Win32 编排的任务被 run_plan 过滤掉，
-        # 或者直接报「当前 controller/resource 下没有可执行任务」。
-        if configured_controller:
-            with suppress(RuntimeError):
-                return _find_controller(interface_model, configured_controller).name
-            # 配置里的 controller 在当前 interface 中已不存在（项目更新改了名字），
-            # 落到下面按模拟器推断，保持旧的兜底行为
-        if self.script_config.get("Emulator", "Id") != "-":
-            adb_controller = next(
-                (
-                    controller
-                    for controller in interface_model.controller
-                    if controller.type == "Adb"
-                ),
-                None,
-            )
-            if adb_controller is not None:
-                return adb_controller.name
-        return configured_controller or None
+        用户在脚本页显式选的 controller 优先。这里曾把「配了模拟器」排在前面，于是先在 ADB
+        模式下选过模拟器、之后把控制方式改成 Win32 的用户会被静默改回 ADB：Emulator.Id 还留着
+        旧值（Win32 分支下模拟器下拉被隐藏，用户没有入口清它），运行时回落到第一个 Adb
+        controller，按 Win32 编排的任务被 run_plan 过滤掉，或者直接报「当前 controller/resource
+        下没有可执行任务」。特调在保存与启动期整理用户配置时用同一个函数判资源。
+        """
 
-    def _select_resource_name(
-        self,
-        interface_model: MaaFWInterface,
-        controller_name: str | None,
-    ) -> str | None:
-        configured_resource = str(
-            self.script_config.get("Info", "Resource") or ""
-        ).strip()
-        if configured_resource:
-            return configured_resource
-        if controller_name is None:
-            return None
-        for resource in interface_model.resource:
-            if not resource.controller or controller_name in resource.controller:
-                return resource.name
-        return None
+        return resolve_run_selection(
+            interface_model,
+            configured_controller=str(
+                self.script_config.get("Info", "Controller") or ""
+            ),
+            emulator_selected=self.script_config.get("Emulator", "Id") != "-",
+            configured_resource=str(self.script_config.get("Info", "Resource") or ""),
+        )
 
     async def _build_device_config(
         self,
