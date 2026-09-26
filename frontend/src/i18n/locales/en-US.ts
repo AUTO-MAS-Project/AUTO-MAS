@@ -190,6 +190,7 @@ export default {
     updateHasFinishedDownloading: 'The update has finished downloading. Install it now?',
     minimize: 'Minimize',
     backendUpdateAvailableClick: 'A backend update is available — click to update',
+    backendUpdateLatestCommit: 'Latest commit:',
     backendUpdateDevUnsupported:
       'A backend update is available — automatic updates are off in development mode',
     backendUpdateTitle: 'Updating the backend to {version}',

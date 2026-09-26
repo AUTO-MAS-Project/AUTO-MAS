@@ -705,6 +705,52 @@ describe('development 模式', () => {
 })
 
 describe('managed 模式', () => {
+  it.each([
+    { name: '新 Runtime', commitMessage: '修复后台启动\n\n补充错误提示' },
+    { name: '旧 Runtime', commitMessage: undefined },
+  ])('后台暂存将 $name 的最新提交文案传给界面', async ({ commitMessage }) => {
+    process.env[RUNTIME_MODE_ENV] = 'managed'
+    process.env[RUNTIME_EXE_ENV] = EXISTING_EXE
+    const service = createService()
+    const run = vi.spyOn(RuntimeClient.prototype, 'run')
+    run.mockResolvedValueOnce({
+      success: true,
+      code: 'OK',
+      result: {
+        details: {
+          healthy: true,
+          version: 'v5.5.0',
+          commit: 'a'.repeat(40),
+          remoteCommit: 'b'.repeat(40),
+          updateAvailable: true,
+        },
+      },
+    } as never)
+    run.mockResolvedValueOnce({
+      success: true,
+      code: 'OK',
+      result: { details: { staged: true, commit: 'b'.repeat(40), commitMessage } },
+    } as never)
+
+    try {
+      const result = await service.checkRuntimeBackendUpdate()
+      expect(result).toMatchObject({
+        updateAvailable: true,
+        staged: true,
+        currentCommit: 'a'.repeat(40),
+        remoteCommit: 'b'.repeat(40),
+        commitMessage,
+      })
+      expect(await service.checkRuntimeBackendUpdate()).toEqual(result)
+      expect(run.mock.calls.map(([command]) => command.slice(0, 2))).toEqual([
+        ['workspace', 'check'],
+        ['workspace', 'stage'],
+      ])
+    } finally {
+      run.mockRestore()
+    }
+  })
+
   it('不传 --repo、不先跑 environment ensure，--app-root 就是用户数据根', async () => {
     process.env[RUNTIME_MODE_ENV] = 'managed'
     process.env[RUNTIME_EXE_ENV] = EXISTING_EXE

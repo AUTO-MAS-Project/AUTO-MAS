@@ -193,6 +193,7 @@ export default {
     updateHasFinishedDownloading: '更新のダウンロードが完了しました。今すぐインストールしますか？',
     minimize: '最小化',
     backendUpdateAvailableClick: 'バックエンドの更新があります。クリックして更新してください',
+    backendUpdateLatestCommit: '最新のコミット：',
     backendUpdateDevUnsupported:
       'バックエンドの更新があります。開発モードでは自動更新に対応していません',
     backendUpdateTitle: 'バックエンドを {version} に更新します',

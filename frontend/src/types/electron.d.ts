@@ -400,6 +400,7 @@ export interface ElectronAPI {
     staged?: boolean
     currentCommit?: string
     remoteCommit?: string
+    commitMessage?: string
     error?: string
   }>
 

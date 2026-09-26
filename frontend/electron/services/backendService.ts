@@ -106,6 +106,7 @@ interface RuntimeBackendUpdateCheck {
   staged?: boolean
   currentCommit?: string
   remoteCommit?: string
+  commitMessage?: string
   error?: string
 }
 
@@ -1168,6 +1169,10 @@ export class BackendService {
           remoteCommit:
             typeof stageOutcome.result.details.commit === 'string'
               ? stageOutcome.result.details.commit
+              : undefined,
+          commitMessage:
+            typeof stageOutcome.result.details.commitMessage === 'string'
+              ? stageOutcome.result.details.commitMessage
               : undefined,
         }
       }

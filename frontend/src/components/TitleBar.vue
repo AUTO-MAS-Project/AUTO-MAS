@@ -161,6 +161,7 @@ import {
   updateInfo,
   backendUpdateInfo,
   runtimeBackendUpdateAvailable,
+  runtimeBackendUpdateCommitMessage,
 } from '@/composables/useVersionService'
 import { useUpdateModal } from '@/composables/useUpdateChecker'
 import { useAppInitialization } from '@/composables/useAppInitialization'
@@ -176,7 +177,7 @@ import {
   MinusOutlined,
 } from '@ant-design/icons-vue'
 import { Modal } from 'ant-design-vue'
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, h, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 
 import type { RuntimeUpdateRetryAction } from '@/types/electron'
@@ -306,11 +307,29 @@ const resolveRuntimeUpdateVersion = (): string => updateInfo.value?.latest_versi
 const handleBackendUpdateClick = () => {
   Modal.confirm({
     title: t('comp.restartBackendUpdate'),
-    content: t(
-      runtimeBackendUpdateAvailable.value
-        ? 'comp.backendUpdateReadyConfirm'
-        : 'comp.backendAboutUpdateWhich'
-    ),
+    content:
+      runtimeBackendUpdateAvailable.value && runtimeBackendUpdateCommitMessage.value
+        ? h('div', [
+            h('p', t('comp.backendUpdateReadyConfirm')),
+            h('strong', t('comp.backendUpdateLatestCommit')),
+            h(
+              'div',
+              {
+                style: {
+                  whiteSpace: 'pre-wrap',
+                  overflowWrap: 'anywhere',
+                  maxHeight: '200px',
+                  overflowY: 'auto',
+                },
+              },
+              runtimeBackendUpdateCommitMessage.value
+            ),
+          ])
+        : t(
+            runtimeBackendUpdateAvailable.value
+              ? 'comp.backendUpdateReadyConfirm'
+              : 'comp.backendAboutUpdateWhich'
+          ),
     okText: t('comp.confirm'),
     cancelText: t('comp.cancel'),
     centered: true,

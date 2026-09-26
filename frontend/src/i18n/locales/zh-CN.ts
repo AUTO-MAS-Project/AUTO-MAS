@@ -194,6 +194,7 @@ export default {
     backendUpdateAvailableClick: '检测到后端更新，点击以更新后端',
     backendUpdateReady: '后端更新已就绪，下次启动生效',
     backendUpdateReadyConfirm: '后端更新已下载，将在下次启动时应用。现在重启软件？',
+    backendUpdateLatestCommit: '最新一条提交：',
     backendUpdateDevUnsupported: '检测到后端更新，开发模式不支持自动更新',
     backendUpdateTitle: '更新后端到 {version}',
     backendUpdateSucceeded: '后端已更新并重新启动',
