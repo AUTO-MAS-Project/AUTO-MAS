@@ -107,15 +107,13 @@ class _MaaFWManager:
             RuntimeError: 如果无法找到指定设备，则抛出异常，异常信息包含相关的错误信息
         """
 
-        def get_adb_port(address: str) -> int | None:
+        def get_emulator_adb_port(address: str) -> int | None:
             offset = 0
             if address.startswith("127.0.0.1:"):
                 raw_port = address.removeprefix("127.0.0.1:")
             elif address.startswith("emulator-"):
                 raw_port = address.removeprefix("emulator-")
                 offset = 1
-            elif ":" in address:
-                raw_port = address.rsplit(":", 1)[1]
             else:
                 return None
 
@@ -129,10 +127,10 @@ class _MaaFWManager:
             if device.address == raw_info.adb_address:
                 return device
 
-        target_port = get_adb_port(raw_info.adb_address)
+        target_port = get_emulator_adb_port(raw_info.adb_address)
         if target_port is not None:
             for device in devices:
-                device_port = get_adb_port(device.address)
+                device_port = get_emulator_adb_port(device.address)
                 if device_port is not None and target_port == device_port:
                     return device
 
