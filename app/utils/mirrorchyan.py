@@ -66,8 +66,7 @@ def compare_mirrorchyan_versions(remote_version: str, current_version: str) -> i
     current_parsed = _parse_semver(current)
     if remote_parsed is None or current_parsed is None:
         raise MirrorChyanError(
-            "版本号无法比较: "
-            f"本地 {current_version!r}，远端 {remote_version!r}"
+            f"版本号无法比较: 本地 {current_version!r}，远端 {remote_version!r}"
         )
 
     remote_core, remote_prerelease = remote_parsed

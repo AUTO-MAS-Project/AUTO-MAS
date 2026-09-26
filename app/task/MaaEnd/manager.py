@@ -260,9 +260,7 @@ class MaaEndManager(TaskExecuteBase):
 
         self.begin_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         if self.task_info.mode == "AutoProxy":
-            script_config = Config.ScriptConfig[
-                uuid.UUID(self.script_info.script_id)
-            ]
+            script_config = Config.ScriptConfig[uuid.UUID(self.script_info.script_id)]
             maaend_root_path = Path(script_config.get("Info", "Path"))
 
             def update_status(message: str) -> None:
