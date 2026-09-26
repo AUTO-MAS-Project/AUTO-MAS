@@ -29,7 +29,6 @@ from .history import router as history_router
 from .info import router as info_router
 from .ocr import router as ocr_router
 from .openclaw_qq import router as openclaw_qq_router
-from .openclaw_weixin import router as openclaw_weixin_router
 from .plan import router as plan_router
 from .qr_login import router as qr_login_router
 from .queue import router as queue_router
@@ -54,7 +53,6 @@ __all__ = [
     "update_router",
     "ocr_router",
     "openclaw_qq_router",
-    "openclaw_weixin_router",
     "qr_login_router",
     "skland_qr_router",
 ]

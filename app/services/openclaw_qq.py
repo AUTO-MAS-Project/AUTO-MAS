@@ -317,7 +317,7 @@ class OpenClawQQManager:
                 else "connecting"
             )
             message = (
-                "QQ 官方机器人已连接，通知可以发送"
+                "QQ 官方机器人消息网关已连接；发送通知仍需与机器人建立好友关系"
                 if self._gateway_online
                 else "QQ 官方机器人已绑定，正在连接消息网关"
             )
@@ -934,20 +934,24 @@ class OpenClawQQManager:
                 response.raise_for_status()
                 payload = response.json()
         except httpx.HTTPStatusError as exc:
-            # 官方会把业务码放在非 2xx 报文里（如链接审查 304003），一并带出。
-            detail = ""
-            with suppress(ValueError):
-                payload = exc.response.json()
-                if isinstance(payload, dict):
-                    code = _business_code(payload)
-                    message = _business_message(payload)
-                    if code not in (None, 0):
-                        detail = f"，错误码 {code}"
-                    if message != "未知错误":
-                        detail = f"{detail}，{message}"
+            details: list[str] = []
+            try:
+                error_payload = exc.response.json()
+            except ValueError:
+                error_payload = None
+            if isinstance(error_payload, dict):
+                code = _business_code(error_payload)
+                if code not in (None, 0):
+                    details.append(f"QQ 错误码 {code}")
+                reason = _business_message(error_payload)
+                if reason != "未知错误":
+                    details.append(" ".join(reason.split())[:160])
+                if code == 40054004:
+                    details.append("请先在扫码所用 QQ 中添加该机器人为好友，再重试通知")
+            suffix = f"，{'，'.join(details)}" if details else ""
             raise RemoteHTTPError(
                 exc.response.status_code,
-                f"QQ 官方机器人 HTTP 请求失败（状态码 {exc.response.status_code}）{detail}",
+                f"QQ 官方机器人 HTTP 请求失败（状态码 {exc.response.status_code}{suffix}）",
             ) from exc
         except httpx.HTTPError as exc:
             raise RuntimeError("QQ 官方机器人网络请求失败") from exc

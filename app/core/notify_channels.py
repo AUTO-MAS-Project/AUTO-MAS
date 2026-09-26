@@ -64,7 +64,7 @@ class ChannelTarget:
     id: str  # 投递 ID（进 DispatchResult.succeeded_ids / 补发记录），逐字保持
     label: str  # 显示名（进 succeeded / failed 文案）
     value: Any = None  # 发送所需配置值：收件字符串，或活的 Webhook 对象
-    # None = 不做空值判定（系统通知 / Koishi / 微信 / QQ / Webhook）；
+    # None = 不做空值判定（系统通知 / Koishi / QQ / Webhook）；
     # 非 None 时按真值判定，warn 策略下为空会计入失败。
     empty_recipient: str | None = None
     empty_hint: str = ""  # 空值告警提示词，逐字保持
@@ -92,7 +92,7 @@ class NotifyChannel:
     doc_url: str | None
     scopes: frozenset[str]
     kind: Literal["fields", "custom", "policy"]  # policy = 通知内容这类非渠道段
-    custom_block: str | None  # "claw:weixin" / "claw:qq" / "webhook_list"
+    custom_block: str | None  # "claw:qq" / "webhook_list"
     enable_field: tuple[str, str] | None
     # 空值摘要变体的词表键约定为 f"{summary_key}Empty"（Empty 后缀，与前端一致）；
     # summary_fields 兼作摘要插值的 i18n 占位符名。
@@ -208,7 +208,7 @@ _POLICY_FIELDS: Mapping[str, tuple[NotifyChannelField, ...]] = {
     )
 }
 
-# 顺序即投递顺序（系统 → 邮件 → Server酱 → 5G → Webhook → Koishi → 微信 → QQ），
+# 顺序即投递顺序（系统 → 邮件 → Server酱 → 5G → Webhook → Koishi → QQ），
 # succeeded/failed 文案按此顺序拼接，用户可见，不能调整。
 _CHANNELS: tuple[NotifyChannel, ...] = (
     NotifyChannel(
@@ -336,22 +336,6 @@ _CHANNELS: tuple[NotifyChannel, ...] = (
                 ),
             )
         },
-    ),
-    NotifyChannel(
-        key="openclaw_weixin",
-        name_key="setting.notify.openclawWeixinSection",
-        desc_key="setting.notify.openclawWeixinTip",
-        icon="wechat",
-        group="builtin",
-        order=70,
-        doc_url="https://github.com/Tencent/openclaw-weixin",
-        scopes=frozenset({SCOPE_GLOBAL}),
-        kind="custom",
-        custom_block="claw:weixin",
-        enable_field=("Notify", "IfOpenClawWeixin"),
-        summary_key=None,
-        summary_fields=(),
-        fields={},
     ),
     NotifyChannel(
         key="openclaw_qq",
@@ -540,20 +524,6 @@ async def _koishi_send(
     return await sender.send_koishi(payload.koishi_content)
 
 
-def _openclaw_weixin_targets(config: Any, *, scope: str) -> tuple[ChannelTarget, ...]:
-    name = f"{_prefix(scope)} 微信（iLink）"
-    return (ChannelTarget(id=name, label=name),)
-
-
-async def _openclaw_weixin_send(
-    sender: Notifier, target: ChannelTarget, payload: NotifyPayload
-) -> bool | None:
-    return await sender.send_openclaw_weixin(
-        title=payload.title,
-        content=payload.openclaw_weixin_content,
-    )
-
-
 def _openclaw_qq_targets(config: Any, *, scope: str) -> tuple[ChannelTarget, ...]:
     name = f"{_prefix(scope)} QQ（官方机器人）"
     return (ChannelTarget(id=name, label=name),)
@@ -576,7 +546,6 @@ _TARGET_BUILDERS: Mapping[str, Callable[..., tuple[ChannelTarget, ...]]] = {
     "cmcc": _cmcc_targets,
     "webhook": _webhook_targets,
     "koishi": _koishi_targets,
-    "openclaw_weixin": _openclaw_weixin_targets,
     "openclaw_qq": _openclaw_qq_targets,
 }
 
@@ -587,6 +556,5 @@ _SENDERS: Mapping[str, Callable[..., Awaitable[bool | None]]] = {
     "cmcc": _cmcc_send,
     "webhook": _webhook_send,
     "koishi": _koishi_send,
-    "openclaw_weixin": _openclaw_weixin_send,
     "openclaw_qq": _openclaw_qq_send,
 }

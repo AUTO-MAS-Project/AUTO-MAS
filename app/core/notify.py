@@ -164,14 +164,6 @@ class NotifyPayload:
         return f"{self.title}\n\n{self.signed_text}"
 
     @property
-    def openclaw_weixin_content(self) -> str:
-        """返回微信（iLink）正文。"""
-
-        text = self.signed_text
-        heading = self.standalone_title or self.title
-        return text if text.startswith(f"【{self.title}】") else f"{heading}\n\n{text}"
-
-    @property
     def openclaw_qq_content(self) -> str:
         """返回 QQ 官方机器人正文。"""
 
@@ -392,8 +384,6 @@ class Notifier(Protocol):
         self, message: str, msgtype: str = "text", client_name: str = "Koishi"
     ) -> bool | None: ...
 
-    async def send_openclaw_weixin(self, title: str, content: str) -> bool | None: ...
-
     async def send_openclaw_qq(self, title: str, content: str) -> bool | None: ...
 
 
@@ -454,7 +444,7 @@ async def dispatch(
     for target in targets:
         for channel, ct in target.channels:
             should_send = True
-            # None 表示该渠道不做空值判定（系统通知 / Koishi / 微信 / QQ / Webhook），
+            # None 表示该渠道不做空值判定（系统通知 / Koishi / QQ / Webhook），
             # 不能进 _recipient_action：None 与空串同判真值会把它们在 warn 下误记失败。
             if ct.empty_recipient is not None:
                 should_send, missing = _recipient_action(

@@ -5,6 +5,7 @@
 import type { BackendHealthOut } from '../models/BackendHealthOut';
 import type { BetterGICustomGroupsOut } from '../models/BetterGICustomGroupsOut';
 import type { BetterGIDomainCatalogOut } from '../models/BetterGIDomainCatalogOut';
+import type { BetterGIGameInfoOut } from '../models/BetterGIGameInfoOut';
 import type { BetterGIGlobalDomainSettingsIn } from '../models/BetterGIGlobalDomainSettingsIn';
 import type { BetterGIGlobalDomainSettingsOut } from '../models/BetterGIGlobalDomainSettingsOut';
 import type { BetterGIGlobalStygianSettingsIn } from '../models/BetterGIGlobalStygianSettingsIn';
@@ -2186,6 +2187,33 @@ export class Service {
             url: '/api/scripts/zzzod/app-config/save',
             body: requestBody,
             mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 获取游戏客户端信息（路径 + 渠道，用户页透传展示）
+     * 读取 BetterGI 配置的游戏路径并识别客户端渠道（官服/B服/国际服）。
+     *
+     * ``detectPath`` 非空时对该路径做渠道识别（用户自填路径的即时标注），
+     * 为空时返回生效路径（用户级优先，否则 BGI 全局配置）及其渠道。
+     * @param scriptId
+     * @param detectPath
+     * @returns BetterGIGameInfoOut Successful Response
+     * @throws ApiError
+     */
+    public static getBettergiGameInfoApiApiScriptsBettergiGameInfoGet(
+        scriptId: string,
+        detectPath: string = '',
+    ): CancelablePromise<BetterGIGameInfoOut> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/scripts/bettergi/game-info',
+            query: {
+                'scriptId': scriptId,
+                'detectPath': detectPath,
+            },
             errors: {
                 422: `Validation Error`,
             },

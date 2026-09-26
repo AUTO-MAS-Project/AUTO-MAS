@@ -27,7 +27,7 @@ export type OpenClawQQStatusOut = {
      */
     connected?: boolean;
     /**
-     * 当前连接状态
+     * 消息网关状态：disconnected、connecting、connected 或 reconnecting
      */
     state?: string;
 };

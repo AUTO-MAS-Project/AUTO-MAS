@@ -425,11 +425,6 @@ def main():
 
                 await DesktopGuard.start()
 
-            async def start_openclaw_weixin() -> None:
-                from app.services.openclaw_weixin import openclaw_weixin_manager
-
-                await openclaw_weixin_manager.start()
-
             async def start_openclaw_qq() -> None:
                 from app.services.openclaw_qq import openclaw_qq_manager
 
@@ -489,8 +484,7 @@ def main():
                 await run_optional_step("桌面显示输出守卫", start_desktop_guard)
                 timer_error = await run_step("主业务定时器", MainTimer.start)
 
-                # 微信按需发送；QQ 同时维持官方网关连接以完成扫码绑定。
-                await run_optional_step("微信通知通道", start_openclaw_weixin)
+                # QQ 维持官方网关连接以完成扫码绑定。
                 await run_optional_step("QQ 通知通道", start_openclaw_qq)
                 await run_optional_step("Koishi 客户端", start_koishi)
 
@@ -568,9 +562,7 @@ def main():
 
             await MainTimer.stop()
             from app.services.openclaw_qq import openclaw_qq_manager
-            from app.services.openclaw_weixin import openclaw_weixin_manager
 
-            await openclaw_weixin_manager.stop()
             await openclaw_qq_manager.stop()
             await TaskManager.stop_task("ALL")
             # 排在停任务之后：还有任务在收尾时把它脚下的屏拆掉没有意义。后端退出后没人
@@ -607,7 +599,6 @@ def main():
         info_router,
         ocr_router,
         openclaw_qq_router,
-        openclaw_weixin_router,
         plan_router,
         qr_login_router,
         queue_router,
@@ -647,7 +638,6 @@ def main():
     app.include_router(update_router)
     app.include_router(ocr_router)
     app.include_router(openclaw_qq_router)
-    app.include_router(openclaw_weixin_router)
     app.include_router(qr_login_router)
 
     # 可选补丁：森空岛扫码登录

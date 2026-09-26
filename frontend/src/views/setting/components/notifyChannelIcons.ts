@@ -6,7 +6,6 @@ import {
   QqOutlined,
   SendOutlined,
   SignalFilled,
-  WechatOutlined,
 } from '@ant-design/icons-vue'
 import type { Component } from 'vue'
 
@@ -17,19 +16,17 @@ const ICONS: Record<string, Component> = {
   plane: SendOutlined,
   chat: MessageOutlined,
   signal: SignalFilled,
-  wechat: WechatOutlined,
   qq: QqOutlined,
   webhook: ApiOutlined,
 }
 
-// 图标主色（微信绿 / QQ 蓝等品牌色，其余按语义就近取色）
+// 图标主色（QQ 蓝等品牌色，其余按语义就近取色）
 const COLORS: Record<string, string> = {
   bell: '#8c8c8c',
   mail: '#1677ff',
   plane: '#13c2c2',
   chat: '#722ed1',
   signal: '#fa8c16',
-  wechat: '#07c160',
   qq: '#12b7f5',
   webhook: '#597ef7',
 }

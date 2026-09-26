@@ -291,25 +291,6 @@ export class GetService {
         });
     }
     /**
-     * 获取当前基建班次
-     * @param requestBody
-     * @returns UserInfrastPlanSelectOut Successful Response
-     * @throws ApiError
-     */
-    public static getInfrastPlanSelectApiScriptsUserInfrastructurePlanSelectGetPost(
-        requestBody: UserDeleteIn,
-    ): CancelablePromise<UserInfrastPlanSelectOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/scripts/user/infrastructure/plan-select/get',
-            body: requestBody,
-            mediaType: 'application/json',
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
      * 获取用户配置目录
      * @param requestBody
      * @returns UserConfigDirOut Successful Response
@@ -321,6 +302,25 @@ export class GetService {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/scripts/user/config-dir',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 获取当前基建班次
+     * @param requestBody
+     * @returns UserInfrastPlanSelectOut Successful Response
+     * @throws ApiError
+     */
+    public static getInfrastPlanSelectApiScriptsUserInfrastructurePlanSelectGetPost(
+        requestBody: UserDeleteIn,
+    ): CancelablePromise<UserInfrastPlanSelectOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/user/infrastructure/plan-select/get',
             body: requestBody,
             mediaType: 'application/json',
             errors: {

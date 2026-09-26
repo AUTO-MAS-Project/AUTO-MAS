@@ -18,6 +18,6 @@ export type UserConfigDirOut = {
     /**
      * 用户配置目录绝对路径
      */
-    path?: string;
+    path?: (string | null);
 };
 
