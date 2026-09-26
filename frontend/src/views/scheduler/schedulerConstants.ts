@@ -68,6 +68,8 @@ export interface SchedulerTab {
   // 日志增量协议的 buffer 与 seq，语义见 schedulerLogBuffer.ts
   logBuffer: string
   logSeq?: number
+  // buffer 第一行在完整日志里的行号，界面据此显示真实行号
+  logFirstLine?: number
   // 送给日志面板渲染的内容（logBuffer 再裁到 120,000）
   lastLogContent: string
   // 新增：任务总览快照（用于路由返回时快速恢复显示）

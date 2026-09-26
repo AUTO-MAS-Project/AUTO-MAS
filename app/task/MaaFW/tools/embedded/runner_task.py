@@ -2556,8 +2556,14 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         # 失败类的用户日志按 WARNING 进 app.log，事后按级别筛得出来
         (logger.warning if warning else logger.info)(message)
         if self.cur_user_log is not None:
-            self.cur_user_log.content.append(_format_user_log_line(message))
-            self.script_info.log = "".join(self.cur_user_log.content[-80:])
+            content = self.cur_user_log.content
+            content.append(_format_user_log_line(message))
+            kept = content[-80:]
+            self.script_info.log = "".join(kept)
+            # 滑出窗口的行仍然占着行号：界面据此从 81 接着往下数，而不是每轮都把
+            # 最后 80 条重新编号成 1-80。
+            dropped_lines = sum(chunk.count("\n") for chunk in content[:-80])
+            self.script_info.log_first_line = dropped_lines + 1
         else:
             self.script_info.log = str(message)
 

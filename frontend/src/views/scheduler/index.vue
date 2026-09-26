@@ -111,6 +111,7 @@
                 <SchedulerLogPanel
                   :log-content="tab.lastLogContent"
                   :external-log-mode="tab.logMode"
+                  :first-line="tab.logFirstLine ?? 1"
                 />
               </div>
             </div>

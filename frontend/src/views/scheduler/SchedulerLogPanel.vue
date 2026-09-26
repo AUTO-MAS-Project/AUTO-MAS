@@ -50,6 +50,8 @@ const { t } = useI18n()
 interface Props {
   logContent: string
   externalLogMode?: 'follow' | 'browse' // 外部控制的日志模式
+  // 日志首行在完整日志里的行号。后端只推最近一段日志，行号得接着完整日志排
+  firstLine?: number
 }
 
 // 日志显示模式类型
@@ -104,7 +106,9 @@ const editorOptions = computed(() => ({
   fontSize: editorConfig.value.fontSize,
   fontFamily: 'SFMono-Regular, Consolas, Liberation Mono, Menlo, Courier, monospace',
   lineHeight: editorConfig.value.lineHeight * editorConfig.value.fontSize,
-  lineNumbers: 'on' as const,
+  // 显示真实行号：后端只推最近一段日志，但编号要接着完整日志往下排，
+  // 否则每轮都从 1 重数，和存下来的日志对不上
+  lineNumbers: (lineNumber: number) => String(lineNumber + (props.firstLine ?? 1) - 1),
   wordWrap: 'on' as const,
   automaticLayout: true,
   scrollbar: {

@@ -271,7 +271,8 @@ class TaskInfo(TaskItem):
             ),
         )
         if self.current_index != -1:
-            log = self.script_list[self.current_index].log
+            script = self.script_list[self.current_index]
+            log = script.log
             if log == self._last_pushed_log:
                 return
             # 日志只在尾部追加时只推增量；首次推送或日志被重置/变短时整体替换。
@@ -281,15 +282,23 @@ class TaskInfo(TaskItem):
             if self._last_pushed_log and log.startswith(self._last_pushed_log):
                 payload = log[len(self._last_pushed_log) :]
                 append = True
+                first_line = 1  # 追加段接着已有内容排，界面自己往后数
             else:
                 payload = log[-200_000:]
                 append = False
+                # 界面行号 = 这段内容在完整日志里的真实行号：生产者自己截掉的那部分
+                # （script.log_first_line）加上这里又被截掉的行数。
+                dropped_hint = log[: len(log) - len(payload)]
+                first_line = script.log_first_line + dropped_hint.count("\n")
             self._log_seq += 1
             await Publisher.send(
                 id=self.task_id,
                 type=protocol.TASK_LOG_UPDATED,
                 data=WSTaskLogUpdatedData(
-                    log=payload, seq=self._log_seq, append=append
+                    log=payload,
+                    seq=self._log_seq,
+                    append=append,
+                    firstLine=first_line,
                 ),
             )
             self._last_pushed_log = log
