@@ -163,9 +163,13 @@ class MaaManager(TaskExecuteBase):
         """运行前准备"""
 
         # 锁定脚本配置并加载用户配置
+        script_config = Config.ScriptConfig[uuid.UUID(self.script_info.script_id)]
+        # lock() 首句即生效，但其内部的子配置遍历还有 await，取消可能打在
+        # 半途：标志必须在调用前置位，final_task 才能对任何中断解锁。置位到
+        # 生效之间没有让出点；取值放在置位前，脚本不存在时不会留下悬空标志。
         self.config_lock_acquired = True
-        await Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].lock()
-        self.script_config = Config.ScriptConfig[uuid.UUID(self.script_info.script_id)]
+        await script_config.lock()
+        self.script_config = script_config
         self.user_config = MultipleConfig([MaaUserConfig])
         await self.user_config.load(await self.script_config.UserData.toDict())
         logger.success(f"{self.script_info.script_id}已锁定, MAA配置提取完成")
