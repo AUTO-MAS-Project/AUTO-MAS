@@ -43,6 +43,7 @@ from .marker import WHIMBOX_RESULT_BLOCK_HEAD
 
 logger = get_logger("奇想盒 通知工具")
 
+
 async def push_notification(
     mode: str,
     title: str,

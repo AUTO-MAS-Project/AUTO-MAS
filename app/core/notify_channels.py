@@ -431,9 +431,7 @@ async def _system_send(
     sender: Notifier, target: ChannelTarget, rendered: RenderedNotification
 ) -> bool | None:
     lines = rendered.content.splitlines() if rendered.summary_used else []
-    timeout = (
-        5 if target.timeout_seconds is None else target.timeout_seconds
-    )
+    timeout = 5 if target.timeout_seconds is None else target.timeout_seconds
     return await sender.push_plyer(
         title=rendered.title,
         message=rendered.content,

@@ -35,6 +35,7 @@ logger = get_logger("BetterGI 通知工具")
 
 _STEP_TIME_FMT = "%H:%M:%S"
 
+
 def _step_duration(step: dict) -> str:
     """把一步的起止时刻换算成人类可读用时（秒/分+秒）；缺时间或解析失败返回 —。"""
     try:

@@ -119,8 +119,7 @@ def render_for_target(
             summary_size = len(content.encode("utf-8"))
             if summary_size > byte_limit:
                 diagnostics.append(
-                    f"业务摘要为 {summary_size} UTF-8 字节，仍超过目标上限 "
-                    f"{byte_limit}"
+                    f"业务摘要为 {summary_size} UTF-8 字节，仍超过目标上限 {byte_limit}"
                 )
 
     if "base64" in capabilities.image_presentations:
@@ -294,9 +293,7 @@ def _render_markdown_images(
         image = image_by_id.get(image_id)
         alt = match.group("alt") or (image.alt if image is not None else "")
         if image is None:
-            diagnostics.append(
-                f"正文引用了不存在的图片 {image_id}；已保留替代文字"
-            )
+            diagnostics.append(f"正文引用了不存在的图片 {image_id}；已保留替代文字")
             return alt
         if "markdown" in capabilities.image_presentations and image.url:
             return f"![{alt or image.alt}]({image.url})"
@@ -347,13 +344,9 @@ def _render_unplaced_image_refs(
             return match.group(0)
         image = image_by_id.get(image_id)
         if image is None:
-            diagnostics.append(
-                f"正文引用了不存在的图片 {image_id}；已移除图片引用"
-            )
+            diagnostics.append(f"正文引用了不存在的图片 {image_id}；已移除图片引用")
             return ""
-        diagnostics.append(
-            f"图片 {image_id} 的引用格式不受支持；已保留替代文字"
-        )
+        diagnostics.append(f"图片 {image_id} 的引用格式不受支持；已保留替代文字")
         return escape(image.alt)
 
     return NOTIFICATION_IMAGE_URI_PATTERN.sub(replace_ref, content)
@@ -374,8 +367,8 @@ def _is_html_image_source_reference(
     source = NOTIFICATION_HTML_IMAGE_SOURCE_PATTERN.search(tag_match.group(0))
     if source is None:
         return False
-    source_start = tag_start + source.start() + source.group(0).find(
-        NOTIFICATION_IMAGE_SCHEME
+    source_start = (
+        tag_start + source.start() + source.group(0).find(NOTIFICATION_IMAGE_SCHEME)
     )
     return reference.start() == source_start and reference.end() == (
         source_start + len(reference.group(0))

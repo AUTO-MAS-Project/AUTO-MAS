@@ -456,13 +456,11 @@ def test_system_notification_passes_override_values() -> None:
             NotifyPayload(
                 title="标题",
                 text="正文",
-                summary=NotificationSummary(title="系统标题", text="系统正文\n系统ticker"),
+                summary=NotificationSummary(
+                    title="系统标题", text="系统正文\n系统ticker"
+                ),
             ),
-            [
-                _global_target(
-                    config, include_system=True, system_timeout_seconds=7
-                )
-            ],
+            [_global_target(config, include_system=True, system_timeout_seconds=7)],
             notifier=notify,
         )
     )
@@ -833,9 +831,7 @@ def test_renderer_appends_html_signature_only_when_missing() -> None:
         NotifyPayload(title="标题", text="正文", html="<p>正文</p>"), capabilities
     )
     signed = render_for_target(
-        NotifyPayload(
-            title="标题", text="正文", html="<p>AUTO-MAS 敬上</p>"
-        ),
+        NotifyPayload(title="标题", text="正文", html="<p>AUTO-MAS 敬上</p>"),
         capabilities,
     )
 
