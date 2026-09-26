@@ -28,13 +28,13 @@ import json
 import re
 import smtplib
 from collections.abc import Sequence
-from dataclasses import dataclass
 from datetime import datetime
 from email.header import Header
 from email.mime.image import MIMEImage
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.utils import formataddr
+from html import escape as html_escape
 from typing import Literal
 from urllib.parse import urlparse
 
@@ -42,6 +42,15 @@ import httpx
 from plyer import notification
 
 from app.models.config import Webhook
+from app.models.notification import (
+    DEFAULT_WEBHOOK_TEMPLATE,
+    NOTIFICATION_HTML_IMAGE_SOURCE_PATTERN,
+    NOTIFICATION_IMAGE_URI_PATTERN,
+    NotificationImage,
+    WECOM_ROBOT_HOST,
+    WECOM_ROBOT_PATH,
+    WebhookTargetSnapshot,
+)
 from app.utils import LazyProxy, get_logger, resource_path
 from app.utils.constants import UTC4
 
@@ -51,28 +60,41 @@ logger = get_logger("通知服务")
 Config = LazyProxy("app.core", "Config")
 
 SMTP_TIMEOUT_SECONDS = 15
-DEFAULT_WEBHOOK_TEMPLATE = '{"title": "{title}", "content": "{content}"}'
 # OneBot 图片段里的占位写法，前端预设与这里必须一致。
 WEBHOOK_IMAGE_PLACEHOLDER = "base64://{image_base64}"
 # 企业微信群机器人按 host + path 认（key 在 query 里）；图片消息只收 JPG/PNG，
 # 原图不超过 2MB。
-WECOM_ROBOT_HOST = "qyapi.weixin.qq.com"
-WECOM_ROBOT_PATH = "/cgi-bin/webhook/send"
 WECOM_IMAGE_MAX_BYTES = 2 * 1024 * 1024
+_MAIL_IMAGE_TAG_PATTERN = re.compile(r"<img\b[^>]*>", re.IGNORECASE)
 
 
-@dataclass(frozen=True)
-class MailInlineImage:
-    """随网页邮件一起发送的内嵌图片，正文用 ``<img src="cid:{cid}">`` 引用。
+def _rewrite_mail_image_sources(
+    content: str,
+    replacements: dict[str, str],
+    fallback_images: dict[str, NotificationImage],
+) -> str:
+    """把渲染器确认过的完整资源地址编码为邮件协议地址。"""
 
-    走 ``multipart/related`` + Content-ID，而不是把 base64 直接写进 ``<img src>``：
-    data URI 在 QQ 邮箱、Gmail、Outlook 里都会被拦掉，六星喜报以前就是这么
-    失效的（c8d3c41e6 改成了外链）。
-    """
+    def replace_failed_tag(match: re.Match[str]) -> str:
+        tag = match.group(0)
+        source = NOTIFICATION_HTML_IMAGE_SOURCE_PATTERN.search(tag)
+        if source is None:
+            return tag
+        image_id = source.group("id")
+        if image_id in fallback_images:
+            return html_escape(fallback_images[image_id].alt)
+        return tag
 
-    cid: str
-    data: bytes
-    subtype: str = "png"
+    if fallback_images:
+        content = _MAIL_IMAGE_TAG_PATTERN.sub(replace_failed_tag, content)
+
+    def encode_reference(match: re.Match[str]) -> str:
+        replacement = replacements.get(match.group("id"))
+        if replacement is None:
+            return match.group(0)
+        return html_escape(replacement, quote=True)
+
+    return NOTIFICATION_IMAGE_URI_PATTERN.sub(encode_reference, content)
 
 
 # Windows 通知最终写入 NOTIFYICONDATA 的定长字段：标题落在 szInfoTitle（64 个
@@ -230,7 +252,7 @@ class Notification:
         content: str,
         to_address: str,
         *,
-        images: Sequence[MailInlineImage] = (),
+        images: Sequence[NotificationImage] = (),
     ) -> None:
         """
         推送邮件通知
@@ -245,7 +267,7 @@ class Notification:
             邮件内容
         to_address: str
             收件人地址
-        images: Sequence[MailInlineImage], optional
+        images: Sequence[NotificationImage], optional
             网页模式下随信内嵌的图片；文本模式忽略
         """
 
@@ -268,10 +290,39 @@ class Notification:
         ):
             raise ValueError("邮件通知的接收邮箱格式错误或为空")
 
+        email_images = []
+        if mode == "网页":
+            replacements: dict[str, str] = {}
+            fallback_images: dict[str, NotificationImage] = {}
+            for image in images:
+                if image.data is None:
+                    replacements[image.id] = image.url or image.alt
+                    continue
+                try:
+                    subtype = image.mime_type.split("/", 1)[-1]
+                    part = MIMEImage(image.data, _subtype=subtype)
+                except Exception as exc:
+                    fallback_images[image.id] = image
+                    logger.warning(
+                        f"网页邮件图片 {image.id} 无法内嵌，已保留替代文字: {exc}"
+                    )
+                    continue
+                part.add_header("Content-ID", f"<{image.id}>")
+                part.add_header(
+                    "Content-Disposition",
+                    "inline",
+                    filename=f"{image.id}.{subtype}",
+                )
+                replacements[image.id] = f"cid:{image.id}"
+                email_images.append(part)
+            content = _rewrite_mail_image_sources(
+                content, replacements, fallback_images
+            )
+
         # 定义邮件正文
         if mode == "文本":
             message = MIMEText(content, "plain", "utf-8")
-        elif mode == "网页" and images:
+        elif mode == "网页" and email_images:
             message = MIMEMultipart("related")
         elif mode == "网页":
             message = MIMEMultipart("alternative")
@@ -288,14 +339,7 @@ class Notification:
 
         if mode == "网页":
             message.attach(MIMEText(content, "html", "utf-8"))
-            for image in images:
-                part = MIMEImage(image.data, _subtype=image.subtype)
-                part.add_header("Content-ID", f"<{image.cid}>")
-                part.add_header(
-                    "Content-Disposition",
-                    "inline",
-                    filename=f"{image.cid}.{image.subtype}",
-                )
+            for part in email_images:
                 message.attach(part)
 
         smtp_server = Config.get("Notify", "SMTPServerAddress")
@@ -388,9 +432,9 @@ class Notification:
         self,
         title: str,
         content: str,
-        webhook: Webhook,
+        webhook: Webhook | WebhookTargetSnapshot,
         *,
-        image_base64: str = "",
+        images: Sequence[NotificationImage] = (),
     ) -> None:
         """
         Webhook 推送通知
@@ -401,11 +445,17 @@ class Notification:
             通知标题
         content: str
             通知内容
-        webhook: Webhook
-            Webhook配置对象
-        image_base64: str, optional
-            可选图片的纯 Base64 数据，供 OneBot 等协议使用
+        webhook: Webhook | WebhookTargetSnapshot
+            Webhook 配置或创建目标时的只读快照
+        images: Sequence[NotificationImage], optional
+            可选图片资源，由 Webhook 协议适配器编码
         """
+        image = images[-1] if images else None
+        image_base64 = (
+            base64.b64encode(image.data).decode("ascii")
+            if image is not None and image.data is not None
+            else ""
+        )
         if not webhook.get("Info", "Enabled"):
             return
 

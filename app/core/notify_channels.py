@@ -29,17 +29,35 @@
 
 from __future__ import annotations
 
+import json
+import re
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
+from html import escape as html_escape
 from typing import TYPE_CHECKING, Any, Literal, Mapping
+from urllib.parse import urlsplit
 
 if TYPE_CHECKING:
     # 只在类型标注里用；注解靠 from __future__ import annotations 延迟求值，
     # 避免 app.core.notify ↔ 本模块的运行期导入环（先例：app/core/config.py:50-51）。
-    from app.core.notify import Notifier, NotifyPayload
+    from app.core.notify import Notifier
+
+from app.models.notification import (
+    DEFAULT_WEBHOOK_TEMPLATE,
+    NotificationCapabilities,
+    RenderedNotification,
+    SummaryPolicy,
+    WECOM_ROBOT_HOST,
+    WECOM_ROBOT_PATH,
+    WebhookTargetSnapshot,
+)
 
 SCOPE_GLOBAL = "global"
 SCOPE_USER = "user"
+_KOISHI_HTML_DOCUMENT_PATTERN = re.compile(
+    r"^\s*(?:<!--.*?-->\s*)*(?:<!doctype\s+html\b|<html\b|<head\b)",
+    re.IGNORECASE | re.DOTALL,
+)
 
 
 @dataclass(frozen=True)
@@ -63,11 +81,16 @@ class ChannelTarget:
 
     id: str  # 投递 ID（进 DispatchResult.succeeded_ids / 补发记录），逐字保持
     label: str  # 显示名（进 succeeded / failed 文案）
-    value: Any = None  # 发送所需配置值：收件字符串，或活的 Webhook 对象
+    value: Any = None  # 发送所需配置值：收件字符串或 Webhook 配置快照
     # None = 不做空值判定（系统通知 / Koishi / QQ / Webhook）；
     # 非 None 时按真值判定，warn 策略下为空会计入失败。
     empty_recipient: str | None = None
     empty_hint: str = ""  # 空值告警提示词，逐字保持
+    timeout_seconds: int | None = None  # 目标发送参数（系统通知显示时长）
+    # 摘要选择属于本次投递策略，不是渠道对内容格式的能力。
+    summary_policy: SummaryPolicy = "never"
+    use_summary_title: bool = False
+    capabilities: NotificationCapabilities = NotificationCapabilities()
 
 
 def _webhook_name(uid: str, webhook: Any) -> str:
@@ -118,11 +141,11 @@ class NotifyChannel:
         self,
         sender: Notifier,
         target: ChannelTarget,
-        payload: NotifyPayload,
+        rendered: RenderedNotification,
     ) -> bool | None:
         """执行一次发送；返回值语义与 Notifier 协议一致（False 即失败）。"""
 
-        return await _SENDERS[self.key](sender, target, payload)
+        return await _SENDERS[self.key](sender, target, rendered)
 
 
 _MAIL_FIELD_TO = NotifyChannelField(
@@ -390,17 +413,31 @@ def _prefix(scope: str) -> str:
 
 def _system_targets(config: Any, *, scope: str) -> tuple[ChannelTarget, ...]:
     name = f"{_prefix(scope)}系统"
-    return (ChannelTarget(id=name, label=name),)
+    return (
+        ChannelTarget(
+            id=name,
+            label=name,
+            timeout_seconds=5,
+            summary_policy="preferred",
+            use_summary_title=True,
+            capabilities=NotificationCapabilities(
+                formats=("text",),
+                append_signature=False,
+            ),
+        ),
+    )
 
 
 async def _system_send(
-    sender: Notifier, target: ChannelTarget, payload: NotifyPayload
+    sender: Notifier, target: ChannelTarget, rendered: RenderedNotification
 ) -> bool | None:
+    lines = rendered.content.splitlines() if rendered.summary_used else []
+    timeout = 5 if target.timeout_seconds is None else target.timeout_seconds
     return await sender.push_plyer(
-        title=payload.system_title or payload.title,
-        message=payload.system_message or payload.system_content,
-        ticker=payload.system_ticker or payload.title,
-        t=payload.system_timeout,
+        title=rendered.title,
+        message=rendered.content,
+        ticker=(lines[0] if lines else "") or rendered.title,
+        t=timeout,
     )
 
 
@@ -416,19 +453,24 @@ def _mail_targets(config: Any, *, scope: str) -> tuple[ChannelTarget, ...]:
             value=value,
             empty_recipient=value,
             empty_hint=f"{_prefix(scope)}邮箱地址",
+            capabilities=NotificationCapabilities(
+                formats=("html", "text"),
+                image_presentations=frozenset({"html"}),
+                append_signature=False,
+            ),
         ),
     )
 
 
 async def _mail_send(
-    sender: Notifier, target: ChannelTarget, payload: NotifyPayload
+    sender: Notifier, target: ChannelTarget, rendered: RenderedNotification
 ) -> bool | None:
     return await sender.send_mail(
-        mode=payload.email_mode,
-        title=payload.title,
-        content=payload.email_content,
+        mode="网页" if rendered.format == "html" else "文本",
+        title=rendered.title,
+        content=rendered.content,
         to_address=target.value,
-        images=payload.mail_images,
+        images=rendered.images,
     )
 
 
@@ -444,16 +486,23 @@ def _serverchan_targets(config: Any, *, scope: str) -> tuple[ChannelTarget, ...]
             value=value,
             empty_recipient=value,
             empty_hint=f"{_prefix(scope)}ServerChan 密钥",
+            summary_policy="if_over_limit",
+            capabilities=NotificationCapabilities(
+                formats=("markdown", "text"),
+                image_presentations=frozenset({"markdown"}),
+                max_content_utf8_bytes=30 * 1024,
+                double_text_newlines=True,
+            ),
         ),
     )
 
 
 async def _serverchan_send(
-    sender: Notifier, target: ChannelTarget, payload: NotifyPayload
+    sender: Notifier, target: ChannelTarget, rendered: RenderedNotification
 ) -> bool | None:
     return await sender.ServerChanPush(
-        title=payload.title,
-        content=payload.serverchan_content,
+        title=rendered.title,
+        content=rendered.content,
         send_key=target.value,
     )
 
@@ -470,71 +519,167 @@ def _cmcc_targets(config: Any, *, scope: str) -> tuple[ChannelTarget, ...]:
             value=value,
             empty_recipient=value,
             empty_hint=f"{_prefix(scope)}中国移动5G短信 API Key",
+            capabilities=NotificationCapabilities(
+                formats=("text",),
+                body_title_policy="always",
+            ),
         ),
     )
 
 
 async def _cmcc_send(
-    sender: Notifier, target: ChannelTarget, payload: NotifyPayload
+    sender: Notifier, target: ChannelTarget, rendered: RenderedNotification
 ) -> bool | None:
     return await sender.send_cmcc_newmsg(
-        title=payload.title,
-        content=payload.cmcc_newmsg_content,
+        title=rendered.title,
+        content=rendered.content,
         api_key=target.value,
     )
 
 
 def _webhook_targets(config: Any, *, scope: str) -> tuple[ChannelTarget, ...]:
     prefix = _prefix(scope)
-    # 顺序按 MultipleConfig.order（items() 的产出顺序），不按 uid
-    return tuple(
-        ChannelTarget(
-            id=f"{prefix} Webhook {uid}",
-            label=f"{prefix} Webhook {_webhook_name(uid, webhook)}",
-            value=webhook,
+    targets = []
+    # 顺序按 MultipleConfig.order（items() 的产出顺序），不按 uid。
+    for uid, webhook in config.Notify_CustomWebhooks.items():
+        snapshot = WebhookTargetSnapshot(
+            name=_webhook_name(uid, webhook),
+            enabled=bool(webhook.get("Info", "Enabled")),
+            url=str(webhook.get("Data", "Url") or ""),
+            template=str(webhook.get("Data", "Template") or ""),
+            headers=str(webhook.get("Data", "Headers") or "{ }"),
+            method=webhook.get("Data", "Method"),
         )
-        for uid, webhook in config.Notify_CustomWebhooks.items()
-        if bool(webhook.get("Info", "Enabled"))
+        if not snapshot.enabled:
+            continue
+        targets.append(
+            ChannelTarget(
+                id=f"{prefix} Webhook {uid}",
+                label=f"{prefix} Webhook {_webhook_name(uid, snapshot)}",
+                value=snapshot,
+                capabilities=_webhook_capabilities(snapshot),
+            )
+        )
+    return tuple(targets)
+
+
+def _webhook_capabilities(
+    webhook: WebhookTargetSnapshot,
+) -> NotificationCapabilities:
+    """解析该配置实际使用的正文表达与图片槽位。"""
+
+    template_text = webhook.template or DEFAULT_WEBHOOK_TEMPLATE
+    try:
+        template = json.loads(template_text)
+    except (ValueError, TypeError):
+        template = None
+    parsed_url = urlsplit(webhook.url)
+    host = (parsed_url.hostname or "").lower()
+    markdown = (
+        isinstance(template, dict)
+        and (
+            template.get("msgtype") == "markdown"
+            or template.get("template") == "markdown"
+            or "desp" in template
+        )
+    ) or host in {
+        "discord.com",
+        "discordapp.com",
+        "canary.discord.com",
+        "ptb.discord.com",
+    }
+    wecom_image = host == WECOM_ROBOT_HOST and parsed_url.path == WECOM_ROBOT_PATH
+    image_slot = "{image_base64}" in template_text or wecom_image
+    return NotificationCapabilities(
+        formats=("markdown", "text") if markdown else ("text",),
+        image_presentations=frozenset({"base64"}) if image_slot else frozenset(),
+        body_title_policy="when_title_missing",
+        title_in_template="{title}" in template_text,
     )
 
 
 async def _webhook_send(
-    sender: Notifier, target: ChannelTarget, payload: NotifyPayload
+    sender: Notifier, target: ChannelTarget, rendered: RenderedNotification
 ) -> bool | None:
     return await sender.WebhookPush(
-        title=payload.title,
-        content=payload.webhook_content_for(target.value),
-        image_base64=payload.webhook_image_base64 or "",
+        title=rendered.title,
+        content=rendered.content,
+        images=rendered.images,
         webhook=target.value,
     )
 
 
 def _koishi_targets(config: Any, *, scope: str) -> tuple[ChannelTarget, ...]:
     name = f"{_prefix(scope)} Koishi"
-    return (ChannelTarget(id=name, label=name),)
+    return (
+        ChannelTarget(
+            id=name,
+            label=name,
+            capabilities=NotificationCapabilities(
+                # Koishi 接收 HTML 正文片段；完整邮件文档在发送适配器中退回文本表达。
+                formats=("html", "text"),
+                body_title_policy="always",
+            ),
+        ),
+    )
 
 
 async def _koishi_send(
-    sender: Notifier, target: ChannelTarget, payload: NotifyPayload
+    sender: Notifier, target: ChannelTarget, rendered: RenderedNotification
 ) -> bool | None:
-    if payload.koishi_msgtype != "text":
+    if rendered.format != "html":
+        return await sender.send_koishi(rendered.content)
+
+    if _KOISHI_HTML_DOCUMENT_PATTERN.search(rendered.content[:256]):
         return await sender.send_koishi(
-            payload.koishi_content, msgtype=payload.koishi_msgtype
+            _koishi_html_from_text(rendered.text_fallback or rendered.title),
+            msgtype="html",
         )
-    return await sender.send_koishi(payload.koishi_content)
+
+    content = rendered.content
+    title = html_escape(rendered.title)
+    if title and title not in content:
+        content = f"<h2>{title}</h2>{content}"
+    return await sender.send_koishi(content, msgtype="html")
+
+
+def _koishi_html_from_text(content: str) -> str:
+    """把完整邮件文档的备用纯文本排成 Koishi 可读的 HTML 片段。"""
+
+    lines = [line.strip() for line in content.splitlines() if line.strip()]
+    fragments = []
+    for index, line in enumerate(lines):
+        escaped = html_escape(line)
+        if index == 0 or (line.startswith("【") and line.endswith("】")):
+            tag = "h2"
+        elif line.startswith("•"):
+            tag = "h3"
+        else:
+            tag = "p"
+        fragments.append(f"<{tag}>{escaped}</{tag}>")
+    return "".join(fragments)
 
 
 def _openclaw_qq_targets(config: Any, *, scope: str) -> tuple[ChannelTarget, ...]:
     name = f"{_prefix(scope)} QQ（官方机器人）"
-    return (ChannelTarget(id=name, label=name),)
+    return (
+        ChannelTarget(
+            id=name,
+            label=name,
+            capabilities=NotificationCapabilities(
+                formats=("text",),
+                body_title_policy="always",
+            ),
+        ),
+    )
 
 
 async def _openclaw_qq_send(
-    sender: Notifier, target: ChannelTarget, payload: NotifyPayload
+    sender: Notifier, target: ChannelTarget, rendered: RenderedNotification
 ) -> bool | None:
     return await sender.send_openclaw_qq(
-        title=payload.title,
-        content=payload.openclaw_qq_content,
+        title=rendered.title,
+        content=rendered.content,
     )
 
 

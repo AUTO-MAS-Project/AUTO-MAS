@@ -23,11 +23,11 @@
 from app.core import Config
 from app.core.notify import (
     DispatchResult,
-    NotifyPayload,
     dispatch,
     statistic_targets,
 )
 from app.models.config import MaaEndUserConfig
+from app.models.notification import NotifyPayload
 from app.task.notify_core import push_proxy_result
 from app.utils import get_logger
 

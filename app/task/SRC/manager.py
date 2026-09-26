@@ -930,7 +930,7 @@ class SrcManager(TaskExecuteBase):
             if self.script_info.status == "完成"
             else title.replace("报告", "存在异常")
         )
-        result = {**result, "system_title": completion_title}
+        result = {**result, "summary_title": completion_title}
         try:
             await asyncio.wait_for(
                 push_notification(

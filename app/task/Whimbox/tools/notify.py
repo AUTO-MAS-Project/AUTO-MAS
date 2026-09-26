@@ -30,33 +30,18 @@ tools/notify.py），**投递**一律交 ``app.core.notify.dispatch``——全�
 
 from app.core import Config
 from app.core.notify import (
-    SIGNATURE,
     DispatchResult,
-    NotifyPayload,
     dispatch,
     statistic_targets,
 )
 from app.models.config import WhimboxUserConfig
+from app.models.notification import NotificationSummary, NotifyPayload
 from app.task.notify_core import push_proxy_result
 from app.utils import get_logger
 
 from .marker import WHIMBOX_RESULT_BLOCK_HEAD
 
 logger = get_logger("奇想盒 通知工具")
-
-# Server酱 desp 上限约 32KB：结果块超预算安全回退简略版
-_SERVERCHAN_MAX_BYTES = 30 * 1024
-
-
-def _signed(text: str, *, serverchan: bool = False) -> str:
-    """按 ``NotifyPayload`` 的默认口径补签名（ServerChan 另把换行折成双换行）。
-
-    只用于需要覆盖 payload 默认正文的两个渠道：聊天机器人类 Webhook 的简略版，
-    以及 ServerChan 超预算时的降级版。
-    """
-
-    body = text.replace("\n", "\n\n") if serverchan else text
-    return f"{body}\n\n{SIGNATURE}"
 
 
 async def push_notification(
@@ -103,12 +88,6 @@ async def push_notification(
             render_data
         )
 
-        serverchan_text = None
-        if len(message_text_full.encode("utf-8")) > _SERVERCHAN_MAX_BYTES:
-            # Server酱 desp 上限约 32KB：结果块很小时用完整版，超预算回退简略版
-            serverchan_text = _signed(message_text, serverchan=True)
-            logger.warning("Server酱内容超过字数上限，已回退为简略版（不含结果块）")
-
         # 正文只按渠道分流，投递交 dispatch：用户侧开关在用户目标内判定，
         # 全局渠道与「统计信息」总开关在 statistic_targets 内判定
         return await dispatch(
@@ -116,10 +95,9 @@ async def push_notification(
                 title=title,
                 text=message_text_full,
                 html=message_html,
-                serverchan_text=serverchan_text,
-                webhook_text=_signed(message_text),
+                summary=NotificationSummary(text=message_text),
             ),
-            statistic_targets(user_config),
+            statistic_targets(user_config, compact_summary=True),
         )
 
     if mode != "代理结果":
