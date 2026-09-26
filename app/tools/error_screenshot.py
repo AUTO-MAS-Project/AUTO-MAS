@@ -18,19 +18,19 @@
 
 """失败截图诊断落盘工具。
 
-各专项（MaaEnd 登录、OK-WW / OK-NTE / BetterGI 切号、OK-NTE 启动器）失败时
-把窗口截图落盘到 ``debug/<专项目录>/``，供问题包导出与人工排查。截图只给
-人看、没有任何代码回读，因此统一存 JPEG——游戏画面（渐变 + 纹理）对 PNG
-无损压缩极不友好，2K 窗口实测单张约 3MB；JPEG 后典型 300-500KB。超过
-1080p 长边先降采样：OCR 在 1080p 基准空间识别，更高分辨率不增加诊断价值。
-清理由 ``Config.clean_debug_diagnostics`` 自动扫描 ``debug/`` 子目录完成，
-新专项无需登记。
+各专项（登录、切号、启动器等失败场景）失败时把窗口截图落盘到
+``debug/<专项目录>/``，供问题包导出与人工排查。截图只给人看、没有任何代码
+回读，因此统一存 JPEG——游戏画面（渐变 + 纹理）对 PNG 无损压缩极不友好，
+2K 窗口实测单张约 3MB；JPEG 后典型 300-500KB。超过 1080p 长边先降采样：
+OCR 在 1080p 基准空间识别，更高分辨率不增加诊断价值。清理由
+``Config.clean_debug_diagnostics`` 自动扫描 ``debug/`` 子目录完成，新专项
+无需登记。
 
 示例::
 
     from app.tools.error_screenshot import save_error_screenshot
 
-    save_error_screenshot(image, "bgi-account-switch", "switch-error")
+    save_error_screenshot(image, "okww-account-switch", "switch-error")
 """
 
 from datetime import datetime
