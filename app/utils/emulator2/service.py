@@ -32,7 +32,6 @@ from app.utils import get_logger
 from .detect import DetectResult, probe_install_path
 from .facade import DeviceUnavailableError, Emulator2Manager, dump_paths
 from .guard import capture, dump_baselines
-from .ldplayer14 import BossKeyUnavailableError
 from .settings import SettingsConflictError, validate_changes
 from .slots import PathRecord, SlotTable, make_path_id
 
@@ -49,10 +48,6 @@ def readable_error(error: BaseException) -> str:
         return str(error)
     if isinstance(error, SettingsConflictError):
         return "配置在编辑期间被改动，请刷新后重试"
-    if isinstance(error, BossKeyUnavailableError):
-        return _BOSS_KEY_REASONS.get(
-            error.reason, f"无法确定该实例的老板键（{error.reason}）"
-        )
     if isinstance(error, ValueError):
         return str(error)
     if isinstance(error, KeyError):
@@ -63,14 +58,6 @@ def readable_error(error: BaseException) -> str:
         return str(error)
     return f"{type(error).__name__}: {error}"
 
-
-#: 老板键认不出时给用户的说法。键与 :mod:`.bosskey` 的 ``reason`` 一一对应。
-_BOSS_KEY_REASONS = {
-    "disabled": "该实例在雷电里取消了老板键，无法隐藏窗口",
-    "unknown_modifier": "该实例的老板键用了无法识别的修饰键，无法隐藏窗口",
-    "unknown_key": "该实例的老板键用了无法识别的按键，无法隐藏窗口",
-    "malformed": "该实例的老板键配置读不出来，无法隐藏窗口",
-}
 
 #: 脚本配置里两套模拟器绑定字段命名。
 #: ``Config.del_emulator()`` 只处理了其中一部分, 反查受影响脚本时不能照抄它。

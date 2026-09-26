@@ -22,7 +22,9 @@
 
 继承旧 ``LDManager`` 的启动、关闭、状态、实例锁和配置守卫。
 「大雷主人模式」沿用旧版全局开关，在启动前应用安装级设置，保留游戏中心入口。
-老板键按实例读取；设置写入与配置守卫使用同一把实例锁。
+窗口显示 / 隐藏沿用父类，按 ``list2`` 的 ``top_hwnd`` 精确切换该实例的窗口，
+不发老板键：老板键是全局热键、不带实例信息，雷电默认各实例都是 Ctrl+Q，
+多开时会把别的实例一起翻过去（#948）。设置写入与配置守卫使用同一把实例锁。
 启动后多一道「虚拟机真的起来了吗」的核对，VBox 服务卡住时自愈一次，见 :mod:`.vbox`。
 """
 
@@ -39,11 +41,9 @@ from app.models.config import EmulatorConfig
 from app.models.emulator import DeviceInfo, DeviceRef, DeviceStatus
 from app.utils import ProcessRunner, get_logger
 from app.utils.emulator.ldplayer import _INSTANCE_CONFIG_SNAPSHOTS, LDManager
-from app.utils.platform import IS_WINDOWS
 
 from .adb import candidate_serial, parse_adb_devices, resolve_serial
 from .applaunch import AppLaunchMixin, is_package_missing, is_package_present
-from .bosskey import BossKey, read_boss_key
 from .master_mode import is_master_mode_enabled, ldplayer_clean_mode_args
 from .settings import (
     InstanceSettings,
@@ -77,10 +77,6 @@ def _dig_flat(config: dict, key: str) -> str | None:
     return str(config[key])
 
 
-if IS_WINDOWS:
-    import keyboard
-    import win32gui
-
 logger = get_logger("Emulator2 雷电管理")
 
 #: 新建 / 删除实例后复核 list2 的次数与间隔。
@@ -108,18 +104,6 @@ _OWNERSHIP_CACHE_SECONDS = 30.0
 _ZOMBIE_QUIT_TIMEOUT = 15.0
 #: 雷电修复工具的提示，自愈做不了或做了没用时都指到这里。
 _REPAIR_HINT = "请关闭所有雷电实例后运行雷电修复工具（安装目录下的 dnrepairer.exe）"
-
-
-class BossKeyUnavailableError(RuntimeError):
-    """无法确定该实例的老板键，隐藏操作不可用。
-
-    带上 ``reason`` 供界面区分：是认不出修饰键、认不出按键，还是配置读不出来。
-    """
-
-    def __init__(self, idx: str, reason: str) -> None:
-        super().__init__(f"无法确定雷电实例 {idx} 的老板键: {reason}")
-        self.idx = idx
-        self.reason = reason
 
 
 class LDPlayer14Manager(AppLaunchMixin, LDManager):
@@ -372,10 +356,6 @@ class LDPlayer14Manager(AppLaunchMixin, LDManager):
             logger.warning(f"读取雷电实例 {idx} 配置失败: {e}")
             return None
         return data if isinstance(data, dict) else None
-
-    def get_boss_key(self, idx: str) -> BossKey:
-        """取该实例的老板键。"""
-        return read_boss_key(self.read_instance_config(idx))
 
     def _get_instance_vbox_path(self, idx: str) -> Path | None:
         idx_text = str(idx)
@@ -820,42 +800,6 @@ class LDPlayer14Manager(AppLaunchMixin, LDManager):
         模式由 :meth:`prepare_launch` 统一处理，整包禁用会让「打开游戏中心」失效。
         """
         return None
-
-    async def setVisible(self, idx: str, is_visible: bool) -> DeviceStatus:
-        """用**该实例自己的**老板键切换窗口可见性。
-
-        与父类的差别只在老板键从哪来：父类读配置级的 ``Info.BossKey``，
-        这里读 ``leidianN.config`` 的 ``hotkeySettings.bossKey``。
-        认不出时抛 :class:`BossKeyUnavailableError`，**不回落任何猜测组合**。
-        """
-        if not IS_WINDOWS:
-            raise RuntimeError("切换模拟器窗口可见性仅支持 Windows 平台")
-
-        status = await self.getStatus(idx)
-        if status != DeviceStatus.ONLINE:
-            logger.warning(f"设备{idx}未在线，当前状态码: {status}")
-            return status
-
-        boss_key = self.get_boss_key(idx)
-        hotkey = boss_key.hotkey
-        if hotkey is None:
-            raise BossKeyUnavailableError(idx, boss_key.reason)
-        if boss_key.reason == "default":
-            logger.info(f"雷电实例 {idx} 未自定义老板键，使用雷电默认 {hotkey}")
-
-        device = (await self.get_device_info(idx))[idx]
-
-        deadline = time.monotonic() + self.config.get("Info", "MaxWaitTime")
-        while time.monotonic() < deadline:
-            if win32gui.IsWindowVisible(device.top_hwnd) == is_visible:
-                return status
-            try:
-                keyboard.press_and_release(hotkey)
-            except Exception as e:  # noqa: BLE001 - 与父类一致, 单次发送失败不终止重试
-                logger.error(f"发送老板键失败: {e}")
-            await asyncio.sleep(0.5)
-
-        raise RuntimeError(f"隐藏设备{idx}窗口超时")
 
 
 async def build_manager(
