@@ -5,6 +5,7 @@ import AdmZip = require('adm-zip')
 import { getLogger } from './logger'
 import {
   CollectorState,
+  addDebugDirectory,
   addDiagnosticFile,
   addDirectory,
   addReportManifest,
@@ -556,7 +557,7 @@ async function addProjectDebugDirectory(
 
 async function addMasDebugLogs(state: CollectorState, dataRoots: string[]): Promise<void> {
   for (const [index, dataRoot] of dataRoots.entries()) {
-    addDirectory(
+    addDebugDirectory(
       state,
       path.join(dataRoot, 'debug'),
       index === 0 ? 'logs/auto-mas' : 'logs/auto-mas/backend'

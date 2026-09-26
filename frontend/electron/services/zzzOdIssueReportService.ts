@@ -6,6 +6,7 @@ import { getLogger } from './logger'
 import {
   CollectorState,
   Installation,
+  addDebugDirectory,
   addDiagnosticFile,
   addDirectory,
   addLatestMasHistoryLog,
@@ -70,7 +71,7 @@ export function createZzzOdIssueReport(appRoot: string, zipPath: string): ZzzOdI
   addLatestMasHistoryLog(state, dataRoots)
 
   dataRoots.forEach((dataRoot, index) => {
-    addDirectory(
+    addDebugDirectory(
       state,
       path.join(dataRoot, 'debug'),
       index === 0 ? 'logs/auto-mas' : 'logs/auto-mas/backend'

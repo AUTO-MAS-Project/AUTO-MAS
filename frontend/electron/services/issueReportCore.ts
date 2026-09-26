@@ -487,6 +487,67 @@ export function addDirectory(
   return foundFile
 }
 
+// 各专项在后端 debug/ 下自有的诊断子目录（对应 app/task/*/tools 里 Path.cwd()/debug 的落盘）。
+// 问题包只收声明方自己的目录，其他专项的目录跳过，避免互相混入
+const ADAPTER_DEBUG_SUBDIRS = {
+  maaend: ['maaend-login'],
+  okww: ['okww-account-switch'],
+  oknte: ['oknte-account-switch', 'oknte-launcher-start'],
+} satisfies Record<string, readonly string[]>
+
+export type AdapterDebugDirKey = keyof typeof ADAPTER_DEBUG_SUBDIRS
+
+/**
+ * 收集后端 debug/ 目录：通用文件与未登记目录全收，其他专项的诊断子目录跳过，
+ * 只有 ownAdapter 声明的子目录会收进包里。
+ */
+export function addDebugDirectory(
+  state: CollectorState,
+  sourceDir: string,
+  archiveDir: string,
+  ownAdapter?: AdapterDebugDirKey
+): boolean {
+  if (!fs.existsSync(sourceDir)) {
+    return false
+  }
+
+  let entries: fs.Dirent[]
+  try {
+    entries = fs
+      .readdirSync(sourceDir, { withFileTypes: true })
+      .sort((left, right) => left.name.localeCompare(right.name))
+  } catch (error) {
+    logger.debug(`读取诊断目录失败: ${sourceDir}, ${String(error)}`)
+    return false
+  }
+
+  const foreignDirs = new Set(Object.values(ADAPTER_DEBUG_SUBDIRS).flat())
+  for (const name of ownAdapter ? ADAPTER_DEBUG_SUBDIRS[ownAdapter] : []) {
+    foreignDirs.delete(name)
+  }
+
+  let foundFile = false
+  for (const entry of entries) {
+    if (entry.isSymbolicLink()) {
+      continue
+    }
+
+    const sourcePath = path.join(sourceDir, entry.name)
+    const archivePath = path.posix.join(archiveDir, entry.name)
+    if (entry.isDirectory()) {
+      if (foreignDirs.has(entry.name)) {
+        continue
+      }
+      foundFile = addDirectory(state, sourcePath, archivePath) || foundFile
+    } else if (entry.isFile()) {
+      addDiagnosticFile(state, sourcePath, archivePath)
+      foundFile = true
+    }
+  }
+
+  return foundFile
+}
+
 export function addSanitizedJsonFile(
   state: CollectorState,
   sourcePath: string,
