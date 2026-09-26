@@ -68,6 +68,7 @@ from app.utils.constants import (
 )
 from app.utils.io import mark_native_config_injected, read_file, write_file
 
+from .base_preset import maa_task_identity, seed_maa_base_config
 from .tools import (
     agree_bilibili,
     ensure_game_updated,
@@ -263,10 +264,8 @@ _MAA_GUI_SKELETON: dict[str, dict] = {
 }
 """MAA 配置骨架：仅含 MAS 托管键所在的容器路径，不含任何任务内容。
 
-base 缺失或损坏时以骨架为底下发——MAA（System.Text.Json）加载时对缺席属性
-取 C# 内存默认值，**TaskQueue 缺席即由 MAA 内存默认队列填空**（PR #907 实证：
-MAA 保存时用内存默认队列整体重写 gui.new.json）。用户在 MAA 里一保存，
-完整 base 即落盘。默认队列从此只有 MAA 一个生成器，MAS 不再维护队列表单。
+托管 base 缺失时会先播种 MAS 预设；原生配置损坏且无有效备份时仍以骨架下发，
+TaskQueue 由 MAA 内存默认值填充。
 """
 
 
@@ -324,9 +323,7 @@ def _merge_task_queue(
         return False
 
     def identity(item: object) -> tuple | None:
-        if not isinstance(item, dict):
-            return None
-        return (item.get("TaskType"), item.get("Name"))
+        return maa_task_identity(item)
 
     index_by_id: dict[tuple, int] = {}
     for index, item in enumerate(archive_queue):
@@ -515,22 +512,13 @@ def _find_task_source(
     task_queue: list[dict],
     name: str,
     task_type: str,
-    *,
-    allow_type_fallback: bool = True,
 ) -> dict | None:
-    """按任务名称取原生配置，必要时兼容旧配置中的类型匹配。"""
+    """按 TaskType + Name 精确取得原生任务配置。"""
 
+    identity = (task_type, name)
     for task in task_queue:
-        if (
-            isinstance(task, dict)
-            and task.get("TaskType") == task_type
-            and task.get("Name") == name
-        ):
+        if maa_task_identity(task) == identity:
             return deepcopy(task)
-    if allow_type_fallback:
-        for task in task_queue:
-            if isinstance(task, dict) and task.get("TaskType") == task_type:
-                return deepcopy(task)
     return None
 
 
@@ -1340,6 +1328,7 @@ class AutoProxyTask(TaskExecuteBase):
         # native 池由 manager prepare 在任务级一次性归档
         archive_dir = self._config_archive_dir()
         if archive_dir is not None:
+            seed_maa_base_config(archive_dir)
             archive_mas_runtime_backup(
                 self.script_info.script_id,
                 str(self.cur_user_uid),
@@ -1391,20 +1380,22 @@ class AutoProxyTask(TaskExecuteBase):
         # 各配置部分的引用
         global_set = gui_set["Global"]
 
-        # 逐条修 $type 位置（布局不校对、成员不动——下方 _apply_maa_quick_config
-        # 会按本轮用户配置重建 TaskQueue，但各条目的高级字段经 _find_task_source
-        # 从这份队列取回，$type 不在首位会让 MAA 读不进整个文件）。
-        for configurations in (gui_new_set.get("Configurations") or {}).values():
-            if isinstance(configurations, dict):
-                queue = configurations.get("TaskQueue")
-                if isinstance(queue, list):
-                    configurations["TaskQueue"] = _repair_maa_task_queue(queue)
+        # 非直控模式才由 MAS 修正队列条目；直控的 TaskQueue 完全由用户维护。
+        if not self.direct_control:
+            for configurations in (gui_new_set.get("Configurations") or {}).values():
+                if isinstance(configurations, dict):
+                    queue = configurations.get("TaskQueue")
+                    if isinstance(queue, list):
+                        configurations["TaskQueue"] = _repair_maa_task_queue(queue)
 
         # 使用简体中文
         global_set["GUI.Localization"] = "zh-cn"  # OLD: 即将移除
         gui_new_set.setdefault("Gui", {})["Localization"] = "zh-cn"
 
-        if self.cur_user_config.get("Info", "IfQuickConfig"):
+        # 直控的 TaskQueue 由用户在 MAA 原生界面维护；仅保留下方运行期 overlay。
+        if not self.direct_control and self.cur_user_config.get(
+            "Info", "IfQuickConfig"
+        ):
             await self._apply_maa_quick_config(gui_new_set)
         self._configure_maa_runtime(gui_set, gui_new_set, emulator_info)
 
@@ -1495,7 +1486,6 @@ class AutoProxyTask(TaskExecuteBase):
                 source_queue,
                 zh_task,
                 en_task,
-                allow_type_fallback=en_task != "Fight",
             ) or {
                 "$type": f"{en_task}Task",
                 "Name": zh_task,
@@ -1503,12 +1493,8 @@ class AutoProxyTask(TaskExecuteBase):
                 "TaskType": en_task,
             }
 
-        annihilation_source = _find_task_source(
-            source_queue, "剿灭作战", "Fight", allow_type_fallback=False
-        )
-        activity_source = _find_task_source(
-            source_queue, "活动关优先", "Fight", allow_type_fallback=False
-        )
+        annihilation_source = _find_task_source(source_queue, "剿灭作战", "Fight")
+        activity_source = _find_task_source(source_queue, "活动关优先", "Fight")
 
         # 库存保持计划：MAS 快速配置面板维护的计划写回原生 PlanList。只覆盖
         # MAS 管理的三项（Stage/DropId/DropCount），其余原生字段（含用户在 MAA 里

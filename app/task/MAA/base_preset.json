@@ -1,0 +1,683 @@
+{
+  "Configurations": {
+    "Default": {
+      "TaskQueue": [
+        {
+          "$type": "StartUpTask",
+          "AccountName": "",
+          "AccountSwitchEnabled": true,
+          "Name": "开始唤醒",
+          "IsEnable": true,
+          "TaskType": "StartUp"
+        },
+        {
+          "$type": "FightTask",
+          "UseMedicine": true,
+          "MedicineCount": 99,
+          "UseStone": false,
+          "StoneCount": 0,
+          "EnableTargetDrop": false,
+          "DropId": "",
+          "DropCount": 0,
+          "IsInventoryTarget": false,
+          "EnableTimesLimit": false,
+          "TimesLimit": 2147483647,
+          "Series": 0,
+          "StagePlan": [
+            "Annihilation"
+          ],
+          "IsDrGrandet": false,
+          "UseExpiringMedicine": false,
+          "MedicineExpireDays": 2,
+          "UseExpireMedicineForActivity": true,
+          "UseCustomAnnihilation": true,
+          "AnnihilationStage": "Annihilation",
+          "HideUnavailableStage": false,
+          "IsStageManually": false,
+          "UseOptionalStage": false,
+          "UseStoneAllowSave": false,
+          "HideSeries": false,
+          "StageResetMode": "Current",
+          "UseWeeklySchedule": false,
+          "Name": "剿灭作战",
+          "IsEnable": true,
+          "TaskType": "Fight"
+        },
+        {
+          "$type": "RecruitTask",
+          "MaxTimes": 4,
+          "ExtraTagMode": 0,
+          "Level3PreferTags": [],
+          "PreferTagEnabled": true,
+          "PreserveTagList": [
+            "支援机械"
+          ],
+          "PreserveTagEnabled": true,
+          "RefreshLevel3": true,
+          "ForceRefresh": true,
+          "Level3Choose": true,
+          "Level3RecruitmentPermitReserveEnabled": false,
+          "Level3RecruitmentPermitReserve": 8,
+          "Level4Choose": true,
+          "Level5Choose": true,
+          "Level6Choose": false,
+          "Level3Time": 540,
+          "Level4Time": 540,
+          "Name": "自动公招",
+          "IsEnable": true,
+          "TaskType": "Recruit"
+        },
+        {
+          "$type": "InfrastTask",
+          "Mode": "Normal",
+          "UsesOfDrones": "Money",
+          "DormThreshold": 30,
+          "DormTrustEnabled": true,
+          "OriginiumShardAutoReplenishment": true,
+          "DormFilterNotStationed": false,
+          "ReceptionMessageBoard": true,
+          "ReceptionClueExchange": true,
+          "SendClue": true,
+          "ContinueTraining": true,
+          "FiammettaTarget1": "清流",
+          "FiammettaTarget2": "可露希尔",
+          "FiammettaTarget3": "但书",
+          "FiammettaRecoveryEnabled": false,
+          "UsePinusSylvestris": false,
+          "UsePerceptionInformation": false,
+          "UseWorldlyPlight": false,
+          "UseAbyssalHunter": false,
+          "CustomFileType": "user_defined",
+          "Filename": "",
+          "PlanSelect": -1,
+          "RoomList": [
+            {
+              "Room": "Power"
+            },
+            {
+              "Room": "Office"
+            },
+            {
+              "Room": "Control"
+            },
+            {
+              "Room": "Mfg"
+            },
+            {
+              "Room": "Trade"
+            },
+            {
+              "Room": "Reception"
+            },
+            {
+              "Room": "Dorm"
+            },
+            {
+              "Room": "Processing"
+            },
+            {
+              "Room": "Training"
+            },
+            {
+              "Room": "AssistantChange"
+            }
+          ],
+          "Name": "基建换班",
+          "IsEnable": true,
+          "TaskType": "Infrast"
+        },
+        {
+          "$type": "FightTask",
+          "UseMedicine": true,
+          "MedicineCount": 0,
+          "UseStone": false,
+          "StoneCount": 0,
+          "EnableTargetDrop": false,
+          "DropId": "",
+          "DropCount": 0,
+          "IsInventoryTarget": false,
+          "EnableTimesLimit": false,
+          "TimesLimit": 2147483647,
+          "Series": 0,
+          "StagePlan": [
+            ""
+          ],
+          "IsDrGrandet": false,
+          "UseExpiringMedicine": true,
+          "MedicineExpireDays": 2,
+          "UseExpireMedicineForActivity": true,
+          "UseCustomAnnihilation": false,
+          "AnnihilationStage": "Annihilation",
+          "HideUnavailableStage": false,
+          "IsStageManually": false,
+          "UseOptionalStage": false,
+          "UseStoneAllowSave": false,
+          "HideSeries": false,
+          "StageResetMode": "Current",
+          "UseWeeklySchedule": false,
+          "Name": "活动关优先",
+          "IsEnable": true,
+          "TaskType": "Fight"
+        },
+        {
+          "$type": "DepotMaintainTask",
+          "UpdateDepot": true,
+          "IsStageManually": false,
+          "SkipDuringActivity": true,
+          "SkipDuringResourceCollection": true,
+          "OnlyFirstInsufficientPlan": true,
+          "UseAutoSeries": true,
+          "UseMedicine": true,
+          "UseStone": true,
+          "UseExpiringMedicine": true,
+          "PlanList": [
+            {
+              "Stage": "PR-A-1",
+              "DropId": "3261",
+              "DropCount": 20,
+              "UseMedicine": false,
+              "MedicineCount": 0,
+              "UseStone": false,
+              "StoneCount": 0
+            },
+            {
+              "Stage": "PR-A-1",
+              "DropId": "3231",
+              "DropCount": 20,
+              "UseMedicine": false,
+              "MedicineCount": 0,
+              "UseStone": false,
+              "StoneCount": 0
+            },
+            {
+              "Stage": "PR-B-1",
+              "DropId": "3251",
+              "DropCount": 20,
+              "UseMedicine": false,
+              "MedicineCount": 0,
+              "UseStone": false,
+              "StoneCount": 0
+            },
+            {
+              "Stage": "PR-B-1",
+              "DropId": "3241",
+              "DropCount": 20,
+              "UseMedicine": false,
+              "MedicineCount": 0,
+              "UseStone": false,
+              "StoneCount": 0
+            },
+            {
+              "Stage": "PR-C-1",
+              "DropId": "3211",
+              "DropCount": 20,
+              "UseMedicine": false,
+              "MedicineCount": 0,
+              "UseStone": false,
+              "StoneCount": 0
+            },
+            {
+              "Stage": "PR-C-1",
+              "DropId": "3271",
+              "DropCount": 20,
+              "UseMedicine": false,
+              "MedicineCount": 0,
+              "UseStone": false,
+              "StoneCount": 0
+            },
+            {
+              "Stage": "PR-D-1",
+              "DropId": "3221",
+              "DropCount": 20,
+              "UseMedicine": false,
+              "MedicineCount": 0,
+              "UseStone": false,
+              "StoneCount": 0
+            },
+            {
+              "Stage": "PR-D-1",
+              "DropId": "3281",
+              "DropCount": 20,
+              "UseMedicine": false,
+              "MedicineCount": 0,
+              "UseStone": false,
+              "StoneCount": 0
+            },
+            {
+              "Stage": "PR-A-2",
+              "DropId": "3262",
+              "DropCount": 20,
+              "UseMedicine": false,
+              "MedicineCount": 0,
+              "UseStone": false,
+              "StoneCount": 0
+            },
+            {
+              "Stage": "PR-A-2",
+              "DropId": "3232",
+              "DropCount": 20,
+              "UseMedicine": false,
+              "MedicineCount": 0,
+              "UseStone": false,
+              "StoneCount": 0
+            },
+            {
+              "Stage": "PR-B-2",
+              "DropId": "3252",
+              "DropCount": 20,
+              "UseMedicine": false,
+              "MedicineCount": 0,
+              "UseStone": false,
+              "StoneCount": 0
+            },
+            {
+              "Stage": "PR-B-2",
+              "DropId": "3242",
+              "DropCount": 20,
+              "UseMedicine": false,
+              "MedicineCount": 0,
+              "UseStone": false,
+              "StoneCount": 0
+            },
+            {
+              "Stage": "PR-C-2",
+              "DropId": "3212",
+              "DropCount": 20,
+              "UseMedicine": false,
+              "MedicineCount": 0,
+              "UseStone": false,
+              "StoneCount": 0
+            },
+            {
+              "Stage": "PR-C-2",
+              "DropId": "3272",
+              "DropCount": 20,
+              "UseMedicine": false,
+              "MedicineCount": 0,
+              "UseStone": false,
+              "StoneCount": 0
+            },
+            {
+              "Stage": "PR-D-2",
+              "DropId": "3222",
+              "DropCount": 20,
+              "UseMedicine": false,
+              "MedicineCount": 0,
+              "UseStone": false,
+              "StoneCount": 0
+            },
+            {
+              "Stage": "PR-D-2",
+              "DropId": "3282",
+              "DropCount": 20,
+              "UseMedicine": false,
+              "MedicineCount": 0,
+              "UseStone": false,
+              "StoneCount": 0
+            },
+            {
+              "Stage": "CE-6",
+              "DropId": "4001",
+              "DropCount": 2000000,
+              "UseMedicine": false,
+              "MedicineCount": 0,
+              "UseStone": false,
+              "StoneCount": 0
+            },
+            {
+              "Stage": "AP-5",
+              "DropId": "4006",
+              "DropCount": 5000,
+              "UseMedicine": false,
+              "MedicineCount": 0,
+              "UseStone": false,
+              "StoneCount": 0
+            },
+            {
+              "Stage": "CA-5",
+              "DropId": "3303",
+              "DropCount": 200,
+              "UseMedicine": false,
+              "MedicineCount": 0,
+              "UseStone": false,
+              "StoneCount": 0
+            }
+          ],
+          "Name": "",
+          "IsEnable": true,
+          "TaskType": "DepotMaintain"
+        },
+        {
+          "$type": "FightTask",
+          "UseMedicine": true,
+          "MedicineCount": 999,
+          "UseStone": false,
+          "StoneCount": 0,
+          "EnableTargetDrop": false,
+          "DropId": "",
+          "DropCount": 5,
+          "IsInventoryTarget": false,
+          "EnableTimesLimit": false,
+          "TimesLimit": 5,
+          "Series": 0,
+          "StagePlan": [
+            "",
+            "AT-8",
+            "1-7"
+          ],
+          "IsDrGrandet": false,
+          "UseExpiringMedicine": true,
+          "MedicineExpireDays": 2,
+          "UseExpireMedicineForActivity": true,
+          "UseCustomAnnihilation": false,
+          "AnnihilationStage": "Annihilation",
+          "HideUnavailableStage": false,
+          "IsStageManually": false,
+          "UseOptionalStage": true,
+          "UseStoneAllowSave": false,
+          "HideSeries": false,
+          "StageResetMode": "Ignore",
+          "UseWeeklySchedule": false,
+          "Name": "理智作战",
+          "IsEnable": true,
+          "TaskType": "Fight"
+        },
+        {
+          "$type": "MallTask",
+          "Shopping": true,
+          "CreditFight": true,
+          "CreditFightFormation": 0,
+          "CreditFightLastTime": "2026/01/26 00:00:00",
+          "CreditFightOnceADay": true,
+          "VisitFriends": true,
+          "VisitFriendsOnceADay": true,
+          "VisitFriendsLastTime": "2026/01/26 00:00:00",
+          "FirstList": "招聘许可",
+          "BlackList": "碳;家具;加急许可",
+          "ShoppingIgnoreBlackListWhenFull": true,
+          "OnlyBuyDiscount": false,
+          "ReserveMaxCredit": false,
+          "IsCreditFightAvailable": true,
+          "IsVisitFriendsAvailable": true,
+          "Name": "信用收支",
+          "IsEnable": true,
+          "TaskType": "Mall"
+        },
+        {
+          "$type": "AwardTask",
+          "Award": true,
+          "Mail": true,
+          "FreeGacha": true,
+          "Orundum": true,
+          "Mining": true,
+          "SpecialAccess": true,
+          "SignInEvent": true,
+          "Name": "领取奖励",
+          "IsEnable": true,
+          "TaskType": "Award"
+        },
+        {
+          "$type": "SwitchThemeTask",
+          "Themes": [],
+          "Name": "",
+          "IsEnable": true,
+          "TaskType": "SwitchTheme"
+        }
+      ],
+      "Gui": {
+        "Performance": {
+          "UseGpu": true,
+          "GpuDescription": "NVIDIA GeForce RTX 4060 Laptop GPU",
+          "GpuInstancePath": "",
+          "AllowDeprecatedGpu": false
+        },
+        "ExternalNotification": {
+          "Configs": [],
+          "SendWhenComplete": true,
+          "ShowWhenCompleteWithDetails": false,
+          "SendWhenError": true,
+          "SendWhenStalled": false
+        },
+        "RemoteControl": {
+          "RemoteControlGetTaskEndpointUri": "",
+          "RemoteControlReportStatusUri": "",
+          "RemoteControlUserIdentity": "",
+          "RemoteControlDeviceIdentity": "",
+          "RemoteControlPollIntervalMs": 1000
+        },
+        "ThirdParty": {
+          "ReportToPenguin": true,
+          "PenguinId": "",
+          "ReportToYituliu": true,
+          "YituliuOpenApiToken": "",
+          "OperBoxUseYituliuApi": false
+        },
+        "WindowTitlePrefix": "",
+        "PostActions": "None",
+        "AchievementPopupDisabled": false,
+        "AchievementPopupAutoClose": false
+      },
+      "Toolbox": {
+        "OperBoxExportFormat": "Clipboard",
+        "GachaShowDisclaimerNoMore": false,
+        "PeepTargetFps": 20,
+        "ChooseLevel3": false,
+        "ChooseLevel3Time": 540,
+        "ChooseLevel4": true,
+        "ChooseLevel4Time": 540,
+        "ChooseLevel5": true,
+        "ChooseLevel6": true,
+        "AutoSetTime": true,
+        "ShowPotential": true
+      },
+      "Copilot": {
+        "TaskList": [
+          {
+            "Name": "SR-EX-7",
+            "IsNavNameOverride": false,
+            "FilePath": "",
+            "CopilotId": 102462,
+            "IsRaid": false,
+            "IsChecked": true,
+            "Index": 0
+          },
+          {
+            "Name": "SR-EX-7",
+            "IsNavNameOverride": false,
+            "FilePath": "",
+            "CopilotId": 102462,
+            "IsRaid": true,
+            "IsChecked": true,
+            "Index": 1
+          },
+          {
+            "Name": "SR-EX-8",
+            "IsNavNameOverride": false,
+            "FilePath": "",
+            "CopilotId": 102364,
+            "IsRaid": false,
+            "IsChecked": true,
+            "Index": 2
+          },
+          {
+            "Name": "SR-EX-8",
+            "IsNavNameOverride": false,
+            "FilePath": "",
+            "CopilotId": 102364,
+            "IsRaid": true,
+            "IsChecked": true,
+            "Index": 3
+          }
+        ],
+        "EnableUserAdditional": false,
+        "UserAdditional": [
+          {
+            "Name": "德克萨斯",
+            "Skill": 1,
+            "Module": 0
+          }
+        ],
+        "SupportMode": "WhenNeeded",
+        "SelectFormation": 1,
+        "LoopTimes": 1
+      },
+      "TaskSelectedIndex": 9
+    }
+  },
+  "Timers": {
+    "ForceScheduledStart": false,
+    "ShowWindowBeforeForceScheduledStart": false,
+    "CustomConfig": false,
+    "List": [
+      {
+        "Id": 0,
+        "IsEnabled": false,
+        "Config": "Default",
+        "Hour": 0,
+        "Minute": 0
+      },
+      {
+        "Id": 1,
+        "IsEnabled": false,
+        "Config": "Default",
+        "Hour": 3,
+        "Minute": 0
+      },
+      {
+        "Id": 2,
+        "IsEnabled": false,
+        "Config": "Default",
+        "Hour": 6,
+        "Minute": 0
+      },
+      {
+        "Id": 3,
+        "IsEnabled": false,
+        "Config": "Default",
+        "Hour": 9,
+        "Minute": 0
+      },
+      {
+        "Id": 4,
+        "IsEnabled": false,
+        "Config": "Default",
+        "Hour": 12,
+        "Minute": 0
+      },
+      {
+        "Id": 5,
+        "IsEnabled": false,
+        "Config": "Default",
+        "Hour": 15,
+        "Minute": 0
+      },
+      {
+        "Id": 6,
+        "IsEnabled": false,
+        "Config": "Default",
+        "Hour": 18,
+        "Minute": 0
+      },
+      {
+        "Id": 7,
+        "IsEnabled": false,
+        "Config": "Default",
+        "Hour": 21,
+        "Minute": 0
+      }
+    ]
+  },
+  "ConfigVersion": 1,
+  "Current": "Default",
+  "AnnouncementInfo": {
+    "DoNotShowAgain": true,
+    "DoNotShow": false
+  },
+  "Gui": {
+    "DarkMode": "SyncWithOs",
+    "UseNotify": true,
+    "MainTasksInvertNullFunction": false,
+    "HideHoverActionButtons": false,
+    "Localization": "zh-cn",
+    "OperNameLanguage": "OperNameLanguageMAA",
+    "UseTray": true,
+    "MinimizeToTray": false,
+    "MinimizeOnStartup": false,
+    "HideCloseButton": false,
+    "WindowTitleSelectShowList": "2 3 4",
+    "WindowTitleScrollable": false,
+    "LogItemDateFormat": "HH:mm:ss",
+    "WindowPlacement": {
+      "Length": 44,
+      "Flags": 0,
+      "ShowCmd": 1,
+      "MinPosition": {
+        "X": -1,
+        "Y": -1
+      },
+      "MaxPosition": {
+        "X": -1,
+        "Y": -1
+      },
+      "NormalPosition": {
+        "Left": 755,
+        "Top": 208,
+        "Right": 1955,
+        "Bottom": 1108
+      }
+    },
+    "LoadWindowPlacement": true,
+    "SaveWindowPlacement": true,
+    "InverseClearMode": "Clear",
+    "TransitionSpeed": "Normal",
+    "TaskQueueInverseMode": false,
+    "UseCardLog": true,
+    "MaxNumberOfLogThumbnails": 100,
+    "SoberLanguage": "zh-cn",
+    "Hangover": false,
+    "LastBuyWineTime": "2026-01-26T00:00:00+08:00",
+    "CustomCulture": "",
+    "IgnoreBadModulesAndUseSoftwareRendering": false,
+    "OverlayTarget": {
+      "ProcessId": 0,
+      "Hwnd": 0
+    },
+    "SettingOrders": [
+      "SwitchConfiguration",
+      "ScheduleSettings",
+      "PerformanceSettings",
+      "GameSettings",
+      "ConnectionSettings",
+      "StartupSettings",
+      "RemoteControlSettings",
+      "UiSettings",
+      "BackgroundSettings",
+      "ExternalNotificationSettings",
+      "HotKeySettings",
+      "AchievementSettings",
+      "UpdateSettings",
+      "IssueReport",
+      "AboutUs",
+      "ThirdPartyServiceSettings"
+    ],
+    "CollapesStates": [],
+    "HotKeys": {
+      "LinkStart": {
+        "Key": "L",
+        "Modifiers": "Alt, Control, Shift"
+      }
+    },
+    "GuideStep": 7,
+    "Background": {
+      "ImagePath": "",
+      "StretchMode": "Fill",
+      "Opacity": 50,
+      "BlurEffectRadius": 5
+    },
+    "BackgroundMonetEnabled": false,
+    "BackgroundMonetMode": "Auto",
+    "BackgroundMonetCustomColor": "#326CF3",
+    "BackgroundMonetCachedColor": "",
+    "BackgroundMonetKeepMaskNeutral": false
+  }
+}

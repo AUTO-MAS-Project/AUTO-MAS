@@ -125,11 +125,11 @@ class MaaManager(TaskExecuteBase):
             ).exists()
         ):
             return "MAA配置文件不存在, 请检查MAA路径设置或先启动MAA完成配置文件生成！"
-        # 脚本级存档仅在存在非直控用户时需要: 直控直接使用 MAA 安装目录的原生配置,
-        # 不依赖 MAS 侧的 Default/ConfigFile 存档
+        # 脚本级存档仅在确实有用户选择“脚本”来源时需要；“用户”来源使用各自
+        # 的用户目录，直控则直接使用 MAA 安装目录的原生配置。
         if (
             self.task_info.mode != "ScriptConfig"
-            and self._has_mas_config_user()
+            and self._has_script_config_user()
             and not (
                 Path.cwd() / f"data/{self.script_info.script_id}/Default/ConfigFile"
             ).exists()
@@ -137,16 +137,16 @@ class MaaManager(TaskExecuteBase):
             return "未完成 MAA 全局设置, 请先设置 MAA！"
         return "Pass"
 
-    def _has_mas_config_user(self) -> bool:
-        """目标用户里是否存在非直控（脚本/用户）配置来源的用户。
+    def _has_script_config_user(self) -> bool:
+        """目标用户里是否存在选择脚本级配置来源的用户。
 
         check() 先于 prepare() 执行，此时 self.user_config 尚未加载、user_list
         还是占位项；直接读脚本配置持久化的 UserData，按参与运行的用户（启用、
-        剩余天数非 0、命中目标用户）判定，与 M9A._uses_direct_control 同构。
+        剩余天数非 0、命中目标用户）判定。
         """
 
         return any(
-            read_config_source(config, CONFIG_SOURCE_SCRIPT) != CONFIG_SOURCE_DIRECT
+            read_config_source(config, CONFIG_SOURCE_SCRIPT) == CONFIG_SOURCE_SCRIPT
             for uid, config in Config.ScriptConfig[
                 uuid.UUID(self.script_info.script_id)
             ].UserData.items()
