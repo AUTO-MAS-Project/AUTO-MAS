@@ -731,6 +731,8 @@ export class RuntimeInitializationService {
    *
    * `mode` 显式覆盖上一次失败留下的判断：初始化界面的「重建环境」按钮传 `rebuild`，
    * 普通「重试」按钮走默认的 `auto`，两个按钮才不会做同一件事。
+   *
+   * 依赖段报 `PYTHON_VERSION_MISMATCH` 时自动补装受管 Python，见 {@link repairMissingPython}。
    */
   async retryStage(
     stage: InitializationRunStage,
@@ -776,13 +778,46 @@ export class RuntimeInitializationService {
         return aligned
       }
     }
-    const outcome = await this.execute(command, mirror, bridge)
+    let outcome = await this.execute(command, mirror, bridge)
+    if (
+      !outcome.success &&
+      stage === 'dependency' &&
+      outcome.code === 'PYTHON_VERSION_MISMATCH' &&
+      !this.cancelRequested
+    ) {
+      outcome = await this.repairMissingPython(mirror, bridge)
+    }
     if (outcome.success) {
       onProgress({ stage, status: 'completed', progress: 100, message: '完成' })
     } else {
       bridge.fail(outcome.failedStage ?? stage, outcome.error ?? '重试失败')
     }
     return outcome
+  }
+
+  /**
+   * 依赖段报受管 Python 缺失或不符时，先 `environment repair` 装好受管 Python，再 `dependencies sync`。
+   *
+   * 受管 Python 只有 `bootstrap`、`repair` 与 `environment repair` 会装，`dependencies sync` /
+   * `rebuild` 只复核。bootstrap 在装 Python 之前失败（例如测速全挂被取消）后，单步重试链是
+   * `environment ensure` → `workspace sync` → `dependencies sync`，没有一步会装 Python，
+   * 依赖段就会一直报 `PYTHON_VERSION_MISMATCH`，「重建环境」换成 `dependencies rebuild`
+   * 也照样失败。
+   *
+   * 不用顶层 `repair`：Runtime v0.1.10 里它的重建 venv 一步与 `dependencies rebuild` 共用同一个
+   * 删除器，必然报 `ENVIRONMENT_REBUILD_FAILED`。`environment repair` 只重验 uv、重装受管
+   * Python，不碰 venv；随后的 `dependencies sync` 由 uv 按新解释器建好 venv 并同步锁定依赖。
+   * 两条命令都要求仓库完好，走到依赖段时仓库段已经过了，前提成立。
+   */
+  private async repairMissingPython(
+    mirror: RuntimeMirrorSelection | null | undefined,
+    bridge: BootstrapProgressBridge
+  ): Promise<RuntimeStageOutcome> {
+    logger.info('受管 Python 缺失或版本不符，先 environment repair 安装受管 Python，再同步依赖')
+    const repaired = await this.execute(['environment', 'repair'], null, bridge)
+    if (!repaired.success) return repaired
+    if (this.cancelRequested) return cancelledOutcome()
+    return this.execute(['dependencies', 'sync'], mirror, bridge)
   }
 
   /**

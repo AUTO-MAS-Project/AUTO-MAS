@@ -67,5 +67,9 @@ export type MSSUserConfig_Info = {
      * 悬赏试炼关卡来源（Fixed 或 MSS 计划表 UID）
      */
     PlanMode?: (string | null);
+    /**
+     * 队列里没加活动任务时，是否在活动期间自动加入并排到最前
+     */
+    IfActivityFirst?: (boolean | null);
 };
 

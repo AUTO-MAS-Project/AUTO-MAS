@@ -37,10 +37,11 @@ from app.models.schema import *
 from app.task.MaaFW.api_service import agent_env as maafw_agent_env_api
 from app.task.MaaFW.api_service import embedded as maafw_embedded_api
 from app.task.MaaFW.api_service import interface as maafw_interface_api
+from app.task.MaaFW.api_service import shell_instances as maafw_shell_instances_api
 from app.task.MaaFW.api_service import update as maafw_update_api
 from app.utils import get_logger
-from app.utils.io import ConfigCorruptedError
 from app.utils.constants import UTC8
+from app.utils.io import ConfigCorruptedError
 
 router = APIRouter(prefix="/api/scripts", tags=["脚本管理"])
 logger = get_logger("脚本管理 API")
@@ -480,6 +481,30 @@ async def get_user(user: UserGetIn = Body(...)) -> UserGetOut:
             data={},
         )
     return UserGetOut(index=index, data=data)
+
+
+@router.post(
+    "/user/config-dir",
+    tags=["Get"],
+    summary="获取用户配置目录",
+    response_model=UserConfigDirOut,
+    status_code=200,
+)
+async def get_user_config_dir(user: UserConfigDirIn = Body(...)) -> UserConfigDirOut:
+
+    try:
+        user_config_dir = await Config.get_user_config_dir(user.scriptId, user.userId)
+    except Exception as e:
+        logger.opt(exception=True).warning(
+            f"get_user_config_dir失败: {type(e).__name__}: {e}"
+        )
+        return UserConfigDirOut(
+            code=500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+            path="",
+        )
+    return UserConfigDirOut(message="用户配置目录获取成功", path=str(user_config_dir))
 
 
 @router.post(
@@ -1033,6 +1058,43 @@ async def clone_maafw_embedded(
         payload.scriptId, payload.sourceScriptId
     )
     return MaaFWEmbeddedStatusOut(**reply.out_fields())
+
+
+@router.post(
+    "/maafw/shell-instances",
+    tags=["MaaFW"],
+    summary="列出项目目录里外壳（MFAAvalonia / MXU / MFW-PyQt6）保存的配置实例",
+    response_model=MaaFWShellInstancesOut,
+    status_code=200,
+)
+async def list_maafw_shell_instances(
+    payload: MaaFWShellInstancesIn = Body(...),
+) -> MaaFWShellInstancesOut:
+    """新建脚本引导最后一步用：外壳里配好的每份实例都可以导入成一个用户。只读外壳文件。"""
+
+    reply = await maafw_shell_instances_api.list_shell_instances(payload.scriptId)
+    return MaaFWShellInstancesOut(**reply.out_fields())
+
+
+@router.post(
+    "/maafw/shell-instances/import",
+    tags=["MaaFW"],
+    summary="把选中的外壳配置实例导入成用户",
+    response_model=MaaFWShellInstanceImportOut,
+    status_code=200,
+)
+async def import_maafw_shell_instances(
+    payload: MaaFWShellInstanceImportIn = Body(...),
+) -> MaaFWShellInstanceImportOut:
+    """每个实例建一个用户：用户名取实例名，任务队列与任务选项一起导入。
+
+    逐个实例独立处理，失败原因与当前项目里对不上而跳过的任务 / 选项写在各项结果里。
+    """
+
+    reply = await maafw_shell_instances_api.import_shell_instances(
+        payload.scriptId, payload.instanceIds
+    )
+    return MaaFWShellInstanceImportOut(**reply.out_fields())
 
 
 @router.post(
@@ -2846,6 +2908,50 @@ async def save_zzzod_app_config_api(
             message=f"{type(e).__name__}: {str(e)}",
             appId=script.appId,
             fields=[],
+        )
+
+
+@router.get(
+    "/bettergi/game-info",
+    tags=["BetterGI"],
+    summary="获取游戏客户端信息（路径 + 渠道，用户页透传展示）",
+    response_model=BetterGIGameInfoOut,
+    status_code=200,
+)
+async def get_bettergi_game_info_api(
+    scriptId: str, detectPath: str = ""
+) -> BetterGIGameInfoOut:
+    """读取 BetterGI 配置的游戏路径并识别客户端渠道（官服/B服/国际服）。
+
+    ``detectPath`` 非空时对该路径做渠道识别（用户自填路径的即时标注），
+    为空时返回生效路径（用户级优先，否则 BGI 全局配置）及其渠道。
+    """
+
+    try:
+        script_config = _bettergi_script_config(scriptId)
+        root = Path(script_config.get("Info", "RootPath")).expanduser()
+        from app.task.BetterGI.tools import game_info
+
+        data = game_info.read_game_info(root, detectPath)
+        return BetterGIGameInfoOut(
+            code=200,
+            status="success",
+            message="操作成功",
+            installPath=data["installPath"],
+            globalPath=data["globalPath"],
+            channel=data["channel"],
+            source=data["source"],
+        )
+    except Exception as e:
+        logger.opt(exception=True).warning(
+            f"get_bettergi_game_info_api失败: {type(e).__name__}: {e}"
+        )
+        return BetterGIGameInfoOut(
+            code=400
+            if isinstance(e, (ValueError, KeyError, TypeError, RuntimeError))
+            else 500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
         )
 
 

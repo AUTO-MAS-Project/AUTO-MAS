@@ -168,6 +168,19 @@ class MSSFlavor:
                 interface_model, ids, options, tribulation, plan_key, name_of, log
             )
 
+        ## 「活动优先」开着时，队列里没加活动任务也补一个——但只有**确认在活动期**才补：
+        ## 取不到活动数据时乱加会让这一轮多跑一个本来不该跑的任务。
+        if (
+            activity is not None
+            and not any(name_of(i) == activity for i in ids)
+            and _get(user_config, "Info", "IfActivityFirst") is not False
+            and self._activity_probe() is True
+        ):
+            ids = _insert_before_tail(ids, activity, interface_model, name_of)
+            moved = _move_before(ids, activity, tribulation, name_of)
+            ids = moved
+            log(f"[MSS] 活动进行中，已自动加入「{activity}」并排到最前")
+
         if activity is not None and any(name_of(i) == activity for i in ids):
             running = self._activity_probe()
             if running is False:
@@ -270,6 +283,10 @@ def _apply_plan(
         targets = [tribulation]
         ids = _insert_before_tail(ids, tribulation, interface_model, name_of)
         log(f"[MSS] 计划表已选，自动加入「{tribulation}」")
+    else:
+        ## 队列里手动加了多个同任务实例时只改第一个：剩下的留给用户自己配，
+        ## 这样「一个按计划表刷、一个固定刷别的关」还能共存
+        targets = targets[:1]
 
     values: dict[str, Any] = {
         OPTION_TRIBULATION_STAGE: stage,

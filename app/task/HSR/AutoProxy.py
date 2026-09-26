@@ -39,7 +39,7 @@ from app.utils.constants import UTC4
 
 from .task_mapping import (
     HSR_TASK_MODULES,
-    describe_script_fallback,
+    engine_label,
     resolve_script_assignment,
 )
 from .tools import push_notification
@@ -68,6 +68,7 @@ from .tools.log_detect import (
     parse_cloud_remaining,
     select_failure_summary_lines,
 )
+from .tools.m7a_config import M7A_DAILY_ACTIVITY_SWITCH_KEYS
 from .tools.m7a_control import HSRM7AControl
 from .tools.m7a_runtime import M7ARunner
 from .tools.managed_config import list_managed_modules, redeem_code_fingerprint
@@ -127,17 +128,10 @@ def resolve_daily_native_modes(
         return bool(values.get("useBuildTarget", False)), bool(
             values.get("activity.enabled", False)
         )
-    activity_enabled = bool(values.get("activity_enable", False)) and any(
-        bool(value)
-        for key, value in values.items()
-        if key.startswith("activity_")
-        and key.endswith("_enable")
-        and key
-        not in {
-            "activity_enable",
-            "activity_dailycheckin_enable",
-            "activity_journey_highlights_notification_enable",
-        }
+    # 活动总开关 activity_enable 不在表单里，运行时按这三个子开关推导（见
+    # build_m7a_daily_patch），判定口径与之相同。
+    activity_enabled = any(
+        bool(values.get(key, False)) for key in M7A_DAILY_ACTIVITY_SWITCH_KEYS
     )
     return bool(values.get("build_target_enable", False)), activity_enabled
 
@@ -523,7 +517,10 @@ class HSRAutoProxyTask(TaskExecuteBase):
         lines = ["模块执行情况："]
         for item in items:
             label = status_label.get(item.status, item.status)
-            text = f"{item.module_name}（{item.script}）：{label}"
+            text = (
+                f"{item.module_name}（{engine_label(item.script, left=False, right=False)}）"
+                f"：{label}"
+            )
             if item.reason and item.status != "completed":
                 text = f"{text}，{item.reason}"
             lines.append(text)
@@ -922,7 +919,9 @@ class HSRAutoProxyTask(TaskExecuteBase):
         else:
             selected = bool(values.get("reward_redemption_code_enable", True))
         if not selected:
-            self._append_log(f"用户「{user_name}」已关闭 {engine} 兑换码奖励，本轮跳过")
+            self._append_log(
+                f"用户「{user_name}」已关闭{engine_label(engine)}兑换码奖励，本轮跳过"
+            )
             return False, None
         if engine == "M7A":
             # 三月七每日任务从在线码表取兑换码、按 already_used_codes 自行去重，
@@ -935,13 +934,15 @@ class HSRAutoProxyTask(TaskExecuteBase):
             fingerprint = redeem_code_fingerprint(engine, self.script_config)
         except (OSError, ValueError, TypeError) as exc:
             logger.warning(
-                f"用户「{user_name}」读取 {engine} 兑换码版本失败，保守执行：{exc}"
+                f"用户「{user_name}」读取{engine_label(engine)}兑换码版本失败，"
+                f"保守执行：{exc}"
             )
             return True, None
         previous = str(user_cfg.get("Data", f"{engine}RedeemCodeFingerprint") or "")
         if previous == fingerprint:
             self._append_log(
-                f"用户「{user_name}」{engine} 兑换码未变化，本轮跳过兑换码领取"
+                f"用户「{user_name}」{engine_label(engine, left=False)}兑换码未变化，"
+                "本轮跳过兑换码领取"
             )
             return False, fingerprint
         return True, fingerprint
@@ -1018,16 +1019,12 @@ class HSRAutoProxyTask(TaskExecuteBase):
 
             # 脚本来源时 plan 是脚本配置，其 Managed.TaskMapping 恒为空，
             # 自然落到脚本级 TaskMapping。
-            assignment = resolve_script_assignment(
+            assigned = resolve_script_assignment(
                 module,
                 self.script_config,
                 user_config=plan,
                 effective_engines=effective_engines,
             )
-            assigned = assignment.script
-            fallback_note = describe_script_fallback(module, assignment)
-            if fallback_note:
-                self._append_log(f"用户「{user_name}」{fallback_note}")
             module_daily_eow_enabled = daily_eow_enabled
             redeem_codes_enabled = True
             redeem_code_fingerprint: str | None = None
@@ -1119,7 +1116,7 @@ class HSRAutoProxyTask(TaskExecuteBase):
                             self._queue_data_writeback(
                                 user_id=uid,
                                 user_name=user_name,
-                                reason=f"{engine} 兑换码任务成功完成",
+                                reason=f"{engine_label(engine, left=False)}兑换码任务成功完成",
                                 fields=[
                                     (
                                         "Data",
@@ -1164,7 +1161,7 @@ class HSRAutoProxyTask(TaskExecuteBase):
                             self._queue_data_writeback(
                                 user_id=uid,
                                 user_name=user_name,
-                                reason=f"{engine} 兑换码任务成功完成",
+                                reason=f"{engine_label(engine, left=False)}兑换码任务成功完成",
                                 fields=[
                                     (
                                         "Data",
@@ -1576,7 +1573,7 @@ class HSRAutoProxyTask(TaskExecuteBase):
                         item = login_item
                 item.attempts += 1
                 self._append_log(
-                    f"用户「{item.user_name}」执行 {item.script} "
+                    f"用户「{item.user_name}」执行{engine_label(item.script)}"
                     f"{item.module_name}：{item.description}"
                 )
                 try:
@@ -1793,8 +1790,8 @@ class HSRAutoProxyTask(TaskExecuteBase):
                 )
                 detail = "\n".join(select_failure_summary_lines(recent))
                 return (
-                    f"M7A {cause}，已自行关闭游戏；"
-                    "MAS 已终止本次 M7A，补跑前会重新启动游戏。M7A 最后的报错："
+                    f"三月七{cause}，已自行关闭游戏；"
+                    "MAS 已终止本次三月七，补跑前会重新启动游戏。三月七最后的报错："
                     f"\n{detail}"
                 )
         return (
@@ -1813,7 +1810,8 @@ class HSRAutoProxyTask(TaskExecuteBase):
         for item in failures:
             parts.append(
                 f"用户「{item.user_name}」模块「{item.module_name}」"
-                f"（{item.script}，已尝试 {item.attempts} 次）："
+                f"（{engine_label(item.script, left=False, right=False)}，"
+                f"已尝试 {item.attempts} 次）："
                 f"{item.last_error or '未知错误'}"
             )
         return "\n".join(parts)

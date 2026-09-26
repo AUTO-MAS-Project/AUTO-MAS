@@ -1,6 +1,5 @@
 <template>
-  <a-empty v-if="fields.length === 0" :description="t('edit.thisVersionHasNothing')" />
-  <div v-else class="dynamic-fields">
+  <div class="dynamic-fields">
     <div
       v-for="field in fields"
       :key="field.key"
@@ -23,6 +22,22 @@
             </a-tooltip>
           </span>
         </a-checkbox>
+        <!-- 标记与恢复放在复选框外面，点它们不会顺带切换勾选 -->
+        <span v-if="isFieldOverridden(field)" class="override-actions">
+          <a-tooltip :title="overrideTooltip(field)">
+            <a-tag color="blue" class="override-tag">{{ t('edit.hsrFieldOverridden') }}</a-tag>
+          </a-tooltip>
+          <a-button
+            v-if="canResetField(field)"
+            type="link"
+            size="small"
+            class="reset-link"
+            :disabled="disabled"
+            @click="emit('reset', field.key)"
+          >
+            {{ t('edit.hsrFieldReset') }}
+          </a-button>
+        </span>
       </div>
 
       <template v-else>
@@ -31,6 +46,21 @@
           <a-tooltip v-if="field.description" :title="field.description">
             <QuestionCircleOutlined class="help-icon" aria-hidden="true" />
           </a-tooltip>
+          <template v-if="isFieldOverridden(field)">
+            <a-tooltip :title="overrideTooltip(field)">
+              <a-tag color="blue" class="override-tag">{{ t('edit.hsrFieldOverridden') }}</a-tag>
+            </a-tooltip>
+            <a-button
+              v-if="canResetField(field)"
+              type="link"
+              size="small"
+              class="reset-link"
+              :disabled="disabled"
+              @click="emit('reset', field.key)"
+            >
+              {{ t('edit.hsrFieldReset') }}
+            </a-button>
+          </template>
         </div>
         <a-select
           v-if="field.type === 'select'"
@@ -48,6 +78,13 @@
           :precision="field.type === 'integer' ? 0 : undefined"
           :disabled="disabled || field.readonly"
           class="option-control"
+          @change="emitValue(field, $event)"
+        />
+        <ManagedListField
+          v-else-if="isRowListField(field)"
+          :field-key="field.key"
+          :value="field.value"
+          :disabled="disabled || Boolean(field.readonly)"
           @change="emitValue(field, $event)"
         />
         <a-textarea
@@ -78,6 +115,13 @@ import { useI18n } from 'vue-i18n'
 import { message } from 'ant-design-vue'
 import { QuestionCircleOutlined } from '@ant-design/icons-vue'
 import type { HSRManagedField } from '@/composables/useHSRPluginApi'
+import ManagedListField from './ManagedListField.vue'
+import {
+  canResetField,
+  formatManagedValue,
+  isFieldOverridden,
+  isRowListField,
+} from './managedFields'
 
 const { t } = useI18n()
 
@@ -88,17 +132,25 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   change: [key: string, value: unknown]
+  /** 删掉该键在 MAS 里的覆盖值，回到三月七 / SRA 里的设置。 */
+  reset: [key: string]
 }>()
 
 // 文本与 JSON 输入只在失焦时提交，而父级每次保存都会整体重渲染受控输入。
 // 未提交的内容先留在草稿里，避免重渲染用旧的 field.value 把用户输入冲掉。
 const drafts = reactive<Record<string, string>>({})
 
-const clearDrafts = () => {
-  Object.keys(drafts).forEach(key => delete drafts[key])
-}
-
-watch(() => props.fields, clearDrafts)
+// 字段离开本列表（换模块、换引擎、被显示条件隐藏）时丢掉它的草稿。不按数组身份清：
+// 分组数组在相邻字段保存、显示条件变化时都会重算成新数组，那样会把正在输入的内容冲掉。
+watch(
+  () => props.fields.map(field => field.key).join('\n'),
+  joined => {
+    const keys = new Set(joined.split('\n'))
+    Object.keys(drafts).forEach(key => {
+      if (!keys.has(key)) delete drafts[key]
+    })
+  }
+)
 
 const draftValue = (field: HSRManagedField, fallback: string) => drafts[field.key] ?? fallback
 
@@ -126,9 +178,24 @@ const numberValue = (value: unknown) => {
 
 const formatJson = (value: unknown) => JSON.stringify(value ?? null, null, 2)
 
+// 有原值才挂提示；没有原值时「已改」标签自己就说明白了
+const overrideTooltip = (field: HSRManagedField) =>
+  field.native_value === undefined
+    ? undefined
+    : t('edit.hsrFieldNativeValue', {
+        value: formatManagedValue(field, field.native_value, {
+          on: t('edit.hsrValueOn'),
+          off: t('edit.hsrValueOff'),
+          empty: t('edit.hsrValueEmpty'),
+        }),
+      })
+
 const handleTextBlur = (field: HSRManagedField, event: FocusEvent) => {
+  const value = (event.target as HTMLInputElement).value
   clearDraft(field)
-  emitValue(field, (event.target as HTMLInputElement).value)
+  // 没改动的失焦不提交，免得点一下就把原值存成覆盖
+  if (value === String(field.value ?? '')) return
+  emitValue(field, value)
 }
 
 const handleJsonBlur = (field: HSRManagedField, event: FocusEvent) => {
@@ -136,6 +203,7 @@ const handleJsonBlur = (field: HSRManagedField, event: FocusEvent) => {
   try {
     const parsed = JSON.parse(raw)
     clearDraft(field)
+    if (JSON.stringify(parsed) === JSON.stringify(field.value ?? null)) return
     emitValue(field, parsed)
   } catch {
     // 保留草稿，让用户在原文上继续修正而不是丢失已输入的内容
@@ -165,6 +233,7 @@ const handleJsonBlur = (field: HSRManagedField, event: FocusEvent) => {
 .option-label {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 6px;
   color: var(--ant-color-text);
   font-size: 14px;
@@ -180,6 +249,8 @@ const handleJsonBlur = (field: HSRManagedField, event: FocusEvent) => {
   min-height: 32px;
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
 }
 
 .option-item-boolean {
@@ -189,6 +260,27 @@ const handleJsonBlur = (field: HSRManagedField, event: FocusEvent) => {
 .boolean-control :deep(.ant-checkbox-wrapper) {
   display: inline-flex;
   align-items: center;
+}
+
+.override-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.override-tag {
+  margin-inline-end: 0;
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 18px;
+  cursor: default;
+}
+
+.reset-link {
+  height: auto;
+  padding: 0 4px;
+  font-size: 12px;
+  font-weight: 400;
 }
 
 .option-control {

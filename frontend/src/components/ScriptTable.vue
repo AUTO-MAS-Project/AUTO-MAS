@@ -45,10 +45,11 @@
                     alt="MaaEnd"
                     class="script-logo"
                   />
+                  <!-- MaaFW 与各特调的图标取自特调注册表 -->
                   <img
-                    v-else-if="script.type === 'M9A'"
-                    src="@/assets/M9A.png"
-                    alt="M9A"
+                    v-else-if="isMaaFWFamily(script.type)"
+                    :src="resolveMaaFWFlavor(script.type).logo"
+                    :alt="resolveMaaFWFlavor(script.type).typeTagLabel"
                     class="script-logo"
                   />
                   <img
@@ -70,12 +71,6 @@
                     class="script-logo"
                   />
                   <img
-                    v-else-if="script.type === 'MaaFW'"
-                    src="@/assets/maafw.png"
-                    alt="MFW"
-                    class="script-logo"
-                  />
-                  <img
                     v-else-if="script.type === 'BetterGI'"
                     src="@/assets/bettergi.ico"
                     alt="BetterGI"
@@ -93,18 +88,12 @@
                     alt="BAAH"
                     class="script-logo"
                   />
-                  <img
-                    v-else-if="script.type === 'MSS'"
-                    src="@/assets/mss.png"
-                    alt="MSS"
-                    class="script-logo"
-                  />
                   <img v-else src="@/assets/AUTO-MAS.ico" alt="AUTO-MAS" class="script-logo" />
                 </div>
                 <div class="script-details">
                   <h3 class="script-name">{{ script.name }}</h3>
                   <a-tag :color="getScriptTypeTagColor(script.type)" class="script-type">
-                    {{ getScriptTypeLabel(script.type) }}
+                    {{ getScriptTypeLabel(script) }}
                   </a-tag>
                 </div>
               </div>
@@ -412,11 +401,9 @@
                             script.type === 'Okww' ||
                             script.type === 'OkNte' ||
                             script.type === 'BetterGI' ||
-                            script.type === 'MaaFW' ||
-                            script.type === 'M9A' ||
+                            isMaaFWFamily(script.type) ||
                             script.type === 'ZzzOd' ||
-                            script.type === 'BAAH' ||
-                            script.type === 'MSS'
+                            script.type === 'BAAH'
                           "
                           class="user-info-tags"
                         >
@@ -539,7 +526,7 @@
 
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
-import type { Script, User } from '../types/script'
+import type { MaaFWScriptConfig, Script, User } from '../types/script'
 import type { MaaEndConfig } from '@/api'
 import {
   CopyOutlined,
@@ -557,6 +544,11 @@ import { message, Modal } from 'ant-design-vue'
 import { useScriptApi } from '@/composables/useScriptApi'
 import { useUserApi } from '@/composables/useUserApi'
 import { parseStatusTagList } from '@/composables/useStatusTag'
+import {
+  isMaaFWFamily,
+  resolveMaaFWFlavor,
+  type MaaFWFlavorType,
+} from '@/composables/useMaaFWFlavor'
 
 const { t } = useI18n()
 
@@ -737,29 +729,35 @@ const handleToggleUserStatus = (user: User) => {
   emit('toggleUserStatus', user)
 }
 
-const getScriptTypeLabel = (type: Script['type']) => {
+const getScriptTypeLabel = (script: Script) => {
+  const type = script.type
   if (type === 'Okww') return 'ok-ww'
   if (type === 'OkNte') return 'ok-nte'
+  // MFW 家族显示项目实际的名字（引导页读到 interface 时记进 Info.ProjectLabel），没记过才显示类型
+  if (isMaaFWFamily(type)) {
+    return (script.config as MaaFWScriptConfig).Info?.ProjectLabel?.trim() || type
+  }
   return type
 }
 
-const SCRIPT_TYPE_TAG_COLORS: Record<Script['type'], string> = {
+// MaaFW 与各特调的标签颜色取自特调注册表
+const SCRIPT_TYPE_TAG_COLORS: Record<Exclude<Script['type'], MaaFWFlavorType>, string> = {
   MAA: 'blue',
   SRC: 'purple',
   MaaEnd: 'blue',
-  M9A: 'cyan',
-  MaaFW: 'geekblue',
   Okww: 'blue',
   OkNte: 'blue',
   HSR: 'purple',
   BetterGI: 'gold',
   ZzzOd: 'volcano',
   BAAH: 'magenta',
-  MSS: 'orange',
   General: 'green',
 }
 
-const getScriptTypeTagColor = (type: Script['type']) => SCRIPT_TYPE_TAG_COLORS[type] ?? 'green'
+const getScriptTypeTagColor = (type: Script['type']) =>
+  isMaaFWFamily(type)
+    ? resolveMaaFWFlavor(type).typeTagColor
+    : (SCRIPT_TYPE_TAG_COLORS[type] ?? 'green')
 
 const truncateText = (text: string, maxLength: number = 10): string => {
   if (!text || text.length === 0) return '无'

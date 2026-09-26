@@ -5,6 +5,7 @@
       :script-name="scriptName"
       :is-edit="isEdit"
       script-edit-segment="okww"
+      :user-id="userId"
       config-label="配置 ok-ww"
       :config-loading="okwwConfigLoading"
       :config-active="showOkwwConfigMask"

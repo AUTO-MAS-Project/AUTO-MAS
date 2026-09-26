@@ -67,6 +67,7 @@ except ImportError:  # pragma: no cover - 只有很老的 binding 会走到
 from app.task.MaaFW.tools.core.agent_env import write_agent_compat_shims
 from app.task.MaaFW.tools.core.runner.environment import (
     describe_runtime_architecture_mismatch,
+    host_runtime_rid_dirs,
     project_maafw_runtime_path,
 )
 from app.task.MaaFW.tools.core.runtime_pool.host_environment import (
@@ -188,13 +189,6 @@ def agent_connect_budget_seconds(timeout: Any) -> float:
 ADB_READY_RETRY_COUNT = 180
 ADB_READY_RETRY_INTERVAL = 1.0
 ADB_COMMAND_TIMEOUT = 5
-AGENT_ENV_PATH_DIRS = (
-    (),
-    ("maafw",),
-    ("runtimes", "win-x64"),
-    ("libs",),
-    ("deps",),
-)
 # Agent 自举所需的最小依赖包（pip 发行名）
 # pip 健康检测超时（秒）
 # pip 安装/修复超时（秒）
@@ -568,6 +562,23 @@ def _assert_binding_origin() -> None:
         )
 
 
+def agent_env_path_dirs(project_path: Path) -> list[Path]:
+    """agent PATH 前置的项目目录（存在的才用）：根、``maafw/``、``runtimes/<本机 rid>``、
+    ``libs/``、``deps/``。
+
+    rid 按本机架构取（与 ``project_maafw_runtime_path`` 同一套判断），不写死 win-x64：
+    arm64 机器上带两种架构的发行包，agent 该看到的是 win-arm64。
+    """
+
+    return [
+        project_path,
+        project_path / "maafw",
+        *host_runtime_rid_dirs(project_path),
+        project_path / "libs",
+        project_path / "deps",
+    ]
+
+
 def _pool_native_runtime_path() -> Path | None:
     """项目没自带 DLL 时，宿主经 ``MAAFW_BINARY_PATH`` / ``AUTO_MAS_MAAFW_NATIVE_DIR`` 给的池内官方原生库目录。"""
 
@@ -600,7 +611,9 @@ def _ensure_maafw_global_init(
             )
         # 架构不符时 Library.open 必然失败，但原生层的报错定位不到「装错了包」。
         # 提前判断只是把同一个失败说清楚，不会挡下原本能跑的情况。
-        architecture_error = describe_runtime_architecture_mismatch(runtime_path)
+        architecture_error = describe_runtime_architecture_mismatch(
+            runtime_path, project_path=project_path
+        )
         if architecture_error:
             raise RuntimeError(architecture_error)
         _ensure_maafw_client_library_mode(runtime_path)
@@ -1084,6 +1097,41 @@ class MaaFWRunner:
             self.send_log("; ".join(parts))
         else:
             self.send_log(f"已连接 controller: {self.plan.controllerName}")
+        self._prime_first_screencap()
+
+    def _prime_first_screencap(self) -> None:
+        """连上之后、投递任何任务之前先截一张图，顺带把截图耗时告诉用户。
+
+        控制器没截过图时 ``cached_image`` 直接抛 ``Failed to get cached image.``、
+        ``resolution`` 返回 (0, 0)。有的项目的 agent 在 tasker sink 里于任务
+        Starting 时读这两个值做分辨率检查（M9A v4.10.0 读到 0 就 post_stop），
+        不先截一张，第一个任务一开始就被项目自己停掉。MFAAvalonia 连上后也固定先截
+        一次（``MaaProcessor.MeasureScreencapPerformanceAsync``）。这是本次连接的第
+        一张图：启动画面判定在它之后才开始截，重试轮次是新的 worker、会重新连接再截。
+        截不到只记一行，不拦运行——任务管线自己还会截。
+        """
+
+        controller = self.controller
+        if controller is None:
+            return
+        started_at = time.perf_counter()
+        try:
+            job = controller.post_screencap()
+            job.wait()
+            failed = bool(job.failed)
+        except Exception as exc:  # noqa: BLE001 - 预热截图失败不该挡住运行
+            self.send_log(f"首张截图失败，继续运行: {exc}")
+            return
+        elapsed_ms = (time.perf_counter() - started_at) * 1000
+        if failed:
+            self.send_log(f"首张截图失败（{elapsed_ms:.0f} ms），继续运行")
+            return
+        try:
+            width, height = controller.resolution
+        except Exception:  # noqa: BLE001 - 只影响日志里的尺寸
+            width, height = 0, 0
+        size = f"{width}×{height}" if width > 0 and height > 0 else "分辨率未知"
+        self.send_log(f"首张截图完成（{size}，{elapsed_ms:.0f} ms）")
 
     def _resolve_adb_device(self, device_config: MaaFWDeviceConfig) -> None:
         """Fill a missing ADB path through the active MaaFW Toolkit."""
@@ -1885,8 +1933,7 @@ class MaaFWRunner:
             if scripts_dir.is_dir():
                 path_items.append(str(scripts_dir))
         path_items.append(str(project_path))
-        for parts in AGENT_ENV_PATH_DIRS:
-            candidate = project_path.joinpath(*parts)
+        for candidate in agent_env_path_dirs(project_path):
             if candidate.is_dir():
                 path_items.append(str(candidate))
 

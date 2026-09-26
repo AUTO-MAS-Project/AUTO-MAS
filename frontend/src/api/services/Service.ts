@@ -80,6 +80,10 @@ import type { MaaFWInterfacePreviewIn } from '../models/MaaFWInterfacePreviewIn'
 import type { MaaFWInterfacePreviewOut } from '../models/MaaFWInterfacePreviewOut';
 import type { MaaFWProjectUpdateIn } from '../models/MaaFWProjectUpdateIn';
 import type { MaaFWProjectUpdateOut } from '../models/MaaFWProjectUpdateOut';
+import type { MaaFWShellInstanceImportIn } from '../models/MaaFWShellInstanceImportIn';
+import type { MaaFWShellInstanceImportOut } from '../models/MaaFWShellInstanceImportOut';
+import type { MaaFWShellInstancesIn } from '../models/MaaFWShellInstancesIn';
+import type { MaaFWShellInstancesOut } from '../models/MaaFWShellInstancesOut';
 import type { NoticeOut } from '../models/NoticeOut';
 import type { NotifyChannelsOut } from '../models/NotifyChannelsOut';
 import type { OutBase } from '../models/OutBase';
@@ -143,6 +147,8 @@ import type { ToolsUpdateIn } from '../models/ToolsUpdateIn';
 import type { UpdateCheckIn } from '../models/UpdateCheckIn';
 import type { UpdateCheckOut } from '../models/UpdateCheckOut';
 import type { UpdateDownloadSnapshot } from '../models/UpdateDownloadSnapshot';
+import type { UserConfigDirIn } from '../models/UserConfigDirIn';
+import type { UserConfigDirOut } from '../models/UserConfigDirOut';
 import type { UserCreateOut } from '../models/UserCreateOut';
 import type { UserDeleteIn } from '../models/UserDeleteIn';
 import type { UserGetIn } from '../models/UserGetIn';
@@ -618,6 +624,25 @@ export class Service {
         });
     }
     /**
+     * 获取用户配置目录
+     * @param requestBody
+     * @returns UserConfigDirOut Successful Response
+     * @throws ApiError
+     */
+    public static getUserConfigDirApiScriptsUserConfigDirPost(
+        requestBody: UserConfigDirIn,
+    ): CancelablePromise<UserConfigDirOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/user/config-dir',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
      * 添加用户
      * @param requestBody
      * @returns UserCreateOut Successful Response
@@ -1032,6 +1057,48 @@ export class Service {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/scripts/maafw/embedded/clone',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 列出项目目录里外壳（MFAAvalonia / MXU / MFW-PyQt6）保存的配置实例
+     * 新建脚本引导最后一步用：外壳里配好的每份实例都可以导入成一个用户。只读外壳文件。
+     * @param requestBody
+     * @returns MaaFWShellInstancesOut Successful Response
+     * @throws ApiError
+     */
+    public static listMaafwShellInstancesApiScriptsMaafwShellInstancesPost(
+        requestBody: MaaFWShellInstancesIn,
+    ): CancelablePromise<MaaFWShellInstancesOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/maafw/shell-instances',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 把选中的外壳配置实例导入成用户
+     * 每个实例建一个用户：用户名取实例名，任务队列与任务选项一起导入。
+     *
+     * 逐个实例独立处理，失败原因与当前项目里对不上而跳过的任务 / 选项写在各项结果里。
+     * @param requestBody
+     * @returns MaaFWShellInstanceImportOut Successful Response
+     * @throws ApiError
+     */
+    public static importMaafwShellInstancesApiScriptsMaafwShellInstancesImportPost(
+        requestBody: MaaFWShellInstanceImportIn,
+    ): CancelablePromise<MaaFWShellInstanceImportOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/maafw/shell-instances/import',
             body: requestBody,
             mediaType: 'application/json',
             errors: {

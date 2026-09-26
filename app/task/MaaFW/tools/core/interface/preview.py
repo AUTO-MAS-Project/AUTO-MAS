@@ -3,6 +3,8 @@ from __future__ import annotations
 import importlib.util
 import logging
 import os
+import re
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -348,22 +350,53 @@ def resolve_description(root_path: Path, description: str | None) -> str | None:
         return description
 
 
+_TITLE_SEGMENT_SEPARATOR = re.compile(r"[|｜]")
+_TRAILING_VERSION = re.compile(
+    r"\s+(?:版本号\s*[:：]?\s*)?v?\d+(?:\.\d+)+(?:[-+][\w.]+)?$", re.IGNORECASE
+)
+
+
 def interface_display_name(root_path: str | Path, interface: MaaFWInterface) -> str:
-    """给人看的项目名（不带版本）：label → name，``$project.label`` 这类 i18n 键按项目
-    语言文件翻译过再给。``title`` 是模型按「label 版本」拼出来的，版本另给。"""
+    """给人看的项目名（不带版本）：label → title → name，``$project.label`` 这类 i18n 键按项目
+    语言文件翻译过再给。与前端 ``resolveMaaFWProjectName`` 同一口径。
+
+    模型在没写 label 时把它补成 name，所以 label 与 name 相同就当没写，轮到 title。
+    ``title`` 常是窗口标题，带版本号和标语（「识宝小助手 Oᴗoಣ | 版本号:v1.13.3 | …」、
+    「MRA v3.2.0 | 舰R小助手」），只取第一段并去掉末尾的版本号；没写 title 时模型按
+    「label 版本」拼一个，去掉版本后就是 label。"""
 
     mapping = _load_i18n_mapping(Path(root_path).resolve(), interface)
-    for raw in (interface.label, interface.name):
+    label = interface.label if interface.label != interface.name else None
+    for raw in (label, interface.title, interface.name):
         if not isinstance(raw, str) or not raw.strip():
             continue
         translated = _resolve_i18n_value(raw, mapping)
         text = translated if isinstance(translated, str) else raw
-        # 「$project.label」这类 i18n 键翻不出来（没有 zh_cn 语言文件、缺键）就当没有标签，退回 name。
-        if text.startswith("$") and text == raw:
+        # 「$project.label」这类 i18n 键翻不出来（没有 zh_cn 语言文件、缺键）就当没有，往下一项退。
+        if text.strip().startswith("$"):
             continue
-        if text.strip():
-            return text.strip()
+        name = _TITLE_SEGMENT_SEPARATOR.split(text, maxsplit=1)[0].strip()
+        name = _TRAILING_VERSION.sub("", name).strip()
+        if name:
+            return name
     return ""
+
+
+def interface_text_translator(
+    root_path: str | Path, interface: MaaFWInterface
+) -> Callable[[str | None], str | None]:
+    """按项目简体中文语言文件翻 ``$键`` 文案的函数，与预览里的 label 同一口径。
+
+    语言文件只读一次；翻不出来（没有语言文件、缺键、不是 ``$`` 开头）原样返回。
+    """
+
+    mapping = _load_i18n_mapping(Path(root_path).resolve(), interface)
+
+    def translate(value: str | None) -> str | None:
+        translated = _resolve_i18n_value(value, mapping)
+        return translated if isinstance(translated, str) else value
+
+    return translate
 
 
 def _load_i18n_mapping(root_path: Path, interface: MaaFWInterface) -> dict[str, Any]:

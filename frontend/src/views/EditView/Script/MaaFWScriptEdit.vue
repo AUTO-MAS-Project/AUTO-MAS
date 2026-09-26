@@ -16,7 +16,7 @@
 
     <a-space size="middle">
       <DocLink :url="flavor.docUrl" />
-      <a-button size="large" class="cancel-button" @click="handleCancel">
+      <a-button size="large" class="cancel-button" :disabled="shellImporting" @click="handleCancel">
         <template #icon>
           <ArrowLeftOutlined />
         </template>
@@ -28,7 +28,7 @@
   <ConfigLockPanel :script-id="scriptId" content-class="script-edit-content">
     <a-card :title="pageTitle" :loading="pageLoading" class="config-card">
       <template #extra>
-        <a-tag :color="flavor.typeTagColor" class="type-tag">{{ flavor.typeTagLabel }}</a-tag>
+        <a-tag :color="flavor.typeTagColor" class="type-tag">{{ typeTagLabel }}</a-tag>
       </template>
 
       <a-steps
@@ -99,6 +99,7 @@
             :adb-control-strategy-items="adbControlStrategyItems"
             :selected-emulator-label="selectedEmulatorLabel"
             :interface-dependent-disabled="interfaceDependentDisabled"
+            :game-update-hint-key="flavor.gameUpdateHintKey"
             @change="handleChange"
             @controller-change="handleControllerChange"
             @resource-change="handleResourceChangeWithPackage"
@@ -140,8 +141,23 @@
         </div>
       </a-form>
 
+      <!-- 只在引导最后一步出现：外壳里配好的实例导入成用户，扫不到就整块不显示 -->
+      <ShellInstanceImportSection
+        v-if="isWizard && currentStep === stepItems.length - 1 && shellInstances.length > 0"
+        v-model:selected-ids="selectedShellInstanceIds"
+        :instances="shellInstances"
+        :disabled="shellImporting"
+      />
+
       <div v-if="isWizard" class="wizard-actions">
-        <a-button v-if="currentStep > 0" size="large" @click="currentStep -= 1"> 上一步 </a-button>
+        <a-button
+          v-if="currentStep > 0"
+          size="large"
+          :disabled="shellImporting"
+          @click="currentStep -= 1"
+        >
+          上一步
+        </a-button>
         <a-button
           v-if="currentStep < stepItems.length - 1"
           type="primary"
@@ -151,9 +167,15 @@
         >
           {{ t('edit.next') }}
         </a-button>
-        <a-button v-else type="primary" size="large" @click="handleCancel">{{
-          t('edit.done')
-        }}</a-button>
+        <a-button
+          v-else
+          type="primary"
+          size="large"
+          :loading="shellImporting"
+          @click="handleFinishWizard"
+        >
+          {{ finishButtonLabel }}
+        </a-button>
       </div>
     </a-card>
   </ConfigLockPanel>
@@ -163,7 +185,7 @@
 import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
 import DocLink from '@/components/DocLink.vue'
 import { useI18n } from 'vue-i18n'
-import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+import { computed, h, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import type { FormInstance } from 'ant-design-vue'
 import { message } from 'ant-design-vue'
@@ -197,7 +219,10 @@ import {
   useMaaFWControlConfig,
 } from '@/composables/useMaaFWScriptConfig'
 import { resolveAutoUpdateMode } from '@/composables/useMaaFWProjectUpdate'
-import { useMaaFWFlavor } from '@/composables/useMaaFWFlavor'
+import { maafwDefaultScriptNames, useMaaFWFlavor } from '@/composables/useMaaFWFlavor'
+import { useMaaFWShellInstanceApi } from '@/composables/useMaaFWShellInstanceApi'
+import { resolveMaaFWProjectName } from '@/utils/maafwProjectName'
+import type { MaaFWShellInstanceItem } from '@/api'
 import type {
   MaaFWInterfacePreviewData,
   MaaFWScriptConfig,
@@ -208,6 +233,13 @@ import BasicInfoSection, { type MaaFWEnvOutcome } from './MaaFWScriptEdit/BasicI
 import ControlConfigSection from './MaaFWScriptEdit/ControlConfigSection.vue'
 import UpdateSettingsSection from './MaaFWScriptEdit/UpdateSettingsSection.vue'
 import RunConfigSection from './MaaFWScriptEdit/RunConfigSection.vue'
+import ShellInstanceImportSection from './MaaFWScriptEdit/ShellInstanceImportSection.vue'
+import {
+  buildShellImportReportLines,
+  shellImportItemName,
+  summarizeShellImport,
+  type ShellImportSummary,
+} from './MaaFWScriptEdit/shellInstanceImport'
 
 const { t } = useI18n()
 
@@ -228,6 +260,7 @@ const router = useRouter()
 const { getScript, updateScript, previewMaaFWInterface, prepareMaaFWAgentEnv } = useScriptApi()
 const { checkMaaFWUpdate, applyMaaFWUpdate } = useMaaFWUpdateApi()
 const { getEmbeddedStatus, reimportEmbedded } = useMaaFWEmbeddedApi()
+const { listShellInstances, importShellInstances } = useMaaFWShellInstanceApi()
 
 const scriptId = route.params.id as string
 
@@ -343,20 +376,51 @@ const isAutoUpdateDisabled = computed(() =>
   Boolean(previewData.value && !previewData.value.project.version)
 )
 
+// 项目实际的名字（「识宝小助手 Oᴗoಣ」而不是整条窗口标题或 MAA_bbb）：读到 interface 就按它算，
+// 没读到时用上次记下的 Info.ProjectLabel
+const projectName = computed(
+  () =>
+    (previewData.value ? resolveMaaFWProjectName(previewData.value.project) : '') ||
+    maafwConfig.Info.ProjectLabel?.trim() ||
+    ''
+)
+
 const previewProjectTitle = computed(() => {
   if (!previewData.value) return '-'
-  const project = previewData.value.project
-  return project.title || project.label || project.name
+  return projectName.value || previewData.value.project.name
 })
 
-const projectDisplayName = computed(() => {
-  const candidates = [
-    previewData.value ? previewProjectTitle.value : '',
-    maafwConfig.Info.ProjectLabel,
-    maafwConfig.Info.Name,
-  ]
-  return candidates.find(value => typeof value === 'string' && value.trim())?.trim() || 'MFW'
-})
+const projectDisplayName = computed(
+  () => projectName.value || maafwConfig.Info.Name?.trim() || 'MFW'
+)
+
+// 卡片右上角的类型标签：有项目名就显示项目名，没有才显示 MFW / M9A
+const typeTagLabel = computed(() => projectName.value || flavor.value.typeTagLabel)
+
+// 新建脚本时后端给的默认名（MaaFWConfig 及各特调配置类的 DEFAULT_SCRIPT_NAME，登记在特调注册表）
+const DEFAULT_SCRIPT_NAMES = maafwDefaultScriptNames()
+
+// 读到 interface 后把项目名记进 Info.ProjectLabel（脚本列表的类型标签用它）；
+// 脚本名还是默认名、空、或是上次自动起的项目名时，一并改成项目名，用户自己起的名字不动。
+// 初始化期间 handleChange 不落盘，由 onMounted 在初始化结束后再调一次。
+const syncProjectName = async () => {
+  if (isInitializing.value) return
+  const name = previewData.value ? resolveMaaFWProjectName(previewData.value.project) : ''
+  if (!name) return
+  const previousLabel = maafwConfig.Info.ProjectLabel?.trim() ?? ''
+  const currentName = maafwConfig.Info.Name.trim()
+  const autoNamed =
+    !currentName || DEFAULT_SCRIPT_NAMES.has(currentName) || currentName === previousLabel
+  if (autoNamed && currentName !== name) {
+    maafwConfig.Info.Name = name
+    formData.name = name
+    await handleChange('Info', 'Name', name)
+  }
+  if (previousLabel !== name) {
+    maafwConfig.Info.ProjectLabel = name
+    await handleChange('Info', 'ProjectLabel', name)
+  }
+}
 
 // 通用 MaaFW 用「<项目名> 项目配置 / 项目引导」；特调类型（M9A）用它自己那句标题
 const pageTitle = computed(() =>
@@ -471,6 +535,7 @@ const runPreview = async (options: { forceEnv?: boolean } = {}) => {
     previewData.value = response.data as MaaFWInterfacePreviewData
     await syncControllerResourceSelection(true)
     await prunePeriodTaskSelections()
+    await syncProjectName()
     // 读到 interface 就把运行环境备好。四个调用方（读取按钮 / 选目录 /
     // 路径变更 / 页面加载）都会经过这里，放在 runPreview 里才不会漏。
     void runAgentEnvPrepare(path, options.forceEnv === true)
@@ -549,7 +614,10 @@ const ensureUpdateSubscription = () => {
   )
 }
 
+// 页面已卸载：还在跑的异步流程（外壳配置导入）结束时不再跳转
+let pageUnmounted = false
 onBeforeUnmount(() => {
+  pageUnmounted = true
   if (envSubscriptionId) {
     unsubscribe(envSubscriptionId)
     envSubscriptionId = null
@@ -791,6 +859,122 @@ const handleCancel = () => {
   router.push('/scripts')
 }
 
+// 用户页路由按脚本当前类型走对应那条线（/users/add/maafw、/m9a、/mss ……）
+const userRouteSuffix = () => flavor.value.routeSuffix
+const addUserPath = () => `/scripts/${scriptId}/users/add/${userRouteSuffix()}`
+
+// 引导最后一步直接去建第一个用户；先等排队中的保存写完，用户页读到的才是刚配好的脚本
+const handleCreateFirstUser = async () => {
+  await enqueue(async () => undefined)
+  router.push(addUserPath())
+}
+
+// ---- 引导最后一步：外壳（MFAAvalonia / MXU / MFW-PyQt6）配置导入成用户 ----
+// 只在引导形态、进入最后一步时扫描；扫不到或扫描失败都只记日志，区块不显示。
+const shellInstances = ref<MaaFWShellInstanceItem[]>([])
+const selectedShellInstanceIds = ref<string[]>([])
+const shellImporting = ref(false)
+
+const loadShellInstances = async () => {
+  try {
+    const list = await listShellInstances(scriptId)
+    // 回到这一步时保留用户之前的勾选；新出现的实例默认勾上
+    const previous = new Set(shellInstances.value.map(item => item.id))
+    const selected = new Set(selectedShellInstanceIds.value)
+    shellInstances.value = list
+    selectedShellInstanceIds.value = list
+      .filter(item => !previous.has(item.id) || selected.has(item.id))
+      .map(item => item.id)
+  } catch (error) {
+    shellInstances.value = []
+    selectedShellInstanceIds.value = []
+    logger.warn(`扫描外壳配置失败: ${error instanceof Error ? error.message : String(error)}`)
+  }
+}
+
+watch(
+  () => isWizard.value && currentStep.value === stepItems.length - 1,
+  onLastStep => {
+    if (onLastStep) void loadShellInstances()
+  }
+)
+
+const finishButtonLabel = computed(() => {
+  if (shellImporting.value) return t('edit.shellImporting')
+  const count = selectedShellInstanceIds.value.length
+  return count > 0 ? t('edit.shellImportButton', { count }) : t('edit.createFirstUser')
+})
+
+// 导入要一会儿，结束时用户可能已经离开了这一页（面包屑等）：那时只弹提示、不跳转，
+// 免得把人从别的页面拽回来（pageUnmounted 在卸载钩子里置位）
+const stillOnWizard = () =>
+  !pageUnmounted && route.name === 'MaaFWSetupWizard' && route.params.id === scriptId
+const leaveWizardTo = (path: string) => {
+  if (stillOnWizard()) router.push(path)
+}
+
+// 勾了实例就导入，一个都没勾就是原来的「创建第一个用户！」。导入失败不能把用户卡在引导页：
+// 一个用户都没建成就报错并退回建空用户；部分失败 / 导不全合并成一条提示，照常往下走。
+const handleFinishWizard = async () => {
+  const instanceIds = [...selectedShellInstanceIds.value]
+  if (instanceIds.length === 0) {
+    await handleCreateFirstUser()
+    return
+  }
+  // 结果项里没带实例名时（找不到的实例）按列表里的名字写，都没有才退回 ID
+  const instanceNames = new Map(shellInstances.value.map(item => [item.id, item.name]))
+  shellImporting.value = true
+  try {
+    await enqueue(async () => undefined)
+    let summary: ShellImportSummary
+    try {
+      summary = summarizeShellImport(await importShellInstances(scriptId, instanceIds))
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error)
+      logger.error(`导入外壳配置失败: ${reason}`)
+      message.error(t('edit.shellImportAllFailedWithReason', { reason }))
+      leaveWizardTo(addUserPath())
+      return
+    }
+    for (const item of [...summary.failed, ...summary.partial]) {
+      logger.warn(
+        `导入外壳配置「${shellImportItemName(item, instanceNames)}」：` +
+          (item.error ? `失败 ${item.error}` : `跳过 ${(item.skipped ?? []).join('、')}`)
+      )
+    }
+    const lines = buildShellImportReportLines(summary, t, instanceNames)
+    if (summary.created.length === 0) {
+      message.error({
+        content: h(
+          'div',
+          [t('edit.shellImportAllFailed'), ...lines].map(line => h('div', line))
+        ),
+        duration: 8,
+      })
+      leaveWizardTo(addUserPath())
+      return
+    }
+    if (lines.length > 0) {
+      const notify = summary.failed.length > 0 ? message.error : message.warning
+      notify({
+        content: h(
+          'div',
+          lines.map(line => h('div', line))
+        ),
+        duration: 8,
+      })
+    }
+    const [only] = summary.created
+    leaveWizardTo(
+      summary.created.length === 1 && only.userId
+        ? `/scripts/${scriptId}/users/${only.userId}/edit/${userRouteSuffix()}`
+        : '/scripts'
+    )
+  } finally {
+    shellImporting.value = false
+  }
+}
+
 onMounted(async () => {
   pageLoading.value = true
   let scriptLoaded = false
@@ -830,6 +1014,7 @@ onMounted(async () => {
   // 放在 isInitializing 复位之后：handleChange 在初始化期间不落盘，
   // 预填要真正写进脚本配置而不是只改本地草稿。
   if (scriptLoaded) {
+    await syncProjectName()
     await prefillMirrorChyanCdk()
     await syncGamePackageName(false)
   }

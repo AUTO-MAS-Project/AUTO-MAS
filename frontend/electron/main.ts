@@ -38,6 +38,12 @@ import { decideRendererRecovery } from './rendererCrashRecovery'
 import { getLogger, initializeLogger } from './services/logger'
 import { readLogContent, readLogIncrement } from './services/logFileReader'
 import { createMaaEndIssueReport } from './services/maaEndIssueReportService'
+import {
+  createM9AIssueReport,
+  createMaaFWIssueReport,
+  listMaaFWIssueReportScripts,
+  maafwIssueReportFileNamePrefix,
+} from './services/maafwIssueReportService'
 import { createOkwwIssueReport } from './services/okwwIssueReportService'
 import { createOkNteIssueReport } from './services/okNteIssueReportService'
 import { createZzzOdIssueReport } from './services/zzzOdIssueReportService'
@@ -519,9 +525,11 @@ async function forceQuitAfterRendererTimeout(reason: string): Promise<void> {
       coordinatedQuit,
       forceQuitInProgress,
       quitRequestInFlight,
+      relaunchAfterQuit,
     })
     forceQuitInProgress = retryableState.forceQuitInProgress
     quitRequestInFlight = retryableState.quitRequestInFlight
+    relaunchAfterQuit = retryableState.relaunchAfterQuit
     if (mainWindow && !mainWindow.isDestroyed()) {
       showMainWindow()
     } else if (app.isReady()) {
@@ -1380,22 +1388,35 @@ ipcMain.handle('log:export', async () => {
   }
 })
 
+interface IssueReportResult {
+  success: boolean
+  message?: string
+  zipPath?: string
+  error?: string
+}
+
+// scriptId 只有按脚本导出的问题包（MFW）才用，其余导出函数不接这个参数
 function registerIssueReportExporter(
   ipcChannel: string,
   title: string,
-  fileNamePrefix: string,
+  fileNamePrefix: string | ((appRoot: string, scriptId: string) => string),
   create: (
     appRoot: string,
-    zipPath: string
-  ) => { success: boolean; message?: string; zipPath?: string; error?: string }
+    zipPath: string,
+    scriptId: string
+  ) => IssueReportResult | Promise<IssueReportResult>
 ): void {
-  ipcMain.handle(ipcChannel, async () => {
+  ipcMain.handle(ipcChannel, async (_event, rawScriptId?: unknown) => {
     try {
       if (!mainWindow) return { success: false, error: '窗口未初始化' }
 
+      const scriptId = typeof rawScriptId === 'string' ? rawScriptId : ''
+      const appRoot = getAppRoot()
+      const prefix =
+        typeof fileNamePrefix === 'function' ? fileNamePrefix(appRoot, scriptId) : fileNamePrefix
       const result = await dialog.showSaveDialog(mainWindow, {
         title,
-        defaultPath: `${fileNamePrefix}-${new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)}.zip`,
+        defaultPath: `${prefix}-${new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)}.zip`,
         filters: [{ name: 'ZIP文件', extensions: ['zip'] }],
       })
 
@@ -1403,7 +1424,7 @@ function registerIssueReportExporter(
         return { success: false, error: '用户取消' }
       }
 
-      return create(getAppRoot(), result.filePath)
+      return await create(appRoot, result.filePath, scriptId)
     } catch (error) {
       logger.error(`${title}失败:`, error)
       return {
@@ -1438,6 +1459,25 @@ registerIssueReportExporter(
   'ZZZ-OD-logs',
   createZzzOdIssueReport
 )
+registerIssueReportExporter(
+  'maafw:exportIssueReport',
+  '导出 MFW 问题包',
+  maafwIssueReportFileNamePrefix,
+  createMaaFWIssueReport
+)
+registerIssueReportExporter(
+  'm9a:exportIssueReport',
+  '导出 M9A 问题包',
+  'M9A-logs',
+  createM9AIssueReport
+)
+
+ipcMain.handle('maafw:listIssueReportScripts', (_event, configTypes?: unknown) => {
+  const types = Array.isArray(configTypes)
+    ? configTypes.filter((type): type is string => typeof type === 'string')
+    : []
+  return listMaaFWIssueReportScripts(getAppRoot(), types)
+})
 
 ipcMain.handle('data:backup', async () => {
   let partialPath: string | undefined
@@ -2043,7 +2083,7 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
     if (canElectronExitImmediately({ coordinatedQuit, forceQuitInProgress, quitRequestInFlight })) {
       app.quit()
-    } else if (!forceQuitInProgress) {
+    } else if (!forceQuitInProgress && !quitRequestInFlight) {
       void forceQuitAfterRendererTimeout('所有 renderer 窗口意外关闭')
     }
   }

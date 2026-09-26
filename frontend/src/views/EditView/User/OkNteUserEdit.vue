@@ -5,6 +5,7 @@
       :script-name="scriptName"
       :is-edit="isEdit"
       script-edit-segment="oknte"
+      :user-id="activeUserId"
       config-label="配置 OK-NTE"
       :config-loading="oknteConfigLoading"
       :config-active="showOknteConfigMask"

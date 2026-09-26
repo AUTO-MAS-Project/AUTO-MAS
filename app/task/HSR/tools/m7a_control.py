@@ -128,7 +128,7 @@ class HSRM7AControl:
         """执行一条 M7A 命令并同步调度台日志。"""
 
         await self._account_switcher.wait_before_external_script("M7A", user_name)
-        self._append_log(f"用户「{user_name}」开始执行 M7A {module_name}（{command}）")
+        self._append_log(f"用户「{user_name}」开始执行三月七{module_name}（{command}）")
         runtime = getattr(self._account_switcher, "runtime", None)
         if runtime is not None:
             runtime.cloud_self_browser_detected = False
@@ -137,20 +137,20 @@ class HSRM7AControl:
             # 输出回调已终止了三月七；这不是云本身的问题，按普通失败补跑，
             # 补跑前 ensure_cloud_browser 会先清掉三月七自建的浏览器、重起 MAS 的。
             self._append_log(
-                f"用户「{user_name}」M7A {module_name}（{command}）已终止：三月七试图自建浏览器"
+                f"用户「{user_name}」三月七{module_name}（{command}）已终止：三月七试图自建浏览器"
             )
             raise HSRRetryableTaskError(
-                f"用户「{user_name}」模块「{module_name}」M7A 命令「{command}」："
+                f"用户「{user_name}」模块「{module_name}」三月七命令「{command}」："
                 "三月七没找到 MAS 托管的云浏览器、试图自己新建，已终止，补跑前重新启动",
                 result=result,
             )
         if getattr(result, "success", False):
             self._append_log(
-                f"用户「{user_name}」M7A {module_name}（{command}）执行完成"
+                f"用户「{user_name}」三月七{module_name}（{command}）执行完成"
             )
         else:
             self._append_log(
-                f"用户「{user_name}」M7A {module_name}（{command}）执行失败"
+                f"用户「{user_name}」三月七{module_name}（{command}）执行失败"
             )
             self._raise_if_cloud_non_retryable(result, user_name, module_name, command)
         return result
@@ -169,7 +169,7 @@ class HSRM7AControl:
         if marker is None:
             return
         raise HSRNonRetryableTaskError(
-            f"用户「{user_name}」模块「{module_name}」M7A 命令「{command}」"
+            f"用户「{user_name}」模块「{module_name}」三月七命令「{command}」"
             f"云·星穹铁道失败（{marker}），不再补跑："
             f"{external_result_failure_summary(result)}",
             result=result,
@@ -202,7 +202,7 @@ class HSRM7AControl:
         )
         current_config = m7a.load_m7a_yaml(config_path.read_text(encoding="utf-8-sig"))
         if not isinstance(current_config, dict):
-            raise ValueError(f"M7A config.yaml 顶层必须是对象: {config_path}")
+            raise ValueError(f"三月七 config.yaml 顶层必须是对象: {config_path}")
         patched_config = m7a.merge_whitelist(
             current_config,
             effective_patch,
@@ -211,7 +211,7 @@ class HSRM7AControl:
         )
         write_file(config_path, patched_config)
         logger.info(
-            f"M7A config.yaml 已写入 MAS 模板字段：{sorted(effective_patch.keys())}"
+            f"三月七 config.yaml 已写入 MAS 模板字段：{sorted(effective_patch.keys())}"
         )
 
     async def execute_m7a_daily(
@@ -255,7 +255,7 @@ class HSRM7AControl:
             if not result.success:
                 raise HSRRetryableTaskError(
                     f"用户「{user_name}」模块「{module.name}」"
-                    f" M7A 命令「{command}」执行失败："
+                    f"三月七命令「{command}」执行失败："
                     f"{external_result_failure_summary(result)}",
                     result=result,
                 )
@@ -286,7 +286,7 @@ class HSRM7AControl:
 
         async def run_m7a_patched():
             if not m7a_config_path.exists():
-                raise RuntimeError(f"M7A config.yaml 不存在: {m7a_config_path}")
+                raise RuntimeError(f"三月七 config.yaml 不存在: {m7a_config_path}")
 
             platform_patch = await self.ensure_platform_ready()
             self.write_m7a_patch(
@@ -362,7 +362,7 @@ class HSRM7AControl:
                 module_name=module.name,
                 script="M7A",
                 description=(
-                    f"M7A routine：主关卡={'已配置' if daily_main_stage else '使用原生动态配置'}，"
+                    f"三月七 routine：主关卡={'已配置' if daily_main_stage else '使用原生动态配置'}，"
                     f"历战余响本周尝试={'是' if daily_eow_enabled else '否'}"
                 ),
                 run=run_m7a_daily,
@@ -396,7 +396,7 @@ class HSRM7AControl:
                 ),
                 whitelist=m7a.M7A_RECEIVE_REWARDS_PATCH_WHITELIST,
                 commands=list(module.m7a_tasks),
-                description=f"M7A routine：{module.description}",
+                description=f"三月七 routine：{module.description}",
             )
 
         if module.key == "DivergentUniverse":
@@ -416,7 +416,7 @@ class HSRM7AControl:
                 ),
                 whitelist=m7a.M7A_COSMIC_STRIFE_PATCH_WHITELIST,
                 commands=list(module.m7a_tasks),
-                description=f"M7A divergent：{module.description}",
+                description=f"三月七 divergent：{module.description}",
                 on_success=(
                     lambda result, uid=uid, user_name=user_name, module_name=module.name, module_key=module.key: (
                         _on_m7a_weekly_success(
@@ -450,7 +450,7 @@ class HSRM7AControl:
                 ),
                 whitelist=m7a.M7A_COSMIC_STRIFE_PATCH_WHITELIST,
                 commands=list(module.m7a_tasks),
-                description=f"M7A currencywars：{module.description}",
+                description=f"三月七 currencywars：{module.description}",
                 on_success=(
                     lambda result, uid=uid, user_name=user_name, module_name=module.name, module_key=module.key: (
                         _on_m7a_weekly_success(

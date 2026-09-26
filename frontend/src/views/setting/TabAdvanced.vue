@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
-import { DownloadOutlined, QuestionCircleOutlined } from '@ant-design/icons-vue'
+import { DownOutlined, DownloadOutlined, QuestionCircleOutlined } from '@ant-design/icons-vue'
 import { message } from 'ant-design-vue'
 import { computed, onMounted, ref } from 'vue'
 import type { RuntimeLaunchModeSetting, RuntimeLaunchModeState } from '@/types/electron'
@@ -9,6 +9,13 @@ import { useMaaEndIssueReport } from '@/composables/useMaaEndIssueReport'
 import { useOkwwIssueReport } from '@/composables/useOkwwIssueReport'
 import { useOkNteIssueReport } from '@/composables/useOkNteIssueReport'
 import { useZzzOdIssueReport } from '@/composables/useZzzOdIssueReport'
+import { useMaaFWIssueReport } from '@/composables/useMaaFWIssueReport'
+import { useM9AIssueReport } from '@/composables/useM9AIssueReport'
+import {
+  maafwScriptTypeByConfigType,
+  resolveMaaFWFlavor,
+  type MaaFWFlavor,
+} from '@/composables/useMaaFWFlavor'
 
 const { t } = useI18n()
 
@@ -23,6 +30,36 @@ const { exporting: exportingMaaEndLogs, exportMaaEndIssueReport } = useMaaEndIss
 const { exporting: exportingOkwwLogs, exportOkwwIssueReport } = useOkwwIssueReport(logger)
 const { exporting: exportingOkNteLogs, exportOkNteIssueReport } = useOkNteIssueReport(logger)
 const { exporting: exportingZzzOdLogs, exportZzzOdIssueReport } = useZzzOdIssueReport(logger)
+const { exporting: exportingMaaFWLogs, exportMaaFWIssueReport } = useMaaFWIssueReport(logger)
+const { exporting: exportingM9ALogs, exportM9AIssueReport } = useM9AIssueReport(logger)
+
+// MFW 问题包按脚本导出：下拉里列出 MaaFW 与各特调的脚本，点哪个导哪个
+const maafwScriptTypes = maafwScriptTypeByConfigType()
+const maafwReportScripts = ref<Array<{ uid: string; name: string; flavor: MaaFWFlavor }>>([])
+
+const loadMaaFWReportScripts = async () => {
+  try {
+    const scripts = await window.electronAPI?.listMaaFWIssueReportScripts?.(
+      Object.keys(maafwScriptTypes)
+    )
+    maafwReportScripts.value = (scripts ?? []).map(script => ({
+      uid: script.uid,
+      name: script.name,
+      flavor: resolveMaaFWFlavor(maafwScriptTypes[script.type]),
+    }))
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`读取 MFW 脚本列表失败: ${errorMsg}`)
+  }
+}
+
+const handleMaaFWMenuOpenChange = (open: boolean) => {
+  if (open) void loadMaaFWReportScripts()
+}
+
+const handleMaaFWMenuClick = ({ key }: { key: string | number }) => {
+  void exportMaaFWIssueReport(String(key))
+}
 
 // Runtime 灰度开关：持久化设置 + 当前生效值（重启后生效）
 const runtimeLaunchMode = ref<RuntimeLaunchModeSetting>('auto')
@@ -85,6 +122,7 @@ const handleRuntimeLaunchModeChange = async (value: unknown) => {
 
 onMounted(() => {
   void loadRuntimeLaunchMode()
+  void loadMaaFWReportScripts()
 })
 
 const exportLogsZip = async () => {
@@ -213,6 +251,38 @@ const exportDataBackup = async () => {
               </template>
               {{ t('setting.advanced.exportZzzOd') }}
             </a-button>
+            <a-dropdown
+              :trigger="['click']"
+              :disabled="exportingMaaFWLogs"
+              @open-change="handleMaaFWMenuOpenChange"
+            >
+              <a-button type="primary" :loading="exportingMaaFWLogs">
+                <template #icon>
+                  <DownloadOutlined />
+                </template>
+                {{ t('setting.advanced.exportMaaFW') }}
+                <DownOutlined />
+              </a-button>
+              <template #overlay>
+                <a-menu @click="handleMaaFWMenuClick">
+                  <a-menu-item v-for="script in maafwReportScripts" :key="script.uid">
+                    {{ script.name }}
+                    <a-tag :color="script.flavor.typeTagColor" class="maafw-report-tag">
+                      {{ script.flavor.typeTagLabel }}
+                    </a-tag>
+                  </a-menu-item>
+                  <a-menu-item v-if="maafwReportScripts.length === 0" key="" disabled>
+                    {{ t('setting.advanced.exportMaaFWEmpty') }}
+                  </a-menu-item>
+                </a-menu>
+              </template>
+            </a-dropdown>
+            <a-button type="primary" :loading="exportingM9ALogs" @click="exportM9AIssueReport">
+              <template #icon>
+                <DownloadOutlined />
+              </template>
+              {{ t('setting.advanced.exportM9A') }}
+            </a-button>
           </a-space>
         </a-col>
       </a-row>
@@ -283,6 +353,11 @@ const exportDataBackup = async () => {
   line-height: 1.6;
   flex: 1 1 360px;
   min-width: 240px;
+}
+
+.maafw-report-tag {
+  margin-inline-start: 8px;
+  margin-inline-end: 0;
 }
 
 .runtime-mode-hint {

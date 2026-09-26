@@ -32,6 +32,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Literal, Mapping
 
+from ..task_mapping import engine_label
+
 DroppedOverrideReason = Literal["unknown", "type"]
 
 
@@ -45,7 +47,7 @@ class DroppedOverride:
 
     def describe(self) -> str:
         if self.reason == "unknown":
-            return f"{self.key}：当前原生配置没有该字段"
+            return f"{self.key}：当前原生配置没有该字段，或该字段已不由 MAS 托管"
         return f"{self.key}：保存的值类型与原生配置不一致"
 
     def asdict(self) -> dict[str, Any]:
@@ -108,7 +110,7 @@ def log_dropped_overrides(
         return
     detail = "；".join(item.describe() for item in dropped)
     logger.warning(
-        f"{engine} {module_key} 忽略 {len(dropped)} 项失效的 MAS 覆盖配置，"
+        f"{engine_label(engine, left=False, right=False)} {module_key} 忽略 {len(dropped)} 项失效的 MAS 覆盖配置，"
         f"已按原生配置运行：{detail}"
     )
 

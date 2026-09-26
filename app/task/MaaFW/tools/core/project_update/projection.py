@@ -63,6 +63,9 @@ MAX_REPORT_ITEMS = 128
 
 # 白名单之外的顶层条目：剩余部分不超过这个大小就留下（数据文件级别），再大就是外壳运行时。
 UNDECLARED_KEEP_LIMIT = 64 * 1024 * 1024
+# 超过上面上限的顶层目录，只有在这个深度以内（0 = 直接放在目录里）有 wheel / get-pip.py
+# 才按离线依赖目录整棵带走，见 ``_looks_like_offline_dependency_dir``。
+OFFLINE_DEPENDENCY_MAX_DEPTH = 1
 # 根目录上没声明的这些后缀只可能是外壳或外壳的运行时（m9a.exe、MaaEnd.exe、qt6core.dll…）。
 UNDECLARED_BINARY_SUFFIXES = {
     ".exe",
@@ -1623,6 +1626,12 @@ def _looks_like_frozen_python_package_dir(view: _FileView, directory: Path) -> b
 def _looks_like_offline_dependency_dir(view: _FileView, directory: Path) -> bool:
     """顶层目录里有 ``*.whl`` 或 ``get-pip.py``：项目的离线依赖包（deps/、wheels/ 之类）。
 
+    只数直接放在目录里、或往下一层子目录里的（深度 ≤ 1）：语料里真正的离线依赖目录
+    wheel 都在这两层（MHXY、MaaGumballs 等是 ``deps/*.whl``，MaaStarResonance 另有
+    ``deps/<子目录>/*.whl``）；更深处的是别的东西顺带解压出来的——M9A 自更新留下的
+    ``temp_res/resource_v3.22.0_extracted/deps/*.whl`` 曾让整个 185 MB 的 ``temp_res/``
+    绕过 64 MB 上限进了副本。
+
     CPython 自带的 wheel 不算：``ensurepip/_bundled``（venv / 安装器附带 pip），以及
     python.org 安装器默认装上的测试套件 ``Lib/test/**``（``wheeldata``、
     ``test_importlib/data`` 里都有 .whl）。目录本身就是一个 Python 解释器
@@ -1634,6 +1643,7 @@ def _looks_like_offline_dependency_dir(view: _FileView, directory: Path) -> bool
         return False
     return any(
         (path.suffix.casefold() == ".whl" or path.name.casefold() == "get-pip.py")
+        and len(path.relative_to(directory).parts) <= OFFLINE_DEPENDENCY_MAX_DEPTH + 1
         and not _is_cpython_bundled_file(path)
         for path in view.walk_files(directory)
     )
@@ -1804,7 +1814,9 @@ def _bundled_native_runtime_dir(
     查找逻辑与 runner 同一套（``project_maafw_runtime_path``：先 ``maafw/``，再
     ``runtimes/<rid>/native``，再有界搜索），叠加视图里先看包、再看项目。MFAAvalonia
     布局下找到的是 ``runtimes/win-x64/native``，那里除了 MaaFramework 还有外壳自己的
-    原生库；整目录带走，几十 MB，换来的是 runner 用的就是发行包里那份库。
+    原生库；整目录带走，几十 MB，换来的是 runner 用的就是发行包里那份库。来源同时带
+    好几种架构（``win-arm64`` + ``win-x64``）时选本机那一种，其余照旧当外壳运行时剔掉；
+    本机那一种不在才退回别的（运行前会按架构不符报出来）。
     """
 
     from app.task.MaaFW.tools.core.runner.environment import (

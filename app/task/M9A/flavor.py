@@ -18,30 +18,47 @@
 
 """M9A 特调：MaaFW 引擎之上唯一的运行期专项逻辑，以及"这是不是 M9A 项目"的判据。
 
-运行前把用户勾选的任务列表装饰一遍：队列头加「启动游戏」（entry ``StartUp``），脚本资源
-为官服且用户填了 ``Info.Account`` 时紧接着加「切换账号」（entry ``SwitchAccount``，账号填进
-它唯一的 input 选项），队列尾加「关闭游戏」（entry ``Close1999``）。队列里已经有的不重复加、
-也不改用户自己配的选项。除此之外 M9A 与通用 MaaFW 没有任何运行期差别。
+「启动游戏」（entry ``StartUp``）、「切换账号」（entry ``SwitchAccount``）、「关闭游戏」
+（entry ``Close1999``）由 MAS 全权控制（规则见 ``managed.py``）。运行前先把勾选列表里这三类
+全部剔掉，再按固定顺序补：启动放队首；脚本资源为官服且有账号时切号紧跟启动，账号填进它唯一的
+input 选项；关闭放队尾。用户排的顺序不影响这三项。队列里有多个有效切号的用户拒绝运行。
 
 按 entry 而不是按任务名找：任务名会随 M9A 的版本与语言变，entry 是它的 pipeline 入口，稳定。
+
+另实现了引擎的两个可选钩子：``sanitize_task_snapshot``（写用户任务快照前按同一规则整理）与
+``ensure_game_updated``（脚本开了游戏更新时，模拟器启动后比对官服客户端版本，落后就提示或
+下载安装，``game_update.py``）。除此之外 M9A 与通用 MaaFW 没有任何运行期差别。
 """
 
 from __future__ import annotations
 
 import re
-from collections.abc import Callable
-from typing import Any
+from collections.abc import Awaitable, Callable
+from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
+from app.task.M9A.managed import (
+    CLOSE_ENTRY,
+    MANAGED_ENTRIES,
+    OFFICIAL_RESOURCE_NAME,
+    STARTUP_ENTRY,
+    SWITCH_ACCOUNT_ENTRY,
+    M9ASplitRequiredError,
+    effective_switch_accounts,
+    first_text_value,
+    settle_snapshot,
+    settle_user_info,
+    split_message,
+)
 from app.task.MaaFW.tools.core.interface.models import (
     MaaFWInterface,
     resolve_task_instance_name,
 )
 
+if TYPE_CHECKING:
+    from app.utils.game_apk import GameUpdateResult
+
 TYPE_KEY = "M9A"
-STARTUP_ENTRY = "StartUp"
-SWITCH_ACCOUNT_ENTRY = "SwitchAccount"
-CLOSE_ENTRY = "Close1999"
-OFFICIAL_RESOURCE_NAME = "官服"
 
 # 旧版 M9A 专项按名字记任务；名字随版本变过（「每日心相」→「每日心相（意志解析）」），
 # 迁移时按 entry 反查。这张表只服务迁移与无 interface 降级，运行期不用。
@@ -119,51 +136,62 @@ class M9AFlavor:
             if send_log is not None:
                 send_log(message)
 
-        if not task_ids:
-            # 一个任务都没勾：不补首尾，免得白白启动再关闭一次游戏；空队列交给引擎原有处理。
-            return list(task_ids), dict(task_options)
+        entry_of, account_of = _entry_and_account_readers(interface_model)
+        official = str(resource_name or "").strip() == OFFICIAL_RESOURCE_NAME
+        queued_accounts = effective_switch_accounts(
+            task_ids, task_options, entry_of=entry_of, account_of=account_of
+        )
+        if official and len(queued_accounts) >= 2:
+            # 一个用户对应一个账号：MAS 没法替用户决定这一轮切到哪个号，整个用户不跑
+            message = split_message(queued_accounts)
+            log(f"[M9A] {message}")
+            raise M9ASplitRequiredError(message)
 
-        valid_names = {task.name for task in interface_model.task}
-        present = {
-            resolve_task_instance_name(task_id, valid_names) for task_id in task_ids
+        # 三类受管任务一律剔掉，下面按固定顺序补；它们的选项也不再下发
+        ids = [
+            task_id for task_id in task_ids if entry_of(task_id) not in MANAGED_ENTRIES
+        ]
+        options = {
+            key: value
+            for key, value in task_options.items()
+            if entry_of(key) not in MANAGED_ENTRIES
         }
-        ids = list(task_ids)
-        options = dict(task_options)
-        added: list[str] = []
+        if len(ids) != len(task_ids):
+            log(
+                "[M9A] 启动游戏、切换账号、关闭游戏由 MAS 控制，"
+                "队列里的这几项已忽略并按固定顺序重新加入"
+            )
 
+        if not ids:
+            # 除受管任务外一个都没勾：不补首尾，免得白白启动再关闭一次游戏；空队列交给引擎原有处理。
+            return ids, options
+
+        added: list[str] = []
         startup = task_name_for_entry(interface_model, STARTUP_ENTRY)
         if startup is None:
             log(
                 f"[M9A] interface 里没有 entry 为 {STARTUP_ENTRY} 的任务，未自动加入启动游戏"
             )
-        elif startup not in present:
+        else:
             ids.insert(0, startup)
-            present.add(startup)
             added.append(startup)
-        elif ids and resolve_task_instance_name(ids[0], valid_names) != startup:
-            log(
-                f"[M9A] 队列里已有「{startup}」但不在开头，按你排的顺序执行；"
-                "它前面的任务会在游戏未启动时运行"
-            )
 
-        account = str(_get(user_config, "Info", "Account") or "").strip()
-        if account and str(resource_name or "").strip() == OFFICIAL_RESOURCE_NAME:
+        # 队列里恰好一个有效切号时以它为准，与启动整理的结果一致（整理会把它收进「账号」）
+        account = (
+            queued_accounts[0]
+            if len(queued_accounts) == 1
+            else str(_get(user_config, "Info", "Account") or "").strip()
+        )
+        if account and official:
             switch = task_name_for_entry(interface_model, SWITCH_ACCOUNT_ENTRY)
             if switch is None:
                 log(
                     f"[M9A] interface 里没有 entry 为 {SWITCH_ACCOUNT_ENTRY} 的任务，"
                     "未自动加入切换账号"
                 )
-            elif switch not in present:
-                # 紧跟在「启动游戏」后面：它在哪就插在它后面，不在队列里就插到队首。
-                position = 0
-                if startup is not None:
-                    for i, task_id in enumerate(ids):
-                        if resolve_task_instance_name(task_id, valid_names) == startup:
-                            position = i + 1
-                            break
-                ids.insert(position, switch)
-                present.add(switch)
+            else:
+                # 紧跟在「启动游戏」后面；interface 里没有启动任务时放队首
+                ids.insert(1 if startup is not None else 0, switch)
                 added.append(switch)
                 account_option = _account_option(interface_model, switch, account)
                 if account_option is not None:
@@ -180,19 +208,80 @@ class M9AFlavor:
             log(
                 f"[M9A] interface 里没有 entry 为 {CLOSE_ENTRY} 的任务，未自动加入关闭游戏"
             )
-        elif close not in present:
+        else:
             ids.append(close)
-            present.add(close)
             added.append(close)
         if added:
-            log(f"[M9A] 已自动补上：{' / '.join(added)}")
+            log(f"[M9A] 已自动加入：{' / '.join(added)}")
         return ids, options
 
+    def sanitize_task_snapshot(
+        self,
+        interface_model: MaaFWInterface,
+        snapshot: dict[str, Any],
+        *,
+        script_config: Any,
+        resource_name: str | None,
+        user_info: dict[str, Any],
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
+        """引擎的可选钩子：写 ``Task.TaskSnapshot`` 前按 ``managed.py`` 的规则整理。
 
-def _account_option(
-    interface_model: MaaFWInterface, task_name: str, account: str
-) -> dict[str, Any] | None:
-    """切换账号任务上第一个 input 型选项：``{选项名: {第一个输入字段: 账号}}``。"""
+        返回（整理后的快照, 要写进 ``Info`` 的字段）。多个有效切号的保留态原样放行，
+        备注只由启动整理写，这里不写（用户页上有常驻提示）。
+        """
+
+        del script_config  # 资源由引擎按建运行计划的同一口径解析后传入
+        entry_of, account_of = _entry_and_account_readers(interface_model)
+        settlement = settle_snapshot(
+            snapshot,
+            entry_of=entry_of,
+            account_of=account_of,
+            official=str(resource_name or "").strip() == OFFICIAL_RESOURCE_NAME,
+        )
+        change = settle_user_info(
+            settlement,
+            account=str(user_info.get("Account") or ""),
+            notes=str(user_info.get("Notes") or ""),
+            note_split=False,
+        )
+        return (
+            settlement.snapshot if settlement.changed else snapshot,
+            change.updates(),
+        )
+
+    async def ensure_game_updated(
+        self,
+        *,
+        script_config: Any,
+        resource_name: str | None,
+        package_name: str,
+        adb_path: str | None,
+        adb_address: str,
+        if_auto_install: bool,
+        progress: Callable[[str], Awaitable[None]] | None,
+    ) -> GameUpdateResult:
+        """引擎的可选游戏更新钩子：只查官服，契约见 MaaFW 的 ``flavor.py`` 模块说明。"""
+
+        # 按需导入：本包在导入期不拉起网络与 adb 相关模块（迁移也会导入 flavor）
+        from .game_update import ensure_game_updated
+
+        del script_config  # 资源名由引擎按脚本配置解析后传入
+        return await ensure_game_updated(
+            adb_path=Path(adb_path) if adb_path else None,
+            adb_address=adb_address,
+            resource_name=resource_name,
+            package_name=package_name,
+            official_resource_name=OFFICIAL_RESOURCE_NAME,
+            apk_dir=Path.cwd() / "data/GameApk",
+            if_auto_install=if_auto_install,
+            progress=progress,
+        )
+
+
+def _account_field(
+    interface_model: MaaFWInterface, task_name: str
+) -> tuple[str, str] | None:
+    """切换账号任务上第一个 input 型选项与它的第一个输入字段：``(选项名, 字段名)``。"""
 
     task = next((item for item in interface_model.task if item.name == task_name), None)
     if task is None:
@@ -205,9 +294,52 @@ def _account_option(
         inputs = getattr(option, "inputs", None) or []
         if not inputs:
             continue
-        field_name = getattr(inputs[0], "name", None) or "账号"
-        return {option_name: {field_name: account}}
+        return option_name, getattr(inputs[0], "name", None) or "账号"
     return None
+
+
+def _account_option(
+    interface_model: MaaFWInterface, task_name: str, account: str
+) -> dict[str, Any] | None:
+    """切换账号任务的账号选项值：``{选项名: {第一个输入字段: 账号}}``。"""
+
+    found = _account_field(interface_model, task_name)
+    if found is None:
+        return None
+    option_name, field_name = found
+    return {option_name: {field_name: account}}
+
+
+def _entry_and_account_readers(
+    interface_model: MaaFWInterface,
+) -> tuple[Callable[[str], str], Callable[[str, Any], str]]:
+    """按 interface 读实例 entry 与切号目标账号的两个函数（``managed.py`` 的规则要用）。"""
+
+    task_by_name = {task.name: task for task in interface_model.task}
+    field_cache: dict[str, tuple[str, str] | None] = {}
+
+    def name_of(task_id: str) -> str:
+        return resolve_task_instance_name(str(task_id), task_by_name)
+
+    def entry_of(task_id: str) -> str:
+        task = task_by_name.get(name_of(task_id))
+        return str(task.entry or "") if task is not None else ""
+
+    def account_of(task_id: str, options: Any) -> str:
+        if not isinstance(options, dict):
+            return ""
+        name = name_of(task_id)
+        if name not in field_cache:
+            field_cache[name] = _account_field(interface_model, name)
+        found = field_cache[name]
+        if found is not None:
+            value = options.get(found[0])
+            if isinstance(value, dict):
+                return str(value.get(found[1]) or "").strip()
+            return first_text_value(value)
+        return first_text_value(options)
+
+    return entry_of, account_of
 
 
 def _get(config: Any, group: str, name: str) -> Any:
@@ -225,6 +357,7 @@ __all__ = [
     "FLAVOR",
     "LEGACY_ENTRY_ALIASES",
     "M9AFlavor",
+    "MANAGED_ENTRIES",
     "OFFICIAL_RESOURCE_NAME",
     "STARTUP_ENTRY",
     "SWITCH_ACCOUNT_ENTRY",

@@ -484,6 +484,18 @@ def build_repeat_instance_ids(
     return instance_ids
 
 
+def build_task_option_maps(
+    interface_model: MaaFWInterface,
+) -> dict[str, dict[str, MaaFWOption]]:
+    """每个任务可配的选项表 ``{任务名: {选项名: 定义}}``。
+
+    与快照归一、预设展开用的是同一张表：任务自身的选项加全局 / resource / controller
+    选项，case 下挂的嵌套选项逐层展开；pretask 伪任务按伪任务名给出。
+    """
+
+    return _build_task_option_maps(interface_model)
+
+
 def _build_default_task_order(interface_model: MaaFWInterface) -> list[str]:
     return [task_id for task_id, _ in build_default_task_instances(interface_model)]
 
