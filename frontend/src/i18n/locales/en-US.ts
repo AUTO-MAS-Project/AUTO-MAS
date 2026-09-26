@@ -3062,6 +3062,9 @@ export default {
   home: {
     editLayout: 'Edit layout',
     viewNotice: 'Announcements',
+    satelliteEgg: {
+      star: 'star!',
+    },
     greeting: {
       morning: 'Good morning — welcome to AUTO-MAS',
       noon: 'Good afternoon — welcome to AUTO-MAS',

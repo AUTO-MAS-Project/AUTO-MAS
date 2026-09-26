@@ -99,7 +99,6 @@ let satelliteStates: Map<CardMesh, SatelliteState> = new Map()
 let centerGlowSprite: THREE.Sprite | null = null
 let glowTexture: THREE.CanvasTexture | null = null
 let updateInterval: ReturnType<typeof setInterval> | null = null
-// 预览用：临时把默认值设成 rainbow 直接看效果，看完改回 'green'
 const centerGlowMode = ref<'rainbow' | 'green'>('green')
 const raycaster = new THREE.Raycaster()
 const pointer = new THREE.Vector2()
@@ -500,8 +499,9 @@ function spawnStarBurst(clientX: number, clientY: number): void {
 
 /** 按在中心图标上时给它一个压扁的形变，松开还原 */
 function handleCardPointerDown(event: PointerEvent): void {
-  // 低性能模式下动画循环是停的，按压形变和浮字都不会动，这俩干脆别做
-  if (performanceStore.isLowPower || !isCenterCardHit(event)) {
+  // 低性能模式下动画循环是停的，按压形变和浮字都不会动，这俩干脆别做；
+  // 只认主键，右键 / 中键不会产生 click，冒了字也不算连点
+  if (event.button !== 0 || performanceStore.isLowPower || !isCenterCardHit(event)) {
     return
   }
   centerPressed = true
@@ -788,7 +788,7 @@ function getCardImageCanvas(card: CardMesh): HTMLCanvasElement | null {
 }
 
 /**
- * 图标彩虹的色相站：每 5° 一个。段数给少了，相邻色相之间的插值偏色会连成肉眼可见的分界。
+ * 图标彩虹的色相站：每 10° 一个。段数给少了，相邻色相之间的插值偏色会连成肉眼可见的分界。
  * 每站存偏移比例和色相角，整体加 phase 偏移就成了流动效果。
  */
 const ICON_RAINBOW_SEGMENTS = 36
@@ -1665,6 +1665,11 @@ watch(
       stopAnimation()
       stopAppearAnimation()
       disposeGlowRenderer()
+      // 彩蛋跟着低性能模式一起收掉：不然会停在一张静止的彩虹图上，补渲一帧还会跳一次色相
+      setCenterIconRainbow(false)
+      centerPressed = false
+      centerScaleX = 1
+      centerScaleY = 1
       showCardsImmediately()
       if (!performanceStore.isBackgrounded) {
         renderCurrentFrame()
