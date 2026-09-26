@@ -21,6 +21,8 @@
 
 
 import asyncio
+import base64
+import hashlib
 import ipaddress
 import json
 import re
@@ -52,6 +54,11 @@ SMTP_TIMEOUT_SECONDS = 15
 DEFAULT_WEBHOOK_TEMPLATE = '{"title": "{title}", "content": "{content}"}'
 # OneBot 图片段里的占位写法，前端预设与这里必须一致。
 WEBHOOK_IMAGE_PLACEHOLDER = "base64://{image_base64}"
+# 企业微信群机器人按 host + path 认（key 在 query 里）；图片消息只收 JPG/PNG，
+# 原图不超过 2MB。
+WECOM_ROBOT_HOST = "qyapi.weixin.qq.com"
+WECOM_ROBOT_PATH = "/cgi-bin/webhook/send"
+WECOM_IMAGE_MAX_BYTES = 2 * 1024 * 1024
 
 
 @dataclass(frozen=True)
@@ -168,6 +175,15 @@ def _is_webhook_image_placeholder(obj: object) -> bool:
         and obj.get("type") == "image"
         and isinstance(obj.get("data"), dict)
         and obj["data"].get("file") == WEBHOOK_IMAGE_PLACEHOLDER
+    )
+
+
+def _is_wecom_robot(url: str) -> bool:
+    """是不是企业微信群机器人的 Webhook 地址。"""
+
+    parsed = urlparse(url)
+    return (parsed.hostname or "").lower() == WECOM_ROBOT_HOST and (
+        parsed.path == WECOM_ROBOT_PATH
     )
 
 
@@ -518,6 +534,66 @@ class Notification:
         logger.success(
             f"自定义Webhook推送成功: {webhook.get('Info', 'Name')} - {title}"
         )
+
+        # 企业微信群机器人的文本消息放不下图，失败截图要单独补发一条图片消息；
+        # 模板里自己写了 {image_base64} 的说明用户已经处理过图，不再补发。
+        if image_base64 and "{image_base64}" not in template and _is_wecom_robot(url):
+            await self._push_wecom_image(
+                url, image_base64, headers, webhook.get("Info", "Name")
+            )
+
+    async def _push_wecom_image(
+        self, url: str, image_base64: str, headers: dict, name: str
+    ) -> None:
+        """给企业微信群机器人补发一条图片消息。
+
+        正文那条已经送达，图片发不出去只记警告，不让整条通知算失败。日志里
+        不带 URL，里面的 key 就是机器人的发送凭据。
+
+        Args:
+            url: 企业微信群机器人 Webhook 地址。
+            image_base64: 图片的纯 Base64 数据。
+            headers: 与正文那条相同的请求头。
+            name: Webhook 名称，只用于日志。
+        """
+
+        try:
+            raw = base64.b64decode(image_base64, validate=True)
+        except ValueError:
+            logger.warning(f"企业微信图片补发跳过: {name} - 图片不是有效的 Base64")
+            return
+        if len(raw) > WECOM_IMAGE_MAX_BYTES:
+            logger.warning(
+                f"企业微信图片补发跳过: {name} - 图片 {len(raw)} 字节，超过 2MB 上限"
+            )
+            return
+        if not raw.startswith((b"\xff\xd8\xff", b"\x89PNG\r\n\x1a\n")):
+            logger.warning(f"企业微信图片补发跳过: {name} - 只支持 JPG/PNG")
+            return
+
+        data = {
+            "msgtype": "image",
+            "image": {
+                "base64": image_base64,
+                "md5": hashlib.md5(raw).hexdigest(),
+            },
+        }
+        try:
+            async with httpx.AsyncClient(**_webhook_client_kwargs(url)) as client:
+                response = await client.post(url=url, json=data, headers=headers)
+        except Exception as e:
+            logger.warning(f"企业微信图片补发失败: {name} - {type(e).__name__} {e}")
+            return
+        if not response.is_success:
+            logger.warning(
+                f"企业微信图片补发失败: {name} - HTTP {response.status_code}: {response.text}"
+            )
+            return
+        failure = webhook_body_failure(response.text, url)
+        if failure is not None:
+            logger.warning(f"企业微信图片补发失败: {name} - 服务端拒绝: {failure}")
+            return
+        logger.success(f"企业微信图片补发成功: {name}")
 
     async def send_koishi(
         self,
