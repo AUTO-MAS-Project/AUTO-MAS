@@ -1034,6 +1034,10 @@ class MaaUserConfig(ConfigBase):
         self.Task_IfInfrast = ConfigItem("Task", "IfInfrast", True, BoolValidator())
         ## 是否公开招募
         self.Task_IfRecruit = ConfigItem("Task", "IfRecruit", True, BoolValidator())
+        ## 公开招募是否自动确认六星（MAA 界面无法勾选，暂只经接口设置）
+        self.Task_IfRecruitSixStar = ConfigItem(
+            "Task", "IfRecruitSixStar", False, BoolValidator()
+        )
         ## 是否信用收支
         self.Task_IfMall = ConfigItem("Task", "IfMall", True, BoolValidator())
         ## 是否领取奖励

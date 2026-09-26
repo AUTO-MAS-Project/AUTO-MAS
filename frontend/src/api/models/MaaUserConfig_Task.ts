@@ -12,6 +12,10 @@ export type MaaUserConfig_Task = {
      */
     IfRecruit?: (boolean | null);
     /**
+     * 自动公招时自动确认六星
+     */
+    IfRecruitSixStar?: (boolean | null);
+    /**
      * 基建换班
      */
     IfInfrast?: (boolean | null);

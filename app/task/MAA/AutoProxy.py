@@ -1693,7 +1693,7 @@ class AutoProxyTask(TaskExecuteBase):
     def _configure_maa_runtime(
         self, gui_set: dict, gui_new_set: dict, emulator_info: DeviceInfo
     ) -> None:
-        """两种快速配置状态均需的启动、模拟器和账号设置，不改任务选择。"""
+        """两种快速配置状态均需的启动、模拟器、账号与公招六星设置，不改任务选择。"""
 
         global_set = gui_set["Global"]
         default_set = gui_set["Configurations"]["Default"]
@@ -1769,6 +1769,14 @@ class AutoProxyTask(TaskExecuteBase):
             )
             # MAA 账号切换需要独立开关，空账号仍由 MAA 沿用登录态。
             task["AccountSwitchEnabled"] = True
+        # 自动确认六星在 MAA 界面上无法勾选，只能写配置文件开启；开关关闭时保留
+        # 来源配置原值。直控以安装目录的原生配置为准，不覆盖，用户在原生配置里改即可。
+        if not self.direct_control and self.cur_user_config.get(
+            "Task", "IfRecruitSixStar"
+        ):
+            for task in gui_new_set["Configurations"]["Default"].get("TaskQueue", []):
+                if task.get("TaskType") == "Recruit":
+                    task["Level6Choose"] = True
 
     def _snapshot_maa_config(self) -> None:
         """记录托管注入完成后的 MAA 配置基线, 供任务结束后甄别 MAA 自身的写盘变更。"""

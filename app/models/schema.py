@@ -1714,6 +1714,9 @@ class MaaUserConfig_Data(BaseModel):
 class MaaUserConfig_Task(BaseModel):
     IfStartUp: Optional[bool] = Field(default=None, description="开始唤醒")
     IfRecruit: Optional[bool] = Field(default=None, description="自动公招")
+    IfRecruitSixStar: Optional[bool] = Field(
+        default=None, description="自动公招时自动确认六星"
+    )
     IfInfrast: Optional[bool] = Field(default=None, description="基建换班")
     IfFight: Optional[bool] = Field(default=None, description="理智作战")
     IfMall: Optional[bool] = Field(default=None, description="信用收支")
