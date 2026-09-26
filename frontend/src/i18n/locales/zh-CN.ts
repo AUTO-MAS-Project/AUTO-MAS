@@ -2265,7 +2265,6 @@ export default {
     zzzodOneDragonDesc:
       '一条龙系列任务一屏可见，打开开关即加入并按顺序执行，关闭后原位保留；拖动卡片手柄调整执行顺序。',
     zzzodLoadOneDragonFailed: '加载一条龙任务失败',
-    zzzodPushLogModeHint: '任务报告中各任务的执行结果展示方式（成功/失败/跳过）',
     zzzodAfterDone: '游戏结束后操作',
     zzzodAfterDoneHint:
       '一条龙运行结束后执行的操作，与一条龙「结束后」下拉同义。用户模式经配置会话与一条龙界面双向同步；直控模式直接读写一条龙原生设置。运行时由 MAS 以启动参数下发（仅运行成功结束时生效）',
