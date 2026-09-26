@@ -1431,7 +1431,9 @@ class AutoProxyTask(TaskExecuteBase):
                 "EmulatorPath": device_ref.manager_path,
                 "InstanceIndex": device_ref.native_index,
             }
-            _configure_mumu_screenshot_enhancement(gui_new_set, self._maa_temporary_extras)
+            _configure_mumu_screenshot_enhancement(
+                gui_new_set, self._maa_temporary_extras
+            )
 
         write_file(self.maa_set_path / "gui.json", gui_set)
         write_file(self.maa_set_path / "gui.new.json", gui_new_set)
@@ -1796,7 +1798,8 @@ class AutoProxyTask(TaskExecuteBase):
         try:
             self._maa_config_baseline = {
                 name: _without_temporary_mumu_extras(
-                    deepcopy(read_file(self.maa_set_path / name)), self._maa_temporary_extras
+                    deepcopy(read_file(self.maa_set_path / name)),
+                    self._maa_temporary_extras,
                 )
                 for name in _MAA_CONFIG_FILES
             }
