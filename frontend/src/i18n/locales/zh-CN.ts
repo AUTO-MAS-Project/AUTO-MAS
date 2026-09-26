@@ -4046,6 +4046,7 @@ export default {
       exportOkNte: '导出 OK-NTE 问题包',
       exportZzzOd: '导出 ZZZ-OD 问题包',
       exportWhimbox: '导出 Whimbox 问题包',
+      exportBetterGI: '导出 BetterGI 问题包',
       exportMaaFW: '导出 MFW 问题包',
       exportMaaFWEmpty: '还没有 MFW 脚本',
       exportM9A: '导出 M9A 问题包',

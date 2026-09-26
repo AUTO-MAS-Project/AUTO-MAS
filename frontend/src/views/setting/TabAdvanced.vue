@@ -10,6 +10,7 @@ import { useOkwwIssueReport } from '@/composables/useOkwwIssueReport'
 import { useOkNteIssueReport } from '@/composables/useOkNteIssueReport'
 import { useZzzOdIssueReport } from '@/composables/useZzzOdIssueReport'
 import { useWhimboxIssueReport } from '@/composables/useWhimboxIssueReport'
+import { useBetterGIIssueReport } from '@/composables/useBetterGIIssueReport'
 import { useMaaFWIssueReport } from '@/composables/useMaaFWIssueReport'
 import { useM9AIssueReport } from '@/composables/useM9AIssueReport'
 import { useMSSIssueReport } from '@/composables/useMSSIssueReport'
@@ -33,6 +34,8 @@ const { exporting: exportingOkwwLogs, exportOkwwIssueReport } = useOkwwIssueRepo
 const { exporting: exportingOkNteLogs, exportOkNteIssueReport } = useOkNteIssueReport(logger)
 const { exporting: exportingZzzOdLogs, exportZzzOdIssueReport } = useZzzOdIssueReport(logger)
 const { exporting: exportingWhimboxLogs, exportWhimboxIssueReport } = useWhimboxIssueReport(logger)
+const { exporting: exportingBetterGILogs, exportBetterGIIssueReport } =
+  useBetterGIIssueReport(logger)
 const { exporting: exportingMaaFWLogs, exportMaaFWIssueReport } = useMaaFWIssueReport(logger)
 const { exporting: exportingM9ALogs, exportM9AIssueReport } = useM9AIssueReport(logger)
 const { exporting: exportingMSSLogs, exportMSSIssueReport } = useMSSIssueReport(logger)
@@ -264,6 +267,16 @@ const exportDataBackup = async () => {
                 <DownloadOutlined />
               </template>
               {{ t('setting.advanced.exportWhimbox') }}
+            </a-button>
+            <a-button
+              type="primary"
+              :loading="exportingBetterGILogs"
+              @click="exportBetterGIIssueReport"
+            >
+              <template #icon>
+                <DownloadOutlined />
+              </template>
+              {{ t('setting.advanced.exportBetterGI') }}
             </a-button>
             <a-dropdown
               :trigger="['click']"

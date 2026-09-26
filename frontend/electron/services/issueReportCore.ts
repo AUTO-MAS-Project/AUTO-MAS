@@ -493,6 +493,7 @@ const ADAPTER_DEBUG_SUBDIRS = {
   maaend: ['maaend-login'],
   okww: ['okww-account-switch'],
   oknte: ['oknte-account-switch', 'oknte-launcher-start'],
+  bettergi: ['bgi-account-switch'],
 } satisfies Record<string, readonly string[]>
 
 export type AdapterDebugDirKey = keyof typeof ADAPTER_DEBUG_SUBDIRS

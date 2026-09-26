@@ -38,6 +38,7 @@ import { decideRendererRecovery } from './rendererCrashRecovery'
 import { getLogger, initializeLogger } from './services/logger'
 import { readLogContent, readLogIncrement } from './services/logFileReader'
 import { CollectorState, addDiagnosticFile, addDirectory } from './services/issueReportCore'
+import { createBetterGIIssueReport } from './services/bettergiIssueReportService'
 import { createMaaEndIssueReport } from './services/maaEndIssueReportService'
 import {
   createM9AIssueReport,
@@ -1485,6 +1486,12 @@ registerIssueReportExporter(
   '导出 Whimbox 问题包',
   'Whimbox-logs',
   createWhimboxIssueReport
+)
+registerIssueReportExporter(
+  'bettergi:exportIssueReport',
+  '导出 BetterGI 问题包',
+  'BetterGI-logs',
+  createBetterGIIssueReport
 )
 registerIssueReportExporter(
   'maafw:exportIssueReport',
