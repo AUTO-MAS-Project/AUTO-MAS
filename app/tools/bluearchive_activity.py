@@ -38,8 +38,12 @@ logger = get_logger("碧蓝档案活动")
 ACTIVITY_PAGE_SIZE = 100
 ACTIVITY_MAX_PAGES = 2
 
-## 只有「活动」算活动，卡池、掉落加倍、维护等分类不算
-WANTED_TYPE = "Event"
+## 玩家会为这些开一局：限时活动、总力战、大决战、无限制决战。
+## 卡池、掉落加倍、维护、剧情与家具更新等分类都不算
+WANTED_TYPES = frozenset({"Event", "Raid", "BigRaid", "MiniBattle"})
+
+## 战斗通行证（战令）也被 Kivo 归进「活动」，可它基本整期都在，跟脚本排期无关，按标题排掉
+EXCLUDED_TITLE_KEYWORDS = ("战斗通行证",)
 
 BlueArchiveLineType = Literal["JP", "Globle", "CN"]
 
@@ -51,6 +55,16 @@ class ActivityInfo:
     name: str
     start_time: float
     end_time: float
+
+
+def _is_wanted_activity(item: Mapping[str, object]) -> bool:
+    """这条时间轴记录算不算排期要看的活动"""
+
+    if item.get("type") not in WANTED_TYPES:
+        return False
+
+    title = str(item.get("title") or "")
+    return not any(keyword in title for keyword in EXCLUDED_TITLE_KEYWORDS)
 
 
 def has_running_activity_in(
@@ -67,7 +81,7 @@ def has_running_activity_in(
     """
 
     for item in items:
-        if item.get("type") != WANTED_TYPE:
+        if not _is_wanted_activity(item):
             continue
 
         start = item.get("start_time")
@@ -100,7 +114,7 @@ def collect_activities(
     picked: dict[str, ActivityInfo] = {}
 
     for item in items:
-        if item.get("type") != WANTED_TYPE:
+        if not _is_wanted_activity(item):
             continue
 
         start = item.get("start_time")
