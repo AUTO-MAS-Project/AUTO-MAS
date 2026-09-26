@@ -2938,6 +2938,9 @@ export default {
   home: {
     editLayout: '编辑布局',
     viewNotice: '查看公告',
+    satelliteEgg: {
+      star: 'star！',
+    },
     greeting: {
       morning: '早上好！欢迎使用 AUTO-MAS',
       noon: '中午好！欢迎使用 AUTO-MAS',
