@@ -46,6 +46,7 @@ from app.utils.io import (
 from .AutoProxy import AutoProxyTask
 from .resource_loader import load_maaend_controller_protocol
 from .ScriptConfig import ScriptConfigTask, maaend_config_mode
+from .update_takeover import check_and_update_maaend
 from .tools import push_notification
 from .tools.backup_archive import archive_native_backup
 
@@ -258,6 +259,28 @@ class MaaEndManager(TaskExecuteBase):
             return
 
         self.begin_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        if self.task_info.mode == "AutoProxy":
+            script_config = Config.ScriptConfig[uuid.UUID(self.script_info.script_id)]
+            maaend_root_path = Path(script_config.get("Info", "Path"))
+
+            def update_status(message: str) -> None:
+                self.script_info.log = message
+
+            try:
+                await check_and_update_maaend(
+                    maaend_root_path,
+                    on_status=update_status,
+                )
+            except Exception as error:
+                self.check_result = f"MaaEnd 更新预检失败: {error}"
+                logger.warning(self.check_result)
+                await Publisher.send(
+                    id=self.task_info.task_id,
+                    type=protocol.TASK_NOTICE,
+                    data=WSTaskNoticeData(level="error", message=self.check_result),
+                )
+                return
+
         await self.prepare()
 
         if not isinstance(self.script_config, MaaEndConfig):
