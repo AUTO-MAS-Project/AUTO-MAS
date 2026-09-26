@@ -1373,10 +1373,18 @@ ipcMain.handle('log:export', async () => {
 
       if (stat.isFile()) {
         addDiagnosticFile(state, filePath, file)
-        logger.info(`添加文件到压缩包: ${file}`)
       } else if (stat.isDirectory() && file === 'maaend-login') {
         addDirectory(state, filePath, 'maaend-login')
-        logger.info('添加 MaaEnd 登录错误截图到压缩包')
+      }
+    }
+
+    // 读不出来、解不开的文件不会原样放进包（那样就把没打码的内容发出去了），要让人知道少了哪些
+    const skipped = state.entries.filter(entry => entry.status === 'skipped')
+    for (const entry of state.entries) {
+      if (entry.status === 'skipped') {
+        logger.warn(`未能导出: ${entry.path}（${entry.reason}）`)
+      } else {
+        logger.info(`添加文件到压缩包: ${entry.path}`)
       }
     }
 
@@ -1386,7 +1394,10 @@ ipcMain.handle('log:export', async () => {
 
     return {
       success: true,
-      message: '日志压缩包导出成功',
+      message:
+        skipped.length > 0
+          ? `日志压缩包导出成功，${skipped.map(entry => entry.path).join('、')} 未能导出`
+          : '日志压缩包导出成功',
       zipPath: zipPath,
     }
   } catch (error) {

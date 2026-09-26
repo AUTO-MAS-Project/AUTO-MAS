@@ -42,45 +42,53 @@ __all__ = [
 # 管不到它们：企业微信群机器人的 ``key=``、Server 酱 SendKey 与飞书、Discord 等 Webhook
 # 的令牌都在路径里。前端问题包导出（frontend/electron/services/issueReportCore.ts）有同一组规则，
 # 给已经落盘的旧日志打码，两边一起改。
+# 值只认 URL 里的字符，碰到逗号、中文、引号就停，别把后面的正文一起打掉。
+_URL_VALUE = r"[A-Za-z0-9_.~%+/=-]+"
+_URL_SEGMENT = r"[A-Za-z0-9_.~%+=-]+"
 _URL_SECRET_PATTERNS = [
-    # 企业微信群机器人 ?key=、钉钉加签 &sign=、Server 酱 ?sendkey=
-    (re.compile(r"([?&](?:key|sendkey|sign)=)[^&#\s\"']+", re.IGNORECASE), r"\1***"),
-    # Server 酱：sctapi.ftqq.com/<SendKey>.send、<uid>.push.ft07.com/send/<SendKey>.send
+    # 企业微信群机器人 ?key=、钉钉加签 &sign=、Server 酱 ?sendkey=、PushDeer ?pushkey=、
+    # WxPusher ?appToken=、Power Automate &sig=；JSON 里的 & 会转义成 &
     (
         re.compile(
-            r"((?:sctapi\.ftqq\.com|\.push\.ft07\.com/send)/)[^/?#\s\"']+(\.send)",
+            rf"((?:[?&]|\\u0026)(?:key|sendkey|sign|sig|pushkey|apptoken)=){_URL_VALUE}",
+            re.IGNORECASE,
+        ),
+        r"\1***",
+    ),
+    # Server 酱：(sc|sctapi).ftqq.com/<SendKey>.send、<uid>.push.ft07.com/send/<SendKey>.send
+    (
+        re.compile(
+            rf"((?:(?:sc|sctapi)\.ftqq\.com|\.push\.ft07\.com/send)/){_URL_SEGMENT}(\.send)",
             re.IGNORECASE,
         ),
         r"\1***\2",
     ),
-    # 飞书 / Lark 自定义机器人
-    (
-        re.compile(
-            r"(open\.(?:feishu\.cn|larksuite\.com)/open-apis/bot/v2/hook/)[^/?#\s\"']+",
-            re.IGNORECASE,
-        ),
-        r"\1***",
-    ),
-    # Discord：/api/webhooks/<id>/<token>
-    (
-        re.compile(
-            r"(discord(?:app)?\.com/api/webhooks/[^/?#\s\"']+/)[^/?#\s\"']+",
-            re.IGNORECASE,
-        ),
-        r"\1***",
-    ),
+    # 路径最后一段就是令牌的：飞书 / Lark（新旧两版）、Discord（可带 API 版本号）、
+    # Telegram（令牌带冒号）、Bark、PushPlus、Qmsg、WxPusher 的 SPT、IFTTT
+    *[
+        (re.compile(prefix + rest, re.IGNORECASE), r"\1***")
+        for prefix, rest in [
+            (
+                r"(open\.(?:feishu\.cn|larksuite\.com)/open-apis/bot/(?:v2/)?hook/)",
+                _URL_SEGMENT,
+            ),
+            (
+                rf"(discord(?:app)?\.com/api/(?:v\d+/)?webhooks/{_URL_SEGMENT}/)",
+                _URL_SEGMENT,
+            ),
+            (r"(api\.telegram\.org/bot)", r"[A-Za-z0-9_:-]+"),
+            (r"(api\.day\.app/)", _URL_SEGMENT),
+            (r"(pushplus\.plus/send/)", _URL_SEGMENT),
+            (r"(qmsg\.zendee\.cn/(?:j?send|j?group)/)", _URL_SEGMENT),
+            (r"(wxpusher\.zjiecode\.com/api/send/message/)", _URL_SEGMENT),
+            (r"(maker\.ifttt\.com/trigger/[^/\s]+/(?:json/)?with/key/)", _URL_SEGMENT),
+        ]
+    ],
     # Slack：hooks.slack.com/services/<T>/<B>/<secret>
     (
-        re.compile(r"(hooks\.slack\.com/services/)[^?#\s\"']+", re.IGNORECASE),
+        re.compile(r"(hooks\.slack\.com/services/)[A-Za-z0-9_/-]+", re.IGNORECASE),
         r"\1***",
     ),
-    # Telegram：api.telegram.org/bot<token>/
-    (
-        re.compile(r"(api\.telegram\.org/bot)[^/?#\s\"']+", re.IGNORECASE),
-        r"\1***",
-    ),
-    # Bark：api.day.app/<device key>/
-    (re.compile(r"(api\.day\.app/)[^/?#\s\"']+", re.IGNORECASE), r"\1***"),
 ]
 
 
@@ -115,10 +123,15 @@ def sanitize_log_message(message: str) -> str:
         sanitized_message = re.sub(
             pattern, replacement, sanitized_message, flags=re.IGNORECASE
         )
-    for url_pattern, replacement in _URL_SECRET_PATTERNS:
-        sanitized_message = url_pattern.sub(replacement, sanitized_message)
+    return _mask_url_secrets(sanitized_message)
 
-    return sanitized_message
+
+def _mask_url_secrets(message: str) -> str:
+    """只套推送地址那组规则（与前端 issueReportCore.ts 的 maskUrlSecrets 逐条对应）。"""
+
+    for url_pattern, replacement in _URL_SECRET_PATTERNS:
+        message = url_pattern.sub(replacement, message)
+    return message
 
 
 def format_exception_reason(
