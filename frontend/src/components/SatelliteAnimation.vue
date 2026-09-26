@@ -84,6 +84,7 @@ let centerRainbowCanvas: HTMLCanvasElement | null = null
 let centerRainbowTexture: THREE.CanvasTexture | null = null
 let centerRainbowExtent: OpaqueExtent | null = null
 let centerRainbowStartedAt = 0
+let centerRainbowLastPaintedAt = 0
 
 interface SatelliteState {
   type: ScriptType
@@ -230,6 +231,7 @@ function disposeScene() {
   stopAppearAnimation()
   stopStatusPolling()
   removeCardInteraction()
+  disposeStarBursts()
   clearSatelliteExplosions()
 
   disposeSceneResources(orbitScene)
@@ -431,6 +433,21 @@ function registerCenterPoke(): void {
   logger.info('中心图标彩蛋触发：炫彩图标')
 }
 
+/** 同时在飞的浮字上限；快速连点时先到的先让位，免得 DOM 和合成层无限堆 */
+const MAX_STAR_BURSTS = 12
+const activeStarBursts: HTMLSpanElement[] = []
+
+function removeStarBurst(element: HTMLSpanElement): void {
+  element.getAnimations().forEach(animation => animation.cancel())
+  element.remove()
+}
+
+/** 组件销毁时把还在飞的浮字连同动画一起收掉 */
+function disposeStarBursts(): void {
+  activeStarBursts.forEach(removeStarBurst)
+  activeStarBursts.length = 0
+}
+
 /** 在点击处冒一句 star！，加速往上方飘走；彩蛋亮起来之后这句字是彩虹色的 */
 function spawnStarBurst(clientX: number, clientY: number): void {
   if (!container.value || isUnmounted) {
@@ -444,6 +461,14 @@ function spawnStarBurst(clientX: number, clientY: number): void {
   element.style.left = `${clientX - bounds.left}px`
   element.style.top = `${clientY - bounds.top}px`
   container.value.appendChild(element)
+  activeStarBursts.push(element)
+
+  while (activeStarBursts.length > MAX_STAR_BURSTS) {
+    const oldest = activeStarBursts.shift()
+    if (oldest) {
+      removeStarBurst(oldest)
+    }
+  }
 
   // 左右随机偏一点，整体向上；缓动是强 ease-in，越飞越快
   const driftX = (Math.random() - 0.5) * 90
@@ -464,7 +489,13 @@ function spawnStarBurst(clientX: number, clientY: number): void {
     ],
     { duration: 1150, easing: 'cubic-bezier(0.5, 0, 1, 1)', fill: 'forwards' }
   )
-  animation.onfinish = () => element.remove()
+  animation.onfinish = () => {
+    const index = activeStarBursts.indexOf(element)
+    if (index >= 0) {
+      activeStarBursts.splice(index, 1)
+    }
+    element.remove()
+  }
 }
 
 /** 按在中心图标上时给它一个压扁的形变，松开还原 */
@@ -760,7 +791,7 @@ function getCardImageCanvas(card: CardMesh): HTMLCanvasElement | null {
  * 图标彩虹的色相站：每 5° 一个。段数给少了，相邻色相之间的插值偏色会连成肉眼可见的分界。
  * 每站存偏移比例和色相角，整体加 phase 偏移就成了流动效果。
  */
-const ICON_RAINBOW_SEGMENTS = 72
+const ICON_RAINBOW_SEGMENTS = 36
 const RAINBOW_HUE_STOPS: ReadonlyArray<readonly [number, number]> = Array.from(
   { length: ICON_RAINBOW_SEGMENTS + 1 },
   (_, index) => {
@@ -775,6 +806,12 @@ const RAINBOW_AXIS_Y = Math.SQRT1_2
 
 /** 色相走完一整圈要多久 */
 const CENTER_RAINBOW_CYCLE_MS = 1200
+
+/**
+ * 重画彩虹的最小间隔。这一步是全画布合成加 36 个色相站再上传纹理，是整套里最贵的，
+ * 而色相一圈要 1.2 秒，60fps 下每步才 0.5°，限到约 15fps（每步 2°）视觉上没有区别。
+ */
+const CENTER_RAINBOW_PAINT_INTERVAL_MS = 66
 
 /** 图标不透明像素在某个方向上的投影范围，用来把彩虹铺在图标真正覆盖的那一段上 */
 interface OpaqueExtent {
@@ -893,12 +930,18 @@ function updateCenterRainbowIcon(): void {
     return
   }
 
+  const now = performance.now()
+  if (now - centerRainbowLastPaintedAt < CENTER_RAINBOW_PAINT_INTERVAL_MS) {
+    return
+  }
+  centerRainbowLastPaintedAt = now
+
   const context = centerRainbowCanvas.getContext('2d')
   if (!context) {
     return
   }
 
-  const elapsed = performance.now() - centerRainbowStartedAt
+  const elapsed = now - centerRainbowStartedAt
   const phase = ((elapsed / CENTER_RAINBOW_CYCLE_MS) * 360) % 360
   paintCenterRainbowIcon(context, centerIconCanvas, centerRainbowExtent, phase)
   centerRainbowTexture.needsUpdate = true
