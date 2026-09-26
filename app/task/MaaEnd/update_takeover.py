@@ -19,6 +19,7 @@
 
 import asyncio
 import os
+import re
 import time
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager, suppress
@@ -37,13 +38,9 @@ logger = get_logger("MaaEnd 更新接管")
 
 _UPDATE_SESSION_TIMEOUT = 30 * 60
 _PROCESS_STOP_TIMEOUT = 8
-_LOG_MARKERS_SUCCESS = ("更新安装完成", "update installation completed")
-_LOG_MARKERS_FAILURE = (
-    "更新安装失败",
-    "打开安装程序失败",
-    "兜底更新也失败",
-    "update installation failed",
-)
+_LOG_FILE_NAME = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}-[1-9][0-9]*\.log")
+_LOG_SUCCESS = "更新安装完成"
+_LOG_FAILURE = ("更新安装失败", "打开安装程序失败")
 
 
 class MaaEndUpdateError(RuntimeError):
@@ -141,26 +138,17 @@ async def _stop_mxu(executable: Path) -> None:
 
 
 def _mxu_log_files(root_path: Path) -> list[Path]:
-    # 当前 MXU 每次启动生成 debug/YYYY-MM-DD-N.log；兼容旧的 MXU-*.log。
-    files = set((root_path / "debug").glob("????-??-??-*.log"))
-    for directory in (
-        root_path,
-        root_path / "debug",
-        root_path / "logs",
-        root_path / "log",
-        root_path / "cache" / "logs",
-    ):
-        files.update(
-            path
-            for path in directory.glob("*.log")
-            if path.name.casefold().startswith("mxu-")
-        )
-    return sorted(files)
+    # MXU 前端日志：debug/YYYY-MM-DD-N.log，每次启动新建文件。
+    return sorted(
+        path
+        for path in (root_path / "debug").glob("*.log")
+        if _LOG_FILE_NAME.fullmatch(path.name) and path.is_file()
+    )
 
 
-def _read_new_mxu_logs(root_path: Path, offsets: dict[Path, int]) -> str:
+def _read_new_mxu_logs(root_path: Path, offsets: dict[Path, int]) -> list[str]:
     """读取本轮新增完整行，保留重启前日志和跨次写入的半行。"""
-    chunks = []
+    lines: list[str] = []
     for path in _mxu_log_files(root_path):
         try:
             with path.open("rb") as log_file:
@@ -171,10 +159,10 @@ def _read_new_mxu_logs(root_path: Path, offsets: dict[Path, int]) -> str:
                 content = log_file.read()
                 end = content.rfind(b"\n") + 1
                 offsets[path] = offset + end
-                chunks.append(content[:end].decode("utf-8", errors="replace"))
+                lines.extend(content[:end].decode("utf-8").splitlines())
         except FileNotFoundError:
             continue  # MXU 可能在清理旧日志。
-    return "\n".join(chunks).casefold()
+    return lines
 
 
 async def _run_update_session(
@@ -207,14 +195,12 @@ async def _run_update_session(
             installation_complete = False
             while time.monotonic() < deadline:
                 # 安装结果写在旧进程日志中，必须从启动起持续读取，不能只读重启后的最新文件。
-                new_text = await asyncio.to_thread(
+                lines = await asyncio.to_thread(
                     _read_new_mxu_logs, root_path, log_offsets
                 )
-                if any(marker in new_text for marker in _LOG_MARKERS_FAILURE):
+                if any(message in line for line in lines for message in _LOG_FAILURE):
                     raise MaaEndUpdateError("MXU 日志报告更新失败")
-                installation_complete |= any(
-                    marker in new_text for marker in _LOG_MARKERS_SUCCESS
-                )
+                installation_complete |= any(_LOG_SUCCESS in line for line in lines)
                 if first_process.returncode is not None and installation_complete:
                     processes = await asyncio.to_thread(
                         _find_executable_processes, executable
