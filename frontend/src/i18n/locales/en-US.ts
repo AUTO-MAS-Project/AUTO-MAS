@@ -2375,7 +2375,6 @@ export default {
     zzzodOneDragonDesc:
       'One-dragon series tasks on one screen: flip a switch to include a task in the run, and it stays in place when turned off; drag the card handle to adjust the run order.',
     zzzodLoadOneDragonFailed: 'Could not load the one-dragon task list',
-    zzzodPushLogModeHint: 'How per-task results (success/failure/skipped) appear in the run report',
     zzzodAfterDone: 'Action after run',
     zzzodAfterDoneHint:
       'Action to run after the OneDragon run finishes, same as the OneDragon "After run" dropdown. In user mode it stays in sync with the OneDragon UI via the config session; in direct-control mode it reads and writes the OneDragon native setting. Delivered by MAS as launch arguments (only applies when the run finishes successfully)',
