@@ -8,7 +8,7 @@ export type HSRManagedDroppedOverride = {
      */
     key: string;
     /**
-     * 忽略原因：unknown=当前原生配置没有该字段；type=保存的值类型与原生配置不一致
+     * 忽略原因：unknown=当前原生配置没有该字段或该字段已不由 MAS 托管；type=保存的值类型与原生配置不一致
      */
     reason: HSRManagedDroppedOverride.reason;
     /**
@@ -22,7 +22,7 @@ export type HSRManagedDroppedOverride = {
 };
 export namespace HSRManagedDroppedOverride {
     /**
-     * 忽略原因：unknown=当前原生配置没有该字段；type=保存的值类型与原生配置不一致
+     * 忽略原因：unknown=当前原生配置没有该字段或该字段已不由 MAS 托管；type=保存的值类型与原生配置不一致
      */
     export enum reason {
         UNKNOWN = 'unknown',

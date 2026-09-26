@@ -143,9 +143,11 @@ import {
   isMfwFamily,
   type ScriptCreateRequest,
 } from '@/views/scripts/components/scriptCreateFlow'
+import { maafwRouteSuffix } from '@/composables/useMaaFWFlavor'
 import { useScriptApi } from '@/composables/useScriptApi'
 import { useUserApi } from '@/composables/useUserApi'
 import { useWebSocket } from '@/composables/useWebSocket'
+import { onTaskRuntimeEvent } from '@/composables/useTaskRuntimeState'
 import {
   WS_TASK_COMPLETED,
   WS_TASK_NOTICE,
@@ -260,23 +262,8 @@ const handleSaveConfigMask = () => {
   }
 }
 
-const scriptEditPathMap: Record<ScriptType, string> = {
-  MAA: 'maa',
-  General: 'general',
-  Okww: 'okww',
-  OkNte: 'oknte',
-  SRC: 'src',
-  MaaEnd: 'maaend',
-  M9A: 'm9a',
-  MaaFW: 'maafw',
-  HSR: 'hsr',
-  BetterGI: 'bettergi',
-  ZzzOd: 'zzzod',
-  BAAH: 'baah',
-  MSS: 'mss',
-}
-
-const getScriptEditPath = (type: ScriptType) => scriptEditPathMap[type]
+// 与新建流程同一张表（MaaFW 与各特调的后缀取自特调注册表）
+const getScriptEditPath = (type: ScriptType) => getScriptEditSegment(type)
 
 // 配置会话超时：30 分钟没保存就自动断开
 const CONFIG_SESSION_TIMEOUT_MS = 30 * 60 * 1000
@@ -289,12 +276,28 @@ const activeConnections = ref<
   >
 >(new Map())
 
+// 定时队列等别处发起的任务结束后，用户的代理状态已在后端更新，防抖后重新拉一次列表；
+// removed 是断线期间结束、没收到完成通知的任务
+const TASK_COMPLETED_RELOAD_DELAY_MS = 1000
+let taskCompletedReloadTimer: ReturnType<typeof setTimeout> | undefined
+let disposeTaskRuntimeListener: (() => void) | undefined
+
 onMounted(() => {
   loadScripts()
+  disposeTaskRuntimeListener = onTaskRuntimeEvent(event => {
+    const ended =
+      event.type === 'removed' ||
+      (event.type === 'completed' && event.state.mode !== 'ScriptConfig')
+    if (!ended) return
+    clearTimeout(taskCompletedReloadTimer)
+    taskCompletedReloadTimer = setTimeout(() => void loadScripts(), TASK_COMPLETED_RELOAD_DELAY_MS)
+  })
 })
 
 // 离开页面时释放全部配置会话订阅并清掉超时定时器，不会在其他页面弹出提示
 onUnmounted(() => {
+  disposeTaskRuntimeListener?.()
+  clearTimeout(taskCompletedReloadTimer)
   for (const connection of activeConnections.value.values()) {
     for (const subscriptionId of connection.subscriptionIds) {
       unsubscribe(subscriptionId)
@@ -349,7 +352,7 @@ const navigateToCreatedScript = (
   data?: Record<string, unknown>
 ) => {
   const route = {
-    // MFW 新建后进分步引导（M9A / MSS 是 MaaFW 的特调类型，同一套引导）；其余类型直接进编辑页
+    // MFW 新建后进分步引导（各特调是 MaaFW 的特调类型，同一套引导）；其余类型直接进编辑页
     path: isMfwFamily(type)
       ? `/scripts/${scriptId}/setup/maafw`
       : `/scripts/${scriptId}/edit/${getScriptEditSegment(type)}`,
@@ -468,16 +471,15 @@ const handleCopyScript = async (script: Script) => {
 
 const handleAddUser = (script: Script) => {
   // 根据脚本类型跳转到对应的用户添加页面
-  if (script.type === 'MAA') {
+  if (isMfwFamily(script.type)) {
+    // MaaFW 与各特调共用一个用户页，路由后缀取自特调注册表
+    router.push(`/scripts/${script.id}/users/add/${maafwRouteSuffix(script.type)}`)
+  } else if (script.type === 'MAA') {
     router.push(`/scripts/${script.id}/users/add/maa`)
   } else if (script.type === 'SRC') {
     router.push(`/scripts/${script.id}/users/add/src`)
   } else if (script.type === 'MaaEnd') {
     router.push(`/scripts/${script.id}/users/add/maaend`)
-  } else if (script.type === 'M9A') {
-    router.push(`/scripts/${script.id}/users/add/m9a`)
-  } else if (script.type === 'MaaFW') {
-    router.push(`/scripts/${script.id}/users/add/maafw`)
   } else if (script.type === 'Okww') {
     router.push(`/scripts/${script.id}/users/add/okww`)
   } else if (script.type === 'OkNte') {
@@ -490,8 +492,6 @@ const handleAddUser = (script: Script) => {
     router.push(`/scripts/${script.id}/users/add/zzzod`)
   } else if (script.type === 'BAAH') {
     router.push(`/scripts/${script.id}/users/add/baah`)
-  } else if (script.type === 'MSS') {
-    router.push(`/scripts/${script.id}/users/add/mss`)
   } else {
     router.push(`/scripts/${script.id}/users/add/general`)
   }
@@ -502,16 +502,15 @@ const handleEditUser = (user: User) => {
   const script = scripts.value.find(s => s.users.some(u => u.id === user.id))
   if (script) {
     // 根据脚本类型跳转到对应的用户编辑页面
-    if (script.type === 'MAA') {
+    if (isMfwFamily(script.type)) {
+      // MaaFW 与各特调共用一个用户页，路由后缀取自特调注册表
+      router.push(`/scripts/${script.id}/users/${user.id}/edit/${maafwRouteSuffix(script.type)}`)
+    } else if (script.type === 'MAA') {
       router.push(`/scripts/${script.id}/users/${user.id}/edit/maa`)
     } else if (script.type === 'SRC') {
       router.push(`/scripts/${script.id}/users/${user.id}/edit/src`)
     } else if (script.type === 'MaaEnd') {
       router.push(`/scripts/${script.id}/users/${user.id}/edit/maaend`)
-    } else if (script.type === 'M9A') {
-      router.push(`/scripts/${script.id}/users/${user.id}/edit/m9a`)
-    } else if (script.type === 'MaaFW') {
-      router.push(`/scripts/${script.id}/users/${user.id}/edit/maafw`)
     } else if (script.type === 'Okww') {
       router.push(`/scripts/${script.id}/users/${user.id}/edit/okww`)
     } else if (script.type === 'OkNte') {
@@ -524,8 +523,6 @@ const handleEditUser = (user: User) => {
       router.push(`/scripts/${script.id}/users/${user.id}/edit/zzzod`)
     } else if (script.type === 'BAAH') {
       router.push(`/scripts/${script.id}/users/${user.id}/edit/baah`)
-    } else if (script.type === 'MSS') {
-      router.push(`/scripts/${script.id}/users/${user.id}/edit/mss`)
     } else {
       router.push(`/scripts/${script.id}/users/${user.id}/edit/general`)
     }

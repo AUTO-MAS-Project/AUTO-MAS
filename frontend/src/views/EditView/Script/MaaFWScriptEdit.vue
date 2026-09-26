@@ -99,6 +99,7 @@
             :adb-control-strategy-items="adbControlStrategyItems"
             :selected-emulator-label="selectedEmulatorLabel"
             :interface-dependent-disabled="interfaceDependentDisabled"
+            :game-update-hint-key="flavor.gameUpdateHintKey"
             @change="handleChange"
             @controller-change="handleControllerChange"
             @resource-change="handleResourceChangeWithPackage"
@@ -218,7 +219,7 @@ import {
   useMaaFWControlConfig,
 } from '@/composables/useMaaFWScriptConfig'
 import { resolveAutoUpdateMode } from '@/composables/useMaaFWProjectUpdate'
-import { useMaaFWFlavor } from '@/composables/useMaaFWFlavor'
+import { maafwDefaultScriptNames, useMaaFWFlavor } from '@/composables/useMaaFWFlavor'
 import { useMaaFWShellInstanceApi } from '@/composables/useMaaFWShellInstanceApi'
 import { resolveMaaFWProjectName } from '@/utils/maafwProjectName'
 import type { MaaFWShellInstanceItem } from '@/api'
@@ -396,8 +397,8 @@ const projectDisplayName = computed(
 // 卡片右上角的类型标签：有项目名就显示项目名，没有才显示 MFW / M9A
 const typeTagLabel = computed(() => projectName.value || flavor.value.typeTagLabel)
 
-// 新建脚本时后端给的默认名（MaaFWConfig / M9AConfig 的 DEFAULT_SCRIPT_NAME）
-const DEFAULT_SCRIPT_NAMES = new Set(['新 MFW 脚本', '新 M9A 脚本'])
+// 新建脚本时后端给的默认名（MaaFWConfig 及各特调配置类的 DEFAULT_SCRIPT_NAME，登记在特调注册表）
+const DEFAULT_SCRIPT_NAMES = maafwDefaultScriptNames()
 
 // 读到 interface 后把项目名记进 Info.ProjectLabel（脚本列表的类型标签用它）；
 // 脚本名还是默认名、空、或是上次自动起的项目名时，一并改成项目名，用户自己起的名字不动。
@@ -858,7 +859,8 @@ const handleCancel = () => {
   router.push('/scripts')
 }
 
-const userRouteSuffix = () => (flavor.value.type === 'M9A' ? 'm9a' : 'maafw')
+// 用户页路由按脚本当前类型走对应那条线（/users/add/maafw、/m9a、/mss ……）
+const userRouteSuffix = () => flavor.value.routeSuffix
 const addUserPath = () => `/scripts/${scriptId}/users/add/${userRouteSuffix()}`
 
 // 引导最后一步直接去建第一个用户；先等排队中的保存写完，用户页读到的才是刚配好的脚本

@@ -1263,6 +1263,111 @@ describe('单步重试', () => {
     expect(FakeRuntimeClient.calls[1].command).toEqual(['dependencies', 'rebuild'])
   })
 
+  // 照抄 Runtime v0.1.10 真机输出：`dependencies sync` / `rebuild` 在受管 Python 缺失时，
+  // state、error、result 三个事件的 stage 都是 `python.check`，不是命令自己的 stage。
+  const pythonMismatchEvents = (): RuntimeEvent[] => {
+    const failure = {
+      code: 'PYTHON_VERSION_MISMATCH',
+      stage: 'python.check',
+      message: '受管 Python 版本复核失败',
+      retryable: true,
+      remediation: ['rebuild-environment'],
+      details: { exitCode: 2, pythonVersion: '3.12.13' },
+    }
+    return [
+      {
+        ...base,
+        type: 'state',
+        sequence: 3,
+        stage: 'python.check',
+        status: 'environment_broken',
+        message: '运行环境已损坏',
+        details: {},
+      },
+      { ...base, type: 'error', sequence: 4, ...failure },
+      { ...base, type: 'result', sequence: 5, success: false, status: 'failed', ...failure },
+    ] as unknown as RuntimeEvent[]
+  }
+
+  for (const mode of ['auto', 'rebuild'] as const) {
+    it(`依赖段报受管 Python 缺失时（${mode}）先 environment repair 再 dependencies sync`, async () => {
+      const service = createService()
+      FakeRuntimeClient.scripts = [
+        { events: [helloEvent, ...pythonMismatchEvents()] },
+        { events: [helloEvent, okResult('repair')] },
+        { events: [helloEvent, okResult('dependencies.sync')] },
+      ]
+
+      const outcome = await service.retryStage('dependency', () => undefined, undefined, mode)
+
+      expect(outcome.success).toBe(true)
+      const first = mode === 'rebuild' ? ['dependencies', 'rebuild'] : ['dependencies', 'sync']
+      expect(FakeRuntimeClient.calls.map(call => call.command)).toEqual([
+        first,
+        ['environment', 'repair'],
+        ['dependencies', 'sync'],
+      ])
+    })
+  }
+
+  it('依赖段补装受管 Python 失败时停下，报 environment repair 的失败', async () => {
+    FakeRuntimeClient.scripts = [
+      { events: [helloEvent, ...pythonMismatchEvents()] },
+      {
+        events: [
+          helloEvent,
+          {
+            ...base,
+            type: 'result',
+            sequence: 4,
+            success: false,
+            code: 'PYTHON_INSTALL_FAILED',
+            stage: 'python.install',
+            status: 'environment_broken',
+            message: 'Python 安装失败',
+            retryable: true,
+            remediation: ['retry', 'open-log'],
+            details: {},
+          },
+        ] as unknown as RuntimeEvent[],
+      },
+    ]
+
+    const outcome = await createService().retryStage('dependency', () => undefined)
+
+    expect(outcome.success).toBe(false)
+    expect(outcome.code).toBe('PYTHON_INSTALL_FAILED')
+    expect(FakeRuntimeClient.calls).toHaveLength(2)
+  })
+
+  it('依赖段其他失败不补 repair', async () => {
+    FakeRuntimeClient.scripts = [
+      {
+        events: [
+          helloEvent,
+          {
+            ...base,
+            type: 'result',
+            sequence: 5,
+            success: false,
+            code: 'DEPENDENCY_SYNC_FAILED',
+            stage: 'dependencies.sync',
+            status: 'environment_broken',
+            message: 'Python 依赖同步失败',
+            retryable: true,
+            remediation: ['retry-sync', 'rebuild-environment', 'open-log'],
+            details: {},
+          },
+        ] as unknown as RuntimeEvent[],
+      },
+    ]
+
+    const outcome = await createService().retryStage('dependency', () => undefined)
+
+    expect(outcome.success).toBe(false)
+    expect(FakeRuntimeClient.calls).toHaveLength(1)
+  })
+
   it('python 段重试走 environment ensure，要求重建环境时走 repair', async () => {
     const service = createService()
     FakeRuntimeClient.scripts = [{ events: [helloEvent, okResult('uv.check')] }]

@@ -47,7 +47,7 @@ class DroppedOverride:
 
     def describe(self) -> str:
         if self.reason == "unknown":
-            return f"{self.key}：当前原生配置没有该字段"
+            return f"{self.key}：当前原生配置没有该字段，或该字段已不由 MAS 托管"
         return f"{self.key}：保存的值类型与原生配置不一致"
 
     def asdict(self) -> dict[str, Any]:

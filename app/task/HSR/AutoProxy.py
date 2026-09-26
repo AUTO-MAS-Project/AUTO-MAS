@@ -39,7 +39,6 @@ from app.utils.constants import UTC4
 
 from .task_mapping import (
     HSR_TASK_MODULES,
-    describe_script_fallback,
     engine_label,
     resolve_script_assignment,
 )
@@ -69,6 +68,7 @@ from .tools.log_detect import (
     parse_cloud_remaining,
     select_failure_summary_lines,
 )
+from .tools.m7a_config import M7A_DAILY_ACTIVITY_SWITCH_KEYS
 from .tools.m7a_control import HSRM7AControl
 from .tools.m7a_runtime import M7ARunner
 from .tools.managed_config import list_managed_modules, redeem_code_fingerprint
@@ -128,17 +128,10 @@ def resolve_daily_native_modes(
         return bool(values.get("useBuildTarget", False)), bool(
             values.get("activity.enabled", False)
         )
-    activity_enabled = bool(values.get("activity_enable", False)) and any(
-        bool(value)
-        for key, value in values.items()
-        if key.startswith("activity_")
-        and key.endswith("_enable")
-        and key
-        not in {
-            "activity_enable",
-            "activity_dailycheckin_enable",
-            "activity_journey_highlights_notification_enable",
-        }
+    # 活动总开关 activity_enable 不在表单里，运行时按这三个子开关推导（见
+    # build_m7a_daily_patch），判定口径与之相同。
+    activity_enabled = any(
+        bool(values.get(key, False)) for key in M7A_DAILY_ACTIVITY_SWITCH_KEYS
     )
     return bool(values.get("build_target_enable", False)), activity_enabled
 
@@ -1026,16 +1019,12 @@ class HSRAutoProxyTask(TaskExecuteBase):
 
             # 脚本来源时 plan 是脚本配置，其 Managed.TaskMapping 恒为空，
             # 自然落到脚本级 TaskMapping。
-            assignment = resolve_script_assignment(
+            assigned = resolve_script_assignment(
                 module,
                 self.script_config,
                 user_config=plan,
                 effective_engines=effective_engines,
             )
-            assigned = assignment.script
-            fallback_note = describe_script_fallback(module, assignment)
-            if fallback_note:
-                self._append_log(f"用户「{user_name}」{fallback_note}")
             module_daily_eow_enabled = daily_eow_enabled
             redeem_codes_enabled = True
             redeem_code_fingerprint: str | None = None

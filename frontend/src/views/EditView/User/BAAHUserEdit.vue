@@ -17,6 +17,12 @@
     </div>
 
     <a-space size="middle">
+      <a-button v-if="!!userId" size="large" :loading="folderLoading" @click="handleOpenFolder">
+        <template #icon>
+          <FolderOpenOutlined />
+        </template>
+        {{ t('comp.openConfigFolder') }}
+      </a-button>
       <a-button size="large" class="cancel-button" @click="handleCancel">
         <template #icon>
           <ArrowLeftOutlined />
@@ -375,6 +381,7 @@ import { message } from 'ant-design-vue'
 import {
   ArrowLeftOutlined,
   CalendarOutlined,
+  FolderOpenOutlined,
   HistoryOutlined,
   QuestionCircleOutlined,
 } from '@ant-design/icons-vue'
@@ -396,7 +403,14 @@ const logger = window.electronAPI.getLogger('BAAH用户编辑')
 
 const router = useRouter()
 const route = useRoute()
-const { addUser, updateUser, getUsers, loading: userLoading } = useUserApi()
+const {
+  addUser,
+  updateUser,
+  getUsers,
+  loading: userLoading,
+  openUserConfigFolder,
+  loading: folderLoading,
+} = useUserApi()
 const { getScript } = useScriptApi()
 
 const formRef = ref<FormInstance>()
@@ -406,6 +420,11 @@ const isSaving = ref(false) // 标记是否正在保存
 
 // 路由参数
 const scriptId = route.params.scriptId as string
+
+const handleOpenFolder = async () => {
+  if (!userId) return
+  await openUserConfigFolder(scriptId, userId)
+}
 let userId = route.params.userId as string
 const isEdit = ref(!!userId) // 使用 ref 以便在创建后更新
 const { configLocked } = useScriptConfigLock(() => scriptId)

@@ -482,6 +482,30 @@ async def get_user(user: UserGetIn = Body(...)) -> UserGetOut:
 
 
 @router.post(
+    "/user/config-dir",
+    tags=["Get"],
+    summary="获取用户配置目录",
+    response_model=UserConfigDirOut,
+    status_code=200,
+)
+async def get_user_config_dir(user: UserConfigDirIn = Body(...)) -> UserConfigDirOut:
+
+    try:
+        user_config_dir = await Config.get_user_config_dir(user.scriptId, user.userId)
+    except Exception as e:
+        logger.opt(exception=True).warning(
+            f"get_user_config_dir失败: {type(e).__name__}: {e}"
+        )
+        return UserConfigDirOut(
+            code=500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+            path="",
+        )
+    return UserConfigDirOut(message="用户配置目录获取成功", path=str(user_config_dir))
+
+
+@router.post(
     "/user/add",
     tags=["Add"],
     summary="添加用户",
@@ -2835,6 +2859,50 @@ async def save_zzzod_app_config_api(
             message=f"{type(e).__name__}: {str(e)}",
             appId=script.appId,
             fields=[],
+        )
+
+
+@router.get(
+    "/bettergi/game-info",
+    tags=["BetterGI"],
+    summary="获取游戏客户端信息（路径 + 渠道，用户页透传展示）",
+    response_model=BetterGIGameInfoOut,
+    status_code=200,
+)
+async def get_bettergi_game_info_api(
+    scriptId: str, detectPath: str = ""
+) -> BetterGIGameInfoOut:
+    """读取 BetterGI 配置的游戏路径并识别客户端渠道（官服/B服/国际服）。
+
+    ``detectPath`` 非空时对该路径做渠道识别（用户自填路径的即时标注），
+    为空时返回生效路径（用户级优先，否则 BGI 全局配置）及其渠道。
+    """
+
+    try:
+        script_config = _bettergi_script_config(scriptId)
+        root = Path(script_config.get("Info", "RootPath")).expanduser()
+        from app.task.BetterGI.tools import game_info
+
+        data = game_info.read_game_info(root, detectPath)
+        return BetterGIGameInfoOut(
+            code=200,
+            status="success",
+            message="操作成功",
+            installPath=data["installPath"],
+            globalPath=data["globalPath"],
+            channel=data["channel"],
+            source=data["source"],
+        )
+    except Exception as e:
+        logger.opt(exception=True).warning(
+            f"get_bettergi_game_info_api失败: {type(e).__name__}: {e}"
+        )
+        return BetterGIGameInfoOut(
+            code=400
+            if isinstance(e, (ValueError, KeyError, TypeError, RuntimeError))
+            else 500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
         )
 
 

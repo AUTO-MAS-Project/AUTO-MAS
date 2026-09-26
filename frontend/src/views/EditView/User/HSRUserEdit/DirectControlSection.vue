@@ -1,11 +1,9 @@
 <template>
   <div class="direct-control-section">
     <div class="section-header">
-      <h3>{{ t('edit.scriptDirectControl') }}</h3>
+      <h3>{{ t('edit.directControl') }}</h3>
     </div>
-    <!-- 直控区块唯一的一条提示：说明直控跑什么、MAS 管什么、哪些字段此时不生效 -->
-    <a-alert type="info" show-icon :message="t('edit.hsrDirectControlHint')" class="direct-alert" />
-
+    <!-- 直控跑什么、MAS 管什么由上方「直控」来源卡片说明，这里不再重复 -->
     <a-empty v-if="availableEngines.length === 0" :description="t('edit.noSraMarch7thAssistant')" />
     <div v-else class="engine-grid">
       <div v-for="engine in availableEngines" :key="engine" class="engine-card">
@@ -73,10 +71,6 @@ const engineDescription = (engine: HSREngine) =>
 .section-header h3::before {
   height: 20px;
   background: var(--ant-color-primary);
-}
-
-.direct-alert {
-  margin-bottom: 16px;
 }
 
 .engine-grid {
