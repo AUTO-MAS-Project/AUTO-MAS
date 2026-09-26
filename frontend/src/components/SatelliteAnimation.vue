@@ -6,6 +6,7 @@
 
 <script setup lang="ts">
 import { nextTick, ref, onMounted, onUnmounted, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { useTheme } from '@/composables/useTheme'
 import { useScriptApi } from '@/composables/useScriptApi'
 import { satelliteModules, centerIconUrl } from '@/composables/satellite-config'
@@ -24,6 +25,7 @@ import {
 } from './satelliteExplosion'
 import * as THREE from 'three'
 
+const { t } = useI18n()
 const logger = window.electronAPI.getLogger('卫星动画')
 
 const CONFIG = {
@@ -73,6 +75,15 @@ type CardMesh = THREE.Mesh<THREE.BoxGeometry, THREE.Material[]>
 let satellites: CardMesh[] = []
 let orbitLine: THREE.Line<THREE.BufferGeometry, THREE.LineBasicMaterial> | null = null
 let centerCard: CardMesh | null = null
+let centerIconCanvas: HTMLCanvasElement | null = null
+let centerIconRainbow = false
+let centerPressed = false
+let centerScaleX = 1
+let centerScaleY = 1
+let centerRainbowCanvas: HTMLCanvasElement | null = null
+let centerRainbowTexture: THREE.CanvasTexture | null = null
+let centerRainbowExtent: OpaqueExtent | null = null
+let centerRainbowStartedAt = 0
 
 interface SatelliteState {
   type: ScriptType
@@ -87,6 +98,7 @@ let satelliteStates: Map<CardMesh, SatelliteState> = new Map()
 let centerGlowSprite: THREE.Sprite | null = null
 let glowTexture: THREE.CanvasTexture | null = null
 let updateInterval: ReturnType<typeof setInterval> | null = null
+// 预览用：临时把默认值设成 rainbow 直接看效果，看完改回 'green'
 const centerGlowMode = ref<'rainbow' | 'green'>('green')
 const raycaster = new THREE.Raycaster()
 const pointer = new THREE.Vector2()
@@ -174,6 +186,9 @@ function waitBackendReady(): Promise<void> {
 }
 
 function showCardsImmediately() {
+  // 入场到此为止，把帧号清掉：动画循环靠它判断能不能接管中心卡片的 scale
+  appearAnimationFrameId = null
+
   if (centerCard) {
     const frontMaterial = getCardFrontMaterial(centerCard)
     if (frontMaterial) frontMaterial.opacity = 1
@@ -204,6 +219,10 @@ function removeCardInteraction() {
   cardRenderer.domElement.removeEventListener('click', handleSatelliteClick)
   cardRenderer.domElement.removeEventListener('pointermove', handleSatellitePointerMove)
   cardRenderer.domElement.removeEventListener('pointerleave', resetSatelliteCursor)
+  cardRenderer.domElement.removeEventListener('pointerdown', handleCardPointerDown)
+  cardRenderer.domElement.removeEventListener('pointerup', handleCardPointerUp)
+  cardRenderer.domElement.removeEventListener('pointercancel', handleCardPointerUp)
+  cardRenderer.domElement.removeEventListener('pointerleave', handleCardPointerUp)
 }
 
 function disposeScene() {
@@ -289,6 +308,10 @@ function setupCardInteraction() {
   element.addEventListener('click', handleSatelliteClick)
   element.addEventListener('pointermove', handleSatellitePointerMove)
   element.addEventListener('pointerleave', resetSatelliteCursor)
+  element.addEventListener('pointerdown', handleCardPointerDown)
+  element.addEventListener('pointerup', handleCardPointerUp)
+  element.addEventListener('pointercancel', handleCardPointerUp)
+  element.addEventListener('pointerleave', handleCardPointerUp)
 }
 
 function getSatelliteAtPointer(event: PointerLikeEvent): CardMesh | null {
@@ -336,7 +359,128 @@ function resetSatelliteCursor() {
   }
 }
 
+// ── 中心图标彩蛋：连点 5 次起，每次按固定概率把中心图标换成炫彩版 ──
+// 前 4 次不给机会，从第 5 次起每次 0.5%；连点到 30 次保底直接给，命中过就不再触发。
+const CENTER_POKE_MIN_CLICKS = 5
+const CENTER_POKE_CHANCE = 0.005
+/** 手气差也不能点不到头，连点到这个次数一定给 */
+const CENTER_POKE_GUARANTEE_CLICKS = 30
+/** 中心图标按下去时的形变，照 dsh-whale-widget 的 SQUISH 加大幅度：压扁、横向撑开 */
+const CENTER_PRESS_SCALE_X = 1.15
+const CENTER_PRESS_SCALE_Y = 0.75
+const CENTER_POKE_WINDOW_MS = 1500
+let centerPokeCount = 0
+let centerPokeLastAt = 0
+
+/** 指针是否落在中心图标上；卫星拾取只看 satellites，中心卡片得单独判一次 */
+function isCenterCardHit(event: PointerLikeEvent): boolean {
+  if (!centerCard || !cardRenderer || !camera || performanceStore.isBackgrounded) {
+    return false
+  }
+
+  const bounds = cardRenderer.domElement.getBoundingClientRect()
+  if (bounds.width <= 0 || bounds.height <= 0) {
+    return false
+  }
+
+  pointer.set(
+    ((event.clientX - bounds.left) / bounds.width) * 2 - 1,
+    -((event.clientY - bounds.top) / bounds.height) * 2 + 1
+  )
+  raycaster.setFromCamera(pointer, camera)
+  return raycaster.intersectObject(centerCard, false).length > 0
+}
+
+function registerCenterPoke(): void {
+  const now = performance.now()
+  // 慢悠悠点不算连点：超过窗口就从头数
+  if (now - centerPokeLastAt > CENTER_POKE_WINDOW_MS) {
+    centerPokeCount = 0
+  }
+  centerPokeLastAt = now
+  centerPokeCount += 1
+
+  // 连点够数之前不给机会
+  if (centerPokeCount < CENTER_POKE_MIN_CLICKS) {
+    return
+  }
+  if (centerIconRainbow) {
+    return
+  }
+
+  // 保底：点够次数直接给，不再看概率
+  if (centerPokeCount >= CENTER_POKE_GUARANTEE_CLICKS) {
+    setCenterIconRainbow(true)
+    centerPokeCount = 0
+    logger.info('中心图标彩蛋触发：连点保底')
+    return
+  }
+
+  // 连点够数之后，每一次都是同样的概率，不会越点越容易
+  if (Math.random() >= CENTER_POKE_CHANCE) {
+    return
+  }
+
+  setCenterIconRainbow(true)
+  centerPokeCount = 0
+  logger.info('中心图标彩蛋触发：炫彩图标')
+}
+
+/** 在点击处冒一句 star！，加速往上方飘走；彩蛋亮起来之后这句字是彩虹色的 */
+function spawnStarBurst(clientX: number, clientY: number): void {
+  if (!container.value || isUnmounted) {
+    return
+  }
+
+  const bounds = container.value.getBoundingClientRect()
+  const element = document.createElement('span')
+  element.className = centerIconRainbow ? 'star-burst star-burst-rainbow' : 'star-burst'
+  element.textContent = t('home.satelliteEgg.star')
+  element.style.left = `${clientX - bounds.left}px`
+  element.style.top = `${clientY - bounds.top}px`
+  container.value.appendChild(element)
+
+  // 左右随机偏一点，整体向上；缓动是强 ease-in，越飞越快
+  const driftX = (Math.random() - 0.5) * 90
+  const riseY = 220 + Math.random() * 140
+  const spin = (Math.random() - 0.5) * 50
+  const animation = element.animate(
+    [
+      { transform: 'translate(-50%, -50%) scale(0.6)', opacity: 0 },
+      {
+        offset: 0.22,
+        transform: `translate(calc(-50% + ${driftX * 0.3}px), calc(-50% - ${riseY * 0.3}px)) scale(1.08) rotate(${spin * 0.35}deg)`,
+        opacity: 1,
+      },
+      {
+        transform: `translate(calc(-50% + ${driftX}px), calc(-50% - ${riseY}px)) scale(0.92) rotate(${spin}deg)`,
+        opacity: 0,
+      },
+    ],
+    { duration: 1150, easing: 'cubic-bezier(0.5, 0, 1, 1)', fill: 'forwards' }
+  )
+  animation.onfinish = () => element.remove()
+}
+
+/** 按在中心图标上时给它一个压扁的形变，松开还原 */
+function handleCardPointerDown(event: PointerEvent): void {
+  if (!isCenterCardHit(event)) {
+    return
+  }
+  centerPressed = true
+  spawnStarBurst(event.clientX, event.clientY)
+}
+
+function handleCardPointerUp(): void {
+  centerPressed = false
+}
+
 function handleSatelliteClick(event: MouseEvent) {
+  if (isCenterCardHit(event)) {
+    registerCenterPoke()
+    return
+  }
+
   const sat = getSatelliteAtPointer(event)
   if (!sat || satelliteExplosions.has(sat)) {
     return
@@ -604,6 +748,188 @@ function getCardImageCanvas(card: CardMesh): HTMLCanvasElement | null {
     return null
   }
   return image
+}
+
+/**
+ * 图标彩虹的色相站：每 5° 一个。段数给少了，相邻色相之间的插值偏色会连成肉眼可见的分界。
+ * 每站存偏移比例和色相角，整体加 phase 偏移就成了流动效果。
+ */
+const ICON_RAINBOW_SEGMENTS = 72
+const RAINBOW_HUE_STOPS: ReadonlyArray<readonly [number, number]> = Array.from(
+  { length: ICON_RAINBOW_SEGMENTS + 1 },
+  (_, index) => {
+    const ratio = index / ICON_RAINBOW_SEGMENTS
+    return [ratio, ratio * 360] as const
+  }
+)
+
+/** 彩虹的铺设方向：左上 → 右下 */
+const RAINBOW_AXIS_X = Math.SQRT1_2
+const RAINBOW_AXIS_Y = Math.SQRT1_2
+
+/** 色相走完一整圈要多久 */
+const CENTER_RAINBOW_CYCLE_MS = 1200
+
+/** 图标不透明像素在某个方向上的投影范围，用来把彩虹铺在图标真正覆盖的那一段上 */
+interface OpaqueExtent {
+  min: number
+  max: number
+}
+
+function getOpaqueExtentAlong(
+  context: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  axisX: number,
+  axisY: number
+): OpaqueExtent {
+  const fallback: OpaqueExtent = { min: 0, max: width * axisX + height * axisY }
+  const { data } = context.getImageData(0, 0, width, height)
+  let min = Infinity
+  let max = -Infinity
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      if (data[(y * width + x) * 4 + 3] <= 8) {
+        continue
+      }
+      const projection = x * axisX + y * axisY
+      if (projection < min) min = projection
+      if (projection > max) max = projection
+    }
+  }
+  return min > max ? fallback : { min, max }
+}
+
+/**
+ * 把炫彩版画进给定画布：色相换成整条彩虹，原图的明暗关系留着，所以还能认出是哪个图标。
+ *
+ * 合成分两步，缺一不可——先用 `color` 混合铺彩虹，再拿原图的 alpha 裁回来。
+ * 少了第二步，图标外面那圈透明区域会被彩虹矩形整块糊满。
+ */
+function paintCenterRainbowIcon(
+  context: CanvasRenderingContext2D,
+  source: HTMLCanvasElement,
+  extent: OpaqueExtent,
+  phase: number
+): void {
+  const width = context.canvas.width
+  const height = context.canvas.height
+  context.globalCompositeOperation = 'source-over'
+  context.clearRect(0, 0, width, height)
+  context.drawImage(source, 0, 0)
+
+  // 斜着铺，左上到右下。起止点取图标自己的投影范围而不是画布对角线：
+  // 这个菱形图标只占对角线中间一段，照着画布铺的话红紫两端会落在空白里看不见。
+  const gradient = context.createLinearGradient(
+    extent.min * RAINBOW_AXIS_X,
+    extent.min * RAINBOW_AXIS_Y,
+    extent.max * RAINBOW_AXIS_X,
+    extent.max * RAINBOW_AXIS_Y
+  )
+  // 色相随时间递减，颜色才是沿着左上 → 右下淌；递增的话看过去是从右下往左上跑
+  RAINBOW_HUE_STOPS.forEach(([offset, hue]) => {
+    const hueAngle = (((hue - phase) % 360) + 360) % 360
+    gradient.addColorStop(offset, `hsl(${hueAngle} 95% 64%)`)
+  })
+
+  context.globalCompositeOperation = 'color'
+  context.fillStyle = gradient
+  context.fillRect(0, 0, width, height)
+  context.globalCompositeOperation = 'destination-in'
+  context.drawImage(source, 0, 0)
+  context.globalCompositeOperation = 'source-over'
+}
+
+/** 炫彩贴图复用同一块画布，每帧只重画内容，靠 needsUpdate 推给 GPU */
+function ensureCenterRainbowCanvas(): THREE.CanvasTexture | null {
+  if (centerRainbowTexture) {
+    return centerRainbowTexture
+  }
+  if (!centerIconCanvas) {
+    return null
+  }
+
+  const canvas = document.createElement('canvas')
+  canvas.width = centerIconCanvas.width
+  canvas.height = centerIconCanvas.height
+  const context = canvas.getContext('2d')
+  if (!context) {
+    return null
+  }
+
+  context.drawImage(centerIconCanvas, 0, 0)
+  centerRainbowExtent = getOpaqueExtentAlong(
+    context,
+    canvas.width,
+    canvas.height,
+    RAINBOW_AXIS_X,
+    RAINBOW_AXIS_Y
+  )
+  centerRainbowCanvas = canvas
+  centerRainbowStartedAt = performance.now()
+
+  const texture = new THREE.CanvasTexture(canvas)
+  texture.colorSpace = THREE.SRGBColorSpace
+  texture.needsUpdate = true
+  centerRainbowTexture = texture
+  return texture
+}
+
+/** 每帧把色相往前推一点；只有炫彩图标开着时才动手 */
+function updateCenterRainbowIcon(): void {
+  if (
+    !centerIconRainbow ||
+    !centerRainbowCanvas ||
+    !centerRainbowTexture ||
+    !centerIconCanvas ||
+    !centerRainbowExtent
+  ) {
+    return
+  }
+
+  const context = centerRainbowCanvas.getContext('2d')
+  if (!context) {
+    return
+  }
+
+  const elapsed = performance.now() - centerRainbowStartedAt
+  const phase = ((elapsed / CENTER_RAINBOW_CYCLE_MS) * 360) % 360
+  paintCenterRainbowIcon(context, centerIconCanvas, centerRainbowExtent, phase)
+  centerRainbowTexture.needsUpdate = true
+}
+
+/** 中心图标的正面贴图在炫彩版和原图之间切换；原图 canvas 一直留着，换回来不用重新加载 */
+function setCenterIconRainbow(rainbow: boolean): void {
+  if (!centerCard || !centerIconCanvas || centerIconRainbow === rainbow) {
+    return
+  }
+
+  const frontMaterial = getCardFrontMaterial(centerCard)
+  if (!frontMaterial?.map) {
+    return
+  }
+
+  let texture: THREE.CanvasTexture
+  if (rainbow) {
+    const rainbowTexture = ensureCenterRainbowCanvas()
+    if (!rainbowTexture) {
+      return
+    }
+    texture = rainbowTexture
+  } else {
+    texture = new THREE.CanvasTexture(centerIconCanvas)
+    texture.colorSpace = THREE.SRGBColorSpace
+    texture.needsUpdate = true
+    // 炫彩用的画布随贴图一起丢掉，下次触发再建
+    centerRainbowCanvas = null
+    centerRainbowTexture = null
+    centerRainbowExtent = null
+  }
+
+  frontMaterial.map.dispose()
+  frontMaterial.map = texture
+  frontMaterial.needsUpdate = true
+  centerIconRainbow = rainbow
 }
 
 function createFragmentTexture(
@@ -968,6 +1294,7 @@ async function initSceneInternal(): Promise<void> {
   }
 
   centerCard = createdCenterCard
+  centerIconCanvas = getCardImageCanvas(createdCenterCard)
   centerCard.position.set(0, 0, 0)
   cardScene.add(centerCard)
 
@@ -1136,7 +1463,17 @@ function animate(): void {
     const centerFloat =
       Math.sin(time * CONFIG.centerFloatSpeed * 0.001) * CONFIG.centerFloatAmplitude
     centerCard.position.y = centerFloat
+    // 入场动画自己写 scale，等它跑完再接管；按压形变平滑逼近，免得一帧跳到位
+    if (appearAnimationFrameId === null) {
+      const targetX = centerPressed ? CENTER_PRESS_SCALE_X : 1
+      const targetY = centerPressed ? CENTER_PRESS_SCALE_Y : 1
+      centerScaleX += (targetX - centerScaleX) * 0.35
+      centerScaleY += (targetY - centerScaleY) * 0.35
+      centerCard.scale.set(centerScaleX, centerScaleY, 1)
+    }
   }
+
+  updateCenterRainbowIcon()
 
   const hasActiveExplosions = updateSatelliteExplosions(time)
 
@@ -1395,6 +1732,39 @@ onMounted(async () => {
 @keyframes spin {
   to {
     transform: rotate(360deg);
+  }
+}
+
+/* 浮字是运行时创建的，不在模板里，scoped 的选择器要用 :deep 才管得到 */
+.satellite-container :deep(.star-burst) {
+  position: absolute;
+  /* 三个 canvas 的 z-index 是 1/1.5/2，浮字得压在上面才看得见 */
+  z-index: 10;
+  transform: translate(-50%, -50%);
+  font-size: 17px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  color: var(--ant-color-warning);
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.18);
+  pointer-events: none;
+  white-space: nowrap;
+  will-change: transform, opacity;
+}
+
+.satellite-container :deep(.star-burst-rainbow) {
+  background-image: linear-gradient(90deg, #ff5f6d, #ffc371, #47e5bc, #4facfe, #b06ab3, #ff5f6d);
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  text-shadow: none;
+  animation: star-rainbow 1.2s linear infinite;
+}
+
+@keyframes star-rainbow {
+  to {
+    background-position: 200% center;
   }
 }
 </style>
