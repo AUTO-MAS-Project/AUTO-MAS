@@ -338,15 +338,23 @@ export const buildEndfieldOverview = (
     endTime.getTime() > now.getTime() &&
     (startTime === null || startTime.getTime() <= now.getTime())
 
+  // isRunning 已保证条目 endTime 非空，MAX_SAFE_INTEGER 仅为类型兜底；
+  // 展示顺序按结束时间升序，最先结束的排最前，同结束时间再按源站 sortId 稳定排序。
+  const byEndAscending = <T extends { endTime: Date | null; sortId: number }>(a: T, b: T): number =>
+    (a.endTime?.getTime() ?? Number.MAX_SAFE_INTEGER) -
+      (b.endTime?.getTime() ?? Number.MAX_SAFE_INTEGER) || a.sortId - b.sortId
+
   const activePools = source.pools
     .filter(pool => isRunning(pool.startTime, pool.endTime))
-    .sort((a, b) => a.sortId - b.sortId || (a.poolId < b.poolId ? -1 : a.poolId > b.poolId ? 1 : 0))
+    .sort(
+      (a, b) => byEndAscending(a, b) || (a.poolId < b.poolId ? -1 : a.poolId > b.poolId ? 1 : 0)
+    )
 
   const activeActivities = source.activities
     .filter(activity => isRunning(activity.startTime, activity.endTime))
     .sort(
       (a, b) =>
-        a.sortId - b.sortId ||
+        byEndAscending(a, b) ||
         (a.activityId < b.activityId ? -1 : a.activityId > b.activityId ? 1 : 0)
     )
 
