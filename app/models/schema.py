@@ -5586,6 +5586,10 @@ class WSTaskLogUpdatedData(BaseModel):
     log: str = Field(default="", description="append 为真时是新增片段, 否则是完整日志")
     seq: int = Field(default=0, description="推送序号, 每个任务独立, 从 1 起单调递增")
     append: bool = Field(default=False, description="是否追加到已有日志, 否则整体替换")
+    firstLine: int = Field(
+        default=1,
+        description="log 第一行在完整日志里的行号, 供界面显示真实行号; append 时忽略",
+    )
 
 
 class WSTaskScriptIdentityData(BaseModel):
