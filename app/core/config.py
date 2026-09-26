@@ -592,7 +592,9 @@ class AppConfig(GlobalConfig):
 
                 # MaaConfig.Emulator.Id 依赖 EmulatorConfig；迁移时必须先加载模拟器，
                 # 否则合法 UUID 会被 MultipleUIDValidator 当成失效值改成 "-"。
-                await self.EmulatorConfig.connect(self.config_path / "EmulatorConfig.json")
+                await self.EmulatorConfig.connect(
+                    self.config_path / "EmulatorConfig.json"
+                )
                 await self.ScriptConfig.connect(self.config_path / "ScriptConfig.json")
                 await self.PlanConfig.connect(self.config_path / "PlanConfig.json")
                 await self.QueueConfig.connect(self.config_path / "QueueConfig.json")
