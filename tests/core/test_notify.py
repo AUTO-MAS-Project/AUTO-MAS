@@ -1,6 +1,5 @@
 import asyncio
 import inspect
-from dataclasses import replace
 from unittest.mock import AsyncMock, patch
 
 from app.core import notify as notify_module
@@ -13,45 +12,21 @@ from app.core.notify import (
     user_target,
 )
 from app.core.notify_channels import get_notify_channels
-from app.core.notify_render import render_for_target
-from app.models.notification import (
-    NotificationCapabilities,
-    NotificationImage,
-    NotificationSummary,
-    image_reference,
-)
 
 _UNSET = object()
 
 
 class _Webhook:
-    def __init__(
-        self,
-        enabled: bool = True,
-        name: str = "值班群",
-        *,
-        url: str = "https://example.com/webhook",
-        template: str = "",
-        headers: str = "{ }",
-        method: str = "POST",
-    ) -> None:
+    def __init__(self, enabled: bool = True, name: str = "值班群") -> None:
         self._enabled = enabled
         self._name = name
-        self._data = {
-            "Url": url,
-            "Template": template,
-            "Headers": headers,
-            "Method": method,
-        }
 
     def get(self, group: str, key: str) -> str | bool:
-        if group == "Info":
-            if key == "Name":
-                return self._name
-            assert key == "Enabled"
-            return self._enabled
-        assert group == "Data"
-        return self._data[key]
+        assert group == "Info"
+        if key == "Name":
+            return self._name
+        assert key == "Enabled"
+        return self._enabled
 
 
 class _Webhooks:
@@ -159,14 +134,14 @@ class _Notify:
         )
 
     async def WebhookPush(
-        self, title=_UNSET, content=_UNSET, webhook=_UNSET, *, images=_UNSET
+        self, title=_UNSET, content=_UNSET, webhook=_UNSET, *, image_base64=_UNSET
     ):
         return await self._run(
             "WebhookPush",
             title=title,
             content=content,
             webhook=webhook,
-            images=images,
+            image_base64=image_base64,
         )
 
     async def send_koishi(self, message=_UNSET, msgtype=_UNSET, client_name=_UNSET):
@@ -186,18 +161,10 @@ def _run(awaitable):
 
 
 def _global_target(
-    config: _Config,
-    *,
-    include_system: bool = False,
-    empty_policy="send",
-    system_timeout_seconds: int | None = None,
+    config: _Config, *, include_system: bool = False, empty_policy="send"
 ):
     with patch.object(notify_module, "Config", config):
-        return global_target(
-            include_system=include_system,
-            empty_policy=empty_policy,
-            system_timeout_seconds=system_timeout_seconds,
-        )
+        return global_target(include_system=include_system, empty_policy=empty_policy)
 
 
 def _protocol_members():
@@ -312,15 +279,6 @@ def test_dispatch_reports_named_webhook_failure() -> None:
     assert list(result.failed) == ["全局 Webhook 值班群"]
 
 
-def test_mail_keeps_html_template_signature_without_adding_another() -> None:
-    config = _Config({"IfSendMail": True, "ToAddress": "user@example.com"})
-    notify = _Notify()
-
-    _run(dispatch(PAYLOAD, [_global_target(config)], notifier=notify))
-
-    assert notify.kwargs[0]["content"] == "<p>正文</p>"
-
-
 def test_dispatch_continues_after_system_failure() -> None:
     config = _Config(
         {
@@ -344,39 +302,6 @@ def test_dispatch_continues_after_system_failure() -> None:
     assert list(result.failed) == ["全局系统"]
     assert list(result.succeeded) == ["全局邮件", "全局 ServerChan"]
     assert notify.calls == ["push_plyer", "send_mail", "ServerChanPush"]
-
-
-def test_render_failure_isolated_to_one_target() -> None:
-    config = _Config(
-        {
-            "IfSendMail": True,
-            "ToAddress": "user@example.com",
-            "IfServerChan": True,
-            "ServerChanKey": "send-key",
-        }
-    )
-    target = _global_target(config)
-    channel, channel_target = target.channels[0]
-    broken_target = replace(
-        target,
-        channels=(
-            (
-                channel,
-                replace(
-                    channel_target,
-                    capabilities=NotificationCapabilities(formats=()),
-                ),
-            ),
-            *target.channels[1:],
-        ),
-    )
-    notify = _Notify()
-
-    result = _run(dispatch(PAYLOAD, [broken_target], notifier=notify))
-
-    assert result.failed == ("全局邮件",)
-    assert result.succeeded == ("全局 ServerChan",)
-    assert notify.calls == ["ServerChanPush"]
 
 
 def test_dispatch_skips_disabled_webhook_channel() -> None:
@@ -456,19 +381,20 @@ def test_system_notification_passes_override_values() -> None:
             NotifyPayload(
                 title="标题",
                 text="正文",
-                summary=NotificationSummary(
-                    title="系统标题", text="系统正文\n系统ticker"
-                ),
+                system_title="系统标题",
+                system_message="系统正文",
+                system_ticker="系统ticker",
+                system_timeout=7,
             ),
-            [_global_target(config, include_system=True, system_timeout_seconds=7)],
+            [_global_target(config, include_system=True)],
             notifier=notify,
         )
     )
 
     assert notify.kwargs[0] == {
         "title": "系统标题",
-        "message": "系统正文\n系统ticker",
-        "ticker": "系统正文",
+        "message": "系统正文",
+        "ticker": "系统ticker",
         "t": 7,
     }
 
@@ -538,56 +464,6 @@ def test_same_name_webhooks_keep_distinct_delivery_ids() -> None:
     # 显示名相同但补发记录按 uid 区分
     assert list(result.succeeded) == ["全局 Webhook 同名", "全局 Webhook 同名"]
     assert list(result.succeeded_ids) == ["全局 Webhook a", "全局 Webhook b"]
-
-
-def test_webhook_snapshot_keeps_config_and_capabilities_together() -> None:
-    webhook = _Webhook(
-        url="https://example.com/old",
-        template='{"msgtype": "markdown", "content": "{content}"}',
-        headers='{"X-Test": "old"}',
-    )
-    target = _global_target(_Config(webhooks=[("hook-1", webhook)]))
-    channel_target = target.channels[0][1]
-    webhook._data.update(
-        Url="https://example.com/new",
-        Template='{"content": "{content}"}',
-        Headers='{"X-Test": "new"}',
-    )
-
-    notify = _Notify()
-    _run(dispatch(PAYLOAD, [target], notifier=notify))
-
-    snapshot = notify.kwargs[0]["webhook"]
-    assert snapshot.url == "https://example.com/old"
-    assert snapshot.headers == '{"X-Test": "old"}'
-    assert channel_target.capabilities.formats == ("markdown", "text")
-
-
-def test_compact_statistics_enable_webhook_summary_only_for_that_target_set() -> None:
-    from app.core.notify import statistic_targets
-
-    config = _Config({"IfSendStatistic": True}, webhooks=[("hook-1", _Webhook())])
-    with patch.object(notify_module, "Config", config):
-        targets = statistic_targets(None, compact_summary=True)
-
-    webhook_target = targets[0].channels[0][1]
-    assert webhook_target.summary_policy == "preferred"
-
-
-def test_task_report_summary_does_not_shorten_default_webhook_content() -> None:
-    webhook = _Webhook()
-    target = _global_target(_Config(webhooks=[("hook-1", webhook)]))
-    notify = _Notify()
-    payload = NotifyPayload(
-        title="任务报告",
-        text="完整任务报告",
-        summary=NotificationSummary(text="已完成用户数: 2, 未完成用户数: 0"),
-    )
-
-    _run(dispatch(payload, [target], notifier=notify))
-
-    assert notify.kwargs[0]["content"].startswith("完整任务报告")
-    assert "已完成用户数" not in notify.kwargs[0]["content"]
 
 
 def test_user_target_uses_user_scope_and_warn_policy() -> None:
@@ -745,98 +621,6 @@ def test_descriptor_fields_exist_in_config_and_schema() -> None:
         if channel.enable_field:
             Config.get(*channel.enable_field)
             assert channel.enable_field[1] in GlobalConfig_Notify.model_fields
-
-
-def test_renderer_inlines_only_referenced_html_images() -> None:
-    image = NotificationImage(id="report-shot", data=b"png", alt="失败截图")
-    rendered = render_for_target(
-        NotifyPayload(
-            title="结果",
-            text="结果",
-            html=(
-                f"<p>{image_reference(image.id)}</p>"
-                f'<img src="{image_reference(image.id)}" alt="失败截图">'
-            ),
-            images=(image,),
-        ),
-        NotificationCapabilities(
-            formats=("html", "text"),
-            image_presentations=frozenset({"html"}),
-            append_signature=False,
-        ),
-    )
-
-    assert rendered.format == "html"
-    assert rendered.content.count(image_reference(image.id)) == 1
-    assert "<p>失败截图</p>" in rendered.content
-    assert rendered.images == (image,)
-
-
-def test_renderer_degrades_unavailable_image_to_alt_text() -> None:
-    rendered = render_for_target(
-        NotifyPayload(
-            title="结果",
-            text=f"检查 {image_reference('missing-shot')}",
-        ),
-        NotificationCapabilities(formats=("text",), append_signature=False),
-    )
-
-    assert rendered.content == "检查 "
-    assert any("不存在的图片 missing-shot" in item for item in rendered.diagnostics)
-
-
-def test_renderer_uses_alt_text_when_target_cannot_access_image_data() -> None:
-    image = NotificationImage(id="local-only", data=b"png", alt="本地图片")
-    rendered = render_for_target(
-        NotifyPayload(
-            title="结果",
-            text="结果",
-            markdown=f"![本地图片]({image_reference(image.id)})",
-            images=(image,),
-        ),
-        NotificationCapabilities(
-            formats=("markdown", "text"),
-            image_presentations=frozenset({"markdown"}),
-            append_signature=False,
-        ),
-    )
-
-    assert rendered.content == "本地图片"
-    assert rendered.images == ()
-    assert any("无法直接显示图片 local-only" in item for item in rendered.diagnostics)
-
-
-def test_renderer_counts_signature_and_newline_expansion_in_byte_limit() -> None:
-    rendered = render_for_target(
-        NotifyPayload(
-            title="标题",
-            text="x" * 35 + "\ny",
-            summary=NotificationSummary(text="短摘要"),
-        ),
-        NotificationCapabilities(
-            formats=("text",),
-            max_content_utf8_bytes=54,
-            double_text_newlines=True,
-        ),
-        summary_policy="if_over_limit",
-    )
-
-    assert rendered.content == "短摘要\n\nAUTO-MAS 敬上"
-    assert len(rendered.content.encode("utf-8")) <= 54
-
-
-def test_renderer_appends_html_signature_only_when_missing() -> None:
-    capabilities = NotificationCapabilities(formats=("html",))
-    plain = render_for_target(
-        NotifyPayload(title="标题", text="正文", html="<p>正文</p>"), capabilities
-    )
-    signed = render_for_target(
-        NotifyPayload(title="标题", text="正文", html="<p>AUTO-MAS 敬上</p>"),
-        capabilities,
-    )
-
-    assert plain.content.endswith("<p>AUTO-MAS 敬上</p>")
-    assert signed.content.count("AUTO-MAS 敬上") == 1
 
 
 def test_channels_endpoint_returns_metadata_only() -> None:

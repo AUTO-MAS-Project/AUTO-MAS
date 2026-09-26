@@ -98,7 +98,11 @@ async def push_proxy_result(
             text=message_text,
             html=template.render(message),
             signature_sep=signature_sep,
-            summary=NotificationSummary(text=counts, title=summary_title),
+            summary=NotificationSummary(
+                text=counts,
+                title=summary_title,
+                overflow_text=message_text,
+            ),
             images=tuple(images),
         ),
         [global_target(include_system=True, system_timeout_seconds=10)],

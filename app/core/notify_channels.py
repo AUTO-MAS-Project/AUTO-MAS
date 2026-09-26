@@ -55,7 +55,8 @@ from app.models.notification import (
 SCOPE_GLOBAL = "global"
 SCOPE_USER = "user"
 _KOISHI_HTML_DOCUMENT_PATTERN = re.compile(
-    r"^\s*(?:<!doctype\s+html\b|<html\b|<head\b)", re.IGNORECASE
+    r"^\s*(?:<!--.*?-->\s*)*(?:<!doctype\s+html\b|<html\b|<head\b)",
+    re.IGNORECASE | re.DOTALL,
 )
 
 

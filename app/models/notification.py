@@ -75,6 +75,8 @@ class NotificationSummary:
 
     text: str
     title: str | None = None
+    # 正文超出目标限制时使用；与系统通知等渠道展示的紧凑文字分开。
+    overflow_text: str | None = None
 
 
 @dataclass(frozen=True)

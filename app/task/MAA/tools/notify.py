@@ -19,6 +19,7 @@
 
 #   Contact: DLmaster_361@163.com
 
+from dataclasses import replace
 from functools import cache
 
 from app.core import Config
@@ -107,7 +108,32 @@ def _six_star_targets(user_config: MaaUserConfig | None) -> list[NotifyTarget]:
         and user_config.get("Notify", "IfSendSixStar")
     ):
         targets.append(user_target(user_config))
-    return targets
+    # 六星 Webhook 沿用纯文案；配图由能直接展示该图片的渠道处理。
+    return [
+        replace(
+            target,
+            channels=tuple(
+                (
+                    channel,
+                    replace(
+                        channel_target,
+                        capabilities=replace(
+                            channel_target.capabilities,
+                            formats=("text",),
+                            double_text_newlines=(
+                                "markdown" in channel_target.capabilities.formats
+                                or channel_target.capabilities.double_text_newlines
+                            ),
+                        ),
+                    ),
+                )
+                if channel.key == "webhook"
+                else (channel, channel_target)
+                for channel, channel_target in target.channels
+            ),
+        )
+        for target in targets
+    ]
 
 
 async def push_notification(

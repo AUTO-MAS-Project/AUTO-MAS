@@ -407,6 +407,13 @@ async def dispatch_task_report(
             if task_info is not None
             else summary_text
         )
+        markdown = payload.markdown or payload.text
+        if markdown_summary and markdown_summary not in markdown:
+            markdown = (
+                markdown.replace(summary_text, markdown_summary)
+                if summary_text in markdown
+                else f"{markdown}\n\n{markdown_summary}"
+            )
         clean_payload = replace(
             payload,
             text=payload.text.replace(summary_text, "").rstrip(),
@@ -415,20 +422,26 @@ async def dispatch_task_report(
                 if payload.html is not None
                 else None
             ),
-            markdown=(
-                payload.markdown.replace(markdown_summary, "").rstrip()
-                if payload.markdown is not None
-                else None
-            ),
             summary=(
                 replace(
                     payload.summary,
                     text=payload.summary.text.replace(summary_text, "").rstrip(),
+                    overflow_text=(
+                        payload.summary.overflow_text.replace(summary_text, "").rstrip()
+                        if payload.summary.overflow_text is not None
+                        else None
+                    ),
                 )
                 if payload.summary is not None
                 else None
             ),
+            markdown=(
+                payload.markdown.replace(markdown_summary, "").rstrip()
+                if payload.markdown is not None
+                else payload.text.replace(summary_text, "").rstrip()
+            ),
         )
+        payload = replace(payload, markdown=markdown)
     else:
         clean_payload = payload
         if task_info is not None:
@@ -437,6 +450,9 @@ async def dispatch_task_report(
             summary_markdown = append_task_community_summary(
                 task_info, "", output_format="markdown"
             ).strip()
+            markdown = payload.markdown or payload.text
+            if summary_markdown:
+                markdown = f"{markdown}\n\n{summary_markdown}"
             payload = replace(
                 payload,
                 text=f"{payload.text}\n\n{summary_text}",
@@ -445,15 +461,15 @@ async def dispatch_task_report(
                     if payload.html is not None
                     else None
                 ),
-                markdown=(
-                    f"{payload.markdown}\n\n{summary_markdown}"
-                    if payload.markdown is not None
-                    else None
-                ),
+                markdown=markdown,
                 summary=(
                     replace(
                         payload.summary,
                         text=f"{payload.summary.text}\n\n{summary_text}",
+                        overflow_text=(
+                            f"{payload.summary.overflow_text or payload.text}"
+                            f"\n\n{summary_text}"
+                        ),
                     )
                     if payload.summary is not None
                     else None

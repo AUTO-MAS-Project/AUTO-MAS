@@ -94,13 +94,14 @@ def render_for_target(
         and len(content.encode("utf-8")) > byte_limit
     )
     if over_limit and payload.summary is not None:
-        if not payload.summary.text:
+        fallback_text = payload.summary.overflow_text or payload.summary.text
+        if not fallback_text:
             diagnostics.append("正文超过目标字节上限，但没有可用的非空业务摘要")
         else:
             assert byte_limit is not None
             full_size = len(content.encode("utf-8"))
             selected_format = "text"
-            content = payload.summary.text
+            content = fallback_text
             used_summary = True
             if use_summary_title and payload.summary.title:
                 title = payload.summary.title
@@ -114,12 +115,23 @@ def render_for_target(
             )
             diagnostics.append(
                 f"正文为 {full_size} UTF-8 字节，超过目标上限 "
-                f"{byte_limit}；已改用业务摘要"
+                f"{byte_limit}；已改用超限备用内容"
             )
             summary_size = len(content.encode("utf-8"))
             if summary_size > byte_limit:
+                content = _truncate_utf8_content(
+                    content,
+                    byte_limit,
+                    suffix=(
+                        f"{_signature_separator('text', payload, capabilities)}"
+                        f"{NOTIFICATION_SIGNATURE}"
+                        if payload.append_signature and capabilities.append_signature
+                        else ""
+                    ),
+                )
                 diagnostics.append(
-                    f"业务摘要为 {summary_size} UTF-8 字节，仍超过目标上限 {byte_limit}"
+                    f"超限备用内容为 {summary_size} UTF-8 字节，已截断至目标上限 "
+                    f"{byte_limit}"
                 )
 
     if "base64" in capabilities.image_presentations:
@@ -202,7 +214,12 @@ def _render_content(
             if NOTIFICATION_SIGNATURE not in content:
                 content = f"{content}<p>{escape(NOTIFICATION_SIGNATURE)}</p>"
         else:
-            content = f"{content}{payload.signature_sep}{NOTIFICATION_SIGNATURE}"
+            signature_sep = _signature_separator(
+                content_format,
+                payload,
+                capabilities,
+            )
+            content = f"{content}{signature_sep}{NOTIFICATION_SIGNATURE}"
 
     return content, referenced_images, diagnostics
 
@@ -222,6 +239,42 @@ def _select_format(
         if content is not None:
             return content_format, content
     raise ValueError("通知目标未声明可用的纯文本正文")
+
+
+def _signature_separator(
+    content_format: NotificationFormat,
+    payload: NotifyPayload,
+    capabilities: NotificationCapabilities,
+) -> str:
+    """确保 Markdown 与自动扩展换行的纯文本正文能分开签名段落。"""
+
+    if payload.signature_sep == "\n" and (
+        content_format == "markdown" or capabilities.double_text_newlines
+    ):
+        return "\n\n"
+    return payload.signature_sep
+
+
+def _truncate_utf8_content(content: str, byte_limit: int, *, suffix: str) -> str:
+    """在 UTF-8 字节上限内截断正文，并尽量保留完整行与通知签名。"""
+
+    marker = "\n…（内容已截断）"
+    suffix_bytes = len(suffix.encode("utf-8"))
+    marker_bytes = len(marker.encode("utf-8"))
+    if suffix_bytes + marker_bytes > byte_limit:
+        suffix = ""
+        suffix_bytes = 0
+    body = content[: -len(suffix)] if suffix and content.endswith(suffix) else content
+    prefix_limit = byte_limit - suffix_bytes - marker_bytes
+    prefix = body.encode("utf-8")[:prefix_limit].decode("utf-8", errors="ignore")
+    last_newline = prefix.rfind("\n")
+    if last_newline > len(prefix) * 0.75:
+        prefix = prefix[:last_newline].rstrip()
+    marker = marker if prefix else marker.lstrip("\n")
+    result = f"{prefix}{marker}{suffix}"
+    if len(result.encode("utf-8")) > byte_limit:
+        return result.encode("utf-8")[:byte_limit].decode("utf-8", errors="ignore")
+    return result
 
 
 def _render_html_images(
