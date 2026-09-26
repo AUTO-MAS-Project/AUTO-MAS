@@ -26,11 +26,9 @@
 """
 
 import asyncio
-import json
 from collections.abc import Awaitable, Callable, Iterable, Sequence
 from dataclasses import dataclass, replace
 from typing import Any, Literal, Protocol
-from urllib.parse import urlsplit
 
 from app.core.config import Config
 from app.core.notify_channels import (
@@ -38,152 +36,21 @@ from app.core.notify_channels import (
     NotifyChannel,
     get_notify_channels,
 )
-from app.models.config import Webhook
-from app.services.notification import (
-    DEFAULT_WEBHOOK_TEMPLATE,
-    MailInlineImage,
-    Notify,
+from app.core.notify_render import render_for_target
+from app.models.notification import (
+    NOTIFICATION_SIGNATURE,
+    NotificationImage,
+    NotifyPayload,
+    WebhookTargetSnapshot,
 )
+from app.services.notification import Notify
 from app.utils import get_logger
 
 logger = get_logger("通知编排")
 
-SIGNATURE = "AUTO-MAS 敬上"
+SIGNATURE = NOTIFICATION_SIGNATURE
 
-MailMode = Literal["文本", "网页"]
 EmptyPolicy = Literal["send", "warn", "skip"]
-
-
-@dataclass(frozen=True)
-class NotifyPayload:
-    """一份已经完成业务渲染的通知正文。"""
-
-    title: str
-    text: str
-    html: str | None = None
-    signature_sep: str = "\n\n"
-    append_signature: bool = True
-    email_mode: MailMode = "网页"
-    # 网页邮件的内嵌图片，html 里用 cid 引用；其他渠道各自决定要不要带图。
-    mail_images: tuple[MailInlineImage, ...] = ()
-    serverchan_text: str | None = None
-    webhook_text: str | None = None
-    markdown_text: str | None = None
-    webhook_image_base64: str | None = None
-    koishi_text: str | None = None
-    koishi_msgtype: Literal["text", "html", "picture"] = "text"
-    system_title: str | None = None
-    system_message: str | None = None
-    system_ticker: str | None = None
-    system_timeout: int = 5
-    standalone_title: str | None = None
-
-    @property
-    def signed_text(self) -> str:
-        """返回默认的纯文本渠道正文。"""
-
-        if not self.append_signature:
-            return self.text
-        return f"{self.text}{self.signature_sep}{SIGNATURE}"
-
-    @property
-    def email_content(self) -> str:
-        """返回邮件正文。"""
-
-        if self.email_mode == "网页" and self.html is not None:
-            return self.html
-        return self.text
-
-    @property
-    def serverchan_content(self) -> str:
-        """返回 ServerChan 正文。"""
-
-        if self.serverchan_text is not None:
-            return self.serverchan_text
-        if self.markdown_text is not None:
-            return self.markdown_text
-        text = self.text.replace("\n", "\n\n")
-        if not self.append_signature:
-            return text
-        return f"{text}{self.signature_sep}{SIGNATURE}"
-
-    @property
-    def webhook_content(self) -> str:
-        """返回 Webhook 正文。"""
-
-        if self.webhook_text is not None:
-            return self.webhook_text
-        if self.markdown_text is not None:
-            return self.markdown_text
-        return self.signed_text
-
-    def webhook_content_for(self, webhook: Webhook) -> str:
-        """按模板选择正文格式；仅正文模板需要补上独立通知标题。"""
-
-        if not self.standalone_title and (
-            self.webhook_text is not None or self.markdown_text is None
-        ):
-            return self.webhook_content
-        template_text = webhook.get("Data", "Template") or DEFAULT_WEBHOOK_TEMPLATE
-        content = self.webhook_content
-        markdown = False
-        if self.webhook_text is None and self.markdown_text is not None:
-            try:
-                template = json.loads(template_text)
-                host = urlsplit(webhook.get("Data", "Url")).hostname
-            except (ValueError, TypeError):
-                content = self.signed_text
-            else:
-                markdown = (
-                    isinstance(template, dict)
-                    and (
-                        template.get("msgtype") == "markdown"
-                        or template.get("template") == "markdown"
-                        or "desp" in template
-                    )
-                ) or host in {
-                    "discord.com",
-                    "discordapp.com",
-                    "canary.discord.com",
-                    "ptb.discord.com",
-                }
-                content = self.markdown_text if markdown else self.signed_text
-        if self.standalone_title and "{title}" not in template_text:
-            heading = (
-                f"**{self.standalone_title}**" if markdown else self.standalone_title
-            )
-            return f"{heading}\n\n{content}"
-        return content
-
-    @property
-    def koishi_content(self) -> str:
-        """返回 Koishi 正文。"""
-
-        if self.koishi_text is not None:
-            return self.koishi_text
-        return f"{self.title}\n\n{self.signed_text}"
-
-    @property
-    def openclaw_qq_content(self) -> str:
-        """返回 QQ 官方机器人正文。"""
-
-        text = self.signed_text
-        heading = self.standalone_title or self.title
-        return text if text.startswith(f"【{self.title}】") else f"{heading}\n\n{text}"
-
-    @property
-    def cmcc_newmsg_content(self) -> str:
-        """返回中国移动新消息正文。"""
-
-        text = self.signed_text
-        heading = self.standalone_title or self.title
-        return text if text.startswith(f"【{self.title}】") else f"{heading}\n\n{text}"
-
-    @property
-    def system_content(self) -> str:
-        """返回系统通知正文。"""
-
-        return self.text
 
 
 @dataclass(frozen=True)
@@ -220,6 +87,7 @@ def global_target(
     *,
     include_system: bool = False,
     empty_policy: EmptyPolicy = "send",
+    system_timeout_seconds: int | None = None,
 ) -> NotifyTarget:
     """按全局配置构造通知目标。"""
 
@@ -229,9 +97,10 @@ def global_target(
         # include_system 只作用于系统通知渠道，False 时对应路径不弹系统通知
         if channel.key == "system" and not include_system:
             continue
-        pairs.extend(
-            (channel, target) for target in channel.targets(Config, scope="global")
-        )
+        for target in channel.targets(Config, scope="global"):
+            if channel.key == "system" and system_timeout_seconds is not None:
+                target = replace(target, timeout_seconds=system_timeout_seconds)
+            pairs.append((channel, target))
     return NotifyTarget(
         name="全局",
         channels=tuple(pairs),
@@ -289,6 +158,7 @@ def statistic_targets(
     user_config: Any | None,
     *,
     global_empty_policy: EmptyPolicy = "send",
+    compact_summary: bool = False,
 ) -> list[NotifyTarget]:
     """返回全局与用户级统计通知目标。"""
 
@@ -296,7 +166,23 @@ def statistic_targets(
     if Config.get("Notify", "IfSendStatistic"):
         targets.append(global_target(empty_policy=global_empty_policy))
     targets.extend(user_statistic_targets(user_config))
+    if compact_summary:
+        targets = [_prefer_webhook_summaries(target) for target in targets]
     return targets
+
+
+def _prefer_webhook_summaries(target: NotifyTarget) -> NotifyTarget:
+    """为明确提供紧凑摘要的统计消息设置 Webhook 摘要偏好。"""
+
+    channels = []
+    for channel, channel_target in target.channels:
+        if channel.key == "webhook":
+            channel_target = replace(channel_target, summary_policy="preferred")
+        channels.append((channel, channel_target))
+    return replace(
+        target,
+        channels=tuple(channels),
+    )
 
 
 async def _send(
@@ -360,7 +246,7 @@ class Notifier(Protocol):
         content: str,
         to_address: str,
         *,
-        images: Sequence[MailInlineImage] = (),
+        images: Sequence[NotificationImage] = (),
     ) -> bool | None: ...
 
     async def ServerChanPush(
@@ -375,9 +261,9 @@ class Notifier(Protocol):
         self,
         title: str,
         content: str,
-        webhook: Webhook,
+        webhook: WebhookTargetSnapshot,
         *,
-        image_base64: str = "",
+        images: Sequence[NotificationImage] = (),
     ) -> bool | None: ...
 
     async def send_koishi(
@@ -419,7 +305,8 @@ async def dispatch(
 
     async def attempt(
         channel: str,
-        send: Callable[[], Awaitable[Any]],
+        channel_impl: NotifyChannel,
+        channel_target: ChannelTarget,
         *,
         channel_id: str | None = None,
     ) -> None:
@@ -428,6 +315,23 @@ async def dispatch(
         if channel in skip or delivery_id in skip_ids:
             return
         attempted += 1
+        try:
+            rendered = render_for_target(
+                payload,
+                channel_target.capabilities,
+                summary_policy=channel_target.summary_policy,
+                use_summary_title=channel_target.use_summary_title,
+            )
+        except Exception as exc:
+            logger.warning(f"{channel}通知内容准备失败: {exc}")
+            failed.append(channel)
+            return
+        for diagnostic in rendered.diagnostics:
+            logger.warning(f"{channel}通知内容降级: {diagnostic}")
+
+        async def send() -> Any:
+            return await channel_impl.send(sender, channel_target, rendered)
+
         if await _send(channel, send, attempts=attempts, retry_delay=retry_delay):
             succeeded.append(channel)
             succeeded_ids.append(delivery_id)
@@ -458,7 +362,8 @@ async def dispatch(
             if should_send:
                 await attempt(
                     ct.label,
-                    lambda c=channel, t=ct: c.send(sender, t, payload),
+                    channel,
+                    ct,
                     channel_id=ct.id,
                 )
 
@@ -490,18 +395,37 @@ async def dispatch_task_report(
     from app.tools.community_notify import (
         append_community_summary_html,
         append_task_community_summary,
-        detect_community_notification_format,
         mark_task_community_summary_consumed,
     )
 
     delivered = set(getattr(task_info, "game_sign_summary_delivered", ()))
     if summary_text:
+        markdown_summary = (
+            append_task_community_summary(
+                task_info, "", output_format="markdown"
+            ).strip()
+            if task_info is not None
+            else summary_text
+        )
         clean_payload = replace(
             payload,
             text=payload.text.replace(summary_text, "").rstrip(),
             html=(
                 payload.html.replace(summary_text, "").rstrip()
                 if payload.html is not None
+                else None
+            ),
+            markdown=(
+                payload.markdown.replace(markdown_summary, "").rstrip()
+                if payload.markdown is not None
+                else None
+            ),
+            summary=(
+                replace(
+                    payload.summary,
+                    text=payload.summary.text.replace(summary_text, "").rstrip(),
+                )
+                if payload.summary is not None
                 else None
             ),
         )
@@ -513,15 +437,6 @@ async def dispatch_task_report(
             summary_markdown = append_task_community_summary(
                 task_info, "", output_format="markdown"
             ).strip()
-            serverchan_body = payload.serverchan_content
-            serverchan_summary = summary_markdown
-            if payload.serverchan_text is None and payload.markdown_text is None:
-                # 默认签名仍放在整份报告末尾，社区摘要只负责自己的格式。
-                serverchan_body = replace(
-                    payload, append_signature=False
-                ).serverchan_content
-                if payload.append_signature:
-                    serverchan_summary += f"{payload.signature_sep}{SIGNATURE}"
             payload = replace(
                 payload,
                 text=f"{payload.text}\n\n{summary_text}",
@@ -530,34 +445,17 @@ async def dispatch_task_report(
                     if payload.html is not None
                     else None
                 ),
-                serverchan_text=f"{serverchan_body}\n\n{serverchan_summary}",
-                markdown_text=(
-                    f"{payload.markdown_text}\n\n{summary_markdown}"
-                    if payload.markdown_text is not None
+                markdown=(
+                    f"{payload.markdown}\n\n{summary_markdown}"
+                    if payload.markdown is not None
                     else None
                 ),
-                webhook_text=(
-                    f"{payload.webhook_text}\n\n"
-                    + (
-                        summary_markdown
-                        if detect_community_notification_format(payload.webhook_text)
-                        == "markdown"
-                        else summary_text
+                summary=(
+                    replace(
+                        payload.summary,
+                        text=f"{payload.summary.text}\n\n{summary_text}",
                     )
-                    if payload.webhook_text is not None
-                    else None
-                ),
-                koishi_text=(
-                    append_community_summary_html(payload.koishi_text, summary_text)
-                    if payload.koishi_text is not None
-                    and payload.koishi_msgtype == "html"
-                    else f"{payload.koishi_text}\n\n{summary_text}"
-                    if payload.koishi_text is not None
-                    else None
-                ),
-                system_message=(
-                    f"{payload.system_message}\n\n{summary_text}"
-                    if payload.system_message is not None
+                    if payload.summary is not None
                     else None
                 ),
             )
@@ -649,10 +547,12 @@ async def send_test_notification() -> DispatchResult:
             title="AUTO-MAS测试通知",
             text=text,
             append_signature=False,
-            email_mode="文本",
-            koishi_text=text,
-            system_ticker="测试通知",
-            system_timeout=3,
         ),
-        [global_target(include_system=True, empty_policy="warn")],
+        [
+            global_target(
+                include_system=True,
+                empty_policy="warn",
+                system_timeout_seconds=3,
+            )
+        ],
     )
