@@ -89,9 +89,8 @@ def build_capabilities(script_config: Any) -> dict[str, Any]:
     """
 
     from app.task.HSR.task_mapping import (
+        ENGINE_DISPLAY_NAMES,
         HSR_TASK_MODULES,
-        describe_script_fallback,
-        resolve_script_assignment,
     )
 
     configured = _configured_engines(script_config)
@@ -122,7 +121,7 @@ def build_capabilities(script_config: Any) -> dict[str, Any]:
         adapters.append(
             {
                 "engine": engine,
-                "display_name": "三月七" if engine == "M7A" else "StarRailAssistant",
+                "display_name": ENGINE_DISPLAY_NAMES.get(engine, engine),
                 "version": _installed_version(script_config, engine),
                 "capabilities": {
                     "native_import": bool(import_ready),
@@ -151,16 +150,6 @@ def build_capabilities(script_config: Any) -> dict[str, Any]:
                 "strategies": _task_strategies(module, task_engines),
             }
         )
-        # 脚本级 TaskMapping 指到了没配路径的引擎时，第四级回落会静默换引擎；
-        # 这里把它写进快照警告，编辑页顶部能看到。
-        fallback_note = describe_script_fallback(
-            module,
-            resolve_script_assignment(
-                module, script_config, effective_engines=tuple(effective)
-            ),
-        )
-        if fallback_note:
-            warnings.append(fallback_note)
     return {
         "revision": "old-dev",
         "available": bool(configured),
@@ -253,7 +242,7 @@ def build_managed_config(
 
     from app.task.HSR.task_mapping import (
         HSR_TASK_MODULES,
-        describe_script_fallback,
+        engine_label,
         resolve_script_assignment,
     )
 
@@ -281,7 +270,9 @@ def build_managed_config(
         try:
             modules = list_managed_modules(engine, script_config, plan)
         except (FileNotFoundError, OSError, RuntimeError, ValueError, KeyError) as exc:
-            warnings.append(f"{engine} 动态托管字段不可用：{exc}")
+            warnings.append(
+                f"{engine_label(engine, left=False)}动态托管字段不可用：{exc}"
+            )
             continue
         for module in modules:
             task_forms.setdefault(module.key, {})[engine] = module.asdict()
@@ -293,16 +284,12 @@ def build_managed_config(
         ]
         if not task_engines:
             continue
-        assignment = resolve_script_assignment(
+        task_mapping[module.key] = resolve_script_assignment(
             module,
             script_config,
             user_config=plan,
             effective_engines=tuple(effective),
         )
-        task_mapping[module.key] = assignment.script
-        fallback_note = describe_script_fallback(module, assignment)
-        if fallback_note:
-            warnings.append(fallback_note)
 
     tasks: list[dict[str, Any]] = []
     for module in HSR_TASK_MODULES:

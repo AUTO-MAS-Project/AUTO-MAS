@@ -46,7 +46,7 @@
           <a-button
             size="small"
             :disabled="loading"
-            @click="emitSave('Data.GreenTicketStoreMonth', currentMonthMarker())"
+            @click="emitSave('Data.GreenTicketStoreMonth', serverMonthMarker())"
           >
             {{ t('edit.markAsDone2') }}
           </a-button>
@@ -104,7 +104,7 @@
               <a-button
                 size="small"
                 :disabled="loading"
-                @click="emitSave('Data.AnnihilationCompletedWeek', currentWeekMarker())"
+                @click="emitSave('Data.AnnihilationCompletedWeek', serverWeekMarker())"
               >
                 {{ t('edit.markAsDone2') }}
               </a-button>
@@ -351,7 +351,7 @@ import type {
   CultivateOperatorCatalogEntry as OperatorCatalogEntry,
 } from './cultivateTargets'
 import type { CultivatePreviewOut } from '@/api'
-import { currentMonthMarker, currentWeekMarker } from './periodMarkers'
+import { currentMonthMarker, currentWeekMarker, getGameDayOffset } from './periodMarkers'
 import {
   ANNIHILATION_STAGE_OPTIONS as annihilationStageOptions,
   ANNIHILATION_WEEKDAY_OPTIONS as annihilationWeekdayOptions,
@@ -433,8 +433,13 @@ const dailyTasks = [
 
 const annihilationEnabled = computed(() => formData.value.Info.Annihilation !== 'Close')
 
+// 剿灭周 / 绿票月标记按用户区服的游戏日换日，与后端 AutoProxy 一致
+const gameDayOffset = () => getGameDayOffset(formData.value.Info.Server)
+const serverWeekMarker = () => currentWeekMarker(new Date(), gameDayOffset())
+const serverMonthMarker = () => currentMonthMarker(new Date(), gameDayOffset())
+
 const annihilationCompletedThisWeek = computed(
-  () => formData.value.Data?.AnnihilationCompletedWeek === currentWeekMarker()
+  () => formData.value.Data?.AnnihilationCompletedWeek === serverWeekMarker()
 )
 
 // 关闭时记住原关卡，重新打开直接恢复，省掉一次下拉选择
@@ -548,7 +553,7 @@ const depotSummary = computed(() =>
 )
 
 const greenTicketStoreDoneThisMonth = computed(
-  () => formData.value.Data?.GreenTicketStoreMonth === currentMonthMarker()
+  () => formData.value.Data?.GreenTicketStoreMonth === serverMonthMarker()
 )
 
 const greenTicketStoreSummary = computed(() => {

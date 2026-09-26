@@ -5,14 +5,14 @@ import { parse } from '@vue/compiler-sfc'
 describe('quick configuration panel visibility', () => {
   // BetterGI 不在列：其快速配置开关已隐藏，改由配置来源派生（直控 = 关，脚本 / 用户 = 开），
   // 于是选择器不再渲染该开关；面板形态仍按来源决定（见本文件最后一条用例）。
-  for (const name of ['MAA', 'M9A', 'SRC', 'MaaEnd', 'Okww', 'OkNte']) {
+  // M9A 也不在列：它已是 MaaFW 的特调类型，页面就是 MaaFWUserEdit.vue，见下一条
+  for (const name of ['MAA', 'SRC', 'MaaEnd', 'Okww', 'OkNte']) {
     it(`${name} keeps its switch outside the conditional panel`, () => {
       const source = readFileSync(new URL(`./${name}UserEdit.vue`, import.meta.url), 'utf8')
       const template = parse(source).descriptor.template!.content
       const panel =
         {
           MAA: '<TaskPipelineSection',
-          M9A: '<TaskQueueSection',
           SRC: '<StageConfigSection',
         }[name] || '<a-card v-if="formData.Info.IfQuickConfig"'
       const start = template.indexOf(panel)

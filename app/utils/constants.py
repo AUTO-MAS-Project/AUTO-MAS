@@ -46,11 +46,32 @@ TYPE_BOOK = {
     "BetterGIConfig": "BetterGI",
     "ZzzOdConfig": "ZZZ-OD",
     "BAAHConfig": "BAAH",
+    "MSSConfig": "MSS",
 }
 """配置类型映射表"""
 
-PLAN_CONSUMER_VALUES = ("maa", "maaend")
+PLAN_CONSUMER_VALUES = ("maa", "maaend", "mss")
 """计划表消费方列表"""
+
+MSS_TRIBULATION_STAGES = (
+    "基础试炼",
+    "晋升试炼-怪诞舞者",
+    "晋升试炼-终宵萤辉",
+    "晋升试炼-热嘟噜噗男爵",
+    "技巧试炼-节奏游戏卡带",
+    "技巧试炼-射击游戏卡带",
+    "技巧试炼-格斗游戏卡带",
+    "纹章试炼-好市民点数",
+    "纹章试炼-协会贡献证",
+    "纹章试炼-恩赐消费券",
+)
+"""MSS 悬赏试炼关卡：与外壳 interface 的 `悬赏试炼关卡` 选项逐一对应（v1.4.4 共 10 项）
+
+**上游加关卡或改名时必须同步这里**，否则计划表里存的旧关卡会被折算回默认值。
+"""
+
+MSS_DEFAULT_TRIBULATION_STAGE = MSS_TRIBULATION_STAGES[0]
+"""MSS 悬赏试炼的默认关卡"""
 
 MAA_RUN_MOOD_BOOK = {
     "GreenTicketStore": "绿票商店",
@@ -168,6 +189,36 @@ ARKNIGHTS_PACKAGE_NAME = {
     "txwy": "tw.txwy.and.arknights",
 }
 """明日方舟包名映射表"""
+
+ARKNIGHTS_GAME_DAY_TZ = {
+    "Official": UTC4,
+    "Bilibili": UTC4,
+    "txwy": UTC4,
+    "YoStarEN": timezone(timedelta(hours=-11)),
+    "YoStarJP": timezone(timedelta(hours=5)),
+    "YoStarKR": timezone(timedelta(hours=5)),
+}
+"""明日方舟各区服的游戏日时区：服务器当地 04:00 换日，即服务器时区减 4 小时
+
+来源 MAA `src/MaaWpfGui/Extensions/DateTimeExtension.cs`：`_clientTypeTimezone`
+中 Official / Bilibili / txwy 为 UTC+8，YoStarEN 为 UTC-7（固定偏移，不随夏令时），
+YoStarJP / YoStarKR 为 UTC+9；`YjDayStartHour = 4`。
+前端 `frontend/src/views/MAAUserEdit/periodMarkers.ts` 的 ARKNIGHTS_GAME_DAY_OFFSET
+是同一张表，改动时两边同步。
+"""
+
+
+def get_game_day_tz(server: str | None) -> timezone:
+    """按明日方舟区服取游戏日时区，未知或空区服回落到东4区。"""
+
+    return ARKNIGHTS_GAME_DAY_TZ.get(server or "", UTC4)
+
+
+def game_now(server: str | None) -> datetime:
+    """按明日方舟区服的游戏日时区取当前时间，其日期即当前游戏日。"""
+
+    return datetime.now(tz=get_game_day_tz(server))
+
 
 ARKNIGHTS_VERSION_API_SERVER = {
     "Official": "official",

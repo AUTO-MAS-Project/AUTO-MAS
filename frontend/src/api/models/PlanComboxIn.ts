@@ -15,6 +15,7 @@ export namespace PlanComboxIn {
     export enum consumer {
         MAA = 'maa',
         MAAEND = 'maaend',
+        MSS = 'mss',
     }
 }
 

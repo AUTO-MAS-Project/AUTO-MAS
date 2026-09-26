@@ -74,7 +74,7 @@
                   <a-button
                     type="primary"
                     class="preset-apply-button"
-                    :disabled="template.taskNames.length === 0"
+                    :disabled="template.entries.length === 0"
                     @click="emit('applyPresetTemplate', template.preset.name)"
                   >
                     {{ t('edit.applyPreset2') }}
@@ -82,10 +82,10 @@
                 </div>
 
                 <div class="preset-tasks-preview">
-                  <div v-for="taskName in template.taskNames" :key="taskName" class="task-chip">
+                  <div v-for="entry in template.entries" :key="entry.id" class="task-chip">
                     <span class="task-dot"></span>
                     <span class="task-chip-name">
-                      {{ getDisplayName(taskByName.get(taskName)!) }}
+                      {{ getDisplayName(entry.task) }}
                     </span>
                   </div>
                 </div>
@@ -259,17 +259,17 @@
               <a-button
                 type="primary"
                 class="preset-apply-button"
-                :disabled="template.taskNames.length === 0"
+                :disabled="template.entries.length === 0"
                 @click="emit('applyPresetTemplate', template.preset.name)"
               >
                 {{ t('edit.applyPreset2') }}
               </a-button>
             </div>
             <div class="preset-tasks-preview">
-              <div v-for="taskName in template.taskNames" :key="taskName" class="task-chip">
+              <div v-for="entry in template.entries" :key="entry.id" class="task-chip">
                 <span class="task-dot"></span>
                 <span class="task-chip-name">
-                  {{ getDisplayName(taskByName.get(taskName)!) }}
+                  {{ getDisplayName(entry.task) }}
                 </span>
               </div>
             </div>
@@ -296,6 +296,7 @@ import {
 import { buildMaaFWAssetUrl } from '@/composables/useMaaFWApi'
 import MaaFWDescriptionView from '../MaaFWDescriptionView.vue'
 import MaaFWTaskOptionEditor from '../MaaFWTaskOptionEditor.vue'
+import type { MaaFWPresetQueueEntry } from '../maafwPresetQueue'
 import type {
   MaaFWInterfacePreviewData,
   MaaFWPresetInfo,
@@ -325,7 +326,8 @@ type AddTaskCascaderPathOption = {
 
 type PresetTemplate = {
   preset: MaaFWPresetInfo
-  taskNames: string[]
+  /** 预设里当前可用的各项，重复任务是各自的实例 id */
+  entries: MaaFWPresetQueueEntry[]
 }
 
 const props = defineProps<{
@@ -822,7 +824,8 @@ const filterAddTaskOption = (inputValue: string, path: AddTaskCascaderPathOption
   height: 40px;
 }
 
-@media (max-width: 768px) {
+/* 与 :lg 断点对齐：栅格在 992px 以下就折成上下两块，定高要在同一宽度放开，否则两栏叠在 640px 里溢出 */
+@media (max-width: 991px) {
   .column-header {
     flex-direction: column;
     align-items: stretch;

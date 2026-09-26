@@ -13,16 +13,18 @@ MXU 可对接任意符合 PI V2 的 Maa 项目；本仓 `MaaEnd` 类型指「按
 
 **MAS 不实现识别节点，也不打包 MXU 应用**——只负责进程、目录、`mxu-*.json` 读写、`runtime_bridge`。任务逻辑在上游资源与 agent 中。
 
-## 与 MFAA 线（M9A）的分界（选型关键）
+## 与 MFAA 线的分界（选型关键）
 
-| 维度 | MXU 线（MaaEnd） | MFAA 线（M9A） |
+MFAA 线目前没有在役专项：M9A 原是这条线的例子，已并入 MFW，成为 MaaFW 的特调类型，不再是专项。下表右列是这条线的设计口径。
+
+| 维度 | MXU 线（MaaEnd） | MFAA 线 |
 | --- | --- | --- |
 | 外置 GUI | MXU（Tauri + React，PI V2） | MFAAvalonia（Avalonia，C#） |
 | 自动跑 | 在 `mxu-*.json` 写 autoRun 类字段再启 exe；可对照壳 CLI 决定是否拼启动参数 | 写任务 JSON 后启 exe，**不依赖 CLI 传队列** |
 | 用户改配置 | **ScriptConfig 遮罩**拉起本体保存复杂项，其余 Section 写用户目录 / `runtime_bridge` | 仅 Vue + 后端写配置，**不调 Avalonia 壳做配置会话** |
 | 用户页 | 遮罩 + 多 Section | 队列 + draggable，无典型遮罩 |
 
-**新专项若外置 GUI 是 MFAAvalonia 而非 MXU，别套 MXU 遮罩流程**，改看 [examples-m9a.md](./examples-m9a.md)。
+**新专项若外置 GUI 是 MFAAvalonia 而非 MXU，别套 MXU 遮罩流程**；带 `interface.json` 的项目先用通用 MaaFW 类型，见 [examples-m9a.md](./examples-m9a.md)。
 
 ## 落点线索（搜代码用）
 

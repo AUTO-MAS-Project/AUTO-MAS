@@ -32,6 +32,21 @@ async def try_reserve_project_path(path: str | Path) -> str | None:
 
 
 async def release_project_path(key: str | None) -> None:
+    release_project_path_sync(key)
+
+
+def try_reserve_project_path_sync(path: str | Path) -> str | None:
+    """同一张表的同步版：给已经在工作线程里跑的服务层代码用（它拿不到事件循环）。"""
+
+    key = normalize_project_path(path)
+    with _ACTIVE_PROJECT_PATHS_LOCK:
+        if key in _ACTIVE_PROJECT_PATHS:
+            return None
+        _ACTIVE_PROJECT_PATHS.add(key)
+    return key
+
+
+def release_project_path_sync(key: str | None) -> None:
     if not key:
         return
     with _ACTIVE_PROJECT_PATHS_LOCK:

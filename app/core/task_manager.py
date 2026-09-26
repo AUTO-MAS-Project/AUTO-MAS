@@ -64,6 +64,7 @@ from .config import (
     MaaConfig,
     MaaEndConfig,
     MaaFWConfig,
+    MSSConfig,
     OkNteConfig,
     OkwwConfig,
     SrcConfig,
@@ -133,7 +134,9 @@ _MANAGER_BOOK: dict[
     OkwwConfig: lambda script_item, _ctx: task.OkwwManager(script_item),
     OkNteConfig: lambda script_item, _ctx: task.OkNteManager(script_item),
     MaaEndConfig: lambda script_item, _ctx: task.MaaEndManager(script_item),
-    M9AConfig: lambda script_item, _ctx: task.M9AManager(script_item),
+    # 特调类型是 MaaFWConfig 的子类，但这张表按类型精确查，得单独登记一行。
+    M9AConfig: lambda script_item, _ctx: task.MaaFWEmbeddedManager(script_item),
+    MSSConfig: lambda script_item, _ctx: task.MaaFWEmbeddedManager(script_item),
     HSRConfig: lambda script_item, _ctx: task.HSRManager(script_item),
     BetterGIConfig: lambda script_item, _ctx: task.BetterGIManager(script_item),
     ZzzOdConfig: lambda script_item, _ctx: task.ZzzOdManager(script_item),
@@ -890,8 +893,13 @@ class _TaskManager:
         self._cleanup_tasks: set[asyncio.Task[None]] = set()
         self._stop_all_lock = asyncio.Lock()
         self._stopping_all = False
+        # 已通过 add_task 入口检查、尚未 execute 的任务数；停止全部任务要等它们落定再取快照
+        self._creating_tasks = 0
+        self._creating_tasks_idle = asyncio.Event()
+        self._creating_tasks_idle.set()
         self._startup_queue_started = False
-        self._startup_queue_running = False
+        # 正在等待/执行启动队列的连接回调任务，同一时间只有一个
+        self._startup_queue_task: asyncio.Task | None = None
 
     @staticmethod
     def _queue_script_entries(
@@ -1063,6 +1071,11 @@ class _TaskManager:
 
         uid = uuid.UUID(id)
 
+        # 停止全部任务期间拒绝新任务，否则它不在停止快照里，却会让停止流程
+        # 一直等到它自然跑完。从这里到下方计入 _creating_tasks 之间不能有 await。
+        if self._stopping_all:
+            raise RuntimeError("正在停止全部任务，暂不接受新任务")
+
         # 指定单个用户只对「脚本 + 自动代理」成立；队列到不了用户粒度，设置类任务
         # 的用户由 uid 自身表达。放在循环队列占用标记之前，避免拒绝时留下脏标记。
         if user_id is not None and (
@@ -1151,6 +1164,8 @@ class _TaskManager:
                 raise RuntimeError(f"任务 {script_config.get('Info', 'Name')} 已在运行")
             reservation_acquired = True
 
+        self._creating_tasks += 1
+        self._creating_tasks_idle.clear()
         try:
             logger.info(
                 f"创建任务: {task_uid}, 模式: {mode}, 触发来源: {trigger_source}"
@@ -1195,6 +1210,10 @@ class _TaskManager:
             self.task_handler.pop(task_uid, None)
             self.task_info.pop(task_uid, None)
             raise
+        finally:
+            self._creating_tasks -= 1
+            if self._creating_tasks == 0:
+                self._creating_tasks_idle.set()
 
         return task_uid
 
@@ -1242,6 +1261,11 @@ class _TaskManager:
                     if System.power_task is not None and not System.power_task.done():
                         await System.cancel_power_task()
 
+                    # 新任务已被拒绝；已过入口检查、正在发送创建通知的任务等它们
+                    # execute 之后再取快照，保证快照覆盖全部任务。
+                    await self._creating_tasks_idle.wait()
+
+                    # 先全部发出取消再统一等待，不让一个任务的收尾拖住其余任务的取消。
                     task_item_list = list(self.task_handler.values())
                     if task_item_list:
                         logger.info("等待全部任务中的子任务结束...")
@@ -1249,8 +1273,11 @@ class _TaskManager:
                         if not task_item.is_closing:
                             task_item.cancel()
                             task_item.is_closing = True
-                        await task_item.accomplish.wait()
-                        logger.info(f"子任务已结束: {task_item.task_id}")
+                    await asyncio.gather(
+                        *(task_item.accomplish.wait() for task_item in task_item_list)
+                    )
+                    for task_item in task_item_list:
+                        logger.info(f"子任务已结束: {task_item.task_info.task_id}")
                     cleanup_tasks = [
                         cleanup for cleanup in self._cleanup_tasks if not cleanup.done()
                     ]
@@ -1283,14 +1310,17 @@ class _TaskManager:
     async def start_startup_queue(self):
         """开始运行启动时运行的调度队列"""
 
+        # 旧连接的回调还在等待时，新连接的回调不能直接跳过：旧回调随后会随旧连接
+        # 一起被取消，启动队列就要拖到下一次连接才跑。这里等它结束后再重新判断。
+        while (running_task := self._startup_queue_task) is not None:
+            logger.info("启动时任务正在等待运行，等待其结束后再判断")
+            await asyncio.wait({running_task})
+
         if self._startup_queue_started:
             logger.info("启动时任务已触发，跳过重复运行")
             return
-        if self._startup_queue_running:
-            logger.info("启动时任务正在等待运行，跳过重复触发")
-            return
 
-        self._startup_queue_running = True
+        self._startup_queue_task = asyncio.current_task()
 
         try:
             await asyncio.sleep(10)
@@ -1356,7 +1386,7 @@ class _TaskManager:
                     await queue.set("Data", "LastStartupTime", curday)
 
         finally:
-            self._startup_queue_running = False
+            self._startup_queue_task = None
 
         logger.success("启动时任务开始运行")
 

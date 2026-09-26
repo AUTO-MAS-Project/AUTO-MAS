@@ -41,6 +41,7 @@
       :show-maa-config-mask="showMaaConfigMask"
       :loading="loading"
       :config-locked="configLocked"
+      :user-id="userId"
       @handle-m-a-a-config="handleMAAConfig"
       @handle-cancel="handleCancel"
     />
@@ -237,6 +238,7 @@ import BasicInfoSection from '@/views/MAAUserEdit/BasicInfoSection.vue'
 import StageConfigSection from '@/views/MAAUserEdit/StageConfigSection.vue'
 import TaskPipelineSection from '@/views/MAAUserEdit/TaskPipelineSection.vue'
 import { summarizeFight } from '@/views/MAAUserEdit/taskSummaries'
+import { getGameDayOffset } from '@/views/MAAUserEdit/periodMarkers'
 import type { CultivateOperatorCatalogEntry } from '@/views/MAAUserEdit/cultivateTargets'
 import UserNotifyConfig from '@/components/UserNotifyConfig.vue'
 import ExtraScriptSection from '@/components/ExtraScriptSection.vue'
@@ -517,14 +519,14 @@ const getPlanCurrentConfig = (planData: any) => {
   if (mode === 'ALL') {
     return planData.ALL || null
   } else if (mode === 'Weekly') {
-    // 使用东4区时区的今天是星期几（已经是数字0-6）
-    const todayWeekday = getWeekdayInTimezone(4)
+    // 按用户区服的游戏日时区取今天是星期几（已经是数字0-6），与后端计划表取值一致
+    const todayWeekday = getWeekdayInTimezone(getGameDayOffset(formData.Info.Server))
 
     const weekdays = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
     const today = weekdays[todayWeekday]
 
     logger.debug(`计划表周模式调试: 
-      东4区星期几: ${todayWeekday},
+      游戏日星期几: ${todayWeekday},
       星期: ${today},
       计划数据: ${JSON.stringify(planData)}`)
 

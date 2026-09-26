@@ -18,6 +18,12 @@
       </div>
 
       <a-space size="middle">
+        <a-button v-if="!!userId" size="large" :loading="folderLoading" @click="handleOpenFolder">
+          <template #icon>
+            <FolderOpenOutlined />
+          </template>
+          {{ t('comp.openConfigFolder') }}
+        </a-button>
         <a-tooltip
           v-if="!showBettergiConfigMask && !pageLoading && masConfigEnabled"
           placement="bottom"
@@ -256,7 +262,7 @@
                     v-model:value="formData.Switch.Resource"
                     size="large"
                     class="modern-select"
-                    @change="saveField('Switch.Resource', formData.Switch.Resource)"
+                    @change="handleResourceChange"
                   >
                     <a-select-option value="官服">{{ t('edit.bettergiServerCn') }}</a-select-option>
                     <a-select-option value="B服">{{
@@ -275,6 +281,46 @@
                       {{ t('edit.bettergiServerTwHkMo') }}
                     </a-select-option>
                   </a-select>
+                </a-form-item>
+              </a-col>
+            </a-row>
+
+            <!-- 游戏客户端（用户级覆盖）：官服/B服/国际服是三个互相隔离的客户端；
+                 渠道可识别时自动联动游戏服务器，无法识别或不一致时气泡提醒 -->
+            <a-row :gutter="24">
+              <a-col :span="24">
+                <a-form-item>
+                  <template #label>
+                    <span class="form-label">
+                      {{ t('edit.bettergiGameClient') }}
+                      <a-tooltip :title="t('edit.bettergiGameClientHint')">
+                        <QuestionCircleOutlined class="help-icon" />
+                      </a-tooltip>
+                    </span>
+                  </template>
+                  <a-input-group compact class="path-input-group">
+                    <a-input
+                      v-model:value="gamePathInput"
+                      :placeholder="gamePathPlaceholder"
+                      size="large"
+                      class="path-input"
+                      @blur="handleGamePathSaved"
+                    />
+                    <a-button size="large" class="path-button" @click="selectGameClient">
+                      <template #icon>
+                        <FolderOpenOutlined />
+                      </template>
+                      {{ t('edit.pickFile') }}
+                    </a-button>
+                    <a-button
+                      size="large"
+                      class="path-button"
+                      :disabled="!gamePathInput"
+                      @click="clearGameClient"
+                    >
+                      {{ t('edit.bettergiGameClientRestore') }}
+                    </a-button>
+                  </a-input-group>
                 </a-form-item>
               </a-col>
             </a-row>
@@ -1243,10 +1289,22 @@ const { t } = useI18n()
 const logger = window.electronAPI.getLogger('BetterGI用户编辑')
 const route = useRoute()
 const router = useRouter()
-const { addUser, getUsers, updateUser, error: userApiError } = useUserApi()
+const {
+  addUser,
+  getUsers,
+  updateUser,
+  error: userApiError,
+  openUserConfigFolder,
+  loading: folderLoading,
+} = useUserApi()
 const { getScript } = useScriptApi()
 
 const scriptId = route.params.scriptId as string
+
+const handleOpenFolder = async () => {
+  if (!userId.value) return
+  await openUserConfigFolder(scriptId, userId.value)
+}
 const userId = ref((route.params.userId as string) || '')
 const isEdit = ref(!!userId.value)
 const { configLocked } = useScriptConfigLock(() => scriptId)
@@ -1338,6 +1396,7 @@ const getDefaultUserData = (): Omit<BetterGIUserFormData, 'userName'> => ({
   Switch: {
     Resource: '官服',
     Uid: '',
+    GamePath: '',
   },
   OneDragon: {
     Groups: ONE_DRAGON_GROUPS.map(group => group.value),
@@ -1425,6 +1484,164 @@ const saveField = (key: string, value: unknown): Promise<boolean> => {
   }
 
   return enqueue(persist)
+}
+
+// ══ 游戏客户端（用户级覆盖）：透传 BetterGI 配置 + config.ini 渠道识别 ══
+// 输入框直接以 BGI 维护的路径为默认值（可编辑）；存值规则：输入值与 BGI 当前
+// 路径一致 → 存空（跟随语义，BGI 改了自动跟），否则存显式覆盖值。
+// 渠道可识别时自动联动「游戏服务器」（国际服分不出区服，弹提示手选）；
+// 渠道无法识别、或手选服务器与识别渠道不一致时气泡提醒（check() 运行时仍硬拦截）。
+const gameClientInfo = ref<{
+  installPath: string
+  globalPath: string
+  channel: string
+} | null>(null)
+
+const gamePathInput = ref('')
+
+// BGI 全局路径缺失时的兜底提示（正常情况输入框默认值直接显示 BGI 路径）
+const gamePathPlaceholder = computed(
+  () => gameClientInfo.value?.globalPath || t('edit.bettergiGameClientPlaceholder')
+)
+
+const normalizePath = (path: string) =>
+  path.replace(/\\/g, '/').replace(/\/+$/, '').trim().toLowerCase()
+
+/** 用户服务器（Switch.Resource）→ 应使用的客户端渠道（与后端校验同口径） */
+const RESOURCE_EXPECTED_CHANNEL: Record<string, string> = {
+  官服: '官服',
+  B服: 'B服',
+  亚服: '国际服',
+  欧服: '国际服',
+  美服: '国际服',
+  港澳台服: '国际服',
+}
+
+const channelLabel = (channel: string) => {
+  switch (channel) {
+    case '官服':
+      return t('edit.bettergiChannelOfficial')
+    case 'B服':
+      return t('edit.bettergiChannelBili')
+    case '国际服':
+      return t('edit.bettergiChannelGlobal')
+    default:
+      return channel
+  }
+}
+
+const syncGamePathInput = () => {
+  gamePathInput.value = formData.Switch.GamePath || gameClientInfo.value?.globalPath || ''
+}
+
+/**
+ * 渠道可识别时联动「游戏服务器」：
+ * - 官服/B服客户端 → 自动切换（弹气泡告知）；
+ * - 国际服客户端分不出区服 → 不猜，当前不是四服之一时提示手动指定；
+ * - 渠道无法识别 → 提示手动指定区服。
+ */
+const syncResourceWithChannel = async () => {
+  const channel = gameClientInfo.value?.channel
+  if (!channel) {
+    message.warning(t('edit.bettergiGameClientUnknownWarning'))
+    return
+  }
+  if (channel === '国际服') {
+    const intlServers = ['亚服', '欧服', '美服', '港澳台服']
+    if (!intlServers.includes(formData.Switch.Resource)) {
+      message.warning(t('edit.bettergiGameClientIntlWarning'))
+    }
+    return
+  }
+  if (formData.Switch.Resource !== channel) {
+    formData.Switch.Resource = channel
+    await saveField('Switch.Resource', channel)
+    message.success(
+      t('edit.bettergiGameClientSynced', {
+        server: channel === '官服' ? t('edit.bettergiServerCn') : t('edit.bettergiServerBili'),
+      })
+    )
+  }
+}
+
+const loadGameClientInfo = async () => {
+  try {
+    const resp = await BetterGiService.getBettergiGameInfoApiApiScriptsBettergiGameInfoGet(
+      scriptId,
+      formData.Switch.GamePath || ''
+    )
+    if (resp.status === 'success') {
+      gameClientInfo.value = {
+        installPath: resp.installPath || '',
+        globalPath: resp.globalPath || '',
+        channel: resp.channel || '',
+      }
+    } else {
+      gameClientInfo.value = null
+    }
+  } catch {
+    // 展示旁路：识别失败不影响配置编辑
+    gameClientInfo.value = null
+  }
+  // 输入框默认值：用户配置优先，否则直接显示 BGI 维护的路径（可编辑）
+  syncGamePathInput()
+}
+
+const handleGamePathSaved = async () => {
+  const input = (gamePathInput.value || '').trim()
+  const globalPath = gameClientInfo.value?.globalPath || ''
+  // 输入值与 BGI 当前路径一致 → 存空（跟随），否则存显式覆盖
+  const followsGlobal = !!globalPath && normalizePath(input) === normalizePath(globalPath)
+  const next = followsGlobal ? '' : input
+  if (next !== formData.Switch.GamePath) {
+    formData.Switch.GamePath = next
+    await saveField('Switch.GamePath', next)
+  }
+  await loadGameClientInfo()
+  await syncResourceWithChannel()
+}
+
+/** 弹出文件选择并校验为原神主程序，取消/选错返回 null */
+const pickGenshinExe = async (): Promise<string | null> => {
+  const paths = await window.electronAPI?.selectFile([
+    {
+      name: 'YuanShen.exe / GenshinImpact.exe',
+      extensions: ['exe'],
+    },
+  ])
+  const path = paths?.[0]
+  if (!path) return null
+  const fileName = path.split(/[\\/]/).pop()?.toLowerCase()
+  if (fileName !== 'yuanshen.exe' && fileName !== 'genshinimpact.exe') {
+    message.error(t('edit.bettergiGameClientInvalid'))
+    return null
+  }
+  return path
+}
+
+const selectGameClient = async () => {
+  const path = await pickGenshinExe()
+  if (!path) return
+  gamePathInput.value = path
+  await handleGamePathSaved()
+}
+
+const clearGameClient = async () => {
+  gamePathInput.value = gameClientInfo.value?.globalPath || ''
+  await handleGamePathSaved()
+}
+
+const handleResourceChange = async (value: string) => {
+  await saveField('Switch.Resource', value)
+  const channel = gameClientInfo.value?.channel
+  const expected = RESOURCE_EXPECTED_CHANNEL[value]
+  if (!channel || !expected || expected === channel) return
+  message.warning(
+    t('edit.bettergiServerMismatchWarning', {
+      server: channelLabel(value),
+      channel: channelLabel(channel),
+    })
+  )
 }
 
 // 快速配置开关已隐藏（按配置来源派生），原先「关闭前先落盘一条龙组设置」的处理
@@ -4636,6 +4853,8 @@ onMounted(async () => {
       loadOneDragonConfigs(),
     ])
     await loadUser()
+    // 游戏客户端信息（生效路径 + 渠道标注）：用户数据就绪后按用户路径识别
+    await loadGameClientInfo()
     // 编辑界面进入：归档 BGI 全局配置当前状态（须在 userId 就绪后）
     void ensureBettergiBackup('native')
   }
@@ -5666,5 +5885,30 @@ onUnmounted(() => {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* 游戏客户端路径（用户级覆盖）：输入组与信息行 */
+.path-input-group {
+  display: flex;
+  overflow: hidden;
+  border: 1px solid var(--ant-color-border);
+}
+
+.path-input {
+  flex: 1;
+  min-width: 0;
+  border: none !important;
+  border-radius: 0 !important;
+}
+
+.path-button {
+  flex-shrink: 0;
+  border: none;
+  border-radius: 0;
+  background: var(--ant-color-primary-bg);
+  color: var(--ant-color-primary);
+  font-weight: 600;
+  padding: 0 20px;
+  border-left: 1px solid var(--ant-color-border-secondary);
 }
 </style>
