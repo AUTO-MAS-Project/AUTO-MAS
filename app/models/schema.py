@@ -5043,7 +5043,8 @@ class Emulator2SearchItem(BaseModel):
         description=(
             "判定原因: ok 可添加 / version_too_old 版本太旧 / planned 后续版本接入 / "
             "unsupported 暂不支持 / already_added 已添加 / "
-            "not_found 找不到模拟器程序 / probe_failed 版本认不出"
+            "not_found 找不到模拟器程序 / probe_failed 版本认不出 / "
+            "components_missing 官方模拟器组件还没下载齐"
         ),
     )
     instanceCount: Optional[int] = Field(default=None, description="实例数量")
@@ -5124,6 +5125,21 @@ class Emulator2InstanceCreateIn(BaseModel):
     pathId: str = Field(..., description="在哪条模拟器安装下新建")
     name: Optional[str] = Field(
         default=None, description="新实例名称, 留空由模拟器自己命名"
+    )
+    memoryMb: Optional[int] = Field(
+        default=None,
+        description="仅官方模拟器: 内存 MB, 可选 3072 / 4096 / 6144, 留空为 4096",
+    )
+    cpu: Optional[int] = Field(
+        default=None, description="仅官方模拟器: CPU 核数, 可选 2 / 4 / 6, 留空为 4"
+    )
+    dataPartitionGb: Optional[int] = Field(
+        default=None,
+        description="仅官方模拟器: 数据盘上限 GB (16–512), 按实际写入增长, 留空为 64",
+    )
+    headless: Optional[bool] = Field(
+        default=None,
+        description="仅官方模拟器: 是否无头运行 (没有窗口, 即静默模式), 留空为 true",
     )
 
 
@@ -5276,6 +5292,211 @@ class Emulator2DevicesOut(OutBase):
     devices: List[Emulator2DeviceItem] = Field(
         default_factory=list, description="合并后的设备列表"
     )
+
+
+# ---- Emulator 2.0 · 官方模拟器（Android Emulator / AVD）---------------------
+# 没有厂商管理器: 用户选一个根目录, 同意《Android SDK 许可协议》后由后端从官方仓库
+# 后台下载组件; 组件齐了再按普通路径 ``/paths/add`` 纳管 (installPath = 根目录)。
+
+
+class Emulator2AvdRootIn(BaseModel):
+    root: str = Field(..., description="官方模拟器根目录 (组件与实例都放在里面)")
+
+
+class Emulator2AvdComponentItem(BaseModel):
+    id: str = Field(
+        ...,
+        description="组件标识: platform-tools / emulator / system-image / launcher",
+    )
+    name: str = Field(..., description="组件名称")
+    version: str = Field(default="", description="固定版本")
+    sizeBytes: int = Field(default=0, description="下载大小 (字节)")
+    installed: bool = Field(default=False, description="是否已就绪")
+    downloadedBytes: int = Field(
+        default=0, description="已下载的字节数 (断点续传用, 已就绪时为完整大小或 0)"
+    )
+    optional: bool = Field(
+        default=False, description="是否可选组件 (轻量桌面), 可选组件缺失不影响添加"
+    )
+    license: str = Field(default="", description="许可证")
+
+
+class WSEmulator2AvdInstallProgressData(BaseModel):
+    """官方模拟器组件后台下载进度 (id=EmulatorManager, type=emulator2.avd.install.progress)
+
+    同一份结构也是 ``/avd/status`` 与 ``/avd/install/start`` 返回的 ``job`` 快照。
+    下载 / 解压这类高频事件按 0.5 秒节流, 阶段切换与收尾事件必发。
+    """
+
+    jobId: str = Field(..., description="下载任务 ID")
+    root: str = Field(..., description="根目录")
+    source: str = Field(default="", description="下载源标识")
+    sourceName: str = Field(default="", description="下载源名称")
+    stage: str = Field(
+        ...,
+        description=(
+            "阶段: preparing / downloading / verifying / extracting / "
+            "completed / failed / cancelled"
+        ),
+    )
+    status: str = Field(..., description="running / success / failed / cancelled")
+    message: str = Field(default="", description="当前阶段的用户可读描述")
+    component: str = Field(default="", description="当前组件标识")
+    componentName: str = Field(default="", description="当前组件名称")
+    componentIndex: int = Field(default=0, description="当前是第几个组件 (从 1 起)")
+    componentCount: int = Field(default=0, description="本次要准备的组件数")
+    downloadedBytes: int = Field(default=0, description="总已下载字节数 (含续传部分)")
+    totalBytes: int = Field(default=0, description="本次要下载的总字节数")
+    percent: Optional[float] = Field(
+        default=None, description="总下载进度百分比, 未知时为 null"
+    )
+    speedBytesPerSec: Optional[float] = Field(
+        default=None, description="下载速度 (B/s), 首个采样点为 null"
+    )
+    etaSeconds: Optional[int] = Field(
+        default=None, description="预计剩余秒数, 只在下载阶段给出"
+    )
+    extractPercent: Optional[float] = Field(
+        default=None, description="当前组件的解压进度百分比, 只在解压阶段给出"
+    )
+    error: str = Field(default="", description="失败原因, 仅 status=failed 时有值")
+    launcherError: str = Field(
+        default="", description="可选的轻量桌面没下载成功时的原因 (不影响整体成功)"
+    )
+
+
+class Emulator2AvdStatusOut(OutBase):
+    root: str = Field(default="", description="根目录")
+    ready: bool = Field(default=False, description="必需组件是否齐全, 齐了才能添加")
+    components: List[Emulator2AvdComponentItem] = Field(
+        default_factory=list, description="组件清单 (含可选的轻量桌面)"
+    )
+    missingBytes: int = Field(default=0, description="还要下载的字节数")
+    requiredDiskBytes: int = Field(
+        default=0, description="下载并解压还需要的磁盘空间 (字节, 不含余量)"
+    )
+    freeDiskBytes: Optional[int] = Field(
+        default=None, description="根目录所在盘的剩余空间 (字节)"
+    )
+    licenseAccepted: bool = Field(
+        default=False, description="该根目录是否已同意过许可协议"
+    )
+    licenseAcceptedAt: str = Field(default="", description="同意许可协议的时间")
+    source: str = Field(default="", description="上次使用的下载源标识")
+    accelerationOk: Optional[bool] = Field(
+        default=None,
+        description="硬件加速 (WHPX) 是否可用; 模拟器组件还没装时为 null (无法检查)",
+    )
+    accelerationDetail: str = Field(
+        default="", description="硬件加速检查的原始输出或不可用时的引导文案"
+    )
+    job: Optional[WSEmulator2AvdInstallProgressData] = Field(
+        default=None, description="该根目录最近一次下载任务的进度快照, 没有时为 null"
+    )
+
+
+class Emulator2AvdLicenseIn(BaseModel):
+    source: Optional[str] = Field(
+        default=None, description="从哪个下载源取许可协议, 留空按默认顺序"
+    )
+
+
+class Emulator2AvdLicenseOut(OutBase):
+    licenseId: str = Field(default="", description="许可证标识")
+    text: str = Field(default="", description="《Android SDK 许可协议》全文")
+    source: str = Field(default="", description="实际取自哪个下载源")
+
+
+class Emulator2AvdSourceItem(BaseModel):
+    id: str = Field(..., description="下载源标识")
+    name: str = Field(..., description="下载源名称")
+    url: str = Field(..., description="仓库根地址")
+    ok: bool = Field(default=False, description="测速是否成功")
+    speedBytesPerSec: Optional[float] = Field(
+        default=None, description="测得的速度 (B/s), 失败时为 null"
+    )
+    error: str = Field(default="", description="失败原因")
+
+
+class Emulator2AvdSourcesOut(OutBase):
+    sources: List[Emulator2AvdSourceItem] = Field(
+        default_factory=list, description="按速度从快到慢排序, 失败的在最后"
+    )
+    recommended: str = Field(default="", description="推荐的下载源标识 (最快的)")
+
+
+class Emulator2AvdInstallIn(BaseModel):
+    root: str = Field(..., description="根目录, 不存在会自动创建")
+    acceptLicense: bool = Field(
+        default=False,
+        description="用户是否勾选了「我已阅读并同意」; 为 false 时拒绝下载, 后端不代为同意",
+    )
+    source: Optional[str] = Field(
+        default=None, description="下载源标识, 留空则先测速再选最快的"
+    )
+    includeLauncher: bool = Field(
+        default=True, description="是否一并下载可选的轻量桌面 (Fossify Launcher)"
+    )
+    emulatorId: Optional[str] = Field(
+        default=None,
+        description="Emulator 2.0 配置 ID; 给了就在下载完成后自动把这个根目录加进该配置",
+    )
+    alias: Optional[str] = Field(default=None, description="自动添加时用的安装别名")
+
+
+class Emulator2AvdInstallOut(OutBase):
+    ok: bool = Field(default=False, description="是否已开始 (或已有同目录任务在跑)")
+    reason: str = Field(
+        default="",
+        description=(
+            "结果原因: started 已开始 / running 已有任务在跑 / ready 组件已齐无需下载 / "
+            "license_not_accepted 未同意许可协议 / invalid_root 目录不可用 / "
+            "disk_space 磁盘空间不足 / no_source 所有下载源都不可用"
+        ),
+    )
+    jobId: str = Field(default="", description="下载任务 ID")
+    job: Optional[WSEmulator2AvdInstallProgressData] = Field(
+        default=None, description="当前进度快照"
+    )
+
+
+class Emulator2AvdInstallCancelOut(OutBase):
+    ok: bool = Field(default=False, description="是否已请求取消")
+    reason: str = Field(
+        default="", description="cancelling 正在取消 / no_job 没有在跑的任务"
+    )
+
+
+class Emulator2AvdInstanceIn(BaseModel):
+    emulatorId: str = Field(..., description="Emulator 2.0 配置 ID")
+    slot: str = Field(..., description="设备号")
+
+
+class Emulator2AvdInstanceOptionsSetIn(BaseModel):
+    emulatorId: str = Field(..., description="Emulator 2.0 配置 ID")
+    slot: str = Field(..., description="设备号")
+    headless: bool = Field(
+        ..., description="true 无头 (静默, 没有窗口) / false 带窗口; 下次启动生效"
+    )
+
+
+class Emulator2AvdInstanceOptionsOut(OutBase):
+    headless: bool = Field(default=True, description="是否无头运行, 下次启动生效")
+    memoryMb: Optional[int] = Field(default=None, description="内存 MB")
+    cpu: Optional[int] = Field(default=None, description="CPU 核数")
+    dataPartitionGb: Optional[int] = Field(default=None, description="数据盘上限 GB")
+    initialized: bool = Field(
+        default=False, description="首次开机初始化是否已完成 (关 WiFi / 去预装等)"
+    )
+    launcher: str = Field(default="", description="当前桌面包名, pixel 为原生桌面")
+    renderer: str = Field(default="", description="首次开机记录的渲染器 (GLES 行)")
+    softwareRenderer: bool = Field(
+        default=False,
+        description="是否在用软件渲染 (SwiftShader); 为 true 时应提示用户更新显卡驱动",
+    )
+    consolePort: int = Field(default=0, description="控制台端口")
+    adbPort: int = Field(default=0, description="adb 端口")
+    grpcPort: int = Field(default=0, description="gRPC 端口 (带 token 鉴权)")
 
 
 class WebhookInBase(BaseModel):

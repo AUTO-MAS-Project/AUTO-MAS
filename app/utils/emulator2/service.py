@@ -55,6 +55,11 @@ def readable_error(error: BaseException) -> str:
         )
     if isinstance(error, ValueError):
         return str(error)
+    from .avd.components import ComponentError
+    from .avd.manager import IncompatibleGameError
+
+    if isinstance(error, (ComponentError, IncompatibleGameError)):
+        return str(error)
     if isinstance(error, KeyError):
         return f"找不到对象: {error.args[0] if error.args else error}"
     if type(error) is RuntimeError:
@@ -358,16 +363,27 @@ async def remove_path(emulator_id: str, path_id: str) -> dict:
 
 
 async def create_instance(
-    emulator_id: str, path_id: str, name: str | None = None
+    emulator_id: str,
+    path_id: str,
+    name: str | None = None,
+    options: dict | None = None,
 ) -> dict:
-    """在某条模拟器安装下新建一个实例，并给它分配设备号。"""
+    """在某条模拟器安装下新建一个实例，并给它分配设备号。
+
+    ``options`` 只对官方模拟器生效（``memory_mb`` / ``cpu`` / ``data_partition_gb`` /
+    ``headless`` / ``native_index``）：雷电 / MuMu 新建时用的是模拟器自己的默认配置。
+    """
     manager = await build_manager(emulator_id)
     path = manager.path_of(path_id)
     if path is None:
         return {"ok": False, "reason": "path_not_found"}
 
     backend = await manager.manager_for(path)
-    native_index = await backend.create_instance(name)
+    if path.type == "avd":
+        cleaned = {k: v for k, v in (options or {}).items() if v is not None}
+        native_index = await backend.create_instance(name, **cleaned)
+    else:
+        native_index = await backend.create_instance(name)
 
     added = manager.slots.sync_path(path_id, [native_index])
     await _save(emulator_id, manager.paths, manager.slots)

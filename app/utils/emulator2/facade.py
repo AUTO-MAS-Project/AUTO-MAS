@@ -43,6 +43,8 @@ from app.models.emulator import DeviceBase, DeviceInfo, DeviceRef, DeviceStatus
 from app.utils import get_logger
 
 from .applaunch import AppLaunchResult
+from .avd.manager import AvdManager
+from .avd.manager import build_manager as build_avd_manager
 from .guard import drift, load_baselines
 from .ldplayer14 import LDPlayer14Manager
 from .ldplayer14 import build_manager as build_ldplayer_manager
@@ -52,13 +54,15 @@ from .mumu6 import build_manager as build_mumu_manager
 from .settings import InstanceSettings
 from .slots import PathRecord, SlotRecord, SlotTable
 
-#: 一条安装的后端管理器。两家各自继承旧实现, 对门面暴露同一组方法。
-Backend = LDPlayer14Manager | MuMu6Manager
+#: 一条安装的后端管理器。雷电 / MuMu 各自继承旧实现, 官方模拟器（avd）自己驱动
+#: emulator.exe, 三家对门面暴露同一组方法。
+Backend = LDPlayer14Manager | MuMu6Manager | AvdManager
 
 #: 类型 -> 构造函数。加一家模拟器只要在这里加一行。
 _BACKEND_BUILDERS = {
     "ldplayer": build_ldplayer_manager,
     "mumu": build_mumu_manager,
+    "avd": build_avd_manager,
 }
 
 logger = get_logger("Emulator2 设备管理")

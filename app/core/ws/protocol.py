@@ -88,6 +88,9 @@ TOOLKIT_NOTICE = "toolkit.notice"
 # 模拟器启动 / 关闭 / 显示 / 隐藏这类后台操作结束（id=EmulatorManager）
 EMULATOR_OPERATION_FINISHED = "emulator.operation.finished"
 
+# 官方模拟器组件后台下载进度（id=EmulatorManager），数据见 WSEmulator2AvdInstallProgressData
+EMULATOR2_AVD_INSTALL_PROGRESS = "emulator2.avd.install.progress"
+
 # 虚拟显示器（id=Main）：真实显示器回来了但有任务在跑，问用户要不要拆；以及提示已作废
 DISPLAY_DETACH_PROMPT = "display.detach.prompt"
 DISPLAY_DETACH_PROMPT_CLOSED = "display.detach.prompt.closed"

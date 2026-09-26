@@ -27,6 +27,17 @@
 from fastapi import APIRouter, Body
 
 from app.models.schema import (
+    Emulator2AvdInstallCancelOut,
+    Emulator2AvdInstallIn,
+    Emulator2AvdInstallOut,
+    Emulator2AvdInstanceIn,
+    Emulator2AvdInstanceOptionsOut,
+    Emulator2AvdInstanceOptionsSetIn,
+    Emulator2AvdLicenseIn,
+    Emulator2AvdLicenseOut,
+    Emulator2AvdRootIn,
+    Emulator2AvdSourcesOut,
+    Emulator2AvdStatusOut,
     Emulator2DevicesIn,
     Emulator2DevicesOut,
     Emulator2GuardCaptureOut,
@@ -52,6 +63,7 @@ from app.models.schema import (
 )
 from app.utils import get_logger
 from app.utils.emulator2 import service
+from app.utils.emulator2.avd import service as avd_service
 
 router = APIRouter(prefix="/api/emulator2", tags=["Emulator 2.0"])
 logger = get_logger("Emulator 2.0 API")
@@ -190,7 +202,15 @@ async def create_instance(
     """
     try:
         result = await service.create_instance(
-            payload.emulatorId, payload.pathId, payload.name
+            payload.emulatorId,
+            payload.pathId,
+            payload.name,
+            {
+                "memory_mb": payload.memoryMb,
+                "cpu": payload.cpu,
+                "data_partition_gb": payload.dataPartitionGb,
+                "headless": payload.headless,
+            },
         )
     except Exception as e:
         logger.opt(exception=True).warning(
@@ -371,3 +391,158 @@ async def capture_baselines(
         )
         return Emulator2GuardCaptureOut(**_error(e))
     return Emulator2GuardCaptureOut(**result)
+
+
+# ---- 官方模拟器（Android Emulator）------------------------------------------
+
+
+@router.post(
+    "/avd/status",
+    tags=["Get"],
+    summary="查询官方模拟器根目录的组件状态",
+    response_model=Emulator2AvdStatusOut,
+    status_code=200,
+)
+async def avd_status(payload: Emulator2AvdRootIn = Body(...)) -> Emulator2AvdStatusOut:
+    """组件清单与是否齐全、磁盘空间、是否同意过许可、硬件加速（WHPX）是否可用，
+    以及该目录最近一次下载任务的进度快照。只读，不联网。
+    """
+    try:
+        result = await avd_service.status(payload.root)
+    except Exception as e:
+        logger.opt(exception=True).warning(f"avd_status失败: {type(e).__name__}: {e}")
+        return Emulator2AvdStatusOut(**_error(e))
+    return Emulator2AvdStatusOut(**result)
+
+
+@router.post(
+    "/avd/license",
+    tags=["Get"],
+    summary="获取《Android SDK 许可协议》全文",
+    response_model=Emulator2AvdLicenseOut,
+    status_code=200,
+)
+async def avd_license(
+    payload: Emulator2AvdLicenseIn = Body(default=Emulator2AvdLicenseIn()),
+) -> Emulator2AvdLicenseOut:
+    """从下载源的官方仓库清单里取许可协议全文，给弹窗展示；用户勾选同意后才能下载。"""
+    try:
+        result = await avd_service.license_text(payload.source)
+    except Exception as e:
+        logger.opt(exception=True).warning(f"avd_license失败: {type(e).__name__}: {e}")
+        return Emulator2AvdLicenseOut(**_error(e))
+    return Emulator2AvdLicenseOut(**result)
+
+
+@router.post(
+    "/avd/sources",
+    tags=["Get"],
+    summary="官方模拟器下载源测速",
+    response_model=Emulator2AvdSourcesOut,
+    status_code=200,
+)
+async def avd_sources() -> Emulator2AvdSourcesOut:
+    """各下载源依次拉几 MB 测速，按速度排序并给出推荐；失败的源排在最后。"""
+    try:
+        result = await avd_service.probe_sources()
+    except Exception as e:
+        logger.opt(exception=True).warning(f"avd_sources失败: {type(e).__name__}: {e}")
+        return Emulator2AvdSourcesOut(**_error(e))
+    return Emulator2AvdSourcesOut(**result)
+
+
+@router.post(
+    "/avd/install/start",
+    tags=["Action"],
+    summary="开始后台下载官方模拟器组件",
+    response_model=Emulator2AvdInstallOut,
+    status_code=200,
+)
+async def avd_install_start(
+    payload: Emulator2AvdInstallIn = Body(...),
+) -> Emulator2AvdInstallOut:
+    """立即返回，进度走 WebSocket（id=EmulatorManager, type=emulator2.avd.install.progress）。
+
+    ``acceptLicense`` 必须是用户亲手勾选的，为 false 时拒绝。断点续传：取消或失败后再调一次
+    会从已下载的位置接着下。带 ``emulatorId`` 时下载完成后自动把根目录加进该配置。
+    """
+    try:
+        result = await avd_service.install_start(
+            payload.root,
+            accept_license=payload.acceptLicense,
+            source_id=payload.source,
+            include_launcher=payload.includeLauncher,
+            emulator_id=payload.emulatorId,
+            alias=payload.alias,
+        )
+    except Exception as e:
+        logger.opt(exception=True).warning(
+            f"avd_install_start失败: {type(e).__name__}: {e}"
+        )
+        return Emulator2AvdInstallOut(**_error(e))
+    return Emulator2AvdInstallOut(**result)
+
+
+@router.post(
+    "/avd/install/cancel",
+    tags=["Action"],
+    summary="取消官方模拟器组件下载",
+    response_model=Emulator2AvdInstallCancelOut,
+    status_code=200,
+)
+async def avd_install_cancel(
+    payload: Emulator2AvdRootIn = Body(...),
+) -> Emulator2AvdInstallCancelOut:
+    """取消后已下载的部分保留在根目录的 downloads 里，下次开始时续传。"""
+    try:
+        result = avd_service.install_cancel(payload.root)
+    except Exception as e:
+        logger.opt(exception=True).warning(
+            f"avd_install_cancel失败: {type(e).__name__}: {e}"
+        )
+        return Emulator2AvdInstallCancelOut(**_error(e))
+    return Emulator2AvdInstallCancelOut(**result)
+
+
+@router.post(
+    "/avd/instance/options",
+    tags=["Get"],
+    summary="查询官方模拟器实例选项",
+    response_model=Emulator2AvdInstanceOptionsOut,
+    status_code=200,
+)
+async def avd_instance_options(
+    payload: Emulator2AvdInstanceIn = Body(...),
+) -> Emulator2AvdInstanceOptionsOut:
+    """无头 / 带窗口、内存、核数、数据盘、首次初始化与渲染器检测结果、端口。"""
+    try:
+        result = await avd_service.instance_options(payload.emulatorId, payload.slot)
+    except Exception as e:
+        logger.opt(exception=True).warning(
+            f"avd_instance_options失败: {type(e).__name__}: {e}"
+        )
+        return Emulator2AvdInstanceOptionsOut(**_error(e))
+    return Emulator2AvdInstanceOptionsOut(**result)
+
+
+@router.post(
+    "/avd/instance/options/set",
+    tags=["Action"],
+    summary="修改官方模拟器实例选项",
+    response_model=Emulator2AvdInstanceOptionsOut,
+    status_code=200,
+)
+async def avd_set_instance_options(
+    payload: Emulator2AvdInstanceOptionsSetIn = Body(...),
+) -> Emulator2AvdInstanceOptionsOut:
+    """目前只有无头 / 带窗口一项，下次启动生效；内存与核数走通用的设置接口。"""
+    try:
+        result = await avd_service.set_instance_options(
+            payload.emulatorId, payload.slot, headless=payload.headless
+        )
+    except Exception as e:
+        logger.opt(exception=True).warning(
+            f"avd_set_instance_options失败: {type(e).__name__}: {e}"
+        )
+        return Emulator2AvdInstanceOptionsOut(**_error(e))
+    return Emulator2AvdInstanceOptionsOut(**result)

@@ -1,0 +1,250 @@
+#   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
+#   Copyright © 2025-2026 AUTO-MAS Team
+
+#   This file is part of AUTO-MAS.
+
+#   AUTO-MAS is free software: you can redistribute it and/or modify
+#   it under the terms of the GNU Affero General Public License as
+#   published by the Free Software Foundation, either version 3 of
+#   the License, or (at your option) any later version.
+
+#   AUTO-MAS is distributed in the hope that it will be useful,
+#   but WITHOUT ANY WARRANTY; without even the implied warranty
+#   of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See
+#   the GNU Affero General Public License for more details.
+
+#   You should have received a copy of the GNU Affero General Public License
+#   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
+
+#   Contact: DLmaster_361@163.com
+
+"""官方模拟器的服务层：组件状态、许可证、测速、后台下载、实例选项。
+
+添加流程：``status``（缺什么）→ ``license``（给用户看全文、勾选同意）→ ``sources``（测速）
+→ ``install_start``（后台下载，进度走 WebSocket，可关弹窗）→ 下载完成后按普通路径纳管
+（``install_start`` 带了配置 ID 就自动加）。组件齐了之后实例的新建 / 删除 / 启停走 Emulator 2.0
+原有接口。
+"""
+
+from __future__ import annotations
+
+import asyncio
+import uuid
+from datetime import datetime
+from pathlib import Path
+from typing import Any
+
+from app.utils import get_logger
+
+from . import components, host
+from .components import ComponentError, InstallJob
+from .constants import DOWNLOAD_SOURCES, LICENSE_ID
+
+logger = get_logger("官方模拟器服务")
+
+#: WebSocket 推送任务的强引用，免得还没发出去就被回收。
+_PENDING_SENDS: set[asyncio.Task] = set()
+
+
+def _normalize_root(root: str) -> Path:
+    path = Path(str(root or "").strip())
+    if not str(path) or not path.is_absolute():
+        raise ValueError("请选择一个完整路径的文件夹作为官方模拟器根目录")
+    if path.exists() and not path.is_dir():
+        raise ValueError(f"{path} 不是文件夹")
+    return path
+
+
+async def status(root: str, *, check_acceleration: bool = True) -> dict[str, Any]:
+    """根目录现状：组件、磁盘、许可、硬件加速、最近一次下载任务。只读。"""
+    path = _normalize_root(root)
+    result = await asyncio.to_thread(components.install_status, path)
+    result["accelerationOk"] = None
+    result["accelerationDetail"] = ""
+    if check_acceleration and components.emulator_exe(path).is_file():
+        accel = await host.check_acceleration(path)
+        result["accelerationOk"] = accel.ok
+        result["accelerationDetail"] = (
+            accel.detail if accel.ok else f"{host.ACCEL_GUIDE}（{accel.detail}）"
+        )
+    job = components.get_job(path)
+    result["job"] = dict(job.snapshot) if job is not None and job.snapshot else None
+    return result
+
+
+async def license_text(source_id: str | None = None) -> dict[str, str]:
+    return await components.fetch_license(source_id)
+
+
+async def probe_sources() -> dict[str, Any]:
+    results = await components.probe_sources()
+    recommended = next((item["id"] for item in results if item["ok"]), "")
+    return {"sources": results, "recommended": recommended}
+
+
+def _publish(snapshot: dict[str, Any]) -> None:
+    """把进度快照推给前端。主连接没建立时 Publisher 自己丢弃，不影响下载。"""
+    from app.core.ws import protocol as ws_protocol
+    from app.core.ws.publisher import Publisher
+    from app.models.schema import WSEmulator2AvdInstallProgressData
+
+    try:
+        data = WSEmulator2AvdInstallProgressData(**snapshot)
+    except Exception as e:  # noqa: BLE001 - 进度格式问题不该打断下载
+        logger.debug(f"下载进度快照不合规，跳过推送: {e}")
+        return
+    task = asyncio.get_running_loop().create_task(
+        Publisher.send(
+            id=ws_protocol.ID_EMULATOR_MANAGER,
+            type=ws_protocol.EMULATOR2_AVD_INSTALL_PROGRESS,
+            data=data,
+        )
+    )
+    _PENDING_SENDS.add(task)
+    task.add_done_callback(_PENDING_SENDS.discard)
+
+
+async def install_start(
+    root: str,
+    *,
+    accept_license: bool,
+    source_id: str | None = None,
+    include_launcher: bool = True,
+    emulator_id: str | None = None,
+    alias: str | None = None,
+    publish: bool = True,
+) -> dict[str, Any]:
+    """开始（或续上）后台下载。立即返回，进度走 WebSocket 与 ``status``。
+
+    **不勾同意不下载**：``accept_license`` 必须是用户在弹窗里亲手勾的，后端不代为同意。
+    同一根目录已有任务在跑时直接返回那个任务；已取消 / 失败的任务再调一次就从断点续传。
+    """
+    if not accept_license:
+        return {
+            "ok": False,
+            "reason": "license_not_accepted",
+            "message": "请先阅读并同意《Android SDK 许可协议》",
+        }
+    try:
+        path = _normalize_root(root)
+        path.mkdir(parents=True, exist_ok=True)
+    except (ValueError, OSError) as e:
+        return {"ok": False, "reason": "invalid_root", "message": str(e)}
+
+    existing = components.get_job(path)
+    if existing is not None and not existing.finished and existing.task is not None:
+        return {
+            "ok": True,
+            "reason": "running",
+            "jobId": existing.job_id,
+            "job": dict(existing.snapshot),
+            "message": "该目录已有下载任务在进行",
+        }
+
+    current = await asyncio.to_thread(components.install_status, path)
+    launcher_missing = include_launcher and not components.launcher_downloaded(path)
+    if current["ready"] and not launcher_missing:
+        await _auto_add(emulator_id, path, alias)
+        return {"ok": True, "reason": "ready", "message": "组件已齐全，无需下载"}
+
+    try:
+        await asyncio.to_thread(components.check_disk_space, path)
+    except ComponentError as e:
+        return {"ok": False, "reason": "disk_space", "message": str(e)}
+
+    source = next((s for s in DOWNLOAD_SOURCES if s.id == source_id), None)
+    if source is None:
+        probe = await probe_sources()
+        source = next(
+            (s for s in DOWNLOAD_SOURCES if s.id == probe["recommended"]), None
+        )
+        if source is None:
+            return {
+                "ok": False,
+                "reason": "no_source",
+                "message": "所有下载源都连不上，请检查网络后重试",
+            }
+
+    components.update_metadata(
+        path,
+        licenseId=LICENSE_ID,
+        licenseAcceptedAt=datetime.now().isoformat(timespec="seconds"),
+        source=source.id,
+    )
+
+    job = InstallJob(
+        job_id=uuid.uuid4().hex,
+        root=path,
+        source=source,
+        include_launcher=include_launcher,
+        sink=_publish if publish else None,
+        on_success=(lambda: _auto_add(emulator_id, path, alias)),
+    )
+    job = components.start_job(job)
+    logger.info(f"开始下载官方模拟器组件: {path}（下载源 {source.name}）")
+    return {
+        "ok": True,
+        "reason": "started",
+        "jobId": job.job_id,
+        "job": dict(job.snapshot) or None,
+        "message": "已开始后台下载",
+    }
+
+
+async def _auto_add(emulator_id: str | None, root: Path, alias: str | None) -> None:
+    """下载完成后把根目录加进 Emulator 2.0 配置。已经加过就什么都不做。"""
+    if not emulator_id:
+        return
+    from .. import service as emulator2_service
+
+    result = await emulator2_service.add_path(emulator_id, str(root), alias)
+    if result.get("ok") or result.get("reason") == "already_added":
+        logger.info(f"官方模拟器 {root} 已加入配置 {emulator_id}")
+    else:
+        logger.warning(f"官方模拟器 {root} 自动加入配置失败: {result}")
+
+
+def install_cancel(root: str) -> dict[str, Any]:
+    path = _normalize_root(root)
+    job = components.get_job(path)
+    if job is None or job.finished:
+        return {"ok": False, "reason": "no_job", "message": "没有正在进行的下载"}
+    job.cancel()
+    return {"ok": True, "reason": "cancelling", "message": "正在取消下载"}
+
+
+async def wait_job(root: str) -> dict[str, Any] | None:
+    """等某个根目录的下载任务结束（测试与脚本用）。"""
+    job = components.get_job(_normalize_root(root))
+    if job is None or job.task is None:
+        return None
+    await asyncio.shield(job.task)
+    return dict(job.snapshot)
+
+
+# ---- 实例选项 -------------------------------------------------------------
+
+
+async def _backend(emulator_id: str, slot: str):
+    from ..service import build_manager
+    from .manager import AvdManager
+
+    manager = await build_manager(emulator_id)
+    path, record = manager.resolve_slot(str(slot))
+    if path.type != "avd":
+        raise ValueError("该设备不是官方模拟器")
+    backend = await manager.manager_for(path)
+    assert isinstance(backend, AvdManager)
+    return backend, record.native_index
+
+
+async def instance_options(emulator_id: str, slot: str) -> dict[str, Any]:
+    backend, native_index = await _backend(emulator_id, slot)
+    return backend.instance_options(native_index)
+
+
+async def set_instance_options(
+    emulator_id: str, slot: str, *, headless: bool
+) -> dict[str, Any]:
+    backend, native_index = await _backend(emulator_id, slot)
+    return backend.set_headless(native_index, headless)
