@@ -17,8 +17,9 @@ import {
 
 const logger = getLogger('MFW问题包')
 
-// 与 app/models/config.py 的 M9AConfig 类名同步
+// 与 app/models/config.py 的 M9AConfig / MSSConfig 类名同步
 const M9A_CONFIG_TYPE = 'M9AConfig'
+const MSS_CONFIG_TYPE = 'MSSConfig'
 
 // 与 app/task/MaaFW/tools/embedded/embedded_project.py 的 embedded_copy_dir_name 同步：
 // 每个脚本的项目视图是 data/mfw/<脚本 uuid 去掉连字符的前 12 位>/
@@ -791,4 +792,16 @@ export async function createM9AIssueReport(
     (_uid, type) => type === M9A_CONFIG_TYPE
   )
   return createIssueReport(appRoot, zipPath, scripts, 'M9A')
+}
+
+/** 全部 MSS 脚本的问题包。 */
+export async function createMSSIssueReport(
+  appRoot: string,
+  zipPath: string
+): Promise<IssueReportResult> {
+  const scripts = discoverMaaFWScripts(
+    resolveDataRoots(appRoot),
+    (_uid, type) => type === MSS_CONFIG_TYPE
+  )
+  return createIssueReport(appRoot, zipPath, scripts, 'MSS')
 }

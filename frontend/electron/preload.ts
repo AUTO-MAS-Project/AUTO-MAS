@@ -118,6 +118,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   exportMaaFWIssueReport: (scriptId: string) =>
     ipcRenderer.invoke('maafw:exportIssueReport', scriptId),
   exportM9AIssueReport: () => ipcRenderer.invoke('m9a:exportIssueReport'),
+  exportMSSIssueReport: () => ipcRenderer.invoke('mss:exportIssueReport'),
   exportDataBackup: () => ipcRenderer.invoke('data:backup'),
   // 传 fromOffset 时只读该字节偏移之后的新增部分，返回 { content, size, reset }
   getLogs: (lines?: number, fileName?: string, fromOffset?: number) =>

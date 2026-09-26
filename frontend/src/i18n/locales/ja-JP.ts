@@ -3577,6 +3577,7 @@ export default {
       exportMaaFW: 'MFW の問題報告パッケージを書き出す',
       exportMaaFWEmpty: 'MFW スクリプトはまだありません',
       exportM9A: 'M9A の問題報告パッケージを書き出す',
+      exportMSS: 'MSS の問題報告パッケージを書き出す',
       devSection: '開発者向けオプション',
       openDevTools: '開発者ツールを開く',
       runtimeLaunchMode: 'バックエンドの起動方式',

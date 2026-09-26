@@ -40,6 +40,7 @@ import { readLogContent, readLogIncrement } from './services/logFileReader'
 import { createMaaEndIssueReport } from './services/maaEndIssueReportService'
 import {
   createM9AIssueReport,
+  createMSSIssueReport,
   createMaaFWIssueReport,
   listMaaFWIssueReportScripts,
   maafwIssueReportFileNamePrefix,
@@ -1470,6 +1471,12 @@ registerIssueReportExporter(
   '导出 M9A 问题包',
   'M9A-logs',
   createM9AIssueReport
+)
+registerIssueReportExporter(
+  'mss:exportIssueReport',
+  '导出 MSS 问题包',
+  'MSS-logs',
+  createMSSIssueReport
 )
 
 ipcMain.handle('maafw:listIssueReportScripts', (_event, configTypes?: unknown) => {
