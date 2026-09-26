@@ -2484,6 +2484,9 @@ export default {
   home: {
     editLayout: 'レイアウトを編集',
     viewNotice: 'お知らせ',
+    satelliteEgg: {
+      star: 'star！',
+    },
     greeting: {
       morning: 'おはようございます — AUTO-MAS へようこそ',
       noon: 'こんにちは — AUTO-MAS へようこそ',
