@@ -30,8 +30,8 @@
                                   有本机基线的差分 -> SophonPatch（自动执行）
                                   没有             -> SophonUpdate（不自动执行）
 
-只有 ``SophonPatch`` 会下载：其余三种都要么没有增量、要么整份客户端还没落地，无人值守
-时把它们跑完就是替用户决定几十 GB 的流量去哪。
+只有 ``SophonPatch`` 会下载：其余三种都要么没有增量、要么整份客户端还没落地，无人
+值守时把它们跑完，就是替用户决定一整份客户端的流量去哪。
 
 同一款客户端可能被多个用户的任务同时用到，所以按游戏目录串行：``game_dir_lock`` 内跑完
 一轮再交给下一个。
@@ -206,9 +206,6 @@ class InstallManagerBase:
         """初始化安装管理器。
 
         Args:
-            preset: 预设配置（决定 Sophon 端点与匹配字段）。
-            version_manager: 版本管理器，提供本地版本与安装态判定。
-            game_path: 显式覆盖游戏安装目录（仅本次会话，不落盘）。
             logger: 日志对象；缺省时取模块默认 logger。
         """
         self.preset = preset
@@ -226,10 +223,6 @@ class InstallManagerBase:
 
     async def build_plan(self, client: Any) -> UpdatePlan:
         """问出「这次该怎么更新」，不写任何文件。
-
-        Args:
-            client: 注入的异步 HTTP 客户端。
-
         Returns:
             :class:`UpdatePlan`。只有增量路径会带上待处理明细，其余三种给出结论即返回。
 
@@ -312,14 +305,6 @@ class InstallManagerBase:
         should_abort: AbortHook | None = None,
     ) -> InstallResult:
         """按计划逐文件取回落盘，全部成功才写回版本号。
-
-        Args:
-            plan: :meth:`build_plan` 的产物。
-            client: 注入的异步 HTTP 客户端。
-            hpatchz: ``hpatchz`` 路径；``None`` 时每个文件都只能整文件重下。
-            on_progress: 一行行面向用户的进度文案。
-            should_abort: 中止判定，在文件批次边界轮询。
-
         Returns:
             :class:`InstallResult`。单个文件失败不会中断整轮：失败的文件记数，
             其余继续——一次更新上千个文件，因为一个坏文件停手会让用户反复从头开始。
@@ -408,7 +393,7 @@ class InstallManagerBase:
     # ================================================================== 收尾
 
     def finalize(self) -> None:
-        """把「已更新」落盘：写 ``config.ini`` 的 game_version / channel / 之后重载。
+        """把「已更新」落盘：写 ``config.ini`` 的版本号与频道信息，再重载本地版本。
 
         这是唯一把更新结果写盘的地方，只在整轮零失败时调用。
         """

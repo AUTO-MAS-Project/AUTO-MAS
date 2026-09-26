@@ -64,10 +64,6 @@ class GameUpdater:
 
     async def check(self, client: Any) -> UpdatePlan:
         """联网问出「这次该怎么更新」，不下载、不写盘。
-
-        Args:
-            client: 调用方创建并负责的异步 HTTP 客户端。
-
         Returns:
             :class:`UpdatePlan`。问不出结论时不抛异常，给出 ``kind=Unknown`` 并带上原因。
 
@@ -121,9 +117,6 @@ def create_updater(
     """按游戏与区服装配一整套更新器。
 
     Args:
-        game: 游戏短名（如 ``gi``），决定用哪一对版本/安装实现与哪份预设。
-        region: 区服，``cn`` / ``global``。
-        game_path: 游戏安装目录；``None`` 时由版本管理器自行探测。
         profile_dir: 预设/缓存目录；缺省由版本管理器自行决定。
         logger: 日志对象；缺省时按游戏名取。
 

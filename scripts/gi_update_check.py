@@ -1,8 +1,8 @@
 """只读探测：拉真实清单算出计划，不下载、不写盘（诊断脚本，非 pytest 入口）。
 
 用法：``python scripts/gi_update_check.py [--game gi]``，对所给游戏的两个区服各跑一次。
-探测刻意走 ``dry_run`` 之外的真实路径：演练态会跳过清单收集，文件数与体积都会是
-``getBuild`` 的统计估算而不是真值。
+文件数与体积都从清单实算，不取 ``getBuild`` 返回的统计估算——后者会把一次增量
+估成整客户端全量。
 """
 
 import asyncio
@@ -22,8 +22,6 @@ async def probe(game: str, region: str, game_dir: str) -> dict:
     """按游戏与区服算一次更新计划并回报关键字段。
 
     Args:
-        game: 游戏短名，如 ``gi``。
-        region: ``cn`` / ``global``。
         game_dir: 一个空目录，代表「未安装」的全量场景。
 
     Returns:

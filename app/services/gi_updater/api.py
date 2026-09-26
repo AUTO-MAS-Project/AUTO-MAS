@@ -25,12 +25,8 @@
     getPatchBuild     差分清单位置（只收 POST，且分片基址取它自己的 diff_download）
     清单与数据块       直接按地址取字节
 
-不为响应建模型：官方在同一字段上会给数字也会给字符串，缺项与形态变化都只发生在
-用到的那一条路径上，逐处窄取值能把「协议变了」的影响面压到最小，也不需要在模型里
-为用不到的字段维持一份与官方响应的同步义务。
-
-三条实测事实写进报错与注释里，改动前先看清（详见各函数）：``tag`` 必须是接口返回的
-原始 3 段串、两个 getBuild 系端点的方法互不通用、差分分片要下的长度是 ``PatchLength``。
+响应不建模型、就地窄取值：官方在同一个字段上会给数字也会给字符串，缺项与形态变化都
+只落在用到的那一条路径上，逐处收敛能把「协议变了」的影响面压到最小。
 """
 
 from __future__ import annotations
@@ -64,7 +60,7 @@ __all__ = [
 DEFAULT_TIMEOUT = 30.0
 #: 单个数据块：体积远大于清单，但不能让用户干等
 _CHUNK_TIMEOUT = 120.0
-#: 整份清单：有几万条记录，走的是慢速 CDN
+#: 整份清单：条目多、体积大，走的是慢速 CDN
 _MANIFEST_TIMEOUT = 300.0
 
 DEFAULT_USER_AGENT = "HYPContainer/1.16.1.361 (windows 11) collapse-python-updater/1.0"
@@ -212,8 +208,8 @@ def _find_branch_entry(entries: Any, preset: PresetConfig) -> dict:
     """在 ``game_branches[]`` 里挑出本预设那一款。
 
     一个 launcher 分组下挂着多款游戏，URL 上的 ``game_ids[]`` 只是请服务端少发几条，最终
-    仍以本地比对为准。先按 ``game_id`` 精确命中：同 biz 可能占好几条（实测国际服的
-    ``bh3_global`` 有 4 条不同 id），只比 biz 会挑到别的发行版。
+    仍以本地比对为准。先按 ``game_id`` 精确命中：同一 biz 可能占多条不同 id，只比 biz 会
+    挑到别的发行版。
 
     Raises:
         UpdaterError: 一款都对不上。此时宁可按「问不出」放行，也不能拿别款游戏的
@@ -292,12 +288,6 @@ def _find_entry(payload: dict, matching_field: str) -> dict | None:
 
 def _manifest_ref(entry: dict, *, from_diff: bool) -> ManifestRef:
     """把一个清单条目收敛成 :class:`ManifestRef`。
-
-    Args:
-        entry: ``manifests[]`` 的元素。
-        from_diff: 来自差分端点。差分的分片基址在 ``diff_download`` 上，主清单在
-            ``chunk_download`` 上；取错边会让每个分片都 404。
-
     Raises:
         UpdaterError: 缺清单 id 或任一基址。
     """
@@ -324,7 +314,7 @@ def _query(preset: PresetConfig, package: PackageInfo, *, with_tag: bool) -> str
         f"?plat_app={preset.launcher_biz_name}&branch=main"
         f"&password={package.password}&package_id={package.package_id}"
     )
-    # tag 必须是接口返回的原始 3 段串；补成 4 段会被服务端判 -202 not found
+    # tag 只用接口原样返回的串，形态上的讲究见 GameVersion.sophon_tag
     return f"{url}&tag={package.tag}" if with_tag and package.tag else url
 
 
@@ -351,14 +341,14 @@ async def fetch_main_manifest_ref(
 async def fetch_patch_manifest_ref(
     client: httpx.AsyncClient, preset: PresetConfig, package: PackageInfo, baseline: str
 ) -> ManifestRef | None:
-    """取差分清单位置（只收 POST）；该基线没有差分时报错。
+    """取差分清单位置（只收 POST）。
 
     Returns:
-        差分清单位置；本机基线不在差分覆盖的版本里时返回 ``None``，由调用方退回
-        逐文件全量比对。
+        差分清单位置；官方没给本机基线的差分（响应里没有 ``game`` 条目，或 ``stats``
+        里没有这个基线键）时返回 ``None``，由调用方退回逐文件全量比对。
 
     Raises:
-        UpdaterError: 接口异常，或响应有 ``game`` 条目却读不出地址。
+        UpdaterError: 接口异常，或有 ``game`` 条目却读不出地址。
     """
     urls = preset.launcher_resource_chunks_url
     payload = await request_json(

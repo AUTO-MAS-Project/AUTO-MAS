@@ -98,11 +98,7 @@ class PercentStyleLogger:
     """把 ``%`` 惰性格式化转发给 loguru 的薄壳。"""
 
     def __init__(self, name: str = "更新引擎") -> None:
-        """绑定一个宿主 logger。
-
-        Args:
-            name: loguru 的模块名（进日志的 ``extra[module]`` 列）。
-        """
+        """绑定一个宿主 logger。"""
         from app.utils import get_logger as host_get_logger
 
         self._logger = host_get_logger(name)
@@ -111,8 +107,6 @@ class PercentStyleLogger:
         """按 ``level`` 输出一条消息，参数缺失或格式不匹配时降级为拼接。
 
         Args:
-            level: loguru 的方法名。
-            message: 日志正文，可能是 ``%`` 模板。
             args: 位置参数；为空表示不做格式化。
         """
         if not args:
@@ -170,10 +164,6 @@ class UnsafePathError(ValueError):
 
 def split_rel_path(rel_path: str) -> list[str]:
     """把远端下发的相对路径清洗成安全的段列表。
-
-    Args:
-        rel_path: 原始相对路径；分隔符可以是 ``/`` 或 ``\\``，可以带前导斜杠。
-
     Returns:
         逐个目录段（已去掉空段与 ``.`` 段），至少含一段。
 
@@ -212,11 +202,6 @@ def split_rel_path(rel_path: str) -> list[str]:
 
 def safe_join(root: str, rel_path: str) -> str:
     """把不可信的相对路径拼到可信根目录下，越界即抛。
-
-    Args:
-        root: 目标根目录（游戏安装目录、暂存目录等）。
-        rel_path: 远端下发的相对路径。
-
     Returns:
         位于 ``root`` 内部的绝对路径。
 
@@ -270,12 +255,7 @@ class IniSection(Dict[str, IniValue]):
     # -------------------------------------------------------------- dict 覆写
 
     def __setitem__(self, key: str, value: object) -> None:
-        """写入键值，保留首次出现的键大小写与插入顺序。
-
-        Args:
-            key: 键名（查找大小写不敏感，但写回沿用首次写入时的大小写）。
-            value: 任意值，会被包装成 :class:`IniValue`。
-        """
+        """写入键值，保留首次出现的键大小写与插入顺序。"""
         lower = str(key).lower()
         original = self._key_case_map.get(lower)
         if original is None:
@@ -288,12 +268,8 @@ class IniSection(Dict[str, IniValue]):
     def __getitem__(self, key: str) -> IniValue:
         """读取键值；未命中时**静默创建空节点并返回**，不会抛异常。
 
-        与 的宽容读取一致：访问不存在的键会在段内留下一个空
+        与 :meth:`get` 一样宽容：访问不存在的键会在段内留下一个空
         ``IniValue`` 并记入键顺序，因此本方法兼具「查询」与「副作用写入」。
-
-        Args:
-            key: 键名（大小写不敏感）。
-
         Returns:
             对应的 :class:`IniValue`；未命中时为新建的空值。
         """
@@ -301,7 +277,7 @@ class IniSection(Dict[str, IniValue]):
         original = self._key_case_map.get(lower)
         if original is not None and original in self.keys():
             return super().__getitem__(original)
-        # 未找到时返回空 IniValue 而不是抛异常 —— 与 的宽容行为一致
+        # 未找到时返回空 IniValue 而不是抛异常，与 get() 的宽容读法一致
         empty = IniValue("")
         super().__setitem__(str(key), empty)
         self._key_case_map[lower] = str(key)
@@ -310,10 +286,6 @@ class IniSection(Dict[str, IniValue]):
 
     def __contains__(self, key: object) -> bool:
         """判断键是否存在（大小写不敏感，且对「尚未首次写入」的大小写别名也成立）。
-
-        Args:
-            key: 待查键名。
-
         Returns:
             该键（忽略大小写）是否已存在于段中。
         """
@@ -323,7 +295,6 @@ class IniSection(Dict[str, IniValue]):
         """宽松取值；键不存在时返回 ``default`` 且**不会**像 ``__getitem__`` 那样创建空节点。
 
         Args:
-            key: 键名（大小写不敏感）。
             default: 缺失时返回的值，默认 ``None``。
 
         Returns:
@@ -337,10 +308,6 @@ class IniSection(Dict[str, IniValue]):
         self, key: str
     ) -> IniValue:  # pragma: no cover - 由 __getitem__ 兜底
         """dict 缺失键兜底；实际不会触发（``__getitem__`` 已自行处理）。
-
-        Args:
-            key: 缺失的键名。
-
         Returns:
             占位用的空 :class:`IniValue`。
         """
@@ -369,10 +336,6 @@ class IniFile:
 
     def __contains__(self, section: object) -> bool:
         """判断段是否存在（大小写不敏感）。
-
-        Args:
-            section: 段名。
-
         Returns:
             该段名（忽略大小写）是否已存在。
         """
@@ -380,10 +343,6 @@ class IniFile:
 
     def __getitem__(self, section: str) -> IniSection:
         """获取段；不存在时**新建空段并返回**（写入段顺序，不抛异常）。
-
-        Args:
-            section: 段名。
-
         Returns:
             对应的 :class:`IniSection`；未命中时为新建的空段。
         """
@@ -401,7 +360,6 @@ class IniFile:
         """宽松取段；段不存在时返回 ``default`` 而不创建空段。
 
         Args:
-            section: 段名（大小写不敏感）。
             default: 缺失时返回的值，默认 ``None``。
 
         Returns:
@@ -426,10 +384,6 @@ class IniFile:
 
         保留原文件注释、键顺序与换行风格：自动探测 UTF-8 / UTF-8-BOM / UTF-16
         编码，并记录首个段之前的前导内容到 ``preamble``。
-
-        Args:
-            path: ini 文件路径。
-
         Returns:
             解析出的 :class:`IniFile`；文件不存在时为不含任何段的空文档。
         """
@@ -464,9 +418,6 @@ class IniFile:
 
         段名匹配 ``_SECTION_RE``、键值匹配 ``_KV_RE``；首个段之前的非键值行
         视为前导内容存入 ``preamble``。
-
-        Args:
-            text: 已解码的 ini 纯文本。
         """
         current: Optional[IniSection] = None
         for line in text.splitlines():
@@ -499,10 +450,6 @@ class IniFile:
         目标文件已存在时走单行替换：定位 ``[段]`` 下的 ``键=值`` 行，整行换成模型里的
         新值并沿用该行原有的行尾；模型里有、文件里没有的键追加到该段末尾；文件里有而
         模型没动的段、键、注释行、空行一概不碰。文件不存在才整份写出。
-
-        Args:
-            path: 目标文件路径。
-
         Raises:
             IniFormatError: 现有文件按加载时的编码解不开时——宁可停手，也不把一份读不
                 懂的配置覆盖掉。
@@ -527,10 +474,6 @@ class IniFile:
 
     def _read_existing(self, path: str) -> Optional[str]:
         """按加载时的编码读出磁盘上的现有内容。
-
-        Args:
-            path: 目标文件路径。
-
         Returns:
             解码后的文本；文件不存在时返回 ``None``，表示需要整份写出。
 
@@ -549,10 +492,6 @@ class IniFile:
 
     def _section_spans(self, lines: List[str]) -> Dict[str, Tuple[int, int]]:
         """算出每个段在原文里的行区间。
-
-        Args:
-            lines: 带行尾的原文行。
-
         Returns:
             ``段名（折叠大小写）-> (起始行, 结束行左开)``，段头行本身含在区间内。
         """
@@ -569,10 +508,6 @@ class IniFile:
 
     def _splice(self, text: str) -> str:
         """把模型里被改过的键替换进原文，其余行一字不动。
-
-        Args:
-            text: 磁盘上的现有文本。
-
         Returns:
             改好的完整文本。
         """
@@ -618,13 +553,6 @@ class IniFile:
         ending: str,
     ) -> str:
         """把原文里没有的键插到所属段末尾；段本身也不存在时整段追加到文件末尾。
-
-        Args:
-            lines: 已完成单行替换的原文行。
-            spans: 段名（折叠大小写）到行区间，由 :meth:`_section_spans` 给出。
-            appends: ``段名 -> 待插入的行``。
-            ending: 该文档的主要行尾。
-
         Returns:
             插入完成的文本。
         """

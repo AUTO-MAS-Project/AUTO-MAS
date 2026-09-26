@@ -18,9 +18,9 @@
 
 """版本号值类型与安装状态机。
 
-米哈游使用 4 段版本号（major.minor.patch.revision，例如 3.4.0.0 / 2.7.10.1）。
-比较语义：允许短版本（``"3.4" == "3.4.0.0"``）、逐段数值比较而非字符串比较、
-未解析或空串视为 ``None``（表示「未安装」或「未知」）。
+米哈游使用 4 段版本号（major.minor.patch.revision）。比较语义：允许短版本（缺失的
+段按 0 补齐后再比）、逐段数值比较而非字符串比较、未解析或空串视为 ``None``（表示
+「未安装」或「未知」）。
 
 状态机（对应上游的 ``.GameApi`` / ``.GameState`` / ``.IniConfig`` 三个分部）：
 
@@ -80,7 +80,7 @@ class GameVersion:
 
     @classmethod
     def parse(cls, value: "str | int | GameVersion | None") -> Optional["GameVersion"]:
-        """宽松解析版本号：支持 str（如 ``"5.6.0.0"``）、int 与 ``GameVersion``。
+        """宽松解析版本号：支持 str、int 与 ``GameVersion``。
 
         空串、``None`` 与匹配不上 ``_VERSION_RE`` 的输入都返回 ``None``（语义上是
         「未安装」）而不抛异常——版本号读不出来不该拦住整条更新流程。
@@ -106,14 +106,7 @@ class GameVersion:
 
     @classmethod
     def from_segments(cls, segments: Iterable[int]) -> "GameVersion":
-        """用整数序列构造版本号，超过 4 段截断、不足 4 段补 0。
-
-        Args:
-            segments: 版本号分段，如 ``[5, 6, 0]`` 或 ``(3, 4)``。
-
-        Returns:
-            补齐/截断到 4 段后的 :class:`GameVersion` 实例。
-        """
+        """用整数序列构造版本号，超过 4 段截断、不足 4 段补 0。"""
         parts: List[int] = [int(part) for part in segments][:VERSION_SEGMENTS]
         while len(parts) < VERSION_SEGMENTS:
             parts.append(0)
@@ -121,14 +114,14 @@ class GameVersion:
 
     @classmethod
     def empty(cls) -> "GameVersion":
-        """等价（全 0 版本）。"""
+        """全 0 版本，语义上是「还没装 / 不知道」。"""
         return cls(0, 0, 0, 0)
 
     # ------------------------------------------------------------------ 输出
 
     @property
     def version_string(self) -> str:
-        """（``major.minor.patch.revision``）。"""
+        """4 段完整版本号 ``major.minor.patch.revision``。"""
         return f"{self.major}.{self.minor}.{self.patch}.{self.revision}"
 
     @property
@@ -143,32 +136,29 @@ class GameVersion:
         return f"{self.major}.{self.minor}.{self.patch}"
 
     def as_tuple(self) -> Tuple[int, int, int, int]:
-        """返回 4 段版本号的整数元组 ``(major, minor, patch, revision)``。"""
+        """4 段版本号转元组，比较与哈希都以它为准。"""
         return (self.major, self.minor, self.patch, self.revision)
 
-    def __str__(self) -> str:  # pragma: no cover - 平凡实现
-        """等价于 ``version_string``。"""
+    def __str__(self) -> str:  # pragma: no cover
+        """展示成 ``version_string``。"""
         return self.version_string
 
-    def __repr__(self) -> str:  # pragma: no cover - 调试辅助
-        """返回可供 ``eval``/调试阅读的 ``GameVersion(x.y.z.w)`` 形式。"""
+    def __repr__(self) -> str:  # pragma: no cover
+        """调试用的 ``GameVersion(x.y.z.w)`` 形式。"""
         return f"GameVersion({self.version_string})"
 
     def is_empty(self) -> bool:
-        """判断是否为全 0 的「空版本」。"""
+        """是否为全 0 的空版本。"""
         return self.as_tuple() == (0, 0, 0, 0)
 
-    # ------------------------------------------------------------------ 比较
+    # 四个大小比较把右操作数交给 :func:`_coerce`（读不出的一律按全 0 空版本算），
+    # 因此「未安装」排在任何具体版本之前；``__eq__`` 是另一套规则，见它的说明。
 
     def __eq__(self, other: object) -> bool:
-        """相等比较；右操作数经 :func:`GameVersion.parse` 转换后逐段比较。
+        """相等比较。
 
-        Args:
-            other: 另一版本，可为 ``GameVersion`` / str / int / None。
-
-        Returns:
-            两段版本是否相等；``other`` 为 None 或无法解析时返回 ``NotImplemented``，
-            交由 Python 回退到默认对象比较（而非当作不等）。
+        ``other`` 是 None 或读不出来时返回 ``NotImplemented``，交给 Python 回退到默认
+        对象比较 —— 不能把它当成「与全 0 空版本相等」。
         """
         other_version = (
             self.parse(other) if not isinstance(other, GameVersion) else other
@@ -178,64 +168,28 @@ class GameVersion:
         return self.as_tuple() == other_version.as_tuple()
 
     def __hash__(self) -> int:
-        """以 4 段元组为哈希键，使相等的版本必然同哈希。"""
+        """按 4 段元组哈希，保证相等的版本必然同哈希。"""
         return hash(self.as_tuple())
 
     def __lt__(self, other: "GameVersion") -> bool:
-        """小于比较；右操作数经 :func:`GameVersion.parse` 转换后逐段比较。
-
-        Args:
-            other: 另一版本，可为 ``GameVersion`` / str / int / None。
-                None 或无法解析的值按 ``GameVersion.Empty`` 处理，故「未安装」小于任何具体版本。
-
-        Returns:
-            左操作数是否严格小于 ``other``。
-        """
+        """逐段比较大小。"""
         return self.as_tuple() < _coerce(other).as_tuple()
 
     def __le__(self, other: "GameVersion") -> bool:
-        """小于等于比较；右操作数经 :func:`GameVersion.parse` 转换后逐段比较。
-
-        Args:
-            other: 另一版本，可为 ``GameVersion`` / str / int / None。
-                None 或无法解析的值按 ``GameVersion.Empty`` 处理。
-
-        Returns:
-            左操作数是否小于或等于 ``other``。
-        """
+        """逐段比较大小（含相等）。"""
         return self.as_tuple() <= _coerce(other).as_tuple()
 
     def __gt__(self, other: "GameVersion") -> bool:
-        """大于比较；右操作数经 :func:`GameVersion.parse` 转换后逐段比较。
-
-        Args:
-            other: 另一版本，可为 ``GameVersion`` / str / int / None。
-                None 或无法解析的值按 ``GameVersion.Empty`` 处理。
-
-        Returns:
-            左操作数是否严格大于 ``other``。
-        """
+        """逐段比较大小。"""
         return self.as_tuple() > _coerce(other).as_tuple()
 
     def __ge__(self, other: "GameVersion") -> bool:
-        """大于等于比较；右操作数经 :func:`GameVersion.parse` 转换后逐段比较。
-
-        Args:
-            other: 另一版本，可为 ``GameVersion`` / str / int / None。
-                None 或无法解析的值按 ``GameVersion.Empty`` 处理。
-
-        Returns:
-            左操作数是否大于或等于 ``other``。
-        """
+        """逐段比较大小（含相等）。"""
         return self.as_tuple() >= _coerce(other).as_tuple()
 
 
 def _coerce(other: object) -> GameVersion:
-    """把比较运算的右操作数转成 GameVersion。
-
-    None 或无法解析的值按 ``GameVersion.Empty`` 处理，使「未安装」排在任意
-    具体版本之下（「未知」排在「已安装」之前）。不可解析时退化为全 0 空版本。
-    """
+    """把比较的右操作数转成 :class:`GameVersion`；读不出来按全 0 空版本算。"""
     if isinstance(other, GameVersion):
         return other
     parsed = GameVersion.parse(other)
@@ -267,33 +221,22 @@ class GameInstallStateEnum(str, Enum):
     Installed = "Installed"
 
     def __str__(self) -> str:  # pragma: no cover
-        """返回本地化中文标签（来自 `GAME_STATE_LABELS`），未登记时退回原始枚举值。
-
-        Note:
-            标记 ``# pragma: no cover``：只是枚举值的展示别名，不参与任何逻辑分支。
-        """
+        """返回面向用户的中文标签，未登记时退回原始枚举值。"""
         return GAME_STATE_LABELS.get(self.value, self.value)
 
 
 class GameVersionBase:
-    """版本管理基类；三款游戏通过子类覆写少量钩子。"""
+    """版本管理基类；每款游戏通过子类覆写少量钩子。"""
 
     def __init__(
         self,
         preset: PresetConfig,
         game_path: Optional[str] = None,
     ) -> None:
-        """初始化版本管理实例并惰性加载本地 ``config.ini``。
+        """建立内存态与两份 ini 句柄，惰性加载本地 ``config.ini``。
 
-        Args:
-            preset: 启动器 profile 配置（`PresetConfig`），提供可执行名 / 频道 / 区域等。
-            game_path: 游戏安装根目录；非空时立即调用 `update_game_path` 载入 ini
-                （``save=False``，构造阶段不写盘）。
-
-        Note:
-            仅建立内存态与 ini 句柄；真正写盘发生在 `update_game_path` /
-            `update_game_version` 等显式调用时。远程版本由调用方填进
-            :attr:`remote_tag`，本类自己不联网。
+        传 ``game_path`` 时只加载不写盘；远程版本由调用方经 :meth:`apply_branches` 填进来，
+        本类自己不联网。
         """
         self.preset = preset
         self.logger = get_logger()
@@ -313,11 +256,7 @@ class GameVersionBase:
 
     @property
     def config_file_name(self) -> str:
-        """磁盘配置文件名，固定为 ``config.ini``（本地版本与 profile 共用此名）。
-
-        Returns:
-            文件名；游戏根目录与 profile 目录各持有一份同名文件。
-        """
+        """配置文件名；游戏根目录与 profile 目录各有一份同名的。"""
         return "config.ini"
 
     @property
@@ -344,16 +283,11 @@ class GameVersionBase:
     # ================================================================== ini
 
     def update_game_path(self, path: str, save: bool = True) -> None:
-        """重新指向游戏目录并（重新）加载本地 ``config.ini``。
+        """重新指向游戏目录并加载两份 ``config.ini``。
 
-        Args:
-            path: 新的游戏根目录；空串会清空 `game_path`（用于取消绑定）。
-            save: 为 ``True`` 且 `profile_dir` 存在时，把 ``game_install_path`` 写回
-                ``<profile_dir>/config.ini``；构造期调用传 ``False`` 避免误写。
-
-        Note:
-            仅加载、不校验目录是否合法；会重建 `game_ini_version` / `game_ini_profile`
-            两个句柄（丢弃此前内存中的未保存修改）。
+        空串表示取消绑定。``save`` 为真时把 ``game_install_path`` 写回 profile ini，构造期
+        调用必须传 ``False``，免得刚加载就把路径写进用户的 profile。只加载不校验目录合法
+        性，并且会丢掉此前内存中未保存的修改。
         """
         self.game_path = os.path.abspath(path) if path else ""
         self.game_ini_version = IniFile()
@@ -376,11 +310,7 @@ class GameVersionBase:
 
     @property
     def version_section(self):
-        """`game_ini_version` 中存放版本信息的节（``[General]`` 即 `VERSION_SECTION`）。
-
-        Returns:
-            mapping: ini 节视图；读写它等价于直接读写本地 ``config.ini`` 的版本字段。
-        """
+        """``config.ini`` 里放版本信息的节（``[General]``）。"""
         return self.game_ini_version[VERSION_SECTION]
 
     # ================================================================== 版本
@@ -394,40 +324,23 @@ class GameVersionBase:
     def update_game_version(
         self, version: Optional[GameVersion], save: bool = True
     ) -> None:
-        """把本地 ``game_version`` 写入 ``config.ini``。
-
-        Args:
-            version: 目标版本；``None`` 时写入空串（等同于「未知 / 未安装」）。
-            save: 为 ``True`` 立即落盘，否则只改内存。
-
-        Note:
-            仅改 ``[General] game_version`` 一个字段；写盘委托 `save_version_config`。
-        """
+        """写本地 ``game_version``；``None`` 写成空串，等同于「未知 / 未安装」。"""
         self.version_section["game_version"] = version.version_string if version else ""
         if save:
             self.save_version_config()
 
     def update_game_version_to_latest(self, save: bool = True) -> None:
-        """把本地版本同步为远程最新，并回写频道信息。
+        """把本地版本同步为远程最新，再回写频道信息。
 
-        Args:
-            save: 传给 `update_game_version` / `update_game_channels` 的落盘开关。
-
-        Note:
-            顺序固定为先写版本、后写 channel / sub_channel / cps；
-            跳过写盘时不会引发后续逻辑自动补写。
+        顺序固定为先版本后频道；``save=False`` 时两处都只改内存，不会互相带着补写。
         """
         self.update_game_version(self.latest_version, save=save)
         self.update_game_channels(save=save)
 
     def update_game_channels(self, save: bool = True) -> None:
-        """把当前 profile 的 channel / sub_channel / cps 写回 ``config.ini``。
+        """把预设里的 channel / sub_channel / cps 写回 ``config.ini``。
 
-        Args:
-            save: 为 ``True`` 立即落盘，否则只改内存中的 `version_section`。
-
-        Note:
-            三个值来自 `preset`，与游戏实际区域绑定；改完需落盘才对后续启动生效。
+        三个值与游戏实际区域绑定，拿错区服的预设写回去，客户端的渠道就变成另一套。
         """
         self.version_section["channel"] = str(self.preset.channel_id)
         self.version_section["sub_channel"] = str(self.preset.sub_channel_id)
@@ -436,21 +349,15 @@ class GameVersionBase:
             self.save_version_config()
 
     def save_version_config(self) -> None:
-        """把内存中的 `game_ini_version` 落盘到 ``<game_path>/config.ini``。
-
-        Note:
-            `game_path` 为空时直接返回、不写盘。`update_game_version` /
-            `update_game_channels` 默认都会调用本方法（受各自 ``save`` 形参控制）。
-        """
+        """把版本 ini 落盘；``game_path`` 还没定就什么都不写。"""
         if not self.game_path:
             return
         self.game_ini_version.save(self.game_ini_version_path)
 
     # ------------------------------------------------------------ 远程版本
 
-    #: 分支接口给出的原始版本串，由 :func:`~app.services.gi_updater.api.fetch_branches`
-    #: 的调用方填进来。必须是**原始 3 段串**（如 ``7.0.0``）：差分清单以它为键查分片，
-    #: 补成 4 段（``7.0.0.0``）会被服务端以 ``-202 not found`` 拒绝。
+    #: 分支接口给出的原始版本串，由调用方经 :meth:`apply_branches` 填进来。形态为什么
+    #: 必须是 3 段，见 :attr:`GameVersion.sophon_tag`。
     remote_tag: str = ""
     #: 预下载分支的原始版本串；官方没开预下载时为空串
     preload_tag: str = ""
@@ -559,5 +466,3 @@ class GameVersionBase:
         if self.is_game_has_preload():
             return GameInstallStateEnum.InstalledHavePreload
         return GameInstallStateEnum.Installed
-
-    # ================================================================== 本地探测

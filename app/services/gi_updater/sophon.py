@@ -33,12 +33,11 @@
     * ``matching_field`` 决定清单类别，主资源用 ``game``
     * chunk 是按**偏移直写**，不是先落临时文件再合并
 
-清单与差分档案的正文都是 protobuf。这里用 protobuf 官方运行时按 schema 构造消息类，
-不再自研 wire format 解码：手写的长度前缀解析分不出 ``bytes`` / ``string`` / 嵌套消息，
-只能靠预先声明「哪些字段号是消息」来补，内层解析失败还要吞掉异常退回原始 bytes。
-也不入库 ``protoc`` 生成物——生成物把 schema 编译成不可读的序列化字节，评审与后续
-维护都得先装工具链；显式写出字段号反而能逐条对照上游 ``.proto``。解出的消息一律转成
-小 dataclass 再交给上层，上游的 ``PascalCase`` 字段名不外泄。
+清单与差分档案的正文都是 protobuf，这里用 protobuf 官方运行时按 schema 构造消息类：
+手写的长度前缀解析分不出 ``bytes`` / ``string`` / 嵌套消息，只能预先声明「哪些字段号是消
+息」来补，内层解析失败还得吞掉异常退回原始 bytes。也不入库 ``protoc`` 生成物——生成物是
+不可读的序列化字节，而显式写出字段号能逐条对照上游 ``.proto``。解出的消息一律转成小
+dataclass 再交给上层，上游的 ``PascalCase`` 字段名不外泄。
 
 上游原始定义（MIT，Hi3Helper.Sophon 项目，署名见 :mod:`app.services.gi_updater`）::
 
@@ -70,7 +69,7 @@
     message SophonUnusedAssetInfo { repeated SophonUnusedAssetFile Assets = 1; }
     message SophonUnusedAssetFile { string FileName = 1; int64 FileSize = 2; string FileMd5 = 3; }
 
-zstd 侧统一走 ``zstandard`` 包（``pyproject.toml`` 里是硬依赖），不做多后端降级探测。
+zstd 用 ``zstandard`` 包（仓库硬依赖）。
 
 本模块是协议层，不含任何游戏知识。差分清单与补丁落盘见 :mod:`patch`。
 """
@@ -124,13 +123,7 @@ def _add_message(
     name: str,
     fields: Sequence[_FieldSpec],
 ) -> None:
-    """往文件描述符里加一个 message 定义。
-
-    Args:
-        file_proto: 目标文件描述符。
-        name: message 名。
-        fields: 字段定义序列，每项为 ``(字段名, 字段号, 类型, label, 嵌套类型名)``。
-    """
+    """往文件描述符里加一个 message 定义。"""
     message = file_proto.message_type.add()
     message.name = name
     for field_name, number, field_type, label, type_name in fields:
@@ -151,7 +144,6 @@ def _build_proto_file(
 
     Args:
         file_name: 文件名（仅用于描述符内标识）。
-        messages: ``(message 名, 字段序列)`` 序列。
     """
     file_proto = descriptor_pb2.FileDescriptorProto()
     file_proto.name = file_name
@@ -164,10 +156,6 @@ def _build_proto_file(
 
 def _message_class(name: str) -> type:
     """取已注册 message 的 Python 类。
-
-    Args:
-        name: message 名（不含包名）。
-
     Returns:
         可用于 ``ParseFromString`` 的消息类。
     """
@@ -313,10 +301,6 @@ class SophonManifestProto:
 
 def parse_sophon_manifest(data: bytes) -> SophonManifestProto:
     """解析 Sophon 清单 protobuf。
-
-    Args:
-        data: 原始清单字节（通常已 zstd 解压）。
-
     Returns:
         :class:`SophonManifestProto`，含 ``assets`` 列表。
 
@@ -411,12 +395,7 @@ class SophonUnusedAssetInfo:
 
 @dataclass
 class SophonUnusedAssetProperty:
-    """某个基线升上来之后变成无用的文件清单。
-
-    Note:
-        这里列的是「从某个基线升上来后就不再被引用」的旧文件，跨基线混在一起，
-        因此不能直接照单全删——目标清单里仍然存在的同名文件必须留下。
-    """
+    """某个基线升上来之后变成无用的文件清单。"""
 
     version_tag: str = ""
     asset_infos: List[SophonUnusedAssetInfo] = field(default_factory=list)
@@ -432,10 +411,6 @@ class SophonPatchProto:
 
 def _to_patch_chunk(chunk: Any) -> SophonPatchChunk:
     """把上游的差分分片转成内部 dataclass。
-
-    Args:
-        chunk: ``SophonPatchAssetChunk`` 消息实例。
-
     Returns:
         对应的 :class:`SophonPatchChunk`。
     """
@@ -455,10 +430,6 @@ def _to_patch_chunk(chunk: Any) -> SophonPatchChunk:
 
 def parse_sophon_patch(data: bytes) -> SophonPatchProto:
     """解析 Sophon 差分清单 protobuf。
-
-    Args:
-        data: 原始差分清单字节（通常已 zstd 解压）。
-
     Returns:
         :class:`SophonPatchProto`，含 ``patch_assets`` 与 ``unused_assets``。
 
@@ -517,7 +488,7 @@ def parse_sophon_patch(data: bytes) -> SophonPatchProto:
 #: 线程各自的解压器：``zstandard.ZstdDecompressor`` 内部持有可复用的解压上下文，
 #: **不是线程安全的**。清单与数据块的解压会落到 ``asyncio.to_thread`` 的多个工作线程上，
 #: 共享单例会出现 ``Data corruption detected`` / ``Unknown frame descriptor`` 之类的
-#: 交叉损坏（实测 2026-09-25），所以按 ``threading.local`` 每线程惰性独享一个实例。
+#: 交叉损坏（实测），所以按 ``threading.local`` 每线程惰性独享一个实例。
 _ZSTD_LOCAL = threading.local()
 
 

@@ -52,11 +52,7 @@ __all__ = [
 
 
 class GameKey:
-    """游戏短名：``PROFILES`` 与 ``games.spec.SPECS`` 共用的键。
-
-    新增一款米哈游游戏时，先在这里登记短名，再补 ``(key, region)`` 预设与
-    ``games/<game>.py`` 的注册。
-    """
+    """游戏短名：``PROFILES`` 与 ``games.spec.SPECS`` 共用的键。"""
 
     Genshin = "gi"
 
@@ -69,10 +65,6 @@ class GameKey:
     @classmethod
     def normalize(cls, value: str) -> str:
         """把用户给的游戏写法归一化成注册短名。
-
-        Args:
-            value: 短名本身（``gi``），或 :attr:`ALIASES` 里的别名。
-
         Returns:
             归一化后的游戏短名。
 
@@ -97,10 +89,6 @@ class Region:
     @classmethod
     def normalize(cls, value: str) -> str:
         """把用户区服输入归一化成 ``Region.CN`` / ``Region.GLOBAL`` 短名。
-
-        Args:
-            value: 用户输入（支持 cn/zh-cn/china/bilibili/国服、global/glb/en/国际服 等）。
-
         Returns:
             归一化后的区服短名（``"cn"`` 或 ``"global"``）。
 
@@ -208,17 +196,13 @@ class PresetConfig:
         """拼 ``getBuild`` URL（主清单与预下载清单）。
 
         Args:
-            package_id: 分支接口返回的 ``package_id``，拼进 ``package_id`` 参数。
             branch: 分支名；默认 ``"main"``，拼进 ``branch`` 参数。
-            password: 分支密码，拼进 ``password`` 参数（可空）。
-            tag: 版本 tag，拼进 ``tag`` 参数。
-
         Returns:
             完整 ``getBuild`` URL（含 ``plat_app={biz}`` 等业务参数）。
 
         Note:
-            ``tag`` 必须传 API 返回的原始 3 段版本串（如 ``7.0.0``）；
-            ``tag`` 为空时该参数整体被省略。若补成 4 段版本号，服务端会以 ``-202`` 拒绝。
+            ``tag`` 用接口原样返回的版本串（形态见 ``GameVersion.sophon_tag``），
+            为空时该参数整体省略。
         """
         return self.build_sophon_query_url(
             f"{self.downloader_base}/downloader/sophon_chunk/api/getBuild",
@@ -240,14 +224,6 @@ class PresetConfig:
 
         主清单（``getBuild``）与差分清单（``getPatchBuild``）的查询串形状完全一样，
         差别只在端点路径与 HTTP 方法，所以拼接只留这一份。
-
-        Args:
-            base_url: 端点地址，取自预设 :class:`SophonChunkUrls`。
-            package_id: 分支接口返回的 ``package_id``。
-            branch: 分支名。
-            password: 分支密码（可空）。
-            tag: 版本 tag（可空，空时整体省略该参数）。
-
         Returns:
             带 ``plat_app`` 等业务参数的完整请求地址。
         """
@@ -279,14 +255,8 @@ _GLB_LAUNCHER_ID = "VYTpXlbWo8"
 def _sophon_urls(base: str) -> SophonChunkUrls:
     """构造本区服的 Sophon 下载 URL 组。
 
-    branch/main/preload 都走 ``getBuild``（只收 GET），**差分走独立的
-    ``getPatchBuild`` 端点（只收 POST）**；两个端点互不通用，拿 GET 去问 getPatchBuild
-    或拿 POST 去问 getBuild，服务端都回 405。
-    这里只按区服把两个端点摆好，``main_branch_matching_field`` 固定为 ``"game"``。
-
-    Args:
-        base: 下载域名（``downloader_base``）。
-
+    只按区服把两个端点摆好，``main_branch_matching_field`` 固定为 ``"game"``；
+    两端方法不通用（见本模块开头的端点表）。
     Returns:
         含全量与差分两个端点的 ``SophonChunkUrls``。
     """
@@ -353,12 +323,6 @@ PROFILES: Dict[Tuple[str, str], PresetConfig] = _build_profiles()
 
 def get_profile(game: str, region: str) -> PresetConfig:
     """取指定游戏、指定区服的预设。
-
-    Args:
-        game: 游戏短名（如 ``gi``），或 :class:`GameKey` 里登记的别名写法。
-        region: 区服，``cn`` / ``global``（也接受 ``官服`` / ``国际服`` 等写法，
-            由 :meth:`Region.normalize` 归一化）。
-
     Returns:
         匹配到的 ``PresetConfig``。
 

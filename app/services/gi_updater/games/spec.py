@@ -20,10 +20,8 @@
 
 引擎本体（``api`` / ``sophon`` / ``patch`` / ``install`` / ``versioning``）不含游戏
 知识；一款游戏的差异由 :class:`GameSpec` 描述，各 ``games/<game>.py`` 在自己的模块
-末尾调 :func:`register` 登记，装配层按 ``game`` 短名查表。
-
-形状沿用 ``app/task/HSR/tools/update/engines.py`` 里 ``EngineSpec`` + ``get_spec``
-的既有做法。
+末尾调 :func:`register` 登记，装配层按 ``game`` 短名查表。规格表只登记装配关系，
+不含任何更新逻辑。
 """
 
 from __future__ import annotations
@@ -70,10 +68,6 @@ class GameSpec:
 
     def region_for_label(self, label: str) -> str:
         """把区服配置项的标签换成区服短名。
-
-        Args:
-            label: 配置里的区服写法（如 ``官服``）。
-
         Returns:
             对应的区服短名；标签不认识时退回最后一个区服，与既有口径一致。
         """
@@ -85,10 +79,6 @@ SPECS: Dict[str, GameSpec] = {}
 
 def register(spec: GameSpec) -> GameSpec:
     """登记一款游戏，返回传进来的规格，便于 ``X = register(...)`` 一行写完。
-
-    Args:
-        spec: 待登记的规格。
-
     Raises:
         ValueError: 短名已被占用时——两处注册撞名通常是笔误，静默覆盖会让其中
             一份实现永远走不到。
@@ -101,10 +91,6 @@ def register(spec: GameSpec) -> GameSpec:
 
 def get_spec(game: str) -> GameSpec:
     """按短名取游戏规格。
-
-    Args:
-        game: 游戏短名（如 ``gi``）。
-
     Returns:
         对应的 :class:`GameSpec`。
 

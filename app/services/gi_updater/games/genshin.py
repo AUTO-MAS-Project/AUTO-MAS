@@ -23,11 +23,11 @@
 * **双可执行名**：国际服 ``GenshinImpact.exe``、国服/B 服 ``YuanShen.exe``。每个探测
   都先试主名、再试备选名，并且要求二者**互斥**：``is_exec_data_dir_valid`` 只判定不改
   盘，混装时由宿主门禁停手并提示改用官方启动器。
-* **只有 Sophon 一条链路**：自 5.6 起官方不再提供 zip 分包，上游的 ``@DisableSophon``
+* **只有 Sophon 一条链路**：官方不再提供 zip 分包，上游的 ``@DisableSophon``
   文件与启动器开关对原神**无效**，版本一律以 ``getGameBranches`` 的 ``main.tag`` 为准。
 * **无 DeltaPatch**、无预下载之外的多条链路。
 
-一款游戏的知识集中在本模块；加新游戏请另建一个同形态的模块，不改引擎正文。
+一款游戏的知识集中在本模块。
 """
 
 from __future__ import annotations

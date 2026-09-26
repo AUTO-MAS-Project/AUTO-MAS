@@ -21,8 +21,6 @@
 编排在 :mod:`app.services.gi_updater.pipeline`——挪出事件循环、把进度转成调度台日志、
 混装目录 / 只应用增量包 / 磁盘余量三道门禁都在那里，与具体游戏无关。本模块只做一件事：
 把原神的短名钉进入口，并沿用宿主既有的函数名与结论类型。
-
-接一款新游戏时照抄本文件、换掉短名即可，不必再复制一遍编排。
 """
 
 from __future__ import annotations
@@ -52,11 +50,6 @@ GenshinUpdateResult = UpdateResult
 
 def detect_genshin_region(game_exe: str) -> str:
     """按游戏程序文件名判定区服，供 BetterGI 专项宿主复用。
-
-    Args:
-        game_exe: 「游戏程序」里选的可执行文件路径；手改配置时可能带
-            包裹引号，所以先清洗再取名比对。
-
     Returns:
         ``"cn"`` / ``"global"``；不是原神游戏程序时返回空串。
     """
@@ -73,9 +66,6 @@ async def update_genshin_client(
     """检查并按需更新原神客户端，直到落盘完成。
 
     Args:
-        game_path: 游戏安装目录（``config.ini`` 与可执行文件所在的那一级）。
-        resource: 区服，``自动`` / ``官服`` / ``国际服``。
-        on_progress: 一行行进度文案的回调。
         should_abort: 中止判定，在文件批次边界轮询；``None`` 表示不可中止。
 
     Returns:

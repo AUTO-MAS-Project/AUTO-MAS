@@ -137,27 +137,20 @@ def build_patch_assets(
 ) -> Tuple[List[PatchAsset], List[str]]:
     """把差分清单与目标清单合并成待处理明细，并收集待删文件。
 
-    以差分清单点名的文件为准，目标清单里未被点名的本轮不动——把它们也算成「要下」的话，
-    一次约 10 GB 的增量会被报成上百 GB 的全量。
+    以差分清单点名的文件为准，目标清单里未被点名的本轮不动。
 
     Args:
-        patch_manifest: 解析后的差分清单。
-        target_assets: 目标版本主清单的文件条目。
-        baseline: 本机已装的基线版本（原始 3 段串，如 ``7.0.0``）。
-
-    Returns:
-        ``(待处理明细, 待删旧文件)``。
+        protected: 清单要求删除也必须留下的文件名，由安装层按这款游戏预设给。
 
     Raises:
-        UpdaterError: 差分清单给本基线登了条目却没有分片坐标——这是自相矛盾的数据，
-            照它下载会取到别处的内容，宁可停手。
+        UpdaterError: 差分清单给本基线登了条目却没有分片坐标——照它下载会取到别处的内容，
+            宁可停手。
 
     Note:
-        差分清单点的是**目标版本的全部文件**，但只给「相对本基线确实要动」的那些带上基线
-        条目：实测 7.0.0 -> 7.1.0 点名 2744 个，其中带 7.0.0 分片的只有 1151 个（约 10 GB），
-        其余 1430 个只覆盖 6.7.0、1314 个连 AssetInfos 都是空的，合计 84.7 GiB。空着的那些
-        就是「相对本基线没变」，既不下载也不写任何东西 —— 把它们当成缺分片而停手，每一次
-        真实更新都算不出计划。
+        差分清单点的是**目标版本的全部文件**，但只有「相对本基线确实要动」的那些才带上基线
+        条目；条目为空就是「相对本基线没变」，既不下载也不写任何东西。把它们当成缺分片而
+        停手，等于每一次真实更新都算不出计划；当成要整份重下，则会把一次增量放大成整个
+        客户端的全量。
     """
     target_index = {
         asset.asset_name: asset for asset in target_assets if not asset.is_directory
@@ -184,8 +177,8 @@ def build_patch_assets(
                 method=METHOD_PATCH if chunk.original_file_name else METHOD_COPYOVER,
                 patch_name=chunk.patch_name,
                 # 要下的长度是 PatchLength：PatchSize 是整个 blob 的大小，多个文件共用
-                # 同一 blob，按文件累加会重复计数（实测把 10 GB 报成 85 GB）。
-                # CopyOver 时 PatchLength 就等于新文件的完整大小。
+                # 同一 blob，按文件累加会重复计数。CopyOver 时 PatchLength 就等于新文件
+                # 的完整大小。
                 patch_offset=chunk.patch_offset,
                 patch_length=chunk.patch_length,
                 original_name=chunk.original_file_name,
@@ -205,12 +198,6 @@ def collect_removals(
 
     ``unused_assets`` 列的是「从某个基线升上来后不再被引用」的文件，跨基线混在一起，不能
     照单全删。比对大小写不敏感：Windows 上同一文件的大小写漂移不该被当成两个。
-
-    Args:
-        patch_manifest: 解析后的差分清单。
-        in_target: 目标清单里的文件名集合。
-        protected: 无论清单怎么说都不删的名字（可执行文件与 ``config.ini``），由安装层
-            按这款游戏预设里登记的名字给出。
     """
     forbidden = {name.casefold() for name in protected}
     known = {name.casefold() for name in in_target}
@@ -278,9 +265,7 @@ async def summarize_assets(
     :data:`_VERDICT_DIFF`
         其余 —— 照差分取那一段。
 
-    三态互斥，所以不会出现「1150 个已就绪」与「待下载 40 GiB」同时成立：早先这里算的是
-    两面独立的标志，一个内容已经是新版本的文件既被判成要整包重下（尺寸 ≠ 基线）又被判成
-    已就绪（尺寸 = 目标），待下载量按前者计，凭空多出整包的量。
+    一个文件只出一个结论：内容已经是本轮要的文件只计就绪，不会同时又被算成待下载。
     """
 
     def inspect(asset: PatchAsset) -> Tuple[str, int]:
@@ -369,9 +354,9 @@ async def _fetch_diff_segment(client: Any, asset: PatchAsset, urls: BlobUrls) ->
 async def _old_file_usable(game_path: str, asset: PatchAsset) -> bool:
     """旧文件能不能直接打补丁：存在、尺寸与内容都和差分基线一致。
 
-    hpatchz 按差分头里的 oldDataSize/oldMd5 校验旧文件：米哈游的现网差分不支持从空文件
-    重建（实测 2026-09-25），旧文件缺失时对空文件硬打必然报 oldDataSize 不符；内容被改过
-    则产出一个校验不过的坏文件。两种情形都该降级整文件重下。
+    hpatchz 按差分头里的 oldDataSize/oldMd5 校验旧文件，而现网差分不支持从空文件重建：
+    旧文件缺失时硬打必然报 oldDataSize 不符，内容被改过则产出校验不过的坏文件。两种情形
+    都该降级整文件重下。
     """
     old = safe_join(game_path, asset.original_name)
     if await asyncio.to_thread(_stat_size, old) != asset.original_size:
@@ -383,7 +368,7 @@ async def _old_file_usable(game_path: str, asset: PatchAsset) -> bool:
 
 
 def _staging_name(target: str) -> str:
-    """目标文件同级目录下的临时名（同卷，替换才是原子改名）。"""
+    """目标文件同级目录下的临时名。"""
     directory = os.path.dirname(target) or "."
     return os.path.join(directory, f"{os.path.basename(target)}.mas-new")
 
@@ -404,6 +389,10 @@ async def fetch_full_asset(
 
     Returns:
         从网络取回的字节数（按网线上的压缩后长度计）。
+
+    Note:
+        临时文件必须用可 ``seek`` 的写模式打开：追加模式会忽略 ``seek``，每块都接在文件
+        末尾，拼出来的就是个尺寸对不上的坏文件。
 
     Raises:
         UpdaterError: 主清单里没有该文件的数据块、某块长度或 MD5 不符、或整文件校验不过。
@@ -464,11 +453,6 @@ async def apply_asset(
     """处理一个文件：取回 → 校验 → 同卷原子替换。
 
     Args:
-        client: 注入的异步客户端。
-        game_path: 游戏安装目录。
-        temp_dir: 中间产物目录（放差分切片）。
-        asset: 待处理明细。
-        urls: 差分与主包两处基址。
         hpatchz: ``hpatchz`` 路径；``None`` 表示手上没有补丁工具。
         logger: 用于记下每一次降级。
 
@@ -483,9 +467,8 @@ async def apply_asset(
         return 0, False
 
     if not asset.is_patch:
-        # 分片本身就是完整的新文件（实测 82 条 CopyOver 全部满足
-        # patch_length == target_file_size）；patch_offset 是分片在差分档案里的偏移，
-        # 不是目标文件里的偏移（实测 67/82 条非零），拿它当目标偏移会写错位置。
+        # CopyOver 的分片本身就是完整的新文件；patch_offset 是分片在差分档案里的偏移，
+        # 不是目标文件里的偏移，拿它当目标偏移会写错位置。
         data = await _fetch_diff_segment(client, asset, urls)
         if not _same_md5(asset.target_md5, hashlib.md5(data).hexdigest()):
             raise UpdaterError(f"CopyOver 内容校验失败: {asset.name}")
