@@ -68,6 +68,7 @@ from app.utils.constants import (
 )
 from app.utils.io import mark_native_config_injected, read_file, write_file
 
+from .base_preset import seed_maa_base_config
 from .tools import (
     agree_bilibili,
     ensure_game_updated,
@@ -251,6 +252,7 @@ def _has_completed_sanity_task(log_records: list[LogRecord]) -> bool:
 
 
 _MAA_CONFIG_FILES = ("gui.json", "gui.new.json")
+_MUMU_EXTRAS_KEY = "MuMuEmulator12"
 
 # 每次注入都由 MAS 决定、不从存档取值的任务字段: MAA 运行期改了也不回写。
 # PlanSelect 是 MAA 跑完基建后自增的班次指针, 脚本模式下存档全脚本共用,
@@ -263,10 +265,8 @@ _MAA_GUI_SKELETON: dict[str, dict] = {
 }
 """MAA 配置骨架：仅含 MAS 托管键所在的容器路径，不含任何任务内容。
 
-base 缺失或损坏时以骨架为底下发——MAA（System.Text.Json）加载时对缺席属性
-取 C# 内存默认值，**TaskQueue 缺席即由 MAA 内存默认队列填空**（PR #907 实证：
-MAA 保存时用内存默认队列整体重写 gui.new.json）。用户在 MAA 里一保存，
-完整 base 即落盘。默认队列从此只有 MAA 一个生成器，MAS 不再维护队列表单。
+托管 base 缺失时会先播种 MAS 预设；原生配置损坏且无有效备份时仍以骨架下发，
+TaskQueue 由 MAA 内存默认值填充。
 """
 
 
@@ -381,6 +381,33 @@ def _merge_task_queue(
                 )
             changed = True
     return changed
+
+
+def _configure_mumu_screenshot_enhancement(gui_new_set: dict, device: dict) -> None:
+    gui = gui_new_set["Configurations"]["Default"].setdefault("Gui", {})
+    connect = gui.setdefault("ConnectSettings", {})
+    extras = connect.setdefault("Extras", {})
+    mumu = extras.setdefault(_MUMU_EXTRAS_KEY, {})
+    mumu.update({"IsEnabled": True, **device})
+
+
+def _without_temporary_mumu_extras(config: dict, device: dict | None) -> dict:
+    if device is None:
+        return config
+    gui = (
+        config.get("Configurations", {})
+        .get("Default", {})
+        .get("Gui", {})
+    )
+    connect = gui.get("ConnectSettings", {})
+    extras = connect.get("Extras", {}) if isinstance(connect, dict) else {}
+    mumu = extras.get(_MUMU_EXTRAS_KEY) if isinstance(extras, dict) else None
+    if isinstance(mumu, dict):
+        mumu.pop("EmulatorPath", None)
+        mumu.pop("InstanceIndex", None)
+        if not mumu:
+            extras.pop(_MUMU_EXTRAS_KEY, None)
+    return config
 
 
 def _merge_maa_changes(
@@ -1340,6 +1367,7 @@ class AutoProxyTask(TaskExecuteBase):
         # native 池由 manager prepare 在任务级一次性归档
         archive_dir = self._config_archive_dir()
         if archive_dir is not None:
+            seed_maa_base_config(archive_dir)
             archive_mas_runtime_backup(
                 self.script_info.script_id,
                 str(self.cur_user_uid),
@@ -1407,6 +1435,16 @@ class AutoProxyTask(TaskExecuteBase):
         if self.cur_user_config.get("Info", "IfQuickConfig"):
             await self._apply_maa_quick_config(gui_new_set)
         self._configure_maa_runtime(gui_set, gui_new_set, emulator_info)
+        self._maa_temporary_extras = None
+        device_ref = self.emulator_manager.resolve_device(
+            self.script_config.get("Emulator", "Index")
+        )
+        if device_ref is not None and device_ref.emulator_type == "mumu":
+            self._maa_temporary_extras = {
+                "EmulatorPath": device_ref.manager_path,
+                "InstanceIndex": device_ref.native_index,
+            }
+            _configure_mumu_screenshot_enhancement(gui_new_set, self._maa_temporary_extras)
 
         write_file(self.maa_set_path / "gui.json", gui_set)
         write_file(self.maa_set_path / "gui.new.json", gui_new_set)
@@ -1775,7 +1813,9 @@ class AutoProxyTask(TaskExecuteBase):
 
         try:
             self._maa_config_baseline = {
-                name: deepcopy(read_file(self.maa_set_path / name))
+                name: _without_temporary_mumu_extras(
+                    deepcopy(read_file(self.maa_set_path / name)), self._maa_temporary_extras
+                )
                 for name in _MAA_CONFIG_FILES
             }
         except Exception as e:
@@ -1822,7 +1862,9 @@ class AutoProxyTask(TaskExecuteBase):
             if not baseline.get(name):
                 continue
             try:
-                current = read_file(self.maa_set_path / name)
+                current = _without_temporary_mumu_extras(
+                    read_file(self.maa_set_path / name), self._maa_temporary_extras
+                )
                 archive = read_file(archive_dir / name)
             except Exception as e:
                 logger.opt(exception=True).warning(
