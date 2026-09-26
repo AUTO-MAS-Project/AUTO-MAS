@@ -124,8 +124,14 @@ from app.utils.platform import IS_WINDOWS
 
 # 孤儿 venv 的宽限期：刚动过的一律不碰，避免与正在准备环境的运行抢。
 MAAFW_AGENT_VENV_GRACE_SECONDS = 60 * 60
-# 登录失败截图的总容量上限，超出后按时间从旧到新回收。
-LOGIN_SCREENSHOT_MAX_BYTES = 10 * 1024 * 1024
+# 各专项失败诊断目录里参与保留期清理的文件后缀（诊断日志与截图）；
+# 不在集合内的文件（如未来的标记/锁文件）不被自动清理触碰
+DIAGNOSTIC_FILE_SUFFIXES = frozenset({".log", ".png", ".jpg"})
+# 失败截图后缀（旧专项存量 PNG 与现行 JPEG 同口径）
+DIAGNOSTIC_SCREENSHOT_SUFFIXES = frozenset({".png", ".jpg"})
+# 单个诊断目录的失败截图总量上限，超出后按时间从旧到新回收；
+# 每目录独立结算，一个专项的截图风暴不会挤掉其他专项的证据
+DIAGNOSTIC_SCREENSHOT_MAX_BYTES = 10 * 1024 * 1024
 
 #: 本进程启动时刻；启动清理只碰比它更早的半成品。
 _PROCESS_STARTED_AT = time.time()
@@ -6046,10 +6052,11 @@ class AppConfig(GlobalConfig):
     async def clean_debug_diagnostics(self) -> None:
         """清理 debug 目录下过期的失败诊断文件。
 
-        终末地登录失败截图与 OK-WW / OK-NTE 切号诊断只会随失败新增，
-        此前没有任何回收；保留时长沿用历史记录的保留天数设置。
-        登录截图总大小超过 10 MB 时，额外按时间从旧到新清理，
-        不受历史记录永久保留设置影响。
+        自动扫描 ``debug/`` 下全部子目录（各专项的登录/切号/启动器失败诊断，
+        新专项落盘即纳入清理，无需登记名单）：诊断日志与截图按历史记录的
+        保留天数清理；截图另受每目录独立的大小上限约束，超限从旧到新
+        回收，不受历史记录永久保留设置影响——一个专项的截图风暴不会
+        挤掉其他专项的证据。
         """
 
         retention_days = self.get("Function", "HistoryRetentionTime")
@@ -6059,15 +6066,23 @@ class AppConfig(GlobalConfig):
         else:
             cutoff = time.time() - retention_days * 86400
 
+        debug_root = Path.cwd() / "debug"
+        if not debug_root.is_dir():
+            return
+
         deleted_count = 0
-        screenshot_files: list[tuple[Path, float, int]] = []
-        screenshot_size = 0
-        for name in ("maaend-login", "okww-account-switch", "oknte-account-switch"):
-            folder = Path.cwd() / "debug" / name
+        screenshot_deleted_count = 0
+        for folder in debug_root.iterdir():
             if not folder.is_dir():
                 continue
+
+            screenshot_files: list[tuple[Path, float, int]] = []
+            screenshot_size = 0
             for file in folder.iterdir():
-                if not file.is_file():
+                if (
+                    not file.is_file()
+                    or file.suffix.lower() not in DIAGNOSTIC_FILE_SUFFIXES
+                ):
                     continue
                 try:
                     file_stat = file.stat()
@@ -6081,28 +6096,30 @@ class AppConfig(GlobalConfig):
                         logger.warning(f"诊断文件清理失败: {file} - {exc}")
                     else:
                         deleted_count += 1
-                        continue
-                if file.suffix.lower() == ".png":
+                    continue
+                if file.suffix.lower() in DIAGNOSTIC_SCREENSHOT_SUFFIXES:
                     screenshot_files.append(
                         (file, file_stat.st_mtime, file_stat.st_size)
                     )
                     screenshot_size += file_stat.st_size
+
+            for file, _, file_size in sorted(
+                screenshot_files, key=lambda item: item[1]
+            ):
+                if screenshot_size <= DIAGNOSTIC_SCREENSHOT_MAX_BYTES:
+                    break
+                try:
+                    file.unlink()
+                except OSError as exc:
+                    logger.warning(f"失败截图清理失败: {file} - {exc}")
+                    continue
+                screenshot_size -= file_size
+                screenshot_deleted_count += 1
+
         if deleted_count:
             logger.success(f"清理完成: {deleted_count} 个过期诊断文件")
-
-        screenshot_deleted_count = 0
-        for file, _, file_size in sorted(screenshot_files, key=lambda item: item[1]):
-            if screenshot_size <= LOGIN_SCREENSHOT_MAX_BYTES:
-                break
-            try:
-                file.unlink()
-            except OSError as exc:
-                logger.warning(f"登录截图清理失败: {file} - {exc}")
-                continue
-            screenshot_size -= file_size
-            screenshot_deleted_count += 1
         if screenshot_deleted_count:
-            logger.success(f"清理完成: {screenshot_deleted_count} 个超限登录截图")
+            logger.success(f"清理完成: {screenshot_deleted_count} 个超限失败截图")
 
     async def clean_maafw_native_debug_logs(self) -> None:
         """清掉 MFW 项目里过期的 MaaFramework 原生日志备份。

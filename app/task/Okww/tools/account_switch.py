@@ -51,6 +51,7 @@ import numpy as np
 import psutil
 from PIL import Image
 
+from app.tools.error_screenshot import save_error_screenshot
 from app.tools.ocr import Box, OCRItem, ocr_image
 from app.utils import get_logger
 from app.utils.platform import IS_WINDOWS
@@ -631,15 +632,13 @@ def _select_and_login(hwnd: int, suffix: str, on_log: Callable[[str], None]) -> 
 
 
 def _save_error_screenshot(hwnd: int) -> None:
-    """保存切换失败时的原始窗口截图，便于排查 OCR 文本漂移。"""
+    """保存切换失败时的窗口截图，便于排查 OCR 文本漂移。"""
     try:
-        screenshot_dir = Path.cwd() / "debug" / "okww-account-switch"
-        screenshot_dir.mkdir(parents=True, exist_ok=True)
-        screenshot_path = screenshot_dir / (
-            f"switch-error-{datetime.now().strftime('%Y%m%d-%H%M%S-%f')}.png"
+        save_error_screenshot(
+            _capture_window_image(hwnd, activate=False),
+            "okww-account-switch",
+            "switch-error",
         )
-        _capture_window_image(hwnd, activate=False).save(screenshot_path, format="PNG")
-        logger.warning(f"账号切换错误截图已保存: {screenshot_path}")
     except Exception as error:
         # 截图是诊断旁路，失败时不能覆盖原始切换异常
         logger.warning(f"账号切换错误截图保存失败: {error}")
