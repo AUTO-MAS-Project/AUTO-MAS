@@ -41,6 +41,7 @@ import { createMaaEndIssueReport } from './services/maaEndIssueReportService'
 import { createOkwwIssueReport } from './services/okwwIssueReportService'
 import { createOkNteIssueReport } from './services/okNteIssueReportService'
 import { createZzzOdIssueReport } from './services/zzzOdIssueReportService'
+import { createWhimboxIssueReport } from './services/whimboxIssueReportService'
 import {
   captureMainRendererCrash,
   configureMainSentry,
@@ -1439,6 +1440,12 @@ registerIssueReportExporter(
   '导出 ZZZ-OD 问题包',
   'ZZZ-OD-logs',
   createZzzOdIssueReport
+)
+registerIssueReportExporter(
+  'whimbox:exportIssueReport',
+  '导出 Whimbox 问题包',
+  'Whimbox-logs',
+  createWhimboxIssueReport
 )
 
 ipcMain.handle('data:backup', async () => {

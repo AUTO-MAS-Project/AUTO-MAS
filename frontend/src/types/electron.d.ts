@@ -283,6 +283,12 @@ export interface ElectronAPI {
     zipPath?: string
     error?: string
   }>
+  exportWhimboxIssueReport: () => Promise<{
+    success: boolean
+    message?: string
+    zipPath?: string
+    error?: string
+  }>
   exportDataBackup: () => Promise<{
     success: boolean
     message?: string

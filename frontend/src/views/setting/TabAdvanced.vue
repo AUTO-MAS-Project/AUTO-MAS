@@ -9,6 +9,7 @@ import { useMaaEndIssueReport } from '@/composables/useMaaEndIssueReport'
 import { useOkwwIssueReport } from '@/composables/useOkwwIssueReport'
 import { useOkNteIssueReport } from '@/composables/useOkNteIssueReport'
 import { useZzzOdIssueReport } from '@/composables/useZzzOdIssueReport'
+import { useWhimboxIssueReport } from '@/composables/useWhimboxIssueReport'
 
 const { t } = useI18n()
 
@@ -23,6 +24,7 @@ const { exporting: exportingMaaEndLogs, exportMaaEndIssueReport } = useMaaEndIss
 const { exporting: exportingOkwwLogs, exportOkwwIssueReport } = useOkwwIssueReport(logger)
 const { exporting: exportingOkNteLogs, exportOkNteIssueReport } = useOkNteIssueReport(logger)
 const { exporting: exportingZzzOdLogs, exportZzzOdIssueReport } = useZzzOdIssueReport(logger)
+const { exporting: exportingWhimboxLogs, exportWhimboxIssueReport } = useWhimboxIssueReport(logger)
 
 // Runtime 灰度开关：持久化设置 + 当前生效值（重启后生效）
 const runtimeLaunchMode = ref<RuntimeLaunchModeSetting>('auto')
@@ -212,6 +214,16 @@ const exportDataBackup = async () => {
                 <DownloadOutlined />
               </template>
               {{ t('setting.advanced.exportZzzOd') }}
+            </a-button>
+            <a-button
+              type="primary"
+              :loading="exportingWhimboxLogs"
+              @click="exportWhimboxIssueReport"
+            >
+              <template #icon>
+                <DownloadOutlined />
+              </template>
+              {{ t('setting.advanced.exportWhimbox') }}
             </a-button>
           </a-space>
         </a-col>

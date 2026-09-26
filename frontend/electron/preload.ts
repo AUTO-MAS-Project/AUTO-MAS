@@ -113,6 +113,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   exportOkwwIssueReport: () => ipcRenderer.invoke('okww:exportIssueReport'),
   exportOkNteIssueReport: () => ipcRenderer.invoke('oknte:exportIssueReport'),
   exportZzzOdIssueReport: () => ipcRenderer.invoke('zzzod:exportIssueReport'),
+  exportWhimboxIssueReport: () => ipcRenderer.invoke('whimbox:exportIssueReport'),
   exportDataBackup: () => ipcRenderer.invoke('data:backup'),
   // 传 fromOffset 时只读该字节偏移之后的新增部分，返回 { content, size, reset }
   getLogs: (lines?: number, fileName?: string, fromOffset?: number) =>
