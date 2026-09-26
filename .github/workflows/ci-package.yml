@@ -23,7 +23,7 @@ concurrency:
 
 jobs:
   package:
-    name: 构建未签名 Windows 包
+    name: 构建未签名 Windows 验证包
     runs-on: windows-latest
 
     steps:
@@ -42,20 +42,75 @@ jobs:
           $shortSha = $env:GITHUB_SHA.Substring(0, 7)
           Add-Content -LiteralPath $env:GITHUB_OUTPUT -Value "version_tag=$version"
           Add-Content -LiteralPath $env:GITHUB_OUTPUT -Value "short_sha=$shortSha"
-          Write-Host "版本 $version，提交 $shortSha"
+          Write-Host "版本 $version，提交 $shortSha；本产物包含本次提交的前端、Electron 与后端源码"
 
       - name: 构建并准备 Windows 解压包
         uses: ./.github/actions/build-windows-unpacked
         with:
           github-token: ${{ github.token }}
 
+      - name: 预置本次提交的后端仓库
+        env:
+          APP_VERSION: ${{ steps.metadata.outputs.version_tag }}
+        shell: pwsh
+        run: |
+          if ($env:APP_VERSION -notmatch '^v\d+\.\d+\.\d+(-[0-9A-Za-z.]+)?$') {
+            throw "应用版本号无效：$env:APP_VERSION"
+          }
+          if ($env:GITHUB_SHA -notmatch '^[0-9a-f]{40}$') {
+            throw "提交 SHA 无效：$env:GITHUB_SHA"
+          }
+
+          $branch = "release/$env:APP_VERSION"
+          $backendRepo = Join-Path $env:RUNNER_TEMP 'auto-mas-pr-backend'
+          $sourceBranch = 'auto-mas-ci-seed'
+          $sourceUri = 'file:///' + ($env:GITHUB_WORKSPACE -replace '\\', '/')
+          if (Test-Path -LiteralPath $backendRepo) {
+            Remove-Item -LiteralPath $backendRepo -Recurse -Force
+          }
+
+          git -C $env:GITHUB_WORKSPACE branch --force $sourceBranch $env:GITHUB_SHA
+          if ($LASTEXITCODE -ne 0) {
+            throw "创建 CI 源引用失败"
+          }
+          git init -q -b $branch $backendRepo
+          git -C $backendRepo remote add origin 'https://github.com/AUTO-MAS-Project/AUTO-MAS.git'
+          git -C $backendRepo fetch --depth=1 --no-tags $sourceUri $sourceBranch
+          if ($LASTEXITCODE -ne 0) {
+            throw "从 CI 源仓库抓取提交失败"
+          }
+          git -C $backendRepo checkout -q -B $branch FETCH_HEAD
+          if ($LASTEXITCODE -ne 0) {
+            throw "预置后端仓库失败"
+          }
+
+          $seededSha = git -C $backendRepo rev-parse HEAD
+          if ($seededSha -ne $env:GITHUB_SHA) {
+            throw "预置后端仓库提交不一致：期望 $env:GITHUB_SHA，实际 $seededSha"
+          }
+          if (-not (Test-Path -LiteralPath (Join-Path $backendRepo '.git/shallow') -PathType Leaf)) {
+            throw '预置后端仓库不是 Runtime 要求的浅仓库'
+          }
+
+          $target = 'frontend\dist\win-unpacked\repo'
+          if (Test-Path -LiteralPath $target) {
+            throw "构建产物中已存在后端目录：$target"
+          }
+          Move-Item -LiteralPath $backendRepo -Destination $target
+          Write-Host "已预置后端源码：$branch@$($env:GITHUB_SHA.Substring(0, 7))"
+
       - name: 生成便携包
         env:
           PORTABLE_NAME: AUTO-MAS-${{ steps.metadata.outputs.version_tag }}-${{ steps.metadata.outputs.short_sha }}-x64.zip
         shell: pwsh
         run: |
-          Compress-Archive -Path 'frontend/dist/win-unpacked/*' `
-            -DestinationPath $env:PORTABLE_NAME -Force
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          [System.IO.Compression.ZipFile]::CreateFromDirectory(
+            (Resolve-Path 'frontend/dist/win-unpacked').Path,
+            $env:PORTABLE_NAME,
+            [System.IO.Compression.CompressionLevel]::Optimal,
+            $false
+          )
 
       - name: 收集构建产物
         env:
