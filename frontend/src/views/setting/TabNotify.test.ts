@@ -29,7 +29,6 @@ describe('通知页编辑提交与 Claw 单实例', () => {
   })
 
   it('只有 TabNotify 调用 useClawBinding，ClawBinding 只接收提升后的状态', () => {
-    expect(tabSource).toContain("useClawBinding('weixin'")
     expect(tabSource).toContain("useClawBinding('qq'")
     expect(clawSource).not.toMatch(/[^e]useClawBinding\(/)
     expect(clawSource).toContain('binding: ClawBindingState')

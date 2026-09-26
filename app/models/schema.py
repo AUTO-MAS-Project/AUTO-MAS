@@ -1321,9 +1321,6 @@ class GlobalConfig_Notify(BaseModel):
         default=None, description="Koishi服务器地址"
     )
     KoishiToken: Optional[str] = Field(default=None, description="Koishi Token")
-    IfOpenClawWeixin: Optional[bool] = Field(
-        default=None, description="是否启用微信 Claw 通知"
-    )
     IfOpenClawQQ: Optional[bool] = Field(
         default=None, description="是否启用 QQ 官方机器人通知"
     )
@@ -1377,7 +1374,7 @@ class NotifyChannelOut(BaseModel):
     scopes: List[str] = Field(default=[], description="可用作用域：global/user")
     kind: str = Field(..., description="渲染类型：fields/custom/policy")
     customBlock: Optional[str] = Field(
-        default=None, description="自定义块标识：claw:weixin/claw:qq/webhook_list"
+        default=None, description="自定义块标识：claw:qq/webhook_list"
     )
     enableField: Optional[List[str]] = Field(
         default=None, description="启用开关的 [配置组, 字段名]"
@@ -1395,38 +1392,6 @@ class NotifyChannelsOut(OutBase):
     """通知渠道描述表。"""
 
     channels: List[NotifyChannelOut] = Field(default=[], description="渠道描述列表")
-
-
-class OpenClawWeixinQrStartOut(OutBase):
-    """微信 Claw 二维码创建响应。"""
-
-    sessionId: str = Field(default="", description="二维码登录会话 ID")
-    qrUrl: str = Field(default="", description="用于生成二维码的登录链接")
-
-
-class OpenClawWeixinQrCheckIn(BaseModel):
-    """微信 Claw 二维码状态查询请求。"""
-
-    sessionId: str = Field(..., min_length=1, description="二维码登录会话 ID")
-    verifyCode: Optional[str] = Field(
-        default=None, max_length=32, description="微信要求时输入的配对码"
-    )
-
-
-class OpenClawWeixinQrCheckOut(OutBase):
-    """微信 Claw 二维码状态查询响应。"""
-
-    sessionId: str = Field(default="", description="二维码登录会话 ID")
-    state: str = Field(default="", description="二维码状态")
-    connected: bool = Field(default=False, description="是否已完成账号绑定")
-
-
-class OpenClawWeixinStatusOut(OutBase):
-    """微信 Claw 通知绑定状态，不返回任何凭据。"""
-
-    enabled: bool = Field(default=False, description="是否启用微信 Claw 通知")
-    connected: bool = Field(default=False, description="是否已绑定微信账号")
-    state: str = Field(default="disconnected", description="当前连接状态")
 
 
 class OpenClawQQQrStartOut(OutBase):
@@ -3671,6 +3636,13 @@ class HSRCloudLoginOut(OutBase):
     data: Optional[HSRCloudLoginData] = Field(default=None, description="登录结果")
 
 
+class HSRManagedFieldVisibleWhen(BaseModel):
+    key: str = Field(..., description="依赖的同模块字段键")
+    values: List[Any] = Field(
+        default_factory=list, description="该字段取这些值之一时才显示"
+    )
+
+
 class HSRManagedField(BaseModel):
     key: str = Field(..., description="字段键")
     label: str = Field(default="", description="字段名称")
@@ -3681,13 +3653,31 @@ class HSRManagedField(BaseModel):
     minimum: Optional[float] = Field(default=None, description="最小值")
     maximum: Optional[float] = Field(default=None, description="最大值")
     readonly: bool = Field(default=False, description="是否只读")
+    group: Literal[
+        "common", "team", "support", "activity", "replenish", "reroll", "misc"
+    ] = Field(
+        default="common",
+        description="字段分组：common 平铺，其余各成一个默认收起的折叠面板",
+    )
+    overridden: bool = Field(
+        default=False,
+        description="当前计划（plan_owner 指向的那份）对该字段有生效中的覆盖值",
+    )
+    native_value: Any = Field(default=None, description="引擎原生配置里的值")
+    visible_when: Optional[HSRManagedFieldVisibleWhen] = Field(
+        default=None,
+        description="只有同模块同引擎里字段 key 的当前值在 values 中时才显示",
+    )
 
 
 class HSRManagedDroppedOverride(BaseModel):
     key: str = Field(..., description="被忽略的 Managed.Options 覆盖键")
     reason: Literal["unknown", "type"] = Field(
         ...,
-        description="忽略原因：unknown=当前原生配置没有该字段；type=保存的值类型与原生配置不一致",
+        description=(
+            "忽略原因：unknown=当前原生配置没有该字段或该字段已不由 MAS 托管；"
+            "type=保存的值类型与原生配置不一致"
+        ),
     )
     value: Any = Field(default=None, description="用户保存的覆盖值")
     message: str = Field(default="", description="人类可读说明")

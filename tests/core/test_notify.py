@@ -43,7 +43,6 @@ _SWITCHES = {
     "IfServerChan": False,
     "IfKoishiSupport": False,
     "IfCMCCNewMsg": False,
-    "IfOpenClawWeixin": False,
     "IfOpenClawQQ": False,
 }
 _TEXTS = {
@@ -150,9 +149,6 @@ class _Notify:
             "send_koishi", message=message, msgtype=msgtype, client_name=client_name
         )
 
-    async def send_openclaw_weixin(self, title=_UNSET, content=_UNSET):
-        return await self._run("send_openclaw_weixin", title=title, content=content)
-
     async def send_openclaw_qq(self, title=_UNSET, content=_UNSET):
         return await self._run("send_openclaw_qq", title=title, content=content)
 
@@ -192,7 +188,6 @@ def test_notifier_fake_matches_protocol_signatures() -> None:
         "send_koishi",
         "send_mail",
         "send_openclaw_qq",
-        "send_openclaw_weixin",
     ]
     for name, protocol_method in members.items():
         fake = getattr(_Notify, name, None)
@@ -342,7 +337,6 @@ def test_dispatch_channel_names_are_verbatim() -> None:
             "IfCMCCNewMsg": True,
             "CMCCNewMsgApiKey": "ak_x",
             "IfKoishiSupport": True,
-            "IfOpenClawWeixin": True,
             "IfOpenClawQQ": True,
         }
     )
@@ -352,7 +346,6 @@ def test_dispatch_channel_names_are_verbatim() -> None:
     assert list(result.succeeded) == [
         "全局 中国移动5G短信",
         "全局 Koishi",
-        "全局 微信（iLink）",
         "全局 QQ（官方机器人）",
     ]
 
@@ -640,6 +633,6 @@ def test_channels_endpoint_returns_metadata_only() -> None:
         result = _run(endpoint())
 
     assert result.code == 200
-    assert len(result.channels) == 9
+    assert len(result.channels) == 8
     assert [channel.key for channel in result.channels][0] == "system"
     assert result.channels[-1].kind == "policy"

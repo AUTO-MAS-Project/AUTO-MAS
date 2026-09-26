@@ -79,6 +79,7 @@ from .game_resolution import UnityGameResolutionOverride, parse_resolution_optio
 from .option_secrets import (
     REDACTED_SECRET_TEXT,
     collect_plan_password_values,
+    log_redaction_notice,
     open_task_snapshot,
     redact_secret_text,
     secret_log_variants,
@@ -1567,6 +1568,11 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 return
             framework_log_writer.write(source, message)
 
+        # 项目有 password 输入框时第一行写打码说明：问题包导出凭它判断这份日志能不能往外发
+        redaction_notice = self._log_redaction_notice()
+        if redaction_notice:
+            write_framework_log("runner", redaction_notice)
+
         async def read_stdout() -> None:
             nonlocal result_payload
             if process.stdout is None:
@@ -1713,6 +1719,16 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             return []
         return secret_log_variants(
             collect_plan_password_values(self.run_plan, self.interface_model)
+        )
+
+    def _log_redaction_notice(self) -> str | None:
+        """项目有 password 输入框时写进 ``.worker.log`` 开头的打码说明（见 option_secrets）。"""
+
+        if self.run_plan is None or self.interface_model is None:
+            return None
+        return log_redaction_notice(
+            self.interface_model,
+            collect_plan_password_values(self.run_plan, self.interface_model),
         )
 
     async def _wait_worker_exit(
@@ -1984,6 +2000,9 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             # 地址是随这次启动缓存的，关掉后下一轮要重新开、重新拿。
             self._cached_adb_address = None
             self._cached_device_info = None
+            # 雷电截图增强的 extras 里带着这次启动的 dnplayer pid；重开后还用旧 pid，
+            # MaaFW 建不出截图实例（Failed to create ld inst），这一轮当场 connect 失败。
+            self._cached_adb_profile = None
 
     async def _ensure_desktop_game_started(self) -> None:
         """Win32 场景下由 MAS 负责启动/激活桌面游戏客户端，供后续窗口解析使用。"""

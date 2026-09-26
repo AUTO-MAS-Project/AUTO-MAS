@@ -175,6 +175,12 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   还没出来时下发首个任务照样成功。背景：终末地窗口出现后登录界面要 22~31s 才渲染，MaaEnd 的
   SceneManager 见画面十几秒不变就判「环境识别异常」失败，beta.5 runner 启动变快（窗口→下发
   7~9s）后每次冷启动都撞上。
+- **连上控制器后先截一张图**（`runner._prime_first_screencap`，每次连接一次，在启动画面判定与
+  首个任务之前），不是多余代码：控制器没截过图时 binding 的 `cached_image` 抛
+  `Failed to get cached image.`、`resolution` 是 (0, 0)，而有的项目的 agent 在 tasker sink 里于
+  任务 Starting 时就读这两个值（M9A v4.10.0 的 `aspect_ratio` sink 读到 0 直接 `post_stop`，
+  ADB 路径第一个任务一开始就被停掉）。MFAAvalonia 连上后同样先截一次
+  （`MaaProcessor.MeasureScreencapPerformanceAsync`）。截图失败只记日志、不拦运行。
 - 用户配置在 `check()` 时深拷贝成副本跑，`final_task` 解锁后**整表写回**（#720 / #737）。
   改任何运行期写用户字段的逻辑，都要用落盘探针验证，只看内存会误判成已生效。
 
@@ -202,6 +208,9 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   （有意为之，本地测试钉住）：一两个字符全局替换会把日志里所有同样的字符都换掉，日志就没法看了。
   input 值下发失败的计划告警对密码字段一律不带原值、与长度无关（`MaaFWInputValueError(secret=True)`）。
   新增任何落盘 / 转发日志的路径都要过它；agent 进程自己写的日志同样不在 MAS 控制内。
+  项目有 password 输入框时，`.worker.log` 第一行是以 `LOG_REDACTION_MARKER` 开头的打码说明：
+  前端问题包导出（`frontend/electron/services/maafwIssueReportService.ts`）凭它认定这次的
+  `.worker.log` / `.maafw.log` 已打码才往包里放，项目 `debug/` 目录与没有这一行的旧副本一律不收。
 - 加载器写的告警（`logger.warning`）由加载器旁听收集、挂在模型上（`interface_load_warnings`），
   随磁盘缓存保存，进运行计划的 `warnings`（运行日志开头）与导入报告；只给后端看的用
   `extra=_LOG_ONLY`。发行包的毛病能降级就降级：缺 import 文件、scan_dir 不在、缺

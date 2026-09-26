@@ -215,6 +215,7 @@ import {
   endfieldActivityBanner,
   getActivityAccent,
   sraActivityBanner,
+  stellaActivityBanner,
 } from '@/views/home/activityBanner'
 import { useHomeLayout } from '@/views/home/useHomeLayout'
 import { useHomeNotice } from '@/views/home/useHomeNotice'
@@ -223,6 +224,7 @@ import { useSraActivitySource } from '@/views/home/useSraActivitySource'
 import { useReverse1999ActivitySource } from '@/views/home/useReverse1999ActivitySource'
 import { useBlueArchiveActivitySource } from '@/views/home/useBlueArchiveActivitySource'
 import { useEndfieldActivitySource } from '@/views/home/useEndfieldActivitySource'
+import { useStellaActivitySource } from '@/views/home/useStellaActivitySource'
 import { useHomeQuickStart } from '@/views/home/useHomeQuickStart'
 import { usePerformanceStore } from '@/stores/performance'
 import { createEmptySraActivityOverview } from '@/types/home'
@@ -293,6 +295,7 @@ const wutheringWavesSource = useSraActivitySource('ww', t('home.module.wuthering
 const nevernessToEvernessSource = useSraActivitySource('nte', t('home.module.nte'))
 const reverse1999Source = useReverse1999ActivitySource()
 const blueArchiveSource = useBlueArchiveActivitySource()
+const stellaSource = useStellaActivitySource()
 const endfieldSource = useEndfieldActivitySource()
 
 const sraSourceFor = (key: HomeModuleKey) => {
@@ -355,6 +358,14 @@ const activityBanners = computed<ActivityBannerItem[]>(() =>
       }
     }
 
+    if (key === 'stellasora') {
+      return {
+        ...base,
+        loading: stellaSource.loading.value,
+        ...stellaActivityBanner(stellaSource.overview.value),
+      }
+    }
+
     const source = sraSourceFor(key)
     return {
       ...base,
@@ -374,6 +385,7 @@ const activitySourcesByModule: Array<[HomeModuleKey, { start: () => void; stop: 
   ['nte', nevernessToEvernessSource],
   ['reverse1999', reverse1999Source],
   ['bluearchive', blueArchiveSource],
+  ['stellasora', stellaSource],
   ['endfield', endfieldSource],
 ]
 for (const [moduleKey, source] of activitySourcesByModule) {

@@ -390,11 +390,12 @@ class AutoProxyTask(TaskExecuteBase):
             self.cur_user_item.status = "异常"
             return "未找到 MaaEnd 配置文件, 请先完成「MaaEnd 配置」步骤"
 
-        self._prepare_auto_collect_routes()
-        daily_once_skip_reason = self._daily_once_skip_reason()
-        if daily_once_skip_reason is not None:
-            self.cur_user_item.status = "跳过"
-            return daily_once_skip_reason
+        if self.cur_user_config.get("Info", "IfQuickConfig"):
+            self._prepare_auto_collect_routes()
+            daily_once_skip_reason = self._daily_once_skip_reason()
+            if daily_once_skip_reason is not None:
+                self.cur_user_item.status = "跳过"
+                return daily_once_skip_reason
 
         return "Pass"
 
@@ -557,6 +558,11 @@ class AutoProxyTask(TaskExecuteBase):
             (1, 23), "%Y-%m-%d %H:%M:%S.%f", self.check_log
         )
 
+        if not self.cur_user_config.get("Info", "IfQuickConfig"):
+            self.first_run_mode = "Routine"
+            self.run_book = {mode: mode != "Routine" for mode in MAAEND_RUN_MOOD_BOOK}
+            return
+
         self._prepare_auto_collect_routes()
 
         mode_skip_reasons: dict[str, str] = {}
@@ -644,48 +650,6 @@ class AutoProxyTask(TaskExecuteBase):
         result = [task for task in tasks if isinstance(task, dict)]
         self._drop_removed_medication_task(result)
         return result
-
-    def _source_mode_skip_reason(self, mode: str) -> tuple[str | None, bool]:
-        """非快速配置下按 MaaEnd 配置判断阶段是否可执行。"""
-
-        tasks = self._source_maaend_tasks()
-        if tasks is None:
-            # 配置读取失败时交给 MaaEnd 执行并由日志判定，避免误跳过用户任务。
-            return None, False
-
-        def has_task(task_name: str, *, enabled_only: bool = False) -> bool:
-            return any(
-                str(task.get("taskName", "")) == task_name
-                and (not enabled_only or bool(task.get("enabled", False)))
-                for task in tasks
-            )
-
-        if mode == "Delivery":
-            if not has_task(MAAEND_DELIVERY_TASK):
-                return "MaaEnd 配置中不存在抢委托送货任务", True
-            if not has_task(MAAEND_DELIVERY_TASK, enabled_only=True):
-                return "抢委托送货任务未启用", False
-            if self._daily_once_task_done(MAAEND_DELIVERY_TASK):
-                return "抢委托送货任务今日已完成", False
-            return None, False
-        if mode == "AutoCollect":
-            if not has_task(MAAEND_AUTO_COLLECT_TASK):
-                return "MaaEnd 配置中不存在自动采集任务", True
-            if not has_task(MAAEND_AUTO_COLLECT_TASK, enabled_only=True):
-                return "自动采集任务未启用", False
-            return None, False
-        if not any(
-            _task_enabled_for_mode(
-                task.get("taskName"), task.get("enabled", False), mode
-            )
-            for task in tasks
-            if not str(task.get("taskName", "")).startswith("__MXU_")
-            and str(task.get("taskName", ""))
-            not in {_MAAEND_ACCOUNT_SWITCH_TASK, _MAAEND_CLOSE_GAME_TASK}
-            and not self._daily_once_task_done(task.get("taskName"))
-        ):
-            return "MaaEnd 配置中没有已启用的日常任务", False
-        return None, False
 
     def _quick_config_mode_skip_reason(self, mode: str) -> tuple[str | None, bool]:
         """快速配置下按 MAS 任务开关与 MaaEnd 配置判断阶段是否可执行。"""
@@ -795,9 +759,7 @@ class AutoProxyTask(TaskExecuteBase):
                 以及是否因阶段任务在 MaaEnd 配置中不存在导致跳过。
         """
 
-        if self.cur_user_config.get("Info", "IfQuickConfig"):
-            return self._quick_config_mode_skip_reason(mode)
-        return self._source_mode_skip_reason(mode)
+        return self._quick_config_mode_skip_reason(mode)
 
     async def _wait_maaend_stage(self) -> None:
         """同时等待日志结果与进程退出，避免子进程持有 stdout 导致阶段卡住。"""
@@ -871,11 +833,15 @@ class AutoProxyTask(TaskExecuteBase):
         self.cur_user_item.status = "运行"
 
         run_times_limit = self.script_config.get("Run", "RunTimesLimit")
+        if_quick_config = self.cur_user_config.get("Info", "IfQuickConfig")
         i = 0
         mode_order = list(MAAEND_RUN_MOOD_BOOK)
         mode_index = 0
         while mode_index < len(mode_order):
             self.mode = mode_order[mode_index]
+            stage_label = (
+                MAAEND_RUN_MOOD_BOOK[self.mode] if if_quick_config else "原配置"
+            )
             if self.run_book[self.mode]:
                 mode_index += 1
                 i = 0
@@ -883,7 +849,7 @@ class AutoProxyTask(TaskExecuteBase):
                 continue
             if i >= run_times_limit:
                 logger.warning(
-                    f"用户: {self.cur_user_uid} - {MAAEND_RUN_MOOD_BOOK[self.mode]}阶段重试次数已耗尽"
+                    f"用户: {self.cur_user_uid} - {stage_label}阶段重试次数已耗尽"
                 )
                 mode_index += 1
                 i = 0
@@ -892,11 +858,13 @@ class AutoProxyTask(TaskExecuteBase):
             i += 1
             self.retryable = True
             logger.info(
-                f"用户 {self.cur_user_item.name} - {MAAEND_RUN_MOOD_BOOK[self.mode]}"
+                f"用户 {self.cur_user_item.name} - {stage_label}"
                 f"阶段尝试次数: {i}/{run_times_limit}"
             )
             self.log_start_time = datetime.now()
-            self.cur_user_log = LogRecord(phase=self.mode)
+            self.cur_user_log = LogRecord(
+                phase=self.mode if if_quick_config else "Source"
+            )
             self.cur_user_item.log_record[self.log_start_time] = self.cur_user_log
 
             # 执行任务前脚本
@@ -1022,8 +990,7 @@ class AutoProxyTask(TaskExecuteBase):
             if self.cur_user_log.status == "Success!":
                 self.run_book[self.mode] = True
                 self.script_info.log = (
-                    f"检测到 MaaEnd 完成{MAAEND_RUN_MOOD_BOOK[self.mode]}任务\n"
-                    "正在等待相关程序结束"
+                    f"检测到 MaaEnd 完成{stage_label}任务\n正在等待相关程序结束"
                 )
 
                 # 中止相关程序
@@ -1578,17 +1545,20 @@ class AutoProxyTask(TaskExecuteBase):
         maaend_tasks = maaend_instance.get("tasks")
         if not isinstance(maaend_tasks, list):
             raise ValueError("MaaEnd 配置实例中未找到任务列表")
-        self._drop_removed_medication_task(maaend_tasks)
+        if_quick_config = self.cur_user_config.get("Info", "IfQuickConfig")
+        if if_quick_config:
+            self._drop_removed_medication_task(maaend_tasks)
 
         account_id = str(self.cur_user_config.get("Info", "Id")).strip()
-        replace_account_switch_task(
-            tasks=maaend_tasks,
-            account_id=(
-                account_id if self._account_switch_method() == "MAAEND" else ""
-            ),
-            controller_type=str(self.script_config.get("Game", "ControllerType")),
-            task_id=f"mas{self.cur_user_uid.hex[:4]}",
-        )
+        if if_quick_config or account_id:
+            replace_account_switch_task(
+                tasks=maaend_tasks,
+                account_id=(
+                    account_id if self._account_switch_method() == "MAAEND" else ""
+                ),
+                controller_type=str(self.script_config.get("Game", "ControllerType")),
+                task_id=f"mas{self.cur_user_uid.hex[:4]}",
+            )
 
         if self.emulator_manager is None:
             controller_type = str(self.script_config.get("Game", "ControllerType"))
@@ -1602,25 +1572,27 @@ class AutoProxyTask(TaskExecuteBase):
                 or not has_later_mode
                 and self.script_config.get("Game", "CloseOnFinish")
             )
-            _place_managed_task(
-                maaend_tasks,
-                task_name=_MAAEND_GAME_SETTING_PRETASK,
-                task_id="automas-gamesetting",
-                controller_type=controller_type,
-                enabled=(
-                    self.mode == self.first_run_mode
-                    and bool(self.script_config.get("Game", "SetResolution"))
-                ),
-                first=True,
-            )
-            _place_managed_task(
-                maaend_tasks,
-                task_name=_MAAEND_CLOSE_GAME_TASK,
-                task_id="automas-close-game",
-                controller_type=controller_type,
-                enabled=close_after_mode,
-                first=False,
-            )
+            if if_quick_config or self.script_config.get("Game", "SetResolution"):
+                _place_managed_task(
+                    maaend_tasks,
+                    task_name=_MAAEND_GAME_SETTING_PRETASK,
+                    task_id="automas-gamesetting",
+                    controller_type=controller_type,
+                    enabled=(
+                        self.mode == self.first_run_mode
+                        and bool(self.script_config.get("Game", "SetResolution"))
+                    ),
+                    first=True,
+                )
+            if if_quick_config or close_after_mode:
+                _place_managed_task(
+                    maaend_tasks,
+                    task_name=_MAAEND_CLOSE_GAME_TASK,
+                    task_id="automas-close-game",
+                    controller_type=controller_type,
+                    enabled=close_after_mode,
+                    first=False,
+                )
             _configure_game_pre_action(
                 maaend_instance,
                 game_path=str(self.script_config.get("Game", "Path")),
@@ -1646,9 +1618,11 @@ class AutoProxyTask(TaskExecuteBase):
             "task.SceneManager.focus.color_match_failed_prefix"
         ]
 
-        removed_task_names = _disable_removed_tasks(maaend_tasks, maaend_i18n)
-
-        if_quick_config = self.cur_user_config.get("Info", "IfQuickConfig")
+        removed_task_names = (
+            _disable_removed_tasks(maaend_tasks, maaend_i18n)
+            if if_quick_config
+            else set()
+        )
 
         def get_task_book_name(task: dict[str, object]) -> str:
             if not if_quick_config:
@@ -1723,16 +1697,17 @@ class AutoProxyTask(TaskExecuteBase):
                             "Task", f"If{task_name_value}"
                         )
 
-                task_enabled = _task_enabled_for_mode(
-                    task_name_value, task_enabled, self.mode
-                )
+                if if_quick_config:
+                    task_enabled = _task_enabled_for_mode(
+                        task_name_value, task_enabled, self.mode
+                    )
                 if (
                     task_name_value == _MAAEND_ACCOUNT_SWITCH_TASK
                     and self.mode != self.first_run_mode
                 ):
                     task_enabled = False
 
-                if self._daily_once_task_done(task_name_value):
+                if if_quick_config and self._daily_once_task_done(task_name_value):
                     task_enabled = False
 
                 task_name = get_task_book_name(task)
@@ -2015,7 +1990,10 @@ class AutoProxyTask(TaskExecuteBase):
                         ):
                             task_index[task_name]["index"] += 1
 
-                    await self._mark_daily_once_tasks_completed(completed_task_names)
+                    if self.cur_user_config.get("Info", "IfQuickConfig"):
+                        await self._mark_daily_once_tasks_completed(
+                            completed_task_names
+                        )
 
                     unfinished_tasks = {}
                     for task_name, task_status in self.task_dict.items():

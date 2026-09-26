@@ -350,24 +350,6 @@ class Notification:
         )
         logger.success(f"中国移动5G短信通知已提交: {title}")
 
-    async def send_openclaw_weixin(self, title: str, content: str) -> None:
-        """通过微信 Claw 通道推送通知。
-
-        登录凭据和会话上下文由扫码登录管理器维护，通知层不读取或暴露协议
-        细节；长文本拆分、业务错误和上下文失效也由管理器统一处理。
-
-        Args:
-            title: 通知标题。
-            content: 已渲染的通知正文。
-
-        Raises:
-            ValueError: 尚未绑定微信账号时抛出。
-            RuntimeError: 网关返回 HTTP 或业务错误时抛出。
-        """
-        from app.services.openclaw_weixin import openclaw_weixin_manager
-
-        await openclaw_weixin_manager.send(title=title, content=content)
-
     async def send_openclaw_qq(self, title: str, content: str) -> None:
         """通过 QQ 官方机器人通道推送通知。
 

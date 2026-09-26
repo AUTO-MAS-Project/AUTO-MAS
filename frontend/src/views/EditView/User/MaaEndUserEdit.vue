@@ -140,7 +140,12 @@
             />
           </a-card>
 
-          <a-collapse id="section-limits" class="optional-section" :bordered="false">
+          <a-collapse
+            v-if="formData.Info.IfQuickConfig"
+            id="section-limits"
+            class="optional-section"
+            :bordered="false"
+          >
             <a-collapse-panel key="limits" :header="t('edit.maaEndDailyOnceTasks')">
               <DailyOnceSection
                 :value="formData.Task.DailyOnceTasks"
@@ -318,7 +323,6 @@ const isSanityPlanMode = computed(() => formData.Info.SanityMode !== 'Fixed')
 
 const getAnchorContainer = () => document.querySelector<HTMLElement>('.content-area') ?? window
 
-// 每日执行限制属于调度，独立于快速配置。
 const anchorItems = computed(() => {
   const items = [{ key: 'basic', href: '#section-basic', title: t('edit.basicInfo') }]
   items.push({ key: 'source', href: '#section-source', title: t('edit.configurationSource') })
@@ -326,11 +330,11 @@ const anchorItems = computed(() => {
   if (formData.Info.IfQuickConfig) {
     items.push(
       { key: 'collect', href: '#section-collect', title: t('edit.maaEndAutoCollectConfig') },
-      { key: 'delivery', href: '#section-delivery', title: t('edit.maaEndDeliveryConfig') }
+      { key: 'delivery', href: '#section-delivery', title: t('edit.maaEndDeliveryConfig') },
+      { key: 'limits', href: '#section-limits', title: t('edit.maaEndDailyOnceTasks') }
     )
   }
   items.push(
-    { key: 'limits', href: '#section-limits', title: t('edit.maaEndDailyOnceTasks') },
     { key: 'script', href: '#section-script', title: t('comp.extraScripts') },
     { key: 'notify', href: '#section-notify', title: t('edit.notificationSettings') }
   )

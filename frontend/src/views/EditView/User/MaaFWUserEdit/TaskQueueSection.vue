@@ -824,7 +824,8 @@ const filterAddTaskOption = (inputValue: string, path: AddTaskCascaderPathOption
   height: 40px;
 }
 
-@media (max-width: 768px) {
+/* 与 :lg 断点对齐：栅格在 992px 以下就折成上下两块，定高要在同一宽度放开，否则两栏叠在 640px 里溢出 */
+@media (max-width: 991px) {
   .column-header {
     flex-direction: column;
     align-items: stretch;

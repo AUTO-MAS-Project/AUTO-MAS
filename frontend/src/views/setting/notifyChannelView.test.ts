@@ -20,7 +20,7 @@ const channel = (overrides: Partial<NotifyChannelOut>): NotifyChannelOut => ({
 })
 
 const CLAW_EXTRAS = {
-  clawConnected: { 'claw:weixin': false, 'claw:qq': true },
+  clawConnected: { 'claw:qq': true },
   webhookNames: ['飞书群机器人', '自建 ntfy'],
 }
 
@@ -46,12 +46,7 @@ describe('groupChannels', () => {
   const channels = [
     channel({ key: 'system', order: 10, enableField: ['Notify', 'IfPushPlyer'] }),
     channel({ key: 'mail', enableField: ['Notify', 'IfSendMail'] }),
-    channel({
-      key: 'openclaw_weixin',
-      order: 70,
-      customBlock: 'claw:weixin',
-      enableField: ['Notify', 'IfOpenClawWeixin'],
-    }),
+    channel({ key: 'openclaw_qq', order: 80, customBlock: 'claw:qq' }),
     channel({
       key: 'webhook',
       order: 50,
@@ -72,17 +67,19 @@ describe('groupChannels', () => {
     const values = { IfPushPlyer: true, IfSendMail: false }
     const groups = groupChannels(channels, 'global', values)
     expect(groups.active.map(c => c.key)).toEqual(['system'])
-    expect(groups.idle.map(c => c.key)).toEqual(['mail', 'openclaw_weixin'])
+    expect(groups.idle.map(c => c.key)).toEqual(['mail', 'openclaw_qq'])
     expect(groups.custom.map(c => c.key)).toEqual(['webhook'])
     expect(groups.policy?.key).toBe('policy')
   })
 
   it('未绑定的 Claw 未启用行显示「未绑定」，已绑定但开关关着显示「未启用」', () => {
-    const weixin = channel({ key: 'openclaw_weixin', customBlock: 'claw:weixin' })
-    const qq = channel({ key: 'openclaw_qq', customBlock: 'claw:qq' })
+    const qqUnbound = channel({ key: 'openclaw_qq', customBlock: 'claw:qq' })
+    const qqBound = channel({ key: 'openclaw_qq', customBlock: 'claw:qq' })
     const mail = channel({ key: 'mail' })
-    expect(idleStateKey(weixin, CLAW_EXTRAS)).toBe('stateUnbound')
-    expect(idleStateKey(qq, CLAW_EXTRAS)).toBe('stateDisabled')
+    expect(idleStateKey(qqUnbound, { ...CLAW_EXTRAS, clawConnected: { 'claw:qq': false } })).toBe(
+      'stateUnbound'
+    )
+    expect(idleStateKey(qqBound, CLAW_EXTRAS)).toBe('stateDisabled')
     expect(idleStateKey(mail, CLAW_EXTRAS)).toBe('stateDisabled')
   })
 })

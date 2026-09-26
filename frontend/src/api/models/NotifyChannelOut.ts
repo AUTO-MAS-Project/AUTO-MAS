@@ -44,7 +44,7 @@ export type NotifyChannelOut = {
      */
     kind: string;
     /**
-     * 自定义块标识：claw:weixin/claw:qq/webhook_list
+     * 自定义块标识：claw:qq/webhook_list
      */
     customBlock?: (string | null);
     /**
