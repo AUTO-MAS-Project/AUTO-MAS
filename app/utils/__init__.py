@@ -61,6 +61,13 @@ _LAZY_EXPORTS = {
     "decode_bytes": (".tools", "decode_bytes"),
     "busy_wait": (".tools", "busy_wait"),
     "WebSocketClient": (".websocket", "WebSocketClient"),
+    "MirrorChyanError": (".mirrorchyan", "MirrorChyanError"),
+    "MirrorChyanVersionCheck": (".mirrorchyan", "MirrorChyanVersionCheck"),
+    "check_mirrorchyan_update": (".mirrorchyan", "check_mirrorchyan_update"),
+    "compare_mirrorchyan_versions": (
+        ".mirrorchyan",
+        "compare_mirrorchyan_versions",
+    ),
 }
 
 
@@ -148,6 +155,10 @@ __all__ = [
     "decode_bytes",
     "busy_wait",
     "WebSocketClient",
+    "MirrorChyanError",
+    "MirrorChyanVersionCheck",
+    "check_mirrorchyan_update",
+    "compare_mirrorchyan_versions",
     "RegexMatcher",
     "MultiLineAggregator",
     "compile_regex",
