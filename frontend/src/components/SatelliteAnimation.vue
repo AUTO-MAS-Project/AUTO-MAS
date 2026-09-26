@@ -392,6 +392,11 @@ function isCenterCardHit(event: PointerLikeEvent): boolean {
 }
 
 function registerCenterPoke(): void {
+  // 低性能模式下彩虹不会流动，触发了也只是一张静止的图，不给机会
+  if (performanceStore.isLowPower) {
+    return
+  }
+
   const now = performance.now()
   // 慢悠悠点不算连点：超过窗口就从头数
   if (now - centerPokeLastAt > CENTER_POKE_WINDOW_MS) {
@@ -464,7 +469,8 @@ function spawnStarBurst(clientX: number, clientY: number): void {
 
 /** 按在中心图标上时给它一个压扁的形变，松开还原 */
 function handleCardPointerDown(event: PointerEvent): void {
-  if (!isCenterCardHit(event)) {
+  // 低性能模式下动画循环是停的，按压形变和浮字都不会动，这俩干脆别做
+  if (performanceStore.isLowPower || !isCenterCardHit(event)) {
     return
   }
   centerPressed = true
