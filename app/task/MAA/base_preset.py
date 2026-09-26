@@ -16,10 +16,7 @@ _MAA_BASE_PRESET = {
             "Start.MinimizeDirectly": "False",
             **{f"Timer.Timer{index}": "False" for index in range(1, 9)},
         },
-        "Configurations": {
-            "Default": {
-            }
-        },
+        "Configurations": {"Default": {}},
     },
     "gui.new.json": {
         **json.loads(
@@ -57,11 +54,7 @@ def maa_task_identity(task: object) -> tuple[str, str] | None:
         return None
     task_type = task.get("TaskType")
     name = task.get("Name", "")
-    if (
-        not isinstance(task_type, str)
-        or not task_type
-        or not isinstance(name, str)
-    ):
+    if not isinstance(task_type, str) or not task_type or not isinstance(name, str):
         return None
     return task_type, name
 

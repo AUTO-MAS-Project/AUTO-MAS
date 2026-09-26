@@ -1393,9 +1393,8 @@ class AutoProxyTask(TaskExecuteBase):
         gui_new_set.setdefault("Gui", {})["Localization"] = "zh-cn"
 
         # 直控的 TaskQueue 由用户在 MAA 原生界面维护；仅保留下方运行期 overlay。
-        if (
-            not self.direct_control
-            and self.cur_user_config.get("Info", "IfQuickConfig")
+        if not self.direct_control and self.cur_user_config.get(
+            "Info", "IfQuickConfig"
         ):
             await self._apply_maa_quick_config(gui_new_set)
         self._configure_maa_runtime(gui_set, gui_new_set, emulator_info)
@@ -1494,12 +1493,8 @@ class AutoProxyTask(TaskExecuteBase):
                 "TaskType": en_task,
             }
 
-        annihilation_source = _find_task_source(
-            source_queue, "剿灭作战", "Fight"
-        )
-        activity_source = _find_task_source(
-            source_queue, "活动关优先", "Fight"
-        )
+        annihilation_source = _find_task_source(source_queue, "剿灭作战", "Fight")
+        activity_source = _find_task_source(source_queue, "活动关优先", "Fight")
 
         # 库存保持计划：MAS 快速配置面板维护的计划写回原生 PlanList。只覆盖
         # MAS 管理的三项（Stage/DropId/DropCount），其余原生字段（含用户在 MAA 里
