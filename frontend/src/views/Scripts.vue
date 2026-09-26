@@ -104,6 +104,7 @@
     @start-maa-end-config="handleStartMaaEndConfig"
     @start-maa-end-user-config="handleStartMaaEndUserConfig"
     @start-okww-config="handleStartOkwwConfig"
+    @start-whimbox-config="handleStartWhimboxConfig"
     @toggle-user-status="handleToggleUserStatus"
     @scripts-reordered="handleScriptsReordered"
   />
@@ -196,7 +197,7 @@ const mfwSourcesLoading = ref(false)
 const mfwSourcesError = ref<string | null>(null)
 
 // 配置会话遮罩：同一时刻只会有一个配置会话在前台
-type ConfigMaskKind = 'MAA' | 'SRC' | 'MaaEnd' | 'Okww'
+type ConfigMaskKind = 'MAA' | 'SRC' | 'MaaEnd' | 'Okww' | 'Whimbox'
 const configMask = ref<{ kind: ConfigMaskKind; script: Script; user: User | null } | null>(null)
 const clearConfigMask = () => {
   configMask.value = null
@@ -239,6 +240,14 @@ const configMaskView = computed(() => {
         tip: t('scripts.mask.okwwUnlockTip'),
         button: t('scripts.mask.saveSettings'),
       }
+    case 'Whimbox':
+      return {
+        iconColor: 'var(--ant-color-primary)',
+        title: t('scripts.mask.whimboxTitle'),
+        description: t('scripts.mask.whimboxDesc'),
+        tip: t('scripts.mask.whimboxUnlockTip'),
+        button: t('scripts.mask.saveSettings'),
+      }
     default:
       return null
   }
@@ -258,6 +267,9 @@ const handleSaveConfigMask = () => {
       break
     case 'Okww':
       void handleSaveOkwwConfig(mask.script)
+      break
+    case 'Whimbox':
+      void handleSaveWhimboxConfig(mask.script)
       break
   }
 }
@@ -492,6 +504,8 @@ const handleAddUser = (script: Script) => {
     router.push(`/scripts/${script.id}/users/add/zzzod`)
   } else if (script.type === 'BAAH') {
     router.push(`/scripts/${script.id}/users/add/baah`)
+  } else if (script.type === 'Whimbox') {
+    router.push(`/scripts/${script.id}/users/add/whimbox`)
   } else {
     router.push(`/scripts/${script.id}/users/add/general`)
   }
@@ -523,6 +537,8 @@ const handleEditUser = (user: User) => {
       router.push(`/scripts/${script.id}/users/${user.id}/edit/zzzod`)
     } else if (script.type === 'BAAH') {
       router.push(`/scripts/${script.id}/users/${user.id}/edit/baah`)
+    } else if (script.type === 'Whimbox') {
+      router.push(`/scripts/${script.id}/users/${user.id}/edit/whimbox`)
     } else {
       router.push(`/scripts/${script.id}/users/${user.id}/edit/general`)
     }
@@ -646,8 +662,8 @@ const stopConfigSession = async (targetId: string, label: string, clearState: ()
   return true
 }
 
-// MAA / SRC 脚本级配置会话：走通用的 start/stop，带 sessionEnded 竞态守卫
-const handleStartScriptConfig = async (script: Script, kind: 'MAA' | 'SRC') => {
+// 脚本级配置会话（MAA / SRC / Whimbox）：走通用的 start/stop，带 sessionEnded 竞态守卫
+const handleStartScriptConfig = async (script: Script, kind: 'MAA' | 'SRC' | 'Whimbox') => {
   try {
     const started = await startConfigSession(
       script.id,
@@ -676,7 +692,7 @@ const handleStartScriptConfig = async (script: Script, kind: 'MAA' | 'SRC') => {
   }
 }
 
-const handleSaveScriptConfig = async (script: Script, kind: 'MAA' | 'SRC') => {
+const handleSaveScriptConfig = async (script: Script, kind: 'MAA' | 'SRC' | 'Whimbox') => {
   try {
     const saved = await stopConfigSession(script.id, kind, clearConfigMask)
     if (saved) message.success(t('scripts.toast.configSaved', { name: script.name }))
@@ -691,6 +707,9 @@ const handleStartMAAConfig = (script: Script) => handleStartScriptConfig(script,
 const handleSaveMAAConfig = (script: Script) => handleSaveScriptConfig(script, 'MAA')
 const handleStartSRCConfig = (script: Script) => handleStartScriptConfig(script, 'SRC')
 const handleSaveSRCConfig = (script: Script) => handleSaveScriptConfig(script, 'SRC')
+// 奇想盒：无参数拉起原生 app（下载跑图路线、配置模型/键位等都在那边做，MAS 零写入）
+const handleStartWhimboxConfig = (script: Script) => handleStartScriptConfig(script, 'Whimbox')
+const handleSaveWhimboxConfig = (script: Script) => handleSaveScriptConfig(script, 'Whimbox')
 
 const handleStartMaaEndConfig = async (script: Script, user: User | null = null) => {
   try {

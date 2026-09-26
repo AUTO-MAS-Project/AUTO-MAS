@@ -91,6 +91,8 @@ from app.models.config import (
     SrcUserConfig,
     TimeSet,
     Webhook,
+    WhimboxConfig,
+    WhimboxUserConfig,
     ZzzOdConfig,
     ZzzOdUserConfig,
     infrast_format_problem,
@@ -885,6 +887,7 @@ class AppConfig(GlobalConfig):
             "BetterGI",
             "ZzzOd",
             "BAAH",
+            "Whimbox",
             "MSS",
         ],
         script_id: str | None = None,
@@ -902,6 +905,7 @@ class AppConfig(GlobalConfig):
         | BetterGIConfig
         | ZzzOdConfig
         | BAAHConfig
+        | WhimboxConfig
         | MSSConfig,
     ]:
         """添加脚本配置"""
@@ -1267,6 +1271,7 @@ class AppConfig(GlobalConfig):
         | BetterGIUserConfig
         | ZzzOdUserConfig
         | BAAHUserConfig
+        | WhimboxUserConfig
         | MSSUserConfig,
     ]:
         """添加用户配置"""
@@ -1311,6 +1316,8 @@ class AppConfig(GlobalConfig):
             uid, config = await script_config.UserData.add(ZzzOdUserConfig)
         elif isinstance(script_config, BAAHConfig):
             uid, config = await script_config.UserData.add(BAAHUserConfig)
+        elif isinstance(script_config, WhimboxConfig):
+            uid, config = await script_config.UserData.add(WhimboxUserConfig)
         else:
             raise TypeError(f"不支持的脚本配置类型: {type(script_config)}")
 
@@ -2881,6 +2888,10 @@ class AppConfig(GlobalConfig):
             )
         elif isinstance(script_config, HSRConfig):
             from app.task.HSR.tools.restore_service import (
+                RESTORE_POOLS,
+            )
+        elif isinstance(script_config, WhimboxConfig):
+            from app.task.Whimbox.tools.restore_service import (
                 RESTORE_POOLS,
             )
         else:

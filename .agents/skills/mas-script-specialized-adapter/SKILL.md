@@ -59,7 +59,8 @@ description: >-
    [HSR](references/examples-hsr.md) ·
    [ZzzOd](references/examples-zzzod.md) ·
    [BAAH](references/examples-baah.md) ·
-   [BetterGI](references/examples-bettergi.md)
+   [BetterGI](references/examples-bettergi.md) ·
+   [Whimbox](references/examples-whimbox.md)
    需要画面文本识别（登录/切号/按钮定位）时另读 [OCR 工具](references/ocr-tools.md)
 4. 现场反查全部注册调用者与相邻实现，再定最小改动。**不要从旧 Skill 文案推断当前行为。**
 5. 用用户场景验收：少了哪段手工配置？补位有无明确输入、失败提示、回退路径？
@@ -95,7 +96,7 @@ description: >-
 
 ## 配置来源与快速配置
 
-所有专项统一提供三态配置来源：脚本 / 用户 / 直控。三态只决定配置 owner；各专项的物理落盘、会话和运行方式仍按真实架构确认，不机械复制目录或配置模型。**MaaFW 不是专项**（通用引擎，任何 `interface.json` 项目都由它运行），三态对它没有所指，见 `app/task/MaaFW/AGENTS.md`。
+所有专项统一提供三态配置来源：脚本 / 用户 / 直控（例外见下表：MaaFW 仅用户）。三态只决定配置 owner；各专项的物理落盘、会话和运行方式仍按真实架构确认，不机械复制目录或配置模型。**MaaFW 不是专项**（通用引擎，任何 `interface.json` 项目都由它运行），三态对它没有所指，见 `app/task/MaaFW/AGENTS.md`。
 
 | 专项 | 模式 |
 | --- | --- |
@@ -111,10 +112,13 @@ description: >-
 | BetterGI | 脚本 / 用户 / 直控 三态 |
 | ZzzOd | 脚本 / 用户 / 直控 三态（物理布局见 examples-zzzod） |
 | BAAH | 脚本 / 用户 / 直控 三态 |
+| Whimbox | 脚本 / 用户 / 直控 三态（脚本/用户=共享/独立 base，当前运行行为一致，**保留三态为后续特殊功能预留**，#879 语义，见 examples-whimbox） |
 
 **三态只决定配置 owner**：**脚本**=脚本级共享配置；**用户**=当前用户独立配置；**直控**=直接使用外侧脚本原生配置，由原生 GUI 或上游入口维护。
 
 **快速配置是独立于来源的用户级布尔开关与配置面板**，三种来源均可启用：开启时 MAS 尝试用该用户快速配置覆盖原生便捷配置；关闭时不覆盖来源配置。例外：**HSR 不支持快速配置**——SRA/M7A 原生配置由脚本 GUI 维护，MAS 托管字段写入耦合托管运行器，不存在可独立下发的快速配置子集，开关不渲染（方案 B 声明见 [examples-hsr](references/examples-hsr.md) 与 native_control.py）；**ZzzOd 快速配置已封锁**（2026-09 维护者决策：唯一消费点「直控覆盖写槽」与直控=MAS 零写入相悖，曾把切直控时清空的 AppList 写进运行槽导致全部任务跳过——开关 UI 不渲染，后端 load/update 把直控存量值归一为关，消费点已删除，直控恒为纯原生裸跑）。
+
+Whimbox 三态齐全（2026-09 维护者决策：上游不按账号分档配置、MAS 也无法指定运行账号，「脚本/用户」下发时落到同一份 `config.json`、当前运行行为一致，仍**保留三态为后续特殊功能预留**——不要据此给其中一态单独加配置面）。快速配置（覆写层）保留并绑定基座开关（`Info.IfQuickConfig`，默认关）：当前唯一运行时消费点是**原生态（直控）任务前物化面板覆盖集、任务结束还原（overlay，满足「写入任务结束能不能还原」判据）**；共享/独立态面板本就是 base 来源，开关暂无额外消费点；没有独立快速面板——面板覆盖的本来就是上游一条龙参数全集，无可划的高频子集。
 
 - **直控 + 关闭**：完全使用外侧原生配置，MAS 仅保留必要的模拟器、启动参数或命令行注入，以及运行时必需的启动器默认值补齐（缺省才补、无事零写入，如 Okww 的 `app.json` 的 `auto_start`/`update_method`）。
 - **直控 + 开启**：任务前把面板值写入原生配置，任务结束沿用现有快照机制恢复任务前原生配置。

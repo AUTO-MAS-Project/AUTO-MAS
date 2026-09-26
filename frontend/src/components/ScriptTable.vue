@@ -88,6 +88,12 @@
                     alt="BAAH"
                     class="script-logo"
                   />
+                  <img
+                    v-else-if="script.type === 'Whimbox'"
+                    src="@/assets/whimbox.png"
+                    alt="Whimbox"
+                    class="script-logo"
+                  />
                   <img v-else src="@/assets/AUTO-MAS.ico" alt="AUTO-MAS" class="script-logo" />
                 </div>
                 <div class="script-details">
@@ -184,6 +190,30 @@
                 </a-button>
                 <a-button
                   v-if="script.type === 'Okww' && props.activeConnections.has(script.id)"
+                  type="default"
+                  size="middle"
+                  disabled
+                  style="color: #52c41a; border-color: #52c41a"
+                >
+                  <template #icon>
+                    <SettingOutlined />
+                  </template>
+                  {{ t('comp.configuring') }}
+                </a-button>
+                <a-button
+                  v-if="script.type === 'Whimbox' && !props.activeConnections.has(script.id)"
+                  type="primary"
+                  ghost
+                  size="middle"
+                  @click="handleStartWhimboxConfig(script)"
+                >
+                  <template #icon>
+                    <SettingOutlined />
+                  </template>
+                  {{ t('comp.configureWhimbox') }}
+                </a-button>
+                <a-button
+                  v-if="script.type === 'Whimbox' && props.activeConnections.has(script.id)"
                   type="default"
                   size="middle"
                   disabled
@@ -403,7 +433,8 @@
                             script.type === 'BetterGI' ||
                             isMaaFWFamily(script.type) ||
                             script.type === 'ZzzOd' ||
-                            script.type === 'BAAH'
+                            script.type === 'BAAH' ||
+                            script.type === 'Whimbox'
                           "
                           class="user-info-tags"
                         >
@@ -582,6 +613,8 @@ interface Emits {
 
   (e: 'startOkwwConfig', script: Script): void
 
+  (e: 'startWhimboxConfig', script: Script): void
+
   (e: 'toggleUserStatus', user: User): void
 
   (e: 'scriptsReordered', scripts: Script[]): void
@@ -725,6 +758,10 @@ const handleStartOkwwConfig = (script: Script) => {
   emit('startOkwwConfig', script)
 }
 
+const handleStartWhimboxConfig = (script: Script) => {
+  emit('startWhimboxConfig', script)
+}
+
 const handleToggleUserStatus = (user: User) => {
   emit('toggleUserStatus', user)
 }
@@ -751,6 +788,7 @@ const SCRIPT_TYPE_TAG_COLORS: Record<Exclude<Script['type'], MaaFWFlavorType>, s
   BetterGI: 'gold',
   ZzzOd: 'volcano',
   BAAH: 'magenta',
+  Whimbox: 'pink',
   General: 'green',
 }
 

@@ -68,6 +68,7 @@ from .config import (
     OkNteConfig,
     OkwwConfig,
     SrcConfig,
+    WhimboxConfig,
     ZzzOdConfig,
 )
 from .queue_cycle import (
@@ -142,6 +143,7 @@ _MANAGER_BOOK: dict[
     ZzzOdConfig: lambda script_item, _ctx: task.ZzzOdManager(script_item),
     BAAHConfig: lambda script_item, _ctx: task.BAAHManager(script_item),
     MaaFWConfig: lambda script_item, _ctx: task.MaaFWEmbeddedManager(script_item),
+    WhimboxConfig: lambda script_item, _ctx: task.WhimboxManager(script_item),
     SrcConfig: _build_src_manager,
 }
 
