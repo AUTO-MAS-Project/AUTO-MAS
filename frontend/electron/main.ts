@@ -37,6 +37,7 @@ import { decideRendererRecovery } from './rendererCrashRecovery'
 
 import { getLogger, initializeLogger } from './services/logger'
 import { readLogContent, readLogIncrement } from './services/logFileReader'
+import { CollectorState, addDiagnosticFile, addDirectory } from './services/issueReportCore'
 import { createMaaEndIssueReport } from './services/maaEndIssueReportService'
 import {
   createM9AIssueReport,
@@ -1348,8 +1349,15 @@ ipcMain.handle('log:export', async () => {
 
     const zipPath = result.filePath
 
-    // 创建 ZIP 文件
+    // 与问题包同一套脱敏（日志里的推送密钥、家目录等），但不设大小上限：这里要的就是全部日志
     const zip = new AdmZip()
+    const state: CollectorState = {
+      zip,
+      entries: [],
+      archiveBytes: 0,
+      maxEntryBytes: Number.POSITIVE_INFINITY,
+      maxArchiveBytes: Number.POSITIVE_INFINITY,
+    }
 
     // 读取 debug 目录下的所有文件
     const files = fs.readdirSync(debugDir)
@@ -1364,10 +1372,10 @@ ipcMain.handle('log:export', async () => {
       const stat = fs.statSync(filePath)
 
       if (stat.isFile()) {
-        zip.addLocalFile(filePath)
+        addDiagnosticFile(state, filePath, file)
         logger.info(`添加文件到压缩包: ${file}`)
       } else if (stat.isDirectory() && file === 'maaend-login') {
-        zip.addLocalFolder(filePath, 'maaend-login')
+        addDirectory(state, filePath, 'maaend-login')
         logger.info('添加 MaaEnd 登录错误截图到压缩包')
       }
     }

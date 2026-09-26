@@ -37,6 +37,53 @@ __all__ = [
 ]
 
 
+# 推送地址里的密钥。httpx 按 INFO 记下每个请求的完整 URL，这些 URL 会进 app.log 与
+# Runtime 抓下来的后端输出，再随问题包、日志压缩包被发出去。上面那组按参数名匹配的规则
+# 管不到它们：企业微信群机器人的 ``key=``、Server 酱 SendKey 与飞书、Discord 等 Webhook
+# 的令牌都在路径里。前端问题包导出（frontend/electron/services/issueReportCore.ts）有同一组规则，
+# 给已经落盘的旧日志打码，两边一起改。
+_URL_SECRET_PATTERNS = [
+    # 企业微信群机器人 ?key=、钉钉加签 &sign=、Server 酱 ?sendkey=
+    (re.compile(r"([?&](?:key|sendkey|sign)=)[^&#\s\"']+", re.IGNORECASE), r"\1***"),
+    # Server 酱：sctapi.ftqq.com/<SendKey>.send、<uid>.push.ft07.com/send/<SendKey>.send
+    (
+        re.compile(
+            r"((?:sctapi\.ftqq\.com|\.push\.ft07\.com/send)/)[^/?#\s\"']+(\.send)",
+            re.IGNORECASE,
+        ),
+        r"\1***\2",
+    ),
+    # 飞书 / Lark 自定义机器人
+    (
+        re.compile(
+            r"(open\.(?:feishu\.cn|larksuite\.com)/open-apis/bot/v2/hook/)[^/?#\s\"']+",
+            re.IGNORECASE,
+        ),
+        r"\1***",
+    ),
+    # Discord：/api/webhooks/<id>/<token>
+    (
+        re.compile(
+            r"(discord(?:app)?\.com/api/webhooks/[^/?#\s\"']+/)[^/?#\s\"']+",
+            re.IGNORECASE,
+        ),
+        r"\1***",
+    ),
+    # Slack：hooks.slack.com/services/<T>/<B>/<secret>
+    (
+        re.compile(r"(hooks\.slack\.com/services/)[^?#\s\"']+", re.IGNORECASE),
+        r"\1***",
+    ),
+    # Telegram：api.telegram.org/bot<token>/
+    (
+        re.compile(r"(api\.telegram\.org/bot)[^/?#\s\"']+", re.IGNORECASE),
+        r"\1***",
+    ),
+    # Bark：api.day.app/<device key>/
+    (re.compile(r"(api\.day\.app/)[^/?#\s\"']+", re.IGNORECASE), r"\1***"),
+]
+
+
 def sanitize_log_message(message: str) -> str:
     """
     从日志消息中移除敏感信息
@@ -68,6 +115,8 @@ def sanitize_log_message(message: str) -> str:
         sanitized_message = re.sub(
             pattern, replacement, sanitized_message, flags=re.IGNORECASE
         )
+    for url_pattern, replacement in _URL_SECRET_PATTERNS:
+        sanitized_message = url_pattern.sub(replacement, sanitized_message)
 
     return sanitized_message
 

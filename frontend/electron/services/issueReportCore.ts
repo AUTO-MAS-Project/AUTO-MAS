@@ -32,6 +32,20 @@ const SENSITIVE_ASSIGNMENT_PATTERN =
 // 上面两条正则在大文件上每 MB 各要十几毫秒；第一条命中的必要条件是出现「: Bearer 」这种形状，
 // 先用便宜得多的这条筛一遍
 const BEARER_OR_BASIC_PATTERN = /[:=]\s*["']?(?:Bearer|Basic)\s/i
+// 推送地址里的密钥：后端日志按 INFO 记下每个请求的完整 URL，按参数名的规则管不到企业微信的 ?key=
+// 和路径里的令牌。与 app/utils/security.py 的 _URL_SECRET_PATTERNS 同一组，两边一起改；
+// 后端从源头打码，这里给已经落盘的旧日志打码
+const URL_SECRET_PATTERNS: Array<[RegExp, string]> = [
+  [/([?&](?:key|sendkey|sign)=)[^&#\s"']+/gi, '$1***'],
+  [/((?:sctapi\.ftqq\.com|\.push\.ft07\.com\/send)\/)[^/?#\s"']+(\.send)/gi, '$1***$2'],
+  [/(open\.(?:feishu\.cn|larksuite\.com)\/open-apis\/bot\/v2\/hook\/)[^/?#\s"']+/gi, '$1***'],
+  [/(discord(?:app)?\.com\/api\/webhooks\/[^/?#\s"']+\/)[^/?#\s"']+/gi, '$1***'],
+  [/(hooks\.slack\.com\/services\/)[^?#\s"']+/gi, '$1***'],
+  [/(api\.telegram\.org\/bot)[^/?#\s"']+/gi, '$1***'],
+  [/(api\.day\.app\/)[^/?#\s"']+/gi, '$1***'],
+]
+// loguru 按周轮转后压成 app.<时间>.log.zip：解开、给里面的日志打码、再压回去
+const ROTATED_LOG_ARCHIVE_PATTERN = /\.log\.zip$/i
 
 interface ReportEntry {
   path: string
@@ -89,6 +103,9 @@ function sanitizeText(text: string): string {
     ? text.replace(SENSITIVE_BEARER_PATTERN, '$1***')
     : text
   sanitized = sanitized.replace(SENSITIVE_ASSIGNMENT_PATTERN, '$1***')
+  for (const [pattern, replacement] of URL_SECRET_PATTERNS) {
+    sanitized = sanitized.replace(pattern, replacement)
+  }
   const homePath = os.homedir()
   if (homePath) {
     sanitized = sanitized.split(homePath).join('<HOME>')
@@ -276,6 +293,42 @@ function tailOf(content: Buffer, bytes: number): Buffer {
     : fromFirstFullLine(content.subarray(content.byteLength - bytes))
 }
 
+function addRotatedLogArchive(
+  state: CollectorState,
+  sourcePath: string,
+  archivePath: string,
+  sourceSize: number,
+  storedLimit: number
+): void {
+  let content: Buffer
+  try {
+    const sanitizedArchive = new AdmZip()
+    for (const entry of new AdmZip(sourcePath).getEntries()) {
+      if (entry.isDirectory) {
+        continue
+      }
+      const data = entry.getData()
+      sanitizedArchive.addFile(
+        entry.entryName,
+        isTextFile(entry.entryName)
+          ? Buffer.from(sanitizeText(data.toString('utf-8')), 'utf-8')
+          : data
+      )
+    }
+    content = sanitizedArchive.toBuffer()
+  } catch (error) {
+    // 解不开就不收：原样放进去等于把没打码的旧日志发出去
+    addSkippedEntry(state, archivePath, sourceSize, `读取日志压缩包失败: ${String(error)}`)
+    return
+  }
+
+  if (content.byteLength > storedLimit) {
+    addSkippedEntry(state, archivePath, sourceSize, '日志压缩包超过问题包大小限制')
+    return
+  }
+  addEntry(state, archivePath, sourceSize, content, 'included')
+}
+
 export function addDiagnosticFile(
   state: CollectorState,
   sourcePath: string,
@@ -342,6 +395,17 @@ export function addDiagnosticFile(
       addSkippedEntry(state, archivePath, stat.size, `读取文本文件失败: ${String(error)}`)
       return
     }
+  }
+
+  if (ROTATED_LOG_ARCHIVE_PATTERN.test(sourcePath)) {
+    addRotatedLogArchive(
+      state,
+      sourcePath,
+      archivePath,
+      stat.size,
+      Math.min(maxEntryBytes, remainingBytes)
+    )
+    return
   }
 
   if (stat.size > maxEntryBytes || stat.size > remainingBytes) {
