@@ -289,6 +289,12 @@ export interface ElectronAPI {
     zipPath?: string
     error?: string
   }>
+  exportBetterGIIssueReport: () => Promise<{
+    success: boolean
+    message?: string
+    zipPath?: string
+    error?: string
+  }>
   /** configTypes：要列出的脚本配置类名（MaaFW 特调注册表的 scriptConfigType） */
   listMaaFWIssueReportScripts: (configTypes: string[]) => Promise<
     Array<{

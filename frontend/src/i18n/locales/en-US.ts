@@ -4161,6 +4161,7 @@ export default {
       exportOkNte: 'Export an OK-NTE issue bundle',
       exportZzzOd: 'Export a ZZZ-OD issue bundle',
       exportWhimbox: 'Export a Whimbox issue bundle',
+      exportBetterGI: 'Export a BetterGI issue bundle',
       exportMaaFW: 'Export an MFW issue bundle',
       exportMaaFWEmpty: 'No MFW scripts yet',
       exportM9A: 'Export an M9A issue bundle',

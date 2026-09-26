@@ -3584,6 +3584,7 @@ export default {
       issueSection: '専用の問題報告パッケージ',
       exportOkww: 'OK-WW の問題報告パッケージを書き出す',
       exportOkNte: 'OK-NTE の問題報告パッケージを書き出す',
+      exportBetterGI: 'BetterGI の問題報告パッケージを書き出す',
       exportMaaFW: 'MFW の問題報告パッケージを書き出す',
       exportMaaFWEmpty: 'MFW スクリプトはまだありません',
       exportM9A: 'M9A の問題報告パッケージを書き出す',
