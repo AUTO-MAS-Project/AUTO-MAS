@@ -4022,6 +4022,7 @@ export default {
       exportMaaFW: '导出 MFW 问题包',
       exportMaaFWEmpty: '还没有 MFW 脚本',
       exportM9A: '导出 M9A 问题包',
+      exportMSS: '导出 MSS 问题包',
       devSection: '开发者选项',
       openDevTools: '打开开发者工具',
       runtimeLaunchMode: '后端运行方式',
