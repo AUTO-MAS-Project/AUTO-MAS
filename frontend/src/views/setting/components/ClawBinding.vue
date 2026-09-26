@@ -43,9 +43,7 @@ const statusLabel = computed(() => {
 })
 const statusColor = computed(() => {
   if (!connected.value) return 'default'
-  return binding.value.status?.state !== 'connected'
-    ? 'processing'
-    : 'success'
+  return binding.value.status?.state !== 'connected' ? 'processing' : 'success'
 })
 </script>
 
