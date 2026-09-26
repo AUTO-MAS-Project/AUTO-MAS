@@ -425,9 +425,17 @@
         }
       ],
       "Gui": {
+        "ConnectSettings": {
+          "Extras": {
+            "MuMuEmulator12": {
+              "IsEnabled": true,
+              "EnableBridgeConnection": false,
+              "EnableTouch": false
+            }
+          }
+        },
         "Performance": {
           "UseGpu": true,
-          "GpuDescription": "NVIDIA GeForce RTX 4060 Laptop GPU",
           "GpuInstancePath": "",
           "AllowDeprecatedGpu": false
         },
