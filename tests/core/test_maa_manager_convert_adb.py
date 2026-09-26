@@ -100,9 +100,7 @@ def test_convert_adb_matches_wireless_address_exactly(
 def test_convert_adb_matches_equivalent_emulator_addresses(
     monkeypatch, maa_manager_module, target: str, available: str
 ) -> None:
-    devices = _available_devices(
-        monkeypatch, maa_manager_module, "HA2FKGY1", available
-    )
+    devices = _available_devices(monkeypatch, maa_manager_module, "HA2FKGY1", available)
 
     assert _convert(maa_manager_module, target) is devices[1]
 
