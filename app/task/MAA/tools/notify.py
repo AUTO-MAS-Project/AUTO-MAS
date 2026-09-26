@@ -19,6 +19,9 @@
 
 #   Contact: DLmaster_361@163.com
 
+import base64
+from functools import cache
+
 from app.core import Config
 from app.core.notify import (
     DispatchResult,
@@ -32,11 +35,27 @@ from app.core.notify import (
 from app.models.config import MaaUserConfig
 from app.task.notify_core import push_proxy_result
 from app.utils import get_logger
+from app.utils.paths import resource_path
 
 logger = get_logger("MAA 通知工具")
 
 # MAA 的签名只空一行, 与其余脚本不同
 SIGNATURE_SEP = "\n"
+
+
+@cache
+def _six_star_image_base64() -> str | None:
+    """喜报配图，给 Webhook 的图片槽位用（企业微信群机器人会补发成一条图片消息）。
+
+    以前专门的企业微信群机器人渠道会发这张图，改成自定义 Webhook 后没接上，喜报只剩一句文字。
+    """
+
+    try:
+        data = resource_path("images", "notification", "six_star.png").read_bytes()
+    except OSError as exc:
+        logger.warning(f"读取喜报配图失败，喜报只发文字: {exc}")
+        return None
+    return base64.b64encode(data).decode("ascii")
 
 
 def _statistic_text(message: dict) -> str:
@@ -133,6 +152,7 @@ async def push_notification(
                 text="好羡慕~",
                 html=template.render(message),
                 signature_sep=SIGNATURE_SEP,
+                webhook_image_base64=_six_star_image_base64(),
             ),
             _six_star_targets(user_config),
         )
