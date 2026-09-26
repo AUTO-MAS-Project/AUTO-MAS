@@ -97,14 +97,66 @@
         :scroll="{ x: 'max-content' }"
       >
         <template #bodyCell="{ column, record }">
-          <template v-if="column.key === 'TribulationStage'">
-            {{ shortStage(record.TribulationStage) }}
-          </template>
-          <template
-            v-else-if="column.key === 'SkipDifficulty' || column.key === 'ConsumeAllEnergy'"
+          <a-select
+            v-if="column.key === 'TribulationStage'"
+            :value="record.TribulationStage"
+            size="small"
+            class="config-control"
+            :bordered="false"
+            :list-height="STAGE_LIST_HEIGHT"
+            :disabled="isColumnDisabled(record.timeKey)"
+            @update:value="(value: string) => handleStageChange(record.timeKey, value)"
           >
-            {{ record[column.key] ? t('edit.yes') : t('edit.no') }}
-          </template>
+            <a-select-option v-for="stage in TRIBULATION_STAGES" :key="stage" :value="stage">
+              {{ shortStage(stage) }}
+            </a-select-option>
+          </a-select>
+
+          <a-select
+            v-else-if="column.key === 'Difficulty'"
+            :value="record.Difficulty"
+            size="small"
+            class="config-control"
+            :bordered="false"
+            :options="
+              difficultyOptions(record.TribulationStage).map(level => ({
+                label: level,
+                value: level,
+              }))
+            "
+            :disabled="
+              isColumnDisabled(record.timeKey) || isOverriddenBySwitch('Difficulty', record.timeKey)
+            "
+            @update:value="
+              (value: number) => handleFieldChange(record.timeKey, { Difficulty: value })
+            "
+          />
+
+          <a-switch
+            v-else-if="column.key === 'SkipDifficulty' || column.key === 'ConsumeAllEnergy'"
+            :checked="record[column.key]"
+            size="small"
+            :disabled="isColumnDisabled(record.timeKey)"
+            @change="
+              (checked: boolean) => handleFieldChange(record.timeKey, { [column.key]: checked })
+            "
+          />
+
+          <a-input-number
+            v-else-if="column.key === 'FightTimes'"
+            :value="record.FightTimes"
+            size="small"
+            class="config-control"
+            :min="1"
+            :max="99"
+            :disabled="
+              isColumnDisabled(record.timeKey) || isOverriddenBySwitch('FightTimes', record.timeKey)
+            "
+            @change="
+              (value: number | null) =>
+                handleFieldChange(record.timeKey, { FightTimes: value ?? 1 })
+            "
+          />
         </template>
       </a-table>
     </div>
