@@ -1570,7 +1570,7 @@ class AppConfig(GlobalConfig):
         logger.info(f"ZZZ-OD 直控删除实例: {instance_idx:02d}")
         return self.get_zzzod_instances(script_id)
 
-    def get_zzzod_slots(self, script_id: str) -> list[dict]:
+    async def get_zzzod_slots(self, script_id: str) -> list[dict]:
         """实例槽总览：原生实例 / MAS 绑定槽 / 无主残留（含未落盘的绑定）。
 
         槽目录是 MAS 分配在一条龙安装目录里的，注册表里没有它、GUI 看不见，
@@ -1587,7 +1587,9 @@ class AppConfig(GlobalConfig):
 
         script_config = self._zzzod_script_config(script_id)
         root = self._zzzod_root(script_config)
-        return list_slot_overview(root, collect_slot_owners(root))
+        owners = collect_slot_owners(root)
+        # 槽总览要 rglob 统计各槽目录占用，是阻塞 IO，放线程里跑
+        return await asyncio.to_thread(list_slot_overview, root, owners)
 
     def _ensure_zzzod_install_unlocked(self, root: Path) -> None:
         """任一指向同一安装的 ZzzOd 脚本正在运行时拒绝槽级写操作。
@@ -1613,7 +1615,7 @@ class AppConfig(GlobalConfig):
             if script_root and config_root_key(script_root) == key:
                 raise RuntimeError("有正在运行的绝区零一条龙脚本, 请结束后再试")
 
-    def clean_zzzod_slots(self, script_id: str) -> list[int]:
+    async def clean_zzzod_slots(self, script_id: str) -> list[int]:
         """手动清理该安装下无人绑定的实例槽，返回实际回收的槽号。
 
         与运行/会话前的自动回收同源（先归档进回收池再删目录；原生实例与
@@ -1634,17 +1636,22 @@ class AppConfig(GlobalConfig):
         script_config = self._zzzod_script_config(script_id)
         root = self._zzzod_root(script_config)
         self._ensure_zzzod_install_unlocked(root)
-        return recycle_unbound_slots(root, only_allocated=False, swallow=False)
+        # 归档 + 删目录是阻塞 IO，放线程里跑
+        return await asyncio.to_thread(
+            recycle_unbound_slots, root, only_allocated=False, swallow=False
+        )
 
-    def get_zzzod_recycle(self, script_id: str) -> list[dict]:
+    async def get_zzzod_recycle(self, script_id: str) -> list[dict]:
         """回收池条目（被删用户/脚本留下的槽内容与该槽 MAS 备份池快照）。"""
 
         from app.task.ZzzOd.tools import list_recycle_entries
 
         script_config = self._zzzod_script_config(script_id)
-        return list_recycle_entries(self._zzzod_root(script_config))
+        return await asyncio.to_thread(
+            list_recycle_entries, self._zzzod_root(script_config)
+        )
 
-    def clear_zzzod_recycle(self, script_id: str) -> int:
+    async def clear_zzzod_recycle(self, script_id: str) -> int:
         """清空本安装的回收池，返回删除的条目数。
 
         只删 recycle 池（被删用户/脚本留下的存底）；``onedragon`` 原生池与
@@ -1660,7 +1667,8 @@ class AppConfig(GlobalConfig):
         script_config = self._zzzod_script_config(script_id)
         root = self._zzzod_root(script_config)
         self._ensure_zzzod_install_unlocked(root)
-        return clear_recycle_pool(root)
+        # 删池是阻塞 IO，放线程里跑
+        return await asyncio.to_thread(clear_recycle_pool, root)
 
     async def restore_zzzod_recycle(
         self,
