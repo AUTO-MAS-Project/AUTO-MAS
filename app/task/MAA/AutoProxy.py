@@ -1391,20 +1391,23 @@ class AutoProxyTask(TaskExecuteBase):
         # 各配置部分的引用
         global_set = gui_set["Global"]
 
-        # 逐条修 $type 位置（布局不校对、成员不动——下方 _apply_maa_quick_config
-        # 会按本轮用户配置重建 TaskQueue，但各条目的高级字段经 _find_task_source
-        # 从这份队列取回，$type 不在首位会让 MAA 读不进整个文件）。
-        for configurations in (gui_new_set.get("Configurations") or {}).values():
-            if isinstance(configurations, dict):
-                queue = configurations.get("TaskQueue")
-                if isinstance(queue, list):
-                    configurations["TaskQueue"] = _repair_maa_task_queue(queue)
+        # 非直控模式才由 MAS 修正队列条目；直控的 TaskQueue 完全由用户维护。
+        if not self.direct_control:
+            for configurations in (gui_new_set.get("Configurations") or {}).values():
+                if isinstance(configurations, dict):
+                    queue = configurations.get("TaskQueue")
+                    if isinstance(queue, list):
+                        configurations["TaskQueue"] = _repair_maa_task_queue(queue)
 
         # 使用简体中文
         global_set["GUI.Localization"] = "zh-cn"  # OLD: 即将移除
         gui_new_set.setdefault("Gui", {})["Localization"] = "zh-cn"
 
-        if self.cur_user_config.get("Info", "IfQuickConfig"):
+        # 直控的 TaskQueue 由用户在 MAA 原生界面维护；仅保留下方运行期 overlay。
+        if (
+            not self.direct_control
+            and self.cur_user_config.get("Info", "IfQuickConfig")
+        ):
             await self._apply_maa_quick_config(gui_new_set)
         self._configure_maa_runtime(gui_set, gui_new_set, emulator_info)
 
