@@ -68,6 +68,7 @@ from app.utils.constants import (
 )
 from app.utils.io import mark_native_config_injected, read_file, write_file
 
+from .base_preset import seed_maa_base_config
 from .tools import (
     agree_bilibili,
     ensure_game_updated,
@@ -263,10 +264,8 @@ _MAA_GUI_SKELETON: dict[str, dict] = {
 }
 """MAA 配置骨架：仅含 MAS 托管键所在的容器路径，不含任何任务内容。
 
-base 缺失或损坏时以骨架为底下发——MAA（System.Text.Json）加载时对缺席属性
-取 C# 内存默认值，**TaskQueue 缺席即由 MAA 内存默认队列填空**（PR #907 实证：
-MAA 保存时用内存默认队列整体重写 gui.new.json）。用户在 MAA 里一保存，
-完整 base 即落盘。默认队列从此只有 MAA 一个生成器，MAS 不再维护队列表单。
+托管 base 缺失时会先播种 MAS 预设；原生配置损坏且无有效备份时仍以骨架下发，
+TaskQueue 由 MAA 内存默认值填充。
 """
 
 
@@ -1340,6 +1339,7 @@ class AutoProxyTask(TaskExecuteBase):
         # native 池由 manager prepare 在任务级一次性归档
         archive_dir = self._config_archive_dir()
         if archive_dir is not None:
+            seed_maa_base_config(archive_dir)
             archive_mas_runtime_backup(
                 self.script_info.script_id,
                 str(self.cur_user_uid),
