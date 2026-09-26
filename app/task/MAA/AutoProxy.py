@@ -512,7 +512,7 @@ def _find_task_source(
     task_queue: list[dict],
     name: str,
     task_type: str,
- ) -> dict | None:
+) -> dict | None:
     """按 TaskType + Name 精确取得原生任务配置。"""
 
     identity = (task_type, name)
