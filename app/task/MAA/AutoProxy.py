@@ -68,7 +68,7 @@ from app.utils.constants import (
 )
 from app.utils.io import mark_native_config_injected, read_file, write_file
 
-from .base_preset import seed_maa_base_config
+from .base_preset import maa_task_identity, seed_maa_base_config
 from .tools import (
     agree_bilibili,
     ensure_game_updated,
@@ -323,9 +323,7 @@ def _merge_task_queue(
         return False
 
     def identity(item: object) -> tuple | None:
-        if not isinstance(item, dict):
-            return None
-        return (item.get("TaskType"), item.get("Name"))
+        return maa_task_identity(item)
 
     index_by_id: dict[tuple, int] = {}
     for index, item in enumerate(archive_queue):
@@ -514,22 +512,13 @@ def _find_task_source(
     task_queue: list[dict],
     name: str,
     task_type: str,
-    *,
-    allow_type_fallback: bool = True,
-) -> dict | None:
-    """按任务名称取原生配置，必要时兼容旧配置中的类型匹配。"""
+ ) -> dict | None:
+    """按 TaskType + Name 精确取得原生任务配置。"""
 
+    identity = (task_type, name)
     for task in task_queue:
-        if (
-            isinstance(task, dict)
-            and task.get("TaskType") == task_type
-            and task.get("Name") == name
-        ):
+        if maa_task_identity(task) == identity:
             return deepcopy(task)
-    if allow_type_fallback:
-        for task in task_queue:
-            if isinstance(task, dict) and task.get("TaskType") == task_type:
-                return deepcopy(task)
     return None
 
 
@@ -1498,7 +1487,6 @@ class AutoProxyTask(TaskExecuteBase):
                 source_queue,
                 zh_task,
                 en_task,
-                allow_type_fallback=en_task != "Fight",
             ) or {
                 "$type": f"{en_task}Task",
                 "Name": zh_task,
@@ -1507,10 +1495,10 @@ class AutoProxyTask(TaskExecuteBase):
             }
 
         annihilation_source = _find_task_source(
-            source_queue, "剿灭作战", "Fight", allow_type_fallback=False
+            source_queue, "剿灭作战", "Fight"
         )
         activity_source = _find_task_source(
-            source_queue, "活动关优先", "Fight", allow_type_fallback=False
+            source_queue, "活动关优先", "Fight"
         )
 
         # 库存保持计划：MAS 快速配置面板维护的计划写回原生 PlanList。只覆盖

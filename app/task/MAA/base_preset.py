@@ -45,20 +45,25 @@ def seed_maa_base_config(config_dir: Path) -> None:
             write_file(path, deepcopy(preset))
 
 
-def _maa_task_identity(task: object) -> tuple[str, str, str] | None:
+def maa_task_identity(task: object) -> tuple[str, str] | None:
+    """Return the stable business identity of one MAA task.
+
+    ``$type`` is serialization metadata and is intentionally excluded: old and new
+    MAA versions may spell it differently while ``TaskType`` and ``Name`` remain
+    the task identity exposed by the queue.
+    """
+
     if not isinstance(task, dict):
         return None
     task_type = task.get("TaskType")
     name = task.get("Name", "")
-    maa_type = task.get("$type") or f"{task_type}Task"
     if (
         not isinstance(task_type, str)
         or not task_type
         or not isinstance(name, str)
-        or not isinstance(maa_type, str)
     ):
         return None
-    return maa_type, task_type, name
+    return task_type, name
 
 
 def maa_task_queue_layout_signature(queue: object) -> tuple[tuple, ...] | None:
@@ -68,7 +73,7 @@ def maa_task_queue_layout_signature(queue: object) -> tuple[tuple, ...] | None:
         return None
     signature = []
     for task in queue:
-        identity = _maa_task_identity(task)
+        identity = maa_task_identity(task)
         if identity is None:
             return None
         signature.append(identity)
@@ -83,7 +88,7 @@ def maa_task_queue_signature(queue: object) -> tuple[tuple, ...] | None:
 
     signature = []
     for task in queue:
-        identity = _maa_task_identity(task)
+        identity = maa_task_identity(task)
         if identity is None:
             return None
         enabled = task.get("IsEnable", True)
@@ -107,10 +112,10 @@ def restore_maa_default_task_queue(
     ):
         return deepcopy(queue), False
 
-    existing_tasks: dict[tuple[str, str, str], dict] = {}
+    existing_tasks: dict[tuple[str, str], dict] = {}
     if isinstance(queue, list):
         for task in queue:
-            identity = _maa_task_identity(task)
+            identity = maa_task_identity(task)
             if identity is not None:
                 existing_tasks.setdefault(identity, task)
 
@@ -118,7 +123,7 @@ def restore_maa_default_task_queue(
     restored_queue = []
     for default_task in default_queue:
         task = deepcopy(default_task)
-        identity = _maa_task_identity(task)
+        identity = maa_task_identity(task)
         existing = existing_tasks.get(identity) if identity is not None else None
         if existing is not None:
             task.update(
