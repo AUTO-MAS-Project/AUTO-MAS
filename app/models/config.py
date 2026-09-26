@@ -3182,6 +3182,139 @@ class MaaEndPlanConfig(WeeklyKeyPlanConfig):
         return await super().load(normalized_data)
 
 
+BAAH_PLAN_KEY_SHAPE = {
+    # 字段: (默认值, 最短长度, 最长长度)，与 schema 的 BAAHPlanKey 逐位对应；
+    # 每一位的取值范围见 schema.BAAH_PLAN_KEY_SLOT_RULES，不在这里重复一份。
+    "Event": ([1, 1], 2, 3),
+    "Wanted": ([1, -1, 1], 2, 4),
+    "Special": ([1, -1, 1], 2, 4),
+    "Exchange": ([1, -1, 1], 2, 4),
+    "Hard": ([1, 1, -1], 2, 4),
+    "Normal": ([1, 1, -1], 2, 4),
+}
+"""BAAH 计划表 key 的字段默认值与长度区间"""
+
+
+def default_baah_plan_key() -> dict[str, Any]:
+    """返回 BAAH 计划表默认 key，六个字段都给具体值。
+
+    新建的计划表默认按「多类混打」排：每一类都有值，用户拿到的是一张和以前一样的
+    表。**不能**返回空 key——那表示六类全都不干预，新计划表会变成「什么都不管」。
+    校验器与 BAAHPlanConfig 的 default_key 都用它生成，避免默认值在两处各写
+    一份后漂移。
+    """
+
+    return {
+        field: list(default)
+        for field, (default, _minimum, _maximum) in BAAH_PLAN_KEY_SHAPE.items()
+    }
+
+
+def normalize_baah_plan_key(raw_key: object) -> dict[str, Any]:
+    """将固定配置或旧计划表日期槽位转换为 BAAH key，任何输入都不抛异常。
+
+    输入里没有的字段，结果里**也不会出现**：缺席表示「今天这一类不干预」，由 BAAH
+    沿用自己配置里的关卡与开关；在这里补齐默认值会把它静默改成「按默认关卡打」。
+
+    越界的位按 schema 的逐位规则修正到最近的合法值（困难图关卡 0/-1 修成 1、
+    次数小于 -1 修成 -1、开关位非 0/1 修成 1），存量的脏配置因此也能过校验。
+    """
+
+    if isinstance(raw_key, dict) and "Key" in raw_key:
+        raw_key = raw_key["Key"]
+    data = raw_key if isinstance(raw_key, dict) else {}
+
+    result: dict[str, Any] = {}
+    for field, (default, minimum, maximum) in BAAH_PLAN_KEY_SHAPE.items():
+        if field not in data:
+            continue
+
+        value = data[field]
+        if value is None:
+            # 显式 null 与字段缺失同义：都不干预这一类
+            continue
+
+        if not isinstance(value, list):
+            result[field] = list(default)
+            continue
+
+        if not value:
+            # 空数组表示「今天不打这一类」，补成默认值就变成照默认关卡打了
+            result[field] = []
+            continue
+
+        try:
+            items = [int(item) for item in value]
+        except (TypeError, ValueError):
+            # 每一位都有固定含义（如「地区、关卡、次数」），丢掉一位会让后面的
+            # 位整体错位，所以只要有一位转不成 int，整项就回落到默认值。
+            result[field] = list(default)
+            continue
+
+        if len(items) > maximum:
+            items = items[:maximum]
+        elif len(items) < minimum:
+            # 缺位用默认值补齐，已经写明的位保持不动。
+            items = items + default[len(items) :]
+
+        # 存量配置里可能存着越界的位（如困难图关卡写成 0），按 schema 的规则表
+        # 修正到最近的合法值：这一步只修不问，任何输入都不抛异常。
+        result[field] = [
+            schema_model.fix_baah_plan_slot(field, index, item)
+            for index, item in enumerate(items)
+        ]
+
+    return result
+
+
+def validate_baah_plan_key(raw_key: object) -> dict[str, Any]:
+    """严格校验并返回规范化的 BAAH key，不合法时抛 ValueError。
+
+    ``exclude_none=True`` 是必需的：缺席字段不能被 dump 成 ``None``，否则
+    「今天不干预这一类」会跟着 key 一起落盘，语义与「不打这一类」混在一起。
+    """
+
+    return schema_model.BAAHPlanConfig_Item(Key=raw_key).Key.model_dump(
+        exclude_none=True
+    )
+
+
+class BAAHPlanKeyValidator(ValidatorBase):
+    """BAAH 计划表 key 验证器。"""
+
+    def validate(self, value: Any) -> bool:
+        try:
+            return validate_baah_plan_key(value) == value
+        except ValueError:
+            return False
+
+    def correct(self, value: Any) -> dict[str, Any]:
+        return normalize_baah_plan_key(value)
+
+
+class BAAHPlanConfig(WeeklyKeyPlanConfig):
+    """BAAH 计划表配置。"""
+
+    def __init__(self) -> None:
+        super().__init__(
+            default_name="新 BAAH 计划表",
+            default_key=default_baah_plan_key(),
+            key_validator=BAAHPlanKeyValidator(),
+        )
+
+    async def load(self, data: dict) -> bool:
+        """加载计划表并迁移没有 Key 包装的旧日期槽位。"""
+
+        normalized_data = deepcopy(data) if isinstance(data, dict) else {}
+        for group in ["ALL", *calendar.day_name]:
+            group_data = normalized_data.get(group)
+            # 空槽位不在这里包 Key：包出来是一份「六类全都不干预」的 key，而不包则
+            # 沿用槽位默认值（多类混打那六项），与迁移前的行为一致
+            if isinstance(group_data, dict) and group_data:
+                normalized_data[group] = {"Key": normalize_baah_plan_key(group_data)}
+        return await super().load(normalized_data)
+
+
 def normalize_mss_plan_key(raw_key: object) -> dict[str, Any]:
     """将固定配置或旧计划表日期槽位转换为 MSS key。"""
 
@@ -5094,6 +5227,7 @@ class GlobalConfig(ConfigBase):
         BAAHConfig.related_config["EmulatorConfig"] = self.EmulatorConfig
         MaaUserConfig.related_config["PlanConfig"] = self.PlanConfig
         MaaEndUserConfig.related_config["PlanConfig"] = self.PlanConfig
+        BAAHUserConfig.related_config["PlanConfig"] = self.PlanConfig
         MSSUserConfig.related_config["PlanConfig"] = self.PlanConfig
         QueueItem.related_config["ScriptConfig"] = self.ScriptConfig
         HSRUserConfig.related_config["ScriptConfig"] = self.ScriptConfig
@@ -5184,6 +5318,8 @@ class GlobalConfig(ConfigBase):
 class BAAHUserConfig(ConfigBase):
     """BAAH 用户配置"""
 
+    related_config: dict[str, MultipleConfig] = {}
+
     def __init__(self) -> None:
 
         ## Info ------------------------------------------------------------
@@ -5205,15 +5341,22 @@ class BAAHUserConfig(ConfigBase):
         )
         ## 默认使用的 BAAH 配置文件名（BAAH_CONFIGS 目录下的文件名，不含 .json 后缀）
         self.Info_ConfigName = ConfigItem("Info", "ConfigName", "")
-        ## 活动期间使用的 BAAH 配置文件名；留空表示活动期间也用 ConfigName
-        self.Info_ActivityConfigName = ConfigItem("Info", "ActivityConfigName", "")
-        ## 是否按碧蓝档案有没有活动切换使用的配置文件
-        self.Info_IfActivityAdapt = ConfigItem(
-            "Info", "IfActivityAdapt", False, BoolValidator()
+        ## 关卡计划表；Fixed 表示按脚本配置
+        self.Info_StageMode = ConfigItem(
+            "Info",
+            "StageMode",
+            "Fixed",
+            TypedMultipleUIDValidator(
+                "Fixed", self.related_config, "PlanConfig", BAAHPlanConfig
+            ),
         )
-        ## 活动排期按哪个服判断（Kivo 时间轴的原文拼写：JP / Globle / CN）
+        ## 活动排期按哪个服判断，供「活动关优先」使用（Kivo 时间轴的原文拼写：JP / Globle / CN）
         self.Info_ActivityLineType = ConfigItem(
             "Info", "ActivityLineType", "CN", OptionsValidator(["JP", "Globle", "CN"])
+        )
+        ## 活动期间自动把「活动关卡」任务排到最前并打开
+        self.Info_IfEventFirst = ConfigItem(
+            "Info", "IfEventFirst", False, BoolValidator()
         )
         ## 备注
         self.Info_Notes = ConfigItem("Info", "Notes", "无")
@@ -5355,11 +5498,20 @@ PLAN_BOOK = {
         "script_class": MaaEndConfig,
         "field_name": "SanityMode",
     },
+    "BAAHPlanConfig": {
+        "create_type": "BAAHPlan",
+        "config_class": BAAHPlanConfig,
+        "schema_class": schema_model.BAAHPlanConfig,
+        "consumer": PLAN_CONSUMER_VALUES[2],
+        "script_class": BAAHConfig,
+        "field_name": "StageMode",
+    },
     "MSSPlanConfig": {
         "create_type": "MSSPlan",
         "config_class": MSSPlanConfig,
         "schema_class": schema_model.MSSPlanConfig,
-        "consumer": PLAN_CONSUMER_VALUES[2],
+        # MSS 排在 baah 之后，位置索引跟着往后挪一位
+        "consumer": PLAN_CONSUMER_VALUES[3],
         "script_class": MSSConfig,
         "field_name": "PlanMode",
     },

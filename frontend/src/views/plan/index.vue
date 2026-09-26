@@ -45,10 +45,14 @@
           :current-plan-name="currentPlanName"
           :current-mode="currentMode"
           :view-mode="viewMode"
+          :supports-simple-view="currentPlanDescriptor.supportsSimpleView"
+          :supports-layout-mode="currentPlanDescriptor.supportsLayoutMode"
+          :baah-layout="baahLayout"
           :is-editing-plan-name="isEditingPlanName"
           @update:current-plan-name="currentPlanName = $event"
           @update:current-mode="currentMode = $event"
           @update:view-mode="viewMode = $event"
+          @update:baah-layout="baahLayout = $event"
           @start-edit-plan-name="startEditPlanName"
           @finish-edit-plan-name="finishEditPlanName"
           @mode-change="onModeChange"
@@ -59,6 +63,7 @@
             :table-data="tableData"
             :current-mode="currentMode"
             :view-mode="viewMode"
+            :baah-layout="baahLayout"
             :plan-id="activePlanId"
             :handle-plan-change="handlePlanChange"
           />
@@ -116,6 +121,9 @@ const planDataMap = ref<Record<string, PlanConfigData>>({})
 const currentPlanName = ref<string>('')
 const currentMode = ref<'ALL' | 'Weekly'>('ALL')
 const viewMode = ref<'config' | 'simple'>('config')
+// BAAH 计划表的关卡安排：每天一类（默认，三行各管一件事）或多类混打（六类都填）。
+// 与 viewMode 一样只是当前页面的显示状态，各计划表共用同一个选择
+const baahLayout = ref<'mixed' | 'single'>('single')
 
 const isEditingPlanName = ref<boolean>(false)
 const loading = ref(true)

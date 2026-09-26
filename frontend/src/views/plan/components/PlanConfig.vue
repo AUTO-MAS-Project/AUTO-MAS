@@ -40,15 +40,30 @@
           ]"
           @change="handleModeChange"
         />
-        <span class="view-label">{{ t('plan.viewLabel') }}</span>
-        <a-segmented
-          :value="viewMode"
-          :options="[
-            { label: t('plan.viewConfig'), value: 'config' },
-            { label: t('plan.viewSimple'), value: 'simple' },
-          ]"
-          @change="$emit('update:view-mode', $event)"
-        />
+        <!-- 只给提供了简化视图的类型显示这个切换，避免出现点了没反应的控件 -->
+        <template v-if="supportsSimpleView">
+          <span class="view-label">{{ t('plan.viewLabel') }}</span>
+          <a-segmented
+            :value="viewMode"
+            :options="[
+              { label: t('plan.viewConfig'), value: 'config' },
+              { label: t('plan.viewSimple'), value: 'simple' },
+            ]"
+            @change="$emit('update:view-mode', $event)"
+          />
+        </template>
+        <!-- 关卡安排：只有 BAAH 的 key 分「每天一类」与「多类混打」两种排法 -->
+        <template v-if="supportsLayoutMode">
+          <span class="layout-label">{{ t('plan.baahLayout.label') }}</span>
+          <a-segmented
+            :value="baahLayout"
+            :options="[
+              { label: t('plan.baahLayout.single'), value: 'single' },
+              { label: t('plan.baahLayout.mixed'), value: 'mixed' },
+            ]"
+            @change="$emit('update:baah-layout', $event)"
+          />
+        </template>
       </a-space>
     </template>
 
@@ -69,6 +84,12 @@ interface Props {
   currentPlanName: string
   currentMode: 'ALL' | 'Weekly'
   viewMode: 'config' | 'simple'
+  /** 该类型是否提供简化视图；为 false 时隐藏视图切换 */
+  supportsSimpleView: boolean
+  /** 该类型是否提供「关卡安排」切换；为 false 时隐藏这一组 */
+  supportsLayoutMode: boolean
+  /** 「关卡安排」：多类混打（六类都填）或每天一类（每天只选一类） */
+  baahLayout: 'mixed' | 'single'
   isEditingPlanName: boolean
 }
 
@@ -78,6 +99,8 @@ interface Emits {
   (e: 'update:current-mode', value: 'ALL' | 'Weekly'): void
 
   (e: 'update:view-mode', value: 'config' | 'simple'): void
+
+  (e: 'update:baah-layout', value: 'mixed' | 'single'): void
 
   (e: 'start-edit-plan-name'): void
 
@@ -103,7 +126,8 @@ const handleModeChange = (value: 'ALL' | 'Weekly') => {
 }
 
 .mode-label,
-.view-label {
+.view-label,
+.layout-label {
   color: var(--ant-color-text-secondary);
   font-size: 14px;
   font-weight: 500;

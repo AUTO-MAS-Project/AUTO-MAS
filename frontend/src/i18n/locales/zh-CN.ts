@@ -1888,26 +1888,20 @@ export default {
     baahRunTimesLimitHint: '超过该次数仍失败则终止本次运行',
     baahRunTimeLimitHint: '单次运行中日志停止更新的最长等待时间（分钟）；超过则按运行失败处理',
     baahConfigName: '默认配置名',
-    baahConfigNameHint:
-      '平时使用的 BAAH 配置，本软件用它启动 BAAH.exe <名称>.json；开启活动适配后，它在活动期间会被「活动期间配置文件名」取代',
+    baahConfigNameHint: '平时使用的 BAAH 配置，本软件用它启动 BAAH.exe <名称>.json',
     baahConfigNamePlaceholder: '请选择平时使用的配置',
-    baahActivityConfigName: '活动期间配置文件名',
-    baahActivityConfigNameHint:
-      '开启上面的「活动适配」后，碧蓝档案有进行中的活动时改用这个配置启动 BAAH；留空、或活动排期取不到时仍用默认配置名',
-    baahActivityConfigNamePlaceholder: '留空则始终使用默认配置',
-    baahIfActivityAdapt: '活动适配',
-    baahIfActivityAdaptHint:
-      '开启后按碧蓝档案的活动排期切换配置文件：有活动时用「活动期间配置文件名」，没有活动时用「默认配置名」',
+    baahStageMode: '关卡计划表',
+    baahStageModeHint:
+      '按计划表安排每天打哪些关卡；选「固定」则照 BAAH 里自己的关卡配置运行。计划表分全局（每天都用）与周计划（按星期几）两种模式',
+    baahIfEventFirst: '活动关优先',
+    baahIfEventFirstHint:
+      '碧蓝档案有进行中的活动时，把「活动关卡」任务排到最前并打开；没有活动、或取不到排期时不动你的任务顺序',
     baahActivityLineType: '活动排期服务器',
     baahActivityLineTypeHint:
-      '按哪个服的排期判断有没有活动；各服活动时间不同，请选你的账号所在的服',
+      '按哪个服的排期判断有没有活动；各服活动时间不同，请选你的账号所在的服。「活动关优先」也按这里选的服判断活动是否进行中',
     baahActivityLineCN: '国服',
     baahActivityLineJP: '日服',
     baahActivityLineGloble: '国际服',
-    baahActivityRunning: '进行中：',
-    baahActivityUpcoming: '下一个活动：',
-    baahActivityNone: '当前没有进行中或即将开始的活动',
-    baahActivityUnavailable: '未取到活动排期',
     baahUserTag: '用户标签',
     baahUserTagHint: '由本软件按运行情况自动生成，仅供查看',
     baahLastProxyDate: '上次代理日期',
@@ -3230,8 +3224,20 @@ export default {
     viewLabel: '视图：',
     viewConfig: '配置视图',
     viewSimple: '简化视图',
+    // 关卡安排：BAAH 计划表的两种排法，切换只影响表格怎么排、整份 key 怎么组
+    baahLayout: {
+      label: '关卡：',
+      mixed: '多类混打',
+      single: '每天一类',
+      emptyOption: '不打',
+    },
     typeFallback: '计划表',
-    type: { maa: 'MAA 计划表', maaEnd: 'MaaEnd 计划表', mss: 'MSS 计划表' },
+    type: {
+      maa: 'MAA 计划表',
+      maaEnd: 'MaaEnd 计划表',
+      baah: 'BAAH 计划表',
+      mss: 'MSS 计划表',
+    },
     week: {
       ALL: '全局',
       Monday: '周一',
@@ -3263,6 +3269,43 @@ export default {
       stagePlaceholder: '输入关卡号',
       noSwitch: '不切换',
       usedSuffix: '{label} (已选择)',
+    },
+    // BAAH 关卡计划表：六类关卡每一位的含义固定，提示里写明每一位是什么、能不能填 -1
+    baah: {
+      event: '活动关卡',
+      wanted: '悬赏通缉',
+      special: '特殊任务',
+      exchange: '学园交流会',
+      hard: '困难关卡',
+      normal: '普通关卡',
+      eventHint: '活动关卡：关卡序号 / 扫荡次数（-1 = 最大）',
+      wantedHint: '悬赏通缉：地区 / 关卡（-1 = 最高关）/ 次数（-1 = 最大）',
+      specialHint: '特殊任务：地区 / 关卡（-1 = 最高关）/ 次数（-1 = 最大）',
+      exchangeHint: '学园交流会：学院 / 关卡（-1 = 最高关）/ 次数（-1 = 最大）',
+      hardHint: '困难关卡：章节 / 关卡 / 次数（-1 = 最大），关卡不能填 -1',
+      normalHint: '普通关卡：章节 / 关卡 / 次数（-1 = 最大），关卡不能填 -1',
+      partStageIndex: '关卡序号',
+      partTimes: '次数',
+      partRegion: '地区',
+      partLevelHighest: '关卡',
+      partLevel: '关卡',
+      partAcademy: '学院',
+      partChapter: '章节',
+      // 关卡位只认 -1 或 >= 1，用户填 0 时界面直接改成 1，这条说明改了什么
+      partLevelZeroFixed: '关卡位只能填 -1（最高关）或 1 以上，已改为 1',
+      // 每天一类那三行的行标题：一行只管一件事，行首的提示写明这一行的取值范围
+      rowKind: '关卡选择',
+      rowStage: '关卡名称',
+      rowTimes: '战斗次数',
+      rowKindHint: '今天打哪一类关卡；选「不打」则今天六类都不跑',
+      rowStageHint:
+        '这一类具体打哪一关；悬赏通缉、特殊任务、学园交流会可以选「倒数第一个」（倒数第一个能扫荡的关卡，扫不了会自动往前退一关），困难与普通关卡只能选具体关卡号',
+      rowTimesHint: '这一类打几次；选「最大次数」表示把剩下的次数一次扫完',
+      // 下拉里代表 -1 的那一项：关卡位是倒数第一个能扫荡的关卡，次数位是扫荡次数拉满
+      stageHighest: '倒数第一个',
+      timesMax: '最大次数',
+      // 多类混打里每一类头上那一行开关，关了就是这一天不跑这一类
+      partEnabled: '启用',
     },
     toast: {
       created: '已创建新的{type}："{name}"',

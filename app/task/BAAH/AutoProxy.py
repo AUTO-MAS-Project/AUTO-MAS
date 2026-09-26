@@ -33,11 +33,12 @@ import time
 import uuid
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 from app.core import Config
 from app.core.ws import Publisher, protocol
 from app.log_box import LogCollect, LogType, log_box
-from app.models.config import BAAHConfig, BAAHUserConfig
+from app.models.config import BAAHConfig, BAAHPlanConfig, BAAHUserConfig
 from app.models.ConfigBase import MultipleConfig
 from app.models.emulator import DeviceBase
 from app.models.schema import WSTaskNoticeData
@@ -58,6 +59,7 @@ from .tools import (
     baah_resolve,
     latest_log_file,
     push_notification,
+    read_json,
     resolve_config_name,
     resolve_log_time_range,
     resolve_user_config_path,
@@ -93,6 +95,106 @@ _PROCESS_EXIT_WAIT_SECONDS = 10
 ## BAAH 跑完还要执行自动退出与用户配置的 POST_COMMAND，立即强杀会把后置命令截断。
 _PROCESS_GRACE_SECONDS = 60
 
+## BAAH 的「活动关卡」任务名（上游 modules/AllTask/myAllTask.py 的 TaskName.EVENT）
+BAAH_EVENT_TASK_NAME = "活动关卡"
+
+## 计划表六类关卡字段与 BAAH 配置项的对应关系。键名沿用上游既有拼写
+## （SPECIAL_HIGHTEST_LEVEL 少一个 E），不要照着拼写习惯改。
+BAAH_STAGE_OPTIONS: dict[str, str] = {
+    "Event": "EVENT_QUEST_LEVEL",
+    "Wanted": "WANTED_HIGHEST_LEVEL",
+    "Special": "SPECIAL_HIGHTEST_LEVEL",
+    "Exchange": "EXCHANGE_HIGHEST_LEVEL",
+    "Hard": "HARD",
+    "Normal": "NORMAL",
+}
+
+
+def prioritize_event_quest(
+    task_order_group: object,
+) -> tuple[dict[str, Any] | None, str]:
+    """把激活任务线里的「活动关卡」整体挪到最前并打开。
+
+    只动激活那条线的 ``TASK_PIPELINE`` 与 ``TASK_ONOFF``：这两个数组按下标严格
+    配对（同一个下标是同一个任务与它的开关），所以 **务必成对搬动**，只挪一边
+    会让它后面所有任务的开关整体错位，用户看到的执行结果与界面上的勾选完全对不上。
+
+    BAAH 2.3.4 起弃用的 ``TASK_ORDER`` / ``TASK_ACTIVATE`` **不要**在这里改：只要配置里
+    有 ``TASK_ORDER_GROUP``（GUI 保存必写），这两个字段就完全不参与任务映射，改了
+    没有任何效果。
+
+    Args:
+        task_order_group: 用户配置里的 ``TASK_ORDER_GROUP`` 取值。
+
+    Returns:
+        tuple[dict[str, Any] | None, str]: 新的 ``TASK_ORDER_GROUP`` 与一句说明；
+            结构不符合预期时第一项为 None，调用方不应做任何改动。
+    """
+
+    if not isinstance(task_order_group, dict):
+        return None, "TASK_ORDER_GROUP 不是键值对象, 未调整活动关卡顺序"
+
+    all_pipelines = task_order_group.get("ALL_PIPELINES")
+    activate_ind = task_order_group.get("ACTIVATE_IND")
+    if not isinstance(all_pipelines, list) or not all_pipelines:
+        return None, "TASK_ORDER_GROUP 里没有任务线, 未调整活动关卡顺序"
+    ## bool 是 int 的子类，ACTIVATE_IND 为 True 时会被当成下标 1，先把它挡掉
+    if (
+        not isinstance(activate_ind, int)
+        or isinstance(activate_ind, bool)
+        or not 0 <= activate_ind < len(all_pipelines)
+    ):
+        return None, f"激活任务线下标 {activate_ind!r} 不合法, 未调整活动关卡顺序"
+
+    pipeline = all_pipelines[activate_ind]
+    if not isinstance(pipeline, dict):
+        return None, "激活任务线不是键值对象, 未调整活动关卡顺序"
+
+    task_pipeline = pipeline.get("TASK_PIPELINE")
+    task_onoff = pipeline.get("TASK_ONOFF")
+    if not isinstance(task_pipeline, list) or not isinstance(task_onoff, list):
+        return None, "激活任务线缺少 TASK_PIPELINE / TASK_ONOFF, 未调整活动关卡顺序"
+
+    ## 两个数组长度不齐时以较短的为准：BAAH 读取时会把长的截断、短的补 False，
+    ## 按较短的配对才与它实际执行的任务序列一致，多出来的尾巴原样留在末尾
+    pair_count = min(len(task_pipeline), len(task_onoff))
+    note = ""
+    if len(task_pipeline) != len(task_onoff):
+        note = (
+            f"（TASK_PIPELINE {len(task_pipeline)} 项与 TASK_ONOFF "
+            f"{len(task_onoff)} 项长度不齐, 以较短的 {pair_count} 项配对）"
+        )
+
+    head_tasks: list[Any] = []
+    head_onoff: list[Any] = []
+    rest_tasks: list[Any] = []
+    rest_onoff: list[Any] = []
+    for index in range(pair_count):
+        task = task_pipeline[index]
+        if task == BAAH_EVENT_TASK_NAME:
+            head_tasks.append(task)
+            ## 排到最前的前提是它会被执行，开关必须同时打开
+            head_onoff.append(True)
+        else:
+            rest_tasks.append(task)
+            rest_onoff.append(task_onoff[index])
+
+    if not head_tasks:
+        ## 一条都没有就地插入：只补任务名不补开关，等于插了个不执行的任务
+        head_tasks.append(BAAH_EVENT_TASK_NAME)
+        head_onoff.append(True)
+        note += "（任务线里原本没有活动关卡, 已插入一项并打开）"
+
+    new_pipeline = dict(pipeline)
+    new_pipeline["TASK_PIPELINE"] = head_tasks + rest_tasks + task_pipeline[pair_count:]
+    new_pipeline["TASK_ONOFF"] = head_onoff + rest_onoff + task_onoff[pair_count:]
+
+    new_order_group = dict(task_order_group)
+    new_all_pipelines = list(all_pipelines)
+    new_all_pipelines[activate_ind] = new_pipeline
+    new_order_group["ALL_PIPELINES"] = new_all_pipelines
+    return new_order_group, "已把「活动关卡」排到激活任务线最前" + note
+
 
 class AutoProxyTask(TaskExecuteBase):
     """自动代理模式"""
@@ -125,11 +227,7 @@ class AutoProxyTask(TaskExecuteBase):
         ## 两个总开关在 prepare() 里按脚本配置初始化，这里给出保守默认值
         self.if_manage_config = True
         self.push_log_enabled = True
-        ## 活动适配开关与判定所用的服，在 check() 里按用户配置初始化
-        self.if_activity_adapt = False
-        self.activity_line_type: BlueArchiveLineType = "CN"
-        ## 本次运行实际使用的配置文件名：check() 里确定，prepare() 复用，
-        ## 避免一次任务里重复查询第三方活动排期
+        ## 本次活动使用的配置文件名：check() 里确定，prepare() 复用
         self.effective_config_name: str | None = None
         ## log_box：任务节点采集（受「推送任务节点详情」开关控制，关闭时不创建）
         self.log_collect: LogCollect | None = None
@@ -157,55 +255,23 @@ class AutoProxyTask(TaskExecuteBase):
     async def _resolve_effective_config_name(self) -> str:
         """决定本次运行使用哪份 BAAH 配置文件。
 
-        开启活动适配且当前有进行中的活动时用活动配置，其余情况（未开启、
-        没有活动、排期取不到、活动配置名无效）都用默认配置。
+        只看用户配置里的 ``Info.ConfigName``：活动相关的那份「换配置文件」逻辑已经
+        拆掉，用哪份配置不再随时间变化。
 
         Returns:
             str: 规范化后的配置名。
 
         Raises:
-            ValueError: 默认配置名为空或含路径分隔符。
+            ValueError: 配置名为空或含路径分隔符。
         """
 
         if self.effective_config_name is not None:
             return self.effective_config_name
 
-        self.if_activity_adapt = bool(
-            self.cur_user_config.get("Info", "IfActivityAdapt")
-        )
-        self.activity_line_type = self.cur_user_config.get("Info", "ActivityLineType")
-
-        default_name = resolve_config_name(
-            str(self.cur_user_config.get("Info", "ConfigName"))
-        )
-        self.effective_config_name = default_name
-
         ## or "" 兜住 None：str(None) 会得到 "None"，被当成配置名去找 None.json
-        activity_name = (
-            self.cur_user_config.get("Info", "ActivityConfigName") or ""
-        ).strip()
-        if not self.if_activity_adapt or not activity_name:
-            return self.effective_config_name
-
-        running = await has_running_activity(self.activity_line_type)
-        if running is None:
-            logger.warning("未取到碧蓝档案活动排期, 本次使用默认配置文件运行")
-            return self.effective_config_name
-
-        if not running:
-            logger.info("碧蓝档案当前没有进行中的活动, 使用默认配置文件运行")
-            return self.effective_config_name
-
-        try:
-            activity_config_name = resolve_config_name(activity_name)
-        except ValueError as e:
-            logger.warning(f"活动配置文件名称 {e}, 本次使用默认配置文件运行")
-            return self.effective_config_name
-
-        logger.info(
-            f"碧蓝档案当前有进行中的活动, 使用活动配置文件 {activity_config_name}"
+        self.effective_config_name = resolve_config_name(
+            str(self.cur_user_config.get("Info", "ConfigName") or "")
         )
-        self.effective_config_name = activity_config_name
         return self.effective_config_name
 
     async def check(self) -> str:
@@ -257,7 +323,7 @@ class AutoProxyTask(TaskExecuteBase):
         self.push_log_enabled = bool(self.script_config.get("Script", "PushLogEnabled"))
         self.log_collect = None
 
-        ## 配置文件名在 check() 里已按活动排期定好，这里复用同一结果
+        ## 配置文件名在 check() 里已解析并缓存，这里复用同一结果
         config_name = await self._resolve_effective_config_name()
         self.user_config_path = resolve_user_config_path(self.config_dir, config_name)
 
@@ -384,6 +450,115 @@ class AutoProxyTask(TaskExecuteBase):
             "TARGET_PORT": int(port) if port.isdigit() else port,
         }
 
+    def _plan_stage_runtime_values(self) -> dict[str, Any]:
+        """按用户选的关卡计划表覆盖 BAAH 的六类关卡配置。
+
+        ``Info.StageMode`` 为 ``Fixed`` 时**一个字节都不动**，用户在 BAAH 界面里自己配的
+        多天轮换原样保留；选了计划表才用计划表当天那一格的 key 覆盖。
+
+        计划表一天的 key 里，六个字段各有三种状态，写进 BAAH 的方式也不同：
+        缺席（字段不在 key 里）＝这一项根本不写，BAAH 沿用自己配置里的关卡与开关；
+        空数组＝今天这一类不打，直接写空数组（BAAH 六类都用「数组长度不为 0」判断
+        要不要做，空数组会被它跳过）；有值＝按下面的单元素数组写。
+
+        **有值时这六个字段都必须写成单元素数组**：BAAH 取槽位的方式是
+        ``time.localtime().tm_mday % len(数组)``（本月第几天对数组长度取模）。数组长度
+        为 1 时 ``today % 1 == 0``，永远命中第 0 项，「今天打什么」就完全由计划表决定；
+        若照抄计划表那套多天数组，1~31 号会与计划表的「周几」整体错位，每天都在打别的
+        天该打的关卡。空数组同样不能包成单元素数组：BAAH 会把那个空列表当成当天的
+        关卡列表去跑，而不是「今天不打」。
+        """
+
+        stage_mode = str(self.cur_user_config.get("Info", "StageMode"))
+        if stage_mode == "Fixed":
+            return {}
+
+        try:
+            plan = Config.PlanConfig[uuid.UUID(stage_mode)]
+        except (KeyError, ValueError) as e:
+            logger.warning(
+                f"未找到关卡计划表 {stage_mode}, 本次按 BAAH 里的关卡配置运行: {e}"
+            )
+            return {}
+
+        if not isinstance(plan, BAAHPlanConfig):
+            logger.warning(
+                f"关卡计划表 {stage_mode} 不是 BAAH 计划表"
+                f"({type(plan).__name__}), 本次按 BAAH 里的关卡配置运行"
+            )
+            return {}
+
+        try:
+            key = plan.get_current_key()
+        except (KeyError, TypeError) as e:
+            logger.warning(
+                f"关卡计划表 {stage_mode} 取不到当天关卡, "
+                f"本次按 BAAH 里的关卡配置运行: {e}"
+            )
+            return {}
+
+        if not isinstance(key, dict):
+            logger.warning(
+                f"关卡计划表 {stage_mode} 当天的 key 不是键值对象, "
+                "本次按 BAAH 里的关卡配置运行"
+            )
+            return {}
+
+        runtime_values: dict[str, Any] = {}
+        for field, option_name in BAAH_STAGE_OPTIONS.items():
+            if field not in key:
+                ## 缺席：这一项不写，不覆盖 BAAH 自己配置里的关卡与开关
+                continue
+
+            stage_value = key[field]
+            if not stage_value:
+                ## 空数组：今天不打这一类
+                runtime_values[option_name] = []
+                continue
+
+            runtime_values[option_name] = [[stage_value]]
+
+        return runtime_values
+
+    async def _event_first_runtime_values(self) -> dict[str, Any]:
+        """活动关优先：碧蓝档案有进行中的活动时，把「活动关卡」排到任务线最前。
+
+        只有 ``Info.IfEventFirst`` 为真、且 ``Info.ActivityLineType`` 所指的服**确实**
+        有进行中的活动才动手。取不到排期（None）与确实没有活动（False）都必须一个字节
+        都不改：把「取不到」当成「没有活动」会顺手删掉用户已经排好的活动关任务。
+        """
+
+        if not bool(self.cur_user_config.get("Info", "IfEventFirst")):
+            return {}
+
+        line_type: BlueArchiveLineType = self.cur_user_config.get(
+            "Info", "ActivityLineType"
+        )
+        running = await has_running_activity(line_type)
+        if running is None:
+            logger.warning("未取到碧蓝档案活动排期, 本次不调整活动关卡顺序")
+            return {}
+
+        if not running:
+            logger.info("碧蓝档案当前没有进行中的活动, 本次不调整活动关卡顺序")
+            return {}
+
+        try:
+            user_config = read_json(self.user_config_path)
+        except Exception as e:
+            logger.opt(exception=True).warning(
+                f"读取 BAAH 配置失败, 本次不调整活动关卡顺序: {e}"
+            )
+            return {}
+
+        updated, note = prioritize_event_quest(user_config.get("TASK_ORDER_GROUP"))
+        if updated is None:
+            logger.warning(f"活动关优先已跳过: {note}")
+            return {}
+
+        logger.info(f"碧蓝档案当前有进行中的活动, {note}")
+        return {"TASK_ORDER_GROUP": updated}
+
     async def run_once(self) -> None:
         """执行一次 BAAH 运行。
 
@@ -396,21 +571,31 @@ class AutoProxyTask(TaskExecuteBase):
         if not await self._ensure_emulator_online():
             return
 
+        ## 关卡计划表与活动关优先是用户在用户页单独打开的开关，与「托管 BAAH
+        ## 运行配置」无关：托管没开时它们照样要在本次运行生效。两者都只在这一次
+        ## 运行里成立，所以仍然走托管项写盘、跑完由 restore_managed_config 还原
+        runtime_values = self._plan_stage_runtime_values()
+        runtime_values.update(await self._event_first_runtime_values())
+
         if self.if_manage_config:
+            ## 模拟器地址属于「接管」范畴，只在开了托管时注入
+            runtime_values.update(self._emulator_runtime_values())
+
+        if not runtime_values:
+            ## 既没开托管、也没开计划表 / 活动关优先：BAAH 完全按自己的配置跑
+            logger.info("本次运行没有需要写入 BAAH 配置的取值, 跳过配置托管")
+        else:
             try:
                 self.managed_backup = apply_managed_config(
                     self.user_config_path,
-                    self.software_config_path,
-                    self._emulator_runtime_values(),
+                    self.software_config_path if self.if_manage_config else None,
+                    runtime_values,
+                    include_managed=self.if_manage_config,
                 )
             except Exception as e:
                 logger.opt(exception=True).warning(f"写入 BAAH 托管配置失败: {e}")
                 await self.handle_pre_script_error("写入 BAAH 托管配置失败", e)
                 return
-        else:
-            ## 用户关闭了配置托管：模拟器地址等运行期取值也不再注入，
-            ## BAAH 完全按它自己的配置文件运行
-            logger.info("未开启「托管 BAAH 运行配置」, 跳过配置托管")
 
         try:
             await self._run_launched()

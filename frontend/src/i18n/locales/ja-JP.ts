@@ -1654,25 +1654,20 @@ export default {
       '実行中にログの更新が止まってから待つ最大時間（分）。超えると実行失敗として扱います',
     baahConfigName: '既定の設定名',
     baahConfigNameHint:
-      '通常使用する BAAH 設定です。本ソフトはこれを使って BAAH.exe <名前>.json を起動します。イベント対応を有効にすると、イベント期間中は「イベント期間中の設定ファイル名」に置き換わります',
+      '通常使用する BAAH 設定です。本ソフトはこれを使って BAAH.exe <名前>.json を起動します',
     baahConfigNamePlaceholder: '通常使用する設定を選択してください',
-    baahActivityConfigName: 'イベント期間中の設定ファイル名',
-    baahActivityConfigNameHint:
-      '上の「イベント対応」を有効にすると、ブルーアーカイブで開催中のイベントがある間はこの設定で BAAH を起動します。空欄の場合やイベント日程を取得できない場合は既定の設定名を使用します',
-    baahActivityConfigNamePlaceholder: '空欄の場合は常に既定の設定を使用します',
-    baahIfActivityAdapt: 'イベント対応',
-    baahIfActivityAdaptHint:
-      '有効にするとブルーアーカイブのイベント日程に応じて設定ファイルを切り替えます。イベント中は「イベント期間中の設定ファイル名」、イベントがないときは「既定の設定名」を使用します',
+    baahStageMode: 'ステージプラン',
+    baahStageModeHint:
+      'プランに従って日ごとに挑むステージを決めます。「固定」を選ぶと BAAH 側で設定したステージ構成のまま実行します。プランには毎日同じ内容の全体モードと、曜日ごとの週間モードがあります',
+    baahIfEventFirst: 'イベントステージ優先',
+    baahIfEventFirstHint:
+      'ブルーアーカイブで開催中のイベントがある間、「イベントステージ」のタスクを先頭に移動して有効にします。イベントがない場合や日程を取得できない場合はタスク順を変更しません',
     baahActivityLineType: 'イベント日程のサーバー',
     baahActivityLineTypeHint:
-      'どのサーバーの日程でイベントの有無を判定するかを選びます。サーバーごとにイベント時期が異なるため、お使いのアカウントのサーバーを選んでください',
+      'どのサーバーの日程でイベントの有無を判定するかを選びます。サーバーごとにイベント時期が異なるため、お使いのアカウントのサーバーを選んでください。「イベントステージ優先」もここで選んだサーバーで開催中かどうかを判定します',
     baahActivityLineCN: '中国版',
     baahActivityLineJP: '日本版',
     baahActivityLineGloble: 'グローバル版',
-    baahActivityRunning: '開催中：',
-    baahActivityUpcoming: '次のイベント：',
-    baahActivityNone: '現在開催中または開始予定のイベントはありません',
-    baahActivityUnavailable: 'イベント日程を取得できませんでした',
     baahUserTag: 'ユーザータグ',
     baahUserTagHint: '本ソフトが実行状況に応じて自動生成します。閲覧のみ',
     baahLastProxyDate: '前回の実行日',
@@ -2807,10 +2802,18 @@ export default {
     viewLabel: '表示：',
     viewConfig: '設定ビュー',
     viewSimple: '簡易ビュー',
+    // ステージ編成：BAAH プランの 2 通りの並べ方
+    baahLayout: {
+      label: '形式：',
+      mixed: '複数種類',
+      single: '1日1種類',
+      emptyOption: 'なし',
+    },
     typeFallback: 'プラン',
     type: {
       maa: 'MAA プラン',
       maaEnd: 'MaaEnd プラン',
+      baah: 'BAAH プラン',
       mss: 'MSS プラン',
     },
     week: {
@@ -2844,6 +2847,42 @@ export default {
       stagePlaceholder: 'ステージ番号を入力',
       noSwitch: '変更しない',
       usedSuffix: '{label}（選択済み）',
+    },
+    // BAAH ステージプラン：6 種類のステージは各桁の意味が固定なので、ヒントに何の桁かと -1 の可否を書く
+    baah: {
+      event: 'イベントステージ',
+      wanted: '懸賞手配',
+      special: '特殊任務',
+      exchange: '学園交流会',
+      hard: 'ハードステージ',
+      normal: 'ノーマルステージ',
+      eventHint: 'イベントステージ：ステージ番号 / 掃討回数（-1 = 最大）',
+      wantedHint: '懸賞手配：エリア / ステージ（-1 = 最後のステージ）/ 回数（-1 = 最大）',
+      specialHint: '特殊任務：エリア / ステージ（-1 = 最後のステージ）/ 回数（-1 = 最大）',
+      exchangeHint: '学園交流会：学園 / ステージ（-1 = 最後のステージ）/ 回数（-1 = 最大）',
+      hardHint: 'ハードステージ：章 / ステージ / 回数（-1 = 最大）。ステージに -1 は使えません',
+      normalHint: 'ノーマルステージ：章 / ステージ / 回数（-1 = 最大）。ステージに -1 は使えません',
+      partStageIndex: 'ステージ番号',
+      partTimes: '回数',
+      partRegion: 'エリア',
+      partLevelHighest: 'ステージ',
+      partLevel: 'ステージ',
+      partAcademy: '学園',
+      partChapter: '章',
+      partLevelZeroFixed: 'ステージは -1（最後のステージ）または 1 以上のみです。1 に変更しました',
+      // 1 日 1 種類のレイアウトは 1 行につき 1 項目なので、ヒントにその行の範囲を書く
+      rowKind: 'ステージ選択',
+      rowStage: 'ステージ名',
+      rowTimes: '戦闘回数',
+      rowKindHint: '今日やるステージ種別。「なし」なら 6 種類とも実行しません',
+      rowStageHint:
+        'その種別で具体的にどのステージをやるか。懸賞手配・特殊任務・学園交流会は「最後から1番目」（掃討できる最後のステージ。掃討できなければ 1 つ前へ戻る）が選べ、ハードとノーマルは具体的な番号のみ',
+      rowTimesHint: 'この種別を何回やるか。「最大回数」で残りを一度に消化します',
+      // -1 を表す選択肢：ステージは掃討できる最後のステージ、回数は最大
+      stageHighest: '最後から1番目',
+      timesMax: '最大回数',
+      // 複数種類レイアウトで各種別の上に付くスイッチ
+      partEnabled: '有効',
     },
     toast: {
       created: '新しい{type}「{name}」を作成しました',

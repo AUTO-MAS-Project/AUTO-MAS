@@ -218,6 +218,8 @@ def apply_managed_config(
     user_config_path: Path,
     software_config_path: Path | None,
     runtime_values: dict[str, Any] | None = None,
+    *,
+    include_managed: bool = True,
 ) -> ManagedConfigBackup:
     """写入托管项并返回恢复所需的快照。
 
@@ -226,6 +228,10 @@ def apply_managed_config(
         software_config_path: BAAH 软件配置文件路径，None 表示不托管软件配置。
         runtime_values: 本次运行才确定的托管项，会覆盖同名静态托管项，
             例如模拟器调度解析出的 ADB 地址。
+        include_managed: 是否连同静态托管项一起写入。用户关掉「托管 BAAH
+            运行配置」时传 False：那时只写调用方显式给出的 runtime_values
+            （关卡计划表、活动关优先这类用户单独打开的功能），不接管他的
+            其余运行配置。
 
     Returns:
         ManagedConfigBackup: 运行结束后交回 ``restore_managed_config`` 的快照。
@@ -249,7 +255,8 @@ def apply_managed_config(
         backup.software_config_existed = software_config_path.exists()
         backup.software_config = dict(software_config)
 
-    managed_values = dict(MANAGED_USER_VALUES)
+    ## include_managed 为 False 时不碰静态托管项，只写调用方显式指定的那几项
+    managed_values = dict(MANAGED_USER_VALUES) if include_managed else {}
     if runtime_values:
         managed_values.update(runtime_values)
 

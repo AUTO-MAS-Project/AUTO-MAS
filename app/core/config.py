@@ -58,6 +58,7 @@ from app.models.config import (
     CLASS_BOOK,
     PLAN_BOOK,
     BAAHConfig,
+    BAAHPlanConfig,
     BAAHUserConfig,
     BetterGIConfig,
     BetterGIUserConfig,
@@ -3777,8 +3778,10 @@ class AppConfig(GlobalConfig):
         }
 
     async def add_plan(
-        self, script: Literal["MaaPlan", "MaaEndPlan", "MSSPlan"]
-    ) -> tuple[uuid.UUID, MaaPlanConfig | MaaEndPlanConfig | MSSPlanConfig]:
+        self, script: Literal["MaaPlan", "MaaEndPlan", "BAAHPlan", "MSSPlan"]
+    ) -> tuple[
+        uuid.UUID, MaaPlanConfig | MaaEndPlanConfig | BAAHPlanConfig | MSSPlanConfig
+    ]:
         """添加计划表"""
 
         logger.info(f"添加计划表: {script}")
@@ -3825,7 +3828,9 @@ class AppConfig(GlobalConfig):
             raise TypeError(f"不支持的计划表配置类型: {plan_type}")
 
         consumer_config = PLAN_BOOK[plan_type]
-        user_list: list[MaaUserConfig | MaaEndUserConfig | MSSUserConfig] = []
+        user_list: list[
+            MaaUserConfig | MaaEndUserConfig | BAAHUserConfig | MSSUserConfig
+        ] = []
 
         for script in self.ScriptConfig.values():
             if not isinstance(script, consumer_config["script_class"]):

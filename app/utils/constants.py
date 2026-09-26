@@ -50,8 +50,8 @@ TYPE_BOOK = {
 }
 """配置类型映射表"""
 
-PLAN_CONSUMER_VALUES = ("maa", "maaend", "mss")
-"""计划表消费方列表"""
+PLAN_CONSUMER_VALUES = ("maa", "maaend", "baah", "mss")
+"""计划表消费方列表；PLAN_BOOK 按下标引用此项，新消费方只能追加到末尾"""
 
 MSS_TRIBULATION_STAGES = (
     "基础试炼",
