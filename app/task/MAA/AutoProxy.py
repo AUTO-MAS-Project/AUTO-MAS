@@ -280,7 +280,9 @@ def _without_maa_update_changes(current: dict, baseline: dict, name: str) -> dic
         current_node: object = current
         baseline_node: object = baseline
         for key in path[:-1]:
-            if not isinstance(current_node, dict) or not isinstance(baseline_node, dict):
+            if not isinstance(current_node, dict) or not isinstance(
+                baseline_node, dict
+            ):
                 break
             current_node = current_node.get(key)
             baseline_node = baseline_node.get(key)
@@ -292,6 +294,7 @@ def _without_maa_update_changes(current: dict, baseline: dict, name: str) -> dic
                 else:
                     current_node.pop(key, None)
     return current
+
 
 _MAA_GUI_SKELETON: dict[str, dict] = {
     "gui.json": {"Current": "Default", "Global": {}, "Configurations": {"Default": {}}},
