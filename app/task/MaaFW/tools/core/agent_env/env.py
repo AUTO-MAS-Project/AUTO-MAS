@@ -4,6 +4,7 @@ import hashlib
 import json
 import logging
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -16,7 +17,7 @@ from typing import Callable
 from packaging.version import InvalidVersion, Version
 
 from ..runtime_pool import runtime_managed_uv_executable
-from ..runtime_pool._shared import remove_tree_best_effort
+from ..runtime_pool._shared import output_tail, remove_tree_best_effort
 from ..runtime_pool.host_environment import (
     EMBEDDED_COPIES_DIR_PARTS,
     set_project_pycache_prefix,
@@ -40,6 +41,11 @@ PIP_INSTALL_TIMEOUT = 120
 # pip install 本身单独给足余量：与运行池的 RUNTIME_INSTALL_TIMEOUT_SECONDS 对齐，
 # 且每个镜像候选各享一次完整超时。venv 创建与 ensurepip 仍用上面那个。
 PIP_INSTALL_PER_INDEX_TIMEOUT = 300
+# 与 runner.DETAIL_LOG_PREFIX 同一个前缀（runner.py 会 import maa，这里不能引它）：
+# worker 里宿主据此只写进 .worker.log，宿主侧的更新日志据此只写后端日志，都不上界面。
+DETAIL_LOG_PREFIX = "[MaaFW 详情] "
+# 完整输出进详情日志时的上限（按结尾截），挡住异常情况下的超长输出。
+DETAIL_OUTPUT_LIMIT = 20000
 VENV_PROBE_TIMEOUT = 30
 # uv 兜底可能需要下载 managed Python,给足余量
 UV_VENV_TIMEOUT = 300
@@ -215,17 +221,21 @@ def _prepare_project_python_env(
 ) -> None:
     log(f"[Python环境] 检测项目 Python: {python_exe}")
     test_env = _build_project_python_probe_env(python_exe, project_path)
-    if _check_project_python_health(
+    healthy, reason = _check_project_python_health(
         python_exe,
         cwd=str(project_path),
         env=test_env,
         log=log,
-    ):
+    )
+    if healthy:
         _repin_project_python_binding(python_exe, project_path, test_env, log)
         return
 
+    # 原因放第一行：任务结果与预检失败通知只取报错的第一行，还各自再截 200 / 120 字，
+    # 所以项目目录换成 <项目>，免得长安装路径把原因挤掉。
+    reason = _project_relative_text(reason, project_path)
     raise MaaFWAgentEnvError(
-        "项目 Python 或 MaaFW Agent 模块不可用，请修复项目包后重试：\n"
+        f"项目 Python 或 MaaFW Agent 模块不可用（{reason}），请修复项目包后重试：\n"
         f"  Python 路径: {python_exe}\n"
         "  处理建议:\n"
         "    方法1: 重新下载并解压完整 MaaFW 项目包\n"
@@ -384,7 +394,9 @@ def _repin_project_python_binding(
     if stash is not None and not remove_tree_best_effort(stash):
         log(f"[Python环境] 临时目录没删干净，留在 {stash}")
     if not ok:
-        log(f"[Python环境] binding 钉回失败，agent 可能连不上: {detail[:200]}")
+        log(
+            f"[Python环境] binding 钉回失败，agent 可能连不上: {output_tail(detail, 200)}"
+        )
     else:
         log(
             f"[Python环境] 钉回后读到的 binding 仍是 {pinned or '未知'}，与原生库 {native} "
@@ -583,7 +595,7 @@ def _ensure_isolated_venv(
         if result.returncode != 0:
             detail = (result.stderr or result.stdout or "").strip()
             raise MaaFWAgentEnvError(
-                f"创建隔离 venv 失败 (exit={result.returncode}): {detail[:500]}"
+                f"创建隔离 venv 失败 (exit={result.returncode}): {output_tail(detail, 500)}"
             )
     if not _is_valid_venv_path(venv_path):
         raise MaaFWAgentEnvError(f"创建隔离 venv 后结构不完整: {venv_path}")
@@ -618,7 +630,7 @@ def _create_venv_with_uv(venv_path: Path, log: Callable[[str], None]) -> None:
     if result.returncode != 0:
         detail = (result.stderr or result.stdout or "").strip()
         raise MaaFWAgentEnvError(
-            f"uv 创建隔离 venv 失败 (exit={result.returncode}): {detail[:500]}"
+            f"uv 创建隔离 venv 失败 (exit={result.returncode}): {output_tail(detail, 500)}"
         )
 
 
@@ -789,6 +801,9 @@ def _build_project_python_probe_env(
     binding 就去开不存在的 ``maa/bin``、抛 ``FileNotFoundError``，把能跑的副本判成坏的，
     更新预检也因此永远过不去。所以 ``maa/bin`` 不在、项目自带的原生库又齐时，检查
     也指过去；``maa/bin`` 在时不动，照旧用 wheel 自带那份。
+
+    问题包导出（``frontend/electron/services/maafwProjectRuntimeProbe.ts``）按同一判据
+    再跑一次这个检查，改判据时两边一起改。
     """
 
     env = _build_agent_env_for_pip(project_path)
@@ -805,12 +820,31 @@ def _build_project_python_probe_env(
     return env
 
 
-def _output_tail(text: str, limit: int) -> str:
-    """长输出只留结尾：traceback 的异常类型与消息在最后一行，截开头恰好把它丢掉。"""
+def _project_relative_text(text: str, project_path: Path) -> str:
+    """把文本里的项目目录（大小写不敏感）换成 ``<项目>``。
 
-    if len(text) <= limit:
+    OSError 系异常用 repr 显示路径，反斜杠成对，原样、正斜杠、成对反斜杠三种都认。
+    """
+
+    root = str(project_path)
+    if not root:
         return text
-    return "…" + text[-limit:]
+    for variant in dict.fromkeys(
+        (root.replace("\\", "\\\\"), root, root.replace("\\", "/"))
+    ):
+        text = re.sub(
+            re.escape(variant), lambda _match: "<项目>", text, flags=re.IGNORECASE
+        )
+    return text
+
+
+def _last_output_line(text: str) -> str:
+    """输出的最后一个非空行：traceback 里就是异常类型与消息。"""
+
+    for line in reversed(text.splitlines()):
+        if line.strip():
+            return line.strip()
+    return ""
 
 
 def _check_pip_health(
@@ -834,7 +868,7 @@ def _check_pip_health(
         if result.returncode != 0:
             detail = (result.stderr or result.stdout or "").strip()
             log(
-                f"[Python环境] pip --version 失败 (exit={result.returncode}): {detail[:500]}"
+                f"[Python环境] pip --version 失败 (exit={result.returncode}): {output_tail(detail, 500)}"
             )
             return False
 
@@ -861,7 +895,7 @@ def _check_pip_health(
             log("[Python环境] pip install 子命令加载失败（backports.zstd 冲突）")
         else:
             log(
-                f"[Python环境] pip install 检测失败 (exit={install_check.returncode}): {detail[:500]}"
+                f"[Python环境] pip install 检测失败 (exit={install_check.returncode}): {output_tail(detail, 500)}"
             )
         return False
     except subprocess.TimeoutExpired:
@@ -878,8 +912,13 @@ def _check_project_python_health(
     cwd: str | None,
     env: dict[str, str],
     log: Callable[[str], None],
-) -> bool:
-    """Probe a project-owned Agent runtime without requiring or invoking pip."""
+) -> tuple[bool, str]:
+    """Probe a project-owned Agent runtime without requiring or invoking pip.
+
+    返回 ``(是否健康, 失败原因)``。失败原因是一行（traceback 的最后一行），进界面与
+    报错文案；完整输出逐行带 :data:`DETAIL_LOG_PREFIX` 记下，只进 ``.worker.log`` /
+    后端日志，问题包里能看到整段 traceback。
+    """
 
     probe = (
         "import sys; "
@@ -898,26 +937,30 @@ def _check_project_python_health(
             env=env,
         )
     except subprocess.TimeoutExpired:
-        log(
-            "[Python环境] 项目 Python/Agent 健康检查超时 "
-            f"({PROJECT_PYTHON_HEALTH_TIMEOUT}s)"
-        )
-        return False
+        reason = f"健康检查超时 ({PROJECT_PYTHON_HEALTH_TIMEOUT}s)"
+        log(f"[Python环境] 项目 Python/Agent {reason}")
+        return False, reason
     except Exception as exc:
-        log(f"[Python环境] 项目 Python/Agent 健康检查异常: {exc}")
-        return False
+        reason = f"健康检查异常: {exc}"
+        log(f"[Python环境] 项目 Python/Agent {reason}")
+        return False, reason
 
     if result.returncode == 0:
         detail = (result.stdout or "").strip()
         log(f"[Python环境] 项目 Python/Agent 健康: {detail or python_exe}")
-        return True
+        return True, ""
 
     detail = (result.stderr or result.stdout or "").strip()
+    reason = output_tail(_last_output_line(detail), 500) or f"exit={result.returncode}"
     log(
         "[Python环境] 项目 Python/Agent 健康检查失败 "
-        f"(exit={result.returncode}): {_output_tail(detail, 500)}"
+        f"(exit={result.returncode}): {reason}"
     )
-    return False
+    if detail:
+        log(f"{DETAIL_LOG_PREFIX}项目 Python/Agent 健康检查完整输出（{python_exe}）:")
+        for line in output_tail(detail, DETAIL_OUTPUT_LIMIT).splitlines():
+            log(f"{DETAIL_LOG_PREFIX}{line}")
+    return False, reason
 
 
 def _try_ensurepip(
@@ -945,7 +988,7 @@ def _try_ensurepip(
             log("[Python环境] ensurepip 修复成功")
             return True
         detail = (result.stderr or result.stdout or "").strip()
-        log(f"[Python环境] ensurepip 未成功: {detail[:300]}")
+        log(f"[Python环境] ensurepip 未成功: {output_tail(detail, 300)}")
     except subprocess.TimeoutExpired:
         log(f"[Python环境] ensurepip 超时 ({PIP_INSTALL_TIMEOUT}s)")
     except Exception as exc:
@@ -1044,12 +1087,14 @@ def _pip_install(
                             "[Python环境] 解释器不带 pip（embeddable 发行版），"
                             "也找不到可用的 uv，无法安装"
                         )
-                        return False, last_detail[:300]
+                        return False, output_tail(last_detail, 300)
                     log(
                         "[Python环境] 解释器不带 pip（embeddable 发行版），改用 uv 安装"
                     )
                     continue
-                log(f"[Python环境] {tool} 未成功 ({label}): {last_detail[:300]}")
+                log(
+                    f"[Python环境] {tool} 未成功 ({label}): {output_tail(last_detail, 300)}"
+                )
             except subprocess.TimeoutExpired:
                 last_detail = f"{label} 超时 ({PIP_INSTALL_PER_INDEX_TIMEOUT}s)"
                 log(
@@ -1059,12 +1104,12 @@ def _pip_install(
                 # 起不了子进程（venv 被删、python.exe 不在了）与索引无关，别再轮换。
                 last_detail = f"无法启动 {command[0]}: {exc}"
                 log(f"[Python环境] {tool} 无法启动 ({label}): {exc}")
-                return False, last_detail[:300]
+                return False, output_tail(last_detail, 300)
             except Exception as exc:
                 last_detail = f"{label}: {exc}"
                 log(f"[Python环境] {tool} 异常 ({label}): {exc}")
             break
-    return False, last_detail[:300]
+    return False, output_tail(last_detail, 300)
 
 
 def _python_supports_venv(python: str) -> bool:

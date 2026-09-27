@@ -37,6 +37,7 @@ from app.task.MaaFW.api_service.common import (
     maafw_script_config,
 )
 from app.task.MaaFW.api_service.embedded import embedded_summary_lines
+from app.task.MaaFW.tools.core.agent_env.env import DETAIL_LOG_PREFIX
 from app.task.MaaFW.tools.core.interface.loader import (
     MaaFWInterfaceLoadError,
     load_interface_model_cached,
@@ -161,6 +162,10 @@ async def prepare_agent_env(
         )
 
     def append_log(line: str) -> None:
+        if str(line).startswith(DETAIL_LOG_PREFIX):
+            # 详情行（健康检查的完整 traceback）只进后端日志，不进面板
+            _maafw_env_logger.info(sanitize_log_message(str(line)))
+            return
         logs.append(line)
         publish_progress(
             {
