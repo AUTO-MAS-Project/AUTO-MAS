@@ -252,37 +252,6 @@ def _has_completed_sanity_task(log_records: list[LogRecord]) -> bool:
 
 
 _MAA_CONFIG_FILES = ("gui.json", "gui.new.json")
-_MUMU_EXTRAS_KEY = "MuMuEmulator12"
-
-
-def _mumu_install_path(manager_path: str) -> str:
-    """Derive MAA's MuMu install directory from the manager executable."""
-    manager = Path(manager_path)
-    parent = manager.parent
-    if parent.name.casefold() == "nx_main":
-        parent = parent.parent
-    return str(parent)
-
-
-def _configure_mumu_screenshot_enhancement(gui_new_set: dict, device: dict) -> None:
-    gui = gui_new_set["Configurations"]["Default"].setdefault("Gui", {})
-    connect = gui.setdefault("ConnectSettings", {})
-    extras = connect.setdefault("Extras", {})
-    mumu = extras.setdefault(_MUMU_EXTRAS_KEY, {})
-    mumu.update({"IsEnabled": True, **device})
-
-
-def _without_temporary_mumu_extras(config: dict, device: dict | None) -> dict:
-    if device is None:
-        return config
-    gui = config.get("Configurations", {}).get("Default", {}).get("Gui", {})
-    connect = gui.get("ConnectSettings", {}) if isinstance(gui, dict) else {}
-    extras = connect.get("Extras", {}) if isinstance(connect, dict) else {}
-    mumu = extras.get(_MUMU_EXTRAS_KEY) if isinstance(extras, dict) else None
-    if isinstance(mumu, dict):
-        mumu.pop("EmulatorPath", None)
-        mumu.pop("InstanceIndex", None)
-    return config
 
 
 # 每次注入都由 MAS 决定、不从存档取值的任务字段: MAA 运行期改了也不回写。
@@ -444,42 +413,6 @@ def _merge_task_queue(
                 )
             changed = True
     return changed
-
-
-def _mumu_install_path(manager_path: str) -> str:
-    """Derive MAA's MuMu install directory from the manager executable."""
-    manager = Path(manager_path)
-    parent = manager.parent
-    if parent.name.casefold() == "nx_main":
-        parent = parent.parent
-    return str(parent)
-
-
-def _configure_mumu_screenshot_enhancement(gui_new_set: dict, device: dict) -> None:
-    gui = gui_new_set["Configurations"]["Default"].setdefault("Gui", {})
-    connect = gui.setdefault("ConnectSettings", {})
-    extras = connect.setdefault("Extras", {})
-    mumu = extras.setdefault(_MUMU_EXTRAS_KEY, {})
-    mumu.update({"IsEnabled": True, **device})
-
-
-def _without_temporary_mumu_extras(config: dict, device: dict | None) -> dict:
-    if device is None:
-        return config
-    gui = (
-        config.get("Configurations", {})
-        .get("Default", {})
-        .get("Gui", {})
-    )
-    connect = gui.get("ConnectSettings", {})
-    extras = connect.get("Extras", {}) if isinstance(connect, dict) else {}
-    mumu = extras.get(_MUMU_EXTRAS_KEY) if isinstance(extras, dict) else None
-    if isinstance(mumu, dict):
-        mumu.pop("EmulatorPath", None)
-        mumu.pop("InstanceIndex", None)
-        if not mumu:
-            extras.pop(_MUMU_EXTRAS_KEY, None)
-    return config
 
 
 def _merge_maa_changes(
@@ -934,7 +867,6 @@ class AutoProxyTask(TaskExecuteBase):
         self.if_game_hot_update = False
         self.pending_res_version = ""
         self._maa_config_baseline: dict[str, dict] | None = None
-        self._maa_temporary_extras: dict[str, str] | None = None
         # 养成采集：本轮是否采到过识别数据（每类以最后一次标记为准覆盖档案，
         # 见 _collect_cultivate_archive）；
         # 达成文案供 final_task 的统计信息报告，按 (干员, 档位) 去重累积
@@ -1501,18 +1433,6 @@ class AutoProxyTask(TaskExecuteBase):
         ):
             await self._apply_maa_quick_config(gui_new_set)
         self._configure_maa_runtime(gui_set, gui_new_set, emulator_info)
-        self._maa_temporary_extras = None
-        device_ref = self.emulator_manager.resolve_device(
-            self.script_config.get("Emulator", "Index")
-        )
-        if device_ref is not None and device_ref.emulator_type == "mumu":
-            self._maa_temporary_extras = {
-                "EmulatorPath": _mumu_install_path(device_ref.manager_path),
-                "InstanceIndex": int(device_ref.native_index),
-            }
-            _configure_mumu_screenshot_enhancement(
-                gui_new_set, self._maa_temporary_extras
-            )
 
         write_file(self.maa_set_path / "gui.json", gui_set)
         write_file(self.maa_set_path / "gui.new.json", gui_new_set)
@@ -1876,10 +1796,7 @@ class AutoProxyTask(TaskExecuteBase):
 
         try:
             self._maa_config_baseline = {
-                name: _without_temporary_mumu_extras(
-                    deepcopy(read_file(self.maa_set_path / name)),
-                    self._maa_temporary_extras,
-                )
+                name: deepcopy(read_file(self.maa_set_path / name))
                 for name in _MAA_CONFIG_FILES
             }
         except Exception as e:
@@ -1926,9 +1843,7 @@ class AutoProxyTask(TaskExecuteBase):
             if not baseline.get(name):
                 continue
             try:
-                current = _without_temporary_mumu_extras(
-                    read_file(self.maa_set_path / name), self._maa_temporary_extras
-                )
+                current = read_file(self.maa_set_path / name)
                 current = _without_maa_update_changes(current, baseline[name], name)
                 archive = read_file(archive_dir / name)
             except Exception as e:
