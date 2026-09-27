@@ -435,7 +435,7 @@ export default {
     okWwSetupFailed: 'ok-ww setup failed: {p0}',
     p0NotValidJson: '{p0} is not valid JSON',
     p0MustSitUnder: '{p0} must sit under the script root directory or AppData',
-    p0HasNoMatch: '{p0} has no match pattern, so it was saved as disabled',
+    p0HasNoMatch: '{p0} has no match pattern and will not take effect',
     matchPatternP0Has: 'The match pattern of {p0} has a syntax error and will not run',
     p0MissingRequiredField:
       '{p0} is missing a required field and was saved as disabled: split/regex needs a match keyword or pattern, multiline needs a start pattern',
@@ -1201,11 +1201,11 @@ export default {
     whenTaskProgressCollected:
       'When on, task progress is collected from the script log with the rules below and appended to the report. Three extraction modes are supported; for each log line the first matching rule wins, and everything is pushed together.',
     rulesApplyOnlyWhen:
-      'Rules apply only when this is on; turning it off keeps the configuration but behaves as if no hook were set',
+      'Rules apply only when this is on; turning it off keeps the configuration but behaves as if no preprocessing rules were set',
     progressCollectedOnlyWhen:
       'Progress is collected only when this is on; turning it off keeps the configuration but collects nothing',
     whenScriptLogPreprocessed:
-      'When on, the script log is preprocessed line by line: noisy lines are dropped and content that needs redacting or normalizing is rewritten. Hooks run before task logging, push-log collection, and the success/failure check, and dropped lines never reach any of them — so do not drop the line that carries the success/failure marker.',
+      'When on, the script log is preprocessed line by line: noisy lines are dropped and content that needs redacting or normalizing is rewritten. Preprocessing runs before task logging, push-log collection, and the success/failure check, and dropped lines never reach any of them — so do not drop the line that carries the success/failure marker.',
     masTakesOverStarting: 'MAS takes over starting and stopping the game',
     collectsKeyMomentsFrom:
       "Choose how this user's key moments appear in the task report: Off = not collected; List = one line each with its collection time; Summary = one line per success/failure/skipped status",
@@ -1369,8 +1369,8 @@ export default {
     wholeFileSyncLimit: 'Whole-file sync limit (GB)',
     noMatchingLines: 'No matching lines',
     dailyTaskTimeoutMinutes: 'Daily task timeout (minutes)',
-    logHooks: 'Log hooks',
-    logHooksOffRules: 'Log hooks are off; the rules will not run.',
+    logHooks: 'Log preprocessing',
+    logHooksOffRules: 'Log preprocessing is off; the rules will not run.',
     logFileEmptyCould: 'The log file is empty or could not be read',
     logFileNameFormat: 'Log file name format',
     logFileNameFormat2: 'Log file name format; leave empty when the name is fixed',

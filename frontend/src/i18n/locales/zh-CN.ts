@@ -424,7 +424,7 @@ export default {
     okWwSetupFailed: 'ok-ww 设置失败: {p0}',
     p0NotValidJson: '{p0} 不是有效的 JSON',
     p0MustSitUnder: '{p0}必须是脚本根目录或 AppData 目录的子路径',
-    p0HasNoMatch: '{p0}未填写匹配正则，已按停用保存',
+    p0HasNoMatch: '{p0}未填写匹配正则，暂不生效',
     matchPatternP0Has: '{p0}的匹配正则语法错误，运行时不会生效',
     p0MissingRequiredField:
       '{p0}缺少必填字段已停用保存：split/regex 需填匹配关键字(正则)，multiline 需填起始正则',
@@ -1164,10 +1164,10 @@ export default {
     treatScriptAsFinished: '开启后仅在脚本的子进程结束时认定脚本进程结束',
     whenTaskProgressCollected:
       '开启后会按下列规则从脚本日志中采集任务进程信息，追加到推送报告中。支持三种提取模式，日志单行按规则顺序取首个命中的规则匹配提取，统一推送。',
-    rulesApplyOnlyWhen: '开启后才会按规则处理日志；关闭时配置仍保留，行为与未配置钩子一致',
+    rulesApplyOnlyWhen: '开启后才会按规则处理日志；关闭时配置仍保留，行为与未配置预处理规则一致',
     progressCollectedOnlyWhen: '开启后才会按规则采集任务进程信息；关闭时配置仍保留，但不进行采集',
     whenScriptLogPreprocessed:
-      '开启后按下列规则逐行预处理脚本日志：丢弃命中的噪声行、改写需要脱敏或归一化的内容。钩子先于任务日志、推送日志采集与成功/失败判定执行，被丢弃的行不会进入其中任何一环，请勿丢弃成功/失败标志所在的行。',
+      '开启后按下列规则逐行预处理脚本日志：丢弃命中的噪声行、改写需要脱敏或归一化的内容。预处理先于任务日志、推送日志采集与成功/失败判定执行，被丢弃的行不会进入其中任何一环，请勿丢弃成功/失败标志所在的行。',
     masTakesOverStarting: '开启后由 MAS 接管游戏启停',
     collectsKeyMomentsFrom:
       '选择该用户关键节点在任务报告中的呈现方式：关闭 = 不采集；逐条 = 每条带上采集时间，一行一条；汇总 = 按成功/失败/跳过各合并为一行',
@@ -1312,8 +1312,8 @@ export default {
     wholeFileSyncLimit: '整文件同步上限（GB）',
     noMatchingLines: '无命中行',
     dailyTaskTimeoutMinutes: '日常任务超时限制（分钟）',
-    logHooks: '日志处理钩子',
-    logHooksOffRules: '日志处理钩子已停用，规则不会参与日志处理。',
+    logHooks: '日志预处理',
+    logHooksOffRules: '日志预处理已停用，规则不会参与日志处理。',
     logFileEmptyCould: '日志文件为空或无法读取',
     logFileNameFormat: '日志文件名格式',
     logFileNameFormat2: '日志文件名格式，文件名固定时留空',
