@@ -324,6 +324,37 @@ class MumuManager(DeviceBase):
         else:
             logger.warning(f"停止 MuMu 应用商店广告进程失败: {result.stdout.strip()}")
 
+    async def _wait_for_adb_ready(self, idx: str) -> None:
+        """等待 MuMu 的 ADB 从 offline 变为可用。"""
+        timeout = self.config.get("Info", "MaxWaitTime")
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            try:
+                result = await ProcessRunner.run_process(
+                    self.emulator_path,
+                    "adb",
+                    "-v",
+                    idx,
+                    "get-state",
+                    timeout=timeout,
+                    if_merge_std=True,
+                    breakaway=True,
+                )
+            except Exception as e:
+                logger.debug(f"等待 MuMu ADB 就绪失败: {e}")
+            else:
+                state = result.stdout.strip().lower()
+                if result.returncode == 0 and state == "device":
+                    logger.info(f"MuMu ADB 已就绪: {idx}")
+                    return
+                logger.debug(
+                    f"MuMu ADB 尚未就绪: {idx} - 状态={state or '未知'}"
+                )
+
+            await asyncio.sleep(0.5)
+
+        raise RuntimeError(f"模拟器 {idx} 已启动，但 ADB 在规定时间内仍未就绪")
+
     async def open(self, idx: str, package_name: str = "") -> DeviceInfo:
         started_at = time.monotonic()
         logger.info(f"开始启动模拟器 {idx}  - {package_name}")
@@ -339,6 +370,7 @@ class MumuManager(DeviceBase):
                     f"模拟器已在线，跳过应用启动检查: {idx} - {package_name} - "
                     f"用时: {time.monotonic() - started_at:.3f}秒"
                 )
+                await self._wait_for_adb_ready(idx)
                 if Config.get("Function", "IfBlockAd"):
                     await self._block_store_overlay_ads(idx)
                 return (await self.getInfo(idx))[idx]
@@ -421,6 +453,7 @@ class MumuManager(DeviceBase):
                     f"模拟器已在线: {idx} - {package_name} - 用时: "
                     f"{time.monotonic() - online_started_at:.3f}秒"
                 )
+                await self._wait_for_adb_ready(idx)
                 if Config.get("Function", "IfBlockAd"):
                     await self._block_store_overlay_ads(idx)
                 if package_name:
