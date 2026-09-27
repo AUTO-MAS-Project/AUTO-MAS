@@ -2383,10 +2383,11 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         self.cur_user_item.log_record[start_time] = self.cur_user_log = LogRecord()
 
     async def _finish_on_signal(self, attempt: int, result: MaaFWRunResult) -> None:
-        """worker 回报了信号节点命中：记账、写日志状态、发一条任务页提示。
+        """worker 回报了信号节点命中：记账、写日志状态。
 
-        正式通知不在这里发：同一轮里同一资源可能有多位用户，由管理器收尾时按
-        「信号 + 资源」各发一条。证据图只进那条通知，不当失败截图进统计信息与汇总。
+        不发任务页提示（TASK_NOTICE 会在前端弹通知框并响提示音）：界面上只有 runner
+        那行日志，正式通知由管理器收尾时按「信号 + 资源」各发一条（同一资源可能有
+        多位用户）。证据图只进那条通知，不当失败截图进统计信息与汇总。
         """
 
         signal = str(result.signal)
@@ -2447,14 +2448,6 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             user_id=str(self.cur_user_uid),
             user_name=self.cur_user_item.name,
             screenshot=Path(evidence.path) if evidence is not None else None,
-        )
-        await Publisher.send(
-            id=self.task_info.task_id,
-            type=protocol.TASK_NOTICE,
-            data=WSTaskNoticeData(
-                level="warning" if signal == SERVER_MAINTENANCE else "error",
-                message=message,
-            ),
         )
 
     def _is_maintenance_skip(self) -> bool:

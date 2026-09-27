@@ -36,7 +36,7 @@ logger = get_logger("MaaFW 信号通知")
 SERVER_MAINTENANCE = "server_maintenance"
 CLIENT_UPDATE_REQUIRED = "client_update_required"
 
-# 任务页 TASK_NOTICE、用户日志状态与「任务详情」里用的一句话。
+# 用户日志状态、统计信息与「任务详情」里用的一句话。
 SIGNAL_USER_MESSAGES = {
     SERVER_MAINTENANCE: "游戏停服维护中，本次跳过",
     CLIENT_UPDATE_REQUIRED: "需要更新游戏客户端，请手动更新后再运行",
