@@ -11,6 +11,9 @@ import * as http from 'http'
 import { getLogger } from './logger'
 const logger = getLogger('下载服务')
 
+// 重定向最大跟随次数：超限按下载失败处理，交给上层镜像轮换，防止重定向成环导致下载永久卡死
+const MAX_REDIRECT_DEPTH = 10
+
 // ==================== 类型定义 ====================
 
 export interface DownloadProgress {
@@ -26,7 +29,7 @@ interface DownloadChunk {
   start: number
   end: number
   index: number
-  data: Buffer[]
+  downloaded: number
   completed: boolean
 }
 
@@ -79,12 +82,20 @@ export class SmartDownloader {
   /**
    * 获取文件信息
    */
-  private getFileInfo(url: string): Promise<{
+  private getFileInfo(
+    url: string,
+    depth: number = 0
+  ): Promise<{
     isFile: boolean
     size: number
     supportsRange: boolean
   }> {
     return new Promise((resolve, reject) => {
+      if (depth > MAX_REDIRECT_DEPTH) {
+        reject(new Error('重定向次数超过上限'))
+        return
+      }
+
       const client = url.startsWith('https') ? https : http
 
       const req = client.request(url, { method: 'HEAD', timeout: 10000 }, response => {
@@ -94,7 +105,7 @@ export class SmartDownloader {
           if (redirectUrl) {
             logger.debug(`跟随重定向: ${response.statusCode} -> ${redirectUrl}`)
             req.destroy() // 销毁原请求
-            this.getFileInfo(redirectUrl).then(resolve).catch(reject)
+            this.getFileInfo(redirectUrl, depth + 1).then(resolve).catch(reject)
             return
           }
         }
@@ -129,9 +140,15 @@ export class SmartDownloader {
     url: string,
     savePath: string,
     totalSize: number,
-    onProgress?: ProgressCallback
+    onProgress?: ProgressCallback,
+    depth: number = 0
   ): Promise<{ success: boolean; error?: string }> {
     return new Promise(resolve => {
+      if (depth > MAX_REDIRECT_DEPTH) {
+        resolve({ success: false, error: '重定向次数超过上限' })
+        return
+      }
+
       const client = url.startsWith('https') ? https : http
       const file = fs.createWriteStream(savePath)
 
@@ -147,7 +164,7 @@ export class SmartDownloader {
             logger.info(`跟随重定向: ${response.statusCode} -> ${redirectUrl}`)
             req.destroy() // 销毁原请求
             file.close()
-            this.singleThreadDownload(redirectUrl, savePath, totalSize, onProgress)
+            this.singleThreadDownload(redirectUrl, savePath, totalSize, onProgress, depth + 1)
               .then(resolve)
               .catch(error => resolve({ success: false, error: error.message }))
             return
@@ -265,6 +282,24 @@ export class SmartDownloader {
     onProgress?: ProgressCallback,
     threadCount: number = 4
   ): Promise<{ success: boolean; error?: string }> {
+    // 分片数据按位置直接写入目标文件，不再把整个文件缓冲在内存
+    let fileHandle: number
+    try {
+      fileHandle = fs.openSync(savePath, 'w')
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error)
+      logger.error(`❌ 多线程下载失败: ${errorMsg}`)
+      return { success: false, error: errorMsg }
+    }
+
+    let fileClosed = false
+    const closeFile = () => {
+      if (!fileClosed) {
+        fileClosed = true
+        fs.closeSync(fileHandle)
+      }
+    }
+
     try {
       // 计算每个分片的大小
       const chunkSize = Math.ceil(totalSize / threadCount)
@@ -278,7 +313,7 @@ export class SmartDownloader {
           start,
           end,
           index: i,
-          data: [],
+          downloaded: 0,
           completed: false,
         })
       }
@@ -290,9 +325,7 @@ export class SmartDownloader {
       let lastDownloaded = 0
 
       const progressInterval = setInterval(() => {
-        const downloadedSize = chunks.reduce((total, chunk) => {
-          return total + chunk.data.reduce((sum, buffer) => sum + buffer.length, 0)
-        }, 0)
+        const downloadedSize = chunks.reduce((total, chunk) => total + chunk.downloaded, 0)
 
         const currentTime = Date.now()
         const timeDiff = (currentTime - lastTime) / 1000
@@ -315,20 +348,17 @@ export class SmartDownloader {
 
       try {
         // 并行下载所有分片
-        const downloadPromises = chunks.map(chunk => this.downloadChunk(url, chunk))
+        const downloadPromises = chunks.map(chunk => this.downloadChunk(url, chunk, fileHandle))
         await Promise.all(downloadPromises)
 
         clearInterval(progressInterval)
+        closeFile()
 
         // 下载完成时，无论是否达到上报间隔，都执行最后一次进度上报
         if (onProgress) {
-          const downloadedSize = chunks.reduce((total, chunk) => {
-            return total + chunk.data.reduce((sum, buffer) => sum + buffer.length, 0)
-          }, 0)
-
           const currentTime = Date.now()
           const timeDiff = (currentTime - lastTime) / 1000
-          const speed = timeDiff > 0 ? (downloadedSize - lastDownloaded) / timeDiff : 0
+          const speed = timeDiff > 0 ? (totalSize - lastDownloaded) / timeDiff : 0
 
           onProgress({
             progress: 100,
@@ -338,27 +368,12 @@ export class SmartDownloader {
           })
         }
 
-        // 合并分片
-        logger.info('开始合并分片...')
-        const writeStream = fs.createWriteStream(savePath)
-
-        for (const chunk of chunks) {
-          for (const buffer of chunk.data) {
-            writeStream.write(buffer)
-          }
-        }
-
-        await new Promise<void>((resolve, reject) => {
-          writeStream.end()
-          writeStream.on('finish', resolve)
-          writeStream.on('error', reject)
-        })
-
         logger.info('多线程下载完成')
         return { success: true }
       } catch (downloadError) {
-        // 确保清理进度定时器
+        // 确保清理进度定时器并关闭文件句柄
         clearInterval(progressInterval)
+        closeFile()
 
         const errorMsg =
           downloadError instanceof Error ? downloadError.message : String(downloadError)
@@ -370,6 +385,7 @@ export class SmartDownloader {
       logger.error(`❌ 多线程下载失败: ${errorMsg}`)
 
       // 清理不完整的文件
+      closeFile()
       if (fs.existsSync(savePath)) {
         fs.unlinkSync(savePath)
       }
@@ -381,8 +397,18 @@ export class SmartDownloader {
   /**
    * 下载单个分片
    */
-  private downloadChunk(url: string, chunk: DownloadChunk): Promise<void> {
+  private downloadChunk(
+    url: string,
+    chunk: DownloadChunk,
+    fileHandle: number,
+    depth: number = 0
+  ): Promise<void> {
     return new Promise((resolve, reject) => {
+      if (depth > MAX_REDIRECT_DEPTH) {
+        reject(new Error(`分片 ${chunk.index} 重定向次数超过上限`))
+        return
+      }
+
       const client = url.startsWith('https') ? https : http
 
       const options = {
@@ -399,7 +425,9 @@ export class SmartDownloader {
           if (redirectUrl) {
             logger.debug(`分片 ${chunk.index} 跟随重定向: ${response.statusCode} -> ${redirectUrl}`)
             req.destroy() // 销毁原请求
-            this.downloadChunk(redirectUrl, chunk).then(resolve).catch(reject)
+            this.downloadChunk(redirectUrl, chunk, fileHandle, depth + 1)
+              .then(resolve)
+              .catch(reject)
             return
           }
         }
@@ -409,13 +437,31 @@ export class SmartDownloader {
           return
         }
 
-        chunk.data = []
-
         response.on('data', (data: Buffer) => {
-          chunk.data.push(data)
+          try {
+            // 按分片起始位置顺序写入；写入失败视为整个下载失败
+            fs.writeSync(fileHandle, data, 0, data.length, chunk.start + chunk.downloaded)
+            chunk.downloaded += data.length
+          } catch (writeError) {
+            const errorMsg = writeError instanceof Error ? writeError.message : String(writeError)
+            logger.error(`分片 ${chunk.index} 写入失败: ${errorMsg}`)
+            req.destroy()
+            reject(new Error(`分片 ${chunk.index} 文件写入错误: ${errorMsg}`))
+          }
         })
 
         response.on('end', () => {
+          // 校验分片实际收到的字节数：短响应（chunked 提前收尾、close-delimited）不算成功，
+          // 否则文件会在对应区间留下零空洞，损坏要到解压时才暴露
+          const expectedLength = chunk.end - chunk.start + 1
+          if (chunk.downloaded !== expectedLength) {
+            reject(
+              new Error(
+                `分片 ${chunk.index} 数据不完整: 预期 ${expectedLength} 字节，实际 ${chunk.downloaded} 字节`
+              )
+            )
+            return
+          }
           chunk.completed = true
           resolve()
         })

@@ -13,6 +13,9 @@ import { getLogger } from './logger'
 import { getDefaultApiEndpoints, isDevelopmentEnvironment } from './instanceConfig'
 const logger = getLogger('镜像源服务')
 
+// 重定向最大跟随次数：超限按下载失败处理，防止重定向成环导致检查云端配置永久卡死
+const MAX_REDIRECT_DEPTH = 10
+
 // ==================== 类型定义 ====================
 
 export interface MirrorSource {
@@ -279,13 +282,20 @@ export class MirrorService {
    */
   private downloadCloudConfig(
     currentEtag?: string,
-    url?: string
+    url?: string,
+    depth: number = 0
   ): Promise<{
     status: 'updated' | 'not-modified' | 'error'
     config?: CloudMirrorConfig
     etag?: string
   }> {
     return new Promise(resolve => {
+      if (depth > MAX_REDIRECT_DEPTH) {
+        logger.warn(`重定向次数超过上限: ${url}`)
+        resolve({ status: 'error' })
+        return
+      }
+
       const targetUrl = url || 'https://api.auto-mas.top/file/Server/mirror.json'
       logger.info(`正在检查云端配置: ${targetUrl}`)
       if (currentEtag) {
@@ -312,7 +322,7 @@ export class MirrorService {
             logger.info(`跟随重定向: ${response.statusCode} -> ${redirectUrl}`)
             req.destroy() // 销毁原请求
             // 递归调用以跟随重定向，使用新的 URL
-            this.downloadCloudConfig(currentEtag, redirectUrl)
+            this.downloadCloudConfig(currentEtag, redirectUrl, depth + 1)
               .then(resolve)
               .catch(() => {
                 resolve({ status: 'error' })
