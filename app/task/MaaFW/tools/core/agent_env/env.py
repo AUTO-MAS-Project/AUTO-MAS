@@ -214,7 +214,7 @@ def _prepare_project_python_env(
     log: Callable[[str], None],
 ) -> None:
     log(f"[Python环境] 检测项目 Python: {python_exe}")
-    test_env = _build_agent_env_for_pip(project_path)
+    test_env = _build_project_python_probe_env(python_exe, project_path)
     if _check_project_python_health(
         python_exe,
         cwd=str(project_path),
@@ -759,6 +759,60 @@ def _build_agent_env_for_pip(project_path: Path) -> dict[str, str]:
     return env
 
 
+#: agent 侧 ``from maa.agent.agent_server import AgentServer`` 要加载的库，与
+#: ``MaaFramework.dll`` 同在项目自带的原生库目录里时才算那份可用（与 M9A 的判据一致）。
+PROJECT_AGENT_SERVER_DLL_NAME = "MaaAgentServer.dll"
+
+
+def _bundled_maa_bin_missing(python_exe: str | Path) -> bool:
+    """自带解释器里有 maa 包、却没有 wheel 自带的 ``maa/bin``。找不到 maa 包时不算缺。"""
+
+    root = Path(python_exe).parent
+    for site in (
+        root / "Lib" / "site-packages",
+        *sorted(root.glob("lib/python*/site-packages")),
+    ):
+        package = site / "maa"
+        if (package / "__init__.py").is_file():
+            return not (package / "bin").is_dir()
+    return False
+
+
+def _build_project_python_probe_env(
+    python_exe: str, project_path: Path
+) -> dict[str, str]:
+    """项目自带 Python 健康检查的环境：pip 那份，外加 agent 自己会设的原生库目录。
+
+    M9A 的发行包不在自带解释器的 ``site-packages/maa/bin`` 里再放一份原生库，agent 在
+    ``import maa`` 之前自己把 ``MAAFW_BINARY_PATH`` 指到 ``runtimes/<rid>/native``
+    （M9A 的 ``agent/maafw_paths.py``）。检查直接 ``import maa``，这个变量又被剔除了，
+    binding 就去开不存在的 ``maa/bin``、抛 ``FileNotFoundError``，把能跑的副本判成坏的，
+    更新预检也因此永远过不去。所以 ``maa/bin`` 不在、项目自带的原生库又齐时，检查
+    也指过去；``maa/bin`` 在时不动，照旧用 wheel 自带那份。
+    """
+
+    env = _build_agent_env_for_pip(project_path)
+    if not _bundled_maa_bin_missing(python_exe):
+        return env
+
+    from app.task.MaaFW.tools.core.runner.environment import (
+        project_maafw_runtime_path,
+    )
+
+    runtime = project_maafw_runtime_path(project_path)
+    if runtime is not None and (runtime / PROJECT_AGENT_SERVER_DLL_NAME).is_file():
+        env["MAAFW_BINARY_PATH"] = str(runtime)
+    return env
+
+
+def _output_tail(text: str, limit: int) -> str:
+    """长输出只留结尾：traceback 的异常类型与消息在最后一行，截开头恰好把它丢掉。"""
+
+    if len(text) <= limit:
+        return text
+    return "…" + text[-limit:]
+
+
 def _check_pip_health(
     python_exe: str,
     *,
@@ -861,7 +915,7 @@ def _check_project_python_health(
     detail = (result.stderr or result.stdout or "").strip()
     log(
         "[Python环境] 项目 Python/Agent 健康检查失败 "
-        f"(exit={result.returncode}): {detail[:500]}"
+        f"(exit={result.returncode}): {_output_tail(detail, 500)}"
     )
     return False
 
