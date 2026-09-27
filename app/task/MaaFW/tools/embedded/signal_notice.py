@@ -39,7 +39,7 @@ CLIENT_UPDATE_REQUIRED = "client_update_required"
 # 任务页 TASK_NOTICE、用户日志状态与「任务详情」里用的一句话。
 SIGNAL_USER_MESSAGES = {
     SERVER_MAINTENANCE: "游戏停服维护中，本次跳过",
-    CLIENT_UPDATE_REQUIRED: "游戏需要更新，请手动更新游戏客户端后再运行",
+    CLIENT_UPDATE_REQUIRED: "需要更新游戏客户端，请手动更新后再运行",
 }
 # 同一资源已确认在维护时，后续用户运行前检查返回的原因。
 MAINTENANCE_SKIP_MESSAGE = "游戏停服维护中，本次跳过（同一资源已确认在维护）"
@@ -106,13 +106,24 @@ class MaaFWSignalTracker:
     def records(self) -> list[MaaFWSignalRecord]:
         return list(self._records.values())
 
+    def user_ids(self, signal: str) -> set[str]:
+        """本轮因该信号受影响的用户 id（含维护时被连带跳过的）。"""
+
+        return {
+            user_id
+            for record in self._records.values()
+            if record.signal == signal
+            for user_id, _ in record.users
+        }
+
 
 def signal_notice_targets(user_configs: Iterable[Any]) -> list[NotifyTarget]:
     """信号通知的目标：与任务报告同一套开关，不绕过。
 
     全局渠道看「发送任务结果时机」：不推送就不发（维护 / 需更新都属于本次没跑成，
-    「仅失败时」也发）；系统通知另受它自己的开关约束。用户渠道只发给受影响、且开了
-    个人通知与统计推送的用户（与用户级统计报告同一开关）。
+    「仅失败时」也发）；系统通知另受它自己的开关约束，且本轮的系统弹窗只由这里弹
+    （代理结果那份此时不弹）。用户渠道只发给受影响、且开了个人通知与统计推送的用户
+    （与用户级统计报告同一开关）。
     """
 
     targets: list[NotifyTarget] = []
@@ -129,17 +140,17 @@ def build_signal_payload(
     script_name: str,
     images: Sequence[tuple[str, NotificationImage]] = (),
 ) -> NotifyPayload:
-    game = record.project_name or "游戏"
-    where = f"{game}（{record.resource_label}）" if record.resource_label else game
+    game = record.project_name
+    where = " ".join(part for part in (game, record.resource_label) if part)
     users = "、".join(name for _, name in record.users) or "-"
     if record.signal == SERVER_MAINTENANCE:
-        title = f"游戏停服维护中：{game}"
-        lead = f"{where}正在停服维护，本次已跳过，下次定时照常运行。"
+        head = "游戏停服维护中"
+        tail = "本次已跳过，下次定时照常运行。"
     else:
-        title = f"需要更新游戏：{game}"
-        lead = (
-            f"{where}需要更新游戏客户端，本次未能运行。请手动更新游戏客户端后再运行。"
-        )
+        head = "需要更新游戏客户端"
+        tail = "本次未能运行，请手动更新游戏客户端后再运行。"
+    title = f"{head}：{game}" if game else head
+    lead = f"{head}（{where}），{tail}" if where else f"{head}，{tail}"
     lines = [lead, f"脚本：{script_name}", f"受影响的用户：{users}"]
     text = "\n".join(lines)
     markdown = "\n\n".join(lines)

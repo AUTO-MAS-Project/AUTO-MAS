@@ -70,6 +70,8 @@ from app.task.MaaFW.tools.embedded.project_path import (
     try_reserve_project_path,
 )
 from app.task.MaaFW.tools.embedded.signal_notice import (
+    CLIENT_UPDATE_REQUIRED,
+    SERVER_MAINTENANCE,
     MaaFWSignalTracker,
     push_signal_notices,
 )
@@ -1493,8 +1495,18 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
         completed_users = [
             user for user in self.script_info.user_list if user.status == "完成"
         ]
+        # 因停服维护跳过的用户（命中的与被连带跳过的）：不算完成，也不算异常
+        maintenance_ids = self.signal_tracker.user_ids(SERVER_MAINTENANCE)
+        maintenance_users = [
+            user
+            for user in self.script_info.user_list
+            if user.status == "跳过" and user.user_id in maintenance_ids
+        ]
         if self.check_result == "Pass" and not error_users:
-            self.script_info.status = "完成"
+            # 全员因维护跳过时不能显示成「完成」
+            self.script_info.status = (
+                "跳过" if maintenance_users and not completed_users else "完成"
+            )
         else:
             self.script_info.status = "异常"
 
@@ -1524,9 +1536,16 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
             "start_time": self.begin_time,
             "end_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "completed_count": len(completed_users),
-            "uncompleted_count": len(error_users),
+            "uncompleted_count": len(error_users) + len(maintenance_users),
             "result": self.script_info.result,
         }
+        summary_title = self._signal_summary_title(
+            title,
+            has_error=bool(error_users),
+            has_completed=bool(completed_users),
+        )
+        if summary_title:
+            result["summary_title"] = summary_title
         try:
             images = await asyncio.to_thread(
                 load_screenshot_images,
@@ -1539,6 +1558,8 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
                 message=result,
                 task_info=self.task_info,
                 images=[image for _, image in images],
+                # 本轮有信号通知时系统弹窗由它弹（写明维护 / 需更新），这里不再弹第二次
+                include_system=not self.signal_tracker.records(),
             )
         except Exception as exc:  # noqa: BLE001
             logger.opt(exception=True).warning(f"推送 MFW 代理结果时出现异常: {exc}")
@@ -1556,6 +1577,30 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
             await self._run_project_update("AfterRun")
             # 顺手把下一轮要用的环境备好：下次运行前那一步就只剩比指纹。
             await self._ensure_project_environment("AfterRun")
+
+    def _signal_summary_title(
+        self, title: str, *, has_error: bool, has_completed: bool
+    ) -> str | None:
+        """本轮有信号时代理结果的摘要标题，写明原因；没有信号返回 None（沿用默认）。"""
+
+        signals = {record.signal for record in self.signal_tracker.records()}
+        reasons = [
+            text
+            for signal, text in (
+                (SERVER_MAINTENANCE, "游戏停服维护中"),
+                (CLIENT_UPDATE_REQUIRED, "需要更新游戏客户端"),
+            )
+            if signal in signals
+        ]
+        if not reasons:
+            return None
+        if has_error:
+            state = "存在异常"
+        elif has_completed:
+            state = "部分跳过"
+        else:
+            state = "已跳过"
+        return title.replace("报告", f"{state}（{'、'.join(reasons)}）")
 
     async def _push_signal_notices(self) -> None:
         """本轮撞上的停服维护 / 需要更新客户端，每个「信号 + 资源」发一条通知。"""

@@ -167,7 +167,7 @@ MAAFW_POST_STOP_ENTRY = "MaaTaskerPostStop"
 # kind 部分是 ``[a-z]+``，带连字符就收不进去。
 SIGNAL_MESSAGES = {
     SERVER_MAINTENANCE: "游戏停服维护中",
-    CLIENT_UPDATE_REQUIRED: "游戏需要更新客户端",
+    CLIENT_UPDATE_REQUIRED: "需要更新游戏客户端",
 }
 SIGNAL_SCREENSHOT_KINDS = {
     SERVER_MAINTENANCE: "maintenance",
@@ -763,6 +763,8 @@ class MaaFWRunner:
         # 就把任务投出去，那个任务就没人停了。
         self._post_lock: threading.Lock = threading.Lock()
         self._task_in_flight: bool = False
+        # 正在投递的任务名，与 _task_in_flight 同进同出；信号判定据此记下命中的是哪个任务。
+        self._in_flight_task: str | None = None
         self._deadline_stop_posted: bool = False
         # 项目声明的信号节点（attach.auto_mas），资源加载后扫描得到：节点名 → 声明。
         # 每个任务下发时强开它们（叠在任务自身与选项覆盖之后）。
@@ -2262,15 +2264,21 @@ class MaaFWRunner:
             try:
                 with self._post_lock:
                     self._raise_if_deadline_hit()
-                    if pipeline_override:
-                        job = tasker.post_task(task.entry, pipeline_override)
-                    else:
-                        job = tasker.post_task(task.entry)
-                    self._task_in_flight = True
+                    # 在投递之前置位（仍在锁内，定时器看不到中间态）：投递返回前就可能
+                    # 有节点通知送达，信号判定要认得出它属于这个任务。
+                    self._set_task_in_flight(task.name)
+                    try:
+                        if pipeline_override:
+                            job = tasker.post_task(task.entry, pipeline_override)
+                        else:
+                            job = tasker.post_task(task.entry)
+                    except BaseException:
+                        self._set_task_in_flight(None)
+                        raise
                 try:
                     self._wait_job(job)
                 finally:
-                    self._task_in_flight = False
+                    self._set_task_in_flight(None)
             except Exception as exc:
                 if self._stop_requested.is_set():
                     raise RuntimeError("MaaFW 任务已停止") from exc
@@ -2336,18 +2344,37 @@ class MaaFWRunner:
             time.sleep(0.1)
         return completed_tasks
 
+    def _set_task_in_flight(self, task_name: str | None) -> None:
+        with self._signal_lock:
+            self._task_in_flight = task_name is not None
+            self._in_flight_task = task_name
+
     def _finish_on_signal(self, task: MaaFWTaskRunPlan, display_name: str) -> bool:
-        """当前任务是因为信号节点命中而停下的：截证据图、记日志，返回 True 让本轮收尾。"""
+        """当前任务是因为信号节点命中而停下的：截证据图、记日志，返回 True 让本轮收尾。
+
+        命中的是哪个任务在回调里就记下了（``_signal_task``），这里不再按「刚回来的
+        是谁」推断。
+        """
 
         with self._signal_lock:
             hit = self._signal_hit
-            if hit is None:
-                return False
-            self._signal_task = task.name
+            signal_task = self._signal_task
+        if hit is None:
+            return False
         self._join_signal_stop()
         signal, _ = hit
+        task_name = signal_task or task.name
+        if task_name != task.name:
+            display_name = next(
+                (
+                    _task_display_name(item)
+                    for item in self.plan.tasks
+                    if item.name == task_name
+                ),
+                task_name,
+            )
         self._capture_failure_screenshot(
-            task.name, kind=SIGNAL_SCREENSHOT_KINDS[signal]
+            task_name, kind=SIGNAL_SCREENSHOT_KINDS[signal]
         )
         self.send_log(f"{SIGNAL_MESSAGES[signal]}，本轮剩余任务已跳过: {display_name}")
         return True
@@ -2371,16 +2398,26 @@ class MaaFWRunner:
         if signal is None:
             self._log_unmatched_signal(name, texts)
             return
+        thread: threading.Thread | None = None
         with self._signal_lock:
             if self._signal_hit is not None or self._stop_requested.is_set():
                 return
-            self._signal_hit = (signal, name)
-            thread = threading.Thread(
-                target=self._post_signal_stop,
-                name="maafw-signal-stop",
-                daemon=True,
+            in_flight_task = self._in_flight_task
+            # 只认投递中的任务：任务已经回来了才晚到的通知，不能算到下一个任务头上
+            if self._task_in_flight and in_flight_task is not None:
+                self._signal_hit = (signal, name)
+                self._signal_task = in_flight_task
+                thread = threading.Thread(
+                    target=self._post_signal_stop,
+                    name="maafw-signal-stop",
+                    daemon=True,
+                )
+                self._signal_stop_thread = thread
+        if thread is None:
+            self.send_log(
+                f"{DETAIL_LOG_PREFIX}信号节点 {name} 命中时没有任务在投递中，已忽略"
             )
-            self._signal_stop_thread = thread
+            return
         self.send_log(
             f"{DETAIL_LOG_PREFIX}信号节点 {name} 命中：{signal}，正在停止当前任务"
         )

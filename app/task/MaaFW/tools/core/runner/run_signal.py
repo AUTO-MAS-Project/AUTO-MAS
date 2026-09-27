@@ -3,8 +3,8 @@
 与项目约定：进游戏流程里识别「停服维护」「需要更新客户端」的节点写上
 
 - 字符串：``"attach": {"auto_mas": "server_maintenance"}``——节点识别命中即该信号；
-- 对象：``"attach": {"auto_mas": {"server_maintenance": ["停服维护中"],
-  "client_update_required": ["发现新版本"]}}``——一个节点认多种画面，拿 OCR 识别
+- 对象：``"attach": {"auto_mas": {"server_maintenance": ["<维护画面的文字>"],
+  "client_update_required": ["<更新提示的文字>"]}}``——一个节点认多种画面，拿 OCR 识别
   文本逐个 ``re.search``。**不按键顺序**：MaaFW 的 ``get_node_data`` 不保留 attach 的
   键顺序（写的维护在前，读回来可能更新在前），固定先判维护、再判更新；两个都中按维护
   算——维护是暂时的，跳过比判失败安全。
