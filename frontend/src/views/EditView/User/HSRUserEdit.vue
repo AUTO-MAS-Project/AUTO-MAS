@@ -13,31 +13,27 @@
 
     <ConfigLockPanel :script-id="scriptId" content-class="user-edit-content">
       <a-card class="config-card">
+        <!-- 能力提示合成一条：第一句作标题，其余列在下面 -->
         <a-alert
-          v-if="capabilitySnapshot?.unavailable_reason && !visibleCapabilityWarnings.length"
+          v-if="pageWarnings.length"
           type="warning"
           show-icon
-          :message="capabilitySnapshot.unavailable_reason"
+          :message="pageWarnings[0]"
           style="margin-bottom: 12px"
-        />
-        <a-alert
-          v-for="warning in visibleCapabilityWarnings"
-          :key="warning"
-          type="warning"
-          show-icon
-          :message="warning"
-          style="margin-bottom: 12px"
-        />
+        >
+          <template v-if="pageWarnings.length > 1" #description>
+            <ul class="page-warning-list">
+              <li v-for="warning in pageWarnings.slice(1)" :key="warning">{{ warning }}</li>
+            </ul>
+          </template>
+        </a-alert>
         <a-form ref="formRef" :model="formData" layout="vertical" class="config-form">
           <!-- 基本信息 -->
           <div class="form-section form-section-flat">
             <div class="section-header">
               <h3>{{ t('edit.basicInfo') }}</h3>
-              <!-- 体力配置区块隐藏（直控模式，或未给 Daily 配引擎）时，恢复入口兜底到这里 -->
-              <div
-                v-if="controlMode !== 'managed' || !dailyStageEngine"
-                class="section-header-actions"
-              >
+              <!-- 配置恢复入口固定在这里，不随配置来源跳动 -->
+              <div class="section-header-actions">
                 <a-button size="small" @click="restoreOpen = true">
                   <template #icon>
                     <HistoryOutlined />
@@ -46,6 +42,7 @@
                 </a-button>
               </div>
             </div>
+            <!-- 与其他专项一致：用户名 / 启用 / 剩余天数一行，备注单独一行 -->
             <a-row :gutter="24">
               <a-col :span="8">
                 <a-form-item>
@@ -63,21 +60,38 @@
                   />
                 </a-form-item>
               </a-col>
-              <a-col :span="4">
+              <a-col :span="8">
                 <a-form-item>
                   <template #label>
                     <span class="form-label">{{ t('edit.enabled2') }}</span>
                   </template>
-                  <a-switch
-                    v-model:checked="formData.Info.Status"
-                    :checked-children="t('edit.enabled3')"
-                    :un-checked-children="t('edit.disabled')"
-                    @change="handleFieldSave('Info.Status', formData.Info.Status)"
+                  <!-- 和同一行的其他控件一样用下拉，别一个开关孤零零地矮一截 -->
+                  <a-select v-model:value="statusValue" size="large" :options="statusOptions" />
+                </a-form-item>
+              </a-col>
+              <a-col :span="8">
+                <a-form-item>
+                  <template #label>
+                    <a-tooltip :title="t('edit.daysLeft1Means')">
+                      <span class="form-label"
+                        >{{ t('edit.daysLeft') }} <QuestionCircleOutlined class="help-icon"
+                      /></span>
+                    </a-tooltip>
+                  </template>
+                  <a-input-number
+                    v-model:value="formData.Info.RemainedDay"
+                    :min="-1"
+                    :max="9999"
+                    size="large"
+                    style="width: 100%"
+                    @blur="handleFieldSave('Info.RemainedDay', formData.Info.RemainedDay)"
                   />
                 </a-form-item>
               </a-col>
+            </a-row>
+            <a-row v-if="showCredentials" :gutter="24">
               <!-- 账号密码只给 SRA StartGame 切号用；云·星穹铁道按用户分浏览器登录态，不需要 -->
-              <a-col v-if="showCredentials" :span="6">
+              <a-col :span="8">
                 <a-form-item>
                   <template #label>
                     <span class="form-label">{{ t('edit.account') }}</span>
@@ -90,7 +104,7 @@
                   />
                 </a-form-item>
               </a-col>
-              <a-col v-if="showCredentials" :span="6">
+              <a-col :span="8">
                 <a-form-item>
                   <template #label>
                     <!-- 加密说明由原先的区块提示降为密码字段的悬停说明 -->
@@ -135,56 +149,19 @@
                 </div>
               </a-col>
             </a-row>
-            <a-row :gutter="24" style="margin-top: 8px">
-              <!-- 只有一个服务器可选时不渲染下拉（字段仍保留在后端，留作扩展口） -->
-              <a-col v-if="serverOptions.length > 1" :span="6">
-                <a-form-item>
-                  <template #label>
-                    <span class="form-label">{{ t('edit.server') }}</span>
-                  </template>
-                  <a-select
-                    v-model:value="formData.Info.Server"
-                    size="large"
-                    :options="serverOptions"
-                    @change="handleFieldSave('Info.Server', formData.Info.Server)"
-                  />
-                </a-form-item>
-              </a-col>
-              <a-col :span="6">
-                <a-form-item>
-                  <template #label>
-                    <a-tooltip :title="t('edit.daysLeft1Means')">
-                      <span class="form-label"
-                        >{{ t('edit.daysLeft') }} <QuestionCircleOutlined class="help-icon"
-                      /></span>
-                    </a-tooltip>
-                  </template>
-                  <a-input-number
-                    v-model:value="formData.Info.RemainedDay"
-                    :min="-1"
-                    :max="9999"
-                    size="large"
-                    style="width: 100%"
-                    @blur="handleFieldSave('Info.RemainedDay', formData.Info.RemainedDay)"
-                  />
-                </a-form-item>
-              </a-col>
-              <a-col :span="12">
-                <a-form-item>
-                  <template #label>
-                    <span class="form-label">{{ t('edit.note') }}</span>
-                  </template>
-                  <a-textarea
-                    v-model:value="formData.Info.Notes"
-                    :rows="2"
-                    allow-clear
-                    auto-size
-                    class="notes-textarea"
-                    @blur="handleFieldSave('Info.Notes', formData.Info.Notes)"
-                  />
-                </a-form-item>
-              </a-col>
-            </a-row>
+            <a-form-item>
+              <template #label>
+                <span class="form-label">{{ t('edit.note') }}</span>
+              </template>
+              <a-textarea
+                v-model:value="formData.Info.Notes"
+                :rows="2"
+                allow-clear
+                auto-size
+                class="notes-textarea"
+                @blur="handleFieldSave('Info.Notes', formData.Info.Notes)"
+              />
+            </a-form-item>
             <!-- 页面上唯一的模式控件；三张卡片自带描述，不再另挂来源提示 -->
             <GeneralConfigModeSelector
               :model-value="formData.Info.Mode ?? '脚本'"
@@ -196,26 +173,9 @@
             />
           </div>
 
-          <!-- 关卡配置：「脚本」来源编辑脚本共享计划，「用户」来源编辑该用户自己的计划 -->
+          <!-- 任务配置：「脚本」来源编辑脚本共享计划，「用户」来源编辑该用户自己的计划；
+               模块细节（含体力模块的刷取副本）在右侧所选模块的设置里 -->
           <div v-if="controlMode === 'managed'" class="control-mode-content">
-            <a-alert
-              v-if="planOwner === 'script'"
-              type="info"
-              show-icon
-              :message="t('edit.hsrSharedPlanHint')"
-              class="mode-alert"
-            />
-            <StageConfigSection
-              v-if="dailyStageEngine"
-              :form-data="planForm"
-              :loading="isSaving"
-              :daily-engine="dailyStageEngine"
-              :stage-options="hsrStageOptions"
-              :stage-options-loading="hsrStageOptionsLoading"
-              :stage-options-error="hsrStageOptionsError"
-              @save="handleFieldSave"
-              @open-restore="restoreOpen = true"
-            />
             <ManagedTaskSection
               :snapshot="managedConfigSnapshot"
               :task-switch="planForm.TaskSwitch"
@@ -224,12 +184,29 @@
               :shared="planOwner === 'script'"
               :cloud="isCloud"
               :shown-warnings="visibleCapabilityWarnings"
-              @reset-overrides="handleManagedOverridesReset"
+              :summaries="moduleSummaries"
               @task-toggle="handleTaskSwitchToggle"
               @mapping-change="handleManagedMappingChange"
               @field-change="handleManagedFieldChange"
+              @field-reset="handleManagedFieldReset"
+              @module-reset="handleManagedModuleReset"
               @clear-invalid-overrides="handleManagedInvalidOverridesClear"
-            />
+            >
+              <template #module-extra="{ task, engine, form }">
+                <StageConfigSection
+                  v-if="task.key === 'Daily' && dailyStageEngine"
+                  :form-data="planForm"
+                  :loading="isSaving"
+                  :daily-engine="dailyStageEngine"
+                  :engine-label="engineDisplayName(dailyStageEngine)"
+                  :build-target-label="findEnabledBuildTargetField(engine, form?.fields)?.label"
+                  :stage-options="hsrStageOptions"
+                  :stage-options-loading="hsrStageOptionsLoading"
+                  :stage-options-error="hsrStageOptionsError"
+                  @save="handleFieldSave"
+                />
+              </template>
+            </ManagedTaskSection>
           </div>
           <div v-else class="control-mode-content">
             <DirectControlSection
@@ -241,7 +218,7 @@
             />
           </div>
 
-          <!-- 进度与重置（完成态恒按用户记，脚本 / 用户来源都显示；历战余响开始日在体力配置区） -->
+          <!-- 进度（完成态恒按用户记，脚本 / 用户来源都显示；历战余响开始日在体力模块设置里） -->
           <div v-if="formData.Info.Mode !== '直控'" class="form-section">
             <div class="section-header">
               <h3>{{ t('edit.progressReset') }}</h3>
@@ -272,8 +249,8 @@
                   <a-button size="small" :disabled="eowCompletedThisWeek" @click="markEowCompleted">
                     {{ t('edit.markAsDone') }}
                   </a-button>
-                  <a-button size="small" danger @click="resetEowProgress">{{
-                    t('edit.reset')
+                  <a-button size="small" @click="resetEowProgress">{{
+                    t('edit.hsrMarkNotDone')
                   }}</a-button>
                 </a-space>
               </a-col>
@@ -310,8 +287,8 @@
                   >
                     {{ t('edit.markAsDone') }}
                   </a-button>
-                  <a-button size="small" danger @click="resetWeeklyProgress">{{
-                    t('edit.reset')
+                  <a-button size="small" @click="resetWeeklyProgress">{{
+                    t('edit.hsrMarkNotDone')
                   }}</a-button>
                 </a-space>
               </a-col>
@@ -413,6 +390,15 @@ import type {
 import { buildHSRCapabilityView, resolveDirectEngineCards } from './HSRUserEdit/capabilityView'
 import DirectControlSection from './HSRUserEdit/DirectControlSection.vue'
 import ManagedTaskSection from './HSRUserEdit/ManagedTaskSection.vue'
+import { findEnabledBuildTargetField } from './HSRUserEdit/managedFields'
+import {
+  CHANNEL_LABEL_KEYS,
+  EOW_WEEKDAY_LABEL_KEYS,
+  hasLegacyEngineMismatch,
+  readChannelStage,
+  readEowStage,
+  resolveStageChannel,
+} from './HSRUserEdit/stageState'
 
 const { t } = useI18n()
 
@@ -535,6 +521,15 @@ const capabilitySnapshot = ref<HSRCapabilitySnapshot | null>(null)
 const visibleCapabilityWarnings = computed(() =>
   filterHSRCapabilityWarnings(capabilitySnapshot.value?.warnings)
 )
+// 页面顶部只放一条能力提示：有警告列警告，没有时才显示不可用原因
+const pageWarnings = computed<string[]>(() => {
+  if (visibleCapabilityWarnings.value.length) return visibleCapabilityWarnings.value
+  const reason = capabilitySnapshot.value?.unavailable_reason
+  return reason ? [reason] : []
+})
+// 用户可见的引擎名：不出现 M7A 这类内部代号
+const engineDisplayName = (engine: HSREngine) =>
+  engine === 'M7A' ? t('edit.directEngineM7a') : t('edit.directEngineSra')
 const capabilityView = computed(() => buildHSRCapabilityView(capabilitySnapshot.value))
 const effectiveEngines = computed(() => capabilityView.value.effectiveEngines)
 // 云·星穹铁道只用三月七：直控只剩三月七可选，引擎分配恒为三月七
@@ -580,12 +575,22 @@ const hsrStageOptions = ref<HSRDynamicStageOptionsData | null>(null)
 const hsrStageOptionsLoading = ref(false)
 const hsrStageOptionsError = ref('')
 
-const serverOptions = computed(() => [
-  { value: 'CN-Official', label: t('edit.hsrServerCnOfficial') },
+// 启用状态用下拉表达；a-select 的值只认字符串 / 数字，这里和布尔互转
+const statusOptions = computed(() => [
+  { label: t('edit.enabled3'), value: 'on' },
+  { label: t('edit.disabled'), value: 'off' },
 ])
+const statusValue = computed({
+  get: () => (formData.Info.Status ? 'on' : 'off'),
+  set: (value: string) => {
+    formData.Info.Status = value === 'on'
+    handleFieldSave('Info.Status', formData.Info.Status)
+  },
+})
 
 // 配置来源三态卡片（value 为后端 Info.Mode 取值，驱动逻辑需保持原样；文案走词表）
-// 脚本 = 本脚本下「脚本」来源用户共用一份任务配置；用户 = 该用户自己一份；直控 = 原样跑原生配置
+// 脚本 = 本脚本下选了「脚本」的用户共用一份任务配置；用户 = 该用户自己一份；
+// 直控 = 直接运行三月七 / SRA 里保存的设置
 const hsrConfigModeOptions: Array<{
   label: string
   value: '脚本' | '用户' | '直控'
@@ -604,14 +609,14 @@ const hsrConfigModeOptions: Array<{
     label: t('edit.user'),
     value: '用户',
     title: t('edit.user'),
-    description: t('edit.useThisUserS'),
+    description: t('edit.hsrUseUserOwn'),
     icon: 'database',
   },
   {
     label: t('edit.directControl'),
     value: '直控',
     title: t('edit.directControl'),
-    description: t('edit.useScriptSCurrent'),
+    description: t('edit.hsrUseDirect'),
     icon: 'setting',
   },
 ]
@@ -767,6 +772,26 @@ const controlMode = computed<'managed' | 'direct'>(() =>
   formData.Info.Mode === '直控' ? 'direct' : 'managed'
 )
 const dailyStageEngine = computed(() => getTaskMapping('Daily'))
+
+// 体力模块在列表里的摘要：当前刷取的副本类型与副本、历战余响与开始日
+const dailySummary = computed(() => {
+  const engine = dailyStageEngine.value
+  if (!engine) return undefined
+  const plan = planForm.value
+  if (hasLegacyEngineMismatch(plan.Stage, engine)) return t('edit.hsrRepickStage')
+  const channel = resolveStageChannel(plan.Stage.Channel)
+  const weekday = EOW_WEEKDAY_LABEL_KEYS[plan.TaskOpt.EchoOfWarWeekday ?? 'Monday']
+  return t('edit.hsrDailySummary', {
+    type: t(CHANNEL_LABEL_KEYS[channel]),
+    stage: readChannelStage(plan.Stage, engine, channel)?.label || t('edit.hsrStageNotPicked'),
+    eow: readEowStage(plan.Stage, engine)?.label || t('edit.skip'),
+    weekday: weekday ? t(weekday) : '',
+  })
+})
+
+const moduleSummaries = computed<Partial<Record<string, string>>>(() =>
+  dailySummary.value ? { Daily: dailySummary.value } : {}
+)
 const showCredentials = computed(
   () => controlMode.value === 'managed' && effectiveEngines.value.includes('SRA') && !isCloud.value
 )
@@ -799,17 +824,61 @@ const loadManagedConfig = async () => {
   }
 }
 
-// 「重置为源配置」：清空当前计划（脚本共享或该用户自己）在 MAS 里的全部 Managed.Options
-// 覆盖值，之后表单和运行都按 SRA / 三月七当前配置走。确认弹窗在子组件里。
-const handleManagedOverridesReset = async () => {
+// 从当前计划（脚本共享或该用户自己）的 Managed.Options 里删掉某引擎某模块的覆盖键；
+// keys 为 null 时删掉该模块的全部覆盖。返回是否保存成功。
+const removeManagedOverrides = async (
+  engine: HSREngine,
+  task: string,
+  keys: readonly string[] | null
+): Promise<boolean> => {
+  const plan = planForm.value
+  const options = { ...(plan.Managed?.Options ?? {}) }
+  const engineOptions = { ...(options[engine] ?? {}) }
+  const taskOptions = { ...(engineOptions[task] ?? {}) }
+  if (keys === null) {
+    for (const key of Object.keys(taskOptions)) delete taskOptions[key]
+  } else {
+    for (const key of keys) delete taskOptions[key]
+  }
+  if (Object.keys(taskOptions).length > 0) engineOptions[task] = taskOptions
+  else delete engineOptions[task]
+  if (Object.keys(engineOptions).length > 0) options[engine] = engineOptions
+  else delete options[engine]
+  plan.Managed = { ...(plan.Managed ?? {}), Options: options }
+  return handleFieldSave('Managed.Options', options)
+}
+
+const findManagedField = (engine: HSREngine, task: string, key: string) =>
+  managedConfigSnapshot.value?.tasks
+    .find(item => item.key === task)
+    ?.forms?.[engine]?.fields.find(item => item.key === key)
+
+// 「恢复本模块为三月七 / SRA 里的设置」：只清当前引擎当前模块的覆盖值。确认弹窗在子组件里。
+const handleManagedModuleReset = async (engine: HSREngine, task: string) => {
   if (!userId || managedConfigLoading.value) return
-  const saved = await handleFieldSave('Managed.Options', {})
+  const saved = await removeManagedOverrides(engine, task, null)
+  const engineName = engineDisplayName(engine)
   if (!saved) {
-    message.error(t('edit.couldNotResetManagedOverrides'))
+    message.error(t('edit.hsrModuleResetFailed', { engine: engineName }))
     return
   }
   await loadManagedConfig()
-  message.success(t('edit.managedOverridesReset'))
+  message.success(t('edit.hsrModuleResetDone', { engine: engineName }))
+}
+
+// 单项恢复：删掉该键的覆盖值，直接显示后端给的原值（只有带 native_value 的字段才有这个入口）
+const handleManagedFieldReset = async (engine: HSREngine, task: string, key: string) => {
+  if (!userId || managedConfigLoading.value) return
+  const saved = await removeManagedOverrides(engine, task, [key])
+  if (!saved) {
+    message.error(t('edit.hsrFieldResetFailed'))
+    return
+  }
+  const field = findManagedField(engine, task, key)
+  if (field) {
+    field.value = field.native_value
+    field.overridden = false
+  }
 }
 
 // 只剔掉后端报告为失效（原生配置里已没有、或类型对不上）的覆盖键，其余保留。
@@ -819,17 +888,7 @@ const handleManagedInvalidOverridesClear = async (
   keys: string[]
 ) => {
   if (!userId || managedConfigLoading.value || keys.length === 0) return
-  const plan = planForm.value
-  const options = { ...(plan.Managed?.Options ?? {}) }
-  const engineOptions = { ...(options[engine] ?? {}) }
-  const taskOptions = { ...(engineOptions[task] ?? {}) }
-  for (const key of keys) delete taskOptions[key]
-  if (Object.keys(taskOptions).length > 0) engineOptions[task] = taskOptions
-  else delete engineOptions[task]
-  if (Object.keys(engineOptions).length > 0) options[engine] = engineOptions
-  else delete options[engine]
-  plan.Managed = { ...(plan.Managed ?? {}), Options: options }
-  const saved = await handleFieldSave('Managed.Options', options)
+  const saved = await removeManagedOverrides(engine, task, keys)
   if (!saved) {
     message.error(t('edit.couldNotClearInvalidManagedOverrides'))
     return
@@ -897,10 +956,12 @@ const handleManagedFieldChange = async (
   engineOptions[task] = taskOptions
   options[engine] = engineOptions
   plan.Managed = { ...(plan.Managed ?? {}), Options: options }
-  const field = managedConfigSnapshot.value?.tasks
-    .find(item => item.key === task)
-    ?.forms?.[engine]?.fields.find(item => item.key === key)
-  if (field) field.value = value
+  const field = findManagedField(engine, task, key)
+  if (field) {
+    field.value = value
+    // 后端给了覆盖标记才跟着更新，没给时保持「未覆盖」的退化口径
+    if (field.overridden !== undefined && field.overridden !== null) field.overridden = true
+  }
   await handleFieldSave('Managed.Options', options)
 }
 
@@ -1097,16 +1158,16 @@ const loadCapabilities = async () => {
     capabilitySnapshot.value = {
       revision: 0,
       available: configuredEngines.length > 0,
-      unavailable_reason: configuredEngines.length ? null : '未配置 M7A 或 SRA 路径',
+      unavailable_reason: configuredEngines.length ? null : t('edit.hsrNoEnginePath'),
       candidate_engines: configuredEngines,
       configured_engines: configuredEngines,
       effective_engines: configuredEngines,
       adapters: [],
       tasks: [],
       warnings: [
-        `HSR 能力端点不可用，已回退到内置脚本配置：${
-          error instanceof Error ? error.message : String(error)
-        }`,
+        t('edit.hsrCapabilityFallback', {
+          reason: error instanceof Error ? error.message : String(error),
+        }),
       ],
     }
   }
@@ -1399,6 +1460,11 @@ const loadUserData = async () => {
 
 .cloud-login-row {
   margin-top: 8px;
+}
+
+.page-warning-list {
+  margin: 0;
+  padding-left: 18px;
 }
 
 .cloud-login-line {

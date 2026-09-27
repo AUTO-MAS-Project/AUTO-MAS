@@ -2,18 +2,11 @@ import { onBeforeUnmount, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { message } from 'ant-design-vue'
 import QRCode from 'qrcode'
-import { ClawService, QqService, type OutBase, type OpenClawWeixinStatusOut } from '@/api'
+import { QqService, type OutBase, type OpenClawQQStatusOut } from '@/api'
 
 const POLL_INTERVAL = 2000
 
 const CHANNELS = {
-  weixin: {
-    prefix: 'openclawWeixin',
-    status: ClawService.getStatusApiSettingOpenclawWeixinStatusPost,
-    start: ClawService.startLoginApiSettingOpenclawWeixinLoginStartPost,
-    check: ClawService.checkLoginApiSettingOpenclawWeixinLoginCheckPost,
-    unbind: ClawService.unbindApiSettingOpenclawWeixinUnbindPost,
-  },
   qq: {
     prefix: 'openclawQq',
     status: QqService.getStatusApiSettingOpenclawQqStatusPost,
@@ -32,7 +25,7 @@ export function useClawBinding(
   const api = CHANNELS[channel]
   const { t } = useI18n()
   const label = (key: string) => t(`setting.notify.${api.prefix}${key}`)
-  const status = ref<OpenClawWeixinStatusOut | null>(null)
+  const status = ref<OpenClawQQStatusOut | null>(null)
   const statusLoading = ref(false)
   const statusError = ref('')
   const unbinding = ref(false)
@@ -42,7 +35,6 @@ export function useClawBinding(
   const qrDataUrl = ref('')
   const state = ref('idle')
   const hint = ref('')
-  const verifyCode = ref('')
   let sessionId = ''
   let runId = 0
   let timer: ReturnType<typeof setTimeout> | undefined
@@ -65,7 +57,7 @@ export function useClawBinding(
       checkResponse(result)
       status.value = result
       isBound = !!result.connected
-      if (channel === 'qq' && (!result.connected || result.state === 'connected')) {
+      if (!result.connected || result.state === 'connected') {
         qqBindingObserved = false
       }
       // 后端发现凭据不完整时同时关闭旧的通知开关，避免继续向失效渠道投递。
@@ -82,7 +74,6 @@ export function useClawBinding(
       clearTimeout(statusTimer)
       if (
         !disposed &&
-        channel === 'qq' &&
         (qqBindingObserved || (status.value?.connected && status.value.state !== 'connected'))
       ) {
         statusTimer = setTimeout(() => void loadStatus(), POLL_INTERVAL)
@@ -95,19 +86,16 @@ export function useClawBinding(
     clearTimeout(timer)
     open.value = false
     loading.value = checking.value = false
-    sessionId = qrDataUrl.value = verifyCode.value = ''
+    sessionId = qrDataUrl.value = ''
     state.value = 'idle'
     hint.value = ''
   }
 
-  const poll = async (id: number, code?: string) => {
+  const poll = async (id: number) => {
     if (id !== runId || checking.value) return
     checking.value = true
     try {
-      const result = await api.check({
-        sessionId,
-        ...(code ? { verifyCode: code } : {}),
-      })
+      const result = await api.check({ sessionId })
       if (id !== runId) return
       checkResponse(result)
       const wasConnecting = state.value === 'connecting'
@@ -119,7 +107,7 @@ export function useClawBinding(
         isBound = true
         await loadStatus()
       } else if (['waiting', 'scanned', 'connecting'].includes(state.value)) {
-        if (channel === 'qq' && state.value === 'connecting' && !wasConnecting) {
+        if (state.value === 'connecting' && !wasConnecting) {
           qqBindingObserved = true
           void loadStatus()
         }
@@ -163,10 +151,6 @@ export function useClawBinding(
     }
   }
 
-  const submitCode = () => {
-    if (verifyCode.value.trim()) void poll(runId, verifyCode.value.trim())
-  }
-
   const unbind = async () => {
     unbinding.value = true
     try {
@@ -202,11 +186,9 @@ export function useClawBinding(
     qrDataUrl,
     state,
     hint,
-    verifyCode,
     loadStatus,
     close,
     start,
-    submitCode,
     unbind,
   }
 }

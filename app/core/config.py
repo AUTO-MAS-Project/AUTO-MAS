@@ -91,6 +91,8 @@ from app.models.config import (
     SrcUserConfig,
     TimeSet,
     Webhook,
+    WhimboxConfig,
+    WhimboxUserConfig,
     ZzzOdConfig,
     ZzzOdUserConfig,
     infrast_format_problem,
@@ -101,7 +103,11 @@ from app.models.config import (
     read_maa_config,
 )
 from app.models.schema import PlanComboxConsumer
-from app.task.M9A.migration import migrate_legacy_m9a_scripts
+from app.task.M9A.migration import (
+    migrate_legacy_m9a_scripts,
+    normalize_m9a_managed_entries,
+    repair_m9a_migration_losses,
+)
 from app.utils import get_logger, is_supervised, resource_path
 from app.utils.community import next_community_account_name
 from app.utils.constants import (
@@ -112,6 +118,7 @@ from app.utils.constants import (
     TYPE_BOOK,
     UTC4,
     UTC8,
+    game_now,
 )
 from app.utils.io import ConfigCorruptedError, force_rmtree, write_file
 from app.utils.paths import SOURCE_ROOT
@@ -119,8 +126,14 @@ from app.utils.platform import IS_WINDOWS
 
 # 孤儿 venv 的宽限期：刚动过的一律不碰，避免与正在准备环境的运行抢。
 MAAFW_AGENT_VENV_GRACE_SECONDS = 60 * 60
-# 登录失败截图的总容量上限，超出后按时间从旧到新回收。
-LOGIN_SCREENSHOT_MAX_BYTES = 10 * 1024 * 1024
+# 各专项失败诊断目录里参与保留期清理的文件后缀（诊断日志与截图）；
+# 不在集合内的文件（如未来的标记/锁文件）不被自动清理触碰
+DIAGNOSTIC_FILE_SUFFIXES = frozenset({".log", ".png", ".jpg"})
+# 失败截图后缀（旧专项存量 PNG 与现行 JPEG 同口径）
+DIAGNOSTIC_SCREENSHOT_SUFFIXES = frozenset({".png", ".jpg"})
+# 单个诊断目录的失败截图总量上限，超出后按时间从旧到新回收；
+# 每目录独立结算，一个专项的截图风暴不会挤掉其他专项的证据
+DIAGNOSTIC_SCREENSHOT_MAX_BYTES = 10 * 1024 * 1024
 
 #: 本进程启动时刻；启动清理只碰比它更早的半成品。
 _PROCESS_STARTED_AT = time.time()
@@ -321,7 +334,7 @@ def normalize_proxy_address(raw: str | None) -> str | None:
 
 
 class AppConfig(GlobalConfig):
-    VERSION = "v5.6.0-beta.1"
+    VERSION = "v5.6.0"
 
     def __init__(self) -> None:
         super().__init__()
@@ -457,6 +470,16 @@ class AppConfig(GlobalConfig):
             self.config_path / "ScriptConfig.json",
             global_mirror_cdk=str(self.get("Update", "MirrorChyanCDK") or ""),
         )
+        # 按 v5.6.0-beta.1 迁过的配置，从迁移备份补回那版清空的输入值与丢掉的切号，只做一次
+        m9a_repair = await asyncio.to_thread(
+            repair_m9a_migration_losses,
+            self.config_path / "ScriptConfig.json",
+            skip_uids=set(m9a_migration.migrated_uids),
+        )
+        # 启动游戏 / 切换账号 / 关闭游戏由 MAS 控制，不留在用户队列里：每次启动整理一遍，幂等
+        m9a_managed = await asyncio.to_thread(
+            normalize_m9a_managed_entries, self.config_path / "ScriptConfig.json"
+        )
         # HSR 旧直控快照（Direct.*）已删字段，同理必须在 connect 之前另存原始密文
         await self._archive_legacy_hsr_direct_snapshots(
             self.config_path / "ScriptConfig.json"
@@ -464,6 +487,10 @@ class AppConfig(GlobalConfig):
         await self.ScriptConfig.connect(self.config_path / "ScriptConfig.json")
         if m9a_migration.changed or m9a_migration.failure:
             await self._settle_m9a_migration(m9a_migration)
+        if m9a_repair.needs_notice:
+            self.startup_notices.append(m9a_repair.notice())
+        if m9a_managed.needs_notice:
+            self.startup_notices.append(m9a_managed.notice())
         await self.QueueConfig.connect(self.config_path / "QueueConfig.json")
         await self.ToolsConfig.connect(self.config_path / "ToolsConfig.json")
 
@@ -572,6 +599,11 @@ class AppConfig(GlobalConfig):
                 )
                 if_streaming = True
 
+                # MaaConfig.Emulator.Id 依赖 EmulatorConfig；迁移时必须先加载模拟器，
+                # 否则合法 UUID 会被 MultipleUIDValidator 当成失效值改成 "-"。
+                await self.EmulatorConfig.connect(
+                    self.config_path / "EmulatorConfig.json"
+                )
                 await self.ScriptConfig.connect(self.config_path / "ScriptConfig.json")
                 await self.PlanConfig.connect(self.config_path / "PlanConfig.json")
                 await self.QueueConfig.connect(self.config_path / "QueueConfig.json")
@@ -866,6 +898,7 @@ class AppConfig(GlobalConfig):
             "BetterGI",
             "ZzzOd",
             "BAAH",
+            "Whimbox",
             "MSS",
         ],
         script_id: str | None = None,
@@ -883,6 +916,7 @@ class AppConfig(GlobalConfig):
         | BetterGIConfig
         | ZzzOdConfig
         | BAAHConfig
+        | WhimboxConfig
         | MSSConfig,
     ]:
         """添加脚本配置"""
@@ -1248,6 +1282,7 @@ class AppConfig(GlobalConfig):
         | BetterGIUserConfig
         | ZzzOdUserConfig
         | BAAHUserConfig
+        | WhimboxUserConfig
         | MSSUserConfig,
     ]:
         """添加用户配置"""
@@ -1292,6 +1327,8 @@ class AppConfig(GlobalConfig):
             uid, config = await script_config.UserData.add(ZzzOdUserConfig)
         elif isinstance(script_config, BAAHConfig):
             uid, config = await script_config.UserData.add(BAAHUserConfig)
+        elif isinstance(script_config, WhimboxConfig):
+            uid, config = await script_config.UserData.add(WhimboxUserConfig)
         else:
             raise TypeError(f"不支持的脚本配置类型: {type(script_config)}")
 
@@ -1533,7 +1570,7 @@ class AppConfig(GlobalConfig):
         logger.info(f"ZZZ-OD 直控删除实例: {instance_idx:02d}")
         return self.get_zzzod_instances(script_id)
 
-    def get_zzzod_slots(self, script_id: str) -> list[dict]:
+    async def get_zzzod_slots(self, script_id: str) -> list[dict]:
         """实例槽总览：原生实例 / MAS 绑定槽 / 无主残留（含未落盘的绑定）。
 
         槽目录是 MAS 分配在一条龙安装目录里的，注册表里没有它、GUI 看不见，
@@ -1550,7 +1587,9 @@ class AppConfig(GlobalConfig):
 
         script_config = self._zzzod_script_config(script_id)
         root = self._zzzod_root(script_config)
-        return list_slot_overview(root, collect_slot_owners(root))
+        owners = collect_slot_owners(root)
+        # 槽总览要 rglob 统计各槽目录占用，是阻塞 IO，放线程里跑
+        return await asyncio.to_thread(list_slot_overview, root, owners)
 
     def _ensure_zzzod_install_unlocked(self, root: Path) -> None:
         """任一指向同一安装的 ZzzOd 脚本正在运行时拒绝槽级写操作。
@@ -1576,7 +1615,7 @@ class AppConfig(GlobalConfig):
             if script_root and config_root_key(script_root) == key:
                 raise RuntimeError("有正在运行的绝区零一条龙脚本, 请结束后再试")
 
-    def clean_zzzod_slots(self, script_id: str) -> list[int]:
+    async def clean_zzzod_slots(self, script_id: str) -> list[int]:
         """手动清理该安装下无人绑定的实例槽，返回实际回收的槽号。
 
         与运行/会话前的自动回收同源（先归档进回收池再删目录；原生实例与
@@ -1597,17 +1636,22 @@ class AppConfig(GlobalConfig):
         script_config = self._zzzod_script_config(script_id)
         root = self._zzzod_root(script_config)
         self._ensure_zzzod_install_unlocked(root)
-        return recycle_unbound_slots(root, only_allocated=False, swallow=False)
+        # 归档 + 删目录是阻塞 IO，放线程里跑
+        return await asyncio.to_thread(
+            recycle_unbound_slots, root, only_allocated=False, swallow=False
+        )
 
-    def get_zzzod_recycle(self, script_id: str) -> list[dict]:
+    async def get_zzzod_recycle(self, script_id: str) -> list[dict]:
         """回收池条目（被删用户/脚本留下的槽内容与该槽 MAS 备份池快照）。"""
 
         from app.task.ZzzOd.tools import list_recycle_entries
 
         script_config = self._zzzod_script_config(script_id)
-        return list_recycle_entries(self._zzzod_root(script_config))
+        return await asyncio.to_thread(
+            list_recycle_entries, self._zzzod_root(script_config)
+        )
 
-    def clear_zzzod_recycle(self, script_id: str) -> int:
+    async def clear_zzzod_recycle(self, script_id: str) -> int:
         """清空本安装的回收池，返回删除的条目数。
 
         只删 recycle 池（被删用户/脚本留下的存底）；``onedragon`` 原生池与
@@ -1623,7 +1667,8 @@ class AppConfig(GlobalConfig):
         script_config = self._zzzod_script_config(script_id)
         root = self._zzzod_root(script_config)
         self._ensure_zzzod_install_unlocked(root)
-        return clear_recycle_pool(root)
+        # 删池是阻塞 IO，放线程里跑
+        return await asyncio.to_thread(clear_recycle_pool, root)
 
     async def restore_zzzod_recycle(
         self,
@@ -2864,6 +2909,10 @@ class AppConfig(GlobalConfig):
             from app.task.HSR.tools.restore_service import (
                 RESTORE_POOLS,
             )
+        elif isinstance(script_config, WhimboxConfig):
+            from app.task.Whimbox.tools.restore_service import (
+                RESTORE_POOLS,
+            )
         else:
             raise ValueError("该专项暂不支持配置恢复")
         return build_restore_service(
@@ -2995,8 +3044,14 @@ class AppConfig(GlobalConfig):
             and isinstance(task_data, dict)
             and "TaskSnapshot" in task_data
         ):
+            from app.task.MaaFW.tools.embedded.flavor import sanitize_user_task_update
             from app.task.MaaFW.tools.embedded.option_secrets import (
                 seal_user_task_snapshot,
+            )
+
+            # 特调收归自己管的任务（如 M9A 的启动 / 切号 / 关闭）不进用户队列，写入前按特调整理
+            await asyncio.to_thread(
+                sanitize_user_task_update, script_id, script_config, user_config, data
             )
 
             task_data["TaskSnapshot"] = await asyncio.to_thread(
@@ -3677,6 +3732,9 @@ class AppConfig(GlobalConfig):
             maa_data_dir=archive_dir,
             config_path=self.config_path,
             proxy=self.proxy,
+            today=game_now(
+                script_config.UserData[uuid.UUID(user_id)].get("Info", "Server")
+            ).date(),
             skland=skland,
         )
         # 目标干员当前练度（编辑器"当前等级 → 目标等级"展示用）；
@@ -4430,11 +4488,13 @@ class AppConfig(GlobalConfig):
         """获取关卡信息"""
 
         stage_by_server = await self.get_stage(refresh=refresh)
+        # 开放日按区服的游戏日判断
+        game_today = game_now(server)
         server = "Official" if server == "Bilibili" else server
         stage_data = stage_by_server.get(server, {})
 
         if type == "Info":
-            today = datetime.now(tz=UTC4).isoweekday()
+            today = game_today.isoweekday()
             res_stage_info = []
             for stage in RESOURCE_STAGE_INFO:
                 if (
@@ -4460,7 +4520,7 @@ class AppConfig(GlobalConfig):
                 )
             return data
         elif type == "Today":
-            return stage_data.get(datetime.now(tz=UTC4).strftime("%A"), [])
+            return stage_data.get(game_today.strftime("%A"), [])
         else:
             return stage_data.get(type, [])
 
@@ -5443,14 +5503,7 @@ class AppConfig(GlobalConfig):
             lines.append(f"迁移前的配置已备份为 {report.backup_path.name}")
         self.startup_notices.append(
             {
-                "level": "warning"
-                if (
-                    report.failure
-                    or report.disabled_users
-                    or report.dropped_tasks
-                    or report.degraded_scripts
-                )
-                else "info",
+                "level": "warning" if report.needs_attention else "info",
                 "title": "M9A 脚本迁移失败"
                 if report.failure
                 else "M9A 脚本已并入 MFW 引擎"
@@ -6023,10 +6076,11 @@ class AppConfig(GlobalConfig):
     async def clean_debug_diagnostics(self) -> None:
         """清理 debug 目录下过期的失败诊断文件。
 
-        终末地登录失败截图与 OK-WW / OK-NTE 切号诊断只会随失败新增，
-        此前没有任何回收；保留时长沿用历史记录的保留天数设置。
-        登录截图总大小超过 10 MB 时，额外按时间从旧到新清理，
-        不受历史记录永久保留设置影响。
+        自动扫描 ``debug/`` 下全部子目录（各专项的登录/切号/启动器失败诊断，
+        新专项落盘即纳入清理，无需登记名单）：诊断日志与截图按历史记录的
+        保留天数清理；截图另受每目录独立的大小上限约束，超限从旧到新
+        回收，不受历史记录永久保留设置影响——一个专项的截图风暴不会
+        挤掉其他专项的证据。
         """
 
         retention_days = self.get("Function", "HistoryRetentionTime")
@@ -6036,15 +6090,23 @@ class AppConfig(GlobalConfig):
         else:
             cutoff = time.time() - retention_days * 86400
 
+        debug_root = Path.cwd() / "debug"
+        if not debug_root.is_dir():
+            return
+
         deleted_count = 0
-        screenshot_files: list[tuple[Path, float, int]] = []
-        screenshot_size = 0
-        for name in ("maaend-login", "okww-account-switch", "oknte-account-switch"):
-            folder = Path.cwd() / "debug" / name
+        screenshot_deleted_count = 0
+        for folder in debug_root.iterdir():
             if not folder.is_dir():
                 continue
+
+            screenshot_files: list[tuple[Path, float, int]] = []
+            screenshot_size = 0
             for file in folder.iterdir():
-                if not file.is_file():
+                if (
+                    not file.is_file()
+                    or file.suffix.lower() not in DIAGNOSTIC_FILE_SUFFIXES
+                ):
                     continue
                 try:
                     file_stat = file.stat()
@@ -6058,28 +6120,30 @@ class AppConfig(GlobalConfig):
                         logger.warning(f"诊断文件清理失败: {file} - {exc}")
                     else:
                         deleted_count += 1
-                        continue
-                if file.suffix.lower() == ".png":
+                    continue
+                if file.suffix.lower() in DIAGNOSTIC_SCREENSHOT_SUFFIXES:
                     screenshot_files.append(
                         (file, file_stat.st_mtime, file_stat.st_size)
                     )
                     screenshot_size += file_stat.st_size
+
+            for file, _, file_size in sorted(
+                screenshot_files, key=lambda item: item[1]
+            ):
+                if screenshot_size <= DIAGNOSTIC_SCREENSHOT_MAX_BYTES:
+                    break
+                try:
+                    file.unlink()
+                except OSError as exc:
+                    logger.warning(f"失败截图清理失败: {file} - {exc}")
+                    continue
+                screenshot_size -= file_size
+                screenshot_deleted_count += 1
+
         if deleted_count:
             logger.success(f"清理完成: {deleted_count} 个过期诊断文件")
-
-        screenshot_deleted_count = 0
-        for file, _, file_size in sorted(screenshot_files, key=lambda item: item[1]):
-            if screenshot_size <= LOGIN_SCREENSHOT_MAX_BYTES:
-                break
-            try:
-                file.unlink()
-            except OSError as exc:
-                logger.warning(f"登录截图清理失败: {file} - {exc}")
-                continue
-            screenshot_size -= file_size
-            screenshot_deleted_count += 1
         if screenshot_deleted_count:
-            logger.success(f"清理完成: {screenshot_deleted_count} 个超限登录截图")
+            logger.success(f"清理完成: {screenshot_deleted_count} 个超限失败截图")
 
     async def clean_maafw_native_debug_logs(self) -> None:
         """清掉 MFW 项目里过期的 MaaFramework 原生日志备份。

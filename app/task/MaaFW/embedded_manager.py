@@ -69,6 +69,12 @@ from app.task.MaaFW.tools.embedded.project_path import (
     release_project_path,
     try_reserve_project_path,
 )
+from app.task.MaaFW.tools.embedded.signal_notice import (
+    CLIENT_UPDATE_REQUIRED,
+    SERVER_MAINTENANCE,
+    MaaFWSignalTracker,
+    push_signal_notices,
+)
 from app.task.MaaFW.tools.embedded.update_credentials import (
     AutoUpdateMode,
     MaaFWUpdateCredentials,
@@ -341,6 +347,9 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
         self._report_finalized = False
         # 各用户跑完攒下的失败截图（带用户名的标签, 路径），最后随「代理结果」发出。
         self._failure_screenshots: list[tuple[str, Path]] = []
+        # 本轮项目信号（停服维护 / 需要更新客户端）的账，各用户的 AutoProxy 共用一份：
+        # 同一资源已确认维护时后续用户直接跳过；收尾时按「信号 + 资源」各发一条通知。
+        self.signal_tracker = MaaFWSignalTracker()
         # 项目更新的日志行（已带时间戳）；运行前更新的会并入第一位用户的日志。
         self.project_update_logs: list[str] = []
         self._auto_update_mode: AutoUpdateMode = "Off"
@@ -544,6 +553,7 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
             self.emulator_manager,
             # 运行前更新的日志只并入第一位用户；取走后列表清空，后续用户不重复。
             project_update_logs=self._take_project_update_logs(),
+            signal_tracker=self.signal_tracker,
         )
         route = self._resolve_runtime_pool_route()
         task.maafw_runtime_pool_root = route.root
@@ -565,7 +575,12 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
         不能从这里引用），这样并入用户日志后看不出接缝。
         """
 
+        from app.task.MaaFW.tools.core.agent_env.env import DETAIL_LOG_PREFIX
+
         logger.info(f"MFW 项目更新：{message}")
+        if str(message).startswith(DETAIL_LOG_PREFIX):
+            # 详情行（如健康检查的完整 traceback）只进后端日志，不上界面与用户日志。
+            return
         timestamp = datetime.now().astimezone().strftime("%H:%M:%S")
         for line in str(message).splitlines() or [""]:
             self.project_update_logs.append(f"[{timestamp}] {line}\n")
@@ -1485,8 +1500,18 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
         completed_users = [
             user for user in self.script_info.user_list if user.status == "完成"
         ]
+        # 因停服维护跳过的用户（命中的与被连带跳过的）：不算完成，也不算异常
+        maintenance_ids = self.signal_tracker.user_ids(SERVER_MAINTENANCE)
+        maintenance_users = [
+            user
+            for user in self.script_info.user_list
+            if user.status == "跳过" and user.user_id in maintenance_ids
+        ]
         if self.check_result == "Pass" and not error_users:
-            self.script_info.status = "完成"
+            # 全员因维护跳过时不能显示成「完成」
+            self.script_info.status = (
+                "跳过" if maintenance_users and not completed_users else "完成"
+            )
         else:
             self.script_info.status = "异常"
 
@@ -1504,6 +1529,40 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
             return
         self._report_finalized = True
 
+        await self._push_signal_notices()
+
+        # 全员都因停服维护跳过（含运行前检查连带跳过的）：信号通知已经说清楚了，
+        # 不再发「代理结果」汇总；有任何用户完成、失败、需更新或因别的原因跳过时照发。
+        if maintenance_users and len(maintenance_users) == len(
+            self.script_info.user_list
+        ):
+            logger.info(
+                f"MFW 本轮用户全部因停服维护跳过（{self.script_info.name}），"
+                "只发信号通知，不发代理结果汇总"
+            )
+        else:
+            await self._push_proxy_report(
+                error_users=error_users,
+                completed_users=completed_users,
+                maintenance_users=maintenance_users,
+            )
+
+        # 运行后更新：所有用户都跑完（main_task 正常走到底）之后一次。放在
+        # 代理结果推送之后，别让下载耽误报告；取消/崩溃路径不跑。
+        if self._users_completed and self._auto_update_mode == "AfterRun":
+            await self._run_project_update("AfterRun")
+            # 顺手把下一轮要用的环境备好：下次运行前那一步就只剩比指纹。
+            await self._ensure_project_environment("AfterRun")
+
+    async def _push_proxy_report(
+        self,
+        *,
+        error_users: list[UserItem],
+        completed_users: list[UserItem],
+        maintenance_users: list[UserItem],
+    ) -> None:
+        """推送本轮的「代理结果」汇总。"""
+
         title = (
             f"{datetime.now().strftime('%m-%d')} | "
             f"{self.script_info.name or '空白'}的{TASK_MODE_ZH[self.task_info.mode]}任务报告"
@@ -1514,9 +1573,16 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
             "start_time": self.begin_time,
             "end_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "completed_count": len(completed_users),
-            "uncompleted_count": len(error_users),
+            "uncompleted_count": len(error_users) + len(maintenance_users),
             "result": self.script_info.result,
         }
+        summary_title = self._signal_summary_title(
+            title,
+            has_error=bool(error_users),
+            has_completed=bool(completed_users),
+        )
+        if summary_title:
+            result["summary_title"] = summary_title
         try:
             images = await asyncio.to_thread(
                 load_screenshot_images,
@@ -1529,6 +1595,8 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
                 message=result,
                 task_info=self.task_info,
                 images=[image for _, image in images],
+                # 本轮有信号通知时系统弹窗由它弹（写明维护 / 需更新），这里不再弹第二次
+                include_system=not self.signal_tracker.records(),
             )
         except Exception as exc:  # noqa: BLE001
             logger.opt(exception=True).warning(f"推送 MFW 代理结果时出现异常: {exc}")
@@ -1540,12 +1608,53 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
                 ),
             )
 
-        # 运行后更新：所有用户都跑完（main_task 正常走到底）之后一次。放在
-        # 代理结果推送之后，别让下载耽误报告；取消/崩溃路径不跑。
-        if self._users_completed and self._auto_update_mode == "AfterRun":
-            await self._run_project_update("AfterRun")
-            # 顺手把下一轮要用的环境备好：下次运行前那一步就只剩比指纹。
-            await self._ensure_project_environment("AfterRun")
+    def _signal_summary_title(
+        self, title: str, *, has_error: bool, has_completed: bool
+    ) -> str | None:
+        """本轮有信号时代理结果的摘要标题，写明原因；没有信号返回 None（沿用默认）。"""
+
+        signals = {record.signal for record in self.signal_tracker.records()}
+        reasons = [
+            text
+            for signal, text in (
+                (SERVER_MAINTENANCE, "游戏停服维护中"),
+                (CLIENT_UPDATE_REQUIRED, "需要更新游戏客户端"),
+            )
+            if signal in signals
+        ]
+        if not reasons:
+            return None
+        if has_error:
+            state = "存在异常"
+        elif has_completed:
+            state = "部分跳过"
+        else:
+            state = "已跳过"
+        return title.replace("报告", f"{state}（{'、'.join(reasons)}）")
+
+    async def _push_signal_notices(self) -> None:
+        """本轮撞上的停服维护 / 需要更新客户端，每个「信号 + 资源」发一条通知。"""
+
+        if not self.signal_tracker.records():
+            return
+        user_config = self.user_config
+
+        def user_config_for(user_id: str) -> Any | None:
+            if user_config is None:
+                return None
+            try:
+                return user_config[uuid.UUID(user_id)]
+            except (KeyError, ValueError):
+                return None
+
+        try:
+            await push_signal_notices(
+                self.signal_tracker,
+                script_name=self.script_info.name or "空白",
+                user_config_for=user_config_for,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.opt(exception=True).warning(f"推送 MFW 信号通知时出现异常: {exc}")
 
     async def on_crash(self, e: Exception) -> None:
         logger.exception(f"MFW 内置运行异常：{e}")

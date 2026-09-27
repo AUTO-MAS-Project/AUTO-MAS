@@ -139,7 +139,6 @@ const handleOpenFolder = async () => {
   if (!userId) return
   await openUserConfigFolder(props.scriptId, userId)
 }
-
 </script>
 
 <style scoped>

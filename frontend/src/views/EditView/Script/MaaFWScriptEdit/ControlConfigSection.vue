@@ -135,22 +135,48 @@
         <!-- type=flex + stretch：右边的策略表跟左边「标签 + 输入框」等高，上下边对齐 -->
         <a-row :gutter="24" type="flex" align="stretch" class="control-detail-row">
           <a-col :span="12">
-            <a-form-item>
-              <template #label>
-                <a-tooltip :title="t('edit.mfwGamePackageNamePassed')">
-                  <span class="form-label">
-                    {{ t('edit.mfwGamePackageName') }}
-                    <QuestionCircleOutlined class="help-icon" aria-hidden="true" />
-                  </span>
-                </a-tooltip>
-              </template>
-              <a-input
-                v-model:value="maafwConfig.Game.PackageName"
-                :placeholder="t('edit.mfwGamePackageNamePlaceholder')"
-                allow-clear
-                @blur="emit('change', 'Game', 'PackageName', maafwConfig.Game.PackageName)"
-              />
-            </a-form-item>
+            <!-- flavor 支持游戏更新（M9A）时包名右边并排「游戏更新」，窄屏上下排；
+                 不支持时包名独占整列，与通用 MaaFW 一致 -->
+            <a-row :gutter="16">
+              <a-col :xs="24" :xl="gameUpdateHintKey ? 12 : 24">
+                <a-form-item>
+                  <template #label>
+                    <a-tooltip :title="t('edit.mfwGamePackageNamePassed')">
+                      <span class="form-label">
+                        {{ t('edit.mfwGamePackageName') }}
+                        <QuestionCircleOutlined class="help-icon" aria-hidden="true" />
+                      </span>
+                    </a-tooltip>
+                  </template>
+                  <a-input
+                    v-model:value="maafwConfig.Game.PackageName"
+                    :placeholder="t('edit.mfwGamePackageNamePlaceholder')"
+                    allow-clear
+                    @blur="emit('change', 'Game', 'PackageName', maafwConfig.Game.PackageName)"
+                  />
+                </a-form-item>
+              </a-col>
+              <a-col v-if="gameUpdateHintKey" :xs="24" :xl="12">
+                <a-form-item>
+                  <template #label>
+                    <a-tooltip :title="t(gameUpdateHintKey)">
+                      <span class="form-label">
+                        {{ t('edit.gameUpdate') }}
+                        <QuestionCircleOutlined class="help-icon" aria-hidden="true" />
+                      </span>
+                    </a-tooltip>
+                  </template>
+                  <a-select
+                    v-model:value="maafwConfig.Run.GameUpdateMode"
+                    style="width: 100%"
+                    :options="gameUpdateModeOptions"
+                    @change="
+                      (value: string | number) => emit('change', 'Run', 'GameUpdateMode', value)
+                    "
+                  />
+                </a-form-item>
+              </a-col>
+            </a-row>
           </a-col>
           <!-- 控制策略表放在包名右边：截图 / 输入两行，撑满整列高度 -->
           <a-col :span="12" class="control-strategy-col">
@@ -294,6 +320,7 @@ import type {
   MaaFWControllerInfo,
   MaaFWInterfacePreviewData,
   MaaFWResourceInfo,
+  MaaFWGameUpdateMode,
   MaaFWLaunchMode,
   MaaFWScriptConfig,
   MaaFWUnityResolution,
@@ -320,6 +347,8 @@ const props = defineProps<{
   adbControlStrategyItems: Array<{ label: string; value: string }>
   selectedEmulatorLabel: string
   interfaceDependentDisabled: boolean
+  /** flavor 的「游戏更新」问号提示 key；为空表示该类型不支持游戏更新，不显示下拉 */
+  gameUpdateHintKey: string | null
 }>()
 
 const emit = defineEmits<{
@@ -340,6 +369,13 @@ const unityResolutionOptions = computed<Array<{ label: string; value: MaaFWUnity
     { label: '1280×720', value: '1280x720' },
   ]
 )
+
+// 三项与后端 MaaFWConfig.Run.GameUpdateMode 的 OptionsValidator 一致
+const gameUpdateModeOptions = computed<Array<{ label: string; value: MaaFWGameUpdateMode }>>(() => [
+  { label: t('edit.mfwGameUpdateOff'), value: 'Off' },
+  { label: t('edit.mfwGameUpdateCheck'), value: 'Check' },
+  { label: t('edit.mfwGameUpdateAutoInstall'), value: 'AutoInstall' },
+])
 </script>
 
 <style scoped>

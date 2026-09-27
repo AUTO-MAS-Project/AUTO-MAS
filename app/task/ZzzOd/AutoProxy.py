@@ -1805,7 +1805,7 @@ class AutoProxyTask(TaskExecuteBase):
         # 写入历史记录（对齐 General/SRC/MaaEnd/Okww/BetterGI 行为）
         statistic_paths: list[Path] = []
         for t, log_item in self.cur_user_item.log_record.items():
-            dt = t.replace(tzinfo=datetime.now().astimezone().tzinfo).astimezone(UTC4)
+            dt = t.astimezone(UTC4)
             log_path = Config.build_history_log_path(
                 script_name=self.script_info.name,
                 user_name=self.cur_user_item.name,

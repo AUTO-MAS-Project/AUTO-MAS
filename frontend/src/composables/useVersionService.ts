@@ -14,6 +14,7 @@ const logger = window.electronAPI.getLogger('版本服务')
 export const updateInfo = ref<UpdateCheckOut | null>(null)
 export const backendUpdateInfo = ref<VersionOut | null>(null)
 export const runtimeBackendUpdateAvailable = ref(false)
+export const runtimeBackendUpdateCommitMessage = ref('')
 
 const TITLEBAR_POLL_MS = 10 * 60 * 1000 // 10 分钟
 let titlebarPollTimer: number | null = null
@@ -49,8 +50,13 @@ export const getBackendVersion = async () => {
 export const checkRuntimeBackendUpdate = async () => {
   try {
     const result = await window.electronAPI.checkRuntimeBackendUpdate?.()
-    if (result?.staged === true) runtimeBackendUpdateAvailable.value = true
-    else if (result && !result.error) runtimeBackendUpdateAvailable.value = false
+    if (result?.staged === true) {
+      runtimeBackendUpdateAvailable.value = true
+      runtimeBackendUpdateCommitMessage.value = result.commitMessage ?? ''
+    } else if (result && !result.error) {
+      runtimeBackendUpdateAvailable.value = false
+      runtimeBackendUpdateCommitMessage.value = ''
+    }
     return result
   } catch (error) {
     logger.debug(

@@ -35,7 +35,6 @@ import ctypes
 import time
 from collections.abc import Callable
 from contextlib import contextmanager
-from datetime import datetime
 from functools import lru_cache
 from pathlib import Path
 
@@ -44,6 +43,7 @@ import numpy as np
 import psutil
 from PIL import Image
 
+from app.tools.error_screenshot import save_error_screenshot
 from app.tools.ocr import Box, OCRItem, ocr_image
 from app.utils import get_logger
 from app.utils.platform import IS_WINDOWS
@@ -321,20 +321,16 @@ def dismiss_screensaver() -> None:
 
 
 def _save_error_screenshot(launcher_hwnd: int | None) -> None:
-    """保存启动失败时的原始窗口截图，便于排查 OCR 文本漂移。"""
+    """保存启动失败时的窗口截图，便于排查 OCR 文本漂移。"""
     try:
-        screenshot_dir = Path.cwd() / "debug" / "oknte-launcher-start"
-        screenshot_dir.mkdir(parents=True, exist_ok=True)
-        screenshot_path = screenshot_dir / (
-            f"launcher-error-{datetime.now().strftime('%Y%m%d-%H%M%S-%f')}.png"
-        )
         target = launcher_hwnd if launcher_hwnd is not None else _find_game_hwnd()
         if target is None:
             return
-        _capture_window_image(target, activate=False).save(
-            screenshot_path, format="PNG"
+        save_error_screenshot(
+            _capture_window_image(target, activate=False),
+            "oknte-launcher-start",
+            "launcher-error",
         )
-        logger.warning(f"启动器启动错误截图已保存: {screenshot_path}")
     except Exception as error:
         # 截图是诊断旁路，失败时不能覆盖原始启动异常
         logger.warning(f"启动器启动错误截图保存失败: {error}")

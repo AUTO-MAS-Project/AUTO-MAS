@@ -1321,9 +1321,6 @@ class GlobalConfig_Notify(BaseModel):
         default=None, description="Koishi服务器地址"
     )
     KoishiToken: Optional[str] = Field(default=None, description="Koishi Token")
-    IfOpenClawWeixin: Optional[bool] = Field(
-        default=None, description="是否启用微信 Claw 通知"
-    )
     IfOpenClawQQ: Optional[bool] = Field(
         default=None, description="是否启用 QQ 官方机器人通知"
     )
@@ -1377,7 +1374,7 @@ class NotifyChannelOut(BaseModel):
     scopes: List[str] = Field(default=[], description="可用作用域：global/user")
     kind: str = Field(..., description="渲染类型：fields/custom/policy")
     customBlock: Optional[str] = Field(
-        default=None, description="自定义块标识：claw:weixin/claw:qq/webhook_list"
+        default=None, description="自定义块标识：claw:qq/webhook_list"
     )
     enableField: Optional[List[str]] = Field(
         default=None, description="启用开关的 [配置组, 字段名]"
@@ -1395,38 +1392,6 @@ class NotifyChannelsOut(OutBase):
     """通知渠道描述表。"""
 
     channels: List[NotifyChannelOut] = Field(default=[], description="渠道描述列表")
-
-
-class OpenClawWeixinQrStartOut(OutBase):
-    """微信 Claw 二维码创建响应。"""
-
-    sessionId: str = Field(default="", description="二维码登录会话 ID")
-    qrUrl: str = Field(default="", description="用于生成二维码的登录链接")
-
-
-class OpenClawWeixinQrCheckIn(BaseModel):
-    """微信 Claw 二维码状态查询请求。"""
-
-    sessionId: str = Field(..., min_length=1, description="二维码登录会话 ID")
-    verifyCode: Optional[str] = Field(
-        default=None, max_length=32, description="微信要求时输入的配对码"
-    )
-
-
-class OpenClawWeixinQrCheckOut(OutBase):
-    """微信 Claw 二维码状态查询响应。"""
-
-    sessionId: str = Field(default="", description="二维码登录会话 ID")
-    state: str = Field(default="", description="二维码状态")
-    connected: bool = Field(default=False, description="是否已完成账号绑定")
-
-
-class OpenClawWeixinStatusOut(OutBase):
-    """微信 Claw 通知绑定状态，不返回任何凭据。"""
-
-    enabled: bool = Field(default=False, description="是否启用微信 Claw 通知")
-    connected: bool = Field(default=False, description="是否已绑定微信账号")
-    state: str = Field(default="disconnected", description="当前连接状态")
 
 
 class OpenClawQQQrStartOut(OutBase):
@@ -1646,6 +1611,7 @@ class ScriptIndexItem(BaseModel):
         "BetterGIConfig",
         "ZzzOdConfig",
         "BAAHConfig",
+        "WhimboxConfig",
         "MSSConfig",
     ] = Field(..., description="配置类型")
 
@@ -1665,6 +1631,7 @@ class UserIndexItem(BaseModel):
         "BetterGIUserConfig",
         "ZzzOdUserConfig",
         "BAAHUserConfig",
+        "WhimboxUserConfig",
         "MSSUserConfig",
     ] = Field(..., description="配置类型")
 
@@ -2032,7 +1999,17 @@ class BetterGIUserConfig_Switch(BaseModel):
         default=None, description="游戏服务器：官服/B服/亚服/欧服/美服/港澳台服"
     )
     Uid: Optional[str] = Field(
-        default=None, description="账号 UID（可不填，切换前识别一致将不执行切换动作）"
+        default=None,
+        description="账号 UID（可不填，切换前识别一致将不执行切换动作；仅 BetterGI 脚本方式生效）",
+    )
+    GamePath: Optional[str] = Field(
+        default=None,
+        description=(
+            "游戏客户端路径（用户级覆盖，可空）：官服/B服/国际服是三个互相隔离的"
+            "客户端（B站账号只能登录B服客户端）。留空跟随 BetterGI 全局配置；填写后"
+            "该用户运行时由 MAS 按此路径临时拉起游戏（不修改 BetterGI 配置），同脚本"
+            "不同服务器的用户可各配各的客户端"
+        ),
     )
 
 
@@ -2067,6 +2044,23 @@ class OneDragonPlan(BaseModel):
     version: int = Field(default=1, description="Plan 结构版本")
     steps: List[OneDragonPlanStep] = Field(
         default_factory=list, description="有序步骤列表"
+    )
+
+
+class BetterGIGameInfoOut(OutBase):
+    """BetterGI 游戏客户端信息（用户页透传展示）"""
+
+    installPath: Optional[str] = Field(
+        default=None, description="生效游戏路径（用户级优先，否则 BGI 全局配置）"
+    )
+    globalPath: Optional[str] = Field(
+        default=None, description="BetterGI 全局配置的游戏路径原值"
+    )
+    channel: Optional[Literal["官服", "B服", "国际服"]] = Field(
+        default=None, description="识别到的客户端渠道，无法识别为 null"
+    )
+    source: Optional[Literal["用户", "全局"]] = Field(
+        default=None, description="生效路径来源"
     )
 
 
@@ -2557,9 +2551,25 @@ class BetterGIConfig_Game(BaseModel):
     )
 
 
+class BetterGIConfig_Run(GeneralConfig_Run):
+    """BetterGI 运行配置（通用字段 + BetterGI 专属字段）"""
+
+    UseAdmin: Optional[bool] = Field(
+        default=None,
+        description="是否以管理员权限启动 BetterGI（MAS 未提权时开启会触发 UAC）",
+    )
+    AccountSwitchMethod: Optional[Literal["BGI", "MAS"]] = Field(
+        default=None,
+        description=(
+            "账号切换方式: BGI=BetterGI「切换账号多模式」脚本执行; "
+            "MAS=MAS 前台直接操控游戏切号（官服/B服，游戏由 MAS 托管启动）"
+        ),
+    )
+
+
 class BetterGIConfig(BaseModel):
     Info: Optional[GeneralConfig_Info] = Field(default=None, description="脚本基础信息")
-    Run: Optional[GeneralConfig_Run] = Field(default=None, description="运行配置")
+    Run: Optional[BetterGIConfig_Run] = Field(default=None, description="运行配置")
     Game: Optional[BetterGIConfig_Game] = Field(default=None, description="游戏配置")
 
 
@@ -2636,6 +2646,148 @@ class BAAHConfig(BaseModel):
     Emulator: Optional[BAAHConfig_Emulator] = Field(
         default=None, description="模拟器配置"
     )
+
+
+class WhimboxConfig_Run(BaseModel):
+    """奇想盒运行配置（复用通用三限语义 + 提权开关）"""
+
+    ProxyTimesLimit: Optional[int] = Field(
+        default=None, description="每日代理次数上限（0=不限）"
+    )
+    RunTimesLimit: Optional[int] = Field(default=None, description="重试次数限制")
+    RunTimeLimit: Optional[int] = Field(
+        default=None, description="运行时间限制（分钟，日志静默超时判定）"
+    )
+    UseAdmin: Optional[bool] = Field(
+        default=None,
+        description="以管理员权限启动奇想盒后端（上游强制管理员，默认开启）",
+    )
+
+
+class WhimboxConfig(BaseModel):
+    """奇想盒脚本配置（无限暖暖，BetterGI 线）"""
+
+    Info: Optional[GeneralConfig_Info] = Field(default=None, description="脚本基础信息")
+    Run: Optional[WhimboxConfig_Run] = Field(default=None, description="运行配置")
+
+
+class WhimboxUserConfig_Info(BaseModel):
+    """奇想盒用户信息
+
+    base 来源三态（#879 语义）：「脚本/用户」=共享/独立 base（MAS 面板值，当前
+    运行行为一致、为后续特殊功能预留），「直控」=原生 base（奇想盒自带配置）；
+    覆写层（IfQuickConfig）为账号级独立开关，开启时原生态任务前也会物化面板覆盖集。
+    """
+
+    Name: Optional[str] = Field(default=None, description="用户名")
+    Status: Optional[bool] = Field(default=None, description="用户状态")
+    RemainedDay: Optional[int] = Field(default=None, description="剩余天数")
+    Mode: Optional[Literal["脚本", "用户", "直控"]] = Field(
+        default=None, description="base 来源（脚本=共享/用户=独立/直控=原生）"
+    )
+    IfQuickConfig: Optional[bool] = Field(
+        default=None,
+        description="是否启用覆写层（快速配置，与来源独立；原生态开启时任务前写入面板覆盖集、结束还原）",
+    )
+    IfScriptBeforeTask: Optional[bool] = Field(
+        default=None, description="是否在任务前执行脚本"
+    )
+    ScriptBeforeTask: Optional[str] = Field(default=None, description="任务前脚本路径")
+    IfScriptAfterTask: Optional[bool] = Field(
+        default=None, description="是否在任务后执行脚本"
+    )
+    ScriptAfterTask: Optional[str] = Field(default=None, description="任务后脚本路径")
+    Notes: Optional[str] = Field(default=None, description="备注")
+    Tag: Optional[str] = Field(
+        default=None, description="用户标签列表（JSON字符串，TagItem的dict列表）"
+    )
+
+
+class WhimboxUserConfig_OneDragon(BaseModel):
+    """奇想盒一条龙流程级配置（物化为上游 OneDragon 流程开关）"""
+
+    IfRunAllAccounts: Optional[bool] = Field(
+        default=None,
+        description="一条龙是否循环全部游戏账号（多账号由奇想盒 OCR 动态发现并循环）",
+    )
+
+
+class WhimboxUserConfig_Task(BaseModel):
+    """奇想盒任务覆盖集（键集来自任务目录，MAS 不建模字段定义）"""
+
+    Tasks: Optional[Union[str, dict]] = Field(
+        default=None,
+        description="步骤开关覆盖集 JSON map {步骤键: bool}，键集来自任务目录",
+    )
+    Options: Optional[Union[str, dict]] = Field(
+        default=None,
+        description="目标/参数覆盖集 JSON map {键: 值}，键集来自任务目录",
+    )
+
+
+class WhimboxUserConfig_Data(GeneralUserConfig_Data):
+    """奇想盒用户数据（复用通用字段）"""
+
+    LastProxyStatus: Optional[str] = Field(
+        default=None, description="上次代理状态（未知/成功/失败）"
+    )
+
+
+class WhimboxUserConfig(BaseModel):
+    """奇想盒用户配置（一条龙配置档）"""
+
+    Info: Optional[WhimboxUserConfig_Info] = Field(default=None, description="用户信息")
+    OneDragon: Optional[WhimboxUserConfig_OneDragon] = Field(
+        default=None, description="一条龙流程配置"
+    )
+    Task: Optional[WhimboxUserConfig_Task] = Field(
+        default=None, description="任务覆盖集"
+    )
+    Data: Optional[WhimboxUserConfig_Data] = Field(default=None, description="用户数据")
+    Notify: Optional[GeneralUserConfig_Notify] = Field(
+        default=None, description="单独通知"
+    )
+
+
+class WhimboxTaskCatalogItem(BaseModel):
+    """任务目录条目：一条龙步骤开关（上游三件套机械转换）"""
+
+    key: str = Field(default=..., description="上游配置键")
+    display: str = Field(default=..., description="显示名（上游模板 description）")
+    section: str = Field(default=..., description="上游配置节")
+
+
+class WhimboxOptionCatalogItem(BaseModel):
+    """任务目录条目：一条龙目标/参数字段（上游三件套机械转换）"""
+
+    key: str = Field(default=..., description="上游配置键")
+    display: str = Field(default=..., description="显示名（上游模板 description）")
+    section: str = Field(default=..., description="上游配置节")
+    field_type: str = Field(
+        default=..., description="控件类型：bool/int/select/multi_select/text"
+    )
+    options: List[str] = Field(default_factory=list, description="值域候选")
+    default: Optional[Union[bool, int, float, str, List[str]]] = Field(
+        default=None, description="上游模板默认值（布尔语义已归一为 bool）"
+    )
+
+
+class WhimboxTaskCatalogData(BaseModel):
+    """任务目录数据：步骤开关 + 参数字段 + 上游版本提示"""
+
+    steps: List[WhimboxTaskCatalogItem] = Field(
+        default_factory=list, description="一条龙步骤开关（键集与顺序来自上游模板）"
+    )
+    options: List[WhimboxOptionCatalogItem] = Field(
+        default_factory=list, description="一条龙目标/参数字段"
+    )
+    upstream_version: str = Field(default="", description="奇想盒后端版本（dist-info）")
+
+
+class WhimboxTaskCatalogOut(OutBase):
+    """任务目录响应"""
+
+    data: WhimboxTaskCatalogData = Field(default_factory=WhimboxTaskCatalogData)
 
 
 class BlueArchiveActivityStatusOut(OutBase):
@@ -3484,6 +3636,13 @@ class HSRCloudLoginOut(OutBase):
     data: Optional[HSRCloudLoginData] = Field(default=None, description="登录结果")
 
 
+class HSRManagedFieldVisibleWhen(BaseModel):
+    key: str = Field(..., description="依赖的同模块字段键")
+    values: List[Any] = Field(
+        default_factory=list, description="该字段取这些值之一时才显示"
+    )
+
+
 class HSRManagedField(BaseModel):
     key: str = Field(..., description="字段键")
     label: str = Field(default="", description="字段名称")
@@ -3494,13 +3653,31 @@ class HSRManagedField(BaseModel):
     minimum: Optional[float] = Field(default=None, description="最小值")
     maximum: Optional[float] = Field(default=None, description="最大值")
     readonly: bool = Field(default=False, description="是否只读")
+    group: Literal[
+        "common", "team", "support", "activity", "replenish", "reroll", "misc"
+    ] = Field(
+        default="common",
+        description="字段分组：common 平铺，其余各成一个默认收起的折叠面板",
+    )
+    overridden: bool = Field(
+        default=False,
+        description="当前计划（plan_owner 指向的那份）对该字段有生效中的覆盖值",
+    )
+    native_value: Any = Field(default=None, description="引擎原生配置里的值")
+    visible_when: Optional[HSRManagedFieldVisibleWhen] = Field(
+        default=None,
+        description="只有同模块同引擎里字段 key 的当前值在 values 中时才显示",
+    )
 
 
 class HSRManagedDroppedOverride(BaseModel):
     key: str = Field(..., description="被忽略的 Managed.Options 覆盖键")
     reason: Literal["unknown", "type"] = Field(
         ...,
-        description="忽略原因：unknown=当前原生配置没有该字段；type=保存的值类型与原生配置不一致",
+        description=(
+            "忽略原因：unknown=当前原生配置没有该字段或该字段已不由 MAS 托管；"
+            "type=保存的值类型与原生配置不一致"
+        ),
     )
     value: Any = Field(default=None, description="用户保存的覆盖值")
     message: str = Field(default="", description="人类可读说明")
@@ -3771,6 +3948,10 @@ class MaaFWConfig_Run(BaseModel):
     )
     MonthlyOnceTasks: Optional[Union[str, List[str]]] = Field(
         default=None, description="每月正常完成一次后本月跳过的 MaaFW 任务名列表"
+    )
+    GameUpdateMode: Optional[Literal["Off", "Check", "AutoInstall"]] = Field(
+        default=None,
+        description="游戏客户端更新：Off 不检查 / Check 落后时提示手动更新 / AutoInstall 落后时自动下载安装；仅支持的特调类型生效",
     )
 
 
@@ -4543,10 +4724,11 @@ class ScriptCreateIn(BaseModel):
         "BetterGI",
         "ZzzOd",
         "BAAH",
+        "Whimbox",
         "MSS",
     ] = Field(
         ...,
-        description="脚本类型: MAA脚本, 通用脚本, OK-WW脚本, OK-NTE脚本, SRC脚本, MaaEnd脚本, M9A脚本, MaaFW脚本, HSR脚本, BetterGI脚本, ZZZ-OD脚本, BAAH脚本, MSS脚本",
+        description="脚本类型: MAA脚本, 通用脚本, OK-WW脚本, OK-NTE脚本, SRC脚本, MaaEnd脚本, M9A脚本, MaaFW脚本, HSR脚本, BetterGI脚本, ZZZ-OD脚本, BAAH脚本, 奇想盒脚本, MSS脚本",
     )
     scriptId: str | None = Field(
         default=None, description="直接从该脚本ID复制创建, 仅在复制创建时使用"
@@ -4568,6 +4750,7 @@ class ScriptCreateOut(OutBase):
         BetterGIConfig,
         ZzzOdConfig,
         BAAHConfig,
+        WhimboxConfig,
         MSSConfig,
     ] = Field(..., description="脚本配置数据")
 
@@ -4595,6 +4778,7 @@ class ScriptGetOut(OutBase):
             BetterGIConfig,
             ZzzOdConfig,
             BAAHConfig,
+            WhimboxConfig,
             MSSConfig,
         ],
     ] = Field(..., description="脚本数据字典, key来自于index列表的uid")
@@ -4615,6 +4799,7 @@ class ScriptUpdateIn(BaseModel):
         BetterGIConfig,
         ZzzOdConfig,
         BAAHConfig,
+        WhimboxConfig,
         MSSConfig,
     ] = Field(..., description="脚本更新数据")
 
@@ -4654,9 +4839,7 @@ class UserConfigDirIn(UserInBase):
 
 
 class UserConfigDirOut(OutBase):
-    path: Optional[str] = Field(
-        default=None, description="用户配置目录绝对路径"
-    )
+    path: Optional[str] = Field(default=None, description="用户配置目录绝对路径")
 
 
 class UserGetIn(UserInBase):
@@ -4682,6 +4865,7 @@ class UserGetOut(OutBase):
             BetterGIUserConfig,
             ZzzOdUserConfig,
             BAAHUserConfig,
+            WhimboxUserConfig,
             MSSUserConfig,
         ],
     ] = Field(..., description="用户数据字典, key来自于index列表的uid")
@@ -4702,6 +4886,7 @@ class UserCreateOut(OutBase):
         BetterGIUserConfig,
         ZzzOdUserConfig,
         BAAHUserConfig,
+        WhimboxUserConfig,
         MSSUserConfig,
     ] = Field(..., description="用户配置数据")
 
@@ -4721,6 +4906,7 @@ class UserUpdateIn(UserInBase):
         BetterGIUserConfig,
         ZzzOdUserConfig,
         BAAHUserConfig,
+        WhimboxUserConfig,
         MSSUserConfig,
     ] = Field(..., description="用户更新数据")
 

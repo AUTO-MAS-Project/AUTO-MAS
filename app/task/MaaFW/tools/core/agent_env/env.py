@@ -4,10 +4,12 @@ import hashlib
 import json
 import logging
 import os
+import re
 import shutil
 import subprocess
 import sys
 import threading
+import time
 import uuid
 from pathlib import Path
 from typing import Callable
@@ -15,6 +17,7 @@ from typing import Callable
 from packaging.version import InvalidVersion, Version
 
 from ..runtime_pool import runtime_managed_uv_executable
+from ..runtime_pool._shared import output_tail, remove_tree_best_effort
 from ..runtime_pool.host_environment import (
     EMBEDDED_COPIES_DIR_PARTS,
     set_project_pycache_prefix,
@@ -38,6 +41,11 @@ PIP_INSTALL_TIMEOUT = 120
 # pip install 本身单独给足余量：与运行池的 RUNTIME_INSTALL_TIMEOUT_SECONDS 对齐，
 # 且每个镜像候选各享一次完整超时。venv 创建与 ensurepip 仍用上面那个。
 PIP_INSTALL_PER_INDEX_TIMEOUT = 300
+# 与 runner.DETAIL_LOG_PREFIX 同一个前缀（runner.py 会 import maa，这里不能引它）：
+# worker 里宿主据此只写进 .worker.log，宿主侧的更新日志据此只写后端日志，都不上界面。
+DETAIL_LOG_PREFIX = "[MaaFW 详情] "
+# 完整输出进详情日志时的上限（按结尾截），挡住异常情况下的超长输出。
+DETAIL_OUTPUT_LIMIT = 20000
 VENV_PROBE_TIMEOUT = 30
 # uv 兜底可能需要下载 managed Python,给足余量
 UV_VENV_TIMEOUT = 300
@@ -212,18 +220,22 @@ def _prepare_project_python_env(
     log: Callable[[str], None],
 ) -> None:
     log(f"[Python环境] 检测项目 Python: {python_exe}")
-    test_env = _build_agent_env_for_pip(project_path)
-    if _check_project_python_health(
+    test_env = _build_project_python_probe_env(python_exe, project_path)
+    healthy, reason = _check_project_python_health(
         python_exe,
         cwd=str(project_path),
         env=test_env,
         log=log,
-    ):
+    )
+    if healthy:
         _repin_project_python_binding(python_exe, project_path, test_env, log)
         return
 
+    # 原因放第一行：任务结果与预检失败通知只取报错的第一行，还各自再截 200 / 120 字，
+    # 所以项目目录换成 <项目>，免得长安装路径把原因挤掉。
+    reason = _project_relative_text(reason, project_path)
     raise MaaFWAgentEnvError(
-        "项目 Python 或 MaaFW Agent 模块不可用，请修复项目包后重试：\n"
+        f"项目 Python 或 MaaFW Agent 模块不可用（{reason}），请修复项目包后重试：\n"
         f"  Python 路径: {python_exe}\n"
         "  处理建议:\n"
         "    方法1: 重新下载并解压完整 MaaFW 项目包\n"
@@ -242,15 +254,7 @@ def project_python_maafw_version(python_exe: str | Path) -> str | None:
     重装出来的文件脱离共用库。
     """
 
-    root = Path(python_exe).parent
-    for site in (
-        root / "Lib" / "site-packages",
-        *sorted(root.glob("lib/python*/site-packages")),
-    ):
-        try:
-            matches = sorted(site.glob("maafw-*.dist-info"))
-        except OSError:
-            continue
+    for matches in _iter_maafw_dist_info_groups(python_exe):
         versions = [
             text
             for text in (
@@ -270,6 +274,48 @@ def project_python_maafw_version(python_exe: str | Path) -> str | None:
             return max(parsed, key=lambda item: item[0])[1]
         return versions[0]
     return None
+
+
+def _iter_maafw_dist_info_groups(python_exe: str | Path):
+    """按查找顺序逐个 site-packages 给出其中的 ``maafw-*.dist-info``（排好序；空的跳过）。"""
+
+    root = Path(python_exe).parent
+    for site in (
+        root / "Lib" / "site-packages",
+        *sorted(root.glob("lib/python*/site-packages")),
+    ):
+        try:
+            matches = sorted(site.glob("maafw-*.dist-info"))
+        except OSError:
+            continue
+        if matches:
+            yield matches
+
+
+def _stale_maafw_dist_infos(python_exe: str | Path) -> list[Path]:
+    """与 :func:`project_python_maafw_version` 同一个 site-packages 里、版本不是最高的
+    那些 ``maafw-*.dist-info``——升级没卸干净留下的旧安装记录。
+
+    它们会让 pip 与我们对「装的是哪个版本」各说各的：pip 按目录顺序取第一个记录，
+    我们取最高版本。钉回前不清掉，``pip install maafw==<原生库版本>`` 要么把同版本的旧
+    记录当成已装好、什么都不做（M9A v4.9.0 带 5.12.3 + 5.13.0 两份，原生库是 5.12.3 时
+    就是这样），要么只卸掉旧记录、留下更高的那份；两种结果下次准备读到的都还不是原生库
+    版本，于是每次准备都重跑钉回，改了记录集合的那次还会被当成并发改动拒绝缓存。
+    """
+
+    for matches in _iter_maafw_dist_info_groups(python_exe):
+        parsed: list[tuple[Version, Path]] = []
+        for match in matches:
+            text = match.name[len("maafw-") : -len(".dist-info")]
+            try:
+                parsed.append((Version(text), match))
+            except InvalidVersion:
+                continue
+        if len(parsed) < 2:
+            return []
+        newest = max(parsed, key=lambda item: item[0])[1]
+        return [path for _, path in parsed if path != newest]
+    return []
 
 
 def _is_embedded_copy(project_path: Path) -> bool:
@@ -321,11 +367,90 @@ def _repin_project_python_binding(
         )
         return
     log(f"[Python环境] {mismatch}，把副本里的 binding 钉回 {native}")
+    # 残留的旧安装记录先挪开（不删）：钉回成功才丢，失败就原样放回。dist-info 集合是
+    # 环境指纹的输入，失败时若集合变了、版本又没对上，准备会被当成并发改动拒绝缓存——
+    # 离线时本来能过的项目（M9A v4.9.0 出厂形态）会因此每次都失败。
+    stash, moved = _stash_stale_maafw_dist_infos(python_exe, Path(project_path), log)
+    if moved:
+        log(
+            f"[Python环境] 先把副本里残留的旧 maafw 安装记录 "
+            f"{', '.join(original.name for original, _ in moved)} 挪开（实际装的是 "
+            f"{installed}），否则 pip 会认错已装版本"
+        )
     ok, detail = _pip_install(
         python_exe, [f"maafw=={native}"], cwd=str(project_path), env=env, log=log
     )
+    pinned = project_python_maafw_version(python_exe) if ok else None
+    try:
+        pinned_ok = pinned is not None and Version(pinned) == Version(native)
+    except InvalidVersion:
+        pinned_ok = pinned == native
+    if ok and pinned_ok:
+        if stash is not None and not remove_tree_best_effort(stash):
+            log(f"[Python环境] 挪开的旧 maafw 安装记录没删干净，留在 {stash}")
+        return
+    if moved:
+        _restore_stashed_dist_infos(moved, log)
+    if stash is not None and not remove_tree_best_effort(stash):
+        log(f"[Python环境] 临时目录没删干净，留在 {stash}")
     if not ok:
-        log(f"[Python环境] binding 钉回失败，agent 可能连不上: {detail[:200]}")
+        log(
+            f"[Python环境] binding 钉回失败，agent 可能连不上: {output_tail(detail, 200)}"
+        )
+    else:
+        log(
+            f"[Python环境] 钉回后读到的 binding 仍是 {pinned or '未知'}，与原生库 {native} "
+            "不一致，agent 可能连不上"
+        )
+
+
+#: 钉回期间暂放旧 maafw 安装记录的目录（副本根下，钉回结束即删）
+REPIN_STASH_PREFIX = ".maafw-repin-stash-"
+
+
+def _stash_stale_maafw_dist_infos(
+    python_exe: str, project_path: Path, log: Callable[[str], None]
+) -> tuple[Path | None, list[tuple[Path, Path]]]:
+    """把 :func:`_stale_maafw_dist_infos` 挪进副本根下的临时目录。
+
+    只挪记录目录本身，不按它的 RECORD 动文件：那些文件现在属于更高的版本，由 pip 按那份
+    记录卸。同一卷上是目录改名，目录里的小文件是视图私有的复制件，不写穿载荷。
+    返回（临时目录或 None, [(原位置, 暂放位置)]）。
+    """
+
+    stale = _stale_maafw_dist_infos(python_exe)
+    if not stale:
+        return None, []
+    stash = project_path / (
+        f"{REPIN_STASH_PREFIX}{time.strftime('%Y%m%d-%H%M%S')}-{uuid.uuid4().hex[:6]}"
+    )
+    moved: list[tuple[Path, Path]] = []
+    for original in stale:
+        target = stash / original.name
+        try:
+            stash.mkdir(parents=True, exist_ok=True)
+            os.rename(original, target)
+        except OSError as exc:
+            log(f"[Python环境] 挪开旧的 maafw 安装记录 {original.name} 失败: {exc}")
+            continue
+        moved.append((original, target))
+    return stash, moved
+
+
+def _restore_stashed_dist_infos(
+    moved: list[tuple[Path, Path]], log: Callable[[str], None]
+) -> None:
+    """钉回没成：把挪开的记录原样放回，dist-info 集合与指纹回到钉回前。"""
+
+    for original, stashed in moved:
+        if original.exists():
+            # pip 装出了同名记录（装上了却读不对版本）：以它为准，暂放的这份随临时目录删掉
+            log(f"[Python环境] {original.name} 已被 pip 重建，不放回旧记录")
+            continue
+        try:
+            os.rename(stashed, original)
+        except OSError as exc:
+            log(f"[Python环境] 放回旧的 maafw 安装记录 {original.name} 失败: {exc}")
 
 
 def _isolated_venv_lock(path: Path) -> threading.RLock:
@@ -470,7 +595,7 @@ def _ensure_isolated_venv(
         if result.returncode != 0:
             detail = (result.stderr or result.stdout or "").strip()
             raise MaaFWAgentEnvError(
-                f"创建隔离 venv 失败 (exit={result.returncode}): {detail[:500]}"
+                f"创建隔离 venv 失败 (exit={result.returncode}): {output_tail(detail, 500)}"
             )
     if not _is_valid_venv_path(venv_path):
         raise MaaFWAgentEnvError(f"创建隔离 venv 后结构不完整: {venv_path}")
@@ -505,7 +630,7 @@ def _create_venv_with_uv(venv_path: Path, log: Callable[[str], None]) -> None:
     if result.returncode != 0:
         detail = (result.stderr or result.stdout or "").strip()
         raise MaaFWAgentEnvError(
-            f"uv 创建隔离 venv 失败 (exit={result.returncode}): {detail[:500]}"
+            f"uv 创建隔离 venv 失败 (exit={result.returncode}): {output_tail(detail, 500)}"
         )
 
 
@@ -646,6 +771,82 @@ def _build_agent_env_for_pip(project_path: Path) -> dict[str, str]:
     return env
 
 
+#: agent 侧 ``from maa.agent.agent_server import AgentServer`` 要加载的库，与
+#: ``MaaFramework.dll`` 同在项目自带的原生库目录里时才算那份可用（与 M9A 的判据一致）。
+PROJECT_AGENT_SERVER_DLL_NAME = "MaaAgentServer.dll"
+
+
+def _bundled_maa_bin_missing(python_exe: str | Path) -> bool:
+    """自带解释器里有 maa 包、却没有 wheel 自带的 ``maa/bin``。找不到 maa 包时不算缺。"""
+
+    root = Path(python_exe).parent
+    for site in (
+        root / "Lib" / "site-packages",
+        *sorted(root.glob("lib/python*/site-packages")),
+    ):
+        package = site / "maa"
+        if (package / "__init__.py").is_file():
+            return not (package / "bin").is_dir()
+    return False
+
+
+def _build_project_python_probe_env(
+    python_exe: str, project_path: Path
+) -> dict[str, str]:
+    """项目自带 Python 健康检查的环境：pip 那份，外加 agent 自己会设的原生库目录。
+
+    M9A 的发行包不在自带解释器的 ``site-packages/maa/bin`` 里再放一份原生库，agent 在
+    ``import maa`` 之前自己把 ``MAAFW_BINARY_PATH`` 指到 ``runtimes/<rid>/native``
+    （M9A 的 ``agent/maafw_paths.py``）。检查直接 ``import maa``，这个变量又被剔除了，
+    binding 就去开不存在的 ``maa/bin``、抛 ``FileNotFoundError``，把能跑的副本判成坏的，
+    更新预检也因此永远过不去。所以 ``maa/bin`` 不在、项目自带的原生库又齐时，检查
+    也指过去；``maa/bin`` 在时不动，照旧用 wheel 自带那份。
+
+    问题包导出（``frontend/electron/services/maafwProjectRuntimeProbe.ts``）按同一判据
+    再跑一次这个检查，改判据时两边一起改。
+    """
+
+    env = _build_agent_env_for_pip(project_path)
+    if not _bundled_maa_bin_missing(python_exe):
+        return env
+
+    from app.task.MaaFW.tools.core.runner.environment import (
+        project_maafw_runtime_path,
+    )
+
+    runtime = project_maafw_runtime_path(project_path)
+    if runtime is not None and (runtime / PROJECT_AGENT_SERVER_DLL_NAME).is_file():
+        env["MAAFW_BINARY_PATH"] = str(runtime)
+    return env
+
+
+def _project_relative_text(text: str, project_path: Path) -> str:
+    """把文本里的项目目录（大小写不敏感）换成 ``<项目>``。
+
+    OSError 系异常用 repr 显示路径，反斜杠成对，原样、正斜杠、成对反斜杠三种都认。
+    """
+
+    root = str(project_path)
+    if not root:
+        return text
+    for variant in dict.fromkeys(
+        (root.replace("\\", "\\\\"), root, root.replace("\\", "/"))
+    ):
+        text = re.sub(
+            re.escape(variant), lambda _match: "<项目>", text, flags=re.IGNORECASE
+        )
+    return text
+
+
+def _last_output_line(text: str) -> str:
+    """输出的最后一个非空行：traceback 里就是异常类型与消息。"""
+
+    for line in reversed(text.splitlines()):
+        if line.strip():
+            return line.strip()
+    return ""
+
+
 def _check_pip_health(
     python_exe: str,
     *,
@@ -667,7 +868,7 @@ def _check_pip_health(
         if result.returncode != 0:
             detail = (result.stderr or result.stdout or "").strip()
             log(
-                f"[Python环境] pip --version 失败 (exit={result.returncode}): {detail[:500]}"
+                f"[Python环境] pip --version 失败 (exit={result.returncode}): {output_tail(detail, 500)}"
             )
             return False
 
@@ -694,7 +895,7 @@ def _check_pip_health(
             log("[Python环境] pip install 子命令加载失败（backports.zstd 冲突）")
         else:
             log(
-                f"[Python环境] pip install 检测失败 (exit={install_check.returncode}): {detail[:500]}"
+                f"[Python环境] pip install 检测失败 (exit={install_check.returncode}): {output_tail(detail, 500)}"
             )
         return False
     except subprocess.TimeoutExpired:
@@ -711,8 +912,13 @@ def _check_project_python_health(
     cwd: str | None,
     env: dict[str, str],
     log: Callable[[str], None],
-) -> bool:
-    """Probe a project-owned Agent runtime without requiring or invoking pip."""
+) -> tuple[bool, str]:
+    """Probe a project-owned Agent runtime without requiring or invoking pip.
+
+    返回 ``(是否健康, 失败原因)``。失败原因是一行（traceback 的最后一行），进界面与
+    报错文案；完整输出逐行带 :data:`DETAIL_LOG_PREFIX` 记下，只进 ``.worker.log`` /
+    后端日志，问题包里能看到整段 traceback。
+    """
 
     probe = (
         "import sys; "
@@ -731,26 +937,30 @@ def _check_project_python_health(
             env=env,
         )
     except subprocess.TimeoutExpired:
-        log(
-            "[Python环境] 项目 Python/Agent 健康检查超时 "
-            f"({PROJECT_PYTHON_HEALTH_TIMEOUT}s)"
-        )
-        return False
+        reason = f"健康检查超时 ({PROJECT_PYTHON_HEALTH_TIMEOUT}s)"
+        log(f"[Python环境] 项目 Python/Agent {reason}")
+        return False, reason
     except Exception as exc:
-        log(f"[Python环境] 项目 Python/Agent 健康检查异常: {exc}")
-        return False
+        reason = f"健康检查异常: {exc}"
+        log(f"[Python环境] 项目 Python/Agent {reason}")
+        return False, reason
 
     if result.returncode == 0:
         detail = (result.stdout or "").strip()
         log(f"[Python环境] 项目 Python/Agent 健康: {detail or python_exe}")
-        return True
+        return True, ""
 
     detail = (result.stderr or result.stdout or "").strip()
+    reason = output_tail(_last_output_line(detail), 500) or f"exit={result.returncode}"
     log(
         "[Python环境] 项目 Python/Agent 健康检查失败 "
-        f"(exit={result.returncode}): {detail[:500]}"
+        f"(exit={result.returncode}): {reason}"
     )
-    return False
+    if detail:
+        log(f"{DETAIL_LOG_PREFIX}项目 Python/Agent 健康检查完整输出（{python_exe}）:")
+        for line in output_tail(detail, DETAIL_OUTPUT_LIMIT).splitlines():
+            log(f"{DETAIL_LOG_PREFIX}{line}")
+    return False, reason
 
 
 def _try_ensurepip(
@@ -778,7 +988,7 @@ def _try_ensurepip(
             log("[Python环境] ensurepip 修复成功")
             return True
         detail = (result.stderr or result.stdout or "").strip()
-        log(f"[Python环境] ensurepip 未成功: {detail[:300]}")
+        log(f"[Python环境] ensurepip 未成功: {output_tail(detail, 300)}")
     except subprocess.TimeoutExpired:
         log(f"[Python环境] ensurepip 超时 ({PIP_INSTALL_TIMEOUT}s)")
     except Exception as exc:
@@ -877,12 +1087,14 @@ def _pip_install(
                             "[Python环境] 解释器不带 pip（embeddable 发行版），"
                             "也找不到可用的 uv，无法安装"
                         )
-                        return False, last_detail[:300]
+                        return False, output_tail(last_detail, 300)
                     log(
                         "[Python环境] 解释器不带 pip（embeddable 发行版），改用 uv 安装"
                     )
                     continue
-                log(f"[Python环境] {tool} 未成功 ({label}): {last_detail[:300]}")
+                log(
+                    f"[Python环境] {tool} 未成功 ({label}): {output_tail(last_detail, 300)}"
+                )
             except subprocess.TimeoutExpired:
                 last_detail = f"{label} 超时 ({PIP_INSTALL_PER_INDEX_TIMEOUT}s)"
                 log(
@@ -892,12 +1104,12 @@ def _pip_install(
                 # 起不了子进程（venv 被删、python.exe 不在了）与索引无关，别再轮换。
                 last_detail = f"无法启动 {command[0]}: {exc}"
                 log(f"[Python环境] {tool} 无法启动 ({label}): {exc}")
-                return False, last_detail[:300]
+                return False, output_tail(last_detail, 300)
             except Exception as exc:
                 last_detail = f"{label}: {exc}"
                 log(f"[Python环境] {tool} 异常 ({label}): {exc}")
             break
-    return False, last_detail[:300]
+    return False, output_tail(last_detail, 300)
 
 
 def _python_supports_venv(python: str) -> bool:

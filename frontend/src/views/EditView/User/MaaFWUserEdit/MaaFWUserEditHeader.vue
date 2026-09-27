@@ -6,7 +6,10 @@
           <router-link to="/scripts" class="breadcrumb-link">{{ t('edit.scripts') }}</router-link>
         </a-breadcrumb-item>
         <a-breadcrumb-item>
-          <router-link :to="`/scripts/${scriptId}/edit/maafw`" class="breadcrumb-link">
+          <router-link
+            :to="`/scripts/${scriptId}/edit/${scriptRouteSuffix}`"
+            class="breadcrumb-link"
+          >
             {{ scriptName || 'MFW' }}
           </router-link>
         </a-breadcrumb-item>
@@ -32,12 +35,7 @@
     </div>
 
     <a-space>
-      <a-button
-        v-if="props.userId"
-        size="large"
-        :loading="folderLoading"
-        @click="handleOpenFolder"
-      >
+      <a-button v-if="props.userId" size="large" :loading="folderLoading" @click="handleOpenFolder">
         <template #icon>
           <FolderOpenOutlined />
         </template>
@@ -71,6 +69,8 @@ const props = defineProps<{
   saveErrorMessage: string
   scriptId: string
   scriptName: string
+  /** 脚本页路由后缀（maafw / m9a / mss，取自特调注册表） */
+  scriptRouteSuffix: string
   isEdit: boolean
   userId?: string
 }>()

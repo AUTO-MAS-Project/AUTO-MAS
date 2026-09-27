@@ -40,6 +40,11 @@ from .log_detect import (
     emit_process_output,
     has_failure_output,
 )
+from .managed_fields import (
+    SRA_REWARD_NAMED_KEYS,
+    managed_field_keys,
+    select_sra_reward_keys,
+)
 from .managed_overlay import (
     DroppedOverride,
     log_dropped_overrides,
@@ -56,13 +61,11 @@ logger = get_logger("HSR SRA 运行器")
 SRA_GAME_CHANNEL_CLIENT = 0
 SRA_TRAILBLAZE_POWER_AUTO_DETECT = True
 
-SRA_DIVERGENT_UNIVERSE_MODE = 0
 SRA_DIVERGENT_UNIVERSE_RUNTIMES = 20
 SRA_DIVERGENT_UNIVERSE_USE_TECHNIQUE = False
 SRA_DIVERGENT_UNIVERSE_POINT_REWARDS = True
 
 SRA_CURRENCY_WARS_STRATEGY = "template"
-SRA_CURRENCY_WARS_STRATEGY_INDEX = 0
 SRA_CURRENCY_WARS_RUNTIMES = 2
 SRA_CURRENCY_WARS_STRATEGY_KEYWORDS = ("阿格莱雅", "aglaea")
 SRA_SETTINGS_SYSTEM_NOTIFY_KEY = "system.enabled"
@@ -113,7 +116,11 @@ def discover_sra_managed_options(
     module_key: str,
     script_config: Any,
 ) -> tuple[dict[str, Any], str]:
-    """Discover native fields for one HSR module without applying overrides."""
+    """Discover native fields for one HSR module without applying overrides.
+
+    只返回 :data:`SRA_MANAGED_FIELDS` 里列出、且原生 profile 里确实存在的键，
+    顺序同字段表：表单露出什么，运行时就套用什么。
+    """
 
     if module_key == "Daily":
         section_name = "trailblazePower"
@@ -122,40 +129,23 @@ def discover_sra_managed_options(
     else:
         section_name = "cosmicStrife"
     _source, payload = load_sra_native_config(script_config)
-    if module_key == "Daily":
-
-        def predicate(key):
-            return key not in {"enabled", "tasklist"}
-
-    elif module_key == "ReceiveRewards":
-
-        def predicate(key):
-            return key not in {"enabled", "redeemCodes"}
-
-    else:
-        if module_key == "DivergentUniverse":
-
-            def predicate(key):
-                return (
-                    key == "pointRewards.enabled"
-                    or key.startswith("divergentUniverse.")
-                ) and key != "divergentUniverse.enabled"
-
-        else:
-
-            def predicate(key):
-                return key.startswith("currencyWars.") and key != "currencyWars.enabled"
-
     section = payload.get(section_name)
     if not isinstance(section, dict):
         return {}, section_name
-    options = {str(key): value for key, value in section.items() if predicate(str(key))}
+    available = {str(key): value for key, value in section.items()}
     if module_key == "ReceiveRewards":
-        rewards = options.pop("rewards", None)
+        rewards = available.pop("rewards", None)
         if isinstance(rewards, list):
-            options.update(
-                {f"rewards.{index}": value for index, value in enumerate(rewards)}
-            )
+            for index, value in enumerate(rewards):
+                available.setdefault(f"rewards.{index}", value)
+    keys = select_sra_reward_keys(
+        frozenset(managed_field_keys("SRA", module_key)) & available.keys()
+    )
+    options = {
+        key: available[key]
+        for key in managed_field_keys("SRA", module_key)
+        if key in keys
+    }
     return options, section_name
 
 
@@ -186,6 +176,15 @@ def resolve_sra_managed_options(
         module_key, script_config, user_config
     )
     return effective
+
+
+def _native_redeem_codes(script_config: Any) -> str:
+    """原生 profile 的 ``receiveRewards.redeemCodes``；缺失或不是字符串时为空串。"""
+
+    _source, payload = load_sra_native_config(script_config)
+    section = payload.get("receiveRewards")
+    codes = section.get("redeemCodes") if isinstance(section, dict) else None
+    return codes if isinstance(codes, str) else ""
 
 
 def _reward_list_index(key: str) -> int | None:
@@ -356,30 +355,22 @@ def build_sra_module_config(
                     target = child
                 target[keys[-1]] = value
 
-    if module.key == "Daily":
-        config["trailblazePower"]["tasklist"] = _build_sra_trailblaze_tasklist(
-            plan, eow_enabled=daily_eow_enabled
-        )
-
-    elif module.key == "ReceiveRewards":
+    # Daily 的 tasklist 与各模块的 enabled 在 _apply_managed_options 之后统一写。
+    if module.key == "ReceiveRewards":
         # 领取项来自当前 SRA profile；Managed.Options 只覆盖已发现字段。
+        # 具名键存在时表单只露出具名键，数组按具名值镜像，两种形态保持一致。
         native_options = resolve_sra_managed_options(module.key, script_config, plan)
         config["receiveRewards"]["rewards"] = [
-            bool(native_options.get("rewards.0", True)),
-            bool(native_options.get("rewards.1", True)),
-            bool(native_options.get("rewards.2", True)),
-            bool(native_options.get("rewards.3", True)),
-            bool(native_options.get("rewards.4", True)),
-            bool(native_options.get("rewards.5", True)),
-            bool(native_options.get("rewards.6", True)) and bool(redeem_codes_enabled),
+            bool(
+                native_options.get(
+                    named_key, native_options.get(f"rewards.{index}", True)
+                )
+            )
+            for index, named_key in enumerate(SRA_REWARD_NAMED_KEYS)
         ]
 
     elif module.key == "DivergentUniverse":
         native_options = resolve_sra_managed_options(module.key, script_config, plan)
-        config["cosmicStrife"]["divergentUniverse.enabled"] = True
-        config["cosmicStrife"]["divergentUniverse.mode"] = int(
-            native_options.get("divergentUniverse.mode", SRA_DIVERGENT_UNIVERSE_MODE)
-        )
         config["cosmicStrife"]["divergentUniverse.runtimes"] = int(
             native_options.get(
                 "divergentUniverse.runtimes", SRA_DIVERGENT_UNIVERSE_RUNTIMES
@@ -398,15 +389,8 @@ def build_sra_module_config(
 
     elif module.key == "CurrencyWars":
         native_options = resolve_sra_managed_options(module.key, script_config, plan)
-
-        config["cosmicStrife"]["currencyWars.enabled"] = True
         config["cosmicStrife"]["currencyWars.strategy"] = native_options.get(
             "currencyWars.strategy", _resolve_sra_currency_wars_strategy(script_config)
-        )
-        config["cosmicStrife"]["currencyWars.strategyIndex"] = int(
-            native_options.get(
-                "currencyWars.strategyIndex", SRA_CURRENCY_WARS_STRATEGY_INDEX
-            )
         )
         config["cosmicStrife"]["currencyWars.runtimes"] = int(
             native_options.get("currencyWars.runtimes", SRA_CURRENCY_WARS_RUNTIMES)
@@ -437,8 +421,11 @@ def build_sra_module_config(
                 section[SRA_REWARD_REDEEM_CODE_KEY]
             ) and bool(redeem_codes_enabled)
             redeem_enabled = section[SRA_REWARD_REDEEM_CODE_KEY]
-        if not redeem_enabled:
-            section["redeemCodes"] = ""
+        # 兑换码在 SRA 里维护、不进托管表单；开关生效时把原生码原样送进临时配置
+        # （模板里是空串），与 redeem_code_fingerprint 按原生码算的指纹一致。
+        section["redeemCodes"] = (
+            _native_redeem_codes(script_config) if redeem_enabled else ""
+        )
     elif module.key == "DivergentUniverse":
         config["cosmicStrife"]["enabled"] = True
         config["cosmicStrife"]["divergentUniverse.enabled"] = True

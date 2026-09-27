@@ -104,6 +104,7 @@
     @start-maa-end-config="handleStartMaaEndConfig"
     @start-maa-end-user-config="handleStartMaaEndUserConfig"
     @start-okww-config="handleStartOkwwConfig"
+    @start-whimbox-config="handleStartWhimboxConfig"
     @toggle-user-status="handleToggleUserStatus"
     @scripts-reordered="handleScriptsReordered"
   />
@@ -143,6 +144,7 @@ import {
   isMfwFamily,
   type ScriptCreateRequest,
 } from '@/views/scripts/components/scriptCreateFlow'
+import { maafwRouteSuffix } from '@/composables/useMaaFWFlavor'
 import { useScriptApi } from '@/composables/useScriptApi'
 import { useUserApi } from '@/composables/useUserApi'
 import { useWebSocket } from '@/composables/useWebSocket'
@@ -195,7 +197,7 @@ const mfwSourcesLoading = ref(false)
 const mfwSourcesError = ref<string | null>(null)
 
 // 配置会话遮罩：同一时刻只会有一个配置会话在前台
-type ConfigMaskKind = 'MAA' | 'SRC' | 'MaaEnd' | 'Okww'
+type ConfigMaskKind = 'MAA' | 'SRC' | 'MaaEnd' | 'Okww' | 'Whimbox'
 const configMask = ref<{ kind: ConfigMaskKind; script: Script; user: User | null } | null>(null)
 const clearConfigMask = () => {
   configMask.value = null
@@ -238,6 +240,14 @@ const configMaskView = computed(() => {
         tip: t('scripts.mask.okwwUnlockTip'),
         button: t('scripts.mask.saveSettings'),
       }
+    case 'Whimbox':
+      return {
+        iconColor: 'var(--ant-color-primary)',
+        title: t('scripts.mask.whimboxTitle'),
+        description: t('scripts.mask.whimboxDesc'),
+        tip: t('scripts.mask.whimboxUnlockTip'),
+        button: t('scripts.mask.saveSettings'),
+      }
     default:
       return null
   }
@@ -258,26 +268,14 @@ const handleSaveConfigMask = () => {
     case 'Okww':
       void handleSaveOkwwConfig(mask.script)
       break
+    case 'Whimbox':
+      void handleSaveWhimboxConfig(mask.script)
+      break
   }
 }
 
-const scriptEditPathMap: Record<ScriptType, string> = {
-  MAA: 'maa',
-  General: 'general',
-  Okww: 'okww',
-  OkNte: 'oknte',
-  SRC: 'src',
-  MaaEnd: 'maaend',
-  M9A: 'm9a',
-  MaaFW: 'maafw',
-  HSR: 'hsr',
-  BetterGI: 'bettergi',
-  ZzzOd: 'zzzod',
-  BAAH: 'baah',
-  MSS: 'mss',
-}
-
-const getScriptEditPath = (type: ScriptType) => scriptEditPathMap[type]
+// 与新建流程同一张表（MaaFW 与各特调的后缀取自特调注册表）
+const getScriptEditPath = (type: ScriptType) => getScriptEditSegment(type)
 
 // 配置会话超时：30 分钟没保存就自动断开
 const CONFIG_SESSION_TIMEOUT_MS = 30 * 60 * 1000
@@ -366,7 +364,7 @@ const navigateToCreatedScript = (
   data?: Record<string, unknown>
 ) => {
   const route = {
-    // MFW 新建后进分步引导（M9A / MSS 是 MaaFW 的特调类型，同一套引导）；其余类型直接进编辑页
+    // MFW 新建后进分步引导（各特调是 MaaFW 的特调类型，同一套引导）；其余类型直接进编辑页
     path: isMfwFamily(type)
       ? `/scripts/${scriptId}/setup/maafw`
       : `/scripts/${scriptId}/edit/${getScriptEditSegment(type)}`,
@@ -485,16 +483,15 @@ const handleCopyScript = async (script: Script) => {
 
 const handleAddUser = (script: Script) => {
   // 根据脚本类型跳转到对应的用户添加页面
-  if (script.type === 'MAA') {
+  if (isMfwFamily(script.type)) {
+    // MaaFW 与各特调共用一个用户页，路由后缀取自特调注册表
+    router.push(`/scripts/${script.id}/users/add/${maafwRouteSuffix(script.type)}`)
+  } else if (script.type === 'MAA') {
     router.push(`/scripts/${script.id}/users/add/maa`)
   } else if (script.type === 'SRC') {
     router.push(`/scripts/${script.id}/users/add/src`)
   } else if (script.type === 'MaaEnd') {
     router.push(`/scripts/${script.id}/users/add/maaend`)
-  } else if (script.type === 'M9A') {
-    router.push(`/scripts/${script.id}/users/add/m9a`)
-  } else if (script.type === 'MaaFW') {
-    router.push(`/scripts/${script.id}/users/add/maafw`)
   } else if (script.type === 'Okww') {
     router.push(`/scripts/${script.id}/users/add/okww`)
   } else if (script.type === 'OkNte') {
@@ -507,8 +504,8 @@ const handleAddUser = (script: Script) => {
     router.push(`/scripts/${script.id}/users/add/zzzod`)
   } else if (script.type === 'BAAH') {
     router.push(`/scripts/${script.id}/users/add/baah`)
-  } else if (script.type === 'MSS') {
-    router.push(`/scripts/${script.id}/users/add/mss`)
+  } else if (script.type === 'Whimbox') {
+    router.push(`/scripts/${script.id}/users/add/whimbox`)
   } else {
     router.push(`/scripts/${script.id}/users/add/general`)
   }
@@ -519,16 +516,15 @@ const handleEditUser = (user: User) => {
   const script = scripts.value.find(s => s.users.some(u => u.id === user.id))
   if (script) {
     // 根据脚本类型跳转到对应的用户编辑页面
-    if (script.type === 'MAA') {
+    if (isMfwFamily(script.type)) {
+      // MaaFW 与各特调共用一个用户页，路由后缀取自特调注册表
+      router.push(`/scripts/${script.id}/users/${user.id}/edit/${maafwRouteSuffix(script.type)}`)
+    } else if (script.type === 'MAA') {
       router.push(`/scripts/${script.id}/users/${user.id}/edit/maa`)
     } else if (script.type === 'SRC') {
       router.push(`/scripts/${script.id}/users/${user.id}/edit/src`)
     } else if (script.type === 'MaaEnd') {
       router.push(`/scripts/${script.id}/users/${user.id}/edit/maaend`)
-    } else if (script.type === 'M9A') {
-      router.push(`/scripts/${script.id}/users/${user.id}/edit/m9a`)
-    } else if (script.type === 'MaaFW') {
-      router.push(`/scripts/${script.id}/users/${user.id}/edit/maafw`)
     } else if (script.type === 'Okww') {
       router.push(`/scripts/${script.id}/users/${user.id}/edit/okww`)
     } else if (script.type === 'OkNte') {
@@ -541,8 +537,8 @@ const handleEditUser = (user: User) => {
       router.push(`/scripts/${script.id}/users/${user.id}/edit/zzzod`)
     } else if (script.type === 'BAAH') {
       router.push(`/scripts/${script.id}/users/${user.id}/edit/baah`)
-    } else if (script.type === 'MSS') {
-      router.push(`/scripts/${script.id}/users/${user.id}/edit/mss`)
+    } else if (script.type === 'Whimbox') {
+      router.push(`/scripts/${script.id}/users/${user.id}/edit/whimbox`)
     } else {
       router.push(`/scripts/${script.id}/users/${user.id}/edit/general`)
     }
@@ -666,8 +662,8 @@ const stopConfigSession = async (targetId: string, label: string, clearState: ()
   return true
 }
 
-// MAA / SRC 脚本级配置会话：走通用的 start/stop，带 sessionEnded 竞态守卫
-const handleStartScriptConfig = async (script: Script, kind: 'MAA' | 'SRC') => {
+// 脚本级配置会话（MAA / SRC / Whimbox）：走通用的 start/stop，带 sessionEnded 竞态守卫
+const handleStartScriptConfig = async (script: Script, kind: 'MAA' | 'SRC' | 'Whimbox') => {
   try {
     const started = await startConfigSession(
       script.id,
@@ -696,7 +692,7 @@ const handleStartScriptConfig = async (script: Script, kind: 'MAA' | 'SRC') => {
   }
 }
 
-const handleSaveScriptConfig = async (script: Script, kind: 'MAA' | 'SRC') => {
+const handleSaveScriptConfig = async (script: Script, kind: 'MAA' | 'SRC' | 'Whimbox') => {
   try {
     const saved = await stopConfigSession(script.id, kind, clearConfigMask)
     if (saved) message.success(t('scripts.toast.configSaved', { name: script.name }))
@@ -711,6 +707,9 @@ const handleStartMAAConfig = (script: Script) => handleStartScriptConfig(script,
 const handleSaveMAAConfig = (script: Script) => handleSaveScriptConfig(script, 'MAA')
 const handleStartSRCConfig = (script: Script) => handleStartScriptConfig(script, 'SRC')
 const handleSaveSRCConfig = (script: Script) => handleSaveScriptConfig(script, 'SRC')
+// 奇想盒：无参数拉起原生 app（下载跑图路线、配置模型/键位等都在那边做，MAS 零写入）
+const handleStartWhimboxConfig = (script: Script) => handleStartScriptConfig(script, 'Whimbox')
+const handleSaveWhimboxConfig = (script: Script) => handleSaveScriptConfig(script, 'Whimbox')
 
 const handleStartMaaEndConfig = async (script: Script, user: User | null = null) => {
   try {

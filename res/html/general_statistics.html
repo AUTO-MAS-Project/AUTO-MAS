@@ -247,6 +247,22 @@
         </div>
         {% endif %}
 
+        {# 上游结果块原文：单步成败的唯一载体（当前仅 Whimbox 专项填该字段） #}
+        {% if result_block_body %}
+        <div class="content">
+            <p class="result-label">一条龙分步结果</p>
+            <div class="result-box">{{ result_block_body }}</div>
+        </div>
+        {% endif %}
+
+        {# 未完成原因：结果块只有状态、没有原因，这里放上游 ❌/🛑 行原文（当前仅 Whimbox） #}
+        {% if failure_notes_text %}
+        <div class="content">
+            <p class="result-label">未完成原因（上游提示原文）</p>
+            <div class="result-box">{{ failure_notes_text }}</div>
+        </div>
+        {% endif %}
+
         <p class="signature">AUTO-MAS 敬上</p>
 
         <div class="footer">

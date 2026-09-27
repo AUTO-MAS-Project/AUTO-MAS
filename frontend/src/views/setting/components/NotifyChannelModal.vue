@@ -70,7 +70,6 @@ const switchDisabled = computed(() => {
   }
   return false
 })
-const clawChannel = computed(() => (props.channel?.customBlock === 'claw:qq' ? 'qq' : 'weixin'))
 const webhookMode = computed(() => (props.scope === 'user' ? 'user' : 'global'))
 
 const saving = ref(false)
@@ -160,7 +159,6 @@ const onWebhookListed = (items: { name: string; uid: string }[]) =>
 
         <ClawBinding
           v-if="isClaw && clawBinding"
-          :channel="clawChannel"
           :binding="clawBinding"
           :get-container="getPopupContainer"
         />

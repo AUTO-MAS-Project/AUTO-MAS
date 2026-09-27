@@ -17,12 +17,7 @@
     </div>
 
     <a-space size="middle">
-      <a-button
-        v-if="!!userId"
-        size="large"
-        :loading="folderLoading"
-        @click="handleOpenFolder"
-      >
+      <a-button v-if="!!userId" size="large" :loading="folderLoading" @click="handleOpenFolder">
         <template #icon>
           <FolderOpenOutlined />
         </template>
@@ -414,7 +409,12 @@ import { useI18n } from 'vue-i18n'
 import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
-import { ArrowLeftOutlined, FolderOpenOutlined, HistoryOutlined, QuestionCircleOutlined } from '@ant-design/icons-vue'
+import {
+  ArrowLeftOutlined,
+  FolderOpenOutlined,
+  HistoryOutlined,
+  QuestionCircleOutlined,
+} from '@ant-design/icons-vue'
 import type { FormInstance, Rule } from 'ant-design-vue/es/form'
 import { useUserApi } from '@/composables/useUserApi.ts'
 import { useScriptApi } from '@/composables/useScriptApi.ts'

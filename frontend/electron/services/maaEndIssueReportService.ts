@@ -5,6 +5,7 @@ import AdmZip = require('adm-zip')
 import { getLogger } from './logger'
 import {
   CollectorState,
+  addDebugDirectory,
   addDirectory,
   addRecentFailedMaaEndHistoryLogs,
   addSanitizedJsonFile,
@@ -33,10 +34,11 @@ export function createMaaEndIssueReport(appRoot: string, zipPath: string): MaaEn
   addRecentFailedMaaEndHistoryLogs(state, dataRoots)
 
   dataRoots.forEach((dataRoot, index) => {
-    addDirectory(
+    addDebugDirectory(
       state,
       path.join(dataRoot, 'debug'),
-      index === 0 ? 'logs/auto-mas' : 'logs/auto-mas/backend'
+      index === 0 ? 'logs/auto-mas' : 'logs/auto-mas/backend',
+      'maaend'
     )
   })
 

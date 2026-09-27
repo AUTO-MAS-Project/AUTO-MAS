@@ -29,7 +29,6 @@ import ctypes
 import time
 from collections.abc import AsyncIterator
 from contextlib import contextmanager
-from datetime import datetime
 from functools import lru_cache
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -56,6 +55,7 @@ from PIL import Image
 from rapidocr_onnxruntime import RapidOCR
 
 from app.models.emulator import DeviceInfo
+from app.tools.error_screenshot import save_error_screenshot
 from app.utils import get_logger, resource_path
 
 logger = get_logger("终末地登录")
@@ -183,16 +183,14 @@ def _capture_window(hwnd: int, *, activate: bool = True) -> np.ndarray:
 
 
 def _save_error_screenshot(hwnd: int) -> None:
-    """保存登录失败时未缩放、未标注的游戏窗口截图。"""
+    """保存登录失败时未标注的游戏窗口截图，由共享工具压缩落盘。"""
 
     try:
-        screenshot_dir = Path.cwd() / "debug/maaend-login"
-        screenshot_dir.mkdir(parents=True, exist_ok=True)
-        screenshot_path = screenshot_dir / (
-            f"login-error-{datetime.now().strftime('%Y%m%d-%H%M%S-%f')}.png"
+        save_error_screenshot(
+            _capture_window_image(hwnd, activate=False),
+            "maaend-login",
+            "login-error",
         )
-        _capture_window_image(hwnd, activate=False).save(screenshot_path, format="PNG")
-        logger.warning(f"终末地登录错误截图已保存: {screenshot_path}")
     except Exception as error:
         # 截图是诊断旁路，失败时不能覆盖原始登录异常
         logger.warning(f"终末地登录错误截图保存失败: {error}")

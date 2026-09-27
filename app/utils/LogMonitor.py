@@ -243,6 +243,9 @@ class LogMonitor:
 
             except (FileNotFoundError, PermissionError) as e:
                 logger.warning(f"文件访问错误: {e}")
+                # 日志尚未创建或被短暂锁定时也要推进回调；否则调用方的
+                # 停滞超时永远没有机会判定，任务会无限等待。
+                await self.do_callback()
                 await asyncio.sleep(5)
                 continue
 

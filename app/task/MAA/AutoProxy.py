@@ -64,9 +64,11 @@ from app.utils.constants import (
     MAA_TASKS,
     MAA_TASKS_ZH,
     UTC4,
+    game_now,
 )
 from app.utils.io import mark_native_config_injected, read_file, write_file
 
+from .base_preset import maa_task_identity, seed_maa_base_config
 from .tools import (
     agree_bilibili,
     ensure_game_updated,
@@ -251,10 +253,45 @@ def _has_completed_sanity_task(log_records: list[LogRecord]) -> bool:
 
 _MAA_CONFIG_FILES = ("gui.json", "gui.new.json")
 
+
 # 每次注入都由 MAS 决定、不从存档取值的任务字段: MAA 运行期改了也不回写。
 # PlanSelect 是 MAA 跑完基建后自增的班次指针, 脚本模式下存档全脚本共用,
 # 回写会让多个自定义基建用户互相拨对方的班次。
 _MAA_TASK_KEYS_NOT_MERGED = frozenset({"PlanSelect"})
+
+
+_MAA_UPDATE_CONFIG_KEYS = {
+    "gui.json": (
+        ("Global", "VersionUpdate.ScheduledUpdateCheck"),
+        ("Global", "VersionUpdate.AutoDownloadUpdatePackage"),
+        ("Global", "VersionUpdate.AutoInstallUpdatePackage"),
+    ),
+    "gui.new.json": (
+        ("Update", "CheckOnSchedule"),
+        ("Update", "AutoDownloadUpdatePackage"),
+        ("Update", "AutoInstallUpdatePackage"),
+    ),
+}
+
+
+def _without_maa_update_changes(current: dict, baseline: dict, name: str) -> dict:
+    """移除 MAS 临时接管的更新字段，避免它们进入 MAA 存档。"""
+    for path in _MAA_UPDATE_CONFIG_KEYS.get(name, ()):
+        current_node: object = current
+        baseline_node: object = baseline
+        for key in path[:-1]:
+            if not isinstance(current_node, dict) or not isinstance(baseline_node, dict):
+                break
+            current_node = current_node.get(key)
+            baseline_node = baseline_node.get(key)
+        else:
+            if isinstance(current_node, dict) and isinstance(baseline_node, dict):
+                key = path[-1]
+                if key in baseline_node:
+                    current_node[key] = deepcopy(baseline_node[key])
+                else:
+                    current_node.pop(key, None)
+    return current
 
 _MAA_GUI_SKELETON: dict[str, dict] = {
     "gui.json": {"Current": "Default", "Global": {}, "Configurations": {"Default": {}}},
@@ -262,10 +299,8 @@ _MAA_GUI_SKELETON: dict[str, dict] = {
 }
 """MAA 配置骨架：仅含 MAS 托管键所在的容器路径，不含任何任务内容。
 
-base 缺失或损坏时以骨架为底下发——MAA（System.Text.Json）加载时对缺席属性
-取 C# 内存默认值，**TaskQueue 缺席即由 MAA 内存默认队列填空**（PR #907 实证：
-MAA 保存时用内存默认队列整体重写 gui.new.json）。用户在 MAA 里一保存，
-完整 base 即落盘。默认队列从此只有 MAA 一个生成器，MAS 不再维护队列表单。
+托管 base 缺失时会先播种 MAS 预设；原生配置损坏且无有效备份时仍以骨架下发，
+TaskQueue 由 MAA 内存默认值填充。
 """
 
 
@@ -323,9 +358,7 @@ def _merge_task_queue(
         return False
 
     def identity(item: object) -> tuple | None:
-        if not isinstance(item, dict):
-            return None
-        return (item.get("TaskType"), item.get("Name"))
+        return maa_task_identity(item)
 
     index_by_id: dict[tuple, int] = {}
     for index, item in enumerate(archive_queue):
@@ -514,22 +547,13 @@ def _find_task_source(
     task_queue: list[dict],
     name: str,
     task_type: str,
-    *,
-    allow_type_fallback: bool = True,
 ) -> dict | None:
-    """按任务名称取原生配置，必要时兼容旧配置中的类型匹配。"""
+    """按 TaskType + Name 精确取得原生任务配置。"""
 
+    identity = (task_type, name)
     for task in task_queue:
-        if (
-            isinstance(task, dict)
-            and task.get("TaskType") == task_type
-            and task.get("Name") == name
-        ):
+        if maa_task_identity(task) == identity:
             return deepcopy(task)
-    if allow_type_fallback:
-        for task in task_queue:
-            if isinstance(task, dict) and task.get("TaskType") == task_type:
-                return deepcopy(task)
     return None
 
 
@@ -871,7 +895,9 @@ class AutoProxyTask(TaskExecuteBase):
         if not self.run_book["GreenTicketStore"]:
             completed_month = self.cur_user_config.get("Data", "GreenTicketStoreMonth")
 
-            if completed_month == _current_month_marker(datetime.now(tz=UTC4)):
+            if completed_month == _current_month_marker(
+                game_now(self.cur_user_config.get("Info", "Server"))
+            ):
                 self.run_book["GreenTicketStore"] = True
                 logger.info(
                     f"用户 {self.cur_user_item.name} 本次跳过绿票商店："
@@ -879,7 +905,7 @@ class AutoProxyTask(TaskExecuteBase):
                 )
 
         if not self.run_book["Annihilation"]:
-            now = datetime.now(tz=UTC4)
+            now = game_now(self.cur_user_config.get("Info", "Server"))
             start_weekday = self.cur_user_config.get("Info", "AnnihilationStartWeekday")
 
             if not _should_run_annihilation(
@@ -900,8 +926,10 @@ class AutoProxyTask(TaskExecuteBase):
     async def main_task(self):
         """自动代理模式主逻辑"""
 
-        # 初始化每日代理状态
-        self.curdate = datetime.now(tz=UTC4).strftime("%Y-%m-%d")
+        # 初始化每日代理状态（按用户区服的游戏日换日）
+        self.curdate = game_now(self.cur_user_config.get("Info", "Server")).strftime(
+            "%Y-%m-%d"
+        )
         if self.cur_user_config.get("Data", "LastProxyDate") != self.curdate:
             await self.cur_user_config.set("Data", "LastProxyDate", self.curdate)
             await self.cur_user_config.set("Data", "ProxyTimes", 0)
@@ -1259,6 +1287,7 @@ class AutoProxyTask(TaskExecuteBase):
                 maa_data_dir=self._cultivate_archive_dir(),
                 config_path=Config.config_path,
                 proxy=Config.proxy,
+                today=game_now(self.cur_user_config.get("Info", "Server")).date(),
                 skland=skland,
             )
         except Exception as e:
@@ -1334,6 +1363,7 @@ class AutoProxyTask(TaskExecuteBase):
         # native 池由 manager prepare 在任务级一次性归档
         archive_dir = self._config_archive_dir()
         if archive_dir is not None:
+            seed_maa_base_config(archive_dir)
             archive_mas_runtime_backup(
                 self.script_info.script_id,
                 str(self.cur_user_uid),
@@ -1385,20 +1415,22 @@ class AutoProxyTask(TaskExecuteBase):
         # 各配置部分的引用
         global_set = gui_set["Global"]
 
-        # 逐条修 $type 位置（布局不校对、成员不动——下方 _apply_maa_quick_config
-        # 会按本轮用户配置重建 TaskQueue，但各条目的高级字段经 _find_task_source
-        # 从这份队列取回，$type 不在首位会让 MAA 读不进整个文件）。
-        for configurations in (gui_new_set.get("Configurations") or {}).values():
-            if isinstance(configurations, dict):
-                queue = configurations.get("TaskQueue")
-                if isinstance(queue, list):
-                    configurations["TaskQueue"] = _repair_maa_task_queue(queue)
+        # 非直控模式才由 MAS 修正队列条目；直控的 TaskQueue 完全由用户维护。
+        if not self.direct_control:
+            for configurations in (gui_new_set.get("Configurations") or {}).values():
+                if isinstance(configurations, dict):
+                    queue = configurations.get("TaskQueue")
+                    if isinstance(queue, list):
+                        configurations["TaskQueue"] = _repair_maa_task_queue(queue)
 
         # 使用简体中文
         global_set["GUI.Localization"] = "zh-cn"  # OLD: 即将移除
         gui_new_set.setdefault("Gui", {})["Localization"] = "zh-cn"
 
-        if self.cur_user_config.get("Info", "IfQuickConfig"):
+        # 直控的 TaskQueue 由用户在 MAA 原生界面维护；仅保留下方运行期 overlay。
+        if not self.direct_control and self.cur_user_config.get(
+            "Info", "IfQuickConfig"
+        ):
             await self._apply_maa_quick_config(gui_new_set)
         self._configure_maa_runtime(gui_set, gui_new_set, emulator_info)
 
@@ -1489,7 +1521,6 @@ class AutoProxyTask(TaskExecuteBase):
                 source_queue,
                 zh_task,
                 en_task,
-                allow_type_fallback=en_task != "Fight",
             ) or {
                 "$type": f"{en_task}Task",
                 "Name": zh_task,
@@ -1497,12 +1528,8 @@ class AutoProxyTask(TaskExecuteBase):
                 "TaskType": en_task,
             }
 
-        annihilation_source = _find_task_source(
-            source_queue, "剿灭作战", "Fight", allow_type_fallback=False
-        )
-        activity_source = _find_task_source(
-            source_queue, "活动关优先", "Fight", allow_type_fallback=False
-        )
+        annihilation_source = _find_task_source(source_queue, "剿灭作战", "Fight")
+        activity_source = _find_task_source(source_queue, "活动关优先", "Fight")
 
         # 库存保持计划：MAS 快速配置面板维护的计划写回原生 PlanList。只覆盖
         # MAS 管理的三项（Stage/DropId/DropCount），其余原生字段（含用户在 MAA 里
@@ -1526,7 +1553,9 @@ class AutoProxyTask(TaskExecuteBase):
                 uuid.UUID(self.cur_user_config.get("Info", "StageMode"))
             ]
             plan_data = {
-                stage_key: plan.get_current_info(stage_key).getValue()
+                stage_key: plan.get_current_info(
+                    stage_key, server=self.cur_user_config.get("Info", "Server")
+                ).getValue()
                 for stage_key in MAA_STAGE_KEY
             }
 
@@ -1815,6 +1844,7 @@ class AutoProxyTask(TaskExecuteBase):
                 continue
             try:
                 current = read_file(self.maa_set_path / name)
+                current = _without_maa_update_changes(current, baseline[name], name)
                 archive = read_file(archive_dir / name)
             except Exception as e:
                 logger.opt(exception=True).warning(
@@ -1930,7 +1960,9 @@ class AutoProxyTask(TaskExecuteBase):
                     await self.cur_user_config.set(
                         "Data",
                         "AnnihilationCompletedWeek",
-                        _current_week_marker(datetime.now(tz=UTC4)),
+                        _current_week_marker(
+                            game_now(self.cur_user_config.get("Info", "Server"))
+                        ),
                     )
                     self._annihilation_weekly_completion_recorded = True
                     progress_text = (
@@ -1951,7 +1983,9 @@ class AutoProxyTask(TaskExecuteBase):
             await self.cur_user_config.set(
                 "Data",
                 "GreenTicketStoreMonth",
-                _current_month_marker(datetime.now(tz=UTC4)),
+                _current_month_marker(
+                    game_now(self.cur_user_config.get("Info", "Server"))
+                ),
             )
             logger.info(f"用户 {self.cur_user_item.name} 已完成本月绿票商店购买")
 
@@ -1980,7 +2014,9 @@ class AutoProxyTask(TaskExecuteBase):
             self.cur_user_log.status = "MAA 未选择任何任务"
         elif "任务出错: 开始唤醒" in log:
             self.cur_user_log.status = "MAA 未能正确登录 PRTS"
-        elif "任务已全部完成！" in log:
+        # MAA v6.18.0-beta.3 起任务出错时收尾标题改为「任务已完成，但出现错误！」，
+        # 只有全部成功才打「任务已全部完成！」，完成判定两个都要认。
+        elif "任务已全部完成！" in log or "任务已完成，但出现错误！" in log:
             # 关闭时不读取/反推来源队列；成功与失败均取自 MAA 本轮输出。
             for en_task, zh_task in zip(MAA_TASKS, MAA_TASKS_ZH):
                 if (

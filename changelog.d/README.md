@@ -56,6 +56,7 @@ python scripts/changelog.py add fix maa "修复理智不足时剿灭被误记为
 | `okww` | ok-ww | `tools` | 工具 |
 | `oknte` | ok-nte | `settings` | 设置 |
 | `baah` | BAAH | `update` | 更新 |
+| `whimbox` | 奇想盒（Whimbox） |  |  |
 | `mss` | MSS | `runtime` | Runtime |
 | `src` | SRC |  |  |
 

@@ -136,40 +136,27 @@ def engine_list(engines) -> str:
     return "、".join(ENGINE_DISPLAY_NAMES.get(engine, engine) for engine in engines)
 
 
-@dataclass(frozen=True)
-class HSRScriptAssignment:
-    """模块引擎归属的解析结果。
-
-    ``requested`` 是前三级（用户覆盖 → 脚本 TaskMapping → 模块默认值）解析出的
-    引擎；``script`` 是最终执行引擎。两者不同即发生了第四级回落：指派的引擎没有
-    配置路径，改用 ``supported_scripts`` 里第一个已配置的引擎。
-    """
-
-    script: ScriptType
-    requested: ScriptType
-
-    @property
-    def fallback(self) -> bool:
-        return self.script != self.requested
-
-
 def resolve_script_assignment(
     module: HSRTaskModule,
     script_config,
     *,
     user_config=None,
     effective_engines: tuple[ScriptType, ...] | None = None,
-) -> HSRScriptAssignment:
-    """解析模块执行脚本，并保留「是否回落、从哪个到哪个」供调用方呈现。
+) -> ScriptType:
+    """解析模块的执行引擎：用户覆盖 → 脚本 TaskMapping → 模块默认值。
 
-    云·星穹铁道只用三月七（SRA 接不上 MAS 托管的浏览器）：平台为云时不走
-    四级回落，用户覆盖与脚本 TaskMapping 一律忽略。纯函数，不写日志。
+    解析出的引擎没有配置路径时改用 ``supported_scripts`` 里第一个已配置的引擎。
+    没配路径的引擎在界面上本就选不了，这种改用是常态（例如只装了三月七），
+    不算异常，调用方不必提示。
+
+    云·星穹铁道只用三月七（SRA 接不上 MAS 托管的浏览器）：平台为云时用户覆盖
+    与脚本 TaskMapping 一律忽略。纯函数，不写日志。
     """
 
     from .tools.account_switch import is_cloud_platform
 
     if is_cloud_platform(script_config):
-        return HSRScriptAssignment(script="M7A", requested="M7A")
+        return "M7A"
 
     assigned = None
     if user_config is not None:
@@ -185,7 +172,6 @@ def resolve_script_assignment(
         assigned = script_config.get("TaskMapping", module.key)
     if assigned not in module.supported_scripts:
         assigned = module.default_script
-    requested: ScriptType = "SRA" if assigned == "SRA" else "M7A"
     if effective_engines and assigned not in effective_engines:
         assigned = next(
             (
@@ -195,20 +181,4 @@ def resolve_script_assignment(
             ),
             assigned,
         )
-    script: ScriptType = "SRA" if assigned == "SRA" else "M7A"
-    return HSRScriptAssignment(script=script, requested=requested)
-
-
-def describe_script_fallback(
-    module: HSRTaskModule, assignment: HSRScriptAssignment
-) -> str | None:
-    """把一次引擎回落写成用户能看懂的一句话；没有回落时返回 None。"""
-
-    if not assignment.fallback:
-        return None
-    requested = assignment.requested
-    return (
-        f"模块「{module.name}」指派给{engine_label(requested, right=False)}，"
-        f"但{engine_label(requested)}未配置路径，"
-        f"已改用{engine_label(assignment.script)}执行"
-    )
+    return "SRA" if assigned == "SRA" else "M7A"

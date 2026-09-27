@@ -26,7 +26,7 @@ export function sortChannels<T extends { order: number }>(channels: readonly T[]
 }
 
 export interface ChannelExtras {
-  /** 各 custom_block 的 Claw 绑定状态，键为 custom_block（claw:weixin / claw:qq）。 */
+  /** 各 custom_block 的 Claw 绑定状态，键为 custom_block（claw:qq）。 */
   clawConnected: Record<string, boolean>
   /** Webhook 条目名，来自 WebhookManager 列表重载后的 emit。 */
   webhookNames: string[]

@@ -137,6 +137,10 @@ REDACTED_SECRET_TEXT = "<已隐藏>"
 #: 短于这个长度的密码不做全文替换：一两个字符的值会把日志里所有同样的字符都换掉，
 #: 日志就没法看了；这么短的密码本身也谈不上保密。
 MIN_REDACTED_SECRET_LENGTH = 4
+#: 项目有 password 输入框时，每次运行的 ``.worker.log`` 第一行以它开头（``log_redaction_notice``）。
+#: 问题包导出（frontend/electron/services/maafwIssueReportService.ts）凭这一行认定这次的
+#: ``.worker.log`` / ``.maafw.log`` 是写的时候就打过码的，没有这一行的旧副本不往包里放。两边一起改。
+LOG_REDACTION_MARKER = "[MAS 日志打码]"
 
 
 def collect_plan_password_values(plan: Any, interface: MaaFWInterface) -> list[str]:
@@ -189,6 +193,24 @@ def redact_secret_text(text: str, variants: list[str]) -> str:
     return text
 
 
+def log_redaction_notice(interface: MaaFWInterface, values: list[str]) -> str | None:
+    """项目声明了 password 输入框时写进 ``.worker.log`` 开头的打码说明，没有就是 None。
+
+    ``values`` 是本次运行计划里的密码值（``collect_plan_password_values``）。
+    """
+
+    if not password_input_names(interface):
+        return None
+    short = sum(1 for value in values if len(value) < MIN_REDACTED_SECRET_LENGTH)
+    notice = (
+        f"{LOG_REDACTION_MARKER} 本次的 .worker.log 与 .maafw.log 已把 "
+        f"{len(values) - short} 个密码值换成「{REDACTED_SECRET_TEXT}」"
+    )
+    if short:
+        notice += f"；另有 {short} 个短于 {MIN_REDACTED_SECRET_LENGTH} 个字符，未打码"
+    return notice
+
+
 def seal_user_task_snapshot(script_id: str, script_config: Any, snapshot: Any) -> Any:
     """``Config.update_user`` 写 ``Task.TaskSnapshot`` 前调：按脚本当前的 interface 加密密码字段。
 
@@ -208,11 +230,13 @@ def seal_user_task_snapshot(script_id: str, script_config: Any, snapshot: Any) -
 
 
 __all__ = [
+    "LOG_REDACTION_MARKER",
     "REDACTED_SECRET_TEXT",
     "SECRET_PREFIX",
     "MaaFWSecretError",
     "collect_plan_password_values",
     "is_sealed_secret",
+    "log_redaction_notice",
     "open_task_snapshot",
     "redact_secret_text",
     "seal_task_snapshot",

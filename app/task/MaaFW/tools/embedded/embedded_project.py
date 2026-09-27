@@ -465,6 +465,20 @@ def _payload_or_error(root: Path, lineage: str, payload_id: str) -> tuple[Path, 
     return directory, manifest
 
 
+def _is_maafw_binding_path(rel: str) -> bool:
+    """``rel``（posix、已 casefold）是不是某个 site-packages 里的 maafw binding：
+    ``…/site-packages/maa/…`` 或 ``…/site-packages/maafw-*.dist-info/…``。"""
+
+    parts = rel.split("/")
+    for index, part in enumerate(parts[:-1]):
+        if part == "site-packages":
+            following = parts[index + 1]
+            return following == "maa" or (
+                following.startswith("maafw-") and following.endswith(".dist-info")
+            )
+    return False
+
+
 def _differs_from(path: Path, payload_file: Path, entry: Mapping[str, Any]) -> bool:
     """视图里的文件内容是否与载荷记的不同。先比 inode（链接着同一份就是没动过，不读文件），
     再比大小，最后才算 sha。"""
@@ -603,6 +617,11 @@ def _build_view_tree(
             key = rel.casefold()
             if key in VERSION_BOUND_STATE_FILES and not same_payload:
                 # 换载荷：staging 里已是新载荷那份（或没有），视图这份不带，见 contracts。
+                continue
+            if _is_maafw_binding_path(key):
+                # 自带解释器里的 maafw binding：准备运行环境会按原生库版本把它钉回（改的是我们
+                # 自己，或项目 agent 的部署脚本），不是用户的本地修改。以新载荷为准，不留档、
+                # 不当私有文件带过去（带过去的旧 dist-info 会成为新视图里的残留安装记录）。
                 continue
             if key in RUNTIME_STATE_FILES:
                 # 运行期状态（账号记录之类）：视图里这份就是真相，不论新旧载荷里有没有、内容

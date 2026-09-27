@@ -37,10 +37,20 @@ import { decideRendererRecovery } from './rendererCrashRecovery'
 
 import { getLogger, initializeLogger } from './services/logger'
 import { readLogContent, readLogIncrement } from './services/logFileReader'
+import { CollectorState, addDiagnosticFile, addDirectory } from './services/issueReportCore'
+import { createBetterGIIssueReport } from './services/bettergiIssueReportService'
 import { createMaaEndIssueReport } from './services/maaEndIssueReportService'
+import {
+  createM9AIssueReport,
+  createMSSIssueReport,
+  createMaaFWIssueReport,
+  listMaaFWIssueReportScripts,
+  maafwIssueReportFileNamePrefix,
+} from './services/maafwIssueReportService'
 import { createOkwwIssueReport } from './services/okwwIssueReportService'
 import { createOkNteIssueReport } from './services/okNteIssueReportService'
 import { createZzzOdIssueReport } from './services/zzzOdIssueReportService'
+import { createWhimboxIssueReport } from './services/whimboxIssueReportService'
 import {
   captureMainRendererCrash,
   configureMainSentry,
@@ -519,9 +529,11 @@ async function forceQuitAfterRendererTimeout(reason: string): Promise<void> {
       coordinatedQuit,
       forceQuitInProgress,
       quitRequestInFlight,
+      relaunchAfterQuit,
     })
     forceQuitInProgress = retryableState.forceQuitInProgress
     quitRequestInFlight = retryableState.quitRequestInFlight
+    relaunchAfterQuit = retryableState.relaunchAfterQuit
     if (mainWindow && !mainWindow.isDestroyed()) {
       showMainWindow()
     } else if (app.isReady()) {
@@ -1338,8 +1350,15 @@ ipcMain.handle('log:export', async () => {
 
     const zipPath = result.filePath
 
-    // 创建 ZIP 文件
+    // 与问题包同一套脱敏（日志里的推送密钥、家目录等），但不设大小上限：这里要的就是全部日志
     const zip = new AdmZip()
+    const state: CollectorState = {
+      zip,
+      entries: [],
+      archiveBytes: 0,
+      maxEntryBytes: Number.POSITIVE_INFINITY,
+      maxArchiveBytes: Number.POSITIVE_INFINITY,
+    }
 
     // 读取 debug 目录下的所有文件
     const files = fs.readdirSync(debugDir)
@@ -1354,11 +1373,19 @@ ipcMain.handle('log:export', async () => {
       const stat = fs.statSync(filePath)
 
       if (stat.isFile()) {
-        zip.addLocalFile(filePath)
-        logger.info(`添加文件到压缩包: ${file}`)
+        addDiagnosticFile(state, filePath, file)
       } else if (stat.isDirectory() && file === 'maaend-login') {
-        zip.addLocalFolder(filePath, 'maaend-login')
-        logger.info('添加 MaaEnd 登录错误截图到压缩包')
+        addDirectory(state, filePath, 'maaend-login')
+      }
+    }
+
+    // 读不出来、解不开的文件不会原样放进包（那样就把没打码的内容发出去了），要让人知道少了哪些
+    const skipped = state.entries.filter(entry => entry.status === 'skipped')
+    for (const entry of state.entries) {
+      if (entry.status === 'skipped') {
+        logger.warn(`未能导出: ${entry.path}（${entry.reason}）`)
+      } else {
+        logger.info(`添加文件到压缩包: ${entry.path}`)
       }
     }
 
@@ -1368,7 +1395,10 @@ ipcMain.handle('log:export', async () => {
 
     return {
       success: true,
-      message: '日志压缩包导出成功',
+      message:
+        skipped.length > 0
+          ? `日志压缩包导出成功，${skipped.map(entry => entry.path).join('、')} 未能导出`
+          : '日志压缩包导出成功',
       zipPath: zipPath,
     }
   } catch (error) {
@@ -1380,22 +1410,35 @@ ipcMain.handle('log:export', async () => {
   }
 })
 
+interface IssueReportResult {
+  success: boolean
+  message?: string
+  zipPath?: string
+  error?: string
+}
+
+// scriptId 只有按脚本导出的问题包（MFW）才用，其余导出函数不接这个参数
 function registerIssueReportExporter(
   ipcChannel: string,
   title: string,
-  fileNamePrefix: string,
+  fileNamePrefix: string | ((appRoot: string, scriptId: string) => string),
   create: (
     appRoot: string,
-    zipPath: string
-  ) => { success: boolean; message?: string; zipPath?: string; error?: string }
+    zipPath: string,
+    scriptId: string
+  ) => IssueReportResult | Promise<IssueReportResult>
 ): void {
-  ipcMain.handle(ipcChannel, async () => {
+  ipcMain.handle(ipcChannel, async (_event, rawScriptId?: unknown) => {
     try {
       if (!mainWindow) return { success: false, error: '窗口未初始化' }
 
+      const scriptId = typeof rawScriptId === 'string' ? rawScriptId : ''
+      const appRoot = getAppRoot()
+      const prefix =
+        typeof fileNamePrefix === 'function' ? fileNamePrefix(appRoot, scriptId) : fileNamePrefix
       const result = await dialog.showSaveDialog(mainWindow, {
         title,
-        defaultPath: `${fileNamePrefix}-${new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)}.zip`,
+        defaultPath: `${prefix}-${new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)}.zip`,
         filters: [{ name: 'ZIP文件', extensions: ['zip'] }],
       })
 
@@ -1403,7 +1446,7 @@ function registerIssueReportExporter(
         return { success: false, error: '用户取消' }
       }
 
-      return create(getAppRoot(), result.filePath)
+      return await create(appRoot, result.filePath, scriptId)
     } catch (error) {
       logger.error(`${title}失败:`, error)
       return {
@@ -1438,6 +1481,43 @@ registerIssueReportExporter(
   'ZZZ-OD-logs',
   createZzzOdIssueReport
 )
+registerIssueReportExporter(
+  'whimbox:exportIssueReport',
+  '导出 Whimbox 问题包',
+  'Whimbox-logs',
+  createWhimboxIssueReport
+)
+registerIssueReportExporter(
+  'bettergi:exportIssueReport',
+  '导出 BetterGI 问题包',
+  'BetterGI-logs',
+  createBetterGIIssueReport
+)
+registerIssueReportExporter(
+  'maafw:exportIssueReport',
+  '导出 MFW 问题包',
+  maafwIssueReportFileNamePrefix,
+  createMaaFWIssueReport
+)
+registerIssueReportExporter(
+  'm9a:exportIssueReport',
+  '导出 M9A 问题包',
+  'M9A-logs',
+  createM9AIssueReport
+)
+registerIssueReportExporter(
+  'mss:exportIssueReport',
+  '导出 MSS 问题包',
+  'MSS-logs',
+  createMSSIssueReport
+)
+
+ipcMain.handle('maafw:listIssueReportScripts', (_event, configTypes?: unknown) => {
+  const types = Array.isArray(configTypes)
+    ? configTypes.filter((type): type is string => typeof type === 'string')
+    : []
+  return listMaaFWIssueReportScripts(getAppRoot(), types)
+})
 
 ipcMain.handle('data:backup', async () => {
   let partialPath: string | undefined
@@ -2043,7 +2123,7 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
     if (canElectronExitImmediately({ coordinatedQuit, forceQuitInProgress, quitRequestInFlight })) {
       app.quit()
-    } else if (!forceQuitInProgress) {
+    } else if (!forceQuitInProgress && !quitRequestInFlight) {
       void forceQuitAfterRendererTimeout('所有 renderer 窗口意外关闭')
     }
   }
