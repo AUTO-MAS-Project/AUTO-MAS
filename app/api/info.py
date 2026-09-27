@@ -449,7 +449,9 @@ async def get_bluearchive_activity(
     tags=["Get"],
     summary="获取碧蓝档案活动图片（GameKee 中转）",
 )
-async def get_bluearchive_image(url: str = Query(..., description="图片地址")) -> Response:
+async def get_bluearchive_image(
+    url: str = Query(..., description="图片地址"),
+) -> Response:
     """中转 GameKee 的图片。
 
     那个 CDN 校验 Referer：带上它自己的站点才给图，页面直连（Referer 是本软件）会被拒。
@@ -566,8 +568,12 @@ async def get_endfield_image(url: str = Query(..., description="图片地址")) 
             with Image.open(io.BytesIO(response.content)) as image:
                 picture = image.convert("RGB")
                 if picture.width > ENDFIELD_IMAGE_WIDTH:
-                    height = round(picture.height * ENDFIELD_IMAGE_WIDTH / picture.width)
-                    picture = picture.resize((ENDFIELD_IMAGE_WIDTH, height), Image.LANCZOS)
+                    height = round(
+                        picture.height * ENDFIELD_IMAGE_WIDTH / picture.width
+                    )
+                    picture = picture.resize(
+                        (ENDFIELD_IMAGE_WIDTH, height), Image.LANCZOS
+                    )
                 picture.save(cache_file, "JPEG", quality=85)
         except Exception as e:
             logger.opt(exception=True).warning(
@@ -681,7 +687,10 @@ async def get_arknights_activity() -> InfoOut:
     global _arknights_cache
 
     now = datetime.now(timezone.utc)
-    if _arknights_cache is not None and time.time() - _arknights_cache[0] < ARKNIGHTS_CACHE_TTL:
+    if (
+        _arknights_cache is not None
+        and time.time() - _arknights_cache[0] < ARKNIGHTS_CACHE_TTL
+    ):
         return InfoOut(data=_arknights_cache[1])
 
     try:
