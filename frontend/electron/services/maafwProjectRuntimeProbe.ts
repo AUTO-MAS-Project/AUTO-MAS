@@ -59,7 +59,11 @@ function hostRid(): string {
   return `win-${arch}`
 }
 
-/** 与后端 project_maafw_runtime_path 的已知布局一致：先 maafw/，再 runtimes/<rid>/native（本机 rid 优先）。 */
+/**
+ * 后端 project_maafw_runtime_path 的已知布局部分：先 maafw/，再 runtimes/<rid>/native（本机 rid 优先）。
+ * 后端另有 runtimes/<rid> 本身、有界逐层搜索与跳过架构不符的库，这里不做：非标准布局下
+ * 这份检查可能报失败而后端能过，看 nativeDir 是不是 null 就能分辨。
+ */
 function findNativeDir(viewDir: string): string | null {
   const candidates = [path.join(viewDir, 'maafw')]
   const runtimes = path.join(viewDir, 'runtimes')
@@ -97,17 +101,24 @@ function escapeRegExp(text: string): string {
   return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
-/** 问题包清单不走通用脱敏：绝对路径换成 <视图> / <HOME>。 */
-function redactPaths(text: string, viewDir: string): string {
+/**
+ * 问题包清单不走通用脱敏：视图、安装目录、用户目录换成 <视图> / <安装目录> / <HOME>。
+ * Python 的 OSError 用 repr 显示路径（反斜杠成对），三种写法都要认。
+ */
+export function redactPaths(text: string, viewDir: string): string {
   let result = text
+  // 视图是 <安装目录>/data/mfw/<12hex>，先换最长的
+  const installRoot = path.resolve(viewDir, '..', '..', '..')
   for (const [target, label] of [
     [viewDir, '<视图>'],
+    [installRoot, '<安装目录>'],
     [os.homedir(), '<HOME>'],
   ]) {
-    if (!target) {
+    if (!target || path.parse(target).root === target) {
       continue
     }
-    for (const variant of new Set([target, target.replace(/\\/g, '/')])) {
+    const variants = [target.replace(/\\/g, '\\\\'), target, target.replace(/\\/g, '/')]
+    for (const variant of new Set(variants)) {
       result = result.replace(new RegExp(escapeRegExp(variant), 'gi'), label)
     }
   }

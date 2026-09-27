@@ -629,6 +629,13 @@ async function createIssueReport(
     includeNativeLog: boolean
   }> = []
   const projectDebugDirs: Array<{ viewDir: string; archiveRoot: string }> = []
+  // 各脚本的运行时检查并行起跑（每个最多 15 秒），收集到它时再取结果
+  const runtimeProbes = new Map(
+    scripts.map(script => [
+      script,
+      probeProjectRuntime(path.join(script.dataRoot, 'data', 'mfw', script.viewDirName)),
+    ])
+  )
 
   for (const script of scripts) {
     const scriptRoot = `scripts/${script.viewDirName}`
@@ -718,7 +725,7 @@ async function createIssueReport(
       projectLabel: script.projectLabel,
       archiveRoot: scriptRoot,
       projectVersion: readViewVersion(viewDir),
-      projectRuntime: await probeProjectRuntime(viewDir),
+      projectRuntime: await runtimeProbes.get(script),
       projectDebug: protectSecrets
         ? '未收集：项目带密码输入框，框架与 agent 自己写的日志里可能有密码原文'
         : '已收集（顶层 maafw*.log 即 history 里各次的 .maafw.log，不重复收）',
