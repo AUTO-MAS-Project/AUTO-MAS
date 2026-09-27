@@ -114,6 +114,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   exportOkNteIssueReport: () => ipcRenderer.invoke('oknte:exportIssueReport'),
   exportZzzOdIssueReport: () => ipcRenderer.invoke('zzzod:exportIssueReport'),
   exportWhimboxIssueReport: () => ipcRenderer.invoke('whimbox:exportIssueReport'),
+  exportBetterGIIssueReport: () => ipcRenderer.invoke('bettergi:exportIssueReport'),
   listMaaFWIssueReportScripts: (configTypes: string[]) =>
     ipcRenderer.invoke('maafw:listIssueReportScripts', configTypes),
   exportMaaFWIssueReport: (scriptId: string) =>
