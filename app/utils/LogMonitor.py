@@ -71,7 +71,7 @@ class LogMonitor:
         self.callback = callback
         self.except_logs = except_logs or []
         self.parse_log = parse_log
-        # 日志处理钩子：日志行进入日志内容前逐行预处理（改写）或丢弃
+        # 日志预处理：日志行进入日志内容前逐行预处理（改写）或丢弃
         self.line_hook = line_hook
         self.last_callback_time: datetime = datetime.now()
         # 节流判定用的单调时钟读数。last_callback_time 还要充当 strptime 的
@@ -317,12 +317,12 @@ class LogMonitor:
             logger.error(f"回调函数执行失败: {e}")
 
     def append_line(self, log_contents: list[str], line: str) -> None:
-        """经日志处理钩子后把日志行写入日志内容
+        """经日志预处理后把日志行写入日志内容
 
-        执行顺序：日志起始判定与时间戳活跃度跟踪读取原始行 → 钩子（丢弃/改写）
-        → 日志内容。因此被钩子丢弃的行不会进入任务日志、推送日志采集与成功/
+        执行顺序：日志起始判定与时间戳活跃度跟踪读取原始行 → 预处理（丢弃/改写）
+        → 日志内容。因此被预处理丢弃的行不会进入任务日志、推送日志采集与成功/
         失败标志判定，但不影响 latest_time，过滤噪声行不会造成误判超时。
-        未挂钩子时行为与直接 append 完全一致。
+        未启用预处理时行为与直接 append 完全一致。
         """
         if self.line_hook is None:
             log_contents.append(line)
@@ -330,7 +330,7 @@ class LogMonitor:
         try:
             hooked = self.line_hook(line)
         except Exception as e:
-            logger.warning(f"日志处理钩子执行失败: {e}")
+            logger.warning(f"日志预处理执行失败: {e}")
             log_contents.append(line)
             return
         if hooked is not None:

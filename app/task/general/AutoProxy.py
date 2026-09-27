@@ -255,7 +255,7 @@ class AutoProxyTask(TaskExecuteBase):
         for name, matcher in (("成功", self.success_log), ("失败", self.error_log)):
             if matcher.invalid:
                 logger.warning(f"通用脚本{name}日志正则语法错误，该标志将不会命中")
-        # 日志处理钩子：受 LogHookEnabled 总开关控制，关闭时保留规则但不挂接
+        # 日志预处理：受 LogHookEnabled 总开关控制，关闭时保留规则但不挂接
         self.log_line_hook = (
             make_line_hook(self.script_config.get("Script", "LogHookRules"))
             if self.script_config.get("Script", "LogHookEnabled")
