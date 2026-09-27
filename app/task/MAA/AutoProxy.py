@@ -469,11 +469,7 @@ def _configure_mumu_screenshot_enhancement(gui_new_set: dict, device: dict) -> N
 def _without_temporary_mumu_extras(config: dict, device: dict | None) -> dict:
     if device is None:
         return config
-    gui = (
-        config.get("Configurations", {})
-        .get("Default", {})
-        .get("Gui", {})
-    )
+    gui = config.get("Configurations", {}).get("Default", {}).get("Gui", {})
     connect = gui.get("ConnectSettings", {})
     extras = connect.get("Extras", {}) if isinstance(connect, dict) else {}
     mumu = extras.get(_MUMU_EXTRAS_KEY) if isinstance(extras, dict) else None
