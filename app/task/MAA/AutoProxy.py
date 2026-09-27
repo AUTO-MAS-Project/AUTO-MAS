@@ -311,7 +311,9 @@ def _without_maa_update_changes(current: dict, baseline: dict, name: str) -> dic
         current_node: object = current
         baseline_node: object = baseline
         for key in path[:-1]:
-            if not isinstance(current_node, dict) or not isinstance(baseline_node, dict):
+            if not isinstance(current_node, dict) or not isinstance(
+                baseline_node, dict
+            ):
                 break
             current_node = current_node.get(key)
             baseline_node = baseline_node.get(key)
@@ -323,6 +325,7 @@ def _without_maa_update_changes(current: dict, baseline: dict, name: str) -> dic
                 else:
                     current_node.pop(key, None)
     return current
+
 
 _MAA_GUI_SKELETON: dict[str, dict] = {
     "gui.json": {"Current": "Default", "Global": {}, "Configurations": {"Default": {}}},
@@ -897,7 +900,6 @@ class AutoProxyTask(TaskExecuteBase):
         self._infrast_plan_advanced = False
 
     async def check(self) -> str:
-
         # 单独运行脚本是用户主动指定的一次性运行，不受单日代理次数上限约束
         if (
             self.task_info.is_queue_task
@@ -920,7 +922,6 @@ class AutoProxyTask(TaskExecuteBase):
         return "Pass"
 
     async def prepare(self):
-
         self.maa_process_manager = ProcessManager()
         self.maa_log_monitor = LogMonitor(
             (1, 20),

@@ -347,9 +347,7 @@ class MumuManager(DeviceBase):
                 if result.returncode == 0 and state == "device":
                     logger.info(f"MuMu ADB 已就绪: {idx}")
                     return
-                logger.debug(
-                    f"MuMu ADB 尚未就绪: {idx} - 状态={state or '未知'}"
-                )
+                logger.debug(f"MuMu ADB 尚未就绪: {idx} - 状态={state or '未知'}")
 
             await asyncio.sleep(0.5)
 
