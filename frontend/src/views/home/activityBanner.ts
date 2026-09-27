@@ -102,9 +102,7 @@ export const endfieldActivityBanner = (
   // 而不是随便挑一场活动。所以取当前活动与卡池里最晚的结束时间当终点。
   // 数据源没有版本起止时间，这是能拿到的最接近的口径
   const pending = [...overview.Activities, ...overview.Pools]
-  const ends = pending
-    .map(item => toTimestamp(item.EndTime))
-    .filter(value => value > now)
+  const ends = pending.map(item => toTimestamp(item.EndTime)).filter(value => value > now)
   const starts = pending.map(item => toTimestamp(item.StartTime)).filter(value => value > 0)
 
   return {
