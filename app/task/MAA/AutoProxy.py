@@ -290,6 +290,40 @@ def _without_temporary_mumu_extras(config: dict, device: dict | None) -> dict:
 # 回写会让多个自定义基建用户互相拨对方的班次。
 _MAA_TASK_KEYS_NOT_MERGED = frozenset({"PlanSelect"})
 
+
+_MAA_UPDATE_CONFIG_KEYS = {
+    "gui.json": (
+        ("Global", "VersionUpdate.ScheduledUpdateCheck"),
+        ("Global", "VersionUpdate.AutoDownloadUpdatePackage"),
+        ("Global", "VersionUpdate.AutoInstallUpdatePackage"),
+    ),
+    "gui.new.json": (
+        ("Update", "CheckOnSchedule"),
+        ("Update", "AutoDownloadUpdatePackage"),
+        ("Update", "AutoInstallUpdatePackage"),
+    ),
+}
+
+
+def _without_maa_update_changes(current: dict, baseline: dict, name: str) -> dict:
+    """移除 MAS 临时接管的更新字段，避免它们进入 MAA 存档。"""
+    for path in _MAA_UPDATE_CONFIG_KEYS.get(name, ()):
+        current_node: object = current
+        baseline_node: object = baseline
+        for key in path[:-1]:
+            if not isinstance(current_node, dict) or not isinstance(baseline_node, dict):
+                break
+            current_node = current_node.get(key)
+            baseline_node = baseline_node.get(key)
+        else:
+            if isinstance(current_node, dict) and isinstance(baseline_node, dict):
+                key = path[-1]
+                if key in baseline_node:
+                    current_node[key] = deepcopy(baseline_node[key])
+                else:
+                    current_node.pop(key, None)
+    return current
+
 _MAA_GUI_SKELETON: dict[str, dict] = {
     "gui.json": {"Current": "Default", "Global": {}, "Configurations": {"Default": {}}},
     "gui.new.json": {"Configurations": {"Default": {}}, "Timers": {"List": []}},
@@ -1859,6 +1893,7 @@ class AutoProxyTask(TaskExecuteBase):
                 current = _without_temporary_mumu_extras(
                     read_file(self.maa_set_path / name), self._maa_temporary_extras
                 )
+                current = _without_maa_update_changes(current, baseline[name], name)
                 archive = read_file(archive_dir / name)
             except Exception as e:
                 logger.opt(exception=True).warning(
