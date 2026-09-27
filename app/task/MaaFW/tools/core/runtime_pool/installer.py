@@ -20,6 +20,7 @@ from packaging.requirements import InvalidRequirement, Requirement
 from packaging.specifiers import InvalidSpecifier, SpecifierSet
 from packaging.version import InvalidVersion, Version
 
+from ._shared import output_tail
 from .host_environment import strip_host_python_environment
 from .identity import (
     find_maafw_requirement,
@@ -1164,7 +1165,7 @@ def _select_uv_python_version(
         detail = (result.stderr or result.stdout or "").strip()
         raise RuntimeError(
             "MaaFW runtime uv Python catalog lookup failed "
-            f"(exit={result.returncode}): {detail[:800]}"
+            f"(exit={result.returncode}): {output_tail(detail, 800)}"
         )
     try:
         rows = json.loads(result.stdout)
@@ -1519,7 +1520,7 @@ def _probe_python_identity(python_executable: Path) -> dict[str, str]:
                 f"Python 运行时，后者删除该运行环境后重新准备即可。原始错误：{detail[-400:]}"
             )
         raise RuntimeError(
-            f"MaaFW runtime ABI 探测失败 (exit={result.returncode}): {detail[:400]}"
+            f"MaaFW runtime ABI 探测失败 (exit={result.returncode}): {output_tail(detail, 400)}"
         )
     try:
         payload = json.loads(result.stdout.strip())
@@ -1679,7 +1680,7 @@ def _run(
         return
     detail = (result.stderr or result.stdout or "").strip()
     raise RuntimeError(
-        f"MaaFW runtime 安装失败 (exit={result.returncode}): {detail[:800]}"
+        f"MaaFW runtime 安装失败 (exit={result.returncode}): {output_tail(detail, 800)}"
     )
 
 
@@ -1728,7 +1729,7 @@ def _run_with_source_rotation(
             return source, attempt_index
         detail = (result.stderr or result.stdout or "").strip()
         failed_attempts.append((source, result.returncode, detail))
-        last_message = f"{failure_label}失败 (exit={result.returncode}): {detail[:800]}"
+        last_message = f"{failure_label}失败 (exit={result.returncode}): {output_tail(detail, 800)}"
         if attempt_index < len(sources):
             logger.warning(
                 "%s失败，换下一个源重试（失败源：%s，第 %d/%d 次尝试）：%s",
@@ -1920,7 +1921,7 @@ def _resolved_requirements_with_uv(
         detail = (result.stderr or result.stdout or "").strip()
         raise RuntimeError(
             "MaaFW runtime uv pip freeze 失败 "
-            f"(exit={result.returncode}): {detail[:800]}"
+            f"(exit={result.returncode}): {output_tail(detail, 800)}"
         )
     return _normalized_freeze_lines(result.stdout)
 
@@ -1949,7 +1950,7 @@ def _resolved_requirements(python_executable: Path) -> list[str]:
         detail = (result.stderr or result.stdout or "").strip()
         raise RuntimeError(
             "MaaFW runtime pip freeze --all 失败 "
-            f"(exit={result.returncode}): {detail[:800]}"
+            f"(exit={result.returncode}): {output_tail(detail, 800)}"
         )
     return _normalized_freeze_lines(result.stdout)
 
