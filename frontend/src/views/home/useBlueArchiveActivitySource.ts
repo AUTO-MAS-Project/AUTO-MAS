@@ -1,6 +1,6 @@
 import { computed, onScopeDispose, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { BlueArchiveActivityIn, GetService } from '@/api'
+import { BlueArchiveActivityIn, GetService, OpenAPI } from '@/api'
 import { createEmptySraActivityOverview } from '@/types/home'
 import type {
   BlueArchiveActivityOverview,
@@ -18,29 +18,22 @@ const MAX_RETRIES = 8
 const REFRESH_INTERVAL_MS = 10 * 60 * 1000
 
 /**
- * 数据取自 Kivo 古书馆时间轴，但那个接口对 Origin 做了白名单校验（只放行
- * kivo.wiki 自己的来源），浏览器直连必定 403，因此统一走本软件后端中转。
- * 后端只做转发，筛选与格式转换仍在这里完成。
+ * 数据取自 GameKee 的活动表（三个服都有），那个接口认自定义头、响应也没给跨域头，
+ * 浏览器直连取不到，因此统一走本软件后端中转。后端只做转发，筛选与格式转换在这里完成。
  */
 
-/** 每页 50 条且按时间倒序，3 页足以覆盖最近数周 */
-const PAGE_SIZE = 50
-const MAX_PAGES = 3
+/** 每页 100 条、两页足够放下三个服的当期活动与最近结束的那些 */
+const PAGE_SIZE = 100
+const MAX_PAGES = 2
 
 /** 往前多带几天已经结束的活动，让卡片在活动间隙里也有内容可显示 */
 const RECENT_WINDOW_DAYS = 14
 const SECONDS_PER_DAY = 86_400
 
-/** Kivo 的 body_summary 很长（含话题标签），按卡片展示宽度截断 */
+/** GameKee 的 description 与图片都很短，按卡片展示宽度截断 */
 const DESCRIPTION_MAX_LENGTH = 200
 
-/** 玩家会为这些开一局：限时活动、总力战、大决战、无限制决战。卡池、掉落加倍等不进卡片 */
-const WANTED_TYPES = new Set(['Event', 'Raid', 'BigRaid', 'MiniBattle'])
-
-/** 战斗通行证（战令）也被 Kivo 归进「活动」，可它基本整期都在，不算排期 */
-const EXCLUDED_TITLE_KEYWORDS = ['战斗通行证']
-
-/** 三个服与 Kivo 的 line_type 对应关系（国际服的原文拼写就是 Globle） */
+/** 三个服与后端入参的对应关系（国际服的原文拼写就是 Globle） */
 const SERVER_LINE_TYPES: Record<BlueArchiveServerKey, BlueArchiveActivityIn.line_type> = {
   jp: BlueArchiveActivityIn.line_type.JP,
   global: BlueArchiveActivityIn.line_type.GLOBLE,
@@ -62,21 +55,23 @@ const readSelectedServer = (): BlueArchiveServerKey => {
 
 /**
  * 固定 +08:00 偏移（Asia/Shanghai 无夏令时）。
- * Kivo 的时间戳是 Unix 秒，而 SRA 格式的时间字段不带时区标记、按其惯例填北京时间。
+ * GameKee 的时间戳是 Unix 秒，而 SRA 格式的时间字段不带时区标记、按其惯例填北京时间。
  */
 const TIMEZONE_OFFSET_MS = 8 * 60 * 60 * 1000
 
-interface KivoTimelineItem {
+interface GameKeeActivity {
   title?: string
-  image?: string
-  body_summary?: string
-  type?: string
-  start_time?: number
-  end_time?: number
+  picture?: string
+  description?: string
+  /** 中文分类名：活动 / 总力大决 / 爬塔 / 多倍活动 / 战术测试 / 指引任务 / 其他 */
+  activity_kind_name?: string
+  begin_at?: number
+  end_at?: number
 }
 
-interface KivoTimelineResponse {
-  data?: { timeline?: KivoTimelineItem[] }
+interface GameKeeResponse {
+  code?: number
+  data?: GameKeeActivity[]
 }
 
 /** 快照里存整份 overview，恢复时重置 Stale / Message 这两个运行时元数据 */
@@ -115,32 +110,34 @@ const currentMonth = (): string => {
   return shifted.getUTCFullYear() + '-' + pad(shifted.getUTCMonth() + 1)
 }
 
-/** Kivo 的图片地址是协议相对 URL（//static...），补全为 https */
+/**
+ * GameKee 的图片地址是协议相对 URL（//cdnimg...），补全成 https 后还要走后端中转：
+ * 那个 CDN 校验 Referer，页面直连（Referer 是本软件）必定被拒。
+ */
 const normalizeImage = (image: string | undefined): string => {
   if (!image) return ''
-  return image.startsWith('//') ? 'https:' + image : image
+  const absolute = image.startsWith('//') ? 'https:' + image : image
+  return `${OpenAPI.BASE}/api/info/bluearchive/image?url=${encodeURIComponent(absolute)}`
 }
 
 /**
  * 原始时间轴 → SRA 活动条目：筛分类、去重、按开始时间升序。
  *
- * 与 Kivo 时间轴的取值口径保持一致：同一活动可能被拆成「活动」与
+ * 与数据源的取值口径保持一致：同一活动可能被拆成「活动」与
  * 「活动介绍PV」等多条记录，只保留结束时间最晚的那条。
  */
-const buildActivities = (items: KivoTimelineItem[], nowSeconds: number) => {
+const buildActivities = (items: GameKeeActivity[], nowSeconds: number) => {
   const horizon = nowSeconds - RECENT_WINDOW_DAYS * SECONDS_PER_DAY
-  const picked = new Map<string, { item: KivoTimelineItem; start: number; end: number }>()
+  const picked = new Map<string, { item: GameKeeActivity; start: number; end: number }>()
 
   for (const item of items) {
-    if (!item.type || !WANTED_TYPES.has(item.type)) continue
-    const start = item.start_time
-    const end = item.end_time
+    const start = item.begin_at
+    const end = item.end_at
     if (typeof start !== 'number' || typeof end !== 'number') continue
     if (end < horizon) continue
 
     const name = (item.title ?? '').trim()
     if (!name) continue
-    if (EXCLUDED_TITLE_KEYWORDS.some(keyword => name.includes(keyword))) continue
 
     const existing = picked.get(name)
     if (existing && existing.end >= end) continue
@@ -151,23 +148,24 @@ const buildActivities = (items: KivoTimelineItem[], nowSeconds: number) => {
     .sort((left, right) => left[1].start - right[1].start)
     .map(([name, row]) => ({
       name,
-      description: (row.item.body_summary ?? '').trim().slice(0, DESCRIPTION_MAX_LENGTH),
+      description: (row.item.description ?? '').trim().slice(0, DESCRIPTION_MAX_LENGTH),
       startTime: formatTime(row.start),
       endTime: formatTime(row.end),
-      cover: normalizeImage(row.item.image),
+      cover: normalizeImage(row.item.picture),
+      kind: row.item.activity_kind_name ?? '',
     }))
 }
 
 /**
  * 横幅的起始 / 结束取**当前这批活动**的区间。
  *
- * 直接拿整份数据里最晚的结束时间是不对的：Kivo 会提前放出后面的活动，
+ * 直接拿整份数据里最晚的结束时间是不对的：数据源会提前放出后面的活动，
  * 于是「剩余时间」倒数的会是还没开始的那一期。所以先看正在进行中的活动，
  * 没有进行中的就退回最近结束的那一次（横幅如实显示「已结束」），
  * 两者都没有才用还没开始的活动。
  */
 const buildOverview = (
-  items: KivoTimelineItem[],
+  items: GameKeeActivity[],
   versionName: string
 ): BlueArchiveActivityOverview => {
   const activities = buildActivities(items, Date.now() / 1000)
@@ -205,12 +203,12 @@ interface ServerRuntime {
   requesting: boolean
 }
 
-/** 拉取一个服的完整时间轴（分页直到空页或达到页数上限） */
+/** 拉取一个服的完整活动列表（分页直到空页或达到页数上限） */
 const fetchTimeline = async (
   server: BlueArchiveServerKey,
   signal: AbortSignal
-): Promise<KivoTimelineItem[]> => {
-  const items: KivoTimelineItem[] = []
+): Promise<GameKeeActivity[]> => {
+  const items: GameKeeActivity[] = []
   for (let page = 1; page <= MAX_PAGES; page += 1) {
     const request = GetService.getBluearchiveActivityApiInfoBluearchiveActivityPost({
       line_type: SERVER_LINE_TYPES[server],
@@ -223,19 +221,23 @@ const fetchTimeline = async (
     const cancelOnAbort = () => request.cancel()
     signal.addEventListener('abort', cancelOnAbort, { once: true })
 
-    let payload: KivoTimelineResponse
+    let payload: GameKeeResponse
     try {
       const result = await request
       if (result.code !== 200) {
         throw new Error(result.message || 'HTTP ' + result.code)
       }
-      // 后端把 Kivo 的响应原样放在 data 里
-      payload = result.data as unknown as KivoTimelineResponse
+      // 后端把 GameKee 的响应原样放在 data 里
+      payload = result.data as unknown as GameKeeResponse
     } finally {
       signal.removeEventListener('abort', cancelOnAbort)
     }
 
-    const batch = payload.data?.timeline
+    if (payload.code !== 0) {
+      throw new Error(payload.code ? `GameKee ${payload.code}` : 'GameKee 响应异常')
+    }
+
+    const batch = payload.data
     if (!Array.isArray(batch) || batch.length === 0) break
     items.push(...batch)
   }
@@ -243,7 +245,7 @@ const fetchTimeline = async (
 }
 
 /**
- * 碧蓝档案活动数据的直连数据源（Kivo 古书馆时间轴）。
+ * 碧蓝档案活动数据的直连数据源（GameKee 活动表）。
  *
  * 与其它活动源的职责一致：带超时、失败退避重试、本地快照
  * （stale-while-revalidate）与独立失败态。区别在于碧蓝档案分日/国际/国
@@ -309,7 +311,7 @@ export const useBlueArchiveActivitySource = () => {
     try {
       const controller = new AbortController()
       const timer = window.setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS)
-      let items: KivoTimelineItem[]
+      let items: GameKeeActivity[]
       try {
         items = await fetchTimeline(runtime.key, controller.signal)
       } finally {

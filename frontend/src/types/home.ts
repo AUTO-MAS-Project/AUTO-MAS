@@ -81,6 +81,8 @@ interface EndfieldActivityItem {
   StartTime: string
   EndTime: string
   ImageUrl: string
+  /** 活动背景大图（游戏原生素材，走本软件后端缩放后使用），取不到时为空串 */
+  CoverUrl: string
   Tags: string[]
 }
 
@@ -124,6 +126,8 @@ export interface SraActivityItem {
   startTime: string
   endTime: string
   cover?: string
+  /** 数据源给的分类（目前只有碧蓝档案用）：Event 是限时活动，其余是总力战一类的战斗玩法 */
+  kind?: string
 }
 
 export interface SraActivityOverview {
@@ -238,6 +242,8 @@ export interface ActivityBannerItem {
    * StellaBase 的 `background` 常 404，官网横幅与站点小图依次补位）。
    */
   coverCandidates?: string[]
+  /** 版本号（如 4.4 / 2026-09），取不到时留空，徽章退回游戏名 */
+  version?: string
   /** 版本名或当期活动名 */
   subtitle: string
   /** 活动开始时间；用来区分「还没开始」与「进行中」，取不到时为空串 */

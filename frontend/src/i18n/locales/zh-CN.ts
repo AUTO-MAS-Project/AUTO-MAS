@@ -2975,8 +2975,10 @@ export default {
       arknights: '明日方舟',
     },
     carousel: {
-      remaining: '剩余时间',
+      remaining: '活动剩余时间',
       startsIn: '距开始',
+      versionBadge: '{version} 版本',
+      endsAt: '{time} 结束',
       prev: '上一个游戏',
       next: '下一个游戏',
       loading: '正在获取活动信息…',
@@ -3013,9 +3015,13 @@ export default {
       noData: '无数据',
     },
     countdown: {
+      d: 'D 天',
       dh: 'D 天 H 时',
       dhm: 'D 天 H 时 m 分',
       dhms: 'D 天 H 时 m 分 ss 秒',
+      startsIn: '距开始',
+      left: '剩余',
+      startsAt: '{time} 开始',
       ended: '[活动已结束]',
     },
     arknights: {
@@ -3023,6 +3029,11 @@ export default {
       remaining: '当期活动剩余时间',
       resourceToday: '今日开放资源收集关卡',
       activityEnded: '活动已结束',
+      startsIn: '距开始',
+      countdownLeft: '剩余',
+      source: 'PRTSwiki',
+      noActivity: '暂无活动',
+      unavailable: '明日方舟活动数据暂不可用',
     },
     endfield: {
       stale: '缓存数据',
@@ -3033,6 +3044,7 @@ export default {
       upCharacters: 'UP：{names}',
       endsAt: '{time} 结束',
       concurrent: '同期活动',
+      noActivity: '暂无活动',
       ongoing: '{count} 项进行中 | {count} 项进行中',
     },
     sra: {
@@ -3061,7 +3073,7 @@ export default {
       noActivity: '暂无活动',
       stale: '缓存数据',
       staleMessage: '正在使用上次成功获取的活动数据',
-      source: 'Kivo 古书馆',
+      source: 'GameKee',
     },
     command: {
       aria: '调度快速启动',

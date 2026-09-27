@@ -3,7 +3,7 @@
     <template #extra>
       <div class="card-extra">
         <a-typography-link
-          href="https://kivo.wiki/timeline"
+          href="https://www.gamekee.com/ba/huodong/16"
           target="_blank"
           rel="noreferrer"
           class="source-link"
@@ -66,7 +66,10 @@
           />
           <div class="activity-overlay" />
           <div class="activity-content">
-            <div class="activity-name">{{ activity.name }}</div>
+            <div class="activity-head">
+              <span v-if="activity.kind" class="activity-kind">{{ activity.kind }}</span>
+              <span class="activity-name">{{ activity.name }}</span>
+            </div>
             <div v-if="activity.description" class="activity-desc">
               {{ activity.description }}
             </div>
@@ -342,9 +345,28 @@ const formatTime = (value: string) =>
   padding: 14px 16px;
 }
 
-.activity-name {
+.activity-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   min-width: 0;
   margin-bottom: 8px;
+}
+
+/* 分类标签：活动 / 总力大决 / 爬塔 / 多倍活动 … */
+.activity-kind {
+  flex-shrink: 0;
+  padding: 1px 6px;
+  border: 1px solid color-mix(in srgb, var(--bluearchive-accent) 45%, transparent);
+  border-radius: 4px;
+  background: rgba(11, 18, 32, 0.55);
+  color: var(--bluearchive-accent);
+  font-size: 11px;
+  line-height: 16px;
+}
+
+.activity-name {
+  min-width: 0;
   overflow: hidden;
   color: white;
   font-size: 15px;

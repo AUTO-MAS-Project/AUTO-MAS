@@ -1,5 +1,6 @@
 import { onScopeDispose, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { GetService, OpenAPI } from '@/api'
 import {
   buildEndfieldOverview,
   resolveEndfieldSourceData,
@@ -41,6 +42,10 @@ const loadSnapshot = (): EndfieldSourceData | null => {
 export const useEndfieldActivitySource = () => {
   const { t } = useI18n()
   const overview = ref<EndfieldActivityOverview>(createEmptyEndfieldActivityOverview())
+  /** 官网当期宣传图（已经过本软件后端缩放），横幅优先用它 */
+  const versionArt = ref('')
+  /** 当前版本名（如「雪凇幽梦」），横幅标题用它 */
+  const versionName = ref('')
   const loading = ref(false)
   let sourceData = loadSnapshot()
   let retryTimer: number | null = null
@@ -196,9 +201,28 @@ export const useEndfieldActivitySource = () => {
     if (!started) {
       started = true
       void load()
+      void loadVersionArt()
     } else if (retryPending) {
       retryPending = false
       void load()
+    }
+  }
+
+  /** 版本图（官网当期宣传图）：取到就用它当横幅封面，取不到退回活动大图 */
+  const loadVersionArt = async () => {
+    try {
+      const result = await GetService.getEndfieldVersionArtApiInfoEndfieldVersionArtGet()
+      if (result.code !== 200) throw new Error(result.message || 'HTTP ' + result.code)
+      const payload = result.data as { url?: string; name?: string } | undefined
+      const url = payload?.url ?? ''
+      versionArt.value = url
+        ? `${OpenAPI.BASE}/api/info/endfield/image?url=${encodeURIComponent(url)}`
+        : ''
+      versionName.value = payload?.name ?? ''
+    } catch (error) {
+      logger.warn(
+        `获取终末地版本图失败: ${error instanceof Error ? error.message : String(error)}`
+      )
     }
   }
 
@@ -222,6 +246,8 @@ export const useEndfieldActivitySource = () => {
   return {
     overview,
     loading,
+    versionArt,
+    versionName,
     start,
     stop,
     refresh: () => {

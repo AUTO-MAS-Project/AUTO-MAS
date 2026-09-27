@@ -48,15 +48,20 @@
               <div class="banner-overlay" />
 
               <div class="banner-content">
-                <div class="banner-heading">
+                <div class="banner-badge">
                   <span class="banner-dot" :style="{ background: item.accent }" />
-                  <span class="banner-game">{{ item.title }}</span>
+                  <span class="banner-badge-text">{{ bannerBadge(item) }}</span>
                   <a-tag v-if="item.stale" color="orange">{{ t('home.sra.stale') }}</a-tag>
                 </div>
                 <div class="banner-subtitle">{{ bannerSubtitle(item) }}</div>
+                <div v-if="bannerEndTime(item)" class="banner-time">
+                  <ClockCircleOutlined class="banner-time-icon" />
+                  <span>{{
+                    t('home.carousel.endsAt', { time: formatBannerTime(bannerEndTime(item)) })
+                  }}</span>
+                </div>
               </div>
 
-              <!-- 没有进行中的活动时只剩「后续活动即将开始」一行，倒计时整块不出现 -->
               <div v-if="item.endTime || item.ended" class="banner-remaining">
                 <template v-if="item.endTime">
                   <div class="remaining-label">{{ countdownLabel(item) }}</div>
@@ -66,9 +71,7 @@
                     :value-style="remainingStyle"
                   />
                 </template>
-                <div v-if="item.ended" class="remaining-sub">
-                  {{ t('home.carousel.endedNote') }}
-                </div>
+                <div class="remaining-sub">{{ t('home.carousel.endedNote') }}</div>
               </div>
             </div>
           </article>
@@ -105,7 +108,7 @@
 import { useI18n } from 'vue-i18n'
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import type { CSSProperties } from 'vue'
-import { LeftOutlined, RightOutlined } from '@ant-design/icons-vue'
+import { LeftOutlined, RightOutlined, ClockCircleOutlined } from '@ant-design/icons-vue'
 import type { ActivityBannerItem, HomeModuleKey } from '@/types/home'
 
 defineOptions({
@@ -160,15 +163,15 @@ const activeIndex = computed(() => {
 const activeKey = computed<HomeModuleKey | null>(() => props.items[activeIndex.value]?.key ?? null)
 
 const activeItem = computed(() => props.items[activeIndex.value])
-const isCompact = computed(() =>
-  ['endfield', 'arknights', 'bluearchive'].includes(activeKey.value ?? '')
-)
+// 终末地现在也能拿到活动背景大图（经后端缩放），和其它游戏一样走大横幅
+const isCompact = computed(() => false)
 
 const remainingStyle: CSSProperties = {
-  color: '#fff',
-  fontSize: '20px',
-  fontWeight: '600',
-  lineHeight: '1.2',
+  color: 'var(--activity-accent)',
+  fontSize: '28px',
+  fontWeight: '700',
+  lineHeight: '1.1',
+  fontVariantNumeric: 'tabular-nums',
 }
 
 const hasCover = (item: ActivityBannerItem) =>
@@ -232,11 +235,13 @@ const coverMode = (item: ActivityBannerItem): CoverMode =>
   coverModes.value.get(coverOf(item)) ?? 'cover'
 
 const bannerStyle = (item: ActivityBannerItem): CSSProperties => {
+  const accent = { '--activity-accent': item.accent } as CSSProperties
   if (hasCover(item) && coverMode(item) !== 'inset' && coverModes.value.has(coverOf(item))) {
-    return {}
+    return accent
   }
   // 没有满幅封面时用主题色底纹兜底，文字仍是浅色，观感与有封面的一致
   return {
+    ...accent,
     background: `linear-gradient(120deg, ${item.accent}88 0%, rgba(16, 20, 28, 0.94) 72%)`,
   }
 }
@@ -254,6 +259,22 @@ const bannerSubtitle = (item: ActivityBannerItem) => {
   }
   return item.available ? t('home.carousel.noActivity') : t('home.carousel.unavailable')
 }
+
+/** 徽章：有版本号就报版本，没有的游戏退回游戏名 */
+const bannerBadge = (item: ActivityBannerItem) =>
+  item.version ? t('home.carousel.versionBadge', { version: item.version }) : item.title
+
+/** 已经走完的那场不再标「几点结束」，时间行跟着撤掉 */
+const bannerEndTime = (item: ActivityBannerItem) => (item.ended ? '' : item.endTime)
+
+const formatBannerTime = (value: string) =>
+  new Date(value).toLocaleString('zh-CN', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
 
 const countdownValue = (time: string) => {
   const timestamp = new Date(time).getTime()
@@ -438,22 +459,27 @@ onBeforeUnmount(() => {
   padding: 0 24px;
 }
 
-.banner-heading {
-  display: flex;
+.banner-badge {
+  display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
+  align-self: flex-start;
+  padding: 4px 12px;
+  border: 1px solid color-mix(in srgb, var(--activity-accent) 45%, transparent);
+  border-radius: 999px;
+  background: rgba(11, 18, 32, 0.55);
 }
 
 .banner-dot {
-  width: 8px;
-  height: 8px;
+  width: 6px;
+  height: 6px;
   border-radius: 50%;
 }
 
-.banner-game {
-  color: rgba(255, 255, 255, 0.82);
-  font-size: 13px;
-  font-weight: 500;
+.banner-badge-text {
+  color: var(--activity-accent);
+  font-size: 12px;
+  font-weight: 600;
   letter-spacing: 0.04em;
 }
 
@@ -461,12 +487,32 @@ onBeforeUnmount(() => {
   display: -webkit-box;
   overflow: hidden;
   color: #fff;
-  font-size: 24px;
-  font-weight: 600;
-  line-height: 1.25;
+  font-size: 30px;
+  font-weight: 700;
+  line-height: 1.2;
   text-overflow: ellipsis;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
+}
+
+/* 结束时间：与徽章同款的胶囊 */
+.banner-time {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  align-self: flex-start;
+  padding: 6px 16px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 999px;
+  background: rgba(11, 18, 32, 0.5);
+  color: #fff;
+  font-size: 15px;
+  font-weight: 500;
+}
+
+.banner-time-icon {
+  color: var(--activity-accent);
+  font-size: 15px;
 }
 
 /* 亮色封面右侧几乎没有压暗，倒计时单独垫一层才读得清 */
@@ -474,23 +520,28 @@ onBeforeUnmount(() => {
   position: absolute;
   right: 20px;
   bottom: 16px;
-  padding: 6px 12px;
-  text-align: right;
-  background: rgba(8, 10, 14, 0.42);
-  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 22px;
+  background: rgba(8, 10, 14, 0.5);
+  border: 1px solid color-mix(in srgb, var(--activity-accent) 35%, transparent);
+  border-radius: 14px;
+  backdrop-filter: blur(10px);
 }
 
 .remaining-label {
-  margin-bottom: 2px;
-  color: rgba(255, 255, 255, 0.72);
-  font-size: 12px;
+  color: rgba(255, 255, 255, 0.75);
+  font-size: 13px;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
 }
 
-/* 「后续活动即将开始」：只在这张卡展示的是刚结束的那场时出现 */
+/* 倒计时旁边那句注脚：「后续活动即将开始」或「活动已结束」 */
 .remaining-sub {
-  margin-top: 2px;
   color: rgba(255, 255, 255, 0.6);
   font-size: 12px;
+  white-space: nowrap;
 }
 
 .banner-arrow {

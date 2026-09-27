@@ -3099,8 +3099,10 @@ export default {
       arknights: 'Arknights',
     },
     carousel: {
-      remaining: 'Time left',
+      remaining: 'Event time left',
       startsIn: 'Starts in',
+      versionBadge: 'Version {version}',
+      endsAt: 'Ends {time}',
       prev: 'Previous game',
       next: 'Next game',
       loading: 'Loading events…',
@@ -3137,9 +3139,13 @@ export default {
       noData: 'No data',
     },
     countdown: {
+      d: 'D[d]',
       dh: 'D[d] H[h]',
       dhm: 'D[d] H[h] m[m]',
       dhms: 'D[d] H[h] m[m] ss[s]',
+      startsIn: 'Starts in',
+      left: 'Left',
+      startsAt: 'Starts {time}',
       ended: '[Event ended]',
     },
     arknights: {
@@ -3147,6 +3153,11 @@ export default {
       remaining: 'Time left in this event',
       resourceToday: "Today's open resource stages",
       activityEnded: 'Event ended',
+      startsIn: 'Starts in',
+      countdownLeft: 'Left',
+      source: 'PRTSwiki',
+      noActivity: 'No events',
+      unavailable: 'Arknights event data is unavailable',
     },
     endfield: {
       stale: 'Cached',
@@ -3157,6 +3168,7 @@ export default {
       upCharacters: 'Rate-up: {names}',
       endsAt: 'Ends {time}',
       concurrent: 'Running alongside',
+      noActivity: 'No events',
       ongoing: '{count} ongoing | {count} ongoing',
     },
     sra: {
@@ -3185,7 +3197,7 @@ export default {
       noActivity: 'No events running',
       stale: 'Cached',
       staleMessage: 'Using the last successfully fetched event data',
-      source: 'Kivo Wiki',
+      source: 'GameKee',
     },
     command: {
       aria: 'Quick task launcher',

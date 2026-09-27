@@ -2521,8 +2521,10 @@ export default {
       arknights: 'アークナイツ',
     },
     carousel: {
-      remaining: '残り時間',
+      remaining: 'イベント残り時間',
       startsIn: '開始まで',
+      versionBadge: 'バージョン {version}',
+      endsAt: '{time} 終了',
       prev: '前のゲーム',
       next: '次のゲーム',
       loading: 'イベント情報を取得しています…',
@@ -2543,9 +2545,13 @@ export default {
       noData: 'データなし',
     },
     countdown: {
+      d: 'D[日]',
       dh: 'D[日] H[時間]',
       dhm: 'D[日] H[時間] m[分]',
       dhms: 'D[日] H[時間] m[分] ss[秒]',
+      startsIn: '開始まで',
+      left: '残り',
+      startsAt: '{time} 開始',
       ended: '[イベント終了]',
     },
     arknights: {
@@ -2553,6 +2559,11 @@ export default {
       remaining: '開催中イベントの残り時間',
       resourceToday: '本日開放中の資源収集ステージ',
       activityEnded: 'イベントは終了しました',
+      startsIn: '開始まで',
+      countdownLeft: '残り',
+      source: 'PRTSwiki',
+      noActivity: 'イベントはありません',
+      unavailable: 'アークナイツのイベント情報を取得できません',
     },
     endfield: {
       stale: 'キャッシュ',
@@ -2563,6 +2574,7 @@ export default {
       upCharacters: 'ピックアップ：{names}',
       endsAt: '{time} 終了',
       concurrent: '同時開催',
+      noActivity: 'イベントはありません',
       ongoing: '{count} 件開催中 | {count} 件開催中',
     },
     sra: {
@@ -2591,7 +2603,7 @@ export default {
       noActivity: '開催中のイベントはありません',
       stale: 'キャッシュ',
       staleMessage: '前回取得したイベント情報を表示しています',
-      source: 'Kivo 古書館',
+      source: 'GameKee',
     },
     command: {
       aria: 'タスクのクイック起動',
