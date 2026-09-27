@@ -907,17 +907,6 @@ class AutoProxyTask(TaskExecuteBase):
                 "Connect.Address": ""
             }
 
-        # A missing template must not erase the device selected by AUTO-MAS.
-        # The previous fallback left AdbSerial empty, so M9A failed during
-        # controller construction and was reported as an abandoned task.
-        if emulator_info and emulator_info.adb_address not in ("", "Unknown"):
-            adb_device = config.setdefault("AdbDevice", {})
-            if not adb_device.get("AdbSerial"):
-                adb_device["AdbSerial"] = emulator_info.adb_address
-                if not adb_device.get("AdbPath"):
-                    adb_device["AdbPath"] = "adb"
-                logger.info(f"模板缺失回退：注入 ADB 序列号 {emulator_info.adb_address}")
-
         all_tasks = task_loader.get_all_tasks_with_entry()
         config["CurrentTasks"] = [
             f"{task['name']}<|||>{task['entry']}"

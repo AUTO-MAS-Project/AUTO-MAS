@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, call, patch
 
 from app.api.info import get_emulator_devices_combox, router
 from app.core.config import AppConfig
-from app.models.emulator import DeviceStatus
+from app.models.emulator import DeviceInfo, DeviceStatus
 from app.models.schema import ComboBoxOut, EmulatorDeleteIn
 from app.utils.emulator.general import GeneralDeviceManager
 from app.utils.emulator.ldplayer import LDManager
@@ -15,6 +15,40 @@ from app.utils.emulator.mumu import MumuManager
 
 
 class EmulatorDeviceListingTest(unittest.IsolatedAsyncioTestCase):
+    async def test_mumu_open_waits_for_adb_to_leave_offline_state(self) -> None:
+        manager = MumuManager.__new__(MumuManager)
+        manager.emulator_path = Path("MuMuManager.exe")
+        manager.config = SimpleNamespace(get=lambda _section, _key: 5)
+        manager.getStatus = AsyncMock(return_value=DeviceStatus.ONLINE)
+        manager.getInfo = AsyncMock(
+            return_value={
+                "0": DeviceInfo(
+                    title="MuMu 0",
+                    status=DeviceStatus.ONLINE,
+                    adb_address="127.0.0.1:16384",
+                )
+            }
+        )
+        run_process = AsyncMock(
+            side_effect=[
+                SimpleNamespace(returncode=0, stdout="offline"),
+                SimpleNamespace(returncode=0, stdout="device"),
+            ]
+        )
+
+        with (
+            patch("app.core.Config.get", return_value=False),
+            patch(
+                "app.utils.emulator.mumu.ProcessRunner.run_process", run_process
+            ),
+            patch("app.utils.emulator.mumu.asyncio.sleep", AsyncMock()),
+        ):
+            result = await manager.open("0")
+
+        self.assertEqual(result.adb_address, "127.0.0.1:16384")
+        self.assertEqual(run_process.await_count, 2)
+        self.assertEqual(run_process.await_args_list[0].args[-1], "get-state")
+
     async def test_mumu_list_devices_only_queries_all_instance_info(self) -> None:
         manager = MumuManager.__new__(MumuManager)
         manager.get_device_info = AsyncMock(
