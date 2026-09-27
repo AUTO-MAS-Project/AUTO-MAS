@@ -91,7 +91,7 @@
             :autoplay="carouselAutoplay"
           >
             <template #community="{ moduleKey: gameKey }">
-              <!-- 社区信息紧贴游戏导航，与导航一起吸顶，横幅和概览在下方滚动。 -->
+              <!-- 社区信息紧跟游戏切换条，两者都不吸顶，跟着页面一起滚 -->
               <HomeActivityNotes
                 v-if="activityNotesVisible && isActivityNoteVisible(gameKey)"
                 :active-key="gameKey"
