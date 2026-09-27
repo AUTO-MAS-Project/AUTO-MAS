@@ -54,9 +54,31 @@ function isFile(target: string): boolean {
   }
 }
 
-function hostRid(): string {
-  const arch = { x64: 'x64', arm64: 'arm64', ia32: 'x86' }[process.arch as string] ?? process.arch
-  return `win-${arch}`
+// 与 app/task/MaaFW/tools/core/runner/environment.py 的 _RID_ARCHITECTURE_ALIASES /
+// runtime_identifier_matches_host 同步：rid 最后一段是架构，其余是系统前缀（win10-x64 也算本机）
+const RID_ARCHITECTURE_ALIASES: Record<string, string> = {
+  x64: 'x64',
+  amd64: 'x64',
+  x86_64: 'x64',
+  arm64: 'arm64',
+  aarch64: 'arm64',
+  x86: 'x86',
+  i386: 'x86',
+  i686: 'x86',
+}
+
+function hostArchitecture(): string {
+  return { x64: 'x64', arm64: 'arm64', ia32: 'x86' }[process.arch as string] ?? process.arch
+}
+
+export function ridMatchesHost(rid: string): boolean {
+  const lowered = rid.toLowerCase()
+  const separator = lowered.lastIndexOf('-')
+  if (separator < 0) {
+    return false
+  }
+  const architecture = RID_ARCHITECTURE_ALIASES[lowered.slice(separator + 1)]
+  return architecture === hostArchitecture() && lowered.slice(0, separator).startsWith('win')
 }
 
 /**
@@ -73,9 +95,10 @@ function findNativeDir(viewDir: string): string | null {
   } catch {
     rids = []
   }
-  const host = hostRid()
+  // 与后端 _project_runtime_rid_dirs 一致：本机能加载的 rid 在前，其余照名字顺序
   rids.sort(
-    (left, right) => Number(right === host) - Number(left === host) || left.localeCompare(right)
+    (left, right) =>
+      Number(ridMatchesHost(right)) - Number(ridMatchesHost(left)) || left.localeCompare(right)
   )
   candidates.push(...rids.map(rid => path.join(runtimes, rid, 'native')))
   return candidates.find(candidate => isFile(path.join(candidate, FRAMEWORK_DLL))) ?? null
