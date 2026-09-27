@@ -76,10 +76,11 @@ zstd 用 ``zstandard`` 包（仓库硬依赖）。
 
 from __future__ import annotations
 
+import hashlib
 import io
 import threading
 from dataclasses import dataclass, field
-from typing import Any, List, Sequence
+from typing import Any, List, Sequence, Tuple
 
 import zstandard
 from google.protobuf import descriptor_pb2, descriptor_pool, message_factory
@@ -99,6 +100,7 @@ __all__ = [
     "SophonUnusedAssetInfo",
     "SophonUnusedAssetProperty",
     "decompress",
+    "inflate_file",
     "parse_sophon_manifest",
     "parse_sophon_patch",
 ]
@@ -515,6 +517,33 @@ def decompress(data: bytes) -> bytes:
             return reader.read()
     except zstandard.ZstdError as exc:
         raise UpdaterError(f"zstd 解压失败: {exc}") from exc
+
+
+#: 解压流式落盘的缓冲块大小
+_INFLATE_BLOCK = 4 * 1024 * 1024
+
+
+def inflate_file(src: str, dst: str) -> Tuple[int, str]:
+    """把一个 zstd 文件解到 ``dst``，返回 ``(写出字节数, 内容的 MD5)``。
+
+    全程流式：内存占用只跟缓冲块一样大，几百 MiB 的数据块也解得动。校验和在同一次
+    遍历里算完，不再回读一遍。
+    """
+    digest = hashlib.md5()
+    total = 0
+    try:
+        with (
+            open(src, "rb") as raw,
+            open(dst, "wb") as out,
+            _decompressor().stream_reader(raw) as reader,
+        ):
+            while block := reader.read(_INFLATE_BLOCK):
+                digest.update(block)
+                out.write(block)
+                total += len(block)
+    except zstandard.ZstdError as exc:
+        raise UpdaterError(f"zstd 解压失败: {exc}") from exc
+    return total, digest.hexdigest()
 
 
 #: 主资源的 ``matching_field``，官方固定为该值
