@@ -54,14 +54,30 @@
                   <a-tag v-if="item.stale" color="orange">{{ t('home.sra.stale') }}</a-tag>
                 </div>
                 <div class="banner-subtitle">{{ bannerSubtitle(item) }}</div>
-                <div v-if="bannerEndTime(item)" class="banner-time">
-                  <ClockCircleOutlined class="banner-time-icon" />
-                  <span>{{
-                    t('home.carousel.endsAt', { time: formatBannerTime(bannerEndTime(item)) })
-                  }}</span>
-                </div>
               </div>
 
+              <!--
+                左下角给起止时间，右下角是倒计时（相对时间）：
+                两角各占一处，绝对时间与倒计时可对照着看。
+                版本号已经在上面那枚徽章里，这里不再重复一遍
+              -->
+              <div
+                v-if="item.startTime || item.endTime"
+                class="banner-meta"
+                :class="{ 'has-remaining': item.endTime || item.ended }"
+              >
+                <span v-if="item.startTime" class="meta-time">
+                  {{ formatBannerTime(item.startTime) }}
+                </span>
+                <span v-if="item.startTime && item.endTime" class="meta-sep" aria-hidden="true">
+                  ~
+                </span>
+                <span v-if="item.endTime" class="meta-time">
+                  {{ formatBannerTime(item.endTime) }}
+                </span>
+              </div>
+
+              <!-- 没有进行中的活动时只剩「后续活动即将开始」一行，倒计时整块不出现 -->
               <div v-if="item.endTime || item.ended" class="banner-remaining">
                 <template v-if="item.endTime">
                   <div class="remaining-label">{{ countdownLabel(item) }}</div>
@@ -108,7 +124,7 @@
 import { useI18n } from 'vue-i18n'
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import type { CSSProperties } from 'vue'
-import { LeftOutlined, RightOutlined, ClockCircleOutlined } from '@ant-design/icons-vue'
+import { LeftOutlined, RightOutlined } from '@ant-design/icons-vue'
 import type { ActivityBannerItem, HomeModuleKey } from '@/types/home'
 
 defineOptions({
@@ -171,6 +187,7 @@ const remainingStyle: CSSProperties = {
   fontSize: '28px',
   fontWeight: '700',
   lineHeight: '1.1',
+  // 数字逐秒变化时宽度不抖
   fontVariantNumeric: 'tabular-nums',
 }
 
@@ -264,9 +281,7 @@ const bannerSubtitle = (item: ActivityBannerItem) => {
 const bannerBadge = (item: ActivityBannerItem) =>
   item.version ? t('home.carousel.versionBadge', { version: item.version }) : item.title
 
-/** 已经走完的那场不再标「几点结束」，时间行跟着撤掉 */
-const bannerEndTime = (item: ActivityBannerItem) => (item.ended ? '' : item.endTime)
-
+// 与各活动卡片里的 formatTime 同格式，起止时间在整页是一个口径
 const formatBannerTime = (value: string) =>
   new Date(value).toLocaleString('zh-CN', {
     year: 'numeric',
@@ -493,41 +508,55 @@ onBeforeUnmount(() => {
   text-overflow: ellipsis;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
+  line-clamp: 2;
 }
 
-/* 结束时间：与徽章同款的胶囊 */
-.banner-time {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  align-self: flex-start;
-  padding: 6px 16px;
-  border: 1px solid rgba(255, 255, 255, 0.16);
-  border-radius: 999px;
-  background: rgba(11, 18, 32, 0.5);
-  color: #fff;
-  font-size: 15px;
-  font-weight: 500;
-}
-
-.banner-time-icon {
-  color: var(--activity-accent);
-  font-size: 15px;
-}
-
-/* 亮色封面右侧几乎没有压暗，倒计时单独垫一层才读得清 */
+/* 亮色封面几乎没有压暗，左右两角的时间信息共用同一套底衬才读得清 */
+.banner-meta,
 .banner-remaining {
   position: absolute;
-  right: 20px;
   bottom: 16px;
   display: flex;
   align-items: center;
   gap: 14px;
   padding: 12px 22px;
   background: rgba(8, 10, 14, 0.5);
-  border: 1px solid color-mix(in srgb, var(--activity-accent) 35%, transparent);
+  border: 1px solid rgba(255, 255, 255, 0.14);
   border-radius: 14px;
   backdrop-filter: blur(10px);
+}
+
+.banner-remaining {
+  right: 20px;
+  border-color: color-mix(in srgb, var(--activity-accent) 35%, transparent);
+}
+
+/* 左下角的起止时间，与右下角的倒计时各占一角 */
+.banner-meta {
+  left: 24px;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  padding: 8px 16px;
+  color: rgba(255, 255, 255, 0.8);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+/* 右下角有倒计时时收窄，放不下就换行，不压到倒计时上 */
+.banner-meta.has-remaining {
+  max-width: calc(100% - 260px);
+}
+
+/* 每端时间是一个整体，不从日期中间折行 */
+.meta-time {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 连接符弱化，左右间距收紧，读起来是一整段起止时间 */
+.meta-sep {
+  margin: 0 -3px;
+  color: rgba(255, 255, 255, 0.4);
 }
 
 .remaining-label {
@@ -660,6 +689,11 @@ onBeforeUnmount(() => {
   .banner-remaining {
     right: 16px;
     bottom: 12px;
+  }
+
+  .banner-meta {
+    bottom: 12px;
+    left: 16px;
   }
 }
 </style>

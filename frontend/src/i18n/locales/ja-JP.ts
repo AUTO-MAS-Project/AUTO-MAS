@@ -2484,6 +2484,9 @@ export default {
   home: {
     editLayout: 'レイアウトを編集',
     viewNotice: 'お知らせ',
+    satelliteEgg: {
+      star: 'star！',
+    },
     greeting: {
       morning: 'おはようございます — AUTO-MAS へようこそ',
       noon: 'こんにちは — AUTO-MAS へようこそ',
@@ -2524,7 +2527,6 @@ export default {
       remaining: 'イベント残り時間',
       startsIn: '開始まで',
       versionBadge: 'バージョン {version}',
-      endsAt: '{time} 終了',
       prev: '前のゲーム',
       next: '次のゲーム',
       loading: 'イベント情報を取得しています…',
@@ -3596,6 +3598,7 @@ export default {
       issueSection: '専用の問題報告パッケージ',
       exportOkww: 'OK-WW の問題報告パッケージを書き出す',
       exportOkNte: 'OK-NTE の問題報告パッケージを書き出す',
+      exportBetterGI: 'BetterGI の問題報告パッケージを書き出す',
       exportMaaFW: 'MFW の問題報告パッケージを書き出す',
       exportMaaFWEmpty: 'MFW スクリプトはまだありません',
       exportM9A: 'M9A の問題報告パッケージを書き出す',

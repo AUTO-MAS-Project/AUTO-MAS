@@ -2938,6 +2938,9 @@ export default {
   home: {
     editLayout: '编辑布局',
     viewNotice: '查看公告',
+    satelliteEgg: {
+      star: 'star！',
+    },
     greeting: {
       morning: '早上好！欢迎使用 AUTO-MAS',
       noon: '中午好！欢迎使用 AUTO-MAS',
@@ -2978,7 +2981,6 @@ export default {
       remaining: '活动剩余时间',
       startsIn: '距开始',
       versionBadge: '{version} 版本',
-      endsAt: '{time} 结束',
       prev: '上一个游戏',
       next: '下一个游戏',
       loading: '正在获取活动信息…',
@@ -4058,6 +4060,7 @@ export default {
       exportOkNte: '导出 OK-NTE 问题包',
       exportZzzOd: '导出 ZZZ-OD 问题包',
       exportWhimbox: '导出 Whimbox 问题包',
+      exportBetterGI: '导出 BetterGI 问题包',
       exportMaaFW: '导出 MFW 问题包',
       exportMaaFWEmpty: '还没有 MFW 脚本',
       exportM9A: '导出 M9A 问题包',

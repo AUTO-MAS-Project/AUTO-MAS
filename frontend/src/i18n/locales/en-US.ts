@@ -3062,6 +3062,9 @@ export default {
   home: {
     editLayout: 'Edit layout',
     viewNotice: 'Announcements',
+    satelliteEgg: {
+      star: 'star!',
+    },
     greeting: {
       morning: 'Good morning — welcome to AUTO-MAS',
       noon: 'Good afternoon — welcome to AUTO-MAS',
@@ -3102,7 +3105,6 @@ export default {
       remaining: 'Event time left',
       startsIn: 'Starts in',
       versionBadge: 'Version {version}',
-      endsAt: 'Ends {time}',
       prev: 'Previous game',
       next: 'Next game',
       loading: 'Loading events…',
@@ -4173,6 +4175,7 @@ export default {
       exportOkNte: 'Export an OK-NTE issue bundle',
       exportZzzOd: 'Export a ZZZ-OD issue bundle',
       exportWhimbox: 'Export a Whimbox issue bundle',
+      exportBetterGI: 'Export a BetterGI issue bundle',
       exportMaaFW: 'Export an MFW issue bundle',
       exportMaaFWEmpty: 'No MFW scripts yet',
       exportM9A: 'Export an M9A issue bundle',

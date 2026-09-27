@@ -487,12 +487,32 @@ export function addDirectory(
   return foundFile
 }
 
+/**
+ * 每个安装收录各自的固定相对路径文件（多安装互不竞争），
+ * 归档为 ``<labelPrefix>/<label>/<文件名>``；文件不存在时静默跳过。
+ */
+export function addPerInstallationFile(
+  state: CollectorState,
+  installations: Installation[],
+  relPath: string,
+  labelPrefix: string
+): void {
+  for (const installation of installations) {
+    addDiagnosticFile(
+      state,
+      path.join(installation.rootPath, ...relPath.split('/')),
+      path.posix.join(labelPrefix, installation.label, path.basename(relPath))
+    )
+  }
+}
+
 // 各专项在后端 debug/ 下自有的诊断子目录（对应 app/task/*/tools 里 Path.cwd()/debug 的落盘）。
 // 问题包只收声明方自己的目录，其他专项的目录跳过，避免互相混入
 const ADAPTER_DEBUG_SUBDIRS = {
   maaend: ['maaend-login'],
   okww: ['okww-account-switch'],
   oknte: ['oknte-account-switch', 'oknte-launcher-start'],
+  bettergi: ['bgi-account-switch'],
 } satisfies Record<string, readonly string[]>
 
 export type AdapterDebugDirKey = keyof typeof ADAPTER_DEBUG_SUBDIRS

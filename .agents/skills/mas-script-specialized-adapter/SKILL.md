@@ -4,11 +4,12 @@ description: >-
   Review, add, or refactor AUTO-MAS specialized script adapters by upstream
   architecture, including MAA, SRC, MaaEnd/MXU, General, ok-script
   adapters such as Okww and OkNte, multi-engine adapters such as HSR, and the
-  one-dragon line such as BetterGI. Use when lowering user setup friction,
-  judging whether a change stays inside the black-box boundary (barrier first,
-  then capability ownership), or changing ScriptType registration, task
-  lifecycle, config ownership, ScriptConfig sessions, Electron integration,
-  frontend edit surfaces, and verification.
+  one-dragon line such as BetterGI, as well as per-adapter issue-bundle
+  exports. Use when lowering user setup friction, judging whether a change
+  stays inside the black-box boundary (barrier first, then capability
+  ownership), or changing ScriptType registration, task lifecycle, config
+  ownership, ScriptConfig sessions, Electron integration, frontend edit
+  surfaces, and verification.
 ---
 
 # 专项适配
@@ -80,6 +81,7 @@ description: >-
 - 视觉识别：专项需要画面文本识别时，**新逻辑用共享工具 `app/tools/ocr.py`**（用法见 [ocr-tools.md](references/ocr-tools.md)），交互层（截图/激活/点击）专项自持；MaaEnd 登录仍为历史私有 OCR，未迁移前不强制改造
 - 配置备份恢复：**新专项一律主动接入**（存量专项改到配置读写时同步补齐）——配置的跨会话持久快照与一键恢复是 MAS 领域标配，不要等「配置被覆盖丢失」才补，仅确无任何配置文件落盘的专项可豁免。**文件级原语用 `app/utils/config_archive.py`**（用法见 [config-archive.md](references/config-archive.md)），专项只提供备份对象（目录/文件集）与恢复后语义钩子；**恢复功能用通用服务 `app/utils/config_restore.py` + 通用端点 `/backup/*` + 前端组件 `ConfigRestoreSection.vue`**（用法见 [config-restore.md](references/config-restore.md)），专项在 `tools/restore_service.py` 声明目标池表（普通函数显式收 `RestoreContext`），core 分发链加一个分支即接入、不改 HTTP 层与 schema，会话遮罩用 `GuiSessionMask.vue`；不要给公共原语或通用组件加专项分支。**归档三时机**（`ConfigRestorePool.snapshot` + `service.ensure`）：① 编辑界面进入时归档 MAS 会触碰的原生配置（捕捉「MAS 操作前原始态」——配置在 MAS 之外就可能已被修改）；② 编辑界面退出时归档 MAS 侧配置终态（MAS 侧修改一定发生在 MAS 内，退出即备份）；③ 运行前归档（原生配置可能在 MAS 之外被改）。所有归档走指纹去重（内容无变化自动跳过），覆盖性操作（导入/恢复）前另做强制归档。
 - 前端入口：`Scripts.vue`、`ScriptTable.vue`、router、`types/script.ts`、相关 composable、脚本/用户编辑页
+- 问题包导出：新增或改动专项的问题包服务（`frontend/electron/services` 的 `*IssueReportService`）时读 [issue-report.md](references/issue-report.md)——「每安装各自收集」「debug 子目录登记」是硬约束
 - Electron 能力：仅当需要注册表、文件系统或进程发现时增加 `electron/services`、IPC、preload 与类型声明
 - 生成代码：后端 schema 变更后运行生成器，禁止手改 `frontend/src/api/**`
 

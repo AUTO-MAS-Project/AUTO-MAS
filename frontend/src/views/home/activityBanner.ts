@@ -62,8 +62,8 @@ export const sraActivityBanner = (overview: SraActivityOverview): ActivityBanner
   return {
     // 版本封面优先；部分游戏没有版本封面，退回第一张有图的活动
     cover: overview.cover || overview.activities.find(item => item.cover)?.cover || '',
-    version: overview.version,
     subtitle: useVersion ? overview.versionName : (activity?.name ?? ''),
+    version: overview.version,
     startTime: useVersion ? overview.startTime : (activity?.startTime ?? ''),
     endTime: useVersion ? overview.endTime : (activity?.endTime ?? ''),
     available: overview.Available,

@@ -78,6 +78,10 @@ class MaaManager(TaskExecuteBase):
         self.script_info = script_info
         self.check_result = "-"
         self.prepared = False
+        # 锁是否已建立必须独立于 prepared 记录：prepare() 首句加锁, 而置位
+        # prepared 要等 prepare() 整体返回, 中途被取消或失败时 final_task
+        # 靠这个标志解锁（对齐 SRC 的 config_lock_acquired）
+        self.config_lock_acquired = False
         self._device_provider = device_provider
 
     async def check(self) -> str:
@@ -125,11 +129,11 @@ class MaaManager(TaskExecuteBase):
             ).exists()
         ):
             return "MAA配置文件不存在, 请检查MAA路径设置或先启动MAA完成配置文件生成！"
-        # 脚本级存档仅在存在非直控用户时需要: 直控直接使用 MAA 安装目录的原生配置,
-        # 不依赖 MAS 侧的 Default/ConfigFile 存档
+        # 脚本级存档仅在确实有用户选择“脚本”来源时需要；“用户”来源使用各自
+        # 的用户目录，直控则直接使用 MAA 安装目录的原生配置。
         if (
             self.task_info.mode != "ScriptConfig"
-            and self._has_mas_config_user()
+            and self._has_script_config_user()
             and not (
                 Path.cwd() / f"data/{self.script_info.script_id}/Default/ConfigFile"
             ).exists()
@@ -137,16 +141,16 @@ class MaaManager(TaskExecuteBase):
             return "未完成 MAA 全局设置, 请先设置 MAA！"
         return "Pass"
 
-    def _has_mas_config_user(self) -> bool:
-        """目标用户里是否存在非直控（脚本/用户）配置来源的用户。
+    def _has_script_config_user(self) -> bool:
+        """目标用户里是否存在选择脚本级配置来源的用户。
 
         check() 先于 prepare() 执行，此时 self.user_config 尚未加载、user_list
         还是占位项；直接读脚本配置持久化的 UserData，按参与运行的用户（启用、
-        剩余天数非 0、命中目标用户）判定，与 M9A._uses_direct_control 同构。
+        剩余天数非 0、命中目标用户）判定。
         """
 
         return any(
-            read_config_source(config, CONFIG_SOURCE_SCRIPT) != CONFIG_SOURCE_DIRECT
+            read_config_source(config, CONFIG_SOURCE_SCRIPT) == CONFIG_SOURCE_SCRIPT
             for uid, config in Config.ScriptConfig[
                 uuid.UUID(self.script_info.script_id)
             ].UserData.items()
@@ -159,8 +163,13 @@ class MaaManager(TaskExecuteBase):
         """运行前准备"""
 
         # 锁定脚本配置并加载用户配置
-        await Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].lock()
-        self.script_config = Config.ScriptConfig[uuid.UUID(self.script_info.script_id)]
+        script_config = Config.ScriptConfig[uuid.UUID(self.script_info.script_id)]
+        # lock() 首句即生效，但其内部的子配置遍历还有 await，取消可能打在
+        # 半途：标志必须在调用前置位，final_task 才能对任何中断解锁。置位到
+        # 生效之间没有让出点；取值放在置位前，脚本不存在时不会留下悬空标志。
+        self.config_lock_acquired = True
+        await script_config.lock()
+        self.script_config = script_config
         self.user_config = MultipleConfig([MaaUserConfig])
         await self.user_config.load(await self.script_config.UserData.toDict())
         logger.success(f"{self.script_info.script_id}已锁定, MAA配置提取完成")
@@ -298,8 +307,16 @@ class MaaManager(TaskExecuteBase):
         """运行结束后的收尾工作"""
 
         if not self.prepared:
-            # prepare() 未走完就结束：配置锁、备份目录与模拟器实例都还没建立，
-            # 没有可收尾的资源。此时收尾只应回报状态——主动停止不算异常，
+            # prepare() 未走完就结束：备份目录与模拟器实例可能还没建立，没有
+            # 可收尾的资源。但配置锁在 prepare() 首句就已建立，必须先释放，
+            # 否则该脚本配置的读写与任务启动会一直被拒到进程重启。
+            if self.config_lock_acquired:
+                self.config_lock_acquired = False
+                await Config.ScriptConfig[
+                    uuid.UUID(self.script_info.script_id)
+                ].unlock()
+                logger.success(f"已解锁脚本配置 {self.script_info.script_id}")
+            # 此时收尾只应回报状态——主动停止不算异常，
             # 而 prepare() 自身的失败则要保留异常
             if not self.stopped_manually:
                 self.script_info.status = "异常"
@@ -311,6 +328,7 @@ class MaaManager(TaskExecuteBase):
 
         logger.info("MAA 主任务已结束, 开始执行后续操作")
         await Config.ScriptConfig[uuid.UUID(self.script_info.script_id)].unlock()
+        self.config_lock_acquired = False
         logger.success(f"已解锁脚本配置 {self.script_info.script_id}")
 
         if self.task_info.mode in ["AutoProxy"]:
