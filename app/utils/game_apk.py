@@ -97,17 +97,24 @@ async def _run_adb(
     *args: str,
     timeout: float = 60,
 ) -> tuple[int, str]:
-    """执行一条 adb 命令，返回 (返回码, 合并后的输出)。"""
+    """执行一条 adb 命令，返回 (返回码, 合并后的输出)。
+
+    进程无法启动时返回 ``(-1, 错误文本)``，让调用方按 adb 返回失败处理。
+    """
 
     program: Path | str = adb_path if adb_path is not None else "adb"
-    result = await ProcessRunner.run_process(
-        program,
-        "-s",
-        adb_address,
-        *args,
-        timeout=timeout,
-        if_merge_std=True,
-    )
+    try:
+        result = await ProcessRunner.run_process(
+            program,
+            "-s",
+            adb_address,
+            *args,
+            timeout=timeout,
+            if_merge_std=True,
+        )
+    except OSError as exc:
+        logger.warning(f"执行 adb 失败，跳过本次命令: {exc}")
+        return -1, str(exc)
     return result.returncode, result.stdout.strip()
 
 

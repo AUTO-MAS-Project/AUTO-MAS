@@ -22,8 +22,8 @@ const BGI_REL_LOG_DIR = 'log'
 const BGI_LOG_FILE_PREFIX = 'better-genshin-impact'
 
 function addLatestBetterGILog(state: CollectorState, installations: Installation[]): void {
-  let latest: { sourcePath: string; archivePath: string; mtimeMs: number } | undefined
-
+  // 每个安装各自收录最新一份滚动日志：多安装互不竞争，
+  // 避免 A 安装刚跑完掩盖 B 安装的失败证据
   for (const installation of installations) {
     const logDir = path.join(installation.rootPath, ...BGI_REL_LOG_DIR.split('/'))
     let entries: fs.Dirent[]
@@ -34,6 +34,7 @@ function addLatestBetterGILog(state: CollectorState, installations: Installation
       continue
     }
 
+    let latest: { sourcePath: string; archivePath: string; mtimeMs: number } | undefined
     for (const entry of entries) {
       if (
         !entry.isFile() ||
@@ -57,10 +58,10 @@ function addLatestBetterGILog(state: CollectorState, installations: Installation
         logger.debug(`读取 BetterGI 日志信息失败: ${logPath}, ${String(error)}`)
       }
     }
-  }
 
-  if (latest) {
-    addDiagnosticFile(state, latest.sourcePath, latest.archivePath)
+    if (latest) {
+      addDiagnosticFile(state, latest.sourcePath, latest.archivePath)
+    }
   }
 }
 
