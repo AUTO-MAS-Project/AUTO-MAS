@@ -30,8 +30,8 @@ const taskOptions = ref<TaskOption[]>([])
 const logger = window.electronAPI?.getLogger?.('托盘菜单')
 
 const columns = computed<TableColumnsType>(() => [
-  { title: t('setting.tray.colLabel'), key: 'label', width: 240 },
-  { title: t('setting.tray.colAction'), key: 'action', width: 260 },
+  { title: t('setting.tray.colLabel'), key: 'label', width: '35%' },
+  { title: t('setting.tray.colAction'), key: 'action' },
   { title: t('setting.tray.colOps'), key: 'ops', width: 140, align: 'center' },
 ])
 
@@ -203,8 +203,8 @@ onBeforeUnmount(() => {
         </a-tooltip>
       </div>
       <a-space :size="8">
-        <a-button size="small" @click="add">{{ t('setting.tray.add') }}</a-button>
-        <a-button size="small" @click="confirmReset">{{ t('setting.tray.reset') }}</a-button>
+        <a-button size="middle" @click="add">{{ t('setting.tray.add') }}</a-button>
+        <a-button size="middle" @click="confirmReset">{{ t('setting.tray.reset') }}</a-button>
       </a-space>
     </div>
 
@@ -213,23 +213,28 @@ onBeforeUnmount(() => {
         :columns="columns"
         :data-source="items"
         :pagination="false"
-        :scroll="{ x: 640 }"
-        size="small"
+        :scroll="{ x: 760 }"
+        row-key="id"
+        size="middle"
       >
         <template #bodyCell="{ column, record, index }">
           <a-input
             v-if="column.key === 'label'"
             v-model:value="record.label"
-            size="small"
+            size="middle"
             :placeholder="t('setting.tray.colLabel')"
             :maxlength="30"
             style="width: 100%"
             @change="schedulePersist"
           />
-          <div v-else-if="column.key === 'action'" class="action-cell">
+          <div
+            v-else-if="column.key === 'action'"
+            class="action-cell"
+            :class="{ 'action-cell--task': record.action === 'startTask' }"
+          >
             <a-select
               v-model:value="record.action"
-              size="small"
+              size="middle"
               style="width: 100%"
               @change="(value: any) => onActionChange(record, value)"
             >
@@ -240,7 +245,7 @@ onBeforeUnmount(() => {
             <a-select
               v-if="record.action === 'startTask'"
               v-model:value="record.taskId"
-              size="small"
+              size="middle"
               style="width: 100%"
               :placeholder="t('setting.tray.taskPlaceholder')"
               show-search
@@ -251,7 +256,7 @@ onBeforeUnmount(() => {
           </div>
           <a-space v-else-if="column.key === 'ops'" :size="4">
             <a-button
-              size="small"
+              size="middle"
               type="text"
               :disabled="index === 0"
               :aria-label="t('setting.tray.moveUp')"
@@ -260,7 +265,7 @@ onBeforeUnmount(() => {
               <UpOutlined />
             </a-button>
             <a-button
-              size="small"
+              size="middle"
               type="text"
               :disabled="index === items.length - 1"
               :aria-label="t('setting.tray.moveDown')"
@@ -269,7 +274,7 @@ onBeforeUnmount(() => {
               <DownOutlined />
             </a-button>
             <a-button
-              size="small"
+              size="middle"
               type="text"
               danger
               :aria-label="t('setting.tray.remove')"
@@ -293,6 +298,7 @@ onBeforeUnmount(() => {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  flex-wrap: wrap;
   gap: 8px;
   margin-bottom: 12px;
 }
@@ -314,14 +320,18 @@ onBeforeUnmount(() => {
   font-size: 12px;
 }
 
-/* 限定宽度，避免全屏下输入框过长，降低眼动成本 */
 .tray-menu-table-wrap {
-  max-width: 640px;
+  width: 100%;
+  min-width: 0;
 }
 
 .action-cell {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
+}
+
+.action-cell--task {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 </style>
