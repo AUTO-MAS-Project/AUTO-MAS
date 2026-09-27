@@ -446,6 +446,42 @@ def _merge_task_queue(
     return changed
 
 
+def _mumu_install_path(manager_path: str) -> str:
+    """Derive MAA's MuMu install directory from the manager executable."""
+    manager = Path(manager_path)
+    parent = manager.parent
+    if parent.name.casefold() == "nx_main":
+        parent = parent.parent
+    return str(parent)
+
+
+def _configure_mumu_screenshot_enhancement(gui_new_set: dict, device: dict) -> None:
+    gui = gui_new_set["Configurations"]["Default"].setdefault("Gui", {})
+    connect = gui.setdefault("ConnectSettings", {})
+    extras = connect.setdefault("Extras", {})
+    mumu = extras.setdefault(_MUMU_EXTRAS_KEY, {})
+    mumu.update({"IsEnabled": True, **device})
+
+
+def _without_temporary_mumu_extras(config: dict, device: dict | None) -> dict:
+    if device is None:
+        return config
+    gui = (
+        config.get("Configurations", {})
+        .get("Default", {})
+        .get("Gui", {})
+    )
+    connect = gui.get("ConnectSettings", {})
+    extras = connect.get("Extras", {}) if isinstance(connect, dict) else {}
+    mumu = extras.get(_MUMU_EXTRAS_KEY) if isinstance(extras, dict) else None
+    if isinstance(mumu, dict):
+        mumu.pop("EmulatorPath", None)
+        mumu.pop("InstanceIndex", None)
+        if not mumu:
+            extras.pop(_MUMU_EXTRAS_KEY, None)
+    return config
+
+
 def _merge_maa_changes(
     archive: dict | list,
     baseline: dict | list,
