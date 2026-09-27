@@ -720,8 +720,8 @@ const handleImportMaaEndConfig = async () => {
       scriptId,
       formData.Info.Mode === '脚本' ? null : userId
     )
-    if (response.code !== 200) {
-      throw new Error(response.message || '导入脚本配置文件失败')
+    if (!response || response.code !== 200) {
+      throw new Error(response?.message || '导入脚本配置文件失败')
     }
     const importTarget = formData.Info.Mode === '脚本' ? '脚本共享' : '用户独立'
     message.success(t('edit.importedP0ConfigurationFile', { p0: importTarget }))

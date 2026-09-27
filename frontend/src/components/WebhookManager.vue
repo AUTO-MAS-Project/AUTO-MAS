@@ -236,10 +236,12 @@ import {
 } from '@ant-design/icons-vue'
 import { TEMPLATE_VARIABLES, WEBHOOK_TEMPLATES } from '@/utils/webhookTemplates'
 import { Service } from '@/api/services/Service'
+import { useConfigEditSession } from '@/composables/useConfigEditSession'
 
 const { t } = useI18n()
 
 const logger = window.electronAPI.getLogger('Webhook管理器')
+const { ensureConfigEditSession, markConfigEditSaved } = useConfigEditSession()
 
 // update/test 接口的载荷形状：开关切换、提交保存、测试三处写入共用
 const toWebhookPayload = (
@@ -253,6 +255,8 @@ const toWebhookPayload = (
   Info: { Name: name, Enabled: enabled },
   Data: { Url: url, Template: template, Method: method, Headers: headers },
 })
+
+const webhookResourceKey = () => (props.mode === 'global' ? 'Config' : 'ScriptConfig')
 
 // 定义Webhook类型（兼容旧props用）
 interface CustomWebhook {
@@ -434,6 +438,8 @@ const toggleWebhookEnabled = async (webhook: WebhookItem) => {
     // API模式：调用更新接口
     try {
       const headers = webhook.headers ? JSON.stringify(webhook.headers) : null
+      const editSession = await ensureConfigEditSession(webhookResourceKey())
+      if (!editSession) return
 
       if (props.mode === 'global') {
         // 全局模式：使用setting接口
@@ -449,6 +455,7 @@ const toggleWebhookEnabled = async (webhook: WebhookItem) => {
             newEnabled,
             headers
           ),
+          ...editSession,
         })
       } else {
         // 用户模式：使用scripts接口
@@ -464,9 +471,11 @@ const toggleWebhookEnabled = async (webhook: WebhookItem) => {
             newEnabled,
             headers
           ),
+          ...editSession,
         })
       }
 
+      await markConfigEditSaved(webhookResourceKey())
       // 重新加载最新数据
       await loadWebhooks()
       message.success(t('comp.webhookP0P1', { p0: webhook.name, p1: newEnabled ? '启用' : '禁用' }))
@@ -505,12 +514,15 @@ const deleteWebhook = (webhook: WebhookItem) => {
       if (props.mode === 'global' || (props.scriptId && props.userId)) {
         // API模式：调用删除接口
         try {
+          const editSession = await ensureConfigEditSession(webhookResourceKey())
+          if (!editSession) return
           if (props.mode === 'global') {
             // 全局模式：使用setting接口
             await Service.deleteWebhookApiSettingWebhookDeletePost({
               scriptId: null,
               userId: null,
               webhookId: webhook.uid,
+              ...editSession,
             })
           } else {
             // 用户模式：使用scripts接口
@@ -518,9 +530,11 @@ const deleteWebhook = (webhook: WebhookItem) => {
               scriptId: props.scriptId || null,
               userId: props.userId || null,
               webhookId: webhook.uid,
+              ...editSession,
             })
           }
 
+          await markConfigEditSaved(webhookResourceKey())
           // 重新加载最新数据
           await loadWebhooks()
           message.success(t('comp.webhookDeleted'))
@@ -639,18 +653,24 @@ const handleSubmit = async () => {
     if (props.mode === 'global' || (props.scriptId && props.userId)) {
       // API模式：新增时先创建记录拿到 uid，再写入表单内容
       try {
+        let editSession = await ensureConfigEditSession(webhookResourceKey())
+        if (!editSession) return
         if (!isEditing.value) {
           const addResponse =
             props.mode === 'global'
-              ? await Service.addWebhookApiSettingWebhookAddPost()
+              ? await Service.addWebhookApiSettingWebhookAddPost(editSession)
               : await Service.addWebhookApiScriptsWebhookAddPost({
                   scriptId: props.scriptId || null,
                   userId: props.userId || null,
+                  ...editSession,
                 })
           if (addResponse.code !== 200) {
             throw new Error(addResponse.message || '')
           }
           formData.uid = addResponse.webhookId
+          await markConfigEditSaved(webhookResourceKey())
+          editSession = await ensureConfigEditSession(webhookResourceKey())
+          if (!editSession) return
           logger.info(`创建新Webhook，ID: ${addResponse.webhookId}`)
         }
 
@@ -670,6 +690,7 @@ const handleSubmit = async () => {
               formData.enabled,
               headersJson
             ),
+            ...editSession,
           })
         } else {
           // 用户模式：使用scripts接口
@@ -685,9 +706,11 @@ const handleSubmit = async () => {
               formData.enabled,
               headersJson
             ),
+            ...editSession,
           })
         }
 
+        await markConfigEditSaved(webhookResourceKey())
         // 重新加载最新数据
         await loadWebhooks()
 

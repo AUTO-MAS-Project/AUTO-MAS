@@ -24,12 +24,21 @@
 from fastapi import APIRouter, Body
 
 from app.core import Config
+from app.core.config_edit import ConfigEditError
 from app.models.config import PLAN_BOOK
 from app.models.schema import *
 from app.utils import get_logger
 
 router = APIRouter(prefix="/api/plan", tags=["计划管理"])
 logger = get_logger("计划管理 API")
+
+
+def _config_edit_scope(plan: ConfigEditSaveMixin):
+    return Config.config_edit_scope(
+        "PlanConfig",
+        token=plan.editLeaseToken,
+        base_version=plan.baseVersion,
+    )
 
 
 @router.post(
@@ -42,9 +51,23 @@ logger = get_logger("计划管理 API")
 async def add_plan(plan: PlanCreateIn = Body(...)) -> PlanCreateOut:
 
     try:
-        uid, config = await Config.add_plan(plan.type)
+        with _config_edit_scope(plan):
+            uid, config = await Config.add_plan(plan.type)
         data = PLAN_BOOK[type(config).__name__]["schema_class"](
             **(await config.toDict())
+        )
+    except ConfigEditError as e:
+        plan_schema_class = next(
+            item["schema_class"]
+            for item in PLAN_BOOK.values()
+            if item["create_type"] == plan.type
+        )
+        return PlanCreateOut(
+            code=e.code,
+            status="error",
+            message=e.message,
+            planId="",
+            data=plan_schema_class(**{}),
         )
     except Exception as e:
         logger.opt(exception=True).warning(f"add_plan失败: {type(e).__name__}: {e}")
@@ -104,7 +127,10 @@ async def get_plan(plan: PlanGetIn = Body(...)) -> PlanGetOut:
 async def update_plan(plan: PlanUpdateIn = Body(...)) -> OutBase:
 
     try:
-        await Config.update_plan(plan.planId, plan.data.model_dump(exclude_unset=True))
+        with _config_edit_scope(plan):
+            await Config.update_plan(plan.planId, plan.data.model_dump(exclude_unset=True))
+    except ConfigEditError as e:
+        return OutBase(code=e.code, status="error", message=e.message)
     except Exception as e:
         logger.opt(exception=True).warning(f"update_plan失败: {type(e).__name__}: {e}")
         return OutBase(
@@ -123,7 +149,10 @@ async def update_plan(plan: PlanUpdateIn = Body(...)) -> OutBase:
 async def delete_plan(plan: PlanDeleteIn = Body(...)) -> OutBase:
 
     try:
-        await Config.del_plan(plan.planId)
+        with _config_edit_scope(plan):
+            await Config.del_plan(plan.planId)
+    except ConfigEditError as e:
+        return OutBase(code=e.code, status="error", message=e.message)
     except Exception as e:
         logger.opt(exception=True).warning(f"delete_plan失败: {type(e).__name__}: {e}")
         return OutBase(
@@ -142,7 +171,10 @@ async def delete_plan(plan: PlanDeleteIn = Body(...)) -> OutBase:
 async def reorder_plan(plan: PlanReorderIn = Body(...)) -> OutBase:
 
     try:
-        await Config.reorder_plan(plan.indexList)
+        with _config_edit_scope(plan):
+            await Config.reorder_plan(plan.indexList)
+    except ConfigEditError as e:
+        return OutBase(code=e.code, status="error", message=e.message)
     except Exception as e:
         logger.opt(exception=True).warning(f"reorder_plan失败: {type(e).__name__}: {e}")
         return OutBase(

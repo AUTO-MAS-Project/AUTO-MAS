@@ -30,6 +30,7 @@ from uuid import UUID
 from fastapi import APIRouter, Body
 
 from app.core import Config
+from app.core.config_edit import ConfigEditError
 from app.core.community_scheduler import (
     CommunityActivityInProgressError,
     community_activity_flow,
@@ -45,6 +46,7 @@ from app.models.schema import (
     CommunityActivityResourceOut,
     CommunityActivitySnapshotOut,
     CommunityActivityTaskOut,
+    GameSignAccountCreateIn,
     GameSignAccountCreateOut,
     GameSignAccountDeleteIn,
     GameSignAccountGroupConfig,
@@ -65,6 +67,23 @@ router = APIRouter(prefix="/api/tools", tags=["工具设置"])
 logger = get_logger("游戏社区 API")
 _PENDING_COMMUNITY_NOTIFICATIONS: set[asyncio.Task[list[str] | None]] = set()
 _MIYOUSHE_DEVICE_FIELDS = ("MiyousheDeviceId", "MiyousheDeviceFp")
+
+
+def _config_edit_scope(
+    payload: ToolsUpdateIn
+    | GameSignAccountCreateIn
+    | GameSignAccountUpdateIn
+    | GameSignAccountDeleteIn
+    | GameSignAccountReorderIn
+    | None,
+):
+    if payload is None:
+        raise ConfigEditError(409, "配置编辑锁已失效，请重新进入编辑页")
+    return Config.config_edit_scope(
+        "ToolsConfig",
+        token=payload.editLeaseToken,
+        base_version=payload.baseVersion,
+    )
 
 
 def _log_community_api_error(stage: str, error: Exception) -> None:
@@ -172,9 +191,12 @@ async def update_tools(script: ToolsUpdateIn = Body(...)) -> OutBase:
     """更新工具配置"""
 
     try:
-        data = script.data.model_dump(exclude_unset=True)
-        await Config.update_tools(data)
+        with _config_edit_scope(script):
+            data = script.data.model_dump(exclude_unset=True)
+            await Config.update_tools(data)
 
+    except ConfigEditError as e:
+        return OutBase(code=e.code, status="error", message=e.message)
     except Exception as e:
         _log_community_api_error("更新工具配置失败", e)
         return OutBase(
@@ -377,16 +399,27 @@ async def list_game_sign_accounts() -> GameSignAccountsListOut:
     response_model=GameSignAccountCreateOut,
     status_code=200,
 )
-async def add_game_sign_account() -> GameSignAccountCreateOut:
+async def add_game_sign_account(
+    account: GameSignAccountCreateIn | None = Body(default=None),
+) -> GameSignAccountCreateOut:
     """添加游戏社区账号组"""
 
     try:
-        uid, config = await Config.add_game_sign_account()
+        with _config_edit_scope(account):
+            uid, config = await Config.add_game_sign_account()
         # toDict() 返回 {"GameSignAccount": {fields}}，需提取嵌套字典
         raw = await config.toDict()
         flat = raw.get("GameSignAccount", raw)
         data = GameSignAccountGroupConfig(**flat)
         # 新增账号无需清空结果，因为新账号没有历史结果
+    except ConfigEditError as e:
+        return GameSignAccountCreateOut(
+            code=e.code,
+            status="error",
+            message=e.message,
+            accountId="",
+            data=GameSignAccountGroupConfig(**{}),
+        )
     except Exception as e:
         _log_community_api_error("添加游戏社区账号组失败", e)
         return GameSignAccountCreateOut(
@@ -412,39 +445,42 @@ async def update_game_sign_account(
     """更新游戏社区账号组配置"""
 
     try:
-        # GameSignAccountGroupConfig 是扁平格式，需包装为 {group: {name: value}} 传给 ConfigBase.set
-        flat_data = account.data.model_dump(exclude_unset=True)
-        _normalize_miyoushe_device_fields(flat_data)
-        skland_token = flat_data.get("SklandToken")
-        if isinstance(skland_token, str) and skland_token.strip():
-            from app.tools.skland import validate_skland_credential
+        with _config_edit_scope(account):
+            # GameSignAccountGroupConfig 是扁平格式，需包装为 {group: {name: value}} 传给 ConfigBase.set
+            flat_data = account.data.model_dump(exclude_unset=True)
+            _normalize_miyoushe_device_fields(flat_data)
+            skland_token = flat_data.get("SklandToken")
+            if isinstance(skland_token, str) and skland_token.strip():
+                from app.tools.skland import validate_skland_credential
 
-            try:
-                validate_skland_credential(skland_token)
-            except ValueError as exc:
-                _log_community_api_error("森空岛凭据校验失败", exc)
-                return OutBase(
-                    code=400,
-                    status="error",
-                    message="森空岛凭据格式无效，请检查后重试",
-                )
-        cloud_genshin_token = flat_data.get("CloudGenshinToken")
-        if isinstance(cloud_genshin_token, str) and cloud_genshin_token.strip():
-            from app.tools.cloud_genshin import validate_cloud_genshin_token
+                try:
+                    validate_skland_credential(skland_token)
+                except ValueError as exc:
+                    _log_community_api_error("森空岛凭据校验失败", exc)
+                    return OutBase(
+                        code=400,
+                        status="error",
+                        message="森空岛凭据格式无效，请检查后重试",
+                    )
+            cloud_genshin_token = flat_data.get("CloudGenshinToken")
+            if isinstance(cloud_genshin_token, str) and cloud_genshin_token.strip():
+                from app.tools.cloud_genshin import validate_cloud_genshin_token
 
-            try:
-                flat_data["CloudGenshinToken"] = validate_cloud_genshin_token(
-                    cloud_genshin_token
-                )
-            except ValueError as exc:
-                _log_community_api_error("云原神凭据校验失败", exc)
-                return OutBase(
-                    code=400,
-                    status="error",
-                    message="云原神 combo token 格式无效，请检查后重试",
-                )
-        data = {"GameSignAccount": flat_data}
-        await Config.update_game_sign_account(account.accountId, data)
+                try:
+                    flat_data["CloudGenshinToken"] = validate_cloud_genshin_token(
+                        cloud_genshin_token
+                    )
+                except ValueError as exc:
+                    _log_community_api_error("云原神凭据校验失败", exc)
+                    return OutBase(
+                        code=400,
+                        status="error",
+                        message="云原神 combo token 格式无效，请检查后重试",
+                    )
+            data = {"GameSignAccount": flat_data}
+            await Config.update_game_sign_account(account.accountId, data)
+    except ConfigEditError as e:
+        return OutBase(code=e.code, status="error", message=e.message)
     except Exception as e:
         _log_community_api_error("更新游戏社区账号组失败", e)
         return OutBase(
@@ -468,7 +504,10 @@ async def delete_game_sign_account(
     """删除游戏社区账号组"""
 
     try:
-        await Config.delete_game_sign_account(account.accountId)
+        with _config_edit_scope(account):
+            await Config.delete_game_sign_account(account.accountId)
+    except ConfigEditError as e:
+        return OutBase(code=e.code, status="error", message=e.message)
     except Exception as e:
         _log_community_api_error("删除游戏社区账号组失败", e)
         return OutBase(
@@ -492,7 +531,10 @@ async def reorder_game_sign_accounts(
     """调整游戏社区账号组顺序"""
 
     try:
-        await Config.reorder_game_sign_accounts(account.order)
+        with _config_edit_scope(account):
+            await Config.reorder_game_sign_accounts(account.order)
+    except ConfigEditError as e:
+        return OutBase(code=e.code, status="error", message=e.message)
     except Exception as e:
         _log_community_api_error("调整游戏社区账号组顺序失败", e)
         return OutBase(

@@ -25,6 +25,7 @@ from fastapi import APIRouter, Body
 
 from app.api.ws_command import ws_command
 from app.core import Config
+from app.core.config_edit import ConfigEditError
 from app.models.schema import *
 from app.utils import get_logger
 
@@ -32,7 +33,17 @@ router = APIRouter(prefix="/api/queue", tags=["调度队列管理"])
 logger = get_logger("调度队列 API")
 
 
-@ws_command("queue.add")
+def _config_edit_scope(payload: ConfigEditSaveMixin | None):
+    if payload is None:
+        raise ConfigEditError(409, "配置编辑锁已失效，请重新进入编辑页")
+    return Config.config_edit_scope(
+        "QueueConfig",
+        token=payload.editLeaseToken,
+        base_version=payload.baseVersion,
+    )
+
+
+@ws_command("queue.add", params=QueueCreateIn)
 @router.post(
     "/add",
     tags=["Add"],
@@ -40,11 +51,20 @@ logger = get_logger("调度队列 API")
     response_model=QueueCreateOut,
     status_code=200,
 )
-async def add_queue() -> QueueCreateOut:
+async def add_queue(queue: QueueCreateIn | None = Body(default=None)) -> QueueCreateOut:
 
     try:
-        uid, config = await Config.add_queue()
+        with _config_edit_scope(queue):
+            uid, config = await Config.add_queue()
         data = QueueConfig(**(await config.toDict()))
+    except ConfigEditError as e:
+        return QueueCreateOut(
+            code=e.code,
+            status="error",
+            message=e.message,
+            queueId="",
+            data=QueueConfig(**{}),
+        )
     except Exception as e:
         logger.opt(exception=True).warning(f"add_queue失败: {type(e).__name__}: {e}")
         return QueueCreateOut(
@@ -93,9 +113,12 @@ async def get_queues(queue: QueueGetIn = Body(...)) -> QueueGetOut:
 async def update_queue(queue: QueueUpdateIn = Body(...)) -> OutBase:
 
     try:
-        await Config.update_queue(
-            queue.queueId, queue.data.model_dump(exclude_unset=True)
-        )
+        with _config_edit_scope(queue):
+            await Config.update_queue(
+                queue.queueId, queue.data.model_dump(exclude_unset=True)
+            )
+    except ConfigEditError as e:
+        return OutBase(code=e.code, status="error", message=e.message)
     except Exception as e:
         logger.opt(exception=True).warning(f"update_queue失败: {type(e).__name__}: {e}")
         return OutBase(
@@ -114,7 +137,10 @@ async def update_queue(queue: QueueUpdateIn = Body(...)) -> OutBase:
 async def delete_queue(queue: QueueDeleteIn = Body(...)) -> OutBase:
 
     try:
-        await Config.del_queue(queue.queueId)
+        with _config_edit_scope(queue):
+            await Config.del_queue(queue.queueId)
+    except ConfigEditError as e:
+        return OutBase(code=e.code, status="error", message=e.message)
     except Exception as e:
         logger.opt(exception=True).warning(f"delete_queue失败: {type(e).__name__}: {e}")
         return OutBase(
@@ -155,10 +181,29 @@ async def get_time_set(time: TimeSetGetIn = Body(...)) -> TimeSetGetOut:
     response_model=TimeSetCreateOut,
     status_code=200,
 )
-async def add_time_set(time: QueueSetInBase = Body(...)) -> TimeSetCreateOut:
+async def add_time_set(time: TimeSetCreateIn = Body(...)) -> TimeSetCreateOut:
 
-    uid, config = await Config.add_time_set(time.queueId)
-    data = TimeSet(**(await config.toDict()))
+    try:
+        with _config_edit_scope(time):
+            uid, config = await Config.add_time_set(time.queueId)
+        data = TimeSet(**(await config.toDict()))
+    except ConfigEditError as e:
+        return TimeSetCreateOut(
+            code=e.code,
+            status="error",
+            message=e.message,
+            timeSetId="",
+            data=TimeSet(**{}),
+        )
+    except Exception as e:
+        logger.opt(exception=True).warning(f"add_time_set失败: {type(e).__name__}: {e}")
+        return TimeSetCreateOut(
+            code=500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+            timeSetId="",
+            data=TimeSet(**{}),
+        )
     return TimeSetCreateOut(timeSetId=str(uid), data=data)
 
 
@@ -172,9 +217,12 @@ async def add_time_set(time: QueueSetInBase = Body(...)) -> TimeSetCreateOut:
 async def update_time_set(time: TimeSetUpdateIn = Body(...)) -> OutBase:
 
     try:
-        await Config.update_time_set(
-            time.queueId, time.timeSetId, time.data.model_dump(exclude_unset=True)
-        )
+        with _config_edit_scope(time):
+            await Config.update_time_set(
+                time.queueId, time.timeSetId, time.data.model_dump(exclude_unset=True)
+            )
+    except ConfigEditError as e:
+        return OutBase(code=e.code, status="error", message=e.message)
     except Exception as e:
         logger.opt(exception=True).warning(
             f"update_time_set失败: {type(e).__name__}: {e}"
@@ -195,7 +243,10 @@ async def update_time_set(time: TimeSetUpdateIn = Body(...)) -> OutBase:
 async def delete_time_set(time: TimeSetDeleteIn = Body(...)) -> OutBase:
 
     try:
-        await Config.del_time_set(time.queueId, time.timeSetId)
+        with _config_edit_scope(time):
+            await Config.del_time_set(time.queueId, time.timeSetId)
+    except ConfigEditError as e:
+        return OutBase(code=e.code, status="error", message=e.message)
     except Exception as e:
         logger.opt(exception=True).warning(
             f"delete_time_set失败: {type(e).__name__}: {e}"
@@ -216,7 +267,10 @@ async def delete_time_set(time: TimeSetDeleteIn = Body(...)) -> OutBase:
 async def reorder_time_set(time: TimeSetReorderIn = Body(...)) -> OutBase:
 
     try:
-        await Config.reorder_time_set(time.queueId, time.indexList)
+        with _config_edit_scope(time):
+            await Config.reorder_time_set(time.queueId, time.indexList)
+    except ConfigEditError as e:
+        return OutBase(code=e.code, status="error", message=e.message)
     except Exception as e:
         logger.opt(exception=True).warning(
             f"reorder_time_set失败: {type(e).__name__}: {e}"
@@ -259,11 +313,20 @@ async def get_item(item: QueueItemGetIn = Body(...)) -> QueueItemGetOut:
     response_model=QueueItemCreateOut,
     status_code=200,
 )
-async def add_item(item: QueueSetInBase = Body(...)) -> QueueItemCreateOut:
+async def add_item(item: QueueItemCreateIn = Body(...)) -> QueueItemCreateOut:
 
     try:
-        uid, config = await Config.add_queue_item(item.queueId)
+        with _config_edit_scope(item):
+            uid, config = await Config.add_queue_item(item.queueId)
         data = QueueItem(**(await config.toDict()))
+    except ConfigEditError as e:
+        return QueueItemCreateOut(
+            code=e.code,
+            status="error",
+            message=e.message,
+            queueItemId="",
+            data=QueueItem(**{}),
+        )
     except Exception as e:
         # 循环运行中的队列会拒绝增删队列项，原因要带回给前端提示
         logger.opt(exception=True).warning(f"add_item失败: {type(e).__name__}: {e}")
@@ -287,9 +350,12 @@ async def add_item(item: QueueSetInBase = Body(...)) -> QueueItemCreateOut:
 async def update_item(item: QueueItemUpdateIn = Body(...)) -> OutBase:
 
     try:
-        await Config.update_queue_item(
-            item.queueId, item.queueItemId, item.data.model_dump(exclude_unset=True)
-        )
+        with _config_edit_scope(item):
+            await Config.update_queue_item(
+                item.queueId, item.queueItemId, item.data.model_dump(exclude_unset=True)
+            )
+    except ConfigEditError as e:
+        return OutBase(code=e.code, status="error", message=e.message)
     except Exception as e:
         logger.opt(exception=True).warning(f"update_item失败: {type(e).__name__}: {e}")
         return OutBase(
@@ -308,7 +374,10 @@ async def update_item(item: QueueItemUpdateIn = Body(...)) -> OutBase:
 async def delete_item(item: QueueItemDeleteIn = Body(...)) -> OutBase:
 
     try:
-        await Config.del_queue_item(item.queueId, item.queueItemId)
+        with _config_edit_scope(item):
+            await Config.del_queue_item(item.queueId, item.queueItemId)
+    except ConfigEditError as e:
+        return OutBase(code=e.code, status="error", message=e.message)
     except Exception as e:
         logger.opt(exception=True).warning(f"delete_item失败: {type(e).__name__}: {e}")
         return OutBase(
@@ -327,7 +396,10 @@ async def delete_item(item: QueueItemDeleteIn = Body(...)) -> OutBase:
 async def reorder_item(item: QueueItemReorderIn = Body(...)) -> OutBase:
 
     try:
-        await Config.reorder_queue_item(item.queueId, item.indexList)
+        with _config_edit_scope(item):
+            await Config.reorder_queue_item(item.queueId, item.indexList)
+    except ConfigEditError as e:
+        return OutBase(code=e.code, status="error", message=e.message)
     except Exception as e:
         logger.opt(exception=True).warning(f"reorder_item失败: {type(e).__name__}: {e}")
         return OutBase(

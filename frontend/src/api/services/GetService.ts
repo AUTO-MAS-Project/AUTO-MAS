@@ -13,6 +13,8 @@ import type { CheckImageAnyIn } from '../models/CheckImageAnyIn';
 import type { CheckImageIn } from '../models/CheckImageIn';
 import type { CheckImageOut } from '../models/CheckImageOut';
 import type { ComboBoxOut } from '../models/ComboBoxOut';
+import type { ConfigEditIn } from '../models/ConfigEditIn';
+import type { ConfigEditLeaseOut } from '../models/ConfigEditLeaseOut';
 import type { CultivatePreviewIn } from '../models/CultivatePreviewIn';
 import type { CultivatePreviewOut } from '../models/CultivatePreviewOut';
 import type { Emulator2DevicesIn } from '../models/Emulator2DevicesIn';
@@ -76,6 +78,25 @@ import type { CancelablePromise } from '../core/CancelablePromise';
 import { OpenAPI } from '../core/OpenAPI';
 import { request as __request } from '../core/request';
 export class GetService {
+    /**
+     * 查询配置编辑锁状态
+     * @param requestBody
+     * @returns ConfigEditLeaseOut Successful Response
+     * @throws ApiError
+     */
+    public static getConfigEditStatusApiConfigEditStatusPost(
+        requestBody: ConfigEditIn,
+    ): CancelablePromise<ConfigEditLeaseOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/config-edit/status',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
     /**
      * 获取后端git版本信息
      * @returns VersionOut Successful Response

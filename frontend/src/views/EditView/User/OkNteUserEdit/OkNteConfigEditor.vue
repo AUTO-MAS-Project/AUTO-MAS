@@ -317,7 +317,6 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
 import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
-import { onBeforeRouteLeave, onBeforeRouteUpdate } from 'vue-router'
 import { message } from 'ant-design-vue'
 import { ArrowDownOutlined, ArrowUpOutlined } from '@ant-design/icons-vue'
 import { OknteService } from '@/api/services/OknteService'
@@ -669,18 +668,12 @@ watch(
   { deep: true }
 )
 
-onBeforeRouteLeave(async () => await saveAll())
-onBeforeRouteUpdate(async () => await saveAll())
-
 onMounted(() => {
   loadConfigs()
 })
 
-onBeforeUnmount(async () => {
+onBeforeUnmount(() => {
   clearTimeout(saveTimer)
-  if (hasChanges.value) {
-    await saveAll(true)
-  }
 })
 
 watch(

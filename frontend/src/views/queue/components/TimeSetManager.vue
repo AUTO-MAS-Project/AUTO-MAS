@@ -135,9 +135,11 @@ import { DeleteOutlined, PlusOutlined } from '@ant-design/icons-vue'
 import draggable from 'vuedraggable'
 import { Service } from '@/api'
 import dayjs from 'dayjs'
+import { useConfigEditSession } from '@/composables/useConfigEditSession'
 
 const { t } = useI18n()
 const logger = window.electronAPI.getLogger('定时项管理')
+const { ensureConfigEditSession, markConfigEditSaved } = useConfigEditSession()
 
 // Props
 interface Props {
@@ -231,11 +233,15 @@ const addTimeSet = async () => {
     loading.value = true
 
     // 创建定时项，使用后端默认值
+    const editSession = await ensureConfigEditSession('QueueConfig')
+    if (!editSession) return
     const createResponse = await Service.addTimeSetApiQueueTimeAddPost({
       queueId: props.queueId,
+      ...editSession,
     })
 
     if (createResponse.code === 200 && createResponse.timeSetId) {
+      await markConfigEditSaved('QueueConfig')
       emit('refresh')
     } else {
       message.error(
@@ -257,6 +263,8 @@ const addTimeSet = async () => {
 const updateTimeSetTime = async (timeSet: any) => {
   try {
     const timeString = formatTimeValue(timeSet.timeValue)
+    const editSession = await ensureConfigEditSession('QueueConfig')
+    if (!editSession) return
 
     const response = await Service.updateTimeSetApiQueueTimeUpdatePost({
       queueId: props.queueId,
@@ -266,9 +274,11 @@ const updateTimeSetTime = async (timeSet: any) => {
           Time: timeString,
         },
       },
+      ...editSession,
     })
 
     if (response.code === 200) {
+      await markConfigEditSaved('QueueConfig')
       // 更新本地显示的时间
       timeSet.time = timeString
     } else {
@@ -292,6 +302,9 @@ const updateTimeSetTime = async (timeSet: any) => {
 // 更新定时项状态
 const updateTimeSetStatus = async (timeSet: any) => {
   try {
+    const editSession = await ensureConfigEditSession('QueueConfig')
+    if (!editSession) return
+
     const response = await Service.updateTimeSetApiQueueTimeUpdatePost({
       queueId: props.queueId,
       timeSetId: timeSet.id,
@@ -300,9 +313,11 @@ const updateTimeSetStatus = async (timeSet: any) => {
           Enabled: timeSet.enabled,
         },
       },
+      ...editSession,
     })
 
     if (response.code === 200) {
+      await markConfigEditSaved('QueueConfig')
       // 状态更新成功，无需通知
     } else {
       message.error(
@@ -328,6 +343,8 @@ const updateTimeSetDays = async (timeSet: any) => {
     // 对选中的日期按星期顺序排序
     const sortedDays = sortDays(timeSet.days || [])
     timeSet.days = sortedDays
+    const editSession = await ensureConfigEditSession('QueueConfig')
+    if (!editSession) return
 
     const response = await Service.updateTimeSetApiQueueTimeUpdatePost({
       queueId: props.queueId,
@@ -337,9 +354,11 @@ const updateTimeSetDays = async (timeSet: any) => {
           Days: sortedDays,
         },
       },
+      ...editSession,
     })
 
     if (response.code === 200) {
+      await markConfigEditSaved('QueueConfig')
       // 周期更新成功，无需通知
     } else {
       message.error(
@@ -358,12 +377,16 @@ const updateTimeSetDays = async (timeSet: any) => {
 // 删除定时项
 const deleteTimeSet = async (timeSetId: string) => {
   try {
+    const editSession = await ensureConfigEditSession('QueueConfig')
+    if (!editSession) return
     const response = await Service.deleteTimeSetApiQueueTimeDeletePost({
       queueId: props.queueId,
       timeSetId,
+      ...editSession,
     })
 
     if (response.code === 200) {
+      await markConfigEditSaved('QueueConfig')
       // 确保删除后刷新数据
       emit('refresh')
     } else {
@@ -394,14 +417,18 @@ const onDragEnd = async (evt: any) => {
 
     // 构造排序后的ID列表
     const sortedIds = timeSets.value.map(item => item.id)
+    const editSession = await ensureConfigEditSession('QueueConfig')
+    if (!editSession) return
 
     // 调用排序API
     const response = await Service.reorderTimeSetApiQueueTimeOrderPost({
       queueId: props.queueId,
       indexList: sortedIds,
+      ...editSession,
     })
 
     if (response.code === 200) {
+      await markConfigEditSaved('QueueConfig')
       // 刷新数据以确保与服务器同步
       emit('refresh')
     } else {

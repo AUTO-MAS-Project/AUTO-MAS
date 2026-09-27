@@ -223,6 +223,7 @@ import { useUserApi } from '@/composables/useUserApi.ts'
 import { useScriptApi } from '@/composables/useScriptApi.ts'
 import { usePlanApi } from '@/composables/usePlanApi.ts'
 import { useMaaGuiSession } from '@/composables/useMaaGuiSession'
+import { useConfigEditSession } from '@/composables/useConfigEditSession'
 import { Service } from '@/api'
 import type { CultivatePreviewOut } from '@/api'
 import { PlanComboxIn } from '@/api/models/PlanComboxIn.ts'
@@ -252,6 +253,7 @@ const route = useRoute()
 const { addUser, updateUser, getUsers, loading: userLoading, error: userError } = useUserApi()
 const { getScript } = useScriptApi()
 const { getPlans } = usePlanApi()
+const { ensureConfigEditSession, markConfigEditSaved } = useConfigEditSession()
 const {
   maaConfigLoading,
   maaTaskId,
@@ -1155,10 +1157,13 @@ const loadStageModeOptions = async () => {
 const handleInfrastPlanSelectChange = async (index: number, label: string) => {
   if (configLocked.value) return
   try {
+    const editSession = await ensureConfigEditSession('ScriptConfig')
+    if (!editSession) return
     const result = await Service.setInfrastPlanSelectApiScriptsUserInfrastructurePlanSelectPost({
       scriptId: scriptId,
       userId: userId,
       index: index,
+      ...editSession,
     })
     if (!result || result.code !== 200) {
       message.error(t('edit.maaCustomInfrastPlanSelectFailed'))
@@ -1166,6 +1171,7 @@ const handleInfrastPlanSelectChange = async (index: number, label: string) => {
     }
     // 后端会把「自动」归一成第一班, 以返回值为准, 免得刷新前后显示不一致
     infrastPlanSelect.value = result.index ?? index
+    await markConfigEditSaved('ScriptConfig')
     message.success(t('edit.maaCustomInfrastPlanSelected', { name: label }))
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
@@ -1195,12 +1201,15 @@ const selectAndImportInfrastructureConfig = async () => {
         return
       }
       infrastructureImporting.value = true
+      const editSession = await ensureConfigEditSession('ScriptConfig')
+      if (!editSession) return
 
       // 直接导入配置
       const result = await Service.importInfrastructureApiScriptsUserInfrastructurePost({
         scriptId: scriptId,
         userId: userId,
         jsonFile: path[0],
+        ...editSession,
       })
 
       if (result && result.code === 200) {
@@ -1209,6 +1218,7 @@ const selectAndImportInfrastructureConfig = async () => {
         formData.Info.InfrastName = fileName.replace('.json', '')
 
         message.success(t('edit.baseConfigurationImported'))
+        await markConfigEditSaved('ScriptConfig')
 
         // 重新加载基建配置选项与当前班次
         await loadInfrastructureOptions()

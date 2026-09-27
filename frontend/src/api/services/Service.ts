@@ -34,9 +34,13 @@ import type { ConfigBackupListOut } from '../models/ConfigBackupListOut';
 import type { ConfigBackupPreviewOut } from '../models/ConfigBackupPreviewOut';
 import type { ConfigBackupRestoreIn } from '../models/ConfigBackupRestoreIn';
 import type { ConfigBackupRestoreOut } from '../models/ConfigBackupRestoreOut';
+import type { ConfigEditIn } from '../models/ConfigEditIn';
+import type { ConfigEditLeaseOut } from '../models/ConfigEditLeaseOut';
+import type { ConfigEditTokenIn } from '../models/ConfigEditTokenIn';
 import type { CultivatePreviewIn } from '../models/CultivatePreviewIn';
 import type { CultivatePreviewOut } from '../models/CultivatePreviewOut';
 import type { DispatchIn } from '../models/DispatchIn';
+import type { EmulatorCreateIn } from '../models/EmulatorCreateIn';
 import type { EmulatorCreateOut } from '../models/EmulatorCreateOut';
 import type { EmulatorDeleteIn } from '../models/EmulatorDeleteIn';
 import type { EmulatorGetIn } from '../models/EmulatorGetIn';
@@ -45,6 +49,7 @@ import type { EmulatorOperateIn } from '../models/EmulatorOperateIn';
 import type { EmulatorSearchOut } from '../models/EmulatorSearchOut';
 import type { EmulatorStatusOut } from '../models/EmulatorStatusOut';
 import type { EmulatorUpdateIn } from '../models/EmulatorUpdateIn';
+import type { GameSignAccountCreateIn } from '../models/GameSignAccountCreateIn';
 import type { GameSignAccountCreateOut } from '../models/GameSignAccountCreateOut';
 import type { GameSignAccountDeleteIn } from '../models/GameSignAccountDeleteIn';
 import type { GameSignAccountReorderIn } from '../models/GameSignAccountReorderIn';
@@ -105,17 +110,18 @@ import type { QrCheckIn } from '../models/QrCheckIn';
 import type { QrCheckOut } from '../models/QrCheckOut';
 import type { QrCreateOut } from '../models/QrCreateOut';
 import type { QrSaveIn } from '../models/QrSaveIn';
+import type { QueueCreateIn } from '../models/QueueCreateIn';
 import type { QueueCreateOut } from '../models/QueueCreateOut';
 import type { QueueDeleteIn } from '../models/QueueDeleteIn';
 import type { QueueGetIn } from '../models/QueueGetIn';
 import type { QueueGetOut } from '../models/QueueGetOut';
+import type { QueueItemCreateIn } from '../models/QueueItemCreateIn';
 import type { QueueItemCreateOut } from '../models/QueueItemCreateOut';
 import type { QueueItemDeleteIn } from '../models/QueueItemDeleteIn';
 import type { QueueItemGetIn } from '../models/QueueItemGetIn';
 import type { QueueItemGetOut } from '../models/QueueItemGetOut';
 import type { QueueItemReorderIn } from '../models/QueueItemReorderIn';
 import type { QueueItemUpdateIn } from '../models/QueueItemUpdateIn';
-import type { QueueSetInBase } from '../models/QueueSetInBase';
 import type { QueueUpdateIn } from '../models/QueueUpdateIn';
 import type { ScriptConfigImportIn } from '../models/ScriptConfigImportIn';
 import type { ScriptCreateIn } from '../models/ScriptCreateIn';
@@ -137,6 +143,7 @@ import type { TaskCreateIn } from '../models/TaskCreateIn';
 import type { TaskCreateOut } from '../models/TaskCreateOut';
 import type { TaskRuntimeSnapshot } from '../models/TaskRuntimeSnapshot';
 import type { TaygedoLoginIn } from '../models/TaygedoLoginIn';
+import type { TimeSetCreateIn } from '../models/TimeSetCreateIn';
 import type { TimeSetCreateOut } from '../models/TimeSetCreateOut';
 import type { TimeSetDeleteIn } from '../models/TimeSetDeleteIn';
 import type { TimeSetGetIn } from '../models/TimeSetGetIn';
@@ -150,11 +157,11 @@ import type { UpdateCheckOut } from '../models/UpdateCheckOut';
 import type { UpdateDownloadSnapshot } from '../models/UpdateDownloadSnapshot';
 import type { UserConfigDirIn } from '../models/UserConfigDirIn';
 import type { UserConfigDirOut } from '../models/UserConfigDirOut';
+import type { UserCreateIn } from '../models/UserCreateIn';
 import type { UserCreateOut } from '../models/UserCreateOut';
 import type { UserDeleteIn } from '../models/UserDeleteIn';
 import type { UserGetIn } from '../models/UserGetIn';
 import type { UserGetOut } from '../models/UserGetOut';
-import type { UserInBase } from '../models/UserInBase';
 import type { UserInfrastPlanComboxOut } from '../models/UserInfrastPlanComboxOut';
 import type { UserInfrastPlanSelectIn } from '../models/UserInfrastPlanSelectIn';
 import type { UserInfrastPlanSelectOut } from '../models/UserInfrastPlanSelectOut';
@@ -164,11 +171,11 @@ import type { UserUpdateIn } from '../models/UserUpdateIn';
 import type { VersionOut } from '../models/VersionOut';
 import type { VirtualDisplayCheckOut } from '../models/VirtualDisplayCheckOut';
 import type { VirtualDisplayDetachOut } from '../models/VirtualDisplayDetachOut';
+import type { WebhookCreateIn } from '../models/WebhookCreateIn';
 import type { WebhookCreateOut } from '../models/WebhookCreateOut';
 import type { WebhookDeleteIn } from '../models/WebhookDeleteIn';
 import type { WebhookGetIn } from '../models/WebhookGetIn';
 import type { WebhookGetOut } from '../models/WebhookGetOut';
-import type { WebhookInBase } from '../models/WebhookInBase';
 import type { WebhookTestIn } from '../models/WebhookTestIn';
 import type { WebhookUpdateIn } from '../models/WebhookUpdateIn';
 import type { WebSocketMetaOut } from '../models/WebSocketMetaOut';
@@ -241,6 +248,82 @@ export class Service {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/core/close',
+        });
+    }
+    /**
+     * 获取配置编辑租约
+     * @param requestBody
+     * @returns ConfigEditLeaseOut Successful Response
+     * @throws ApiError
+     */
+    public static acquireConfigEditLeaseApiConfigEditAcquirePost(
+        requestBody: ConfigEditIn,
+    ): CancelablePromise<ConfigEditLeaseOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/config-edit/acquire',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 续租配置编辑租约
+     * @param requestBody
+     * @returns ConfigEditLeaseOut Successful Response
+     * @throws ApiError
+     */
+    public static renewConfigEditLeaseApiConfigEditRenewPost(
+        requestBody: ConfigEditTokenIn,
+    ): CancelablePromise<ConfigEditLeaseOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/config-edit/renew',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 释放配置编辑租约
+     * @param requestBody
+     * @returns ConfigEditLeaseOut Successful Response
+     * @throws ApiError
+     */
+    public static releaseConfigEditLeaseApiConfigEditReleasePost(
+        requestBody: ConfigEditTokenIn,
+    ): CancelablePromise<ConfigEditLeaseOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/config-edit/release',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 查询配置编辑锁状态
+     * @param requestBody
+     * @returns ConfigEditLeaseOut Successful Response
+     * @throws ApiError
+     */
+    public static getConfigEditStatusApiConfigEditStatusPost(
+        requestBody: ConfigEditIn,
+    ): CancelablePromise<ConfigEditLeaseOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/config-edit/status',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
         });
     }
     /**
@@ -651,7 +734,7 @@ export class Service {
      * @throws ApiError
      */
     public static addUserApiScriptsUserAddPost(
-        requestBody: UserInBase,
+        requestBody: UserCreateIn,
     ): CancelablePromise<UserCreateOut> {
         return __request(OpenAPI, {
             method: 'POST',
@@ -928,7 +1011,7 @@ export class Service {
      * @throws ApiError
      */
     public static addWebhookApiScriptsWebhookAddPost(
-        requestBody: WebhookInBase,
+        requestBody: WebhookCreateIn,
     ): CancelablePromise<WebhookCreateOut> {
         return __request(OpenAPI, {
             method: 'POST',
@@ -2811,13 +2894,21 @@ export class Service {
     }
     /**
      * 添加模拟器项
+     * @param requestBody
      * @returns EmulatorCreateOut Successful Response
      * @throws ApiError
      */
-    public static addEmulatorApiEmulatorAddPost(): CancelablePromise<EmulatorCreateOut> {
+    public static addEmulatorApiEmulatorAddPost(
+        requestBody?: (EmulatorCreateIn | null),
+    ): CancelablePromise<EmulatorCreateOut> {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/emulator/add',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
         });
     }
     /**
@@ -2910,13 +3001,21 @@ export class Service {
     }
     /**
      * 添加调度队列
+     * @param requestBody
      * @returns QueueCreateOut Successful Response
      * @throws ApiError
      */
-    public static addQueueApiQueueAddPost(): CancelablePromise<QueueCreateOut> {
+    public static addQueueApiQueueAddPost(
+        requestBody?: (QueueCreateIn | null),
+    ): CancelablePromise<QueueCreateOut> {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/queue/add',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
         });
     }
     /**
@@ -3002,7 +3101,7 @@ export class Service {
      * @throws ApiError
      */
     public static addTimeSetApiQueueTimeAddPost(
-        requestBody: QueueSetInBase,
+        requestBody: TimeSetCreateIn,
     ): CancelablePromise<TimeSetCreateOut> {
         return __request(OpenAPI, {
             method: 'POST',
@@ -3097,7 +3196,7 @@ export class Service {
      * @throws ApiError
      */
     public static addItemApiQueueItemAddPost(
-        requestBody: QueueSetInBase,
+        requestBody: QueueItemCreateIn,
     ): CancelablePromise<QueueItemCreateOut> {
         return __request(OpenAPI, {
             method: 'POST',
@@ -3386,13 +3485,21 @@ export class Service {
     /**
      * 添加游戏社区账号组
      * 添加游戏社区账号组
+     * @param requestBody
      * @returns GameSignAccountCreateOut Successful Response
      * @throws ApiError
      */
-    public static addGameSignAccountApiToolsSignAccountAddPost(): CancelablePromise<GameSignAccountCreateOut> {
+    public static addGameSignAccountApiToolsSignAccountAddPost(
+        requestBody?: (GameSignAccountCreateIn | null),
+    ): CancelablePromise<GameSignAccountCreateOut> {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/tools/sign/account/add',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
         });
     }
     /**
@@ -3587,13 +3694,21 @@ export class Service {
     }
     /**
      * 添加webhook项
+     * @param requestBody
      * @returns WebhookCreateOut Successful Response
      * @throws ApiError
      */
-    public static addWebhookApiSettingWebhookAddPost(): CancelablePromise<WebhookCreateOut> {
+    public static addWebhookApiSettingWebhookAddPost(
+        requestBody?: (WebhookCreateIn | null),
+    ): CancelablePromise<WebhookCreateOut> {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/setting/webhook/add',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
         });
     }
     /**

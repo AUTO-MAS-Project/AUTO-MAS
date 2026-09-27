@@ -261,8 +261,10 @@ import {
 import { message } from 'ant-design-vue'
 import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
 import { useTaskRuntimeState } from '@/composables/useTaskRuntimeState'
+import { useConfigEditSession } from '@/composables/useConfigEditSession'
 
 const { t } = useI18n()
+const { ensureConfigEditSession, markConfigEditSaved } = useConfigEditSession()
 
 defineOptions({ name: 'QueueManager' })
 
@@ -586,9 +588,12 @@ const handleAfterAccomplishDelayBlur = async () => {
 // 添加队列
 const handleAddQueue = async () => {
   try {
-    const response = await Service.addQueueApiQueueAddPost()
+    const editSession = await ensureConfigEditSession('QueueConfig')
+    if (!editSession) return
+    const response = await Service.addQueueApiQueueAddPost(editSession)
 
     if (response.code === 200 && response.queueId) {
+      await markConfigEditSaved('QueueConfig')
       // 播放添加队列成功音频
       const { useAudioPlayer } = await import('@/composables/useAudioPlayer')
       const { playSound } = useAudioPlayer()
@@ -625,9 +630,12 @@ const handleAddQueue = async () => {
 // 删除队列
 const handleRemoveQueue = async (queueId: string) => {
   try {
-    const response = await Service.deleteQueueApiQueueDeletePost({ queueId })
+    const editSession = await ensureConfigEditSession('QueueConfig')
+    if (!editSession) return
+    const response = await Service.deleteQueueApiQueueDeletePost({ queueId, ...editSession })
 
     if (response.code === 200) {
+      await markConfigEditSaved('QueueConfig')
       // 播放删除队列成功音频
       const { useAudioPlayer } = await import('@/composables/useAudioPlayer')
       const { playSound } = useAudioPlayer()
@@ -726,6 +734,9 @@ const handleSaveChange = async (key: string, value: any): Promise<boolean> => {
   if (!activeQueueId.value) return false
 
   try {
+    const editSession = await ensureConfigEditSession('QueueConfig')
+    if (!editSession) return false
+
     // 构建只包含变更字段的数据
     const queueData: Record<string, any> = {
       Info: { [key]: value },
@@ -734,6 +745,7 @@ const handleSaveChange = async (key: string, value: any): Promise<boolean> => {
     const response = await Service.updateQueueApiQueueUpdatePost({
       queueId: activeQueueId.value,
       data: queueData,
+      ...editSession,
     })
 
     if (response.code !== 200) {
@@ -744,6 +756,7 @@ const handleSaveChange = async (key: string, value: any): Promise<boolean> => {
     }
 
     // 保存成功：更新接口不带最新 Info，本地应用这次变更即可，不再整份回读
+    await markConfigEditSaved('QueueConfig')
     applyLocalQueueChange(key, value)
     return true
   } catch (error) {

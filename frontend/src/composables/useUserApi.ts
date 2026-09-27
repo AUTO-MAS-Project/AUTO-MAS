@@ -3,7 +3,7 @@ import { message } from 'ant-design-vue'
 import { translate as t } from '@/i18n'
 import { Service } from '@/api'
 import type {
-  UserInBase,
+  UserCreateIn,
   UserCreateOut,
   UserUpdateIn,
   UserDeleteIn,
@@ -13,6 +13,7 @@ import type {
 } from '@/api'
 import { useAudioPlayer } from '@/composables/useAudioPlayer'
 import { getTaskRuntimeStates } from '@/composables/useTaskRuntimeState'
+import { useConfigEditSession } from '@/composables/useConfigEditSession'
 import { isScriptConfigLocked } from '@/utils/scriptConfigLock'
 
 const logger = window.electronAPI.getLogger('用户API')
@@ -25,6 +26,7 @@ export function useUserApi() {
   const loading = ref(false)
   const error = ref<string | null>(null)
   const addUserErrorCode = ref<number | null>(null)
+  const { ensureConfigEditSession, markConfigEditSaved } = useConfigEditSession()
 
   // 添加用户
   const addUser = async (
@@ -45,8 +47,11 @@ export function useUserApi() {
     const showError = options.showError ?? true
 
     try {
-      const requestData: UserInBase = {
+      const editSession = await ensureConfigEditSession('ScriptConfig')
+      if (!editSession) return null
+      const requestData: UserCreateIn = {
         scriptId,
+        ...editSession,
       }
 
       const response = await Service.addUserApiScriptsUserAddPost(requestData)
@@ -56,6 +61,7 @@ export function useUserApi() {
         const errorMsg = response.message || '添加用户失败'
         throw new Error(errorMsg)
       }
+      await markConfigEditSaved('ScriptConfig')
 
       // 播放添加用户成功音频
       const { playSound } = useAudioPlayer()
@@ -91,10 +97,14 @@ export function useUserApi() {
     error.value = null
 
     try {
+      const editSession = await ensureConfigEditSession('ScriptConfig')
+      if (!editSession) return false
+
       const requestData: UserUpdateIn = {
         scriptId,
         userId,
         data: userData,
+        ...editSession,
       }
 
       logger.debug('发送更新用户请求')
@@ -108,6 +118,7 @@ export function useUserApi() {
         throw new Error(errorMsg)
       }
 
+      await markConfigEditSaved('ScriptConfig')
       return true
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : '更新用户失败'
@@ -166,9 +177,12 @@ export function useUserApi() {
     error.value = null
 
     try {
+      const editSession = await ensureConfigEditSession('ScriptConfig')
+      if (!editSession) return false
       const requestData: UserDeleteIn = {
         scriptId,
         userId,
+        ...editSession,
       }
 
       const response = await Service.deleteUserApiScriptsUserDeletePost(requestData)
@@ -178,6 +192,7 @@ export function useUserApi() {
         message.error(errorMsg)
         throw new Error(errorMsg)
       }
+      await markConfigEditSaved('ScriptConfig')
 
       // 播放删除用户成功音频
       const { playSound } = useAudioPlayer()
@@ -209,9 +224,12 @@ export function useUserApi() {
     error.value = null
 
     try {
+      const editSession = await ensureConfigEditSession('ScriptConfig')
+      if (!editSession) return false
       const requestData: UserReorderIn = {
         scriptId,
         indexList: userIds,
+        ...editSession,
       }
 
       const response = await Service.reorderUserApiScriptsUserOrderPost(requestData)
@@ -221,6 +239,7 @@ export function useUserApi() {
         message.error(errorMsg)
         throw new Error(errorMsg)
       }
+      await markConfigEditSaved('ScriptConfig')
 
       return true
     } catch (err) {

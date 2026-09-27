@@ -2,7 +2,7 @@
  * Runtime 后端监督链路的灰度开关与可执行文件定位
  *
  * 灰度期同时存在两条后端启动链路：
- * - `off`（默认）：Electron 自己 spawn `python.exe`，就绪靠健康检查，停止靠 scoped taskkill；
+ * - `off`：Electron 自己 spawn `python.exe`，就绪靠健康检查，停止靠 scoped taskkill；
  * - `development` / `managed`：交给 `auto-mas-runtime.exe backend supervise` 监督。
  *
  * 一次生命周期只走一条链路：模式非 `off` 却找不到可执行文件时，按 `RUNTIME_NOT_FOUND`
@@ -12,8 +12,8 @@
  * 1. 环境变量 `AUTO_MAS_RUNTIME_MODE`；
  * 2. 设置界面持久化的用户选择（`<appRoot>/config/frontend_config.json` 的
  *    `Runtime.LaunchMode`，与 `main.ts` 的 `loadConfig()/saveConfig()` 同一份文件）；
- * 3. 构建默认值：打包安装且已捆绑 Runtime 时默认 `managed`，否则 `off`——即打包安装且带
- *    Runtime 的用户默认走新链路，开发者跑源码默认仍走旧链路，除非显式设了环境变量。
+ * 3. 构建默认值：源码开发默认 `development`；打包安装且已捆绑 Runtime 时默认 `managed`，
+ *    打包安装但缺少 Runtime 时保留 `off` 兼容回退。
  *
  * 任一级取值非法都记 warning 后落到下一级，不再像早前只有环境变量一级时那样直接判 `off`。
  */
@@ -135,10 +135,11 @@ function readPersistedLaunchMode(appRoot: string): string | undefined {
   }
 }
 
-/** 构建默认值：打包安装且已捆绑 Runtime 才默认切新链路，源码开发默认走旧链路。 */
+/** 构建默认值：源码开发走 development；打包安装仅在捆绑 Runtime 时走 managed。 */
 function resolveBuildDefaultLaunchMode(): RuntimeLaunchMode {
   const packaged = Boolean(app?.isPackaged)
-  return packaged && resolveRuntimeExecutable() !== null ? 'managed' : 'off'
+  if (!packaged) return 'development'
+  return resolveRuntimeExecutable() !== null ? 'managed' : 'off'
 }
 
 /**
@@ -226,7 +227,8 @@ export function recoverRuntimeBackup(runtimePath: string): boolean {
  * 定位 `auto-mas-runtime.exe`。
  *
  * 优先用环境变量显式指定的路径，其次查安装包捆绑位置 `process.resourcesPath`；捆绑位置
- * 缺失但留有随本体更新的备份时先把备份改回来（见 {@link recoverRuntimeBackup}）。
+ * 缺失但留有随本体更新的备份时先把备份改回来（见 {@link recoverRuntimeBackup}）。源码开发时
+ * 最后查找仓库同级的本地 Runtime 构建产物。
  * 尚未捆绑时返回 null，由调用方转成 `RUNTIME_NOT_FOUND`。
  */
 export function resolveRuntimeExecutable(): string | null {
@@ -244,6 +246,21 @@ export function resolveRuntimeExecutable(): string | null {
     const bundled = path.join(resourcesPath, RUNTIME_EXECUTABLE_NAME)
     if (isExistingFile(bundled) || recoverRuntimeBackup(bundled)) {
       return bundled
+    }
+  }
+
+  // 源码开发的约定布局：AUTO-MAS 与 AUTO-MAS-Runtime 并列检出，
+  // Runtime 按 scripts/README.md 构建到其 bin 目录。只在当前源码根可识别时
+  // 探测，避免打包环境意外拾取用户目录中的同名文件。
+  if (app?.isPackaged) return null
+  const sourceRoot = path.resolve(__dirname, '../../../..')
+  const localDevelopmentRuntimes = [
+    path.join(sourceRoot, 'AUTO-MAS-Runtime', 'bin', RUNTIME_EXECUTABLE_NAME),
+    path.join(sourceRoot, '..', 'AUTO-MAS-Runtime', 'bin', RUNTIME_EXECUTABLE_NAME),
+  ]
+  for (const localDevelopmentRuntime of localDevelopmentRuntimes) {
+    if (isExistingFile(localDevelopmentRuntime)) {
+      return localDevelopmentRuntime
     }
   }
 

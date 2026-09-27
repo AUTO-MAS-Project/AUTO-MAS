@@ -35,6 +35,8 @@ from fastapi import APIRouter, Body
 from pydantic import BaseModel, Field
 
 from app.core import Config
+from app.core.config_edit import ConfigEditError
+from app.models.schema import ConfigEditSaveMixin
 from app.models.schema import OutBase
 from app.utils.logger import get_logger
 from app.utils.security import format_exception_reason
@@ -70,7 +72,7 @@ class QrCheckOut(OutBase):
     cookies_str: str = Field(default="", description="确认后返回的完整 cookie 字符串")
 
 
-class QrSaveIn(BaseModel):
+class QrSaveIn(ConfigEditSaveMixin):
     account_uid: str = Field(..., description="MAS 账号组 UUID")
     cookie: str
 
@@ -165,7 +167,14 @@ async def qr_save(body: QrSaveIn = Body(...)) -> OutBase:
         cookie = body.cookie
         validate_miyoushe_cookie(cookie)
         data = {"GameSignAccount": {"MiyousheToken": cookie}}
-        await Config.update_game_sign_account(body.account_uid, data)
+        with Config.config_edit_scope(
+            "ToolsConfig",
+            token=body.editLeaseToken,
+            base_version=body.baseVersion,
+        ):
+            await Config.update_game_sign_account(body.account_uid, data)
+    except ConfigEditError as e:
+        return OutBase(code=e.code, status="error", message=e.message)
     except ValueError as e:
         _log_qr_error("保存米游社 Token 校验失败", e)
         return OutBase(

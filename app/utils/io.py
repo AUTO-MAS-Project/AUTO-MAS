@@ -24,15 +24,28 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import socket
 import shutil
 import stat
 import threading
+import time
 import tomllib
-from contextlib import suppress
+from contextlib import contextmanager, suppress
+from contextvars import ContextVar
 from dataclasses import dataclass
 from pathlib import Path
 from time import sleep
-from typing import Any
+from typing import Any, Protocol
+
+try:
+    import msvcrt  # type: ignore[import-not-found]
+except ImportError:  # pragma: no cover - Windows only
+    msvcrt = None
+
+try:
+    import fcntl  # type: ignore[import-not-found]
+except ImportError:  # pragma: no cover - POSIX only
+    fcntl = None
 
 import json5
 import tomli_w
@@ -42,6 +55,34 @@ from .logger import get_logger
 from .tools import decode_bytes
 
 logger = get_logger("路径迁移")
+
+
+class FileWriteGuard(Protocol):
+    """配置保存时可选的资源级写入校验。"""
+
+    paths: tuple[Path, ...]
+
+    def before_write(self, path: Path) -> None:
+        """在原子替换前校验当前写入是否仍被允许。"""
+
+    def after_write(self, path: Path) -> None:
+        """在原子替换成功后推进保存上下文版本。"""
+
+
+_CURRENT_WRITE_GUARD: ContextVar[FileWriteGuard | None] = ContextVar(
+    "current_file_write_guard", default=None
+)
+
+
+@contextmanager
+def file_write_guard(guard: FileWriteGuard):
+    """为现有配置保存链路安装一次资源级写入保护。"""
+
+    token = _CURRENT_WRITE_GUARD.set(guard)
+    try:
+        yield
+    finally:
+        _CURRENT_WRITE_GUARD.reset(token)
 
 
 class ConfigCorruptedError(ValueError):
@@ -116,6 +157,9 @@ _ALIASES: dict[str, str] = {
 
 # 进程内串行锁, 避免并发竞争写
 _WRITE_LOCK = threading.Lock()
+_PROFILE_LOCK_TIMEOUT = 30.0
+_PROFILE_LOCK_GUARD = threading.RLock()
+_PROFILE_LOCKS: dict[str, tuple[Any, int, int]] = {}
 
 # 删除重试: 任务收尾复原紧跟脚本进程结束, 等被占用的句柄释放
 _RMTREE_RETRIES = 5
@@ -212,6 +256,92 @@ def dir_fingerprint(path: Path) -> str:
         digest.update(str(entry.relative_to(path)).encode("utf-8", "surrogatepass"))
         digest.update(str(stat_result.st_size).encode("ascii"))
     return digest.hexdigest()
+
+
+def file_fingerprint(path: Path) -> str:
+    """
+    计算单个文件的内容指纹。
+
+    不存在的文件也返回稳定指纹，避免「空文件」与「缺文件」被误判为同一版本。
+    """
+
+    digest = hashlib.sha256()
+    if not path.exists():
+        digest.update(b"missing\0")
+        digest.update(str(path.name).encode("utf-8", "surrogatepass"))
+        return digest.hexdigest()
+
+    digest.update(b"file\0")
+    digest.update(path.read_bytes())
+    return digest.hexdigest()
+
+
+def file_collection_fingerprint(paths: list[Path] | tuple[Path, ...]) -> str:
+    """
+    计算一组文件的集合指纹。
+
+    集合指纹包含每个文件的归一化绝对路径和单文件指纹，文件顺序不影响结果。
+    """
+
+    digest = hashlib.sha256()
+    for path in sorted(paths, key=lambda item: str(item.resolve()).casefold()):
+        digest.update(str(path.resolve()).encode("utf-8", "surrogatepass"))
+        digest.update(b"\0")
+        digest.update(file_fingerprint(path).encode("ascii"))
+        digest.update(b"\0")
+    return digest.hexdigest()
+
+
+def atomic_write_with_fingerprint(path: Path, data: bytes) -> str:
+    """
+    原子写入并返回写入后的文件指纹。
+
+    Args:
+        path: 目标文件路径。
+        data: 待写入字节。
+
+    Returns:
+        写入完成后的单文件内容指纹。
+    """
+
+    atomic_write(path, data)
+    return file_fingerprint(path)
+
+
+def write_file_with_version(
+    path: Path,
+    payload: dict[str, Any] | str,
+    *,
+    expected_fingerprint: str,
+    encoding: str = "utf-8",
+    format: str | None = None,
+) -> str:
+    """
+    校验当前文件版本后原子写入，并返回新版本指纹。
+
+    Args:
+        path: 文件路径。
+        payload: 待写入内容。
+        expected_fingerprint: 调用方读取或进入编辑时记录的基础指纹。
+        encoding: 文本编码。
+        format: 强制序列化格式。
+
+    Raises:
+        RuntimeError: 当前指纹与预期不一致。
+    """
+
+    _suffix = (format or path.suffix).lower()
+    codec = _CODECS.get(_ALIASES.get(_suffix, _suffix))
+
+    with ProfileFileLock(path.parent / ".automas-profile.lock"):
+        current = file_fingerprint(path)
+        if current != expected_fingerprint:
+            raise RuntimeError("配置已被外部修改，请刷新后再保存")
+        if codec is not None:
+            return atomic_write_with_fingerprint(path, codec[0](payload, encoding))
+        if not isinstance(payload, str):
+            raise ValueError(f"不支持的配置文件格式 `{_suffix}`，且内容非字符串")
+        return atomic_write_with_fingerprint(path, payload.encode(encoding))
 
 
 @dataclass(frozen=True, slots=True)
@@ -520,6 +650,95 @@ def atomic_write(path: Path, data: bytes) -> None:
             raise
 
 
+class ProfileFileLock:
+    """跨进程配置锁，锁文件保留并由操作系统在进程退出时释放。"""
+
+    def __init__(self, path: Path, timeout: float = _PROFILE_LOCK_TIMEOUT) -> None:
+        self.path = path
+        self.timeout = timeout
+        self._handle: Any = None
+        self._key = ""
+        self._reentrant = False
+
+    def __enter__(self) -> "ProfileFileLock":
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self._key = str(self.path.resolve()).casefold() if os.name == "nt" else str(self.path.resolve())
+        with _PROFILE_LOCK_GUARD:
+            local = _PROFILE_LOCKS.get(self._key)
+            if local and local[1] == threading.get_ident():
+                _PROFILE_LOCKS[self._key] = (local[0], local[1], local[2] + 1)
+                self._handle = local[0]
+                self._reentrant = True
+                return self
+        deadline = time.monotonic() + self.timeout
+        while True:
+            with _PROFILE_LOCK_GUARD:
+                local = _PROFILE_LOCKS.get(self._key)
+                local_busy = local is not None and local[1] != threading.get_ident()
+            if local_busy:
+                if time.monotonic() >= deadline:
+                    logger.error(f"配置锁等待超时: {self.path} (local thread owner)")
+                    raise TimeoutError(f"配置锁等待超时: {self.path} (local thread owner)")
+                time.sleep(0.05)
+                continue
+            handle = self.path.open("a+b")
+            try:
+                if self.path.stat().st_size == 0:
+                    handle.write(b"\0")
+                    handle.flush()
+                    os.fsync(handle.fileno())
+                handle.seek(0)
+                if os.name == "nt":
+                    if msvcrt is None:
+                        raise RuntimeError("Windows lock provider is unavailable")
+                    msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+                else:
+                    if fcntl is None:
+                        raise RuntimeError("POSIX lock provider is unavailable")
+                    fcntl.lockf(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB, 1, 0, os.SEEK_SET)
+                handle.seek(0)
+                handle.truncate()
+                owner = {"pid": os.getpid(), "host": socket.gethostname(), "thread": threading.get_ident()}
+                handle.write(json.dumps(owner).encode("utf-8"))
+                handle.flush()
+                os.fsync(handle.fileno())
+                with _PROFILE_LOCK_GUARD:
+                    _PROFILE_LOCKS[self._key] = (handle, threading.get_ident(), 1)
+                self._handle = handle
+                return self
+            except (BlockingIOError, PermissionError, OSError) as exc:
+                handle.close()
+                if time.monotonic() >= deadline:
+                    try:
+                        owner = json.loads(self.path.read_text(encoding="utf-8"))
+                        detail = f"pid={owner.get('pid')}, host={owner.get('host')}"
+                    except (OSError, ValueError):
+                        detail = "unknown owner"
+                    logger.error(f"配置锁等待超时: {self.path} ({detail})")
+                    raise TimeoutError(f"配置锁等待超时: {self.path} ({detail})") from exc
+                time.sleep(0.05)
+
+    def __exit__(self, _type: Any, _value: Any, _traceback: Any) -> None:
+        if self._handle is None:
+            return
+        with _PROFILE_LOCK_GUARD:
+            local = _PROFILE_LOCKS.get(self._key)
+            if local is not None and local[0] is self._handle and local[2] > 1:
+                _PROFILE_LOCKS[self._key] = (local[0], local[1], local[2] - 1)
+                return
+            _PROFILE_LOCKS.pop(self._key, None)
+        try:
+            if os.name == "nt" and msvcrt is not None:
+                self._handle.seek(0)
+                msvcrt.locking(self._handle.fileno(), msvcrt.LK_UNLCK, 1)
+            elif fcntl is not None:
+                fcntl.lockf(self._handle.fileno(), fcntl.LOCK_UN, 1, 0, os.SEEK_SET)
+        except OSError:
+            pass
+        finally:
+            self._handle.close()
+
+
 def read_file(path: Path, *, format: str | None = None) -> dict[str, Any] | str:
     """
     按后缀读取配置文件, 传 ``format`` 可强制改用指定后缀的解析器
@@ -598,12 +817,26 @@ def write_file(
     """
     _suffix = (format or path.suffix).lower()
     codec = _CODECS.get(_ALIASES.get(_suffix, _suffix))
-    if codec is not None:
-        atomic_write(path, codec[0](payload, encoding))
-        return
-    if not isinstance(payload, str):
-        raise ValueError(f"不支持的配置文件格式 `{_suffix}`，且内容非字符串")
-    atomic_write(path, payload.encode(encoding))
+    # 一个 profile 下所有配置文件共用同一把锁，覆盖序列化到原子替换的完整事务。
+    try:
+        with ProfileFileLock(path.parent / ".automas-profile.lock"):
+            guard = _CURRENT_WRITE_GUARD.get()
+            guarded = guard is not None and path in guard.paths
+            if guarded:
+                guard.before_write(path)
+            if codec is not None:
+                atomic_write(path, codec[0](payload, encoding))
+            else:
+                if not isinstance(payload, str):
+                    raise ValueError(f"不支持的配置文件格式 `{_suffix}`，且内容非字符串")
+                atomic_write(path, payload.encode(encoding))
+            if guarded:
+                guard.after_write(path)
+    except TimeoutError:
+        raise
+    except BaseException:
+        logger.exception(f"配置文件保存失败: {path}")
+        raise
 
 
 def migrate_legacy_dir(old_path: Path, new_path: Path) -> bool:

@@ -125,6 +125,10 @@ const negotiateWebSocketUrl = async (): Promise<string> => {
     try {
       httpBase = await window.electronAPI.getApiEndpoint('local')
     } catch (error) {
+      const runtimeMode = await window.electronAPI.getRuntimeLaunchMode?.()
+      if (runtimeMode && runtimeMode.mode !== 'off') {
+        throw error
+      }
       const errorMsg = error instanceof Error ? error.message : String(error)
       logger.warn(`获取 HTTP 端点失败，继续使用当前 OpenAPI.BASE: ${errorMsg}`)
     }

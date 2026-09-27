@@ -8,6 +8,14 @@ import type { GameSignAccountGroupConfig } from './GameSignAccountGroupConfig';
  */
 export type GameSignAccountUpdateIn = {
     /**
+     * 编辑租约令牌
+     */
+    editLeaseToken?: (string | null);
+    /**
+     * 进入编辑时的基础指纹
+     */
+    baseVersion?: (string | null);
+    /**
      * 账号组 UUID
      */
     accountId: string;

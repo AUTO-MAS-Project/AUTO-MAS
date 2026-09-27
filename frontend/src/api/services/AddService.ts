@@ -6,19 +6,22 @@ import type { Emulator2InstanceCreateIn } from '../models/Emulator2InstanceCreat
 import type { Emulator2InstanceCreateOut } from '../models/Emulator2InstanceCreateOut';
 import type { Emulator2PathAddIn } from '../models/Emulator2PathAddIn';
 import type { Emulator2PathAddOut } from '../models/Emulator2PathAddOut';
+import type { EmulatorCreateIn } from '../models/EmulatorCreateIn';
 import type { EmulatorCreateOut } from '../models/EmulatorCreateOut';
 import type { PlanCreateIn } from '../models/PlanCreateIn';
 import type { PlanCreateOut } from '../models/PlanCreateOut';
+import type { QueueCreateIn } from '../models/QueueCreateIn';
 import type { QueueCreateOut } from '../models/QueueCreateOut';
+import type { QueueItemCreateIn } from '../models/QueueItemCreateIn';
 import type { QueueItemCreateOut } from '../models/QueueItemCreateOut';
-import type { QueueSetInBase } from '../models/QueueSetInBase';
 import type { ScriptCreateIn } from '../models/ScriptCreateIn';
 import type { ScriptCreateOut } from '../models/ScriptCreateOut';
+import type { TimeSetCreateIn } from '../models/TimeSetCreateIn';
 import type { TimeSetCreateOut } from '../models/TimeSetCreateOut';
+import type { UserCreateIn } from '../models/UserCreateIn';
 import type { UserCreateOut } from '../models/UserCreateOut';
-import type { UserInBase } from '../models/UserInBase';
+import type { WebhookCreateIn } from '../models/WebhookCreateIn';
 import type { WebhookCreateOut } from '../models/WebhookCreateOut';
-import type { WebhookInBase } from '../models/WebhookInBase';
 import type { CancelablePromise } from '../core/CancelablePromise';
 import { OpenAPI } from '../core/OpenAPI';
 import { request as __request } from '../core/request';
@@ -49,7 +52,7 @@ export class AddService {
      * @throws ApiError
      */
     public static addUserApiScriptsUserAddPost(
-        requestBody: UserInBase,
+        requestBody: UserCreateIn,
     ): CancelablePromise<UserCreateOut> {
         return __request(OpenAPI, {
             method: 'POST',
@@ -68,7 +71,7 @@ export class AddService {
      * @throws ApiError
      */
     public static addWebhookApiScriptsWebhookAddPost(
-        requestBody: WebhookInBase,
+        requestBody: WebhookCreateIn,
     ): CancelablePromise<WebhookCreateOut> {
         return __request(OpenAPI, {
             method: 'POST',
@@ -101,13 +104,21 @@ export class AddService {
     }
     /**
      * 添加模拟器项
+     * @param requestBody
      * @returns EmulatorCreateOut Successful Response
      * @throws ApiError
      */
-    public static addEmulatorApiEmulatorAddPost(): CancelablePromise<EmulatorCreateOut> {
+    public static addEmulatorApiEmulatorAddPost(
+        requestBody?: (EmulatorCreateIn | null),
+    ): CancelablePromise<EmulatorCreateOut> {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/emulator/add',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
         });
     }
     /**
@@ -157,13 +168,21 @@ export class AddService {
     }
     /**
      * 添加调度队列
+     * @param requestBody
      * @returns QueueCreateOut Successful Response
      * @throws ApiError
      */
-    public static addQueueApiQueueAddPost(): CancelablePromise<QueueCreateOut> {
+    public static addQueueApiQueueAddPost(
+        requestBody?: (QueueCreateIn | null),
+    ): CancelablePromise<QueueCreateOut> {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/queue/add',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
         });
     }
     /**
@@ -173,7 +192,7 @@ export class AddService {
      * @throws ApiError
      */
     public static addTimeSetApiQueueTimeAddPost(
-        requestBody: QueueSetInBase,
+        requestBody: TimeSetCreateIn,
     ): CancelablePromise<TimeSetCreateOut> {
         return __request(OpenAPI, {
             method: 'POST',
@@ -192,7 +211,7 @@ export class AddService {
      * @throws ApiError
      */
     public static addItemApiQueueItemAddPost(
-        requestBody: QueueSetInBase,
+        requestBody: QueueItemCreateIn,
     ): CancelablePromise<QueueItemCreateOut> {
         return __request(OpenAPI, {
             method: 'POST',
@@ -206,13 +225,21 @@ export class AddService {
     }
     /**
      * 添加webhook项
+     * @param requestBody
      * @returns WebhookCreateOut Successful Response
      * @throws ApiError
      */
-    public static addWebhookApiSettingWebhookAddPost(): CancelablePromise<WebhookCreateOut> {
+    public static addWebhookApiSettingWebhookAddPost(
+        requestBody?: (WebhookCreateIn | null),
+    ): CancelablePromise<WebhookCreateOut> {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/setting/webhook/add',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
         });
     }
 }

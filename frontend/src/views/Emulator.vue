@@ -21,10 +21,12 @@ import DocLink from '@/components/DocLink.vue'
 import Emulator2Panel from '@/views/Emulator/Emulator2Panel.vue'
 import { MAS_DOC_URLS } from '@/utils/openExternal'
 import { usePerformanceStore } from '@/stores/performance'
+import { useConfigEditSession } from '@/composables/useConfigEditSession'
 const { t } = useI18n()
 
 const logger = window.electronAPI.getLogger('模拟器管理')
 const performanceStore = usePerformanceStore()
+const { ensureConfigEditSession, markConfigEditSaved } = useConfigEditSession()
 
 defineOptions({ name: 'EmulatorManager' })
 
@@ -279,6 +281,18 @@ const buildEditingData = (configData: any): EmulatorInfo => ({
   config_guard: configData?.Info?.ConfigGuard === true,
 })
 
+const saveEmulatorConfig = async (emulatorId: string, data: Record<string, any>) => {
+  const editSession = await ensureConfigEditSession('EmulatorConfig')
+  if (!editSession) return null
+  const response = await Service.updateEmulatorApiEmulatorUpdatePost({
+    emulatorId,
+    data,
+    ...editSession,
+  })
+  if (response.code === 200) await markConfigEditSaved('EmulatorConfig')
+  return response
+}
+
 // 获取当前模拟器的编辑数据
 const getEditingData = (uuid: string): EmulatorInfo => {
   if (!editingDataMap.value.has(uuid)) {
@@ -332,8 +346,11 @@ const loadEmulators = async () => {
 // 添加模拟器
 const handleAdd = async () => {
   try {
-    const response = await Service.addEmulatorApiEmulatorAddPost()
+    const editSession = await ensureConfigEditSession('EmulatorConfig')
+    if (!editSession) return
+    const response = await Service.addEmulatorApiEmulatorAddPost(editSession)
     if (response.code === 200) {
+      await markConfigEditSaved('EmulatorConfig')
       await loadEmulators()
       // 自动切换到新模拟器
       activeKey.value = response.emulatorId
@@ -433,10 +450,8 @@ const handleSaveChange = async (uuid: string, key: string, value: any) => {
       configData = { Info: { ForceKillBeforeLaunch: value } }
     }
 
-    const response = await Service.updateEmulatorApiEmulatorUpdatePost({
-      emulatorId: uuid,
-      data: configData,
-    })
+    const response = await saveEmulatorConfig(uuid, configData)
+    if (!response) return
 
     if (response.code === 200) {
       logger.info(`配置已保存: ${key}`)
@@ -457,10 +472,14 @@ const handleSaveChange = async (uuid: string, key: string, value: any) => {
 // 删除模拟器
 const handleDelete = async (uuid: string) => {
   try {
+    const editSession = await ensureConfigEditSession('EmulatorConfig')
+    if (!editSession) return
     const response = await Service.deleteEmulatorApiEmulatorDeletePost({
       emulatorId: uuid,
+      ...editSession,
     })
     if (response.code === 200) {
+      await markConfigEditSaved('EmulatorConfig')
       // 如果删除的是当前激活的 Tab，需要跳转到其他 Tab
       if (activeKey.value === uuid) {
         const currentIndex = emulatorIndex.value.findIndex(e => e.uid === uuid)
@@ -515,12 +534,13 @@ const handleSearch = async () => {
 // 从搜索结果导入
 const handleImportFromSearch = async (result: EmulatorSearchResult) => {
   try {
-    const response = await Service.addEmulatorApiEmulatorAddPost()
+    const editSession = await ensureConfigEditSession('EmulatorConfig')
+    if (!editSession) return
+    const response = await Service.addEmulatorApiEmulatorAddPost(editSession)
     if (response.code === 200) {
+      await markConfigEditSaved('EmulatorConfig')
       // 更新新添加的模拟器配置，使用分组结构
-      const updateResponse = await Service.updateEmulatorApiEmulatorUpdatePost({
-        emulatorId: response.emulatorId,
-        data: {
+      const updateResponse = await saveEmulatorConfig(response.emulatorId, {
           Info: {
             Name: result.name,
             Type: result.type as 'general' | 'mumu' | 'ldplayer',
@@ -528,14 +548,13 @@ const handleImportFromSearch = async (result: EmulatorSearchResult) => {
             MaxWaitTime: 300,
             BossKey: JSON.stringify([]),
           },
-        },
       })
-      if (updateResponse.code === 200) {
+      if (updateResponse?.code === 200) {
         message.success(t('emulator.toast.importOk'))
         await loadEmulators()
         showSearchModal.value = false
       } else {
-        message.error(updateResponse.message || t('emulator.toast.importFailed'))
+        message.error(updateResponse?.message || t('emulator.toast.importFailed'))
       }
     } else {
       message.error(response.message || t('emulator.toast.importFailed'))

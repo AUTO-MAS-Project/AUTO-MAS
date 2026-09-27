@@ -1,10 +1,12 @@
 import { ref } from 'vue'
 import { message } from 'ant-design-vue'
 import { GetService, UpdateService, type GlobalConfig } from '@/api'
+import { useConfigEditSession } from '@/composables/useConfigEditSession'
 
 export function useSettingsApi() {
   const loading = ref(false)
   const error = ref<string | null>(null)
+  const { ensureConfigEditSession, markConfigEditSaved } = useConfigEditSession()
 
   // 获取设置
   const getSettings = async (): Promise<GlobalConfig | null> => {
@@ -40,8 +42,12 @@ export function useSettingsApi() {
     error.value = null
 
     try {
+      const editSession = await ensureConfigEditSession('Config')
+      if (!editSession) return false
+
       const response = await UpdateService.updateScriptApiSettingUpdatePost({
         data: settings,
+        ...editSession,
       })
 
       // 根据code判断是否成功（非200就是不成功）
@@ -51,6 +57,7 @@ export function useSettingsApi() {
         throw new Error(errorMsg)
       }
 
+      await markConfigEditSaved('Config')
       return true
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : '设置修改失败'

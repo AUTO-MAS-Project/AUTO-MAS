@@ -29,6 +29,7 @@ import sqlite3
 import sys
 import time
 import uuid
+from contextlib import contextmanager
 from collections import defaultdict
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -103,6 +104,11 @@ from app.models.config import (
     read_maa_config,
 )
 from app.models.schema import PlanComboxConsumer
+from .config_edit import (
+    ConfigEditLease,
+    ConfigEditLeaseService,
+    ConfigEditResource,
+)
 from app.task.M9A.migration import (
     migrate_legacy_m9a_scripts,
     normalize_m9a_managed_entries,
@@ -120,7 +126,13 @@ from app.utils.constants import (
     UTC8,
     game_now,
 )
-from app.utils.io import ConfigCorruptedError, force_rmtree, write_file
+from app.utils.io import (
+    ConfigCorruptedError,
+    file_write_guard,
+    file_collection_fingerprint,
+    force_rmtree,
+    write_file,
+)
 from app.utils.paths import SOURCE_ROOT
 from app.utils.platform import IS_WINDOWS
 
@@ -384,6 +396,8 @@ class AppConfig(GlobalConfig):
         self._maa_item_name_cache: dict[Path, tuple[int, dict[str, str]]] = {}
         self._game_sign_result_date = ""
         self._community_account_add_lock = asyncio.Lock()
+        self._config_edit_service = ConfigEditLeaseService(self.database_path)
+        self._config_file_versions: dict[str, str] = {}
 
         self._inject_truststore()
 
@@ -459,6 +473,7 @@ class AppConfig(GlobalConfig):
         """初始化配置管理"""
 
         await self.check_data()
+        self._config_edit_service.init_schema()
 
         await self.connect(self.config_path / "Config.json")
         await self.EmulatorConfig.connect(self.config_path / "EmulatorConfig.json")
@@ -532,6 +547,141 @@ class AppConfig(GlobalConfig):
         self.loop = asyncio.get_running_loop()
 
         logger.info("程序初始化完成")
+        self._remember_config_file_versions()
+
+    def _config_resource_map(self) -> dict[str, ConfigEditResource]:
+        return {
+            "Config": ConfigEditResource(
+                "Config", (self.config_path / "Config.json",)
+            ),
+            "EmulatorConfig": ConfigEditResource(
+                "EmulatorConfig", (self.config_path / "EmulatorConfig.json",)
+            ),
+            "PlanConfig": ConfigEditResource(
+                "PlanConfig", (self.config_path / "PlanConfig.json",)
+            ),
+            "ScriptConfig": ConfigEditResource(
+                "ScriptConfig", (self.config_path / "ScriptConfig.json",)
+            ),
+            "QueueConfig": ConfigEditResource(
+                "QueueConfig", (self.config_path / "QueueConfig.json",)
+            ),
+            "ToolsConfig": ConfigEditResource(
+                "ToolsConfig",
+                (
+                    self.config_path / "ToolsConfig.json",
+                    self.config_path / "GameSignAccounts.json",
+                ),
+            ),
+        }
+
+    def config_edit_resource(self, resource_key: str) -> ConfigEditResource:
+        try:
+            return self._config_resource_map()[resource_key]
+        except KeyError as exc:
+            raise ValueError(f"未知配置资源: {resource_key}") from exc
+
+    def acquire_config_edit_lease(self, resource_key: str) -> ConfigEditLease:
+        return self._config_edit_service.acquire(
+            self.config_edit_resource(resource_key)
+        )
+
+    def renew_config_edit_lease(
+        self, resource_key: str, token: str
+    ) -> ConfigEditLease:
+        return self._config_edit_service.renew(
+            self.config_edit_resource(resource_key), token
+        )
+
+    def release_config_edit_lease(self, resource_key: str, token: str) -> bool:
+        return self._config_edit_service.release(resource_key, token)
+
+    def get_config_edit_status(
+        self, resource_key: str
+    ) -> ConfigEditLease | None:
+        return self._config_edit_service.status(
+            self.config_edit_resource(resource_key)
+        )
+
+    def assert_config_save_allowed(
+        self,
+        resource_key: str,
+        *,
+        token: str | None,
+        base_version: str | None,
+    ) -> None:
+        self._config_edit_service.assert_save_allowed(
+            self.config_edit_resource(resource_key),
+            token=token,
+            base_version=base_version,
+        )
+
+    @contextmanager
+    def config_edit_scope(
+        self,
+        resource_key: str,
+        *,
+        token: str | None,
+        base_version: str | None,
+    ):
+        """在原有配置业务接口执行期间启用资源级保存校验。
+
+        入口校验用于尽早返回租约错误；真正的版本校验仍由 ``write_file``
+        在持有 profile 文件锁时执行，避免校验与原子写入之间出现竞态。
+        """
+
+        resource = self.config_edit_resource(resource_key)
+        self._config_edit_service.assert_save_allowed(
+            resource, token=token, base_version=base_version
+        )
+        guard = self._config_edit_service.create_write_guard(
+            resource, token=token, base_version=base_version
+        )
+        with file_write_guard(guard):
+            yield
+
+    def _remember_config_file_versions(self) -> None:
+        self._config_file_versions = {
+            key: file_collection_fingerprint(resource.paths)
+            for key, resource in self._config_resource_map().items()
+        }
+
+    def remember_config_file_version(self, resource_key: str) -> None:
+        resource = self.config_edit_resource(resource_key)
+        self._config_file_versions[resource_key] = file_collection_fingerprint(
+            resource.paths
+        )
+
+    async def sync_config_cache_from_files(self) -> None:
+        """共享配置文件变化后刷新本进程缓存。"""
+
+        resources = self._config_resource_map()
+        changed = [
+            key
+            for key, resource in resources.items()
+            if file_collection_fingerprint(resource.paths)
+            != self._config_file_versions.get(key)
+        ]
+        if not changed:
+            return
+
+        logger.info(f"检测到共享配置文件变化，刷新缓存: {changed}")
+        if "Config" in changed:
+            await self.connect(self.config_path / "Config.json")
+        if "EmulatorConfig" in changed:
+            await self.EmulatorConfig.connect(self.config_path / "EmulatorConfig.json")
+        if "PlanConfig" in changed:
+            await self.PlanConfig.connect(self.config_path / "PlanConfig.json")
+        if "ScriptConfig" in changed:
+            await self.ScriptConfig.connect(self.config_path / "ScriptConfig.json")
+        if "QueueConfig" in changed:
+            await self.QueueConfig.connect(self.config_path / "QueueConfig.json")
+        if "ToolsConfig" in changed:
+            await self.ToolsConfig.connect(self.config_path / "ToolsConfig.json")
+            await self.ToolsConfig.GameSign_Accounts.connect(
+                self.config_path / "GameSignAccounts.json"
+            )
+        self._remember_config_file_versions()
 
     async def check_data(self) -> None:
         """检查用户数据文件并处理数据文件版本更新"""
@@ -991,6 +1141,7 @@ class AppConfig(GlobalConfig):
     async def get_script(self, script_id: str | None) -> tuple[list, dict]:
         """获取脚本配置"""
 
+        await self.sync_config_cache_from_files()
         logger.info(f"获取脚本配置: {script_id}")
 
         if script_id is None:
@@ -1057,6 +1208,7 @@ class AppConfig(GlobalConfig):
             raise RuntimeError(f"脚本 {script_id} 正在运行, 无法更新配置项")
 
         await self.ScriptConfig[uid].update(data)
+        self.remember_config_file_version("ScriptConfig")
 
     async def del_script(self, script_id: str) -> None:
         """删除脚本配置"""
@@ -1252,6 +1404,7 @@ class AppConfig(GlobalConfig):
     ) -> tuple[list, dict]:
         """获取用户配置"""
 
+        await self.sync_config_cache_from_files()
         logger.info(f"获取用户配置: {script_id} - {user_id}")
 
         uid = uuid.UUID(script_id)
@@ -3062,6 +3215,7 @@ class AppConfig(GlobalConfig):
             )
 
         await user_config.update(data)
+        self.remember_config_file_version("ScriptConfig")
 
     async def import_script_config_file(
         self, script_id: str, user_id: Optional[str]
@@ -3823,6 +3977,7 @@ class AppConfig(GlobalConfig):
     async def get_plan(self, plan_id: Optional[str]) -> tuple[list, dict]:
         """获取计划表配置"""
 
+        await self.sync_config_cache_from_files()
         logger.info(f"获取计划表配置: {plan_id}")
 
         if plan_id is None:
@@ -3841,6 +3996,7 @@ class AppConfig(GlobalConfig):
         plan_uid = uuid.UUID(plan_id)
 
         await self.PlanConfig[plan_uid].update(data)
+        self.remember_config_file_version("PlanConfig")
 
     async def del_plan(self, plan_id: str) -> None:
         """删除计划表配置"""
@@ -3883,6 +4039,7 @@ class AppConfig(GlobalConfig):
 
     async def get_emulator(self, emulator_id: Optional[str]) -> tuple[list, dict]:
         """获取模拟器配置"""
+        await self.sync_config_cache_from_files()
         logger.info(f"获取全局模拟器设置: {emulator_id}")
 
         if emulator_id is None:
@@ -3910,6 +4067,7 @@ class AppConfig(GlobalConfig):
         logger.info(f"更新模拟器配置: {emulator_id}")
 
         await self.EmulatorConfig[emulator_uid].update(data)
+        self.remember_config_file_version("EmulatorConfig")
 
     async def del_emulator(self, emulator_id: str) -> None:
         """删除模拟器配置"""
@@ -3956,6 +4114,7 @@ class AppConfig(GlobalConfig):
     async def get_queue(self, queue_id: Optional[str]) -> tuple[list, dict]:
         """获取调度队列配置"""
 
+        await self.sync_config_cache_from_files()
         logger.info(f"获取调度队列配置: {queue_id}")
 
         if queue_id is None:
@@ -3980,6 +4139,7 @@ class AppConfig(GlobalConfig):
             self._ensure_cycle_safe(queue_uid, "切换循环开关")
 
         await self.QueueConfig[queue_uid].update(data)
+        self.remember_config_file_version("QueueConfig")
 
     async def del_queue(self, queue_id: str) -> None:
         """删除调度队列配置"""
@@ -3996,6 +4156,7 @@ class AppConfig(GlobalConfig):
     ) -> tuple[list, dict]:
         """获取时间设置配置"""
 
+        await self.sync_config_cache_from_files()
         logger.info(f"获取队列的时间配置: {queue_id} - {time_set_id}")
 
         queue_uid = uuid.UUID(queue_id)
@@ -4029,6 +4190,7 @@ class AppConfig(GlobalConfig):
         time_set_uid = uuid.UUID(time_set_id)
 
         await self.QueueConfig[queue_uid].TimeSet[time_set_uid].update(data)
+        self.remember_config_file_version("QueueConfig")
 
     async def del_time_set(self, queue_id: str, time_set_id: str) -> None:
         """删除时间设置配置"""
@@ -4056,6 +4218,7 @@ class AppConfig(GlobalConfig):
     ) -> tuple[list, dict]:
         """获取队列项配置"""
 
+        await self.sync_config_cache_from_files()
         logger.info(f"获取队列的队列项配置: {queue_id} - {queue_item_id}")
 
         queue_uid = uuid.UUID(queue_id)
@@ -4097,6 +4260,7 @@ class AppConfig(GlobalConfig):
             self._ensure_cycle_safe(queue_uid, "更换队列项的脚本")
 
         await self.QueueConfig[queue_uid].QueueItem[queue_item_uid].update(data)
+        self.remember_config_file_version("QueueConfig")
 
     async def del_queue_item(self, queue_id: str, queue_item_id: str) -> None:
         """删除队列项配置"""
@@ -4142,6 +4306,7 @@ class AppConfig(GlobalConfig):
     async def get_tools(self) -> Dict[str, Any]:
         """获取工具设置"""
 
+        await self.sync_config_cache_from_files()
         logger.debug("获取工具设置")
 
         today = datetime.now(tz=UTC8).strftime("%Y-%m-%d")
@@ -4198,6 +4363,7 @@ class AppConfig(GlobalConfig):
         logger.info("更新工具设置")
 
         await self.ToolsConfig.update(data)
+        self.remember_config_file_version("ToolsConfig")
 
         logger.success("工具设置更新成功")
 
@@ -4288,6 +4454,7 @@ class AppConfig(GlobalConfig):
         if credential_changed:
             await account.set("GameSignAccount", "LastSignDate", "2000-01-01")
             self._clear_game_sign_account_results(account_id)
+        self.remember_config_file_version("ToolsConfig")
 
     async def delete_game_sign_account(self, account_id: str) -> None:
         """删除游戏社区账号组"""
@@ -4308,6 +4475,7 @@ class AppConfig(GlobalConfig):
     async def get_setting(self) -> Dict[str, Any]:
         """获取全局设置"""
 
+        await self.sync_config_cache_from_files()
         logger.info("获取全局设置")
 
         return await self.toDict()
@@ -4318,6 +4486,7 @@ class AppConfig(GlobalConfig):
         logger.info("更新全局设置")
 
         await self.update(data)
+        self.remember_config_file_version("Config")
 
         logger.success("全局设置更新成功")
 
@@ -4417,6 +4586,10 @@ class AppConfig(GlobalConfig):
                         .Notify_CustomWebhooks[webhook_uid]
                         .set(group, name, value)
                     )
+
+        self.remember_config_file_version(
+            "Config" if script_id is None and user_id is None else "ScriptConfig"
+        )
 
     async def del_webhook(
         self, script_id: Optional[str], user_id: Optional[str], webhook_id: str
@@ -4652,6 +4825,7 @@ class AppConfig(GlobalConfig):
     async def get_script_combox(self):
         """获取脚本下拉框信息"""
 
+        await self.sync_config_cache_from_files()
         logger.info("开始获取脚本下拉框信息")
         data = [{"label": "未选择", "value": "-"}]
         for uid, script in self.ScriptConfig.items():
@@ -4668,6 +4842,7 @@ class AppConfig(GlobalConfig):
     async def get_task_combox(self):
         """获取任务下拉框信息"""
 
+        await self.sync_config_cache_from_files()
         logger.info("开始获取任务下拉框信息")
         data = [{"label": "未选择", "value": None}]
         for uid, queue in self.QueueConfig.items():
@@ -4692,6 +4867,7 @@ class AppConfig(GlobalConfig):
     async def get_plan_combox(self, consumer: PlanComboxConsumer):
         """获取指定消费方的计划下拉框信息"""
 
+        await self.sync_config_cache_from_files()
         consumer_config = next(
             (item for item in PLAN_BOOK.values() if item["consumer"] == consumer), None
         )
@@ -4711,6 +4887,7 @@ class AppConfig(GlobalConfig):
     async def get_emulator_combox(self):
         """获取模拟器下拉框信息"""
 
+        await self.sync_config_cache_from_files()
         logger.info("开始获取模拟器下拉框信息")
         data = [{"label": "未选择", "value": "-"}]
         for uid, emulator in self.EmulatorConfig.items():
@@ -4721,6 +4898,7 @@ class AppConfig(GlobalConfig):
     async def get_emulator_devices_combox(self, emulator_id: str):
         """获取模拟器多开实例下拉框信息"""
 
+        await self.sync_config_cache_from_files()
         logger.info("开始获取模拟器下拉框信息")
 
         if emulator_id == "-":

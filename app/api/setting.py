@@ -29,6 +29,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from starlette.background import BackgroundTask
 
 from app.core import Config, notify_channels
+from app.core.config_edit import ConfigEditError
 from app.core.notify import send_test_notification
 from app.models.config import Webhook as WebhookConfig
 from app.models.schema import (
@@ -47,6 +48,7 @@ from app.models.schema import (
     VirtualDisplayCheckResultItem,
     VirtualDisplayDetachOut,
     Webhook,
+    WebhookCreateIn,
     WebhookCreateOut,
     WebhookDeleteIn,
     WebhookGetIn,
@@ -62,6 +64,16 @@ from app.utils import debug_pattern, get_logger
 router = APIRouter(prefix="/api/setting", tags=["全局设置"])
 logger = get_logger("全局设置")
 backup_lock = asyncio.Lock()
+
+
+def _config_edit_scope(payload: SettingUpdateIn | WebhookCreateIn | WebhookUpdateIn | WebhookDeleteIn | None):
+    if payload is None:
+        raise ConfigEditError(409, "配置编辑锁已失效，请重新进入编辑页")
+    return Config.config_edit_scope(
+        "Config",
+        token=payload.editLeaseToken,
+        base_version=payload.baseVersion,
+    )
 
 
 @router.get(
@@ -137,9 +149,12 @@ async def update_script(script: SettingUpdateIn = Body(...)) -> OutBase:
     """更新配置"""
 
     try:
-        data = script.data.model_dump(exclude_unset=True)
-        await Config.update_setting(data)
+        with _config_edit_scope(script):
+            data = script.data.model_dump(exclude_unset=True)
+            await Config.update_setting(data)
 
+    except ConfigEditError as e:
+        return OutBase(code=e.code, status="error", message=e.message)
     except Exception as e:
         logger.opt(exception=True).warning(
             f"update_script失败: {type(e).__name__}: {e}"
@@ -311,10 +326,21 @@ async def get_webhook(webhook: WebhookGetIn = Body(...)) -> WebhookGetOut:
     response_model=WebhookCreateOut,
     status_code=200,
 )
-async def add_webhook() -> WebhookCreateOut:
+async def add_webhook(
+    webhook: WebhookCreateIn | None = Body(default=None),
+) -> WebhookCreateOut:
     try:
-        uid, config = await Config.add_webhook(None, None)
+        with _config_edit_scope(webhook):
+            uid, config = await Config.add_webhook(None, None)
         data = Webhook(**(await config.toDict()))
+    except ConfigEditError as e:
+        return WebhookCreateOut(
+            code=e.code,
+            status="error",
+            message=e.message,
+            webhookId="",
+            data=Webhook(**{}),
+        )
     except Exception as e:
         logger.opt(exception=True).warning(f"add_webhook失败: {type(e).__name__}: {e}")
         return WebhookCreateOut(
@@ -336,9 +362,12 @@ async def add_webhook() -> WebhookCreateOut:
 )
 async def update_webhook(webhook: WebhookUpdateIn = Body(...)) -> OutBase:
     try:
-        await Config.update_webhook(
-            None, None, webhook.webhookId, webhook.data.model_dump(exclude_unset=True)
-        )
+        with _config_edit_scope(webhook):
+            await Config.update_webhook(
+                None, None, webhook.webhookId, webhook.data.model_dump(exclude_unset=True)
+            )
+    except ConfigEditError as e:
+        return OutBase(code=e.code, status="error", message=e.message)
     except Exception as e:
         logger.opt(exception=True).warning(
             f"update_webhook失败: {type(e).__name__}: {e}"
@@ -358,7 +387,10 @@ async def update_webhook(webhook: WebhookUpdateIn = Body(...)) -> OutBase:
 )
 async def delete_webhook(webhook: WebhookDeleteIn = Body(...)) -> OutBase:
     try:
-        await Config.del_webhook(None, None, webhook.webhookId)
+        with _config_edit_scope(webhook):
+            await Config.del_webhook(None, None, webhook.webhookId)
+    except ConfigEditError as e:
+        return OutBase(code=e.code, status="error", message=e.message)
     except Exception as e:
         logger.opt(exception=True).warning(
             f"delete_webhook失败: {type(e).__name__}: {e}"

@@ -8,6 +8,7 @@
  */
 
 import * as path from 'path'
+import * as net from 'net'
 import { app } from 'electron'
 
 // ==================== 常量 ====================
@@ -41,6 +42,17 @@ function parsePort(value: string | undefined): number | undefined {
   return port >= 1 && port <= 65535 ? port : undefined
 }
 
+/** 从 Runtime 实际下发的 HTTP 地址提取端口；解析失败时返回 undefined。 */
+export function parseEndpointPort(endpoint: string | undefined): number | undefined {
+  if (!endpoint) return undefined
+  try {
+    const url = new URL(endpoint)
+    return parsePort(url.port || (url.protocol === 'https:' ? '443' : '80'))
+  } catch {
+    return undefined
+  }
+}
+
 // 解析后端 HTTP/WS 端口：环境变量优先，其次按运行环境分流
 export function resolveHttpPort(): number {
   const configured = parsePort(process.env.AUTO_MAS_HTTP_PORT)
@@ -49,6 +61,39 @@ export function resolveHttpPort(): number {
   }
 
   return isDevelopmentEnvironment() ? DEV_HTTP_PORT : DEFAULT_HTTP_PORT
+}
+
+/** 是否由用户显式配置了端口；显式端口冲突时保持原有失败行为。 */
+export function hasExplicitHttpPort(): boolean {
+  return parsePort(process.env.AUTO_MAS_HTTP_PORT) !== undefined
+}
+
+/** 在回环地址探测端口；默认端口被占用时让内核选择空闲端口。 */
+export async function resolveAvailableHttpPort(preferred = resolveHttpPort()): Promise<number> {
+  const explicit = hasExplicitHttpPort()
+  const probe = (port: number): Promise<number | undefined> =>
+    new Promise(resolve => {
+      const server = net.createServer()
+      server.once('error', () => resolve(undefined))
+      server.listen({ host: '127.0.0.1', port }, () => {
+        const address = server.address()
+        const selected = typeof address === 'object' && address ? address.port : undefined
+        server.close(() => resolve(selected))
+      })
+    })
+
+  const selected = await probe(preferred)
+  if (selected !== undefined || explicit) {
+    if (selected === undefined && explicit) {
+      throw new Error(`配置的后端端口 ${preferred} 已被占用`)
+    }
+    return selected ?? preferred
+  }
+  const fallback = await probe(0)
+  if (fallback === undefined) {
+    throw new Error('无法分配空闲后端端口')
+  }
+  return fallback
 }
 
 // 停止全部任务的全局快捷键，开发环境错开以免与正式版互抢

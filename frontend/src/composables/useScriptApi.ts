@@ -19,6 +19,7 @@ import { useAudioPlayer } from '@/composables/useAudioPlayer'
 import { getTaskRuntimeStates } from '@/composables/useTaskRuntimeState'
 import { isScriptConfigLocked } from '@/utils/scriptConfigLock'
 import { maafwScriptTypeByConfigType, maafwUserConfigTypes } from '@/composables/useMaaFWFlavor'
+import { useConfigEditSession } from '@/composables/useConfigEditSession'
 
 const logger = window.electronAPI.getLogger('脚本API')
 
@@ -74,6 +75,7 @@ const resolveScriptType = (configType: string): ScriptType => {
 export function useScriptApi() {
   const loading = ref(false)
   const error = ref<string | null>(null)
+  const { ensureConfigEditSession, markConfigEditSaved } = useConfigEditSession()
 
   // 添加脚本（支持从已有脚本复制创建）
   const addScript = async (type: ScriptType, scriptId?: string) => {
@@ -81,9 +83,12 @@ export function useScriptApi() {
     error.value = null
 
     try {
+      const editSession = await ensureConfigEditSession('ScriptConfig')
+      if (!editSession) return null
       const requestData: ScriptCreateIn = {
         type: SCRIPT_CREATE_TYPE_BY_SCRIPT_TYPE[type],
         scriptId: scriptId || null,
+        ...editSession,
       }
 
       const response = await Service.addScriptApiScriptsAddPost(requestData)
@@ -93,6 +98,7 @@ export function useScriptApi() {
         message.error(errorMsg)
         throw new Error(errorMsg)
       }
+      await markConfigEditSaved('ScriptConfig')
 
       // 播放添加脚本成功音频
       const { playSound } = useAudioPlayer()
@@ -1491,13 +1497,16 @@ export function useScriptApi() {
     error.value = null
 
     try {
-      const response = await Service.deleteScriptApiScriptsDeletePost({ scriptId })
+      const editSession = await ensureConfigEditSession('ScriptConfig')
+      if (!editSession) return false
+      const response = await Service.deleteScriptApiScriptsDeletePost({ scriptId, ...editSession })
 
       if (response.code !== 200) {
         const errorMsg = response.message || '删除脚本失败'
         message.error(errorMsg)
         throw new Error(errorMsg)
       }
+      await markConfigEditSaved('ScriptConfig')
 
       // 播放删除脚本成功音频
       const { playSound } = useAudioPlayer()
@@ -1532,6 +1541,9 @@ export function useScriptApi() {
     error.value = null
 
     try {
+      const editSession = await ensureConfigEditSession('ScriptConfig')
+      if (!editSession) return false
+
       // 创建数据副本并移除 SubConfigsInfo 字段
       const dataToSend = { ...data }
       delete dataToSend.SubConfigsInfo
@@ -1539,6 +1551,7 @@ export function useScriptApi() {
       const response = await Service.updateScriptApiScriptsUpdatePost({
         scriptId,
         data: dataToSend as ScriptUpdateIn['data'],
+        ...editSession,
       })
 
       if (response.code !== 200) {
@@ -1547,6 +1560,7 @@ export function useScriptApi() {
         throw new Error(errorMsg)
       }
 
+      await markConfigEditSaved('ScriptConfig')
       return true
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : '更新脚本失败'
@@ -1566,8 +1580,11 @@ export function useScriptApi() {
     error.value = null
 
     try {
+      const editSession = await ensureConfigEditSession('ScriptConfig')
+      if (!editSession) return false
       const requestData: ScriptReorderIn = {
         indexList: scriptIds,
+        ...editSession,
       }
 
       const response = await Service.reorderScriptApiScriptsOrderPost(requestData)
@@ -1577,6 +1594,7 @@ export function useScriptApi() {
         message.error(errorMsg)
         throw new Error(errorMsg)
       }
+      await markConfigEditSaved('ScriptConfig')
 
       return true
     } catch (err) {
@@ -1591,8 +1609,17 @@ export function useScriptApi() {
     }
   }
 
-  const importScriptConfigFile = (scriptId: string, userId: string | null) =>
-    Service.importScriptConfigFileApiScriptsConfigImportPost({ scriptId, userId })
+  const importScriptConfigFile = async (scriptId: string, userId: string | null) => {
+    const editSession = await ensureConfigEditSession('ScriptConfig')
+    if (!editSession) return null
+    const response = await Service.importScriptConfigFileApiScriptsConfigImportPost({
+      scriptId,
+      userId,
+      ...editSession,
+    })
+    if (response.code === 200) await markConfigEditSaved('ScriptConfig')
+    return response
+  }
 
   return {
     loading,

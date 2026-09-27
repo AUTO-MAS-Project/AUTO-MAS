@@ -8,6 +8,14 @@ export type QueueItemDeleteIn = {
      */
     queueId: string;
     /**
+     * 编辑租约令牌
+     */
+    editLeaseToken?: (string | null);
+    /**
+     * 进入编辑时的基础指纹
+     */
+    baseVersion?: (string | null);
+    /**
      * 队列项ID
      */
     queueItemId: string;

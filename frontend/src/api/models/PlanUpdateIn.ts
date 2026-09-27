@@ -7,6 +7,14 @@ import type { MaaPlanConfig } from './MaaPlanConfig';
 import type { MSSPlanConfig_Input } from './MSSPlanConfig_Input';
 export type PlanUpdateIn = {
     /**
+     * 编辑租约令牌
+     */
+    editLeaseToken?: (string | null);
+    /**
+     * 进入编辑时的基础指纹
+     */
+    baseVersion?: (string | null);
+    /**
      * 计划ID
      */
     planId: string;

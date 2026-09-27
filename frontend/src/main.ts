@@ -63,8 +63,18 @@ if (window.electronAPI?.getApiEndpoint) {
       logger.info('前端应用开始初始化')
       logger.info(`API基础URL: ${OpenAPI.BASE}`)
     })
-    .catch(error => {
+    .catch(async error => {
       const errorMsg = error instanceof Error ? error.message : String(error)
+      try {
+        const runtimeMode = await window.electronAPI.getRuntimeLaunchMode()
+        if (runtimeMode.mode !== 'off') {
+          logger.warn(`Runtime 后端尚未就绪，等待本实例端点: ${errorMsg}`)
+          return
+        }
+      } catch (modeError) {
+        logger.error(`读取 Runtime 启动方式失败: ${String(modeError)}`)
+        return
+      }
       logger.error(`获取 API 端点失败，使用默认值: ${errorMsg}`)
       OpenAPI.BASE = getDefaultHttpEndpoint()
       logger.info(`API基础URL (默认): ${OpenAPI.BASE}`)

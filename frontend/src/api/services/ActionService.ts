@@ -5,6 +5,9 @@
 import type { ClickImageIn } from '../models/ClickImageIn';
 import type { ClickOut } from '../models/ClickOut';
 import type { ClickTextIn } from '../models/ClickTextIn';
+import type { ConfigEditIn } from '../models/ConfigEditIn';
+import type { ConfigEditLeaseOut } from '../models/ConfigEditLeaseOut';
+import type { ConfigEditTokenIn } from '../models/ConfigEditTokenIn';
 import type { DispatchIn } from '../models/DispatchIn';
 import type { Emulator2DevicesIn } from '../models/Emulator2DevicesIn';
 import type { Emulator2GuardCaptureOut } from '../models/Emulator2GuardCaptureOut';
@@ -30,6 +33,63 @@ import type { CancelablePromise } from '../core/CancelablePromise';
 import { OpenAPI } from '../core/OpenAPI';
 import { request as __request } from '../core/request';
 export class ActionService {
+    /**
+     * 获取配置编辑租约
+     * @param requestBody
+     * @returns ConfigEditLeaseOut Successful Response
+     * @throws ApiError
+     */
+    public static acquireConfigEditLeaseApiConfigEditAcquirePost(
+        requestBody: ConfigEditIn,
+    ): CancelablePromise<ConfigEditLeaseOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/config-edit/acquire',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 续租配置编辑租约
+     * @param requestBody
+     * @returns ConfigEditLeaseOut Successful Response
+     * @throws ApiError
+     */
+    public static renewConfigEditLeaseApiConfigEditRenewPost(
+        requestBody: ConfigEditTokenIn,
+    ): CancelablePromise<ConfigEditLeaseOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/config-edit/renew',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 释放配置编辑租约
+     * @param requestBody
+     * @returns ConfigEditLeaseOut Successful Response
+     * @throws ApiError
+     */
+    public static releaseConfigEditLeaseApiConfigEditReleasePost(
+        requestBody: ConfigEditTokenIn,
+    ): CancelablePromise<ConfigEditLeaseOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/config-edit/release',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
     /**
      * 确认通知
      * @returns OutBase Successful Response

@@ -26,9 +26,11 @@ import asyncio
 from fastapi import APIRouter, Body
 
 from app.core import Config, EmulatorManager
+from app.core.config_edit import ConfigEditError
 from app.models.schema import (
     EmulatorConfig,
     EmulatorConfigIndexItem,
+    EmulatorCreateIn,
     EmulatorCreateOut,
     EmulatorDeleteIn,
     EmulatorGetIn,
@@ -45,6 +47,18 @@ from app.utils.emulator.tools import search_all_emulators
 
 router = APIRouter(prefix="/api/emulator", tags=["模拟器管理"])
 logger = get_logger("模拟器 API")
+
+
+def _config_edit_scope(
+    payload: EmulatorCreateIn | EmulatorUpdateIn | EmulatorDeleteIn | None,
+):
+    if payload is None:
+        raise ConfigEditError(409, "配置编辑锁已失效，请重新进入编辑页")
+    return Config.config_edit_scope(
+        "EmulatorConfig",
+        token=payload.editLeaseToken,
+        base_version=payload.baseVersion,
+    )
 
 
 @router.post(
@@ -78,10 +92,21 @@ async def get_emulator(emulator: EmulatorGetIn = Body(...)) -> EmulatorGetOut:
     response_model=EmulatorCreateOut,
     status_code=200,
 )
-async def add_emulator() -> EmulatorCreateOut:
+async def add_emulator(
+    emulator: EmulatorCreateIn | None = Body(default=None),
+) -> EmulatorCreateOut:
     try:
-        uid, config = await Config.add_emulator()
+        with _config_edit_scope(emulator):
+            uid, config = await Config.add_emulator()
         data = EmulatorConfig(**(await config.toDict()))
+    except ConfigEditError as e:
+        return EmulatorCreateOut(
+            code=e.code,
+            status="error",
+            message=e.message,
+            emulatorId="",
+            data=EmulatorConfig(**{}),
+        )
     except Exception as e:
         logger.opt(exception=True).warning(f"add_emulator失败: {type(e).__name__}: {e}")
         return EmulatorCreateOut(
@@ -103,9 +128,12 @@ async def add_emulator() -> EmulatorCreateOut:
 )
 async def update_emulator(emulator: EmulatorUpdateIn = Body(...)) -> OutBase:
     try:
-        await Config.update_emulator(
-            emulator.emulatorId, emulator.data.model_dump(exclude_unset=True)
-        )
+        with _config_edit_scope(emulator):
+            await Config.update_emulator(
+                emulator.emulatorId, emulator.data.model_dump(exclude_unset=True)
+            )
+    except ConfigEditError as e:
+        return OutBase(code=e.code, status="error", message=e.message)
     except Exception as e:
         logger.opt(exception=True).warning(
             f"update_emulator失败: {type(e).__name__}: {e}"
@@ -125,7 +153,10 @@ async def update_emulator(emulator: EmulatorUpdateIn = Body(...)) -> OutBase:
 )
 async def delete_emulator(emulator: EmulatorDeleteIn = Body(...)) -> OutBase:
     try:
-        await Config.del_emulator(emulator.emulatorId)
+        with _config_edit_scope(emulator):
+            await Config.del_emulator(emulator.emulatorId)
+    except ConfigEditError as e:
+        return OutBase(code=e.code, status="error", message=e.message)
     except Exception as e:
         logger.opt(exception=True).warning(
             f"delete_emulator失败: {type(e).__name__}: {e}"

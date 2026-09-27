@@ -36,6 +36,8 @@ from fastapi import APIRouter, Body
 from pydantic import BaseModel, Field
 
 from app.core import Config
+from app.core.config_edit import ConfigEditError
+from app.models.schema import ConfigEditSaveMixin
 from app.models.schema import OutBase
 from app.utils.logger import get_logger
 from app.utils.security import format_exception_reason
@@ -69,7 +71,7 @@ class SklandQrCheckOut(OutBase):
     scan_code: str = Field(default="", description="确认后返回的短时 scanCode")
 
 
-class SklandQrSaveIn(BaseModel):
+class SklandQrSaveIn(ConfigEditSaveMixin):
     account_uid: str = Field(..., description="MAS 账号组 UUID")
     scan_code: str
 
@@ -158,10 +160,17 @@ async def qr_save(body: SklandQrSaveIn = Body(...)) -> OutBase:
             for field in ("oauthToken", "token", "cred")
         ):
             raise ValueError("森空岛扫码登录未返回完整凭据")
-        await Config.update_game_sign_account(
-            body.account_uid,
-            {"GameSignAccount": {"SklandToken": serialized}},
-        )
+        with Config.config_edit_scope(
+            "ToolsConfig",
+            token=body.editLeaseToken,
+            base_version=body.baseVersion,
+        ):
+            await Config.update_game_sign_account(
+                body.account_uid,
+                {"GameSignAccount": {"SklandToken": serialized}},
+            )
+    except ConfigEditError as e:
+        return OutBase(code=e.code, status="error", message=e.message)
     except ValueError as e:
         _log_qr_error("保存森空岛 Token 校验失败", e)
         return OutBase(

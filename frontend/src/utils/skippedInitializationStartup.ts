@@ -19,7 +19,8 @@ export function startSkippedInitializationStartup(): Promise<void> {
     const api = window.electronAPI
 
     try {
-      if (!import.meta.env.DEV) {
+      const runtimeMode = await api.getRuntimeLaunchMode?.()
+      if (!import.meta.env.DEV || (runtimeMode && runtimeMode.mode !== 'off')) {
         const backendStatus = await api.backendStatus?.().catch(() => null)
 
         if (!backendStatus?.isRunning) {

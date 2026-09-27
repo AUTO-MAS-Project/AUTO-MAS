@@ -106,8 +106,8 @@ export function getBackendService(): BackendService {
 /**
  * 主进程与渲染进程共用的后端端点解析。
  *
- * Runtime 监督链路就绪后必须用它在 `state:running` 事件里下发的 baseUrl（协议 v1 固定
- * 36163），不能再按 `resolveHttpPort()` 的开发/正式分流算端口；旧链路仍走镜像源服务。
+ * Runtime 监督链路就绪后必须用它在 `state:running` 事件里下发的 baseUrl；
+ * 尚未就绪时不能把另一用户占用的默认端口当作本实例后端。
  */
 function resolveApiEndpoints(): ApiEndpoints {
   const initService = getInitService()
@@ -117,6 +117,10 @@ function resolveApiEndpoints(): ApiEndpoints {
     getBackendService().getRuntimeApiEndpoints() ??
     initService.getBackendService().getRuntimeApiEndpoints()
   if (runtimeEndpoints) return runtimeEndpoints
+
+  if (resolveRuntimeLaunchMode(getAppRoot()) !== 'off') {
+    throw new Error('Runtime 后端尚未就绪')
+  }
 
   return initService.getMirrorService().getApiEndpoints()
 }

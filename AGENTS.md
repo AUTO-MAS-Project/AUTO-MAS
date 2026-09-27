@@ -4,6 +4,7 @@
 
 - 开发、贡献、分支、提交、版本记录、Issue/PR 正文：<https://doc.auto-mas.top/developer/>
 - 项目附属 Agent Skills：[.agents/skills](.agents/skills)
+- 配置并发编辑与运行快照设计：[docs/developer/config-edit-concurrency.md](docs/developer/config-edit-concurrency.md)
 
 若本文件与文档站或 [.agents/skills](.agents/skills) 冲突，以文档站和 [.agents/skills](.agents/skills) 为准。
 

@@ -1,6 +1,7 @@
 import { ref } from 'vue'
 import { message } from 'ant-design-vue'
 import { Service } from '@/api'
+import { useConfigEditSession } from '@/composables/useConfigEditSession'
 
 export interface WebConfigTemplate {
   configName: string
@@ -27,6 +28,7 @@ const isWebConfigResponseData = (value: unknown): value is WebConfigResponse['da
 export function useTemplateApi() {
   const loading = ref(false)
   const error = ref<string | null>(null)
+  const { ensureConfigEditSession, markConfigEditSaved } = useConfigEditSession()
 
   // 获取Web配置模板列表
   const getWebConfigTemplates = async (): Promise<WebConfigTemplate[]> => {
@@ -62,9 +64,12 @@ export function useTemplateApi() {
     error.value = null
 
     try {
+      const editSession = await ensureConfigEditSession('ScriptConfig')
+      if (!editSession) return false
       const response = await Service.importScriptFromWebApiScriptsImportWebPost({
         scriptId,
         url,
+        ...editSession,
       })
 
       if (response.code !== 200) {
@@ -73,6 +78,7 @@ export function useTemplateApi() {
         throw new Error(errorMsg)
       }
 
+      await markConfigEditSaved('ScriptConfig')
       return true
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : '导入配置失败'

@@ -49,6 +49,34 @@ class InfoOut(OutBase):
     data: Dict[str, Any] = Field(..., description="收到的服务器数据")
 
 
+class ConfigEditIn(BaseModel):
+    resourceKey: Literal[
+        "Config",
+        "EmulatorConfig",
+        "PlanConfig",
+        "ScriptConfig",
+        "QueueConfig",
+        "ToolsConfig",
+    ] = Field(..., description="配置物理文件资源键")
+
+
+class ConfigEditTokenIn(ConfigEditIn):
+    editLeaseToken: str = Field(..., description="编辑租约令牌")
+
+
+class ConfigEditLeaseOut(OutBase):
+    resourceKey: str = Field(..., description="配置物理文件资源键")
+    editLeaseToken: Optional[str] = Field(default=None, description="编辑租约令牌")
+    version: str = Field(..., description="当前配置文件集合指纹")
+    expiresAt: float = Field(..., description="租约过期时间戳")
+    locked: bool = Field(default=False, description="资源当前是否被编辑锁占用")
+
+
+class ConfigEditSaveMixin(BaseModel):
+    editLeaseToken: Optional[str] = Field(default=None, description="编辑租约令牌")
+    baseVersion: Optional[str] = Field(default=None, description="进入编辑时的基础指纹")
+
+
 class VersionOut(OutBase):
     if_need_update: bool = Field(..., description="后端代码是否需要更新")
     current_time: str = Field(..., description="后端代码当前时间戳")
@@ -1106,20 +1134,24 @@ class GameSignAccountsListOut(OutBase):
     ] = Field(default_factory=dict, description="账号组列表")
 
 
-class GameSignAccountUpdateIn(BaseModel):
+class GameSignAccountCreateIn(ConfigEditSaveMixin):
+    """游戏社区账号组创建请求"""
+
+
+class GameSignAccountUpdateIn(ConfigEditSaveMixin):
     """游戏社区账号组更新请求"""
 
     accountId: str = Field(..., description="账号组 UUID")
     data: GameSignAccountGroupConfig = Field(..., description="账号组配置")
 
 
-class GameSignAccountDeleteIn(BaseModel):
+class GameSignAccountDeleteIn(ConfigEditSaveMixin):
     """游戏社区账号组删除请求"""
 
     accountId: str = Field(..., description="账号组 UUID")
 
 
-class GameSignAccountReorderIn(BaseModel):
+class GameSignAccountReorderIn(ConfigEditSaveMixin):
     """游戏社区账号组排序请求"""
 
     order: list[str] = Field(..., description="账号组 UUID 顺序列表")
@@ -4710,7 +4742,7 @@ class HistoryData(BaseModel):
     )
 
 
-class ScriptCreateIn(BaseModel):
+class ScriptCreateIn(ConfigEditSaveMixin):
     type: Literal[
         "MAA",
         "SRC",
@@ -4784,7 +4816,7 @@ class ScriptGetOut(OutBase):
     ] = Field(..., description="脚本数据字典, key来自于index列表的uid")
 
 
-class ScriptUpdateIn(BaseModel):
+class ScriptUpdateIn(ConfigEditSaveMixin):
     scriptId: str = Field(..., description="脚本ID")
     data: Union[
         MaaConfig,
@@ -4804,15 +4836,15 @@ class ScriptUpdateIn(BaseModel):
     ] = Field(..., description="脚本更新数据")
 
 
-class ScriptDeleteIn(BaseModel):
+class ScriptDeleteIn(ConfigEditSaveMixin):
     scriptId: str = Field(..., description="脚本ID")
 
 
-class ScriptReorderIn(BaseModel):
+class ScriptReorderIn(ConfigEditSaveMixin):
     indexList: List[str] = Field(..., description="脚本ID列表, 按新顺序排列")
 
 
-class ScriptUrlIn(BaseModel):
+class ScriptUrlIn(ConfigEditSaveMixin):
     scriptId: str = Field(..., description="脚本ID")
     url: str = Field(..., description="配置文件URL")
 
@@ -4828,7 +4860,11 @@ class UserInBase(BaseModel):
     scriptId: str = Field(..., description="所属脚本ID")
 
 
-class ScriptConfigImportIn(UserInBase):
+class UserCreateIn(ConfigEditSaveMixin, UserInBase):
+    pass
+
+
+class ScriptConfigImportIn(ConfigEditSaveMixin, UserInBase):
     userId: Optional[str] = Field(
         default=None, description="用户ID, 未携带时导入到脚本级配置文件"
     )
@@ -4891,7 +4927,7 @@ class UserCreateOut(OutBase):
     ] = Field(..., description="用户配置数据")
 
 
-class UserUpdateIn(UserInBase):
+class UserUpdateIn(ConfigEditSaveMixin, UserInBase):
     userId: str = Field(..., description="用户ID")
     data: Union[
         MaaUserConfig,
@@ -4911,20 +4947,20 @@ class UserUpdateIn(UserInBase):
     ] = Field(..., description="用户更新数据")
 
 
-class UserDeleteIn(UserInBase):
+class UserDeleteIn(ConfigEditSaveMixin, UserInBase):
     userId: str = Field(..., description="用户ID")
 
 
-class UserReorderIn(UserInBase):
+class UserReorderIn(ConfigEditSaveMixin, UserInBase):
     indexList: List[str] = Field(..., description="用户ID列表, 按新顺序排列")
 
 
-class UserSetIn(UserInBase):
+class UserSetIn(ConfigEditSaveMixin, UserInBase):
     userId: str = Field(..., description="用户ID")
     jsonFile: str = Field(..., description="JSON文件路径, 用于导入自定义基建文件")
 
 
-class UserInfrastPlanSelectIn(BaseModel):
+class UserInfrastPlanSelectIn(ConfigEditSaveMixin):
     scriptId: str = Field(..., description="脚本ID")
     userId: str = Field(..., description="用户ID")
     index: int = Field(default=-1, ge=-1, description="基建班次索引（-1=按时段自动）")
@@ -4965,12 +5001,16 @@ class EmulatorCreateOut(OutBase):
     data: EmulatorConfig = Field(..., description="模拟器配置数据")
 
 
-class EmulatorUpdateIn(BaseModel):
+class EmulatorCreateIn(ConfigEditSaveMixin):
+    pass
+
+
+class EmulatorUpdateIn(ConfigEditSaveMixin):
     emulatorId: str = Field(..., description="模拟器 ID")
     data: EmulatorConfig = Field(..., description="模拟器更新数据")
 
 
-class EmulatorDeleteIn(BaseModel):
+class EmulatorDeleteIn(ConfigEditSaveMixin):
     emulatorId: str = Field(..., description="模拟器 ID")
 
 
@@ -5305,12 +5345,16 @@ class WebhookCreateOut(OutBase):
     data: Webhook = Field(..., description="Webhook配置数据")
 
 
-class WebhookUpdateIn(WebhookInBase):
+class WebhookCreateIn(ConfigEditSaveMixin, WebhookInBase):
+    pass
+
+
+class WebhookUpdateIn(ConfigEditSaveMixin, WebhookInBase):
     webhookId: str = Field(..., description="Webhook ID")
     data: Webhook = Field(..., description="Webhook更新数据")
 
 
-class WebhookDeleteIn(WebhookInBase):
+class WebhookDeleteIn(ConfigEditSaveMixin, WebhookInBase):
     webhookId: str = Field(..., description="Webhook ID")
 
 
@@ -5318,7 +5362,7 @@ class WebhookTestIn(WebhookInBase):
     data: Webhook = Field(..., description="Webhook配置数据")
 
 
-class PlanCreateIn(BaseModel):
+class PlanCreateIn(ConfigEditSaveMixin):
     type: PlanCreateType
 
 
@@ -5342,17 +5386,21 @@ class PlanGetOut(OutBase):
     data: Dict[str, PlanConfigData] = Field(..., description="计划列表或单个计划数据")
 
 
-class PlanUpdateIn(BaseModel):
+class PlanUpdateIn(ConfigEditSaveMixin):
     planId: str = Field(..., description="计划ID")
     data: PlanConfigData = Field(..., description="计划更新数据")
 
 
-class PlanDeleteIn(BaseModel):
+class PlanDeleteIn(ConfigEditSaveMixin):
     planId: str = Field(..., description="计划ID")
 
 
-class PlanReorderIn(BaseModel):
+class PlanReorderIn(ConfigEditSaveMixin):
     indexList: List[str] = Field(..., description="计划ID列表, 按新顺序排列")
+
+
+class QueueCreateIn(ConfigEditSaveMixin):
+    pass
 
 
 class QueueCreateOut(OutBase):
@@ -5373,17 +5421,21 @@ class QueueGetOut(OutBase):
     )
 
 
-class QueueUpdateIn(BaseModel):
+class QueueUpdateIn(ConfigEditSaveMixin):
     queueId: str = Field(..., description="队列ID")
     data: QueueConfig = Field(..., description="队列更新数据")
 
 
-class QueueDeleteIn(BaseModel):
+class QueueDeleteIn(ConfigEditSaveMixin):
     queueId: str = Field(..., description="队列ID")
 
 
 class QueueSetInBase(BaseModel):
     queueId: str = Field(..., description="所属队列ID")
+
+
+class QueueSetMutationInBase(ConfigEditSaveMixin, QueueSetInBase):
+    pass
 
 
 class TimeSetGetIn(QueueSetInBase):
@@ -5404,16 +5456,20 @@ class TimeSetCreateOut(OutBase):
     data: TimeSet = Field(..., description="时间设置配置数据")
 
 
-class TimeSetUpdateIn(QueueSetInBase):
+class TimeSetUpdateIn(ConfigEditSaveMixin, QueueSetInBase):
     timeSetId: str = Field(..., description="时间设置ID")
     data: TimeSet = Field(..., description="时间设置更新数据")
 
 
-class TimeSetDeleteIn(QueueSetInBase):
+class TimeSetCreateIn(QueueSetMutationInBase):
+    pass
+
+
+class TimeSetDeleteIn(QueueSetMutationInBase):
     timeSetId: str = Field(..., description="时间设置ID")
 
 
-class TimeSetReorderIn(QueueSetInBase):
+class TimeSetReorderIn(QueueSetMutationInBase):
     indexList: List[str] = Field(..., description="时间设置ID列表, 按新顺序排列")
 
 
@@ -5435,16 +5491,20 @@ class QueueItemCreateOut(OutBase):
     data: QueueItem = Field(..., description="队列项配置数据")
 
 
-class QueueItemUpdateIn(QueueSetInBase):
+class QueueItemUpdateIn(ConfigEditSaveMixin, QueueSetInBase):
     queueItemId: str = Field(..., description="队列项ID")
     data: QueueItem = Field(..., description="队列项更新数据")
 
 
-class QueueItemDeleteIn(QueueSetInBase):
+class QueueItemCreateIn(QueueSetMutationInBase):
+    pass
+
+
+class QueueItemDeleteIn(QueueSetMutationInBase):
     queueItemId: str = Field(..., description="队列项ID")
 
 
-class QueueItemReorderIn(QueueSetInBase):
+class QueueItemReorderIn(QueueSetMutationInBase):
     indexList: List[str] = Field(..., description="队列项ID列表, 按新顺序排列")
 
 
@@ -5851,7 +5911,7 @@ class ToolsGetOut(OutBase):
     data: ToolsConfig = Field(..., description="工具配置数据")
 
 
-class ToolsUpdateIn(BaseModel):
+class ToolsUpdateIn(ConfigEditSaveMixin):
     data: ToolsConfig = Field(..., description="工具配置需要更新的数据")
 
 
@@ -5859,7 +5919,7 @@ class SettingGetOut(OutBase):
     data: GlobalConfig = Field(..., description="全局设置数据")
 
 
-class SettingUpdateIn(BaseModel):
+class SettingUpdateIn(ConfigEditSaveMixin):
     data: GlobalConfig = Field(..., description="全局设置需要更新的数据")
 
 

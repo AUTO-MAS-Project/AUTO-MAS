@@ -2,7 +2,7 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-export type WebhookInBase = {
+export type WebhookCreateIn = {
     /**
      * 所属脚本ID, 获取全局设置的Webhook数据时无需携带
      */
@@ -11,5 +11,13 @@ export type WebhookInBase = {
      * 所属用户ID, 获取全局设置的Webhook数据时无需携带
      */
     userId?: (string | null);
+    /**
+     * 编辑租约令牌
+     */
+    editLeaseToken?: (string | null);
+    /**
+     * 进入编辑时的基础指纹
+     */
+    baseVersion?: (string | null);
 };
 

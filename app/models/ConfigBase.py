@@ -53,7 +53,7 @@ from app.utils.constants import (
     KEYBOARD_KEYS,
     RESERVED_NAMES,
 )
-from app.utils.io import write_file
+from app.utils.io import ProfileFileLock, write_file
 
 logger = get_logger("配置基类")
 
@@ -949,7 +949,8 @@ class ConfigBase(ABC):
             self.file.parent.mkdir(parents=True, exist_ok=True)
             self.file.touch()
 
-        data = _load_json_file(self.file)
+        with ProfileFileLock(self.file.parent / ".automas-profile.lock"):
+            data = _load_json_file(self.file)
 
         await self.load(data)
 
@@ -1178,8 +1179,9 @@ class ConfigBase(ABC):
 
         # 序列化与落盘整体串行, 保证连续两次保存的落盘顺序与调用顺序一致
         async with self._save_lock:
-            data = await self.toDict(if_decrypt=False)
-            await asyncio.to_thread(write_file, self.file, data)
+            with ProfileFileLock(self.file.parent / ".automas-profile.lock"):
+                data = await self.toDict(if_decrypt=False)
+                write_file(self.file, data)
 
     async def lock(self):
         """
@@ -1288,7 +1290,8 @@ class MultipleConfig(Generic[T]):
             self.file.parent.mkdir(parents=True, exist_ok=True)
             self.file.touch()
 
-        data = _load_json_file(self.file)
+        with ProfileFileLock(self.file.parent / ".automas-profile.lock"):
+            data = _load_json_file(self.file)
 
         await self.load(data)
 
@@ -1502,8 +1505,9 @@ class MultipleConfig(Generic[T]):
 
         # 序列化与落盘整体串行, 保证连续两次保存的落盘顺序与调用顺序一致
         async with self._save_lock:
-            data = await self.toDict(if_decrypt=False)
-            await asyncio.to_thread(write_file, self.file, data)
+            with ProfileFileLock(self.file.parent / ".automas-profile.lock"):
+                data = await self.toDict(if_decrypt=False)
+                write_file(self.file, data)
 
     async def add(self, config_type: Type[T]) -> tuple[uuid.UUID, T]:
         """

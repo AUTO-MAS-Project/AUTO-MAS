@@ -9,6 +9,14 @@ export type TimeSetUpdateIn = {
      */
     queueId: string;
     /**
+     * 编辑租约令牌
+     */
+    editLeaseToken?: (string | null);
+    /**
+     * 进入编辑时的基础指纹
+     */
+    baseVersion?: (string | null);
+    /**
      * 时间设置ID
      */
     timeSetId: string;
