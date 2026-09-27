@@ -24,7 +24,8 @@
 「大雷主人模式」沿用旧版全局开关，在启动前应用安装级设置，保留游戏中心入口。
 窗口显示 / 隐藏不沿用父类的老板键，按 ``list2`` 的 ``top_hwnd`` 精确切换该实例的窗口：
 老板键是全局热键、不带实例信息，雷电默认各实例都是 Ctrl+Q，
-多开时会把别的实例一起翻过去（#948）。设置写入与配置守卫使用同一把实例锁。
+多开时会把别的实例一起翻过去（#948）。静默模式下冷启动的实例在启动途中窗口一出现
+就隐藏，与 MuMu 口径一致。设置写入与配置守卫使用同一把实例锁。
 启动后多一道「虚拟机真的起来了吗」的核对，VBox 服务卡住时自愈一次，见 :mod:`.vbox`。
 """
 
@@ -109,6 +110,9 @@ _OWNERSHIP_CACHE_SECONDS = 30.0
 _ZOMBIE_QUIT_TIMEOUT = 15.0
 #: 雷电修复工具的提示，自愈做不了或做了没用时都指到这里。
 _REPAIR_HINT = "请关闭所有雷电实例后运行雷电修复工具（安装目录下的 dnrepairer.exe）"
+#: 静默模式冷启动时压窗口的间隔。拿到句柄后每轮只剩两次 user32 调用，
+#: 这个间隔就是窗口最多露出来的时长。
+_EARLY_HIDE_INTERVAL = 0.1
 
 
 class LDPlayer14Manager(AppLaunchMixin, LDManager):
@@ -134,6 +138,57 @@ class LDPlayer14Manager(AppLaunchMixin, LDManager):
     #: 序列号 -> (是不是别家的, 缓存到什么时候)。同上放类属性；
     #: 「谁占着这个端口」本来就是整机的事实，几个管理器实例共用一份反而更对。
     _ownership_cache: dict[str, tuple[bool, float]] = {}
+
+    async def open(self, idx: str, package_name: str = "") -> DeviceInfo:
+        """静默模式下冷启动的实例，启动途中窗口一出现就隐藏，直到启动流程走完。
+
+        原先要等安卓起来、应用拉起、``open`` 返回之后调用方才调 :meth:`setVisible`，
+        这一整段窗口都开着；只有 MAA / MaaFW 事后会隐藏，其余专项一直不藏。
+        本来就在线的实例不动，不替用户藏起正开着的窗口。
+        """
+        from app.core import Config
+
+        if (
+            not IS_WINDOWS
+            or not Config.get("Function", "IfSilence")
+            or await self.getStatus(idx) == DeviceStatus.ONLINE
+        ):
+            return await super().open(idx, package_name)
+
+        watcher = asyncio.create_task(self._keep_hidden(idx))
+        try:
+            return await super().open(idx, package_name)
+        finally:
+            watcher.cancel()
+            await asyncio.gather(watcher, return_exceptions=True)
+
+    async def _keep_hidden(self, idx: str) -> None:
+        """每隔 :data:`_EARLY_HIDE_INTERVAL` 把该实例的窗口压回隐藏，直到被取消。
+
+        句柄只在还没拿到或已失效时（刚 ``launch``、自愈重启）才重读 ``list2``，
+        拿到之后只剩 user32 调用，不跟父类的状态轮询抢着起子进程。
+        启动途中雷电自己再把窗口翻出来，也会在下一轮被压回去。
+        """
+        hwnd = 0
+        hidden = warned = False
+        while True:
+            if hwnd <= 0 or not win32gui.IsWindow(hwnd):
+                try:
+                    hwnd = (await self.get_device_info(idx))[idx].top_hwnd
+                except Exception:  # noqa: BLE001 - 读不到就下一轮再读, 不影响启动
+                    hwnd = 0
+            if hwnd > 0 and platform_window.is_visible(hwnd):
+                try:
+                    platform_window.hide_window(hwnd)
+                except Exception as e:  # noqa: BLE001 - 同上
+                    if not warned:
+                        logger.warning(f"静默模式隐藏雷电实例 {idx} 窗口失败: {e}")
+                        warned = True
+                else:
+                    if not hidden:
+                        logger.info(f"静默模式: 雷电实例 {idx} 的窗口已在启动途中隐藏")
+                        hidden = True
+            await asyncio.sleep(_EARLY_HIDE_INTERVAL)
 
     async def _open_locked(self, idx: str, package_name: str) -> DeviceInfo:
         """在父类启动流程之上核对虚拟机是否真的起来，没起来就自愈一次。
