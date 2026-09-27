@@ -1252,19 +1252,20 @@
       "
       :confirm-loading="updateModal.starting"
       :mask-closable="!updateModal.running"
-      :footer="updateModal.running ? null : undefined"
+      :footer="updateModal.running || updateModal.done ? null : undefined"
       @ok="startUpdate"
       @cancel="handleUpdateModalCancel"
     >
-      <template v-if="!updateModal.running">
-        <a-alert type="info" show-icon :message="t('edit.bettergiWillBeUpdated')" />
-      </template>
-      <template v-else>
+      <!-- 出结论后也要留着日志：后端专门推的「已是最新 / 更新完成 x -> y」就在里面 -->
+      <template v-if="updateModal.running || updateModal.done">
         <div class="update-log-area">
           <pre class="update-log-content">{{
             updateModal.log || t('edit.bettergiUpdateConnecting')
           }}</pre>
         </div>
+      </template>
+      <template v-else>
+        <a-alert type="info" show-icon :message="t('edit.bettergiWillBeUpdated')" />
       </template>
     </a-modal>
   </div>

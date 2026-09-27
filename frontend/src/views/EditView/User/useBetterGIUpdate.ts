@@ -14,8 +14,13 @@ import {
 
 /** 单次更新日志的缓冲上限 */
 const UPDATE_LOG_MAX_CHARS = 200_000
-/** 单次更新的兜底时限（实测一次增量约 10 GB，给足 30 分钟） */
-const UPDATE_TIMEOUT_MS = 30 * 60 * 1000
+/**
+ * 卡住的判定：这么久一行新日志都没有就收工。
+ *
+ * 这里刻意不是「整轮时限」——多 GB 的增量在慢网下跑上一两个小时也算正常，按总时长掐表
+ * 只会把正在推进的更新拦腰掐断；反过来，半天不出一行字才是真出了问题。
+ */
+const UPDATE_IDLE_MS = 5 * 60 * 1000
 
 /**
  * BetterGI 用户页「检查更新」手动入口。
@@ -37,6 +42,8 @@ export function useBetterGIUpdate(getUserId: () => string) {
     open: false,
     running: false,
     starting: false,
+    /** 这一轮已经出结论（完成、报错或卡住）：日志要留在弹窗里给用户看 */
+    done: false,
     log: '',
   })
 
@@ -86,6 +93,20 @@ export function useBetterGIUpdate(getUserId: () => string) {
     }
   }
 
+  /** 重新起「多久没进展就算卡住」的表；每来一条新日志都续一次 */
+  const armIdleTimer = () => {
+    if (updateSession.timeout) {
+      window.clearTimeout(updateSession.timeout)
+    }
+    updateSession.timeout = window.setTimeout(() => {
+      message.error(t('edit.bettergiUpdateTimed'))
+      // 状态一定要落回不运行，否则弹窗会一直停在「进行中」出不来
+      updateModal.running = false
+      updateModal.done = true
+      void stopSession()
+    }, UPDATE_IDLE_MS)
+  }
+
   const resyncLog = async () => {
     if (logResyncing || !updateSession.taskId) return
     logResyncing = true
@@ -114,6 +135,7 @@ export function useBetterGIUpdate(getUserId: () => string) {
       void resyncLog()
       return
     }
+    armIdleTimer()
     if (updateModal.log.length > UPDATE_LOG_MAX_CHARS) {
       updateModal.log = updateModal.log.slice(-UPDATE_LOG_MAX_CHARS)
     }
@@ -122,6 +144,7 @@ export function useBetterGIUpdate(getUserId: () => string) {
   const handleCheckUpdate = () => {
     if (updateModal.running || !getUserId()) return
     updateModal.log = ''
+    updateModal.done = false
     logSeq = null
     updateModal.open = true
   }
@@ -139,6 +162,7 @@ export function useBetterGIUpdate(getUserId: () => string) {
         throw new Error(response.message || t('edit.bettergiUpdateStartFailed'))
       }
       updateModal.running = true
+      updateModal.done = false
       updateSession.taskId = response.taskId
       errored = false
       updateSession.subscriptionIds = [
@@ -153,7 +177,8 @@ export function useBetterGIUpdate(getUserId: () => string) {
             errored = true
             message.error(t('edit.bettergiUpdateFailed', { p0: data.message }))
             updateModal.running = false
-            updateModal.open = false
+            updateModal.done = true
+            // 弹窗留着：具体原因就在里面那几行日志里
             void stopSession()
           }
         }),
@@ -162,14 +187,13 @@ export function useBetterGIUpdate(getUserId: () => string) {
             message.success(t('edit.bettergiUpdateTask'))
           }
           updateModal.running = false
-          updateModal.open = false
+          updateModal.done = true
+          // 不关弹窗：后端为这次检查专门推的结论（「当前为最新版本（x）」/
+          // 「更新完成 x -> y」）就在日志里，一关掉用户只剩一句「已结束」
           void stopSession()
         }),
       ]
-      updateSession.timeout = window.setTimeout(() => {
-        message.error(t('edit.bettergiUpdateTimed'))
-        void stopSession()
-      }, UPDATE_TIMEOUT_MS)
+      armIdleTimer()
     } catch (e) {
       logger.error(e instanceof Error ? e.message : String(e))
       message.error(e instanceof Error ? e.message : t('edit.bettergiUpdateStartFailed'))
@@ -183,6 +207,7 @@ export function useBetterGIUpdate(getUserId: () => string) {
       void stopSession()
     }
     updateModal.running = false
+    updateModal.done = false
     updateModal.open = false
   }
 
