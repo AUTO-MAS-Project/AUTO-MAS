@@ -29,31 +29,17 @@ from pathlib import Path
 
 from app.services.gi_updater.common import AbortHook
 from app.services.gi_updater.install import UpdateKind
-from app.services.gi_updater.pipeline import (
-    ProgressHook,
-    UpdateResult,
-    detect_region,
-    update_client,
-)
+from app.services.gi_updater.pipeline import ProgressHook, UpdateResult, update_client
 from app.services.gi_updater.presets import GameKey
 
 __all__ = [
     "GenshinUpdateResult",
     "UpdateKind",
-    "detect_genshin_region",
     "update_genshin_client",
 ]
 
 #: 一轮原神客户端更新的结论——类型与名字沿用宿主既有调用方
 GenshinUpdateResult = UpdateResult
-
-
-def detect_genshin_region(game_exe: str) -> str:
-    """按游戏程序文件名判定区服，供 BetterGI 专项宿主复用。
-    Returns:
-        ``"cn"`` / ``"global"``；不是原神游戏程序时返回空串。
-    """
-    return detect_region(GameKey.Genshin, game_exe)
 
 
 async def update_genshin_client(

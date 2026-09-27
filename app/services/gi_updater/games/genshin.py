@@ -104,7 +104,10 @@ class GameTypeGenshinVersion(GameVersionBase):
         for name in (primary, alternative):
             other = alternative if name == primary else primary
             other_exec = os.path.join(self.game_path, other)
-            other_dir = os.path.join(self.game_path, os.path.splitext(other)[0])
+            # 数据文件夹是 ``<程序名>_Data``，只去掉 ``.exe`` 得到的是永远不存在的裸名
+            other_dir = os.path.join(
+                self.game_path, f"{os.path.splitext(other)[0]}_Data"
+            )
             if os.path.isfile(other_exec) or os.path.isdir(other_dir):
                 # 只有在当前客户端自身存在时才判定为「混装」
                 if os.path.isfile(os.path.join(self.game_path, name)):
@@ -144,10 +147,5 @@ GENSHIN = register(
         version_cls=GameTypeGenshinVersion,
         installer_cls=GenshinInstaller,
         locale_regions=(("官服", Region.CN), ("国际服", Region.GLOBAL)),
-        # B 服与官服同名 YuanShen.exe，不做区分
-        executable_regions={
-            "yuanshen.exe": Region.CN,
-            "genshinimpact.exe": Region.GLOBAL,
-        },
     )
 )

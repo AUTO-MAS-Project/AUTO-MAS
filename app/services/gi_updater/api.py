@@ -113,7 +113,8 @@ async def request_json(
         # 包封按对象解析；数组与标量都说明协议变了，不让它变成下游的 AttributeError
         raise UpdaterError(f"响应不是 JSON 对象: {mask_url_password(url)}")
     retcode = payload.get("retcode")
-    if retcode not in (0, None):
+    # 同一个字段会给数字也会给文字，两种都按 0 放行；没给这个字段也放行
+    if retcode is not None and str(retcode) != "0":
         raise UpdaterError(
             f"接口返回 retcode={retcode} message={payload.get('message')!r}: "
             f"{mask_url_password(url)}"
@@ -134,13 +135,21 @@ def data_mapping(payload: dict) -> dict:
 async def request_bytes(
     client: httpx.AsyncClient, url: str, *, timeout: float | None = None
 ) -> bytes:
-    """取一份原始字节（清单）。
+    """取一份原始字节（清单与整份重建用的数据块）。
+
+    ``timeout`` 指「连续多久没有字节到达」的上限，不是整个下载的时限。
+
+    Note:
+        留空时**不能**把这个参数原样传下去：网络库把显式的空值理解成「关闭全部超时」，
+        连客户端默认那一档也一起抹掉，卡死的连接就再也等不出结果。没指定就不传，让它
+        沿用客户端默认。
 
     Raises:
         UpdaterError: 网络失败或非 200。
     """
+    options: dict[str, Any] = {} if timeout is None else {"timeout": timeout}
     try:
-        response = await client.get(url, timeout=timeout)
+        response = await client.get(url, **options)
         response.raise_for_status()
     except httpx.HTTPError as error:
         raise UpdaterError(f"下载失败 {url}: {error}") from error

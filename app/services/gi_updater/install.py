@@ -240,7 +240,7 @@ class InstallManagerBase:
             GameInstallStateEnum.GameBroken,
         ):
             # 全新安装与「有可执行文件却没版本号」都交给官方启动器：让调度任务往一个
-            # 没装过游戏的目录里灌几十 GB，是不可挽回的浪费
+            # 没装过游戏的目录里灌一整份客户端，是不可挽回的浪费
             plan.kind = UpdateKind.SophonInstall
             return plan
 

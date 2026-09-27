@@ -26,7 +26,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Dict, Tuple, Type
 
 from app.services.gi_updater.install import InstallManagerBase
@@ -47,8 +47,6 @@ class GameSpec:
         installer_cls: 该游戏的安装管理器，覆写安装态判定等专属钩子。
         locale_regions: 区服配置项的中文标签 -> 区服短名，顺序即「自动」的探测顺序，
             第一项同时是空目录（新装）时的默认区服。
-        executable_regions: 游戏程序文件名（小写）-> 区服短名，供宿主按可执行文件
-            反推区服；同一区服的多个渠道同名文件不必区分，只列能区分的名字。
         install_marker_files: 判断「这个目录真装了本游戏」的文件名，与可执行文件
             取并集；只有两者都见不到时宿主才按「路径填错」拦下。
     """
@@ -58,7 +56,6 @@ class GameSpec:
     version_cls: Type[GameVersionBase]
     installer_cls: Type[InstallManagerBase]
     locale_regions: Tuple[Tuple[str, str], ...] = ()
-    executable_regions: Dict[str, str] = field(default_factory=dict)
     install_marker_files: Tuple[str, ...] = ("config.ini",)
 
     @property

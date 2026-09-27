@@ -54,6 +54,7 @@ from app.services.gi_updater.common import (
 from app.services.gi_updater.games import create_updater, get_spec
 from app.services.gi_updater.install import UpdateKind
 from app.services.gi_updater.presets import get_profile
+from app.services.gi_updater.versioning import MIN_EXECUTABLE_SIZE
 from app.utils import get_logger, sanitize_log_message
 from app.utils.hpatchz import ensure_hpatchz
 
@@ -61,8 +62,6 @@ logger = get_logger("更新引擎")
 
 #: 区服配置项里表示「按目录里的客户端自己判」的取值
 AUTO_REGION_LABEL = "自动"
-#: 判定「可执行文件是真的在那儿」的最小体积，与引擎口径一致
-_MIN_EXECUTABLE_SIZE = 1 << 16
 #: 磁盘余量在需要量之外再多留的缓冲
 _DISK_MARGIN_BYTES = 2 * 1024**3
 
@@ -96,15 +95,6 @@ class UpdateResult:
     downgraded: int = 0
 
 
-def detect_region(game: str, game_exe: str) -> str:
-    """按游戏程序文件名判定区服，供专项宿主复用。
-    Returns:
-        区服短名；不是这款游戏已知的游戏程序时返回空串。
-    """
-    text = str(game_exe or "").strip().strip('"').strip()
-    return get_spec(game).executable_regions.get(Path(text).name.lower(), "")
-
-
 def _resolve_region(game: str, game_dir: Path, resource: str) -> str | None:
     """定下这次要按哪个区服的接口走。
 
@@ -134,7 +124,7 @@ def _executable_present(game_dir: Path, preset: Any) -> bool:
     """某区服的可执行文件是否真实存在于该目录（体积要达标）。"""
     candidate = game_dir / str(preset.executable_name)
     try:
-        return candidate.is_file() and candidate.stat().st_size > _MIN_EXECUTABLE_SIZE
+        return candidate.is_file() and candidate.stat().st_size > MIN_EXECUTABLE_SIZE
     except OSError:
         return False
 
@@ -205,29 +195,31 @@ async def update_client(
         return UpdateResult(success=False, message=reason)
 
     updater = create_updater(game, resolved, str(game_dir))
-    client = api.new_client()
-    try:
-        plan = await updater.check(client)
-        return await _run_plan(
-            updater,
-            plan,
-            display=display,
-            game_dir=game_dir,
-            client=client,
-            hpatchz=hpatchz,
-            on_progress=on_progress,
-            should_abort=should_abort,
-        )
-    except Exception as error:  # noqa: BLE001
-        logger.warning(
-            "%s更新失败: %s: %s", display, type(error).__name__, error, exc_info=True
-        )
-        return UpdateResult(success=False, message=f"{type(error).__name__}: {error}")
-    finally:
-        kept = updater.installer.cleanup_temp()
-        if kept:
-            # 只进 app.log：调度台那行已经说明了结果，路径细节是留给排查的
-            _note(f"已清理本轮中间产物：{'、'.join(kept)}")
+    # 这条通道归本流程管：每次启动前都会跑一遍，不还就会一直攒着连接与套接字
+    async with api.new_client() as client:
+        try:
+            plan = await updater.check(client)
+            return await _run_plan(
+                updater,
+                plan,
+                display=display,
+                game_dir=game_dir,
+                client=client,
+                hpatchz=hpatchz,
+                on_progress=on_progress,
+                should_abort=should_abort,
+            )
+        except Exception as error:  # noqa: BLE001
+            # 宿主的日志器不做 % 占位替换，写成占位符就等于把失败原因丢了
+            logger.exception(f"{display}更新失败: {type(error).__name__}: {error}")
+            return UpdateResult(
+                success=False, message=f"{type(error).__name__}: {error}"
+            )
+        finally:
+            kept = updater.installer.cleanup_temp()
+            if kept:
+                # 只进 app.log：调度台那行已经说明了结果，路径细节是留给排查的
+                _note(f"已清理本轮中间产物：{'、'.join(kept)}")
 
 
 async def _run_plan(
@@ -304,7 +296,7 @@ async def _run_plan(
         should_abort=should_abort,
     )
     if result.aborted:
-        logger.info("%s更新已中止，已落盘的文件会留给下次接着用", display)
+        logger.info(f"{display}更新已中止，已落盘的文件会留给下次接着用")
         return UpdateResult(
             success=False,
             aborted=True,
@@ -368,7 +360,7 @@ async def _gate(
         )
 
     # 自动接管只应用增量差分包：拿不到差分（全新安装、逐文件全量比对、预下载）一律
-    # 停手交给官方启动器，绝不在无人值守时顺手灌几十 GB 整包。
+    # 停手交给官方启动器，绝不在无人值守时顺手灌一整份客户端。
     if plan.kind != UpdateKind.SophonPatch:
         # 这几种结论都没有待下清单（引擎不为它们收集资产），所以不提体积——报「约 0 B」
         # 会让人以为白下一趟

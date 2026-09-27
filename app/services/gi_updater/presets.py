@@ -23,18 +23,17 @@
 内置的是公开的 HYP Connect（HoYoPlay）端点与公开已知的 launcher_id / game_id /
 biz 三元组：
 
-    资源包   /hyp/hyp-connect/api/getGamePackages
     分支     /hyp/hyp-connect/api/getGameBranches
     构建     /downloader/sophon_chunk/api/getBuild        （全量清单，只收 GET）
     差分     /downloader/sophon_chunk/api/getPatchBuild   （差分清单，只收 POST）
 
-两端的方法不可互换，发错一端就是 405（真机实测）。
+后两端的方法不可互换，发错一端就是 405（真机实测）。
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Tuple
+from dataclasses import dataclass
+from typing import Dict, Optional, Tuple
 
 __all__ = [
     "SophonChunkUrls",
@@ -118,22 +117,14 @@ class Region:
 
 @dataclass
 class SophonChunkUrls:
-    """Sophon 的 ``getBuild`` 端点集合。
+    """本区服的两个 Sophon 清单端点。
 
-    先请求 ``branch_url`` 拿到 ``package_id / branch / password``，
-    再拼到 ``main_url`` / ``preload_url`` / ``patch_url`` 上。
+    两者的查询串同形（见 :mod:`~app.services.gi_updater.api` 的拼接），差别只在路径与
+    HTTP 方法：``main_url`` 取全量清单只收 GET，``patch_url`` 取差分清单位置只收 POST。
     """
 
-    branch_url: str
     main_url: str
-    preload_url: str
     patch_url: str
-    #: 主资源的 ``matching_field``，官方固定为 ``"game"``
-    main_branch_matching_field: str = "game"
-    exclude_matching_field_main: List[str] = field(default_factory=list)
-    exclude_matching_field_preload: List[str] = field(default_factory=list)
-    exclude_matching_field_patch: List[str] = field(default_factory=list)
-    exclude_matching_field_update: List[str] = field(default_factory=list)
 
 
 # --------------------------------------------------------------------------- #
@@ -186,58 +177,6 @@ class PresetConfig:
             f"?launcher_id={self.launcher_id}&game_ids[]={self.game_id}"
         )
 
-    def build_get_build_url(
-        self,
-        package_id: str,
-        branch: str = "main",
-        password: str = "",
-        tag: str = "",
-    ) -> str:
-        """拼 ``getBuild`` URL（主清单与预下载清单）。
-
-        Args:
-            branch: 分支名；默认 ``"main"``，拼进 ``branch`` 参数。
-        Returns:
-            完整 ``getBuild`` URL（含 ``plat_app={biz}`` 等业务参数）。
-
-        Note:
-            ``tag`` 用接口原样返回的版本串（形态见 ``GameVersion.sophon_tag``），
-            为空时该参数整体省略。
-        """
-        return self.build_sophon_query_url(
-            f"{self.downloader_base}/downloader/sophon_chunk/api/getBuild",
-            package_id=package_id,
-            branch=branch,
-            password=password,
-            tag=tag,
-        )
-
-    def build_sophon_query_url(
-        self,
-        base_url: str,
-        package_id: str,
-        branch: str = "main",
-        password: str = "",
-        tag: str = "",
-    ) -> str:
-        """给任意 Sophon ``getBuild`` 系端点拼上同一套查询参数。
-
-        主清单（``getBuild``）与差分清单（``getPatchBuild``）的查询串形状完全一样，
-        差别只在端点路径与 HTTP 方法，所以拼接只留这一份。
-        Returns:
-            带 ``plat_app`` 等业务参数的完整请求地址。
-        """
-        url = (
-            f"{base_url}"
-            f"?plat_app={self.launcher_biz_name}"
-            f"&branch={branch}"
-            f"&password={password}"
-            f"&package_id={package_id}"
-        )
-        if tag:
-            url += f"&tag={tag}"
-        return url
-
 
 # --------------------------------------------------------------------------- #
 # 内置预设
@@ -253,20 +192,16 @@ _GLB_LAUNCHER_ID = "VYTpXlbWo8"
 
 
 def _sophon_urls(base: str) -> SophonChunkUrls:
-    """构造本区服的 Sophon 下载 URL 组。
+    """把本区服的两个清单端点摆好。
 
-    只按区服把两个端点摆好，``main_branch_matching_field`` 固定为 ``"game"``；
     两端方法不通用（见本模块开头的端点表）。
     Returns:
         含全量与差分两个端点的 ``SophonChunkUrls``。
     """
     get_build = f"{base}/downloader/sophon_chunk/api/getBuild"
     return SophonChunkUrls(
-        branch_url=get_build,
         main_url=get_build,
-        preload_url=get_build,
         patch_url=f"{base}/downloader/sophon_chunk/api/getPatchBuild",
-        main_branch_matching_field="game",
     )
 
 
@@ -282,7 +217,7 @@ def _build_profiles() -> Dict[Tuple[str, str], PresetConfig]:
     profiles: Dict[Tuple[str, str], PresetConfig] = {}
 
     # ---------------------------------------------------------------- 原神
-    profiles[(GameKey.Genshin, Region.CN)] = PresetConfig(
+    cn = PresetConfig(
         profile_name="GICN",
         launcher_id=_CN_LAUNCHER_ID,
         game_id="1Z8W5NHUQb",
@@ -293,13 +228,11 @@ def _build_profiles() -> Dict[Tuple[str, str], PresetConfig]:
         executable_name="YuanShen.exe",
         api_base=_CN_API,
         downloader_base=_CN_DL,
-        # 5.6 起官方移除 zip 包，本预设强制走 Sophon
     )
-    profiles[(GameKey.Genshin, Region.CN)].launcher_resource_chunks_url = _sophon_urls(
-        _CN_DL
-    )
+    cn.launcher_resource_chunks_url = _sophon_urls(cn.downloader_base)
+    profiles[(GameKey.Genshin, Region.CN)] = cn
 
-    profiles[(GameKey.Genshin, Region.GLOBAL)] = PresetConfig(
+    glb = PresetConfig(
         profile_name="GIGlb",
         launcher_id=_GLB_LAUNCHER_ID,
         game_id="gopR6Cufr3",
@@ -311,9 +244,8 @@ def _build_profiles() -> Dict[Tuple[str, str], PresetConfig]:
         api_base=_GLB_API,
         downloader_base=_GLB_DL,
     )
-    profiles[
-        (GameKey.Genshin, Region.GLOBAL)
-    ].launcher_resource_chunks_url = _sophon_urls(_GLB_DL)
+    glb.launcher_resource_chunks_url = _sophon_urls(glb.downloader_base)
+    profiles[(GameKey.Genshin, Region.GLOBAL)] = glb
 
     return profiles
 
