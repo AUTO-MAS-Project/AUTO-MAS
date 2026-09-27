@@ -128,7 +128,9 @@ async def update_plan(plan: PlanUpdateIn = Body(...)) -> OutBase:
 
     try:
         with _config_edit_scope(plan):
-            await Config.update_plan(plan.planId, plan.data.model_dump(exclude_unset=True))
+            await Config.update_plan(
+                plan.planId, plan.data.model_dump(exclude_unset=True)
+            )
     except ConfigEditError as e:
         return OutBase(code=e.code, status="error", message=e.message)
     except Exception as e:

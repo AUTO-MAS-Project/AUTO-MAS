@@ -662,7 +662,11 @@ class ProfileFileLock:
 
     def __enter__(self) -> "ProfileFileLock":
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        self._key = str(self.path.resolve()).casefold() if os.name == "nt" else str(self.path.resolve())
+        self._key = (
+            str(self.path.resolve()).casefold()
+            if os.name == "nt"
+            else str(self.path.resolve())
+        )
         with _PROFILE_LOCK_GUARD:
             local = _PROFILE_LOCKS.get(self._key)
             if local and local[1] == threading.get_ident():
@@ -678,7 +682,9 @@ class ProfileFileLock:
             if local_busy:
                 if time.monotonic() >= deadline:
                     logger.error(f"配置锁等待超时: {self.path} (local thread owner)")
-                    raise TimeoutError(f"配置锁等待超时: {self.path} (local thread owner)")
+                    raise TimeoutError(
+                        f"配置锁等待超时: {self.path} (local thread owner)"
+                    )
                 time.sleep(0.05)
                 continue
             handle = self.path.open("a+b")
@@ -695,10 +701,20 @@ class ProfileFileLock:
                 else:
                     if fcntl is None:
                         raise RuntimeError("POSIX lock provider is unavailable")
-                    fcntl.lockf(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB, 1, 0, os.SEEK_SET)
+                    fcntl.lockf(
+                        handle.fileno(),
+                        fcntl.LOCK_EX | fcntl.LOCK_NB,
+                        1,
+                        0,
+                        os.SEEK_SET,
+                    )
                 handle.seek(0)
                 handle.truncate()
-                owner = {"pid": os.getpid(), "host": socket.gethostname(), "thread": threading.get_ident()}
+                owner = {
+                    "pid": os.getpid(),
+                    "host": socket.gethostname(),
+                    "thread": threading.get_ident(),
+                }
                 handle.write(json.dumps(owner).encode("utf-8"))
                 handle.flush()
                 os.fsync(handle.fileno())
@@ -715,7 +731,9 @@ class ProfileFileLock:
                     except (OSError, ValueError):
                         detail = "unknown owner"
                     logger.error(f"配置锁等待超时: {self.path} ({detail})")
-                    raise TimeoutError(f"配置锁等待超时: {self.path} ({detail})") from exc
+                    raise TimeoutError(
+                        f"配置锁等待超时: {self.path} ({detail})"
+                    ) from exc
                 time.sleep(0.05)
 
     def __exit__(self, _type: Any, _value: Any, _traceback: Any) -> None:
@@ -828,7 +846,9 @@ def write_file(
                 atomic_write(path, codec[0](payload, encoding))
             else:
                 if not isinstance(payload, str):
-                    raise ValueError(f"不支持的配置文件格式 `{_suffix}`，且内容非字符串")
+                    raise ValueError(
+                        f"不支持的配置文件格式 `{_suffix}`，且内容非字符串"
+                    )
                 atomic_write(path, payload.encode(encoding))
             if guarded:
                 guard.after_write(path)

@@ -86,9 +86,7 @@ async def renew_config_edit_lease(
 ) -> ConfigEditLeaseOut:
     try:
         return _lease_out(
-            Config.renew_config_edit_lease(
-                payload.resourceKey, payload.editLeaseToken
-            )
+            Config.renew_config_edit_lease(payload.resourceKey, payload.editLeaseToken)
         )
     except ConfigEditError as e:
         return ConfigEditLeaseOut(

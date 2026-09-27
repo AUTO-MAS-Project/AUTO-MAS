@@ -569,9 +569,9 @@ async def add_user(user: UserCreateIn = Body(...)) -> UserCreateOut:
     try:
         with _config_edit_scope("ScriptConfig", user):
             uid, config = await Config.add_user(user.scriptId)
-            data = USER_BOOK[type(Config.ScriptConfig[uuid.UUID(user.scriptId)]).__name__](
-                **(await config.toDict())
-            )
+            data = USER_BOOK[
+                type(Config.ScriptConfig[uuid.UUID(user.scriptId)]).__name__
+            ](**(await config.toDict()))
     except ConfigEditError as e:
         return UserCreateOut(
             code=e.code,
@@ -1059,7 +1059,9 @@ async def delete_webhook(webhook: WebhookDeleteIn = Body(...)) -> OutBase:
 
     try:
         with _config_edit_scope(_webhook_resource_key(webhook), webhook):
-            await Config.del_webhook(webhook.scriptId, webhook.userId, webhook.webhookId)
+            await Config.del_webhook(
+                webhook.scriptId, webhook.userId, webhook.webhookId
+            )
     except ConfigEditError as e:
         return OutBase(code=e.code, status="error", message=e.message)
     except Exception as e:

@@ -66,7 +66,13 @@ logger = get_logger("全局设置")
 backup_lock = asyncio.Lock()
 
 
-def _config_edit_scope(payload: SettingUpdateIn | WebhookCreateIn | WebhookUpdateIn | WebhookDeleteIn | None):
+def _config_edit_scope(
+    payload: SettingUpdateIn
+    | WebhookCreateIn
+    | WebhookUpdateIn
+    | WebhookDeleteIn
+    | None,
+):
     if payload is None:
         raise ConfigEditError(409, "配置编辑锁已失效，请重新进入编辑页")
     return Config.config_edit_scope(
@@ -364,7 +370,10 @@ async def update_webhook(webhook: WebhookUpdateIn = Body(...)) -> OutBase:
     try:
         with _config_edit_scope(webhook):
             await Config.update_webhook(
-                None, None, webhook.webhookId, webhook.data.model_dump(exclude_unset=True)
+                None,
+                None,
+                webhook.webhookId,
+                webhook.data.model_dump(exclude_unset=True),
             )
     except ConfigEditError as e:
         return OutBase(code=e.code, status="error", message=e.message)

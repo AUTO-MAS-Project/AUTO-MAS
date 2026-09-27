@@ -390,7 +390,11 @@ class Task(TaskExecuteBase):
             ScriptItem(
                 script_id=script_id,
                 status="等待",
-                name=(self.script_config_snapshots[script_id] if script_id in self.script_config_snapshots else Config.ScriptConfig[uuid.UUID(script_id)]).get("Info", "Name"),
+                name=(
+                    self.script_config_snapshots[script_id]
+                    if script_id in self.script_config_snapshots
+                    else Config.ScriptConfig[uuid.UUID(script_id)]
+                ).get("Info", "Name"),
                 user_list=[
                     UserItem(user_id=str(uuid.uuid4()), name="暂未加载", status="等待")
                 ],
@@ -609,7 +613,11 @@ class Task(TaskExecuteBase):
             logger.warning(f"循环跳过: {script_uid} 对应脚本已被删除")
             return "failed"
 
-        script_config = self.script_config_snapshots[str(script_uid)] if str(script_uid) in self.script_config_snapshots else Config.ScriptConfig[script_uid]
+        script_config = (
+            self.script_config_snapshots[str(script_uid)]
+            if str(script_uid) in self.script_config_snapshots
+            else Config.ScriptConfig[script_uid]
+        )
         src_root_path = _get_src_root_path(script_config)
         reservation_owner = self.task_info.task_id
 
@@ -829,7 +837,11 @@ class Task(TaskExecuteBase):
 
             # 原子占用脚本，避免两个调度器同时通过布尔锁前置检查。
             reservation_owner = self.task_info.task_id
-            script_config = self.script_config_snapshots[str(current_script_uid)] if str(current_script_uid) in self.script_config_snapshots else Config.ScriptConfig[current_script_uid]
+            script_config = (
+                self.script_config_snapshots[str(current_script_uid)]
+                if str(current_script_uid) in self.script_config_snapshots
+                else Config.ScriptConfig[current_script_uid]
+            )
             src_root_path = _get_src_root_path(script_config)
             if not self.script_reservations.try_acquire(
                 current_script_uid,

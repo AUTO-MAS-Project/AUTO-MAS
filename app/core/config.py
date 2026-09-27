@@ -551,9 +551,7 @@ class AppConfig(GlobalConfig):
 
     def _config_resource_map(self) -> dict[str, ConfigEditResource]:
         return {
-            "Config": ConfigEditResource(
-                "Config", (self.config_path / "Config.json",)
-            ),
+            "Config": ConfigEditResource("Config", (self.config_path / "Config.json",)),
             "EmulatorConfig": ConfigEditResource(
                 "EmulatorConfig", (self.config_path / "EmulatorConfig.json",)
             ),
@@ -586,9 +584,7 @@ class AppConfig(GlobalConfig):
             self.config_edit_resource(resource_key)
         )
 
-    def renew_config_edit_lease(
-        self, resource_key: str, token: str
-    ) -> ConfigEditLease:
+    def renew_config_edit_lease(self, resource_key: str, token: str) -> ConfigEditLease:
         return self._config_edit_service.renew(
             self.config_edit_resource(resource_key), token
         )
@@ -596,12 +592,8 @@ class AppConfig(GlobalConfig):
     def release_config_edit_lease(self, resource_key: str, token: str) -> bool:
         return self._config_edit_service.release(resource_key, token)
 
-    def get_config_edit_status(
-        self, resource_key: str
-    ) -> ConfigEditLease | None:
-        return self._config_edit_service.status(
-            self.config_edit_resource(resource_key)
-        )
+    def get_config_edit_status(self, resource_key: str) -> ConfigEditLease | None:
+        return self._config_edit_service.status(self.config_edit_resource(resource_key))
 
     def assert_config_save_allowed(
         self,
