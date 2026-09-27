@@ -42,9 +42,6 @@ ACTIVITY_MAX_PAGES = 2
 ## 卡池、掉落加倍、维护、剧情与家具更新等分类都不算
 WANTED_TYPES = frozenset({"Event", "Raid", "BigRaid", "MiniBattle"})
 
-## 战斗通行证（战令）也被 Kivo 归进「活动」，可它基本整期都在，跟脚本排期无关，按标题排掉
-EXCLUDED_TITLE_KEYWORDS = ("战斗通行证",)
-
 BlueArchiveLineType = Literal["JP", "Globle", "CN"]
 
 
@@ -60,11 +57,7 @@ class ActivityInfo:
 def _is_wanted_activity(item: Mapping[str, object]) -> bool:
     """这条时间轴记录算不算排期要看的活动"""
 
-    if item.get("type") not in WANTED_TYPES:
-        return False
-
-    title = str(item.get("title") or "")
-    return not any(keyword in title for keyword in EXCLUDED_TITLE_KEYWORDS)
+    return item.get("type") in WANTED_TYPES
 
 
 def has_running_activity_in(
