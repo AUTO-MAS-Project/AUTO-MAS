@@ -1372,6 +1372,7 @@ export default {
     logHooks: 'Log preprocessing',
     logHooksOffRules: 'Log preprocessing is off; the rules will not run.',
     ruleCountSummary: '{n} rules, {m} active',
+    ruleCountFooter: '{n} rules, {m} active, run in list order',
     logFileEmptyCould: 'The log file is empty or could not be read',
     logFileNameFormat: 'Log file name format',
     logFileNameFormat2: 'Log file name format; leave empty when the name is fixed',

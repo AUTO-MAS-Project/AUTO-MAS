@@ -154,7 +154,7 @@ const onDragEnd = () => {
         </a-dropdown>
 
         <span class="hook-rules-count">
-          共 {{ hookRules.length }} 条规则，{{ activeRuleCount }} 条生效，按列表顺序执行
+          {{ t('edit.ruleCountFooter', { n: hookRules.length, m: activeRuleCount }) }}
         </span>
       </div>
     </div>

@@ -1315,6 +1315,7 @@ export default {
     logHooks: '日志预处理',
     logHooksOffRules: '日志预处理已停用，规则不会参与日志处理。',
     ruleCountSummary: '{n} 条规则，{m} 条生效',
+    ruleCountFooter: '共 {n} 条规则，{m} 条生效，按列表顺序执行',
     logFileEmptyCould: '日志文件为空或无法读取',
     logFileNameFormat: '日志文件名格式',
     logFileNameFormat2: '日志文件名格式，文件名固定时留空',
