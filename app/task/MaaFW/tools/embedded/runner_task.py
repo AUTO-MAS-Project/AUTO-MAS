@@ -37,6 +37,7 @@ from app.task.MaaFW.tools.core.interface.models import (
 )
 from app.task.MaaFW.tools.core.interface.preview import (
     build_adb_emulator_extra_capabilities,
+    interface_display_name,
 )
 from app.task.MaaFW.tools.core.interface.service import (
     MaaFWInterfaceService,
@@ -85,6 +86,13 @@ from .option_secrets import (
     secret_log_variants,
 )
 from .project_path import release_project_path, try_reserve_project_path
+from .signal_notice import (
+    MAINTENANCE_LAST_STATUS,
+    MAINTENANCE_SKIP_MESSAGE,
+    SERVER_MAINTENANCE,
+    SIGNAL_USER_MESSAGES,
+    MaaFWSignalTracker,
+)
 from .update_credentials import resolve_update_proxy_url
 
 logger = get_logger("MaaFW 插件自动代理")
@@ -393,6 +401,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         user_config: Mapping[uuid.UUID, Any],
         emulator_manager: DeviceBase | None,
         project_update_logs: list[str] | None = None,
+        signal_tracker: MaaFWSignalTracker | None = None,
     ):
         super().__init__()
 
@@ -447,6 +456,11 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         self._game_update_checked = False
         self.maafw_runtime_pool_root: Path | None = None
         self.maafw_runtime_pool_id: str | None = None
+        # 本轮（整个脚本）的信号账：同一资源已确认维护时后续用户直接跳过，收尾时由
+        # 管理器按「信号 + 资源」各发一条通知。管理器传入共享的一份。
+        self.signal_tracker = signal_tracker or MaaFWSignalTracker()
+        # 本用户这次运行命中的信号（worker 回报），决定收尾怎么结算。
+        self.run_signal: str | None = None
 
     async def check(self) -> str:
         proxy_times = (
@@ -490,6 +504,14 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             if not self.run_plan.tasks:
                 self.cur_user_item.status = "跳过"
                 return "MaaFW 周期任务已在本周或本月完成，跳过本次运行"
+
+            # 本轮前面的用户已经撞上同一资源的停服维护：不再拉起游戏 / 模拟器，
+            # 并进那条维护通知的用户列表。代理次数、上次状态都不动。
+            maintenance = self.signal_tracker.maintenance(self.run_plan.resourceName)
+            if maintenance is not None:
+                maintenance.add_user(str(self.cur_user_uid), self.cur_user_item.name)
+                self.cur_user_item.status = "跳过"
+                return MAINTENANCE_SKIP_MESSAGE
 
             if self.run_plan.controllerType == "Adb":
                 emulator_id = self.script_config.get("Emulator", "Id")
@@ -651,6 +673,11 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                     continue
 
                 await self._mark_period_tasks_completed(result.completedTasks)
+                if result.signal is not None:
+                    # 项目声明的信号节点命中：停服维护 = 本次跳过，需要更新客户端 = 失败；
+                    # 两种都是重试多少次都一样，不重启游戏 / 模拟器，直接收尾。
+                    await self._finish_on_signal(index + 1, result)
+                    break
                 if result.success:
                     self.run_complete = True
                     if self.cur_user_log is not None:
@@ -743,6 +770,12 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             await self.cur_user_config.set("Data", "LastProxyStatus", "成功")
             self.cur_user_item.status = "完成"
             await self._send_success_notify()
+        elif self.run_signal == SERVER_MAINTENANCE:
+            # 维护是跳过不是失败：代理次数、剩余天数不动，下次定时照常再跑
+            await self.cur_user_config.set(
+                "Data", "LastProxyStatus", MAINTENANCE_LAST_STATUS
+            )
+            self.cur_user_item.status = "跳过"
         else:
             await self.cur_user_config.set("Data", "LastProxyStatus", "失败")
             if self.cur_user_item.status == "运行":
@@ -2330,6 +2363,78 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             start_time = previous.replace(microsecond=0) + timedelta(seconds=1)
         self.cur_user_log_started_at = start_time
         self.cur_user_item.log_record[start_time] = self.cur_user_log = LogRecord()
+
+    async def _finish_on_signal(self, attempt: int, result: MaaFWRunResult) -> None:
+        """worker 回报了信号节点命中：记账、写日志状态、发一条任务页提示。
+
+        正式通知不在这里发：同一轮里同一资源可能有多位用户，由管理器收尾时按
+        「信号 + 资源」各发一条。维护的证据图只进那条通知，不当失败截图进报告；
+        需要更新按失败计，截图照常进报告。
+        """
+
+        signal = str(result.signal)
+        self.run_signal = signal
+        message = SIGNAL_USER_MESSAGES.get(signal, str(result.errorMessage or signal))
+        # runner 那行「游戏停服维护中，本轮剩余任务已跳过: <任务>」已进任务日志，
+        # 这里只记后端日志，不在界面上再复述一遍。
+        logger.warning(
+            f"MaaFW 用户 {self.cur_user_item.name} 命中项目信号 {signal}"
+            f"（节点 {result.signalNode}）：{message}"
+        )
+        screenshots = [Path(shot.path) for shot in result.failureScreenshots]
+        labels = (
+            _format_completed_task_labels(self.run_plan, result.completedTasks)
+            if self.run_plan is not None
+            else list(result.completedTasks)
+        )
+        report_shots: list[tuple[str, Path]] = []
+        if signal != SERVER_MAINTENANCE and self.run_plan is not None:
+            report_shots = [
+                (
+                    _format_completed_task_labels(self.run_plan, [shot.task])[0],
+                    Path(shot.path),
+                )
+                for shot in result.failureScreenshots
+            ]
+        self._record_attempt(attempt, labels, message, screenshots=report_shots)
+        if self.cur_user_log is not None:
+            self.cur_user_log.status = message
+
+        project_name = ""
+        if self.interface_model is not None:
+            with suppress(Exception):
+                project_name = await asyncio.to_thread(
+                    interface_display_name, self.project_path, self.interface_model
+                )
+        plan = self.run_plan
+        if not project_name and plan is not None:
+            project_name = str(plan.projectLabel or plan.projectName or "")
+        resource_label = ""
+        if plan is not None:
+            label = str(plan.resource.label or "").strip()
+            resource_label = (
+                label if label and not label.startswith("$") else plan.resourceName
+            )
+        self.signal_tracker.record(
+            signal,
+            resource_name=plan.resourceName
+            if plan is not None
+            else result.resourceName,
+            resource_label=resource_label,
+            project_name=project_name,
+            node=result.signalNode,
+            user_id=str(self.cur_user_uid),
+            user_name=self.cur_user_item.name,
+            screenshot=screenshots[0] if screenshots else None,
+        )
+        await Publisher.send(
+            id=self.task_info.task_id,
+            type=protocol.TASK_NOTICE,
+            data=WSTaskNoticeData(
+                level="warning" if signal == SERVER_MAINTENANCE else "error",
+                message=message,
+            ),
+        )
 
     def _timed_out_user_summary(self, result: MaaFWRunResult) -> str:
         limit = self.script_config.get("Run", "RunTimeLimit")

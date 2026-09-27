@@ -69,6 +69,10 @@ from app.task.MaaFW.tools.embedded.project_path import (
     release_project_path,
     try_reserve_project_path,
 )
+from app.task.MaaFW.tools.embedded.signal_notice import (
+    MaaFWSignalTracker,
+    push_signal_notices,
+)
 from app.task.MaaFW.tools.embedded.update_credentials import (
     AutoUpdateMode,
     MaaFWUpdateCredentials,
@@ -341,6 +345,9 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
         self._report_finalized = False
         # 各用户跑完攒下的失败截图（带用户名的标签, 路径），最后随「代理结果」发出。
         self._failure_screenshots: list[tuple[str, Path]] = []
+        # 本轮项目信号（停服维护 / 需要更新客户端）的账，各用户的 AutoProxy 共用一份：
+        # 同一资源已确认维护时后续用户直接跳过；收尾时按「信号 + 资源」各发一条通知。
+        self.signal_tracker = MaaFWSignalTracker()
         # 项目更新的日志行（已带时间戳）；运行前更新的会并入第一位用户的日志。
         self.project_update_logs: list[str] = []
         self._auto_update_mode: AutoUpdateMode = "Off"
@@ -544,6 +551,7 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
             self.emulator_manager,
             # 运行前更新的日志只并入第一位用户；取走后列表清空，后续用户不重复。
             project_update_logs=self._take_project_update_logs(),
+            signal_tracker=self.signal_tracker,
         )
         route = self._resolve_runtime_pool_route()
         task.maafw_runtime_pool_root = route.root
@@ -1504,6 +1512,8 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
             return
         self._report_finalized = True
 
+        await self._push_signal_notices()
+
         title = (
             f"{datetime.now().strftime('%m-%d')} | "
             f"{self.script_info.name or '空白'}的{TASK_MODE_ZH[self.task_info.mode]}任务报告"
@@ -1546,6 +1556,30 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
             await self._run_project_update("AfterRun")
             # 顺手把下一轮要用的环境备好：下次运行前那一步就只剩比指纹。
             await self._ensure_project_environment("AfterRun")
+
+    async def _push_signal_notices(self) -> None:
+        """本轮撞上的停服维护 / 需要更新客户端，每个「信号 + 资源」发一条通知。"""
+
+        if not self.signal_tracker.records():
+            return
+        user_config = self.user_config
+
+        def user_config_for(user_id: str) -> Any | None:
+            if user_config is None:
+                return None
+            try:
+                return user_config[uuid.UUID(user_id)]
+            except (KeyError, ValueError):
+                return None
+
+        try:
+            await push_signal_notices(
+                self.signal_tracker,
+                script_name=self.script_info.name or "空白",
+                user_config_for=user_config_for,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.opt(exception=True).warning(f"推送 MFW 信号通知时出现异常: {exc}")
 
     async def on_crash(self, e: Exception) -> None:
         logger.exception(f"MFW 内置运行异常：{e}")

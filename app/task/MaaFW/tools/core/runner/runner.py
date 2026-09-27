@@ -80,17 +80,39 @@ from app.task.MaaFW.tools.core.runtime_pool.host_environment import (
 # 就这么丢过一次，见下方注释）。
 try:
     from .models import MaaFWDeviceConfig, MaaFWFailureScreenshot, MaaFWRunResult
+    from .pipeline_override import deep_merge_pipeline_override
     from .run_plan import MaaFWRunPlan, MaaFWTaskRunPlan, _lookup_i18n_text
+    from .run_signal import (
+        CLIENT_UPDATE_REQUIRED,
+        SERVER_MAINTENANCE,
+        SIGNAL_NOTIFICATION,
+        MaaFWSignalSpec,
+        match_signal,
+        parse_signal_spec,
+        signal_enable_override,
+    )
 except ImportError:
     from models import (  # type: ignore[no-redef]
         MaaFWDeviceConfig,
         MaaFWFailureScreenshot,
         MaaFWRunResult,
     )
+    from pipeline_override import (  # type: ignore[no-redef]
+        deep_merge_pipeline_override,
+    )
     from run_plan import (  # type: ignore[no-redef]
         MaaFWRunPlan,
         MaaFWTaskRunPlan,
         _lookup_i18n_text,
+    )
+    from run_signal import (  # type: ignore[no-redef]
+        CLIENT_UPDATE_REQUIRED,
+        SERVER_MAINTENANCE,
+        SIGNAL_NOTIFICATION,
+        MaaFWSignalSpec,
+        match_signal,
+        parse_signal_spec,
+        signal_enable_override,
     )
 
 ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-9;]*[a-zA-Z]")
@@ -140,6 +162,22 @@ FATAL_CONTROLLER_ACTIONS = frozenset({"start_app"})
 # post_stop 都会产生它。脚本侧（如 MaaEnd 的分辨率闸门）用自定义动作强停时，
 # 我们只能从这里知道「这一轮不是自己结束的」。
 MAAFW_POST_STOP_ENTRY = "MaaTaskerPostStop"
+# 信号节点命中后的说明（界面日志与结果 errorMessage）与证据截图文件名里的 kind。
+# kind 只用小写字母：问题包导出按 ``<时分秒>.<kind>-<HHMMSS>-<任务>.png`` 收截图，
+# kind 部分是 ``[a-z]+``，带连字符就收不进去。
+SIGNAL_MESSAGES = {
+    SERVER_MAINTENANCE: "游戏停服维护中",
+    CLIENT_UPDATE_REQUIRED: "游戏需要更新客户端",
+}
+SIGNAL_SCREENSHOT_KINDS = {
+    SERVER_MAINTENANCE: "maintenance",
+    CLIENT_UPDATE_REQUIRED: "clientupdate",
+}
+# 对象形状的信号节点识别文本都不中时记一行 worker 日志；[JumpBack] 节点会反复命中，
+# 同一段文本只记一次，总数封顶。
+SIGNAL_UNMATCHED_LOG_LIMIT = 20
+# 回调线程里发起的停止，主线程收尾时最多等它这么久。
+SIGNAL_STOP_JOIN_SECONDS = 10.0
 
 _MAAFW_INITIALIZED = False
 _MAAFW_INIT_LOCK = threading.Lock()
@@ -726,6 +764,19 @@ class MaaFWRunner:
         self._post_lock: threading.Lock = threading.Lock()
         self._task_in_flight: bool = False
         self._deadline_stop_posted: bool = False
+        # 项目声明的信号节点（attach.auto_mas），资源加载后扫描得到：节点名 → 声明。
+        # 每个任务下发时强开它们（叠在任务自身与选项覆盖之后）。
+        self._signal_specs: dict[str, MaaFWSignalSpec] = {}
+        # binding 列不出节点时退回「命中时按节点名查 attach」：不强开，只判定。
+        self._signal_lookup_on_hit: bool = False
+        self._signal_lookup_cache: dict[str, MaaFWSignalSpec | None] = {}
+        self._signal_unmatched_logged: set[tuple[str, tuple[str, ...]]] = set()
+        # 回调线程判定到信号后置位（信号, 节点名），并在单独线程里 post_stop；
+        # 主线程从 _wait_job 回来先看它，再看超时与脚本侧强停。
+        self._signal_lock: threading.Lock = threading.Lock()
+        self._signal_hit: tuple[str, str] | None = None
+        self._signal_task: str | None = None
+        self._signal_stop_thread: threading.Thread | None = None
         # 本次运行的实例标识：拼进 interface 声明的固定 agent identifier，防同一项目的
         # 两个脚本并行时抢同一个 socket（见 _run_agent_identifier）。
         self._run_instance_tag: str = uuid.uuid4().hex[:8]
@@ -749,6 +800,7 @@ class MaaFWRunner:
         self.tasker = Tasker()
         self._install_resource_sink()
         self._load_resources()
+        self._scan_signal_nodes()
         self._connect_device(device_config)
         self._start_agents()
         self._initialized = True
@@ -803,11 +855,30 @@ class MaaFWRunner:
         self._deadline_hit.clear()
         self._deadline_stop_posted = False
         self._failure_screenshots = []
+        with self._signal_lock:
+            self._signal_hit = None
+            self._signal_task = None
+            self._signal_stop_thread = None
         self._start_deadline_timer()
         try:
             self._ensure_initialized(device_config)
             self._wait_task_start_gate()
             completed_tasks = self._run_tasks()
+            signal_hit = self._signal_hit
+            if signal_hit is not None:
+                signal, signal_node = signal_hit
+                return MaaFWRunResult(
+                    success=False,
+                    projectName=self.plan.projectName,
+                    controllerName=self.plan.controllerName,
+                    resourceName=self.plan.resourceName,
+                    completedTasks=completed_tasks,
+                    failedTask=self._signal_task,
+                    errorMessage=SIGNAL_MESSAGES[signal],
+                    failureScreenshots=self.failure_screenshots,
+                    signal=signal,
+                    signalNode=signal_node,
+                )
             if self._failed_task_errors:
                 first_failed_task, _ = self._failed_task_errors[0]
                 if len(self._failed_task_errors) == 1:
@@ -860,6 +931,7 @@ class MaaFWRunner:
             )
         finally:
             self._cancel_deadline_timer()
+            self._join_signal_stop()
 
     def _start_deadline_timer(self) -> None:
         """到宿主给的截止时刻就停掉当前任务。
@@ -994,6 +1066,88 @@ class MaaFWRunner:
         self._check_resource_hash()
         for path_info in self.plan.resource.attachedPaths:
             self._load_resource_bundle(path_info)
+
+    def _scan_signal_nodes(self) -> None:
+        """资源加载完后找出声明了 ``attach.auto_mas`` 的节点（见 run_signal.py）。
+
+        扫到的节点在每个任务下发时由 ``_task_pipeline_override`` 强开（``auto_mas`` 就是
+        项目作者声明「在 MAS 下启用」，项目自带的开关只对其他外壳有效）。回调里只查字典。
+        binding 列不出节点（没有 ``node_list``）时不扫、不强开，退回命中时按节点名查
+        （结果缓存）；连 ``get_node_data`` 都没有就不识别信号。都只记日志，不影响运行。
+        """
+
+        self._signal_specs = {}
+        self._signal_lookup_on_hit = False
+        self._signal_lookup_cache = {}
+        resource = self.resource
+        get_node_data = getattr(resource, "get_node_data", None)
+        if not callable(get_node_data):
+            self.send_log(
+                f"{DETAIL_LOG_PREFIX}MaaFW binding 没有 get_node_data，不识别项目声明的"
+                "维护 / 更新信号节点"
+            )
+            return
+        started = time.perf_counter()
+        try:
+            names = list(resource.node_list)
+        except Exception as exc:
+            self._signal_lookup_on_hit = True
+            self.send_log(
+                f"{DETAIL_LOG_PREFIX}MaaFW binding 列不出节点（{exc}），不强开维护 / "
+                "更新信号节点，只在节点命中时按名字判定"
+            )
+            return
+        specs: dict[str, MaaFWSignalSpec] = {}
+        for name in names:
+            try:
+                data = get_node_data(name)
+            except Exception:
+                continue
+            spec = self._parse_signal_node(name, data)
+            if spec is not None:
+                specs[name] = spec
+        self._signal_specs = specs
+        elapsed_ms = (time.perf_counter() - started) * 1000
+        found = "、".join(sorted(specs)) if specs else "无"
+        self.send_log(
+            f"{DETAIL_LOG_PREFIX}信号节点扫描：{len(names)} 个节点，用时 "
+            f"{elapsed_ms:.0f} ms，信号节点: {found}"
+        )
+
+    def _parse_signal_node(self, name: str, data: Any) -> MaaFWSignalSpec | None:
+        spec, warnings = parse_signal_spec(name, data)
+        for warning in warnings:
+            self.send_log(f"项目信号节点写法有误: {warning}")
+        return spec
+
+    def _signal_spec_for(self, name: str) -> MaaFWSignalSpec | None:
+        spec = self._signal_specs.get(name)
+        if spec is not None or not self._signal_lookup_on_hit:
+            return spec
+        if name in self._signal_lookup_cache:
+            return self._signal_lookup_cache[name]
+        spec = None
+        resource = self.resource
+        if resource is not None:
+            try:
+                spec = self._parse_signal_node(name, resource.get_node_data(name))
+            except Exception:
+                spec = None
+        self._signal_lookup_cache[name] = spec
+        return spec
+
+    def _task_pipeline_override(self, task: MaaFWTaskRunPlan) -> dict[str, Any]:
+        """下发给 MaaFW 的覆盖：任务计划里的覆盖，最后叠上强开信号节点。
+
+        项目自带的开关关着时会在覆盖里写 ``{节点: {"enabled": false}}``；强开必须在
+        任务自身与全部选项深合并之后再叠，以它为准。没有信号节点时原样返回同一个对象。
+        """
+
+        if not self._signal_specs:
+            return task.pipelineOverride
+        return deep_merge_pipeline_override(
+            task.pipelineOverride, signal_enable_override(self._signal_specs)
+        )
 
     def _load_resource_bundle(self, path_info: Any) -> None:
         if not path_info.exists or not path_info.isDir:
@@ -2104,11 +2258,12 @@ class MaaFWRunner:
             with self._focus_lock:
                 self._focus_log_count = 0
             self._failed_controller_actions.clear()
+            pipeline_override = self._task_pipeline_override(task)
             try:
                 with self._post_lock:
                     self._raise_if_deadline_hit()
-                    if task.pipelineOverride:
-                        job = tasker.post_task(task.entry, task.pipelineOverride)
+                    if pipeline_override:
+                        job = tasker.post_task(task.entry, pipeline_override)
                     else:
                         job = tasker.post_task(task.entry)
                     self._task_in_flight = True
@@ -2119,6 +2274,10 @@ class MaaFWRunner:
             except Exception as exc:
                 if self._stop_requested.is_set():
                     raise RuntimeError("MaaFW 任务已停止") from exc
+                # 信号节点命中后是我们自己 post_stop 的：要先于超时与脚本侧强停判定，
+                # 否则会被记成任务失败或「任务被脚本侧强制停止」。
+                if self._finish_on_signal(task, display_name):
+                    break
                 if isinstance(exc, MaaFWRunTimeoutError):
                     # 投递前就到点了（锁内那次检查抛的）：截一张当前画面再往上抛
                     self._raise_if_deadline_hit(task.name)
@@ -2155,6 +2314,10 @@ class MaaFWRunner:
                 continue
             if self._stop_requested.is_set():
                 raise RuntimeError("MaaFW 任务已停止")
+            # 被我们 post_stop 打断的任务 job 不报失败（5.12.3 实测状态是 invalid），
+            # 同样先看信号。
+            if self._finish_on_signal(task, display_name):
+                break
             self._raise_if_deadline_hit(task.name, only_if_stopped=True)
             # MaaFW 会把「被 post_stop 打断」的入口回报成 Task.Succeeded——强停是
             # 由 pipeline 里的动作节点触发的，那个节点本身返回成功。只看
@@ -2173,6 +2336,85 @@ class MaaFWRunner:
             time.sleep(0.1)
         return completed_tasks
 
+    def _finish_on_signal(self, task: MaaFWTaskRunPlan, display_name: str) -> bool:
+        """当前任务是因为信号节点命中而停下的：截证据图、记日志，返回 True 让本轮收尾。"""
+
+        with self._signal_lock:
+            hit = self._signal_hit
+            if hit is None:
+                return False
+            self._signal_task = task.name
+        self._join_signal_stop()
+        signal, _ = hit
+        self._capture_failure_screenshot(
+            task.name, kind=SIGNAL_SCREENSHOT_KINDS[signal]
+        )
+        self.send_log(f"{SIGNAL_MESSAGES[signal]}，本轮剩余任务已跳过: {display_name}")
+        return True
+
+    def _on_signal_notification(self, message: str, details: Any) -> None:
+        """信号节点识别命中：置位并在单独线程里停掉当前任务。
+
+        这是框架的回调线程，不能在这里等 post_stop 的 job（停止要等当前任务从回调里
+        返回，原地等就是死锁）；截图与收尾留给主线程，和超时截止同一个做法。
+        """
+
+        if message != SIGNAL_NOTIFICATION or not isinstance(details, dict):
+            return
+        name = details.get("name")
+        if not isinstance(name, str) or not name:
+            return
+        spec = self._signal_spec_for(name)
+        if spec is None:
+            return
+        signal, texts = match_signal(spec, details)
+        if signal is None:
+            self._log_unmatched_signal(name, texts)
+            return
+        with self._signal_lock:
+            if self._signal_hit is not None or self._stop_requested.is_set():
+                return
+            self._signal_hit = (signal, name)
+            thread = threading.Thread(
+                target=self._post_signal_stop,
+                name="maafw-signal-stop",
+                daemon=True,
+            )
+            self._signal_stop_thread = thread
+        self.send_log(
+            f"{DETAIL_LOG_PREFIX}信号节点 {name} 命中：{signal}，正在停止当前任务"
+        )
+        thread.start()
+
+    def _log_unmatched_signal(self, name: str, texts: list[str] | None) -> None:
+        key = (name, tuple(texts or ()))
+        if (
+            key in self._signal_unmatched_logged
+            or len(self._signal_unmatched_logged) >= SIGNAL_UNMATCHED_LOG_LIMIT
+        ):
+            return
+        self._signal_unmatched_logged.add(key)
+        if texts:
+            detail = "识别文本: " + " / ".join(texts)
+        else:
+            detail = "不是 OCR 识别或没有识别文本，按规则无法判定"
+        self.send_log(
+            f"{DETAIL_LOG_PREFIX}信号节点 {name} 命中但未匹配任何信号规则，{detail}"
+        )
+
+    def _post_signal_stop(self) -> None:
+        try:
+            self._post_self_stop()
+        except Exception as exc:
+            self.send_log(f"停止 MaaFW tasker 失败: {exc}")
+
+    def _join_signal_stop(self) -> None:
+        thread = self._signal_stop_thread
+        if thread is None or thread is threading.current_thread():
+            return
+        with suppress(RuntimeError):
+            thread.join(timeout=SIGNAL_STOP_JOIN_SECONDS)
+
     def _capture_failure_screenshot(
         self, task_name: str, *, kind: str = "failed"
     ) -> None:
@@ -2181,7 +2423,8 @@ class MaaFWRunner:
         画面就是用户排查时最想看的那一眼——卡在哪个弹窗、哪个界面。
         取消（stop_requested）不算失败，不截；controller 已经没了也截不到。
         截图失败只记一行日志，绝不能反过来影响任务结果。
-        ``kind`` 进文件名：普通失败是 ``failed``，超时停下的是 ``timeout``。
+        ``kind`` 进文件名：普通失败是 ``failed``，超时停下的是 ``timeout``，信号节点
+        命中的证据图是 ``maintenance`` / ``clientupdate``。
         """
 
         directory = self._failure_screenshot_dir
@@ -2207,7 +2450,13 @@ class MaaFWRunner:
         self._failure_screenshots.append(
             MaaFWFailureScreenshot(task=task_name, path=str(path))
         )
-        self.send_log(f"任务失败截图已保存: {path}")
+        # 信号节点的证据图不是失败截图（维护是跳过）
+        label = (
+            "截图已保存"
+            if kind in SIGNAL_SCREENSHOT_KINDS.values()
+            else "任务失败截图已保存"
+        )
+        self.send_log(f"{label}: {path}")
 
     def _completed_task_names(self) -> list[str]:
         completed_tasks = getattr(self, "_completed_tasks", [])
@@ -2233,6 +2482,11 @@ class MaaFWRunner:
         任何异常都吞掉——这是框架线程上的回调，抛出去只会让原生层丢通知。
         """
 
+        try:
+            self._on_signal_notification(message, details)
+        except Exception as exc:  # pragma: no cover - 同上，不能反噬任务
+            with suppress(Exception):
+                self.send_log(f"处理 MaaFW 信号节点通知失败: {exc}")
         try:
             focus_texts = self._resolve_focus_texts(message, details)
             for text in focus_texts:
