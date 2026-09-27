@@ -255,6 +255,15 @@ _MAA_CONFIG_FILES = ("gui.json", "gui.new.json")
 _MUMU_EXTRAS_KEY = "MuMuEmulator12"
 
 
+def _mumu_install_path(manager_path: str) -> str:
+    """Derive MAA's MuMu install directory from the manager executable."""
+    manager = Path(manager_path)
+    parent = manager.parent
+    if parent.name.casefold() == "nx_main":
+        parent = parent.parent
+    return str(parent)
+
+
 def _configure_mumu_screenshot_enhancement(gui_new_set: dict, device: dict) -> None:
     gui = gui_new_set["Configurations"]["Default"].setdefault("Gui", {})
     connect = gui.setdefault("ConnectSettings", {})
@@ -1428,8 +1437,8 @@ class AutoProxyTask(TaskExecuteBase):
         )
         if device_ref is not None and device_ref.emulator_type == "mumu":
             self._maa_temporary_extras = {
-                "EmulatorPath": device_ref.manager_path,
-                "InstanceIndex": device_ref.native_index,
+                "EmulatorPath": _mumu_install_path(device_ref.manager_path),
+                "InstanceIndex": int(device_ref.native_index),
             }
             _configure_mumu_screenshot_enhancement(
                 gui_new_set, self._maa_temporary_extras
