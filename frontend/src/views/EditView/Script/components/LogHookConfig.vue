@@ -95,7 +95,7 @@ const onDragEnd = () => {
       </h3>
       <div class="hook-config-actions">
         <span v-if="collapsed && hookRules.length > 0" class="hook-config-summary">
-          {{ hookRules.length }} 条规则，{{ activeRuleCount }} 条生效
+          {{ t('edit.ruleCountSummary', { n: hookRules.length, m: activeRuleCount }) }}
         </span>
         <a-tooltip :title="t('edit.rulesApplyOnlyWhen')">
           <a-switch

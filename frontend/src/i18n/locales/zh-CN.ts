@@ -1314,6 +1314,7 @@ export default {
     dailyTaskTimeoutMinutes: '日常任务超时限制（分钟）',
     logHooks: '日志预处理',
     logHooksOffRules: '日志预处理已停用，规则不会参与日志处理。',
+    ruleCountSummary: '{n} 条规则，{m} 条生效',
     logFileEmptyCould: '日志文件为空或无法读取',
     logFileNameFormat: '日志文件名格式',
     logFileNameFormat2: '日志文件名格式，文件名固定时留空',

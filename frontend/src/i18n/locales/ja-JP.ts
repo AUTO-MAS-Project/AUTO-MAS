@@ -1279,6 +1279,7 @@ export default {
     dailyTaskTimeoutMinutes: '日課タスクのタイムアウト（分）',
     logHooks: 'ログ前処理',
     logHooksOffRules: 'ログ前処理は無効です。ルールは実行されません。',
+    ruleCountSummary: '{n} 件のルール、{m} 件が有効',
     logFileEmptyCould: 'ログファイルが空か、読み込めません',
     logFileNameFormat: 'ログファイル名の書式',
     logFileNameFormat2: 'ログファイル名の書式。ファイル名が固定の場合は空にしてください',
