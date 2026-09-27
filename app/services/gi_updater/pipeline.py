@@ -274,11 +274,20 @@ async def _run_plan(
             f"{summarize_size(plan.summary.largest_target)}、磁盘需 "
             f"{summarize_size(plan.disk_need)}"
             + (
+                f"、其中语音包 {plan.summary.voice_count} 个/"
+                f"{summarize_size(plan.summary.voice_download)}"
+                if plan.summary.voice_count
+                else ""
+            )
+            + (
                 f"、预计整文件重下 {plan.summary.downgraded} 个"
                 if plan.summary.downgraded
                 else ""
             )
         )
+        if plan.message:
+            # 例如某档语音本轮没有差分：主资源照更，这档本轮不动
+            _note(f"{display}客户端本轮还有一处没动：{plan.message}")
         # 补丁工具只在确实要打增量时才取：没装过游戏、拿不到差分的轮次都用不上它，
         # 更早地失败会把一轮本不需要它的任务白白拦下
         try:

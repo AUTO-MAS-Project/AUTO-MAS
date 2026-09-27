@@ -49,9 +49,9 @@ from typing import Any, Dict, List, Optional
 
 from app.services.gi_updater.api import (
     fetch_branches,
-    fetch_main_manifest_ref,
+    fetch_main_manifest_refs,
     fetch_manifest_bytes,
-    fetch_patch_manifest_ref,
+    fetch_patch_manifest_refs,
 )
 from app.services.gi_updater.common import (
     AbortHook,
@@ -71,6 +71,7 @@ from app.services.gi_updater.patch import (
 )
 from app.services.gi_updater.presets import PresetConfig
 from app.services.gi_updater.sophon import (
+    MAIN_MATCHING_FIELD,
     parse_sophon_manifest,
     parse_sophon_patch,
 )
@@ -113,14 +114,14 @@ class UpdatePlan:
     state: GameInstallStateEnum = GameInstallStateEnum.Installed
     source_version: Optional[GameVersion] = None
     target_version: Optional[GameVersion] = None
-    #: 待处理明细（只有 SophonPatch 才有）
+    #: 待处理明细（只有 SophonPatch 才有）；主资源与各档语音混在一张表里，
+    #: 每条自带所属类别与取数据的基址
     assets: List[PatchAsset] = field(default_factory=list)
     #: 本轮淘汰的旧文件（只有 SophonPatch 才有）
     removals: List[str] = field(default_factory=list)
-    #: 取数据用的两处基址（只有 SophonPatch 才有）
-    urls: Optional[BlobUrls] = None
     summary: AssetSummary = field(default_factory=AssetSummary)
-    #: 面向用户的一句话结论：``kind == Unknown`` 时是问不出的原因
+    #: 面向用户的一句话结论：``kind == Unknown`` 时是问不出的原因，
+    #: ``kind == SophonPatch`` 时可能带着「某档语音本轮没有差分」这类附注
     message: str = ""
 
     @property
@@ -260,11 +261,11 @@ class InstallManagerBase:
             plan.message = "读不出本机游戏版本，无法定位差分基线"
             return plan
 
-        target_ref = await fetch_main_manifest_ref(client, self.preset, main)
-        patch_ref = await fetch_patch_manifest_ref(
+        target_refs = await fetch_main_manifest_refs(client, self.preset, main)
+        patch_refs = await fetch_patch_manifest_refs(
             client, self.preset, main, baseline.sophon_tag
         )
-        if patch_ref is None:
+        if MAIN_MATCHING_FIELD not in patch_refs:
             plan.kind = UpdateKind.SophonUpdate
             plan.message = (
                 f"官方没有下发 {baseline.sophon_tag} -> "
@@ -272,23 +273,59 @@ class InstallManagerBase:
             )
             return plan
 
-        target_assets = parse_sophon_manifest(
-            await fetch_manifest_bytes(client, target_ref)
-        ).assets
-        patch_manifest = parse_sophon_patch(
-            await fetch_manifest_bytes(client, patch_ref)
-        )
-        assets, removals = build_patch_assets(
-            patch_manifest, target_assets, baseline.sophon_tag, self.protected_names()
-        )
+        assets: List[PatchAsset] = []
+        removals: List[str] = []
+        kept: set = set()
+        skipped: List[str] = []
+        # 主资源必选；语音只跟「本机确实装了这档语言」的类别，避免凭空给用户多出几 GiB
+        for category in [MAIN_MATCHING_FIELD, *self.installed_voice_categories()]:
+            target_ref = target_refs.get(category)
+            patch_ref = patch_refs.get(category)
+            if target_ref is None or patch_ref is None:
+                if category != MAIN_MATCHING_FIELD:
+                    skipped.append(category)
+                continue
+            target_assets = parse_sophon_manifest(
+                await fetch_manifest_bytes(client, target_ref)
+            ).assets
+            patch_manifest = parse_sophon_patch(
+                await fetch_manifest_bytes(client, patch_ref)
+            )
+            group_assets, group_removals = build_patch_assets(
+                patch_manifest,
+                target_assets,
+                baseline.sophon_tag,
+                category,
+                BlobUrls(
+                    diff_prefix=patch_ref.chunk_url_prefix,
+                    diff_compressed=patch_ref.chunk_compressed,
+                    main_prefix=target_ref.chunk_url_prefix,
+                    main_compressed=target_ref.chunk_compressed,
+                ),
+                self.protected_names(),
+            )
+            assets.extend(group_assets)
+            removals.extend(group_removals)
+            kept.update(
+                asset.asset_name.casefold()
+                for asset in target_assets
+                if not asset.is_directory
+            )
+
+        if skipped:
+            # 官方没给这档语音的差分：主资源照更，这档本轮不动
+            plan.message = (
+                "官方没有下发语音包 " + "、".join(skipped) + " 的差分包，本次不更新"
+            )
+
         plan.assets = self.filter_assets(assets)
-        plan.removals = removals
-        plan.urls = BlobUrls(
-            diff_prefix=patch_ref.chunk_url_prefix,
-            diff_compressed=patch_ref.chunk_compressed,
-            main_prefix=target_ref.chunk_url_prefix,
-            main_compressed=target_ref.chunk_compressed,
-        )
+        # 删除名单按所有入选类别的目标文件并集复核：任一入选清单还在用的文件都不能删
+        forbidden = {name.casefold() for name in self.protected_names()}
+        plan.removals = [
+            name
+            for name in dict.fromkeys(removals)
+            if name.casefold() not in kept and name.casefold() not in forbidden
+        ]
         plan.summary = await summarize_assets(plan.assets, self.game_path)
         plan.kind = UpdateKind.SophonPatch
         return plan
@@ -310,7 +347,7 @@ class InstallManagerBase:
             其余继续——一次更新上千个文件，因为一个坏文件停手会让用户反复从头开始。
         """
         result = InstallResult(kind=plan.kind, file_total=plan.file_count)
-        if plan.kind is not UpdateKind.SophonPatch or plan.urls is None:
+        if plan.kind is not UpdateKind.SophonPatch or not plan.assets:
             result.success = True
             result.message = "本轮没有需要自动执行的增量"
             return result
@@ -338,7 +375,6 @@ class InstallManagerBase:
                             game_path,
                             temp_dir,
                             asset,
-                            plan.urls,
                             hpatchz=hpatchz,
                             logger=self.logger,
                         )
@@ -381,6 +417,15 @@ class InstallManagerBase:
     def filter_assets(self, assets: List[PatchAsset]) -> List[PatchAsset]:
         """钩子：剔除这款游戏不该下的文件；基类原样返回。"""
         return assets
+
+    def installed_voice_categories(self) -> List[str]:
+        """钩子：本机装了哪些语音类别（``matching_field``）；基类认为一个都没装。
+
+        只报「本地已有这档语言的资源」的类别：一档语音的体量都以 GiB 计，凭空给用户补一
+        档他从没下过的语言不能接受。哪些目录算装过某档语言是这款游戏自己的形态知识，所以
+        由游戏模块判定。
+        """
+        return []
 
     def protected_names(self) -> List[str]:
         """钩子：清单要求删除也必须留下的文件名（可执行文件与客户端配置）。"""

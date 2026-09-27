@@ -47,9 +47,9 @@ __all__ = [
     "PackageInfo",
     "blob_url",
     "fetch_branches",
-    "fetch_main_manifest_ref",
+    "fetch_main_manifest_refs",
     "fetch_manifest_bytes",
-    "fetch_patch_manifest_ref",
+    "fetch_patch_manifest_refs",
     "fetch_range",
     "mask_url_password",
     "new_client",
@@ -335,16 +335,69 @@ class ManifestRef:
     chunk_compressed: bool
 
 
-def _find_entry(payload: dict, matching_field: str) -> dict | None:
-    """在一份 build 响应里找指定 ``matching_field`` 的清单条目；没有返回 ``None``。"""
+def _index_entries(payload: dict) -> dict[str, dict]:
+    """把一个清单响应里的 ``manifests[]`` 按 ``matching_field`` 归成表。
+
+    一次 ``getBuild`` / ``getPatchBuild`` 会并列返回主资源与每档语音的清单条目，各自带着
+    自己的 ``category_id`` 与两处下载基址，所以两类接口都各请求一次就够，不必按类别反复问。
+    """
+    indexed: dict[str, dict] = {}
     for entry in data_mapping(payload).get("manifests") or []:
-        if (
-            isinstance(entry, dict)
-            and str(entry.get("matching_field") or "").casefold()
-            == matching_field.casefold()
-        ):
-            return entry
-    return None
+        if isinstance(entry, dict) and entry.get("matching_field"):
+            indexed[str(entry["matching_field"]).casefold()] = entry
+    return indexed
+
+
+async def fetch_main_manifest_refs(
+    client: httpx.AsyncClient, preset: PresetConfig, package: PackageInfo
+) -> dict[str, ManifestRef]:
+    """取目标版本各类资源的主清单位置（只收 GET）。
+
+    Returns:
+        ``matching_field``（小写）-> 清单位置；至少应含 ``game``。
+
+    Raises:
+        UpdaterError: 接口异常，或响应里没有 ``game`` 清单。
+    """
+    urls = preset.launcher_resource_chunks_url
+    payload = await request_json(
+        client, f"{urls.main_url}{_query(preset, package, with_tag=True)}"
+    )
+    entries = _index_entries(payload)
+    if MAIN_MATCHING_FIELD not in entries:
+        raise UpdaterError(
+            f"{preset.profile_name}：主清单里没有 matching_field=game 的条目"
+        )
+    return {
+        field: _manifest_ref(entry, from_diff=False) for field, entry in entries.items()
+    }
+
+
+async def fetch_patch_manifest_refs(
+    client: httpx.AsyncClient, preset: PresetConfig, package: PackageInfo, baseline: str
+) -> dict[str, ManifestRef]:
+    """取各类资源的差分清单位置（只收 POST）。
+
+    只登记「本机基线在它的 ``stats`` 里有键」的那几类：官方没给这个基线的差分（响应里没有
+    该条目，或 ``stats`` 里没有这个基线键）时，这一类直接不入选，由调用方决定退回全量比对
+    还是本轮不动。
+
+    Raises:
+        UpdaterError: 接口异常，或某类条目读不出地址。
+    """
+    urls = preset.launcher_resource_chunks_url
+    payload = await request_json(
+        client,
+        f"{urls.patch_url}{_query(preset, package, with_tag=False)}",
+        method="POST",
+    )
+    refs: dict[str, ManifestRef] = {}
+    for field, entry in _index_entries(payload).items():
+        # 基线版本不在查询串上：每份差分清单的 stats 直接以基线版本为键
+        baselines = entry.get("stats") or {}
+        if any(str(tag).casefold() == baseline.casefold() for tag in baselines):
+            refs[field] = _manifest_ref(entry, from_diff=True)
+    return refs
 
 
 def _manifest_ref(entry: dict, *, from_diff: bool) -> ManifestRef:
@@ -377,54 +430,6 @@ def _query(preset: PresetConfig, package: PackageInfo, *, with_tag: bool) -> str
     )
     # tag 只用接口原样返回的串，形态上的讲究见 GameVersion.sophon_tag
     return f"{url}&tag={package.tag}" if with_tag and package.tag else url
-
-
-async def fetch_main_manifest_ref(
-    client: httpx.AsyncClient, preset: PresetConfig, package: PackageInfo
-) -> ManifestRef:
-    """取目标版本主清单的位置（只收 GET）。
-
-    Raises:
-        UpdaterError: 接口异常，或响应里没有 ``game`` 清单。
-    """
-    urls = preset.launcher_resource_chunks_url
-    payload = await request_json(
-        client, f"{urls.main_url}{_query(preset, package, with_tag=True)}"
-    )
-    entry = _find_entry(payload, MAIN_MATCHING_FIELD)
-    if entry is None:
-        raise UpdaterError(
-            f"{preset.profile_name}：主清单里没有 matching_field=game 的条目"
-        )
-    return _manifest_ref(entry, from_diff=False)
-
-
-async def fetch_patch_manifest_ref(
-    client: httpx.AsyncClient, preset: PresetConfig, package: PackageInfo, baseline: str
-) -> ManifestRef | None:
-    """取差分清单位置（只收 POST）。
-
-    Returns:
-        差分清单位置；官方没给本机基线的差分（响应里没有 ``game`` 条目，或 ``stats``
-        里没有这个基线键）时返回 ``None``，由调用方退回逐文件全量比对。
-
-    Raises:
-        UpdaterError: 接口异常，或有 ``game`` 条目却读不出地址。
-    """
-    urls = preset.launcher_resource_chunks_url
-    payload = await request_json(
-        client,
-        f"{urls.patch_url}{_query(preset, package, with_tag=False)}",
-        method="POST",
-    )
-    entry = _find_entry(payload, MAIN_MATCHING_FIELD)
-    if entry is None:
-        return None
-    # 基线版本不在查询串上：每份差分清单的 stats 直接以基线版本为键
-    baselines = entry.get("stats") or {}
-    if not any(str(tag).casefold() == baseline.casefold() for tag in baselines):
-        return None
-    return _manifest_ref(entry, from_diff=True)
 
 
 async def fetch_manifest_bytes(client: httpx.AsyncClient, ref: ManifestRef) -> bytes:

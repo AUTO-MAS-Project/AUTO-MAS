@@ -1165,7 +1165,7 @@ export default {
     updateAutomaticallyBeforeLaunching: 'Update automatically before launching',
     genshinUpdateAuto: 'Auto-update Genshin (Bilibili server not supported)',
     genshinUpdateAutoHint:
-      'MAS checks the version and finishes downloading and installing on its own before the task starts the game, so the official launcher is not needed. Only incremental patches are applied automatically; when none is available it stops and defers to the official launcher. It updates the main resource package only - voice packs and other resources are still filled in by the official launcher or the in-game update. Bilibili server is not supported, update it with the official launcher',
+      'MAS checks the version and finishes downloading and installing on its own before the task starts the game, so the official launcher is not needed. Only incremental patches are applied automatically; when none is available it stops and defers to the official launcher. Voice packs that are already installed are updated along with the main resources. Bilibili server is not supported, update it with the official launcher',
     waitAfterLaunchSeconds: 'Wait after launch (seconds)',
     launchMode: 'Launch mode',
     howLongWaitAfter2: 'How long to wait after the game launches',
@@ -1765,7 +1765,7 @@ export default {
       'Only the official (CN) and global clients are supported (Asia / Europe / America / TW-HK-MO). For the Bilibili client, please use the official launcher',
     bettergiUpdateProgressTitle: 'Genshin client update progress',
     bettergiWillBeUpdated:
-      'The Genshin client used by this user will be checked and updated with official incremental patches. Only the main resource package is updated - voice packs still come from the official launcher. The update may download a lot of data, so make sure the game is not running',
+      'The Genshin client used by this user will be checked and updated with official incremental patches. Installed voice packs are updated along with the main resources. The update may download a lot of data, so make sure the game is not running',
     bettergiUpdateFailed: 'Genshin update failed: {p0}',
     bettergiUpdateTask: 'The Genshin update task finished',
     bettergiUpdateTimed: 'The Genshin update made no progress for a long time and was stopped',

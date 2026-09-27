@@ -45,6 +45,7 @@ from typing import Any, List, Optional, Sequence, Tuple
 from app.services.gi_updater.api import request_bytes, stream_range_to
 from app.services.gi_updater.common import UpdaterError, get_logger, safe_join
 from app.services.gi_updater.sophon import (
+    MAIN_MATCHING_FIELD,
     SophonAssetChunk,
     SophonAssetProperty,
     SophonPatchProto,
@@ -86,6 +87,20 @@ def _hpatchz_timeout(target_size: int) -> float:
 
 
 @dataclass(frozen=True)
+class BlobUrls:
+    """一类资源取数据用到的两处基址。
+
+    差分分片只能从**差分档案自己**的基址取，主包数据块只能从主清单的基址取；两边互不
+    含对方的内容，取错边就是每个都 404。主资源与每一档语音各有自己的一对基址。
+    """
+
+    diff_prefix: str
+    diff_compressed: bool
+    main_prefix: str
+    main_compressed: bool
+
+
+@dataclass(frozen=True)
 class PatchAsset:
     """一个文件本轮怎么处理。"""
 
@@ -101,6 +116,10 @@ class PatchAsset:
     original_name: str
     original_size: int
     original_md5: str
+    #: 这一条属于哪一类资源（主资源或某个语音类别），报明细与判语音是否装过时要用
+    category: str
+    #: 取这一条数据要用的基址；不同类别的基址互不相同，所以挂在文件上而不是计划上
+    urls: BlobUrls
     #: 主清单里该文件的全部数据块，整文件重建（降级）时用
     chunks: Tuple[SophonAssetChunk, ...] = ()
 
@@ -109,19 +128,10 @@ class PatchAsset:
         """是否走 hpatchz 打补丁（否则分片即新内容）。"""
         return self.method == METHOD_PATCH
 
-
-@dataclass(frozen=True)
-class BlobUrls:
-    """本轮取数据用到的两处基址。
-
-    差分分片只能从**差分档案自己**的基址取，主包数据块只能从主清单的基址取；两边互不
-    含对方的内容，取错边就是每个都 404。
-    """
-
-    diff_prefix: str
-    diff_compressed: bool
-    main_prefix: str
-    main_compressed: bool
+    @property
+    def is_voice(self) -> bool:
+        """这一条是否属于语音包（主资源之外的类别）。"""
+        return self.category != MAIN_MATCHING_FIELD
 
 
 # --------------------------------------------------------------------------- #
@@ -145,13 +155,17 @@ def build_patch_assets(
     patch_manifest: SophonPatchProto,
     target_assets: Sequence[SophonAssetProperty],
     baseline: str,
+    category: str,
+    urls: BlobUrls,
     protected: Sequence[str] = (),
 ) -> Tuple[List[PatchAsset], List[str]]:
-    """把差分清单与目标清单合并成待处理明细，并收集待删文件。
+    """把一类资源的差分清单与目标清单合并成待处理明细，并收集待删文件。
 
     以差分清单点名的文件为准，目标清单里未被点名的本轮不动。
 
     Args:
+        category: 这一批属于哪一类资源（``game`` 或某个语音类别）。
+        urls: 这一类资源自己的两处基址，跟着每条明细走。
         protected: 清单要求删除也必须留下的文件名，由安装层按这款游戏预设给。
 
     Raises:
@@ -196,6 +210,8 @@ def build_patch_assets(
                 original_name=chunk.original_file_name,
                 original_size=chunk.original_file_length,
                 original_md5=chunk.original_file_md5,
+                category=category,
+                urls=urls,
                 chunks=tuple(target.asset_chunks),
             )
         )
@@ -247,6 +263,9 @@ class AssetSummary:
     downgraded: int = 0
     #: 体积已与目标一致、预计不必下载的文件数（续传时给个人数感觉）
     ready: int = 0
+    #: 其中属于语音包的文件数与要下的量（报明细用，让用户知道多出来的是语音）
+    voice_count: int = 0
+    voice_download: int = 0
 
 
 def _stat_size(path: str) -> int:
@@ -293,6 +312,8 @@ async def summarize_assets(
     verdicts = await asyncio.gather(
         *(asyncio.to_thread(inspect, asset) for asset in assets)
     )
+    sizes = {id(asset): size for asset, (_, size) in zip(assets, verdicts)}
+    voice = [asset for asset in assets if asset.is_voice]
     return AssetSummary(
         file_count=len(assets),
         download_size=sum(size for _, size in verdicts),
@@ -301,6 +322,8 @@ async def summarize_assets(
         largest_target=max((asset.target_size for asset in assets), default=0),
         downgraded=sum(1 for verdict, _ in verdicts if verdict == _VERDICT_FULL),
         ready=sum(1 for verdict, _ in verdicts if verdict == _VERDICT_READY),
+        voice_count=len(voice),
+        voice_download=sum(sizes[id(asset)] for asset in voice),
     )
 
 
@@ -429,9 +452,7 @@ async def _replace_from(staging: str, target: str) -> None:
     await asyncio.to_thread(os.replace, staging, target)
 
 
-async def fetch_full_asset(
-    client: Any, game_path: str, asset: PatchAsset, urls: BlobUrls
-) -> int:
+async def fetch_full_asset(client: Any, game_path: str, asset: PatchAsset) -> int:
     """按主清单把这个文件整份重建出来（降级路径）。
 
     逐个数据块从主包 ``chunk_download`` 基址取回、按接口声明的压缩标志解压、按
@@ -450,6 +471,7 @@ async def fetch_full_asset(
     if not asset.chunks:
         raise UpdaterError(f"主清单里没有 {asset.name} 的数据块，无法整文件重建")
 
+    urls = asset.urls
     target = safe_join(game_path, asset.name)
     staging = _staging_name(target)
     await asyncio.to_thread(os.makedirs, os.path.dirname(target) or ".", exist_ok=True)
@@ -497,12 +519,14 @@ async def apply_asset(
     game_path: str,
     temp_dir: str,
     asset: PatchAsset,
-    urls: BlobUrls,
     *,
     hpatchz: Optional[str],
     logger: Any,
 ) -> Tuple[int, bool]:
     """处理一个文件：取回 → 校验 → 同卷原子替换。
+
+    取数据的基址跟着文件走（``asset.urls``）：主资源与每档语音各有一套，混在一张总表里
+    按计划级基址取就会取到别类的分片。
 
     Args:
         hpatchz: ``hpatchz`` 路径；``None`` 表示手上没有补丁工具。
@@ -514,6 +538,7 @@ async def apply_asset(
     Raises:
         UpdaterError: 取回、打补丁或校验失败，且降级也没成——由调用方计成本轮失败文件。
     """
+    urls = asset.urls
     target = safe_join(game_path, asset.name)
     if await _target_is_current(target, asset):
         return 0, False
@@ -549,7 +574,7 @@ async def apply_asset(
             "降级为整文件下载",
             asset.name,
         )
-        return await fetch_full_asset(client, game_path, asset, urls), True
+        return await fetch_full_asset(client, game_path, asset), True
 
     old = safe_join(game_path, asset.original_name)
     staging = _staging_name(target)
@@ -583,7 +608,7 @@ async def apply_asset(
             with suppress(OSError):
                 if os.path.isfile(staging):
                     os.remove(staging)
-            fetched = await fetch_full_asset(client, game_path, asset, urls)
+            fetched = await fetch_full_asset(client, game_path, asset)
             return fetched + asset.patch_length, True
         if not await asyncio.to_thread(_verify, staging, asset.target_md5):
             raise UpdaterError(f"补丁结果校验失败: {asset.name}")

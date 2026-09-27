@@ -52,6 +52,16 @@ __all__ = [
 GLOBAL_EXEC_NAME = "GenshinImpact.exe"
 ALTERNATIVE_EXEC_NAME = "YuanShen.exe"
 
+#: 语音类别（清单里的 ``matching_field``）-> 游戏内的语音资源目录名。
+#: 目录在不在就是「本机装没装这档语言」的依据；语音清单里连启动器那份
+#: ``Audio_<语言>_pkg_version`` 记账文件都在文件名内，照单下载就把账一起换对了。
+VOICE_CATEGORY_DIRS = {
+    "zh-cn": "Chinese",
+    "en-us": "English(US)",
+    "ja-jp": "Japanese",
+    "ko-kr": "Korean",
+}
+
 
 class GameTypeGenshinVersion(GameVersionBase):
     """原神版本管理。"""
@@ -127,6 +137,20 @@ class GenshinInstaller(InstallManagerBase):
             *super().protected_names(),
             GLOBAL_EXEC_NAME,
             ALTERNATIVE_EXEC_NAME,
+        ]
+
+    def installed_voice_categories(self) -> List[str]:
+        """按 ``<Data>/StreamingAssets/AudioAssets/<语言>`` 在不在，判本机装了哪几档语音。
+
+        只看目录是否存在，不读语音内容，也不碰启动器的私有格式。
+        """
+        audio_root = os.path.join(
+            self.version.game_data_path, "StreamingAssets", "AudioAssets"
+        )
+        return [
+            category
+            for category, folder in VOICE_CATEGORY_DIRS.items()
+            if os.path.isdir(os.path.join(audio_root, folder))
         ]
 
     def validate_exec_data_dir(self) -> bool:

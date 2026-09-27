@@ -1134,7 +1134,7 @@ export default {
     updateAutomaticallyBeforeLaunching: '启动前自动更新',
     genshinUpdateAuto: '自动更新原神（不支持B服）',
     genshinUpdateAutoHint:
-      '任务启动游戏前，由 MAS 自己查版本并完成下载与安装，不必再开官方启动器；只自动应用增量包，拿不到增量时会停止并交给官方启动器。只更新主资源包，语音包等资源仍由官方启动器或游戏内更新补齐。不支持 B服，B服请用官方启动器自行更新',
+      '任务启动游戏前，由 MAS 自己查版本并完成下载与安装，不必再开官方启动器；只自动应用增量包，拿不到增量时会停止并交给官方启动器。已安装的语音包会随主资源一起更新。不支持 B服，B服请用官方启动器自行更新',
     waitAfterLaunchSeconds: '启动后等待时间（秒）',
     launchMode: '启动方式',
     howLongWaitAfter2: '启动游戏后等待的时间',
@@ -1692,7 +1692,7 @@ export default {
       '仅支持官服与国际服客户端（亚服/欧服/美服/港澳台服）；B服请用官方启动器更新',
     bettergiUpdateProgressTitle: '原神客户端更新进度',
     bettergiWillBeUpdated:
-      '将检查该用户所用的原神客户端并应用官方增量包，只更新主资源包，语音包等仍由官方启动器补齐；过程可能下载大量数据，请确保游戏未在运行',
+      '将检查该用户所用的原神客户端并应用官方增量包，已安装的语音包一并更新；过程可能下载大量数据，请确保游戏未在运行',
     bettergiUpdateFailed: '原神更新失败: {p0}',
     bettergiUpdateTask: '原神更新任务已结束',
     bettergiUpdateTimed: '原神更新长时间没有进展，已自动停止',
