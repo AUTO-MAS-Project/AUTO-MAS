@@ -11,7 +11,7 @@
     </a-card>
 
     <template v-else>
-      <div class="activity-sticky-header">
+      <div class="activity-sticky-header" :class="{ 'is-hidden': stickyHidden }">
         <!-- 没做 tablist 的方向键漫游焦点，就别用 tab 语义许下做不到的承诺 -->
         <div v-if="items.length > 1" class="banner-switcher">
           <button
@@ -122,7 +122,7 @@
 
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
-import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type { CSSProperties } from 'vue'
 import { LeftOutlined, RightOutlined } from '@ant-design/icons-vue'
 import type { ActivityBannerItem, HomeModuleKey } from '@/types/home'
@@ -357,11 +357,44 @@ watch(
   }
 )
 
+/**
+ * 往下看内容的时候，吸顶的游戏切换条整条收起来。
+ *
+ * 它一直粘在内容区顶部，横幅和卡片滚上来会被它拦腰截断；看内容时躲开，
+ * 想切游戏往回滚一下它就回来。指针停在条上或焦点在条里时不收，
+ * 免得刚要点击它就跑掉。
+ */
+const stickyHidden = ref(false)
+const STICKY_HIDE_AFTER = 96
+let scrollArea: Element | null = null
+let lastScrollTop = 0
+
+const onScrollArea = () => {
+  if (!scrollArea) {
+    return
+  }
+  const top = scrollArea.scrollTop
+  stickyHidden.value =
+    top > lastScrollTop && top > STICKY_HIDE_AFTER && !hovered.value && !focused.value
+  lastScrollTop = top
+}
+
+onMounted(() => {
+  // 首页内容区是内部滚动容器，页面本身不滚（同 HomeBackToTop / HomeScrollHint）
+  scrollArea = document.querySelector('.content-area')
+  if (!scrollArea) {
+    return
+  }
+  lastScrollTop = scrollArea.scrollTop
+  scrollArea.addEventListener('scroll', onScrollArea, { passive: true })
+})
+
 onBeforeUnmount(() => {
   if (timer !== null) {
     window.clearInterval(timer)
     timer = null
   }
+  scrollArea?.removeEventListener('scroll', onScrollArea)
 })
 </script>
 
@@ -380,10 +413,18 @@ onBeforeUnmount(() => {
   flex-direction: column;
   gap: 8px;
   background: var(--ant-color-bg-layout);
+  transition: transform 0.2s ease;
+}
+
+/* 往下看内容时整条收起，不拦腰截断滚上来的横幅与卡片 */
+.activity-sticky-header.is-hidden {
+  transform: translateY(-100%);
 }
 
 .banner-viewport {
   position: relative;
+  /* 自己起一层：横幅里的封面、模糊底衬都关在这一层，滚动时不会盖到吸顶条上 */
+  z-index: 0;
   overflow: hidden;
   border-radius: 12px;
 }
@@ -661,6 +702,7 @@ onBeforeUnmount(() => {
   .banner-track,
   .banner-cover,
   .banner-arrow,
+  .activity-sticky-header,
   .switcher-chip {
     transition: none;
   }
