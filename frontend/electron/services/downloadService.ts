@@ -156,7 +156,8 @@ export class SmartDownloader {
       let lastTime = Date.now()
       let lastDownloaded = 0
 
-      const req = client.get(url, response => {
+      // 禁用 keep-alive 连接池：与 downloadChunk 同理，避免半截响应后连接静默悬死
+      const req = client.get(url, { agent: false }, response => {
         // 处理重定向 (301, 302, 307, 308)
         if (response.statusCode && [301, 302, 307, 308].includes(response.statusCode)) {
           const redirectUrl = response.headers.location
@@ -416,6 +417,10 @@ export class SmartDownloader {
           Range: `bytes=${chunk.start}-${chunk.end}`,
         },
         timeout: 30000,
+        // 禁用 keep-alive 连接池：默认 agent 会吞掉「响应未满 Content-Length 就收到 FIN」的
+        // 连接关闭，res 上不触发 end/aborted/error/close，分片 Promise 永久挂起；
+        // 独立连接下这些事件正常触发，由下面的 close/error 兜底快速失败
+        agent: false,
       }
 
       const req = client.get(url, options, response => {
@@ -437,16 +442,44 @@ export class SmartDownloader {
           return
         }
 
+        // 统一收口：end 与 close 都会触发（正常完成时 close 在 end 之后），用 settled
+        // 保证只结算一次；连接在 end/error 之前断掉时由 close 兜底，避免 Promise 永久挂起
+        let settled = false
+        const settle = (error?: Error) => {
+          if (settled) {
+            return
+          }
+          settled = true
+          if (error) {
+            reject(error)
+          } else {
+            resolve()
+          }
+        }
+
         response.on('data', (data: Buffer) => {
           try {
-            // 按分片起始位置顺序写入；写入失败视为整个下载失败
-            fs.writeSync(fileHandle, data, 0, data.length, chunk.start + chunk.downloaded)
+            // 按分片起始位置顺序写入；循环写满整个缓冲，部分写时补写剩余段，防静默丢尾
+            let written = 0
+            while (written < data.length) {
+              const count = fs.writeSync(
+                fileHandle,
+                data,
+                written,
+                data.length - written,
+                chunk.start + chunk.downloaded + written
+              )
+              if (count <= 0) {
+                throw new Error(`writeSync 写入 0 字节`)
+              }
+              written += count
+            }
             chunk.downloaded += data.length
           } catch (writeError) {
             const errorMsg = writeError instanceof Error ? writeError.message : String(writeError)
             logger.error(`分片 ${chunk.index} 写入失败: ${errorMsg}`)
             req.destroy()
-            reject(new Error(`分片 ${chunk.index} 文件写入错误: ${errorMsg}`))
+            settle(new Error(`分片 ${chunk.index} 文件写入错误: ${errorMsg}`))
           }
         })
 
@@ -455,7 +488,7 @@ export class SmartDownloader {
           // 否则文件会在对应区间留下零空洞，损坏要到解压时才暴露
           const expectedLength = chunk.end - chunk.start + 1
           if (chunk.downloaded !== expectedLength) {
-            reject(
+            settle(
               new Error(
                 `分片 ${chunk.index} 数据不完整: 预期 ${expectedLength} 字节，实际 ${chunk.downloaded} 字节`
               )
@@ -463,13 +496,17 @@ export class SmartDownloader {
             return
           }
           chunk.completed = true
-          resolve()
+          settle()
         })
 
         response.on('error', err => {
           logger.error(`分片 ${chunk.index} 响应错误: ${err.message}`)
           req.destroy()
-          reject(new Error(`分片 ${chunk.index} 网络错误: ${err.message}`))
+          settle(new Error(`分片 ${chunk.index} 网络错误: ${err.message}`))
+        })
+
+        response.on('close', () => {
+          settle(new Error(`分片 ${chunk.index} 连接提前断开`))
         })
       })
 
