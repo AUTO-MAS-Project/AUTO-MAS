@@ -30,6 +30,12 @@
   - 开发流程：只影响贡献者、用户看不见的改动，不进公告。
 -->
 
+## [未发布]
+
+### 修复
+
+- 【M9A】修复部分 M9A 报「项目 Python 或 MaaFW Agent 模块不可用」无法运行的问题 (#1082) by @qiyinxi
+
 ## [v5.6.0] - 2026-09-27
 
 ### 新增
@@ -99,7 +105,7 @@
 - 【Runtime】修复初始化或更新期间关闭窗口偶发导致程序崩溃退出的问题 (#669) by @qiyinxi
 - 【Runtime】修复初始化中途失败后重试卡在依赖段、「重建环境」也反复失败的问题 (#984) by @qiyinxi
 - 【Runtime】修复「重建环境」与修复运行环境必然失败的问题 (#999) by @qiyinxi
-- 【MAA】修复 MAA 连接 MuMu 模拟器时任务提前中止的问题 (#9) by @CrazyPigeon
+- 【MAA】修复 MAA 连接 MuMu 模拟器时任务提前中止的问题 by @1w1w11w1
 - 【工具】多安装时专项问题包改为收录每个安装各自的最新日志 (#1073) by @AthenaHibou
 
 ### 安全
@@ -293,6 +299,7 @@
 - OK-NTE专项 修复任务结束后异环启动器进程残留并持续占用内存的问题 by @qiyinxi by @HarcoChen
 - MAA专项 修复开启活动关优先后普通理智作战的理智药额度被静默清零的问题，两个作战任务各自使用独立理智药额度 by @qiyinxi by @HarcoChen
 
+[未发布]: https://github.com/AUTO-MAS-Project/AUTO-MAS/compare/v5.6.0...dev
 [v5.6.0]: https://github.com/AUTO-MAS-Project/AUTO-MAS/compare/v5.5.0...v5.6.0
 [v5.5.0]: https://github.com/AUTO-MAS-Project/AUTO-MAS/compare/v5.4.0...v5.5.0
 [v5.4.0]: https://github.com/AUTO-MAS-Project/AUTO-MAS/releases/tag/v5.4.0
