@@ -94,8 +94,10 @@ class ScriptItem:
     user_list: List[UserItem] = field(default_factory=list)  # 用户信息列表
     current_index: int = -1  # 当前执行的用户索引，-1 表示未开始
     log: str = ""  # 脚本执行日志
-    # log 第一行在完整日志里的行号。生产者截断日志时要一起维护（如 MaaFW 只留最近
-    # 80 条），界面才能显示真实行号而不是每次都从 1 重数；不截断就保持 1。
+    # log 第一行在完整日志里的行号。**截断日志的生产者要一起维护它**（如 MaaFW 只留
+    # 最近 80 条），界面才能显示真实行号而不是每次都从 1 重数；不截断就保持 1。
+    # 注意目前只有 MaaFW 在维护：BetterGI / OkNte / Okww / ZzzOd 的 log[-4000:]
+    # 尚未跟上，它们的行号仍会从 1 重数。
     log_first_line: int = 1
     _task_item_ref: Optional[weakref.ReferenceType[TaskItem]] = None
 

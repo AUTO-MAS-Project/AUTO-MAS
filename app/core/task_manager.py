@@ -282,7 +282,9 @@ class TaskInfo(TaskItem):
             if self._last_pushed_log and log.startswith(self._last_pushed_log):
                 payload = log[len(self._last_pushed_log) :]
                 append = True
-                first_line = 1  # 追加段接着已有内容排，界面自己往后数
+                # 追加段接着界面已有的内容往下排，行号由前端自己累加，这个值不会被读；
+                # 字段本身有默认值，这里只是把它显式带上，保持两种分支的载荷形状一致。
+                first_line = WSTaskLogUpdatedData.model_fields["firstLine"].default
             else:
                 payload = log[-200_000:]
                 append = False
