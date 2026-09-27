@@ -821,12 +821,21 @@ def _build_project_python_probe_env(
 
 
 def _project_relative_text(text: str, project_path: Path) -> str:
-    """把文本里的项目目录（大小写不敏感）换成 ``<项目>``。"""
+    """把文本里的项目目录（大小写不敏感）换成 ``<项目>``。
+
+    OSError 系异常用 repr 显示路径，反斜杠成对，原样、正斜杠、成对反斜杠三种都认。
+    """
 
     root = str(project_path)
     if not root:
         return text
-    return re.sub(re.escape(root), lambda _match: "<项目>", text, flags=re.IGNORECASE)
+    for variant in dict.fromkeys(
+        (root.replace("\\", "\\\\"), root, root.replace("\\", "/"))
+    ):
+        text = re.sub(
+            re.escape(variant), lambda _match: "<项目>", text, flags=re.IGNORECASE
+        )
+    return text
 
 
 def _last_output_line(text: str) -> str:
