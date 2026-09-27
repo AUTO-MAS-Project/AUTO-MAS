@@ -1,0 +1,193 @@
+import { execFile } from 'child_process'
+import * as fs from 'fs'
+import * as os from 'os'
+import * as path from 'path'
+
+// 问题包里每个 MFW 脚本附一份「项目自带运行时」检查结果：M9A 这类项目的自带 Python 不带
+// site-packages/maa/bin，原因只在 import maa 的最后一行（v5.6.0 现场日志全被截掉，只能让用户
+// 手敲命令）。这里只读文件、跑一次 import，不改视图（不写字节码）。
+
+// 与 app/task/MaaFW/tools/core/agent_env/env.py 同步：健康检查的探测语句与
+// _build_project_python_probe_env 的判据（maa/bin 不在、项目自带库两份都在才指 MAAFW_BINARY_PATH）
+const PROBE_STATEMENT = 'from maa.agent.agent_server import AgentServer'
+const FRAMEWORK_DLL = 'MaaFramework.dll'
+const AGENT_SERVER_DLL = 'MaaAgentServer.dll'
+const IMPORT_TIMEOUT_MS = 15_000
+const MAX_REASON_CHARS = 500
+// 与 app/task/MaaFW/tools/core/runtime_pool/host_environment.py 的 ISOLATED_HOST_KEYS 里
+// binding 相关的那几个同步；PYTHON* 一律不传
+const ISOLATED_KEYS = new Set([
+  'MAAFW_BINARY_PATH',
+  'AUTO_MAS_MAAFW_BINDING_DIR',
+  'AUTO_MAS_MAAFW_NATIVE_DIR',
+])
+
+export interface ProjectRuntimeSummary {
+  /** 视图里的自带解释器（相对视图），没有为 null */
+  python: string | null
+  /** 自带解释器 site-packages 里的 maafw-*.dist-info 版本 */
+  maafwBindings: string[]
+  /** site-packages/maa/bin 在不在；找不到 maa 包为 null */
+  maaBin: boolean | null
+  /** 项目自带 MaaFramework 原生库目录（相对视图），没有为 null */
+  nativeDir: string | null
+  nativeHasAgentServer: boolean
+  /** 检查时是否像后端那样把 MAAFW_BINARY_PATH 指到 nativeDir */
+  checkUsedProjectNative: boolean
+  /** 「通过」或失败原因（traceback 最后一行） */
+  importMaa: string
+}
+
+function isDirectory(target: string): boolean {
+  try {
+    return fs.statSync(target).isDirectory()
+  } catch {
+    return false
+  }
+}
+
+function isFile(target: string): boolean {
+  try {
+    return fs.statSync(target).isFile()
+  } catch {
+    return false
+  }
+}
+
+function hostRid(): string {
+  const arch = { x64: 'x64', arm64: 'arm64', ia32: 'x86' }[process.arch as string] ?? process.arch
+  return `win-${arch}`
+}
+
+/** 与后端 project_maafw_runtime_path 的已知布局一致：先 maafw/，再 runtimes/<rid>/native（本机 rid 优先）。 */
+function findNativeDir(viewDir: string): string | null {
+  const candidates = [path.join(viewDir, 'maafw')]
+  const runtimes = path.join(viewDir, 'runtimes')
+  let rids: string[] = []
+  try {
+    rids = fs.readdirSync(runtimes).filter(name => isDirectory(path.join(runtimes, name)))
+  } catch {
+    rids = []
+  }
+  const host = hostRid()
+  rids.sort(
+    (left, right) => Number(right === host) - Number(left === host) || left.localeCompare(right)
+  )
+  candidates.push(...rids.map(rid => path.join(runtimes, rid, 'native')))
+  return candidates.find(candidate => isFile(path.join(candidate, FRAMEWORK_DLL))) ?? null
+}
+
+function sitePackagesOf(pythonExe: string): string {
+  return path.join(path.dirname(pythonExe), 'Lib', 'site-packages')
+}
+
+function maafwBindingsOf(sitePackages: string): string[] {
+  try {
+    return fs
+      .readdirSync(sitePackages)
+      .map(name => /^maafw-(.+)\.dist-info$/i.exec(name)?.[1])
+      .filter((version): version is string => !!version)
+      .sort()
+  } catch {
+    return []
+  }
+}
+
+function escapeRegExp(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+/** 问题包清单不走通用脱敏：绝对路径换成 <视图> / <HOME>。 */
+function redactPaths(text: string, viewDir: string): string {
+  let result = text
+  for (const [target, label] of [
+    [viewDir, '<视图>'],
+    [os.homedir(), '<HOME>'],
+  ]) {
+    if (!target) {
+      continue
+    }
+    for (const variant of new Set([target, target.replace(/\\/g, '/')])) {
+      result = result.replace(new RegExp(escapeRegExp(variant), 'gi'), label)
+    }
+  }
+  return result
+}
+
+function lastLine(text: string): string {
+  const lines = text.split(/\r?\n/).filter(line => line.trim())
+  return lines.length ? lines[lines.length - 1].trim() : ''
+}
+
+function probeEnvironment(viewDir: string, nativeDir: string | null): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = {}
+  for (const [key, value] of Object.entries(process.env)) {
+    const upper = key.toUpperCase()
+    if (upper.startsWith('PYTHON') || ISOLATED_KEYS.has(upper) || upper === 'VIRTUAL_ENV') {
+      continue
+    }
+    env[key] = value
+  }
+  env.PYTHONPATH = viewDir
+  env.PYTHONIOENCODING = 'utf-8'
+  // 只读检查：不往视图里写字节码
+  env.PYTHONDONTWRITEBYTECODE = '1'
+  if (nativeDir) {
+    env.MAAFW_BINARY_PATH = nativeDir
+  }
+  return env
+}
+
+function runImport(pythonExe: string, viewDir: string, env: NodeJS.ProcessEnv): Promise<string> {
+  return new Promise(resolve => {
+    execFile(
+      pythonExe,
+      ['-c', PROBE_STATEMENT],
+      { cwd: viewDir, env, timeout: IMPORT_TIMEOUT_MS, windowsHide: true, encoding: 'utf8' },
+      (error, stdout, stderr) => {
+        if (!error) {
+          resolve('通过')
+          return
+        }
+        if (error.killed) {
+          resolve(`失败：超过 ${IMPORT_TIMEOUT_MS / 1000}s 没有结束`)
+          return
+        }
+        const reason = lastLine(String(stderr || stdout || '')) || error.message
+        resolve(`失败：${reason.slice(-MAX_REASON_CHARS)}`)
+      }
+    )
+  })
+}
+
+export async function probeProjectRuntime(viewDir: string): Promise<ProjectRuntimeSummary> {
+  const pythonExe = path.join(viewDir, 'python', 'python.exe')
+  const nativeDir = findNativeDir(viewDir)
+  const nativeHasAgentServer = !!nativeDir && isFile(path.join(nativeDir, AGENT_SERVER_DLL))
+  const summary: ProjectRuntimeSummary = {
+    python: null,
+    maafwBindings: [],
+    maaBin: null,
+    nativeDir: nativeDir ? path.relative(viewDir, nativeDir).replace(/\\/g, '/') : null,
+    nativeHasAgentServer,
+    checkUsedProjectNative: false,
+    importMaa: '未检查：视图里没有自带的 python/python.exe',
+  }
+  if (!isFile(pythonExe)) {
+    return summary
+  }
+  const sitePackages = sitePackagesOf(pythonExe)
+  summary.python = 'python/python.exe'
+  summary.maafwBindings = maafwBindingsOf(sitePackages)
+  if (isFile(path.join(sitePackages, 'maa', '__init__.py'))) {
+    summary.maaBin = isDirectory(path.join(sitePackages, 'maa', 'bin'))
+  }
+  if (process.platform !== 'win32') {
+    summary.importMaa = '未检查：不是 Windows'
+    return summary
+  }
+  summary.checkUsedProjectNative = summary.maaBin === false && nativeHasAgentServer
+  const env = probeEnvironment(viewDir, summary.checkUsedProjectNative ? nativeDir : null)
+  summary.importMaa = redactPaths(await runImport(pythonExe, viewDir, env), viewDir)
+  return summary
+}

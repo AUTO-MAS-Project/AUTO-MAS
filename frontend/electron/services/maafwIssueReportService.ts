@@ -3,6 +3,7 @@ import * as path from 'path'
 import AdmZip = require('adm-zip')
 
 import { getLogger } from './logger'
+import { probeProjectRuntime } from './maafwProjectRuntimeProbe'
 import {
   CollectorState,
   addDebugDirectory,
@@ -717,6 +718,7 @@ async function createIssueReport(
       projectLabel: script.projectLabel,
       archiveRoot: scriptRoot,
       projectVersion: readViewVersion(viewDir),
+      projectRuntime: await probeProjectRuntime(viewDir),
       projectDebug: protectSecrets
         ? '未收集：项目带密码输入框，框架与 agent 自己写的日志里可能有密码原文'
         : '已收集（顶层 maafw*.log 即 history 里各次的 .maafw.log，不重复收）',

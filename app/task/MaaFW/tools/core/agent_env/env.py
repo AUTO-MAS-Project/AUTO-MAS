@@ -798,6 +798,9 @@ def _build_project_python_probe_env(
     binding 就去开不存在的 ``maa/bin``、抛 ``FileNotFoundError``，把能跑的副本判成坏的，
     更新预检也因此永远过不去。所以 ``maa/bin`` 不在、项目自带的原生库又齐时，检查
     也指过去；``maa/bin`` 在时不动，照旧用 wheel 自带那份。
+
+    问题包导出（``frontend/electron/services/maafwProjectRuntimeProbe.ts``）按同一判据
+    再跑一次这个检查，改判据时两边一起改。
     """
 
     env = _build_agent_env_for_pip(project_path)
