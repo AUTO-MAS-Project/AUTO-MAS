@@ -4,6 +4,7 @@ import hashlib
 import json
 import logging
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -230,7 +231,9 @@ def _prepare_project_python_env(
         _repin_project_python_binding(python_exe, project_path, test_env, log)
         return
 
-    # 原因放第一行：任务结果与通知只取报错的第一行。
+    # 原因放第一行：任务结果与预检失败通知只取报错的第一行，还各自再截 200 / 120 字，
+    # 所以项目目录换成 <项目>，免得长安装路径把原因挤掉。
+    reason = _project_relative_text(reason, project_path)
     raise MaaFWAgentEnvError(
         f"项目 Python 或 MaaFW Agent 模块不可用（{reason}），请修复项目包后重试：\n"
         f"  Python 路径: {python_exe}\n"
@@ -812,6 +815,15 @@ def _build_project_python_probe_env(
     if runtime is not None and (runtime / PROJECT_AGENT_SERVER_DLL_NAME).is_file():
         env["MAAFW_BINARY_PATH"] = str(runtime)
     return env
+
+
+def _project_relative_text(text: str, project_path: Path) -> str:
+    """把文本里的项目目录（大小写不敏感）换成 ``<项目>``。"""
+
+    root = str(project_path)
+    if not root:
+        return text
+    return re.sub(re.escape(root), lambda _match: "<项目>", text, flags=re.IGNORECASE)
 
 
 def _last_output_line(text: str) -> str:

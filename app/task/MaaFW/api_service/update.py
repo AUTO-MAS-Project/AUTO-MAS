@@ -37,6 +37,7 @@ from app.task.MaaFW.api_service.common import (
     maafw_group_members,
     maafw_script_config,
 )
+from app.task.MaaFW.tools.core.agent_env.env import DETAIL_LOG_PREFIX
 from app.task.MaaFW.tools.core.interface.loader import (
     MaaFWInterfaceLoadError,
     load_interface_model_cached,
@@ -242,6 +243,9 @@ async def update_project(script_id: str, action: str) -> MaaFWApiReply:
         # 写日志前先打码，避免 CDK 等敏感值落盘；WS 通道走同一份打码结果。
         text = sanitize_log_message(str(line))
         _maafw_update_logger.info(text)
+        if text.startswith(DETAIL_LOG_PREFIX):
+            # 详情行（预检里健康检查的完整 traceback）只进后端日志，不上更新面板
+            return
         publish_progress(tracker.log(text))
 
     def report_progress(event: dict[str, Any]) -> None:
