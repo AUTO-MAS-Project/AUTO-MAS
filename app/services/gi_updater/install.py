@@ -25,13 +25,14 @@
 
     state = version.get_state()
     NotInstalled / GameBroken -> SophonInstall   （不自动执行）
-    Installed                 -> Noop / 预下载
+    Installed（含「有预下载」）-> Noop
     NeedsUpdate               -> 问主清单 + 问差分
                                   有本机基线的差分 -> SophonPatch（自动执行）
                                   没有             -> SophonUpdate（不自动执行）
 
-只有 ``SophonPatch`` 会下载：其余三种都要么没有增量、要么整份客户端还没落地，无人
-值守时把它们跑完，就是替用户决定一整份客户端的流量去哪。
+只有 ``SophonPatch`` 会下载：其余几种要么没有增量、要么整份客户端还没落地，无人值守时
+把它们跑完，就是替用户决定一整份客户端的流量去哪。预下载按「已是最新」放行——主资源并
+没有要动的东西，拦下来只会让任务白失败一轮。
 
 同一款客户端可能被多个用户的任务同时用到，所以按游戏目录串行：``game_dir_lock`` 内跑完
 一轮再交给下一个。
@@ -98,8 +99,6 @@ class UpdateKind(str, Enum):
     SophonPatch = "sophon-patch"
     #: 全量比较：拿不到增量，只能逐文件比对重下
     SophonUpdate = "sophon-update"
-    #: 预下载下一版本
-    SophonPreload = "sophon-preload"
     #: 无需动作
     Noop = "noop"
     #: 联网问不出结论，由宿主按「无法判定」放行
@@ -123,11 +122,6 @@ class UpdatePlan:
     summary: AssetSummary = field(default_factory=AssetSummary)
     #: 面向用户的一句话结论：``kind == Unknown`` 时是问不出的原因
     message: str = ""
-
-    @property
-    def is_preload(self) -> bool:
-        """本次计划是否为预下载。"""
-        return self.kind == UpdateKind.SophonPreload
 
     @property
     def needs_action(self) -> bool:
@@ -244,13 +238,19 @@ class InstallManagerBase:
             plan.kind = UpdateKind.SophonInstall
             return plan
 
-        if state == GameInstallStateEnum.InstalledHavePreload:
-            plan.kind = UpdateKind.SophonPreload
-            plan.target_version = self.version.preload_version
-            return plan
-
-        if state == GameInstallStateEnum.Installed:
+        if state in (
+            GameInstallStateEnum.Installed,
+            GameInstallStateEnum.InstalledHavePreload,
+        ):
+            # 主资源已是最新。预下载只是官方提前放出来的下一版，MAS 不替用户预下，
+            # 更不能因此把任务判失败——每版开放预下载的那一两周会误拦所有自动任务
             plan.kind = UpdateKind.Noop
+            plan.target_version = self.version.latest_version
+            if state is GameInstallStateEnum.InstalledHavePreload:
+                plan.message = (
+                    f"官方已开放 {self.version.preload_tag} 预下载，"
+                    "MAS 不自动应用，请用官方启动器处理"
+                )
             return plan
 
         baseline = self.version.installed_version
@@ -317,11 +317,11 @@ class InstallManagerBase:
 
         game_path = self.game_path
         temp_dir = os.path.join(game_path, _TEMP_DIR_NAME)
-        await asyncio.to_thread(os.makedirs, temp_dir, exist_ok=True)
         throttle = Throttle(_PROGRESS_INTERVAL_SEC)
         pending = list(plan.assets)
 
         async with game_dir_lock(game_path):
+            await asyncio.to_thread(os.makedirs, temp_dir, exist_ok=True)
             while pending:
                 if should_abort is not None and should_abort():
                     result.aborted = True
@@ -400,18 +400,20 @@ class InstallManagerBase:
         self.version.update_game_version_to_latest(save=True)
         self.version.reload()
 
-    def cleanup_temp(self) -> List[str]:
+    async def cleanup_temp(self) -> List[str]:
         """删掉本轮的中间产物目录，返回处理过的路径。
 
         切片与差分文件都落在游戏目录内的 ``_mas_update``，成功失败都可以直接删——落盘是
-        原子替换，没落盘的本轮就不认。
+        原子替换，没落盘的本轮就不认。删之前必须先拿到该目录的串行锁，否则同一目录上另一
+        轮正在用的中间产物会被连着删掉。
         """
-        temp_dir = os.path.join(self.game_path, _TEMP_DIR_NAME)
-        if not os.path.isdir(temp_dir):
-            return []
-        try:
-            shutil.rmtree(temp_dir)
-        except OSError as error:
-            self.logger.warning("清理中间产物目录失败 %s: %s", temp_dir, error)
+        async with game_dir_lock(self.game_path):
+            temp_dir = os.path.join(self.game_path, _TEMP_DIR_NAME)
+            if not os.path.isdir(temp_dir):
+                return []
+            try:
+                await asyncio.to_thread(shutil.rmtree, temp_dir)
+            except OSError as error:
+                self.logger.warning("清理中间产物目录失败 %s: %s", temp_dir, error)
+                return [temp_dir]
             return [temp_dir]
-        return [temp_dir]

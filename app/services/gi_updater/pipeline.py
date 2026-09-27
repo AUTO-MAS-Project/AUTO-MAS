@@ -26,8 +26,8 @@
 
 - **混装目录**：不同区服的客户端不会共存于同一目录。目录里同时见得到多个可执行
   文件，说明这个路径填错了；再往下走就是往别人的安装目录里灌整客户端量级的数据。
-- **只应用增量包**：拿不到增量差分包（全新安装、逐文件全量比对、预下载）就停手
-  交给官方启动器——无人值守的调度任务绝不该顺手吃掉一整份客户端的流量。
+- **只应用增量包**：拿不到增量差分包（全新安装、逐文件全量比对）就停手交给官方启动器
+  ——无人值守的调度任务绝不该顺手吃掉一整份客户端的流量。
 - **磁盘余量**：差分也可能不小，空间不够要提前停，不能让下载在半路写爆磁盘。
 
 三道门禁都建立在「问得出该怎么更新」之上。联网问不出结论（协议异常、清单缺项、清单解
@@ -70,7 +70,6 @@ _KIND_LABELS = {
     UpdateKind.SophonInstall.value: "全新安装",
     UpdateKind.SophonPatch.value: "增量更新",
     UpdateKind.SophonUpdate.value: "差异比对更新",
-    UpdateKind.SophonPreload.value: "预下载下一版本",
     UpdateKind.Noop.value: "无需更新",
     UpdateKind.Unknown.value: "无法判定",
 }
@@ -187,14 +186,15 @@ async def update_client(
         )
 
     try:
-        hpatchz = str(await ensure_hpatchz(on_progress=on_progress))
+        updater = create_updater(game, resolved, str(game_dir))
     except Exception as error:  # noqa: BLE001
-        # 没有补丁工具就打不出增量，只能整文件重下——那是要用户付流量的事，停手问一句
-        reason = f"获取增量补丁工具失败：{error}"
-        await _report(on_progress, f"{reason}，本次已停止更新")
-        return UpdateResult(success=False, message=reason)
+        # 连更新器都装配不出来（读不开 config.ini 之类）属于「我这边问不出」，不该算成
+        # 用户「确知要更新却没做成」
+        logger.exception(
+            f"{display}客户端更新器装配失败: {type(error).__name__}: {error}"
+        )
+        return _undecidable(f"{type(error).__name__}: {error}")
 
-    updater = create_updater(game, resolved, str(game_dir))
     # 这条通道归本流程管：每次启动前都会跑一遍，不还就会一直攒着连接与套接字
     async with api.new_client() as client:
         try:
@@ -205,7 +205,6 @@ async def update_client(
                 display=display,
                 game_dir=game_dir,
                 client=client,
-                hpatchz=hpatchz,
                 on_progress=on_progress,
                 should_abort=should_abort,
             )
@@ -216,7 +215,7 @@ async def update_client(
                 success=False, message=f"{type(error).__name__}: {error}"
             )
         finally:
-            kept = updater.installer.cleanup_temp()
+            kept = await updater.installer.cleanup_temp()
             if kept:
                 # 只进 app.log：调度台那行已经说明了结果，路径细节是留给排查的
                 _note(f"已清理本轮中间产物：{'、'.join(kept)}")
@@ -229,7 +228,6 @@ async def _run_plan(
     display: str,
     game_dir: Path,
     client: Any,
-    hpatchz: str,
     on_progress: ProgressHook | None,
     should_abort: AbortHook | None,
 ) -> UpdateResult:
@@ -241,21 +239,16 @@ async def _run_plan(
         # 一次问不出结论不代表用户的客户端有问题，更不该拦住专项启动：留一行 app.log
         # 供排查，联网恢复的下一轮自会重新判定
         _note(f"无法判定{display}客户端要不要更新，本轮跳过：{plan.message}")
-        return UpdateResult(
-            success=True,
-            noop=True,
-            message=f"无法判定是否需要更新：{plan.message}",
-            local_version=local,
-            kind=plan.kind.value,
-        )
+        return _undecidable(plan.message, local_version=local)
 
     if plan.kind == UpdateKind.Noop:
-        # 常态结论：只留 app.log，不刷任务日志
+        # 常态结论：只留 app.log，不刷任务日志；预下载也落在这里——主资源没有要动的
+        # 东西，拦下来只会让任务白失败一轮
         _note(f"{display}客户端已是最新（{local or '?'}）")
         return UpdateResult(
             success=True,
             noop=True,
-            message="已是最新版本",
+            message=plan.message,
             local_version=local,
             remote_version=remote,
             kind=plan.kind.value,
@@ -273,6 +266,8 @@ async def _run_plan(
     if blocked is not None:
         return blocked
 
+    # 只有要打增量时才会被赋值；其余计划类型没有可打的对象，execute 也不看它
+    hpatchz: str | None = None
     if plan.kind == UpdateKind.SophonPatch:
         _note(
             f"增量约 {summarize_size(plan.total_size)}、单文件更新后最大 "
@@ -284,6 +279,21 @@ async def _run_plan(
                 else ""
             )
         )
+        # 补丁工具只在确实要打增量时才取：没装过游戏、拿不到差分的轮次都用不上它，
+        # 更早地失败会把一轮本不需要它的任务白白拦下
+        try:
+            hpatchz = str(await ensure_hpatchz(on_progress=on_progress))
+        except Exception as error:  # noqa: BLE001
+            # 没有补丁工具就打不出增量，只能整文件重下——那是要用户付流量的事，停手问一句
+            reason = f"获取增量补丁工具失败：{error}"
+            await _report(on_progress, f"{reason}，本次已停止更新")
+            return UpdateResult(
+                success=False,
+                message=reason,
+                local_version=local,
+                remote_version=remote,
+                kind=plan.kind.value,
+            )
         await _report(
             on_progress, f"准备就绪，开始下载 {summarize_size(plan.total_size)}"
         )
@@ -359,8 +369,8 @@ async def _gate(
             f"该目录疑似混装了不同区服的{display}客户端，已停止更新", kind=plan.kind
         )
 
-    # 自动接管只应用增量差分包：拿不到差分（全新安装、逐文件全量比对、预下载）一律
-    # 停手交给官方启动器，绝不在无人值守时顺手灌一整份客户端。
+    # 自动接管只应用增量差分包：拿不到差分（全新安装、逐文件全量比对）一律停手交给
+    # 官方启动器，绝不在无人值守时顺手灌一整份客户端。
     if plan.kind != UpdateKind.SophonPatch:
         # 这几种结论都没有待下清单（引擎不为它们收集资产），所以不提体积——报「约 0 B」
         # 会让人以为白下一趟
@@ -385,6 +395,17 @@ def _stop(message: str, *, kind: UpdateKind = UpdateKind.Noop) -> UpdateResult:
     """一条门禁拦截 -> 失败的结论，并留一行 app.log。"""
     _note(message)
     return UpdateResult(success=False, noop=True, message=message, kind=kind.value)
+
+
+def _undecidable(reason: str, *, local_version: str = "") -> UpdateResult:
+    """问不出结论 -> 放行但不算做过事，具体原因只留 app.log。"""
+    return UpdateResult(
+        success=True,
+        noop=True,
+        message=f"无法判定是否需要更新：{reason}",
+        local_version=local_version,
+        kind=UpdateKind.Unknown.value,
+    )
 
 
 def _note(line: str) -> None:

@@ -68,10 +68,9 @@
 三道门禁；一款游戏的门面只做「钉自己的短名」这一件事。
 
 只实现 Sophon 差分一条执行链路：官方已不下发 zip 分包，传统 zip 链路（下载分包 →
-解压 → hdiff → deletefiles）无对应实现；全新安装（``SophonInstall``）、全量比较
-（``SophonUpdate``）与预下载（``SophonPreload``）只产出计划供宿主提示，无人值守一律
-停手交给官方启动器。要接仍以 zip 分包为主的游戏时，需要另补一条 zip 执行链路与相应
-的 ``UpdateKind`` 取值。
+解压 → hdiff → deletefiles）无对应实现；全新安装（``SophonInstall``）与全量比较
+（``SophonUpdate``）只产出计划供宿主提示，无人值守一律停手交给官方启动器。要接仍以
+zip 分包为主的游戏时，需要另补一条 zip 执行链路与相应的 ``UpdateKind`` 取值。
 
 新增一款米哈游游戏（如绝区零）只需四步，不改引擎正文：在
 :mod:`~app.services.gi_updater.presets` 的 ``GameKey`` 登记短名并补

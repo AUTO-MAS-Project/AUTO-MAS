@@ -66,15 +66,15 @@ AbortHook = Callable[[], bool]
 def task_stopped(task: object) -> bool:
     """用户是否已要求停止本任务（供更新途中在边界轮询）。
 
-    ``stopped_manually`` 覆盖「停止落在任务主体里」，根任务已被取消则覆盖「停止落在
-    更新途中」——两个都看，用户按下停止后才不必等一次大下载走完。
+    两个信号都要看：``stopped_manually`` 只在取消异常冒出任务主体之后才置位，覆盖
+    「停止落在任务主体里」；执行器自己的 ``task`` 在用户按下停止时立刻已是取消态，
+    覆盖「停止落在更新途中」——不看它，用户按了停止还要等一次大下载走完。
     Returns:
         已要求停止时为真。
     """
     if bool(getattr(task, "stopped_manually", False)):
         return True
-    task_info = getattr(task, "task_info", None)
-    root_task = getattr(task_info, "task", None) if task_info is not None else None
+    root_task = getattr(task, "task", None)
     return bool(root_task is not None and root_task.cancelled())
 
 
@@ -174,10 +174,13 @@ async def ensure_game_updated(
 
     if result.success:
         if result.noop:
-            # 「已是最新」对手动入口是必须当面回答的结论；自动流程只留 app.log 一行
+            # 「已是最新」对手动入口是必须当面回答的结论；自动流程只留 app.log 一行。
+            # 编排层附带的结论（例如官方开了预下载）一并说全，用户才知道下一步去哪
             if manual:
                 await _report(
-                    on_log, f"当前为最新版本（{result.local_version or '?'}），无需更新"
+                    on_log,
+                    f"当前为最新版本（{result.local_version or '?'}），无需更新"
+                    + (f"；{result.message}" if result.message else ""),
                 )
         else:
             await report(

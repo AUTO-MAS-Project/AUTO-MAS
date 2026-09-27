@@ -85,5 +85,6 @@ class BetterGIUpdateTask(TaskExecuteBase):
             await Publisher.send(
                 id=self.task_info.task_id,
                 type=protocol.TASK_NOTICE,
-                data=WSTaskNoticeData(level="error", message=f"原神更新失败: {e}"),
+                # 只推原因本身；「原神更新失败: 」这层前缀由前端词表加，两边都加会说两遍
+                data=WSTaskNoticeData(level="error", message=f"{e}"),
             )
