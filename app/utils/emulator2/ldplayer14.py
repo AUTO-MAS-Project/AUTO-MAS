@@ -22,8 +22,8 @@
 
 继承旧 ``LDManager`` 的启动、关闭、状态、实例锁和配置守卫。
 「大雷主人模式」沿用旧版全局开关，在启动前应用安装级设置，保留游戏中心入口。
-窗口显示 / 隐藏沿用父类，按 ``list2`` 的 ``top_hwnd`` 精确切换该实例的窗口，
-不发老板键：老板键是全局热键、不带实例信息，雷电默认各实例都是 Ctrl+Q，
+窗口显示 / 隐藏不沿用父类的老板键，按 ``list2`` 的 ``top_hwnd`` 精确切换该实例的窗口：
+老板键是全局热键、不带实例信息，雷电默认各实例都是 Ctrl+Q，
 多开时会把别的实例一起翻过去（#948）。设置写入与配置守卫使用同一把实例锁。
 启动后多一道「虚拟机真的起来了吗」的核对，VBox 服务卡住时自愈一次，见 :mod:`.vbox`。
 """
@@ -41,6 +41,8 @@ from app.models.config import EmulatorConfig
 from app.models.emulator import DeviceInfo, DeviceRef, DeviceStatus
 from app.utils import ProcessRunner, get_logger
 from app.utils.emulator.ldplayer import _INSTANCE_CONFIG_SNAPSHOTS, LDManager
+from app.utils.platform import IS_WINDOWS
+from app.utils.platform import window as platform_window
 
 from .adb import candidate_serial, parse_adb_devices, resolve_serial
 from .applaunch import AppLaunchMixin, is_package_missing, is_package_present
@@ -76,6 +78,9 @@ def _dig_flat(config: dict, key: str) -> str | None:
         return None
     return str(config[key])
 
+
+if IS_WINDOWS:
+    import win32gui
 
 logger = get_logger("Emulator2 雷电管理")
 
@@ -800,6 +805,44 @@ class LDPlayer14Manager(AppLaunchMixin, LDManager):
         模式由 :meth:`prepare_launch` 统一处理，整包禁用会让「打开游戏中心」失效。
         """
         return None
+
+    async def setVisible(self, idx: str, is_visible: bool) -> DeviceStatus:
+        """按 ``list2`` 给出的该实例顶层窗口句柄切换可见性。
+
+        父类发的是全局老板键：老板键不带实例信息，多开时会把别的实例一起翻过去
+        （#948）。这里直接对该实例的 ``top_hwnd`` 调 ``ShowWindow``；句柄为 0 或
+        已失效时等待重读，不回落到老板键。
+        """
+        if not IS_WINDOWS:
+            raise RuntimeError("切换模拟器窗口可见性仅支持 Windows 平台")
+
+        status = await self.getStatus(idx)
+        if status != DeviceStatus.ONLINE:
+            logger.warning(f"设备{idx}未在线，当前状态码: {status}")
+            return status
+
+        device = (await self.get_device_info(idx))[idx]
+
+        deadline = time.monotonic() + self.config.get("Info", "MaxWaitTime")
+        while time.monotonic() < deadline:
+            hwnd = device.top_hwnd
+            if hwnd <= 0 or not win32gui.IsWindow(hwnd):
+                # 实例刚启动时窗口可能还没建出来，等一会儿重新读取
+                await asyncio.sleep(0.5)
+                device = (await self.get_device_info(idx))[idx]
+                continue
+            if platform_window.is_visible(hwnd) == is_visible:
+                return status
+            try:
+                if is_visible:
+                    platform_window.show_window(hwnd)
+                else:
+                    platform_window.hide_window(hwnd)
+            except Exception as e:  # noqa: BLE001 - 与父类一致, 单次失败不终止重试
+                logger.error(f"切换设备{idx}窗口可见性失败: {e}")
+            await asyncio.sleep(0.5)
+
+        raise RuntimeError(f"{'显示' if is_visible else '隐藏'}设备{idx}窗口超时")
 
 
 async def build_manager(
