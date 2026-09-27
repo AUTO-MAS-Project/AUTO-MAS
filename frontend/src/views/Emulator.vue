@@ -541,13 +541,13 @@ const handleImportFromSearch = async (result: EmulatorSearchResult) => {
       await markConfigEditSaved('EmulatorConfig')
       // 更新新添加的模拟器配置，使用分组结构
       const updateResponse = await saveEmulatorConfig(response.emulatorId, {
-          Info: {
-            Name: result.name,
-            Type: result.type as 'general' | 'mumu' | 'ldplayer',
-            Path: result.path,
-            MaxWaitTime: 300,
-            BossKey: JSON.stringify([]),
-          },
+        Info: {
+          Name: result.name,
+          Type: result.type as 'general' | 'mumu' | 'ldplayer',
+          Path: result.path,
+          MaxWaitTime: 300,
+          BossKey: JSON.stringify([]),
+        },
       })
       if (updateResponse?.code === 200) {
         message.success(t('emulator.toast.importOk'))

@@ -131,10 +131,7 @@ export function useQrLogin({ getAccountId, onSaved, logger, provider }: QrLoginO
    * 把 openapi 生成的 CancelablePromise 接到 AbortSignal 上。
    * 取消导致的 reject 一律换成 name='AbortError'，好让调用方静默丢弃。
    */
-  const abortableRequest = async <T>(
-    request: Promise<T>,
-    signal?: AbortSignal
-  ): Promise<T> => {
+  const abortableRequest = async <T>(request: Promise<T>, signal?: AbortSignal): Promise<T> => {
     let aborted = signal?.aborted ?? false
     const handleAbort = () => {
       aborted = true
