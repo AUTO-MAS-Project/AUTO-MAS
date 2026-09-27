@@ -56,6 +56,27 @@
                 <div class="banner-subtitle">{{ bannerSubtitle(item) }}</div>
               </div>
 
+              <!--
+                左下角给版本号与起止时间，右下角是倒计时（相对时间）：
+                两角各占一处，绝对时间与倒计时可对照着看
+              -->
+              <div
+                v-if="item.version || item.startTime || item.endTime"
+                class="banner-meta"
+                :class="{ 'has-remaining': item.endTime || item.ended }"
+              >
+                <span v-if="item.version" class="meta-version">{{ item.version }}</span>
+                <span v-if="item.startTime" class="meta-time">
+                  {{ formatBannerTime(item.startTime) }}
+                </span>
+                <span v-if="item.startTime && item.endTime" class="meta-sep" aria-hidden="true">
+                  ~
+                </span>
+                <span v-if="item.endTime" class="meta-time">
+                  {{ formatBannerTime(item.endTime) }}
+                </span>
+              </div>
+
               <!-- 没有进行中的活动时只剩「后续活动即将开始」一行，倒计时整块不出现 -->
               <div v-if="item.endTime || item.ended" class="banner-remaining">
                 <template v-if="item.endTime">
@@ -169,6 +190,8 @@ const remainingStyle: CSSProperties = {
   fontSize: '20px',
   fontWeight: '600',
   lineHeight: '1.2',
+  // 数字逐秒变化时宽度不抖
+  fontVariantNumeric: 'tabular-nums',
 }
 
 const hasCover = (item: ActivityBannerItem) =>
@@ -254,6 +277,16 @@ const bannerSubtitle = (item: ActivityBannerItem) => {
   }
   return item.available ? t('home.carousel.noActivity') : t('home.carousel.unavailable')
 }
+
+// 与各活动卡片里的 formatTime 同格式，起止时间在整页是一个口径
+const formatBannerTime = (value: string) =>
+  new Date(value).toLocaleString('zh-CN', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
 
 const countdownValue = (time: string) => {
   const timestamp = new Date(time).getTime()
@@ -467,17 +500,63 @@ onBeforeUnmount(() => {
   text-overflow: ellipsis;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
+  line-clamp: 2;
 }
 
-/* 亮色封面右侧几乎没有压暗，倒计时单独垫一层才读得清 */
+/* 亮色封面几乎没有压暗，左右两角的时间信息共用同一套底衬才读得清 */
+.banner-meta,
 .banner-remaining {
   position: absolute;
-  right: 20px;
   bottom: 16px;
   padding: 6px 12px;
-  text-align: right;
-  background: rgba(8, 10, 14, 0.42);
+  background: rgba(8, 10, 14, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.14);
   border-radius: 10px;
+  backdrop-filter: blur(8px);
+}
+
+.banner-remaining {
+  right: 20px;
+  text-align: right;
+}
+
+/* 左下角的版本号与起止时间，与右下角的倒计时各占一角 */
+.banner-meta {
+  left: 24px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  color: rgba(255, 255, 255, 0.8);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+/* 右下角有倒计时时收窄，放不下就换行，不压到倒计时上 */
+.banner-meta.has-remaining {
+  max-width: calc(100% - 240px);
+}
+
+.meta-version {
+  padding: 0 8px;
+  color: #fff;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.32);
+  border-radius: 999px;
+}
+
+/* 每端时间是一个整体，不从日期中间折行 */
+.meta-time {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 连接符弱化，左右间距收紧，读起来是一整段起止时间 */
+.meta-sep {
+  margin: 0 -3px;
+  color: rgba(255, 255, 255, 0.4);
 }
 
 .remaining-label {
@@ -609,6 +688,11 @@ onBeforeUnmount(() => {
   .banner-remaining {
     right: 16px;
     bottom: 12px;
+  }
+
+  .banner-meta {
+    bottom: 12px;
+    left: 16px;
   }
 }
 </style>
