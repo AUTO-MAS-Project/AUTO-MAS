@@ -162,6 +162,9 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   这个变量已被剔除，所以 `maa/bin` 不在、项目自带库（`MaaFramework.dll` + `MaaAgentServer.dll`）又齐时
   由检查替它指过去；不这么做，导入的 M9A 全部卡在「项目 Python 或 MaaFW Agent 模块不可用」，
   更新预检也永远过不去（v5.6.0 真机）。`maa/bin` 在时不设，照旧用 wheel 自带那份。
+  检查失败时界面与报错第一行只给 traceback 的最后一行，完整输出逐行带 `[MaaFW 详情] ` 前缀、只进
+  `.worker.log` / 后端日志。子进程输出进日志一律按结尾截（`runtime_pool/_shared.output_tail`），
+  截开头会正好丢掉异常那一行——那次现场所有日志都断在 `File "D:\douy`。
 - `Run.RunTimeLimit` 是套在单个用户整次 MaaFW 运行上的**硬超时**（`asyncio.wait_for`），
   与其他专项的"日志停滞超时"不同义；超时会丢掉本轮进度。
 - Win32 下 `Game.LaunchMode` 只有两态：`DirectExe`（默认，MAS 启动、结束后一律关闭）与

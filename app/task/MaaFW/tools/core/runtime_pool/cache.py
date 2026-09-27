@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from ._shared import output_tail
 from .installer import (
     AUTO_MAS_UV_CACHE_DIR_ENV,
     _clean_process_environment,
@@ -160,7 +161,7 @@ def clean_uv_cache(
                 "status": "error",
                 "error": (
                     f"uv cache clean failed (exit={completed.returncode}): "
-                    f"{detail[:800]}"
+                    f"{output_tail(detail, 800)}"
                 ),
             }
         )

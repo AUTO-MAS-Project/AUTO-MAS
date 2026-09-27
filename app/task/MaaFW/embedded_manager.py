@@ -565,7 +565,12 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
         不能从这里引用），这样并入用户日志后看不出接缝。
         """
 
+        from app.task.MaaFW.tools.core.agent_env.env import DETAIL_LOG_PREFIX
+
         logger.info(f"MFW 项目更新：{message}")
+        if str(message).startswith(DETAIL_LOG_PREFIX):
+            # 详情行（如健康检查的完整 traceback）只进后端日志，不上界面与用户日志。
+            return
         timestamp = datetime.now().astimezone().strftime("%H:%M:%S")
         for line in str(message).splitlines() or [""]:
             self.project_update_logs.append(f"[{timestamp}] {line}\n")
