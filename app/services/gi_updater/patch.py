@@ -69,8 +69,19 @@ METHOD_COPYOVER = "copyover"
 #: 分片是 ldiff 数据，要打到旧文件上
 METHOD_PATCH = "patch"
 
-#: hpatchz 单次调用的上限（秒）：它只处理一个文件，几十秒已属异常
-_HPATCHZ_TIMEOUT = 300
+#: hpatchz 的等待预算：起步 60 秒，再按目标体积每秒 1 MiB 追加
+_HPATCHZ_MIN_SECONDS = 60
+_HPATCHZ_MIN_BYTES_PER_SECOND = 1 << 20
+
+
+def _hpatchz_timeout(target_size: int) -> float:
+    """这个文件打补丁最多等多久。
+
+    每秒 1 MiB 是比真机慢一到两个数量级的保守估计，正常跑不会提前掐表；留着上限只为工具
+    真挂住时仍能收工——掐早了要把整个文件重下一遍，已经花掉的差分片段白下，比多等一会儿
+    贵得多。
+    """
+    return _HPATCHZ_MIN_SECONDS + target_size / _HPATCHZ_MIN_BYTES_PER_SECOND
 
 
 @dataclass(frozen=True)
@@ -322,7 +333,7 @@ async def _target_is_current(target: str, asset: PatchAsset) -> bool:
     return await asyncio.to_thread(md5_file, target) == asset.target_md5.casefold()
 
 
-def _run_hpatchz(exe: str, old: str, diff: str, out: str) -> None:
+def _run_hpatchz(exe: str, old: str, diff: str, out: str, timeout: float) -> None:
     """调 hpatchz 把差分打到旧文件上，产出新文件。
 
     Raises:
@@ -330,10 +341,10 @@ def _run_hpatchz(exe: str, old: str, diff: str, out: str) -> None:
     """
     try:
         result = subprocess.run(
-            [exe, "-f", old, diff, out], capture_output=True, timeout=_HPATCHZ_TIMEOUT
+            [exe, "-f", old, diff, out], capture_output=True, timeout=timeout
         )
     except subprocess.TimeoutExpired as error:
-        raise UpdaterError(f"hpatchz 超时（{_HPATCHZ_TIMEOUT} 秒）: {out}") from error
+        raise UpdaterError(f"hpatchz 超时（{timeout:.0f} 秒）: {out}") from error
     except OSError as error:
         raise UpdaterError(f"无法运行 hpatchz（{exe}）: {error}") from error
     if result.returncode != 0:
@@ -497,7 +508,14 @@ async def apply_asset(
     try:
         await asyncio.to_thread(_write_bytes, diff_path, data)
         try:
-            await asyncio.to_thread(_run_hpatchz, hpatchz, old, diff_path, staging)
+            await asyncio.to_thread(
+                _run_hpatchz,
+                hpatchz,
+                old,
+                diff_path,
+                staging,
+                _hpatchz_timeout(asset.target_size),
+            )
         except UpdaterError as error:
             # 打不出可信的新文件：退回整文件重下，取回的差分片段照实计入流量
             logger.warning("%s 打补丁失败，降级为整文件下载: %s", asset.name, error)
