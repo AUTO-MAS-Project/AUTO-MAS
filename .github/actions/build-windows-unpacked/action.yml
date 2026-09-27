@@ -1,0 +1,109 @@
+name: 构建 Windows 解压包
+description: 下载并校验 Runtime，构建 Electron 应用，然后生成未签名的 win-unpacked 目录。
+
+inputs:
+  github-token:
+    description: 下载 Runtime Release 使用的 GitHub Token。
+    required: true
+  sentry-auth-token:
+    description: 可选的 Sentry Auth Token；CI 构建留空。
+    required: false
+    default: ''
+  sentry-org:
+    description: 可选的 Sentry Organization；CI 构建留空。
+    required: false
+    default: ''
+  sentry-project:
+    description: 可选的 Sentry Project；CI 构建留空。
+    required: false
+    default: ''
+
+runs:
+  using: composite
+  steps:
+    - name: 读取 Runtime 版本
+      id: runtime
+      shell: pwsh
+      run: |
+        $runtimeVersionFile = Join-Path '${{ github.workspace }}' 'res\runtime-version.txt'
+        $runtimeVersion = (Get-Content -LiteralPath $runtimeVersionFile -Raw).Trim()
+        if ($runtimeVersion -notmatch '^v\d+(\.\d+)*([-+][0-9A-Za-z.-]+)?$') {
+          throw "Runtime 版本格式无效：$runtimeVersion"
+        }
+
+        Add-Content -LiteralPath $env:GITHUB_OUTPUT -Value "version=$runtimeVersion"
+        Write-Host "本次构建使用 Runtime $runtimeVersion"
+
+    - name: 下载并校验 Runtime 可执行文件
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+        RUNTIME_VERSION: ${{ steps.runtime.outputs.version }}
+      shell: pwsh
+      run: |
+        $runtimeDir = Join-Path "${{ github.workspace }}" 'runtime'
+        New-Item -ItemType Directory -Force -Path $runtimeDir | Out-Null
+
+        $exeName = "auto-mas-runtime-$env:RUNTIME_VERSION.exe"
+        gh release download $env:RUNTIME_VERSION `
+          -R AUTO-MAS-Project/AUTO-MAS-Runtime `
+          -D $runtimeDir `
+          -p $exeName `
+          -p 'SHA256SUMS.txt' `
+          --clobber
+        if ($LASTEXITCODE -ne 0) {
+          throw "下载 Runtime $env:RUNTIME_VERSION 失败"
+        }
+
+        Push-Location $runtimeDir
+        try {
+          $sumsLine = Select-String -Path 'SHA256SUMS.txt' -Pattern ([regex]::Escape($exeName)) |
+            Select-Object -First 1
+          if (-not $sumsLine) {
+            throw "SHA256SUMS.txt 中找不到 $exeName 对应的记录"
+          }
+
+          $expectedHash = ($sumsLine.Line -split '\s+')[0].ToUpperInvariant()
+          $actualHash = (Get-FileHash -Path $exeName -Algorithm SHA256).Hash.ToUpperInvariant()
+          Write-Host "期望哈希: $expectedHash"
+          Write-Host "实际哈希: $actualHash"
+          if ($actualHash -ne $expectedHash) {
+            throw "SHA-256 校验失败：$exeName 与 SHA256SUMS.txt 不匹配"
+          }
+
+          # Electron 侧固定按 auto-mas-runtime.exe 定位。
+          Move-Item -Path $exeName -Destination 'auto-mas-runtime.exe' -Force
+          Remove-Item 'SHA256SUMS.txt'
+          Write-Host "Runtime $env:RUNTIME_VERSION 校验通过"
+        } finally {
+          Pop-Location
+        }
+
+    - name: 设置 Node.js 环境
+      uses: actions/setup-node@v7.0.0
+      with:
+        node-version: '20'
+
+    - name: 构建应用程序
+      working-directory: frontend
+      env:
+        SENTRY_AUTH_TOKEN: ${{ inputs.sentry-auth-token }}
+        SENTRY_ORG: ${{ inputs.sentry-org }}
+        SENTRY_PROJECT: ${{ inputs.sentry-project }}
+      shell: pwsh
+      run: |
+        $env:CSC_IDENTITY_AUTO_DISCOVERY = 'false'
+        corepack enable
+        corepack prepare yarn@4.9.1 --activate
+        yarn install
+        yarn build
+        if (-not (Test-Path -LiteralPath 'dist/win-unpacked/AUTO-MAS.exe' -PathType Leaf)) {
+          throw 'Electron 构建未生成 AUTO-MAS.exe'
+        }
+
+    - name: 放入 Runtime 可执行文件
+      shell: pwsh
+      run: |
+        $target = 'frontend\dist\win-unpacked\resources'
+        New-Item -ItemType Directory -Force -Path $target | Out-Null
+        Copy-Item -Path 'runtime\auto-mas-runtime.exe' `
+          -Destination (Join-Path $target 'auto-mas-runtime.exe') -Force
