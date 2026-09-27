@@ -1526,6 +1526,38 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
 
         await self._push_signal_notices()
 
+        # 全员都因停服维护跳过（含运行前检查连带跳过的）：信号通知已经说清楚了，
+        # 不再发「代理结果」汇总；有任何用户完成、失败、需更新或因别的原因跳过时照发。
+        if maintenance_users and len(maintenance_users) == len(
+            self.script_info.user_list
+        ):
+            logger.info(
+                f"MFW 本轮用户全部因停服维护跳过（{self.script_info.name}），"
+                "只发信号通知，不发代理结果汇总"
+            )
+        else:
+            await self._push_proxy_report(
+                error_users=error_users,
+                completed_users=completed_users,
+                maintenance_users=maintenance_users,
+            )
+
+        # 运行后更新：所有用户都跑完（main_task 正常走到底）之后一次。放在
+        # 代理结果推送之后，别让下载耽误报告；取消/崩溃路径不跑。
+        if self._users_completed and self._auto_update_mode == "AfterRun":
+            await self._run_project_update("AfterRun")
+            # 顺手把下一轮要用的环境备好：下次运行前那一步就只剩比指纹。
+            await self._ensure_project_environment("AfterRun")
+
+    async def _push_proxy_report(
+        self,
+        *,
+        error_users: list[UserItem],
+        completed_users: list[UserItem],
+        maintenance_users: list[UserItem],
+    ) -> None:
+        """推送本轮的「代理结果」汇总。"""
+
         title = (
             f"{datetime.now().strftime('%m-%d')} | "
             f"{self.script_info.name or '空白'}的{TASK_MODE_ZH[self.task_info.mode]}任务报告"
@@ -1570,13 +1602,6 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
                     level="error", message=f"推送 MFW 代理结果时出现异常: {exc}"
                 ),
             )
-
-        # 运行后更新：所有用户都跑完（main_task 正常走到底）之后一次。放在
-        # 代理结果推送之后，别让下载耽误报告；取消/崩溃路径不跑。
-        if self._users_completed and self._auto_update_mode == "AfterRun":
-            await self._run_project_update("AfterRun")
-            # 顺手把下一轮要用的环境备好：下次运行前那一步就只剩比指纹。
-            await self._ensure_project_environment("AfterRun")
 
     def _signal_summary_title(
         self, title: str, *, has_error: bool, has_completed: bool
