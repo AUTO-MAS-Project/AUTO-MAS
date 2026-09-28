@@ -72,6 +72,7 @@ from app.task.MaaFW.tools.core.project_update.contracts import (
     VIEW_MARKER_FILE_NAME,
 )
 from app.task.MaaFW.tools.core.project_update.projection import (
+    PROJECTION_REVISION,
     ProjectionError,
     build_projection_plan,
     is_shared_path,
@@ -507,6 +508,25 @@ def _differs_from(path: Path, payload_file: Path, entry: Mapping[str, Any]) -> b
     return sha256_file(path) != str(entry.get("sha256") or "")
 
 
+def _is_content_superset(
+    old_files: Mapping[str, Mapping[str, Any]],
+    new_files: Mapping[str, Mapping[str, Any]],
+) -> bool:
+    """新载荷是不是旧载荷的超集、共同路径内容相同（按清单哈希，大小写不敏感）。"""
+
+    if not old_files:
+        return False
+    new_hashes = {
+        rel.casefold(): str(entry.get("sha256") or "").lower()
+        for rel, entry in new_files.items()
+    }
+    for rel, entry in old_files.items():
+        digest = str(entry.get("sha256") or "").lower()
+        if not digest or new_hashes.get(rel.casefold()) != digest:
+            return False
+    return True
+
+
 def _local_modified_dir(
     view: Path, from_id: str, to_id: str, base: Path | None
 ) -> Path:
@@ -528,8 +548,13 @@ def _build_view_tree(
     private: Iterable[str] = (),
     archive_dropped: bool = False,
     same_payload: bool = False,
+    fills_only: bool = False,
 ) -> None:
     """§3.2 第 2–3 步：载荷的链接森林 + 私有状态承载。写 staging 一律 ``place_fresh``。
+
+    ``fills_only``：新载荷只是旧载荷加了些文件（投影补齐）。视图里已有的文件一律原样带过去
+    （版本绑定状态、被本地改过的受管文件、与新增路径同名的私有文件），不留档；只有视图里
+    没有的路径用新载荷的。
 
     载荷文件满足共用谓词的挂硬链接（与载荷 / blob 同一 inode），其余复制成视图私有的新
     文件——小文件、``config/`` 这些 agent 可能原地写的，视图里必须是自己的一份。
@@ -592,6 +617,15 @@ def _build_view_tree(
             parent = parent.parent
         return False
 
+    def _keep_view_copy(path: Path, rel: str, rel_path: Path) -> None:
+        """视图这份替掉 staging 里的载荷链接（``place_fresh`` 只摘目录项，不写载荷）。"""
+
+        if _blocked(rel_path):
+            _archive(path, rel)
+            return
+        payloads.place_fresh(path, staging / rel, link=True)
+        result.carried += 1
+
     for current, dir_names, file_names in os.walk(carry_from, onerror=_walk_error):
         current_path = Path(current)
         relative_dir = current_path.relative_to(carry_from)
@@ -615,7 +649,7 @@ def _build_view_tree(
             path = current_path / name
             rel = (relative_dir / name).as_posix()
             key = rel.casefold()
-            if key in VERSION_BOUND_STATE_FILES and not same_payload:
+            if key in VERSION_BOUND_STATE_FILES and not (same_payload or fills_only):
                 # 换载荷：staging 里已是新载荷那份（或没有），视图这份不带，见 contracts。
                 continue
             if _is_maafw_binding_path(key):
@@ -646,14 +680,22 @@ def _build_view_tree(
                     payloads.place_fresh(path, staging / rel, link=True)
                     result.carried += 1
                 elif _differs_from(path, payload_path / new_rel, new_files[new_rel]):
-                    # 新版本开始自带这个路径：载荷优先，视图那份留档。绝不能往 staging 里
-                    # 那个载荷硬链接上写（写穿防线）。
-                    _archive(path, rel)
+                    if fills_only:
+                        # 补齐：视图里已有的（用户自己拷进来的、#1110 写进来的）照旧用。
+                        _keep_view_copy(path, rel, relative_dir / name)
+                    else:
+                        # 新版本开始自带这个路径：载荷优先，视图那份留档。绝不能往 staging
+                        # 里那个载荷硬链接上写（写穿防线）。
+                        _archive(path, rel)
                 continue
             if old_payload_path is not None and _differs_from(
                 path, old_payload_path / old_rel, old_files[old_rel]
             ):
-                _archive(path, rel)
+                if fills_only:
+                    # 补齐不换内容：被本地改过（热更新）的受管文件原样带过去，不留档。
+                    _keep_view_copy(path, rel, relative_dir / name)
+                else:
+                    _archive(path, rel)
             elif archive_dropped and (
                 new_rel is None
                 or str(old_files[old_rel].get("sha256") or "").lower()
@@ -725,6 +767,15 @@ def _realize_view(
         version=version,
         from_payload=from_id,
     )
+    same_payload = bool(from_id) and from_id == payload_id
+    # 补齐切换（``projection_heal`` 按新投影规则重建出的同版本载荷）：新载荷是旧载荷的超集、
+    # 共同路径内容一字不差。按「同内容」处理：视图里的文件（版本绑定状态、被热更新改过的
+    # 受管文件）原样保留、不留档，只有视图里没有的新增文件落进来。
+    fills_only = (
+        not same_payload
+        and old_payload_path is not None
+        and _is_content_superset(old_files, new_files)
+    )
     journal = _journal_path(view.name, base)
     if journal.exists():
         raise EmbeddedProjectError("该脚本的项目上一次切换版本还没收尾，请重启后再试")
@@ -754,13 +805,15 @@ def _realize_view(
             carry_from=carry_from,
             old_files=old_files,
             old_payload_path=old_payload_path,
-            same_payload=bool(from_id) and from_id == payload_id,
+            same_payload=same_payload,
+            fills_only=fills_only,
             archive_dir=lambda: _local_modified_dir(view, from_id, payload_id, base),
             result=result,
             private=payloads.private_paths(root, lineage),
             archive_dropped=bool(
                 old_payload_path is not None
                 and from_id != payload_id
+                and not fills_only
                 and _same_version(str(old_manifest_version or ""), str(version or ""))
             ),
         )
@@ -1126,6 +1179,7 @@ def import_embedded_project(
                 "maafw": plan.bundled_maafw_version or "",
                 "python": plan.bundled_python_version or "",
             },
+            projection_revision=PROJECTION_REVISION,
         )
         payloads.add_known_source(store_root, lineage, str(source))
     except payloads.PayloadError as exc:

@@ -52,6 +52,7 @@ from .contracts import (
     safe_relative_path,
 )
 from .projection import (
+    PROJECTION_REVISION,
     ProjectionPlan,
     build_projection_plan,
     is_shared_path,
@@ -69,6 +70,11 @@ ORIGIN_IMPORT = "import"
 ORIGIN_PACKAGE = "package"
 # 登记前从 staging 剔掉的运行期目录（预检 / 准备环境会在 staging 上写这些）。
 PAYLOAD_STRIP_ROOT_DIRS = frozenset({"debug", "logs", "temp", ".pycache"})
+# 清单里的投影规则版本（没有 = 0，v5.6.0 的旧规则建的，见 ``projection.PROJECTION_REVISION``）
+# 与旧载荷按新规则检查过的结果（``projection_heal`` 写，每个载荷只查一次）。
+PROJECTION_REVISION_FIELD = "projectionRevision"
+PROJECTION_CHECK_FIELD = "projectionCheck"
+PROJECTION_CHECK_CLEAN = "clean"
 
 _LINEAGE_KEY_RE = re.compile(r"^[0-9a-f]{12}$")
 _PAYLOAD_ID_RE = re.compile(r"^[0-9A-Za-z._+-]{1,80}-[0-9a-f]{8}$")
@@ -353,6 +359,41 @@ def manifest_files(manifest: Mapping[str, Any] | None) -> dict[str, dict[str, An
 
 def read_manifest(root: Path, key: str, payload_id: str) -> dict[str, Any] | None:
     return _read_json(manifest_path(root, key, payload_id))
+
+
+def _non_negative_int(value: Any) -> int:
+    try:
+        return max(0, int(value or 0))
+    except (TypeError, ValueError):
+        return 0
+
+
+def projection_revision_of(manifest: Mapping[str, Any] | None) -> int:
+    """载荷按哪一版投影规则算是完整的：清单记的 ``projectionRevision``，或旧载荷按某一版
+    规则检查过、没缺文件（``projectionCheck.result=clean``）。两者都没有是 0（v5.6.0 旧规则）。
+    """
+
+    manifest = manifest or {}
+    explicit = _non_negative_int(manifest.get(PROJECTION_REVISION_FIELD))
+    check = manifest.get(PROJECTION_CHECK_FIELD)
+    checked = (
+        _non_negative_int(check.get("revision"))
+        if isinstance(check, Mapping)
+        and str(check.get("result") or "") == PROJECTION_CHECK_CLEAN
+        else 0
+    )
+    return max(explicit, checked)
+
+
+def inherited_projection_revision(
+    old_manifest: Mapping[str, Any] | None, package_type: str
+) -> int:
+    """更新建出的新载荷记哪版规则：全量包里的条目全部按当前规则投影，记当前版本；差量包
+    只动了包里那几个文件，其余从旧载荷原样继承，完整程度与旧载荷相同。"""
+
+    if package_type == "full":
+        return PROJECTION_REVISION
+    return projection_revision_of(old_manifest)
 
 
 def latest(root: Path, key: str, channel: str) -> dict[str, Any] | None:
@@ -787,6 +828,7 @@ def register(
     known_hashes: Mapping[str, str] | None = None,
     origins: Mapping[str, str] | None = None,
     bundled: Mapping[str, Any] | None = None,
+    projection_revision: int = 0,
 ) -> RegisterResult:
     """把 staging 登记成载荷并推进 ``latest[channel]``。
 
@@ -795,8 +837,12 @@ def register(
     - ``latest[channel]`` **只在版本严格更高时前进**；版本相同而 id 不同时保留既有 id
       （新建的这份不登记为 latest，等启动期回收）。返回的 ``latest_id`` 就是调用方该把
       视图切到的那个。``latest`` 指向的目录丢了才无条件换成这份。
-    - 唯一的同版本例外：既有 latest 自带的 MaaFramework 在本机加载不了、这份能加载
+    - 同版本例外一：既有 latest 自带的 MaaFramework 在本机加载不了、这份能加载
       （见 :func:`_replaces_unloadable_latest`），换成这份。
+    - 同版本例外二：这份按更新的投影规则建（``projection_revision`` 比 latest 的有效规则
+      版本高，见 :func:`_replaces_older_projection_latest`），换成这份。
+
+    ``projection_revision``：这份载荷按哪版投影规则算完整，记进清单；0 不记（旧规则）。
     """
 
     staging = Path(staging)
@@ -834,6 +880,8 @@ def register(
         "bundledPython": str((bundled or {}).get("python") or ""),
         "files": files,
     }
+    if projection_revision:
+        manifest[PROJECTION_REVISION_FIELD] = int(projection_revision)
 
     target = payload_dir(root, lineage, payload_id)
     manifest_file = manifest_path(root, lineage, payload_id)
@@ -860,6 +908,12 @@ def register(
                 # 同一份内容这次有更新器清单背书：来源升成 update（下次更新可要差量包）。
                 # 与 origin 合并同一口径，结果不取决于谁先登记。
                 merged["source"] = dict(source)
+                changed = True
+            if projection_revision > _non_negative_int(
+                existing.get(PROJECTION_REVISION_FIELD)
+            ):
+                # 同一份内容按新规则又建出了一遍：它本来就是完整的，记上。
+                merged[PROJECTION_REVISION_FIELD] = int(projection_revision)
                 changed = True
             if changed:
                 merged["files"] = merged_files
@@ -892,13 +946,26 @@ def register(
             current_version = str(current_latest.get("version") or "")
             latest_dir = lineage_dir(root, lineage) / str(current_latest["id"])
             if latest_dir.is_dir():
-                advanced = version_newer(
-                    version, current_version
-                ) or _replaces_unloadable_latest(
-                    latest_dir,
-                    target,
-                    same_id=str(current_latest["id"]) == payload_id,
-                    same_version=not version_newer(current_version, version),
+                same_id = str(current_latest["id"]) == payload_id
+                same_version = not version_newer(current_version, version)
+                advanced = (
+                    version_newer(version, current_version)
+                    or _replaces_unloadable_latest(
+                        latest_dir,
+                        target,
+                        same_id=same_id,
+                        same_version=same_version,
+                    )
+                    or _replaces_older_projection_latest(
+                        _read_json(
+                            manifest_path(root, lineage, str(current_latest["id"]))
+                        ),
+                        manifest,
+                        latest_dir=latest_dir,
+                        candidate_dir=target,
+                        same_id=same_id,
+                        same_version=same_version,
+                    )
                 )
             else:
                 # latest 指的目录丢了：只有新登记的不比它旧才顶上去，否则组会后退；
@@ -966,14 +1033,50 @@ def _replaces_unloadable_latest(
     return project_runtime_loadable_on_host(candidate_dir) is True
 
 
+def _replaces_older_projection_latest(
+    latest_manifest: Mapping[str, Any] | None,
+    candidate_manifest: Mapping[str, Any],
+    *,
+    latest_dir: Path,
+    candidate_dir: Path,
+    same_id: bool,
+    same_version: bool,
+) -> bool:
+    """同版本重新登记时，按更新的投影规则建的这份该不该顶替组的 latest。
+
+    旧规则漏装了文件的载荷（MaaFgo v2.0.03 的 ``agent/battle/runtime/``）按同一版本补齐后
+    重新登记、或用户按新规则重新导入同一版本：不开这个口子，同版本永远换不掉，运行前
+    检查还会说「已是最新」。看规则版本：这份清单记的 ``projectionRevision`` 比 latest
+    的有效规则版本（:func:`projection_revision_of`，含「按新规则查过没缺文件」）高才换；
+    但这份自带的 MaaFramework 在本机加载不了、latest 的能加载时不换（与
+    :func:`_replaces_unloadable_latest` 同一判据，重新导入一份别的架构的包不该把组换坏）。
+    """
+
+    if same_id or not same_version or latest_manifest is None:
+        return False
+    candidate = _non_negative_int(candidate_manifest.get(PROJECTION_REVISION_FIELD))
+    if candidate <= projection_revision_of(latest_manifest):
+        return False
+    from app.task.MaaFW.tools.core.runner.environment import (
+        project_runtime_loadable_on_host,
+    )
+
+    return not (
+        project_runtime_loadable_on_host(candidate_dir) is False
+        and project_runtime_loadable_on_host(latest_dir) is not False
+    )
+
+
 def _same_version_rank(
     candidate: str, manifests: Mapping[str, Mapping[str, Any]]
-) -> tuple[int, int, int, int]:
+) -> tuple[int, int, int, int, int]:
     """同版本多份载荷里挑谁当 latest 的排序键（越大越好；最后按 id 字典序兜底）。
 
-    1. ``source.kind=update``（有更新器清单背书）优先；
-    2. 文件集合是其它几份的超集的优先（超过几份就记几分）；
-    3. 文件数多、总字节大的优先。
+    1. 按更新的投影规则建的优先（:func:`projection_revision_of`，与登记时的同版本例外
+       同一口径，免得迁移又把补齐过的换回旧的）；
+    2. ``source.kind=update``（有更新器清单背书）优先；
+    3. 文件集合是其它几份的超集的优先（超过几份就记几分）；
+    4. 文件数多、总字节大的优先。
     与登记顺序无关——迁移时登记顺序就是脚本列表顺序，用户拖一下就会变。
     """
 
@@ -989,7 +1092,13 @@ def _same_version_rank(
             supersets += 1
     is_update = int(str((manifest.get("source") or {}).get("kind") or "") == "update")
     total = sum(int(entry.get("size") or 0) for entry in files.values())
-    return (is_update, supersets, len(files), total)
+    return (
+        projection_revision_of(manifest),
+        is_update,
+        supersets,
+        len(files),
+        total,
+    )
 
 
 def settle_same_version_latest(root: Path, key: str, channel: str) -> str | None:
@@ -1142,6 +1251,9 @@ __all__ = [
     "ORIGIN_IMPORT",
     "ORIGIN_PACKAGE",
     "PAYLOAD_STRIP_ROOT_DIRS",
+    "PROJECTION_CHECK_CLEAN",
+    "PROJECTION_CHECK_FIELD",
+    "PROJECTION_REVISION_FIELD",
     "FinalizeResult",
     "PackageBuild",
     "PayloadError",
@@ -1154,6 +1266,7 @@ __all__ = [
     "collect_unreferenced",
     "content_id",
     "finalize",
+    "inherited_projection_revision",
     "latest",
     "lineage_dir",
     "lineage_identity",
@@ -1173,6 +1286,7 @@ __all__ = [
     "payload_ref",
     "place_fresh",
     "private_paths",
+    "projection_revision_of",
     "read_lineage",
     "read_manifest",
     "read_project_interface",
