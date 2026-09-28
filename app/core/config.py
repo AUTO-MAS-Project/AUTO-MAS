@@ -3061,6 +3061,23 @@ class AppConfig(GlobalConfig):
                 task_data["TaskSnapshot"],
             )
 
+        # 养成接管提示只在运行注入准备时重写（AutoProxy._prepare_cultivate_injection）。
+        # 养成被关到不可能接管的状态后，上一轮写入的提示会残留到下次运行，前端把
+        # 它展示得像当前状态。判定口径归专项（与注入早退分支同源），这里只在
+        # 用户配置写入漏斗里应用其结论
+        if isinstance(script_config, MaaConfig) and isinstance(data.get("Task"), dict):
+            from app.task.MAA.tools.cultivate.service import takeover_notice_patch_value
+
+            task_patch = data["Task"]
+            notice = takeover_notice_patch_value(
+                task_patch.get("IfCultivate", user_config.get("Task", "IfCultivate")),
+                task_patch.get(
+                    "CultivateTargets", user_config.get("Task", "CultivateTargets")
+                ),
+            )
+            if notice is not None:
+                data.setdefault("Data", {})["CultivateNotice"] = notice
+
         await user_config.update(data)
 
     async def import_script_config_file(

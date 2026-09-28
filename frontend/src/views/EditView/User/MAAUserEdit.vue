@@ -76,7 +76,7 @@
               <span>{{ t('edit.enableQuickConfiguration') }}</span>
               <a-switch
                 :checked="formData.Info.IfQuickConfig"
-                :disabled="loading || isInitializing || isSaving"
+                :disabled="loading || isInitializing"
                 :aria-label="t('edit.enableQuickConfiguration')"
                 @change="handleQuickConfigChange"
               />
@@ -266,9 +266,13 @@ const {
 } = useMaaGuiSession()
 
 const formRef = ref<FormInstance>()
-const loading = computed(() => userLoading.value)
 const isInitializing = ref(true) // 标记是否正在初始化
 const isSaving = ref(false) // 标记是否正在保存
+// 字段保存不进入页面级 loading：updateUser 的请求 loading 若经此处传给整棵
+// 编辑树，会把全部控件禁用一轮——实测表现为切开关整页闪烁、键入目标库存
+// 时焦点输入框被禁用夺焦只能输一个数字。保存中的后续变更由 pendingFieldSaves
+// 队列兜底，不依赖禁用
+const loading = computed(() => userLoading.value && !isSaving.value)
 const pendingFieldSaves = new Map<string, any>()
 let fieldSavePromise: Promise<boolean> | null = null
 
@@ -875,6 +879,7 @@ const loadUserData = async () => {
         // 库存列读当前用户识别档案（决策 31）；两者无依赖，并行加载避免目录
         // 慢时库存列被串行阻塞
         await Promise.all([loadCultivateOperatorOptions(), loadDepotInventory()])
+        preloadDepotStageCandidates()
       } else {
         message.error(t('edit.userDoesNotExist'))
         handleCancel()
@@ -1001,6 +1006,23 @@ const loadDepotStageCandidates = async (itemId: string) => {
     depotStageCandidatesLoading.value = depotStageCandidatesLoading.value.filter(
       id => id !== itemId
     )
+  }
+}
+
+// 库存保持关卡候选进页预取：首次展开面板时逐行等响应，关卡列会随各请求
+// 返回肉眼可见地逐个刷新。改在进页后台预取（折叠状态下面板未挂载，响应
+// 到达零渲染），展开时编辑器的预加载全命中缓存不再发请求。单条失败写入
+// 空数组由 loadDepotStageCandidates 自身的兜底语义处理
+const preloadDepotStageCandidates = () => {
+  try {
+    const plans: Array<{ DropId?: string }> = JSON.parse(
+      formData.Task.DepotMaintainPlans || '[]'
+    )
+    for (const itemId of new Set(plans.map(plan => plan?.DropId).filter(Boolean))) {
+      void loadDepotStageCandidates(itemId as string)
+    }
+  } catch {
+    logger.warn('库存保持候选预取失败，展开时按需加载')
   }
 }
 

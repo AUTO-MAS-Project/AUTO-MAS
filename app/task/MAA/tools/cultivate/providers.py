@@ -181,6 +181,20 @@ def has_oper_box_data(context: ProviderContext) -> bool:
     return _load_oper_box(context)[0] is not None
 
 
+def observed_operator_ids(context: ProviderContext) -> tuple[str, ...]:
+    """出现过练度观测的干员全集（识别档案 ∪ 森空岛 ∪ 手填，去重）。
+
+    供预览组装练度名册超集：练度是档案事实，与是否在养成目标里无关；
+    按目标裁剪会让编辑器新选干员先渲染"？"再等下一轮预览（前端可见
+    二段刷新）。无任何观测的干员不进名册。
+    """
+
+    ids = set(load_oper_box_names(context))
+    ids.update(context.skland_progressions)
+    ids.update(context.manual_progressions)
+    return tuple(ids)
+
+
 def _load_oper_box(
     context: ProviderContext,
 ) -> tuple[float | None, dict[str, Progression], dict[str, str]]:
