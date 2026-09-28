@@ -55,6 +55,9 @@ from app.task.MaaFW.tools.embedded.embedded_project import (
     shell_hint_from_report,
 )
 from app.task.MaaFW.tools.embedded.project_path import (
+    begin_project_updating,
+    end_project_updating,
+    is_project_updating,
     release_project_path,
     try_reserve_project_path,
 )
@@ -69,12 +72,30 @@ from app.utils import get_logger
 from app.utils.security import sanitize_log_message
 
 UPDATE_SCRIPT_BUSY = "脚本正在运行，运行结束后再更新项目"
+UPDATE_PROJECT_UPDATING = "该项目正在更新，请等当前更新完成"
+# 预约被占、又不是在更新：编辑页准备运行环境、兄弟脚本的更新切过来后确认环境、导入 / 克隆、
+# 启动期迁移都会短暂持有。分不清是哪一个，只说被占用，不说「正在运行」误导用户。
+UPDATE_PROJECT_OCCUPIED = "项目正被占用（在准备运行环境或切换版本），请稍后再试"
 # 这两种 CDK 状态不需要额外提示：ok 是正常，absent 在选 GitHub 源时本就无关。
 _MAAFW_CDK_QUIET_STATUSES = frozenset({"ok", "absent"})
 _maafw_update_logger = get_logger("MaaFW 项目更新")
 # 手动更新拿项目锁的限时：另一次自动更新 / 预检正持有时回 409，不让同步请求
 # 跟着等几分钟。自动路径不限时。
 _MAAFW_MANUAL_UPDATE_LOCK_TIMEOUT_SECONDS = 5.0
+
+
+def describe_update_busy(root_path: Path, *, script_running: bool) -> str:
+    """现在不能手动更新的原因：正在更新 > 脚本在运行 > 项目被别的事占着。
+
+    「正在更新」看 ``project_path`` 的更新登记（``run_view_update`` 持谱系锁那段与手动更新
+    整段都会登记）；运行前 / 运行后自动更新时脚本也算在运行，但此时说「正在更新」更准。
+    """
+
+    if is_project_updating(root_path):
+        return UPDATE_PROJECT_UPDATING
+    if script_running:
+        return UPDATE_SCRIPT_BUSY
+    return UPDATE_PROJECT_OCCUPIED
 
 
 def _maafw_httpx_proxy(proxy_url: str | None) -> Any:
@@ -249,7 +270,9 @@ async def update_project(script_id: str, action: str) -> MaaFWApiReply:
         publish_progress(tracker.log(text))
 
     def report_progress(event: dict[str, Any]) -> None:
-        publish_progress(tracker.event(event))
+        # events() 而不是 event()：解压开始前要多发一条旧前端（v5.6.0）能认的过渡消息。
+        for data in tracker.events(event):
+            publish_progress(data)
 
     if action == "check":
         publish_progress(tracker.checking())
@@ -365,15 +388,20 @@ async def update_project(script_id: str, action: str) -> MaaFWApiReply:
     # 只查版本随时可以；真切换要等运行结束（与 dev 一致，运行中的手动更新不支持）：
     # 运行中的脚本只经兄弟脚本的更新被动 pending，跑完后切。
     if getattr(script_config, "is_locked", False):
-        return MaaFWApiReply.error(400, UPDATE_SCRIPT_BUSY)
+        return MaaFWApiReply.error(
+            400, describe_update_busy(root_path, script_running=True)
+        )
     # 下载 + 构建 + 预检要几分钟，锁只在这一刻查过一次：整段持有本视图的项目预约，
     # 运行前检查看到预约就按「正在更新」跳过；切换与之后的运行环境确认都在这段预约里。
     apply_reservation = await try_reserve_project_path(root_path)
     if apply_reservation is None:
-        return MaaFWApiReply.error(400, UPDATE_SCRIPT_BUSY)
-
+        return MaaFWApiReply.error(
+            400, describe_update_busy(root_path, script_running=False)
+        )
     precheck_failure: dict[str, Any] = {}
     script_name = str(script_config.get("Info", "Name") or script_id[:8])
+    # 整段登记为「正在更新」（含切换后的环境确认），这期间再点更新说的是「正在更新」。
+    updating_key = begin_project_updating(root_path)
     try:
         route = await asyncio.to_thread(
             lambda: runtime_pool_route_from_service(MaaFWRuntimePoolService())
@@ -468,6 +496,7 @@ async def update_project(script_id: str, action: str) -> MaaFWApiReply:
         )
         return MaaFWApiReply.error(500, f"MFW 项目更新失败: {exc}")
     finally:
+        end_project_updating(updating_key)
         await release_project_path(apply_reservation)
 
     if outcome.registered_id:
