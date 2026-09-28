@@ -1015,9 +1015,7 @@ const loadDepotStageCandidates = async (itemId: string) => {
 // 空数组由 loadDepotStageCandidates 自身的兜底语义处理
 const preloadDepotStageCandidates = () => {
   try {
-    const plans: Array<{ DropId?: string }> = JSON.parse(
-      formData.Task.DepotMaintainPlans || '[]'
-    )
+    const plans: Array<{ DropId?: string }> = JSON.parse(formData.Task.DepotMaintainPlans || '[]')
     for (const itemId of new Set(plans.map(plan => plan?.DropId).filter(Boolean))) {
       void loadDepotStageCandidates(itemId as string)
     }
