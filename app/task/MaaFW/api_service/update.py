@@ -234,9 +234,9 @@ async def update_project(script_id: str, action: str) -> MaaFWApiReply:
         proxy_url = ""
     # CDK 值绝不进日志：只记录「有没有」。
     _maafw_update_logger.info(
-        f"MFW 项目更新({action}): script={script_id} "
-        f"channel={source_config['channel']} "
-        f"cdk={'已配置' if source_config['mirror_cdk'] else '未配置'}"
+        f"MFW 项目手动{'检查更新' if action == 'check' else '更新'}：脚本 {script_id}，"
+        f"渠道 {source_config['channel']}，"
+        f"Mirror 酱 CDK {'已配置' if source_config['mirror_cdk'] else '未配置'}"
     )
 
     from app.core.ws import protocol as ws_protocol

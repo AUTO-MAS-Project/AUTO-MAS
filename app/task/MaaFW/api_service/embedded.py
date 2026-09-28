@@ -469,7 +469,7 @@ def _view_architecture_warnings(view: Path, source: Path | None) -> list[str]:
     )
     from app.task.MaaFW.tools.core.runner.run_plan import (
         MaaFWRunPlanError,
-        _build_native_plugin_paths,
+        native_plugin_paths,
     )
 
     messages: list[str] = []
@@ -482,7 +482,7 @@ def _view_architecture_warnings(view: Path, source: Path | None) -> list[str]:
     if runtime_message:
         messages.append(runtime_message)
     try:
-        plugin_paths = _build_native_plugin_paths(view)
+        plugin_paths = native_plugin_paths(view)
     except (MaaFWRunPlanError, OSError):
         plugin_paths = []  # 清单坏了运行前会报清楚，这里只是提示
     for path_info in plugin_paths:

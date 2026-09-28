@@ -71,6 +71,8 @@ MIRROR_CDK_STATUS_BY_CODE: dict[int, str] = {
 CDK_STATUS_OK = "ok"
 CDK_STATUS_ABSENT = "absent"
 CDK_ABSENT_REASON = "未配置 Mirror酱 CDK"
+# 更新失败那行的前缀：检查失败与应用失败共用，已带前缀的原因不再重复加。
+UPDATE_FAILED_PREFIX = "项目更新失败："
 
 
 @dataclass
@@ -309,7 +311,7 @@ def _public_package_source(raw_value: Any) -> str | None:
 
 
 def _format_package_size(size: int | None) -> str:
-    """把包大小说成人话，接在 ``found …`` 那行后面；没有大小就什么都不加。
+    """把包大小说成人话，接在「发现新版本」那行括号里；没有大小就什么都不加。
 
     359MB 全量包在直连 GitHub 下要几十分钟，用户看到「发现更新」之后那段
     静默里最该知道的就是「要下多大」。GitHub 资产元数据里必有 size，
@@ -318,7 +320,27 @@ def _format_package_size(size: int | None) -> str:
 
     if not size or size <= 0:
         return ""
-    return f", {size / (1024 * 1024):.1f} MB"
+    return f"，{size / (1024 * 1024):.1f} MB"
+
+
+def _describe_package(candidate: MaaFWProjectUpdateCandidate) -> str:
+    """「GitHub 全量包，342.9 MB」：下载源 + 包类型 + 大小，缺哪项就不写哪项。"""
+
+    source = _public_package_source(candidate.source)
+    label = {"github": "GitHub", "mirrorchyan": "Mirror 酱"}.get(source or "", "")
+    kind = {"full": "全量包", "delta": "差量包"}.get(
+        str(candidate.package_type or ""), "更新包"
+    )
+    return f"{label} {kind}".strip() + _format_package_size(candidate.size)
+
+
+def _describe_public_source(raw_value: Any) -> str:
+    """更新完成那行的下载源显示名；认不出就原样给。"""
+
+    source = _public_package_source(raw_value)
+    return {"github": "GitHub", "mirrorchyan": "Mirror 酱"}.get(
+        source or "", str(raw_value or "未知")
+    )
 
 
 def _report_progress(
@@ -388,7 +410,7 @@ async def update_maafw_project_if_needed(
     update_channel = channel or "stable"
 
     if not current_version:
-        message = "interface does not declare version, skip MaaFW project update"
+        message = "interface.json 没有声明版本号，跳过项目更新"
         send_update_log(message)
         _report_progress(
             progress,
@@ -416,9 +438,9 @@ async def update_maafw_project_if_needed(
         if base_version and version_newer(base_version, current_version):
             send_update_log(f"本项目已登记 {base_version}，以它为基准检查更新")
             current_version = base_version
-    send_update_log("start checking MaaFW project update")
-    send_update_log(f"current version: {current_version}")
-    send_update_log(f"update channel: {update_channel}")
+    send_update_log(
+        f"正在检查项目更新（当前 {current_version}，渠道 {update_channel}）"
+    )
     del project_lock_already_held, project_lock_timeout, projection
 
     merged_source_config = dict(source_config or {})
@@ -441,7 +463,7 @@ async def update_maafw_project_if_needed(
         )
         if project_shell_hint:
             merged_source_config["project_shell_hint"] = project_shell_hint
-    _report_progress(progress, "checking", message="checking for project updates")
+    _report_progress(progress, "checking", message="正在检查更新")
     try:
         # 差量包只能套在「更新器装的那一版」上：当前载荷是更新得来的（清单逐文件
         # 记着包内哈希、指纹就是它现在的指纹——载荷不可变）才要差量包；本地导入的
@@ -488,7 +510,7 @@ async def update_maafw_project_if_needed(
             precheck_gate=precheck_gate,
         )
     except Exception as exc:
-        message = f"MaaFW project update failed: {_sanitize_log_message(str(exc))}"
+        message = f"{UPDATE_FAILED_PREFIX}{_sanitize_log_message(str(exc))}"
         send_update_log(message)
         _report_progress(
             progress,
@@ -503,10 +525,10 @@ async def update_maafw_project_if_needed(
 
     if discovery is None:
         if version_check is not None:
-            message = f"MaaFW 项目已是最新版本: {current_version}"
+            message = f"项目已是最新版本（{current_version}）"
             status = "no_update"
         else:
-            message = skipped_reason or "MaaFW 项目未配置可用更新源，跳过更新"
+            message = skipped_reason or "项目未配置可用的更新源，跳过更新"
             status = "skipped"
         send_update_log(message)
         _report_progress(
@@ -547,8 +569,8 @@ async def update_maafw_project_if_needed(
     if not discovery.installable:
         reason = discovery.unavailable_reason or "更新源没有返回可安装的下载地址"
         message = (
-            f"发现 MaaFW 项目更新 {current_version} -> {discovery.version}，"
-            f"但没有可安装的更新包: {reason}"
+            f"发现新版本 {current_version} → {discovery.version}，"
+            f"但没有可安装的更新包：{reason}"
         )
         send_update_log(message)
         _report_progress(
@@ -573,7 +595,7 @@ async def update_maafw_project_if_needed(
 
     candidate = discovery.candidate
     if candidate is None:
-        message = "update discovery is marked installable but has no candidate"
+        message = "更新源标记为可安装，却没有给出更新包"
         _report_progress(
             progress,
             "failed",
@@ -584,8 +606,8 @@ async def update_maafw_project_if_needed(
         raise MaaFWProjectUpdateError(message)
 
     send_update_log(
-        f"found MaaFW project update: {current_version} -> {candidate.version} "
-        f"({candidate.source}{_format_package_size(candidate.size)})"
+        f"发现新版本 {current_version} → {candidate.version}"
+        f"（{_describe_package(candidate)}）"
     )
     if not candidate.plan_id:
         candidate.plan_id = uuid.uuid4().hex
@@ -605,7 +627,7 @@ async def update_maafw_project_if_needed(
     except Exception as exc:
         if getattr(exc, "cancelled", False):
             # 用户点的停止：断点留着、项目没动，说「失败」会让人以为坏了。
-            message = "MaaFW project update cancelled"
+            message = "项目更新已中止"
             send_update_log(message)
             _report_progress(
                 progress,
@@ -618,8 +640,8 @@ async def update_maafw_project_if_needed(
         detail = _sanitize_log_message(str(exc))
         message = (
             detail
-            if detail.startswith("MaaFW project update failed:")
-            else f"MaaFW project update failed: {detail}"
+            if detail.startswith(UPDATE_FAILED_PREFIX)
+            else f"{UPDATE_FAILED_PREFIX}{detail}"
         )
         if message != detail:
             send_update_log(message)
@@ -638,8 +660,8 @@ async def update_maafw_project_if_needed(
         raise
 
     message = (
-        f"MaaFW 项目更新完成: {current_version} -> {candidate.version}"
-        f"（来源: {_public_package_source(candidate.source)}）"
+        f"项目更新完成：{current_version} → {candidate.version}"
+        f"（{_describe_public_source(candidate.source)}）"
     )
     send_update_log(message)
     _report_progress(
@@ -767,11 +789,13 @@ async def _discover_project_update_detailed(
 
     mirror_cdk = str(config.get("mirror_cdk") or config.get("cdk") or "").strip()
     channel = str(config.get("channel") or "stable").strip() or "stable"
-    send_update_log(f"MirrorChyan RID: {rid}")
-    send_update_log("MirrorChyan platform: win/x86_64")
+    # 资源 ID / 平台 / CDK 有无只给开发者看（进 app.log，不进任务日志与更新面板）：
+    # 任务日志开头那行已经说过 CDK 配没配。
+    logger.info("Mirror 酱资源 ID：%s", rid)
+    logger.info("Mirror 酱查询平台：win/x86_64")
     # 日志里绝不出现 CDK 明文，连前几位都不打。
     if mirror_cdk:
-        send_update_log("MirrorChyan CDK: 已配置")
+        logger.info("Mirror 酱 CDK：已配置")
 
     # **查版本一律不带 CDK。** Mirror 酱在有更新且 CDK 有效时会签发一个一次性
     # 下载地址，而它能计数的就是这一下签发——带着 CDK 查一次版本就可能扣掉一次
@@ -787,10 +811,11 @@ async def _discover_project_update_detailed(
         send_log=send_update_log,
     )
     latest = version_check.version_name
-    send_update_log(f"version metadata source: MirrorChyan; latest={latest}")
+    # 给用户看的版本号由「发现新版本 / 已是最新版本」那行说，这里只进 app.log。
+    logger.info("Mirror 酱最新版本：%s（当前 %s）", latest, current)
 
     if not _is_remote_newer(latest, current):
-        reason = f"已是最新版本: {current or latest}"
+        reason = f"已是最新版本（{current or latest}）"
         return None, version_check, reason
 
     def unavailable(reason: str):
@@ -866,7 +891,7 @@ async def _discover_project_update_detailed(
                 "更新源选的是 Mirror 酱，请检查 CDK 或改用 GitHub 源"
             )
         discovery = _discovery_from_mirror_check(authorized)
-        send_update_log(f"install package source: MirrorChyan; version={latest}")
+        logger.info("更新包来源：Mirror 酱，版本 %s", latest)
         return (
             _attach_version_check(discovery, authorized, current),
             authorized,
@@ -879,7 +904,7 @@ async def _discover_project_update_detailed(
             "更新源选的是 GitHub，但 interface.json 未声明 github 仓库，无法下载更新包"
         )
 
-    send_update_log(f"install package source: GitHub Release; repo={repo}")
+    logger.info("更新包来源：GitHub Release，仓库 %s", repo)
     try:
         github_discovery = await _check_github_release_update(
             interface_model,
@@ -905,7 +930,7 @@ async def _discover_project_update_detailed(
         # the matching tag with a conventional leading ``v``.
         github_discovery.candidate.version = latest
         github_discovery.candidate.to_version = latest
-        send_update_log(f"install package source: GitHub Release; version={latest}")
+        logger.info("GitHub Release 找到版本 %s 的更新包", latest)
 
     discovery = MaaFWProjectUpdateDiscovery(
         source="mirrorchyan",
@@ -935,14 +960,14 @@ def _attach_version_check(
             else "GitHub Release"
         )
         discovery.message = (
-            f"发现新版本 {current_version} -> {discovery.version}，将从 {label} 下载"
+            f"发现新版本 {current_version} → {discovery.version}，将从 {label} 下载"
         )
         discovery.skipped_reason = None
     else:
         reason = discovery.unavailable_reason or "更新源没有返回可安装的下载地址"
         discovery.message = (
-            f"发现新版本 {current_version} -> {discovery.version}，"
-            f"但没有可安装的更新包: {reason}"
+            f"发现新版本 {current_version} → {discovery.version}，"
+            f"但没有可安装的更新包：{reason}"
         )
         discovery.skipped_reason = reason
     return discovery
@@ -1297,9 +1322,11 @@ async def apply_maafw_project_update(
     # 流水记到终态：启动期清理只收终态 / 本进程之前的记录，不让目录越攒越多。
     _finish_operation(operation, "registered", payloadId=registered.payload_id)
     emit("committed", {"payloadId": registered.payload_id})
+    # 任务日志里 ``committed`` 事件不再单翻一行（见 update_progress），这一行说全。
     send_update_log(
-        f"新版本已登记：{registered.payload_id}"
-        + ("" if registered.created else "（与本机已有的同一版本内容相同，复用）")
+        f"新版本已登记（{registered.payload_id}"
+        + ("" if registered.created else "，与本机已有的同一版本内容相同，复用")
+        + ("），正在切换脚本" if after_register is not None else "）")
     )
     if after_register is not None:
         # 登记之后不再响应取消：切换约 2 s，做完再返回。钩子自己的失败只记日志——
@@ -1423,7 +1450,7 @@ async def _query_mirrorchyan_latest(
                 provider_error_code=error_code,
             )
         send_update_log(
-            f"MirrorChyan CDK 状态 [{error_code}]: {cdk_message}；本次仅用 Mirror酱 查版本"
+            f"Mirror 酱 CDK 不可用（{error_code}）：{cdk_message}；本次只用 Mirror 酱查版本"
         )
         return MaaFWMirrorChyanVersionCheck(
             version_name=latest_version,

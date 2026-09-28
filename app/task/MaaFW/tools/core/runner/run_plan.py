@@ -267,7 +267,7 @@ def build_maafw_run_plan(
         controllerDisplay=_build_controller_display(controller),
         resourceName=resource.name,
         resource=resource_bundle,
-        nativePluginPaths=_build_native_plugin_paths(resolved_base_dir),
+        nativePluginPaths=native_plugin_paths(resolved_base_dir),
         agents=build_maafw_agent_command_plans(
             resolved_base_dir,
             interface.agent,
@@ -985,7 +985,12 @@ def _build_resource_bundle_plan(
     )
 
 
-def _build_native_plugin_paths(base_dir: Path) -> list[MaaFWResolvedPath]:
+def native_plugin_paths(base_dir: Path) -> list[MaaFWResolvedPath]:
+    """项目的原生插件路径：项目清单 ``nativePluginPaths`` 优先，缺省 ``plugins/``。
+
+    运行计划与编辑页的架构提示共用这一套解析。
+    """
+
     manifest_path = base_dir / PROJECT_RUNTIME_MANIFEST_NAME
     declared_paths: list[str] | None = None
     if manifest_path.is_file():
@@ -1016,6 +1021,10 @@ def _build_native_plugin_paths(base_dir: Path) -> list[MaaFWResolvedPath]:
         default_path = base_dir / "plugins"
         declared_paths = ["plugins"] if default_path.is_dir() else []
     return [_resolve_project_path(base_dir, item) for item in declared_paths]
+
+
+# 旧私有名留作别名，外部已有的引用照常可用。
+_build_native_plugin_paths = native_plugin_paths
 
 
 def _resolve_project_path(base_dir: Path, raw_path: str) -> MaaFWResolvedPath:

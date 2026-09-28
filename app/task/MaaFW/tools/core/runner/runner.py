@@ -811,6 +811,18 @@ class MaaFWRunner:
 
     def _load_native_plugins(self) -> None:
         host = host_architecture()
+        # 清单 nativePluginPaths 的条目可能互相重叠（同时写了 ``plugins`` 与
+        # ``plugins/win-arm64``）：同一个 DLL 按解析后的真实路径只处理一次，
+        # 加载与「已跳过」日志都不重复。
+        handled: set[str] = set()
+
+        def first_time(path: Path) -> bool:
+            key = os.path.normcase(str(path.resolve()))
+            if key in handled:
+                return False
+            handled.add(key)
+            return True
+
         for path_info in self.plan.nativePluginPaths:
             plugin_path = Path(path_info.resolved)
             if not path_info.exists:
@@ -826,6 +838,8 @@ class MaaFWRunner:
             # loadable DLLs while preserving explicit file entries in a
             # project manifest.
             if path_info.isFile:
+                if not first_time(plugin_path):
+                    continue
                 if plugin_path.suffix.casefold() != ".dll":
                     self.send_log(
                         f"MaaFW native plugin 路径未找到可加载 DLL，已跳过: {path_info.resolved}"
@@ -856,6 +870,9 @@ class MaaFWRunner:
                     f"MaaFW native plugin 路径未找到可加载 DLL，已跳过: {path_info.resolved}"
                 )
                 continue
+            candidates = [item for item in candidates if first_time(item)]
+            if not candidates:
+                continue  # 这些 DLL 前面的条目已经处理过
 
             # 发行包常在 plugins/ 下同时带 win-arm64 与 win-x64，按名字排 arm64 在前；
             # 别的架构的 DLL 必然加载失败，读得出架构且与本机不符的跳过，读不出的照旧尝试。

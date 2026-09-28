@@ -6,6 +6,7 @@ import asyncio
 import hashlib
 import ipaddress
 import json
+import logging
 import os
 import re
 import threading
@@ -26,6 +27,8 @@ from .state import (
     redact_text,
     redact_url,
 )
+
+logger = logging.getLogger("automas.maafw.project_update.transport")
 
 CHUNK_SIZE = 64 * 1024
 MAX_REDIRECTS = 10
@@ -458,7 +461,9 @@ async def download_resumable(
                 supportsResume=outcome.range_supported,
                 attempt=attempt,
             )
-            send_update_log(f"MaaFW update package downloaded: {outcome.size} bytes")
+            # 给用户看的「更新包下载完成（x MB）」由下面的 downloaded 事件翻出来（任务日志
+            # 与更新面板各有一份），这里只把精确字节数留在 app.log。
+            logger.info("更新包下载完成：%s 字节", outcome.size)
             # 正常路径也要有 ``downloaded`` 事件（原来只有缓存命中才发）：
             # 宿主靠它知道「下载已结束、事务马上开始」——最后一个 chunk 到
             # 事务发出 plan_validated 之间还有 sha256 与项目指纹那几十秒，

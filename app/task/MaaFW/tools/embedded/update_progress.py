@@ -54,7 +54,6 @@ PACKAGE_KIND_INCREMENTAL = "incremental"
 
 # 核心包里表示「本次更新已收尾」的 completed 子状态；除 updated 外都算成功结束。
 _FINAL_STAGES = frozenset({"completed", "failed"})
-_THROTTLED_STAGES = frozenset({"downloading", "extracting", "applying"})
 
 _STAGE_MESSAGES: dict[str, str] = {
     "checking": "正在检查更新",
@@ -85,9 +84,17 @@ _DOWNLOAD_UNKNOWN_STEP_BYTES = 32 * 1024 * 1024
 _EXTRACT_PERCENT_STEP = 10.0
 _APPLY_PERCENT_STEP = 25.0
 # 这些阶段核心包自己已经用 send_log 写过人话（比对 / 复制骨架 / 预检的开始与带用时的
-# 结束行都在 updater 里），再翻一遍就是重复行。
+# 结束行、「新版本已登记（…），正在切换脚本」都在 updater 里），再翻一遍就是重复行。
 _TASK_LOG_SKIPPED_STAGES = frozenset(
-    {"checking", "completed", "failed", "plan_validated", "staged", "post_validating"}
+    {
+        "checking",
+        "completed",
+        "failed",
+        "plan_validated",
+        "staged",
+        "post_validating",
+        "committed",
+    }
 )
 
 
@@ -349,8 +356,7 @@ class MaaFWUpdateProgressTracker:
     ) -> WSMaaFWProjectUpdateProgressData:
         message = str(event.get("message") or "")
         if stage == "checking":
-            # 核心包这一步的 message 是英文流水（"checking for project updates"），
-            # 面板上统一用中文阶段文案；发现版本时把版本号带上。
+            # 面板上统一用阶段文案，不认核心包这一步带的 message；发现版本时把版本号带上。
             if str(event.get("status") or "") == "version_discovered":
                 version = str(event.get("version") or "").strip()
                 message = f"发现新版本 {version}" if version else "发现新版本"
@@ -445,8 +451,9 @@ class MaaFWUpdateTaskLogTranslator:
       覆盖每跨 25% 一行，收尾必发（解压的首尾两行由核心包写，这里不出）。按时间节流
       会让 359MB 的下载刷出几百行。
     - ``checking`` / ``completed`` / ``failed`` / ``plan_validated`` / ``staged`` /
-      ``post_validating`` 一律跳过：核心包自己已经用 ``send_log`` 写过人话（后三个带
-      用时），再翻一遍就是重复行；取消时宿主另有自己的文案。
+      ``post_validating`` / ``committed`` 一律跳过：核心包自己已经用 ``send_log`` 写过
+      人话（比对 / 复制骨架 / 预检带用时，登记那行带载荷 id），再翻一遍就是重复行；
+      取消时宿主另有自己的文案。
 
     速度沿用 :class:`MaaFWUpdateProgressTracker` 算好的 ``speedBytesPerSec``，
     而且**只把决定要发的事件喂给它**——这样速度是两条相邻日志行之间的平均，
