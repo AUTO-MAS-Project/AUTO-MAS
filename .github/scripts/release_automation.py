@@ -209,10 +209,15 @@ def prepare(args):
         if target_key and target_key[3] == module.PHASE_RANK[None] and target_key[2] > 0:
             raise ValueError("stable patch versions require an explicit base and selected fixes")
         source = git("rev-parse", "origin/dev")
-        if latest and "-beta." in latest:
+        # 维护补丁不回 dev；最近一次 beta 或开发线转正必须已合入发布记录。
+        development_release = module.latest_version(
+            v for v in tags if (key := module.version_key(v)) is not None
+            and (key[3] == module.PHASE_RANK["beta"]
+                 or (key[3] == module.PHASE_RANK[None] and key[2] == 0)))
+        if development_release:
             _, sections, _ = module.parse_changelog(git("show", "origin/dev:CHANGELOG.md"))
-            if latest not in sections:
-                raise ValueError("merge the previous development release record PR into dev before continuing beta/stable")
+            if development_release not in sections:
+                raise ValueError(f"merge the development release record PR for {development_release} into dev before continuing beta/stable")
         fixes = []
     if target in tags or not re.fullmatch(r"v\d+\.\d+\.\d+(?:-beta\.\d+)?", target):
         raise ValueError("duplicate or unsupported release version")

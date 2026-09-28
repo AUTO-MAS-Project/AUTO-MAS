@@ -51,6 +51,8 @@
    Mirror 酱和自建源继续按 stable/beta 渠道发布同一版本包。
 5. beta/开发线正式版发布后会创建发布记录 PR 到 dev。维护者保留后续未发布改动、
    解决可能的更新日志冲突后合并，才能继续下个 beta/转正，防止重复发布同批条目。
+   准备开发线版本前检查最新 beta 或 `X.Y.0` 的记录；即使随后发布了维护补丁，
+   也不能跳过这项检查。维护补丁的记录无需合回 dev，不阻止独立补丁准备。
    补丁不送回 dev；5.6.1/5.6.2 和 5.7.0-beta.2/beta.3/5.7.0 各自推进。
    正常发布中途失败保留已创建的引用，勿删改已发布版本；未完成的平台由维护者
    使用同次 Actions 包补传。这与可删除重建的 nightly dev 不同。
@@ -109,9 +111,10 @@
 
 ## 已执行的验证与边界
 
-- AUTO-MAS：`python -m pytest tests/tools/test_release_workflows_temp.py tests/tools/test_changelog_script.py tests/core/test_git_version.py tests/api/test_core_health.py -q`：141 通过，1 跳过。
+- 发布记录守门：`python -m pytest tests/tools/test_release_workflows_temp.py -q`：42 项通过，包括 14 个未入账/已入账、beta/转正及后续维护补丁场景。
+- 初次 AUTO-MAS 验证：`python -m pytest tests/tools/test_release_workflows_temp.py tests/tools/test_changelog_script.py tests/core/test_git_version.py tests/api/test_core_health.py -q`：141 通过，1 跳过。
   临时本地仓库和模拟 GitHub API 覆盖 dev 入账、真实非快进拒绝后重算、补丁与 beta 并行、旧来源保留、必要 CI 入口迁移、nightly 完整/缺失/部分失败与重试、同步 PR 增删改与重复运行。
-- `python -m pytest tests --collect-only -q`：437 项收集成功。
+- `python -m pytest tests --collect-only -q`：451 项收集成功。
 - 前端：`yarn typecheck`、`yarn build:main` 通过；`yarn test electron/services/runtimeBinaryService.test.ts electron/services/runtimeInitializationService.test.ts electron/services/runtimeUpdateService.test.ts src/utils/changelog.test.ts`：182 项通过；三个修改过的 TypeScript 文件格式检查通过。
 - Runtime：`gofmt`、`go vet ./...`、`go build -buildvcs=false ./...`、`go test -p 1 ./... -count=1` 通过；已有 alpha 首装、滚动提交更新、身份校验、启动及恢复测试随完整套件执行。
 - `actionlint -shellcheck= -pyflakes=`、Python 编译、四个 `.ps1` 文件及 40 段工作流 PowerShell 语法检查通过；`scripts/changelog.py check` 和两仓库 `git diff --check` 通过。
