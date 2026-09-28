@@ -21,8 +21,10 @@
 #   Contact: DLmaster_361@163.com
 
 
+import asyncio
 import hashlib
 import io
+import os
 import re
 import tempfile
 import time
@@ -485,21 +487,28 @@ async def get_bluearchive_image(
 ENDFIELD_IMAGE_HOSTS = ("data.akedata.wiki", "web.hycdn.cn")
 ENDFIELD_IMAGE_WIDTH = 1300
 ENDFIELD_IMAGE_CACHE_DIR = Path(tempfile.gettempdir()) / "auto-mas-image-cache"
+## 活动图按地址换，版本大图却是固定地址换内容，所以缓存还得有有效期
+ENDFIELD_IMAGE_CACHE_TTL = 6 * 3600
 
 ## 终末地的版本大图就是 AKEData 首页顶部那张（打开网站第一眼看到的就是它），
 ## 比活动自带的背景图更稳定：每个版本都会换，且不依赖某个活动是否在跑
 ENDFIELD_VERSION_ART_URL = "https://data.akedata.wiki/public/images/index/main.png"
 
 ## 版本名（如「雪凇幽梦」）在官网首页的公告列表里：置顶的那条就叫「XX版本更新说明」。
-## 那段 JSON 在页面上是双重转义的，所以直接按标题文本匹配
+## 那段 JSON 在页面上是双重转义的，所以直接按标题文本匹配；书名号里不允许再出现
+## 书名号，否则同一行前面的别的「」标题会被一起吞进来
 ENDFIELD_OFFICIAL_URL = "https://endfield.hypergryph.com/"
-ENDFIELD_VERSION_NAME = re.compile(r"「(.+?)」版本更新说明")
+ENDFIELD_VERSION_NAME = re.compile(r"「([^「」]+)」版本更新说明")
 ENDFIELD_ART_CACHE_TTL = 3600
 _endfield_version_cache: tuple[float, str] | None = None
 
 
-def _endfield_version_name() -> str:
-    """从官网首页的公告列表里取当前版本名，取不到就返回空串。"""
+async def _endfield_version_name() -> str:
+    """从官网首页的公告列表里取当前版本名，取不到就返回上一次取到的值。
+
+    官网响应慢的时候不能把事件循环钉在这里，所以用异步客户端；取数失败或没匹配到
+    也不写缓存，免得一个空串把上一版的名字顶掉整整一个小时。
+    """
 
     global _endfield_version_cache
 
@@ -511,8 +520,8 @@ def _endfield_version_name() -> str:
 
     name = ""
     try:
-        with httpx.Client(timeout=20, follow_redirects=True) as client:
-            response = client.get(
+        async with httpx.AsyncClient(timeout=20, follow_redirects=True) as client:
+            response = await client.get(
                 ENDFIELD_OFFICIAL_URL,
                 headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"},
             )
@@ -524,8 +533,47 @@ def _endfield_version_name() -> str:
             f"获取终末地版本名失败: {type(e).__name__}: {e}"
         )
 
+    if not name:
+        return _endfield_version_cache[1] if _endfield_version_cache else ""
+
     _endfield_version_cache = (time.time(), name)
     return name
+
+
+def _cache_is_fresh(path: Path) -> bool:
+    """磁盘缓存还在有效期内吗（进程重启后也认，所以看文件的修改时间）"""
+
+    try:
+        return time.time() - path.stat().st_mtime < ENDFIELD_IMAGE_CACHE_TTL
+    except OSError:
+        return False
+
+
+def _write_thumbnail(payload: bytes, target: Path) -> None:
+    """把大图缩到横幅宽度、转成 jpeg，再原子地落到缓存文件上。
+
+    Pillow 的解码与编码都是 CPU 活，调用方放进线程里跑。写入先落临时文件再改名：
+    中途失败不会留下半截图片被当成有效缓存，并发请求也不会互相覆盖。
+    """
+
+    from PIL import Image
+
+    with Image.open(io.BytesIO(payload)) as image:
+        picture = image.convert("RGB")
+        if picture.width > ENDFIELD_IMAGE_WIDTH:
+            height = round(picture.height * ENDFIELD_IMAGE_WIDTH / picture.width)
+            picture = picture.resize((ENDFIELD_IMAGE_WIDTH, height), Image.LANCZOS)
+
+        handle, temp_path = tempfile.mkstemp(
+            dir=target.parent, prefix=f"{target.stem}-", suffix=".part"
+        )
+        os.close(handle)
+        try:
+            picture.save(temp_path, "JPEG", quality=85)
+            os.replace(temp_path, target)
+        except BaseException:
+            Path(temp_path).unlink(missing_ok=True)
+            raise
 
 
 @router.get(
@@ -539,7 +587,7 @@ async def get_endfield_version_art() -> InfoOut:
     """终末地的版本图地址与版本名（图是固定地址，前端再走图片中转取回）。"""
 
     return InfoOut(
-        data={"url": ENDFIELD_VERSION_ART_URL, "name": _endfield_version_name()}
+        data={"url": ENDFIELD_VERSION_ART_URL, "name": await _endfield_version_name()}
     )
 
 
@@ -551,8 +599,6 @@ async def get_endfield_version_art() -> InfoOut:
 async def get_endfield_image(url: str = Query(..., description="图片地址")) -> Response:
     """把终末地的活动大图缩到横幅宽度再交给前端。"""
 
-    from PIL import Image
-
     parsed = urlparse(url)
     if parsed.scheme != "https" or parsed.hostname not in ENDFIELD_IMAGE_HOSTS:
         raise HTTPException(status_code=400, detail="只允许中转终末地活动图片")
@@ -560,26 +606,20 @@ async def get_endfield_image(url: str = Query(..., description="图片地址")) 
     digest = hashlib.sha256(url.encode("utf-8")).hexdigest()[:20]
     ENDFIELD_IMAGE_CACHE_DIR.mkdir(parents=True, exist_ok=True)
     cache_file = ENDFIELD_IMAGE_CACHE_DIR / f"{digest}.jpg"
-    if not cache_file.exists():
+    if not _cache_is_fresh(cache_file):
         try:
             async with httpx.AsyncClient(timeout=120) as client:
                 response = await client.get(url)
             response.raise_for_status()
-            with Image.open(io.BytesIO(response.content)) as image:
-                picture = image.convert("RGB")
-                if picture.width > ENDFIELD_IMAGE_WIDTH:
-                    height = round(
-                        picture.height * ENDFIELD_IMAGE_WIDTH / picture.width
-                    )
-                    picture = picture.resize(
-                        (ENDFIELD_IMAGE_WIDTH, height), Image.LANCZOS
-                    )
-                picture.save(cache_file, "JPEG", quality=85)
+            ## 缩图是 CPU 活，扔给线程跑，别把事件循环钉住
+            await asyncio.to_thread(_write_thumbnail, response.content, cache_file)
         except Exception as e:
             logger.opt(exception=True).warning(
                 f"获取终末地活动图片失败: {type(e).__name__}: {e}"
             )
-            raise HTTPException(status_code=502, detail="图片获取失败")
+            ## 手里还有上一版图就接着用，比直接报错强
+            if not cache_file.exists():
+                raise HTTPException(status_code=502, detail="图片获取失败")
 
     return FileResponse(
         cache_file,
@@ -682,6 +722,8 @@ async def get_arknights_activity() -> InfoOut:
     """取回明日方舟的活动一览。
 
     PRTS 的页面里已经带了活动名、分类、起止时间与配图，这里解析成前端好用的形状。
+    最近两周一场活动都没有是正常情况（长草期），按空列表返回并照常缓存，
+    不然前端会把「没有活动」当成接口出错反复重试。
     """
 
     global _arknights_cache
@@ -697,10 +739,7 @@ async def get_arknights_activity() -> InfoOut:
         async with httpx.AsyncClient(timeout=30) as client:
             response = await client.get(PRTS_ACTIVITY_URL, headers=PRTS_HEADERS)
         response.raise_for_status()
-        activities = _parse_prts_activities(response.text, now)
-        if not activities:
-            raise ValueError("活动一览里没有解析出条目")
-        data = {"activities": activities}
+        data = {"activities": _parse_prts_activities(response.text, now)}
     except Exception as e:
         logger.opt(exception=True).warning(
             f"获取明日方舟活动数据失败: {type(e).__name__}: {e}"
