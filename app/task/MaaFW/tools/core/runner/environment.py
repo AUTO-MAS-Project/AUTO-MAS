@@ -1000,12 +1000,22 @@ def detect_pe_architecture(path: Path) -> str | None:
 
 
 def host_architecture() -> str:
-    """当前解释器进程的架构。"""
+    """当前解释器进程的架构（DLL 由本进程加载，要的是进程而不是系统的架构）。
 
-    if struct.calcsize("P") == 8:
-        machine = platform_module.machine().casefold()
-        return "arm64" if "arm" in machine or "aarch" in machine else "x64"
-    return "x86"
+    按解释器的构建平台判断（``sysconfig.get_platform()``：``win-amd64`` / ``win-arm64``
+    / ``linux-x86_64`` / ``linux-aarch64``）。不能看 ``platform.machine()``：3.12 在
+    Windows 上先问 WMI 的 CPU 架构，arm64 机器上仿真跑的 x64 解释器会得到 ARM64。
+    构建平台看不出架构时（macOS 的 ``universal2``）才退回 ``platform.machine()``。
+    """
+
+    if struct.calcsize("P") != 8:
+        return "x86"
+    build_platform = sysconfig.get_platform().casefold()
+    architecture = _RID_ARCHITECTURE_ALIASES.get(build_platform.rpartition("-")[2])
+    if architecture in ("x64", "arm64"):
+        return architecture
+    machine = platform_module.machine().casefold()
+    return "arm64" if "arm" in machine or "aarch" in machine else "x64"
 
 
 # 架构不符报错（describe_runtime_architecture_mismatch 的各种文案）里一定有其一；宿主侧
@@ -1077,6 +1087,34 @@ def _is_relative_to(path: Path, parent: Path) -> bool:
     except (OSError, ValueError):
         return False
     return True
+
+
+def describe_plugin_architecture_mismatch(plugins_dir: Path) -> str | None:
+    """项目自带的原生插件目录里没有一个本机能加载时给出可读原因（导入时提示用）。
+
+    与 runner 目录模式的筛选同一个判据：PE 架构读得出且与本机不符的 DLL 会被跳过，
+    读不出的照旧尝试。所以只有「读得出架构的全都不符、也没有读不出的」才说——那时
+    插件一个都不会加载。没有 DLL、或目录读不了时不说。
+    """
+
+    try:
+        dlls = [item for item in plugins_dir.rglob("*.dll") if item.is_file()]
+    except OSError:
+        return None
+    found: set[str] = set()
+    for dll in dlls:
+        architecture = detect_pe_architecture(dll)
+        if architecture is None:
+            return None
+        found.add(architecture)
+    expected = host_architecture()
+    if not found or expected in found:
+        return None
+    return (
+        f"项目自带的原生插件（{plugins_dir.name}/）是 {' / '.join(sorted(found))} 架构，"
+        f"本机是 {expected}——多半是下载了不匹配的发行包，请换成 {expected} 的发行包"
+        "重新导入"
+    )
 
 
 def describe_project_runtime_architecture_mismatch(

@@ -238,6 +238,7 @@ import BasicInfoSection from '@/views/MAAUserEdit/BasicInfoSection.vue'
 import StageConfigSection from '@/views/MAAUserEdit/StageConfigSection.vue'
 import TaskPipelineSection from '@/views/MAAUserEdit/TaskPipelineSection.vue'
 import { summarizeFight } from '@/views/MAAUserEdit/taskSummaries'
+import { getDepotMaintainPreset } from '@/views/MAAUserEdit/depotMaintainPresets'
 import { getGameDayOffset } from '@/views/MAAUserEdit/periodMarkers'
 import type { CultivateOperatorCatalogEntry } from '@/views/MAAUserEdit/cultivateTargets'
 import UserNotifyConfig from '@/components/UserNotifyConfig.vue'
@@ -582,11 +583,11 @@ const getDefaultMAAUserData = () => ({
     IfAward: true,
     IfSwitchTheme: false,
     IfRecruit: true,
-    IfDepotMaintain: false,
-    DepotMaintainPlans: '[]',
+    IfDepotMaintain: true,
+    DepotMaintainPlans: JSON.stringify(getDepotMaintainPreset('all')),
     IfCultivate: false,
     IfGreenTicketStore: false,
-    IfActivityFirst: false,
+    IfActivityFirst: true,
     ActivityStageIndex: 1,
     ActivityMedicineNumb: 0,
     CultivateTargets: '[]',

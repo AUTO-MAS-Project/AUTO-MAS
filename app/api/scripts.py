@@ -2521,11 +2521,8 @@ async def get_zzzod_slots_api(scriptId: str) -> ZzzOdSlotsOut:
     """
 
     try:
-        # 槽总览要 rglob 统计各槽目录占用，是阻塞 IO，放线程里跑
-        data = [
-            ZzzOdSlotOut(**item)
-            for item in await asyncio.to_thread(Config.get_zzzod_slots, scriptId)
-        ]
+        # 阻塞 IO 在 Config.get_zzzod_slots 内放线程执行，懒导入留在事件循环
+        data = [ZzzOdSlotOut(**item) for item in await Config.get_zzzod_slots(scriptId)]
         return ZzzOdSlotsOut(
             code=200,
             status="success",
@@ -2557,8 +2554,7 @@ async def clean_zzzod_slots_api(
     """原生实例与被任一 ZzzOd 用户绑定的槽一律不动，返回实际回收的槽号。"""
 
     try:
-        # 清理要整目录拷贝 + 删目录，是阻塞 IO，放线程里跑
-        removed = await asyncio.to_thread(Config.clean_zzzod_slots, body.scriptId)
+        removed = await Config.clean_zzzod_slots(body.scriptId)
         return ZzzOdSlotCleanOut(
             code=200,
             status="success",
@@ -2590,7 +2586,7 @@ async def get_zzzod_recycle_api(scriptId: str) -> ZzzOdRecycleOut:
     try:
         data = [
             ZzzOdRecycleEntryOut(**item)
-            for item in await asyncio.to_thread(Config.get_zzzod_recycle, scriptId)
+            for item in await Config.get_zzzod_recycle(scriptId)
         ]
         return ZzzOdRecycleOut(
             code=200,
@@ -2623,8 +2619,7 @@ async def clear_zzzod_recycle_api(
     """只删 recycle 池；onedragon 原生池与 mas 配置恢复池不受影响。"""
 
     try:
-        # 整棵目录删除是阻塞 IO，放线程里跑
-        count = await asyncio.to_thread(Config.clear_zzzod_recycle, body.scriptId)
+        count = await Config.clear_zzzod_recycle(body.scriptId)
         return ZzzOdRecycleClearOut(
             code=200,
             status="success",

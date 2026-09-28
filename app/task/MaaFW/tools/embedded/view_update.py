@@ -63,6 +63,8 @@ from app.task.MaaFW.tools.embedded.embedded_project import (
     switch_view,
 )
 from app.task.MaaFW.tools.embedded.project_path import (
+    begin_project_updating,
+    end_project_updating,
     release_project_path_sync,
     try_reserve_project_path_sync,
 )
@@ -418,6 +420,9 @@ async def run_view_update(
         raise MaaFWProjectUpdateError(
             "同一项目正在自动更新/预检中，请稍后再试", project_lock_busy=True
         ) from exc
+    # 持谱系锁这段把 S 的视图登记为「正在更新」：手动更新拿不到预约时据此说「正在更新」，
+    # 而不是「脚本正在运行」（运行前 / 运行后自动更新都走这里）。
+    updating_key = begin_project_updating(view)
     try:
         # 1. 先同步到组（不联网）：组里已有别的版本就先切过去，再照常发现。
         synced = await sync_view_to_group(
@@ -489,6 +494,7 @@ async def run_view_update(
 
         outcome.result = await core_call(view, target, after_register)
     finally:
+        end_project_updating(updating_key)
         lock.release()
 
     final = await asyncio.to_thread(read_view_marker, view)

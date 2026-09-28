@@ -30,7 +30,7 @@ main:
     - runner:
         cpus: 1
       docker:
-        image: python:3.11
+        image: python:3.11@sha256:70e8e937c1da72df1688e883a2108b0feff03381187fa78eca6d9b10df411320 # 3.11.16-trixie
       imports:
         - https://cnb.cool/AUTO-MAS-Project/secret/-/blob/main/env.yml
       stages:
@@ -44,7 +44,7 @@ main:
     - runner:
         cpus: 1
       docker:
-        image: python:3.11
+        image: python:3.11@sha256:70e8e937c1da72df1688e883a2108b0feff03381187fa78eca6d9b10df411320 # 3.11.16-trixie
       imports:
         - https://cnb.cool/AUTO-MAS-Project/secret/-/blob/main/env.yml
       stages:
@@ -62,7 +62,7 @@ dev:
     - runner:
         cpus: 1
       docker:
-        image: python:3.11
+        image: python:3.11@sha256:70e8e937c1da72df1688e883a2108b0feff03381187fa78eca6d9b10df411320 # 3.11.16-trixie
       imports:
         - https://cnb.cool/AUTO-MAS-Project/secret/-/blob/main/env.yml
       stages:
@@ -76,7 +76,7 @@ dev:
     - runner:
         cpus: 1
       docker:
-        image: python:3.11
+        image: python:3.11@sha256:70e8e937c1da72df1688e883a2108b0feff03381187fa78eca6d9b10df411320 # 3.11.16-trixie
       imports:
         - https://cnb.cool/AUTO-MAS-Project/secret/-/blob/main/env.yml
       stages:

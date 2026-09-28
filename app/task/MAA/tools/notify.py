@@ -19,10 +19,12 @@
 
 #   Contact: DLmaster_361@163.com
 
+from dataclasses import replace
+from functools import cache
+
 from app.core import Config
 from app.core.notify import (
     DispatchResult,
-    NotifyPayload,
     NotifyTarget,
     dispatch,
     global_target,
@@ -30,13 +32,32 @@ from app.core.notify import (
     user_target,
 )
 from app.models.config import MaaUserConfig
+from app.models.notification import (
+    NotificationImage,
+    NotifyPayload,
+    image_reference,
+)
 from app.task.notify_core import push_proxy_result
 from app.utils import get_logger
+from app.utils.paths import resource_path
 
 logger = get_logger("MAA 通知工具")
 
 # MAA 的签名只空一行, 与其余脚本不同
 SIGNATURE_SEP = "\n"
+
+# 喜报图片同时提供本地资源和官网 URL；缺少本地文件时，仍可在支持 URL 的表达中展示。
+SIX_STAR_IMAGE_ID = "maa-six-star"
+SIX_STAR_IMAGE_URL = "https://api.auto-mas.top/file/Resource/six_star.png"
+
+
+@cache
+def _six_star_image() -> bytes | None:
+    try:
+        return resource_path("images", "notification", "six_star.png").read_bytes()
+    except OSError as exc:
+        logger.warning(f"读取喜报配图失败，通知将使用可用的替代图片来源: {exc}")
+        return None
 
 
 def _statistic_text(message: dict) -> str:
@@ -87,7 +108,32 @@ def _six_star_targets(user_config: MaaUserConfig | None) -> list[NotifyTarget]:
         and user_config.get("Notify", "IfSendSixStar")
     ):
         targets.append(user_target(user_config))
-    return targets
+    # 六星 Webhook 沿用纯文案；配图由能直接展示该图片的渠道处理。
+    return [
+        replace(
+            target,
+            channels=tuple(
+                (
+                    channel,
+                    replace(
+                        channel_target,
+                        capabilities=replace(
+                            channel_target.capabilities,
+                            formats=("text",),
+                            double_text_newlines=(
+                                "markdown" in channel_target.capabilities.formats
+                                or channel_target.capabilities.double_text_newlines
+                            ),
+                        ),
+                    ),
+                )
+                if channel.key == "webhook"
+                else (channel, channel_target)
+                for channel, channel_target in target.channels
+            ),
+        )
+        for target in targets
+    ]
 
 
 async def push_notification(
@@ -127,12 +173,23 @@ async def push_notification(
         # 喜报正文是固定文案, message 只用于渲染 HTML
         template = Config.notify_env.get_template("MAA_six_star.html")
 
+        image = _six_star_image()
+
         return await dispatch(
             NotifyPayload(
                 title=title,
                 text="好羡慕~",
+                markdown=f"好羡慕~\n\n![喜报]({image_reference(SIX_STAR_IMAGE_ID)})",
                 html=template.render(message),
                 signature_sep=SIGNATURE_SEP,
+                images=(
+                    NotificationImage(
+                        id=SIX_STAR_IMAGE_ID,
+                        data=image,
+                        url=SIX_STAR_IMAGE_URL,
+                        alt="喜报",
+                    ),
+                ),
             ),
             _six_star_targets(user_config),
         )

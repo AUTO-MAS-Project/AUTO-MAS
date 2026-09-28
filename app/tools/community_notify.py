@@ -20,7 +20,6 @@
 #   Contact: DLmaster_361@163.com
 
 
-import base64
 import re
 from html import escape
 from html.parser import HTMLParser
@@ -31,7 +30,8 @@ from typing import Literal
 from PIL import Image, ImageDraw, ImageFont
 
 from app.core import Config
-from app.core.notify import DispatchResult, NotifyPayload, dispatch, global_target
+from app.core.notify import DispatchResult, dispatch, global_target
+from app.models.notification import NotificationImage, NotifyPayload
 from app.utils.logger import get_logger
 
 logger = get_logger("游戏社区通知")
@@ -41,16 +41,6 @@ NOTIFICATION_RETRY_DELAY_SECONDS = 1
 _SUCCESS_STATUSES = {"成功", "已签到"}
 _PLATFORM_ORDER = ("森空岛", "米游社", "库街区", "塔吉多", "云异环")
 NotificationBodyFormat = Literal["text", "markdown"]
-
-
-def detect_community_notification_format(content: str) -> NotificationBodyFormat:
-    """识别通知正文是否包含 Markdown 块级标记。"""
-
-    for line in content.splitlines():
-        stripped = line.lstrip()
-        if stripped.startswith(("# ", "## ", "### ", "- ", "* ", "> ", "```")):
-            return "markdown"
-    return "markdown" if "**" in content else "text"
 
 
 def _result_status_text(item: dict[str, object]) -> str:
@@ -370,14 +360,6 @@ def _community_notification_image(results: list[dict[str, object]]) -> bytes:
     return buffer.getvalue()
 
 
-def _community_notification_image_base64(
-    results: list[dict[str, object]],
-) -> str:
-    """生成 OneBot 等渠道可用的纯 Base64 PNG 数据。"""
-
-    return base64.b64encode(_community_notification_image(results)).decode("ascii")
-
-
 def _escape_markdown_text(value: str) -> str:
     """账号和奖励作为文字展示，不解释为 Markdown 或 HTML。"""
 
@@ -547,9 +529,7 @@ def build_community_notification_payload(
 ) -> NotifyPayload:
     """把结构化社区结果渲染为统一通知载荷。
 
-    Markdown 是独立社区通知的主内容形态；ServerChan/Webhook 使用 Markdown
-    源码，Koishi 使用转换后的 HTML，系统/OpenClaw 等纯文本渠道使用不带
-    Markdown 标记的可读文本，邮件使用 MAS HTML 卡片模板。
+    同时提供纯文本、Markdown 和 HTML 表达，由每个目标按声明能力选择。
     """
 
     results = _notification_results(results)
@@ -557,17 +537,22 @@ def build_community_notification_payload(
     plain_text = format_community_notification(
         results, output_format="text", include_title=False
     )
-    markdown_text = format_community_notification(results, include_title=False)
+    markdown = format_community_notification(results, include_title=False)
     return NotifyPayload(
         title=title,
-        standalone_title="【社区签到通知】",
+        body_title="【社区签到通知】",
         text=plain_text,
         append_signature=False,
         html=_render_community_html(results, title),
-        markdown_text=markdown_text,
-        webhook_image_base64=_community_notification_image_base64(results),
-        koishi_text=_community_html_fragment(results),
-        koishi_msgtype="html",
+        markdown=markdown,
+        images=(
+            NotificationImage(
+                id="community-sign-summary",
+                data=_community_notification_image(results),
+                alt="社区签到结果",
+                mime_type="image/png",
+            ),
+        ),
     )
 
 
@@ -599,7 +584,6 @@ async def push_community_notification(
 
 __all__ = [
     "append_task_community_summary",
-    "detect_community_notification_format",
     "format_community_notification",
     "format_community_task_summary",
     "get_task_community_summary",

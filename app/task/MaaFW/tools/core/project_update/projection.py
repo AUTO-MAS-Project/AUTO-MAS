@@ -142,6 +142,29 @@ EXCLUDED_DIRECTORY_REASONS: dict[str, str] = {
     "build": "build-output",
     "dist": "build-output",
 }
+# 上表的目录名**只在发行包顶层算数**（包根或 interface 所在目录的直接子项）：深处的
+# runtime / cache / update / ui 只是名字撞上了，以前逐级匹配把 MaaFgo v2.0.03 的
+# agent/battle/runtime/ 当成外壳剔掉，agent 一起来就 ModuleNotFoundError。
+# 只有下面这些没有歧义的缓存 / 版本库 / MAS 更新器目录任何深度都剔。
+ANYWHERE_EXCLUDED_DIRECTORY_NAMES = frozenset(
+    {
+        "__pycache__",
+        ".pytest_cache",
+        ".mypy_cache",
+        ".ruff_cache",
+        ".tox",
+        ".nox",
+        ".git",
+        ".github",
+        ".idea",
+        ".vscode",
+        ".mas-update",
+        ".mas-update-cache",
+    }
+)
+# 剔除清单里出现这些后缀、又位于 agent / 依赖目录下时，给用户一行提示（见
+# :func:`describe_dropped_code_files`）。
+CODE_FILE_SUFFIXES = frozenset({".py", ".pyw", ".js", ".mjs", ".cjs", ".ts", ".lua"})
 EXCLUDED_FILE_SUFFIXES = {".pyc", ".pyo", ".tmp", ".temp", ".log"}
 KNOWN_RUNTIME_FILE_NAMES = {
     "maaframework.dll",
@@ -260,7 +283,7 @@ class TargetMode:
 
     ``complete``：整棵子树都要（resource 目录）；否则只是"保留根"，里面按分类表剔除。
     ``allow_excluded_root``：目标本身的名字可以撞上分类表（resource 目录真有叫
-    ``runtime`` 的），只豁免这个前缀，里面照常剔除。
+    ``runtime`` 的）；与 ``complete`` 同时成立时里面只剔没有歧义的缓存。
     """
 
     complete: bool
@@ -297,6 +320,15 @@ class ProjectionRules:
     warnings: list[str] = field(default_factory=list)
     # 导入时声明了但发行包里没有的 resource（名字）：副本里不可用，其余照常导入。
     unavailable_resources: list[str] = field(default_factory=list)
+
+    def exclusion_reason(
+        self, relative: Path, *, is_directory: bool = False
+    ) -> str | None:
+        """按分类表判断，「顶层」按本项目的 interface 所在目录算。"""
+
+        return exclusion_reason(
+            relative, is_directory=is_directory, base=self.base_relative
+        )
 
     @property
     def base_relative(self) -> Path:
@@ -342,6 +374,7 @@ class ProjectionRules:
                     mode=mode,
                     target_is_directory=target_is_directory,
                     is_directory=is_directory,
+                    base=self.base_relative,
                 )
                 is None
             ):
@@ -407,12 +440,47 @@ class ProjectionPlan:
 # --------------------------------------------------------------------------
 
 
-def exclusion_reason(path: Path, *, is_directory: bool = False) -> str | None:
-    """按分类表判断一个相对路径为什么不该进副本；None 表示没有理由。"""
+def _cache_exclusion_reason(path: Path, *, is_directory: bool = False) -> str | None:
+    """任何深度都成立的那部分：没有歧义的缓存 / 版本库目录与缓存、临时文件后缀。"""
 
     parts = path.parts if is_directory else path.parts[:-1]
     for part in parts:
         normalized = part.casefold()
+        if normalized in ANYWHERE_EXCLUDED_DIRECTORY_NAMES:
+            return EXCLUDED_DIRECTORY_REASONS.get(normalized, "cache")
+    if not is_directory and path.suffix.casefold() in EXCLUDED_FILE_SUFFIXES:
+        return "cache-or-temporary"
+    return None
+
+
+def _top_level_indexes(path: Path, base: Path) -> frozenset[int]:
+    """``path.parts`` 里哪几段是发行包顶层：包根的直接子项，以及 interface 所在目录
+    （assets 布局的 ``assets/``）的直接子项。"""
+
+    if base == ROOT or not _is_relative_to(path, base):
+        return frozenset({0})
+    return frozenset({0, len(base.parts)})
+
+
+def exclusion_reason(
+    path: Path, *, is_directory: bool = False, base: Path = ROOT
+) -> str | None:
+    """按分类表判断一个相对路径为什么不该进副本；None 表示没有理由。
+
+    目录名规则只看发行包顶层（包根与 ``base`` 即 interface 所在目录的直接子项）：
+    深处叫 ``runtime`` / ``cache`` / ``update`` 的是项目自己的代码或数据
+    （MaaFgo 的 ``agent/battle/runtime/``）。``ANYWHERE_EXCLUDED_DIRECTORY_NAMES``
+    里没有歧义的缓存任何深度都剔。文件名规则不变。
+    """
+
+    parts = path.parts if is_directory else path.parts[:-1]
+    top = _top_level_indexes(path, base)
+    for index, part in enumerate(parts):
+        normalized = part.casefold()
+        if normalized in ANYWHERE_EXCLUDED_DIRECTORY_NAMES:
+            return EXCLUDED_DIRECTORY_REASONS.get(normalized, "cache")
+        if index not in top:
+            continue
         reason = EXCLUDED_DIRECTORY_REASONS.get(normalized)
         if reason:
             return reason
@@ -453,15 +521,18 @@ def target_exclusion_reason(
     mode: TargetMode,
     target_is_directory: bool,
     is_directory: bool = False,
+    base: Path = ROOT,
 ) -> str | None:
     """在某个白名单目标之下判断 ``path``。
 
-    显式声明的完整目标（resource 目录）可以叫 ``runtime`` / ``python`` 这种在发行包
-    顶层视为外壳的名字——声明比猜测更可信，只豁免目标前缀本身，里面照常剔除。
+    显式声明的完整目标（resource 目录、agent 所在的 ``python/`` 源码目录）可以叫
+    ``runtime`` / ``python`` 这种在发行包顶层视为外壳的名字——声明比猜测更可信：
+    里面只剔没有歧义的缓存，不再按目录名猜外壳（以前 resource 里的 ``image/ui/``、
+    源码目录里的 ``runtime/`` 都会被整棵剔掉）。
     """
 
     if not mode.complete or not mode.allow_excluded_root or target == ROOT:
-        return exclusion_reason(path, is_directory=is_directory)
+        return exclusion_reason(path, is_directory=is_directory, base=base)
     inner = path.relative_to(target) if target_is_directory else Path(path.name)
     if mode.verbatim_runtime:
         # 原样带走的运行时目录：CPython 发行版里本来就有 build / debug / logs 这些
@@ -471,7 +542,7 @@ def target_exclusion_reason(
         if any(part.casefold() == "__pycache__" for part in parts):
             return "cache"
         return None
-    return exclusion_reason(inner, is_directory=is_directory)
+    return _cache_exclusion_reason(inner, is_directory=is_directory)
 
 
 # --------------------------------------------------------------------------
@@ -1381,6 +1452,10 @@ def build_projection_rules(
             "agent 不是 Python，但项目里没有自带的 MaaFramework 原生库目录；"
             "agent 若要从项目目录加载库，运行时会失败。"
         )
+    if strict:
+        warnings.extend(
+            _bundled_architecture_warnings(roots, base_relative, runtime_relative)
+        )
 
     _adopt_small_undeclared_entries(view, base_relative, targets, warnings)
 
@@ -1506,7 +1581,11 @@ def build_projection_plan(source_root: Path) -> ProjectionPlan:
         if target_absolute.is_file():
             if (
                 target_exclusion_reason(
-                    target, target=target, mode=mode, target_is_directory=False
+                    target,
+                    target=target,
+                    mode=mode,
+                    target_is_directory=False,
+                    base=rules.base_relative,
                 )
                 is None
             ):
@@ -1530,6 +1609,7 @@ def build_projection_plan(source_root: Path) -> ProjectionPlan:
                     mode=mode,
                     target_is_directory=True,
                     is_directory=True,
+                    base=rules.base_relative,
                 )
                 is None
             ):
@@ -1540,7 +1620,11 @@ def build_projection_plan(source_root: Path) -> ProjectionPlan:
         for target, mode in covering_targets(file_path):
             if (
                 target_exclusion_reason(
-                    file_path, target=target, mode=mode, target_is_directory=True
+                    file_path,
+                    target=target,
+                    mode=mode,
+                    target_is_directory=True,
+                    base=rules.base_relative,
                 )
                 is None
             ):
@@ -1564,7 +1648,7 @@ def build_projection_plan(source_root: Path) -> ProjectionPlan:
                 f"（{requirement.path.as_posix()}），运行时将使用该项目的隔离 venv。"
             )
             continue
-        reason = exclusion_reason(
+        reason = rules.exclusion_reason(
             requirement.path, is_directory=requirement.is_directory
         )
         raise ProjectionError(
@@ -1574,10 +1658,13 @@ def build_projection_plan(source_root: Path) -> ProjectionPlan:
 
     excluded_reasons = {
         path.as_posix(): (
-            exclusion_reason(path) or "not-required-by-runtime-projection"
+            rules.exclusion_reason(path) or "not-required-by-runtime-projection"
         )
         for path in all_files - copied_files
     }
+    code_hint = describe_dropped_code_files(rules, excluded_reasons)
+    if code_hint:
+        rules.warnings.append(code_hint)
 
     # 提升后的输出路径不能撞车（assets/x 与根上的 x 同名）。
     owners: dict[Path, Path] = {}
@@ -1699,7 +1786,7 @@ def _adopt_small_undeclared_entries(
         if entry in targets and targets[entry].complete:
             continue
         is_dir = view.is_dir(entry)
-        reason = exclusion_reason(entry, is_directory=is_dir)
+        reason = exclusion_reason(entry, is_directory=is_dir, base=base_relative)
         if (
             reason == "embedded-python"
             and is_dir
@@ -1711,7 +1798,7 @@ def _adopt_small_undeclared_entries(
             remainder = sum(
                 view.size(path)
                 for path in view.walk_files(entry)
-                if exclusion_reason(path.relative_to(entry)) is None
+                if _cache_exclusion_reason(path.relative_to(entry)) is None
             )
             if remainder <= UNDECLARED_KEEP_LIMIT:
                 targets[entry] = TargetMode(True, True)
@@ -1733,7 +1820,7 @@ def _adopt_small_undeclared_entries(
         remainder = sum(
             view.size(path)
             for path in view.walk_files(entry)
-            if not covered(path) and exclusion_reason(path) is None
+            if not covered(path) and exclusion_reason(path, base=base_relative) is None
         )
         if remainder > UNDECLARED_KEEP_LIMIT and _looks_like_offline_dependency_dir(
             view, entry
@@ -1833,6 +1920,43 @@ def _bundled_native_runtime_dir(
         except ValueError:
             continue
     return None
+
+
+def _bundled_architecture_warnings(
+    roots: tuple[Path, ...], base_relative: Path, runtime_relative: Path | None
+) -> list[str]:
+    """导入时提示：自带的 MaaFramework 或原生插件没有本机能加载的那一份。
+
+    只提示、不剔除：``plugins/`` 各架构都整目录带走（插件很小，后端与 worker 架构不一致时
+    也不会删错），运行时由 runner 按 worker 进程的架构筛。判定用后端进程的架构，与
+    ``_bundled_native_runtime_dir`` 选 ``runtimes/<rid>`` 同一个近似。
+    """
+
+    from app.task.MaaFW.tools.core.runner.environment import (
+        describe_plugin_architecture_mismatch,
+        describe_runtime_architecture_mismatch,
+    )
+
+    messages: list[str] = []
+    for root in roots:
+        if runtime_relative is None:
+            break
+        runtime_dir = root / runtime_relative
+        if runtime_dir.is_dir():
+            message = describe_runtime_architecture_mismatch(runtime_dir)
+            if message:
+                messages.append(message)
+            break
+    for root in roots:
+        plugins_dir = (root / base_relative if base_relative.parts else root) / (
+            "plugins"
+        )
+        if plugins_dir.is_dir():
+            message = describe_plugin_architecture_mismatch(plugins_dir)
+            if message:
+                messages.append(message)
+            break
+    return messages
 
 
 def probe_bundled_python_version(root: Path, rules: ProjectionRules) -> str | None:
@@ -1962,6 +2086,62 @@ def package_projection_rules(payload_root: Path, project_root: Path) -> Projecti
     return rules
 
 
+#: 兜底提示里最多列几个路径。
+DROPPED_CODE_HINT_ITEMS = 3
+
+
+def _code_roots(rules: ProjectionRules) -> list[Path]:
+    """agent 引用的文件所在的保留根，加上顶层的依赖目录（``agent/``、``plugins/`` …）。"""
+
+    tops = {ROOT, rules.base_relative}
+    roots: set[Path] = set()
+    for target in rules.targets:
+        if target in tops:
+            continue
+        if target.parent in tops and target.name.casefold() in DEPENDENCY_DIR_NAMES:
+            roots.add(target)
+    for agent in rules.agents:
+        for raw in agent.get("projectPaths") or []:
+            declared = Path(str(raw))
+            if is_python_interpreter_path(declared):
+                continue
+            for target in rules.targets:
+                if (
+                    target not in tops
+                    and target != declared
+                    and _is_relative_to(declared, target)
+                ):
+                    roots.add(target)
+    return sorted(roots)
+
+
+def describe_dropped_code_files(
+    rules: ProjectionRules, dropped: Iterable[str]
+) -> str | None:
+    """剔除清单里有 agent / 依赖目录下的源码文件时，给用户看的一行提示；没有就 None。
+
+    正常情况下这些目录里只会剔掉缓存，源码被剔说明分类表又误伤了项目代码（v5.6.0 把
+    MaaFgo 的 ``agent/battle/runtime/`` 当成外壳，agent 起来就 ModuleNotFoundError）。
+    这不是修复，只是让下次一眼看出是哪几个文件没落盘。
+    """
+
+    roots = _code_roots(rules)
+    if not roots:
+        return None
+    hits = sorted(
+        path
+        for path in (str(item).replace("\\", "/") for item in dropped)
+        if PurePosixPath(path).suffix.casefold() in CODE_FILE_SUFFIXES
+        and any(_is_relative_to(Path(path), root) for root in roots)
+    )
+    if not hits:
+        return None
+    shown = "、".join(hits[:DROPPED_CODE_HINT_ITEMS])
+    if len(hits) > DROPPED_CODE_HINT_ITEMS:
+        return f"以下代码文件被当成外壳未落盘：{shown} 等 {len(hits)} 个"
+    return f"以下代码文件被当成外壳未落盘：{shown}（共 {len(hits)} 个）"
+
+
 def filter_package_entries(
     rules: ProjectionRules,
     entries: Iterable[str],
@@ -1977,7 +2157,7 @@ def filter_package_entries(
             kept.add(entry)
         else:
             dropped[entry] = (
-                exclusion_reason(relative) or "not-required-by-runtime-projection"
+                rules.exclusion_reason(relative) or "not-required-by-runtime-projection"
             )
     return kept, dropped
 
@@ -1995,6 +2175,7 @@ __all__ = [
     "build_projection_plan",
     "build_projection_rules",
     "classify_agent",
+    "describe_dropped_code_files",
     "discover_project_interface",
     "exclusion_reason",
     "filter_package_entries",

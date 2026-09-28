@@ -240,6 +240,8 @@ export interface ActivityBannerItem {
   coverCandidates?: string[]
   /** 版本名或当期活动名 */
   subtitle: string
+  /** 版本号（版本制游戏的编号），数据源没有版本概念时缺省，banner 不显示 */
+  version?: string
   /** 活动开始时间；用来区分「还没开始」与「进行中」，取不到时为空串 */
   startTime: string
   /** 倒计时终点，取不到时为空串 */

@@ -5,10 +5,10 @@ import AdmZip = require('adm-zip')
 import { getLogger } from './logger'
 import {
   CollectorState,
-  Installation,
-  addDiagnosticFile,
+  addDebugDirectory,
   addDirectory,
   addLatestMasHistoryLog,
+  addPerInstallationFile,
   discoverInstallations,
   resolveDataRoots,
 } from './issueReportCore'
@@ -17,30 +17,6 @@ const logger = getLogger('OK-NTE问题包')
 
 // 与 app/task/OkNte/AutoProxy.py 的 script_log_path 默认值保持同步
 const OKNTE_REL_LOG_FILE = 'data/apps/ok-nte/working/logs/ok-script.log'
-
-function addLatestOkNteScriptLog(state: CollectorState, installations: Installation[]): void {
-  let latest: { sourcePath: string; archivePath: string; mtimeMs: number } | undefined
-
-  for (const installation of installations) {
-    const logPath = path.join(installation.rootPath, ...OKNTE_REL_LOG_FILE.split('/'))
-    try {
-      const mtimeMs = fs.statSync(logPath).mtimeMs
-      if (!latest || mtimeMs > latest.mtimeMs) {
-        latest = {
-          sourcePath: logPath,
-          archivePath: `oknte/${installation.label}/ok-script.log`,
-          mtimeMs,
-        }
-      }
-    } catch (error) {
-      logger.debug(`读取 ok-script.log 失败: ${logPath}, ${String(error)}`)
-    }
-  }
-
-  if (latest) {
-    addDiagnosticFile(state, latest.sourcePath, latest.archivePath)
-  }
-}
 
 interface OkNteIssueReportResult {
   success: boolean
@@ -61,10 +37,11 @@ export function createOkNteIssueReport(appRoot: string, zipPath: string): OkNteI
   addLatestMasHistoryLog(state, dataRoots)
 
   dataRoots.forEach((dataRoot, index) => {
-    addDirectory(
+    addDebugDirectory(
       state,
       path.join(dataRoot, 'debug'),
-      index === 0 ? 'logs/auto-mas' : 'logs/auto-mas/backend'
+      index === 0 ? 'logs/auto-mas' : 'logs/auto-mas/backend',
+      'oknte'
     )
   })
 
@@ -74,7 +51,7 @@ export function createOkNteIssueReport(appRoot: string, zipPath: string): OkNteI
     addDirectory(state, runtimeDebugDir, 'logs/frontend-runtime')
   }
 
-  addLatestOkNteScriptLog(state, installations)
+  addPerInstallationFile(state, installations, OKNTE_REL_LOG_FILE, 'oknte')
 
   try {
     fs.mkdirSync(path.dirname(zipPath), { recursive: true })

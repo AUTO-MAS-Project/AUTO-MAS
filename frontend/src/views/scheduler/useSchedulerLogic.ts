@@ -84,12 +84,7 @@ const trimLogForRender = (content: string, firstLine: number) => {
   const tail = firstLineBreak >= 0 ? trimmed.slice(firstLineBreak + 1) : trimmed
   return {
     content: `${t('scheduler.log.truncated')}\n\n${tail}`,
-    firstLine:
-      firstLine +
-      dropped.split('\n').length -
-      1 +
-      (firstLineBreak >= 0 ? 1 : 0) -
-      2,
+    firstLine: firstLine + dropped.split('\n').length - 1 + (firstLineBreak >= 0 ? 1 : 0) - 2,
   }
 }
 

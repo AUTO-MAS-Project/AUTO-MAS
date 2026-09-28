@@ -37,6 +37,8 @@ import { decideRendererRecovery } from './rendererCrashRecovery'
 
 import { getLogger, initializeLogger } from './services/logger'
 import { readLogContent, readLogIncrement } from './services/logFileReader'
+import { CollectorState, addDiagnosticFile, addDirectory } from './services/issueReportCore'
+import { createBetterGIIssueReport } from './services/bettergiIssueReportService'
 import { createMaaEndIssueReport } from './services/maaEndIssueReportService'
 import {
   createM9AIssueReport,
@@ -1348,8 +1350,15 @@ ipcMain.handle('log:export', async () => {
 
     const zipPath = result.filePath
 
-    // 创建 ZIP 文件
+    // 与问题包同一套脱敏（日志里的推送密钥、家目录等），但不设大小上限：这里要的就是全部日志
     const zip = new AdmZip()
+    const state: CollectorState = {
+      zip,
+      entries: [],
+      archiveBytes: 0,
+      maxEntryBytes: Number.POSITIVE_INFINITY,
+      maxArchiveBytes: Number.POSITIVE_INFINITY,
+    }
 
     // 读取 debug 目录下的所有文件
     const files = fs.readdirSync(debugDir)
@@ -1364,11 +1373,19 @@ ipcMain.handle('log:export', async () => {
       const stat = fs.statSync(filePath)
 
       if (stat.isFile()) {
-        zip.addLocalFile(filePath)
-        logger.info(`添加文件到压缩包: ${file}`)
+        addDiagnosticFile(state, filePath, file)
       } else if (stat.isDirectory() && file === 'maaend-login') {
-        zip.addLocalFolder(filePath, 'maaend-login')
-        logger.info('添加 MaaEnd 登录错误截图到压缩包')
+        addDirectory(state, filePath, 'maaend-login')
+      }
+    }
+
+    // 读不出来、解不开的文件不会原样放进包（那样就把没打码的内容发出去了），要让人知道少了哪些
+    const skipped = state.entries.filter(entry => entry.status === 'skipped')
+    for (const entry of state.entries) {
+      if (entry.status === 'skipped') {
+        logger.warn(`未能导出: ${entry.path}（${entry.reason}）`)
+      } else {
+        logger.info(`添加文件到压缩包: ${entry.path}`)
       }
     }
 
@@ -1378,7 +1395,10 @@ ipcMain.handle('log:export', async () => {
 
     return {
       success: true,
-      message: '日志压缩包导出成功',
+      message:
+        skipped.length > 0
+          ? `日志压缩包导出成功，${skipped.map(entry => entry.path).join('、')} 未能导出`
+          : '日志压缩包导出成功',
       zipPath: zipPath,
     }
   } catch (error) {
@@ -1466,6 +1486,12 @@ registerIssueReportExporter(
   '导出 Whimbox 问题包',
   'Whimbox-logs',
   createWhimboxIssueReport
+)
+registerIssueReportExporter(
+  'bettergi:exportIssueReport',
+  '导出 BetterGI 问题包',
+  'BetterGI-logs',
+  createBetterGIIssueReport
 )
 registerIssueReportExporter(
   'maafw:exportIssueReport',

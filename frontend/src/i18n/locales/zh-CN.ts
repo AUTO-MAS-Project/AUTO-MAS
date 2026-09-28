@@ -1420,6 +1420,7 @@ export default {
     updateProcessNoLogYet: '暂无日志',
     updatePhaseChecking: '检查中',
     updatePhaseDownloading: '下载中',
+    updatePhaseExtracting: '解压中',
     updatePhasePreparing: '准备覆盖',
     updatePhaseApplying: '覆盖中',
     updatePhaseValidating: '校验中',
@@ -2938,6 +2939,9 @@ export default {
   home: {
     editLayout: '编辑布局',
     viewNotice: '查看公告',
+    satelliteEgg: {
+      star: 'star！',
+    },
     greeting: {
       morning: '早上好！欢迎使用 AUTO-MAS',
       noon: '中午好！欢迎使用 AUTO-MAS',
@@ -4046,6 +4050,7 @@ export default {
       exportOkNte: '导出 OK-NTE 问题包',
       exportZzzOd: '导出 ZZZ-OD 问题包',
       exportWhimbox: '导出 Whimbox 问题包',
+      exportBetterGI: '导出 BetterGI 问题包',
       exportMaaFW: '导出 MFW 问题包',
       exportMaaFWEmpty: '还没有 MFW 脚本',
       exportM9A: '导出 M9A 问题包',

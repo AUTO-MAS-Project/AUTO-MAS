@@ -175,14 +175,14 @@ interface WSMaaFWEnvPrepareProgressData {
 
 /** MFW 项目手动更新过程 (id=<scriptId>, type=maafw.project-update.progress) */
 export interface WSMaaFWProjectUpdateProgressData {
-  /** checking / downloading / downloaded / plan_validated / staged / applying / post_validating / committed / rolled_back / completed / failed / log */
+  /** checking / downloading / downloaded / extracting / plan_validated / staged / applying / post_validating / committed / rolled_back / completed / failed / log */
   stage: string
   /** running / success / failed */
   status: string
   message: string
   /** 本次事件附带的新增日志行 */
   log?: string | null
-  /** 当前阶段进度百分比（下载 / 覆盖），未知时为 null */
+  /** 当前阶段进度百分比（下载 / 解压 / 覆盖），未知时为 null */
   percent?: number | null
   downloadedBytes?: number | null
   totalBytes?: number | null
@@ -192,6 +192,12 @@ export interface WSMaaFWProjectUpdateProgressData {
   packageKind?: string | null
   appliedFiles?: number | null
   totalFiles?: number | null
+  /** 解压阶段：已解压 / 总文件数（不含目录条目） */
+  extractedFiles?: number | null
+  extractTotalFiles?: number | null
+  /** 解压阶段：已写出 / 解压后总字节 */
+  extractedBytes?: number | null
+  extractTotalBytes?: number | null
 }
 
 /** 更新下载进度数据 (id=Update, type=update.progress) */
