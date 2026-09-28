@@ -17,6 +17,17 @@
 
     <a-skeleton v-if="loading" active :paragraph="{ rows: 4 }" />
 
+    <!-- 首页概览接口失败时来说一句：下面的材料关卡会因此空着，别让它悄无声息 -->
+    <a-alert
+      v-if="error"
+      :message="error"
+      type="error"
+      show-icon
+      closable
+      class="status-alert"
+      @close="emit('clearError')"
+    />
+
     <a-alert
       v-if="overview.Message"
       :message="overview.Message"
@@ -118,9 +129,11 @@ const props = defineProps<{
   loading: boolean
   /** 今日开放的资源收集关卡，来自后端那份关卡表 */
   resourceData: ResourceItem[]
+  /** 首页概览接口的失败原因，空串表示没出错 */
+  error?: string
 }>()
 
-const emit = defineEmits<{ refresh: [] }>()
+const emit = defineEmits<{ refresh: []; clearError: [] }>()
 
 const ACCENT = '#9fb4cc'
 const MAX_VISIBLE_ACTIVITIES = 8

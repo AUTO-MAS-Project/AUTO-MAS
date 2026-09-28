@@ -110,7 +110,9 @@
                 :loading="arknightsSource.loading.value"
                 :overview="arknightsSource.overview.value"
                 :resource-data="resourceData"
+                :error="error"
                 @refresh="arknightsSource.refresh"
+                @clear-error="clearOverviewError"
               />
 
               <HomeSraActivityOverview

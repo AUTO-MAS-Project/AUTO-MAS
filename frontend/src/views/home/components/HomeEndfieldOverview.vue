@@ -61,6 +61,7 @@
                   :value="getCountdownValue(countdownTarget(item))"
                   :format="t('home.countdown.dh')"
                   :value-style="activityCountdownStyle"
+                  @finish="emit('refresh')"
                 />
               </span>
               <div class="activity-end-time">
@@ -95,6 +96,11 @@ interface Props {
 }
 
 const props = defineProps<Props>()
+
+/** 倒计时走完就重新取一次：否则这一期结束后卡片会停在「0 天 0 时」 */
+const emit = defineEmits<{
+  refresh: []
+}>()
 
 const { t } = useI18n()
 

@@ -31,7 +31,7 @@
         <slot v-if="activeKey" name="community" :module-key="activeKey" />
       </div>
 
-      <div v-if="activeItem && !isCompact" class="banner-viewport">
+      <div v-if="activeItem" class="banner-viewport">
         <div class="banner-track">
           <article v-for="item in [activeItem]" :key="item.key" class="banner-slide">
             <div class="banner-body" :style="bannerStyle(item)">
@@ -87,7 +87,9 @@
                     :value-style="remainingStyle"
                   />
                 </template>
-                <div class="remaining-sub">{{ t('home.carousel.endedNote') }}</div>
+                <div v-if="item.ended" class="remaining-sub">
+                  {{ t('home.carousel.endedNote') }}
+                </div>
               </div>
             </div>
           </article>
@@ -179,8 +181,6 @@ const activeIndex = computed(() => {
 const activeKey = computed<HomeModuleKey | null>(() => props.items[activeIndex.value]?.key ?? null)
 
 const activeItem = computed(() => props.items[activeIndex.value])
-// 终末地现在也能拿到活动背景大图（经后端缩放），和其它游戏一样走大横幅
-const isCompact = computed(() => false)
 
 const remainingStyle: CSSProperties = {
   color: 'var(--activity-accent)',

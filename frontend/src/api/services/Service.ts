@@ -436,8 +436,8 @@ export class Service {
         });
     }
     /**
-     * 获取终末地版本宣传图地址
-     * 取终末地官网首页最新的一张宣传图，给首页横幅当版本图用。
+     * 获取终末地版本图与版本名
+     * 终末地的版本图地址与版本名（图是固定地址，前端再走图片中转取回）。
      * @returns InfoOut Successful Response
      * @throws ApiError
      */
@@ -473,6 +473,8 @@ export class Service {
      * 取回明日方舟的活动一览。
      *
      * PRTS 的页面里已经带了活动名、分类、起止时间与配图，这里解析成前端好用的形状。
+     * 最近两周一场活动都没有是正常情况（长草期），按空列表返回并照常缓存，
+     * 不然前端会把「没有活动」当成接口出错反复重试。
      * @returns InfoOut Successful Response
      * @throws ApiError
      */
