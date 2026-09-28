@@ -1381,6 +1381,10 @@ def build_projection_rules(
             "agent 不是 Python，但项目里没有自带的 MaaFramework 原生库目录；"
             "agent 若要从项目目录加载库，运行时会失败。"
         )
+    if strict:
+        warnings.extend(
+            _bundled_architecture_warnings(roots, base_relative, runtime_relative)
+        )
 
     _adopt_small_undeclared_entries(view, base_relative, targets, warnings)
 
@@ -1833,6 +1837,43 @@ def _bundled_native_runtime_dir(
         except ValueError:
             continue
     return None
+
+
+def _bundled_architecture_warnings(
+    roots: tuple[Path, ...], base_relative: Path, runtime_relative: Path | None
+) -> list[str]:
+    """导入时提示：自带的 MaaFramework 或原生插件没有本机能加载的那一份。
+
+    只提示、不剔除：``plugins/`` 各架构都整目录带走（插件很小，后端与 worker 架构不一致时
+    也不会删错），运行时由 runner 按 worker 进程的架构筛。判定用后端进程的架构，与
+    ``_bundled_native_runtime_dir`` 选 ``runtimes/<rid>`` 同一个近似。
+    """
+
+    from app.task.MaaFW.tools.core.runner.environment import (
+        describe_plugin_architecture_mismatch,
+        describe_runtime_architecture_mismatch,
+    )
+
+    messages: list[str] = []
+    for root in roots:
+        if runtime_relative is None:
+            break
+        runtime_dir = root / runtime_relative
+        if runtime_dir.is_dir():
+            message = describe_runtime_architecture_mismatch(runtime_dir)
+            if message:
+                messages.append(message)
+            break
+    for root in roots:
+        plugins_dir = (root / base_relative if base_relative.parts else root) / (
+            "plugins"
+        )
+        if plugins_dir.is_dir():
+            message = describe_plugin_architecture_mismatch(plugins_dir)
+            if message:
+                messages.append(message)
+            break
+    return messages
 
 
 def probe_bundled_python_version(root: Path, rules: ProjectionRules) -> str | None:

@@ -445,7 +445,53 @@ def embedded_summary_lines(script_id: str) -> list[str]:
         )
     if details:
         lines.append("；".join(details))
+    source = str(status.get("sourcePath") or "")
+    lines.extend(
+        _view_architecture_warnings(
+            Path(str(status["copyPath"])),
+            Path(source) if source and status.get("sourceExists") else None,
+        )
+    )
     return lines
+
+
+def _view_architecture_warnings(view: Path, source: Path | None) -> list[str]:
+    """视图现在的自带 MaaFramework / 原生插件没有本机能加载的那份时的提示，各占一行。
+
+    按视图目录现场算、不读导入报告：更新或切换视图后报告不会重写，读它会在换成本机
+    架构的版本之后仍一直提示。只读 PE 头；插件目录取运行计划同一套解析（清单
+    ``nativePluginPaths`` 优先，缺省 ``plugins/``）。
+    """
+
+    from app.task.MaaFW.tools.core.runner.environment import (
+        describe_plugin_architecture_mismatch,
+        describe_project_runtime_architecture_mismatch,
+    )
+    from app.task.MaaFW.tools.core.runner.run_plan import (
+        MaaFWRunPlanError,
+        _build_native_plugin_paths,
+    )
+
+    messages: list[str] = []
+    try:
+        runtime_message = describe_project_runtime_architecture_mismatch(
+            view, source_path=source
+        )
+    except OSError:
+        runtime_message = None
+    if runtime_message:
+        messages.append(runtime_message)
+    try:
+        plugin_paths = _build_native_plugin_paths(view)
+    except (MaaFWRunPlanError, OSError):
+        plugin_paths = []  # 清单坏了运行前会报清楚，这里只是提示
+    for path_info in plugin_paths:
+        if not path_info.isDir:
+            continue  # 显式文件条目架构不符时 runner 直接报错，不在这里重复
+        plugin_message = describe_plugin_architecture_mismatch(Path(path_info.resolved))
+        if plugin_message:
+            messages.append(plugin_message)
+    return messages
 
 
 def _embedded_source_project(script_id: str) -> tuple[str, str]:
