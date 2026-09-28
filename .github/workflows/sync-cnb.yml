@@ -46,12 +46,14 @@ jobs:
           ref: ${{ github.ref }}
           fetch-depth: 0
       
+      - name: 读取 dev 当前的源码同步工具
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: dev
+          path: .sync-tools
+          sparse-checkout: .github/scripts
       - name: Sync to CNB Repository
-        uses: docker://tencentcom/git-sync@sha256:b7c4672616ddea5b89948dcd034610b29d37d8430e74b4bc83b421c963c25f77
+        shell: pwsh
         env:
-          PLUGIN_TARGET_URL: "https://cnb.cool/AUTO-MAS-Project/AUTO-MAS.git"
-          PLUGIN_AUTH_TYPE: "https"
-          PLUGIN_USERNAME: "cnb"
-          PLUGIN_PASSWORD: ${{ secrets.GIT_PASSWORD }}
-          PLUGIN_PUSH_TAGS: "true"
-          PLUGIN_FORCE: "true"
+          CNB_GIT_TOKEN: ${{ secrets.GIT_PASSWORD }}
+        run: ./.sync-tools/.github/scripts/sync-cnb.ps1

@@ -23,17 +23,30 @@ name: MirrorChyan 上传最新版本
 
 on:
   workflow_dispatch:
+    inputs:
+      version:
+        description: '补传指定正式/beta 版本，禁止 dev/nightly'
+        type: string
+        required: true
 
 jobs:
   mirrorchyan:
     runs-on: macos-latest
 
     steps:
+      - name: 禁止选择 nightly，避免上传固定 dev Release
+        shell: pwsh
+        env:
+          VERSION_TAG: ${{ inputs.version }}
+        run: |
+          if ($env:VERSION_TAG -notmatch '^v\d+\.\d+\.\d+(-beta\.\d+)?$') { throw '只能补传指定正式版或 beta，不可自动选择最新 nightly' }
+
       - id: uploading
         uses: MirrorChyan/uploading-action@ea9a0f6f516fafb6b0a3046a1fe4b0dccb29eca8 # v1
         with:
           filetype: latest-release
-          filename: "AUTO-MAS-Setup-*.exe"
+          filename: "AUTO-MAS-Setup-*-x64.zip"
+          tag: ${{ inputs.version }}
           mirrorchyan_rid: AUTO_MAS
 
           owner: AUTO-MAS-Project

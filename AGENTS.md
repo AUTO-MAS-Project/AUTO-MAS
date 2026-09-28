@@ -22,12 +22,14 @@
 
 ## 分支与 PR
 
-- `main`：禁止协助 push / force push；禁止以 `main` 为 base 创建 PR。仅维护者将 `dev` 合入 `main` 用于发布。
-- `dev`：上游社区贡献的合并目标。外部贡献者应在自己的 fork 中从上游 `dev` 拉出开发分支，再向 `AUTO-MAS-Project/AUTO-MAS:dev` 提 PR。维护者直推 `dev` 的小修复同样适用碎片规则：用户可见的改动带一个 `changelog.d/` 碎片（格式同下），且不改 `CHANGELOG.md` 与版本号；带碎片的提交一进 `dev`，「入账更新日志碎片」工作流就会把它编译进 `CHANGELOG.md` 顶部的「未发布」段并删掉碎片。
+- `main`：禁止直接 push / force push。允许自动创建仅同步 `dev/.github/**` 的 PR，由维护者合并；定时入口存在于 main，实际入账和 nightly 源码固定为 dev。
+- `dev`：上游社区贡献的合并目标。外部贡献者应在自己的 fork 中从上游 `dev` 拉出开发分支，再向 `AUTO-MAS-Project/AUTO-MAS:dev` 提 PR。维护者直推 `dev` 的小修复同样适用碎片规则：用户可见的改动带一个 `changelog.d/` 碎片（格式同下），且不改 `CHANGELOG.md` 与版本号；每天北京时间凌晨 02:00 由 nightly 的前置任务仅对 `dev` 入账，把碎片编译进 `CHANGELOG.md` 顶部的「未发布」段并删掉碎片。
 - `tests/`：测试照旧在本地编写并运行，把验证命令与结论写进 PR 正文；**功能实现与 bug 修复的测试属于一次性验证产物**，实现改完、问题复现过后就没有长期价值，留在仓库只会持续抬高每次跑测试的时间成本，不提交；只有跨功能通用的公共与纯逻辑测试才进仓库。**提交前用 `git status` 自查，默认不提交 `tests/` 下的任何新增或修改**；确有例外时在 PR 正文单独说明理由，由维护者评估。
-- `release/{version}`：由发布流程维护，不接受直推。修复先进 `dev`，再以 cherry-pick PR 进 release 分支；PR 不得带入 `dev` 独有的提交，CI 会检查。cherry-pick PR 只带碎片（格式同下，合并后同样自动入账），不改版本号、不编译更新日志；要出补丁版时，在最新 tag 对应的 release 分支上运行「准备发版」（每次发版都会新建 `release/<tag>` 分支，在更老的分支上准备会因版本号重号被拒）。本流程上线前建出的 release 分支仍按旧规则运行，要在其上沿用新规则，需把新工作流、`scripts/changelog.py` 与 `sync` 后的 `CHANGELOG.md` 一并 cherry-pick 进去。
-- 发版 PR：标题 `Release vX.Y.Z`，由「准备发版」工作流从 `dev` 或 `release/*` 创建，是唯一允许修改 `CHANGELOG.md`、`res/version.json` 与版本号的 PR；合并后由维护者手动运行「构建并发布应用程序」。外部贡献者不要开这类 PR。
-- 版本号只有 `vX.Y.Z` 与 `vX.Y.Z-beta.N` 两种形态：预发布号里的 `X.Y.Z` 就是将来的正式号，转正与最后一个 beta 同号；正式版热修出 `Z+1` 补丁版，从 release 分支发；N 只增不减。版本号由发版 PR 写入，其他 PR 不要改。
+- `release/{version}`：已安装客户端的后端来源，只接收经过该版本兼容验证的 cherry-pick 修复 PR；不接收 dev 合并、版本准备、版本提升、碎片清理或独立入账提交。修复碎片可保留，热更不必等待入账。
+- 发版 PR：标题 `Release vX.Y.Z`，以独立 `codex/release-base-v*` 准备分支为目标，合并后从 main 的构建入口选择该分支。正式补丁必须指定正式 tag 基准与修复 SHA，默认不带 dev 全量内容。新 tag 和 `release/<新版本>` 指向实际构建 SHA，不改旧来源。
+- beta/正式开发线发布后，维护者合并自动生成的发布记录 PR 到 dev，保留后续未发布改动，再准备下个 beta/转正；正式补丁记录不合回 dev。
+- 正常发布号为 `vX.Y.Z` / `vX.Y.Z-beta.N`；补丁和下一周期 beta 独立推进。nightly 构建工作区使用 `vX.Y.Z-alpha.<run_number>`，不提交回仓库；GitHub 固定 dev Release/tag 仅在完整构建后删除重建，不用 force push，不进入正式下载源。
+- 首次上线、权限、运行步骤和验证边界见 [scripts/release-workflows.md](scripts/release-workflows.md)。
 
 ## 写作约束
 

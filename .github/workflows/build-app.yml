@@ -23,6 +23,11 @@ name: 构建并发布应用程序
 
 on:
   workflow_dispatch:
+    inputs:
+      release_branch:
+        description: '已合并发版 PR 的独立准备分支：codex/release-base-vX.Y.Z[-beta.N]'
+        type: string
+        required: true
 
 permissions:
   contents: write
@@ -31,14 +36,13 @@ permissions:
 
 concurrency:
   group: build-app
-  queue: max
   cancel-in-progress: false
 
 jobs:
   build:
     name: 构建 Windows 版本
     runs-on: windows-latest
-    if: github.repository == 'AUTO-MAS-Project/AUTO-MAS' && (github.ref_name == 'main' || github.ref_name == 'dev' || startsWith(github.ref_name, 'release/'))
+    if: github.repository == 'AUTO-MAS-Project/AUTO-MAS'
 
     outputs:
       version_tag: ${{ steps.generate_version_info.outputs.version_tag }}
@@ -47,12 +51,34 @@ jobs:
       note_cut_count: ${{ steps.generate_version_info.outputs.note_cut_count }}
       note_issue_title: ${{ steps.generate_version_info.outputs.note_issue_title }}
       note_issue_body: ${{ steps.generate_version_info.outputs.note_issue_body }}
+      source_sha: ${{ steps.generate_version_info.outputs.source_sha }}
 
     steps:
+      - name: 只构建独立发版准备分支
+        env:
+          RELEASE_BRANCH: ${{ inputs.release_branch }}
+        shell: pwsh
+        run: |
+          if ($env:RELEASE_BRANCH -notmatch '^codex/release-base-v\d+\.\d+\.\d+(-beta\.\d+)?$') { throw '仅允许 codex/release-base-v*；旧 release 后端来源不得用于版本准备' }
+
       - name: 签出代码
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ inputs.release_branch }}
           fetch-depth: 0
+
+      - name: 读取 dev 上当前发布工具
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: dev
+          path: .release-tools
+          sparse-checkout: |
+            scripts
+            .github
+
+      - name: 设定发布工具的源码根
+        shell: pwsh
+        run: '"AUTO_MAS_CHANGELOG_ROOT=$env:GITHUB_WORKSPACE" >> $env:GITHUB_ENV'
 
       - name: 设置 Python 环境
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
@@ -62,11 +88,15 @@ jobs:
       - name: 生成版本信息
         id: generate_version_info
         run: |
-          $versionTag = (python scripts/changelog.py current).Trim()
+          $versionTag = (python .release-tools/scripts/changelog.py current).Trim()
           if ($LASTEXITCODE -ne 0 -or -not $versionTag) { throw "读不到当前版本号" }
           $notePath = Join-Path $env:RUNNER_TEMP 'release-note.md'
           $runUrl = "$env:GITHUB_SERVER_URL/$env:GITHUB_REPOSITORY/actions/runs/$env:GITHUB_RUN_ID"
-          python scripts/changelog.py release-note --version $versionTag --output $notePath --github-output $env:GITHUB_OUTPUT --run-url $runUrl
+          if ('${{ inputs.release_branch }}' -ne "codex/release-base-$versionTag") { throw '分支与准备版本不符，发版 PR 尚未合并或版本被更改' }
+          $sourceSha = (git rev-parse HEAD).Trim()
+          if ($LASTEXITCODE -ne 0) { throw '无法读取构建源码 SHA' }
+          "source_sha=$sourceSha" >> $env:GITHUB_OUTPUT
+          python .release-tools/scripts/changelog.py release-note --version $versionTag --output $notePath --github-output $env:GITHUB_OUTPUT --run-url $runUrl
           if ($LASTEXITCODE -ne 0) { throw "渲染 Release 正文失败" }
           $changelog = Get-Content -LiteralPath $notePath -Raw -Encoding utf8
           $isPrerelease = if ($versionTag.Contains('-')) { 'true' } else { 'false' }
@@ -97,7 +127,9 @@ jobs:
           if ([string]::IsNullOrWhiteSpace($env:SIGNPATH_API_TOKEN)) {
             throw '缺少 GitHub Actions secret: SIGNPATH_API_TOKEN'
           }
-          python scripts/changelog.py guard
+          python .release-tools/scripts/changelog.py check
+          if ($LASTEXITCODE -ne 0) { throw '生成物一致性检查失败' }
+          python .release-tools/scripts/changelog.py guard
           if ($LASTEXITCODE -ne 0) { throw "发布守门未通过" }
           $releaseRef = "refs/heads/release/$env:VERSION_TAG"
           $remoteReleaseBranch = @(git ls-remote --heads origin $releaseRef)
@@ -111,60 +143,10 @@ jobs:
           Write-Host "前置检查通过：将发布 $env:VERSION_TAG"
         shell: pwsh
 
-      - name: 读取 Runtime 版本
-        run: |
-          $runtimeVersionFile = Join-Path '${{ github.workspace }}' 'res\runtime-version.txt'
-          $runtimeVersion = (Get-Content -LiteralPath $runtimeVersionFile -Raw).Trim()
-          if ($runtimeVersion -notmatch '^v\d+(\.\d+)*([-+][0-9A-Za-z.-]+)?$') {
-            throw "Runtime 版本格式无效：$runtimeVersion"
-          }
-          Add-Content -LiteralPath $env:GITHUB_ENV -Value "RUNTIME_VERSION=$runtimeVersion" -Encoding utf8
-          Write-Host "本次构建使用 Runtime $runtimeVersion"
-        shell: pwsh
-
-      - name: 下载并校验 Runtime 可执行文件
+      - name: 下载并校验钉扎 Runtime
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          $runtimeDir = Join-Path "${{ github.workspace }}" 'runtime'
-          New-Item -ItemType Directory -Force -Path $runtimeDir | Out-Null
-
-          $exeName = "auto-mas-runtime-$env:RUNTIME_VERSION.exe"
-
-          gh release download $env:RUNTIME_VERSION `
-            -R AUTO-MAS-Project/AUTO-MAS-Runtime `
-            -D $runtimeDir `
-            -p $exeName `
-            -p 'SHA256SUMS.txt' `
-            --clobber
-          if ($LASTEXITCODE -ne 0) {
-            throw "下载 Runtime $env:RUNTIME_VERSION 失败"
-          }
-
-          Push-Location $runtimeDir
-          try {
-            $sumsLine = Select-String -Path 'SHA256SUMS.txt' -Pattern ([regex]::Escape($exeName)) |
-              Select-Object -First 1
-            if (-not $sumsLine) {
-              throw "SHA256SUMS.txt 中找不到 $exeName 对应的记录"
-            }
-            $expectedHash = ($sumsLine.Line -split '\s+')[0].ToUpperInvariant()
-            $actualHash = (Get-FileHash -Path $exeName -Algorithm SHA256).Hash.ToUpperInvariant()
-
-            Write-Host "期望哈希: $expectedHash"
-            Write-Host "实际哈希: $actualHash"
-
-            if ($actualHash -ne $expectedHash) {
-              throw "SHA-256 校验失败：$exeName 与 SHA256SUMS.txt 不匹配，可能下载损坏或被篡改"
-            }
-
-            # Electron 侧固定按 auto-mas-runtime.exe 定位（frontend/electron/services/runtime/launchConfig.ts）
-            Move-Item -Path $exeName -Destination 'auto-mas-runtime.exe' -Force
-            Remove-Item 'SHA256SUMS.txt'
-            Write-Host "Runtime $env:RUNTIME_VERSION 校验通过：$runtimeDir\auto-mas-runtime.exe"
-          } finally {
-            Pop-Location
-          }
+          GH_TOKEN: ${{ github.token }}
+        run: ./.release-tools/.github/scripts/download-runtime.ps1
         shell: pwsh
 
       - name: 设置 Node.js 环境
@@ -181,8 +163,10 @@ jobs:
           cd frontend
           corepack enable
           corepack prepare yarn@4.9.1 --activate
-          yarn install
+          yarn install --immutable
+          if ($LASTEXITCODE -ne 0) { throw "依赖安装失败" }
           yarn build
+          if ($LASTEXITCODE -ne 0) { throw "应用构建失败" }
           Move-Item -Path "dist\win-unpacked\AUTO-MAS.exe" -Destination "..\AUTO-MAS.exe"
         shell: pwsh
 
@@ -269,8 +253,11 @@ jobs:
     runs-on: ubuntu-latest
     needs: build
     steps:
-      - name: 签出代码
+      - name: 签出本次构建源码
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.build.outputs.source_sha }}
+          fetch-depth: 0
 
       - name: 下载构建产物
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
@@ -278,31 +265,34 @@ jobs:
           name: build-artifacts
           path: artifacts
 
-      - name: 创建发行版分支与标签
-        run: |
-          git config --global user.name 'github-actions[bot]'
-          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
-
-          git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git
-
-          NEW_BRANCH="release/${{ needs.build.outputs.version_tag }}"
-          TAG_NAME="${{ needs.build.outputs.version_tag }}"
-
-          echo "Creating branch: $NEW_BRANCH"
-          echo "Creating tag: $TAG_NAME"
-
-          git checkout -b "$NEW_BRANCH"
-          git push origin "$NEW_BRANCH"
-
-          git tag "$TAG_NAME"
-          git push origin "$TAG_NAME"
-
-      - name: 同步发行版分支到 CNB
-        continue-on-error: true
+      - name: 从构建 SHA 原子创建独立 release 来源与 tag
+        shell: pwsh
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SOURCE_SHA: ${{ needs.build.outputs.source_sha }}
+          VERSION_TAG: ${{ needs.build.outputs.version_tag }}
         run: |
-          gh workflow run sync-cnb.yml --ref "release/${{ needs.build.outputs.version_tag }}"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git branch "release/$env:VERSION_TAG" $env:SOURCE_SHA
+          if ($LASTEXITCODE -ne 0) { throw '创建独立后端分支失败' }
+          git tag $env:VERSION_TAG $env:SOURCE_SHA
+          if ($LASTEXITCODE -ne 0) { throw '创建 tag 失败，禁止覆盖历史 tag' }
+          git push --atomic origin "refs/heads/release/$env:VERSION_TAG" "refs/tags/$env:VERSION_TAG"
+          if ($LASTEXITCODE -ne 0) { throw '创建发布引用失败，禁止覆盖或强推' }
+
+      - name: 读取源码同步工具
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: dev
+          path: .release-tools
+          sparse-checkout: .github/scripts
+      - name: 同步本版后端来源到 CNB
+        shell: pwsh
+        env:
+          CNB_GIT_TOKEN: ${{ secrets.GIT_PASSWORD }}
+          SOURCE_SHA: ${{ needs.build.outputs.source_sha }}
+          VERSION_TAG: ${{ needs.build.outputs.version_tag }}
+        run: ./.release-tools/.github/scripts/sync-cnb.ps1 -VersionTag $env:VERSION_TAG -SourceSha $env:SOURCE_SHA
 
       - name: 发布发行版
         uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
@@ -347,18 +337,20 @@ jobs:
         # 同一版重跑不重复开 issue：按标题找到已开的就追加评论。
         if: needs.build.outputs.note_cut_count != '' && needs.build.outputs.note_cut_count != '0'
         continue-on-error: true
+        shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           ISSUE_TITLE: ${{ needs.build.outputs.note_issue_title }}
           ISSUE_BODY: ${{ needs.build.outputs.note_issue_body }}
         run: |
-          existing=$(gh issue list --state open --limit 100 --json number,title \
-            | jq -r --arg title "$ISSUE_TITLE" '[.[] | select(.title == $title)][0].number // empty')
-          if [ -n "$existing" ]; then
-            gh issue comment "$existing" --body "$ISSUE_BODY"
-          else
-            gh issue create --title "$ISSUE_TITLE" --body "$ISSUE_BODY"
-          fi
+          $issues = gh issue list --state open --limit 100 --json number,title | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0) { throw '查询公告 issue 失败' }
+          $existing = $issues | Where-Object title -EQ $env:ISSUE_TITLE | Select-Object -First 1
+          $bodyPath = Join-Path $env:RUNNER_TEMP 'release-cut-issue.md'
+          $env:ISSUE_BODY | Set-Content -LiteralPath $bodyPath -Encoding utf8
+          if ($existing) { gh issue comment $existing.number --body-file $bodyPath }
+          else { gh issue create --title $env:ISSUE_TITLE --body-file $bodyPath }
+          if ($LASTEXITCODE -ne 0) { throw '写入公告 issue 失败' }
 
       - name: 标记 Sentry 生产部署
         env:
@@ -400,36 +392,60 @@ jobs:
   cnb:
     name: 发布 CNB 发行版
     runs-on: ubuntu-latest
-    needs: build
-    if: github.repository == 'AUTO-MAS-Project/AUTO-MAS' && (github.ref_name == 'main' || github.ref_name == 'dev' || startsWith(github.ref_name, 'release/'))
-
+    needs: [build, release]
+    if: github.repository == 'AUTO-MAS-Project/AUTO-MAS'
     steps:
-      - name: 签出代码
+      - name: 读取当前发布工具
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - name: 设置 Python 环境
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          python-version: "3.x"
-
-      - name: 安装依赖
+          ref: dev
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+      - name: 安装发布工具依赖
+        shell: pwsh
         run: |
-          python -m pip install --upgrade pip
-          pip install -r .github/workflows/requirements.txt
-
-      - name: 触发 CNB 构建
+          python -m pip install -r .github/workflows/requirements.txt
+          if ($LASTEXITCODE -ne 0) { throw '安装 CNB 发布依赖失败' }
+      - name: 同次构建直接发布 CNB（不依赖 CNB 分支事件配置）
+        shell: pwsh
         env:
           CNB_TOKEN: ${{ secrets.CNB_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
           RELEASE_BODY: ${{ needs.build.outputs.version_changelog }}
           VERSION_TAG: ${{ needs.build.outputs.version_tag }}
           IS_PRERELEASE: ${{ needs.build.outputs.is_prerelease }}
+          SOURCE_SHA: ${{ needs.build.outputs.source_sha }}
         run: |
-          python .github/workflows/cnb_trigger.py "$CNB_TOKEN" \
-            --branch "${{ github.ref_name }}" \
-            --runid "${{ github.run_id }}" \
-            --release-body "$RELEASE_BODY" \
-            --version-tag "$VERSION_TAG" \
-            --is-prerelease "$IS_PRERELEASE"
+          python .github/workflows/github_download_and_cnb_upload.py --cnb-token $env:CNB_TOKEN --github-token $env:GH_TOKEN --run-id '${{ github.run_id }}' --version-tag $env:VERSION_TAG --is-prerelease $env:IS_PRERELEASE --target-commitish $env:SOURCE_SHA --release-body $env:RELEASE_BODY
+          if ($LASTEXITCODE -ne 0) { throw 'CNB 发布失败' }
+
+  record-dev:
+    name: 将开发线发布记录送回 dev 审核
+    needs: [build, release, cnb, mirror]
+    if: contains(needs.build.outputs.version_tag, '-beta.') || endsWith(needs.build.outputs.version_tag, '.0')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: 创建开发线记录 PR（维护者合并后继续下一 beta）
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_PR_TOKEN }}
+          VERSION_TAG: ${{ needs.build.outputs.version_tag }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          if (-not $env:GH_TOKEN) { throw '需要 RELEASE_PR_TOKEN 才能创建开发线记录 PR' }
+          $head = "release/$env:VERSION_TAG"
+          $existing = gh pr list --base dev --head $head --state open --json number | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0) { throw '查询记录 PR 失败' }
+          if ($existing.Count -eq 0) {
+            $body = Join-Path $env:RUNNER_TEMP 'record-dev.md'
+            "- 将 $env:VERSION_TAG 的版本、更新日志与已消费碎片记录同步回 dev。`n- 保留 dev 后续未发布改动，冲突由维护者审核解决；补丁维护线不运行此步骤。" | Set-Content $body
+            gh pr create --base dev --head $head --title "chore: 同步 $env:VERSION_TAG 开发线发布记录" --body-file $body --label changelog-maintenance --label skip-changelog
+            if ($LASTEXITCODE -ne 0) { throw '创建记录 PR 失败' }
+          }
 
   mirror:
     name: 推送镜像版本
@@ -453,29 +469,25 @@ jobs:
           upload_token: ${{ secrets.MirrorChyanUploadToken }}
           os: windows
           arch: x64
+          channel: ${{ needs.build.outputs.is_prerelease == 'true' && 'beta' || 'stable' }}
 
       - name: 上传版本说明
         uses: MirrorChyan/release-note-action@f392b50c411981ee6d33c8ed5e91d66d84d56202 # v1
         with:
           version_name: ${{ needs.build.outputs.version_tag }}
           release_note: ${{ needs.build.outputs.version_changelog }}
+          channel: ${{ needs.build.outputs.is_prerelease == 'true' && 'beta' || 'stable' }}
           mirrorchyan_rid: AUTO_MAS
           upload_token: ${{ secrets.MirrorChyanUploadToken }}
 
       - name: 触发自建源更新
+        shell: pwsh
+        env:
+          VERSION_TAG: ${{ needs.build.outputs.version_tag }}
+          IS_PRERELEASE: ${{ needs.build.outputs.is_prerelease }}
+          UPDATE_URL: ${{ secrets.UPDATE_URL }}
         run: |
-          if [ "${{ needs.build.outputs.is_prerelease }}" = "true" ]; then
-            CHANNEL="beta"
-          else
-            CHANNEL="stable"
-          fi
-
-          PAYLOAD=$(jq -n \
-            --arg version "${{ needs.build.outputs.version_tag }}" \
-            --arg res_id "AUTO_MAS" \
-            --arg channel "$CHANNEL" \
-            --arg os "win" \
-            --arg arch "x64" \
-            '{version: $version, res_id: $res_id, channel: $channel, os: $os, arch: $arch}')
-
-          curl -X POST "${{ secrets.UPDATE_URL }}" -H "Content-Type: application/json" -d "$PAYLOAD"
+          if (-not $env:UPDATE_URL) { throw '缺少自建源 UPDATE_URL' }
+          $channel = if ($env:IS_PRERELEASE -eq 'true') { 'beta' } else { 'stable' }
+          $payload = @{ version=$env:VERSION_TAG; res_id='AUTO_MAS'; channel=$channel; os='win'; arch='x64' } | ConvertTo-Json
+          Invoke-RestMethod -Method Post -Uri $env:UPDATE_URL -ContentType 'application/json' -Body $payload | Out-Null
