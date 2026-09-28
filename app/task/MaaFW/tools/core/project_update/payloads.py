@@ -961,6 +961,8 @@ def register(
                             manifest_path(root, lineage, str(current_latest["id"]))
                         ),
                         manifest,
+                        latest_dir=latest_dir,
+                        candidate_dir=target,
                         same_id=same_id,
                         same_version=same_version,
                     )
@@ -1035,6 +1037,8 @@ def _replaces_older_projection_latest(
     latest_manifest: Mapping[str, Any] | None,
     candidate_manifest: Mapping[str, Any],
     *,
+    latest_dir: Path,
+    candidate_dir: Path,
     same_id: bool,
     same_version: bool,
 ) -> bool:
@@ -1042,14 +1046,25 @@ def _replaces_older_projection_latest(
 
     旧规则漏装了文件的载荷（MaaFgo v2.0.03 的 ``agent/battle/runtime/``）按同一版本补齐后
     重新登记、或用户按新规则重新导入同一版本：不开这个口子，同版本永远换不掉，运行前
-    检查还会说「已是最新」。只看规则版本：这份清单记的 ``projectionRevision`` 比 latest
-    的有效规则版本（:func:`projection_revision_of`，含「按新规则查过没缺文件」）高才换。
+    检查还会说「已是最新」。看规则版本：这份清单记的 ``projectionRevision`` 比 latest
+    的有效规则版本（:func:`projection_revision_of`，含「按新规则查过没缺文件」）高才换；
+    但这份自带的 MaaFramework 在本机加载不了、latest 的能加载时不换（与
+    :func:`_replaces_unloadable_latest` 同一判据，重新导入一份别的架构的包不该把组换坏）。
     """
 
     if same_id or not same_version or latest_manifest is None:
         return False
     candidate = _non_negative_int(candidate_manifest.get(PROJECTION_REVISION_FIELD))
-    return candidate > projection_revision_of(latest_manifest)
+    if candidate <= projection_revision_of(latest_manifest):
+        return False
+    from app.task.MaaFW.tools.core.runner.environment import (
+        project_runtime_loadable_on_host,
+    )
+
+    return not (
+        project_runtime_loadable_on_host(candidate_dir) is False
+        and project_runtime_loadable_on_host(latest_dir) is not False
+    )
 
 
 def _same_version_rank(

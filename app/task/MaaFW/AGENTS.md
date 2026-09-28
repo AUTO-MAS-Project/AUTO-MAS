@@ -48,8 +48,10 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   视图根上的 `.auto_mas_view.json`（谱系、载荷、版本、物化时刻、`switchedBy`）是物化事实的唯一
   来源，不进指纹、不进任何清单，只随目录原子换入、不原地改（`switchedBy` 打完日志后清除除外）。
   谱系键 = `mirrorchyan_rid` > `github` > `name`；**组 = 谱系 + `Update.Channel`，同组永远挂同一个
-  载荷**（`lineage.json` 的 `latest[channel]` 只前进，同版本不换 id——唯一例外是 latest
-  自带的 MaaFramework 在本机加载不了而新登记的能加载，见 `payloads._replaces_unloadable_latest`）。
+  载荷**（`lineage.json` 的 `latest[channel]` 只前进，同版本不换 id——例外只有两个：latest
+  自带的 MaaFramework 在本机加载不了而新登记的能加载，见 `payloads._replaces_unloadable_latest`；
+  新登记的按更高的投影规则版本建（投影补齐、按新规则重新导入同版本），且不是「本机加载不了换掉
+  能加载的」，见 `payloads._replaces_older_projection_latest`）。
   配置项零新增：谱系 / 载荷 / 版本都不进 `ScriptConfig.json`。
 - **投影**：按 interface 白名单（`project_update/projection.py`），**白名单之外的顶层条目
   剩余 ≤ 64 MB 的也带走**（MaaEnd 的 `data/`、`locales/`，MaaYYs 的 `assets/答案.csv`，M9A 的
@@ -57,17 +59,19 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   exe / dll、.NET 外壳的 `libs/` 才是外壳运行时）。**能确认是外壳才剔，确认不了一律保留**（规则
   第 2 版）：按名字剔的只剩顶层的界面程序（MFAAvalonia / MXU / MFW / MaaPiCli）、Qt 界面运行时与
   顶层运行期目录（`debug/ cache/ logs/ temp/ update/ backup/` 等，导入的多半是用户在用的目录）；
-  没声明的顶层目录是 Python 解释器、.NET 托管库、带 MaaFramework 原生库的，按内容确认后剔
-  （`ProjectionRules.confirmed_shell`）；任何深度都剔的只有 `__pycache__` 这类没有歧义的缓存、
-  版本库目录与 `.pyc/.log/.tmp` 后缀。外壳是冻结的 Python 程序时（根上直接躺着没人
+  没声明的顶层目录是 Python 解释器、.NET 托管库 / RID 资产、标准形态的 MaaFramework 原生库目录
+  （库直接在目录里，或目录里只有原生库）的，按内容确认后整目录剔；只是某处带着一份原生库的只剔那几个
+  库文件（`ProjectionRules.confirmed_shell`）；任何深度都剔的只有 `__pycache__` 这类没有歧义的缓存、
+  版本库目录、`.pyc/.log/.tmp` 后缀与 MaaFramework 的 `.lib` 导入库。外壳是冻结的 Python 程序时（根上直接躺着没人
   声明的 `python312.dll`，Maa_bbb 的 MFW.exe 就是），它散在根目录的二进制依赖包（带 `.pyd`，或
   `*.libs` / `*.dist-info`）也不带：agent 子进程的 `PYTHONPATH` 是项目根，`backports/zstd/`
   这种没有 `__init__.py` 的半截包会变成命名空间包盖住真正的模块——副本上 pip 就是这样崩的。
   视图路径由脚本 ID 推出（`embedded_copy_dir_name`：uuid 去连字符取前 12 位，短是为了 pyc 前缀树
   与深层 site-packages 不撞 MAX_PATH）、不进配置、不可手改；来源目录一个字节不动、也不由 MAS 删。脚本页
   「选择本地目录」就是 `/maafw/embedded/reimport`：投影成载荷、登记进脚本所在渠道的组，视图切到组的
-  latest——导入的比组新就推进整组（空闲的兄弟立即切），相同或更旧就上组当前版本（「导入时版本」
-  那行日志仍是所选目录的版本）。没有 enable / disable 这种开关路由，`Embedded.*` 里只有报告、
+  latest——导入的比组新、或同版本而投影规则版本比组的 latest 高（组的载荷是旧规则建的）就推进
+  整组（空闲的兄弟立即切），其余相同或更旧的就上组当前版本（「导入时版本」那行日志仍是所选目录的
+  版本）。没有 enable / disable 这种开关路由，`Embedded.*` 里只有报告、
   来源版本与导入时间。删脚本连带删视图；载荷与共用库的回收在启动期。
 - **换版本 = 切视图**（`embedded_project.switch_view`，§3.2）：在 `data/mfw/.staging/` 里按新载荷重建
   链接森林、把视图私有文件带过去（同谱系才带；`.pycache` 不带）、被本地改过的受管文件以新版本为准并
@@ -284,7 +288,10 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   `project_update/projection_legacy.py` 留一份上一版规则的复刻。运行前检查与手动检查更新时
   （`tools/embedded/view_heal.py`）按「当前规则留、载荷那一版剔、载荷里没有」比对一次（依据：导入目录 →
   缓存的完整包 → GitHub 发行包的 HTTP Range），缺了就用「旧载荷 + 取回的文件」建同版本新载荷、登记
-  （`register` 允许规则版本更高的同版本载荷顶替 latest）、切组。结果记在载荷清单的 `projectionCheck`，
+  （`register` 允许规则版本更高的同版本载荷顶替 latest）、切组。新载荷是旧载荷的超集、共同路径内容
+  相同，切换按「同内容」走（`embedded_project._is_content_superset` → `fills_only`）：视图里已有的文件
+  （`data/manifest_cache.json`、热更新改过的受管文件）原样保留、不留档，只落新增的文件，M9A / MaaEnd
+  不会因此重跑热更新。结果记在载荷清单的 `projectionCheck`，
   同组只查一次（`project_update/projection_heal.py`）。全量包清的是旧载荷里 `origin=package` 且不在包内的，加上 `origin=import`、位于新
   interface 资源目录内、不在包内的（`apply._import_origin_orphans`：用户内容目录与运行时目录不碰）。
   `.mas-update` / `.mas-update-cache` 是更新器的保留目录；`debug` / `logs` / `temp` / `__pycache__` /

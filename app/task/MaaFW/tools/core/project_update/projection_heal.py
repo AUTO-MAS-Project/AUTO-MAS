@@ -107,7 +107,12 @@ RETRY_AFTER_SECONDS = 6 * 3600
 RANGE_BLOCK_SIZE = 64 * 1024
 # 一次最多从远端读这么多（中央目录 + 缺的条目）：MaaFgo 一万多条目的中央目录 1.6 MB。
 MAX_REMOTE_BYTES = 64 * 1024 * 1024
-HTTP_TIMEOUT = httpx.Timeout(20.0, connect=8.0)
+# 检查跑在运行前、同步等着，超时比更新本身短：Range 连接 5 s、读 10 s，查 Release 的 API
+# 每个请求 10 s；整次检查（找依据 + 取回缺的文件）最多 CHECK_DEADLINE_SECONDS，超了按暂时
+# 失败记下、本次照常运行。更新本身的超时不受影响。
+HTTP_TIMEOUT = httpx.Timeout(10.0, connect=5.0)
+API_TIMEOUT_SECONDS = 10.0
+CHECK_DEADLINE_SECONDS = 45.0
 HTTP_HEADERS = {"User-Agent": "AutoMasGui"}
 # 一次最多补这么多：实测 MaaEnd v2.30.1 缺 655 个文件、原始 1.2 MB 左右（Range 读 1.6 MB），
 # MaaFgo 3 个。再多说明比对出了意外，不在运行前悄悄下载一大批。
@@ -164,11 +169,14 @@ class RangeHTTPReader:
         expected_size: int | None = None,
         block_size: int = RANGE_BLOCK_SIZE,
         max_bytes: int = MAX_REMOTE_BYTES,
+        deadline: float | None = None,
     ) -> None:
         self.client = client
         self.url = url
         self.block_size = block_size
         self.max_bytes = max_bytes
+        # ``time.monotonic()`` 的截止时刻：过了就不再发请求（整次检查的总时长上限）。
+        self.deadline = deadline
         self.blocks: dict[int, bytes] = {}
         self.position = 0
         self.fetched = 0
@@ -186,6 +194,8 @@ class RangeHTTPReader:
         expected = end - start + 1
         if self.fetched + expected > self.max_bytes:
             raise HealSkip("要读的太多，不在运行前自动补齐", permanent=True)
+        if self.deadline is not None and time.monotonic() > self.deadline:
+            raise HealSkip("读取发行包超时")
         self.requests += 1
         buffer = bytearray()
         try:
@@ -302,6 +312,7 @@ async def _github_asset(
             source_config={"project_shell_hint": shell_hint} if shell_hint else {},
             proxy=proxy,
             target_version=version,
+            timeout=API_TIMEOUT_SECONDS,
         )
     except (MaaFWProjectUpdateError, httpx.HTTPError) as exc:
         raise HealSkip(f"查询 GitHub Release 失败：{exc}") from exc
@@ -637,12 +648,15 @@ def _remote_gap(
     size: int,
     *,
     proxy: httpx.Proxy | None,
+    deadline: float | None = None,
     **kwargs: Any,
 ) -> Gap:
     client = _open_client(proxy)
     archive: zipfile.ZipFile | None = None
     try:
-        reader = RangeHTTPReader(client, url, expected_size=size or None)
+        reader = RangeHTTPReader(
+            client, url, expected_size=size or None, deadline=deadline
+        )
         try:
             archive = zipfile.ZipFile(reader)  # type: ignore[arg-type]
         except zipfile.BadZipFile as exc:
@@ -670,11 +684,13 @@ async def find_gap(
     proxy: httpx.Proxy | None = None,
     shell_hint: str = "",
     cache_root: Path | None = None,
+    deadline: float | None = None,
 ) -> Gap:
     """按 导入目录 → 缓存的完整包 → GitHub 发行包 的顺序找比对依据，算出缺的文件。
 
     ``revision``：被比对的那一份（载荷）按哪版投影规则建的；``have(rel)``：它已经有这个
-    文件。拿不到依据抛 :class:`HealSkip`。调用方用完返回值要 ``close``。
+    文件。``deadline``：``time.monotonic()`` 的截止时刻，远端读取过了它就不再发请求。
+    拿不到依据抛 :class:`HealSkip`。调用方用完返回值要 ``close``。
     """
 
     common: dict[str, Any] = {
@@ -711,7 +727,9 @@ async def find_gap(
     url, size = await _github_asset(
         interface_model, version, proxy=proxy, shell_hint=shell_hint
     )
-    return await asyncio.to_thread(_remote_gap, url, size, proxy=proxy, **common)
+    return await asyncio.to_thread(
+        _remote_gap, url, size, proxy=proxy, deadline=deadline, **common
+    )
 
 
 def write_missing_files(directory: Path, contents: Mapping[str, bytes]) -> int:
@@ -1092,9 +1110,10 @@ async def heal_payload(
     have_keys = {rel.casefold() for rel in manifest_files(manifest)}
     source = manifest.get("source") or {}
 
-    gap: Gap | None = None
-    try:
-        gap = await find_gap(
+    deadline = time.monotonic() + CHECK_DEADLINE_SECONDS
+
+    async def locate() -> tuple[Gap, dict[str, bytes]]:
+        found = await find_gap(
             lineage=target.lineage,
             version=version,
             revision=revision,
@@ -1109,11 +1128,24 @@ async def heal_payload(
             proxy=proxy,
             shell_hint=shell_hint,
             cache_root=cache_root,
+            deadline=deadline,
         )
-        contents = await asyncio.to_thread(gap.read)
+        try:
+            return found, await asyncio.to_thread(found.read)
+        except BaseException:
+            await asyncio.to_thread(found.close)
+            raise
+
+    try:
+        try:
+            gap, contents = await asyncio.wait_for(
+                locate(), timeout=CHECK_DEADLINE_SECONDS
+            )
+        except TimeoutError as exc:
+            raise HealSkip(
+                f"检查超过 {CHECK_DEADLINE_SECONDS:.0f} 秒没做完，下次再试"
+            ) from exc
     except Exception as exc:  # noqa: BLE001 - 查不了只是跳过，不挡运行
-        if gap is not None:
-            await asyncio.to_thread(gap.close)
         if not isinstance(exc, HealSkip):
             logger.warning("MaaFW 按当前投影规则核对载荷时出错", exc_info=True)
         permanent = bool(getattr(exc, "permanent", False))

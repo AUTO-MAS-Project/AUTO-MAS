@@ -1521,8 +1521,12 @@ async def _check_github_release_update(
     source_config: dict[str, Any],
     proxy: httpx.Proxy | None,
     target_version: str = "",
+    timeout: float = 30.0,
 ) -> MaaFWProjectUpdateDiscovery | None:
     """Fetch the exact MirrorChyan-selected version from GitHub Releases.
+
+    ``timeout`` is per request; the projection heal check passes a shorter one
+    because it runs synchronously before a task starts.
 
     The repository is always ``interface.github``, the tag is always the
     MirrorChyan ``version_name`` (``target_version``), and the asset is picked
@@ -1555,7 +1559,7 @@ async def _check_github_release_update(
 
     response: httpx.Response | None = None
     async with httpx.AsyncClient(
-        proxy=proxy, follow_redirects=True, timeout=30.0
+        proxy=proxy, follow_redirects=True, timeout=timeout
     ) as client:
         for api_url in api_urls:
             candidate_response = await client.get(api_url, headers=headers)

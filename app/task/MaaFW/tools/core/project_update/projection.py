@@ -97,9 +97,10 @@ DOTNET_SHELL_FILE_PREFIXES = (
 # 与 Qt 界面运行时（名字没有歧义），以及用户在用目录里的运行期产物——导入的多半是用户
 # 一直在用的目录，顶层的 debug/ cache/ update/ 是 MaaFramework、MFAA / MXU 与更新器运行时
 # 写出来的，不是项目文件；更新包走同一张表，导入与更新的载荷才一致。
-# 叫 runtime / python / venv / web / frontend / build 的目录不再按名字剔：自带的 MaaFramework
-# 原生库目录、Python 解释器目录、.NET 外壳托管库目录按**内容**确认
-# （``ProjectionRules.confirmed_shell``，见 :func:`_confirmed_shell_reason`），其余照常带走
+# 叫 runtime / python / venv / web / frontend / build 的目录不再按名字剔：没声明的顶层目录
+# 是 Python 解释器、.NET 外壳托管库 / RID 资产、标准形态的 MaaFramework 原生库目录的，按
+# **内容**确认后整目录剔；只是某处带着一份 MaaFramework 原生库的，只剔那几个库文件
+# （``ProjectionRules.confirmed_shell``，见 :func:`_confirmed_shell_reason`）。其余照常带走
 # （顶层 64 MB 的上限照旧）。以前按名字逐级匹配把 MaaFgo v2.0.03 的 agent/battle/runtime/
 # 当成外壳剔掉，agent 一起来就 ModuleNotFoundError。
 EXCLUDED_DIRECTORY_REASONS: dict[str, str] = {
@@ -139,9 +140,13 @@ EXCLUDED_DIRECTORY_REASONS: dict[str, str] = {
     "backup": "temporary",
     "backups": "temporary",
 }
-# 顶层目录叫这些、里面又真有 MaaFramework 原生库的，是发行包自带的原生库目录（MFAAvalonia
-# 布局的 ``runtimes/<rid>/native`` 只带本机那一份，其余架构在这里剔）。
-RUNTIME_DIR_NAMES = frozenset({"maafw", "runtime", "runtimes"})
+# MaaFramework 原生库的 MSVC 导入库（``MaaFramework.lib``、``MaaToolkit.lib`` …）只在链接
+# 插件时用，运行时用不到：任何深度都剔（原样带走的运行时目录除外）。只认第 1 版按文件名族
+# 剔过的这几族，免得已登记的载荷因为规则改版被当成缺文件或多文件（M9A MFAA 的
+# ``plugins/win-x64/MaaAgentClient.lib`` 第 1 版就留着）。
+MAAFW_IMPORT_LIBRARY_STEMS = frozenset(
+    {"maaframework", "maatoolkit", "maaadbcontrolunit", "maahttp"}
+)
 # 没有歧义的缓存 / 版本库 / 编辑器 / MAS 更新器目录任何深度都剔。
 ANYWHERE_EXCLUDED_DIRECTORY_NAMES = frozenset(
     {
@@ -316,7 +321,8 @@ class ProjectionRules:
     warnings: list[str] = field(default_factory=list)
     # 导入时声明了但发行包里没有的 resource（名字）：副本里不可用，其余照常导入。
     unavailable_resources: list[str] = field(default_factory=list)
-    # 按内容确认是外壳 / 自带运行时的顶层目录（没被 interface 声明的）→ 原因。
+    # 按内容确认是外壳 / 自带运行时的顶层目录（没被 interface 声明的），以及这类目录里
+    # 按内容确认的原生库文件 → 原因。
     confirmed_shell: dict[Path, str] = field(default_factory=dict)
 
     def exclusion_reason(
@@ -482,6 +488,11 @@ def exclusion_reason(
     （:data:`ANYWHERE_EXCLUDED_DIRECTORY_NAMES`）与字节码、临时文件、日志后缀。
     """
 
+    if confirmed and not is_directory:
+        # 没被声明的顶层目录里、按内容确认的原生库文件本身（目录其余照常带走）。
+        hit = confirmed.get(path)
+        if hit:
+            return hit
     parts = path.parts if is_directory else path.parts[:-1]
     top = _top_level_indexes(path, base)
     for index, part in enumerate(parts):
@@ -505,9 +516,11 @@ def exclusion_reason(
     suffix = path.suffix.casefold()
     if suffix in EXCLUDED_FILE_SUFFIXES:
         return "cache-or-temporary"
+    family = name.split(".", 1)[0]
+    if suffix == ".lib" and family in MAAFW_IMPORT_LIBRARY_STEMS:
+        return "embedded-runtime"
     if len(path.parts) - 1 not in top:
         return None
-    family = name.split(".", 1)[0]
     if family in KNOWN_UI_SHELL_STEMS:
         return "ui-shell"
     if (
@@ -1779,8 +1792,8 @@ def _is_cpython_bundled_file(path: Path) -> bool:
     )
 
 
-#: 往下找 MaaFramework 原生库的深度（``runtimes/<rid>/native/MaaFramework.dll`` 是 3）。
-_RUNTIME_PROBE_MAX_DEPTH = 4
+#: 「目录里只有原生库」按这些后缀认（调试符号与导入库也算原生库的一部分）。
+_NATIVE_ONLY_SUFFIXES = frozenset({".dll", ".so", ".dylib", ".lib", ".pdb"})
 #: .NET / NuGet 的运行时资产布局 ``runtimes/<rid>/native|lib/``：RID 形如 win-x64、
 #: linux-musl-arm64、osx-arm64。
 _RID_RE = re.compile(
@@ -1790,33 +1803,52 @@ _RID_RE = re.compile(
 
 
 def _looks_like_rid_asset_tree(view: _FileView, directory: Path) -> bool:
-    """目录的子目录全是 RID、且每个 RID 下都是 ``native/`` 或 ``lib/``：.NET 外壳（MFAAvalonia）
-    按架构分发的运行时资产。runner 用的那一份早已是原样带走的目标。"""
+    """目录的子目录全是 RID，而且是按架构分发的运行时：每个 RID 下都只有 ``native/`` /
+    ``lib/``（.NET 外壳 MFAAvalonia 的运行时资产），或者某个 RID 目录（或它的 ``native/``）
+    里直接放着 MaaFramework 原生库（MFW-PyQt6 外壳的 ``runtimes/win-x64/``）。runner 用的
+    那一份早已是原样带走的目标。"""
 
     children = view.iter_entries(directory)
-    if not children:
+    if not children or not all(
+        view.is_dir(child) and _RID_RE.match(child.name.casefold())
+        for child in children
+    ):
         return False
-    for child in children:
-        if not view.is_dir(child) or not _RID_RE.match(child.name.casefold()):
-            return False
-        kinds = {entry.name.casefold() for entry in view.iter_entries(child)}
-        if not kinds or not kinds <= {"native", "lib"}:
-            return False
-    return True
+    if all(
+        (kinds := {entry.name.casefold() for entry in view.iter_entries(child)})
+        and kinds <= {"native", "lib"}
+        for child in children
+    ):
+        return True
+    return any(
+        view.is_file(entry) and _is_maaframework_core(entry.name)
+        for child in children
+        for folder in (child, child / "native")
+        for entry in view.iter_entries(folder)
+    )
+
+
+def _is_maaframework_core(name: str) -> bool:
+    """``MaaFramework.dll`` / ``libMaaFramework.so`` / ``libMaaFramework.dylib``。"""
+
+    stem = name.casefold().split(".", 1)[0].removeprefix("lib")
+    return stem == "maaframework" and _is_maafw_runtime_library(name)
 
 
 def _confirmed_shell_reason(view: _FileView, directory: Path) -> str | None:
-    """没被声明的顶层目录，按**内容**确认是外壳或自带运行时才给出原因：
+    """没被声明的顶层目录，按**内容**确认**整个目录**是外壳或自带运行时才给出原因：
 
     - 目录本身就是一个 Python 解释器（发行版 / 嵌入式包 / venv，见
       :func:`_is_python_interpreter_dir`）——agent 声明的那个早已是原样带走的目标；
     - .NET 外壳的托管库目录（``Avalonia*.dll`` / ``System.*.dll`` …）；
     - .NET 按架构分发的运行时资产（``runtimes/<rid>/native|lib``，见
       :func:`_looks_like_rid_asset_tree`）；
-    - 里面有 MaaFramework 自己的原生库（``MaaFramework.dll`` / ``libMaaFramework.so`` …）：
-      自带运行时的其它架构 / 副本，runner 用的那份（``_bundled_native_runtime_dir``）
-      早已是原样带走的目标。
-    名字叫 runtime / python / web 但内容对不上的一律不算。
+    - MaaFramework 运行时的标准形态：``MaaFramework`` 原生库就直接放在这个目录里（``maafw/``
+      那种），或者整个目录里只有原生库（``bin/*.dll`` 那种）。runner 用的那份
+      （``_bundled_native_runtime_dir``）早已是原样带走的目标，这里是其它架构 / 副本。
+    名字叫 runtime / python / web 但内容对不上的一律不算。目录里只是某处带着原生库的
+    （``libs/maa/bin/MaaFramework.dll`` 旁边还有 ``.py``），整目录照常带走，只剔那几个
+    原生库文件（:func:`_confirmed_runtime_files`）。
     """
 
     if _is_python_interpreter_dir(view, directory):
@@ -1825,13 +1857,28 @@ def _confirmed_shell_reason(view: _FileView, directory: Path) -> str | None:
         return "ui-runtime"
     if _looks_like_rid_asset_tree(view, directory):
         return "embedded-runtime"
-    for path in view.walk_files(directory):
-        if len(path.relative_to(directory).parts) > _RUNTIME_PROBE_MAX_DEPTH:
-            continue
-        stem = path.name.casefold().split(".", 1)[0].removeprefix("lib")
-        if stem == "maaframework" and _is_maafw_runtime_library(path.name):
-            return "embedded-runtime"
+    if any(
+        view.is_file(entry) and _is_maaframework_core(entry.name)
+        for entry in view.iter_entries(directory)
+    ):
+        return "embedded-runtime"
+    files = view.walk_files(directory)
+    if (
+        files
+        and all(path.suffix.casefold() in _NATIVE_ONLY_SUFFIXES for path in files)
+        and any(_is_maaframework_core(path.name) for path in files)
+    ):
+        return "embedded-runtime"
     return None
+
+
+def _confirmed_runtime_files(view: _FileView, directory: Path) -> list[Path]:
+    """整目录确认不了、但里面带着一份 MaaFramework 运行时的：那一份的原生库文件本身。"""
+
+    files = view.walk_files(directory)
+    if not any(_is_maaframework_core(path.name) for path in files):
+        return []
+    return [path for path in files if _is_maafw_runtime_library(path.name)]
 
 
 def _adopt_small_undeclared_entries(
@@ -1882,6 +1929,9 @@ def _adopt_small_undeclared_entries(
             reason = _confirmed_shell_reason(view, entry)
             if reason is not None:
                 confirmed[entry] = reason
+            else:
+                for native in _confirmed_runtime_files(view, entry):
+                    confirmed[native] = "embedded-runtime"
         if reason is not None:
             continue
         if not is_dir:
