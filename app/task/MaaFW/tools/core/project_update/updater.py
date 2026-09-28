@@ -73,6 +73,7 @@ CDK_STATUS_ABSENT = "absent"
 CDK_ABSENT_REASON = "未配置 Mirror酱 CDK"
 # 更新失败那行的前缀：检查失败与应用失败共用，已带前缀的原因不再重复加。
 UPDATE_FAILED_PREFIX = "项目更新失败："
+_PACKAGE_KIND_ZH = {"full": "全量包", "delta": "差量包"}
 
 
 @dataclass
@@ -277,9 +278,7 @@ def _normalise_package_source(raw_value: Any) -> str:
         return "mirrorchyan"
     if value in {"github", "github release", "github releases"}:
         return "github_release"
-    raise MaaFWProjectUpdateError(
-        f"unsupported MaaFW update package source: {raw_value}"
-    )
+    raise MaaFWProjectUpdateError(f"不支持的更新源：{raw_value}")
 
 
 def _requested_package_source(config: dict[str, Any]) -> str:
@@ -328,9 +327,7 @@ def _describe_package(candidate: MaaFWProjectUpdateCandidate) -> str:
 
     source = _public_package_source(candidate.source)
     label = {"github": "GitHub", "mirrorchyan": "Mirror 酱"}.get(source or "", "")
-    kind = {"full": "全量包", "delta": "差量包"}.get(
-        str(candidate.package_type or ""), "更新包"
-    )
+    kind = _PACKAGE_KIND_ZH.get(str(candidate.package_type or ""), "更新包")
     return f"{label} {kind}".strip() + _format_package_size(candidate.size)
 
 
@@ -530,7 +527,9 @@ async def update_maafw_project_if_needed(
         else:
             message = skipped_reason or "项目未配置可用的更新源，跳过更新"
             status = "skipped"
-        send_update_log(message)
+        if version_check is not None or not skipped_reason:
+            # 跳过的原因发现那一步已经写过一行（没声明 mirrorchyan_rid），不再重复。
+            send_update_log(message)
         _report_progress(
             progress,
             "completed",
@@ -659,9 +658,14 @@ async def update_maafw_project_if_needed(
         )
         raise
 
+    # 任务日志里只留这一行结论（宿主的「MFW 项目已更新 …（来源：…）」只进通知），所以把
+    # 包类型也带上。
+    kind = _PACKAGE_KIND_ZH.get(
+        str(apply_result.get("packageType") or candidate.package_type or ""), ""
+    )
     message = (
         f"项目更新完成：{current_version} → {candidate.version}"
-        f"（{_describe_public_source(candidate.source)}）"
+        f"（{_describe_public_source(candidate.source)}{f' {kind}' if kind else ''}）"
     )
     send_update_log(message)
     _report_progress(
@@ -917,7 +921,7 @@ async def _discover_project_update_detailed(
         # 查询失败不阻断任务：报为「有更新但不可安装」，原因留在
         # unavailable_reason / skipped_reason 里，让上层照常继续运行脚本。
         return unavailable(
-            f"GitHub Release 查询失败: {_sanitize_log_message(str(exc))}"
+            f"GitHub Release 查询失败：{_sanitize_log_message(str(exc))}"
         )
 
     if github_discovery is None:
@@ -1016,7 +1020,7 @@ async def apply_maafw_project_update(
     send_update_log = send_log or (lambda _: None)
     download_url = str(candidate.download_url or "").strip()
     if not download_url:
-        raise MaaFWProjectUpdateError("update provider did not return a download URL")
+        raise MaaFWProjectUpdateError("更新源没有返回下载地址")
     if payload is None:
         raise MaaFWProjectUpdateError("项目还没有登记版本（视图没有标记），无法更新")
 
@@ -1210,9 +1214,7 @@ async def apply_maafw_project_update(
         )
         actual = _read_interface_version(staging, strict=True).strip()
         if expected_version and actual.lstrip("vV") != expected_version.lstrip("vV"):
-            raise PayloadError(
-                "updated MaaFW interface version does not match the planned target"
-            )
+            raise PayloadError("新版本 interface.json 里的版本号与要更新到的版本不一致")
         return built, actual
 
     registered: RegisterResult | None = None
@@ -1244,7 +1246,7 @@ async def apply_maafw_project_update(
             if verdict is False:
                 send_update_log(f"预检未通过，用时 {format_duration(timer.finish())}")
                 raise MaaFWProjectUpdateError(
-                    "MaaFW post-validation rejected the update",
+                    "新版本的运行环境预检未通过",
                     post_validate_rejected=True,
                 )
             send_update_log(f"预检通过，用时 {format_duration(timer.finish())}")
@@ -1424,7 +1426,7 @@ async def _query_mirrorchyan_latest(
             response = await client.get(url, params=params, headers=HTTP_HEADERS)
     except httpx.HTTPError as exc:
         raise MaaFWProjectUpdateError(
-            f"MirrorChyan update check failed: {_sanitize_log_message(str(exc))}"
+            f"Mirror 酱版本查询失败：{_sanitize_log_message(str(exc))}"
         ) from None
 
     result = _load_response_json(response)
@@ -1446,7 +1448,7 @@ async def _query_mirrorchyan_latest(
         cdk_message = MIRROR_ERROR_INFO.get(error_code, MIRROR_ERROR_INFO[1])
         if not latest_version:
             raise MaaFWProjectUpdateError(
-                f"MirrorChyan [{error_code}]: {cdk_message}",
+                f"Mirror 酱 [{error_code}]：{cdk_message}",
                 provider_error_code=error_code,
             )
         send_update_log(
@@ -1468,17 +1470,15 @@ async def _query_mirrorchyan_latest(
                 if server_message:
                     error_message = f"{error_message}: {server_message}"
             raise MaaFWProjectUpdateError(
-                f"MirrorChyan [{error_code}]: {error_message}",
+                f"Mirror 酱 [{error_code}]：{error_message}",
                 provider_error_code=error_code,
             )
-        raise MaaFWProjectUpdateError(
-            f"MirrorChyan returned HTTP {response.status_code}"
-        )
+        raise MaaFWProjectUpdateError(f"Mirror 酱返回 HTTP {response.status_code}")
 
     if not data:
-        raise MaaFWProjectUpdateError("MirrorChyan did not return version data")
+        raise MaaFWProjectUpdateError("Mirror 酱没有返回版本数据")
     if not latest_version:
-        raise MaaFWProjectUpdateError("MirrorChyan did not return version")
+        raise MaaFWProjectUpdateError("Mirror 酱没有返回版本号")
 
     return MaaFWMirrorChyanVersionCheck(
         version_name=latest_version,
@@ -1551,7 +1551,7 @@ async def _check_github_release_update(
     target_version = str(target_version or "").strip()
     if not target_version:
         raise MaaFWProjectUpdateError(
-            "GitHub release lookup requires an exact target version selected by MirrorChyan"
+            "查询 GitHub Release 需要 Mirror 酱给出的目标版本号"
         )
     # Resolve that exact release instead of GitHub's stable-only ``latest``
     # endpoint so prereleases and an older same-version package stay
@@ -1580,12 +1580,12 @@ async def _check_github_release_update(
     if response.status_code >= 400:
         message = str(data.get("message") or "").strip()
         raise MaaFWProjectUpdateError(
-            f"GitHub release check failed: HTTP {response.status_code} {message}"
+            f"GitHub 返回 HTTP {response.status_code} {message}"
         )
 
     latest_version = str(data.get("tag_name") or data.get("name") or "").strip()
     if not latest_version:
-        raise MaaFWProjectUpdateError("GitHub release did not return version")
+        raise MaaFWProjectUpdateError("GitHub Release 没有返回版本号")
     if target_version and _normalize_version(latest_version) != _normalize_version(
         target_version
     ):
@@ -1595,8 +1595,8 @@ async def _check_github_release_update(
             download_url=None,
             sha256=None,
             unavailable_reason=(
-                "GitHub tag lookup returned a different version: "
-                f"github={latest_version}, target={target_version}"
+                "GitHub 上查到的版本与要更新到的版本不一致："
+                f"GitHub {latest_version}，目标 {target_version}"
             ),
         )
     if not _is_remote_newer(latest_version, current_version):
@@ -1607,7 +1607,7 @@ async def _check_github_release_update(
             version=latest_version,
             download_url=None,
             sha256=None,
-            unavailable_reason="GitHub matching release is a draft",
+            unavailable_reason="GitHub 上对应的 Release 还是草稿",
         )
 
     shell_hint = str(source_config.get("project_shell_hint") or "").strip()
@@ -1648,8 +1648,7 @@ async def _check_github_release_update(
             asset or {}, "range", "range_supported", "rangeSupported"
         ),
         unavailable_reason=(
-            selection_reason
-            or "GitHub release has no unambiguous matching package asset"
+            selection_reason or "GitHub Release 里找不到唯一匹配的更新包"
         ),
     )
 
@@ -1760,9 +1759,9 @@ def _load_response_json(response: httpx.Response) -> dict[str, Any]:
     try:
         data = response.json()
     except Exception as exc:
-        raise MaaFWProjectUpdateError("update source did not return JSON") from exc
+        raise MaaFWProjectUpdateError("更新源返回的不是 JSON") from exc
     if not isinstance(data, dict):
-        raise MaaFWProjectUpdateError("update source returned invalid JSON shape")
+        raise MaaFWProjectUpdateError("更新源返回的 JSON 格式不对")
     return data
 
 
@@ -1829,12 +1828,12 @@ def _select_github_release_asset(
 ) -> tuple[str | None, str]:
     assets = data.get("assets")
     if not isinstance(assets, list):
-        return None, "GitHub release assets are missing"
+        return None, "GitHub Release 没有附带任何文件"
 
     try:
         pattern = re.compile(asset_pattern)
     except re.error as exc:
-        raise MaaFWProjectUpdateError(f"invalid GitHub asset pattern: {exc}") from exc
+        raise MaaFWProjectUpdateError(f"GitHub 资产匹配规则无效：{exc}") from exc
 
     matches: list[tuple[str, str]] = []
     for asset in assets:
@@ -1848,13 +1847,13 @@ def _select_github_release_asset(
             matches.append((name, url))
 
     if not matches:
-        return None, f"GitHub release has no matching asset for {asset_pattern!r}"
+        return None, f"GitHub Release 里没有匹配 {asset_pattern!r} 的文件"
     if len(matches) == 1:
         return matches[0][1], ""
 
     if require_explicit_match:
         names = ", ".join(name for name, _ in matches[:5])
-        return None, f"GitHub asset pattern is ambiguous: {names}"
+        return None, f"GitHub 资产匹配规则命中了多个文件：{names}"
 
     narrowed = matches
 
@@ -1920,7 +1919,7 @@ def _select_github_release_asset(
                 return narrowed[0][1], ""
 
     names = ", ".join(name for name, _ in narrowed[:5])
-    return None, f"GitHub release package selection is ambiguous: {names}"
+    return None, f"GitHub Release 里有多个候选更新包，无法确定用哪个：{names}"
 
 
 # rid 后缀 -> 外壳家族规范名。取值域与 _select_github_release_asset 的

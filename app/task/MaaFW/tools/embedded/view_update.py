@@ -532,7 +532,7 @@ def _normalize_result(
             message=(
                 getattr(result, "message", "")
                 if getattr(result, "updated", False)
-                else f"MaaFW 项目已切到 {outcome.version_after}（组里已有的版本）"
+                else f"项目已切到 {outcome.version_after}（组里已有的版本）"
             ),
         )
     if getattr(result, "updated", False):

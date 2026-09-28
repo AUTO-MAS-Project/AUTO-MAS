@@ -41,7 +41,7 @@ RETRY_DELAYS = (1.0, 3.0, 9.0, 27.0)
 # 退避期间看取消的间隔：睡满 27s 再看一眼，用户点的停止就要等半分钟才生效。
 CANCEL_POLL_SECONDS = 0.5
 HTTP_HEADERS = {"User-Agent": "AutoMasGui"}
-CANCELLED_MESSAGE = "MaaFW update package download cancelled"
+CANCELLED_MESSAGE = "更新包下载已中止"
 DEFAULT_TIMEOUT = httpx.Timeout(30.0)
 # 备选源每个只试一次，所以连不上要早点认输——默认的 30s 连接超时乘以四个
 # 镜像就是两分钟白等。读超时仍是 30s：镜像连上了但慢，那是下载本身的事。
@@ -186,9 +186,9 @@ def _validate_url(raw_url: str) -> str:
     parsed = urlsplit(value)
     scheme = parsed.scheme.casefold()
     if scheme not in {"https", "http"} or not parsed.hostname:
-        raise RuntimeError("MaaFW update URL must use HTTPS")
+        raise RuntimeError("更新地址必须使用 HTTPS")
     if parsed.username or parsed.password:
-        raise RuntimeError("MaaFW update URL must not contain credentials")
+        raise RuntimeError("更新地址不能带账号密码")
     try:
         address = ipaddress.ip_address(parsed.hostname)
     except ValueError:
@@ -196,7 +196,7 @@ def _validate_url(raw_url: str) -> str:
     # A loopback HTTP endpoint is accepted for local integration/smoke
     # servers only; all remote provider/package traffic remains HTTPS.
     if scheme == "http" and not (address is not None and address.is_loopback):
-        raise RuntimeError("MaaFW update URL must use HTTPS")
+        raise RuntimeError("更新地址必须使用 HTTPS")
     if address is not None and (
         (
             scheme != "http"
@@ -210,7 +210,7 @@ def _validate_url(raw_url: str) -> str:
         )
         or (scheme == "http" and not address.is_loopback)
     ):
-        raise RuntimeError("MaaFW update URL cannot target a private address")
+        raise RuntimeError("更新地址不能指向内网地址")
     return value
 
 
@@ -226,7 +226,7 @@ def _artifact_paths(root: Path, artifact_id: str) -> tuple[Path, Path, Path]:
     cache_root = root.resolve(strict=False)
     directory = (cache_root / artifact_id).resolve(strict=False)
     if not directory.is_relative_to(cache_root):
-        raise RuntimeError("MaaFW artifact path escapes cache root")
+        raise RuntimeError("更新包缓存路径越出了缓存目录")
     return directory, directory / "payload.part", directory / "artifact.json"
 
 
@@ -295,7 +295,7 @@ async def download_resumable(
     validated_url = _validate_url(download_url)
     expected = normalise_sha256(expected_sha256)
     if expected_sha256 and expected is None:
-        raise RuntimeError("update package expected sha256 is invalid")
+        raise RuntimeError("更新包的 sha256 摘要格式不对")
     root = (cache_root or DEFAULT_CACHE_ROOT).resolve()
     stable_id = artifact_id_for(source, version, validated_url, explicit=artifact_id)
     directory, partial_path, metadata_path = _artifact_paths(root, stable_id)
@@ -639,7 +639,7 @@ async def _download_attempt(
                 if response.status_code in {301, 302, 303, 307, 308}:
                     location = str(response.headers.get("location") or "").strip()
                     if not location or redirect_count >= MAX_REDIRECTS:
-                        raise RuntimeError("update package redirect is invalid")
+                        raise RuntimeError("更新包下载地址跳转无效或次数过多")
                     current_url = _validate_url(urljoin(current_url, location))
                     continue
 
@@ -656,7 +656,7 @@ async def _download_attempt(
                         and response_etag
                         and response_etag != saved_etag
                     ):
-                        raise _RestartFromZero("update package ETag changed")
+                        raise _RestartFromZero("服务器上的更新包已变化（ETag 不同）")
                     if (
                         existing
                         and not saved_etag
@@ -664,7 +664,9 @@ async def _download_attempt(
                         and response_modified
                         and response_modified != saved_modified
                     ):
-                        raise _RestartFromZero("update package Last-Modified changed")
+                        raise _RestartFromZero(
+                            "服务器上的更新包已变化（Last-Modified 不同）"
+                        )
                     total = _parse_unsatisfied_range(
                         str(response.headers.get("content-range") or "")
                     )
@@ -679,7 +681,7 @@ async def _download_attempt(
                             last_modified=response_modified or saved_modified,
                             range_supported=True,
                         )
-                    raise _RestartFromZero("server rejected stale range")
+                    raise _RestartFromZero("服务器拒绝了断点续传的范围")
 
                 if response.status_code not in {200, 206}:
                     content = (await response.aread())[:4096]
@@ -707,23 +709,23 @@ async def _download_attempt(
                     str(response.headers.get("last-modified") or "").strip() or None
                 )
                 if existing and saved_etag and response_etag != saved_etag:
-                    raise _RestartFromZero("update package ETag changed")
+                    raise _RestartFromZero("服务器上的更新包已变化（ETag 不同）")
                 if (
                     existing
                     and not saved_etag
                     and saved_modified
                     and response_modified != saved_modified
                 ):
-                    raise _RestartFromZero("update package Last-Modified changed")
+                    raise _RestartFromZero(
+                        "服务器上的更新包已变化（Last-Modified 不同）"
+                    )
 
                 if response.status_code == 206:
                     content_range = _parse_content_range(
                         str(response.headers.get("content-range") or "")
                     )
                     if content_range is None or content_range[0] != existing:
-                        raise _RestartFromZero(
-                            "server returned an invalid Content-Range"
-                        )
+                        raise _RestartFromZero("服务器返回的 Content-Range 无效")
                     _start, end, total = content_range
                     if total is None:
                         total = existing + (end - _start + 1)
@@ -744,7 +746,7 @@ async def _download_attempt(
 
                 if total is not None and total > max_bytes:
                     raise RuntimeError(
-                        f"update package exceeds size limit: {total} > {max_bytes}"
+                        f"更新包超过大小上限：{total} > {max_bytes} 字节"
                     )
                 metadata.update(
                     {
@@ -777,7 +779,7 @@ async def _download_attempt(
                             continue
                         downloaded += len(chunk)
                         if downloaded > max_bytes:
-                            raise RuntimeError("update package exceeds size limit")
+                            raise RuntimeError("更新包超过大小上限")
                         await handle.write(chunk)
                         if downloaded % (CHUNK_SIZE * 16) < len(chunk):
                             # 每 1MB 落一次断点：fsync 与元数据原子改写都是同步
@@ -817,7 +819,7 @@ async def _download_attempt(
                 metadata["downloadedBytes"] = downloaded
                 _atomic_json_write(metadata_path, metadata)
                 if total is not None and downloaded != total:
-                    raise RuntimeError(f"download incomplete: {downloaded}/{total}")
+                    raise RuntimeError(f"下载不完整：{downloaded}/{total} 字节")
                 return await _finalize_partial(
                     partial_path=partial_path,
                     metadata_path=metadata_path,
@@ -828,7 +830,7 @@ async def _download_attempt(
                     last_modified=response_modified or saved_modified,
                     range_supported=range_supported,
                 )
-    raise RuntimeError("update package redirect failed")
+    raise RuntimeError("更新包下载地址跳转次数过多")
 
 
 async def _finalize_partial(
@@ -843,11 +845,11 @@ async def _finalize_partial(
     range_supported: bool | None,
 ) -> DownloadOutcome:
     if not partial_path.is_file() or partial_path.stat().st_size == 0:
-        raise RuntimeError("update package is empty")
+        raise RuntimeError("下载到的更新包是空的")
     actual = await asyncio.to_thread(_calculate_sha256, partial_path)
     if expected_sha256 and actual != expected_sha256:
         raise RuntimeError(
-            f"update package sha256 mismatch: expected {expected_sha256[:12]}..., actual {actual[:12]}..."
+            f"更新包校验失败：sha256 应为 {expected_sha256[:12]}…，实际为 {actual[:12]}…"
         )
     directory = partial_path.parent
     final_path = _complete_path(directory, actual)

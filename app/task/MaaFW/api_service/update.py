@@ -288,19 +288,19 @@ async def update_project(script_id: str, action: str) -> MaaFWApiReply:
                 version_only=True,
             )
         except MaaFWProjectUpdateError as exc:
-            message = f"MFW 更新检查失败: {exc}"
+            message = f"检查更新失败：{exc}"
             publish_progress(tracker.finished(success=False, message=message))
             return MaaFWApiReply.error(400, message)
         except Exception as exc:
             logger.opt(exception=True).warning(
                 f"update_maafw_project失败: {type(exc).__name__}: {exc}"
             )
-            message = f"MFW 更新检查失败: {exc}"
+            message = f"检查更新失败：{exc}"
             publish_progress(tracker.finished(success=False, message=message))
             return MaaFWApiReply.error(500, message)
 
         if discovery is None:
-            message = f"MFW 项目已是最新版本: {current_version or '未知'}"
+            message = f"项目已是最新版本（{current_version or '未知'}）"
             publish_progress(tracker.finished(success=True, message=message))
             return MaaFWApiReply(
                 message=message,
@@ -323,12 +323,10 @@ async def update_project(script_id: str, action: str) -> MaaFWApiReply:
         installable = bool(getattr(discovery, "installable", False))
         latest_version = getattr(discovery, "version", None) or extra["versionName"]
         extra["versionName"] = extra["versionName"] or latest_version
-        message = (
-            f"发现 MFW 项目新版本: {current_version or '未知'} -> {latest_version}"
-        )
+        message = f"发现新版本 {current_version or '未知'} → {latest_version}"
         unavailable_reason = getattr(discovery, "unavailable_reason", "")
         if not installable and unavailable_reason:
-            message = f"{message}（暂无可安装更新包: {unavailable_reason}）"
+            message = f"{message}（暂无可安装的更新包：{unavailable_reason}）"
         publish_progress(
             tracker.finished(
                 success=True,
@@ -468,7 +466,7 @@ async def update_project(script_id: str, action: str) -> MaaFWApiReply:
                 lock_timeout=_MAAFW_MANUAL_UPDATE_LOCK_TIMEOUT_SECONDS,
             )
         except EmbeddedProjectError as exc:
-            return MaaFWApiReply.error(400, f"MFW 项目更新失败: {exc}")
+            return MaaFWApiReply.error(400, f"项目更新失败：{exc}")
         result = outcome.result
         if outcome.updated:
             # 切完就在自己这段预约里确认一次运行环境再放手：前端随后那次 prepare 会被
@@ -489,12 +487,12 @@ async def update_project(script_id: str, action: str) -> MaaFWApiReply:
     except MaaFWProjectUpdateError as exc:
         if exc.project_lock_busy:
             return MaaFWApiReply.error(409, "MFW 项目正在自动更新/预检中，请稍后再试")
-        return MaaFWApiReply.error(400, f"MFW 项目更新失败: {exc}")
+        return MaaFWApiReply.error(400, f"项目更新失败：{exc}")
     except Exception as exc:
         logger.opt(exception=True).warning(
             f"update_maafw_project失败: {type(exc).__name__}: {exc}"
         )
-        return MaaFWApiReply.error(500, f"MFW 项目更新失败: {exc}")
+        return MaaFWApiReply.error(500, f"项目更新失败：{exc}")
     finally:
         end_project_updating(updating_key)
         await release_project_path(apply_reservation)
@@ -519,7 +517,7 @@ async def update_project(script_id: str, action: str) -> MaaFWApiReply:
         )
 
     extra = _maafw_update_extra_fields(result)
-    message = str(getattr(result, "message", "") or "") or "MFW 项目更新完成"
+    message = str(getattr(result, "message", "") or "") or "项目更新完成"
     return MaaFWApiReply(
         message=_maafw_update_message_with_cdk(message, extra),
         data=MaaFWProjectUpdateData(

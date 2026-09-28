@@ -159,12 +159,16 @@ def _optional_byte_count(value: Any) -> int | None:
 
 
 def describe_update_result(
-    result: Any, *, now: float | None = None
+    result: Any, *, now: float | None = None, include_outcome: bool = True
 ) -> list[tuple[NoticeLevel, str]]:
     """把核心包的更新结果翻成给用户看的几行话。
 
     只翻译，不判断要不要阻断——这一层从不阻断运行。返回 ``(级别, 文案)``，
     warning 只给 CDK 异常与即将到期，其余都是 info。
+
+    ``include_outcome=False`` 时不要第一行结论（已更新 / 已跳过 / 其它消息）：任务日志里
+    核心包与 ``run_view_update`` 已经各自写过同义的那一行（「项目更新完成：…」「项目已是
+    最新版本（…）」「已切到本项目当前版本 …」「新版本已登记，…」），通知才需要它。
     """
 
     lines: list[tuple[NoticeLevel, str]] = []
@@ -175,23 +179,23 @@ def describe_update_result(
     source = _result_field(result, "source")
     message = _result_field(result, "message")
 
+    outcome: str | None = None
     if updated:
         source_zh = (
             _UPDATE_SOURCE_ZH.get(str(source).lower(), str(source))
             if source
             else "未知"
         )
-        lines.append(
-            (
-                "info",
-                f"MFW 项目已更新 {previous_version or '未知'} → "
-                f"{version_name or '未知'}（来源：{source_zh}）",
-            )
+        outcome = (
+            f"MFW 项目已更新 {previous_version or '未知'} → "
+            f"{version_name or '未知'}（来源：{source_zh}）"
         )
     elif skipped_reason:
-        lines.append(("info", f"MFW 项目更新已跳过：{skipped_reason}"))
+        outcome = f"MFW 项目更新已跳过：{skipped_reason}"
     elif message:
-        lines.append(("info", f"MFW 项目更新：{message}"))
+        outcome = f"MFW 项目更新：{message}"
+    if outcome and include_outcome:
+        lines.append(("info", outcome))
 
     cdk_status = str(_result_field(result, "cdk_status") or "").strip().lower()
     cdk_message = str(_result_field(result, "cdk_message") or "").strip()
@@ -1188,7 +1192,9 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
                 self._append_update_log(f"刷新 interface 缓存失败：{exc}")
 
         lines = describe_update_result(result)
-        for _, text in lines:
+        # 结论那行（已更新 / 已跳过 …）核心包与 run_view_update 已经写进任务日志，这里只补
+        # CDK 相关的行；通知仍用带结论的完整几行。
+        for _, text in describe_update_result(result, include_outcome=False):
             self._append_update_log(text)
         # 「已是最新 / 跳过」只留在日志里；真的更新了或 CDK 有问题才弹通知，
         # 免得每次运行都弹一条没信息量的提示。

@@ -116,7 +116,7 @@ def build_package_plan(
         package_type = declared_type  # type: ignore[assignment]
     if expected_package_type and package_type != expected_package_type:
         raise UpdateApplyError(
-            f"update package type mismatch: expected {expected_package_type}, got {package_type}"
+            f"更新包类型不对：应为 {expected_package_type}，实际是 {package_type}"
         )
 
     base_version = _first_text(
@@ -142,7 +142,7 @@ def build_package_plan(
         if source.is_dir():
             continue
         if source.is_symlink():
-            raise UpdateApplyError(f"update package contains symlink: {source}")
+            raise UpdateApplyError(f"更新包里有符号链接：{source}")
         if source.name == "changes.json":
             continue
         relative = safe_relative_path(source.relative_to(payload_root).as_posix())
@@ -169,7 +169,7 @@ def build_package_plan(
     for relative in deleted:
         safe_relative_path(relative)
     if package_type == "full" and not _has_interface_file(package_root):
-        raise UpdateApplyError("full update package must contain interface.json")
+        raise UpdateApplyError("全量更新包里没有 interface.json")
     shared: frozenset[str] = frozenset()
     if projection:
         # 内嵌副本：只按 interface 白名单落盘。这是唯一的枚举口，三张表一起过滤，
@@ -208,7 +208,7 @@ def _project_package_entries(
     try:
         rules = package_projection_rules(payload_root, project_path)
     except ProjectionError as exc:
-        raise UpdateApplyError(f"projection rules unavailable: {exc}") from exc
+        raise UpdateApplyError(f"读不出投影规则：{exc}") from exc
     kept_files, dropped_files = filter_package_entries(rules, files)
     kept_deleted, _dropped_deleted = filter_package_entries(rules, deleted)
     if send_log is not None:
@@ -261,26 +261,24 @@ def _validate_plan_base(
     )
     if recorded:
         if recorded != current_fingerprint:
-            raise UpdateApplyError("delta baseFingerprint does not match project")
+            raise UpdateApplyError("差量包的基线指纹与当前版本不符")
     elif manifest_fingerprint:
         if manifest_fingerprint != current_fingerprint:
-            raise UpdateApplyError("delta base manifest does not match project")
+            raise UpdateApplyError("差量包的基线清单与当前版本不符")
     else:
-        raise UpdateApplyError(
-            "legacy delta has no trusted base fingerprint; full package required"
-        )
+        raise UpdateApplyError("旧格式差量包没有可信的基线指纹，需要全量包")
     if plan.base_version:
         current_version = _read_interface_version(project_path)
         if current_version and plan.base_version.strip().lstrip(
             "vV"
         ) != current_version.strip().lstrip("vV"):
             raise UpdateApplyError(
-                f"delta baseVersion does not match project: {plan.base_version} != {current_version}"
+                f"差量包的基线版本与当前版本不符：{plan.base_version} ≠ {current_version}"
             )
     for relative, expected in plan.hashes.items():
         source = plan.files.get(relative)
         if source is None or _sha256_file(source) != expected:
-            raise UpdateApplyError(f"delta file hash mismatch: {relative}")
+            raise UpdateApplyError(f"差量包里的文件校验不符：{relative}")
 
 
 def _package_resource_directories(plan: PackagePlan) -> set[str]:
@@ -396,9 +394,7 @@ def _find_package_root(extract_dir: Path) -> Path:
             return interface.parent
     for changes in extract_dir.rglob("changes.json"):
         return changes.parent
-    raise UpdateApplyError(
-        "update package does not contain interface.json or changes.json"
-    )
+    raise UpdateApplyError("更新包里既没有 interface.json 也没有 changes.json")
 
 
 def zip_entry_stats(package_path: Path) -> tuple[int, int]:
@@ -408,16 +404,18 @@ def zip_entry_stats(package_path: Path) -> tuple[int, int]:
         with zipfile.ZipFile(package_path, "r") as archive:
             members = archive.infolist()
             if len(members) > ZIP_MAX_ENTRIES:
-                raise UpdateApplyError(
-                    f"update package contains too many entries: {len(members)}"
-                )
+                raise UpdateApplyError(f"更新包条目过多：{len(members)} 个")
             files = sum(1 for item in members if not item.is_dir())
             expanded = sum(max(0, int(item.file_size)) for item in members)
     except zipfile.BadZipFile as exc:
-        raise UpdateApplyError("update package is not a valid zip file") from exc
+        raise UpdateApplyError("更新包不是有效的 zip 文件") from exc
     if expanded > ZIP_MAX_EXPANDED_BYTES:
-        raise UpdateApplyError("update package expanded size exceeds limit")
+        raise UpdateApplyError("更新包解压后超过大小上限")
     return files, expanded
+
+
+def _mb(value: int) -> str:
+    return f"{max(0, value) / (1024 * 1024):.1f} MB"
 
 
 def _check_disk_space(
@@ -432,18 +430,16 @@ def _check_disk_space(
         state_free = shutil.disk_usage(state_dir).free
         project_free = shutil.disk_usage(project_path).free
     except OSError as exc:
-        raise UpdateApplyError(
-            "INSUFFICIENT_DISK: cannot determine free space"
-        ) from exc
+        raise UpdateApplyError("磁盘空间不足：读不到剩余空间") from exc
     if state_free < max(0, state_required) + reserve:
         raise UpdateApplyError(
-            f"INSUFFICIENT_DISK: update staging needs {state_required} bytes, "
-            f"state volume has {state_free} bytes free"
+            f"磁盘空间不足：解压与构建新版本需要 {_mb(state_required)}，"
+            f"所在磁盘只剩 {_mb(state_free)}"
         )
     if project_free < max(0, project_required) + reserve:
         raise UpdateApplyError(
-            f"INSUFFICIENT_DISK: project commit needs {project_required} bytes, "
-            f"project volume has {project_free} bytes free"
+            f"磁盘空间不足：落地新版本需要 {_mb(project_required)}，"
+            f"项目所在磁盘只剩 {_mb(project_free)}"
         )
 
 
@@ -588,19 +584,13 @@ def _plan_zip_extraction(
                 noticed = True
                 send_log(f"正在校验更新包条目（{index}/{len(members)}）")
         if not boundary.contains(member.filename):
-            raise UpdateApplyError(
-                f"update package contains unsafe path: {member.filename}"
-            )
+            raise UpdateApplyError(f"更新包里有不安全的路径：{member.filename}")
         mode = (member.external_attr >> 16) & 0o170000
         if mode == 0o120000:
-            raise UpdateApplyError(
-                f"update package contains symlink: {member.filename}"
-            )
+            raise UpdateApplyError(f"更新包里有符号链接：{member.filename}")
         parts = _zip_member_parts(member.filename)
         if not parts and not member.is_dir():
-            raise UpdateApplyError(
-                f"update package contains unsafe path: {member.filename}"
-            )
+            raise UpdateApplyError(f"更新包里有不安全的路径：{member.filename}")
         plan.append((member, extract_dir.joinpath(*parts) if parts else None))
     return plan
 
@@ -629,12 +619,10 @@ def _safe_extract_zip(
         with zipfile.ZipFile(package_path, "r") as archive:
             members = archive.infolist()
             if len(members) > ZIP_MAX_ENTRIES:
-                raise UpdateApplyError(
-                    f"update package contains too many entries: {len(members)}"
-                )
+                raise UpdateApplyError(f"更新包条目过多：{len(members)} 个")
             expanded = sum(max(0, int(item.file_size)) for item in members)
             if expanded > ZIP_MAX_EXPANDED_BYTES:
-                raise UpdateApplyError("update package expanded size exceeds limit")
+                raise UpdateApplyError("更新包解压后超过大小上限")
             plan = _plan_zip_extraction(
                 members, extract_dir, check_cancel=check_cancel, send_log=send_log
             )
@@ -665,7 +653,7 @@ def _safe_extract_zip(
             reporter.report()
             return ExtractStats(files=reporter.files, bytes=reporter.bytes)
     except zipfile.BadZipFile as exc:
-        raise UpdateApplyError("update package is not a valid zip file") from exc
+        raise UpdateApplyError("更新包不是有效的 zip 文件") from exc
 
 
 def _resolve_payload_root(
@@ -679,7 +667,7 @@ def _resolve_payload_root(
         if isinstance(raw_files, str) and raw_files.strip():
             candidate = (changes_path.parent / raw_files).resolve()
             if not is_within(candidate, extract_dir) or not candidate.is_dir():
-                raise UpdateApplyError("changes.json payload path is unsafe")
+                raise UpdateApplyError("changes.json 指向的文件目录不安全")
             return candidate
     for name in ("payload", "files"):
         candidate = package_root / name
@@ -731,9 +719,9 @@ def _load_json(path: Path | None) -> dict[str, Any]:
     try:
         value = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise UpdateApplyError(f"cannot parse update metadata: {path.name}") from exc
+        raise UpdateApplyError(f"读不出更新包元数据：{path.name}") from exc
     if not isinstance(value, dict):
-        raise UpdateApplyError(f"update metadata must be an object: {path.name}")
+        raise UpdateApplyError(f"更新包元数据不是 JSON 对象：{path.name}")
     return value
 
 
@@ -764,12 +752,12 @@ def _read_interface_version(project_path: Path, *, strict: bool = False) -> str:
             except Exception as exc:
                 if strict:
                     raise UpdateApplyError(
-                        "updated MaaFW interface is not valid JSON/JSONC"
+                        "新版本的 interface.json 不是有效的 JSON/JSONC"
                     ) from exc
                 return ""
         if not isinstance(value, Mapping):
             if strict:
-                raise UpdateApplyError("updated MaaFW interface must be a JSON object")
+                raise UpdateApplyError("新版本的 interface.json 不是 JSON 对象")
             return ""
         return str(value.get("version") or "")
     return ""
@@ -777,7 +765,7 @@ def _read_interface_version(project_path: Path, *, strict: bool = False) -> str:
 
 def _validate_project_interface(project_path: Path) -> None:
     if not _has_interface_file(project_path):
-        raise UpdateApplyError("updated MaaFW project has no interface.json")
+        raise UpdateApplyError("新版本里没有 interface.json")
     _read_interface_version(project_path, strict=True)
 
 
@@ -785,7 +773,7 @@ def _project_target(project_path: Path, relative: str) -> Path:
     normalized = safe_relative_path(relative)
     target = (project_path / normalized).resolve(strict=False)
     if not is_within(target, project_path):
-        raise UpdateApplyError(f"update path escapes project root: {relative}")
+        raise UpdateApplyError(f"更新路径越出了项目目录：{relative}")
     return target
 
 
