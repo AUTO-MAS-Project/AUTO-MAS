@@ -39,6 +39,7 @@
 - 【M9A】修复部分 M9A 报「项目 Python 或 MaaFW Agent 模块不可用」无法运行的问题 (#1083) by @qiyinxi
 - 【MFW】运行前环境检查失败时，日志里能看到具体原因 (#1089) by @qiyinxi
 - 【MFW】修复发行包同时带多种架构的原生插件时 MFW 整轮运行失败 (#1103) by @qiyinxi
+- 【MFW】修复 MaaFgo v2.0.03 等项目代码中名为 runtime 的子目录被漏装导致无法运行 (#1105) by @qiyinxi
 - 【模拟器】修复 Emulator 2.0 静默模式下雷电启动时窗口一直显示，且多开时隐藏会把其他实例翻出来 (#1094) by @qiyinxi
 
 ## [v5.6.0] - 2026-09-27
