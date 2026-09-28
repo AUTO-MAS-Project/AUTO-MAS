@@ -2,7 +2,7 @@
 
 ## 实现与操作
 
-- 北京时间每日凌晨 02:00（UTC 前一天 18:00），默认分支 main 上的 `nightly.yml` 调用
+- 北京时间每日凌晨 03:25（UTC 前一天 19:25），默认分支 main 上的 `nightly.yml` 调用
   `absorb-changelog.yml`，等待成功后才检出 dev 检查源码 SHA。
   Actions 定时可能延迟；顺序由 `needs` 保证。手动运行入账也只处理 dev，
   无碎片不提交；推送竞争最多从 dev 顶端重算三次。

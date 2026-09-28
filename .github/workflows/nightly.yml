@@ -1,8 +1,8 @@
 name: 每晚构建 dev alpha
 on:
   schedule:
-    # UTC 18:00 = 次日北京时间 02:00；先入账，再检出 dev。
-    - cron: '0 18 * * *'
+    # UTC 19:25 = 次日北京时间 03:25；先入账，再检出 dev。
+    - cron: '25 19 * * *'
   workflow_dispatch:
 permissions:
   contents: write

@@ -23,7 +23,7 @@
 ## 分支与 PR
 
 - `main`：禁止直接 push / force push。允许自动创建仅同步 `dev/.github/**` 的 PR，由维护者合并；定时入口存在于 main，实际入账和 nightly 源码固定为 dev。
-- `dev`：上游社区贡献的合并目标。外部贡献者应在自己的 fork 中从上游 `dev` 拉出开发分支，再向 `AUTO-MAS-Project/AUTO-MAS:dev` 提 PR。维护者直推 `dev` 的小修复同样适用碎片规则：用户可见的改动带一个 `changelog.d/` 碎片（格式同下），且不改 `CHANGELOG.md` 与版本号；每天北京时间凌晨 02:00 由 nightly 的前置任务仅对 `dev` 入账，把碎片编译进 `CHANGELOG.md` 顶部的「未发布」段并删掉碎片。
+- `dev`：上游社区贡献的合并目标。外部贡献者应在自己的 fork 中从上游 `dev` 拉出开发分支，再向 `AUTO-MAS-Project/AUTO-MAS:dev` 提 PR。维护者直推 `dev` 的小修复同样适用碎片规则：用户可见的改动带一个 `changelog.d/` 碎片（格式同下），且不改 `CHANGELOG.md` 与版本号；每天北京时间凌晨 03:25 由 nightly 的前置任务仅对 `dev` 入账，把碎片编译进 `CHANGELOG.md` 顶部的「未发布」段并删掉碎片。
 - `tests/`：测试照旧在本地编写并运行，把验证命令与结论写进 PR 正文；**功能实现与 bug 修复的测试属于一次性验证产物**，实现改完、问题复现过后就没有长期价值，留在仓库只会持续抬高每次跑测试的时间成本，不提交；只有跨功能通用的公共与纯逻辑测试才进仓库。**提交前用 `git status` 自查，默认不提交 `tests/` 下的任何新增或修改**；确有例外时在 PR 正文单独说明理由，由维护者评估。
 - `release/{version}`：已安装客户端的后端来源，只接收经过该版本兼容验证的 cherry-pick 修复 PR；不接收 dev 合并、版本准备、版本提升、碎片清理或独立入账提交。修复碎片可保留，热更不必等待入账。
 - 发版 PR：标题 `Release vX.Y.Z`，以独立 `codex/release-base-v*` 准备分支为目标，合并后从 main 的构建入口选择该分支。正式补丁必须指定正式 tag 基准与修复 SHA，默认不带 dev 全量内容。新 tag 和 `release/<新版本>` 指向实际构建 SHA，不改旧来源。
