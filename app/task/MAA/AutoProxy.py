@@ -551,12 +551,23 @@ def _find_task_source(
     name: str,
     task_type: str,
 ) -> dict | None:
-    """按 TaskType + Name 精确取得原生任务配置。"""
+    """按 TaskType + Name 匹配原生任务，必要时按同类型唯一项兜底。
+
+    MAA 原生任务允许使用空名称；多个同类型任务不能仅按类型区分，避免配置串用。
+    """
 
     identity = (task_type, name)
+    fallback = None
+    fallback_count = 0
     for task in task_queue:
-        if maa_task_identity(task) == identity:
+        task_identity = maa_task_identity(task)
+        if task_identity == identity:
             return deepcopy(task)
+        if task_identity is not None and task_identity[0] == task_type:
+            fallback = task
+            fallback_count += 1
+    if fallback_count == 1:
+        return deepcopy(fallback)
     return None
 
 
