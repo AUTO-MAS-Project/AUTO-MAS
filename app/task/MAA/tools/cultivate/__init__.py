@@ -55,6 +55,7 @@ from .service import (
     get_inventory_chain,
     get_progression_chain,
     parse_cultivate_targets,
+    takeover_notice_patch_value,
 )
 from .skland import (
     SklandAccountRef,
@@ -140,6 +141,7 @@ __all__ = [
     "parse_depot_payload",
     "parse_oper_box_names",
     "parse_oper_box_payload",
+    "takeover_notice_patch_value",
     "parse_player_info_payload",
     "recommend_stages",
     "resolve_inventory",

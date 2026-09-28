@@ -473,6 +473,8 @@ export default {
     stagnantShadow: '凝結虚影',
     deleteStockKeepingPlan: '在庫維持プランを削除',
     maaDepotDragSortHint: 'ドラッグで計画の順序を変更',
+    maaDepotMoveUp: '計画行を上へ移動',
+    maaDepotMoveDown: '計画行を下へ移動',
     selectPlanRows: 'すべての計画行を選択',
     selectPlanRow: '計画行を選択',
     deleteSelected: '選択したものを削除',

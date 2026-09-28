@@ -485,6 +485,8 @@ export default {
     stagnantShadow: 'Stagnant Shadow',
     deleteStockKeepingPlan: 'Delete the stock-keeping plan',
     maaDepotDragSortHint: 'Drag to reorder plans',
+    maaDepotMoveUp: 'Move plan row up',
+    maaDepotMoveDown: 'Move plan row down',
     selectPlanRows: 'Select all plan rows',
     selectPlanRow: 'Select plan row',
     deleteSelected: 'Delete selected',

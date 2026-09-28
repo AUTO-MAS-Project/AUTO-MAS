@@ -470,6 +470,8 @@ export default {
     stagnantShadow: '凝滞虚影',
     deleteStockKeepingPlan: '删除库存保持计划',
     maaDepotDragSortHint: '拖动调整计划顺序',
+    maaDepotMoveUp: '上移计划行',
+    maaDepotMoveDown: '下移计划行',
     selectPlanRows: '选择全部计划行',
     selectPlanRow: '选择计划行',
     deleteSelected: '删除选中',

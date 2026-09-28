@@ -761,8 +761,9 @@ watch(rows, nextRows => {
 })
 
 onMounted(() => {
-  // 进页即拉预览（空目标也拉）：后端 progressions 返回识别档案全量名册，
-  // 新选干员的第一帧就有真实练度，不再出现「？」→ 填充的二段刷新
+  // 挂载即拉预览（空目标也拉；本编辑器随任务行展开才挂载）：后端
+  // progressions 返回识别档案全量名册，新选干员的第一帧就有真实练度，
+  // 不再出现「？」→ 填充的二段刷新
   props.loadCultivatePreview(serializeCultivateTargets(rows.value))
   // 已绑定时拉一次角色列表以回显角色名（未绑定不请求；已加载过则复用，
   // 仅下拉为空时由展开触发加载，要刷新须重进编辑页）

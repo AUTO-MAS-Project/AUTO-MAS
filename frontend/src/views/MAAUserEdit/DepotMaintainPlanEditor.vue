@@ -86,7 +86,7 @@
         class="plan-rows"
         @end="savePlans"
       >
-        <template #item="{ element: record }">
+        <template #item="{ element: record, index }">
           <div class="plan-row" :class="{ 'row-selected': selectedKeys.has(record.key) }">
             <span
               class="depot-drag-handle"
@@ -139,6 +139,25 @@
             />
             <span class="stock-value">{{ stockOf(record) }}</span>
             <span class="col-action">
+              <!-- 键盘排序走上移/下移按钮（MFW 任务队列先例），拖拽手柄供鼠标 -->
+              <a-button
+                type="text"
+                size="small"
+                :aria-label="t('edit.maaDepotMoveUp')"
+                :disabled="loading || index === 0"
+                @click="moveRow(index, -1)"
+              >
+                <ArrowUpOutlined />
+              </a-button>
+              <a-button
+                type="text"
+                size="small"
+                :aria-label="t('edit.maaDepotMoveDown')"
+                :disabled="loading || index === plans.length - 1"
+                @click="moveRow(index, 1)"
+              >
+                <ArrowDownOutlined />
+              </a-button>
               <a-button
                 type="text"
                 danger
@@ -177,6 +196,8 @@ import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import draggable from 'vuedraggable'
 import {
   AppstoreAddOutlined,
+  ArrowDownOutlined,
+  ArrowUpOutlined,
   DeleteOutlined,
   DownOutlined,
   PlusOutlined,
@@ -222,6 +243,11 @@ const stockColumnTitle = computed(() =>
 )
 
 const plans = ref<DepotMaintainPlan[]>([])
+// 本组件刚序列化发出的 JSON：watch 收到自己的回写时跳过重建。用发出值而
+// 非当前行数据：若另一字段的保存还在队列里、本组件又敲了新值，当前数据
+// 已不等于"刚保存的内容"，拿它判定会把排队旧值的回写当外部变更，整表
+// 重建并丢掉刚敲的输入（与 CultivateTargetEditor 的 lastEmitted 同款）
+let lastEmitted: string | null = null
 const selectedRowKeys = ref<number[]>([])
 const selectedKeys = computed(() => new Set(selectedRowKeys.value))
 const allSelected = computed(
@@ -246,11 +272,12 @@ watch(
   value => {
     // 自身 savePlans 的回声：formData 原样写回后会再触发本 watch。若此时
     // 重建 plans，所有行 key 递增导致整表重挂载，打开中的下拉浮层被拆毁
-    // 重建（表现为下拉内容闪变/污染），因此与当前内容一致时直接跳过
-    const normalized = JSON.stringify(
-      plans.value.map(({ Stage, DropId, DropCount }) => ({ Stage, DropId, DropCount }))
-    )
-    if (value === normalized) return
+    // 重建（表现为下拉内容闪变/污染），因此按上次发出值识别并跳过
+    if (value === lastEmitted) {
+      lastEmitted = null
+      return
+    }
+    lastEmitted = null
     selectedRowKeys.value = []
     try {
       const parsed = JSON.parse(value || '[]')
@@ -340,18 +367,25 @@ const queueSave = () => {
   saveTimer = window.setTimeout(savePlans, 500)
 }
 
+// 键盘/按钮排序：与拖拽同序语义（行序即执行顺序），落位即保存
+const moveRow = (index: number, offset: number) => {
+  const target = index + offset
+  if (props.loading || target < 0 || target >= plans.value.length) return
+  const next = [...plans.value]
+  ;[next[index], next[target]] = [next[target], next[index]]
+  plans.value = next
+  savePlans()
+}
+
 const savePlans = () => {
   if (saveTimer !== undefined) {
     window.clearTimeout(saveTimer)
     saveTimer = undefined
   }
-  emit(
-    'save',
-    'Task.DepotMaintainPlans',
-    JSON.stringify(
-      plans.value.map(({ Stage, DropId, DropCount }) => ({ Stage, DropId, DropCount }))
-    )
+  lastEmitted = JSON.stringify(
+    plans.value.map(({ Stage, DropId, DropCount }) => ({ Stage, DropId, DropCount }))
   )
+  emit('save', 'Task.DepotMaintainPlans', lastEmitted)
 }
 
 onBeforeUnmount(() => {
@@ -429,10 +463,10 @@ const removeSelectedPlans = () => {
 .plan-grid-header,
 .plan-row {
   display: grid;
-  grid-template-columns: 24px 32px minmax(0, 1fr) minmax(0, 1.3fr) 110px 88px 52px;
+  grid-template-columns: 24px 32px minmax(0, 1fr) minmax(0, 1.3fr) 110px 88px 104px;
   gap: 8px;
   align-items: center;
-  min-width: 760px;
+  min-width: 810px;
 }
 
 .plan-grid-header {
@@ -456,7 +490,10 @@ const removeSelectedPlans = () => {
 }
 
 .col-action {
-  text-align: center;
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0;
 }
 
 /* 拖拽手柄：可见把手 + grab 光标，热区仅限手柄（行内控件不受影响） */
