@@ -445,6 +445,18 @@ def embedded_summary_lines(script_id: str) -> list[str]:
         )
     if details:
         lines.append("；".join(details))
+    # 导入时查出的架构不符（自带 MaaFramework / 原生插件没有本机那一份）单独成行。
+    from app.task.MaaFW.tools.core.runner.environment import (
+        ARCHITECTURE_MISMATCH_MARKERS,
+    )
+
+    warnings = report.get("warnings")
+    if isinstance(warnings, list):
+        lines.extend(
+            str(warning)
+            for warning in warnings
+            if any(marker in str(warning) for marker in ARCHITECTURE_MISMATCH_MARKERS)
+        )
     return lines
 
 
