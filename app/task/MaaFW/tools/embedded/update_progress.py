@@ -24,7 +24,7 @@
 两条路径共用。
 
 - 下载速度按 ``downloaded_bytes`` 的时间差在这里算，核心包不管。
-- 下载与覆盖两类高频事件按时间节流（默认 0.5s），但收尾事件必发，前端才能
+- 下载、解压与覆盖三类高频事件按时间节流（默认 0.5s），但收尾事件必发，前端才能
   走到满格。
 - 全量 / 差量：核心包叫 ``full`` / ``delta``，对外统一成 ``full`` /
   ``incremental``。
@@ -32,7 +32,7 @@
 
 运行前自动更新没有这块面板，进度只能进任务日志，翻译在
 :class:`MaaFWUpdateTaskLogTranslator`：日志是**追加**的，每多一行就多一条
-永久记录，所以节流按进度跨度（下载 5%、覆盖 25%）而不是时间。
+永久记录，所以节流按进度跨度（下载 5%、解压 10%、覆盖 25%）而不是时间。
 """
 
 from __future__ import annotations
@@ -42,6 +42,7 @@ from collections.abc import Callable, Mapping
 from typing import Any
 
 from app.models.schema import WSMaaFWProjectUpdateProgressData
+from app.task.MaaFW.tools.core.project_update.timing import format_duration
 from app.utils.security import sanitize_log_message
 
 STATUS_RUNNING = "running"
@@ -53,12 +54,13 @@ PACKAGE_KIND_INCREMENTAL = "incremental"
 
 # 核心包里表示「本次更新已收尾」的 completed 子状态；除 updated 外都算成功结束。
 _FINAL_STAGES = frozenset({"completed", "failed"})
-_THROTTLED_STAGES = frozenset({"downloading", "applying"})
+_THROTTLED_STAGES = frozenset({"downloading", "extracting", "applying"})
 
 _STAGE_MESSAGES: dict[str, str] = {
     "checking": "正在检查更新",
     "downloading": "正在下载更新包",
     "downloaded": "更新包下载完成",
+    "extracting": "正在解压更新包",
     "plan_validated": "更新计划校验通过，正在准备新版本",
     "staged": "已从当前版本复制出新版本骨架，开始套用更新包",
     "applying": "正在套用更新包",
@@ -68,13 +70,25 @@ _STAGE_MESSAGES: dict[str, str] = {
     "rolled_back": "更新失败，已回滚到更新前状态",
 }
 
-# 任务日志的节流步长：下载每 5%、覆盖每 25% 一行。359MB 的包按 5% 是 20 行，
-# 既看得出在动，也不会把用户自己的运行日志淹掉。
+# 解压开始时先补发的一条过渡消息用的阶段名（旧前端认识、归到「准备」阶段）。
+# v5.6.0 的前端没有 extracting：未知阶段停在上一个阶段（downloading），而 downloading 下
+# 会拿这条事件的 percent / downloadedBytes / totalBytes 覆盖显示——下载条从 100% 倒回去、
+# 字节变空，message 反而不显示。先发一条 staged 把它切到「准备」阶段：之后的 extracting
+# 在旧前端上停在「准备」，状态行显示「准备覆盖 · 正在解压更新包 30%（…）」，不碰下载字段；
+# 新前端收到 extracting 立刻切到「解压中」，这条过渡只闪一下。只进 WS，不进日志与任务日志。
+_LEGACY_PREPARING_STAGE = "staged"
+
+# 任务日志的节流步长：下载每 5%、解压每 10%、覆盖每 25% 一行。359MB 的包按 5% 是
+# 20 行，既看得出在动，也不会把用户自己的运行日志淹掉。
 _DOWNLOAD_PERCENT_STEP = 5.0
 _DOWNLOAD_UNKNOWN_STEP_BYTES = 32 * 1024 * 1024
+_EXTRACT_PERCENT_STEP = 10.0
 _APPLY_PERCENT_STEP = 25.0
-# 这三个阶段核心包自己已经用 send_log 写过人话，再翻一遍就是重复行。
-_TASK_LOG_SKIPPED_STAGES = frozenset({"checking", "completed", "failed"})
+# 这些阶段核心包自己已经用 send_log 写过人话（比对 / 复制骨架 / 预检的开始与带用时的
+# 结束行都在 updater 里），再翻一遍就是重复行。
+_TASK_LOG_SKIPPED_STAGES = frozenset(
+    {"checking", "completed", "failed", "plan_validated", "staged", "post_validating"}
+)
 
 
 def _megabytes(value: float | int | None) -> str:
@@ -125,6 +139,74 @@ def _percent(done: int | None, total: int | None) -> float | None:
     return round(min(100.0, done / total * 100.0), 1)
 
 
+_ExtractCounts = tuple[int | None, int | None, int | None, int | None]
+
+
+def _extract_counts(event: Mapping[str, Any]) -> _ExtractCounts:
+    """解压事件的 (已解压文件, 文件总数, 已解压字节, 展开总字节)。"""
+
+    return (
+        _optional_int(event.get("extractedFiles")),
+        _optional_int(event.get("extractTotalFiles")),
+        _optional_int(event.get("extractedBytes")),
+        _optional_int(event.get("extractTotalBytes")),
+    )
+
+
+def _extract_percent(
+    files: int | None,
+    total_files: int | None,
+    done_bytes: int | None,
+    total_bytes: int | None,
+) -> float | None:
+    """解压百分比取字节与文件数两个进度的平均。
+
+    只按字节算，包里的大文件排在前面时会出现「100%（3/33 个文件）」；只按文件数算，
+    一个几百 MB 的模型文件又会让进度停在原地。两者都给不出时用能给的那个。
+    """
+
+    by_bytes = _percent(done_bytes, total_bytes)
+    by_files = _percent(files, total_files)
+    if by_bytes is None or by_files is None:
+        return by_bytes if by_bytes is not None else by_files
+    return round((by_bytes + by_files) / 2, 1)
+
+
+def _extract_finished(
+    files: int | None,
+    total_files: int | None,
+    done_bytes: int | None,
+    total_bytes: int | None,
+) -> bool:
+    if files is None or total_files is None or files < total_files:
+        return False
+    return not total_bytes or (done_bytes or 0) >= total_bytes
+
+
+def _describe_extract(
+    files: int | None,
+    total_files: int | None,
+    done_bytes: int | None,
+    total_bytes: int | None,
+) -> str:
+    """「正在解压更新包 30%（1200/5230 个文件，105.2 / 350.8 MB）」；缺哪项就不写哪项。
+
+    百分比也写进文案：v5.6.0 的前端不认识 extracting，只显示这句 message（见
+    :data:`_LEGACY_PREPARING_STAGE`），没有进度条。
+    """
+
+    text = _STAGE_MESSAGES["extracting"]
+    percent = _extract_percent(files, total_files, done_bytes, total_bytes)
+    if percent is not None:
+        text = f"{text} {int(percent)}%"
+    details: list[str] = []
+    if files is not None and total_files is not None:
+        details.append(f"{files}/{total_files} 个文件")
+    if done_bytes is not None and total_bytes:
+        details.append(f"{_megabytes(done_bytes)} / {_megabytes(total_bytes)} MB")
+    return f"{text}（{'，'.join(details)}）" if details else text
+
+
 class MaaFWUpdateProgressTracker:
     """一次手动更新请求的进度状态机；每次请求新建一个。
 
@@ -149,6 +231,7 @@ class MaaFWUpdateProgressTracker:
         # 上一次**已发出**的下载采样点，速度按发出点之间的差算，
         # 节流吞掉的采样不参与，否则 0.5s 内的抖动会把速度算得忽高忽低。
         self._last_sample: tuple[float, int] | None = None
+        self._extract_announced = False
 
     # ------------------------------------------------------------------ 组装
 
@@ -205,6 +288,23 @@ class MaaFWUpdateProgressTracker:
             message=message,
         )
 
+    def events(
+        self, event: Mapping[str, Any]
+    ) -> list[WSMaaFWProjectUpdateProgressData]:
+        """同 :meth:`event`，但返回要发的全部 WS 消息（被节流吞掉时为空）。
+
+        一条核心事件目前最多对应两条：解压的第一条前面先补一条旧前端兼容的过渡消息
+        （见 :data:`_LEGACY_PREPARING_STAGE`）。WS 发送方用这个入口。
+        """
+
+        data = self.event(event)
+        if data is None:
+            return []
+        if data.stage == "extracting" and not self._extract_announced:
+            self._extract_announced = True
+            return [self._data(_LEGACY_PREPARING_STAGE, message=data.message), data]
+        return [data]
+
     def event(
         self, event: Mapping[str, Any]
     ) -> WSMaaFWProjectUpdateProgressData | None:
@@ -224,6 +324,8 @@ class MaaFWUpdateProgressTracker:
             return self._final(stage, event)
         if stage in {"downloading", "downloaded"}:
             return self._download(stage, event)
+        if stage == "extracting":
+            return self._extracting(event)
         if stage == "applying":
             return self._applying(event)
         return self._plain(stage, event)
@@ -290,6 +392,27 @@ class MaaFWUpdateProgressTracker:
             speedBytesPerSec=speed,
         )
 
+    def _extracting(
+        self, event: Mapping[str, Any]
+    ) -> WSMaaFWProjectUpdateProgressData | None:
+        files, total_files, done_bytes, total_bytes = _extract_counts(event)
+        now = self._clock()
+        finished = _extract_finished(files, total_files, done_bytes, total_bytes)
+        # 首个（0 个文件、0 字节）与最后一个必发；中间按时间节流，与覆盖同一口径。
+        started = not files and not done_bytes
+        if not started and not finished and self._throttled("extracting", now):
+            return None
+        self._mark_emitted("extracting", now)
+        return self._data(
+            "extracting",
+            message=_describe_extract(files, total_files, done_bytes, total_bytes),
+            percent=_extract_percent(files, total_files, done_bytes, total_bytes),
+            extractedFiles=files,
+            extractTotalFiles=total_files,
+            extractedBytes=done_bytes,
+            extractTotalBytes=total_bytes,
+        )
+
     def _applying(
         self, event: Mapping[str, Any]
     ) -> WSMaaFWProjectUpdateProgressData | None:
@@ -318,20 +441,30 @@ class MaaFWUpdateTaskLogTranslator:
 
     返回 ``None`` 表示这条事件不值得单独占一行。与 WS 面板的区别：
 
-    - 节流按**进度跨度**：下载每跨 5%（``total`` 未知时每 32MB）、覆盖每跨
-      25% 一行，收尾必发。按时间节流会让 359MB 的下载刷出几百行。
-    - ``checking`` / ``completed`` / ``failed`` 一律跳过：核心包自己已经用
-      ``send_log`` 写过人话，再翻一遍就是重复行；取消时宿主另有自己的文案。
+    - 节流按**进度跨度**：下载每跨 5%（``total`` 未知时每 32MB）、解压每跨 10%、
+      覆盖每跨 25% 一行，收尾必发（解压的首尾两行由核心包写，这里不出）。按时间节流
+      会让 359MB 的下载刷出几百行。
+    - ``checking`` / ``completed`` / ``failed`` / ``plan_validated`` / ``staged`` /
+      ``post_validating`` 一律跳过：核心包自己已经用 ``send_log`` 写过人话（后三个带
+      用时），再翻一遍就是重复行；取消时宿主另有自己的文案。
 
     速度沿用 :class:`MaaFWUpdateProgressTracker` 算好的 ``speedBytesPerSec``，
     而且**只把决定要发的事件喂给它**——这样速度是两条相邻日志行之间的平均，
     不是两个 64KB chunk 之间的抖动。因此内部那个 tracker 不再按时间节流。
     """
 
-    def __init__(self, *, tracker: MaaFWUpdateProgressTracker | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        tracker: MaaFWUpdateProgressTracker | None = None,
+        clock: Callable[[], float] = time.monotonic,
+    ) -> None:
         self._tracker = tracker or MaaFWUpdateProgressTracker(throttle_seconds=0.0)
+        self._clock = clock
         self._download_key: int | None = None
         self._download_done = False
+        self._extract_started_at: float | None = None
+        self._extract_bucket: int | None = None
         self._apply_bucket: int | None = None
         self._apply_done = False
 
@@ -341,6 +474,8 @@ class MaaFWUpdateTaskLogTranslator:
             return None
         if stage in {"downloading", "downloaded"}:
             return self._download(stage, event)
+        if stage == "extracting":
+            return self._extracting(event)
         if stage == "applying":
             return self._applying(event)
         message = _STAGE_MESSAGES.get(stage)
@@ -399,6 +534,43 @@ class MaaFWUpdateTaskLogTranslator:
                     + _format_eta((total - downloaded) / data.speedBytesPerSec)
                 )
         return sanitize_log_message(f"{head}（{'，'.join(details)}）")
+
+    # ------------------------------------------------------------------ 解压
+
+    def _extracting(self, event: Mapping[str, Any]) -> str | None:
+        """每跨 10% 一行，带文件数、MB 与已用时。
+
+        开始（「正在解压更新包：N 个文件，解压后约 X MB」）与结束（「解压完成：…，用时 …」）
+        两行由 updater 用 ``send_log`` 写，这里只出中间的，不重复。
+        """
+
+        files, total_files, done_bytes, total_bytes = _extract_counts(event)
+        now = self._clock()
+        if self._extract_started_at is None:
+            self._extract_started_at = now
+        percent = _extract_percent(files, total_files, done_bytes, total_bytes)
+        if percent is None or _extract_finished(
+            files, total_files, done_bytes, total_bytes
+        ):
+            return None
+        bucket = int(percent // _EXTRACT_PERCENT_STEP)
+        if self._extract_bucket is None:
+            # 第一条（多半是 0%）只定起点，不单独占一行。
+            self._extract_bucket = bucket
+            if bucket == 0:
+                return None
+        elif bucket <= self._extract_bucket:
+            return None
+        self._extract_bucket = bucket
+        details: list[str] = []
+        if files is not None and total_files is not None:
+            details.append(f"{files}/{total_files} 个文件")
+        if done_bytes is not None and total_bytes:
+            details.append(f"{_megabytes(done_bytes)} / {_megabytes(total_bytes)} MB")
+        details.append(f"已用 {format_duration(now - self._extract_started_at)}")
+        return sanitize_log_message(
+            f"{_STAGE_MESSAGES['extracting']} {percent:.0f}%（{'，'.join(details)}）"
+        )
 
     # ------------------------------------------------------------------ 覆盖
 

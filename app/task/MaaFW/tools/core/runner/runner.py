@@ -67,6 +67,8 @@ except ImportError:  # pragma: no cover - 只有很老的 binding 会走到
 from app.task.MaaFW.tools.core.agent_env import write_agent_compat_shims
 from app.task.MaaFW.tools.core.runner.environment import (
     describe_runtime_architecture_mismatch,
+    detect_pe_architecture,
+    host_architecture,
     host_runtime_rid_dirs,
     project_maafw_runtime_path,
 )
@@ -808,6 +810,7 @@ class MaaFWRunner:
         self._initialized = True
 
     def _load_native_plugins(self) -> None:
+        host = host_architecture()
         for path_info in self.plan.nativePluginPaths:
             plugin_path = Path(path_info.resolved)
             if not path_info.exists:
@@ -823,33 +826,85 @@ class MaaFWRunner:
             # loadable DLLs while preserving explicit file entries in a
             # project manifest.
             if path_info.isFile:
-                candidates = (
-                    [plugin_path] if plugin_path.suffix.casefold() == ".dll" else []
-                )
-            elif path_info.isDir:
-                candidates = sorted(
+                if plugin_path.suffix.casefold() != ".dll":
+                    self.send_log(
+                        f"MaaFW native plugin 路径未找到可加载 DLL，已跳过: {path_info.resolved}"
+                    )
+                    continue
+                # 清单里显式写的文件是项目方的声明：架构不符不静默跳过，直接说清楚。
+                # 文案带「架构，本机是 」，宿主据此不重试（ARCHITECTURE_MISMATCH_MARKERS）。
+                architecture = detect_pe_architecture(plugin_path)
+                if architecture is not None and architecture != host:
+                    raise RuntimeError(
+                        f"MaaFW native plugin 是 {architecture} 架构，本机是 {host}，"
+                        f"无法加载: {path_info.resolved}（项目清单 nativePluginPaths "
+                        "显式声明了这个文件，请换成本机架构的发行包）"
+                    )
+                self._load_native_plugin(path_info.resolved, architecture, host)
+                continue
+
+            candidates = (
+                sorted(
                     (item for item in plugin_path.rglob("*.dll") if item.is_file()),
                     key=lambda item: str(item).casefold(),
                 )
-            else:
-                candidates = []
-
+                if path_info.isDir
+                else []
+            )
             if not candidates:
                 self.send_log(
                     f"MaaFW native plugin 路径未找到可加载 DLL，已跳过: {path_info.resolved}"
                 )
                 continue
 
+            # 发行包常在 plugins/ 下同时带 win-arm64 与 win-x64，按名字排 arm64 在前；
+            # 别的架构的 DLL 必然加载失败，读得出架构且与本机不符的跳过，读不出的照旧尝试。
+            loadable: list[tuple[Path, str | None]] = []
+            skipped: dict[tuple[Path, str], list[Path]] = {}
             for candidate in candidates:
-                if path_info.isFile:
-                    # Preserve the explicit-file contract; directory entries
-                    # are handled by the filtered candidate path below.
-                    loaded = Tasker.load_plugin(path_info.resolved)
+                architecture = detect_pe_architecture(candidate)
+                if architecture is not None and architecture != host:
+                    skipped.setdefault((candidate.parent, architecture), []).append(
+                        candidate
+                    )
                 else:
-                    loaded = Tasker.load_plugin(str(candidate))
-                if loaded is False:
-                    raise RuntimeError(f"MaaFW native plugin 加载失败: {candidate}")
-                self.send_log(f"已加载 MaaFW native plugin: {candidate}")
+                    loadable.append((candidate, architecture))
+            for (directory, architecture), files in skipped.items():
+                shown = (
+                    self._plugin_display_path(files[0])
+                    if len(files) == 1
+                    else f"{self._plugin_display_path(directory)}\\ 下 {len(files)} 个 DLL"
+                )
+                self.send_log(
+                    f"已跳过其他架构的原生插件：{shown}（{architecture}，本机 {host}）"
+                )
+            if not loadable:
+                self.send_log(
+                    f"MaaFW native plugin 路径下的 DLL 都不是本机（{host}）架构，"
+                    f"未找到可加载 DLL，已跳过: {path_info.resolved}"
+                )
+                continue
+
+            for candidate, architecture in loadable:
+                self._load_native_plugin(str(candidate), architecture, host)
+
+    def _load_native_plugin(
+        self, plugin: str, architecture: str | None, host: str
+    ) -> None:
+        if Tasker.load_plugin(plugin) is False:
+            described = f"插件架构 {architecture}" if architecture else "插件架构未知"
+            raise RuntimeError(
+                f"MaaFW native plugin 加载失败: {plugin}（{described}，本机 {host}）"
+            )
+        self.send_log(f"已加载 MaaFW native plugin: {plugin}")
+
+    def _plugin_display_path(self, path: Path) -> str:
+        """插件路径按项目根给相对路径（日志短一些）；不在项目根下就给原路径。"""
+
+        try:
+            return str(path.relative_to(Path(self.plan.path)))
+        except ValueError:
+            return str(path)
 
     def run(self, device_config: MaaFWDeviceConfig) -> MaaFWRunResult:
         self._stop_requested.clear()

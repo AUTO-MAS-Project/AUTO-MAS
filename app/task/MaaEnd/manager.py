@@ -46,8 +46,8 @@ from app.utils.io import (
 from .AutoProxy import AutoProxyTask
 from .resource_loader import load_maaend_controller_protocol
 from .ScriptConfig import ScriptConfigTask, maaend_config_mode
-from .tools import push_notification
 from .tools.backup_archive import archive_native_backup
+from .tools.notify import collect_recent_error_images, push_notification
 
 logger = get_logger("MaaEnd 调度器")
 
@@ -333,6 +333,11 @@ class MaaEndManager(TaskExecuteBase):
             )
             # 报告正文整块镜像进调度台，未配置推送的用户也能看到节点详情
             mirror_report_to_dispatch(self.script_info, user_result_text)
+            error_images = (
+                collect_recent_error_images(self.script_config.get("Info", "Path"))
+                if error_count
+                else ()
+            )
             result = {
                 "title": f"{TASK_MODE_ZH[self.task_info.mode]}任务报告",
                 "script_name": self.script_info.name or "空白",
@@ -350,6 +355,7 @@ class MaaEndManager(TaskExecuteBase):
                     message=result,
                     user_config=None,
                     task_info=self.task_info,
+                    images=error_images,
                 )
             except Exception as e:
                 logger.opt(exception=True).warning(f"推送代理结果时出现异常: {e}")

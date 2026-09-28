@@ -237,6 +237,8 @@ import {
   formatAppliedFiles,
   formatDownloadSize,
   formatDownloadSpeed,
+  formatExtractedFiles,
+  formatExtractedSize,
   progressBarPercent,
   type MaaFWUpdateProgressPhase,
   type MaaFWUpdateProgressState,
@@ -319,6 +321,7 @@ const cdkExpiryMessage = computed(() => {
 const PHASE_LABEL_KEYS: Record<Exclude<MaaFWUpdateProgressPhase, 'idle'>, string> = {
   checking: 'edit.updatePhaseChecking',
   downloading: 'edit.updatePhaseDownloading',
+  extracting: 'edit.updatePhaseExtracting',
   preparing: 'edit.updatePhasePreparing',
   applying: 'edit.updatePhaseApplying',
   validating: 'edit.updatePhaseValidating',
@@ -342,12 +345,21 @@ const summaryTone = computed<'running' | 'success' | 'failed'>(() => {
   return 'running'
 })
 
-// 下载阶段给「已下 / 总量 · 速度」，覆盖阶段给「n/m 个文件」，其余阶段给后端那句描述。
+// 下载阶段给「已下 / 总量 · 速度」，解压阶段给「n/m 个文件 · 已解压 / 总量」，覆盖阶段给
+// 「n/m 个文件」，其余阶段给后端那句描述。
 const summaryDetail = computed(() => {
   const state = props.updateProgress
   if (state.phase === 'downloading') {
     const parts = [formatDownloadSize(state), formatDownloadSpeed(state)].filter(Boolean)
     return parts.join('  ·  ')
+  }
+  if (state.phase === 'extracting') {
+    const files = formatExtractedFiles(state)
+    const parts = [
+      files ? t('edit.updateFilesApplied', { files }) : '',
+      formatExtractedSize(state),
+    ].filter(Boolean)
+    return parts.length ? parts.join('  ·  ') : state.message
   }
   if (state.phase === 'applying') {
     const files = formatAppliedFiles(state)

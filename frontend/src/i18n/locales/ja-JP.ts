@@ -1377,6 +1377,7 @@ export default {
     updateProcessNoLogYet: 'ログはまだありません',
     updatePhaseChecking: '確認中',
     updatePhaseDownloading: 'ダウンロード中',
+    updatePhaseExtracting: '展開中',
     updatePhasePreparing: '上書き準備中',
     updatePhaseApplying: '上書き中',
     updatePhaseValidating: '検証中',

@@ -1483,6 +1483,7 @@ export default {
     updateProcessNoLogYet: 'No log yet',
     updatePhaseChecking: 'Checking',
     updatePhaseDownloading: 'Downloading',
+    updatePhaseExtracting: 'Extracting',
     updatePhasePreparing: 'Preparing',
     updatePhaseApplying: 'Applying',
     updatePhaseValidating: 'Verifying',
