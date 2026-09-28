@@ -58,6 +58,10 @@ from ._shared import (
     utc_now,
     write_json_atomic,
 )
+from .architecture import (
+    MaaFWUnsupportedArchitectureError,
+    supported_architecture_target,
+)
 from .binding_fallback import (
     BINDING_SOURCE_PREFIX,
     BINDING_SRC_CACHE_RELATIVE_PATH,
@@ -188,16 +192,10 @@ def directory_version(name: str) -> str | None:
 def wheel_platform_tag() -> str:
     """官方 wheel 的平台标签（``maafw-<ver>-py3-none-win_amd64.whl``）。
 
-    架构只从 ``runner.environment.host_architecture()`` 取；MFW 目前只支持 x64，别的架构
+    架构只从 ``architecture.host_architecture()`` 取；MFW 目前只支持 x64，别的架构
     （含 32 位）给「只支持 x64」而不是悄悄按 x64 选 wheel。运行池解释器的架构在
     ``installer.resolve_python_interpreter`` 里核过，与本进程一样只能是 x64。
     """
-
-    # 函数内导入：runner.environment 在模块层导入本模块。
-    from app.task.MaaFW.tools.core.runner.environment import (
-        MaaFWUnsupportedArchitectureError,
-        supported_architecture_target,
-    )
 
     if sys.platform != "win32":
         raise MaaFWBindingError("MaaFW 官方 wheel 的平台标签只在 Windows 上解析")

@@ -50,8 +50,8 @@ from .transport import (
     download_resumable,
 )
 
-if TYPE_CHECKING:  # runner.environment 会拉起运行池，选包时才导入
-    from ..runner.environment import ArchitectureTarget
+if TYPE_CHECKING:  # 导入 runtime_pool 会连带整个运行池包，选包时才导入
+    from ..runtime_pool.architecture import ArchitectureTarget
 
 HTTP_HEADERS = {"User-Agent": "AutoMasGui"}
 
@@ -266,11 +266,11 @@ class MaaFWProjectUpdateError(RuntimeError):
 def _host_update_target() -> ArchitectureTarget:
     """本机选包用的架构参数（Mirror 酱 os/arch、GitHub 资产架构段）。
 
-    只从 ``runner.environment.host_architecture()`` 取；不是 x64 时按「只支持 x64」
+    只从 ``runtime_pool.architecture.host_architecture()`` 取；不是 x64 时按「只支持 x64」
     报错，不悄悄按 x64 去下包。
     """
 
-    from app.task.MaaFW.tools.core.runner.environment import (
+    from ..runtime_pool.architecture import (
         MaaFWUnsupportedArchitectureError,
         supported_architecture_target,
     )

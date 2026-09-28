@@ -21,6 +21,11 @@ from packaging.specifiers import InvalidSpecifier, SpecifierSet
 from packaging.version import InvalidVersion, Version
 
 from ._shared import output_tail
+from .architecture import (
+    architecture_from_build_platform,
+    runtime_identity_architecture,
+    supported_architecture_target,
+)
 from .host_environment import strip_host_python_environment
 from .identity import (
     find_maafw_requirement,
@@ -441,10 +446,6 @@ def _resolve_python_interpreter(
             # 取 _find_uv_executable 的第一候选（解释器同级）：便携版是
             # environment\python\uv.exe，源码开发是 .venv\Scripts\uv.exe，两种布局都成立。
             portable_uv = Path(sys.executable).resolve().parent / "uv.exe"
-            from app.task.MaaFW.tools.core.runner.environment import (
-                supported_architecture_target,
-            )
-
             uv_asset = supported_architecture_target().uv_release_asset
             raise RuntimeError(
                 "未找到 uv，无法为 MFW 项目创建隔离运行环境"
@@ -1018,10 +1019,6 @@ def _uv_python_request(target_version: str) -> str:
     request = f"cpython-{target_version}"
     if sys.platform != "win32":
         return request
-    from app.task.MaaFW.tools.core.runner.environment import (
-        supported_architecture_target,
-    )
-
     return f"{request}-{supported_architecture_target().uv_python_platform}"
 
 
@@ -1572,11 +1569,6 @@ def _probe_python_identity(python_executable: Path) -> dict[str, str]:
         raise RuntimeError("MaaFW runtime ABI 探测返回值不是 JSON object")
     identity = {str(key): str(value) for key, value in payload.items()}
     if "architecture" in identity:
-        # 函数内导入：runner.environment 在模块层导入本模块。
-        from app.task.MaaFW.tools.core.runner.environment import (
-            runtime_identity_architecture,
-        )
-
         identity["architecture"] = runtime_identity_architecture(
             identity.get("platform"), identity["architecture"]
         )
@@ -1585,11 +1577,6 @@ def _probe_python_identity(python_executable: Path) -> dict[str, str]:
 
 def _require_supported_interpreter(probe: Mapping[str, Any]) -> None:
     """运行池解释器（binding 与 DLL 由它加载）不是 x64 时给「只支持 x64」。"""
-
-    from app.task.MaaFW.tools.core.runner.environment import (
-        architecture_from_build_platform,
-        supported_architecture_target,
-    )
 
     supported_architecture_target(
         architecture_from_build_platform(str(probe.get("platform") or "")) or "",
