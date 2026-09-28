@@ -713,8 +713,10 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
         if stage in ("committed", "completed"):
             # 新版本已登记：不再响应取消，切换约 2 s，做完再返回。
             return "新版本已登记，正在切换脚本，请稍候", _UPDATE_CANCEL_GRACE_SECONDS
-        # 下载完成之后到登记之前：构建 / 预检 / 入库都在 staging 上，取消 = 丢掉
-        # staging，没有回滚。宽限仍给满，等预检里被令牌终止的 uv / pip 子进程退出。
+        # 下载完成之后到登记之前（解压 extracting / 构建 / 预检 / 入库）都在 staging 上，
+        # 取消 = 丢掉 staging，没有回滚。解压（条目检查每 500 条、写盘每个条目与每 1 MB 块）
+        # 与并入共用库（每个文件）都查令牌，下一个检查点就停；之后删半截目录的耗时随已写出
+        # 的文件数增长。宽限仍给满，是等预检里被令牌终止的 uv / pip 子进程退出。
         # 这段里再说「下次续传」就是生产上那次「提示与后台不一致」的翻版。
         return (
             "正在中止更新（丢弃未完成的新版本），请稍候",
