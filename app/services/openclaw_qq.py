@@ -805,9 +805,7 @@ class OpenClawQQManager:
                     )
                 except Exception as exc:
                     # 正文已经送达，单张图片失败不应让通知进入渠道级重试。
-                    logger.warning(
-                        f"QQ 官方机器人图片发送失败: {image.id} - {exc}"
-                    )
+                    logger.warning(f"QQ 官方机器人图片发送失败: {image.id} - {exc}")
             logger.success(f"QQ官方机器人通知推送成功: {title}")
 
     def _next_msg_seq(self) -> int:
@@ -857,9 +855,7 @@ class OpenClawQQManager:
         else:
             raise ValueError("图片没有可上传的数据或 URL")
 
-        upload_endpoint = (
-            f"{API_BASE_URL}/v2/users/{quote(user_openid, safe='')}/files"
-        )
+        upload_endpoint = f"{API_BASE_URL}/v2/users/{quote(user_openid, safe='')}/files"
         upload = await self._request_with_token(
             app_id=app_id,
             client_secret=client_secret,
