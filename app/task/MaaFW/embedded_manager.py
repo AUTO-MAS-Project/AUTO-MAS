@@ -84,7 +84,7 @@ from app.task.MaaFW.tools.embedded.update_credentials import (
     resolve_update_credentials,
     resolve_update_proxy_url,
 )
-from app.task.MaaFW.tools.embedded.view_heal import heal_view_code_files
+from app.task.MaaFW.tools.embedded.view_heal import heal_view_files
 from app.task.MaaFW.tools.notify import push_notification
 from app.task.MaaFW.tools.notify.report import (
     NOTIFY_SCREENSHOT_LIMIT,
@@ -434,8 +434,8 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
                 # 上锁之前切过去——配置一个字段都不写。切没切都看一眼标记：还欠确认
                 # （本次切的、或此前哪条路径切完没确认上）就由 main_task 在用户任务前补。
                 await self._sync_view_to_group("运行前", reservation_held=True)
-                # 旧投影规则漏装的 agent 代码文件补进视图（每个视图只查一次，从不抛）。
-                await heal_view_code_files(
+                # 旧投影规则漏装的文件补进视图（每个视图只查一次，从不抛）。
+                await heal_view_files(
                     script_id,
                     proxy=self._resolve_update_proxy()[1],
                     shell_hint=shell_hint_from_report(script_config),
