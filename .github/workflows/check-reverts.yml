@@ -47,7 +47,7 @@ jobs:
     steps:
       # blame 要追溯被删行的来源提交，需要完整历史
       - name: 检出代码
-        uses: actions/checkout@v7.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
 
@@ -57,7 +57,7 @@ jobs:
         run: git fetch --no-recurse-submodules origin "+refs/heads/${BASE_REF}:refs/remotes/origin/${BASE_REF}"
 
       - name: 设置 Python 环境
-        uses: actions/setup-python@v7.0.0
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: '3.12'
 
