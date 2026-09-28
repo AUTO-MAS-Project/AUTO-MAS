@@ -546,28 +546,28 @@ def _merge_fight_task(source_task: dict, managed_patch: dict) -> dict:
     return {**deepcopy(source_task), **deepcopy(managed_patch)}
 
 
-# MAA 里任务 Name 为空时，界面按 TaskType 显示本地化的默认名
-# （MaaWpfGui BaseTask.NameOrTaskType），简中下与 MAA_TASKS_ZH 逐项一致
-_MAA_DEFAULT_TASK_NAMES = dict(zip(MAA_TASKS, MAA_TASKS_ZH))
-
-
 def _find_task_source(
     task_queue: list[dict],
     name: str,
     task_type: str,
 ) -> dict | None:
-    """按 TaskType + Name 精确取得原生任务配置。
+    """按 TaskType + Name 匹配原生任务，必要时按同类型唯一项兜底。
 
-    Name 为空的条目按该类型的默认名参与匹配：MAA 里它就显示为默认名，
-    按空串比对会漏掉，退回的空任务会让用户在 MAA 里设的选项全部失效。
+    MAA 原生任务允许使用空名称；多个同类型任务不能仅按类型区分，避免配置串用。
     """
 
+    identity = (task_type, name)
+    fallback = None
+    fallback_count = 0
     for task in task_queue:
-        identity = maa_task_identity(task)
-        if identity is None or identity[0] != task_type:
-            continue
-        if (identity[1] or _MAA_DEFAULT_TASK_NAMES.get(task_type, "")) == name:
+        task_identity = maa_task_identity(task)
+        if task_identity == identity:
             return deepcopy(task)
+        if task_identity is not None and task_identity[0] == task_type:
+            fallback = task
+            fallback_count += 1
+    if fallback_count == 1:
+        return deepcopy(fallback)
     return None
 
 
@@ -1360,17 +1360,20 @@ class AutoProxyTask(TaskExecuteBase):
         self._depot_maintain_suppressed = False
 
     async def _warn_missing_task_source(self, source_name: str, affected: str) -> None:
-        """提示 MAA 任务队列里找不到某个原生任务，受影响的任务将按默认值运行。
+        """提示 MAA 任务队列里认不出某个原生任务，受影响的任务将按默认值运行。
+
+        认不出有两种情况：队列里没有这类任务；或同类任务有多个、名字又都对不上，
+        按 ``_find_task_source`` 的约定不猜，免得串用别的任务的配置。
 
         Args:
-            source_name: MAA 任务队列里没找到的任务名。
+            source_name: MAA 任务队列里认不出的任务名。
             affected: 因此按默认值运行的任务，多个用顿号连接。
         """
 
         message = (
-            f"用户 {self.cur_user_item.name} 的 MAA 任务队列里找不到「{source_name}」"
-            f"任务（改过名的任务不会被识别），{affected}本次按默认设置运行，"
-            f"在 MAA 里设置的理智药、源石等选项不会生效"
+            f"用户 {self.cur_user_item.name} 的 MAA 任务队列里认不出「{source_name}」"
+            f"任务（队列里没有，或有多个同类任务且名字都对不上），{affected}本次按"
+            f"默认设置运行，在 MAA 里为它设置的选项不会生效"
         )
         if message in self._missing_task_source_warned:
             return
