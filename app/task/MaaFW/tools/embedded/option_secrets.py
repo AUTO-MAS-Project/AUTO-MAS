@@ -166,6 +166,63 @@ def collect_plan_password_values(plan: Any, interface: MaaFWInterface) -> list[s
     return values
 
 
+def _sealed_leaves(value: Any) -> list[str]:
+    if isinstance(value, str):
+        return [value] if is_sealed_secret(value) else []
+    if isinstance(value, dict):
+        return [leaf for item in value.values() for leaf in _sealed_leaves(item)]
+    if isinstance(value, list):
+        return [leaf for item in value for leaf in _sealed_leaves(item)]
+    return []
+
+
+def collect_script_password_values(
+    script_config: Any, interface: MaaFWInterface | None
+) -> list[str]:
+    """脚本下全部用户任务配置里 password 字段的值（已解密），去重。
+
+    给不在某次运行里的日志打码用（问题包收项目自己写的日志）：那些日志可能是任何一个用户
+    跑出来的。``interface`` 读不出来（None）时只认带 ``SECRET_PREFIX`` 的密文——它们一定是
+    密码；旧版本存下的明文要靠 interface 才认得出。解不开的密文跳过（本机本来也跑不了它）。
+    """
+
+    fields = password_input_names(interface) if interface is not None else {}
+    values: list[str] = []
+
+    def add(value: str) -> None:
+        if value and value not in values:
+            values.append(value)
+
+    def collect(value: str, option_name: str, field_name: str) -> str:
+        try:
+            add(_open_value(value, option_name, field_name))
+        except MaaFWSecretError:
+            pass
+        return value
+
+    try:
+        users = list(script_config.UserData.items())
+    except Exception as exc:  # noqa: BLE001 - 读不出用户列表就没有可打码的值
+        logger.debug(f"读取脚本用户列表失败，没有可打码的密码值：{exc}")
+        return values
+    for _, user in users:
+        try:
+            raw = user.get("Task", "TaskSnapshot")
+            snapshot = json.loads(raw) if isinstance(raw, str) else raw
+        except Exception:  # noqa: BLE001 - 坏快照跳过
+            continue
+        task_options = (
+            snapshot.get("taskOptions") if isinstance(snapshot, dict) else None
+        )
+        if not isinstance(task_options, dict):
+            continue
+        if fields:
+            map_password_values(task_options, fields, collect)
+        for sealed in _sealed_leaves(task_options):
+            collect(sealed, "", "")
+    return values
+
+
 def secret_log_variants(values: list[str]) -> list[str]:
     """一个密码在日志里可能出现的写法：原文，以及 JSON 转义后的两种（中文原样 / \\u 转义）。
 
@@ -235,6 +292,7 @@ __all__ = [
     "SECRET_PREFIX",
     "MaaFWSecretError",
     "collect_plan_password_values",
+    "collect_script_password_values",
     "is_sealed_secret",
     "log_redaction_notice",
     "open_task_snapshot",

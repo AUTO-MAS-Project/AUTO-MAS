@@ -74,6 +74,7 @@ from app.task.MaaFW.tools.core.project_update.contracts import (
 from app.task.MaaFW.tools.core.project_update.projection import (
     PROJECTION_REVISION,
     ProjectionError,
+    ProjectionPlan,
     build_projection_plan,
     is_shared_path,
     read_json_object,
@@ -453,6 +454,8 @@ class ViewResult:
     dropped: list[str] = field(default_factory=list)
     archive_dir: Path | None = None
     elapsed: float = 0.0
+    # 导入时从来源目录放进视图的私有状态文件（debug/ 下不是日志的那些，见 _seed_private_state）。
+    seeded: list[str] = field(default_factory=list)
 
 
 def _payload_or_error(root: Path, lineage: str, payload_id: str) -> tuple[Path, dict]:
@@ -707,6 +710,37 @@ def _build_view_tree(
             # 在新载荷里 → staging 已是新内容；不在 → 新版本删掉了，不带。
 
 
+def _seed_private_state(
+    staging: Path, seed: Mapping[str, Path], result: ViewResult
+) -> None:
+    """导入：来源目录里投影留下、但载荷不收的运行期状态（``debug/`` 下不是日志的文件，
+    如 MaaEnd 的 ``debug/record/``、MPA 的 ``debug/*_zone_offset.json``）作为视图私有文件放进
+    staging。视图里已有同名文件（本脚本自己跑出来的）一律以视图为准；与新载荷撞路径的不放。
+    一律**复制**：链接会让 agent 原地写视图时写穿到用户的来源目录。"""
+
+    for rel, source in sorted(seed.items()):
+        target = staging / rel
+        if os.path.lexists(target):
+            continue
+        parent = target.parent
+        blocked = False
+        while parent != staging and staging in parent.parents:
+            if parent.exists() and not parent.is_dir():
+                blocked = True
+                break
+            parent = parent.parent
+        if blocked:
+            continue
+        try:
+            payloads.place_fresh(source, target, link=False)
+        except OSError as exc:
+            logger.warning(
+                f"[MFW 内嵌] 来源目录的运行期状态没放进视图，跳过: {rel}: {exc}"
+            )
+            continue
+        result.seeded.append(rel)
+
+
 def _realize_view(
     view: Path,
     lineage: str,
@@ -716,10 +750,12 @@ def _realize_view(
     carry: bool,
     switched_by: Mapping[str, Any] | None = None,
     assume_marker: Mapping[str, Any] | None = None,
+    seed_private: Mapping[str, Path] | None = None,
 ) -> ViewResult:
     """按载荷（重）建视图并原子换入。``carry=True`` 且视图有标记时就是 :func:`switch_view`；
     否则整棵换掉（没有标记的老副本、全新脚本）。``assume_marker`` 给没有标记的老副本
-    用（采纳）：把它当成已经挂在那个载荷上，私有文件照常带过去。"""
+    用（采纳）：把它当成已经挂在那个载荷上，私有文件照常带过去。``seed_private``（导入用，
+    项目相对路径 → 来源文件）：视图里没有的才放进去，见 :func:`_seed_private_state`。"""
 
     started = time.monotonic()
     root = payloads_root(base)
@@ -817,6 +853,8 @@ def _realize_view(
                 and _same_version(str(old_manifest_version or ""), str(version or ""))
             ),
         )
+        if seed_private:
+            _seed_private_state(staging, seed_private, result)
         marker: dict[str, Any] = {
             "schemaVersion": VIEW_SCHEMA_VERSION,
             "lineage": lineage,
@@ -1100,6 +1138,27 @@ def _config_class_name(project_dir: Path) -> str:
         return ""
 
 
+def _runtime_state_seed(plan: ProjectionPlan) -> dict[str, Path]:
+    """投影留下、但登记载荷前会被整目录剔掉的文件（``payloads.PAYLOAD_STRIP_ROOT_DIRS``）：
+    项目相对路径 → 来源文件。实际只有顶层 ``debug/`` 下不是日志的文件——logs/ temp/ 投影时
+    已按名字剔，``.pycache`` 只在 MAS 自己的视图里有。它们是项目读回的持久状态（MaaEnd 的
+    ``debug/record/``、MPA 的 ``debug/*_zone_offset.json``），属于这个脚本、不属于任何版本，
+    所以不进载荷，由 :func:`_seed_private_state` 放进视图。"""
+
+    seed: dict[str, Path] = {}
+    for source_relative in plan.copied_files:
+        try:
+            output = plan.rules.output_path(source_relative)
+        except ProjectionError:
+            continue
+        if (
+            len(output.parts) > 1
+            and output.parts[0].casefold() in payloads.PAYLOAD_STRIP_ROOT_DIRS
+        ):
+            seed[output.as_posix()] = plan.rules.source_root / source_relative
+    return seed
+
+
 def import_embedded_project(
     script_id: str,
     source_path: str | Path,
@@ -1190,8 +1249,20 @@ def import_embedded_project(
         raise
 
     view_result = _realize_view(
-        final_dir, lineage, registered.target_id, base=base, carry=True
+        final_dir,
+        lineage,
+        registered.target_id,
+        base=base,
+        carry=True,
+        seed_private=_runtime_state_seed(plan),
     )
+    if view_result.seeded:
+        preview = ", ".join(view_result.seeded[:10])
+        more = " ..." if len(view_result.seeded) > 10 else ""
+        logger.info(
+            f"[MFW 内嵌] 来源目录里 {len(view_result.seeded)} 个运行期状态文件（debug/ 下不是"
+            f"日志的）已作为视图私有文件放进 {final_dir.name}，不进载荷: {preview}{more}"
+        )
     if registered.target_id != registered.payload_id:
         logger.info(
             f"[MFW 内嵌] 导入的版本 {source_version} 不比组里的新，"

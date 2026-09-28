@@ -58,7 +58,11 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   `data/activity` 都没在 interface 里声明却是 agent 运行时要读的；更大的顶层目录、根上没声明的
   exe / dll、.NET 外壳的 `libs/` 才是外壳运行时）。**能确认是外壳才剔，确认不了一律保留**（规则
   第 2 版）：按名字剔的只剩顶层的界面程序（MFAAvalonia / MXU / MFW / MaaPiCli）、Qt 界面运行时与
-  顶层运行期目录（`debug/ cache/ logs/ temp/ update/ backup/` 等，导入的多半是用户在用的目录）；
+  顶层运行期目录（`cache/ logs/ temp/ update/ backup/`、MFAAvalonia 旧版自更新的 `temp_res/` 等，
+  导入的多半是用户在用的目录）。**`debug/` 不在其中**：里面除了日志还有项目读回的持久状态（MaaEnd
+  的 `debug/record/` 用 `random_salt.txt` 算账号 ID，MPA 的 `debug/*_zone_offset.json`），它不进载荷
+  （`payloads.PAYLOAD_STRIP_ROOT_DIRS` 登记前整个剔），导入时不是日志的那部分作为视图私有文件放进视图
+  （`embedded_project._runtime_state_seed`，视图里已有的不覆盖），之后随切换原样带着走；
   没声明的顶层目录是 Python 解释器、.NET 托管库 / RID 资产、标准形态的 MaaFramework 原生库目录
   （库直接在目录里，或目录里只有原生库）的，按内容确认后整目录剔；只是某处带着一份原生库的只剔那几个
   库文件（`ProjectionRules.confirmed_shell`）；任何深度都剔的只有 `__pycache__` 这类没有歧义的缓存、
@@ -231,6 +235,9 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   项目有 password 输入框时，`.worker.log` 第一行是以 `LOG_REDACTION_MARKER` 开头的打码说明：
   前端问题包导出（`frontend/electron/services/maafwIssueReportService.ts`）凭它认定这次的
   `.worker.log` / `.maafw.log` 已打码才往包里放，项目 `debug/` 目录与没有这一行的旧副本一律不收。
+  项目 agent 自己写的日志（M9A `debug/custom/*.log`、MaaEnd `debug/go-service*.log`、MaaFgo
+  `bbcdll/*.log` …）MAS 不按次另存；`tools/embedded/project_logs.py` 能按脚本把视图里的 `.log`
+  取结尾（单个 2 MB、总量 20 MB）、按该脚本全部用户的密码打码后另存一份，问题包还没接它。
 - 加载器写的告警（`logger.warning`）由加载器旁听收集、挂在模型上（`interface_load_warnings`），
   随磁盘缓存保存，进运行计划的 `warnings`（运行日志开头）与导入报告；只给后端看的用
   `extra=_LOG_ONLY`。发行包的毛病能降级就降级：缺 import 文件、scan_dir 不在、缺

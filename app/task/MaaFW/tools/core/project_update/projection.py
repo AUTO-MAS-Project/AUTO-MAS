@@ -14,7 +14,8 @@ interface 里各层级的 ``icon``（用户页展示项目 / 任务图标）与�
 里 languages 没声明的那 37 个文件；M9A 的 ``data/activity``（agent 热更新的活动表）；
 MaaYYs 的 ``assets/答案.csv``（逢魔答题）与 ``resource_pack`` 里没声明的子目录。把它们
 去掉，副本上的运行就和路径模式不一样。而大的顶层条目（MFAAvalonia 的 ``libs/`` 141 MB、
-M9A 的 ``temp_res`` 185 MB、PyQt 外壳的 ``PySide6/``）都是外壳运行时。所以每个没被完整
+PyQt 外壳的 ``PySide6/``）都是外壳运行时（M9A 用户目录里 185 MB 的 ``temp_res`` 是 MFAAvalonia
+自更新的临时目录，按名字剔）。所以每个没被完整
 声明的顶层条目，剩余部分 ≤ 64 MB 就以"保留根"的口径带走（里面照常按分类表剔除），
 更大的才丢；根目录上没声明的可执行文件与库（``.exe`` / ``.dll`` / ``.pyd`` …）一律不要，
 它们只可能是外壳。外壳若是冻结的 Python 程序（MFW.exe 旁边直接放着 ``python312.dll``），
@@ -95,7 +96,7 @@ DOTNET_SHELL_FILE_PREFIXES = (
 # **能确认是外壳才剔，确认不了一律保留**（投影规则第 2 版）。只凭名字就剔的目录只剩下面
 # 这些，而且**只在发行包顶层算数**（包根或 interface 所在目录的直接子项）：界面程序本体
 # 与 Qt 界面运行时（名字没有歧义），以及用户在用目录里的运行期产物——导入的多半是用户
-# 一直在用的目录，顶层的 debug/ cache/ update/ 是 MaaFramework、MFAA / MXU 与更新器运行时
+# 一直在用的目录，顶层的 cache/ logs/ update/ 是 MaaFramework、MFAA / MXU 与更新器运行时
 # 写出来的，不是项目文件；更新包走同一张表，导入与更新的载荷才一致。
 # 叫 runtime / python / venv / web / frontend / build 的目录不再按名字剔：没声明的顶层目录
 # 是 Python 解释器、.NET 外壳托管库 / RID 资产、标准形态的 MaaFramework 原生库目录的，按
@@ -121,7 +122,10 @@ EXCLUDED_DIRECTORY_REASONS: dict[str, str] = {
     "__pycache__": "cache",
     ".cache": "cache",
     "cache": "cache",
-    "debug": "cache",
+    # 顶层 debug/ 不按名字剔：里面除了日志（``.log`` 任何深度都剔）还有项目会读回的持久状态——
+    # MaaEnd 的 debug/record/（random_salt.txt 算账号 ID、IMS.json、Ziplines.json）、MPA 的
+    # debug/*_zone_offset.json。载荷登记前 debug/ 照旧整个剔掉（payloads.PAYLOAD_STRIP_ROOT_DIRS），
+    # 导入时这部分作为视图私有状态放进视图（embedded_project.import_embedded_project）。
     "logs": "cache",
     "log": "cache",
     ".pytest_cache": "cache",
@@ -139,6 +143,12 @@ EXCLUDED_DIRECTORY_REASONS: dict[str, str] = {
     ".tmp": "temporary",
     "backup": "temporary",
     "backups": "temporary",
+    # MFAAvalonia 自更新的临时目录：2026-03 之前的版本直接建在程序根目录下（资源包 zip 与
+    # 解压出的整份发行包，M9A 用户目录里的 temp_res/ 有 185 MB，里面还有一份 interface.json），
+    # 之后挪进了 temp/。见 MFAAvalonia Helper/VersionChecker.cs、AppPaths.cs。
+    "temp_res": "temporary",
+    "temp_mfa": "temporary",
+    "temp_maafw": "temporary",
 }
 # MaaFramework 原生库的 MSVC 导入库（``MaaFramework.lib``、``MaaToolkit.lib`` …）只在链接
 # 插件时用，运行时用不到：任何深度都剔（原样带走的运行时目录除外）。只认第 1 版按文件名族
