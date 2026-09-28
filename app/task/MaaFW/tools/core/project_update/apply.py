@@ -191,6 +191,7 @@ def _project_package_entries(
 ) -> tuple[dict[str, Path], dict[str, str], tuple[str, ...], frozenset[str]]:
     from .projection import (
         ProjectionError,
+        describe_dropped_code_files,
         filter_package_entries,
         package_projection_rules,
     )
@@ -205,6 +206,9 @@ def _project_package_entries(
         dropped_count = len(dropped_files)
         if dropped_count:
             send_log(f"内嵌投影：包内 {dropped_count} 个条目不在白名单内，未落盘")
+        code_hint = describe_dropped_code_files(rules, dropped_files)
+        if code_hint:
+            send_log(f"内嵌投影：{code_hint}")
         for warning in rules.warnings:
             send_log(f"内嵌投影：{warning}")
     return (
