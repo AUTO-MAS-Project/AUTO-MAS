@@ -1695,7 +1695,8 @@ class AutoProxyTask(TaskExecuteBase):
         """按内置日志判定结果，未见成功日志便退出则视为异常。"""
         log = "".join(log_content)
         self.cur_user_log.content = log_content
-        self.script_info.log = log[-4000:] if len(log) > 4000 else log
+        self.script_info.log_first_line = log[:-4000].count("\n") + 1
+        self.script_info.log = log[-4000:]
 
         log_status = "BetterGI 正常运行中"
         user_item_status: str | None = None

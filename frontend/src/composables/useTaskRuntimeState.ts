@@ -43,6 +43,7 @@ export interface TaskRuntimeState {
   log: string
   /** 快照里日志对应的 seq，供调度台与后续 task.log.updated 增量衔接 */
   logSeq?: number
+  logFirstLine?: number
   phase: 'created' | 'active' | 'completed'
   taskName: string | null
   taskType: string | null
@@ -130,6 +131,7 @@ const createUnknownTaskState = (taskId: string): TaskRuntimeState => ({
   taskInfo: [],
   cycleNextList: [],
   log: '',
+  logFirstLine: 1,
   phase: 'created',
   taskName: null,
   taskType: null,
@@ -218,6 +220,7 @@ const stateFromSnapshot = (
   cycleNextList: item.cycleNextList ?? [],
   log: item.log,
   logSeq: item.logSeq,
+  logFirstLine: item.logFirstLine,
   phase: 'active',
   result: null,
   outcome: null,

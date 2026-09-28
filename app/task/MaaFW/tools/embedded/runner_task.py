@@ -554,9 +554,15 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         self.user_start_time = start_time
         self.cur_user_log_started_at = start_time
         self.cur_user_item.log_record[start_time] = self.cur_user_log = LogRecord()
+        content = self.cur_user_log.content
         if self.project_update_logs:
-            self.cur_user_log.content.extend(self.project_update_logs)
-            self.script_info.log = "".join(self.cur_user_log.content[-80:])
+            content.extend(self.project_update_logs)
+            self.script_info.log = "".join(content[-80:])
+        # 窗口在这里重建，行号也得跟着回到这份日志的开头；更新日志本身就超过 80 行时，
+        # 与 _append_log 用同一套算法把滑出去的行数补上。
+        self.script_info.log_first_line = (
+            sum(chunk.count("\n") for chunk in content[:-80]) + 1
+        )
 
     async def main_task(self) -> None:
         self.curdate = datetime.now(tz=UTC4).strftime("%Y-%m-%d")
@@ -586,6 +592,9 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 self._append_log(self.check_result)
                 if self.cur_user_log is not None:
                     self.cur_user_log.status = self.check_result
+            # 这份日志从零开始，行号回到 1；_append_log 已在上面把本用户的行号算好，
+            # 这里只在没有日志可写时兜底。
+            self.script_info.log_first_line = self.script_info.log_first_line or 1
             self.script_info.log = self.check_result
             return
 
@@ -2381,6 +2390,8 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             start_time = previous.replace(microsecond=0) + timedelta(seconds=1)
         self.cur_user_log_started_at = start_time
         self.cur_user_item.log_record[start_time] = self.cur_user_log = LogRecord()
+        # 这份日志从零开始，行号也要回到 1，否则会接着上一个用户的行号往下数
+        self.script_info.log_first_line = 1
 
     async def _finish_on_signal(self, attempt: int, result: MaaFWRunResult) -> None:
         """worker 回报了信号节点命中：记账、写日志状态。
@@ -2693,11 +2704,16 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
     def _append_log(self, message: str, *, warning: bool = False) -> None:
         # 失败类的用户日志按 WARNING 进 app.log，事后按级别筛得出来
         (logger.warning if warning else logger.info)(message)
-        if self.cur_user_log is not None:
-            self.cur_user_log.content.append(_format_user_log_line(message))
-            self.script_info.log = "".join(self.cur_user_log.content[-80:])
-        else:
-            self.script_info.log = str(message)
+        if self.cur_user_log is None:
+            return
+        content = self.cur_user_log.content
+        content.append(_format_user_log_line(message))
+        kept = content[-80:]
+        self.script_info.log = "".join(kept)
+        # 滑出窗口的行仍然占着行号：界面据此从 81 接着往下数，而不是每轮都把
+        # 最后 80 条重新编号成 1-80。
+        dropped_lines = sum(chunk.count("\n") for chunk in content[:-80])
+        self.script_info.log_first_line = dropped_lines + 1
 
 
 def _maafw_runner_jobs_dir() -> Path:
