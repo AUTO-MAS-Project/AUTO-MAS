@@ -1050,6 +1050,9 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
     def _describe_precheck_failure(phase_zh: str, failure: Mapping[str, Any]) -> str:
         """预检失败给用户看的一句话；按 ``kind`` 分文案。"""
 
+        from app.task.MaaFW.tools.core.agent_env.import_check import (
+            KIND_AGENT_MODULE_MISSING,
+        )
         from app.task.MaaFW.tools.core.project_update.precheck_memo import (
             KIND_BINDING_UNAVAILABLE,
         )
@@ -1057,6 +1060,11 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
         name = str(failure.get("projectName") or "MFW 项目").strip()
         target = str(failure.get("targetVersion") or "新版本").strip()
         previous = str(failure.get("previousVersion") or "当前版本").strip()
+        if failure.get("kind") == KIND_AGENT_MODULE_MISSING:
+            # 原因本身就是整句（缺哪个模块、哪里引用、继续用哪个版本），不再套一层
+            reason = str(failure.get("reason") or "").strip().splitlines()
+            if reason:
+                return f"MFW 项目{phase_zh}更新（{name} {target}）：{reason[0]}"
         if failure.get("kind") == KIND_BINDING_UNAVAILABLE:
             requirement = str(failure.get("requirement") or "maafw").strip()
             return (
