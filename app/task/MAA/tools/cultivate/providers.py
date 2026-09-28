@@ -186,10 +186,11 @@ def observed_operator_ids(context: ProviderContext) -> tuple[str, ...]:
 
     供预览组装练度名册超集：练度是档案事实，与是否在养成目标里无关；
     按目标裁剪会让编辑器新选干员先渲染"？"再等下一轮预览（前端可见
-    二段刷新）。无任何观测的干员不进名册。
+    二段刷新）。无任何观测的干员不进名册。枚举用练度索引而非名字映射：
+    名字仅用于文案、可能缺失，缺名干员同样有练度观测。
     """
 
-    ids = set(load_oper_box_names(context))
+    ids = set(_load_oper_box(context)[1])
     ids.update(context.skland_progressions)
     ids.update(context.manual_progressions)
     return tuple(ids)
