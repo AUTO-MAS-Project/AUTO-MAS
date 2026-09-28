@@ -1,6 +1,6 @@
 # ocr_tool.py
-import re
 import subprocess
+import unicodedata
 from pathlib import Path
 
 import cv2
@@ -312,8 +312,10 @@ class OCRTool:
             RuntimeError: 如果 ADB 命令执行失败或截图失败。
             FileNotFoundError: 如果 ADB 可执行文件不存在。
         """
+        # 清理剪贴板粘贴带出的不可见字符与引号（如资源管理器「复制文件地址」的 U+202A）
+        # 用 Unicode Cf（格式字符）全类过滤，覆盖逐个枚举漏掉的 U+2060 等
         adb_path = (
-            re.sub(r"[\u200b-\u200f\u202a-\u202e\u2066-\u2069\ufeff]", "", adb_path)
+            "".join(c for c in adb_path if unicodedata.category(c) != "Cf")
             .strip()
             .strip("\"'")
         )
