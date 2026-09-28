@@ -47,6 +47,10 @@ class MaaEndUpdateError(RuntimeError):
     """MaaEnd 更新接管未能确认更新完成。"""
 
 
+class MaaEndUpdatePrecheckError(MaaEndUpdateError):
+    """更新预检失败；可以跳过自动更新并继续运行任务。"""
+
+
 def _read_interface_update_info(root_path: Path) -> tuple[str, str]:
     interface = read_dict_file(root_path / "interface.json", format=".json5")
     version = str(interface.get("version") or "").strip()
@@ -246,21 +250,27 @@ async def check_and_update_maaend(
 
     返回 ``None`` 表示无需更新；需要更新时返回最终安装的
     PI 版本号。
+
+    Raises:
+        MaaEndUpdatePrecheckError: 更新预检失败，尚未开始更新接管。
     """
 
-    current_version, resource_id = _read_interface_update_info(root_path)
-    config_path = root_path / "config" / "mxu-MaaEnd.json"
-    mxu_config = read_dict_file(config_path, format=".json5")
-    channel = _get_update_channel(mxu_config)
+    try:
+        current_version, resource_id = _read_interface_update_info(root_path)
+        config_path = root_path / "config" / "mxu-MaaEnd.json"
+        mxu_config = read_dict_file(config_path, format=".json5")
+        channel = _get_update_channel(mxu_config)
+        if on_status is not None:
+            on_status(f"正在检查 MaaEnd 更新（{channel}）")
+        update = await check_mirrorchyan_update(
+            resource_id,
+            current_version,
+            channel=channel,
+            user_agent="MXU",
+        )
+    except Exception as error:
+        raise MaaEndUpdatePrecheckError(str(error)) from error
 
-    if on_status is not None:
-        on_status(f"正在检查 MaaEnd 更新（{channel}）")
-    update = await check_mirrorchyan_update(
-        resource_id,
-        current_version,
-        channel=channel,
-        user_agent="MXU",
-    )
     logger.info(
         f"Mirror酱 版本检查: 本地 {current_version}，"
         f"远端 {update.latest_version}，"

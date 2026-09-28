@@ -46,7 +46,7 @@ from app.utils.io import (
 from .AutoProxy import AutoProxyTask
 from .resource_loader import load_maaend_controller_protocol
 from .ScriptConfig import ScriptConfigTask, maaend_config_mode
-from .update_takeover import check_and_update_maaend
+from .update_takeover import MaaEndUpdatePrecheckError, check_and_update_maaend
 from .tools import push_notification
 from .tools.backup_archive import archive_native_backup
 
@@ -271,8 +271,22 @@ class MaaEndManager(TaskExecuteBase):
                     maaend_root_path,
                     on_status=update_status,
                 )
+            except MaaEndUpdatePrecheckError as error:
+                warning_message = (
+                    f"MaaEnd 更新预检失败，已跳过更新检查并继续任务: {error}"
+                )
+                self.script_info.log = warning_message
+                logger.warning(warning_message)
+                try:
+                    await Publisher.send(
+                        id=self.task_info.task_id,
+                        type=protocol.TASK_NOTICE,
+                        data=WSTaskNoticeData(level="warning", message=warning_message),
+                    )
+                except Exception as notice_error:
+                    logger.warning(f"发送 MaaEnd 更新预检提示失败: {notice_error}")
             except Exception as error:
-                self.check_result = f"MaaEnd 更新预检失败: {error}"
+                self.check_result = f"MaaEnd 更新失败: {error}"
                 logger.warning(self.check_result)
                 await Publisher.send(
                     id=self.task_info.task_id,
