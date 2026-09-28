@@ -221,6 +221,11 @@ class GeneralDeviceManager(DeviceBase):
         """
         logger.info("开始清理设备管理器资源")
 
+        # 先停跟随任务并还原音频，此时进程还在，还原才有意义；
+        # 记录不留给后续流程（管理器就此销毁）
+        for idx in list(self._audio_mute_states):
+            await restore_audio_before_close(self._audio_mute_states, idx)
+
         for idx, pm in self.process_managers.items():
             try:
                 if await pm.is_running():

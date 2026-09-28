@@ -498,6 +498,7 @@ async def _watch_and_mute(record: AudioMuteRecord) -> None:
 
     游戏引擎往往在启动完成后数分钟才首次发声，音频会话届时才建立；按
     ``poll_interval`` 重试到 ``timeout`` 为止，超时放弃（说明那条进程没在出声）。
+    被取消时先让进行中的一轮把结果落进记录再退出，保证这一轮刚静音上的会话不漏还原。
     """
     try:
         from app.utils.platform.windows import audio
@@ -506,17 +507,22 @@ async def _watch_and_mute(record: AudioMuteRecord) -> None:
         return
 
     deadline = time.monotonic() + record.timeout
-    try:
-        while time.monotonic() < deadline:
-            states = await audio.mute_once(record.pending())
-            if states:
-                record.states.update(states)
-                logger.info(f"已静音音频会话: {sorted(states)}")
-                if not record.pending():
-                    return
-            await asyncio.sleep(record.poll_interval)
-    except asyncio.CancelledError:
-        raise
+    while time.monotonic() < deadline:
+        mute_task = asyncio.create_task(audio.mute_once(record.pending()))
+        try:
+            states = await asyncio.shield(mute_task)
+        except asyncio.CancelledError:
+            # 取消落在枚举进行中：线程无法中断，等这一轮跑完并把结果落进记录再传播，
+            # 否则它刚静音上的会话会因结果被丢弃而漏还原
+            with suppress(Exception):
+                record.states.update(await mute_task)
+            raise
+        if states:
+            record.states.update(states)
+            logger.info(f"已静音音频会话: {sorted(states)}")
+            if not record.pending():
+                return
+        await asyncio.sleep(record.poll_interval)
     logger.warning(f"等待音频会话超时，未能静音: {sorted(record.pending())}")
 
 
