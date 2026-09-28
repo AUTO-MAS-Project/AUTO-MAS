@@ -23,7 +23,7 @@ from .apply import (
     _find_package_root,
     _read_interface_version,
     _safe_extract_zip,
-    _zip_expanded_size,
+    zip_entry_stats,
 )
 from .contracts import normalise_sha256
 from .payloads import (
@@ -43,6 +43,7 @@ from .state import (
     DEFAULT_OPERATION_ROOT,
     UpdateOperationStore,
 )
+from .timing import StageTimer, format_duration, format_megabytes
 from .transport import (
     CANCELLED_MESSAGE,
     UpdateDownloadCancelled,
@@ -1026,6 +1027,24 @@ async def apply_maafw_project_update(
         packageType=candidate.package_type or "",
         scriptId=str(script_id or payload.by or "").strip(),
     )
+    # 各段用时：每段结束的日志带用时，收尾打一行汇总；失败 / 取消时说停在哪一段。
+    # send_update_log 在两条路径上都既给用户看、又进 app.log（手动更新面板 / 任务日志）。
+    timer = StageTimer()
+
+    def log_stopped(exc: BaseException) -> None:
+        # 段与段之间（找包根、读版本号）停下的，算在刚结束的那一段上。
+        stage = timer.current or timer.last or "准备"
+        verb = (
+            "中止"
+            if isinstance(exc, (PayloadCancelled, UpdateDownloadCancelled))
+            or getattr(exc, "cancelled", False)
+            else "失败"
+        )
+        send_update_log(
+            f"更新已在「{stage}」阶段{verb}，本次已用时 {format_duration(timer.elapsed())}"
+        )
+
+    timer.start("下载")
     try:
         downloaded = await download_resumable(
             source=candidate.source,
@@ -1053,9 +1072,11 @@ async def apply_maafw_project_update(
     except UpdateDownloadCancelled as exc:
         # 必须排在下面那个 ``except Exception`` 之前，否则「已中止」会被
         # 包成一条普通的更新失败。
+        log_stopped(exc)
         _finish_operation(operation, "cancelled")
         raise MaaFWProjectUpdateError(str(exc), cancelled=True) from exc
     except MaaFWProjectUpdateError as exc:
+        log_stopped(exc)
         _finish_operation(
             operation,
             "cancelled" if getattr(exc, "cancelled", False) else "failed",
@@ -1064,14 +1085,45 @@ async def apply_maafw_project_update(
         raise
     except Exception as exc:
         # 下载阶段失败也记终态：流水不停在 discovered，启动期清理一视同仁。
+        log_stopped(exc)
         _finish_operation(operation, "failed", error=str(exc)[:500])
         raise MaaFWProjectUpdateError(str(exc)) from exc
+    timer.finish()
     if is_cancelled():
+        send_update_log(
+            f"更新已在「下载」之后中止，本次已用时 {format_duration(timer.elapsed())}"
+        )
         _finish_operation(operation, "cancelled", downloadedBytes=downloaded.size)
         raise MaaFWProjectUpdateError(CANCELLED_MESSAGE, cancelled=True)
 
     def emit(stage: str, data: dict[str, Any]) -> None:
         _report_progress(progress, stage, operation_id=operation.operation_id, **data)
+
+    def check_cancel() -> None:
+        if is_cancelled():
+            raise PayloadCancelled("update cancelled")
+
+    def on_build_event(stage: str, data: dict[str, Any]) -> None:
+        """``build_from_package`` 的阶段事件：照常转成进度，顺带收段、打带用时的日志。"""
+
+        if stage == "plan_validated":
+            elapsed = timer.finish()
+            kind = "全量包" if data.get("packageType") == "full" else "差量包"
+            send_update_log(
+                f"比对完成：{kind}，包内 {data.get('packageFiles', 0)} 个文件，"
+                f"删除 {data.get('staleFiles', 0)} 个旧文件，用时 {format_duration(elapsed)}"
+            )
+            timer.start("复制旧版本")
+            send_update_log("正在从当前版本复制出新版本骨架")
+        elif stage == "staged":
+            elapsed = timer.finish()
+            send_update_log(
+                f"新版本骨架已复制：{data.get('stagedFiles', 0)} 个文件，"
+                f"用时 {format_duration(elapsed)}"
+            )
+            # 「正在套用更新包 x/y」由进度事件出（面板状态行 / 任务日志），这里不再单打一行。
+            timer.start("套用更新包")
+        emit(stage, data)
 
     suffix = uuid.uuid4().hex[:8]
     staging_root = Path(payload.staging_root)
@@ -1080,8 +1132,9 @@ async def apply_maafw_project_update(
     expected_version = str(target_version or "").strip()
 
     def build() -> Any:
+        timer.start("解压")
         staging_root.mkdir(parents=True, exist_ok=True)
-        expanded = _zip_expanded_size(downloaded.path)
+        entry_files, expanded = zip_entry_stats(downloaded.path)
         # 解压一份、新载荷里包内条目再落一份（大文件多半进共用库，只占一次）。
         _check_disk_space(
             staging_root,
@@ -1090,8 +1143,24 @@ async def apply_maafw_project_update(
             project_required=expanded,
         )
         extract_dir.mkdir(parents=True, exist_ok=True)
-        _safe_extract_zip(downloaded.path, extract_dir)
+        send_update_log(
+            f"正在解压更新包：{entry_files} 个文件，解压后约 {format_megabytes(expanded)}"
+        )
+        extracted = _safe_extract_zip(
+            downloaded.path,
+            extract_dir,
+            progress=lambda data: emit("extracting", data),
+            check_cancel=check_cancel,
+            send_log=send_update_log,
+        )
+        elapsed = timer.finish()
+        send_update_log(
+            f"解压完成：{extracted.files} 个文件 / {format_megabytes(extracted.bytes)}，"
+            f"用时 {format_duration(elapsed)}"
+        )
         package_root = _find_package_root(extract_dir)
+        timer.start("比对")
+        send_update_log("正在比对新旧版本文件")
         built = build_from_package(
             payload.manifest(),
             payload.directory(),
@@ -1101,7 +1170,7 @@ async def apply_maafw_project_update(
             blob_store=payload.blob_store,
             private=payload.private_paths,
             send_log=send_update_log,
-            on_event=emit,
+            on_event=on_build_event,
             expected_package_type=(
                 candidate.package_type
                 if candidate.package_type in {"full", "delta"}
@@ -1109,6 +1178,10 @@ async def apply_maafw_project_update(
             ),
             target_version=target_version,
             cancelled=is_cancelled,
+        )
+        elapsed = timer.finish()
+        send_update_log(
+            f"套用更新包完成：{built.applied_files} 个文件，用时 {format_duration(elapsed)}"
         )
         actual = _read_interface_version(staging, strict=True).strip()
         if expected_version and actual.lstrip("vV") != expected_version.lstrip("vV"):
@@ -1120,11 +1193,17 @@ async def apply_maafw_project_update(
     registered: RegisterResult | None = None
     try:
         built, actual_version = await asyncio.to_thread(build)
-        remove_tree(extract_dir)
+        # 解压目录里剩下的（没被挪进新载荷的）可能还有几百 MB：删在工作线程里，不在事件
+        # 循环上同步删——那会冻住 WS 推送与界面，看起来又像卡死。用时只进汇总行。
+        timer.start("清理解压目录")
+        await asyncio.to_thread(remove_tree, extract_dir)
+        timer.finish()
         if is_cancelled():
             raise PayloadCancelled("update cancelled")
         emit("post_validating", {})
         if post_validate is not None:
+            timer.start("预检")
+            send_update_log("正在预检新版本的运行环境")
             # 回调（运行环境预检）失败的原因必须原样带出去：调用方要据此分
             # 「binding 拿不到」与其它失败、写备忘、给用户看文案。
             try:
@@ -1132,27 +1211,40 @@ async def apply_maafw_project_update(
             except Exception as exc:
                 if is_cancelled():
                     raise PayloadCancelled("update cancelled") from exc
+                send_update_log(f"预检未通过，用时 {format_duration(timer.finish())}")
                 raise MaaFWProjectUpdateError(
                     str(exc).strip() or type(exc).__name__,
                     post_validate_rejected=True,
                 ) from exc
             if verdict is False:
+                send_update_log(f"预检未通过，用时 {format_duration(timer.finish())}")
                 raise MaaFWProjectUpdateError(
                     "MaaFW post-validation rejected the update",
                     post_validate_rejected=True,
                 )
+            send_update_log(f"预检通过，用时 {format_duration(timer.finish())}")
         if is_cancelled():
             raise PayloadCancelled("update cancelled")
+        timer.start("并入共用库")
         send_update_log("正在把新版本的大文件并入共用库")
         finalized = await asyncio.to_thread(
             finalize,
             staging,
             blob_store=payload.blob_store,
             private=payload.private_paths,
+            # 逐文件之间可停：每个文件的入库本身是原子的（硬链接 + os.replace），停在中间
+            # 只会留下「已入库、staging 丢掉后只剩库里一个链接」的完整 blob，启动期回收收走。
+            check_cancel=check_cancel,
+        )
+        send_update_log(
+            f"并入共用库完成：新入库 {finalized.ingested_files} 个文件 / "
+            f"{format_megabytes(finalized.ingested_bytes)}，"
+            f"用时 {format_duration(timer.finish())}"
         )
         # 最后一个能干净停下的点：再往下就是登记，之后不再响应取消。
         if is_cancelled():
             raise PayloadCancelled("update cancelled")
+        timer.start("生成清单")
         send_update_log("正在为新版本生成文件清单（大项目可能要一两分钟）")
         registered = await asyncio.to_thread(
             lambda: register(
@@ -1173,24 +1265,35 @@ async def apply_maafw_project_update(
             )
         )
     except PayloadCancelled as exc:
-        remove_tree_quietly(staging)
+        log_stopped(exc)
+        await _remove_tree_in_thread(staging)
         _finish_operation(operation, "cancelled", downloadedBytes=downloaded.size)
         raise MaaFWProjectUpdateError(CANCELLED_MESSAGE, cancelled=True) from exc
     except MaaFWProjectUpdateError as exc:
-        remove_tree_quietly(staging)
+        log_stopped(exc)
+        await _remove_tree_in_thread(staging)
         _finish_operation(operation, "failed", error=str(exc)[:500])
         raise
     except (PayloadError, UpdateApplyError) as exc:
-        remove_tree_quietly(staging)
+        log_stopped(exc)
+        await _remove_tree_in_thread(staging)
         _finish_operation(operation, "failed", error=str(exc)[:500])
         raise MaaFWProjectUpdateError(str(exc)) from exc
     except Exception as exc:
-        remove_tree_quietly(staging)
+        log_stopped(exc)
+        await _remove_tree_in_thread(staging)
         _finish_operation(operation, "failed", error=str(exc)[:500])
         raise MaaFWProjectUpdateError(str(exc)) from exc
     finally:
-        remove_tree_quietly(extract_dir)
+        # 取消 / 失败时解压目录多半是整包大小；成功路径上面已经删过，这里是空操作。
+        await _remove_tree_in_thread(extract_dir)
 
+    manifest_files = registered.manifest.get("files")
+    send_update_log(
+        f"文件清单已生成并登记：{len(manifest_files) if isinstance(manifest_files, Mapping) else 0}"
+        f" 个文件，用时 {format_duration(timer.finish())}"
+    )
+    send_update_log(f"新版本构建总用时 {timer.summary()}")
     # 流水记到终态：启动期清理只收终态 / 本进程之前的记录，不让目录越攒越多。
     _finish_operation(operation, "registered", payloadId=registered.payload_id)
     emit("committed", {"payloadId": registered.payload_id})
@@ -1229,6 +1332,15 @@ def _finish_operation(
         operation.update(status, **fields)
     except Exception:  # noqa: BLE001
         logger.warning("MaaFW 更新流水写终态失败: %s", status, exc_info=True)
+
+
+async def _remove_tree_in_thread(path: Path) -> None:
+    """在工作线程里删 staging / 解压目录（上万个文件要删好几秒，不能卡住事件循环）。
+
+    ``to_thread`` 一调用就把删除交给了线程池：这里的 await 即使被取消，删除也会照常做完。
+    """
+
+    await asyncio.to_thread(remove_tree_quietly, path)
 
 
 def remove_tree_quietly(path: Path) -> None:
