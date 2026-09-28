@@ -64,8 +64,9 @@ MAX_REPORT_ITEMS = 128
 # 投影规则的版本，记进载荷清单的 ``projectionRevision``（没有这个字段的是 0 = v5.6.0 的规则）。
 # 规则改动会让已登记的载荷少文件时加一，并在 ``projection_legacy`` 里留一份旧版复刻：
 # ``projection_heal`` 据此给旧载荷补齐一次，更新时旧载荷也只要全量包。
-# 1 = 目录名只在发行包顶层算数（#1104）。
-PROJECTION_REVISION = 1
+# 1 = 目录名只在发行包顶层算数（#1104）；2 = 只剔确认是外壳的：按名字剔的只剩界面程序与
+# 顶层运行期目录，自带运行时 / 解释器 / .NET 托管库按内容确认，文件名规则只在顶层算数。
+PROJECTION_REVISION = 2
 
 # 白名单之外的顶层条目：剩余部分不超过这个大小就留下（数据文件级别），再大就是外壳运行时。
 UNDECLARED_KEEP_LIMIT = 64 * 1024 * 1024
@@ -91,39 +92,31 @@ DOTNET_SHELL_FILE_PREFIXES = (
     "system.",
 )
 
+# **能确认是外壳才剔，确认不了一律保留**（投影规则第 2 版）。只凭名字就剔的目录只剩下面
+# 这些，而且**只在发行包顶层算数**（包根或 interface 所在目录的直接子项）：界面程序本体
+# 与 Qt 界面运行时（名字没有歧义），以及用户在用目录里的运行期产物——导入的多半是用户
+# 一直在用的目录，顶层的 debug/ cache/ update/ 是 MaaFramework、MFAA / MXU 与更新器运行时
+# 写出来的，不是项目文件；更新包走同一张表，导入与更新的载荷才一致。
+# 叫 runtime / python / venv / web / frontend / build 的目录不再按名字剔：自带的 MaaFramework
+# 原生库目录、Python 解释器目录、.NET 外壳托管库目录按**内容**确认
+# （``ProjectionRules.confirmed_shell``，见 :func:`_confirmed_shell_reason`），其余照常带走
+# （顶层 64 MB 的上限照旧）。以前按名字逐级匹配把 MaaFgo v2.0.03 的 agent/battle/runtime/
+# 当成外壳剔掉，agent 一起来就 ModuleNotFoundError。
 EXCLUDED_DIRECTORY_REASONS: dict[str, str] = {
     ".git": "source-control",
     ".github": "source-control",
     ".idea": "editor-state",
     ".vscode": "editor-state",
-    "ui": "ui-shell",
-    "gui": "ui-shell",
-    "frontend": "ui-shell",
-    "web": "ui-shell",
-    "webui": "ui-shell",
-    "electron": "ui-shell",
     "mfaavalonia": "ui-shell",
     "mxu": "ui-shell",
     "mfw": "ui-shell",
     "maapicli": "ui-shell",
-    "node_modules": "ui-runtime",
     "pyside6": "ui-runtime",
     "pyside2": "ui-runtime",
     "pyqt6": "ui-runtime",
     "pyqt5": "ui-runtime",
     "shiboken6": "ui-runtime",
     "shiboken2": "ui-runtime",
-    # 发行包自带的原生库目录：副本里由运行池按投影标记的版本提供，整目录不进。
-    "maafw": "embedded-runtime",
-    "runtime": "embedded-runtime",
-    "runtimes": "embedded-runtime",
-    "python": "embedded-python",
-    "python-runtime": "embedded-python",
-    "python_runtime": "embedded-python",
-    "python-embed": "embedded-python",
-    "python_embed": "embedded-python",
-    ".venv": "embedded-python",
-    "venv": "embedded-python",
     "__pycache__": "cache",
     ".cache": "cache",
     "cache": "cache",
@@ -145,13 +138,11 @@ EXCLUDED_DIRECTORY_REASONS: dict[str, str] = {
     ".tmp": "temporary",
     "backup": "temporary",
     "backups": "temporary",
-    "build": "build-output",
-    "dist": "build-output",
 }
-# 上表的目录名**只在发行包顶层算数**（包根或 interface 所在目录的直接子项）：深处的
-# runtime / cache / update / ui 只是名字撞上了，以前逐级匹配把 MaaFgo v2.0.03 的
-# agent/battle/runtime/ 当成外壳剔掉，agent 一起来就 ModuleNotFoundError。
-# 只有下面这些没有歧义的缓存 / 版本库 / MAS 更新器目录任何深度都剔。
+# 顶层目录叫这些、里面又真有 MaaFramework 原生库的，是发行包自带的原生库目录（MFAAvalonia
+# 布局的 ``runtimes/<rid>/native`` 只带本机那一份，其余架构在这里剔）。
+RUNTIME_DIR_NAMES = frozenset({"maafw", "runtime", "runtimes"})
+# 没有歧义的缓存 / 版本库 / 编辑器 / MAS 更新器目录任何深度都剔。
 ANYWHERE_EXCLUDED_DIRECTORY_NAMES = frozenset(
     {
         "__pycache__",
@@ -232,7 +223,6 @@ def is_shared_path(
 
 
 KNOWN_UI_SHELL_STEMS = {"mfaavalonia", "mxu", "mfw", "maapicli"}
-SHELL_SUFFIXES = {".bat", ".cmd", ".exe", ".ps1", ".sh"}
 DEPENDENCY_DIR_NAMES = {"agent", "agents", "lock", "locks", "plugins", "requirements"}
 DEPENDENCY_FILE_PATTERNS = (
     "requirements*.txt",
@@ -326,6 +316,8 @@ class ProjectionRules:
     warnings: list[str] = field(default_factory=list)
     # 导入时声明了但发行包里没有的 resource（名字）：副本里不可用，其余照常导入。
     unavailable_resources: list[str] = field(default_factory=list)
+    # 按内容确认是外壳 / 自带运行时的顶层目录（没被 interface 声明的）→ 原因。
+    confirmed_shell: dict[Path, str] = field(default_factory=dict)
 
     def exclusion_reason(
         self, relative: Path, *, is_directory: bool = False
@@ -333,7 +325,10 @@ class ProjectionRules:
         """按分类表判断，「顶层」按本项目的 interface 所在目录算。"""
 
         return exclusion_reason(
-            relative, is_directory=is_directory, base=self.base_relative
+            relative,
+            is_directory=is_directory,
+            base=self.base_relative,
+            confirmed=self.confirmed_shell,
         )
 
     @property
@@ -381,6 +376,7 @@ class ProjectionRules:
                     target_is_directory=target_is_directory,
                     is_directory=is_directory,
                     base=self.base_relative,
+                    confirmed=self.confirmed_shell,
                 )
                 is None
             ):
@@ -469,14 +465,21 @@ def _top_level_indexes(path: Path, base: Path) -> frozenset[int]:
 
 
 def exclusion_reason(
-    path: Path, *, is_directory: bool = False, base: Path = ROOT
+    path: Path,
+    *,
+    is_directory: bool = False,
+    base: Path = ROOT,
+    confirmed: Mapping[Path, str] | None = None,
 ) -> str | None:
     """按分类表判断一个相对路径为什么不该进副本；None 表示没有理由。
 
-    目录名规则只看发行包顶层（包根与 ``base`` 即 interface 所在目录的直接子项）：
-    深处叫 ``runtime`` / ``cache`` / ``update`` 的是项目自己的代码或数据
-    （MaaFgo 的 ``agent/battle/runtime/``）。``ANYWHERE_EXCLUDED_DIRECTORY_NAMES``
-    里没有歧义的缓存任何深度都剔。文件名规则不变。
+    **只在发行包顶层**（包根与 ``base`` 即 interface 所在目录的直接子项）按名字剔：
+    :data:`EXCLUDED_DIRECTORY_REASONS` 里的目录、界面程序家族（MFAAvalonia / MXU / MFW /
+    MaaPiCli）的目录与文件、MaaFramework / Python 解释器的库与可执行文件；``confirmed``
+    里按内容确认过的顶层目录（:attr:`ProjectionRules.confirmed_shell`）。深处叫
+    ``runtime`` / ``cache`` / ``mfw.py`` / ``MaaFramework.dll`` 的是项目自己的东西（MaaFgo 的
+    ``agent/battle/runtime/``）。任何深度都剔的只有没有歧义的缓存 / 版本库目录
+    （:data:`ANYWHERE_EXCLUDED_DIRECTORY_NAMES`）与字节码、临时文件、日志后缀。
     """
 
     parts = path.parts if is_directory else path.parts[:-1]
@@ -487,36 +490,32 @@ def exclusion_reason(
             return EXCLUDED_DIRECTORY_REASONS.get(normalized, "cache")
         if index not in top:
             continue
+        if confirmed:
+            hit = confirmed.get(Path(*path.parts[: index + 1]))
+            if hit:
+                return hit
         reason = EXCLUDED_DIRECTORY_REASONS.get(normalized)
         if reason:
             return reason
-        family = normalized.split(".", 1)[0]
-        if family in KNOWN_UI_SHELL_STEMS:
+        if normalized.split(".", 1)[0] in KNOWN_UI_SHELL_STEMS:
             return "ui-shell"
-        if family in KNOWN_RUNTIME_STEMS:
-            return "embedded-runtime"
     if is_directory:
         return None
     name = path.name.casefold()
     suffix = path.suffix.casefold()
+    if suffix in EXCLUDED_FILE_SUFFIXES:
+        return "cache-or-temporary"
+    if len(path.parts) - 1 not in top:
+        return None
     family = name.split(".", 1)[0]
     if family in KNOWN_UI_SHELL_STEMS:
         return "ui-shell"
-    if family in KNOWN_RUNTIME_STEMS:
-        return "embedded-runtime"
-    if suffix in EXCLUDED_FILE_SUFFIXES:
-        return "cache-or-temporary"
-    if name in KNOWN_RUNTIME_FILE_NAMES or (
-        name.startswith("python") and suffix in {".dll", ".exe", ".so", ".dylib"}
+    if (
+        family in KNOWN_RUNTIME_STEMS
+        or name in KNOWN_RUNTIME_FILE_NAMES
+        or (name.startswith("python") and suffix in {".dll", ".exe", ".so", ".dylib"})
     ):
         return "embedded-runtime"
-    stem = path.stem.casefold()
-    if suffix in SHELL_SUFFIXES and (
-        "update" in stem
-        or "updater" in stem
-        or stem.endswith(("gui", "ui", "launcher"))
-    ):
-        return "ui-or-updater-shell"
     return None
 
 
@@ -528,6 +527,7 @@ def target_exclusion_reason(
     target_is_directory: bool,
     is_directory: bool = False,
     base: Path = ROOT,
+    confirmed: Mapping[Path, str] | None = None,
 ) -> str | None:
     """在某个白名单目标之下判断 ``path``。
 
@@ -538,7 +538,9 @@ def target_exclusion_reason(
     """
 
     if not mode.complete or not mode.allow_excluded_root or target == ROOT:
-        return exclusion_reason(path, is_directory=is_directory, base=base)
+        return exclusion_reason(
+            path, is_directory=is_directory, base=base, confirmed=confirmed
+        )
     inner = path.relative_to(target) if target_is_directory else Path(path.name)
     if mode.verbatim_runtime:
         # 原样带走的运行时目录：CPython 发行版里本来就有 build / debug / logs 这些
@@ -880,11 +882,18 @@ def _retention_root(relative: Path, view: _FileView) -> Path:
     return parent if parent != ROOT else relative
 
 
-#: 分类表里按「内嵌解释器」处理的目录名（python / venv / .venv / python-embed …）。
+#: 常见的内嵌解释器目录名（python / venv / .venv / python-embed …）：叫这个名字、其实只放
+#: 源码的 agent 目录按完整目标带走（见 :func:`_python_named_source_prefix`）。
 EMBEDDED_PYTHON_DIR_NAMES = frozenset(
-    name
-    for name, reason in EXCLUDED_DIRECTORY_REASONS.items()
-    if reason == "embedded-python"
+    {
+        "python",
+        "python-runtime",
+        "python_runtime",
+        "python-embed",
+        "python_embed",
+        ".venv",
+        "venv",
+    }
 )
 
 
@@ -1472,7 +1481,10 @@ def build_projection_rules(
             _bundled_architecture_warnings(roots, base_relative, runtime_relative)
         )
 
-    _adopt_small_undeclared_entries(view, base_relative, targets, warnings)
+    confirmed_shell: dict[Path, str] = {}
+    _adopt_small_undeclared_entries(
+        view, base_relative, targets, warnings, confirmed_shell
+    )
 
     conservative = opaque_found
     if conservative:
@@ -1499,6 +1511,7 @@ def build_projection_rules(
         conservative=conservative,
         warnings=warnings,
         unavailable_resources=unavailable_resources,
+        confirmed_shell=confirmed_shell,
     )
     return rules
 
@@ -1601,6 +1614,7 @@ def build_projection_plan(source_root: Path) -> ProjectionPlan:
                     mode=mode,
                     target_is_directory=False,
                     base=rules.base_relative,
+                    confirmed=rules.confirmed_shell,
                 )
                 is None
             ):
@@ -1625,6 +1639,7 @@ def build_projection_plan(source_root: Path) -> ProjectionPlan:
                     target_is_directory=True,
                     is_directory=True,
                     base=rules.base_relative,
+                    confirmed=rules.confirmed_shell,
                 )
                 is None
             ):
@@ -1640,6 +1655,7 @@ def build_projection_plan(source_root: Path) -> ProjectionPlan:
                     mode=mode,
                     target_is_directory=True,
                     base=rules.base_relative,
+                    confirmed=rules.confirmed_shell,
                 )
                 is None
             ):
@@ -1763,11 +1779,67 @@ def _is_cpython_bundled_file(path: Path) -> bool:
     )
 
 
+#: 往下找 MaaFramework 原生库的深度（``runtimes/<rid>/native/MaaFramework.dll`` 是 3）。
+_RUNTIME_PROBE_MAX_DEPTH = 4
+#: .NET / NuGet 的运行时资产布局 ``runtimes/<rid>/native|lib/``：RID 形如 win-x64、
+#: linux-musl-arm64、osx-arm64。
+_RID_RE = re.compile(
+    r"^(win|linux|linux-musl|linux-bionic|osx|maccatalyst|android|ios|freebsd|unix|browser)"
+    r"(-[a-z0-9]+)*$"
+)
+
+
+def _looks_like_rid_asset_tree(view: _FileView, directory: Path) -> bool:
+    """目录的子目录全是 RID、且每个 RID 下都是 ``native/`` 或 ``lib/``：.NET 外壳（MFAAvalonia）
+    按架构分发的运行时资产。runner 用的那一份早已是原样带走的目标。"""
+
+    children = view.iter_entries(directory)
+    if not children:
+        return False
+    for child in children:
+        if not view.is_dir(child) or not _RID_RE.match(child.name.casefold()):
+            return False
+        kinds = {entry.name.casefold() for entry in view.iter_entries(child)}
+        if not kinds or not kinds <= {"native", "lib"}:
+            return False
+    return True
+
+
+def _confirmed_shell_reason(view: _FileView, directory: Path) -> str | None:
+    """没被声明的顶层目录，按**内容**确认是外壳或自带运行时才给出原因：
+
+    - 目录本身就是一个 Python 解释器（发行版 / 嵌入式包 / venv，见
+      :func:`_is_python_interpreter_dir`）——agent 声明的那个早已是原样带走的目标；
+    - .NET 外壳的托管库目录（``Avalonia*.dll`` / ``System.*.dll`` …）；
+    - .NET 按架构分发的运行时资产（``runtimes/<rid>/native|lib``，见
+      :func:`_looks_like_rid_asset_tree`）；
+    - 里面有 MaaFramework 自己的原生库（``MaaFramework.dll`` / ``libMaaFramework.so`` …）：
+      自带运行时的其它架构 / 副本，runner 用的那份（``_bundled_native_runtime_dir``）
+      早已是原样带走的目标。
+    名字叫 runtime / python / web 但内容对不上的一律不算。
+    """
+
+    if _is_python_interpreter_dir(view, directory):
+        return "embedded-python"
+    if _looks_like_dotnet_shell_dir(view, directory):
+        return "ui-runtime"
+    if _looks_like_rid_asset_tree(view, directory):
+        return "embedded-runtime"
+    for path in view.walk_files(directory):
+        if len(path.relative_to(directory).parts) > _RUNTIME_PROBE_MAX_DEPTH:
+            continue
+        stem = path.name.casefold().split(".", 1)[0].removeprefix("lib")
+        if stem == "maaframework" and _is_maafw_runtime_library(path.name):
+            return "embedded-runtime"
+    return None
+
+
 def _adopt_small_undeclared_entries(
     view: _FileView,
     base_relative: Path,
     targets: dict[Path, TargetMode],
     warnings: list[str],
+    confirmed: dict[Path, str],
 ) -> None:
     """白名单之外的顶层条目：剩余部分 ≤ 64 MB 的以"保留根"口径带走，更大的丢。
 
@@ -1775,6 +1847,8 @@ def _adopt_small_undeclared_entries(
     声明过的子目录不重复算。根目录上没声明的可执行文件与库一律不要；外壳是冻结的
     Python 程序时（根上直接放着没人声明的 ``python3xx.dll``），它散在根目录的二进制
     依赖包也不要——agent 的 ``PYTHONPATH`` 是项目根，半截包会盖住真正的模块。
+    按内容确认是外壳 / 自带运行时的顶层目录记进 ``confirmed``（见
+    :func:`_confirmed_shell_reason`）。
     """
 
     # 被完整目标覆盖 = 自己或某个祖先是完整目标（根除外）。按祖先查集合，不再对每个
@@ -1802,23 +1876,12 @@ def _adopt_small_undeclared_entries(
             continue
         is_dir = view.is_dir(entry)
         reason = exclusion_reason(entry, is_directory=is_dir, base=base_relative)
-        if (
-            reason == "embedded-python"
-            and is_dir
-            and not _is_python_interpreter_dir(view, entry)
-        ):
-            # 叫 python / venv 却没有解释器的目录只是项目源码（agent 会 import 的
-            # 辅助脚本），按名字当解释器丢掉就和路径模式不一样了。名字本身豁免，
-            # 里面照常按分类表剔除。
-            remainder = sum(
-                view.size(path)
-                for path in view.walk_files(entry)
-                if _cache_exclusion_reason(path.relative_to(entry)) is None
-            )
-            if remainder <= UNDECLARED_KEEP_LIMIT:
-                targets[entry] = TargetMode(True, True)
-                complete_targets.add(entry)
-            continue
+        if reason is None and is_dir and entry not in targets:
+            # 没被声明的顶层目录：按内容确认是不是自带运行时 / 外壳托管库。确认了就记下，
+            # 保守模式的整棵根也按它剔；确认不了照常按大小决定去留。
+            reason = _confirmed_shell_reason(view, entry)
+            if reason is not None:
+                confirmed[entry] = reason
         if reason is not None:
             continue
         if not is_dir:
@@ -1826,8 +1889,6 @@ def _adopt_small_undeclared_entries(
                 continue
             if view.size(entry) <= UNDECLARED_KEEP_LIMIT:
                 targets.setdefault(entry, TargetMode(False, False))
-            continue
-        if _looks_like_dotnet_shell_dir(view, entry):
             continue
         if frozen_shell and _looks_like_frozen_python_package_dir(view, entry):
             frozen_packages.append(entry.name)

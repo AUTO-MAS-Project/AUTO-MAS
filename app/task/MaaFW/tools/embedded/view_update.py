@@ -45,6 +45,7 @@ from app.task.MaaFW.tools.core.project_update.blob_store import (
 from app.task.MaaFW.tools.core.project_update.precheck_memo import (
     precheck_memo_path,
 )
+from app.task.MaaFW.tools.core.project_update.timing import format_duration
 from app.task.MaaFW.tools.core.project_update.updater import (
     MaaFWProjectUpdateError,
 )
@@ -481,8 +482,8 @@ async def run_view_update(
                     log(f"{switch_label}已登记，{outcome.s_skipped_reason}")
                 else:
                     log(
-                        f"已切到{switch_label} {switched.version}"
-                        f"（{switched.elapsed:.1f} s）"
+                        f"已切到{switch_label} {switched.version}，"
+                        f"用时 {format_duration(switched.elapsed)}"
                     )
             propagation = await asyncio.to_thread(
                 propagate_and_confirm,

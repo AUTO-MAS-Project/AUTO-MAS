@@ -54,7 +54,12 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
 - **投影**：按 interface 白名单（`project_update/projection.py`），**白名单之外的顶层条目
   剩余 ≤ 64 MB 的也带走**（MaaEnd 的 `data/`、`locales/`，MaaYYs 的 `assets/答案.csv`，M9A 的
   `data/activity` 都没在 interface 里声明却是 agent 运行时要读的；更大的顶层目录、根上没声明的
-  exe / dll、.NET 外壳的 `libs/` 才是外壳运行时）。外壳是冻结的 Python 程序时（根上直接躺着没人
+  exe / dll、.NET 外壳的 `libs/` 才是外壳运行时）。**能确认是外壳才剔，确认不了一律保留**（规则
+  第 2 版）：按名字剔的只剩顶层的界面程序（MFAAvalonia / MXU / MFW / MaaPiCli）、Qt 界面运行时与
+  顶层运行期目录（`debug/ cache/ logs/ temp/ update/ backup/` 等，导入的多半是用户在用的目录）；
+  没声明的顶层目录是 Python 解释器、.NET 托管库、带 MaaFramework 原生库的，按内容确认后剔
+  （`ProjectionRules.confirmed_shell`）；任何深度都剔的只有 `__pycache__` 这类没有歧义的缓存、
+  版本库目录与 `.pyc/.log/.tmp` 后缀。外壳是冻结的 Python 程序时（根上直接躺着没人
   声明的 `python312.dll`，Maa_bbb 的 MFW.exe 就是），它散在根目录的二进制依赖包（带 `.pyd`，或
   `*.libs` / `*.dist-info`）也不带：agent 子进程的 `PYTHONPATH` 是项目根，`backports/zstd/`
   这种没有 `__init__.py` 的半截包会变成命名空间包盖住真正的模块——副本上 pip 就是这样崩的。
