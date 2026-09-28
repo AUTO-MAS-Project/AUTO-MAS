@@ -234,6 +234,17 @@ def describe_update_result(
     return lines
 
 
+def describe_unsupported_host() -> str | None:
+    """本机进程不是 x64 时的「MaaFW 目前只支持 x64」提示；是 x64 时 None。"""
+
+    # 与下面同理：runner.environment 会拉起运行池，只在检查时导入。
+    from app.task.MaaFW.tools.core.runner.environment import (
+        describe_unsupported_architecture,
+    )
+
+    return describe_unsupported_architecture()
+
+
 def describe_unusable_runtime(project_path: Path) -> str | None:
     """运行前自检：这个项目要用的运行池 runtime 还能用吗？
 
@@ -399,6 +410,12 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
         if not isinstance(script_config, MaaFWConfig):
             return "脚本配置类型错误，不是 MFW 脚本类型"
         self.script_config = script_config
+
+        # 只支持 x64：不是就在导入、更新、准备运行环境之前说一次，本轮整个脚本不跑，
+        # 也就没有重试（运行期其它层再撞上同一句也按 ARCHITECTURE_MISMATCH_MARKERS 不重试）。
+        unsupported = await asyncio.to_thread(describe_unsupported_host)
+        if unsupported:
+            return unsupported
 
         script_id = str(self.script_info.script_id)
         # 副本还没建（升级前的老脚本、复制脚本、手删、磁盘迁移）或来源换了目录时
