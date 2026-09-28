@@ -84,7 +84,7 @@ from app.task.MaaFW.tools.embedded.update_credentials import (
     resolve_update_credentials,
     resolve_update_proxy_url,
 )
-from app.task.MaaFW.tools.embedded.view_heal import heal_view_files
+from app.task.MaaFW.tools.embedded.view_heal import heal_projection
 from app.task.MaaFW.tools.notify import push_notification
 from app.task.MaaFW.tools.notify.report import (
     NOTIFY_SCREENSHOT_LIMIT,
@@ -113,6 +113,9 @@ _UPDATE_CANCEL_GRACE_SECONDS = 60.0
 # ``.partial`` 与断点原样留着下次续传，等不到就放手。
 _UPDATE_DOWNLOAD_CANCEL_GRACE_SECONDS = 5.0
 _BYTES_PER_MB = 1024 * 1024
+# 运行前投影补齐等谱系锁的上限：同项目正在更新（兄弟脚本的运行前更新可能要几分钟）就
+# 这次不查，不让运行前检查跟着等。
+_PROJECTION_HEAL_LOCK_TIMEOUT_SECONDS = 1.0
 # CDK 距到期不足这些天时提醒用户续费
 CDK_EXPIRY_WARNING_DAYS = 7
 
@@ -434,12 +437,21 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
                 # 上锁之前切过去——配置一个字段都不写。切没切都看一眼标记：还欠确认
                 # （本次切的、或此前哪条路径切完没确认上）就由 main_task 在用户任务前补。
                 await self._sync_view_to_group("运行前", reservation_held=True)
-                # 旧投影规则漏装的文件补进视图（每个视图只查一次，从不抛）。
-                await heal_view_files(
+                # 旧投影规则建的载荷按当前规则补齐（同组只查一次，从不抛）：补齐后本视图
+                # 与同组空闲脚本切过去，下面的 envConfirmedFor 据此补一次运行环境确认。
+                # 同项目正在更新时不等锁，这次不查。
+                proxy_url, proxy = self._resolve_update_proxy()
+                await heal_projection(
                     script_id,
-                    proxy=self._resolve_update_proxy()[1],
-                    shell_hint=shell_hint_from_report(script_config),
+                    channel=resolve_update_credentials(script_config).channel,
+                    members=self._group_members,
+                    reservation_held=True,
                     send_log=self._threadsafe_update_log(),
+                    proxy=proxy,
+                    proxy_url=proxy_url,
+                    shell_hint=shell_hint_from_report(script_config),
+                    script_name=str(self.script_info.name or ""),
+                    lock_timeout=_PROJECTION_HEAL_LOCK_TIMEOUT_SECONDS,
                 )
                 self._env_confirm_needed = await asyncio.to_thread(
                     lambda: env_confirm_pending(

@@ -379,8 +379,12 @@ async def run_view_update(
     script_name: str = "",
     lock_timeout: float | None = None,
     base: Path | None = None,
+    switch_label: str = "新版本",
 ) -> ViewUpdateOutcome:
     """§3.1 第 1–8 步。
+
+    ``switch_label``：登记 / 切换日志里怎么称呼登记出来的载荷（投影补齐走同一条路，那不是
+    新版本）。
 
     ``reservation_held``：调用方是否整段持有 S 视图的项目预约（手动更新持有；运行前 /
     运行后自动更新不持有，这里切 S 时自己拿，拿不到就本轮不切、记一行日志——载荷已登记，
@@ -474,9 +478,12 @@ async def run_view_update(
                 )
                 if switched is None:
                     outcome.s_skipped_reason = "项目正被占用，本次没切，下次运行前切换"
-                    log(f"新版本已登记，{outcome.s_skipped_reason}")
+                    log(f"{switch_label}已登记，{outcome.s_skipped_reason}")
                 else:
-                    log(f"已切到新版本 {switched.version}（{switched.elapsed:.1f} s）")
+                    log(
+                        f"已切到{switch_label} {switched.version}"
+                        f"（{switched.elapsed:.1f} s）"
+                    )
             propagation = await asyncio.to_thread(
                 propagate_and_confirm,
                 lineage,

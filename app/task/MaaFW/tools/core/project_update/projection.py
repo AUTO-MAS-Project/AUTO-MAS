@@ -50,7 +50,7 @@ import fnmatch
 import json
 import os
 import re
-from collections.abc import Callable, Iterable, Iterator
+from collections.abc import Callable, Iterable, Iterator, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
 from typing import Any
@@ -60,6 +60,12 @@ import json5
 from .blob_store import LINK_MIN_BYTES, RuntimeBlobStore, place_fresh
 
 MAX_REPORT_ITEMS = 128
+
+# 投影规则的版本，记进载荷清单的 ``projectionRevision``（没有这个字段的是 0 = v5.6.0 的规则）。
+# 规则改动会让已登记的载荷少文件时加一，并在 ``projection_legacy`` 里留一份旧版复刻：
+# ``projection_heal`` 据此给旧载荷补齐一次，更新时旧载荷也只要全量包。
+# 1 = 目录名只在发行包顶层算数（#1104）。
+PROJECTION_REVISION = 1
 
 # 白名单之外的顶层条目：剩余部分不超过这个大小就留下（数据文件级别），再大就是外壳运行时。
 UNDECLARED_KEEP_LIMIT = 64 * 1024 * 1024
@@ -551,8 +557,13 @@ def target_exclusion_reason(
 
 
 class _FileView:
-    def __init__(self, roots: tuple[Path, ...]) -> None:
+    def __init__(
+        self, roots: tuple[Path, ...], sizes: Mapping[str, int] | None = None
+    ) -> None:
         self.roots = roots
+        # 给了就按它报大小（posix 相对路径 → 字节）：按发行包条目表建的空文件骨架上算
+        # 白名单时用，大小取中央目录里记的。
+        self.sizes = sizes
 
     def locate(self, relative: Path) -> Path | None:
         for root in self.roots:
@@ -585,6 +596,8 @@ class _FileView:
         return read_json_object(located, label)
 
     def size(self, relative: Path) -> int:
+        if self.sizes is not None:
+            return int(self.sizes.get(relative.as_posix(), 0))
         located = self.locate(relative)
         try:
             return located.stat().st_size if located is not None else 0
@@ -945,12 +958,14 @@ def build_projection_rules(
     *,
     strict: bool = True,
     overlay_root: Path | None = None,
+    sizes: Mapping[str, int] | None = None,
 ) -> ProjectionRules:
     """从 interface 声明算出白名单。
 
     ``strict``：导入时为真——声明的路径必须存在，缺了就是发行包不合规。差量落地时
     为假——新版本新增的目录本来就还不在项目里。
     ``overlay_root``：差量包的 payload 根，排在项目目录前面参与查找。
+    ``sizes``：文件大小以它为准（posix 相对路径 → 字节），给按条目表建的空文件骨架用。
     """
 
     source_root = source_root.resolve()
@@ -959,7 +974,7 @@ def build_projection_rules(
         if overlay_root is not None
         else (source_root,)
     )
-    view = _FileView(roots)
+    view = _FileView(roots, sizes)
     # interface 在哪一层？叠加视图里以包内的为准，包里没有再看项目。
     interface_base: Path | None = None
     interface_relative: Path | None = None
@@ -2165,6 +2180,7 @@ def filter_package_entries(
 __all__ = [
     "EXCLUDED_DIRECTORY_REASONS",
     "MAX_REPORT_ITEMS",
+    "PROJECTION_REVISION",
     "SHARED_EXCLUDED_ROOT_DIRS",
     "SHARED_EXCLUDED_SUFFIXES",
     "ProjectionError",

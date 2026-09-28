@@ -33,11 +33,14 @@ from .payloads import (
     RegisterResult,
     build_from_package,
     finalize,
+    inherited_projection_revision,
+    projection_revision_of,
     read_lineage,
     register,
     remove_tree,
     version_newer,
 )
+from .projection import PROJECTION_REVISION
 from .state import (
     DEFAULT_CACHE_ROOT,
     DEFAULT_OPERATION_ROOT,
@@ -448,14 +451,25 @@ async def update_maafw_project_if_needed(
         # 载荷没有发布方基线，一律要全量包。
         prefer_full = True
         damaged = False
+        stale_projection = False
         if payload is not None:
             try:
-                source_kind = str(
-                    (payload.manifest().get("source") or {}).get("kind") or ""
-                )
+                base_manifest = payload.manifest()
             except PayloadError:
-                source_kind = ""
+                base_manifest = {}
+            source_kind = str((base_manifest.get("source") or {}).get("kind") or "")
             prefer_full = source_kind != "update"
+            # 按旧投影规则建、漏装的文件又没补上的载荷：差量包只动包里那几个文件，套上去
+            # 新版本照样缺；全量包的条目全部按当前规则投影。
+            stale_projection = (
+                not prefer_full
+                and projection_revision_of(base_manifest) < PROJECTION_REVISION
+            )
+            if stale_projection:
+                prefer_full = True
+                send_update_log(
+                    "当前版本按旧规则安装、缺的文件还没补上，改为请求全量包"
+                )
             # 写穿巡检标过 damaged 的载荷：差量基线（清单）已与盘上内容不符，套差量会把
             # 被改写的文件原样带进新版本，只能整版重建。
             if not prefer_full:
@@ -471,7 +485,7 @@ async def update_maafw_project_if_needed(
             if damaged:
                 prefer_full = True
                 send_update_log("当前版本有共用文件被改写过，改为请求全量包")
-        if prefer_full and not damaged:
+        if prefer_full and not damaged and not stale_projection:
             send_update_log("当前版本是本地导入的，改为请求全量包")
 
         (
@@ -1262,6 +1276,9 @@ async def apply_maafw_project_update(
                 lineage_info=payload.lineage_info,
                 known_hashes=finalized.hashes,
                 origins=built.origins,
+                projection_revision=inherited_projection_revision(
+                    payload.manifest(), built.plan.package_type
+                ),
             )
         )
     except PayloadCancelled as exc:

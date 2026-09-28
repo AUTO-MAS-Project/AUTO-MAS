@@ -72,6 +72,7 @@ from app.task.MaaFW.tools.core.project_update.contracts import (
     VIEW_MARKER_FILE_NAME,
 )
 from app.task.MaaFW.tools.core.project_update.projection import (
+    PROJECTION_REVISION,
     ProjectionError,
     build_projection_plan,
     is_shared_path,
@@ -1126,6 +1127,7 @@ def import_embedded_project(
                 "maafw": plan.bundled_maafw_version or "",
                 "python": plan.bundled_python_version or "",
             },
+            projection_revision=PROJECTION_REVISION,
         )
         payloads.add_known_source(store_root, lineage, str(source))
     except payloads.PayloadError as exc:

@@ -198,6 +198,49 @@ def _maafw_update_source_config(script_config: RuntimeMaaFWConfig) -> dict[str, 
     return config
 
 
+async def _heal_projection(
+    script_id: str,
+    script_config: RuntimeMaaFWConfig,
+    root_path: Path,
+    *,
+    channel: str,
+    proxy: Any,
+    proxy_url: str | None,
+    shell_hint: str,
+    send_log: Any,
+) -> None:
+    """手动检查更新前，旧投影规则建的载荷按当前规则补齐一次（与运行前同一条路，同组只查
+    一次）。运行中、项目被占用或同项目正在更新时这次不查；失败只记日志，不影响检查。"""
+
+    from app.task.MaaFW.tools.embedded.view_heal import (
+        heal_projection,
+        projection_heal_due,
+    )
+
+    if getattr(script_config, "is_locked", False):
+        return
+    if not await asyncio.to_thread(projection_heal_due, script_id, channel):
+        return
+    reservation = await try_reserve_project_path(root_path)
+    if reservation is None:
+        return
+    try:
+        await heal_projection(
+            script_id,
+            channel=channel,
+            members=lambda: maafw_group_members(script_id),
+            reservation_held=True,
+            send_log=send_log,
+            proxy=proxy,
+            proxy_url=proxy_url,
+            shell_hint=shell_hint,
+            script_name=str(script_config.get("Info", "Name") or script_id[:8]),
+            lock_timeout=_MAAFW_MANUAL_UPDATE_LOCK_TIMEOUT_SECONDS,
+        )
+    finally:
+        await release_project_path(reservation)
+
+
 async def update_project(script_id: str, action: str) -> MaaFWApiReply:
     """按脚本 ``Update.*`` 配置检查（``check``）或应用（``apply``）项目更新。"""
 
@@ -276,6 +319,16 @@ async def update_project(script_id: str, action: str) -> MaaFWApiReply:
 
     if action == "check":
         publish_progress(tracker.checking())
+        await _heal_projection(
+            script_id,
+            script_config,
+            root_path,
+            channel=source_config["channel"],
+            proxy=proxy,
+            proxy_url=proxy_url,
+            shell_hint=str(source_config.get("project_shell_hint") or ""),
+            send_log=send_update_log,
+        )
         try:
             discovery = await discover_maafw_project_update(
                 interface,
