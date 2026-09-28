@@ -40,7 +40,7 @@ import os
 import subprocess
 from contextlib import suppress
 from dataclasses import dataclass
-from typing import Any, List, Optional, Sequence, Tuple
+from typing import Any, Callable, List, Optional, Sequence, Tuple
 
 from app.services.gi_updater.api import request_bytes, stream_range_to
 from app.services.gi_updater.common import UpdaterError, get_logger, safe_join
@@ -390,6 +390,7 @@ async def _fetch_range_to_file(
     scratch: str,
     *,
     compressed: bool,
+    on_bytes: Optional[Callable[[int], None]] = None,
 ) -> Tuple[int, str]:
     """按 Range 把一段数据流式取回、按需解压后写进 ``dest``。
 
@@ -398,6 +399,8 @@ async def _fetch_range_to_file(
 
     这么绕一圈是为了两件事：整段数据不攒在内存里，几百 MiB 的文件几路并发同时下也不会把
     驻留抬到数 GiB；解压与校验都在工作线程里做，主循环既不碰磁盘也不算哈希。
+
+    ``on_bytes`` 每落一块就报一次网上取回的字节数，供执行层的心跳行取用。
 
     Raises:
         UpdaterError: 网络失败、长度不符，或解压失败。
@@ -408,7 +411,7 @@ async def _fetch_range_to_file(
         return 0, await asyncio.to_thread(md5_file, dest)
     source = scratch if compressed else dest
     try:
-        await stream_range_to(client, url, offset, length, source)
+        await stream_range_to(client, url, offset, length, source, on_bytes=on_bytes)
         if not compressed:
             return length, await asyncio.to_thread(md5_file, dest)
         return await asyncio.to_thread(inflate_file, scratch, dest)
@@ -418,10 +421,14 @@ async def _fetch_range_to_file(
                 os.remove(source)
 
 
-def _inflate_and_digest(raw: bytes, compressed: bool) -> Tuple[bytes, str]:
-    """按需解压一段数据，返回 ``(内容, 它的 MD5)``。"""
-    data = decompress(raw) if compressed else raw
-    return data, hashlib.md5(data).hexdigest()
+def _blob_input_name(blob_name: str, offset: int, suffix: str) -> str:
+    """共用差分档案的中间输入文件名：对完整分片名取哈希，再带偏移。
+
+    一份档案供许多文件共用，只取分片名尾巴会让不同档案的尾部相同名字撞成同一个临时文件，
+    同批并发时互相覆盖对方的补丁输入，收尾还会删掉别人正在读的档案段。
+    """
+    digest = hashlib.md5(blob_name.encode("utf-8", "replace")).hexdigest()[:16]
+    return f"{digest}_{offset}{suffix}"
 
 
 async def _old_file_usable(game_path: str, asset: PatchAsset) -> bool:
@@ -452,11 +459,30 @@ async def _replace_from(staging: str, target: str) -> None:
     await asyncio.to_thread(os.replace, staging, target)
 
 
-async def fetch_full_asset(client: Any, game_path: str, asset: PatchAsset) -> int:
+def _inflate_place(
+    raw: bytes, handle: Any, offset: int, compressed: bool
+) -> Tuple[int, str]:
+    """按需解压一个数据块、算出校验和，并写到目标文件的指定位置。
+
+    返回 ``(写出字节数, 块内容的 MD5)``。放在线程里做，主循环既不碰磁盘也不算哈希。
+    """
+    data = decompress(raw) if compressed else raw
+    handle.seek(offset)
+    handle.write(data)
+    return len(data), hashlib.md5(data).hexdigest()
+
+
+async def fetch_full_asset(
+    client: Any,
+    game_path: str,
+    asset: PatchAsset,
+    *,
+    on_bytes: Optional[Callable[[int], None]] = None,
+) -> int:
     """按主清单把这个文件整份重建出来（降级路径）。
 
-    逐个数据块从主包 ``chunk_download`` 基址取回、按接口声明的压缩标志解压、按
-    ``chunk_on_file_offset`` 写进同一个临时文件，校完整 MD5 后原子替换。
+    逐个数据块从主包 ``chunk_download`` 基址取回，解压、算校验、写进同一个临时文件都在
+    工作线程里做；全部落位后校完整 MD5 再原子替换。
 
     Returns:
         从网络取回的字节数（按网线上的压缩后长度计）。
@@ -482,23 +508,26 @@ async def fetch_full_asset(client: Any, game_path: str, asset: PatchAsset) -> in
                 url = f"{urls.main_prefix.rstrip('/')}/{chunk.chunk_name}"
                 raw = await request_bytes(client, url)
                 fetched += len(raw)
-                # 解压与校验都在工作线程里做，主循环只管收字节；驻留量按一个数据块计，
-                # 不随文件体积放大
-                data, digest = await asyncio.to_thread(
-                    _inflate_and_digest, raw, urls.main_compressed
+                if on_bytes is not None:
+                    on_bytes(len(raw))
+                # 解压、校验、落位都在同一个线程里；驻留量按一个数据块计，不随文件体积放大
+                size, digest = await asyncio.to_thread(
+                    _inflate_place,
+                    raw,
+                    handle,
+                    chunk.chunk_on_file_offset,
+                    urls.main_compressed,
                 )
                 if not _same_md5(chunk.chunk_decompressed_hash_md5, digest):
                     raise UpdaterError(
                         f"数据块 {chunk.chunk_name} 校验失败: {asset.name}"
                     )
                 expected = chunk.chunk_size_decompressed or chunk.chunk_size
-                if expected and len(data) != expected:
+                if expected and size != expected:
                     raise UpdaterError(
                         f"数据块 {chunk.chunk_name} 长度不符"
-                        f"（期望 {expected}，实际 {len(data)}）"
+                        f"（期望 {expected}，实际 {size}）"
                     )
-                handle.seek(chunk.chunk_on_file_offset)
-                handle.write(data)
         if not await asyncio.to_thread(_verify, staging, asset.target_md5):
             raise UpdaterError(f"整文件重建后校验失败: {asset.name}")
         await _replace_from(staging, target)
@@ -522,6 +551,7 @@ async def apply_asset(
     *,
     hpatchz: Optional[str],
     logger: Any,
+    on_bytes: Optional[Callable[[int], None]] = None,
 ) -> Tuple[int, bool]:
     """处理一个文件：取回 → 校验 → 同卷原子替换。
 
@@ -531,6 +561,7 @@ async def apply_asset(
     Args:
         hpatchz: ``hpatchz`` 路径；``None`` 表示手上没有补丁工具。
         logger: 用于记下每一次降级。
+        on_bytes: 每从网上取回一块就报一次字节数，供执行层的心跳行取用。
 
     Returns:
         ``(从网络取回的字节数, 是否走了整文件降级)``；目标已是新内容时返回 ``(0, False)``。
@@ -555,9 +586,11 @@ async def apply_asset(
                 asset.patch_length,
                 staging,
                 os.path.join(
-                    temp_dir, f"{_safe_leaf(asset.name)}_{asset.patch_offset}.raw"
+                    temp_dir,
+                    _blob_input_name(asset.patch_name, asset.patch_offset, ".raw"),
                 ),
                 compressed=urls.diff_compressed,
+                on_bytes=on_bytes,
             )
             if not _same_md5(asset.target_md5, digest):
                 raise UpdaterError(f"CopyOver 内容校验失败: {asset.name}")
@@ -574,14 +607,13 @@ async def apply_asset(
             "降级为整文件下载",
             asset.name,
         )
-        return await fetch_full_asset(client, game_path, asset), True
+        return await fetch_full_asset(client, game_path, asset, on_bytes=on_bytes), True
 
     old = safe_join(game_path, asset.original_name)
     staging = _staging_name(target)
-    # 同一个差分档案供许多文件共用，只带档案名会让同批文件互相覆盖对方的补丁输入，
-    # 收尾还会删掉别人正在读的文件 —— 偏移才是区分键
+    # 同一份差分档案供许多文件共用，临时名必须能区分到档案里的位置，见 _blob_input_name
     diff_path = os.path.join(
-        temp_dir, f"{_safe_leaf(asset.patch_name)}_{asset.patch_offset}.diff"
+        temp_dir, _blob_input_name(asset.patch_name, asset.patch_offset, ".diff")
     )
     try:
         await _fetch_range_to_file(
@@ -592,6 +624,7 @@ async def apply_asset(
             diff_path,
             f"{diff_path}.raw",
             compressed=urls.diff_compressed,
+            on_bytes=on_bytes,
         )
         try:
             await asyncio.to_thread(
@@ -608,7 +641,9 @@ async def apply_asset(
             with suppress(OSError):
                 if os.path.isfile(staging):
                     os.remove(staging)
-            fetched = await fetch_full_asset(client, game_path, asset)
+            fetched = await fetch_full_asset(
+                client, game_path, asset, on_bytes=on_bytes
+            )
             return fetched + asset.patch_length, True
         if not await asyncio.to_thread(_verify, staging, asset.target_md5):
             raise UpdaterError(f"补丁结果校验失败: {asset.name}")
@@ -627,11 +662,6 @@ def _write_bytes(path: str, data: bytes) -> None:
     """覆盖写一个文件。"""
     with open(path, "wb") as handle:
         handle.write(data)
-
-
-def _safe_leaf(name: str) -> str:
-    """把分片名压成一个安全的文件名。"""
-    return name.replace("/", "_").replace("\\", "_").replace(":", "_")[-120:]
 
 
 async def remove_unused(game_path: str, removals: Sequence[str], logger: Any) -> int:

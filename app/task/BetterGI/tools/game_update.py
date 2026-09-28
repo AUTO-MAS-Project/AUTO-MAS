@@ -59,23 +59,19 @@ __all__ = ["LogHook", "ensure_game_updated", "task_stopped"]
 #: 一行面向用户的进度文案
 LogHook = Callable[[str], Awaitable[None]]
 
-#: 中止判定；为真时更新在文件与数据块边界收工
+#: 中止判定；为真时更新在文件批次边界收工
 AbortHook = Callable[[], bool]
 
 
 def task_stopped(task: object) -> bool:
-    """用户是否已要求停止本任务（供更新途中在边界轮询）。
+    """用户是否已要求停止本任务（供更新途中在批次边界轮询）。
 
-    两个信号都要看：``stopped_manually`` 只在取消异常冒出任务主体之后才置位，覆盖
-    「停止落在任务主体里」；执行器自己的 ``task`` 在用户按下停止时立刻已是取消态，
-    覆盖「停止落在更新途中」——不看它，用户按了停止还要等一次大下载走完。
-    Returns:
-        已要求停止时为真。
+    只认 ``stopped_manually``：它由核心层在取消异常冒出任务主体时置位，顶层任务与 ``spawn()``
+    出的子任务都走这一条路径。子任务身上没有可提前读的停止标志（顶层那个任务对象只在顶层
+    ``execute()`` 里赋值），所以真按下停止时生效的是取消异常本身——它在下一个等待点打断本轮，
+    已落盘的合法文件保留、版本号不写。
     """
-    if bool(getattr(task, "stopped_manually", False)):
-        return True
-    root_task = getattr(task, "task", None)
-    return bool(root_task is not None and root_task.cancelled())
+    return bool(getattr(task, "stopped_manually", False))
 
 
 #: 客户端渠道 -> 更新接口区服；不在表里的渠道不接管

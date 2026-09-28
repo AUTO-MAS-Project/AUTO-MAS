@@ -34,7 +34,7 @@ from __future__ import annotations
 import asyncio
 import re
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Callable
 
 import httpx
 
@@ -190,12 +190,21 @@ _STREAM_FLUSH_BYTES = 1 << 20
 
 
 async def stream_range_to(
-    client: httpx.AsyncClient, url: str, offset: int, length: int, path: str
+    client: httpx.AsyncClient,
+    url: str,
+    offset: int,
+    length: int,
+    path: str,
+    *,
+    on_bytes: Callable[[int], None] | None = None,
 ) -> int:
     """按 Range 把一段数据**流式**写进 ``path``，返回收到的字节数。
 
     与 :func:`fetch_range` 的差别只在内存：整段不攒在内存里，几百 MiB 的文件几路并发同时
     下也不会把驻留量抬到数 GiB。解压与校验由调用方在写完之后用工作线程做。
+
+    ``on_bytes`` 每攒够一块就报一次网上到达的字节数，供上层的心跳行取用（一批文件要
+    几分钟才全部完成，界面需要更密的动静）。
 
     Raises:
         UpdaterError: 网络失败、非 200，或回来的长度不等于要的 ``length``（口径与
@@ -215,10 +224,14 @@ async def stream_range_to(
                     if len(buffer) >= _STREAM_FLUSH_BYTES:
                         await asyncio.to_thread(_write_all, handle, bytes(buffer))
                         received += len(buffer)
+                        if on_bytes is not None:
+                            on_bytes(len(buffer))
                         buffer.clear()
             if buffer:
                 await asyncio.to_thread(_write_all, handle, bytes(buffer))
                 received += len(buffer)
+                if on_bytes is not None:
+                    on_bytes(len(buffer))
     except httpx.HTTPError as error:
         raise UpdaterError(f"取分片失败 {url}: {error}") from error
     if received != length:

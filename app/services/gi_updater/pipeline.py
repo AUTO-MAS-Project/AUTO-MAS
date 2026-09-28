@@ -274,7 +274,7 @@ async def _run_plan(
             f"{summarize_size(plan.summary.largest_target)}、磁盘需 "
             f"{summarize_size(plan.disk_need)}"
             + (
-                f"、其中语音包 {plan.summary.voice_count} 个/"
+                f"、其中语音包 {plan.summary.voice_count} 个文件/"
                 f"{summarize_size(plan.summary.voice_download)}"
                 if plan.summary.voice_count
                 else ""

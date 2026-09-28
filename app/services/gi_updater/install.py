@@ -43,6 +43,7 @@ from __future__ import annotations
 import asyncio
 import os
 import shutil
+from contextlib import suppress
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Dict, List, Optional
@@ -89,6 +90,23 @@ _WORKERS = 6
 _TEMP_DIR_NAME = "_mas_update"
 #: 进度行推送的最小间隔（秒）；阶段变化不受此限
 _PROGRESS_INTERVAL_SEC = 1.0
+#: 心跳行间隔（秒）：一批文件可能几分钟才完成一行，得有比前端「判卡住」短得多的动静
+_HEARTBEAT_SEC = 30.0
+
+
+class _LiveBytes:
+    """下载途中的实时字节计数，只给心跳行取用。
+
+    累加发生在事件循环里（每攒够一块调一次），不需要加锁；用它而不是
+    ``result.bytes_downloaded`` 是因为后者要等整批六个文件都完成才动。
+    """
+
+    def __init__(self) -> None:
+        self.total = 0
+
+    def add(self, count: int) -> None:
+        """记下一块刚从网上取回的字节数。"""
+        self.total += count
 
 
 class UpdateKind(str, Enum):
@@ -121,7 +139,7 @@ class UpdatePlan:
     removals: List[str] = field(default_factory=list)
     summary: AssetSummary = field(default_factory=AssetSummary)
     #: 面向用户的一句话结论：``kind == Unknown`` 时是问不出的原因，
-    #: ``kind == SophonPatch`` 时可能带着「某档语音本轮没有差分」这类附注
+    #: ``kind == SophonPatch`` 时可能带着「某档语音本轮不动」这类附注
     message: str = ""
 
     @property
@@ -160,6 +178,8 @@ class InstallResult:
     file_total: int = 0
     file_done: int = 0
     file_failed: int = 0
+    #: 其中属于语音包的失败数（只用于把失败原因说清，不改变成败口径）
+    voice_failed: int = 0
     #: 走整文件降级的文件数
     downgraded: int = 0
     #: 从网络取回的字节数
@@ -276,14 +296,18 @@ class InstallManagerBase:
         assets: List[PatchAsset] = []
         removals: List[str] = []
         kept: set = set()
-        skipped: List[str] = []
+        no_category: List[str] = []
+        no_diff: List[str] = []
         # 主资源必选；语音只跟「本机确实装了这档语言」的类别，避免凭空给用户多出几 GiB
         for category in [MAIN_MATCHING_FIELD, *self.installed_voice_categories()]:
             target_ref = target_refs.get(category)
             patch_ref = patch_refs.get(category)
             if target_ref is None or patch_ref is None:
-                if category != MAIN_MATCHING_FIELD:
-                    skipped.append(category)
+                if category == MAIN_MATCHING_FIELD:
+                    continue
+                # 两种「本轮不动」的原因得分开说：官方清单里没这档语言，和官方没给本机
+                # 基线下发这档语言的差分包，用户能做的下一步完全不同
+                (no_category if target_ref is None else no_diff).append(category)
                 continue
             target_assets = parse_sophon_manifest(
                 await fetch_manifest_bytes(client, target_ref)
@@ -312,11 +336,16 @@ class InstallManagerBase:
                 if not asset.is_directory
             )
 
-        if skipped:
-            # 官方没给这档语音的差分：主资源照更，这档本轮不动
-            plan.message = (
-                "官方没有下发语音包 " + "、".join(skipped) + " 的差分包，本次不更新"
-            )
+        if no_category or no_diff:
+            # 落空的语音档照实说一句：主资源照常更新，这些档本轮不动
+            reasons = []
+            if no_diff:
+                reasons.append("官方没有下发语音包 " + "、".join(no_diff) + " 的差分包")
+            if no_category:
+                reasons.append(
+                    "官方清单里没有语音包 " + "、".join(no_category) + " 这一类"
+                )
+            plan.message = "；".join(reasons) + "，本次不更新它们"
 
         plan.assets = self.filter_assets(assets)
         # 删除名单按所有入选类别的目标文件并集复核：任一入选清单还在用的文件都不能删
@@ -347,70 +376,103 @@ class InstallManagerBase:
             其余继续——一次更新上千个文件，因为一个坏文件停手会让用户反复从头开始。
         """
         result = InstallResult(kind=plan.kind, file_total=plan.file_count)
-        if plan.kind is not UpdateKind.SophonPatch or not plan.assets:
+        if plan.kind is not UpdateKind.SophonPatch:
             result.success = True
             result.message = "本轮没有需要自动执行的增量"
             return result
+        # 注意：资产清单为空也可能是「这一版官方只删文件、不改内容」，那种轮次照样要
+        # 走下面的收尾（删除名单 + 版本号），否则旧文件永远删不掉、版本号每轮都不写
 
         game_path = self.game_path
         temp_dir = os.path.join(game_path, _TEMP_DIR_NAME)
         throttle = Throttle(_PROGRESS_INTERVAL_SEC)
         pending = list(plan.assets)
+        live = _LiveBytes()
 
-        async with game_dir_lock(game_path):
-            await asyncio.to_thread(os.makedirs, temp_dir, exist_ok=True)
-            while pending:
-                if should_abort is not None and should_abort():
-                    result.aborted = True
-                    result.message = (
-                        f"更新已中止（已完成 {result.file_done}/{plan.file_count} 个）；"
-                        "已落盘的文件保留，重新运行会接着更新"
-                    )
-                    return result
-                batch, pending = pending[:_WORKERS], pending[_WORKERS:]
-                outcomes = await asyncio.gather(
-                    *(
-                        apply_asset(
-                            client,
-                            game_path,
-                            temp_dir,
-                            asset,
-                            hpatchz=hpatchz,
-                            logger=self.logger,
-                        )
-                        for asset in batch
-                    ),
-                    return_exceptions=True,
-                )
-                for asset, outcome in zip(batch, outcomes):
-                    if isinstance(outcome, BaseException):
-                        result.file_failed += 1
-                        self.logger.warning("%s 处理失败: %s", asset.name, outcome)
-                        continue
-                    fetched, downgraded = outcome
-                    result.bytes_downloaded += fetched
-                    result.downgraded += int(downgraded)
-                    result.file_done += 1
-                if on_progress is not None and throttle.ready():
-                    await on_progress(
-                        f"已处理 {result.file_done}/{plan.file_count} 个文件"
-                        f" · 已取回 {summarize_size(result.bytes_downloaded)}"
-                        + (
-                            f" · 整文件重下 {result.downgraded} 个"
-                            if result.downgraded
-                            else ""
-                        )
-                    )
+        async def heartbeat() -> None:
+            """一批文件可能几分钟才完成，得有一行说明「还在下」。
 
-            result.success = result.file_failed == 0
-            if result.success:
-                result.removed = await remove_unused(
-                    game_path, plan.removals, self.logger
+            手动更新弹窗那边靠「多久没有新日志」判卡住；没有这一行，慢网里一个几 GB 的
+            文件就能让一条正在正常推进的更新被误停。
+            """
+            while True:
+                await asyncio.sleep(_HEARTBEAT_SEC)
+                await on_progress(
+                    f"下载中 · 已取回 {summarize_size(live.total)}"
+                    f" · 还剩 {result.file_total - result.file_done} 个文件"
                 )
-                self.finalize()
-            else:
-                result.message = f"{result.file_failed} 个文件未能落盘"
-            return result
+
+        beat = asyncio.create_task(heartbeat()) if on_progress is not None else None
+        try:
+            async with game_dir_lock(game_path):
+                await asyncio.to_thread(os.makedirs, temp_dir, exist_ok=True)
+                while pending:
+                    if should_abort is not None and should_abort():
+                        result.aborted = True
+                        result.message = (
+                            f"更新已中止（已完成 {result.file_done}/{plan.file_count} 个）；"
+                            "已落盘的文件保留，重新运行会接着更新"
+                        )
+                        return result
+                    batch, pending = pending[:_WORKERS], pending[_WORKERS:]
+                    outcomes = await asyncio.gather(
+                        *(
+                            apply_asset(
+                                client,
+                                game_path,
+                                temp_dir,
+                                asset,
+                                hpatchz=hpatchz,
+                                logger=self.logger,
+                                on_bytes=live.add,
+                            )
+                            for asset in batch
+                        ),
+                        return_exceptions=True,
+                    )
+                    for asset, outcome in zip(batch, outcomes):
+                        if isinstance(outcome, BaseException):
+                            result.file_failed += 1
+                            if asset.is_voice:
+                                result.voice_failed += 1
+                            self.logger.warning("%s 处理失败: %s", asset.name, outcome)
+                            if not result.message:
+                                result.message = f"{asset.name}: {outcome}"
+                            continue
+                        fetched, downgraded = outcome
+                        result.bytes_downloaded += fetched
+                        result.downgraded += int(downgraded)
+                        result.file_done += 1
+                    if on_progress is not None and throttle.ready():
+                        await on_progress(
+                            f"已处理 {result.file_done}/{plan.file_count} 个文件"
+                            f" · 已取回 {summarize_size(result.bytes_downloaded)}"
+                            + (
+                                f" · 整文件重下 {result.downgraded} 个"
+                                if result.downgraded
+                                else ""
+                            )
+                        )
+
+                result.success = result.file_failed == 0
+                if result.success:
+                    result.removed = await remove_unused(
+                        game_path, plan.removals, self.logger
+                    )
+                    self.finalize()
+                else:
+                    # 说清失败在哪一类：语音文件挂了同样不写版本号（版本号是新的而语音
+                    # 是旧的，用户就没有优雅补回的途径了），但用户至少该知道卡的是哪个文件
+                    detail = f"{result.file_failed} 个文件未能落盘"
+                    if result.voice_failed:
+                        detail += f"（其中语音包 {result.voice_failed} 个文件）"
+                    result.message = f"{detail}：{result.message}"
+                return result
+        finally:
+            if beat is not None:
+                beat.cancel()
+                with suppress(asyncio.CancelledError):
+                    await beat
 
     # ================================================================== 钩子
 
