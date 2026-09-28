@@ -1,2 +1,3 @@
 project: notify
-QQ 官方机器人通知现可发送报告图片
+beta-only: true
+QQ 官方机器人可发送 MaaEnd 失败报告中的最新三张报错图片
