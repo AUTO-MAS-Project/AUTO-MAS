@@ -16,31 +16,35 @@
 #   You should have received a copy of the GNU Affero General Public License
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
 
-"""项目自己写进视图的日志：按上限取结尾、按密码打码后另存一份（给问题包用）。
+"""项目自己写进视图的日志：每次运行把本次新写的部分打码后另存进 history。
 
-MAS 每次运行另存进 ``history/`` 的只有两份：``.worker.log``（runner 事件、worker 与 agent 的
-stdout / stderr）和 ``.maafw.log``（``debug/maafw.log`` 本次运行的部分）。项目 agent 自己写
-文件的日志只在视图里：M9A 的 ``debug/custom/*.log``（DEBUG 级，控制台只出 INFO）与
+MAS 每次运行另存的还有 ``.worker.log``（runner 事件、worker 与 agent 的 stdout / stderr）和
+``.maafw.log``（``debug/maafw.log`` 本次运行的部分）。项目 agent 自己写文件的日志原本只在
+视图里：M9A 的 ``debug/custom/*.log``（DEBUG 级，控制台只出 INFO）与
 ``debug/agent-bootstrap.log``，MaaEnd go-service 的 ``debug/go-service.log``（控制台只出
 Error）与 ``debug/go-service.stderr.log``（stderr 被重定向到这里，panic 只在这份里），MaaFgo
 的 ``bbcdll/bbc_server.log`` 等。视图里的 ``.log`` 一定是运行期写出来的（投影在任何深度都剔
 ``.log``，载荷里没有），切换版本时按私有文件原样带过去。
 
-这里只收 ``.log``：单个文件取结尾 :data:`PROJECT_LOG_TAIL_BYTES`，总量
-:data:`PROJECT_LOG_TOTAL_BYTES`，``debug/`` 下的优先、同组里新写的优先；``debug/`` 顶层的
-``maafw.log`` / ``maafw.bak.*.log`` 不收（history 里的 ``.maafw.log`` 就是它按次切好、打过码
-的副本）。打码与 ``.maafw.log`` 同一口径：按字节把密码的各种写法（``secret_log_variants``）
-换成「<已隐藏>」。截断处从下一行开始，不留半行（半行里可能是半个密码）。
+做法与 ``.maafw.log`` 相同：运行开始时 :func:`snapshot_project_logs` 记下每个 ``.log`` 的大小
+与开头几个字节，收尾时 :func:`copy_project_log_delta` 只取本次新写的部分，拼成
+``history/…/<时分秒>.project.log``，每段前面一行分隔头。已有文件从记下的位置取到结尾；新出现
+的、被轮转或截短（变小了）、被整个重写（开头变了）的从头取。``debug/`` 顶层的 ``maafw.log`` /
+``maafw.bak.*.log`` 不收（``.maafw.log`` 就是它）。
+
+单个文件只留本次新增部分的末尾 :data:`PROJECT_LOG_TAIL_BYTES`，一次运行总量
+:data:`PROJECT_LOG_TOTAL_BYTES`（``debug/`` 下的优先、同组里新写的优先），截掉多少写一行说明；
+切口从下一行开始，不留半行（半行里可能是半个密码）。打码与 ``.maafw.log`` 同一口径：按字节把
+密码的各种写法（``secret_log_variants``）换成「<已隐藏>」。
 """
 
 from __future__ import annotations
 
 import os
 import re
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
 
 from app.utils import get_logger
 
@@ -49,7 +53,10 @@ from .option_secrets import REDACTED_SECRET_TEXT
 logger = get_logger("MFW 项目日志")
 
 PROJECT_LOG_TAIL_BYTES = 2 * 1024 * 1024
-PROJECT_LOG_TOTAL_BYTES = 20 * 1024 * 1024
+PROJECT_LOG_TOTAL_BYTES = 8 * 1024 * 1024
+# 记开头这么多字节：收尾时开头变了就是整个重写过（``open(..., "w")`` 每次运行重开的日志），
+# 从头取；只是往后追加的开头不变。
+_HEAD_BYTES = 256
 _LOG_SUFFIX = ".log"
 # debug/ 顶层的原生日志：history 里的 .maafw.log 是它的按次副本（已打码），不重复收。
 _NATIVE_LOG_RE = re.compile(r"^maafw(?:\.bak\..+)?\.log$", re.IGNORECASE)
@@ -59,35 +66,21 @@ _SKIP_DIR_NAMES = frozenset(
 )
 
 
-@dataclass
-class ProjectLogEntry:
-    rel: str
+@dataclass(frozen=True)
+class LogMark:
+    """运行开始时一个日志文件的状态。"""
+
     size: int
-    written: int
-    truncated: bool
+    head: bytes
 
 
 @dataclass
-class ProjectLogsReport:
-    collected: list[ProjectLogEntry] = field(default_factory=list)
-    # 超出总量没收的（项目相对路径）。
-    skipped: list[str] = field(default_factory=list)
+class ProjectLogDelta:
+    # 写进去的段（项目相对路径, 本次新增字节, 实际写入字节）。
+    segments: list[tuple[str, int, int]] = field(default_factory=list)
+    # 超出总量、一个字节都没写的（项目相对路径, 本次新增字节）。
+    skipped: list[tuple[str, int]] = field(default_factory=list)
     written_bytes: int = 0
-
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "collected": [
-                {
-                    "path": entry.rel,
-                    "size": entry.size,
-                    "written": entry.written,
-                    "truncated": entry.truncated,
-                }
-                for entry in self.collected
-            ],
-            "skipped": list(self.skipped),
-            "writtenBytes": self.written_bytes,
-        }
 
 
 def list_project_logs(view: Path) -> list[tuple[str, Path]]:
@@ -109,34 +102,42 @@ def list_project_logs(view: Path) -> list[tuple[str, Path]]:
         for name in file_names:
             if not name.casefold().endswith(_LOG_SUFFIX):
                 continue
-            rel = f"{prefix}{name}"
-            in_debug = rel.casefold().startswith("debug/")
             if rel_dir.casefold() == "debug" and _NATIVE_LOG_RE.match(name):
                 continue
+            rel = f"{prefix}{name}"
             path = base / name
             try:
                 mtime = path.stat().st_mtime
             except OSError:
                 continue
-            found.append((not in_debug, -mtime, rel, path))
+            found.append((not rel.casefold().startswith("debug/"), -mtime, rel, path))
     found.sort()
     return [(rel, path) for _, _, rel, path in found]
 
 
-def _read_tail(path: Path, limit: int) -> tuple[bytes, int, bool]:
-    """``(内容, 文件大小, 是否截断)``：超过 ``limit`` 只取结尾，并从截断处的下一行开始
-    （结尾里没有完整的一行时返回空）。"""
-
+def _read_head(path: Path) -> bytes:
     with path.open("rb") as handle:
-        handle.seek(0, os.SEEK_END)
-        size = handle.tell()
-        if size <= limit:
-            handle.seek(0)
-            return handle.read(size), size, False
-        handle.seek(size - limit)
-        data = handle.read(limit)
-    newline = data.find(b"\n")
-    return (data[newline + 1 :] if newline != -1 else b""), size, True
+        return handle.read(_HEAD_BYTES)
+
+
+def snapshot_project_logs(view: Path) -> dict[str, LogMark]:
+    """运行开始时：视图里每个项目日志的大小与开头，按项目相对路径（小写）记。"""
+
+    marks: dict[str, LogMark] = {}
+    for rel, path in list_project_logs(view):
+        try:
+            marks[rel.casefold()] = LogMark(path.stat().st_size, _read_head(path))
+        except OSError:
+            continue
+    return marks
+
+
+def _format_size(size: int) -> str:
+    if size >= 1024 * 1024:
+        return f"{size / (1024 * 1024):.1f} MB"
+    if size >= 1024:
+        return f"{size / 1024:.1f} KB"
+    return f"{size} B"
 
 
 def _redact(data: bytes, secrets: Sequence[str]) -> bytes:
@@ -148,85 +149,108 @@ def _redact(data: bytes, secrets: Sequence[str]) -> bytes:
     return data
 
 
-def collect_project_logs(
+def _start_offset(path: Path, size: int, mark: LogMark | None) -> int:
+    """本次新写的部分从哪开始：已有且只是往后追加的从记下的位置，其余从头。"""
+
+    if mark is None or size < mark.size:
+        return 0
+    try:
+        head = _read_head(path)
+    except OSError:
+        return 0
+    return mark.size if head[: len(mark.head)] == mark.head else 0
+
+
+def _read_range(path: Path, start: int, end: int, limit: int) -> tuple[bytes, int]:
+    """读 ``[start, end)`` 里的最后 ``limit`` 字节（不够一整段时从下一行开始）。返回
+    ``(内容, 截掉的字节)``。"""
+
+    begin = max(start, end - limit)
+    with path.open("rb") as handle:
+        handle.seek(begin)
+        data = handle.read(end - begin)
+    if begin > start:
+        newline = data.find(b"\n")
+        data = data[newline + 1 :] if newline != -1 else b""
+    return data, (end - start) - len(data)
+
+
+def copy_project_log_delta(
     view: Path,
-    destination: Path,
+    marks: Mapping[str, LogMark],
+    target: Path,
     *,
     secrets: Sequence[str] = (),
     tail_bytes: int = PROJECT_LOG_TAIL_BYTES,
     total_bytes: int = PROJECT_LOG_TOTAL_BYTES,
-) -> ProjectLogsReport:
-    """把视图里项目自己写的 ``.log`` 按上限取结尾、打码，照原相对路径写进 ``destination``。
+) -> ProjectLogDelta:
+    """把视图里项目日志本次新写的部分（相对 ``marks``）打码后拼进 ``target``。
 
-    ``secrets`` 是 ``secret_log_variants`` 给出的密码写法（长的在前）。视图一个字节不动。
-    读不了的文件跳过（正被独占写的、刚被轮转掉的）。
+    没有任何新内容时不建文件。视图一个字节不动；读不了的文件跳过（正被独占写的、刚被轮转掉的）。
     """
 
-    destination = Path(destination)
-    report = ProjectLogsReport()
+    result = ProjectLogDelta()
     remaining = max(0, int(total_bytes))
+    chunks: list[bytes] = []
     for rel, path in list_project_logs(view):
-        if remaining <= 0:
-            report.skipped.append(rel)
-            continue
         try:
-            data, size, truncated = _read_tail(path, min(tail_bytes, remaining))
+            size = path.stat().st_size
+            start = _start_offset(path, size, marks.get(rel.casefold()))
         except OSError as exc:
             logger.debug(f"读取项目日志失败，跳过: {rel}: {exc}")
             continue
-        if truncated and not data:
-            # 取到的结尾里没有一整行（剩下的总量不够，或最后一行本身就超过单文件上限）：
-            # 不写半行（半行里可能是半个密码），按没收记下。
-            report.skipped.append(rel)
+        added = size - start
+        if added <= 0:
             continue
+        if remaining <= 0:
+            result.skipped.append((rel, added))
+            continue
+        try:
+            data, cut = _read_range(path, start, size, min(tail_bytes, remaining))
+        except OSError as exc:
+            logger.debug(f"读取项目日志失败，跳过: {rel}: {exc}")
+            continue
+        if not data:
+            # 能用的额度里放不下一整行：不写半行，按没收记下。
+            result.skipped.append((rel, added))
+            continue
+        header = f"===== {rel}（本次新增 {_format_size(added)}）=====\n"
+        if cut:
+            header += (
+                f"（只保留本次新增部分的末尾 {_format_size(len(data))}，"
+                f"前面 {_format_size(cut)} 已截掉）\n"
+            )
+        if not data.endswith(b"\n"):
+            data += b"\n"
         data = _redact(data, secrets)
-        target = destination / rel
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_bytes(data)
+        chunks.append(header.encode("utf-8") + data)
         remaining -= len(data)
-        report.written_bytes += len(data)
-        report.collected.append(
-            ProjectLogEntry(rel=rel, size=size, written=len(data), truncated=truncated)
+        result.written_bytes += len(data)
+        result.segments.append((rel, added, len(data)))
+    if result.skipped:
+        total = sum(added for _, added in result.skipped)
+        names = "、".join(rel for rel, _ in result.skipped[:10])
+        more = " 等" if len(result.skipped) > 10 else ""
+        chunks.append(
+            (
+                f"===== 超出本次 {_format_size(total_bytes)} 总量上限，另有 "
+                f"{len(result.skipped)} 个文件共 {_format_size(total)} 没保存：{names}{more} =====\n"
+            ).encode("utf-8")
         )
-    if report.skipped:
-        logger.info(
-            f"项目日志已收 {len(report.collected)} 个、{report.written_bytes} 字节，"
-            f"另有 {len(report.skipped)} 个超出上限没收: {', '.join(report.skipped[:5])}"
-        )
-    return report
-
-
-def export_script_project_logs(
-    script_id: str, script_config: Any, destination: Path
-) -> ProjectLogsReport:
-    """按脚本收它视图里的项目日志：密码取该脚本全部用户任务配置里 password 字段的值
-    （解不开的跳过），与 ``.worker.log`` / ``.maafw.log`` 同一套打码。视图不在就什么都不收。"""
-
-    from app.task.MaaFW.tools.core.interface.loader import load_interface_model_cached
-
-    from .embedded_project import resolve_maafw_project_root
-    from .option_secrets import collect_script_password_values, secret_log_variants
-
-    view = Path(resolve_maafw_project_root(script_id, script_config))
-    if not view.is_dir():
-        return ProjectLogsReport()
-    interface = None
-    try:
-        interface = load_interface_model_cached(view)
-    except Exception as exc:  # noqa: BLE001 - 读不出 interface 时只按密文认密码
-        logger.debug(f"收集项目日志时读取 interface 失败，只按已加密的值打码: {exc}")
-    secrets = secret_log_variants(
-        collect_script_password_values(script_config, interface)
-    )
-    return collect_project_logs(view, destination, secrets=secrets)
+    if chunks:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        with target.open("ab") as handle:
+            for chunk in chunks:
+                handle.write(chunk)
+    return result
 
 
 __all__ = [
     "PROJECT_LOG_TAIL_BYTES",
     "PROJECT_LOG_TOTAL_BYTES",
-    "ProjectLogEntry",
-    "ProjectLogsReport",
-    "collect_project_logs",
-    "export_script_project_logs",
+    "LogMark",
+    "ProjectLogDelta",
+    "copy_project_log_delta",
     "list_project_logs",
+    "snapshot_project_logs",
 ]
