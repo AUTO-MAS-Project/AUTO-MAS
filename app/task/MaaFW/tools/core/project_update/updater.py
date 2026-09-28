@@ -8,7 +8,7 @@ import threading
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Awaitable, Callable, Mapping, Sequence
+from typing import TYPE_CHECKING, Any, Awaitable, Callable, Mapping, Sequence
 from urllib.parse import quote
 
 import httpx
@@ -49,6 +49,9 @@ from .transport import (
     UpdateDownloadCancelled,
     download_resumable,
 )
+
+if TYPE_CHECKING:  # 导入 runtime_pool 会连带整个运行池包，选包时才导入
+    from ..runtime_pool.architecture import ArchitectureTarget
 
 HTTP_HEADERS = {"User-Agent": "AutoMasGui"}
 
@@ -258,6 +261,24 @@ class MaaFWProjectUpdateError(RuntimeError):
         self.post_validate_rejected = post_validate_rejected
         self.project_lock_busy = project_lock_busy
         self.cancelled = cancelled
+
+
+def _host_update_target() -> ArchitectureTarget:
+    """本机选包用的架构参数（Mirror 酱 os/arch、GitHub 资产架构段）。
+
+    只从 ``runtime_pool.architecture.host_architecture()`` 取；不是 x64 时按「只支持 x64」
+    报错，不悄悄按 x64 去下包。
+    """
+
+    from ..runtime_pool.architecture import (
+        MaaFWUnsupportedArchitectureError,
+        supported_architecture_target,
+    )
+
+    try:
+        return supported_architecture_target()
+    except MaaFWUnsupportedArchitectureError as exc:
+        raise MaaFWProjectUpdateError(str(exc)) from None
 
 
 def _normalise_package_source(raw_value: Any) -> str:
@@ -768,7 +789,10 @@ async def _discover_project_update_detailed(
     mirror_cdk = str(config.get("mirror_cdk") or config.get("cdk") or "").strip()
     channel = str(config.get("channel") or "stable").strip() or "stable"
     send_update_log(f"MirrorChyan RID: {rid}")
-    send_update_log("MirrorChyan platform: win/x86_64")
+    target = _host_update_target()
+    send_update_log(
+        f"MirrorChyan platform: {target.mirrorchyan_os}/{target.mirrorchyan_arch}"
+    )
     # 日志里绝不出现 CDK 明文，连前几位都不打。
     if mirror_cdk:
         send_update_log("MirrorChyan CDK: 已配置")
@@ -1386,8 +1410,9 @@ async def _query_mirrorchyan_latest(
     # 更新检查就整条失败。实测单平台 rid（AUTO_MAS）多带这两个参数照常回 200，
     # os=win&arch=x86_64 与 windows/x64 都被服务端接受并归一；这里沿用 GitHub
     # 资产命名的那套写法。
-    params["os"] = "win"
-    params["arch"] = "x86_64"
+    target = _host_update_target()
+    params["os"] = target.mirrorchyan_os
+    params["arch"] = target.mirrorchyan_arch
 
     url = f"https://mirrorchyan.com/api/resources/{rid}/latest"
     try:
@@ -1852,8 +1877,7 @@ def _select_github_release_asset(
         if windows_matches:
             narrowed = windows_matches
         arch_pattern = re.compile(
-            r"(?<![a-z0-9])(?:x86[-_]?64|x64|amd64)(?![a-z0-9])",
-            re.IGNORECASE,
+            _host_update_target().github_asset_pattern, re.IGNORECASE
         )
         arch_matches = [item for item in narrowed if arch_pattern.search(item[0])]
         if arch_matches:
