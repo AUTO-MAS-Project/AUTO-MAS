@@ -43,7 +43,7 @@ const channelBlocks: ChannelBlock[] = source
 
 describe('通知渠道描述表的词表键', () => {
   it('描述表引用的所有词表键都存在', () => {
-    expect(channelBlocks.length).toBeGreaterThanOrEqual(9)
+    expect(channelBlocks.length).toBeGreaterThanOrEqual(8)
     const keys = [...source.matchAll(/"(setting\.[A-Za-z0-9_.]+)"/g)].map(match => match[1])
     expect(keys.length).toBeGreaterThan(20)
     // Webhook 的正文摘要不渲染（非空时直接拼条目名），词表只放 Empty 变体

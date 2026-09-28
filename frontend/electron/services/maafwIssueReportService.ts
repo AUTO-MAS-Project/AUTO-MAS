@@ -3,8 +3,10 @@ import * as path from 'path'
 import AdmZip = require('adm-zip')
 
 import { getLogger } from './logger'
+import { probeProjectRuntime } from './maafwProjectRuntimeProbe'
 import {
   CollectorState,
+  addDebugDirectory,
   addDiagnosticFile,
   addDirectory,
   addReportManifest,
@@ -17,8 +19,9 @@ import {
 
 const logger = getLogger('MFW问题包')
 
-// 与 app/models/config.py 的 M9AConfig 类名同步
+// 与 app/models/config.py 的 M9AConfig / MSSConfig 类名同步
 const M9A_CONFIG_TYPE = 'M9AConfig'
+const MSS_CONFIG_TYPE = 'MSSConfig'
 
 // 与 app/task/MaaFW/tools/embedded/embedded_project.py 的 embedded_copy_dir_name 同步：
 // 每个脚本的项目视图是 data/mfw/<脚本 uuid 去掉连字符的前 12 位>/
@@ -555,7 +558,7 @@ async function addProjectDebugDirectory(
 
 async function addMasDebugLogs(state: CollectorState, dataRoots: string[]): Promise<void> {
   for (const [index, dataRoot] of dataRoots.entries()) {
-    addDirectory(
+    addDebugDirectory(
       state,
       path.join(dataRoot, 'debug'),
       index === 0 ? 'logs/auto-mas' : 'logs/auto-mas/backend'
@@ -626,6 +629,13 @@ async function createIssueReport(
     includeNativeLog: boolean
   }> = []
   const projectDebugDirs: Array<{ viewDir: string; archiveRoot: string }> = []
+  // 各脚本的运行时检查并行起跑（每个最多 15 秒），收集到它时再取结果
+  const runtimeProbes = new Map(
+    scripts.map(script => [
+      script,
+      probeProjectRuntime(path.join(script.dataRoot, 'data', 'mfw', script.viewDirName)),
+    ])
+  )
 
   for (const script of scripts) {
     const scriptRoot = `scripts/${script.viewDirName}`
@@ -715,6 +725,7 @@ async function createIssueReport(
       projectLabel: script.projectLabel,
       archiveRoot: scriptRoot,
       projectVersion: readViewVersion(viewDir),
+      projectRuntime: await runtimeProbes.get(script),
       projectDebug: protectSecrets
         ? '未收集：项目带密码输入框，框架与 agent 自己写的日志里可能有密码原文'
         : '已收集（顶层 maafw*.log 即 history 里各次的 .maafw.log，不重复收）',
@@ -791,4 +802,16 @@ export async function createM9AIssueReport(
     (_uid, type) => type === M9A_CONFIG_TYPE
   )
   return createIssueReport(appRoot, zipPath, scripts, 'M9A')
+}
+
+/** 全部 MSS 脚本的问题包。 */
+export async function createMSSIssueReport(
+  appRoot: string,
+  zipPath: string
+): Promise<IssueReportResult> {
+  const scripts = discoverMaaFWScripts(
+    resolveDataRoots(appRoot),
+    (_uid, type) => type === MSS_CONFIG_TYPE
+  )
+  return createIssueReport(appRoot, zipPath, scripts, 'MSS')
 }

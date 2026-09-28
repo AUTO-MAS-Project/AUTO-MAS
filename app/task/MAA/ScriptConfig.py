@@ -41,6 +41,12 @@ from .AutoProxy import (
     _repair_maa_task_queue,
     read_maa_config_with_fallback,
 )
+from .base_preset import (
+    get_maa_base_preset,
+    is_valid_maa_task_queues,
+    restore_maa_default_task_queue,
+    seed_maa_base_config,
+)
 from .tools.backup_archive import (
     archive_mas_runtime_backup,
     mas_config_dir,
@@ -91,6 +97,13 @@ _SESSION_STARTUP_OVERRIDES: tuple[tuple[str, tuple[str, ...], object], ...] = (
         ("Gui", "MinimizeOnStartup"),
         False,
     ),
+    # 更新由 MAS 的更新流程接管，配置会话只临时关闭，退出时恢复原值。
+    ("gui.json", ("Global", "VersionUpdate.ScheduledUpdateCheck"), "False"),
+    ("gui.json", ("Global", "VersionUpdate.AutoDownloadUpdatePackage"), "False"),
+    ("gui.json", ("Global", "VersionUpdate.AutoInstallUpdatePackage"), "False"),
+    ("gui.new.json", ("Update", "CheckOnSchedule"), False),
+    ("gui.new.json", ("Update", "AutoDownloadUpdatePackage"), False),
+    ("gui.new.json", ("Update", "AutoInstallUpdatePackage"), False),
 )
 
 
@@ -254,6 +267,28 @@ class ScriptConfigTask(TaskExecuteBase):
         target_user_id = self.cur_user_item.user_id
         owner = self._mas_owner()
         mas_dir = mas_config_dir(self.script_info.script_id, owner)
+        seed_maa_base_config(mas_dir)
+
+        preset_queue = get_maa_base_preset("gui.new.json")["Configurations"]["Default"][
+            "TaskQueue"
+        ]
+        base_gui_new_set = read_maa_config_with_fallback(mas_dir, "gui.new.json")
+        base_configurations = base_gui_new_set.get("Configurations")
+        repaired_queues = 0
+        if isinstance(base_configurations, dict):
+            for configuration in base_configurations.values():
+                if not isinstance(configuration, dict):
+                    continue
+                queue, repaired = restore_maa_default_task_queue(
+                    configuration.get("TaskQueue"), preset_queue
+                )
+                if repaired:
+                    configuration["TaskQueue"] = _repair_maa_task_queue(queue)
+                    repaired_queues += 1
+        if repaired_queues and not self.view_only:
+            write_file(mas_dir / "gui.new.json", base_gui_new_set)
+            logger.warning(f"MAA 队列结构异常, 已恢复 {repaired_queues} 个默认队列")
+
         overlay = (
             read_overlay_values(self.user_config[uuid.UUID(target_user_id)])
             if target_user_id != "Default"
@@ -271,8 +306,7 @@ class ScriptConfigTask(TaskExecuteBase):
         if mas_dir.is_dir() and any(mas_dir.iterdir()):
             shutil.copytree(mas_dir, self.maa_set_path, dirs_exist_ok=True)
 
-        # base 缺失/损坏时退回 MAA 自带 .bak 或骨架：骨架不含 TaskQueue，
-        # MAA 加载时用内存默认队列填空——默认队列的唯一生成器是 MAA 本体。
+        # base 缺失/损坏时退回 MAA 自带 .bak 或骨架；下方用预设补齐队列。
         gui_set = read_maa_config_with_fallback(self.maa_set_path, "gui.json")
         gui_new_set = read_maa_config_with_fallback(self.maa_set_path, "gui.new.json")
 
@@ -292,14 +326,19 @@ class ScriptConfigTask(TaskExecuteBase):
         # 各配置部分的引用
         global_set = gui_set["Global"]
 
-        # GUI 直接展示 base（MAA 自己的日常任务配置）：队列成员与顺序都归 MAA 与
-        # 用户所有，MAS 不校对不重建；只修 $type 位置，否则 MAA 读不进整个文件。
-        source_queue = gui_new_set["Configurations"]["Default"].get("TaskQueue", [])
-        if not isinstance(source_queue, list):
-            source_queue = []
-        gui_new_set["Configurations"]["Default"]["TaskQueue"] = _repair_maa_task_queue(
-            source_queue
-        )
+        # base 缺失队列或结构错误时用预设补齐；结构有效时仅修正 $type 属性顺序。
+        for configuration in gui_new_set["Configurations"].values():
+            if not isinstance(configuration, dict):
+                continue
+            source_queue = configuration.get("TaskQueue")
+            if not isinstance(source_queue, list) or not source_queue:
+                source_queue = preset_queue
+            source_queue, _ = restore_maa_default_task_queue(source_queue, preset_queue)
+            configuration["TaskQueue"] = _repair_maa_task_queue(source_queue)
+
+        # 更新容器可能是旧版配置缺省的，先建临时容器，让恢复表能记录缺失键；
+        # 会话结束时缺失键会被删除，不把 MAS 接管项写进 base。
+        gui_new_set.setdefault("Update", {})
 
         # 配置会话的启动编排：不自动跑任务、不拉模拟器、不拉游戏，让 MAA 打开就是
         # 可配置状态（用户不必先终止队列）。这些是会话级覆盖，回写时还原成原值。
@@ -361,21 +400,32 @@ class ScriptConfigTask(TaskExecuteBase):
 
         mas_dir = mas_config_dir(self.script_info.script_id, self._mas_owner())
 
-        # GUI 展示的就是 base，用户在 MAA 里改完落盘的文件即新的 base：整份写回
-        # 即可，不需要按身份归并（那是"GUI 展示映射层"时代的产物）。队列同样原样
-        # 接受——这份文件刚被 MAA 自己写出并读通过，MAS 没有立场替它判定合法。
-        saved = False
+        # 队列结构属于预设的一部分，只允许改任务高级字段；结构变化时整次
+        # GUI 会话都不回写，避免把非预设队列或其他同时发生的修改写进 base。
+        current_docs = {}
         for name in _MAA_CONFIG_FILES:
             try:
                 current = read_file(self.maa_set_path / name)
             except (OSError, json.JSONDecodeError) as e:
                 logger.opt(exception=True).warning(
-                    f"读取 MAA 配置以回写失败({name}): {e}"
+                    f"读取 MAA 配置以回写失败({name}), 本次修改全部丢弃: {e}"
                 )
-                continue
-            if not current:
+                return
+            if not isinstance(current, dict) or not current:
                 # MAA 未写盘(如被强杀)，GUI 改动无从谈起，存档保持 set_maa 下发态
-                continue
+                logger.info("MAA 配置回写: 无完整落盘内容, 存档保持不变")
+                return
+            current_docs[name] = current
+
+        baseline_new = (self._maa_config_baseline or {}).get("gui.new.json", {})
+        if not is_valid_maa_task_queues(
+            baseline_new.get("Configurations"),
+            current_docs["gui.new.json"].get("Configurations"),
+        ):
+            logger.warning("MAA 队列结构或配置方案发生变化, 本次 GUI 配置修改全部丢弃")
+            return
+
+        for name, current in current_docs.items():
             # 先还原会话强制过的启动编排项：它们是会话级覆盖，不能写进 base
             entries = (self._session_startup_restore or {}).get(name)
             if entries:
@@ -385,10 +435,8 @@ class ScriptConfigTask(TaskExecuteBase):
                     queue = configurations.get("TaskQueue")
                     if isinstance(queue, list):
                         configurations["TaskQueue"] = _repair_maa_task_queue(queue)
+        for name, current in current_docs.items():
             write_file(mas_dir / name, current)
-            saved = True
-        if not saved:
-            logger.info("MAA 配置回写: 无落盘内容, 存档保持不变")
 
     async def on_crash(self, e: Exception):
         self.cur_user_item.status = "异常"

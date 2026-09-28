@@ -47,6 +47,7 @@ const SCRIPT_CREATE_TYPE_BY_SCRIPT_TYPE: Record<ScriptType, ScriptCreateIn.type>
   BetterGI: ScriptCreateIn.type.BETTER_GI,
   ZzzOd: ScriptCreateIn.type.ZZZ_OD,
   BAAH: ScriptCreateIn.type.BAAH,
+  Whimbox: ScriptCreateIn.type.WHIMBOX,
   MSS: ScriptCreateIn.type.MSS,
   General: ScriptCreateIn.type.GENERAL,
 }
@@ -61,6 +62,7 @@ const SCRIPT_TYPE_BY_CONFIG_TYPE: Record<string, ScriptType> = {
   BetterGIConfig: 'BetterGI',
   ZzzOdConfig: 'ZzzOd',
   BAAHConfig: 'BAAH',
+  WhimboxConfig: 'Whimbox',
   // MaaFW 与各特调（M9A / MSS ……）的配置类名由特调注册表提供
   ...maafwScriptTypeByConfigType(),
 }
@@ -1040,6 +1042,106 @@ export function useScriptApi() {
                         LastProxyStatus:
                           bettergiUserData.Data?.LastProxyStatus !== undefined
                             ? bettergiUserData.Data.LastProxyStatus
+                            : '未知',
+                      },
+                    }
+                  } else if (userIndex.type === 'WhimboxUserConfig' && userData) {
+                    const whimboxUserData = userData as unknown as LooseUserConfig
+                    return {
+                      id: userIndex.uid,
+                      name: whimboxUserData.Info?.Name || `用户${userIndex.uid}`,
+                      Info: {
+                        Name:
+                          whimboxUserData.Info?.Name !== undefined
+                            ? whimboxUserData.Info.Name
+                            : `用户${userIndex.uid}`,
+                        Status:
+                          whimboxUserData.Info?.Status !== undefined
+                            ? whimboxUserData.Info.Status
+                            : true,
+                        Mode:
+                          whimboxUserData.Info?.Mode !== undefined
+                            ? whimboxUserData.Info.Mode
+                            : '脚本',
+                        RemainedDay:
+                          whimboxUserData.Info?.RemainedDay !== undefined
+                            ? whimboxUserData.Info.RemainedDay
+                            : -1,
+                        IfScriptBeforeTask:
+                          whimboxUserData.Info?.IfScriptBeforeTask !== undefined
+                            ? whimboxUserData.Info.IfScriptBeforeTask
+                            : false,
+                        ScriptBeforeTask:
+                          whimboxUserData.Info?.ScriptBeforeTask !== undefined
+                            ? whimboxUserData.Info.ScriptBeforeTask
+                            : '',
+                        IfScriptAfterTask:
+                          whimboxUserData.Info?.IfScriptAfterTask !== undefined
+                            ? whimboxUserData.Info.IfScriptAfterTask
+                            : false,
+                        ScriptAfterTask:
+                          whimboxUserData.Info?.ScriptAfterTask !== undefined
+                            ? whimboxUserData.Info.ScriptAfterTask
+                            : '',
+                        Notes:
+                          whimboxUserData.Info?.Notes !== undefined
+                            ? whimboxUserData.Info.Notes
+                            : '',
+                        Tag:
+                          whimboxUserData.Info?.Tag !== undefined ? whimboxUserData.Info.Tag : null,
+                      },
+                      Task: {
+                        Tasks:
+                          whimboxUserData.Task?.Tasks !== undefined
+                            ? whimboxUserData.Task.Tasks
+                            : '{ }',
+                        Options:
+                          whimboxUserData.Task?.Options !== undefined
+                            ? whimboxUserData.Task.Options
+                            : '{ }',
+                      },
+                      Notify: {
+                        Enabled:
+                          whimboxUserData.Notify?.Enabled !== undefined
+                            ? whimboxUserData.Notify.Enabled
+                            : false,
+                        IfSendStatistic:
+                          whimboxUserData.Notify?.IfSendStatistic !== undefined
+                            ? whimboxUserData.Notify.IfSendStatistic
+                            : false,
+                        IfSendMail:
+                          whimboxUserData.Notify?.IfSendMail !== undefined
+                            ? whimboxUserData.Notify.IfSendMail
+                            : false,
+                        ToAddress:
+                          whimboxUserData.Notify?.ToAddress !== undefined
+                            ? whimboxUserData.Notify.ToAddress
+                            : '',
+                        IfServerChan:
+                          whimboxUserData.Notify?.IfServerChan !== undefined
+                            ? whimboxUserData.Notify.IfServerChan
+                            : false,
+                        ServerChanKey:
+                          whimboxUserData.Notify?.ServerChanKey !== undefined
+                            ? whimboxUserData.Notify.ServerChanKey
+                            : '',
+                        CustomWebhooks:
+                          whimboxUserData.Notify?.CustomWebhooks !== undefined
+                            ? whimboxUserData.Notify.CustomWebhooks
+                            : [],
+                      },
+                      Data: {
+                        LastProxyDate:
+                          whimboxUserData.Data?.LastProxyDate !== undefined
+                            ? whimboxUserData.Data.LastProxyDate
+                            : '2000-01-01',
+                        ProxyTimes:
+                          whimboxUserData.Data?.ProxyTimes !== undefined
+                            ? whimboxUserData.Data.ProxyTimes
+                            : 0,
+                        LastProxyStatus:
+                          whimboxUserData.Data?.LastProxyStatus !== undefined
+                            ? whimboxUserData.Data.LastProxyStatus
                             : '未知',
                       },
                     }

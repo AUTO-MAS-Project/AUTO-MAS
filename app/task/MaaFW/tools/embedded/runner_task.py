@@ -37,6 +37,7 @@ from app.task.MaaFW.tools.core.interface.models import (
 )
 from app.task.MaaFW.tools.core.interface.preview import (
     build_adb_emulator_extra_capabilities,
+    interface_display_name,
 )
 from app.task.MaaFW.tools.core.interface.service import (
     MaaFWInterfaceService,
@@ -85,6 +86,13 @@ from .option_secrets import (
     secret_log_variants,
 )
 from .project_path import release_project_path, try_reserve_project_path
+from .signal_notice import (
+    MAINTENANCE_LAST_STATUS,
+    MAINTENANCE_SKIP_MESSAGE,
+    SERVER_MAINTENANCE,
+    SIGNAL_USER_MESSAGES,
+    MaaFWSignalTracker,
+)
 from .update_credentials import resolve_update_proxy_url
 
 logger = get_logger("MaaFW 插件自动代理")
@@ -393,6 +401,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         user_config: Mapping[uuid.UUID, Any],
         emulator_manager: DeviceBase | None,
         project_update_logs: list[str] | None = None,
+        signal_tracker: MaaFWSignalTracker | None = None,
     ):
         super().__init__()
 
@@ -447,6 +456,13 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         self._game_update_checked = False
         self.maafw_runtime_pool_root: Path | None = None
         self.maafw_runtime_pool_id: str | None = None
+        # 本轮（整个脚本）的信号账：同一资源已确认维护时后续用户直接跳过，收尾时由
+        # 管理器按「信号 + 资源」各发一条通知。管理器传入共享的一份。
+        self.signal_tracker = signal_tracker or MaaFWSignalTracker()
+        # 本用户这次运行命中的信号（worker 回报），决定收尾怎么结算。
+        self.run_signal: str | None = None
+        # 运行前检查发现同一资源本轮已确认在维护、本用户没启动就跳过。
+        self.maintenance_skipped = False
 
     async def check(self) -> str:
         proxy_times = (
@@ -490,6 +506,15 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             if not self.run_plan.tasks:
                 self.cur_user_item.status = "跳过"
                 return "MaaFW 周期任务已在本周或本月完成，跳过本次运行"
+
+            # 本轮前面的用户已经撞上同一资源的停服维护：不再拉起游戏 / 模拟器，
+            # 并进那条维护通知的用户列表。代理次数、上次状态都不动。
+            maintenance = self.signal_tracker.maintenance(self.run_plan.resourceName)
+            if maintenance is not None:
+                maintenance.add_user(str(self.cur_user_uid), self.cur_user_item.name)
+                self.cur_user_item.status = "跳过"
+                self.maintenance_skipped = True
+                return MAINTENANCE_SKIP_MESSAGE
 
             if self.run_plan.controllerType == "Adb":
                 emulator_id = self.script_config.get("Emulator", "Id")
@@ -554,6 +579,13 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                         ),
                     ),
                 )
+            if self.maintenance_skipped:
+                # 同一资源已确认在维护：记一份本用户的日志，让代理结果汇总、统计信息与
+                # history 都写明原因（其他跳过原因照旧不记）。
+                await self.prepare()
+                self._append_log(self.check_result)
+                if self.cur_user_log is not None:
+                    self.cur_user_log.status = self.check_result
             self.script_info.log = self.check_result
             return
 
@@ -651,6 +683,11 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                     continue
 
                 await self._mark_period_tasks_completed(result.completedTasks)
+                if result.signal is not None:
+                    # 项目声明的信号节点命中：停服维护 = 本次跳过，需要更新客户端 = 失败；
+                    # 两种都是重试多少次都一样，不重启游戏 / 模拟器，直接收尾。
+                    await self._finish_on_signal(index + 1, result)
+                    break
                 if result.success:
                     self.run_complete = True
                     if self.cur_user_log is not None:
@@ -719,6 +756,14 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
     async def final_task(self) -> None:
         await self._shutdown_runner()
         if self.check_result != "Pass":
+            if self.maintenance_skipped:
+                # 维护连带跳过：同样是跳过不是失败，代理次数不动；上次状态、history
+                # 与统计信息都写明原因。
+                await self.cur_user_config.set(
+                    "Data", "LastProxyStatus", MAINTENANCE_LAST_STATUS
+                )
+                statistic_paths = await self._save_user_logs()
+                await self._push_user_statistics(statistic_paths)
             await self._release_project_path()
             return
 
@@ -743,6 +788,12 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             await self.cur_user_config.set("Data", "LastProxyStatus", "成功")
             self.cur_user_item.status = "完成"
             await self._send_success_notify()
+        elif self.run_signal == SERVER_MAINTENANCE:
+            # 维护是跳过不是失败：代理次数、剩余天数不动，下次定时照常再跑
+            await self.cur_user_config.set(
+                "Data", "LastProxyStatus", MAINTENANCE_LAST_STATUS
+            )
+            self.cur_user_item.status = "跳过"
         else:
             await self.cur_user_config.set("Data", "LastProxyStatus", "失败")
             if self.cur_user_item.status == "运行":
@@ -2331,6 +2382,86 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         self.cur_user_log_started_at = start_time
         self.cur_user_item.log_record[start_time] = self.cur_user_log = LogRecord()
 
+    async def _finish_on_signal(self, attempt: int, result: MaaFWRunResult) -> None:
+        """worker 回报了信号节点命中：记账、写日志状态。
+
+        不发任务页提示（TASK_NOTICE 会在前端弹通知框并响提示音）：界面上只有 runner
+        那行日志，正式通知由管理器收尾时按「信号 + 资源」各发一条（同一资源可能有
+        多位用户）。证据图只进那条通知，不当失败截图进统计信息与汇总。
+        """
+
+        signal = str(result.signal)
+        self.run_signal = signal
+        message = SIGNAL_USER_MESSAGES.get(signal, str(result.errorMessage or signal))
+        # runner 那行「游戏停服维护中，本轮剩余任务已跳过: <任务>」已进任务日志，
+        # 这里只记后端日志，不在界面上再复述一遍。
+        logger.warning(
+            f"MaaFW 用户 {self.cur_user_item.name} 命中项目信号 {signal}"
+            f"（节点 {result.signalNode}）：{message}"
+        )
+        # 证据图只认命中那个任务、kind 是信号那种的：前面任务普通失败的 failed 图不算。
+        evidence = _signal_evidence_shot(result)
+        labels = (
+            _format_completed_task_labels(self.run_plan, result.completedTasks)
+            if self.run_plan is not None
+            else list(result.completedTasks)
+        )
+        # 证据图只随信号通知发一次，不再进统计信息与代理结果汇总；前面任务的普通
+        # 失败截图照常进。
+        report_shots = [
+            (
+                _format_completed_task_labels(self.run_plan, [shot.task])[0]
+                if self.run_plan is not None
+                else shot.task,
+                Path(shot.path),
+            )
+            for shot in result.failureScreenshots
+            if shot is not evidence
+        ]
+        self._record_attempt(attempt, labels, message, screenshots=report_shots)
+        if self.cur_user_log is not None:
+            self.cur_user_log.status = message
+
+        project_name = ""
+        if self.interface_model is not None:
+            with suppress(Exception):
+                project_name = await asyncio.to_thread(
+                    interface_display_name, self.project_path, self.interface_model
+                )
+        plan = self.run_plan
+        if not project_name and plan is not None:
+            project_name = str(plan.projectLabel or plan.projectName or "")
+        resource_label = ""
+        if plan is not None:
+            label = str(plan.resource.label or "").strip()
+            resource_label = (
+                label if label and not label.startswith("$") else plan.resourceName
+            )
+        self.signal_tracker.record(
+            signal,
+            resource_name=plan.resourceName
+            if plan is not None
+            else result.resourceName,
+            resource_label=resource_label,
+            project_name=project_name,
+            node=result.signalNode,
+            user_id=str(self.cur_user_uid),
+            user_name=self.cur_user_item.name,
+            screenshot=Path(evidence.path) if evidence is not None else None,
+        )
+
+    def _is_maintenance_skip(self) -> bool:
+        return self.maintenance_skipped or self.run_signal == SERVER_MAINTENANCE
+
+    def _signal_user_message(self) -> str | None:
+        """本用户因信号没跑成时给人看的原因；没有信号返回 None。"""
+
+        if self.maintenance_skipped:
+            return MAINTENANCE_SKIP_MESSAGE
+        if self.run_signal is not None:
+            return SIGNAL_USER_MESSAGES.get(self.run_signal, self.run_signal)
+        return None
+
     def _timed_out_user_summary(self, result: MaaFWRunResult) -> str:
         limit = self.script_config.get("Run", "RunTimeLimit")
         total = len(self.run_plan.tasks) if self.run_plan is not None else 0
@@ -2509,16 +2640,23 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 self._collect_failure_screenshots()[-NOTIFY_SCREENSHOT_LIMIT:],
             )
             statistics["screenshots"] = screenshot_entries(images)
-            statistics["user_result"] = (
-                "代理任务全部完成"
-                if self.run_complete
-                else (
+            signal_message = self._signal_user_message()
+            if self.run_complete:
+                statistics["user_result"] = "代理任务全部完成"
+            elif signal_message is not None:
+                statistics["user_result"] = signal_message
+            else:
+                statistics["user_result"] = (
                     self.cur_user_log.status
                     if self.cur_user_log is not None
                     else "代理任务未完成"
                 )
-            )
-            mark = "√" if self.run_complete else "X"
+            if self.run_complete:
+                mark = "√"
+            elif self._is_maintenance_skip():
+                mark = MAINTENANCE_LAST_STATUS
+            else:
+                mark = "X"
             await push_notification(
                 mode="统计信息",
                 title=(
@@ -3030,6 +3168,22 @@ def _copy_native_debug_log_delta(
         if target_file is not None:
             target_file.close()
     return copied
+
+
+# worker 截图文件名是 ``[<前缀>.]<kind>-<HHMMSS>-<任务>.png``，信号证据图的 kind 见
+# core/runner/runner.py 的 SIGNAL_SCREENSHOT_KINDS。
+_SIGNAL_EVIDENCE_NAME_RE = re.compile(r"(?:^|\.)(?:maintenance|clientupdate)-\d{6}-")
+
+
+def _signal_evidence_shot(result: Any) -> Any | None:
+    """信号命中那个任务的证据图；找不到就不带图（宁缺勿错）。"""
+
+    for shot in getattr(result, "failureScreenshots", None) or ():
+        if shot.task == result.failedTask and _SIGNAL_EVIDENCE_NAME_RE.search(
+            Path(shot.path).name
+        ):
+            return shot
+    return None
 
 
 def _is_unretryable_failure(message: str) -> bool:

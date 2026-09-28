@@ -5,10 +5,10 @@ import AdmZip = require('adm-zip')
 import { getLogger } from './logger'
 import {
   CollectorState,
-  Installation,
-  addDiagnosticFile,
+  addDebugDirectory,
   addDirectory,
   addLatestMasHistoryLog,
+  addPerInstallationFile,
   discoverInstallations,
   resolveDataRoots,
 } from './issueReportCore'
@@ -17,30 +17,6 @@ const logger = getLogger('OK-WW问题包')
 
 // 与 app/task/Okww/AutoProxy.py 的 _OKWW_REL_LOG_FILE 保持同步
 const OKWW_REL_LOG_FILE = 'data/apps/ok-ww/working/logs/ok-script.log'
-
-function addLatestOkwwScriptLog(state: CollectorState, installations: Installation[]): void {
-  let latest: { sourcePath: string; archivePath: string; mtimeMs: number } | undefined
-
-  for (const installation of installations) {
-    const logPath = path.join(installation.rootPath, ...OKWW_REL_LOG_FILE.split('/'))
-    try {
-      const mtimeMs = fs.statSync(logPath).mtimeMs
-      if (!latest || mtimeMs > latest.mtimeMs) {
-        latest = {
-          sourcePath: logPath,
-          archivePath: `okww/${installation.label}/ok-script.log`,
-          mtimeMs,
-        }
-      }
-    } catch (error) {
-      logger.debug(`读取 ok-script.log 失败: ${logPath}, ${String(error)}`)
-    }
-  }
-
-  if (latest) {
-    addDiagnosticFile(state, latest.sourcePath, latest.archivePath)
-  }
-}
 
 interface OkwwIssueReportResult {
   success: boolean
@@ -61,10 +37,11 @@ export function createOkwwIssueReport(appRoot: string, zipPath: string): OkwwIss
   addLatestMasHistoryLog(state, dataRoots)
 
   dataRoots.forEach((dataRoot, index) => {
-    addDirectory(
+    addDebugDirectory(
       state,
       path.join(dataRoot, 'debug'),
-      index === 0 ? 'logs/auto-mas' : 'logs/auto-mas/backend'
+      index === 0 ? 'logs/auto-mas' : 'logs/auto-mas/backend',
+      'okww'
     )
   })
 
@@ -74,7 +51,7 @@ export function createOkwwIssueReport(appRoot: string, zipPath: string): OkwwIss
     addDirectory(state, runtimeDebugDir, 'logs/frontend-runtime')
   }
 
-  addLatestOkwwScriptLog(state, installations)
+  addPerInstallationFile(state, installations, OKWW_REL_LOG_FILE, 'okww')
 
   try {
     fs.mkdirSync(path.dirname(zipPath), { recursive: true })

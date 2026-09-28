@@ -711,7 +711,7 @@
                   <template #label>
                     <span class="form-label">
                       {{ t('edit.collectNodeDetails') }}
-                      <a-tooltip :title="t('edit.zzzodPushLogModeHint')">
+                      <a-tooltip mouse-enter-delay="0.5" :title="t('edit.collectsKeyMomentsFrom')">
                         <QuestionCircleOutlined class="help-icon" />
                       </a-tooltip>
                     </span>

@@ -141,6 +141,12 @@ const routes = [
     meta: { title: '编辑ZZZ-OD脚本' },
   },
   {
+    path: '/scripts/:id/edit/whimbox',
+    name: 'WhimboxScriptEdit',
+    component: () => import('../views/EditView/Script/WhimboxScriptEdit.vue'),
+    meta: { title: '编辑奇想盒脚本' },
+  },
+  {
     path: '/scripts/:scriptId/users/add/zzzod',
     name: 'ZzzOdUserAdd',
     component: () => import('../views/EditView/User/ZzzOdUserEdit.vue'),
@@ -273,6 +279,18 @@ const routes = [
     name: 'BetterGIUserEdit',
     component: () => import('../views/EditView/User/BetterGIUserEdit.vue'),
     meta: { title: '编辑BetterGI用户' },
+  },
+  {
+    path: '/scripts/:scriptId/users/add/whimbox',
+    name: 'WhimboxUserAdd',
+    component: () => import('../views/EditView/User/WhimboxUserEdit.vue'),
+    meta: { title: '添加奇想盒用户' },
+  },
+  {
+    path: '/scripts/:scriptId/users/:userId/edit/whimbox',
+    name: 'WhimboxUserEdit',
+    component: () => import('../views/EditView/User/WhimboxUserEdit.vue'),
+    meta: { title: '编辑奇想盒用户' },
   },
   {
     path: '/plans',

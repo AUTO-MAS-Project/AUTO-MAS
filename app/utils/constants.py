@@ -46,6 +46,7 @@ TYPE_BOOK = {
     "BetterGIConfig": "BetterGI",
     "ZzzOdConfig": "ZZZ-OD",
     "BAAHConfig": "BAAH",
+    "WhimboxConfig": "奇想盒",
     "MSSConfig": "MSS",
 }
 """配置类型映射表"""

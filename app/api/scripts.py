@@ -32,12 +32,14 @@ from fastapi.responses import FileResponse
 from app.core import Config
 from app.models.config import BetterGIConfig as RuntimeBetterGIConfig
 from app.models.config import OkNteConfig as RuntimeOkNteConfig
+from app.models.config import WhimboxConfig as RuntimeWhimboxConfig
 from app.models.schema import *
 from app.task.MaaFW.api_service import agent_env as maafw_agent_env_api
 from app.task.MaaFW.api_service import embedded as maafw_embedded_api
 from app.task.MaaFW.api_service import interface as maafw_interface_api
 from app.task.MaaFW.api_service import shell_instances as maafw_shell_instances_api
 from app.task.MaaFW.api_service import update as maafw_update_api
+from app.task.Whimbox.tools.upstream import WheelAssetsConfigSurface
 from app.utils import get_logger
 from app.utils.io import ConfigCorruptedError
 
@@ -68,6 +70,15 @@ def _bettergi_user_config(script_config: RuntimeBetterGIConfig, user_id: str):
 
     user_config = script_config.UserData[uuid.UUID(user_id)]
     return user_config
+
+
+def _whimbox_script_config(script_id: str):
+    """Resolve a Whimbox script and reject cross-type IDs before domain access."""
+
+    script_config = Config.ScriptConfig[uuid.UUID(script_id)]
+    if not isinstance(script_config, RuntimeWhimboxConfig):
+        raise TypeError("脚本配置类型错误, 不是奇想盒类型")
+    return script_config
 
 
 def _read_combat_from_plan(
@@ -196,6 +207,7 @@ SCRIPT_BOOK = {
     "BetterGIConfig": BetterGIConfig,
     "ZzzOdConfig": ZzzOdConfig,
     "BAAHConfig": BAAHConfig,
+    "WhimboxConfig": WhimboxConfig,
     "MSSConfig": MSSConfig,
 }
 USER_BOOK = {
@@ -211,6 +223,7 @@ USER_BOOK = {
     "BetterGIConfig": BetterGIUserConfig,
     "ZzzOdConfig": ZzzOdUserConfig,
     "BAAHConfig": BAAHUserConfig,
+    "WhimboxConfig": WhimboxUserConfig,
     "MSSConfig": MSSUserConfig,
 }
 
@@ -2459,11 +2472,8 @@ async def get_zzzod_slots_api(scriptId: str) -> ZzzOdSlotsOut:
     """
 
     try:
-        # 槽总览要 rglob 统计各槽目录占用，是阻塞 IO，放线程里跑
-        data = [
-            ZzzOdSlotOut(**item)
-            for item in await asyncio.to_thread(Config.get_zzzod_slots, scriptId)
-        ]
+        # 阻塞 IO 在 Config.get_zzzod_slots 内放线程执行，懒导入留在事件循环
+        data = [ZzzOdSlotOut(**item) for item in await Config.get_zzzod_slots(scriptId)]
         return ZzzOdSlotsOut(
             code=200,
             status="success",
@@ -2495,8 +2505,7 @@ async def clean_zzzod_slots_api(
     """原生实例与被任一 ZzzOd 用户绑定的槽一律不动，返回实际回收的槽号。"""
 
     try:
-        # 清理要整目录拷贝 + 删目录，是阻塞 IO，放线程里跑
-        removed = await asyncio.to_thread(Config.clean_zzzod_slots, body.scriptId)
+        removed = await Config.clean_zzzod_slots(body.scriptId)
         return ZzzOdSlotCleanOut(
             code=200,
             status="success",
@@ -2528,7 +2537,7 @@ async def get_zzzod_recycle_api(scriptId: str) -> ZzzOdRecycleOut:
     try:
         data = [
             ZzzOdRecycleEntryOut(**item)
-            for item in await asyncio.to_thread(Config.get_zzzod_recycle, scriptId)
+            for item in await Config.get_zzzod_recycle(scriptId)
         ]
         return ZzzOdRecycleOut(
             code=200,
@@ -2561,8 +2570,7 @@ async def clear_zzzod_recycle_api(
     """只删 recycle 池；onedragon 原生池与 mas 配置恢复池不受影响。"""
 
     try:
-        # 整棵目录删除是阻塞 IO，放线程里跑
-        count = await asyncio.to_thread(Config.clear_zzzod_recycle, body.scriptId)
+        count = await Config.clear_zzzod_recycle(body.scriptId)
         return ZzzOdRecycleClearOut(
             code=200,
             status="success",
@@ -3162,6 +3170,72 @@ async def get_hsr_sra_profiles_api(scriptId: str | None = None) -> HSRSRAProfile
 
     reply = await hsr_api.get_sra_profiles(scriptId)
     return HSRSRAProfilesOut(**reply.out_fields())
+
+
+@router.get(
+    "/whimbox/task-catalog",
+    tags=["Whimbox"],
+    summary="获取奇想盒一条龙任务目录",
+    response_model=WhimboxTaskCatalogOut,
+    status_code=200,
+)
+async def get_whimbox_task_catalog_api(
+    scriptId: str | None = None,
+) -> WhimboxTaskCatalogOut:
+    """下发一条龙任务目录（步骤开关 + 目标/参数字段）。
+
+    字段定义与值域从上游安装目录三件套（default_config / setting_options /
+    material）运行时机械转换，MAS 发版不管理；上游升级后下次读取自动生效。
+    """
+
+    try:
+        if not scriptId:
+            return WhimboxTaskCatalogOut(
+                code=400, status="error", message="缺少 scriptId"
+            )
+        script_config = _whimbox_script_config(scriptId)
+        surface = WheelAssetsConfigSurface(
+            Path(str(script_config.get("Info", "RootPath") or ""))
+        )
+        install_error = surface.check_install()
+        if install_error:
+            return WhimboxTaskCatalogOut(
+                code=400, status="error", message=install_error
+            )
+        catalog = surface.read_catalog()
+        data = WhimboxTaskCatalogData(
+            steps=[
+                WhimboxTaskCatalogItem(key=s.key, display=s.display, section=s.section)
+                for s in catalog.steps
+            ],
+            options=[
+                WhimboxOptionCatalogItem(
+                    key=o.key,
+                    display=o.display,
+                    section=o.section,
+                    field_type=o.field_type,
+                    options=list(o.options),
+                    default=o.default,
+                )
+                for o in catalog.options
+            ],
+            upstream_version=catalog.upstream_version,
+        )
+        return WhimboxTaskCatalogOut(
+            message=f"共 {len(data.steps)} 个步骤, {len(data.options)} 个参数字段",
+            data=data,
+        )
+    except Exception as e:
+        logger.opt(exception=True).warning(
+            f"get_whimbox_task_catalog_api失败: {type(e).__name__}: {e}"
+        )
+        return WhimboxTaskCatalogOut(
+            code=400
+            if isinstance(e, (ValueError, KeyError, TypeError, RuntimeError))
+            else 500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+        )
 
 
 @router.post(

@@ -49,7 +49,6 @@ const dailyOnceTaskOptions = MAAEND_DAILY_ONCE_TASK_OPTIONS.map(task => ({
 
 const handleChange = (values: string[]) => {
   if (props.loading) return
-  // 每日执行限制独立于快速配置，关闭快速配置后仍可保存。
   emit('save', JSON.stringify(Array.from(new Set(values.filter(Boolean)))))
 }
 </script>

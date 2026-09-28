@@ -25,6 +25,15 @@ class MaaFWRuntimePoolError(RuntimeError):
     """Raised when a managed MaaFW runtime pool operation is unsafe or invalid."""
 
 
+def output_tail(text: str, limit: int) -> str:
+    """子进程输出过长时只留结尾：traceback 与 uv / pip 的报错原因都在最后几行，
+    截开头恰好把它们丢掉。"""
+
+    if len(text) <= limit:
+        return text
+    return "…" + text[-limit:]
+
+
 _LOCKS_GUARD = threading.Lock()
 _POOL_LOCKS: dict[str, threading.RLock] = {}
 

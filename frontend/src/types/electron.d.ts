@@ -283,6 +283,18 @@ export interface ElectronAPI {
     zipPath?: string
     error?: string
   }>
+  exportWhimboxIssueReport: () => Promise<{
+    success: boolean
+    message?: string
+    zipPath?: string
+    error?: string
+  }>
+  exportBetterGIIssueReport: () => Promise<{
+    success: boolean
+    message?: string
+    zipPath?: string
+    error?: string
+  }>
   /** configTypes：要列出的脚本配置类名（MaaFW 特调注册表的 scriptConfigType） */
   listMaaFWIssueReportScripts: (configTypes: string[]) => Promise<
     Array<{
@@ -299,6 +311,12 @@ export interface ElectronAPI {
     error?: string
   }>
   exportM9AIssueReport: () => Promise<{
+    success: boolean
+    message?: string
+    zipPath?: string
+    error?: string
+  }>
+  exportMSSIssueReport: () => Promise<{
     success: boolean
     message?: string
     zipPath?: string
@@ -394,6 +412,7 @@ export interface ElectronAPI {
     staged?: boolean
     currentCommit?: string
     remoteCommit?: string
+    commitMessage?: string
     error?: string
   }>
 

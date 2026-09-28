@@ -171,6 +171,7 @@ import type { WebhookInBase } from '../models/WebhookInBase';
 import type { WebhookTestIn } from '../models/WebhookTestIn';
 import type { WebhookUpdateIn } from '../models/WebhookUpdateIn';
 import type { WebSocketMetaOut } from '../models/WebSocketMetaOut';
+import type { WhimboxTaskCatalogOut } from '../models/WhimboxTaskCatalogOut';
 import type { ZzzOdAppConfigOut } from '../models/ZzzOdAppConfigOut';
 import type { ZzzOdAppConfigSaveIn } from '../models/ZzzOdAppConfigSaveIn';
 import type { ZzzOdCatalogOut } from '../models/ZzzOdCatalogOut';
@@ -407,6 +408,30 @@ export class Service {
             errors: {
                 422: `Validation Error`,
             },
+        });
+    }
+    /**
+     * 获取星塔旅人活动数据（StellaBase 中转）
+     * 取回星塔旅人的活动排期。
+     *
+     * StellaBase 不放开跨域，浏览器直连拿不到数据，所以统一由后端中转——筛选与
+     * 格式转换仍由前端完成，与碧蓝档案那条链路一致。取数失败返回错误信封，由卡片
+     * 显示自己的失败态，不影响其它卡片。
+     *
+     * 顺带捎上国服官网的主推横幅（``official``）：StellaBase 的活动大图时有时无，
+     * 官网那张 795×510 的官方主视觉正好当封面兜底；官网挂了不影响排期本身。
+     * 其中与当前活动对得上号的那条会带 ``matched: true``，前端优先用它。
+     *
+     * Returns:
+     * InfoOut: 站点原始响应，另加 ``official`` 横幅列表；取不到排期时返回
+     * ``code=500`` 的错误信封。
+     * @returns InfoOut Successful Response
+     * @throws ApiError
+     */
+    public static getStellaActivityApiInfoStellaActivityPost(): CancelablePromise<InfoOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/info/stella/activity',
         });
     }
     /**
@@ -2392,6 +2417,30 @@ export class Service {
         return __request(OpenAPI, {
             method: 'GET',
             url: '/api/scripts/hsr/sra-profiles',
+            query: {
+                'scriptId': scriptId,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 获取奇想盒一条龙任务目录
+     * 下发一条龙任务目录（步骤开关 + 目标/参数字段）。
+     *
+     * 字段定义与值域从上游安装目录三件套（default_config / setting_options /
+     * material）运行时机械转换，MAS 发版不管理；上游升级后下次读取自动生效。
+     * @param scriptId
+     * @returns WhimboxTaskCatalogOut Successful Response
+     * @throws ApiError
+     */
+    public static getWhimboxTaskCatalogApiApiScriptsWhimboxTaskCatalogGet(
+        scriptId?: (string | null),
+    ): CancelablePromise<WhimboxTaskCatalogOut> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/scripts/whimbox/task-catalog',
             query: {
                 'scriptId': scriptId,
             },
