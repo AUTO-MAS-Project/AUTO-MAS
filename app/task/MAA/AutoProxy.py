@@ -890,6 +890,8 @@ class AutoProxyTask(TaskExecuteBase):
         # 上一轮是否真的被养成接管抑制过库存保持：只有抑制过才在下一轮
         # 恢复开关值，否则会把已完成的库存保持重新点亮、重试轮整个重跑
         self._depot_maintain_suppressed = False
+        # 已提示过的「找不到原生任务」：重试轮每次都重新合成队列，同一条只提示一次
+        self._missing_task_source_warned: set[str] = set()
 
         self.maa_root_path = Path(self.script_config.get("Info", "Path"))
         self.maa_set_path = self.maa_root_path / "config"
@@ -1357,6 +1359,33 @@ class AutoProxyTask(TaskExecuteBase):
         )
         self._depot_maintain_suppressed = False
 
+    async def _warn_missing_task_source(self, source_name: str, affected: str) -> None:
+        """提示 MAA 任务队列里认不出某个原生任务，受影响的任务将按默认值运行。
+
+        认不出有两种情况：队列里没有这类任务；或同类任务有多个、名字又都对不上，
+        按 ``_find_task_source`` 的约定不猜，免得串用别的任务的配置。
+
+        Args:
+            source_name: MAA 任务队列里认不出的任务名。
+            affected: 因此按默认值运行的任务，多个用顿号连接。
+        """
+
+        message = (
+            f"用户 {self.cur_user_item.name} 的 MAA 任务队列里认不出「{source_name}」"
+            f"任务（队列里没有，或有多个同类任务且名字都对不上），{affected}本次按"
+            f"默认设置运行，在 MAA 里为它设置的选项不会生效"
+        )
+        if message in self._missing_task_source_warned:
+            return
+        self._missing_task_source_warned.add(message)
+
+        logger.warning(message)
+        await Publisher.send(
+            id=self.task_info.task_id,
+            type=protocol.TASK_NOTICE,
+            data=WSTaskNoticeData(level="warning", message=message),
+        )
+
     async def set_maa(self, emulator_info: DeviceInfo):
         """配置MAA运行参数"""
 
@@ -1522,6 +1551,7 @@ class AutoProxyTask(TaskExecuteBase):
                 )
 
         # 优先按任务名称匹配，确保多个 Fight 任务各自继承原生高级配置。
+        missing_sources: set[str] = set()
         for en_task, zh_task in zip(MAA_TASKS, MAA_TASKS_ZH):
             # 默认关闭时不写入新任务，兼容尚未支持该任务类型的 MAA 版本
             # （库存保持、更换主题；更换主题需 MAA v6.17.3+，旧版无法反序列化未知任务类型）
@@ -1531,11 +1561,10 @@ class AutoProxyTask(TaskExecuteBase):
             ):
                 continue
 
-            task_set[en_task] = _find_task_source(
-                source_queue,
-                zh_task,
-                en_task,
-            ) or {
+            source = _find_task_source(source_queue, zh_task, en_task)
+            if source is None:
+                missing_sources.add(en_task)
+            task_set[en_task] = source or {
                 "$type": f"{en_task}Task",
                 "Name": zh_task,
                 "IsEnable": False,
@@ -1544,6 +1573,26 @@ class AutoProxyTask(TaskExecuteBase):
 
         annihilation_source = _find_task_source(source_queue, "剿灭作战", "Fight")
         activity_source = _find_task_source(source_queue, "活动关优先", "Fight")
+
+        # 吃药 / 碎石类任务取不到原生配置就只剩默认值，用户在 MAA 里设的选项
+        # 全部失效却看不出来，必须提示。剿灭作战、活动关优先没有同名任务时本就
+        # 沿用理智作战，只有理智作战也缺失才会落到默认值
+        if "DepotMaintain" in missing_sources:
+            await self._warn_missing_task_source("库存保持", "库存保持")
+        if "Fight" in missing_sources:
+            affected = []
+            if self.task_dict["Fight"] and self.mode == "Routine":
+                affected.append("理智作战")
+            if (
+                self.task_dict["Fight"]
+                and self.mode == "Annihilation"
+                and annihilation_source is None
+            ):
+                affected.append("剿灭作战")
+            if self.mode == "Routine" and activity_stage and activity_source is None:
+                affected.append("活动关优先")
+            if affected:
+                await self._warn_missing_task_source("理智作战", "、".join(affected))
 
         # 库存保持计划：MAS 快速配置面板维护的计划写回原生 PlanList。只覆盖
         # MAS 管理的三项（Stage/DropId/DropCount），其余原生字段（含用户在 MAA 里
