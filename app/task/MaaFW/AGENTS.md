@@ -48,21 +48,35 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   视图根上的 `.auto_mas_view.json`（谱系、载荷、版本、物化时刻、`switchedBy`）是物化事实的唯一
   来源，不进指纹、不进任何清单，只随目录原子换入、不原地改（`switchedBy` 打完日志后清除除外）。
   谱系键 = `mirrorchyan_rid` > `github` > `name`；**组 = 谱系 + `Update.Channel`，同组永远挂同一个
-  载荷**（`lineage.json` 的 `latest[channel]` 只前进，同版本不换 id——唯一例外是 latest
-  自带的 MaaFramework 在本机加载不了而新登记的能加载，见 `payloads._replaces_unloadable_latest`）。
+  载荷**（`lineage.json` 的 `latest[channel]` 只前进，同版本不换 id——例外只有两个：latest
+  自带的 MaaFramework 在本机加载不了而新登记的能加载，见 `payloads._replaces_unloadable_latest`；
+  新登记的按更高的投影规则版本建（投影补齐、按新规则重新导入同版本），且不是「本机加载不了换掉
+  能加载的」，见 `payloads._replaces_older_projection_latest`）。
   配置项零新增：谱系 / 载荷 / 版本都不进 `ScriptConfig.json`。
 - **投影**：按 interface 白名单（`project_update/projection.py`），**白名单之外的顶层条目
   剩余 ≤ 64 MB 的也带走**（MaaEnd 的 `data/`、`locales/`，MaaYYs 的 `assets/答案.csv`，M9A 的
   `data/activity` 都没在 interface 里声明却是 agent 运行时要读的；更大的顶层目录、根上没声明的
-  exe / dll、.NET 外壳的 `libs/` 才是外壳运行时）。外壳是冻结的 Python 程序时（根上直接躺着没人
+  exe / dll、.NET 外壳的 `libs/` 才是外壳运行时）。**能确认是外壳才剔，确认不了一律保留**（规则
+  第 2 版）：按名字剔的只剩顶层的界面程序（MFAAvalonia / MXU / MFW / MaaPiCli）、Qt 界面运行时与
+  顶层运行期目录（`cache/ logs/ temp/ update/ backup/`、MFAAvalonia 旧版自更新的 `temp_res/` 等，
+  导入的多半是用户在用的目录）。**`debug/` 不在其中**：里面除了日志还有项目读回的持久状态（MaaEnd
+  的 `debug/record/` 用 `random_salt.txt` 算账号 ID，MPA 的 `debug/*_zone_offset.json`），它不进载荷
+  （`payloads.PAYLOAD_STRIP_ROOT_DIRS` 登记前整个剔），导入时直接从来源的 `debug/` 挑状态文件（不是
+  日志、截图、临时文件，单个 ≤ 1 MB；**不看投影去留**，截图多了 `debug/` 会超过 64 MB 被整个丢）作为
+  视图私有文件放进视图（`embedded_project._runtime_state_seed`，视图里已有的不覆盖），之后随切换原样带着走；
+  没声明的顶层目录是 Python 解释器、.NET 托管库 / RID 资产、标准形态的 MaaFramework 原生库目录
+  （库直接在目录里，或目录里只有原生库）的，按内容确认后整目录剔；只是某处带着一份原生库的只剔那几个
+  库文件（`ProjectionRules.confirmed_shell`）；任何深度都剔的只有 `__pycache__` 这类没有歧义的缓存、
+  版本库目录、`.pyc/.log/.tmp` 后缀与 MaaFramework 的 `.lib` 导入库。外壳是冻结的 Python 程序时（根上直接躺着没人
   声明的 `python312.dll`，Maa_bbb 的 MFW.exe 就是），它散在根目录的二进制依赖包（带 `.pyd`，或
   `*.libs` / `*.dist-info`）也不带：agent 子进程的 `PYTHONPATH` 是项目根，`backports/zstd/`
   这种没有 `__init__.py` 的半截包会变成命名空间包盖住真正的模块——副本上 pip 就是这样崩的。
   视图路径由脚本 ID 推出（`embedded_copy_dir_name`：uuid 去连字符取前 12 位，短是为了 pyc 前缀树
   与深层 site-packages 不撞 MAX_PATH）、不进配置、不可手改；来源目录一个字节不动、也不由 MAS 删。脚本页
   「选择本地目录」就是 `/maafw/embedded/reimport`：投影成载荷、登记进脚本所在渠道的组，视图切到组的
-  latest——导入的比组新就推进整组（空闲的兄弟立即切），相同或更旧就上组当前版本（「导入时版本」
-  那行日志仍是所选目录的版本）。没有 enable / disable 这种开关路由，`Embedded.*` 里只有报告、
+  latest——导入的比组新、或同版本而投影规则版本比组的 latest 高（组的载荷是旧规则建的）就推进
+  整组（空闲的兄弟立即切），其余相同或更旧的就上组当前版本（「导入时版本」那行日志仍是所选目录的
+  版本）。没有 enable / disable 这种开关路由，`Embedded.*` 里只有报告、
   来源版本与导入时间。删脚本连带删视图；载荷与共用库的回收在启动期。
 - **换版本 = 切视图**（`embedded_project.switch_view`，§3.2）：在 `data/mfw/.staging/` 里按新载荷重建
   链接森林、把视图私有文件带过去（同谱系才带；`.pycache` 不带）、被本地改过的受管文件以新版本为准并
@@ -222,6 +236,14 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   项目有 password 输入框时，`.worker.log` 第一行是以 `LOG_REDACTION_MARKER` 开头的打码说明：
   前端问题包导出（`frontend/electron/services/maafwIssueReportService.ts`）凭它认定这次的
   `.worker.log` / `.maafw.log` 已打码才往包里放，项目 `debug/` 目录与没有这一行的旧副本一律不收。
+  项目 agent 自己写的日志（M9A `debug/custom/*.log`、MaaEnd `debug/go-service*.log`、MaaFgo
+  `bbcdll/*.log` …）由 `runner_task` 挨着 `.maafw.log` 另存：运行开始记下视图里每个 `.log`
+  的大小与开头，收尾只取本次新写的部分拼成 `history/…/<时分秒>.project.log`（每段一行分隔头；
+  单个取末尾 2 MB、一次运行总量 8 MB，按行切；按该脚本**全部用户**的密码打码，
+  `tools/embedded/project_logs.py`）。`debug/maafw*.log` 不在其中。问题包按后缀认 history
+  文件，`.project.log` 与 `.worker.log` 同一条件收（有密码输入框时只收写的时候就打过码的那次）；
+  数据备份与 `.maafw.log` 一样不带它。打码按每个写法的 UTF-8 / GBK / UTF-16LE 字节替换
+  （`option_secrets.secret_byte_pairs`，`.maafw.log` 同用）。
 - 加载器写的告警（`logger.warning`）由加载器旁听收集、挂在模型上（`interface_load_warnings`），
   随磁盘缓存保存，进运行计划的 `warnings`（运行日志开头）与导入报告；只给后端看的用
   `extra=_LOG_ONLY`。发行包的毛病能降级就降级：缺 import 文件、scan_dir 不在、缺
@@ -272,8 +294,18 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   宽限）；登记之后不再响应取消。手动 `/maafw/update` 运行中照旧拒绝（`api_service/update.py` 的 `UPDATE_SCRIPT_BUSY`），整段
   持本视图预约，切完在预约里确认一次运行环境再放手（前端那次 prepare 会被 `envReady` 短路）。
 - 差量 / 全量只看当前载荷：`source.kind=update`（更新得来的，清单逐文件记包内哈希，指纹就是它
-  现在的指纹——载荷不可变）才要差量包，本地导入的一律全量；差量基线用 `apply.py: _validate_plan_base`
-  对载荷清单校验。全量包清的是旧载荷里 `origin=package` 且不在包内的，加上 `origin=import`、位于新
+  现在的指纹——载荷不可变）才要差量包，本地导入的一律全量；按旧投影规则建、缺的文件又没补上的
+  载荷（清单 `projectionRevision` 低于 `projection.PROJECTION_REVISION`）也只要全量包。差量基线用 `apply.py: _validate_plan_base`
+  对载荷清单校验。
+- **投影规则改版**：规则改动会让已登记的载荷少文件时，`PROJECTION_REVISION` 加一，并在
+  `project_update/projection_legacy.py` 留一份上一版规则的复刻。运行前检查与手动检查更新时
+  （`tools/embedded/view_heal.py`）按「当前规则留、载荷那一版剔、载荷里没有」比对一次（依据：导入目录 →
+  缓存的完整包 → GitHub 发行包的 HTTP Range），缺了就用「旧载荷 + 取回的文件」建同版本新载荷、登记
+  （`register` 允许规则版本更高的同版本载荷顶替 latest）、切组。新载荷是旧载荷的超集、共同路径内容
+  相同且版本号相同，切换按「同内容」走（`embedded_project._is_content_superset` → `fills_only`；版本号不同的：视图里已有的文件
+  （`data/manifest_cache.json`、热更新改过的受管文件）原样保留、不留档，只落新增的文件，M9A / MaaEnd
+  不会因此重跑热更新。结果记在载荷清单的 `projectionCheck`，
+  同组只查一次（`project_update/projection_heal.py`）。全量包清的是旧载荷里 `origin=package` 且不在包内的，加上 `origin=import`、位于新
   interface 资源目录内、不在包内的（`apply._import_origin_orphans`：用户内容目录与运行时目录不碰）。
   `.mas-update` / `.mas-update-cache` 是更新器的保留目录；`debug` / `logs` / `temp` / `__pycache__` /
   `.pycache`、`config/maa_option.json` 与视图标记不计入指纹（agent 子进程与环境准备设了
@@ -303,4 +335,5 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
 - 本地边界测试会在临时目录建很深的树，`--basetemp` 用短路径（如 `%TEMP%\mfwt\pt`），
   否则 Windows 报 `WinError 206`，看起来像代码坏了。
 - 排障先看 `history/<日期>/…/<时分秒>.maafw.log`（`grep -a`）：agent 协议版本不匹配之类
-  只记在那里，宿主日志只有一句"连接超时"。
+  只记在那里，宿主日志只有一句"连接超时"。agent 自己的 DEBUG 日志、Go agent 的 panic 在同名
+  的 `.project.log` 里。

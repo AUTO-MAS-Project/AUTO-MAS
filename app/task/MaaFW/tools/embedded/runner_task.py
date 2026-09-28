@@ -78,13 +78,15 @@ from .flavor import resolve_flavor, resolve_game_update_hook
 from .game_package import resolve_game_package
 from .game_resolution import UnityGameResolutionOverride, parse_resolution_option
 from .option_secrets import (
-    REDACTED_SECRET_TEXT,
     collect_plan_password_values,
+    collect_script_password_values,
     log_redaction_notice,
     open_task_snapshot,
     redact_secret_text,
+    secret_byte_pairs,
     secret_log_variants,
 )
+from .project_logs import copy_project_log_delta, snapshot_project_logs
 from .project_path import release_project_path, try_reserve_project_path
 from .signal_notice import (
     MAINTENANCE_LAST_STATUS,
@@ -1494,6 +1496,14 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         ) = await asyncio.to_thread(
             _snapshot_native_debug_log_state, native_debug_log_path
         )
+        # 项目 agent 自己写的日志（debug/custom、go-service …）同样记下起点，收尾时只另存本次新写的。
+        try:
+            project_log_marks = await asyncio.to_thread(
+                snapshot_project_logs, self.project_path
+            )
+        except Exception as exc:
+            project_log_marks = {}
+            self._append_log(f"MaaFW 项目日志起点记录失败，本次按全部新写处理: {exc}")
 
         def send_runner_log(message: str) -> None:
             loop.call_soon_threadsafe(self._append_log, message)
@@ -1753,6 +1763,25 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             else:
                 if copied:
                     self._append_log(f"MaaFW 原生日志已保存: {native_log_path}")
+            # 项目自己写的日志本次新增的部分：与 .maafw.log 同目录同前缀，按脚本全部用户的密码打码。
+            project_log_path = history_dir / f"{history_stamp}.project.log"
+            try:
+                project_logs = await asyncio.to_thread(
+                    copy_project_log_delta,
+                    self.project_path,
+                    project_log_marks,
+                    project_log_path,
+                    secrets=self._project_log_secret_variants(secrets),
+                )
+            except Exception as exc:
+                self._append_log(f"MaaFW 项目日志保存失败: {exc}")
+            else:
+                if project_logs.segments:
+                    self._append_log(
+                        f"MaaFW 项目日志已保存: {project_log_path}"
+                        f"（{len(project_logs.segments)} 个文件，"
+                        f"{project_logs.written_bytes} 字节）"
+                    )
             with suppress(Exception):
                 await asyncio.to_thread(job_path.unlink)
             with suppress(Exception):
@@ -1779,6 +1808,23 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             return []
         return secret_log_variants(
             collect_plan_password_values(self.run_plan, self.interface_model)
+        )
+
+    def _project_log_secret_variants(self, plan_variants: list[str]) -> list[str]:
+        """项目日志不一定是本次运行的用户写的（上一个用户留下的片段也可能落在本次新增里），
+        所以按脚本全部用户的密码打码，再并上本次运行计划里的。"""
+
+        try:
+            values = collect_script_password_values(
+                self.script_config, self.interface_model
+            )
+        except Exception as exc:  # noqa: BLE001 - 取不到时退回本次运行计划里的
+            logger.debug(f"收集脚本全部用户的密码失败，只按本次运行的打码: {exc}")
+            return plan_variants
+        return sorted(
+            set(plan_variants) | set(secret_log_variants(values)),
+            key=len,
+            reverse=True,
         )
 
     def _log_redaction_notice(self) -> str | None:
@@ -3144,14 +3190,12 @@ def _copy_native_debug_log_delta(
 
     唯一的改动是 ``secrets``（密码字段的原文及其 JSON 转义写法）：框架在
     ``Tasker::post_task`` 里按 INFO 级别记下整份 ``pipeline_override``（``[pipeline_override={...}]``），
-    密码会原样出现；给了就逐行换成占位（按 UTF-8 字节替换，其余字节不动）。项目目录里框架
+    密码会原样出现；给了就逐行换成占位（按 UTF-8 / GBK / UTF-16LE 的字节替换，其余字节不动）。项目目录里框架
     自己写的 ``debug/maafw.log`` 不归 MAS 管，那份仍是原文。
     """
 
-    secret_pairs = [
-        (secret.encode("utf-8"), REDACTED_SECRET_TEXT.encode("utf-8"))
-        for secret in secrets
-    ]
+    # 每个写法按 UTF-8 / GBK / UTF-16LE 的字节都换（与 .project.log 同一套，见 option_secrets）。
+    secret_pairs = secret_byte_pairs(list(secrets))
 
     copied = 0
     target_file: Any | None = None

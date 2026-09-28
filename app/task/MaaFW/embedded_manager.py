@@ -84,7 +84,7 @@ from app.task.MaaFW.tools.embedded.update_credentials import (
     resolve_update_credentials,
     resolve_update_proxy_url,
 )
-from app.task.MaaFW.tools.embedded.view_heal import heal_view_files
+from app.task.MaaFW.tools.embedded.view_heal import heal_projection
 from app.task.MaaFW.tools.notify import push_notification
 from app.task.MaaFW.tools.notify.report import (
     NOTIFY_SCREENSHOT_LIMIT,
@@ -113,6 +113,9 @@ _UPDATE_CANCEL_GRACE_SECONDS = 60.0
 # ``.partial`` 与断点原样留着下次续传，等不到就放手。
 _UPDATE_DOWNLOAD_CANCEL_GRACE_SECONDS = 5.0
 _BYTES_PER_MB = 1024 * 1024
+# 运行前投影补齐等谱系锁的上限：同项目正在更新（兄弟脚本的运行前更新可能要几分钟）就
+# 这次不查，不让运行前检查跟着等。
+_PROJECTION_HEAL_LOCK_TIMEOUT_SECONDS = 1.0
 # CDK 距到期不足这些天时提醒用户续费
 CDK_EXPIRY_WARNING_DAYS = 7
 
@@ -232,6 +235,17 @@ def describe_update_result(
                         )
                     )
     return lines
+
+
+def describe_unsupported_host() -> str | None:
+    """本机进程不是 x64 时的「MaaFW 目前只支持 x64」提示；是 x64 时 None。"""
+
+    # 与下面同理：runner.environment 会拉起运行池，只在检查时导入。
+    from app.task.MaaFW.tools.core.runner.environment import (
+        describe_unsupported_architecture,
+    )
+
+    return describe_unsupported_architecture()
 
 
 def describe_unusable_runtime(project_path: Path) -> str | None:
@@ -400,6 +414,12 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
             return "脚本配置类型错误，不是 MFW 脚本类型"
         self.script_config = script_config
 
+        # 只支持 x64：不是就在导入、更新、准备运行环境之前说一次，本轮整个脚本不跑，
+        # 也就没有重试（运行期其它层再撞上同一句也按 ARCHITECTURE_MISMATCH_MARKERS 不重试）。
+        unsupported = await asyncio.to_thread(describe_unsupported_host)
+        if unsupported:
+            return unsupported
+
         script_id = str(self.script_info.script_id)
         # 副本还没建（升级前的老脚本、复制脚本、手删、磁盘迁移）或来源换了目录时
         # 先导入一次；副本和来源都没了才报错。
@@ -434,12 +454,21 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
                 # 上锁之前切过去——配置一个字段都不写。切没切都看一眼标记：还欠确认
                 # （本次切的、或此前哪条路径切完没确认上）就由 main_task 在用户任务前补。
                 await self._sync_view_to_group("运行前", reservation_held=True)
-                # 旧投影规则漏装的文件补进视图（每个视图只查一次，从不抛）。
-                await heal_view_files(
+                # 旧投影规则建的载荷按当前规则补齐（同组只查一次，从不抛）：补齐后本视图
+                # 与同组空闲脚本切过去，下面的 envConfirmedFor 据此补一次运行环境确认。
+                # 同项目正在更新时不等锁，这次不查。
+                proxy_url, proxy = self._resolve_update_proxy()
+                await heal_projection(
                     script_id,
-                    proxy=self._resolve_update_proxy()[1],
-                    shell_hint=shell_hint_from_report(script_config),
+                    channel=resolve_update_credentials(script_config).channel,
+                    members=self._group_members,
+                    reservation_held=True,
                     send_log=self._threadsafe_update_log(),
+                    proxy=proxy,
+                    proxy_url=proxy_url,
+                    shell_hint=shell_hint_from_report(script_config),
+                    script_name=str(self.script_info.name or ""),
+                    lock_timeout=_PROJECTION_HEAL_LOCK_TIMEOUT_SECONDS,
                 )
                 self._env_confirm_needed = await asyncio.to_thread(
                     lambda: env_confirm_pending(
@@ -1033,6 +1062,9 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
     def _describe_precheck_failure(phase_zh: str, failure: Mapping[str, Any]) -> str:
         """预检失败给用户看的一句话；按 ``kind`` 分文案。"""
 
+        from app.task.MaaFW.tools.core.agent_env.import_check import (
+            KIND_AGENT_MODULE_MISSING,
+        )
         from app.task.MaaFW.tools.core.project_update.precheck_memo import (
             KIND_BINDING_UNAVAILABLE,
         )
@@ -1040,6 +1072,11 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
         name = str(failure.get("projectName") or "MFW 项目").strip()
         target = str(failure.get("targetVersion") or "新版本").strip()
         previous = str(failure.get("previousVersion") or "当前版本").strip()
+        if failure.get("kind") == KIND_AGENT_MODULE_MISSING:
+            # 原因本身就是整句（缺哪个模块、哪里引用、继续用哪个版本），不再套一层
+            reason = str(failure.get("reason") or "").strip().splitlines()
+            if reason:
+                return f"MFW 项目{phase_zh}更新（{name} {target}）：{reason[0]}"
         if failure.get("kind") == KIND_BINDING_UNAVAILABLE:
             requirement = str(failure.get("requirement") or "maafw").strip()
             return (

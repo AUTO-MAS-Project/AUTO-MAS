@@ -8,7 +8,7 @@ import threading
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Awaitable, Callable, Mapping, Sequence
+from typing import TYPE_CHECKING, Any, Awaitable, Callable, Mapping, Sequence
 from urllib.parse import quote
 
 import httpx
@@ -27,17 +27,21 @@ from .apply import (
 )
 from .contracts import normalise_sha256
 from .payloads import (
+    PROJECTION_CHECK_FIELD,
     PayloadCancelled,
     PayloadError,
     PayloadTarget,
     RegisterResult,
     build_from_package,
     finalize,
+    inherited_projection_revision,
+    projection_revision_of,
     read_lineage,
     register,
     remove_tree,
     version_newer,
 )
+from .projection import PROJECTION_REVISION
 from .state import (
     DEFAULT_CACHE_ROOT,
     DEFAULT_OPERATION_ROOT,
@@ -49,6 +53,9 @@ from .transport import (
     UpdateDownloadCancelled,
     download_resumable,
 )
+
+if TYPE_CHECKING:  # 导入 runtime_pool 会连带整个运行池包，选包时才导入
+    from ..runtime_pool.architecture import ArchitectureTarget
 
 HTTP_HEADERS = {"User-Agent": "AutoMasGui"}
 
@@ -260,6 +267,42 @@ class MaaFWProjectUpdateError(RuntimeError):
         self.cancelled = cancelled
 
 
+def _stale_projection_message(manifest: Mapping[str, Any]) -> str:
+    """按旧投影规则建的载荷改要全量包时的日志：如实说明是否核对过、缺多少（``projectionCheck``）。"""
+
+    record = manifest.get(PROJECTION_CHECK_FIELD)
+    record = record if isinstance(record, Mapping) else {}
+    reason = str(record.get("reason") or "").strip()
+    suffix = f"（上次检查：{reason}）" if reason else ""
+    missing = int(record.get("missingCount") or 0)
+    if missing:
+        return (
+            f"当前版本按旧规则安装，查出漏装 {missing} 个文件但没补上{suffix}，"
+            "改为请求全量包"
+        )
+    if record:
+        return f"当前版本按旧规则安装，是否漏装文件还没核对成{suffix}，改为请求全量包"
+    return "当前版本按旧规则安装，还没核对过是否漏装文件，改为请求全量包"
+
+
+def _host_update_target() -> ArchitectureTarget:
+    """本机选包用的架构参数（Mirror 酱 os/arch、GitHub 资产架构段）。
+
+    只从 ``runtime_pool.architecture.host_architecture()`` 取；不是 x64 时按「只支持 x64」
+    报错，不悄悄按 x64 去下包。
+    """
+
+    from ..runtime_pool.architecture import (
+        MaaFWUnsupportedArchitectureError,
+        supported_architecture_target,
+    )
+
+    try:
+        return supported_architecture_target()
+    except MaaFWUnsupportedArchitectureError as exc:
+        raise MaaFWProjectUpdateError(str(exc)) from None
+
+
 def _normalise_package_source(raw_value: Any) -> str:
     """Normalize a package source name to the internal identifier.
 
@@ -448,14 +491,23 @@ async def update_maafw_project_if_needed(
         # 载荷没有发布方基线，一律要全量包。
         prefer_full = True
         damaged = False
+        stale_projection = False
         if payload is not None:
             try:
-                source_kind = str(
-                    (payload.manifest().get("source") or {}).get("kind") or ""
-                )
+                base_manifest = payload.manifest()
             except PayloadError:
-                source_kind = ""
+                base_manifest = {}
+            source_kind = str((base_manifest.get("source") or {}).get("kind") or "")
             prefer_full = source_kind != "update"
+            # 按旧投影规则建、漏装的文件又没补上的载荷：差量包只动包里那几个文件，套上去
+            # 新版本照样缺；全量包的条目全部按当前规则投影。
+            stale_projection = (
+                not prefer_full
+                and projection_revision_of(base_manifest) < PROJECTION_REVISION
+            )
+            if stale_projection:
+                prefer_full = True
+                send_update_log(_stale_projection_message(base_manifest))
             # 写穿巡检标过 damaged 的载荷：差量基线（清单）已与盘上内容不符，套差量会把
             # 被改写的文件原样带进新版本，只能整版重建。
             if not prefer_full:
@@ -471,7 +523,7 @@ async def update_maafw_project_if_needed(
             if damaged:
                 prefer_full = True
                 send_update_log("当前版本有共用文件被改写过，改为请求全量包")
-        if prefer_full and not damaged:
+        if prefer_full and not damaged and not stale_projection:
             send_update_log("当前版本是本地导入的，改为请求全量包")
 
         (
@@ -768,7 +820,10 @@ async def _discover_project_update_detailed(
     mirror_cdk = str(config.get("mirror_cdk") or config.get("cdk") or "").strip()
     channel = str(config.get("channel") or "stable").strip() or "stable"
     send_update_log(f"MirrorChyan RID: {rid}")
-    send_update_log("MirrorChyan platform: win/x86_64")
+    target = _host_update_target()
+    send_update_log(
+        f"MirrorChyan platform: {target.mirrorchyan_os}/{target.mirrorchyan_arch}"
+    )
     # 日志里绝不出现 CDK 明文，连前几位都不打。
     if mirror_cdk:
         send_update_log("MirrorChyan CDK: 已配置")
@@ -1262,6 +1317,9 @@ async def apply_maafw_project_update(
                 lineage_info=payload.lineage_info,
                 known_hashes=finalized.hashes,
                 origins=built.origins,
+                projection_revision=inherited_projection_revision(
+                    payload.manifest(), built.plan.package_type
+                ),
             )
         )
     except PayloadCancelled as exc:
@@ -1386,8 +1444,9 @@ async def _query_mirrorchyan_latest(
     # 更新检查就整条失败。实测单平台 rid（AUTO_MAS）多带这两个参数照常回 200，
     # os=win&arch=x86_64 与 windows/x64 都被服务端接受并归一；这里沿用 GitHub
     # 资产命名的那套写法。
-    params["os"] = "win"
-    params["arch"] = "x86_64"
+    target = _host_update_target()
+    params["os"] = target.mirrorchyan_os
+    params["arch"] = target.mirrorchyan_arch
 
     url = f"https://mirrorchyan.com/api/resources/{rid}/latest"
     try:
@@ -1504,8 +1563,12 @@ async def _check_github_release_update(
     source_config: dict[str, Any],
     proxy: httpx.Proxy | None,
     target_version: str = "",
+    timeout: float = 30.0,
 ) -> MaaFWProjectUpdateDiscovery | None:
     """Fetch the exact MirrorChyan-selected version from GitHub Releases.
+
+    ``timeout`` is per request; the projection heal check passes a shorter one
+    because it runs synchronously before a task starts.
 
     The repository is always ``interface.github``, the tag is always the
     MirrorChyan ``version_name`` (``target_version``), and the asset is picked
@@ -1538,7 +1601,7 @@ async def _check_github_release_update(
 
     response: httpx.Response | None = None
     async with httpx.AsyncClient(
-        proxy=proxy, follow_redirects=True, timeout=30.0
+        proxy=proxy, follow_redirects=True, timeout=timeout
     ) as client:
         for api_url in api_urls:
             candidate_response = await client.get(api_url, headers=headers)
@@ -1852,8 +1915,7 @@ def _select_github_release_asset(
         if windows_matches:
             narrowed = windows_matches
         arch_pattern = re.compile(
-            r"(?<![a-z0-9])(?:x86[-_]?64|x64|amd64)(?![a-z0-9])",
-            re.IGNORECASE,
+            _host_update_target().github_asset_pattern, re.IGNORECASE
         )
         arch_matches = [item for item in narrowed if arch_pattern.search(item[0])]
         if arch_matches:
