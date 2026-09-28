@@ -212,12 +212,23 @@ async def _heal_projection(
     """手动检查更新前，旧投影规则建的载荷按当前规则补齐一次（与运行前同一条路，同组只查
     一次）。运行中、项目被占用或同项目正在更新时这次不查；失败只记日志，不影响检查。"""
 
+    from app.task.MaaFW.tools.core.runtime_pool.architecture import (
+        SUPPORTED_ARCHITECTURE,
+        host_architecture,
+    )
     from app.task.MaaFW.tools.embedded.view_heal import (
         heal_projection,
         projection_heal_due,
     )
 
     if getattr(script_config, "is_locked", False):
+        return
+    if host_architecture() != SUPPORTED_ARCHITECTURE:
+        # 只支持 x64：补齐要按本机架构取发行包，非 x64 上注定失败；架构提示由后面的检查给出。
+        _maafw_update_logger.info(
+            f"本机架构是 {host_architecture()}，不是 {SUPPORTED_ARCHITECTURE}，"
+            f"跳过旧规则载荷的补齐检查: {script_id}"
+        )
         return
     if not await asyncio.to_thread(projection_heal_due, script_id, channel):
         return

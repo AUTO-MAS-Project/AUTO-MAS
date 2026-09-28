@@ -27,6 +27,7 @@ from .apply import (
 )
 from .contracts import normalise_sha256
 from .payloads import (
+    PROJECTION_CHECK_FIELD,
     PayloadCancelled,
     PayloadError,
     PayloadTarget,
@@ -266,6 +267,24 @@ class MaaFWProjectUpdateError(RuntimeError):
         self.cancelled = cancelled
 
 
+def _stale_projection_message(manifest: Mapping[str, Any]) -> str:
+    """按旧投影规则建的载荷改要全量包时的日志：如实说明是否核对过、缺多少（``projectionCheck``）。"""
+
+    record = manifest.get(PROJECTION_CHECK_FIELD)
+    record = record if isinstance(record, Mapping) else {}
+    reason = str(record.get("reason") or "").strip()
+    suffix = f"（上次检查：{reason}）" if reason else ""
+    missing = int(record.get("missingCount") or 0)
+    if missing:
+        return (
+            f"当前版本按旧规则安装，查出漏装 {missing} 个文件但没补上{suffix}，"
+            "改为请求全量包"
+        )
+    if record:
+        return f"当前版本按旧规则安装，是否漏装文件还没核对成{suffix}，改为请求全量包"
+    return "当前版本按旧规则安装，还没核对过是否漏装文件，改为请求全量包"
+
+
 def _host_update_target() -> ArchitectureTarget:
     """本机选包用的架构参数（Mirror 酱 os/arch、GitHub 资产架构段）。
 
@@ -488,9 +507,7 @@ async def update_maafw_project_if_needed(
             )
             if stale_projection:
                 prefer_full = True
-                send_update_log(
-                    "当前版本按旧规则安装、缺的文件还没补上，改为请求全量包"
-                )
+                send_update_log(_stale_projection_message(base_manifest))
             # 写穿巡检标过 damaged 的载荷：差量基线（清单）已与盘上内容不符，套差量会把
             # 被改写的文件原样带进新版本，只能整版重建。
             if not prefer_full:

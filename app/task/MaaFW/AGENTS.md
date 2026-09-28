@@ -61,8 +61,9 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   顶层运行期目录（`cache/ logs/ temp/ update/ backup/`、MFAAvalonia 旧版自更新的 `temp_res/` 等，
   导入的多半是用户在用的目录）。**`debug/` 不在其中**：里面除了日志还有项目读回的持久状态（MaaEnd
   的 `debug/record/` 用 `random_salt.txt` 算账号 ID，MPA 的 `debug/*_zone_offset.json`），它不进载荷
-  （`payloads.PAYLOAD_STRIP_ROOT_DIRS` 登记前整个剔），导入时不是日志的那部分作为视图私有文件放进视图
-  （`embedded_project._runtime_state_seed`，视图里已有的不覆盖），之后随切换原样带着走；
+  （`payloads.PAYLOAD_STRIP_ROOT_DIRS` 登记前整个剔），导入时直接从来源的 `debug/` 挑状态文件（不是
+  日志、截图、临时文件，单个 ≤ 1 MB；**不看投影去留**，截图多了 `debug/` 会超过 64 MB 被整个丢）作为
+  视图私有文件放进视图（`embedded_project._runtime_state_seed`，视图里已有的不覆盖），之后随切换原样带着走；
   没声明的顶层目录是 Python 解释器、.NET 托管库 / RID 资产、标准形态的 MaaFramework 原生库目录
   （库直接在目录里，或目录里只有原生库）的，按内容确认后整目录剔；只是某处带着一份原生库的只剔那几个
   库文件（`ProjectionRules.confirmed_shell`）；任何深度都剔的只有 `__pycache__` 这类没有歧义的缓存、
@@ -240,7 +241,9 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   的大小与开头，收尾只取本次新写的部分拼成 `history/…/<时分秒>.project.log`（每段一行分隔头；
   单个取末尾 2 MB、一次运行总量 8 MB，按行切；按该脚本**全部用户**的密码打码，
   `tools/embedded/project_logs.py`）。`debug/maafw*.log` 不在其中。问题包按后缀认 history
-  文件，还不认 `.project.log`。
+  文件，`.project.log` 与 `.worker.log` 同一条件收（有密码输入框时只收写的时候就打过码的那次）；
+  数据备份与 `.maafw.log` 一样不带它。打码按每个写法的 UTF-8 / GBK / UTF-16LE 字节替换
+  （`option_secrets.secret_byte_pairs`，`.maafw.log` 同用）。
 - 加载器写的告警（`logger.warning`）由加载器旁听收集、挂在模型上（`interface_load_warnings`），
   随磁盘缓存保存，进运行计划的 `warnings`（运行日志开头）与导入报告；只给后端看的用
   `extra=_LOG_ONLY`。发行包的毛病能降级就降级：缺 import 文件、scan_dir 不在、缺
@@ -299,7 +302,7 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   （`tools/embedded/view_heal.py`）按「当前规则留、载荷那一版剔、载荷里没有」比对一次（依据：导入目录 →
   缓存的完整包 → GitHub 发行包的 HTTP Range），缺了就用「旧载荷 + 取回的文件」建同版本新载荷、登记
   （`register` 允许规则版本更高的同版本载荷顶替 latest）、切组。新载荷是旧载荷的超集、共同路径内容
-  相同，切换按「同内容」走（`embedded_project._is_content_superset` → `fills_only`）：视图里已有的文件
+  相同且版本号相同，切换按「同内容」走（`embedded_project._is_content_superset` → `fills_only`；版本号不同的：视图里已有的文件
   （`data/manifest_cache.json`、热更新改过的受管文件）原样保留、不留档，只落新增的文件，M9A / MaaEnd
   不会因此重跑热更新。结果记在载荷清单的 `projectionCheck`，
   同组只查一次（`project_update/projection_heal.py`）。全量包清的是旧载荷里 `origin=package` 且不在包内的，加上 `origin=import`、位于新

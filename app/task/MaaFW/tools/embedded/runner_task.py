@@ -78,12 +78,12 @@ from .flavor import resolve_flavor, resolve_game_update_hook
 from .game_package import resolve_game_package
 from .game_resolution import UnityGameResolutionOverride, parse_resolution_option
 from .option_secrets import (
-    REDACTED_SECRET_TEXT,
     collect_plan_password_values,
     collect_script_password_values,
     log_redaction_notice,
     open_task_snapshot,
     redact_secret_text,
+    secret_byte_pairs,
     secret_log_variants,
 )
 from .project_logs import copy_project_log_delta, snapshot_project_logs
@@ -3190,14 +3190,12 @@ def _copy_native_debug_log_delta(
 
     唯一的改动是 ``secrets``（密码字段的原文及其 JSON 转义写法）：框架在
     ``Tasker::post_task`` 里按 INFO 级别记下整份 ``pipeline_override``（``[pipeline_override={...}]``），
-    密码会原样出现；给了就逐行换成占位（按 UTF-8 字节替换，其余字节不动）。项目目录里框架
+    密码会原样出现；给了就逐行换成占位（按 UTF-8 / GBK / UTF-16LE 的字节替换，其余字节不动）。项目目录里框架
     自己写的 ``debug/maafw.log`` 不归 MAS 管，那份仍是原文。
     """
 
-    secret_pairs = [
-        (secret.encode("utf-8"), REDACTED_SECRET_TEXT.encode("utf-8"))
-        for secret in secrets
-    ]
+    # 每个写法按 UTF-8 / GBK / UTF-16LE 的字节都换（与 .project.log 同一套，见 option_secrets）。
+    secret_pairs = secret_byte_pairs(list(secrets))
 
     copied = 0
     target_file: Any | None = None

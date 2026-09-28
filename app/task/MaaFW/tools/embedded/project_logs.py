@@ -26,16 +26,17 @@ Error）与 ``debug/go-service.stderr.log``（stderr 被重定向到这里，pan
 的 ``bbcdll/bbc_server.log`` 等。视图里的 ``.log`` 一定是运行期写出来的（投影在任何深度都剔
 ``.log``，载荷里没有），切换版本时按私有文件原样带过去。
 
-做法与 ``.maafw.log`` 相同：运行开始时 :func:`snapshot_project_logs` 记下每个 ``.log`` 的大小
-与开头几个字节，收尾时 :func:`copy_project_log_delta` 只取本次新写的部分，拼成
-``history/…/<时分秒>.project.log``，每段前面一行分隔头。已有文件从记下的位置取到结尾；新出现
-的、被轮转或截短（变小了）、被整个重写（开头变了）的从头取。``debug/`` 顶层的 ``maafw.log`` /
-``maafw.bak.*.log`` 不收（``.maafw.log`` 就是它）。
+做法与 ``.maafw.log`` 相同：运行开始时 :func:`snapshot_project_logs` 记下每个 ``.log`` 的
+大小、开头与该位置之前的几百个字节，收尾时 :func:`copy_project_log_delta` 只取本次新写的部分，
+拼成 ``history/…/<时分秒>.project.log``，每段前面一行分隔头。已有文件从记下的位置取到结尾；
+新出现的、被轮转或截短（变小了）、被整个重写（开头或记下位置之前那一段变了）的从头取。
+``debug/`` 顶层的 ``maafw.log`` / ``maafw.bak.*.log`` 不收（``.maafw.log`` 就是它）。
 
 单个文件只留本次新增部分的末尾 :data:`PROJECT_LOG_TAIL_BYTES`，一次运行总量
 :data:`PROJECT_LOG_TOTAL_BYTES`（``debug/`` 下的优先、同组里新写的优先），截掉多少写一行说明；
 切口从下一行开始，不留半行（半行里可能是半个密码）。打码与 ``.maafw.log`` 同一口径：按字节把
-密码的各种写法（``secret_log_variants``）换成「<已隐藏>」。
+密码的各种写法（``secret_log_variants``）在 UTF-8 / GBK / UTF-16LE 下的字节换成「<已隐藏>」
+（``option_secrets.secret_byte_pairs``）。
 """
 
 from __future__ import annotations
@@ -48,7 +49,7 @@ from pathlib import Path
 
 from app.utils import get_logger
 
-from .option_secrets import REDACTED_SECRET_TEXT
+from .option_secrets import redact_secret_bytes, secret_byte_pairs
 
 logger = get_logger("MFW 项目日志")
 
@@ -72,6 +73,8 @@ class LogMark:
 
     size: int
     head: bytes
+    # 记下位置之前的最后几个字节：收尾时这一段没变才算「往后追加」，否则是整个重写过。
+    tail: bytes = b""
 
 
 @dataclass
@@ -120,13 +123,25 @@ def _read_head(path: Path) -> bytes:
         return handle.read(_HEAD_BYTES)
 
 
+def _read_before(path: Path, end: int) -> bytes:
+    """``end`` 之前的最后 ``_HEAD_BYTES`` 个字节。"""
+
+    begin = max(0, end - _HEAD_BYTES)
+    with path.open("rb") as handle:
+        handle.seek(begin)
+        return handle.read(end - begin)
+
+
 def snapshot_project_logs(view: Path) -> dict[str, LogMark]:
     """运行开始时：视图里每个项目日志的大小与开头，按项目相对路径（小写）记。"""
 
     marks: dict[str, LogMark] = {}
     for rel, path in list_project_logs(view):
         try:
-            marks[rel.casefold()] = LogMark(path.stat().st_size, _read_head(path))
+            size = path.stat().st_size
+            marks[rel.casefold()] = LogMark(
+                size, _read_head(path), _read_before(path, size)
+            )
         except OSError:
             continue
     return marks
@@ -141,24 +156,24 @@ def _format_size(size: int) -> str:
 
 
 def _redact(data: bytes, secrets: Sequence[str]) -> bytes:
-    placeholder = REDACTED_SECRET_TEXT.encode("utf-8")
-    for secret in secrets:
-        raw = secret.encode("utf-8")
-        if raw and raw in data:
-            data = data.replace(raw, placeholder)
-    return data
+    return redact_secret_bytes(data, secret_byte_pairs(list(secrets)))
 
 
 def _start_offset(path: Path, size: int, mark: LogMark | None) -> int:
-    """本次新写的部分从哪开始：已有且只是往后追加的从记下的位置，其余从头。"""
+    """本次新写的部分从哪开始：已有且只是往后追加的（开头与记下位置之前的一段都没变）从
+    记下的位置，其余从头——开头一样但被整个重写过的（每次运行先写同一段横幅的日志）靠
+    位置之前那一段对不上认出来。"""
 
     if mark is None or size < mark.size:
         return 0
     try:
         head = _read_head(path)
+        before = _read_before(path, mark.size)
     except OSError:
         return 0
-    return mark.size if head[: len(mark.head)] == mark.head else 0
+    if head[: len(mark.head)] != mark.head or before != mark.tail:
+        return 0
+    return mark.size
 
 
 def _read_range(path: Path, start: int, end: int, limit: int) -> tuple[bytes, int]:
@@ -223,8 +238,10 @@ def copy_project_log_delta(
         if not data.endswith(b"\n"):
             data += b"\n"
         data = _redact(data, secrets)
-        chunks.append(header.encode("utf-8") + data)
-        remaining -= len(data)
+        header_bytes = header.encode("utf-8")
+        chunks.append(header_bytes + data)
+        # 分隔头也算进总量，整份文件不超过上限（最多多出下一段的分隔头）。
+        remaining -= len(header_bytes) + len(data)
         result.written_bytes += len(data)
         result.segments.append((rel, added, len(data)))
     if result.skipped:

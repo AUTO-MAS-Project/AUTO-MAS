@@ -241,6 +241,37 @@ def secret_log_variants(values: list[str]) -> list[str]:
     return sorted(variants, key=len, reverse=True)
 
 
+#: 按字节打码时每个写法再试的编码：项目日志不一定是 UTF-8（GBK 控制台输出重定向进文件、
+#: Windows 下 UTF-16LE 的日志），``.maafw.log`` 与 ``.project.log`` 共用。
+_SECRET_BYTE_ENCODINGS = ("utf-8", "gbk", "utf-16-le")
+
+
+def secret_byte_pairs(variants: list[str]) -> list[tuple[bytes, bytes]]:
+    """``secret_log_variants`` 的每个写法在 UTF-8 / GBK / UTF-16LE 下的字节，配同一编码的占位；
+    编不了的（GBK 里没有的字）跳过，重复的只留一份，长的在前。"""
+
+    pairs: dict[bytes, bytes] = {}
+    for variant in variants:
+        for encoding in _SECRET_BYTE_ENCODINGS:
+            try:
+                raw = variant.encode(encoding)
+                placeholder = REDACTED_SECRET_TEXT.encode(encoding)
+            except UnicodeEncodeError:
+                continue
+            if raw:
+                pairs.setdefault(raw, placeholder)
+    return sorted(pairs.items(), key=lambda item: len(item[0]), reverse=True)
+
+
+def redact_secret_bytes(data: bytes, pairs: list[tuple[bytes, bytes]]) -> bytes:
+    """按 ``secret_byte_pairs`` 把字节里的密码换成占位。"""
+
+    for raw, placeholder in pairs:
+        if raw in data:
+            data = data.replace(raw, placeholder)
+    return data
+
+
 def redact_secret_text(text: str, variants: list[str]) -> str:
     """把 ``text`` 里出现的密码（``secret_log_variants`` 给出的写法）换成占位。"""
 
@@ -296,7 +327,9 @@ __all__ = [
     "is_sealed_secret",
     "log_redaction_notice",
     "open_task_snapshot",
+    "redact_secret_bytes",
     "redact_secret_text",
+    "secret_byte_pairs",
     "seal_task_snapshot",
     "seal_user_task_snapshot",
     "secret_log_variants",

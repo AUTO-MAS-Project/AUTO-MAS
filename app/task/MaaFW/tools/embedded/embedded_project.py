@@ -806,10 +806,13 @@ def _realize_view(
     same_payload = bool(from_id) and from_id == payload_id
     # 补齐切换（``projection_heal`` 按新投影规则重建出的同版本载荷）：新载荷是旧载荷的超集、
     # 共同路径内容一字不差。按「同内容」处理：视图里的文件（版本绑定状态、被热更新改过的
-    # 受管文件）原样保留、不留档，只有视图里没有的新增文件落进来。
+    # 受管文件）原样保留、不留档，只有视图里没有的新增文件落进来。只认同版本（与 archive_dropped
+    # 同一判据）：真正换版本时新版本恰好只多了文件（interface 没写 version 的项目新旧 interface
+    # 一字不差），也得按换版本走——新增路径上视图里的旧内容留档、以新版本为准。
     fills_only = (
         not same_payload
         and old_payload_path is not None
+        and _same_version(str(old_manifest_version or ""), str(version or ""))
         and _is_content_superset(old_files, new_files)
     )
     journal = _journal_path(view.name, base)
@@ -1138,24 +1141,53 @@ def _config_class_name(project_dir: Path) -> str:
         return ""
 
 
-def _runtime_state_seed(plan: ProjectionPlan) -> dict[str, Path]:
-    """投影留下、但登记载荷前会被整目录剔掉的文件（``payloads.PAYLOAD_STRIP_ROOT_DIRS``）：
-    项目相对路径 → 来源文件。实际只有顶层 ``debug/`` 下不是日志的文件——logs/ temp/ 投影时
-    已按名字剔，``.pycache`` 只在 MAS 自己的视图里有。它们是项目读回的持久状态（MaaEnd 的
-    ``debug/record/``、MPA 的 ``debug/*_zone_offset.json``），属于这个脚本、不属于任何版本，
-    所以不进载荷，由 :func:`_seed_private_state` 放进视图。"""
+# 导入时从来源 ``debug/`` 放进视图的只是状态文件：日志、截图、临时文件与大文件都不要。
+_SEED_SKIP_SUFFIXES = frozenset(
+    {".log", ".tmp", ".temp", ".pyc", ".pyo", ".png", ".jpg", ".jpeg", ".bmp", ".webp"}
+)
+_SEED_MAX_FILE_BYTES = 1024 * 1024
+_SEED_SKIP_DIR_NAMES = frozenset(
+    {"__pycache__", ".git", ".mas-update", ".mas-update-cache"}
+)
 
+
+def _runtime_state_seed(plan: ProjectionPlan) -> dict[str, Path]:
+    """来源目录顶层 ``debug/`` 里的状态文件：项目相对路径 → 来源文件。
+
+    它们是项目读回的持久状态（MaaEnd 的 ``debug/record/``、MPA 的 ``debug/*_zone_offset.json``），
+    属于这个脚本、不属于任何版本，登记载荷前 ``debug/`` 整个被剔掉
+    （``payloads.PAYLOAD_STRIP_ROOT_DIRS``），由 :func:`_seed_private_state` 放进视图。**不看投影
+    的去留**：``debug/`` 里截图多了会超过顶层 64 MB 被整个当成外壳丢掉，状态不能跟着丢。只挑
+    不是日志（``.log`` 与轮转出的 ``*.log.*``）、不是截图 / 临时文件、单个不超过 1 MB 的。
+    """
+
+    debug_dir = plan.rules.interface_base / "debug"
+    if not debug_dir.is_dir():
+        return {}
     seed: dict[str, Path] = {}
-    for source_relative in plan.copied_files:
-        try:
-            output = plan.rules.output_path(source_relative)
-        except ProjectionError:
-            continue
-        if (
-            len(output.parts) > 1
-            and output.parts[0].casefold() in payloads.PAYLOAD_STRIP_ROOT_DIRS
-        ):
-            seed[output.as_posix()] = plan.rules.source_root / source_relative
+
+    def _error(exc: OSError) -> None:
+        logger.debug(f"[MFW 内嵌] 读取来源 debug/ 失败，跳过: {exc.filename}: {exc}")
+
+    for current, dir_names, file_names in os.walk(debug_dir, onerror=_error):
+        dir_names[:] = [
+            name for name in dir_names if name.casefold() not in _SEED_SKIP_DIR_NAMES
+        ]
+        base = Path(current)
+        for name in file_names:
+            folded = name.casefold()
+            if Path(folded).suffix in _SEED_SKIP_SUFFIXES or ".log." in folded:
+                continue
+            path = base / name
+            try:
+                if not path.is_file() or path.is_symlink():
+                    continue
+                if path.stat().st_size > _SEED_MAX_FILE_BYTES:
+                    continue
+            except OSError:
+                continue
+            rel = path.relative_to(plan.rules.interface_base).as_posix()
+            seed[rel] = path
     return seed
 
 
