@@ -25,6 +25,8 @@ import json
 import re
 import shlex
 
+import psutil
+
 from app.utils.platform import IS_WINDOWS
 
 if IS_WINDOWS:
@@ -37,6 +39,11 @@ from typing import Dict
 from app.models.config import EmulatorConfig
 from app.models.emulator import DeviceBase, DeviceInfo, DeviceStatus
 from app.utils import get_logger
+from app.utils.emulator.tools import (
+    AudioMuteRecord,
+    apply_launch_audio_mute,
+    restore_audio_before_close,
+)
 from app.utils.ProcessManager import ProcessManager
 
 logger = get_logger("通用模拟器管理")
@@ -58,6 +65,8 @@ class GeneralDeviceManager(DeviceBase):
         self.config = config
         self.emulator_path = Path(config.get("Info", "Path"))
         self.process_managers: Dict[str, ProcessManager] = {}
+        # {实例索引: 静音记录}，启动时跟随静音、关闭前还原
+        self._audio_mute_states: dict[str, AudioMuteRecord] = {}
 
     async def open(self, idx: str, package_name: str = "") -> DeviceInfo:
 
@@ -81,9 +90,25 @@ class GeneralDeviceManager(DeviceBase):
         # 等待进程启动
         await asyncio.sleep(self.config.get("Info", "MaxWaitTime"))
 
+        pids = await asyncio.to_thread(self._resolve_audio_pids, idx)
+        await apply_launch_audio_mute(self._audio_mute_states, idx, pids)
+
         return (await self.getInfo(idx))[idx]
 
+    def _resolve_audio_pids(self, idx: str) -> list[int]:
+        """实例主进程及其后代进程：模拟器主程序往往再拉起子进程渲染声音。"""
+        manager = self.process_managers.get(idx)
+        pid = manager.main_pid if manager else None
+        if pid is None:
+            return []
+        try:
+            children = psutil.Process(pid).children(recursive=True)
+        except psutil.NoSuchProcess:
+            return []
+        return [pid, *(child.pid for child in children)]
+
     async def close(self, idx: str) -> DeviceStatus:
+        await restore_audio_before_close(self._audio_mute_states, idx)
 
         status = await self.getStatus(idx)
         if status == DeviceStatus.OFFLINE:
@@ -195,6 +220,11 @@ class GeneralDeviceManager(DeviceBase):
         清理所有资源
         """
         logger.info("开始清理设备管理器资源")
+
+        # 先停跟随任务并还原音频，此时进程还在，还原才有意义；
+        # 记录不留给后续流程（管理器就此销毁）
+        for idx in list(self._audio_mute_states):
+            await restore_audio_before_close(self._audio_mute_states, idx)
 
         for idx, pm in self.process_managers.items():
             try:
