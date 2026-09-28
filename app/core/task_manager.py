@@ -273,13 +273,20 @@ class TaskInfo(TaskItem):
         if self.current_index != -1:
             script = self.script_list[self.current_index]
             log = script.log
-            if log == self._last_pushed_log:
+            if (
+                log == self._last_pushed_log
+                and script.log_first_line == self._last_pushed_log_first_line
+            ):
                 return
             # 日志只在尾部追加时只推增量；首次推送或日志被重置/变短时整体替换。
             # 部分任务模式（MAA/SRC/General/M9A）无上限累积脚本日志，全量 JSON
             # 序列化超大字符串会在 iterencode 阶段 MemoryError；整体替换时做
             # 防御性限长（保留最新日志），一处覆盖所有任务模式。
-            if self._last_pushed_log and log.startswith(self._last_pushed_log):
+            if (
+                self._last_pushed_log
+                and log.startswith(self._last_pushed_log)
+                and script.log_first_line == self._last_pushed_log_first_line
+            ):
                 payload = log[len(self._last_pushed_log) :]
                 append = True
                 # 追加段接着界面已有的内容往下排，行号由前端自己累加，这个值不会被读；
@@ -304,6 +311,8 @@ class TaskInfo(TaskItem):
                 ),
             )
             self._last_pushed_log = log
+            if not append:
+                self._last_pushed_log_first_line = script.log_first_line
 
 
 class Task(TaskExecuteBase):
@@ -990,6 +999,10 @@ class _TaskManager:
                     # 返回上次推送的日志而非当前日志, 保证与下一条增量推送衔接
                     log=task_info._last_pushed_log[-200_000:],
                     logSeq=task_info._log_seq,
+                    logFirstLine=task_info._last_pushed_log_first_line
+                    + task_info._last_pushed_log.count(
+                        "\n", 0, max(0, len(task_info._last_pushed_log) - 200_000)
+                    ),
                 )
             )
         return TaskRuntimeSnapshot(

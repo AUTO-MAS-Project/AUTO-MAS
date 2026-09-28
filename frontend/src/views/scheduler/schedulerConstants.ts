@@ -70,6 +70,8 @@ export interface SchedulerTab {
   logSeq?: number
   // buffer 第一行在完整日志里的行号，界面据此显示真实行号
   logFirstLine?: number
+  // 裁剪并添加提示行后的首行号，和当前显示内容对应
+  displayLogFirstLine?: number
   // 送给日志面板渲染的内容（logBuffer 再裁到 120,000）
   lastLogContent: string
   // 新增：任务总览快照（用于路由返回时快速恢复显示）

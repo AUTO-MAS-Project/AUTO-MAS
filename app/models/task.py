@@ -96,8 +96,6 @@ class ScriptItem:
     log: str = ""  # 脚本执行日志
     # log 第一行在完整日志里的行号。**截断日志的生产者要一起维护它**（如 MaaFW 只留
     # 最近 80 条），界面才能显示真实行号而不是每次都从 1 重数；不截断就保持 1。
-    # 注意目前只有 MaaFW 在维护：BetterGI / OkNte / Okww / ZzzOd 的 log[-4000:]
-    # 尚未跟上，它们的行号仍会从 1 重数。
     log_first_line: int = 1
     _task_item_ref: Optional[weakref.ReferenceType[TaskItem]] = None
 
@@ -156,8 +154,11 @@ class TaskItem(ABC):
         default=None, init=False, repr=False, compare=False
     )
     _change_dirty: bool = field(default=False, init=False, repr=False, compare=False)
-    # 日志增量推送状态: 上次推送的完整日志 (不截断) 与推送序号, 见 TaskInfo.on_change
+    # 日志增量推送状态：上次推送的完整日志（不截断）、首行基准与推送序号
     _last_pushed_log: str = field(default="", init=False, repr=False, compare=False)
+    _last_pushed_log_first_line: int = field(
+        default=1, init=False, repr=False, compare=False
+    )
     _log_seq: int = field(default=0, init=False, repr=False, compare=False)
 
     @property

@@ -5622,6 +5622,7 @@ class TaskRuntimeSnapshotItem(BaseModel):
     )
     log: str = Field(default="", description="已推送的脚本日志, 与下一条增量推送衔接")
     logSeq: int = Field(default=0, description="已推送日志对应的推送序号")
+    logFirstLine: int = Field(default=1, description="快照日志首行在完整日志里的行号")
 
 
 class TaskRuntimeSnapshot(BaseModel):

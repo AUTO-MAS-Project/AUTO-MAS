@@ -560,6 +560,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                         ),
                     ),
                 )
+            self.script_info.log_first_line = 1
             self.script_info.log = self.check_result
             return
 
