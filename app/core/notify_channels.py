@@ -668,6 +668,7 @@ def _openclaw_qq_targets(config: Any, *, scope: str) -> tuple[ChannelTarget, ...
             label=name,
             capabilities=NotificationCapabilities(
                 formats=("text",),
+                image_presentations=frozenset({"rich_media"}),
                 body_title_policy="always",
             ),
         ),
@@ -680,6 +681,7 @@ async def _openclaw_qq_send(
     return await sender.send_openclaw_qq(
         title=rendered.title,
         content=rendered.content,
+        images=rendered.images,
     )
 
 

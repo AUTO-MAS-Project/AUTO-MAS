@@ -149,8 +149,10 @@ class _Notify:
             "send_koishi", message=message, msgtype=msgtype, client_name=client_name
         )
 
-    async def send_openclaw_qq(self, title=_UNSET, content=_UNSET):
-        return await self._run("send_openclaw_qq", title=title, content=content)
+    async def send_openclaw_qq(self, title=_UNSET, content=_UNSET, *, images=_UNSET):
+        return await self._run(
+            "send_openclaw_qq", title=title, content=content, images=images
+        )
 
 
 PAYLOAD = NotifyPayload(title="标题", text="正文", html="<p>正文</p>")
