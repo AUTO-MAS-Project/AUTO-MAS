@@ -5742,16 +5742,17 @@ class WSMaaFWProjectUpdateProgressData(BaseModel):
     stage: str = Field(
         ...,
         description=(
-            "阶段：checking / downloading / downloaded / plan_validated / staged / "
-            "applying / post_validating / committed / rolled_back / completed / "
-            "failed / log"
+            "阶段：checking / downloading / downloaded / extracting / plan_validated / "
+            "staged / applying / post_validating / committed / rolled_back / "
+            "completed / failed / log"
         ),
     )
     status: str = Field(..., description="running / success / failed")
     message: str = Field(default="", description="当前阶段的用户可读描述")
     log: Optional[str] = Field(default=None, description="本次事件附带的新增日志行")
     percent: Optional[float] = Field(
-        default=None, description="当前阶段进度百分比（下载 / 覆盖），未知时为 null"
+        default=None,
+        description="当前阶段进度百分比（下载 / 解压 / 覆盖），未知时为 null",
     )
     downloadedBytes: Optional[int] = Field(default=None, description="已下载字节数")
     totalBytes: Optional[int] = Field(
@@ -5766,6 +5767,18 @@ class WSMaaFWProjectUpdateProgressData(BaseModel):
     )
     appliedFiles: Optional[int] = Field(default=None, description="已覆盖文件数")
     totalFiles: Optional[int] = Field(default=None, description="本次要覆盖的文件总数")
+    extractedFiles: Optional[int] = Field(
+        default=None, description="解压阶段：已解压的文件数"
+    )
+    extractTotalFiles: Optional[int] = Field(
+        default=None, description="解压阶段：更新包里的文件总数（不含目录条目）"
+    )
+    extractedBytes: Optional[int] = Field(
+        default=None, description="解压阶段：已写出的字节数"
+    )
+    extractTotalBytes: Optional[int] = Field(
+        default=None, description="解压阶段：更新包声明的解压后总字节数"
+    )
 
 
 class WSUpdateCompletedData(BaseModel):

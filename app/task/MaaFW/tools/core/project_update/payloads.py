@@ -499,10 +499,21 @@ class PackageBuild:
     applied_files: int = 0
 
 
-def clone_payload_into(payload_root: Path, files: Iterable[str], staging: Path) -> None:
-    """把载荷里的 ``files`` 摆进 staging：多链接的（blob）挂硬链接，其余复制。"""
+def clone_payload_into(
+    payload_root: Path,
+    files: Iterable[str],
+    staging: Path,
+    *,
+    check_cancel: Callable[[], None] | None = None,
+) -> None:
+    """把载荷里的 ``files`` 摆进 staging：多链接的（blob）挂硬链接，其余复制。
 
-    for rel in files:
+    ``check_cancel`` 每 200 个文件调一次，由它抛调用方的取消异常。
+    """
+
+    for index, rel in enumerate(files):
+        if check_cancel is not None and index % 200 == 0:
+            check_cancel()
         source = payload_root / rel
         place_fresh(source, staging / rel, link=source.stat().st_nlink > 1)
 
@@ -531,8 +542,9 @@ def build_from_package(
       stale = 包声明的删除表。
     包内条目一律 ``origin=package``。失败时调用方直接丢掉 staging。
 
-    ``on_event(stage, payload)`` 按更新进度的阶段词发：``plan_validated``（计划校验完）→
-    ``staged``（旧载荷已复制成新版本骨架）→ ``applying``（逐文件套包，带
+    ``on_event(stage, payload)`` 按更新进度的阶段词发：``plan_validated``（计划校验完，带
+    包内条目数 ``packageFiles`` 与要删的旧文件数 ``staleFiles``）→ ``staged``（旧载荷已复制
+    成新版本骨架，带 ``stagedFiles``）→ ``applying``（逐文件套包，带
     ``appliedFiles`` / ``totalFiles``）。``cancelled()`` 为真时在两步之间抛
     :class:`PayloadCancelled`，staging 由调用方丢弃。
     """
@@ -569,6 +581,7 @@ def build_from_package(
             target_version=target_version,
             projection=True,
             send_log=send_log,
+            check_cancel=check_cancel,
         )
         _validate_plan_base(
             old_root,
@@ -597,13 +610,17 @@ def build_from_package(
             for rel in old_files
             if any(rel == item or rel.startswith(f"{item}/") for item in deleted)
         }
-    emit("plan_validated", packageType=plan.package_type)
+    emit(
+        "plan_validated",
+        packageType=plan.package_type,
+        packageFiles=len(plan.files),
+        staleFiles=len(stale),
+    )
     check_cancel()
 
-    clone_payload_into(
-        old_root, (rel for rel in old_files if rel not in stale), staging
-    )
-    emit("staged")
+    kept = [rel for rel in old_files if rel not in stale]
+    clone_payload_into(old_root, kept, staging, check_cancel=check_cancel)
+    emit("staged", stagedFiles=len(kept))
     check_cancel()
 
     total = len(plan.files)
@@ -671,8 +688,17 @@ def finalize(
     *,
     blob_store: RuntimeBlobStore | None = None,
     private: Iterable[str] = (),
+    check_cancel: Callable[[], None] | None = None,
 ) -> FinalizeResult:
-    """登记前的收尾：剔掉运行期目录与视图标记，把还私有的共用候选就地入库。"""
+    """登记前的收尾：剔掉运行期目录与视图标记，把还私有的共用候选就地入库。
+
+    ``check_cancel`` 在每个文件之前调一次（由它抛调用方的取消异常）。停在两个文件之间是
+    安全的：:meth:`RuntimeBlobStore.ingest_in_place` 每个文件要么整个入库（库里的名字与
+    staging 里的是同一 inode，内容一个字节不写），要么原样不动；临时名带
+    ``_TEMP_SUFFIX``。staging 随后被丢掉，已入库的 blob 只剩库里一个链接（``st_nlink == 1``），
+    与临时名一起由启动期的 ``collect_garbage`` 收走——与「finalize 做完后再取消」留下的状态
+    是同一种，只是少一些。
+    """
 
     staging = Path(staging)
     for entry in list(staging.iterdir()):
@@ -687,6 +713,8 @@ def finalize(
         return result
     private_list = tuple(private)
     for rel, path in _iter_files(staging):
+        if check_cancel is not None:
+            check_cancel()
         info = path.stat()
         if info.st_nlink != 1 or not is_shared_path(rel, info.st_size, private_list):
             continue
