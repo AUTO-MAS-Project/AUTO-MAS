@@ -105,23 +105,22 @@ def _warn_agent_imports(
 ) -> None:
     """按准备结果里的 agent 计划做导入静态检查，结论只进日志；检查失败静默放行。"""
 
-    from app.task.MaaFW.tools.core.agent_env.import_check import (
-        check_agent_plan_imports,
-        log_agent_import_reports,
-    )
-    from app.task.MaaFW.tools.core.agent_env.models import MaaFWAgentCommandPlan
-
     try:
+        from app.task.MaaFW.tools.core.agent_env.import_check import (
+            check_agent_plan_imports,
+            log_agent_import_reports,
+        )
+        from app.task.MaaFW.tools.core.agent_env.models import MaaFWAgentCommandPlan
+
         agents = result.get("agents") or {}
         plans = [
             MaaFWAgentCommandPlan.model_validate(item)
             for item in (agents.get("plans") or [])
         ]
         reports = check_agent_plan_imports(root_path, plans)
+        log_agent_import_reports(reports, log, blocking=False)
     except Exception as exc:  # noqa: BLE001 - 提示性检查，出错不影响准备结果
         _maafw_env_logger.warning(f"agent 导入检查没能完成：{exc}")
-        return
-    log_agent_import_reports(reports, log, blocking=False)
 
 
 async def prepare_agent_env(

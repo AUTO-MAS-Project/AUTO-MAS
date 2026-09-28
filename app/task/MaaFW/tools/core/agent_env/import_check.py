@@ -16,11 +16,12 @@ v5.6.0 的 MaaFgo v2.0.01 → v2.0.03：投影漏装了 ``agent/battle/runtime/*
 
 不执行项目代码：探针（``_import_probe.py``）在项目解释器里只做 ``ast`` 解析与 finder 查找，
 见其模块说明。环境与真实 agent 子进程一致（``runner._build_agent_env``：剔除宿主 Python
-变量、``PYTHONUTF8``、pyc 前缀，cwd = 项目根），另加 ``-B`` 不写字节码。两处有意的差别：
-``PYTHONPATH``（项目根）不走环境变量、由探针启动后插回 sys.path 的同一位置——走环境变量
-的话解释器启动时会从项目根 import ``sitecustomize``；隔离 venv 的兼容 shim 目录不放（它只
-patch ``maa``，与找模块无关）。解释器自己 site-packages 里的 ``.pth`` 仍照常处理：那是
-解释器的一部分，现有的健康检查同样会跑。
+变量、``PYTHONUTF8``、pyc 前缀），另加 ``-B`` 不写字节码。三处有意的差别：cwd 是空的临时
+目录而不是项目根（见 :func:`check_agent_script_imports`）；``PYTHONPATH``（项目根）不走
+环境变量、由探针启动后插回 sys.path 的同一位置——走环境变量的话解释器启动时会从项目根
+import ``sitecustomize``；隔离 venv 的兼容 shim 目录不放（它只 patch ``maa``，与找模块
+无关）。解释器自己 site-packages 里的 ``.pth`` 仍照常处理：那是解释器的一部分，现有的
+健康检查同样会跑。
 """
 
 from __future__ import annotations
@@ -28,6 +29,7 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+import tempfile
 import time
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
@@ -142,10 +144,15 @@ def check_agent_script_imports(
     python_exe: str | Path,
     entry: str | Path,
     *,
-    cwd: str | Path | None = None,
     timeout: float = IMPORT_CHECK_TIMEOUT_SECONDS,
 ) -> AgentImportReport:
-    """用 ``python_exe`` 检查 ``entry`` 启动时的导入。任何意外都只返回 ``checked=False``。"""
+    """用 ``python_exe`` 检查 ``entry`` 启动时的导入。任何意外都只返回 ``checked=False``。
+
+    子进程的 cwd 是空的临时目录，不是项目根：``-c`` 把 cwd（``''``）放在 sys.path 最前，
+    探针自己的 ``import json`` 等就会先在 cwd 里找，项目根下的 ``json.py`` 会被执行。
+    真实 agent 以 ``python <入口>.py`` 启动，cwd 不在它的 sys.path 上（在的是入口目录，
+    探针自己换上），所以判定不受影响。
+    """
 
     project = Path(project_path).resolve()
     entry_path = Path(entry).resolve()
@@ -153,23 +160,24 @@ def check_agent_script_imports(
     started = time.perf_counter()
     try:
         source = _PROBE_PATH.read_text(encoding="utf-8")
-        result = subprocess.run(
-            [str(python_exe), "-B", "-c", source],
-            input=json.dumps(
-                {
-                    "project": str(project),
-                    "entry": str(entry_path),
-                    "pythonpath": str(project),
-                }
-            ),
-            capture_output=True,
-            timeout=timeout,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            cwd=str(cwd or project),
-            env=_probe_env(project),
-        )
+        with tempfile.TemporaryDirectory(prefix="mas-agent-import-") as neutral_cwd:
+            result = subprocess.run(
+                [str(python_exe), "-B", "-c", source],
+                input=json.dumps(
+                    {
+                        "project": str(project),
+                        "entry": str(entry_path),
+                        "pythonpath": str(project),
+                    }
+                ),
+                capture_output=True,
+                timeout=timeout,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                cwd=neutral_cwd,
+                env=_probe_env(project),
+            )
     except subprocess.TimeoutExpired:
         report.skipped_reason = f"超时（{timeout:g}s）"
         return report
@@ -230,13 +238,7 @@ def check_agent_plan_imports(
             continue
         seen.add(key)
         reports.append(
-            check_agent_script_imports(
-                project,
-                python_exe,
-                entry,
-                cwd=plan.cwd or project,
-                timeout=timeout,
-            )
+            check_agent_script_imports(project, python_exe, entry, timeout=timeout)
         )
     return reports
 
