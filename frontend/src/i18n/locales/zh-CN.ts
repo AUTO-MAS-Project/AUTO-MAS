@@ -1420,6 +1420,7 @@ export default {
     updateProcessNoLogYet: '暂无日志',
     updatePhaseChecking: '检查中',
     updatePhaseDownloading: '下载中',
+    updatePhaseExtracting: '解压中',
     updatePhasePreparing: '准备覆盖',
     updatePhaseApplying: '覆盖中',
     updatePhaseValidating: '校验中',
