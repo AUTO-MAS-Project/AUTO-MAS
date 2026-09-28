@@ -20,10 +20,17 @@
 
 v5.6.0 的投影逐级匹配目录名，把 MaaFgo v2.0.03 的 ``agent/battle/runtime/`` 当成外壳剔掉，
 agent 一起来就 ``ModuleNotFoundError``。规则修好（#1104）之后，已经建好的载荷与视图不会
-自己恢复。这里只做用户手动能做的那一步：找出新规则会保留、视图里却没有的**代码文件**
-（只看 agent / 依赖目录，``projection._code_roots``），从发行包里取出来直接写进视图——
-效果与用户自己拷进去一样：它们是视图私有文件，换版本时照常带过去，新载荷里有同路径
-文件时以载荷为准。不重建载荷、不动登记与更新流程。
+自己恢复（同一个毛病还让 MaaEnd v2.30.1 的 ``resource/image/UI/`` 丢了 655 张图：完整
+目标里旧规则也按整张分类表剔）。这里只做用户手动能做的那一步：找出**新规则保留、旧规则
+剔掉、视图里又不存在**的文件，从发行包里取出来直接写进视图——效果与用户自己拷进去一样：
+它们是视图私有文件，换版本时照常带过去，新载荷里有同路径文件时以载荷为准。视图里已有的
+文件一律不动；用户数据 / 运行期目录（``config/``、``debug/`` …）、已知运行期状态文件与
+``.auto_mas*`` 不补。一次最多补 ``MAX_HEAL_FILES`` 个、``MAX_HEAL_BYTES`` 字节，超了不补、
+只提示一行。不重建载荷、不动登记与更新流程。
+
+「旧规则」是 v5.6.0 的分类表（目录名在任何深度都算），按同一组白名单目标复刻
+（:func:`_newly_kept`）；只补两者之差，所以 M9A 这类没被误伤的项目一个文件都不会补，
+白名单之外的取舍差异（顶层大目录之类）也不会被当成缺文件。
 
 比对依据按代价从低到高：本地导入且来源目录还是同一版本 → 来源目录；更新包下载缓存里有
 同版本的完整包 → 本地 zip；都没有才读 GitHub Release 资产：包一层只读、可 seek 的
@@ -47,7 +54,8 @@ import time
 import uuid
 import zipfile
 import zlib
-from collections.abc import Callable, Iterable, Mapping
+from collections import Counter
+from collections.abc import Callable, Mapping
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 from typing import Any
@@ -58,13 +66,19 @@ import json5
 
 from app.task.MaaFW.tools.core.project_update import payloads
 from app.task.MaaFW.tools.core.project_update.apply import _EntryBoundary
+from app.task.MaaFW.tools.core.project_update.contracts import RUNTIME_STATE_FILES
 from app.task.MaaFW.tools.core.project_update.projection import (
-    CODE_FILE_SUFFIXES,
+    EXCLUDED_DIRECTORY_REASONS,
+    KNOWN_RUNTIME_STEMS,
+    KNOWN_UI_SHELL_STEMS,
+    ROOT,
+    SHARED_EXCLUDED_ROOT_DIRS,
     ProjectionError,
     ProjectionRules,
-    _code_roots,
-    _is_relative_to,
+    TargetMode,
     build_projection_rules,
+    exclusion_reason,
+    target_exclusion_reason,
 )
 from app.task.MaaFW.tools.core.project_update.state import DEFAULT_CACHE_ROOT
 from app.task.MaaFW.tools.core.project_update.timing import format_duration
@@ -92,14 +106,23 @@ HTTP_HEADERS = {"User-Agent": "AutoMasGui"}
 _INTERFACE_NAMES = ("interface.json", "interface.jsonc")
 _ZIP_ENTRY_LIMIT = 100_000
 _LOG_ITEMS = 3
+# 一次最多补这么多：实测 MaaEnd v2.30.1 缺 655 个文件、原始 1.2 MB 左右（Range 读 1.6 MB），
+# MaaFgo 3 个。再多说明比对出了意外，不在运行前悄悄下载一大批。
+MAX_HEAL_FILES = 5000
+MAX_HEAL_BYTES = 100 * 1024 * 1024
+# 视图根下这些目录是用户数据 / 运行期产物（与共用库的排除表同一张），不补。
+_USER_ROOT_DIRS = frozenset(SHARED_EXCLUDED_ROOT_DIRS)
 
 
 class HealSkip(RuntimeError):
-    """拿不到比对依据或条目不能用；``permanent`` 的不再重试。"""
+    """拿不到比对依据或条目不能用；``permanent`` 的不再重试，``notify`` 的给用户一行提示。"""
 
-    def __init__(self, message: str, *, permanent: bool = False) -> None:
+    def __init__(
+        self, message: str, *, permanent: bool = False, notify: bool = False
+    ) -> None:
         super().__init__(message)
         self.permanent = permanent
+        self.notify = notify
 
 
 # --------------------------------------------------------------------------
@@ -298,28 +321,112 @@ def _parse_json(raw: bytes) -> dict[str, Any]:
     return data
 
 
-def _missing_code_files(
-    rules: ProjectionRules, names: Iterable[str], view: Path
-) -> list[str]:
-    """新规则会保留、在 agent / 依赖目录下、视图里却没有的代码文件（``names`` 与视图同一坐标）。"""
+def _legacy_exclusion_reason(path: Path, *, is_directory: bool = False) -> str | None:
+    """v5.6.0 的 ``exclusion_reason``：目录名在任何深度都按分类表判，文件名规则不变。"""
 
-    roots = _code_roots(rules)
-    missing = []
-    for rel in names:
-        path = Path(rel)
-        if PurePosixPath(rel).suffix.casefold() not in CODE_FILE_SUFFIXES:
-            continue
-        if not any(_is_relative_to(path, root) for root in roots):
-            continue
-        if not os.path.lexists(view / rel) and rules.keeps(path):
-            missing.append(rel)
-    return sorted(missing)
+    parts = path.parts if is_directory else path.parts[:-1]
+    for part in parts:
+        normalized = part.casefold()
+        reason = EXCLUDED_DIRECTORY_REASONS.get(normalized)
+        if reason:
+            return reason
+        family = normalized.split(".", 1)[0]
+        if family in KNOWN_UI_SHELL_STEMS:
+            return "ui-shell"
+        if family in KNOWN_RUNTIME_STEMS:
+            return "embedded-runtime"
+    if is_directory:
+        return None
+    return exclusion_reason(Path(path.name))
+
+
+def _legacy_reason(relative: Path, target: Path, mode: TargetMode) -> str | None:
+    """v5.6.0 的 ``target_exclusion_reason``：完整目标里旧规则照样按整张分类表剔，原样
+    带走的运行时目录新旧同一口径。"""
+
+    if not mode.complete or not mode.allow_excluded_root or target == ROOT:
+        return _legacy_exclusion_reason(relative)
+    target_is_directory = relative != target
+    if mode.verbatim_runtime:
+        return target_exclusion_reason(
+            relative,
+            target=target,
+            mode=mode,
+            target_is_directory=target_is_directory,
+        )
+    inner = relative.relative_to(target) if target_is_directory else Path(relative.name)
+    return _legacy_exclusion_reason(inner)
+
+
+def _newly_kept(rules: ProjectionRules, relative: Path) -> bool:
+    """新规则保留、v5.6.0 的规则剔掉。与 ``ProjectionRules.keeps`` 同一组目标、同一判定，
+    只是按祖先查目标（``keeps`` 对每个路径把全部目标 ``relative_to`` 一遍，MaaFgo 六百多个
+    目标 × 一千多个候选要三十秒）。"""
+
+    covering = [
+        (ancestor, rules.targets[ancestor])
+        for ancestor in (relative, *relative.parents)
+        if ancestor in rules.targets
+    ]
+    kept = any(
+        target_exclusion_reason(
+            relative,
+            target=target,
+            mode=mode,
+            target_is_directory=target == ROOT or relative != target,
+            base=rules.base_relative,
+        )
+        is None
+        for target, mode in covering
+    )
+    return kept and all(
+        _legacy_reason(relative, target, mode) is not None for target, mode in covering
+    )
+
+
+def _is_user_path(rel: str) -> bool:
+    """视图里的用户数据 / 运行期文件：不补。"""
+
+    parts = PurePosixPath(rel).parts
+    folded = rel.casefold()
+    return (
+        not parts
+        or parts[0].casefold() in _USER_ROOT_DIRS
+        or folded in RUNTIME_STATE_FILES
+        or any(part.casefold().startswith(".auto_mas") for part in parts)
+    )
+
+
+def _missing_files(
+    rules: ProjectionRules, candidates: Mapping[str, Path], view: Path
+) -> list[str]:
+    """``candidates``：视图相对路径 → ``rules`` 坐标里的路径。返回新规则保留、旧规则剔掉、
+    视图里又不存在的那些（视图里已有的一律不动）。"""
+
+    return sorted(
+        rel
+        for rel, relative in candidates.items()
+        if not _is_user_path(rel)
+        and not os.path.lexists(view / rel)
+        and _newly_kept(rules, relative)
+    )
+
+
+def _check_limits(missing: list[str], sizes: Mapping[str, int]) -> None:
+    total = sum(sizes[rel] for rel in missing)
+    if len(missing) > MAX_HEAL_FILES or total > MAX_HEAL_BYTES:
+        raise HealSkip(
+            f"缺 {len(missing)} 个文件、共 {_format_size(total)}，超过自动补齐上限，"
+            "请在脚本页重新导入或更新一次",
+            permanent=True,
+            notify=True,
+        )
 
 
 def _from_source(
     source: Path, view: Path, version: str
 ) -> tuple[dict[str, bytes], int] | None:
-    """本地导入且来源目录还是这个版本：直接按新规则扫它的 agent / 依赖目录。"""
+    """本地导入且来源目录还是这个版本：直接按新旧规则扫来源目录。"""
 
     try:
         rules = build_projection_rules(source, strict=False)
@@ -335,18 +442,23 @@ def _from_source(
     except (ProjectionError, StopIteration, OSError, ValueError):
         return None
     root = rules.source_root
-    found: dict[str, Path] = {}
-    for code_root in _code_roots(rules):
-        for current, _dirs, files in os.walk(root / code_root):
-            for name in files:
-                relative = (Path(current) / name).relative_to(root)
-                try:
-                    found[rules.output_path(relative).as_posix()] = relative
-                except ProjectionError:
-                    continue
-    view_rules = build_projection_rules(view, strict=False)
-    missing = _missing_code_files(view_rules, found, view)
-    return {rel: (root / found[rel]).read_bytes() for rel in missing}, 0
+    candidates: dict[str, Path] = {}
+    for current, _dirs, files in os.walk(root):
+        for name in files:
+            path = Path(current) / name
+            if path.is_symlink():
+                continue
+            relative = path.relative_to(root)
+            try:
+                output = rules.output_path(relative)
+            except ProjectionError:
+                continue
+            candidates[output.as_posix()] = relative
+    missing = _missing_files(rules, candidates, view)
+    _check_limits(
+        missing, {rel: (root / candidates[rel]).stat().st_size for rel in missing}
+    )
+    return {rel: (root / candidates[rel]).read_bytes() for rel in missing}, 0
 
 
 def _from_archive(
@@ -381,9 +493,12 @@ def _from_archive(
         for info in members
         if not info.is_dir() and info.filename.startswith(prefix)
     }
-    missing = _missing_code_files(
-        build_projection_rules(view, strict=False), infos, view
+    missing = _missing_files(
+        build_projection_rules(view, strict=False),
+        {rel: Path(rel) for rel in infos},
+        view,
     )
+    _check_limits(missing, {rel: infos[rel].file_size for rel in missing})
     # 路径安全与更新解压同一判据：落在视图里、不是符号链接；有一个不合格就整批不写。
     boundary = _EntryBoundary(view)
     for rel in missing:
@@ -492,11 +607,21 @@ def heal_due(marker: Mapping[str, Any] | None) -> bool:
     return int(record.get("attempts") or 0) < MAX_ATTEMPTS
 
 
+def _describe_missing(missing: list[str]) -> str:
+    """日志里怎么说缺了哪些：三个以内逐个列；多了只给最常见的目录（「resource/image/UI/Item/… 等」）。"""
+
+    if len(missing) <= _LOG_ITEMS:
+        return "、".join(missing)
+    parents = Counter(PurePosixPath(rel).parent.as_posix() for rel in missing)
+    top = parents.most_common(1)[0][0]
+    return f"{top}/… 等" if top != "." else "、".join(missing[:_LOG_ITEMS]) + " 等"
+
+
 def _format_size(size: int) -> str:
     return f"{size / 1024:.1f} KB" if size < 1024 * 1024 else f"{size / 2**20:.1f} MB"
 
 
-async def heal_view_code_files(
+async def heal_view_files(
     script_id: str,
     *,
     proxy: httpx.Proxy | None = None,
@@ -547,6 +672,8 @@ async def heal_view_code_files(
                             _from_archive, archive, view, lineage, version
                         )
                 except (HealSkip, OSError, zipfile.BadZipFile) as exc:
+                    if getattr(exc, "notify", False):
+                        raise
                     logger.info(f"MFW 缓存包 {cached} 不能用来比对：{exc}")
                     continue
                 found, via = (contents, 0), "本机缓存的发行包"
@@ -597,9 +724,9 @@ async def heal_view_code_files(
             logger.warning(f"MFW 视图补齐结果写不进标记：{record_error}")
         message = f"检查 {version} 是否漏装文件没做成（{reason}），本次照常运行"
         logger.info(f"MFW 视图 {view.name}：{message}")
-        if not permanent:
-            # 暂时性的（断网、校验失败）才告诉用户，最多 MAX_ATTEMPTS 次；没有 GitHub
-            # 仓库、服务端不认 Range 这类查不了的只进后端日志，不给每个项目刷一行。
+        if not permanent or getattr(exc, "notify", False):
+            # 暂时性的（断网、校验失败）与超上限才告诉用户，前者最多 MAX_ATTEMPTS 次；
+            # 没有 GitHub 仓库、服务端不认 Range 这类查不了的只进后端日志。
             log(message)
         return "unavailable"
 
@@ -618,13 +745,10 @@ async def heal_view_code_files(
     except OSError as exc:
         logger.warning(f"MFW 视图补齐结果写不进标记：{exc}")
     if not missing:
-        logger.info(
-            f"MFW 视图 {view.name} 按新投影规则核对过（{via}），没有漏装的代码文件"
-        )
+        logger.info(f"MFW 视图 {view.name} 按新投影规则核对过（{via}），没有漏装的文件")
         return "clean"
-    shown = "、".join(missing[:_LOG_ITEMS]) + (
-        " 等" if len(missing) > _LOG_ITEMS else ""
-    )
+    shown = _describe_missing(missing)
+
     size = sum(len(content) for content in contents.values())
     log(
         f"检测到 {version} 缺少 {len(missing)} 个文件（{shown}），已从{via}补齐"
@@ -640,5 +764,5 @@ __all__ = [
     "HealSkip",
     "RangeHTTPReader",
     "heal_due",
-    "heal_view_code_files",
+    "heal_view_files",
 ]
