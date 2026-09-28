@@ -119,6 +119,7 @@ source = { virtual = "." }
 dependencies = [
     { name = "aiofiles" },
     { name = "aiohttp" },
+    { name = "comtypes", marker = "sys_platform == 'win32'" },
     { name = "fastapi" },
     { name = "fastapi-mcp" },
     { name = "gitpython" },
@@ -136,6 +137,7 @@ dependencies = [
     { name = "plyer" },
     { name = "psutil" },
     { name = "pyautogui" },
+    { name = "pycaw", marker = "sys_platform == 'win32'" },
     { name = "pycryptodome" },
     { name = "pydantic" },
     { name = "pygetwindow" },
@@ -162,6 +164,7 @@ dev = [
 requires-dist = [
     { name = "aiofiles", specifier = "==24.1.0" },
     { name = "aiohttp", specifier = "==3.13.3" },
+    { name = "comtypes", marker = "sys_platform == 'win32'", specifier = "==1.4.17" },
     { name = "fastapi", specifier = "==0.116.1" },
     { name = "fastapi-mcp", specifier = "==0.4.0" },
     { name = "gitpython", specifier = "==3.1.45" },
@@ -179,6 +182,7 @@ requires-dist = [
     { name = "plyer", specifier = "==2.1.0" },
     { name = "psutil", specifier = "==7.0.0" },
     { name = "pyautogui", specifier = "==0.9.54" },
+    { name = "pycaw", marker = "sys_platform == 'win32'", specifier = "==20260927" },
     { name = "pycryptodome", specifier = "==3.23.0" },
     { name = "pydantic", specifier = "==2.11.7" },
     { name = "pygetwindow", specifier = "==0.0.9" },
@@ -290,6 +294,15 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/d8/53/6f443c9a4a8358a93a6792e2acffb9d9d5cb0a5cfd8802644b7b1c9a02e4/colorama-0.4.6.tar.gz", hash = "sha256:08695f5cb7ed6e0531a20572697297273c47b8cae5a63ffc6d6ed5c201be6e44", size = 27697, upload-time = "2022-10-25T02:36:22.414Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/d1/d6/3965ed04c63042e047cb6a3e6ed1a63a35087b6a609aa3a15ed8ac56c221/colorama-0.4.6-py2.py3-none-any.whl", hash = "sha256:4f1d9991f5acc0ca119f9d443620b77f9d6b33703e51011c16baf57afb285fc6", size = 25335, upload-time = "2022-10-25T02:36:20.889Z" },
+]
+
+[[package]]
+name = "comtypes"
+version = "1.4.17"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/0e/ff/c7836bd0d78fc615281016f154f514e9d523d7cb9ab9e8b4d344adc5f5e7/comtypes-1.4.17.tar.gz", hash = "sha256:3d9c1e92ad8daf7600d371e76ee16161a627a5fb70c3144f6e52e78af6034363", size = 262743, upload-time = "2026-09-21T08:08:07.687Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/89/9c/d0bc1fb69ad22a04bdc01dd9b5613a2ebc4d02ba1ec24b02127dc93791ba/comtypes-1.4.17-py3-none-any.whl", hash = "sha256:4e0a221dde2c589b82977bed802efd71cd5eb67a380347b732e02735e597f586", size = 298743, upload-time = "2026-09-21T08:08:06.461Z" },
 ]
 
 [[package]]
@@ -875,6 +888,19 @@ dependencies = [
     { name = "pytweening" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/65/ff/cdae0a8c2118a0de74b6cf4cbcdcaf8fd25857e6c3f205ce4b1794b27814/PyAutoGUI-0.9.54.tar.gz", hash = "sha256:dd1d29e8fd118941cb193f74df57e5c6ff8e9253b99c7b04f39cfc69f3ae04b2", size = 61236, upload-time = "2023-05-24T20:11:32.972Z" }
+
+[[package]]
+name = "pycaw"
+version = "20260927"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "comtypes" },
+    { name = "psutil" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/9e/51/2870619bf47cef359505d88d277b71c18ae5af18ffe94e707dbce6def6c2/pycaw-20260927.tar.gz", hash = "sha256:3a833ace1a76d0cee134366366d64c56ea9552ebc6f572580e4299ad552743f6", size = 29644, upload-time = "2026-09-26T20:05:02.191Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/af/79/baf93a0a0b53a886f6a84ac05dd8491068c8a7c54db4ccd247acdcff9d1c/pycaw-20260927-py3-none-any.whl", hash = "sha256:d5b162a87536956af8dfa0fc53b1c77870a30706445ffd7f92a2ed184f65ddf4", size = 28463, upload-time = "2026-09-26T20:05:00.817Z" },
+]
 
 [[package]]
 name = "pyclipper"
