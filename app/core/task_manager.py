@@ -52,6 +52,7 @@ from app.models.task import (
     UserItem,
 )
 from app.runtime_tasks import RuntimeTasks
+from app.tools.push_log import build_task_result_text
 from app.utils import LazyProxy, get_logger
 
 from .config import (
@@ -838,7 +839,9 @@ class Task(TaskExecuteBase):
             id=str(self.task_info.task_id),
             type=protocol.TASK_COMPLETED,
             data=WSTaskCompletedData(
-                result=self.task_info.result,
+                # 完成面板文本带采集节点详情（与推送报告同源渲染），
+                # 未配置推送的用户在调度台也能看到
+                result=build_task_result_text(self.task_info.script_list),
                 outcome=self._exit_result,
                 error=self._exit_error,
                 task_info=self.task_info.asdict,
