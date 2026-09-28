@@ -45,8 +45,8 @@ def collect_recent_error_images(
 ) -> tuple[NotificationImage, ...]:
     """读取 MaaEnd 最近保存的错误截图，作为通知图片原样传递。"""
 
-    # MaaFramework 将 save_on_error 截图写入日志目录的 on_error/，这里只透传图片字节。
-    error_dir = Path(maaend_root_path) / "on_error"
+    # MaaEnd 的日志根目录是 debug/，save_on_error 截图保存在其 on_error/ 子目录。
+    error_dir = Path(maaend_root_path) / "debug" / "on_error"
     try:
         entries = tuple(error_dir.iterdir())
     except FileNotFoundError:
