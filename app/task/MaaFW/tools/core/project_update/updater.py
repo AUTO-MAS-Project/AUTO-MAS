@@ -508,7 +508,9 @@ async def update_maafw_project_if_needed(
         )
     except Exception as exc:
         message = f"{UPDATE_FAILED_PREFIX}{_sanitize_log_message(str(exc))}"
-        send_update_log(message)
+        # 失败 / 中止的结论不走 send_log：两个宿主各自写一行（运行前更新「项目更新失败
+        # （任务继续）：…」，手动更新面板的状态行来自下面的 failed 事件），这里再写就是两行。
+        logger.warning(message)
         _report_progress(
             progress,
             "failed",
@@ -627,7 +629,7 @@ async def update_maafw_project_if_needed(
         if getattr(exc, "cancelled", False):
             # 用户点的停止：断点留着、项目没动，说「失败」会让人以为坏了。
             message = "项目更新已中止"
-            send_update_log(message)
+            logger.info(message)
             _report_progress(
                 progress,
                 "failed",
@@ -642,8 +644,7 @@ async def update_maafw_project_if_needed(
             if detail.startswith(UPDATE_FAILED_PREFIX)
             else f"{UPDATE_FAILED_PREFIX}{detail}"
         )
-        if message != detail:
-            send_update_log(message)
+        logger.warning(message)
         status = (
             getattr(exc, "progress_status", "")
             if isinstance(exc, MaaFWProjectUpdateError)

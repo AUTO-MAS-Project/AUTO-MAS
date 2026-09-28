@@ -1023,10 +1023,6 @@ def native_plugin_paths(base_dir: Path) -> list[MaaFWResolvedPath]:
     return [_resolve_project_path(base_dir, item) for item in declared_paths]
 
 
-# 旧私有名留作别名，外部已有的引用照常可用。
-_build_native_plugin_paths = native_plugin_paths
-
-
 def _resolve_project_path(base_dir: Path, raw_path: str) -> MaaFWResolvedPath:
     replaced = raw_path.replace("{PROJECT_DIR}", str(base_dir))
     candidate = Path(replaced)

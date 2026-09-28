@@ -579,13 +579,10 @@ async def download_resumable(
                 if not await _sleep_unless_cancelled(delay, cancelled):
                     record_cancelled()
                     raise UpdateDownloadCancelled(CANCELLED_MESSAGE) from exc
-        message = redact_text(last_error or "download failed")
+        message = redact_text(last_error or "下载失败")
         kept = partial_path.stat().st_size if partial_path.is_file() else 0
         store.update("failed", downloadedBytes=kept, error=message[:500])
-        detail = (
-            f"MaaFW update package download failed after {RETRY_COUNT} attempts: "
-            f"{message}"
-        )
+        detail = f"更新包下载失败（已尝试 {RETRY_COUNT} 次）：{message}"
         if kept > 0:
             # 断点是留着的，下次运行接着下——不说这一句，用户看到「失败」就会
             # 以为这几百兆白下了，转头去删缓存目录。

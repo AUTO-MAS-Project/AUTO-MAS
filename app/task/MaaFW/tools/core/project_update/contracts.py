@@ -152,9 +152,9 @@ def safe_relative_path(raw_path: str) -> str:
         or candidate.root
         or any(part in {"", ".", ".."} for part in candidate.parts)
     ):
-        raise ValueError(f"update package contains unsafe path: {raw_path}")
+        raise ValueError(f"更新包里有不安全的路径：{raw_path}")
     if candidate.parts[0] in RESERVED_PROJECT_DIRS:
-        raise ValueError(f"update package cannot write to reserved path: {raw_path}")
+        raise ValueError(f"更新包不能写入保留目录：{raw_path}")
     return candidate.as_posix()
 
 

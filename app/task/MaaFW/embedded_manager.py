@@ -1131,7 +1131,7 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
                 # 这里不复用 ``_describe_update_cancel``：那套文案是「正在停」，
                 # 事已停下再说「正在中止」只会让人以为还在等。
                 logger.info(f"MFW 项目{phase_zh}更新已中止：{reason}")
-                self._append_update_log("MFW 项目更新已中止")
+                self._append_update_log("项目更新已中止")
                 return
             if precheck_failure and getattr(exc, "post_validate_rejected", False):
                 # 预检没过、新版本已丢弃：视图还是原样、照常能跑。这是「不升级」
@@ -1144,7 +1144,8 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
             logger.opt(exception=True).warning(
                 f"MFW 项目{phase_zh}更新失败，任务继续：{reason}"
             )
-            self._append_update_log(f"MFW 项目更新失败，任务继续：{reason}")
+            # 核心包不再往任务日志写失败结论，这一行就是唯一的一行。
+            self._append_update_log(f"项目更新失败（任务继续）：{reason}")
             await self._notify_update(
                 "error", f"MFW 项目{phase_zh}更新失败，任务继续：{reason}"
             )
