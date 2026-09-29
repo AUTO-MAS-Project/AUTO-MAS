@@ -489,6 +489,8 @@ class Task(TaskExecuteBase):
             await self._sleep_until(min(entry.next_run_at for entry in entries))
             return
 
+        # 循环队列每轮醒来检查一次资源，本轮到期条目共用（失败静默，见模块说明）
+        await self._prepare_maa_resources()
         await self._run_due_entries(queue_uid, pending)
 
     async def _sleep_until(self, target: datetime) -> None:
@@ -699,6 +701,20 @@ class Task(TaskExecuteBase):
         # TaskItem 自己的字段改了不会像脚本状态那样自动发布，得显式排一次。
         self.task_info.schedule_on_change()
 
+    async def _prepare_maa_resources(self) -> None:
+        """任务/循环轮启动前的 MAA 资源按需更新；没有 MAA 脚本时零成本跳过。"""
+        if not any(
+            isinstance(config, CLASS_BOOK["MAA"])
+            for config in Config.ScriptConfig.values()
+        ):
+            return
+        # 局部 import 沿用本文件 MainTimer 的先例规避导入环；且 app.task.MAA
+        # 的导入链冷启动近 2 秒（热态约 0.3 秒，一次性），只有真的有 MAA
+        # 脚本时才付这笔账。
+        from app.task.MAA.tools.resource_update import prepare_queue_resources
+
+        await prepare_queue_resources()
+
     async def _run_main_task(self):
 
         # 循环运行不参与签到与顺序执行那套流程，单独走自己的调度。
@@ -743,6 +759,10 @@ class Task(TaskExecuteBase):
 
         for i in range(start_index):
             self.task_info.script_list[i].status = "跳过"
+
+        # MAA 资源按需更新：对全部 MAA 实例检查一次（免费查询、版本变化才下载；
+        # 内部自带退避/锁/兜底，任何失败都不影响本轮任务）。
+        await self._prepare_maa_resources()
 
         # 依次运行任务。桌面保障是常驻守卫，这里只强制它立刻巡检一次：轮询有几秒窗口，
         # 而任务一旦在幻影屏上起来，游戏就会把坏掉的窗口尺寸记进自己的配置。
