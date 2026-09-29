@@ -2249,7 +2249,9 @@ class AutoProxyTask(TaskExecuteBase):
                 loaded = await asyncio.to_thread(
                     load_screenshot_images,
                     [(self.cur_user_item.name, failure_shot)],
-                    image_id_prefix="maa",
+                    # ID 带用户序号：manager 汇总拼接各用户的图，前缀不唯一
+                    # 会让邮件里同名 cid 互相覆盖
+                    image_id_prefix=f"maa{self.script_info.current_index}",
                 )
                 images = [image for _, image in loaded]
                 # 模板的「失败截图」块在这里组装；payload 走展平后的 images
