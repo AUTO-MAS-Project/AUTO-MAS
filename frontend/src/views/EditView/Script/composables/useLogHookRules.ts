@@ -186,11 +186,10 @@ export function useLogHookRules(options: UseLogHookRulesOptions) {
 
   // 与运行/序列化语义一致才算生效：总开关开启、规则启用且填写了匹配正则
   // （匹配正则为空的启用规则会在序列化时被剔除，后端也不会编译它）
-  const activeRuleCount = computed(
-    () =>
-      masterEnabled?.value !== false
-        ? rules.value.filter(r => r.enabled !== false && (r.match || '').trim()).length
-        : 0
+  const activeRuleCount = computed(() =>
+    masterEnabled?.value !== false
+      ? rules.value.filter(r => r.enabled !== false && (r.match || '').trim()).length
+      : 0
   )
 
   return {
