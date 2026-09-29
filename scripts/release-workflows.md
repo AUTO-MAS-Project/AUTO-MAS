@@ -107,7 +107,9 @@
 
 验证文件：AUTO-MAS `tests/tools/test_release_workflows_temp.py`、
 `tests/tools/test_changelog_script.py`、`frontend/electron/services/runtimeBinaryService.test.ts`，
-以及 Runtime `internal/cli/version_test.go`。AUTO-MAS 的一次性验证文件保留本地，不纳入本次 PR。
+以及 Runtime `internal/cli/version_test.go`。AUTO-MAS 的一次性验证文件保留本地，不纳入本次 PR；
+已有的 `test_changelog_script.py` 属于通用纯逻辑回归测试，本次提交一行断言适配，
+确保其按新规则拒绝以 dev 为目标的发版 PR。
 
 ## 已执行的验证与边界
 
