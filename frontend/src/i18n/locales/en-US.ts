@@ -3158,6 +3158,7 @@ export default {
     },
     stella: {
       sourceName: 'Official site',
+      permanent: 'Permanent events',
     },
     countdown: {
       dh: 'D[d] H[h]',

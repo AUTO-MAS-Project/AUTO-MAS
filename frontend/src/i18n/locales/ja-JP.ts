@@ -2564,6 +2564,7 @@ export default {
     },
     stella: {
       sourceName: '公式サイト',
+      permanent: '常設イベント',
     },
     countdown: {
       dh: 'D[日] H[時間]',

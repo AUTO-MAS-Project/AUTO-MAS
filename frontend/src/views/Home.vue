@@ -171,7 +171,7 @@
                 :overview="reverse1999Source.overview.value"
               />
 
-              <HomeSraActivityOverview
+              <HomeStellaActivityOverview
                 v-else-if="gameKey === 'stellasora'"
                 :title="t('home.module.stellasora')"
                 :accent="getActivityAccent('stellasora')"
@@ -221,6 +221,7 @@ import HomeProxyCard from '@/views/home/components/HomeProxyCard.vue'
 import HomeQuickActionsCard from '@/views/home/components/HomeQuickActionsCard.vue'
 import HomeReverse1999Overview from '@/views/home/components/HomeReverse1999Overview.vue'
 import HomeSraActivityOverview from '@/views/home/components/HomeSraActivityOverview.vue'
+import HomeStellaActivityOverview from '@/views/home/components/HomeStellaActivityOverview.vue'
 import HomeScrollHint from '@/views/home/components/HomeScrollHint.vue'
 import {
   arknightsActivityBanner,

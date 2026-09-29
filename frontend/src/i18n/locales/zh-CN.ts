@@ -3034,6 +3034,7 @@ export default {
     },
     stella: {
       sourceName: '官网',
+      permanent: '常驻活动',
     },
     countdown: {
       dh: 'D 天 H 时',

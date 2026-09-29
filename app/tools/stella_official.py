@@ -74,6 +74,10 @@ KIND_BY_SUFFIX = (
 )
 ## 带活动关的那一类：横幅与 MSS 的活动期判定都只认它
 VERSION_KIND = "版本活动"
+## 长期开放、随版本轮换的活动单独归一类，首页给它们单开一栏。
+## 按关键词认而不是整名：猎影合围以后去掉了 Beta 也照样算
+PERMANENT_KIND = "常驻活动"
+PERMANENT_KEYWORDS = ("灾变防线", "创业激励基金", "猎影合围")
 ## 带这些字样的公告不是活动：维护、兑换码、问卷、充值之类
 SKIP_TITLE = re.compile(
     r"维护|更新说明|兑换|问卷|举报|封禁|处罚|支付|充值|客服|反馈|补偿|直播|前瞻|预约|测试|下载|问题说明"
@@ -183,9 +187,13 @@ def parse_activities(
             continue
 
         description = re.sub(r"\s+", " ", str(row.get("description") or "")).strip()
+        kind = _kind_of(title, matched.group("suffix"))
+        if any(keyword in name for keyword in PERMANENT_KEYWORDS):
+            kind = PERMANENT_KIND
+
         picked[name] = {
             "name": name,
-            "kind": _kind_of(title, matched.group("suffix")),
+            "kind": kind,
             "startTime": start.isoformat(timespec="minutes"),
             "endTime": end.isoformat(timespec="minutes"),
             "cover": str(row.get("thumbnail") or ""),
