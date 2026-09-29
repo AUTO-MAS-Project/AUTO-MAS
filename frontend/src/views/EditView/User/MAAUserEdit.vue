@@ -750,12 +750,16 @@ const handleFieldSave = async (key: string, value: any): Promise<boolean> => {
 
         // 后端按同一口径清空 Data.CultivateNotice，但只落在配置里；提示是
         // 整份 Data 只在 loadUserData 回来，不在此同步会让当前页的告警
-        // 挂到离开编辑页为止。保存成功后按 patch 事实同步本地展示
-        if (pendingKey.startsWith('Task.Cultivate')) {
+        // 挂到离开编辑页为止。保存开关或目标成功后按 patch 事实同步本地展示；
+        // 有效性对齐后端 parse_cultivate_targets：目标须带非空 goals 才算数
+        if (pendingKey === 'Task.IfCultivate' || pendingKey === 'Task.CultivateTargets') {
           const taskData = formData.Task as Record<string, any>
           let hasTargets = false
           try {
-            hasTargets = JSON.parse(String(taskData.CultivateTargets ?? '[]')).length > 0
+            const parsed = JSON.parse(String(taskData.CultivateTargets ?? '[]'))
+            hasTargets = Array.isArray(parsed) && parsed.some(
+              (t: any) => t && Array.isArray(t.goals) && t.goals.length > 0
+            )
           } catch {
             hasTargets = false
           }

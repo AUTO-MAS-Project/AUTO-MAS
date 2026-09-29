@@ -81,7 +81,6 @@
         handle=".depot-drag-handle"
         :animation="200"
         ghost-class="depot-row-ghost"
-        chosen-class="depot-row-chosen"
         :disabled="loading"
         class="plan-rows"
         @end="savePlans"
@@ -510,6 +509,11 @@ const removeSelectedPlans = () => {
   color: var(--ant-color-text-secondary);
 }
 
+/* 拖拽进行中：光标转 grabbing（拖拽全程按住左键，active 即拖拽态） */
+.depot-drag-handle:active {
+  cursor: grabbing;
+}
+
 .drag-dots {
   display: inline-block;
   width: 8px;
@@ -518,13 +522,9 @@ const removeSelectedPlans = () => {
   background-size: 4px 4px;
 }
 
-/* 拖拽反馈：拖动中的行半透明，落点位置高亮（单套反馈，不叠 ghost 样式） */
+/* 拖拽反馈只用一种：拖动中的行半透明（ghost），不叠底色高亮 */
 .depot-row-ghost {
   opacity: 0.4;
-}
-
-.depot-row-chosen {
-  background: var(--ant-color-fill-tertiary);
 }
 
 /* 一图流数据署名（CC BY-NC 4.0 授权条件，方案 §5.4/决策 3）；链接走系统浏览器 */

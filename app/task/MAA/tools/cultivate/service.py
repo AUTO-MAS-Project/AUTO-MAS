@@ -186,6 +186,13 @@ def takeover_notice_patch_value(
     开关关闭或无有效目标 → 本轮不可能接管，返回 ``""`` 清空上一轮残留的
     过期提示；仍可能接管 → 返回 ``None``，提示归注入阶段按当轮缺口判定，
     配置写路径不动它。
+
+    Args:
+        if_cultivate: 养成开关值（patch 覆盖后的当前事实）。
+        raw_targets: 养成目标 JSON 字符串或已解析对象（脏数据按空表处理）。
+
+    Returns:
+        ``""`` 表示应清空提示；``None`` 表示仍可能接管、不修改提示。
     """
 
     if not if_cultivate:
@@ -437,7 +444,9 @@ class DepotCultivateService:
         for operator_id in observed_operator_ids(context):
             if operator_id not in progressions:
                 progressions[operator_id] = resolve_progression(
-                    operator_id, get_progression_chain(), context
+                    operator_id,
+                    chain=get_progression_chain(),
+                    context=context,
                 )
         _, plan, _ = await self.prepare_cultivate(
             targets=targets,

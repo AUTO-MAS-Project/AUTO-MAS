@@ -188,6 +188,12 @@ def observed_operator_ids(context: ProviderContext) -> tuple[str, ...]:
     按目标裁剪会让编辑器新选干员先渲染"？"再等下一轮预览（前端可见
     二段刷新）。无任何观测的干员不进名册。枚举用练度索引而非名字映射：
     名字仅用于文案、可能缺失，缺名干员同样有练度观测。
+
+    Args:
+        context: 运行时数据（识别档案目录、森空岛/手填快照）与缓存。
+
+    Returns:
+        有练度观测的干员 ID 元组，顺序不保证稳定。
     """
 
     ids = set(_load_oper_box(context)[1])
