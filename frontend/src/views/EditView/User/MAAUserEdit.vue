@@ -757,9 +757,9 @@ const handleFieldSave = async (key: string, value: any): Promise<boolean> => {
           let hasTargets = false
           try {
             const parsed = JSON.parse(String(taskData.CultivateTargets ?? '[]'))
-            hasTargets = Array.isArray(parsed) && parsed.some(
-              (t: any) => t && Array.isArray(t.goals) && t.goals.length > 0
-            )
+            hasTargets =
+              Array.isArray(parsed) &&
+              parsed.some((t: any) => t && Array.isArray(t.goals) && t.goals.length > 0)
           } catch {
             hasTargets = false
           }
