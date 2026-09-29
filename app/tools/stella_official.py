@@ -31,6 +31,7 @@
 取数失败返回 None，由调用方退回默认行为。
 """
 
+import asyncio
 import re
 import time
 from collections.abc import Mapping, Sequence
@@ -45,7 +46,7 @@ logger = get_logger("星塔旅人活动")
 
 NEWS_BASE = "https://stellasora.yostar.cn"
 NEWS_LIST_URL = f"{NEWS_BASE}/api/resource/news"
-NEWS_PAGE_URL = f"{NEWS_BASE}/news"
+NEWS_DETAIL_URL = f"{NEWS_BASE}/api/resource/news"
 ## 那个 CMS 认 Referer，不带就只给空壳
 NEWS_HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
@@ -59,6 +60,8 @@ CACHE_TTL_SECONDS = 600
 REQUEST_TIMEOUT_SECONDS = 20
 ## 只留最近结束 14 天以内的，与其它活动源一个口径
 RECENT_WINDOW_DAYS = 14
+## 补封面要逐条取公告详情，同时最多发这么多个请求
+COVER_FETCH_CONCURRENCY = 5
 
 BEIJING = timezone(timedelta(hours=8))
 
@@ -79,6 +82,8 @@ SKIP_TITLE = re.compile(
 TIME_SECTION = re.compile(
     r"[▌■]\s*(?:活动时间|开放时间|招募时间|活动期间|卡池时间)[：:]?\s*([^\n▌■]+)"
 )
+## 正文里的第一张图：官方主视觉，比列表那个方形缩略图更适合当横幅封面
+DETAIL_IMAGE = re.compile(r'<img[^>]+src="([^"]+)"')
 ## 起止都带时刻：2026/09/22 12:00 ~ 2026/09/29 10:59
 EXACT_RANGE = re.compile(
     r"(\d{4})/(\d{2})/(\d{2})\s+(\d{2}):(\d{2})\s*[~～至\-]\s*"
@@ -186,9 +191,48 @@ def parse_activities(
             "cover": str(row.get("thumbnail") or ""),
             "url": str(row.get("link") or ""),
             "description": description[:80],
+            ## 只用来补封面，发给前端前会摘掉
+            "_newsId": row.get("id"),
         }
 
     return sorted(picked.values(), key=lambda item: item["startTime"])
+
+
+async def _detail_cover(client: httpx.AsyncClient, news_id: object) -> str:
+    """取公告详情正文里的第一张图。
+
+    列表给的 ``thumbnail`` 是方形缩略图，铺进 5:1 的横幅只能缩成右边一小块；
+    正文开头那张才是官方主视觉（活动名与角色都在上面），所以封面优先用它。
+    """
+
+    try:
+        response = await client.get(
+            f"{NEWS_DETAIL_URL}/{news_id}", headers=NEWS_HEADERS
+        )
+        response.raise_for_status()
+        news = (response.json().get("data") or {}).get("news") or {}
+    except Exception as e:
+        logger.debug(f"取星塔旅人公告详情失败({news_id}): {type(e).__name__}: {e}")
+        return ""
+
+    matched = DETAIL_IMAGE.search(str(news.get("content") or ""))
+    return matched.group(1) if matched is not None else ""
+
+
+async def _fill_covers(
+    client: httpx.AsyncClient, activities: list[dict[str, Any]]
+) -> None:
+    """并发把每场活动的封面换成详情正文里的主视觉，取不到就留着列表缩略图"""
+
+    semaphore = asyncio.Semaphore(COVER_FETCH_CONCURRENCY)
+
+    async def fill(item: dict[str, Any]) -> None:
+        async with semaphore:
+            cover = await _detail_cover(client, item.get("_newsId"))
+        if cover:
+            item["cover"] = cover
+
+    await asyncio.gather(*(fill(item) for item in activities))
 
 
 async def fetch_official_activities(*, force: bool = False) -> dict[str, Any] | None:
@@ -220,15 +264,21 @@ async def fetch_official_activities(*, force: bool = False) -> dict[str, Any] | 
                 if not isinstance(batch, list) or not batch:
                     break
                 rows.extend(item for item in batch if isinstance(item, Mapping))
+
+            if not rows:
+                logger.warning("星塔旅人官网活动列表为空，按拿不到处理")
+                return None
+
+            activities = parse_activities(rows, datetime.now(BEIJING))
+            await _fill_covers(client, activities)
     except Exception as e:
         logger.warning(f"获取星塔旅人官网活动失败: {type(e).__name__}: {e}")
         return None
 
-    if not rows:
-        logger.warning("星塔旅人官网活动列表为空，按拿不到处理")
-        return None
+    for item in activities:
+        item.pop("_newsId", None)
 
-    data = {"activities": parse_activities(rows, datetime.now(BEIJING))}
+    data = {"activities": activities}
     _cache = (now, data)
     return data
 
