@@ -171,6 +171,18 @@
                 :overview="reverse1999Source.overview.value"
               />
 
+              <HomeSraActivityOverview
+                v-else-if="gameKey === 'stellasora'"
+                :title="t('home.module.stellasora')"
+                :accent="getActivityAccent('stellasora')"
+                :empty-text="t('home.empty.stellasora')"
+                :loading="stellaSource.loading.value"
+                :overview="stellaSource.overview.value"
+                :source-name="t('home.stella.sourceName')"
+                :source-url="STELLA_NEWS_URL"
+                @refresh="stellaSource.refresh"
+              />
+
               <HomeBlueArchiveOverview
                 v-else-if="gameKey === 'bluearchive'"
                 :servers="blueArchiveSource.servers.value"
@@ -215,7 +227,6 @@ import {
   endfieldActivityBanner,
   getActivityAccent,
   sraActivityBanner,
-  stellaActivityBanner,
 } from '@/views/home/activityBanner'
 import { useHomeLayout } from '@/views/home/useHomeLayout'
 import { useHomeNotice } from '@/views/home/useHomeNotice'
@@ -298,6 +309,9 @@ const blueArchiveSource = useBlueArchiveActivitySource()
 const stellaSource = useStellaActivitySource()
 const endfieldSource = useEndfieldActivitySource()
 
+/** 星塔旅人的活动数据取自国服官网的活动公告 */
+const STELLA_NEWS_URL = 'https://stellasora.yostar.cn/news'
+
 const sraSourceFor = (key: HomeModuleKey) => {
   switch (key) {
     case 'starrail':
@@ -362,7 +376,7 @@ const activityBanners = computed<ActivityBannerItem[]>(() =>
       return {
         ...base,
         loading: stellaSource.loading.value,
-        ...stellaActivityBanner(stellaSource.overview.value),
+        ...sraActivityBanner(stellaSource.overview.value),
       }
     }
 

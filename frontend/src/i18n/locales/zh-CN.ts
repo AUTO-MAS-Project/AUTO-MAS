@@ -3029,7 +3029,11 @@ export default {
       reverse1999: '暂无进行中的重返未来：1999 活动',
       endfield: '暂无进行中的卡池或活动',
       endfieldNoData: '暂无终末地活动数据',
+      stellasora: '暂无进行中的星塔旅人活动',
       noData: '无数据',
+    },
+    stella: {
+      sourceName: '官网',
     },
     countdown: {
       dh: 'D 天 H 时',
