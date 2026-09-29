@@ -82,9 +82,12 @@ _GAME_EXIT_WAIT_SECONDS = 90
 
 # ── okww 专项硬编码（不存 ConfigItem，随 MAS 版本同步）──────────────
 # 对齐 MaaEnd：专项内置日志片段，Okww 不向用户暴露成功/失败日志关键词配置。
+# 「游戏更新成功」是环境变更而非脚本错误，命中后至少保证再跑一轮（见 main_task）。
+_OKWW_GAME_UPDATED_LOG = "游戏更新成功, 游戏即将重启"
+_OKWW_GAME_UPDATED_MSG = "游戏更新成功，即将重启任务"
 _OKWW_BUILTIN_FATAL: tuple[tuple[str, str], ...] = (
     ("connected:False", "OK-WW 未连接游戏客户端"),
-    ("游戏更新成功, 游戏即将重启", "游戏更新成功，即将重启任务"),
+    (_OKWW_GAME_UPDATED_LOG, _OKWW_GAME_UPDATED_MSG),
     ("info_set 错误", "OK-WW 流程产生错误，请检查游戏状态"),
 )
 _OKWW_SUCCESS_LOG = "Window closed exit_event.is_set"
@@ -547,11 +550,12 @@ class AutoProxyTask(TaskExecuteBase):
         self.cur_user_item.status = "运行"
 
         run_limit = int(self.script_config.get("Run", "RunTimesLimit"))
-        for i in range(run_limit):
-            if self.run_book:
-                break
+        attempt = 0
+        # while 而非 for：游戏更新成功时 run_limit 会在轮次内延长（至少再跑一轮）
+        while attempt < run_limit and not self.run_book:
+            attempt += 1
             logger.info(
-                f"用户 {self.cur_user_item.name} - 尝试次数: {i + 1}/{run_limit}"
+                f"用户 {self.cur_user_item.name} - 尝试次数: {attempt}/{run_limit}"
             )
             self.cur_user_item.status = "运行"
             self.log_start_time = datetime.now()
@@ -595,9 +599,9 @@ class AutoProxyTask(TaskExecuteBase):
                         )
                     except Exception:
                         pass
-                    if i + 1 < run_limit:
+                    if attempt < run_limit:
                         await self._push_dispatch_log(
-                            f"游戏启动失败，将在稍后重试 ({i + 1}/{run_limit})"
+                            f"游戏启动失败，将在稍后重试 ({attempt}/{run_limit})"
                         )
                         await asyncio.sleep(10)
                     else:
@@ -634,9 +638,9 @@ class AutoProxyTask(TaskExecuteBase):
                         )
                     except Exception as e:
                         await self.handle_pre_okww_error("鸣潮账号切换失败", e)
-                        if i + 1 < run_limit:
+                        if attempt < run_limit:
                             await self._push_dispatch_log(
-                                f"鸣潮账号切换失败，将在稍后重试 ({i + 1}/{run_limit})"
+                                f"鸣潮账号切换失败，将在稍后重试 ({attempt}/{run_limit})"
                             )
                             await asyncio.sleep(10)
                         else:
@@ -699,8 +703,16 @@ class AutoProxyTask(TaskExecuteBase):
                     Path(self.cur_user_config.get("Info", "ScriptAfterTask")),
                     "脚本后任务",
                 )
-            if i + 1 < run_limit:
-                self.script_info.log += f"\n将在稍后重试 ({i + 1}/{run_limit})"
+            if attempt < run_limit:
+                self.script_info.log += f"\n将在稍后重试 ({attempt}/{run_limit})"
+                await asyncio.sleep(10)
+            elif self.cur_user_log.status == _OKWW_GAME_UPDATED_MSG:
+                # 「游戏更新成功」是环境变更而非脚本错误：次数用尽也至少再跑
+                # 一轮，否则鸣潮客户端自更新后任务直接以失败收尾
+                run_limit = attempt + 1
+                self.script_info.log += (
+                    f"\n游戏更新成功，将重启任务 ({attempt}/{run_limit})"
+                )
                 await asyncio.sleep(10)
 
     def _game_management_enabled(self) -> bool:
