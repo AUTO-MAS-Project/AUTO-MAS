@@ -33,7 +33,6 @@ import hashlib
 import json
 import os
 import shutil
-import zipfile
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -48,19 +47,9 @@ from app.services.wuthering_waves import (
     write_wuthering_waves_local_version,
 )
 from app.utils import get_logger
+from app.utils.hpatchz import ensure_hpatchz
 
 logger = get_logger("鸣潮更新")
-
-# hpatchz 用于应用官方增量包。上游 sisong/HDiffPatch 为 MIT，与本项目 AGPL 兼容。
-# 仓库不跟踪二进制，故首次需要增量更新时按需下载并校验后缓存。
-_HPATCHZ_VERSION = "v5.1.3"
-_HPATCHZ_URL = (
-    "https://github.com/sisong/HDiffPatch/releases/download/"
-    f"{_HPATCHZ_VERSION}/hdiffpatch_{_HPATCHZ_VERSION}_bin_windows64.zip"
-)
-_HPATCHZ_ZIP_SHA256 = "77f141386e5d8f785c1c846e10fbbc19b6c05aa00e3f59cc44670fb3f0e2ae94"
-_HPATCHZ_MEMBER = "windows64/hpatchz.exe"
-_HPATCHZ_CACHE_DIR = Path.cwd() / "data" / "cache" / "hpatchz"
 
 # 暂存区放在安装目录内，确保与游戏目录同卷，move 才是原子改名而非跨卷复制。
 _STAGING_DIR_NAME = "_mas_update"
@@ -503,47 +492,6 @@ async def download_plan(
             )
 
     await asyncio.gather(*(worker(entry) for entry in plan.downloads))
-
-
-def _extract_hpatchz(zip_path: Path, target: Path) -> None:
-    with zipfile.ZipFile(zip_path) as archive:
-        with archive.open(_HPATCHZ_MEMBER) as src, target.open("wb") as dst:
-            shutil.copyfileobj(src, dst)
-
-
-async def ensure_hpatchz(
-    *, on_progress: ProgressHook | None = None, timeout: float = 120.0
-) -> Path:
-    """确保本地有 hpatchz，没有则下载并校验 sha256 后缓存。
-
-    仓库不跟踪二进制，所以按需拉取。校验固定的 sha256 是必须的：
-    这是个会被我们拿去改写游戏文件的可执行体，不能来源不明。
-    """
-
-    exe = _HPATCHZ_CACHE_DIR / "hpatchz.exe"
-    if exe.is_file():
-        return exe
-
-    await _report(on_progress, f"正在获取增量补丁工具 hpatchz {_HPATCHZ_VERSION}...")
-    _HPATCHZ_CACHE_DIR.mkdir(parents=True, exist_ok=True)
-    zip_path = _HPATCHZ_CACHE_DIR / "hpatchz.zip"
-    async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
-        response = await client.get(_HPATCHZ_URL)
-        response.raise_for_status()
-        payload = response.content
-
-    actual = hashlib.sha256(payload).hexdigest()
-    if actual != _HPATCHZ_ZIP_SHA256:
-        raise RuntimeError(
-            f"hpatchz 校验失败: 期望 {_HPATCHZ_ZIP_SHA256} 实际 {actual}"
-        )
-    zip_path.write_bytes(payload)
-    try:
-        await asyncio.to_thread(_extract_hpatchz, zip_path, exe)
-    finally:
-        zip_path.unlink(missing_ok=True)
-    logger.info("hpatchz 就绪: {}", exe)
-    return exe
 
 
 async def _run_hpatchz(exe: Path, old_dir: Path, blob: Path, out_dir: Path) -> None:

@@ -1163,6 +1163,9 @@ export default {
     checkGameUpdateBeforeLogin:
       'When enabled, the game client version is compared between the server and the emulator before logging in. An outdated client gets stuck on the force-update screen during login',
     updateAutomaticallyBeforeLaunching: 'Update automatically before launching',
+    genshinUpdateAuto: 'Auto-update Genshin (Bilibili server not supported)',
+    genshinUpdateAutoHint:
+      'MAS checks the version and finishes downloading and installing on its own before the task starts the game, so the official launcher is not needed. Only incremental patches are applied automatically; when none is available it stops and defers to the official launcher. Voice packs that are already installed are updated along with the main resources. Bilibili server is not supported, update it with the official launcher',
     waitAfterLaunchSeconds: 'Wait after launch (seconds)',
     launchMode: 'Launch mode',
     howLongWaitAfter2: 'How long to wait after the game launches',
@@ -1758,6 +1761,18 @@ export default {
     bettergiControllerCloud: 'PC - Cloud Genshin (not implemented)',
     bettergiControllerDesktopClone: 'PC - desktop clone (not implemented)',
     bettergiCloseGameOnFinish: 'Close the game when the task finishes',
+    bettergiCheckUpdateTitle: 'Check the Genshin client for updates',
+    bettergiUpdateUnsupportedHint:
+      'Only the official (CN) and global clients are supported (Asia / Europe / America / TW-HK-MO). For the Bilibili client, please use the official launcher',
+    bettergiUpdateProgressTitle: 'Genshin client update progress',
+    bettergiWillBeUpdated:
+      'The Genshin client used by this user will be checked and updated with official incremental patches. Installed voice packs are updated along with the main resources. The update may download a lot of data, so make sure the game is not running',
+    bettergiUpdateFailed: 'Genshin update failed: {p0}',
+    bettergiUpdateTask: 'The Genshin update task finished',
+    bettergiUpdateTimed: 'The Genshin update made no progress for a long time and was stopped',
+    bettergiUpdateConnecting: 'Connecting to the update task...',
+    bettergiUpdateStartFailed: 'Could not start the Genshin update',
+    bettergiUpdateStopFailed: 'Could not stop the Genshin update',
     bettergiCloseGameOnFinishHint: 'Whether to close the game once the task has finished running',
     bettergiRetryLimitHint: 'Give up once this many attempts have failed',
     bettergiRunTimeoutHint: 'Treated as a timeout when the log stops changing for this long',

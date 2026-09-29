@@ -1112,6 +1112,9 @@ export default {
     checkGameUpdateBeforeLogin:
       '有効にすると、ゲームにログインする前にサーバーとエミュレーター内のゲームクライアントのバージョンを比較します。クライアントが古いと強制更新画面でログインが止まります',
     updateAutomaticallyBeforeLaunching: '起動前に自動更新',
+    genshinUpdateAuto: '原神を自動更新（B服非対応）',
+    genshinUpdateAutoHint:
+      'タスクがゲームを起動する前に、MAS がバージョン確認・ダウンロード・インストールまで自行完了し、公式ランチャーは不要です。増分パッチのみ自動適用し、無い場合は停止して公式ランチャーに任せます。インストール済みの音声パッケージはメインのリソースと一緒に更新されます。Bサーバー（bili服）は非対応のため、公式ランチャーで各自更新してください',
     waitAfterLaunchSeconds: '起動後の待機時間（秒）',
     launchMode: '起動方式',
     howLongWaitAfter2: 'ゲーム起動後に待つ時間',
@@ -1694,6 +1697,18 @@ export default {
     bettergiControllerCloud: 'PC - クラウド原神（未実装）',
     bettergiControllerDesktopClone: 'PC - デスクトップ分身（未実装）',
     bettergiCloseGameOnFinish: 'タスク終了後にゲームを終了する',
+    bettergiCheckUpdateTitle: '原神クライアントの更新を確認',
+    bettergiUpdateUnsupportedHint:
+      '官服と国際服クライアント（アジア／ヨーロッパ／アメリカ／港澳台）のみ対応しています。Bサーバーは公式ランチャーをご利用ください',
+    bettergiUpdateProgressTitle: '原神クライアント更新の進捗',
+    bettergiWillBeUpdated:
+      'このユーザーが使う原神クライアントを確認し、公式の差分パッケージを適用します。インストール済みの音声パッケージもメインのリソースと一緒に更新されます。大量のダウンロードが発生する場合があるため、ゲームが起動していないことを確認してください',
+    bettergiUpdateFailed: '原神の更新に失敗しました: {p0}',
+    bettergiUpdateTask: '原神の更新タスクが終了しました',
+    bettergiUpdateTimed: '原神の更新が長時間進展しなかったため、自動的に停止しました',
+    bettergiUpdateConnecting: '更新タスクに接続しています...',
+    bettergiUpdateStartFailed: '原神の更新を開始できませんでした',
+    bettergiUpdateStopFailed: '原神の更新を停止できませんでした',
     bettergiCloseGameOnFinishHint: 'タスクの実行が終わったときにゲームを終了するかどうか',
     bettergiRetryLimitHint: 'この回数を超えても失敗する場合は中止します',
     bettergiRunTimeoutHint: 'ログが長時間更新されない場合はタイムアウトと判定します',

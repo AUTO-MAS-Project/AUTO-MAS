@@ -4272,6 +4272,11 @@ class BetterGIConfig(ConfigBase):
             "Game", "CloseOnFinish", True, BoolValidator()
         )
 
+        ## 是否在启动 BetterGI 前由 MAS 检查并接管原神客户端更新
+        self.Game_IfAutoUpdate = ConfigItem(
+            "Game", "IfAutoUpdate", False, BoolValidator()
+        )
+
         self.UserData = MultipleConfig([BetterGIUserConfig])
 
         super().__init__()

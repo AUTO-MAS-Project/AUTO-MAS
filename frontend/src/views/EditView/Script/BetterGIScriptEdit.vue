@@ -150,6 +150,30 @@
               </a-form-item>
             </a-col>
           </a-row>
+
+          <a-row :gutter="24">
+            <a-col :span="12">
+              <a-form-item>
+                <template #label>
+                  <span class="form-label">
+                    {{ t('edit.genshinUpdateAuto') }}
+                    <a-tooltip :title="t('edit.genshinUpdateAutoHint')">
+                      <QuestionCircleOutlined class="help-icon" />
+                    </a-tooltip>
+                  </span>
+                </template>
+                <a-select
+                  v-model:value="bettergiConfig.Game.IfAutoUpdate"
+                  size="large"
+                  style="width: 100%"
+                  @change="handleChange('Game', 'IfAutoUpdate', bettergiConfig.Game.IfAutoUpdate)"
+                >
+                  <a-select-option :value="true">{{ t('edit.yes') }}</a-select-option>
+                  <a-select-option :value="false">{{ t('edit.no') }}</a-select-option>
+                </a-select>
+              </a-form-item>
+            </a-col>
+          </a-row>
         </div>
 
         <div class="form-section">
@@ -298,6 +322,7 @@ interface BetterGIRunForm {
 interface BetterGIGameForm {
   Controller: string
   CloseOnFinish: boolean
+  IfAutoUpdate: boolean
 }
 
 interface BetterGIScriptConfigForm {
@@ -325,7 +350,11 @@ const bettergiConfig = reactive<BetterGIScriptConfigForm>({
     UseAdmin: true,
     AccountSwitchMethod: 'MAS',
   },
-  Game: { Controller: '电脑端-前台', CloseOnFinish: true },
+  Game: {
+    Controller: '电脑端-前台',
+    CloseOnFinish: true,
+    IfAutoUpdate: false,
+  },
 })
 
 const rules = computed(() => ({
