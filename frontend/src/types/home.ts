@@ -124,6 +124,8 @@ export interface SraActivityItem {
   startTime: string
   endTime: string
   cover?: string
+  /** 数据源自己的活动分类（如星塔旅人的「版本活动」），横幅按它挑要报的那一类 */
+  kind?: string
 }
 
 export interface SraActivityOverview {

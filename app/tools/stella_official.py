@@ -24,9 +24,9 @@
 标题和正文摘要里——接口本身没有时间字段，只能读「▌活动时间 / 招募时间 /
 开放时间」那一段文本。
 
-首页的活动卡与横幅用这里解析出来的结果；MSS 那边判定「当前有没有进行中的
-活动」仍走 StellaBase 的精确时间（``stella_activity.py``），因为官网会把开始
-写成「维护结束后」，那种写法读不出具体时刻，不适合拿来做调度判定。
+首页的活动卡与横幅、以及 MSS 判断「当前有没有活动」，用的都是这里的结果。
+判定只认「版本活动」那一类（``VERSION_KIND``）：只有它会开限时活动关，招募与
+拼图之类的小玩法没有关卡可打，全算进来的话几乎天天「有活动」。
 
 取数失败返回 None，由调用方退回默认行为。
 """
@@ -69,6 +69,8 @@ KIND_BY_SUFFIX = (
     ("招募", "招募"),
     ("一览", "版本活动"),
 )
+## 带活动关的那一类：横幅与 MSS 的活动期判定都只认它
+VERSION_KIND = "版本活动"
 ## 带这些字样的公告不是活动：维护、兑换码、问卷、充值之类
 SKIP_TITLE = re.compile(
     r"维护|更新说明|兑换|问卷|举报|封禁|处罚|支付|充值|客服|反馈|补偿|直播|前瞻|预约|测试|下载|问题说明"
@@ -229,3 +231,30 @@ async def fetch_official_activities(*, force: bool = False) -> dict[str, Any] | 
     data = {"activities": parse_activities(rows, datetime.now(BEIJING))}
     _cache = (now, data)
     return data
+
+
+async def has_running_official_activity() -> bool | None:
+    """当前有没有进行中的「版本活动」。
+
+    只有版本活动会开限时活动关，MSS 据此决定「活动快速战斗」排不排、排在哪；
+    招募与拼图之类的小玩法没有关卡可打，算进来几乎天天「有活动」，判定就废了。
+
+    Returns:
+        bool | None: 有 True、确实没有 False、取不到数据 None——调用方要把 None
+        当成「说不准」跳过编排，不能当成「没有活动」。
+    """
+
+    data = await fetch_official_activities()
+    if data is None:
+        return None
+
+    now = datetime.now(BEIJING)
+    for item in data["activities"]:
+        if item["kind"] != VERSION_KIND:
+            continue
+        start = datetime.fromisoformat(item["startTime"])
+        end = datetime.fromisoformat(item["endTime"])
+        if start <= now < end:
+            return True
+
+    return False

@@ -227,6 +227,7 @@ import {
   endfieldActivityBanner,
   getActivityAccent,
   sraActivityBanner,
+  stellaActivityBanner,
 } from '@/views/home/activityBanner'
 import { useHomeLayout } from '@/views/home/useHomeLayout'
 import { useHomeNotice } from '@/views/home/useHomeNotice'
@@ -376,7 +377,7 @@ const activityBanners = computed<ActivityBannerItem[]>(() =>
       return {
         ...base,
         loading: stellaSource.loading.value,
-        ...sraActivityBanner(stellaSource.overview.value),
+        ...stellaActivityBanner(stellaSource.overview.value),
       }
     }
 

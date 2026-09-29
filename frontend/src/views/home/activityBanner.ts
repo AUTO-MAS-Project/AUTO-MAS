@@ -99,3 +99,30 @@ export const arknightsActivityBanner = (activityData: ActivityItem[]): ActivityB
     stale: false,
   }
 }
+
+/**
+ * 星塔旅人的横幅只报「版本活动」。
+ *
+ * 那是会开限时活动关的版本大活动（「遥远的塔」这种），招募与拼图、经营之类的小玩法
+ * 只留在下面的活动卡里；一期版本活动都没有时横幅空着，由轮播显示「暂无进行中的活动」。
+ */
+const STELLA_BANNER_KIND = '版本活动'
+
+export const stellaActivityBanner = (overview: SraActivityOverview): ActivityBannerSource => {
+  const now = Date.now()
+  const versions = overview.activities.filter(item =>
+    (item.kind ?? '').includes(STELLA_BANNER_KIND)
+  )
+  const activity =
+    versions.find(item => toTimestamp(item.startTime) <= now && toTimestamp(item.endTime) > now) ??
+    versions.find(item => toTimestamp(item.startTime) > now)
+
+  return {
+    cover: activity?.cover ?? '',
+    subtitle: activity?.name ?? '',
+    startTime: activity?.startTime ?? '',
+    endTime: activity?.endTime ?? '',
+    available: overview.Available,
+    stale: overview.Stale,
+  }
+}
