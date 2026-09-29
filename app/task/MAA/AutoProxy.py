@@ -1071,6 +1071,15 @@ class AutoProxyTask(TaskExecuteBase):
 
                 await self.set_maa(emulator_info)
 
+                # 本轮 MAA 的日志从启动前的文件末尾开始读：gui.log 追加写且跨
+                # 运行保留，历史内容里带完成/失败标志的旧行（时间戳闸门分辨不出
+                # 它们的「未来」时间戳）会被整段当成本轮日志，MAA 刚启动就被判
+                # 失败，随后反复重启模拟器（#19）。
+                log_offset = (
+                    self.maa_log_path.stat().st_size
+                    if self.maa_log_path.is_file()
+                    else 0
+                )
                 logger.info(f"启动MAA进程: {self.maa_exe_path}")
                 self.wait_event.clear()
                 await self.maa_process_manager.open_process(self.maa_exe_path)
@@ -1084,7 +1093,9 @@ class AutoProxyTask(TaskExecuteBase):
                     f"running={await self.maa_process_manager.is_running()}"
                 )
                 await self.maa_log_monitor.start_monitor_file(
-                    self._resolve_log_file_path, self.log_start_time
+                    self._resolve_log_file_path,
+                    self.log_start_time,
+                    initial_offset=log_offset,
                 )
                 await self.wait_event.wait()
                 await self.maa_log_monitor.stop()
