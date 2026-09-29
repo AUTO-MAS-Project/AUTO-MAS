@@ -1,0 +1,231 @@
+#   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
+#   Copyright © 2025-2026 AUTO-MAS Team
+
+#   This file is part of AUTO-MAS.
+
+#   AUTO-MAS is free software: you can redistribute it and/or modify
+#   it under the terms of the GNU Affero General Public License as
+#   published by the Free Software Foundation, either version 3 of
+#   the License, or (at your option) any later version.
+
+#   AUTO-MAS is distributed in the hope that it will be useful,
+#   but WITHOUT ANY WARRANTY; without even the implied warranty of
+#   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+#   GNU Affero General Public License for more details.
+
+#   You should have received a copy of the GNU Affero General Public License
+#   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
+
+#   Contact: DLmaster_361@163.com
+
+"""星塔旅人官网活动公告的抓取与解析。
+
+官网 CMS 把活动也当公告发：列表接口一次给 6 条，活动名、分类与开放时间都在
+标题和正文摘要里——接口本身没有时间字段，只能读「▌活动时间 / 招募时间 /
+开放时间」那一段文本。
+
+首页的活动卡与横幅用这里解析出来的结果；MSS 那边判定「当前有没有进行中的
+活动」仍走 StellaBase 的精确时间（``stella_activity.py``），因为官网会把开始
+写成「维护结束后」，那种写法读不出具体时刻，不适合拿来做调度判定。
+
+取数失败返回 None，由调用方退回默认行为。
+"""
+
+import re
+import time
+from collections.abc import Mapping, Sequence
+from datetime import datetime, timedelta, timezone
+from typing import Any
+
+import httpx
+
+from app.utils import get_logger
+
+logger = get_logger("星塔旅人活动")
+
+NEWS_BASE = "https://stellasora.yostar.cn"
+NEWS_LIST_URL = f"{NEWS_BASE}/api/resource/news"
+NEWS_PAGE_URL = f"{NEWS_BASE}/news"
+## 那个 CMS 认 Referer，不带就只给空壳
+NEWS_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+    "Referer": f"{NEWS_BASE}/",
+}
+
+## 站点固定每页 6 条（size 参数不起作用）；翻 6 页 36 条，够覆盖进行中的
+## 活动与最近结束的那批，再多翻也只是更早的历史公告
+NEWS_MAX_PAGES = 6
+CACHE_TTL_SECONDS = 600
+REQUEST_TIMEOUT_SECONDS = 20
+## 只留最近结束 14 天以内的，与其它活动源一个口径
+RECENT_WINDOW_DAYS = 14
+
+BEIJING = timezone(timedelta(hours=8))
+
+## 「「猎影合围Beta」活动说明」「「空白的稚梦」限时招募开启」……
+ACTIVITY_TITLE = re.compile(r"^「(?P<name>[^「」]+)」(?P<suffix>.*)$")
+## 标题后缀 → 卡片上的分类标签
+KIND_BY_SUFFIX = (
+    ("招募", "招募"),
+    ("一览", "版本活动"),
+)
+## 带这些字样的公告不是活动：维护、兑换码、问卷、充值之类
+SKIP_TITLE = re.compile(
+    r"维护|更新说明|兑换|问卷|举报|封禁|处罚|支付|充值|客服|反馈|补偿|直播|前瞻|预约|测试|下载|问题说明"
+)
+## 正文里的开放时间段落，标签名各家公告不统一
+TIME_SECTION = re.compile(
+    r"[▌■]\s*(?:活动时间|开放时间|招募时间|活动期间|卡池时间)[：:]?\s*([^\n▌■]+)"
+)
+## 起止都带时刻：2026/09/22 12:00 ~ 2026/09/29 10:59
+EXACT_RANGE = re.compile(
+    r"(\d{4})/(\d{2})/(\d{2})\s+(\d{2}):(\d{2})\s*[~～至\-]\s*"
+    r"(\d{4})/(\d{2})/(\d{2})\s+(\d{2}):(\d{2})"
+)
+## 开始写成「维护结束后」：只有日期没有时刻，2026/09/29 维护结束后 ~ 2026/10/13 03:59
+MAINTENANCE_RANGE = re.compile(
+    r"(\d{4})/(\d{2})/(\d{2})\s*维护结束后\s*[~～至\-]\s*"
+    r"(\d{4})/(\d{2})/(\d{2})\s+(\d{2}):(\d{2})"
+)
+
+_cache: tuple[float, dict[str, Any]] | None = None
+
+
+def _at(year: str, month: str, day: str, hour: str, minute: str) -> datetime:
+    """按北京时间拼一个时刻"""
+
+    return datetime(
+        int(year), int(month), int(day), int(hour), int(minute), tzinfo=BEIJING
+    )
+
+
+def parse_open_time(text: str) -> tuple[datetime, datetime] | None:
+    """从公告正文里读出活动的开放时间。
+
+    优先认起止都带时刻的写法；开始写成「维护结束后」的，维护多久公告里没有，
+    硬猜只会让「距开始」错报，所以按当天零点算——倒计时按结束时间走，不受影响。
+
+    Args:
+        text: 公告正文（或摘要）。
+
+    Returns:
+        tuple[datetime, datetime] | None: 开始与结束时刻；读不出结束时刻时为 None。
+    """
+
+    exact = EXACT_RANGE.search(text)
+    if exact is not None:
+        return _at(*exact.groups()[:5]), _at(*exact.groups()[5:])
+
+    maintenance = MAINTENANCE_RANGE.search(text)
+    if maintenance is not None:
+        year, month, day = maintenance.groups()[:3]
+        return _at(year, month, day, "0", "0"), _at(*maintenance.groups()[3:])
+
+    return None
+
+
+def _kind_of(title: str, suffix: str) -> str:
+    """标题后缀 → 卡片上的分类标签"""
+
+    for keyword, kind in KIND_BY_SUFFIX:
+        if keyword in suffix:
+            return kind
+
+    return "活动"
+
+
+def parse_activities(
+    rows: Sequence[Mapping[str, Any]], now: datetime
+) -> list[dict[str, Any]]:
+    """把公告列表里认得出的活动整理成前端要的形状（按开始时间升序）。
+
+    认活动的方式：标题形如「活动名」后缀，后缀不是维护、兑换码之类的杂项；
+    正文里能读出开放时间。同名公告会重复发（活动说明、奖励说明各一篇），
+    只留结束最晚的那条。
+
+    Args:
+        rows: 官网列表接口返回的公告条目。
+        now: 判定时刻（北京时间）。
+
+    Returns:
+        list[dict[str, Any]]: 活动条目，字段与明日方舟那条链路一致。
+    """
+
+    horizon = now - timedelta(days=RECENT_WINDOW_DAYS)
+    picked: dict[str, dict[str, Any]] = {}
+
+    for row in rows:
+        title = str(row.get("title") or "").strip()
+        matched = ACTIVITY_TITLE.match(title)
+        if matched is None or SKIP_TITLE.search(title):
+            continue
+
+        text = f"{row.get('description') or ''}\n{title}"
+        section = TIME_SECTION.search(text)
+        window = parse_open_time(section.group(1) if section is not None else text)
+        if window is None:
+            continue
+
+        start, end = window
+        if end <= start or end < horizon:
+            continue
+
+        name = matched.group("name").strip()
+        existing = picked.get(name)
+        if existing is not None and datetime.fromisoformat(existing["endTime"]) >= end:
+            continue
+
+        description = re.sub(r"\s+", " ", str(row.get("description") or "")).strip()
+        picked[name] = {
+            "name": name,
+            "kind": _kind_of(title, matched.group("suffix")),
+            "startTime": start.isoformat(timespec="minutes"),
+            "endTime": end.isoformat(timespec="minutes"),
+            "cover": str(row.get("thumbnail") or ""),
+            "url": str(row.get("link") or ""),
+            "description": description[:80],
+        }
+
+    return sorted(picked.values(), key=lambda item: item["startTime"])
+
+
+async def fetch_official_activities(*, force: bool = False) -> dict[str, Any] | None:
+    """取回官网的活动一览（带模块级缓存）。
+
+    Args:
+        force: 为 True 时忽略缓存。
+
+    Returns:
+        dict[str, Any] | None: ``{"activities": [...]}``；取数失败时为 None。
+    """
+
+    global _cache
+
+    now = time.time()
+    if not force and _cache is not None and now - _cache[0] < CACHE_TTL_SECONDS:
+        return _cache[1]
+
+    rows: list[Mapping[str, Any]] = []
+    try:
+        async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT_SECONDS) as client:
+            for index in range(1, NEWS_MAX_PAGES + 1):
+                response = await client.get(
+                    NEWS_LIST_URL, params={"index": index}, headers=NEWS_HEADERS
+                )
+                response.raise_for_status()
+                payload = response.json()
+                batch = (payload.get("data") or {}).get("rows")
+                if not isinstance(batch, list) or not batch:
+                    break
+                rows.extend(item for item in batch if isinstance(item, Mapping))
+    except Exception as e:
+        logger.warning(f"获取星塔旅人官网活动失败: {type(e).__name__}: {e}")
+        return None
+
+    if not rows:
+        logger.warning("星塔旅人官网活动列表为空，按拿不到处理")
+        return None
+
+    data = {"activities": parse_activities(rows, datetime.now(BEIJING))}
+    _cache = (now, data)
+    return data
