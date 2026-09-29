@@ -8,7 +8,7 @@ import threading
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Awaitable, Callable, Mapping, Sequence
+from typing import TYPE_CHECKING, Any, Awaitable, Callable, Mapping, Sequence
 from urllib.parse import quote
 
 import httpx
@@ -23,31 +23,39 @@ from .apply import (
     _find_package_root,
     _read_interface_version,
     _safe_extract_zip,
-    _zip_expanded_size,
+    zip_entry_stats,
 )
 from .contracts import normalise_sha256
 from .payloads import (
+    PROJECTION_CHECK_FIELD,
     PayloadCancelled,
     PayloadError,
     PayloadTarget,
     RegisterResult,
     build_from_package,
     finalize,
+    inherited_projection_revision,
+    projection_revision_of,
     read_lineage,
     register,
     remove_tree,
     version_newer,
 )
+from .projection import PROJECTION_REVISION
 from .state import (
     DEFAULT_CACHE_ROOT,
     DEFAULT_OPERATION_ROOT,
     UpdateOperationStore,
 )
+from .timing import StageTimer, format_duration, format_megabytes
 from .transport import (
     CANCELLED_MESSAGE,
     UpdateDownloadCancelled,
     download_resumable,
 )
+
+if TYPE_CHECKING:  # 导入 runtime_pool 会连带整个运行池包，选包时才导入
+    from ..runtime_pool.architecture import ArchitectureTarget
 
 HTTP_HEADERS = {"User-Agent": "AutoMasGui"}
 
@@ -259,6 +267,42 @@ class MaaFWProjectUpdateError(RuntimeError):
         self.cancelled = cancelled
 
 
+def _stale_projection_message(manifest: Mapping[str, Any]) -> str:
+    """按旧投影规则建的载荷改要全量包时的日志：如实说明是否核对过、缺多少（``projectionCheck``）。"""
+
+    record = manifest.get(PROJECTION_CHECK_FIELD)
+    record = record if isinstance(record, Mapping) else {}
+    reason = str(record.get("reason") or "").strip()
+    suffix = f"（上次检查：{reason}）" if reason else ""
+    missing = int(record.get("missingCount") or 0)
+    if missing:
+        return (
+            f"当前版本按旧规则安装，查出漏装 {missing} 个文件但没补上{suffix}，"
+            "改为请求全量包"
+        )
+    if record:
+        return f"当前版本按旧规则安装，是否漏装文件还没核对成{suffix}，改为请求全量包"
+    return "当前版本按旧规则安装，还没核对过是否漏装文件，改为请求全量包"
+
+
+def _host_update_target() -> ArchitectureTarget:
+    """本机选包用的架构参数（Mirror 酱 os/arch、GitHub 资产架构段）。
+
+    只从 ``runtime_pool.architecture.host_architecture()`` 取；不是 x64 时按「只支持 x64」
+    报错，不悄悄按 x64 去下包。
+    """
+
+    from ..runtime_pool.architecture import (
+        MaaFWUnsupportedArchitectureError,
+        supported_architecture_target,
+    )
+
+    try:
+        return supported_architecture_target()
+    except MaaFWUnsupportedArchitectureError as exc:
+        raise MaaFWProjectUpdateError(str(exc)) from None
+
+
 def _normalise_package_source(raw_value: Any) -> str:
     """Normalize a package source name to the internal identifier.
 
@@ -447,14 +491,23 @@ async def update_maafw_project_if_needed(
         # 载荷没有发布方基线，一律要全量包。
         prefer_full = True
         damaged = False
+        stale_projection = False
         if payload is not None:
             try:
-                source_kind = str(
-                    (payload.manifest().get("source") or {}).get("kind") or ""
-                )
+                base_manifest = payload.manifest()
             except PayloadError:
-                source_kind = ""
+                base_manifest = {}
+            source_kind = str((base_manifest.get("source") or {}).get("kind") or "")
             prefer_full = source_kind != "update"
+            # 按旧投影规则建、漏装的文件又没补上的载荷：差量包只动包里那几个文件，套上去
+            # 新版本照样缺；全量包的条目全部按当前规则投影。
+            stale_projection = (
+                not prefer_full
+                and projection_revision_of(base_manifest) < PROJECTION_REVISION
+            )
+            if stale_projection:
+                prefer_full = True
+                send_update_log(_stale_projection_message(base_manifest))
             # 写穿巡检标过 damaged 的载荷：差量基线（清单）已与盘上内容不符，套差量会把
             # 被改写的文件原样带进新版本，只能整版重建。
             if not prefer_full:
@@ -470,7 +523,7 @@ async def update_maafw_project_if_needed(
             if damaged:
                 prefer_full = True
                 send_update_log("当前版本有共用文件被改写过，改为请求全量包")
-        if prefer_full and not damaged:
+        if prefer_full and not damaged and not stale_projection:
             send_update_log("当前版本是本地导入的，改为请求全量包")
 
         (
@@ -767,7 +820,10 @@ async def _discover_project_update_detailed(
     mirror_cdk = str(config.get("mirror_cdk") or config.get("cdk") or "").strip()
     channel = str(config.get("channel") or "stable").strip() or "stable"
     send_update_log(f"MirrorChyan RID: {rid}")
-    send_update_log("MirrorChyan platform: win/x86_64")
+    target = _host_update_target()
+    send_update_log(
+        f"MirrorChyan platform: {target.mirrorchyan_os}/{target.mirrorchyan_arch}"
+    )
     # 日志里绝不出现 CDK 明文，连前几位都不打。
     if mirror_cdk:
         send_update_log("MirrorChyan CDK: 已配置")
@@ -1026,6 +1082,24 @@ async def apply_maafw_project_update(
         packageType=candidate.package_type or "",
         scriptId=str(script_id or payload.by or "").strip(),
     )
+    # 各段用时：每段结束的日志带用时，收尾打一行汇总；失败 / 取消时说停在哪一段。
+    # send_update_log 在两条路径上都既给用户看、又进 app.log（手动更新面板 / 任务日志）。
+    timer = StageTimer()
+
+    def log_stopped(exc: BaseException) -> None:
+        # 段与段之间（找包根、读版本号）停下的，算在刚结束的那一段上。
+        stage = timer.current or timer.last or "准备"
+        verb = (
+            "中止"
+            if isinstance(exc, (PayloadCancelled, UpdateDownloadCancelled))
+            or getattr(exc, "cancelled", False)
+            else "失败"
+        )
+        send_update_log(
+            f"更新已在「{stage}」阶段{verb}，本次已用时 {format_duration(timer.elapsed())}"
+        )
+
+    timer.start("下载")
     try:
         downloaded = await download_resumable(
             source=candidate.source,
@@ -1053,9 +1127,11 @@ async def apply_maafw_project_update(
     except UpdateDownloadCancelled as exc:
         # 必须排在下面那个 ``except Exception`` 之前，否则「已中止」会被
         # 包成一条普通的更新失败。
+        log_stopped(exc)
         _finish_operation(operation, "cancelled")
         raise MaaFWProjectUpdateError(str(exc), cancelled=True) from exc
     except MaaFWProjectUpdateError as exc:
+        log_stopped(exc)
         _finish_operation(
             operation,
             "cancelled" if getattr(exc, "cancelled", False) else "failed",
@@ -1064,14 +1140,45 @@ async def apply_maafw_project_update(
         raise
     except Exception as exc:
         # 下载阶段失败也记终态：流水不停在 discovered，启动期清理一视同仁。
+        log_stopped(exc)
         _finish_operation(operation, "failed", error=str(exc)[:500])
         raise MaaFWProjectUpdateError(str(exc)) from exc
+    timer.finish()
     if is_cancelled():
+        send_update_log(
+            f"更新已在「下载」之后中止，本次已用时 {format_duration(timer.elapsed())}"
+        )
         _finish_operation(operation, "cancelled", downloadedBytes=downloaded.size)
         raise MaaFWProjectUpdateError(CANCELLED_MESSAGE, cancelled=True)
 
     def emit(stage: str, data: dict[str, Any]) -> None:
         _report_progress(progress, stage, operation_id=operation.operation_id, **data)
+
+    def check_cancel() -> None:
+        if is_cancelled():
+            raise PayloadCancelled("update cancelled")
+
+    def on_build_event(stage: str, data: dict[str, Any]) -> None:
+        """``build_from_package`` 的阶段事件：照常转成进度，顺带收段、打带用时的日志。"""
+
+        if stage == "plan_validated":
+            elapsed = timer.finish()
+            kind = "全量包" if data.get("packageType") == "full" else "差量包"
+            send_update_log(
+                f"比对完成：{kind}，包内 {data.get('packageFiles', 0)} 个文件，"
+                f"删除 {data.get('staleFiles', 0)} 个旧文件，用时 {format_duration(elapsed)}"
+            )
+            timer.start("复制旧版本")
+            send_update_log("正在从当前版本复制出新版本骨架")
+        elif stage == "staged":
+            elapsed = timer.finish()
+            send_update_log(
+                f"新版本骨架已复制：{data.get('stagedFiles', 0)} 个文件，"
+                f"用时 {format_duration(elapsed)}"
+            )
+            # 「正在套用更新包 x/y」由进度事件出（面板状态行 / 任务日志），这里不再单打一行。
+            timer.start("套用更新包")
+        emit(stage, data)
 
     suffix = uuid.uuid4().hex[:8]
     staging_root = Path(payload.staging_root)
@@ -1080,8 +1187,9 @@ async def apply_maafw_project_update(
     expected_version = str(target_version or "").strip()
 
     def build() -> Any:
+        timer.start("解压")
         staging_root.mkdir(parents=True, exist_ok=True)
-        expanded = _zip_expanded_size(downloaded.path)
+        entry_files, expanded = zip_entry_stats(downloaded.path)
         # 解压一份、新载荷里包内条目再落一份（大文件多半进共用库，只占一次）。
         _check_disk_space(
             staging_root,
@@ -1090,8 +1198,24 @@ async def apply_maafw_project_update(
             project_required=expanded,
         )
         extract_dir.mkdir(parents=True, exist_ok=True)
-        _safe_extract_zip(downloaded.path, extract_dir)
+        send_update_log(
+            f"正在解压更新包：{entry_files} 个文件，解压后约 {format_megabytes(expanded)}"
+        )
+        extracted = _safe_extract_zip(
+            downloaded.path,
+            extract_dir,
+            progress=lambda data: emit("extracting", data),
+            check_cancel=check_cancel,
+            send_log=send_update_log,
+        )
+        elapsed = timer.finish()
+        send_update_log(
+            f"解压完成：{extracted.files} 个文件 / {format_megabytes(extracted.bytes)}，"
+            f"用时 {format_duration(elapsed)}"
+        )
         package_root = _find_package_root(extract_dir)
+        timer.start("比对")
+        send_update_log("正在比对新旧版本文件")
         built = build_from_package(
             payload.manifest(),
             payload.directory(),
@@ -1101,7 +1225,7 @@ async def apply_maafw_project_update(
             blob_store=payload.blob_store,
             private=payload.private_paths,
             send_log=send_update_log,
-            on_event=emit,
+            on_event=on_build_event,
             expected_package_type=(
                 candidate.package_type
                 if candidate.package_type in {"full", "delta"}
@@ -1109,6 +1233,10 @@ async def apply_maafw_project_update(
             ),
             target_version=target_version,
             cancelled=is_cancelled,
+        )
+        elapsed = timer.finish()
+        send_update_log(
+            f"套用更新包完成：{built.applied_files} 个文件，用时 {format_duration(elapsed)}"
         )
         actual = _read_interface_version(staging, strict=True).strip()
         if expected_version and actual.lstrip("vV") != expected_version.lstrip("vV"):
@@ -1120,11 +1248,17 @@ async def apply_maafw_project_update(
     registered: RegisterResult | None = None
     try:
         built, actual_version = await asyncio.to_thread(build)
-        remove_tree(extract_dir)
+        # 解压目录里剩下的（没被挪进新载荷的）可能还有几百 MB：删在工作线程里，不在事件
+        # 循环上同步删——那会冻住 WS 推送与界面，看起来又像卡死。用时只进汇总行。
+        timer.start("清理解压目录")
+        await asyncio.to_thread(remove_tree, extract_dir)
+        timer.finish()
         if is_cancelled():
             raise PayloadCancelled("update cancelled")
         emit("post_validating", {})
         if post_validate is not None:
+            timer.start("预检")
+            send_update_log("正在预检新版本的运行环境")
             # 回调（运行环境预检）失败的原因必须原样带出去：调用方要据此分
             # 「binding 拿不到」与其它失败、写备忘、给用户看文案。
             try:
@@ -1132,27 +1266,40 @@ async def apply_maafw_project_update(
             except Exception as exc:
                 if is_cancelled():
                     raise PayloadCancelled("update cancelled") from exc
+                send_update_log(f"预检未通过，用时 {format_duration(timer.finish())}")
                 raise MaaFWProjectUpdateError(
                     str(exc).strip() or type(exc).__name__,
                     post_validate_rejected=True,
                 ) from exc
             if verdict is False:
+                send_update_log(f"预检未通过，用时 {format_duration(timer.finish())}")
                 raise MaaFWProjectUpdateError(
                     "MaaFW post-validation rejected the update",
                     post_validate_rejected=True,
                 )
+            send_update_log(f"预检通过，用时 {format_duration(timer.finish())}")
         if is_cancelled():
             raise PayloadCancelled("update cancelled")
+        timer.start("并入共用库")
         send_update_log("正在把新版本的大文件并入共用库")
         finalized = await asyncio.to_thread(
             finalize,
             staging,
             blob_store=payload.blob_store,
             private=payload.private_paths,
+            # 逐文件之间可停：每个文件的入库本身是原子的（硬链接 + os.replace），停在中间
+            # 只会留下「已入库、staging 丢掉后只剩库里一个链接」的完整 blob，启动期回收收走。
+            check_cancel=check_cancel,
+        )
+        send_update_log(
+            f"并入共用库完成：新入库 {finalized.ingested_files} 个文件 / "
+            f"{format_megabytes(finalized.ingested_bytes)}，"
+            f"用时 {format_duration(timer.finish())}"
         )
         # 最后一个能干净停下的点：再往下就是登记，之后不再响应取消。
         if is_cancelled():
             raise PayloadCancelled("update cancelled")
+        timer.start("生成清单")
         send_update_log("正在为新版本生成文件清单（大项目可能要一两分钟）")
         registered = await asyncio.to_thread(
             lambda: register(
@@ -1170,27 +1317,41 @@ async def apply_maafw_project_update(
                 lineage_info=payload.lineage_info,
                 known_hashes=finalized.hashes,
                 origins=built.origins,
+                projection_revision=inherited_projection_revision(
+                    payload.manifest(), built.plan.package_type
+                ),
             )
         )
     except PayloadCancelled as exc:
-        remove_tree_quietly(staging)
+        log_stopped(exc)
+        await _remove_tree_in_thread(staging)
         _finish_operation(operation, "cancelled", downloadedBytes=downloaded.size)
         raise MaaFWProjectUpdateError(CANCELLED_MESSAGE, cancelled=True) from exc
     except MaaFWProjectUpdateError as exc:
-        remove_tree_quietly(staging)
+        log_stopped(exc)
+        await _remove_tree_in_thread(staging)
         _finish_operation(operation, "failed", error=str(exc)[:500])
         raise
     except (PayloadError, UpdateApplyError) as exc:
-        remove_tree_quietly(staging)
+        log_stopped(exc)
+        await _remove_tree_in_thread(staging)
         _finish_operation(operation, "failed", error=str(exc)[:500])
         raise MaaFWProjectUpdateError(str(exc)) from exc
     except Exception as exc:
-        remove_tree_quietly(staging)
+        log_stopped(exc)
+        await _remove_tree_in_thread(staging)
         _finish_operation(operation, "failed", error=str(exc)[:500])
         raise MaaFWProjectUpdateError(str(exc)) from exc
     finally:
-        remove_tree_quietly(extract_dir)
+        # 取消 / 失败时解压目录多半是整包大小；成功路径上面已经删过，这里是空操作。
+        await _remove_tree_in_thread(extract_dir)
 
+    manifest_files = registered.manifest.get("files")
+    send_update_log(
+        f"文件清单已生成并登记：{len(manifest_files) if isinstance(manifest_files, Mapping) else 0}"
+        f" 个文件，用时 {format_duration(timer.finish())}"
+    )
+    send_update_log(f"新版本构建总用时 {timer.summary()}")
     # 流水记到终态：启动期清理只收终态 / 本进程之前的记录，不让目录越攒越多。
     _finish_operation(operation, "registered", payloadId=registered.payload_id)
     emit("committed", {"payloadId": registered.payload_id})
@@ -1229,6 +1390,15 @@ def _finish_operation(
         operation.update(status, **fields)
     except Exception:  # noqa: BLE001
         logger.warning("MaaFW 更新流水写终态失败: %s", status, exc_info=True)
+
+
+async def _remove_tree_in_thread(path: Path) -> None:
+    """在工作线程里删 staging / 解压目录（上万个文件要删好几秒，不能卡住事件循环）。
+
+    ``to_thread`` 一调用就把删除交给了线程池：这里的 await 即使被取消，删除也会照常做完。
+    """
+
+    await asyncio.to_thread(remove_tree_quietly, path)
 
 
 def remove_tree_quietly(path: Path) -> None:
@@ -1274,8 +1444,9 @@ async def _query_mirrorchyan_latest(
     # 更新检查就整条失败。实测单平台 rid（AUTO_MAS）多带这两个参数照常回 200，
     # os=win&arch=x86_64 与 windows/x64 都被服务端接受并归一；这里沿用 GitHub
     # 资产命名的那套写法。
-    params["os"] = "win"
-    params["arch"] = "x86_64"
+    target = _host_update_target()
+    params["os"] = target.mirrorchyan_os
+    params["arch"] = target.mirrorchyan_arch
 
     url = f"https://mirrorchyan.com/api/resources/{rid}/latest"
     try:
@@ -1392,8 +1563,12 @@ async def _check_github_release_update(
     source_config: dict[str, Any],
     proxy: httpx.Proxy | None,
     target_version: str = "",
+    timeout: float = 30.0,
 ) -> MaaFWProjectUpdateDiscovery | None:
     """Fetch the exact MirrorChyan-selected version from GitHub Releases.
+
+    ``timeout`` is per request; the projection heal check passes a shorter one
+    because it runs synchronously before a task starts.
 
     The repository is always ``interface.github``, the tag is always the
     MirrorChyan ``version_name`` (``target_version``), and the asset is picked
@@ -1426,7 +1601,7 @@ async def _check_github_release_update(
 
     response: httpx.Response | None = None
     async with httpx.AsyncClient(
-        proxy=proxy, follow_redirects=True, timeout=30.0
+        proxy=proxy, follow_redirects=True, timeout=timeout
     ) as client:
         for api_url in api_urls:
             candidate_response = await client.get(api_url, headers=headers)
@@ -1740,8 +1915,7 @@ def _select_github_release_asset(
         if windows_matches:
             narrowed = windows_matches
         arch_pattern = re.compile(
-            r"(?<![a-z0-9])(?:x86[-_]?64|x64|amd64)(?![a-z0-9])",
-            re.IGNORECASE,
+            _host_update_target().github_asset_pattern, re.IGNORECASE
         )
         arch_matches = [item for item in narrowed if arch_pattern.search(item[0])]
         if arch_matches:

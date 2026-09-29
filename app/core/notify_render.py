@@ -143,6 +143,8 @@ def render_for_target(
                 diagnostics.append(
                     f"图片 {image.id} 只有 URL，当前图片槽位需要本地数据；已保留正文"
                 )
+    elif "rich_media" in capabilities.image_presentations:
+        target_images = payload.images
     else:
         target_images = tuple(referenced_images.values())
 
@@ -196,7 +198,12 @@ def _render_content(
             diagnostics,
         )
     else:
-        content = _render_text_images(content, image_by_id, diagnostics)
+        content = _render_text_images(
+            content,
+            image_by_id,
+            diagnostics,
+            separate_images="rich_media" in capabilities.image_presentations,
+        )
 
     content = _append_body_title(
         content,
@@ -361,6 +368,8 @@ def _render_text_images(
     content: str,
     image_by_id: dict[str, NotificationImage],
     diagnostics: list[str],
+    *,
+    separate_images: bool = False,
 ) -> str:
     """纯文本没有图片位置，遇到资源引用时退回替代文字。"""
 
@@ -372,7 +381,8 @@ def _render_text_images(
                 f"正文引用了不存在的图片 {image_id}；已移除图片并保留替代文字"
             )
             return ""
-        diagnostics.append(f"纯文本目标无法显示图片 {image_id}；已保留替代文字")
+        if not separate_images:
+            diagnostics.append(f"纯文本目标无法显示图片 {image_id}；已保留替代文字")
         return image.alt
 
     return NOTIFICATION_IMAGE_URI_PATTERN.sub(replace_ref, content)

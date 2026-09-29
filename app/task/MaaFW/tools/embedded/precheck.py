@@ -25,6 +25,11 @@ Python 里的 binding 钉回原生库版本也就发生在这一步，写的是 
 就丢掉 staging、所有视图继续跑当前版本，并按谱系 + 目标版本写备忘
 （``precheck_memo.py``），之后每次运行前由 ``precheck_gate.py`` 轻探一次再决定要不要重试。
 
+环境建好之后再对 Python agent 做一次导入静态检查（``agent_env/import_check.py``）：
+MaaFgo v2.0.03 漏装了 ``agent/battle/runtime/``，解释器能 ``import maa``，agent 一启动却
+``ModuleNotFoundError``。启动时必然 import 的项目模块不在就同样丢弃新版本；第三方包缺失等
+只记日志。检查自身出任何意外都放行（宁可漏报，不可误拒）。
+
 这里只负责构造回调。回调跑在工作线程里，不拿锁、不 await。运行前自动更新
 （``embedded_manager``）与手动更新（``/maafw/update``）共用同一份逻辑，两边只在
 「要不要读备忘」上不同（手动不读，见 precheck_gate）。
@@ -38,6 +43,13 @@ from collections.abc import Callable, MutableMapping
 from pathlib import Path
 from typing import Any, Protocol
 
+from app.task.MaaFW.tools.core.agent_env.import_check import (
+    KIND_AGENT_MODULE_MISSING,
+    MaaFWAgentImportMissingError,
+    check_agent_plan_imports,
+    describe_missing_agent_modules,
+    log_agent_import_reports,
+)
 from app.task.MaaFW.tools.core.agent_env.planner import (
     compute_isolated_venv_path,
 )
@@ -97,6 +109,39 @@ def _resolve_requirement(project_path: Path) -> str | None:
         return None
 
 
+def check_staging_agent_imports(
+    root: Path,
+    agent_env_root: Path,
+    send_log: Callable[[str], None],
+    *,
+    previous_version: str | None = None,
+) -> None:
+    """在已建好运行环境的 staging 上查 Python agent 的导入；缺项目模块就 raise。
+
+    解释器按与预检同一个 ``agent_env_root`` 定位（隔离 venv 此刻就建在那里）。
+    读 interface、建计划、检查本身出任何别的错都只记日志、放行。
+    """
+
+    try:
+        from app.task.MaaFW.tools.core.agent_env import MaaFWAgentEnvService
+        from app.task.MaaFW.tools.core.interface import load_interface_model_cached
+
+        interface = load_interface_model_cached(root)
+        plans = MaaFWAgentEnvService().build_command_plans(
+            root, interface, managed_env_root=agent_env_root
+        )
+        reports = check_agent_plan_imports(root, plans)
+    except Exception as exc:  # noqa: BLE001 - 检查不了就不下结论
+        logger.warning(f"agent 导入检查没能完成，放行：{exc}")
+        send_log(f"[Agent 导入检查] 没能完成（{type(exc).__name__}），跳过")
+        return
+    missing = log_agent_import_reports(reports, send_log, blocking=True)
+    if missing:
+        raise MaaFWAgentImportMissingError(
+            describe_missing_agent_modules(missing, previous_version), missing
+        )
+
+
 def build_precheck_validator(
     *,
     prepare: PrepareProjectEnvironment,
@@ -128,12 +173,23 @@ def build_precheck_validator(
                 agent_env_root=agent_env_root,
                 store_cache=False,
             )
+            # 已取消就不必再查：核心包随后按取消收尾
+            if not cancel_event.is_set():
+                check_staging_agent_imports(
+                    root,
+                    agent_env_root,
+                    send_log,
+                    previous_version=previous_version,
+                )
         except Exception as exc:
             if cancel_event.is_set():
                 raise
             info = classify_precheck_failure(
                 root, exc, requirement=_resolve_requirement(root)
             )
+            if isinstance(exc, MaaFWAgentImportMissingError):
+                # 备忘里仍按 other 记（不自动重试），这里只给文案分支用
+                info["kind"] = KIND_AGENT_MODULE_MISSING
             if previous_version:
                 info["previousVersion"] = str(previous_version)
             if project_name:
@@ -160,6 +216,7 @@ __all__ = [
     "PRECHECK_AGENT_ROOT_NAME",
     "PrepareProjectEnvironment",
     "build_precheck_validator",
+    "check_staging_agent_imports",
     "cleanup_precheck_agent_venv",
     "precheck_agent_root",
 ]

@@ -46,8 +46,8 @@ from app.utils.io import (
 from .AutoProxy import AutoProxyTask
 from .resource_loader import load_maaend_controller_protocol
 from .ScriptConfig import ScriptConfigTask, maaend_config_mode
-from .tools import push_notification
 from .tools.backup_archive import archive_native_backup
+from .tools.notify import collect_recent_error_images, push_notification
 
 logger = get_logger("MaaEnd 调度器")
 
@@ -328,6 +328,11 @@ class MaaEndManager(TaskExecuteBase):
             # 按用户交错组装「用户结果行 + 该用户节点详情」：
             # 开关关闭的用户未启 log_box，push_log 为空，自然只有结果行。
             has_uncompleted = error_count + wait_count > 0
+            error_images = (
+                collect_recent_error_images(self.script_config.get("Info", "Path"))
+                if error_count
+                else ()
+            )
             result = {
                 "title": f"{TASK_MODE_ZH[self.task_info.mode]}任务报告",
                 "script_name": self.script_info.name or "空白",
@@ -347,6 +352,7 @@ class MaaEndManager(TaskExecuteBase):
                     message=result,
                     user_config=None,
                     task_info=self.task_info,
+                    images=error_images,
                 )
             except Exception as e:
                 logger.opt(exception=True).warning(f"推送代理结果时出现异常: {e}")

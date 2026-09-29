@@ -53,6 +53,7 @@ async def push_proxy_result(
     logger: Any | None = None,
     skip_debug_message: str | None = None,
     images: Sequence[NotificationImage] = (),
+    include_system: bool = True,
 ) -> DispatchResult:
     """推送全局「代理结果」报告；签到汇总与渠道级重试由 dispatch_task_report 承担。
 
@@ -66,6 +67,8 @@ async def push_proxy_result(
         logger: 调用方模块 logger，仅用于可选的跳过 debug 日志。
         skip_debug_message: SendTaskResultTime 不满足时的 debug 文案，仅 M9A 传入。
         images: 随报告提供的图片资源。HTML 模板通过稳定资源 ID 引用需要展示的图片。
+        include_system: 是否弹系统通知。本轮已由专门的通知弹过（如 MaaFW 的停服维护 /
+            需要更新）时传 False，免得同一件事弹两次。
     """
 
     if not should_send_result(message, task_info=task_info):
@@ -105,7 +108,7 @@ async def push_proxy_result(
             ),
             images=tuple(images),
         ),
-        [global_target(include_system=True, system_timeout_seconds=10)],
+        [global_target(include_system=include_system, system_timeout_seconds=10)],
         task_info,
         summary_text=summary_text,
     )

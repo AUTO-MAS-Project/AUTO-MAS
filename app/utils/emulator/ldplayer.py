@@ -38,6 +38,11 @@ from pydantic import BaseModel
 from app.models.config import EmulatorConfig
 from app.models.emulator import DeviceBase, DeviceInfo, DeviceStatus
 from app.utils import ProcessRunner, get_logger
+from app.utils.emulator.tools import (
+    AudioMuteRecord,
+    apply_launch_audio_mute,
+    restore_audio_before_close,
+)
 
 logger = get_logger("雷电模拟器管理")
 
@@ -76,6 +81,9 @@ class LDManager(DeviceBase):
         self.config = config
 
         self.emulator_path = Path(config.get("Info", "Path"))
+
+        # {实例索引: 静音记录}，启动时跟随静音、关闭前还原
+        self._audio_mute_states: dict[str, AudioMuteRecord] = {}
 
     def _get_instance_key(self, idx: str) -> tuple[str, str]:
         return str(self.emulator_path.resolve()).casefold(), str(idx)
@@ -220,6 +228,9 @@ class LDManager(DeviceBase):
 
                 if Config.get("Function", "IfBlockAd"):
                     await self._block_ads_via_adb(idx)
+                device = (await self.get_device_info(idx)).get(idx)
+                pids = [p for p in (device.pid, device.vbox_pid) if p] if device else []
+                await apply_launch_audio_mute(self._audio_mute_states, idx, pids)
                 return (await self.getInfo(idx))[idx]
 
             await asyncio.sleep(0.1)
@@ -233,6 +244,7 @@ class LDManager(DeviceBase):
             return await self._close_locked(idx)
 
     async def _close_locked(self, idx: str) -> DeviceStatus:
+        await restore_audio_before_close(self._audio_mute_states, idx)
         status = await self.getStatus(idx)
         if status not in [DeviceStatus.ONLINE, DeviceStatus.STARTING]:
             logger.warning(f"设备{idx}未在线，当前状态: {status}")

@@ -389,7 +389,8 @@ class AutoProxyTask(TaskExecuteBase):
 
         log = self.feed.log_text
         self.cur_user_log.content = log.splitlines(keepends=True)
-        self.script_info.log = log[-4000:] if len(log) > 4000 else log
+        self.script_info.log_first_line = log[:-4000].count("\n") + 1
+        self.script_info.log = log[-4000:]
 
         # 实时进展：步骤进入/异常/账号切换行的消息段转述到调度台（只推一次）。
         # loguru 行 = 「时间 | 级别 | 模块 - 消息」，emoji 前缀在消息段而非行首；
