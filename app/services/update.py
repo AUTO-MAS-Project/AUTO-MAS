@@ -439,6 +439,11 @@ class _UpdateHandler:
 
         self.current_version = current_version
 
+        # nightly 通过 GitHub 手动更新整包，避免同号正式版或 beta 将其替换为旧代码。
+        prerelease = version.parse(current_version).pre
+        if prerelease is not None and prerelease[0] == "a":
+            return (False, current_version, {})
+
         # 标题栏每 10 分钟轮询一次, 非强制检查一小时内直接复用上次结果
         if not if_force and self._check_cache is not None:
             cached_version, cached_result, checked_at = self._check_cache

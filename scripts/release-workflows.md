@@ -19,8 +19,9 @@
 - alpha 首装和更新从 dev 读 Runtime 钉扎，Runtime 始终按实际 Commit 检查滚动更新；
   dev 源码版本可跨开发周期，与 alpha 构建号无需相同。受管仓库绑定完整目标版本、
   源码版本和 SHA，启动/恢复继续严格校验身份。正式版和 beta 使用原 release 分支。
-  普通客户端更新仍走 stable/beta 正常发布源；nightly 包在 GitHub 手动下载，
-  不加入普通用户默认升级目标。后台更新提示继续显示真实目标提交信息。
+  普通客户端更新仍走 stable/beta 正常发布源；alpha 客户端跳过该整包更新检查，
+  nightly 包在 GitHub 手动下载，不加入普通用户默认升级目标。
+  Runtime 的 dev 后端更新不受影响，后台更新提示继续显示真实目标提交信息。
 - 旧版本后端热修：将兼容验证过的修复及一个碎片通过 cherry-pick PR 纳入旧
   `release/vX.Y.Z`。不入账、不提升版本、不合入 dev，不要求先入账才能热更。
   下一补丁从正式 tag 快照重放选定修复，不能依赖旧 release 的全部分支内容。

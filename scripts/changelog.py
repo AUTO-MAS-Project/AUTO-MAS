@@ -74,7 +74,9 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Sequence, Tuple, Union
 
-REPO_ROOT = Path(os.environ.get("AUTO_MAS_CHANGELOG_ROOT", Path(__file__).resolve().parent.parent)).resolve()
+REPO_ROOT = Path(
+    os.environ.get("AUTO_MAS_CHANGELOG_ROOT", Path(__file__).resolve().parent.parent)
+).resolve()
 REPO_URL = "https://github.com/AUTO-MAS-Project/AUTO-MAS"
 GITHUB_REPO = "AUTO-MAS-Project/AUTO-MAS"
 # 未发布版本的对比链接指向开发分支
@@ -563,11 +565,18 @@ def latest_on_line(target: str, versions: Iterable[str]) -> Optional[str]:
     key = version_key(target)
     if key is None:
         raise ChangelogError(f"版本号 {target} 不合形态")
-    candidates = [v for v in versions if (k := version_key(v)) is not None
-                  and k[3] in (PHASE_RANK["beta"], PHASE_RANK[None])]
+    candidates = [
+        v
+        for v in versions
+        if (k := version_key(v)) is not None
+        and k[3] in (PHASE_RANK["beta"], PHASE_RANK[None])
+    ]
     if key[3] == PHASE_RANK[None]:
-        candidates = [v for v in candidates if version_key(v)[:2] == key[:2]
-                      and not is_prerelease(v)]
+        candidates = [
+            v
+            for v in candidates
+            if version_key(v)[:2] == key[:2] and not is_prerelease(v)
+        ]
     return latest_version(candidates)
 
 
@@ -1941,8 +1950,12 @@ def command_release(arguments: argparse.Namespace) -> int:
     else:
         if arguments.kind == "patch":
             raise ChangelogError("patch 必须指定 --base-version 并在独立分支组装修复")
-        latest = latest_version(v for v in every if version_key(v) is not None
-                                and version_key(v)[3] in (PHASE_RANK["beta"], PHASE_RANK[None]))
+        latest = latest_version(
+            v
+            for v in every
+            if version_key(v) is not None
+            and version_key(v)[3] in (PHASE_RANK["beta"], PHASE_RANK[None])
+        )
     target = next_version(arguments.kind, latest, arguments.version)
     if version_key(target)[3] not in (PHASE_RANK["beta"], PHASE_RANK[None]):
         raise ChangelogError("正式发版只支持正式版和 beta；alpha 由 nightly 构建注入")
@@ -2455,7 +2468,9 @@ def build_parser() -> argparse.ArgumentParser:
         "--kind", choices=["beta", "stable", "patch", "explicit"], default="beta"
     )
     release.add_argument("--version", help="--kind explicit 时的版本号")
-    release.add_argument("--base-version", help="补丁基准正式版 tag，必须是维护线最新正式版")
+    release.add_argument(
+        "--base-version", help="补丁基准正式版 tag，必须是维护线最新正式版"
+    )
     release.add_argument("--date", help="发布日期 YYYY-MM-DD，默认北京时间今天")
     release.add_argument("--repo", default=GITHUB_REPO, help="解析署名用的 owner/repo")
     release.add_argument(

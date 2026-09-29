@@ -6,7 +6,7 @@ if ($LASTEXITCODE -ne 0) { throw '无法确认分支' }
 git config user.name 'github-actions[bot]'
 git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
 for ($attempt = 1; $attempt -le 3; $attempt++) {
-    git fetch --quiet origin dev
+    git fetch --quiet origin refs/heads/dev:refs/remotes/origin/dev
     if ($LASTEXITCODE -ne 0) { throw '拉取 dev 失败' }
     git reset --hard --quiet origin/dev
     if ($LASTEXITCODE -ne 0) { throw '检出 dev 顶端失败' }
