@@ -86,11 +86,8 @@ from app.task.MaaFW.tools.embedded.update_credentials import (
 )
 from app.task.MaaFW.tools.embedded.view_heal import heal_projection
 from app.task.MaaFW.tools.notify import push_notification
-from app.task.MaaFW.tools.notify.report import (
-    NOTIFY_SCREENSHOT_LIMIT,
-    load_screenshot_images,
-    screenshot_entries,
-)
+from app.task.MaaFW.tools.notify.report import NOTIFY_SCREENSHOT_LIMIT
+from app.task.notify_core import load_screenshot_images, screenshot_entries
 from app.utils import get_logger
 from app.utils.constants import TASK_MODE_ZH
 from app.utils.paths import SOURCE_ROOT
@@ -1634,6 +1631,7 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
             images = await asyncio.to_thread(
                 load_screenshot_images,
                 self._failure_screenshots[-NOTIFY_SCREENSHOT_LIMIT:],
+                image_id_prefix="maafw",
             )
             result["screenshots"] = screenshot_entries(images)
             await push_notification(

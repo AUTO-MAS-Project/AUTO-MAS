@@ -19,6 +19,7 @@
 
 #   Contact: DLmaster_361@163.com
 
+from collections.abc import Sequence
 from dataclasses import replace
 from functools import cache
 
@@ -45,6 +46,9 @@ logger = get_logger("MAA 通知工具")
 
 # MAA 的签名只空一行, 与其余脚本不同
 SIGNATURE_SEP = "\n"
+
+# 汇总「代理结果」最多带几张失败截图，多了取最后几张（对齐 MaaFW）。
+NOTIFY_SCREENSHOT_LIMIT = 4
 
 # 喜报图片同时提供本地资源和官网 URL；缺少本地文件时，仍可在支持 URL 的表达中展示。
 SIX_STAR_IMAGE_ID = "maa-six-star"
@@ -142,8 +146,14 @@ async def push_notification(
     message: dict,
     user_config: MaaUserConfig | None,
     task_info: object | None = None,
+    *,
+    images: Sequence[NotificationImage] = (),
 ) -> DispatchResult:
-    """通过所有渠道推送通知; 返回分发的实际尝试/成功/失败结果。"""
+    """通过所有渠道推送通知; 返回分发的实际尝试/成功/失败结果。
+
+    ``images`` 只在「统计信息」模式下随报告附带（失败截图），模板通过
+    资源 ID 引用对应图片。
+    """
 
     logger.info(f"开始推送通知, 模式: {mode}, 标题: {title}")
 
@@ -154,6 +164,7 @@ async def push_notification(
             task_info=task_info,
             result_template="MAA_result.html",
             signature_sep=SIGNATURE_SEP,
+            images=images,
         )
 
     if mode == "统计信息":
@@ -165,6 +176,7 @@ async def push_notification(
                 text=_statistic_text(message),
                 html=template.render(message),
                 signature_sep=SIGNATURE_SEP,
+                images=images,
             ),
             statistic_targets(user_config),
         )

@@ -1,8 +1,6 @@
 """MaaFW 任务报告推送。"""
 
-import io
 from collections.abc import Sequence
-from pathlib import Path
 from typing import Any
 
 from app.core import Config
@@ -14,7 +12,6 @@ from app.core.notify import (
 from app.models.notification import (
     NotificationImage,
     NotifyPayload,
-    image_reference,
 )
 from app.task.notify_core import push_proxy_result
 from app.utils import get_logger
@@ -24,71 +21,6 @@ logger = get_logger("MaaFW 通知工具")
 # 一份通知最多带几张失败截图，多了取最后几张（最终停在哪更要紧）。
 # 邮件里每张 JPEG 约 100~300 KB；PNG 原图留在 history 目录里不动。
 NOTIFY_SCREENSHOT_LIMIT = 4
-NOTIFY_SCREENSHOT_JPEG_QUALITY = 85
-
-
-def load_screenshot_images(
-    shots: Sequence[tuple[str, Path]],
-) -> list[tuple[str, NotificationImage]]:
-    """把失败截图读入通用图片资源，并尽量转成体积更小的 JPEG。
-
-    worker 只能存 PNG（它那边没有编码器），一张 1280 宽的游戏画面动辄 1 MB，
-    几张下来邮件就太胖；这里用宿主的 Pillow 转成 JPEG，体积能压到十分之一。
-    转不动（Pillow 异常）就原样带 PNG；文件读不到就跳过这张，通知照发。
-    """
-
-    images: list[tuple[str, NotificationImage]] = []
-    for index, (label, path) in enumerate(shots, start=1):
-        try:
-            data = path.read_bytes()
-        except OSError as exc:
-            logger.warning(f"读取失败截图失败，通知里不带这张: {path}: {exc}")
-            continue
-        image_id = f"maafw-failure-{index}"
-        try:
-            from PIL import Image
-
-            with Image.open(io.BytesIO(data)) as image:
-                buffer = io.BytesIO()
-                image.convert("RGB").save(
-                    buffer, format="JPEG", quality=NOTIFY_SCREENSHOT_JPEG_QUALITY
-                )
-            images.append(
-                (
-                    label,
-                    NotificationImage(
-                        id=image_id,
-                        data=buffer.getvalue(),
-                        alt=label,
-                        mime_type="image/jpeg",
-                    ),
-                )
-            )
-        except Exception as exc:  # noqa: BLE001
-            logger.warning(f"失败截图转 JPEG 失败，改用原图: {path}: {exc}")
-            images.append(
-                (
-                    label,
-                    NotificationImage(
-                        id=image_id,
-                        data=data,
-                        alt=label,
-                        mime_type="image/png",
-                    ),
-                )
-            )
-    return images
-
-
-def screenshot_entries(
-    images: Sequence[tuple[str, NotificationImage]],
-) -> list[dict[str, str]]:
-    """构造失败截图模板使用的资源引用和说明文字。"""
-
-    return [
-        {"image_ref": image_reference(image.id), "label": label}
-        for label, image in images
-    ]
 
 
 async def push_notification(
