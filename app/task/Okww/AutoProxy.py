@@ -240,7 +240,9 @@ class AutoProxyTask(TaskExecuteBase):
                 return "未找到 OK-WW 脚本原有配置，请先在 OK-WW 中保存设置"
         else:
             try:
-                await Config.ensure_okww_user_config(
+                from .tools.config_dir import ensure_user_config_dir
+
+                await ensure_user_config_dir(
                     script_id=self.script_info.script_id,
                     user_id=str(self.cur_user_uid),
                     mode=config_mode,

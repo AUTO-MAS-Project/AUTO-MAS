@@ -68,10 +68,12 @@ from app.utils.constants import (
 )
 from app.utils.io import mark_native_config_injected, read_file, write_file
 
+from . import api_service as maa_api
 from .base_preset import maa_task_identity, seed_maa_base_config
 from .tools import (
     agree_bilibili,
     ensure_game_updated,
+    log_statistics,
     push_notification,
     update_maa,
 )
@@ -1230,7 +1232,7 @@ class AutoProxyTask(TaskExecuteBase):
                 return
             # 森空岛快照走 TTL 缓存（force=False）：注入时刚强刷过，运行末
             # 复用当轮观测即可；缓存过期才再拉一次（决策 38）
-            skland = await Config.get_maa_cultivate_skland_progression(
+            skland = await maa_api.get_cultivate_skland_progression(
                 str(self.script_info.script_id), str(self.cur_user_uid)
             )
             context = ProviderContext(
@@ -1300,7 +1302,7 @@ class AutoProxyTask(TaskExecuteBase):
         try:
             # 森空岛练度注入前强刷（决策 38：注入前重新查询一次，滞后≈0）；
             # 未绑定/凭据失效/网络失败返回 None，链短路落 local，不炸注入
-            skland = await Config.get_maa_cultivate_skland_progression(
+            skland = await maa_api.get_cultivate_skland_progression(
                 str(self.script_info.script_id), str(self.cur_user_uid), force=True
             )
             (
@@ -2178,7 +2180,9 @@ class AutoProxyTask(TaskExecuteBase):
             )
             user_logs_list.append(log_path.with_suffix(".json"))
 
-            if await Config.save_maa_log(log_path, log_item.content, log_item.status):
+            if await log_statistics.save_maa_log(
+                log_path, log_item.content, log_item.status
+            ):
                 if_six_star = True
 
         statistics = await Config.merge_statistic_info(user_logs_list)
