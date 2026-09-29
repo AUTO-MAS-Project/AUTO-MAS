@@ -1425,6 +1425,10 @@ export default {
     accountSwitch16x9Only: 'Only 16:9 screens are adapted; switching may fail on other ratios',
     accountSwitch16x9ArgHint:
       'If your screen is not 16:9, account switching may fail — specify the resolution in the launch arguments, e.g. {p0}',
+    okwwAccountSwitchHint:
+      "When enabled, MAS switches to the login account matching the last four digits of the user's phone number after the game launches successfully and before running ok-ww; users without an account ID filled in are not switched",
+    oknteAccountSwitchHint:
+      'When "Launch the game before the task" is enabled, MAS switches to the login account matching the last four digits of the user\'s phone number after the game launches successfully and before running ok-nte; users without an account ID filled in are not switched. This switch is unavailable when "Launch the game before the task" is off',
     gameLauncher: 'Game launcher',
     whichPlatformGameRuns: 'Which platform the game runs on',
     gameUpdate: 'Game update',
