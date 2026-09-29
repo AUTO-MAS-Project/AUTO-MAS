@@ -1422,6 +1422,9 @@ export default {
     pathGameExecutable: 'Path to the game executable',
     gameLaunchArgumentsNot: 'Game launch arguments (not the OK-NTE arguments)',
     gameLaunchArgumentsNot2: 'Game launch arguments (not the ok-ww arguments)',
+    accountSwitch16x9Only: 'Only 16:9 screens are adapted; switching may fail on other ratios',
+    accountSwitch16x9ArgHint:
+      'If your screen is not 16:9, account switching may fail — specify the resolution in the launch arguments, e.g. {p0}',
     gameLauncher: 'Game launcher',
     whichPlatformGameRuns: 'Which platform the game runs on',
     gameUpdate: 'Game update',

@@ -242,6 +242,7 @@
                     {{ t('edit.bettergiAccountSwitchMethodMas') }}
                   </a-select-option>
                 </a-select>
+                <span class="control-hint">{{ t('edit.accountSwitch16x9Only') }}</span>
               </a-form-item>
             </a-col>
           </a-row>
@@ -518,6 +519,14 @@ onMounted(loadScript)
   align-items: center;
   gap: 8px;
   font-weight: 600;
+}
+
+.control-hint {
+  display: block;
+  margin-top: 4px;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--ant-color-text-tertiary);
 }
 
 .help-icon {
