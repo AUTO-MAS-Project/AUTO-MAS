@@ -663,7 +663,9 @@ async def reorder_user(user: UserReorderIn = Body(...)) -> OutBase:
 async def import_infrastructure(user: UserSetIn = Body(...)) -> OutBase:
 
     try:
-        await Config.set_infrastructure(user.scriptId, user.userId, user.jsonFile)
+        from app.task.MAA import api_service as maa_api
+
+        await maa_api.set_infrastructure(user.scriptId, user.userId, user.jsonFile)
     except Exception as e:
         logger.opt(exception=True).warning(
             f"import_infrastructure失败: {type(e).__name__}: {e}"
@@ -685,7 +687,9 @@ async def set_infrast_plan_select(
     user: UserInfrastPlanSelectIn = Body(...),
 ) -> UserInfrastPlanSelectOut:
     try:
-        index = await Config.set_infrast_plan_select(
+        from app.task.MAA import api_service as maa_api
+
+        index = await maa_api.set_infrast_plan_select(
             user.scriptId, user.userId, user.index
         )
     except Exception as e:
@@ -709,7 +713,9 @@ async def get_infrast_plan_select(
     user: UserDeleteIn = Body(...),
 ) -> UserInfrastPlanSelectOut:
     try:
-        index = await Config.get_infrast_plan_select(user.scriptId, user.userId)
+        from app.task.MAA import api_service as maa_api
+
+        index = await maa_api.get_infrast_plan_select(user.scriptId, user.userId)
     except Exception as e:
         logger.opt(exception=True).warning(
             f"get_infrast_plan_select失败: {type(e).__name__}: {e}"
@@ -732,7 +738,11 @@ async def get_user_combox_infrastructure(
 ) -> UserInfrastPlanComboxOut:
 
     try:
-        result = await Config.get_user_combox_infrastructure(user.scriptId, user.userId)
+        from app.task.MAA import api_service as maa_api
+
+        result = await maa_api.get_user_combox_infrastructure(
+            user.scriptId, user.userId
+        )
         data = [UserInfrastPlanComboxItem(**item) for item in result["data"]]
         state = result["state"]
     except Exception as e:
@@ -759,7 +769,9 @@ async def get_user_combox_infrastructure(
 async def get_maa_depot_items(script: ScriptDeleteIn = Body(...)) -> ComboBoxOut:
 
     try:
-        raw_data = await Config.get_maa_depot_items(script.scriptId)
+        from app.task.MAA import api_service as maa_api
+
+        raw_data = await maa_api.get_depot_items(script.scriptId)
         data = [ComboBoxItem(**item) for item in raw_data]
     except Exception as e:
         logger.opt(exception=True).warning(
@@ -783,7 +795,9 @@ async def get_maa_depot_stage_candidates(
 ) -> ComboBoxOut:
 
     try:
-        raw_data = await Config.get_maa_depot_stage_candidates(script.scriptId, itemId)
+        from app.task.MAA import api_service as maa_api
+
+        raw_data = await maa_api.get_depot_stage_candidates(script.scriptId, itemId)
         data = [ComboBoxItem(**item) for item in raw_data]
     except Exception as e:
         return ComboBoxOut(
@@ -804,7 +818,9 @@ async def get_maa_depot_inventory(
 ) -> MaaDepotInventoryOut:
 
     try:
-        raw_data, recognized_at = await Config.get_maa_depot_inventory(
+        from app.task.MAA import api_service as maa_api
+
+        raw_data, recognized_at = await maa_api.get_depot_inventory(
             script.scriptId, userId
         )
         data = [ComboBoxItem(**item) for item in raw_data]
@@ -825,7 +841,9 @@ async def get_maa_depot_inventory(
 async def get_maa_cultivate_skland_bindings() -> ComboBoxOut:
 
     try:
-        raw_data = await Config.get_maa_cultivate_skland_bindings()
+        from app.task.MAA import api_service as maa_api
+
+        raw_data = await maa_api.get_cultivate_skland_bindings()
         data = [ComboBoxItem(**item) for item in raw_data]
     except Exception as e:
         return ComboBoxOut(
@@ -846,7 +864,9 @@ async def get_maa_cultivate_operators(
 ) -> MaaCultivateOperatorsOut:
 
     try:
-        raw_data = await Config.get_maa_cultivate_operators(script.scriptId, userId)
+        from app.task.MAA import api_service as maa_api
+
+        raw_data = await maa_api.get_cultivate_operators(script.scriptId, userId)
         data = [MaaCultivateOperatorOptionItem(**item) for item in raw_data]
     except Exception as e:
         return MaaCultivateOperatorsOut(
@@ -867,7 +887,9 @@ async def get_maa_cultivate_preview(
 ) -> CultivatePreviewOut:
 
     try:
-        data = await Config.get_maa_cultivate_preview(
+        from app.task.MAA import api_service as maa_api
+
+        data = await maa_api.get_cultivate_preview(
             preview.scriptId, preview.userId, preview.targets
         )
     except Exception as e:
