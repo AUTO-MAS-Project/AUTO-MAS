@@ -68,9 +68,14 @@ jobs:
           BASE_REF: ${{ github.base_ref }}
           PR_TITLE: ${{ github.event.pull_request.title }}
           PR_LABELS: ${{ join(github.event.pull_request.labels.*.name, ',') }}
+          PR_HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          PR_HEAD_REF: ${{ github.head_ref }}
         run: |
           $kind = 'normal'
-          if ($env:BASE_REF -eq 'main') { $kind = 'sync' }
+          if ($env:BASE_REF -eq 'main') {
+            if ($env:PR_HEAD_REPO -ne $env:GITHUB_REPOSITORY -or $env:PR_HEAD_REF -ne 'codex/sync-github-main') { throw 'main 仅接受本仓库 codex/sync-github-main 的工作流同步 PR' }
+            $kind = 'sync'
+          }
           elseif ($env:BASE_REF -like 'codex/release-base-v*' -or ",$env:PR_LABELS," -like '*,release,*' -or $env:PR_TITLE -like 'Release v*') { $kind = 'release' }
           "kind=$kind" >> $env:GITHUB_OUTPUT
           Write-Host "PR 类型：$kind"
@@ -110,6 +115,6 @@ jobs:
           $arguments = @('check', '--pr-base', "origin/$env:BASE_REF", '--pr-kind', $env:PR_KIND)
           if (",$env:PR_LABELS," -like '*,skip-changelog,*') { $arguments += '--skip-changelog' }
           if (",$env:PR_LABELS," -like '*,changelog-maintenance,*') { $arguments += '--maintenance' }
-          if ($env:BASE_REF -like 'release/*') { $arguments += @('--dev-ref', 'origin/dev') }
+          if ($env:BASE_REF -like 'release/*' -or $env:PR_KIND -eq 'sync') { $arguments += @('--dev-ref', 'origin/dev') }
           python $tool @arguments
           if ($LASTEXITCODE -ne 0) { throw '更新日志检查失败' }

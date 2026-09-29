@@ -561,7 +561,7 @@ def latest_version(versions: Iterable[str]) -> Optional[str]:
 
 
 def latest_on_line(target: str, versions: Iterable[str]) -> Optional[str]:
-    """正式维护线只比较同 X.Y 的正式 tag；开发线比较全部正常发版 tag。"""
+    """Z > 0 的正式维护线只比较同 X.Y 正式 tag；开发线保留 beta 下限。"""
     key = version_key(target)
     if key is None:
         raise ChangelogError(f"版本号 {target} 不合形态")
@@ -571,13 +571,30 @@ def latest_on_line(target: str, versions: Iterable[str]) -> Optional[str]:
         if (k := version_key(v)) is not None
         and k[3] in (PHASE_RANK["beta"], PHASE_RANK[None])
     ]
-    if key[3] == PHASE_RANK[None]:
+    if key[3] == PHASE_RANK[None] and key[2] > 0:
         candidates = [
             v
             for v in candidates
             if version_key(v)[:2] == key[:2] and not is_prerelease(v)
         ]
     return latest_version(candidates)
+
+
+def check_stable_beta_source(target: str, root: Path = REPO_ROOT) -> Optional[str]:
+    """转正必须包含本周期最新 beta，防止准备后又发布 beta 导致源码遗漏。"""
+    key = version_key(target)
+    if key is None or key[3] != PHASE_RANK[None] or key[2] != 0:
+        return None
+    latest_beta = latest_version(
+        tag
+        for tag in all_tags(root)
+        if (beta := version_key(tag)) is not None
+        and beta[:3] == key[:3]
+        and beta[3] == PHASE_RANK["beta"]
+    )
+    if latest_beta and latest_beta not in reachable_tags("HEAD", root):
+        return f"转正源码未包含最新公测版 {latest_beta}，请合入发布记录后重新准备"
+    return None
 
 
 def next_version(
@@ -1315,7 +1332,7 @@ def check_pull_request(
     changes = changed_files(base, "HEAD", root)
     paths = {path for _, path in changes}
 
-    if dev_ref:
+    if dev_ref and kind != "sync":
         # 目标是 release/* 的 PR，不论类型，都不得带入 dev 独有的提交（#673 那种事故的判据）。
         # 放在类型分流之前：发版 PR 被误改目标到 release/* 时同样要拦。
         pr_commits = set(git("rev-list", f"{base}..HEAD", root=root).split())
@@ -1331,6 +1348,10 @@ def check_pull_request(
     if kind == "sync":
         if not all(path.startswith(".github/") for path in paths):
             problems.append("同步到 main 的 PR 只允许修改 .github/")
+        if not dev_ref or git("rev-parse", "HEAD:.github", root=root) != git(
+            "rev-parse", f"{dev_ref}:.github", root=root
+        ):
+            problems.append("同步 PR 的 .github/ 必须与 dev 完全一致，请更新同步分支")
         return problems
 
     if kind == "release":
@@ -1355,6 +1376,9 @@ def check_pull_request(
                     f"发版 PR 的版本号 {current_version} 比 {base} 上的 {base_version} 还旧"
                 )
         latest = latest_on_line(current_version, all_tags(root))
+        source_problem = check_stable_beta_source(current_version, root)
+        if source_problem:
+            problems.append(source_problem)
         if latest is not None and version_key(current_version) <= version_key(latest):  # type: ignore[operator]
             problems.append(
                 f"发版 PR 的版本号 {current_version} 没有比最新 tag {latest} 新"
@@ -1436,14 +1460,27 @@ def check_pull_request(
 
 
 def command_check(arguments: argparse.Namespace) -> int:
-    # main 的纯工作流同步不依赖其历史版本/生成器；只检查 PR 的目录边界。
-    if arguments.pr_base and arguments.pr_kind == "sync":
-        problems = check_pull_request(arguments.pr_base, "sync", False, False, None)
+    # 同步和旧 release 热修保留原快照，不用 dev 的模板重新规范化历史生成物。
+    old_release = (
+        arguments.pr_base
+        and arguments.pr_base.startswith("origin/release/")
+        and arguments.pr_kind == "normal"
+    )
+    if arguments.pr_base and (arguments.pr_kind == "sync" or old_release):
+        if old_release:
+            list_fragments()
+        problems = check_pull_request(
+            base=arguments.pr_base,
+            kind=arguments.pr_kind,
+            skip_changelog=arguments.skip_changelog,
+            maintenance=False,
+            dev_ref=arguments.dev_ref,
+        )
         if problems:
             for problem in problems:
                 print(problem, file=sys.stderr)
             return 1
-        print("main 同步仅包含 .github/，无需修改版本或更新日志")
+        print("PR 来源与差异检查通过，保留目标分支的历史生成物")
         return 0
     stale = check_generated()
     if stale:
@@ -1493,6 +1530,10 @@ def command_guard() -> int:
     latest = latest_on_line(current_version, all_tags()) if git_available() else None
     problems: List[str] = []
     pending_count = pending_unreleased(sections, dates)
+    if git_available():
+        source_problem = check_stable_beta_source(current_version)
+        if source_problem:
+            problems.append(source_problem)
     if pending_count:
         problems.append(UNRELEASED_PENDING_MESSAGE.format(count=pending_count))
     if latest is not None and version_key(current_version) <= version_key(latest):  # type: ignore[operator]
@@ -1942,7 +1983,7 @@ def command_release(arguments: argparse.Namespace) -> int:
     if basis:
         if basis not in every or is_prerelease(basis) or version_key(basis) is None:
             raise ChangelogError("补丁基准必须是已发布的正式版 tag")
-        latest = latest_on_line(basis, every)
+        latest = latest_on_line(next_version("patch", basis), every)
         if latest != basis:
             raise ChangelogError(f"补丁应从维护线最新正式版 {latest} 准备")
         if arguments.kind not in ("patch", "explicit"):

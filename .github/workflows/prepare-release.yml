@@ -97,7 +97,8 @@ jobs:
           BASE_VERSION: ${{ inputs.base_version }}
         run: |
           $tool = Join-Path $env:RUNNER_TEMP 'release-tools/changelog.py'
-          $argsList = @('release', '--kind', $env:KIND, '--body-file', "$env:RUNNER_TEMP/pr-body.md")
+          $runUrl = "$env:GITHUB_SERVER_URL/$env:GITHUB_REPOSITORY/actions/runs/$env:GITHUB_RUN_ID"
+          $argsList = @('release', '--kind', $env:KIND, '--body-file', "$env:RUNNER_TEMP/pr-body.md", '--step-summary', $env:GITHUB_STEP_SUMMARY, '--run-url', $runUrl)
           if ($env:VERSION) { $argsList += @('--version', $env:VERSION) }
           if ($env:BASE_VERSION) { $argsList += @('--base-version', $env:BASE_VERSION) }
           python $tool @argsList

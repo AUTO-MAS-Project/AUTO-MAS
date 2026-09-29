@@ -277,7 +277,7 @@ def prepare(args):
     if args.kind == "patch" or basis:
         if basis not in tags or not re.fullmatch(r"v\d+\.\d+\.\d+", basis):
             raise ValueError("patch requires a published stable --base-version")
-        if module.latest_on_line(basis, tags) != basis:
+        if module.latest_on_line(module.next_version("patch", basis), tags) != basis:
             raise ValueError(
                 "patch base is not the latest stable on this maintenance line"
             )
@@ -384,6 +384,7 @@ def prepare(args):
                 "prepare-release",
                 "build-app",
                 "check-changelog",
+                "sync-cnb",
             )
         ]
         for path in entries:

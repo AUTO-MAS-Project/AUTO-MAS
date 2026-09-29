@@ -442,7 +442,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw '查询记录 PR 失败' }
           if ($existing.Count -eq 0) {
             $body = Join-Path $env:RUNNER_TEMP 'record-dev.md'
-            "- 将 $env:VERSION_TAG 的版本、更新日志与已消费碎片记录同步回 dev。`n- 保留 dev 后续未发布改动，冲突由维护者审核解决；补丁维护线不运行此步骤。" | Set-Content $body
+            "- 将 $env:VERSION_TAG 的版本、更新日志与已消费碎片记录同步回 dev。`n- 使用 merge commit 合并以保留发布 tag 的祖先关系，勿 squash；转正守门会校验最新 beta 已包含在源码中。`n- 保留 dev 后续未发布改动，冲突由维护者审核解决；补丁维护线不运行此步骤。" | Set-Content $body
             gh pr create --base dev --head $head --title "chore: 同步 $env:VERSION_TAG 开发线发布记录" --body-file $body --label changelog-maintenance --label skip-changelog
             if ($LASTEXITCODE -ne 0) { throw '创建记录 PR 失败' }
           }
