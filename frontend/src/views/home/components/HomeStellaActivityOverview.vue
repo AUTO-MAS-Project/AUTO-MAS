@@ -73,21 +73,36 @@
     v-if="permanentActivities.length"
     :title="t('home.stella.permanent')"
     class="stella-permanent-card"
+    :class="{ 'is-plain': activityPlain }"
     :style="cardStyle"
   >
-    <div class="permanent-list">
-      <div v-for="activity in permanentActivities" :key="activity.name" class="permanent-item">
-        <div class="permanent-name">{{ activity.name }}</div>
-        <div class="permanent-meta">
-          <a-statistic-countdown
-            :value="getCountdownValue(activity.endTime)"
-            :format="t('home.countdown.dh')"
-            :value-style="activityCountdownStyle"
-            @finish="emit('refresh')"
+    <div class="activity-list" :class="{ 'is-plain': activityPlain }">
+      <div v-for="activity in permanentActivities" :key="activity.name" class="activity-card">
+        <div class="activity-item" :class="{ 'is-fallback': !getActivityImage(activity) }">
+          <img
+            v-if="getActivityImage(activity)"
+            :src="getActivityImage(activity)"
+            :alt="activity.name"
+            class="activity-image"
+            referrerpolicy="no-referrer"
+            @error="handleImageError(activity.name)"
           />
-          <span class="permanent-end">
-            {{ t('home.sra.endedAt', { time: formatTime(activity.endTime) }) }}
-          </span>
+          <div class="activity-overlay" />
+          <div class="activity-content">
+            <div class="activity-name">{{ activity.name }}</div>
+            <div v-if="activity.description" class="activity-desc">{{ activity.description }}</div>
+            <div class="activity-meta">
+              <a-statistic-countdown
+                :value="getCountdownValue(activity.endTime)"
+                :format="t('home.countdown.dh')"
+                :value-style="activityCountdownStyle"
+                @finish="emit('refresh')"
+              />
+              <div class="activity-end-time">
+                {{ t('home.sra.endedAt', { time: formatTime(activity.endTime) }) }}
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -210,7 +225,7 @@ const formatTime = (value: string) =>
   box-shadow: 0 8px 24px rgba(15, 23, 42, 0.04);
 }
 
-/* 常驻活动：一张跟着活动卡的小卡，三条并排，只有名字与剩余时间 */
+/* 常驻活动跟着活动卡排，只多一条上边距把它和上面那张分开 */
 .stella-permanent-card {
   margin-top: 16px;
   border-radius: 8px;
@@ -220,49 +235,6 @@ const formatTime = (value: string) =>
 .stella-permanent-card :deep(.ant-card-head-title) {
   font-size: 18px;
   font-weight: 600;
-}
-
-.permanent-list {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 12px;
-}
-
-.permanent-item {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 12px 16px;
-  border: 1px solid var(--ant-color-border);
-  border-radius: 8px;
-  transition: border-color 0.2s ease;
-}
-
-.permanent-item:hover {
-  border-color: var(--ant-color-primary);
-}
-
-.permanent-name {
-  font-size: 15px;
-  font-weight: 600;
-}
-
-.permanent-meta {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  color: var(--ant-color-text-secondary);
-  font-size: 12px;
-}
-
-.permanent-end {
-  white-space: nowrap;
-}
-
-@media (max-width: 800px) {
-  .permanent-list {
-    grid-template-columns: repeat(1, minmax(0, 1fr));
-  }
 }
 
 .sra-card :deep(.ant-card-head-title) {
