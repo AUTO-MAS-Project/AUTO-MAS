@@ -91,12 +91,18 @@ class LogMonitor:
         self,
         log_file_path_resolver: Callable[[], Path],
         log_start_time: datetime,
+        initial_offset: int | None = None,
     ):
         """监控日志文件
 
         ``log_file_path_resolver`` 每轮循环重新解析路径。用于监控按日期滚动
         的日志（如 M9A 的 ``logs/log-YYYYMMDD.log``）：任务跨过本地午夜时，
         被监控脚本会写入新文件，固定路径会导致再也读不到新行。
+
+        ``initial_offset`` 是首个监控文件的起始字节偏移，供追加写且跨运行
+        保留的日志使用：被监控进程由调用方启动时，把启动前的文件长度传进来，
+        本次运行之前的历史内容就不会被摄入（起始判定只看时间戳，无法分辨
+        历史内容里时间戳更晚的旧行）。
         """
 
         current_path = log_file_path_resolver()
@@ -107,11 +113,11 @@ class LogMonitor:
         if_mtime_checked = False
         warned_mtime_date: date | None = None
         if_log_start = False
-        offset = 0
+        offset = initial_offset if initial_offset is not None else 0
         log_contents = []
         # 按路径记忆读取偏移：时钟回拨可能让解析出的路径倒退回昨天，
         # 若一律从 0 重读会把整份旧日志重复摄入。
-        read_offsets: dict[Path, int] = {current_path: 0}
+        read_offsets: dict[Path, int] = {current_path: offset}
         drain_failures = 0
 
         while True:
@@ -488,6 +494,7 @@ class LogMonitor:
         self,
         log_file_path_resolver: Callable[[], Path],
         start_time: datetime,
+        initial_offset: int | None = None,
     ) -> None:
         """
         开始监控日志文件
@@ -496,6 +503,9 @@ class LogMonitor:
             log_file_path_resolver (Callable[[], Path]): 返回日志文件路径的方法；
                 每轮循环重新解析，用于按日期滚动的日志
             start_time (datetime): 日志时间戳起始时间
+            initial_offset (int | None): 首个监控文件的起始字节偏移，用于追加写
+                且跨运行保留的日志：传入被监控进程启动前的文件长度，只有本次
+                运行新写的行会被读取；为 None 时从文件头开始读
         """
 
         probe_path = log_file_path_resolver()
@@ -506,7 +516,7 @@ class LogMonitor:
             await self.stop()
 
         self.task = asyncio.create_task(
-            self.monitor_file(log_file_path_resolver, start_time)
+            self.monitor_file(log_file_path_resolver, start_time, initial_offset)
         )
         logger.info(f"日志文件监控已启动: {probe_path}")
 
