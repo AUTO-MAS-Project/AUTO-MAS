@@ -2262,9 +2262,7 @@ class AutoProxyTask(TaskExecuteBase):
         should_send_statistics = (
             if_success
             or bool(images)
-            or _has_completed_sanity_task(
-                list(self.cur_user_item.log_record.values())
-            )
+            or _has_completed_sanity_task(list(self.cur_user_item.log_record.values()))
         )
         if should_send_statistics:
             try:
