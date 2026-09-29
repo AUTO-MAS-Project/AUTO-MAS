@@ -47,7 +47,7 @@ jobs:
       - name: 构建并准备 Windows 解压包
         uses: ./.github/actions/build-windows-unpacked
         with:
-          github-token: ${{ github.token }}
+          github-token: ${{ github.event_name == 'push' && github.token || '' }}
 
       - name: 预置本次提交的后端仓库
         env:
