@@ -551,6 +551,7 @@ class AutoProxyTask(TaskExecuteBase):
 
         run_limit = int(self.script_config.get("Run", "RunTimesLimit"))
         attempt = 0
+        game_update_extended = False
         # while 而非 for：游戏更新成功时 run_limit 会在轮次内延长（至少再跑一轮）
         while attempt < run_limit and not self.run_book:
             attempt += 1
@@ -706,9 +707,15 @@ class AutoProxyTask(TaskExecuteBase):
             if attempt < run_limit:
                 self.script_info.log += f"\n将在稍后重试 ({attempt}/{run_limit})"
                 await asyncio.sleep(10)
-            elif self.cur_user_log.status == _OKWW_GAME_UPDATED_MSG:
+            elif (
+                self.cur_user_log.status == _OKWW_GAME_UPDATED_MSG
+                and not game_update_extended
+            ):
                 # 「游戏更新成功」是环境变更而非脚本错误：次数用尽也至少再跑
-                # 一轮，否则鸣潮客户端自更新后任务直接以失败收尾
+                # 一轮，否则鸣潮客户端自更新后任务直接以失败收尾。
+                # 每个任务只延长一次：再命中说明更新根本没应用成功，属持久性
+                # 环境问题，继续盲重试大概率白跑，按异常收尾交用户排查
+                game_update_extended = True
                 run_limit = attempt + 1
                 self.script_info.log += (
                     f"\n游戏更新成功，将重启任务 ({attempt}/{run_limit})"
