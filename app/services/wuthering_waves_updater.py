@@ -33,6 +33,7 @@ import hashlib
 import json
 import os
 import shutil
+import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -64,6 +65,15 @@ _HTTP_TIMEOUT = httpx.Timeout(30.0, connect=15.0)
 _FULL_SYNC_SIZE_LIMIT = 10 * 1024**3
 
 ProgressHook = Callable[[str], Awaitable[None]]
+# 已收到字节数回调：每写出一块字节调一次，只报本次真正收到的字节。
+BytesHook = Callable[[int], Awaitable[None]]
+
+# 调度台里的下载进度行按「进度跨度 + 时间上限」节流。日志是追加的、只增不减，无脑刷会把
+# 用户自己的运行日志淹掉；但只看跨度（每 5%）在慢网下又要几分钟才一行，正是用户抱怨的
+# 「看着像卡住了」。速度是两条相邻进度行之间的平均，所以两次之间至少要隔 1 秒。
+_PROGRESS_PERCENT_STEP = 5.0
+_PROGRESS_MIN_INTERVAL = 1.0
+_PROGRESS_MAX_INTERVAL = 5.0
 
 
 @dataclass(frozen=True)
@@ -408,9 +418,17 @@ def _entry_url(cdn: str, plan: UpdatePlan, entry: ResourceEntry) -> str:
 
 
 async def _stream_to_file(
-    client: httpx.AsyncClient, url: str, target: Path, expected_size: int
+    client: httpx.AsyncClient,
+    url: str,
+    target: Path,
+    expected_size: int,
+    on_bytes: BytesHook | None = None,
 ) -> None:
-    """流式下载，支持断点续传。"""
+    """流式下载，支持断点续传。
+
+    on_bytes 每写出一块字节被调一次，只报本次真正收到的字节；续传时文件里已有的前缀
+    由调用方算进基线（见 download_plan），不在这里重复报。
+    """
 
     done = target.stat().st_size if target.is_file() else 0
     if done and done >= expected_size:
@@ -427,6 +445,8 @@ async def _stream_to_file(
             async for block in response.aiter_bytes(chunk_size=_CHUNK_SIZE):
                 if block:
                     await handle.write(block)
+                    if on_bytes is not None:
+                        await on_bytes(len(block))
 
 
 async def _download_entry(
@@ -436,6 +456,7 @@ async def _download_entry(
     staging: Path,
     *,
     attempts: int = 2,
+    on_bytes: BytesHook | None = None,
 ) -> Path:
     """下载单个条目到暂存区，md5 校验通过才算成功。"""
 
@@ -449,7 +470,7 @@ async def _download_entry(
         url = _entry_url(cdn, plan, entry)
         for attempt in range(attempts):
             try:
-                await _stream_to_file(client, url, target, entry.size)
+                await _stream_to_file(client, url, target, entry.size, on_bytes)
                 actual = await file_md5(target)
                 if actual == entry.md5:
                     return target
@@ -472,19 +493,61 @@ async def download_plan(
     *,
     on_progress: ProgressHook | None = None,
 ) -> None:
-    """并发下载计划里的全部条目。"""
+    """并发下载计划里的全部条目。
+
+    除每个条目下完报一行，还按进度跨度往调度台报「已下 / 总量 + 实时速度」，否则用户
+    看到的只有「3/10」这类条目计数，慢网下会以为卡死。
+    """
 
     total = len(plan.downloads)
     if not total:
         return
+    total_bytes = plan.download_size
     semaphore = asyncio.Semaphore(_DOWNLOAD_CONCURRENCY)
     finished = 0
     lock = asyncio.Lock()
 
+    # 上次中断留下的暂存文件同样算本次进度（条目会续传或直接复用），先并进基线，
+    # 否则续传那次的百分比永远走不到 100%。
+    downloaded = 0
+    for entry in plan.downloads:
+        staged = resolve_within(staging, entry.dest)
+        if staged.is_file():
+            downloaded += min(staged.stat().st_size, entry.size)
+
+    # 速度取两条相邻进度行之间的平均，不是两块 1MB 分块之间的抖动，所以只有真要发一行
+    # 时才采样；采样后立刻把状态前移，并发的其它条目就不会各补一行。
+    sent_bytes = downloaded
+    sent_key = -1
+    sent_at = time.monotonic()
+
+    async def on_bytes(size: int) -> None:
+        nonlocal downloaded, sent_bytes, sent_key, sent_at
+        downloaded += size
+        if not total_bytes:
+            return
+        now = time.monotonic()
+        elapsed = now - sent_at
+        if elapsed < _PROGRESS_MIN_INTERVAL:
+            return
+        # md5 不符会删掉残留重下，已下字节可能超过总量：显示封顶，速度仍按真实字节算。
+        shown = min(downloaded, total_bytes)
+        percent = shown / total_bytes * 100
+        key = int(percent // _PROGRESS_PERCENT_STEP)
+        if key == sent_key and elapsed < _PROGRESS_MAX_INTERVAL:
+            return
+        speed = (downloaded - sent_bytes) / elapsed
+        sent_bytes, sent_key, sent_at = downloaded, key, now
+        await _report(
+            on_progress,
+            f"鸣潮更新下载中 {percent:.1f}%（{shown / 1024**3:.2f}/"
+            f"{total_bytes / 1024**3:.2f} GB，{speed / 1024**2:.1f} MB/s）",
+        )
+
     async def worker(entry: ResourceEntry) -> None:
         nonlocal finished
         async with semaphore:
-            await _download_entry(client, plan, entry, staging)
+            await _download_entry(client, plan, entry, staging, on_bytes=on_bytes)
         async with lock:
             finished += 1
             await _report(
