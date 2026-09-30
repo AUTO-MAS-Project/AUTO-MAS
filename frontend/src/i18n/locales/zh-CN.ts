@@ -3066,6 +3066,8 @@ export default {
       poweredBy: '由 {name} 强力支持',
       poweredByM9A: '由 M9A 强力支持',
       stale: '缓存数据',
+      staleMessage: '正在使用上次成功获取的活动数据',
+      unavailable: '{name}活动数据暂不可用',
       endedAt: '结束于 {time}',
     },
     bluearchive: {
