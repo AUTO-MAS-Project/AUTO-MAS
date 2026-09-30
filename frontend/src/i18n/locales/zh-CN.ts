@@ -3178,6 +3178,8 @@ export default {
       runDoctor: '检查运行环境',
       internalErrorNotice: '这是程序内部的问题，重试也不会有帮助，请带上日志反馈给开发者',
       contactSupportNotice: '这个问题需要带上日志反馈给开发者',
+      joinGroupHint: '如果重试后仍无法解决，可以加入 QQ 群，带上日志寻求帮助。',
+      joinGroup: '加群寻求帮助',
       openLogFailed: '打开日志失败：{error}',
       doctorEmpty: '没有检查到任何项目',
       doctorFailed: '检查运行环境失败：{error}',

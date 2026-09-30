@@ -35,10 +35,9 @@
  * - **下载首选 CNB，再走 gh-proxy 家族，GitHub 官方兜底。** 顺序自己实现，不复用
  *   `MirrorRotationService`：后者的 `sortMirrors()` 会把 key 里含 `github` 的源提到最前
  *   （为初始化拉源码的测试版场景加的），套到这里正好把国内用户最连不上的官方源排到第一个。
- * - **第 0 步失败就停下，启动时的兜底核对失败不阻断。** 第 0 步所在的两条流程紧接着就要
- *   联网克隆源码，连十几个字节的钉扎都拿不到时克隆也必挂，与其让 bootstrap 报一个看不懂的
- *   错，不如在这里用一句能照着做的话停下来等用户重试；启动时旧 Runtime 仍然能监督后端，
- *   把用户卡在「更新完就打不开」比多跑一版旧 Runtime 糟得多。
+ * - **第 0 步失败通常停下，启动时的兜底核对失败不阻断。** 远端钉扎的全部来源均因网络
+ *   失败时，初始化编排器可用 `bootstrap --if-needed` 复用已就绪的本地环境，供断网开机
+ *   自启使用；切换目标版本的更新流程仍然必须先完成核对。
  */
 
 import * as crypto from 'crypto'
@@ -178,13 +177,13 @@ export type RemoteRuntimePinLookup =
   /** 两个来源都明确回答 404：该版本发布时还没有这个机制，按未钉扎处理。 */
   | { status: 'unpinned' }
   /** 没有一个来源给出结论：网络不通、代理改写了正文、一个 404 另一个失败等。 */
-  | { status: 'unavailable'; error: string }
+  | { status: 'unavailable'; error: string; networkUnavailable?: true }
 
 /** 单个来源的抓取结果，供 {@link fetchFirstValidText} 归并。 */
 export type RuntimePinFetchOutcome =
   | { kind: 'text'; text: string }
   | { kind: 'missing' }
-  | { kind: 'failed'; error: string }
+  | { kind: 'failed'; error: string; networkUnavailable?: true }
 
 export type RuntimePinFetcher = (url: string, timeoutMs: number) => Promise<RuntimePinFetchOutcome>
 
@@ -207,6 +206,7 @@ const defaultFetchText: RuntimePinFetcher = async (url, timeoutMs) => {
     return {
       kind: 'failed',
       error: controller.signal.aborted ? `${Math.ceil(timeoutMs / 1000)} 秒内没有响应` : message,
+      networkUnavailable: true,
     }
   } finally {
     clearTimeout(timer)
@@ -223,7 +223,7 @@ type FirstValidTextOutcome<T> =
   | { kind: 'found'; value: T; source: string }
   /** 全部来源都明确回答 404。 */
   | { kind: 'missing' }
-  | { kind: 'unavailable'; error: string }
+  | { kind: 'unavailable'; error: string; networkUnavailable?: true }
 
 /**
  * 从几个可信来源并行读同一份小文本，先给出合法内容的那个胜出。
@@ -247,6 +247,7 @@ function fetchFirstValidText<T>(
     let pending = sources.length
     let settled = false
     let missingCount = 0
+    let networkFailureCount = 0
     const failures: string[] = []
 
     const conclude = (): void => {
@@ -256,7 +257,11 @@ function fetchFirstValidText<T>(
         resolve({ kind: 'missing' })
         return
       }
-      resolve({ kind: 'unavailable', error: failures.join('；') })
+      resolve({
+        kind: 'unavailable',
+        error: failures.join('；'),
+        ...(networkFailureCount === sources.length ? { networkUnavailable: true as const } : {}),
+      })
     }
 
     for (const source of sources) {
@@ -286,6 +291,7 @@ function fetchFirstValidText<T>(
             failures.push(`${source.name}: HTTP 404`)
           } else {
             failures.push(`${source.name}: ${outcome.error}`)
+            if (outcome.networkUnavailable) networkFailureCount += 1
           }
           pending -= 1
           if (pending === 0) conclude()
@@ -318,7 +324,11 @@ export async function fetchRemoteRuntimeBinaryPin(
       logger.info(`${runtimeReleaseBranch(version)} 上没有 ${RUNTIME_PIN_URL_PATH}，按未钉扎处理`)
       return { status: 'unpinned' }
     case 'unavailable':
-      return { status: 'unavailable', error: outcome.error }
+      return {
+        status: 'unavailable',
+        error: outcome.error,
+        ...(outcome.networkUnavailable ? { networkUnavailable: true as const } : {}),
+      }
   }
 }
 
@@ -1120,6 +1130,8 @@ export interface RuntimeBinaryAlignResult {
   /** 给用户看的一句话。 */
   error?: string
   code?: string
+  /** 远端钉扎的全部来源均因网络失败，初始化时可尝试复用本地环境。 */
+  networkUnavailable?: true
 }
 
 export interface RuntimeBinaryAlignOptions {
@@ -1160,7 +1172,12 @@ export async function alignRuntimeBinaryWithVersion(
   if (lookup.status === 'unavailable') {
     const error = describePinUnavailable(version, lookup.error)
     logger.warn(error)
-    return { status: 'failed', error, code: RUNTIME_PIN_UNAVAILABLE }
+    return {
+      status: 'failed',
+      error,
+      code: RUNTIME_PIN_UNAVAILABLE,
+      ...(lookup.networkUnavailable ? { networkUnavailable: true as const } : {}),
+    }
   }
   if (options.isCancelled?.()) {
     return {
