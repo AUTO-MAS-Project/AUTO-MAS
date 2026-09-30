@@ -393,20 +393,28 @@ def main():
                         description="MCP server for AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software",
                         describe_full_response_schema=True,
                         describe_all_responses=True,
-                        exclude_tags=["Delete"],
+                        # 仅暴露监测、调度与结果查询能力；新增 HTTP 接口不会自动成为工具。
+                        # fastapi-mcp 的操作与标签过滤取并集，白名单不能再搭配标签过滤。
+                        include_operations=[
+                            "get_task_runtime_snapshot_api_dispatch_runtime_snapshot_get",
+                            "get_power_countdown_snapshot_api_dispatch_power_countdown_snapshot_get",
+                            "get_queues_api_queue_get_post",
+                            "add_task_api_dispatch_start_post",
+                            "stop_task_api_dispatch_stop_post",
+                            "get_plan_api_plan_get_post",
+                            "search_history_api_history_search_post",
+                            "get_history_data_api_history_data_post",
+                        ],
                     )
+                    # 0.4.0 在工具清单为空时不会清空调用映射，仍需按实际清单收敛。
+                    tool_names = {tool.name for tool in mcp.tools}
+                    mcp.operation_map = {
+                        name: operation
+                        for name, operation in mcp.operation_map.items()
+                        if name in tool_names
+                    }
                     mcp.mount_http()
-                    # 通知渠道描述只服务设置页渲染，不作为 MCP 工具暴露。
-                    # fastapi-mcp==0.4.0 的 exclude_operations 与 exclude_tags 取并集，
-                    # 两者同时传会让两个排除都失效（Delete 路由也会漏出去），只能在
-                    # 挂载后从工具清单里剪掉；handle_list_tools / handle_call_tool
-                    # 实时读这两个属性，剪除即生效。
-                    notify_channels_op = (
-                        "get_notify_channels_api_setting_notify_channels_get"
-                    )
-                    mcp.tools = [t for t in mcp.tools if t.name != notify_channels_op]
-                    mcp.operation_map.pop(notify_channels_op, None)
-                    logger.info("MCP 服务已挂载")
+                    logger.info(f"MCP 服务已挂载，共 {len(mcp.tools)} 个工具")
                 else:
                     logger.info("MCP 服务未启用，跳过路由挂载")
 
