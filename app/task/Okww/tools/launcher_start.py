@@ -147,8 +147,8 @@ _BUSY_STATE_TEXTS = ("下载中", "下载", "校验解压")
 # 条目；速度与总量并不一直显示（可能只剩「00:40:45 0.28%」这类计时+百分比），
 # 计时文本必须剥离，否则计时器每秒变化会掩盖真实进度停滞
 _DOWNLOAD_PROGRESS_TOKENS = ("%", "MB", "GB", "KB")
-# 进度签名剥离模式：剥离「00:40:45」形态的计时文本
-_ELAPSED_TIME_PATTERN = re.compile(r"\d{1,}:\d{2}(?::\d{2})+")
+# 进度签名剥离模式：剥离「00:40:45」/「40:45」形态的计时文本（至少一组冒号）
+_ELAPSED_TIME_PATTERN = re.compile(r"\d{1,}:\d{2}(?::\d{2})*")
 # 检测到下载态时每次顺延的等待宽限（下载 UI 持续存在就持续等，等效不设总时限）
 _UPDATE_ACTIVE_GRACE_SECONDS = 600.0
 # 下载进度签名持续无变化的时长上限：百分比/体积/速度长时间不动视为下载卡死
@@ -293,6 +293,16 @@ def find_launcher_pids(launcher_path: Path) -> list[int]:
         except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
             continue
     return pids
+
+
+def has_launcher_window(launcher_path: Path) -> bool:
+    """清理后复核启动器窗口是否仍存在。
+
+    find_launcher_pids 为防误杀跳过 exe 不可读（提权）的同名进程，这类进程
+    不会被自动结束；本函数复用窗口定位的容忍口径复核一次，供清理方提示用户
+    手工确认，避免静默残留。
+    """
+    return _find_launcher_hwnd(launcher_path) is not None
 
 
 def _find_game_hwnd() -> int | None:
@@ -574,6 +584,9 @@ def start_game_via_launcher(
         update_clicked = False
         last_update_click: float | None = None
         update_click_retries = 0
+        # 点「更新」后是否确实进入过下载/校验解压态：作为「按钮被取代」的强证据，
+        # 避免单帧 OCR 漏识别按钮就误判为点击被吞而重复点击
+        update_went_busy = False
         # 点「更新」后按钮是否已离开更新态（被下载 UI 取代过）：用于区分
         # 「更新刚点完、按钮文本尚未切换」与「下载结束、按钮真正变回」
         update_button_gone = False
@@ -629,6 +642,8 @@ def start_game_via_launcher(
             # 游戏下载/校验解压进行中：基于忙碌态动态续延等待，并以进度签名
             # 检测卡死（校验解压阶段进度行为「过程不消耗流量 88.08%」）
             if _find_busy_box(action_items) is not None:
+                if update_clicked:
+                    update_went_busy = True
                 deadline = max(deadline, now + _UPDATE_ACTIVE_GRACE_SECONDS)
                 progress_sig = _download_progress_signature(action_items)
                 if progress_sig != last_download_sig:
@@ -645,7 +660,8 @@ def start_game_via_launcher(
 
             start_box = _find_text(action_items, ("进入游戏",))
             update_box = None if start_box else _find_text(action_items, ("更新",))
-            if update_clicked and update_box is None:
+            if update_clicked and update_went_busy and update_box is None:
+                # 必须「进入过下载态」才算按钮被真正取代，单帧漏识别不算
                 update_button_gone = True
             if update_box is not None and update_clicked and update_button_gone:
                 # 下载结束后按钮已真正变回（中间被下载 UI 取代过）：重置更新
@@ -653,6 +669,7 @@ def start_game_via_launcher(
                 on_log("启动器按钮已恢复，继续处理...")
                 update_clicked = False
                 update_button_gone = False
+                update_went_busy = False
             if start_box is not None and start_clicks >= _START_CLICK_LIMIT:
                 if not start_click_exhausted_logged:
                     start_click_exhausted_logged = True
@@ -688,6 +705,7 @@ def start_game_via_launcher(
             elif (
                 update_box is not None
                 and update_clicked
+                and not update_went_busy
                 and not update_button_gone
                 and last_update_click is not None
                 and now - last_update_click >= _UPDATE_CLICK_RETRY_SECONDS

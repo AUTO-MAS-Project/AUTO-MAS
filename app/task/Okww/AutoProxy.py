@@ -71,6 +71,7 @@ from .tools.backup_archive import (
 from .tools.launcher_start import (
     async_start_game_via_launcher,
     find_launcher_pids,
+    has_launcher_window,
 )
 
 logger = get_logger("OK-WW 自动代理")
@@ -995,6 +996,13 @@ class AutoProxyTask(TaskExecuteBase):
                     # 游戏清理在先，启动器进程树里只剩 webview 等子进程，
                     # 连树一并带走避免残留；游戏若意外仍在树内也属应关范围
                     await System.kill_process_by_pid(pid, kill_tree=True)
+                # 清理后复核：exe 不可读（提权）的启动器进程不在上面的结果内，
+                # 用窗口定位口径再查一次，避免静默残留
+                if await asyncio.to_thread(has_launcher_window, self.launcher_path):
+                    logger.warning(
+                        "检测到鸣潮官方启动器窗口仍残留（可能是提权进程，"
+                        "MAS 无权结束），请人工确认关闭"
+                    )
             except Exception as e:
                 logger.opt(exception=True).warning(f"关闭鸣潮官方启动器失败: {e}")
 

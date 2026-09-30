@@ -104,16 +104,17 @@ _IN_GAME_UPDATE_TIMEOUT = 1800.0
 _IN_GAME_STALL_SECONDS = 60.0
 # 游戏内更新/加载等待的轮询间隔（比窗口等待更宽松，降低长等待期 OCR 负载）。
 _IN_GAME_POLL_INTERVAL = 3.0
-# 游戏内更新完成提示重启：弹窗正文「更新完成，游戏即将重启。」，点「确认」后
-# 游戏自行退出并重开新窗口，需换新窗口句柄继续后续流程（正文比标题「提示」
-# 更具区分度，不按裸「提示」判定以免误伤其它弹窗；两个短语需同屏同时命中，
-# 避免公告正文含「更新完成」时误触发）。
-_RESTART_PROMPT_TEXTS = ("更新完成", "游戏即将重启")
+# 游戏内更新完成提示重启：弹窗正文「更新完成，游戏即将重启。」。判据只认
+# 高区分度的「游戏即将重启」——「更新完成」较通用（公告正文可能含），两短语
+# 同屏 AND 又会因 OCR 切分/截断漏触发，单选高区分度短语兼顾两侧。
+_RESTART_PROMPT_TEXTS = ("游戏即将重启",)
 # 点「确认」后等旧窗口退出的时限。
 _RESTART_WINDOW_WAIT_SECONDS = 120.0
 # 游戏内公告弹窗特征：弹窗顶部「推荐/公告/资讯」页签中的「资讯」——标题画面
 # 右侧竖排仅「公告」按钮，不会与之混淆；已实测 ESC 可关闭该弹窗。
 _ANNOUNCEMENT_POPUP_TEXTS = ("资讯",)
+# 公告弹窗 ESC 尝试次数上限：正常关闭 1-2 次即消失，反复命中说明关不掉
+_ANNOUNCEMENT_ESCAPE_LIMIT = 5
 # 游戏内忙碌态：内部下载与编译着色器的底部进度行（「正在下载： x/x」「正在编译
 # 着色器 xx%」）。识别后跳过静止卡死判定（进度会动但速度可能长时间接近 0），
 # 改用自该态首见起 60 分钟硬上限防意外；阶段切换（下载→编译着色器）时重新计时。
@@ -484,10 +485,8 @@ def _find_title_enter_box(items: list[OCRItem]) -> Box | None:
 
 
 def _has_restart_prompt(items: list[OCRItem]) -> bool:
-    """重启提示判定：正文两个短语需同屏同时命中，防公告正文单短语误触发。"""
-    return all(
-        _find_text(items, (keyword,)) is not None for keyword in _RESTART_PROMPT_TEXTS
-    )
+    """重启提示判定：只认高区分度短语「游戏即将重启」，避免误报与漏报。"""
+    return _find_text(items, _RESTART_PROMPT_TEXTS) is not None
 
 
 def _wait_game_restart(hwnd: int, on_log: Callable[[str], None]) -> int:
@@ -531,6 +530,7 @@ def _wait_for_actionable_state(hwnd: int, on_log: Callable[[str], None]) -> int:
     busy_seen: tuple[str, float] | None = None
     busy_switches = 0
     restart_count = 0
+    announcement_escapes = 0
     title_clicked_at: float | None = None
     iter_count = 0
     while time.monotonic() < deadline:
@@ -567,6 +567,8 @@ def _wait_for_actionable_state(hwnd: int, on_log: Callable[[str], None]) -> int:
                 items_full = []
                 on_login_page = False
                 busy_seen = None
+                busy_switches = 0
+                announcement_escapes = 0
                 title_clicked_at = None
                 last_progress = time.monotonic()
                 deadline = max(deadline, time.monotonic() + _IN_GAME_UPDATE_TIMEOUT)
@@ -607,8 +609,13 @@ def _wait_for_actionable_state(hwnd: int, on_log: Callable[[str], None]) -> int:
             time.sleep(_IN_GAME_POLL_INTERVAL)
             continue
         busy_seen = None
-        # 公告弹窗：已实测 ESC 可关闭，关掉后继续等待登录态
+        # 公告弹窗：已实测 ESC 可关闭，关掉后继续等待登录态；但要设次数上限——
+        # 本分支在 stall 判定之前 continue，若 ESC 关不掉会绕过静止卡死保护
         if _find_text(items_full, _ANNOUNCEMENT_POPUP_TEXTS) is not None:
+            announcement_escapes += 1
+            if announcement_escapes > _ANNOUNCEMENT_ESCAPE_LIMIT:
+                on_log("公告弹窗多次 ESC 未能关闭，停止等待，按未知状态走返回登录流程")
+                break
             on_log("检测到游戏内公告弹窗，按 ESC 关闭后继续等待...")
             _press_escape(hwnd)
             time.sleep(1)
@@ -617,10 +624,16 @@ def _wait_for_actionable_state(hwnd: int, on_log: Callable[[str], None]) -> int:
         # 按钮在右半段，偏右点击避开账号文本；已登录时点击后直接进主场景
         title_box = _find_title_enter_box(items_full)
         if title_box is not None:
+            # 只记首次点击时刻并自带上限：反复点击仍停在标题时停止，不让本分支
+            # 的 continue 绕过下面的标题超时判定
+            if title_clicked_at is None:
+                title_clicked_at = time.monotonic()
+            elif time.monotonic() - title_clicked_at >= _TITLE_FOLLOW_SECONDS:
+                on_log("标题「进入游戏」多次点击未推进，按未知状态走返回登录流程")
+                break
             on_log("检测到标题「进入游戏」界面，点击进入游戏...")
             x, y, width, height = title_box
             _click_point(hwnd, x + round(width * 0.8), y + height // 2, after_sleep=3)
-            title_clicked_at = time.monotonic()
             last_sig = None
             last_progress = time.monotonic()
             continue
