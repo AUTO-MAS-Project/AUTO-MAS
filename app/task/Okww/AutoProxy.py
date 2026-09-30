@@ -999,10 +999,12 @@ class AutoProxyTask(TaskExecuteBase):
                 # 清理后复核：exe 不可读（提权）的启动器进程不在上面的结果内，
                 # 用窗口定位口径再查一次，避免静默残留
                 if await asyncio.to_thread(has_launcher_window, self.launcher_path):
-                    logger.warning(
+                    message = (
                         "检测到鸣潮官方启动器窗口仍残留（可能是提权进程，"
                         "MAS 无权结束），请人工确认关闭"
                     )
+                    logger.warning(message)
+                    await self._push_dispatch_log(message)
             except Exception as e:
                 logger.opt(exception=True).warning(f"关闭鸣潮官方启动器失败: {e}")
 

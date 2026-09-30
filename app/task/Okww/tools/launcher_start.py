@@ -584,6 +584,7 @@ def start_game_via_launcher(
         update_clicked = False
         last_update_click: float | None = None
         update_click_retries = 0
+        update_exhausted_logged = False
         # 点「更新」后是否确实进入过下载/校验解压态：作为「按钮被取代」的强证据，
         # 避免单帧 OCR 漏识别按钮就误判为点击被吞而重复点击
         update_went_busy = False
@@ -630,9 +631,11 @@ def start_game_via_launcher(
                     on_log("检测到启动器「提示」弹窗，点击关闭...")
                     _click_box(hwnd, popup_box, after_sleep=2)
                     # 遮罩期「进入游戏」点击会被吞掉：关掉弹窗后重置点击计数
-                    # 与间隔，立即可重试
+                    # 与间隔，立即可重试（耗尽提示标志一并重置，恢复后再次耗尽
+                    # 仍能提示）
                     start_clicks = 0
                     last_start_click = None
+                    start_click_exhausted_logged = False
                     time.sleep(1)
                     continue
 
@@ -660,6 +663,14 @@ def start_game_via_launcher(
 
             start_box = _find_text(action_items, ("进入游戏",))
             update_box = None if start_box else _find_text(action_items, ("更新",))
+            if start_box is not None and update_clicked:
+                # 「进入游戏」出现即更新流程已结束（无论更新是否真正执行过）：
+                # 清理更新标记，避免残留污染超时报错文案与补点日志措辞
+                on_log("启动器按钮已变为「进入游戏」，更新流程结束")
+                update_clicked = False
+                update_button_gone = False
+                update_went_busy = False
+                update_click_retries = 0
             if update_clicked and update_went_busy and update_box is None:
                 # 必须「进入过下载态」才算按钮被真正取代，单帧漏识别不算
                 update_button_gone = True
@@ -717,6 +728,12 @@ def start_game_via_launcher(
                     _click_box(hwnd, update_box, after_sleep=3)
                     update_click_retries += 1
                     last_update_click = now
+                elif not update_exhausted_logged:
+                    update_exhausted_logged = True
+                    on_log(
+                        f"「更新」已补点 {_UPDATE_CLICK_RETRY_LIMIT} 次仍未生效，"
+                        "停止补点并继续等待（可能被遮挡或启动器异常）"
+                    )
             if iter_count % 5 == 0:
                 sample = (
                     " / ".join(text for text, _ in action_items[:6])

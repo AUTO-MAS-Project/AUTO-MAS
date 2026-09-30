@@ -652,10 +652,7 @@ def _wait_for_actionable_state(hwnd: int, on_log: Callable[[str], None]) -> int:
             )
         iter_count += 1
         time.sleep(_IN_GAME_POLL_INTERVAL)
-    on_log(
-        "等待进入可执行登录态超时或长时间无进展"
-        f"（{_IN_GAME_UPDATE_TIMEOUT:g}s），按未知状态走返回登录流程"
-    )
+    on_log("等待进入可执行登录态超时或长时间无进展，按未知状态走返回登录流程")
     return hwnd
 
 
