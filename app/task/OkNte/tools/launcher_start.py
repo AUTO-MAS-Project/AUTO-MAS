@@ -452,6 +452,7 @@ def start_game_via_launcher(
                     update_clicked = False
                     start_button_gone = False
                     launcher_upgrade_clicked = False
+                    start_click_exhausted_logged = False
                 time.sleep(2)
                 continue
 
@@ -465,9 +466,11 @@ def start_game_via_launcher(
                     on_log("检测到启动器「提示」弹窗，点击关闭...")
                     _click_box(hwnd, popup_box, after_sleep=2)
                     # 遮罩期「开始游戏」点击会被吞掉：关掉弹窗后重置点击计数
-                    # 与间隔，立即可重试
+                    # 与间隔，立即可重试（耗尽提示标志一并重置，恢复后再次耗尽
+                    # 仍能提示）
                     start_clicks = 0
                     last_start_click = None
+                    start_click_exhausted_logged = False
                     time.sleep(1)
                     continue
 
@@ -503,6 +506,7 @@ def start_game_via_launcher(
                 on_log("游戏更新完成，按钮已恢复「开始游戏」，继续启动...")
                 start_clicks = 0
                 last_start_click = None
+                start_click_exhausted_logged = False
                 update_clicked = False
                 start_button_gone = False
             if start_box is not None and start_clicks >= _START_CLICK_LIMIT:
