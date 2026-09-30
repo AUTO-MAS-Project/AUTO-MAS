@@ -653,7 +653,7 @@ def build_from_package(
         if abandoned and send_log is not None:
             locations = sorted({shell_native_location(rel) or "" for rel in abandoned})
             send_log(
-                "清掉换外壳留下的旧原生库："
+                "清掉新包不再使用的旧布局原生库："
                 + "、".join(f"{item}/" if item else "根目录" for item in locations)
                 + f"，共 {len(abandoned)} 个文件"
             )

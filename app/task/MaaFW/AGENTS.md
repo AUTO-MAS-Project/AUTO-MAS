@@ -313,7 +313,7 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   （`projection.abandoned_native_runtime_files`）：位置只有顶层 `maafw/`、`runtimes/<rid>/native`、
   `runtimes/<rid>` 与包根上的 MaaFramework 原生库，新包在某处带主库、旧的另一处也有主库而新包那处没有，
   那一处就清——MXU 换 MFAAvalonia 的导入目录里 `maafw/` 5.9.2 与 `runtimes/win-x64/native` 5.14.0
-  并存，runner 与 agent 各挑一份、每次等满连接超时。判据只看新包清单、不比版本；自带解释器的
+  并存，runner 与 agent 各挑一份、每次等满连接超时。判据只看新包（投影过滤后）的清单、不比版本；自带解释器的
   `site-packages/maa/bin` 是正牌的第二份库（可以更旧），永远不碰。导入时同样的混装只在报告里提示、不删。
   `.mas-update` / `.mas-update-cache` 是更新器的保留目录；`debug` / `logs` / `temp` / `__pycache__` /
   `.pycache`、`config/maa_option.json` 与视图标记不计入指纹（agent 子进程与环境准备设了

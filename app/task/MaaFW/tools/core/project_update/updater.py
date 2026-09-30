@@ -548,7 +548,7 @@ async def update_maafw_project_if_needed(
                 if native_residue:
                     prefer_full = True
                     send_update_log(
-                        "当前版本里留着换外壳前的旧原生库目录，改为请求全量包以清掉它"
+                        "当前版本里留着新包不再使用的旧布局原生库，改为请求全量包以清掉它"
                     )
         if prefer_full and not damaged and not stale_projection and not native_residue:
             send_update_log("当前版本是本地导入的，改为请求全量包")
