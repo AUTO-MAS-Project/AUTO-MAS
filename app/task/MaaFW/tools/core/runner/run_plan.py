@@ -118,6 +118,10 @@ class MaaFWRunPlanError(ValueError):
     """Raised when a MaaFW project cannot be converted into a runnable plan."""
 
 
+#: 选中的任务一个都跑不了时的报错；宿主据此判断要不要补上「interface 内已无」的任务名。
+NO_RUNNABLE_TASKS_MESSAGE = "当前 controller/resource 下没有可执行任务"
+
+
 def build_maafw_run_plan(
     base_dir: str | Path,
     interface_model: MaaFWInterface | dict[str, Any],
@@ -247,7 +251,7 @@ def build_maafw_run_plan(
         )
 
     if not runnable_tasks:
-        raise MaaFWRunPlanError("当前 controller/resource 下没有可执行任务")
+        raise MaaFWRunPlanError(NO_RUNNABLE_TASKS_MESSAGE)
 
     builder_warnings = [*pipeline_builder.warnings, *input_warnings]
     for warning in builder_warnings:
