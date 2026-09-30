@@ -944,7 +944,9 @@ def project_maafw_runtime_path(project_path: Path | None) -> Path | None:
 
 
 def _newest_runtime(candidates: list[Path]) -> Path:
-    """同时有好几份原生库时取版本最高的；版本相同或读不出时按候选顺序取第一份。
+    """同时有好几份原生库时取版本最高的。读不出版本的那份不参与比较；版本相同、或一份
+    都读不出时按候选顺序取第一份。问题包检查（``maafwProjectRuntimeProbe.ts`` 的
+    ``findNativeDir``）按同一口径选，改时两边一起改。
 
     多份并存几乎都是残留：本地导入的目录被外壳原地升级过（老布局的 ``maafw/`` 留着），
     全量包更新又把导入来的文件原样带进新载荷。M9A v4.11.0 实测 ``maafw/`` 是 5.9.2、
