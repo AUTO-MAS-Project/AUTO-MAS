@@ -106,7 +106,8 @@ _IN_GAME_STALL_SECONDS = 60.0
 _IN_GAME_POLL_INTERVAL = 3.0
 # 游戏内更新完成提示重启：弹窗正文「更新完成，游戏即将重启。」，点「确认」后
 # 游戏自行退出并重开新窗口，需换新窗口句柄继续后续流程（正文比标题「提示」
-# 更具区分度，不按裸「提示」判定以免误伤其它弹窗）。
+# 更具区分度，不按裸「提示」判定以免误伤其它弹窗；两个短语需同屏同时命中，
+# 避免公告正文含「更新完成」时误触发）。
 _RESTART_PROMPT_TEXTS = ("更新完成", "游戏即将重启")
 # 点「确认」后等旧窗口退出的时限。
 _RESTART_WINDOW_WAIT_SECONDS = 120.0
@@ -118,6 +119,9 @@ _ANNOUNCEMENT_POPUP_TEXTS = ("资讯",)
 # 改用自该态首见起 60 分钟硬上限防意外；阶段切换（下载→编译着色器）时重新计时。
 _IN_GAME_BUSY_TEXTS = ("正在下载", "正在编译着色器")
 _IN_GAME_BUSY_LIMIT_SECONDS = 3600.0
+# 忙碌态阶段切换次数上限：正常「下载→编译着色器」只切换一次，反复横跳说明
+# 识别不稳或环境异常，超过后按未知状态走兜底
+_BUSY_PHASE_SWITCH_LIMIT = 6
 # 跟随游戏自重启的次数上限：正常「游戏内更新→重启」只发生一次，超出视为异常。
 _MAX_GAME_RESTARTS = 3
 # 点击标题「进入游戏」后等待可执行登录态的时限：已登录时游戏会直接进入主场景
@@ -479,6 +483,13 @@ def _find_title_enter_box(items: list[OCRItem]) -> Box | None:
     return _find_text(items, ("进入游戏",))
 
 
+def _has_restart_prompt(items: list[OCRItem]) -> bool:
+    """重启提示判定：正文两个短语需同屏同时命中，防公告正文单短语误触发。"""
+    return all(
+        _find_text(items, (keyword,)) is not None for keyword in _RESTART_PROMPT_TEXTS
+    )
+
+
 def _wait_game_restart(hwnd: int, on_log: Callable[[str], None]) -> int:
     """点「确认」重启后：等旧窗口退出，再等新窗口出现，返回新窗口句柄。"""
     deadline = time.monotonic() + _RESTART_WINDOW_WAIT_SECONDS
@@ -486,7 +497,10 @@ def _wait_game_restart(hwnd: int, on_log: Callable[[str], None]) -> int:
         time.sleep(1)
     on_log("游戏窗口已退出，正在等待游戏重启...")
     # 复用窗口宽限轮询：游戏自重启到新窗口亮相可能需要数十秒；超时由其抛错
-    return _find_game_hwnd()
+    new_hwnd = _find_game_hwnd()
+    # 后续截图与点击均不激活窗口，先置前一次保证落点正确
+    _activate_window(new_hwnd)
+    return new_hwnd
 
 
 def _wait_for_actionable_state(hwnd: int, on_log: Callable[[str], None]) -> int:
@@ -515,6 +529,7 @@ def _wait_for_actionable_state(hwnd: int, on_log: Callable[[str], None]) -> int:
     items_full: list[OCRItem] = []
     on_login_page = False
     busy_seen: tuple[str, float] | None = None
+    busy_switches = 0
     restart_count = 0
     title_clicked_at: float | None = None
     iter_count = 0
@@ -535,7 +550,7 @@ def _wait_for_actionable_state(hwnd: int, on_log: Callable[[str], None]) -> int:
             return hwnd
         # 游戏内更新完成提示重启：点「确认」后游戏自行重启，换新窗口后继续在
         # 本循环等待可执行登录态
-        if _find_text(items_full, _RESTART_PROMPT_TEXTS) is not None:
+        if _has_restart_prompt(items_full):
             confirm_box = _find_text(items_full, ("确认",))
             if confirm_box is not None:
                 if restart_count >= _MAX_GAME_RESTARTS:
@@ -561,13 +576,25 @@ def _wait_for_actionable_state(hwnd: int, on_log: Callable[[str], None]) -> int:
         busy_keyword = _find_busy_keyword(items_full)
         if busy_keyword is not None:
             now = time.monotonic()
-            if busy_seen is None or busy_seen[0] != busy_keyword:
+            if busy_seen is None:
                 busy_seen = (busy_keyword, now)
                 deadline = max(deadline, now + _IN_GAME_BUSY_LIMIT_SECONDS)
                 on_log(
                     f"检测到游戏内「{busy_keyword}」，将持续等待"
                     f"（自首见起最多 {_IN_GAME_BUSY_LIMIT_SECONDS / 60:g} 分钟）..."
                 )
+            elif busy_seen[0] != busy_keyword:
+                # 阶段切换（下载→编译着色器）重新计时；次数设上限防反复横跳
+                # 绕过硬上限
+                busy_switches += 1
+                if busy_switches > _BUSY_PHASE_SWITCH_LIMIT:
+                    on_log(
+                        "游戏内忙碌态阶段反复切换，停止等待，按未知状态走返回登录流程"
+                    )
+                    break
+                busy_seen = (busy_keyword, now)
+                deadline = max(deadline, now + _IN_GAME_BUSY_LIMIT_SECONDS)
+                on_log(f"游戏内进入「{busy_keyword}」阶段，重新计时...")
             elif now - busy_seen[1] >= _IN_GAME_BUSY_LIMIT_SECONDS:
                 on_log(
                     f"游戏内「{busy_keyword}」超过 "

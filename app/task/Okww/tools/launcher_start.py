@@ -109,8 +109,10 @@ def _describe_window(hwnd: int) -> str:
         return "描述失败"
 
 
-# 游戏客户端进程名（与账号切换的 _WUWA_PROCESS 一致），窗口出现即游戏就绪
+# 游戏客户端进程名与窗口类（与账号切换的 _WUWA_PROCESS/_WUWA_CLASS 一致），
+# 窗口出现即游戏就绪
 _GAME_PROCESS = "Client-Win64-Shipping.exe"
+_GAME_WINDOW_CLASS = "UnrealWindow"
 
 # 启动器进程家族：顶层 launcher.exe 是引导器，真正的界面窗口属于版本目录下的
 # launcher_main.exe；版本目录随启动器自更新变化（如 <根>\2.6.5.0\）。家族匹配
@@ -138,7 +140,8 @@ _LAUNCHER_WINDOW_TIMEOUT = 120
 # ── 启动器下载状态动态识别（基于 OCR，样本为真实下载界面）────────────────
 # 忙碌态判定文本：右下角按钮「下载中 ...」与「校验解压文件 ..」。下载完成后
 # 启动器会自动进入校验解压阶段（过程不消耗流量），解压完成才会回到「进入游戏」，
-# 两态同样需要动态续延等待
+# 两态同样需要动态续延等待；裸「下载」用于容忍 OCR 拆词，但「预下载」开放且
+# 游戏可玩是官方预期状态，含「预」的条目必须排除（见 _find_busy_box）
 _BUSY_STATE_TEXTS = ("下载中", "下载", "校验解压")
 # 下载进度相关文本特征：用于构造「下载进度签名」，只看含百分比/体积/速度的
 # 条目；速度与总量并不一直显示（可能只剩「00:40:45 0.28%」这类计时+百分比），
@@ -155,6 +158,10 @@ _DOWNLOAD_STALL_SECONDS = 300.0
 # 生效时启动器会直接退出，按钮消失即停止重试。
 _START_CLICK_LIMIT = 8
 _START_CLICK_INTERVAL_SECONDS = 12.0
+# 「更新」点击重试：单次点击防重复下载是有意设计，但点击被吞时需按间隔补点，
+# 以按钮长时间停留原状（未被下载/进度 UI 取代）为被吞判据
+_UPDATE_CLICK_RETRY_SECONDS = 15.0
+_UPDATE_CLICK_RETRY_LIMIT = 3
 
 
 @lru_cache(maxsize=1)
@@ -204,13 +211,15 @@ def _window_area(hwnd: int) -> int:
         return 0
 
 
-def _find_hwnd(process_name: str) -> int | None:
-    """按所属进程名找最大可见窗口；不存在返回 None。"""
+def _find_hwnd(process_name: str, window_class: str | None = None) -> int | None:
+    """按所属进程名（可选加窗口类）找最大可见窗口；不存在返回 None。"""
     candidates: list[int] = []
 
     def _enum(hwnd: int, _lparam: int) -> bool:
         try:
             if not win32gui.IsWindowVisible(hwnd):
+                return True
+            if window_class is not None and win32gui.GetClassName(hwnd) != window_class:
                 return True
         except Exception:
             return True
@@ -261,9 +270,9 @@ def _find_launcher_hwnd(launcher_path: Path) -> int | None:
 def find_launcher_pids(launcher_path: Path) -> list[int]:
     """按启动器进程家族找 pid（顶层引导器 + 版本目录下的主程序）。
 
-    供任务清理使用：launcher.exe 是通用进程名，必须以「exe 位于启动器安装根
-    目录树内」限定，避免误杀无关程序的同名进程；exe 读取被拒的同名进程放行
-    （与窗口定位的兜底口径一致）。
+    供任务清理使用：launcher.exe 是通用进程名，kill 误杀不可恢复，口径比窗口
+    定位更保守——必须「exe 可读且位于启动器安装根目录树内」双条件同时满足；
+    exe 读取被拒的同名进程跳过并打警告（多为提权进程，普通权限下本就杀不动）。
     """
     root_prefix = str(launcher_path.parent).casefold().rstrip("\\/") + "\\"
     pids: list[int] = []
@@ -273,7 +282,12 @@ def find_launcher_pids(launcher_path: Path) -> list[int]:
             if name not in _LAUNCHER_PROCESS_NAMES:
                 continue
             exe = process.info["exe"]
-            if exe is not None and not exe.casefold().startswith(root_prefix):
+            if exe is None:
+                logger.warning(
+                    f"同名启动器进程 exe 不可读，跳过清理以免误杀: pid={process.pid}"
+                )
+                continue
+            if not exe.casefold().startswith(root_prefix):
                 continue
             pids.append(process.pid)
         except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
@@ -282,7 +296,7 @@ def find_launcher_pids(launcher_path: Path) -> list[int]:
 
 
 def _find_game_hwnd() -> int | None:
-    return _find_hwnd(_GAME_PROCESS)
+    return _find_hwnd(_GAME_PROCESS, _GAME_WINDOW_CLASS)
 
 
 def _wait_launcher_hwnd(
@@ -433,6 +447,20 @@ def _download_progress_signature(items: list[OCRItem]) -> int:
     return hash(tuple(texts))
 
 
+def _find_busy_box(items: list[OCRItem]) -> Box | None:
+    """识别启动器忙碌态按钮（下载中/校验解压）；「预下载」不算忙碌。
+
+    预下载开放且游戏可玩是官方预期状态，此时按钮区可能并存「进入游戏」与
+    「预下载」，裸「下载」子串会误命中，故含「预」的条目一律排除。
+    """
+    for text, box in items:
+        if "预" in text:
+            continue
+        if any(keyword in text for keyword in _BUSY_STATE_TEXTS):
+            return box
+    return None
+
+
 # ── 屏保退出（挂机定时任务几乎必然带屏保运行）───────────────────────────
 _SPI_GETSCREENSAVERRUNNING = 0x0072
 
@@ -544,6 +572,8 @@ def start_game_via_launcher(
         start_click_exhausted_logged = False
         exit_wait_polls = 0
         update_clicked = False
+        last_update_click: float | None = None
+        update_click_retries = 0
         # 点「更新」后按钮是否已离开更新态（被下载 UI 取代过）：用于区分
         # 「更新刚点完、按钮文本尚未切换」与「下载结束、按钮真正变回」
         update_button_gone = False
@@ -598,7 +628,7 @@ def start_game_via_launcher(
 
             # 游戏下载/校验解压进行中：基于忙碌态动态续延等待，并以进度签名
             # 检测卡死（校验解压阶段进度行为「过程不消耗流量 88.08%」）
-            if _find_text(action_items, _BUSY_STATE_TEXTS) is not None:
+            if _find_busy_box(action_items) is not None:
                 deadline = max(deadline, now + _UPDATE_ACTIVE_GRACE_SECONDS)
                 progress_sig = _download_progress_signature(action_items)
                 if progress_sig != last_download_sig:
@@ -653,7 +683,22 @@ def start_game_via_launcher(
                 on_log("检测到启动器「更新」按钮，正在更新游戏，等待时间将延长...")
                 _click_box(hwnd, update_box, after_sleep=3)
                 update_clicked = True
+                last_update_click = now
                 deadline = max(deadline, now + _UPDATE_TIMEOUT)
+            elif (
+                update_box is not None
+                and update_clicked
+                and not update_button_gone
+                and last_update_click is not None
+                and now - last_update_click >= _UPDATE_CLICK_RETRY_SECONDS
+            ):
+                # 点击「更新」后按钮长时间停留原状（未被下载/进度 UI 取代）：
+                # 判定点击被吞，按间隔补点
+                if update_click_retries < _UPDATE_CLICK_RETRY_LIMIT:
+                    on_log("「更新」点击未生效，补点一次...")
+                    _click_box(hwnd, update_box, after_sleep=3)
+                    update_click_retries += 1
+                    last_update_click = now
             if iter_count % 5 == 0:
                 sample = (
                     " / ".join(text for text, _ in action_items[:6])
