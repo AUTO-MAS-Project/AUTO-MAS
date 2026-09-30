@@ -1369,6 +1369,12 @@ export default {
     pathGameExecutable: '游戏可执行文件的路径',
     gameLaunchArgumentsNot: '游戏启动参数（非 OK-NTE 启动参数）',
     gameLaunchArgumentsNot2: '游戏启动参数（非 ok-ww 启动参数）',
+    accountSwitch16x9Only: '仅对 16:9 进行了适配，非 16:9 不保证切换成功',
+    accountSwitch16x9ArgHint: '非 16:9 屏幕切换可能失败，建议在启动参数指定分辨率，如：{p0}',
+    okwwAccountSwitchHint:
+      '开启后，游戏启动成功后在运行 ok-ww 前按用户手机号后 4 位强制切换登录账号；用户未填写账号则不切换',
+    oknteAccountSwitchHint:
+      '开启「任务前启动游戏」后，游戏启动成功后在运行 ok-nte 前按用户手机号后 4 位强制切换登录账号；用户未填写账号则不切换。未开启「任务前启动游戏」时本开关不可用',
     gameLauncher: '游戏启动器',
     whichPlatformGameRuns: '游戏在哪个平台上运行',
     gameUpdate: '游戏更新',
