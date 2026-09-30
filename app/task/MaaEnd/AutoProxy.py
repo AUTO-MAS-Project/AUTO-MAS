@@ -560,23 +560,28 @@ class AutoProxyTask(TaskExecuteBase):
         )
 
         self._prepare_auto_collect_routes()
+        await self._refresh_stage_plan(list(MAAEND_RUN_MOOD_BOOK))
 
+    async def _refresh_stage_plan(self, modes: list[str]) -> None:
+        """重新评估指定的未完成阶段，保留已执行首阶段的前置任务身份。"""
+        first_run_completed = (
+            self.first_run_mode is not None and self.run_book[self.first_run_mode]
+        )
         mode_skip_reasons: dict[str, str] = {}
         missing_task_modes: list[str] = []
-        for mode in MAAEND_RUN_MOOD_BOOK:
+        for mode in modes:
             reason, missing_task = self._mode_skip_reason(mode)
+            self.run_book[mode] = reason is not None
             if reason is None:
                 continue
             mode_skip_reasons[mode] = reason
             if missing_task:
                 missing_task_modes.append(mode)
-        self.first_run_mode = next(
-            (mode for mode in MAAEND_RUN_MOOD_BOOK if mode not in mode_skip_reasons),
-            None,
-        )
-        self.run_book = {
-            mode: mode in mode_skip_reasons for mode in MAAEND_RUN_MOOD_BOOK
-        }
+        if not first_run_completed:
+            self.first_run_mode = next(
+                (mode for mode in MAAEND_RUN_MOOD_BOOK if not self.run_book[mode]),
+                None,
+            )
         for mode, reason in mode_skip_reasons.items():
             logger.info(
                 f"用户 {self.cur_user_item.name} 跳过{MAAEND_RUN_MOOD_BOOK[mode]}阶段: {reason}"
@@ -645,7 +650,13 @@ class AutoProxyTask(TaskExecuteBase):
             return None
         result = [task for task in tasks if isinstance(task, dict)]
         self._drop_removed_medication_task(result)
-        return result
+        # 配置副本可能仍保留新版已移除的任务，阶段计划按当前 PI 声明判断。
+        return [
+            task
+            for task in result
+            if str(task.get("taskName", "")).startswith("__MXU_")
+            or self._maaend_task_supported(str(task.get("taskName", ""))) is not False
+        ]
 
     def _source_mode_skip_reason(self, mode: str) -> tuple[str | None, bool]:
         """非快速配置下按 MaaEnd 配置判断阶段是否可执行。"""
@@ -735,9 +746,13 @@ class AutoProxyTask(TaskExecuteBase):
                     if sanity_task_key["SanityTaskType"] == "Essence"
                     else "ProtocolSpace"
                 )
-                if not any(
-                    str(task.get("taskName", "")) == target_sanity_task_name
-                    for task in tasks
+                if (
+                    not any(
+                        str(task.get("taskName", "")) == target_sanity_task_name
+                        for task in tasks
+                    )
+                    and self._maaend_task_supported(target_sanity_task_name)
+                    is not False
                 ):
                     return None, False
 
@@ -861,7 +876,10 @@ class AutoProxyTask(TaskExecuteBase):
 
         try:
             version = await update_maaend_after_stage(
-                root_path, log_offsets, on_status=update_status
+                root_path,
+                log_offsets,
+                process=self.maaend_process_manager.process,
+                on_status=update_status,
             )
             if version is not None:
                 await asyncio.to_thread(
@@ -871,8 +889,12 @@ class AutoProxyTask(TaskExecuteBase):
                 )
                 self._source_tasks_cache = None
                 self._prepare_auto_collect_routes()
-                if update_log is not None:
-                    update_log.status = "Success!"
+                modes = list(MAAEND_RUN_MOOD_BOOK)
+                next_index = modes.index(self.mode) + int(self.run_book[self.mode])
+                await self._refresh_stage_plan(modes[next_index:])
+                self.task_dict = None
+            if update_log is not None:
+                update_log.status = "Success!" if version is not None else "跳过更新"
         except asyncio.CancelledError:
             self.update_failed = True
             if update_log is not None:

@@ -23,6 +23,7 @@ import re
 import time
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager, suppress
+from dataclasses import dataclass
 from pathlib import Path
 
 import psutil
@@ -40,7 +41,8 @@ _LOG_FILE_NAME = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}-[1-9][0-9]*\.log")
 _LOG_TARGET_VERSION = re.compile(
     r"(?:发现新版本|检测到待安装更新|已保存待安装更新信息):\s*(\S+)"
 )
-_LOG_DOWNLOAD = ("开始下载更新:", "更新下载完成", "检测到待安装更新:")
+_LOG_DOWNLOAD = ("开始下载更新:", "更新下载完成")
+_LOG_DOWNLOAD_READY = ("已保存待安装更新信息:", "检测到待安装更新:")
 _LOG_SUCCESS = "更新安装完成"
 _LOG_FAILURE = ("更新安装失败", "打开安装程序失败")
 _LOG_CHECK_FAILURE = (
@@ -49,11 +51,52 @@ _LOG_CHECK_FAILURE = (
     "检查更新失败:",
     "更新检查返回错误:",
     "GitHub 下载链接获取失败",
+    "下载失败:",
+    "保存待安装更新信息失败:",
 )
 
 
 class MaaEndUpdateError(RuntimeError):
     """MaaEnd 更新接管未能确认更新完成。"""
+
+
+@dataclass
+class _UpdateProgress:
+    """按本轮日志顺序保留 MXU 最后报告的更新结果。"""
+
+    state: str = "idle"
+    target_version: str | None = None
+
+    def read(self, lines: list[str]) -> None:
+        for line in lines:
+            if match := _LOG_TARGET_VERSION.search(line):
+                candidate = match.group(1)
+                if (
+                    self.target_version is None
+                    or compare_mirrorchyan_versions(candidate, self.target_version) > 0
+                ):
+                    self.target_version = candidate
+            if any(message in line for message in _LOG_FAILURE):
+                self.state = "install_failed"
+            elif _LOG_SUCCESS in line:
+                self.state = "complete"
+            elif "开始安装更新:" in line:
+                self.state = "installing"
+            elif "开始下载更新:" in line:
+                self.state = "downloading"
+            elif self.state not in {"installing", "complete", "install_failed"}:
+                if "下载已被用户取消" in line:
+                    self.state = "cancelled"
+                elif any(message in line for message in _LOG_CHECK_FAILURE):
+                    if self.state != "cancelled":
+                        self.state = "failed"
+                elif any(message in line for message in _LOG_DOWNLOAD_READY):
+                    self.state = "ready"
+                elif "更新下载完成" in line:
+                    # 此行先于待安装信息落盘，尚不能关闭下载进程。
+                    self.state = "downloading"
+                elif "更新检查完成:" in line and "有更新=false" in line:
+                    self.state = "current"
 
 
 def _read_installed_version(root_path: Path, target_version: str | None) -> str:
@@ -137,9 +180,15 @@ async def _stop_mxu(executable: Path) -> None:
 def _mxu_log_files(root_path: Path) -> list[Path]:
     # MXU 前端日志：debug/YYYY-MM-DD-N.log，每次启动新建文件。
     return sorted(
-        path
-        for path in (root_path / "debug").glob("*.log")
-        if _LOG_FILE_NAME.fullmatch(path.name) and path.is_file()
+        (
+            path
+            for path in (root_path / "debug").glob("*.log")
+            if _LOG_FILE_NAME.fullmatch(path.name) and path.is_file()
+        ),
+        key=lambda path: (
+            path.stem.rsplit("-", 1)[0],
+            int(path.stem.rsplit("-", 1)[1]),
+        ),
     )
 
 
@@ -175,7 +224,7 @@ async def _run_update_session(
     root_path: Path,
     target_version: str | None,
     on_status: Callable[[str], None] | None,
-) -> str:
+) -> str | None:
     executable = root_path / "MaaEnd.exe"
     config_path = root_path / "config" / "mxu-MaaEnd.json"
     process_manager = ProcessManager()
@@ -187,7 +236,9 @@ async def _run_update_session(
             on_status(message)
 
     status("正在准备 MaaEnd 更新会话")
-    await _stop_mxu(executable)
+    # 只在原进程自然退出后启动，不能中止仍在下载或安装的会话。
+    if await asyncio.to_thread(_find_executable_processes, executable):
+        raise MaaEndUpdateError("MaaEnd 原进程尚未退出，无法启动独立更新会话")
     log_offsets = await asyncio.to_thread(snapshot_mxu_logs, root_path)
     with _pause_auto_run(config_path):
         try:
@@ -198,7 +249,7 @@ async def _run_update_session(
                 raise MaaEndUpdateError("MaaEnd 更新进程未启动")
 
             status("MaaEnd 正在检查并安装更新")
-            installation_complete = False
+            progress = _UpdateProgress(target_version=target_version)
             exited_at: float | None = None
             while time.monotonic() < deadline:
                 await process_manager.hide_window()
@@ -206,28 +257,16 @@ async def _run_update_session(
                 lines = await asyncio.to_thread(
                     _read_new_mxu_logs, root_path, log_offsets
                 )
-                if any(
-                    message in line
-                    for line in lines
-                    for message in (*_LOG_FAILURE, *_LOG_CHECK_FAILURE)
-                ):
+                progress.read(lines)
+                if progress.state == "install_failed":
                     raise MaaEndUpdateError("MXU 日志报告更新失败")
-                for line in lines:
-                    if match := _LOG_TARGET_VERSION.search(line):
-                        candidate = match.group(1)
-                        if (
-                            target_version is None
-                            or compare_mirrorchyan_versions(candidate, target_version)
-                            > 0
-                        ):
-                            target_version = candidate
-                installation_complete |= any(_LOG_SUCCESS in line for line in lines)
+                if progress.state in {"failed", "cancelled"}:
+                    status("MaaEnd 下载失败或已取消，本轮跳过更新")
+                    return None
                 # 首阶段可能已经完成更新；由 MXU 的检查结果确认，无需再安装一次。
-                if not installation_complete and any(
-                    "更新检查完成:" in line and "有更新=false" in line for line in lines
-                ):
+                if progress.state == "current":
                     installed_version = _read_installed_version(
-                        root_path, target_version
+                        root_path, progress.target_version
                     )
                     status(f"MaaEnd 已是最新版本 {installed_version}")
                     return installed_version
@@ -254,12 +293,12 @@ async def _run_update_session(
                         await asyncio.sleep(0.5)
                         continue
 
-                    if not installation_complete:
+                    if progress.state != "complete":
                         await asyncio.sleep(0.5)
                         continue
                     # 临时复用上游日志；MXU 提供更新退出码后替换此判断。
                     installed_version = _read_installed_version(
-                        root_path, target_version
+                        root_path, progress.target_version
                     )
                     status(f"MaaEnd 已更新到 {installed_version}")
                     return installed_version
@@ -277,6 +316,7 @@ async def update_maaend_after_stage(
     root_path: Path,
     log_offsets: dict[Path, int],
     *,
+    process: asyncio.subprocess.Process | None = None,
     on_status: Callable[[str], None] | None = None,
 ) -> str | None:
     """首阶段结束后按本轮下载日志插入更新，返回更新后的版本。
@@ -284,24 +324,49 @@ async def update_maaend_after_stage(
     未观察到下载时返回 ``None``；下载、安装和重启均复用 MXU 原生流程。
     """
     lines = await asyncio.to_thread(_read_new_mxu_logs, root_path, log_offsets)
-    if not any(message in line for line in lines for message in _LOG_DOWNLOAD):
+    if not any(
+        message in line
+        for line in lines
+        for message in (*_LOG_DOWNLOAD, *_LOG_DOWNLOAD_READY)
+    ):
         return None
 
-    target_version: str | None = None
-    for line in lines:
-        if match := _LOG_TARGET_VERSION.search(line):
-            target_version = match.group(1)
-
-    if on_status is not None:
-        on_status("首阶段检测到 MaaEnd 下载更新，正在准备更新阶段")
-    if any(message in line for line in lines for message in _LOG_FAILURE):
-        raise MaaEndUpdateError("MXU 日志报告安装失败，已停止后续任务")
-    if any(_LOG_SUCCESS in line for line in lines):
-        installed_version = _read_installed_version(root_path, target_version)
+    def status(message: str) -> None:
+        logger.info(message)
         if on_status is not None:
-            on_status(f"首阶段已完成 MaaEnd 更新：{installed_version}")
-        return installed_version
+            on_status(message)
 
-    return await _run_update_session(
-        root_path=root_path, target_version=target_version, on_status=on_status
-    )
+    progress = _UpdateProgress()
+    progress.read(lines)
+    deadline = time.monotonic() + _UPDATE_SESSION_TIMEOUT
+    status("首阶段检测到 MaaEnd 下载更新，正在等待下载与安装结果")
+    while True:
+        if progress.state == "install_failed":
+            raise MaaEndUpdateError("MXU 日志报告安装失败，已停止后续任务")
+        if progress.state in {"failed", "cancelled"}:
+            status("MaaEnd 下载失败或已取消，本轮跳过更新")
+            return None
+        if progress.state in {"complete", "current"}:
+            installed_version = _read_installed_version(
+                root_path, progress.target_version
+            )
+            status(f"首阶段已完成 MaaEnd 更新：{installed_version}")
+            return installed_version
+
+        processes = await asyncio.to_thread(
+            _find_executable_processes, root_path / "MaaEnd.exe"
+        )
+        if not processes and (process is None or process.returncode is not None):
+            # -q 可能在下载完成前退出；原进程已消失时，由新会话重新下载。
+            # 仍存活的下载进程则在下面等待，不能主动关闭它来制造交接。
+            return await _run_update_session(
+                root_path=root_path,
+                target_version=progress.target_version,
+                on_status=on_status,
+            )
+        if time.monotonic() >= deadline:
+            raise MaaEndUpdateError("等待 MaaEnd 原进程完成下载或安装超时")
+        await asyncio.sleep(0.5)
+        progress.read(
+            await asyncio.to_thread(_read_new_mxu_logs, root_path, log_offsets)
+        )
