@@ -27,7 +27,8 @@
 CheckAndDownloadResourceUpdate 只在 UpdateSource==MirrorChyan 且 CDK 非空时
 下载），GitHub 源只保留 GUI 手动入口（设置页按钮 / 主窗口拖拽导入），且没有
 任何程序化触发方式（Bootstrapper.ParseArgs 无相关 flag）。本模块在 MAS 侧
-补位：任务/循环轮启动前按需更新全部 MAA 实例的资源。
+补位：MAA 任务运行前（MaaManager.prepare 锁定配置之前）按需更新全部 MAA
+实例的资源。
 
 移除条件（任一落地即改为复用上游并删除本模块，见 .agents/skills/
 mas-script-specialized-adapter/references/blackbox-boundary.md）：
@@ -733,7 +734,10 @@ async def _sweep() -> None:
 
 
 async def prepare_queue_resources() -> None:
-    """任务/循环轮启动前按需更新全部 MAA 实例资源。
+    """MAA 任务运行前按需更新全部 MAA 实例资源。
+
+    必须在 MaaManager.prepare 锁定脚本配置之前调用：lock() 之后本安装会被
+    占用过滤跳过，更新不到它自己。
 
     契约：永不抛异常；任何失败只写日志并进入退避；调用方无需 try/except。
     """

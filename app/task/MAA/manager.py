@@ -51,6 +51,7 @@ from .AutoProxy import AutoProxyTask
 from .ScriptConfig import ScriptConfigTask
 from .tools import push_notification
 from .tools.backup_archive import archive_native_backup
+from .tools.resource_update import prepare_queue_resources
 
 logger = get_logger("MAA 调度器")
 
@@ -161,6 +162,11 @@ class MaaManager(TaskExecuteBase):
 
     async def prepare(self):
         """运行前准备"""
+
+        # MAA 资源按需更新：必须放在锁定配置之前——lock() 之后本安装会被
+        # 资源更新的占用过滤跳过，就更新不到它自己了。内部对全部 MAA 实例
+        # 扫描，自带机器锁/退避/兜底，任何失败只写日志，不影响本轮任务。
+        await prepare_queue_resources()
 
         # 锁定脚本配置并加载用户配置
         script_config = Config.ScriptConfig[uuid.UUID(self.script_info.script_id)]
