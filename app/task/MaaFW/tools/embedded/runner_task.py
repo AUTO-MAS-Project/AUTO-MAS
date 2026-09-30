@@ -467,6 +467,8 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         self.run_signal: str | None = None
         # 运行前检查发现同一资源本轮已确认在维护、本用户没启动就跳过。
         self.maintenance_skipped = False
+        # 队列里 interface 已没有的任务名（项目更新改了 name），建计划时填，进任务报告
+        self.missing_task_names: list[str] = []
 
     async def check(self) -> str:
         proxy_times = (
@@ -918,10 +920,12 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             task_snapshot = open_task_snapshot(task_snapshot, interface_model)
             # 项目更新改了任务 name 后，队列里的旧 id 在归一化时就被滤掉了，运行日志里
             # 一点痕迹都没有。先按原始快照把它们找出来，建完计划记成跳过。
+            missing_names = find_missing_task_names(task_snapshot, interface_model)
             missing_skips = [
                 MaaFWSkippedTaskPlan(name=name, reason="interface 内已无该任务")
-                for name in find_missing_task_names(task_snapshot, interface_model)
+                for name in missing_names
             ]
+            self.missing_task_names = list(dict.fromkeys(missing_names))
             if flavor is None:
                 plan = MaaFWRunnerService().build_plan(
                     self.project_path,
@@ -2652,8 +2656,21 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         与 M9A 专项同形（多次尝试分块列出、最终成功时并集去重），但数据来源
         不同：M9A 只能用 ``M9ALogAnalyzer`` 正则解析日志文本，MaaFW 手里本来
         就有 ``completedTasks`` 与失败摘要，直接用结构化结果，不必反解日志。
+        队列里有失效任务时末尾再附一行。
         """
 
+        details = self._build_attempt_details()
+        missing = self.missing_task_notice()
+        return "\n\n".join(part for part in (details, missing) if part)
+
+    def missing_task_notice(self) -> str:
+        """队列里 interface 已没有的任务（多半是项目更新改了 name）：进用户与脚本两份报告。"""
+
+        if not self.missing_task_names:
+            return ""
+        return f"{MISSING_TASK_NOTICE_PREFIX}: " + "、".join(self.missing_task_names)
+
+    def _build_attempt_details(self) -> str:
         if not self._attempt_reports:
             return ""
 
@@ -3360,6 +3377,12 @@ def _format_run_overview_log(
     if len(skipped_names) > _RUN_OVERVIEW_LOG_VALUE_LIMIT:
         skipped_names = skipped_names[:_RUN_OVERVIEW_LOG_VALUE_LIMIT] + "..."
     return f"{overview}; skipped_tasks({len(plan.skippedTasks)})={skipped_names}"
+
+
+#: 任务报告里「失效任务」一行的前缀：队列里的任务 interface 已没有，本次跳过。
+MISSING_TASK_NOTICE_PREFIX = (
+    "失效任务（interface 内已无，已跳过，请到用户配置里重新添加）"
+)
 
 
 def _with_skipped_tasks(
