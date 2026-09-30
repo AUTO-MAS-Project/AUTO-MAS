@@ -2377,11 +2377,11 @@ class GeneralConfig_Script(BaseModel):
     LogTimeEnd: Optional[int] = Field(default=None, description="日志时间戳结束位置")
     LogTimeFormat: Optional[str] = Field(default=None, description="日志时间戳格式")
     LogHookEnabled: Optional[bool] = Field(
-        default=None, description="日志处理钩子启用开关"
+        default=None, description="日志预处理启用开关"
     )
     LogHookRules: Optional[str] = Field(
         default=None,
-        description='日志处理钩子规则(JSON 数组，每项形如 {"type":"drop|replace","match":正则,"replace":替换文本})；先于任务日志、推送采集与成功/失败判定执行',
+        description='日志预处理规则(JSON 数组，每项形如 {"type":"drop|replace","match":正则,"replace":替换文本})；先于任务日志、推送采集与成功/失败判定执行',
     )
     SuccessLog: Optional[str] = Field(default=None, description="成功时日志")
     SuccessLogMode: Optional[Literal["Split", "Regex"]] = Field(
