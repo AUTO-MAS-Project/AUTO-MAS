@@ -68,6 +68,10 @@ from .tools.backup_archive import (
     owner_for_mode,
     read_overlay_values,
 )
+from .tools.launcher_start import (
+    async_start_game_via_launcher,
+    find_launcher_pids,
+)
 
 logger = get_logger("OK-WW 自动代理")
 
@@ -501,7 +505,12 @@ class AutoProxyTask(TaskExecuteBase):
         )
 
     async def _mas_launch_game_before_task(self) -> None:
-        """检查并触发官方启动器更新，然后启动鸣潮客户端。"""
+        """检查并触发官方更新，然后经官方启动器拉起鸣潮客户端。
+
+        鸣潮已不允许直启客户端 exe，必须经官方启动器进入游戏：MAS 拉起启动器
+        后由 OCR 流程点击「进入游戏」（launcher_start），启动器出现更新/下载时
+        按下载态等待。启动参数随启动器传入（能否透传到游戏由启动器决定）。
+        """
 
         if isinstance(self.game_manager, ProcessManager):
             await self._ensure_wuthering_waves_updated()
@@ -518,10 +527,28 @@ class AutoProxyTask(TaskExecuteBase):
                     await self._note_launch_arguments_skipped()
                     return
 
+            launcher_path = self.launcher_path
+            if launcher_path is None:
+                raise RuntimeError("未找到鸣潮官方启动器路径，请重新导入启动器")
+            await self._push_dispatch_log(
+                "未检测到运行中的客户端，正在拉起官方启动器..."
+            )
             await self.game_manager.open_process(
-                self.game_process_path,
+                launcher_path,
                 *split_args(self.script_config.get("Game", "Arguments")),
             )
+            await self._push_dispatch_log("启动器已拉起，正在等待点击「进入游戏」...")
+            # 启动器交互在后台线程内同步执行，on_log 契约是同步回调；
+            # _push_dispatch_log 是 async 方法，须经 run_coroutine_threadsafe
+            # 调度回事件循环（与账号切换的 _push_switch_log 同理）。
+            launch_loop = asyncio.get_running_loop()
+
+            def _push_launch_log(line: str) -> None:
+                asyncio.run_coroutine_threadsafe(
+                    self._push_dispatch_log(line), launch_loop
+                )
+
+            await async_start_game_via_launcher(launcher_path, on_log=_push_launch_log)
             wait_time = max(int(self.script_config.get("Game", "WaitTime")), 0)
             if wait_time:
                 await self._push_dispatch_log(f"等待游戏启动（{wait_time} 秒）...")
@@ -933,7 +960,7 @@ class AutoProxyTask(TaskExecuteBase):
                 logger.opt(exception=True).warning(f"中止 OK-WW 追踪进程失败: {e}")
 
     async def _kill_game_process(self) -> None:
-        """结束游戏：任务结束/失败/异常时始终触发（由 Game.Enabled 总开关控制）"""
+        """结束游戏与官方启动器：任务结束/失败/异常时始终触发（由 Game.Enabled 总开关控制）"""
         if isinstance(self.game_manager, ProcessManager):
             if (
                 self.game_process_path is not None
@@ -957,6 +984,19 @@ class AutoProxyTask(TaskExecuteBase):
                 await System.kill_process(self.game_process_path)
             except Exception as e:
                 logger.opt(exception=True).warning(f"兜底强杀鸣潮客户端失败: {e}")
+        if self.launcher_path is not None:
+            try:
+                # 启动器是进程家族：顶层 launcher.exe 引导器 + 版本目录下的
+                # launcher_main.exe（真窗口，版本目录随自更新变化）。launcher.exe
+                # 是通用进程名，按「家族 + 安装根目录树内」限定清理，避免误伤
+                # 无关程序；每步独立捕获，失败不阻断收尾
+                pids = await asyncio.to_thread(find_launcher_pids, self.launcher_path)
+                for pid in pids:
+                    # 游戏清理在先，启动器进程树里只剩 webview 等子进程，
+                    # 连树一并带走避免残留；游戏若意外仍在树内也属应关范围
+                    await System.kill_process_by_pid(pid, kill_tree=True)
+            except Exception as e:
+                logger.opt(exception=True).warning(f"关闭鸣潮官方启动器失败: {e}")
 
     async def kill_managed_process(self, *, kill_game: bool = True) -> None:
         """中止 ok-ww；kill_game 为真时结束游戏"""
