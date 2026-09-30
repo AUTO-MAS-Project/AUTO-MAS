@@ -73,14 +73,14 @@ describe('词表', () => {
   })
 
   it('字面量里的 | { } @ 都做了转义', () => {
-    expect(t('edit.enterInstanceInfoAs')).toBe('请输入实例信息，格式：启动附加命令 | ADB地址')
+    expect(t('edit.enterInstanceInfoAs')).toBe('请输入模拟器实例信息，格式：启动附加命令 | ADB地址')
     expect(t('edit.exampleTaskDoneSuccess')).toBe('例如：任务完成|成功|失败')
     expect(t('comp.enterMessageTemplateVariables')).toContain('{title}, {content}')
   })
 
   it('占位符能正常代入', () => {
-    expect(t('scripts.toast.copied', { name: 'demo' })).toBe('已复制脚本「demo」')
-    expect(t('scheduler.tabName', { n: 2 })).toBe('调度台2')
+    expect(t('scripts.toast.copied', { name: 'demo' })).toBe('已复制托管「demo」')
+    expect(t('scheduler.tabName', { n: 2 })).toBe('运行面板2')
   })
 
   // 计数类文案在英文下要区分单复数，中文两个形式写成一样的

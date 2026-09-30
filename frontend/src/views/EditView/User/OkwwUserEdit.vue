@@ -102,8 +102,11 @@
                   :options="okwwConfigModeOptions"
                   :disabled="pageLoading"
                   :saving="isSaving"
+                  :quick-config="formData.Info.IfQuickConfig"
+                  :quick-config-disabled="pageLoading || isInitializing || isSaving"
                   :alert-message="t('edit.configSourceHintBase')"
                   @change="handleConfigModeChange"
+                  @quick-config-change="handleQuickConfigChange"
                 />
               </a-col>
               <a-col :span="12">
@@ -210,13 +213,6 @@
       <a-flex class="section-header" justify="space-between" align="center" wrap="wrap" gap="small">
         <h3>{{ t('edit.taskConfiguration') }}</h3>
         <a-space>
-          <span>{{ t('edit.enableQuickConfiguration') }}</span>
-          <a-switch
-            :checked="formData.Info.IfQuickConfig"
-            :disabled="pageLoading || isInitializing || isSaving"
-            :aria-label="t('edit.enableQuickConfiguration')"
-            @change="handleQuickConfigChange"
-          />
           <a-button size="small" @click="openRestoreModal">
             <template #icon><HistoryOutlined /></template>
             {{ t('edit.configRestoreTitle') }}
