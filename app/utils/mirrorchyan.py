@@ -17,17 +17,8 @@
 #   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
 
 
-import platform
 import re
-import sys
-from dataclasses import dataclass
-from urllib.parse import quote
 
-import httpx
-
-
-MIRRORCHYAN_API_BASE = "https://mirrorchyan.com/api/resources"
-_CDK_ERROR_CODES = {7001, 7002, 7003, 7004, 7005}
 _SEMVER_RE = re.compile(
     r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)"
     r"(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?"
@@ -36,18 +27,7 @@ _SEMVER_RE = re.compile(
 
 
 class MirrorChyanError(RuntimeError):
-    """Mirror酱查询失败或返回的版本号无法比较。"""
-
-
-@dataclass(frozen=True)
-class MirrorChyanVersionCheck:
-    """Mirror酱返回的版本检查结果。"""
-
-    resource_id: str
-    current_version: str
-    latest_version: str
-    channel: str
-    has_update: bool
+    """Mirror酱版本号无法比较。"""
 
 
 def compare_mirrorchyan_versions(remote_version: str, current_version: str) -> int:
@@ -111,109 +91,3 @@ def _compare_prerelease(left: tuple[str, ...], right: tuple[str, ...]) -> int:
             return -1 if left_numeric else 1
         return (left_item > right_item) - (left_item < right_item)
     return (len(left) > len(right)) - (len(left) < len(right))
-
-
-def _platform_parameters() -> tuple[str, str]:
-    """返回 MXU 使用的 Mirror酱 操作系统和架构名称。"""
-
-    if sys.platform == "win32":
-        os_name = "windows"
-    elif sys.platform == "darwin":
-        os_name = "darwin"
-    elif sys.platform.startswith("linux"):
-        os_name = "linux"
-    else:
-        os_name = sys.platform
-
-    machine = platform.machine().lower()
-    if machine in {"x86_64", "x64", "amd64"}:
-        arch = "amd64"
-    elif machine in {"aarch64", "arm64"}:
-        arch = "arm64"
-    else:
-        arch = machine
-    return os_name, arch
-
-
-async def check_mirrorchyan_update(
-    resource_id: str,
-    current_version: str,
-    *,
-    channel: str = "stable",
-    user_agent: str = "AutoMasGui",
-    os_name: str | None = None,
-    arch: str | None = None,
-    timeout: float = 30.0,
-) -> MirrorChyanVersionCheck:
-    """查询 Mirror酱 latest 接口并严格比较当前版本。
-
-    不附带 CDK：Mirror酱允许无授权查询版本，下载链接仍由其
-    授权策略控制。API 请求、响应结构和版本比较的失败都会抛出
-    ``MirrorChyanError``，不会被转换成「没有更新」。
-    """
-
-    resource_id = resource_id.strip()
-    current_version = current_version.strip()
-    channel = channel.strip().lower()
-    if not resource_id:
-        raise MirrorChyanError("interface.json 未声明 mirrorchyan_rid")
-    if not current_version:
-        raise MirrorChyanError("interface.json 未声明 version")
-    if channel not in {"stable", "beta"}:
-        raise MirrorChyanError(f"不支持的 Mirror酱 更新频道: {channel!r}")
-
-    default_os, default_arch = _platform_parameters()
-    params = {
-        "current_version": current_version,
-        "channel": channel,
-        "user_agent": user_agent,
-        "os": os_name or default_os,
-        "arch": arch or default_arch,
-    }
-    url = f"{MIRRORCHYAN_API_BASE}/{quote(resource_id, safe='')}/latest"
-
-    try:
-        async with httpx.AsyncClient(follow_redirects=True, timeout=timeout) as client:
-            response = await client.get(
-                url,
-                params=params,
-                headers={"User-Agent": user_agent},
-            )
-            response.raise_for_status()
-            payload = response.json()
-    except httpx.HTTPError as error:
-        raise MirrorChyanError(f"Mirror酱 请求失败: {error}") from error
-    except ValueError as error:
-        raise MirrorChyanError("Mirror酱 返回了无效 JSON") from error
-
-    if not isinstance(payload, dict):
-        raise MirrorChyanError("Mirror酱 返回了无效响应")
-
-    if "code" not in payload:
-        raise MirrorChyanError("Mirror酱 响应缺少状态码")
-    try:
-        error_code = int(payload.get("code", 0))
-    except (TypeError, ValueError) as error:
-        raise MirrorChyanError("Mirror酱 返回了无效状态码") from error
-
-    data = payload.get("data")
-    data = data if isinstance(data, dict) else {}
-    latest_version = str(data.get("version_name") or "").strip()
-    message = str(payload.get("msg") or payload.get("message") or "").strip()
-
-    # MXU 与 MaaFW 均允许已知 CDK 状态错误携带的 version_name
-    # 用于版本检查；其它业务错误不能被当作「无更新」。
-    if error_code != 0 and not (error_code in _CDK_ERROR_CODES and latest_version):
-        detail = f": {message}" if message else ""
-        raise MirrorChyanError(f"Mirror酱 返回错误 [{error_code}]{detail}")
-    if not latest_version:
-        raise MirrorChyanError("Mirror酱 响应缺少 version_name")
-
-    comparison = compare_mirrorchyan_versions(latest_version, current_version)
-    return MirrorChyanVersionCheck(
-        resource_id=resource_id,
-        current_version=current_version,
-        latest_version=latest_version,
-        channel=channel,
-        has_update=comparison > 0,
-    )
