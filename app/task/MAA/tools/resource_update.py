@@ -45,9 +45,11 @@ MaaResource/latest 的 version_name；包文件只整体覆盖不解析；不判
 本体版本的兼容性。
 
 失败语义：本模块对外的唯一入口 prepare_queue_resources() 永不抛异常；任何
-失败只写日志。重文件 I/O（进程扫描、解压、合并、逐安装复读时钟）一律运行在
-asyncio.to_thread 内、下载写盘用 aiofiles——MAS 后端是单事件循环 uvicorn，
-阻塞 I/O 会冻结整个后端；KB 级状态/清单文件是唯一例外（与仓库现状一致）。
+失败只写日志。阶段级进度经可选的 progress 回调上报（回调异常被忽略，见
+prepare_queue_resources）。重文件 I/O（进程扫描、解压、合并、逐安装复读
+时钟）一律运行在 asyncio.to_thread 内、下载写盘用 aiofiles——MAS 后端是
+单事件循环 uvicorn，阻塞 I/O 会冻结整个后端；KB 级状态/清单文件是唯一
+例外（与仓库现状一致）。
 """
 
 from __future__ import annotations
@@ -58,6 +60,7 @@ import json
 import os
 import shutil
 import time
+from collections.abc import Awaitable, Callable
 from contextlib import suppress
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -632,12 +635,26 @@ def _apply_stage(install: Path, stage_clock: datetime) -> None:
         raise RuntimeError(f"合并后时钟为 {done}，期望 {stage_clock}")
 
 
-async def _sweep() -> None:
+_Progress = Callable[[str], Awaitable[None]]
+
+
+async def _report(progress: _Progress | None, line: str) -> None:
+    """阶段级进度上报：回调异常只影响展示，绝不影响更新流程。"""
+    if progress is None:
+        return
+    try:
+        await progress(line)
+    except Exception:
+        logger.debug("MAA 资源更新: 进度回调失败（不影响更新流程）")
+
+
+async def _sweep(progress: _Progress | None = None) -> None:
     deadline = time.monotonic() + _DISTRIBUTE_DEADLINE
     pairs = await asyncio.to_thread(_snapshot_installs)
     if not pairs:
         return
     clocks = dict(pairs)
+    await _report(progress, "检查 MAA 资源更新…")
 
     state: dict[str, object] = _load_state()
     now = datetime.now(timezone.utc)
@@ -673,10 +690,14 @@ async def _sweep() -> None:
         if behind and not _stage_reusable(stage, target, min_clock) and not _backoff_active(
             state, "download_fail_until", now
         ):
+            await _report(progress, f"发现新版本 {_format_clock(target)}，下载资源包…")
             try:
-                if await _refresh_stage(min_clock, target):
+                refreshed = await _refresh_stage(min_clock, target)
+                if refreshed:
                     state["download_fail_streak"] = 0   # 成功即复位退避连击
                     _save_state(state)
+                else:
+                    await _report(progress, "更新源为 Mirror酱 且未填 CDK，跳过资源更新")
                 stage = _load_manifest()
             except _DownloadError as e:
                 try:
@@ -690,6 +711,7 @@ async def _sweep() -> None:
                 ).isoformat()
                 _save_state(state)
                 logger.warning(f"MAA 资源更新: 取包失败（退避 {delay} 秒）: {e}")
+                await _report(progress, f"资源包下载失败（{delay // 3600} 小时后重试）")
                 # 换位失败可能已把盘上 manifest 作废，按盘上现状决定本轮
                 # 是否仍分发旧暂存，不沿用内存里的旧值
                 stage = _load_manifest()
@@ -713,31 +735,61 @@ async def _sweep() -> None:
         _MANIFEST_FILE.unlink(missing_ok=True)
         return
 
+    # 先筛出本轮真正要写的实例。合并前逐安装复查占用：快照之后可能过了
+    # 最长 10 分钟的下载期，前面的合并也要跑分钟级，中途拉起的 MAA /
+    # 新锁定的脚本不该被写入
+    candidates: list[Path] = []
     for install, clock in clocks.items():
         if time.monotonic() > deadline:
             logger.warning("MAA 资源更新: 达到单轮时限，剩余实例交由下一轮自愈")
             break
         if clock >= stage_clock:
             continue
-        # 合并前逐安装复查占用：快照之后可能过了最长 10 分钟的下载期，
-        # 前面的合并也要跑分钟级，中途拉起的 MAA / 新锁定的脚本不该被写入
         if await asyncio.to_thread(_install_busy_now, install):
             logger.info(f"MAA 资源更新: 分发前复查到占用，跳过 {install}")
             continue
         if not _stage_applies(stage, clock):
             continue
+        candidates.append(install)
+
+    if not candidates:
+        return
+    await _report(progress, f"分发资源更新到 {len(candidates)} 个实例…")
+    done = failed = 0
+    for install in candidates:
+        if time.monotonic() > deadline:
+            logger.warning("MAA 资源更新: 达到单轮时限，剩余实例交由下一轮自愈")
+            break
         try:
             await asyncio.to_thread(_apply_stage, install, stage_clock)
+            done += 1
             logger.info(f"MAA 资源更新: {install} 已更新至 {_format_clock(stage_clock)}")
+            await _report(progress, f"资源分发进度 {done}/{len(candidates)}…")
         except Exception as e:
+            failed += 1
             logger.warning(f"MAA 资源更新: {install} 更新失败（不影响其他实例与任务）: {e}")
+    if failed:
+        await _report(
+            progress,
+            f"资源更新完成 {done}/{len(candidates)}，失败实例下轮自愈"
+            if done
+            else "资源更新失败，将在下轮任务前重试",
+        )
+    elif done:
+        await _report(progress, f"资源已更新至 {_format_clock(stage_clock)}")
 
 
-async def prepare_queue_resources() -> None:
+async def prepare_queue_resources(progress: _Progress | None = None) -> None:
     """MAA 任务运行前按需更新全部 MAA 实例资源。
 
     必须在 MaaManager.prepare 锁定脚本配置之前调用：lock() 之后本安装会被
     占用过滤跳过，更新不到它自己。
+
+    Args:
+        progress: 可选的阶段级进度回调，入参为单行文本（如「检查 MAA 资源
+            更新…」「分发资源更新到 3 个实例…」），可直接写进调度台日志；
+            回调异常只影响展示，不影响更新流程。忙（锁被其他实例持有）与
+            零可更新实例时不回调。
 
     契约：永不抛异常；任何失败只写日志并进入退避；调用方无需 try/except。
     """
@@ -745,6 +797,6 @@ async def prepare_queue_resources() -> None:
         with _MachineLock() as lock:
             if lock is None:
                 return
-            await _sweep()
+            await _sweep(progress)
     except Exception:
         logger.exception("MAA 资源自动更新异常（已忽略，不影响本轮任务）")

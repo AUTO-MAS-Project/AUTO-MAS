@@ -165,8 +165,13 @@ class MaaManager(TaskExecuteBase):
 
         # MAA 资源按需更新：必须放在锁定配置之前——lock() 之后本安装会被
         # 资源更新的占用过滤跳过，就更新不到它自己了。内部对全部 MAA 实例
-        # 扫描，自带机器锁/退避/兜底，任何失败只写日志，不影响本轮任务。
-        await prepare_queue_resources()
+        # 扫描，自带机器锁/退避/兜底，任何失败只写日志，不影响本轮任务；
+        # 阶段进度写进本脚本项的日志字段，调度台运行期即可见（与 AutoProxy
+        # 的状态行同一通路）。
+        async def _report_progress(line: str) -> None:
+            self.script_info.log = line
+
+        await prepare_queue_resources(progress=_report_progress)
 
         # 锁定脚本配置并加载用户配置
         script_config = Config.ScriptConfig[uuid.UUID(self.script_info.script_id)]
