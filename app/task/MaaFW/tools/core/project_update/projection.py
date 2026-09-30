@@ -1898,8 +1898,9 @@ def _bundled_native_runtime_dir(
 ) -> Path | None:
     """项目自带 MaaFramework 原生库所在目录（相对 ``source_root``）；没有就 None。
 
-    查找逻辑与 runner 同一套（``project_maafw_runtime_path``：先 ``maafw/``，再
-    ``runtimes/<rid>/native``，再有界搜索），叠加视图里先看包、再看项目。MFAAvalonia
+    查找逻辑与 runner 同一套（``project_maafw_runtime_path``：``maafw/`` 与
+    ``runtimes/<rid>/native`` 里本机能加载的取版本最高的，都没有再有界搜索），叠加视图里
+    先看包、再看项目。MFAAvalonia
     布局下找到的是 ``runtimes/win-x64/native``，那里除了 MaaFramework 还有外壳自己的
     原生库；整目录带走，几十 MB，换来的是 runner 用的就是发行包里那份库。来源同时带
     好几种架构（``win-arm64`` + ``win-x64``）时选本机那一种，其余照旧当外壳运行时剔掉；

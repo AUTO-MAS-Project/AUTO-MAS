@@ -96,6 +96,16 @@ except ImportError:
     )
 
 ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-9;]*[a-zA-Z]")
+# AgentServer 拒绝握手时打的原生日志（AgentServer.cpp handle_start_up_request），例：
+# Protocol version mismatch client: [req.version=v5.9.2] [req.protocol=7]
+#   server: ["v5.14.0"=v5.14.0] [kProtocolVersion=8]
+AGENT_PROTOCOL_MISMATCH_MARK = "Protocol version mismatch"
+_MISMATCH_CLIENT_VERSION_RE = re.compile(r"req\.version=(v?[0-9][0-9A-Za-z.\-]*)")
+_MISMATCH_CLIENT_PROTOCOL_RE = re.compile(r"req\.protocol=(\d+)")
+_MISMATCH_SERVER_VERSION_RE = re.compile(
+    r"server:\s*\[[^\]]*=(v?[0-9][0-9A-Za-z.\-]*)\]"
+)
+_MISMATCH_SERVER_PROTOCOL_RE = re.compile(r"kProtocolVersion=(\d+)")
 ENCODINGS = ("utf-8", "gbk", "shift_jis", "utf-16")
 # pipeline 节点 focus 文案的前缀：这是项目作者写给用户看的进度/解释，不是框架事件。
 FOCUS_LOG_PREFIX = "[提示] "
@@ -315,6 +325,26 @@ def _positive_int_pair(value: Any) -> tuple[int, int] | None:
 
 #: CreateProcess 被应用控制策略（智能应用控制 / WDAC）拒绝时的 Windows 错误码。
 _WINDOWS_ERROR_APPLICATION_CONTROL_BLOCKED = 4551
+
+
+def describe_agent_protocol_mismatch(message: str) -> str:
+    """把 AgentServer 的协议不一致日志说成人话；解析不全时原样给出日志正文。"""
+
+    def pick(pattern: re.Pattern[str]) -> str | None:
+        match = pattern.search(message)
+        return match.group(1) if match else None
+
+    client_version = pick(_MISMATCH_CLIENT_VERSION_RE)
+    client_protocol = pick(_MISMATCH_CLIENT_PROTOCOL_RE)
+    server_version = pick(_MISMATCH_SERVER_VERSION_RE)
+    server_protocol = pick(_MISMATCH_SERVER_PROTOCOL_RE)
+    if None in (client_version, client_protocol, server_version, server_protocol):
+        index = message.find(AGENT_PROTOCOL_MISMATCH_MARK)
+        return f"MaaFramework {message[index:].strip()}"
+    return (
+        f"MaaFramework 协议版本不一致（MAS 端 {client_version}/协议 {client_protocol}，"
+        f"Agent 端 {server_version}/协议 {server_protocol}）"
+    )
 
 
 def _agent_spawn_error_hint(exc: OSError) -> str | None:
@@ -698,6 +728,8 @@ class MaaFWRunner:
         self.agent_clients: list[AgentClient] = []
         self.agent_processes: list[subprocess.Popen] = []
         self.agent_output_threads: list[threading.Thread] = []
+        # agent 进程 pid -> 输出里读到的握手拒绝原因（读输出的线程写，连接循环读）
+        self._agent_handshake_errors: dict[int, str] = {}
         self.event_sinks: list[Any] = []
         self.embedded_agent_sys_paths: list[str] = []
         self.send_log: Callable[[str], None] = send_log or (lambda _: None)
@@ -1756,6 +1788,10 @@ class MaaFWRunner:
                 # 不能一直等到宿主「限时 + 宽限」强杀 worker。
                 self.send_log(f"{RUN_TIMEOUT_MESSAGE}，不再等待 Agent 连接: {label}")
                 raise MaaFWRunTimeoutError(RUN_TIMEOUT_MESSAGE)
+            handshake_error = self._agent_handshake_errors.get(process.pid)
+            if handshake_error:
+                # 协议版本对不上是确定性的，重试到预算用完只是白等（原先要等满 600 秒）。
+                raise RuntimeError(f"Agent 拒绝连接：{handshake_error}: {label}")
 
             try:
                 if agent_client.connect():
@@ -1846,14 +1882,16 @@ class MaaFWRunner:
 
         thread = threading.Thread(
             target=self._read_agent_output,
-            args=(process.stdout, label),
+            args=(process.stdout, label, process.pid),
             name=f"maafw-agent-log-{process.pid}",
             daemon=True,
         )
         thread.start()
         self.agent_output_threads.append(thread)
 
-    def _read_agent_output(self, stream: BinaryIO | TextIO, label: str) -> None:
+    def _read_agent_output(
+        self, stream: BinaryIO | TextIO, label: str, pid: int | None = None
+    ) -> None:
         try:
             while True:
                 line = stream.readline()
@@ -1862,6 +1900,14 @@ class MaaFWRunner:
                 message = self._decode_agent_output_line(line).rstrip()
                 if message:
                     self.send_log(f"[Agent:{label}] {message}")
+                    if (
+                        pid is not None
+                        and pid not in self._agent_handshake_errors
+                        and AGENT_PROTOCOL_MISMATCH_MARK in message
+                    ):
+                        self._agent_handshake_errors[pid] = (
+                            describe_agent_protocol_mismatch(message)
+                        )
         except ValueError:
             return
         except Exception as exc:
