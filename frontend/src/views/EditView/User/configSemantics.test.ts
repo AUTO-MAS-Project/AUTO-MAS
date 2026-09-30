@@ -61,12 +61,16 @@ describe('base ⊕ overlay 生效语义', () => {
     for (const note of notes) expect(note.length).toBeGreaterThan(30)
   })
 
-  it('未接入 overlay 的专项按未覆写说明，仍然交代不会改动原配置', () => {
-    const shared = composeConfigSemantics('脚本', undefined, t)
-    expect(shared).toEqual(composeConfigSemantics('脚本', false, t))
-    const native = composeConfigSemantics('直控', undefined, t)
-    expect(native.formula).toBe('直接使用外部脚本的原生配置')
-    expect(native.note).toContain('不会改动')
+  it('未接入 overlay 的专项不渲染语义：没有覆写层就没有子态可讲', () => {
+    // General / HSR / BAAH / ZzzOd 没有覆写层，且本身就是 MAS 在写配置，
+    // off 文案里的「不覆写常规配置时 MAS 仅启动脚本」对它们不成立。
+    for (const base of ['脚本', '用户', '直控'] as const) {
+      expect(composeConfigSemantics(base, undefined, t)).toEqual({
+        formula: '',
+        note: '',
+        gui: '',
+      })
+    }
   })
 
   it('默认两态卡片的布尔取值映射到独立 / 原生', () => {

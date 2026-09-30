@@ -90,6 +90,7 @@ withDefaults(
   { quickConfig: undefined, quickConfigDisabled: undefined }
 )
 
+// 配置来源三态卡片（value 为后端 Info.Mode 取值，驱动逻辑需保持原样；文案走词表，与其它专项同一套 key）
 const maaEndConfigModeOptions: Array<{
   value: '脚本' | '用户' | '直控'
   title: string
@@ -98,20 +99,20 @@ const maaEndConfigModeOptions: Array<{
 }> = [
   {
     value: '脚本',
-    title: '共享配置',
-    description: '使用共享配置，所有账号共用。',
+    title: t('edit.script'),
+    description: t('edit.useSharedScriptLevel'),
     icon: 'file',
   },
   {
     value: '用户',
-    title: '独立配置',
-    description: '使用当前账号独立配置，与共享配置隔离。',
+    title: t('edit.user'),
+    description: t('edit.useThisUserS'),
     icon: 'database',
   },
   {
     value: '直控',
-    title: '原生',
-    description: '直接使用 MaaEnd 原生配置，由 MaaEnd GUI 维护。',
+    title: t('edit.directControl'),
+    description: t('edit.nativeConfigSourceDescription'),
     icon: 'setting',
   },
 ]

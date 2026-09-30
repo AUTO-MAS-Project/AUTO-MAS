@@ -633,7 +633,7 @@ export default {
     pickSimulatedUniverseWorld2: '挑戦する模擬宇宙の世界を選びます',
     relic: '遺物',
     relicStage: '遺物ステージ',
-    configurationSource: '設定ファイルのパス',
+    configurationSource: '設定ファイルの取得元',
     resetState: '状態をリセット',
     ornament: 'オーナメント',
     ornamentStage: 'オーナメントステージ',

@@ -66,7 +66,7 @@ export type ConfigSemantics = {
 
 /**
  * @param modelValue 当前 base 取值（Info.Mode 的 wire 值或默认两态的布尔）
- * @param quickConfig Info.IfQuickConfig；undefined 表示该专项未接入 overlay，按未覆写说明
+ * @param quickConfig Info.IfQuickConfig；undefined 表示该专项未接入 overlay，没有 3×2 子态，不渲染语义
  */
 export const composeConfigSemantics = (
   modelValue: boolean | string,
@@ -74,7 +74,9 @@ export const composeConfigSemantics = (
   t: Translate
 ): ConfigSemantics => {
   const kind = BASE_KINDS[String(modelValue)]
-  if (!kind) return { formula: '', note: '', gui: '' }
+  // 未接入 overlay 的专项（General / HSR / BAAH / ZzzOd）没有覆写层：off 文案里的「不覆写常规配置时
+  // MAS 仅启动脚本」对它们不成立——这些页面本身就是 MAS 在写配置，于是整块语义面板不渲染。
+  if (!kind || quickConfig === undefined) return { formula: '', note: '', gui: '' }
 
   const [titleKey, descKey] = SEMANTICS_KEYS[kind][quickConfig === true ? 'on' : 'off']
   return { formula: t(titleKey), note: t(descKey), gui: t(SEMANTICS_GUI_KEYS[kind]) }

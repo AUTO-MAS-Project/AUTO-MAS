@@ -668,7 +668,7 @@ export default {
     pickSimulatedUniverseWorld2: '选择要挑战的模拟宇宙世界',
     relic: '遗器',
     relicStage: '遗器关卡',
-    configurationSource: '配置文件路径',
+    configurationSource: '配置文件来源',
     resetState: '重置状态',
     ornament: '饰品',
     ornamentStage: '饰品关卡',

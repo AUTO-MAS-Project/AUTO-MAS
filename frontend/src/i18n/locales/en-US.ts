@@ -686,7 +686,7 @@ export default {
     pickSimulatedUniverseWorld2: 'Pick the Simulated Universe world to run',
     relic: 'Relic',
     relicStage: 'Relic stage',
-    configurationSource: 'Configuration file path',
+    configurationSource: 'Configuration source',
     resetState: 'Reset the state',
     ornament: 'Ornament',
     ornamentStage: 'Ornament stage',

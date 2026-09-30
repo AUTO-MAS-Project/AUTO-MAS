@@ -75,6 +75,8 @@ describe('quick configuration panel visibility', () => {
     expect(source).toContain('config-mode-option')
     expect(source).toContain('composeConfigSemantics(props.modelValue, props.quickConfig, t)')
     expect(source).toContain('class="config-effective"')
+    // 未接入 overlay 的专项拿到的语义为空，面板随之整块隐藏（「仅启动脚本」只对覆写层成立）
+    expect(source).toContain('v-if="semantics.formula"')
 
     const semantics = readFileSync(new URL('./configSemantics.ts', import.meta.url), 'utf8')
     // 六个子态各有一套标题 / 说明 key（off / on × 三种 base），不再是短语拼接的公式。

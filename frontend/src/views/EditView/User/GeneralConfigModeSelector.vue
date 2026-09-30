@@ -107,7 +107,7 @@
 
     <!--
       生效语义：跟着 base × overlay 子态动态变化（3×2 六种组合，文案对齐开发者文档
-      developer/config-semantics.html）。未接入 overlay 的专项只展示 base 那一行。
+      developer/config-semantics.html）。未接入 overlay 的专项没有子态可讲，整块不渲染。
     -->
     <div v-if="semantics.formula" class="config-effective" role="status" aria-live="polite">
       <span class="config-effective-title">{{ t('edit.configSemanticsTitle') }}</span>
@@ -221,7 +221,7 @@ const overlayDisabled = computed(
     props.quickConfigReadonly === true
 )
 
-/** 当前 base × overlay 子态的生效语义（公式 + 补充说明），未接入 overlay 的专项只有 base 一行 */
+/** 当前 base × overlay 子态的生效语义（公式 + 说明 + 界面入口），未接入 overlay 的专项为空 */
 const semantics = computed(() => composeConfigSemantics(props.modelValue, props.quickConfig, t))
 
 const emit = defineEmits<{
