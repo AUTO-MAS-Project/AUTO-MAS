@@ -1339,23 +1339,24 @@ export default {
     overlayConfigEnabled: '覆写常规配置',
     overlayConfigEnabledDesc: '按本账号的界面字段覆写基础配置，任务结束后自动恢复。',
     overlayConfigDisabled: '不覆写常规配置',
-    overlayConfigDisabledDesc: '任务直接使用基础配置，界面上的覆写字段不参与运行。',
+    overlayConfigDisabledDesc:
+      '任务直接使用基础配置：不覆写常规配置时，MAS 仅启动脚本，界面上的覆写字段不参与运行。',
     configSemanticsTitle: '本次任务生效的配置',
     configSemanticsSharedOffTitle: '直接使用共享基础配置',
     configSemanticsSharedOffDesc:
-      '任务按托管里这份共享基础配置运行，不覆写常规配置，也不会改动这份共享基础配置本身。',
+      '任务按托管里这份共享基础配置运行；不覆写常规配置时 MAS 仅启动脚本，不会改动这份共享基础配置本身。',
     configSemanticsSharedOnTitle: '共享基础配置 + 本账号的覆写',
     configSemanticsSharedOnDesc:
       '任务运行期间，用本页填写的字段临时覆写共享基础配置，覆写只对本账号生效；任务结束（含失败、取消、异常）后自动恢复原来的共享基础配置，不会污染托管里各账号共用的这份配置。',
     configSemanticsIndependentOffTitle: '直接使用独立基础配置',
     configSemanticsIndependentOffDesc:
-      '任务按本账号自己那份独立基础配置运行，不覆写常规配置，也不会改动这份独立基础配置本身；其他账号各用各自的独立配置，互不影响。',
+      '任务按本账号自己那份独立基础配置运行；不覆写常规配置时 MAS 仅启动脚本，不会改动这份独立基础配置本身；其他账号各用各自的独立配置，互不影响。',
     configSemanticsIndependentOnTitle: '独立基础配置 + 本账号的覆写',
     configSemanticsIndependentOnDesc:
       '任务运行期间，用本页填写的字段临时覆写本账号的独立基础配置；任务结束（含失败、取消、异常）后自动恢复，不会污染这个账号原来的独立配置，也不会影响其他账号。',
     configSemanticsNativeOffTitle: '直接使用外部脚本的原生配置',
     configSemanticsNativeOffDesc:
-      '任务完全按外部脚本（如 MaaEnd、SRC）自带的那份原生配置启动，MAS 不接管这份配置，不覆写常规配置，也不会改动这份原生配置本身。',
+      '任务完全按外部脚本（如 MaaEnd、SRC）自带的那份原生配置启动；不覆写常规配置时 MAS 仅启动脚本、不接管这份配置，也不会改动它。',
     configSemanticsNativeOnTitle: '用本页字段覆写脚本自带的配置',
     configSemanticsNativeOnDesc:
       '任务运行期间，用本页填写的字段覆写脚本自带的那份配置；任务结束（含失败、取消、异常）后立即恢复任务前的配置，不会污染你原来的配置。',

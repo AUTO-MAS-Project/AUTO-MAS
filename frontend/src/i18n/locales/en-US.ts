@@ -1406,23 +1406,23 @@ export default {
       "Overrides the base configuration with this account's page settings, then restores it once the task ends.",
     overlayConfigDisabled: 'Do not override the regular configuration',
     overlayConfigDisabledDesc:
-      'The task uses the base configuration as is and override fields on this page are not applied.',
+      'The task uses the base configuration as is: without overriding the regular configuration, MAS only starts the script and the override fields on this page are not applied.',
     configSemanticsTitle: 'Configuration in effect for this task',
     configSemanticsSharedOffTitle: 'Runs on the shared base configuration as is',
     configSemanticsSharedOffDesc:
-      'The task runs on the shared base configuration of this managed script. The regular configuration is not overridden, and the shared base configuration itself is not modified.',
+      'The task runs on the shared base configuration of this managed script. Without overriding the regular configuration, MAS only starts the script and does not modify the shared base configuration itself.',
     configSemanticsSharedOnTitle: "Shared base configuration + this account's override",
     configSemanticsSharedOnDesc:
       'While the task runs, the fields on this page temporarily override the shared base configuration, and the override applies to this account only. When the task ends, including on failure, cancellation, or error, the previous shared base configuration is restored, so the copy shared by every account under this managed script is never polluted.',
     configSemanticsIndependentOffTitle: 'Runs on the independent base configuration as is',
     configSemanticsIndependentOffDesc:
-      "The task runs on this account's own independent base configuration. The regular configuration is not overridden, and the independent base configuration itself is not modified. Other accounts keep using their own configurations.",
+      "The task runs on this account's own independent base configuration. Without overriding the regular configuration, MAS only starts the script and does not modify the independent base configuration itself. Other accounts keep using their own configurations.",
     configSemanticsIndependentOnTitle: "Independent base configuration + this account's override",
     configSemanticsIndependentOnDesc:
       "While the task runs, the fields on this page temporarily override this account's independent base configuration. When the task ends, including on failure, cancellation, or error, it is restored, so this account's independent configuration is never polluted and other accounts are unaffected.",
     configSemanticsNativeOffTitle: "Runs on the external script's native configuration as is",
     configSemanticsNativeOffDesc:
-      'The task starts entirely on the native configuration that the external script itself maintains, such as MaaEnd or SRC, and MAS does not take it over. The regular configuration is not overridden, and that native configuration itself is not modified.',
+      'The task starts entirely on the configuration that the external script itself maintains, such as MaaEnd or SRC. Without overriding the regular configuration, MAS only starts the script and neither takes over nor modifies that configuration.',
     configSemanticsNativeOnTitle:
       "Overrides the script's own configuration with the fields on this page",
     configSemanticsNativeOnDesc:
