@@ -101,7 +101,8 @@ _BACKOFF_BASE = 60 * 60          # 秒，下载失败退避基数
 _BACKOFF_CAP = 24 * 60 * 60      # 秒，退避封顶
 _ORPHAN_TTL = 60 * 60            # 秒，解压孤儿目录的安全清理门槛
 _FREE_SPACE_REQUIRED = 300 * 1024 * 1024
-_CHUNK = 1024 * 1024
+_MB = 1024 * 1024
+_CHUNK = _MB
 
 # data/ 是每个 MAS 实例私有的（双实例各自一份暂存，双下载已接受）；
 # 锁文件放 %LOCALAPPDATA%，同一 Windows 用户的多个 MAS 进程互斥（跨用户
@@ -408,7 +409,19 @@ async def _mirror_download_url(base_clock: datetime, cdk: str) -> str:
     return str(url)
 
 
-async def _stream_download(url: str, dest: Path) -> None:
+def _download_line(label: str, downloaded: int, total: int, speed: float) -> str:
+    """下载进度行：有 Content-Length 时带 x/y MB，速度按量级选单位。"""
+    speed_text = (
+        f"{speed / _MB:.1f} MB/s" if speed >= _MB else f"{speed / 1024:.0f} KB/s"
+    )
+    if total:
+        return f"{label} {downloaded / _MB:.1f}/{total / _MB:.1f} MB（{speed_text}）…"
+    return f"{label} {downloaded / _MB:.1f} MB（{speed_text}）…"
+
+
+async def _stream_download(
+    url: str, dest: Path, progress: _Progress | None, label: str
+) -> None:
     async def _run() -> None:
         client = httpx.AsyncClient(
             timeout=_DOWNLOAD_TIMEOUT, proxy=Config.proxy, follow_redirects=True
@@ -416,9 +429,27 @@ async def _stream_download(url: str, dest: Path) -> None:
         async with client:
             async with client.stream("GET", url) as resp:
                 resp.raise_for_status()
+                total = int(resp.headers.get("content-length") or 0)
+                # 连接建立即上报一次（0 进度），让进度行立刻出现；其后每秒
+                # 至多一次，速度按滑动 1 秒窗口计算（同 update.py 先例）
+                await _report(progress, _download_line(label, 0, total, 0.0))
+                downloaded = 0
+                window_bytes = 0
+                window_start = time.monotonic()
                 async with aiofiles.open(dest, "wb") as fh:
                     async for chunk in resp.aiter_bytes(_CHUNK):
                         await fh.write(chunk)
+                        downloaded += len(chunk)
+                        window_bytes += len(chunk)
+                        now = time.monotonic()
+                        if now - window_start >= 1.0:
+                            speed = window_bytes / (now - window_start)
+                            await _report(
+                                progress,
+                                _download_line(label, downloaded, total, speed),
+                            )
+                            window_bytes = 0
+                            window_start = now
 
     try:
         await asyncio.wait_for(_run(), timeout=_DOWNLOAD_TIMEOUT)
@@ -517,7 +548,9 @@ def _build_stage(
         raise _DownloadError(f"暂存重建失败: {e}") from e
 
 
-async def _refresh_stage(base_clock: datetime | None, target: datetime) -> bool:
+async def _refresh_stage(
+    base_clock: datetime | None, target: datetime, progress: _Progress | None = None
+) -> bool:
     """取包并重建暂存。返回 False = 按设置本轮不可取包（无退避）；失败抛
     _DownloadError。"""
     try:
@@ -531,9 +564,12 @@ async def _refresh_stage(base_clock: datetime | None, target: datetime) -> bool:
     kind, cdk = resolved
     if kind == "github":
         url = _GITHUB_RESOURCE_ZIP
+        label = "下载 GitHub 全量资源包"
     else:
         url = await _mirror_download_url(base_clock, cdk)
-    await _stream_download(url, _STAGE_ZIP)
+        label = "下载 Mirror酱 增量资源包"
+    await _stream_download(url, _STAGE_ZIP, progress, label)
+    await _report(progress, "校验并暂存资源包…")
     await asyncio.to_thread(_build_stage, _STAGE_ZIP, target, base_clock, kind == "github")
     # zip 是可弃缓存，删不掉（AV 隔离等）也无妨——下次下载按 "wb" 截断重写
     with suppress(OSError):
@@ -692,7 +728,7 @@ async def _sweep(progress: _Progress | None = None) -> None:
         ):
             await _report(progress, f"发现新版本 {_format_clock(target)}，下载资源包…")
             try:
-                refreshed = await _refresh_stage(min_clock, target)
+                refreshed = await _refresh_stage(min_clock, target, progress)
                 if refreshed:
                     state["download_fail_streak"] = 0   # 成功即复位退避连击
                     _save_state(state)
