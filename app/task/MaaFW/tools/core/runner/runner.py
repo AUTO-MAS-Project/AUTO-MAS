@@ -2189,7 +2189,8 @@ class MaaFWRunner:
 
         清理 VIRTUAL_ENV、PYTHONHOME、旧 PYTHONPATH 等会导致串环境的变量，
         再显式设置当前项目所需的 PYTHONPATH；PATH 前置 agent Python 目录、
-        Scripts 目录、项目根目录与项目必要 dll 目录。
+        Scripts 目录、runner 实际使用的项目原生库目录，再是项目根目录与其余必要 dll 目录。
+        项目自带解释器没有 maa/bin 时，``MAAFW_BINARY_PATH`` 指向 runner 那份库。
         """
         # 先按共用名单剔除 worker 自己与宿主的 Python 变量，再叠加项目 interface 声明的
         # 环境：项目给自己 agent 设的值要保留。worker 自己需要 PYTHONSAFEPATH（见
