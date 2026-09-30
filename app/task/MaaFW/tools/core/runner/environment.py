@@ -927,17 +927,66 @@ def project_maafw_runtime_path(project_path: Path | None) -> Path | None:
     # 与本机架构不符的（PE 头读得出且对不上）跳过继续找；一个对得上的都没有时退回
     # 第一份不符的，让调用方走架构不符的报错（describe_runtime_architecture_mismatch）。
     mismatched: Path | None = None
+    loadable: list[Path] = []
     for candidate in _iter_project_maafw_candidates(project_path):
         if not (candidate / PROJECT_MAAFW_DLL_NAME).is_file():
             continue
         if _runtime_loadable_on_host(candidate):
-            return candidate
-        if mismatched is None:
+            loadable.append(candidate)
+        elif mismatched is None:
             mismatched = candidate
+    if loadable:
+        return _newest_runtime(loadable)
     found = _search_project_maafw_dll(project_path)
     if found is not None and (mismatched is None or _runtime_loadable_on_host(found)):
         return found
     return mismatched
+
+
+def _newest_runtime(candidates: list[Path]) -> Path:
+    """同时有好几份原生库时取版本最高的。读不出版本的那份不参与比较；版本相同、或一份
+    都读不出时按候选顺序取第一份。问题包检查（``maafwProjectRuntimeProbe.ts`` 的
+    ``findNativeDir``）按同一口径选，改时两边一起改。
+
+    多份并存几乎都是残留：本地导入的目录被外壳原地升级过（老布局的 ``maafw/`` 留着），
+    全量包更新又把导入来的文件原样带进新载荷。M9A v4.11.0 实测 ``maafw/`` 是 5.9.2、
+    ``runtimes/win-x64/native`` 是 5.14.0；它的 agent（``agent/maafw_paths.py``）先找
+    ``runtimes/``，按固定顺序先取 ``maafw/`` 的 runner 就与 agent 协议不一致（7 对 8），
+    每次都等满连接超时。残留天然比发行包带的旧，取最高版本不依赖任何布局约定。
+    """
+
+    if len(candidates) == 1:
+        return candidates[0]
+    best = candidates[0]
+    best_version: Version | None = None
+    for candidate in candidates:
+        text = _read_runtime_maafw_version(candidate)
+        if text is None:
+            continue
+        version = Version(text)
+        if best_version is None or version > best_version:
+            best, best_version = candidate, version
+    return best
+
+
+def _read_runtime_maafw_version(runtime_path: Path) -> str | None:
+    """原生库里内嵌的版本串，规范化成 PEP 440；不是恰好一个或解析不了时 None。"""
+
+    try:
+        data = (runtime_path / PROJECT_MAAFW_DLL_NAME).read_bytes()
+    except OSError:
+        return None
+
+    found = {
+        match.group(1).decode("ascii", errors="ignore")
+        for match in _MAAFW_DLL_VERSION_RE.finditer(data)
+    }
+    if len(found) != 1:
+        return None
+    try:
+        return str(Version(found.pop()))
+    except InvalidVersion:
+        return None
 
 
 def _runtime_loadable_on_host(runtime_path: Path) -> bool:
@@ -1126,21 +1175,7 @@ def probe_bundled_maafw_version(project_path: Path) -> str | None:
     runtime_path = project_maafw_runtime_path(project_path)
     if runtime_path is None:
         return None
-    try:
-        data = (runtime_path / PROJECT_MAAFW_DLL_NAME).read_bytes()
-    except OSError:
-        return None
-
-    found = {
-        match.group(1).decode("ascii", errors="ignore")
-        for match in _MAAFW_DLL_VERSION_RE.finditer(data)
-    }
-    if len(found) != 1:
-        return None
-    try:
-        return str(Version(found.pop()))
-    except InvalidVersion:
-        return None
+    return _read_runtime_maafw_version(runtime_path)
 
 
 def _bundled_project_maafw_requirement(project_path: Path) -> str | None:
