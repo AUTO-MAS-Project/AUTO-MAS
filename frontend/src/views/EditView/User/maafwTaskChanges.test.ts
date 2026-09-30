@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { i18n } from '@/i18n'
 import type { MaaFWOptionInfo } from '@/types/script'
 import {
   describeMaaFWMissingTaskSettings,
@@ -92,6 +93,19 @@ describe('describeMaaFWMissingTaskSettings', () => {
       options
     )
     expect(rows.map(row => row.key)).toEqual(['Difficulty', 'Nick', 'Gone'])
+  })
+
+  it('分隔符跟界面语言走', () => {
+    i18n.global.locale.value = 'en-US'
+    try {
+      const rows = describeMaaFWMissingTaskSettings(
+        { Stages: ['A', 'B'], Login: { User: 'me', Pass: 'x' } },
+        options
+      )
+      expect(rows.map(row => row.value)).toEqual(['甲, 乙', '账号: me; 密码: ******'])
+    } finally {
+      i18n.global.locale.value = 'zh-CN'
+    }
   })
 
   it('没有设置时为空', () => {

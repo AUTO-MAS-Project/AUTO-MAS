@@ -1579,6 +1579,8 @@ export default {
     missingTaskTag: 'No longer in interface',
     missingTaskHint: 'This task is no longer in the project and will be skipped',
     missingTaskSettings: 'Previous settings',
+    missingTaskValueSeparator: ', ',
+    missingTaskFieldSeparator: '; ',
     adbStrategyPerDevice: 'Decided at run time',
     adbStrategyEmulatorExtras: 'EmulatorExtras',
     adbStrategyDefault: 'Default',

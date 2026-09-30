@@ -1509,6 +1509,8 @@ export default {
     missingTaskTag: 'interface内已无该任务',
     missingTaskHint: '项目里已没有这个任务，运行时跳过',
     missingTaskSettings: '原来的设置',
+    missingTaskValueSeparator: '、',
+    missingTaskFieldSeparator: '，',
     adbStrategyPerDevice: '运行时判定',
     adbStrategyEmulatorExtras: 'EmulatorExtras',
     adbStrategyDefault: '默认',

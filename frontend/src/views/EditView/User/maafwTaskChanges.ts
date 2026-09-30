@@ -3,6 +3,7 @@
 // - interface 里多出了用户没见过的任务：在「添加任务」里标 NEW，加进队列后消掉。
 // 「见过哪些任务」只是提示用的本机状态，按脚本存在 localStorage，不进配置。
 
+import { translate as t } from '@/i18n'
 import { MAAFW_DUPLICATE_TASK_SEPARATOR } from '@/utils/maafwTaskInstance'
 import type { MaaFWOptionInfo, MaaFWTaskOptionValue } from '@/types/script'
 
@@ -28,7 +29,7 @@ const describeValue = (
     const matched = option?.cases.find(item => item.name === caseName)
     return matched ? displayName(matched) : caseName
   }
-  if (Array.isArray(value)) return value.map(caseLabel).join('、')
+  if (Array.isArray(value)) return value.map(caseLabel).join(t('edit.missingTaskValueSeparator'))
   if (value && typeof value === 'object') {
     return Object.entries(value)
       .map(([field, fieldValue]) => {
@@ -41,7 +42,7 @@ const describeValue = (
           ? text
           : `${input ? displayName(input) : field}: ${text}`
       })
-      .join('，')
+      .join(t('edit.missingTaskFieldSeparator'))
   }
   const text = String(value ?? '')
   if (text.startsWith(SECRET_VALUE_PREFIX)) return MASKED_VALUE

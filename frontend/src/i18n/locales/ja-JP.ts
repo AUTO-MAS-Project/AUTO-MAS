@@ -1461,6 +1461,8 @@ export default {
     missingTaskTag: 'interface にありません',
     missingTaskHint: 'このタスクはプロジェクトにないため、実行時はスキップされます',
     missingTaskSettings: '以前の設定',
+    missingTaskValueSeparator: '、',
+    missingTaskFieldSeparator: '、',
     adbStrategyPerDevice: '実行時に判定',
     adbStrategyEmulatorExtras: 'EmulatorExtras',
     adbStrategyDefault: '既定',
