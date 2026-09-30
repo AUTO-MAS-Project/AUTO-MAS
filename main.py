@@ -390,20 +390,54 @@ def main():
                         fastapi_mcp.FastApiMCP,
                         app,
                         name="AUTO-MAS MCP",
-                        description="MCP server for AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software",
-                        describe_full_response_schema=True,
-                        describe_all_responses=True,
-                        # 仅暴露监测、调度与结果查询能力；新增 HTTP 接口不会自动成为工具。
+                        description=(
+                            "配置已安装的 AUTO-MAS 脚本：创建脚本并设置安装路径，"
+                            "创建并配置用户，创建计划，建立队列、队列项和定时项，最后按需试运行。"
+                            "创建接口返回新 ID 和默认配置；修改时只提交需要变更的字段，"
+                            "并使用查询接口返回的真实 ID 与可选值。"
+                            "MFW/M9A 的安装目录通过 embedded/reimport 导入后再添加用户。"
+                            "任务创建成功仅表示已受理，不代表脚本运行成功。"
+                        ),
+                        describe_full_response_schema=False,
+                        describe_all_responses=False,
+                        # 仅暴露通用配置与试运行能力；新增 HTTP 接口不会自动成为工具。
                         # fastapi-mcp 的操作与标签过滤取并集，白名单不能再搭配标签过滤。
                         include_operations=[
-                            "get_task_runtime_snapshot_api_dispatch_runtime_snapshot_get",
-                            "get_power_countdown_snapshot_api_dispatch_power_countdown_snapshot_get",
+                            # 脚本接入与用户配置（类型选项由创建工具的参数提供）
+                            "add_script_api_scripts_add_post",
+                            "get_script_api_scripts_get_post",
+                            "update_script_api_scripts_update_post",
+                            "add_user_api_scripts_user_add_post",
+                            "get_user_api_scripts_user_get_post",
+                            "update_user_api_scripts_user_update_post",
+                            "import_script_config_file_api_scripts_config_import_post",
+                            "get_maafw_embedded_status_api_scripts_maafw_embedded_status_post",
+                            "reimport_maafw_embedded_api_scripts_maafw_embedded_reimport_post",
+                            # 配置引用的可选值
+                            "get_maaend_options_api_scripts_maaend_options_post",
+                            "get_stage_combox_api_info_combox_stage_post",
+                            "get_plan_combox_api_info_combox_plan_post",
+                            "get_emulator_combox_api_info_combox_emulator_post",
+                            "get_emulator_devices_combox_api_info_combox_emulator_devices_post",
+                            # 计划与调度编排
+                            "add_plan_api_plan_add_post",
+                            "get_plan_api_plan_get_post",
+                            "update_plan_api_plan_update_post",
+                            "add_queue_api_queue_add_post",
                             "get_queues_api_queue_get_post",
+                            "update_queue_api_queue_update_post",
+                            "add_item_api_queue_item_add_post",
+                            "get_item_api_queue_item_get_post",
+                            "update_item_api_queue_item_update_post",
+                            "reorder_item_api_queue_item_order_post",
+                            "add_time_set_api_queue_time_add_post",
+                            "get_time_set_api_queue_time_get_post",
+                            "update_time_set_api_queue_time_update_post",
+                            "reorder_time_set_api_queue_time_order_post",
+                            # 试运行与核对当前状态
+                            "get_task_runtime_snapshot_api_dispatch_runtime_snapshot_get",
                             "add_task_api_dispatch_start_post",
                             "stop_task_api_dispatch_stop_post",
-                            "get_plan_api_plan_get_post",
-                            "search_history_api_history_search_post",
-                            "get_history_data_api_history_data_post",
                         ],
                     )
                     # 0.4.0 在工具清单为空时不会清空调用映射，仍需按实际清单收敛。
@@ -413,6 +447,18 @@ def main():
                         for name, operation in mcp.operation_map.items()
                         if name in tool_names
                     }
+                    for tool in mcp.tools:
+                        if (
+                            tool.name
+                            == "get_maaend_options_api_scripts_maaend_options_post"
+                        ):
+                            tool.description += (
+                                "\n\n先创建 MaaEnd 脚本并设置 Info.Path 为已安装的 MaaEnd 目录，"
+                                "再用该脚本的 scriptId 查询动态选项。"
+                                "根据 controllerTypes 判断控制器协议：Adb 需配置模拟器与实例，"
+                                "Win32 需配置游戏路径。控制器、基质与采集选项使用返回的真实值；"
+                                "检查返回的 code，查询失败时先处理错误，不要猜测选项。"
+                            )
                     mcp.mount_http()
                     logger.info(f"MCP 服务已挂载，共 {len(mcp.tools)} 个工具")
                 else:
