@@ -83,10 +83,16 @@ def _dig_flat(config: dict, key: str) -> str | None:
 
 if IS_WINDOWS:
     import ctypes
+    from ctypes import wintypes
 
     import pywintypes
     import win32con
     import win32gui
+
+    # 私有一份 user32，声明原型不影响进程里其它走 ctypes.windll.user32 的代码
+    _user32 = ctypes.WinDLL("user32")
+    _user32.ShowWindowAsync.argtypes = [wintypes.HWND, ctypes.c_int]
+    _user32.ShowWindowAsync.restype = wintypes.BOOL
 
 logger = get_logger("Emulator2 雷电管理")
 
@@ -155,7 +161,7 @@ def _show_window_async(hwnd: int, cmd: int) -> None:
     弹窗巡检在事件循环线程里跑几个小时，同步的 ``ShowWindow`` 碰上 dnplayer 界面线程
     未响应会一直阻塞，整个后端跟着停住；pywin32 没有包这个函数，直接走 ctypes。
     """
-    ctypes.windll.user32.ShowWindowAsync(hwnd, cmd)
+    _user32.ShowWindowAsync(hwnd, cmd)
 
 
 class LDPlayer14Manager(AppLaunchMixin, LDManager):
