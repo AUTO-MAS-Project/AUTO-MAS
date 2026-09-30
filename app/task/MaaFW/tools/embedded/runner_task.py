@@ -2732,7 +2732,10 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             )
             statistics["screenshots"] = screenshot_entries(images)
             signal_message = self._signal_user_message()
-            if self.run_complete:
+            # 有失效任务时照常算完成（次数、状态不动），但不能说成「全部完成」
+            if self.run_complete and self.missing_task_names:
+                statistics["user_result"] = MISSING_TASK_USER_RESULT
+            elif self.run_complete:
                 statistics["user_result"] = "代理任务全部完成"
             elif signal_message is not None:
                 statistics["user_result"] = signal_message
@@ -2742,7 +2745,9 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                     if self.cur_user_log is not None
                     else "代理任务未完成"
                 )
-            if self.run_complete:
+            if self.run_complete and self.missing_task_names:
+                mark = "!"
+            elif self.run_complete:
                 mark = "√"
             elif self._is_maintenance_skip():
                 mark = MAINTENANCE_LAST_STATUS
@@ -2772,6 +2777,16 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
 
     async def _send_success_notify(self) -> None:
         try:
+            if self.missing_task_names:
+                names = "、".join(self.missing_task_names)
+                await Notify.push_plyer(
+                    "MaaFW 自动代理任务完成，但有失效任务",
+                    f"用户 {self.cur_user_item.name} 的队列里有 interface 内已没有的任务，"
+                    f"已跳过：{names}",
+                    f"{self.cur_user_item.name} 有失效任务：{names}",
+                    3,
+                )
+                return
             await Notify.push_plyer(
                 "MaaFW 自动代理任务完成",
                 f"已完成用户 {self.cur_user_item.name} 的 MaaFW 自动代理任务",
@@ -3383,6 +3398,8 @@ def _format_run_overview_log(
 MISSING_TASK_NOTICE_PREFIX = (
     "失效任务（interface 内已无，已跳过，请到用户配置里重新添加）"
 )
+#: 其余任务都跑完、但队列里有失效任务时统计报告的结果：照常算完成，不说「全部完成」。
+MISSING_TASK_USER_RESULT = "代理任务完成，但有失效任务"
 
 
 def _with_skipped_tasks(
