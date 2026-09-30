@@ -54,10 +54,12 @@ from .contracts import (
 from .projection import (
     PROJECTION_REVISION,
     ProjectionPlan,
+    abandoned_native_runtime_files,
     build_projection_plan,
     is_shared_path,
     materialize_projection,
     read_json_object,
+    shell_native_location,
 )
 from .state import DurableFileLock
 
@@ -578,7 +580,9 @@ def build_from_package(
     """旧载荷 + 更新包 → staging 里的新载荷树（§3.1 第 4 步）。
 
     - 全量包：stale = 旧载荷里 ``origin=package`` 且不在包内的 ∪ ``origin=import``、位于
-      新 interface 声明的资源目录内、且不在包内的；资源目录之外的 ``import`` 文件带进新载荷。
+      新 interface 声明的资源目录内、且不在包内的 ∪ ``origin=import``、在被新包淘汰的外壳
+      原生库位置上、且不在包内的（``projection.abandoned_native_runtime_files``）；其余
+      ``import`` 文件带进新载荷。
     - 差量包：以旧载荷清单为基线校验（载荷不可变，清单记的指纹就是它当前的指纹），
       stale = 包声明的删除表。
     包内条目一律 ``origin=package``。失败时调用方直接丢掉 staging。
@@ -643,6 +647,17 @@ def build_from_package(
             rel for rel, entry in old_files.items() if entry["origin"] != ORIGIN_PACKAGE
         }
         stale |= _import_origin_orphans(old_root, plan) & import_files
+        # 换过外壳的导入目录里留着的旧布局原生库（maafw/ 与 runtimes/<rid>/native 并存）：
+        # 新包在别处带着 MaaFramework 时清掉，否则 runner 与 agent 会各挑一份。
+        abandoned = abandoned_native_runtime_files(import_files, plan.files)
+        if abandoned and send_log is not None:
+            locations = sorted({shell_native_location(rel) or "" for rel in abandoned})
+            send_log(
+                "清掉换外壳留下的旧原生库："
+                + "、".join(f"{item}/" if item else "根目录" for item in locations)
+                + f"，共 {len(abandoned)} 个文件"
+            )
+        stale |= abandoned
     else:
         # 删除表里可能是目录（``deleted_dir``）：目录下的旧文件一起清。
         deleted = [item.rstrip("/") for item in plan.deleted if item]

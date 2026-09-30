@@ -27,6 +27,7 @@ from .apply import (
 )
 from .contracts import normalise_sha256
 from .payloads import (
+    ORIGIN_PACKAGE,
     PROJECTION_CHECK_FIELD,
     PayloadCancelled,
     PayloadError,
@@ -35,13 +36,14 @@ from .payloads import (
     build_from_package,
     finalize,
     inherited_projection_revision,
+    manifest_files,
     projection_revision_of,
     read_lineage,
     register,
     remove_tree,
     version_newer,
 )
-from .projection import PROJECTION_REVISION
+from .projection import PROJECTION_REVISION, abandoned_native_runtime_files
 from .state import (
     DEFAULT_CACHE_ROOT,
     DEFAULT_OPERATION_ROOT,
@@ -492,6 +494,7 @@ async def update_maafw_project_if_needed(
         prefer_full = True
         damaged = False
         stale_projection = False
+        native_residue = False
         if payload is not None:
             try:
                 base_manifest = payload.manifest()
@@ -523,7 +526,31 @@ async def update_maafw_project_if_needed(
             if damaged:
                 prefer_full = True
                 send_update_log("当前版本有共用文件被改写过，改为请求全量包")
-        if prefer_full and not damaged and not stale_projection:
+            # 换过外壳的导入目录留下的旧布局原生库（本修复之前的全量包会把它原样带进
+            # 新载荷）：差量包不会删它，只有全量包按新包清单清得掉。用上一个包自己的清单
+            # 当「下一个全量包」来判，清完之后同样的判断不再成立，不会每次都要全量包。
+            if not prefer_full:
+                base_files = manifest_files(base_manifest)
+                native_residue = bool(
+                    abandoned_native_runtime_files(
+                        [
+                            rel
+                            for rel, entry in base_files.items()
+                            if entry["origin"] != ORIGIN_PACKAGE
+                        ],
+                        [
+                            rel
+                            for rel, entry in base_files.items()
+                            if entry["origin"] == ORIGIN_PACKAGE
+                        ],
+                    )
+                )
+                if native_residue:
+                    prefer_full = True
+                    send_update_log(
+                        "当前版本里留着换外壳前的旧原生库目录，改为请求全量包以清掉它"
+                    )
+        if prefer_full and not damaged and not stale_projection and not native_residue:
             send_update_log("当前版本是本地导入的，改为请求全量包")
 
         (
