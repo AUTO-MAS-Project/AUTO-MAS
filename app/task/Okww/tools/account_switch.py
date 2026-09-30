@@ -490,13 +490,35 @@ def _has_restart_prompt(items: list[OCRItem]) -> bool:
 
 
 def _wait_game_restart(hwnd: int, on_log: Callable[[str], None]) -> int:
-    """点「确认」重启后：等旧窗口退出，再等新窗口出现，返回新窗口句柄。"""
-    deadline = time.monotonic() + _RESTART_WINDOW_WAIT_SECONDS
-    while time.monotonic() < deadline and win32gui.IsWindow(hwnd):
+    """点「确认」重启后：等旧窗口退出，再等一个**不同**的新窗口出现并返回。
+
+    旧窗口等待超时（游戏卡在自重启中，或确认未真正触发重启）时不接受旧窗口
+    冒充新窗口：明确抛错交由调度重试，避免继续操作一个语义上已「即将重启」的
+    旧进程。
+    """
+    exit_deadline = time.monotonic() + _RESTART_WINDOW_WAIT_SECONDS
+    while time.monotonic() < exit_deadline and win32gui.IsWindow(hwnd):
         time.sleep(1)
+    if win32gui.IsWindow(hwnd):
+        raise RuntimeError(
+            f"点击确认重启后游戏窗口在 {_RESTART_WINDOW_WAIT_SECONDS:g}s 内"
+            "仍未退出，重启可能未生效，请人工确认游戏状态"
+        )
     on_log("游戏窗口已退出，正在等待游戏重启...")
-    # 复用窗口宽限轮询：游戏自重启到新窗口亮相可能需要数十秒；超时由其抛错
-    new_hwnd = _find_game_hwnd()
+    # 复用窗口宽限轮询等新窗口亮相；句柄必须不同于旧窗口，防止把尚未退出的
+    # 旧窗口（或其残影）当成重启后的新窗口
+    restart_deadline = time.monotonic() + _GAME_WINDOW_WAIT_SECONDS
+    while True:
+        new_hwnd = _find_game_hwnd(wait=False)
+        if new_hwnd is not None and new_hwnd != hwnd:
+            break
+        if time.monotonic() >= restart_deadline:
+            raise RuntimeError(
+                f"游戏重启后 {_GAME_WINDOW_WAIT_SECONDS:g}s 内未出现新的游戏窗口，"
+                "请人工确认游戏状态"
+            )
+        logger.info(f"游戏重启后新窗口暂未出现，{_WINDOW_POLL_INTERVAL:g} 秒后重试...")
+        time.sleep(_WINDOW_POLL_INTERVAL)
     # 后续截图与点击均不激活窗口，先置前一次保证落点正确
     _activate_window(new_hwnd)
     return new_hwnd
