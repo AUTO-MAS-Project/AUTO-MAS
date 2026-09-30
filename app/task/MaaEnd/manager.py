@@ -46,7 +46,6 @@ from app.utils.io import (
 from .AutoProxy import AutoProxyTask
 from .resource_loader import load_maaend_controller_protocol
 from .ScriptConfig import ScriptConfigTask, maaend_config_mode
-from .update_takeover import MaaEndUpdatePrecheckError, check_and_update_maaend
 from .tools import push_notification
 from .tools.backup_archive import archive_native_backup
 
@@ -259,42 +258,6 @@ class MaaEndManager(TaskExecuteBase):
             return
 
         self.begin_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        if self.task_info.mode == "AutoProxy":
-            script_config = Config.ScriptConfig[uuid.UUID(self.script_info.script_id)]
-            maaend_root_path = Path(script_config.get("Info", "Path"))
-
-            def update_status(message: str) -> None:
-                self.script_info.log = message
-
-            try:
-                await check_and_update_maaend(
-                    maaend_root_path,
-                    on_status=update_status,
-                )
-            except MaaEndUpdatePrecheckError as error:
-                warning_message = (
-                    f"MaaEnd 更新预检失败，已跳过更新检查并继续任务: {error}"
-                )
-                self.script_info.log = warning_message
-                logger.warning(warning_message)
-                try:
-                    await Publisher.send(
-                        id=self.task_info.task_id,
-                        type=protocol.TASK_NOTICE,
-                        data=WSTaskNoticeData(level="warning", message=warning_message),
-                    )
-                except Exception as notice_error:
-                    logger.warning(f"发送 MaaEnd 更新预检提示失败: {notice_error}")
-            except Exception as error:
-                self.check_result = f"MaaEnd 更新失败: {error}"
-                logger.warning(self.check_result)
-                await Publisher.send(
-                    id=self.task_info.task_id,
-                    type=protocol.TASK_NOTICE,
-                    data=WSTaskNoticeData(level="error", message=self.check_result),
-                )
-                return
-
         await self.prepare()
 
         if not isinstance(self.script_config, MaaEndConfig):
@@ -324,6 +287,9 @@ class MaaEndManager(TaskExecuteBase):
             finally:
                 if self.task_info.mode != "ScriptConfig":
                     await self._restore_script_config_from_temp()
+            if isinstance(task, AutoProxyTask) and task.update_failed:
+                # 安装状态未确认时，同一目录上的后续用户也不能继续执行。
+                return
 
     async def final_task(self):
 

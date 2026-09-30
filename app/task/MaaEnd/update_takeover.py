@@ -29,48 +29,41 @@ import psutil
 
 from app.utils import ProcessManager, get_logger
 from app.utils.io import read_dict_file, write_file
-from app.utils.mirrorchyan import (
-    check_mirrorchyan_update,
-    compare_mirrorchyan_versions,
-)
+from app.utils.mirrorchyan import compare_mirrorchyan_versions
 
 logger = get_logger("MaaEnd 更新接管")
 
 _UPDATE_SESSION_TIMEOUT = 30 * 60
 _PROCESS_STOP_TIMEOUT = 8
+_PROCESS_RESTART_TIMEOUT = 30
 _LOG_FILE_NAME = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}-[1-9][0-9]*\.log")
+_LOG_TARGET_VERSION = re.compile(
+    r"(?:发现新版本|检测到待安装更新|已保存待安装更新信息):\s*(\S+)"
+)
+_LOG_DOWNLOAD = ("开始下载更新:", "更新下载完成", "检测到待安装更新:")
 _LOG_SUCCESS = "更新安装完成"
 _LOG_FAILURE = ("更新安装失败", "打开安装程序失败")
+_LOG_CHECK_FAILURE = (
+    "更新下载失败",
+    "更新下载出错",
+    "检查更新失败:",
+    "更新检查返回错误:",
+    "GitHub 下载链接获取失败",
+)
 
 
 class MaaEndUpdateError(RuntimeError):
     """MaaEnd 更新接管未能确认更新完成。"""
 
 
-class MaaEndUpdatePrecheckError(MaaEndUpdateError):
-    """更新预检失败；可以跳过自动更新并继续运行任务。"""
-
-
-def _read_interface_update_info(root_path: Path) -> tuple[str, str]:
+def _read_installed_version(root_path: Path, target_version: str | None) -> str:
     interface = read_dict_file(root_path / "interface.json", format=".json5")
     version = str(interface.get("version") or "").strip()
-    resource_id = str(interface.get("mirrorchyan_rid") or "").strip()
     if not version:
         raise MaaEndUpdateError("interface.json 未声明 version")
-    if not resource_id:
-        raise MaaEndUpdateError("interface.json 未声明 mirrorchyan_rid")
-    return version, resource_id
-
-
-def _get_update_channel(config: dict[str, object]) -> str:
-    settings = config.get("settings", {})
-    if not isinstance(settings, dict):
-        raise MaaEndUpdateError("MXU 配置中的 settings 不是对象")
-    mirror_settings = settings.get("mirrorChyan", {})
-    if not isinstance(mirror_settings, dict):
-        raise MaaEndUpdateError("MXU 配置中的 Mirror酱设置不是对象")
-    # 频道校验统一交给通用 Mirror酱检查工具。
-    return str(mirror_settings.get("channel") or "stable").strip().lower()
+    if target_version and compare_mirrorchyan_versions(version, target_version) < 0:
+        raise MaaEndUpdateError(f"MaaEnd 更新未达到 {target_version}（当前 {version}）")
+    return version
 
 
 @contextmanager
@@ -150,6 +143,15 @@ def _mxu_log_files(root_path: Path) -> list[Path]:
     )
 
 
+def snapshot_mxu_logs(root_path: Path) -> dict[Path, int]:
+    """启动首阶段前记录日志位置，避免历史下载记录触发更新。"""
+    offsets: dict[Path, int] = {}
+    for path in _mxu_log_files(root_path):
+        with suppress(FileNotFoundError):
+            offsets[path] = path.stat().st_size
+    return offsets
+
+
 def _read_new_mxu_logs(root_path: Path, offsets: dict[Path, int]) -> list[str]:
     """读取本轮新增完整行，保留重启前日志和跨次写入的半行。"""
     lines: list[str] = []
@@ -171,7 +173,7 @@ def _read_new_mxu_logs(root_path: Path, offsets: dict[Path, int]) -> list[str]:
 
 async def _run_update_session(
     root_path: Path,
-    target_version: str,
+    target_version: str | None,
     on_status: Callable[[str], None] | None,
 ) -> str:
     executable = root_path / "MaaEnd.exe"
@@ -186,7 +188,7 @@ async def _run_update_session(
 
     status("正在准备 MaaEnd 更新会话")
     await _stop_mxu(executable)
-    log_offsets = {path: path.stat().st_size for path in _mxu_log_files(root_path)}
+    log_offsets = await asyncio.to_thread(snapshot_mxu_logs, root_path)
     with _pause_auto_run(config_path):
         try:
             launched_at = time.time()
@@ -197,15 +199,41 @@ async def _run_update_session(
 
             status("MaaEnd 正在检查并安装更新")
             installation_complete = False
+            exited_at: float | None = None
             while time.monotonic() < deadline:
+                await process_manager.hide_window()
                 # 安装结果写在旧进程日志中，必须从启动起持续读取，不能只读重启后的最新文件。
                 lines = await asyncio.to_thread(
                     _read_new_mxu_logs, root_path, log_offsets
                 )
-                if any(message in line for line in lines for message in _LOG_FAILURE):
+                if any(
+                    message in line
+                    for line in lines
+                    for message in (*_LOG_FAILURE, *_LOG_CHECK_FAILURE)
+                ):
                     raise MaaEndUpdateError("MXU 日志报告更新失败")
+                for line in lines:
+                    if match := _LOG_TARGET_VERSION.search(line):
+                        candidate = match.group(1)
+                        if (
+                            target_version is None
+                            or compare_mirrorchyan_versions(candidate, target_version)
+                            > 0
+                        ):
+                            target_version = candidate
                 installation_complete |= any(_LOG_SUCCESS in line for line in lines)
-                if first_process.returncode is not None and installation_complete:
+                # 首阶段可能已经完成更新；由 MXU 的检查结果确认，无需再安装一次。
+                if not installation_complete and any(
+                    "更新检查完成:" in line and "有更新=false" in line for line in lines
+                ):
+                    installed_version = _read_installed_version(
+                        root_path, target_version
+                    )
+                    status(f"MaaEnd 已是最新版本 {installed_version}")
+                    return installed_version
+                if first_process.returncode is not None:
+                    if exited_at is None:
+                        exited_at = time.monotonic()
                     processes = await asyncio.to_thread(
                         _find_executable_processes, executable
                     )
@@ -215,20 +243,24 @@ async def _run_update_session(
                                 process.pid != first_process.pid
                                 and process.create_time() >= launched_at
                             ):
+                                process_manager.target_process = process
+                                await process_manager.hide_window()
                                 break
                     else:
+                        if time.monotonic() - exited_at >= _PROCESS_RESTART_TIMEOUT:
+                            raise MaaEndUpdateError(
+                                "MaaEnd 更新进程已退出，未能确认重启完成"
+                            )
                         await asyncio.sleep(0.5)
                         continue
 
+                    if not installation_complete:
+                        await asyncio.sleep(0.5)
+                        continue
                     # 临时复用上游日志；MXU 提供更新退出码后替换此判断。
-                    installed_version, _ = _read_interface_update_info(root_path)
-                    if (
-                        compare_mirrorchyan_versions(installed_version, target_version)
-                        < 0
-                    ):
-                        raise MaaEndUpdateError(
-                            f"MXU 安装已完成，但 PI 版本未达到 {target_version}（当前 {installed_version}）"
-                        )
+                    installed_version = _read_installed_version(
+                        root_path, target_version
+                    )
                     status(f"MaaEnd 已更新到 {installed_version}")
                     return installed_version
                 await asyncio.sleep(0.5)
@@ -241,46 +273,35 @@ async def _run_update_session(
                 await _stop_mxu(executable)
 
 
-async def check_and_update_maaend(
+async def update_maaend_after_stage(
     root_path: Path,
+    log_offsets: dict[Path, int],
     *,
     on_status: Callable[[str], None] | None = None,
 ) -> str | None:
-    """启动 MaaEnd 自动代理前检查并接管需要的 MXU 更新。
+    """首阶段结束后按本轮下载日志插入更新，返回更新后的版本。
 
-    返回 ``None`` 表示无需更新；需要更新时返回最终安装的
-    PI 版本号。
-
-    Raises:
-        MaaEndUpdatePrecheckError: 更新预检失败，尚未开始更新接管。
+    未观察到下载时返回 ``None``；下载、安装和重启均复用 MXU 原生流程。
     """
-
-    try:
-        current_version, resource_id = _read_interface_update_info(root_path)
-        config_path = root_path / "config" / "mxu-MaaEnd.json"
-        mxu_config = read_dict_file(config_path, format=".json5")
-        channel = _get_update_channel(mxu_config)
-        if on_status is not None:
-            on_status(f"正在检查 MaaEnd 更新（{channel}）")
-        update = await check_mirrorchyan_update(
-            resource_id,
-            current_version,
-            channel=channel,
-            user_agent="MXU",
-        )
-    except Exception as error:
-        raise MaaEndUpdatePrecheckError(str(error)) from error
-
-    logger.info(
-        f"Mirror酱 版本检查: 本地 {current_version}，"
-        f"远端 {update.latest_version}，"
-        f"频道 {channel}，需更新={update.has_update}"
-    )
-    if not update.has_update:
-        if on_status is not None:
-            on_status("MaaEnd 已是最新版本，准备运行任务")
+    lines = await asyncio.to_thread(_read_new_mxu_logs, root_path, log_offsets)
+    if not any(message in line for line in lines for message in _LOG_DOWNLOAD):
         return None
 
+    target_version: str | None = None
+    for line in lines:
+        if match := _LOG_TARGET_VERSION.search(line):
+            target_version = match.group(1)
+
     if on_status is not None:
-        on_status(f"检测到 MaaEnd 新版本 {update.latest_version}，正在接管 MXU 更新")
-    return await _run_update_session(root_path, update.latest_version, on_status)
+        on_status("首阶段检测到 MaaEnd 下载更新，正在准备更新阶段")
+    if any(message in line for line in lines for message in _LOG_FAILURE):
+        raise MaaEndUpdateError("MXU 日志报告安装失败，已停止后续任务")
+    if any(_LOG_SUCCESS in line for line in lines):
+        installed_version = _read_installed_version(root_path, target_version)
+        if on_status is not None:
+            on_status(f"首阶段已完成 MaaEnd 更新：{installed_version}")
+        return installed_version
+
+    return await _run_update_session(
+        root_path=root_path, target_version=target_version, on_status=on_status
+    )
