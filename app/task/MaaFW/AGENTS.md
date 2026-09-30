@@ -162,6 +162,11 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   这个变量已被剔除，所以 `maa/bin` 不在、项目自带库（`MaaFramework.dll` + `MaaAgentServer.dll`）又齐时
   由检查替它指过去；不这么做，导入的 M9A 全部卡在「项目 Python 或 MaaFW Agent 模块不可用」，
   更新预检也永远过不去（v5.6.0 真机）。`maa/bin` 在时不设，照旧用 wheel 自带那份。
+  runner 起 agent 时按同一个函数（`agent_env/env.project_python_agent_binary_path`）给 agent 设
+  `MAAFW_BINARY_PATH`（agent PATH 里 runner 那份原生库目录也排在项目目录最前）：M9A 见到已设就沿用，
+  不再自己按 `runtimes/` → `maafw/` 的顺序找，两份原生库并存时也与 runner 同一份。原生 agent
+  （Go / C++）固定从 `maafw/` 加载、指不过去，runner 选的不是它且版本不同时启动前就报混装
+  （`runner._check_native_agent_runtime`），不等连接超时。
   检查失败时界面与报错第一行只给 traceback 的最后一行（项目目录换成 `<项目>`：任务结果与预检失败通知
   只取第一行、再截 200 / 120 字），完整输出逐行带 `[MaaFW 详情] ` 前缀、只进 `.worker.log` / 后端
   日志——worker 转发、`embedded_manager._append_update_log`、编辑页准备环境（`api_service/agent_env.py`）

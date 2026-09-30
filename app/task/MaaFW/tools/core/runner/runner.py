@@ -64,8 +64,12 @@ try:
 except ImportError:  # pragma: no cover - 只有很老的 binding 会走到
     _ContextEventSinkBase = None
 
-from app.task.MaaFW.tools.core.agent_env import write_agent_compat_shims
+from app.task.MaaFW.tools.core.agent_env import (
+    project_python_agent_binary_path,
+    write_agent_compat_shims,
+)
 from app.task.MaaFW.tools.core.runner.environment import (
+    _read_runtime_maafw_version,
     describe_runtime_architecture_mismatch,
     detect_pe_architecture,
     host_architecture,
@@ -594,21 +598,28 @@ def _assert_binding_origin() -> None:
         )
 
 
-def agent_env_path_dirs(project_path: Path) -> list[Path]:
-    """agent PATH 前置的项目目录（存在的才用）：根、``maafw/``、``runtimes/<本机 rid>``、
-    ``libs/``、``deps/``。
+def agent_env_path_dirs(
+    project_path: Path, runtime_path: Path | None = None
+) -> list[Path]:
+    """agent PATH 前置的项目目录（存在的才用）：runner 用的项目原生库目录、根、``maafw/``、
+    ``runtimes/<本机 rid>``、``libs/``、``deps/``。
 
-    rid 按本机架构取（与 ``project_maafw_runtime_path`` 同一套判断），不写死 win-x64：
-    arm64 机器上带两种架构的发行包，agent 该看到的是 win-arm64。
+    ``runtime_path`` 是 runner 实际加载的项目自带原生库（``project_maafw_runtime_path``），
+    排最前：项目里并存两份原生库时，agent 按 PATH 找到的必须是 runner 那份，否则协议版本
+    可能对不上。rid 按本机架构取（与 ``project_maafw_runtime_path`` 同一套判断），不写死
+    win-x64：arm64 机器上带两种架构的发行包，agent 该看到的是 win-arm64。
     """
 
-    return [
+    dirs = [
         project_path,
         project_path / "maafw",
         *host_runtime_rid_dirs(project_path),
         project_path / "libs",
         project_path / "deps",
     ]
+    if runtime_path is None:
+        return dirs
+    return [runtime_path, *(item for item in dirs if item != runtime_path)]
 
 
 def _pool_native_runtime_path() -> Path | None:
@@ -619,6 +630,18 @@ def _pool_native_runtime_path() -> Path | None:
         if value and (Path(value) / "MaaFramework.dll").is_file():
             return Path(value)
     return None
+
+
+def runner_maafw_runtime_path(project_path: Path | None) -> Path | None:
+    """runner 实际加载的原生库目录：项目自带的优先，没有就是运行池给的官方库。"""
+
+    return project_maafw_runtime_path(project_path) or _pool_native_runtime_path()
+
+
+def _same_directory(left: Path, right: Path) -> bool:
+    return os.path.normcase(str(left.resolve())) == os.path.normcase(
+        str(right.resolve())
+    )
 
 
 def _ensure_maafw_global_init(
@@ -632,9 +655,7 @@ def _ensure_maafw_global_init(
         if _MAAFW_INITIALIZED:
             return
         _assert_binding_origin()
-        runtime_path = project_maafw_runtime_path(project_path)
-        if runtime_path is None:
-            runtime_path = _pool_native_runtime_path()
+        runtime_path = runner_maafw_runtime_path(project_path)
         if runtime_path is None:
             raise RuntimeError(
                 "找不到 MaaFramework 原生库：项目目录里没有 MaaFramework.dll，"
@@ -1585,6 +1606,7 @@ class MaaFWRunner:
         for agent_plan in self.plan.agents:
             if agent_plan.embedded:
                 continue
+            self._check_native_agent_runtime(agent_plan)
             agent_client = self._create_agent_client(
                 agent_plan.childExec,
                 identifier=self._run_agent_identifier(
@@ -1645,6 +1667,39 @@ class MaaFWRunner:
                 raise RuntimeError("AgentClient 注册 sink 失败")
 
             self.send_log(f"Agent 已启动: {command[0]}")
+
+    def _check_native_agent_runtime(self, agent_plan: Any) -> None:
+        """原生 agent（Go / C++ 的 exe）启动前核对它要加载的原生库与 runner 是不是同一版本。
+
+        现有的原生 agent（MaaEnd、MaaYYs）都固定从 ``<项目>/maafw`` 加载 MaaFramework，
+        没法像 Python agent 那样经 ``MAAFW_BINARY_PATH`` 指给它。项目里混装了两份原生库、
+        runner 又选了另一份时，版本不同协议就可能不同，agent 起来也连不上；在启动前说清楚，
+        不等满连接超时。版本相同或读不出时放行。
+        """
+
+        if getattr(agent_plan, "runtimeKind", None) != "project_binary":
+            return
+        project_path = Path(self.plan.path)
+        agent_runtime = project_path / "maafw"
+        if not (agent_runtime / "MaaFramework.dll").is_file():
+            return
+        runner_runtime = runner_maafw_runtime_path(project_path)
+        if runner_runtime is None or _same_directory(runner_runtime, agent_runtime):
+            return
+        agent_version = _read_runtime_maafw_version(agent_runtime)
+        runner_version = _read_runtime_maafw_version(runner_runtime)
+        if not agent_version or not runner_version or agent_version == runner_version:
+            return
+        try:
+            runner_where = str(runner_runtime.relative_to(project_path))
+        except ValueError:
+            runner_where = str(runner_runtime)
+        raise RuntimeError(
+            f"原生 Agent（{Path(agent_plan.executable).name}）固定从 maafw 目录加载 "
+            f"MaaFramework {_display_maafw_version(agent_version)}，runner 用的是 "
+            f"{runner_where} 里的 {_display_maafw_version(runner_version)}："
+            "项目里混装了两份不同版本的原生库。请用干净的发行包重新导入，或更新项目"
+        )
 
     def prepare_agent_python_envs(self) -> None:
         """Prepare all MaaFW agent Python environments without starting agents."""
@@ -1978,7 +2033,8 @@ class MaaFWRunner:
 
         清理 VIRTUAL_ENV、PYTHONHOME、旧 PYTHONPATH 等会导致串环境的变量，
         再显式设置当前项目所需的 PYTHONPATH；PATH 前置 agent Python 目录、
-        Scripts 目录、项目根目录与项目必要 dll 目录。
+        Scripts 目录、runner 实际使用的项目原生库目录，再是项目根目录与其余必要 dll 目录。
+        项目自带解释器没有 maa/bin 时，``MAAFW_BINARY_PATH`` 指向 runner 那份库。
         """
         # 先按共用名单剔除 worker 自己与宿主的 Python 变量，再叠加项目 interface 声明的
         # 环境：项目给自己 agent 设的值要保留。worker 自己需要 PYTHONSAFEPATH（见
@@ -2021,10 +2077,24 @@ class MaaFWRunner:
         # 也不会把 2000 个小文件散进项目自带的 python/Lib。
         set_project_pycache_prefix(env, project_path)
 
-        # PATH 前置：agent Python 目录、Scripts 目录、项目根目录、项目必要 dll 目录。
-        # 再把官方原生库目录放在项目路径之后、宿主 PATH 之前：项目自带的原生库
-        # 仍然优先，缺库的项目则从运行池为这个版本备的 native 目录拿到同版本的 DLL
-        # （binding 目录里的 maa/bin 只是占位，没有 DLL）。
+        # 项目自带解释器没有 wheel 的 maa/bin 时（M9A v4.10+），agent 自己找原生库：设了
+        # MAAFW_BINARY_PATH 就沿用，否则按 runtimes/ → maafw/ 的固定顺序找第一份。两份并存
+        # 时那未必是 runner 选的，所以指给它 runner 那份（与健康检查同一个函数）。
+        # 隔离 venv 与带 maa/bin 的自带解释器用 wheel 自带的库，照旧不设。
+        if getattr(agent_plan, "runtimeKind", None) == "project_python":
+            binary_path = project_python_agent_binary_path(
+                agent_plan.executable, project_path
+            )
+            if binary_path is not None and "MAAFW_BINARY_PATH" not in env:
+                env["MAAFW_BINARY_PATH"] = str(binary_path)
+                self.send_log(
+                    f"Agent 使用 runner 同一份原生库: MAAFW_BINARY_PATH={binary_path}"
+                )
+
+        # PATH 前置：agent Python 目录、Scripts 目录、runner 用的项目原生库目录、项目根
+        # 目录、项目必要 dll 目录。再把官方原生库目录放在项目路径之后、宿主 PATH 之前：
+        # 项目自带的原生库仍然优先，缺库的项目则从运行池为这个版本备的 native 目录拿到
+        # 同版本的 DLL（binding 目录里的 maa/bin 只是占位，没有 DLL）。
         python_exe = Path(agent_plan.executable)
         path_items: list[str] = []
         python_dir = python_exe.parent
@@ -2033,8 +2103,9 @@ class MaaFWRunner:
             scripts_dir = python_dir / ("Scripts" if os.name == "nt" else "bin")
             if scripts_dir.is_dir():
                 path_items.append(str(scripts_dir))
-        path_items.append(str(project_path))
-        for candidate in agent_env_path_dirs(project_path):
+        for candidate in agent_env_path_dirs(
+            project_path, project_maafw_runtime_path(project_path)
+        ):
             if candidate.is_dir():
                 path_items.append(str(candidate))
 
