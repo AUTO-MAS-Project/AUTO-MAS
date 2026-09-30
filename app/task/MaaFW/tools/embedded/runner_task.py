@@ -2231,7 +2231,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             return
         self.game_resolution_override = override
         self._append_log(
-            f"已临时把 HKCU\\{override.registry_path} 的分辨率设为 "
+            f"已尝试把 HKCU\\{override.registry_path} 的分辨率临时设为 "
             f"{override.label} 窗口模式，游戏关闭后恢复原值"
         )
 
