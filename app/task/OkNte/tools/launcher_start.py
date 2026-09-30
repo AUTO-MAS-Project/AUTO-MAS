@@ -502,6 +502,7 @@ def start_game_via_launcher(
                 # （更新后无重启弹窗时此处是唯一再点入口）
                 on_log("游戏更新完成，按钮已恢复「开始游戏」，继续启动...")
                 start_clicks = 0
+                last_start_click = None
                 update_clicked = False
                 start_button_gone = False
             if start_box is not None and start_clicks >= _START_CLICK_LIMIT:
