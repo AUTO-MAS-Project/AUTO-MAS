@@ -300,51 +300,6 @@ def main():
             其余步骤失败时仍为 ready，失败步骤只写进 background_warnings。
             """
 
-            def _patch_fastapi_mcp_ref_recursion(max_depth: int = 96) -> None:
-                """给 fastapi_mcp 的 $ref 解析加递归深度上限。
-
-                库实现（openapi.utils.resolve_schema_references）在模型互相
-                $ref 引用时会无限展开（A→B→A…），递归 ~1000 层即 RecursionError，
-                导致 MCP 挂载失败。
-                这里以相同逻辑但带深度上限的实现替换；超限的 $ref 原样保留，
-                仅影响 MCP 工具 schema 的展示完整度，不再炸初始化。
-                需同时替换 utils 与 convert 两处按名绑定的引用。
-                """
-                import fastapi_mcp.openapi.convert as _fm_convert
-                from fastapi_mcp.openapi import utils as _fm_utils
-
-                def resolve_with_depth_limit(schema_part, reference_schema, _depth=0):
-                    schema_part = schema_part.copy()
-                    if "$ref" in schema_part and _depth < max_depth:
-                        ref_path = schema_part["$ref"]
-                        # 标准 OpenAPI 引用格式："#/components/schemas/ModelName"
-                        if ref_path.startswith("#/components/schemas/"):
-                            model_name = ref_path.split("/")[-1]
-                            components = reference_schema.get("components") or {}
-                            schemas = components.get("schemas") or {}
-                            if model_name in schemas:
-                                ref_schema = schemas[model_name].copy()
-                                schema_part.pop("$ref")
-                                schema_part.update(ref_schema)
-                    for key, value in schema_part.items():
-                        if isinstance(value, dict):
-                            schema_part[key] = resolve_with_depth_limit(
-                                value, reference_schema, _depth + 1
-                            )
-                        elif isinstance(value, list):
-                            schema_part[key] = [
-                                resolve_with_depth_limit(
-                                    item, reference_schema, _depth + 1
-                                )
-                                if isinstance(item, dict)
-                                else item
-                                for item in value
-                            ]
-                    return schema_part
-
-                _fm_utils.resolve_schema_references = resolve_with_depth_limit
-                _fm_convert.resolve_schema_references = resolve_with_depth_limit
-
             # 各步骤各自容错：任一步抛异常只记日志，不连带跳过后面的步骤，
             # 尤其不能跳过主定时器（队列定时按分钟精确匹配，没起来就整夜不触发）。
             warnings: list[str] = []
@@ -375,94 +330,9 @@ def main():
                     warnings.append(failure)
 
             async def mount_mcp() -> None:
-                import importlib
+                from app.api.mcp import mount_mcp as mount_mcp_server
 
-                # MCP 构建需要遍历完整 OpenAPI schema (约 1s)，后移到后台
-                # 导入与构建均为重 CPU 操作，放入线程避免阻塞事件循环推迟 API 响应
-                # Starlette 支持运行期追加路由，首个 /mcp 请求前挂载完成即可
-                if os.getenv("AUTO_MAS_ENABLE_MCP", "1") == "1":
-                    fastapi_mcp = await asyncio.to_thread(
-                        importlib.import_module, "fastapi_mcp"
-                    )
-                    _patch_fastapi_mcp_ref_recursion()
-
-                    mcp = await asyncio.to_thread(
-                        fastapi_mcp.FastApiMCP,
-                        app,
-                        name="AUTO-MAS MCP",
-                        description=(
-                            "配置已安装的 AUTO-MAS 脚本：创建脚本并设置安装路径，"
-                            "创建并配置用户，创建计划，建立队列、队列项和定时项，最后按需试运行。"
-                            "创建接口返回新 ID 和默认配置；修改时只提交需要变更的字段，"
-                            "并使用查询接口返回的真实 ID 与可选值。"
-                            "MFW/M9A 的安装目录通过 embedded/reimport 导入后再添加用户。"
-                            "任务创建成功仅表示已受理，不代表脚本运行成功。"
-                        ),
-                        describe_full_response_schema=False,
-                        describe_all_responses=False,
-                        # 仅暴露通用配置与试运行能力；新增 HTTP 接口不会自动成为工具。
-                        # fastapi-mcp 的操作与标签过滤取并集，白名单不能再搭配标签过滤。
-                        include_operations=[
-                            # 脚本接入与用户配置（类型选项由创建工具的参数提供）
-                            "add_script_api_scripts_add_post",
-                            "get_script_api_scripts_get_post",
-                            "update_script_api_scripts_update_post",
-                            "add_user_api_scripts_user_add_post",
-                            "get_user_api_scripts_user_get_post",
-                            "update_user_api_scripts_user_update_post",
-                            "import_script_config_file_api_scripts_config_import_post",
-                            "get_maafw_embedded_status_api_scripts_maafw_embedded_status_post",
-                            "reimport_maafw_embedded_api_scripts_maafw_embedded_reimport_post",
-                            # 配置引用的可选值
-                            "get_maaend_options_api_scripts_maaend_options_post",
-                            "get_stage_combox_api_info_combox_stage_post",
-                            "get_plan_combox_api_info_combox_plan_post",
-                            "get_emulator_combox_api_info_combox_emulator_post",
-                            "get_emulator_devices_combox_api_info_combox_emulator_devices_post",
-                            # 计划与调度编排
-                            "add_plan_api_plan_add_post",
-                            "get_plan_api_plan_get_post",
-                            "update_plan_api_plan_update_post",
-                            "add_queue_api_queue_add_post",
-                            "get_queues_api_queue_get_post",
-                            "update_queue_api_queue_update_post",
-                            "add_item_api_queue_item_add_post",
-                            "get_item_api_queue_item_get_post",
-                            "update_item_api_queue_item_update_post",
-                            "reorder_item_api_queue_item_order_post",
-                            "add_time_set_api_queue_time_add_post",
-                            "get_time_set_api_queue_time_get_post",
-                            "update_time_set_api_queue_time_update_post",
-                            "reorder_time_set_api_queue_time_order_post",
-                            # 试运行与核对当前状态
-                            "get_task_runtime_snapshot_api_dispatch_runtime_snapshot_get",
-                            "add_task_api_dispatch_start_post",
-                            "stop_task_api_dispatch_stop_post",
-                        ],
-                    )
-                    # 0.4.0 在工具清单为空时不会清空调用映射，仍需按实际清单收敛。
-                    tool_names = {tool.name for tool in mcp.tools}
-                    mcp.operation_map = {
-                        name: operation
-                        for name, operation in mcp.operation_map.items()
-                        if name in tool_names
-                    }
-                    for tool in mcp.tools:
-                        if (
-                            tool.name
-                            == "get_maaend_options_api_scripts_maaend_options_post"
-                        ):
-                            tool.description += (
-                                "\n\n先创建 MaaEnd 脚本并设置 Info.Path 为已安装的 MaaEnd 目录，"
-                                "再用该脚本的 scriptId 查询动态选项。"
-                                "根据 controllerTypes 判断控制器协议：Adb 需配置模拟器与实例，"
-                                "Win32 需配置游戏路径。控制器、基质与采集选项使用返回的真实值；"
-                                "检查返回的 code，查询失败时先处理错误，不要猜测选项。"
-                            )
-                    mcp.mount_http()
-                    logger.info(f"MCP 服务已挂载，共 {len(mcp.tools)} 个工具")
-                else:
-                    logger.info("MCP 服务未启用，跳过路由挂载")
+                await mount_mcp_server(app)
 
             async def init_arknight_win32() -> None:
                 import importlib
