@@ -91,6 +91,7 @@ from .tools.cultivate import (
     parse_depot_payload,
     resolve_progression,
     summarize_achievements,
+    takeover_notice_patch_value,
 )
 
 # OLD: 旧版 MAA（PR #17392 前）gui.json 的 ClientType 字符串 → 新版枚举整数映射
@@ -1254,6 +1255,10 @@ class AutoProxyTask(TaskExecuteBase):
                     "CultivateTargets",
                     json.dumps(dump_cultivate_targets(updated), ensure_ascii=False),
                 )
+                # 最后一个目标达成被移除后目标清空：接管已不可能，残留的接管
+                # 提示要一并清掉——这条路不经过用户配置写入漏斗
+                if not updated:
+                    await self._set_cultivate_notice("")
                 removed = summarize_achievements(
                     targets, achievements, load_oper_box_names(context)
                 )
@@ -1285,19 +1290,23 @@ class AutoProxyTask(TaskExecuteBase):
             (养成任务配置, 是否存在原始目标, 是否接管抑制库存保持)
         """
 
-        if not self.cur_user_config.get("Task", "IfCultivate"):
-            await self._set_cultivate_notice("")
-            return None, False, False
+        # 早退判定与配置写入漏斗共用同一口径函数：notice 非 None 即「开关关闭
+        # 或无有效目标」，本轮不可能接管——恢复 dev 原有的开关早退，防止关掉
+        # 养成后仍按残留目标注入并抑制库存保持
+        raw_targets: object
         try:
             raw_targets = json.loads(
                 self.cur_user_config.get("Task", "CultivateTargets")
             )
         except (TypeError, ValueError):
             raw_targets = []
-        targets = parse_cultivate_targets(raw_targets)
-        if not targets:
-            await self._set_cultivate_notice("")
+        notice = takeover_notice_patch_value(
+            self.cur_user_config.get("Task", "IfCultivate"), raw_targets
+        )
+        if notice is not None:
+            await self._set_cultivate_notice(notice)
             return None, False, False
+        targets = parse_cultivate_targets(raw_targets)
 
         try:
             # 森空岛练度注入前强刷（决策 38：注入前重新查询一次，滞后≈0）；
