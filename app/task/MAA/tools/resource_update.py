@@ -1,8 +1,6 @@
 #   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
-#   Copyright © 2024-2025 DLmaster361
-#   Copyright © 2025 MoeSnowyFox
 #   Copyright © 2025-2026 AUTO-MAS Team
-
+#
 #   This file is part of AUTO-MAS.
 
 #   AUTO-MAS is free software: you can redistribute it and/or modify
@@ -27,8 +25,8 @@
 CheckAndDownloadResourceUpdate 只在 UpdateSource==MirrorChyan 且 CDK 非空时
 下载），GitHub 源只保留 GUI 手动入口（设置页按钮 / 主窗口拖拽导入），且没有
 任何程序化触发方式（Bootstrapper.ParseArgs 无相关 flag）。本模块在 MAS 侧
-补位：MAA 任务运行前（MaaManager.prepare 锁定配置之前）按需更新全部 MAA
-实例的资源。
+补位：MAA 自动代理任务运行前（MaaManager.prepare 锁定配置之前；配置会话
+不触发）按需更新全部 MAA 实例的资源。
 
 移除条件（任一落地即改为复用上游并删除本模块，见 .agents/skills/
 mas-script-specialized-adapter/references/blackbox-boundary.md）：
@@ -429,7 +427,13 @@ async def _stream_download(
         async with client:
             async with client.stream("GET", url) as resp:
                 resp.raise_for_status()
-                total = int(resp.headers.get("content-length") or 0)
+                # 总量只用于进度展示：坏代理可能给非数字头，解析失败按未知处理；
+                # Content-Length 是压缩口径而 aiter_bytes 产出解码后字节，经压缩
+                # CDN 时可能显示 x>y（同 update.py 先例，仅文案影响）
+                try:
+                    total = int(resp.headers.get("content-length") or 0)
+                except ValueError:
+                    total = 0
                 # 连接建立即上报一次（0 进度），让进度行立刻出现；其后每秒
                 # 至多一次，速度按滑动 1 秒窗口计算（同 update.py 先例）
                 await _report(progress, _download_line(label, 0, total, 0.0))
@@ -657,7 +661,7 @@ def _stage_reusable(
 def _stage_applies(stage: dict[str, object], clock: datetime) -> bool:
     """增量差分只安全作用于时钟恰为 from_clock 的实例（文件级差分对中间
     版本可能漏「改了又改回」的文件）；全量包对任何落后实例安全。
-    实测镜像酱给的是全量快照时可放宽为 from_clock <= clock（见 spec §11.1）。"""
+    实测镜像酱增量包若经真 CDK 验证为全量快照，可放宽为 from_clock <= clock。"""
     if bool(stage.get("full")):
         return True
     return _parse_iso(stage.get("from_clock")) == clock
@@ -796,6 +800,10 @@ async def _sweep(progress: _Progress | None = None) -> None:
         if time.monotonic() > deadline:
             logger.warning("MAA 资源更新: 达到单轮时限，剩余实例交由下一轮自愈")
             break
+        # 筛选后的占用快照可能已过期（前面的合并可达分钟级），合并前再查一次
+        if await asyncio.to_thread(_install_busy_now, install):
+            logger.info(f"MAA 资源更新: 合并前复查到占用，跳过 {install}")
+            continue
         try:
             await asyncio.to_thread(_apply_stage, install, stage_clock)
             done += 1
@@ -813,6 +821,8 @@ async def _sweep(progress: _Progress | None = None) -> None:
         )
     elif done:
         await _report(progress, f"资源已更新至 {_format_clock(stage_clock)}")
+    else:
+        await _report(progress, "本轮未完成分发，剩余实例下轮自愈")
 
 
 async def prepare_queue_resources(progress: _Progress | None = None) -> None:
