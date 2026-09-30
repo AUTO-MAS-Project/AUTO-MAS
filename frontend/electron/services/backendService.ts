@@ -360,11 +360,19 @@ export class BackendService {
 
     // 遥测开关（AUTO_MAS_TELEMETRY）与开发标记（AUTO_MAS_ENV）由 createRuntimeClient 统一注入，
     // 见 runtimeEnv.ts；配置从用户数据根 dataRoot 读，development 模式下它不是 --app-root。
+    const clientVersion = resolveRuntimeTargetVersion()
     const client = createRuntimeClient({
       runtimePath,
       appRoot: config.appRoot,
       dataRoot: config.dataRoot,
       launchMode: config.mode,
+      // alpha 后端是滚动 dev，遥测使用安装包版本；健康检查仍保留源码版本契约。
+      env: {
+        AUTO_MAS_NIGHTLY_VERSION:
+          config.mode === 'managed' && /^v\d+\.\d+\.\d+-alpha\.\d+$/.test(clientVersion)
+            ? clientVersion
+            : undefined,
+      },
     })
 
     if (config.mode === 'development') {
@@ -1375,8 +1383,13 @@ export class BackendService {
     // 仅开发环境标记运行环境，打包版必须清除继承值以正常上报遥测
     if (isDevelopmentEnvironment()) {
       env.AUTO_MAS_ENV = 'development'
+      delete env.AUTO_MAS_NIGHTLY_VERSION
     } else {
       delete env.AUTO_MAS_ENV
+      const clientVersion = resolveRuntimeTargetVersion()
+      env.AUTO_MAS_NIGHTLY_VERSION = /^v\d+\.\d+\.\d+-alpha\.\d+$/.test(clientVersion)
+        ? clientVersion
+        : undefined
     }
     return env
   }

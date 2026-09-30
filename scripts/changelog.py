@@ -1103,17 +1103,18 @@ def fragment_origin(
     relative = fragment.path.resolve().relative_to(root.resolve()).as_posix()
     output = git(
         "log",
+        "-1",
         "--diff-filter=A",
-        "--format=%H%x00%an%x00%ae%x00%s",
+        "--format=%H%x00%an%x00%ae%x00%s%x00%B",
         "--",
         relative,
         root=root,
     ).strip()
     if not output:
         return list(fragment.authors), pr_from_name
-    # git log 最新在前，取第一行：碎片发版后会被删除，同名文件可能被后来的 PR 再次
-    # 新增，要署最近一次新增它的人，而不是历史上第一个用过这个文件名的人
-    sha, name, email, subject = output.splitlines()[0].split("\x00", 3)
+    # 只取最近一次新增：碎片发版后会被删除，同名文件可能被后来的 PR 再次新增，
+    # 要署最近一次新增它的人，而不是历史上第一个用过这个文件名的人。
+    sha, name, email, subject, body = output.split("\x00", 4)
     subject_pr = SUBJECT_PR.search(subject)
     pr = int(subject_pr.group(1)) if subject_pr else pr_from_name
 
@@ -1123,7 +1124,11 @@ def fragment_origin(
     if noreply:
         return [noreply.group("login")], pr
     if resolve_online:
-        login = resolve_login_via_api(repo, sha, token)
+        # 本地准备阶段的 cherry-pick SHA 还未推送；使用 -x 保留的已发布来源查作者。
+        origins = re.findall(
+            r"(?m)^\(cherry picked from commit ([a-f0-9]{40})\)$", body
+        )
+        login = resolve_login_via_api(repo, origins[0] if origins else sha, token)
         if login:
             return [login], pr
     # 退回 git 作者名，但只有长得像登录名的才用：squash 提交里的作者名往往是显示名
@@ -1325,7 +1330,7 @@ def check_pull_request(
 ) -> List[str]:
     """PR 级别的规则，返回违规说明列表。
 
-    kind：normal（普通 PR）、release（发版 PR）、sync（dev→main 之类的同步 PR）。
+    kind：normal（普通 PR）、release（发版 PR）、record（发布记录）、sync（dev→main）。
     """
 
     problems: List[str] = []
@@ -1352,6 +1357,40 @@ def check_pull_request(
             "rev-parse", f"{dev_ref}:.github", root=root
         ):
             problems.append("同步 PR 的 .github/ 必须与 dev 完全一致，请更新同步分支")
+        return problems
+
+    if kind == "record":
+        if base != "origin/dev":
+            problems.append("发布记录 PR 只能以 dev 为目标")
+        current_version, sections, dates = parse_changelog(
+            read_text(root / "CHANGELOG.md")
+        )
+        published_text = show_file(f"refs/tags/{current_version}", "CHANGELOG.md", root)
+        if published_text is None:
+            problems.append("发布记录必须对应一个已发布的版本 tag")
+        else:
+            _, published, published_dates = parse_changelog(published_text)
+            for version, categories in published.items():
+                if (
+                    sections.get(version) != categories
+                    or dates.get(version) != published_dates[version]
+                ):
+                    problems.append(
+                        f"{version} 的记录与发布快照不符；请重跑记录作业，保留后续未发布条目"
+                    )
+            if current_version not in reachable_tags("HEAD", root):
+                problems.append(
+                    "发布记录必须保留版本 tag 的祖先关系，请使用 merge commit"
+                )
+        allowed = set(PROTECTED_FILES) | {relative for relative, _ in VERSION_FIELDS}
+        if any(
+            path not in allowed
+            and not (status == "D" and path.startswith("changelog.d/"))
+            for status, path in changes
+        ):
+            problems.append(
+                "发布记录只允许同步版本、更新日志与消费过的碎片，不得带入业务或 CI 改动"
+            )
         return problems
 
     if kind == "release":
@@ -1468,12 +1507,20 @@ def command_check(arguments: argparse.Namespace) -> int:
     )
     if arguments.pr_base and (arguments.pr_kind == "sync" or old_release):
         if old_release:
-            list_fragments()
+            # 未改动的旧碎片沿用旧版本规则，只校验本次新增或修改的碎片。
+            for status, relative in changed_files(arguments.pr_base, "HEAD"):
+                path = REPO_ROOT / relative
+                if (
+                    status != "D"
+                    and relative.startswith("changelog.d/")
+                    and FRAGMENT_NAME.match(path.name)
+                ):
+                    parse_fragment(path, read_text(path))
         problems = check_pull_request(
             base=arguments.pr_base,
             kind=arguments.pr_kind,
             skip_changelog=arguments.skip_changelog,
-            maintenance=False,
+            maintenance=arguments.maintenance,
             dev_ref=arguments.dev_ref,
         )
         if problems:
@@ -2488,9 +2535,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     check.add_argument(
         "--pr-kind",
-        choices=["normal", "release", "sync"],
+        choices=["normal", "release", "record", "sync"],
         default="normal",
-        help="normal 普通 PR、release 发版 PR、sync 同步 PR",
+        help="normal 普通 PR、release 发版 PR、record 发布记录、sync 同步 PR",
     )
     check.add_argument(
         "--skip-changelog", action="store_true", help="PR 带 skip-changelog 标签"

@@ -31,16 +31,20 @@ on:
 
 permissions:
   contents: write
-  actions: write
+  actions: read
   issues: write
 
 concurrency:
   group: build-app
   cancel-in-progress: false
+  queue: max
 
 jobs:
   build:
     name: 构建 Windows 版本
+    permissions:
+      contents: read
+      actions: read
     runs-on: windows-latest
     if: github.repository == 'AUTO-MAS-Project/AUTO-MAS'
 
@@ -66,15 +70,7 @@ jobs:
         with:
           ref: ${{ inputs.release_branch }}
           fetch-depth: 0
-
-      - name: 读取 dev 上当前发布工具
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: dev
-          path: .release-tools
-          sparse-checkout: |
-            scripts
-            .github
+          persist-credentials: false
 
       - name: 设定发布工具的源码根
         shell: pwsh
@@ -88,7 +84,7 @@ jobs:
       - name: 生成版本信息
         id: generate_version_info
         run: |
-          $versionTag = (python .release-tools/scripts/changelog.py current).Trim()
+          $versionTag = (python scripts/changelog.py current).Trim()
           if ($LASTEXITCODE -ne 0 -or -not $versionTag) { throw "读不到当前版本号" }
           $notePath = Join-Path $env:RUNNER_TEMP 'release-note.md'
           $runUrl = "$env:GITHUB_SERVER_URL/$env:GITHUB_REPOSITORY/actions/runs/$env:GITHUB_RUN_ID"
@@ -96,7 +92,7 @@ jobs:
           $sourceSha = (git rev-parse HEAD).Trim()
           if ($LASTEXITCODE -ne 0) { throw '无法读取构建源码 SHA' }
           "source_sha=$sourceSha" >> $env:GITHUB_OUTPUT
-          python .release-tools/scripts/changelog.py release-note --version $versionTag --output $notePath --github-output $env:GITHUB_OUTPUT --run-url $runUrl
+          python scripts/changelog.py release-note --version $versionTag --output $notePath --github-output $env:GITHUB_OUTPUT --run-url $runUrl
           if ($LASTEXITCODE -ne 0) { throw "渲染 Release 正文失败" }
           $changelog = Get-Content -LiteralPath $notePath -Raw -Encoding utf8
           $isPrerelease = if ($versionTag.Contains('-')) { 'true' } else { 'false' }
@@ -104,6 +100,7 @@ jobs:
           Add-Content -LiteralPath $env:GITHUB_OUTPUT -Value "version_tag=$versionTag" -Encoding utf8
           Add-Content -LiteralPath $env:GITHUB_OUTPUT -Value "is_prerelease=$isPrerelease" -Encoding utf8
           Add-Content -LiteralPath $env:GITHUB_OUTPUT -Value "version_changelog<<$delimiter`n$changelog`n$delimiter" -Encoding utf8
+          "WINDOWS_VERSION=$($versionTag -replace '^v(\d+\.\d+\.\d+).*$', '$1.0')" >> $env:GITHUB_ENV
           Write-Host "版本 $versionTag，预发布：$isPrerelease"
         shell: pwsh
 
@@ -127,10 +124,12 @@ jobs:
           if ([string]::IsNullOrWhiteSpace($env:SIGNPATH_API_TOKEN)) {
             throw '缺少 GitHub Actions secret: SIGNPATH_API_TOKEN'
           }
-          python .release-tools/scripts/changelog.py check
+          python scripts/changelog.py check
           if ($LASTEXITCODE -ne 0) { throw '生成物一致性检查失败' }
-          python .release-tools/scripts/changelog.py guard
+          python scripts/changelog.py guard
           if ($LASTEXITCODE -ne 0) { throw "发布守门未通过" }
+          python .github/scripts/release_automation.py patch-check
+          if ($LASTEXITCODE -ne 0) { throw '补丁未保留当前后端热修；重新选择修复并准备发版' }
           $releaseRef = "refs/heads/release/$env:VERSION_TAG"
           $remoteReleaseBranch = @(git ls-remote --heads origin $releaseRef)
           $lsRemoteExitCode = $LASTEXITCODE
@@ -146,7 +145,7 @@ jobs:
       - name: 下载并校验钉扎 Runtime
         env:
           GH_TOKEN: ${{ github.token }}
-        run: ./.release-tools/.github/scripts/download-runtime.ps1
+        run: ./.github/scripts/download-runtime.ps1
         shell: pwsh
 
       - name: 设置 Node.js 环境
@@ -271,28 +270,8 @@ jobs:
           SOURCE_SHA: ${{ needs.build.outputs.source_sha }}
           VERSION_TAG: ${{ needs.build.outputs.version_tag }}
         run: |
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git branch "release/$env:VERSION_TAG" $env:SOURCE_SHA
-          if ($LASTEXITCODE -ne 0) { throw '创建独立后端分支失败' }
-          git tag $env:VERSION_TAG $env:SOURCE_SHA
-          if ($LASTEXITCODE -ne 0) { throw '创建 tag 失败，禁止覆盖历史 tag' }
-          git push --atomic origin "refs/heads/release/$env:VERSION_TAG" "refs/tags/$env:VERSION_TAG"
-          if ($LASTEXITCODE -ne 0) { throw '创建发布引用失败，禁止覆盖或强推' }
-
-      - name: 读取源码同步工具
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: dev
-          path: .release-tools
-          sparse-checkout: .github/scripts
-      - name: 同步本版后端来源到 CNB
-        shell: pwsh
-        env:
-          CNB_GIT_TOKEN: ${{ secrets.GIT_PASSWORD }}
-          SOURCE_SHA: ${{ needs.build.outputs.source_sha }}
-          VERSION_TAG: ${{ needs.build.outputs.version_tag }}
-        run: ./.release-tools/.github/scripts/sync-cnb.ps1 -VersionTag $env:VERSION_TAG -SourceSha $env:SOURCE_SHA
+          python .github/scripts/release_automation.py publish-refs --sha $env:SOURCE_SHA --version $env:VERSION_TAG
+          if ($LASTEXITCODE -ne 0) { throw '创建发布引用失败；仅允许同次构建 SHA 续跑，禁止覆盖或强推' }
 
       - name: 发布发行版
         uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
@@ -391,14 +370,18 @@ jobs:
 
   cnb:
     name: 发布 CNB 发行版
+    permissions:
+      contents: read
+      actions: read
     runs-on: ubuntu-latest
     needs: [build, release]
     if: github.repository == 'AUTO-MAS-Project/AUTO-MAS'
     steps:
-      - name: 读取当前发布工具
+      - name: 读取本次构建快照的发布工具
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: dev
+          ref: ${{ needs.build.outputs.source_sha }}
+          persist-credentials: false
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: '3.12'
@@ -407,6 +390,13 @@ jobs:
         run: |
           python -m pip install -r .github/workflows/requirements.txt
           if ($LASTEXITCODE -ne 0) { throw '安装 CNB 发布依赖失败' }
+      - name: 同步本版后端来源到 CNB
+        shell: pwsh
+        env:
+          CNB_GIT_TOKEN: ${{ secrets.GIT_PASSWORD }}
+          SOURCE_SHA: ${{ needs.build.outputs.source_sha }}
+          VERSION_TAG: ${{ needs.build.outputs.version_tag }}
+        run: ./.github/scripts/sync-cnb.ps1 -VersionTag $env:VERSION_TAG -SourceSha $env:SOURCE_SHA
       - name: 同次构建直接发布 CNB（不依赖 CNB 分支事件配置）
         shell: pwsh
         env:
@@ -422,35 +412,45 @@ jobs:
 
   record-dev:
     name: 将开发线发布记录送回 dev 审核
-    needs: [build, release, cnb, mirror]
+    needs: [build, release]
     if: contains(needs.build.outputs.version_tag, '-beta.') || endsWith(needs.build.outputs.version_tag, '.0')
     runs-on: ubuntu-latest
     permissions:
       contents: read
       pull-requests: write
     steps:
+      - name: 读取本次构建快照的记录工具与完整历史
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.build.outputs.source_sha }}
+          fetch-depth: 0
+          token: ${{ secrets.RELEASE_PR_TOKEN }}
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
       - name: 创建开发线记录 PR（维护者合并后继续下一 beta）
         shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.RELEASE_PR_TOKEN }}
           VERSION_TAG: ${{ needs.build.outputs.version_tag }}
+          SOURCE_SHA: ${{ needs.build.outputs.source_sha }}
           GH_REPO: ${{ github.repository }}
+          AUTO_MAS_CHANGELOG_ROOT: ${{ github.workspace }}
         run: |
           if (-not $env:GH_TOKEN) { throw '需要 RELEASE_PR_TOKEN 才能创建开发线记录 PR' }
-          $head = "release/$env:VERSION_TAG"
-          $existing = gh pr list --base dev --head $head --state open --json number | ConvertFrom-Json
-          if ($LASTEXITCODE -ne 0) { throw '查询记录 PR 失败' }
-          if ($existing.Count -eq 0) {
-            $body = Join-Path $env:RUNNER_TEMP 'record-dev.md'
-            "- 将 $env:VERSION_TAG 的版本、更新日志与已消费碎片记录同步回 dev。`n- 使用 merge commit 合并以保留发布 tag 的祖先关系，勿 squash；转正守门会校验最新 beta 已包含在源码中。`n- 保留 dev 后续未发布改动，冲突由维护者审核解决；补丁维护线不运行此步骤。" | Set-Content $body
-            gh pr create --base dev --head $head --title "chore: 同步 $env:VERSION_TAG 开发线发布记录" --body-file $body --label changelog-maintenance --label skip-changelog
-            if ($LASTEXITCODE -ne 0) { throw '创建记录 PR 失败' }
-          }
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          $tools = Join-Path $env:RUNNER_TEMP 'record-tools'
+          New-Item -ItemType Directory -Force $tools | Out-Null
+          Copy-Item scripts/changelog.py $tools/
+          Copy-Item .github/scripts/release_automation.py $tools/
+          python "$tools/release_automation.py" record-dev --changelog "$tools/changelog.py" --version $env:VERSION_TAG --sha $env:SOURCE_SHA
+          if ($LASTEXITCODE -ne 0) { throw '创建记录 PR 失败；保留已有分支和发布来源，可重跑本作业' }
 
   mirror:
     name: 推送镜像版本
     runs-on: macos-latest
-    needs: [build, release, cnb]
+    needs: [build, release]
 
     steps:
       - name: 下载构建产物

@@ -21,6 +21,7 @@
 
 
 import json
+import os
 import re
 from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
@@ -323,7 +324,7 @@ def _start_sentry(release: str, dist: str | None = None) -> None:
         dsn=SENTRY_DSN,
         release=f"auto-mas@{release}",
         dist=dist,
-        environment="production",
+        environment="nightly" if "-alpha." in release else "production",
         send_default_pii=False,
         include_local_variables=False,
         include_source_context=False,
@@ -487,9 +488,19 @@ def init_sentry(
     if development:
         return
 
-    _sentry_release = release
+    _sentry_release = resolve_telemetry_version(release)
     _sentry_dist = dist
     set_telemetry_enabled(enabled)
+
+
+def resolve_telemetry_version(source_version: str) -> str:
+    """滚动 dev 的遥测归属于 alpha 安装包，源码版本继续用于 Runtime 身份校验。"""
+    version = os.environ.get("AUTO_MAS_NIGHTLY_VERSION", "")
+    return (
+        version
+        if re.fullmatch(r"v\d+\.\d+\.\d+-alpha\.\d+", version)
+        else source_version
+    )
 
 
 __all__ = [
@@ -499,6 +510,7 @@ __all__ = [
     "record_count",
     "record_distribution",
     "resolve_sentry_dist",
+    "resolve_telemetry_version",
     "sample_trace",
     "sanitize_event",
     "set_telemetry_enabled",

@@ -16,6 +16,8 @@ jobs:
     secrets: inherit
   build:
     needs: absorb
+    permissions:
+      contents: read
     if: github.repository == 'AUTO-MAS-Project/AUTO-MAS'
     runs-on: windows-latest
     defaults:
@@ -30,6 +32,7 @@ jobs:
         with:
           ref: dev
           fetch-depth: 0
+          persist-credentials: false
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: '3.12'
@@ -104,6 +107,9 @@ jobs:
           retention-days: 30
   publish:
     needs: build
+    permissions:
+      contents: write
+      actions: read
     if: needs.build.outputs.built == 'true'
     runs-on: ubuntu-latest
     defaults:

@@ -39,11 +39,11 @@ on:
         description: '补丁必填：修复 SHA，按依赖顺序用空格分隔；含旧 release 上保留碎片的修复'
         type: string
 permissions:
-  contents: write
-  pull-requests: write
+  contents: read
 concurrency:
   group: prepare-release
   cancel-in-progress: false
+  queue: max
 jobs:
   prepare:
     if: github.repository == 'AUTO-MAS-Project/AUTO-MAS'
@@ -54,11 +54,12 @@ jobs:
     env:
       GH_TOKEN: ${{ secrets.RELEASE_PR_TOKEN }}
       AUTO_MAS_CHANGELOG_ROOT: ${{ github.workspace }}
+      ENTRY_REF: ${{ github.ref_name }}
     steps:
       - name: 要求可写工作流并触发 PR 检查的令牌
         run: |
           if (-not $env:GH_TOKEN) { throw '需要 RELEASE_PR_TOKEN：Contents/Pull requests/Workflows 写权限' }
-          if ('${{ github.ref_name }}' -notin @('main', 'dev')) { throw '请从 main 或 dev 入口运行，勿从旧 release 分支运行' }
+          if ($env:ENTRY_REF -notin @('main', 'dev')) { throw '请从 main 或 dev 入口运行，勿从旧 release 分支运行' }
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: dev
@@ -67,16 +68,18 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: '3.12'
-      - name: 保存工具并拉取全部基准与修复
+      - name: 拉取版本基准与修复并保存同一 dev 快照的工具
         run: |
+          git fetch --no-tags origin
+          if ($LASTEXITCODE -ne 0) { throw '拉取分支失败' }
+          git fetch --no-tags origin 'refs/tags/v*:refs/tags/v*'
+          if ($LASTEXITCODE -ne 0) { throw '拉取版本 tag 失败' }
+          git checkout --detach refs/remotes/origin/dev
+          if ($LASTEXITCODE -ne 0) { throw '检出准备工具快照失败' }
           $tools = Join-Path $env:RUNNER_TEMP 'release-tools'
           New-Item -ItemType Directory -Force $tools | Out-Null
           Copy-Item scripts/changelog.py $tools/
           Copy-Item .github/scripts/release_automation.py $tools/
-          git fetch origin
-          if ($LASTEXITCODE -ne 0) { throw '拉取分支失败' }
-          git fetch origin --tags
-          if ($LASTEXITCODE -ne 0) { throw '拉取 tag 失败' }
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
       - name: 在独立分支组装指定源码

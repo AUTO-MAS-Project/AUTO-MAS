@@ -15,6 +15,9 @@
   保留 30 天。然后只删除重建 dev Release/tag，在草稿中上传全部附件和
   `nightly-build.json`，确认完整后公开为预发布、非 Latest。失败可从 Artifact
   下载包；下一次运行不会把失败当成成功，可手动重跑 nightly。
+  发布前按构建号拒绝旧运行覆盖较新的公开版本或草稿；同次完整发布的重试无副作用。
+  更新仍有删除旧入口到公开新草稿的空窗；失败时使用同次 Actions 产物恢复。
+  防回退检查只在包含修复脚本的运行中生效；勿重跑修复前旧产物自带的发布脚本。
   nightly 不签名、不调用 CNB/Mirror 酱/自建源的产物发布。
 - alpha 首装和更新从 dev 读 Runtime 钉扎，Runtime 始终按实际 Commit 检查滚动更新；
   dev 源码版本可跨开发周期，与 alpha 构建号无需相同。受管仓库绑定完整目标版本、
@@ -22,6 +25,8 @@
   普通客户端更新仍走 stable/beta 正常发布源；alpha 客户端跳过该整包更新检查，
   nightly 包在 GitHub 手动下载，不加入普通用户默认升级目标。
   Runtime 的 dev 后端更新不受影响，后台更新提示继续显示真实目标提交信息。
+  Electron 经 Runtime 向后端透传 alpha 安装包版本，Sentry 使用 nightly 环境，Matomo
+  使用该安装包版本；健康检查继续报告源码版本，保持 Runtime 的身份校验契约。
 - 旧版本后端热修：将兼容验证过的修复及一个碎片通过 cherry-pick PR 纳入旧
   `release/vX.Y.Z`。不入账、不提升版本、不合入 dev，不要求先入账才能热更。
   下一补丁从正式 tag 快照重放选定修复，不能依赖旧 release 的全部分支内容。
@@ -34,11 +39,16 @@
    缺失修复、merge/root 提交、冲突或修改发布版本字段都会拒绝，绝不隐式合入 dev。
    若确实要把 dev 全量发布为补丁，须另行确认范围并修改方案，此入口不提供捷径。
 2. 工作流先在本地组装独立 `codex/release-base-v目标`，从正式 tag 仅 cherry-pick
-   所选修复（原修复即使已在旧 release 上也会纳入；已在基准中的等效补丁跳过）。
-   补丁仅另外迁移 dev 当前的五个 CI 入口：入账、准备发版、构建发布、更新日志检查和 CNB 同步，
-   防止旧 tag 的 push 入账与旧守门规则在新 release 上复活；工具由入口从 dev 读取。
+   所选修复（原修复即使已在旧 release 上也会纳入；实际重放为空才跳过，被回滚的修复会重新应用）。
+   准备和构建前均核对 `release/<基准>` 的有效后端热修，漏填或重叠变化无法确认保留时拒绝，
+   须补齐 SHA 或人工复核后重新准备，不会升级后静默丢掉已安装客户端拿到的修复。
+   补丁另外迁移 dev 当前的六个 CI 入口：入账、准备发版、构建发布、更新日志检查、CNB 同步及 Mirror 酱版本说明，
+   防止旧 tag 的 push 入账与旧守门规则在新 release 上复活。
+   同时冻结 `scripts/changelog.py`、`.github/scripts` 和 CNB 上传工具及依赖清单，
+   生成、PR 检查、构建与发布使用同一快照，后续 dev 模板变化不影响已准备版本。
    不带入 dev 业务代码、版本文件、更新日志或其他工作流，旧 release 的 CI 文件不改。
-   原始修复碎片随提交保留并统一编译、署名和清理。依赖是否满足运行语义、是否兼容
+   原始修复碎片随提交保留并统一编译、署名和清理；本地 cherry-pick 使用原 SHA 查作者。
+   依赖是否满足运行语义、是否兼容
    旧客户端仍由维护者审核和运行对应测试；自动 cherry-pick 成功不代表兼容证明。
 3. 发版 PR 的 head 为 `codex/release-v目标`，base 为独立准备分支，只有 head
    写入版本/日志生成物。所有检查通过后才普通原子推送两个新分支并创建 PR。
@@ -46,19 +56,27 @@
 4. 审核并合并 PR 后，从 **main 的最新构建工作流入口**选择该准备分支。
    构建守门按发布线和全仓库 tag 拒绝重号/倒退；正式补丁不受下一周期 beta 阻挡。
    GitHub 新 tag 与新 `release/<完整版本>` 原子创建于构建 SHA；不覆盖旧 tag/Release。
-   CNB 源码先普通推送，再从同一个 GitHub Actions run 下载包，直接调用现有 CNB
+   GitHub 发布成功后，CNB 作业先普通同步源码，再从同一个 GitHub Actions run 下载包，调用现有 CNB
    上传脚本，以相同 SHA/tag/预发布标记发布。无需把新准备分支补进 `.cnb.yml` 的
    main/dev 触发配置，也不再调用与该配置不匹配的准备分支事件。
    Mirror 酱和自建源继续按 stable/beta 渠道发布同一版本包。
-5. beta/开发线正式版发布后会创建发布记录 PR 到 dev。使用 merge commit 合并，勿 squash，
-   以保留发布 tag 的祖先关系供转正守门验证。维护者保留后续未发布改动、
-   解决可能的更新日志冲突后合并，才能继续下个 beta/转正，防止重复发布同批条目。
+   准备与构建均保留串行队列，最多 100 个等待请求；CNB 附件、Mirror 酱和
+   发布记录 PR 分别依赖 GitHub 发布成功，一个后续平台失败不阻断另外两项。
+5. beta/开发线正式版发布后，从当时最新 dev 创建 `codex/release-record-v目标` 的记录 PR。
+   业务树保留 dev 当前内容，发布段按已发布快照重建；仅扣除准备时已消费的条目和碎片，
+   准备之后的条目留在未发布段，后续碎片保留。临时分支带有发布 tag 的祖先关系，
+   不直接用受保护的 `release/*` 作 PR head，旧后端来源不接受冲突解决提交。
+   使用 merge commit 合并，勿 squash；检查实际合并结果的发布段必须与已发布快照一致，
+   若后续入账被 Git 合并进发布段，检查拒绝，须重跑记录作业更新同一个 PR。
    准备开发线版本前检查最新 beta 或 `X.Y.0` 的记录；即使随后发布了维护补丁，
    也不能跳过这项检查。维护补丁的记录无需合回 dev，不阻止独立补丁准备。
+   准备入口同时检查发布 tag 的祖先关系；记录被 squash 时在创建准备分支前拒绝，
+   可重跑记录作业修复祖先关系，已有准确发布段不重复消费或插入；仍须普通合并，不能仅复制日志。
    转正 PR 和构建前还会确认源码包含本周期最新 beta；准备后又发布 beta 时须重新合入记录并准备。
    补丁不送回 dev；5.6.1/5.6.2 和 5.7.0-beta.2/beta.3/5.7.0 各自推进。
-   正常发布中途失败保留已创建的引用，勿删改已发布版本；未完成的平台由维护者
-   使用同次 Actions 包补传。这与可删除重建的 nightly dev 不同。
+   正常发布中途失败保留已创建的引用，重跑失败发布作业时只接受与同次构建 SHA 相同的
+   分支和 tag，并补齐缺失引用；身份不一致直接拒绝。CNB 失败不阻断 GitHub Release、
+   Mirror 酱、自建源和记录 PR；可独立重跑失败作业。不要重新构建已经打 tag 的版本。
 
 ## Secrets、权限与首次上线
 
@@ -72,13 +90,15 @@
    写权限。令牌必须能修改工作流并触发 PR 检查，本实现不回退普通 GITHUB_TOKEN。
    具体权限参见 [GitHub 令牌说明](https://docs.github.com/en/actions/concepts/security/github_token)。
    自动 PR 不合并。GITHUB_TOKEN 供入账、nightly、正式 Release 使用，需要 Contents
-   写和 Actions 写；正式流程另外需要 Issues 写。准备和记录 PR 标签需预先存在：
+   写；入账触发 CNB 同步需 Actions 写，nightly 调用方保留该权限，发布任务只需 Actions 读。
+   正式流程另外需要 Actions 读和 Issues 写。构建任务只读且不保留 checkout 凭据。
+   准备和记录 PR 标签需预先存在：
    `release`、`skip-changelog`、`changelog-maintenance`。
 3. 正常发布继续需要 `SIGNPATH_API_TOKEN`、`SENTRY_AUTH_TOKEN`、`SENTRY_ORG` /
    `SENTRY_PROJECT` 变量、`CNB_TOKEN`、`GIT_PASSWORD`、`MirrorChyanUploadToken`、
    `UPDATE_URL`。nightly 仅使用 GITHUB_TOKEN 下载 Runtime 与发布 GitHub 产物。
 4. 先把实现合入 dev，再将 **仅 .github** 的首次上线 PR 合入 main，带入每日入口、
-   可复用入账与同步工作流。main 上的新工作流从 dev 读取发布工具，不要求将
+   可复用入账与同步工作流。准备入口读取 dev 工具，构建读取准备快照，不要求将
    scripts、版本文件、业务代码或 `.cnb.yml` 一起同步；不要将旧发布准备代码写回旧 release。
    main 已安装新同步工作流后，dev/.github 后续变化自动更新同一个同步 PR。
    删除亦同步，无差异不创建，更新仅普通推送；main 只接受本仓库 `codex/sync-github-main`
@@ -86,13 +106,23 @@
    **已有 release 分支的旧 push 工作流不会随 main/dev 更新自动消失。** 必须将这些
    分支的 `absorb-changelog.yml` 替换为新的仅 dev 入口或移除它，同时移除旧的
    `prepare-release.yml` / `build-app.yml` 手动发布入口，统一从 main 运行新流程。
-   只改这三份 CI 入口，可随下一次经过兼容验证的修复一并纳入同一个 PR；
+   还须替换旧 `sync-cnb.yml`，停止其强制同步；在向旧 release 再次推送任何热修前
+   完成这些 CI 入口的迁移，可与经过兼容验证的修复纳入同一个 PR；
    不编译/清理碎片、不提升版本，不另外追加入账机器人提交，不改写已有历史。
    迁移完成前不能宣称旧 release 已停止自动入账。
-   旧 release 的普通热修检查保留历史日志模板和生成物，只校验碎片、受保护文件差异及 dev 提交混入。
+   旧 release 的普通热修检查保留历史日志模板和生成物，只按现行规则校验本次新增/修改的碎片，
+   未改动的旧碎片沿用原规则；仍检查受保护文件差异及 dev 提交混入，维护标签按实际输入生效。
+   dev 尚无新 CNB 同步工具时，首次分支检查警告跳过，合入 dev 后须重跑确认同步成功。
+   **首次同步前先合入 #1122 的 CI 迁移**，保留 #966 引入的 Windows 构建检查。
+   同步发现从未进入 dev 的 main 独有 CI 文件时直接拒绝，不创建删除它们的 PR；
+   曾进入 dev 后由 dev 删除的文件仍正常同步删除。
 5. GitHub immutable releases 不能用于滚动 dev Release；若仓库启用了这项设置，
    维护者须处理 nightly 可变发布要求。普通版本不可改写。
-   CNB 远端有分叉时普通源码同步会失败，须维护者诊断，不使用 force push。
+   CNB 全仓库同步逐引用普通推送：分叉引用保留并报错，其他 dev、release 分支和正式 tag
+   继续同步；历史分叉不会让所有引用都失败。新版本的分支/tag 仍成对原子同步。
+   须维护者诊断被拒的引用，不使用 force push。
+   准备和同步只拉取不可变 `v*` tag，滚动 dev tag 不参与拉取或镜像。
+   手动操作 dev 分支时使用 `refs/heads/dev`，避免同名 tag 的 refspec 歧义。
 
 ## 改动清单
 
@@ -118,10 +148,31 @@
 
 ## 已执行的验证与边界
 
+- 2026-09-30 最新评论修复：发布、更新日志、更新及健康检查的组合回归 205 通过、1 跳过，
+  临时 Git 仓库覆盖被回滚修复重放、漏选及新增热修拦截、相邻兼容改动、删除/插入/二进制热修、
+  CNB 分叉隔离、同 SHA 发布重试、准确记录与后续条目保留、squash 后记录恢复、首次 CI 迁移守门、
+  原 SHA 署名、旧版碎片及维护标签。之后补充了 nightly 读取元数据改变下载次数的场景，
+  相关 19 项通过，发布状态复核只比较身份和附件内容；本地 502 项测试收集成功。
+  前端全量 97 个文件、925 项通过，含 alpha 遥测版本透传及主进程归属验证；
+  lint、typecheck、build:main、Ruff、更新日志生成物、12 个工作流 YAML、43 个 PowerShell 输入、
+  47 个 action 与 4 个容器镜像的固定引用和差异检查通过。一次性验证文件仅留本地，不提交。
+  actionlint 1.7.12 对原文件只报告不支持两处 `queue: max`；去掉该字段的临时副本检查通过，
+  源文件的排队配置按 GitHub 官方文档核对，未宣称原文件 actionlint 全量通过。
+- 2026-09-29 评论修复：发布/更新日志测试合计 167 通过、1 跳过，包含 13 个本地新增场景，
+  覆盖旧 nightly 重试保留新版及草稿、运行身份、删除前状态复核、错误附件、squash 记录拒绝、
+  冻结工具抵抗后续 dev 模板变化，以及滚动 tag 拉取不冲突、正式 tag 异常变化仍被拒绝。
+  后续加强的模板对照用例单独复跑通过。一次性测试文件仅留本地。
+- 本轮本地收集 478 项，已提交测试集合单独收集 409 项；两者都成功。
+  Ruff lint/format、12 个工作流 YAML、Python AST、40 段 PowerShell 和 3 个脚本语法、
+  45 个外部 action 的 SHA 钉扎及差异检查通过。
+  actionlint 1.7.12 尚不识别 `queue: max`；只在临时副本去除此字段后其余检查通过，
+  源文件保留按 [GitHub 官方并发文档](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency)
+  核对的串行队列配置，不能把这次检查表述为原文件 actionlint 全量通过。
 - 发布记录守门：`python -m pytest tests/tools/test_release_workflows_temp.py -q`：42 项通过，包括 14 个未入账/已入账、beta/转正及后续维护补丁场景。
 - 初次 AUTO-MAS 验证：`python -m pytest tests/tools/test_release_workflows_temp.py tests/tools/test_changelog_script.py tests/core/test_git_version.py tests/api/test_core_health.py -q`：141 通过，1 跳过。
   临时本地仓库和模拟 GitHub API 覆盖 dev 入账、真实非快进拒绝后重算、补丁与 beta 并行、旧来源保留、必要 CI 入口迁移、nightly 完整/缺失/部分失败与重试、同步 PR 增删改与重复运行。
-- `python -m pytest tests --collect-only -q`：451 项收集成功。
+- `python -m pytest tests --collect-only -q`：初次本地收集 451 项，包含未提交的一次性测试，
+  不是 PR 内测试集合；评审在 b00e2e5e 的已提交测试中收集 409 项。
 - 前端：`yarn typecheck`、`yarn build:main` 通过；`yarn test electron/services/runtimeBinaryService.test.ts electron/services/runtimeInitializationService.test.ts electron/services/runtimeUpdateService.test.ts src/utils/changelog.test.ts`：182 项通过；三个修改过的 TypeScript 文件格式检查通过。
 - Runtime：`gofmt`、`go vet ./...`、`go build -buildvcs=false ./...`、`go test -p 1 ./... -count=1` 通过；已有 alpha 首装、滚动提交更新、身份校验、启动及恢复测试随完整套件执行。
 - `actionlint -shellcheck= -pyflakes=`、Python 编译、四个 `.ps1` 文件及 40 段工作流 PowerShell 语法检查通过；`scripts/changelog.py check` 和两仓库 `git diff --check` 通过。

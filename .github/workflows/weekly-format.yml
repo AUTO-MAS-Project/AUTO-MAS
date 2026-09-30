@@ -80,5 +80,5 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git commit -m "style: 自动格式化代码"
-          git pull --rebase origin dev
-          git push origin HEAD:dev
+          git pull --rebase --no-tags origin refs/heads/dev
+          git push origin HEAD:refs/heads/dev

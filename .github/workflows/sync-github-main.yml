@@ -5,8 +5,7 @@ on:
     paths: ['.github/**']
   workflow_dispatch:
 permissions:
-  contents: write
-  pull-requests: write
+  contents: read
 concurrency:
   group: sync-github-main
   cancel-in-progress: false

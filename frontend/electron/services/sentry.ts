@@ -16,11 +16,14 @@ const isSentryEnabled = () => Sentry.getClient()?.getOptions().enabled === true
 
 const startSentry = () => {
   if (isDevelopmentEnvironment()) return
+  const version = app.getVersion()
+  const nightly = /-alpha\.\d+$/.test(version)
+  const releaseVersion = nightly && !version.startsWith('v') ? `v${version}` : version
 
   Sentry.init({
     dsn: SENTRY_DSN,
-    release: `auto-mas@${app.getVersion()}`,
-    environment: 'production',
+    release: `auto-mas@${releaseVersion}`,
+    environment: nightly ? 'nightly' : 'production',
     sendDefaultPii: false,
     includeLocalVariables: false,
     serverName: 'AUTO-MAS',

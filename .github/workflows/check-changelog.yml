@@ -20,11 +20,12 @@
 
 name: 检查更新日志
 
-# 三类 PR 三套规则，全部由 scripts/changelog.py check 实现：
+# PR 规则由 scripts/changelog.py check 实现：
 #   - 普通 PR：改了用户可见代码就必须恰好新增一个 changelog.d/ 碎片（或带 skip-changelog 标签），
 #     且不得改 CHANGELOG.md、res/version.json 与五处版本号；目标是 release/* 时还不得带入 dev 独有提交。
 #   - 发版 PR（标题 Release vX.Y.Z 或带 release 标签）：碎片必须已清空、版本号必须比目标分支新。
 #   - 同步 PR（目标是 main）：只允许 .github 差异，不依赖 main 的版本生成物。
+#   - 发布记录 PR：合并结果必须与发布快照一致，后续条目保留在未发布段。
 # 其他 PR 校验所选发布线上的版本下限，防止合并时把版本提升冲掉。
 # labeled / unlabeled 也触发，这样加上 skip-changelog 标签后不用再推一次提交。
 
@@ -50,11 +51,11 @@ jobs:
           fetch-depth: 0
 
       # 版本号守门要看 tag，release 分支的守门要看 dev；pull_request 的检出默认都没有。
-      - name: 拉取目标分支、dev 与全部 tag
+      - name: 拉取目标分支、dev 与不可变版本 tag
         env:
           BASE_REF: ${{ github.base_ref }}
         run: |
-          git fetch --no-recurse-submodules origin "+refs/heads/$($env:BASE_REF):refs/remotes/origin/$($env:BASE_REF)" '+refs/heads/dev:refs/remotes/origin/dev' '+refs/tags/*:refs/tags/*'
+          git fetch --no-tags --no-recurse-submodules origin "+refs/heads/$($env:BASE_REF):refs/remotes/origin/$($env:BASE_REF)" '+refs/heads/dev:refs/remotes/origin/dev' 'refs/tags/v*:refs/tags/v*'
           if ($LASTEXITCODE -ne 0) { throw '拉取检查基准失败' }
 
       - name: 设置 Python 环境
@@ -76,6 +77,10 @@ jobs:
             if ($env:PR_HEAD_REPO -ne $env:GITHUB_REPOSITORY -or $env:PR_HEAD_REF -ne 'codex/sync-github-main') { throw 'main 仅接受本仓库 codex/sync-github-main 的工作流同步 PR' }
             $kind = 'sync'
           }
+          elseif ($env:BASE_REF -eq 'dev' -and $env:PR_HEAD_REF -match '^codex/release-record-v\d+\.\d+\.0(-beta\.\d+)?$') {
+            if ($env:PR_HEAD_REPO -ne $env:GITHUB_REPOSITORY) { throw '发布记录必须来自本仓库的临时记录分支' }
+            $kind = 'record'
+          }
           elseif ($env:BASE_REF -like 'codex/release-base-v*' -or ",$env:PR_LABELS," -like '*,release,*' -or $env:PR_TITLE -like 'Release v*') { $kind = 'release' }
           "kind=$kind" >> $env:GITHUB_OUTPUT
           Write-Host "PR 类型：$kind"
@@ -96,7 +101,7 @@ jobs:
           if (($response -join "`n") -notmatch 'HTTP/[0-9.]+ 404') { throw '确认旧署名机器人已移除失败，不能将权限或网络错误当成不存在' }
 
       - name: 读取 dev 的当前发布检查工具
-        if: steps.kind.outputs.kind != 'normal' || startsWith(github.base_ref, 'release/')
+        if: steps.kind.outputs.kind == 'sync' || startsWith(github.base_ref, 'release/')
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: dev
@@ -110,8 +115,14 @@ jobs:
           PR_KIND: ${{ steps.kind.outputs.kind }}
           PR_LABELS: ${{ join(github.event.pull_request.labels.*.name, ',') }}
         run: |
-          # 普通 dev PR 用自身检查器，允许同时更新生成器和模板；旧快照/main 使用 dev 工具。
-          $tool = if ($env:PR_KIND -ne 'normal' -or $env:BASE_REF -like 'release/*') { '.release-tools/scripts/changelog.py' } else { 'scripts/changelog.py' }
+          # 普通 dev PR 用自身检查器；发版 PR 使用准备基线的冻结工具；旧 release/main 用 dev 工具。
+          $tool = 'scripts/changelog.py'
+          if ($env:PR_KIND -eq 'sync' -or $env:BASE_REF -like 'release/*') { $tool = '.release-tools/scripts/changelog.py' }
+          elseif ($env:PR_KIND -eq 'release') {
+            $tool = Join-Path $env:RUNNER_TEMP 'release-changelog.py'
+            git show "origin/$($env:BASE_REF):scripts/changelog.py" | Set-Content -LiteralPath $tool -Encoding utf8
+            if ($LASTEXITCODE -ne 0) { throw '读取准备基线的检查工具失败' }
+          }
           $arguments = @('check', '--pr-base', "origin/$env:BASE_REF", '--pr-kind', $env:PR_KIND)
           if (",$env:PR_LABELS," -like '*,skip-changelog,*') { $arguments += '--skip-changelog' }
           if (",$env:PR_LABELS," -like '*,changelog-maintenance,*') { $arguments += '--maintenance' }
