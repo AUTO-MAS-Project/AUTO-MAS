@@ -55,6 +55,7 @@ from app.task.MaaFW.tools.core.runner.models import (
     MaaFWSkippedTaskPlan,
 )
 from app.task.MaaFW.tools.core.runner.run_plan import (
+    NO_RUNNABLE_TASKS_MESSAGE,
     MaaFWRunPlanError,
     resolve_run_selection,
     select_snapshot_tasks,
@@ -957,8 +958,9 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             return _with_skipped_tasks(plan, missing_skips)
         except Exception as exc:
             message = str(exc)
-            if missing_skips:
-                # 队列里只剩虚影时「没有可执行任务」说不清原因，把对不上的任务名带上
+            if missing_skips and NO_RUNNABLE_TASKS_MESSAGE in message:
+                # 队列里只剩虚影时「没有可执行任务」说不清原因，把对不上的任务名带上；
+                # 别的报错（拆用户、找不到 controller……）与虚影无关，不附加
                 names = "、".join(dict.fromkeys(item.name for item in missing_skips))
                 message = f"{message}（interface 内已无：{names}）"
             raise MaaFWRunPlanError(message) from exc

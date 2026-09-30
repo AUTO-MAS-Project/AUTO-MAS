@@ -765,7 +765,8 @@ const selectTask = (taskId: string) => {
 const flavorSlotContext = computed<MaaFWUserSlotContext>(() => ({
   formData,
   loading: loading.value,
-  queuedTaskCount: taskSnapshot.value.taskOrder.length,
+  // 虚影不会运行，不算进队列（MSS 靠它提示「队列为空又没选计划表」）
+  queuedTaskCount: presentQueuedTasks.value.length,
 }))
 
 const persistQueuedSnapshot = async () => {
