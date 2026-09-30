@@ -2590,6 +2590,8 @@ export default {
       poweredBy: 'Powered by {name}',
       poweredByM9A: 'Powered by M9A',
       stale: 'キャッシュ',
+      staleMessage: '前回取得したイベント情報を表示しています',
+      unavailable: '{name}のイベント情報を一時的に取得できません',
       endedAt: '{time} 終了',
     },
     bluearchive: {

@@ -3191,6 +3191,8 @@ export default {
       poweredBy: 'Powered by {name}',
       poweredByM9A: 'Powered by M9A',
       stale: 'Cached',
+      staleMessage: 'Using the last successfully fetched event data',
+      unavailable: '{name} event data is temporarily unavailable',
       endedAt: 'Ends {time}',
     },
     bluearchive: {

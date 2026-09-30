@@ -1,5 +1,5 @@
 import { onScopeDispose, ref, watch } from 'vue'
-import { i18n } from '@/i18n'
+import { i18n, translate } from '@/i18n'
 import { createEmptySraActivityOverview } from '@/types/home'
 import type { SraActivityItem, SraActivityOverview } from '@/types/home'
 
@@ -47,8 +47,11 @@ const snapshotKey = (game: string, locale: string) =>
  * （缺档回退无语言标识的默认数据），带超时、失败退避重试、本地快照
  * （stale-while-revalidate）与独立失败态——任一源异常只影响本卡片，
  * 不阻塞其它卡片。
+ *
+ * @param nameKey 游戏名的 i18n key（如 home.game.starrail）。失败文案在
+ * 出错时按当前语言现取，不缓存初始化时的译文，切语言后不会显示旧语言文案。
  */
-export const useSraActivitySource = (game: string, displayName: string) => {
+export const useSraActivitySource = (game: string, nameKey: string) => {
   const overview = ref<SraActivityOverview>(createEmptySraActivityOverview())
   const loading = ref(false)
   const hasData = ref(false)
@@ -124,15 +127,18 @@ export const useSraActivitySource = (game: string, displayName: string) => {
       if (disposed || locale !== currentLocale()) return
       const errorMessage =
         requestError instanceof Error ? requestError.message : String(requestError)
-      logger.warn('获取' + displayName + '活动数据失败: ' + errorMessage)
+      const name = translate(nameKey)
+      logger.warn('获取' + name + '活动数据失败: ' + errorMessage)
       if (hasData.value) {
         overview.value = {
           ...overview.value,
           Stale: true,
-          Message: '正在使用上次成功获取的活动数据',
+          Message: translate('home.sra.staleMessage'),
         }
       } else {
-        overview.value = createEmptySraActivityOverview(displayName + '活动数据暂不可用')
+        overview.value = createEmptySraActivityOverview(
+          translate('home.sra.unavailable', { name })
+        )
       }
       if (retryCount < MAX_RETRIES) {
         retryCount += 1
@@ -188,6 +194,13 @@ export const useSraActivitySource = (game: string, displayName: string) => {
   watch(i18n.global.locale, () => {
     if (disposed) return
     retryCount = 0
+    // 丢弃旧语言排队中的重试：留着它会在新请求之后再打一次，
+    // 同一语言出现重复请求，还可能并存多个重试定时器。
+    // 补不补重试交给下面的可见性分支：可见即发新请求，隐藏才挂起
+    if (retryTimer !== null) {
+      window.clearTimeout(retryTimer)
+      retryTimer = null
+    }
     if (restoreSnapshot()) {
       loading.value = false
     } else {
