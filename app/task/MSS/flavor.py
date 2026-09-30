@@ -36,7 +36,6 @@
 from __future__ import annotations
 
 import asyncio
-import re
 import uuid
 from collections.abc import Callable
 from typing import Any
@@ -64,9 +63,9 @@ SWITCH_OFF = "No"
 
 PLAN_MODE_FIXED = "Fixed"
 
-_GITHUB_MSS_RE = re.compile(
-    r"(^|[/:])MaaStellaSora/MaaStellaSora(\.git)?/?$", re.IGNORECASE
-)
+## 项目唯一标识符前缀：官方版是 MaaStellaSora，衍生版在其后加后缀（个人版 MaaStellaSora-Personal）。
+## github 仓库名按同一口径认。
+_MSS_PROJECT_NAME = "maastellasora"
 
 
 def task_name_for_entry(interface_model: MaaFWInterface, entry: str) -> str | None:
@@ -78,8 +77,28 @@ def task_name_for_entry(interface_model: MaaFWInterface, entry: str) -> str | No
     return None
 
 
+def github_repo_name(github: str) -> str:
+    """``https://github.com/<owner>/<repo>`` 里的 ``<repo>``；取不到返回空串。"""
+
+    cleaned = github.strip().rstrip("/")
+    if cleaned.endswith(".git"):
+        cleaned = cleaned[: -len(".git")]
+    if "/" not in cleaned:
+        return ""
+    return cleaned.rsplit("/", 1)[-1]
+
+
 def is_mss_project(interface_model: MaaFWInterface | dict[str, Any]) -> bool:
-    """三条判据任一命中：``mirrorchyan_rid == SSAH``、``github`` 指向 MaaStellaSora、``name == MaaStellaSora``。"""
+    """官方版与其衍生版（个人版）都认领，三条判据任一命中即可：
+
+    - ``mirrorchyan_rid == SSAH``：官方版在 MirrorChyan 的分发标识；
+    - ``github`` 仓库名以 ``MaaStellaSora`` 开头：官方 ``MaaStellaSora/MaaStellaSora``、
+      个人版 ``beichen24a1/MaaStellaSora-Personal`` 都命中；
+    - ``name`` 等于 ``MaaStellaSora`` 或以 ``MaaStellaSora-`` 开头（PI 的项目唯一标识符）。
+
+    认领只决定**脚本类型**（都用 ``MSSConfig`` 与同一套运行期装饰）；更新谱系仍按
+    ``mirrorchyan_rid`` / ``github`` / ``name`` 各自分开，衍生版不会被官方版的更新包覆盖。
+    """
 
     if isinstance(interface_model, dict):
         rid = interface_model.get("mirrorchyan_rid")
@@ -91,9 +110,12 @@ def is_mss_project(interface_model: MaaFWInterface | dict[str, Any]) -> bool:
         name = getattr(interface_model, "name", None)
     if str(rid or "").strip().casefold() == "ssah":
         return True
-    if _GITHUB_MSS_RE.search(str(github or "").strip()):
+    if github_repo_name(str(github or "")).casefold().startswith(_MSS_PROJECT_NAME):
         return True
-    return str(name or "").strip().casefold() == "maastellasora"
+    normalized = str(name or "").strip().casefold()
+    return normalized == _MSS_PROJECT_NAME or normalized.startswith(
+        f"{_MSS_PROJECT_NAME}-"
+    )
 
 
 def activity_running() -> bool | None:
