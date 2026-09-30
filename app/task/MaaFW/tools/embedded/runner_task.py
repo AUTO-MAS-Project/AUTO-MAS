@@ -42,6 +42,7 @@ from app.task.MaaFW.tools.core.interface.preview import (
 from app.task.MaaFW.tools.core.interface.service import (
     MaaFWInterfaceService,
 )
+from app.task.MaaFW.tools.core.interface.task_config import find_missing_task_names
 from app.task.MaaFW.tools.core.runner.environment import (
     ARCHITECTURE_MISMATCH_MARKERS,
     MaaFWRunnerEnvironment,
@@ -909,12 +910,19 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         # 钩子装饰（首尾任务、切号绑定之类），再按装饰后的列表建计划。通用 MaaFW
         # 没有钩子，仍按快照直接建计划，行为不变。
         flavor = resolve_flavor(self.script_config)
+        missing_skips: list[MaaFWSkippedTaskPlan] = []
         try:
             # 密码字段（PI v2.10.0）在配置里是密文，只在这份内存副本里解开交给计划；
             # 用户配置本身不动，运行后的整表写回也就写不出明文。
             task_snapshot = open_task_snapshot(task_snapshot, interface_model)
+            # 项目更新改了任务 name 后，队列里的旧 id 在归一化时就被滤掉了，运行日志里
+            # 一点痕迹都没有。先按原始快照把它们找出来，建完计划记成跳过。
+            missing_skips = [
+                MaaFWSkippedTaskPlan(name=name, reason="interface 内已无该任务")
+                for name in find_missing_task_names(task_snapshot, interface_model)
+            ]
             if flavor is None:
-                return MaaFWRunnerService().build_plan(
+                plan = MaaFWRunnerService().build_plan(
                     self.project_path,
                     interface_model,
                     controller_name=controller_name,
@@ -922,6 +930,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                     selected_preset=effective_preset,
                     task_snapshot=task_snapshot or None,
                 )
+                return _with_skipped_tasks(plan, missing_skips)
             task_ids, task_options = select_snapshot_tasks(
                 interface_model,
                 selected_preset=effective_preset,
@@ -937,7 +946,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 # 本方法在工作线程里跑：没给线程安全的回调就只进后端日志。
                 send_log=send_log if send_log is not None else logger.info,
             )
-            return MaaFWRunnerService().build_plan(
+            plan = MaaFWRunnerService().build_plan(
                 self.project_path,
                 interface_model,
                 controller_name=controller_name,
@@ -945,8 +954,14 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 task_ids=task_ids,
                 task_options=task_options,
             )
+            return _with_skipped_tasks(plan, missing_skips)
         except Exception as exc:
-            raise MaaFWRunPlanError(str(exc)) from exc
+            message = str(exc)
+            if missing_skips:
+                # 队列里只剩虚影时「没有可执行任务」说不清原因，把对不上的任务名带上
+                names = "、".join(dict.fromkeys(item.name for item in missing_skips))
+                message = f"{message}（interface 内已无：{names}）"
+            raise MaaFWRunPlanError(message) from exc
 
     def _select_run_selection(
         self, interface_model: MaaFWInterface
@@ -3343,6 +3358,16 @@ def _format_run_overview_log(
     if len(skipped_names) > _RUN_OVERVIEW_LOG_VALUE_LIMIT:
         skipped_names = skipped_names[:_RUN_OVERVIEW_LOG_VALUE_LIMIT] + "..."
     return f"{overview}; skipped_tasks({len(plan.skippedTasks)})={skipped_names}"
+
+
+def _with_skipped_tasks(
+    plan: MaaFWRunPlan, skipped: list[MaaFWSkippedTaskPlan]
+) -> MaaFWRunPlan:
+    """把建计划之外判出的跳过项排在计划自己的跳过项前面。"""
+
+    if not skipped:
+        return plan
+    return plan.model_copy(update={"skippedTasks": [*skipped, *plan.skippedTasks]})
 
 
 def _current_period_keys(now: datetime | None = None) -> tuple[str, str, str]:

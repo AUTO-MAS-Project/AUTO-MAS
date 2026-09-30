@@ -321,10 +321,23 @@ export interface MaaFWTaskSnapshot {
 export interface MaaFWQueuedTaskItem {
   id: string
   task: MaaFWTaskInfo
+  missing?: false
   /** 同名副本中的序号，从 1 起；仅在 `copyTotal > 1` 时需要显示 */
   copyIndex: number
   copyTotal: number
 }
+
+/** 队列里 interface 已经没有的任务（项目更新改了 name）：留成虚影，由用户自己删。 */
+export interface MaaFWMissingQueuedTask {
+  id: string
+  missing: true
+  /** 实例 id 去掉副本后缀后的原任务名 */
+  name: string
+  copyIndex: number
+  copyTotal: number
+}
+
+export type MaaFWQueueEntry = MaaFWQueuedTaskItem | MaaFWMissingQueuedTask
 
 export interface MaaFWUserConfig {
   Info: {
