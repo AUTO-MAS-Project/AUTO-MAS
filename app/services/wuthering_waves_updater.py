@@ -70,7 +70,8 @@ BytesHook = Callable[[int], Awaitable[None]]
 
 # 调度台里的下载进度行按「进度跨度 + 时间上限」节流。日志是追加的、只增不减，无脑刷会把
 # 用户自己的运行日志淹掉；但只看跨度（每 5%）在慢网下又要几分钟才一行，正是用户抱怨的
-# 「看着像卡住了」。速度是两条相邻进度行之间的平均，所以两次之间至少要隔 1 秒。
+# 「看着像卡住了」。速度是两条相邻进度行之间的平均，所以两次之间至少要隔 1 秒；时间上限
+# 只在字节还在到达时起作用，真停流会先撞上读超时（_HTTP_TIMEOUT）并报下载失败。
 _PROGRESS_PERCENT_STEP = 5.0
 _PROGRESS_MIN_INTERVAL = 1.0
 _PROGRESS_MAX_INTERVAL = 5.0
@@ -440,6 +441,10 @@ async def _stream_to_file(
         # 请求了 Range 但服务端回 200，说明它整体重发了：必须覆盖而不是追加，
         # 否则会把新内容接在旧字节后面，静默写出坏文件。
         mode = "ab" if (done and response.status_code == 206) else "wb"
+        if done and response.status_code != 206 and on_bytes is not None:
+            # 这截暂存前缀已被丢弃，但调用方早把它算进了进度基线（见 download_plan），
+            # 扣回去，否则百分比会提前跑到 100%。负数只表示更正，不是收到的字节。
+            await on_bytes(-done)
         target.parent.mkdir(parents=True, exist_ok=True)
         async with aiofiles.open(target, mode) as handle:
             async for block in response.aiter_bytes(chunk_size=_CHUNK_SIZE):
@@ -524,6 +529,10 @@ async def download_plan(
     async def on_bytes(size: int) -> None:
         nonlocal downloaded, sent_bytes, sent_key, sent_at
         downloaded += size
+        if size < 0:
+            # 基线更正：两侧同扣，既不发线也不让速度被这截假字节污染。
+            sent_bytes += size
+            return
         if not total_bytes:
             return
         now = time.monotonic()
@@ -616,6 +625,8 @@ async def _redownload_group(
     group: PatchGroup,
     staging: Path,
     install_dir: Path,
+    *,
+    on_progress: ProgressHook | None = None,
 ) -> None:
     """某个 group 打补丁失败时，整文件重下该组产物。
 
@@ -632,8 +643,10 @@ async def _redownload_group(
         cdn_urls=plan.cdn_urls,
         downloads=group.dst_files,
     )
-    await download_plan(client, fallback, staging)
-    await _commit_entries(staging, install_dir, group.dst_files)
+    await download_plan(client, fallback, staging, on_progress=on_progress)
+    await _commit_entries(
+        staging, install_dir, group.dst_files, on_progress=on_progress
+    )
 
 
 async def _apply_groups(
@@ -663,7 +676,9 @@ async def _apply_groups(
         except (RuntimeError, OSError, ValueError) as exc:
             logger.warning("{} 应用失败，回退整文件重下: {}", group.blob, exc)
             await _report(on_progress, f"补丁 {done}/{total} 应用失败，改为整文件下载")
-            await _redownload_group(client, plan, group, staging, install_dir)
+            await _redownload_group(
+                client, plan, group, staging, install_dir, on_progress=on_progress
+            )
         finally:
             shutil.rmtree(out_dir, ignore_errors=True)
         await _report(on_progress, f"鸣潮更新应用中 {done}/{total}")
