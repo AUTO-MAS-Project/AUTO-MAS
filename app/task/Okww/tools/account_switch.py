@@ -274,7 +274,7 @@ def _activate_window(hwnd: int) -> None:
 def _client_size(hwnd: int) -> tuple[int, int]:
     _, _, width, height = win32gui.GetClientRect(hwnd)
     if width <= 0 or height <= 0:
-        raise RuntimeError("鸣潮游戏窗口尺寸异常")
+        raise RuntimeError("鸣潮游戏窗口已失效或尺寸异常，可能游戏已被关闭或崩溃")
     if abs(width / height - 16 / 9) > 0.02:
         logger.warning(f"鸣潮窗口非 16:9（{width}x{height}），账号切换坐标可能偏移")
     return width, height

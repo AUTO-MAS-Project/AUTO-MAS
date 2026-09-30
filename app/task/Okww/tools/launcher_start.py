@@ -153,6 +153,9 @@ _ELAPSED_TIME_PATTERN = re.compile(r"\d{1,}:\d{2}(?::\d{2})*")
 _UPDATE_ACTIVE_GRACE_SECONDS = 600.0
 # 下载进度签名持续无变化的时长上限：百分比/体积/速度长时间不动视为下载卡死
 _DOWNLOAD_STALL_SECONDS = 300.0
+# 忙碌态等待的绝对上限：单次下载/校验解压最多等这么久，防止进度文本持续抖动
+# 时既判不出卡死也无法退出（正常下载远超此时长才会触发，属防意外兜底）
+_BUSY_WAIT_HARD_LIMIT_SECONDS = 7200.0
 # 「进入游戏」点击重试：被遮挡等场景点击可能被吞（若用固定次数预算，遮罩消失
 # 后预算已尽只能干等超时），改为按时间间隔重试并保留宽松总上限防死循环；点击
 # 生效时启动器会直接退出，按钮消失即停止重试。
@@ -369,7 +372,7 @@ def _activate_window(hwnd: int) -> None:
 def _client_size(hwnd: int) -> tuple[int, int]:
     _, _, width, height = win32gui.GetClientRect(hwnd)
     if width <= 0 or height <= 0:
-        raise RuntimeError("鸣潮启动器窗口尺寸异常")
+        raise RuntimeError("鸣潮启动器窗口已失效或尺寸异常，可能启动器已关闭")
     return width, height
 
 
@@ -448,13 +451,13 @@ def _items_in_action_roi(items: list[OCRItem]) -> list[OCRItem]:
     return selected
 
 
-def _download_progress_signature(items: list[OCRItem]) -> int:
-    """以百分比/体积/速度构造下载进度签名（剥离计时文本，见常量说明）。"""
+def _download_progress_texts(items: list[OCRItem]) -> tuple[str, ...]:
+    """取百分比/体积/速度相关文本并剥离计时（见常量说明），供进度签名使用。"""
     texts = []
     for text, _ in items:
         if any(token in text for token in _DOWNLOAD_PROGRESS_TOKENS):
             texts.append(_ELAPSED_TIME_PATTERN.sub("", text))
-    return hash(tuple(texts))
+    return tuple(texts)
 
 
 def _find_busy_box(items: list[OCRItem]) -> Box | None:
@@ -593,6 +596,7 @@ def start_game_via_launcher(
         update_button_gone = False
         last_download_sig: int | None = None
         last_download_progress = time.monotonic()
+        busy_since: float | None = None
         iter_count = 0
         deadline = time.monotonic() + _FIND_BUTTON_TIMEOUT
         while time.monotonic() < deadline:
@@ -647,19 +651,34 @@ def start_game_via_launcher(
             if _find_busy_box(action_items) is not None:
                 if update_clicked:
                     update_went_busy = True
-                deadline = max(deadline, now + _UPDATE_ACTIVE_GRACE_SECONDS)
-                progress_sig = _download_progress_signature(action_items)
-                if progress_sig != last_download_sig:
-                    last_download_sig = progress_sig
-                    last_download_progress = now
-                elif now - last_download_progress >= _DOWNLOAD_STALL_SECONDS:
+                if busy_since is None:
+                    busy_since = now
+                elif now - busy_since >= _BUSY_WAIT_HARD_LIMIT_SECONDS:
                     raise RuntimeError(
-                        f"启动器下载/校验解压长时间无进展"
-                        f"（{_DOWNLOAD_STALL_SECONDS:g}s 内百分比/体积/速度无变化，"
-                        "疑似卡住），请人工确认下载状态"
+                        "启动器下载/校验解压超出"
+                        f" {_BUSY_WAIT_HARD_LIMIT_SECONDS / 60:g} 分钟仍未完成，"
+                        "请人工确认下载状态"
                     )
+                deadline = max(deadline, now + _UPDATE_ACTIVE_GRACE_SECONDS)
+                progress_texts = _download_progress_texts(action_items)
+                # 动作区没识别到百分比/体积/速度时无法据此判卡死，交给上面的
+                # 绝对上限兜底；有进度文本时才用「长时间不变」判卡死
+                if progress_texts:
+                    progress_sig = hash(progress_texts)
+                    if progress_sig != last_download_sig:
+                        last_download_sig = progress_sig
+                        last_download_progress = now
+                    elif now - last_download_progress >= _DOWNLOAD_STALL_SECONDS:
+                        raise RuntimeError(
+                            f"启动器下载/校验解压长时间无进展"
+                            f"（{_DOWNLOAD_STALL_SECONDS:g}s 内百分比/体积/速度无变化，"
+                            "疑似卡住），请人工确认下载状态"
+                        )
                 time.sleep(2)
                 continue
+            # 离开忙碌态：清掉忙碌基准，避免下次进入时用到过期时刻
+            busy_since = None
+            last_download_sig = None
 
             start_box = _find_text(action_items, ("进入游戏",))
             update_box = None if start_box else _find_text(action_items, ("更新",))
@@ -671,6 +690,7 @@ def start_game_via_launcher(
                 update_button_gone = False
                 update_went_busy = False
                 update_click_retries = 0
+                update_exhausted_logged = False
             if update_clicked and update_went_busy and update_box is None:
                 # 必须「进入过下载态」才算按钮被真正取代，单帧漏识别不算
                 update_button_gone = True
@@ -681,6 +701,8 @@ def start_game_via_launcher(
                 update_clicked = False
                 update_button_gone = False
                 update_went_busy = False
+                update_click_retries = 0
+                update_exhausted_logged = False
             if start_box is not None and start_clicks >= _START_CLICK_LIMIT:
                 if not start_click_exhausted_logged:
                     start_click_exhausted_logged = True
