@@ -62,6 +62,7 @@ from ..interface.agent_entry import (
     CFA_FALLBACK_AGENT_ENTRY,
     describe_cfa_agent_entry_fallback,
     is_python_entry_arg,
+    is_relative_entry_path,
 )
 from .blob_store import LINK_MIN_BYTES, RuntimeBlobStore, place_fresh
 
@@ -1102,12 +1103,16 @@ def build_projection_rules(
         return relative
 
     def cfa_agent_entry(raw: str, label: str) -> Path | None:
-        """入口脚本越出 interface 所在目录、而 CFA 的兜底入口在时返回兜底入口；
-        否则 None，照原来的严格校验走（见 ``interface.agent_entry``）。"""
+        """相对写法的入口脚本经 ``..`` 越出 interface 所在目录、而 CFA 的兜底入口在时
+        返回兜底入口；否则 None，照原来的严格校验走（见 ``interface.agent_entry``）。"""
 
+        if not is_relative_entry_path(raw):
+            # 绝对路径 / 盘符：照旧报「必须是项目内的相对路径」，不兜底。
+            return None
         try:
             relative = _normalize_declared_path(raw, base_relative, label)
         except ProjectionError:
+            # 相对写法只有「逃出了项目目录」这一种失败。
             relative = None
         if relative is not None and _is_relative_to(relative, base_relative):
             return None
