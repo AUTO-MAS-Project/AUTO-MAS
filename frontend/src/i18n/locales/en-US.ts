@@ -435,7 +435,7 @@ export default {
     okWwSetupFailed: 'ok-ww setup failed: {p0}',
     p0NotValidJson: '{p0} is not valid JSON',
     p0MustSitUnder: '{p0} must sit under the script root directory or AppData',
-    p0HasNoMatch: '{p0} has no match pattern, so it was saved as disabled',
+    p0HasNoMatch: '{p0} has no match pattern and will not take effect',
     matchPatternP0Has: 'The match pattern of {p0} has a syntax error and will not run',
     p0MissingRequiredField:
       '{p0} is missing a required field and was saved as disabled: split/regex needs a match keyword or pattern, multiline needs a start pattern',
@@ -484,6 +484,11 @@ export default {
     stageConfiguration: 'Stage configuration',
     stagnantShadow: 'Stagnant Shadow',
     deleteStockKeepingPlan: 'Delete the stock-keeping plan',
+    maaDepotDragSortHint: 'Drag to reorder plans',
+    maaDepotMoveUp: 'Move plan row up',
+    maaDepotMoveDown: 'Move plan row down',
+    selectPlanRows: 'Select all plan rows',
+    selectPlanRow: 'Select plan row',
     deleteSelected: 'Delete selected',
     farmType: 'Farm type',
     annihilationDailyRunStart:
@@ -1163,6 +1168,9 @@ export default {
     checkGameUpdateBeforeLogin:
       'When enabled, the game client version is compared between the server and the emulator before logging in. An outdated client gets stuck on the force-update screen during login',
     updateAutomaticallyBeforeLaunching: 'Update automatically before launching',
+    genshinUpdateAuto: 'Auto-update Genshin (Bilibili server not supported)',
+    genshinUpdateAutoHint:
+      'MAS checks the version and finishes downloading and installing on its own before the task starts the game, so the official launcher is not needed. Only incremental patches are applied automatically; when none is available it stops and defers to the official launcher. Voice packs that are already installed are updated along with the main resources. Bilibili server is not supported, update it with the official launcher',
     waitAfterLaunchSeconds: 'Wait after launch (seconds)',
     launchMode: 'Launch mode',
     howLongWaitAfter2: 'How long to wait after the game launches',
@@ -1201,11 +1209,11 @@ export default {
     whenTaskProgressCollected:
       'When on, task progress is collected from the script log with the rules below and appended to the report. Three extraction modes are supported; for each log line the first matching rule wins, and everything is pushed together.',
     rulesApplyOnlyWhen:
-      'Rules apply only when this is on; turning it off keeps the configuration but behaves as if no hook were set',
+      'Rules apply only when this is on; turning it off keeps the configuration but behaves as if no preprocessing rules were set',
     progressCollectedOnlyWhen:
       'Progress is collected only when this is on; turning it off keeps the configuration but collects nothing',
     whenScriptLogPreprocessed:
-      'When on, the script log is preprocessed line by line: noisy lines are dropped and content that needs redacting or normalizing is rewritten. Hooks run before task logging, push-log collection, and the success/failure check, and dropped lines never reach any of them — so do not drop the line that carries the success/failure marker.',
+      'When on, the script log is preprocessed line by line: noisy lines are dropped and content that needs redacting or normalizing is rewritten. Preprocessing runs before task logging, push-log collection, and the success/failure check, and dropped lines never reach any of them — so do not drop the line that carries the success/failure marker.',
     masTakesOverStarting: 'MAS takes over starting and stopping the game',
     collectsKeyMomentsFrom:
       "Choose how this user's key moments appear in the task report: Off = not collected; List = one line each with its collection time; Summary = one line per success/failure/skipped status",
@@ -1369,8 +1377,10 @@ export default {
     wholeFileSyncLimit: 'Whole-file sync limit (GB)',
     noMatchingLines: 'No matching lines',
     dailyTaskTimeoutMinutes: 'Daily task timeout (minutes)',
-    logHooks: 'Log hooks',
-    logHooksOffRules: 'Log hooks are off; the rules will not run.',
+    logHooks: 'Log preprocessing',
+    logHooksOffRules: 'Log preprocessing is off; the rules will not run.',
+    ruleCountSummary: '{n} rules, {m} active',
+    ruleCountFooter: '{n} rules, {m} active, run in list order',
     logFileEmptyCould: 'The log file is empty or could not be read',
     logFileNameFormat: 'Log file name format',
     logFileNameFormat2: 'Log file name format; leave empty when the name is fixed',
@@ -1422,6 +1432,13 @@ export default {
     pathGameExecutable: 'Path to the game executable',
     gameLaunchArgumentsNot: 'Game launch arguments (not the OK-NTE arguments)',
     gameLaunchArgumentsNot2: 'Game launch arguments (not the ok-ww arguments)',
+    accountSwitch16x9Only: 'Only 16:9 screens are adapted; switching may fail on other ratios',
+    accountSwitch16x9ArgHint:
+      'If your screen is not 16:9, account switching may fail — specify the resolution in the launch arguments, e.g. {p0}',
+    okwwAccountSwitchHint:
+      "When enabled, MAS switches to the login account matching the last four digits of the user's phone number after the game launches successfully and before running ok-ww; users without an account ID filled in are not switched",
+    oknteAccountSwitchHint:
+      'When "Launch the game before the task" is enabled, MAS switches to the login account matching the last four digits of the user\'s phone number after the game launches successfully and before running ok-nte; users without an account ID filled in are not switched. This switch is unavailable when "Launch the game before the task" is off',
     gameLauncher: 'Game launcher',
     whichPlatformGameRuns: 'Which platform the game runs on',
     gameUpdate: 'Game update',
@@ -1564,6 +1581,11 @@ export default {
     mfwUnityResolution: 'Try to set the resolution of Unity games',
     envPanelTitle: 'Runtime environment',
     taskDescriptionLabel: 'Notes',
+    missingTaskTag: 'No longer in interface',
+    missingTaskHint: 'This task is no longer in the project and will be skipped',
+    missingTaskSettings: 'Previous settings',
+    missingTaskValueSeparator: ', ',
+    missingTaskFieldSeparator: '; ',
     adbStrategyPerDevice: 'Decided at run time',
     adbStrategyEmulatorExtras: 'EmulatorExtras',
     adbStrategyDefault: 'Default',
@@ -1758,6 +1780,18 @@ export default {
     bettergiControllerCloud: 'PC - Cloud Genshin (not implemented)',
     bettergiControllerDesktopClone: 'PC - desktop clone (not implemented)',
     bettergiCloseGameOnFinish: 'Close the game when the task finishes',
+    bettergiCheckUpdateTitle: 'Check the Genshin client for updates',
+    bettergiUpdateUnsupportedHint:
+      'Only the official (CN) and global clients are supported (Asia / Europe / America / TW-HK-MO). For the Bilibili client, please use the official launcher',
+    bettergiUpdateProgressTitle: 'Genshin client update progress',
+    bettergiWillBeUpdated:
+      'The Genshin client used by this user will be checked and updated with official incremental patches. Installed voice packs are updated along with the main resources. The update may download a lot of data, so make sure the game is not running',
+    bettergiUpdateFailed: 'Genshin update failed: {p0}',
+    bettergiUpdateTask: 'The Genshin update task finished',
+    bettergiUpdateTimed: 'The Genshin update made no progress for a long time and was stopped',
+    bettergiUpdateConnecting: 'Connecting to the update task...',
+    bettergiUpdateStartFailed: 'Could not start the Genshin update',
+    bettergiUpdateStopFailed: 'Could not stop the Genshin update',
     bettergiCloseGameOnFinishHint: 'Whether to close the game once the task has finished running',
     bettergiRetryLimitHint: 'Give up once this many attempts have failed',
     bettergiRunTimeoutHint: 'Treated as a timeout when the log stops changing for this long',
@@ -3167,6 +3201,8 @@ export default {
       poweredBy: 'Powered by {name}',
       poweredByM9A: 'Powered by M9A',
       stale: 'Cached',
+      staleMessage: 'Using the last successfully fetched event data',
+      unavailable: '{name} event data is temporarily unavailable',
       endedAt: 'Ends {time}',
     },
     bluearchive: {
@@ -4191,6 +4227,12 @@ export default {
     others: {
       updateSection: 'Updates',
       checkUpdate: 'Check for updates',
+      pauseUpdates: 'Pause updates',
+      pauseUpdatesTip:
+        'Pick an end date to pause automatic update checks (1-35 days); checking for updates manually resumes immediately.',
+      pausePlaceholder: 'Select pause end date',
+      pauseStatus: 'Updates paused until {date}',
+      pauseStatusHint: 'Your app may not stay up to date until updates resume',
       updateBackend: 'Update the backend at startup',
       updateBackendTip: 'Try to update backend components when the app starts',
       updateSource: 'Update source',

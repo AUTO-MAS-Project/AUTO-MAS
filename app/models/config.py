@@ -3973,12 +3973,12 @@ class GeneralConfig(ConfigBase):
         self.Script_LogTimeFormat = ConfigItem(
             "Script", "LogTimeFormat", "%Y-%m-%d %H:%M:%S"
         )
-        ## 日志处理钩子启用开关：关闭时保留规则配置，行为与未配置钩子完全一致
+        ## 日志预处理启用开关：关闭时保留规则配置，行为与未配置预处理完全一致
         self.Script_LogHookEnabled = ConfigItem(
             "Script", "LogHookEnabled", False, BoolValidator()
         )
-        ## 日志处理钩子规则（JSON 数组，每项形如 {"type":"drop|replace",...}）；
-        ## 钩子先于任务日志、推送日志采集与成功/失败判定执行，丢弃的行不进入下游
+        ## 日志预处理规则（JSON 数组，每项形如 {"type":"drop|replace",...}）；
+        ## 预处理先于任务日志、推送日志采集与成功/失败判定执行，丢弃的行不进入下游
         self.Script_LogHookRules = ConfigItem("Script", "LogHookRules", "")
         ## 成功日志匹配
         self.Script_SuccessLog = ConfigItem("Script", "SuccessLog", "")
@@ -4270,6 +4270,11 @@ class BetterGIConfig(ConfigBase):
         ## 任务结束后关闭游戏
         self.Game_CloseOnFinish = ConfigItem(
             "Game", "CloseOnFinish", True, BoolValidator()
+        )
+
+        ## 是否在启动 BetterGI 前由 MAS 检查并接管原神客户端更新
+        self.Game_IfAutoUpdate = ConfigItem(
+            "Game", "IfAutoUpdate", False, BoolValidator()
         )
 
         self.UserData = MultipleConfig([BetterGIUserConfig])
@@ -4971,6 +4976,8 @@ class GlobalConfig(ConfigBase):
         self.Update_IfAutoUpdate = ConfigItem(
             "Update", "IfAutoUpdate", False, BoolValidator()
         )
+        ## 暂停更新截止日期（YYYY-MM-DD，空串表示未暂停）
+        self.Update_PauseUntil = ConfigItem("Update", "PauseUntil", "")
         ## 更新源
         self.Update_Source = ConfigItem(
             "Update",

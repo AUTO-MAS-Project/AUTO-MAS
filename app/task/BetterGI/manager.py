@@ -33,6 +33,7 @@ from app.utils.constants import TASK_MODE_ZH
 from .AutoProxy import _BGI_REL_EXE, AutoProxyTask
 from .ScriptConfig import ScriptConfigTask
 from .tools import archive_native_backup, push_notification
+from .Update import BetterGIUpdateTask
 
 logger = get_logger("BetterGI 调度器")
 
@@ -53,7 +54,7 @@ class BetterGIManager(TaskExecuteBase):
         self.begin_time = ""
 
     async def check(self) -> str:
-        if self.task_info.mode not in ("AutoProxy", "ScriptConfig"):
+        if self.task_info.mode not in ("AutoProxy", "ScriptConfig", "Update"):
             return "不支持的任务模式, 请检查任务配置！"
 
         script_config = Config.ScriptConfig[uuid.UUID(self.script_info.script_id)]
@@ -72,6 +73,15 @@ class BetterGIManager(TaskExecuteBase):
                     return "BetterGI 用户不存在，请刷新后重试"
                 if target_user_uid not in script_config.UserData:
                     return "BetterGI 用户不存在，请刷新后重试"
+
+        # 「检查更新」必须落到具体用户：游戏客户端路径可能是用户级覆盖
+        if self.task_info.mode == "Update":
+            try:
+                target_user_uid = uuid.UUID(self.task_info.user_id or "")
+            except ValueError:
+                return "更新任务需要指定用户，请刷新后重试"
+            if target_user_uid not in script_config.UserData:
+                return "BetterGI 用户不存在，请刷新后重试"
 
         # AutoProxy 模式只做用户列表可用性校验；逐用户配置文件检查放到 AutoProxyTask.check()
         if self.task_info.mode == "AutoProxy":
@@ -106,7 +116,23 @@ class BetterGIManager(TaskExecuteBase):
         if not isinstance(self.script_config, BetterGIConfig):
             raise TypeError("脚本配置类型错误")
 
-        if self.task_info.mode == "ScriptConfig":
+        if self.task_info.mode == "Update":
+            target_user_id = self.task_info.user_id or "Default"
+            target_user_name = "BetterGI 更新"
+            with suppress(ValueError):
+                target_user_uid = uuid.UUID(target_user_id)
+                if target_user_uid in self.user_config:
+                    target_user_name = self.user_config[target_user_uid].get(
+                        "Info", "Name"
+                    )
+            self.script_info.user_list = [
+                UserItem(
+                    user_id=target_user_id,
+                    name=target_user_name,
+                    status="等待",
+                )
+            ]
+        elif self.task_info.mode == "ScriptConfig":
             target_user_id = self.task_info.user_id or "Default"
             target_user_name = "BetterGI 设置"
             with suppress(ValueError):
@@ -150,6 +176,20 @@ class BetterGIManager(TaskExecuteBase):
         await self.prepare()
 
         self.script_info.user_config = self.user_config
+
+        # 「检查更新」不动 BetterGI 配置，不必归档，直接进更新任务
+        if self.task_info.mode == "Update":
+            self.script_info.current_index = 0
+            await self.spawn(
+                BetterGIUpdateTask(
+                    self.script_info,
+                    self.script_config,
+                    self.user_config,
+                    self.task_info.user_id or "Default",
+                )
+            )
+            return
+
         # 任务级归档 BetterGI 全局主配置（config.json）——运行会临时补写
         # 队伍/策略叶子、结束还原，崩溃残留会污染全局配置；持久归档提供
         # 跨会话找回（指纹去重，失败不阻断任务）。mas 池由 AutoProxy

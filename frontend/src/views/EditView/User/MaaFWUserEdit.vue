@@ -95,6 +95,7 @@
             :available-tasks="availableTasks"
             :ordered-tasks="orderedTasks"
             :add-task-cascader-options="addTaskCascaderOptions"
+            :has-new-tasks="hasNewTasks"
             :preset-templates="presetTemplates"
             :task-by-name="taskByName"
             :selected-task="selectedTask"
@@ -110,6 +111,7 @@
             @task-drag-end="handleTaskDragEnd"
             @task-option-update="handleTaskOptionUpdate"
             @delete-selected-task="deleteSelectedTask"
+            @delete-task="deleteTask"
           />
 
           <ExtraScriptSection
@@ -173,6 +175,7 @@ import { useScriptConfigLock } from '@/composables/useScriptConfigLock'
 import { useI18n } from 'vue-i18n'
 import {
   computed,
+  h,
   markRaw,
   nextTick,
   onBeforeUnmount,
@@ -182,6 +185,7 @@ import {
   ref,
   shallowRef,
   watch,
+  type VNode,
 } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import type { FormInstance, Rule } from 'ant-design-vue/es/form'
@@ -207,7 +211,13 @@ import MaaFWFlavorSlot from '@/views/EditView/MaaFWFlavor/MaaFWFlavorSlot.vue'
 import MaaFWUserEditHeader from './MaaFWUserEdit/MaaFWUserEditHeader.vue'
 import BasicInfoSection from './MaaFWUserEdit/BasicInfoSection.vue'
 import TaskQueueSection from './MaaFWUserEdit/TaskQueueSection.vue'
+import MaaFWNewBadge from './MaaFWUserEdit/MaaFWNewBadge.vue'
 import { buildPresetAppliedSnapshot, selectPresetQueueEntries } from './maafwPresetQueue'
+import {
+  maafwMissingTaskName,
+  markMaaFWTasksSeen,
+  resolveMaaFWNewTaskNames,
+} from './maafwTaskChanges'
 import {
   isManagedMaaFWTask,
   managedMaaFWQueueState,
@@ -216,6 +226,7 @@ import {
 import type {
   MaaFWGroupInfo,
   MaaFWInterfacePreviewData,
+  MaaFWQueueEntry,
   MaaFWQueuedTaskItem,
   MaaFWScriptConfig,
   MaaFWTaskInfo,
@@ -236,7 +247,9 @@ type MaaFWDisplayItem = {
 
 type AddTaskCascaderOption = {
   value: string
-  label: string
+  /** 带 NEW 标记时是 VNode；搜索按 searchText 匹配 */
+  label: string | VNode
+  searchText: string
   children?: AddTaskCascaderOption[]
 }
 
@@ -470,24 +483,34 @@ const isTaskActiveForCurrentContext = (task: MaaFWTaskInfo) => {
   }
   return true
 }
-const orderedTasks = computed<MaaFWQueuedTaskItem[]>(() => {
-  const queuedItems = taskSnapshot.value.taskOrder
-    .map(taskId => ({ id: taskId, task: getTaskInfoById(taskId) }))
-    .filter(
-      (item): item is { id: string; task: MaaFWTaskInfo } =>
-        item.task !== undefined && isTaskActiveForCurrentContext(item.task)
-    )
+type QueueEntryDraft =
+  | { id: string; task: MaaFWTaskInfo; missing?: false }
+  | { id: string; missing: true; name: string }
+const queueEntryName = (item: QueueEntryDraft) => (item.missing ? item.name : item.task.name)
+const orderedTasks = computed<MaaFWQueueEntry[]>(() => {
+  const hasInterface = Boolean(previewData.value)
+  const queuedItems = taskSnapshot.value.taskOrder.flatMap((taskId): QueueEntryDraft[] => {
+    const task = getTaskInfoById(taskId)
+    if (task) return isTaskActiveForCurrentContext(task) ? [{ id: taskId, task }] : []
+    // interface 已经没有这个任务（项目更新改了 name）：留成虚影，由用户自己删
+    return hasInterface ? [{ id: taskId, missing: true, name: maafwMissingTaskName(taskId) }] : []
+  })
   const copyTotals = new Map<string, number>()
   for (const item of queuedItems) {
-    copyTotals.set(item.task.name, (copyTotals.get(item.task.name) || 0) + 1)
+    const name = queueEntryName(item)
+    copyTotals.set(name, (copyTotals.get(name) || 0) + 1)
   }
   const copyCounters = new Map<string, number>()
   return queuedItems.map(item => {
-    const copyIndex = (copyCounters.get(item.task.name) || 0) + 1
-    copyCounters.set(item.task.name, copyIndex)
-    return { ...item, copyIndex, copyTotal: copyTotals.get(item.task.name) || 1 }
+    const name = queueEntryName(item)
+    const copyIndex = (copyCounters.get(name) || 0) + 1
+    copyCounters.set(name, copyIndex)
+    return { ...item, copyIndex, copyTotal: copyTotals.get(name) || 1 }
   })
 })
+const presentQueuedTasks = computed(() =>
+  orderedTasks.value.filter((item): item is MaaFWQueuedTaskItem => !item.missing)
+)
 // 拖拽结束后子组件回传可见部分的新顺序；被 controller/resource 过滤掉的实例
 // 不在队列里显示，要原样接回去，不能被这次重排冲掉。
 const applyQueuedTaskIds = (taskIds: string[]) => {
@@ -510,7 +533,7 @@ const availableTasks = computed(() =>
 )
 // 队列里残留的受管任务：只有真要拆用户（后端会拒绝运行）才给警告，其余是运行照常的轻提示
 const managedQueueAlert = computed<{ type: 'warning' | 'info'; message: string } | null>(() => {
-  const state = managedMaaFWQueueState(orderedTasks.value, {
+  const state = managedMaaFWQueueState(presentQueuedTasks.value, {
     managedEntries: managedTaskEntries.value,
     accountTask: flavor.value.managedAccountTask,
     resourceName: effectiveResourceName.value,
@@ -599,19 +622,56 @@ const addTaskMenuGroups = computed(() => {
 
   return Array.from(groupMap.values()).filter(group => group.taskCount > 0)
 })
+// 用户没见过的任务（项目更新新增或改了 name）：在「添加任务」里标 NEW，加进队列后消掉
+const newTaskNames = ref<ReadonlySet<string>>(new Set())
+watch(previewData, data => {
+  if (!data) return
+  newTaskNames.value = resolveMaaFWNewTaskNames(
+    scriptId,
+    data.tasks.map(task => task.name)
+  )
+})
+const isNewTask = (task: MaaFWTaskInfo) => newTaskNames.value.has(task.name)
+const hasNewTasks = computed(() => availableTasks.value.some(isNewTask))
+
+/** 选项文字后面挂 NEW 标签（任务）或一个点（含新任务的分组） */
+const markedOption = (
+  text: string,
+  mark: 'badge' | 'dot' | null
+): Pick<AddTaskCascaderOption, 'label' | 'searchText'> => ({
+  label: mark
+    ? h('span', { style: { display: 'inline-flex', alignItems: 'center', gap: '6px' } }, [
+        text,
+        h(MaaFWNewBadge, { dot: mark === 'dot' }),
+      ])
+    : text,
+  searchText: text,
+})
+
 /** 分组里的项 → 级联选项：任务直接可选，二级分组再展开一层 */
 const toCascaderItems = (items: AddTaskMenuGroup['items']): AddTaskCascaderOption[] =>
   items.map(item =>
     item.type === 'task'
-      ? { value: `task:${item.task.name}`, label: item.label }
+      ? {
+          value: `task:${item.task.name}`,
+          ...markedOption(item.label, isNewTask(item.task) ? 'badge' : null),
+        }
       : {
           value: item.key,
-          label: `${item.label} (${item.taskCount})`,
+          ...markedOption(
+            `${item.label} (${item.taskCount})`,
+            item.tasks.some(isNewTask) ? 'dot' : null
+          ),
           children: item.tasks.map(task => ({
             value: `task:${task.name}`,
-            label: getDisplayName(task),
+            ...markedOption(getDisplayName(task), isNewTask(task) ? 'badge' : null),
           })),
         }
+  )
+
+const menuGroupHasNewTask = (group: AddTaskMenuGroup) =>
+  group.items.some(item =>
+    item.type === 'task' ? isNewTask(item.task) : item.tasks.some(isNewTask)
   )
 
 const addTaskCascaderOptions = computed<AddTaskCascaderOption[]>(() => {
@@ -623,7 +683,10 @@ const addTaskCascaderOptions = computed<AddTaskCascaderOption[]>(() => {
   }
   return groups.map(group => ({
     value: `group:${group.key}`,
-    label: `${group.label} (${group.taskCount})`,
+    ...markedOption(
+      `${group.label} (${group.taskCount})`,
+      menuGroupHasNewTask(group) ? 'dot' : null
+    ),
     children: toCascaderItems(group.items),
   }))
 })
@@ -649,7 +712,10 @@ const selectedQueuedTask = computed(
     orderedTasks.value[0] ||
     null
 )
-const selectedTask = computed(() => selectedQueuedTask.value?.task || null)
+const selectedTask = computed(() => {
+  const item = selectedQueuedTask.value
+  return item && !item.missing ? item.task : null
+})
 watch(
   () => formData.Info.Name,
   newVal => {
@@ -699,7 +765,8 @@ const selectTask = (taskId: string) => {
 const flavorSlotContext = computed<MaaFWUserSlotContext>(() => ({
   formData,
   loading: loading.value,
-  queuedTaskCount: taskSnapshot.value.taskOrder.length,
+  // 虚影不会运行，不算进队列（MSS 靠它提示「队列为空又没选计划表」）
+  queuedTaskCount: presentQueuedTasks.value.length,
 }))
 
 const persistQueuedSnapshot = async () => {
@@ -719,9 +786,11 @@ const pruneQueuedTasksForCurrentContext = async (persist = true) => {
   if (!previewData.value) return false
 
   const activeTaskNames = new Set(activeTasks.value.map(task => task.name))
-  const nextOrder = taskSnapshot.value.taskOrder.filter(taskId =>
-    activeTaskNames.has(resolveTaskName(taskId))
-  )
+  const nextOrder = taskSnapshot.value.taskOrder.filter(taskId => {
+    const taskName = resolveTaskName(taskId)
+    // interface 已经没有的任务不在这里清：它们留成虚影，由用户自己删
+    return activeTaskNames.has(taskName) || !validTaskNames.value.has(taskName)
+  })
   if (nextOrder.length === taskSnapshot.value.taskOrder.length) return false
 
   taskSnapshot.value.taskOrder = nextOrder
@@ -756,6 +825,10 @@ const addTaskToQueue = async (taskName: string) => {
   }
   selectedTaskId.value = taskIds[0]
   addTaskCascaderValue.value = []
+  if (newTaskNames.value.has(taskName)) {
+    markMaaFWTasksSeen(scriptId, [taskName])
+    newTaskNames.value = new Set([...newTaskNames.value].filter(name => name !== taskName))
+  }
   await persistQueuedSnapshot()
 }
 
@@ -788,12 +861,18 @@ const applyPresetTemplate = async (presetName: string) => {
 const deleteSelectedTask = async () => {
   const taskId = selectedQueuedTask.value?.id
   if (!taskId) return
+  await deleteTask(taskId)
+}
 
+const deleteTask = async (taskId: string) => {
   const nextOrder = taskSnapshot.value.taskOrder.filter(item => item !== taskId)
   taskSnapshot.value.taskOrder = nextOrder
   delete taskSnapshot.value.taskChecked[taskId]
   delete taskSnapshot.value.taskOptions[taskId]
-  selectedTaskId.value = nextOrder[0] || ''
+  // 队列行上直接删虚影时，右侧正在看的任务不跟着跳
+  if (selectedQueuedTask.value?.id === taskId || !nextOrder.includes(selectedTaskId.value)) {
+    selectedTaskId.value = nextOrder[0] || ''
+  }
   await persistQueuedSnapshot()
 }
 
@@ -827,16 +906,23 @@ const parseTaskSnapshot = (
   }
 }
 
+/**
+ * `keepMissing`：用户自己的队列要保留 interface 已没有的任务（项目更新改了 name），
+ * 它们在队列里显示成虚影，删不删由用户定；预设模板照旧只要认得的任务。
+ */
 const normalizeTaskSnapshot = (
   raw: string | MaaFWTaskSnapshot | Record<string, unknown> | null | undefined,
-  preview: MaaFWInterfacePreviewData | null
+  preview: MaaFWInterfacePreviewData | null,
+  { keepMissing = false }: { keepMissing?: boolean } = {}
 ): MaaFWTaskSnapshot => {
   const parsed = parseTaskSnapshot(raw) as Partial<MaaFWTaskSnapshot>
   const tasks = preview?.tasks || []
   const knownTaskNames = new Set(tasks.map(task => task.name))
   const order = Array.isArray(parsed.taskOrder)
-    ? parsed.taskOrder.filter(taskId =>
-        knownTaskNames.has(resolveMaaFWTaskName(taskId, knownTaskNames))
+    ? parsed.taskOrder.filter(
+        taskId =>
+          typeof taskId === 'string' &&
+          (keepMissing || knownTaskNames.has(resolveMaaFWTaskName(taskId, knownTaskNames)))
       )
     : []
   const taskChecked: Record<string, boolean> = Object.fromEntries(
@@ -931,7 +1017,9 @@ const reloadManagedUserFields = async () => {
   const savedSnapshot = userData.Task?.TaskSnapshot
   if (typeof savedSnapshot === 'string' && savedSnapshot !== formData.Task.TaskSnapshot) {
     formData.Task.TaskSnapshot = savedSnapshot
-    taskSnapshot.value = normalizeTaskSnapshot(savedSnapshot, previewData.value)
+    taskSnapshot.value = normalizeTaskSnapshot(savedSnapshot, previewData.value, {
+      keepMissing: true,
+    })
   }
 }
 
@@ -1017,7 +1105,9 @@ const loadUserData = async () => {
       const isMaaFWUser = Boolean(userIndex && maafwUserConfigTypes().has(userIndex.type))
       if (isMaaFWUser && userData) {
         applyUserData(userData)
-        taskSnapshot.value = normalizeTaskSnapshot(formData.Task.TaskSnapshot, previewData.value)
+        taskSnapshot.value = normalizeTaskSnapshot(formData.Task.TaskSnapshot, previewData.value, {
+          keepMissing: true,
+        })
         await syncControllerResourceSelection()
         formData.Task.TaskSnapshot = JSON.stringify(taskSnapshot.value)
         await nextTick()
@@ -1051,7 +1141,7 @@ const reloadInterface = async (showMessage = true) => {
   const data = await previewInterface(scriptPath.value, scriptId)
   if (data) {
     previewData.value = markRaw(data)
-    taskSnapshot.value = normalizeTaskSnapshot(taskSnapshot.value, data)
+    taskSnapshot.value = normalizeTaskSnapshot(taskSnapshot.value, data, { keepMissing: true })
     await syncControllerResourceSelection()
     await nextTick()
     if (showMessage) message.success(t('edit.interfaceLoaded'))

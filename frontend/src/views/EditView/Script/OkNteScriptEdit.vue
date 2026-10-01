@@ -161,9 +161,7 @@
             <a-col :span="12">
               <a-form-item>
                 <template #label>
-                  <a-tooltip
-                    title="开启「任务前启动游戏」后，游戏启动成功后在运行 ok-nte 前按用户手机号后 4 位强制切换登录账号；用户未填写账号则不切换。未开启「任务前启动游戏」时本开关不可用"
-                  >
+                  <a-tooltip :title="t('edit.oknteAccountSwitchHint')">
                     <span class="form-label">
                       运行前强制切换账号
                       <QuestionCircleOutlined class="help-icon" />
@@ -180,6 +178,7 @@
                   <a-select-option :value="true">是</a-select-option>
                   <a-select-option :value="false">否</a-select-option>
                 </a-select>
+                <span class="control-hint">{{ t('edit.accountSwitch16x9Only') }}</span>
               </a-form-item>
             </a-col>
           </a-row>
@@ -737,6 +736,14 @@ onMounted(loadScript)
 }
 
 .label-hint {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--ant-color-text-tertiary);
+}
+
+.control-hint {
+  display: block;
+  margin-top: 4px;
   font-size: 12px;
   font-weight: 400;
   color: var(--ant-color-text-tertiary);

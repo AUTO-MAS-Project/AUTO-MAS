@@ -44,11 +44,11 @@ if TYPE_CHECKING:
 
 from app.models.notification import (
     DEFAULT_WEBHOOK_TEMPLATE,
+    WECOM_ROBOT_HOST,
+    WECOM_ROBOT_PATH,
     NotificationCapabilities,
     RenderedNotification,
     SummaryPolicy,
-    WECOM_ROBOT_HOST,
-    WECOM_ROBOT_PATH,
     WebhookTargetSnapshot,
 )
 

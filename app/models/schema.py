@@ -1433,6 +1433,9 @@ class OpenClawQQStatusOut(OutBase):
 
 class GlobalConfig_Update(BaseModel):
     IfAutoUpdate: Optional[bool] = Field(default=None, description="是否自动更新")
+    PauseUntil: Optional[str] = Field(
+        default=None, description="暂停更新截止日期 YYYY-MM-DD，空字符串表示未暂停"
+    )
     Source: Optional[Literal["GitHub", "MirrorChyan", "AutoSite", "CNB"]] = Field(
         default=None, description="更新源: GitHub源, Mirror酱源, 自建源, CNB 镜像源"
     )
@@ -2377,11 +2380,11 @@ class GeneralConfig_Script(BaseModel):
     LogTimeEnd: Optional[int] = Field(default=None, description="日志时间戳结束位置")
     LogTimeFormat: Optional[str] = Field(default=None, description="日志时间戳格式")
     LogHookEnabled: Optional[bool] = Field(
-        default=None, description="日志处理钩子启用开关"
+        default=None, description="日志预处理启用开关"
     )
     LogHookRules: Optional[str] = Field(
         default=None,
-        description='日志处理钩子规则(JSON 数组，每项形如 {"type":"drop|replace","match":正则,"replace":替换文本})；先于任务日志、推送采集与成功/失败判定执行',
+        description='日志预处理规则(JSON 数组，每项形如 {"type":"drop|replace","match":正则,"replace":替换文本})；先于任务日志、推送采集与成功/失败判定执行',
     )
     SuccessLog: Optional[str] = Field(default=None, description="成功时日志")
     SuccessLogMode: Optional[Literal["Split", "Regex"]] = Field(
@@ -2548,6 +2551,10 @@ class BetterGIConfig_Game(BaseModel):
     )
     CloseOnFinish: Optional[bool] = Field(
         default=None, description="任务结束后是否关闭游戏"
+    )
+    IfAutoUpdate: Optional[bool] = Field(
+        default=None,
+        description="是否在启动 BetterGI 前由 MAS 检查并接管原神客户端更新",
     )
 
 
