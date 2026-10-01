@@ -1,9 +1,30 @@
-// MaaFW 特调注册表：MaaFW 与各特调（M9A / MSS ……）在前端的唯一事实来源。
+// MaaFW 特调注册表：MaaFW 与各特调在前端的唯一事实来源。
 //
-// 特调是 MaaFW 引擎的一种「口味」：脚本页 / 用户页 / 脚本列表 / 新建流程都是 MaaFW 的公共组件，
-// 特调之间的差别全部写在各自的描述对象里（身份、文案 key、独有区块、钩子），公共代码只按
-// 描述对象的字段取值，不写 `type === 'XXX'` 这类分支。
-// flavor 以脚本当前类型为准（导入后后端会按项目内容原地换类型），不以路由 meta 为准。
+// MaaFW 提供四个部分的默认实现：脚本页、用户页、新建流程、路由。特调是 MaaFW 引擎的一种「口味」，
+// 与 MaaFW 的差别全部写在自己的描述对象里，公共代码只按描述对象的字段取值，不写
+// `type === 'XXX'` 这类分支。flavor 以脚本实际类型为准（导入后后端会按项目内容原地换类型），
+// 不以路由为准；新建流程按选中的类型卡片取。
+//
+// ── 定制的三种方式（由浅到深，能用浅的就别用深的） ─────────────────────────────
+// 1. 身份与差异：defineMaaFWFlavor（MaaFWFlavor/defineFlavor.ts）只写与 MaaFW 不同的部分——
+//    身份、路由后缀、新建卡片必写；scriptPage.text / userPage.text / userPage.managed 按字段
+//    浅合并（不写沿用 MaaFW，写 null 关掉）。
+// 2. 分节级：
+//    - 替换分节：defineMaaFWSection(part, key, load) 写进 scriptPage / userPage / create 的
+//      sections。替换组件必须接得住 MFW 该分节的契约（MaaFWFlavor/sectionContracts.ts，不接住
+//      typecheck 报错），只有这个特调用到时才加载。
+//    - 插入点：defineMaaFWLazyComponent 写进 slots，组件以 `context` 一个 prop 接收上下文。
+//      scriptPage：afterBasicInfo / beforeControl / afterControl / afterUpdate / afterRun
+//      userPage：afterBasicInfo / beforeTaskQueue / afterTaskQueue
+//      create：afterSourceStep（只读）
+//    - 预取数据：scriptPage.prepare / userPage.prepare（页面加载期间调用；新建流程没有）。
+// 3. 页面级：scriptPage.page / userPage.page 整页替换，用 MFW 的公共件拼——
+//    views/EditView/Script/MaaFWScriptEdit/index.ts、views/EditView/User/MaaFWUserEdit/index.ts
+//    导出分节、分节契约与编排层（useMaaFWScriptPage / useMaaFWUserPage），不必复制 MFW 页面。
+// 路由不用改：router/maafwFlavorRoutes.ts 按注册表给每个类型生成四条路由；页面宿主
+// （MaaFWFlavor/MaaFWPageHost.vue）按脚本实际类型选页面，地址后缀写错的纠正到实际类型那条。
+// 需要一个现在没有的插入点：在 maafwFlavorTypes.ts 的 MaaFWFlavorSlotContextMap 对应部分下加
+// 名字，在公共页面对应位置放一个 <MaaFWFlavorSlot>——不要在公共页面里按类型分支。
 //
 // ── 新增一个特调 X 需要做的事 ──────────────────────────────────────────────
 // 1. 后端：配置类 XConfig(MaaFWConfig) / XUserConfig、app/task/X 的特调钩子、schema，
@@ -15,15 +36,10 @@
 //    词表 zh-CN.ts 的 scripts.type.X / scripts.create.typeDesc.X 与该特调自己的文案。
 // 3. maafwFlavorTypes.ts 的 MaaFWFlavorType 加上 'X'。
 // 4. 新建目录 views/EditView/MaaFWFlavor/x/：index.ts 用 defineMaaFWFlavor 导出描述对象
-//    X_FLAVOR，只写与 MaaFW 不同的部分（合并规则见 MaaFWFlavor/defineFlavor.ts）；独有区块写成
-//    本目录下的组件，用 defineMaaFWLazyComponent 声明到 scriptPage.slots / userPage.slots
-//    的插入点上（按需加载），需要预取数据就给该页的 prepare。要整个换掉 MFW 的某个分节，用
-//    defineMaaFWSection 写进 scriptPage.sections / userPage.sections（契约见
-//    MaaFWFlavor/sectionContracts.ts）。
+//    X_FLAVOR，按上面三种方式写差异；独有组件都放在本目录。
 // 5. 在下面的 FLAVOR_REGISTRY 里登记 X_FLAVOR（漏登记 typecheck 会报错）。
 // 公共页面（MaaFW 脚本页 / 用户页、脚本列表、新建流程）与路由不用改：路由、类型卡片、
-// 路由后缀、用户类型白名单、默认脚本名都从这里生成。只有需要一个现在没有的插入点时，
-// 才在 MaaFWFlavorSlotContextMap 对应页面下加名字、在公共页面对应位置放一个 <MaaFWFlavorSlot>。
+// 路由后缀、用户类型白名单、默认脚本名都从这里生成。
 // ──────────────────────────────────────────────────────────────────────────
 
 import { computed, toValue, type Component, type ComputedRef, type MaybeRefOrGetter } from 'vue'

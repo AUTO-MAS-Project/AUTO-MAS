@@ -67,9 +67,11 @@
 按类型精确查表，`M9AConfig` 单独登记到 `MaaFWEmbeddedManager`；`app/core/config.py` 里所有
 `isinstance(…, MaaFWConfig)` 分支天然覆盖 M9A，不要再加 `isinstance(…, M9AConfig)` 分支。
 
-前端没有 M9A 专用页面：脚本页 / 用户页 / 创建流程都是 MaaFW 的组件按 `scriptType === 'M9A'` 取一张
-flavor 文案表。表里的 `managedTaskEntries` 与 `managed.py` 的 `MANAGED_ENTRIES` 是同一组：通用用户页
-按它把受管任务挡在「添加任务」与预设模板之外，已在队列里的照常显示；`managedAccountTask`
+前端没有 M9A 专用页面：脚本页 / 用户页 / 创建流程都是 MaaFW 的组件，按脚本实际类型取特调注册表里
+M9A 的描述对象（`frontend/src/views/EditView/MaaFWFlavor/m9a/index.ts`，写法见
+`frontend/src/composables/useMaaFWFlavor.ts` 文件头）。其中 `userPage.managed.entries` 与 `managed.py` 的
+`MANAGED_ENTRIES` 是同一组：通用用户页
+按它把受管任务挡在「添加任务」与预设模板之外，已在队列里的照常显示；`userPage.managed.accountTask`
 （`SwitchAccount` + 官服）是拆分判据，只有页面上生效的资源在其中、有效切号 ≥ 2 时才给「拆分前不会运行」
 的警告，其余残留只给轻提示（`frontend/src/views/EditView/User/maafwManagedTasks.ts`）。改一边要同步另一边。#799 的配置备份恢复走 MaaFW 的两个池（`data/<sid>/MaaFWBackups/{mas,native}`）；
 旧 `M9ABackups/` 不再被列出、不支持恢复、原地保留。

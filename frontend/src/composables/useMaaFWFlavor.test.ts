@@ -355,26 +355,84 @@ describe('公共页面不按特调类型分支', () => {
     '../components/ScriptTable.vue',
     '../views/Scripts.vue',
     '../views/scripts/components/scriptCreateFlow.ts',
+    '../views/scripts/components/ScriptCreateDialog.vue',
+    '../views/scripts/components/MaaFWSourceStep.vue',
     '../router/index.ts',
     '../router/maafwFlavorRoutes.ts',
     './useScriptApi.ts',
   ]
 
-  it('页面宿主在扫描范围里', () => {
+  // 只有路由表本身拼 MaaFW 家族的路径；其余地方的跳转目标一律来自 maafwRouteLocation
+  const ROUTE_TABLE = '../router/maafwFlavorRoutes.ts'
+  // 路由登记的类型只有路由表与页面宿主读（宿主据此纠正地址），页面一律按脚本实际类型取 flavor
+  const ROUTE_META_READERS = new Set([
+    ROUTE_TABLE,
+    '../views/EditView/MaaFWFlavor/useMaaFWPageHost.ts',
+    '../views/EditView/MaaFWFlavor/MaaFWPageHost.vue',
+  ])
+
+  /** 公共代码里不许出现的写法：[说明, 正则, 哪些文件例外] */
+  const FORBIDDEN: Array<[string, RegExp, ReadonlySet<string>]> = [
+    ['flavor.type 判断', /flavor(\.value)?\.type\s*[!=]==/, new Set()],
+    ['特调类型字面量', /['"`](M9A|MSS)['"`]/, new Set()],
+    ['特调配置类名', /\b(M9A|MSS)(User)?Config\b/, new Set()],
+    ['特调路由后缀', /\/(m9a|mss)['"`]/, new Set()],
+    ['按路由名分支', /\b(route|currentRoute\.value)\.name\s*[!=]==/, new Set()],
+    ['写死引导路由名', /['"`]MaaFWSetupWizard['"`]/, new Set()],
+    ['拼引导路径', /\/setup\//, new Set([ROUTE_TABLE])],
+    ['拼加用户路径', /\/users\/add\/\$\{/, new Set([ROUTE_TABLE])],
+    ['读路由登记的类型', /\bmeta\??\.scriptType\b/, ROUTE_META_READERS],
+  ]
+
+  /** 违反了哪几条（说明） */
+  const violations = (path: string, source: string) =>
+    FORBIDDEN.filter(([, pattern, allowed]) => !allowed.has(path) && pattern.test(source)).map(
+      ([label]) => label
+    )
+
+  it('页面宿主、新建对话框与特调目录根下的公共件都在扫描范围里', () => {
     expect(PUBLIC_FILES).toEqual(
       expect.arrayContaining([
         '../views/EditView/MaaFWFlavor/MaaFWPageHost.vue',
         '../views/EditView/MaaFWFlavor/useMaaFWPageHost.ts',
         '../views/EditView/MaaFWFlavor/pageHostContext.ts',
+        '../views/EditView/MaaFWFlavor/MaaFWFlavorSlot.vue',
+        '../views/EditView/MaaFWFlavor/sectionContracts.ts',
+        '../views/EditView/MaaFWFlavor/defineFlavor.ts',
+        '../views/scripts/components/ScriptCreateDialog.vue',
+        '../views/scripts/components/MaaFWSourceStep.vue',
+        ROUTE_TABLE,
       ])
     )
   })
 
-  it.each(PUBLIC_FILES)('%s 不写特调类型字面量与 flavor.type 判断', path => {
-    const source = read(path)
-    expect(source).not.toMatch(/flavor(\.value)?\.type\s*[!=]==/)
-    expect(source).not.toMatch(/['"`](M9A|MSS)['"`]/)
-    expect(source).not.toMatch(/\b(M9A|MSS)(User)?Config\b/)
-    expect(source).not.toMatch(/\/(m9a|mss)['"`]/)
+  it.each(PUBLIC_FILES)('%s 不按特调类型、路由名或路由 meta 分支，不自己拼 MaaFW 路径', path => {
+    expect([path, violations(path, read(path))]).toEqual([path, []])
+  })
+
+  it('这些规则真能抓到违规写法', () => {
+    const page = '../views/EditView/Script/MaaFWScriptEdit.vue'
+    const planted: Array<[string, string]> = [
+      ["if (route.name === 'M9AScriptEdit') return", '按路由名分支'],
+      ["router.push({ name: 'MaaFWSetupWizard', params })", '写死引导路由名'],
+      ['router.push(`/scripts/${id}/setup/maafw`)', '拼引导路径'],
+      ['router.push(`/scripts/${id}/users/add/${suffix}`)', '拼加用户路径'],
+      ['const type = route.meta.scriptType', '读路由登记的类型'],
+      ["if (flavor.value.type === 'X') return", 'flavor.type 判断'],
+    ]
+    for (const [code, label] of planted) {
+      expect([code, violations(page, code)]).toEqual([code, expect.arrayContaining([label])])
+    }
+    // 路由表与页面宿主读 meta.scriptType 是允许的
+    expect(violations(ROUTE_TABLE, 'const routeType = route.meta.scriptType')).toEqual([])
+    // 正常写法不误报：任务 / 资源按名字比较、组合式函数名里带 SetupWizard
+    for (const code of [
+      'item => item.name === props.effectiveResourceName',
+      "import { useMaaFWSetupWizard } from './useMaaFWSetupWizard'",
+      "router.push(maafwRouteLocation(type, 'setup', { id }))",
+      'router.push(`/scripts/${script.id}/users/add/maa`)',
+    ]) {
+      expect([code, violations(page, code)]).toEqual([code, []])
+    }
   })
 })
