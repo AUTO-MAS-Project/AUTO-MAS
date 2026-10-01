@@ -29,7 +29,8 @@ import type { ComboBoxItem } from '@/api/models/ComboBoxItem'
 import { type SchedulerTab, type SchedulerStatus, TASK_MODE_OPTIONS } from './schedulerConstants'
 import { applyTaskLogUpdate, trimLogBuffer } from './schedulerLogBuffer'
 import { findReusableSchedulerTab } from './schedulerTabReuse'
-import { toRunnableUserOptions } from './schedulerUserOptions'
+import { reconcileSelectedUserIds, toRunnableUserOptions } from './schedulerUserOptions'
+import { buildStartTaskRequest } from './schedulerStartRequest'
 import { resolveTaskCompletionFeedback } from '@/utils/taskFailures'
 
 // 运行态里的脚本执行模式 → 词表标签；词表里没有的模式（如 Update）保留原值
@@ -53,6 +54,8 @@ const STOP_COMPLETION_GRACE_MS = 1500
 let storageSaveTimer: number | null = null
 const pendingLogUpdates = new Map<string, number>()
 const pendingLogContents = new Map<string, string>()
+// 同一标签页可能连续刷新用户列表；旧请求不得覆盖较新的选择和加载状态。
+const latestUserOptionsRequest = new WeakMap<SchedulerTab, object>()
 // 序号断裂后正在等快照重建 buffer 的标签页，期间到达的增量直接丢弃、不重复拉快照
 const pendingLogResyncs = new Set<string>()
 // 手动启动还在等 /dispatch/start 返回的标签页：同队列的定时任务此时复用它的话，
@@ -110,6 +113,7 @@ const toPersistedTab = (tab: SchedulerTab): SchedulerTab => ({
   selectedUserIds: tab.selectedUserIds ? [...tab.selectedUserIds] : undefined,
   userOptions: tab.userOptions ? [...tab.userOptions] : [],
   userOptionsLoading: false,
+  userOptionsLoaded: false,
   taskId: tab.taskId,
   subscriptionIds: [],
   runningTaskLabel: tab.runningTaskLabel,
@@ -134,6 +138,7 @@ const normalizePersistedTab = (
       : undefined,
   userOptions: tab.userOptions || [],
   userOptionsLoading: false,
+  userOptionsLoaded: false,
   subscriptionIds: [],
   logMode: tab.logMode || 'follow',
 })
@@ -173,6 +178,7 @@ const loadTabsFromStorage = (): SchedulerTab[] => {
       selectedUserIds: undefined,
       userOptions: [],
       userOptionsLoading: false,
+      userOptionsLoaded: false,
       taskId: null,
       logBuffer: '',
       lastLogContent: '',
@@ -363,6 +369,7 @@ export function useSchedulerLogic() {
       selectedUserIds: undefined,
       userOptions: [],
       userOptionsLoading: false,
+      userOptionsLoaded: false,
       taskId: options?.taskId || null,
       logBuffer: '',
       lastLogContent: '',
@@ -609,17 +616,23 @@ export function useSchedulerLogic() {
     if (!taskOptions.value.length) return
 
     if (!tab.selectedTaskId || !isScriptTask(tab)) {
+      latestUserOptionsRequest.delete(tab)
       tab.userOptions = []
       tab.selectedUserIds = undefined
       tab.userOptionsLoading = false
+      tab.userOptionsLoaded = false
       return
     }
 
-    // 连续切换任务项时旧请求可能后返回；只有仍指向发起时那个脚本才允许写回状态
+    // 切换任务或重复刷新时，仅最新请求可以写回用户列表与选择。
     const requestedTaskId = tab.selectedTaskId
-    const isStale = () => tab.selectedTaskId !== requestedTaskId
+    const request = {}
+    latestUserOptionsRequest.set(tab, request)
+    const isStale = () =>
+      tab.selectedTaskId !== requestedTaskId || latestUserOptionsRequest.get(tab) !== request
 
     tab.userOptionsLoading = true
+    tab.userOptionsLoaded = false
     try {
       const response = await Service.getUserApiScriptsUserGetPost({
         scriptId: requestedTaskId,
@@ -633,15 +646,8 @@ export function useSchedulerLogic() {
 
       const options = toRunnableUserOptions(response)
       tab.userOptions = options
-
-      if (tab.selectedUserIds === undefined) {
-        // 第一次选择脚本时默认运行全部可运行用户。
-        tab.selectedUserIds = options.map(item => item.value)
-      } else {
-        // 刷新用户列表只剔除已失效的用户，不覆盖用户手动做出的子集选择。
-        const validUserIds = new Set(options.map(item => item.value))
-        tab.selectedUserIds = tab.selectedUserIds.filter(id => validUserIds.has(id))
-      }
+      tab.selectedUserIds = reconcileSelectedUserIds(tab.selectedUserIds, options)
+      tab.userOptionsLoaded = true
     } catch (error) {
       if (isStale()) return
       const errorMsg = error instanceof Error ? error.message : String(error)
@@ -659,6 +665,7 @@ export function useSchedulerLogic() {
     tab.resumeFromScriptId = null
     tab.selectedUserIds = undefined
     tab.userOptions = []
+    tab.userOptionsLoaded = false
     await Promise.all([loadResumeScriptOptions(tab), loadUserOptions(tab), loadCycleQueueFlag(tab)])
   }
 
@@ -699,11 +706,11 @@ export function useSchedulerLogic() {
     }
 
     if (tab.selectedMode === TaskCreateIn.mode.AUTO_PROXY && isScriptTask(tab)) {
-      if (tab.selectedUserIds === undefined) {
+      if (!tab.userOptionsLoaded || tab.userOptionsLoading) {
         message.error(t('scheduler.toast.loadScriptUsersFailed'))
         return
       }
-      if (tab.selectedUserIds.length === 0) {
+      if (!tab.selectedUserIds?.length) {
         message.error(t('scheduler.toast.needRunUsers'))
         return
       }
@@ -711,21 +718,12 @@ export function useSchedulerLogic() {
 
     startingTabKeys.add(tab.key)
     try {
-      const requestBody: TaskCreateIn & { resumeFromScriptId?: string } = {
-        taskId: tab.selectedTaskId,
-        mode: tab.selectedMode,
-      }
-      if (tab.resumeFromScriptId) {
-        requestBody.resumeFromScriptId = tab.resumeFromScriptId
-      }
-      // 多选用户只对脚本自动代理有意义，非空选择始终随请求传递。
-      if (
-        tab.selectedMode === TaskCreateIn.mode.AUTO_PROXY &&
-        isScriptTask(tab) &&
-        tab.selectedUserIds?.length
-      ) {
-        requestBody.userIds = [...tab.selectedUserIds]
-      }
+      const requestBody = buildStartTaskRequest(
+        tab.selectedTaskId,
+        tab.selectedMode,
+        tab.resumeFromScriptId,
+        isScriptTask(tab) ? tab.selectedUserIds : undefined
+      )
 
       const response = await Service.addTaskApiDispatchStartPost(requestBody)
 

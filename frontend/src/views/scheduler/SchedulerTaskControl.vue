@@ -58,7 +58,6 @@
             :max-tag-count="'responsive'"
             allow-clear
             size="large"
-            @change="onUserChange"
             @dropdown-visible-change="onUserDropdownVisibleChange"
           >
             <template #option="{ label, value }">
@@ -229,7 +228,10 @@ const emit = defineEmits<Emits>()
 const localSelectedTaskId = ref(props.selectedTaskId)
 const localSelectedMode = ref(props.selectedMode)
 const localResumeFromScriptId = ref(props.resumeFromScriptId ?? null)
-const localSelectedUserIds = ref<string[]>([...(props.selectedUserIds ?? [])])
+const localSelectedUserIds = computed({
+  get: () => props.selectedUserIds ?? [],
+  set: value => emit('update:selectedUserIds', [...value]),
+})
 
 // 「循环运行」只对循环队列开放，其余任务仍然只有自动代理
 const modeOptions = computed(() =>
@@ -318,14 +320,6 @@ watch(
   { immediate: true }
 )
 
-watch(
-  () => props.selectedUserIds,
-  newVal => {
-    localSelectedUserIds.value = [...(newVal ?? [])]
-  },
-  { immediate: true, deep: true }
-)
-
 // 事件处理
 const onTaskChange = (value: string) => {
   emit('update:selectedTaskId', value)
@@ -344,19 +338,12 @@ const onResumeDropdownVisibleChange = (open: boolean) => {
   if (open) emit('refresh-resume-scripts')
 }
 
-const onUserChange = (value: string[]) => {
-  emit('update:selectedUserIds', [...value])
-}
-
 const selectAllUsers = () => {
-  const value = (props.userOptions ?? []).map(item => item.value)
-  localSelectedUserIds.value = value
-  emit('update:selectedUserIds', [...value])
+  localSelectedUserIds.value = (props.userOptions ?? []).map(item => item.value)
 }
 
 const clearAllUsers = () => {
   localSelectedUserIds.value = []
-  emit('update:selectedUserIds', [])
 }
 
 const onUserDropdownVisibleChange = (open: boolean) => {

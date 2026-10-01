@@ -63,6 +63,7 @@ export interface SchedulerTab {
   selectedUserIds?: string[]
   userOptions?: Array<{ label: string; value: string }>
   userOptionsLoading?: boolean
+  userOptionsLoaded?: boolean
   taskId: string | null
   subscriptionIds?: string[]
   // 日志增量协议的 buffer 与 seq，语义见 schedulerLogBuffer.ts

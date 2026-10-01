@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { toRunnableUserOptions } from './schedulerUserOptions'
+import { reconcileSelectedUserIds, toRunnableUserOptions } from './schedulerUserOptions'
 
 const user = (uid: string, info: Record<string, unknown>) => ({ uid, info })
 
@@ -53,5 +53,20 @@ describe('toRunnableUserOptions', () => {
     const payload = build([user('a', { Name: '甲', Status: true, RemainedDay: -1 })])
     payload.index.push({ uid: 'ghost' } as (typeof payload.index)[number])
     expect(toRunnableUserOptions(payload)).toEqual([{ value: 'a', label: '甲' }])
+  })
+})
+
+describe('reconcileSelectedUserIds', () => {
+  const options = ['a', 'b', 'c'].map(value => ({ value }))
+
+  it('首次加载全选；首次无可运行用户时等待下次加载', () => {
+    expect(reconcileSelectedUserIds(undefined, options)).toEqual(['a', 'b', 'c'])
+    expect(reconcileSelectedUserIds(undefined, [])).toBeUndefined()
+  })
+
+  it('保留手动 A+C 子集和空选择，刷新只剔除失效用户', () => {
+    expect(reconcileSelectedUserIds(['a', 'c'], options)).toEqual(['a', 'c'])
+    expect(reconcileSelectedUserIds(['a', 'c'], options.slice(1))).toEqual(['c'])
+    expect(reconcileSelectedUserIds([], options)).toEqual([])
   })
 })
