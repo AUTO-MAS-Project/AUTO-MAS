@@ -58,6 +58,11 @@ from typing import Any
 
 import json5
 
+from ..interface.agent_entry import (
+    CFA_FALLBACK_AGENT_ENTRY,
+    describe_cfa_agent_entry_fallback,
+    is_python_entry_arg,
+)
 from .blob_store import LINK_MIN_BYTES, RuntimeBlobStore, place_fresh
 
 MAX_REPORT_ITEMS = 128
@@ -1096,6 +1101,24 @@ def build_projection_rules(
             raise ProjectionError(f"{label} 声明的路径不存在：{raw}")
         return relative
 
+    def cfa_agent_entry(raw: str, label: str) -> Path | None:
+        """入口脚本越出 interface 所在目录、而 CFA 的兜底入口在时返回兜底入口；
+        否则 None，照原来的严格校验走（见 ``interface.agent_entry``）。"""
+
+        try:
+            relative = _normalize_declared_path(raw, base_relative, label)
+        except ProjectionError:
+            relative = None
+        if relative is not None and _is_relative_to(relative, base_relative):
+            return None
+        fallback = base_relative / CFA_FALLBACK_AGENT_ENTRY
+        if not view.is_file(fallback):
+            return None
+        warnings.append(
+            f"{label}：{describe_cfa_agent_entry_fallback(raw, fallback.as_posix())}"
+        )
+        return fallback
+
     def declare_executable(raw: str, label: str) -> Path:
         relative = _normalize_declared_path(raw, base_relative, label)
         if view.exists(relative):
@@ -1334,13 +1357,21 @@ def build_projection_rules(
                     raise ProjectionError(f"{label} 声明的路径不存在：{child_exec}")
                 else:
                     warnings.append(f"{label} 声明的路径当前不存在：{child_exec}")
+            python_entry_seen = False
             for arg_index, raw_arg in enumerate(child_args):
                 if not looks_like_local_path(raw_arg):
                     continue
                 label = f"agent[{index}].child_args[{arg_index}]"
                 if looks_like_script_file(raw_arg):
                     # 脚本 / 可执行文件路径就是 agent 的入口，缺了必然跑不起来：照旧严格。
-                    arg_relative = declare(raw_arg, label, must_exist=True)
+                    # 第一个 Python 入口先过 CFA 兜底（与 agent_env.planner 同一规则）。
+                    fallback_entry = None
+                    if not python_entry_seen and is_python_entry_arg(raw_arg):
+                        python_entry_seen = True
+                        fallback_entry = cfa_agent_entry(raw_arg, label)
+                    arg_relative = fallback_entry or declare(
+                        raw_arg, label, must_exist=True
+                    )
                     if arg_relative is None:
                         continue
                 else:
