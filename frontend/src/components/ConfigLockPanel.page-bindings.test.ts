@@ -47,7 +47,10 @@ describe('ConfigLockPanel edit page bindings', () => {
         'if (configLocked.value) return',
       ],
       'User/GeneralUserEdit.vue': [':disabled="configLocked"', 'if (configLocked.value) return'],
-      'User/MAAUserEdit.vue': [':config-locked="configLocked"', 'if (configLocked.value) return'],
+      'User/MAAUserEdit.vue': [
+        ':config-locked="configLocked || leavingPage"',
+        'if (configLocked.value || editorBusy.value || isInitializing.value || !userId) return',
+      ],
       'User/MaaEndUserEdit.vue': ['if (configLocked.value) return'],
       'User/OkNteUserEdit.vue': [
         ':config-disabled="pageLoading || !activeUserId || configLocked"',

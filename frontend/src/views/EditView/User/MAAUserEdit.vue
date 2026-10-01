@@ -1,5 +1,5 @@
 <template>
-  <div class="user-edit-container">
+  <div ref="pageRef" class="user-edit-container">
     <!-- 原生 GUI 会话遮罩（配置会话 / 查看会话，公用组件对齐 ok-ww / ok-nte） -->
     <GuiSessionMask
       :open="showMaaConfigMask"
@@ -37,17 +37,18 @@
       :script-name="scriptName"
       :is-edit="isEdit"
       :user-mode="formData.Info.Mode"
-      :maa-config-loading="maaConfigLoading"
+      :maa-config-loading="preparingSession || maaConfigLoading"
+      :leaving="leavingPage"
       :show-maa-config-mask="showMaaConfigMask"
       :loading="loading"
-      :config-locked="configLocked"
+      :config-locked="configLocked || leavingPage"
       :user-id="userId"
       @handle-m-a-a-config="handleMAAConfig"
       @handle-cancel="handleCancel"
     />
 
     <ConfigLockPanel :script-id="scriptId" content-class="user-edit-content">
-      <a-card class="config-card">
+      <a-card class="config-card" :inert="editorBusy">
         <a-form
           ref="formRef"
           :model="formData"
@@ -87,6 +88,7 @@
             </a-space>
           </a-flex>
           <TaskPipelineSection
+            ref="taskPipelineRef"
             v-if="formData.Info.IfQuickConfig"
             v-model:form-data="formData"
             :loading="loading"
@@ -182,7 +184,7 @@
     <!-- ══ 配置恢复（通用组件：MAS 用户配置在前、MAA 原生配置在后）══ -->
     <ConfigRestoreSection
       v-model:open="restoreOpen"
-      :disabled="configLocked"
+      :disabled="configLocked || editorBusy"
       :script-name="MAA_DISPLAY_NAME"
       :targets="restoreTargets"
       :api="restoreApi"
@@ -215,8 +217,18 @@
 import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
 import { useScriptConfigLock } from '@/composables/useScriptConfigLock'
 import { useI18n } from 'vue-i18n'
-import { computed, h, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import {
+  computed,
+  h,
+  nextTick,
+  onBeforeUnmount,
+  onMounted,
+  onUnmounted,
+  reactive,
+  ref,
+  watch,
+} from 'vue'
+import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
 import { message, Modal } from 'ant-design-vue'
 import { EyeOutlined, HistoryOutlined, SettingOutlined } from '@ant-design/icons-vue'
 import type { FormInstance, Rule } from 'ant-design-vue/es/form'
@@ -266,18 +278,25 @@ const {
 } = useMaaGuiSession()
 
 const formRef = ref<FormInstance>()
+const pageRef = ref<HTMLElement>()
+const taskPipelineRef = ref<InstanceType<typeof TaskPipelineSection>>()
+const preparingSession = ref(false)
+const leavingPage = ref(false)
+const editorBusy = computed(() => preparingSession.value || leavingPage.value)
+let pageActive = true
+let sessionStartGeneration = 0
+let sessionStartPromise: Promise<void> | null = null
 const isInitializing = ref(true) // 标记是否正在初始化
 const isSaving = ref(false) // 标记是否正在保存
 // 字段保存不进入页面级 loading：updateUser 的请求 loading 若经此处传给整棵
 // 编辑树，会把全部控件禁用一轮——实测表现为切开关整页闪烁、键入目标库存
 // 时焦点输入框被禁用夺焦只能输一个数字。保存中的后续变更由 pendingFieldSaves
 // 队列兜底，不依赖禁用
-const loading = computed(() => userLoading.value && !isSaving.value)
-const pendingFieldSaves = new Map<string, any>()
+const loading = computed(() => editorBusy.value || (userLoading.value && !isSaving.value))
+const pendingFieldSaves = new Map<string, unknown>()
+// 回读失败时保留输入，下次离页或启动会话前重试，不能把未确认的修改当作已保存。
+const failedFieldSaves = new Set<string>()
 let fieldSavePromise: Promise<boolean> | null = null
-// 与 DepotMaintainPlanEditor 的目标库存防抖窗口一致：handleCancel 退出前
-// 等待一个窗口，保证停手未满 500ms 的键入也有机会冲刷落盘
-const DEBOUNCE_FLUSH_MS = 500
 
 const reportFieldSaveFailure = () => {
   const errorMsg = userError.value
@@ -285,6 +304,25 @@ const reportFieldSaveFailure = () => {
     message.error(t('edit.couldNotSaveUser'))
   }
   logger.error(`保存失败: ${errorMsg || '用户 API 未返回成功'}`)
+}
+
+// 只恢复失败字段；回读期间的新编辑和其它字段的草稿都保留。
+const reconcileField = async (key: string, submittedValue: unknown) => {
+  try {
+    const userResponse = await getUsers(scriptId, userId)
+    if (!userResponse || userResponse.code !== 200) return
+    const userData = userResponse.data[userId] as any
+    if (!userData) return
+    if (pendingFieldSaves.has(key) || !Object.is(readField(formData, key), submittedValue)) return
+    const savedValue = readField(userData, key)
+    writeFieldLocally(
+      key,
+      savedValue === undefined ? readField(getDefaultMAAUserData(), key) : savedValue
+    )
+    failedFieldSaves.delete(key)
+  } catch {
+    // 保留失败标记，网络恢复后允许重新提交。
+  }
 }
 
 // 路由参数
@@ -662,7 +700,7 @@ const rules = computed(() => {
   return baseRules
 })
 
-// 同步扁平化字段与嵌套数据
+// 同步扁平化验证字段与嵌套数据，避免同一轮更新中的旧值覆盖新草稿。
 watch(
   () => formData.Info.Name,
   newVal => {
@@ -670,7 +708,7 @@ watch(
       formData.userName = newVal || ''
     }
   },
-  { immediate: true }
+  { immediate: true, flush: 'sync' }
 )
 
 watch(
@@ -680,7 +718,7 @@ watch(
       formData.userId = newVal || ''
     }
   },
-  { immediate: true }
+  { immediate: true, flush: 'sync' }
 )
 
 // 基建配置名称和索引保持独立，不自动同步
@@ -691,7 +729,8 @@ watch(
     if (formData.Info.Name !== newVal) {
       formData.Info.Name = newVal || ''
     }
-  }
+  },
+  { flush: 'sync' }
 )
 
 watch(
@@ -700,84 +739,102 @@ watch(
     if (formData.Info.Id !== newVal) {
       formData.Info.Id = newVal || ''
     }
-  }
+  },
+  { flush: 'sync' }
 )
 
+// 验证字段与实际配置使用同一队列键，避免同一字段分成两条保存。
+const normalizeFieldKey = (key: string) =>
+  key === 'userName' ? 'Info.Name' : key === 'userId' ? 'Info.Id' : key
+
+const readField = (data: object, key: string): unknown =>
+  key.split('.').reduce<unknown>((value, part) => (value as Record<string, unknown>)?.[part], data)
+
+const writeFieldLocally = (key: string, value: unknown) => {
+  const parts = key.split('.')
+  let localTarget: any = formData
+  for (let i = 0; i < parts.length - 1; i++) {
+    localTarget = localTarget[parts[i]]
+  }
+  localTarget[parts[parts.length - 1]] = value
+}
+
+const buildFieldPatch = (key: string, value: unknown): Record<string, any> => {
+  const parts = key.split('.')
+  const userData: Record<string, any> = {}
+  let current = userData
+  for (let i = 0; i < parts.length - 1; i++) {
+    current[parts[i]] = {}
+    current = current[parts[i]]
+  }
+  current[parts[parts.length - 1]] = value
+  return userData
+}
+
 // 即时保存单个字段变更。保存中的后续变更保留最后一次值，避免被 isSaving 直接丢弃。
-const handleFieldSave = async (key: string, value: any): Promise<boolean> => {
+const handleFieldSave = async (key: string, value: unknown): Promise<boolean> => {
   if (isInitializing.value || !userId) return false
 
+  key = normalizeFieldKey(key)
   pendingFieldSaves.set(key, value)
+  failedFieldSaves.delete(key)
+  // 入队即更新受控控件，连点时基于最新状态反向切换。
+  writeFieldLocally(key, value)
   if (fieldSavePromise) return fieldSavePromise
 
   const savePromise = (async (): Promise<boolean> => {
     isSaving.value = true
+    let allSaved = true
     try {
       while (pendingFieldSaves.size > 0) {
-        const pendingEntry = pendingFieldSaves.entries().next().value as [string, any] | undefined
+        const pendingEntry = pendingFieldSaves.entries().next().value
         if (!pendingEntry) break
 
         const [pendingKey, pendingValue] = pendingEntry
         pendingFieldSaves.delete(pendingKey)
 
-        // 解析 key 路径，例如 "Info.Status" -> { Info: { Status: value } }
-        const parts = pendingKey.split('.')
-        let userData: Record<string, any> = {}
-        let current = userData
-        let localTarget: any = formData
+        const userData = buildFieldPatch(pendingKey, pendingValue)
 
-        for (let i = 0; i < parts.length - 1; i++) {
-          current[parts[i]] = {}
-          current = current[parts[i]]
-          localTarget = localTarget[parts[i]]
+        let success = false
+        try {
+          success = await updateUser(scriptId, userId, userData)
+        } catch (error) {
+          logger.error(`保存异常: ${error instanceof Error ? error.message : String(error)}`)
         }
-        current[parts[parts.length - 1]] = pendingValue
-        localTarget[parts[parts.length - 1]] = pendingValue
-
-        // 特殊处理：userName 和 userId 需要同步到 Info
-        if (pendingKey === 'userName') {
-          userData = { Info: { Name: pendingValue } }
-        } else if (pendingKey === 'userId') {
-          userData = { Info: { Id: pendingValue } }
-        }
-
-        const success = await updateUser(scriptId, userId, userData)
         if (!success) {
-          pendingFieldSaves.clear()
+          allSaved = false
+          failedFieldSaves.add(pendingKey)
           reportFieldSaveFailure()
-          return false
+          await reconcileField(pendingKey, pendingValue)
+          // 失败只影响本字段，其它排队修改继续保存。
+          continue
         }
 
-        // 后端按同一口径清空 Data.CultivateNotice，但只落在配置里；提示是
-        // 整份 Data 只在 loadUserData 回来，不在此同步会让当前页的告警
-        // 挂到离开编辑页为止。保存开关或目标成功后按 patch 事实同步本地展示；
-        // 有效性对齐后端 parse_cultivate_targets：目标须带非空 goals 才算数
-        if (pendingKey === 'Task.IfCultivate' || pendingKey === 'Task.CultivateTargets') {
-          const taskData = formData.Task as Record<string, any>
+        failedFieldSaves.delete(pendingKey)
+        // 成功不回写：本地可能已有尚未失焦或防抖提交的新输入。
+
+        // 后端清空提示后同步当前页，只依据本次已保存的值，不能用排队中的状态。
+        // 有效目标对齐后端 parse_cultivate_targets：须带非空 goals。
+        if (pendingKey === 'Task.IfCultivate' && !pendingValue) {
+          formData.Data.CultivateNotice = ''
+        } else if (pendingKey === 'Task.CultivateTargets') {
           let hasTargets = false
           try {
-            const parsed = JSON.parse(String(taskData.CultivateTargets ?? '[]'))
+            const parsed = JSON.parse(String(pendingValue ?? '[]'))
             hasTargets =
               Array.isArray(parsed) &&
               parsed.some((t: any) => t && Array.isArray(t.goals) && t.goals.length > 0)
           } catch {
             hasTargets = false
           }
-          if (!taskData.IfCultivate || !hasTargets) {
+          if (!hasTargets) {
             formData.Data.CultivateNotice = ''
           }
         }
 
         logger.info(`用户配置已保存: ${pendingKey}`)
       }
-      return true
-    } catch (error) {
-      pendingFieldSaves.clear()
-      reportFieldSaveFailure()
-      if (error instanceof Error) {
-        logger.error(`保存异常: ${error.message}`)
-      }
-      return false
+      return allSaved && failedFieldSaves.size === 0
     } finally {
       isSaving.value = false
       fieldSavePromise = null
@@ -790,11 +847,7 @@ const handleFieldSave = async (key: string, value: any): Promise<boolean> => {
 
 // 快速配置开关：与配置来源独立，真实保存
 const handleQuickConfigChange = async (value: boolean) => {
-  const previous = formData.Info.IfQuickConfig
-  formData.Info.IfQuickConfig = value
-  if (!(await handleFieldSave('Info.IfQuickConfig', value))) {
-    formData.Info.IfQuickConfig = previous
-  }
+  await handleFieldSave('Info.IfQuickConfig', value)
 }
 
 // 配置来源切换：校验 value ∈ options → 赋值 Info.Mode → 保存
@@ -1308,10 +1361,73 @@ const loadInfrastructureOptions = async () => {
   }
 }
 
+const flushPendingEdits = async (): Promise<boolean> => {
+  // 输入框按失焦保存；先提交当前草稿，再冲刷库存编辑器的防抖与异步编辑。
+  const focused = document.activeElement
+  if (focused instanceof HTMLElement && pageRef.value?.contains(focused)) focused.blur()
+  await nextTick()
+  try {
+    await taskPipelineRef.value?.flushPendingEdits()
+  } catch (error) {
+    logger.error(`提交编辑失败: ${error instanceof Error ? error.message : String(error)}`)
+    message.error(t('edit.couldNotSaveUser'))
+    return false
+  }
+  await nextTick()
+
+  for (const key of [...failedFieldSaves]) {
+    void handleFieldSave(key, readField(formData, key))
+  }
+  while (fieldSavePromise) {
+    if (!(await fieldSavePromise)) return false
+  }
+  return failedFieldSaves.size === 0
+}
+
 const handleMAAConfig = async () => {
-  if (configLocked.value) return
-  if (!userId) return
-  await startSession(userId)
+  if (configLocked.value || editorBusy.value || isInitializing.value || !userId) return
+  preparingSession.value = true
+  const generation = ++sessionStartGeneration
+  const startup = (async () => {
+    try {
+      if (!(await flushPendingEdits())) return
+      if (!pageActive || generation !== sessionStartGeneration || configLocked.value) return
+      await startSession(userId)
+      // 请求已发出时无法撤销；离页后到达的会话立即关闭。
+      if (!pageActive || generation !== sessionStartGeneration) await stopSession(true)
+    } finally {
+      preparingSession.value = false
+      sessionStartPromise = null
+    }
+  })()
+  sessionStartPromise = startup
+  await startup
+}
+
+// 返回按钮、面包屑和侧栏导航共用离页保护。
+let leavePromise: Promise<boolean> | null = null
+onBeforeRouteLeave(() => {
+  if (leavePromise) return leavePromise
+  leavingPage.value = true
+  sessionStartGeneration++
+  const leaving = (async (): Promise<boolean> => {
+    try {
+      if (!(await flushPendingEdits())) return false
+      await sessionStartPromise
+      const stopped = await stopSession(true)
+      if (!stopped) message.error(t('edit.maaSessionStopFailed'))
+      return stopped
+    } finally {
+      leavingPage.value = false
+      leavePromise = null
+    }
+  })()
+  leavePromise = leaving
+  return leaving
+})
+
+const handleCancel = async () => {
+  await router.push('/scripts')
 }
 
 const handleSaveMAAConfig = () => {
@@ -1416,16 +1532,6 @@ const addCustomStage3 = (stageName: string) => {
   }
 }
 
-const handleCancel = async () => {
-  // 防抖中的编辑（库存保持目标库存等）尚未 emit：等一个防抖窗口让编辑器
-  // 定时器触发 savePlans 入队，再等保存队列走完，否则离开时丢最后一次改动
-  await new Promise(resolve => setTimeout(resolve, DEBOUNCE_FLUSH_MS))
-  const pendingSave = fieldSavePromise
-  if (pendingSave && !(await pendingSave)) return
-
-  await stopSession()
-  router.push('/scripts')
-}
 const updateMedicineNumb = (value: number) => {
   if (!isPlanMode.value) {
     formData.Info.MedicineNumb = value
@@ -1688,11 +1794,18 @@ onMounted(async () => {
   )
 })
 
+onBeforeUnmount(() => {
+  pageActive = false
+  sessionStartGeneration++
+})
+
 onUnmounted(() => {
   // 退出编辑页：先停会话再归档 MAS 侧终态——并行会与 final_task 的
   // rmtree/copytree 回写撞车，归档到半程状态；会话未开时 stopSession
   // 立即返回，不影响归档时机
   void (async () => {
+    await fieldSavePromise
+    await sessionStartPromise
     await stopSession()
     await ensureMaaBackup('mas')
   })()

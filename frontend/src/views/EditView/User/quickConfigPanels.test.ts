@@ -23,10 +23,17 @@ describe('quick configuration panel visibility', () => {
       expect(template.indexOf('@change="handleQuickConfigChange"')).toBeLessThan(start)
       expect(template).not.toContain('@quick-config-change=')
       expect(template.match(/@change="handleQuickConfigChange"/g)).toHaveLength(1)
-      expect(source).toMatch(
-        /if \(!\(await (handleFieldSave|saveField)\('Info.IfQuickConfig', value\)\)\)/
-      )
-      expect(source).toContain('formData.Info.IfQuickConfig = previous')
+      if (name === 'MAA') {
+        // MAA 队列统一恢复失败字段，开关不能按整轮结果再回滚一次。
+        expect(source).toContain("await handleFieldSave('Info.IfQuickConfig', value)")
+        expect(source).toContain('await reconcileField(pendingKey, pendingValue)')
+        expect(source).not.toContain('formData.Info.IfQuickConfig = previous')
+      } else {
+        expect(source).toMatch(
+          /if \(!\(await (handleFieldSave|saveField)\('Info.IfQuickConfig', value\)\)\)/
+        )
+        expect(source).toContain('formData.Info.IfQuickConfig = previous')
+      }
     })
   }
 

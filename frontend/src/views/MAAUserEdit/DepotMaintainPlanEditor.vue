@@ -242,6 +242,9 @@ const stockColumnTitle = computed(() =>
 )
 
 const plans = ref<DepotMaintainPlan[]>([])
+let saveTimer: number | undefined
+let disposed = false
+const pendingEdits = new Set<Promise<void>>()
 // 本组件刚序列化发出的 JSON：watch 收到自己的回写时跳过重建。用发出值而
 // 非当前行数据：若另一字段的保存还在队列里、本组件又敲了新值，当前数据
 // 已不等于"刚保存的内容"，拿它判定会把排队旧值的回写当外部变更，整表
@@ -277,6 +280,8 @@ watch(
       return
     }
     lastEmitted = null
+    // 失败回读不能重建仍在防抖或等待候选的本地草稿。
+    if (saveTimer !== undefined || pendingEdits.size > 0) return
     selectedRowKeys.value = []
     try {
       const parsed = JSON.parse(value || '[]')
@@ -340,27 +345,32 @@ const stockOf = (record: DepotMaintainPlan): number | string =>
 const getPopupContainer = (trigger: HTMLElement): HTMLElement =>
   trigger.closest<HTMLElement>('.depot-plan-editor') ?? document.body
 
-const onItemChange = async (record: DepotMaintainPlan) => {
-  const itemId = record.DropId
-  // 换物品后旧关卡大概率不再掉该材料，清空待重选（防提交无效组合）；
-  // 清空物品同样清掉残留关卡，避免显示物品为空的脏组合
-  record.Stage = ''
-  if (!itemId) {
-    savePlans()
-    return
-  }
-  await props.loadStageCandidates(itemId)
-  // await 期间物品可能又被换了：只为仍是当前物品的请求自动填最优关
-  if (record.DropId === itemId && !record.Stage) {
-    const best = props.stageCandidates?.[itemId]?.[0]
-    if (best) record.Stage = best.value
-  }
-  savePlans()
+const trackPendingEdit = (edit: () => Promise<void>) => {
+  const pending: Promise<void> = edit().finally(() => pendingEdits.delete(pending))
+  pendingEdits.add(pending)
+  return pending
 }
+
+const onItemChange = (record: DepotMaintainPlan) =>
+  trackPendingEdit(async () => {
+    const itemId = record.DropId
+    // 换物品后旧关卡大概率不再掉该材料，清空待重选（防提交无效组合）；
+    // 清空物品同样清掉残留关卡，避免显示物品为空的脏组合
+    record.Stage = ''
+    savePlans()
+    if (!itemId) return
+    await props.loadStageCandidates(itemId)
+    if (disposed || !plans.value.includes(record) || record.DropId !== itemId) return
+    // await 期间物品可能又被换了：只为仍是当前物品的请求自动填最优关
+    if (record.DropId === itemId && !record.Stage) {
+      const best = props.stageCandidates?.[itemId]?.[0]
+      if (best) record.Stage = best.value
+    }
+    savePlans()
+  })
 
 // 目标库存的 @change 每次步进/键入都会触发保存，防抖合并为停手后一次；
 // 显式保存（选关/选物品/增删行/拖拽落位）会顺手冲掉未触发的定时器
-let saveTimer: number | undefined
 const queueSave = () => {
   if (saveTimer !== undefined) window.clearTimeout(saveTimer)
   saveTimer = window.setTimeout(savePlans, 500)
@@ -381,16 +391,26 @@ const savePlans = () => {
     window.clearTimeout(saveTimer)
     saveTimer = undefined
   }
-  lastEmitted = JSON.stringify(
+  const next = JSON.stringify(
     plans.value.map(({ Stage, DropId, DropCount }) => ({ Stage, DropId, DropCount }))
   )
-  emit('save', 'Task.DepotMaintainPlans', lastEmitted)
+  // 未改变配置的操作不重复保存；回声标记只负责识别自身更新。
+  if (next === props.formData.Task.DepotMaintainPlans) return
+  lastEmitted = next
+  emit('save', 'Task.DepotMaintainPlans', next)
 }
+
+const flushPendingEdits = async () => {
+  while (pendingEdits.size > 0) await Promise.all([...pendingEdits])
+  if (saveTimer !== undefined) savePlans()
+}
+defineExpose({ flushPendingEdits })
 
 onBeforeUnmount(() => {
   // 折叠行即销毁重建（PipelineRow v-if）：冲刷未落盘的改动，防止迟到定时器
   // 在新实例挂载后用旧数据覆盖用户的新编辑
-  if (saveTimer !== undefined) savePlans()
+  if (saveTimer !== undefined || pendingEdits.size > 0) savePlans()
+  disposed = true
 })
 
 const addPlan = () => {
@@ -398,25 +418,27 @@ const addPlan = () => {
   savePlans()
 }
 
-const importPreset = async (preset: DepotMaintainPresetKey) => {
-  selectedRowKeys.value = []
-  const imported = getDepotMaintainPreset(preset).map(plan => ({
-    key: nextKey++,
-    ...plan,
-  }))
-  // 动态预设：先确保候选加载完成，再用当前最优关替代预设里的硬编码关卡
-  await Promise.all(
-    [...new Set(imported.map(plan => plan.DropId).filter(Boolean))].map(itemId =>
-      props.loadStageCandidates(itemId)
+const importPreset = (preset: DepotMaintainPresetKey) =>
+  trackPendingEdit(async () => {
+    selectedRowKeys.value = []
+    const imported = getDepotMaintainPreset(preset).map(plan => ({
+      key: nextKey++,
+      ...plan,
+    }))
+    // 动态预设：先确保候选加载完成，再用当前最优关替代预设里的硬编码关卡
+    await Promise.all(
+      [...new Set(imported.map(plan => plan.DropId).filter(Boolean))].map(itemId =>
+        props.loadStageCandidates(itemId)
+      )
     )
-  )
-  for (const plan of imported) {
-    const best = props.stageCandidates?.[plan.DropId]?.[0]
-    if (best) plan.Stage = best.value
-  }
-  plans.value.push(...imported)
-  savePlans()
-}
+    if (disposed) return
+    for (const plan of imported) {
+      const best = props.stageCandidates?.[plan.DropId]?.[0]
+      if (best) plan.Stage = best.value
+    }
+    plans.value.push(...imported)
+    savePlans()
+  })
 
 const removePlan = (key: number) => {
   selectedRowKeys.value = selectedRowKeys.value.filter(selectedKey => selectedKey !== key)

@@ -206,6 +206,7 @@
         @change="emitSave('Task.IfDepotMaintain', $event)"
       >
         <DepotMaintainPlanEditor
+          ref="depotPlanEditorRef"
           :form-data="formData"
           :loading="loading"
           :stage-options="stageOptions"
@@ -340,7 +341,7 @@
 
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import PipelineRow from './PipelineRow.vue'
 import LabelWithHint from './LabelWithHint.vue'
 import DepotMaintainPlanEditor from './DepotMaintainPlanEditor.vue'
@@ -424,6 +425,12 @@ const emit = defineEmits<{
   selectAndImportInfrastructureConfig: []
 }>()
 const emitSave = (key: string, value: any) => emit('save', key, value)
+
+const depotPlanEditorRef = ref<InstanceType<typeof DepotMaintainPlanEditor>>()
+const flushPendingEdits = async () => {
+  await depotPlanEditorRef.value?.flushPendingEdits()
+}
+defineExpose({ flushPendingEdits })
 
 const dailyTasks = [
   { key: 'IfRecruit', label: t('edit.maaRecruit') },
