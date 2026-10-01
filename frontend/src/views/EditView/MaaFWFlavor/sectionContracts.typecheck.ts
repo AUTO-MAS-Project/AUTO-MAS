@@ -16,6 +16,7 @@ import type MaaFWUserEditHeader from '../User/MaaFWUserEdit/MaaFWUserEditHeader.
 import type UserBasicInfoSection from '../User/MaaFWUserEdit/BasicInfoSection.vue'
 import type MaaFWQueueHeaderSection from '../User/MaaFWUserEdit/MaaFWQueueHeaderSection.vue'
 import type TaskQueueSection from '../User/MaaFWUserEdit/TaskQueueSection.vue'
+import type MaaFWSourceStep from '@/views/scripts/components/MaaFWSourceStep.vue'
 
 type Assert<T extends true> = T
 
@@ -72,6 +73,9 @@ export type MaaFWDefaultSectionsAcceptTheirContracts = [
       MaaFWSectionContract<'userPage', 'taskQueue'>
     >
   >,
+  Assert<
+    MaaFWAcceptsSectionContract<typeof MaaFWSourceStep, MaaFWSectionContract<'create', 'source'>>
+  >,
 ]
 
 /** 换错了节：运行参数分节接不住控制方式的契约 */
@@ -93,6 +97,17 @@ export const maafwSectionDeclarationChecks = () => [
     'userPage',
     'header',
     () => import('../User/MaaFWUserEdit/MaaFWUserEditHeader.vue')
+  ),
+  defineMaaFWSection(
+    'create',
+    'source',
+    () => import('@/views/scripts/components/MaaFWSourceStep.vue')
+  ),
+  // @ts-expect-error -- 新建流程的 source 接不住脚本页外壳导入分节
+  defineMaaFWSection(
+    'create',
+    'source',
+    () => import('../Script/MaaFWScriptEdit/ShellInstanceImportSection.vue')
   ),
   // @ts-expect-error -- 只声明了 instances，缺 selectedIds
   defineMaaFWSection('scriptPage', 'shellImport', async () =>

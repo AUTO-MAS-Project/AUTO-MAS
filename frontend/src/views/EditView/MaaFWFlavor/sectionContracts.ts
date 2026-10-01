@@ -1,13 +1,13 @@
 // MFW 页面分节的契约：每个分节收什么 props、发什么事件。MFW 的默认分节直接用这里的接口
 // defineProps / defineEmits，所以这里就是唯一的事实来源；特调替换某个分节时（descriptor 的
-// scriptPage.sections / userPage.sections，用 defineMaaFWSection 声明），替换组件必须能接受
-// 对应契约里的全部 props——页面对默认分节和替换分节传的是同一组属性与监听。
+// scriptPage.sections / userPage.sections / create.sections，用 defineMaaFWSection 声明），替换组件
+// 必须能接受对应契约里的全部 props——页面对默认分节和替换分节传的是同一组属性与监听。
 //
 // 这里只放类型，不引入任何组件：注册表（会被路由、脚本列表引入）通过它取类型，不能带上页面代码。
 
 import type { VNode } from 'vue'
 import type { ComboBoxItem, MaaFWShellInstanceItem } from '@/api'
-import type { MaaFWUserFormData } from '@/composables/maafwFlavorTypes'
+import type { MaaFWFlavorType, MaaFWUserFormData } from '@/composables/maafwFlavorTypes'
 import type { MaaFWEmbeddedStatus } from '@/composables/useMaaFWEmbeddedApi'
 import type { EmulatorType } from '@/composables/useMaaFWScriptConfig'
 import type { MaaFWUpdateResult } from '@/composables/useMaaFWUpdateApi'
@@ -23,6 +23,7 @@ import type {
   MaaFWTaskSnapshot,
   ScriptType,
 } from '@/types/script'
+import type { MfwReuseChoice } from '@/views/scripts/components/scriptCreateFlow'
 import type { MaaFWUpdateProgressState } from '../Script/MaaFWScriptEdit/updateProgress'
 import type { MaaFWPresetQueueEntry } from '../User/maafwPresetQueue'
 
@@ -267,8 +268,40 @@ export interface MaaFWUserSectionContracts {
   taskQueue: MaaFWUserTaskQueueSectionProps
 }
 
-/** 各页面的分节契约 */
+// ════════════════════════════ 新建流程 ════════════════════════════
+
+/**
+ * 新建流程 `source`：MFW 家族第二步「项目从哪来」的选项（新建一个别的项目 / 复用已导入的项目）。
+ * 选中状态归对话框所有（返回再进来照样保留，列表变了选中的源失效时由对话框退回 'new'），
+ * 分节只负责显示与交回选择。
+ */
+export interface MaaFWCreateSourceSectionProps {
+  /** 选中的类型卡片：只列与它同类型的项目 */
+  type: MaaFWFlavorType
+  /** 可复用的项目（已按类型筛好、同一项目并成一行） */
+  choices: MfwReuseChoice[]
+  /** 候选列表正在读 */
+  loading: boolean
+  /** 候选列表没读出来的原因；有值就显示错误条 + 重试 */
+  error: string | null
+  /** 'new' = 新建一个别的项目；否则是要复用的项目所属脚本的 id */
+  value: string
+}
+
+export interface MaaFWCreateSourceSectionEmits {
+  'update:value': [value: string]
+  /** 点了错误条上的「重试」：对话框重新读候选列表 */
+  retry: []
+}
+
+/** 新建流程分节键 → props 契约 */
+export interface MaaFWCreateSectionContracts {
+  source: MaaFWCreateSourceSectionProps
+}
+
+/** 各部分的分节契约 */
 export interface MaaFWSectionContractMap {
   scriptPage: MaaFWScriptSectionContracts
   userPage: MaaFWUserSectionContracts
+  create: MaaFWCreateSectionContracts
 }

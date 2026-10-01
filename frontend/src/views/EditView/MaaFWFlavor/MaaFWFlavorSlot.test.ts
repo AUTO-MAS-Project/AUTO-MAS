@@ -240,6 +240,32 @@ describe('MaaFWFlavorSlot 插入点渲染器', () => {
     expect(recorded[0].context).toMatchObject({ scriptId: 's1', previewData: { tasks: [] } })
   })
 
+  it('新建流程插入点：只读，三个类型都什么都不插；声明了就渲染，不挂任何监听', async () => {
+    const context = { type: 'MaaFW', selection: 'new' } as const
+    for (const type of ['MaaFW', 'M9A', 'MSS']) {
+      expect([
+        type,
+        await renderPartSlot('create', 'afterSourceStep', resolveMaaFWFlavor(type), context),
+      ]).toEqual([type, ''])
+    }
+    const base = resolveMaaFWFlavor('MaaFW')
+    const flavor: MaaFWFlavor = {
+      ...base,
+      create: {
+        ...base.create,
+        slots: { afterSourceStep: [reportingSlot('create:afterSourceStep', 'change', [1])] },
+      },
+    }
+    const onChange = vi.fn()
+    const onSave = vi.fn()
+    expect(
+      await renderPartSlot('create', 'afterSourceStep', flavor, context, { onChange, onSave })
+    ).toBe('<p>create:afterSourceStep</p>')
+    expect(onChange).not.toHaveBeenCalled()
+    expect(onSave).not.toHaveBeenCalled()
+    expect(recorded).toEqual([{ name: 'create:afterSourceStep', context, attrs: [] }])
+  })
+
   it('当前 flavor 声明了组件才渲染，异步组件加载后按声明顺序显示', async () => {
     // 加载函数直接给组件（import() 给的模块对象由 defineAsyncComponent 自己取 default）
     const load = vi.fn(async () =>

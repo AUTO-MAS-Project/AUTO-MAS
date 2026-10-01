@@ -3,9 +3,9 @@ import { useRoute, useRouter } from 'vue-router'
 import {
   MAAFW_PAGE_PART,
   defineMaaFWLazyComponent,
-  type MaaFWFlavorPart,
   type MaaFWLazyComponent,
   type MaaFWPageKind,
+  type MaaFWPagePart,
 } from '@/composables/maafwFlavorTypes'
 import { isMaaFWFamily, resolveMaaFWFlavor } from '@/composables/useMaaFWFlavor'
 import { useScriptApi } from '@/composables/useScriptApi'
@@ -17,7 +17,7 @@ import { MAAFW_PAGE_HOST_KEY, type MaaFWPageHostContext } from './pageHostContex
  * MFW 的默认页面：模块级常量，同一个异步组件引用——类型在默认页之间变（MaaFW ↔ 没有整页替换的
  * 特调）时宿主渲染的还是同一个组件，页面不重建，引导进度不丢。
  */
-export const MAAFW_DEFAULT_PAGES: Record<MaaFWFlavorPart, MaaFWLazyComponent> = {
+export const MAAFW_DEFAULT_PAGES: Record<MaaFWPagePart, MaaFWLazyComponent> = {
   scriptPage: defineMaaFWLazyComponent(() => import('../Script/MaaFWScriptEdit.vue')),
   userPage: defineMaaFWLazyComponent(() => import('../User/MaaFWUserEdit.vue')),
 }
@@ -34,7 +34,7 @@ export const MAAFW_DEFAULT_PAGES: Record<MaaFWFlavorPart, MaaFWLazyComponent> = 
  *    没有就渲染默认页。之后类型变了（导入后后端换类型，页面写回 scriptType）就地换页面，不改地址。
  */
 export function useMaaFWPageHost(
-  pages: Record<MaaFWFlavorPart, MaaFWLazyComponent> = MAAFW_DEFAULT_PAGES
+  pages: Record<MaaFWPagePart, MaaFWLazyComponent> = MAAFW_DEFAULT_PAGES
 ) {
   const logger = window.electronAPI.getLogger('MaaFW 页面宿主')
   const route = useRoute()

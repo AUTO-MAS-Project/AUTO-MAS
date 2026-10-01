@@ -18,8 +18,8 @@ export type MaaFWFlavorType = Extract<ScriptType, 'MaaFW' | 'M9A' | 'MSS'>
 export type MaaFWUserFormData = MaaFWUserConfig & { userName: string }
 
 /**
- * 插入点：公共页面上留给特调独有区块的位置，按页面分组，名字只在本页内有意义。
- * 需要新位置时在对应页面下加名字，再在公共页面对应处放一个
+ * 插入点：公共页面上留给特调独有区块的位置，按部分（脚本页 / 用户页 / 新建流程）分组，名字只在
+ * 本部分内有意义。需要新位置时在对应部分下加名字，再在公共页面对应处放一个
  * `<MaaFWFlavorSlot part="…" name="…">`。脚本页的插入点都在引导的步骤块里面，
  * 所以在引导里随所在步骤出现，在编辑页紧跟对应分节。
  */
@@ -44,19 +44,27 @@ export interface MaaFWFlavorSlotContextMap {
     /** 任务队列两栏之后、附加脚本之前 */
     afterTaskQueue: MaaFWUserSlotContext
   }
+  create: {
+    /** 新建对话框 MFW 家族第二步「项目从哪来」的选项之后 */
+    afterSourceStep: MaaFWCreateSlotContext
+  }
 }
 
-/** 描述对象里按页面分组的部分 */
+/** 描述对象里按部分分组的那几组：脚本页、用户页、新建流程 */
 export type MaaFWFlavorPart = keyof MaaFWFlavorSlotContextMap
 
-/** 某一页的插入点名 */
+/** 某一部分的插入点名 */
 export type MaaFWFlavorSlotName<P extends MaaFWFlavorPart> = keyof MaaFWFlavorSlotContextMap[P] &
   string
 
-/** 插入点组件交回页面的事件：脚本页交 change（按 category.key 落盘），用户页交 save */
+/**
+ * 插入点组件交回页面的事件：脚本页交 change（按 category.key 落盘），用户页交 save；
+ * 新建流程的插入点只读，什么事件都不转发（新建请求里不带特调的数据）
+ */
 export interface MaaFWFlavorSlotEmitMap {
   scriptPage: { change: [category: keyof MaaFWScriptConfig, key: string, value: unknown] }
   userPage: { save: [key: string, value: unknown] }
+  create: Record<never, never>
 }
 
 /**
@@ -90,6 +98,14 @@ export interface MaaFWUserSlotContext {
   readonly scriptId: string
 }
 
+/** 新建流程插入点的上下文：只读，组件以 `context` 一个 prop 接收 */
+export interface MaaFWCreateSlotContext {
+  /** 选中的类型卡片 */
+  readonly type: MaaFWFlavorType
+  /** 「项目从哪来」当前的选择：'new' = 新建一个别的项目；否则是要复用的项目所属脚本的 id */
+  readonly selection: string
+}
+
 /**
  * 按需加载的组件：渲染用的异步组件 + 同一个加载函数（页面加载期间预取，首屏不闪）。
  * 插入点组件与替换分节都是它。
@@ -107,14 +123,14 @@ export const defineMaaFWLazyComponent = (
   load,
 })
 
-/** 某个页面的插入点 → 组件（按数组顺序渲染）；没有独有区块写 {} */
+/** 某一部分的插入点 → 组件（按数组顺序渲染）；没有独有区块写 {} */
 export type MaaFWFlavorSlots<P extends MaaFWFlavorPart> = {
   [N in MaaFWFlavorSlotName<P>]?: readonly MaaFWLazyComponent[]
 }
 
 // ---- 分节替换 ----
 
-/** 某个页面可替换的分节键（契约见 views/EditView/MaaFWFlavor/sectionContracts.ts） */
+/** 某一部分可替换的分节键（契约见 views/EditView/MaaFWFlavor/sectionContracts.ts） */
 export type MaaFWSectionKey<P extends MaaFWFlavorPart> = keyof MaaFWSectionContractMap[P] & string
 
 /** 某个页面某个分节的 props 契约 */
@@ -209,6 +225,9 @@ export const MAAFW_PAGE_PART = {
   userEdit: 'userPage',
 } as const satisfies Record<MaaFWPageKind, MaaFWFlavorPart>
 
+/** 有路由、能整页替换的部分（新建流程是对话框里的一步，不在此列） */
+export type MaaFWPagePart = (typeof MAAFW_PAGE_PART)[MaaFWPageKind]
+
 /** 路由 */
 export interface MaaFWFlavorRoutes {
   /** 路由后缀：/scripts/:id/edit/<suffix>、/scripts/:id/users/add/<suffix> 等 */
@@ -217,9 +236,15 @@ export interface MaaFWFlavorRoutes {
   titles: Record<MaaFWPageKind, string>
 }
 
-/** 新建流程 */
+/**
+ * 新建流程（新建脚本对话框）。没有整页替换，也没有 prepare：这一步没有要预取的特调数据，
+ * 新建请求也不带特调的数据（后端新建只认类型）。
+ */
 export interface MaaFWFlavorCreate {
   card: MaaFWFlavorCreateOption
+  /** 替换的分节（MFW 家族第二步 source）；没有写 {} */
+  sections: MaaFWFlavorSections<'create'>
+  slots: MaaFWFlavorSlots<'create'>
 }
 
 /** 脚本页文案（t() 用的 key；为空表示沿用通用写法或不显示） */
@@ -298,7 +323,7 @@ export interface MaaFWUserPagePart {
 }
 
 /**
- * 一个特调 = 一个描述对象。身份平铺在顶层，其余按页面分组。注册表里的描述对象字段全部齐全
+ * 一个特调 = 一个描述对象。身份平铺在顶层，其余按部分（路由、新建流程、脚本页、用户页）分组。注册表里的描述对象字段全部齐全
  * （没有就是 null / {}），组件只按这一组字段取值；特调自己用 defineMaaFWFlavor 只写差异。
  */
 export interface MaaFWFlavor {

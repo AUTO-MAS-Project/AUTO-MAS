@@ -18,7 +18,8 @@ import { MAAFW_FLAVOR } from './maafw'
  * - `routes.titles` 可省，按 `typeTagLabel` 生成，写了的逐条覆盖；
  * - `scriptPage` / `userPage` 可省；其中 `text` / `managed` 按字段浅合并到 MaaFW 上：
  *   不写或写 `undefined` 沿用 MaaFW，写 `null` 表示明确关掉（只有可为空的字段能写 null）；
- * - `page` / `sections` / `slots` / `prepare` 不继承，不写就是没有。
+ * - `page` / `sections` / `slots` / `prepare`（含 `create.sections` / `create.slots`）不继承，
+ *   不写就是没有。
  */
 export interface MaaFWFlavorSpec extends Pick<
   MaaFWFlavor,
@@ -33,7 +34,10 @@ export interface MaaFWFlavorSpec extends Pick<
 > {
   /** 路由后缀必须写；标题不写就按 typeTagLabel 生成（见 defaultMaaFWRouteTitles），写了的逐条覆盖 */
   routes: Pick<MaaFWFlavorRoutes, 'suffix'> & { titles?: Partial<MaaFWFlavorRoutes['titles']> }
-  create: MaaFWFlavorCreate
+  create: Pick<MaaFWFlavorCreate, 'card'> & {
+    sections?: MaaFWFlavorCreate['sections']
+    slots?: MaaFWFlavorCreate['slots']
+  }
   scriptPage?: {
     text?: Partial<MaaFWScriptPageText>
     page?: MaaFWScriptPagePart['page']
@@ -83,7 +87,11 @@ export const mergeMaaFWFlavor = (base: MaaFWFlavor, spec: MaaFWFlavorSpec): MaaF
     // 标题不从底继承（底是 MaaFW 自己的标题），按本特调的标签生成
     titles: mergeDefined(defaultMaaFWRouteTitles(spec.typeTagLabel), spec.routes.titles),
   },
-  create: { card: spec.create.card },
+  create: {
+    card: spec.create.card,
+    sections: spec.create.sections ?? {},
+    slots: spec.create.slots ?? {},
+  },
   scriptPage: {
     text: mergeDefined(base.scriptPage.text, spec.scriptPage?.text),
     page: spec.scriptPage?.page ?? null,

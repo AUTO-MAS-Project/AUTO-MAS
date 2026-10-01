@@ -242,7 +242,7 @@ describe('MaaFW 特调注册表', () => {
       expect(resolveMaaFWFlavor(type).userPage.prepare).toBeNull()
     }
     expect(resolveMaaFWFlavor('MSS').userPage.prepare).toBeTypeOf('function')
-    // 脚本页三个都没有插入点与钩子；两页都没有替换分节，也没有整页替换
+    // 脚本页三个都没有插入点与钩子；两页都没有替换分节，也没有整页替换；新建流程什么都不换不插
     for (const flavor of MAAFW_FLAVORS) {
       expect([
         flavor.type,
@@ -252,7 +252,9 @@ describe('MaaFW 特调注册表', () => {
         flavor.userPage.sections,
         flavor.scriptPage.page,
         flavor.userPage.page,
-      ]).toEqual([flavor.type, {}, null, {}, {}, null, null])
+        flavor.create.sections,
+        flavor.create.slots,
+      ]).toEqual([flavor.type, {}, null, {}, {}, null, null, {}, {}])
     }
   })
 
@@ -290,6 +292,11 @@ describe('MaaFW 特调注册表', () => {
         slots: { beforeTaskQueue: [lazy('slotA'), lazy('slotB', 'throw')] },
         prepare: userPrepare,
       },
+      create: {
+        ...base.create,
+        sections: { source: { ...lazy('source', 'throw'), part: 'create', key: 'source' } },
+        slots: { afterSourceStep: [lazy('createSlot')] },
+      },
     } as unknown as MaaFWFlavor
 
     await expect(prepareMaaFWFlavorPage(flavor, 'userPage')).resolves.toBeUndefined()
@@ -299,9 +306,13 @@ describe('MaaFW 特调注册表', () => {
     await expect(prepareMaaFWFlavorPage(flavor, 'scriptPage')).resolves.toBeUndefined()
     expect(calls).toEqual(['control', 'scriptPrepare'])
     expect(userPrepare).toHaveBeenCalledOnce()
+    // 新建流程没有整页与钩子：只预取分节与插入点
+    calls.length = 0
+    await expect(prepareMaaFWFlavorPage(flavor, 'create')).resolves.toBeUndefined()
+    expect(calls).toEqual(['source', 'createSlot'])
     // 没有替换分节、插入点、钩子的 flavor 什么都不做
     for (const type of ['MaaFW', 'M9A']) {
-      for (const part of ['scriptPage', 'userPage'] as const) {
+      for (const part of ['scriptPage', 'userPage', 'create'] as const) {
         await expect(
           prepareMaaFWFlavorPage(resolveMaaFWFlavor(type), part)
         ).resolves.toBeUndefined()

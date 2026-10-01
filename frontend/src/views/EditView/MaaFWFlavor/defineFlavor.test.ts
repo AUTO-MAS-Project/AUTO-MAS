@@ -46,8 +46,18 @@ const headerSection = defineMaaFWSection(
   'header',
   () => import('../User/MaaFWUserEdit/MaaFWUserEditHeader.vue')
 )
+const sourceSection = defineMaaFWSection(
+  'create',
+  'source',
+  () => import('@/views/scripts/components/MaaFWSourceStep.vue')
+)
 const RICH_BASE: MaaFWFlavor = {
   ...MAAFW_FLAVOR,
+  create: {
+    card: MAAFW_FLAVOR.create.card,
+    sections: { source: sourceSection },
+    slots: { afterSourceStep: [slot] },
+  },
   scriptPage: {
     text: {
       titleKey: 'base.title',
@@ -96,6 +106,8 @@ describe('defineMaaFWFlavor 合并规则', () => {
       routes: { suffix: 'x' },
       create: { card },
     })
+    // 新建卡片不从底继承
+    expect(flavor.create.card).toBe(card)
   })
 
   it('什么都不写：text / managed 整组沿用底；page / sections / slots / prepare 不继承', () => {
@@ -111,6 +123,8 @@ describe('defineMaaFWFlavor 合并规则', () => {
     expect(flavor.userPage.slots).toEqual({})
     expect(flavor.scriptPage.prepare).toBeNull()
     expect(flavor.userPage.prepare).toBeNull()
+    expect(flavor.create.sections).toEqual({})
+    expect(flavor.create.slots).toEqual({})
     // 合并结果是新对象，改它不会改到底
     expect(flavor.scriptPage.text).not.toBe(RICH_BASE.scriptPage.text)
   })
@@ -151,6 +165,24 @@ describe('defineMaaFWFlavor 合并规则', () => {
     expect(flavor.userPage.sections).toEqual({})
     expect(flavor.userPage.slots).toEqual({ beforeTaskQueue: [ownSlot] })
     expect(flavor.userPage.prepare).toBe(ownPrepare)
+  })
+
+  it('新建流程：写了的替换分节与插入点照抄，没写的那一项为空', () => {
+    const ownSlot = defineMaaFWLazyComponent(async () => ({}))
+    const withSection = mergeMaaFWFlavor(RICH_BASE, {
+      ...identity,
+      create: { card, sections: { source: sourceSection } },
+    })
+    expect(withSection.create).toEqual({ card, sections: { source: sourceSection }, slots: {} })
+    const withSlot = mergeMaaFWFlavor(RICH_BASE, {
+      ...identity,
+      create: { card, slots: { afterSourceStep: [ownSlot] } },
+    })
+    expect(withSlot.create).toEqual({
+      card,
+      sections: {},
+      slots: { afterSourceStep: [ownSlot] },
+    })
   })
 
   it('路由标题：不写就按类型标签生成（不继承底的标题），写了的逐条覆盖', () => {

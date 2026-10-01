@@ -32,6 +32,8 @@ export const MAAFW_FLAVOR: MaaFWFlavor = {
       group: 'general',
       after: 'General',
     },
+    sections: {},
+    slots: {},
   },
   scriptPage: {
     text: {
