@@ -1097,7 +1097,6 @@ export default {
       "Written to the current user's registry only while MAS launches the local game, switching it to windowed mode; the original value is restored when the task finishes, fails, or is stopped and the game closes",
     appliesMarch7thDivergentUniverse:
       'Applies to March7th Divergent Universe only; maps to weekly_divergent_stable_mode',
-    officialWutheringWavesLauncher: 'The official Wuthering Waves launcher only',
     pcControllersOnlySeconds: 'PC controllers only, in seconds',
     cutFromKeywordEnd:
       'Cut from the keyword to the end of the line; tick "include" to remove the keyword too, otherwise keep it',
@@ -1440,6 +1439,16 @@ export default {
     oknteAccountSwitchHint:
       'When "Launch the game before the task" is enabled, MAS switches to the login account matching the last four digits of the user\'s phone number after the game launches successfully and before running ok-nte; users without an account ID filled in are not switched. This switch is unavailable when "Launch the game before the task" is off',
     gameLauncher: 'Game launcher',
+    launchType: 'Game launch method',
+    launchTypeHint:
+      'Via launcher: enter the game through the official launcher; Direct launch: start the game client directly (MAS passes -krqlv=hd) without opening the launcher. Both use the launcher path to locate the game',
+    launchViaLauncher: 'Via launcher',
+    launchDirectly: 'Direct launch',
+    autoUpdateNeedsLauncher: 'Configure the official launcher path above for auto-update to work',
+    gameClientPathLabel: 'Game client',
+    clientPathPending: 'Auto-located from the launcher path, or pick the file manually',
+    selectFile: 'Select file',
+    resetAutoLocate: 'Use auto',
     whichPlatformGameRuns: 'Which platform the game runs on',
     gameUpdate: 'Game update',
     gameUpdateTimeoutMinutes: 'Game update timeout (minutes)',

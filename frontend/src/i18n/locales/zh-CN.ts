@@ -1071,7 +1071,6 @@ export default {
     writtenCurrentUserS:
       '仅在 MAS 启动本地游戏前临时写入当前用户注册表并切为窗口模式；任务完成、失败或手动停止并关闭游戏后恢复原值',
     appliesMarch7thDivergentUniverse: '仅对三月七差分宇宙生效，映射到 weekly_divergent_stable_mode',
-    officialWutheringWavesLauncher: '仅支持鸣潮官方启动器',
     pcControllersOnlySeconds: '仅电脑端控制器需要配置，单位秒',
     cutFromKeywordEnd: '从关键字处截取到行尾；勾选「包含」则连同关键字一起去除，不勾选则保留关键字',
     couldNotClearInvalidManagedOverrides: '清除无效覆盖失败',
@@ -1381,6 +1380,16 @@ export default {
     oknteAccountSwitchHint:
       '开启「任务前启动游戏」后，游戏启动成功后在运行 ok-nte 前按用户手机号后 4 位强制切换登录账号；用户未填写账号则不切换。未开启「任务前启动游戏」时本开关不可用',
     gameLauncher: '游戏启动器',
+    launchType: '游戏启动方式',
+    launchTypeHint:
+      '启动器启动：经官方启动器进入游戏；直接启动：直启游戏客户端（MAS 内置 -krqlv=hd），不打开启动器。两种方式都由启动器路径定位游戏',
+    launchViaLauncher: '启动器启动',
+    launchDirectly: '直接启动',
+    autoUpdateNeedsLauncher: '需在上方配置官方启动器路径，自动更新才能生效',
+    gameClientPathLabel: '游戏客户端',
+    clientPathPending: '由启动器路径自动定位，或点击「选择文件」手动指定',
+    selectFile: '选择文件',
+    resetAutoLocate: '恢复自动',
     whichPlatformGameRuns: '游戏在哪个平台上运行',
     gameUpdate: '游戏更新',
     gameUpdateTimeoutMinutes: '游戏更新超时限制（分钟）',

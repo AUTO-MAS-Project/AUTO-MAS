@@ -322,6 +322,7 @@ export type { OkNteUserConfig_Notify } from './models/OkNteUserConfig_Notify';
 export type { OkNteUserConfig_Task } from './models/OkNteUserConfig_Task';
 export type { OkwwConfig } from './models/OkwwConfig';
 export type { OkwwConfig_Game } from './models/OkwwConfig_Game';
+export type { OkwwLauncherLocationsOut } from './models/OkwwLauncherLocationsOut';
 export type { OkwwUserConfig } from './models/OkwwUserConfig';
 export type { OkwwUserConfig_Data } from './models/OkwwUserConfig_Data';
 export type { OkwwUserConfig_Info } from './models/OkwwUserConfig_Info';

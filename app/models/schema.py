@@ -2436,7 +2436,18 @@ class OkwwConfig_Game(BaseModel):
     """OK-WW 游戏配置（复用通用字段）"""
 
     Enabled: Optional[bool] = Field(default=None, description="游戏相关功能是否启用")
-    Path: Optional[str] = Field(default=None, description="游戏启动器路径")
+    Type: Optional[Literal["Launcher", "Client"]] = Field(
+        default=None,
+        description="游戏启动方式：Launcher=经官方启动器，Client=直启客户端",
+    )
+    Path: Optional[str] = Field(
+        default=None,
+        description="鸣潮官方启动器 launcher.exe 路径（两种启动方式均由它定位游戏）",
+    )
+    ClientPath: Optional[str] = Field(
+        default=None,
+        description="直启模式手动指定的客户端程序路径（留空时由启动器路径自动定位）",
+    )
     Arguments: Optional[str] = Field(default=None, description="游戏启动参数")
     WaitTime: Optional[int] = Field(default=None, description="游戏等待启动时间")
     IfAutoUpdate: Optional[bool] = Field(
@@ -2449,6 +2460,13 @@ class OkwwConfig_Game(BaseModel):
         default=None,
         description="运行前强制切换账号（需启用游戏配置；用户未填手机号时不切换）",
     )
+
+
+class OkwwLauncherLocationsOut(OutBase):
+    """OK-WW 启动器解码结果（直启模式的客户端路径展示与启动均由此派生）"""
+
+    client_path: str = Field(..., description="解码得到的鸣潮客户端 exe 完整路径")
+    install_dir: str = Field(..., description="解码得到的游戏安装目录")
 
 
 class OkwwConfig(BaseModel):

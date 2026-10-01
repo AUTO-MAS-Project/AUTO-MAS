@@ -41,6 +41,7 @@ import type { NoticeOut } from '../models/NoticeOut';
 import type { NotifyChannelsOut } from '../models/NotifyChannelsOut';
 import type { OCRScreenshotIn } from '../models/OCRScreenshotIn';
 import type { OCRScreenshotOut } from '../models/OCRScreenshotOut';
+import type { OkwwLauncherLocationsOut } from '../models/OkwwLauncherLocationsOut';
 import type { PlanComboxIn } from '../models/PlanComboxIn';
 import type { PlanGetIn } from '../models/PlanGetIn';
 import type { PlanGetOut } from '../models/PlanGetOut';
@@ -271,6 +272,29 @@ export class GetService {
             url: '/api/scripts/get',
             body: requestBody,
             mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 解码鸣潮启动器，返回客户端 exe 与游戏安装目录
+     * 解码鸣潮启动器记录，返回客户端 exe 与游戏安装目录（前端直启模式展示用）。
+     *
+     * 自动更新链路由后端在任务期从启动器路径实时解码，不经过本端点。
+     * @param scriptId
+     * @returns OkwwLauncherLocationsOut Successful Response
+     * @throws ApiError
+     */
+    public static getOkwwLauncherLocationsApiApiScriptsOkwwLauncherLocationsGet(
+        scriptId: string,
+    ): CancelablePromise<OkwwLauncherLocationsOut> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/scripts/okww/launcher-locations',
+            query: {
+                'scriptId': scriptId,
+            },
             errors: {
                 422: `Validation Error`,
             },

@@ -21,7 +21,6 @@
 #   Contact: DLmaster_361@163.com
 
 
-import asyncio
 import uuid
 from datetime import datetime
 from pathlib import Path
@@ -35,6 +34,7 @@ from app.models.config import BetterGIConfig as RuntimeBetterGIConfig
 from app.models.config import OkNteConfig as RuntimeOkNteConfig
 from app.models.config import WhimboxConfig as RuntimeWhimboxConfig
 from app.models.schema import *
+from app.services.wuthering_waves import resolve_wuthering_waves_locations
 from app.task.MaaFW.api_service import agent_env as maafw_agent_env_api
 from app.task.MaaFW.api_service import embedded as maafw_embedded_api
 from app.task.MaaFW.api_service import interface as maafw_interface_api
@@ -305,6 +305,45 @@ async def update_script(script: ScriptUpdateIn = Body(...)) -> OutBase:
             code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
         )
     return OutBase()
+
+
+@router.get(
+    "/okww/launcher-locations",
+    tags=["Get"],
+    summary="解码鸣潮启动器，返回客户端 exe 与游戏安装目录",
+    response_model=OkwwLauncherLocationsOut,
+    status_code=200,
+)
+async def get_okww_launcher_locations_api(scriptId: str) -> OkwwLauncherLocationsOut:
+    """解码鸣潮启动器记录，返回客户端 exe 与游戏安装目录（前端直启模式展示用）。
+
+    自动更新链路由后端在任务期从启动器路径实时解码，不经过本端点。
+    """
+
+    try:
+        script_config = Config.ScriptConfig[uuid.UUID(scriptId)]
+        if type(script_config).__name__ != "OkwwConfig":
+            raise ValueError("脚本类型不是 OK-WW")
+        launcher_path = Path(str(script_config.get("Game", "Path") or "").strip())
+        client_path, install_dir = resolve_wuthering_waves_locations(launcher_path)
+        return OkwwLauncherLocationsOut(
+            code=200,
+            status="success",
+            message="",
+            client_path=client_path.as_posix(),
+            install_dir=install_dir.as_posix(),
+        )
+    except Exception as e:
+        logger.opt(exception=True).warning(
+            f"get_okww_launcher_locations_api失败: {type(e).__name__}: {e}"
+        )
+        return OkwwLauncherLocationsOut(
+            code=400 if isinstance(e, (ValueError, KeyError, TypeError)) else 500,
+            status="error",
+            message=f"{type(e).__name__}: {str(e)}",
+            client_path="",
+            install_dir="",
+        )
 
 
 @router.post(
