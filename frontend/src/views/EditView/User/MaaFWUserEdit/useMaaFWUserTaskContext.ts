@@ -112,7 +112,7 @@ export function useMaaFWUserTaskContext({
 
   // 特调受管的任务（M9A 的启动 / 切号 / 关闭）由后端控制，不进「添加任务」与预设模板
   const managedTaskEntries = computed<ReadonlySet<string>>(
-    () => new Set(flavor.value.managedTaskEntries)
+    () => new Set(flavor.value.userPage.managed.entries)
   )
   const isManagedTaskId = (taskId: string) =>
     isManagedMaaFWTask(getTaskInfoById(taskId), managedTaskEntries.value)

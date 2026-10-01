@@ -14,13 +14,14 @@
 //    composables/useScriptApi.ts 的 SCRIPT_CREATE_TYPE_BY_SCRIPT_TYPE、
 //    词表 zh-CN.ts 的 scripts.type.X / scripts.create.typeDesc.X 与该特调自己的文案。
 // 3. maafwFlavorTypes.ts 的 MaaFWFlavorType 加上 'X'。
-// 4. 新建目录 views/EditView/MaaFWFlavor/x/：index.ts 导出描述对象 X_FLAVOR（字段见
-//    MaaFWFlavor，全部必填）；独有区块写成本目录下的组件，用 defineMaaFWFlavorSlotComponent
-//    声明到 slots 的插入点上（按需加载），需要预取数据就给 prepareUserPage。
+// 4. 新建目录 views/EditView/MaaFWFlavor/x/：index.ts 用 defineMaaFWFlavor 导出描述对象
+//    X_FLAVOR，只写与 MaaFW 不同的部分（合并规则见 MaaFWFlavor/defineFlavor.ts）；独有区块写成
+//    本目录下的组件，用 defineMaaFWFlavorSlotComponent 声明到 userPage.slots 的插入点上
+//    （按需加载），需要预取数据就给 userPage.prepare。
 // 5. 在下面的 FLAVOR_REGISTRY 里登记 X_FLAVOR（漏登记 typecheck 会报错）。
 // 公共页面（MaaFW 脚本页 / 用户页、脚本列表、新建流程）与路由不用改：路由、类型卡片、
 // 路由后缀、用户类型白名单、默认脚本名都从这里生成。只有需要一个现在没有的插入点时，
-// 才在 MaaFWFlavorSlotContextMap 加名字、在公共页面对应位置放一个 <MaaFWFlavorSlot>。
+// 才在 MaaFWFlavorPartSlotContextMap 加名字、在公共页面对应位置放一个 <MaaFWFlavorSlot>。
 // ──────────────────────────────────────────────────────────────────────────
 
 import { computed, toValue, type MaybeRefOrGetter } from 'vue'
@@ -78,7 +79,7 @@ export const resolveMaaFWFlavor = (type: ScriptType | string | null | undefined)
 
 /** 路由后缀（/edit/<suffix>、/users/add/<suffix>），未知类型按 maafw */
 export const maafwRouteSuffix = (type: ScriptType | string | null | undefined): string =>
-  resolveMaaFWFlavor(type).routeSuffix
+  resolveMaaFWFlavor(type).routes.suffix
 
 /** MaaFW 家族的后端用户配置类名（M9A / MSS 的用户类都是 MaaFWUserConfig 的子类） */
 export const maafwUserConfigTypes = (): ReadonlySet<string> => USER_CONFIG_TYPES
@@ -94,18 +95,18 @@ export const maafwDefaultScriptNames = (): ReadonlySet<string> => DEFAULT_SCRIPT
 export const resolveMaaFWFlavorSlot = (
   flavor: MaaFWFlavor,
   name: MaaFWFlavorSlotName
-): readonly MaaFWFlavorSlotComponent[] => flavor.slots[name] ?? []
+): readonly MaaFWFlavorSlotComponent[] => flavor.userPage.slots[name] ?? []
 
 /**
- * 用户页加载期间调用：预取该 flavor 插入点组件的 chunk、跑它的 prepareUserPage。
+ * 用户页加载期间调用：预取该 flavor 用户页插入点组件的 chunk、跑它的 userPage.prepare。
  * 预取过的异步组件在首次渲染时同一轮微任务内就能解析，不会先空一下再冒出来。
  * 失败只影响独有区块自己（组件渲染时会再加载一次），不拖垮页面加载。
  */
 export const prepareMaaFWFlavorUserPage = async (flavor: MaaFWFlavor): Promise<void> => {
-  const loads = Object.values(flavor.slots).flatMap(entries =>
+  const loads = Object.values(flavor.userPage.slots).flatMap(entries =>
     (entries ?? []).map(entry => entry.load())
   )
-  await Promise.allSettled([...loads, flavor.prepareUserPage?.()])
+  await Promise.allSettled([...loads, flavor.userPage.prepare?.()])
 }
 
 /** 响应式版本：类型变了（导入后后端按项目换了类型）文案跟着变。 */

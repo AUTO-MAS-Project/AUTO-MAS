@@ -57,7 +57,7 @@ export function useMaaFWSetupWizard({
   )
 
   // 用户页路由按脚本当前类型走对应那条线（/users/add/maafw、/m9a、/mss ……）
-  const userRouteSuffix = () => flavor.value.routeSuffix
+  const userRouteSuffix = () => flavor.value.routes.suffix
   const addUserPath = () => `/scripts/${scriptId}/users/add/${userRouteSuffix()}`
 
   // 引导最后一步直接去建第一个用户；先等排队中的保存写完，用户页读到的才是刚配好的脚本

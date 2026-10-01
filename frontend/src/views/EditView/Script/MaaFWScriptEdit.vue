@@ -54,9 +54,9 @@
             :embedded-busy="embeddedBusy"
             :import-percent="importPercent"
             :import-message="importMessage"
-            :source-directory-label="t(flavor.sourceDirectoryKey)"
-            :source-hint="t(flavor.sourceHintKey)"
-            :source-placeholder="t(flavor.sourcePlaceholderKey)"
+            :source-directory-label="t(flavor.scriptPage.text.sourceDirectoryKey)"
+            :source-hint="t(flavor.scriptPage.text.sourceHintKey)"
+            :source-placeholder="t(flavor.scriptPage.text.sourcePlaceholderKey)"
             :env-preparing="envPreparing"
             :env-ready="envReady"
             :env-failed="envFailed"
@@ -74,11 +74,11 @@
         <div v-show="!isWizard || currentStep === 1">
           <!-- 特调类型（MSS）只适配部分控制方式时，在这里说明原因 -->
           <a-alert
-            v-if="flavor.controllerHintKey"
+            v-if="flavor.scriptPage.text.controllerHintKey"
             class="flavor-controller-hint"
             type="warning"
             show-icon
-            :message="t(flavor.controllerHintKey)"
+            :message="t(flavor.scriptPage.text.controllerHintKey)"
           />
           <ControlConfigSection
             :maafw-config="maafwConfig"
@@ -99,7 +99,7 @@
             :adb-control-strategy-items="adbControlStrategyItems"
             :selected-emulator-label="selectedEmulatorLabel"
             :interface-dependent-disabled="interfaceDependentDisabled"
-            :game-update-hint-key="flavor.gameUpdateHintKey"
+            :game-update-hint-key="flavor.scriptPage.text.gameUpdateHintKey"
             @change="handleChange"
             @controller-change="handleControllerChange"
             @resource-change="handleResourceChangeWithPackage"

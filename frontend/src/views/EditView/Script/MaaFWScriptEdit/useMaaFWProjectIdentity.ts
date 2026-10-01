@@ -75,8 +75,8 @@ export function useMaaFWProjectIdentity({
 
   // 通用 MaaFW 用「<项目名> 项目配置 / 项目引导」；特调类型（M9A）用它自己那句标题
   const pageTitle = computed(() =>
-    flavor.value.scriptTitleKey
-      ? t(flavor.value.scriptTitleKey)
+    flavor.value.scriptPage.text.titleKey
+      ? t(flavor.value.scriptPage.text.titleKey)
       : `${projectDisplayName.value} ${isWizard.value ? '项目引导' : '项目配置'}`
   )
 

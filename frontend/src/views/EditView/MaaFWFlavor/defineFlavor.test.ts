@@ -1,0 +1,274 @@
+import { describe, expect, it } from 'vitest'
+import {
+  defineMaaFWFlavorSlotComponent,
+  type MaaFWFlavor,
+  type MaaFWFlavorCreateOption,
+} from '@/composables/maafwFlavorTypes'
+import { resolveMaaFWFlavor } from '@/composables/useMaaFWFlavor'
+import { MAS_DOC_URLS } from '@/utils/openExternal'
+import { SCRIPT_LOGOS } from '@/utils/scriptLogos'
+import { defineMaaFWFlavor, mergeMaaFWFlavor, type MaaFWFlavorSpec } from './defineFlavor'
+import { MAAFW_FLAVOR } from './maafw'
+
+const card: MaaFWFlavorCreateOption = {
+  titleKey: 'scripts.type.X',
+  descriptionKey: 'scripts.create.typeDesc.X',
+  keywords: ['x'],
+  group: 'specialized',
+  after: null,
+}
+
+const identity: MaaFWFlavorSpec = {
+  type: 'MaaFW',
+  scriptConfigType: 'XConfig',
+  userConfigType: 'XUserConfig',
+  defaultScriptName: '新 X 脚本',
+  typeTagLabel: 'X',
+  typeTagColor: 'red',
+  logo: 'x.png',
+  docUrl: 'https://x',
+  routes: { suffix: 'x' },
+  create: { card },
+}
+
+/** 每个可为空的字段都有值、带插入点与钩子的底：用来区分「沿用」「关掉」「不继承」 */
+const slot = defineMaaFWFlavorSlotComponent(async () => ({}))
+const prepare = async () => undefined
+const RICH_BASE: MaaFWFlavor = {
+  ...MAAFW_FLAVOR,
+  scriptPage: {
+    text: {
+      titleKey: 'base.title',
+      sourceDirectoryKey: 'base.dir',
+      sourceHintKey: 'base.hint',
+      sourcePlaceholderKey: 'base.placeholder',
+      controllerHintKey: 'base.controller',
+      gameUpdateHintKey: 'base.gameUpdate',
+    },
+    slots: {},
+    prepare,
+  },
+  userPage: {
+    text: {
+      accountPlaceholderKey: 'base.account',
+      accountTooltipKey: 'base.accountTooltip',
+      queueHintKey: 'base.queue',
+    },
+    managed: {
+      entries: ['Base'],
+      accountTask: { entry: 'Base', resources: ['r'] },
+      warningKey: 'base.warning',
+      noticeKey: 'base.notice',
+    },
+    slots: { userBeforeTaskQueue: [slot] },
+    prepare,
+  },
+}
+
+describe('defineMaaFWFlavor 合并规则', () => {
+  it('身份、路由后缀、新建卡片照抄 spec，不继承', () => {
+    const flavor = mergeMaaFWFlavor(RICH_BASE, identity)
+    expect(flavor).toMatchObject({
+      type: 'MaaFW',
+      scriptConfigType: 'XConfig',
+      userConfigType: 'XUserConfig',
+      defaultScriptName: '新 X 脚本',
+      typeTagLabel: 'X',
+      typeTagColor: 'red',
+      logo: 'x.png',
+      docUrl: 'https://x',
+      routes: { suffix: 'x' },
+      create: { card },
+    })
+  })
+
+  it('什么都不写：text / managed 整组沿用底；slots / prepare 不继承', () => {
+    const flavor = mergeMaaFWFlavor(RICH_BASE, identity)
+    expect(flavor.scriptPage.text).toEqual(RICH_BASE.scriptPage.text)
+    expect(flavor.userPage.text).toEqual(RICH_BASE.userPage.text)
+    expect(flavor.userPage.managed).toEqual(RICH_BASE.userPage.managed)
+    expect(flavor.scriptPage.slots).toEqual({})
+    expect(flavor.userPage.slots).toEqual({})
+    expect(flavor.scriptPage.prepare).toBeNull()
+    expect(flavor.userPage.prepare).toBeNull()
+    // 合并结果是新对象，改它不会改到底
+    expect(flavor.scriptPage.text).not.toBe(RICH_BASE.scriptPage.text)
+  })
+
+  it('按字段浅合并：写了的覆盖，undefined 沿用，null 明确关掉', () => {
+    const ownSlot = defineMaaFWFlavorSlotComponent(async () => ({}))
+    const ownPrepare = async () => undefined
+    const flavor = mergeMaaFWFlavor(RICH_BASE, {
+      ...identity,
+      scriptPage: {
+        text: { sourceHintKey: 'own.hint', titleKey: undefined, controllerHintKey: null },
+      },
+      userPage: {
+        text: { queueHintKey: null },
+        managed: { entries: ['Own'], accountTask: null, warningKey: undefined },
+        slots: { userBeforeTaskQueue: [ownSlot] },
+        prepare: ownPrepare,
+      },
+    })
+    expect(flavor.scriptPage.text).toEqual({
+      ...RICH_BASE.scriptPage.text,
+      sourceHintKey: 'own.hint',
+      controllerHintKey: null,
+    })
+    expect(flavor.userPage.text).toEqual({ ...RICH_BASE.userPage.text, queueHintKey: null })
+    expect(flavor.userPage.managed).toEqual({
+      entries: ['Own'],
+      accountTask: null,
+      warningKey: 'base.warning',
+      noticeKey: 'base.notice',
+    })
+    expect(flavor.userPage.slots).toEqual({ userBeforeTaskQueue: [ownSlot] })
+    expect(flavor.userPage.prepare).toBe(ownPrepare)
+  })
+
+  it('defineMaaFWFlavor 以通用 MaaFW 为底', () => {
+    expect(defineMaaFWFlavor(identity)).toEqual(mergeMaaFWFlavor(MAAFW_FLAVOR, identity))
+    expect(defineMaaFWFlavor(identity).userPage.text).toEqual(MAAFW_FLAVOR.userPage.text)
+  })
+})
+
+// 改成分组前（dev 5b3129815）三个描述对象的平铺字段，逐项照抄。解析后的值必须一字不差。
+const FLAT_BEFORE = {
+  MaaFW: {
+    type: 'MaaFW',
+    scriptConfigType: 'MaaFWConfig',
+    userConfigType: 'MaaFWUserConfig',
+    routeSuffix: 'maafw',
+    defaultScriptName: '新 MFW 脚本',
+    typeTagLabel: 'MFW',
+    typeTagColor: 'geekblue',
+    logo: SCRIPT_LOGOS.MaaFW,
+    docUrl: MAS_DOC_URLS.scripts,
+    createOption: {
+      titleKey: 'scripts.type.MaaFW',
+      descriptionKey: 'scripts.create.typeDesc.MaaFW',
+      keywords: ['maafw', 'maaframework', 'framework', 'mfw', 'interface.json', '通用'],
+      group: 'general',
+      after: 'General',
+    },
+    scriptTitleKey: null,
+    sourceDirectoryKey: 'edit.localProjectDirectory',
+    sourceHintKey: 'edit.pickMfwProjectDirectory',
+    sourcePlaceholderKey: 'edit.pickActualMfwProject',
+    controllerHintKey: null,
+    accountPlaceholderKey: 'edit.localNoteOnly',
+    accountTooltipKey: 'edit.maafwAccountRecordTooltip',
+    queueHintKey: null,
+    gameUpdateHintKey: null,
+    managedTaskEntries: [],
+    managedAccountTask: null,
+    managedTaskWarningKey: null,
+    managedTaskNoticeKey: null,
+    slotCount: 0,
+    hasPrepareUserPage: false,
+  },
+  M9A: {
+    type: 'M9A',
+    scriptConfigType: 'M9AConfig',
+    userConfigType: 'M9AUserConfig',
+    routeSuffix: 'm9a',
+    defaultScriptName: '新 M9A 脚本',
+    typeTagLabel: 'M9A',
+    typeTagColor: 'cyan',
+    logo: SCRIPT_LOGOS.M9A,
+    docUrl: MAS_DOC_URLS.scriptTypes.M9A,
+    createOption: {
+      titleKey: 'scripts.type.M9A',
+      descriptionKey: 'scripts.create.typeDesc.M9A',
+      keywords: ['m9a', '1999', '重返未来'],
+      group: 'specialized',
+      after: 'MaaEnd',
+    },
+    scriptTitleKey: 'edit.m9aFlavorScriptTitle',
+    sourceDirectoryKey: 'edit.m9aFlavorSourceDirectory',
+    sourceHintKey: 'edit.m9aFlavorSourceHint',
+    sourcePlaceholderKey: 'edit.m9aFlavorSourcePlaceholder',
+    controllerHintKey: null,
+    accountPlaceholderKey: 'edit.m9aFlavorAccountPlaceholder',
+    accountTooltipKey: 'edit.m9aFlavorAccountTooltip',
+    queueHintKey: 'edit.m9aFlavorQueueHint',
+    gameUpdateHintKey: 'edit.m9aFlavorGameUpdateHint',
+    managedTaskEntries: ['StartUp', 'SwitchAccount', 'Close1999'],
+    managedAccountTask: { entry: 'SwitchAccount', resources: ['官服'] },
+    managedTaskWarningKey: 'edit.m9aFlavorManagedTaskWarning',
+    managedTaskNoticeKey: 'edit.m9aFlavorManagedTaskNotice',
+    slotCount: 0,
+    hasPrepareUserPage: false,
+  },
+  MSS: {
+    type: 'MSS',
+    scriptConfigType: 'MSSConfig',
+    userConfigType: 'MSSUserConfig',
+    routeSuffix: 'mss',
+    defaultScriptName: '新 MSS 脚本',
+    typeTagLabel: 'MSS',
+    typeTagColor: 'orange',
+    logo: SCRIPT_LOGOS.MSS,
+    docUrl: MAS_DOC_URLS.scripts,
+    createOption: {
+      titleKey: 'scripts.type.MSS',
+      descriptionKey: 'scripts.create.typeDesc.MSS',
+      keywords: ['mss', 'maastellasora', '星塔旅人', 'stella', 'maaframework'],
+      group: 'specialized',
+      after: null,
+    },
+    scriptTitleKey: 'edit.mssFlavorScriptTitle',
+    sourceDirectoryKey: 'edit.mssFlavorSourceDirectory',
+    sourceHintKey: 'edit.mssFlavorSourceHint',
+    sourcePlaceholderKey: 'edit.mssFlavorSourcePlaceholder',
+    controllerHintKey: 'edit.mssFlavorControllerHint',
+    accountPlaceholderKey: 'edit.localNoteOnly',
+    accountTooltipKey: 'edit.maafwAccountRecordTooltip',
+    queueHintKey: 'edit.mssFlavorQueueHint',
+    gameUpdateHintKey: null,
+    managedTaskEntries: [],
+    managedAccountTask: null,
+    managedTaskWarningKey: null,
+    managedTaskNoticeKey: null,
+    slotCount: 2,
+    hasPrepareUserPage: true,
+  },
+} as const
+
+/** 分组后的描述对象按旧的平铺字段名读回来 */
+const flatten = (flavor: MaaFWFlavor) => ({
+  type: flavor.type,
+  scriptConfigType: flavor.scriptConfigType,
+  userConfigType: flavor.userConfigType,
+  routeSuffix: flavor.routes.suffix,
+  defaultScriptName: flavor.defaultScriptName,
+  typeTagLabel: flavor.typeTagLabel,
+  typeTagColor: flavor.typeTagColor,
+  logo: flavor.logo,
+  docUrl: flavor.docUrl,
+  createOption: flavor.create.card,
+  scriptTitleKey: flavor.scriptPage.text.titleKey,
+  sourceDirectoryKey: flavor.scriptPage.text.sourceDirectoryKey,
+  sourceHintKey: flavor.scriptPage.text.sourceHintKey,
+  sourcePlaceholderKey: flavor.scriptPage.text.sourcePlaceholderKey,
+  controllerHintKey: flavor.scriptPage.text.controllerHintKey,
+  accountPlaceholderKey: flavor.userPage.text.accountPlaceholderKey,
+  accountTooltipKey: flavor.userPage.text.accountTooltipKey,
+  queueHintKey: flavor.userPage.text.queueHintKey,
+  gameUpdateHintKey: flavor.scriptPage.text.gameUpdateHintKey,
+  managedTaskEntries: flavor.userPage.managed.entries,
+  managedAccountTask: flavor.userPage.managed.accountTask,
+  managedTaskWarningKey: flavor.userPage.managed.warningKey,
+  managedTaskNoticeKey: flavor.userPage.managed.noticeKey,
+  slotCount: Object.values(flavor.userPage.slots).flat().length,
+  hasPrepareUserPage: typeof flavor.userPage.prepare === 'function',
+})
+
+describe('分组前后等价', () => {
+  it.each(Object.keys(FLAT_BEFORE) as Array<keyof typeof FLAT_BEFORE>)(
+    '%s 解析后的每个字段与改前的平铺值相同',
+    type => {
+      expect(flatten(resolveMaaFWFlavor(type))).toEqual(FLAT_BEFORE[type])
+    }
+  )
+})

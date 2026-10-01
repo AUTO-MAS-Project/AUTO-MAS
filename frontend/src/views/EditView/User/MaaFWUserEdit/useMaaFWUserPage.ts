@@ -99,13 +99,13 @@ export function useMaaFWUserPage({ scriptId, userId }: MaaFWUserPageOptions) {
 
   /** 队列提示按条目给出（文案里用 \n 分行），渲染成列表而不是一坨文字 */
   const queueHintLines = computed(() =>
-    t(flavor.value.queueHintKey ?? '')
+    t(flavor.value.userPage.text.queueHintKey ?? '')
       .split('\n')
       .map(line => line.trim())
       .filter(Boolean)
   )
 
-  const accountRecordTooltip = computed(() => t(flavor.value.accountTooltipKey))
+  const accountRecordTooltip = computed(() => t(flavor.value.userPage.text.accountTooltipKey))
 
   const context = useMaaFWUserTaskContext({
     previewData,
@@ -143,17 +143,17 @@ export function useMaaFWUserPage({ scriptId, userId }: MaaFWUserPageOptions) {
   const managedQueueAlert = computed<{ type: 'warning' | 'info'; message: string } | null>(() => {
     const state = managedMaaFWQueueState(presentQueuedTasks.value, {
       managedEntries: managedTaskEntries.value,
-      accountTask: flavor.value.managedAccountTask,
+      accountTask: flavor.value.userPage.managed.accountTask,
       resourceName: effectiveResourceName.value,
       taskOptions: taskSnapshot.value.taskOptions,
       options: previewData.value?.options || [],
       displayName: task => getDisplayName(task),
     })
-    if (state?.kind === 'split' && flavor.value.managedTaskWarningKey) {
-      return { type: 'warning', message: t(flavor.value.managedTaskWarningKey, state) }
+    if (state?.kind === 'split' && flavor.value.userPage.managed.warningKey) {
+      return { type: 'warning', message: t(flavor.value.userPage.managed.warningKey, state) }
     }
-    if (state?.kind === 'notice' && flavor.value.managedTaskNoticeKey) {
-      return { type: 'info', message: t(flavor.value.managedTaskNoticeKey, state) }
+    if (state?.kind === 'notice' && flavor.value.userPage.managed.noticeKey) {
+      return { type: 'info', message: t(flavor.value.userPage.managed.noticeKey, state) }
     }
     return null
   })

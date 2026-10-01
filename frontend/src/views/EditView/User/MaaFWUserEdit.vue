@@ -5,7 +5,7 @@
       :save-error-message="saveErrorMessage"
       :script-id="scriptId"
       :script-name="scriptName"
-      :script-route-suffix="flavor.routeSuffix"
+      :script-route-suffix="flavor.routes.suffix"
       :is-edit="isEdit"
       :user-id="userIdHolder.value"
       @cancel="handleCancel"
@@ -39,7 +39,7 @@
             :form-data="formData"
             :interface-dependent-disabled="interfaceDependentDisabled"
             :account-record-tooltip="accountRecordTooltip"
-            :account-placeholder="t(flavor.accountPlaceholderKey)"
+            :account-placeholder="t(flavor.userPage.text.accountPlaceholderKey)"
             @save="handleFieldSave"
           />
 

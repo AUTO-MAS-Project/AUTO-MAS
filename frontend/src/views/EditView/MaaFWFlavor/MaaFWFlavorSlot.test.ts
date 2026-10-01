@@ -131,15 +131,19 @@ describe('MaaFWFlavorSlot 插入点渲染器', () => {
           h('p', `队列 ${(props.context as MaaFWUserSlotContext).queuedTaskCount}`),
       })
     )
+    const base = resolveMaaFWFlavor('MaaFW')
     const flavor: MaaFWFlavor = {
-      ...resolveMaaFWFlavor('MaaFW'),
-      slots: {
-        userBeforeTaskQueue: [
-          defineMaaFWFlavorSlotComponent(load),
-          defineMaaFWFlavorSlotComponent(async () =>
-            defineComponent({ setup: () => () => h('p', '第二个') })
-          ),
-        ],
+      ...base,
+      userPage: {
+        ...base.userPage,
+        slots: {
+          userBeforeTaskQueue: [
+            defineMaaFWFlavorSlotComponent(load),
+            defineMaaFWFlavorSlotComponent(async () =>
+              defineComponent({ setup: () => () => h('p', '第二个') })
+            ),
+          ],
+        },
       },
     }
     const html = await renderSlot(flavor, makeContext({ queuedTaskCount: 3 }))

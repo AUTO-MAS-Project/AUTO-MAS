@@ -49,7 +49,7 @@ export type ScriptCreateRequest =
   | { kind: 'general-custom' }
   | { kind: 'general-template'; template: WebConfigTemplate }
 
-// MaaFW 与各特调的卡片不在这里：由特调注册表提供，按各自的 createOption.after 插回原位
+// MaaFW 与各特调的卡片不在这里：由特调注册表提供，按各自的 create.card.after 插回原位
 const BASE_SCRIPT_TYPE_OPTIONS: ScriptTypeOption[] = [
   {
     value: 'General',
@@ -144,7 +144,7 @@ const BASE_SCRIPT_TYPE_OPTIONS: ScriptTypeOption[] = [
 const withMaaFWFlavorOptions = (base: readonly ScriptTypeOption[]): ScriptTypeOption[] => {
   const options = [...base]
   for (const flavor of MAAFW_FLAVORS) {
-    const { after, ...card } = flavor.createOption
+    const { after, ...card } = flavor.create.card
     const option: ScriptTypeOption = { value: flavor.type, ...card, icon: flavor.logo }
     const index = after ? options.findIndex(item => item.value === after) : -1
     if (index >= 0) options.splice(index + 1, 0, option)
