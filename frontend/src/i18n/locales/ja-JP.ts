@@ -3638,6 +3638,12 @@ export default {
     others: {
       updateSection: '更新',
       checkUpdate: '更新を確認',
+      pauseUpdates: '更新を一時停止',
+      pauseUpdatesTip:
+        '終了日を選ぶと自動更新チェックが一時停止します（1〜35日間）。手動で更新を確認すると即座に再開します。',
+      pausePlaceholder: '一時停止の終了日を選択',
+      pauseStatus: '更新は {date} まで一時停止中',
+      pauseStatusHint: '更新を再開するまで、アプリが最新の状態でない可能性があります',
       updateBackend: '起動時にバックエンドを更新',
       updateBackendTip: 'アプリ起動時にバックエンドの更新を試みます',
       updateSource: '更新の取得元',

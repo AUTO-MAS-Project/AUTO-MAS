@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, toRaw } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { message, Modal } from 'ant-design-vue'
 import type { ThemeColor, ThemeMode } from '@/composables/useTheme'
@@ -13,6 +13,7 @@ import { invalidateVoiceSettingsCache } from '@/composables/useAudioPlayer'
 import { setTelemetryEnabled } from '@/utils/sentry'
 import { useUiPreferences } from '@/composables/useUiPreferences'
 import { useUpdateChecker } from '@/composables/useUpdateChecker.ts'
+import { updateInfo } from '@/composables/useVersionService'
 import { useCursorEffectStore } from '@/stores/cursorEffect'
 import { usePerformanceStore } from '@/stores/performance'
 import { Service, type VersionOut } from '@/api'
@@ -118,11 +119,13 @@ const NORMALIZED_SETTING_KEYS = new Set([
 const syncConfigToElectron = async (data: GlobalConfig) => {
   try {
     if (window.electronAPI?.syncBackendConfig) {
+      // toRaw 剥掉 reactive 代理：Electron IPC 的结构化克隆不支持 Proxy，直接传会报
+      // "An object could not be cloned"（对已是普通对象的入参 toRaw 原样返回）
       await window.electronAPI.syncBackendConfig({
-        UI: data.UI,
-        Start: data.Start,
-        Update: data.Update,
-        Function: data.Function,
+        UI: toRaw(data.UI),
+        Start: toRaw(data.Start),
+        Update: toRaw(data.Update),
+        Function: toRaw(data.Function),
       })
       logger.info('配置已同步到 Electron')
     }
@@ -226,6 +229,11 @@ const handleSettingChange = async (category: keyof GlobalConfig, key: string, va
       message.error(t('setting.toast.updateCheckFailed'))
     }
   }
+
+  // 暂停状态变化时立即清掉标题栏的"检测到更新"旧提示
+  if (category === 'Update' && key === 'PauseUntil') {
+    updateInfo.value = null
+  }
 }
 
 // 主题
@@ -287,6 +295,12 @@ const openDevTools = () => window.electronAPI?.openDevTools?.()
 // 更新检查 - 使用全局更新检查器
 const checkUpdate = async () => {
   logger.info('使用全局更新检查器进行手动检查')
+
+  // 手动检查立即恢复：先终止暂停、清空截止日期，再做完整检查
+  if (settings.Update?.PauseUntil) {
+    await handleSettingChange('Update', 'PauseUntil', '')
+  }
+
   logger.info(`检查前状态:{
     updateVisible: ${updateVisible.value},
     updateData: ${updateData.value},
