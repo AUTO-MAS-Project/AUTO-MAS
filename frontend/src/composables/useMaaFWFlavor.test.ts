@@ -24,8 +24,8 @@ const lookup = (key: string): unknown =>
     return node && typeof node === 'object' ? (node as Record<string, unknown>)[part] : undefined
   }, zhCN)
 
-// 描述对象里这些键的值是各特调自己的表（插入点、受管切号任务），键集本来就因特调而异，当叶子看
-const LEAF_FIELDS = new Set(['sections', 'slots', 'accountTask'])
+// 描述对象里这些键的值是各特调自己的表（整页、分节、插入点、受管切号任务），键集本来就因特调而异，当叶子看
+const LEAF_FIELDS = new Set(['page', 'sections', 'slots', 'accountTask'])
 
 /** 描述对象展开成「点分路径 → 叶子值」：分组对象往下走，数组、null、函数与上面几项是叶子 */
 const fieldEntries = (node: object, prefix = ''): Array<[string, unknown]> =>
@@ -242,7 +242,7 @@ describe('MaaFW 特调注册表', () => {
       expect(resolveMaaFWFlavor(type).userPage.prepare).toBeNull()
     }
     expect(resolveMaaFWFlavor('MSS').userPage.prepare).toBeTypeOf('function')
-    // 脚本页三个都没有插入点与钩子；两页都没有替换分节
+    // 脚本页三个都没有插入点与钩子；两页都没有替换分节，也没有整页替换
     for (const flavor of MAAFW_FLAVORS) {
       expect([
         flavor.type,
@@ -250,11 +250,13 @@ describe('MaaFW 特调注册表', () => {
         flavor.scriptPage.prepare,
         flavor.scriptPage.sections,
         flavor.userPage.sections,
-      ]).toEqual([flavor.type, {}, null, {}, {}])
+        flavor.scriptPage.page,
+        flavor.userPage.page,
+      ]).toEqual([flavor.type, {}, null, {}, {}, null, null])
     }
   })
 
-  it('页面准备：只预取这一页的替换分节与插入点组件、调用这一页的钩子，失败不往外抛', async () => {
+  it('页面准备：只预取这一页的整页、替换分节与插入点组件、调用这一页的钩子，失败不往外抛', async () => {
     const calls: string[] = []
     const lazy = (name: string, fail: 'reject' | 'throw' | null = null) => ({
       component: {},
@@ -283,6 +285,7 @@ describe('MaaFW 特调注册表', () => {
       },
       userPage: {
         ...base.userPage,
+        page: lazy('userPage'),
         sections: { taskQueue: { ...lazy('taskQueue'), part: 'userPage', key: 'taskQueue' } },
         slots: { beforeTaskQueue: [lazy('slotA'), lazy('slotB', 'throw')] },
         prepare: userPrepare,
@@ -290,8 +293,8 @@ describe('MaaFW 特调注册表', () => {
     } as unknown as MaaFWFlavor
 
     await expect(prepareMaaFWFlavorPage(flavor, 'userPage')).resolves.toBeUndefined()
-    // 分节 → 插入点 → 钩子，同一轮里依次发起
-    expect(calls).toEqual(['taskQueue', 'slotA', 'slotB', 'userPrepare'])
+    // 整页 → 分节 → 插入点 → 钩子，同一轮里依次发起
+    expect(calls).toEqual(['userPage', 'taskQueue', 'slotA', 'slotB', 'userPrepare'])
     calls.length = 0
     await expect(prepareMaaFWFlavorPage(flavor, 'scriptPage')).resolves.toBeUndefined()
     expect(calls).toEqual(['control', 'scriptPrepare'])
@@ -336,14 +339,25 @@ describe('公共页面不按特调类型分支', () => {
     '../views/EditView/User/MaaFWUserEdit.vue',
     ...sectionFiles('../views/EditView/Script/MaaFWScriptEdit'),
     ...sectionFiles('../views/EditView/User/MaaFWUserEdit'),
-    // 特调目录的根（defineFlavor、插入点渲染器等公共件）；各特调自己的子目录不在此列
+    // 特调目录的根（defineFlavor、插入点渲染器、页面宿主等公共件）；各特调自己的子目录不在此列
     ...sectionFiles('../views/EditView/MaaFWFlavor'),
     '../components/ScriptTable.vue',
     '../views/Scripts.vue',
     '../views/scripts/components/scriptCreateFlow.ts',
     '../router/index.ts',
+    '../router/maafwFlavorRoutes.ts',
     './useScriptApi.ts',
   ]
+
+  it('页面宿主在扫描范围里', () => {
+    expect(PUBLIC_FILES).toEqual(
+      expect.arrayContaining([
+        '../views/EditView/MaaFWFlavor/MaaFWPageHost.vue',
+        '../views/EditView/MaaFWFlavor/useMaaFWPageHost.ts',
+        '../views/EditView/MaaFWFlavor/pageHostContext.ts',
+      ])
+    )
+  })
 
   it.each(PUBLIC_FILES)('%s 不写特调类型字面量与 flavor.type 判断', path => {
     const source = read(path)

@@ -6,13 +6,13 @@ import {
   buildMaaFWRoutes,
   maafwRouteLocation,
   maafwRouteName,
+  resolveMaaFWCanonicalLocation,
 } from './maafwFlavorRoutes'
 
-const scriptPage = () => Promise.resolve({ default: {} })
-const userPage = () => Promise.resolve({ default: {} })
+const host = () => Promise.resolve({ default: {} })
 
 describe('MaaFW 家族路由按注册表生成', () => {
-  const routes = buildMaaFWRoutes(MAAFW_FLAVORS, { scriptPage, userPage })
+  const routes = buildMaaFWRoutes(MAAFW_FLAVORS, host)
   const all = Object.values(routes).flat()
   const shape = (kind: MaaFWPageKind) =>
     routes[kind].map(route => ({ path: route.path, name: route.name, meta: route.meta }))
@@ -98,13 +98,8 @@ describe('MaaFW 家族路由按注册表生成', () => {
     ])
   })
 
-  it('脚本编辑与引导指向脚本页，加用户与编辑用户指向用户页', () => {
-    for (const route of [...routes.script, ...routes.setup]) {
-      expect(route.component).toBe(scriptPage)
-    }
-    for (const route of [...routes.userAdd, ...routes.userEdit]) {
-      expect(route.component).toBe(userPage)
-    }
+  it('12 条的组件都是页面宿主（由它按脚本实际类型选页面）', () => {
+    for (const route of all) expect(route.component).toBe(host)
   })
 
   it('maafwRouteLocation 与生成的路由同一张名字表；未知类型按通用 MaaFW', () => {
@@ -130,5 +125,56 @@ describe('MaaFW 家族路由按注册表生成', () => {
     for (const type of ['MAA', 'General', '', null, undefined]) {
       expect(maafwRouteLocation(type, 'userAdd', { scriptId: 's1' }).name).toBe('MaaFWUserAdd')
     }
+  })
+})
+
+describe('resolveMaaFWCanonicalLocation：路由登记的类型与脚本实际类型不符时纠正', () => {
+  const route = (meta: Record<string, unknown>) => ({
+    meta,
+    params: { scriptId: 's1', userId: 'u1' },
+    query: { from: 'list' },
+    hash: '#queue',
+  })
+
+  it('同一个类型：不用纠正', () => {
+    expect(
+      resolveMaaFWCanonicalLocation(route({ scriptType: 'M9A', maafwPage: 'userEdit' }), 'M9A')
+    ).toBeNull()
+  })
+
+  it('不符：同一种页面、实际类型那条线，参数 / query / hash 照带', () => {
+    expect(
+      resolveMaaFWCanonicalLocation(route({ scriptType: 'MaaFW', maafwPage: 'userEdit' }), 'MSS')
+    ).toEqual({
+      name: 'MSSUserEdit',
+      params: { scriptId: 's1', userId: 'u1' },
+      query: { from: 'list' },
+      hash: '#queue',
+    })
+    expect(
+      resolveMaaFWCanonicalLocation(
+        {
+          meta: { scriptType: 'M9A', maafwPage: 'setup' },
+          params: { id: 's1' },
+          query: {},
+          hash: '',
+        },
+        'MaaFW'
+      )
+    ).toEqual({ name: 'MaaFWSetupWizard', params: { id: 's1' }, query: {}, hash: '' })
+  })
+
+  it('脚本不是 MaaFW 家族：不纠正（页面照常给出现有的报错）', () => {
+    for (const type of ['MAA', 'General', '', null, undefined]) {
+      expect(
+        resolveMaaFWCanonicalLocation(route({ scriptType: 'MaaFW', maafwPage: 'userAdd' }), type)
+      ).toBeNull()
+    }
+  })
+
+  it('路由没有 MaaFW 的 meta（不是生成的那几条）：不纠正', () => {
+    expect(resolveMaaFWCanonicalLocation(route({}), 'M9A')).toBeNull()
+    expect(resolveMaaFWCanonicalLocation(route({ scriptType: 'MaaFW' }), 'M9A')).toBeNull()
+    expect(resolveMaaFWCanonicalLocation(route({ maafwPage: 'script' }), 'M9A')).toBeNull()
   })
 })

@@ -6,7 +6,7 @@
       :save-error-message="saveErrorMessage"
       :script-id="scriptId"
       :script-name="scriptName"
-      :script-route-suffix="flavor.routes.suffix"
+      :script-route="scriptRoute"
       :is-edit="isEdit"
       :user-id="userIdHolder.value"
       @cancel="handleCancel"
@@ -171,11 +171,7 @@ import ConfigRestoreSection from '@/views/EditView/User/components/ConfigRestore
 import MaaFWFlavorSlot from '@/views/EditView/MaaFWFlavor/MaaFWFlavorSlot.vue'
 import { useMaaFWSections } from '@/composables/useMaaFWFlavor'
 // MFW 默认分节静态引入：通用 MFW 打开不闪；特调的替换分节由注册表按需加载
-import MaaFWUserEditHeader from './MaaFWUserEdit/MaaFWUserEditHeader.vue'
-import BasicInfoSection from './MaaFWUserEdit/BasicInfoSection.vue'
-import MaaFWQueueHeaderSection from './MaaFWUserEdit/MaaFWQueueHeaderSection.vue'
-import TaskQueueSection from './MaaFWUserEdit/TaskQueueSection.vue'
-import { useMaaFWUserPage } from './MaaFWUserEdit/useMaaFWUserPage'
+import { MAAFW_USER_PAGE_SECTIONS, useMaaFWUserPage } from './MaaFWUserEdit/index'
 
 const { t } = useI18n()
 
@@ -194,6 +190,7 @@ const {
   configLocked,
   scriptName,
   flavor,
+  scriptRoute,
   previewData,
   interfaceLoading,
   projectIconUrl,
@@ -238,12 +235,7 @@ const {
 } = useMaaFWUserPage({ scriptId, userId: route.params.userId as string })
 
 // 各分节：默认用 MFW 的，当前特调替换了哪节就换成它的（契约见 MaaFWFlavor/sectionContracts）
-const sections = useMaaFWSections(flavor, 'userPage', {
-  header: MaaFWUserEditHeader,
-  basicInfo: BasicInfoSection,
-  queueHeader: MaaFWQueueHeaderSection,
-  taskQueue: TaskQueueSection,
-})
+const sections = useMaaFWSections(flavor, 'userPage', MAAFW_USER_PAGE_SECTIONS)
 </script>
 
 <style scoped>

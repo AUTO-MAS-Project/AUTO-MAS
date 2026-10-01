@@ -1,4 +1,4 @@
-import { effectScope } from 'vue'
+import { effectScope, ref } from 'vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 // 调用记录：按发生顺序记下每个后端请求，最后对顺序下断言
@@ -25,6 +25,8 @@ const mocks = vi.hoisted(() => {
     push: vi.fn(),
     /** 特调准备钩子被调时：已经发生过的请求、flavor 类型、页面 */
     prepareFlavor: [] as Array<{ after: string[]; type: string; part: string }>,
+    /** 页面宿主交来的上下文；null 表示不在宿主里（按路由走老办法） */
+    host: null as unknown,
   }
 })
 
@@ -42,6 +44,9 @@ vi.mock('vue', async original => ({
   ...(await original<typeof import('vue')>()),
   onMounted: (hook: () => unknown) => mocks.mounted.push(hook),
   onBeforeUnmount: (hook: () => unknown) => mocks.beforeUnmount.push(hook),
+}))
+vi.mock('../../MaaFWFlavor/pageHostContext', () => ({
+  useMaaFWPageHostContext: () => mocks.host,
 }))
 vi.mock('vue-i18n', () => ({ useI18n: () => ({ t: (key: string) => key }) }))
 vi.mock('@/i18n', () => ({ translate: (key: string) => key }))
@@ -129,6 +134,9 @@ describe('useMaaFWScriptPage 加载顺序', () => {
     mocks.mounted.length = 0
     mocks.beforeUnmount.length = 0
     mocks.prepareFlavor.length = 0
+    mocks.host = null
+    // 选目录导入那条用例会给订阅挂上记录调用的实现，这里复位，免得串到后面的顺序断言里
+    mocks.subscribe.mockImplementation(() => 'sub_1')
     mocks.getScript.mockImplementation(async () => {
       mocks.calls.push('getScript')
       return {
@@ -268,5 +276,66 @@ describe('useMaaFWScriptPage 加载顺序', () => {
     expect(mocks.calls).toContain('preview')
     scope.stop()
     expect(mocks.unsubscribe).toHaveBeenCalledWith('sub_1')
+  })
+
+  it('在页面宿主里：脚本详情用宿主读好的（不再请求），类型、引导形态与步骤都是宿主的', async () => {
+    const host = {
+      scriptType: ref('M9A'),
+      mode: 'setup',
+      wizardStep: ref(2),
+      takeInitialScript: vi.fn(() => ({
+        type: 'M9A',
+        name: '新 M9A 脚本',
+        config: {
+          Info: { Name: '新 M9A 脚本', Path: 'D:/project', Controller: '', Resource: '' },
+          Run: { DailyOnceTasks: '["Daily","Gone"]' },
+        },
+      })),
+    }
+    mocks.host = host
+    const { scope, page } = mountPage()
+    await page.load()
+
+    expect(host.takeInitialScript).toHaveBeenCalledOnce()
+    expect(mocks.getScript).not.toHaveBeenCalled()
+    // 去掉脚本详情这一项，其余顺序不变：模拟器选项 → 内嵌状态 → 读 interface → 再读内嵌状态
+    const lastEmbedded = mocks.calls.lastIndexOf('embeddedStatus')
+    expect(mocks.calls.slice(0, lastEmbedded + 1).filter(call => call !== 'prepareEnv')).toEqual([
+      'emulatorCombox',
+      'emulatorDetail',
+      'embeddedStatus',
+      'preview',
+      'embeddedStatus',
+    ])
+    expect(mocks.calls.findIndex(call => call.startsWith('update:'))).toBeGreaterThan(lastEmbedded)
+    expect(page.scriptType).toBe(host.scriptType)
+    expect(page.flavor.value.type).toBe('M9A')
+    expect(page.isWizard.value).toBe(true)
+    expect(page.currentStep).toBe(host.wizardStep)
+
+    // 导入后重新拉类型：写回宿主那一份（宿主据此决定要不要换页面）
+    mocks.getScript.mockImplementation(async () => ({ type: 'MaaFW', name: 'x', config: {} }))
+    await page.refreshScriptType()
+    expect(host.scriptType.value).toBe('MaaFW')
+
+    // 引导最后一步建第一个用户：去脚本当前类型那条线的加用户路由
+    await page.handleFinishWizard()
+    expect(mocks.push).toHaveBeenCalledWith({ name: 'MaaFWUserAdd', params: { scriptId: 's1' } })
+    scope.stop()
+  })
+
+  it('宿主读过但没读到脚本（null）：按脚本不存在处理，不再请求一次', async () => {
+    mocks.host = {
+      scriptType: ref('MaaFW'),
+      mode: 'script',
+      wizardStep: ref(0),
+      takeInitialScript: () => null,
+    }
+    const { scope, page } = mountPage()
+    await page.load()
+    expect(mocks.getScript).not.toHaveBeenCalled()
+    expect(mocks.push).toHaveBeenCalledWith('/scripts')
+    expect(page.isWizard.value).toBe(false)
+    scope.stop()
   })
 })

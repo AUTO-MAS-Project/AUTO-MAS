@@ -23,6 +23,8 @@ const mocks = vi.hoisted(() => {
     getUsers: vi.fn(),
     updateUser: vi.fn(),
     ensureBackup: vi.fn(async () => ({ code: 200 })),
+    /** 页面宿主交来的上下文；null 表示不在宿主里 */
+    host: null as unknown,
   }
 })
 
@@ -58,6 +60,9 @@ vi.mock('@/composables/useUserApi', () => ({
 vi.mock('@/composables/useMaaFWApi', () => ({
   buildMaaFWAssetUrl: () => '',
   useMaaFWApi: () => ({ loading: ref(false), previewInterface: mocks.previewInterface }),
+}))
+vi.mock('../../MaaFWFlavor/pageHostContext', () => ({
+  useMaaFWPageHostContext: () => mocks.host,
 }))
 vi.mock('@/composables/useScriptConfigLock', () => ({
   useScriptConfigLock: () => ({ configLocked: ref(false) }),
@@ -124,6 +129,7 @@ describe('useMaaFWUserPage', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mocks.mounted.length = 0
+    mocks.host = null
     mocks.getScript.mockResolvedValue({
       type: 'MaaFW',
       name: 'Demo',
@@ -166,7 +172,7 @@ describe('useMaaFWUserPage', () => {
     scope.stop()
   })
 
-  it('新建模式：建好用户后改写 userId 持有者并 replace 到同一条线的编辑路由', async () => {
+  it('新建模式：建好用户后改写 userId 持有者并 replace 到脚本类型那条线的编辑路由', async () => {
     mocks.route.name = 'MaaFWUserAdd'
     mocks.route.params = { scriptId: 's1' }
     mocks.addUser.mockResolvedValue({ userId: 'u9' })
@@ -193,6 +199,41 @@ describe('useMaaFWUserPage', () => {
     expect(mocks.replace.mock.invocationCallOrder[0]).toBeLessThan(
       mocks.getUsers.mock.invocationCallOrder[0]
     )
+    scope.stop()
+  })
+
+  it('在页面宿主里：脚本详情用宿主读好的，建好用户后按脚本实际类型去编辑路由（不看路由名）', async () => {
+    const host = {
+      scriptType: ref('M9A'),
+      mode: 'userAdd',
+      wizardStep: ref(0),
+      takeInitialScript: vi.fn(() => ({
+        type: 'M9A',
+        name: 'Demo',
+        config: {
+          Info: { Path: 'D:/project', Controller: '', Resource: '' },
+          Emulator: { Id: '-' },
+        },
+      })),
+    }
+    mocks.host = host
+    // 路由名故意与脚本类型不符：跳转目标只看脚本类型
+    mocks.route.name = 'MaaFWUserAdd'
+    mocks.route.params = { scriptId: 's1' }
+    mocks.addUser.mockResolvedValue({ userId: 'u9' })
+    mocks.getUsers.mockResolvedValue(userResponse('u9'))
+    const { scope, page } = mountPage('')
+
+    await vi.waitFor(() => expect(mocks.replace).toHaveBeenCalled())
+    expect(host.takeInitialScript).toHaveBeenCalledOnce()
+    expect(mocks.getScript).not.toHaveBeenCalled()
+    expect(mocks.addUser).toHaveBeenCalledOnce()
+    expect(mocks.replace).toHaveBeenCalledWith({
+      name: 'M9AUserEdit',
+      params: { scriptId: 's1', userId: 'u9' },
+    })
+    expect(page.scriptType).toBe(host.scriptType)
+    expect(page.scriptRoute.value).toEqual({ name: 'M9AScriptEdit', params: { id: 's1' } })
     scope.stop()
   })
 })

@@ -9,7 +9,7 @@ import {
   shallowRef,
 } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { useRoute, useRouter } from 'vue-router'
+import { useRouter } from 'vue-router'
 import { message, Modal } from 'ant-design-vue'
 import { useScriptConfigLock } from '@/composables/useScriptConfigLock'
 import { buildMaaFWAssetUrl, useMaaFWApi } from '@/composables/useMaaFWApi'
@@ -38,6 +38,8 @@ import { useMaaFWUserPersistence, type MaaFWUserIdHolder } from './useMaaFWUserP
 import { useMaaFWTaskQueue } from './useMaaFWTaskQueue'
 import { useMaaFWAddTaskMenu } from './useMaaFWAddTaskMenu'
 import { useMaaFWUserConfigRestore } from './useMaaFWUserConfigRestore'
+import { maafwRouteLocation } from '@/router/maafwFlavorRoutes'
+import { useMaaFWPageHostContext } from '../../MaaFWFlavor/pageHostContext'
 
 export interface MaaFWUserPageOptions {
   scriptId: string
@@ -55,7 +57,6 @@ export function useMaaFWUserPage({ scriptId, userId }: MaaFWUserPageOptions) {
   const { t } = useI18n()
   const logger = window.electronAPI.getLogger('MaaFW用户编辑')
   const router = useRouter()
-  const route = useRoute()
   const { addUser, getUsers } = useUserApi()
   const { getScript } = useScriptApi()
   const { loading: interfaceLoading, previewInterface } = useMaaFWApi()
@@ -72,9 +73,15 @@ export function useMaaFWUserPage({ scriptId, userId }: MaaFWUserPageOptions) {
 
   const scriptName = ref('')
   const scriptPath = ref('')
-  // flavor 文案以脚本当前类型为准（MaaFW / M9A / MSS ……），不看路由 meta
-  const scriptType = ref<ScriptType>('MaaFW')
+  // flavor 文案以脚本当前类型为准（MaaFW / M9A / MSS ……），不看路由 meta。
+  // 在页面宿主里时类型是宿主的那一份：写回去宿主才知道要不要换页面。
+  const host = useMaaFWPageHostContext()
+  const scriptType = host?.scriptType ?? ref<ScriptType>('MaaFW')
   const flavor = useMaaFWFlavor(scriptType)
+  /** 面包屑回脚本页：按脚本当前类型走它那条线 */
+  const scriptRoute = computed(() =>
+    maafwRouteLocation(scriptType.value, 'script', { id: scriptId })
+  )
   const scriptConfig = ref<MaaFWScriptConfig | null>(null)
   const preferAdbController = ref(false)
   const previewData = shallowRef<MaaFWInterfacePreviewData | null>(null)
@@ -171,7 +178,9 @@ export function useMaaFWUserPage({ scriptId, userId }: MaaFWUserPageOptions) {
   const loadScriptInfo = async () => {
     pageLoading.value = true
     try {
-      const script = await getScript(scriptId)
+      // 页面宿主已经读过脚本详情就直接用（null 是读过但没读到），不再请求一次
+      const initialScript = host?.takeInitialScript()
+      const script = initialScript !== undefined ? initialScript : await getScript(scriptId)
       if (!script) {
         message.error(t('edit.scriptDoesNotExist2'))
         handleCancel()
@@ -218,13 +227,10 @@ export function useMaaFWUserPage({ scriptId, userId }: MaaFWUserPageOptions) {
       if (result?.userId) {
         userIdHolder.value = result.userId
         isEdit.value = true
-        router.replace({
-          // 加用户路由与编辑路由成对（M9AUserAdd ↔ M9AUserEdit），跳回同一条线，别把 M9A 落到 MFW 的 URL 上。
-          name: String(route.name ?? '').endsWith('UserAdd')
-            ? String(route.name).replace(/UserAdd$/, 'UserEdit')
-            : 'MaaFWUserEdit',
-          params: { ...route.params, userId: result.userId },
-        })
+        // 去脚本实际类型那条线的编辑用户路由，别把 M9A 落到 MFW 的 URL 上
+        router.replace(
+          maafwRouteLocation(scriptType.value, 'userEdit', { scriptId, userId: result.userId })
+        )
         await loadUserData()
       } else {
         message.error(t('edit.couldNotCreateUser'))
@@ -362,6 +368,7 @@ export function useMaaFWUserPage({ scriptId, userId }: MaaFWUserPageOptions) {
     scriptName,
     scriptType,
     flavor,
+    scriptRoute,
     previewData,
     interfaceLoading,
     projectIconUrl,

@@ -35,6 +35,7 @@ const identity: MaaFWFlavorSpec = {
 /** 每个可为空的字段都有值、带插入点与钩子的底：用来区分「沿用」「关掉」「不继承」 */
 const slot = defineMaaFWLazyComponent(async () => ({}))
 const prepare = async () => undefined
+const basePage = defineMaaFWLazyComponent(async () => ({}))
 const runSection = defineMaaFWSection(
   'scriptPage',
   'run',
@@ -56,6 +57,7 @@ const RICH_BASE: MaaFWFlavor = {
       controllerHintKey: 'base.controller',
       gameUpdateHintKey: 'base.gameUpdate',
     },
+    page: basePage,
     sections: { run: runSection },
     slots: {},
     prepare,
@@ -72,6 +74,7 @@ const RICH_BASE: MaaFWFlavor = {
       warningKey: 'base.warning',
       noticeKey: 'base.notice',
     },
+    page: basePage,
     sections: { header: headerSection },
     slots: { beforeTaskQueue: [slot] },
     prepare,
@@ -95,11 +98,13 @@ describe('defineMaaFWFlavor 合并规则', () => {
     })
   })
 
-  it('什么都不写：text / managed 整组沿用底；sections / slots / prepare 不继承', () => {
+  it('什么都不写：text / managed 整组沿用底；page / sections / slots / prepare 不继承', () => {
     const flavor = mergeMaaFWFlavor(RICH_BASE, identity)
     expect(flavor.scriptPage.text).toEqual(RICH_BASE.scriptPage.text)
     expect(flavor.userPage.text).toEqual(RICH_BASE.userPage.text)
     expect(flavor.userPage.managed).toEqual(RICH_BASE.userPage.managed)
+    expect(flavor.scriptPage.page).toBeNull()
+    expect(flavor.userPage.page).toBeNull()
     expect(flavor.scriptPage.sections).toEqual({})
     expect(flavor.userPage.sections).toEqual({})
     expect(flavor.scriptPage.slots).toEqual({})
@@ -113,10 +118,12 @@ describe('defineMaaFWFlavor 合并规则', () => {
   it('按字段浅合并：写了的覆盖，undefined 沿用，null 明确关掉', () => {
     const ownSlot = defineMaaFWLazyComponent(async () => ({}))
     const ownPrepare = async () => undefined
+    const ownPage = defineMaaFWLazyComponent(async () => ({}))
     const flavor = mergeMaaFWFlavor(RICH_BASE, {
       ...identity,
       scriptPage: {
         text: { sourceHintKey: 'own.hint', titleKey: undefined, controllerHintKey: null },
+        page: ownPage,
         sections: { run: runSection },
       },
       userPage: {
@@ -138,6 +145,8 @@ describe('defineMaaFWFlavor 合并规则', () => {
       warningKey: 'base.warning',
       noticeKey: 'base.notice',
     })
+    expect(flavor.scriptPage.page).toBe(ownPage)
+    expect(flavor.userPage.page).toBeNull()
     expect(flavor.scriptPage.sections).toEqual({ run: runSection })
     expect(flavor.userPage.sections).toEqual({})
     expect(flavor.userPage.slots).toEqual({ beforeTaskQueue: [ownSlot] })

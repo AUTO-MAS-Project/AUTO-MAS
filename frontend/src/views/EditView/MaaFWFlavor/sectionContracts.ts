@@ -172,8 +172,8 @@ export interface MaaFWUserHeaderSectionProps {
   saveErrorMessage: string
   scriptId: string
   scriptName: string
-  /** 脚本页路由后缀（取自特调注册表） */
-  scriptRouteSuffix: string
+  /** 面包屑回脚本页的路由目标（maafwRouteLocation(脚本类型, 'script', { id })） */
+  scriptRoute: { name: string; params: { id: string } }
   isEdit: boolean
   userId?: string
 }

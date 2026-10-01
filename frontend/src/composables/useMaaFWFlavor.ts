@@ -106,7 +106,7 @@ export const resolveMaaFWFlavorSlot = <P extends MaaFWFlavorPart>(
   (flavor[part].slots as Partial<Record<string, readonly MaaFWLazyComponent[]>>)[name] ?? []
 
 /**
- * 页面加载期间调用：预取该 flavor 在这一页的替换分节与插入点组件的 chunk、跑这一页的 prepare。
+ * 页面加载期间调用：预取该 flavor 在这一页的整页、替换分节与插入点组件的 chunk、跑这一页的 prepare。
  * 预取过的异步组件在首次渲染时同一轮微任务内就能解析，不会先空一下再冒出来。
  * 全部并行、用 allSettled 收：失败只影响独有区块自己（组件渲染时会再加载一次），
  * 不拖垮页面加载，也从不往外抛（同步抛出的也收住）。
@@ -117,6 +117,7 @@ export const prepareMaaFWFlavorPage = async (
 ): Promise<void> => {
   const page = flavor[part]
   const lazy: MaaFWLazyComponent[] = [
+    page.page ?? undefined,
     ...Object.values(page.sections as Record<string, MaaFWLazyComponent | undefined>),
     ...Object.values(
       page.slots as Record<string, readonly MaaFWLazyComponent[] | undefined>

@@ -246,6 +246,7 @@ const userState = (flavor: MaaFWFlavor) => ({
   configLocked: false,
   scriptName: '演示',
   flavor: shallowRef(flavor),
+  scriptRoute: { name: `${flavor.type}ScriptEdit`, params: { id: 's1' } },
   previewData: { tasks: [] },
   interfaceLoading: false,
   projectIconUrl: '',

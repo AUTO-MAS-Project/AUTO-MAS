@@ -233,12 +233,7 @@ import { updateChannelOptions, updateSourceOptions } from '@/composables/useMaaF
 import { useMaaFWSections } from '@/composables/useMaaFWFlavor'
 import MaaFWFlavorSlot from '@/views/EditView/MaaFWFlavor/MaaFWFlavorSlot.vue'
 // MFW 默认分节静态引入：通用 MFW 打开不闪；特调的替换分节由注册表按需加载
-import BasicInfoSection from './MaaFWScriptEdit/BasicInfoSection.vue'
-import ControlConfigSection from './MaaFWScriptEdit/ControlConfigSection.vue'
-import UpdateSettingsSection from './MaaFWScriptEdit/UpdateSettingsSection.vue'
-import RunConfigSection from './MaaFWScriptEdit/RunConfigSection.vue'
-import ShellInstanceImportSection from './MaaFWScriptEdit/ShellInstanceImportSection.vue'
-import { useMaaFWScriptPage } from './MaaFWScriptEdit/useMaaFWScriptPage'
+import { MAAFW_SCRIPT_PAGE_SECTIONS, useMaaFWScriptPage } from './MaaFWScriptEdit/index'
 
 const { t } = useI18n()
 
@@ -322,13 +317,7 @@ const {
 } = useMaaFWScriptPage({ scriptId })
 
 // 各分节：默认用 MFW 的，当前特调替换了哪节就换成它的（契约见 MaaFWFlavor/sectionContracts）
-const sections = useMaaFWSections(flavor, 'scriptPage', {
-  basicInfo: BasicInfoSection,
-  control: ControlConfigSection,
-  update: UpdateSettingsSection,
-  run: RunConfigSection,
-  shellImport: ShellInstanceImportSection,
-})
+const sections = useMaaFWSections(flavor, 'scriptPage', MAAFW_SCRIPT_PAGE_SECTIONS)
 </script>
 
 <style scoped>

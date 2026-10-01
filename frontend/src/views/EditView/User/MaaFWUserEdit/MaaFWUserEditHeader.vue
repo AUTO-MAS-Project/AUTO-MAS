@@ -6,10 +6,7 @@
           <router-link to="/scripts" class="breadcrumb-link">{{ t('edit.scripts') }}</router-link>
         </a-breadcrumb-item>
         <a-breadcrumb-item>
-          <router-link
-            :to="`/scripts/${scriptId}/edit/${scriptRouteSuffix}`"
-            class="breadcrumb-link"
-          >
+          <router-link :to="scriptRoute" class="breadcrumb-link">
             {{ scriptName || 'MFW' }}
           </router-link>
         </a-breadcrumb-item>

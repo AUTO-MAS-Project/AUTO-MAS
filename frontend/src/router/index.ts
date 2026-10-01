@@ -6,11 +6,12 @@ import { MAAFW_FLAVORS } from '@/composables/useMaaFWFlavor'
 import { buildMaaFWRoutes } from './maafwFlavorRoutes'
 const logger = window.electronAPI.getLogger('路由管理')
 
-// MaaFW 与各特调的路由（每个类型：脚本编辑 / 引导 / 加用户 / 编辑用户）按特调注册表生成
-const maafwRoutes = buildMaaFWRoutes(MAAFW_FLAVORS, {
-  scriptPage: () => import('../views/EditView/Script/MaaFWScriptEdit.vue'),
-  userPage: () => import('../views/EditView/User/MaaFWUserEdit.vue'),
-})
+// MaaFW 与各特调的路由（每个类型：脚本编辑 / 引导 / 加用户 / 编辑用户）按特调注册表生成；
+// 组件都是页面宿主：按脚本实际类型选页面，后缀与类型不符的地址由它纠正
+const maafwRoutes = buildMaaFWRoutes(
+  MAAFW_FLAVORS,
+  () => import('../views/EditView/MaaFWFlavor/MaaFWPageHost.vue')
+)
 
 // 异步按需加载调度中心，避免弹窗窗口提前执行相关逻辑
 const SchedulerView = () => import('../views/scheduler/index.vue')

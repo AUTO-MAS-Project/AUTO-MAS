@@ -18,7 +18,7 @@ import { MAAFW_FLAVOR } from './maafw'
  * - `routes.titles` 可省，按 `typeTagLabel` 生成，写了的逐条覆盖；
  * - `scriptPage` / `userPage` 可省；其中 `text` / `managed` 按字段浅合并到 MaaFW 上：
  *   不写或写 `undefined` 沿用 MaaFW，写 `null` 表示明确关掉（只有可为空的字段能写 null）；
- * - `sections` / `slots` / `prepare` 不继承，不写就是没有。
+ * - `page` / `sections` / `slots` / `prepare` 不继承，不写就是没有。
  */
 export interface MaaFWFlavorSpec extends Pick<
   MaaFWFlavor,
@@ -36,6 +36,7 @@ export interface MaaFWFlavorSpec extends Pick<
   create: MaaFWFlavorCreate
   scriptPage?: {
     text?: Partial<MaaFWScriptPageText>
+    page?: MaaFWScriptPagePart['page']
     sections?: MaaFWScriptPagePart['sections']
     slots?: MaaFWScriptPagePart['slots']
     prepare?: MaaFWScriptPagePart['prepare']
@@ -43,6 +44,7 @@ export interface MaaFWFlavorSpec extends Pick<
   userPage?: {
     text?: Partial<MaaFWUserPageText>
     managed?: Partial<MaaFWManagedTasks>
+    page?: MaaFWUserPagePart['page']
     sections?: MaaFWUserPagePart['sections']
     slots?: MaaFWUserPagePart['slots']
     prepare?: MaaFWUserPagePart['prepare']
@@ -84,6 +86,7 @@ export const mergeMaaFWFlavor = (base: MaaFWFlavor, spec: MaaFWFlavorSpec): MaaF
   create: { card: spec.create.card },
   scriptPage: {
     text: mergeDefined(base.scriptPage.text, spec.scriptPage?.text),
+    page: spec.scriptPage?.page ?? null,
     sections: spec.scriptPage?.sections ?? {},
     slots: spec.scriptPage?.slots ?? {},
     prepare: spec.scriptPage?.prepare ?? null,
@@ -91,6 +94,7 @@ export const mergeMaaFWFlavor = (base: MaaFWFlavor, spec: MaaFWFlavorSpec): MaaF
   userPage: {
     text: mergeDefined(base.userPage.text, spec.userPage?.text),
     managed: mergeDefined(base.userPage.managed, spec.userPage?.managed),
+    page: spec.userPage?.page ?? null,
     sections: spec.userPage?.sections ?? {},
     slots: spec.userPage?.slots ?? {},
     prepare: spec.userPage?.prepare ?? null,

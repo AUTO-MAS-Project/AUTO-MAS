@@ -1,11 +1,11 @@
-import type { RouteRecordRaw } from 'vue-router'
-import {
-  MAAFW_PAGE_PART,
-  type MaaFWFlavor,
-  type MaaFWFlavorPart,
-  type MaaFWPageKind,
-} from '@/composables/maafwFlavorTypes'
-import { resolveMaaFWFlavor } from '@/composables/useMaaFWFlavor'
+import type {
+  LocationQueryRaw,
+  RouteLocationNormalizedLoaded,
+  RouteParamsRaw,
+  RouteRecordRaw,
+} from 'vue-router'
+import type { MaaFWFlavor, MaaFWPageKind } from '@/composables/maafwFlavorTypes'
+import { isMaaFWFamily, resolveMaaFWFlavor } from '@/composables/useMaaFWFlavor'
 import type { ScriptType } from '@/types/script'
 
 declare module 'vue-router' {
@@ -67,13 +67,33 @@ export const maafwRouteLocation = <K extends MaaFWPageKind>(
 })
 
 /**
+ * 路由登记的类型与脚本实际类型不符时（老链接、手输的地址、导入后换了类型），应该去的地址：
+ * 同一种页面、实际类型那条线，参数、query、hash 照带。不用纠正（类型相符、不是 MaaFW 家族的
+ * 路由或脚本）时返回 null。只有页面宿主调它（路由 meta.scriptType 只在这里读）。
+ */
+export const resolveMaaFWCanonicalLocation = (
+  route: Pick<RouteLocationNormalizedLoaded, 'meta' | 'params' | 'query' | 'hash'>,
+  actualType: ScriptType | string | null | undefined
+): { name: string; params: RouteParamsRaw; query: LocationQueryRaw; hash: string } | null => {
+  const kind = route.meta.maafwPage
+  const routeType = route.meta.scriptType
+  if (!kind || !routeType || !isMaaFWFamily(actualType) || actualType === routeType) return null
+  return {
+    name: maafwRouteName(actualType, kind),
+    params: { ...route.params },
+    query: { ...route.query },
+    hash: route.hash,
+  }
+}
+
+/**
  * MaaFW 与各特调的路由按注册表生成：每个类型四条（脚本编辑 / 引导 / 加用户 / 编辑用户），
- * 按页面种类分组返回，路由表在原来的位置展开。meta 记下标题、登记的类型与页面种类。
- * 新增特调不用改路由表。
+ * 按页面种类分组返回，路由表在原来的位置展开。组件都是页面宿主（按脚本实际类型选页面），
+ * meta 记下标题、登记的类型与页面种类。新增特调不用改路由表。
  */
 export const buildMaaFWRoutes = (
   flavors: readonly MaaFWFlavor[],
-  pages: Record<MaaFWFlavorPart, LazyPage>
+  page: LazyPage
 ): Record<MaaFWPageKind, RouteRecordRaw[]> =>
   Object.fromEntries(
     MAAFW_PAGE_KINDS.map(kind => [
@@ -81,7 +101,7 @@ export const buildMaaFWRoutes = (
       flavors.map((flavor): RouteRecordRaw => ({
         path: MAAFW_PAGE_ROUTES[kind].path(flavor.routes.suffix),
         name: routeNameOf(flavor.type, kind),
-        component: pages[MAAFW_PAGE_PART[kind]],
+        component: page,
         meta: { title: flavor.routes.titles[kind], scriptType: flavor.type, maafwPage: kind },
       })),
     ])

@@ -19,6 +19,7 @@ import { useMaaFWProjectIdentity } from './useMaaFWProjectIdentity'
 import { useMaaFWEmbeddedImport } from './useMaaFWEmbeddedImport'
 import { useMaaFWUpdatePanel } from './useMaaFWUpdatePanel'
 import { useMaaFWGamePackage } from './useMaaFWGamePackage'
+import { useMaaFWPageHostContext } from '../../MaaFWFlavor/pageHostContext'
 
 export interface MaaFWScriptPageOptions {
   scriptId: string
@@ -28,7 +29,7 @@ export interface MaaFWScriptPageOptions {
  * MFW 脚本页的编排层：把草稿、控制方式、周期任务、运行环境、内嵌副本、项目更新、
  * 包名推断与引导拼在一起，负责页面加载顺序与卸载收尾，返回模板要用的全部状态与动作。
  *
- * 加载顺序（onMounted）：脚本详情与模拟器选项并行 → 铺配置与类型 → 设备列表 → 内嵌状态 →
+ * 加载顺序（onMounted）：脚本详情（页面宿主读过就直接用）与模拟器选项并行 → 铺配置与类型 → 设备列表 → 内嵌状态 →
  * 读 interface（期间的控制器 / 资源同步与项目名同步因 `isInitializing` 仍为 true 而只改草稿）
  * → 再读一次内嵌状态 → finally 放开 `isInitializing` → 最后才项目名同步、CDK 预填、包名推断。
  */
@@ -53,7 +54,9 @@ export function useMaaFWScriptPage({ scriptId }: MaaFWScriptPageOptions) {
 
   // flavor 文案以脚本当前类型为准，不看路由 meta：/edit/maafw 与 /edit/m9a 都进这个组件，
   // 而导入完成后后端会按项目内容原地换类型（M9A 项目 → M9A，其它 → MaaFW，uid 不变）。
-  const scriptType = ref<ScriptType>('MaaFW')
+  // 在页面宿主里时类型是宿主的那一份：写回去宿主才知道要不要换页面。
+  const host = useMaaFWPageHostContext()
+  const scriptType = host?.scriptType ?? ref<ScriptType>('MaaFW')
   const flavor = useMaaFWFlavor(scriptType)
   const refreshScriptType = async () => {
     try {
@@ -99,6 +102,7 @@ export function useMaaFWScriptPage({ scriptId }: MaaFWScriptPageOptions) {
     envReady: env.envReady,
     enqueue,
     flavor,
+    host,
     isPageUnmounted: () => pageUnmounted,
   })
 
@@ -213,7 +217,12 @@ export function useMaaFWScriptPage({ scriptId }: MaaFWScriptPageOptions) {
     pageLoading.value = true
     let scriptLoaded = false
     try {
-      const [scriptDetail] = await Promise.all([getScript(scriptId), loadEmulatorOptions()])
+      // 页面宿主已经读过脚本详情就直接用（null 是读过但没读到），不再请求一次
+      const initialScript = host?.takeInitialScript()
+      const [scriptDetail] = await Promise.all([
+        initialScript !== undefined ? initialScript : getScript(scriptId),
+        loadEmulatorOptions(),
+      ])
       if (!scriptDetail) {
         message.error(t('edit.scriptDoesNotExist'))
         router.push('/scripts')

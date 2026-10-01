@@ -1,10 +1,12 @@
 import { computed, h, ref, watch, type ComputedRef, type Ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { useRoute, useRouter } from 'vue-router'
+import { useRoute, useRouter, type RouteLocationRaw } from 'vue-router'
 import { message } from 'ant-design-vue'
 import type { MaaFWShellInstanceItem } from '@/api'
 import { useMaaFWShellInstanceApi } from '@/composables/useMaaFWShellInstanceApi'
 import type { MaaFWFlavor } from '@/composables/useMaaFWFlavor'
+import { maafwRouteLocation } from '@/router/maafwFlavorRoutes'
+import type { MaaFWPageHostContext } from '../../MaaFWFlavor/pageHostContext'
 import type { MaaFWInterfacePreviewData } from '@/types/script'
 import {
   buildShellImportReportLines,
@@ -19,6 +21,8 @@ interface MaaFWSetupWizardOptions {
   envReady: Ref<boolean>
   enqueue: <T>(run: () => Promise<T>, key?: string) => Promise<T>
   flavor: ComputedRef<MaaFWFlavor>
+  /** 页面宿主的上下文：页面种类与引导步骤取它的；不在宿主里为 null（按路由 meta） */
+  host: MaaFWPageHostContext | null
   /** 页面已卸载：还在跑的异步流程（外壳配置导入）结束时不再跳转 */
   isPageUnmounted: () => boolean
 }
@@ -30,6 +34,7 @@ export function useMaaFWSetupWizard({
   envReady,
   enqueue,
   flavor,
+  host,
   isPageUnmounted,
 }: MaaFWSetupWizardOptions) {
   const { t } = useI18n()
@@ -40,8 +45,10 @@ export function useMaaFWSetupWizard({
 
   // 引导模式：同一个页面按步骤渲染四个分节。新建 MaaFW 家族脚本后进引导路由（页面种类 setup），
   // 之后再编辑走编辑路由的完整单页形态。
-  const isWizard = computed(() => route.meta.maafwPage === 'setup')
-  const currentStep = ref(0)
+  const mode = host ? host.mode : route.meta.maafwPage
+  const isWizard = computed(() => mode === 'setup')
+  // 步骤放在宿主里：导入后类型变了、宿主换成特调自己的页面时，新页面接着这一步走
+  const currentStep = host?.wizardStep ?? ref(0)
   const stepItems = [
     { title: t('edit.basicInfo') },
     { title: t('edit.controlConfiguration') },
@@ -56,14 +63,13 @@ export function useMaaFWSetupWizard({
     () => currentStep.value !== 0 || (previewData.value !== null && envReady.value)
   )
 
-  // 用户页路由按脚本当前类型走对应那条线（/users/add/maafw、/m9a、/mss ……）
-  const userRouteSuffix = () => flavor.value.routes.suffix
-  const addUserPath = () => `/scripts/${scriptId}/users/add/${userRouteSuffix()}`
+  // 用户页路由按脚本当前类型走对应那条线
+  const addUserLocation = () => maafwRouteLocation(flavor.value.type, 'userAdd', { scriptId })
 
   // 引导最后一步直接去建第一个用户；先等排队中的保存写完，用户页读到的才是刚配好的脚本
   const handleCreateFirstUser = async () => {
     await enqueue(async () => undefined)
-    router.push(addUserPath())
+    router.push(addUserLocation())
   }
 
   // ---- 引导最后一步：外壳（MFAAvalonia / MXU / MFW-PyQt6）配置导入成用户 ----
@@ -106,8 +112,8 @@ export function useMaaFWSetupWizard({
   // 免得把人从别的页面拽回来（pageUnmounted 在卸载钩子里置位）
   const stillOnWizard = () =>
     !isPageUnmounted() && route.meta.maafwPage === 'setup' && route.params.id === scriptId
-  const leaveWizardTo = (path: string) => {
-    if (stillOnWizard()) router.push(path)
+  const leaveWizardTo = (target: RouteLocationRaw) => {
+    if (stillOnWizard()) router.push(target)
   }
 
   // 勾了实例就导入，一个都没勾就是原来的「创建第一个用户！」。导入失败不能把用户卡在引导页：
@@ -130,7 +136,7 @@ export function useMaaFWSetupWizard({
         const reason = error instanceof Error ? error.message : String(error)
         logger.error(`导入外壳配置失败: ${reason}`)
         message.error(t('edit.shellImportAllFailedWithReason', { reason }))
-        leaveWizardTo(addUserPath())
+        leaveWizardTo(addUserLocation())
         return
       }
       for (const item of [...summary.failed, ...summary.partial]) {
@@ -148,7 +154,7 @@ export function useMaaFWSetupWizard({
           ),
           duration: 8,
         })
-        leaveWizardTo(addUserPath())
+        leaveWizardTo(addUserLocation())
         return
       }
       if (lines.length > 0) {
@@ -164,7 +170,7 @@ export function useMaaFWSetupWizard({
       const [only] = summary.created
       leaveWizardTo(
         summary.created.length === 1 && only.userId
-          ? `/scripts/${scriptId}/users/${only.userId}/edit/${userRouteSuffix()}`
+          ? maafwRouteLocation(flavor.value.type, 'userEdit', { scriptId, userId: only.userId })
           : '/scripts'
       )
     } finally {
