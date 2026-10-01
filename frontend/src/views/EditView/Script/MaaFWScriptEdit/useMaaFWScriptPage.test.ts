@@ -23,6 +23,18 @@ const mocks = vi.hoisted(() => {
     subscribe: vi.fn(() => 'sub_1'),
     unsubscribe: vi.fn(),
     push: vi.fn(),
+    /** 特调准备钩子被调时：已经发生过的请求、flavor 类型、页面 */
+    prepareFlavor: [] as Array<{ after: string[]; type: string; part: string }>,
+  }
+})
+
+vi.mock('@/composables/useMaaFWFlavor', async original => {
+  const actual = await original<typeof import('@/composables/useMaaFWFlavor')>()
+  return {
+    ...actual,
+    prepareMaaFWFlavorPage: async (flavor: { type: string }, part: string) => {
+      mocks.prepareFlavor.push({ after: [...mocks.calls], type: flavor.type, part })
+    },
   }
 })
 
@@ -112,6 +124,7 @@ describe('useMaaFWScriptPage 加载顺序', () => {
     mocks.calls.length = 0
     mocks.mounted.length = 0
     mocks.beforeUnmount.length = 0
+    mocks.prepareFlavor.length = 0
     mocks.getScript.mockImplementation(async () => {
       mocks.calls.push('getScript')
       return {
@@ -197,6 +210,38 @@ describe('useMaaFWScriptPage 加载顺序', () => {
     mocks.updateScript.mockClear()
     await page.handleChange('Info', 'Notes', 'y')
     expect(mocks.updateScript).toHaveBeenCalledWith('s1', { Info: { Notes: 'y' } })
+    scope.stop()
+  })
+
+  it('读到脚本详情就（不等地）准备特调脚本页；类型变了再准备一次；插入点上下文跟着页面状态', async () => {
+    const { scope, page } = mountPage()
+    await page.load()
+    // 只在读到详情（与模拟器选项）后调一次，在读内嵌状态等后续请求之前，且不等它
+    expect(mocks.prepareFlavor).toEqual([
+      {
+        after: ['getScript', 'emulatorCombox', 'emulatorDetail'],
+        type: 'MaaFW',
+        part: 'scriptPage',
+      },
+    ])
+    expect(page.flavorSlotContext.value).toMatchObject({
+      scriptId: 's1',
+      previewData: preview,
+      interfaceDisabled: false,
+      loading: false,
+      isWizard: false,
+    })
+    expect(page.flavorSlotContext.value.maafwConfig).toBe(page.maafwConfig)
+
+    // 类型没变：不再准备；导入后换成了特调：准备新特调的脚本页
+    await page.refreshScriptType()
+    expect(mocks.prepareFlavor).toHaveLength(1)
+    mocks.getScript.mockImplementation(async () => ({ type: 'M9A', name: 'x', config: {} }))
+    await page.refreshScriptType()
+    expect(mocks.prepareFlavor.map(entry => [entry.type, entry.part])).toEqual([
+      ['MaaFW', 'scriptPage'],
+      ['M9A', 'scriptPage'],
+    ])
     scope.stop()
   })
 

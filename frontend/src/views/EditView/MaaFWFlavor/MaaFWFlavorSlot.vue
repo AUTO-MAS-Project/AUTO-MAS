@@ -1,34 +1,49 @@
-<!-- 特调插入点：按当前 flavor 在注册表里声明的组件依次渲染，没有就什么都不渲染。
-     不包外层元素，渲染结果和直接写在页面里一样。组件以 context 一个 prop 接收上下文，
-     save 事件原样交回页面。 -->
+<!-- 特调插入点：按当前 flavor 在注册表里为这一页这个位置声明的组件依次渲染，没有就什么都不渲染。
+     不包外层元素，渲染结果和直接写在页面里一样。组件以 context 一个 prop 接收上下文；
+     只转发这一页的事件（脚本页 change、用户页 save），别的事件不挂到组件上。 -->
 <template>
   <component
     :is="entry.component"
     v-for="(entry, index) in entries"
     :key="`${flavor.type}:${index}`"
     :context="context"
-    @save="(key: string, value: unknown) => emit('save', key, value)"
+    v-on="listeners"
   />
 </template>
 
-<script setup lang="ts" generic="N extends MaaFWFlavorSlotName">
+<script setup lang="ts" generic="P extends MaaFWFlavorPart, N extends MaaFWFlavorSlotName<P>">
 import { computed } from 'vue'
 import { resolveMaaFWFlavorSlot } from '@/composables/useMaaFWFlavor'
 import type {
   MaaFWFlavor,
+  MaaFWFlavorPart,
   MaaFWFlavorSlotContextMap,
+  MaaFWFlavorSlotEmitMap,
   MaaFWFlavorSlotName,
 } from '@/composables/maafwFlavorTypes'
 
+defineOptions({ inheritAttrs: false })
+
 const props = defineProps<{
+  part: P
   name: N
   flavor: MaaFWFlavor
-  context: MaaFWFlavorSlotContextMap[N]
+  context: MaaFWFlavorSlotContextMap[P][N]
 }>()
 
 const emit = defineEmits<{
-  save: [key: string, value: unknown]
+  change: MaaFWFlavorSlotEmitMap['scriptPage']['change']
+  save: MaaFWFlavorSlotEmitMap['userPage']['save']
 }>()
 
-const entries = computed(() => resolveMaaFWFlavorSlot(props.flavor, props.name))
+const entries = computed(() => resolveMaaFWFlavorSlot(props.flavor, props.part, props.name))
+
+const listeners = computed(() =>
+  props.part === 'scriptPage'
+    ? {
+        change: (...args: MaaFWFlavorSlotEmitMap['scriptPage']['change']) =>
+          emit('change', ...args),
+      }
+    : { save: (...args: MaaFWFlavorSlotEmitMap['userPage']['save']) => emit('save', ...args) }
+)
 </script>

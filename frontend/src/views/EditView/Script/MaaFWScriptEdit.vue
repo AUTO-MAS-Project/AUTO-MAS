@@ -70,6 +70,13 @@
             @select-path="selectMaaFWPath"
             @preview-interface="handlePreviewInterface"
           />
+          <MaaFWFlavorSlot
+            part="scriptPage"
+            name="afterBasicInfo"
+            :flavor="flavor"
+            :context="flavorSlotContext"
+            @change="handleChange"
+          />
         </div>
 
         <div v-show="!isWizard || currentStep === 1">
@@ -80,6 +87,13 @@
             type="warning"
             show-icon
             :message="t(flavor.scriptPage.text.controllerHintKey)"
+          />
+          <MaaFWFlavorSlot
+            part="scriptPage"
+            name="beforeControl"
+            :flavor="flavor"
+            :context="flavorSlotContext"
+            @change="handleChange"
           />
           <component
             :is="sections.control"
@@ -108,6 +122,13 @@
             @emulator-select-change="handleEmulatorSelectChange"
             @select-launch-path="selectLaunchPath"
           />
+          <MaaFWFlavorSlot
+            part="scriptPage"
+            name="afterControl"
+            :flavor="flavor"
+            :context="flavorSlotContext"
+            @change="handleChange"
+          />
         </div>
 
         <div v-show="!isWizard || currentStep === 2">
@@ -128,6 +149,13 @@
             @check-update="runUpdateCheck"
             @apply-update="runUpdateApply"
           />
+          <MaaFWFlavorSlot
+            part="scriptPage"
+            name="afterUpdate"
+            :flavor="flavor"
+            :context="flavorSlotContext"
+            @change="handleChange"
+          />
         </div>
 
         <div v-show="!isWizard || currentStep === 3">
@@ -141,6 +169,13 @@
             :interface-dependent-disabled="interfaceDependentDisabled"
             @change="handleChange"
             @period-task-change="handlePeriodTaskChange"
+          />
+          <MaaFWFlavorSlot
+            part="scriptPage"
+            name="afterRun"
+            :flavor="flavor"
+            :context="flavorSlotContext"
+            @change="handleChange"
           />
         </div>
       </a-form>
@@ -196,6 +231,7 @@ import type { FormInstance } from 'ant-design-vue'
 import { ArrowLeftOutlined } from '@ant-design/icons-vue'
 import { updateChannelOptions, updateSourceOptions } from '@/composables/useMaaFWScriptConfig'
 import { useMaaFWSections } from '@/composables/useMaaFWFlavor'
+import MaaFWFlavorSlot from '@/views/EditView/MaaFWFlavor/MaaFWFlavorSlot.vue'
 // MFW 默认分节静态引入：通用 MFW 打开不闪；特调的替换分节由注册表按需加载
 import BasicInfoSection from './MaaFWScriptEdit/BasicInfoSection.vue'
 import ControlConfigSection from './MaaFWScriptEdit/ControlConfigSection.vue'
@@ -282,6 +318,7 @@ const {
   interfaceStats,
   handlePreviewInterface,
   handleCancel,
+  flavorSlotContext,
 } = useMaaFWScriptPage({ scriptId })
 
 // 各分节：默认用 MFW 的，当前特调替换了哪节就换成它的（契约见 MaaFWFlavor/sectionContracts）

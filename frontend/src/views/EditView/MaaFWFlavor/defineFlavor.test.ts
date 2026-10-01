@@ -73,7 +73,7 @@ const RICH_BASE: MaaFWFlavor = {
       noticeKey: 'base.notice',
     },
     sections: { header: headerSection },
-    slots: { userBeforeTaskQueue: [slot] },
+    slots: { beforeTaskQueue: [slot] },
     prepare,
   },
 }
@@ -122,7 +122,7 @@ describe('defineMaaFWFlavor 合并规则', () => {
       userPage: {
         text: { queueHintKey: null },
         managed: { entries: ['Own'], accountTask: null, warningKey: undefined },
-        slots: { userBeforeTaskQueue: [ownSlot] },
+        slots: { beforeTaskQueue: [ownSlot] },
         prepare: ownPrepare,
       },
     })
@@ -140,7 +140,7 @@ describe('defineMaaFWFlavor 合并规则', () => {
     })
     expect(flavor.scriptPage.sections).toEqual({ run: runSection })
     expect(flavor.userPage.sections).toEqual({})
-    expect(flavor.userPage.slots).toEqual({ userBeforeTaskQueue: [ownSlot] })
+    expect(flavor.userPage.slots).toEqual({ beforeTaskQueue: [ownSlot] })
     expect(flavor.userPage.prepare).toBe(ownPrepare)
   })
 

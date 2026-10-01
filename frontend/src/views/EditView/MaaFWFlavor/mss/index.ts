@@ -36,7 +36,7 @@ export const MSS_FLAVOR = defineMaaFWFlavor({
   userPage: {
     text: { queueHintKey: 'edit.mssFlavorQueueHint' },
     slots: {
-      userBeforeTaskQueue: [
+      beforeTaskQueue: [
         defineMaaFWLazyComponent(() => import('./MSSPlanModeField.vue')),
         defineMaaFWLazyComponent(() => import('./MSSActivityFirstField.vue')),
       ],

@@ -14,6 +14,7 @@ import type RunConfigSection from '../Script/MaaFWScriptEdit/RunConfigSection.vu
 import type ShellInstanceImportSection from '../Script/MaaFWScriptEdit/ShellInstanceImportSection.vue'
 import type MaaFWUserEditHeader from '../User/MaaFWUserEdit/MaaFWUserEditHeader.vue'
 import type UserBasicInfoSection from '../User/MaaFWUserEdit/BasicInfoSection.vue'
+import type MaaFWQueueHeaderSection from '../User/MaaFWUserEdit/MaaFWQueueHeaderSection.vue'
 import type TaskQueueSection from '../User/MaaFWUserEdit/TaskQueueSection.vue'
 
 type Assert<T extends true> = T
@@ -57,6 +58,12 @@ export type MaaFWDefaultSectionsAcceptTheirContracts = [
     MaaFWAcceptsSectionContract<
       typeof UserBasicInfoSection,
       MaaFWSectionContract<'userPage', 'basicInfo'>
+    >
+  >,
+  Assert<
+    MaaFWAcceptsSectionContract<
+      typeof MaaFWQueueHeaderSection,
+      MaaFWSectionContract<'userPage', 'queueHeader'>
     >
   >,
   Assert<

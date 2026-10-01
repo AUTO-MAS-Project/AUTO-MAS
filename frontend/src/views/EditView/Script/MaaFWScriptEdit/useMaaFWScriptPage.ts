@@ -4,7 +4,11 @@ import { useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
 import { useScriptApi } from '@/composables/useScriptApi'
 import { useMaaFWControlConfig } from '@/composables/useMaaFWScriptConfig'
-import { prepareMaaFWFlavorPage, useMaaFWFlavor } from '@/composables/useMaaFWFlavor'
+import {
+  prepareMaaFWFlavorPage,
+  useMaaFWFlavor,
+  type MaaFWScriptSlotContext,
+} from '@/composables/useMaaFWFlavor'
 import type { MaaFWInterfacePreviewData, MaaFWScriptConfig, ScriptType } from '@/types/script'
 import { useMaaFWScriptDraft } from './useMaaFWScriptDraft'
 import { useMaaFWPeriodTasks } from './useMaaFWPeriodTasks'
@@ -108,6 +112,16 @@ export function useMaaFWScriptPage({ scriptId }: MaaFWScriptPageOptions) {
     isWizard: wizard.isWizard,
   })
   const { syncProjectName } = identity
+
+  // 特调插入点的上下文：独有区块可以直接改 maafwConfig 草稿，落盘走 change 事件回到 handleChange
+  const flavorSlotContext = computed<MaaFWScriptSlotContext>(() => ({
+    scriptId,
+    maafwConfig,
+    previewData: previewData.value,
+    interfaceDisabled: control.interfaceDependentDisabled.value,
+    loading: pageLoading.value,
+    isWizard: wizard.isWizard.value,
+  }))
 
   const interfaceStats = computed(() => [
     { label: t('edit.task'), value: previewData.value?.tasks.length ?? 0 },
@@ -264,6 +278,7 @@ export function useMaaFWScriptPage({ scriptId }: MaaFWScriptPageOptions) {
     ...update,
     ...wizard,
     ...identity,
+    flavorSlotContext,
     interfaceStats,
     handlePreviewInterface,
     handleCancel,

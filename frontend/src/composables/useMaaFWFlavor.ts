@@ -16,14 +16,14 @@
 // 3. maafwFlavorTypes.ts 的 MaaFWFlavorType 加上 'X'。
 // 4. 新建目录 views/EditView/MaaFWFlavor/x/：index.ts 用 defineMaaFWFlavor 导出描述对象
 //    X_FLAVOR，只写与 MaaFW 不同的部分（合并规则见 MaaFWFlavor/defineFlavor.ts）；独有区块写成
-//    本目录下的组件，用 defineMaaFWLazyComponent 声明到 userPage.slots 的插入点上
-//    （按需加载），需要预取数据就给 userPage.prepare。要整个换掉 MFW 的某个分节，用
+//    本目录下的组件，用 defineMaaFWLazyComponent 声明到 scriptPage.slots / userPage.slots
+//    的插入点上（按需加载），需要预取数据就给该页的 prepare。要整个换掉 MFW 的某个分节，用
 //    defineMaaFWSection 写进 scriptPage.sections / userPage.sections（契约见
 //    MaaFWFlavor/sectionContracts.ts）。
 // 5. 在下面的 FLAVOR_REGISTRY 里登记 X_FLAVOR（漏登记 typecheck 会报错）。
 // 公共页面（MaaFW 脚本页 / 用户页、脚本列表、新建流程）与路由不用改：路由、类型卡片、
 // 路由后缀、用户类型白名单、默认脚本名都从这里生成。只有需要一个现在没有的插入点时，
-// 才在 MaaFWFlavorPartSlotContextMap 加名字、在公共页面对应位置放一个 <MaaFWFlavorSlot>。
+// 才在 MaaFWFlavorSlotContextMap 对应页面下加名字、在公共页面对应位置放一个 <MaaFWFlavorSlot>。
 // ──────────────────────────────────────────────────────────────────────────
 
 import { computed, toValue, type Component, type ComputedRef, type MaybeRefOrGetter } from 'vue'
@@ -42,8 +42,10 @@ import type {
 
 export type {
   MaaFWFlavor,
+  MaaFWFlavorPart,
   MaaFWFlavorSlotName,
   MaaFWFlavorType,
+  MaaFWScriptSlotContext,
   MaaFWUserSlotContext,
 } from './maafwFlavorTypes'
 
@@ -95,11 +97,13 @@ export const maafwScriptTypeByConfigType = (): Record<string, MaaFWFlavorType> =
 /** 后端给新建脚本起的默认名：脚本名还是其中之一时，读到 interface 后改成项目名 */
 export const maafwDefaultScriptNames = (): ReadonlySet<string> => DEFAULT_SCRIPT_NAMES
 
-/** 某个插入点上当前 flavor 要渲染的组件（没有就是空数组） */
-export const resolveMaaFWFlavorSlot = (
+/** 某一页某个插入点上当前 flavor 要渲染的组件（没有就是空数组） */
+export const resolveMaaFWFlavorSlot = <P extends MaaFWFlavorPart>(
   flavor: MaaFWFlavor,
-  name: MaaFWFlavorSlotName
-): readonly MaaFWLazyComponent[] => flavor.userPage.slots[name] ?? []
+  part: P,
+  name: MaaFWFlavorSlotName<P>
+): readonly MaaFWLazyComponent[] =>
+  (flavor[part].slots as Partial<Record<string, readonly MaaFWLazyComponent[]>>)[name] ?? []
 
 /**
  * 页面加载期间调用：预取该 flavor 在这一页的替换分节与插入点组件的 chunk、跑这一页的 prepare。

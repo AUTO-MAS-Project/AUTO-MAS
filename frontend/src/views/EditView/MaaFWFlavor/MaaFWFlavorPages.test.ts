@@ -1,9 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createSSRApp, defineComponent, h, reactive, shallowRef, type Component } from 'vue'
+import { createSSRApp, defineComponent, h, reactive, ref, shallowRef, type Component } from 'vue'
 import { renderToString } from '@vue/server-renderer'
 import { createI18n } from 'vue-i18n'
 import zhCN from '@/i18n/locales/zh-CN'
 import {
+  defineMaaFWLazyComponent,
   defineMaaFWSection,
   type MaaFWFlavor,
   type MaaFWFlavorPart,
@@ -124,11 +125,11 @@ const shell = (name: string) =>
   defineComponent({
     name,
     inheritAttrs: false,
-    setup(_props, { slots }) {
+    setup(_props, { attrs, slots }) {
       return () =>
         h(
           'div',
-          { class: name },
+          { class: [name, attrs.class] },
           Object.values(slots).map(slot => slot?.())
         )
     },
@@ -144,6 +145,12 @@ const SHELLS = [
   'AAlert',
   'ATag',
   'AFlex',
+  'AFormItem',
+  'ASelect',
+  'ASwitch',
+  'AEmpty',
+  'ADescriptions',
+  'ADescriptionsItem',
   'RouterLink',
 ]
 
@@ -220,6 +227,14 @@ const scriptState = (flavor: MaaFWFlavor) => ({
   interfaceStats: [],
   handlePreviewInterface: fn('handlePreviewInterface'),
   handleCancel: fn('handleCancel'),
+  flavorSlotContext: {
+    scriptId: 's1',
+    maafwConfig: { Info: { Name: 'n' } },
+    previewData: { tasks: [] },
+    interfaceDisabled: false,
+    loading: false,
+    isWizard: true,
+  },
 })
 
 const userState = (flavor: MaaFWFlavor) => ({
@@ -241,7 +256,13 @@ const userState = (flavor: MaaFWFlavor) => ({
   queueHintLines: [],
   accountRecordTooltip: '提示',
   managedQueueAlert: null,
-  flavorSlotContext: { formData: {}, loading: false, queuedTaskCount: 0 },
+  flavorSlotContext: {
+    formData: { Info: {} },
+    loading: false,
+    queuedTaskCount: 0,
+    previewData: null,
+    scriptId: 's1',
+  },
   taskByName: new Map(),
   effectiveControllerName: 'Win',
   effectiveResourceName: 'Official',
@@ -278,16 +299,19 @@ const render = async (page: Component) => {
   const app = createSSRApp(page)
   app.use(i18n)
   for (const name of SHELLS) app.component(name, shell(name))
-  return (await renderToString(app)).replace(/<!--[\s\S]*?-->/g, '')
+  // 去掉注释锚点与 scoped 样式的 data-v 属性，只比结构
+  return (await renderToString(app))
+    .replace(/<!--[\s\S]*?-->/g, '')
+    .replace(/ data-v-[0-9a-f]+(="")?/g, '')
 }
 
-const renderScriptPage = async (flavor: MaaFWFlavor) => {
-  mocks.script = scriptState(flavor)
+const renderScriptPage = async (flavor: MaaFWFlavor, overrides: Record<string, unknown> = {}) => {
+  mocks.script = { ...scriptState(flavor), ...overrides }
   return render(MaaFWScriptEdit)
 }
 
-const renderUserPage = async (flavor: MaaFWFlavor) => {
-  mocks.user = userState(flavor)
+const renderUserPage = async (flavor: MaaFWFlavor, overrides: Record<string, unknown> = {}) => {
+  mocks.user = { ...userState(flavor), ...overrides }
   return render(MaaFWUserEdit)
 }
 
@@ -401,5 +425,166 @@ describe('MFW 页面分节替换', () => {
       const html = await renderScriptPage(resolveMaaFWFlavor(type))
       expect(html).toContain('data-section="default:control"')
     }
+  })
+})
+
+/** 插入点里的组件：渲染一个标记，并在 setup 里替用户发一次事件 */
+const markerSlot = (name: string, event?: { name: string; args: unknown[] }) =>
+  defineMaaFWLazyComponent(async () =>
+    defineComponent({
+      props: { context: { type: Object, required: true } },
+      emits: event ? [event.name] : [],
+      setup(props, { emit }) {
+        received.set(name, { context: props.context })
+        if (event) emit(event.name, ...event.args)
+        return () => h('p', name)
+      },
+    })
+  )
+
+const withSlots = (
+  base: MaaFWFlavor,
+  scriptSlots: MaaFWFlavor['scriptPage']['slots'],
+  userSlots: MaaFWFlavor['userPage']['slots'] = {}
+): MaaFWFlavor => ({
+  ...base,
+  scriptPage: { ...base.scriptPage, slots: scriptSlots },
+  userPage: { ...base.userPage, slots: userSlots },
+})
+
+describe('MFW 页面插入点', () => {
+  it('脚本页五个插入点各在自己的引导步骤块里，紧跟对应分节', async () => {
+    const base = resolveMaaFWFlavor('MSS')
+    const flavor = withSlots(base, {
+      afterBasicInfo: [markerSlot('slot:afterBasicInfo')],
+      beforeControl: [markerSlot('slot:beforeControl')],
+      afterControl: [markerSlot('slot:afterControl')],
+      afterUpdate: [markerSlot('slot:afterUpdate')],
+      afterRun: [markerSlot('slot:afterRun')],
+    })
+    const html = await renderScriptPage(flavor)
+    const section = (key: string) => `<section data-section="default:${key}"></section>`
+    const slot = (name: string) => `<p>slot:${name}</p>`
+    // 引导停在最后一步：前三步的块隐藏，插入点跟着所在步骤一起隐藏
+    const hidden = '<div style="display:none;">'
+    expect(html).toContain(`${hidden}${section('basicInfo')}${slot('afterBasicInfo')}</div>`)
+    expect(html).toContain(
+      `${hidden}<div class="AAlert flavor-controller-hint"></div>${slot('beforeControl')}${section('control')}${slot('afterControl')}</div>`
+    )
+    expect(html).toContain(`${hidden}${section('update')}${slot('afterUpdate')}</div>`)
+    expect(html).toContain(`<div>${section('run')}${slot('afterRun')}</div>`)
+    // 上下文：脚本 id、配置草稿、interface、置灰与引导标记
+    expect(received.get('slot:afterControl')).toMatchObject({
+      context: {
+        scriptId: 's1',
+        interfaceDisabled: false,
+        loading: false,
+        isWizard: true,
+        previewData: { tasks: [] },
+        maafwConfig: { Info: { Name: 'n' } },
+      },
+    })
+  })
+
+  it('脚本页插入点的 change 交给页面的 handleChange（初始化闸门在那里）', async () => {
+    const handleChange = vi.fn()
+    const flavor = withSlots(resolveMaaFWFlavor('MaaFW'), {
+      afterRun: [markerSlot('slot:afterRun', { name: 'change', args: ['Run', 'Foo', true] })],
+    })
+    await renderScriptPage(flavor, {
+      handleChange,
+      flavorSlotContext: { scriptId: 's1' },
+    })
+    expect(handleChange.mock.calls).toEqual([['Run', 'Foo', true]])
+  })
+
+  it('用户页三个插入点：基本信息之后、队列标题之后两栏之前、两栏之后；save 交给 handleFieldSave', async () => {
+    const handleFieldSave = vi.fn()
+    const flavor = withSlots(
+      resolveMaaFWFlavor('MaaFW'),
+      {},
+      {
+        afterBasicInfo: [markerSlot('slot:afterBasicInfo')],
+        beforeTaskQueue: [markerSlot('slot:beforeTaskQueue')],
+        afterTaskQueue: [
+          markerSlot('slot:afterTaskQueue', { name: 'save', args: ['Info.Foo', 1] }),
+        ],
+      }
+    )
+    const html = await renderUserPage(flavor, { handleFieldSave })
+    const order = [
+      '<section data-section="default:userBasicInfo">',
+      '<p>slot:afterBasicInfo</p>',
+      '<h3>任务队列配置</h3>',
+      '<p>slot:beforeTaskQueue</p>',
+      '<section data-section="default:taskQueue">',
+      '<p>slot:afterTaskQueue</p>',
+    ].map(marker => html.indexOf(marker))
+    expect(order.every(index => index >= 0)).toBe(true)
+    expect([...order].sort((a, b) => a - b)).toEqual(order)
+    expect(handleFieldSave.mock.calls).toEqual([['Info.Foo', 1]])
+  })
+
+  it('MSS 的计划表与活动优先仍在队列标题之后、两栏之前', async () => {
+    const html = await renderUserPage(resolveMaaFWFlavor('MSS'), {
+      flavorSlotContext: {
+        formData: { Info: { PlanMode: 'Fixed' } },
+        loading: false,
+        queuedTaskCount: 1,
+        previewData: null,
+        scriptId: 's1',
+      },
+    })
+    const header = html.indexOf('<h3>任务队列配置</h3>')
+    const plan = html.indexOf('flavor-plan-mode')
+    const activity = html.indexOf('flavor-activity-first')
+    const queue = html.indexOf('data-section="default:taskQueue"')
+    expect(header).toBeGreaterThanOrEqual(0)
+    expect(plan).toBeGreaterThan(header)
+    expect(activity).toBeGreaterThan(plan)
+    expect(queue).toBeGreaterThan(activity)
+  })
+})
+
+describe('用户页队列标题分节 queueHeader', () => {
+  it('默认分节：标题 + 配置恢复按钮 + 一行一个提示框 + 受管任务提示，与抽出前同样的结构', async () => {
+    const html = await renderUserPage(resolveMaaFWFlavor('MaaFW'), {
+      queueHintLines: ['第一行', '第二行'],
+      managedQueueAlert: { type: 'warning', message: '要拆用户' },
+    })
+    const start = html.indexOf('<div class="AFlex section-header"')
+    const end = html.indexOf('<section data-section="default:taskQueue">')
+    expect(start).toBeGreaterThanOrEqual(0)
+    expect(html.slice(start, end)).toBe(
+      '<div class="AFlex section-header"><h3>任务队列配置</h3><div class="AButton"> 配置恢复</div></div>' +
+        '<div class="AAlert flavor-queue-hint"></div>'.repeat(3)
+    )
+  })
+
+  it('换成特调的 queueHeader：收到提示行、受管提示与 open-restore 监听，点了打开恢复弹窗', async () => {
+    const restoreOpen = ref(false)
+    const flavor = withSections(
+      resolveMaaFWFlavor('MaaFW'),
+      {},
+      {
+        queueHeader: fakeSection('userPage', 'queueHeader', async () =>
+          recordingStub('flavor:queueHeader')
+        ),
+      }
+    )
+    const html = await renderUserPage(flavor, {
+      restoreOpen,
+      queueHintLines: ['提示'],
+      managedQueueAlert: null,
+    })
+    expect(html).toContain('data-section="flavor:queueHeader"')
+    expect(html).not.toContain('<h3>任务队列配置</h3>')
+    const attrs = received.get('flavor:queueHeader')!
+    expect(Object.keys(attrs).sort()).toEqual(
+      ['managed-queue-alert', 'onOpenRestore', 'queue-hint-lines'].sort()
+    )
+    expect(attrs['queue-hint-lines']).toEqual(['提示'])
+    ;(attrs.onOpenRestore as () => void)()
+    expect(restoreOpen.value).toBe(true)
   })
 })

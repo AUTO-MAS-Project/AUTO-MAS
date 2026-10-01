@@ -7,9 +7,14 @@ import { resolveMaaFWFlavor } from '@/composables/useMaaFWFlavor'
 import {
   defineMaaFWLazyComponent,
   type MaaFWFlavor,
+  type MaaFWFlavorPart,
+  type MaaFWFlavorSlotContextMap,
+  type MaaFWFlavorSlotName,
+  type MaaFWScriptSlotContext,
   type MaaFWUserFormData,
   type MaaFWUserSlotContext,
 } from '@/composables/maafwFlavorTypes'
+import type { MaaFWScriptConfig } from '@/types/script'
 import MaaFWFlavorSlot from './MaaFWFlavorSlot.vue'
 import { mssPlanComboxItems } from './mss/planModeOptions'
 
@@ -90,36 +95,149 @@ const makeContext = (
   }) as unknown as MaaFWUserFormData,
   loading: false,
   queuedTaskCount: 0,
+  previewData: null,
+  scriptId: 's1',
   ...overrides,
 })
 
-async function renderSlot(
+const makeScriptContext = (): MaaFWScriptSlotContext => ({
+  scriptId: 's1',
+  maafwConfig: reactive({ Info: { Name: 'n' } }) as unknown as MaaFWScriptConfig,
+  previewData: null,
+  interfaceDisabled: false,
+  loading: false,
+  isWizard: true,
+})
+
+async function renderPartSlot<P extends MaaFWFlavorPart>(
+  part: P,
+  name: MaaFWFlavorSlotName<P>,
+  flavor: MaaFWFlavor,
+  context: MaaFWFlavorSlotContextMap[P][MaaFWFlavorSlotName<P>],
+  listeners: Record<string, (...args: never[]) => void> = {}
+): Promise<string> {
+  const app = createSSRApp(MaaFWFlavorSlot, { part, name, flavor, context, ...listeners })
+  app.use(i18n)
+  for (const [stubName, component] of Object.entries(stubs)) app.component(stubName, component)
+  return (await renderToString(app)).replace(/<!--[\s\S]*?-->/g, '')
+}
+
+/** 用户页「任务队列两栏之上」的插入点（MSS 的两个区块在这里） */
+const renderSlot = (
   flavor: MaaFWFlavor,
   context: MaaFWUserSlotContext,
   onSave: (key: string, value: unknown) => void = () => undefined
-): Promise<string> {
-  const app = createSSRApp(MaaFWFlavorSlot, {
-    name: 'userBeforeTaskQueue',
-    flavor,
-    context,
-    onSave,
-  })
-  app.use(i18n)
-  for (const [name, component] of Object.entries(stubs)) app.component(name, component)
-  return (await renderToString(app)).replace(/<!--[\s\S]*?-->/g, '')
-}
+) => renderPartSlot('userPage', 'beforeTaskQueue', flavor, context, { onSave })
+
+const SCRIPT_SLOTS = [
+  'afterBasicInfo',
+  'beforeControl',
+  'afterControl',
+  'afterUpdate',
+  'afterRun',
+] as const
+const USER_SLOTS = ['afterBasicInfo', 'beforeTaskQueue', 'afterTaskQueue'] as const
+
+/** 记录收到的 context 与全部监听，并在 setup 里替用户发一次事件 */
+const recorded: Array<{ name: string; context: unknown; attrs: string[] }> = []
+const reportingSlot = (name: string, event: string, args: unknown[]) =>
+  defineMaaFWLazyComponent(async () =>
+    defineComponent({
+      props: { context: { type: Object, required: true } },
+      emits: [event],
+      setup(props, { attrs, emit }) {
+        recorded.push({ name, context: props.context, attrs: Object.keys(attrs) })
+        emit(event, ...args)
+        return () => h('p', name)
+      },
+    })
+  )
 
 afterEach(() => {
   delete actions.select
   delete actions.switchTo
   mssPlanComboxItems.value = null
+  recorded.length = 0
 })
 
 describe('MaaFWFlavorSlot 插入点渲染器', () => {
-  it('MaaFW / M9A 在用户页插入点什么都不渲染，也不加载 MSS 的组件', async () => {
-    for (const type of ['MaaFW', 'M9A']) {
-      expect(await renderSlot(resolveMaaFWFlavor(type), makeContext())).toBe('')
+  it('MaaFW / M9A 在两页的每个插入点都什么都不渲染；MSS 只在用户页队列上方有东西', async () => {
+    for (const type of ['MaaFW', 'M9A', 'MSS']) {
+      const flavor = resolveMaaFWFlavor(type)
+      for (const name of SCRIPT_SLOTS) {
+        expect([
+          type,
+          name,
+          await renderPartSlot('scriptPage', name, flavor, makeScriptContext()),
+        ]).toEqual([type, name, ''])
+      }
+      for (const name of USER_SLOTS) {
+        if (type === 'MSS' && name === 'beforeTaskQueue') continue
+        expect([type, name, await renderPartSlot('userPage', name, flavor, makeContext())]).toEqual(
+          [type, name, '']
+        )
+      }
     }
+  })
+
+  it('脚本页插入点：只渲染这一页这个位置的组件，change 原样交回页面，不挂 save', async () => {
+    const base = resolveMaaFWFlavor('MaaFW')
+    const flavor: MaaFWFlavor = {
+      ...base,
+      scriptPage: {
+        ...base.scriptPage,
+        slots: {
+          afterControl: [reportingSlot('script:afterControl', 'change', ['Game', 'Foo', 1])],
+        },
+      },
+      userPage: {
+        ...base.userPage,
+        slots: { afterBasicInfo: [reportingSlot('user:afterBasicInfo', 'save', ['Info.X', 1])] },
+      },
+    }
+    const onChange = vi.fn()
+    const onSave = vi.fn()
+    const context = makeScriptContext()
+    const html = await renderPartSlot('scriptPage', 'afterControl', flavor, context, {
+      onChange,
+      onSave,
+    })
+    expect(html).toBe('<p>script:afterControl</p>')
+    expect(onChange.mock.calls).toEqual([['Game', 'Foo', 1]])
+    expect(onSave).not.toHaveBeenCalled()
+    expect(recorded).toEqual([{ name: 'script:afterControl', context, attrs: [] }])
+    // 同名的位置在另一页是另一个插入点
+    expect(await renderPartSlot('scriptPage', 'afterBasicInfo', flavor, context)).toBe('')
+  })
+
+  it('用户页插入点：save 原样交回页面，不挂 change；上下文带只读的 interface 与脚本 id', async () => {
+    const base = resolveMaaFWFlavor('MaaFW')
+    const flavor: MaaFWFlavor = {
+      ...base,
+      userPage: {
+        ...base.userPage,
+        slots: {
+          afterBasicInfo: [reportingSlot('user:afterBasicInfo', 'save', ['Info.X', 1])],
+          afterTaskQueue: [reportingSlot('user:afterTaskQueue', 'save', ['Info.Y', 2])],
+        },
+      },
+    }
+    const onChange = vi.fn()
+    const onSave = vi.fn()
+    const context = makeContext({ previewData: { tasks: [] } as never })
+    expect(
+      await renderPartSlot('userPage', 'afterBasicInfo', flavor, context, { onChange, onSave })
+    ).toBe('<p>user:afterBasicInfo</p>')
+    expect(
+      await renderPartSlot('userPage', 'afterTaskQueue', flavor, context, { onChange, onSave })
+    ).toBe('<p>user:afterTaskQueue</p>')
+    expect(onSave.mock.calls).toEqual([
+      ['Info.X', 1],
+      ['Info.Y', 2],
+    ])
+    expect(onChange).not.toHaveBeenCalled()
+    expect(recorded.map(entry => entry.attrs)).toEqual([[], []])
+    expect(recorded[0].context).toMatchObject({ scriptId: 's1', previewData: { tasks: [] } })
   })
 
   it('当前 flavor 声明了组件才渲染，异步组件加载后按声明顺序显示', async () => {
@@ -137,7 +255,7 @@ describe('MaaFWFlavorSlot 插入点渲染器', () => {
       userPage: {
         ...base.userPage,
         slots: {
-          userBeforeTaskQueue: [
+          beforeTaskQueue: [
             defineMaaFWLazyComponent(load),
             defineMaaFWLazyComponent(async () =>
               defineComponent({ setup: () => () => h('p', '第二个') })

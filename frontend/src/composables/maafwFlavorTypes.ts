@@ -3,7 +3,12 @@
 // 而注册表又要 import 那些描述对象，放在同一个文件里会成环。
 
 import { defineAsyncComponent, type Component } from 'vue'
-import type { MaaFWUserConfig, ScriptType } from '@/types/script'
+import type {
+  MaaFWInterfacePreviewData,
+  MaaFWScriptConfig,
+  MaaFWUserConfig,
+  ScriptType,
+} from '@/types/script'
 import type { MaaFWSectionContractMap } from '@/views/EditView/MaaFWFlavor/sectionContracts'
 
 /** 由 MaaFW 引擎运行的脚本类型：MaaFW 本身 + 各特调。新增特调时在这里加一项 */
@@ -13,24 +18,62 @@ export type MaaFWFlavorType = Extract<ScriptType, 'MaaFW' | 'M9A' | 'MSS'>
 export type MaaFWUserFormData = MaaFWUserConfig & { userName: string }
 
 /**
- * 插入点：公共页面上留给特调独有区块的位置，按页面分组。只按现有特调实际用到的位置定义，
- * 需要新位置时在对应页面下加名字和它的上下文，再在公共页面对应处放一个 <MaaFWFlavorSlot>。
+ * 插入点：公共页面上留给特调独有区块的位置，按页面分组，名字只在本页内有意义。
+ * 需要新位置时在对应页面下加名字，再在公共页面对应处放一个
+ * `<MaaFWFlavorSlot part="…" name="…">`。脚本页的插入点都在引导的步骤块里面，
+ * 所以在引导里随所在步骤出现，在编辑页紧跟对应分节。
  */
-export interface MaaFWFlavorPartSlotContextMap {
-  scriptPage: Record<never, never>
+export interface MaaFWFlavorSlotContextMap {
+  scriptPage: {
+    /** 基本信息（名称、项目目录、运行环境）之后；引导第 1 步 */
+    afterBasicInfo: MaaFWScriptSlotContext
+    /** 控制方式一步顶部的特调提示之后、控制方式分节之前；引导第 2 步 */
+    beforeControl: MaaFWScriptSlotContext
+    /** 控制方式分节之后；引导第 2 步 */
+    afterControl: MaaFWScriptSlotContext
+    /** 项目更新分节之后；引导第 3 步 */
+    afterUpdate: MaaFWScriptSlotContext
+    /** 运行设置分节之后；引导第 4 步 */
+    afterRun: MaaFWScriptSlotContext
+  }
   userPage: {
-    /** 用户页「任务队列配置」标题与队列提示之下、任务队列两栏之上 */
-    userBeforeTaskQueue: MaaFWUserSlotContext
+    /** 用户基本信息之后、「任务队列配置」标题之前 */
+    afterBasicInfo: MaaFWUserSlotContext
+    /** 「任务队列配置」标题与队列提示之下、任务队列两栏之上 */
+    beforeTaskQueue: MaaFWUserSlotContext
+    /** 任务队列两栏之后、附加脚本之前 */
+    afterTaskQueue: MaaFWUserSlotContext
   }
 }
 
 /** 描述对象里按页面分组的部分 */
-export type MaaFWFlavorPart = keyof MaaFWFlavorPartSlotContextMap
+export type MaaFWFlavorPart = keyof MaaFWFlavorSlotContextMap
 
-/** 用户页的插入点（MaaFWFlavorSlot 目前只放在用户页） */
-export type MaaFWFlavorSlotContextMap = MaaFWFlavorPartSlotContextMap['userPage']
+/** 某一页的插入点名 */
+export type MaaFWFlavorSlotName<P extends MaaFWFlavorPart> = keyof MaaFWFlavorSlotContextMap[P] &
+  string
 
-export type MaaFWFlavorSlotName = keyof MaaFWFlavorSlotContextMap
+/** 插入点组件交回页面的事件：脚本页交 change（按 category.key 落盘），用户页交 save */
+export interface MaaFWFlavorSlotEmitMap {
+  scriptPage: { change: [category: keyof MaaFWScriptConfig, key: string, value: unknown] }
+  userPage: { save: [key: string, value: unknown] }
+}
+
+/**
+ * 脚本页插入点的上下文。组件以 `context` 一个 prop 接收；配置草稿归页面所有，组件可以直接
+ * 改 maafwConfig 的字段，落盘通过 `change(category, key, value)` 交回页面（初始化期间页面不落盘）。
+ */
+export interface MaaFWScriptSlotContext {
+  readonly scriptId: string
+  maafwConfig: MaaFWScriptConfig
+  readonly previewData: MaaFWInterfacePreviewData | null
+  /** interface 还没读到或正在读：依赖 interface 的控件置灰 */
+  readonly interfaceDisabled: boolean
+  /** 页面仍在加载 */
+  readonly loading: boolean
+  /** 当前是引导（新建脚本后的分步向导）而不是编辑页 */
+  readonly isWizard: boolean
+}
 
 /**
  * 用户页插入点的上下文。组件以 `context` 一个 prop 接收，改动直接写进 formData
@@ -39,9 +82,12 @@ export type MaaFWFlavorSlotName = keyof MaaFWFlavorSlotContextMap
 export interface MaaFWUserSlotContext {
   formData: MaaFWUserFormData
   /** 页面仍在加载：控件置灰 */
-  loading: boolean
-  /** 任务队列里的任务实例数 */
-  queuedTaskCount: number
+  readonly loading: boolean
+  /** 任务队列里的任务实例数（虚影不算） */
+  readonly queuedTaskCount: number
+  /** 读到的 interface；没读到为 null */
+  readonly previewData: MaaFWInterfacePreviewData | null
+  readonly scriptId: string
 }
 
 /**
@@ -63,7 +109,7 @@ export const defineMaaFWLazyComponent = (
 
 /** 某个页面的插入点 → 组件（按数组顺序渲染）；没有独有区块写 {} */
 export type MaaFWFlavorSlots<P extends MaaFWFlavorPart> = {
-  [N in keyof MaaFWFlavorPartSlotContextMap[P]]?: readonly MaaFWLazyComponent[]
+  [N in MaaFWFlavorSlotName<P>]?: readonly MaaFWLazyComponent[]
 }
 
 // ---- 分节替换 ----

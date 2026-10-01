@@ -195,6 +195,19 @@ export interface MaaFWUserBasicInfoSectionEmits {
   save: [key: string, value: unknown]
 }
 
+/** 用户页 `queueHeader`：「任务队列配置」标题与配置恢复入口、队列提示、受管任务提示 */
+export interface MaaFWUserQueueHeaderSectionProps {
+  /** 特调的队列提示，一行一个框（没有就是空数组） */
+  queueHintLines: string[]
+  /** 队列里残留受管任务时的提示；没有为 null */
+  managedQueueAlert: { type: 'warning' | 'info'; message: string } | null
+}
+
+export interface MaaFWUserQueueHeaderSectionEmits {
+  /** 点了「配置恢复」：页面打开恢复弹窗 */
+  'open-restore': []
+}
+
 /** 「添加任务」级联菜单的一项 */
 export type AddTaskCascaderOption = {
   value: string
@@ -250,6 +263,7 @@ export interface MaaFWUserTaskQueueSectionEmits {
 export interface MaaFWUserSectionContracts {
   header: MaaFWUserHeaderSectionProps
   basicInfo: MaaFWUserBasicInfoSectionProps
+  queueHeader: MaaFWUserQueueHeaderSectionProps
   taskQueue: MaaFWUserTaskQueueSectionProps
 }
 

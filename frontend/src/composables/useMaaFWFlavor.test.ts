@@ -232,9 +232,13 @@ describe('MaaFW 特调注册表', () => {
   })
 
   it('只有 MSS 在用户页队列上方有独有区块，MaaFW / M9A 什么都不插', () => {
-    expect(resolveMaaFWFlavorSlot(resolveMaaFWFlavor('MSS'), 'userBeforeTaskQueue')).toHaveLength(2)
+    expect(
+      resolveMaaFWFlavorSlot(resolveMaaFWFlavor('MSS'), 'userPage', 'beforeTaskQueue')
+    ).toHaveLength(2)
     for (const type of ['MaaFW', 'M9A']) {
-      expect(resolveMaaFWFlavorSlot(resolveMaaFWFlavor(type), 'userBeforeTaskQueue')).toEqual([])
+      expect(
+        resolveMaaFWFlavorSlot(resolveMaaFWFlavor(type), 'userPage', 'beforeTaskQueue')
+      ).toEqual([])
       expect(resolveMaaFWFlavor(type).userPage.prepare).toBeNull()
     }
     expect(resolveMaaFWFlavor('MSS').userPage.prepare).toBeTypeOf('function')
@@ -280,7 +284,7 @@ describe('MaaFW 特调注册表', () => {
       userPage: {
         ...base.userPage,
         sections: { taskQueue: { ...lazy('taskQueue'), part: 'userPage', key: 'taskQueue' } },
-        slots: { userBeforeTaskQueue: [lazy('slotA'), lazy('slotB', 'throw')] },
+        slots: { beforeTaskQueue: [lazy('slotA'), lazy('slotB', 'throw')] },
         prepare: userPrepare,
       },
     } as unknown as MaaFWFlavor
@@ -311,7 +315,7 @@ describe('MaaFW 特调注册表', () => {
         ...base,
         userPage: {
           ...base.userPage,
-          slots: { userBeforeTaskQueue: [{ component: {}, load }] },
+          slots: { beforeTaskQueue: [{ component: {}, load }] },
           prepare,
         },
       },
