@@ -41,7 +41,53 @@ ACTIVITY_MAX_PAGES = 2
 ## 只有「活动」算活动，卡池、掉落加倍、维护等分类不算
 WANTED_TYPE = "Event"
 
+## Kivo 把公告也塞进 Event 分类：总决算、登录签到、宣传活动、常驻化都在里面。
+## 只用 type 判断会让「有活动」几乎恒为真（实测过去 90 天 CN 92% / JP 96%），
+## 「活动关优先」就退化成常开。标题必须带「活动」二字、且不含下列公告词才算
+## 活动档期（Kivo 的标题统一是中文，JP / 国际服条目也一样）。
+ACTIVITY_TITLE_KEYWORD = "活动"
+ANNOUNCEMENT_TITLE_KEYWORDS = (
+    "常驻",
+    "登录",
+    "登入",
+    "签到",
+    "总决算",
+    "宣传",
+    "纪念",
+)
+
+## 正常活动档期在几天到数周之间：单日公告不足一天，常驻化条目可以挂几个月
+MIN_ACTIVITY_SECONDS = 24 * 60 * 60
+MAX_ACTIVITY_SECONDS = 60 * 24 * 60 * 60
+
 BlueArchiveLineType = Literal["JP", "Globle", "CN"]
+
+
+def _is_activity_entry(item: Mapping[str, object]) -> bool:
+    """判断一条 Kivo 时间轴条目是不是有档期的活动。
+
+    Args:
+        item: 时间轴条目，含 ``type`` / ``title`` / ``start_time`` / ``end_time``。
+
+    Returns:
+        bool: 是活动档期时为 True。
+    """
+
+    if item.get("type") != WANTED_TYPE:
+        return False
+
+    title = str(item.get("title") or "")
+    if ACTIVITY_TITLE_KEYWORD not in title:
+        return False
+    if any(word in title for word in ANNOUNCEMENT_TITLE_KEYWORDS):
+        return False
+
+    start = item.get("start_time")
+    end = item.get("end_time")
+    if not isinstance(start, (int, float)) or not isinstance(end, (int, float)):
+        return False
+
+    return MIN_ACTIVITY_SECONDS <= end - start <= MAX_ACTIVITY_SECONDS
 
 
 @dataclass(frozen=True)
@@ -67,16 +113,14 @@ def has_running_activity_in(
     """
 
     for item in items:
-        if item.get("type") != WANTED_TYPE:
+        if not _is_activity_entry(item):
             continue
 
         start = item.get("start_time")
         end = item.get("end_time")
-        if not isinstance(start, (int, float)) or not isinstance(end, (int, float)):
-            continue
-
-        if start <= now_seconds < end:
-            return True
+        if isinstance(start, (int, float)) and isinstance(end, (int, float)):
+            if start <= now_seconds < end:
+                return True
 
     return False
 
@@ -100,7 +144,7 @@ def collect_activities(
     picked: dict[str, ActivityInfo] = {}
 
     for item in items:
-        if item.get("type") != WANTED_TYPE:
+        if not _is_activity_entry(item):
             continue
 
         start = item.get("start_time")
@@ -110,7 +154,6 @@ def collect_activities(
             not name
             or not isinstance(start, (int, float))
             or not isinstance(end, (int, float))
-            or end <= start
         ):
             continue
 

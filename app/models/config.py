@@ -5297,6 +5297,35 @@ class GlobalConfig(ConfigBase):
         return json.dumps(all_stage_data, ensure_ascii=False)
 
 
+def _migrate_baah_event_first(data: dict) -> tuple[dict, bool]:
+    """把存量配置里的「活动适配」开关接到新的「活动关优先」。
+
+    ``Info.IfActivityAdapt`` 与 ``Info.ActivityConfigName`` 随 5.5.0 / 5.6.0
+    发出去过，本版改成计划表 + 活动关优先后两个字段都被删除。若直接删字段，
+    当年开着活动适配的用户升级后 ``IfEventFirst`` 仍取默认的关，活动期间不再
+    有任何动作，等于静默失效；这里把那时开着的适配开关迁移到 ``IfEventFirst``，
+    保持升级前后的行为一致。
+
+    ``ActivityConfigName`` 指向的是 BAAH 的配置文件名，新方案里没有对应概念
+    （换成按周排的计划表），无法自动迁移，只能留在旧文件里不再读取。
+
+    Returns:
+        (迁移后的配置字典, 是否发生了迁移)
+    """
+
+    normalized_data = deepcopy(data) if isinstance(data, dict) else {}
+    info = normalized_data.get("Info")
+    if not isinstance(info, dict):
+        return normalized_data, False
+
+    ## 已经写过新键的配置不动，避免把用户后来的选择覆盖回 True
+    if "IfEventFirst" in info or not info.get("IfActivityAdapt"):
+        return normalized_data, False
+
+    info["IfEventFirst"] = True
+    return normalized_data, True
+
+
 class BAAHUserConfig(ConfigBase):
     """BAAH 用户配置"""
 
@@ -5395,6 +5424,15 @@ class BAAHUserConfig(ConfigBase):
         tags.append(_tag_notes(self))
 
         return json.dumps(tags, ensure_ascii=False)
+
+    async def load(self, data: dict) -> bool:
+        """加载用户配置前，把旧的活动适配开关迁移到「活动关优先」。"""
+
+        migrated_data, migrated = _migrate_baah_event_first(data)
+        is_dirty = await super().load(migrated_data)
+        if migrated and not is_dirty:
+            await self._commit_changes()
+        return is_dirty or migrated
 
 
 class BAAHConfig(ConfigBase):
