@@ -25,17 +25,18 @@
    上游自会按数量上限清理旧图）。只在通知需要附图时读取本轮最新的一张，
    属于对上游产物的透传读取，不写 MAA 目录。
 2. MAS 补截：上游没落图的场景（登录链失败、进程超时等）通过 adb 截一张
-   当前画面兜底，纯内存不落盘。
+   当前画面兜底，复用失败截图工具存入 MAS 的 ``debug/maa-failure/``，
+   供通知与问题包共用。
 
 ``not_before`` 传本轮尝试的开始时刻：目录长期累积，不用时间窗会把上一次
 运行的旧图当成这次的现场。
 """
 
 import asyncio
-import io
 from datetime import datetime
 from pathlib import Path
 
+from app.tools.error_screenshot import save_error_screenshot
 from app.utils import get_logger
 
 logger = get_logger("MAA 失败截图")
@@ -94,8 +95,8 @@ def collect_maa_failure_image(
 
 async def capture_current_screen(
     *, adb_path: Path | str | None, adb_address: str
-) -> bytes | None:
-    """通过 adb 补截一张当前画面（PNG 字节），上游没留图时的兜底。
+) -> Path | None:
+    """通过 adb 补截当前画面并保存为诊断图片，上游没留图时的兜底。
 
     只在 MAA 已退出之后调用（如收尾阶段）：登录链失败、进程超时这些上游
     不落图的场景，截到的是"此刻的屏幕"，不保证是异常发生瞬间——MAA 的
@@ -116,15 +117,14 @@ async def capture_current_screen(
         logger.warning(f"加载 ADB 截图工具失败，通知不带图: {exc}")
         return None
 
-    def _capture() -> bytes:
+    def _capture() -> Path | None:
         image = OCRTool.get_screenshot_with_adb(str(adb_path), adb_address)
         low, high = image.convert("L").getextrema()
         if high - low < 8:
             raise RuntimeError("截图为纯色画面（疑似未取到游戏渲染层），放弃")
-        buffer = io.BytesIO()
-        image.save(buffer, format="PNG")
-        logger.info("MAA 补截当前画面成功")
-        return buffer.getvalue()
+        return save_error_screenshot(
+            image=image, dir_name="maa-failure", file_prefix="failure"
+        )
 
     try:
         return await asyncio.to_thread(_capture)

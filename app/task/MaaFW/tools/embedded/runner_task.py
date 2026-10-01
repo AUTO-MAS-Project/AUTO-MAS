@@ -65,8 +65,11 @@ from app.task.MaaFW.tools.core.runtime_pool.host_environment import (
     subprocess_proxy_scope,
 )
 from app.task.MaaFW.tools.notify import push_notification
-from app.task.MaaFW.tools.notify.report import NOTIFY_SCREENSHOT_LIMIT
-from app.task.notify_core import load_screenshot_images, screenshot_entries
+from app.task.notify_core import (
+    NOTIFY_SCREENSHOT_LIMIT,
+    load_screenshot_images,
+    screenshot_entries,
+)
 from app.utils import ProcessInfo, ProcessManager, get_logger
 from app.utils.constants import UTC4
 from app.utils.io import migrate_legacy_dir

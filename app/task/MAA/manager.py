@@ -34,7 +34,7 @@ from app.models.notification import NotificationImage
 from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, TaskExecuteBase, UserItem
 from app.task.emulator_core import close_emulator
-from app.task.notify_core import screenshot_entries
+from app.task.notify_core import NOTIFY_SCREENSHOT_LIMIT, screenshot_entries
 from app.task.proxy_helpers import (
     CONFIG_SOURCE_SCRIPT,
     read_config_source,
@@ -52,7 +52,6 @@ from .AutoProxy import AutoProxyTask
 from .ScriptConfig import ScriptConfigTask
 from .tools import push_notification
 from .tools.backup_archive import archive_native_backup
-from .tools.notify import NOTIFY_SCREENSHOT_LIMIT
 
 logger = get_logger("MAA 调度器")
 

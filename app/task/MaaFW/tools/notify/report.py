@@ -18,11 +18,6 @@ from app.utils import get_logger
 
 logger = get_logger("MaaFW 通知工具")
 
-# 一份通知最多带几张失败截图，多了取最后几张（最终停在哪更要紧）。
-# 邮件里每张 JPEG 约 100~300 KB；PNG 原图留在 history 目录里不动。
-NOTIFY_SCREENSHOT_LIMIT = 4
-
-
 async def push_notification(
     mode: str,
     title: str,

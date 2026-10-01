@@ -25,7 +25,7 @@ SRC / HSR / MaaEnd / OkNte / general / Okww / MAA / M9A / MaaFW / BetterGI 的
 收敛到本模块。各专项的统计信息分支差异较大，保留在各自 notify 模块内。
 
 失败截图到通知图片资源的转换原语（``load_screenshot_images`` /
-``screenshot_entries``）也在这里，供各专项共用；张数策略由各专项自定。
+``screenshot_entries``）与通知截图上限也在这里，供各专项共用。
 """
 
 import io
@@ -125,6 +125,10 @@ async def push_proxy_result(
 
 # 与各专项约定的失败截图 JPEG 质量：任务界面文字在该质量下仍清晰可读。
 NOTIFY_SCREENSHOT_JPEG_QUALITY = 85
+
+# 一份通知最多带几张失败截图，多了取最后几张（最终停在哪更要紧）。
+# 邮件里每张 JPEG 约 100~300 KB；MaaFW 的 PNG 原图留在 history 目录里不动。
+NOTIFY_SCREENSHOT_LIMIT = 4
 
 
 def load_screenshot_images(

@@ -47,9 +47,6 @@ logger = get_logger("MAA 通知工具")
 # MAA 的签名只空一行, 与其余脚本不同
 SIGNATURE_SEP = "\n"
 
-# 汇总「代理结果」最多带几张失败截图，多了取最后几张（对齐 MaaFW）。
-NOTIFY_SCREENSHOT_LIMIT = 4
-
 # 喜报图片同时提供本地资源和官网 URL；缺少本地文件时，仍可在支持 URL 的表达中展示。
 SIX_STAR_IMAGE_ID = "maa-six-star"
 SIX_STAR_IMAGE_URL = "https://api.auto-mas.top/file/Resource/six_star.png"

@@ -878,7 +878,7 @@ class AutoProxyTask(TaskExecuteBase):
         # 本轮打开的模拟器信息；收尾补截失败画面时取 adb 地址用
         self.emulator_info: DeviceInfo | None = None
         # 失败尝试在关模拟器前补截的现场画面；收尾组装通知时消费
-        self._failure_shot: Path | bytes | None = None
+        self._failure_shot: Path | None = None
         # 本用户的失败画面资源（标签+图片），manager 汇总「代理结果」时收集
         self.report_image_pairs: list[tuple[str, NotificationImage]] = []
         self.maa_log_monitor = LogMonitor(
@@ -2169,7 +2169,7 @@ class AutoProxyTask(TaskExecuteBase):
             logger.info(f"MAA 任务结果: {self.cur_user_log.status}, 日志锁已释放")
             self.wait_event.set()
 
-    async def _take_failure_shot(self) -> Path | bytes | None:
+    async def _take_failure_shot(self) -> Path | None:
         """取一张失败现场画面：上游 debug/interface 图优先，adb 补截兜底。
 
         上游图是 MAA 在任务链失败/停止瞬间落的缓存帧；登录链失败、进程超时
@@ -2178,7 +2178,7 @@ class AutoProxyTask(TaskExecuteBase):
         """
 
         try:
-            shot: Path | bytes | None = await asyncio.to_thread(
+            shot: Path | None = await asyncio.to_thread(
                 collect_maa_failure_image,
                 self.maa_root_path,
                 not_before=self.log_start_time,
@@ -2212,18 +2212,19 @@ class AutoProxyTask(TaskExecuteBase):
         await System.kill_process(self.maa_exe_path)
         logger.info(f"MAA 收尾: 结束残留 MAA 进程: {self.maa_exe_path}")
 
+        logger.info("MAA 收尾: 回写 MAA 配置")
+        await agree_bilibili(self.maa_tasks_path, False)
+
         # 是否成功提前判定：ExitEmulator 模式随后就关闭模拟器，失败画面的
         # 补截必须赶在关模拟器之前
         if_success = self.run_book["Annihilation"] and self.run_book["Routine"]
 
         # 失败画面：失败尝试路径已在关模拟器前留下的优先；否则现在取
         # （用户手动中止等未走失败清理的路径，模拟器此时仍开着）。成功轮不取。
-        failure_shot: Path | bytes | None = self._failure_shot
+        failure_shot: Path | None = self._failure_shot
         if not if_success and failure_shot is None:
             failure_shot = await self._take_failure_shot()
 
-        logger.info("MAA 收尾: 回写 MAA 配置")
-        await agree_bilibili(self.maa_tasks_path, False)
         if self.script_config.get("Run", "TaskTransitionMethod") == "ExitEmulator":
             logger.info("用户任务结束, 关闭模拟器")
             await close_emulator(self)
