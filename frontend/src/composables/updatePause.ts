@@ -1,4 +1,5 @@
 /** 暂停更新：纯逻辑辅助（判停 / 格式化 / 日期选择器禁选范围） */
+import type { Dayjs } from 'dayjs'
 
 /** 最短暂停 1 天（截止日期最早为明天） */
 export const PAUSE_MIN_DAYS = 1
@@ -46,8 +47,8 @@ export function formatPauseUntil(pauseUntil: string): string {
 }
 
 /** 供 a-date-picker 的 disabledDate：禁用今天及以前（< 明天）与第 36 天以后（> 今天+35） */
-export function getPauseDisabledDate(): (date: Date) => boolean {
-  return (date: Date): boolean => {
+export function getPauseDisabledDate(): (date: Dayjs) => boolean {
+  return (date: Dayjs): boolean => {
     // 回调内取当前日期，防止跨午夜后仍按旧边界放行
     const now = new Date()
     const start = new Date(
@@ -60,6 +61,8 @@ export function getPauseDisabledDate(): (date: Date) => boolean {
       now.getMonth(),
       now.getDate() + PAUSE_MAX_DAYS,
     )
-    return date < start || date > end
+    // ant-design-vue 4 传入 Dayjs 实例，统一转回原生 Date 比较
+    const value = date.toDate()
+    return value < start || value > end
   }
 }

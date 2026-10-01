@@ -124,4 +124,18 @@ describe('useUpdateChecker 暂停更新', () => {
     await useUpdateChecker().checkUpdate(false, true)
     expect(checkUpdateMock).toHaveBeenCalledTimes(1)
   })
+
+  it('更新设置读取失败时失败关闭：不起定时器、定时检查跳过', async () => {
+    // 启动时读取失败 → 状态未知，不起定时器
+    getSettingsMock.mockRejectedValue(new Error('network down'))
+    await useUpdateChecker().startPolling()
+    expect(vi.mocked(setInterval)).not.toHaveBeenCalled()
+
+    // 运行中读取失败 → 该 tick 跳过检查，不误判为"未暂停"
+    autoUpdate(true)
+    await useUpdateChecker().startPolling()
+    getSettingsMock.mockRejectedValue(new Error('network down'))
+    await vi.advanceTimersByTimeAsync(3000)
+    expect(checkUpdateMock).not.toHaveBeenCalled()
+  })
 })

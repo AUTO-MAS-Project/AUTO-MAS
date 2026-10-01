@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import dayjs from 'dayjs'
 import { formatPauseUntil, getPauseDisabledDate, isUpdatePaused } from './updatePause'
 
 const localDate = (year: number, month: number, day: number) =>
@@ -46,9 +47,10 @@ describe('formatPauseUntil', () => {
 
 describe('getPauseDisabledDate', () => {
   // disabledDate 回调内取当前日期，测试按运行时的今天计算边界，避免依赖墙钟日期
+  // ant-design-vue 4 实际传入 Dayjs 实例，测试保持一致
   const dayOffset = (offset: number) => {
     const now = new Date()
-    return new Date(now.getFullYear(), now.getMonth(), now.getDate() + offset)
+    return dayjs(new Date(now.getFullYear(), now.getMonth(), now.getDate() + offset))
   }
 
   it('禁用今天及以前，明天起可选', () => {

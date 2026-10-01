@@ -7,7 +7,7 @@
 
 import { ref } from 'vue'
 import { Service, type UpdateCheckOut, type VersionOut } from '@/api'
-import { isUpdatePausedNow, requestUpdateCheck } from './useUpdateChecker'
+import { readUpdatePauseState, requestUpdateCheck } from './useUpdateChecker'
 const logger = window.electronAPI.getLogger('版本服务')
 
 // ========== 标题栏版本信息相关 ==========
@@ -76,11 +76,15 @@ const pollTitlebarVersionOnce = async () => {
   try {
     // 暂停更新期间不发起任何更新检查，并清掉暂停前的旧提示
     // （本体"检测到更新"与后端"检测到后端更新"随之消失，到期后下个 tick 自动恢复）
-    if (await isUpdatePausedNow()) {
-      updateInfo.value = null
-      backendUpdateInfo.value = null
-      runtimeBackendUpdateAvailable.value = false
-      runtimeBackendUpdateCommitMessage.value = ''
+    // 读取失败视为状态未知：同样跳过检查但不动现有提示（失败关闭，下个 tick 重试）
+    const pauseState = await readUpdatePauseState()
+    if (pauseState !== false) {
+      if (pauseState === true) {
+        updateInfo.value = null
+        backendUpdateInfo.value = null
+        runtimeBackendUpdateAvailable.value = false
+        runtimeBackendUpdateCommitMessage.value = ''
+      }
       return
     }
 
@@ -118,7 +122,7 @@ export const startTitlebarVersionCheck = async () => {
     return
   }
 
-  if (await isUpdatePausedNow()) {
+  if ((await readUpdatePauseState()) === true) {
     logger.info('更新已暂停，标题栏版本信息检查待命（暂停期内不检查，到期后自动恢复）')
   } else {
     logger.info('启动标题栏版本信息定时检查（每10分钟）')

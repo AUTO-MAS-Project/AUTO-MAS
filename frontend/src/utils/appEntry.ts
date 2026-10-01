@@ -3,7 +3,7 @@ import router from '@/router'
 import { bootstrapRealtimeResidents } from '@/bootstrap/realtimeResidents'
 import { connectWithRetry, initializeAppLifecycle } from '@/composables/useAppLifecycle'
 import { startTitlebarVersionCheck } from '@/composables/useVersionService'
-import { isUpdatePausedNow, useUpdateChecker } from '@/composables/useUpdateChecker'
+import { readUpdatePauseState, useUpdateChecker } from '@/composables/useUpdateChecker'
 import { markAsInitialized } from '@/composables/useAppInitialization'
 
 const logger = window.electronAPI.getLogger('应用入口')
@@ -28,7 +28,8 @@ function startVersionServices() {
       logger.info('开始启动版本检查服务...')
 
       // 暂停更新期间服务照常待命（各定时器自行门控跳过检查），到期后自动恢复
-      const paused = await isUpdatePausedNow()
+      // 读取失败视为状态未知（null），仅按非暂停记录日志，实际检查由 tick 内门控兜底
+      const paused = (await readUpdatePauseState()) === true
 
       // 1. 启动标题栏版本信息定时检查（10分钟一次）
       await startTitlebarVersionCheck()
