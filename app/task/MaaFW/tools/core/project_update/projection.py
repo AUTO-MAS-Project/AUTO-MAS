@@ -54,6 +54,7 @@ import re
 from collections.abc import Callable, Iterable, Iterator, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
+from types import MappingProxyType
 from typing import Any
 
 import json5
@@ -326,11 +327,14 @@ class ProjectionRules:
     ``source_root`` 是用户指向的目录，``interface_base`` 是 interface.json 所在目录
     （release 布局二者相同，assets 布局后者是 ``source_root/assets``）。输出路径一律
     相对 ``interface_base``，这就是 assets 布局的"提升"。
+
+    ``targets`` 建好就冻结（构造时拷成只读的 ``MappingProxyType``）：:meth:`keeps` 按它
+    建的前缀索引只建一次。要换白名单就新建一份规则，别在原地改。
     """
 
     source_root: Path
     interface_base: Path
-    targets: dict[Path, TargetMode]
+    targets: Mapping[Path, TargetMode]
     required: list[RequiredPath]
     agents: list[dict[str, Any]]
     conservative: bool
@@ -340,6 +344,12 @@ class ProjectionRules:
     # 按内容确认是外壳 / 自带运行时的顶层目录（没被 interface 声明的），以及这类目录里
     # 按内容确认的原生库文件 → 原因。
     confirmed_shell: dict[Path, str] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        # 拷一份再冻结：调用方手里那个 dict 之后再改也影响不到规则（写入点都在构造之前，
+        # 见 build_projection_rules 的 add_target / _adopt_small_undeclared_entries）。
+        if not isinstance(self.targets, MappingProxyType):
+            self.targets = MappingProxyType(dict(self.targets))
 
     def exclusion_reason(
         self, relative: Path, *, is_directory: bool = False
@@ -385,19 +395,16 @@ class ProjectionRules:
 
     def _targets_by_path(self) -> dict[Path, list[tuple[Path, TargetMode]]]:
         """白名单目标按路径分桶（``Path`` 的相等与哈希就是 pathlib 的口径：Windows 上
-        不分大小写）。目标表建好之后不再改；万一改了（同一个 dict 增删）按长度重建。"""
+        不分大小写）。目标表在构造时已冻结，索引按它建一次；整个换掉 ``targets``（赋一个
+        新的只读表）时按对象身份认出来重建。"""
 
         cached = self.__dict__.get("_targets_index")
-        if (
-            cached is not None
-            and cached[0] is self.targets
-            and cached[1] == len(self.targets)
-        ):
-            return cached[2]
+        if cached is not None and cached[0] is self.targets:
+            return cached[1]
         index: dict[Path, list[tuple[Path, TargetMode]]] = {}
         for target, mode in self.targets.items():
             index.setdefault(target, []).append((target, mode))
-        self.__dict__["_targets_index"] = (self.targets, len(self.targets), index)
+        self.__dict__["_targets_index"] = (self.targets, index)
         return index
 
     def keeps(self, relative: Path, *, is_directory: bool = False) -> bool:

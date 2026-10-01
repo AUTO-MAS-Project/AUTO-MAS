@@ -25,7 +25,6 @@ from __future__ import annotations
 
 import logging
 import os
-import time
 import zipfile
 import zlib
 from collections.abc import Callable, Iterable, Mapping
@@ -102,17 +101,20 @@ class RangeSpeedGuard:
     """直连按需下载的速度保护：整包能走加速镜像时才由调用方建，不能退就不设。
 
     读取器每收到一块调一次 :meth:`observe`（``RangeHTTPReader(on_chunk=...)``）；样本够了
-    就按「已用时 + 剩余计划字节 / 实测吞吐」估总用时，超过 :data:`SPEED_GUARD_BUDGET_SECONDS`
-    抛 :class:`HealSkip`（区间这一路的失败，调用方照常退回整包）；总用时超过
-    :data:`SPEED_GUARD_HARD_LIMIT_SECONDS` 无论估多少都放弃。吞吐只按花在网络请求里的时间
-    算（本地算 CRC、解压不算），已用时按墙钟。剩余字节分两段：读到包尾的结束记录后按
-    「读完中央目录还要多少」估（``phase`` 为「读文件目录」），定好取回计划后按整次计划估；
-    结束记录读到之前只看硬上限。
+    就按「网络已用时 + 剩余字节 / 实测吞吐」估，超过 :data:`SPEED_GUARD_BUDGET_SECONDS`
+    抛 :class:`HealSkip`（区间这一路的失败，调用方照常退回整包）；网络已用时超过
+    :data:`SPEED_GUARD_HARD_LIMIT_SECONDS` 无论估多少都放弃。
+
+    **只看花在网络请求里的时间**（读取器累计的 ``network_seconds``）：本地的活——列旧载荷
+    大小、算投影规则、逐文件 CRC、取回阶段链接 / 复制——不算。大载荷放在慢盘上时网络再快
+    也会被墙钟拖过预算，而退回整包同样要做这些本地活（还多解压一遍），按墙钟放弃只会更慢。
+    所以不另设墙钟总上限；单次读取 30 秒没数据由读取超时兜住。
+
+    剩余字节分两段：读到包尾的结束记录后按「读完中央目录还要多少」估（``phase`` 为
+    「读文件目录」），定好取回计划后按整次计划估；结束记录读到之前只看硬上限。
     """
 
-    def __init__(self, clock: Callable[[], float] = time.monotonic) -> None:
-        self.clock = clock
-        self.started = clock()
+    def __init__(self) -> None:
         self.budget = SPEED_GUARD_BUDGET_SECONDS
         self.hard_limit = SPEED_GUARD_HARD_LIMIT_SECONDS
         self.min_seconds = SPEED_GUARD_MIN_SAMPLE_SECONDS
@@ -123,13 +125,12 @@ class RangeSpeedGuard:
         self.phase = "按需下载"
 
     def observe(self, reader: RangeHTTPReader) -> None:
-        elapsed = self.clock() - self.started
-        if elapsed > self.hard_limit:
+        received, seconds = reader.received, reader.network_seconds
+        if seconds > self.hard_limit:
             raise HealSkip(
-                f"直连 GitHub 按需下载已用 {format_duration(elapsed)}，"
+                f"直连 GitHub {self.phase}，网络已用 {format_duration(seconds)}，"
                 f"超过上限 {format_duration(self.hard_limit)}，改为按镜像下整包"
             )
-        received, seconds = reader.received, reader.network_seconds
         if self.planned_total is None or received <= 0 or seconds <= 0:
             return
         if seconds < self.min_seconds and received < self.min_bytes:
@@ -137,10 +138,10 @@ class RangeSpeedGuard:
             return
         rate = received / seconds
         remaining = max(0, self.planned_total - received) / rate
-        if elapsed + remaining > self.budget:
+        if seconds + remaining > self.budget:
             raise HealSkip(
                 f"直连 GitHub 实测 {format_size(int(rate))}/s，{self.phase}预计还要 "
-                f"{format_duration(remaining)}（已用 {format_duration(elapsed)}），"
+                f"{format_duration(remaining)}（网络已用 {format_duration(seconds)}），"
                 f"超过 {format_duration(self.budget)}，改为按镜像下整包"
             )
 
@@ -562,15 +563,28 @@ def _central_directory_bytes(reader: RangeHTTPReader) -> int | None:
     读不出来返回 None（那就只有硬上限管着，ZipFile 随后会照常报错）。
     """
 
+    end_record = getattr(zipfile, "_EndRecData", None)
+    size_index = getattr(zipfile, "_ECD_SIZE", None)
+    location_index = getattr(zipfile, "_ECD_LOCATION", None)
+    if end_record is None or size_index is None or location_index is None:
+        # 私有接口换了（将来的 Python）：只剩硬上限管着读目录这一段。
+        return None
     try:
-        endrec = zipfile._EndRecData(reader)  # type: ignore[attr-defined]
-    except (OSError, ValueError, zipfile.BadZipFile):
+        endrec = end_record(reader)
+        if not endrec:
+            return None
+        size_cd = int(endrec[size_index])
+        # 中央目录紧挨在结束记录前面（zip64 时中间还隔着几十字节的 zip64 记录，估算不计较）。
+        end = int(endrec[location_index])
+    except (
+        OSError,
+        ValueError,
+        zipfile.BadZipFile,
+        AttributeError,
+        TypeError,
+        IndexError,
+    ):
         return None
-    if not endrec:
-        return None
-    size_cd = int(endrec[zipfile._ECD_SIZE])  # type: ignore[attr-defined]
-    # 中央目录紧挨在结束记录前面（zip64 时中间还隔着几十字节的 zip64 记录，估算不计较）。
-    end = int(endrec[zipfile._ECD_LOCATION])  # type: ignore[attr-defined]
     start = max(0, end - size_cd)
     return _missing_block_bytes(
         start,

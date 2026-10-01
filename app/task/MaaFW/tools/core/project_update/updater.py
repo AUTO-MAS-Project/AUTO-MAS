@@ -1577,12 +1577,15 @@ async def _range_delta_package(
         route_note = (
             "（区间只直连 github.com，不走加速镜像；没做成再按镜像下整包；直连按需下载预计"
             f"超过 {format_duration(speed_guard.budget)}"
-            f"（或已用超过 {format_duration(speed_guard.hard_limit)}）就放弃区间）"
+            f"（或花在网络上的时间超过 {format_duration(speed_guard.hard_limit)}）就放弃区间）"
         )
     elif mirrored:
-        route_note = "（区间只直连 github.com；资产没有 sha256，整包也不走镜像，不设直连速度保护）"
+        route_note = (
+            "（区间只直连 github.com；资产没有 sha256，整包也不走镜像，不按速度放弃区间"
+            "（读取超时仍会退回整包））"
+        )
     else:
-        route_note = "（没有可用的加速镜像，直连再慢也不放弃区间）"
+        route_note = "（没有可用的加速镜像，不按速度放弃区间（读取超时仍会退回整包））"
     try:
         timer.start("区间比对")
         send_log(
