@@ -1331,7 +1331,7 @@ def import_embedded_project(
     warnings = list(report.get("warnings") or [])
     logger.info(
         mask_home_path(
-            f"[MFW 内嵌] 脚本 {script_id} 已从 {source} 导入：版本 {source_version}，"
+            f"[MFW 内嵌] 脚本 {script_id} 已从 {source} 导入：版本 {source_version or '未声明'}，"
             f"渠道 {channel or DEFAULT_CHANNEL}，载荷 {registered.payload_id}"
             f"（视图用 {registered.target_id}），副本 {final_dir}，"
             f"来源 {int(report.get('sourceSizeBytes') or 0) / 2**20:.1f} MB → "
