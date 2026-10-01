@@ -34,6 +34,7 @@ from app.models.task import LogRecord, ScriptItem, TaskExecuteBase, UserItem
 from app.services import Notify, System
 from app.services.wuthering_waves import (
     check_wuthering_waves_update,
+    is_wuthering_waves_record_usable,
     resolve_wuthering_waves_process_path,
 )
 from app.services.wuthering_waves_updater import update_wuthering_waves
@@ -525,6 +526,13 @@ class AutoProxyTask(TaskExecuteBase):
             )
         except Exception as e:
             logger.warning(f"鸣潮官方更新检查失败，将继续启动游戏: {e}")
+            # 记录读不出来时客户端靠目录搜索还能拉起来，更新却无从下手：不说一声
+            # 用户会一直停在旧版。接口/网络问题属「无法判断」，按既有决策静默放行
+            if not is_wuthering_waves_record_usable(self.launcher_path):
+                await self._push_dispatch_log(
+                    "鸣潮启动器记录不可用，已跳过启动前自动更新，"
+                    "请用官方启动器检查游戏更新"
+                )
             return
 
         # 直启可手动指定客户端：若它不在启动器记录的安装目录内，更新会打到另一
