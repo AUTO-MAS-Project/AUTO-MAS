@@ -73,7 +73,10 @@ export function useMaaFWScriptDraft(scriptId: string) {
     )
   }
 
-  /** 把后端配置铺到草稿上（缺的分区与字段取默认值）；周期任务的列表由 useMaaFWPeriodTasks 跟上 */
+  /**
+   * 把后端配置铺到草稿上（缺的分区与字段取默认值）。只铺草稿，不管周期任务的三个本地列表：
+   * 页面上一律走编排层 useMaaFWScriptPage 的 `applyScriptConfig`，它铺完草稿紧接着同步周期任务。
+   */
   const applyScriptConfig = (config: Partial<MaaFWScriptConfig> | null | undefined) => {
     const defaults = getDefaultMaaFWScriptConfig()
     ;(Object.keys(defaults) as Array<keyof MaaFWScriptConfig>).forEach(section => {

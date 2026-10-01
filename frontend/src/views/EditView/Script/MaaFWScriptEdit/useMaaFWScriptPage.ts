@@ -44,7 +44,7 @@ export function useMaaFWScriptPage({ scriptId }: MaaFWScriptPageOptions) {
     formData,
     rules,
     handleChange,
-    applyScriptConfig,
+    applyScriptConfig: applyDraftConfig,
   } = useMaaFWScriptDraft(scriptId)
 
   // flavor 文案以脚本当前类型为准，不看路由 meta：/edit/maafw 与 /edit/m9a 都进这个组件，
@@ -69,6 +69,12 @@ export function useMaaFWScriptPage({ scriptId }: MaaFWScriptPageOptions) {
 
   const periodTasks = useMaaFWPeriodTasks(maafwConfig, previewData, handleChange)
   const { prunePeriodTaskSelections, syncPeriodTasksFromConfig } = periodTasks
+
+  /** 铺后端配置的唯一入口：先铺草稿，紧接着把周期任务的三个本地列表跟上（两步不能拆开调） */
+  const applyScriptConfig = (config: Partial<MaaFWScriptConfig> | null | undefined) => {
+    applyDraftConfig(config)
+    syncPeriodTasksFromConfig()
+  }
 
   const channel = useMaaFWProgressChannel(scriptId)
   const env = useMaaFWEnvPrepare(scriptId, maafwConfig, channel)
@@ -197,7 +203,6 @@ export function useMaaFWScriptPage({ scriptId }: MaaFWScriptPageOptions) {
         return
       }
       applyScriptConfig(scriptDetail.config as Partial<MaaFWScriptConfig>)
-      syncPeriodTasksFromConfig()
       scriptType.value = scriptDetail.type
       formData.type = scriptDetail.type
       scriptLoaded = true
@@ -242,6 +247,7 @@ export function useMaaFWScriptPage({ scriptId }: MaaFWScriptPageOptions) {
     formData,
     rules,
     handleChange,
+    applyScriptConfig,
     scriptType,
     flavor,
     refreshScriptType,
