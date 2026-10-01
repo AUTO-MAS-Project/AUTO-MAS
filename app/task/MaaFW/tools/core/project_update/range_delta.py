@@ -273,6 +273,9 @@ def open_range_delta(
             expected_size=size or None,
             max_bytes=size if size > 0 else 2**63,
             cancelled=cancelled,
+            over_limit_reason=(
+                f"要读的超过上限 {format_size(size)}（整包大小），不如直接下整包"
+            ),
         )
         try:
             archive = zipfile.ZipFile(reader)  # type: ignore[arg-type]

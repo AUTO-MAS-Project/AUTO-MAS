@@ -180,6 +180,7 @@ class RangeHTTPReader:
         max_bytes: int = MAX_REMOTE_BYTES,
         deadline: float | None = None,
         cancelled: Callable[[], bool] | None = None,
+        over_limit_reason: str = "",
     ) -> None:
         self.client = client
         self.url = url
@@ -188,6 +189,11 @@ class RangeHTTPReader:
         # ``time.monotonic()`` 的截止时刻：过了就不再发请求（整次检查的总时长上限）。
         self.deadline = deadline
         self.cancelled = cancelled
+        # 读的超过 ``max_bytes`` 时的原因：补齐检查默认说「不在运行前自动补齐」，区间差量
+        # 更新另给一句（它不是运行前补齐）。
+        self.over_limit_reason = over_limit_reason
+        # 最后一次响应来自哪台主机（github.com 会跳到 release-assets 之类的 CDN）。
+        self.final_host = ""
         self.blocks: dict[int, bytes] = {}
         self.position = 0
         self.fetched = 0
@@ -198,13 +204,20 @@ class RangeHTTPReader:
         if not total:
             raise HealSkip("下载服务器没给出发行包大小", permanent=True)
         if expected_size and total != expected_size:
-            raise HealSkip("发行包大小与 Release 记录的不同")
+            raise HealSkip(
+                f"发行包大小与 Release 记录的不同（服务器 {total} 字节，"
+                f"Release {expected_size} 字节）"
+            )
         self.size = total
 
     def _request(self, start: int, end: int) -> tuple[bytes, int | None]:
         expected = end - start + 1
         if self.fetched + expected > self.max_bytes:
-            raise HealSkip("要读的太多，不在运行前自动补齐", permanent=True)
+            raise HealSkip(
+                self.over_limit_reason
+                or f"要读的太多（超过 {format_size(self.max_bytes)}），不在运行前自动补齐",
+                permanent=True,
+            )
         if self.deadline is not None and time.monotonic() > self.deadline:
             raise HealSkip("读取发行包超时")
         self.requests += 1
@@ -215,21 +228,24 @@ class RangeHTTPReader:
                 self.url,
                 headers={**HTTP_HEADERS, "Range": f"bytes={start}-{end}"},
             ) as response:
+                self.final_host = response.url.host or self.final_host
                 if response.status_code != 206:
                     # 200 就是服务端不认 Range、要把整包发过来：一个字节都不读。
                     raise HealSkip(
                         f"下载服务器不支持按区间读取（HTTP {response.status_code}）",
                         permanent=response.status_code == 200,
                     )
-                parsed = _parse_content_range(
-                    str(response.headers.get("content-range") or "")
-                )
+                content_range = str(response.headers.get("content-range") or "")
+                parsed = _parse_content_range(content_range)
                 if (
                     parsed is None
                     or parsed[:2] != (start, end)
                     or (self.size and parsed[2] not in (None, self.size))
                 ):
-                    raise HealSkip("下载服务器回的区间与请求不符")
+                    raise HealSkip(
+                        f"下载服务器回的区间与请求不符（要 {start}-{end}，"
+                        f"回 {content_range or '没有 Content-Range'}）"
+                    )
                 for chunk in response.iter_bytes():
                     buffer.extend(chunk)
                     if len(buffer) > expected:
@@ -237,7 +253,15 @@ class RangeHTTPReader:
                     if self.cancelled is not None and self.cancelled():
                         raise RangeReadCancelled("update cancelled")
         except httpx.HTTPError as exc:
-            raise HealSkip(f"读取发行包失败：{type(exc).__name__}") from exc
+            from .transport import _reason
+
+            # 与整包下载的失败原因同一口径（打码、截 200 字；超时类 str 为空时只剩类名）。
+            detail = _reason(exc)
+            name = type(exc).__name__
+            raise HealSkip(
+                f"读取发行包失败：{name if detail == name else f'{name}: {detail}'}"
+                f"（区间 {start}-{end}）"
+            ) from exc
         if len(buffer) != expected:
             raise HealSkip("下载服务器回的区间不完整")
         self.fetched += expected

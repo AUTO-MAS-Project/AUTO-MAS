@@ -6,6 +6,7 @@ import logging
 import os
 import re
 import threading
+import time
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -1220,6 +1221,7 @@ async def apply_maafw_project_update(
                 operation_id=operation.operation_id,
                 timer=timer,
                 cancelled=is_cancelled,
+                mirrored=bool(alternates),
             )
         except RangeDeltaCancelled as exc:
             log_stopped(exc)
@@ -1546,12 +1548,14 @@ async def _range_delta_package(
     operation_id: str,
     timer: StageTimer,
     cancelled: Callable[[], bool],
+    mirrored: bool = False,
 ) -> tuple[dict[str, Path], int] | None:
     """GitHub 发行包按区间只取变化的文件，在 ``package_dir`` 里拼出虚拟全量包。
 
     返回 ``(条目表, 实际下载字节)``；用不了（不在 github.com、服务端不认 Range、区间不符、
     CRC 错、超预算、超时……）丢掉 ``package_dir`` 返回 None，调用方照常下整包。用户停止
-    抛 :class:`RangeDeltaCancelled`。
+    抛 :class:`RangeDeltaCancelled`。``mirrored``：配置了 GitHub 加速镜像（区间不走镜像，
+    要在日志里说一声，免得以为镜像没生效）。
     """
 
     if not is_github_download(download_url):
@@ -1559,9 +1563,17 @@ async def _range_delta_package(
         return None
     staging_root = package_dir.parent
     delta = None
+    started = time.monotonic()
     try:
         timer.start("区间比对")
-        send_log("正在按区间读取 GitHub 发行包的文件目录，比对哪些文件变了")
+        send_log(
+            "正在按区间读取 GitHub 发行包的文件目录，比对哪些文件变了"
+            + (
+                "（区间只直连 github.com，不走加速镜像；没做成再按镜像下整包）"
+                if mirrored
+                else ""
+            )
+        )
         await asyncio.to_thread(staging_root.mkdir, parents=True, exist_ok=True)
         delta = await asyncio.to_thread(
             lambda: open_range_delta(
@@ -1612,7 +1624,21 @@ async def _range_delta_package(
         )
         send_log(
             f"区间下载完成：实际下载 {format_size(delta.transferred)}"
-            f"（整包 {format_size(delta.size)}），用时 {format_duration(timer.finish())}"
+            f"（整包 {format_size(delta.size)}，{delta.reader.requests} 次请求），"
+            f"用时 {format_duration(timer.finish())}"
+        )
+        # 只进 app.log 的一行汇总（与投影补齐同一写法）：日志包里据此认得出走了区间。
+        logger.info(
+            "MaaFW 区间差量：载荷 %s → %s，下载主机 %s，%d 次请求，读 %s / 整包 %s，"
+            "复用 %d、取回 %d",
+            payload.payload_id,
+            target_version,
+            delta.reader.final_host or "未知",
+            delta.reader.requests,
+            format_size(delta.transferred),
+            format_size(delta.size),
+            len(delta.reuse),
+            len(delta.fetch),
         )
         return entries, delta.transferred
     except RangeDeltaCancelled:
@@ -1620,13 +1646,20 @@ async def _range_delta_package(
     except Exception as exc:  # noqa: BLE001 - 区间这一路任何失败都退回整包
         if not isinstance(exc, (RangeDeltaUnavailable, UpdateApplyError)):
             logger.warning("MaaFW 区间差量出错，改下全量包", exc_info=True)
+        stage = timer.current or timer.last or "区间比对"
         timer.finish()
+        where = f"停在「{stage}」，用时 {format_duration(time.monotonic() - started)}"
         if delta is not None:
+            # 读中央目录就失败时 delta 还没建出来，只说得出阶段与用时。
+            where += (
+                f"，已从远端读 {format_size(delta.transferred)}、"
+                f"{delta.reader.requests} 次请求"
+            )
             await asyncio.to_thread(delta.close)
             delta = None
         await _discard_range_dir(package_dir, send_log)
         reason = _sanitize_log_message(str(exc).strip() or type(exc).__name__)
-        send_log(f"按区间差量没做成（{reason}），改为下载全量包")
+        send_log(f"按区间差量没做成（{reason}；{where}），改为下载全量包")
         # 前面的区间进度带着 package_type=delta，transport 的下载事件不带类型、宿主会沿用
         # 上一次的：先报一条全量，面板才不会把整包下载标成「增量」。
         _report_progress(
