@@ -87,17 +87,21 @@ describe('MaaFW flavor 文案表', () => {
   })
 
   it('MaaFW 脚本页与用户页都按脚本当前类型取 flavor，不读路由 meta', () => {
-    // 页面逻辑在编排层里（MaaFWScriptEdit.vue 只调用 useMaaFWScriptPage）
+    // 页面逻辑在编排层里（两个 .vue 只调用 useMaaFWScriptPage / useMaaFWUserPage）
     const scriptPage = readFileSync(
       new URL('../views/EditView/Script/MaaFWScriptEdit/useMaaFWScriptPage.ts', import.meta.url),
       'utf8'
     )
     const userPage = readFileSync(
-      new URL('../views/EditView/User/MaaFWUserEdit.vue', import.meta.url),
+      new URL('../views/EditView/User/MaaFWUserEdit/useMaaFWUserPage.ts', import.meta.url),
       'utf8'
     )
     const scriptPageView = readFileSync(
       new URL('../views/EditView/Script/MaaFWScriptEdit.vue', import.meta.url),
+      'utf8'
+    )
+    const userPageView = readFileSync(
+      new URL('../views/EditView/User/MaaFWUserEdit.vue', import.meta.url),
       'utf8'
     )
     for (const source of [scriptPage, userPage]) {
@@ -105,7 +109,10 @@ describe('MaaFW flavor 文案表', () => {
       expect(source).not.toContain('route.meta.scriptType')
     }
     expect(scriptPageView).toContain('useMaaFWScriptPage(')
-    expect(scriptPageView).not.toContain('route.meta.scriptType')
+    expect(userPageView).toContain('useMaaFWUserPage(')
+    for (const source of [scriptPageView, userPageView]) {
+      expect(source).not.toContain('route.meta.scriptType')
+    }
     // 导入 / 重新导入成功后要重新拉脚本类型：后端按项目内容原地换类型
     expect(scriptPage).toContain('refreshScriptType')
   })

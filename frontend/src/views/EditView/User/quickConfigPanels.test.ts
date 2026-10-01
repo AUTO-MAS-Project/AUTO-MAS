@@ -32,7 +32,10 @@ describe('quick configuration panel visibility', () => {
 
   it('MaaFW has neither a quick configuration switch nor a config source selector', () => {
     // MaaFW 是通用引擎，没有可退回的原生配置；两个控件对它没有所指，页面不再提供入口。
-    const page = readFileSync(new URL('./MaaFWUserEdit.vue', import.meta.url), 'utf8')
+    // 页面逻辑在编排层 useMaaFWUserPage 里，两处一起查
+    const page =
+      readFileSync(new URL('./MaaFWUserEdit.vue', import.meta.url), 'utf8') +
+      readFileSync(new URL('./MaaFWUserEdit/useMaaFWUserPage.ts', import.meta.url), 'utf8')
     const section = readFileSync(
       new URL('./MaaFWUserEdit/BasicInfoSection.vue', import.meta.url),
       'utf8'
