@@ -16,6 +16,7 @@ from typing import Callable
 
 from packaging.version import InvalidVersion, Version
 
+from ..log_redact import mask_home_path
 from ..runtime_pool import runtime_managed_uv_executable
 from ..runtime_pool._shared import output_tail, remove_tree_best_effort
 from ..runtime_pool.host_environment import (
@@ -119,7 +120,10 @@ def prepare_agent_envs(
             # 入口按 CFA 兜底、解释器换成隔离 venv 这类回退只写在计划里，不打出来的话
             # 日志包里看不出 agent 实际跑的是哪个入口。
             log(
-                f"[Python环境] Agent {plan.childExec} 的回退说明：{plan.fallbackReason}"
+                mask_home_path(
+                    f"[Python环境] Agent {plan.childExec} 的回退说明："
+                    f"{plan.fallbackReason}"
+                )
             )
         if runtime_kind == "isolated_venv":
             with _isolated_venv_lock(Path(plan.isolatedVenvPath or python_exe)):
