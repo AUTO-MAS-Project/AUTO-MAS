@@ -105,8 +105,9 @@ class RangeSpeedGuard:
     就按「已用时 + 剩余计划字节 / 实测吞吐」估总用时，超过 :data:`SPEED_GUARD_BUDGET_SECONDS`
     抛 :class:`HealSkip`（区间这一路的失败，调用方照常退回整包）；总用时超过
     :data:`SPEED_GUARD_HARD_LIMIT_SECONDS` 无论估多少都放弃。吞吐只按花在网络请求里的时间
-    算（本地算 CRC、解压不算），已用时按墙钟。剩余计划在读完文件目录之前不知道，那时只看
-    硬上限。
+    算（本地算 CRC、解压不算），已用时按墙钟。剩余字节分两段：读到包尾的结束记录后按
+    「读完中央目录还要多少」估（``phase`` 为「读文件目录」），定好取回计划后按整次计划估；
+    结束记录读到之前只看硬上限。
     """
 
     def __init__(self, clock: Callable[[], float] = time.monotonic) -> None:
@@ -116,8 +117,10 @@ class RangeSpeedGuard:
         self.hard_limit = SPEED_GUARD_HARD_LIMIT_SECONDS
         self.min_seconds = SPEED_GUARD_MIN_SAMPLE_SECONDS
         self.min_bytes = SPEED_GUARD_MIN_SAMPLE_BYTES
-        #: 整次计划从远端读的字节（读完文件目录、定好取回计划后由调用方填）。
+        #: 到当前这一段结束时从远端一共读的字节（读目录时是读完目录，之后是整次计划）。
         self.planned_total: int | None = None
+        #: 估算的是哪一段，进日志。
+        self.phase = "按需下载"
 
     def observe(self, reader: RangeHTTPReader) -> None:
         elapsed = self.clock() - self.started
@@ -136,7 +139,7 @@ class RangeSpeedGuard:
         remaining = max(0, self.planned_total - received) / rate
         if elapsed + remaining > self.budget:
             raise HealSkip(
-                f"直连 GitHub 实测 {format_size(int(rate))}/s，按需下载预计还要 "
+                f"直连 GitHub 实测 {format_size(int(rate))}/s，{self.phase}预计还要 "
                 f"{format_duration(remaining)}（已用 {format_duration(elapsed)}），"
                 f"超过 {format_duration(self.budget)}，改为按镜像下整包"
             )
@@ -334,6 +337,14 @@ def open_range_delta(
             ),
             on_chunk=speed_guard.observe if speed_guard is not None else None,
         )
+        if speed_guard is not None:
+            # 包尾一读到就知道中央目录多大：从这一刻起按「读完目录还要多久」估，极慢的
+            # 直连不必等目录读完才放弃。定好取回计划后再换成整次计划。
+            remaining = _central_directory_bytes(reader)
+            if remaining is not None:
+                speed_guard.phase = "读文件目录"
+                speed_guard.planned_total = reader.received + remaining
+                speed_guard.observe(reader)
         try:
             archive = zipfile.ZipFile(reader)  # type: ignore[arg-type]
         except zipfile.BadZipFile as exc:
@@ -436,6 +447,7 @@ def open_range_delta(
         if speed_guard is not None:
             # 计划定了才能估剩余：读文件目录这段的吞吐已经在样本里，这里先估一次，
             # 慢到估出来就超的不必开始取回。
+            speed_guard.phase = "按需下载"
             speed_guard.planned_total = delta.planned_bytes
             speed_guard.observe(reader)
         return delta
@@ -515,15 +527,58 @@ def plan_range_fetch(
     have = set(cached)
     planned = 0
     for _start, end, members in groups:
-        first = members[0][1].header_offset // block_size
-        last = min(end, size - 1) // block_size
-        for index in range(first, last + 1):
-            if index not in have:
-                planned += min(size, (index + 1) * block_size) - index * block_size
-                have.add(index)
+        planned += _missing_block_bytes(
+            members[0][1].header_offset,
+            end,
+            size=size,
+            block_size=block_size,
+            have=have,
+        )
         limit = end // block_size
         have = {index for index in have if index >= limit}
     return groups, planned
+
+
+def _missing_block_bytes(
+    start: int, end: int, *, size: int, block_size: int, have: set[int]
+) -> int:
+    """``reader.prefetch(start, end)`` 会发的字节（缺的块按块对齐、最后一块截到包尾），
+    并把这些块记进 ``have``。与 ``RangeHTTPReader._ensure`` 同一块运算。"""
+
+    missing = 0
+    for index in range(start // block_size, min(end, size - 1) // block_size + 1):
+        if index not in have:
+            missing += min(size, (index + 1) * block_size) - index * block_size
+            have.add(index)
+    return missing
+
+
+def _central_directory_bytes(reader: RangeHTTPReader) -> int | None:
+    """读到包尾的结束记录（zip64 时连同 zip64 结束记录）后，读中央目录还要发多少字节。
+
+    zipfile 读中央目录是一次 ``read(大小)``，读取器把缺的块合成一个 Range 请求，中途只有
+    逐块的 ``on_chunk``：速度保护在那里按这个数估「读完目录还要多久」。用的是标准库的
+    ``zipfile._EndRecData``（ZipFile 自己也是先调它），读过的包尾块留在缓存里不重读。
+    读不出来返回 None（那就只有硬上限管着，ZipFile 随后会照常报错）。
+    """
+
+    try:
+        endrec = zipfile._EndRecData(reader)  # type: ignore[attr-defined]
+    except (OSError, ValueError, zipfile.BadZipFile):
+        return None
+    if not endrec:
+        return None
+    size_cd = int(endrec[zipfile._ECD_SIZE])  # type: ignore[attr-defined]
+    # 中央目录紧挨在结束记录前面（zip64 时中间还隔着几十字节的 zip64 记录，估算不计较）。
+    end = int(endrec[zipfile._ECD_LOCATION])  # type: ignore[attr-defined]
+    start = max(0, end - size_cd)
+    return _missing_block_bytes(
+        start,
+        end - 1,
+        size=reader.size,
+        block_size=reader.block_size,
+        have=set(reader.blocks),
+    )
 
 
 def _extract_entry(

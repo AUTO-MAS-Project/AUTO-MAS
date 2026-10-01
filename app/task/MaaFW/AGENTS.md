@@ -348,7 +348,8 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   有镜像、资产有 sha256，与 `transport.download_resumable` 同一判据）——国内直连 GitHub 常年
   100 多 KB/s，40% 预算的上限要十几分钟，不如按镜像下整包；没有更快的路可退时不设。从读文件
   目录起按花在网络上的时间测吞吐，样本够了（≥ `SPEED_GUARD_MIN_SAMPLE_SECONDS` 3 秒或
-  ≥ `SPEED_GUARD_MIN_SAMPLE_BYTES` 512 KB）就逐块估「已用时 + 剩余计划字节 / 吞吐」，超过
+  ≥ `SPEED_GUARD_MIN_SAMPLE_BYTES` 512 KB）就逐块估「已用时 + 剩余字节 / 吞吐」（读到包尾结束记录后
+  先按读完中央目录还剩多少估，定好取回计划后按整次计划估），超过
   `SPEED_GUARD_BUDGET_SECONDS`（120 秒）放弃；总用时超过 `SPEED_GUARD_HARD_LIMIT_SECONDS`
   （1.5 倍，180 秒）无论估多少都放弃。放弃走的是同一条退回路径（先报 full、丢 `rpk-*`、整包走镜像）。
 - 预检备忘按**谱系 + 目标版本**记（`.payloads/<谱系>/precheck-<版本>.json`），组共有：一个成员预检
