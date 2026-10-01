@@ -136,9 +136,7 @@ export const useSraActivitySource = (game: string, nameKey: string) => {
           Message: translate('home.sra.staleMessage'),
         }
       } else {
-        overview.value = createEmptySraActivityOverview(
-          translate('home.sra.unavailable', { name })
-        )
+        overview.value = createEmptySraActivityOverview(translate('home.sra.unavailable', { name }))
       }
       if (retryCount < MAX_RETRIES) {
         retryCount += 1

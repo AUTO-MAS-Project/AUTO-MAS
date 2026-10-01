@@ -2,8 +2,7 @@ import { describe, expect, it } from 'vitest'
 import dayjs from 'dayjs'
 import { formatPauseUntil, getPauseDisabledDate, isUpdatePaused } from './updatePause'
 
-const localDate = (year: number, month: number, day: number) =>
-  new Date(year, month - 1, day)
+const localDate = (year: number, month: number, day: number) => new Date(year, month - 1, day)
 
 describe('isUpdatePaused', () => {
   const today = localDate(2026, 9, 30)

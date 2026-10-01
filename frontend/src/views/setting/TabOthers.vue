@@ -12,11 +12,7 @@ import type { GlobalConfig, VersionOut } from '@/api'
 import ChangelogView from '@/components/ChangelogView.vue'
 import type { ChangelogData } from '@/utils/changelog'
 import { MAS_QQ_GROUP_URL, handleExternalLink } from '@/utils/openExternal'
-import {
-  formatPauseUntil,
-  getPauseDisabledDate,
-  isUpdatePaused,
-} from '@/composables/updatePause'
+import { formatPauseUntil, getPauseDisabledDate, isUpdatePaused } from '@/composables/updatePause'
 
 const logger = window.electronAPI.getLogger('设置-其他')
 

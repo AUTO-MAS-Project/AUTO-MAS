@@ -22,9 +22,7 @@ function isValidDateString(value: string): boolean {
   const [year, month, day] = value.split('-').map(Number)
   const parsed = new Date(year, month - 1, day)
   return (
-    parsed.getFullYear() === year &&
-    parsed.getMonth() === month - 1 &&
-    parsed.getDate() === day
+    parsed.getFullYear() === year && parsed.getMonth() === month - 1 && parsed.getDate() === day
   )
 }
 
@@ -33,10 +31,7 @@ function isValidDateString(value: string): boolean {
  * 截止日期当天即恢复；空串/非法值视为未暂停。
  * 每次求值都以当前系统日期为准，时钟越过截止日的下次求值自动恢复。
  */
-export function isUpdatePaused(
-  pauseUntil?: string | null,
-  today: Date = new Date(),
-): boolean {
+export function isUpdatePaused(pauseUntil?: string | null, today: Date = new Date()): boolean {
   if (!pauseUntil || !isValidDateString(pauseUntil)) return false
   return toLocalDateString(today) < pauseUntil
 }
@@ -51,16 +46,8 @@ export function getPauseDisabledDate(): (date: Dayjs) => boolean {
   return (date: Dayjs): boolean => {
     // 回调内取当前日期，防止跨午夜后仍按旧边界放行
     const now = new Date()
-    const start = new Date(
-      now.getFullYear(),
-      now.getMonth(),
-      now.getDate() + PAUSE_MIN_DAYS,
-    )
-    const end = new Date(
-      now.getFullYear(),
-      now.getMonth(),
-      now.getDate() + PAUSE_MAX_DAYS,
-    )
+    const start = new Date(now.getFullYear(), now.getMonth(), now.getDate() + PAUSE_MIN_DAYS)
+    const end = new Date(now.getFullYear(), now.getMonth(), now.getDate() + PAUSE_MAX_DAYS)
     // ant-design-vue 4 传入 Dayjs 实例，统一转回原生 Date 比较
     const value = date.toDate()
     return value < start || value > end
