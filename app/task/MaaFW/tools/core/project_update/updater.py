@@ -19,6 +19,7 @@ from packaging import version
 from app.utils.constants import MIRROR_ERROR_INFO
 
 from ..interface.models import MaaFWInterface
+from ..log_redact import mask_home_path
 from .apply import (
     UpdateApplyError,
     _check_disk_space,
@@ -60,6 +61,7 @@ from .state import (
     DEFAULT_CACHE_ROOT,
     DEFAULT_OPERATION_ROOT,
     UpdateOperationStore,
+    redact_text,
 )
 from .timing import StageTimer, format_duration, format_megabytes
 from .transport import (
@@ -1658,7 +1660,10 @@ async def _range_delta_package(
             await asyncio.to_thread(delta.close)
             delta = None
         await _discard_range_dir(package_dir, send_log)
-        reason = _sanitize_log_message(str(exc).strip() or type(exc).__name__)
+        # 异常原文可能带路径（staging、旧载荷）或 URL：用户目录换成 <HOME>、URL 去掉查询串。
+        reason = mask_home_path(
+            redact_text(_sanitize_log_message(str(exc).strip() or type(exc).__name__))
+        )
         send_log(f"按区间差量没做成（{reason}；{where}），改为下载全量包")
         # 前面的区间进度带着 package_type=delta，transport 的下载事件不带类型、宿主会沿用
         # 上一次的：先报一条全量，面板才不会把整包下载标成「增量」。
@@ -1687,8 +1692,10 @@ async def _discard_range_dir(path: Path, send_log: Callable[[str], None]) -> Non
     await _remove_tree_in_thread(path)
     if await asyncio.to_thread(os.path.lexists, path):
         send_log(
-            f"区间差量的临时目录没删掉（{path}），留待下次启动时清理；"
-            "整包会解压到另一个新目录，不受影响"
+            mask_home_path(
+                f"区间差量的临时目录没删掉（{path}），留待下次启动时清理；"
+                "整包会解压到另一个新目录，不受影响"
+            )
         )
 
 
