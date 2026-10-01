@@ -132,14 +132,17 @@ def resolve_wuthering_waves_install_dir(launcher_path: Path) -> Path:
 
 
 def is_wuthering_waves_record_usable(launcher_path: Path) -> bool:
-    """启动器记录能否解出安装目录，即启动前自动更新是否还可用。
+    """本地记录能否支撑启动前自动更新。
 
-    客户端 exe 有目录搜索兜底，安装目录没有：记录读不出来时启动照跑、更新
-    无从下手。调用方据此决定要不要提示用户，别让更新静默停掉。
+    更新检查依赖两份本地记录：启动器记录解出的安装目录，与该目录下的
+    ``launcherDownloadConfig.json``（缺一即无法判断版本）。客户端 exe 有
+    目录搜索兜底，更新没有——记录读不出来时启动照跑、更新无从下手，
+    调用方据此决定要不要提示用户，别让更新静默停掉。
     """
 
     try:
-        resolve_wuthering_waves_install_dir(launcher_path)
+        install_dir = resolve_wuthering_waves_install_dir(launcher_path)
+        read_wuthering_waves_local_state(install_dir)
     except (FileNotFoundError, ValueError):
         return False
     return True

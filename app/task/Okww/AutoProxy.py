@@ -526,11 +526,12 @@ class AutoProxyTask(TaskExecuteBase):
             )
         except Exception as e:
             logger.warning(f"鸣潮官方更新检查失败，将继续启动游戏: {e}")
-            # 记录读不出来时客户端靠目录搜索还能拉起来，更新却无从下手：不说一声
-            # 用户会一直停在旧版。接口/网络问题属「无法判断」，按既有决策静默放行
+            # 本地记录（启动器记录或版本记录）读不出来时客户端靠目录搜索还能
+            # 拉起来，更新却无从下手：不说一声用户会一直停在旧版。接口/网络
+            # 问题属「无法判断」，按既有决策静默放行
             if not is_wuthering_waves_record_usable(self.launcher_path):
                 await self._push_dispatch_log(
-                    "鸣潮启动器记录不可用，已跳过启动前自动更新，"
+                    "鸣潮本地更新记录不可用，已跳过启动前自动更新，"
                     "请用官方启动器检查游戏更新"
                 )
             return
