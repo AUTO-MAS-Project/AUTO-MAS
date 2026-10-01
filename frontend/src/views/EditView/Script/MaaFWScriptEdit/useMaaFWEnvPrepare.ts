@@ -3,7 +3,7 @@ import { useI18n } from 'vue-i18n'
 import { message } from 'ant-design-vue'
 import { useScriptApi } from '@/composables/useScriptApi'
 import type { MaaFWScriptConfig } from '@/types/script'
-import type { MaaFWEnvOutcome } from './BasicInfoSection.vue'
+import type { MaaFWEnvOutcome } from '../../MaaFWFlavor/sectionContracts'
 import type { MaaFWProgressChannel } from './useMaaFWProgressChannel'
 
 /**

@@ -18,7 +18,7 @@ import { useUserApi } from '@/composables/useUserApi'
 import {
   isMaaFWFamily,
   maafwUserConfigTypes,
-  prepareMaaFWFlavorUserPage,
+  prepareMaaFWFlavorPage,
   useMaaFWFlavor,
   type MaaFWUserSlotContext,
 } from '@/composables/useMaaFWFlavor'
@@ -191,7 +191,7 @@ export function useMaaFWUserPage({ scriptId, userId }: MaaFWUserPageOptions) {
         loadedScriptConfig.Emulator?.Id && loadedScriptConfig.Emulator.Id !== '-'
       )
       // 特调独有区块的数据与组件和 interface 一起备好，卡片出来时已经齐了
-      await Promise.all([reloadInterface(false), prepareMaaFWFlavorUserPage(flavor.value)])
+      await Promise.all([reloadInterface(false), prepareMaaFWFlavorPage(flavor.value, 'userPage')])
 
       if (isEdit.value) {
         await loadUserData()

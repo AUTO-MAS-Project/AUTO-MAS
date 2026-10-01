@@ -16,24 +16,28 @@
 // 3. maafwFlavorTypes.ts 的 MaaFWFlavorType 加上 'X'。
 // 4. 新建目录 views/EditView/MaaFWFlavor/x/：index.ts 用 defineMaaFWFlavor 导出描述对象
 //    X_FLAVOR，只写与 MaaFW 不同的部分（合并规则见 MaaFWFlavor/defineFlavor.ts）；独有区块写成
-//    本目录下的组件，用 defineMaaFWFlavorSlotComponent 声明到 userPage.slots 的插入点上
-//    （按需加载），需要预取数据就给 userPage.prepare。
+//    本目录下的组件，用 defineMaaFWLazyComponent 声明到 userPage.slots 的插入点上
+//    （按需加载），需要预取数据就给 userPage.prepare。要整个换掉 MFW 的某个分节，用
+//    defineMaaFWSection 写进 scriptPage.sections / userPage.sections（契约见
+//    MaaFWFlavor/sectionContracts.ts）。
 // 5. 在下面的 FLAVOR_REGISTRY 里登记 X_FLAVOR（漏登记 typecheck 会报错）。
 // 公共页面（MaaFW 脚本页 / 用户页、脚本列表、新建流程）与路由不用改：路由、类型卡片、
 // 路由后缀、用户类型白名单、默认脚本名都从这里生成。只有需要一个现在没有的插入点时，
 // 才在 MaaFWFlavorPartSlotContextMap 加名字、在公共页面对应位置放一个 <MaaFWFlavorSlot>。
 // ──────────────────────────────────────────────────────────────────────────
 
-import { computed, toValue, type MaybeRefOrGetter } from 'vue'
+import { computed, toValue, type Component, type ComputedRef, type MaybeRefOrGetter } from 'vue'
 import type { ScriptType } from '@/types/script'
 import { MAAFW_FLAVOR } from '@/views/EditView/MaaFWFlavor/maafw'
 import { M9A_FLAVOR } from '@/views/EditView/MaaFWFlavor/m9a'
 import { MSS_FLAVOR } from '@/views/EditView/MaaFWFlavor/mss'
 import type {
   MaaFWFlavor,
-  MaaFWFlavorSlotComponent,
+  MaaFWFlavorPart,
   MaaFWFlavorSlotName,
   MaaFWFlavorType,
+  MaaFWLazyComponent,
+  MaaFWSectionKey,
 } from './maafwFlavorTypes'
 
 export type {
@@ -95,19 +99,56 @@ export const maafwDefaultScriptNames = (): ReadonlySet<string> => DEFAULT_SCRIPT
 export const resolveMaaFWFlavorSlot = (
   flavor: MaaFWFlavor,
   name: MaaFWFlavorSlotName
-): readonly MaaFWFlavorSlotComponent[] => flavor.userPage.slots[name] ?? []
+): readonly MaaFWLazyComponent[] => flavor.userPage.slots[name] ?? []
 
 /**
- * 用户页加载期间调用：预取该 flavor 用户页插入点组件的 chunk、跑它的 userPage.prepare。
+ * 页面加载期间调用：预取该 flavor 在这一页的替换分节与插入点组件的 chunk、跑这一页的 prepare。
  * 预取过的异步组件在首次渲染时同一轮微任务内就能解析，不会先空一下再冒出来。
- * 失败只影响独有区块自己（组件渲染时会再加载一次），不拖垮页面加载。
+ * 全部并行、用 allSettled 收：失败只影响独有区块自己（组件渲染时会再加载一次），
+ * 不拖垮页面加载，也从不往外抛（同步抛出的也收住）。
  */
-export const prepareMaaFWFlavorUserPage = async (flavor: MaaFWFlavor): Promise<void> => {
-  const loads = Object.values(flavor.userPage.slots).flatMap(entries =>
-    (entries ?? []).map(entry => entry.load())
-  )
-  await Promise.allSettled([...loads, flavor.userPage.prepare?.()])
+export const prepareMaaFWFlavorPage = async (
+  flavor: MaaFWFlavor,
+  part: MaaFWFlavorPart
+): Promise<void> => {
+  const page = flavor[part]
+  const lazy: MaaFWLazyComponent[] = [
+    ...Object.values(page.sections as Record<string, MaaFWLazyComponent | undefined>),
+    ...Object.values(
+      page.slots as Record<string, readonly MaaFWLazyComponent[] | undefined>
+    ).flat(),
+  ].filter((entry): entry is MaaFWLazyComponent => Boolean(entry))
+  const settle = (run: () => unknown) => (async () => run())()
+  await Promise.allSettled([
+    ...lazy.map(entry => settle(() => entry.load())),
+    settle(() => page.prepare?.()),
+  ])
 }
+
+/**
+ * 某一页实际渲染的分节表：MFW 默认分节（页面模块里静态引入，通用 MFW 打开不闪）叠上当前
+ * flavor 的替换分节。返回类型与默认表相同：替换分节由 defineMaaFWSection 保证接得住同一组 props，
+ * 页面模板照常按默认分节的类型检查绑定。flavor 变了（导入后换类型）跟着变。
+ */
+export const useMaaFWSections = <
+  P extends MaaFWFlavorPart,
+  D extends Record<MaaFWSectionKey<P>, Component>,
+>(
+  flavor: MaybeRefOrGetter<MaaFWFlavor>,
+  part: P,
+  defaults: D
+): ComputedRef<D> =>
+  computed(() => {
+    const overrides = toValue(flavor)[part].sections as Record<
+      string,
+      MaaFWLazyComponent | undefined
+    >
+    const merged: Record<string, Component> = { ...defaults }
+    for (const [key, section] of Object.entries(overrides)) {
+      if (section) merged[key] = section.component
+    }
+    return merged as D
+  })
 
 /** 响应式版本：类型变了（导入后后端按项目换了类型）文案跟着变。 */
 export const useMaaFWFlavor = (type: MaybeRefOrGetter<ScriptType | string | null | undefined>) =>

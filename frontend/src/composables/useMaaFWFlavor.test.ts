@@ -9,7 +9,7 @@ import {
   maafwRouteSuffix,
   maafwScriptTypeByConfigType,
   maafwUserConfigTypes,
-  prepareMaaFWFlavorUserPage,
+  prepareMaaFWFlavorPage,
   resolveMaaFWFlavor,
   resolveMaaFWFlavorSlot,
   useMaaFWFlavor,
@@ -25,7 +25,7 @@ const lookup = (key: string): unknown =>
   }, zhCN)
 
 // 描述对象里这些键的值是各特调自己的表（插入点、受管切号任务），键集本来就因特调而异，当叶子看
-const LEAF_FIELDS = new Set(['slots', 'accountTask'])
+const LEAF_FIELDS = new Set(['sections', 'slots', 'accountTask'])
 
 /** 描述对象展开成「点分路径 → 叶子值」：分组对象往下走，数组、null、函数与上面几项是叶子 */
 const fieldEntries = (node: object, prefix = ''): Array<[string, unknown]> =>
@@ -238,45 +238,89 @@ describe('MaaFW 特调注册表', () => {
       expect(resolveMaaFWFlavor(type).userPage.prepare).toBeNull()
     }
     expect(resolveMaaFWFlavor('MSS').userPage.prepare).toBeTypeOf('function')
-    // 脚本页三个都没有插入点与钩子
+    // 脚本页三个都没有插入点与钩子；两页都没有替换分节
     for (const flavor of MAAFW_FLAVORS) {
-      expect([flavor.type, flavor.scriptPage.slots, flavor.scriptPage.prepare]).toEqual([
+      expect([
         flavor.type,
-        {},
-        null,
-      ])
+        flavor.scriptPage.slots,
+        flavor.scriptPage.prepare,
+        flavor.scriptPage.sections,
+        flavor.userPage.sections,
+      ]).toEqual([flavor.type, {}, null, {}, {}])
     }
   })
 
-  it('用户页准备：预取插入点组件、调用 flavor 钩子，失败不往外抛', async () => {
-    const load = vi.fn(async () => ({ default: {} }))
-    const failingLoad = vi.fn(async () => {
-      throw new Error('chunk 加载失败')
+  it('页面准备：只预取这一页的替换分节与插入点组件、调用这一页的钩子，失败不往外抛', async () => {
+    const calls: string[] = []
+    const lazy = (name: string, fail: 'reject' | 'throw' | null = null) => ({
+      component: {},
+      load: vi.fn(() => {
+        calls.push(name)
+        if (fail === 'throw') throw new Error(`同步抛出 ${name}`)
+        return fail === 'reject'
+          ? Promise.reject(new Error(`chunk 加载失败 ${name}`))
+          : Promise.resolve({ default: {} })
+      }),
     })
-    const prepareUserPage = vi.fn(async () => undefined)
+    const scriptPrepare = vi.fn(() => {
+      calls.push('scriptPrepare')
+      throw new Error('钩子同步抛出')
+    })
+    const userPrepare = vi.fn(async () => {
+      calls.push('userPrepare')
+    })
     const base = resolveMaaFWFlavor('MaaFW')
-    const flavor: MaaFWFlavor = {
+    const flavor = {
       ...base,
+      scriptPage: {
+        ...base.scriptPage,
+        sections: { control: { ...lazy('control', 'reject'), part: 'scriptPage', key: 'control' } },
+        prepare: scriptPrepare,
+      },
       userPage: {
         ...base.userPage,
-        slots: {
-          userBeforeTaskQueue: [
-            { component: {}, load },
-            { component: {}, load: failingLoad },
-          ],
-        },
-        prepare: prepareUserPage,
+        sections: { taskQueue: { ...lazy('taskQueue'), part: 'userPage', key: 'taskQueue' } },
+        slots: { userBeforeTaskQueue: [lazy('slotA'), lazy('slotB', 'throw')] },
+        prepare: userPrepare,
       },
+    } as unknown as MaaFWFlavor
+
+    await expect(prepareMaaFWFlavorPage(flavor, 'userPage')).resolves.toBeUndefined()
+    // 分节 → 插入点 → 钩子，同一轮里依次发起
+    expect(calls).toEqual(['taskQueue', 'slotA', 'slotB', 'userPrepare'])
+    calls.length = 0
+    await expect(prepareMaaFWFlavorPage(flavor, 'scriptPage')).resolves.toBeUndefined()
+    expect(calls).toEqual(['control', 'scriptPrepare'])
+    expect(userPrepare).toHaveBeenCalledOnce()
+    // 没有替换分节、插入点、钩子的 flavor 什么都不做
+    for (const type of ['MaaFW', 'M9A']) {
+      for (const part of ['scriptPage', 'userPage'] as const) {
+        await expect(
+          prepareMaaFWFlavorPage(resolveMaaFWFlavor(type), part)
+        ).resolves.toBeUndefined()
+      }
     }
-    await expect(prepareMaaFWFlavorUserPage(flavor)).resolves.toBeUndefined()
+  })
+
+  it('页面准备：钩子与 chunk 同一轮里发起，不等前一个', () => {
+    const load = vi.fn(() => new Promise(() => undefined))
+    const prepare = vi.fn(() => new Promise<void>(() => undefined))
+    const base = resolveMaaFWFlavor('MaaFW')
+    void prepareMaaFWFlavorPage(
+      {
+        ...base,
+        userPage: {
+          ...base.userPage,
+          slots: { userBeforeTaskQueue: [{ component: {}, load }] },
+          prepare,
+        },
+      },
+      'userPage'
+    )
     expect(load).toHaveBeenCalledOnce()
-    expect(failingLoad).toHaveBeenCalledOnce()
-    expect(prepareUserPage).toHaveBeenCalledOnce()
-    // 没有独有区块、没有钩子的 flavor 什么都不做
-    await expect(prepareMaaFWFlavorUserPage(resolveMaaFWFlavor('M9A'))).resolves.toBeUndefined()
+    expect(prepare).toHaveBeenCalledOnce()
   })
 })
-
 describe('公共页面不按特调类型分支', () => {
   const read = (path: string) => readFileSync(new URL(path, import.meta.url), 'utf8')
   const sectionFiles = (dir: string) =>

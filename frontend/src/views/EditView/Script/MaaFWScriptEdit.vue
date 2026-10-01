@@ -41,7 +41,8 @@
 
       <a-form ref="formRef" :model="formData" :rules="rules" layout="vertical" class="config-form">
         <div v-show="!isWizard || currentStep === 0">
-          <BasicInfoSection
+          <component
+            :is="sections.basicInfo"
             :maafw-config="maafwConfig"
             :form-data="formData"
             :rules="rules"
@@ -80,7 +81,8 @@
             show-icon
             :message="t(flavor.scriptPage.text.controllerHintKey)"
           />
-          <ControlConfigSection
+          <component
+            :is="sections.control"
             :maafw-config="maafwConfig"
             :preview-data="previewData"
             :interface-loading="previewLoading"
@@ -109,7 +111,8 @@
         </div>
 
         <div v-show="!isWizard || currentStep === 2">
-          <UpdateSettingsSection
+          <component
+            :is="sections.update"
             :maafw-config="maafwConfig"
             :preview-data="previewData"
             :is-auto-update-disabled="isAutoUpdateDisabled"
@@ -128,7 +131,8 @@
         </div>
 
         <div v-show="!isWizard || currentStep === 3">
-          <RunConfigSection
+          <component
+            :is="sections.run"
             :maafw-config="maafwConfig"
             :daily-once-tasks="dailyOnceTasks"
             :weekly-once-tasks="weeklyOnceTasks"
@@ -142,7 +146,8 @@
       </a-form>
 
       <!-- 只在引导最后一步出现：外壳里配好的实例导入成用户，扫不到就整块不显示 -->
-      <ShellInstanceImportSection
+      <component
+        :is="sections.shellImport"
         v-if="isWizard && currentStep === stepItems.length - 1 && shellInstances.length > 0"
         v-model:selected-ids="selectedShellInstanceIds"
         :instances="shellInstances"
@@ -190,6 +195,8 @@ import { useRoute } from 'vue-router'
 import type { FormInstance } from 'ant-design-vue'
 import { ArrowLeftOutlined } from '@ant-design/icons-vue'
 import { updateChannelOptions, updateSourceOptions } from '@/composables/useMaaFWScriptConfig'
+import { useMaaFWSections } from '@/composables/useMaaFWFlavor'
+// MFW 默认分节静态引入：通用 MFW 打开不闪；特调的替换分节由注册表按需加载
 import BasicInfoSection from './MaaFWScriptEdit/BasicInfoSection.vue'
 import ControlConfigSection from './MaaFWScriptEdit/ControlConfigSection.vue'
 import UpdateSettingsSection from './MaaFWScriptEdit/UpdateSettingsSection.vue'
@@ -276,6 +283,15 @@ const {
   handlePreviewInterface,
   handleCancel,
 } = useMaaFWScriptPage({ scriptId })
+
+// 各分节：默认用 MFW 的，当前特调替换了哪节就换成它的（契约见 MaaFWFlavor/sectionContracts）
+const sections = useMaaFWSections(flavor, 'scriptPage', {
+  basicInfo: BasicInfoSection,
+  control: ControlConfigSection,
+  update: UpdateSettingsSection,
+  run: RunConfigSection,
+  shellImport: ShellInstanceImportSection,
+})
 </script>
 
 <style scoped>

@@ -314,50 +314,19 @@
 import { useI18n } from 'vue-i18n'
 import { computed } from 'vue'
 import { FolderOpenOutlined, QuestionCircleOutlined } from '@ant-design/icons-vue'
-import type { ComboBoxItem } from '@/api'
-import { isDirectControllerType, type EmulatorType } from '@/composables/useMaaFWScriptConfig'
+import { isDirectControllerType } from '@/composables/useMaaFWScriptConfig'
+import type { MaaFWGameUpdateMode, MaaFWLaunchMode, MaaFWUnityResolution } from '@/types/script'
 import type {
-  MaaFWControllerInfo,
-  MaaFWInterfacePreviewData,
-  MaaFWResourceInfo,
-  MaaFWGameUpdateMode,
-  MaaFWLaunchMode,
-  MaaFWScriptConfig,
-  MaaFWUnityResolution,
-} from '@/types/script'
+  MaaFWScriptControlSectionEmits,
+  MaaFWScriptControlSectionProps,
+} from '../../MaaFWFlavor/sectionContracts'
 
 const { t } = useI18n()
 
-const props = defineProps<{
-  maafwConfig: MaaFWScriptConfig
-  previewData: MaaFWInterfacePreviewData | null
-  interfaceLoading: boolean
-  emulatorLoading: boolean
-  emulatorOptionsReady: boolean
-  emulatorDeviceLoading: boolean
-  emulatorOptions: ComboBoxItem[]
-  emulatorDeviceOptions: ComboBoxItem[]
-  emulatorTypeById: Record<string, EmulatorType>
-  controllerOptions: MaaFWControllerInfo[]
-  effectiveControllerName: string
-  effectiveControllerType: string
-  isAdbController: boolean
-  isDesktopController: boolean
-  resourceOptions: MaaFWResourceInfo[]
-  adbControlStrategyItems: Array<{ label: string; value: string }>
-  selectedEmulatorLabel: string
-  interfaceDependentDisabled: boolean
-  /** flavor 的「游戏更新」问号提示 key；为空表示该类型不支持游戏更新，不显示下拉 */
-  gameUpdateHintKey: string | null
-}>()
+// props / 事件的契约在 sectionContracts（特调替换这个分节时按同一份契约接收）
+const props = defineProps<MaaFWScriptControlSectionProps>()
 
-const emit = defineEmits<{
-  change: [category: keyof MaaFWScriptConfig, key: string, value: unknown]
-  'controller-change': []
-  'resource-change': []
-  'emulator-select-change': [emulatorId: string]
-  'select-launch-path': []
-}>()
+const emit = defineEmits<MaaFWScriptControlSectionEmits>()
 
 const launchMode = computed<MaaFWLaunchMode>(() => props.maafwConfig.Game.LaunchMode)
 

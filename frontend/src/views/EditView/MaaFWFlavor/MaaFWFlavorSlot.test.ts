@@ -5,7 +5,7 @@ import { createI18n } from 'vue-i18n'
 import zhCN from '@/i18n/locales/zh-CN'
 import { resolveMaaFWFlavor } from '@/composables/useMaaFWFlavor'
 import {
-  defineMaaFWFlavorSlotComponent,
+  defineMaaFWLazyComponent,
   type MaaFWFlavor,
   type MaaFWUserFormData,
   type MaaFWUserSlotContext,
@@ -138,8 +138,8 @@ describe('MaaFWFlavorSlot 插入点渲染器', () => {
         ...base.userPage,
         slots: {
           userBeforeTaskQueue: [
-            defineMaaFWFlavorSlotComponent(load),
-            defineMaaFWFlavorSlotComponent(async () =>
+            defineMaaFWLazyComponent(load),
+            defineMaaFWLazyComponent(async () =>
               defineComponent({ setup: () => () => h('p', '第二个') })
             ),
           ],

@@ -1,4 +1,4 @@
-import { computed, h, ref, watch, type Ref, type VNode } from 'vue'
+import { computed, h, ref, watch, type Ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { buildMaaFWTaskInstanceIds } from '@/utils/maafwTaskInstance'
 import type {
@@ -11,14 +11,7 @@ import { markMaaFWTasksSeen, resolveMaaFWNewTaskNames } from '../maafwTaskChange
 import MaaFWNewBadge from './MaaFWNewBadge.vue'
 import type { MaaFWTaskQueue } from './useMaaFWTaskQueue'
 import type { MaaFWUserTaskContext } from './useMaaFWUserTaskContext'
-
-type AddTaskCascaderOption = {
-  value: string
-  /** 带 NEW 标记时是 VNode；搜索按 searchText 匹配 */
-  label: string | VNode
-  searchText: string
-  children?: AddTaskCascaderOption[]
-}
+import type { AddTaskCascaderOption } from '../../MaaFWFlavor/sectionContracts'
 
 type AddTaskSecondLevelItem =
   | { type: 'task'; key: string; label: string; task: MaaFWTaskInfo }

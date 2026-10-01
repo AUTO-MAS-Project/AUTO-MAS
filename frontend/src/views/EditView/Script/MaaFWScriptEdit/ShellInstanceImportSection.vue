@@ -63,18 +63,17 @@ import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import type { MaaFWShellInstanceItem } from '@/api'
 import { describeShellSources } from './shellInstanceImport'
+import type {
+  MaaFWScriptShellImportSectionEmits,
+  MaaFWScriptShellImportSectionProps,
+} from '../../MaaFWFlavor/sectionContracts'
 
 const { t } = useI18n()
 
-const props = defineProps<{
-  instances: MaaFWShellInstanceItem[]
-  selectedIds: string[]
-  disabled?: boolean
-}>()
+// props / 事件的契约在 sectionContracts（特调替换这个分节时按同一份契约接收）
+const props = defineProps<MaaFWScriptShellImportSectionProps>()
 
-const emit = defineEmits<{
-  'update:selectedIds': [ids: string[]]
-}>()
+const emit = defineEmits<MaaFWScriptShellImportSectionEmits>()
 
 const selectedSet = computed(() => new Set(props.selectedIds))
 const allSelected = computed(

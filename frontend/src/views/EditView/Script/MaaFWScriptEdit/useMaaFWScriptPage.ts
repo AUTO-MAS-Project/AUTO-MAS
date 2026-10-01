@@ -4,7 +4,7 @@ import { useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
 import { useScriptApi } from '@/composables/useScriptApi'
 import { useMaaFWControlConfig } from '@/composables/useMaaFWScriptConfig'
-import { useMaaFWFlavor } from '@/composables/useMaaFWFlavor'
+import { prepareMaaFWFlavorPage, useMaaFWFlavor } from '@/composables/useMaaFWFlavor'
 import type { MaaFWInterfacePreviewData, MaaFWScriptConfig, ScriptType } from '@/types/script'
 import { useMaaFWScriptDraft } from './useMaaFWScriptDraft'
 import { useMaaFWPeriodTasks } from './useMaaFWPeriodTasks'
@@ -55,8 +55,11 @@ export function useMaaFWScriptPage({ scriptId }: MaaFWScriptPageOptions) {
     try {
       const detail = await getScript(scriptId)
       if (detail?.type) {
+        const typeChanged = detail.type !== scriptType.value
         scriptType.value = detail.type
         formData.type = detail.type
+        // 换成了另一个特调：把它在脚本页的替换分节与插入点备好（不等，不挡后续流程）
+        if (typeChanged) void prepareMaaFWFlavorPage(flavor.value, 'scriptPage')
       }
     } catch (error) {
       logger.warn(`刷新脚本类型失败: ${error instanceof Error ? error.message : String(error)}`)
@@ -205,6 +208,8 @@ export function useMaaFWScriptPage({ scriptId }: MaaFWScriptPageOptions) {
       applyScriptConfig(scriptDetail.config as Partial<MaaFWScriptConfig>)
       scriptType.value = scriptDetail.type
       formData.type = scriptDetail.type
+      // 特调在脚本页的替换分节与插入点：与后面的加载并行备好，不等它，不改动请求顺序
+      void prepareMaaFWFlavorPage(flavor.value, 'scriptPage')
       scriptLoaded = true
       if (!maafwConfig.Info.Name) {
         maafwConfig.Info.Name = scriptDetail.name ?? '新 MFW 脚本'

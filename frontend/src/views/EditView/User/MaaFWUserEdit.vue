@@ -1,6 +1,7 @@
 <template>
   <div class="user-edit-container">
-    <MaaFWUserEditHeader
+    <component
+      :is="sections.header"
       :save-status="saveStatus"
       :save-error-message="saveErrorMessage"
       :script-id="scriptId"
@@ -35,7 +36,8 @@
           layout="vertical"
           class="config-form"
         >
-          <BasicInfoSection
+          <component
+            :is="sections.basicInfo"
             :form-data="formData"
             :interface-dependent-disabled="interfaceDependentDisabled"
             :account-record-tooltip="accountRecordTooltip"
@@ -86,7 +88,8 @@
             :context="flavorSlotContext"
             @save="handleFieldSave"
           />
-          <TaskQueueSection
+          <component
+            :is="sections.taskQueue"
             v-model:add-task-cascader-value="addTaskCascaderValue"
             v-model:show-preset-modal="showPresetModal"
             :interface-loading="interfaceLoading"
@@ -180,6 +183,8 @@ import ExtraScriptSection from '@/components/ExtraScriptSection.vue'
 import UserNotifyConfig from '@/components/UserNotifyConfig.vue'
 import ConfigRestoreSection from '@/views/EditView/User/components/ConfigRestoreSection.vue'
 import MaaFWFlavorSlot from '@/views/EditView/MaaFWFlavor/MaaFWFlavorSlot.vue'
+import { useMaaFWSections } from '@/composables/useMaaFWFlavor'
+// MFW 默认分节静态引入：通用 MFW 打开不闪；特调的替换分节由注册表按需加载
 import MaaFWUserEditHeader from './MaaFWUserEdit/MaaFWUserEditHeader.vue'
 import BasicInfoSection from './MaaFWUserEdit/BasicInfoSection.vue'
 import TaskQueueSection from './MaaFWUserEdit/TaskQueueSection.vue'
@@ -244,6 +249,13 @@ const {
   handleRestored,
   handleCancel,
 } = useMaaFWUserPage({ scriptId, userId: route.params.userId as string })
+
+// 各分节：默认用 MFW 的，当前特调替换了哪节就换成它的（契约见 MaaFWFlavor/sectionContracts）
+const sections = useMaaFWSections(flavor, 'userPage', {
+  header: MaaFWUserEditHeader,
+  basicInfo: BasicInfoSection,
+  taskQueue: TaskQueueSection,
+})
 </script>
 
 <style scoped>

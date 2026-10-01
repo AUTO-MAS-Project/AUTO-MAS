@@ -1,9 +1,10 @@
 // MaaFW 特调注册表的类型与声明工具。与注册表（useMaaFWFlavor.ts）分开放：
-// 各特调目录下的描述对象要从这里取类型和 defineMaaFWFlavorSlotComponent，
+// 各特调目录下的描述对象要从这里取类型和 defineMaaFWLazyComponent / defineMaaFWSection，
 // 而注册表又要 import 那些描述对象，放在同一个文件里会成环。
 
 import { defineAsyncComponent, type Component } from 'vue'
 import type { MaaFWUserConfig, ScriptType } from '@/types/script'
+import type { MaaFWSectionContractMap } from '@/views/EditView/MaaFWFlavor/sectionContracts'
 
 /** 由 MaaFW 引擎运行的脚本类型：MaaFW 本身 + 各特调。新增特调时在这里加一项 */
 export type MaaFWFlavorType = Extract<ScriptType, 'MaaFW' | 'M9A' | 'MSS'>
@@ -43,23 +44,95 @@ export interface MaaFWUserSlotContext {
   queuedTaskCount: number
 }
 
-/** 插入点里的一个组件：渲染用的异步组件 + 同一个加载函数（页面加载期间预取，首屏不闪） */
-export interface MaaFWFlavorSlotComponent {
+/**
+ * 按需加载的组件：渲染用的异步组件 + 同一个加载函数（页面加载期间预取，首屏不闪）。
+ * 插入点组件与替换分节都是它。
+ */
+export interface MaaFWLazyComponent {
   component: Component
   load: () => Promise<unknown>
 }
 
-/** 声明插入点组件：只有当前特调用到时才会加载对应的 chunk */
-export const defineMaaFWFlavorSlotComponent = (
+/** 声明按需加载的组件：只有当前特调用到时才会加载对应的 chunk */
+export const defineMaaFWLazyComponent = (
   load: () => Promise<Component | { default: Component }>
-): MaaFWFlavorSlotComponent => ({
+): MaaFWLazyComponent => ({
   component: defineAsyncComponent(load),
   load,
 })
 
 /** 某个页面的插入点 → 组件（按数组顺序渲染）；没有独有区块写 {} */
 export type MaaFWFlavorSlots<P extends MaaFWFlavorPart> = {
-  [N in keyof MaaFWFlavorPartSlotContextMap[P]]?: readonly MaaFWFlavorSlotComponent[]
+  [N in keyof MaaFWFlavorPartSlotContextMap[P]]?: readonly MaaFWLazyComponent[]
+}
+
+// ---- 分节替换 ----
+
+/** 某个页面可替换的分节键（契约见 views/EditView/MaaFWFlavor/sectionContracts.ts） */
+export type MaaFWSectionKey<P extends MaaFWFlavorPart> = keyof MaaFWSectionContractMap[P] & string
+
+/** 某个页面某个分节的 props 契约 */
+export type MaaFWSectionContract<
+  P extends MaaFWFlavorPart,
+  K extends MaaFWSectionKey<P>,
+> = MaaFWSectionContractMap[P][K]
+
+/** 替换分节：按需加载的组件，记着自己替换的是哪一页的哪一节（只能由 defineMaaFWSection 造出来） */
+export interface MaaFWSection<
+  P extends MaaFWFlavorPart = MaaFWFlavorPart,
+  K extends MaaFWSectionKey<P> = MaaFWSectionKey<P>,
+> extends MaaFWLazyComponent {
+  part: P
+  key: K
+}
+
+/** 某个页面的分节替换表：只写要替换的分节，其余用 MFW 默认分节 */
+export type MaaFWFlavorSections<P extends MaaFWFlavorPart> = {
+  [K in MaaFWSectionKey<P>]?: MaaFWSection<P, K>
+}
+
+/** 组件实例上的 props 类型（SFC 的类型由 vue-tsc 推出） */
+type ComponentPropsOf<C> = C extends abstract new (...args: never[]) => { $props: infer Props }
+  ? Props
+  : never
+
+type RequiredKeys<T> = {
+  [K in keyof T]-?: Record<never, never> extends Pick<T, K> ? never : K
+}[keyof T]
+
+/**
+ * 组件 C 能否顶替契约为 Contract 的分节：契约里的每个 prop 它都声明了、类型接得住，
+ * 而且它没有契约之外的必填 prop（页面只会传契约里的那些）。
+ */
+export type MaaFWAcceptsSectionContract<C, Contract> = [ComponentPropsOf<C>] extends [never]
+  ? false
+  : [Exclude<keyof Contract, keyof ComponentPropsOf<C>>] extends [never]
+    ? [Exclude<RequiredKeys<ComponentPropsOf<C>>, keyof Contract>] extends [never]
+      ? Contract extends Pick<ComponentPropsOf<C>, keyof Contract & keyof ComponentPropsOf<C>>
+        ? true
+        : false
+      : false
+    : false
+
+/**
+ * 声明一个替换分节：`defineMaaFWSection('scriptPage', 'control', () => import('./X.vue'))`。
+ * 只有当前特调用到时才会加载对应的 chunk。替换组件必须能接受 MFW 契约里的全部 props
+ * （最省事的写法是直接 `defineProps<MaaFWScriptControlSectionProps>()`），否则 typecheck 报
+ * 「缺第四个参数」，参数名就是原因。
+ */
+export function defineMaaFWSection<
+  P extends MaaFWFlavorPart,
+  K extends MaaFWSectionKey<P>,
+  C extends Component,
+>(
+  part: P,
+  key: K,
+  load: () => Promise<C | { default: C }>,
+  ..._contractCheck: MaaFWAcceptsSectionContract<C, MaaFWSectionContract<P, K>> extends true
+    ? []
+    : [replacementMustAcceptAllContractProps: never]
+): MaaFWSection<P, K> {
+  return { ...defineMaaFWLazyComponent(load), part, key }
 }
 
 /** 页面加载期间调用的钩子，给独有区块备数据；失败自行兜底，不要抛 */
@@ -134,7 +207,10 @@ export interface MaaFWManagedTasks {
 /** 脚本页 */
 export interface MaaFWScriptPagePart {
   text: MaaFWScriptPageText
+  /** 替换的分节；没有写 {} */
+  sections: MaaFWFlavorSections<'scriptPage'>
   slots: MaaFWFlavorSlots<'scriptPage'>
+  /** 脚本页读到脚本详情后（与后续加载并行）调用；导入后类型变成本特调时再调一次 */
   prepare: MaaFWFlavorPrepare
 }
 
@@ -142,6 +218,8 @@ export interface MaaFWScriptPagePart {
 export interface MaaFWUserPagePart {
   text: MaaFWUserPageText
   managed: MaaFWManagedTasks
+  /** 替换的分节；没有写 {} */
+  sections: MaaFWFlavorSections<'userPage'>
   slots: MaaFWFlavorSlots<'userPage'>
   /** 用户页加载期间（与读取 interface 并行）调用 */
   prepare: MaaFWFlavorPrepare
