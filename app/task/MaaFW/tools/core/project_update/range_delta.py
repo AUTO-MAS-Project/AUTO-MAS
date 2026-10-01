@@ -27,7 +27,7 @@ import logging
 import os
 import zipfile
 import zlib
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from urllib.parse import urlsplit
@@ -117,6 +117,10 @@ class RangeDelta:
     entries: dict[str, zipfile.ZipInfo]
     reuse: dict[str, Path]
     fetch: dict[str, zipfile.ZipInfo]
+    #: 读中央目录（及 interface / import）已经花掉的字节。
+    probe_bytes: int = 0
+    #: 按 :func:`plan_range_fetch` 算出的取回阶段要发的字节（含文件头、合并的间隙、块对齐）。
+    planned_fetch_bytes: int = 0
 
     @property
     def size(self) -> int:
@@ -125,8 +129,14 @@ class RangeDelta:
         return self.reader.size
 
     @property
+    def planned_bytes(self) -> int:
+        """整次区间更新计划从远端读的字节：已读的中央目录 + 取回阶段要发的。"""
+
+        return self.probe_bytes + self.planned_fetch_bytes
+
+    @property
     def fetch_bytes(self) -> int:
-        """要取回的条目压缩后合计（不含文件头与合并区间时顺带要回来的间隙）。"""
+        """要取回的条目压缩后合计（名义大小：不含文件头与合并区间时顺带要回来的间隙）。"""
 
         return sum(info.compress_size for info in self.fetch.values())
 
@@ -336,6 +346,12 @@ def open_range_delta(
                 reuse[rel] = local
             else:
                 fetch[rel] = info
+        _groups, planned = plan_range_fetch(
+            fetch,
+            size=reader.size,
+            block_size=reader.block_size,
+            cached=reader.blocks,
+        )
         delta = RangeDelta(
             client=client,
             reader=reader,
@@ -343,14 +359,19 @@ def open_range_delta(
             entries=entries,
             reuse=reuse,
             fetch=fetch,
+            probe_bytes=reader.fetched,
+            planned_fetch_bytes=planned,
         )
+        # 预算按真正要发的字节算（文件头、合并的间隙、块对齐都算上，已读的中央目录也算），
+        # 不按名义压缩大小：分散的小改动拉回来的往往是名义的几倍（MPA 88 KB 要读 846 KB）。
         if (
             len(fetch) > MAX_FETCH_ENTRIES
-            or delta.fetch_bytes > reader.size * MAX_FETCH_RATIO
+            or delta.planned_bytes > reader.size * MAX_FETCH_RATIO
         ):
             raise RangeDeltaUnavailable(
-                f"变化的文件太多（{len(fetch)} 个、压缩后 {format_size(delta.fetch_bytes)}，"
-                f"发行包 {format_size(reader.size)}），超过按区间取回的上限"
+                f"变化的文件太多（{len(fetch)} 个、名义 {format_size(delta.fetch_bytes)}、"
+                f"计划传输 {format_size(delta.planned_bytes)}，发行包 "
+                f"{format_size(reader.size)}），超过按区间取回的上限"
             )
         return delta
     except BaseException as exc:
@@ -410,6 +431,36 @@ def _fetch_groups(
     return groups
 
 
+def plan_range_fetch(
+    fetch: Mapping[str, zipfile.ZipInfo],
+    *,
+    size: int,
+    block_size: int,
+    cached: Iterable[int] = (),
+) -> tuple[list[tuple[int, int, list[tuple[str, zipfile.ZipInfo]]]], int]:
+    """取回阶段的请求计划：``(分组, 要发的字节)``。
+
+    :func:`fetch_range_delta` 就按这里的分组发：每组 ``reader.prefetch(组首条目, 组尾)``
+    补齐缺的块（块对齐、最后一块截到包尾）、取完 ``reader.forget(组尾)`` 丢掉组尾所在块
+    之前的缓存；这里按同样的块运算记账，预算判定用的就是将要发的字节。``cached``：读中央
+    目录时已经缓存的块号。条目的本地头比估的长时 zipfile 会多读一块，不在计划里（罕见）。
+    """
+
+    groups = _fetch_groups(fetch)
+    have = set(cached)
+    planned = 0
+    for _start, end, members in groups:
+        first = members[0][1].header_offset // block_size
+        last = min(end, size - 1) // block_size
+        for index in range(first, last + 1):
+            if index not in have:
+                planned += min(size, (index + 1) * block_size) - index * block_size
+                have.add(index)
+        limit = end // block_size
+        have = {index for index in have if index >= limit}
+    return groups, planned
+
+
 def _extract_entry(
     archive: zipfile.ZipFile, info: zipfile.ZipInfo, rel: str, target: Path
 ) -> None:
@@ -466,7 +517,13 @@ def fetch_range_delta(
         done = 0
         if progress is not None:
             progress(done, total)
-        for _start, end, members in _fetch_groups(delta.fetch):
+        groups, _planned = plan_range_fetch(
+            delta.fetch,
+            size=delta.reader.size,
+            block_size=delta.reader.block_size,
+            cached=delta.reader.blocks,
+        )
+        for _start, end, members in groups:
             check_cancel()
             delta.reader.prefetch(members[0][1].header_offset, end)
             for rel, info in members:
@@ -496,4 +553,5 @@ __all__ = [
     "force_full_package",
     "is_github_download",
     "open_range_delta",
+    "plan_range_fetch",
 ]

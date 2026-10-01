@@ -1578,7 +1578,8 @@ async def _range_delta_package(
             )
         )
         send_log(
-            f"按区间只取变化的 {len(delta.fetch)} 个文件（{format_size(delta.fetch_bytes)}），"
+            f"按区间只取变化的 {len(delta.fetch)} 个文件（{format_size(delta.fetch_bytes)}，"
+            f"计划传输 {format_size(delta.planned_bytes)}，含文件目录与合并的间隙），"
             f"其余 {len(delta.reuse)} 个沿用当前版本；读文件目录 "
             f"{format_size(delta.transferred)}，用时 {format_duration(timer.finish())}"
         )
