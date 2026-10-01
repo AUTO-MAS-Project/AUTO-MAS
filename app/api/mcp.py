@@ -71,6 +71,8 @@ MCP_INCLUDED_OPERATIONS = (
     "get_task_runtime_snapshot_api_dispatch_runtime_snapshot_get",
     "add_task_api_dispatch_start_post",
     "stop_task_api_dispatch_stop_post",
+    # 只读历史索引，用于核对已结束的运行；不开放接受文件路径的历史详情。
+    "search_history_api_history_search_post",
     # MAA 基建选项
     "get_user_combox_infrastructure_api_scripts_user_combox_infrastructure_post",
     "get_infrast_plan_select_api_scripts_user_infrastructure_plan_select_get_post",
@@ -200,6 +202,8 @@ async def mount_mcp(app: FastAPI) -> None:
                 "OK-NTE 先查询配置 schema，BAAH 先查询已有配置文件名。"
                 "保存后回读核对；检查业务 code，失败时不要猜测 ID、字段或选项。"
                 "任务创建成功仅表示已受理，不代表脚本运行成功。"
+                "运行快照只包含当前任务；任务消失后查询历史索引中的 DONE/ERROR，"
+                "没有匹配记录时不能判定成功。"
             ),
             describe_full_response_schema=False,
             describe_all_responses=False,
@@ -209,6 +213,11 @@ async def mount_mcp(app: FastAPI) -> None:
         )
         # 0.4.0 在工具清单为空时不会清空调用映射，仍需按实际清单收敛。
         tool_names = {tool.name for tool in mcp.tools}
+        missing_operations = set(MCP_INCLUDED_OPERATIONS) - tool_names
+        if missing_operations:
+            raise RuntimeError(
+                f"MCP 白名单包含不存在的 operation: {sorted(missing_operations)}"
+            )
         mcp.operation_map = {
             name: operation
             for name, operation in mcp.operation_map.items()
@@ -222,6 +231,13 @@ async def mount_mcp(app: FastAPI) -> None:
                     "根据 controllerTypes 判断控制器协议：Adb 需配置模拟器与实例，"
                     "Win32 需配置游戏路径。控制器、基质与采集选项使用返回的真实值；"
                     "检查返回的 code，查询失败时先处理错误，不要猜测选项。"
+                )
+            elif tool.name == "search_history_api_history_search_post":
+                tool.description += (
+                    "\n\n用于查询已结束运行的结果，建议按运行日期使用 DAILY 模式。"
+                    "按用户和记录时间核对 index 中的 status（DONE/ERROR）与 result。"
+                    "该接口不按 taskId 精确检索；记录缺失或无法唯一对应时，"
+                    "结果仍未知，不能把任务从运行快照消失视为成功。"
                 )
         mcp.mount_http()
         logger.info(f"MCP 服务已挂载，共 {len(mcp.tools)} 个工具")
