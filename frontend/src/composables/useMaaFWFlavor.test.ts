@@ -383,7 +383,11 @@ describe('公共页面不按特调类型分支', () => {
     ['拼加用户路径', /\/users\/add\/\$\{/, new Set([ROUTE_TABLE])],
     ['读路由登记的类型', /\bmeta\??\.scriptType\b/, ROUTE_META_READERS],
     // vite 解析扩展名时 .vue 排在目录之前：按目录名引入拿到的是同名页面本身，typecheck 却照样过
-    ['按目录名引入 MFW 页面公共件', /from\s+['"][^'"]*\/MaaFW(Script|User)Edit['"]/, new Set()],
+    [
+      '按目录名引入 MFW 页面公共件',
+      /(from\s+|import\(\s*)['"][^'"]*\/MaaFW(Script|User)Edit['"]/,
+      new Set(),
+    ],
   ]
 
   /** 违反了哪几条（说明） */
@@ -458,7 +462,14 @@ describe('公共页面不按特调类型分支', () => {
     const flavorFiles = readdirSync(flavorRoot, { recursive: true, encoding: 'utf8' }).filter(
       name => /\.(ts|vue)$/.test(name) && !name.endsWith('.test.ts')
     )
-    const bareImport = /from\s+['"][^'"]*\/MaaFW(Script|User)Edit['"]/
+    // 特调目录里至少有 maafw / m9a / mss 三份描述对象，扫描结果为空说明路径写错了
+    expect(flavorFiles.length).toBeGreaterThanOrEqual(3)
+    // 静态 import 与按需加载的 import() 都算
+    const bareImport = /(from\s+|import\(\s*)['"][^'"]*\/MaaFW(Script|User)Edit['"]/
+    expect(bareImport.test("() => import('@/views/EditView/User/MaaFWUserEdit')")).toBe(true)
+    expect(bareImport.test("() => import('@/views/EditView/User/MaaFWUserEdit/pageKit')")).toBe(
+      false
+    )
     for (const name of flavorFiles) {
       const source = readFileSync(new URL(name.replace(/\\/g, '/'), flavorRoot), 'utf8')
       expect([name, bareImport.test(source)]).toEqual([name, false])

@@ -12,7 +12,9 @@
 // 2. 分节级：
 //    - 替换分节：defineMaaFWSection(part, key, load) 写进 scriptPage / userPage / create 的
 //      sections。替换组件必须接得住 MFW 该分节的契约（MaaFWFlavor/sectionContracts.ts，不接住
-//      typecheck 报错），只有这个特调用到时才加载。
+//      typecheck 报错），只有这个特调用到时才加载。事件不在类型检查之内：替换组件要照
+//      defineEmits<该分节的 …Emits>() 把 change / save 等事件发出来（或把 $attrs 透传给它包的 MFW
+//      分节），否则改动不会落盘。
 //    - 插入点：defineMaaFWLazyComponent 写进 slots，组件以 `context` 一个 prop 接收上下文。
 //      scriptPage：afterBasicInfo / beforeControl / afterControl / afterUpdate / afterRun
 //      userPage：afterBasicInfo / beforeTaskQueue / afterTaskQueue
