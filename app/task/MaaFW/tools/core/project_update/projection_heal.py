@@ -25,6 +25,10 @@ latest，运行前检查也只会说「已是最新」。这里给这些载荷�
 
 零宿主耦合：标准库、``httpx``、``json5`` 与本包内的模块（GitHub Release 的资产查找复用
 ``updater`` 里的实现，只在真要联网时才导入）。
+
+按区间读远端 zip 的零件（:class:`RangeHTTPReader`、:func:`package_entries`、
+:func:`read_entry`、:func:`write_archive_skeleton`）也给 GitHub 源的区间差量更新用
+（``range_delta.py``）。
 """
 
 from __future__ import annotations
@@ -145,6 +149,10 @@ class HealSkip(RuntimeError):
         self.notify = notify
 
 
+class RangeReadCancelled(RuntimeError):
+    """``RangeHTTPReader`` 的 ``cancelled()`` 为真：在读响应体的块之间停下（区间差量更新用）。"""
+
+
 # --------------------------------------------------------------------------
 # 远端：按区间读取的只读文件对象，交给 zipfile
 # --------------------------------------------------------------------------
@@ -159,7 +167,8 @@ def _parse_content_range(value: str) -> tuple[int, int, int | None] | None:
 class RangeHTTPReader:
     """只读、可 seek 的远端文件：``read`` 时按 ``block_size`` 对齐发 HTTP Range，读过的块
     缓存起来。只接受与请求一致的 206（回 200 时不读响应体、直接放弃），累计读到
-    ``max_bytes`` 就停。"""
+    ``max_bytes`` 就停。``cancelled()`` 为真时在响应体的块之间抛 :class:`RangeReadCancelled`
+    （补齐检查不传；区间差量更新传用户的停止令牌）。"""
 
     def __init__(
         self,
@@ -170,6 +179,7 @@ class RangeHTTPReader:
         block_size: int = RANGE_BLOCK_SIZE,
         max_bytes: int = MAX_REMOTE_BYTES,
         deadline: float | None = None,
+        cancelled: Callable[[], bool] | None = None,
     ) -> None:
         self.client = client
         self.url = url
@@ -177,6 +187,7 @@ class RangeHTTPReader:
         self.max_bytes = max_bytes
         # ``time.monotonic()`` 的截止时刻：过了就不再发请求（整次检查的总时长上限）。
         self.deadline = deadline
+        self.cancelled = cancelled
         self.blocks: dict[int, bytes] = {}
         self.position = 0
         self.fetched = 0
@@ -223,6 +234,8 @@ class RangeHTTPReader:
                     buffer.extend(chunk)
                     if len(buffer) > expected:
                         raise HealSkip("下载服务器回的区间比请求的长")
+                    if self.cancelled is not None and self.cancelled():
+                        raise RangeReadCancelled("update cancelled")
         except httpx.HTTPError as exc:
             raise HealSkip(f"读取发行包失败：{type(exc).__name__}") from exc
         if len(buffer) != expected:
@@ -248,6 +261,22 @@ class RangeHTTPReader:
             for offset, index in enumerate(run):
                 begin = offset * self.block_size
                 self.blocks[index] = data[begin : begin + self.block_size]
+
+    def prefetch(self, start: int, end: int) -> None:
+        """把 ``[start, end]`` 字节预读进缓存（缺的块合成一次请求）：区间差量把相邻的
+        几个条目连同间隙一次要回来，不让 zipfile 逐条目各发一次。"""
+
+        end = min(end, self.size - 1)
+        if end < start:
+            return
+        self._ensure(start // self.block_size, end // self.block_size)
+
+    def forget(self, before: int) -> None:
+        """丢掉 ``before`` 字节所在块之前的缓存（读过的条目不会再读，省内存）。"""
+
+        limit = before // self.block_size
+        for index in [index for index in self.blocks if index < limit]:
+            del self.blocks[index]
 
     def read(self, size: int | None = -1) -> bytes:
         if size is None or size < 0:
@@ -456,7 +485,7 @@ def _source_gap(
     return Gap(via="导入目录", missing=missing, size=sum(sizes.values()), reader=read)
 
 
-def _package_entries(
+def package_entries(
     archive: zipfile.ZipFile,
 ) -> tuple[str, dict[str, zipfile.ZipInfo]]:
     """发行包的 interface 条目与「interface 所在目录相对路径 → 条目」。
@@ -505,13 +534,13 @@ def _package_entries(
     return chosen.filename[len(prefix) :], infos
 
 
-def _read_entry(archive: zipfile.ZipFile, info: zipfile.ZipInfo, rel: str) -> bytes:
+def read_entry(archive: zipfile.ZipFile, info: zipfile.ZipInfo, rel: str) -> bytes:
     """用 ``zipfile`` 读一个条目：解压与 CRC32 校验都在标准库里，读到结尾时校验。"""
 
     try:
         with archive.open(info) as handle:
             content = handle.read(info.file_size + 1)
-    except HealSkip:
+    except (HealSkip, RangeReadCancelled):
         raise
     except (NotImplementedError, RuntimeError) as exc:
         # 压缩方法标准库不认识 / 加密条目：再试也一样。
@@ -524,53 +553,70 @@ def _read_entry(archive: zipfile.ZipFile, info: zipfile.ZipInfo, rel: str) -> by
     return content
 
 
+def write_archive_skeleton(
+    archive: zipfile.ZipFile,
+    interface_rel: str,
+    infos: Mapping[str, zipfile.ZipInfo],
+    skeleton: Path,
+    *,
+    directories: Iterable[str] = (),
+) -> None:
+    """按中央目录在 ``skeleton`` 下建空文件骨架：interface 及其 ``import``、``welcome`` 写真
+    内容（按区间读取），其余是空文件，大小由调用方按中央目录另给。``directories``：包里
+    显式的目录条目（空目录也建出来）。"""
+
+    for directory in sorted(
+        {str(PurePosixPath(rel).parent) for rel in infos} | set(directories)
+    ):
+        (skeleton / directory).mkdir(parents=True, exist_ok=True)
+    for rel in infos:
+        try:
+            (skeleton / rel).open("xb").close()
+        except OSError:
+            # 大小写只差一点的重名、Windows 保留名：骨架里少一个空文件，只影响它自己。
+            continue
+    pending = [interface_rel]
+    written: set[str] = set()
+    while pending:
+        rel = pending.pop()
+        if rel in written or rel not in infos:
+            continue
+        written.add(rel)
+        raw = read_entry(archive, infos[rel], rel)
+        (skeleton / rel).write_bytes(raw)
+        if PurePosixPath(rel).suffix.casefold() not in {".json", ".jsonc"}:
+            continue
+        try:
+            data = _parse_json(raw)
+        except ValueError:
+            continue
+        for raw_import in data.get("import") or []:
+            if not isinstance(raw_import, str):
+                continue
+            try:
+                pending.append(
+                    _normalize_declared_path(raw_import, ROOT, "import").as_posix()
+                )
+            except ProjectionError:
+                continue
+        for raw_welcome in _welcome_entries(data.get("welcome")):
+            welcome = _normalize_ui_asset_path(raw_welcome, ROOT)
+            if welcome is not None:
+                pending.append(welcome.as_posix())
+
+
 def _archive_rules(
     archive: zipfile.ZipFile,
     interface_rel: str,
     infos: Mapping[str, zipfile.ZipInfo],
     workdir: Path,
 ) -> ProjectionRules:
-    """发行包的投影白名单：按中央目录在 ``workdir`` 下建空文件骨架（interface 及其
-    ``import``、``welcome`` 写真内容），大小取中央目录里记的，再照常算。骨架算完即删。"""
+    """发行包的投影白名单：按中央目录在 ``workdir`` 下建空文件骨架
+    （:func:`write_archive_skeleton`），大小取中央目录里记的，再照常算。骨架算完即删。"""
 
     skeleton = Path(workdir) / f"hk-{uuid.uuid4().hex[:8]}"
     try:
-        for directory in sorted({str(PurePosixPath(rel).parent) for rel in infos}):
-            (skeleton / directory).mkdir(parents=True, exist_ok=True)
-        for rel in infos:
-            try:
-                (skeleton / rel).open("xb").close()
-            except OSError:
-                # 大小写只差一点的重名、Windows 保留名：骨架里少一个空文件，只影响它自己。
-                continue
-        pending = [interface_rel]
-        written: set[str] = set()
-        while pending:
-            rel = pending.pop()
-            if rel in written or rel not in infos:
-                continue
-            written.add(rel)
-            raw = _read_entry(archive, infos[rel], rel)
-            (skeleton / rel).write_bytes(raw)
-            if PurePosixPath(rel).suffix.casefold() not in {".json", ".jsonc"}:
-                continue
-            try:
-                data = _parse_json(raw)
-            except ValueError:
-                continue
-            for raw_import in data.get("import") or []:
-                if not isinstance(raw_import, str):
-                    continue
-                try:
-                    pending.append(
-                        _normalize_declared_path(raw_import, ROOT, "import").as_posix()
-                    )
-                except ProjectionError:
-                    continue
-            for raw_welcome in _welcome_entries(data.get("welcome")):
-                welcome = _normalize_ui_asset_path(raw_welcome, ROOT)
-                if welcome is not None:
-                    pending.append(welcome.as_posix())
+        write_archive_skeleton(archive, interface_rel, infos, skeleton)
         return build_projection_rules(
             skeleton,
             strict=False,
@@ -597,9 +643,9 @@ def _archive_gap(
 ) -> Gap:
     """发行包（本地缓存或远端）：核对是同一项目同一版本，算缺的条目。"""
 
-    interface_rel, infos = _package_entries(archive)
+    interface_rel, infos = package_entries(archive)
     try:
-        data = _parse_json(_read_entry(archive, infos[interface_rel], interface_rel))
+        data = _parse_json(read_entry(archive, infos[interface_rel], interface_rel))
         same = lineage_key(data) == lineage
     except (ValueError, PayloadError) as exc:
         raise HealSkip(
@@ -613,7 +659,7 @@ def _archive_gap(
     _check_limits(missing, sizes)
 
     def read() -> dict[str, bytes]:
-        return {rel: _read_entry(archive, infos[rel], rel) for rel in missing}
+        return {rel: read_entry(archive, infos[rel], rel) for rel in missing}
 
     return Gap(via=via, missing=missing, size=sum(sizes.values()), reader=read)
 
@@ -1287,6 +1333,7 @@ __all__ = [
     "HealOutcome",
     "HealSkip",
     "RangeHTTPReader",
+    "RangeReadCancelled",
     "check_due",
     "check_record",
     "describe_missing",
@@ -1297,8 +1344,11 @@ __all__ = [
     "healed_to",
     "is_user_path",
     "needs_environment_precheck",
+    "package_entries",
+    "read_entry",
     "rebuild_payload",
     "repoint_latest",
+    "write_archive_skeleton",
     "write_check",
     "write_missing_files",
 ]

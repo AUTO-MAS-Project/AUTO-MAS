@@ -2400,15 +2400,22 @@ def materialize_projection(
 # --------------------------------------------------------------------------
 
 
-def package_projection_rules(payload_root: Path, project_root: Path) -> ProjectionRules:
+def package_projection_rules(
+    payload_root: Path,
+    project_root: Path,
+    *,
+    sizes: Mapping[str, int] | None = None,
+) -> ProjectionRules:
     """更新包落地时的白名单：包内 interface 优先，其次项目现有的；不查存在性。
 
     只支持 release 布局的包（interface.json 在包根）：内嵌副本本身就是提升后的
     release 布局，assets 布局的源码 zip 从来不是更新器的输入。
+    ``sizes``：区间差量更新在按中央目录建的空文件骨架上算时给（包内取中央目录、其余取
+    项目里的实际大小），与整包解压后算的同一张白名单。
     """
 
     rules = build_projection_rules(
-        project_root, strict=False, overlay_root=payload_root
+        project_root, strict=False, overlay_root=payload_root, sizes=sizes
     )
     if rules.base_relative != ROOT:
         raise ProjectionError(
