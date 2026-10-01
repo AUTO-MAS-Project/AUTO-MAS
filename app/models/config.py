@@ -4063,9 +4063,16 @@ class OkwwConfig(ConfigBase):
         ## Game ------------------------------------------------------------
         ## 是否由 MAS 管理游戏进程
         self.Game_Enabled = ConfigItem("Game", "Enabled", False, BoolValidator())
-        ## 鸣潮启动器路径
+        ## 游戏启动方式：Client=直启客户端（内置 -krqlv=hd），Launcher=经官方启动器
+        ## 默认值必须排首位：值非法时 correct() 回落到 options[0]
+        self.Game_Type = ConfigItem(
+            "Game", "Type", "Client", OptionsValidator(["Client", "Launcher"])
+        )
+        ## 鸣潮官方启动器路径（两种启动方式均由它定位游戏安装目录）
         self.Game_Path = ConfigItem("Game", "Path", "", FileValidator())
-        ## 鸣潮启动参数
+        ## 直启模式下手动指定的客户端程序路径（留空则由启动器路径自动定位）
+        self.Game_ClientPath = ConfigItem("Game", "ClientPath", "", FileValidator())
+        ## 鸣潮启动参数（直启时 MAS 会额外内置 -krqlv=hd，与本参数并存）
         self.Game_Arguments = ConfigItem("Game", "Arguments", "", ArgumentValidator())
         ## 等待游戏启动时间
         self.Game_WaitTime = ConfigItem("Game", "WaitTime", 60, RangeValidator(0, 9999))
