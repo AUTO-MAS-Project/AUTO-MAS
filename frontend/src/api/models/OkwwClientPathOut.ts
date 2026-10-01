@@ -3,9 +3,9 @@
 /* tslint:disable */
 /* eslint-disable */
 /**
- * OK-WW 启动器解码结果（直启模式的客户端路径展示与启动均由此派生）
+ * OK-WW 客户端路径解码结果（仅用于前端展示）
  */
-export type OkwwLauncherLocationsOut = {
+export type OkwwClientPathOut = {
     /**
      * 状态码
      */
@@ -22,9 +22,5 @@ export type OkwwLauncherLocationsOut = {
      * 解码得到的鸣潮客户端 exe 完整路径
      */
     client_path: string;
-    /**
-     * 解码得到的游戏安装目录
-     */
-    install_dir: string;
 };
 

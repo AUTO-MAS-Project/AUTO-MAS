@@ -87,7 +87,7 @@ import type { MaaFWShellInstancesIn } from '../models/MaaFWShellInstancesIn';
 import type { MaaFWShellInstancesOut } from '../models/MaaFWShellInstancesOut';
 import type { NoticeOut } from '../models/NoticeOut';
 import type { NotifyChannelsOut } from '../models/NotifyChannelsOut';
-import type { OkwwLauncherLocationsOut } from '../models/OkwwLauncherLocationsOut';
+import type { OkwwClientPathOut } from '../models/OkwwClientPathOut';
 import type { OutBase } from '../models/OutBase';
 import type { PatternDebugIn } from '../models/PatternDebugIn';
 import type { PatternDebugOut } from '../models/PatternDebugOut';
@@ -494,20 +494,20 @@ export class Service {
         });
     }
     /**
-     * 解码鸣潮启动器，返回客户端 exe 与游戏安装目录
-     * 解码鸣潮启动器记录，返回客户端 exe 与游戏安装目录（前端直启模式展示用）。
+     * 解码鸣潮启动器，返回客户端 exe 路径
+     * 解码鸣潮启动器记录，返回客户端 exe 完整路径（仅直启模式的前端展示用）。
      *
-     * 自动更新链路由后端在任务期从启动器路径实时解码，不经过本端点。
+     * 任务期的启动与自动更新链路由后端自行解码，不经过本端点。
      * @param scriptId
-     * @returns OkwwLauncherLocationsOut Successful Response
+     * @returns OkwwClientPathOut Successful Response
      * @throws ApiError
      */
-    public static getOkwwLauncherLocationsApiApiScriptsOkwwLauncherLocationsGet(
+    public static getOkwwClientPathApiApiScriptsOkwwClientPathGet(
         scriptId: string,
-    ): CancelablePromise<OkwwLauncherLocationsOut> {
+    ): CancelablePromise<OkwwClientPathOut> {
         return __request(OpenAPI, {
             method: 'GET',
-            url: '/api/scripts/okww/launcher-locations',
+            url: '/api/scripts/okww/client-path',
             query: {
                 'scriptId': scriptId,
             },

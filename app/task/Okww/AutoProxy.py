@@ -501,10 +501,13 @@ class AutoProxyTask(TaskExecuteBase):
         则必须抛错阻断，否则会拿旧客户端撞登录失败。
         """
 
-        if self.launcher_path is None:
-            return
         if not self.script_config.get("Game", "IfAutoUpdate"):
             logger.info("已关闭启动前自动更新，跳过鸣潮更新检查")
+            return
+        # 直启可只填客户端路径，此时启动器可能没配或路径已失效：安装目录只能从
+        # 启动器记录解码，更新检查无从下手，按预期跳过而不是报「更新检查失败」
+        if self.launcher_path is None or not self.launcher_path.is_file():
+            logger.info("鸣潮启动器未配置或文件不存在，跳过启动前自动更新检查")
             return
         resource = str(self.cur_user_config.get("Info", "Resource"))
         try:

@@ -2462,11 +2462,10 @@ class OkwwConfig_Game(BaseModel):
     )
 
 
-class OkwwLauncherLocationsOut(OutBase):
-    """OK-WW 启动器解码结果（直启模式的客户端路径展示与启动均由此派生）"""
+class OkwwClientPathOut(OutBase):
+    """OK-WW 客户端路径解码结果（仅用于前端展示）"""
 
     client_path: str = Field(..., description="解码得到的鸣潮客户端 exe 完整路径")
-    install_dir: str = Field(..., description="解码得到的游戏安装目录")
 
 
 class OkwwConfig(BaseModel):

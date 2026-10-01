@@ -115,27 +115,6 @@ def resolve_wuthering_waves_process_path(launcher_path: Path) -> Path:
     return _decode_official_launcher_process_path(launcher_path)
 
 
-def resolve_wuthering_waves_locations(launcher_path: Path) -> tuple[Path, Path]:
-    """Resolve the game process exe and install directory from the launcher.
-
-    一次解码启动器的安装目录记录，同时返回客户端 exe 与安装目录：客户端 exe
-    供直启模式展示与启动使用，安装目录随响应返回仅作参考；自动更新链路由
-    启动器路径实时解码，不经过本函数的调用方缓存。
-
-    Raises:
-        FileNotFoundError: 启动器、游戏路径记录或客户端不存在。
-        ValueError: 启动器路径记录无法解码。
-    """
-
-    install_dir = resolve_wuthering_waves_install_dir(launcher_path)
-    process_path = install_dir / _CLIENT_RELATIVE_PATH
-    if not process_path.is_file():
-        raise FileNotFoundError(
-            "启动器记录的鸣潮客户端不存在，请确认游戏已安装后重新导入启动器"
-        )
-    return process_path, install_dir
-
-
 def read_wuthering_waves_local_state(install_dir: Path) -> WutheringWavesLocalState:
     """读取本地安装状态。
 

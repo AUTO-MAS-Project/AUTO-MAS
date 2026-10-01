@@ -1351,6 +1351,15 @@ export default {
     clientPathPending: 'ランチャーのパスから自動特定、またはファイルを手動で選択',
     selectFile: 'ファイルを選択',
     resetAutoLocate: '自動に戻す',
+    clientPathLocateFailed: 'ゲームクライアントのパスを自動特定できませんでした：{message}',
+    clientPathLocateFailedHint:
+      'ゲームクライアントのパスを自動特定できませんでした。ランチャーのパスを確認するか、クライアントのファイルを手動で選択してください',
+    clientPathSaved: '鳴潮クライアントのパスを保存しました',
+    clientPathReset: '自動特定に戻しました',
+    launchTypeSaveFailed: 'ゲームの起動方法を保存できませんでした。元の設定に戻しました',
+    invalidClientFileTitle: '選択したファイルは無効です',
+    invalidClientFileContent:
+      '鳴潮のゲームクライアント Client-Win64-Shipping.exe を選択してください。',
     whichPlatformGameRuns: 'ゲームを動かすプラットフォーム',
     gameUpdate: 'ゲームの更新',
     gameUpdateTimeoutMinutes: 'ゲーム更新のタイムアウト（分）',

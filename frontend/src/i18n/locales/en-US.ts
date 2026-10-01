@@ -1449,6 +1449,16 @@ export default {
     clientPathPending: 'Auto-located from the launcher path, or pick the file manually',
     selectFile: 'Select file',
     resetAutoLocate: 'Use auto',
+    clientPathLocateFailed: 'Could not locate the game client path: {message}',
+    clientPathLocateFailedHint:
+      'Could not locate the game client path; check the launcher path or pick the client file manually',
+    clientPathSaved: 'Wuthering Waves client path saved',
+    clientPathReset: 'Auto-location restored',
+    launchTypeSaveFailed:
+      'Failed to save the game launch method; the previous setting was restored',
+    invalidClientFileTitle: 'Invalid file',
+    invalidClientFileContent:
+      'Please select the Wuthering Waves client, Client-Win64-Shipping.exe.',
     whichPlatformGameRuns: 'Which platform the game runs on',
     gameUpdate: 'Game update',
     gameUpdateTimeoutMinutes: 'Game update timeout (minutes)',

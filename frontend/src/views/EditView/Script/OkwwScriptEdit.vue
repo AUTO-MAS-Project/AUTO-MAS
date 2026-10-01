@@ -617,8 +617,9 @@ const rules = {
 }
 
 const WUWA_LAUNCHER_EXECUTABLE = 'launcher.exe'
-// 直启客户端的进程名，需与 app/task/Okww/AutoProxy.py 的 _WUWA_CLIENT_PROCESS 保持同步
-const WUWA_CLIENT_EXECUTABLE = 'client-win64-shipping.exe'
+// 直启客户端的进程名，与 app/task/Okww/AutoProxy.py 的 _WUWA_CLIENT_PROCESS 逐字一致
+// （后端按进程名精确匹配，大小写不同会被拒绝）
+const WUWA_CLIENT_EXECUTABLE = 'Client-Win64-Shipping.exe'
 
 type DiscoveryKind = 'okww' | 'game'
 type PathValidationStatus = 'unknown' | 'valid' | 'invalid'
@@ -1100,7 +1101,8 @@ const selectGameRootPath = async () => {
   )
 }
 
-// 直启模式的客户端路径由后端解码启动器得到：仅用于展示与直启，不落盘配置。
+// 直启模式的客户端路径由后端解码启动器得到，仅用于前端展示；任务期真正启动的
+// exe 由后端自行解码，不落盘配置。
 // 已手动指定 ClientPath 时展示值不来自解码，跳过调用避免无谓的失败提示
 const refreshDerivedClientPath = async () => {
   if (okwwConfig.Game.ClientPath) return
@@ -1109,18 +1111,17 @@ const refreshDerivedClientPath = async () => {
     return
   }
   try {
-    const locations =
-      await Service.getOkwwLauncherLocationsApiApiScriptsOkwwLauncherLocationsGet(scriptId)
-    if (locations.code === 200) {
-      derivedClientPath.value = locations.client_path
+    const result = await Service.getOkwwClientPathApiApiScriptsOkwwClientPathGet(scriptId)
+    if (result.code === 200) {
+      derivedClientPath.value = result.client_path
     } else {
       derivedClientPath.value = ''
-      message.warning(`客户端路径自动定位失败：${locations.message}`)
+      message.warning(t('edit.clientPathLocateFailed', { message: result.message }))
     }
   } catch (error) {
     logger.error(`解码鸣潮客户端路径失败: ${error instanceof Error ? error.message : error}`)
     derivedClientPath.value = ''
-    message.warning('客户端路径自动定位失败，请检查启动器路径或手动指定客户端文件')
+    message.warning(t('edit.clientPathLocateFailedHint'))
   }
 }
 
@@ -1147,7 +1148,7 @@ const handleLaunchTypeChange = async (value: 'Launcher' | 'Client') => {
     }
   })
   if (!success) {
-    message.error('游戏启动方式保存失败，已恢复原设置')
+    message.error(t('edit.launchTypeSaveFailed'))
     return
   }
   persistedLaunchType = value
@@ -1166,7 +1167,7 @@ const saveClientPath = async (clientPath: string) => {
         Game: { ClientPath: clientPath },
       })
       if (ok) {
-        message.success(clientPath ? '鸣潮客户端路径已保存' : '已恢复自动定位')
+        message.success(t(clientPath ? 'edit.clientPathSaved' : 'edit.clientPathReset'))
       } else {
         okwwConfig.Game.ClientPath = previousPath
       }
@@ -1192,9 +1193,10 @@ const selectClientPath = async () => {
   const picked = paths?.[0]
   if (!picked) return
   const normalized = picked.replace(/\\/g, '/')
-  const executable = normalized.split('/').pop()?.toLowerCase()
+  // 与后端 check() 同口径：按进程名精确匹配（大小写不同会被后端拒绝）
+  const executable = normalized.split('/').pop()
   if (executable !== WUWA_CLIENT_EXECUTABLE) {
-    showPathRejectModal('所选文件无效', '请选择鸣潮游戏客户端 Client-Win64-Shipping.exe。')
+    showPathRejectModal(t('edit.invalidClientFileTitle'), t('edit.invalidClientFileContent'))
     return
   }
   await saveClientPath(normalized)

@@ -32,9 +32,10 @@ from fastapi.responses import FileResponse
 from app.core import Config
 from app.models.config import BetterGIConfig as RuntimeBetterGIConfig
 from app.models.config import OkNteConfig as RuntimeOkNteConfig
+from app.models.config import OkwwConfig as RuntimeOkwwConfig
 from app.models.config import WhimboxConfig as RuntimeWhimboxConfig
 from app.models.schema import *
-from app.services.wuthering_waves import resolve_wuthering_waves_locations
+from app.services.wuthering_waves import resolve_wuthering_waves_process_path
 from app.task.MaaFW.api_service import agent_env as maafw_agent_env_api
 from app.task.MaaFW.api_service import embedded as maafw_embedded_api
 from app.task.MaaFW.api_service import interface as maafw_interface_api
@@ -308,41 +309,44 @@ async def update_script(script: ScriptUpdateIn = Body(...)) -> OutBase:
 
 
 @router.get(
-    "/okww/launcher-locations",
+    "/okww/client-path",
     tags=["Get"],
-    summary="解码鸣潮启动器，返回客户端 exe 与游戏安装目录",
-    response_model=OkwwLauncherLocationsOut,
+    summary="解码鸣潮启动器，返回客户端 exe 路径",
+    response_model=OkwwClientPathOut,
     status_code=200,
 )
-async def get_okww_launcher_locations_api(scriptId: str) -> OkwwLauncherLocationsOut:
-    """解码鸣潮启动器记录，返回客户端 exe 与游戏安装目录（前端直启模式展示用）。
+async def get_okww_client_path_api(scriptId: str) -> OkwwClientPathOut:
+    """解码鸣潮启动器记录，返回客户端 exe 完整路径（仅直启模式的前端展示用）。
 
-    自动更新链路由后端在任务期从启动器路径实时解码，不经过本端点。
+    任务期的启动与自动更新链路由后端自行解码，不经过本端点。
     """
 
     try:
         script_config = Config.ScriptConfig[uuid.UUID(scriptId)]
-        if type(script_config).__name__ != "OkwwConfig":
-            raise ValueError("脚本类型不是 OK-WW")
+        if not isinstance(script_config, RuntimeOkwwConfig):
+            raise TypeError("脚本配置类型错误, 不是 OK-WW 类型")
         launcher_path = Path(str(script_config.get("Game", "Path") or "").strip())
-        client_path, install_dir = resolve_wuthering_waves_locations(launcher_path)
-        return OkwwLauncherLocationsOut(
+        client_path = resolve_wuthering_waves_process_path(launcher_path)
+        return OkwwClientPathOut(
             code=200,
             status="success",
             message="",
             client_path=client_path.as_posix(),
-            install_dir=install_dir.as_posix(),
         )
     except Exception as e:
         logger.opt(exception=True).warning(
-            f"get_okww_launcher_locations_api失败: {type(e).__name__}: {e}"
+            f"get_okww_client_path_api失败: {type(e).__name__}: {e}"
         )
-        return OkwwLauncherLocationsOut(
-            code=400 if isinstance(e, (ValueError, KeyError, TypeError)) else 500,
+        return OkwwClientPathOut(
+            code=(
+                400
+                if isinstance(e, (ValueError, KeyError, TypeError, FileNotFoundError))
+                else 500
+            ),
             status="error",
-            message=f"{type(e).__name__}: {str(e)}",
+            # message 直接展示给用户，不带异常类名前缀（类名只进上面的日志）
+            message=str(e),
             client_path="",
-            install_dir="",
         )
 
 
