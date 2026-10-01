@@ -249,7 +249,8 @@ class TaskItem(ABC):
             user_id (str): 待判定的用户ID。
 
         Returns:
-            bool: 未指定单独运行的用户时恒为 True。
+            bool: AutoProxy 指定 user_ids 时仅匹配集合内用户，指定 user_id 时
+            仅匹配该用户；两者均未指定或非 AutoProxy 模式时恒为 True。
         """
 
         if self.mode == "AutoProxy" and self.user_ids is not None:
