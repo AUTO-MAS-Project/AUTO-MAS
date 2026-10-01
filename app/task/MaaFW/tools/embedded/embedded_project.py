@@ -1324,6 +1324,19 @@ def import_embedded_project(
     # 与其它副本共用的文件（同内容只在磁盘上存一份）。
     report["sharedFiles"] = built.shared_files + finalized.ingested_files
     report["sharedBytes"] = built.shared_bytes + finalized.ingested_bytes
+    # 导入报告只进脚本配置与页面；用户发来的日志包里只有 app.log，总结与每条投影警告
+    # （CFA 入口兜底那条就在这里）都要在这里留一份。
+    warnings = list(report.get("warnings") or [])
+    logger.info(
+        f"[MFW 内嵌] 脚本 {script_id} 已从 {source} 导入：版本 {source_version}，"
+        f"渠道 {channel or DEFAULT_CHANNEL}，载荷 {registered.payload_id}"
+        f"（视图用 {registered.target_id}），副本 {final_dir}，"
+        f"来源 {int(report.get('sourceSizeBytes') or 0) / 2**20:.1f} MB → "
+        f"副本 {int(report.get('payloadSizeBytes') or 0) / 2**20:.1f} MB，"
+        f"投影警告 {len(warnings)} 条"
+    )
+    for warning in warnings:
+        logger.warning(f"[MFW 内嵌] 导入 {source} 的投影警告：{warning}")
     return {
         "report": report,
         "sourceVersion": source_version,

@@ -1784,9 +1784,14 @@ class MaaFWRunner:
             ]
             env = self._build_agent_env(agent_plan)
             creationflags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
-            self.send_log(
-                f"启动 Agent 子进程: {Path(command[0]).name} (cwd={agent_plan.cwd})"
+            # 带上实际参数（入口脚本可能已按 CFA 兜底换过），末尾的连接标识不打。
+            launch = " ".join(
+                [
+                    Path(command[0]).name,
+                    *(item for item in agent_plan.command[1:] if item != "<socket_id>"),
+                ]
             )
+            self.send_log(f"启动 Agent 子进程: {launch} (cwd={agent_plan.cwd})")
             try:
                 process = subprocess.Popen(
                     command,

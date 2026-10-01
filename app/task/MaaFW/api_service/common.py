@@ -144,10 +144,15 @@ async def maafw_effective_root(
                 siblings=maafw_sibling_configs(),
             )
         except EmbeddedProjectError as exc:
+            logger.warning(
+                f"MFW 脚本 {script_id} 准备副本失败"
+                f"（来源 {script_config.get('Info', 'Path') or '未设置'}）：{exc}"
+            )
             return None, str(exc)
         except Exception as exc:  # noqa: BLE001 - 磁盘满、文件被占用之类的 OSError 也要给出文案
             logger.opt(exception=True).warning(
-                f"MFW 项目导入失败（{script_id}）：{exc}"
+                f"MFW 项目导入失败（{script_id}，来源 "
+                f"{script_config.get('Info', 'Path') or '未设置'}）：{exc}"
             )
             return None, f"MFW 项目导入失败：{exc}"
         finally:

@@ -189,6 +189,9 @@ async def prepare_agent_env(
             # 详情行（健康检查的完整 traceback）只进后端日志，不进面板
             _maafw_env_logger.info(sanitize_log_message(str(line)))
             return
+        # 成功路径以前只回给面板，用户发来的日志包里看不到准备过程（回退说明、隔离
+        # venv、导入检查）：与手动更新同一口径，打码后也进 app.log。
+        _maafw_env_logger.info(sanitize_log_message(str(line)))
         logs.append(line)
         publish_progress(
             {

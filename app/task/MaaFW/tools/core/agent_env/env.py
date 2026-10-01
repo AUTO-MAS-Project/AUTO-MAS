@@ -115,6 +115,12 @@ def prepare_agent_envs(
 
         runtime_kind = plan.runtimeKind or "external"
         log(f"[Python环境] Agent {plan.childExec} 使用 {runtime_kind}: {python_exe}")
+        if plan.fallbackReason:
+            # 入口按 CFA 兜底、解释器换成隔离 venv 这类回退只写在计划里，不打出来的话
+            # 日志包里看不出 agent 实际跑的是哪个入口。
+            log(
+                f"[Python环境] Agent {plan.childExec} 的回退说明：{plan.fallbackReason}"
+            )
         if runtime_kind == "isolated_venv":
             with _isolated_venv_lock(Path(plan.isolatedVenvPath or python_exe)):
                 prepared_path = _prepare_isolated_venv_env(

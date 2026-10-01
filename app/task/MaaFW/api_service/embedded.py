@@ -119,8 +119,17 @@ async def _embed_from_source(script_id: str, source_path: str) -> tuple[None, st
         )
     except (KeyError, ValueError, TypeError):
         channel = "stable"
+    try:
+        script_name = str(
+            maafw_script_config(script_id).get("Info", "Name") or script_id[:8]
+        )
+    except (KeyError, ValueError, TypeError):
+        script_name = script_id[:8]
+    # 失败原因只回给页面的话，用户发来的日志包里什么都看不到：每种失败都进 app.log。
+    failed_prefix = f"MFW 脚本 {script_id}（{script_name}）从 {source_path} 导入失败（渠道 {channel}）"
     reservation = await try_reserve_project_path(embedded_project_dir(script_id))
     if reservation is None:
+        logger.warning(f"{failed_prefix}：{EMBEDDED_COPY_BUSY}")
         return None, EMBEDDED_COPY_BUSY
     publish = _embedded_import_publisher(script_id)
     try:
@@ -135,8 +144,12 @@ async def _embed_from_source(script_id: str, source_path: str) -> tuple[None, st
         )
         publish("imported", "success", "导入完成", 100.0)
     except EmbeddedProjectError as exc:
+        logger.warning(f"{failed_prefix}：{exc}")
         return None, str(exc)
     except Exception as exc:  # noqa: BLE001 - 文件系统异常也要原样给用户
+        logger.opt(exception=True).warning(
+            f"{failed_prefix}：{type(exc).__name__}: {exc}"
+        )
         return None, f"{type(exc).__name__}: {exc}"
     finally:
         await release_project_path(reservation)
@@ -570,8 +583,15 @@ async def clone_embedded(script_id: str, source_script_id: str) -> MaaFWApiReply
             clone_embedded_copy, source_script_id, script_id
         )
     except EmbeddedProjectError as exc:
+        logger.warning(
+            f"MFW 脚本 {script_id} 从脚本 {source_script_id} 克隆项目失败：{exc}"
+        )
         return MaaFWApiReply.error(400, f"克隆失败: {exc}")
     except Exception as exc:  # noqa: BLE001 - 文件系统异常也要原样给用户
+        logger.opt(exception=True).warning(
+            f"MFW 脚本 {script_id} 从脚本 {source_script_id} 克隆项目失败："
+            f"{type(exc).__name__}: {exc}"
+        )
         return MaaFWApiReply.error(400, f"克隆失败: {type(exc).__name__}: {exc}")
     finally:
         await release_project_path(target_reservation)
