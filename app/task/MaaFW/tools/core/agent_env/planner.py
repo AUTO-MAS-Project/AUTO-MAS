@@ -228,15 +228,15 @@ def _build_agent_command_plan(
 def _apply_cfa_agent_entry_fallback(
     base_dir: Path, child_args: list[str]
 ) -> tuple[list[str], str | None]:
-    """第一个 Python 入口脚本越出项目目录或不存在、而 CFA 的兜底入口在时，换成兜底入口的
-    绝对路径（见 ``interface.agent_entry``）；其余参数原样。返回 ``(参数, 说明)``。"""
+    """第一个 Python 入口脚本越出项目目录、而 CFA 的兜底入口在时，换成兜底入口的绝对路径
+    （见 ``interface.agent_entry``）；其余参数原样。返回 ``(参数, 说明)``。"""
 
     for position, arg in enumerate(child_args):
         if not is_python_entry_arg(arg):
             continue
         try:
-            if _resolve_project_path(base_dir, arg).is_file():
-                return child_args, None
+            _resolve_project_path(base_dir, arg)
+            return child_args, None
         except MaaFWAgentEnvError:
             pass
         fallback = (base_dir / CFA_FALLBACK_AGENT_ENTRY).resolve()

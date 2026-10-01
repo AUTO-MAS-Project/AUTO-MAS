@@ -58,12 +58,11 @@ from typing import Any
 
 import json5
 
-from app.task.MaaFW.tools.core.interface.agent_entry import (
+from ..interface.agent_entry import (
     CFA_FALLBACK_AGENT_ENTRY,
     describe_cfa_agent_entry_fallback,
     is_python_entry_arg,
 )
-
 from .blob_store import LINK_MIN_BYTES, RuntimeBlobStore, place_fresh
 
 MAX_REPORT_ITEMS = 128
@@ -1103,18 +1102,14 @@ def build_projection_rules(
         return relative
 
     def cfa_agent_entry(raw: str, label: str) -> Path | None:
-        """入口脚本越出 interface 所在目录或不存在、而 CFA 的兜底入口在时返回兜底入口；
+        """入口脚本越出 interface 所在目录、而 CFA 的兜底入口在时返回兜底入口；
         否则 None，照原来的严格校验走（见 ``interface.agent_entry``）。"""
 
         try:
             relative = _normalize_declared_path(raw, base_relative, label)
         except ProjectionError:
             relative = None
-        if (
-            relative is not None
-            and _is_relative_to(relative, base_relative)
-            and view.exists(relative)
-        ):
+        if relative is not None and _is_relative_to(relative, base_relative):
             return None
         fallback = base_relative / CFA_FALLBACK_AGENT_ENTRY
         if not view.is_file(fallback):
