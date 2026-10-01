@@ -15,6 +15,7 @@ import { MAAFW_FLAVOR } from './maafw'
 /**
  * 特调的声明：
  * - 身份、`routes.suffix`、`create.card` 必须写，不继承；
+ * - `routes.titles` 可省，按 `typeTagLabel` 生成，写了的逐条覆盖；
  * - `scriptPage` / `userPage` 可省；其中 `text` / `managed` 按字段浅合并到 MaaFW 上：
  *   不写或写 `undefined` 沿用 MaaFW，写 `null` 表示明确关掉（只有可为空的字段能写 null）；
  * - `sections` / `slots` / `prepare` 不继承，不写就是没有。
@@ -30,7 +31,8 @@ export interface MaaFWFlavorSpec extends Pick<
   | 'logo'
   | 'docUrl'
 > {
-  routes: MaaFWFlavorRoutes
+  /** 路由后缀必须写；标题不写就按 typeTagLabel 生成（见 defaultMaaFWRouteTitles），写了的逐条覆盖 */
+  routes: Pick<MaaFWFlavorRoutes, 'suffix'> & { titles?: Partial<MaaFWFlavorRoutes['titles']> }
   create: MaaFWFlavorCreate
   scriptPage?: {
     text?: Partial<MaaFWScriptPageText>
@@ -56,6 +58,14 @@ const mergeDefined = <T extends object>(base: T, override: Partial<T> | undefine
   return merged
 }
 
+/** 按类型标签生成的四个路由标题（M9A：编辑M9A脚本 / M9A项目引导 / 添加M9A用户 / 编辑M9A用户） */
+export const defaultMaaFWRouteTitles = (label: string): MaaFWFlavorRoutes['titles'] => ({
+  script: `编辑${label}脚本`,
+  setup: `${label}项目引导`,
+  userAdd: `添加${label}用户`,
+  userEdit: `编辑${label}用户`,
+})
+
 /** 把特调的差异合并到 base 上，得到字段齐全的描述对象。base 一般是 MAAFW_FLAVOR（测试可换） */
 export const mergeMaaFWFlavor = (base: MaaFWFlavor, spec: MaaFWFlavorSpec): MaaFWFlavor => ({
   type: spec.type,
@@ -66,7 +76,11 @@ export const mergeMaaFWFlavor = (base: MaaFWFlavor, spec: MaaFWFlavorSpec): MaaF
   typeTagColor: spec.typeTagColor,
   logo: spec.logo,
   docUrl: spec.docUrl,
-  routes: { suffix: spec.routes.suffix },
+  routes: {
+    suffix: spec.routes.suffix,
+    // 标题不从底继承（底是 MaaFW 自己的标题），按本特调的标签生成
+    titles: mergeDefined(defaultMaaFWRouteTitles(spec.typeTagLabel), spec.routes.titles),
+  },
   create: { card: spec.create.card },
   scriptPage: {
     text: mergeDefined(base.scriptPage.text, spec.scriptPage?.text),

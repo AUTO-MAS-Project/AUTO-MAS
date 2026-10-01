@@ -195,10 +195,26 @@ export interface MaaFWFlavorCreateOption {
   after: ScriptType | null
 }
 
+/**
+ * 页面种类：每个特调各有这四条路由（router/maafwFlavorRoutes.ts 按注册表生成）。
+ * script / setup 渲染脚本页（编辑形态 / 新建后的分步引导），userAdd / userEdit 渲染用户页。
+ */
+export type MaaFWPageKind = 'script' | 'setup' | 'userAdd' | 'userEdit'
+
+/** 页面种类 → 渲染哪一页（描述对象里的哪一组） */
+export const MAAFW_PAGE_PART = {
+  script: 'scriptPage',
+  setup: 'scriptPage',
+  userAdd: 'userPage',
+  userEdit: 'userPage',
+} as const satisfies Record<MaaFWPageKind, MaaFWFlavorPart>
+
 /** 路由 */
 export interface MaaFWFlavorRoutes {
   /** 路由后缀：/scripts/:id/edit/<suffix>、/scripts/:id/users/add/<suffix> 等 */
   suffix: string
+  /** 四条路由的标题（route.meta.title） */
+  titles: Record<MaaFWPageKind, string>
 }
 
 /** 新建流程 */

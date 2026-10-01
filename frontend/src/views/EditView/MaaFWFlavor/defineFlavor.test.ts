@@ -144,6 +144,24 @@ describe('defineMaaFWFlavor 合并规则', () => {
     expect(flavor.userPage.prepare).toBe(ownPrepare)
   })
 
+  it('路由标题：不写就按类型标签生成（不继承底的标题），写了的逐条覆盖', () => {
+    const generated = mergeMaaFWFlavor(RICH_BASE, identity)
+    expect(generated.routes.titles).toEqual({
+      script: '编辑X脚本',
+      setup: 'X项目引导',
+      userAdd: '添加X用户',
+      userEdit: '编辑X用户',
+    })
+    const overridden = mergeMaaFWFlavor(RICH_BASE, {
+      ...identity,
+      routes: { suffix: 'x', titles: { setup: 'X 引导', userAdd: undefined } },
+    })
+    expect(overridden.routes).toEqual({
+      suffix: 'x',
+      titles: { ...generated.routes.titles, setup: 'X 引导' },
+    })
+  })
+
   it('defineMaaFWFlavor 以通用 MaaFW 为底', () => {
     expect(defineMaaFWFlavor(identity)).toEqual(mergeMaaFWFlavor(MAAFW_FLAVOR, identity))
     expect(defineMaaFWFlavor(identity).userPage.text).toEqual(MAAFW_FLAVOR.userPage.text)
@@ -289,4 +307,22 @@ describe('分组前后等价', () => {
       expect(flatten(resolveMaaFWFlavor(type))).toEqual(FLAT_BEFORE[type])
     }
   )
+
+  // 改成按注册表生成前的路由标题：MaaFW 四条手写，M9A / MSS 只有脚本页与用户页三条（引导是新增的）
+  it('路由标题与改前一致', () => {
+    expect(resolveMaaFWFlavor('MaaFW').routes.titles).toEqual({
+      script: '编辑MFW脚本',
+      setup: 'MaaFramework项目引导',
+      userAdd: '添加 MFW 用户',
+      userEdit: '编辑 MFW 用户',
+    })
+    for (const label of ['M9A', 'MSS']) {
+      expect(resolveMaaFWFlavor(label).routes.titles).toEqual({
+        script: `编辑${label}脚本`,
+        setup: `${label}项目引导`,
+        userAdd: `添加${label}用户`,
+        userEdit: `编辑${label}用户`,
+      })
+    }
+  })
 })

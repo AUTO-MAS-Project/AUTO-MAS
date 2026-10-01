@@ -38,9 +38,9 @@ export function useMaaFWSetupWizard({
   const router = useRouter()
   const { listShellInstances, importShellInstances } = useMaaFWShellInstanceApi()
 
-  // 引导模式：同一个页面按步骤渲染四个分节。新建 MaaFW 脚本后进这里，
-  // 之后再编辑走 /scripts/:id/edit/maafw 的完整单页形态。
-  const isWizard = computed(() => route.name === 'MaaFWSetupWizard')
+  // 引导模式：同一个页面按步骤渲染四个分节。新建 MaaFW 家族脚本后进引导路由（页面种类 setup），
+  // 之后再编辑走编辑路由的完整单页形态。
+  const isWizard = computed(() => route.meta.maafwPage === 'setup')
   const currentStep = ref(0)
   const stepItems = [
     { title: t('edit.basicInfo') },
@@ -105,7 +105,7 @@ export function useMaaFWSetupWizard({
   // 导入要一会儿，结束时用户可能已经离开了这一页（面包屑等）：那时只弹提示、不跳转，
   // 免得把人从别的页面拽回来（pageUnmounted 在卸载钩子里置位）
   const stillOnWizard = () =>
-    !isPageUnmounted() && route.name === 'MaaFWSetupWizard' && route.params.id === scriptId
+    !isPageUnmounted() && route.meta.maafwPage === 'setup' && route.params.id === scriptId
   const leaveWizardTo = (path: string) => {
     if (stillOnWizard()) router.push(path)
   }

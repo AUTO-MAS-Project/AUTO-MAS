@@ -59,7 +59,7 @@ const FLAVOR_REGISTRY = {
 /** 全部 MaaFW 类型，MaaFW 本身在第一个（未知类型的兜底） */
 export const MAAFW_FLAVORS: readonly MaaFWFlavor[] = Object.values(FLAVOR_REGISTRY)
 
-/** 只有特调（不含 MaaFW 本身）：路由按它们生成，MaaFW 自己的几条路由（含引导页）手写在路由表里 */
+/** 只有特调（不含 MaaFW 本身） */
 export const MAAFW_SPECIAL_FLAVORS: readonly MaaFWFlavor[] = MAAFW_FLAVORS.filter(
   flavor => flavor !== MAAFW_FLAVOR
 )

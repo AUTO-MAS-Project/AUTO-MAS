@@ -13,7 +13,16 @@ export const MAAFW_FLAVOR: MaaFWFlavor = {
   typeTagColor: 'geekblue',
   logo: SCRIPT_LOGOS.MaaFW,
   docUrl: MAS_DOC_URLS.scripts,
-  routes: { suffix: 'maafw' },
+  routes: {
+    suffix: 'maafw',
+    // 沿用改成按注册表生成前手写的四个标题，一字不差（「添加 MFW 用户」带空格）
+    titles: {
+      script: '编辑MFW脚本',
+      setup: 'MaaFramework项目引导',
+      userAdd: '添加 MFW 用户',
+      userEdit: '编辑 MFW 用户',
+    },
+  },
   create: {
     card: {
       // MaaFW 是通用引擎，不是专项：任何带 interface.json 的项目都由它运行，和「通用脚本」并列。

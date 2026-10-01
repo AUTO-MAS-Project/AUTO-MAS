@@ -46,7 +46,11 @@ vi.mock('vue', async original => ({
 vi.mock('vue-i18n', () => ({ useI18n: () => ({ t: (key: string) => key }) }))
 vi.mock('@/i18n', () => ({ translate: (key: string) => key }))
 vi.mock('vue-router', () => ({
-  useRoute: () => ({ name: 'MaaFWScriptEdit', params: { id: 's1' } }),
+  useRoute: () => ({
+    name: 'MaaFWScriptEdit',
+    params: { id: 's1' },
+    meta: { scriptType: 'MaaFW', maafwPage: 'script' },
+  }),
   useRouter: () => ({ push: mocks.push }),
 }))
 vi.mock('ant-design-vue', () => ({
