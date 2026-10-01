@@ -242,12 +242,12 @@ describe('MaaFW 特调注册表', () => {
       expect(resolveMaaFWFlavor(type).userPage.prepare).toBeNull()
     }
     expect(resolveMaaFWFlavor('MSS').userPage.prepare).toBeTypeOf('function')
-    // 脚本页只有 M9A 在包名旁挂游戏更新下拉，三个都没有钩子；两页都没有替换分节，也没有整页替换；
-    // 新建流程什么都不换不插
+    // 脚本页：M9A 在包名旁挂游戏更新下拉，MSS 在控制方式前挂提示，三个都没有钩子；两页都没有
+    // 替换分节，也没有整页替换；新建流程什么都不换不插
     const scriptSlotNames: Record<string, string[]> = {
       MaaFW: [],
       M9A: ['besidePackageName'],
-      MSS: [],
+      MSS: ['beforeControl'],
     }
     for (const flavor of MAAFW_FLAVORS) {
       expect([

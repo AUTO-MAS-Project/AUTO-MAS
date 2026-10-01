@@ -27,7 +27,7 @@ export interface MaaFWFlavorSlotContextMap {
   scriptPage: {
     /** 基本信息（名称、项目目录、运行环境）之后；引导第 1 步 */
     afterBasicInfo: MaaFWScriptSlotContext
-    /** 控制方式一步顶部的特调提示之后、控制方式分节之前；引导第 2 步 */
+    /** 控制方式一步顶部、控制方式分节之前（如 MSS 的控制方式提示）；引导第 2 步 */
     beforeControl: MaaFWScriptSlotContext
     /**
      * 控制方式分节里与「游戏包名」并排的位置（宽屏两列、窄屏上下排）；没有组件时包名独占一行。
@@ -260,8 +260,6 @@ export interface MaaFWScriptPageText {
   sourceDirectoryKey: string
   sourceHintKey: string
   sourcePlaceholderKey: string
-  /** 控制方式一步顶部的一行提示；为空则不显示 */
-  controllerHintKey: string | null
 }
 
 /** 用户页文案 */

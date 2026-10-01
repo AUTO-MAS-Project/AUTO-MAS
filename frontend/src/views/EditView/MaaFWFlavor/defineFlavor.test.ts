@@ -64,7 +64,6 @@ const RICH_BASE: MaaFWFlavor = {
       sourceDirectoryKey: 'base.dir',
       sourceHintKey: 'base.hint',
       sourcePlaceholderKey: 'base.placeholder',
-      controllerHintKey: 'base.controller',
     },
     page: basePage,
     sections: { run: runSection },
@@ -135,7 +134,7 @@ describe('defineMaaFWFlavor 合并规则', () => {
     const flavor = mergeMaaFWFlavor(RICH_BASE, {
       ...identity,
       scriptPage: {
-        text: { sourceHintKey: 'own.hint', titleKey: undefined, controllerHintKey: null },
+        text: { sourceHintKey: 'own.hint', sourcePlaceholderKey: undefined, titleKey: null },
         page: ownPage,
         sections: { run: runSection },
       },
@@ -149,7 +148,7 @@ describe('defineMaaFWFlavor 合并规则', () => {
     expect(flavor.scriptPage.text).toEqual({
       ...RICH_BASE.scriptPage.text,
       sourceHintKey: 'own.hint',
-      controllerHintKey: null,
+      titleKey: null,
     })
     expect(flavor.userPage.text).toEqual({ ...RICH_BASE.userPage.text, queueHintKey: null })
     expect(flavor.userPage.managed).toEqual({
@@ -231,11 +230,11 @@ const FLAT_BEFORE = {
     sourceDirectoryKey: 'edit.localProjectDirectory',
     sourceHintKey: 'edit.pickMfwProjectDirectory',
     sourcePlaceholderKey: 'edit.pickActualMfwProject',
-    controllerHintKey: null,
     accountPlaceholderKey: 'edit.localNoteOnly',
     accountTooltipKey: 'edit.maafwAccountRecordTooltip',
     queueHintKey: null,
-    // 改前的 gameUpdateHintKey（只有 M9A 有）现在是 M9A 自己的插入点组件，见 scriptSlotNames
+    // 改前的 gameUpdateHintKey（只有 M9A 有）与 controllerHintKey（只有 MSS 有）现在都是该特调
+    // 自己的插入点组件，见 scriptSlotNames
     scriptSlotNames: [],
     managedTaskEntries: [],
     managedAccountTask: null,
@@ -265,7 +264,6 @@ const FLAT_BEFORE = {
     sourceDirectoryKey: 'edit.m9aFlavorSourceDirectory',
     sourceHintKey: 'edit.m9aFlavorSourceHint',
     sourcePlaceholderKey: 'edit.m9aFlavorSourcePlaceholder',
-    controllerHintKey: null,
     accountPlaceholderKey: 'edit.m9aFlavorAccountPlaceholder',
     accountTooltipKey: 'edit.m9aFlavorAccountTooltip',
     queueHintKey: 'edit.m9aFlavorQueueHint',
@@ -300,11 +298,12 @@ const FLAT_BEFORE = {
     sourceDirectoryKey: 'edit.mssFlavorSourceDirectory',
     sourceHintKey: 'edit.mssFlavorSourceHint',
     sourcePlaceholderKey: 'edit.mssFlavorSourcePlaceholder',
-    controllerHintKey: 'edit.mssFlavorControllerHint',
     accountPlaceholderKey: 'edit.localNoteOnly',
     accountTooltipKey: 'edit.maafwAccountRecordTooltip',
     queueHintKey: 'edit.mssFlavorQueueHint',
-    scriptSlotNames: [],
+    // 改前 controllerHintKey: 'edit.mssFlavorControllerHint'（公共脚本页顶部的提示），现在由
+    // MSS 在 beforeControl 插入点挂自己的组件，文案仍是那个 key
+    scriptSlotNames: ['beforeControl'],
     managedTaskEntries: [],
     managedAccountTask: null,
     managedTaskWarningKey: null,
@@ -330,7 +329,6 @@ const flatten = (flavor: MaaFWFlavor) => ({
   sourceDirectoryKey: flavor.scriptPage.text.sourceDirectoryKey,
   sourceHintKey: flavor.scriptPage.text.sourceHintKey,
   sourcePlaceholderKey: flavor.scriptPage.text.sourcePlaceholderKey,
-  controllerHintKey: flavor.scriptPage.text.controllerHintKey,
   accountPlaceholderKey: flavor.userPage.text.accountPlaceholderKey,
   accountTooltipKey: flavor.userPage.text.accountTooltipKey,
   queueHintKey: flavor.userPage.text.queueHintKey,

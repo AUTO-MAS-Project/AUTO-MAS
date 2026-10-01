@@ -102,7 +102,10 @@ const makeContext = (
 
 const makeScriptContext = (): MaaFWScriptSlotContext => ({
   scriptId: 's1',
-  maafwConfig: reactive({ Info: { Name: 'n' } }) as unknown as MaaFWScriptConfig,
+  maafwConfig: reactive({
+    Info: { Name: 'n' },
+    Run: { GameUpdateMode: 'Off' },
+  }) as unknown as MaaFWScriptConfig,
   previewData: null,
   interfaceDisabled: false,
   loading: false,
@@ -132,6 +135,7 @@ const renderSlot = (
 const SCRIPT_SLOTS = [
   'afterBasicInfo',
   'beforeControl',
+  'besidePackageName',
   'afterControl',
   'afterUpdate',
   'afterRun',
@@ -161,22 +165,56 @@ afterEach(() => {
 })
 
 describe('MaaFWFlavorSlot 插入点渲染器', () => {
-  it('MaaFW / M9A 在两页的每个插入点都什么都不渲染；MSS 只在用户页队列上方有东西', async () => {
+  it('只有登记了组件的插入点有东西：M9A 包名旁，MSS 控制方式前与用户页队列上方；MaaFW 一处都没有', async () => {
+    const occupied = new Set([
+      'M9A:scriptPage:besidePackageName',
+      'MSS:scriptPage:beforeControl',
+      'MSS:userPage:beforeTaskQueue',
+    ])
     for (const type of ['MaaFW', 'M9A', 'MSS']) {
       const flavor = resolveMaaFWFlavor(type)
       for (const name of SCRIPT_SLOTS) {
-        expect([
+        const html = await renderPartSlot('scriptPage', name, flavor, makeScriptContext())
+        expect([type, name, html !== '']).toEqual([
           type,
           name,
-          await renderPartSlot('scriptPage', name, flavor, makeScriptContext()),
-        ]).toEqual([type, name, ''])
+          occupied.has(`${type}:scriptPage:${name}`),
+        ])
       }
       for (const name of USER_SLOTS) {
-        if (type === 'MSS' && name === 'beforeTaskQueue') continue
-        expect([type, name, await renderPartSlot('userPage', name, flavor, makeContext())]).toEqual(
-          [type, name, '']
-        )
+        const html = await renderPartSlot('userPage', name, flavor, makeContext())
+        expect([type, name, html !== '']).toEqual([
+          type,
+          name,
+          occupied.has(`${type}:userPage:${name}`),
+        ])
       }
+    }
+  })
+
+  it('MSS 控制方式提示与 M9A 游戏更新下拉的文案与改前相同', async () => {
+    const mssHint = await renderPartSlot(
+      'scriptPage',
+      'beforeControl',
+      resolveMaaFWFlavor('MSS'),
+      makeScriptContext()
+    )
+    expect(mssHint).toContain('AAlert flavor-controller-hint')
+    expect(mssHint).toContain(zhCN.edit.mssFlavorControllerHint)
+    const m9aGameUpdate = await renderPartSlot(
+      'scriptPage',
+      'besidePackageName',
+      resolveMaaFWFlavor('M9A'),
+      makeScriptContext()
+    )
+    // 三档与后端 Run.GameUpdateMode 一致，值取自脚本配置草稿
+    expect(m9aGameUpdate).toContain('ASelect')
+    for (const label of [
+      zhCN.edit.mfwGameUpdateOff,
+      zhCN.edit.mfwGameUpdateCheck,
+      zhCN.edit.mfwGameUpdateAutoInstall,
+    ]) {
+      expect(m9aGameUpdate).toContain(label)
     }
   })
 

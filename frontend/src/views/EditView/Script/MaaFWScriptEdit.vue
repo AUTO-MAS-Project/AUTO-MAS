@@ -80,14 +80,6 @@
         </div>
 
         <div v-show="!isWizard || currentStep === 1">
-          <!-- 特调类型（MSS）只适配部分控制方式时，在这里说明原因 -->
-          <a-alert
-            v-if="flavor.scriptPage.text.controllerHintKey"
-            class="flavor-controller-hint"
-            type="warning"
-            show-icon
-            :message="t(flavor.scriptPage.text.controllerHintKey)"
-          />
           <MaaFWFlavorSlot
             part="scriptPage"
             name="beforeControl"
@@ -407,10 +399,6 @@ const hasBesidePackageName = computed(
 
 .config-form {
   max-width: none;
-}
-
-.flavor-controller-hint {
-  margin-bottom: 16px;
 }
 
 .config-form :deep(.ant-form-item) {

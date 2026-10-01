@@ -41,7 +41,6 @@ export const MAAFW_FLAVOR: MaaFWFlavor = {
       sourceDirectoryKey: 'edit.localProjectDirectory',
       sourceHintKey: 'edit.pickMfwProjectDirectory',
       sourcePlaceholderKey: 'edit.pickActualMfwProject',
-      controllerHintKey: null,
     },
     page: null,
     sections: {},

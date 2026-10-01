@@ -381,6 +381,16 @@ describe('MFW 页面分节替换', () => {
     expect(comparable(received.get('flavor:control'))).toEqual(defaultReceived)
   })
 
+  it('控制方式提示：只有 MSS 在 beforeControl 插入点渲染自己的提示，位置在控制方式分节之前', async () => {
+    const hint = '<div class="AAlert flavor-controller-hint"></div>'
+    for (const type of ['MaaFW', 'M9A']) {
+      const html = await renderScriptPage(resolveMaaFWFlavor(type))
+      expect([type, html.includes('flavor-controller-hint')]).toEqual([type, false])
+    }
+    const html = await renderScriptPage(resolveMaaFWFlavor('MSS'))
+    expect(html).toContain(`${hint}<section data-section="default:control"></section>`)
+  })
+
   it('包名旁插入点：只有 M9A 填 control 分节的 besidePackageName（游戏更新下拉），MaaFW / MSS 不填', async () => {
     for (const type of ['MaaFW', 'MSS']) {
       const html = await renderScriptPage(resolveMaaFWFlavor(type))
@@ -488,7 +498,7 @@ describe('MFW 页面插入点', () => {
     const hidden = '<div style="display:none;">'
     expect(html).toContain(`${hidden}${section('basicInfo')}${slot('afterBasicInfo')}</div>`)
     expect(html).toContain(
-      `${hidden}<div class="AAlert flavor-controller-hint"></div>${slot('beforeControl')}${section('control')}${slot('afterControl')}</div>`
+      `${hidden}${slot('beforeControl')}${section('control')}${slot('afterControl')}</div>`
     )
     expect(html).toContain(`${hidden}${section('update')}${slot('afterUpdate')}</div>`)
     expect(html).toContain(`<div>${section('run')}${slot('afterRun')}</div>`)

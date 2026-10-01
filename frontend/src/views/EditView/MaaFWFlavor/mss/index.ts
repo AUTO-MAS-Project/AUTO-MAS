@@ -1,5 +1,5 @@
 // MSS（星塔旅人 / MaaStellaSora）特调：只适配部分控制方式，用户可引用计划表、可关掉活动优先。
-// 独有区块（计划表下拉 + 空队列提示、活动优先开关）都在本目录，按需加载。
+// 独有区块（脚本页控制方式提示、计划表下拉 + 空队列提示、活动优先开关）都在本目录，按需加载。
 import { defineMaaFWLazyComponent } from '@/composables/maafwFlavorTypes'
 import { MAS_DOC_URLS } from '@/utils/openExternal'
 import { SCRIPT_LOGOS } from '@/utils/scriptLogos'
@@ -30,7 +30,9 @@ export const MSS_FLAVOR = defineMaaFWFlavor({
       sourceDirectoryKey: 'edit.mssFlavorSourceDirectory',
       sourceHintKey: 'edit.mssFlavorSourceHint',
       sourcePlaceholderKey: 'edit.mssFlavorSourcePlaceholder',
-      controllerHintKey: 'edit.mssFlavorControllerHint',
+    },
+    slots: {
+      beforeControl: [defineMaaFWLazyComponent(() => import('./MSSControllerHint.vue'))],
     },
   },
   userPage: {
