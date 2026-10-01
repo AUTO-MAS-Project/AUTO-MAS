@@ -114,15 +114,16 @@ const copyAllInfo = async () => {
           {{ t('setting.others.checkUpdate') }}
         </a-button>
       </div>
-      <!-- 暂停中：显著状态条；未暂停：截止日期选择器（清空选择器或手动检查更新可恢复） -->
+      <!-- 暂停中：显著状态条（含副标题提示）；日期选择器常驻，暂停期间也可改截止日期 -->
       <a-alert
         v-if="isPaused"
         type="info"
         show-icon
         class="pause-status-alert"
         :message="t('setting.others.pauseStatus', { date: pauseUntilDisplay })"
+        :description="t('setting.others.pauseStatusHint')"
       />
-      <a-row v-else :gutter="24">
+      <a-row :gutter="24">
         <a-col :span="8">
           <div class="form-item-vertical">
             <div class="form-label-wrapper">

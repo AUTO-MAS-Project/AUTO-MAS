@@ -4222,6 +4222,12 @@ export default {
     others: {
       updateSection: 'Updates',
       checkUpdate: 'Check for updates',
+      pauseUpdates: 'Pause updates',
+      pauseUpdatesTip:
+        'Pick an end date to pause automatic update checks (1-35 days); checking for updates manually resumes immediately.',
+      pausePlaceholder: 'Select pause end date',
+      pauseStatus: 'Updates paused until {date}',
+      pauseStatusHint: 'Your app may not stay up to date until updates resume',
       updateBackend: 'Update the backend at startup',
       updateBackendTip: 'Try to update backend components when the app starts',
       updateSource: 'Update source',

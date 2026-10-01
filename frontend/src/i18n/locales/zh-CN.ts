@@ -4113,6 +4113,7 @@ export default {
         '选择截止日期后暂停自动更新检查，最短 1 天、最长 35 天；期间手动检查更新会立即恢复。',
       pausePlaceholder: '选择暂停截止日期',
       pauseStatus: '更新已暂停，直到{date}为止',
+      pauseStatusHint: '在继续更新之前，你的程序可能不会保持最新状态',
       updateBackend: '启动时尝试更新后端',
       updateBackendTip: '启动时尝试更新后端组件',
       updateSource: '更新源',
