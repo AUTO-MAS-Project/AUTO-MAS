@@ -48,17 +48,41 @@
         <a-space size="middle">
           <a-select
             v-if="status !== '运行' && showUserSelect"
-            v-model:value="localSelectedUserId"
-            :placeholder="t('scheduler.control.userPlaceholder')"
-            style="width: 260px"
+            v-model:value="localSelectedUserIds"
+            mode="multiple"
+            :placeholder="t('scheduler.control.runUsersPlaceholder')"
+            style="width: 320px"
             :loading="userOptionsLoading"
             :options="userOptions || []"
             :disabled="disabled"
+            :max-tag-count="'responsive'"
             allow-clear
             size="large"
             @change="onUserChange"
             @dropdown-visible-change="onUserDropdownVisibleChange"
-          />
+          >
+            <template #option="{ label, value }">
+              <a-checkbox
+                :checked="localSelectedUserIds.includes(value)"
+                style="pointer-events: none"
+              >
+                {{ label }}
+              </a-checkbox>
+            </template>
+
+            <template #dropdownRender="{ menuNode: menu }">
+              <v-nodes :vnodes="menu" />
+              <a-divider style="margin: 4px 0" />
+              <a-space style="padding: 4px 8px" size="small">
+                <a-button type="link" size="small" @click="selectAllUsers">
+                  {{ t('scheduler.control.selectAllUsers') }}
+                </a-button>
+                <a-button type="link" size="small" @click="clearAllUsers">
+                  {{ t('scheduler.control.clearAllUsers') }}
+                </a-button>
+              </a-space>
+            </template>
+          </a-select>
           <a-select
             v-if="status !== '运行' && showResumeScriptSelect"
             v-model:value="localResumeFromScriptId"
@@ -76,7 +100,13 @@
             :type="status === '运行' ? 'default' : 'primary'"
             :danger="status === '运行'"
             :disabled="
-              status === '运行' ? false : !localSelectedTaskId || !localSelectedMode || disabled
+              status === '运行'
+                ? false
+                : !localSelectedTaskId ||
+                  !localSelectedMode ||
+                  disabled ||
+                  !taskOptions.some(option => option.value === localSelectedTaskId) ||
+                  (showUserSelect && localSelectedUserIds.length === 0)
             "
             size="large"
             @click="onAction"
@@ -118,7 +148,7 @@
 
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
-import { computed, ref, watch } from 'vue'
+import { computed, defineComponent, ref, watch, type PropType, type VNode } from 'vue'
 import { PlayCircleOutlined, StopOutlined } from '@ant-design/icons-vue'
 import { TaskCreateIn } from '@/api/models/TaskCreateIn'
 import type { ComboBoxItem } from '@/api/models/ComboBoxItem'
@@ -127,13 +157,25 @@ import { type SchedulerStatus, getTaskModeOptions } from './schedulerConstants'
 
 const { t } = useI18n()
 
+const VNodes = defineComponent({
+  props: {
+    vnodes: {
+      type: Object as PropType<VNode>,
+      required: true,
+    },
+  },
+  setup(props) {
+    return () => props.vnodes
+  },
+})
+
 interface Props {
   selectedTaskId: string | null
   selectedMode: TaskCreateIn.mode | null
   resumeFromScriptId?: string | null
   resumeScriptOptions?: Array<{ label: string; value: string }>
   resumeScriptLoading?: boolean
-  selectedUserId?: string | null
+  selectedUserIds?: string[]
   userOptions?: Array<{ label: string; value: string }>
   userOptionsLoading?: boolean
   taskOptions: ComboBoxItem[]
@@ -151,7 +193,7 @@ interface Emits {
 
   (e: 'update:selectedMode', value: TaskCreateIn.mode | null): void
   (e: 'update:resumeFromScriptId', value: string | null): void
-  (e: 'update:selectedUserId', value: string | null): void
+  (e: 'update:selectedUserIds', value: string[]): void
 
   (e: 'start'): void
 
@@ -172,7 +214,7 @@ const props = withDefaults(defineProps<Props>(), {
   resumeFromScriptId: null,
   resumeScriptOptions: () => [],
   resumeScriptLoading: false,
-  selectedUserId: null,
+  selectedUserIds: () => [],
   userOptions: () => [],
   userOptionsLoading: false,
   runningTaskLabel: '',
@@ -187,7 +229,7 @@ const emit = defineEmits<Emits>()
 const localSelectedTaskId = ref(props.selectedTaskId)
 const localSelectedMode = ref(props.selectedMode)
 const localResumeFromScriptId = ref(props.resumeFromScriptId ?? null)
-const localSelectedUserId = ref(props.selectedUserId ?? null)
+const localSelectedUserIds = ref<string[]>([...(props.selectedUserIds ?? [])])
 
 // 「循环运行」只对循环队列开放，其余任务仍然只有自动代理
 const modeOptions = computed(() =>
@@ -206,12 +248,12 @@ const showResumeScriptSelect = computed(() => {
   return Boolean(taskOption?.label.startsWith('队列 - '))
 })
 
-// 用户下拉只在自动代理模式、且是脚本任务并有可运行用户时出现；不选即按脚本自身筛选跑全部用户。
-// 指定单个用户只对自动代理有意义，脚本设置 / 更新模式下后端一律拒绝，所以切走模式就收起。
-const showUserSelect = computed(
-  () =>
-    localSelectedMode.value === TaskCreateIn.mode.AUTO_PROXY && (props.userOptions?.length ?? 0) > 0
-)
+// 脚本自动代理始终保留用户选择框，列表暂时为空时也可打开下拉重试加载。
+const showUserSelect = computed(() => {
+  if (localSelectedMode.value !== TaskCreateIn.mode.AUTO_PROXY) return false
+  const taskOption = props.taskOptions.find(opt => opt.value === localSelectedTaskId.value)
+  return Boolean(taskOption && !taskOption.label.startsWith('队列 - '))
+})
 
 // 运行时的显示文本 - 直接使用 props，不再需要本地 ref
 // const runningTaskLabel = ref('')
@@ -277,11 +319,11 @@ watch(
 )
 
 watch(
-  () => props.selectedUserId,
+  () => props.selectedUserIds,
   newVal => {
-    localSelectedUserId.value = newVal ?? null
+    localSelectedUserIds.value = [...(newVal ?? [])]
   },
-  { immediate: true }
+  { immediate: true, deep: true }
 )
 
 // 事件处理
@@ -302,8 +344,19 @@ const onResumeDropdownVisibleChange = (open: boolean) => {
   if (open) emit('refresh-resume-scripts')
 }
 
-const onUserChange = (value: string | undefined) => {
-  emit('update:selectedUserId', value ?? null)
+const onUserChange = (value: string[]) => {
+  emit('update:selectedUserIds', [...value])
+}
+
+const selectAllUsers = () => {
+  const value = (props.userOptions ?? []).map(item => item.value)
+  localSelectedUserIds.value = value
+  emit('update:selectedUserIds', [...value])
+}
+
+const clearAllUsers = () => {
+  localSelectedUserIds.value = []
+  emit('update:selectedUserIds', [])
 }
 
 const onUserDropdownVisibleChange = (open: boolean) => {

@@ -1066,6 +1066,23 @@ class _TaskManager:
             )
         return user_uid
 
+    def _resolve_target_users(
+        self, script_uid: uuid.UUID, user_ids: list[str] | None
+    ) -> frozenset[str] | None:
+        # 校验多选运行所指定的用户集合。
+        if user_ids is None:
+            return None
+        if not user_ids:
+            raise ValueError("至少选择一个用户")
+
+        selected: set[str] = set()
+        for user_id in user_ids:
+            user_uid = self._resolve_target_user(script_uid, user_id)
+            if user_uid is not None:
+                selected.add(str(user_uid))
+
+        return frozenset(selected)
+
     async def add_task(
         self,
         mode: Literal["AutoProxy", "ScriptConfig", "Update", "CycleRun"],
@@ -1073,6 +1090,7 @@ class _TaskManager:
         new_task_info: dict | None = None,
         resume_from_script_id: str | None = None,
         user_id: str | None = None,
+        user_ids: list[str] | None = None,
         trigger_source: TaskTriggerSource = "manual_task",
         view_only: bool = False,
         instance_idx: int | None = None,
@@ -1085,6 +1103,7 @@ class _TaskManager:
             id (str): 任务项对应的配置 ID
             new_task_info (dict): 新任务项信息. Defaults to {}.
             user_id (str): 单独运行的用户 ID; 仅脚本的自动代理任务可用。
+            user_ids (list[str]): 多选运行的用户 ID; 仅脚本的自动代理任务可用。
             trigger_source: MAS 任务触发来源，API 手动启动默认 manual_task。
             view_only: 配置查看会话（ScriptConfig 专用）：只读打开原生界面，
                 不注入基线也不回读字段，用于「查看历史备份」等预览场景。
@@ -1102,12 +1121,15 @@ class _TaskManager:
         if self._stopping_all:
             raise RuntimeError("正在停止全部任务，暂不接受新任务")
 
-        # 指定单个用户只对「脚本 + 自动代理」成立；队列到不了用户粒度，设置类任务
+        # 用户范围只对「脚本 + 自动代理」成立；队列到不了用户粒度，设置类任务
         # 的用户由 uid 自身表达。放在循环队列占用标记之前，避免拒绝时留下脏标记。
-        if user_id is not None and (
+        if user_id is not None and user_ids is not None:
+            raise ValueError("多选用户不能与单独运行用户同时使用")
+
+        if (user_id is not None or user_ids is not None) and (
             mode != "AutoProxy" or uid not in Config.ScriptConfig
         ):
-            raise ValueError("指定单个用户仅支持脚本的自动代理任务")
+            raise ValueError("指定运行用户仅支持脚本的自动代理任务")
 
         # CycleRun 只是「怎么排」的差别，脚本仍按自动代理执行；各脚本适配器
         # 只认 AutoProxy，所以模式在这里就翻译掉，循环与否记在 is_cycle 上。
@@ -1129,6 +1151,8 @@ class _TaskManager:
                 )
             # 立刻打上占用标记：检查到这里之间没有 await，并发的两次启动才不会都通过
             Config.running_cycle_queue_ids.add(uid)
+
+        selected_user_ids: frozenset[str] | None = None
 
         if mode in ("ScriptConfig", "Update"):
             if uid in Config.ScriptConfig:
@@ -1156,6 +1180,7 @@ class _TaskManager:
             queue_id = None
             script_uid = uid
             user_uid = self._resolve_target_user(uid, user_id)
+            selected_user_ids = self._resolve_target_users(uid, user_ids)
         else:
             raise ValueError(f"任务 {uid} 无法找到对应脚本配置")
 
@@ -1202,6 +1227,7 @@ class _TaskManager:
                 queue_id=str(queue_id) if queue_id else None,
                 script_id=str(script_uid) if script_uid else None,
                 user_id=str(user_uid) if user_uid else None,
+                user_ids=selected_user_ids,
                 resume_from_script_id=resume_from_script_id,
                 trigger_source=trigger_source,
                 is_cycle=is_cycle,

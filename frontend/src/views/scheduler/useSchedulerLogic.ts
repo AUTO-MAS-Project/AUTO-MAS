@@ -107,7 +107,7 @@ const toPersistedTab = (tab: SchedulerTab): SchedulerTab => ({
   resumeFromScriptId: tab.resumeFromScriptId ?? null,
   resumeScriptOptions: tab.resumeScriptOptions ? [...tab.resumeScriptOptions] : [],
   resumeScriptLoading: false,
-  selectedUserId: tab.selectedUserId ?? null,
+  selectedUserIds: tab.selectedUserIds ? [...tab.selectedUserIds] : undefined,
   userOptions: tab.userOptions ? [...tab.userOptions] : [],
   userOptionsLoading: false,
   taskId: tab.taskId,
@@ -120,11 +120,18 @@ const toPersistedTab = (tab: SchedulerTab): SchedulerTab => ({
   ...getDefaultTabRuntimeState(),
 })
 
-const normalizePersistedTab = (tab: SchedulerTab): SchedulerTab => ({
+const normalizePersistedTab = (
+  tab: SchedulerTab & { selectedUserId?: string | null }
+): SchedulerTab => ({
   ...tab,
   ...getDefaultTabRuntimeState(),
   resumeScriptOptions: tab.resumeScriptOptions || [],
   resumeScriptLoading: false,
+  selectedUserIds: Array.isArray(tab.selectedUserIds)
+    ? [...tab.selectedUserIds]
+    : tab.selectedUserId
+      ? [tab.selectedUserId]
+      : undefined,
   userOptions: tab.userOptions || [],
   userOptionsLoading: false,
   subscriptionIds: [],
@@ -163,7 +170,7 @@ const loadTabsFromStorage = (): SchedulerTab[] => {
       resumeFromScriptId: null,
       resumeScriptOptions: [],
       resumeScriptLoading: false,
-      selectedUserId: null,
+      selectedUserIds: undefined,
       userOptions: [],
       userOptionsLoading: false,
       taskId: null,
@@ -353,7 +360,7 @@ export function useSchedulerLogic() {
       resumeFromScriptId: null,
       resumeScriptOptions: [],
       resumeScriptLoading: false,
-      selectedUserId: null,
+      selectedUserIds: undefined,
       userOptions: [],
       userOptionsLoading: false,
       taskId: options?.taskId || null,
@@ -598,13 +605,12 @@ export function useSchedulerLogic() {
 
   // 脚本任务可以只跑其中一个用户，下拉口径与各脚本适配器一致：已启用且剩余天数不为 0
   const loadUserOptions = async (tab: SchedulerTab) => {
-    // 任务下拉还没加载完时判断不出任务类型，此时清空会把 sessionStorage 恢复出来的
-    // 选择一并抹掉，让刷新后的启动静默退化成跑全部用户。宁可什么都不做，等下拉打开时再刷。
+    // 任务下拉还没加载完时判断不出任务类型，此时保留当前选择，等选项可用后再刷新。
     if (!taskOptions.value.length) return
 
     if (!tab.selectedTaskId || !isScriptTask(tab)) {
       tab.userOptions = []
-      tab.selectedUserId = null
+      tab.selectedUserIds = undefined
       tab.userOptionsLoading = false
       return
     }
@@ -621,22 +627,25 @@ export function useSchedulerLogic() {
       })
       if (isStale()) return
       if (response.code !== 200) {
-        tab.userOptions = []
-        tab.selectedUserId = null
+        message.error(t('scheduler.toast.loadScriptUsersFailed'))
         return
       }
 
       const options = toRunnableUserOptions(response)
       tab.userOptions = options
-      if (tab.selectedUserId && !options.some(item => item.value === tab.selectedUserId)) {
-        tab.selectedUserId = null
+
+      if (tab.selectedUserIds === undefined) {
+        // 第一次选择脚本时默认运行全部可运行用户。
+        tab.selectedUserIds = options.map(item => item.value)
+      } else {
+        // 刷新用户列表只剔除已失效的用户，不覆盖用户手动做出的子集选择。
+        const validUserIds = new Set(options.map(item => item.value))
+        tab.selectedUserIds = tab.selectedUserIds.filter(id => validUserIds.has(id))
       }
     } catch (error) {
       if (isStale()) return
       const errorMsg = error instanceof Error ? error.message : String(error)
       logger.error(`加载脚本用户列表失败: ${errorMsg}`)
-      tab.userOptions = []
-      tab.selectedUserId = null
       message.error(t('scheduler.toast.loadScriptUsersFailed'))
     } finally {
       if (!isStale()) {
@@ -648,7 +657,8 @@ export function useSchedulerLogic() {
   const handleTaskSelectionChange = async (tab: SchedulerTab, taskId: string | null) => {
     tab.selectedTaskId = taskId
     tab.resumeFromScriptId = null
-    tab.selectedUserId = null
+    tab.selectedUserIds = undefined
+    tab.userOptions = []
     await Promise.all([loadResumeScriptOptions(tab), loadUserOptions(tab), loadCycleQueueFlag(tab)])
   }
 
@@ -683,6 +693,22 @@ export function useSchedulerLogic() {
       return
     }
 
+    if (!taskOptions.value.some(option => option.value === tab.selectedTaskId)) {
+      message.error(t('scheduler.toast.taskOptionsUnavailable'))
+      return
+    }
+
+    if (tab.selectedMode === TaskCreateIn.mode.AUTO_PROXY && isScriptTask(tab)) {
+      if (tab.selectedUserIds === undefined) {
+        message.error(t('scheduler.toast.loadScriptUsersFailed'))
+        return
+      }
+      if (tab.selectedUserIds.length === 0) {
+        message.error(t('scheduler.toast.needRunUsers'))
+        return
+      }
+    }
+
     startingTabKeys.add(tab.key)
     try {
       const requestBody: TaskCreateIn & { resumeFromScriptId?: string } = {
@@ -692,9 +718,13 @@ export function useSchedulerLogic() {
       if (tab.resumeFromScriptId) {
         requestBody.resumeFromScriptId = tab.resumeFromScriptId
       }
-      // 指定单个用户只对自动代理有意义，其他模式后端一律拒绝；切走模式后不再带上
-      if (tab.selectedUserId && tab.selectedMode === TaskCreateIn.mode.AUTO_PROXY) {
-        requestBody.userId = tab.selectedUserId
+      // 多选用户只对脚本自动代理有意义，非空选择始终随请求传递。
+      if (
+        tab.selectedMode === TaskCreateIn.mode.AUTO_PROXY &&
+        isScriptTask(tab) &&
+        tab.selectedUserIds?.length
+      ) {
+        requestBody.userIds = [...tab.selectedUserIds]
       }
 
       const response = await Service.addTaskApiDispatchStartPost(requestBody)
