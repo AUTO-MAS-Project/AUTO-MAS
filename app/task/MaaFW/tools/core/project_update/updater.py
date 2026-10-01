@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import re
 import threading
 import uuid
@@ -1195,10 +1196,14 @@ async def apply_maafw_project_update(
     suffix = uuid.uuid4().hex[:8]
     staging_root = Path(payload.staging_root)
     extract_dir = staging_root / f"pkg-{payload.lineage}-{suffix}"
+    # 区间差量拼虚拟全量包的目录，与整包解压目录分开：里面没变的文件是旧载荷 / 共用库同一
+    # inode 的硬链接，区间失败后要是没删干净，整包解压往同名文件里 ``open("wb")`` 就是原地
+    # 截断旧载荷。整包永远解压到 extract_dir 这个从没被区间用过的新目录。
+    range_dir = staging_root / f"rpk-{payload.lineage}-{suffix}"
     staging = staging_root / f"payload-{payload.lineage}-{suffix}"
     expected_version = str(target_version or "").strip()
 
-    # 区间差量：拼好的虚拟全量包（包内相对路径 → extract_dir 下的文件）；None = 照常下整包。
+    # 区间差量：拼好的虚拟全量包（包内相对路径 → range_dir 下的文件）；None = 照常下整包。
     range_entries: dict[str, Path] | None = None
     range_transferred = 0
     if range_delta:
@@ -1207,7 +1212,7 @@ async def apply_maafw_project_update(
                 download_url,
                 candidate,
                 payload,
-                extract_dir,
+                range_dir,
                 target_version=str(target_version or ""),
                 proxy=proxy,
                 send_log=send_update_log,
@@ -1218,7 +1223,7 @@ async def apply_maafw_project_update(
             )
         except RangeDeltaCancelled as exc:
             log_stopped(exc)
-            await _remove_tree_in_thread(extract_dir)
+            await _discard_range_dir(range_dir, send_update_log)
             _finish_operation(operation, "cancelled")
             raise MaaFWProjectUpdateError(CANCELLED_MESSAGE, cancelled=True) from exc
         if range_result is not None:
@@ -1283,6 +1288,7 @@ async def apply_maafw_project_update(
             f"更新已在「下载」之后中止，本次已用时 {format_duration(timer.elapsed())}"
         )
         await _remove_tree_in_thread(extract_dir)
+        await _discard_range_dir(range_dir, send_update_log)
         _finish_operation(operation, "cancelled", downloadedBytes=downloaded_bytes)
         raise MaaFWProjectUpdateError(CANCELLED_MESSAGE, cancelled=True)
 
@@ -1319,14 +1325,14 @@ async def apply_maafw_project_update(
             timer.start("套用更新包")
         emit(stage, data)
 
-    def build_package(package_root: Path) -> Any:
+    def build_package(package_root: Path, unpacked: Path) -> Any:
         timer.start("比对")
         send_update_log("正在比对新旧版本文件")
         built = build_from_package(
             payload.manifest(),
             payload.directory(),
             package_root,
-            extract_dir,
+            unpacked,
             staging,
             blob_store=payload.blob_store,
             private=payload.private_paths,
@@ -1354,8 +1360,8 @@ async def apply_maafw_project_update(
 
     def build() -> Any:
         if range_entries is not None:
-            # 区间差量已在 extract_dir 里拼好了虚拟全量包，条目表就是整包的白名单。
-            return build_package(extract_dir)
+            # 区间差量已在 range_dir 里拼好了虚拟全量包，条目表就是整包的白名单。
+            return build_package(range_dir, range_dir)
         timer.start("解压")
         staging_root.mkdir(parents=True, exist_ok=True)
         entry_files, expanded = zip_entry_stats(downloaded.path)
@@ -1382,7 +1388,7 @@ async def apply_maafw_project_update(
             f"解压完成：{extracted.files} 个文件 / {format_megabytes(extracted.bytes)}，"
             f"用时 {format_duration(elapsed)}"
         )
-        return build_package(_find_package_root(extract_dir))
+        return build_package(_find_package_root(extract_dir), extract_dir)
 
     registered: RegisterResult | None = None
     try:
@@ -1390,7 +1396,9 @@ async def apply_maafw_project_update(
         # 解压目录里剩下的（没被挪进新载荷的）可能还有几百 MB：删在工作线程里，不在事件
         # 循环上同步删——那会冻住 WS 推送与界面，看起来又像卡死。用时只进汇总行。
         timer.start("清理解压目录")
-        await asyncio.to_thread(remove_tree, extract_dir)
+        await asyncio.to_thread(
+            remove_tree, range_dir if range_entries is not None else extract_dir
+        )
         timer.finish()
         if is_cancelled():
             raise PayloadCancelled("update cancelled")
@@ -1485,6 +1493,7 @@ async def apply_maafw_project_update(
     finally:
         # 取消 / 失败时解压目录多半是整包大小；成功路径上面已经删过，这里是空操作。
         await _remove_tree_in_thread(extract_dir)
+        await _discard_range_dir(range_dir, send_update_log)
 
     manifest_files = registered.manifest.get("files")
     send_update_log(
@@ -1611,13 +1620,42 @@ async def _range_delta_package(
         if not isinstance(exc, (RangeDeltaUnavailable, UpdateApplyError)):
             logger.warning("MaaFW 区间差量出错，改下全量包", exc_info=True)
         timer.finish()
-        await _remove_tree_in_thread(package_dir)
+        if delta is not None:
+            await asyncio.to_thread(delta.close)
+            delta = None
+        await _discard_range_dir(package_dir, send_log)
         reason = _sanitize_log_message(str(exc).strip() or type(exc).__name__)
         send_log(f"按区间差量没做成（{reason}），改为下载全量包")
+        # 前面的区间进度带着 package_type=delta，transport 的下载事件不带类型、宿主会沿用
+        # 上一次的：先报一条全量，面板才不会把整包下载标成「增量」。
+        _report_progress(
+            progress,
+            "downloading",
+            status="running",
+            downloaded_bytes=0,
+            total_bytes=candidate.size,
+            package_type="full",
+            operation_id=operation_id,
+        )
         return None
     finally:
         if delta is not None:
             await asyncio.to_thread(delta.close)
+
+
+async def _discard_range_dir(path: Path, send_log: Callable[[str], None]) -> None:
+    """删区间差量拼虚拟全量包的目录；删不掉（被占用）就说清楚，留给启动期清理。
+
+    里面没变的文件是旧载荷 / 共用库的硬链接，只能摘目录项，绝不能再往里写：整包退回
+    解压到另一个新目录（``pkg-*``），不碰这里。
+    """
+
+    await _remove_tree_in_thread(path)
+    if await asyncio.to_thread(os.path.lexists, path):
+        send_log(
+            f"区间差量的临时目录没删掉（{path}），留待下次启动时清理；"
+            "整包会解压到另一个新目录，不受影响"
+        )
 
 
 def _finish_operation(

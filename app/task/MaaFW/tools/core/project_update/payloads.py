@@ -703,9 +703,13 @@ def build_from_package(
     for rel, source in plan.files.items():
         target = staging / rel
         size = source.stat().st_size
-        if os.path.lexists(target) and os.path.samefile(source, target):
+        if (
+            package_entries is not None
+            and os.path.lexists(target)
+            and os.path.samefile(source, target)
+        ):
             # 区间差量里没变的文件：包里那份就是从旧载荷链过来的，骨架里已是同一个
-            # inode，不用再算一遍哈希、也不用动它。整包解压出来的文件不会走到这里。
+            # inode，不用再算一遍哈希、也不用动它。整包与差量包路径不做这个判断。
             pass
         elif blob_store is not None and is_shared_path(rel, size, private_list):
             blob_store.place(source, target)

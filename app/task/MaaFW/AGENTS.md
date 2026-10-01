@@ -334,7 +334,8 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   条目、包根怎么认）时要同步 `range_delta._check_layout`。
 - **GitHub 源按区间差量**（`project_update/range_delta.py`，#1118）：要的是全量包（GitHub 源
   一律如此）时，先用 HTTP Range 读发行包的中央目录，按 CRC32 + 大小与当前载荷逐条目比，只取回
-  变了的条目，没变的从当前载荷搬，在 `.staging/pkg-*` 里拼成虚拟全量包，再按全量包语义建新载荷
+  变了的条目，没变的从当前载荷搬，在 `.staging/rpk-*` 里拼成虚拟全量包（与整包解压的 `pkg-*`
+  分开：里面没变的文件是旧载荷 / 共用库的硬链接，退回整包绝不往里解压），再按全量包语义建新载荷
   ——与整包下载逐字节一致、载荷 id 相同（识宝 v1.13.3→v1.13.4 取回约 3.5 MB，整包 185 MB）。
   清单 `source.mode=range`、`projectionRevision` 照全量记；进度与结果的 `package_type` 报
   `delta`（前端显示增量）。只直连 `github.com`、不走加速镜像（区间字节只有条目级 CRC，没有整包

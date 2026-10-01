@@ -3,7 +3,7 @@
 GitHub 源以前一律下整包（识宝 185 MB、MPA 173 MB），哪怕两版之间只改了几个文件。这里只读
 发行包的中央目录，按 CRC32 + 大小与当前载荷逐条目比对，只把变了的条目按区间取回来，没变的
 从当前载荷硬链接（与 ``clone_payload_into`` 同一口径：库里的链接、小文件复制），在
-``.staging/pkg-*`` 里拼成一棵「虚拟全量包」，再交给 ``payloads.build_from_package`` 按全量包
+``.staging/rpk-*`` 里拼成一棵「虚拟全量包」，再交给 ``payloads.build_from_package`` 按全量包
 的语义建新载荷（stale 规则一字不改）。结果与整包下载后建出的载荷逐字节一致：
 
 - 白名单与整包同一张：在中央目录建的空文件骨架（interface 及其 ``import``、``welcome`` 写真
@@ -11,7 +11,7 @@ GitHub 源以前一律下整包（识宝 185 MB、MPA 173 MB），哪怕两版�
   的叠加视图同样的输入；算出的条目表直接交给 ``build_from_package``（``package_entries``），
   不在缺着外壳文件的虚拟树上再投影一遍。
 - 包的形态与整包解压的认法对不上的（根上有 ``changes.json`` / ``payload/`` / ``files/``、
-  保留目录、重名条目）不走区间，改下整包。
+  保留目录、重名条目、整包解压会改写的条目名、只差大小写的目录段）不走区间，改下整包。
 
 只直连 ``github.com``（与投影补齐同一约束）：加速镜像是第三方转发，按区间取回的字节只有
 条目级 CRC32、没有整包 sha256 可校验。区间这一路任何一步失败都抛
@@ -34,7 +34,7 @@ from urllib.parse import urlsplit
 
 import httpx
 
-from .apply import _EntryBoundary
+from .apply import _EntryBoundary, _zip_member_parts
 from .blob_store import place_fresh
 from .contracts import RESERVED_PROJECT_DIRS
 from .payloads import PayloadError, lineage_key, manifest_files, remove_tree
@@ -171,6 +171,7 @@ def _check_layout(
         # 整包解压时包根下有这两个目录就把它当成载荷根（``apply._resolve_payload_root``）。
         raise RangeDeltaUnavailable("发行包根上有 payload/ 或 files/ 目录")
     seen: set[str] = set()
+    directories: dict[str, str] = {}
     for info in archive.infolist():
         name = info.filename
         if info.is_dir() or not name.startswith(prefix):
@@ -179,11 +180,23 @@ def _check_layout(
         parts = PurePosixPath(rel).parts
         if parts and parts[0] in RESERVED_PROJECT_DIRS:
             raise RangeDeltaUnavailable(f"发行包里有更新器的保留目录：{name}")
+        if "/".join(_zip_member_parts(name)) != name:
+            # 整包解压按 ``_zip_member_parts`` 规整落点（Windows 非法字符换成 _、去各段
+            # 结尾的点和空格），文件名与包里写的不同；区间按原名取，两边对不上。
+            raise RangeDeltaUnavailable(f"发行包里有解压时会被改名的条目：{name}")
         key = rel.casefold()
         if key in seen:
             # 整包解压时后一个覆盖前一个，按条目表取的是前一个。
             raise RangeDeltaUnavailable(f"发行包里有重名条目：{name}")
         seen.add(key)
+        for depth in range(1, len(parts)):
+            directory = "/".join(parts[:depth])
+            known = directories.setdefault(directory.casefold(), directory)
+            if known != directory:
+                # ``a/X`` 与 ``A/y``：整包解压落进同一个目录，条目表里却是两个路径。
+                raise RangeDeltaUnavailable(
+                    f"发行包里有只差大小写的目录：{known}、{directory}"
+                )
 
 
 def _same_content(path: Path, info: zipfile.ZipInfo) -> bool:
