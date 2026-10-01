@@ -4108,6 +4108,10 @@ export default {
     others: {
       updateSection: '更新配置',
       checkUpdate: '检查更新',
+      pauseUpdates: '暂停更新',
+      pauseUpdatesTip: '选择截止日期后暂停自动更新检查，最短 1 天、最长 35 天；期间手动检查更新会立即恢复。',
+      pausePlaceholder: '选择暂停截止日期',
+      pauseStatus: '更新已暂停，直到{date}为止',
       updateBackend: '启动时尝试更新后端',
       updateBackendTip: '启动时尝试更新后端组件',
       updateSource: '更新源',

@@ -4,6 +4,7 @@ import { Service } from '@/api'
 import { message } from 'ant-design-vue'
 import { useAudioPlayer } from '@/composables/useAudioPlayer'
 import type { ChangelogData } from '@/utils/changelog'
+import { isUpdatePaused } from '@/composables/updatePause'
 
 const logger = window.electronAPI.getLogger('更新检查器')
 
@@ -70,6 +71,23 @@ const checkAutoUpdateEnabled = async (): Promise<boolean> => {
   return false
 }
 
+// 是否处于"暂停更新"期（读 Update.PauseUntil，读取失败视为未暂停）
+export const isUpdatePausedNow = async (): Promise<boolean> => {
+  try {
+    const response = await Service.getScriptsApiSettingGetPost()
+    if (response.code === 200 && response.data) {
+      const pauseUntil = response.data.Update?.PauseUntil
+      if (isUpdatePaused(pauseUntil)) {
+        return true
+      }
+    }
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.warn(`获取暂停更新设置失败: ${errorMsg}`)
+  }
+  return false
+}
+
 export function useUpdateChecker() {
   // 执行一次更新检查 - 完全参考顶栏的 pollOnce 逻辑
   const pollOnce = async () => {
@@ -79,6 +97,12 @@ export function useUpdateChecker() {
     const autoUpdateEnabled = await checkAutoUpdateEnabled()
     if (!autoUpdateEnabled) {
       logger.info('自动检查更新已关闭，跳过定时检查')
+      return
+    }
+
+    // 暂停更新期间跳过定时检查（startPolling 仍会起定时器，到期后下个 tick 自动恢复）
+    if (await isUpdatePausedNow()) {
+      logger.info('更新已暂停，跳过定时检查')
       return
     }
 
@@ -169,7 +193,12 @@ export function useUpdateChecker() {
       }
       if (updateCheckTimer) return
 
-      logger.info('启动定时版本检查任务')
+      // 暂停更新期间定时器照常待命（每次 tick 由 pollOnce 门控跳过），到期后自动恢复
+      if (await isUpdatePausedNow()) {
+        logger.info('更新已暂停，定时版本检查任务待命（暂停期内不检查，到期后自动恢复）')
+      } else {
+        logger.info('启动定时版本检查任务')
+      }
 
       // 延迟3秒后再执行首次检查，确保后端已经完全启动
       initialUpdateCheckTimer = setTimeout(async () => {

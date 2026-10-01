@@ -4976,6 +4976,8 @@ class GlobalConfig(ConfigBase):
         self.Update_IfAutoUpdate = ConfigItem(
             "Update", "IfAutoUpdate", False, BoolValidator()
         )
+        ## 暂停更新截止日期（YYYY-MM-DD，空串表示未暂停）
+        self.Update_PauseUntil = ConfigItem("Update", "PauseUntil", "")
         ## 更新源
         self.Update_Source = ConfigItem(
             "Update",
