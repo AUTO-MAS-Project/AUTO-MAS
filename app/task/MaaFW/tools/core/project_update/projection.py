@@ -383,12 +383,39 @@ class ProjectionRules:
 
         return is_shared_path(relative, size, private_paths)
 
-    def keeps(self, relative: Path, *, is_directory: bool = False) -> bool:
-        """这个源相对路径要不要进副本。"""
+    def _targets_by_path(self) -> dict[Path, list[tuple[Path, TargetMode]]]:
+        """白名单目标按路径分桶（``Path`` 的相等与哈希就是 pathlib 的口径：Windows 上
+        不分大小写）。目标表建好之后不再改；万一改了（同一个 dict 增删）按长度重建。"""
 
+        cached = self.__dict__.get("_targets_index")
+        if (
+            cached is not None
+            and cached[0] is self.targets
+            and cached[1] == len(self.targets)
+        ):
+            return cached[2]
+        index: dict[Path, list[tuple[Path, TargetMode]]] = {}
         for target, mode in self.targets.items():
-            if not _is_relative_to(relative, target):
-                continue
+            index.setdefault(target, []).append((target, mode))
+        self.__dict__["_targets_index"] = (self.targets, len(self.targets), index)
+        return index
+
+    def keeps(self, relative: Path, *, is_directory: bool = False) -> bool:
+        """这个源相对路径要不要进副本。
+
+        只看 ``relative`` 自己与它的各级上级里哪些是白名单目标（与逐个目标
+        ``relative_to`` 判「在不在它下面」等价：pathlib 的 ``is_relative_to`` 就是「相等或
+        是某级上级」），条目数 × 目标数降成条目数 × 路径深度——MaaFgo 一万多个条目、几百个
+        目标时逐个比要几分钟。任何一个命中的目标放行就保留，与目标的先后无关。
+        """
+
+        index = self._targets_by_path()
+        matches = [
+            pair
+            for candidate in (relative, *relative.parents)
+            for pair in index.get(candidate, ())
+        ]
+        for target, mode in matches:
             target_is_directory = target == ROOT or (relative != target or is_directory)
             if (
                 target_exclusion_reason(
