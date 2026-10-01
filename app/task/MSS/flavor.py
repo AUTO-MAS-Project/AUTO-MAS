@@ -78,23 +78,53 @@ def task_name_for_entry(interface_model: MaaFWInterface, entry: str) -> str | No
 
 
 def github_repo_name(github: str) -> str:
-    """``https://github.com/<owner>/<repo>`` 里的 ``<repo>``；取不到返回空串。"""
+    """``github`` 里的仓库名；给不出 ``owner/repo`` 这种两段路径时返回空串。
 
-    cleaned = github.strip().rstrip("/")
+    认这些写法：``https://github.com/owner/repo``、``https://github.com/owner/repo.git``、
+    ``git@github.com:owner/repo.git``、``owner/repo``。
+    只给一段的（如 ``https://github.com/MaaStellaSora`` 这种组织主页）返回空串——
+    它不是一个仓库，按仓库名认领会把整个组织名下的项目都算进来。
+    """
+
+    cleaned = github.strip()
+    if "://" in cleaned:
+        cleaned = cleaned.split("://", 1)[1]
+    cleaned = cleaned.replace(":", "/")
+    cleaned = cleaned.strip("/")
     if cleaned.endswith(".git"):
         cleaned = cleaned[: -len(".git")]
-    if "/" not in cleaned:
+    parts = [part for part in cleaned.split("/") if part]
+    if parts and ("." in parts[0] or "@" in parts[0]):
+        ## 首段是主机名（github.com / git@github.com），去掉后剩下的才是路径
+        parts = parts[1:]
+    if len(parts) < 2:
         return ""
-    return cleaned.rsplit("/", 1)[-1]
+    return parts[-1]
+
+
+def _is_mss_project_key(value: str) -> bool:
+    """项目标识符是否属于 MSS：等于 ``MaaStellaSora``，或以 ``MaaStellaSora-`` 开头。
+
+    后缀必须是连字符分隔的——``MaaStellaSora-Personal`` ✓、``MaaStellaSoraX`` ✗，
+    免得把碰巧同前缀的无关项目认成衍生版。``github`` 与 ``name`` 走同一口径。
+    """
+
+    normalized = value.strip().casefold()
+    return normalized == _MSS_PROJECT_NAME or normalized.startswith(
+        f"{_MSS_PROJECT_NAME}-"
+    )
 
 
 def is_mss_project(interface_model: MaaFWInterface | dict[str, Any]) -> bool:
     """官方版与其衍生版（个人版）都认领，三条判据任一命中即可：
 
     - ``mirrorchyan_rid == SSAH``：官方版在 MirrorChyan 的分发标识；
-    - ``github`` 仓库名以 ``MaaStellaSora`` 开头：官方 ``MaaStellaSora/MaaStellaSora``、
-      个人版 ``beichen24a1/MaaStellaSora-Personal`` 都命中；
-    - ``name`` 等于 ``MaaStellaSora`` 或以 ``MaaStellaSora-`` 开头（PI 的项目唯一标识符）。
+    - ``github`` 仓库名（``owner/repo`` 里的 repo）命中同一口径：官方
+      ``MaaStellaSora/MaaStellaSora``、个人版 ``beichen24a1/MaaStellaSora-Personal`` 都命中；
+    - ``name``（PI 的项目唯一标识符）命中同一口径。
+
+    后两条共用 ``_is_mss_project_key``：**等于 ``MaaStellaSora`` 或以 ``MaaStellaSora-`` 开头**。
+    只给 ``https://github.com/MaaStellaSora`` 这种组织主页时仓库名取不到，不会认领。
 
     认领只决定**脚本类型**（都用 ``MSSConfig`` 与同一套运行期装饰）；更新谱系仍按
     ``mirrorchyan_rid`` / ``github`` / ``name`` 各自分开，衍生版不会被官方版的更新包覆盖。
@@ -110,12 +140,9 @@ def is_mss_project(interface_model: MaaFWInterface | dict[str, Any]) -> bool:
         name = getattr(interface_model, "name", None)
     if str(rid or "").strip().casefold() == "ssah":
         return True
-    if github_repo_name(str(github or "")).casefold().startswith(_MSS_PROJECT_NAME):
+    if _is_mss_project_key(github_repo_name(str(github or ""))):
         return True
-    normalized = str(name or "").strip().casefold()
-    return normalized == _MSS_PROJECT_NAME or normalized.startswith(
-        f"{_MSS_PROJECT_NAME}-"
-    )
+    return _is_mss_project_key(str(name or ""))
 
 
 def activity_running() -> bool | None:

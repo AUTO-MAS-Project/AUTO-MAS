@@ -5,8 +5,10 @@
 `flavor.py`：`FLAVOR` 对象（满足 `app/task/MaaFW/tools/embedded/flavor.py` 的 `MaaFWFlavor` 协议）。
 它做的事穷举如下，多一件都没有：
 
-1. `matches_project(interface)`：`mirrorchyan_rid == SSAH` / `github` 仓库名以 `MaaStellaSora` 开头 /
-   `name` 等于 `MaaStellaSora` 或以 `MaaStellaSora-` 开头，任一命中即认领——官方版与个人版等
+1. `matches_project(interface)`：`mirrorchyan_rid == SSAH` / `github` 仓库名命中 /
+   `name` 命中，任一即认领；后两条**同一口径**——等于 `MaaStellaSora` 或以 `MaaStellaSora-` 开头
+   （`MaaStellaSoraX` 这种只是同前缀的不算，`https://github.com/MaaStellaSora` 这种组织主页也取不到仓库名）\
+   ——官方版与个人版等
    衍生版（如 `beichen24a1/MaaStellaSora-Personal`）都认，导入完成后引擎据此把脚本类型定成
    `MSSConfig`。**认领只定类型**；更新谱系仍按 `mirrorchyan_rid` / `github` / `name` 各自分开。
 2. `decorate_selection(...)`，按这个顺序：

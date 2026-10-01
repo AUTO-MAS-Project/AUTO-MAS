@@ -63,6 +63,23 @@ def test_unrelated_project_is_not_claimed() -> None:
     assert is_mss_project({"name": "MaaStellaSoraX"}) is False
 
 
+def test_github_side_uses_the_same_rule_as_name() -> None:
+    ## 判据统一：github 与 name 同口径，只是同前缀（没有连字符）的不认领
+    assert is_mss_project({"github": "https://github.com/foo/MaaStellaSoraX"}) is False
+    assert (
+        is_mss_project({"github": "https://github.com/foo/MaaStellaSoraPlus"}) is False
+    )
+    ## 连字符后缀的衍生版照旧认领
+    assert (
+        is_mss_project({"github": "https://github.com/foo/MaaStellaSora-Personal"})
+        is True
+    )
+    ## 组织主页只有 owner 没有 repo，不是仓库，不认领
+    assert is_mss_project({"github": "https://github.com/MaaStellaSora"}) is False
+    ## 同理，光一个仓库名（没 owner）也不认领
+    assert is_mss_project({"github": "MaaStellaSora"}) is False
+
+
 def test_github_repo_name_parsing() -> None:
     assert (
         github_repo_name("https://github.com/MaaStellaSora/MaaStellaSora")
@@ -78,3 +95,12 @@ def test_github_repo_name_parsing() -> None:
     )
     assert github_repo_name("") == ""
     assert github_repo_name("MaaStellaSora") == ""
+    ## 组织主页没有仓库段
+    assert github_repo_name("https://github.com/MaaStellaSora") == ""
+    ## scp 风格
+    assert (
+        github_repo_name("git@github.com:beichen24a1/MaaStellaSora-Personal.git")
+        == "MaaStellaSora-Personal"
+    )
+    ## 裸 owner/repo
+    assert github_repo_name("foo/MaaStellaSora") == "MaaStellaSora"
