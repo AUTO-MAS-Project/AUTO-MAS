@@ -19,8 +19,10 @@
 //      create：afterSourceStep（只读）
 //    - 预取数据：scriptPage.prepare / userPage.prepare（页面加载期间调用；新建流程没有）。
 // 3. 页面级：scriptPage.page / userPage.page 整页替换，用 MFW 的公共件拼——
-//    views/EditView/Script/MaaFWScriptEdit/index.ts、views/EditView/User/MaaFWUserEdit/index.ts
+//    views/EditView/Script/MaaFWScriptEdit/pageKit.ts、views/EditView/User/MaaFWUserEdit/pageKit.ts
 //    导出分节、分节契约与编排层（useMaaFWScriptPage / useMaaFWUserPage），不必复制 MFW 页面。
+//    这两个文件刻意不叫 index.ts：vite 解析扩展名时 .vue 排在目录之前，按目录名引入会拿到
+//    同名的 MaaFWScriptEdit.vue / MaaFWUserEdit.vue 页面本身（typecheck 却照样通过）。
 // 路由不用改：router/maafwFlavorRoutes.ts 按注册表给每个类型生成四条路由；页面宿主
 // （MaaFWFlavor/MaaFWPageHost.vue）按脚本实际类型选页面，地址后缀写错的纠正到实际类型那条。
 // 需要一个现在没有的插入点：在 maafwFlavorTypes.ts 的 MaaFWFlavorSlotContextMap 对应部分下加

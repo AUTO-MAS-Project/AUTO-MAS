@@ -19,6 +19,8 @@ interface MaaFWEmbeddedImportOptions {
   refreshScriptType: () => Promise<void>
   /** 有效根换了之后重新读 interface 并重新准备运行环境 */
   runPreviewOnNewRoot: () => Promise<void>
+  /** 页面已卸载（导入换了类型、页面宿主换成了特调自己的页面） */
+  isPageUnmounted: () => boolean
 }
 
 /**
@@ -32,6 +34,7 @@ export function useMaaFWEmbeddedImport({
   channel,
   refreshScriptType,
   runPreviewOnNewRoot,
+  isPageUnmounted,
 }: MaaFWEmbeddedImportOptions) {
   const { t } = useI18n()
   const logger = window.electronAPI.getLogger('MaaFW 脚本编辑')
@@ -98,6 +101,9 @@ export function useMaaFWEmbeddedImport({
       importMessage.value = ''
       const ok = await runEmbeddedAction(() => reimportEmbedded(scriptId, path))
       if (!ok) return
+      // 导入后类型变成了有自己页面的特调：页面宿主已经换上那个页面，它加载时自己读 interface、
+      // 备运行环境；这个旧实例再往下走只会重复请求、拿旧草稿回写配置
+      if (isPageUnmounted()) return
       maafwConfig.Info.Path = path
       formData.path = path
       await runPreviewOnNewRoot()

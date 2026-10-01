@@ -382,6 +382,8 @@ describe('公共页面不按特调类型分支', () => {
     ['拼引导路径', /\/setup\//, new Set([ROUTE_TABLE])],
     ['拼加用户路径', /\/users\/add\/\$\{/, new Set([ROUTE_TABLE])],
     ['读路由登记的类型', /\bmeta\??\.scriptType\b/, ROUTE_META_READERS],
+    // vite 解析扩展名时 .vue 排在目录之前：按目录名引入拿到的是同名页面本身，typecheck 却照样过
+    ['按目录名引入 MFW 页面公共件', /from\s+['"][^'"]*\/MaaFW(Script|User)Edit['"]/, new Set()],
   ]
 
   /** 违反了哪几条（说明） */
@@ -419,6 +421,10 @@ describe('公共页面不按特调类型分支', () => {
       ['router.push(`/scripts/${id}/users/add/${suffix}`)', '拼加用户路径'],
       ['const type = route.meta.scriptType', '读路由登记的类型'],
       ["if (flavor.value.type === 'X') return", 'flavor.type 判断'],
+      [
+        "import { ControlConfigSection } from '@/views/EditView/Script/MaaFWScriptEdit'",
+        '按目录名引入 MFW 页面公共件',
+      ],
     ]
     for (const [code, label] of planted) {
       expect([code, violations(page, code)]).toEqual([code, expect.arrayContaining([label])])
@@ -431,8 +437,31 @@ describe('公共页面不按特调类型分支', () => {
       "import { useMaaFWSetupWizard } from './useMaaFWSetupWizard'",
       "router.push(maafwRouteLocation(type, 'setup', { id }))",
       'router.push(`/scripts/${script.id}/users/add/maa`)',
+      "import { ControlConfigSection } from '@/views/EditView/Script/MaaFWScriptEdit/pageKit'",
+      "import MaaFWScriptEdit from '@/views/EditView/Script/MaaFWScriptEdit.vue'",
     ]) {
       expect([code, violations(page, code)]).toEqual([code, []])
+    }
+  })
+
+  it('页面公共件不叫 index.ts，特调目录里也不按目录名引入它们', () => {
+    // 有 index.ts 时按目录名引入能过 typecheck，运行时却拿到同名 .vue 页面；没有它 typecheck 直接报错
+    for (const dir of [
+      '../views/EditView/Script/MaaFWScriptEdit',
+      '../views/EditView/User/MaaFWUserEdit',
+    ]) {
+      const names = readdirSync(new URL(dir, import.meta.url))
+      expect([dir, names.filter(name => /^index\.(ts|js)$/.test(name))]).toEqual([dir, []])
+      expect(names).toContain('pageKit.ts')
+    }
+    const flavorRoot = new URL('../views/EditView/MaaFWFlavor/', import.meta.url)
+    const flavorFiles = readdirSync(flavorRoot, { recursive: true, encoding: 'utf8' }).filter(
+      name => /\.(ts|vue)$/.test(name) && !name.endsWith('.test.ts')
+    )
+    const bareImport = /from\s+['"][^'"]*\/MaaFW(Script|User)Edit['"]/
+    for (const name of flavorFiles) {
+      const source = readFileSync(new URL(name.replace(/\\/g, '/'), flavorRoot), 'utf8')
+      expect([name, bareImport.test(source)]).toEqual([name, false])
     }
   })
 })

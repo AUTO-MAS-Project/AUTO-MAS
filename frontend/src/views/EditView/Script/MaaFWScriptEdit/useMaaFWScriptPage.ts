@@ -189,6 +189,7 @@ export function useMaaFWScriptPage({ scriptId }: MaaFWScriptPageOptions) {
     channel,
     refreshScriptType,
     runPreviewOnNewRoot,
+    isPageUnmounted: () => pageUnmounted,
   })
   const { refreshEmbeddedStatus } = embedded
 

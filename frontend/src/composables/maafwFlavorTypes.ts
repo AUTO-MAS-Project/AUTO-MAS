@@ -296,7 +296,7 @@ export interface MaaFWScriptPagePart {
   text: MaaFWScriptPageText
   /**
    * 整页替换：特调自己的脚本页（编辑与引导两种形态都由它渲染），没有写 null。用 MFW 导出的分节与
-   * 编排层拼（views/EditView/Script/MaaFWScriptEdit/index.ts），页面宿主按脚本实际类型选它。
+   * 编排层拼（views/EditView/Script/MaaFWScriptEdit/pageKit.ts），页面宿主按脚本实际类型选它。
    */
   page: MaaFWLazyComponent | null
   /** 替换的分节；没有写 {} */
@@ -312,7 +312,7 @@ export interface MaaFWUserPagePart {
   managed: MaaFWManagedTasks
   /**
    * 整页替换：特调自己的用户页（加用户与编辑用户都由它渲染），没有写 null。用 MFW 导出的分节与
-   * 编排层拼（views/EditView/User/MaaFWUserEdit/index.ts），页面宿主按脚本实际类型选它。
+   * 编排层拼（views/EditView/User/MaaFWUserEdit/pageKit.ts），页面宿主按脚本实际类型选它。
    */
   page: MaaFWLazyComponent | null
   /** 替换的分节；没有写 {} */

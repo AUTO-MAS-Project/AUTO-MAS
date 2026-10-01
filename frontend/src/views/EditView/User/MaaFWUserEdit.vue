@@ -171,7 +171,7 @@ import ConfigRestoreSection from '@/views/EditView/User/components/ConfigRestore
 import MaaFWFlavorSlot from '@/views/EditView/MaaFWFlavor/MaaFWFlavorSlot.vue'
 import { useMaaFWSections } from '@/composables/useMaaFWFlavor'
 // MFW 默认分节静态引入：通用 MFW 打开不闪；特调的替换分节由注册表按需加载
-import { MAAFW_USER_PAGE_SECTIONS, useMaaFWUserPage } from './MaaFWUserEdit/index'
+import { MAAFW_USER_PAGE_SECTIONS, useMaaFWUserPage } from './MaaFWUserEdit/pageKit'
 
 const { t } = useI18n()
 

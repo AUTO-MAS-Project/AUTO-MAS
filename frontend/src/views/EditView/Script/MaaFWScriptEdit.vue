@@ -233,7 +233,7 @@ import { updateChannelOptions, updateSourceOptions } from '@/composables/useMaaF
 import { useMaaFWSections } from '@/composables/useMaaFWFlavor'
 import MaaFWFlavorSlot from '@/views/EditView/MaaFWFlavor/MaaFWFlavorSlot.vue'
 // MFW 默认分节静态引入：通用 MFW 打开不闪；特调的替换分节由注册表按需加载
-import { MAAFW_SCRIPT_PAGE_SECTIONS, useMaaFWScriptPage } from './MaaFWScriptEdit/index'
+import { MAAFW_SCRIPT_PAGE_SECTIONS, useMaaFWScriptPage } from './MaaFWScriptEdit/pageKit'
 
 const { t } = useI18n()
 

@@ -278,6 +278,28 @@ describe('useMaaFWScriptPage 加载顺序', () => {
     expect(mocks.unsubscribe).toHaveBeenCalledWith('sub_1')
   })
 
+  it('导入后类型变成有自己页面的特调、页面宿主已换掉本页：旧实例不再读 interface、不回写路径', async () => {
+    const { scope, page } = mountPage()
+    ;(
+      globalThis.window as unknown as { electronAPI: Record<string, unknown> }
+    ).electronAPI.selectFolder = async () => 'D:/other'
+    mocks.reimportEmbedded.mockImplementation(async () => {
+      mocks.calls.push('reimport')
+      return { status: { copyPath: 'copy', copyHealthy: true }, message: '' }
+    })
+    // 重新拉类型时宿主发现类型变了、换上特调自己的页面：本页随即卸载
+    mocks.getScript.mockImplementation(async () => {
+      mocks.calls.push('getScript')
+      for (const hook of mocks.beforeUnmount) hook()
+      return { type: 'M9A', name: 'x', config: {} }
+    })
+    const pathBefore = page.maafwConfig.Info.Path
+    await page.selectMaaFWPath()
+    expect(mocks.calls).toEqual(['reimport', 'getScript'])
+    expect(page.maafwConfig.Info.Path).toBe(pathBefore)
+    scope.stop()
+  })
+
   it('在页面宿主里：脚本详情用宿主读好的（不再请求），类型、引导形态与步骤都是宿主的', async () => {
     const host = {
       scriptType: ref('M9A'),
