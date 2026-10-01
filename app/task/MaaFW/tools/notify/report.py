@@ -18,6 +18,7 @@ from app.utils import get_logger
 
 logger = get_logger("MaaFW 通知工具")
 
+
 async def push_notification(
     mode: str,
     title: str,
