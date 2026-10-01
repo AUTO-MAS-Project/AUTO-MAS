@@ -135,10 +135,10 @@
         <!-- type=flex + stretch：右边的策略表跟左边「标签 + 输入框」等高，上下边对齐 -->
         <a-row :gutter="24" type="flex" align="stretch" class="control-detail-row">
           <a-col :span="12">
-            <!-- flavor 支持游戏更新（M9A）时包名右边并排「游戏更新」，窄屏上下排；
-                 不支持时包名独占整列，与通用 MaaFW 一致 -->
+            <!-- 特调在包名旁登记了组件（插入点 besidePackageName）时两列并排，窄屏上下排；
+                 没有时包名独占整列 -->
             <a-row :gutter="16">
-              <a-col :xs="24" :xl="gameUpdateHintKey ? 12 : 24">
+              <a-col :xs="24" :xl="$slots.besidePackageName ? 12 : 24">
                 <a-form-item>
                   <template #label>
                     <a-tooltip :title="t('edit.mfwGamePackageNamePassed')">
@@ -156,25 +156,8 @@
                   />
                 </a-form-item>
               </a-col>
-              <a-col v-if="gameUpdateHintKey" :xs="24" :xl="12">
-                <a-form-item>
-                  <template #label>
-                    <a-tooltip :title="t(gameUpdateHintKey)">
-                      <span class="form-label">
-                        {{ t('edit.gameUpdate') }}
-                        <QuestionCircleOutlined class="help-icon" aria-hidden="true" />
-                      </span>
-                    </a-tooltip>
-                  </template>
-                  <a-select
-                    v-model:value="maafwConfig.Run.GameUpdateMode"
-                    style="width: 100%"
-                    :options="gameUpdateModeOptions"
-                    @change="
-                      (value: string | number) => emit('change', 'Run', 'GameUpdateMode', value)
-                    "
-                  />
-                </a-form-item>
+              <a-col v-if="$slots.besidePackageName" :xs="24" :xl="12">
+                <slot name="besidePackageName" />
               </a-col>
             </a-row>
           </a-col>
@@ -315,7 +298,7 @@ import { useI18n } from 'vue-i18n'
 import { computed } from 'vue'
 import { FolderOpenOutlined, QuestionCircleOutlined } from '@ant-design/icons-vue'
 import { isDirectControllerType } from '@/composables/useMaaFWScriptConfig'
-import type { MaaFWGameUpdateMode, MaaFWLaunchMode, MaaFWUnityResolution } from '@/types/script'
+import type { MaaFWLaunchMode, MaaFWUnityResolution } from '@/types/script'
 import type {
   MaaFWScriptControlSectionEmits,
   MaaFWScriptControlSectionProps,
@@ -338,13 +321,6 @@ const unityResolutionOptions = computed<Array<{ label: string; value: MaaFWUnity
     { label: '1280×720', value: '1280x720' },
   ]
 )
-
-// 三项与后端 MaaFWConfig.Run.GameUpdateMode 的 OptionsValidator 一致
-const gameUpdateModeOptions = computed<Array<{ label: string; value: MaaFWGameUpdateMode }>>(() => [
-  { label: t('edit.mfwGameUpdateOff'), value: 'Off' },
-  { label: t('edit.mfwGameUpdateCheck'), value: 'Check' },
-  { label: t('edit.mfwGameUpdateAutoInstall'), value: 'AutoInstall' },
-])
 </script>
 
 <style scoped>

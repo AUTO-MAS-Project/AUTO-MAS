@@ -73,7 +73,10 @@ export interface MaaFWScriptBasicInfoSectionEmits {
   'preview-interface': []
 }
 
-/** 脚本页 `control`：控制器、资源、模拟器 / 桌面窗口、游戏启动与更新 */
+/**
+ * 脚本页 `control`：控制器、资源、模拟器 / 桌面窗口、游戏启动。另有具名 slot `besidePackageName`
+ * （与游戏包名并排，有内容时两列），页面在当前特调登记了同名插入点时才填它；替换这个分节要保留它。
+ */
 export interface MaaFWScriptControlSectionProps {
   maafwConfig: MaaFWScriptConfig
   previewData: MaaFWInterfacePreviewData | null
@@ -93,8 +96,6 @@ export interface MaaFWScriptControlSectionProps {
   adbControlStrategyItems: Array<{ label: string; value: string }>
   selectedEmulatorLabel: string
   interfaceDependentDisabled: boolean
-  /** flavor 的「游戏更新」问号提示 key；为空表示该类型不支持游戏更新，不显示下拉 */
-  gameUpdateHintKey: string | null
 }
 
 export interface MaaFWScriptControlSectionEmits {

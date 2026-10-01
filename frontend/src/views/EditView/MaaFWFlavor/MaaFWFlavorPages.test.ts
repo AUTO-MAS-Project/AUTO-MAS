@@ -21,24 +21,28 @@ const mocks = vi.hoisted(() => {
   ;(globalThis as { window?: unknown }).window = { electronAPI: { getLogger: () => logger } }
   /** 每个分节 stub 收到的全部属性与监听（不声明 props，全落在 attrs 上），按渲染者分开记 */
   const received = new Map<string, Record<string, unknown>>()
+  /** 每个分节 stub 收到了哪些具名 slot（control 分节的 besidePackageName 由页面按特调决定填不填） */
+  const receivedSlots = new Map<string, string[]>()
   // vi.mock 的工厂比本文件的 import 先跑，vue 由调用方传进来
   const recordingStub = (vue: typeof import('vue'), name: string) =>
     vue.defineComponent({
       name,
       inheritAttrs: false,
-      setup(_props, { attrs }) {
+      setup(_props, { attrs, slots }) {
         received.set(name, { ...attrs })
-        return () => vue.h('section', { 'data-section': name })
+        receivedSlots.set(name, Object.keys(slots))
+        return () => vue.h('section', { 'data-section': name }, slots.besidePackageName?.())
       },
     })
   return {
     received,
+    receivedSlots,
     recordingStub,
     script: null as Record<string, unknown> | null,
     user: null as Record<string, unknown> | null,
   }
 })
-const { received } = mocks
+const { received, receivedSlots } = mocks
 const recordingStub = (name: string) => mocks.recordingStub({ defineComponent, h } as never, name)
 
 /** 测试里的替换分节 stub 不声明契约 props，绕开 defineMaaFWSection 的类型检查（运行时同一个函数） */
@@ -61,6 +65,7 @@ vi.mock('vue-router', () => ({
 vi.mock('@ant-design/icons-vue', () => ({
   ArrowLeftOutlined: { render: () => null },
   HistoryOutlined: { render: () => null },
+  QuestionCircleOutlined: { render: () => null },
 }))
 vi.mock('@/components/ConfigLockPanel.vue', () => ({
   default: {
@@ -147,6 +152,7 @@ const SHELLS = [
   'AFlex',
   'AFormItem',
   'ASelect',
+  'ATooltip',
   'ASwitch',
   'AEmpty',
   'ADescriptions',
@@ -229,7 +235,7 @@ const scriptState = (flavor: MaaFWFlavor) => ({
   handleCancel: fn('handleCancel'),
   flavorSlotContext: {
     scriptId: 's1',
-    maafwConfig: { Info: { Name: 'n' } },
+    maafwConfig: { Info: { Name: 'n' }, Run: { GameUpdateMode: 'Check' } },
     previewData: { tasks: [] },
     interfaceDisabled: false,
     loading: false,
@@ -358,7 +364,7 @@ describe('MFW 页面分节替换', () => {
     const maafw = resolveMaaFWFlavor('MaaFW')
     await renderScriptPage(maafw)
     const defaultReceived = comparable(received.get('default:control'))
-    expect(Object.keys(defaultReceived)).toContain('game-update-hint-key')
+    expect(Object.keys(defaultReceived)).toContain('interface-dependent-disabled')
     expect(defaultReceived.onChange).toBe('fn:handleChange')
 
     const load = vi.fn(async () => recordingStub('flavor:control'))
@@ -373,6 +379,18 @@ describe('MFW 页面分节替换', () => {
     expect(html).toContain('data-section="default:run"')
     expect(load).toHaveBeenCalledOnce()
     expect(comparable(received.get('flavor:control'))).toEqual(defaultReceived)
+  })
+
+  it('包名旁插入点：只有 M9A 填 control 分节的 besidePackageName（游戏更新下拉），MaaFW / MSS 不填', async () => {
+    for (const type of ['MaaFW', 'MSS']) {
+      const html = await renderScriptPage(resolveMaaFWFlavor(type))
+      expect([type, receivedSlots.get('default:control')]).toEqual([type, []])
+      expect(html).not.toContain(zhCN.edit.gameUpdate)
+    }
+    const html = await renderScriptPage(resolveMaaFWFlavor('M9A'))
+    expect(receivedSlots.get('default:control')).toEqual(['besidePackageName'])
+    // M9A 自己的组件（按需加载）渲染在 control 分节里，标签与问号提示与改前相同
+    expect(html).toContain(zhCN.edit.gameUpdate)
   })
 
   it('外壳导入分节换掉后 v-model 照样双向绑定（selectedIds + update:selectedIds）', async () => {

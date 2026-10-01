@@ -42,7 +42,6 @@ export const MAAFW_FLAVOR: MaaFWFlavor = {
       sourceHintKey: 'edit.pickMfwProjectDirectory',
       sourcePlaceholderKey: 'edit.pickActualMfwProject',
       controllerHintKey: null,
-      gameUpdateHintKey: null,
     },
     page: null,
     sections: {},

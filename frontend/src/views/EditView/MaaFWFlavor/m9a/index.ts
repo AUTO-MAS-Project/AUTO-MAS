@@ -1,7 +1,8 @@
-// M9A（重返未来：1999）特调：差别只在文案与身份——账号绑成切号任务；启动游戏、切换账号、
-// 关闭游戏由后端特调全权控制（不能手动加），脚本页多一个「游戏更新」下拉。没有独有区块。
+// M9A（重返未来：1999）特调：账号绑成切号任务；启动游戏、切换账号、关闭游戏由后端特调全权控制
+// （不能手动加）；脚本页控制方式里多一个「游戏更新」下拉（本目录 M9AGameUpdateField，按需加载）。
 import { MAS_DOC_URLS } from '@/utils/openExternal'
 import { SCRIPT_LOGOS } from '@/utils/scriptLogos'
+import { defineMaaFWLazyComponent } from '@/composables/maafwFlavorTypes'
 import { defineMaaFWFlavor } from '../defineFlavor'
 
 export const M9A_FLAVOR = defineMaaFWFlavor({
@@ -29,7 +30,10 @@ export const M9A_FLAVOR = defineMaaFWFlavor({
       sourceDirectoryKey: 'edit.m9aFlavorSourceDirectory',
       sourceHintKey: 'edit.m9aFlavorSourceHint',
       sourcePlaceholderKey: 'edit.m9aFlavorSourcePlaceholder',
-      gameUpdateHintKey: 'edit.m9aFlavorGameUpdateHint',
+    },
+    // 游戏更新下拉：只有 M9A 的后端特调有游戏客户端更新钩子，与游戏包名并排
+    slots: {
+      besidePackageName: [defineMaaFWLazyComponent(() => import('./M9AGameUpdateField.vue'))],
     },
   },
   userPage: {

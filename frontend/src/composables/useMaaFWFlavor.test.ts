@@ -242,11 +242,17 @@ describe('MaaFW 特调注册表', () => {
       expect(resolveMaaFWFlavor(type).userPage.prepare).toBeNull()
     }
     expect(resolveMaaFWFlavor('MSS').userPage.prepare).toBeTypeOf('function')
-    // 脚本页三个都没有插入点与钩子；两页都没有替换分节，也没有整页替换；新建流程什么都不换不插
+    // 脚本页只有 M9A 在包名旁挂游戏更新下拉，三个都没有钩子；两页都没有替换分节，也没有整页替换；
+    // 新建流程什么都不换不插
+    const scriptSlotNames: Record<string, string[]> = {
+      MaaFW: [],
+      M9A: ['besidePackageName'],
+      MSS: [],
+    }
     for (const flavor of MAAFW_FLAVORS) {
       expect([
         flavor.type,
-        flavor.scriptPage.slots,
+        Object.keys(flavor.scriptPage.slots),
         flavor.scriptPage.prepare,
         flavor.scriptPage.sections,
         flavor.userPage.sections,
@@ -254,7 +260,7 @@ describe('MaaFW 特调注册表', () => {
         flavor.userPage.page,
         flavor.create.sections,
         flavor.create.slots,
-      ]).toEqual([flavor.type, {}, null, {}, {}, null, null, {}, {}])
+      ]).toEqual([flavor.type, scriptSlotNames[flavor.type], null, {}, {}, null, null, {}, {}])
     }
   })
 

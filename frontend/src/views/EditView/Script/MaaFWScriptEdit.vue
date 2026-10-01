@@ -115,13 +115,22 @@
             :adb-control-strategy-items="adbControlStrategyItems"
             :selected-emulator-label="selectedEmulatorLabel"
             :interface-dependent-disabled="interfaceDependentDisabled"
-            :game-update-hint-key="flavor.scriptPage.text.gameUpdateHintKey"
             @change="handleChange"
             @controller-change="handleControllerChange"
             @resource-change="handleResourceChangeWithPackage"
             @emulator-select-change="handleEmulatorSelectChange"
             @select-launch-path="selectLaunchPath"
-          />
+          >
+            <template v-if="hasBesidePackageName" #besidePackageName>
+              <MaaFWFlavorSlot
+                part="scriptPage"
+                name="besidePackageName"
+                :flavor="flavor"
+                :context="flavorSlotContext"
+                @change="handleChange"
+              />
+            </template>
+          </component>
           <MaaFWFlavorSlot
             part="scriptPage"
             name="afterControl"
@@ -225,12 +234,12 @@
 import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
 import DocLink from '@/components/DocLink.vue'
 import { useI18n } from 'vue-i18n'
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import type { FormInstance } from 'ant-design-vue'
 import { ArrowLeftOutlined } from '@ant-design/icons-vue'
 import { updateChannelOptions, updateSourceOptions } from '@/composables/useMaaFWScriptConfig'
-import { useMaaFWSections } from '@/composables/useMaaFWFlavor'
+import { resolveMaaFWFlavorSlot, useMaaFWSections } from '@/composables/useMaaFWFlavor'
 import MaaFWFlavorSlot from '@/views/EditView/MaaFWFlavor/MaaFWFlavorSlot.vue'
 // MFW 默认分节静态引入：通用 MFW 打开不闪；特调的替换分节由注册表按需加载
 import { MAAFW_SCRIPT_PAGE_SECTIONS, useMaaFWScriptPage } from './MaaFWScriptEdit/pageKit'
@@ -318,6 +327,11 @@ const {
 
 // 各分节：默认用 MFW 的，当前特调替换了哪节就换成它的（契约见 MaaFWFlavor/sectionContracts）
 const sections = useMaaFWSections(flavor, 'scriptPage', MAAFW_SCRIPT_PAGE_SECTIONS)
+
+// 包名旁的插入点在 control 分节里面：只有当前特调登记了组件才填这个 slot，否则包名独占一行
+const hasBesidePackageName = computed(
+  () => resolveMaaFWFlavorSlot(flavor.value, 'scriptPage', 'besidePackageName').length > 0
+)
 </script>
 
 <style scoped>

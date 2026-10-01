@@ -29,6 +29,11 @@ export interface MaaFWFlavorSlotContextMap {
     afterBasicInfo: MaaFWScriptSlotContext
     /** 控制方式一步顶部的特调提示之后、控制方式分节之前；引导第 2 步 */
     beforeControl: MaaFWScriptSlotContext
+    /**
+     * 控制方式分节里与「游戏包名」并排的位置（宽屏两列、窄屏上下排）；没有组件时包名独占一行。
+     * 由 control 分节的同名 slot 提供：特调替换 control 分节时要自己留这个 slot。引导第 2 步
+     */
+    besidePackageName: MaaFWScriptSlotContext
     /** 控制方式分节之后；引导第 2 步 */
     afterControl: MaaFWScriptSlotContext
     /** 项目更新分节之后；引导第 3 步 */
@@ -257,11 +262,6 @@ export interface MaaFWScriptPageText {
   sourcePlaceholderKey: string
   /** 控制方式一步顶部的一行提示；为空则不显示 */
   controllerHintKey: string | null
-  /**
-   * 「游戏更新」下拉的问号提示；为空表示这个类型的后端特调没有游戏更新钩子，
-   * 下拉整个不显示（游戏包名独占一行，布局与通用 MaaFW 相同）
-   */
-  gameUpdateHintKey: string | null
 }
 
 /** 用户页文案 */
