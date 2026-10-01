@@ -223,12 +223,7 @@ import { maafwDefaultScriptNames, useMaaFWFlavor } from '@/composables/useMaaFWF
 import { useMaaFWShellInstanceApi } from '@/composables/useMaaFWShellInstanceApi'
 import { resolveMaaFWProjectName } from '@/utils/maafwProjectName'
 import type { MaaFWShellInstanceItem } from '@/api'
-import type {
-  MaaFWInterfacePreviewData,
-  MaaFWScriptConfig,
-  MaaFWTaskInfo,
-  ScriptType,
-} from '@/types/script'
+import type { MaaFWInterfacePreviewData, MaaFWScriptConfig, ScriptType } from '@/types/script'
 import BasicInfoSection, { type MaaFWEnvOutcome } from './MaaFWScriptEdit/BasicInfoSection.vue'
 import ControlConfigSection from './MaaFWScriptEdit/ControlConfigSection.vue'
 import UpdateSettingsSection from './MaaFWScriptEdit/UpdateSettingsSection.vue'
@@ -240,20 +235,17 @@ import {
   summarizeShellImport,
   type ShellImportSummary,
 } from './MaaFWScriptEdit/shellInstanceImport'
+import {
+  PERIOD_KEYS,
+  buildPeriodTaskOptions,
+  parseTaskNameList,
+  stringifyTaskNameList,
+  type PeriodKey,
+} from './MaaFWScriptEdit/periodTasks'
 
 const { t } = useI18n()
 
 const logger = window.electronAPI.getLogger('MaaFW 脚本编辑')
-
-// MaaFW pretask 伪任务：预览接口会把它们混进 tasks[]（entry 固定为 MXU_PRETASK、
-// name 带 __MXU_PRETASK__ 前缀），周期跳过下拉不能让用户选到。按 entry 过滤、name 前缀兜底。
-const PRETASK_TASK_ENTRY = 'MXU_PRETASK'
-const PRETASK_TASK_PREFIX = '__MXU_PRETASK__'
-const isPretaskTask = (task: MaaFWTaskInfo): boolean =>
-  task.entry === PRETASK_TASK_ENTRY || task.name.startsWith(PRETASK_TASK_PREFIX)
-
-const PERIOD_KEYS = ['DailyOnceTasks', 'WeeklyOnceTasks', 'MonthlyOnceTasks'] as const
-type PeriodKey = (typeof PERIOD_KEYS)[number]
 
 const route = useRoute()
 const router = useRouter()
@@ -438,33 +430,7 @@ const interfaceStats = computed(() => [
   { label: 'Agent', value: previewData.value?.agentCount ?? 0 },
 ])
 
-const periodTaskOptions = computed(() =>
-  (previewData.value?.tasks || [])
-    .filter(task => !isPretaskTask(task))
-    .map(task => ({
-      label: task.label ? `${task.label}（${task.name}）` : task.name,
-      value: task.name,
-    }))
-)
-
-// ConfigBase 把周期任务列表以 JSON 字符串保存、读回也是字符串；
-// 兼容后端某天直接返回数组的情况，统一收敛成字符串数组。
-const parseTaskNameList = (value: unknown): string[] => {
-  if (Array.isArray(value)) return value.filter((item): item is string => typeof item === 'string')
-  if (typeof value === 'string' && value.trim()) {
-    try {
-      const parsed = JSON.parse(value)
-      return Array.isArray(parsed)
-        ? parsed.filter((item): item is string => typeof item === 'string')
-        : []
-    } catch {
-      return []
-    }
-  }
-  return []
-}
-
-const stringifyTaskNameList = (value: string[]): string => JSON.stringify(value)
+const periodTaskOptions = computed(() => buildPeriodTaskOptions(previewData.value?.tasks || []))
 
 const periodTaskRef = (key: PeriodKey): typeof dailyOnceTasks =>
   key === 'DailyOnceTasks'
