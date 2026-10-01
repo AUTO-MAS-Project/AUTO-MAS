@@ -114,7 +114,7 @@
               :get-popup-container="getPopupContainer"
               :popup-match-select-width="false"
               :placeholder="t('edit.pickStage')"
-              @change="savePlans"
+              @change="onStageChange(record)"
             />
             <a-select
               v-model:value="record.DropId"
@@ -191,7 +191,7 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
 import { handleExternalLink } from '@/utils/openExternal'
-import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { computed } from 'vue'
 import draggable from 'vuedraggable'
 import {
   AppstoreAddOutlined,
@@ -201,19 +201,17 @@ import {
   DownOutlined,
   PlusOutlined,
 } from '@ant-design/icons-vue'
-import {
-  DEPOT_MAINTAIN_PRESETS,
-  getDepotMaintainPreset,
-  type DepotMaintainPlan as SavedDepotMaintainPlan,
-  type DepotMaintainPresetKey,
-} from './depotMaintainPresets'
+import { DEPOT_MAINTAIN_PRESETS } from './depotMaintainPresets'
+import type {
+  DepotMaintainPlanEditorState,
+  DepotMaintainPlanRow as DepotMaintainPlan,
+} from './useDepotMaintainPlanEditor'
 
 const { t } = useI18n()
 
-type DepotMaintainPlan = SavedDepotMaintainPlan & { key: number }
-
 const props = defineProps<{
   formData: any
+  editor: DepotMaintainPlanEditorState
   loading: boolean
   stageOptions: SelectOption[]
   itemOptions: SelectOption[]
@@ -227,11 +225,7 @@ const props = defineProps<{
   inventory: Record<string, number>
   /** 库存档案的最近识别时间（本地格式；空串=未识别） */
   depotInventoryTime: string
-  /** 按需加载某物品的关卡候选（父级负责请求与缓存） */
-  loadStageCandidates: (itemId: string) => Promise<void>
 }>()
-
-const emit = defineEmits<{ save: [key: string, value: any] }>()
 
 type SelectOption = { label: string; value: string }
 
@@ -241,16 +235,19 @@ const stockColumnTitle = computed(() =>
     : t('edit.stock')
 )
 
-const plans = ref<DepotMaintainPlan[]>([])
-let saveTimer: number | undefined
-let disposed = false
-const pendingEdits = new Set<Promise<void>>()
-// 本组件刚序列化发出的 JSON：watch 收到自己的回写时跳过重建。用发出值而
-// 非当前行数据：若另一字段的保存还在队列里、本组件又敲了新值，当前数据
-// 已不等于"刚保存的内容"，拿它判定会把排队旧值的回写当外部变更，整表
-// 重建并丢掉刚敲的输入（与 CultivateTargetEditor 的 lastEmitted 同款）
-let lastEmitted: string | null = null
-const selectedRowKeys = ref<number[]>([])
+const {
+  plans,
+  selectedRowKeys,
+  savePlans,
+  queueSave,
+  onItemChange,
+  onStageChange,
+  importPreset,
+  moveRow,
+  addPlan,
+  removePlan,
+  removeSelectedPlans,
+} = props.editor
 const selectedKeys = computed(() => new Set(selectedRowKeys.value))
 const allSelected = computed(
   () => plans.value.length > 0 && selectedRowKeys.value.length === plans.value.length
@@ -266,45 +263,6 @@ const toggleRow = (key: number, checked: boolean) => {
 const toggleAll = (checked: boolean) => {
   selectedRowKeys.value = checked ? plans.value.map(plan => plan.key) : []
 }
-
-let nextKey = 0
-
-watch(
-  () => props.formData.Task.DepotMaintainPlans,
-  value => {
-    // 自身 savePlans 的回声：formData 原样写回后会再触发本 watch。若此时
-    // 重建 plans，所有行 key 递增导致整表重挂载，打开中的下拉浮层被拆毁
-    // 重建（表现为下拉内容闪变/污染），因此按上次发出值识别并跳过
-    if (value === lastEmitted) {
-      lastEmitted = null
-      return
-    }
-    lastEmitted = null
-    // 失败回读不能重建仍在防抖或等待候选的本地草稿。
-    if (saveTimer !== undefined || pendingEdits.size > 0) return
-    selectedRowKeys.value = []
-    try {
-      const parsed = JSON.parse(value || '[]')
-      plans.value = Array.isArray(parsed)
-        ? parsed
-            .filter(
-              plan =>
-                typeof plan?.Stage === 'string' &&
-                typeof plan?.DropId === 'string' &&
-                typeof plan?.DropCount === 'number'
-            )
-            .map(plan => ({ key: nextKey++, ...plan }))
-        : []
-    } catch {
-      plans.value = []
-    }
-    // 已配置条目的关卡候选预加载，保证过滤与动态预设可用
-    for (const itemId of new Set(plans.value.map(plan => plan.DropId).filter(Boolean))) {
-      props.loadStageCandidates(itemId)
-    }
-  },
-  { immediate: true }
-)
 
 // 行内关卡选项四态：
 // - 未选物品 → 全量表（允许先选关卡）
@@ -344,113 +302,6 @@ const stockOf = (record: DepotMaintainPlan): number | string =>
 // 裁掉显示不全），又随页面滚动移动（挂 body 会驻留原地）
 const getPopupContainer = (trigger: HTMLElement): HTMLElement =>
   trigger.closest<HTMLElement>('.depot-plan-editor') ?? document.body
-
-const trackPendingEdit = (edit: () => Promise<void>) => {
-  const pending: Promise<void> = edit().finally(() => pendingEdits.delete(pending))
-  pendingEdits.add(pending)
-  return pending
-}
-
-const onItemChange = (record: DepotMaintainPlan) =>
-  trackPendingEdit(async () => {
-    const itemId = record.DropId
-    // 换物品后旧关卡大概率不再掉该材料，清空待重选（防提交无效组合）；
-    // 清空物品同样清掉残留关卡，避免显示物品为空的脏组合
-    record.Stage = ''
-    savePlans()
-    if (!itemId) return
-    await props.loadStageCandidates(itemId)
-    if (disposed || !plans.value.includes(record) || record.DropId !== itemId) return
-    // await 期间物品可能又被换了：只为仍是当前物品的请求自动填最优关
-    if (record.DropId === itemId && !record.Stage) {
-      const best = props.stageCandidates?.[itemId]?.[0]
-      if (best) record.Stage = best.value
-    }
-    savePlans()
-  })
-
-// 目标库存的 @change 每次步进/键入都会触发保存，防抖合并为停手后一次；
-// 显式保存（选关/选物品/增删行/拖拽落位）会顺手冲掉未触发的定时器
-const queueSave = () => {
-  if (saveTimer !== undefined) window.clearTimeout(saveTimer)
-  saveTimer = window.setTimeout(savePlans, 500)
-}
-
-// 键盘/按钮排序：与拖拽同序语义（行序即执行顺序），落位即保存
-const moveRow = (index: number, offset: number) => {
-  const target = index + offset
-  if (props.loading || target < 0 || target >= plans.value.length) return
-  const next = [...plans.value]
-  ;[next[index], next[target]] = [next[target], next[index]]
-  plans.value = next
-  savePlans()
-}
-
-const savePlans = () => {
-  if (saveTimer !== undefined) {
-    window.clearTimeout(saveTimer)
-    saveTimer = undefined
-  }
-  const next = JSON.stringify(
-    plans.value.map(({ Stage, DropId, DropCount }) => ({ Stage, DropId, DropCount }))
-  )
-  // 未改变配置的操作不重复保存；回声标记只负责识别自身更新。
-  if (next === props.formData.Task.DepotMaintainPlans) return
-  lastEmitted = next
-  emit('save', 'Task.DepotMaintainPlans', next)
-}
-
-const flushPendingEdits = async () => {
-  while (pendingEdits.size > 0) await Promise.all([...pendingEdits])
-  if (saveTimer !== undefined) savePlans()
-}
-defineExpose({ flushPendingEdits })
-
-onBeforeUnmount(() => {
-  // 折叠行即销毁重建（PipelineRow v-if）：冲刷未落盘的改动，防止迟到定时器
-  // 在新实例挂载后用旧数据覆盖用户的新编辑
-  if (saveTimer !== undefined || pendingEdits.size > 0) savePlans()
-  disposed = true
-})
-
-const addPlan = () => {
-  plans.value.push({ key: nextKey++, Stage: '', DropId: '', DropCount: 1 })
-  savePlans()
-}
-
-const importPreset = (preset: DepotMaintainPresetKey) =>
-  trackPendingEdit(async () => {
-    selectedRowKeys.value = []
-    const imported = getDepotMaintainPreset(preset).map(plan => ({
-      key: nextKey++,
-      ...plan,
-    }))
-    // 动态预设：先确保候选加载完成，再用当前最优关替代预设里的硬编码关卡
-    await Promise.all(
-      [...new Set(imported.map(plan => plan.DropId).filter(Boolean))].map(itemId =>
-        props.loadStageCandidates(itemId)
-      )
-    )
-    if (disposed) return
-    for (const plan of imported) {
-      const best = props.stageCandidates?.[plan.DropId]?.[0]
-      if (best) plan.Stage = best.value
-    }
-    plans.value.push(...imported)
-    savePlans()
-  })
-
-const removePlan = (key: number) => {
-  selectedRowKeys.value = selectedRowKeys.value.filter(selectedKey => selectedKey !== key)
-  plans.value = plans.value.filter(plan => plan.key !== key)
-  savePlans()
-}
-
-const removeSelectedPlans = () => {
-  plans.value = plans.value.filter(plan => !selectedRowKeys.value.includes(plan.key))
-  selectedRowKeys.value = []
-  savePlans()
-}
 </script>
 
 <style scoped>

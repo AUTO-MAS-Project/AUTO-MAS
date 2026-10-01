@@ -88,7 +88,6 @@
             </a-space>
           </a-flex>
           <TaskPipelineSection
-            ref="taskPipelineRef"
             v-if="formData.Info.IfQuickConfig"
             v-model:form-data="formData"
             :loading="loading"
@@ -108,7 +107,7 @@
             :load-skland-role-options="loadSklandRoleOptions"
             :skland-role-loading="sklandRoleLoading"
             :skland-role-error="sklandRoleError"
-            :load-depot-stage-candidates="loadDepotStageCandidates"
+            :depot-plan-editor="depotPlanEditor"
             :cultivate-operator-catalog="cultivateOperatorCatalog"
             :cultivate-operator-options-loading="cultivateOperatorOptionsLoading"
             :cultivate-operator-options-error="cultivateOperatorOptionsError"
@@ -251,6 +250,7 @@ import StageConfigSection from '@/views/MAAUserEdit/StageConfigSection.vue'
 import TaskPipelineSection from '@/views/MAAUserEdit/TaskPipelineSection.vue'
 import { summarizeFight } from '@/views/MAAUserEdit/taskSummaries'
 import { getDepotMaintainPreset } from '@/views/MAAUserEdit/depotMaintainPresets'
+import { useDepotMaintainPlanEditor } from '@/views/MAAUserEdit/useDepotMaintainPlanEditor'
 import { getGameDayOffset } from '@/views/MAAUserEdit/periodMarkers'
 import type { CultivateOperatorCatalogEntry } from '@/views/MAAUserEdit/cultivateTargets'
 import UserNotifyConfig from '@/components/UserNotifyConfig.vue'
@@ -279,7 +279,6 @@ const {
 
 const formRef = ref<FormInstance>()
 const pageRef = ref<HTMLElement>()
-const taskPipelineRef = ref<InstanceType<typeof TaskPipelineSection>>()
 const preparingSession = ref(false)
 const leavingPage = ref(false)
 const editorBusy = computed(() => preparingSession.value || leavingPage.value)
@@ -314,6 +313,8 @@ const reconcileField = async (key: string, submittedValue: unknown) => {
     const userData = userResponse.data[userId] as any
     if (!userData) return
     if (pendingFieldSaves.has(key) || !Object.is(readField(formData, key), submittedValue)) return
+    // 库存数字或候选编辑尚未提交，不能用失败回读重建并丢弃这份草稿。
+    if (key === 'Task.DepotMaintainPlans' && depotPlanEditor.hasPendingEdits()) return
     const savedValue = readField(userData, key)
     writeFieldLocally(
       key,
@@ -351,6 +352,7 @@ const depotItemOptionsError = ref('')
 // 库存保持关卡候选（按物品缓存，含每理智效率）与仓库库存
 const depotStageCandidates = ref<Record<string, Array<{ label: string; value: string }>>>({})
 const depotStageCandidatesLoading = ref<string[]>([])
+const depotStageCandidatePromises = new Map<string, Promise<void>>()
 const depotInventory = ref<Record<string, number>>({})
 const depotInventoryTime = ref('')
 
@@ -1060,30 +1062,37 @@ const loadDepotItemOptions = async () => {
 
 const loadDepotStageCandidates = async (itemId: string) => {
   if (!itemId || depotStageCandidates.value[itemId]) return
-  if (depotStageCandidatesLoading.value.includes(itemId)) return
+  const pending = depotStageCandidatePromises.get(itemId)
+  if (pending) return pending
   depotStageCandidatesLoading.value.push(itemId)
-  try {
-    const response = await Service.getMaaDepotStageCandidatesApiScriptsMaaDepotStageCandidatesPost({
-      script: { scriptId },
-      itemId,
-    })
-    // 失败/无候选时写入空数组作为"已完成"标记：编辑器据此回退全量关卡表
-    // （undefined 才表示加载中），同时避免失败后无限重试
-    depotStageCandidates.value[itemId] =
-      response.code === 200
-        ? response.data
-            .filter(option => option.value)
-            .map(option => ({ label: option.label, value: option.value as string }))
-        : []
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`加载库存保持关卡候选失败: ${errorMsg}`)
-    depotStageCandidates.value[itemId] = []
-  } finally {
-    depotStageCandidatesLoading.value = depotStageCandidatesLoading.value.filter(
-      id => id !== itemId
-    )
-  }
+  const loadingCandidates = (async () => {
+    try {
+      const response =
+        await Service.getMaaDepotStageCandidatesApiScriptsMaaDepotStageCandidatesPost({
+          script: { scriptId },
+          itemId,
+        })
+      // 空数组表示已完成但无候选，编辑器保留原选项，同时避免无限重试。
+      depotStageCandidates.value[itemId] =
+        response.code === 200
+          ? response.data
+              .filter(option => option.value)
+              .map(option => ({ label: option.label, value: option.value as string }))
+          : []
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error)
+      logger.error(`加载库存保持关卡候选失败: ${errorMsg}`)
+      depotStageCandidates.value[itemId] = []
+    } finally {
+      depotStageCandidatesLoading.value = depotStageCandidatesLoading.value.filter(
+        id => id !== itemId
+      )
+      depotStageCandidatePromises.delete(itemId)
+    }
+  })()
+  // 预取与编辑共享同一个请求，冲刷编辑时也要等正在预取的候选。
+  depotStageCandidatePromises.set(itemId, loadingCandidates)
+  await loadingCandidates
 }
 
 // 库存保持关卡候选进页预取：首次展开面板时逐行等响应，关卡列会随各请求
@@ -1361,13 +1370,25 @@ const loadInfrastructureOptions = async () => {
   }
 }
 
+const depotPlanEditor = useDepotMaintainPlanEditor({
+  getSavedPlans: () => formData.Task.DepotMaintainPlans,
+  savePlans: value => {
+    void handleFieldSave('Task.DepotMaintainPlans', value)
+  },
+  loadStageCandidates: async itemId => {
+    if (!isInitializing.value) await loadDepotStageCandidates(itemId)
+  },
+  getBestStage: itemId => depotStageCandidates.value[itemId]?.[0]?.value,
+  isLoading: () => loading.value,
+})
+
 const flushPendingEdits = async (): Promise<boolean> => {
   // 输入框按失焦保存；先提交当前草稿，再冲刷库存编辑器的防抖与异步编辑。
   const focused = document.activeElement
   if (focused instanceof HTMLElement && pageRef.value?.contains(focused)) focused.blur()
   await nextTick()
   try {
-    await taskPipelineRef.value?.flushPendingEdits()
+    await depotPlanEditor.flushPendingEdits()
   } catch (error) {
     logger.error(`提交编辑失败: ${error instanceof Error ? error.message : String(error)}`)
     message.error(t('edit.couldNotSaveUser'))
@@ -1795,6 +1816,7 @@ onMounted(async () => {
 })
 
 onBeforeUnmount(() => {
+  depotPlanEditor.dispose()
   pageActive = false
   sessionStartGeneration++
 })
