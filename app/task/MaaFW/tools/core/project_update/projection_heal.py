@@ -181,6 +181,7 @@ class RangeHTTPReader:
         deadline: float | None = None,
         cancelled: Callable[[], bool] | None = None,
         over_limit_reason: str = "",
+        on_chunk: Callable[["RangeHTTPReader"], None] | None = None,
     ) -> None:
         self.client = client
         self.url = url
@@ -194,6 +195,11 @@ class RangeHTTPReader:
         self.over_limit_reason = over_limit_reason
         # 最后一次响应来自哪台主机（github.com 会跳到 release-assets 之类的 CDN）。
         self.final_host = ""
+        # 逐块收到的字节与花在网络请求里的秒数（含没收完就失败的请求）：区间差量的速度
+        # 保护据此估吞吐。``on_chunk`` 每收到一块调一次，可以抛 :class:`HealSkip` 中止读取。
+        self.received = 0
+        self.network_seconds = 0.0
+        self.on_chunk = on_chunk
         self.blocks: dict[int, bytes] = {}
         self.position = 0
         self.fetched = 0
@@ -222,6 +228,7 @@ class RangeHTTPReader:
             raise HealSkip("读取发行包超时")
         self.requests += 1
         buffer = bytearray()
+        request_started = time.monotonic()
         try:
             with self.client.stream(
                 "GET",
@@ -248,10 +255,15 @@ class RangeHTTPReader:
                     )
                 for chunk in response.iter_bytes():
                     buffer.extend(chunk)
+                    self.received += len(chunk)
                     if len(buffer) > expected:
                         raise HealSkip("下载服务器回的区间比请求的长")
                     if self.cancelled is not None and self.cancelled():
                         raise RangeReadCancelled("update cancelled")
+                    if self.on_chunk is not None:
+                        self.network_seconds += time.monotonic() - request_started
+                        request_started = time.monotonic()
+                        self.on_chunk(self)
         except httpx.HTTPError as exc:
             from .transport import _reason
 
@@ -262,6 +274,8 @@ class RangeHTTPReader:
                 f"读取发行包失败：{name if detail == name else f'{name}: {detail}'}"
                 f"（区间 {start}-{end}）"
             ) from exc
+        finally:
+            self.network_seconds += time.monotonic() - request_started
         if len(buffer) != expected:
             raise HealSkip("下载服务器回的区间不完整")
         self.fetched += expected

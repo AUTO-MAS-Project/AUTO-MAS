@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import logging
 import os
+import time
 import zipfile
 import zlib
 from collections.abc import Callable, Iterable, Mapping
@@ -55,6 +56,7 @@ from .projection_heal import (
     read_entry,
     write_archive_skeleton,
 )
+from .timing import format_duration
 
 logger = logging.getLogger("automas.maafw.project_update.range_delta")
 
@@ -75,6 +77,15 @@ _LOCAL_HEADER_SIZE = 30
 # 更新不像运行前检查那样同步等着：单次请求给足时间，整段没有总时长上限（用户可以停止）。
 HTTP_TIMEOUT = httpx.Timeout(30.0, connect=10.0)
 _COPY_CHUNK = 1024 * 1024
+# 直连太慢就放弃区间（只在整包能走加速镜像时才设，见 :class:`RangeSpeedGuard`）：国内直连
+# GitHub 常年只有 100 多 KB/s，40% 预算的上限对识宝约 74 MB，按这个速度要十几分钟，
+# 不如按镜像下整包。估算「已用时 + 剩余计划字节 / 实测吞吐」超过这个秒数就放弃。
+SPEED_GUARD_BUDGET_SECONDS = 120.0
+# 不论估算多少，整次区间（读文件目录 + 取回）用时超过这个就放弃。
+SPEED_GUARD_HARD_LIMIT_SECONDS = SPEED_GUARD_BUDGET_SECONDS * 1.5
+# 吞吐样本够了才估：花在网络上至少这么多秒，或者至少收到这么多字节（取先到的）。
+SPEED_GUARD_MIN_SAMPLE_SECONDS = 3.0
+SPEED_GUARD_MIN_SAMPLE_BYTES = 512 * 1024
 _CANCEL_CHECK_EVERY = 200
 _TRUE_VALUES = frozenset({"1", "true", "yes", "on"})
 
@@ -85,6 +96,50 @@ class RangeDeltaUnavailable(RuntimeError):
 
 class RangeDeltaCancelled(RuntimeError):
     """用户停止了更新：照常取消，不退回全量包。"""
+
+
+class RangeSpeedGuard:
+    """直连按需下载的速度保护：整包能走加速镜像时才由调用方建，不能退就不设。
+
+    读取器每收到一块调一次 :meth:`observe`（``RangeHTTPReader(on_chunk=...)``）；样本够了
+    就按「已用时 + 剩余计划字节 / 实测吞吐」估总用时，超过 :data:`SPEED_GUARD_BUDGET_SECONDS`
+    抛 :class:`HealSkip`（区间这一路的失败，调用方照常退回整包）；总用时超过
+    :data:`SPEED_GUARD_HARD_LIMIT_SECONDS` 无论估多少都放弃。吞吐只按花在网络请求里的时间
+    算（本地算 CRC、解压不算），已用时按墙钟。剩余计划在读完文件目录之前不知道，那时只看
+    硬上限。
+    """
+
+    def __init__(self, clock: Callable[[], float] = time.monotonic) -> None:
+        self.clock = clock
+        self.started = clock()
+        self.budget = SPEED_GUARD_BUDGET_SECONDS
+        self.hard_limit = SPEED_GUARD_HARD_LIMIT_SECONDS
+        self.min_seconds = SPEED_GUARD_MIN_SAMPLE_SECONDS
+        self.min_bytes = SPEED_GUARD_MIN_SAMPLE_BYTES
+        #: 整次计划从远端读的字节（读完文件目录、定好取回计划后由调用方填）。
+        self.planned_total: int | None = None
+
+    def observe(self, reader: RangeHTTPReader) -> None:
+        elapsed = self.clock() - self.started
+        if elapsed > self.hard_limit:
+            raise HealSkip(
+                f"直连 GitHub 按需下载已用 {format_duration(elapsed)}，"
+                f"超过上限 {format_duration(self.hard_limit)}，改为按镜像下整包"
+            )
+        received, seconds = reader.received, reader.network_seconds
+        if self.planned_total is None or received <= 0 or seconds <= 0:
+            return
+        if seconds < self.min_seconds and received < self.min_bytes:
+            # 样本太小：开头的握手、跳转会把速度算得很低，不据此放弃。
+            return
+        rate = received / seconds
+        remaining = max(0, self.planned_total - received) / rate
+        if elapsed + remaining > self.budget:
+            raise HealSkip(
+                f"直连 GitHub 实测 {format_size(int(rate))}/s，按需下载预计还要 "
+                f"{format_duration(remaining)}（已用 {format_duration(elapsed)}），"
+                f"超过 {format_duration(self.budget)}，改为按镜像下整包"
+            )
 
 
 def force_full_package() -> bool:
@@ -253,6 +308,7 @@ def open_range_delta(
     proxy: httpx.Proxy | None = None,
     cancelled: Callable[[], bool] | None = None,
     send_log: Callable[[str], None] | None = None,
+    speed_guard: RangeSpeedGuard | None = None,
 ) -> RangeDelta:
     """读远端发行包的中央目录，算出白名单内的条目、哪些能从当前载荷搬、哪些要取回。
 
@@ -276,6 +332,7 @@ def open_range_delta(
             over_limit_reason=(
                 f"要读的超过上限 {format_size(size)}（整包大小），不如直接下整包"
             ),
+            on_chunk=speed_guard.observe if speed_guard is not None else None,
         )
         try:
             archive = zipfile.ZipFile(reader)  # type: ignore[arg-type]
@@ -376,6 +433,11 @@ def open_range_delta(
                 f"计划传输 {format_size(delta.planned_bytes)}，发行包 "
                 f"{format_size(reader.size)}），超过按区间取回的上限"
             )
+        if speed_guard is not None:
+            # 计划定了才能估剩余：读文件目录这段的吞吐已经在样本里，这里先估一次，
+            # 慢到估出来就超的不必开始取回。
+            speed_guard.planned_total = delta.planned_bytes
+            speed_guard.observe(reader)
         return delta
     except BaseException as exc:
         for closer in (
@@ -552,6 +614,7 @@ __all__ = [
     "RangeDelta",
     "RangeDeltaCancelled",
     "RangeDeltaUnavailable",
+    "RangeSpeedGuard",
     "fetch_range_delta",
     "force_full_package",
     "is_github_download",

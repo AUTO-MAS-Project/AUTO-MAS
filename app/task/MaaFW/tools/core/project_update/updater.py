@@ -52,6 +52,7 @@ from .range_delta import (
     FORCE_FULL_PACKAGE_ENV,
     RangeDeltaCancelled,
     RangeDeltaUnavailable,
+    RangeSpeedGuard,
     fetch_range_delta,
     force_full_package,
     is_github_download,
@@ -1224,6 +1225,8 @@ async def apply_maafw_project_update(
                 timer=timer,
                 cancelled=is_cancelled,
                 mirrored=bool(alternates),
+                mirror_fallback=bool(alternates)
+                and normalise_sha256(candidate.sha256) is not None,
             )
         except RangeDeltaCancelled as exc:
             log_stopped(exc)
@@ -1551,13 +1554,16 @@ async def _range_delta_package(
     timer: StageTimer,
     cancelled: Callable[[], bool],
     mirrored: bool = False,
+    mirror_fallback: bool = False,
 ) -> tuple[dict[str, Path], int] | None:
     """GitHub 发行包按区间只取变化的文件，在 ``package_dir`` 里拼出虚拟全量包。
 
     返回 ``(条目表, 实际下载字节)``；用不了（不在 github.com、服务端不认 Range、区间不符、
     CRC 错、超预算、超时……）丢掉 ``package_dir`` 返回 None，调用方照常下整包。用户停止
     抛 :class:`RangeDeltaCancelled`。``mirrored``：配置了 GitHub 加速镜像（区间不走镜像，
-    要在日志里说一声，免得以为镜像没生效）。
+    要在日志里说一声，免得以为镜像没生效）。``mirror_fallback``：退回时整包真能走镜像（有镜像
+    且资产有 sha256，与 ``transport.download_resumable`` 同一判据）——只有这时才设直连速度保护
+    （:class:`RangeSpeedGuard`），没有更快的路可退时直连下整包只会更慢，不放弃区间。
     """
 
     if not is_github_download(download_url):
@@ -1566,15 +1572,21 @@ async def _range_delta_package(
     staging_root = package_dir.parent
     delta = None
     started = time.monotonic()
+    speed_guard = RangeSpeedGuard() if mirror_fallback else None
+    if speed_guard is not None:
+        route_note = (
+            "（区间只直连 github.com，不走加速镜像；没做成再按镜像下整包；直连按需下载预计"
+            f"超过 {format_duration(speed_guard.budget)}"
+            f"（或已用超过 {format_duration(speed_guard.hard_limit)}）就放弃区间）"
+        )
+    elif mirrored:
+        route_note = "（区间只直连 github.com；资产没有 sha256，整包也不走镜像，不设直连速度保护）"
+    else:
+        route_note = "（没有可用的加速镜像，直连再慢也不放弃区间）"
     try:
         timer.start("区间比对")
         send_log(
-            "正在按区间读取 GitHub 发行包的文件目录，比对哪些文件变了"
-            + (
-                "（区间只直连 github.com，不走加速镜像；没做成再按镜像下整包）"
-                if mirrored
-                else ""
-            )
+            f"正在按区间读取 GitHub 发行包的文件目录，比对哪些文件变了{route_note}"
         )
         await asyncio.to_thread(staging_root.mkdir, parents=True, exist_ok=True)
         delta = await asyncio.to_thread(
@@ -1589,6 +1601,7 @@ async def _range_delta_package(
                 proxy=proxy,
                 cancelled=cancelled,
                 send_log=send_log,
+                speed_guard=speed_guard,
             )
         )
         send_log(
