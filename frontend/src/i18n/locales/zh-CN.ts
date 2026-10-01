@@ -1385,7 +1385,8 @@ export default {
       '启动器启动：经官方启动器进入游戏；直接启动：直启游戏客户端（MAS 内置 -krqlv=hd），不打开启动器。两种方式都由启动器路径定位游戏',
     launchViaLauncher: '启动器启动',
     launchDirectly: '直接启动',
-    autoUpdateNeedsLauncher: '需在上方配置官方启动器路径，自动更新才能生效',
+    autoUpdateNeedsLauncher:
+      '下方未配置官方启动器路径：自动更新不可用；若也没选择游戏客户端，任务无法直启',
     gameClientPathLabel: '游戏客户端',
     clientPathPending: '由启动器路径自动定位，或点击「选择文件」手动指定',
     selectFile: '选择文件',

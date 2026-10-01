@@ -1346,7 +1346,8 @@ export default {
       'ランチャー起動：公式ランチャー経由でゲームに入ります。直接起動：ランチャーを開かずゲームクライアントを直接起動します（MAS が -krqlv=hd を付与）。どちらもランチャーのパスでゲームを特定します',
     launchViaLauncher: 'ランチャー起動',
     launchDirectly: '直接起動',
-    autoUpdateNeedsLauncher: '自動更新を使うには上で公式ランチャーのパスを設定してください',
+    autoUpdateNeedsLauncher:
+      '下で公式ランチャーのパスが未設定です：自動更新は使えず、ゲームクライアントも未選択だと直接起動できません',
     gameClientPathLabel: 'ゲームクライアント',
     clientPathPending: 'ランチャーのパスから自動特定、またはファイルを手動で選択',
     selectFile: 'ファイルを選択',

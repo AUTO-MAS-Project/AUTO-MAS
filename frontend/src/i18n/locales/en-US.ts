@@ -1444,7 +1444,8 @@ export default {
       'Via launcher: enter the game through the official launcher; Direct launch: start the game client directly (MAS passes -krqlv=hd) without opening the launcher. Both use the launcher path to locate the game',
     launchViaLauncher: 'Via launcher',
     launchDirectly: 'Direct launch',
-    autoUpdateNeedsLauncher: 'Configure the official launcher path above for auto-update to work',
+    autoUpdateNeedsLauncher:
+      'No launcher path is set below: auto-update is unavailable, and the task cannot direct-launch unless you also pick a game client',
     gameClientPathLabel: 'Game client',
     clientPathPending: 'Auto-located from the launcher path, or pick the file manually',
     selectFile: 'Select file',

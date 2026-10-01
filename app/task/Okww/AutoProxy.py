@@ -256,12 +256,19 @@ class AutoProxyTask(TaskExecuteBase):
                     )
                 self.game_process_path = client_exe
             else:
-                # 两种方式都由启动器路径解码客户端 exe（供已运行检测与兜底强杀）
+                # 客户端 exe 由启动器路径解码（直启未手填客户端、启动器态都走这里）
                 try:
                     self.game_process_path = resolve_wuthering_waves_process_path(
                         launcher_path
                     )
                 except (FileNotFoundError, ValueError) as e:
+                    if self._game_launch_type() == "Client":
+                        # 直启侧还有「直接指定客户端文件」这条自足的路，别把用户
+                        # 打发去重新导入启动器
+                        return (
+                            "未找到鸣潮客户端程序：请在直启模式下选择游戏客户端"
+                            "文件，或重新导入官方启动器以自动定位"
+                        )
                     return str(e)
 
         config_mode = _okww_config_mode(self.cur_user_config.get("Info", "Mode"))

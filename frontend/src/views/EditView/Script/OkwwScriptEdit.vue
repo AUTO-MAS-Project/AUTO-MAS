@@ -1135,6 +1135,8 @@ const handleLaunchTypeChange = async (value: 'Launcher' | 'Client') => {
     requestedLaunchType = persistedLaunchType
     okwwConfig.Game.Type = persistedLaunchType
   }
+  // enqueue 会把更新失败透成拒绝，这里收掉：watch 里的 void 调用漏出去会变成
+  // 未处理的 promise 拒绝（失败回滚与提示已在本函数内处理）
   const success = await enqueue(async () => {
     try {
       const ok = await updateScript(scriptId, {
@@ -1146,7 +1148,7 @@ const handleLaunchTypeChange = async (value: 'Launcher' | 'Client') => {
       rollback()
       throw error
     }
-  })
+  }).catch(() => false)
   if (!success) {
     message.error(t('edit.launchTypeSaveFailed'))
     return
