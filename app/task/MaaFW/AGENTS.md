@@ -147,7 +147,10 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   清单里没有导入目录）。
 - **只支持发行包形态**：源码仓里 agent 写成 `"child_exec": "uv"`（`uv run agent/main.py`）
   这类开发者形态不支持、也不打算适配——发行包的打包流程会把它改写成
-  `./python/python.exe`，导入发行包即可。
+  `./python/python.exe`，导入发行包即可。例外是被 CFA（MFW-PyQt6）源码热更新过的目录：它的
+  interface 留着源码写法的 agent（识宝的 `../agent/main.py`），入口按 CFA 自己的规则兜底——
+  解析不到就退回 `<interface 目录>/agent/main.py`（`interface/agent_entry.py`，投影与 planner
+  共用），长期保留，不在导入时改写载荷里的 interface；第一次走 MAS 更新后就是发行包写法。
 - Python agent 的解释器三种落法（`agent_env/planner.py`）：项目自带 `python/python.exe` 存在 →
   `project_python`；声明的是自带 Python 模式但文件不存在，或者裸写 `python` 让 PATH 去找
   （PI v2 示例与 MAA_Punish 的写法）→ 该项目专属隔离 venv（`isolated_venv`，按项目路径哈希
@@ -325,7 +328,21 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   `PYTHONPYCACHEPREFIX=<项目根>/.pycache`，镜像树里项目根出现两遍，路径长到会撞 MAX_PATH 时不设
   前缀，见 `host_environment.project_pycache_prefix`）。
 - 全量与差量包的落地条目都只从 `apply.py: build_package_plan` 枚举（`files` / `hashes` /
-  `deleted` 三张表，按投影白名单过滤）。要改"哪些文件落盘"只动这一处。
+  `deleted` 三张表，按投影白名单过滤）。要改"哪些文件落盘"只动这一处。唯一的旁路是下面的
+  区间差量：它按同一套投影规则（`package_projection_rules`）在中央目录骨架上算好条目表直接传进
+  `build_from_package(package_entries=...)`，改投影规则时两边自然一致，改枚举口径（跳过哪些
+  条目、包根怎么认）时要同步 `range_delta._check_layout`。
+- **GitHub 源按区间差量**（`project_update/range_delta.py`，#1118）：要的是全量包（GitHub 源
+  一律如此）时，先用 HTTP Range 读发行包的中央目录，按 CRC32 + 大小与当前载荷逐条目比，只取回
+  变了的条目，没变的从当前载荷搬，在 `.staging/pkg-*` 里拼成虚拟全量包，再按全量包语义建新载荷
+  ——与整包下载逐字节一致、载荷 id 相同（识宝 v1.13.3→v1.13.4 取回约 3.5 MB，整包 185 MB）。
+  清单 `source.mode=range`、`projectionRevision` 照全量记；进度与结果的 `package_type` 报
+  `delta`（前端显示增量）。只直连 `github.com`、不走加速镜像（区间字节只有条目级 CRC，没有整包
+  sha256 可校验）；区间这一路任何一步失败（回 200、区间不符、CRC 错、超时、取回超过资产 40% 或
+  3000 个条目……）都丢掉这一批，同一次更新里照常下整包（可走镜像），用户停止照常取消。当前载荷
+  damaged、旧投影规则、旧布局原生库残留时不走区间（`updater._range_delta_blocker`，先保守）；
+  本地导入的载荷可以走。环境变量 `AUTO_MAS_MAAFW_FORCE_FULL_PACKAGE=1` 一律下全量包（Mirror 酱
+  也不要差量包），供验收比对与应急，不进配置、不上界面。
 - 预检备忘按**谱系 + 目标版本**记（`.payloads/<谱系>/precheck-<版本>.json`），组共有：一个成员预检
   过某版本失败，组里谁也不再为它下包；只有运行前 / 运行后自动更新读它，手动更新等于强制重试。
 - "检查更新"走 `version_only`，不换下载地址——带 CDK 换地址会扣 Mirror 酱当日额度。

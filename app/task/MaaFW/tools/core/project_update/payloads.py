@@ -576,6 +576,7 @@ def build_from_package(
     expected_package_type: str | None = None,
     target_version: str | None = None,
     cancelled: Callable[[], bool] | None = None,
+    package_entries: Mapping[str, Path] | None = None,
 ) -> PackageBuild:
     """旧载荷 + 更新包 → staging 里的新载荷树（§3.1 第 4 步）。
 
@@ -592,6 +593,11 @@ def build_from_package(
     成新版本骨架，带 ``stagedFiles``）→ ``applying``（逐文件套包，带
     ``appliedFiles`` / ``totalFiles``）。``cancelled()`` 为真时在两步之间抛
     :class:`PayloadCancelled`，staging 由调用方丢弃。
+
+    ``package_entries``：GitHub 源的区间差量（``range_delta.py``）已经按整包的投影白名单
+    定好的条目表（包内相对路径 → ``package_root`` 下的文件）。给了就当全量包用，不再枚举
+    ``package_root``、不再投影第二遍——那棵树只是「旧载荷里没变的 + 按区间取回的」，缺着
+    外壳文件，在它上面重算白名单与整包下载的未必是同一张。
     """
 
     def emit(stage: str, **payload: Any) -> None:
@@ -617,17 +623,27 @@ def build_from_package(
     }
     # 计划只读旧载荷（投影白名单的叠加视图、差量基线版本），不碰 staging。
     try:
-        plan = build_package_plan(
-            package_root,
-            extract_dir,
-            old_root,
-            old_manifest=compat_manifest,
-            expected_package_type=expected_package_type,  # type: ignore[arg-type]
-            target_version=target_version,
-            projection=True,
-            send_log=send_log,
-            check_cancel=check_cancel,
-        )
+        if package_entries is not None:
+            plan = PackagePlan(
+                package_type="full",
+                package_root=Path(package_root),
+                files={rel: Path(path) for rel, path in package_entries.items()},
+                hashes={},
+                deleted=(),
+                target_version=target_version,
+            )
+        else:
+            plan = build_package_plan(
+                package_root,
+                extract_dir,
+                old_root,
+                old_manifest=compat_manifest,
+                expected_package_type=expected_package_type,  # type: ignore[arg-type]
+                target_version=target_version,
+                projection=True,
+                send_log=send_log,
+                check_cancel=check_cancel,
+            )
         _validate_plan_base(
             old_root,
             plan,
@@ -687,7 +703,11 @@ def build_from_package(
     for rel, source in plan.files.items():
         target = staging / rel
         size = source.stat().st_size
-        if blob_store is not None and is_shared_path(rel, size, private_list):
+        if os.path.lexists(target) and os.path.samefile(source, target):
+            # 区间差量里没变的文件：包里那份就是从旧载荷链过来的，骨架里已是同一个
+            # inode，不用再算一遍哈希、也不用动它。整包解压出来的文件不会走到这里。
+            pass
+        elif blob_store is not None and is_shared_path(rel, size, private_list):
             blob_store.place(source, target)
         else:
             target.parent.mkdir(parents=True, exist_ok=True)
