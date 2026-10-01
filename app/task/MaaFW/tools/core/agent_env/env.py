@@ -807,8 +807,26 @@ def _build_project_python_probe_env(
     """
 
     env = _build_agent_env_for_pip(project_path)
+    runtime = project_python_agent_binary_path(python_exe, project_path)
+    if runtime is not None:
+        env["MAAFW_BINARY_PATH"] = str(runtime)
+    return env
+
+
+def project_python_agent_binary_path(
+    python_exe: str | Path, project_path: Path
+) -> Path | None:
+    """项目自带解释器的 agent 该经 ``MAAFW_BINARY_PATH`` 用的原生库目录；不该设时 None。
+
+    ``maa/bin`` 不在、runner 用的是项目自带原生库（``project_maafw_runtime_path``）且那里
+    有 ``MaaAgentServer.dll`` 时，就是 runner 那份。健康检查与 runner 起 agent
+    （``runner._build_agent_env``）都从这里取，两边永远指同一个目录：M9A 的 agent 已设
+    这个变量时一律沿用，不再自己按 ``runtimes/`` → ``maafw/`` 的顺序找——两份原生库并存
+    时它找到的未必是 runner 选的那份，协议版本不同就握手失败。
+    """
+
     if not _bundled_maa_bin_missing(python_exe):
-        return env
+        return None
 
     from app.task.MaaFW.tools.core.runner.environment import (
         project_maafw_runtime_path,
@@ -816,8 +834,8 @@ def _build_project_python_probe_env(
 
     runtime = project_maafw_runtime_path(project_path)
     if runtime is not None and (runtime / PROJECT_AGENT_SERVER_DLL_NAME).is_file():
-        env["MAAFW_BINARY_PATH"] = str(runtime)
-    return env
+        return runtime
+    return None
 
 
 def _project_relative_text(text: str, project_path: Path) -> str:

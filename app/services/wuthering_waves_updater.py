@@ -33,7 +33,7 @@ import hashlib
 import json
 import os
 import shutil
-import zipfile
+import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -48,19 +48,9 @@ from app.services.wuthering_waves import (
     write_wuthering_waves_local_version,
 )
 from app.utils import get_logger
+from app.utils.hpatchz import ensure_hpatchz
 
 logger = get_logger("鸣潮更新")
-
-# hpatchz 用于应用官方增量包。上游 sisong/HDiffPatch 为 MIT，与本项目 AGPL 兼容。
-# 仓库不跟踪二进制，故首次需要增量更新时按需下载并校验后缓存。
-_HPATCHZ_VERSION = "v5.1.3"
-_HPATCHZ_URL = (
-    "https://github.com/sisong/HDiffPatch/releases/download/"
-    f"{_HPATCHZ_VERSION}/hdiffpatch_{_HPATCHZ_VERSION}_bin_windows64.zip"
-)
-_HPATCHZ_ZIP_SHA256 = "77f141386e5d8f785c1c846e10fbbc19b6c05aa00e3f59cc44670fb3f0e2ae94"
-_HPATCHZ_MEMBER = "windows64/hpatchz.exe"
-_HPATCHZ_CACHE_DIR = Path.cwd() / "data" / "cache" / "hpatchz"
 
 # 暂存区放在安装目录内，确保与游戏目录同卷，move 才是原子改名而非跨卷复制。
 _STAGING_DIR_NAME = "_mas_update"
@@ -75,6 +65,16 @@ _HTTP_TIMEOUT = httpx.Timeout(30.0, connect=15.0)
 _FULL_SYNC_SIZE_LIMIT = 10 * 1024**3
 
 ProgressHook = Callable[[str], Awaitable[None]]
+# 已收到字节数回调：每写出一块字节调一次，只报本次真正收到的字节。
+BytesHook = Callable[[int], Awaitable[None]]
+
+# 调度台里的下载进度行按「进度跨度 + 时间上限」节流。日志是追加的、只增不减，无脑刷会把
+# 用户自己的运行日志淹掉；但只看跨度（每 5%）在慢网下又要几分钟才一行，正是用户抱怨的
+# 「看着像卡住了」。速度是两条相邻进度行之间的平均，所以两次之间至少要隔 1 秒；时间上限
+# 只在字节还在到达时起作用，真停流会先撞上读超时（_HTTP_TIMEOUT）并报下载失败。
+_PROGRESS_PERCENT_STEP = 5.0
+_PROGRESS_MIN_INTERVAL = 1.0
+_PROGRESS_MAX_INTERVAL = 5.0
 
 
 @dataclass(frozen=True)
@@ -419,9 +419,17 @@ def _entry_url(cdn: str, plan: UpdatePlan, entry: ResourceEntry) -> str:
 
 
 async def _stream_to_file(
-    client: httpx.AsyncClient, url: str, target: Path, expected_size: int
+    client: httpx.AsyncClient,
+    url: str,
+    target: Path,
+    expected_size: int,
+    on_bytes: BytesHook | None = None,
 ) -> None:
-    """流式下载，支持断点续传。"""
+    """流式下载，支持断点续传。
+
+    on_bytes 每写出一块字节被调一次，只报本次真正收到的字节；续传时文件里已有的前缀
+    由调用方算进基线（见 download_plan），不在这里重复报。
+    """
 
     done = target.stat().st_size if target.is_file() else 0
     if done and done >= expected_size:
@@ -433,11 +441,17 @@ async def _stream_to_file(
         # 请求了 Range 但服务端回 200，说明它整体重发了：必须覆盖而不是追加，
         # 否则会把新内容接在旧字节后面，静默写出坏文件。
         mode = "ab" if (done and response.status_code == 206) else "wb"
+        if done and response.status_code != 206 and on_bytes is not None:
+            # 这截暂存前缀已被丢弃，但调用方早把它算进了进度基线（见 download_plan），
+            # 扣回去，否则百分比会提前跑到 100%。负数只表示更正，不是收到的字节。
+            await on_bytes(-done)
         target.parent.mkdir(parents=True, exist_ok=True)
         async with aiofiles.open(target, mode) as handle:
             async for block in response.aiter_bytes(chunk_size=_CHUNK_SIZE):
                 if block:
                     await handle.write(block)
+                    if on_bytes is not None:
+                        await on_bytes(len(block))
 
 
 async def _download_entry(
@@ -447,6 +461,7 @@ async def _download_entry(
     staging: Path,
     *,
     attempts: int = 2,
+    on_bytes: BytesHook | None = None,
 ) -> Path:
     """下载单个条目到暂存区，md5 校验通过才算成功。"""
 
@@ -460,7 +475,7 @@ async def _download_entry(
         url = _entry_url(cdn, plan, entry)
         for attempt in range(attempts):
             try:
-                await _stream_to_file(client, url, target, entry.size)
+                await _stream_to_file(client, url, target, entry.size, on_bytes)
                 actual = await file_md5(target)
                 if actual == entry.md5:
                     return target
@@ -483,19 +498,65 @@ async def download_plan(
     *,
     on_progress: ProgressHook | None = None,
 ) -> None:
-    """并发下载计划里的全部条目。"""
+    """并发下载计划里的全部条目。
+
+    除每个条目下完报一行，还按进度跨度往调度台报「已下 / 总量 + 实时速度」，否则用户
+    看到的只有「3/10」这类条目计数，慢网下会以为卡死。
+    """
 
     total = len(plan.downloads)
     if not total:
         return
+    total_bytes = plan.download_size
     semaphore = asyncio.Semaphore(_DOWNLOAD_CONCURRENCY)
     finished = 0
     lock = asyncio.Lock()
 
+    # 上次中断留下的暂存文件同样算本次进度（条目会续传或直接复用），先并进基线，
+    # 否则续传那次的百分比永远走不到 100%。
+    downloaded = 0
+    for entry in plan.downloads:
+        staged = resolve_within(staging, entry.dest)
+        if staged.is_file():
+            downloaded += min(staged.stat().st_size, entry.size)
+
+    # 速度取两条相邻进度行之间的平均，不是两块 1MB 分块之间的抖动，所以只有真要发一行
+    # 时才采样；采样后立刻把状态前移，并发的其它条目就不会各补一行。
+    sent_bytes = downloaded
+    sent_key = -1
+    sent_at = time.monotonic()
+
+    async def on_bytes(size: int) -> None:
+        nonlocal downloaded, sent_bytes, sent_key, sent_at
+        downloaded += size
+        if size < 0:
+            # 基线更正：两侧同扣，既不发线也不让速度被这截假字节污染。
+            sent_bytes += size
+            return
+        if not total_bytes:
+            return
+        now = time.monotonic()
+        elapsed = now - sent_at
+        if elapsed < _PROGRESS_MIN_INTERVAL:
+            return
+        # md5 不符会删掉残留重下，已下字节可能超过总量：显示封顶，速度仍按真实字节算。
+        shown = min(downloaded, total_bytes)
+        percent = shown / total_bytes * 100
+        key = int(percent // _PROGRESS_PERCENT_STEP)
+        if key == sent_key and elapsed < _PROGRESS_MAX_INTERVAL:
+            return
+        speed = (downloaded - sent_bytes) / elapsed
+        sent_bytes, sent_key, sent_at = downloaded, key, now
+        await _report(
+            on_progress,
+            f"鸣潮更新下载中 {percent:.1f}%（{shown / 1024**3:.2f}/"
+            f"{total_bytes / 1024**3:.2f} GB，{speed / 1024**2:.1f} MB/s）",
+        )
+
     async def worker(entry: ResourceEntry) -> None:
         nonlocal finished
         async with semaphore:
-            await _download_entry(client, plan, entry, staging)
+            await _download_entry(client, plan, entry, staging, on_bytes=on_bytes)
         async with lock:
             finished += 1
             await _report(
@@ -503,47 +564,6 @@ async def download_plan(
             )
 
     await asyncio.gather(*(worker(entry) for entry in plan.downloads))
-
-
-def _extract_hpatchz(zip_path: Path, target: Path) -> None:
-    with zipfile.ZipFile(zip_path) as archive:
-        with archive.open(_HPATCHZ_MEMBER) as src, target.open("wb") as dst:
-            shutil.copyfileobj(src, dst)
-
-
-async def ensure_hpatchz(
-    *, on_progress: ProgressHook | None = None, timeout: float = 120.0
-) -> Path:
-    """确保本地有 hpatchz，没有则下载并校验 sha256 后缓存。
-
-    仓库不跟踪二进制，所以按需拉取。校验固定的 sha256 是必须的：
-    这是个会被我们拿去改写游戏文件的可执行体，不能来源不明。
-    """
-
-    exe = _HPATCHZ_CACHE_DIR / "hpatchz.exe"
-    if exe.is_file():
-        return exe
-
-    await _report(on_progress, f"正在获取增量补丁工具 hpatchz {_HPATCHZ_VERSION}...")
-    _HPATCHZ_CACHE_DIR.mkdir(parents=True, exist_ok=True)
-    zip_path = _HPATCHZ_CACHE_DIR / "hpatchz.zip"
-    async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
-        response = await client.get(_HPATCHZ_URL)
-        response.raise_for_status()
-        payload = response.content
-
-    actual = hashlib.sha256(payload).hexdigest()
-    if actual != _HPATCHZ_ZIP_SHA256:
-        raise RuntimeError(
-            f"hpatchz 校验失败: 期望 {_HPATCHZ_ZIP_SHA256} 实际 {actual}"
-        )
-    zip_path.write_bytes(payload)
-    try:
-        await asyncio.to_thread(_extract_hpatchz, zip_path, exe)
-    finally:
-        zip_path.unlink(missing_ok=True)
-    logger.info("hpatchz 就绪: {}", exe)
-    return exe
 
 
 async def _run_hpatchz(exe: Path, old_dir: Path, blob: Path, out_dir: Path) -> None:
@@ -605,6 +625,8 @@ async def _redownload_group(
     group: PatchGroup,
     staging: Path,
     install_dir: Path,
+    *,
+    on_progress: ProgressHook | None = None,
 ) -> None:
     """某个 group 打补丁失败时，整文件重下该组产物。
 
@@ -621,8 +643,10 @@ async def _redownload_group(
         cdn_urls=plan.cdn_urls,
         downloads=group.dst_files,
     )
-    await download_plan(client, fallback, staging)
-    await _commit_entries(staging, install_dir, group.dst_files)
+    await download_plan(client, fallback, staging, on_progress=on_progress)
+    await _commit_entries(
+        staging, install_dir, group.dst_files, on_progress=on_progress
+    )
 
 
 async def _apply_groups(
@@ -652,7 +676,9 @@ async def _apply_groups(
         except (RuntimeError, OSError, ValueError) as exc:
             logger.warning("{} 应用失败，回退整文件重下: {}", group.blob, exc)
             await _report(on_progress, f"补丁 {done}/{total} 应用失败，改为整文件下载")
-            await _redownload_group(client, plan, group, staging, install_dir)
+            await _redownload_group(
+                client, plan, group, staging, install_dir, on_progress=on_progress
+            )
         finally:
             shutil.rmtree(out_dir, ignore_errors=True)
         await _report(on_progress, f"鸣潮更新应用中 {done}/{total}")

@@ -150,6 +150,30 @@
               </a-form-item>
             </a-col>
           </a-row>
+
+          <a-row :gutter="24">
+            <a-col :span="12">
+              <a-form-item>
+                <template #label>
+                  <span class="form-label">
+                    {{ t('edit.genshinUpdateAuto') }}
+                    <a-tooltip :title="t('edit.genshinUpdateAutoHint')">
+                      <QuestionCircleOutlined class="help-icon" />
+                    </a-tooltip>
+                  </span>
+                </template>
+                <a-select
+                  v-model:value="bettergiConfig.Game.IfAutoUpdate"
+                  size="large"
+                  style="width: 100%"
+                  @change="handleChange('Game', 'IfAutoUpdate', bettergiConfig.Game.IfAutoUpdate)"
+                >
+                  <a-select-option :value="true">{{ t('edit.yes') }}</a-select-option>
+                  <a-select-option :value="false">{{ t('edit.no') }}</a-select-option>
+                </a-select>
+              </a-form-item>
+            </a-col>
+          </a-row>
         </div>
 
         <div class="form-section">
@@ -242,6 +266,7 @@
                     {{ t('edit.bettergiAccountSwitchMethodMas') }}
                   </a-select-option>
                 </a-select>
+                <span class="control-hint">{{ t('edit.accountSwitch16x9Only') }}</span>
               </a-form-item>
             </a-col>
           </a-row>
@@ -298,6 +323,7 @@ interface BetterGIRunForm {
 interface BetterGIGameForm {
   Controller: string
   CloseOnFinish: boolean
+  IfAutoUpdate: boolean
 }
 
 interface BetterGIScriptConfigForm {
@@ -325,7 +351,11 @@ const bettergiConfig = reactive<BetterGIScriptConfigForm>({
     UseAdmin: true,
     AccountSwitchMethod: 'MAS',
   },
-  Game: { Controller: '电脑端-前台', CloseOnFinish: true },
+  Game: {
+    Controller: '电脑端-前台',
+    CloseOnFinish: true,
+    IfAutoUpdate: false,
+  },
 })
 
 const rules = computed(() => ({
@@ -518,6 +548,14 @@ onMounted(loadScript)
   align-items: center;
   gap: 8px;
   font-weight: 600;
+}
+
+.control-hint {
+  display: block;
+  margin-top: 4px;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--ant-color-text-tertiary);
 }
 
 .help-icon {

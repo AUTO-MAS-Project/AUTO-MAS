@@ -423,7 +423,7 @@ export default {
     okWwSetupFailed: 'ok-ww の設定に失敗しました: {p0}',
     p0NotValidJson: '{p0} は有効な JSON ではありません',
     p0MustSitUnder: '{p0}はスクリプトのルートフォルダまたは AppData 配下である必要があります',
-    p0HasNoMatch: '{p0}にマッチ用の正規表現が未入力のため、無効として保存しました',
+    p0HasNoMatch: '{p0}にマッチ用の正規表現が未入力のため、まだ有効ではありません',
     matchPatternP0Has: '{p0}のマッチ用正規表現に構文エラーがあり、実行時には適用されません',
     p0MissingRequiredField:
       '{p0}は必須項目が未入力のため無効として保存しました：split/regex はマッチ用キーワード（正規表現）、multiline は開始用の正規表現が必要です',
@@ -472,6 +472,11 @@ export default {
     stageConfiguration: 'ステージ設定',
     stagnantShadow: '凝結虚影',
     deleteStockKeepingPlan: '在庫維持プランを削除',
+    maaDepotDragSortHint: 'ドラッグで計画の順序を変更',
+    maaDepotMoveUp: '計画行を上へ移動',
+    maaDepotMoveDown: '計画行を下へ移動',
+    selectPlanRows: 'すべての計画行を選択',
+    selectPlanRow: '計画行を選択',
     deleteSelected: '選択したものを削除',
     farmType: '周回タイプ',
     annihilationDailyRunStart: '殲滅と日課で MAA を 2 回起動します。グループ内は実行順に並びます',
@@ -1042,7 +1047,6 @@ export default {
       'MAS がローカルのゲームを起動する間だけ、現在のユーザーのレジストリに書き込んでウィンドウモードに切り替えます。タスクの完了・失敗・手動停止でゲームを閉じたあと、元の値に戻します',
     appliesMarch7thDivergentUniverse:
       '三月なのかの模擬宇宙・分岐宇宙にのみ適用され、weekly_divergent_stable_mode に対応します',
-    officialWutheringWavesLauncher: '鳴潮の公式ランチャーのみ対応',
     pcControllersOnlySeconds: 'PC 側のコントローラーのみ設定が必要です。単位は秒',
     cutFromKeywordEnd:
       'キーワードから行末までを切り取ります。「含める」にチェックするとキーワードごと削除し、外すとキーワードは残します',
@@ -1112,6 +1116,9 @@ export default {
     checkGameUpdateBeforeLogin:
       '有効にすると、ゲームにログインする前にサーバーとエミュレーター内のゲームクライアントのバージョンを比較します。クライアントが古いと強制更新画面でログインが止まります',
     updateAutomaticallyBeforeLaunching: '起動前に自動更新',
+    genshinUpdateAuto: '原神を自動更新（B服非対応）',
+    genshinUpdateAutoHint:
+      'タスクがゲームを起動する前に、MAS がバージョン確認・ダウンロード・インストールまで自行完了し、公式ランチャーは不要です。増分パッチのみ自動適用し、無い場合は停止して公式ランチャーに任せます。インストール済みの音声パッケージはメインのリソースと一緒に更新されます。Bサーバー（bili服）は非対応のため、公式ランチャーで各自更新してください',
     waitAfterLaunchSeconds: '起動後の待機時間（秒）',
     launchMode: '起動方式',
     howLongWaitAfter2: 'ゲーム起動後に待つ時間',
@@ -1151,11 +1158,11 @@ export default {
     whenTaskProgressCollected:
       'オンにすると、以下のルールでスクリプトのログからタスクの進行情報を収集し、送信レポートに追加します。抽出モードは 3 種類あり、ログの各行はルール順で最初に一致したものが使われ、まとめて送信されます。',
     rulesApplyOnlyWhen:
-      'オンのときだけルールに従ってログを処理します。オフにしても設定は残りますが、フックが未設定のときと同じ動作になります',
+      'オンのときだけルールに従ってログを処理します。オフにしても設定は残りますが、前処理ルールが未設定のときと同じ動作になります',
     progressCollectedOnlyWhen:
       'オンのときだけルールに従ってタスクの進行情報を収集します。オフにしても設定は残りますが、収集は行われません',
     whenScriptLogPreprocessed:
-      'オンにすると、以下のルールでスクリプトのログを 1 行ずつ前処理します：一致したノイズ行を破棄し、伏せ字や正規化が必要な内容を書き換えます。フックはタスクログ・送信ログの収集・成功／失敗の判定より先に実行され、破棄された行はそのいずれにも渡りません。成功／失敗の目印が含まれる行は破棄しないでください。',
+      'オンにすると、以下のルールでスクリプトのログを 1 行ずつ前処理します：一致したノイズ行を破棄し、伏せ字や正規化が必要な内容を書き換えます。前処理はタスクログ・送信ログの収集・成功／失敗の判定より先に実行され、破棄された行はそのいずれにも渡りません。成功／失敗の目印が含まれる行は破棄しないでください。',
     masTakesOverStarting: 'オンにすると MAS がゲームの起動と終了を引き継ぎます',
     collectsKeyMomentsFrom:
       'このユーザーの要所をタスクレポートでどう表示するかを選択します：オフ = 収集しない；リスト = 各行に収集時刻を付けて 1 行ずつ表示；要約 = 成功・失敗・スキップごとに 1 行にまとめる',
@@ -1277,8 +1284,10 @@ export default {
     wholeFileSyncLimit: 'ファイル全体同期の上限（GB）',
     noMatchingLines: '一致する行はありません',
     dailyTaskTimeoutMinutes: '日課タスクのタイムアウト（分）',
-    logHooks: 'ログ処理フック',
-    logHooksOffRules: 'ログ処理フックは無効です。ルールは実行されません。',
+    logHooks: 'ログ前処理',
+    logHooksOffRules: 'ログ前処理は無効です。ルールは実行されません。',
+    ruleCountSummary: '{n} 件のルール、{m} 件が有効',
+    ruleCountFooter: '{n} 件のルール、{m} 件が有効。リスト順に実行します',
     logFileEmptyCould: 'ログファイルが空か、読み込めません',
     logFileNameFormat: 'ログファイル名の書式',
     logFileNameFormat2: 'ログファイル名の書式。ファイル名が固定の場合は空にしてください',
@@ -1332,6 +1341,26 @@ export default {
     gameLaunchArgumentsNot: 'ゲームの起動引数（OK-NTE の引数ではありません）',
     gameLaunchArgumentsNot2: 'ゲームの起動引数（ok-ww の引数ではありません）',
     gameLauncher: 'ゲームランチャー',
+    launchType: 'ゲームの起動方法',
+    launchTypeHint:
+      'ランチャー起動：公式ランチャー経由でゲームに入ります。直接起動：ランチャーを開かずゲームクライアントを直接起動します（MAS が -krqlv=hd を付与）。どちらもランチャーのパスでゲームを特定します',
+    launchViaLauncher: 'ランチャー起動',
+    launchDirectly: '直接起動',
+    autoUpdateNeedsLauncher:
+      '下で公式ランチャーのパスが未設定です：自動更新は使えず、ゲームクライアントも未選択だと直接起動できません',
+    gameClientPathLabel: 'ゲームクライアント',
+    clientPathPending: 'ランチャーのパスから自動特定、またはファイルを手動で選択',
+    selectFile: 'ファイルを選択',
+    resetAutoLocate: '自動に戻す',
+    clientPathLocateFailed: 'ゲームクライアントのパスを自動特定できませんでした：{message}',
+    clientPathLocateFailedHint:
+      'ゲームクライアントのパスを自動特定できませんでした。ランチャーのパスを確認するか、クライアントのファイルを手動で選択してください',
+    clientPathSaved: '鳴潮クライアントのパスを保存しました',
+    clientPathReset: '自動特定に戻しました',
+    launchTypeSaveFailed: 'ゲームの起動方法を保存できませんでした。元の設定に戻しました',
+    invalidClientFileTitle: '選択したファイルは無効です',
+    invalidClientFileContent:
+      '鳴潮のゲームクライアント Client-Win64-Shipping.exe を選択してください。',
     whichPlatformGameRuns: 'ゲームを動かすプラットフォーム',
     gameUpdate: 'ゲームの更新',
     gameUpdateTimeoutMinutes: 'ゲーム更新のタイムアウト（分）',
@@ -1453,6 +1482,11 @@ export default {
     mfwUnityResolution: 'Unity 製ゲームの解像度を変更してみる',
     envPanelTitle: '実行環境',
     taskDescriptionLabel: '説明',
+    missingTaskTag: 'interface にありません',
+    missingTaskHint: 'このタスクはプロジェクトにないため、実行時はスキップされます',
+    missingTaskSettings: '以前の設定',
+    missingTaskValueSeparator: '、',
+    missingTaskFieldSeparator: '、',
     adbStrategyPerDevice: '実行時に判定',
     adbStrategyEmulatorExtras: 'EmulatorExtras',
     adbStrategyDefault: '既定',
@@ -1694,6 +1728,18 @@ export default {
     bettergiControllerCloud: 'PC - クラウド原神（未実装）',
     bettergiControllerDesktopClone: 'PC - デスクトップ分身（未実装）',
     bettergiCloseGameOnFinish: 'タスク終了後にゲームを終了する',
+    bettergiCheckUpdateTitle: '原神クライアントの更新を確認',
+    bettergiUpdateUnsupportedHint:
+      '官服と国際服クライアント（アジア／ヨーロッパ／アメリカ／港澳台）のみ対応しています。Bサーバーは公式ランチャーをご利用ください',
+    bettergiUpdateProgressTitle: '原神クライアント更新の進捗',
+    bettergiWillBeUpdated:
+      'このユーザーが使う原神クライアントを確認し、公式の差分パッケージを適用します。インストール済みの音声パッケージもメインのリソースと一緒に更新されます。大量のダウンロードが発生する場合があるため、ゲームが起動していないことを確認してください',
+    bettergiUpdateFailed: '原神の更新に失敗しました: {p0}',
+    bettergiUpdateTask: '原神の更新タスクが終了しました',
+    bettergiUpdateTimed: '原神の更新が長時間進展しなかったため、自動的に停止しました',
+    bettergiUpdateConnecting: '更新タスクに接続しています...',
+    bettergiUpdateStartFailed: '原神の更新を開始できませんでした',
+    bettergiUpdateStopFailed: '原神の更新を停止できませんでした',
     bettergiCloseGameOnFinishHint: 'タスクの実行が終わったときにゲームを終了するかどうか',
     bettergiRetryLimitHint: 'この回数を超えても失敗する場合は中止します',
     bettergiRunTimeoutHint: 'ログが長時間更新されない場合はタイムアウトと判定します',
@@ -2573,6 +2619,8 @@ export default {
       poweredBy: 'Powered by {name}',
       poweredByM9A: 'Powered by M9A',
       stale: 'キャッシュ',
+      staleMessage: '前回取得したイベント情報を表示しています',
+      unavailable: '{name}のイベント情報を一時的に取得できません',
       endedAt: '{time} 終了',
     },
     bluearchive: {
@@ -3609,6 +3657,12 @@ export default {
     others: {
       updateSection: '更新',
       checkUpdate: '更新を確認',
+      pauseUpdates: '更新を一時停止',
+      pauseUpdatesTip:
+        '終了日を選ぶと自動更新チェックが一時停止します（1〜35日間）。手動で更新を確認すると即座に再開します。',
+      pausePlaceholder: '一時停止の終了日を選択',
+      pauseStatus: '更新は {date} まで一時停止中',
+      pauseStatusHint: '更新を再開するまで、アプリが最新の状態でない可能性があります',
       updateBackend: '起動時にバックエンドを更新',
       updateBackendTip: 'アプリ起動時にバックエンドの更新を試みます',
       updateSource: '更新の取得元',

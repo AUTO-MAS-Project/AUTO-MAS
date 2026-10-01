@@ -320,6 +320,7 @@ export type { OkNteUserConfig_Data } from './models/OkNteUserConfig_Data';
 export type { OkNteUserConfig_Info } from './models/OkNteUserConfig_Info';
 export type { OkNteUserConfig_Notify } from './models/OkNteUserConfig_Notify';
 export type { OkNteUserConfig_Task } from './models/OkNteUserConfig_Task';
+export type { OkwwClientPathOut } from './models/OkwwClientPathOut';
 export type { OkwwConfig } from './models/OkwwConfig';
 export type { OkwwConfig_Game } from './models/OkwwConfig_Game';
 export type { OkwwUserConfig } from './models/OkwwUserConfig';

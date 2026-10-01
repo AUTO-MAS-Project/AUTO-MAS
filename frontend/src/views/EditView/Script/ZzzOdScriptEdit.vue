@@ -263,6 +263,13 @@
                     </a-tooltip>
                   </template>
                 </a-select>
+                <span class="control-hint">
+                  {{
+                    t('edit.accountSwitch16x9ArgHint', {
+                      p0: '-screen-width 1920 -screen-height 1080',
+                    })
+                  }}
+                </span>
               </a-form-item>
             </a-col>
           </a-row>
@@ -660,6 +667,14 @@ onMounted(loadScript)
   align-items: center;
   gap: 8px;
   font-weight: 600;
+}
+
+.control-hint {
+  display: block;
+  margin-top: 4px;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--ant-color-text-tertiary);
 }
 
 .help-icon {

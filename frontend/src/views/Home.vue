@@ -288,11 +288,12 @@ const {
 const { t } = useI18n()
 
 // 首页全前端化：SRA 五张活动卡直连公开接口，独立快照/失败态，不再依赖聚合接口
-const starRailSource = useSraActivitySource('sr', t('home.module.starrail'))
-const genshinSource = useSraActivitySource('ys', t('home.module.genshin'))
-const zenlessSource = useSraActivitySource('zzz', t('home.module.zenless'))
-const wutheringWavesSource = useSraActivitySource('ww', t('home.module.wutheringwaves'))
-const nevernessToEvernessSource = useSraActivitySource('nte', t('home.module.nte'))
+// 传游戏名的 i18n key（而非 t() 的结果）：失败文案在出错时按当前语言现取
+const starRailSource = useSraActivitySource('sr', 'home.game.starrail')
+const genshinSource = useSraActivitySource('ys', 'home.game.genshin')
+const zenlessSource = useSraActivitySource('zzz', 'home.game.zenless')
+const wutheringWavesSource = useSraActivitySource('ww', 'home.game.wutheringwaves')
+const nevernessToEvernessSource = useSraActivitySource('nte', 'home.game.nte')
 const reverse1999Source = useReverse1999ActivitySource()
 const blueArchiveSource = useBlueArchiveActivitySource()
 const stellaSource = useStellaActivitySource()

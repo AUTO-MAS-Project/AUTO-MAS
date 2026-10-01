@@ -31,6 +31,8 @@ export interface ProjectRuntimeSummary {
   maaBin: boolean | null
   /** 项目自带 MaaFramework 原生库目录（相对视图），没有为 null */
   nativeDir: string | null
+  /** nativeDir 里 MaaFramework 内嵌的版本，读不出为 null */
+  nativeVersion: string | null
   nativeHasAgentServer: boolean
   /** 检查时是否像后端那样把 MAAFW_BINARY_PATH 指到 nativeDir */
   checkUsedProjectNative: boolean
@@ -81,10 +83,49 @@ export function ridMatchesHost(rid: string): boolean {
   return architecture === hostArchitecture() && lowered.slice(0, separator).startsWith('win')
 }
 
+// 与 app/task/MaaFW/tools/core/runner/environment.py 的 _MAAFW_DLL_VERSION_RE 同步
+const DLL_VERSION_RE = /(?<![0-9A-Za-z.])v(\d+\.\d+\.\d+(?:-[0-9A-Za-z.]+)?)(?![0-9A-Za-z.])/g
+
+/** 原生库里内嵌的版本串（如 5.14.0、5.13.0-beta.2）；不是恰好一个时为 null。 */
+export function readNativeVersion(nativeDir: string): string | null {
+  let text: string
+  try {
+    text = fs.readFileSync(path.join(nativeDir, FRAMEWORK_DLL)).toString('latin1')
+  } catch {
+    return null
+  }
+  const found = new Set(Array.from(text.matchAll(DLL_VERSION_RE), match => match[1]))
+  return found.size === 1 ? [...found][0] : null
+}
+
+/** 比较 5.14.0 / 5.13.0-beta.2 这类版本：数字段逐位比，同号时正式版高于预发布。 */
+export function compareNativeVersions(left: string, right: string): number {
+  const split = (text: string): [number[], string] => {
+    const [core, pre = ''] = text.split(/-(.*)/s)
+    return [core.split('.').map(Number), pre]
+  }
+  const [leftCore, leftPre] = split(left)
+  const [rightCore, rightPre] = split(right)
+  for (let index = 0; index < 3; index += 1) {
+    const diff = (leftCore[index] ?? 0) - (rightCore[index] ?? 0)
+    if (diff) {
+      return diff
+    }
+  }
+  if (leftPre === rightPre) {
+    return 0
+  }
+  if (!leftPre || !rightPre) {
+    return leftPre ? -1 : 1
+  }
+  return leftPre.localeCompare(rightPre, undefined, { numeric: true })
+}
+
 /**
- * 后端 project_maafw_runtime_path 的已知布局部分：先 maafw/，再 runtimes/<rid>/native（本机 rid 优先）。
- * 后端另有 runtimes/<rid> 本身、有界逐层搜索与跳过架构不符的库，这里不做：非标准布局下
- * 这份检查可能报失败而后端能过，看 nativeDir 是不是 null 就能分辨。
+ * 后端 project_maafw_runtime_path 的已知布局部分：maafw/ 与 runtimes/<rid>/native（本机 rid 优先）
+ * 里有好几份时取版本最高的，版本相同或读不出时按这个顺序取第一份。后端另有 runtimes/<rid> 本身、
+ * 有界逐层搜索与跳过架构不符的库，这里不做：非标准布局下这份检查可能报失败而后端能过，
+ * 看 nativeDir 是不是 null 就能分辨。
  */
 function findNativeDir(viewDir: string): string | null {
   const candidates = [path.join(viewDir, 'maafw')]
@@ -101,7 +142,20 @@ function findNativeDir(viewDir: string): string | null {
       Number(ridMatchesHost(right)) - Number(ridMatchesHost(left)) || left.localeCompare(right)
   )
   candidates.push(...rids.map(rid => path.join(runtimes, rid, 'native')))
-  return candidates.find(candidate => isFile(path.join(candidate, FRAMEWORK_DLL))) ?? null
+  const present = candidates.filter(candidate => isFile(path.join(candidate, FRAMEWORK_DLL)))
+  if (present.length <= 1) {
+    return present[0] ?? null
+  }
+  let best = present[0]
+  let bestVersion: string | null = null
+  for (const candidate of present) {
+    const version = readNativeVersion(candidate)
+    if (version && (!bestVersion || compareNativeVersions(version, bestVersion) > 0)) {
+      best = candidate
+      bestVersion = version
+    }
+  }
+  return best
 }
 
 function sitePackagesOf(pythonExe: string): string {
@@ -203,6 +257,7 @@ export async function probeProjectRuntime(viewDir: string): Promise<ProjectRunti
     maafwBindings: [],
     maaBin: null,
     nativeDir: nativeDir ? path.relative(viewDir, nativeDir).replace(/\\/g, '/') : null,
+    nativeVersion: nativeDir ? readNativeVersion(nativeDir) : null,
     nativeHasAgentServer,
     checkUsedProjectNative: false,
     importMaa: '未检查：视图里没有自带的 python/python.exe',

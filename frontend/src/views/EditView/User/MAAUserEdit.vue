@@ -76,7 +76,7 @@
               <span>{{ t('edit.enableQuickConfiguration') }}</span>
               <a-switch
                 :checked="formData.Info.IfQuickConfig"
-                :disabled="loading || isInitializing || isSaving"
+                :disabled="loading || isInitializing"
                 :aria-label="t('edit.enableQuickConfiguration')"
                 @change="handleQuickConfigChange"
               />
@@ -266,11 +266,18 @@ const {
 } = useMaaGuiSession()
 
 const formRef = ref<FormInstance>()
-const loading = computed(() => userLoading.value)
 const isInitializing = ref(true) // 标记是否正在初始化
 const isSaving = ref(false) // 标记是否正在保存
+// 字段保存不进入页面级 loading：updateUser 的请求 loading 若经此处传给整棵
+// 编辑树，会把全部控件禁用一轮——实测表现为切开关整页闪烁、键入目标库存
+// 时焦点输入框被禁用夺焦只能输一个数字。保存中的后续变更由 pendingFieldSaves
+// 队列兜底，不依赖禁用
+const loading = computed(() => userLoading.value && !isSaving.value)
 const pendingFieldSaves = new Map<string, any>()
 let fieldSavePromise: Promise<boolean> | null = null
+// 与 DepotMaintainPlanEditor 的目标库存防抖窗口一致：handleCancel 退出前
+// 等待一个窗口，保证停手未满 500ms 的键入也有机会冲刷落盘
+const DEBOUNCE_FLUSH_MS = 500
 
 const reportFieldSaveFailure = () => {
   const errorMsg = userError.value
@@ -741,6 +748,26 @@ const handleFieldSave = async (key: string, value: any): Promise<boolean> => {
           return false
         }
 
+        // 后端按同一口径清空 Data.CultivateNotice，但只落在配置里；提示是
+        // 整份 Data 只在 loadUserData 回来，不在此同步会让当前页的告警
+        // 挂到离开编辑页为止。保存开关或目标成功后按 patch 事实同步本地展示；
+        // 有效性对齐后端 parse_cultivate_targets：目标须带非空 goals 才算数
+        if (pendingKey === 'Task.IfCultivate' || pendingKey === 'Task.CultivateTargets') {
+          const taskData = formData.Task as Record<string, any>
+          let hasTargets = false
+          try {
+            const parsed = JSON.parse(String(taskData.CultivateTargets ?? '[]'))
+            hasTargets =
+              Array.isArray(parsed) &&
+              parsed.some((t: any) => t && Array.isArray(t.goals) && t.goals.length > 0)
+          } catch {
+            hasTargets = false
+          }
+          if (!taskData.IfCultivate || !hasTargets) {
+            formData.Data.CultivateNotice = ''
+          }
+        }
+
         logger.info(`用户配置已保存: ${pendingKey}`)
       }
       return true
@@ -873,7 +900,9 @@ const loadUserData = async () => {
         // 必须在放开 isInitializing 之后：目录走 jsdelivr 兜底拉取时最长 30s，
         // 期间用户在页面上的改动会被 handleFieldSave 静默丢弃（组件自带 loading）。
         // 库存列读当前用户识别档案（决策 31）；两者无依赖，并行加载避免目录
-        // 慢时库存列被串行阻塞
+        // 慢时库存列被串行阻塞。关卡候选预取不等它们：只读已落盘的计划，
+        // 纯后台取数，放前面避免被目录最坏 30s 拖住
+        preloadDepotStageCandidates()
         await Promise.all([loadCultivateOperatorOptions(), loadDepotInventory()])
       } else {
         message.error(t('edit.userDoesNotExist'))
@@ -1001,6 +1030,21 @@ const loadDepotStageCandidates = async (itemId: string) => {
     depotStageCandidatesLoading.value = depotStageCandidatesLoading.value.filter(
       id => id !== itemId
     )
+  }
+}
+
+// 库存保持关卡候选进页预取：首次展开面板时逐行等响应，关卡列会随各请求
+// 返回肉眼可见地逐个刷新。改在进页后台预取（折叠状态下面板未挂载，响应
+// 到达零渲染），展开时编辑器的预加载全命中缓存不再发请求。单条失败写入
+// 空数组由 loadDepotStageCandidates 自身的兜底语义处理
+const preloadDepotStageCandidates = () => {
+  try {
+    const plans: Array<{ DropId?: string }> = JSON.parse(formData.Task.DepotMaintainPlans || '[]')
+    for (const itemId of new Set(plans.map(plan => plan?.DropId).filter(Boolean))) {
+      void loadDepotStageCandidates(itemId as string)
+    }
+  } catch {
+    logger.warn('库存保持候选预取失败，展开时按需加载')
   }
 }
 
@@ -1373,6 +1417,9 @@ const addCustomStage3 = (stageName: string) => {
 }
 
 const handleCancel = async () => {
+  // 防抖中的编辑（库存保持目标库存等）尚未 emit：等一个防抖窗口让编辑器
+  // 定时器触发 savePlans 入队，再等保存队列走完，否则离开时丢最后一次改动
+  await new Promise(resolve => setTimeout(resolve, DEBOUNCE_FLUSH_MS))
   const pendingSave = fieldSavePromise
   if (pendingSave && !(await pendingSave)) return
 

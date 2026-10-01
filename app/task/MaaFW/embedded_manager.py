@@ -359,6 +359,9 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
         self._report_finalized = False
         # 各用户跑完攒下的失败截图（带用户名的标签, 路径），最后随「代理结果」发出。
         self._failure_screenshots: list[tuple[str, Path]] = []
+        # 各用户队列里的失效任务（interface 已没有，多半是项目更新改了 name），随「代理结果」发出
+        self._missing_task_notices: list[str] = []
+        self._missing_task_user_ids: set[str] = set()
         # 本轮项目信号（停服维护 / 需要更新客户端）的账，各用户的 AutoProxy 共用一份：
         # 同一资源已确认维护时后续用户直接跳过；收尾时按「信号 + 资源」各发一条通知。
         self.signal_tracker = MaaFWSignalTracker()
@@ -1500,6 +1503,12 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
             logger.opt(exception=True).warning(f"MFW 内置运行收尾异常：{exc}")
         with suppress(Exception):
             self._failure_screenshots.extend(self.inner_task.report_screenshots())
+        with suppress(Exception):
+            notice = self.inner_task.missing_task_notice()
+            if notice:
+                user_item = self.inner_task.cur_user_item
+                self._missing_task_notices.append(f"{user_item.name}: {notice}")
+                self._missing_task_user_ids.add(user_item.user_id)
 
     async def _commit_user_data(self) -> None:
         """解锁脚本配置，并把用户配置副本整表写回、落盘；只做一次。
@@ -1607,6 +1616,16 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
     ) -> None:
         """推送本轮的「代理结果」汇总。"""
 
+        # 跑完了但队列里有失效任务的用户：状态照常是完成，汇总里算未完成，
+        # 这样「仅失败时」推送也会发出来，用户能看到要去处理
+        attention_users = [
+            user
+            for user in completed_users
+            if user.user_id in self._missing_task_user_ids
+        ]
+        completed_users = [
+            user for user in completed_users if user not in attention_users
+        ]
         title = (
             f"{datetime.now().strftime('%m-%d')} | "
             f"{self.script_info.name or '空白'}的{TASK_MODE_ZH[self.task_info.mode]}任务报告"
@@ -1617,8 +1636,15 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
             "start_time": self.begin_time,
             "end_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "completed_count": len(completed_users),
-            "uncompleted_count": len(error_users) + len(maintenance_users),
-            "result": self.script_info.result,
+            "uncompleted_count": (
+                len(error_users) + len(maintenance_users) + len(attention_users)
+            ),
+            # 失效任务每个用户一行跟在结果后面：通用模板没有单独的块，结果框按原样换行
+            "result": "\n\n".join(
+                [self.script_info.result, "\n".join(self._missing_task_notices)]
+                if self._missing_task_notices
+                else [self.script_info.result]
+            ),
         }
         summary_title = self._signal_summary_title(
             title,

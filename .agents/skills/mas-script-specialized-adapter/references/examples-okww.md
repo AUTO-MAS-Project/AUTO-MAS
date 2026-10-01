@@ -55,6 +55,8 @@ Okww 与 [OkNte](./examples-oknte.md) 同属 `ok-script` 家族、同用 `-t N -
 
 判态顺序：内置 fatal 日志 → `Window closed exit_event.is_set` 视为成功 → 未见成功标记而进程退出视为异常 → 日志停滞超 `RunTimeLimit` 视为超时。
 
+「游戏更新成功, 游戏即将重启」是环境变更而非脚本错误：命中后照常杀进程收尾，但本轮运行次数用尽也要把次数延长一轮保底重跑——重试时游戏已是新版，预期成功。每个任务只延长一次（总轮次封顶 `RunTimesLimit + 1`）：再命中说明更新根本没应用成功，属持久性环境问题，按异常收尾。这是唯一允许突破 `RunTimesLimit` 的 fatal；MAS 的鸣潮前置更新器只镜像官方启动器通道（index.json + state 记账），客户端自身的游戏内更新检查是另一条通道，前置判「无需更新」时它仍可能弹框，此标记是唯一的兜底网。其他专项未实测出游戏内自更新通道前，不要预加同类标记，交给通用兜底 + 默认次数承接。
+
 进程清理至少覆盖：ProcessManager 管理的进程、`ok-ww.exe`、`data/apps/ok-ww/python/pythonw.exe`、`Game.Enabled` 时解析出的客户端进程。**每步独立捕获异常**，一个失败不阻断后续。
 
 ## 账号切换（MAS 强制切号）
@@ -108,5 +110,6 @@ ok-ww 已接入通用配置恢复（`ConfigRestoreSection`），mas 池形态与
 - [ ] 启动器路径与客户端进程路径职责分离
 - [ ] `app.json` profile 与用户资源一致，GUI 配置时保留当前 profile
 - [ ] working 配置在成功、失败、取消、异常四条路径都恢复
+- [ ] 「游戏更新成功」命中后至少再跑一轮：`RunTimesLimit=1` 不终局，状态文案「即将重启任务」与实际行为一致
 - [ ] 配置会话离开页面或超时会停止任务并释放锁
 - [ ] schema、表单、运行时三者无虚假功能分支

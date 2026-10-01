@@ -510,7 +510,7 @@ export function addPerInstallationFile(
 // 问题包只收声明方自己的目录，其他专项的目录跳过，避免互相混入
 const ADAPTER_DEBUG_SUBDIRS = {
   maaend: ['maaend-login'],
-  okww: ['okww-account-switch'],
+  okww: ['okww-account-switch', 'okww-launcher-start'],
   oknte: ['oknte-account-switch', 'oknte-launcher-start'],
   bettergi: ['bgi-account-switch'],
 } satisfies Record<string, readonly string[]>
