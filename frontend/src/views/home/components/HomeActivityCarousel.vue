@@ -38,13 +38,6 @@
               <img
                 v-if="hasCover(item)"
                 :src="coverOf(item)"
-                alt=""
-                aria-hidden="true"
-                class="banner-backdrop"
-              />
-              <img
-                v-if="hasCover(item)"
-                :src="coverOf(item)"
                 :alt="item.title"
                 class="banner-cover"
                 :class="[`is-${coverMode(item)}`, { 'is-measured': coverModes.has(coverOf(item)) }]"
@@ -157,8 +150,9 @@ const { t } = useI18n()
  * 统一裁法必然裁坏其中几张（实测：绝区零居中裁只剩腿，重返 1999 居中裁只剩空海面）。
  */
 type CoverMode =
-  /** 横版主视觉（16:9 那类）：整张显示，两边交给同图的模糊底衬——满幅铺要裁掉一多半 */
-  | 'contain'
+  /** 横版主视觉（16:9 那类）：满幅铺开、裁图像中部——横幅接近 5:1，上下必然要裁掉一些，
+      裁中间比贴顶稳妥：贴顶会把角色的身子整个切掉，只剩头部与背景 */
+  | 'cover'
   /** 超高竖图（重返 1999 官网图 1920×3902）：只取上部条带，取值沿用原卡片里的 14% */
   | 'tall'
   /** 方图或小图（终末地给的是 200×200 卡池头像）：右侧贴片，底纹交给主题色 */
@@ -223,9 +217,9 @@ const onCoverError = (item: ActivityBannerItem) => {
 }
 
 const resolveCoverMode = (width: number, height: number, key: HomeModuleKey): CoverMode => {
-  // 无固有尺寸（例如没写 viewBox 的 SVG）就按整张显示，别让它卡在透明状态
+  // 无固有尺寸（例如没写 viewBox 的 SVG）就按满幅铺，别让它卡在透明状态
   if (!width || !height) {
-    return 'contain'
+    return 'cover'
   }
   // 「小图」门槛默认 800——那才是图标、缩略图的量级。星塔旅人单独放宽到 640：
   // 它官网那张 795×510 的活动主视觉只差 5px 就会被当成贴片，卡片看着像没有图。
@@ -235,7 +229,7 @@ const resolveCoverMode = (width: number, height: number, key: HomeModuleKey): Co
   if (width < insetWidth || (ratio >= 0.7 && ratio <= 1.5)) {
     return 'inset'
   }
-  return ratio < 0.7 ? 'tall' : 'contain'
+  return ratio < 0.7 ? 'tall' : 'cover'
 }
 
 const onCoverLoad = (item: ActivityBannerItem, event: Event) => {
@@ -256,7 +250,7 @@ watch(
 
 // 按封面地址记而不是按游戏记：版本更新换图后要重新量，不能沿用上一张的铺法
 const coverMode = (item: ActivityBannerItem): CoverMode =>
-  coverModes.value.get(coverOf(item)) ?? 'contain'
+  coverModes.value.get(coverOf(item)) ?? 'cover'
 
 const bannerStyle = (item: ActivityBannerItem): CSSProperties => {
   const accent = { '--activity-accent': item.accent } as CSSProperties
@@ -422,23 +416,13 @@ onBeforeUnmount(() => {
   opacity: 1;
 }
 
-/* 同图的模糊放大版铺在底下：主图整张显示时，两边不会空出一条生硬的底色 */
-.banner-backdrop {
-  position: absolute;
+/* 横版主视觉：满幅铺开、裁图像中部。横幅接近 5:1，上下必然要裁掉一些，
+   裁中间比贴顶稳妥——贴顶会把角色的身子整个切掉，只剩头部与背景 */
+.banner-cover.is-cover {
   inset: 0;
   width: 100%;
   height: 100%;
   object-fit: cover;
-  filter: blur(26px) brightness(0.5) saturate(1.15);
-  transform: scale(1.12);
-}
-
-/* 横版主视觉整张显示：横幅接近 5:1，按满幅铺要裁掉一多半，只剩中间一条 */
-.banner-cover.is-contain {
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
   object-position: center;
 }
 
