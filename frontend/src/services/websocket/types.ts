@@ -70,6 +70,9 @@ export const WS_EMULATOR_OPERATION_FINISHED = 'emulator.operation.finished'
 export const WS_DISPLAY_DETACH_PROMPT = 'display.detach.prompt'
 export const WS_DISPLAY_DETACH_PROMPT_CLOSED = 'display.detach.prompt.closed'
 
+// 系统通知（id=Main）：后端启动期攒下的通知（如 M9A 配置迁移结果），主连接建立后发一次
+export const WS_SYSTEM_NOTICE = 'system.notice'
+
 // ==================== 关键消息数据类型 ====================
 
 /** 任务提示消息数据 (type=task.notice) */
@@ -125,6 +128,8 @@ export interface WSTaskLogUpdatedData {
   log: string
   seq: number
   append: boolean
+  /** log 第一行在完整日志里的行号；append 为 true 时忽略，界面接着已有行号往后数 */
+  firstLine?: number
 }
 
 /** 任务完成消息数据 (type=task.completed) */
@@ -170,14 +175,14 @@ interface WSMaaFWEnvPrepareProgressData {
 
 /** MFW 项目手动更新过程 (id=<scriptId>, type=maafw.project-update.progress) */
 export interface WSMaaFWProjectUpdateProgressData {
-  /** checking / downloading / downloaded / plan_validated / staged / applying / post_validating / committed / rolled_back / completed / failed / log */
+  /** checking / downloading / downloaded / extracting / plan_validated / staged / applying / post_validating / committed / rolled_back / completed / failed / log */
   stage: string
   /** running / success / failed */
   status: string
   message: string
   /** 本次事件附带的新增日志行 */
   log?: string | null
-  /** 当前阶段进度百分比（下载 / 覆盖），未知时为 null */
+  /** 当前阶段进度百分比（下载 / 解压 / 覆盖），未知时为 null */
   percent?: number | null
   downloadedBytes?: number | null
   totalBytes?: number | null
@@ -187,6 +192,12 @@ export interface WSMaaFWProjectUpdateProgressData {
   packageKind?: string | null
   appliedFiles?: number | null
   totalFiles?: number | null
+  /** 解压阶段：已解压 / 总文件数（不含目录条目） */
+  extractedFiles?: number | null
+  extractTotalFiles?: number | null
+  /** 解压阶段：已写出 / 解压后总字节 */
+  extractedBytes?: number | null
+  extractTotalBytes?: number | null
 }
 
 /** 更新下载进度数据 (id=Update, type=update.progress) */
@@ -246,6 +257,14 @@ export interface WSDisplayDetachPromptData {
   monitor?: WSDisplayMonitorRectData | null
 }
 
+/** 系统通知数据 (type=system.notice, id=Main) */
+export interface WSSystemNoticeData {
+  level: 'info' | 'warning' | 'error'
+  title: string
+  /** 正文，每项一行 */
+  lines: string[]
+}
+
 type WSEmptyData = Record<string, never>
 
 /** 已知关键消息的 type → data 映射。未知消息回退到 WSJsonObject。 */
@@ -272,6 +291,7 @@ interface WSMessageDataMap {
   [WS_EMULATOR_OPERATION_FINISHED]: WSEmulatorOperationData
   [WS_DISPLAY_DETACH_PROMPT]: WSDisplayDetachPromptData
   [WS_DISPLAY_DETACH_PROMPT_CLOSED]: WSEmptyData
+  [WS_SYSTEM_NOTICE]: WSSystemNoticeData
 }
 
 type WSKnownMessageType = keyof WSMessageDataMap

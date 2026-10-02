@@ -135,22 +135,31 @@
         <!-- type=flex + stretch：右边的策略表跟左边「标签 + 输入框」等高，上下边对齐 -->
         <a-row :gutter="24" type="flex" align="stretch" class="control-detail-row">
           <a-col :span="12">
-            <a-form-item>
-              <template #label>
-                <a-tooltip :title="t('edit.mfwGamePackageNamePassed')">
-                  <span class="form-label">
-                    {{ t('edit.mfwGamePackageName') }}
-                    <QuestionCircleOutlined class="help-icon" aria-hidden="true" />
-                  </span>
-                </a-tooltip>
-              </template>
-              <a-input
-                v-model:value="maafwConfig.Game.PackageName"
-                :placeholder="t('edit.mfwGamePackageNamePlaceholder')"
-                allow-clear
-                @blur="emit('change', 'Game', 'PackageName', maafwConfig.Game.PackageName)"
-              />
-            </a-form-item>
+            <!-- 特调在包名旁登记了组件（插入点 besidePackageName）时两列并排，窄屏上下排；
+                 没有时包名独占整列 -->
+            <a-row :gutter="16">
+              <a-col :xs="24" :xl="$slots.besidePackageName ? 12 : 24">
+                <a-form-item>
+                  <template #label>
+                    <a-tooltip :title="t('edit.mfwGamePackageNamePassed')">
+                      <span class="form-label">
+                        {{ t('edit.mfwGamePackageName') }}
+                        <QuestionCircleOutlined class="help-icon" aria-hidden="true" />
+                      </span>
+                    </a-tooltip>
+                  </template>
+                  <a-input
+                    v-model:value="maafwConfig.Game.PackageName"
+                    :placeholder="t('edit.mfwGamePackageNamePlaceholder')"
+                    allow-clear
+                    @blur="emit('change', 'Game', 'PackageName', maafwConfig.Game.PackageName)"
+                  />
+                </a-form-item>
+              </a-col>
+              <a-col v-if="$slots.besidePackageName" :xs="24" :xl="12">
+                <slot name="besidePackageName" />
+              </a-col>
+            </a-row>
           </a-col>
           <!-- 控制策略表放在包名右边：截图 / 输入两行，撑满整列高度 -->
           <a-col :span="12" class="control-strategy-col">
@@ -288,47 +297,19 @@
 import { useI18n } from 'vue-i18n'
 import { computed } from 'vue'
 import { FolderOpenOutlined, QuestionCircleOutlined } from '@ant-design/icons-vue'
-import type { ComboBoxItem } from '@/api'
-import { isDirectControllerType, type EmulatorType } from '@/composables/useMaaFWScriptConfig'
+import { isDirectControllerType } from '@/composables/useMaaFWScriptConfig'
+import type { MaaFWLaunchMode, MaaFWUnityResolution } from '@/types/script'
 import type {
-  MaaFWControllerInfo,
-  MaaFWInterfacePreviewData,
-  MaaFWResourceInfo,
-  MaaFWLaunchMode,
-  MaaFWScriptConfig,
-  MaaFWUnityResolution,
-} from '@/types/script'
+  MaaFWScriptControlSectionEmits,
+  MaaFWScriptControlSectionProps,
+} from '../../MaaFWFlavor/sectionContracts'
 
 const { t } = useI18n()
 
-const props = defineProps<{
-  maafwConfig: MaaFWScriptConfig
-  previewData: MaaFWInterfacePreviewData | null
-  interfaceLoading: boolean
-  emulatorLoading: boolean
-  emulatorOptionsReady: boolean
-  emulatorDeviceLoading: boolean
-  emulatorOptions: ComboBoxItem[]
-  emulatorDeviceOptions: ComboBoxItem[]
-  emulatorTypeById: Record<string, EmulatorType>
-  controllerOptions: MaaFWControllerInfo[]
-  effectiveControllerName: string
-  effectiveControllerType: string
-  isAdbController: boolean
-  isDesktopController: boolean
-  resourceOptions: MaaFWResourceInfo[]
-  adbControlStrategyItems: Array<{ label: string; value: string }>
-  selectedEmulatorLabel: string
-  interfaceDependentDisabled: boolean
-}>()
+// props / 事件的契约在 sectionContracts（特调替换这个分节时按同一份契约接收）
+const props = defineProps<MaaFWScriptControlSectionProps>()
 
-const emit = defineEmits<{
-  change: [category: keyof MaaFWScriptConfig, key: string, value: unknown]
-  'controller-change': []
-  'resource-change': []
-  'emulator-select-change': [emulatorId: string]
-  'select-launch-path': []
-}>()
+const emit = defineEmits<MaaFWScriptControlSectionEmits>()
 
 const launchMode = computed<MaaFWLaunchMode>(() => props.maafwConfig.Game.LaunchMode)
 

@@ -170,7 +170,7 @@ class M7ARunner:
         if not await self._process_manager.is_running():
             return False
 
-        logger.warning("正在终止 M7A 当前子进程")
+        logger.warning("正在终止三月七当前子进程")
         await self._process_manager.kill()
         return True
 
@@ -216,7 +216,7 @@ class M7ARunner:
             return len(children)
 
         count = await asyncio.to_thread(_kill_descendants)
-        logger.warning(f"正在按进程树终止 M7A（子进程 {count} 个）")
+        logger.warning(f"正在按进程树终止三月七（子进程 {count} 个）")
         await self._process_manager.kill()
         return True
 
@@ -294,8 +294,8 @@ class M7ARunner:
             )
             stdout = unescape_backslash_u(decode_bytes(stdout_bytes)).strip()
             stderr = unescape_backslash_u(decode_bytes(stderr_bytes)).strip()
-            self._emit_process_output("M7A", stdout)
-            self._emit_process_output("M7A stderr", stderr)
+            self._emit_process_output("三月七", stdout)
+            self._emit_process_output("三月七 stderr", stderr)
             for text in (stdout, stderr):
                 for line in text.splitlines():
                     line = line.strip()
@@ -321,7 +321,7 @@ class M7ARunner:
                 asyncio.create_task(
                     self._read_stream_live(
                         stdout_stream,
-                        "M7A",
+                        "三月七",
                         stdout_lines,
                         completion_event,
                     )
@@ -332,7 +332,7 @@ class M7ARunner:
                 asyncio.create_task(
                     self._read_stream_live(
                         stderr_stream,
-                        "M7A stderr",
+                        "三月七 stderr",
                         stderr_lines,
                         completion_event,
                     )
@@ -355,9 +355,11 @@ class M7ARunner:
             completed_by_marker = completion_event.is_set()
             if completed_by_marker and not wait_group.done():
                 if await self._send_enter_to_process(proc):
-                    logger.info("M7A 已输出停止运行标记，已发送回车并等待进程自然退出")
+                    logger.info(
+                        "三月七已输出停止运行标记，已发送回车并等待进程自然退出"
+                    )
                 else:
-                    logger.info("M7A 已输出停止运行标记，等待进程自然退出")
+                    logger.info("三月七已输出停止运行标记，等待进程自然退出")
                 try:
                     await asyncio.wait_for(
                         asyncio.shield(wait_group),
@@ -365,7 +367,7 @@ class M7ARunner:
                     )
                 except asyncio.TimeoutError:
                     logger.warning(
-                        "M7A 命令已完成但进程未退出，终止子进程以继续后续任务"
+                        "三月七命令已完成但进程未退出，终止子进程以继续后续任务"
                     )
                     await self.terminate()
                     try:
@@ -434,7 +436,7 @@ class M7ARunner:
             )
             proc = self._process_manager.main_process
             if not isinstance(proc, asyncio.subprocess.Process):
-                raise RuntimeError("M7A 子进程启动后未能被 ProcessManager 跟踪")
+                raise RuntimeError("三月七子进程启动后未能被 ProcessManager 跟踪")
             (
                 stdout,
                 stderr,
@@ -447,7 +449,7 @@ class M7ARunner:
             ) and not has_failure_output(stdout, stderr)
 
             logger.info(
-                f"M7A {task_name} → {'success' if success else 'failed'}"
+                f"三月七 {task_name} → {'success' if success else 'failed'}"
                 f" (rc={proc.returncode})"
             )
             return M7ACommandResult(
@@ -462,7 +464,7 @@ class M7ARunner:
             )
 
         except asyncio.TimeoutError:
-            logger.warning(f"M7A {task_name} timed out after {timeout}s")
+            logger.warning(f"三月七 {task_name} timed out after {timeout}s")
             await self.terminate()
             return M7ACommandResult(
                 task_name=task_name,
@@ -474,12 +476,12 @@ class M7ARunner:
             )
 
         except asyncio.CancelledError:
-            logger.warning(f"M7A {task_name} 收到取消请求，准备终止子进程")
+            logger.warning(f"三月七 {task_name} 收到取消请求，准备终止子进程")
             await self.terminate()
             raise
 
         except Exception as e:
-            logger.opt(exception=True).warning(f"M7A {task_name} error: {e}")
+            logger.opt(exception=True).warning(f"三月七 {task_name} error: {e}")
             return M7ACommandResult(
                 task_name=task_name,
                 exe_path=str(self._m7a_exe),

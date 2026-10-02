@@ -4,6 +4,7 @@
 /* eslint-disable */
 import type { MaaEndPlanConfig_Output } from './MaaEndPlanConfig_Output';
 import type { MaaPlanConfig } from './MaaPlanConfig';
+import type { MSSPlanConfig_Output } from './MSSPlanConfig_Output';
 import type { PlanIndexItem } from './PlanIndexItem';
 export type PlanGetOut = {
     /**
@@ -25,6 +26,6 @@ export type PlanGetOut = {
     /**
      * 计划列表或单个计划数据
      */
-    data: Record<string, (MaaPlanConfig | MaaEndPlanConfig_Output)>;
+    data: Record<string, (MaaPlanConfig | MaaEndPlanConfig_Output | MSSPlanConfig_Output)>;
 };
 

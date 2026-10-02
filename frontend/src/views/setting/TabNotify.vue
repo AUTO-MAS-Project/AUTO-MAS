@@ -65,15 +65,11 @@ const notifyValues = computed<Record<string, unknown>>(
 
 // Claw 绑定状态提升到本组件：a-tab-pane 懒挂载且挂载后常驻，只有这里调用
 // useClawBinding 才能保证每渠道单实例；提到更上层会在用户停留在别的设置页时查询并回写。
-const weixinBinding = reactive(
-  useClawBinding('weixin', value => props.handleSettingChange('Notify', 'IfOpenClawWeixin', value))
-)
 const qqBinding = reactive(
   useClawBinding('qq', value => props.handleSettingChange('Notify', 'IfOpenClawQQ', value))
 )
 
 const clawConnected = computed<Record<string, boolean>>(() => ({
-  'claw:weixin': !!weixinBinding.status?.connected,
   'claw:qq': !!qqBinding.status?.connected,
 }))
 
@@ -128,13 +124,11 @@ const commitFocus = () => {
 }
 
 const activeClawBinding = computed(() => {
-  if (activeChannel.value?.customBlock === 'claw:weixin') return weixinBinding
   if (activeChannel.value?.customBlock === 'claw:qq') return qqBinding
   return null
 })
 
 const closeClawSessions = () => {
-  weixinBinding.close()
   qqBinding.close()
 }
 

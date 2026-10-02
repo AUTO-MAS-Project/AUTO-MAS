@@ -5,7 +5,8 @@
       :script-name="scriptName"
       :is-edit="isEdit"
       script-edit-segment="oknte"
-      config-label="配置 OK-NTE"
+      :user-id="activeUserId"
+      :config-label="t('edit.configureOkNte')"
       :config-loading="oknteConfigLoading"
       :config-active="showOknteConfigMask"
       :config-disabled="pageLoading || !activeUserId || configLocked"
@@ -144,8 +145,13 @@
                   :model-value="formData.Info.Mode"
                   :options="oknteConfigModeOptions"
                   :disabled="pageLoading"
+                  :quick-config="formData.Info.IfQuickConfig"
+                  :quick-config-disabled="
+                    pageLoading || isInitializing || isSaving || configEditorSaving
+                  "
                   :alert-message="t('edit.configSourceHintBase')"
                   @change="handleConfigModeChange"
+                  @quick-config-change="handleQuickConfigChange"
                 />
               </a-col>
             </a-row>
@@ -197,11 +203,8 @@
                 <a-form-item>
                   <template #label>
                     <span class="form-label">
-                      节点详情推送
-                      <a-tooltip
-                        mouse-enter-delay="0.5"
-                        title="选择该用户关键节点在任务报告中的呈现方式：关闭 = 不采集；逐条 = 每条带上采集时间，一行一条；汇总 = 按成功/失败/跳过各合并为一行"
-                      >
+                      {{ t('edit.collectNodeDetails') }}
+                      <a-tooltip mouse-enter-delay="0.5" :title="t('edit.collectsKeyMomentsFrom')">
                         <QuestionCircleOutlined class="help-icon" />
                       </a-tooltip>
                     </span>
@@ -287,13 +290,6 @@
       <a-flex class="section-header" justify="space-between" align="center" wrap="wrap" gap="small">
         <h3>{{ t('edit.okNteConfiguration') }}</h3>
         <a-space>
-          <span>{{ t('edit.enableQuickConfiguration') }}</span>
-          <a-switch
-            :checked="formData.Info.IfQuickConfig"
-            :disabled="pageLoading || isInitializing || isSaving || configEditorSaving"
-            :aria-label="t('edit.enableQuickConfiguration')"
-            @change="handleQuickConfigChange"
-          />
           <a-button size="small" @click="openRestoreModal">
             <template #icon><HistoryOutlined /></template>
             {{ t('edit.configRestoreTitle') }}
@@ -431,7 +427,7 @@ const oknteConfigModeOptions: Array<{
     label: t('edit.script'),
     value: '脚本',
     title: t('edit.script'),
-    description: '使用脚本级共享配置',
+    description: t('edit.useSharedScriptLevel'),
     icon: 'file',
   },
   {

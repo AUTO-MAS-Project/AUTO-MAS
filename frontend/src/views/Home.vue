@@ -171,6 +171,18 @@
                 :overview="reverse1999Source.overview.value"
               />
 
+              <HomeStellaActivityOverview
+                v-else-if="gameKey === 'stellasora'"
+                :title="t('home.module.stellasora')"
+                :accent="getActivityAccent('stellasora')"
+                :empty-text="t('home.empty.stellasora')"
+                :loading="stellaSource.loading.value"
+                :overview="stellaSource.overview.value"
+                :source-name="t('home.stella.sourceName')"
+                :source-url="STELLA_NEWS_URL"
+                @refresh="stellaSource.refresh"
+              />
+
               <HomeBlueArchiveOverview
                 v-else-if="gameKey === 'bluearchive'"
                 :servers="blueArchiveSource.servers.value"
@@ -209,12 +221,14 @@ import HomeProxyCard from '@/views/home/components/HomeProxyCard.vue'
 import HomeQuickActionsCard from '@/views/home/components/HomeQuickActionsCard.vue'
 import HomeReverse1999Overview from '@/views/home/components/HomeReverse1999Overview.vue'
 import HomeSraActivityOverview from '@/views/home/components/HomeSraActivityOverview.vue'
+import HomeStellaActivityOverview from '@/views/home/components/HomeStellaActivityOverview.vue'
 import HomeScrollHint from '@/views/home/components/HomeScrollHint.vue'
 import {
   arknightsActivityBanner,
   endfieldActivityBanner,
   getActivityAccent,
   sraActivityBanner,
+  stellaActivityBanner,
 } from '@/views/home/activityBanner'
 import { useHomeLayout } from '@/views/home/useHomeLayout'
 import { useHomeNotice } from '@/views/home/useHomeNotice'
@@ -223,6 +237,7 @@ import { useSraActivitySource } from '@/views/home/useSraActivitySource'
 import { useReverse1999ActivitySource } from '@/views/home/useReverse1999ActivitySource'
 import { useBlueArchiveActivitySource } from '@/views/home/useBlueArchiveActivitySource'
 import { useEndfieldActivitySource } from '@/views/home/useEndfieldActivitySource'
+import { useStellaActivitySource } from '@/views/home/useStellaActivitySource'
 import { useHomeQuickStart } from '@/views/home/useHomeQuickStart'
 import { usePerformanceStore } from '@/stores/performance'
 import { createEmptySraActivityOverview } from '@/types/home'
@@ -286,14 +301,19 @@ const {
 const { t } = useI18n()
 
 // 首页全前端化：SRA 五张活动卡直连公开接口，独立快照/失败态，不再依赖聚合接口
-const starRailSource = useSraActivitySource('sr', t('home.module.starrail'))
-const genshinSource = useSraActivitySource('ys', t('home.module.genshin'))
-const zenlessSource = useSraActivitySource('zzz', t('home.module.zenless'))
-const wutheringWavesSource = useSraActivitySource('ww', t('home.module.wutheringwaves'))
-const nevernessToEvernessSource = useSraActivitySource('nte', t('home.module.nte'))
+// 传游戏名的 i18n key（而非 t() 的结果）：失败文案在出错时按当前语言现取
+const starRailSource = useSraActivitySource('sr', 'home.game.starrail')
+const genshinSource = useSraActivitySource('ys', 'home.game.genshin')
+const zenlessSource = useSraActivitySource('zzz', 'home.game.zenless')
+const wutheringWavesSource = useSraActivitySource('ww', 'home.game.wutheringwaves')
+const nevernessToEvernessSource = useSraActivitySource('nte', 'home.game.nte')
 const reverse1999Source = useReverse1999ActivitySource()
 const blueArchiveSource = useBlueArchiveActivitySource()
+const stellaSource = useStellaActivitySource()
 const endfieldSource = useEndfieldActivitySource()
+
+/** 星塔旅人的活动数据取自国服官网的活动公告 */
+const STELLA_NEWS_URL = 'https://stellasora.yostar.cn/news'
 
 const sraSourceFor = (key: HomeModuleKey) => {
   switch (key) {
@@ -355,6 +375,14 @@ const activityBanners = computed<ActivityBannerItem[]>(() =>
       }
     }
 
+    if (key === 'stellasora') {
+      return {
+        ...base,
+        loading: stellaSource.loading.value,
+        ...stellaActivityBanner(stellaSource.overview.value),
+      }
+    }
+
     const source = sraSourceFor(key)
     return {
       ...base,
@@ -374,6 +402,7 @@ const activitySourcesByModule: Array<[HomeModuleKey, { start: () => void; stop: 
   ['nte', nevernessToEvernessSource],
   ['reverse1999', reverse1999Source],
   ['bluearchive', blueArchiveSource],
+  ['stellasora', stellaSource],
   ['endfield', endfieldSource],
 ]
 for (const [moduleKey, source] of activitySourcesByModule) {

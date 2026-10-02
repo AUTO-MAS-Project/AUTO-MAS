@@ -1,0 +1,27 @@
+#   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
+#   Copyright © 2025-2026 AUTO-MAS Team
+
+#   This file is part of AUTO-MAS.
+
+#   AUTO-MAS is free software: you can redistribute it and/or modify
+#   it under the terms of the GNU Affero General Public License as
+#   published by the Free Software Foundation, either version 3 of
+#   the License, or (at your option) any later version.
+
+#   AUTO-MAS is distributed in the hope that it will be useful,
+#   but WITHOUT ANY WARRANTY; without even the implied warranty of
+#   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See
+#   the GNU Affero General Public License for more details.
+
+#   You should have received a copy of the GNU Affero General Public License
+#   along with AUTO-MAS. If not, see <https://www.gnu.org/licenses/>.
+
+#   Contact: DLmaster_361@163.com
+
+"""MSS（MaaStellaSora / 星塔旅人）：MaaFW 引擎的特调类型，不是独立专项。
+
+这里只有 ``flavor.py``（运行前的队列装饰 + "是不是 MSS 项目"的判据）。运行、更新、内嵌
+副本、通知全走 ``app/task/MaaFW/``。保持本包不在导入期拉起任何重模块：
+``app.models.config`` 在类属性里只记了 ``"app.task.MSS.flavor:FLAVOR"`` 这个字符串，
+引擎按需导入。
+"""

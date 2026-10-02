@@ -1,16 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
-  weixin: { status: vi.fn(), start: vi.fn(), check: vi.fn(), unbind: vi.fn() },
   qq: { status: vi.fn(), start: vi.fn(), check: vi.fn(), unbind: vi.fn() },
 }))
 vi.mock('@/api', () => ({
-  ClawService: {
-    getStatusApiSettingOpenclawWeixinStatusPost: mocks.weixin.status,
-    startLoginApiSettingOpenclawWeixinLoginStartPost: mocks.weixin.start,
-    checkLoginApiSettingOpenclawWeixinLoginCheckPost: mocks.weixin.check,
-    unbindApiSettingOpenclawWeixinUnbindPost: mocks.weixin.unbind,
-  },
   QqService: {
     getStatusApiSettingOpenclawQqStatusPost: mocks.qq.status,
     startLoginApiSettingOpenclawQqLoginStartPost: mocks.qq.start,
@@ -34,7 +27,8 @@ beforeEach(() => {
 })
 afterEach(() => vi.useRealTimers())
 
-describe.each(['weixin', 'qq'] as const)('%s QR binding', channel => {
+describe('QQ QR binding', () => {
+  const channel = 'qq' as const
   it('uses the selected service and stops polling after expiration', async () => {
     const api = mocks[channel]
     api.start.mockResolvedValue({ code: 200, sessionId: channel, qrUrl: 'qr' })
@@ -72,38 +66,24 @@ describe.each(['weixin', 'qq'] as const)('%s QR binding', channel => {
   })
 })
 
-it('submits a nonempty WeChat pairing code and pauses automatic polling', async () => {
-  mocks.weixin.start.mockResolvedValue({ code: 200, sessionId: 'wx', qrUrl: 'qr' })
-  mocks.weixin.check.mockResolvedValue({ code: 200, state: 'need_verify_code' })
-  const flow = useClawBinding('weixin', vi.fn())
-  await flow.start()
-  flow.submitCode()
-  await vi.advanceTimersByTimeAsync(10000)
-  expect(mocks.weixin.check).toHaveBeenCalledTimes(1)
-  flow.verifyCode.value = ' 1234 '
-  flow.submitCode()
-  expect(mocks.weixin.check).toHaveBeenLastCalledWith({ sessionId: 'wx', verifyCode: '1234' })
-  flow.close()
-})
-
 it('defaults to enabled only for the first binding, not for a rebind', async () => {
-  mocks.weixin.start.mockResolvedValue({ code: 200, sessionId: 'wx', qrUrl: 'qr' })
-  mocks.weixin.check.mockResolvedValue({ code: 200, state: 'connected', connected: true })
-  mocks.weixin.status.mockResolvedValue({
+  mocks.qq.start.mockResolvedValue({ code: 200, sessionId: 'qq', qrUrl: 'qr' })
+  mocks.qq.check.mockResolvedValue({ code: 200, state: 'connected', connected: true })
+  mocks.qq.status.mockResolvedValue({
     code: 200,
     enabled: true,
     connected: true,
     state: 'connected',
   })
   const onChange = vi.fn().mockResolvedValue(undefined)
-  const flow = useClawBinding('weixin', onChange)
+  const flow = useClawBinding('qq', onChange)
 
   await flow.start()
   await vi.waitFor(() => expect(onChange).toHaveBeenCalledTimes(1))
   expect(onChange).toHaveBeenCalledWith(true)
 
   await flow.start()
-  await vi.waitFor(() => expect(mocks.weixin.check).toHaveBeenCalledTimes(2))
+  await vi.waitFor(() => expect(mocks.qq.check).toHaveBeenCalledTimes(2))
   expect(onChange).toHaveBeenCalledTimes(1)
   flow.close()
 })

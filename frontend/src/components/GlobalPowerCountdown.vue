@@ -16,6 +16,13 @@
       <div class="warning-icon">⚠️</div>
       <h2 class="countdown-title">{{ title }}</h2>
       <p class="countdown-message">{{ message }}</p>
+      <a-alert
+        v-if="powerCountdownDisconnected"
+        type="warning"
+        show-icon
+        :message="t('comp.powerCountdownConnectionLost')"
+        class="countdown-disconnected"
+      />
       <div class="countdown-timer">
         <span class="countdown-number">{{ remaining }}</span>
         <span class="countdown-unit">{{ t('comp.seconds') }}</span>
@@ -39,7 +46,6 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
 import { computed, ref, watch } from 'vue'
-import { Service } from '@/api'
 import { useAppLifecycle } from '@/composables/useAppLifecycle'
 
 const { t } = useI18n()
@@ -56,7 +62,7 @@ const POWER_OPERATION_LABEL: Record<string, string> = {
   Logoff: '注销',
 }
 
-const { powerCountdown } = useAppLifecycle()
+const { powerCountdown, powerCountdownDisconnected, cancelPowerCountdown } = useAppLifecycle()
 
 const visible = ref(false)
 const remaining = computed(() => powerCountdown.value?.remaining ?? 0)
@@ -67,27 +73,14 @@ const operationLabel = computed(() => {
 const title = computed(() => `${operationLabel.value}倒计时`)
 const message = computed(() => `程序将在倒计时结束后执行 ${operationLabel.value} 操作`)
 
-// 激活窗口到前台
-const focusWindow = async () => {
-  try {
-    if (window.electronAPI?.windowFocus) {
-      await window.electronAPI.windowFocus()
-      logger.info('窗口已激活到前台')
-    }
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.warn(`激活窗口失败: ${errorMsg}`)
-  }
-}
-
-// 倒计时出现时弹窗并拉起窗口（即使在托盘状态）；倒计时结束/取消时关闭
+// 倒计时出现时弹窗；倒计时结束/取消时关闭。
+// 拉起窗口、置顶与系统通知由 useAppLifecycle 在倒计时状态变化时统一请求。
 watch(
   () => powerCountdown.value,
   (current, previous) => {
     if (current && !previous) {
       logger.info(`收到电源倒计时: ${current.operation}, 剩余 ${current.remaining} 秒`)
       visible.value = true
-      void focusWindow()
     } else if (!current && previous) {
       logger.info('电源倒计时结束或已取消，关闭弹窗')
       visible.value = false
@@ -96,11 +89,12 @@ watch(
   { immediate: true }
 )
 
-// 取消电源操作（走现有 HTTP API，后端会回发 power.countdown.cancelled）
+// 取消电源操作（走现有 HTTP API，后端会回发 power.countdown.cancelled；
+// 断线期间收不到该事件，成功后由生命周期协调器在本地清除状态关闭弹窗）
 const handleCancel = async () => {
   logger.info('用户取消电源操作')
   try {
-    await Service.cancelPowerTaskApiDispatchCancelPowerPost()
+    await cancelPowerCountdown()
     logger.info('电源操作已取消')
 
     // 触发全局事件，通知调度中心刷新电源状态
@@ -150,6 +144,11 @@ const handleCancel = async () => {
   color: var(--ant-color-text-secondary);
   margin: 0 0 32px 0;
   line-height: 1.5;
+}
+
+.countdown-disconnected {
+  margin: -16px 0 24px 0;
+  text-align: left;
 }
 
 .countdown-timer {

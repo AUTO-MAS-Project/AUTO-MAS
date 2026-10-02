@@ -489,7 +489,7 @@ def detect_echo_of_war_completion(
             # 「副本任务完成」字面量，移除该前置条件；保留 attempts>=remaining
             # 作为 M7A 计划数匹配。
             return True, (
-                f"M7A 日志显示本次执行 {m7a_attempts} 次，"
+                f"三月七日志显示本次执行 {m7a_attempts} 次，"
                 f"已覆盖剩余 {remaining} 次历战余响"
             )
         return False, (

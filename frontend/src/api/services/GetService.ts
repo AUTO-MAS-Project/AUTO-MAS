@@ -41,6 +41,7 @@ import type { NoticeOut } from '../models/NoticeOut';
 import type { NotifyChannelsOut } from '../models/NotifyChannelsOut';
 import type { OCRScreenshotIn } from '../models/OCRScreenshotIn';
 import type { OCRScreenshotOut } from '../models/OCRScreenshotOut';
+import type { OkwwClientPathOut } from '../models/OkwwClientPathOut';
 import type { PlanComboxIn } from '../models/PlanComboxIn';
 import type { PlanGetIn } from '../models/PlanGetIn';
 import type { PlanGetOut } from '../models/PlanGetOut';
@@ -66,6 +67,8 @@ import type { ToolsGetOut } from '../models/ToolsGetOut';
 import type { UpdateCheckIn } from '../models/UpdateCheckIn';
 import type { UpdateCheckOut } from '../models/UpdateCheckOut';
 import type { UpdateDownloadSnapshot } from '../models/UpdateDownloadSnapshot';
+import type { UserConfigDirIn } from '../models/UserConfigDirIn';
+import type { UserConfigDirOut } from '../models/UserConfigDirOut';
 import type { UserDeleteIn } from '../models/UserDeleteIn';
 import type { UserGetIn } from '../models/UserGetIn';
 import type { UserGetOut } from '../models/UserGetOut';
@@ -226,6 +229,25 @@ export class GetService {
         });
     }
     /**
+     * 获取星塔旅人活动数据（官网公告）
+     * 取回星塔旅人的活动一览。
+     *
+     * 数据取自国服官网的活动公告：官网 CMS 不放开跨域、也认 Referer，所以由后端
+     * 取回并按公告正文里的开放时间整理成与其它游戏一致的形状。取数失败返回错误
+     * 信封，由卡片显示自己的失败态，不影响其它卡片。
+     *
+     * Returns:
+     * InfoOut: ``{"activities": [...]}``；取不到时返回 ``code=500`` 的错误信封。
+     * @returns InfoOut Successful Response
+     * @throws ApiError
+     */
+    public static getStellaActivityApiInfoStellaActivityPost(): CancelablePromise<InfoOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/info/stella/activity',
+        });
+    }
+    /**
      * 查询脚本配置信息
      * @param requestBody
      * @returns ScriptGetOut Successful Response
@@ -239,6 +261,29 @@ export class GetService {
             url: '/api/scripts/get',
             body: requestBody,
             mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 解码鸣潮启动器，返回客户端 exe 路径
+     * 解码鸣潮启动器记录，返回客户端 exe 完整路径（仅直启模式的前端展示用）。
+     *
+     * 任务期的启动与自动更新链路由后端自行解码，不经过本端点。
+     * @param scriptId
+     * @returns OkwwClientPathOut Successful Response
+     * @throws ApiError
+     */
+    public static getOkwwClientPathApiApiScriptsOkwwClientPathGet(
+        scriptId: string,
+    ): CancelablePromise<OkwwClientPathOut> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/scripts/okww/client-path',
+            query: {
+                'scriptId': scriptId,
+            },
             errors: {
                 422: `Validation Error`,
             },
@@ -294,6 +339,25 @@ export class GetService {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/scripts/user/get',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 获取用户配置目录
+     * @param requestBody
+     * @returns UserConfigDirOut Successful Response
+     * @throws ApiError
+     */
+    public static getUserConfigDirApiScriptsUserConfigDirPost(
+        requestBody: UserConfigDirIn,
+    ): CancelablePromise<UserConfigDirOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/user/config-dir',
             body: requestBody,
             mediaType: 'application/json',
             errors: {

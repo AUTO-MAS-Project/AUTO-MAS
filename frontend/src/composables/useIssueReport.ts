@@ -15,22 +15,25 @@ interface IssueReportResult {
   error?: string
 }
 
-interface IssueReportOptions {
+interface IssueReportOptions<Args extends unknown[]> {
   /** 产品展示名，如 'OK-WW' / 'MaaEnd' */
   label: string
   /** 问题包文件名兜底前缀，如 'OK-WW-logs-*.zip' */
   fallbackName: string
-  /** 触发导出的 IPC 方法 */
-  exportFn: () => Promise<IssueReportResult | undefined> | undefined
+  /** 触发导出的 IPC 方法；按脚本导出的（MFW）带脚本 ID */
+  exportFn: (...args: Args) => Promise<IssueReportResult | undefined> | undefined
 }
 
-export function useIssueReport(logger: ReportLogger, options: IssueReportOptions) {
+export function useIssueReport<Args extends unknown[] = []>(
+  logger: ReportLogger,
+  options: IssueReportOptions<Args>
+) {
   const exporting = ref(false)
 
-  const exportIssueReport = async () => {
+  const exportIssueReport = async (...args: Args) => {
     exporting.value = true
     try {
-      const result = await options.exportFn()
+      const result = await options.exportFn(...args)
 
       if (!result) {
         message.error('导出功能未响应，请检查程序')
@@ -45,6 +48,11 @@ export function useIssueReport(logger: ReportLogger, options: IssueReportOptions
           await window.electronAPI?.showItemInFolder?.(result.zipPath)
         }
         showIssueReportGuide(result.zipPath, options.fallbackName)
+        return
+      }
+
+      // 在保存对话框里点了取消（主进程 registerIssueReportExporter 的约定），不算失败
+      if (result.error === '用户取消') {
         return
       }
 

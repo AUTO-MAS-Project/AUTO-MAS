@@ -12,6 +12,7 @@ export type HomeModuleKey =
   | 'nte'
   | 'reverse1999'
   | 'bluearchive'
+  | 'stellasora'
   | 'arknights'
 
 export interface HomeLayoutConfig {
@@ -123,6 +124,8 @@ export interface SraActivityItem {
   startTime: string
   endTime: string
   cover?: string
+  /** 数据源自己的活动分类（如星塔旅人的「版本活动」），横幅按它挑要报的那一类 */
+  kind?: string
 }
 
 export interface SraActivityOverview {
@@ -181,8 +184,15 @@ export interface ActivityBannerItem {
   accent: string
   /** 封面图地址，取不到时为空串 */
   cover: string
+  /**
+   * 主封面加载失败时依次尝试的备用图（星塔旅人的活动大图时有时无：
+   * StellaBase 的 `background` 常 404，官网横幅与站点小图依次补位）。
+   */
+  coverCandidates?: string[]
   /** 版本名或当期活动名 */
   subtitle: string
+  /** 版本号（版本制游戏的编号），数据源没有版本概念时缺省，banner 不显示 */
+  version?: string
   /** 活动开始时间；用来区分「还没开始」与「进行中」，取不到时为空串 */
   startTime: string
   /** 倒计时终点，取不到时为空串 */
@@ -190,4 +200,11 @@ export interface ActivityBannerItem {
   loading: boolean
   available: boolean
   stale: boolean
+  /**
+   * 这张卡展示的是「刚结束的那场」而不是进行中的活动。
+   *
+   * 与碧蓝档案同口径：没有进行中的活动时退回最近结束的一场，倒计时自然显示
+   * 「[活动已结束]」，再补一句「后续活动即将开始」。
+   */
+  ended?: boolean
 }

@@ -15,6 +15,7 @@ export const HOME_ACTIVITY_ACCENTS: Record<string, string> = {
   nte: '#c9a7ff',
   reverse1999: '#f2a0c0',
   bluearchive: '#3ba9ee',
+  stellasora: '#2b9fff',
   arknights: '#9fb4cc',
 }
 
@@ -25,12 +26,18 @@ export const getActivityAccent = (key: HomeModuleKey): string => {
 /** 从各游戏数据源里抽出 banner 需要的几项，屏蔽字段命名差异 */
 export interface ActivityBannerSource {
   cover: string
+  /** 主封面 404 时依次尝试的备用图（见 ActivityBannerItem.coverCandidates） */
+  coverCandidates?: string[]
   subtitle: string
+  /** 版本号；数据源没有版本概念时缺省，banner 左下角就不显示这一项 */
+  version?: string
   /** 开始时间：轮播据此区分「还没开始」与「进行中」，取不到时为空串 */
   startTime: string
   endTime: string
   available: boolean
   stale: boolean
+  /** 展示的是刚结束的那场活动；轮播据此补一句「后续活动即将开始」 */
+  ended?: boolean
 }
 
 const toTimestamp = (value: string) => {
@@ -55,6 +62,7 @@ export const sraActivityBanner = (overview: SraActivityOverview): ActivityBanner
     // 版本封面优先；部分游戏没有版本封面，退回第一张有图的活动
     cover: overview.cover || overview.activities.find(item => item.cover)?.cover || '',
     subtitle: useVersion ? overview.versionName : (activity?.name ?? ''),
+    version: overview.version,
     startTime: useVersion ? overview.startTime : (activity?.startTime ?? ''),
     endTime: useVersion ? overview.endTime : (activity?.endTime ?? ''),
     available: overview.Available,
@@ -71,6 +79,7 @@ export const endfieldActivityBanner = (
   return {
     cover: record?.ImageUrl || '',
     subtitle: record?.Name || overview.Version || '',
+    version: overview.Version,
     startTime: record?.StartTime || '',
     endTime: record?.EndTime || '',
     available: overview.Available,
@@ -88,5 +97,32 @@ export const arknightsActivityBanner = (activityData: ActivityItem[]): ActivityB
     endTime: activity?.UtcExpireTime ?? '',
     available: activityData.length > 0,
     stale: false,
+  }
+}
+
+/**
+ * 星塔旅人的横幅只报「版本活动」。
+ *
+ * 那是会开限时活动关的版本大活动（「遥远的塔」这种），招募与拼图、经营之类的小玩法
+ * 只留在下面的活动卡里；一期版本活动都没有时横幅空着，由轮播显示「暂无进行中的活动」。
+ */
+const STELLA_BANNER_KIND = '版本活动'
+
+export const stellaActivityBanner = (overview: SraActivityOverview): ActivityBannerSource => {
+  const now = Date.now()
+  const versions = overview.activities.filter(item =>
+    (item.kind ?? '').includes(STELLA_BANNER_KIND)
+  )
+  const activity =
+    versions.find(item => toTimestamp(item.startTime) <= now && toTimestamp(item.endTime) > now) ??
+    versions.find(item => toTimestamp(item.startTime) > now)
+
+  return {
+    cover: activity?.cover ?? '',
+    subtitle: activity?.name ?? '',
+    startTime: activity?.startTime ?? '',
+    endTime: activity?.endTime ?? '',
+    available: overview.Available,
+    stale: overview.Stale,
   }
 }

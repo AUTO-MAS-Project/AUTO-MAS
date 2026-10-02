@@ -17,6 +17,7 @@ import httpx
 
 from app.utils.logger import get_logger
 
+from ...task_mapping import engine_label
 from .discover import HSRUpdateError, UpdateCandidate
 
 logger = get_logger("HSR 更新下载")
@@ -70,7 +71,8 @@ async def download_package(
         except Exception as exc:  # noqa: BLE001 - 网络异常形态多，统一重试
             last_error = exc
             logger.warning(
-                f"HSR 更新：下载 {candidate.engine} {candidate.latest_version} "
+                f"HSR 更新：下载{engine_label(candidate.engine, right=False)} "
+                f"{candidate.latest_version} "
                 f"第 {attempt}/{_RETRIES} 次失败：{exc}"
             )
             if attempt < _RETRIES:

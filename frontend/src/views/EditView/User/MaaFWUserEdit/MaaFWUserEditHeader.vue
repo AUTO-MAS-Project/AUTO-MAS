@@ -6,7 +6,7 @@
           <router-link to="/scripts" class="breadcrumb-link">{{ t('edit.scripts') }}</router-link>
         </a-breadcrumb-item>
         <a-breadcrumb-item>
-          <router-link :to="`/scripts/${scriptId}/edit/maafw`" class="breadcrumb-link">
+          <router-link :to="scriptRoute" class="breadcrumb-link">
             {{ scriptName || 'MFW' }}
           </router-link>
         </a-breadcrumb-item>
@@ -21,17 +21,27 @@
         >
           <LoadingOutlined v-if="saveStatus === 'saving'" spin />
           <CheckCircleOutlined v-else-if="saveStatus === 'saved'" />
-          <a-tooltip v-else :title="saveErrorMessage || '保存失败，请重试'">
+          <a-tooltip v-else :title="saveErrorMessage || t('edit.saveFailedRetry')">
             <CloseCircleOutlined />
           </a-tooltip>
           <span>{{
-            saveStatus === 'saving' ? '保存中…' : saveStatus === 'saved' ? '已自动保存' : '保存失败'
+            saveStatus === 'saving'
+              ? t('edit.savingNow')
+              : saveStatus === 'saved'
+                ? t('edit.autoSaved')
+                : t('edit.saveFailedShort')
           }}</span>
         </span>
       </Transition>
     </div>
 
     <a-space>
+      <a-button v-if="props.userId" size="large" :loading="folderLoading" @click="handleOpenFolder">
+        <template #icon>
+          <FolderOpenOutlined />
+        </template>
+        {{ t('comp.openConfigFolder') }}
+      </a-button>
       <a-button size="large" @click="emit('cancel')">
         <template #icon>
           <ArrowLeftOutlined />
@@ -48,22 +58,28 @@ import {
   ArrowLeftOutlined,
   CheckCircleOutlined,
   CloseCircleOutlined,
+  FolderOpenOutlined,
   LoadingOutlined,
 } from '@ant-design/icons-vue'
+import { useUserApi } from '@/composables/useUserApi'
+import type {
+  MaaFWUserHeaderSectionEmits,
+  MaaFWUserHeaderSectionProps,
+} from '../../MaaFWFlavor/sectionContracts'
 
 const { t } = useI18n()
 
-defineProps<{
-  saveStatus: 'idle' | 'saving' | 'saved' | 'error'
-  saveErrorMessage: string
-  scriptId: string
-  scriptName: string
-  isEdit: boolean
-}>()
+// props / 事件的契约在 sectionContracts（特调替换这个分节时按同一份契约接收）
+const props = defineProps<MaaFWUserHeaderSectionProps>()
 
-const emit = defineEmits<{
-  cancel: []
-}>()
+const emit = defineEmits<MaaFWUserHeaderSectionEmits>()
+
+const { loading: folderLoading, openUserConfigFolder } = useUserApi()
+
+const handleOpenFolder = async () => {
+  if (!props.userId) return
+  await openUserConfigFolder(props.scriptId, props.userId)
+}
 </script>
 
 <style scoped>

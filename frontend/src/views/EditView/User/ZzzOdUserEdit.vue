@@ -18,6 +18,12 @@
       </div>
 
       <a-space size="middle">
+        <a-button v-if="!!userId" size="large" :loading="folderLoading" @click="handleOpenFolder">
+          <template #icon>
+            <FolderOpenOutlined />
+          </template>
+          {{ t('comp.openConfigFolder') }}
+        </a-button>
         <a-tooltip :title="t('edit.zzzodOpenNativeConfigHint')">
           <a-button
             v-if="!showZzzodConfigMask && !showZzzodViewMask"
@@ -326,7 +332,7 @@
                         <a-button
                           size="small"
                           type="text"
-                          aria-label="重命名实例"
+                          :aria-label="t('edit.zzzodRenameInstance')"
                           @click="openRenameInstance(inst)"
                         >
                           <template #icon><EditOutlined /></template>
@@ -337,7 +343,7 @@
                           size="small"
                           type="text"
                           danger
-                          aria-label="删除实例"
+                          :aria-label="t('edit.zzzodDeleteInstance')"
                           @click="openDeleteInstance(inst)"
                         >
                           <template #icon><DeleteOutlined /></template>
@@ -705,7 +711,7 @@
                   <template #label>
                     <span class="form-label">
                       {{ t('edit.collectNodeDetails') }}
-                      <a-tooltip :title="t('edit.zzzodPushLogModeHint')">
+                      <a-tooltip mouse-enter-delay="0.5" :title="t('edit.collectsKeyMomentsFrom')">
                         <QuestionCircleOutlined class="help-icon" />
                       </a-tooltip>
                     </span>
@@ -1300,10 +1306,22 @@ const { t } = useI18n()
 const logger = window.electronAPI.getLogger('ZZZ-OD用户编辑')
 const route = useRoute()
 const router = useRouter()
-const { addUser, getUsers, updateUser, error: userApiError } = useUserApi()
+const {
+  addUser,
+  getUsers,
+  updateUser,
+  error: userApiError,
+  openUserConfigFolder,
+  loading: folderLoading,
+} = useUserApi()
 const { getScript } = useScriptApi()
 
 const scriptId = route.params.scriptId as string
+
+const handleOpenFolder = async () => {
+  if (!userId.value) return
+  await openUserConfigFolder(scriptId, userId.value)
+}
 const userId = ref((route.params.userId as string) || '')
 const isEdit = ref(!!userId.value)
 const { configLocked } = useScriptConfigLock(() => scriptId)

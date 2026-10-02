@@ -180,6 +180,8 @@ PROJECTS: Dict[str, str] = {
     "okww": "ok-ww",
     "oknte": "ok-nte",
     "baah": "BAAH",
+    "whimbox": "奇想盒",
+    "mss": "MSS",
     "src": "SRC",
     "mfw": "MFW",
     "general": "通用脚本",

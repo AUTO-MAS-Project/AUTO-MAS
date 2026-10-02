@@ -3,7 +3,7 @@
 /* tslint:disable */
 /* eslint-disable */
 /**
- * QQ 官方机器人二维码状态查询响应。
+ * QQ 官方机器人二维码及消息网关状态查询响应。
  */
 export type OpenClawQQQrCheckOut = {
     /**
@@ -23,11 +23,11 @@ export type OpenClawQQQrCheckOut = {
      */
     sessionId?: string;
     /**
-     * 二维码状态
+     * 轮询状态：waiting、scanned、connecting（已绑定，网关连接中）、connected（网关已就绪）、expired 或 error
      */
     state?: string;
     /**
-     * 是否已完成账号绑定
+     * 消息网关是否已就绪；绑定成功但仍在连接时为 false
      */
     connected?: boolean;
 };

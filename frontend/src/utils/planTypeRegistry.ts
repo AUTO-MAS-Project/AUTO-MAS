@@ -12,6 +12,7 @@ export type PlanConfigData = PlanGetOut['data'][string]
 export const PLAN_CONFIG_TYPES = {
   MAA: PlanIndexItem.type.MAA_PLAN_CONFIG,
   MAA_END: PlanIndexItem.type.MAA_END_PLAN_CONFIG,
+  MSS: PlanIndexItem.type.MSSPLAN_CONFIG,
 } as const
 
 export interface PlanChangeOptions {
@@ -57,6 +58,16 @@ export const PLAN_TYPE_REGISTRY: Record<PlanConfigType, PlanTypeDescriptor> = {
     selectorTag: 'MaaEnd',
     reloadAfterSave: false,
     tableComponent: defineAsyncComponent(() => import('@/views/plan/tables/MaaEndPlanTable.vue')),
+  },
+  [PLAN_CONFIG_TYPES.MSS]: {
+    configType: PLAN_CONFIG_TYPES.MSS,
+    createType: PlanCreateIn.type.MSSPLAN,
+    displayNameKey: 'plan.type.mss',
+    // 同上：defaultName 会写进计划名，并被 plan/index.vue 拿来判断“还是默认名”，保持中文
+    defaultName: '新 MSS 计划表',
+    selectorTag: 'MSS',
+    reloadAfterSave: false,
+    tableComponent: defineAsyncComponent(() => import('@/views/plan/tables/MSSPlanTable.vue')),
   },
 }
 

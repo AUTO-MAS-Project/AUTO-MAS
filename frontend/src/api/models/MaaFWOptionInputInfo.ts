@@ -39,5 +39,9 @@ export type MaaFWOptionInputInfo = {
      * 输入校验提示
      */
     patternMsg?: (string | null);
+    /**
+     * 是否为密码 / 密钥字段（界面掩码，配置加密存储）
+     */
+    password?: boolean;
 };
 

@@ -2,7 +2,16 @@ import { createRouter, createWebHashHistory, type LocationQueryRaw } from 'vue-r
 import { useAppInitialization } from '@/composables/useAppInitialization'
 import { getInitializationDecision } from '@/utils/initializationDecision'
 import { startSkippedInitializationStartup } from '@/utils/skippedInitializationStartup'
+import { MAAFW_FLAVORS } from '@/composables/useMaaFWFlavor'
+import { buildMaaFWRoutes } from './maafwFlavorRoutes'
 const logger = window.electronAPI.getLogger('路由管理')
+
+// MaaFW 与各特调的路由（每个类型：脚本编辑 / 引导 / 加用户 / 编辑用户）按特调注册表生成；
+// 组件都是页面宿主：按脚本实际类型选页面，后缀与类型不符的地址由它纠正
+const maafwRoutes = buildMaaFWRoutes(
+  MAAFW_FLAVORS,
+  () => import('../views/EditView/MaaFWFlavor/MaaFWPageHost.vue')
+)
 
 // 异步按需加载调度中心，避免弹窗窗口提前执行相关逻辑
 const SchedulerView = () => import('../views/scheduler/index.vue')
@@ -75,25 +84,9 @@ const routes = [
     component: () => import('../views/EditView/Script/MaaEndScriptEdit.vue'),
     meta: { title: '编辑MaaEnd脚本' },
   },
-  {
-    path: '/scripts/:id/edit/m9a',
-    name: 'M9AScriptEdit',
-    component: () => import('../views/EditView/Script/M9AScriptEdit.vue'),
-    meta: { title: '编辑M9A脚本' },
-  },
-  {
-    path: '/scripts/:id/edit/maafw',
-    name: 'MaaFWScriptEdit',
-    component: () => import('../views/EditView/Script/MaaFWScriptEdit.vue'),
-    meta: { title: '编辑MFW脚本' },
-  },
-  {
-    // 新建 MFW 脚本后的分步引导；与编辑页同一个组件，按路由名切换形态
-    path: '/scripts/:id/setup/maafw',
-    name: 'MaaFWSetupWizard',
-    component: () => import('../views/EditView/Script/MaaFWScriptEdit.vue'),
-    meta: { title: 'MaaFramework项目引导' },
-  },
+  // MaaFW 家族的脚本页：编辑形态与新建后的分步引导（按注册表生成）
+  ...maafwRoutes.script,
+  ...maafwRoutes.setup,
   {
     path: '/scripts/:id/edit/hsr',
     name: 'HSRScriptEdit',
@@ -137,6 +130,12 @@ const routes = [
     meta: { title: '编辑ZZZ-OD脚本' },
   },
   {
+    path: '/scripts/:id/edit/whimbox',
+    name: 'WhimboxScriptEdit',
+    component: () => import('../views/EditView/Script/WhimboxScriptEdit.vue'),
+    meta: { title: '编辑奇想盒脚本' },
+  },
+  {
     path: '/scripts/:scriptId/users/add/zzzod',
     name: 'ZzzOdUserAdd',
     component: () => import('../views/EditView/User/ZzzOdUserEdit.vue'),
@@ -172,18 +171,7 @@ const routes = [
     component: () => import('../views/EditView/User/MaaEndUserEdit.vue'),
     meta: { title: '添加MaaEnd用户' },
   },
-  {
-    path: '/scripts/:scriptId/users/add/m9a',
-    name: 'M9AUserAdd',
-    component: () => import('../views/EditView/User/M9AUserEdit.vue'),
-    meta: { title: '添加M9A用户' },
-  },
-  {
-    path: '/scripts/:scriptId/users/add/maafw',
-    name: 'MaaFWUserAdd',
-    component: () => import('../views/EditView/User/MaaFWUserEdit.vue'),
-    meta: { title: '添加 MFW 用户' },
-  },
+  ...maafwRoutes.userAdd,
   {
     path: '/scripts/:scriptId/users/add/hsr',
     name: 'HSRUserAdd',
@@ -202,18 +190,7 @@ const routes = [
     component: () => import('../views/EditView/User/MaaEndUserEdit.vue'),
     meta: { title: '编辑MaaEnd用户' },
   },
-  {
-    path: '/scripts/:scriptId/users/:userId/edit/m9a',
-    name: 'M9AUserEdit',
-    component: () => import('../views/EditView/User/M9AUserEdit.vue'),
-    meta: { title: '编辑M9A用户' },
-  },
-  {
-    path: '/scripts/:scriptId/users/:userId/edit/maafw',
-    name: 'MaaFWUserEdit',
-    component: () => import('../views/EditView/User/MaaFWUserEdit.vue'),
-    meta: { title: '编辑 MFW 用户' },
-  },
+  ...maafwRoutes.userEdit,
   {
     path: '/scripts/:scriptId/users/:userId/edit/hsr',
     name: 'HSRUserEdit',
@@ -279,6 +256,18 @@ const routes = [
     name: 'BetterGIUserEdit',
     component: () => import('../views/EditView/User/BetterGIUserEdit.vue'),
     meta: { title: '编辑BetterGI用户' },
+  },
+  {
+    path: '/scripts/:scriptId/users/add/whimbox',
+    name: 'WhimboxUserAdd',
+    component: () => import('../views/EditView/User/WhimboxUserEdit.vue'),
+    meta: { title: '添加奇想盒用户' },
+  },
+  {
+    path: '/scripts/:scriptId/users/:userId/edit/whimbox',
+    name: 'WhimboxUserEdit',
+    component: () => import('../views/EditView/User/WhimboxUserEdit.vue'),
+    meta: { title: '编辑奇想盒用户' },
   },
   {
     path: '/plans',

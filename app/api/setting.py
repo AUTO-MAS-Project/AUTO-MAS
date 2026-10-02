@@ -173,7 +173,13 @@ async def test_notify() -> OutBase:
             status="error",
             message=f"部分通知发送失败: {'、'.join(result.failed)}",
         )
-    return OutBase()
+    if result.attempted == 0:
+        return OutBase(
+            code=400,
+            status="error",
+            message="没有已启用的通知渠道，请先完成绑定并开启通知",
+        )
+    return OutBase(message=f"测试通知已提交至：{'、'.join(result.succeeded)}")
 
 
 @router.get(

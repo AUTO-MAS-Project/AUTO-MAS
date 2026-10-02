@@ -32,10 +32,15 @@ Task（SelectedPreset / TaskSnapshot）+ Device 段。恢复 = 回填 UserData�
 按物理项目根指纹分桶（脚本级共享、跨脚本复用）。
 """
 
+import asyncio
 import json
 import uuid
 from pathlib import Path
 
+from app.task.MaaFW.tools.embedded.embedded_project import (
+    resolve_maafw_project_root,
+)
+from app.task.MaaFW.tools.embedded.flavor import sanitize_user_task_update
 from app.utils import get_logger
 from app.utils.config_restore import ConfigRestorePool, RestoreContext
 
@@ -66,10 +71,14 @@ def _user_guard(ctx: RestoreContext) -> None:
 
 
 def _project_path(ctx: RestoreContext) -> Path | None:
-    """MaaFW 项目根目录（含 interface.json）；未配置脚本路径返回 ``None``。"""
+    """MaaFW 项目根目录（含 interface.json）；未配置脚本路径返回 ``None``。
 
-    raw = str(ctx.script_config.get("Info", "Path") or "").strip()
-    return Path(raw) if raw else None
+    内嵌脚本的有效根是副本：运行时物化写在副本里，恢复也只能写回副本——来源目录
+    一个字节不动。
+    """
+
+    root = resolve_maafw_project_root(ctx.script_id, ctx.script_config)
+    return root if str(root).strip() and str(root) != "." else None
 
 
 # ══════════════════ mas 池（声明式 + 定制预览/恢复） ══════════════════
@@ -107,7 +116,12 @@ async def _restore_mas(ctx: RestoreContext, ts: str) -> None:
     )
     restored = restore_mas_backup(ctx.script_id, ctx.user_id, ts)
     if restored:
-        await user.update(group_overlay(restored))
+        overlay = group_overlay(restored)
+        # 老备份里可能还有特调收归自己管的任务（M9A 的启动 / 切号 / 关闭），与保存同一口径整理
+        await asyncio.to_thread(
+            sanitize_user_task_update, ctx.script_id, ctx.script_config, user, overlay
+        )
+        await user.update(overlay)
 
 
 # ══════════════════ native 池（声明式 + 定制预览/恢复） ══════════════════

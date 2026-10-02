@@ -3,8 +3,13 @@ import type { HomeLayoutConfig, HomeModuleKey } from '@/types/home'
 /** 活动轮播容器自身的模块键，既是排序里的一格，也是整组游戏卡的总开关 */
 export const HOME_ACTIVITY_CAROUSEL_KEY: HomeModuleKey = 'activities'
 
-/** 进入轮播的游戏活动卡；这里的相对顺序就是轮播的切换顺序 */
-export const HOME_ACTIVITY_MODULE_KEYS: HomeModuleKey[] = [
+/**
+ * 活动轮播上线时就有的游戏卡。
+ *
+ * 迁移判断只认这一批：老配置里用户根本没见过后补的卡，若把新卡也算进
+ * 「全关」判断，那个判断就永远不会成立，于是升级后会凭空多出一张卡。
+ */
+export const CAROUSEL_ERA_MODULE_KEYS: HomeModuleKey[] = [
   'endfield',
   'starrail',
   'genshin',
@@ -14,6 +19,12 @@ export const HOME_ACTIVITY_MODULE_KEYS: HomeModuleKey[] = [
   'reverse1999',
   'bluearchive',
   'arknights',
+]
+
+/** 进入轮播的游戏活动卡；这里的相对顺序就是轮播的切换顺序 */
+export const HOME_ACTIVITY_MODULE_KEYS: HomeModuleKey[] = [
+  ...CAROUSEL_ERA_MODULE_KEYS,
+  'stellasora',
 ]
 
 /** 已接入日常便笺的游戏，提供首页社区信息的独立开关。 */
@@ -68,9 +79,9 @@ export const normalizeHomeLayoutConfig = (value: unknown): HomeLayoutConfig => {
   const isMigration = !configuredOrder.includes(HOME_ACTIVITY_CAROUSEL_KEY)
   const hiddenModules = normalizeModuleKeys(config.hiddenModules)
 
-  // 老配置里八张游戏卡全关了，等价于整块都不要；补键时顺手把总闸也关掉，
+  // 老配置里游戏卡全关了，等价于整块都不要；补键时顺手把总闸也关掉，
   // 否则升级后会凭空多出一张「轮播里的游戏都关掉了」的提示卡
-  if (isMigration && HOME_ACTIVITY_MODULE_KEYS.every(key => hiddenModules.includes(key))) {
+  if (isMigration && CAROUSEL_ERA_MODULE_KEYS.every(key => hiddenModules.includes(key))) {
     hiddenModules.push(HOME_ACTIVITY_CAROUSEL_KEY)
   }
 

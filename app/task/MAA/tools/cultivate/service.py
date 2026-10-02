@@ -34,6 +34,7 @@
 
 from __future__ import annotations
 
+import json
 import time
 from datetime import date, datetime
 from pathlib import Path
@@ -51,6 +52,7 @@ from .providers import (
     ManualProgressionProvider,
     SklandProgressionProvider,
     has_oper_box_data,
+    observed_operator_ids,
     resolve_inventory,
     resolve_progression,
 )
@@ -173,6 +175,35 @@ def parse_cultivate_targets(payload: object) -> tuple[OperatorTarget, ...]:
         if goals:
             targets.append(OperatorTarget(operator_id, tuple(goals)))
     return tuple(targets)
+
+
+def takeover_notice_patch_value(
+    if_cultivate: object, raw_targets: object
+) -> str | None:
+    """按注入准备的门控口径，判定配置写入应落到接管提示字段的值。
+
+    与 ``AutoProxy._prepare_cultivate_injection`` 的早退分支同一口径：
+    开关关闭或无有效目标 → 本轮不可能接管，返回 ``""`` 清空上一轮残留的
+    过期提示；仍可能接管 → 返回 ``None``，提示归注入阶段按当轮缺口判定，
+    配置写路径不动它。
+
+    Args:
+        if_cultivate: 养成开关值（patch 覆盖后的当前事实）。
+        raw_targets: 养成目标 JSON 字符串或已解析对象（脏数据按空表处理）。
+
+    Returns:
+        ``""`` 表示应清空提示；``None`` 表示仍可能接管、不修改提示。
+    """
+
+    if not if_cultivate:
+        return ""
+    try:
+        payload = (
+            json.loads(raw_targets) if isinstance(raw_targets, str) else raw_targets
+        )
+    except (TypeError, ValueError):
+        payload = []
+    return "" if not parse_cultivate_targets(payload) else None
 
 
 def filter_catalog_by_goals(
@@ -375,12 +406,14 @@ class DepotCultivateService:
                 拉取失败，链短路落 local（决策 37/38）。
 
         Returns:
-            (计划, 数据可用性, 目标干员当前练度)：可用性为
+            (计划, 数据可用性, 练度名册)：可用性为
             ``{"has_progression": 练度数据可用（本地识别档案或森空岛快照）,
             "has_inventory": 仓库识别档案存在}``——两者缺任一时预览按
             default 练度/空库存估算，前端须提示"以识别后为准"；练度映射
-            覆盖全部目标干员（source=default 表示无实测数据），供编辑器
-            展示"当前等级 → 目标等级"。
+            覆盖全部目标干员（source=default 表示无实测数据），并超集至
+            识别档案/森空岛/手填里所有有观测的干员——编辑器选中干员的
+            同一帧就要展示真实练度，按目标裁剪会让新选干员先渲染"？"
+            再等下一轮预览，供展示"当前等级 → 目标等级"。
         """
 
         # 两类识别数据同口径判定（对齐决策 24：识别过但结果为空算"有数据"，
@@ -406,6 +439,15 @@ class DepotCultivateService:
             )
             for target in targets
         }
+        # 练度名册超集：档案/快照里有观测的干员一并给出，目标外的新选干员
+        # 不必等下一轮预览（无观测的干员不进名册，避免 source=default 灌水）
+        for operator_id in observed_operator_ids(context):
+            if operator_id not in progressions:
+                progressions[operator_id] = resolve_progression(
+                    operator_id,
+                    chain=get_progression_chain(),
+                    context=context,
+                )
         _, plan, _ = await self.prepare_cultivate(
             targets=targets,
             maa_data_dir=maa_data_dir,
@@ -514,4 +556,5 @@ __all__ = [
     "get_progression_chain",
     "dump_cultivate_targets",
     "parse_cultivate_targets",
+    "takeover_notice_patch_value",
 ]

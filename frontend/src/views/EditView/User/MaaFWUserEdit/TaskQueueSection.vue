@@ -41,7 +41,8 @@
               @change="(value: unknown) => emit('addTaskCascaderChange', value)"
             >
               <template #suffixIcon>
-                <PlusOutlined />
+                <MaaFWNewBadge v-if="hasNewTasks" />
+                <PlusOutlined v-else />
               </template>
             </a-cascader>
           </div>
@@ -74,7 +75,7 @@
                   <a-button
                     type="primary"
                     class="preset-apply-button"
-                    :disabled="template.taskNames.length === 0"
+                    :disabled="template.entries.length === 0"
                     @click="emit('applyPresetTemplate', template.preset.name)"
                   >
                     {{ t('edit.applyPreset2') }}
@@ -82,10 +83,10 @@
                 </div>
 
                 <div class="preset-tasks-preview">
-                  <div v-for="taskName in template.taskNames" :key="taskName" class="task-chip">
+                  <div v-for="entry in template.entries" :key="entry.id" class="task-chip">
                     <span class="task-dot"></span>
                     <span class="task-chip-name">
-                      {{ getDisplayName(taskByName.get(taskName)!) }}
+                      {{ getDisplayName(entry.task) }}
                     </span>
                   </div>
                 </div>
@@ -110,8 +111,50 @@
             :move="canDragTask"
             @end="emit('taskDragEnd')"
           >
+            <!-- interface 已没有的任务（项目更新改了 name）是虚影：不能拖、不能移，只能删。
+                 注释不能写进 item 插槽里：开发模式下它也算一个子节点，vuedraggable 要求只有一个 -->
             <template #item="{ element: queuedTask, index }">
+              <div
+                v-if="queuedTask.missing"
+                role="button"
+                tabindex="0"
+                class="task-row task-row-missing"
+                :class="{ 'task-row-selected': selectedTaskId === queuedTask.id }"
+                @click="emit('selectTask', queuedTask.id)"
+                @keydown.enter="emit('selectTask', queuedTask.id)"
+              >
+                <HolderOutlined class="task-drag-handle-disabled" aria-hidden="true" />
+                <div class="task-main">
+                  <span class="task-title task-title-missing">
+                    {{ queuedTask.name }}
+                    <span v-if="queuedTask.copyTotal > 1" class="task-copy-index">
+                      #{{ queuedTask.copyIndex }}
+                    </span>
+                  </span>
+                  <span class="task-missing-tag">{{ t('edit.missingTaskTag') }}</span>
+                </div>
+                <a-popconfirm
+                  :title="t('edit.deleteThisTask2')"
+                  :ok-text="t('edit.ok')"
+                  :cancel-text="t('edit.cancel')"
+                  :disabled="interfaceDependentDisabled"
+                  @confirm="emit('deleteTask', queuedTask.id)"
+                >
+                  <a-button
+                    type="text"
+                    size="small"
+                    :disabled="interfaceDependentDisabled"
+                    :aria-label="t('edit.deleteThisTask')"
+                    @click.stop
+                  >
+                    <template #icon>
+                      <CloseOutlined />
+                    </template>
+                  </a-button>
+                </a-popconfirm>
+              </div>
               <button
+                v-else
                 type="button"
                 class="task-row"
                 :class="{ 'task-row-selected': selectedTaskId === queuedTask.id }"
@@ -227,6 +270,45 @@
             </a-button>
           </a-popconfirm>
         </div>
+        <div v-else-if="selectedMissingTask" class="task-option-panel">
+          <div class="selected-task-header">
+            <div>
+              <div class="selected-task-title task-title-missing">
+                {{ selectedMissingTask.name }}
+                <span v-if="selectedMissingTask.copyTotal > 1" class="task-copy-index">
+                  #{{ selectedMissingTask.copyIndex }}
+                </span>
+              </div>
+              <div class="selected-task-meta">{{ t('edit.missingTaskHint') }}</div>
+            </div>
+          </div>
+          <div v-if="missingTaskSettings.length > 0" class="missing-task-settings">
+            <div class="missing-task-settings-title">{{ t('edit.missingTaskSettings') }}</div>
+            <div v-for="row in missingTaskSettings" :key="row.key" class="missing-task-setting">
+              <span class="missing-task-setting-label">{{ row.label }}</span>
+              <span class="missing-task-setting-value">{{ row.value }}</span>
+            </div>
+          </div>
+          <a-popconfirm
+            :title="t('edit.deleteThisTask2')"
+            :ok-text="t('edit.ok')"
+            :cancel-text="t('edit.cancel')"
+            :disabled="interfaceDependentDisabled"
+            @confirm="emit('deleteSelectedTask')"
+          >
+            <a-button
+              danger
+              block
+              class="delete-task-button"
+              :disabled="interfaceDependentDisabled"
+            >
+              <template #icon>
+                <DeleteOutlined />
+              </template>
+              {{ t('edit.deleteThisTask') }}
+            </a-button>
+          </a-popconfirm>
+        </div>
         <div v-else class="task-option-empty">
           <a-empty :description="t('edit.pickTaskLeftConfigure')" />
         </div>
@@ -259,17 +341,17 @@
               <a-button
                 type="primary"
                 class="preset-apply-button"
-                :disabled="template.taskNames.length === 0"
+                :disabled="template.entries.length === 0"
                 @click="emit('applyPresetTemplate', template.preset.name)"
               >
                 {{ t('edit.applyPreset2') }}
               </a-button>
             </div>
             <div class="preset-tasks-preview">
-              <div v-for="taskName in template.taskNames" :key="taskName" class="task-chip">
+              <div v-for="entry in template.entries" :key="entry.id" class="task-chip">
                 <span class="task-dot"></span>
                 <span class="task-chip-name">
-                  {{ getDisplayName(taskByName.get(taskName)!) }}
+                  {{ getDisplayName(entry.task) }}
                 </span>
               </div>
             </div>
@@ -288,6 +370,7 @@ import draggable from 'vuedraggable'
 import {
   ArrowDownOutlined,
   ArrowUpOutlined,
+  CloseOutlined,
   DeleteOutlined,
   HolderOutlined,
   PlusOutlined,
@@ -296,14 +379,13 @@ import {
 import { buildMaaFWAssetUrl } from '@/composables/useMaaFWApi'
 import MaaFWDescriptionView from '../MaaFWDescriptionView.vue'
 import MaaFWTaskOptionEditor from '../MaaFWTaskOptionEditor.vue'
+import MaaFWNewBadge from './MaaFWNewBadge.vue'
+import { describeMaaFWMissingTaskSettings } from '../maafwTaskChanges'
+import type { MaaFWMissingQueuedTask, MaaFWQueueEntry, MaaFWTaskInfo } from '@/types/script'
 import type {
-  MaaFWInterfacePreviewData,
-  MaaFWPresetInfo,
-  MaaFWQueuedTaskItem,
-  MaaFWTaskInfo,
-  MaaFWTaskOptionValue,
-  MaaFWTaskSnapshot,
-} from '@/types/script'
+  MaaFWUserTaskQueueSectionEmits,
+  MaaFWUserTaskQueueSectionProps,
+} from '../../MaaFWFlavor/sectionContracts'
 
 const { t } = useI18n()
 
@@ -312,52 +394,16 @@ type DisplayItem = {
   label?: string | null
 }
 
-type AddTaskCascaderOption = {
-  value: string
-  label: string
-  children?: AddTaskCascaderOption[]
-}
-
 type AddTaskCascaderPathOption = {
-  label?: string | number
+  label?: unknown
+  searchText?: string
   value?: string | number
 }
 
-type PresetTemplate = {
-  preset: MaaFWPresetInfo
-  taskNames: string[]
-}
+// props / 事件的契约在 sectionContracts（特调替换这个分节时按同一份契约接收）
+const props = defineProps<MaaFWUserTaskQueueSectionProps>()
 
-const props = defineProps<{
-  interfaceLoading: boolean
-  previewData: MaaFWInterfacePreviewData | null
-  interfaceDependentDisabled: boolean
-  availableTasks: MaaFWTaskInfo[]
-  orderedTasks: MaaFWQueuedTaskItem[]
-  addTaskCascaderValue: string[]
-  addTaskCascaderOptions: AddTaskCascaderOption[]
-  presetTemplates: PresetTemplate[]
-  showPresetModal: boolean
-  taskByName: Map<string, MaaFWTaskInfo>
-  selectedTask: MaaFWTaskInfo | null
-  selectedTaskId: string
-  taskSnapshot: MaaFWTaskSnapshot
-  effectiveControllerName: string
-  effectiveResourceName: string
-}>()
-
-const emit = defineEmits<{
-  'update:addTaskCascaderValue': [value: string[]]
-  'update:showPresetModal': [value: boolean]
-  addTaskCascaderChange: [value: unknown]
-  applyPresetTemplate: [presetName: string]
-  reorderTasks: [taskIds: string[]]
-  selectTask: [taskId: string]
-  moveTask: [taskId: string, direction: -1 | 1]
-  taskDragEnd: []
-  taskOptionUpdate: [taskId: string, payload: { optionName: string; value: MaaFWTaskOptionValue }]
-  deleteSelectedTask: []
-}>()
+const emit = defineEmits<MaaFWUserTaskQueueSectionEmits>()
 
 const queuedTaskItemsModel = computed({
   get: () => props.orderedTasks,
@@ -371,6 +417,21 @@ const queuedTaskItemsModel = computed({
 const selectedQueuedTask = computed(
   () => props.orderedTasks.find(item => item.id === props.selectedTaskId) || null
 )
+
+const selectedMissingTask = computed<MaaFWMissingQueuedTask | null>(() => {
+  const item = selectedQueuedTask.value
+  return item?.missing ? item : null
+})
+
+// 虚影任务原来的设置：给用户对照着在新任务里重设
+const missingTaskSettings = computed(() => {
+  const item = selectedMissingTask.value
+  if (!item) return []
+  return describeMaaFWMissingTaskSettings(
+    props.taskSnapshot.taskOptions[item.id],
+    props.previewData?.options || []
+  )
+})
 
 const addTaskCascaderValueModel = computed({
   get: () => props.addTaskCascaderValue,
@@ -395,7 +456,8 @@ const resolveMaaFWAssetUrl = (rawPath?: string | null) => {
   return buildMaaFWAssetUrl(props.previewData?.path, rawPath)
 }
 
-const isPretaskItem = (item?: MaaFWQueuedTaskItem | null) => item?.task.entry === 'MXU_PRETASK'
+const isPretaskItem = (item?: MaaFWQueueEntry | null) =>
+  Boolean(item && !item.missing && item.task.entry === 'MXU_PRETASK')
 
 const canMoveTaskByOffset = (index: number, direction: -1 | 1) => {
   const current = props.orderedTasks[index]
@@ -404,7 +466,7 @@ const canMoveTaskByOffset = (index: number, direction: -1 | 1) => {
 }
 
 const canDragTask = (event: {
-  draggedContext: { element: MaaFWQueuedTaskItem; futureIndex: number }
+  draggedContext: { element: MaaFWQueueEntry; futureIndex: number }
 }) => {
   const pretaskCount = props.orderedTasks.filter(item => isPretaskItem(item)).length
   return isPretaskItem(event.draggedContext.element)
@@ -448,7 +510,7 @@ const filterAddTaskOption = (inputValue: string, path: AddTaskCascaderPathOption
   const keyword = inputValue.trim().toLowerCase()
   if (!keyword) return true
   return path.some(option =>
-    String(option.label || '')
+    String(option.searchText ?? option.label ?? '')
       .toLowerCase()
       .includes(keyword)
   )
@@ -755,6 +817,82 @@ const filterAddTaskOption = (inputValue: string, path: AddTaskCascaderPathOption
   color: var(--ant-color-text-tertiary);
 }
 
+/* 搜索时悬停出现的清除图标和后缀在同一个位置：加号和它一样大看不出来，NEW 标签更宽会露半截 */
+:deep(.add-task-cascader:has(.ant-select-clear):hover .ant-select-arrow) {
+  opacity: 0;
+}
+
+/* interface 已没有的任务：置灰、删除线，只留删除 */
+.task-row-missing {
+  background: var(--ant-color-fill-quaternary);
+}
+
+.task-title-missing {
+  color: var(--ant-color-text-tertiary);
+  font-weight: 400;
+  text-decoration: line-through;
+}
+
+.task-row-missing .task-main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.task-missing-tag {
+  flex: none;
+  padding: 0 7px;
+  border: 1px dashed var(--ant-color-border);
+  border-radius: 4px;
+  color: var(--ant-color-text-secondary);
+  font-size: 12px;
+  line-height: 20px;
+  white-space: nowrap;
+}
+
+.task-drag-handle-disabled {
+  flex: 0 0 auto;
+  padding: 4px;
+  color: var(--ant-color-text-quaternary);
+  font-size: 16px;
+  opacity: 0.5;
+  cursor: default;
+}
+
+.missing-task-settings {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 16px;
+  border-radius: 6px;
+  background: var(--ant-color-fill-quaternary);
+}
+
+.missing-task-settings-title {
+  color: var(--ant-color-text-secondary);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.missing-task-setting {
+  display: flex;
+  gap: 16px;
+}
+
+.missing-task-setting-label {
+  flex: none;
+  width: 120px;
+  color: var(--ant-color-text-secondary);
+  overflow-wrap: anywhere;
+}
+
+.missing-task-setting-value {
+  min-width: 0;
+  color: var(--ant-color-text);
+  overflow-wrap: anywhere;
+}
+
 .task-option-panel {
   flex: 1;
   min-height: 0;
@@ -822,7 +960,8 @@ const filterAddTaskOption = (inputValue: string, path: AddTaskCascaderPathOption
   height: 40px;
 }
 
-@media (max-width: 768px) {
+/* 与 :lg 断点对齐：栅格在 992px 以下就折成上下两块，定高要在同一宽度放开，否则两栏叠在 640px 里溢出 */
+@media (max-width: 991px) {
   .column-header {
     flex-direction: column;
     align-items: stretch;

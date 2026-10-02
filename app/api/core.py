@@ -59,6 +59,10 @@ class BackendHealthOut(BaseModel):
     ready: bool = Field(description="核心 API 是否可用")
     backgroundStatus: str = Field(description="后台初始化状态")
     backgroundError: str | None = Field(default=None, description="后台初始化失败原因")
+    backgroundWarnings: list[str] = Field(
+        default_factory=list,
+        description="后台初始化中失败但不影响就绪的可选步骤，每项为「步骤名（异常）」",
+    )
     protocol: int = Field(description="后端自身支持的健康检查协议版本")
     version: str = Field(description="后端版本号")
     commit: str = Field(description="后端所在提交哈希，未受监督或监督器未注入时为空")
@@ -92,6 +96,9 @@ async def get_health(request: Request) -> BackendHealthOut:
         ready=True,
         backgroundStatus=getattr(request.app.state, "background_status", "starting"),
         backgroundError=getattr(request.app.state, "background_error", None),
+        backgroundWarnings=list(
+            getattr(request.app.state, "background_warnings", None) or []
+        ),
         protocol=HEALTH_PROTOCOL_VERSION,
         version=_resolve_injected_identity("AUTO_MAS_EXPECTED_VERSION")
         or Config.VERSION,
@@ -116,6 +123,8 @@ async def get_ws_meta() -> WebSocketMetaOut:
 
 # 主连接建立后触发启动时调度队列
 MainConnection.on_connect(TaskManager.start_startup_queue)
+# 启动期的系统通知（配置迁移结果之类）等主连接建立后再发，否则没人收。
+MainConnection.on_connect(Config.flush_startup_notices)
 
 
 @router.websocket("/ws")

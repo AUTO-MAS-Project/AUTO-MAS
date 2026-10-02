@@ -34,6 +34,7 @@ const ORBIT_ORDER: readonly ScriptType[] = [
   'MaaFW',
   'BetterGI',
   'ZzzOd',
+  'MSS',
 ]
 
 function orbitRank(type: ScriptType): number {

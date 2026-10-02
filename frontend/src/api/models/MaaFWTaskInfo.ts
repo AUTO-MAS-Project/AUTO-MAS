@@ -43,5 +43,9 @@ export type MaaFWTaskInfo = {
      * 是否默认勾选
      */
     defaultCheck?: boolean;
+    /**
+     * 加入任务队列时展开成几份（interface 的 repeatable / repeat_count）
+     */
+    repeatCount?: number;
 };
 

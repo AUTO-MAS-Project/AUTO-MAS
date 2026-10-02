@@ -13,7 +13,9 @@ import { request as __request } from '../core/request';
 export class QqService {
     /**
      * 查询 QQ 官方机器人绑定状态
-     * 返回 QQ 绑定状态，不返回协议凭据。
+     * 返回 QQ 绑定及网关状态，不返回协议凭据。
+     *
+     * connected 表示凭据已绑定；state 表示网关是连接中、已连接还是重连中。
      * @returns OpenClawQQStatusOut Successful Response
      * @throws ApiError
      */
@@ -37,7 +39,11 @@ export class QqService {
     }
     /**
      * 查询 QQ 官方机器人登录状态
-     * 轮询二维码状态；确认后自动保存 QQ 机器人凭据。
+     * 轮询二维码与消息网关状态。
+     *
+     * 扫码确认后先保存凭据，此时可能返回 state=connecting、connected=false；
+     * 网关 READY 后返回 state=connected、connected=true。网关等待超时
+     * 返回 state=error，但绑定凭据仍保留，后台继续重连。
      * @param requestBody
      * @returns OpenClawQQQrCheckOut Successful Response
      * @throws ApiError

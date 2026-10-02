@@ -36,6 +36,7 @@
       :script-id="scriptId"
       :script-name="scriptName"
       :is-edit="isEdit"
+      :user-id="userId"
       @handle-cancel="handleCancel"
     />
 
@@ -67,6 +68,11 @@
               :config-loading="maaEndConfigLoading"
               :import-loading="maaEndImportLoading"
               :show-config-mask="showMaaEndConfigMask"
+              :quick-config="formData.Info.IfQuickConfig"
+              :quick-config-disabled="
+                loading || isSaving || (!presetSupported && !formData.Info.IfQuickConfig)
+              "
+              @quick-config-change="handleQuickConfigChange"
               @configure="handleMaaEndConfig"
               @import-config="handleImportMaaEndConfig"
               @script-config="handleScriptConfig"
@@ -86,15 +92,6 @@
                 <template #icon><CalendarOutlined /></template>
                 {{ t('edit.goPlan') }}
               </a-button>
-              <span>{{ t('edit.enableQuickConfiguration') }}</span>
-              <a-switch
-                :checked="formData.Info.IfQuickConfig"
-                :disabled="
-                  loading || isSaving || (!presetSupported && !formData.Info.IfQuickConfig)
-                "
-                :aria-label="t('edit.enableQuickConfiguration')"
-                @change="handleQuickConfigChange"
-              />
               <a-button size="small" @click="openRestoreModal">
                 <template #icon><HistoryOutlined /></template>
                 {{ t('edit.configRestoreTitle') }}
@@ -139,7 +136,12 @@
             />
           </a-card>
 
-          <a-collapse id="section-limits" class="optional-section" :bordered="false">
+          <a-collapse
+            v-if="formData.Info.IfQuickConfig"
+            id="section-limits"
+            class="optional-section"
+            :bordered="false"
+          >
             <a-collapse-panel key="limits" :header="t('edit.maaEndDailyOnceTasks')">
               <DailyOnceSection
                 :value="formData.Task.DailyOnceTasks"
@@ -297,6 +299,7 @@ let userId = route.params.userId as string
 const isEdit = ref(!!userId)
 const { configLocked } = useScriptConfigLock(() => scriptId)
 const scriptName = ref('')
+const scriptPath = ref('')
 const controllerType = ref<string | null>(null)
 const controllerProtocol = ref<string | null>(null)
 const presetSupported = ref(true)
@@ -317,7 +320,6 @@ const isSanityPlanMode = computed(() => formData.Info.SanityMode !== 'Fixed')
 
 const getAnchorContainer = () => document.querySelector<HTMLElement>('.content-area') ?? window
 
-// 每日执行限制属于调度，独立于快速配置。
 const anchorItems = computed(() => {
   const items = [{ key: 'basic', href: '#section-basic', title: t('edit.basicInfo') }]
   items.push({ key: 'source', href: '#section-source', title: t('edit.configurationSource') })
@@ -325,11 +327,11 @@ const anchorItems = computed(() => {
   if (formData.Info.IfQuickConfig) {
     items.push(
       { key: 'collect', href: '#section-collect', title: t('edit.maaEndAutoCollectConfig') },
-      { key: 'delivery', href: '#section-delivery', title: t('edit.maaEndDeliveryConfig') }
+      { key: 'delivery', href: '#section-delivery', title: t('edit.maaEndDeliveryConfig') },
+      { key: 'limits', href: '#section-limits', title: t('edit.maaEndDailyOnceTasks') }
     )
   }
   items.push(
-    { key: 'limits', href: '#section-limits', title: t('edit.maaEndDailyOnceTasks') },
     { key: 'script', href: '#section-script', title: t('comp.extraScripts') },
     { key: 'notify', href: '#section-notify', title: t('edit.notificationSettings') }
   )
@@ -566,11 +568,13 @@ const loadScriptInfo = async () => {
   const scriptDetail = await getScript(scriptId)
   if (scriptDetail) {
     scriptName.value = scriptDetail.name
+    scriptPath.value = (scriptDetail.config as { Info?: { Path?: string } }).Info?.Path ?? ''
     controllerType.value = (scriptDetail.config as any).Game?.ControllerType ?? null
   }
 }
 
 const loadMaaEndOptions = async () => {
+  if (!scriptPath.value.trim()) return
   maaEndOptionsLoading.value = true
   try {
     const response = await getMaaEndOptions(scriptId)

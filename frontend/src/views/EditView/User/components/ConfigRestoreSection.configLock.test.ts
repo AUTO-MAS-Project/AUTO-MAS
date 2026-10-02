@@ -24,13 +24,13 @@ describe('ConfigRestoreSection runtime lock', () => {
       'BetterGIUserEdit.vue',
       'GeneralUserEdit.vue',
       'HSRUserEdit.vue',
-      'M9AUserEdit.vue',
       'MAAUserEdit.vue',
       'MaaEndUserEdit.vue',
       'MaaFWUserEdit.vue',
       'OkNteUserEdit.vue',
       'OkwwUserEdit.vue',
       'SRCUserEdit.vue',
+      'WhimboxUserEdit.vue',
       'ZzzOdUserEdit.vue',
     ]
     for (const filename of pages) {

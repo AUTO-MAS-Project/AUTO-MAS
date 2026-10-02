@@ -18,6 +18,7 @@ import type { ScriptDetail, ScriptType, User } from '@/types/script'
 import { useAudioPlayer } from '@/composables/useAudioPlayer'
 import { getTaskRuntimeStates } from '@/composables/useTaskRuntimeState'
 import { isScriptConfigLocked } from '@/utils/scriptConfigLock'
+import { maafwScriptTypeByConfigType, maafwUserConfigTypes } from '@/composables/useMaaFWFlavor'
 
 const logger = window.electronAPI.getLogger('脚本API')
 
@@ -46,6 +47,8 @@ const SCRIPT_CREATE_TYPE_BY_SCRIPT_TYPE: Record<ScriptType, ScriptCreateIn.type>
   BetterGI: ScriptCreateIn.type.BETTER_GI,
   ZzzOd: ScriptCreateIn.type.ZZZ_OD,
   BAAH: ScriptCreateIn.type.BAAH,
+  Whimbox: ScriptCreateIn.type.WHIMBOX,
+  MSS: ScriptCreateIn.type.MSS,
   General: ScriptCreateIn.type.GENERAL,
 }
 
@@ -55,12 +58,13 @@ const SCRIPT_TYPE_BY_CONFIG_TYPE: Record<string, ScriptType> = {
   OkwwConfig: 'Okww',
   OkNteConfig: 'OkNte',
   MaaEndConfig: 'MaaEnd',
-  M9AConfig: 'M9A',
-  MaaFWConfig: 'MaaFW',
   HSRConfig: 'HSR',
   BetterGIConfig: 'BetterGI',
   ZzzOdConfig: 'ZzzOd',
   BAAHConfig: 'BAAH',
+  WhimboxConfig: 'Whimbox',
+  // MaaFW 与各特调（M9A / MSS ……）的配置类名由特调注册表提供
+  ...maafwScriptTypeByConfigType(),
 }
 
 const resolveScriptType = (configType: string): ScriptType => {
@@ -711,96 +715,6 @@ export function useScriptApi() {
                             : '未知',
                       },
                     }
-                  } else if (userIndex.type === 'M9AUserConfig' && userData) {
-                    const m9aUserData = userData as unknown as LooseUserConfig
-                    return {
-                      id: userIndex.uid,
-                      name: m9aUserData.Info?.Name || `用户${userIndex.uid}`,
-                      Info: {
-                        Name:
-                          m9aUserData.Info?.Name !== undefined
-                            ? m9aUserData.Info.Name
-                            : `用户${userIndex.uid}`,
-                        Status:
-                          m9aUserData.Info?.Status !== undefined ? m9aUserData.Info.Status : true,
-                        RemainedDay:
-                          m9aUserData.Info?.RemainedDay !== undefined
-                            ? m9aUserData.Info.RemainedDay
-                            : -1,
-                        Notes: m9aUserData.Info?.Notes !== undefined ? m9aUserData.Info.Notes : '',
-                        Tag: m9aUserData.Info?.Tag !== undefined ? m9aUserData.Info.Tag : null,
-                        Resource:
-                          m9aUserData.Info?.Resource !== undefined
-                            ? m9aUserData.Info.Resource
-                            : '官服',
-                        Account:
-                          m9aUserData.Info?.Account !== undefined ? m9aUserData.Info.Account : '',
-                        EmulatorId:
-                          m9aUserData.Info?.EmulatorId !== undefined
-                            ? m9aUserData.Info.EmulatorId
-                            : '',
-                        EmulatorIndex:
-                          m9aUserData.Info?.EmulatorIndex !== undefined
-                            ? m9aUserData.Info.EmulatorIndex
-                            : 0,
-                      },
-                      Task: {
-                        AvailableTasks:
-                          m9aUserData.Task?.AvailableTasks !== undefined
-                            ? m9aUserData.Task.AvailableTasks
-                            : '[]',
-                        Queue:
-                          m9aUserData.Task?.Queue !== undefined ? m9aUserData.Task.Queue : '[]',
-                      },
-                      Notify: {
-                        Enabled:
-                          m9aUserData.Notify?.Enabled !== undefined
-                            ? m9aUserData.Notify.Enabled
-                            : false,
-                        IfSendStatistic:
-                          m9aUserData.Notify?.IfSendStatistic !== undefined
-                            ? m9aUserData.Notify.IfSendStatistic
-                            : false,
-                        IfSendMail:
-                          m9aUserData.Notify?.IfSendMail !== undefined
-                            ? m9aUserData.Notify.IfSendMail
-                            : false,
-                        ToAddress:
-                          m9aUserData.Notify?.ToAddress !== undefined
-                            ? m9aUserData.Notify.ToAddress
-                            : '',
-                        IfServerChan:
-                          m9aUserData.Notify?.IfServerChan !== undefined
-                            ? m9aUserData.Notify.IfServerChan
-                            : false,
-                        ServerChanKey:
-                          m9aUserData.Notify?.ServerChanKey !== undefined
-                            ? m9aUserData.Notify.ServerChanKey
-                            : '',
-                      },
-                      Data: {
-                        LastProxyDate:
-                          m9aUserData.Data?.LastProxyDate !== undefined
-                            ? m9aUserData.Data.LastProxyDate
-                            : '2000-01-01',
-                        LastPsychubeDate:
-                          m9aUserData.Data?.LastPsychubeDate !== undefined
-                            ? m9aUserData.Data.LastPsychubeDate
-                            : '',
-                        LastLimboMonth:
-                          m9aUserData.Data?.LastLimboMonth !== undefined
-                            ? m9aUserData.Data.LastLimboMonth
-                            : '',
-                        LastLucidscapeMonth:
-                          m9aUserData.Data?.LastLucidscapeMonth !== undefined
-                            ? m9aUserData.Data.LastLucidscapeMonth
-                            : '',
-                        ProxyTimes:
-                          m9aUserData.Data?.ProxyTimes !== undefined
-                            ? m9aUserData.Data.ProxyTimes
-                            : 0,
-                      },
-                    }
                   } else if (
                     (userIndex.type === 'OkwwUserConfig' || userIndex.type === 'OkNteUserConfig') &&
                     userData
@@ -910,7 +824,8 @@ export function useScriptApi() {
                             : '未知',
                       },
                     }
-                  } else if (userIndex.type === 'MaaFWUserConfig' && userData) {
+                  } else if (maafwUserConfigTypes().has(userIndex.type) && userData) {
+                    // 特调（M9A / MSS ……）的用户类是 MaaFWUserConfig 的子类，归一化走同一条路
                     const maafwUserData = userData as unknown as LooseUserConfig
                     return {
                       id: userIndex.uid,
@@ -1127,6 +1042,106 @@ export function useScriptApi() {
                         LastProxyStatus:
                           bettergiUserData.Data?.LastProxyStatus !== undefined
                             ? bettergiUserData.Data.LastProxyStatus
+                            : '未知',
+                      },
+                    }
+                  } else if (userIndex.type === 'WhimboxUserConfig' && userData) {
+                    const whimboxUserData = userData as unknown as LooseUserConfig
+                    return {
+                      id: userIndex.uid,
+                      name: whimboxUserData.Info?.Name || `用户${userIndex.uid}`,
+                      Info: {
+                        Name:
+                          whimboxUserData.Info?.Name !== undefined
+                            ? whimboxUserData.Info.Name
+                            : `用户${userIndex.uid}`,
+                        Status:
+                          whimboxUserData.Info?.Status !== undefined
+                            ? whimboxUserData.Info.Status
+                            : true,
+                        Mode:
+                          whimboxUserData.Info?.Mode !== undefined
+                            ? whimboxUserData.Info.Mode
+                            : '脚本',
+                        RemainedDay:
+                          whimboxUserData.Info?.RemainedDay !== undefined
+                            ? whimboxUserData.Info.RemainedDay
+                            : -1,
+                        IfScriptBeforeTask:
+                          whimboxUserData.Info?.IfScriptBeforeTask !== undefined
+                            ? whimboxUserData.Info.IfScriptBeforeTask
+                            : false,
+                        ScriptBeforeTask:
+                          whimboxUserData.Info?.ScriptBeforeTask !== undefined
+                            ? whimboxUserData.Info.ScriptBeforeTask
+                            : '',
+                        IfScriptAfterTask:
+                          whimboxUserData.Info?.IfScriptAfterTask !== undefined
+                            ? whimboxUserData.Info.IfScriptAfterTask
+                            : false,
+                        ScriptAfterTask:
+                          whimboxUserData.Info?.ScriptAfterTask !== undefined
+                            ? whimboxUserData.Info.ScriptAfterTask
+                            : '',
+                        Notes:
+                          whimboxUserData.Info?.Notes !== undefined
+                            ? whimboxUserData.Info.Notes
+                            : '',
+                        Tag:
+                          whimboxUserData.Info?.Tag !== undefined ? whimboxUserData.Info.Tag : null,
+                      },
+                      Task: {
+                        Tasks:
+                          whimboxUserData.Task?.Tasks !== undefined
+                            ? whimboxUserData.Task.Tasks
+                            : '{ }',
+                        Options:
+                          whimboxUserData.Task?.Options !== undefined
+                            ? whimboxUserData.Task.Options
+                            : '{ }',
+                      },
+                      Notify: {
+                        Enabled:
+                          whimboxUserData.Notify?.Enabled !== undefined
+                            ? whimboxUserData.Notify.Enabled
+                            : false,
+                        IfSendStatistic:
+                          whimboxUserData.Notify?.IfSendStatistic !== undefined
+                            ? whimboxUserData.Notify.IfSendStatistic
+                            : false,
+                        IfSendMail:
+                          whimboxUserData.Notify?.IfSendMail !== undefined
+                            ? whimboxUserData.Notify.IfSendMail
+                            : false,
+                        ToAddress:
+                          whimboxUserData.Notify?.ToAddress !== undefined
+                            ? whimboxUserData.Notify.ToAddress
+                            : '',
+                        IfServerChan:
+                          whimboxUserData.Notify?.IfServerChan !== undefined
+                            ? whimboxUserData.Notify.IfServerChan
+                            : false,
+                        ServerChanKey:
+                          whimboxUserData.Notify?.ServerChanKey !== undefined
+                            ? whimboxUserData.Notify.ServerChanKey
+                            : '',
+                        CustomWebhooks:
+                          whimboxUserData.Notify?.CustomWebhooks !== undefined
+                            ? whimboxUserData.Notify.CustomWebhooks
+                            : [],
+                      },
+                      Data: {
+                        LastProxyDate:
+                          whimboxUserData.Data?.LastProxyDate !== undefined
+                            ? whimboxUserData.Data.LastProxyDate
+                            : '2000-01-01',
+                        ProxyTimes:
+                          whimboxUserData.Data?.ProxyTimes !== undefined
+                            ? whimboxUserData.Data.ProxyTimes
+                            : 0,
+                        LastProxyStatus:
+                          whimboxUserData.Data?.LastProxyStatus !== undefined
+                            ? whimboxUserData.Data.LastProxyStatus
                             : '未知',
                       },
                     }
@@ -1424,9 +1439,13 @@ export function useScriptApi() {
   }
 
   // 预览 MaaFW 项目 interface：返回后端原始响应，让编辑页把 code=400 的 message 原样呈现
-  const previewMaaFWInterface = async (path: string): Promise<MaaFWInterfacePreviewOut | null> => {
+  const previewMaaFWInterface = async (
+    path: string,
+    scriptId?: string
+  ): Promise<MaaFWInterfacePreviewOut | null> => {
     try {
-      return await MaaFwService.previewMaafwInterfaceApiScriptsMaafwPreviewPost({ path })
+      // 带 scriptId 时后端按脚本解析有效根（内嵌副本优先），path 只是兜底。
+      return await MaaFwService.previewMaafwInterfaceApiScriptsMaafwPreviewPost({ path, scriptId })
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : String(err)
       logger.error(`预览 MaaFW interface 失败: ${errorMsg}`)

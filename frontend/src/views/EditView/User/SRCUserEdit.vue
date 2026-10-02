@@ -46,6 +46,7 @@
       :show-src-config-mask="showSrcConfigMask"
       :loading="loading"
       :config-locked="configLocked"
+      :user-id="userId"
       @handle-s-r-c-config="startConfigSession(false)"
       @handle-cancel="handleCancel"
     />
@@ -64,8 +65,11 @@
             v-model:form-data="formData"
             :loading="loading"
             :server-options="serverOptions"
+            :quick-config="formData.Info.IfQuickConfig"
+            :quick-config-disabled="loading || isInitializing || isSaving"
             @save="handleFieldSave"
             @mode-change="handleConfigModeChange"
+            @quick-config-change="handleQuickConfigChange"
           />
 
           <!-- 关卡配置组件 -->
@@ -78,13 +82,6 @@
           >
             <h3>{{ t('edit.stageConfiguration') }}</h3>
             <a-space>
-              <span>{{ t('edit.enableQuickConfiguration') }}</span>
-              <a-switch
-                :checked="formData.Info.IfQuickConfig"
-                :disabled="loading || isInitializing || isSaving"
-                :aria-label="t('edit.enableQuickConfiguration')"
-                @change="handleQuickConfigChange"
-              />
               <a-button size="small" @click="restoreOpen = true">
                 <template #icon>
                   <HistoryOutlined />

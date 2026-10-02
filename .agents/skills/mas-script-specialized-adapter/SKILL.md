@@ -2,13 +2,14 @@
 name: mas-script-specialized-adapter
 description: >-
   Review, add, or refactor AUTO-MAS specialized script adapters by upstream
-  architecture, including MAA, SRC, MaaEnd/MXU, M9A/MFAA, General, ok-script
+  architecture, including MAA, SRC, MaaEnd/MXU, General, ok-script
   adapters such as Okww and OkNte, multi-engine adapters such as HSR, and the
-  one-dragon line such as BetterGI. Use when lowering user setup friction,
-  judging whether a change stays inside the black-box boundary (barrier first,
-  then capability ownership), or changing ScriptType registration, task
-  lifecycle, config ownership, ScriptConfig sessions, Electron integration,
-  frontend edit surfaces, and verification.
+  one-dragon line such as BetterGI, as well as per-adapter issue-bundle
+  exports. Use when lowering user setup friction, judging whether a change
+  stays inside the black-box boundary (barrier first, then capability
+  ownership), or changing ScriptType registration, task lifecycle, config
+  ownership, ScriptConfig sessions, Electron integration, frontend edit
+  surfaces, and verification.
 ---
 
 # 专项适配
@@ -24,7 +25,7 @@ description: >-
 
 **推进顺序固定：先降门槛，再补缺位。** 立项前必须答出该改动消除了用户当前哪一步手工操作；答不出、或只是把上游配置面板搬进来，一律先重新确认范围。判定细则见 [黑箱边界·推进顺序](references/blackbox-boundary.md)。
 
-### 黑箱红线（必须提示）
+### 黑箱边界参考
 
 上游脚本视为黑箱。先判**能力归属**，再决定能否实现：
 
@@ -34,7 +35,7 @@ description: >-
 
 判定问题：这件事是不是脚本该干的活？操作对象是游戏本体还是上游程序/模拟器？写读的是上游字段还是适配层新造模型？上游执行的任务成败是否取自上游结果面？判据、能力归属表、时效与例外见 [黑箱边界](references/blackbox-boundary.md)。
 
-**加载本 Skill 后必须先自检**：命中时输出结论「这可能违背了 MAS 的开发规范」、命中条目、`file:line` 证据与替代方案；提示不阻断工作。
+**方案分析时参考黑箱边界**：按需核对能力归属、上游入口和私有格式依赖；相关事实、风险或替代方案可作为参考意见提供给用户，不要求在开工阶段输出固定结论。
 
 代码落点（决定代码放哪、谁是事实来源）：
 
@@ -47,19 +48,20 @@ description: >-
 
 ## 开工顺序
 
-0. 列出用户当前的手工步骤与脚本明确缺失的能力，标注 owner；先按[黑箱红线](references/blackbox-boundary.md)判定能力归属（上游领域 / MAS 领域 / 上游私有格式），命中时输出规范提示与替代方案——提示不阻断开工。
+0. 列出用户当前的手工步骤与脚本明确缺失的能力，标注 owner；参考[黑箱边界](references/blackbox-boundary.md)分析能力归属（上游领域 / MAS 领域 / 上游私有格式），必要时将事实依据、风险与替代方案作为参考意见提供给用户。
 1. 读上游仓库/发行版：CLI、`--help`、进程、日志、配置目录、配置 UI。
 2. 按 [架构线判据](references/script-frontend-architectures.md) 归类，**让用户确认架构线**后再动手。
 3. 读 [代码规范](references/adapter-code-norms.md)（必遵守）+ 对应案例：
    [SRC](references/examples-src.md) ·
    [MaaEnd/MXU](references/examples-maaend.md) ·
-   [M9A/MFAA](references/examples-m9a.md) ·
+   [M9A（MaaFW 特调，不是专项）](references/examples-m9a.md) ·
    [Okww](references/examples-okww.md) ·
    [OkNte](references/examples-oknte.md) ·
    [HSR](references/examples-hsr.md) ·
    [ZzzOd](references/examples-zzzod.md) ·
    [BAAH](references/examples-baah.md) ·
-   [BetterGI](references/examples-bettergi.md)
+   [BetterGI](references/examples-bettergi.md) ·
+   [Whimbox](references/examples-whimbox.md)
    需要画面文本识别（登录/切号/按钮定位）时另读 [OCR 工具](references/ocr-tools.md)
 4. 现场反查全部注册调用者与相邻实现，再定最小改动。**不要从旧 Skill 文案推断当前行为。**
 5. 用用户场景验收：少了哪段手工配置？补位有无明确输入、失败提示、回退路径？
@@ -79,6 +81,7 @@ description: >-
 - 视觉识别：专项需要画面文本识别时，**新逻辑用共享工具 `app/tools/ocr.py`**（用法见 [ocr-tools.md](references/ocr-tools.md)），交互层（截图/激活/点击）专项自持；MaaEnd 登录仍为历史私有 OCR，未迁移前不强制改造
 - 配置备份恢复：**新专项一律主动接入**（存量专项改到配置读写时同步补齐）——配置的跨会话持久快照与一键恢复是 MAS 领域标配，不要等「配置被覆盖丢失」才补，仅确无任何配置文件落盘的专项可豁免。**文件级原语用 `app/utils/config_archive.py`**（用法见 [config-archive.md](references/config-archive.md)），专项只提供备份对象（目录/文件集）与恢复后语义钩子；**恢复功能用通用服务 `app/utils/config_restore.py` + 通用端点 `/backup/*` + 前端组件 `ConfigRestoreSection.vue`**（用法见 [config-restore.md](references/config-restore.md)），专项在 `tools/restore_service.py` 声明目标池表（普通函数显式收 `RestoreContext`），core 分发链加一个分支即接入、不改 HTTP 层与 schema，会话遮罩用 `GuiSessionMask.vue`；不要给公共原语或通用组件加专项分支。**归档三时机**（`ConfigRestorePool.snapshot` + `service.ensure`）：① 编辑界面进入时归档 MAS 会触碰的原生配置（捕捉「MAS 操作前原始态」——配置在 MAS 之外就可能已被修改）；② 编辑界面退出时归档 MAS 侧配置终态（MAS 侧修改一定发生在 MAS 内，退出即备份）；③ 运行前归档（原生配置可能在 MAS 之外被改）。所有归档走指纹去重（内容无变化自动跳过），覆盖性操作（导入/恢复）前另做强制归档。
 - 前端入口：`Scripts.vue`、`ScriptTable.vue`、router、`types/script.ts`、相关 composable、脚本/用户编辑页
+- 问题包导出：新增或改动专项的问题包服务（`frontend/electron/services` 的 `*IssueReportService`）时读 [issue-report.md](references/issue-report.md)——「每安装各自收集」「debug 子目录登记」是硬约束
 - Electron 能力：仅当需要注册表、文件系统或进程发现时增加 `electron/services`、IPC、preload 与类型声明
 - 生成代码：后端 schema 变更后运行生成器，禁止手改 `frontend/src/api/**`
 
@@ -90,12 +93,12 @@ description: >-
 4. 配置会话的启动、WebSocket 状态、停止、超时、卸载、异常六条路径：确保任务结束、进程退出、锁释放、配置写回。
 5. `final_task` / `on_crash` 的原子配置恢复、用户状态落盘、独立进程清理。
 6. 按 `tests/AGENTS.md` 本地编写并运行最小专项测试验证改动；测试文件的提交规则见根目录 `AGENTS.md`「分支与 PR」；**测试缺口写进结果，不编造验证结果**。
-7. 反查产品边界：没把「脚本该干的活」拿到 MAS 实现，没把 MAS 补位伪装成脚本原生字段，没在上游私有格式上建 MAS 语义层，没为"字段齐全"加无价值入口；MAS 领域实现不读取、不反推上游内部状态。命中[黑箱红线](references/blackbox-boundary.md)时按其提示要求输出结论与 `file:line` 证据；提示不阻断。
+7. 反查产品边界：没把「脚本该干的活」拿到 MAS 实现，没把 MAS 补位伪装成脚本原生字段，没在上游私有格式上建 MAS 语义层，没为"字段齐全"加无价值入口；MAS 领域实现不读取、不反推上游内部状态。发现相关风险时，可在分析或结果中提供具体事实与替代建议。
 8. 含 `log_box` 采集的专项，反查「采集→报告」闭环：确认采集结果已进入最终报告正文且保留各用户节点归属（多账号时按用户交错），并核对用户级开关关闭的用户确实无节点；只采集不注入 → 报告无节点（ok-nte 曾漏）。注入端点现场反查，不照抄固定路径。
 
 ## 配置来源与快速配置
 
-所有专项统一提供三态配置来源：脚本 / 用户 / 直控。三态只决定配置 owner；各专项的物理落盘、会话和运行方式仍按真实架构确认，不机械复制目录或配置模型。**MaaFW 不是专项**（通用引擎，任何 `interface.json` 项目都由它运行），三态对它没有所指，见 `app/task/MaaFW/AGENTS.md`。
+所有专项统一提供三态配置来源：脚本 / 用户 / 直控（例外见下表：MaaFW 仅用户）。三态只决定配置 owner；各专项的物理落盘、会话和运行方式仍按真实架构确认，不机械复制目录或配置模型。**MaaFW 不是专项**（通用引擎，任何 `interface.json` 项目都由它运行），三态对它没有所指，见 `app/task/MaaFW/AGENTS.md`。
 
 | 专项 | 模式 |
 | --- | --- |
@@ -104,17 +107,20 @@ description: >-
 | General | 脚本 / 用户 / 直控 三态 |
 | MaaEnd | 脚本 / 用户 / 直控 三态 |
 | MaaFW | 仅用户；`Info.IfQuickConfig` 开关有效，`Info.Mode` 三态无代码消费，不要按三态写逻辑 |
-| M9A | 脚本 / 用户 / 直控 三态 |
+| M9A | 不是专项：MaaFW 的特调类型，与 MaaFW 同（见 `app/task/M9A/AGENTS.md`） |
 | Okww | 脚本 / 用户 / 直控 三态 |
 | OkNte | 脚本 / 用户 / 直控 三态 |
 | HSR | 脚本 / 用户 / 直控 三态（脚本态 = `HSRConfig` 同名组共享计划；**不支持快速配置**，见下） |
 | BetterGI | 脚本 / 用户 / 直控 三态 |
 | ZzzOd | 脚本 / 用户 / 直控 三态（物理布局见 examples-zzzod） |
 | BAAH | 脚本 / 用户 / 直控 三态 |
+| Whimbox | 脚本 / 用户 / 直控 三态（脚本/用户=共享/独立 base，当前运行行为一致，**保留三态为后续特殊功能预留**，#879 语义，见 examples-whimbox） |
 
 **三态只决定配置 owner**：**脚本**=脚本级共享配置；**用户**=当前用户独立配置；**直控**=直接使用外侧脚本原生配置，由原生 GUI 或上游入口维护。
 
 **快速配置是独立于来源的用户级布尔开关与配置面板**，三种来源均可启用：开启时 MAS 尝试用该用户快速配置覆盖原生便捷配置；关闭时不覆盖来源配置。例外：**HSR 不支持快速配置**——SRA/M7A 原生配置由脚本 GUI 维护，MAS 托管字段写入耦合托管运行器，不存在可独立下发的快速配置子集，开关不渲染（方案 B 声明见 [examples-hsr](references/examples-hsr.md) 与 native_control.py）；**ZzzOd 快速配置已封锁**（2026-09 维护者决策：唯一消费点「直控覆盖写槽」与直控=MAS 零写入相悖，曾把切直控时清空的 AppList 写进运行槽导致全部任务跳过——开关 UI 不渲染，后端 load/update 把直控存量值归一为关，消费点已删除，直控恒为纯原生裸跑）。
+
+Whimbox 三态齐全（2026-09 维护者决策：上游不按账号分档配置、MAS 也无法指定运行账号，「脚本/用户」下发时落到同一份 `config.json`、当前运行行为一致，仍**保留三态为后续特殊功能预留**——不要据此给其中一态单独加配置面）。快速配置（覆写层）保留并绑定基座开关（`Info.IfQuickConfig`，默认关）：当前唯一运行时消费点是**原生态（直控）任务前物化面板覆盖集、任务结束还原（overlay，满足「写入任务结束能不能还原」判据）**；共享/独立态面板本就是 base 来源，开关暂无额外消费点；没有独立快速面板——面板覆盖的本来就是上游一条龙参数全集，无可划的高频子集。
 
 - **直控 + 关闭**：完全使用外侧原生配置，MAS 仅保留必要的模拟器、启动参数或命令行注入，以及运行时必需的启动器默认值补齐（缺省才补、无事零写入，如 Okww 的 `app.json` 的 `auto_start`/`update_method`）。
 - **直控 + 开启**：任务前把面板值写入原生配置，任务结束沿用现有快照机制恢复任务前原生配置。

@@ -147,28 +147,31 @@ export function useMaaFWApi() {
   /**
    * 读取 MaaFW 项目 interface，返回归一化后的预览数据。
    *
-   * 回收版调用的是 `/api/maafw/interface/preview-script`（按 scriptId），当前分支
-   * 复用 `app/api/scripts.py` 的 `POST /api/scripts/maafw/preview`（按 path），
-   * 因此调用方需自行传入脚本的项目根目录。
+   * 带上 `scriptId` 时后端按脚本解析有效根：内嵌脚本读的是 AUTO-MAS 自己的副本，
+   * 而不是 `path` 指向的来源目录；`path` 只在没有脚本 ID 时兜底。
    */
-  const previewInterface = async (path: string): Promise<MaaFWInterfacePreviewData | null> => {
+  const previewInterface = async (
+    path: string,
+    scriptId?: string
+  ): Promise<MaaFWInterfacePreviewData | null> => {
     loading.value = true
     error.value = null
 
     try {
       const response = await MaaFwService.previewMaafwInterfaceApiScriptsMaafwPreviewPost({
         path,
+        scriptId,
       })
 
       if (response.code !== 200 || !response.data) {
-        throw new Error(response.message || '读取 MFW interface 失败')
+        throw new Error(response.message || '读取项目 interface 失败')
       }
 
       return normalizePreviewData(response.data as MaaFWInterfacePreviewData)
     } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : '读取 MFW interface 失败'
+      const errorMsg = err instanceof Error ? err.message : '读取项目 interface 失败'
       error.value = errorMsg
-      logger.error(`读取 MFW interface 失败: ${errorMsg}`)
+      logger.error(`读取项目 interface 失败: ${errorMsg}`)
       if (err instanceof Error && !err.message.includes('HTTP error')) {
         message.error(errorMsg)
       }

@@ -163,7 +163,7 @@ _OVERLAY_FIELD_LABELS: dict[tuple[str, str], str] = {
     ("Notify", "IfServerChan"): "Server 酱",
     ("Notify", "ServerChanKey"): "Server 酱密钥",
     ("Control", "SRA"): "SRA 引擎开关",
-    ("Control", "M7A"): "M7A 引擎开关",
+    ("Control", "M7A"): "三月七引擎开关",
     ("Managed", "TaskMapping"): "任务映射",
     ("Managed", "Options"): "托管覆盖",
 }
@@ -763,7 +763,7 @@ def build_native_preview(
     m7a_payload = _load_yaml_dict(backup_dir / "M7A" / "config.yaml")
     m7a_rows = _m7a_preview_rows(m7a_payload) if m7a_payload else []
     if m7a_rows:
-        sections.append({"name": "m7a", "label": "M7A（三月七）", "rows": m7a_rows})
+        sections.append({"name": "m7a", "label": "三月七", "rows": m7a_rows})
 
     for rel in sorted(files):
         if not rel.startswith(f"{_SRA_CONFIGS_DIR}/") or not rel.endswith(".json"):

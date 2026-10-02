@@ -41,8 +41,9 @@ from app.models.config import BAAHConfig, BAAHUserConfig
 from app.models.ConfigBase import MultipleConfig
 from app.models.emulator import DeviceBase
 from app.models.schema import WSTaskNoticeData
-from app.models.task import LogRecord, ScriptItem, TaskExecuteBase
+from app.models.task import LogRecord, ScriptItem
 from app.services import Notify, System
+from app.task.base import ScriptAutoProxyBase
 from app.task.proxy_helpers import append_push_log
 from app.tools.bluearchive_activity import BlueArchiveLineType, has_running_activity
 from app.utils import LogMonitor, ProcessManager, compile_log_signs, get_logger
@@ -94,7 +95,7 @@ _PROCESS_EXIT_WAIT_SECONDS = 10
 _PROCESS_GRACE_SECONDS = 60
 
 
-class AutoProxyTask(TaskExecuteBase):
+class AutoProxyTask(ScriptAutoProxyBase):
     """自动代理模式"""
 
     def __init__(

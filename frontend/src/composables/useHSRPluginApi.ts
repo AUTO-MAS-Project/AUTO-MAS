@@ -44,6 +44,25 @@ interface HSRManagedFieldOption {
   label: string
 }
 
+/**
+ * 字段分组：`common` 在模块弹窗里平铺，其余各成一个默认收起的折叠面板。
+ * 分组显示名由前端词表 `edit.hsrFieldGroup.<group>` 提供，后端只给 key。
+ */
+export type HSRManagedFieldGroup =
+  | 'common'
+  | 'team'
+  | 'support'
+  | 'activity'
+  | 'replenish'
+  | 'reroll'
+  | 'misc'
+
+/** 只有同模块同引擎里字段 `key` 的当前值在 `values` 中时才显示该字段。 */
+export interface HSRManagedFieldVisibleWhen {
+  key: string
+  values: unknown[]
+}
+
 export interface HSRManagedField {
   key: string
   label: string
@@ -54,6 +73,14 @@ export interface HSRManagedField {
   minimum?: number | null
   maximum?: number | null
   readonly?: boolean
+  // 以下四项是后续新增的契约字段，全部可选：后端没给时按 common / 未覆盖 / 无原值 / 恒显示处理
+  /** 分组；缺省视为 `common`。后端新增的未知分组照样成一个折叠面板。 */
+  group?: HSRManagedFieldGroup | string | null
+  /** 当前计划对该键有生效中的覆盖值。 */
+  overridden?: boolean | null
+  /** 引擎原生配置里的值；单项恢复后前端直接显示它，不必重拉。 */
+  native_value?: unknown
+  visible_when?: HSRManagedFieldVisibleWhen | null
 }
 
 export type HSRDroppedOverrideReason = 'unknown' | 'type'
@@ -66,7 +93,7 @@ export interface HSRDroppedOverride {
   message: string
 }
 
-interface HSRManagedEngineForm {
+export interface HSRManagedEngineForm {
   key?: string
   engine: HSREngine
   fields: HSRManagedField[]

@@ -17,6 +17,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
+from ...task_mapping import ENGINE_DISPLAY_NAMES
+
 HSREngine = Literal["M7A", "SRA"]
 
 # 下载源标识。与 ``HSRConfig`` 的 ``Update.M7ASource`` / ``Update.SRASource``
@@ -67,7 +69,7 @@ class EngineSpec:
 
 M7A = EngineSpec(
     engine="M7A",
-    display_name="三月七",
+    display_name=ENGINE_DISPLAY_NAMES["M7A"],
     mirrorchyan_rid="March7thAssistant",
     github_repo="moesnow/March7thAssistant",
     executable="March7th Assistant.exe",
@@ -81,7 +83,7 @@ M7A = EngineSpec(
 
 SRA = EngineSpec(
     engine="SRA",
-    display_name="StarRailAssistant",
+    display_name=ENGINE_DISPLAY_NAMES["SRA"],
     mirrorchyan_rid="StarRailAssistant",
     github_repo="Shasnow/StarRailAssistant",
     executable="SRA-cli.exe",

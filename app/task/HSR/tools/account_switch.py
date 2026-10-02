@@ -28,6 +28,7 @@ from typing import Any, Callable, Literal
 from app.services.system import System
 from app.utils import ProcessInfo, get_logger, is_process_running
 
+from ..task_mapping import engine_label
 from .cloud_browser import (
     DEFAULT_DEBUG_PORT,
     MAS_PROFILE_DIRNAME,
@@ -458,8 +459,8 @@ async def stop_external_processes(
         try:
             stopped = await runtime.m7a_runner.terminate() or stopped
         except Exception as e:  # noqa: BLE001
-            logger.warning(f"终止 M7A 当前子进程失败：{e}")
-            append_log(f"终止 M7A 当前子进程失败：{e}")
+            logger.warning(f"终止三月七当前子进程失败：{e}")
+            append_log(f"终止三月七当前子进程失败：{e}")
 
     try:
         stopped = (
@@ -478,8 +479,8 @@ async def stop_external_processes(
                 await System.kill_process(m7a_exe_path)
                 path_checked = True
             except Exception as e:  # noqa: BLE001
-                logger.warning(f"按路径清理 M7A 进程失败：{m7a_exe_path} - {e}")
-                append_log(f"按路径清理 M7A 进程失败：{e}")
+                logger.warning(f"按路径清理三月七进程失败：{m7a_exe_path} - {e}")
+                append_log(f"按路径清理三月七进程失败：{e}")
 
         sra_path = _script_path(script_config, "SRA")
         if sra_path:
@@ -492,9 +493,9 @@ async def stop_external_processes(
                 append_log(f"按路径清理 SRA 进程失败：{e}")
 
     if stopped:
-        append_log("已向 SRA/M7A 外部进程发送停止信号")
+        append_log("已向 SRA / 三月七外部进程发送停止信号")
     if path_checked:
-        append_log("已按路径清理 SRA/M7A 外部进程")
+        append_log("已按路径清理 SRA / 三月七外部进程")
 
 
 async def close_game_if_needed(
@@ -658,7 +659,7 @@ class HSRAccountSwitcher:
         if previous is not None and previous != script:
             if is_game_management_enabled(self.script_config):
                 self._append_log(
-                    f"外部脚本从 {previous} 切换到 {script}，"
+                    f"外部脚本从{engine_label(previous)}切换到{engine_label(script, right=False)}，"
                     f"等待 {HSR_SCRIPT_SWITCH_DELAY_SECONDS}s 后重启游戏"
                 )
                 await asyncio.sleep(HSR_SCRIPT_SWITCH_DELAY_SECONDS)
@@ -667,7 +668,7 @@ class HSRAccountSwitcher:
                 await self._restart_game_after_script_switch(user_name)
             else:
                 self._append_log(
-                    f"外部脚本从 {previous} 切换到 {script}，"
+                    f"外部脚本从{engine_label(previous)}切换到{engine_label(script, right=False)}，"
                     "MAS 未管理游戏，跳过游戏重启"
                 )
         if track_last_script:
@@ -981,7 +982,7 @@ class HSRAccountSwitcher:
         if not is_game_management_enabled(self.script_config):
             return
         if wait_time <= 0:
-            self._append_log("游戏启动等待时间为 0s，继续执行 M7A/SRA 任务")
+            self._append_log("游戏启动等待时间为 0s，继续执行三月七 / SRA 任务")
             return
 
         self._append_log(
@@ -997,4 +998,6 @@ class HSRAccountSwitcher:
                 await self._wait_after_game_process_detected(process_name)
                 return
 
-        self._append_log(f"已达到最大启动等待时间 {wait_time}s，继续执行 M7A/SRA 任务")
+        self._append_log(
+            f"已达到最大启动等待时间 {wait_time}s，继续执行三月七 / SRA 任务"
+        )

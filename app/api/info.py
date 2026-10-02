@@ -28,6 +28,7 @@ from fastapi import APIRouter, Body
 
 from app.core import Config
 from app.models.schema import *
+from app.tools.stella_official import fetch_official_activities
 from app.utils import get_logger
 
 router = APIRouter(prefix="/api/info", tags=["信息获取"])
@@ -382,3 +383,44 @@ async def get_bluearchive_activity(
     _prune_bluearchive_cache(time.time())
     _bluearchive_cache[cache_key] = (time.time(), data)
     return InfoOut(data=data)
+
+
+@router.post(
+    "/stella/activity",
+    tags=["Get"],
+    summary="获取星塔旅人活动数据（官网公告）",
+    response_model=InfoOut,
+    status_code=200,
+)
+async def get_stella_activity() -> InfoOut:
+    """取回星塔旅人的活动一览。
+
+    数据取自国服官网的活动公告：官网 CMS 不放开跨域、也认 Referer，所以由后端
+    取回并按公告正文里的开放时间整理成与其它游戏一致的形状。取数失败返回错误
+    信封，由卡片显示自己的失败态，不影响其它卡片。
+
+    Returns:
+        InfoOut: ``{"activities": [...]}``；取不到时返回 ``code=500`` 的错误信封。
+    """
+
+    try:
+        data = await fetch_official_activities()
+        if data is None:
+            return InfoOut(
+                code=500,
+                status="error",
+                message="星塔旅人活动数据暂不可用",
+                data={},
+            )
+
+        return InfoOut(data=data)
+    except Exception as e:
+        logger.opt(exception=True).warning(
+            f"get_stella_activity失败: {type(e).__name__}: {e}"
+        )
+        return InfoOut(
+            code=500,
+            status="error",
+            message="星塔旅人活动数据暂不可用",
+            data={},
+        )

@@ -59,13 +59,13 @@ jobs:
       # 检出分支顶端而不是触发这次运行的提交：排队的运行如果检出旧 SHA，会把上一次已经
       # 入账并删除的碎片再编译一遍，再往分支上推必然冲突。
       - name: 检出分支
-        uses: actions/checkout@v7.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.ref_name }}
           fetch-depth: 0
 
       - name: 设置 Python 环境
-        uses: actions/setup-python@v7.0.0
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: '3.12'
 
