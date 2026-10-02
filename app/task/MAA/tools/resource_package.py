@@ -41,18 +41,25 @@ import time
 import zipfile
 from pathlib import Path
 
-_SKIP_FILE_NAMES = frozenset({".gitignore"})
-_COMMIT_FILE_DEFAULT = "version.json"
+from app.utils.io import force_rmtree
+
+_COMMIT_FILE = "version.json"
 _CHUNK = 1024 * 1024
 _UTF8_FLAG = 0x800
 
 
 def _file_sha256(path: Path) -> str:
-    digest = hashlib.sha256()
     with path.open("rb") as fh:
-        for chunk in iter(lambda: fh.read(_CHUNK), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
+        return hashlib.file_digest(fh, "sha256").hexdigest()
+
+
+def resource_tree_hashes(root: Path) -> dict[str, str]:
+    """记录待分发文件的相对路径与内容摘要，逐层忽略 .gitignore。"""
+    return {
+        path.relative_to(root).as_posix(): _file_sha256(path)
+        for path in root.rglob("*")
+        if path.is_file() and ".gitignore" not in path.relative_to(root).parts
+    }
 
 
 def _fix_zip_name(info: zipfile.ZipInfo) -> str:
@@ -76,7 +83,7 @@ def extract_zip(zip_path: Path, dest_dir: Path) -> None:
     zip 损坏或条目路径越界（绝对路径 / ``..``）时抛异常，由调用方兜底。
     """
     if dest_dir.exists():
-        shutil.rmtree(dest_dir)
+        force_rmtree(dest_dir)
     dest_dir.mkdir(parents=True)
     root = dest_dir.resolve()
     with zipfile.ZipFile(zip_path) as archive:
@@ -91,24 +98,8 @@ def extract_zip(zip_path: Path, dest_dir: Path) -> None:
                 shutil.copyfileobj(src, dst, _CHUNK)
 
 
-def find_package_resource_root(extract_dir: Path) -> Path | None:
-    """在解压树中定位 resource 目录，兼容两种已知布局（自上而下探测）：
-
-    - GitHub 分支归档：``<extract>/MaaResource-main/resource/``
-    - 镜像酱包：``<extract>/resource/``（包根即安装目录形态，见上游
-      ``DownloadFromMirrorChyanAsync`` 直接 DirectoryMerge 到 BaseDir）
-    """
-    for candidate in (
-        extract_dir / "MaaResource-main" / "resource",
-        extract_dir / "resource",
-    ):
-        if (candidate / "version.json").is_file():
-            return candidate
-    return None
-
-
-def count_zip_entries(zip_path: Path, prefix: str) -> int:
-    """zip 内位于 ``prefix/`` 下的非目录条目数（文件名按 _fix_zip_name 修正后比对）。
+def count_zip_entries(zip_path: Path) -> int:
+    """zip 内位于 ``resource/`` 下的非目录条目数。
 
     供换位前后的暂存树核账：任何原因（并发清理、AV 删文件）造成的残缺树
     都会与条目数对不上。
@@ -117,7 +108,7 @@ def count_zip_entries(zip_path: Path, prefix: str) -> int:
         return sum(
             1
             for info in archive.infolist()
-            if not info.is_dir() and _fix_zip_name(info).startswith(prefix + "/")
+            if not info.is_dir() and _fix_zip_name(info).startswith("resource/")
         )
 
 
@@ -125,43 +116,62 @@ def merge_package_tree(
     source_root: Path,
     dest_root: Path,
     *,
-    commit_file: str = _COMMIT_FILE_DEFAULT,
-    skip_names: frozenset[str] = _SKIP_FILE_NAMES,
+    file_hashes: dict[str, str] | None = None,
 ) -> None:
     """把 source_root 覆盖合并进 dest_root。
 
     - 目标目录不存在则创建（含中间层，对齐上游 DirectoryMerge）；
-    - commit_file 最后写入（中途失败时目标版本时钟仍是旧值）；
-    - 每一层都跳过 skip_names（上游对 .gitignore 同样逐层跳过）；
+    - 根目录 version.json 最后写入（中途失败时目标版本时钟仍是旧值）；
+    - 每一层都跳过 .gitignore（与上游一致）；
     - 从不删除目标目录中源树没有的文件。
+    - 提供清单时校验实际写入内容及文件集合，通过后才提交版本。
     """
-    dest_root.mkdir(parents=True, exist_ok=True)
-    commit_source: Path | None = None
-    for entry in sorted(source_root.iterdir()):
-        if entry.name in skip_names:
-            continue
-        target = dest_root / entry.name
-        if entry.is_dir():
-            merge_package_tree(
-                entry, target, commit_file=commit_file, skip_names=skip_names
-            )
-        elif entry.name == commit_file:
-            commit_source = entry
-        else:
-            _copy_if_changed(entry, target)
-    if commit_source is not None:
-        _copy_if_changed(commit_source, dest_root / commit_source.name)
+    commit_source = source_root / _COMMIT_FILE
+    copied: set[str] = set()
+
+    def copy_file(src: str, dst: str) -> str:
+        relative = Path(src).relative_to(source_root).as_posix()
+        result = _copy_if_changed(
+            src,
+            dst,
+            expected_sha256=file_hashes[relative] if file_hashes is not None else None,
+        )
+        copied.add(relative)
+        return result
+
+    def ignore(directory: str, _names: list[str]) -> set[str]:
+        skipped = {".gitignore"}
+        if Path(directory) == source_root and commit_source.is_file():
+            skipped.add(_COMMIT_FILE)
+        return skipped
+
+    shutil.copytree(
+        source_root,
+        dest_root,
+        dirs_exist_ok=True,
+        ignore=ignore,
+        copy_function=copy_file,
+    )
+    if file_hashes is not None and copied != set(file_hashes) - {_COMMIT_FILE}:
+        raise ValueError("资源文件集合与暂存清单不一致，拒绝提交版本")
+    if commit_source.is_file():
+        copy_file(str(commit_source), str(dest_root / commit_source.name))
+    elif file_hashes is not None and _COMMIT_FILE in file_hashes:
+        raise ValueError("暂存版本文件缺失，拒绝提交版本")
 
 
-def _copy_if_changed(src: Path, dst: Path) -> None:
-    if dst.is_file() and _file_sha256(src) == _file_sha256(dst):
-        return
-    # 临时名带 pid + 单调量：取消 sweep 后合并线程可能孤儿化继续执行，
-    # 同进程的下一轮合并若共用临时名会交错出混合内容（os.replace 同目录
-    # 原子，名字唯一后最坏也只是各自完整落盘一次）
+def _copy_if_changed(
+    src: str | Path, dst: str | Path, *, expected_sha256: str | None = None
+) -> str:
+    src, dst = Path(src), Path(dst)
+    if dst.is_file() and (expected_sha256 or _file_sha256(src)) == _file_sha256(dst):
+        return str(dst)
+    # 临时名带 pid + 单调量，避免其他写入或异常残留共用临时文件。
     tmp = dst.with_name(f"{dst.name}.mas-{os.getpid()}.{time.monotonic_ns()}.tmp")
     try:
         shutil.copyfile(src, tmp)
+        if expected_sha256 is not None and _file_sha256(tmp) != expected_sha256:
+            raise ValueError(f"资源内容与暂存清单不一致: {src}")
         try:
             os.replace(tmp, dst)
         except PermissionError:
@@ -173,3 +183,4 @@ def _copy_if_changed(src: Path, dst: Path) -> None:
     except BaseException:
         tmp.unlink(missing_ok=True)
         raise
+    return str(dst)
