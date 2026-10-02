@@ -9,19 +9,25 @@ metadata:
     url: "https://github.com/humanlayer/skills/blob/main/plugins/show-me/skills/show-me/SKILL.md"
 ---
 
-写 PR body 时用这个模板：
+本仓库 PR 正文的格式以文档站为准（[PR 正文规范](https://doc.auto-mas.top/developer/agent-and-repository-rules.html)）：`## 摘要` 下通常 1 到 4 条要点，有关联 Issue 时补一行 `Closes #n`（没有就删掉），用户可见变更要提醒更新 `res/version.json`。下面的模板只是在写这几条摘要时的取景技巧，与文档站冲突时以文档站为准。
 
 ```markdown
-## Summary（摘要）
+## 摘要
 
 <图表、diff 草图，或树>
 
-## Evidence（证据）
+Closes #n
+```
+
+以下两节按需补充，不是必须：
+
+```markdown
+## 证据
 
 - **Before:** <截图 / 输出 / 失败中的测试运行>
   **After:** <截图 / 输出 / 通过了的测试运行>
 
-## Merge Danger（合并风险）
+## 合并风险
 
 **Door:** <单向门或双向门>
 
@@ -34,9 +40,9 @@ metadata:
 
 ## 各章节
 
-跳过所有开场白，行文保持简短。使用 `GLOSSARY.md` 里用户的领域语言。
+跳过所有开场白，行文保持简短。用项目已有的领域语言（本仓库术语见 `.agents/skills` 与[文档站](https://doc.auto-mas.top/developer/)）。
 
-### Summary（摘要）
+### 摘要
 
 挑最小的、能把关键点讲清楚的视图。
 
@@ -155,7 +161,7 @@ function expandSkill(command: string): string {
 
 这些视图你可能会用一个、用几个，但不太可能全都用上。用你的判断力，别把用户淹没。
 
-### Evidence（证据）
+### 证据
 
 证明变更确实生效的具体证据。展示前后对比。
 
@@ -163,7 +169,7 @@ function expandSkill(command: string): string {
 
 基于执行的证据是 A 级：测试结果、控制台输出。用伪代码展示那个先失败、后通过的具体测试。
 
-### Merge Danger（合并风险）
+### 合并风险
 
 说明它是单向门还是双向门。双向门可以走回去，单向门不能。回滚代价低的 PR 风险更低。涉及破坏性操作或难以逆转的决策的变更，是单向门。
 
