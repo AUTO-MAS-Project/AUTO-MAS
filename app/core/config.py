@@ -1091,9 +1091,9 @@ class AppConfig(GlobalConfig):
             if IS_WINDOWS and Path(config["Script"][path]).is_relative_to(
                 Path(os.environ["APPDATA"])
             ):
-                config["Script"][
-                    path
-                ] = f"%APPDATA%/{Path(config['Script'][path]).relative_to(Path(os.environ['APPDATA']))}"
+                config["Script"][path] = (
+                    f"%APPDATA%/{Path(config['Script'][path]).relative_to(Path(os.environ['APPDATA']))}"
+                )
         config["Info"]["RootPath"] = str(Path(r"C:/脚本根目录"))
 
         # 上面只覆盖脚本自身的路径项；游戏路径、命令行等自由文本同样会带出本机用户名，统一打码
@@ -1192,7 +1192,9 @@ class AppConfig(GlobalConfig):
         index = data.pop("instances", [])
         return list(index), data
 
-    async def add_user(self, script_id: str) -> tuple[
+    async def add_user(
+        self, script_id: str
+    ) -> tuple[
         uuid.UUID,
         MaaUserConfig
         | SrcUserConfig
