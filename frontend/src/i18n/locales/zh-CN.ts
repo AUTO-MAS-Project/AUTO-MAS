@@ -620,6 +620,8 @@ export default {
     addItem: '添加物品',
     addPreset: '添加预设',
     sanityTask: '理智任务',
+    maaEndEnableSanity: '启用理智任务',
+    maaEndSanitySection: '理智任务（基质刷取/协议空间）',
     sanityTaskConfigurationMode: '理智任务配置模式',
     usedSwitchAccountsCn: '用于切换账号，官服输入手机号，B服输入B站ID，无需切换则留空',
     usedSwitchAccountsCn2:
