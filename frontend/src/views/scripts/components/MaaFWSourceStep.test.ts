@@ -118,11 +118,16 @@ describe('MaaFWSourceStep 项目来源默认分节', () => {
     expect(html).toContain(zhCN.scripts.create.mfwReuse)
     expect(html).toContain(JSON.stringify({ value: 'a1', disabled: false }).replace(/"/g, '&quot;'))
     expect(html).toContain(JSON.stringify({ value: 'b1', disabled: true }).replace(/"/g, '&quot;'))
-    // 标题是项目名，读不出就用脚本名；副标题带来源脚本、版本与「运行中」
+    // 标题是项目名，读不出就用脚本名；副标题带来源脚本、版本与「运行中」（文案取词表，措辞改了不用跟着改）
+    const { t } = i18n.global
+    const fromMany = t('scripts.create.mfwReuseFromMany', { name: '早上', count: 2 })
+    const fromOne = t('scripts.create.mfwReuseFrom', { name: '没读出来' })
     expect(html).toContain('<span class="choice-title">项目A</span>')
-    expect(html).toContain('<span class="choice-description">来自脚本「早上」等 2 个 · v1</span>')
+    expect(html).toContain(`<span class="choice-description">${fromMany} · v1</span>`)
     expect(html).toContain('<span class="choice-title">没读出来</span>')
-    expect(html).toContain('<span class="choice-description">来自脚本「没读出来」 · 运行中</span>')
+    expect(html).toContain(
+      `<span class="choice-description">${fromOne} · ${t('scripts.create.mfwReuseBusy')}</span>`
+    )
     expect(html).not.toContain('choice-placeholder')
     expect(html).not.toContain('AAlert')
   })
