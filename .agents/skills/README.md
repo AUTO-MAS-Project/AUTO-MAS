@@ -43,7 +43,7 @@
 
 ## 来源与许可
 
-`grill-me`、`grilling`、`code-review`、`pr` 取自第三方简体中文汉化仓库 [devcxl/mattpocock-skills-zh](https://github.com/devcxl/mattpocock-skills-zh)（原作 [Matt Pocock 的技能集](https://github.com/mattpocock/skills)），按上游 MIT 许可使用（Copyright (c) 2026 Matt Pocock，许可全文见上游仓库 `LICENSE`）；导入时仅按本仓库文档站的贡献流程改动其中的流程引用。本目录其余内容随主程序以 AGPL-3.0 分发。
+`grill-me`、`grilling`、`code-review`、`pr` 取自第三方简体中文汉化仓库 devcxl/mattpocock-skills-zh（原作 Matt Pocock 的技能集），按上游 MIT 许可使用（MIT License，Copyright (c) 2026 Matt Pocock）；导入时仅按本仓库文档站的贡献流程改动其中的流程引用。本目录其余内容随主程序以 AGPL-3.0 分发。按本目录约定，第三方来源只保留纯文本署名与许可声明，不留外部链接；`pr` 的摘要视图部分复制自 Humanlayer 的 show-me 技能（作者 Dex Horthy，MIT License，Copyright (c) 2026 HumanLayer，全文见 `pr/CREDITS.md`）。
 
 ## Claude Code 接入
 
