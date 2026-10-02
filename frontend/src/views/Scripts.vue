@@ -144,7 +144,7 @@ import {
   isMfwFamily,
   type ScriptCreateRequest,
 } from '@/views/scripts/components/scriptCreateFlow'
-import { maafwRouteSuffix } from '@/composables/useMaaFWFlavor'
+import { maafwRouteLocation } from '@/router/maafwFlavorRoutes'
 import { useScriptApi } from '@/composables/useScriptApi'
 import { useUserApi } from '@/composables/useUserApi'
 import { useWebSocket } from '@/composables/useWebSocket'
@@ -364,10 +364,10 @@ const navigateToCreatedScript = (
   data?: Record<string, unknown>
 ) => {
   const route = {
-    // MFW 新建后进分步引导（各特调是 MaaFW 的特调类型，同一套引导）；其余类型直接进编辑页
-    path: isMfwFamily(type)
-      ? `/scripts/${scriptId}/setup/maafw`
-      : `/scripts/${scriptId}/edit/${getScriptEditSegment(type)}`,
+    // MFW 家族新建后进各自类型的分步引导（同一个页面）；其余类型直接进编辑页
+    ...(isMfwFamily(type)
+      ? maafwRouteLocation(type, 'setup', { id: scriptId })
+      : { path: `/scripts/${scriptId}/edit/${getScriptEditSegment(type)}` }),
     ...(data
       ? {
           state: {
@@ -455,7 +455,11 @@ const loadTemplates = async () => {
 }
 
 const handleEditScript = (script: Script) => {
-  router.push(`/scripts/${script.id}/edit/${getScriptEditPath(script.type)}`)
+  router.push(
+    isMfwFamily(script.type)
+      ? maafwRouteLocation(script.type, 'script', { id: script.id })
+      : `/scripts/${script.id}/edit/${getScriptEditPath(script.type)}`
+  )
 }
 
 const handleDeleteScript = async (script: Script) => {
@@ -484,8 +488,8 @@ const handleCopyScript = async (script: Script) => {
 const handleAddUser = (script: Script) => {
   // 根据脚本类型跳转到对应的用户添加页面
   if (isMfwFamily(script.type)) {
-    // MaaFW 与各特调共用一个用户页，路由后缀取自特调注册表
-    router.push(`/scripts/${script.id}/users/add/${maafwRouteSuffix(script.type)}`)
+    // MaaFW 与各特调共用一个用户页，路由按特调注册表生成
+    router.push(maafwRouteLocation(script.type, 'userAdd', { scriptId: script.id }))
   } else if (script.type === 'MAA') {
     router.push(`/scripts/${script.id}/users/add/maa`)
   } else if (script.type === 'SRC') {
@@ -517,8 +521,10 @@ const handleEditUser = (user: User) => {
   if (script) {
     // 根据脚本类型跳转到对应的用户编辑页面
     if (isMfwFamily(script.type)) {
-      // MaaFW 与各特调共用一个用户页，路由后缀取自特调注册表
-      router.push(`/scripts/${script.id}/users/${user.id}/edit/${maafwRouteSuffix(script.type)}`)
+      // MaaFW 与各特调共用一个用户页，路由按特调注册表生成
+      router.push(
+        maafwRouteLocation(script.type, 'userEdit', { scriptId: script.id, userId: user.id })
+      )
     } else if (script.type === 'MAA') {
       router.push(`/scripts/${script.id}/users/${user.id}/edit/maa`)
     } else if (script.type === 'SRC') {

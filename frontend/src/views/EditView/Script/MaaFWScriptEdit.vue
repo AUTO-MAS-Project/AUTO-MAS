@@ -41,7 +41,8 @@
 
       <a-form ref="formRef" :model="formData" :rules="rules" layout="vertical" class="config-form">
         <div v-show="!isWizard || currentStep === 0">
-          <BasicInfoSection
+          <component
+            :is="sections.basicInfo"
             :maafw-config="maafwConfig"
             :form-data="formData"
             :rules="rules"
@@ -54,9 +55,9 @@
             :embedded-busy="embeddedBusy"
             :import-percent="importPercent"
             :import-message="importMessage"
-            :source-directory-label="t(flavor.sourceDirectoryKey)"
-            :source-hint="t(flavor.sourceHintKey)"
-            :source-placeholder="t(flavor.sourcePlaceholderKey)"
+            :source-directory-label="t(flavor.scriptPage.text.sourceDirectoryKey)"
+            :source-hint="t(flavor.scriptPage.text.sourceHintKey)"
+            :source-placeholder="t(flavor.scriptPage.text.sourcePlaceholderKey)"
             :env-preparing="envPreparing"
             :env-ready="envReady"
             :env-failed="envFailed"
@@ -69,18 +70,25 @@
             @select-path="selectMaaFWPath"
             @preview-interface="handlePreviewInterface"
           />
+          <MaaFWFlavorSlot
+            part="scriptPage"
+            name="afterBasicInfo"
+            :flavor="flavor"
+            :context="flavorSlotContext"
+            @change="handleChange"
+          />
         </div>
 
         <div v-show="!isWizard || currentStep === 1">
-          <!-- 特调类型（MSS）只适配部分控制方式时，在这里说明原因 -->
-          <a-alert
-            v-if="flavor.controllerHintKey"
-            class="flavor-controller-hint"
-            type="warning"
-            show-icon
-            :message="t(flavor.controllerHintKey)"
+          <MaaFWFlavorSlot
+            part="scriptPage"
+            name="beforeControl"
+            :flavor="flavor"
+            :context="flavorSlotContext"
+            @change="handleChange"
           />
-          <ControlConfigSection
+          <component
+            :is="sections.control"
             :maafw-config="maafwConfig"
             :preview-data="previewData"
             :interface-loading="previewLoading"
@@ -99,17 +107,34 @@
             :adb-control-strategy-items="adbControlStrategyItems"
             :selected-emulator-label="selectedEmulatorLabel"
             :interface-dependent-disabled="interfaceDependentDisabled"
-            :game-update-hint-key="flavor.gameUpdateHintKey"
             @change="handleChange"
             @controller-change="handleControllerChange"
             @resource-change="handleResourceChangeWithPackage"
             @emulator-select-change="handleEmulatorSelectChange"
             @select-launch-path="selectLaunchPath"
+          >
+            <template v-if="hasBesidePackageName" #besidePackageName>
+              <MaaFWFlavorSlot
+                part="scriptPage"
+                name="besidePackageName"
+                :flavor="flavor"
+                :context="flavorSlotContext"
+                @change="handleChange"
+              />
+            </template>
+          </component>
+          <MaaFWFlavorSlot
+            part="scriptPage"
+            name="afterControl"
+            :flavor="flavor"
+            :context="flavorSlotContext"
+            @change="handleChange"
           />
         </div>
 
         <div v-show="!isWizard || currentStep === 2">
-          <UpdateSettingsSection
+          <component
+            :is="sections.update"
             :maafw-config="maafwConfig"
             :preview-data="previewData"
             :is-auto-update-disabled="isAutoUpdateDisabled"
@@ -125,10 +150,18 @@
             @check-update="runUpdateCheck"
             @apply-update="runUpdateApply"
           />
+          <MaaFWFlavorSlot
+            part="scriptPage"
+            name="afterUpdate"
+            :flavor="flavor"
+            :context="flavorSlotContext"
+            @change="handleChange"
+          />
         </div>
 
         <div v-show="!isWizard || currentStep === 3">
-          <RunConfigSection
+          <component
+            :is="sections.run"
             :maafw-config="maafwConfig"
             :daily-once-tasks="dailyOnceTasks"
             :weekly-once-tasks="weeklyOnceTasks"
@@ -138,11 +171,19 @@
             @change="handleChange"
             @period-task-change="handlePeriodTaskChange"
           />
+          <MaaFWFlavorSlot
+            part="scriptPage"
+            name="afterRun"
+            :flavor="flavor"
+            :context="flavorSlotContext"
+            @change="handleChange"
+          />
         </div>
       </a-form>
 
       <!-- 只在引导最后一步出现：外壳里配好的实例导入成用户，扫不到就整块不显示 -->
-      <ShellInstanceImportSection
+      <component
+        :is="sections.shellImport"
         v-if="isWizard && currentStep === stepItems.length - 1 && shellInstances.length > 0"
         v-model:selected-ids="selectedShellInstanceIds"
         :instances="shellInstances"
@@ -185,168 +226,33 @@
 import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
 import DocLink from '@/components/DocLink.vue'
 import { useI18n } from 'vue-i18n'
-import { computed, h, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { computed, ref } from 'vue'
+import { useRoute } from 'vue-router'
 import type { FormInstance } from 'ant-design-vue'
-import { message } from 'ant-design-vue'
-import { ArrowLeftOutlined, LoadingOutlined } from '@ant-design/icons-vue'
-import { GetService, MaaFwService } from '@/api'
-import { subscribe, unsubscribe } from '@/composables/useWebSocket'
-import {
-  WS_MAAFW_ENV_PREPARE_PROGRESS,
-  WS_MAAFW_PROJECT_UPDATE_PROGRESS,
-} from '@/services/websocket/types'
-import { useScriptApi } from '@/composables/useScriptApi'
-import { useSaveQueue } from '@/composables/useSaveQueue'
-import { useMaaFWUpdateApi, type MaaFWUpdateResult } from '@/composables/useMaaFWUpdateApi'
-import {
-  EMPTY_EMBEDDED_STATUS,
-  useMaaFWEmbeddedApi,
-  type MaaFWEmbeddedStatus,
-} from '@/composables/useMaaFWEmbeddedApi'
-import {
-  createUpdateProgressState,
-  finishUpdateProgress,
-  reduceUpdateProgress,
-  type MaaFWUpdateProgressState,
-} from './MaaFWScriptEdit/updateProgress'
-import {
-  getDefaultMaaFWScriptConfig,
-  isMaaFWUpdateChannel,
-  isMaaFWUpdateSource,
-  updateChannelOptions,
-  updateSourceOptions,
-  useMaaFWControlConfig,
-} from '@/composables/useMaaFWScriptConfig'
-import { resolveAutoUpdateMode } from '@/composables/useMaaFWProjectUpdate'
-import { maafwDefaultScriptNames, useMaaFWFlavor } from '@/composables/useMaaFWFlavor'
-import { useMaaFWShellInstanceApi } from '@/composables/useMaaFWShellInstanceApi'
-import { resolveMaaFWProjectName } from '@/utils/maafwProjectName'
-import type { MaaFWShellInstanceItem } from '@/api'
-import type {
-  MaaFWInterfacePreviewData,
-  MaaFWScriptConfig,
-  MaaFWTaskInfo,
-  ScriptType,
-} from '@/types/script'
-import BasicInfoSection, { type MaaFWEnvOutcome } from './MaaFWScriptEdit/BasicInfoSection.vue'
-import ControlConfigSection from './MaaFWScriptEdit/ControlConfigSection.vue'
-import UpdateSettingsSection from './MaaFWScriptEdit/UpdateSettingsSection.vue'
-import RunConfigSection from './MaaFWScriptEdit/RunConfigSection.vue'
-import ShellInstanceImportSection from './MaaFWScriptEdit/ShellInstanceImportSection.vue'
-import {
-  buildShellImportReportLines,
-  shellImportItemName,
-  summarizeShellImport,
-  type ShellImportSummary,
-} from './MaaFWScriptEdit/shellInstanceImport'
+import { ArrowLeftOutlined } from '@ant-design/icons-vue'
+import { updateChannelOptions, updateSourceOptions } from '@/composables/useMaaFWScriptConfig'
+import { resolveMaaFWFlavorSlot, useMaaFWSections } from '@/composables/useMaaFWFlavor'
+import MaaFWFlavorSlot from '@/views/EditView/MaaFWFlavor/MaaFWFlavorSlot.vue'
+// MFW 默认分节静态引入：通用 MFW 打开不闪；特调的替换分节由注册表按需加载
+import { MAAFW_SCRIPT_PAGE_SECTIONS, useMaaFWScriptPage } from './MaaFWScriptEdit/pageKit'
 
 const { t } = useI18n()
 
-const logger = window.electronAPI.getLogger('MaaFW 脚本编辑')
-
-// MaaFW pretask 伪任务：预览接口会把它们混进 tasks[]（entry 固定为 MXU_PRETASK、
-// name 带 __MXU_PRETASK__ 前缀），周期跳过下拉不能让用户选到。按 entry 过滤、name 前缀兜底。
-const PRETASK_TASK_ENTRY = 'MXU_PRETASK'
-const PRETASK_TASK_PREFIX = '__MXU_PRETASK__'
-const isPretaskTask = (task: MaaFWTaskInfo): boolean =>
-  task.entry === PRETASK_TASK_ENTRY || task.name.startsWith(PRETASK_TASK_PREFIX)
-
-const PERIOD_KEYS = ['DailyOnceTasks', 'WeeklyOnceTasks', 'MonthlyOnceTasks'] as const
-type PeriodKey = (typeof PERIOD_KEYS)[number]
-
 const route = useRoute()
-const router = useRouter()
-const { getScript, updateScript, previewMaaFWInterface, prepareMaaFWAgentEnv } = useScriptApi()
-const { checkMaaFWUpdate, applyMaaFWUpdate } = useMaaFWUpdateApi()
-const { getEmbeddedStatus, reimportEmbedded } = useMaaFWEmbeddedApi()
-const { listShellInstances, importShellInstances } = useMaaFWShellInstanceApi()
 
 const scriptId = route.params.id as string
 
-// flavor 文案以脚本当前类型为准，不看路由 meta：/edit/maafw 与 /edit/m9a 都进这个组件，
-// 而导入完成后后端会按项目内容原地换类型（M9A 项目 → M9A，其它 → MaaFW，uid 不变）。
-const scriptType = ref<ScriptType>('MaaFW')
-const flavor = useMaaFWFlavor(scriptType)
-const refreshScriptType = async () => {
-  try {
-    const detail = await getScript(scriptId)
-    if (detail?.type) {
-      scriptType.value = detail.type
-      formData.type = detail.type
-    }
-  } catch (error) {
-    logger.warn(`刷新脚本类型失败: ${error instanceof Error ? error.message : String(error)}`)
-  }
-}
-
-// 引导模式：同一个页面按步骤渲染四个分节。新建 MaaFW 脚本后进这里，
-// 之后再编辑走 /scripts/:id/edit/maafw 的完整单页形态。
-const isWizard = computed(() => route.name === 'MaaFWSetupWizard')
-const currentStep = ref(0)
-const stepItems = [
-  { title: t('edit.basicInfo') },
-  { title: t('edit.controlConfiguration') },
-  { title: t('edit.projectUpdate') },
-  { title: t('edit.runConfiguration') },
-]
-// 第一步没读到 interface 就往下走，后面几步全是空的，先拦住。
-// 运行环境同理：没装完就往下配，配完了也跑不起来——首次要下载 MaaFramework，
-// 失败时（离线、镜像不通、解释器坏）后面每一步都是白填。失败不是死路，
-// 提示条里有「重试」。
-const canLeaveCurrentStep = computed(
-  () => currentStep.value !== 0 || (previewData.value !== null && envReady.value)
-)
-const pageLoading = ref(false)
-const isInitializing = ref(true)
-// 保存串行队列：连续改动按序写回，不再被布尔互斥丢掉
-const { enqueue } = useSaveQueue()
-
 const formRef = ref<FormInstance>()
-const previewLoading = ref(false)
-const previewData = ref<MaaFWInterfacePreviewData | null>(null)
-
-const dailyOnceTasks = ref<string[]>([])
-const weeklyOnceTasks = ref<string[]>([])
-const monthlyOnceTasks = ref<string[]>([])
-
-const maafwConfig = reactive<MaaFWScriptConfig>(getDefaultMaaFWScriptConfig())
-
-const formData = reactive<{ type: ScriptType; name: string; path: string }>({
-  type: 'MaaFW',
-  name: '',
-  path: '',
-})
-
-const rules = {
-  name: [{ required: true, message: t('edit.enterScriptName'), trigger: 'blur' }],
-  path: [
-    {
-      validator: () =>
-        maafwConfig.Info.Path
-          ? Promise.resolve()
-          : Promise.reject(new Error('请选择 MFW 项目实际目录并读取 interface')),
-      trigger: 'blur',
-    },
-  ],
-}
-
-const handleChange = async (category: keyof MaaFWScriptConfig, key: string, value: unknown) => {
-  if (isInitializing.value) return
-  await enqueue(
-    async () => {
-      try {
-        const success = await updateScript(scriptId, { [category]: { [key]: value } })
-        if (success) logger.info(`配置已保存: ${String(category)}.${key}`)
-      } catch (error) {
-        logger.error(`保存失败: ${error instanceof Error ? error.message : String(error)}`)
-      }
-    },
-    `${String(category)}.${key}`
-  )
-}
 
 const {
+  pageLoading,
+  previewLoading,
+  previewData,
+  maafwConfig,
+  formData,
+  rules,
+  handleChange,
+  flavor,
   emulatorLoading,
   emulatorOptionsReady,
   emulatorDeviceLoading,
@@ -363,662 +269,61 @@ const {
   selectedEmulatorLabel,
   adbControlStrategyItems,
   handleControllerChange,
-  handleResourceChange,
-  resolveResourceName,
+  handleResourceChangeWithPackage,
   handleEmulatorSelectChange,
-  syncControllerResourceSelection,
-  loadEmulatorOptions,
-  loadEmulatorDeviceOptions,
   selectLaunchPath,
-} = useMaaFWControlConfig(maafwConfig, previewData, previewLoading, handleChange)
+  dailyOnceTasks,
+  weeklyOnceTasks,
+  monthlyOnceTasks,
+  periodTaskOptions,
+  handlePeriodTaskChange,
+  envPreparing,
+  envReady,
+  envFailed,
+  envMessage,
+  envPercent,
+  envLogs,
+  envAgents,
+  envOutcome,
+  embeddedStatus,
+  embeddedBusy,
+  importPercent,
+  importMessage,
+  selectMaaFWPath,
+  isAutoUpdateDisabled,
+  updateChecking,
+  updateApplying,
+  updateError,
+  updateResult,
+  updateProgress,
+  runUpdateCheck,
+  runUpdateApply,
+  cdkPrefilled,
+  isWizard,
+  currentStep,
+  stepItems,
+  canLeaveCurrentStep,
+  shellInstances,
+  selectedShellInstanceIds,
+  shellImporting,
+  finishButtonLabel,
+  handleFinishWizard,
+  previewProjectTitle,
+  typeTagLabel,
+  pageTitle,
+  interfaceStats,
+  handlePreviewInterface,
+  handleCancel,
+  flavorSlotContext,
+} = useMaaFWScriptPage({ scriptId })
 
-const isAutoUpdateDisabled = computed(() =>
-  Boolean(previewData.value && !previewData.value.project.version)
+// 各分节：默认用 MFW 的，当前特调替换了哪节就换成它的（契约见 MaaFWFlavor/sectionContracts）
+const sections = useMaaFWSections(flavor, 'scriptPage', MAAFW_SCRIPT_PAGE_SECTIONS)
+
+// 包名旁的插入点在 control 分节里面：只有当前特调登记了组件才填这个 slot，否则包名独占一行
+const hasBesidePackageName = computed(
+  () => resolveMaaFWFlavorSlot(flavor.value, 'scriptPage', 'besidePackageName').length > 0
 )
-
-// 项目实际的名字（「识宝小助手 Oᴗoಣ」而不是整条窗口标题或 MAA_bbb）：读到 interface 就按它算，
-// 没读到时用上次记下的 Info.ProjectLabel
-const projectName = computed(
-  () =>
-    (previewData.value ? resolveMaaFWProjectName(previewData.value.project) : '') ||
-    maafwConfig.Info.ProjectLabel?.trim() ||
-    ''
-)
-
-const previewProjectTitle = computed(() => {
-  if (!previewData.value) return '-'
-  return projectName.value || previewData.value.project.name
-})
-
-const projectDisplayName = computed(
-  () => projectName.value || maafwConfig.Info.Name?.trim() || 'MFW'
-)
-
-// 卡片右上角的类型标签：有项目名就显示项目名，没有才显示 MFW / M9A
-const typeTagLabel = computed(() => projectName.value || flavor.value.typeTagLabel)
-
-// 新建脚本时后端给的默认名（MaaFWConfig 及各特调配置类的 DEFAULT_SCRIPT_NAME，登记在特调注册表）
-const DEFAULT_SCRIPT_NAMES = maafwDefaultScriptNames()
-
-// 读到 interface 后把项目名记进 Info.ProjectLabel（脚本列表的类型标签用它）；
-// 脚本名还是默认名、空、或是上次自动起的项目名时，一并改成项目名，用户自己起的名字不动。
-// 初始化期间 handleChange 不落盘，由 onMounted 在初始化结束后再调一次。
-const syncProjectName = async () => {
-  if (isInitializing.value) return
-  const name = previewData.value ? resolveMaaFWProjectName(previewData.value.project) : ''
-  if (!name) return
-  const previousLabel = maafwConfig.Info.ProjectLabel?.trim() ?? ''
-  const currentName = maafwConfig.Info.Name.trim()
-  const autoNamed =
-    !currentName || DEFAULT_SCRIPT_NAMES.has(currentName) || currentName === previousLabel
-  if (autoNamed && currentName !== name) {
-    maafwConfig.Info.Name = name
-    formData.name = name
-    await handleChange('Info', 'Name', name)
-  }
-  if (previousLabel !== name) {
-    maafwConfig.Info.ProjectLabel = name
-    await handleChange('Info', 'ProjectLabel', name)
-  }
-}
-
-// 通用 MaaFW 用「<项目名> 项目配置 / 项目引导」；特调类型（M9A）用它自己那句标题
-const pageTitle = computed(() =>
-  flavor.value.scriptTitleKey
-    ? t(flavor.value.scriptTitleKey)
-    : `${projectDisplayName.value} ${isWizard.value ? '项目引导' : '项目配置'}`
-)
-
-const interfaceStats = computed(() => [
-  { label: t('edit.task'), value: previewData.value?.tasks.length ?? 0 },
-  { label: t('edit.preset'), value: previewData.value?.presets.length ?? 0 },
-  { label: t('edit.controller'), value: previewData.value?.controllers.length ?? 0 },
-  { label: t('edit.resource'), value: previewData.value?.resources.length ?? 0 },
-  { label: t('edit.import2'), value: previewData.value?.importCount ?? 0 },
-  { label: 'Agent', value: previewData.value?.agentCount ?? 0 },
-])
-
-const periodTaskOptions = computed(() =>
-  (previewData.value?.tasks || [])
-    .filter(task => !isPretaskTask(task))
-    .map(task => ({
-      label: task.label ? `${task.label}（${task.name}）` : task.name,
-      value: task.name,
-    }))
-)
-
-// ConfigBase 把周期任务列表以 JSON 字符串保存、读回也是字符串；
-// 兼容后端某天直接返回数组的情况，统一收敛成字符串数组。
-const parseTaskNameList = (value: unknown): string[] => {
-  if (Array.isArray(value)) return value.filter((item): item is string => typeof item === 'string')
-  if (typeof value === 'string' && value.trim()) {
-    try {
-      const parsed = JSON.parse(value)
-      return Array.isArray(parsed)
-        ? parsed.filter((item): item is string => typeof item === 'string')
-        : []
-    } catch {
-      return []
-    }
-  }
-  return []
-}
-
-const stringifyTaskNameList = (value: string[]): string => JSON.stringify(value)
-
-const periodTaskRef = (key: PeriodKey): typeof dailyOnceTasks =>
-  key === 'DailyOnceTasks'
-    ? dailyOnceTasks
-    : key === 'WeeklyOnceTasks'
-      ? weeklyOnceTasks
-      : monthlyOnceTasks
-
-const handlePeriodTaskChange = async (key: PeriodKey, values: string[]) => {
-  const normalized = Array.from(new Set(values.filter(Boolean)))
-  periodTaskRef(key).value = normalized
-  maafwConfig.Run[key] = stringifyTaskNameList(normalized)
-  await handleChange('Run', key, maafwConfig.Run[key])
-}
-
-const prunePeriodTaskSelections = async () => {
-  const available = new Set((previewData.value?.tasks || []).map(task => task.name))
-  for (const key of PERIOD_KEYS) {
-    const current = periodTaskRef(key).value
-    const next = current.filter(name => available.has(name))
-    if (next.length !== current.length) {
-      await handlePeriodTaskChange(key, next)
-    }
-  }
-}
-
-const applyScriptConfig = (config: Partial<MaaFWScriptConfig> | null | undefined) => {
-  const defaults = getDefaultMaaFWScriptConfig()
-  ;(Object.keys(defaults) as Array<keyof MaaFWScriptConfig>).forEach(section => {
-    Object.assign(
-      maafwConfig[section] as Record<string, unknown>,
-      defaults[section] as Record<string, unknown>,
-      (config?.[section] as Record<string, unknown>) ?? {}
-    )
-  })
-  // 旧配置只有 IfAutoUpdate 时映射到新的自动更新时机；只改本地草稿，不回写后端。
-  maafwConfig.Update.AutoUpdateMode = resolveAutoUpdateMode(config?.Update)
-  // 旧配置里 Source / Channel 可能是空串（曾表示「自动」/「跟随全局」），现在都不是
-  // 合法选项，下拉框会显示空白；同样只修正本地草稿，用户改动前不回写。
-  if (!isMaaFWUpdateSource(maafwConfig.Update.Source)) {
-    maafwConfig.Update.Source = defaults.Update.Source
-  }
-  if (!isMaaFWUpdateChannel(maafwConfig.Update.Channel)) {
-    maafwConfig.Update.Channel = defaults.Update.Channel
-  }
-  formData.name = maafwConfig.Info.Name || ''
-  formData.path = maafwConfig.Info.Path || ''
-  dailyOnceTasks.value = parseTaskNameList(maafwConfig.Run.DailyOnceTasks)
-  weeklyOnceTasks.value = parseTaskNameList(maafwConfig.Run.WeeklyOnceTasks)
-  monthlyOnceTasks.value = parseTaskNameList(maafwConfig.Run.MonthlyOnceTasks)
-}
-
-const runPreview = async (options: { forceEnv?: boolean } = {}) => {
-  const path = maafwConfig.Info.Path.trim()
-  if (!path) {
-    previewData.value = null
-    return
-  }
-  previewLoading.value = true
-  try {
-    // 带 scriptId：内嵌脚本读的是 AUTO-MAS 的副本，path 只在没有脚本时兜底。
-    const response = await previewMaaFWInterface(path, scriptId)
-    if (!response || response.code !== 200 || !response.data) {
-      previewData.value = null
-      message.error(response?.message || 'MaaFW interface 预览失败，请检查后端服务与项目目录')
-      return
-    }
-    previewData.value = response.data as MaaFWInterfacePreviewData
-    await syncControllerResourceSelection(true)
-    await prunePeriodTaskSelections()
-    await syncProjectName()
-    // 读到 interface 就把运行环境备好。四个调用方（读取按钮 / 选目录 /
-    // 路径变更 / 页面加载）都会经过这里，放在 runPreview 里才不会漏。
-    void runAgentEnvPrepare(path, options.forceEnv === true)
-  } catch (error) {
-    previewData.value = null
-    message.error(error instanceof Error ? error.message : String(error))
-  } finally {
-    previewLoading.value = false
-  }
-}
-
-// 「准备运行环境」按钮（失败时即「重试」）：interface 再读一遍，运行环境不吃指纹缓存、
-// 真的重新准备一次——用户点它就是因为环境实际不好使，而指纹只看项目文件动没动，看不出
-// venv 内部坏了。进度与结论都在右侧面板里，不再弹「已读取 xxx」的 toast。
-const handlePreviewInterface = async () => {
-  envPreparedPath.value = ''
-  await runPreview({ forceEnv: true })
-}
-
-// 读到 interface 之后立刻把运行环境备好（下载 MaaFramework、建 agent 环境）。
-// 不做的话这份成本会推迟到用户第一次点运行时才付，界面上看起来像卡住。
-const envPreparing = ref(false)
-const envReady = ref(false)
-const envFailed = ref(false)
-const envMessage = ref('')
-const envPercent = ref<number | null>(null)
-const envLogs = ref<string[]>([])
-const envAgents = ref<{ runtimeKind?: string | null; executable: string }[]>([])
-// 成功时是哪一种：首次准备 / 更新了已有环境 / 项目没变直接沿用，面板按它选状态词
-const envOutcome = ref<MaaFWEnvOutcome | null>(null)
-let envSubscriptionId: string | null = null
-
-// 准备过程可能几分钟，全程订阅后端推来的阶段与日志
-const ensureEnvSubscription = () => {
-  if (envSubscriptionId) return
-  envSubscriptionId = subscribe(
-    { id: scriptId, type: WS_MAAFW_ENV_PREPARE_PROGRESS },
-    wsMessage => {
-      const data = wsMessage.data
-      // 导入副本的进度也走这条通道（同一个脚本、同一个订阅），和环境准备不会同时发生
-      if (data.stage === 'importing' || data.stage === 'imported') {
-        if (typeof data.percent === 'number') importPercent.value = data.percent
-        if (data.message) importMessage.value = data.message
-        return
-      }
-      // 响应处理完就不再理会 WS：它走的是另一条路，可能比响应还晚到——日志行会把
-      // 最后几行写成两遍，ready 事件那句「MFW 运行环境已就绪」会把响应里写好的
-      // 「MaaFramework x.y.z」盖掉
-      if (!envPreparing.value) return
-      if (data.log) {
-        envLogs.value = [...envLogs.value.slice(-199), data.log]
-      }
-      if (data.stage === 'log') return
-      envMessage.value = data.message || envMessage.value
-      if (typeof data.percent === 'number') envPercent.value = data.percent
-      if (data.status === 'failed') {
-        envFailed.value = true
-        envPreparing.value = false
-      }
-    }
-  )
-}
-
-// 手动更新过程（检查 / 下载 / 覆盖 / 校验 + 逐行日志）同样由后端推过来，
-// 折叠成一份面板状态交给「项目更新」区块显示。
-const updateProgress = ref<MaaFWUpdateProgressState>(createUpdateProgressState())
-let updateSubscriptionId: string | null = null
-
-const ensureUpdateSubscription = () => {
-  if (updateSubscriptionId) return
-  updateSubscriptionId = subscribe(
-    { id: scriptId, type: WS_MAAFW_PROJECT_UPDATE_PROGRESS },
-    wsMessage => {
-      updateProgress.value = reduceUpdateProgress(updateProgress.value, wsMessage.data)
-    }
-  )
-}
-
-// 页面已卸载：还在跑的异步流程（外壳配置导入）结束时不再跳转
-let pageUnmounted = false
-onBeforeUnmount(() => {
-  pageUnmounted = true
-  if (envSubscriptionId) {
-    unsubscribe(envSubscriptionId)
-    envSubscriptionId = null
-  }
-  if (updateSubscriptionId) {
-    unsubscribe(updateSubscriptionId)
-    updateSubscriptionId = null
-  }
-})
-
-const envPreparedPath = ref('')
-
-const runAgentEnvPrepare = async (targetPath?: string, force = false) => {
-  const path = (targetPath ?? maafwConfig.Info.Path).trim()
-  if (!path) return
-  if (envPreparing.value) return
-  // 同一个项目已经备好过就不重复跑；换了目录才重新准备。
-  // 这层只挡住本次停留在页面上的重复调用；跨页面进出由后端比项目指纹来挡。
-  if (!force && envReady.value && envPreparedPath.value === path) return
-  ensureEnvSubscription()
-  envPreparing.value = true
-  envReady.value = false
-  envFailed.value = false
-  envPercent.value = null
-  envLogs.value = []
-  envOutcome.value = null
-  envMessage.value = t('edit.envPreparingHint')
-  try {
-    const response = await prepareMaaFWAgentEnv(path, scriptId, force)
-    if (!response || response.code !== 200 || !response.data) {
-      envFailed.value = true
-      envMessage.value = response?.message || t('edit.envStatusFailed')
-      // 失败响应里同样带着逐行日志，而且这才是最需要它的时候：原先这里直接
-      // return，把唯一一份失败原因扔了，用户只剩一句「准备失败」。
-      if (response?.data?.logs?.length) envLogs.value = response.data.logs
-      message.error(envMessage.value)
-      return
-    }
-    envReady.value = true
-    envPercent.value = 100
-    envPreparedPath.value = path
-    envAgents.value = response.data.agents ?? []
-    // 后端返回的完整日志兜底：WS 断连时至少事后能看到
-    if (response.data.logs?.length) envLogs.value = response.data.logs
-    const version = response.data.maafwVersion
-    envMessage.value = version ? `MaaFramework ${version}` : ''
-    // 旧后端没有 previouslyPrepared 字段：读不到就按首次准备算
-    envOutcome.value = response.data.cached
-      ? 'cached'
-      : response.data.previouslyPrepared
-        ? 'updated'
-        : 'prepared'
-  } catch (error) {
-    envFailed.value = true
-    envMessage.value = error instanceof Error ? error.message : String(error)
-    message.error(envMessage.value)
-  } finally {
-    envPreparing.value = false
-  }
-}
-
-const selectMaaFWPath = async () => {
-  try {
-    if (!window.electronAPI) {
-      message.error(t('edit.filePickingUnavailableRun'))
-      return
-    }
-    const path = await window.electronAPI.selectFolder()
-    if (!path) return
-    // 选目录 = 导入：第一次建副本，之后是换来源并重新导入。Info.Path 由后端在
-    // 导入成功后写入，失败时旧副本与旧来源都原样不动，这里也就不动本地草稿。
-    // 进度由后端按文件数推过来，订阅要在请求发出前挂上，否则头几条会漏。
-    ensureEnvSubscription()
-    importPercent.value = 0
-    importMessage.value = ''
-    const ok = await runEmbeddedAction(() => reimportEmbedded(scriptId, path))
-    if (!ok) return
-    maafwConfig.Info.Path = path
-    formData.path = path
-    await runPreviewOnNewRoot()
-  } catch (error) {
-    logger.error(`选择项目目录失败: ${error instanceof Error ? error.message : String(error)}`)
-    message.error(t('edit.couldNotPickFolder'))
-  }
-}
-
-// ---- 内嵌副本 ----
-// 状态只从后端拿：副本在不在、来源在不在都是磁盘上的事实，本地草稿说了不算。
-const embeddedStatus = ref<MaaFWEmbeddedStatus>({ ...EMPTY_EMBEDDED_STATUS })
-const embeddedBusy = ref(false)
-// 导入进度：后端按投影的文件数推百分比与阶段文案，导入几百 MB 时进度条顶在目录字段下面
-const importPercent = ref<number | null>(null)
-const importMessage = ref('')
-
-const refreshEmbeddedStatus = async () => {
-  try {
-    const { status } = await getEmbeddedStatus(scriptId)
-    embeddedStatus.value = status
-  } catch (error) {
-    logger.error(`读取内嵌状态失败: ${error instanceof Error ? error.message : String(error)}`)
-  }
-}
-
-// 有效根换了（换来源、重新导入）：Info.Path 文本可能没变，但后端按
-// scriptId 解析到的目录已经不是同一个，运行环境要在新根上重新准备一次。这里只
-// 清掉页面内「这个路径备好过」的记忆；后端仍按项目指纹去重，不会真的重装。
-const runPreviewOnNewRoot = async () => {
-  envPreparedPath.value = ''
-  await runPreview()
-}
-
-/** 跑一个内嵌动作：成功回填状态并提示后端文案，失败提示原因；返回是否成功。 */
-const runEmbeddedAction = async (
-  action: () => Promise<{ status: MaaFWEmbeddedStatus; message: string }>
-): Promise<boolean> => {
-  if (embeddedBusy.value) return false
-  embeddedBusy.value = true
-  try {
-    const { status, message: text } = await action()
-    embeddedStatus.value = status
-    if (text) message.success(text)
-    // 导入完成后后端按项目内容决定脚本类型（M9A 项目 → M9A，其它 → MaaFW），
-    // 重新拉一次类型让 flavor 文案跟上
-    await refreshScriptType()
-    return true
-  } catch (error) {
-    message.error(error instanceof Error ? error.message : String(error))
-    return false
-  } finally {
-    embeddedBusy.value = false
-  }
-}
-
-const updateChecking = ref(false)
-const updateApplying = ref(false)
-const updateError = ref('')
-const updateResult = ref<MaaFWUpdateResult | null>(null)
-
-// 每次点「检查更新」或「更新」都从头显示过程；订阅要在请求发出前就挂上，
-// 否则后端最先推的那几条（检查中 / 首行日志）会漏掉。
-const beginUpdateProgress = () => {
-  ensureUpdateSubscription()
-  updateProgress.value = createUpdateProgressState('checking')
-}
-
-// HTTP 响应回来后兜底收尾：WS 断连时面板也要能落到终态，
-// 已由 WS 收尾的不改（后端那句更具体）。
-const settleUpdateProgress = (success: boolean, text: string) => {
-  updateProgress.value = finishUpdateProgress(updateProgress.value, { success, message: text })
-}
-
-const runUpdateCheck = async () => {
-  updateChecking.value = true
-  updateError.value = ''
-  beginUpdateProgress()
-  try {
-    updateResult.value = await checkMaaFWUpdate(scriptId)
-    settleUpdateProgress(true, updateResult.value.message)
-  } catch (error) {
-    updateResult.value = null
-    updateError.value = error instanceof Error ? error.message : String(error)
-    settleUpdateProgress(false, updateError.value)
-  } finally {
-    updateChecking.value = false
-  }
-}
-
-const runUpdateApply = async () => {
-  updateApplying.value = true
-  updateError.value = ''
-  beginUpdateProgress()
-  try {
-    updateResult.value = await applyMaaFWUpdate(scriptId)
-    settleUpdateProgress(true, updateResult.value.message)
-    if (updateResult.value.updated && maafwConfig.Info.Path) {
-      await runPreview()
-    }
-  } catch (error) {
-    updateError.value = error instanceof Error ? error.message : String(error)
-    settleUpdateProgress(false, updateError.value)
-  } finally {
-    updateApplying.value = false
-  }
-}
-
-// 游戏包名：按所选 resource 的 pipeline 推断，推出来就直接填进表单并落盘。
-// 首次读到 interface 时只补空的；切换 resource 时覆盖——包名本来就跟服务器走
-// （官服 / B 服不是一个包）。推不出或多个候选就不动，占位符继续写「留空则自动识别」。
-const syncGamePackageName = async (overwrite: boolean) => {
-  const path = maafwConfig.Info.Path.trim()
-  const resource = resolveResourceName(maafwConfig.Info.Resource)
-  if (!path || !resource) return
-  if (!overwrite && maafwConfig.Game.PackageName.trim()) return
-  try {
-    // 带 scriptId：内嵌脚本按副本推断，来源目录不在了也照常。
-    const response = await MaaFwService.resolveMaafwGamePackageApiScriptsMaafwGamePackagePost({
-      path,
-      resource,
-      scriptId,
-    })
-    const resolved = response.code === 200 && response.data?.reason === 'resolved'
-    const packageName = resolved ? (response.data?.package ?? '').trim() : ''
-    if (!packageName || packageName === maafwConfig.Game.PackageName) return
-    maafwConfig.Game.PackageName = packageName
-    await handleChange('Game', 'PackageName', packageName)
-  } catch (error) {
-    logger.warn(`推断游戏包名失败: ${error instanceof Error ? error.message : String(error)}`)
-  }
-}
-
-const handleResourceChangeWithPackage = async () => {
-  await handleResourceChange()
-  await syncGamePackageName(true)
-}
-
-// Mirror 酱 CDK：脚本级为空时把 MAS 更新设置里填过的那份直接填进来并落盘，
-// 用户不用在两处各填一遍。已填过的脚本一律不动；后端仍只看脚本级配置。
-const cdkPrefilled = ref(false)
-
-const prefillMirrorChyanCdk = async () => {
-  if (maafwConfig.Update.MirrorChyanCDK.trim()) return
-  try {
-    // 直接调生成的客户端而不是 useSettingsApi().getSettings()：后者失败时会弹
-    // 「获取设置失败」的红色提示，与本页无关，预填只是锦上添花，静默跳过即可。
-    const response = await GetService.getScriptsApiSettingGetPost()
-    if (response.code !== 200) return
-    const globalCdk = (response.data?.Update?.MirrorChyanCDK ?? '').trim()
-    // 等待期间用户可能已经自己敲进去了，再查一次
-    if (!globalCdk || maafwConfig.Update.MirrorChyanCDK.trim()) return
-    maafwConfig.Update.MirrorChyanCDK = globalCdk
-    cdkPrefilled.value = true
-    await handleChange('Update', 'MirrorChyanCDK', globalCdk)
-  } catch (error) {
-    logger.warn(`读取全局 CDK 失败: ${error instanceof Error ? error.message : String(error)}`)
-  }
-}
-
-const handleCancel = () => {
-  router.push('/scripts')
-}
-
-// 用户页路由按脚本当前类型走对应那条线（/users/add/maafw、/m9a、/mss ……）
-const userRouteSuffix = () => flavor.value.routeSuffix
-const addUserPath = () => `/scripts/${scriptId}/users/add/${userRouteSuffix()}`
-
-// 引导最后一步直接去建第一个用户；先等排队中的保存写完，用户页读到的才是刚配好的脚本
-const handleCreateFirstUser = async () => {
-  await enqueue(async () => undefined)
-  router.push(addUserPath())
-}
-
-// ---- 引导最后一步：外壳（MFAAvalonia / MXU / MFW-PyQt6）配置导入成用户 ----
-// 只在引导形态、进入最后一步时扫描；扫不到或扫描失败都只记日志，区块不显示。
-const shellInstances = ref<MaaFWShellInstanceItem[]>([])
-const selectedShellInstanceIds = ref<string[]>([])
-const shellImporting = ref(false)
-
-const loadShellInstances = async () => {
-  try {
-    const list = await listShellInstances(scriptId)
-    // 回到这一步时保留用户之前的勾选；新出现的实例默认勾上
-    const previous = new Set(shellInstances.value.map(item => item.id))
-    const selected = new Set(selectedShellInstanceIds.value)
-    shellInstances.value = list
-    selectedShellInstanceIds.value = list
-      .filter(item => !previous.has(item.id) || selected.has(item.id))
-      .map(item => item.id)
-  } catch (error) {
-    shellInstances.value = []
-    selectedShellInstanceIds.value = []
-    logger.warn(`扫描外壳配置失败: ${error instanceof Error ? error.message : String(error)}`)
-  }
-}
-
-watch(
-  () => isWizard.value && currentStep.value === stepItems.length - 1,
-  onLastStep => {
-    if (onLastStep) void loadShellInstances()
-  }
-)
-
-const finishButtonLabel = computed(() => {
-  if (shellImporting.value) return t('edit.shellImporting')
-  const count = selectedShellInstanceIds.value.length
-  return count > 0 ? t('edit.shellImportButton', { count }) : t('edit.createFirstUser')
-})
-
-// 导入要一会儿，结束时用户可能已经离开了这一页（面包屑等）：那时只弹提示、不跳转，
-// 免得把人从别的页面拽回来（pageUnmounted 在卸载钩子里置位）
-const stillOnWizard = () =>
-  !pageUnmounted && route.name === 'MaaFWSetupWizard' && route.params.id === scriptId
-const leaveWizardTo = (path: string) => {
-  if (stillOnWizard()) router.push(path)
-}
-
-// 勾了实例就导入，一个都没勾就是原来的「创建第一个用户！」。导入失败不能把用户卡在引导页：
-// 一个用户都没建成就报错并退回建空用户；部分失败 / 导不全合并成一条提示，照常往下走。
-const handleFinishWizard = async () => {
-  const instanceIds = [...selectedShellInstanceIds.value]
-  if (instanceIds.length === 0) {
-    await handleCreateFirstUser()
-    return
-  }
-  // 结果项里没带实例名时（找不到的实例）按列表里的名字写，都没有才退回 ID
-  const instanceNames = new Map(shellInstances.value.map(item => [item.id, item.name]))
-  shellImporting.value = true
-  try {
-    await enqueue(async () => undefined)
-    let summary: ShellImportSummary
-    try {
-      summary = summarizeShellImport(await importShellInstances(scriptId, instanceIds))
-    } catch (error) {
-      const reason = error instanceof Error ? error.message : String(error)
-      logger.error(`导入外壳配置失败: ${reason}`)
-      message.error(t('edit.shellImportAllFailedWithReason', { reason }))
-      leaveWizardTo(addUserPath())
-      return
-    }
-    for (const item of [...summary.failed, ...summary.partial]) {
-      logger.warn(
-        `导入外壳配置「${shellImportItemName(item, instanceNames)}」：` +
-          (item.error ? `失败 ${item.error}` : `跳过 ${(item.skipped ?? []).join('、')}`)
-      )
-    }
-    const lines = buildShellImportReportLines(summary, t, instanceNames)
-    if (summary.created.length === 0) {
-      message.error({
-        content: h(
-          'div',
-          [t('edit.shellImportAllFailed'), ...lines].map(line => h('div', line))
-        ),
-        duration: 8,
-      })
-      leaveWizardTo(addUserPath())
-      return
-    }
-    if (lines.length > 0) {
-      const notify = summary.failed.length > 0 ? message.error : message.warning
-      notify({
-        content: h(
-          'div',
-          lines.map(line => h('div', line))
-        ),
-        duration: 8,
-      })
-    }
-    const [only] = summary.created
-    leaveWizardTo(
-      summary.created.length === 1 && only.userId
-        ? `/scripts/${scriptId}/users/${only.userId}/edit/${userRouteSuffix()}`
-        : '/scripts'
-    )
-  } finally {
-    shellImporting.value = false
-  }
-}
-
-onMounted(async () => {
-  pageLoading.value = true
-  let scriptLoaded = false
-  try {
-    const [scriptDetail] = await Promise.all([getScript(scriptId), loadEmulatorOptions()])
-    if (!scriptDetail) {
-      message.error(t('edit.scriptDoesNotExist'))
-      router.push('/scripts')
-      return
-    }
-    applyScriptConfig(scriptDetail.config as Partial<MaaFWScriptConfig>)
-    scriptType.value = scriptDetail.type
-    formData.type = scriptDetail.type
-    scriptLoaded = true
-    if (!maafwConfig.Info.Name) {
-      maafwConfig.Info.Name = scriptDetail.name ?? '新 MFW 脚本'
-      formData.name = maafwConfig.Info.Name
-    }
-
-    if (maafwConfig.Emulator.Id && maafwConfig.Emulator.Id !== '-') {
-      await loadEmulatorDeviceOptions(maafwConfig.Emulator.Id)
-    }
-    await refreshEmbeddedStatus()
-    if (maafwConfig.Info.Path) {
-      await runPreview()
-      // 老脚本第一次打开：预览会让后端顺手完成导入，面板要按导入后的状态重画。
-      await refreshEmbeddedStatus()
-    }
-  } catch (error) {
-    logger.error(`加载脚本失败: ${error instanceof Error ? error.message : String(error)}`)
-    message.error(t('edit.couldNotLoadScript'))
-    router.push('/scripts')
-  } finally {
-    pageLoading.value = false
-    isInitializing.value = false
-  }
-  // 放在 isInitializing 复位之后：handleChange 在初始化期间不落盘，
-  // 预填要真正写进脚本配置而不是只改本地草稿。
-  if (scriptLoaded) {
-    await syncProjectName()
-    await prefillMirrorChyanCdk()
-    await syncGamePackageName(false)
-  }
-})
 </script>
 
 <style scoped>
@@ -1094,10 +399,6 @@ onMounted(async () => {
 
 .config-form {
   max-width: none;
-}
-
-.flavor-controller-hint {
-  margin-bottom: 16px;
 }
 
 .config-form :deep(.ant-form-item) {
