@@ -67,7 +67,7 @@ describe('quick configuration panel visibility', () => {
     expect(template).not.toContain(':quick-config=')
     expect(template).not.toContain('@quick-config-change=')
     expect(source).toMatch(
-      /if \(\!\(await (handleFieldSave|saveField)\('Info.IfQuickConfig', value\)\)\)/
+      /if \(!\(await (handleFieldSave|saveField)\('Info.IfQuickConfig', value\)\)\)/
     )
     expect(source).toContain('formData.Info.IfQuickConfig = previous')
 

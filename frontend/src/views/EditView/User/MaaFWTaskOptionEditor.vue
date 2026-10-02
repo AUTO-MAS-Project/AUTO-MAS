@@ -12,7 +12,9 @@
     <a-empty
       v-if="filteredOptions.length === 0"
       class="option-empty"
-      :description="optionSearchQuery ? t('edit.maafwNoMatchingSettings') : t('edit.maafwNoConfigurableOptions')"
+      :description="
+        optionSearchQuery ? t('edit.maafwNoMatchingSettings') : t('edit.maafwNoConfigurableOptions')
+      "
     />
 
     <a-collapse
@@ -189,7 +191,9 @@
           v-else
           type="warning"
           show-icon
-          :message="t('edit.maafwUnsupportedOptionType', { type: option.type || t('edit.unknownType') })"
+          :message="
+            t('edit.maafwUnsupportedOptionType', { type: option.type || t('edit.unknownType') })
+          "
         />
 
         <div

@@ -461,7 +461,8 @@ export default {
     enterAccountId: '请输入账号ID',
     goPlan: '跳转到计划表',
     pickGameServerThis: '选择账号所在的游戏服务器',
-    bilibiliEnterPartUsername: "B 服输入账号名片段；也可输入 B 站账号/邮箱号/手机号，中间使用「{'|'}」分隔",
+    bilibiliEnterPartUsername:
+      "B 服输入账号名片段；也可输入 B 站账号/邮箱号/手机号，中间使用「{'|'}」分隔",
     maaConfiguration: 'MAA配置',
     srcConfiguration: 'SRC配置',
     doNotSwitch: '不切换',
@@ -489,12 +490,14 @@ export default {
     annihilationMaaStartsOnce:
       '启用剿灭时会先单独启动一次 MAA 执行剿灭；剿灭结束后，再启动一次 MAA 执行日常流程。',
     srcAccountSwitchTipIntro: '用于切换账号，无需切换则留空。',
-    cnServersEnter11: '官服输入 11 位手机号；若手机号中包含「*」，切换账号时将仅通过识别已登录账号列表登录',
+    cnServersEnter11:
+      '官服输入 11 位手机号；若手机号中包含「*」，切换账号时将仅通过识别已登录账号列表登录',
     passwordStoredOnlySo: '密码仅用于储存以防遗忘，此外无任何作用',
     passwordStoredOnlySo2: '密码仅用于存储以防遗忘，此外无任何作用',
     import2: '导入',
     noConfigurationImportedYet: '尚未导入配置',
-    whenHighTrafficSettings: '开启后运行前会用本页常用配置项覆盖 MaaEnd 任务；关闭后直接运行配置文件内的完整任务配置',
+    whenHighTrafficSettings:
+      '开启后运行前会用本页常用配置项覆盖 MaaEnd 任务；关闭后直接运行配置文件内的完整任务配置',
     maaEndDailyOnceTasks: '每日仅执行一次的任务',
     maaEndDailyOnceTasksHint:
       '送货和自动采集阶段默认每日仅执行一次，无需选择。所选日常任务当天正常完成后自动跳过；失败可重试，每日凌晨4点重置',
@@ -717,7 +720,8 @@ export default {
     urlProtocolEG: 'URL协议(如Starward)',
     yamlFiles: 'YAML 文件',
     invalidOverridesCount: '{n} 项设置已失效',
-    invalidManagedOverridesTitle: '有 {n} 项在 MAS 里覆写过的设置已失效，运行时会被忽略、按三月七 / SRA 里的设置执行',
+    invalidManagedOverridesTitle:
+      '有 {n} 项在 MAS 里覆写过的设置已失效，运行时会被忽略、按三月七 / SRA 里的设置执行',
     invalidManagedOverrideUnknown: '三月七 / SRA 里已没有这一项',
     invalidManagedOverrideType: '保存的值类型与三月七 / SRA 里的不一致',
     invalidManagedOverrideSaved: '已保存的值：{value}',
@@ -804,7 +808,8 @@ export default {
     hsrModuleNotices: '本模块有 {n} 条提示',
     hsrModuleReset: '恢复本模块为{engine}里的设置',
     hsrModuleResetConfirmTitle: '恢复本模块为{engine}里的设置？',
-    hsrModuleResetConfirmUser: '删掉这个账号在 MAS 里对本模块覆写过的设置（只影响当前引擎）；三月七 / SRA 里的设置本身不会被修改。此操作无法撤销。',
+    hsrModuleResetConfirmUser:
+      '删掉这个账号在 MAS 里对本模块覆写过的设置（只影响当前引擎）；三月七 / SRA 里的设置本身不会被修改。此操作无法撤销。',
     hsrModuleResetConfirmShared:
       '删掉共享任务配置里对本模块改过的设置（只影响当前引擎），选了「共享」的账号都会受影响；三月七 / SRA 里的设置本身不会被修改。此操作无法撤销。',
     hsrModuleResetDone: '本模块已恢复为{engine}里的设置',
@@ -1185,7 +1190,8 @@ export default {
       '选择该账号关键节点在任务报告中的呈现方式：关闭 = 不采集；逐条 = 每条带上采集时间，一行一条；汇总 = 按成功/失败/跳过各合并为一行',
     beforeLaunchingGameRun:
       '开启后，代理启动游戏前由 MAS 检查官方版本并自行完成更新；关闭则直接启动游戏',
-    overridesCurrentScriptConfiguration: '开启后，使用下方覆写面板中的常用任务字段覆盖当前常规配置；关闭后保留常规配置中的完整任务设置',
+    overridesCurrentScriptConfiguration:
+      '开启后，使用下方覆写面板中的常用任务字段覆盖当前常规配置；关闭后保留常规配置中的完整任务设置',
     beforeStartingMaaCompare:
       '开启后，启动 MAA 前先比对服务端与模拟器内的游戏客户端版本。客户端版本落后时 MAA 无法通过强制更新界面，只会一直卡到超时',
     whenClientDetectedAs:
@@ -1338,22 +1344,27 @@ export default {
     enableQuickConfiguration: '是否启用覆写常规配置',
     quickConfigDerivedHint: '由配置层级决定，不能单独切换',
     overlayConfigEnabled: '覆写常规配置',
-    overlayConfigEnabledDesc: '按本账号的界面字段覆写基础配置，任务结束（含失败、取消、异常）后自动恢复。',
+    overlayConfigEnabledDesc:
+      '按本账号的界面字段覆写基础配置，任务结束（含失败、取消、异常）后自动恢复。',
     overlayConfigDisabled: '不覆写常规配置',
-    overlayConfigDisabledDesc: '任务直接使用基础配置运行：MAS 仅启动脚本，界面上的覆写字段不参与运行。',
+    overlayConfigDisabledDesc:
+      '任务直接使用基础配置运行：MAS 仅启动脚本，界面上的覆写字段不参与运行。',
     configSemanticsTitle: '本次任务生效的配置',
     configSemanticsSharedOffTitle: '直接使用共享基础配置',
-    configSemanticsSharedOffDesc: '任务按托管里这份共享基础配置运行；MAS 仅启动脚本，不会改动这份共享基础配置本身。',
+    configSemanticsSharedOffDesc:
+      '任务按托管里这份共享基础配置运行；MAS 仅启动脚本，不会改动这份共享基础配置本身。',
     configSemanticsSharedOnTitle: '共享基础配置 + 本账号的覆写',
     configSemanticsSharedOnDesc:
       '任务运行期间，用本页填写的字段临时覆写共享基础配置，覆写只对本账号生效；任务结束（含失败、取消、异常）后自动恢复原来的共享基础配置，不会污染托管里各账号共用的这份配置。',
     configSemanticsIndependentOffTitle: '直接使用独立基础配置',
-    configSemanticsIndependentOffDesc: '任务按本账号自己那份独立基础配置运行；MAS 仅启动脚本，不会改动这份独立基础配置本身；其他账号各用各自的独立配置，互不影响。',
+    configSemanticsIndependentOffDesc:
+      '任务按本账号自己那份独立基础配置运行；MAS 仅启动脚本，不会改动这份独立基础配置本身；其他账号各用各自的独立配置，互不影响。',
     configSemanticsIndependentOnTitle: '独立基础配置 + 本账号的覆写',
     configSemanticsIndependentOnDesc:
       '任务运行期间，用本页填写的字段临时覆写本账号的独立基础配置；任务结束（含失败、取消、异常）后自动恢复，不会污染这个账号原来的独立配置，也不会影响其他账号。',
     configSemanticsNativeOffTitle: '直接使用外部脚本的原生配置',
-    configSemanticsNativeOffDesc: '任务完全按外部脚本（如 MaaEnd、SRC）自带的那份原生配置启动；MAS 仅启动脚本、不接管这份配置，也不会改动它。',
+    configSemanticsNativeOffDesc:
+      '任务完全按外部脚本（如 MaaEnd、SRC）自带的那份原生配置启动；MAS 仅启动脚本、不接管这份配置，也不会改动它。',
     configSemanticsNativeOnTitle: '用本页字段覆写脚本自带的配置',
     configSemanticsNativeOnDesc:
       '任务运行期间，用本页填写的字段覆写脚本自带的那份配置；任务结束（含失败、取消、异常）后立即恢复任务前的配置，不会污染你原来的配置。',
@@ -1849,7 +1860,8 @@ export default {
     bettergiBattleStrategy: '通用战斗策略',
     bettergiEnterBattleStrategy: '请选择通用战斗策略',
     bettergiBattleStrategyHint: '留空则默认为【根据队伍自动选择】',
-    bettergiGroupCapsuleHint: '每个开关对应一个「任务配置组」：勾选的任务才会执行，未勾选的不执行。',
+    bettergiGroupCapsuleHint:
+      '每个开关对应一个「任务配置组」：勾选的任务才会执行，未勾选的不执行。',
     bettergiTeamConfig: '队伍配置',
     bettergiTeamConfigHint:
       '开启后，战斗任务（自动秘境 / 自动地脉花 / 自动首领讨伐）先查本表：命中「战斗场景」的队伍优先采用，多个命中则随机选一个。名称与策略与上方通用战斗队伍/策略互通',
@@ -2130,7 +2142,8 @@ export default {
     configRestoreFileUnsupported: '该备份类别不支持查看文件内容',
     configRestoreDetailView: '查看详细配置',
     configRestoreDetailHint: '将进入托管页面查看详细配置，请保证当前没有其他同名托管在运行！',
-    configRestoreDetailConfirm: '即将打开托管页面查看配置，会临时覆盖当前配置。查看期间请不要运行任何同名托管，否则可能产生配置冲突；若出现意外，可使用配置恢复功能恢复。',
+    configRestoreDetailConfirm:
+      '即将打开托管页面查看配置，会临时覆盖当前配置。查看期间请不要运行任何同名托管，否则可能产生配置冲突；若出现意外，可使用配置恢复功能恢复。',
     configRestoreConfirmOk: '确认',
     configRestoreAction: '一键恢复',
     configRestoreSuccess: '配置已恢复',
@@ -2504,7 +2517,8 @@ export default {
     configureOkNte: '配置 OK-NTE',
     aboutSharingDetailPrefix: '所有',
     aboutSharingSensitive: '敏感信息',
-    aboutSharingDetailSuffix: '均会在上传前自动移除，上传内容仅包含脚本配置的非敏感信息。上传且通过审核后，其他用户可以下载并使用你的脚本配置。请确保配置信息准确且描述清晰。',
+    aboutSharingDetailSuffix:
+      '均会在上传前自动移除，上传内容仅包含脚本配置的非敏感信息。上传且通过审核后，其他用户可以下载并使用你的脚本配置。请确保配置信息准确且描述清晰。',
     bettergiColParty: '队伍',
     bettergiColStrategy: '策略',
     bettergiColDomain: '秘境',
@@ -3595,11 +3609,11 @@ export default {
     },
   },
   logs: {
-  pageTitle: '日志查看',
-  backendLog: '后端日志',
-  frontendLog: '前端日志',
-  followLatest: '保持最新',
-  freeBrowse: '自由浏览',
+    pageTitle: '日志查看',
+    backendLog: '后端日志',
+    frontendLog: '前端日志',
+    followLatest: '保持最新',
+    freeBrowse: '自由浏览',
     package: '打包日志',
     toast: {
       packageNoResponse: '打包日志功能未响应，请检查程序',

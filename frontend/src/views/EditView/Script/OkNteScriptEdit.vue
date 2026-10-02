@@ -189,9 +189,7 @@
                 <template #label>
                   <span class="form-label">
                     {{ t('edit.gameLauncher') }}
-                    <span class="label-hint"
-                      >{{ t('edit.okntePickDirHint') }}</span
-                    >
+                    <span class="label-hint">{{ t('edit.okntePickDirHint') }}</span>
                   </span>
                 </template>
                 <a-input-group compact class="path-input-group">

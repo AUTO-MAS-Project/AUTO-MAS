@@ -28,7 +28,11 @@
             <CloseCircleOutlined />
           </a-tooltip>
           <span>{{
-            saveStatus === 'saving' ? t('edit.savingNow') : saveStatus === 'saved' ? t('edit.autoSaved') : t('edit.saveFailedShort')
+            saveStatus === 'saving'
+              ? t('edit.savingNow')
+              : saveStatus === 'saved'
+                ? t('edit.autoSaved')
+                : t('edit.saveFailedShort')
           }}</span>
         </span>
       </Transition>

@@ -664,7 +664,9 @@
         </div>
         <!-- 第二级：该地区的秘境（地点-秘境类型） -->
         <div class="bettergi-domain-picker-col">
-          <div class="bettergi-domain-picker-col-title">{{ t('edit.bettergiPickerDomainType') }}</div>
+          <div class="bettergi-domain-picker-col-title">
+            {{ t('edit.bettergiPickerDomainType') }}
+          </div>
           <div class="bettergi-domain-picker-list">
             <div
               v-for="item in pickRegionDomains"

@@ -477,7 +477,8 @@ export default {
     enterAccountId: 'Enter the account ID',
     goPlan: 'Go to the plan',
     pickGameServerThis: 'Pick the game server this account plays on',
-    bilibiliEnterPartUsername: "For Bilibili servers, enter part of the account name; you may also enter the account / email / phone number, separated by '{'|'}'",
+    bilibiliEnterPartUsername:
+      "For Bilibili servers, enter part of the account name; you may also enter the account / email / phone number, separated by '{'|'}'",
     maaConfiguration: 'MAA configuration',
     srcConfiguration: 'SRC configuration',
     doNotSwitch: 'Do not switch',
@@ -501,19 +502,22 @@ export default {
       'Annihilation and the daily run start MAA twice; within a group they run in order',
     annihilationDailyTasksEach: 'Annihilation and the daily tasks each start their own MAA session',
     annihilationStage: 'Annihilation stage',
-    rewardGroupsProtocolSpace: 'Reward groups for Protocol Space (Endfield) reward tasks are chosen here',
+    rewardGroupsProtocolSpace:
+      'Reward groups for Protocol Space (Endfield) reward tasks are chosen here',
     rewardGroup: 'Reward group',
     annihilationMaaStartsOnce:
       'With annihilation on, MAA starts once just for annihilation; when that finishes, MAA starts again for the daily run.',
     srcAccountSwitchTipIntro: 'Used to switch accounts. Leave it empty if no switching is needed.',
-    cnServersEnter11: 'For CN servers, enter the 11-digit phone number. If it contains "*", switching only matches the already-signed-in account list',
+    cnServersEnter11:
+      'For CN servers, enter the 11-digit phone number. If it contains "*", switching only matches the already-signed-in account list',
     passwordStoredOnlySo:
       'The password is stored only so you do not forget it; it has no other effect',
     passwordStoredOnlySo2:
       'The password is stored only so you do not forget it; it has no other effect',
     import2: 'Import',
     noConfigurationImportedYet: 'No configuration imported yet',
-    whenHighTrafficSettings: 'When on, the most-used fields on this page override the MaaEnd tasks before a run; when off, the full task configuration from the file is used as is',
+    whenHighTrafficSettings:
+      'When on, the most-used fields on this page override the MaaEnd tasks before a run; when off, the full task configuration from the file is used as is',
     maaEndOpenConfig: 'Open the MaaEnd window',
     maaEndOpenConfigSharedTip:
       'Edit the shared configuration that every account of this managed script uses, in the MaaEnd window.',
@@ -636,7 +640,8 @@ export default {
       'Used to switch accounts. On CN servers enter the phone number; matching always uses the last four digits. Leave empty if you do not switch',
     userSPasswordWhen:
       "The account's password. When set, signing in with the account and password is used as a fallback; when empty, only the already-signed-in account list is used",
-    accountEmailPhoneNumber2: 'When signing in with an account and password, the Bilibili account name is preferred',
+    accountEmailPhoneNumber2:
+      'When signing in with an account and password, the Bilibili account name is preferred',
     firstMaaSessionAnnihilation: 'First MAA session: annihilation',
     world3: 'World 3',
     secondMaaSessionDaily: 'Second MAA session: daily run',
@@ -1232,7 +1237,8 @@ export default {
       "Choose how this account's key moments appear in the task report: Off = not collected; List = one line each with its collection time; Summary = one line per success/failure/skipped status",
     beforeLaunchingGameRun:
       'Before launching the game for a run, MAS checks the official version and updates it; when off the game is launched directly',
-    overridesCurrentScriptConfiguration: 'Overrides the current standard configuration with the most-used task fields from the panel below; when off, the full task settings from the standard configuration are kept',
+    overridesCurrentScriptConfiguration:
+      'Overrides the current standard configuration with the most-used task fields from the panel below; when off, the full task settings from the standard configuration are kept',
     beforeStartingMaaCompare:
       "Before starting MAA, compare the server's game client version with the one in the emulator. When the client is behind, MAA cannot get past the forced-update screen and just hangs until it times out",
     whenClientDetectedAs:
@@ -1247,7 +1253,8 @@ export default {
     maaendConfigRestoreScriptDesc:
       'Backups of the MaaEnd native config; restoring applies directly to MaaEnd itself. Created automatically (dedup) when opening this edit page, before running MaaEnd or opening its config UI, latest 10 kept',
     // 通用脚本配置恢复（配置格式任意，预览为文件清单；有遮罩会话）
-    generalConfigRestoreUserDesc: "Backups of this account's script config; restoring applies directly to the MAS config page. Created automatically (dedup) before running or opening the config UI, latest 10 kept",
+    generalConfigRestoreUserDesc:
+      "Backups of this account's script config; restoring applies directly to the MAS config page. Created automatically (dedup) before running or opening the config UI, latest 10 kept",
     generalConfigRestoreScriptDesc:
       'Backups of the script config path; restoring applies directly to the script itself. Created automatically (dedup) when opening this edit page or before running, latest 10 kept',
     generalViewingTitle: 'Viewing script config',
@@ -1582,7 +1589,8 @@ export default {
       'MirrorChyan CDK unavailable ({status}); the update cannot be downloaded from MirrorChyan. Check the CDK and try again',
     cdkExpiresSoon: 'The MirrorChyan CDK expires on {date}',
     directory: 'Directory',
-    useExistingOkwwConfiguration: 'Use the existing ok-ww configuration and leave the complex settings to the script GUI.',
+    useExistingOkwwConfiguration:
+      'Use the existing ok-ww configuration and leave the complex settings to the script GUI.',
     useScriptSCurrent:
       "Use the script's current configuration; this account's own configuration is neither loaded nor written back.",
     useScriptS: "Use the script configuration; not isolated from the user's own configuration.",
@@ -1919,7 +1927,8 @@ export default {
     bettergiServerEurope: 'Europe',
     bettergiServerAmerica: 'America',
     bettergiServerTwHkMo: 'TW/HK/MO',
-    bettergiTaskConfigHint: "Tick the built-in OneDragon groups to run. In native mode, BetterGI's own settings decide, and this section is read-only",
+    bettergiTaskConfigHint:
+      "Tick the built-in OneDragon groups to run. In native mode, BetterGI's own settings decide, and this section is read-only",
     bettergiDirectModeAlert:
       'Native configuration: enter the OneDragon config name this account uses below (a config that already exists in BetterGI); configure scripts inside BetterGI (click "Configure BetterGI" to open it).',
     bettergiSwitchToMasConfig: 'Switch to independent configuration',
@@ -2631,7 +2640,8 @@ export default {
     depotDeleteSelectedConfirm: 'Delete the {n} selected depot maintenance plans?',
     maafwNoMatchingSettings: 'No matching settings',
     maafwNoConfigurableOptions: 'This task has no configurable options',
-    maafwUnsupportedOptionType: 'Unsupported setting type: {type}. Contact the script author or upgrade AUTO-MAS.',
+    maafwUnsupportedOptionType:
+      'Unsupported setting type: {type}. Contact the script author or upgrade AUTO-MAS.',
     unknownType: 'Unknown',
     savingNow: 'Saving…',
     autoSaved: 'Saved automatically',
@@ -2640,11 +2650,13 @@ export default {
     okwwUpdateProgress: 'Wuthering Waves update progress',
     okwwCheckUpdateTitle: 'Check for Wuthering Waves updates',
     configureOkww: 'Configure ok-ww',
-    okntePickDirHint: 'Choose any directory containing Neverness To Everness; the NTEGame.exe launcher will be located automatically.',
+    okntePickDirHint:
+      'Choose any directory containing Neverness To Everness; the NTEGame.exe launcher will be located automatically.',
     configureOkNte: 'Configure OK-NTE',
     aboutSharingDetailPrefix: 'All ',
     aboutSharingSensitive: 'sensitive information',
-    aboutSharingDetailSuffix: ' is removed automatically before uploading; the uploaded content only contains non-sensitive script settings. After the upload passes review, other users can download and use your script configuration. Please make sure the configuration is accurate and clearly described.',
+    aboutSharingDetailSuffix:
+      ' is removed automatically before uploading; the uploaded content only contains non-sensitive script settings. After the upload passes review, other users can download and use your script configuration. Please make sure the configuration is accurate and clearly described.',
     bettergiColParty: 'Party',
     bettergiColStrategy: 'Strategy',
     bettergiColDomain: 'Domain',
@@ -3479,7 +3491,8 @@ export default {
     couldNotRecoverBackend: 'Could not recover the backend service',
     couldNotStartInstaller: 'Could not start the installer',
     installerStarted: 'The installer started',
-    exportDidNotRespond: 'The export did not respond — check the app window for a dialog window for a dialog window for a dialog window for a dialog',
+    exportDidNotRespond:
+      'The export did not respond — check the app window for a dialog window for a dialog window for a dialog window for a dialog',
     screenshot: 'Screenshot',
     openMasGroup: 'Open the MAS group',
     noUpdates: 'No updates',
@@ -3750,11 +3763,11 @@ export default {
     },
   },
   logs: {
-  pageTitle: 'Logs',
-  backendLog: 'Backend log',
-  frontendLog: 'Frontend log',
-  followLatest: 'Follow latest',
-  freeBrowse: 'Free scroll',
+    pageTitle: 'Logs',
+    backendLog: 'Backend log',
+    frontendLog: 'Frontend log',
+    followLatest: 'Follow latest',
+    freeBrowse: 'Free scroll',
     package: 'Package logs',
     toast: {
       packageNoResponse: 'Packaging logs did not respond. Check the app.',
@@ -4300,7 +4313,8 @@ export default {
     advanced: {
       backupSection: 'Data backup',
       exportBackup: 'Export a data backup',
-      backupDesc: 'Back up your data now so you can recover if MAS ever runs into something unrecoverable. Once saved you can reinstall safely — important data will not be lost.',
+      backupDesc:
+        'Back up your data now so you can recover if MAS ever runs into something unrecoverable. Once saved you can reinstall safely — important data will not be lost.',
       logSection: 'MAS log export',
       exportLog: 'Export a log archive',
       exportMaaEnd: 'Export a MaaEnd issue bundle',
@@ -4416,11 +4430,13 @@ export default {
       testFailed: 'Could not send the test notification',
       versionCopied: 'Version info copied to the clipboard',
       copyFailed: 'Copy failed',
-      exportNoResponse: 'The export did not respond — check the app window for a dialog window for a dialog window for a dialog window for a dialog',
+      exportNoResponse:
+        'The export did not respond — check the app window for a dialog window for a dialog window for a dialog window for a dialog',
       logExported: 'Log archive exported',
       logExportFailed: 'Log export failed',
       logExportError: 'Log export error: {error}',
-      backupNoResponse: 'The backup did not respond — check the app window for a dialog window for a dialog window for a dialog window for a dialog',
+      backupNoResponse:
+        'The backup did not respond — check the app window for a dialog window for a dialog window for a dialog window for a dialog',
       backupExported: 'Data backup exported',
       backupExportFailed: 'Data backup export failed',
       backupExportError: 'Data backup export error: {error}',

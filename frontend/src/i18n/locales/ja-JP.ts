@@ -465,7 +465,8 @@ export default {
     enterAccountId: 'アカウント ID を入力してください',
     goPlan: 'プランへ移動',
     pickGameServerThis: 'このアカウントがプレイするゲームサーバーを選びます',
-    bilibiliEnterPartUsername: "B サーバー（bilibili）ではアカウント名の一部を入力します。アカウント / メールアドレス / 電話番号を「{'|'}」区切りで入力することもできます",
+    bilibiliEnterPartUsername:
+      "B サーバー（bilibili）ではアカウント名の一部を入力します。アカウント / メールアドレス / 電話番号を「{'|'}」区切りで入力することもできます",
     maaConfiguration: 'MAA 設定',
     srcConfiguration: 'SRC 設定',
     doNotSwitch: '切り替えない',
@@ -492,8 +493,10 @@ export default {
     rewardGroup: '報酬グループ',
     annihilationMaaStartsOnce:
       '殲滅を有効にすると、まず殲滅のためだけに MAA を起動し、終わってからもう一度 MAA を起動して日課を実行します。',
-    srcAccountSwitchTipIntro: 'アカウントの切り替えに使います。切り替えない場合は空欄にしてください。',
-    cnServersEnter11: '中国公式サーバーでは 11 桁の電話番号を入力します。「*」を含む場合は、ログイン済みアカウント一覧との照合のみで切り替えます',
+    srcAccountSwitchTipIntro:
+      'アカウントの切り替えに使います。切り替えない場合は空欄にしてください。',
+    cnServersEnter11:
+      '中国公式サーバーでは 11 桁の電話番号を入力します。「*」を含む場合は、ログイン済みアカウント一覧との照合のみで切り替えます',
     passwordStoredOnlySo: 'パスワードは忘れないよう保管する目的のみで、ほかの用途はありません',
     passwordStoredOnlySo2: 'パスワードは忘れないよう保管する目的のみで、ほかの用途はありません',
     import2: 'インポート',
@@ -585,7 +588,8 @@ export default {
       'アカウント切り替えに使います。中国本土サーバーでは電話番号を入力します。どちらの方式でもアカウント末尾 4 桁で照合します。切り替えない場合は空のままにしてください',
     userSPasswordWhen:
       'アカウントのパスワードです。入力すると、アカウントとパスワードによるログインを代替手段として使います。空の場合はログイン済みアカウント一覧からの選択のみを行います',
-    accountEmailPhoneNumber2: 'アカウントとパスワードでログインする場合、B サーバー（bilibili）のアカウント名が優先されます',
+    accountEmailPhoneNumber2:
+      'アカウントとパスワードでログインする場合、B サーバー（bilibili）のアカウント名が優先されます',
     firstMaaSessionAnnihilation: '1 回目の MAA 起動：殲滅フロー',
     world3: '第三世界',
     secondMaaSessionDaily: '2 回目の MAA 起動：日課フロー',
@@ -998,7 +1002,8 @@ export default {
     maaScriptConfiguration: 'MAA スクリプト設定',
     maaPath: 'MAA のパス',
     maaPathSelected: 'MAA のパスを選択しました',
-    masOnlyTakesOver: 'ゲームはご自身（またはスクリプト）が起動し、MAS は開いているウィンドウに接続するだけです',
+    masOnlyTakesOver:
+      'ゲームはご自身（またはスクリプト）が起動し、MAS は開いているウィンドウに接続するだけです',
     howLongMasWaits: 'MAS がゲームを起動してから操作可能になるまで待つ最大時間',
     masManagesGame: 'MAS がゲームを起動・終了する',
     mfwGamePackageName: 'ゲームのパッケージ名',
@@ -1046,11 +1051,13 @@ export default {
     next: '次へ',
     moveTaskDown: 'タスクを下へ',
     moveDailySubtaskDown: '日課サブタスクを下へ',
-    timeoutDownloadingInstallingGame: 'ゲームインストーラーのダウンロードとインストールのタイムアウトです。ゲームリソースのホットアップデートが検出された場合、その回の代行のタイムアウトもこの値まで緩和され、通常の更新中の待機を異常停止と誤判定しないようにします',
+    timeoutDownloadingInstallingGame:
+      'ゲームインストーラーのダウンロードとインストールのタイムアウトです。ゲームリソースのホットアップデートが検出された場合、その回の代行のタイムアウトもこの値まで緩和され、通常の更新中の待機を異常停止と誤判定しないようにします',
     giveHsrScriptName: '見分けやすい HSR マネージドスクリプト名を付けてください',
     giveThisConfigurationName: '見分けやすい設定名を付けてください',
     giveYourScriptConfiguration: '見分けやすいスクリプト設定名を付けてください',
-    saveSeparateConfigurationThis: 'このアカウント専用の設定を保存します。実行前に読み込み、終了時にタスクのポリシーに従って保存します。',
+    saveSeparateConfigurationThis:
+      'このアカウント専用の設定を保存します。実行前に読み込み、終了時にタスクのポリシーに従って保存します。',
     mainProgramPath: 'メインプログラムのパス',
     writtenCurrentUserS:
       'MAS がローカルのゲームを起動する間だけ、現在のアカウントのレジストリに書き込んでウィンドウモードに切り替えます。タスクの完了・失敗・手動停止でゲームを閉じたあと、元の値に戻します',
@@ -1126,7 +1133,8 @@ export default {
       '有効にすると、ゲームにログインする前にサーバーとエミュレーター内のゲームクライアントのバージョンを比較します。クライアントが古いと強制更新画面でログインが止まります',
     updateAutomaticallyBeforeLaunching: '起動前に自動更新',
     genshinUpdateAuto: '原神を自動更新（B サーバーは非対応）',
-    genshinUpdateAutoHint: 'タスクがゲームを起動する前に、MAS がバージョン確認・ダウンロード・インストールまで自動で完了し、公式ランチャーは不要です。差分パッチのみ自動適用し、無い場合は停止して公式ランチャーに任せます。インストール済みの音声パッケージはメインのリソースと一緒に更新されます。B サーバー（bilibili）は非対応のため、公式ランチャーで各自更新してください',
+    genshinUpdateAutoHint:
+      'タスクがゲームを起動する前に、MAS がバージョン確認・ダウンロード・インストールまで自動で完了し、公式ランチャーは不要です。差分パッチのみ自動適用し、無い場合は停止して公式ランチャーに任せます。インストール済みの音声パッケージはメインのリソースと一緒に更新されます。B サーバー（bilibili）は非対応のため、公式ランチャーで各自更新してください',
     waitAfterLaunchSeconds: '起動後の待機時間（秒）',
     launchMode: '起動方式',
     howLongWaitAfter2: 'ゲーム起動後に待つ時間',
@@ -1150,7 +1158,8 @@ export default {
     packageSource: 'インストーラーの取得元',
     clickSaveSettingsWhen:
       '設定が終わったら「保存して閉じる」を押してこのセッションを終了してください。',
-    notWiredIntoRun: '現在のバージョンではオンにしても実行前の自動更新は行われません。右側の手動更新をお使いください',
+    notWiredIntoRun:
+      '現在のバージョンではオンにしても実行前の自動更新は行われません。右側の手動更新をお使いください',
     noOkWwSettings: 'ok-ww の設定はまだ生成されていません',
     interfaceJsonHasNot: 'interface.json はまだ読み込まれていません',
     nativeTaskConfigurationHas: 'ネイティブのタスク設定はまだ読み込まれていません',
@@ -1428,7 +1437,8 @@ export default {
     userTypeDoesNot: 'アカウントの種別が一致しません',
     couldNotSaveUser:
       'アカウント設定を保存できませんでした。バックエンドとの接続を確認してからお試しください',
-    masChecksOfficialVersion: 'MAS が公式サーバーの最新バージョンを確認して更新します。更新前にゲームが起動していないことを確認してください',
+    masChecksOfficialVersion:
+      'MAS が公式サーバーの最新バージョンを確認して更新します。更新前にゲームが起動していないことを確認してください',
     leaveEmptySkipTrailing: '空にすると末尾を切り取りません',
     leaveEmptySkipLeading: '空にすると先頭を切り取りません',
     cdkTip:
@@ -1548,7 +1558,8 @@ export default {
       'MAS がゲームを起動する際の 2 段階の待機はこの上限を共有します。まずウィンドウの表示を待ち、次に画面の安定を待ちます。待機中は毎秒画面を確認し、内容があり 5 秒間変化がなければ早めにタスクを開始します。MaaFW の初期化は並行して進みます。Unity 製ゲームはウィンドウが出た時点ではまだ黒画面で読み込み中のことが多く、早すぎるとスクリプト側で認識異常と判定されます。ゲームが既に起動している場合は画面を待ちません。',
     mfwUnityResolutionTip:
       'Unity 製ゲームのみ有効：MAS は起動前に exe のパスからゲームのレジストリを逆引きし、解像度を一時的に選択したサイズのウィンドウモードに変更、ゲーム終了後に元の値へ戻します。ゲームがすでに起動している場合は変更しません。',
-    thisNameAlsoWritten: 'この名前は、「貨幣戦争」機能の開拓者名としても三月なのかアシスタント / SRA に書き込まれます',
+    thisNameAlsoWritten:
+      'この名前は、「貨幣戦争」機能の開拓者名としても三月なのかアシスタント / SRA に書き込まれます',
     thisSubtaskHasNo: 'このサブタスクに編集できる項目はありません',
     thisConfigurationFileHas: 'この設定ファイルに編集できる項目はありません',
     details: '詳細設定',
@@ -1723,7 +1734,8 @@ export default {
     baahPushLogEnabled: 'タスクノードの詳細を通知する',
     baahPushLogEnabledHint:
       '有効にすると、今回の実行の BAAH タスクノード（成功／スキップ／失敗）がタスクレポートと一緒に通知されます。無効にしてもタスクノードを収集しないだけで、タスクログの記録と結果判定には影響しません',
-    baahEmulatorHint: 'MAS が起動を管理するエミュレーターを選択します。実行前に MAS が起動してデバイスの準備完了を待ち、BAAH は接続するだけです。BAAH 側でエミュレーターのパスとポートを入力する必要はありません',
+    baahEmulatorHint:
+      'MAS が起動を管理するエミュレーターを選択します。実行前に MAS が起動してデバイスの準備完了を待ち、BAAH は接続するだけです。BAAH 側でエミュレーターのパスとポートを入力する必要はありません',
     baahNotBaahScript: 'このスクリプトは BAAH ではありません',
     baahRunTimesLimitHint: 'この回数を超えても失敗した場合は今回の実行を中止します',
     baahRunTimeLimitHint:
@@ -1761,7 +1773,8 @@ export default {
     bettergiPickExeDir: 'BetterGI.exe があるフォルダーを選択します',
     bettergiPickExeDirPlaceholder: 'BetterGI.exe があるフォルダーを選択してください',
     bettergiPathRequired: 'BetterGI のパスを選択してください',
-    bettergiControllerHint: 'ゲームの操作方法です。クラウド版原神とマルチインスタンス（デスクトップ複製）は未実装で、現在は PC フォアグラウンドのみ利用できます',
+    bettergiControllerHint:
+      'ゲームの操作方法です。クラウド版原神とマルチインスタンス（デスクトップ複製）は未実装で、現在は PC フォアグラウンドのみ利用できます',
     bettergiControllerForeground: 'PC - フォアグラウンド',
     bettergiControllerCloud: 'PC - クラウド原神（未実装）',
     bettergiControllerDesktopClone: 'PC - デスクトップ分身（未実装）',
@@ -1871,7 +1884,8 @@ export default {
     bettergiBattleStrategy: '共通戦闘ストラテジー',
     bettergiEnterBattleStrategy: '共通戦闘ストラテジーを選択してください',
     bettergiBattleStrategyHint: '空欄の場合は「パーティーに応じて自動選択」になります',
-    bettergiGroupCapsuleHint: '各行はタスクグループのオン/オフスイッチです。オンのグループだけが実行されます。',
+    bettergiGroupCapsuleHint:
+      '各行はタスクグループのオン/オフスイッチです。オンのグループだけが実行されます。',
     bettergiTeamConfig: 'パーティー設定',
     bettergiTeamConfigHint:
       'オンにすると、戦闘タスク（自動秘境 / 自動地脈の花 / 自動ボス討伐）はまずこの表を参照します。「戦闘シーン」に一致したパーティーを優先採用し、複数一致した場合はランダムに 1 つ選びます。名前とストラテジーは上部の共通戦闘パーティー / ストラテジーと同期します',
@@ -1892,7 +1906,8 @@ export default {
     bettergiTeamActionColumn: '操作',
     bettergiTeamGeneralTag: '共通',
     bettergiTeamGeneralScene: '共通フォールバック',
-    bettergiTeamGeneralHint: '一致しなかったすべての戦闘タスクのフォールバック先になります。削除できません',
+    bettergiTeamGeneralHint:
+      '一致しなかったすべての戦闘タスクのフォールバック先になります。削除できません',
     bettergiTeamStrategyFollowGeneral: '共通ストラテジーに従う',
     bettergiTeamNoScene: '未指定（選出に参加しません）',
     bettergiTeamEditScenes: '戦闘シーン',
@@ -2042,7 +2057,8 @@ export default {
     depotDeleteSelectedConfirm: '選択した {n} 件の倉庫保持プランを削除しますか？',
     maafwNoMatchingSettings: '一致する設定項目がありません',
     maafwNoConfigurableOptions: 'このタスクに設定できる項目はありません',
-    maafwUnsupportedOptionType: 'サポートされていない設定項目の型です：{type}。スクリプト作者に連絡するか、AUTO-MAS をアップグレードしてください。',
+    maafwUnsupportedOptionType:
+      'サポートされていない設定項目の型です：{type}。スクリプト作者に連絡するか、AUTO-MAS をアップグレードしてください。',
     unknownType: '不明',
     savingNow: '保存中…',
     autoSaved: '自動保存済み',
@@ -2051,11 +2067,13 @@ export default {
     okwwUpdateProgress: '鳴潮アップデート進捗',
     okwwCheckUpdateTitle: '鳴潮のアップデートを確認',
     configureOkww: 'ok-ww を設定',
-    okntePickDirHint: 'Neverness To Everness を含む任意のディレクトリを選択してください。NTEGame.exe ランチャーは自動で検出されます。',
+    okntePickDirHint:
+      'Neverness To Everness を含む任意のディレクトリを選択してください。NTEGame.exe ランチャーは自動で検出されます。',
     configureOkNte: 'OK-NTE を設定',
     aboutSharingDetailPrefix: 'すべての',
     aboutSharingSensitive: '機密情報',
-    aboutSharingDetailSuffix: 'はアップロード前に自動的に除外されます。アップロード内容にはスクリプト設定の機密にあたらない情報のみが含まれ、審査を通過すると他のユーザーがダウンロードして利用できます。設定内容が正確で、説明が明確であることを確認してください。',
+    aboutSharingDetailSuffix:
+      'はアップロード前に自動的に除外されます。アップロード内容にはスクリプト設定の機密にあたらない情報のみが含まれ、審査を通過すると他のユーザーがダウンロードして利用できます。設定内容が正確で、説明が明確であることを確認してください。',
     bettergiColParty: 'パーティ',
     bettergiColStrategy: '作戦',
     bettergiColDomain: '秘境',
@@ -3141,11 +3159,11 @@ export default {
     },
   },
   logs: {
-  pageTitle: 'ログ',
-  backendLog: 'バックエンドログ',
-  frontendLog: 'フロントエンドログ',
-  followLatest: '最新に追従',
-  freeBrowse: '自由スクロール',
+    pageTitle: 'ログ',
+    backendLog: 'バックエンドログ',
+    frontendLog: 'フロントエンドログ',
+    followLatest: '最新に追従',
+    freeBrowse: '自由スクロール',
     package: 'ログの書き出し',
     toast: {
       packageNoResponse: '書き出し機能が応答しません。アプリの状態を確認してください',
@@ -3573,7 +3591,8 @@ export default {
       telemetryTip:
         '個人情報を除いたエラーと性能データを送信し、問題の特定に役立てます。オフにすると一切送信しません',
       biliPolicy: 'Bilibili ゲームのプライバシー確認を代行',
-      biliIntro: 'オンにすると、以下の規約をすべて読んで同意したものとみなし、関連ダイアログの処理を本アプリに許可します：',
+      biliIntro:
+        'オンにすると、以下の規約をすべて読んで同意したものとみなし、関連ダイアログの処理を本アプリに許可します：',
       biliTerms: '『bilibili 弾幕網 ユーザー利用規約』',
       biliPrivacy: '『bilibili プライバシーポリシー』',
       biliGame: '『bilibili ゲームセンター ユーザー規約』',
@@ -3655,7 +3674,8 @@ export default {
       serverChanKey: 'ServerChan キー',
       serverChanKeyTip: 'ServerChan の SendKey です。取得方法はドキュメントをご覧ください',
       serverChanPlaceholder: 'ServerChan の SendKey を入力してください',
-      cmccNewMsgSection: 'チャイナモバイル（China Mobile）5G メッセージ通知（無料・チャイナモバイル回線限定）',
+      cmccNewMsgSection:
+        'チャイナモバイル（China Mobile）5G メッセージ通知（無料・チャイナモバイル回線限定）',
       cmccNewMsgDoc: '通知機能ガイドを開く',
       cmccNewMsgEnable: 'チャイナモバイル 5G メッセージ通知を有効にする',
       cmccNewMsgTip:
@@ -3663,7 +3683,8 @@ export default {
       cmccNewMsgApiKey: 'Channel API キー',
       cmccNewMsgApiKeyTip:
         'チャイナモバイル 5G メッセージ Channel の管理者から提供される、ak_ または app_ で始まるキーです',
-      cmccNewMsgApiKeyPlaceholder: 'チャイナモバイル 5G メッセージ Channel API キーを入力してください',
+      cmccNewMsgApiKeyPlaceholder:
+        'チャイナモバイル 5G メッセージ Channel API キーを入力してください',
       koishiSection: 'Koishi',
       koishiEnable: 'Koishi 通知を有効にする',
       koishiTip: 'Koishi で通知を送信します',

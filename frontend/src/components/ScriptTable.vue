@@ -280,7 +280,9 @@
                     size="middle"
                     class="action-button"
                     :disabled="props.searching"
-                    :aria-label="isUsersCollapsed(script.id) ? t('comp.expandUsers') : t('comp.collapseUsers')"
+                    :aria-label="
+                      isUsersCollapsed(script.id) ? t('comp.expandUsers') : t('comp.collapseUsers')
+                    "
                     @click="toggleUsersCollapsed(script.id)"
                   >
                     <template #icon>

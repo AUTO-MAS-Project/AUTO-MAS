@@ -425,7 +425,8 @@
                   @blur="handleChange('Script', 'LogTimeFormat', formData.logTimeFormat)"
                 />
                 <div class="format-preview">
-                  {{ t('edit.examplePreview') }}<span class="format-preview-value">{{ logTimeFormatPreview }}</span>
+                  {{ t('edit.examplePreview')
+                  }}<span class="format-preview-value">{{ logTimeFormatPreview }}</span>
                 </div>
                 <div v-if="hasFractionalSecondToken" class="format-preview-tip">
                   {{ t('edit.tipFAcceptsBoth') }} {{ t('edit.k123456DigitCountLog') }}
@@ -911,7 +912,9 @@
       <a-alert :message="t('edit.aboutSharing')" type="info">
         <template #description>
           <p>
-            {{ t('edit.aboutSharingDetailPrefix') }}<span style="font-weight: bold"> {{ t('edit.aboutSharingSensitive') }} </span>{{ t('edit.aboutSharingDetailSuffix') }}
+            {{ t('edit.aboutSharingDetailPrefix')
+            }}<span style="font-weight: bold"> {{ t('edit.aboutSharingSensitive') }} </span
+            >{{ t('edit.aboutSharingDetailSuffix') }}
           </p>
         </template>
       </a-alert>
