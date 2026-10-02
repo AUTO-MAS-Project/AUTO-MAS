@@ -125,11 +125,16 @@ import type { ScriptDeleteIn } from '../models/ScriptDeleteIn';
 import type { ScriptGetIn } from '../models/ScriptGetIn';
 import type { ScriptGetOut } from '../models/ScriptGetOut';
 import type { ScriptReorderIn } from '../models/ScriptReorderIn';
+import type { ScriptShareInspectIn } from '../models/ScriptShareInspectIn';
+import type { ScriptTemplateImportIn } from '../models/ScriptTemplateImportIn';
 import type { ScriptUpdateIn } from '../models/ScriptUpdateIn';
 import type { ScriptUploadIn } from '../models/ScriptUploadIn';
-import type { ScriptUrlIn } from '../models/ScriptUrlIn';
 import type { SettingGetOut } from '../models/SettingGetOut';
 import type { SettingUpdateIn } from '../models/SettingUpdateIn';
+import type { ShareAuthStatusOut } from '../models/ShareAuthStatusOut';
+import type { ShareInspectOut } from '../models/ShareInspectOut';
+import type { ShareTemplateListIn } from '../models/ShareTemplateListIn';
+import type { ShareTemplateListOut } from '../models/ShareTemplateListOut';
 import type { SklandQrCheckIn } from '../models/SklandQrCheckIn';
 import type { SklandQrCheckOut } from '../models/SklandQrCheckOut';
 import type { SklandQrCreateOut } from '../models/SklandQrCreateOut';
@@ -368,17 +373,6 @@ export class Service {
         });
     }
     /**
-     * 获取配置分享中心的配置信息
-     * @returns InfoOut Successful Response
-     * @throws ApiError
-     */
-    public static getWebConfigApiInfoWebconfigPost(): CancelablePromise<InfoOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/info/webconfig',
-        });
-    }
-    /**
      * 信息总览
      * @returns InfoOut Successful Response
      * @throws ApiError
@@ -413,20 +407,15 @@ export class Service {
         });
     }
     /**
-     * 获取星塔旅人活动数据（StellaBase 中转）
-     * 取回星塔旅人的活动排期。
+     * 获取星塔旅人活动数据（官网公告）
+     * 取回星塔旅人的活动一览。
      *
-     * StellaBase 不放开跨域，浏览器直连拿不到数据，所以统一由后端中转——筛选与
-     * 格式转换仍由前端完成，与碧蓝档案那条链路一致。取数失败返回错误信封，由卡片
-     * 显示自己的失败态，不影响其它卡片。
-     *
-     * 顺带捎上国服官网的主推横幅（``official``）：StellaBase 的活动大图时有时无，
-     * 官网那张 795×510 的官方主视觉正好当封面兜底；官网挂了不影响排期本身。
-     * 其中与当前活动对得上号的那条会带 ``matched: true``，前端优先用它。
+     * 数据取自国服官网的活动公告：官网 CMS 不放开跨域、也认 Referer，所以由后端
+     * 取回并按公告正文里的开放时间整理成与其它游戏一致的形状。取数失败返回错误
+     * 信封，由卡片显示自己的失败态，不影响其它卡片。
      *
      * Returns:
-     * InfoOut: 站点原始响应，另加 ``official`` 横幅列表；取不到排期时返回
-     * ``code=500`` 的错误信封。
+     * InfoOut: ``{"activities": [...]}``；取不到时返回 ``code=500`` 的错误信封。
      * @returns InfoOut Successful Response
      * @throws ApiError
      */
@@ -555,13 +544,13 @@ export class Service {
         });
     }
     /**
-     * 从网络加载脚本配置
+     * 从配置中心导入脚本配置
      * @param requestBody
      * @returns OutBase Successful Response
      * @throws ApiError
      */
     public static importScriptFromWebApiScriptsImportWebPost(
-        requestBody: ScriptUrlIn,
+        requestBody: ScriptTemplateImportIn,
     ): CancelablePromise<OutBase> {
         return __request(OpenAPI, {
             method: 'POST',
@@ -574,7 +563,26 @@ export class Service {
         });
     }
     /**
-     * 上传脚本配置到网络
+     * 分享前检查脚本配置中的隐私风险
+     * @param requestBody
+     * @returns ShareInspectOut Successful Response
+     * @throws ApiError
+     */
+    public static inspectScriptShareApiScriptsShareInspectPost(
+        requestBody: ScriptShareInspectIn,
+    ): CancelablePromise<ShareInspectOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/share/inspect',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 分享脚本配置到配置中心
      * @param requestBody
      * @returns OutBase Successful Response
      * @throws ApiError
@@ -3722,6 +3730,69 @@ export class Service {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/setting/virtual-display/status',
+        });
+    }
+    /**
+     * 获取配置中心已发布的通用脚本配置
+     * @param requestBody
+     * @returns ShareTemplateListOut Successful Response
+     * @throws ApiError
+     */
+    public static listShareTemplatesApiShareTemplatesPost(
+        requestBody: ShareTemplateListIn,
+    ): CancelablePromise<ShareTemplateListOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/share/templates',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 获取配置中心授权状态
+     * @returns ShareAuthStatusOut Successful Response
+     * @throws ApiError
+     */
+    public static getShareAuthStatusApiShareAuthStatusPost(): CancelablePromise<ShareAuthStatusOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/share/auth/status',
+        });
+    }
+    /**
+     * 发起配置中心浏览器授权
+     * @returns ShareAuthStatusOut Successful Response
+     * @throws ApiError
+     */
+    public static startShareAuthApiShareAuthStartPost(): CancelablePromise<ShareAuthStatusOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/share/auth/start',
+        });
+    }
+    /**
+     * 轮询配置中心授权结果
+     * @returns ShareAuthStatusOut Successful Response
+     * @throws ApiError
+     */
+    public static pollShareAuthApiShareAuthPollPost(): CancelablePromise<ShareAuthStatusOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/share/auth/poll',
+        });
+    }
+    /**
+     * 取消等待中的配置中心授权
+     * @returns ShareAuthStatusOut Successful Response
+     * @throws ApiError
+     */
+    public static cancelShareAuthApiShareAuthCancelPost(): CancelablePromise<ShareAuthStatusOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/share/auth/cancel',
         });
     }
     /**
