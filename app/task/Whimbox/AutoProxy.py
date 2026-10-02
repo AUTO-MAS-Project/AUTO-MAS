@@ -46,8 +46,9 @@ from app.core.ws import Publisher, protocol
 from app.models.config import WhimboxConfig, WhimboxUserConfig
 from app.models.ConfigBase import MultipleConfig
 from app.models.schema import WSTaskNoticeData
-from app.models.task import LogRecord, ScriptItem, TaskExecuteBase, UserItem
+from app.models.task import LogRecord, ScriptItem, UserItem
 from app.services import Notify
+from app.task.base import ScriptAutoProxyBase
 from app.task.general.tools import execute_script_task
 from app.task.proxy_helpers import (
     CONFIG_SOURCE_DIRECT,
@@ -112,7 +113,7 @@ def _should_retry(
     return True
 
 
-class AutoProxyTask(TaskExecuteBase):
+class AutoProxyTask(ScriptAutoProxyBase):
     """奇想盒自动代理任务（每用户一轮）。
 
     四边界经构造注入，默认实现就地兜底构造（L1 组合，零容器）；单测经构造

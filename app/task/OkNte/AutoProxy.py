@@ -34,8 +34,9 @@ from app.log_box import LogType, log_box
 from app.models.config import OkNteConfig, OkNteUserConfig
 from app.models.ConfigBase import MultipleConfig
 from app.models.schema import WSTaskNoticeData
-from app.models.task import LogRecord, ScriptItem, TaskExecuteBase, UserItem
+from app.models.task import LogRecord, ScriptItem, UserItem
 from app.services import Notify, System
+from app.task.base import ScriptAutoProxyBase
 from app.task.general.tools import execute_script_task
 from app.task.proxy_helpers import (
     CONFIG_SOURCE_SCRIPT,
@@ -243,7 +244,7 @@ def _oknte_daily_task_success_error(
     return None
 
 
-class AutoProxyTask(TaskExecuteBase):
+class AutoProxyTask(ScriptAutoProxyBase):
     """OK-NTE 自动代理：拼 `-t N -e` 启动参数并监控日志"""
 
     def __init__(

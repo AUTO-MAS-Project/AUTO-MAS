@@ -34,8 +34,9 @@ from app.models.config import SrcConfig, SrcUserConfig
 from app.models.ConfigBase import MultipleConfig
 from app.models.emulator import DeviceBase, DeviceInfo
 from app.models.schema import WSTaskNoticeData
-from app.models.task import LogRecord, ScriptItem, TaskExecuteBase
+from app.models.task import LogRecord, ScriptItem
 from app.services import Notify
+from app.task.base import ScriptAutoProxyBase
 from app.task.emulator_core import close_emulator
 from app.task.general.tools import execute_script_task
 from app.task.proxy_helpers import (
@@ -79,7 +80,7 @@ def _has_structured_src_log(log_content: list[str], message: str) -> bool:
     )
 
 
-class AutoProxyTask(TaskExecuteBase):
+class AutoProxyTask(ScriptAutoProxyBase):
     """自动代理模式"""
 
     wait_for_finalizer_on_cancel = True
