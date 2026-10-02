@@ -224,6 +224,7 @@ const scriptState = (flavor: MaaFWFlavor) => ({
   canLeaveCurrentStep: true,
   shellInstances: [{ id: 'i1' }],
   selectedShellInstanceIds: [],
+  importShellHotkeys: true,
   shellImporting: false,
   finishButtonLabel: '完成',
   handleFinishWizard: fn('handleFinishWizard'),
@@ -403,12 +404,19 @@ describe('MFW 页面分节替换', () => {
     expect(html).toContain(zhCN.edit.gameUpdate)
   })
 
-  it('外壳导入分节换掉后 v-model 照样双向绑定（selectedIds + update:selectedIds）', async () => {
+  it('外壳导入分节换掉后 v-model 照样双向绑定（selectedIds / importHotkeys 与对应 update 事件）', async () => {
     const maafw = resolveMaaFWFlavor('MaaFW')
     await renderScriptPage(maafw)
     const defaultReceived = received.get('default:shellImport')!
     expect(Object.keys(defaultReceived).sort()).toEqual(
-      ['disabled', 'instances', 'onUpdate:selectedIds', 'selected-ids'].sort()
+      [
+        'disabled',
+        'import-hotkeys',
+        'instances',
+        'onUpdate:importHotkeys',
+        'onUpdate:selectedIds',
+        'selected-ids',
+      ].sort()
     )
     const flavor = withSections(maafw, {
       shellImport: fakeSection('scriptPage', 'shellImport', async () =>

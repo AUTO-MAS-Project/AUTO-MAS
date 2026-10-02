@@ -89,6 +89,7 @@
           />
           <component
             :is="sections.control"
+            :script-id="scriptId"
             :maafw-config="maafwConfig"
             :preview-data="previewData"
             :interface-loading="previewLoading"
@@ -187,6 +188,7 @@
         :is="sections.shellImport"
         v-if="isWizard && currentStep === stepItems.length - 1 && shellInstances.length > 0"
         v-model:selected-ids="selectedShellInstanceIds"
+        v-model:import-hotkeys="importShellHotkeys"
         :instances="shellInstances"
         :disabled="shellImporting"
       />
@@ -307,6 +309,7 @@ const {
   canLeaveCurrentStep,
   shellInstances,
   selectedShellInstanceIds,
+  importShellHotkeys,
   shellImporting,
   finishButtonLabel,
   handleFinishWizard,

@@ -1720,6 +1720,11 @@ export default {
     mfwHotkeyComboTag: '{n} modifier(s) + key',
     mfwHotkeyNeedsCase:
       'Only applies when "{option}" is set to "{case}" in the user\'s task settings',
+    mfwHotkeyImport: 'Import from project',
+    mfwHotkeyImportLastUsed: 'Last used',
+    mfwHotkeyImported: 'Loaded {n} key bindings from the project',
+    mfwHotkeyImportSkipped: '; skipped {m} unsupported keys',
+    mfwHotkeyImportToScript: 'Also import key bindings into the script',
     thisNameAlsoWritten:
       'This name is also written to March7th Assistant / SRA as the Trailblazer name for the Currency War feature',
     thisSubtaskHasNo: 'This subtask has no editable fields',

@@ -1577,6 +1577,11 @@ export default {
       '一部のキーは組み合わせが必要です（項目の横に表示）。それ以外は単一キーのみ',
     mfwHotkeyComboTag: '修飾キー {n} 個 + キー',
     mfwHotkeyNeedsCase: 'ユーザーのタスク設定で「{option}」を「{case}」にした場合のみ有効',
+    mfwHotkeyImport: 'プロジェクトから読み込む',
+    mfwHotkeyImportLastUsed: '前回使用',
+    mfwHotkeyImported: 'プロジェクトから {n} 件のキー割り当てを読み込みました',
+    mfwHotkeyImportSkipped: '（非対応のキー {m} 件はスキップ）',
+    mfwHotkeyImportToScript: 'キー割り当てもスクリプトに取り込む',
     thisNameAlsoWritten:
       'この名前は、「貨幣戦争」機能の開拓者名としても三月なのかアシスタント / SRA に書き込まれます',
     thisSubtaskHasNo: 'このサブタスクに編集できる項目はありません',

@@ -232,6 +232,7 @@
           <!-- 游戏已经开着时第二行整行隐藏，键位映射挪到启动方式右边 -->
           <MaaFWHotkeyField
             v-if="launchMode !== 'DirectExe'"
+            :script-id="scriptId"
             :preview-data="previewData"
             :controller-name="effectiveControllerName"
             :resource-name="effectiveResourceName"
@@ -298,6 +299,7 @@
           </a-col>
           <MaaFWHotkeyField
             v-if="launchMode === 'DirectExe'"
+            :script-id="scriptId"
             :preview-data="previewData"
             :controller-name="effectiveControllerName"
             :resource-name="effectiveResourceName"

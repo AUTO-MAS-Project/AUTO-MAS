@@ -46,6 +46,7 @@ from app.task.MaaFW.tools.embedded.shell_instances import (
     ShellInstance,
     Translate,
     assign_user_names,
+    collect_instance_hotkeys,
     display_name,
     plan_instance_import,
     scan_shell_instances,
@@ -145,10 +146,25 @@ async def list_shell_instances(script_id: str) -> MaaFWApiReply:
             resource=display_name(interface.resource, instance.resource, translate)
             if interface
             else instance.resource,
+            hotkeys=_instance_hotkeys(instance, interface),
         )
         for instance, user_name in zip(instances, user_names)
     ]
     return MaaFWApiReply(data=items)
+
+
+def _instance_hotkeys(
+    instance: ShellInstance, interface: MaaFWInterface | None
+) -> dict[str, dict[str, str]]:
+    """列表里每个实例带的键位；没有 interface 或换算出错时当没有（只影响「导入键位」入口）。"""
+
+    if interface is None:
+        return {}
+    try:
+        return collect_instance_hotkeys(instance, interface)
+    except Exception as exc:  # noqa: BLE001 - 一份实例读不出键位不影响列表
+        logger.warning(f"读取外壳配置实例 {instance.id} 的键位失败：{exc}")
+        return {}
 
 
 async def import_shell_instances(

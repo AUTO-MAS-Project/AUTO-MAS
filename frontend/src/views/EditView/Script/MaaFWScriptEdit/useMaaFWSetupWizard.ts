@@ -7,17 +7,24 @@ import { useMaaFWShellInstanceApi } from '@/composables/useMaaFWShellInstanceApi
 import type { MaaFWFlavor } from '@/composables/useMaaFWFlavor'
 import { maafwRouteLocation } from '@/router/maafwFlavorRoutes'
 import type { MaaFWPageHostContext } from '../../MaaFWFlavor/pageHostContext'
-import type { MaaFWInterfacePreviewData } from '@/types/script'
+import type { MaaFWInterfacePreviewData, MaaFWScriptConfig } from '@/types/script'
 import {
   buildShellImportReportLines,
   shellImportItemName,
   summarizeShellImport,
   type ShellImportSummary,
 } from './shellInstanceImport'
+import { parseHotkeyMap } from './hotkeyOptions'
+import { allHotkeyOptions, mergeImportedHotkeys, pickWizardHotkeys } from './hotkeyImport'
+import type { MaaFWScriptChangeHandler } from './useMaaFWScriptDraft'
 
 interface MaaFWSetupWizardOptions {
   scriptId: string
   previewData: Ref<MaaFWInterfacePreviewData | null>
+  /** 脚本配置草稿：「同时把键位导入到脚本」改 Game.Hotkeys */
+  maafwConfig: MaaFWScriptConfig
+  /** 页面的配置保存通道 */
+  handleChange: MaaFWScriptChangeHandler
   envReady: Ref<boolean>
   enqueue: <T>(run: () => Promise<T>, key?: string) => Promise<T>
   flavor: ComputedRef<MaaFWFlavor>
@@ -31,6 +38,8 @@ interface MaaFWSetupWizardOptions {
 export function useMaaFWSetupWizard({
   scriptId,
   previewData,
+  maafwConfig,
+  handleChange,
   envReady,
   enqueue,
   flavor,
@@ -76,6 +85,8 @@ export function useMaaFWSetupWizard({
   // 只在引导形态、进入最后一步时扫描；扫不到或扫描失败都只记日志，区块不显示。
   const shellInstances = ref<MaaFWShellInstanceItem[]>([])
   const selectedShellInstanceIds = ref<string[]>([])
+  // 「同时把键位导入到脚本」：选中的实例里有带键位的才显示，默认开
+  const importShellHotkeys = ref(true)
   const shellImporting = ref(false)
 
   const loadShellInstances = async () => {
@@ -116,6 +127,25 @@ export function useMaaFWSetupWizard({
     if (stillOnWizard()) router.push(target)
   }
 
+  // 选中的实例带着键位、开关开着：取一份（外壳上次使用的优先，否则按选中顺序第一份）并进
+  // Game.Hotkeys，只存与默认不同的字段、脚本已有的其他条目保留；草稿同步改，之后打开弹窗看到的是新值。
+  // 不影响用户任务快照里的键位（那条路由导入用户照旧写）。
+  const importHotkeysToScript = async (instanceIds: readonly string[]) => {
+    if (!importShellHotkeys.value) return
+    const selected = new Set(instanceIds)
+    const hotkeys = pickWizardHotkeys(shellInstances.value.filter(item => selected.has(item.id)))
+    if (!hotkeys) return
+    const current = maafwConfig.Game.Hotkeys
+    const existing = parseHotkeyMap(current)
+    const next = JSON.stringify(
+      mergeImportedHotkeys(existing, allHotkeyOptions(previewData.value), hotkeys)
+    )
+    if (next === JSON.stringify(existing)) return
+    maafwConfig.Game.Hotkeys = next
+    await handleChange('Game', 'Hotkeys', next)
+    logger.info(`已把外壳配置里的键位写进脚本: ${next}`)
+  }
+
   // 勾了实例就导入，一个都没勾就是原来的「创建第一个用户！」。导入失败不能把用户卡在引导页：
   // 一个用户都没建成就报错并退回建空用户；部分失败 / 导不全合并成一条提示，照常往下走。
   const handleFinishWizard = async () => {
@@ -128,6 +158,15 @@ export function useMaaFWSetupWizard({
     const instanceNames = new Map(shellInstances.value.map(item => [item.id, item.name]))
     shellImporting.value = true
     try {
+      // 先写键位再建用户：建用户之后要跳页，键位放在前面与页面同生命周期；它走同一个保存队列，
+      // 下面那次排空会等它落盘。键位写不进去只记日志，不挡导入用户。
+      try {
+        await importHotkeysToScript(instanceIds)
+      } catch (error) {
+        logger.warn(
+          `把外壳配置的键位写进脚本失败: ${error instanceof Error ? error.message : String(error)}`
+        )
+      }
       await enqueue(async () => undefined)
       let summary: ShellImportSummary
       try {
@@ -185,6 +224,7 @@ export function useMaaFWSetupWizard({
     canLeaveCurrentStep,
     shellInstances,
     selectedShellInstanceIds,
+    importShellHotkeys,
     shellImporting,
     finishButtonLabel,
     handleFinishWizard,

@@ -21,17 +21,20 @@
       :values="effectiveValues"
       :description="description"
       :gates="gates"
+      :import-candidates="importCandidates"
       @save="handleSave"
     />
   </a-col>
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { SettingOutlined } from '@ant-design/icons-vue'
+import { useMaaFWShellInstanceApi } from '@/composables/useMaaFWShellInstanceApi'
 import type { MaaFWInterfacePreviewData } from '@/types/script'
 import MaaFWHotkeyModal from './MaaFWHotkeyModal.vue'
+import { collectHotkeyImportCandidates, type MaaFWShellHotkeySource } from './hotkeyImport'
 import {
   collectHotkeyGates,
   collectHotkeyOptions,
@@ -44,6 +47,8 @@ import {
 } from './hotkeyOptions'
 
 const props = defineProps<{
+  /** 脚本 ID：「从项目导入」按它读外壳配置实例 */
+  scriptId: string
   previewData: MaaFWInterfacePreviewData | null
   controllerName: string
   resourceName: string
@@ -74,6 +79,23 @@ const summary = computed(() => {
   const changed = countChangedHotkeys(options.value, storedMap.value)
   return changed > 0 ? t('edit.mfwHotkeyChanged', { n: changed }) : t('edit.mfwHotkeyDefault')
 })
+
+// 「从项目导入」：第一次打开弹窗时读一次外壳配置实例，读不到（没有外壳配置、接口失败）就当没有
+const { listShellInstances } = useMaaFWShellInstanceApi()
+const shellInstances = ref<MaaFWShellHotkeySource[]>([])
+let shellInstancesRequested = false
+watch(modalOpen, async open => {
+  if (!open || shellInstancesRequested || !props.scriptId) return
+  shellInstancesRequested = true
+  try {
+    shellInstances.value = await listShellInstances(props.scriptId)
+  } catch {
+    shellInstances.value = []
+  }
+})
+const importCandidates = computed(() =>
+  collectHotkeyImportCandidates(shellInstances.value, options.value)
+)
 
 const handleSave = (values: MaaFWHotkeyMap) => {
   emit('save', JSON.stringify(mergeHotkeyMap(storedMap.value, options.value, values)))

@@ -67,9 +67,40 @@
     </div>
     <template #footer>
       <div class="hotkey-footer">
-        <a-button type="link" class="hotkey-reset-all" :disabled="!anyChanged" @click="resetAll">
-          {{ t('edit.mfwHotkeyRestoreAll') }}
-        </a-button>
+        <div class="hotkey-footer-left">
+          <a-button type="link" class="hotkey-reset-all" :disabled="!anyChanged" @click="resetAll">
+            {{ t('edit.mfwHotkeyRestoreAll') }}
+          </a-button>
+          <!-- 外壳里配过键位才出现：一份直接填，几份不同的给下拉选 -->
+          <a-button
+            v-if="importCandidates.length === 1"
+            type="link"
+            class="hotkey-reset-all"
+            @click="applyImport(importCandidates[0])"
+          >
+            {{ t('edit.mfwHotkeyImport') }}
+          </a-button>
+          <a-dropdown v-else-if="importCandidates.length > 1" :trigger="['click']">
+            <a-button type="link" class="hotkey-reset-all">
+              {{ t('edit.mfwHotkeyImport') }}
+              <DownOutlined />
+            </a-button>
+            <template #overlay>
+              <a-menu>
+                <a-menu-item
+                  v-for="candidate in importCandidates"
+                  :key="candidate.id"
+                  @click="applyImport(candidate)"
+                >
+                  {{ candidate.source }} · {{ candidate.name }}
+                  <a-tag v-if="candidate.active" color="green" class="hotkey-import-tag">
+                    {{ t('edit.mfwHotkeyImportLastUsed') }}
+                  </a-tag>
+                </a-menu-item>
+              </a-menu>
+            </template>
+          </a-dropdown>
+        </div>
         <a-space>
           <a-button @click="emit('update:open', false)">{{ t('common.cancel') }}</a-button>
           <a-button type="primary" :disabled="invalidCount > 0" @click="handleSave">
@@ -84,6 +115,8 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { message } from 'ant-design-vue'
+import { DownOutlined } from '@ant-design/icons-vue'
 import type { MaaFWOptionInfo } from '@/types/script'
 import {
   displayKey,
@@ -100,6 +133,7 @@ import {
   type MaaFWHotkeyGate,
   type MaaFWHotkeyMap,
 } from './hotkeyOptions'
+import { importHotkeyValues, type MaaFWHotkeyImportCandidate } from './hotkeyImport'
 
 type HotkeyField = MaaFWOptionInfo['hotkeys'][number]
 
@@ -113,6 +147,8 @@ const props = defineProps<{
   description: string
   /** 只在某个选项分支下才生效的 option → 生效条件（组标题旁提示） */
   gates: Record<string, MaaFWHotkeyGate>
+  /** 「从项目导入」的候选（外壳实例里的键位，已限定到本次展示的字段、相同的已合并）；没有就是空数组 */
+  importCandidates: MaaFWHotkeyImportCandidate[]
 }>()
 
 const emit = defineEmits<{
@@ -240,6 +276,20 @@ const handleRecord = (
       : t('edit.mfwHotkeyUnsupported')
 }
 
+// 从项目导入：只填草稿，点「保存」才写；与默认相同 / 不同 / 修饰键个数不符照常显示
+const applyImport = (candidate: MaaFWHotkeyImportCandidate) => {
+  const { values, applied, skipped } = importHotkeyValues(props.options, candidate.hotkeys)
+  for (const [optionName, fields] of Object.entries(values)) {
+    for (const [fieldName, value] of Object.entries(fields)) {
+      setValue(optionName, fieldName, value)
+      delete errors[fieldKey(optionName, fieldName)]
+    }
+  }
+  const text = t('edit.mfwHotkeyImported', { n: applied })
+  if (skipped > 0) message.warning(text + t('edit.mfwHotkeyImportSkipped', { m: skipped }))
+  else message.success(text)
+}
+
 const handleSave = () => {
   const values: MaaFWHotkeyMap = {}
   for (const option of props.options) {
@@ -339,7 +389,17 @@ const handleSave = () => {
   padding-top: 8px;
 }
 
+.hotkey-footer-left {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
 .hotkey-reset-all {
   padding: 0;
+}
+
+.hotkey-import-tag {
+  margin-inline: 8px 0;
 }
 </style>

@@ -99,6 +99,8 @@ export function useMaaFWScriptPage({ scriptId }: MaaFWScriptPageOptions) {
   const wizard = useMaaFWSetupWizard({
     scriptId,
     previewData,
+    maafwConfig,
+    handleChange,
     envReady: env.envReady,
     enqueue,
     flavor,

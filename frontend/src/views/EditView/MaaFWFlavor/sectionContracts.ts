@@ -78,6 +78,8 @@ export interface MaaFWScriptBasicInfoSectionEmits {
  * （与游戏包名并排，有内容时两列），页面在当前特调登记了同名插入点时才填它；替换这个分节要保留它。
  */
 export interface MaaFWScriptControlSectionProps {
+  /** 脚本 ID：键位映射弹窗「从项目导入」按它读外壳配置实例 */
+  scriptId: string
   maafwConfig: MaaFWScriptConfig
   previewData: MaaFWInterfacePreviewData | null
   interfaceLoading: boolean
@@ -152,11 +154,14 @@ export interface MaaFWScriptRunSectionEmits {
 export interface MaaFWScriptShellImportSectionProps {
   instances: MaaFWShellInstanceItem[]
   selectedIds: string[]
+  /** 「同时把键位导入到脚本」：选中的实例里有带键位的才显示这个开关，默认开 */
+  importHotkeys: boolean
   disabled?: boolean
 }
 
 export interface MaaFWScriptShellImportSectionEmits {
   'update:selectedIds': [ids: string[]]
+  'update:importHotkeys': [value: boolean]
 }
 
 /** 脚本页分节键 → props 契约 */
