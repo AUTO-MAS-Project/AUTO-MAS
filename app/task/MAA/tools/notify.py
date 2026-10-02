@@ -49,7 +49,7 @@ SIGNATURE_SEP = "\n"
 
 # 喜报图片同时提供本地资源和官网 URL；缺少本地文件时，仍可在支持 URL 的表达中展示。
 SIX_STAR_IMAGE_ID = "maa-six-star"
-SIX_STAR_IMAGE_URL = "https://api.auto-mas.top/file/Resource/six_star.png"
+SIX_STAR_IMAGE_URL = "https://data.auto-mas.top/api/v1/files/auto-mas/Resource/arknights-six-star/download"
 
 
 @cache
@@ -115,21 +115,23 @@ def _six_star_targets(user_config: MaaUserConfig | None) -> list[NotifyTarget]:
             target,
             channels=tuple(
                 (
-                    channel,
-                    replace(
-                        channel_target,
-                        capabilities=replace(
-                            channel_target.capabilities,
-                            formats=("text",),
-                            double_text_newlines=(
-                                "markdown" in channel_target.capabilities.formats
-                                or channel_target.capabilities.double_text_newlines
+                    (
+                        channel,
+                        replace(
+                            channel_target,
+                            capabilities=replace(
+                                channel_target.capabilities,
+                                formats=("text",),
+                                double_text_newlines=(
+                                    "markdown" in channel_target.capabilities.formats
+                                    or channel_target.capabilities.double_text_newlines
+                                ),
                             ),
                         ),
-                    ),
+                    )
+                    if channel.key == "webhook"
+                    else (channel, channel_target)
                 )
-                if channel.key == "webhook"
-                else (channel, channel_target)
                 for channel, channel_target in target.channels
             ),
         )
