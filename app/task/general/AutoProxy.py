@@ -39,8 +39,9 @@ from app.models.config import GeneralConfig, GeneralUserConfig
 from app.models.ConfigBase import MultipleConfig
 from app.models.emulator import DeviceBase
 from app.models.schema import WSTaskNoticeData
-from app.models.task import LogRecord, ScriptItem, TaskExecuteBase
+from app.models.task import LogRecord, ScriptItem
 from app.services import Notify, System
+from app.task.base import ScriptAutoProxyBase
 from app.task.proxy_helpers import CONFIG_SOURCE_DIRECT, read_config_source
 from app.utils import (
     LogMonitor,
@@ -109,7 +110,7 @@ def _format_to_prefix_regex(fmt: str) -> re.Pattern[str]:
     return re.compile("^" + "".join(parts))  # 不加 $ → re.match 做前缀匹配
 
 
-class AutoProxyTask(TaskExecuteBase):
+class AutoProxyTask(ScriptAutoProxyBase):
     """自动代理模式"""
 
     def __init__(

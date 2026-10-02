@@ -34,8 +34,9 @@ from app.models.config import MaaEndConfig, MaaEndUserConfig
 from app.models.ConfigBase import MultipleConfig
 from app.models.emulator import DeviceBase, DeviceInfo
 from app.models.schema import WSTaskNoticeData
-from app.models.task import LogRecord, ScriptItem, TaskExecuteBase
+from app.models.task import LogRecord, ScriptItem
 from app.services import Notify, System
+from app.task.base import ScriptAutoProxyBase
 from app.task.emulator_core import close_emulator
 from app.task.general.tools import execute_script_task
 from app.task.proxy_helpers import append_push_log
@@ -273,7 +274,7 @@ def _configure_game_pre_action(
     instance["preActions"] = pre_actions
 
 
-class AutoProxyTask(TaskExecuteBase):
+class AutoProxyTask(ScriptAutoProxyBase):
     """MaaEnd 自动代理模式"""
 
     def __init__(

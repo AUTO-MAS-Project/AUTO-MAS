@@ -30,7 +30,7 @@ from app.log_box import LogCollect, LogType, log_box
 from app.models.config import OkwwConfig, OkwwUserConfig
 from app.models.ConfigBase import MultipleConfig
 from app.models.schema import WSTaskNoticeData
-from app.models.task import LogRecord, ScriptItem, TaskExecuteBase, UserItem
+from app.models.task import LogRecord, ScriptItem, UserItem
 from app.services import Notify, System
 from app.services.wuthering_waves import (
     check_wuthering_waves_update,
@@ -38,6 +38,7 @@ from app.services.wuthering_waves import (
     resolve_wuthering_waves_process_path,
 )
 from app.services.wuthering_waves_updater import update_wuthering_waves
+from app.task.base import ScriptAutoProxyBase
 from app.task.general.tools import execute_script_task
 from app.task.proxy_helpers import (
     append_push_log,
@@ -172,7 +173,7 @@ def _configure_okww_launcher(script_root_path: Path) -> None:
     logger.info("已补齐 OK-WW 启动器默认设置")
 
 
-class AutoProxyTask(TaskExecuteBase):
+class AutoProxyTask(ScriptAutoProxyBase):
     """OK-WW 自动代理：拼 `-t N -e` 启动参数并监控日志"""
 
     def __init__(

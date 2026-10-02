@@ -47,6 +47,7 @@ export interface MAAScriptConfig {
     Path: string
   }
   Run: {
+    HardTimeLimit: number
     TaskTransitionMethod: string
     ProxyTimesLimit: number
     ADBSearchRange: number
@@ -87,6 +88,7 @@ export interface GeneralScriptConfig {
     RootPath: string
   }
   Run: {
+    HardTimeLimit: number
     ProxyTimesLimit: number
     RunTimeLimit: number
     RunTimesLimit: number
@@ -129,6 +131,7 @@ export interface SRCScriptConfig {
     Path: string
   }
   Run: {
+    HardTimeLimit: number
     TaskTransitionMethod: string
     ProxyTimesLimit: number
     RunTimesLimit: number
@@ -171,6 +174,7 @@ export interface MaaEndScriptConfig {
     Path: string
   }
   Run: {
+    HardTimeLimit: number
     RunTimeLimit: number
     ProxyTimesLimit: number
     RunTimesLimit: number
