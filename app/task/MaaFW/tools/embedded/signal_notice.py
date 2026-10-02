@@ -26,7 +26,7 @@ from app.core.notify import (
     user_statistic_targets,
 )
 from app.models.notification import NotificationImage, NotifyPayload, image_reference
-from app.task.MaaFW.tools.notify.report import load_screenshot_images
+from app.task.notify_core import load_screenshot_images
 from app.utils import get_logger
 
 logger = get_logger("MaaFW 信号通知")
@@ -195,6 +195,7 @@ async def push_signal_notices(
         images = await asyncio.to_thread(
             load_screenshot_images,
             [("证据截图", path) for path in record.screenshots],
+            image_id_prefix="maafw",
         )
         payload = build_signal_payload(record, script_name=script_name, images=images)
         logger.info(f"推送 MaaFW 信号通知：{payload.title}")

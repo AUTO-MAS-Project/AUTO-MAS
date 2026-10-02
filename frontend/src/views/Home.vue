@@ -171,6 +171,18 @@
                 :overview="reverse1999Source.overview.value"
               />
 
+              <HomeStellaActivityOverview
+                v-else-if="gameKey === 'stellasora'"
+                :title="t('home.module.stellasora')"
+                :accent="getActivityAccent('stellasora')"
+                :empty-text="t('home.empty.stellasora')"
+                :loading="stellaSource.loading.value"
+                :overview="stellaSource.overview.value"
+                :source-name="t('home.stella.sourceName')"
+                :source-url="STELLA_NEWS_URL"
+                @refresh="stellaSource.refresh"
+              />
+
               <HomeBlueArchiveOverview
                 v-else-if="gameKey === 'bluearchive'"
                 :servers="blueArchiveSource.servers.value"
@@ -209,6 +221,7 @@ import HomeProxyCard from '@/views/home/components/HomeProxyCard.vue'
 import HomeQuickActionsCard from '@/views/home/components/HomeQuickActionsCard.vue'
 import HomeReverse1999Overview from '@/views/home/components/HomeReverse1999Overview.vue'
 import HomeSraActivityOverview from '@/views/home/components/HomeSraActivityOverview.vue'
+import HomeStellaActivityOverview from '@/views/home/components/HomeStellaActivityOverview.vue'
 import HomeScrollHint from '@/views/home/components/HomeScrollHint.vue'
 import {
   arknightsActivityBanner,
@@ -298,6 +311,9 @@ const reverse1999Source = useReverse1999ActivitySource()
 const blueArchiveSource = useBlueArchiveActivitySource()
 const stellaSource = useStellaActivitySource()
 const endfieldSource = useEndfieldActivitySource()
+
+/** 星塔旅人的活动数据取自国服官网的活动公告 */
+const STELLA_NEWS_URL = 'https://stellasora.yostar.cn/news'
 
 const sraSourceFor = (key: HomeModuleKey) => {
   switch (key) {

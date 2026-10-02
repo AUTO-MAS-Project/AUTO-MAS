@@ -15,8 +15,8 @@
    - 用户 `Info.PlanMode` 引用了 MSS 计划表时，按当天槽位改写 entry `战斗_入口`（悬赏试炼快速战斗）的
      `悬赏试炼关卡` / `悬赏试炼跳过难度选择` / `选择悬赏试炼难度` / `悬赏试炼消耗所有干劲` / `自定义快速作战次数`；
      队列里没有这个任务就补上。关卡名不在 interface 的 case 里就整条跳过。`Fixed` 时不动。
-   - 队列里有 entry `活动快速战斗_入口` 时查一次 `app/tools/stella_activity.py`：有活动就挪到悬赏试炼前，
-     确实没有就摘掉，取不到数据就原样跑。
+   - 队列里有 entry `活动快速战斗_入口` 时查一次 `app/tools/stella_official.py`（只认会开活动关的「版本活动」）：
+     有活动就挪到悬赏试炼前，确实没有就摘掉，取不到数据就原样跑。
    - entry `星塔_入口_agent`（新版爬塔）挪到队尾。每周一次靠 MaaFW 通用的 `Run.WeeklyOnceTasks`，这里不记周。
    按 entry 找不到就写一行用户日志跳过。**不**碰重试 / 周期 / 超时 / 更新 / 游戏启停。
 
@@ -24,8 +24,11 @@
 `USER_CONFIG_CLASS`、`FLAVOR`；`MSSUserConfig(MaaFWUserConfig)` 多一项 `Info.PlanMode`（计划表消费方
 `mss`，`PLAN_BOOK` 的 `MSSPlanConfig`）。`_MANAGER_BOOK` 里 `MSSConfig` 单独登记到 `MaaFWEmbeddedManager`。
 
-前端没有 MSS 专用脚本页 / 用户页：用 MaaFW 的两个页面，按 `scriptType === 'MSS'` 取 `useMaaFWFlavor`
-的文案表；用户页的计划表下拉由表里的 `planConsumer` 打开。计划表页 `MSSPlanTable.vue` 是 MSS 自己的。
+前端没有 MSS 专用脚本页 / 用户页：用 MaaFW 的两个页面，按脚本实际类型取特调注册表里 MSS 的描述对象
+（`frontend/src/views/EditView/MaaFWFlavor/mss/index.ts`，写法见 `frontend/src/composables/useMaaFWFlavor.ts`
+文件头）；脚本页控制方式一步顶部「只支持桌面端」的提示挂在 `scriptPage.slots.beforeControl`，用户页的
+计划表下拉与活动优先开关挂在 `userPage.slots.beforeTaskQueue`，都是同目录下按需加载的独有区块。
+计划表页 `MSSPlanTable.vue` 是 MSS 自己的。
 
 只适配桌面端：模拟器端的星塔旅人启动不了游戏，脚本页在控制方式一步写明原因；引擎不拦 Adb。
 

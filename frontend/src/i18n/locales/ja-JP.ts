@@ -2677,7 +2677,12 @@ export default {
       reverse1999: '開催中のリバース：1999 のイベントはありません',
       endfield: '開催中のガチャ・イベントはありません',
       endfieldNoData: 'エンドフィールドのイベント情報がありません',
+      stellasora: '開催中のステラソラのイベントはありません',
       noData: 'データなし',
+    },
+    stella: {
+      sourceName: '公式サイト',
+      permanent: '常設イベント',
     },
     countdown: {
       dh: 'D[日] H[時間]',

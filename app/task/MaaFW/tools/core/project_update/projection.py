@@ -54,10 +54,17 @@ import re
 from collections.abc import Callable, Iterable, Iterator, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
+from types import MappingProxyType
 from typing import Any
 
 import json5
 
+from ..interface.agent_entry import (
+    CFA_FALLBACK_AGENT_ENTRY,
+    describe_cfa_agent_entry_fallback,
+    is_python_entry_arg,
+    is_relative_entry_path,
+)
 from .blob_store import LINK_MIN_BYTES, RuntimeBlobStore, place_fresh
 
 MAX_REPORT_ITEMS = 128
@@ -320,11 +327,14 @@ class ProjectionRules:
     ``source_root`` 是用户指向的目录，``interface_base`` 是 interface.json 所在目录
     （release 布局二者相同，assets 布局后者是 ``source_root/assets``）。输出路径一律
     相对 ``interface_base``，这就是 assets 布局的"提升"。
+
+    ``targets`` 建好就冻结（构造时拷成只读的 ``MappingProxyType``）：:meth:`keeps` 按它
+    建的前缀索引只建一次。要换白名单就新建一份规则，别在原地改。
     """
 
     source_root: Path
     interface_base: Path
-    targets: dict[Path, TargetMode]
+    targets: Mapping[Path, TargetMode]
     required: list[RequiredPath]
     agents: list[dict[str, Any]]
     conservative: bool
@@ -334,6 +344,12 @@ class ProjectionRules:
     # 按内容确认是外壳 / 自带运行时的顶层目录（没被 interface 声明的），以及这类目录里
     # 按内容确认的原生库文件 → 原因。
     confirmed_shell: dict[Path, str] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        # 拷一份再冻结：调用方手里那个 dict 之后再改也影响不到规则（写入点都在构造之前，
+        # 见 build_projection_rules 的 add_target / _adopt_small_undeclared_entries）。
+        if not isinstance(self.targets, MappingProxyType):
+            self.targets = MappingProxyType(dict(self.targets))
 
     def exclusion_reason(
         self, relative: Path, *, is_directory: bool = False
@@ -377,12 +393,36 @@ class ProjectionRules:
 
         return is_shared_path(relative, size, private_paths)
 
-    def keeps(self, relative: Path, *, is_directory: bool = False) -> bool:
-        """这个源相对路径要不要进副本。"""
+    def _targets_by_path(self) -> dict[Path, list[tuple[Path, TargetMode]]]:
+        """白名单目标按路径分桶（``Path`` 的相等与哈希就是 pathlib 的口径：Windows 上
+        不分大小写）。目标表在构造时已冻结，索引按它建一次；整个换掉 ``targets``（赋一个
+        新的只读表）时按对象身份认出来重建。"""
 
+        cached = self.__dict__.get("_targets_index")
+        if cached is not None and cached[0] is self.targets:
+            return cached[1]
+        index: dict[Path, list[tuple[Path, TargetMode]]] = {}
         for target, mode in self.targets.items():
-            if not _is_relative_to(relative, target):
-                continue
+            index.setdefault(target, []).append((target, mode))
+        self.__dict__["_targets_index"] = (self.targets, index)
+        return index
+
+    def keeps(self, relative: Path, *, is_directory: bool = False) -> bool:
+        """这个源相对路径要不要进副本。
+
+        只看 ``relative`` 自己与它的各级上级里哪些是白名单目标（与逐个目标
+        ``relative_to`` 判「在不在它下面」等价：pathlib 的 ``is_relative_to`` 就是「相等或
+        是某级上级」），条目数 × 目标数降成条目数 × 路径深度——MaaFgo 一万多个条目、几百个
+        目标时逐个比要几分钟。任何一个命中的目标放行就保留，与目标的先后无关。
+        """
+
+        index = self._targets_by_path()
+        matches = [
+            pair
+            for candidate in (relative, *relative.parents)
+            for pair in index.get(candidate, ())
+        ]
+        for target, mode in matches:
             target_is_directory = target == ROOT or (relative != target or is_directory)
             if (
                 target_exclusion_reason(
@@ -1096,6 +1136,28 @@ def build_projection_rules(
             raise ProjectionError(f"{label} 声明的路径不存在：{raw}")
         return relative
 
+    def cfa_agent_entry(raw: str, label: str) -> Path | None:
+        """相对写法的入口脚本经 ``..`` 越出 interface 所在目录、而 CFA 的兜底入口在时
+        返回兜底入口；否则 None，照原来的严格校验走（见 ``interface.agent_entry``）。"""
+
+        if not is_relative_entry_path(raw):
+            # 绝对路径 / 盘符：照旧报「必须是项目内的相对路径」，不兜底。
+            return None
+        try:
+            relative = _normalize_declared_path(raw, base_relative, label)
+        except ProjectionError:
+            # 相对写法只有「逃出了项目目录」这一种失败。
+            relative = None
+        if relative is not None and _is_relative_to(relative, base_relative):
+            return None
+        fallback = base_relative / CFA_FALLBACK_AGENT_ENTRY
+        if not view.is_file(fallback):
+            return None
+        warnings.append(
+            f"{label}：{describe_cfa_agent_entry_fallback(raw, fallback.as_posix())}"
+        )
+        return fallback
+
     def declare_executable(raw: str, label: str) -> Path:
         relative = _normalize_declared_path(raw, base_relative, label)
         if view.exists(relative):
@@ -1334,13 +1396,21 @@ def build_projection_rules(
                     raise ProjectionError(f"{label} 声明的路径不存在：{child_exec}")
                 else:
                     warnings.append(f"{label} 声明的路径当前不存在：{child_exec}")
+            python_entry_seen = False
             for arg_index, raw_arg in enumerate(child_args):
                 if not looks_like_local_path(raw_arg):
                     continue
                 label = f"agent[{index}].child_args[{arg_index}]"
                 if looks_like_script_file(raw_arg):
                     # 脚本 / 可执行文件路径就是 agent 的入口，缺了必然跑不起来：照旧严格。
-                    arg_relative = declare(raw_arg, label, must_exist=True)
+                    # 第一个 Python 入口先过 CFA 兜底（与 agent_env.planner 同一规则）。
+                    fallback_entry = None
+                    if not python_entry_seen and is_python_entry_arg(raw_arg):
+                        python_entry_seen = True
+                        fallback_entry = cfa_agent_entry(raw_arg, label)
+                    arg_relative = fallback_entry or declare(
+                        raw_arg, label, must_exist=True
+                    )
                     if arg_relative is None:
                         continue
                 else:
@@ -2090,6 +2160,147 @@ def _shell_native_core_location(relative: str) -> str | None:
     return location
 
 
+#: MaaFramework 随原生库一起分发、由发行包整体铺下的顶层目录（不是项目自己的东西）。
+MAAFW_COMPANION_DIR_NAMES = frozenset({"maaagentbinary"})
+
+
+def package_takeover_dirs(
+    rules: ProjectionRules, package_files: Iterable[str]
+) -> frozenset[str]:
+    """全量包「整体接管」的目录（项目相对 posix 路径）：新版本里这些目录的内容就是发行包
+    铺的那一份，导入来的、新包里没有的旧文件不该留下。
+
+    判据只从投影规则与新包的文件表来，不认项目名，三类都要求新包里**确实有**这个目录下
+    的文件（新包不带的目录不算接管，换布局由 :func:`abandoned_native_runtime_files` 按位置管）：
+
+    - MaaFramework 原生库布局里明确的那几种：``maafw/``、``runtimes/<rid>/native``（原样
+      带走的运行时目标里、位置正好是这两种的），以及随附的 ``MaaAgentBinary/``
+      （:data:`MAAFW_COMPANION_DIR_NAMES`）。有界搜索找到的任意目录（``bin/`` 里放着
+      ``MaaFramework.dll``）不算——那里可能混着项目自己的东西。
+    - 项目自带解释器所在目录（原样带走的运行时目标、不是上面的原生库布局）：目录名是
+      :data:`EMBEDDED_PYTHON_DIR_NAMES` 之一，或者新包里它确实是一个解释器目录
+      （与 :func:`_is_python_interpreter_dir` 同一组特征）。投影保守模式（agent 是 custom /
+      command / 不透明形态，代码可能在任何地方）下不认解释器目录。
+
+    另外，接管目录与声明的资源目录（``resource`` / ``attach_resource_path``）、agent 代码目录
+    （``child_args`` / ``pretask`` 参数所在目录）**相等、包含或落在其内**的一律不算：
+    ``child_exec: ./agent/python.exe`` 时解释器目录就是 ``agent/``，那里是项目代码。
+    用户数据、配置、运行期状态、``preset/``、``tasks/`` 都不在这些目录里。
+    """
+
+    files = [str(rel).replace("\\", "/") for rel in package_files]
+    folded_files = {rel.casefold() for rel in files}
+    base = rules.base_relative
+
+    def native_layout(target: Path) -> bool:
+        try:
+            parts = [part.casefold() for part in target.relative_to(base).parts]
+        except ValueError:
+            return False
+        if parts == ["maafw"]:
+            return True
+        return (
+            len(parts) == 3
+            and parts[0] == "runtimes"
+            and bool(_RID_RE.match(parts[1]))
+            and parts[2] == "native"
+        )
+
+    def interpreter_dir(target: Path) -> bool:
+        if target.name.casefold() in EMBEDDED_PYTHON_DIR_NAMES:
+            return True
+        prefix = target.as_posix().casefold()
+        markers = (
+            "python.exe",
+            "pythonw.exe",
+            "python",
+            "python3",
+            "pyvenv.cfg",
+            "python3.dll",
+            "scripts/python.exe",
+            "bin/python",
+            "bin/python3",
+        )
+        if any(f"{prefix}/{marker}" in folded_files for marker in markers):
+            return True
+        return any(
+            rel.startswith(f"{prefix}/")
+            and "/" not in rel[len(prefix) + 1 :]
+            and _PYTHON_DLL_RE.match(rel[len(prefix) + 1 :])
+            for rel in folded_files
+        )
+
+    protected: list[Path] = []
+    for required in rules.required:
+        label = required.label
+        if label.startswith(("resource ", "controller[")):
+            protected.append(required.path)
+        elif ".child_args[" in label or (
+            label.startswith("pretask[") and ".args[" in label
+        ):
+            path = required.path
+            protected.append(path if required.is_directory else path.parent)
+    protected = [path for path in protected if path not in (ROOT, base)]
+
+    def overlaps(target: Path) -> bool:
+        return any(
+            target == path
+            or _is_relative_to(path, target)
+            or _is_relative_to(target, path)
+            for path in protected
+        )
+
+    candidates: dict[str, Path] = {}
+    for target, mode in rules.targets.items():
+        if not mode.verbatim_runtime or target in (ROOT, base):
+            continue
+        if native_layout(target) or (
+            not rules.conservative and interpreter_dir(target)
+        ):
+            candidates.setdefault(target.as_posix().casefold(), target)
+    for rel in files:
+        top = rel.split("/", 1)[0]
+        if "/" in rel and top.casefold() in MAAFW_COMPANION_DIR_NAMES:
+            candidates.setdefault(top.casefold(), Path(top))
+    present: set[str] = set()
+    for key, directory in candidates.items():
+        prefix = f"{key}/"
+        if overlaps(directory):
+            continue
+        if any(rel.startswith(prefix) for rel in folded_files):
+            present.add(directory.as_posix())
+    return frozenset(present)
+
+
+def takeover_orphans(
+    import_files: Iterable[str],
+    package_files: Iterable[str],
+    takeover_dirs: Iterable[str],
+) -> set[str]:
+    """导入来的文件里、落在接管目录（:func:`package_takeover_dirs`）下、新包里没有的那些。
+
+    全量包对 ``origin=package`` 的旧文件本来就是「不在包里就删」；导入来的文件只在资源目录
+    （``apply._import_origin_orphans``）与被淘汰的原生库位置上清，其余原样带进新载荷。接管
+    目录里这样留下来就是新旧两版混在一起：M9A v4.11.0（导入）→ v4.11.1 后自带解释器里同时有
+    ``maafw-5.14.0.dist-info`` 与 ``maafw-5.14.2.dist-info``，``importlib.metadata`` / pip 可能
+    读到旧的。我们自己铺的 ``.auto_mas*`` 不碰。
+    """
+
+    prefixes = tuple(f"{item.casefold().rstrip('/')}/" for item in takeover_dirs)
+    if not prefixes:
+        return set()
+    package = {str(rel).casefold() for rel in package_files}
+    orphans: set[str] = set()
+    for rel in import_files:
+        folded = rel.casefold()
+        if folded in package or not folded.startswith(prefixes):
+            continue
+        if any(part.startswith(".auto_mas") for part in folded.split("/")):
+            continue
+        orphans.add(rel)
+    return orphans
+
+
 def abandoned_native_runtime_files(
     import_files: Iterable[str], package_files: Iterable[str]
 ) -> set[str]:
@@ -2369,15 +2580,22 @@ def materialize_projection(
 # --------------------------------------------------------------------------
 
 
-def package_projection_rules(payload_root: Path, project_root: Path) -> ProjectionRules:
+def package_projection_rules(
+    payload_root: Path,
+    project_root: Path,
+    *,
+    sizes: Mapping[str, int] | None = None,
+) -> ProjectionRules:
     """更新包落地时的白名单：包内 interface 优先，其次项目现有的；不查存在性。
 
     只支持 release 布局的包（interface.json 在包根）：内嵌副本本身就是提升后的
     release 布局，assets 布局的源码 zip 从来不是更新器的输入。
+    ``sizes``：区间差量更新在按中央目录建的空文件骨架上算时给（包内取中央目录、其余取
+    项目里的实际大小），与整包解压后算的同一张白名单。
     """
 
     rules = build_projection_rules(
-        project_root, strict=False, overlay_root=payload_root
+        project_root, strict=False, overlay_root=payload_root, sizes=sizes
     )
     if rules.base_relative != ROOT:
         raise ProjectionError(
@@ -2485,6 +2703,8 @@ __all__ = [
     "looks_like_local_path",
     "materialize_projection",
     "package_projection_rules",
+    "package_takeover_dirs",
     "read_json_object",
+    "takeover_orphans",
     "target_exclusion_reason",
 ]

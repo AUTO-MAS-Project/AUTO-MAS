@@ -65,7 +65,7 @@ from app.task.MaaFW.tools.core.runtime_pool.host_environment import (
     subprocess_proxy_scope,
 )
 from app.task.MaaFW.tools.notify import push_notification
-from app.task.MaaFW.tools.notify.report import (
+from app.task.notify_core import (
     NOTIFY_SCREENSHOT_LIMIT,
     load_screenshot_images,
     screenshot_entries,
@@ -2729,6 +2729,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             images = await asyncio.to_thread(
                 load_screenshot_images,
                 self._collect_failure_screenshots()[-NOTIFY_SCREENSHOT_LIMIT:],
+                image_id_prefix="maafw",
             )
             statistics["screenshots"] = screenshot_entries(images)
             signal_message = self._signal_user_message()

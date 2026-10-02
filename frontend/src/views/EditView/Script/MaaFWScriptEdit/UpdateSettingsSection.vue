@@ -225,13 +225,11 @@ import {
   LoadingOutlined,
   QuestionCircleOutlined,
 } from '@ant-design/icons-vue'
-import type { MaaFWUpdateResult } from '@/composables/useMaaFWUpdateApi'
 import {
   resolveCdkExpiry,
   resolveCdkWarning,
   type MaaFWAutoUpdateMode,
 } from '@/composables/useMaaFWProjectUpdate'
-import type { MaaFWInterfacePreviewData, MaaFWScriptConfig } from '@/types/script'
 import { handleExternalLink } from '@/utils/openExternal'
 import {
   formatAppliedFiles,
@@ -241,33 +239,20 @@ import {
   formatExtractedSize,
   progressBarPercent,
   type MaaFWUpdateProgressPhase,
-  type MaaFWUpdateProgressState,
 } from './updateProgress'
+import type {
+  MaaFWScriptUpdateSectionEmits,
+  MaaFWScriptUpdateSectionProps,
+} from '../../MaaFWFlavor/sectionContracts'
 
 const MIRRORCHYAN_CDK_URL = 'https://mirrorchyan.com?source=automas_script_update'
 
 const { t } = useI18n()
 
-const props = defineProps<{
-  maafwConfig: MaaFWScriptConfig
-  previewData: MaaFWInterfacePreviewData | null
-  isAutoUpdateDisabled: boolean
-  updateChecking: boolean
-  updateApplying: boolean
-  updateError: string
-  updateResult: MaaFWUpdateResult | null
-  updateProgress: MaaFWUpdateProgressState
-  /** 本次进入页面时 CDK 是从 MAS 更新设置里自动填入的 */
-  cdkPrefilled: boolean
-  updateSourceOptions: Array<{ label: string; value: string }>
-  updateChannelOptions: Array<{ label: string; value: string }>
-}>()
+// props / 事件的契约在 sectionContracts（特调替换这个分节时按同一份契约接收）
+const props = defineProps<MaaFWScriptUpdateSectionProps>()
 
-const emit = defineEmits<{
-  change: [category: keyof MaaFWScriptConfig, key: string, value: unknown]
-  'check-update': []
-  'apply-update': []
-}>()
+const emit = defineEmits<MaaFWScriptUpdateSectionEmits>()
 
 const autoUpdateModeOptions = computed<Array<{ label: string; value: MaaFWAutoUpdateMode }>>(() => [
   { label: t('edit.autoUpdateModeOff'), value: 'Off' },

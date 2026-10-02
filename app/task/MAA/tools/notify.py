@@ -19,6 +19,7 @@
 
 #   Contact: DLmaster_361@163.com
 
+from collections.abc import Sequence
 from dataclasses import replace
 from functools import cache
 
@@ -142,8 +143,14 @@ async def push_notification(
     message: dict,
     user_config: MaaUserConfig | None,
     task_info: object | None = None,
+    *,
+    images: Sequence[NotificationImage] = (),
 ) -> DispatchResult:
-    """通过所有渠道推送通知; 返回分发的实际尝试/成功/失败结果。"""
+    """通过所有渠道推送通知; 返回分发的实际尝试/成功/失败结果。
+
+    ``images`` 只在「统计信息」模式下随报告附带（失败截图），模板通过
+    资源 ID 引用对应图片。
+    """
 
     logger.info(f"开始推送通知, 模式: {mode}, 标题: {title}")
 
@@ -154,6 +161,7 @@ async def push_notification(
             task_info=task_info,
             result_template="MAA_result.html",
             signature_sep=SIGNATURE_SEP,
+            images=images,
         )
 
     if mode == "统计信息":
@@ -165,6 +173,7 @@ async def push_notification(
                 text=_statistic_text(message),
                 html=template.render(message),
                 signature_sep=SIGNATURE_SEP,
+                images=images,
             ),
             statistic_targets(user_config),
         )

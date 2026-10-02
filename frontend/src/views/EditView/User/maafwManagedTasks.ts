@@ -1,4 +1,4 @@
-// 特调的受管任务（flavor.managedTaskEntries）：由后端特调全权控制、不许用户自己加。
+// 特调的受管任务（flavor.userPage.managed.entries）：由后端特调全权控制、不许用户自己加。
 // 这里只按 entry 与特调描述对象里的字段判断，不认识任何具体特调；判据与后端特调的整理规则
 // （M9A 是 app/task/M9A/managed.py）保持一致，改一边要同步另一边。
 

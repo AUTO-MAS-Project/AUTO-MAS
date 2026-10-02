@@ -184,50 +184,17 @@ import {
   QuestionCircleOutlined,
   ToolOutlined,
 } from '@ant-design/icons-vue'
-import type { MaaFWInterfacePreviewData, MaaFWScriptConfig, ScriptType } from '@/types/script'
-import type { MaaFWEmbeddedStatus } from '@/composables/useMaaFWEmbeddedApi'
-
-/** 一次准备的结果：首次准备 / 更新了已有环境 / 项目没变直接沿用。 */
-export type MaaFWEnvOutcome = 'prepared' | 'updated' | 'cached'
+import type {
+  MaaFWScriptBasicInfoSectionEmits,
+  MaaFWScriptBasicInfoSectionProps,
+} from '../../MaaFWFlavor/sectionContracts'
 
 const { t } = useI18n()
 
-const props = defineProps<{
-  maafwConfig: MaaFWScriptConfig
-  formData: { type: ScriptType; name: string; path: string }
-  rules: { name: unknown[]; path: unknown[] }
-  previewData: MaaFWInterfacePreviewData | null
-  interfaceLoading: boolean
-  previewProjectTitle: string
-  interfaceStats: Array<{ label: string; value: number }>
-  /** 项目更新正在落盘：此时读 interface 会读到半成品，按钮一律禁用。 */
-  updateApplying: boolean
-  envPreparing: boolean
-  envReady: boolean
-  envFailed: boolean
-  /** 准备中是后端当前阶段那句话；成功后是 MaaFramework 版本；失败时是错误原因。 */
-  envMessage: string
-  envPercent: number | null
-  envLogs: string[]
-  envAgents: Array<{ runtimeKind?: string | null; executable: string }>
-  envOutcome: MaaFWEnvOutcome | null
-  /** 内嵌副本状态：由父组件从后端拉取；导入几十到几百 MB 时 busy 为 true。 */
-  embeddedStatus: MaaFWEmbeddedStatus
-  embeddedBusy: boolean
-  /** 导入进度：后端按文件数推过来的百分比与阶段文案；没有推送时为 null，进度条显示 0 */
-  importPercent: number | null
-  importMessage: string
-  /** flavor 文案（M9A 等特调类型传入）；缺省用通用 MaaFW 的「本地项目目录」那套 */
-  sourceDirectoryLabel?: string
-  sourceHint?: string
-  sourcePlaceholder?: string
-}>()
+// props / 事件的契约在 sectionContracts（特调替换这个分节时按同一份契约接收）
+const props = defineProps<MaaFWScriptBasicInfoSectionProps>()
 
-const emit = defineEmits<{
-  change: [category: keyof MaaFWScriptConfig, key: string, value: unknown]
-  'select-path': []
-  'preview-interface': []
-}>()
+const emit = defineEmits<MaaFWScriptBasicInfoSectionEmits>()
 
 // 副本一旦建好，目录就固定在副本位置：字段里显示副本路径而不是来源目录，按钮锁死。
 // 副本还没建（新脚本刚建、或副本丢了来源也没了）时才允许选目录。
