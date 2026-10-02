@@ -3960,6 +3960,10 @@ class MaaFWConfig_Game(BaseModel):
         default=None,
         description="游戏启动等待时间（秒）：等窗口出现与等画面稳定各最多这么久，画面稳定即提前",
     )
+    Hotkeys: Optional[str] = Field(
+        default=None,
+        description='脚本级键位，JSON 字符串 {option 名: {字段名: 组合键}}（如 "Ctrl+E"），只存与 interface 默认不同的字段；仅 Win32 控制器生效',
+    )
 
 
 class MaaFWConfig_Update(BaseModel):
@@ -4235,6 +4239,10 @@ class MaaFWOptionHotkeyInfo(BaseModel):
     label: Optional[str] = Field(default=None, description="热键项显示名称")
     description: Optional[str] = Field(default=None, description="热键项描述")
     default: Optional[str] = Field(default=None, description="默认热键")
+    modifierCount: int = Field(
+        default=0,
+        description="项目 pipeline 用到的修饰键个数（0–2）：录制的组合键须恰好这么多修饰键",
+    )
 
 
 class MaaFWOptionInfo(BaseModel):
@@ -4419,6 +4427,10 @@ class MaaFWEmbeddedStatusOut(OutBase):
 
 class MaaFWShellInstancesIn(BaseModel):
     scriptId: str = Field(..., min_length=1, description="MFW 脚本 ID")
+    path: Optional[str] = Field(
+        default=None,
+        description="只扫这个目录（键位弹窗「选择其他目录」用，不写回脚本配置）；不传时先扫来源目录再扫内嵌副本",
+    )
 
 
 class MaaFWShellInstanceItem(BaseModel):
@@ -4435,6 +4447,17 @@ class MaaFWShellInstanceItem(BaseModel):
     taskCount: int = Field(default=0, description="实例队列里勾选着的任务数")
     controller: str = Field(default="", description="实例的控制方式（给人看的名字）")
     resource: str = Field(default="", description="实例的资源（给人看的名字）")
+    hotkeys: Dict[str, Dict[str, str]] = Field(
+        default_factory=dict,
+        description=(
+            "实例里记着的键位：{hotkey 选项名: {字段名: 组合键}}，只含 interface 里声明过的"
+            "hotkey 选项与字段、非空的值（全局 / 资源级在前，任务级覆盖），不与默认值比较；"
+            "读不到 interface 时为空"
+        ),
+    )
+    sourceDir: str = Field(
+        default="", description="扫到这份配置的目录（同一次列表里都一样）"
+    )
 
 
 class MaaFWShellInstancesOut(OutBase):
@@ -4874,16 +4897,79 @@ class ScriptReorderIn(BaseModel):
     indexList: List[str] = Field(..., description="脚本ID列表, 按新顺序排列")
 
 
-class ScriptUrlIn(BaseModel):
+class ShareTemplateListIn(BaseModel):
+    page: int = Field(default=1, ge=1, description="页码, 从 1 开始")
+    pageSize: int = Field(default=20, ge=1, le=100, description="每页条数")
+    keyword: Optional[str] = Field(default=None, description="搜索关键字")
+
+
+class ShareTemplateItem(BaseModel):
+    projectKey: str = Field(..., description="配置中心项目标识")
+    categoryKey: str = Field(..., description="配置中心分类标识")
+    configKey: str = Field(..., description="配置中心配置标识")
+    displayName: str = Field(..., description="配置名称")
+    description: str = Field(default="", description="配置描述")
+    ownerUsername: str = Field(default="", description="分享者用户名")
+    publishedVersionNo: Optional[int] = Field(
+        default=None, description="已发布的版本号"
+    )
+    publishedAt: str = Field(default="", description="发布时间")
+    updatedAt: str = Field(default="", description="更新时间")
+
+
+class ShareTemplateListOut(OutBase):
+    items: List[ShareTemplateItem] = Field(
+        default_factory=list, description="配置模板列表"
+    )
+    page: int = Field(default=1, description="当前页码")
+    pageSize: int = Field(default=20, description="每页条数")
+    total: int = Field(default=0, description="模板总数")
+    hasNext: bool = Field(default=False, description="是否还有下一页")
+
+
+class ScriptShareInspectIn(BaseModel):
     scriptId: str = Field(..., description="脚本ID")
-    url: str = Field(..., description="配置文件URL")
+    config_name: str = Field(..., min_length=1, max_length=64, description="配置名称")
+
+
+class ScriptTemplateImportIn(BaseModel):
+    scriptId: str = Field(..., description="脚本ID")
+    configKey: str = Field(..., description="配置中心配置标识")
+    versionNo: Optional[int] = Field(
+        default=None, ge=1, description="版本号, 为空表示已发布的最新版本"
+    )
 
 
 class ScriptUploadIn(BaseModel):
     scriptId: str = Field(..., description="脚本ID")
-    config_name: str = Field(..., description="配置名称")
-    author: str = Field(..., description="作者")
-    description: str = Field(..., description="描述")
+    config_name: str = Field(..., min_length=1, max_length=64, description="配置名称")
+    description: str = Field(..., min_length=1, max_length=500, description="描述")
+    acknowledged: bool = Field(
+        default=False, description="是否已确认分享前检查出的隐私风险项"
+    )
+
+
+class ShareRiskItem(BaseModel):
+    field: str = Field(..., description="存在风险的配置项")
+    reason: str = Field(..., description="风险说明")
+
+
+class ShareInspectOut(OutBase):
+    risks: List[ShareRiskItem] = Field(
+        default_factory=list, description="分享前检查出的隐私风险项"
+    )
+
+
+class ShareAuthStatusOut(OutBase):
+    authStatus: Literal["idle", "pending", "authorized", "denied", "expired"] = Field(
+        ..., description="配置中心授权状态"
+    )
+    username: str = Field(default="", description="已授权用户的用户名")
+    displayName: str = Field(default="", description="已授权用户的显示名")
+    userCode: str = Field(default="", description="待用户在浏览器确认的短授权码")
+    verificationUri: str = Field(default="", description="浏览器授权页地址")
+    expiresIn: int = Field(default=0, description="剩余有效秒数")
+    interval: int = Field(default=5, description="建议的轮询间隔秒数")
 
 
 class UserInBase(BaseModel):

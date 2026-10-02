@@ -19,5 +19,9 @@ export type MaaFWOptionHotkeyInfo = {
      * 默认热键
      */
     default?: (string | null);
+    /**
+     * 项目 pipeline 用到的修饰键个数（0–2）：录制的组合键须恰好这么多修饰键
+     */
+    modifierCount?: number;
 };
 

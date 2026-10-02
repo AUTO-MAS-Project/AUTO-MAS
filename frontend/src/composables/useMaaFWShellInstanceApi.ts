@@ -7,10 +7,17 @@ import type { MaaFWShellInstanceImportItem, MaaFWShellInstanceItem } from '@/api
  * 文案的 Error；逐个实例的成败在导入结果的各项里。
  */
 export function useMaaFWShellInstanceApi() {
-  /** 项目目录里外壳保存的配置实例（只读扫描）。 */
-  const listShellInstances = async (scriptId: string): Promise<MaaFWShellInstanceItem[]> => {
+  /**
+   * 项目目录里外壳保存的配置实例（只读扫描）。给了 `path` 就只扫那个目录（键位弹窗「选择其他目录」），
+   * 否则先扫导入时记下的来源目录、再扫内嵌副本。
+   */
+  const listShellInstances = async (
+    scriptId: string,
+    path?: string
+  ): Promise<MaaFWShellInstanceItem[]> => {
     const response = await MaaFwService.listMaafwShellInstancesApiScriptsMaafwShellInstancesPost({
       scriptId,
+      ...(path ? { path } : {}),
     })
     if (response.code !== 200) {
       throw new Error(response.message || '读取外壳配置失败')

@@ -91,7 +91,7 @@
             :autoplay="carouselAutoplay"
           >
             <template #community="{ moduleKey: gameKey }">
-              <!-- 社区信息紧贴游戏导航，与导航一起吸顶，横幅和概览在下方滚动。 -->
+              <!-- 社区信息紧跟游戏切换条，两者都不吸顶，跟着页面一起滚 -->
               <HomeActivityNotes
                 v-if="activityNotesVisible && isActivityNoteVisible(gameKey)"
                 :active-key="gameKey"
@@ -105,13 +105,13 @@
                 @refresh="endfieldSource.refresh"
               />
 
-              <HomeArknightsOverview
+              <HomeArknightsActivityOverview
                 v-else-if="gameKey === 'arknights'"
-                :loading="loading"
-                :error="error"
-                :activity-data="activityData"
+                :loading="arknightsSource.loading.value"
+                :overview="arknightsSource.overview.value"
                 :resource-data="resourceData"
-                @refresh="fetchOverviewData"
+                :error="error"
+                @refresh="arknightsSource.refresh"
                 @clear-error="clearOverviewError"
               />
 
@@ -209,7 +209,7 @@ import NoticeModal from '@/components/NoticeModal.vue'
 import SatelliteAnimation from '@/components/SatelliteAnimation.vue'
 import { useAppInitialization } from '@/composables/useAppInitialization'
 import HomeActivityCarousel from '@/views/home/components/HomeActivityCarousel.vue'
-import HomeArknightsOverview from '@/views/home/components/HomeArknightsOverview.vue'
+import HomeArknightsActivityOverview from '@/views/home/components/HomeArknightsActivityOverview.vue'
 import HomeBackToTop from '@/views/home/components/HomeBackToTop.vue'
 import HomeActivityNotes from '@/views/home/components/HomeActivityNotes.vue'
 import { blueArchivePresentation } from '@/views/home/blueArchivePresentation'
@@ -224,7 +224,6 @@ import HomeSraActivityOverview from '@/views/home/components/HomeSraActivityOver
 import HomeStellaActivityOverview from '@/views/home/components/HomeStellaActivityOverview.vue'
 import HomeScrollHint from '@/views/home/components/HomeScrollHint.vue'
 import {
-  arknightsActivityBanner,
   endfieldActivityBanner,
   getActivityAccent,
   sraActivityBanner,
@@ -236,6 +235,7 @@ import { useHomeOverview } from '@/views/home/useHomeOverview'
 import { useSraActivitySource } from '@/views/home/useSraActivitySource'
 import { useReverse1999ActivitySource } from '@/views/home/useReverse1999ActivitySource'
 import { useBlueArchiveActivitySource } from '@/views/home/useBlueArchiveActivitySource'
+import { useArknightsActivitySource } from '@/views/home/useArknightsActivitySource'
 import { useEndfieldActivitySource } from '@/views/home/useEndfieldActivitySource'
 import { useStellaActivitySource } from '@/views/home/useStellaActivitySource'
 import { useHomeQuickStart } from '@/views/home/useHomeQuickStart'
@@ -291,7 +291,7 @@ const {
   loading,
   error,
   hasSnapshot,
-  activityData,
+  /** 今日开放的资源收集关卡，给明日方舟卡片用 */
   resourceData,
   proxyData,
   clearOverviewError,
@@ -309,6 +309,7 @@ const wutheringWavesSource = useSraActivitySource('ww', 'home.game.wutheringwave
 const nevernessToEvernessSource = useSraActivitySource('nte', 'home.game.nte')
 const reverse1999Source = useReverse1999ActivitySource()
 const blueArchiveSource = useBlueArchiveActivitySource()
+const arknightsSource = useArknightsActivitySource()
 const stellaSource = useStellaActivitySource()
 const endfieldSource = useEndfieldActivitySource()
 
@@ -347,15 +348,20 @@ const activityBanners = computed<ActivityBannerItem[]>(() =>
       return {
         ...base,
         loading: endfieldSource.loading.value,
-        ...endfieldActivityBanner(endfieldSource.overview.value),
+        ...endfieldActivityBanner(
+          endfieldSource.overview.value,
+          endfieldSource.versionArt.value,
+          endfieldSource.versionName.value
+        ),
       }
     }
 
     if (key === 'arknights') {
+      // 活动一览来自 PRTS，横幅只认支线故事 / 复刻活动 / 联动活动（在数据源里挑好）
       return {
         ...base,
-        loading: loading.value,
-        ...arknightsActivityBanner(activityData.value),
+        loading: arknightsSource.loading.value,
+        ...sraActivityBanner(arknightsSource.overview.value),
       }
     }
 
@@ -363,15 +369,25 @@ const activityBanners = computed<ActivityBannerItem[]>(() =>
       const selectedServer = blueArchiveSource.servers.value.find(
         server => server.key === blueArchiveSource.selectedServer.value
       )
+      const presented = blueArchivePresentation(
+        selectedServer?.overview ?? createEmptySraActivityOverview()
+      )
+      // 横幅只报限时活动；这段时间没有限时活动就让它显示「暂无进行中的活动」，
+      // 别退回总力战一类的战斗玩法
       return {
         ...base,
         loading: blueArchiveSource.loadingByServer[blueArchiveSource.selectedServer.value],
-        ...sraActivityBanner(
-          blueArchivePresentation(selectedServer?.overview ?? createEmptySraActivityOverview())
-        ),
-        cover:
-          blueArchivePresentation(selectedServer?.overview ?? createEmptySraActivityOverview())
-            .cover || '',
+        ...(presented.versionName
+          ? sraActivityBanner(presented)
+          : {
+              cover: '',
+              subtitle: '',
+              startTime: '',
+              endTime: '',
+              available: presented.Available,
+              stale: presented.Stale,
+            }),
+        cover: presented.cover || '',
       }
     }
 
@@ -402,6 +418,7 @@ const activitySourcesByModule: Array<[HomeModuleKey, { start: () => void; stop: 
   ['nte', nevernessToEvernessSource],
   ['reverse1999', reverse1999Source],
   ['bluearchive', blueArchiveSource],
+  ['arknights', arknightsSource],
   ['stellasora', stellaSource],
   ['endfield', endfieldSource],
 ]

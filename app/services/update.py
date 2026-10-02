@@ -364,11 +364,11 @@ class _UpdateHandler:
             )
             if mirror_url is None:
                 logger.warning("MirrorChyan 未返回下载链接, 使用自建下载站")
-                return f"https://download.auto-mas.top/d/AUTO-MAS/AUTO-MAS-Setup-{remote_version}-x64.zip"
+                return f"https://data.auto-mas.top/api/v1/files/auto-mas/Release/{'beta' if 'beta' in remote_version else 'stable'}/download"
             return mirror_url
 
         if source == "AutoSite":
-            return f"https://download.auto-mas.top/d/AUTO-MAS/AUTO-MAS-Setup-{remote_version}-x64.zip"
+            return f"https://data.auto-mas.top/api/v1/files/auto-mas/Release/{'beta' if 'beta' in remote_version else 'stable'}/download"
 
         if source == "CNB":
             return f"https://cnb.cool/AUTO-MAS-Project/AUTO-MAS/-/releases/download/{remote_version}/AUTO-MAS-Setup-{remote_version}-x64.zip"
