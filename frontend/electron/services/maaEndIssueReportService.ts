@@ -2,7 +2,6 @@ import * as fs from 'fs'
 import * as path from 'path'
 import { deflateRawSync } from 'zlib'
 import AdmZip = require('adm-zip')
-import { parse, type ParseError } from 'jsonc-parser'
 
 import { getLogger } from './logger'
 import {
@@ -85,27 +84,48 @@ function collectMxuEntries(rootPath: string): MxuExportEntry[] {
   ]
 }
 
-function mxuExportName(rootPath: string, now: Date): string {
-  const interfacePath = path.join(rootPath, 'interface.json')
-  const errors: ParseError[] = []
-  const project: unknown = fs.existsSync(interfacePath)
-    ? parse(fs.readFileSync(interfacePath, 'utf-8').replace(/^\uFEFF/, ''), errors, {
-        allowTrailingComma: true,
-      })
-    : {}
-  if (errors.length) throw new Error(`项目配置解析失败: ${interfacePath}`)
-  if (!isRecord(project)) throw new Error(`项目配置不是对象: ${interfacePath}`)
-  const name = typeof project.name === 'string' ? project.name : 'mxu'
-  const version = typeof project.version === 'string' ? project.version : ''
+interface MxuProject {
+  projectName: string
+  projectVersion: string
+}
+
+async function loadMxuProject(apiEndpoint: string, scriptId: string): Promise<MxuProject> {
+  const response = await fetch(`${apiEndpoint}/api/scripts/maaend/options`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ scriptId }),
+    signal: AbortSignal.timeout(30_000),
+  })
+  if (!response.ok) throw new Error(`读取 MaaEnd 资源失败: HTTP ${response.status}`)
+  const data: unknown = await response.json()
+  if (!isRecord(data) || data.code !== 200) {
+    throw new Error(
+      isRecord(data) && typeof data.message === 'string' ? data.message : '读取 MaaEnd 资源失败'
+    )
+  }
+  if (typeof data.projectName !== 'string' || typeof data.projectVersion !== 'string') {
+    throw new Error('MaaEnd 资源未返回项目名称和版本，请更新后端')
+  }
+  return { projectName: data.projectName, projectVersion: data.projectVersion }
+}
+
+function mxuExportName(project: MxuProject, now: Date): string {
+  const { projectName: name, projectVersion: version } = project
   const pad = (value: number) => String(value).padStart(2, '0')
   const stamp = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`
   return version ? `${name}-logs-${version}-${stamp}` : `${name}-logs-${stamp}`
 }
 
-function addMxuVolumes(state: CollectorState, rootPath: string, label: string, now: Date): void {
+function addMxuVolumes(
+  state: CollectorState,
+  rootPath: string,
+  label: string,
+  project: MxuProject,
+  now: Date
+): void {
   const entries = collectMxuEntries(rootPath)
   if (!entries.length) throw new Error(`没有可导出的日志文件: ${rootPath}`)
-  const name = mxuExportName(rootPath, now)
+  const name = mxuExportName(project, now)
   const width = entries.length >= 100 ? 3 : 2
   let volume = new AdmZip(undefined, { noSort: true })
   let writtenBytes = 0
@@ -170,7 +190,11 @@ interface MaaEndIssueReportResult {
   error?: string
 }
 
-export function createMaaEndIssueReport(appRoot: string, zipPath: string): MaaEndIssueReportResult {
+export async function createMaaEndIssueReport(
+  appRoot: string,
+  zipPath: string,
+  apiEndpoint: string
+): Promise<MaaEndIssueReportResult> {
   const zip = new AdmZip()
   const state: CollectorState = { zip, entries: [], archiveBytes: 0 }
   const dataRoots = resolveDataRoots(appRoot)
@@ -199,7 +223,8 @@ export function createMaaEndIssueReport(appRoot: string, zipPath: string): MaaEn
   try {
     const now = new Date()
     for (const installation of installations) {
-      addMxuVolumes(state, installation.rootPath, installation.label, now)
+      const project = await loadMxuProject(apiEndpoint, installation.scriptId)
+      addMxuVolumes(state, installation.rootPath, installation.label, project, now)
     }
     fs.mkdirSync(path.dirname(zipPath), { recursive: true })
     zip.writeZip(zipPath)

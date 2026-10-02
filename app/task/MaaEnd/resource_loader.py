@@ -501,7 +501,11 @@ class MaaEndResourceLoader:
         }
 
     def get_options(self) -> dict[str, Any]:
-        return deepcopy(self._options)
+        return {
+            **deepcopy(self._options),
+            "projectName": self._interface.get("name", "mxu"),
+            "projectVersion": self._interface.get("version", ""),
+        }
 
     def has_task_option(self, task_name: str, option_name: str) -> bool:
         """判断当前 MaaEnd 资源是否声明了某个任务选项。"""
