@@ -1573,6 +1573,12 @@ export default {
     mfwHotkeySingleKeyOnly:
       'この項目は単一キーのみ設定できます（Ctrl / Alt / Shift / Win は押されません）',
     mfwHotkeyNeedsModifiers: 'この項目は修飾キー {n} 個とキー 1 つが必要です（例：{example}）',
+    mfwHotkeyNoCombo: 'このプロジェクトは単一キーのみを押します（キーの組み合わせは非対応）',
+    mfwHotkeyAllCombo:
+      'このプロジェクトのキーはすべて修飾キー {n} 個とキー 1 つが必要です（例：{example}）',
+    mfwHotkeySomeCombo:
+      '一部のキーは組み合わせが必要です（項目の横に表示）。それ以外は単一キーのみ',
+    mfwHotkeyComboTag: '修飾キー {n} 個 + キー',
     mfwHotkeyNeedsCase: 'ユーザーのタスク設定で「{option}」を「{case}」にした場合のみ有効',
     thisNameAlsoWritten:
       'この名前は、「貨幣戦争」機能の開拓者名としても三月なのかアシスタント / SRA に書き込まれます',

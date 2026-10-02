@@ -10,6 +10,7 @@
   >
     <div class="hotkey-modal">
       <div v-if="description" class="hotkey-modal-sub">{{ description }}</div>
+      <div class="hotkey-modal-combo">{{ comboNote }}</div>
       <template v-for="option in options" :key="option.name">
         <div class="hotkey-group-title">
           {{ option.label || option.name }}
@@ -25,9 +26,19 @@
         >
           <div class="hotkey-line">
             <a-tooltip v-if="field.description" :title="field.description">
-              <span class="hotkey-label">{{ field.label || field.name }}</span>
+              <span class="hotkey-label">
+                {{ field.label || field.name }}
+                <span v-if="rowComboTag(field)" class="hotkey-combo-tag">{{
+                  rowComboTag(field)
+                }}</span>
+              </span>
             </a-tooltip>
-            <span v-else class="hotkey-label">{{ field.label || field.name }}</span>
+            <span v-else class="hotkey-label">
+              {{ field.label || field.name }}
+              <span v-if="rowComboTag(field)" class="hotkey-combo-tag">{{
+                rowComboTag(field)
+              }}</span>
+            </span>
             <span v-if="isChanged(option.name, field)" class="hotkey-hint">
               {{ t('edit.mfwHotkeyDefaultKey', { key: displayCombo(field.default) }) }}
               <a class="hotkey-link" @click="resetField(option.name, field)">
@@ -77,6 +88,7 @@ import {
 import MaaFWHotkeyInput from './MaaFWHotkeyInput.vue'
 import {
   countChangedHotkeys,
+  hotkeyComboSummary,
   hotkeyModifierProblem,
   type MaaFWHotkeyGate,
   type MaaFWHotkeyMap,
@@ -112,11 +124,35 @@ const recording = computed(() => recordingField.value !== '')
 
 const fieldKey = (optionName: string, fieldName: string) => `${optionName}\u0000${fieldName}`
 
+const MODIFIER_EXAMPLES = ['', 'Ctrl + E', 'Ctrl + Shift + E']
+
+/** 组合键与项目要的修饰键个数对不上时的行内说明；对得上为空串 */
+const modifierProblemText = (field: HotkeyField, keys: readonly string[]) => {
+  // 项目 pipeline 按得出几个修饰键就只能设几个：多了运行时不会按下，少了映射不出
+  const problem = hotkeyModifierProblem(keys, field.modifierCount)
+  if (problem === 'single-key-only') return t('edit.mfwHotkeySingleKeyOnly')
+  if (problem === 'needs-modifiers') {
+    const count = field.modifierCount ?? 0
+    return t('edit.mfwHotkeyNeedsModifiers', {
+      n: count,
+      example: MODIFIER_EXAMPLES[count] ?? MODIFIER_EXAMPLES[2],
+    })
+  }
+  return ''
+}
+
 const resetDraft = () => {
   for (const key of Object.keys(draft)) delete draft[key]
   for (const key of Object.keys(errors)) delete errors[key]
   for (const [optionName, fields] of Object.entries(props.values)) {
     draft[optionName] = { ...fields }
+  }
+  // 已存的值（导入或旧版本录的）与项目要的修饰键个数不符：打开就标出来
+  for (const option of props.options) {
+    for (const field of option.hotkeys ?? []) {
+      const text = modifierProblemText(field, parseHotkey(draft[option.name]?.[field.name]))
+      if (text) errors[fieldKey(option.name, field.name)] = text
+    }
   }
   recordingField.value = ''
 }
@@ -171,7 +207,23 @@ const handleRecording = (optionName: string, fieldName: string, value: boolean) 
   }
 }
 
-const MODIFIER_EXAMPLES = ['', 'Ctrl + E', 'Ctrl + Shift + E']
+// 常驻说明：这个项目的键位支不支持组合键（由项目 pipeline 用到的修饰键占位符决定）
+const comboSummary = computed(() => hotkeyComboSummary(props.options))
+const comboNote = computed(() => {
+  const summary = comboSummary.value
+  if (summary.kind === 'none') return t('edit.mfwHotkeyNoCombo')
+  if (summary.kind === 'all') {
+    return t('edit.mfwHotkeyAllCombo', {
+      n: summary.count,
+      example: MODIFIER_EXAMPLES[summary.count] ?? MODIFIER_EXAMPLES[2],
+    })
+  }
+  return t('edit.mfwHotkeySomeCombo')
+})
+const rowComboTag = (field: HotkeyField) =>
+  comboSummary.value.kind === 'mixed' && (field.modifierCount ?? 0) > 0
+    ? t('edit.mfwHotkeyComboTag', { n: field.modifierCount })
+    : ''
 
 const handleRecord = (
   optionName: string,
@@ -180,18 +232,9 @@ const handleRecord = (
 ) => {
   const key = fieldKey(optionName, field.name)
   if (result.kind === 'combo') {
-    // 项目 pipeline 按得出几个修饰键就只能录几个：多了运行时不会按下，少了映射不出
-    const problem = hotkeyModifierProblem(result.keys, field.modifierCount)
-    if (problem === 'single-key-only') {
-      errors[key] = t('edit.mfwHotkeySingleKeyOnly')
-      return
-    }
-    if (problem === 'needs-modifiers') {
-      const count = field.modifierCount ?? 0
-      errors[key] = t('edit.mfwHotkeyNeedsModifiers', {
-        n: count,
-        example: MODIFIER_EXAMPLES[count] ?? MODIFIER_EXAMPLES[2],
-      })
+    const text = modifierProblemText(field, result.keys)
+    if (text) {
+      errors[key] = text
       return
     }
     delete errors[key]
@@ -226,6 +269,18 @@ const handleSave = () => {
   border-bottom: 1px solid var(--ant-color-border-secondary);
   color: var(--ant-color-text);
   font-weight: 700;
+}
+
+.hotkey-modal-combo {
+  padding: 0 0 4px;
+  color: var(--ant-color-text-tertiary);
+  font-size: 12px;
+}
+
+.hotkey-combo-tag {
+  margin-left: 6px;
+  color: var(--ant-color-text-tertiary);
+  font-size: 12px;
 }
 
 .hotkey-group-gate {

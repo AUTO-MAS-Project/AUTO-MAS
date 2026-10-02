@@ -165,6 +165,26 @@ export const effectiveHotkeyValues = (
 }
 
 /**
+ * 弹窗常驻说明用：这批键位要不要组合键。都只按单键为 none；都要同样个数的修饰键为 all；
+ * 有的要有的不要（或个数不同）为 mixed，此时由各行自己标出个数。
+ */
+export type MaaFWHotkeyComboSummary =
+  | { kind: 'none' }
+  | { kind: 'all'; count: number }
+  | { kind: 'mixed' }
+
+export const hotkeyComboSummary = (
+  options: readonly MaaFWOptionInfo[]
+): MaaFWHotkeyComboSummary => {
+  const counts = new Set(
+    options.flatMap(option => (option.hotkeys ?? []).map(field => field.modifierCount ?? 0))
+  )
+  if (counts.size === 0 || (counts.size === 1 && counts.has(0))) return { kind: 'none' }
+  if (counts.size === 1) return { kind: 'all', count: [...counts][0] }
+  return { kind: 'mixed' }
+}
+
+/**
  * 录到的组合键与项目要的修饰键个数对不上时的原因：项目 pipeline 只按得出 modifierCount 个修饰键，
  * 少了映射不出它要的占位符，多了运行时不会按下。对得上返回 null。
  */

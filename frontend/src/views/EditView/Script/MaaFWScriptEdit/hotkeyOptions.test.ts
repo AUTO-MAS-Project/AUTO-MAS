@@ -6,11 +6,36 @@ import {
   collectHotkeyOptions,
   countChangedHotkeys,
   effectiveHotkeyValues,
+  hotkeyComboSummary,
   hotkeyModifierProblem,
   hotkeySettingDescription,
   mergeHotkeyMap,
   parseHotkeyMap,
 } from './hotkeyOptions'
+
+describe('hotkeyComboSummary', () => {
+  const withCounts = (...counts: Array<number | undefined>): MaaFWOptionInfo[] => [
+    option('O', {
+      hotkeys: counts.map((modifierCount, index) => ({
+        name: `F${index}`,
+        default: 'E',
+        modifierCount,
+      })),
+    }),
+  ]
+
+  it('全是单键（含旧后端没下发 modifierCount）为 none', () => {
+    expect(hotkeyComboSummary(withCounts(0, 0))).toEqual({ kind: 'none' })
+    expect(hotkeyComboSummary(withCounts(undefined, 0))).toEqual({ kind: 'none' })
+    expect(hotkeyComboSummary([])).toEqual({ kind: 'none' })
+  })
+
+  it('全要同样个数的修饰键为 all，混合为 mixed', () => {
+    expect(hotkeyComboSummary(withCounts(1, 1))).toEqual({ kind: 'all', count: 1 })
+    expect(hotkeyComboSummary(withCounts(0, 1))).toEqual({ kind: 'mixed' })
+    expect(hotkeyComboSummary(withCounts(1, 2))).toEqual({ kind: 'mixed' })
+  })
+})
 
 describe('hotkeyModifierProblem', () => {
   it('项目只按主键时只接受单键（MaaEnd / 战双）', () => {

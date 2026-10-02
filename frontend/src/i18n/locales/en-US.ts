@@ -1715,6 +1715,12 @@ export default {
     mfwHotkeySingleKeyOnly:
       'This binding takes a single key; the project never presses Ctrl / Alt / Shift / Win',
     mfwHotkeyNeedsModifiers: 'This binding needs {n} modifier key(s) plus one key, e.g. {example}',
+    mfwHotkeyNoCombo: 'This project only presses single keys; key combinations are not supported',
+    mfwHotkeyAllCombo:
+      'Every binding in this project needs {n} modifier key(s) plus one key, e.g. {example}',
+    mfwHotkeySomeCombo:
+      'Some bindings need a key combination (marked next to them); the rest take a single key',
+    mfwHotkeyComboTag: '{n} modifier(s) + key',
     mfwHotkeyNeedsCase:
       'Only applies when "{option}" is set to "{case}" in the user\'s task settings',
     thisNameAlsoWritten:
