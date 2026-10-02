@@ -558,7 +558,7 @@ const formData = reactive({
 const maaEndConfig = reactive<MaaEndScriptConfig>({
   Info: {
     Name: '',
-    Path: '.',
+    Path: '',
   },
   Run: {
     RunTimeLimit: 30,
@@ -767,9 +767,12 @@ const loadEmulatorOptions = async () => {
 }
 
 const loadMaaEndOptions = async () => {
-  maaEndOptionsLoading.value = true
   originalResolution.value = null
   originalDisplayType.value = null
+  controllerOptions.value = []
+  controllerProtocols.value = {}
+  if (!maaEndConfig.Info.Path?.trim()) return
+  maaEndOptionsLoading.value = true
   try {
     const response = await getMaaEndOptions(scriptId)
     if (response?.code !== 200) return
