@@ -113,7 +113,7 @@ When using this hub:
 3. Apply only the minimum set required by the task.
 4. Keep compatibility-first decisions for legacy modules unless explicitly asked to refactor broadly.
 5. In review tasks, call out where findings follow known maintainer preferences rather than only generic engineering taste.
-6. For Issue/PR body writing, follow the docs site instead of inventing repository-specific text here.
+6. For Issue/PR body writing, follow the docs site instead of inventing repository-specific text here; the drafting techniques live in the `pr` skill.
 7. For frontend tasks, state whether `mas-frontend-standards` and `mas-frontend-ui` were selected and why.
 
 ## Review Checklist

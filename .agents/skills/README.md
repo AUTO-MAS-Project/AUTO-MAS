@@ -29,7 +29,10 @@
 - `mas-script-specialized-adapter`：用于新增或维护专项脚本适配，按脚本前端架构线完成问诊、前端表面与后端任务接入。
 - `mas-plan-schedule`：用于新增、重构或审查计划表类型与调度配置。
 - `mas-game-sign`：用于新增、重构或审查游戏社区签到，涵盖平台注册表、凭据加密与登录路由、签到锁与触发路径、结果与通知契约。
-- `grill-me`：用于对方案做高强度问诊，不属于 AUTO-MAS 工程规则 hub 的默认路由。
+- `grill-me`：对方案做高强度问诊的入口，仅作指针指向 `grilling`；不属于 AUTO-MAS 工程规则 hub 的默认路由。
+- `grilling`：承载方案盘问逻辑，按设计树与前沿轮次推进，直到与用户达成共识；由 `grill-me` 指向，也可独立触发。
+- `code-review`：从固定点（commit、分支、tag 或 merge-base）对变更做规范与规格双轴审查，两条轴线在并行子 agent 中运行；本地另把上游译词「气味基线」统一写作「可疑写法基线」，下次同步后需重新施加。
+- `pr`：撰写 PR 正文时的写作辅助（摘要视图 / 证据 / 合并风险）；PR 正文规范仍以文档站为准。
 
 ## 使用方式
 
@@ -37,6 +40,10 @@
 2. 按任务意图选择最小必要的子 Skill。
 3. 若任务涉及贡献流程、分支、提交、PR/Issue 正文或版本记录，回到文档站确认。
 4. 若任务涉及主程序代码，仍需在主程序仓库中查看相邻实现并遵守本地风格。
+
+## 来源与许可
+
+`grill-me`、`grilling`、`code-review`、`pr` 取自第三方简体中文汉化仓库 devcxl/mattpocock-skills-zh（原作 Matt Pocock 的技能集），按上游 MIT 许可使用（MIT License，Copyright (c) 2026 Matt Pocock）；导入时仅按本仓库文档站的贡献流程改动其中的流程引用。本目录其余内容随主程序以 AGPL-3.0 分发。按本目录约定，第三方来源只保留纯文本署名与许可声明，不留外部链接；`pr` 的摘要视图部分复制自 Humanlayer 的 show-me 技能（作者 Dex Horthy，MIT License，Copyright (c) 2026 HumanLayer，全文见 `pr/CREDITS.md`）。
 
 ## Claude Code 接入
 

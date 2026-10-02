@@ -528,6 +528,7 @@ def main():
         queue_router,
         scripts_router,
         setting_router,
+        share_router,
         skland_qr_router,
         tools_router,
         update_router,
@@ -559,6 +560,7 @@ def main():
     app.include_router(history_router)
     app.include_router(tools_router)
     app.include_router(setting_router)
+    app.include_router(share_router)
     app.include_router(update_router)
     app.include_router(ocr_router)
     app.include_router(openclaw_qq_router)
