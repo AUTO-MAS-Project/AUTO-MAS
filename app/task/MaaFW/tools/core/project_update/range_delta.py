@@ -43,6 +43,7 @@ from .projection import (
     describe_dropped_code_files,
     filter_package_entries,
     package_projection_rules,
+    package_takeover_dirs,
 )
 from .projection_heal import (
     HealSkip,
@@ -180,6 +181,8 @@ class RangeDelta:
     probe_bytes: int = 0
     #: 按 :func:`plan_range_fetch` 算出的取回阶段要发的字节（含文件头、合并的间隙、块对齐）。
     planned_fetch_bytes: int = 0
+    #: 新包整体接管的目录（与整包落地同一个 ``package_takeover_dirs``，同一套规则算）。
+    takeover_dirs: frozenset[str] = frozenset()
 
     @property
     def size(self) -> int:
@@ -433,6 +436,7 @@ def open_range_delta(
             fetch=fetch,
             probe_bytes=reader.fetched,
             planned_fetch_bytes=planned,
+            takeover_dirs=package_takeover_dirs(rules, kept),
         )
         # 预算按真正要发的字节算（文件头、合并的间隙、块对齐都算上，已读的中央目录也算），
         # 不按名义压缩大小：分散的小改动拉回来的往往是名义的几倍（MPA 88 KB 要读 846 KB）。

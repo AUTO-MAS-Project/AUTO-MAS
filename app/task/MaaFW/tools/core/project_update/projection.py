@@ -2160,6 +2160,75 @@ def _shell_native_core_location(relative: str) -> str | None:
     return location
 
 
+#: MaaFramework 随原生库一起分发、由发行包整体铺下的顶层目录（不是项目自己的东西）。
+MAAFW_COMPANION_DIR_NAMES = frozenset({"maaagentbinary"})
+
+
+def package_takeover_dirs(
+    rules: ProjectionRules, package_files: Iterable[str]
+) -> frozenset[str]:
+    """全量包「整体接管」的目录（项目相对 posix 路径）：新版本里这些目录的内容就是发行包
+    铺的那一份，导入来的、新包里没有的旧文件不该留下。
+
+    判据只从投影规则与新包的文件表来，不认项目名：
+
+    - 原样带走的运行时目录（``verbatim_runtime`` 目标）：项目自带解释器所在目录（含
+      ``site-packages``）与 MaaFramework 原生库目录（``maafw/``、``runtimes/<rid>/native``）。
+      包根上逐个文件带走的原生库是文件、不是目录，不算（新包照常覆盖同名文件）。
+    - MaaFramework 随附的顶层目录（:data:`MAAFW_COMPANION_DIR_NAMES`，``MaaAgentBinary/``）。
+
+    两者都还要求新包里**确实有**这个目录下的文件：新包不带的目录不算接管（说明这一版不再
+    在那里放东西，或者换了布局——那由 :func:`abandoned_native_runtime_files` 按位置管）。
+    用户数据、配置、运行期状态都不在这些目录里，资源目录、``preset/``、``tasks/`` 等更不在。
+    """
+
+    files = [str(rel).replace("\\", "/") for rel in package_files]
+    candidates: dict[str, str] = {}
+    for target, mode in rules.targets.items():
+        if not mode.verbatim_runtime or target in (ROOT, rules.base_relative):
+            continue
+        candidates[target.as_posix().casefold()] = target.as_posix()
+    for rel in files:
+        top = rel.split("/", 1)[0]
+        if "/" in rel and top.casefold() in MAAFW_COMPANION_DIR_NAMES:
+            candidates.setdefault(top.casefold(), top)
+    present: set[str] = set()
+    for key, directory in candidates.items():
+        prefix = f"{key}/"
+        if any(rel.casefold().startswith(prefix) for rel in files):
+            present.add(directory)
+    return frozenset(present)
+
+
+def takeover_orphans(
+    import_files: Iterable[str],
+    package_files: Iterable[str],
+    takeover_dirs: Iterable[str],
+) -> set[str]:
+    """导入来的文件里、落在接管目录（:func:`package_takeover_dirs`）下、新包里没有的那些。
+
+    全量包对 ``origin=package`` 的旧文件本来就是「不在包里就删」；导入来的文件只在资源目录
+    （``apply._import_origin_orphans``）与被淘汰的原生库位置上清，其余原样带进新载荷。接管
+    目录里这样留下来就是新旧两版混在一起：M9A v4.11.0（导入）→ v4.11.1 后自带解释器里同时有
+    ``maafw-5.14.0.dist-info`` 与 ``maafw-5.14.2.dist-info``，``importlib.metadata`` / pip 可能
+    读到旧的。我们自己铺的 ``.auto_mas*`` 不碰。
+    """
+
+    prefixes = tuple(f"{item.casefold().rstrip('/')}/" for item in takeover_dirs)
+    if not prefixes:
+        return set()
+    package = {str(rel).casefold() for rel in package_files}
+    orphans: set[str] = set()
+    for rel in import_files:
+        folded = rel.casefold()
+        if folded in package or not folded.startswith(prefixes):
+            continue
+        if any(part.startswith(".auto_mas") for part in folded.split("/")):
+            continue
+        orphans.add(rel)
+    return orphans
+
+
 def abandoned_native_runtime_files(
     import_files: Iterable[str], package_files: Iterable[str]
 ) -> set[str]:
@@ -2562,6 +2631,8 @@ __all__ = [
     "looks_like_local_path",
     "materialize_projection",
     "package_projection_rules",
+    "package_takeover_dirs",
     "read_json_object",
+    "takeover_orphans",
     "target_exclusion_reason",
 ]

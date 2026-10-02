@@ -1210,6 +1210,7 @@ async def apply_maafw_project_update(
     # 区间差量：拼好的虚拟全量包（包内相对路径 → range_dir 下的文件）；None = 照常下整包。
     range_entries: dict[str, Path] | None = None
     range_transferred = 0
+    range_takeover: frozenset[str] = frozenset()
     if range_delta:
         try:
             range_result = await _range_delta_package(
@@ -1234,7 +1235,7 @@ async def apply_maafw_project_update(
             _finish_operation(operation, "cancelled")
             raise MaaFWProjectUpdateError(CANCELLED_MESSAGE, cancelled=True) from exc
         if range_result is not None:
-            range_entries, range_transferred = range_result
+            range_entries, range_transferred, range_takeover = range_result
             operation.update(
                 "downloaded",
                 mode="range",
@@ -1353,6 +1354,7 @@ async def apply_maafw_project_update(
             target_version=target_version,
             cancelled=is_cancelled,
             package_entries=range_entries,
+            takeover_dirs=range_takeover,
         )
         elapsed = timer.finish()
         send_update_log(
@@ -1555,10 +1557,10 @@ async def _range_delta_package(
     cancelled: Callable[[], bool],
     mirrored: bool = False,
     mirror_fallback: bool = False,
-) -> tuple[dict[str, Path], int] | None:
+) -> tuple[dict[str, Path], int, frozenset[str]] | None:
     """GitHub 发行包按区间只取变化的文件，在 ``package_dir`` 里拼出虚拟全量包。
 
-    返回 ``(条目表, 实际下载字节)``；用不了（不在 github.com、服务端不认 Range、区间不符、
+    返回 ``(条目表, 实际下载字节, 整体接管的目录)``；用不了（不在 github.com、服务端不认 Range、区间不符、
     CRC 错、超预算、超时……）丢掉 ``package_dir`` 返回 None，调用方照常下整包。用户停止
     抛 :class:`RangeDeltaCancelled`。``mirrored``：配置了 GitHub 加速镜像（区间不走镜像，
     要在日志里说一声，免得以为镜像没生效）。``mirror_fallback``：退回时整包真能走镜像（有镜像
@@ -1658,7 +1660,7 @@ async def _range_delta_package(
             len(delta.reuse),
             len(delta.fetch),
         )
-        return entries, delta.transferred
+        return entries, delta.transferred, delta.takeover_dirs
     except RangeDeltaCancelled:
         raise
     except Exception as exc:  # noqa: BLE001 - 区间这一路任何失败都退回整包
