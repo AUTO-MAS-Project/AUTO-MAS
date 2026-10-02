@@ -22,8 +22,8 @@ beforeEach(() => {
   disk = { themeMode: 'light', themeColor: 'blue', mysteryUnlockedDate: '2026-10-02' }
   legacy = new Map()
   loadConfig.mockImplementation(async () => (disk ? { ...disk } : null))
-  saveConfig.mockImplementation(async config => {
-    disk = { ...config }
+  saveConfig.mockImplementation(async (config, defaults) => {
+    disk = { ...defaults, ...disk, ...config }
   })
   resetConfig.mockImplementation(async () => {
     disk = null
@@ -60,6 +60,36 @@ function delayFirstRead() {
 }
 
 describe('共享前端配置读写', () => {
+  it('前端读取后主进程更新窗口设置，保存偏好不会回写旧窗口设置', async () => {
+    disk = { themeMode: 'light', UI: { location: '100,100', size: '1600,1000' } }
+    const config = await import('./config')
+    const { started, release } = delayFirstRead()
+    const preference = config.saveConfig({ language: 'en-US' })
+    await started.promise
+    disk.UI = { location: '200,300', size: '1200,900' }
+    release.resolve()
+    await preference
+
+    expect(disk).toMatchObject({
+      language: 'en-US',
+      UI: { location: '200,300', size: '1200,900' },
+    })
+  })
+
+  it('迁移检查期间主进程更新配置，迁移不会覆盖最新文件', async () => {
+    legacy.set('app-config', JSON.stringify({ language: 'en-US' }))
+    const config = await import('./config')
+    const { started, release } = delayFirstRead()
+    const loading = config.getConfig()
+    await started.promise
+    disk = { ...disk, UI: { location: '200,300' }, themeColor: 'green' }
+    release.resolve()
+    await loading
+
+    expect(disk).toMatchObject({ UI: { location: '200,300' }, themeColor: 'green' })
+    expect(legacy.size).toBe(0)
+  })
+
   it('偏好保存先开始、锁定随后开始时，两项修改都保留', async () => {
     const config = await import('./config')
     const { started, release } = delayFirstRead()

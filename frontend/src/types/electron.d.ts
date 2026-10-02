@@ -231,7 +231,8 @@ export interface ElectronAPI {
   stopBackend: () => Promise<{ success: boolean; error?: string }>
 
   // 配置文件操作
-  saveConfig: (config: unknown) => Promise<void>
+  // 仅覆盖 config 中的字段；defaults 只补齐文件中缺失的字段。
+  saveConfig: (config: unknown, defaults?: unknown) => Promise<void>
   loadConfig: () => Promise<ElectronConfig | null>
   resetConfig: () => Promise<void>
 

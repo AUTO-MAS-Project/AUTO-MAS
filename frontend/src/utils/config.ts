@@ -48,7 +48,7 @@ const DEFAULT_CONFIG: FrontendConfig = {
   },
 }
 
-// 读取、迁移、保存和重置共享队列，避免旧快照覆盖其他调用方的修改。
+// 保持渲染进程请求顺序；主进程保存时再合并最新文件，避免覆盖窗口等配置。
 let configQueue: Promise<void> = Promise.resolve()
 
 function enqueueConfigOperation<T>(operation: () => Promise<T>): Promise<T> {
@@ -107,7 +107,8 @@ export async function getConfig(): Promise<FrontendConfig> {
       localStorage.getItem('app-config') || localStorage.getItem('theme-settings')
     if (hasLocalStorage) {
       try {
-        await window.electronAPI.saveConfig(config)
+        // 迁移只补齐缺失字段，不能用读取时的快照覆盖主进程的新值。
+        await window.electronAPI.saveConfig({}, config)
         localStorage.removeItem('app-config')
         localStorage.removeItem('theme-settings')
         localStorage.removeItem('app-initialized')
@@ -127,9 +128,8 @@ export async function saveConfig(config: Partial<FrontendConfig>): Promise<void>
   return enqueueConfigOperation(async () => {
     try {
       logger.info(`开始保存配置: 键=${Object.keys(config).join(',')}`)
-      const currentConfig = await getConfigInternal() // 使用内部函数避免递归
-      const newConfig = { ...currentConfig, ...config }
-      await window.electronAPI.saveConfig(newConfig)
+      const defaults = await getConfigInternal() // 保留默认值和旧配置迁移
+      await window.electronAPI.saveConfig(config, defaults)
       logger.info('配置保存成功')
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error)
