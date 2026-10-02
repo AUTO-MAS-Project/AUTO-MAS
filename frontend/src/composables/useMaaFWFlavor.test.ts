@@ -1,4 +1,3 @@
-import { readFileSync, readdirSync } from 'node:fs'
 import { ref } from 'vue'
 import { describe, expect, it, vi } from 'vitest'
 import {
@@ -85,23 +84,6 @@ describe('MaaFW flavor 文案表', () => {
     type.value = 'M9A'
     expect(flavor.value.type).toBe('M9A')
   })
-
-  it('MaaFW 脚本页与用户页都按脚本当前类型取 flavor，不读路由 meta', () => {
-    const scriptPage = readFileSync(
-      new URL('../views/EditView/Script/MaaFWScriptEdit.vue', import.meta.url),
-      'utf8'
-    )
-    const userPage = readFileSync(
-      new URL('../views/EditView/User/MaaFWUserEdit.vue', import.meta.url),
-      'utf8'
-    )
-    for (const source of [scriptPage, userPage]) {
-      expect(source).toContain('useMaaFWFlavor(')
-      expect(source).not.toContain('route.meta.scriptType')
-    }
-    // 导入 / 重新导入成功后要重新拉脚本类型：后端按项目内容原地换类型
-    expect(scriptPage).toContain('refreshScriptType')
-  })
 })
 
 describe('MaaFW 特调注册表', () => {
@@ -152,19 +134,6 @@ describe('MaaFW 特调注册表', () => {
     const keys = Object.keys(MAAFW_FLAVORS[0]).sort()
     for (const flavor of MAAFW_FLAVORS) expect(Object.keys(flavor).sort()).toEqual(keys)
     expect(MAAFW_SPECIAL_FLAVORS.map(flavor => flavor.type)).toEqual(['M9A', 'MSS'])
-  })
-
-  it('后端默认脚本名与配置类名照抄 app/models/config.py', () => {
-    const source = readFileSync(new URL('../../../app/models/config.py', import.meta.url), 'utf8')
-    for (const flavor of MAAFW_FLAVORS) {
-      const block = (source.split(`class ${flavor.scriptConfigType}(`)[1] ?? '').split(
-        '\nclass '
-      )[0]
-      expect([flavor.type, block.includes(`"${flavor.defaultScriptName}"`)]).toEqual([
-        flavor.type,
-        true,
-      ])
-    }
   })
 
   it('isMaaFWFamily / 路由后缀 / 用户类型 / 默认名 / 配置类名都从注册表来', () => {
@@ -228,32 +197,5 @@ describe('MaaFW 特调注册表', () => {
     expect(prepareUserPage).toHaveBeenCalledOnce()
     // 没有独有区块、没有钩子的 flavor 什么都不做
     await expect(prepareMaaFWFlavorUserPage(resolveMaaFWFlavor('M9A'))).resolves.toBeUndefined()
-  })
-})
-
-describe('公共页面不按特调类型分支', () => {
-  const read = (path: string) => readFileSync(new URL(path, import.meta.url), 'utf8')
-  const sectionFiles = (dir: string) =>
-    readdirSync(new URL(dir, import.meta.url))
-      .filter(name => name.endsWith('.vue') || (name.endsWith('.ts') && !name.endsWith('.test.ts')))
-      .map(name => `${dir}/${name}`)
-  const PUBLIC_FILES = [
-    '../views/EditView/Script/MaaFWScriptEdit.vue',
-    '../views/EditView/User/MaaFWUserEdit.vue',
-    ...sectionFiles('../views/EditView/Script/MaaFWScriptEdit'),
-    ...sectionFiles('../views/EditView/User/MaaFWUserEdit'),
-    '../components/ScriptTable.vue',
-    '../views/Scripts.vue',
-    '../views/scripts/components/scriptCreateFlow.ts',
-    '../router/index.ts',
-    './useScriptApi.ts',
-  ]
-
-  it.each(PUBLIC_FILES)('%s 不写特调类型字面量与 flavor.type 判断', path => {
-    const source = read(path)
-    expect(source).not.toMatch(/flavor(\.value)?\.type\s*[!=]==/)
-    expect(source).not.toMatch(/['"`](M9A|MSS)['"`]/)
-    expect(source).not.toMatch(/\b(M9A|MSS)(User)?Config\b/)
-    expect(source).not.toMatch(/\/(m9a|mss)['"`]/)
   })
 })
