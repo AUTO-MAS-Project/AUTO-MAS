@@ -321,17 +321,23 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   （`projection.abandoned_native_runtime_files`）：位置只有顶层 `maafw/`、`runtimes/<rid>/native`、
   `runtimes/<rid>` 与包根上的 MaaFramework 原生库，新包在某处带主库、旧的另一处也有主库而新包那处没有，
   那一处就清——MXU 换 MFAAvalonia 的导入目录里 `maafw/` 5.9.2 与 `runtimes/win-x64/native` 5.14.0
-  并存，runner 与 agent 各挑一份、每次等满连接超时。判据只看新包（投影过滤后）的清单、不比版本；自带解释器的
-  `site-packages/maa/bin` 是正牌的第二份库（可以更旧），永远不碰。导入时同样的混装只在报告里提示、不删。
+  并存，runner 与 agent 各挑一份、每次等满连接超时。判据只看新包（投影过滤后）的清单、不比版本；**这条**
+  规则里自带解释器的 `site-packages/maa/bin` 是正牌的第二份库（可以更旧），不当被淘汰的位置清。
+  导入时同样的混装只在报告里提示、不删。
   最后再加上 `origin=import`、位于新包**整体接管的目录**里、不在包内的（`projection.package_takeover_dirs` /
-  `takeover_orphans`）：接管目录 = 投影规则里原样带走的运行时目录（自带解释器所在目录含
-  `site-packages`、`maafw/`、`runtimes/<rid>/native`）加上 MaaFramework 随附的 `MaaAgentBinary/`，
-  且新包里确实带着这个目录下的文件；包根上逐个带走的原生库文件不算。不清的话新旧两版混在一起
-  （M9A v4.11.0 导入 → v4.11.1 后自带解释器里两份 `maafw-*.dist-info`、两份 `charset_normalizer`），
-  导入后直跳与链式更新得到的载荷也不一样。资源目录之外别处的导入文件仍然留着：#659 第一版按「包
-  自己铺的顶层目录」扫，把 MXU 写在 `preset/` 里的用户预设删了，`tasks/`、`assets/` 同理可能混着
-  用户内容；接管目录里只有发行包铺的运行时，用户手装进自带解释器的包也会被清（运行时由项目部署脚本
-  按依赖重装），这与从导入走过一次全量包之后的口径相同。
+  `takeover_orphans`）。接管目录只有三类，且新包里确实带着这个目录下的文件：MaaFramework 原生库布局里
+  明确的 `maafw/`、`runtimes/<rid>/native`（有界搜索找到的任意目录，比如只在 `bin/` 里放了
+  `MaaFramework.dll`，不算）；随附的 `MaaAgentBinary/`；项目自带解释器所在目录（目录名是
+  `EMBEDDED_PYTHON_DIR_NAMES` 之一或新包里结构上确是解释器目录，投影保守模式下不认）。与声明的资源目录、
+  agent 代码目录（`child_args` / `pretask` 参数所在目录）相等、包含或落在其内的一律不算——
+  `child_exec: ./agent/python.exe` 时解释器目录就是 `agent/`。不清的话新旧两版混在一起（M9A v4.11.0 导入
+  → v4.11.1 后自带解释器里两份 `maafw-*.dist-info`、两份 `charset_normalizer`），导入后直跳与链式更新
+  得到的载荷也不一样。于是自带解释器里 `site-packages/maa/bin` 在新包不带时也会被清（M9A v4.9.0 →
+  v4.11.x 清 16 个 DLL）：与全新安装新版本的结果相同，健康检查照常把 `MAAFW_BINARY_PATH` 指到项目
+  自带库。**代价**：导入时带进来的、用户手装进自带解释器的包，第一次全量更新（整包或区间）就被删掉，
+  MAS 不负责重装（准备运行环境只做健康检查与 maafw 钉回），能不能装回来要看项目自己的部署脚本。资源目录
+  与接管目录之外别处的导入文件仍然一直是 `origin=import`、任何一次全量包都不清：#659 第一版按「包自己铺的
+  顶层目录」扫，把 MXU 写在 `preset/` 里的用户预设删了，`tasks/`、`assets/` 同理可能混着用户内容。
   `.mas-update` / `.mas-update-cache` 是更新器的保留目录；`debug` / `logs` / `temp` / `__pycache__` /
   `.pycache`、`config/maa_option.json` 与视图标记不计入指纹（agent 子进程与环境准备设了
   `PYTHONPYCACHEPREFIX=<项目根>/.pycache`，镜像树里项目根出现两遍，路径长到会撞 MAX_PATH 时不设

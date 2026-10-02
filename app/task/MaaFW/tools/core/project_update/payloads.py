@@ -680,8 +680,9 @@ def build_from_package(
             )
         stale |= abandoned
         # 新包整体接管的目录（自带解释器、MaaFramework 原生库、MaaAgentBinary）：导入来的、
-        # 新包里没有的旧文件也清掉，否则新旧两版混在一起（两份 maafw dist-info）。从导入走过
-        # 一次全量包之后这些文件都是 origin=package，本来就按上面第一条清，这里补上第一次。
+        # 新包里没有的旧文件也清掉，否则新旧两版混在一起（两份 maafw dist-info）。导入来的文件
+        # 一直是 origin=import，上面第一条永远清不到它们，所以这里在第一次全量包就清；用户手装
+        # 进自带解释器的包也在其中，MAS 不负责重装（看项目自己的部署脚本）。
         taken = takeover_orphans(import_files, plan.files, plan.takeover_dirs) - stale
         if taken and send_log is not None:
             dirs = sorted(

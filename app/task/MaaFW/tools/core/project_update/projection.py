@@ -2170,33 +2170,105 @@ def package_takeover_dirs(
     """全量包「整体接管」的目录（项目相对 posix 路径）：新版本里这些目录的内容就是发行包
     铺的那一份，导入来的、新包里没有的旧文件不该留下。
 
-    判据只从投影规则与新包的文件表来，不认项目名：
+    判据只从投影规则与新包的文件表来，不认项目名，三类都要求新包里**确实有**这个目录下
+    的文件（新包不带的目录不算接管，换布局由 :func:`abandoned_native_runtime_files` 按位置管）：
 
-    - 原样带走的运行时目录（``verbatim_runtime`` 目标）：项目自带解释器所在目录（含
-      ``site-packages``）与 MaaFramework 原生库目录（``maafw/``、``runtimes/<rid>/native``）。
-      包根上逐个文件带走的原生库是文件、不是目录，不算（新包照常覆盖同名文件）。
-    - MaaFramework 随附的顶层目录（:data:`MAAFW_COMPANION_DIR_NAMES`，``MaaAgentBinary/``）。
+    - MaaFramework 原生库布局里明确的那几种：``maafw/``、``runtimes/<rid>/native``（原样
+      带走的运行时目标里、位置正好是这两种的），以及随附的 ``MaaAgentBinary/``
+      （:data:`MAAFW_COMPANION_DIR_NAMES`）。有界搜索找到的任意目录（``bin/`` 里放着
+      ``MaaFramework.dll``）不算——那里可能混着项目自己的东西。
+    - 项目自带解释器所在目录（原样带走的运行时目标、不是上面的原生库布局）：目录名是
+      :data:`EMBEDDED_PYTHON_DIR_NAMES` 之一，或者新包里它确实是一个解释器目录
+      （与 :func:`_is_python_interpreter_dir` 同一组特征）。投影保守模式（agent 是 custom /
+      command / 不透明形态，代码可能在任何地方）下不认解释器目录。
 
-    两者都还要求新包里**确实有**这个目录下的文件：新包不带的目录不算接管（说明这一版不再
-    在那里放东西，或者换了布局——那由 :func:`abandoned_native_runtime_files` 按位置管）。
-    用户数据、配置、运行期状态都不在这些目录里，资源目录、``preset/``、``tasks/`` 等更不在。
+    另外，接管目录与声明的资源目录（``resource`` / ``attach_resource_path``）、agent 代码目录
+    （``child_args`` / ``pretask`` 参数所在目录）**相等、包含或落在其内**的一律不算：
+    ``child_exec: ./agent/python.exe`` 时解释器目录就是 ``agent/``，那里是项目代码。
+    用户数据、配置、运行期状态、``preset/``、``tasks/`` 都不在这些目录里。
     """
 
     files = [str(rel).replace("\\", "/") for rel in package_files]
-    candidates: dict[str, str] = {}
+    folded_files = {rel.casefold() for rel in files}
+    base = rules.base_relative
+
+    def native_layout(target: Path) -> bool:
+        try:
+            parts = [part.casefold() for part in target.relative_to(base).parts]
+        except ValueError:
+            return False
+        if parts == ["maafw"]:
+            return True
+        return (
+            len(parts) == 3
+            and parts[0] == "runtimes"
+            and bool(_RID_RE.match(parts[1]))
+            and parts[2] == "native"
+        )
+
+    def interpreter_dir(target: Path) -> bool:
+        if target.name.casefold() in EMBEDDED_PYTHON_DIR_NAMES:
+            return True
+        prefix = target.as_posix().casefold()
+        markers = (
+            "python.exe",
+            "pythonw.exe",
+            "python",
+            "python3",
+            "pyvenv.cfg",
+            "python3.dll",
+            "scripts/python.exe",
+            "bin/python",
+            "bin/python3",
+        )
+        if any(f"{prefix}/{marker}" in folded_files for marker in markers):
+            return True
+        return any(
+            rel.startswith(f"{prefix}/")
+            and "/" not in rel[len(prefix) + 1 :]
+            and _PYTHON_DLL_RE.match(rel[len(prefix) + 1 :])
+            for rel in folded_files
+        )
+
+    protected: list[Path] = []
+    for required in rules.required:
+        label = required.label
+        if label.startswith(("resource ", "controller[")):
+            protected.append(required.path)
+        elif ".child_args[" in label or (
+            label.startswith("pretask[") and ".args[" in label
+        ):
+            path = required.path
+            protected.append(path if required.is_directory else path.parent)
+    protected = [path for path in protected if path not in (ROOT, base)]
+
+    def overlaps(target: Path) -> bool:
+        return any(
+            target == path
+            or _is_relative_to(path, target)
+            or _is_relative_to(target, path)
+            for path in protected
+        )
+
+    candidates: dict[str, Path] = {}
     for target, mode in rules.targets.items():
-        if not mode.verbatim_runtime or target in (ROOT, rules.base_relative):
+        if not mode.verbatim_runtime or target in (ROOT, base):
             continue
-        candidates[target.as_posix().casefold()] = target.as_posix()
+        if native_layout(target) or (
+            not rules.conservative and interpreter_dir(target)
+        ):
+            candidates.setdefault(target.as_posix().casefold(), target)
     for rel in files:
         top = rel.split("/", 1)[0]
         if "/" in rel and top.casefold() in MAAFW_COMPANION_DIR_NAMES:
-            candidates.setdefault(top.casefold(), top)
+            candidates.setdefault(top.casefold(), Path(top))
     present: set[str] = set()
     for key, directory in candidates.items():
         prefix = f"{key}/"
-        if any(rel.casefold().startswith(prefix) for rel in files):
-            present.add(directory)
+        if overlaps(directory):
+            continue
+        if any(rel.startswith(prefix) for rel in folded_files):
+            present.add(directory.as_posix())
     return frozenset(present)
 
 
