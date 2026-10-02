@@ -42,6 +42,32 @@ def seed_maa_base_config(config_dir: Path) -> None:
             write_file(path, deepcopy(preset))
 
 
+def ensure_maa_default_configuration(gui_set: dict, gui_new_set: dict) -> None:
+    """把 gui.json 的当前方案折到 Default，并保证 gui.new.json 一定有它。
+
+    MAA 原生配置文件不保证带 Default：直控与「来源目录不存在、沿用安装目录
+    现有配置」两条路都会把用户盘上那份 gui.new.json 原样带进来，而 Current
+    完全可能是 Default。折叠与兜底必须无条件执行，否则后续对
+    Configurations["Default"] 的硬索引会抛 KeyError。
+    """
+
+    configurations = gui_new_set.get("Configurations")
+    if not isinstance(configurations, dict):
+        configurations = gui_new_set["Configurations"] = {}
+    configurations.setdefault("Default", {})
+    gui_set.setdefault("Current", "Default")
+    if gui_set["Current"] != "Default":
+        # 当前方案本身也可能不存在（三方文件手改不一致）：与旧 AutoProxy/ScriptConfig
+        # 已验的写法一致，有才折，没有就保留各自原有的 Default。
+        current = gui_set["Current"]
+        gui_configurations = gui_set.get("Configurations")
+        if isinstance(gui_configurations, dict) and current in gui_configurations:
+            gui_configurations["Default"] = gui_configurations[current]
+        if current in configurations:
+            configurations["Default"] = configurations[current]
+        gui_set["Current"] = "Default"
+
+
 def maa_task_identity(task: object) -> tuple[str, str] | None:
     """Return the stable business identity of one MAA task.
 
