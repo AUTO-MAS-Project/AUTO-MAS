@@ -913,6 +913,8 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         # 钩子装饰（首尾任务、切号绑定之类），再按装饰后的列表建计划。通用 MaaFW
         # 没有钩子，仍按快照直接建计划，行为不变。
         flavor = resolve_flavor(self.script_config)
+        # 脚本级键位（Game.Hotkeys）：坏 JSON / 不是对象当空，字段级的校验在建计划时做。
+        script_hotkeys = _load_script_hotkeys(self.script_config.get("Game", "Hotkeys"))
         missing_skips: list[MaaFWSkippedTaskPlan] = []
         try:
             # 密码字段（PI v2.10.0）在配置里是密文，只在这份内存副本里解开交给计划；
@@ -934,6 +936,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                     resource_name=resource_name,
                     selected_preset=effective_preset,
                     task_snapshot=task_snapshot or None,
+                    script_hotkeys=script_hotkeys,
                 )
                 return _with_skipped_tasks(plan, missing_skips)
             task_ids, task_options = select_snapshot_tasks(
@@ -958,6 +961,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 resource_name=resource_name,
                 task_ids=task_ids,
                 task_options=task_options,
+                script_hotkeys=script_hotkeys,
             )
             return _with_skipped_tasks(plan, missing_skips)
         except Exception as exc:
@@ -3156,6 +3160,23 @@ def _load_json_dict(value: Any) -> dict[str, Any]:
             if isinstance(data, dict):
                 return data
     return {}
+
+
+def _load_script_hotkeys(value: Any) -> dict[str, dict[str, str]]:
+    """``Game.Hotkeys`` → ``{option 名: {字段名: 组合键}}``；不成形的部分丢掉。"""
+
+    result: dict[str, dict[str, str]] = {}
+    for option_name, fields in _load_json_dict(value).items():
+        if not isinstance(option_name, str) or not isinstance(fields, dict):
+            continue
+        cleaned = {
+            field_name: field_value
+            for field_name, field_value in fields.items()
+            if isinstance(field_name, str) and isinstance(field_value, str)
+        }
+        if cleaned:
+            result[option_name] = cleaned
+    return result
 
 
 def _load_json_list(value: Any) -> list[str]:

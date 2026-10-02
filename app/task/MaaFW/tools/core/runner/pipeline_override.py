@@ -81,6 +81,31 @@ class MaaFWInputValueError(ValueError):
         )
 
 
+class MaaFWHotkeyValueError(ValueError):
+    """hotkey 选项的覆盖下发不了：键位映射不成当前控制器的键码，或与 pipeline 的占位符对不上。
+
+    与 ``MaaFWInputValueError`` 同样只带事实（选项名、字段名、值、原因），给人看的整句由
+    建计划的一方拼（它有选项与字段的显示名）。``field_name`` / ``value`` 为空表示问题不在某个
+    字段的取值上（例如 pipeline 里的占位符写法不对、控制器没有 hotkey 映射）。
+    """
+
+    def __init__(
+        self,
+        option_name: str,
+        field_name: str,
+        *,
+        value: str | None,
+        reason: str,
+    ) -> None:
+        self.option_name = option_name
+        self.field_name = field_name
+        self.value = value
+        self.reason = reason
+        target = f"{option_name}.{field_name}" if field_name else option_name
+        detail = f"值 {value!r} " if value is not None else ""
+        super().__init__(f"快捷键 {target} {detail}无法下发：{reason}")
+
+
 def _parse_integer_text(text: str) -> int | None:
     """整数，或整数形态的小数 / 科学计数（``99.0``、``1e20``）；别的返回 None。"""
 
@@ -131,6 +156,8 @@ class MaaFWPipelineOverrideBuilder:
         # 因为值下发不了而整段跳过覆盖的 input 选项（没填又没默认值、该填数字却不是）。
         # 只带事实，调用方按任务拼成告警后清空——它知道当前是哪个任务、显示名是什么。
         self.input_errors: list[MaaFWInputValueError] = []
+        # 因为键位下发不了而整段跳过覆盖的 hotkey 选项，用法同 ``input_errors``。
+        self.hotkey_errors: list[MaaFWHotkeyValueError] = []
 
     def build_task_pipeline_override(
         self,
@@ -141,14 +168,71 @@ class MaaFWPipelineOverrideBuilder:
         if task_definition is None:
             return {}
 
+        merged = copy.deepcopy(task_definition.pipeline_override) or {}
+        for option_names in self._task_option_groups(task_definition):
+            merged = deep_merge_pipeline_override(
+                merged,
+                self._build_option_group_override(option_names, options),
+            )
+        return merged
+
+    def active_option_names(
+        self,
+        task_name: str,
+        options: dict[str, MaaFWTaskOptionValue],
+    ) -> list[str]:
+        """这个任务建覆盖时实际会生效的选项名（按出现顺序去重）。
+
+        与 ``build_task_pipeline_override`` 同一套口径：global_option → 当前 resource 的
+        option → 当前 controller 的 option → task.option，过滤掉未声明 / 不支持的类型 /
+        不适用于当前 controller、resource 的选项，select / switch 展开当前选中 case 的子选项，
+        checkbox 展开勾选 case 的子选项。不做勾选数校验、不解析值，没有副作用。
+        """
+
+        task_definition = self._get_task_definition(task_name)
+        if task_definition is None:
+            return []
+        names: list[str] = []
+        for option_names in self._task_option_groups(task_definition):
+            self._collect_active_option_names(option_names, options, set(), names)
+        return names
+
+    def check_hotkey_value(self, option_name: str, field_name: str, value: str) -> None:
+        """按当前控制器检查一个 hotkey 字段的取值能不能下发；不能就抛 ``MaaFWHotkeyError``。
+
+        与建覆盖时同一套检查：映射成当前控制器的键码，并且 pipeline 引用到的
+        ``{字段.modifierN}`` 这个键位都有。字段不是这个 option 声明的也抛。
+        """
+
+        option = self.interface_model.option.get(option_name)
+        hotkey_item = next(
+            (
+                item
+                for item in (option.hotkeys or [] if option is not None else [])
+                if item.name == field_name
+            ),
+            None,
+        )
+        if option is None or option.type != "hotkey" or hotkey_item is None:
+            raise MaaFWHotkeyError(f"未声明的快捷键字段: {option_name}.{field_name}")
+        # 占位符写法不合规是 interface 的问题（建覆盖时另报），这里只看值本身。
+        referenced_values = _hotkey_referenced_values(
+            hotkey_item.name, _collect_template_strings(option.pipeline_override or {})
+        ) & _hotkey_placeholders(hotkey_item.name)
+        _resolve_hotkey_placeholders(
+            hotkey_item.name,
+            value,
+            self._get_active_controller_type(),
+            referenced_values,
+        )
+
+    def _task_option_groups(self, task_definition: MaaFWTask) -> list[list[str]]:
         resource_definition = self._get_resource_definition()
         controller_option_names: list[str] = []
         for controller in self._get_active_controller_definitions():
             if controller.option:
                 controller_option_names.extend(controller.option)
-
-        merged = copy.deepcopy(task_definition.pipeline_override) or {}
-        option_groups = [
+        return [
             self.interface_model.global_option or [],
             resource_definition.option
             if resource_definition and resource_definition.option
@@ -156,12 +240,47 @@ class MaaFWPipelineOverrideBuilder:
             controller_option_names,
             task_definition.option or [],
         ]
-        for option_names in option_groups:
-            merged = deep_merge_pipeline_override(
-                merged,
-                self._build_option_group_override(option_names, options),
-            )
-        return merged
+
+    def _collect_active_option_names(
+        self,
+        option_names: list[str],
+        options: dict[str, MaaFWTaskOptionValue],
+        lineage: set[str],
+        result: list[str],
+    ) -> None:
+        for option_name in option_names:
+            option = self.interface_model.option.get(option_name)
+            if (
+                option is None
+                or option.type not in SUPPORTED_OPTION_TYPES
+                or not self._is_option_active_for_context(option)
+                or option_name in lineage
+            ):
+                continue
+            if option_name not in result:
+                result.append(option_name)
+            next_lineage = {*lineage, option_name}
+            if option.type in {"select", "switch"} and option.cases:
+                active_case_name = self._normalize_choice_value(
+                    option_name, option, options
+                )
+                active_case = next(
+                    (case for case in option.cases if case.name == active_case_name),
+                    None,
+                )
+                if active_case and active_case.option:
+                    self._collect_active_option_names(
+                        active_case.option, options, next_lineage, result
+                    )
+            elif option.type == "checkbox" and option.cases:
+                selected_case_names = set(
+                    self._normalize_checkbox_values(option_name, option, options)
+                )
+                for case in option.cases:
+                    if case.name in selected_case_names and case.option:
+                        self._collect_active_option_names(
+                            case.option, options, next_lineage, result
+                        )
 
     def _get_task_definition(self, task_name: str) -> MaaFWTask | None:
         return next(
@@ -444,31 +563,35 @@ class MaaFWPipelineOverrideBuilder:
         template_strings = _collect_template_strings(option.pipeline_override)
         raw_option_value = options.get(option_name)
         typed_replacements: dict[str, object] = {}
-        controller_type = self._get_active_controller_type()
+        try:
+            controller_type = self._get_active_controller_type()
+        except MaaFWHotkeyError as exc:
+            self.hotkey_errors.append(
+                MaaFWHotkeyValueError(option_name, "", value=None, reason=str(exc))
+            )
+            return {}
 
         for hotkey_item in option.hotkeys:
-            placeholders = {
-                f"{{{hotkey_item.name}}}",
-                f"{{{hotkey_item.name}}}.primary",
-                f"{{{hotkey_item.name}}}.modifier1",
-                f"{{{hotkey_item.name}}}.modifier2",
-                f"{{{hotkey_item.name}.primary}}",
-                f"{{{hotkey_item.name}.modifier1}}",
-                f"{{{hotkey_item.name}.modifier2}}",
-            }
-            referenced_values = {
-                value
-                for value in template_strings
-                if any(placeholder in value for placeholder in placeholders)
-            }
+            referenced_values = _hotkey_referenced_values(
+                hotkey_item.name, template_strings
+            )
             if not referenced_values:
                 continue
-            invalid_templates = referenced_values - placeholders
+            invalid_templates = referenced_values - _hotkey_placeholders(
+                hotkey_item.name
+            )
             if invalid_templates:
-                raise MaaFWHotkeyError(
-                    "hotkey 占位符必须作为完整值使用: "
-                    + ", ".join(sorted(invalid_templates))
+                # interface 写法问题，与用户填的值无关：同样只跳过这个选项的覆盖。
+                self.hotkey_errors.append(
+                    MaaFWHotkeyValueError(
+                        option_name,
+                        hotkey_item.name,
+                        value=None,
+                        reason="hotkey 占位符必须作为完整值使用: "
+                        + ", ".join(sorted(invalid_templates)),
+                    )
                 )
+                return {}
 
             raw_text = hotkey_item.default or ""
             if isinstance(raw_option_value, dict):
@@ -487,14 +610,20 @@ class MaaFWPipelineOverrideBuilder:
                     self.warnings.append(warning)
                 return {}
 
-            resolved = resolve_hotkey(raw_text, controller_type)
-            values = resolved.placeholder_values(hotkey_item.name)
-            missing_placeholders = referenced_values - set(values)
-            if missing_placeholders:
-                raise MaaFWHotkeyError(
-                    f"快捷键 {raw_text} 不包含所需修饰键: "
-                    + ", ".join(sorted(missing_placeholders))
+            try:
+                values = _resolve_hotkey_placeholders(
+                    hotkey_item.name, raw_text, controller_type, referenced_values
                 )
+            except MaaFWHotkeyError as exc:
+                # 快照 / 预设 / 外壳导入里的键位映射不了：与 input 下发不了同一口径，只跳过
+                # 这个选项的覆盖（半替换会把字面量 "{K}" 塞进 pipeline），任务按项目原始
+                # pipeline 跑，不让整轮失败。
+                self.hotkey_errors.append(
+                    MaaFWHotkeyValueError(
+                        option_name, hotkey_item.name, value=raw_text, reason=str(exc)
+                    )
+                )
+                return {}
             typed_replacements.update(values)
 
         return cast(
@@ -625,6 +754,50 @@ class MaaFWPipelineOverrideBuilder:
                 self._build_option_override(option_name, options, lineage),
             )
         return merged
+
+
+def _hotkey_placeholders(field_name: str) -> set[str]:
+    """一个 hotkey 字段在 pipeline 里允许出现的全部占位符写法（必须作为完整值）。"""
+
+    return {
+        f"{{{field_name}}}",
+        f"{{{field_name}}}.primary",
+        f"{{{field_name}}}.modifier1",
+        f"{{{field_name}}}.modifier2",
+        f"{{{field_name}.primary}}",
+        f"{{{field_name}.modifier1}}",
+        f"{{{field_name}.modifier2}}",
+    }
+
+
+def _hotkey_referenced_values(field_name: str, template_strings: set[str]) -> set[str]:
+    """pipeline 里引用到这个字段的字符串值（含写法不合规、占位符只是其中一段的）。"""
+
+    placeholders = _hotkey_placeholders(field_name)
+    return {
+        value
+        for value in template_strings
+        if any(placeholder in value for placeholder in placeholders)
+    }
+
+
+def _resolve_hotkey_placeholders(
+    field_name: str,
+    raw_text: str,
+    controller_type: str,
+    referenced_values: set[str],
+) -> dict[str, int]:
+    """键位 → 占位符值；映射不了或缺 pipeline 用到的修饰键时抛 ``MaaFWHotkeyError``。"""
+
+    resolved = resolve_hotkey(raw_text, controller_type)
+    values = resolved.placeholder_values(field_name)
+    missing_placeholders = referenced_values - set(values)
+    if missing_placeholders:
+        raise MaaFWHotkeyError(
+            f"快捷键 {raw_text} 不包含所需修饰键: "
+            + ", ".join(sorted(missing_placeholders))
+        )
+    return values
 
 
 def _collect_template_strings(value: Any) -> set[str]:
