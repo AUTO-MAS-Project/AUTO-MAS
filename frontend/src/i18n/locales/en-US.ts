@@ -4186,6 +4186,16 @@ export default {
       voiceEnableTip: 'Play a voice prompt at certain moments',
       voiceType: 'Voice style',
       voiceTypeTip: 'How much the voice prompts say',
+      personalMssEntry: 'Not a mystery entrance',
+      personalMssEntryOn: 'Not a mystery entrance (enabled)',
+      personalMssHint:
+        'Enter the password to enable the personal-edition MaaStellaSora jobs (Catastrophe Defense).',
+      personalMssPassword: 'Password',
+      personalMssPlaceholder: 'Enter the password',
+      personalMssWrong: 'Wrong password',
+      personalMssOn: 'Personal-edition MaaStellaSora jobs enabled',
+      personalMssOff: 'Personal-edition MaaStellaSora jobs disabled',
+      personalMssFailed: 'Failed to save, please try again',
     },
     display: {
       section: 'Virtual display',

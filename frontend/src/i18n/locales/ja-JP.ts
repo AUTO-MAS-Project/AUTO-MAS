@@ -3610,6 +3610,16 @@ export default {
       voiceEnableTip: '特定のタイミングで音声ガイドを再生します',
       voiceType: '音声の種類',
       voiceTypeTip: '音声ガイドの詳しさを選びます',
+      personalMssEntry: '謎の入口ではありません',
+      personalMssEntryOn: '謎の入口ではありません（有効）',
+      personalMssHint:
+        'パスワードを入力すると、個人版 MaaStellaSora の専用進行（災変防衛線）が有効になります。',
+      personalMssPassword: 'パスワード',
+      personalMssPlaceholder: 'パスワードを入力',
+      personalMssWrong: 'パスワードが違います',
+      personalMssOn: '個人版 MaaStellaSora の専用進行を有効にしました',
+      personalMssOff: '個人版 MaaStellaSora の専用進行を無効にしました',
+      personalMssFailed: '設定に失敗しました。もう一度お試しください',
     },
     display: {
       section: '仮想ディスプレイ',
