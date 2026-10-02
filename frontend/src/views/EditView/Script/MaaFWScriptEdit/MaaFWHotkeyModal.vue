@@ -10,55 +10,60 @@
   >
     <div class="hotkey-modal">
       <div v-if="description" class="hotkey-modal-sub">{{ description }}</div>
-      <div class="hotkey-modal-combo">{{ comboNote }}</div>
-      <template v-for="option in options" :key="option.name">
-        <div class="hotkey-group-title">
-          {{ option.label || option.name }}
-          <span v-if="gates[option.name]" class="hotkey-group-gate">
-            {{ gateText(gates[option.name]) }}
-          </span>
-        </div>
-        <div
-          v-for="field in option.hotkeys"
-          :key="field.name"
-          class="hotkey-row"
-          :class="{ 'is-changed': isChanged(option.name, field) }"
-        >
-          <div class="hotkey-line">
-            <a-tooltip v-if="field.description" :title="field.description">
-              <span class="hotkey-label">
+      <div class="hotkey-modal-combo" :class="{ 'is-error': invalidCount > 0 }">
+        {{ comboNote }}
+      </div>
+      <!-- 列表定高、内部滚动：键位多的项目也不会把弹窗撑出屏幕 -->
+      <div class="hotkey-modal-list">
+        <template v-for="option in options" :key="option.name">
+          <div class="hotkey-group-title">
+            {{ option.label || option.name }}
+            <span v-if="gates[option.name]" class="hotkey-group-gate">
+              {{ gateText(gates[option.name]) }}
+            </span>
+          </div>
+          <div
+            v-for="field in option.hotkeys"
+            :key="field.name"
+            class="hotkey-row"
+            :class="{ 'is-changed': isChanged(option.name, field) }"
+          >
+            <div class="hotkey-line">
+              <a-tooltip v-if="field.description" :title="field.description">
+                <span class="hotkey-label">
+                  {{ field.label || field.name }}
+                  <span v-if="rowComboTag(field)" class="hotkey-combo-tag">{{
+                    rowComboTag(field)
+                  }}</span>
+                </span>
+              </a-tooltip>
+              <span v-else class="hotkey-label">
                 {{ field.label || field.name }}
                 <span v-if="rowComboTag(field)" class="hotkey-combo-tag">{{
                   rowComboTag(field)
                 }}</span>
               </span>
-            </a-tooltip>
-            <span v-else class="hotkey-label">
-              {{ field.label || field.name }}
-              <span v-if="rowComboTag(field)" class="hotkey-combo-tag">{{
-                rowComboTag(field)
-              }}</span>
-            </span>
-            <span v-if="isChanged(option.name, field)" class="hotkey-hint">
-              {{ t('edit.mfwHotkeyDefaultKey', { key: displayCombo(field.default) }) }}
-              <a class="hotkey-link" @click="resetField(option.name, field)">
-                {{ t('edit.mfwHotkeyRestore') }}
-              </a>
-            </span>
-            <MaaFWHotkeyInput
-              :value="draft[option.name]?.[field.name] ?? ''"
-              :changed="isChanged(option.name, field)"
-              :error="Boolean(errorOf(option.name, field.name))"
-              :label="field.label || field.name"
-              @recording="value => handleRecording(option.name, field.name, value)"
-              @record="result => handleRecord(option.name, field, result)"
-            />
+              <span v-if="isChanged(option.name, field)" class="hotkey-hint">
+                {{ t('edit.mfwHotkeyDefaultKey', { key: displayCombo(field.default) }) }}
+                <a class="hotkey-link" @click="resetField(option.name, field)">
+                  {{ t('edit.mfwHotkeyRestore') }}
+                </a>
+              </span>
+              <MaaFWHotkeyInput
+                :value="draft[option.name]?.[field.name] ?? ''"
+                :changed="isChanged(option.name, field)"
+                :error="Boolean(errorOf(option.name, field.name)) || isInvalid(option.name, field)"
+                :label="field.label || field.name"
+                @recording="value => handleRecording(option.name, field.name, value)"
+                @record="result => handleRecord(option.name, field, result)"
+              />
+            </div>
+            <div v-if="errorOf(option.name, field.name)" class="hotkey-error">
+              {{ errorOf(option.name, field.name) }}
+            </div>
           </div>
-          <div v-if="errorOf(option.name, field.name)" class="hotkey-error">
-            {{ errorOf(option.name, field.name) }}
-          </div>
-        </div>
-      </template>
+        </template>
+      </div>
     </div>
     <template #footer>
       <div class="hotkey-footer">
@@ -67,7 +72,9 @@
         </a-button>
         <a-space>
           <a-button @click="emit('update:open', false)">{{ t('common.cancel') }}</a-button>
-          <a-button type="primary" @click="handleSave">{{ t('edit.mfwHotkeySave') }}</a-button>
+          <a-button type="primary" :disabled="invalidCount > 0" @click="handleSave">
+            {{ t('edit.mfwHotkeySave') }}
+          </a-button>
         </a-space>
       </div>
     </template>
@@ -126,33 +133,11 @@ const fieldKey = (optionName: string, fieldName: string) => `${optionName}\u0000
 
 const MODIFIER_EXAMPLES = ['', 'Ctrl + E', 'Ctrl + Shift + E']
 
-/** 组合键与项目要的修饰键个数对不上时的行内说明；对得上为空串 */
-const modifierProblemText = (field: HotkeyField, keys: readonly string[]) => {
-  // 项目 pipeline 按得出几个修饰键就只能设几个：多了运行时不会按下，少了映射不出
-  const problem = hotkeyModifierProblem(keys, field.modifierCount)
-  if (problem === 'single-key-only') return t('edit.mfwHotkeySingleKeyOnly')
-  if (problem === 'needs-modifiers') {
-    const count = field.modifierCount ?? 0
-    return t('edit.mfwHotkeyNeedsModifiers', {
-      n: count,
-      example: MODIFIER_EXAMPLES[count] ?? MODIFIER_EXAMPLES[2],
-    })
-  }
-  return ''
-}
-
 const resetDraft = () => {
   for (const key of Object.keys(draft)) delete draft[key]
   for (const key of Object.keys(errors)) delete errors[key]
   for (const [optionName, fields] of Object.entries(props.values)) {
     draft[optionName] = { ...fields }
-  }
-  // 已存的值（导入或旧版本录的）与项目要的修饰键个数不符：打开就标出来
-  for (const option of props.options) {
-    for (const field of option.hotkeys ?? []) {
-      const text = modifierProblemText(field, parseHotkey(draft[option.name]?.[field.name]))
-      if (text) errors[fieldKey(option.name, field.name)] = text
-    }
   }
   recordingField.value = ''
 }
@@ -177,6 +162,17 @@ const isChanged = (optionName: string, field: HotkeyField) =>
   !sameHotkey(draft[optionName]?.[field.name] ?? '', field.default ?? '')
 
 const anyChanged = computed(() => countChangedHotkeys(props.options, draft) > 0)
+
+// 组合键与项目 pipeline 要的修饰键个数不符（录进来的或之前存的）：框变红、常驻说明变红、
+// 不让保存；说明就是上面那行，不再逐行重复。
+const isInvalid = (optionName: string, field: HotkeyField) =>
+  hotkeyModifierProblem(parseHotkey(draft[optionName]?.[field.name]), field.modifierCount) !== null
+const invalidCount = computed(
+  () =>
+    props.options.flatMap(option =>
+      (option.hotkeys ?? []).filter(field => isInvalid(option.name, field))
+    ).length
+)
 
 const errorOf = (optionName: string, fieldName: string) =>
   errors[fieldKey(optionName, fieldName)] ?? ''
@@ -232,16 +228,12 @@ const handleRecord = (
 ) => {
   const key = fieldKey(optionName, field.name)
   if (result.kind === 'combo') {
-    const text = modifierProblemText(field, result.keys)
-    if (text) {
-      errors[key] = text
-      return
-    }
+    // 修饰键个数不符也先记下：由 isInvalid 标红并拦住保存，改对或「恢复」即解除
     delete errors[key]
     setValue(optionName, field.name, formatHotkey(result.keys))
     return
   }
-  // 录制失败：值不变，框变红 + 行下提示
+  // 录不出键（不支持的键、超过两个修饰键）：值不变，框变红 + 行下提示
   errors[key] =
     result.kind === 'too-many-modifiers'
       ? t('edit.mfwHotkeyTooManyModifiers')
@@ -275,6 +267,19 @@ const handleSave = () => {
   padding: 0 0 4px;
   color: var(--ant-color-text-tertiary);
   font-size: 12px;
+}
+
+.hotkey-modal-combo.is-error {
+  color: var(--ant-color-error);
+}
+
+.hotkey-modal-list {
+  height: 440px;
+  max-height: calc(100vh - 340px);
+  margin-right: -12px;
+  padding-right: 12px;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
 }
 
 .hotkey-combo-tag {

@@ -1712,9 +1712,6 @@ export default {
     mfwHotkeyTooManyModifiers: 'At most two modifier keys',
     mfwHotkeySave: 'Save',
     mfwHotkeyNeedsSwitch: 'Only applies when "{option}" is turned on in the user\'s task settings',
-    mfwHotkeySingleKeyOnly:
-      'This binding takes a single key; the project never presses Ctrl / Alt / Shift / Win',
-    mfwHotkeyNeedsModifiers: 'This binding needs {n} modifier key(s) plus one key, e.g. {example}',
     mfwHotkeyNoCombo: 'This project only presses single keys; key combinations are not supported',
     mfwHotkeyAllCombo:
       'Every binding in this project needs {n} modifier key(s) plus one key, e.g. {example}',

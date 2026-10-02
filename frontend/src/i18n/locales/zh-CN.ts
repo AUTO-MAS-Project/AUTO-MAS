@@ -1626,8 +1626,6 @@ export default {
     mfwHotkeyTooManyModifiers: '最多两个修饰键',
     mfwHotkeySave: '保存',
     mfwHotkeyNeedsSwitch: '需在用户的任务配置里打开「{option}」才生效',
-    mfwHotkeySingleKeyOnly: '这一项只能设单个按键，项目不会按 Ctrl / Alt / Shift / Win',
-    mfwHotkeyNeedsModifiers: '这一项要设 {n} 个修饰键加一个按键，例如 {example}',
     mfwHotkeyNoCombo: '该项目只按单个按键，不支持组合键',
     mfwHotkeyAllCombo: '该项目的键位都要设 {n} 个修饰键加一个按键，例如 {example}',
     mfwHotkeySomeCombo: '部分键位要设组合键（已在项旁标出），其余只能设单个按键',

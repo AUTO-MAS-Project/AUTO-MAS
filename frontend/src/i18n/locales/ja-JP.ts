@@ -1570,9 +1570,6 @@ export default {
     mfwHotkeyTooManyModifiers: '修飾キーは 2 つまで',
     mfwHotkeySave: '保存',
     mfwHotkeyNeedsSwitch: 'ユーザーのタスク設定で「{option}」をオンにした場合のみ有効',
-    mfwHotkeySingleKeyOnly:
-      'この項目は単一キーのみ設定できます（Ctrl / Alt / Shift / Win は押されません）',
-    mfwHotkeyNeedsModifiers: 'この項目は修飾キー {n} 個とキー 1 つが必要です（例：{example}）',
     mfwHotkeyNoCombo: 'このプロジェクトは単一キーのみを押します（キーの組み合わせは非対応）',
     mfwHotkeyAllCombo:
       'このプロジェクトのキーはすべて修飾キー {n} 個とキー 1 つが必要です（例：{example}）',
