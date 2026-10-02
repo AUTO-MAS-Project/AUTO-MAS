@@ -25,6 +25,11 @@ from typing import Any
 
 import httpx
 
+try:
+    import winreg
+except ImportError:
+    winreg = None
+
 from app.utils import get_logger
 
 logger = get_logger("鸣潮更新检查")
@@ -164,9 +169,7 @@ def _registry_launcher_roots(resource: str) -> list[Path]:
     认错。
     """
 
-    try:
-        import winreg
-    except ImportError:
+    if winreg is None:
         return []
 
     mark = _LAUNCHER_RESOURCE_MARKS.get(resource, "")
@@ -223,9 +226,7 @@ def _uninstall_launcher_roots() -> list[Path]:
     安装根或根下的可执行文件，统一取所在目录作候选。
     """
 
-    try:
-        import winreg
-    except ImportError:
+    if winreg is None:
         return []
 
     roots: list[Path] = []
@@ -238,16 +239,25 @@ def _uninstall_launcher_roots() -> list[Path]:
                         try:
                             entry_name = winreg.EnumKey(parent, index)
                             with winreg.OpenKey(parent, entry_name) as entry:
-                                display_name = str(
-                                    winreg.QueryValueEx(entry, "DisplayName")[0]
-                                )
-                                values = [
-                                    str(winreg.QueryValueEx(entry, name)[0])
-                                    for name in _UNINSTALL_VALUE_NAMES
-                                ]
+                                try:
+                                    display_name = str(
+                                        winreg.QueryValueEx(entry, "DisplayName")[0]
+                                    )
+                                except OSError:
+                                    display_name = ""
+                                if not _is_wuthering_uninstall_entry(
+                                    display_name, entry_name
+                                ):
+                                    continue
+                                values = []
+                                for name in _UNINSTALL_VALUE_NAMES:
+                                    try:
+                                        values.append(
+                                            str(winreg.QueryValueEx(entry, name)[0])
+                                        )
+                                    except OSError:
+                                        continue
                         except OSError:
-                            continue
-                        if not _is_wuthering_uninstall_entry(display_name, entry_name):
                             continue
                         for value in values:
                             root = _uninstall_value_path(value)
@@ -280,6 +290,7 @@ def discover_wuthering_waves_fallback(resource: str) -> WutheringWavesFallback:
         *((root, "卸载信息") for root in _uninstall_launcher_roots()),
     ]
     seen: set[str] = set()
+    client_candidate: Path | None = None
     for root, source in candidates:
         key = str(root).casefold()
         if key in seen:
@@ -290,10 +301,12 @@ def discover_wuthering_waves_fallback(resource: str) -> WutheringWavesFallback:
             logger.info(f"按{source}找回鸣潮启动器: {launcher_path}")
             return WutheringWavesFallback(launcher_path=launcher_path)
         process_path = _find_client_process_below(root)
-        if process_path is not None:
-            logger.info(f"按{source}找回鸣潮客户端: {process_path}")
-            return WutheringWavesFallback(process_path=process_path)
-    return WutheringWavesFallback()
+        if process_path is not None and client_candidate is None:
+            # 继续找启动器：启动器模式不能因前一个根只找到客户端而提前失败。
+            client_candidate = process_path
+    if client_candidate is not None:
+        logger.info(f"已按安装信息找回鸣潮客户端: {client_candidate}")
+    return WutheringWavesFallback(process_path=client_candidate)
 
 
 def is_wuthering_waves_record_usable(launcher_path: Path) -> bool:

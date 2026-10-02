@@ -43,6 +43,7 @@ from app.task.base import ScriptAutoProxyBase
 from app.task.general.tools import execute_script_task
 from app.task.proxy_helpers import (
     append_push_log,
+    kill_pids,
     push_dispatch_log,
     split_args,
 )
@@ -264,7 +265,10 @@ class AutoProxyTask(ScriptAutoProxyBase):
             # 启动器失效时按兜底来源（注册表 → 卸载信息）找回。直启态已手填客户端
             # 时启动器只服务更新，不必为它打扰用户；但启动器态没有启动器就拉不起
             # 游戏，即使已填客户端也必须尝试找回
-            if not launcher_path.is_file() and (
+            launcher_valid = (
+                launcher_path.is_file() and launcher_path.name.lower() == "launcher.exe"
+            )
+            if not launcher_valid and (
                 self.game_process_path is None or self._game_launch_type() == "Launcher"
             ):
                 # 命中结果必须告诉用户：静默换到另一份安装会让人不知情
@@ -294,7 +298,10 @@ class AutoProxyTask(ScriptAutoProxyBase):
                         "请更新脚本配置中的启动器路径"
                     )
             self.launcher_path = launcher_path
-            if self._game_launch_type() == "Launcher" and not launcher_path.is_file():
+            if self._game_launch_type() == "Launcher" and (
+                not launcher_path.is_file()
+                or launcher_path.name.lower() != "launcher.exe"
+            ):
                 # 启动器态必须由启动器拉起游戏，没有它整条链无从谈起；
                 # 直启态可以只靠手动指定的客户端文件，不在这里拦
                 return (
@@ -724,6 +731,8 @@ class AutoProxyTask(ScriptAutoProxyBase):
         「名称 + 启动器根目录树内」口径。
         """
 
+        if self.game_process_path is None:
+            raise RuntimeError("鸣潮客户端路径未知，不能按精确路径匹配进程")
         return ProcessInfo(
             name=_WUWA_CLIENT_PROCESS,
             exe=str(self.game_process_path),
@@ -1153,7 +1162,11 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 await System.kill_process(self.game_process_path)
             except Exception as e:
                 logger.opt(exception=True).warning(f"兜底强杀鸣潮客户端失败: {e}")
-        if self.launcher_path is not None and self.launcher_path.is_file():
+        if (
+            self.launcher_path is not None
+            and self.launcher_path.name.lower() == "launcher.exe"
+            and self.launcher_path.is_file()
+        ):
             # 实际运行的那份可能不在已知路径上（手动指定的客户端与实际启动的不是
             # 同一份，或启动器态压根解不出路径），只按路径匹配会漏杀。兜底按
             # 「名称 + 启动器安装根目录树内」扫——Client-Win64-Shipping.exe 是虚幻
@@ -1161,16 +1174,9 @@ class AutoProxyTask(ScriptAutoProxyBase):
             # 路径本身失效时无从限定，只保留上面的按已知路径结束，不冒险按名扫。
             # 有没杀掉的（多为提权进程）要提示用户，不能静默。
             # 注意 kill_process_by_pid 失败时返回 False 而非抛异常，必须看返回值
-            failed = 0
-            for pid in await asyncio.to_thread(find_game_pids, self.launcher_path):
-                try:
-                    if not await System.kill_process_by_pid(pid):
-                        failed += 1
-                except Exception as e:
-                    failed += 1
-                    logger.opt(exception=True).warning(
-                        f"按进程名结束鸣潮客户端失败 PID: {pid}, {e}"
-                    )
+            failed = await kill_pids(
+                await asyncio.to_thread(find_game_pids, self.launcher_path)
+            )
             if failed:
                 message = (
                     f"有 {failed} 个鸣潮客户端进程未能结束（可能是提权进程，"

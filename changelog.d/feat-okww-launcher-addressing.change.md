@@ -1,2 +1,3 @@
 project: okww
-鸣潮启动器路径失效时自动找回，启动器启动不再因定位不到客户端而失败
+author: AthenaHibou, qiyinxi
+改进游戏路径定位与设置保存，游戏进程未能结束时提示手动关闭

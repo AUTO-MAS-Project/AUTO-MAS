@@ -41,7 +41,7 @@ from app.task.general.tools import execute_script_task
 from app.task.proxy_helpers import (
     CONFIG_SOURCE_SCRIPT,
     append_push_log,
-    find_pids_by_name,
+    kill_pids_by_name,
     push_dispatch_log,
     quick_config_takeover,
     resolve_config_source,
@@ -1203,22 +1203,21 @@ class AutoProxyTask(ScriptAutoProxyBase):
     async def _kill_game_process(self) -> None:
         """结束游戏：不依赖 LaunchBeforeTask（可自行开游戏，由 CloseOnFinish/失败重试触发）"""
         game_type = self.script_config.get("Game", "Type")
-        try:
-            if isinstance(self.game_manager, ProcessManager):
+        if isinstance(self.game_manager, ProcessManager):
+            try:
                 await self.game_manager.kill()
+            except Exception as e:
+                logger.opt(exception=True).warning(f"通过进程管理器关闭异环失败: {e}")
+        try:
             if game_type == "Client":
                 # Game.Path 是启动器，游戏本体按进程名结束；进程管理器只跟踪
                 # 启动器，HTGame.exe 由启动器拉起、可能不在其进程树内。
                 # 全进程扫描放到线程里，不阻塞事件循环
-                for pid in await asyncio.to_thread(
-                    find_pids_by_name, _NTE_CLIENT_PROCESS
-                ):
-                    try:
-                        await System.kill_process_by_pid(pid)
-                    except Exception as e:
-                        logger.opt(exception=True).warning(
-                            f"结束异环游戏进程失败 PID: {pid}, {e}"
-                        )
+                failed = await kill_pids_by_name(_NTE_CLIENT_PROCESS)
+                if failed:
+                    message = f"有 {failed} 个异环游戏进程未能结束，请人工确认关闭"
+                    logger.warning(message)
+                    await self._push_dispatch_log(message)
         except Exception as e:
             logger.opt(exception=True).warning(f"关闭游戏进程失败: {e}")
 
