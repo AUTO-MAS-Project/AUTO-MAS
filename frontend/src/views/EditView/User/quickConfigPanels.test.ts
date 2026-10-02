@@ -7,14 +7,13 @@ describe('quick configuration panel visibility', () => {
   // 于是选择器不再渲染该开关；面板形态仍按来源决定（见本文件最后一条用例）。
   // M9A 也不在列：它已是 MaaFW 的特调类型，页面就是 MaaFWUserEdit.vue，见下一条
   // 覆写常规配置（overlay）的控件与 base 三态卡片同构，一起渲染在选择器里：
-  // 页面只把 Info.IfQuickConfig 绑进去、接住变更（MAA / SRC / MaaEnd 还隔着一层 Section 透传），
-  // 面板门控与「保存失败回滚」的处理保持不变。
+  // 页面只把 Info.IfQuickConfig 绑进去、接住变更（SRC / MaaEnd 还隔着一层 Section 透传），
+  // 面板门控与「保存失败回滚」的处理保持不变。MAA 例外：布局沿用页头开关，见下方专项用例。
   const selectorHosts: Record<string, string> = {
-    MAA: '../../MAAUserEdit/BasicInfoSection.vue',
     SRC: '../../SRCUserEdit/BasicInfoSection.vue',
     MaaEnd: '../../MaaEndUserEdit/ConfigSourceSection.vue',
   }
-  for (const name of ['MAA', 'SRC', 'MaaEnd', 'Okww', 'OkNte']) {
+  for (const name of ['SRC', 'MaaEnd', 'Okww', 'OkNte']) {
     it(`${name} binds the overlay control through the config source selector`, () => {
       const source = readFileSync(new URL(`./${name}UserEdit.vue`, import.meta.url), 'utf8')
       const template = parse(source).descriptor.template!.content
@@ -47,6 +46,37 @@ describe('quick configuration panel visibility', () => {
       }
     })
   }
+
+  it('MAA keeps the header quick configuration switch instead of the selector overlay', () => {
+    // dev 布局决策：MAA 页沿用任务配置标题旁的页头开关，不把覆写控件接进选择器，
+    // 也不经 BasicInfoSection 透传 —— 选择器在未收到 quickConfig 时不渲染覆写卡片。
+    const source = readFileSync(new URL('./MAAUserEdit.vue', import.meta.url), 'utf8')
+    const template = parse(source).descriptor.template!.content
+    const panel = '<TaskPipelineSection'
+    const start = template.indexOf(panel)
+    expect(start).toBeGreaterThan(-1)
+    expect(template.slice(start, template.indexOf('>', start))).toContain(
+      'v-if="formData.Info.IfQuickConfig"'
+    )
+    // 页头开关：绑 checked、接住变更，且出现在面板之前
+    const headerSwitch = template.indexOf(':checked="formData.Info.IfQuickConfig"')
+    expect(headerSwitch).toBeGreaterThan(-1)
+    expect(headerSwitch).toBeLessThan(start)
+    expect(template).toContain('@change="handleQuickConfigChange"')
+    // 不经选择器/Section 透传，避免出现第二个开关
+    expect(template).not.toContain(':quick-config=')
+    expect(template).not.toContain('@quick-config-change=')
+    expect(source).toMatch(
+      /if \(\!\(await (handleFieldSave|saveField)\('Info.IfQuickConfig', value\)\)\)/
+    )
+    expect(source).toContain('formData.Info.IfQuickConfig = previous')
+
+    const section = readFileSync(
+      new URL('../../MAAUserEdit/BasicInfoSection.vue', import.meta.url),
+      'utf8'
+    )
+    expect(section).not.toContain(':quick-config=')
+  })
 
   it('MaaFW has neither a quick configuration switch nor a config source selector', () => {
     // MaaFW 是通用引擎，没有可退回的原生配置；两个控件对它没有所指，页面不再提供入口。
