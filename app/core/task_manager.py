@@ -360,9 +360,17 @@ class Task(TaskExecuteBase):
                 script_id=script_id,
                 status="等待",
                 name=Config.ScriptConfig[uuid.UUID(script_id)].get("Info", "Name"),
-                user_list=[
-                    UserItem(user_id=str(uuid.uuid4()), name="暂未加载", status="等待")
-                ],
+                # AutoProxy 的真实用户由对应 manager 在轮到该脚本时加载；提前
+                # 播种占位项会把未轮到的脚本伪装成已有一个用户。
+                user_list=(
+                    []
+                    if self.task_info.mode == "AutoProxy"
+                    else [
+                        UserItem(
+                            user_id=str(uuid.uuid4()), name="暂未加载", status="等待"
+                        )
+                    ]
+                ),
             )
             for script_id in script_ids
         ]
