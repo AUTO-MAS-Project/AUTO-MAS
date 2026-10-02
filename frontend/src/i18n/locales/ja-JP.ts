@@ -495,7 +495,7 @@ export default {
       'オンにすると、実行前にこのページの主要な設定で MaaEnd のタスクを上書きします。オフの場合は設定ファイル内のタスク設定をそのまま実行します',
     maaEndDailyOnceTasks: '1日1回だけ実行するタスク',
     maaEndDailyOnceTasksHint:
-      'タスクが当日に正常完了した後、同日の後続実行では自動的にスキップします。空欄なら毎回実行します',
+      '配達と自動採集は選択不要で1日1回のみ実行します。選択した日常タスクも正常完了後はスキップします。失敗時は再試行でき、毎日中国時間の午前4時にリセットします',
     maaEndDailyOnceTasksPlaceholder: '1日1回だけ実行するタスクを選択',
     maaEndSetResolution: '起動時に解像度を設定',
     maaEndRestoreDisplayType: 'ゲーム終了時の表示モード',

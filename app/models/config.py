@@ -1708,10 +1708,14 @@ class MaaEndConfig(ConfigBase):
     async def preload_resource(self) -> None:
         """尝试预加载 MaaEnd 动态资源，失败时保留现有配置。"""
 
+        root_path = str(self.get("Info", "Path")).strip()
+        if not root_path:
+            return
+
         def _try_load_in_thread():
             from app.task.MaaEnd.resource_loader import try_load_maaend_options
 
-            return try_load_maaend_options(Path(self.get("Info", "Path")))
+            return try_load_maaend_options(Path(root_path))
 
         resource = await asyncio.to_thread(_try_load_in_thread)
         if resource is None:
@@ -1722,9 +1726,13 @@ class MaaEndConfig(ConfigBase):
     def get_loaded_resource(self) -> dict[str, Any]:
         """读取已经载入内存的 MaaEnd 动态资源。"""
 
+        root_path = str(self.get("Info", "Path")).strip()
+        if not root_path:
+            raise ValueError("MaaEnd 路径未配置")
+
         from app.task.MaaEnd.resource_loader import get_loaded_maaend_options
 
-        return get_loaded_maaend_options(Path(self.get("Info", "Path")))
+        return get_loaded_maaend_options(Path(root_path))
 
 
 class SrcUserConfig(ConfigBase):

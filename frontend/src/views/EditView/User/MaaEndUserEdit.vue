@@ -303,6 +303,7 @@ let userId = route.params.userId as string
 const isEdit = ref(!!userId)
 const { configLocked } = useScriptConfigLock(() => scriptId)
 const scriptName = ref('')
+const scriptPath = ref('')
 const controllerType = ref<string | null>(null)
 const controllerProtocol = ref<string | null>(null)
 const presetSupported = ref(true)
@@ -571,11 +572,13 @@ const loadScriptInfo = async () => {
   const scriptDetail = await getScript(scriptId)
   if (scriptDetail) {
     scriptName.value = scriptDetail.name
+    scriptPath.value = (scriptDetail.config as { Info?: { Path?: string } }).Info?.Path ?? ''
     controllerType.value = (scriptDetail.config as any).Game?.ControllerType ?? null
   }
 }
 
 const loadMaaEndOptions = async () => {
+  if (!scriptPath.value.trim()) return
   maaEndOptionsLoading.value = true
   try {
     const response = await getMaaEndOptions(scriptId)

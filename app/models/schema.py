@@ -945,6 +945,8 @@ class MaaEndAutoCollectGroup(BaseModel):
 
 
 class MaaEndOptionsOut(OutBase):
+    projectName: str = Field(default="mxu", description="MaaEnd 资源声明的项目名称")
+    projectVersion: str = Field(default="", description="MaaEnd 资源声明的项目版本")
     autoCollectGroups: List[MaaEndAutoCollectGroup] = Field(
         default_factory=list, description="MaaEnd 自动采集地区与分类"
     )

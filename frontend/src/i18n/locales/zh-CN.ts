@@ -491,7 +491,8 @@ export default {
     whenHighTrafficSettings:
       '开启后运行前会用本页高频配置项覆盖 MaaEnd 任务；关闭后直接运行配置文件内的完整任务配置',
     maaEndDailyOnceTasks: '每日仅执行一次的任务',
-    maaEndDailyOnceTasksHint: '任务当天正常完成一次后，后续运行会自动跳过；留空则每次运行都执行',
+    maaEndDailyOnceTasksHint:
+      '送货和自动采集阶段默认每日仅执行一次，无需选择。所选日常任务当天正常完成后自动跳过；失败可重试，每日凌晨4点重置',
     maaEndDailyOnceTasksPlaceholder: '选择需要每日仅执行一次的任务',
     maaEndAutoCollectConfig: '自动采集配置',
     maaEndSetResolution: '启动时设置分辨率',
