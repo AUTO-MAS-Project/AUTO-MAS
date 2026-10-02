@@ -11,9 +11,20 @@ const store = useMysteryStore()
 const logger = window.electronAPI.getLogger('神秘入口')
 const form = reactive({ accessCode: '' })
 const error = ref('')
+const loadFailed = ref(false)
+
+const load = async () => {
+  loadFailed.value = false
+  try {
+    await store.load()
+  } catch (cause) {
+    loadFailed.value = true
+    logger.error(`加载失败: ${cause instanceof Error ? cause.message : String(cause)}`)
+  }
+}
 
 onMounted(() => {
-  void store.load()
+  void load()
 })
 
 const unlock = async () => {
@@ -58,7 +69,12 @@ const lock = async () => {
       </a-button>
     </div>
 
-    <div v-if="!store.initialized" class="mystery-loading">
+    <a-result v-if="loadFailed" status="error" :title="t('mystery.loadFailed')">
+      <template #extra>
+        <a-button type="primary" @click="load">{{ t('mystery.retry') }}</a-button>
+      </template>
+    </a-result>
+    <div v-else-if="!store.initialized" class="mystery-loading">
       <a-spin />
     </div>
     <a-card v-else-if="!store.unlocked" :title="t('mystery.unlockTitle')" class="mystery-unlock">

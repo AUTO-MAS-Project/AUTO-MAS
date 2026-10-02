@@ -3934,6 +3934,8 @@ export default {
     unlock: '解锁',
     lock: '重新锁定',
     empty: '这里暂时没有神秘小功能',
+    loadFailed: '加载解锁状态失败，请重试',
+    retry: '重试',
     saveFailed: '保存解锁状态失败，请重试',
   },
   setting: {
