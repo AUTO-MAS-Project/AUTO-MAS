@@ -2,7 +2,7 @@ import { defineStore } from 'pinia'
 import { computed, onScopeDispose, ref } from 'vue'
 import { useEventListener } from '@vueuse/core'
 import { getConfig, saveConfig } from '@/utils/config'
-import { getMysteryAccessCode, getMysteryDate } from '@/utils/mysteryAccess'
+import { getMysteryDate, isValidMysteryAccessCode } from '@/utils/mysteryAccess'
 
 export const useMysteryStore = defineStore('mystery', () => {
   const unlockedDate = ref('')
@@ -54,7 +54,7 @@ export const useMysteryStore = defineStore('mystery', () => {
     try {
       const checkedAt = new Date()
       const checkedDate = getMysteryDate(checkedAt)
-      if (accessCode.trim().toUpperCase() !== (await getMysteryAccessCode(checkedAt))) return false
+      if (!(await isValidMysteryAccessCode(accessCode, checkedAt))) return false
       if (checkedDate !== getMysteryDate()) return false
 
       await saveConfig({ mysteryUnlockedDate: checkedDate })
