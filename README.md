@@ -17,9 +17,14 @@
   <a href="https://mirrorchyan.com/zh/projects?rid=AUTO-MAS&source=auto_mas-readme"><img alt="mirrorc" src="https://img.shields.io/badge/Mirror%E9%85%B1-%239af3f6?logo=countingworkspro&logoColor=4f46e5"></a>
 </p>
 
-## 软件介绍 / Introduction
+<p align="center">
+  简体中文 |
+  <a href="docs/en/README.md">English</a>
+</p>
 
-### 性质 / Nature
+## 软件介绍
+
+### 性质
 
 本软件是自动化脚本类软件的管理工具，能够管理大量脚本并存储多个用户配置、设计自动化任务流、监看脚本日志，提高自动化代理效率与稳定性。
 
@@ -28,14 +33,7 @@
 - **配置灵活**：通过调度队列与脚本的组合设计调度队列，自由实现您能想到的所有调度需求！
 - **代理记录**：记录所有代理记录与日志片段，定位问题更快更准更方便！
 
-This software is a management tool for automation scripts. It enables centralized management of numerous scripts, stores multiple user configurations, designs automated task workflows, monitors script logs, and enhances the efficiency and stability of automated proxy operations.
-
-- **Centralized Management**: Manage multiple scripts and user configurations in one place—say goodbye to messy, scattered script windows!
-- **Unattended Operation**: Monitor script logs and automatically handle errors—no more worries about tasks freezing while you're away from your computer!
-- **Flexible Configuration**: Combine scheduling queues with scripts to freely implement any scheduling logic you can imagine!
-- **Proxy Logging**: Record all proxy sessions and log snippets for faster, more accurate, and convenient troubleshooting!
-
-### 原理 / Working Principle
+### 原理
 
 本软件可以存储多个脚本的多个配置，并通过以下流程实现代理功能：
 
@@ -43,13 +41,7 @@ This software is a management tool for automation scripts. It enables centralize
 2. **监测：** 在脚本开始代理后，持续读取脚本日志以判断其运行状态。当软件认定脚本出现异常时，通过重启脚本使之仍能继续完成任务。
 3. **循环：** 重复上述步骤，使脚本依次完成各个用户的自动代理任务。
 
-The software stores multiple configurations for multiple scripts and implements proxy functionality through the following workflow:
-
-1. **Configuration**: Generate configuration files based on user settings and inject them into the corresponding scripts.
-2. **Monitoring**: After the script starts proxying, continuously read its logs to assess runtime status. If an anomaly is detected, the software restarts the script to ensure task continuity.
-3. **Looping**: Repeat the above steps to allow scripts to sequentially fulfill automated proxy tasks for all users.
-
-## 重要声明 / Important Notice
+## 重要声明
 
 本开发团队承诺，不会主动修改游戏本体与相关配置文件。本项目使用AGPL开源，相关细则如下：
 
@@ -62,48 +54,25 @@ The software stores multiple configurations for multiple scripts and implements 
 
 以上细则是本项目对AGPL的相关补充与强调。未提及的以 AGPL 为准；就图像与美术资源而言，以在线协议为准；其余条款发生冲突的以本细则为准。如有不清楚的部分，请发 Issues 询问。若发生纠纷，相关内容也没有在 Issues 上提及的，AUTO-MAS Team 拥有最终解释权。
 
-The development team commits to never actively modifying the game client or its configuration files. This project is open-sourced under the AGPL license, with the following clarifications:
-
-- **Authorship**: The author of the AUTO-MAS project is the AUTO-MAS Team. All rights of the AUTO-MAS Team are exclusively granted to [DLmaster (@DLmaster361)](https://github.com/DLmaster361), who alone may represent the team in exercising all rights.
-- **Usage**: Users may freely use this software at their own discretion. Per the AGPL, the AUTO-MAS Team bears no liability for any potential damages arising from its use.
-- **Distribution**: Anyone may freely redistribute this software, including for commercial profit. Direct redistribution requires providing recipients with the project URL, full source code, and a copy of the AGPL license text as mandated by the AGPL. Modified redistributions must additionally include the original unmodified source code. Violators may face legal action. Commercial users must establish their own customer communities and provide their own after-sales support—they may not redirect customers to the official AUTO-MAS community. Those exploiting the open-source community for profit will be blacklisted and publicly disclosed.
-- **Promotion**: Redistribution is generally permitted, provided that original copyright notices remain intact and the existence of the AUTO-MAS Team is not concealed. Due to the nature of this software, the AUTO-MAS Team requests that no one mention AUTO-MAS or related automation tools in official game media (including official accounts and communities) or game-related content (such as fan groups, offline events, or gameplay discussions). Your understanding is appreciated.
-- **Derivative Works**: Anyone may create derivative works based on the software or parts of its code. However, per the AGPL, any redistributed derivatives must also be open-sourced under the AGPL or a compatible license.
-- **Artwork and Visual Assets:** Images, icons, illustrations, and other visual assets of this software are **not** covered by the code open-source license. For the full ownership inventory, redistribution duties, third-party compliance templates, and commercial authorization contacts, see the [Visual Assets License Agreement](https://doc.auto-mas.top/disclosure/assets-license). That Agreement is an inseparable part of any distribution and must not be stripped when redistributing or using the assets alone.
-
-These terms supplement and emphasize specific aspects of the AGPL. Where unspecified, the AGPL governs; for visual assets, the online Agreement governs; for other conflicts, these terms prevail. For clarification, please open an Issue. In disputes involving unaddressed matters, the AUTO-MAS Team reserves final interpretation rights.
-
-## 使用方法 / How to Use
+## 使用方法
 
 访问 AUTO-MAS 官方文档站以获取使用指南和更多项目相关信息
 
 - [AUTO-MAS 官方文档站](https://doc.auto-mas.top)
 
-Visit the official AUTO-MAS documentation site for user guides and additional project information
-
-- [Official Documentation](https://doc.auto-mas.top)
-
-## 参与贡献 / Contributing
+## 参与贡献
 
 如需参与项目开发或提交贡献，请先阅读开发与贡献指南：
 
 - [开发与贡献指南](https://doc.auto-mas.top/developer/)
 
-To participate in development or contribute to the project, please read the development and contribution guide first:
-
-- [Development and Contribution Guide](https://doc.auto-mas.top/developer/)
-
-## 代码签名策略 / Code Signing Policy
+## 代码签名策略
 
 免费代码签名由 [SignPath.io](https://signpath.io/) 提供，证书由 [SignPath Foundation](https://signpath.org/) 提供。
 
 - 审批人: [DLmaster (@DLmaster361)](https://github.com/DLmaster361)
 
-Free code signing provided by [SignPath.io](https://signpath.io/), certificate by [SignPath Foundation](https://signpath.org/).
-
-- Approvers: [DLmaster (@DLmaster361)](https://github.com/DLmaster361)
-
-## 隐私政策 / Privacy Policy
+## 隐私政策
 
 为更好地提供服务，AUTO-MAS 将自动收集以下信息：
 
@@ -113,31 +82,18 @@ Free code signing provided by [SignPath.io](https://signpath.io/), certificate b
 
 AUTO-MAS 尊重并保护用户隐私。上述信息会在客户端完成脱敏后发送至 Sentry SaaS（美国区域）进行错误与性能分析；不会发送用户身份、Cookie、请求头、请求体、URL 查询参数、局部变量或本机绝对路径。匿名遥测默认开启，可在「设置 -> 功能设置」中关闭；关闭后前后端均不再发送遥测数据。
 
-To better serve you, AUTO-MAS will automatically collect the following information:
-
-- Software version number
-- Runtime error information
-- Performance tracing information
-
-AUTO-MAS respects and protects user privacy. This information is redacted on the client before being sent to Sentry SaaS (US region) for error and performance analysis. User identity, cookies, request headers, request bodies, URL query parameters, local variables, and absolute local paths are not sent. Anonymous telemetry is enabled by default and can be disabled under 「Settings -> Function Settings」; once disabled, neither the frontend nor backend sends telemetry data.
-
 ---
 
-# 关于 / About
+# 关于
 
-## 特别鸣谢 / Special Thanks
+## 特别鸣谢
 
 - [AoXuan (@ClozyA)](https://github.com/ClozyA)：捐赠 AUTO-MAS 下载站服务器数月。
 - <a href="https://www.packyapi.ai/register?aff=zKkA"><img alt="PackyCode" src="https://www.packyapi.ai/logo-full.svg" height="28" align="absmiddle"></a>：赞助开发者 AI API 额度。PackyCode 是一家稳定、高效的 API 中转服务商，提供 Claude Code、Codex、Gemini 等多种中转服务，具备自动故障转移、智能路由和无限并发等功能。[免费注册 PackyCode](https://www.packyapi.ai/register?aff=zKkA)
 
-- [AoXuan (@ClozyA)](https://github.com/ClozyA): onated the AUTO-MAS download server for several months.
-- <a href="https://www.packyapi.ai/register?aff=zKkA"><img alt="PackyCode" src="https://www.packyapi.ai/logo-full.svg" height="28" align="absmiddle"></a>: Sponsored the developer with AI API credits. PackyCode is a stable, high-performance API relay provider offering relay services for Claude Code, Codex, Gemini, and more, with automatic failover, smart routing, and unlimited concurrency. [Register for free on PackyCode](https://www.packyapi.ai/register?aff=zKkA).
-
-## 贡献者 / Contributors
+## 贡献者
 
 感谢以下贡献者对本项目做出的贡献
-
-We thank the following contributors for their work on this project
 
 <a href="https://github.com/AUTO-MAS-Project/AUTO-MAS/graphs/contributors">
 
@@ -159,16 +115,10 @@ We thank the following contributors for their work on this project
 
 </a>
 
-## 官方社区 / Official Community
+## 官方社区
 
 欢迎加入 AUTO-MAS 项目组官方社群！
 
 - QQ 交流群：[957750551](https://qm.qq.com/q/bd9fISNoME)
 - QQ 开发者交流群：[1094208135](https://qm.qq.com/q/MJYbfjwScM)
 - Telegram：[@AUTO_MAS_top](https://t.me/AUTO_MAS_top)
-
-Join the official AUTO-MAS community!
-
-- QQ Group: [957750551](https://qm.qq.com/q/bd9fISNoME)
-- QQ Developer Community: [1094208135](https://qm.qq.com/q/MJYbfjwScM)
-- Telegram: [@AUTO_MAS_top](https://t.me/AUTO_MAS_top)

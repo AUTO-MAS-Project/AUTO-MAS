@@ -3,12 +3,14 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import re
 import threading
+import time
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Awaitable, Callable, Mapping, Sequence
+from typing import TYPE_CHECKING, Any, Awaitable, Callable, Mapping, Sequence
 from urllib.parse import quote
 
 import httpx
@@ -17,37 +19,60 @@ from packaging import version
 from app.utils.constants import MIRROR_ERROR_INFO
 
 from ..interface.models import MaaFWInterface
+from ..log_redact import mask_home_path
 from .apply import (
     UpdateApplyError,
     _check_disk_space,
     _find_package_root,
     _read_interface_version,
     _safe_extract_zip,
-    _zip_expanded_size,
+    zip_entry_stats,
 )
 from .contracts import normalise_sha256
 from .payloads import (
+    ORIGIN_PACKAGE,
+    PROJECTION_CHECK_FIELD,
     PayloadCancelled,
     PayloadError,
     PayloadTarget,
     RegisterResult,
     build_from_package,
     finalize,
+    inherited_projection_revision,
+    manifest_files,
+    projection_revision_of,
     read_lineage,
     register,
     remove_tree,
     version_newer,
 )
+from .projection import PROJECTION_REVISION, abandoned_native_runtime_files
+from .projection_heal import format_size
+from .range_delta import (
+    FORCE_FULL_PACKAGE_ENV,
+    RangeDeltaCancelled,
+    RangeDeltaUnavailable,
+    RangeSpeedGuard,
+    fetch_range_delta,
+    force_full_package,
+    is_github_download,
+    open_range_delta,
+)
 from .state import (
     DEFAULT_CACHE_ROOT,
     DEFAULT_OPERATION_ROOT,
     UpdateOperationStore,
+    redact_text,
 )
+from .timing import StageTimer, format_duration, format_megabytes
 from .transport import (
     CANCELLED_MESSAGE,
     UpdateDownloadCancelled,
     download_resumable,
 )
+
+if TYPE_CHECKING:  # 导入 runtime_pool 会连带整个运行池包，选包时才导入
+    from ..runtime_pool.architecture import ArchitectureTarget
 
 HTTP_HEADERS = {"User-Agent": "AutoMasGui"}
 
@@ -259,6 +284,72 @@ class MaaFWProjectUpdateError(RuntimeError):
         self.cancelled = cancelled
 
 
+def _stale_projection_message(manifest: Mapping[str, Any]) -> str:
+    """按旧投影规则建的载荷改要全量包时的日志：如实说明是否核对过、缺多少（``projectionCheck``）。"""
+
+    record = manifest.get(PROJECTION_CHECK_FIELD)
+    record = record if isinstance(record, Mapping) else {}
+    reason = str(record.get("reason") or "").strip()
+    suffix = f"（上次检查：{reason}）" if reason else ""
+    missing = int(record.get("missingCount") or 0)
+    if missing:
+        return (
+            f"当前版本按旧规则安装，查出漏装 {missing} 个文件但没补上{suffix}，"
+            "改为请求全量包"
+        )
+    if record:
+        return f"当前版本按旧规则安装，是否漏装文件还没核对成{suffix}，改为请求全量包"
+    return "当前版本按旧规则安装，还没核对过是否漏装文件，改为请求全量包"
+
+
+def _range_delta_blocker(payload: PayloadTarget) -> str:
+    """当前载荷不走区间差量的原因（空串 = 可以走）。
+
+    与「改要全量包」的三种情况同一判据（damaged、旧投影规则、旧布局原生库残留），但不分
+    载荷来源：区间比的是实际字节，本地导入的载荷也能走；这三种首个版本先保守，照旧下整包。
+    """
+
+    try:
+        manifest = payload.manifest()
+    except PayloadError as exc:
+        return f"当前版本的清单读不了（{exc}）"
+    if projection_revision_of(manifest) < PROJECTION_REVISION:
+        return "当前版本按旧投影规则安装"
+    try:
+        damaged = payload.payload_id in {
+            str(item) for item in read_lineage(payload.root, payload.lineage)["damaged"]
+        }
+    except (OSError, PayloadError):
+        damaged = False
+    if damaged:
+        return "当前版本有共用文件被改写过"
+    files = manifest_files(manifest)
+    if abandoned_native_runtime_files(
+        [rel for rel, entry in files.items() if entry["origin"] != ORIGIN_PACKAGE],
+        [rel for rel, entry in files.items() if entry["origin"] == ORIGIN_PACKAGE],
+    ):
+        return "当前版本里留着新包不再使用的旧布局原生库"
+    return ""
+
+
+def _host_update_target() -> ArchitectureTarget:
+    """本机选包用的架构参数（Mirror 酱 os/arch、GitHub 资产架构段）。
+
+    只从 ``runtime_pool.architecture.host_architecture()`` 取；不是 x64 时按「只支持 x64」
+    报错，不悄悄按 x64 去下包。
+    """
+
+    from ..runtime_pool.architecture import (
+        MaaFWUnsupportedArchitectureError,
+        supported_architecture_target,
+    )
+
+    try:
+        return supported_architecture_target()
+    except MaaFWUnsupportedArchitectureError as exc:
+        raise MaaFWProjectUpdateError(str(exc)) from None
+
+
 def _normalise_package_source(raw_value: Any) -> str:
     """Normalize a package source name to the internal identifier.
 
@@ -447,14 +538,24 @@ async def update_maafw_project_if_needed(
         # 载荷没有发布方基线，一律要全量包。
         prefer_full = True
         damaged = False
+        stale_projection = False
+        native_residue = False
         if payload is not None:
             try:
-                source_kind = str(
-                    (payload.manifest().get("source") or {}).get("kind") or ""
-                )
+                base_manifest = payload.manifest()
             except PayloadError:
-                source_kind = ""
+                base_manifest = {}
+            source_kind = str((base_manifest.get("source") or {}).get("kind") or "")
             prefer_full = source_kind != "update"
+            # 按旧投影规则建、漏装的文件又没补上的载荷：差量包只动包里那几个文件，套上去
+            # 新版本照样缺；全量包的条目全部按当前规则投影。
+            stale_projection = (
+                not prefer_full
+                and projection_revision_of(base_manifest) < PROJECTION_REVISION
+            )
+            if stale_projection:
+                prefer_full = True
+                send_update_log(_stale_projection_message(base_manifest))
             # 写穿巡检标过 damaged 的载荷：差量基线（清单）已与盘上内容不符，套差量会把
             # 被改写的文件原样带进新版本，只能整版重建。
             if not prefer_full:
@@ -470,8 +571,38 @@ async def update_maafw_project_if_needed(
             if damaged:
                 prefer_full = True
                 send_update_log("当前版本有共用文件被改写过，改为请求全量包")
-        if prefer_full and not damaged:
+            # 换过外壳的导入目录留下的旧布局原生库（本修复之前的全量包会把它原样带进
+            # 新载荷）：差量包不会删它，只有全量包按新包清单清得掉。用上一个包自己的清单
+            # 当「下一个全量包」来判，清完之后同样的判断不再成立，不会每次都要全量包。
+            if not prefer_full:
+                base_files = manifest_files(base_manifest)
+                native_residue = bool(
+                    abandoned_native_runtime_files(
+                        [
+                            rel
+                            for rel, entry in base_files.items()
+                            if entry["origin"] != ORIGIN_PACKAGE
+                        ],
+                        [
+                            rel
+                            for rel, entry in base_files.items()
+                            if entry["origin"] == ORIGIN_PACKAGE
+                        ],
+                    )
+                )
+                if native_residue:
+                    prefer_full = True
+                    send_update_log(
+                        "当前版本里留着新包不再使用的旧布局原生库，改为请求全量包以清掉它"
+                    )
+        if prefer_full and not damaged and not stale_projection and not native_residue:
             send_update_log("当前版本是本地导入的，改为请求全量包")
+        force_full = force_full_package()
+        if force_full:
+            prefer_full = True
+            send_update_log(
+                f"已设环境变量 {FORCE_FULL_PACKAGE_ENV}=1：一律请求全量包、不按区间差量"
+            )
 
         (
             discovery,
@@ -588,6 +719,20 @@ async def update_maafw_project_if_needed(
     )
     if not candidate.plan_id:
         candidate.plan_id = uuid.uuid4().hex
+    # GitHub 源的全量包先试按区间只取变化的文件（#1118）：当前载荷被迫要全量包的三种
+    # 情况（damaged、旧投影规则、旧布局原生库残留）首个版本先保守，照旧下整包。
+    range_delta = False
+    if (
+        payload is not None
+        and not force_full
+        and str(candidate.source or "").strip().casefold().startswith("github")
+        and candidate.package_type in {None, "", "full"}
+    ):
+        blocker = await asyncio.to_thread(_range_delta_blocker, payload)
+        if blocker:
+            send_update_log(f"{blocker}，不按区间差量，下载全量包")
+        else:
+            range_delta = True
     try:
         apply_result = await apply_maafw_project_update(
             project_path.resolve(),
@@ -600,6 +745,7 @@ async def update_maafw_project_if_needed(
             github_mirror_urls=github_mirror_urls,
             payload=payload,
             after_register=after_register,
+            range_delta=range_delta,
         )
     except Exception as exc:
         if getattr(exc, "cancelled", False):
@@ -767,7 +913,10 @@ async def _discover_project_update_detailed(
     mirror_cdk = str(config.get("mirror_cdk") or config.get("cdk") or "").strip()
     channel = str(config.get("channel") or "stable").strip() or "stable"
     send_update_log(f"MirrorChyan RID: {rid}")
-    send_update_log("MirrorChyan platform: win/x86_64")
+    target = _host_update_target()
+    send_update_log(
+        f"MirrorChyan platform: {target.mirrorchyan_os}/{target.mirrorchyan_arch}"
+    )
     # 日志里绝不出现 CDK 明文，连前几位都不打。
     if mirror_cdk:
         send_update_log("MirrorChyan CDK: 已配置")
@@ -979,11 +1128,16 @@ async def apply_maafw_project_update(
     github_mirror_urls: Callable[[str], Sequence[tuple[str, str]]] | None = None,
     payload: PayloadTarget | None = None,
     after_register: Callable[[RegisterResult], Awaitable[Any]] | None = None,
+    range_delta: bool = False,
 ) -> dict[str, Any]:
     """下载一次 → 在 staging 里建新载荷 → 预检 → 并入共用库 → 登记 → ``after_register``。
 
     staging 之外什么都不改：失败 / 预检不过 / 取消都只是丢掉 staging，当前载荷与
     所有视图原样不动，所以没有备份、回滚与中断恢复。登记之后不再响应取消。
+
+    ``range_delta``：GitHub 发行包先试按区间只取变化的文件（``range_delta.py``），拼成
+    虚拟全量包后照全量包建新载荷，结果与整包下载逐字节一致。区间这一路任何一步失败
+    （停止除外）都丢掉这一批，接着照常下整包（整包可以走加速镜像，区间只直连）。
     """
 
     del project_lock_already_held, project_lock_timeout, projection
@@ -1026,82 +1180,172 @@ async def apply_maafw_project_update(
         packageType=candidate.package_type or "",
         scriptId=str(script_id or payload.by or "").strip(),
     )
-    try:
-        downloaded = await download_resumable(
-            source=candidate.source,
-            version=target_version,
-            download_url=download_url,
-            expected_sha256=candidate.sha256,
-            artifact_id=candidate.artifact_id,
-            cache_root=DEFAULT_CACHE_ROOT,
-            operation=operation,
-            proxy=proxy,
-            send_log=send_update_log,
-            progress=progress,
-            cancel_event=cancel_event,
-            alternates=alternates,
-            expected_size=candidate.size,
+    # 各段用时：每段结束的日志带用时，收尾打一行汇总；失败 / 取消时说停在哪一段。
+    # send_update_log 在两条路径上都既给用户看、又进 app.log（手动更新面板 / 任务日志）。
+    timer = StageTimer()
+
+    def log_stopped(exc: BaseException) -> None:
+        # 段与段之间（找包根、读版本号）停下的，算在刚结束的那一段上。
+        stage = timer.current or timer.last or "准备"
+        verb = (
+            "中止"
+            if isinstance(exc, (PayloadCancelled, UpdateDownloadCancelled))
+            or getattr(exc, "cancelled", False)
+            else "失败"
         )
-        operation.update(
-            "downloaded",
-            packagePath=str(downloaded.path),
-            sha256=downloaded.sha256,
-            downloadedBytes=downloaded.size,
-            totalBytes=downloaded.total_bytes,
-            resumedFromBytes=downloaded.resumed_from,
+        send_update_log(
+            f"更新已在「{stage}」阶段{verb}，本次已用时 {format_duration(timer.elapsed())}"
         )
-    except UpdateDownloadCancelled as exc:
-        # 必须排在下面那个 ``except Exception`` 之前，否则「已中止」会被
-        # 包成一条普通的更新失败。
-        _finish_operation(operation, "cancelled")
-        raise MaaFWProjectUpdateError(str(exc), cancelled=True) from exc
-    except MaaFWProjectUpdateError as exc:
-        _finish_operation(
-            operation,
-            "cancelled" if getattr(exc, "cancelled", False) else "failed",
-            error=str(exc)[:500],
-        )
-        raise
-    except Exception as exc:
-        # 下载阶段失败也记终态：流水不停在 discovered，启动期清理一视同仁。
-        _finish_operation(operation, "failed", error=str(exc)[:500])
-        raise MaaFWProjectUpdateError(str(exc)) from exc
+
+    suffix = uuid.uuid4().hex[:8]
+    staging_root = Path(payload.staging_root)
+    extract_dir = staging_root / f"pkg-{payload.lineage}-{suffix}"
+    # 区间差量拼虚拟全量包的目录，与整包解压目录分开：里面没变的文件是旧载荷 / 共用库同一
+    # inode 的硬链接，区间失败后要是没删干净，整包解压往同名文件里 ``open("wb")`` 就是原地
+    # 截断旧载荷。整包永远解压到 extract_dir 这个从没被区间用过的新目录。
+    range_dir = staging_root / f"rpk-{payload.lineage}-{suffix}"
+    staging = staging_root / f"payload-{payload.lineage}-{suffix}"
+    expected_version = str(target_version or "").strip()
+
+    # 区间差量：拼好的虚拟全量包（包内相对路径 → range_dir 下的文件）；None = 照常下整包。
+    range_entries: dict[str, Path] | None = None
+    range_transferred = 0
+    range_takeover: frozenset[str] = frozenset()
+    if range_delta:
+        try:
+            range_result = await _range_delta_package(
+                download_url,
+                candidate,
+                payload,
+                range_dir,
+                target_version=str(target_version or ""),
+                proxy=proxy,
+                send_log=send_update_log,
+                progress=progress,
+                operation_id=operation.operation_id,
+                timer=timer,
+                cancelled=is_cancelled,
+                mirrored=bool(alternates),
+                mirror_fallback=bool(alternates)
+                and normalise_sha256(candidate.sha256) is not None,
+            )
+        except RangeDeltaCancelled as exc:
+            log_stopped(exc)
+            await _discard_range_dir(range_dir, send_update_log)
+            _finish_operation(operation, "cancelled")
+            raise MaaFWProjectUpdateError(CANCELLED_MESSAGE, cancelled=True) from exc
+        if range_result is not None:
+            range_entries, range_transferred, range_takeover = range_result
+            operation.update(
+                "downloaded",
+                mode="range",
+                downloadedBytes=range_transferred,
+                totalBytes=candidate.size,
+            )
+
+    downloaded = None
+    if range_entries is None:
+        timer.start("下载")
+        try:
+            downloaded = await download_resumable(
+                source=candidate.source,
+                version=target_version,
+                download_url=download_url,
+                expected_sha256=candidate.sha256,
+                artifact_id=candidate.artifact_id,
+                cache_root=DEFAULT_CACHE_ROOT,
+                operation=operation,
+                proxy=proxy,
+                send_log=send_update_log,
+                progress=progress,
+                cancel_event=cancel_event,
+                alternates=alternates,
+                expected_size=candidate.size,
+            )
+            operation.update(
+                "downloaded",
+                packagePath=str(downloaded.path),
+                sha256=downloaded.sha256,
+                downloadedBytes=downloaded.size,
+                totalBytes=downloaded.total_bytes,
+                resumedFromBytes=downloaded.resumed_from,
+            )
+        except UpdateDownloadCancelled as exc:
+            # 必须排在下面那个 ``except Exception`` 之前，否则「已中止」会被
+            # 包成一条普通的更新失败。
+            log_stopped(exc)
+            _finish_operation(operation, "cancelled")
+            raise MaaFWProjectUpdateError(str(exc), cancelled=True) from exc
+        except MaaFWProjectUpdateError as exc:
+            log_stopped(exc)
+            _finish_operation(
+                operation,
+                "cancelled" if getattr(exc, "cancelled", False) else "failed",
+                error=str(exc)[:500],
+            )
+            raise
+        except Exception as exc:
+            # 下载阶段失败也记终态：流水不停在 discovered，启动期清理一视同仁。
+            log_stopped(exc)
+            _finish_operation(operation, "failed", error=str(exc)[:500])
+            raise MaaFWProjectUpdateError(str(exc)) from exc
+        timer.finish()
+    downloaded_bytes = downloaded.size if downloaded is not None else range_transferred
     if is_cancelled():
-        _finish_operation(operation, "cancelled", downloadedBytes=downloaded.size)
+        send_update_log(
+            f"更新已在「下载」之后中止，本次已用时 {format_duration(timer.elapsed())}"
+        )
+        await _remove_tree_in_thread(extract_dir)
+        await _discard_range_dir(range_dir, send_update_log)
+        _finish_operation(operation, "cancelled", downloadedBytes=downloaded_bytes)
         raise MaaFWProjectUpdateError(CANCELLED_MESSAGE, cancelled=True)
 
     def emit(stage: str, data: dict[str, Any]) -> None:
         _report_progress(progress, stage, operation_id=operation.operation_id, **data)
 
-    suffix = uuid.uuid4().hex[:8]
-    staging_root = Path(payload.staging_root)
-    extract_dir = staging_root / f"pkg-{payload.lineage}-{suffix}"
-    staging = staging_root / f"payload-{payload.lineage}-{suffix}"
-    expected_version = str(target_version or "").strip()
+    def check_cancel() -> None:
+        if is_cancelled():
+            raise PayloadCancelled("update cancelled")
 
-    def build() -> Any:
-        staging_root.mkdir(parents=True, exist_ok=True)
-        expanded = _zip_expanded_size(downloaded.path)
-        # 解压一份、新载荷里包内条目再落一份（大文件多半进共用库，只占一次）。
-        _check_disk_space(
-            staging_root,
-            staging_root,
-            state_required=expanded,
-            project_required=expanded,
-        )
-        extract_dir.mkdir(parents=True, exist_ok=True)
-        _safe_extract_zip(downloaded.path, extract_dir)
-        package_root = _find_package_root(extract_dir)
+    def on_build_event(stage: str, data: dict[str, Any]) -> None:
+        """``build_from_package`` 的阶段事件：照常转成进度，顺带收段、打带用时的日志。"""
+
+        if stage == "plan_validated":
+            elapsed = timer.finish()
+            kind = "全量包" if data.get("packageType") == "full" else "差量包"
+            if range_entries is not None:
+                # 按全量包的语义建，对外仍报差量（前端显示「增量」）。
+                kind = "区间差量（按全量包建新版本）"
+                data = {**data, "packageType": "delta"}
+            send_update_log(
+                f"比对完成：{kind}，包内 {data.get('packageFiles', 0)} 个文件，"
+                f"删除 {data.get('staleFiles', 0)} 个旧文件，用时 {format_duration(elapsed)}"
+            )
+            timer.start("复制旧版本")
+            send_update_log("正在从当前版本复制出新版本骨架")
+        elif stage == "staged":
+            elapsed = timer.finish()
+            send_update_log(
+                f"新版本骨架已复制：{data.get('stagedFiles', 0)} 个文件，"
+                f"用时 {format_duration(elapsed)}"
+            )
+            # 「正在套用更新包 x/y」由进度事件出（面板状态行 / 任务日志），这里不再单打一行。
+            timer.start("套用更新包")
+        emit(stage, data)
+
+    def build_package(package_root: Path, unpacked: Path) -> Any:
+        timer.start("比对")
+        send_update_log("正在比对新旧版本文件")
         built = build_from_package(
             payload.manifest(),
             payload.directory(),
             package_root,
-            extract_dir,
+            unpacked,
             staging,
             blob_store=payload.blob_store,
             private=payload.private_paths,
             send_log=send_update_log,
-            on_event=emit,
+            on_event=on_build_event,
             expected_package_type=(
                 candidate.package_type
                 if candidate.package_type in {"full", "delta"}
@@ -1109,6 +1353,12 @@ async def apply_maafw_project_update(
             ),
             target_version=target_version,
             cancelled=is_cancelled,
+            package_entries=range_entries,
+            takeover_dirs=range_takeover,
+        )
+        elapsed = timer.finish()
+        send_update_log(
+            f"套用更新包完成：{built.applied_files} 个文件，用时 {format_duration(elapsed)}"
         )
         actual = _read_interface_version(staging, strict=True).strip()
         if expected_version and actual.lstrip("vV") != expected_version.lstrip("vV"):
@@ -1117,14 +1367,54 @@ async def apply_maafw_project_update(
             )
         return built, actual
 
+    def build() -> Any:
+        if range_entries is not None:
+            # 区间差量已在 range_dir 里拼好了虚拟全量包，条目表就是整包的白名单。
+            return build_package(range_dir, range_dir)
+        timer.start("解压")
+        staging_root.mkdir(parents=True, exist_ok=True)
+        entry_files, expanded = zip_entry_stats(downloaded.path)
+        # 解压一份、新载荷里包内条目再落一份（大文件多半进共用库，只占一次）。
+        _check_disk_space(
+            staging_root,
+            staging_root,
+            state_required=expanded,
+            project_required=expanded,
+        )
+        extract_dir.mkdir(parents=True, exist_ok=True)
+        send_update_log(
+            f"正在解压更新包：{entry_files} 个文件，解压后约 {format_megabytes(expanded)}"
+        )
+        extracted = _safe_extract_zip(
+            downloaded.path,
+            extract_dir,
+            progress=lambda data: emit("extracting", data),
+            check_cancel=check_cancel,
+            send_log=send_update_log,
+        )
+        elapsed = timer.finish()
+        send_update_log(
+            f"解压完成：{extracted.files} 个文件 / {format_megabytes(extracted.bytes)}，"
+            f"用时 {format_duration(elapsed)}"
+        )
+        return build_package(_find_package_root(extract_dir), extract_dir)
+
     registered: RegisterResult | None = None
     try:
         built, actual_version = await asyncio.to_thread(build)
-        remove_tree(extract_dir)
+        # 解压目录里剩下的（没被挪进新载荷的）可能还有几百 MB：删在工作线程里，不在事件
+        # 循环上同步删——那会冻住 WS 推送与界面，看起来又像卡死。用时只进汇总行。
+        timer.start("清理解压目录")
+        await asyncio.to_thread(
+            remove_tree, range_dir if range_entries is not None else extract_dir
+        )
+        timer.finish()
         if is_cancelled():
             raise PayloadCancelled("update cancelled")
         emit("post_validating", {})
         if post_validate is not None:
+            timer.start("预检")
+            send_update_log("正在预检新版本的运行环境")
             # 回调（运行环境预检）失败的原因必须原样带出去：调用方要据此分
             # 「binding 拿不到」与其它失败、写备忘、给用户看文案。
             try:
@@ -1132,27 +1422,40 @@ async def apply_maafw_project_update(
             except Exception as exc:
                 if is_cancelled():
                     raise PayloadCancelled("update cancelled") from exc
+                send_update_log(f"预检未通过，用时 {format_duration(timer.finish())}")
                 raise MaaFWProjectUpdateError(
                     str(exc).strip() or type(exc).__name__,
                     post_validate_rejected=True,
                 ) from exc
             if verdict is False:
+                send_update_log(f"预检未通过，用时 {format_duration(timer.finish())}")
                 raise MaaFWProjectUpdateError(
                     "MaaFW post-validation rejected the update",
                     post_validate_rejected=True,
                 )
+            send_update_log(f"预检通过，用时 {format_duration(timer.finish())}")
         if is_cancelled():
             raise PayloadCancelled("update cancelled")
+        timer.start("并入共用库")
         send_update_log("正在把新版本的大文件并入共用库")
         finalized = await asyncio.to_thread(
             finalize,
             staging,
             blob_store=payload.blob_store,
             private=payload.private_paths,
+            # 逐文件之间可停：每个文件的入库本身是原子的（硬链接 + os.replace），停在中间
+            # 只会留下「已入库、staging 丢掉后只剩库里一个链接」的完整 blob，启动期回收收走。
+            check_cancel=check_cancel,
+        )
+        send_update_log(
+            f"并入共用库完成：新入库 {finalized.ingested_files} 个文件 / "
+            f"{format_megabytes(finalized.ingested_bytes)}，"
+            f"用时 {format_duration(timer.finish())}"
         )
         # 最后一个能干净停下的点：再往下就是登记，之后不再响应取消。
         if is_cancelled():
             raise PayloadCancelled("update cancelled")
+        timer.start("生成清单")
         send_update_log("正在为新版本生成文件清单（大项目可能要一两分钟）")
         registered = await asyncio.to_thread(
             lambda: register(
@@ -1164,33 +1467,49 @@ async def apply_maafw_project_update(
                     "kind": "update",
                     "ref": _public_package_source(candidate.source)
                     or str(candidate.source or ""),
+                    **({"mode": "range"} if range_entries is not None else {}),
                 },
                 by=payload.by,
                 version=actual_version,
                 lineage_info=payload.lineage_info,
                 known_hashes=finalized.hashes,
                 origins=built.origins,
+                projection_revision=inherited_projection_revision(
+                    payload.manifest(), built.plan.package_type
+                ),
             )
         )
     except PayloadCancelled as exc:
-        remove_tree_quietly(staging)
-        _finish_operation(operation, "cancelled", downloadedBytes=downloaded.size)
+        log_stopped(exc)
+        await _remove_tree_in_thread(staging)
+        _finish_operation(operation, "cancelled", downloadedBytes=downloaded_bytes)
         raise MaaFWProjectUpdateError(CANCELLED_MESSAGE, cancelled=True) from exc
     except MaaFWProjectUpdateError as exc:
-        remove_tree_quietly(staging)
+        log_stopped(exc)
+        await _remove_tree_in_thread(staging)
         _finish_operation(operation, "failed", error=str(exc)[:500])
         raise
     except (PayloadError, UpdateApplyError) as exc:
-        remove_tree_quietly(staging)
+        log_stopped(exc)
+        await _remove_tree_in_thread(staging)
         _finish_operation(operation, "failed", error=str(exc)[:500])
         raise MaaFWProjectUpdateError(str(exc)) from exc
     except Exception as exc:
-        remove_tree_quietly(staging)
+        log_stopped(exc)
+        await _remove_tree_in_thread(staging)
         _finish_operation(operation, "failed", error=str(exc)[:500])
         raise MaaFWProjectUpdateError(str(exc)) from exc
     finally:
-        remove_tree_quietly(extract_dir)
+        # 取消 / 失败时解压目录多半是整包大小；成功路径上面已经删过，这里是空操作。
+        await _remove_tree_in_thread(extract_dir)
+        await _discard_range_dir(range_dir, send_update_log)
 
+    manifest_files = registered.manifest.get("files")
+    send_update_log(
+        f"文件清单已生成并登记：{len(manifest_files) if isinstance(manifest_files, Mapping) else 0}"
+        f" 个文件，用时 {format_duration(timer.finish())}"
+    )
+    send_update_log(f"新版本构建总用时 {timer.summary()}")
     # 流水记到终态：启动期清理只收终态 / 本进程之前的记录，不让目录越攒越多。
     _finish_operation(operation, "registered", payloadId=registered.payload_id)
     emit("committed", {"payloadId": registered.payload_id})
@@ -1210,14 +1529,192 @@ async def apply_maafw_project_update(
         "operationId": operation.operation_id,
         "planId": effective_plan_id,
         "status": "committed",
-        "packageType": built.plan.package_type,
+        # 区间差量按全量包建（projectionRevision 照全量记），对外报差量。
+        "packageType": (
+            "delta" if range_entries is not None else built.plan.package_type
+        ),
         "finalFingerprint": str(registered.manifest.get("fingerprint") or ""),
         "targetVersion": actual_version,
-        "resumedFrom": downloaded.resumed_from,
+        "resumedFrom": downloaded.resumed_from if downloaded is not None else 0,
         "payloadId": registered.payload_id,
         "latestId": registered.target_id,
         "created": registered.created,
     }
+
+
+async def _range_delta_package(
+    download_url: str,
+    candidate: MaaFWProjectUpdateCandidate,
+    payload: PayloadTarget,
+    package_dir: Path,
+    *,
+    target_version: str,
+    proxy: httpx.Proxy | None,
+    send_log: Callable[[str], None],
+    progress: ProgressCallback | None,
+    operation_id: str,
+    timer: StageTimer,
+    cancelled: Callable[[], bool],
+    mirrored: bool = False,
+    mirror_fallback: bool = False,
+) -> tuple[dict[str, Path], int, frozenset[str]] | None:
+    """GitHub 发行包按区间只取变化的文件，在 ``package_dir`` 里拼出虚拟全量包。
+
+    返回 ``(条目表, 实际下载字节, 整体接管的目录)``；用不了（不在 github.com、服务端不认 Range、区间不符、
+    CRC 错、超预算、超时……）丢掉 ``package_dir`` 返回 None，调用方照常下整包。用户停止
+    抛 :class:`RangeDeltaCancelled`。``mirrored``：配置了 GitHub 加速镜像（区间不走镜像，
+    要在日志里说一声，免得以为镜像没生效）。``mirror_fallback``：退回时整包真能走镜像（有镜像
+    且资产有 sha256，与 ``transport.download_resumable`` 同一判据）——只有这时才设直连速度保护
+    （:class:`RangeSpeedGuard`），没有更快的路可退时直连下整包只会更慢，不放弃区间。
+    """
+
+    if not is_github_download(download_url):
+        send_log("发行包不在 github.com 上，不按区间差量，下载全量包")
+        return None
+    staging_root = package_dir.parent
+    delta = None
+    started = time.monotonic()
+    speed_guard = RangeSpeedGuard() if mirror_fallback else None
+    if speed_guard is not None:
+        route_note = (
+            "（区间只直连 github.com，不走加速镜像；没做成再按镜像下整包；直连按需下载预计"
+            f"超过 {format_duration(speed_guard.budget)}"
+            f"（或花在网络上的时间超过 {format_duration(speed_guard.hard_limit)}）就放弃区间）"
+        )
+    elif mirrored:
+        route_note = (
+            "（区间只直连 github.com；资产没有 sha256，整包也不走镜像，不按速度放弃区间"
+            "（读取超时仍会退回整包））"
+        )
+    else:
+        route_note = "（没有可用的加速镜像，不按速度放弃区间（读取超时仍会退回整包））"
+    try:
+        timer.start("区间比对")
+        send_log(
+            f"正在按区间读取 GitHub 发行包的文件目录，比对哪些文件变了{route_note}"
+        )
+        await asyncio.to_thread(staging_root.mkdir, parents=True, exist_ok=True)
+        delta = await asyncio.to_thread(
+            lambda: open_range_delta(
+                download_url,
+                int(candidate.size or 0),
+                old_manifest=payload.manifest(),
+                old_payload_dir=payload.directory(),
+                lineage=payload.lineage,
+                target_version=target_version,
+                workdir=staging_root,
+                proxy=proxy,
+                cancelled=cancelled,
+                send_log=send_log,
+                speed_guard=speed_guard,
+            )
+        )
+        send_log(
+            f"按区间只取变化的 {len(delta.fetch)} 个文件（{format_size(delta.fetch_bytes)}，"
+            f"计划传输 {format_size(delta.planned_bytes)}，含文件目录与合并的间隙），"
+            f"其余 {len(delta.reuse)} 个沿用当前版本；读文件目录 "
+            f"{format_size(delta.transferred)}，用时 {format_duration(timer.finish())}"
+        )
+        timer.start("区间下载")
+        await asyncio.to_thread(
+            _check_disk_space,
+            staging_root,
+            staging_root,
+            state_required=delta.fetch_expanded,
+            project_required=delta.fetch_expanded,
+        )
+
+        def report(done: int, total: int) -> None:
+            _report_progress(
+                progress,
+                "downloading",
+                status="running",
+                downloaded_bytes=done,
+                total_bytes=total,
+                package_type="delta",
+                operation_id=operation_id,
+            )
+
+        entries = await asyncio.to_thread(
+            fetch_range_delta,
+            delta,
+            package_dir,
+            cancelled=cancelled,
+            progress=report,
+        )
+        send_log(
+            f"区间下载完成：实际下载 {format_size(delta.transferred)}"
+            f"（整包 {format_size(delta.size)}，{delta.reader.requests} 次请求），"
+            f"用时 {format_duration(timer.finish())}"
+        )
+        # 只进 app.log 的一行汇总（与投影补齐同一写法）：日志包里据此认得出走了区间。
+        logger.info(
+            "MaaFW 区间差量：载荷 %s → %s，下载主机 %s，%d 次请求，读 %s / 整包 %s，"
+            "复用 %d、取回 %d",
+            payload.payload_id,
+            target_version,
+            delta.reader.final_host or "未知",
+            delta.reader.requests,
+            format_size(delta.transferred),
+            format_size(delta.size),
+            len(delta.reuse),
+            len(delta.fetch),
+        )
+        return entries, delta.transferred, delta.takeover_dirs
+    except RangeDeltaCancelled:
+        raise
+    except Exception as exc:  # noqa: BLE001 - 区间这一路任何失败都退回整包
+        if not isinstance(exc, (RangeDeltaUnavailable, UpdateApplyError)):
+            logger.warning("MaaFW 区间差量出错，改下全量包", exc_info=True)
+        stage = timer.current or timer.last or "区间比对"
+        timer.finish()
+        where = f"停在「{stage}」，用时 {format_duration(time.monotonic() - started)}"
+        if delta is not None:
+            # 读中央目录就失败时 delta 还没建出来，只说得出阶段与用时。
+            where += (
+                f"，已从远端读 {format_size(delta.transferred)}、"
+                f"{delta.reader.requests} 次请求"
+            )
+            await asyncio.to_thread(delta.close)
+            delta = None
+        await _discard_range_dir(package_dir, send_log)
+        # 异常原文可能带路径（staging、旧载荷）或 URL：用户目录换成 <HOME>、URL 去掉查询串。
+        reason = mask_home_path(
+            redact_text(_sanitize_log_message(str(exc).strip() or type(exc).__name__))
+        )
+        send_log(f"按区间差量没做成（{reason}；{where}），改为下载全量包")
+        # 前面的区间进度带着 package_type=delta，transport 的下载事件不带类型、宿主会沿用
+        # 上一次的：先报一条全量，面板才不会把整包下载标成「增量」。
+        _report_progress(
+            progress,
+            "downloading",
+            status="running",
+            downloaded_bytes=0,
+            total_bytes=candidate.size,
+            package_type="full",
+            operation_id=operation_id,
+        )
+        return None
+    finally:
+        if delta is not None:
+            await asyncio.to_thread(delta.close)
+
+
+async def _discard_range_dir(path: Path, send_log: Callable[[str], None]) -> None:
+    """删区间差量拼虚拟全量包的目录；删不掉（被占用）就说清楚，留给启动期清理。
+
+    里面没变的文件是旧载荷 / 共用库的硬链接，只能摘目录项，绝不能再往里写：整包退回
+    解压到另一个新目录（``pkg-*``），不碰这里。
+    """
+
+    await _remove_tree_in_thread(path)
+    if await asyncio.to_thread(os.path.lexists, path):
+        send_log(
+            mask_home_path(
+                f"区间差量的临时目录没删掉（{path}），留待下次启动时清理；"
+                "整包会解压到另一个新目录，不受影响"
+            )
+        )
 
 
 def _finish_operation(
@@ -1229,6 +1726,15 @@ def _finish_operation(
         operation.update(status, **fields)
     except Exception:  # noqa: BLE001
         logger.warning("MaaFW 更新流水写终态失败: %s", status, exc_info=True)
+
+
+async def _remove_tree_in_thread(path: Path) -> None:
+    """在工作线程里删 staging / 解压目录（上万个文件要删好几秒，不能卡住事件循环）。
+
+    ``to_thread`` 一调用就把删除交给了线程池：这里的 await 即使被取消，删除也会照常做完。
+    """
+
+    await asyncio.to_thread(remove_tree_quietly, path)
 
 
 def remove_tree_quietly(path: Path) -> None:
@@ -1274,8 +1780,9 @@ async def _query_mirrorchyan_latest(
     # 更新检查就整条失败。实测单平台 rid（AUTO_MAS）多带这两个参数照常回 200，
     # os=win&arch=x86_64 与 windows/x64 都被服务端接受并归一；这里沿用 GitHub
     # 资产命名的那套写法。
-    params["os"] = "win"
-    params["arch"] = "x86_64"
+    target = _host_update_target()
+    params["os"] = target.mirrorchyan_os
+    params["arch"] = target.mirrorchyan_arch
 
     url = f"https://mirrorchyan.com/api/resources/{rid}/latest"
     try:
@@ -1392,8 +1899,12 @@ async def _check_github_release_update(
     source_config: dict[str, Any],
     proxy: httpx.Proxy | None,
     target_version: str = "",
+    timeout: float = 30.0,
 ) -> MaaFWProjectUpdateDiscovery | None:
     """Fetch the exact MirrorChyan-selected version from GitHub Releases.
+
+    ``timeout`` is per request; the projection heal check passes a shorter one
+    because it runs synchronously before a task starts.
 
     The repository is always ``interface.github``, the tag is always the
     MirrorChyan ``version_name`` (``target_version``), and the asset is picked
@@ -1426,7 +1937,7 @@ async def _check_github_release_update(
 
     response: httpx.Response | None = None
     async with httpx.AsyncClient(
-        proxy=proxy, follow_redirects=True, timeout=30.0
+        proxy=proxy, follow_redirects=True, timeout=timeout
     ) as client:
         for api_url in api_urls:
             candidate_response = await client.get(api_url, headers=headers)
@@ -1740,8 +2251,7 @@ def _select_github_release_asset(
         if windows_matches:
             narrowed = windows_matches
         arch_pattern = re.compile(
-            r"(?<![a-z0-9])(?:x86[-_]?64|x64|amd64)(?![a-z0-9])",
-            re.IGNORECASE,
+            _host_update_target().github_asset_pattern, re.IGNORECASE
         )
         arch_matches = [item for item in narrowed if arch_pattern.search(item[0])]
         if arch_matches:

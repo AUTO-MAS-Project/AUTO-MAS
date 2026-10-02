@@ -52,6 +52,7 @@ from app.models.task import (
     UserItem,
 )
 from app.runtime_tasks import RuntimeTasks
+from app.tools.push_log import build_task_result_text
 from app.utils import LazyProxy, get_logger
 
 from .config import (
@@ -271,28 +272,48 @@ class TaskInfo(TaskItem):
             ),
         )
         if self.current_index != -1:
-            log = self.script_list[self.current_index].log
-            if log == self._last_pushed_log:
+            script = self.script_list[self.current_index]
+            log = script.log
+            if (
+                log == self._last_pushed_log
+                and script.log_first_line == self._last_pushed_log_first_line
+            ):
                 return
             # 日志只在尾部追加时只推增量；首次推送或日志被重置/变短时整体替换。
             # 部分任务模式（MAA/SRC/General/M9A）无上限累积脚本日志，全量 JSON
             # 序列化超大字符串会在 iterencode 阶段 MemoryError；整体替换时做
             # 防御性限长（保留最新日志），一处覆盖所有任务模式。
-            if self._last_pushed_log and log.startswith(self._last_pushed_log):
+            if (
+                self._last_pushed_log
+                and log.startswith(self._last_pushed_log)
+                and script.log_first_line == self._last_pushed_log_first_line
+            ):
                 payload = log[len(self._last_pushed_log) :]
                 append = True
+                # 追加段接着界面已有的内容往下排，行号由前端自己累加，这个值不会被读；
+                # 字段本身有默认值，这里只是把它显式带上，保持两种分支的载荷形状一致。
+                first_line = WSTaskLogUpdatedData.model_fields["firstLine"].default
             else:
                 payload = log[-200_000:]
                 append = False
+                # 界面行号 = 这段内容在完整日志里的真实行号：生产者自己截掉的那部分
+                # （script.log_first_line）加上这里又被截掉的行数。
+                dropped_hint = log[: len(log) - len(payload)]
+                first_line = script.log_first_line + dropped_hint.count("\n")
             self._log_seq += 1
             await Publisher.send(
                 id=self.task_id,
                 type=protocol.TASK_LOG_UPDATED,
                 data=WSTaskLogUpdatedData(
-                    log=payload, seq=self._log_seq, append=append
+                    log=payload,
+                    seq=self._log_seq,
+                    append=append,
+                    firstLine=first_line,
                 ),
             )
             self._last_pushed_log = log
+            if not append:
+                self._last_pushed_log_first_line = script.log_first_line
 
 
 class Task(TaskExecuteBase):
@@ -838,7 +859,9 @@ class Task(TaskExecuteBase):
             id=str(self.task_info.task_id),
             type=protocol.TASK_COMPLETED,
             data=WSTaskCompletedData(
-                result=self.task_info.result,
+                # 完成面板文本带采集节点详情（与推送报告同源渲染），
+                # 未配置推送的用户在调度台也能看到
+                result=build_task_result_text(self.task_info.script_list),
                 outcome=self._exit_result,
                 error=self._exit_error,
                 task_info=self.task_info.asdict,
@@ -979,6 +1002,10 @@ class _TaskManager:
                     # 返回上次推送的日志而非当前日志, 保证与下一条增量推送衔接
                     log=task_info._last_pushed_log[-200_000:],
                     logSeq=task_info._log_seq,
+                    logFirstLine=task_info._last_pushed_log_first_line
+                    + task_info._last_pushed_log.count(
+                        "\n", 0, max(0, len(task_info._last_pushed_log) - 200_000)
+                    ),
                 )
             )
         return TaskRuntimeSnapshot(

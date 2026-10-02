@@ -64,9 +64,16 @@ try:
 except ImportError:  # pragma: no cover - 只有很老的 binding 会走到
     _ContextEventSinkBase = None
 
-from app.task.MaaFW.tools.core.agent_env import write_agent_compat_shims
+from app.task.MaaFW.tools.core.agent_env import (
+    project_python_agent_binary_path,
+    write_agent_compat_shims,
+)
+from app.task.MaaFW.tools.core.log_redact import mask_home_path
 from app.task.MaaFW.tools.core.runner.environment import (
+    _read_runtime_maafw_version,
     describe_runtime_architecture_mismatch,
+    detect_pe_architecture,
+    host_architecture,
     host_runtime_rid_dirs,
     project_maafw_runtime_path,
 )
@@ -80,20 +87,52 @@ from app.task.MaaFW.tools.core.runtime_pool.host_environment import (
 # 就这么丢过一次，见下方注释）。
 try:
     from .models import MaaFWDeviceConfig, MaaFWFailureScreenshot, MaaFWRunResult
+    from .pipeline_override import deep_merge_pipeline_override
     from .run_plan import MaaFWRunPlan, MaaFWTaskRunPlan, _lookup_i18n_text
+    from .run_signal import (
+        CLIENT_UPDATE_REQUIRED,
+        SERVER_MAINTENANCE,
+        SIGNAL_NOTIFICATION,
+        MaaFWSignalSpec,
+        match_signal,
+        parse_signal_spec,
+        signal_enable_override,
+    )
 except ImportError:
     from models import (  # type: ignore[no-redef]
         MaaFWDeviceConfig,
         MaaFWFailureScreenshot,
         MaaFWRunResult,
     )
+    from pipeline_override import (  # type: ignore[no-redef]
+        deep_merge_pipeline_override,
+    )
     from run_plan import (  # type: ignore[no-redef]
         MaaFWRunPlan,
         MaaFWTaskRunPlan,
         _lookup_i18n_text,
     )
+    from run_signal import (  # type: ignore[no-redef]
+        CLIENT_UPDATE_REQUIRED,
+        SERVER_MAINTENANCE,
+        SIGNAL_NOTIFICATION,
+        MaaFWSignalSpec,
+        match_signal,
+        parse_signal_spec,
+        signal_enable_override,
+    )
 
 ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-9;]*[a-zA-Z]")
+# AgentServer 拒绝握手时打的原生日志（AgentServer.cpp handle_start_up_request），例：
+# Protocol version mismatch client: [req.version=v5.9.2] [req.protocol=7]
+#   server: ["v5.14.0"=v5.14.0] [kProtocolVersion=8]
+AGENT_PROTOCOL_MISMATCH_MARK = "Protocol version mismatch"
+_MISMATCH_CLIENT_VERSION_RE = re.compile(r"req\.version=(v?[0-9][0-9A-Za-z.\-]*)")
+_MISMATCH_CLIENT_PROTOCOL_RE = re.compile(r"req\.protocol=(\d+)")
+_MISMATCH_SERVER_VERSION_RE = re.compile(
+    r"server:\s*\[[^\]]*=(v?[0-9][0-9A-Za-z.\-]*)\]"
+)
+_MISMATCH_SERVER_PROTOCOL_RE = re.compile(r"kProtocolVersion=(\d+)")
 ENCODINGS = ("utf-8", "gbk", "shift_jis", "utf-16")
 # pipeline 节点 focus 文案的前缀：这是项目作者写给用户看的进度/解释，不是框架事件。
 FOCUS_LOG_PREFIX = "[提示] "
@@ -140,6 +179,22 @@ FATAL_CONTROLLER_ACTIONS = frozenset({"start_app"})
 # post_stop 都会产生它。脚本侧（如 MaaEnd 的分辨率闸门）用自定义动作强停时，
 # 我们只能从这里知道「这一轮不是自己结束的」。
 MAAFW_POST_STOP_ENTRY = "MaaTaskerPostStop"
+# 信号节点命中后的说明（界面日志与结果 errorMessage）与证据截图文件名里的 kind。
+# kind 只用小写字母：问题包导出按 ``<时分秒>.<kind>-<HHMMSS>-<任务>.png`` 收截图，
+# kind 部分是 ``[a-z]+``，带连字符就收不进去。
+SIGNAL_MESSAGES = {
+    SERVER_MAINTENANCE: "游戏停服维护中",
+    CLIENT_UPDATE_REQUIRED: "需要更新游戏客户端",
+}
+SIGNAL_SCREENSHOT_KINDS = {
+    SERVER_MAINTENANCE: "maintenance",
+    CLIENT_UPDATE_REQUIRED: "clientupdate",
+}
+# 对象形状的信号节点识别文本都不中时记一行 worker 日志；[JumpBack] 节点会反复命中，
+# 同一段文本只记一次，总数封顶。
+SIGNAL_UNMATCHED_LOG_LIMIT = 20
+# 回调线程里发起的停止，主线程收尾时最多等它这么久。
+SIGNAL_STOP_JOIN_SECONDS = 10.0
 
 _MAAFW_INITIALIZED = False
 _MAAFW_INIT_LOCK = threading.Lock()
@@ -313,6 +368,26 @@ def _positive_int_pair(value: Any) -> tuple[int, int] | None:
 
 #: CreateProcess 被应用控制策略（智能应用控制 / WDAC）拒绝时的 Windows 错误码。
 _WINDOWS_ERROR_APPLICATION_CONTROL_BLOCKED = 4551
+
+
+def describe_agent_protocol_mismatch(message: str) -> str:
+    """把 AgentServer 的协议不一致日志说成人话；解析不全时原样给出日志正文。"""
+
+    def pick(pattern: re.Pattern[str]) -> str | None:
+        match = pattern.search(message)
+        return match.group(1) if match else None
+
+    client_version = pick(_MISMATCH_CLIENT_VERSION_RE)
+    client_protocol = pick(_MISMATCH_CLIENT_PROTOCOL_RE)
+    server_version = pick(_MISMATCH_SERVER_VERSION_RE)
+    server_protocol = pick(_MISMATCH_SERVER_PROTOCOL_RE)
+    if None in (client_version, client_protocol, server_version, server_protocol):
+        index = message.find(AGENT_PROTOCOL_MISMATCH_MARK)
+        return f"MaaFramework {message[index:].strip()}"
+    return (
+        f"MaaFramework 协议版本不一致（MAS 端 {client_version}/协议 {client_protocol}，"
+        f"Agent 端 {server_version}/协议 {server_protocol}）"
+    )
 
 
 def _agent_spawn_error_hint(exc: OSError) -> str | None:
@@ -562,21 +637,28 @@ def _assert_binding_origin() -> None:
         )
 
 
-def agent_env_path_dirs(project_path: Path) -> list[Path]:
-    """agent PATH 前置的项目目录（存在的才用）：根、``maafw/``、``runtimes/<本机 rid>``、
-    ``libs/``、``deps/``。
+def agent_env_path_dirs(
+    project_path: Path, runtime_path: Path | None = None
+) -> list[Path]:
+    """agent PATH 前置的项目目录（存在的才用）：runner 用的项目原生库目录、根、``maafw/``、
+    ``runtimes/<本机 rid>``、``libs/``、``deps/``。
 
-    rid 按本机架构取（与 ``project_maafw_runtime_path`` 同一套判断），不写死 win-x64：
-    arm64 机器上带两种架构的发行包，agent 该看到的是 win-arm64。
+    ``runtime_path`` 是 runner 实际加载的项目自带原生库（``project_maafw_runtime_path``），
+    排最前：项目里并存两份原生库时，agent 按 PATH 找到的必须是 runner 那份，否则协议版本
+    可能对不上。rid 按本机架构取（与 ``project_maafw_runtime_path`` 同一套判断），不写死
+    win-x64：arm64 机器上带两种架构的发行包，agent 该看到的是 win-arm64。
     """
 
-    return [
+    dirs = [
         project_path,
         project_path / "maafw",
         *host_runtime_rid_dirs(project_path),
         project_path / "libs",
         project_path / "deps",
     ]
+    if runtime_path is None:
+        return dirs
+    return [runtime_path, *(item for item in dirs if item != runtime_path)]
 
 
 def _pool_native_runtime_path() -> Path | None:
@@ -587,6 +669,18 @@ def _pool_native_runtime_path() -> Path | None:
         if value and (Path(value) / "MaaFramework.dll").is_file():
             return Path(value)
     return None
+
+
+def runner_maafw_runtime_path(project_path: Path | None) -> Path | None:
+    """runner 实际加载的原生库目录：项目自带的优先，没有就是运行池给的官方库。"""
+
+    return project_maafw_runtime_path(project_path) or _pool_native_runtime_path()
+
+
+def _same_directory(left: Path, right: Path) -> bool:
+    return os.path.normcase(str(left.resolve())) == os.path.normcase(
+        str(right.resolve())
+    )
 
 
 def _ensure_maafw_global_init(
@@ -600,9 +694,7 @@ def _ensure_maafw_global_init(
         if _MAAFW_INITIALIZED:
             return
         _assert_binding_origin()
-        runtime_path = project_maafw_runtime_path(project_path)
-        if runtime_path is None:
-            runtime_path = _pool_native_runtime_path()
+        runtime_path = runner_maafw_runtime_path(project_path)
         if runtime_path is None:
             raise RuntimeError(
                 "找不到 MaaFramework 原生库：项目目录里没有 MaaFramework.dll，"
@@ -696,6 +788,8 @@ class MaaFWRunner:
         self.agent_clients: list[AgentClient] = []
         self.agent_processes: list[subprocess.Popen] = []
         self.agent_output_threads: list[threading.Thread] = []
+        # agent 进程 pid -> 输出里读到的握手拒绝原因（读输出的线程写，连接循环读）
+        self._agent_handshake_errors: dict[int, str] = {}
         self.event_sinks: list[Any] = []
         self.embedded_agent_sys_paths: list[str] = []
         self.send_log: Callable[[str], None] = send_log or (lambda _: None)
@@ -725,7 +819,22 @@ class MaaFWRunner:
         # 就把任务投出去，那个任务就没人停了。
         self._post_lock: threading.Lock = threading.Lock()
         self._task_in_flight: bool = False
+        # 正在投递的任务名，与 _task_in_flight 同进同出；信号判定据此记下命中的是哪个任务。
+        self._in_flight_task: str | None = None
         self._deadline_stop_posted: bool = False
+        # 项目声明的信号节点（attach.auto_mas），资源加载后扫描得到：节点名 → 声明。
+        # 每个任务下发时强开它们（叠在任务自身与选项覆盖之后）。
+        self._signal_specs: dict[str, MaaFWSignalSpec] = {}
+        # binding 列不出节点时退回「命中时按节点名查 attach」：不强开，只判定。
+        self._signal_lookup_on_hit: bool = False
+        self._signal_lookup_cache: dict[str, MaaFWSignalSpec | None] = {}
+        self._signal_unmatched_logged: set[tuple[str, tuple[str, ...]]] = set()
+        # 回调线程判定到信号后置位（信号, 节点名），并在单独线程里 post_stop；
+        # 主线程从 _wait_job 回来先看它，再看超时与脚本侧强停。
+        self._signal_lock: threading.Lock = threading.Lock()
+        self._signal_hit: tuple[str, str] | None = None
+        self._signal_task: str | None = None
+        self._signal_stop_thread: threading.Thread | None = None
         # 本次运行的实例标识：拼进 interface 声明的固定 agent identifier，防同一项目的
         # 两个脚本并行时抢同一个 socket（见 _run_agent_identifier）。
         self._run_instance_tag: str = uuid.uuid4().hex[:8]
@@ -749,11 +858,13 @@ class MaaFWRunner:
         self.tasker = Tasker()
         self._install_resource_sink()
         self._load_resources()
+        self._scan_signal_nodes()
         self._connect_device(device_config)
         self._start_agents()
         self._initialized = True
 
     def _load_native_plugins(self) -> None:
+        host = host_architecture()
         for path_info in self.plan.nativePluginPaths:
             plugin_path = Path(path_info.resolved)
             if not path_info.exists:
@@ -769,33 +880,85 @@ class MaaFWRunner:
             # loadable DLLs while preserving explicit file entries in a
             # project manifest.
             if path_info.isFile:
-                candidates = (
-                    [plugin_path] if plugin_path.suffix.casefold() == ".dll" else []
-                )
-            elif path_info.isDir:
-                candidates = sorted(
+                if plugin_path.suffix.casefold() != ".dll":
+                    self.send_log(
+                        f"MaaFW native plugin 路径未找到可加载 DLL，已跳过: {path_info.resolved}"
+                    )
+                    continue
+                # 清单里显式写的文件是项目方的声明：架构不符不静默跳过，直接说清楚。
+                # 文案带「架构，本机是 」，宿主据此不重试（ARCHITECTURE_MISMATCH_MARKERS）。
+                architecture = detect_pe_architecture(plugin_path)
+                if architecture is not None and architecture != host:
+                    raise RuntimeError(
+                        f"MaaFW native plugin 是 {architecture} 架构，本机是 {host}，"
+                        f"无法加载: {path_info.resolved}（项目清单 nativePluginPaths "
+                        "显式声明了这个文件，请换成本机架构的发行包）"
+                    )
+                self._load_native_plugin(path_info.resolved, architecture, host)
+                continue
+
+            candidates = (
+                sorted(
                     (item for item in plugin_path.rglob("*.dll") if item.is_file()),
                     key=lambda item: str(item).casefold(),
                 )
-            else:
-                candidates = []
-
+                if path_info.isDir
+                else []
+            )
             if not candidates:
                 self.send_log(
                     f"MaaFW native plugin 路径未找到可加载 DLL，已跳过: {path_info.resolved}"
                 )
                 continue
 
+            # 发行包常在 plugins/ 下同时带 win-arm64 与 win-x64，按名字排 arm64 在前；
+            # 别的架构的 DLL 必然加载失败，读得出架构且与本机不符的跳过，读不出的照旧尝试。
+            loadable: list[tuple[Path, str | None]] = []
+            skipped: dict[tuple[Path, str], list[Path]] = {}
             for candidate in candidates:
-                if path_info.isFile:
-                    # Preserve the explicit-file contract; directory entries
-                    # are handled by the filtered candidate path below.
-                    loaded = Tasker.load_plugin(path_info.resolved)
+                architecture = detect_pe_architecture(candidate)
+                if architecture is not None and architecture != host:
+                    skipped.setdefault((candidate.parent, architecture), []).append(
+                        candidate
+                    )
                 else:
-                    loaded = Tasker.load_plugin(str(candidate))
-                if loaded is False:
-                    raise RuntimeError(f"MaaFW native plugin 加载失败: {candidate}")
-                self.send_log(f"已加载 MaaFW native plugin: {candidate}")
+                    loadable.append((candidate, architecture))
+            for (directory, architecture), files in skipped.items():
+                shown = (
+                    self._plugin_display_path(files[0])
+                    if len(files) == 1
+                    else f"{self._plugin_display_path(directory)}\\ 下 {len(files)} 个 DLL"
+                )
+                self.send_log(
+                    f"已跳过其他架构的原生插件：{shown}（{architecture}，本机 {host}）"
+                )
+            if not loadable:
+                self.send_log(
+                    f"MaaFW native plugin 路径下的 DLL 都不是本机（{host}）架构，"
+                    f"未找到可加载 DLL，已跳过: {path_info.resolved}"
+                )
+                continue
+
+            for candidate, architecture in loadable:
+                self._load_native_plugin(str(candidate), architecture, host)
+
+    def _load_native_plugin(
+        self, plugin: str, architecture: str | None, host: str
+    ) -> None:
+        if Tasker.load_plugin(plugin) is False:
+            described = f"插件架构 {architecture}" if architecture else "插件架构未知"
+            raise RuntimeError(
+                f"MaaFW native plugin 加载失败: {plugin}（{described}，本机 {host}）"
+            )
+        self.send_log(f"已加载 MaaFW native plugin: {plugin}")
+
+    def _plugin_display_path(self, path: Path) -> str:
+        """插件路径按项目根给相对路径（日志短一些）；不在项目根下就给原路径。"""
+
+        try:
+            return str(path.relative_to(Path(self.plan.path)))
+        except ValueError:
+            return str(path)
 
     def run(self, device_config: MaaFWDeviceConfig) -> MaaFWRunResult:
         self._stop_requested.clear()
@@ -803,11 +966,30 @@ class MaaFWRunner:
         self._deadline_hit.clear()
         self._deadline_stop_posted = False
         self._failure_screenshots = []
+        with self._signal_lock:
+            self._signal_hit = None
+            self._signal_task = None
+            self._signal_stop_thread = None
         self._start_deadline_timer()
         try:
             self._ensure_initialized(device_config)
             self._wait_task_start_gate()
             completed_tasks = self._run_tasks()
+            signal_hit = self._signal_hit
+            if signal_hit is not None:
+                signal, signal_node = signal_hit
+                return MaaFWRunResult(
+                    success=False,
+                    projectName=self.plan.projectName,
+                    controllerName=self.plan.controllerName,
+                    resourceName=self.plan.resourceName,
+                    completedTasks=completed_tasks,
+                    failedTask=self._signal_task,
+                    errorMessage=SIGNAL_MESSAGES[signal],
+                    failureScreenshots=self.failure_screenshots,
+                    signal=signal,
+                    signalNode=signal_node,
+                )
             if self._failed_task_errors:
                 first_failed_task, _ = self._failed_task_errors[0]
                 if len(self._failed_task_errors) == 1:
@@ -860,6 +1042,7 @@ class MaaFWRunner:
             )
         finally:
             self._cancel_deadline_timer()
+            self._join_signal_stop()
 
     def _start_deadline_timer(self) -> None:
         """到宿主给的截止时刻就停掉当前任务。
@@ -995,6 +1178,88 @@ class MaaFWRunner:
         for path_info in self.plan.resource.attachedPaths:
             self._load_resource_bundle(path_info)
 
+    def _scan_signal_nodes(self) -> None:
+        """资源加载完后找出声明了 ``attach.auto_mas`` 的节点（见 run_signal.py）。
+
+        扫到的节点在每个任务下发时由 ``_task_pipeline_override`` 强开（``auto_mas`` 就是
+        项目作者声明「在 MAS 下启用」，项目自带的开关只对其他外壳有效）。回调里只查字典。
+        binding 列不出节点（没有 ``node_list``）时不扫、不强开，退回命中时按节点名查
+        （结果缓存）；连 ``get_node_data`` 都没有就不识别信号。都只记日志，不影响运行。
+        """
+
+        self._signal_specs = {}
+        self._signal_lookup_on_hit = False
+        self._signal_lookup_cache = {}
+        resource = self.resource
+        get_node_data = getattr(resource, "get_node_data", None)
+        if not callable(get_node_data):
+            self.send_log(
+                f"{DETAIL_LOG_PREFIX}MaaFW binding 没有 get_node_data，不识别项目声明的"
+                "维护 / 更新信号节点"
+            )
+            return
+        started = time.perf_counter()
+        try:
+            names = list(resource.node_list)
+        except Exception as exc:
+            self._signal_lookup_on_hit = True
+            self.send_log(
+                f"{DETAIL_LOG_PREFIX}MaaFW binding 列不出节点（{exc}），不强开维护 / "
+                "更新信号节点，只在节点命中时按名字判定"
+            )
+            return
+        specs: dict[str, MaaFWSignalSpec] = {}
+        for name in names:
+            try:
+                data = get_node_data(name)
+            except Exception:
+                continue
+            spec = self._parse_signal_node(name, data)
+            if spec is not None:
+                specs[name] = spec
+        self._signal_specs = specs
+        elapsed_ms = (time.perf_counter() - started) * 1000
+        found = "、".join(sorted(specs)) if specs else "无"
+        self.send_log(
+            f"{DETAIL_LOG_PREFIX}信号节点扫描：{len(names)} 个节点，用时 "
+            f"{elapsed_ms:.0f} ms，信号节点: {found}"
+        )
+
+    def _parse_signal_node(self, name: str, data: Any) -> MaaFWSignalSpec | None:
+        spec, warnings = parse_signal_spec(name, data)
+        for warning in warnings:
+            self.send_log(f"项目信号节点写法有误: {warning}")
+        return spec
+
+    def _signal_spec_for(self, name: str) -> MaaFWSignalSpec | None:
+        spec = self._signal_specs.get(name)
+        if spec is not None or not self._signal_lookup_on_hit:
+            return spec
+        if name in self._signal_lookup_cache:
+            return self._signal_lookup_cache[name]
+        spec = None
+        resource = self.resource
+        if resource is not None:
+            try:
+                spec = self._parse_signal_node(name, resource.get_node_data(name))
+            except Exception:
+                spec = None
+        self._signal_lookup_cache[name] = spec
+        return spec
+
+    def _task_pipeline_override(self, task: MaaFWTaskRunPlan) -> dict[str, Any]:
+        """下发给 MaaFW 的覆盖：任务计划里的覆盖，最后叠上强开信号节点。
+
+        项目自带的开关关着时会在覆盖里写 ``{节点: {"enabled": false}}``；强开必须在
+        任务自身与全部选项深合并之后再叠，以它为准。没有信号节点时原样返回同一个对象。
+        """
+
+        if not self._signal_specs:
+            return task.pipelineOverride
+        return deep_merge_pipeline_override(
+            task.pipelineOverride, signal_enable_override(self._signal_specs)
+        )
+
     def _load_resource_bundle(self, path_info: Any) -> None:
         if not path_info.exists or not path_info.isDir:
             raise RuntimeError(f"资源目录不存在: {path_info.resolved}")
@@ -1002,10 +1267,13 @@ class MaaFWRunner:
         self.send_log(f"已加载资源: {path_info.resolved}")
 
     def _check_resource_hash(self) -> None:
-        """interface 声明了 resource.hash 时与 MaaResourceGetHash 比对，不一致只告警。
+        """interface 声明了 resource.hash 时与 MaaResourceGetHash 比对，不一致只记详情。
 
         协议要求「应向用户发出警告，但不应阻止继续使用」；大小写不敏感（MFAA 同）。
-        取不到实际值（老 binding、原生层报错）时不告警，免得把环境问题说成资源被改。
+        但这个 hash 只由文件大小按遍历顺序算出，项目 CI 在打包目录上算、和最终发行包的
+        文件集合不同就会对不上（MaaEnd 正式版每次都是，MXU 里同样告警），用户既判断不了
+        也做不了什么，所以不一致只进 ``.worker.log``，不上界面与用户日志。
+        取不到实际值（老 binding、原生层报错）时不记，免得把环境问题说成资源被改。
         """
 
         expected = (self.plan.resource.hash or "").strip()
@@ -1025,7 +1293,7 @@ class MaaFWRunner:
             label if label and not label.startswith("$") else self.plan.resource.name
         )
         self.send_log(
-            f"资源完整性校验不一致（资源 {resource_name}）：interface 声明 {expected}，"
+            f"{DETAIL_LOG_PREFIX}资源完整性校验不一致（资源 {resource_name}）：interface 声明 {expected}，"
             f"实际加载得到 {actual}。资源文件可能被改动或更新不完整，建议重新下载或"
             "更新该项目；本次照常运行"
         )
@@ -1498,6 +1766,7 @@ class MaaFWRunner:
         for agent_plan in self.plan.agents:
             if agent_plan.embedded:
                 continue
+            self._check_native_agent_runtime(agent_plan)
             agent_client = self._create_agent_client(
                 agent_plan.childExec,
                 identifier=self._run_agent_identifier(
@@ -1516,8 +1785,16 @@ class MaaFWRunner:
             ]
             env = self._build_agent_env(agent_plan)
             creationflags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
+            # 带上实际参数（入口脚本可能已按 CFA 兜底换过），末尾的连接标识不打。
+            launch = " ".join(
+                [
+                    Path(command[0]).name,
+                    *(item for item in agent_plan.command[1:] if item != "<socket_id>"),
+                ]
+            )
+            # 参数与 cwd 里的用户目录换成 <HOME>：这行会经 worker 转发进 app.log。
             self.send_log(
-                f"启动 Agent 子进程: {Path(command[0]).name} (cwd={agent_plan.cwd})"
+                mask_home_path(f"启动 Agent 子进程: {launch} (cwd={agent_plan.cwd})")
             )
             try:
                 process = subprocess.Popen(
@@ -1558,6 +1835,39 @@ class MaaFWRunner:
                 raise RuntimeError("AgentClient 注册 sink 失败")
 
             self.send_log(f"Agent 已启动: {command[0]}")
+
+    def _check_native_agent_runtime(self, agent_plan: Any) -> None:
+        """原生 agent（Go / C++ 的 exe）启动前核对它要加载的原生库与 runner 是不是同一版本。
+
+        现有的原生 agent（MaaEnd、MaaYYs）都固定从 ``<项目>/maafw`` 加载 MaaFramework，
+        没法像 Python agent 那样经 ``MAAFW_BINARY_PATH`` 指给它。项目里混装了两份原生库、
+        runner 又选了另一份时，版本不同协议就可能不同，agent 起来也连不上；在启动前说清楚，
+        不等满连接超时。版本相同或读不出时放行。
+        """
+
+        if getattr(agent_plan, "runtimeKind", None) != "project_binary":
+            return
+        project_path = Path(self.plan.path)
+        agent_runtime = project_path / "maafw"
+        if not (agent_runtime / "MaaFramework.dll").is_file():
+            return
+        runner_runtime = runner_maafw_runtime_path(project_path)
+        if runner_runtime is None or _same_directory(runner_runtime, agent_runtime):
+            return
+        agent_version = _read_runtime_maafw_version(agent_runtime)
+        runner_version = _read_runtime_maafw_version(runner_runtime)
+        if not agent_version or not runner_version or agent_version == runner_version:
+            return
+        try:
+            runner_where = str(runner_runtime.relative_to(project_path))
+        except ValueError:
+            runner_where = str(runner_runtime)
+        raise RuntimeError(
+            f"原生 Agent（{Path(agent_plan.executable).name}）固定从 maafw 目录加载 "
+            f"MaaFramework {_display_maafw_version(agent_version)}，runner 用的是 "
+            f"{runner_where} 里的 {_display_maafw_version(runner_version)}："
+            "项目里混装了两份不同版本的原生库。请用干净的发行包重新导入，或更新项目"
+        )
 
     def prepare_agent_python_envs(self) -> None:
         """Prepare all MaaFW agent Python environments without starting agents."""
@@ -1701,6 +2011,10 @@ class MaaFWRunner:
                 # 不能一直等到宿主「限时 + 宽限」强杀 worker。
                 self.send_log(f"{RUN_TIMEOUT_MESSAGE}，不再等待 Agent 连接: {label}")
                 raise MaaFWRunTimeoutError(RUN_TIMEOUT_MESSAGE)
+            handshake_error = self._agent_handshake_errors.get(process.pid)
+            if handshake_error:
+                # 协议版本对不上是确定性的，重试到预算用完只是白等（原先要等满 600 秒）。
+                raise RuntimeError(f"Agent 拒绝连接：{handshake_error}: {label}")
 
             try:
                 if agent_client.connect():
@@ -1791,14 +2105,16 @@ class MaaFWRunner:
 
         thread = threading.Thread(
             target=self._read_agent_output,
-            args=(process.stdout, label),
+            args=(process.stdout, label, process.pid),
             name=f"maafw-agent-log-{process.pid}",
             daemon=True,
         )
         thread.start()
         self.agent_output_threads.append(thread)
 
-    def _read_agent_output(self, stream: BinaryIO | TextIO, label: str) -> None:
+    def _read_agent_output(
+        self, stream: BinaryIO | TextIO, label: str, pid: int | None = None
+    ) -> None:
         try:
             while True:
                 line = stream.readline()
@@ -1807,6 +2123,14 @@ class MaaFWRunner:
                 message = self._decode_agent_output_line(line).rstrip()
                 if message:
                     self.send_log(f"[Agent:{label}] {message}")
+                    if (
+                        pid is not None
+                        and pid not in self._agent_handshake_errors
+                        and AGENT_PROTOCOL_MISMATCH_MARK in message
+                    ):
+                        self._agent_handshake_errors[pid] = (
+                            describe_agent_protocol_mismatch(message)
+                        )
         except ValueError:
             return
         except Exception as exc:
@@ -1877,7 +2201,8 @@ class MaaFWRunner:
 
         清理 VIRTUAL_ENV、PYTHONHOME、旧 PYTHONPATH 等会导致串环境的变量，
         再显式设置当前项目所需的 PYTHONPATH；PATH 前置 agent Python 目录、
-        Scripts 目录、项目根目录与项目必要 dll 目录。
+        Scripts 目录、runner 实际使用的项目原生库目录，再是项目根目录与其余必要 dll 目录。
+        项目自带解释器没有 maa/bin 时，``MAAFW_BINARY_PATH`` 指向 runner 那份库。
         """
         # 先按共用名单剔除 worker 自己与宿主的 Python 变量，再叠加项目 interface 声明的
         # 环境：项目给自己 agent 设的值要保留。worker 自己需要 PYTHONSAFEPATH（见
@@ -1920,10 +2245,24 @@ class MaaFWRunner:
         # 也不会把 2000 个小文件散进项目自带的 python/Lib。
         set_project_pycache_prefix(env, project_path)
 
-        # PATH 前置：agent Python 目录、Scripts 目录、项目根目录、项目必要 dll 目录。
-        # 再把官方原生库目录放在项目路径之后、宿主 PATH 之前：项目自带的原生库
-        # 仍然优先，缺库的项目则从运行池为这个版本备的 native 目录拿到同版本的 DLL
-        # （binding 目录里的 maa/bin 只是占位，没有 DLL）。
+        # 项目自带解释器没有 wheel 的 maa/bin 时（M9A v4.10+），agent 自己找原生库：设了
+        # MAAFW_BINARY_PATH 就沿用，否则按 runtimes/ → maafw/ 的固定顺序找第一份。两份并存
+        # 时那未必是 runner 选的，所以指给它 runner 那份（与健康检查同一个函数）。
+        # 隔离 venv 与带 maa/bin 的自带解释器用 wheel 自带的库，照旧不设。
+        if getattr(agent_plan, "runtimeKind", None) == "project_python":
+            binary_path = project_python_agent_binary_path(
+                agent_plan.executable, project_path
+            )
+            if binary_path is not None and "MAAFW_BINARY_PATH" not in env:
+                env["MAAFW_BINARY_PATH"] = str(binary_path)
+                self.send_log(
+                    f"Agent 使用 runner 同一份原生库: MAAFW_BINARY_PATH={binary_path}"
+                )
+
+        # PATH 前置：agent Python 目录、Scripts 目录、runner 用的项目原生库目录、项目根
+        # 目录、项目必要 dll 目录。再把官方原生库目录放在项目路径之后、宿主 PATH 之前：
+        # 项目自带的原生库仍然优先，缺库的项目则从运行池为这个版本备的 native 目录拿到
+        # 同版本的 DLL（binding 目录里的 maa/bin 只是占位，没有 DLL）。
         python_exe = Path(agent_plan.executable)
         path_items: list[str] = []
         python_dir = python_exe.parent
@@ -1932,8 +2271,9 @@ class MaaFWRunner:
             scripts_dir = python_dir / ("Scripts" if os.name == "nt" else "bin")
             if scripts_dir.is_dir():
                 path_items.append(str(scripts_dir))
-        path_items.append(str(project_path))
-        for candidate in agent_env_path_dirs(project_path):
+        for candidate in agent_env_path_dirs(
+            project_path, project_maafw_runtime_path(project_path)
+        ):
             if candidate.is_dir():
                 path_items.append(str(candidate))
 
@@ -2104,21 +2444,32 @@ class MaaFWRunner:
             with self._focus_lock:
                 self._focus_log_count = 0
             self._failed_controller_actions.clear()
+            pipeline_override = self._task_pipeline_override(task)
             try:
                 with self._post_lock:
                     self._raise_if_deadline_hit()
-                    if task.pipelineOverride:
-                        job = tasker.post_task(task.entry, task.pipelineOverride)
-                    else:
-                        job = tasker.post_task(task.entry)
-                    self._task_in_flight = True
+                    # 在投递之前置位（仍在锁内，定时器看不到中间态）：投递返回前就可能
+                    # 有节点通知送达，信号判定要认得出它属于这个任务。
+                    self._set_task_in_flight(task.name)
+                    try:
+                        if pipeline_override:
+                            job = tasker.post_task(task.entry, pipeline_override)
+                        else:
+                            job = tasker.post_task(task.entry)
+                    except BaseException:
+                        self._set_task_in_flight(None)
+                        raise
                 try:
                     self._wait_job(job)
                 finally:
-                    self._task_in_flight = False
+                    self._set_task_in_flight(None)
             except Exception as exc:
                 if self._stop_requested.is_set():
                     raise RuntimeError("MaaFW 任务已停止") from exc
+                # 信号节点命中后是我们自己 post_stop 的：要先于超时与脚本侧强停判定，
+                # 否则会被记成任务失败或「任务被脚本侧强制停止」。
+                if self._finish_on_signal(task, display_name):
+                    break
                 if isinstance(exc, MaaFWRunTimeoutError):
                     # 投递前就到点了（锁内那次检查抛的）：截一张当前画面再往上抛
                     self._raise_if_deadline_hit(task.name)
@@ -2155,6 +2506,10 @@ class MaaFWRunner:
                 continue
             if self._stop_requested.is_set():
                 raise RuntimeError("MaaFW 任务已停止")
+            # 被我们 post_stop 打断的任务 job 不报失败（5.12.3 实测状态是 invalid），
+            # 同样先看信号。
+            if self._finish_on_signal(task, display_name):
+                break
             self._raise_if_deadline_hit(task.name, only_if_stopped=True)
             # MaaFW 会把「被 post_stop 打断」的入口回报成 Task.Succeeded——强停是
             # 由 pipeline 里的动作节点触发的，那个节点本身返回成功。只看
@@ -2173,6 +2528,114 @@ class MaaFWRunner:
             time.sleep(0.1)
         return completed_tasks
 
+    def _set_task_in_flight(self, task_name: str | None) -> None:
+        with self._signal_lock:
+            self._task_in_flight = task_name is not None
+            self._in_flight_task = task_name
+
+    def _finish_on_signal(self, task: MaaFWTaskRunPlan, display_name: str) -> bool:
+        """当前任务是因为信号节点命中而停下的：截证据图、记日志，返回 True 让本轮收尾。
+
+        命中的是哪个任务在回调里就记下了（``_signal_task``），这里不再按「刚回来的
+        是谁」推断。
+        """
+
+        with self._signal_lock:
+            hit = self._signal_hit
+            signal_task = self._signal_task
+        if hit is None:
+            return False
+        self._join_signal_stop()
+        signal, _ = hit
+        task_name = signal_task or task.name
+        if task_name != task.name:
+            display_name = next(
+                (
+                    _task_display_name(item)
+                    for item in self.plan.tasks
+                    if item.name == task_name
+                ),
+                task_name,
+            )
+        self._capture_failure_screenshot(
+            task_name, kind=SIGNAL_SCREENSHOT_KINDS[signal]
+        )
+        self.send_log(f"{SIGNAL_MESSAGES[signal]}，本轮剩余任务已跳过: {display_name}")
+        return True
+
+    def _on_signal_notification(self, message: str, details: Any) -> None:
+        """信号节点识别命中：置位并在单独线程里停掉当前任务。
+
+        这是框架的回调线程，不能在这里等 post_stop 的 job（停止要等当前任务从回调里
+        返回，原地等就是死锁）；截图与收尾留给主线程，和超时截止同一个做法。
+        """
+
+        if message != SIGNAL_NOTIFICATION or not isinstance(details, dict):
+            return
+        name = details.get("name")
+        if not isinstance(name, str) or not name:
+            return
+        spec = self._signal_spec_for(name)
+        if spec is None:
+            return
+        signal, texts = match_signal(spec, details)
+        if signal is None:
+            self._log_unmatched_signal(name, texts)
+            return
+        thread: threading.Thread | None = None
+        with self._signal_lock:
+            if self._signal_hit is not None or self._stop_requested.is_set():
+                return
+            in_flight_task = self._in_flight_task
+            # 只认投递中的任务：任务已经回来了才晚到的通知，不能算到下一个任务头上
+            if self._task_in_flight and in_flight_task is not None:
+                self._signal_hit = (signal, name)
+                self._signal_task = in_flight_task
+                thread = threading.Thread(
+                    target=self._post_signal_stop,
+                    name="maafw-signal-stop",
+                    daemon=True,
+                )
+                self._signal_stop_thread = thread
+        if thread is None:
+            self.send_log(
+                f"{DETAIL_LOG_PREFIX}信号节点 {name} 命中时没有任务在投递中，已忽略"
+            )
+            return
+        self.send_log(
+            f"{DETAIL_LOG_PREFIX}信号节点 {name} 命中：{signal}，正在停止当前任务"
+        )
+        thread.start()
+
+    def _log_unmatched_signal(self, name: str, texts: list[str] | None) -> None:
+        key = (name, tuple(texts or ()))
+        if (
+            key in self._signal_unmatched_logged
+            or len(self._signal_unmatched_logged) >= SIGNAL_UNMATCHED_LOG_LIMIT
+        ):
+            return
+        self._signal_unmatched_logged.add(key)
+        if texts:
+            detail = "识别文本: " + " / ".join(texts)
+        else:
+            detail = "不是 OCR 识别或没有识别文本，按规则无法判定"
+        self.send_log(
+            f"{DETAIL_LOG_PREFIX}信号节点 {name} 命中但未匹配任何信号规则，{detail}"
+        )
+
+    def _post_signal_stop(self) -> None:
+        try:
+            self._post_self_stop()
+        except Exception as exc:
+            self.send_log(f"停止 MaaFW tasker 失败: {exc}")
+
+    def _join_signal_stop(self) -> None:
+        thread = self._signal_stop_thread
+        if thread is None or thread is threading.current_thread():
+            return
+        with suppress(RuntimeError):
+            thread.join(timeout=SIGNAL_STOP_JOIN_SECONDS)
+
     def _capture_failure_screenshot(
         self, task_name: str, *, kind: str = "failed"
     ) -> None:
@@ -2181,7 +2644,8 @@ class MaaFWRunner:
         画面就是用户排查时最想看的那一眼——卡在哪个弹窗、哪个界面。
         取消（stop_requested）不算失败，不截；controller 已经没了也截不到。
         截图失败只记一行日志，绝不能反过来影响任务结果。
-        ``kind`` 进文件名：普通失败是 ``failed``，超时停下的是 ``timeout``。
+        ``kind`` 进文件名：普通失败是 ``failed``，超时停下的是 ``timeout``，信号节点
+        命中的证据图是 ``maintenance`` / ``clientupdate``。
         """
 
         directory = self._failure_screenshot_dir
@@ -2207,7 +2671,13 @@ class MaaFWRunner:
         self._failure_screenshots.append(
             MaaFWFailureScreenshot(task=task_name, path=str(path))
         )
-        self.send_log(f"任务失败截图已保存: {path}")
+        # 信号节点的证据图不是失败截图（维护是跳过）
+        label = (
+            "截图已保存"
+            if kind in SIGNAL_SCREENSHOT_KINDS.values()
+            else "任务失败截图已保存"
+        )
+        self.send_log(f"{label}: {path}")
 
     def _completed_task_names(self) -> list[str]:
         completed_tasks = getattr(self, "_completed_tasks", [])
@@ -2233,6 +2703,11 @@ class MaaFWRunner:
         任何异常都吞掉——这是框架线程上的回调，抛出去只会让原生层丢通知。
         """
 
+        try:
+            self._on_signal_notification(message, details)
+        except Exception as exc:  # pragma: no cover - 同上，不能反噬任务
+            with suppress(Exception):
+                self.send_log(f"处理 MaaFW 信号节点通知失败: {exc}")
         try:
             focus_texts = self._resolve_focus_texts(message, details)
             for text in focus_texts:

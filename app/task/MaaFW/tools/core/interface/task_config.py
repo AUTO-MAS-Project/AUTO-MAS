@@ -236,6 +236,30 @@ def normalize_task_execution_payload(
     return normalized_task_list, normalized_task_options
 
 
+def find_missing_task_names(
+    snapshot: MaaFWTaskPresetSnapshot | dict[str, Any] | None,
+    interface_model: MaaFWInterface,
+) -> list[str]:
+    """用户快照里勾选了、但当前 interface 已没有的任务名（按队列顺序，每份实例一项）。
+
+    项目更新改了任务 ``name`` 时旧 id 就对不上了。归一化会把它从执行列表里滤掉，
+    界面把它留成虚影；这里把它找出来，建计划时记成跳过，运行日志里才看得到。
+    重复实例 id 只报任务名（去掉 ``__MAS_DUP__`` 后缀）。
+    """
+
+    raw_snapshot = _normalize_raw_snapshot(snapshot)
+    valid_task_names = _build_valid_task_names(interface_model)
+    missing: list[str] = []
+    for task_id in raw_snapshot["taskOrder"]:
+        if not raw_snapshot["taskChecked"].get(task_id, False):
+            continue
+        if resolve_task_instance_name(task_id, valid_task_names) in valid_task_names:
+            continue
+        head, separator, _ = task_id.rpartition(DUPLICATE_TASK_SUFFIX_SEPARATOR)
+        missing.append(head if separator and head else task_id)
+    return missing
+
+
 def build_interface_preset_snapshot(
     interface_model: MaaFWInterface,
     preset: MaaFWPreset,

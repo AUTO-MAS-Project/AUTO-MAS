@@ -270,7 +270,13 @@ class Notifier(Protocol):
         self, message: str, msgtype: str = "text", client_name: str = "Koishi"
     ) -> bool | None: ...
 
-    async def send_openclaw_qq(self, title: str, content: str) -> bool | None: ...
+    async def send_openclaw_qq(
+        self,
+        title: str,
+        content: str,
+        *,
+        images: Sequence[NotificationImage] = (),
+    ) -> bool | None: ...
 
 
 async def dispatch(

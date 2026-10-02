@@ -12,7 +12,9 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import os
 import shutil
+import time
 import zipfile
 from dataclasses import dataclass
 from pathlib import Path
@@ -29,6 +31,9 @@ ZIP_MAX_ENTRIES = 100_000
 ZIP_MAX_EXPANDED_BYTES = 8 * 1024 * 1024 * 1024
 # 逐文件覆盖进度最密每这么多个文件报一次（大项目数千文件，不能每个都报）。
 APPLY_PROGRESS_MAX_STEP_FILES = 50
+# 解压按块写：块之间查一次取消；大文件里至少每这么多字节报一次进度。
+EXTRACT_CHUNK_BYTES = 1024 * 1024
+EXTRACT_PROGRESS_STEP_BYTES = 8 * 1024 * 1024
 
 logger = logging.getLogger("automas.maafw.project_update.apply")
 PROJECT_STATE_DIR_NAME = "maafw_project_state"
@@ -79,6 +84,9 @@ class PackagePlan:
     target_version: str | None = None
     # 内嵌副本里按内容与其它副本共用的文件（``files`` 的子集）：运行时目录与模型类大文件。
     shared: frozenset[str] = frozenset()
+    # 全量包整体接管的目录（``projection.package_takeover_dirs``）：导入来的、新包里没有的
+    # 旧文件在这些目录里也按 stale 清。只有投影落地时才算。
+    takeover_dirs: frozenset[str] = frozenset()
 
 
 def build_package_plan(
@@ -92,6 +100,7 @@ def build_package_plan(
     target_version: str | None = None,
     projection: bool = False,
     send_log: Callable[[str], None] | None = None,
+    check_cancel: Callable[[], None] | None = None,
 ) -> PackagePlan:
     changes_path = _find_changes_file(package_root, extract_dir)
     changes = _load_json(changes_path) if changes_path else {}
@@ -129,7 +138,10 @@ def build_package_plan(
     )
     files: dict[str, Path] = {}
     hashes: dict[str, str] = {}
-    for source in payload_root.rglob("*"):
+    for index, source in enumerate(payload_root.rglob("*")):
+        if check_cancel is not None and index % 500 == 0:
+            # 上万个条目的包光枚举就要一阵，停止要能在这里生效（抛调用方自己的取消异常）。
+            check_cancel()
         if source.is_dir():
             continue
         if source.is_symlink():
@@ -162,10 +174,11 @@ def build_package_plan(
     if package_type == "full" and not _has_interface_file(package_root):
         raise UpdateApplyError("full update package must contain interface.json")
     shared: frozenset[str] = frozenset()
+    takeover_dirs: frozenset[str] = frozenset()
     if projection:
         # 内嵌副本：只按 interface 白名单落盘。这是唯一的枚举口，三张表一起过滤，
         # 下游的清单、孤儿清理、回滚看到的就都是瘦树。
-        files, hashes, deleted, shared = _project_package_entries(
+        files, hashes, deleted, shared, takeover_dirs = _project_package_entries(
             payload_root, project_path, files, hashes, deleted, send_log
         )
     return PackagePlan(
@@ -178,6 +191,7 @@ def build_package_plan(
         base_fingerprint=base_fingerprint,
         target_version=declared_target or target_version,
         shared=shared,
+        takeover_dirs=takeover_dirs,
     )
 
 
@@ -188,11 +202,15 @@ def _project_package_entries(
     hashes: dict[str, str],
     deleted: tuple[str, ...],
     send_log: Callable[[str], None] | None,
-) -> tuple[dict[str, Path], dict[str, str], tuple[str, ...], frozenset[str]]:
+) -> tuple[
+    dict[str, Path], dict[str, str], tuple[str, ...], frozenset[str], frozenset[str]
+]:
     from .projection import (
         ProjectionError,
+        describe_dropped_code_files,
         filter_package_entries,
         package_projection_rules,
+        package_takeover_dirs,
     )
 
     try:
@@ -205,6 +223,9 @@ def _project_package_entries(
         dropped_count = len(dropped_files)
         if dropped_count:
             send_log(f"内嵌投影：包内 {dropped_count} 个条目不在白名单内，未落盘")
+        code_hint = describe_dropped_code_files(rules, dropped_files)
+        if code_hint:
+            send_log(f"内嵌投影：{code_hint}")
         for warning in rules.warnings:
             send_log(f"内嵌投影：{warning}")
     return (
@@ -224,6 +245,7 @@ def _project_package_entries(
             for relative in kept_files
             if rules.is_shared_file(Path(relative), _file_size(files[relative]))
         ),
+        package_takeover_dirs(rules, kept_files),
     )
 
 
@@ -388,7 +410,9 @@ def _find_package_root(extract_dir: Path) -> Path:
     )
 
 
-def _zip_expanded_size(package_path: Path) -> int:
+def zip_entry_stats(package_path: Path) -> tuple[int, int]:
+    """(文件条目数, 解压后总字节)；条目数与展开大小的上限在这里一并把关。"""
+
     try:
         with zipfile.ZipFile(package_path, "r") as archive:
             members = archive.infolist()
@@ -396,12 +420,13 @@ def _zip_expanded_size(package_path: Path) -> int:
                 raise UpdateApplyError(
                     f"update package contains too many entries: {len(members)}"
                 )
+            files = sum(1 for item in members if not item.is_dir())
             expanded = sum(max(0, int(item.file_size)) for item in members)
     except zipfile.BadZipFile as exc:
         raise UpdateApplyError("update package is not a valid zip file") from exc
     if expanded > ZIP_MAX_EXPANDED_BYTES:
         raise UpdateApplyError("update package expanded size exceeds limit")
-    return expanded
+    return files, expanded
 
 
 def _check_disk_space(
@@ -431,7 +456,184 @@ def _check_disk_space(
         )
 
 
-def _safe_extract_zip(package_path: Path, extract_dir: Path) -> None:
+@dataclass(frozen=True)
+class ExtractStats:
+    files: int
+    bytes: int
+
+
+def _zip_member_parts(name: str) -> tuple[str, ...]:
+    """条目名 → 解压目录下的相对路径各段，与 ``ZipFile.extract`` 的落点一致。
+
+    照抄 CPython ``ZipFile._extract_member`` 的规整：去盘符、去空段 / ``.`` / ``..``，
+    Windows 上把 ``:<>|"?*`` 换成 ``_``、去掉各段结尾的点和空格（不换的话 ``a:b`` 会写成
+    ``a`` 的备用数据流）。越界与符号链接在这之前已按原始条目名拒掉。
+    """
+
+    arcname = name.replace("/", os.path.sep)
+    if os.path.altsep:
+        arcname = arcname.replace(os.path.altsep, os.path.sep)
+    arcname = os.path.splitdrive(arcname)[1]
+    parts = [
+        part
+        for part in arcname.split(os.path.sep)
+        if part not in ("", os.path.curdir, os.path.pardir)
+    ]
+    if os.path.sep == "\\":
+        parts = [
+            part.translate(_WINDOWS_ILLEGAL_NAME_TABLE).rstrip(" .") for part in parts
+        ]
+        parts = [part for part in parts if part]
+    return tuple(parts)
+
+
+_WINDOWS_ILLEGAL_NAME_TABLE = str.maketrans(':<>|"?*', "_" * 7)
+
+
+class _ExtractProgress:
+    """解压进度的上报节流：约每 2% 的文件（最密每 50 个）或每 8 MB 报一次，首尾必报。"""
+
+    def __init__(
+        self,
+        callback: Callable[[dict[str, Any]], None] | None,
+        total_files: int,
+        total_bytes: int,
+    ) -> None:
+        self._callback = callback
+        self._total_files = total_files
+        self._total_bytes = total_bytes
+        self._step = _apply_progress_step(total_files)
+        self.files = 0
+        self.bytes = 0
+        self._reported: tuple[int, int] | None = None
+
+    def add_bytes(self, count: int) -> None:
+        self.bytes += count
+        if self._reported is None or (
+            self.bytes - self._reported[1] >= EXTRACT_PROGRESS_STEP_BYTES
+        ):
+            self.report()
+
+    def file_done(self) -> None:
+        self.files += 1
+        if self._reported is None or self.files - self._reported[0] >= self._step:
+            self.report()
+
+    def report(self, *, force: bool = False) -> None:
+        current = (self.files, self.bytes)
+        if self._callback is None or (not force and current == self._reported):
+            return
+        self._reported = current
+        try:
+            self._callback(
+                {
+                    "extractedFiles": self.files,
+                    "extractTotalFiles": self._total_files,
+                    "extractedBytes": self.bytes,
+                    "extractTotalBytes": self._total_bytes,
+                }
+            )
+        except Exception:
+            logger.warning("MaaFW 更新解压进度回调失败", exc_info=True)
+
+
+class _EntryBoundary:
+    """条目名是否落在解压目录内：与旧实现 ``is_within((extract_dir / name).resolve(),
+    extract_dir)`` 判定一致，但不碰文件系统。
+
+    旧实现对每个条目 ``resolve()``，Windows 上每次都要 ``GetFinalPathNameByHandle`` 探盘，
+    实测 1.2 万个条目要 25 s，是整段解压的大头，而且期间不可取消。检查时解压目录是刚建的
+    空目录，``resolve()`` 对它下面的路径只做到「解压目录的真实路径 + 按字面 normpath 的尾巴」，
+    所以把解压目录解析一次、其余按 ``ntpath`` 纯运算即可。
+
+    例外是带冒号的名字：``a:b`` / ``sub/f:g.txt`` 这类会被当成盘符或备用数据流，``resolve``
+    的结果取决于解压目录在哪个盘、系统怎么解析这个名字（同盘的 ``c:x`` 放行、``sub/f:g.txt``
+    拒绝），纯运算复现不了。发行包里不会有这种名字，遇到就逐条走原来的 ``resolve`` 判定，
+    结果与旧实现逐条相同。
+    """
+
+    def __init__(self, extract_dir: Path) -> None:
+        self._extract_dir = extract_dir
+        root = str(extract_dir.resolve(strict=False))
+        self._root = root
+        self._key = os.path.normcase(root)
+        self._prefix = self._key.rstrip(os.sep) + os.sep
+
+    def contains(self, name: str) -> bool:
+        if ":" in name:
+            return is_within((self._extract_dir / name).resolve(), self._extract_dir)
+        candidate = os.path.normcase(os.path.normpath(os.path.join(self._root, name)))
+        return candidate == self._key or candidate.startswith(self._prefix)
+
+
+# 条目检查每这么多条查一次取消；检查超过这么久就先告诉用户在干什么。
+_ENTRY_CHECK_CANCEL_EVERY = 500
+_ENTRY_CHECK_NOTICE_SECONDS = 1.0
+
+
+def _plan_zip_extraction(
+    members: list[zipfile.ZipInfo],
+    extract_dir: Path,
+    *,
+    check_cancel: Callable[[], None] | None = None,
+    send_log: Callable[[str], None] | None = None,
+    clock: Callable[[], float] = time.monotonic,
+) -> list[tuple[zipfile.ZipInfo, Path | None]]:
+    """写盘之前对全部条目做安全检查（越界路径、符号链接、空文件名），返回各条目的落点。"""
+
+    boundary = _EntryBoundary(extract_dir)
+    started = clock()
+    noticed = False
+    plan: list[tuple[zipfile.ZipInfo, Path | None]] = []
+    for index, member in enumerate(members):
+        if index % _ENTRY_CHECK_CANCEL_EVERY == 0 and index:
+            if check_cancel is not None:
+                check_cancel()
+            if (
+                not noticed
+                and send_log is not None
+                and clock() - started > _ENTRY_CHECK_NOTICE_SECONDS
+            ):
+                noticed = True
+                send_log(f"正在校验更新包条目（{index}/{len(members)}）")
+        if not boundary.contains(member.filename):
+            raise UpdateApplyError(
+                f"update package contains unsafe path: {member.filename}"
+            )
+        mode = (member.external_attr >> 16) & 0o170000
+        if mode == 0o120000:
+            raise UpdateApplyError(
+                f"update package contains symlink: {member.filename}"
+            )
+        parts = _zip_member_parts(member.filename)
+        if not parts and not member.is_dir():
+            raise UpdateApplyError(
+                f"update package contains unsafe path: {member.filename}"
+            )
+        plan.append((member, extract_dir.joinpath(*parts) if parts else None))
+    return plan
+
+
+def _safe_extract_zip(
+    package_path: Path,
+    extract_dir: Path,
+    *,
+    progress: Callable[[dict[str, Any]], None] | None = None,
+    check_cancel: Callable[[], None] | None = None,
+    send_log: Callable[[str], None] | None = None,
+) -> ExtractStats:
+    """逐条目解压：先对全部条目做完安全检查（纯路径运算，见 :class:`_EntryBoundary`），
+    再一条一条写。
+
+    ``check_cancel``（它自己抛调用方的取消异常）在检查阶段每 500 个条目、写盘阶段每个条目
+    之间与大文件的每 1 MB 之间各调一次：停止在下一个检查点生效，最长等一个 1 MB 块或
+    500 个条目的检查（本机实测 1.2 万条目的检查整段约 0.1 s），不再等 ``extractall`` 整包
+    写完。之后删半截解压目录的耗时随已写出的文件数增长，由调用方在工作线程里做。
+    ``progress`` 收到 ``extractedFiles`` / ``extractTotalFiles`` / ``extractedBytes`` /
+    ``extractTotalBytes``（总字节是 zip 里声明的展开大小），已按 :class:`_ExtractProgress`
+    节流。
+    """
+
     try:
         with zipfile.ZipFile(package_path, "r") as archive:
             members = archive.infolist()
@@ -442,18 +644,35 @@ def _safe_extract_zip(package_path: Path, extract_dir: Path) -> None:
             expanded = sum(max(0, int(item.file_size)) for item in members)
             if expanded > ZIP_MAX_EXPANDED_BYTES:
                 raise UpdateApplyError("update package expanded size exceeds limit")
-            for member in members:
-                target = (extract_dir / member.filename).resolve()
-                if not is_within(target, extract_dir):
-                    raise UpdateApplyError(
-                        f"update package contains unsafe path: {member.filename}"
-                    )
-                mode = (member.external_attr >> 16) & 0o170000
-                if mode == 0o120000:
-                    raise UpdateApplyError(
-                        f"update package contains symlink: {member.filename}"
-                    )
-            archive.extractall(extract_dir)
+            plan = _plan_zip_extraction(
+                members, extract_dir, check_cancel=check_cancel, send_log=send_log
+            )
+
+            reporter = _ExtractProgress(
+                progress, sum(1 for item in members if not item.is_dir()), expanded
+            )
+            reporter.report(force=True)
+            for member, target in plan:
+                if check_cancel is not None:
+                    check_cancel()
+                if target is None:
+                    continue
+                if member.is_dir():
+                    target.mkdir(parents=True, exist_ok=True)
+                    continue
+                target.parent.mkdir(parents=True, exist_ok=True)
+                with archive.open(member) as source, open(target, "wb") as sink:
+                    while True:
+                        chunk = source.read(EXTRACT_CHUNK_BYTES)
+                        if not chunk:
+                            break
+                        sink.write(chunk)
+                        reporter.add_bytes(len(chunk))
+                        if check_cancel is not None:
+                            check_cancel()
+                reporter.file_done()
+            reporter.report()
+            return ExtractStats(files=reporter.files, bytes=reporter.bytes)
     except zipfile.BadZipFile as exc:
         raise UpdateApplyError("update package is not a valid zip file") from exc
 

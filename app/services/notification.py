@@ -46,9 +46,9 @@ from app.models.notification import (
     DEFAULT_WEBHOOK_TEMPLATE,
     NOTIFICATION_HTML_IMAGE_SOURCE_PATTERN,
     NOTIFICATION_IMAGE_URI_PATTERN,
-    NotificationImage,
     WECOM_ROBOT_HOST,
     WECOM_ROBOT_PATH,
+    NotificationImage,
     WebhookTargetSnapshot,
 )
 from app.utils import LazyProxy, get_logger, resource_path
@@ -410,7 +410,13 @@ class Notification:
         )
         logger.success(f"中国移动5G短信通知已提交: {title}")
 
-    async def send_openclaw_qq(self, title: str, content: str) -> None:
+    async def send_openclaw_qq(
+        self,
+        title: str,
+        content: str,
+        *,
+        images: Sequence[NotificationImage] = (),
+    ) -> None:
         """通过 QQ 官方机器人通道推送通知。
 
         登录凭据由扫码登录管理器维护，通知层不读取或暴露协议细节；长文本
@@ -419,6 +425,7 @@ class Notification:
         Args:
             title: 通知标题。
             content: 已渲染的通知正文。
+            images: 随通知发送的图片资源。
 
         Raises:
             ValueError: 尚未绑定 QQ 官方机器人时抛出。
@@ -426,7 +433,7 @@ class Notification:
         """
         from app.services.openclaw_qq import openclaw_qq_manager
 
-        await openclaw_qq_manager.send(title=title, content=content)
+        await openclaw_qq_manager.send(title=title, content=content, images=images)
 
     async def WebhookPush(
         self,

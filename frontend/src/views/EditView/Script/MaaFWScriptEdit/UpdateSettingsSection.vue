@@ -225,47 +225,34 @@ import {
   LoadingOutlined,
   QuestionCircleOutlined,
 } from '@ant-design/icons-vue'
-import type { MaaFWUpdateResult } from '@/composables/useMaaFWUpdateApi'
 import {
   resolveCdkExpiry,
   resolveCdkWarning,
   type MaaFWAutoUpdateMode,
 } from '@/composables/useMaaFWProjectUpdate'
-import type { MaaFWInterfacePreviewData, MaaFWScriptConfig } from '@/types/script'
 import { handleExternalLink } from '@/utils/openExternal'
 import {
   formatAppliedFiles,
   formatDownloadSize,
   formatDownloadSpeed,
+  formatExtractedFiles,
+  formatExtractedSize,
   progressBarPercent,
   type MaaFWUpdateProgressPhase,
-  type MaaFWUpdateProgressState,
 } from './updateProgress'
+import type {
+  MaaFWScriptUpdateSectionEmits,
+  MaaFWScriptUpdateSectionProps,
+} from '../../MaaFWFlavor/sectionContracts'
 
 const MIRRORCHYAN_CDK_URL = 'https://mirrorchyan.com?source=automas_script_update'
 
 const { t } = useI18n()
 
-const props = defineProps<{
-  maafwConfig: MaaFWScriptConfig
-  previewData: MaaFWInterfacePreviewData | null
-  isAutoUpdateDisabled: boolean
-  updateChecking: boolean
-  updateApplying: boolean
-  updateError: string
-  updateResult: MaaFWUpdateResult | null
-  updateProgress: MaaFWUpdateProgressState
-  /** 本次进入页面时 CDK 是从 MAS 更新设置里自动填入的 */
-  cdkPrefilled: boolean
-  updateSourceOptions: Array<{ label: string; value: string }>
-  updateChannelOptions: Array<{ label: string; value: string }>
-}>()
+// props / 事件的契约在 sectionContracts（特调替换这个分节时按同一份契约接收）
+const props = defineProps<MaaFWScriptUpdateSectionProps>()
 
-const emit = defineEmits<{
-  change: [category: keyof MaaFWScriptConfig, key: string, value: unknown]
-  'check-update': []
-  'apply-update': []
-}>()
+const emit = defineEmits<MaaFWScriptUpdateSectionEmits>()
 
 const autoUpdateModeOptions = computed<Array<{ label: string; value: MaaFWAutoUpdateMode }>>(() => [
   { label: t('edit.autoUpdateModeOff'), value: 'Off' },
@@ -319,6 +306,7 @@ const cdkExpiryMessage = computed(() => {
 const PHASE_LABEL_KEYS: Record<Exclude<MaaFWUpdateProgressPhase, 'idle'>, string> = {
   checking: 'edit.updatePhaseChecking',
   downloading: 'edit.updatePhaseDownloading',
+  extracting: 'edit.updatePhaseExtracting',
   preparing: 'edit.updatePhasePreparing',
   applying: 'edit.updatePhaseApplying',
   validating: 'edit.updatePhaseValidating',
@@ -342,12 +330,21 @@ const summaryTone = computed<'running' | 'success' | 'failed'>(() => {
   return 'running'
 })
 
-// 下载阶段给「已下 / 总量 · 速度」，覆盖阶段给「n/m 个文件」，其余阶段给后端那句描述。
+// 下载阶段给「已下 / 总量 · 速度」，解压阶段给「n/m 个文件 · 已解压 / 总量」，覆盖阶段给
+// 「n/m 个文件」，其余阶段给后端那句描述。
 const summaryDetail = computed(() => {
   const state = props.updateProgress
   if (state.phase === 'downloading') {
     const parts = [formatDownloadSize(state), formatDownloadSpeed(state)].filter(Boolean)
     return parts.join('  ·  ')
+  }
+  if (state.phase === 'extracting') {
+    const files = formatExtractedFiles(state)
+    const parts = [
+      files ? t('edit.updateFilesApplied', { files }) : '',
+      formatExtractedSize(state),
+    ].filter(Boolean)
+    return parts.length ? parts.join('  ·  ') : state.message
   }
   if (state.phase === 'applying') {
     const files = formatAppliedFiles(state)

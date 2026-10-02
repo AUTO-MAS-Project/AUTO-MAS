@@ -367,7 +367,9 @@ class HSRManager(TaskExecuteBase):
                 formatted = f"[{now_text}] {line}"
                 self._log_lines.append(formatted)
         if len(self._log_lines) > max_lines:
+            dropped_lines = len(self._log_lines) - max_lines
             del self._log_lines[:-max_lines]
+            self.script_info.log_first_line += dropped_lines
         self.script_info.log = "\n".join(self._log_lines)
 
     async def _stop_external_processes(self) -> None:

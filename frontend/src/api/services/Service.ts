@@ -87,6 +87,7 @@ import type { MaaFWShellInstancesIn } from '../models/MaaFWShellInstancesIn';
 import type { MaaFWShellInstancesOut } from '../models/MaaFWShellInstancesOut';
 import type { NoticeOut } from '../models/NoticeOut';
 import type { NotifyChannelsOut } from '../models/NotifyChannelsOut';
+import type { OkwwClientPathOut } from '../models/OkwwClientPathOut';
 import type { OutBase } from '../models/OutBase';
 import type { PatternDebugIn } from '../models/PatternDebugIn';
 import type { PatternDebugOut } from '../models/PatternDebugOut';
@@ -560,6 +561,29 @@ export class Service {
             url: '/api/scripts/update',
             body: requestBody,
             mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 解码鸣潮启动器，返回客户端 exe 路径
+     * 解码鸣潮启动器记录，返回客户端 exe 完整路径（仅直启模式的前端展示用）。
+     *
+     * 任务期的启动与自动更新链路由后端自行解码，不经过本端点。
+     * @param scriptId
+     * @returns OkwwClientPathOut Successful Response
+     * @throws ApiError
+     */
+    public static getOkwwClientPathApiApiScriptsOkwwClientPathGet(
+        scriptId: string,
+    ): CancelablePromise<OkwwClientPathOut> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/scripts/okww/client-path',
+            query: {
+                'scriptId': scriptId,
+            },
             errors: {
                 422: `Validation Error`,
             },

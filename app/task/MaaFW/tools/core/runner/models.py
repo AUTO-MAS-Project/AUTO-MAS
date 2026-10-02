@@ -9,6 +9,8 @@ from app.task.MaaFW.tools.core.agent_env.models import (
 )
 
 MaaFWControllerType = Literal["Adb", "Win32"]
+# 项目节点 attach.auto_mas 声明的联动信号（见 run_signal.py）
+MaaFWRunSignal = Literal["server_maintenance", "client_update_required"]
 
 
 class MaaFWResolvedPath(BaseModel):
@@ -117,6 +119,10 @@ class MaaFWRunResult(BaseModel):
     # 到了 runDeadlineAt 由 worker 自己停下来的：宿主据此在重试前重启游戏/模拟器。
     # 和 errorMessage 分开放，宿主不必靠匹配文案判断。
     timedOut: bool = False
+    # 项目声明的信号节点命中（停服维护 / 需要更新客户端），worker 已主动停下、跳过本轮剩余
+    # 任务。与 timedOut 同理单独成字段，宿主据此分流，不靠文案判断。
+    signal: MaaFWRunSignal | None = None
+    signalNode: str | None = None
 
 
 class MaaFWRunnerJobPayload(BaseModel):

@@ -21,7 +21,7 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any
 
@@ -37,10 +37,13 @@ from app.task.MaaFW.api_service.common import (
     maafw_script_config,
 )
 from app.task.MaaFW.api_service.embedded import embedded_summary_lines
+from app.task.MaaFW.tools.core.agent_env.env import DETAIL_LOG_PREFIX
 from app.task.MaaFW.tools.core.interface.loader import (
     MaaFWInterfaceLoadError,
     load_interface_model_cached,
 )
+from app.task.MaaFW.tools.core.log_redact import mask_home_path
+from app.task.MaaFW.tools.core.project_update.state import redact_text
 from app.task.MaaFW.tools.embedded.update_credentials import (
     resolve_update_proxy_url,
 )
@@ -97,6 +100,29 @@ def _maafw_agent_env_prepare_data(
         previouslyPrepared=previously_prepared,
         preparedAt=result.get("preparedAt"),
     )
+
+
+def _warn_agent_imports(
+    root_path: Path, result: Mapping[str, Any], log: Callable[[str], None]
+) -> None:
+    """按准备结果里的 agent 计划做导入静态检查，结论只进日志；检查失败静默放行。"""
+
+    try:
+        from app.task.MaaFW.tools.core.agent_env.import_check import (
+            check_agent_plan_imports,
+            log_agent_import_reports,
+        )
+        from app.task.MaaFW.tools.core.agent_env.models import MaaFWAgentCommandPlan
+
+        agents = result.get("agents") or {}
+        plans = [
+            MaaFWAgentCommandPlan.model_validate(item)
+            for item in (agents.get("plans") or [])
+        ]
+        reports = check_agent_plan_imports(root_path, plans)
+        log_agent_import_reports(reports, log, blocking=False)
+    except Exception as exc:  # noqa: BLE001 - 提示性检查，出错不影响准备结果
+        _maafw_env_logger.warning(f"agent 导入检查没能完成：{exc}")
 
 
 async def prepare_agent_env(
@@ -161,6 +187,16 @@ async def prepare_agent_env(
         )
 
     def append_log(line: str) -> None:
+        if str(line).startswith(DETAIL_LOG_PREFIX):
+            # 详情行（健康检查的完整 traceback）只进后端日志，不进面板
+            _maafw_env_logger.info(sanitize_log_message(str(line)))
+            return
+        # 成功路径以前只回给面板，用户发来的日志包里看不到准备过程（回退说明、隔离
+        # venv、导入检查）：与手动更新同一口径，打码后也进 app.log（用户目录换成 <HOME>、
+        # URL 去掉查询串；面板上照旧是原文）。
+        _maafw_env_logger.info(
+            mask_home_path(redact_text(sanitize_log_message(str(line))))
+        )
         logs.append(line)
         publish_progress(
             {
@@ -281,6 +317,9 @@ async def prepare_agent_env(
                 f"MFW 运行环境准备失败: {exc}",
                 MaaFWAgentEnvPrepareData(path=str(root_path), logs=logs),
             )
+        # 导入 / 重新准备后顺带查一次 agent 的导入：这里只提示、不挡（同一个检查在
+        # 更新预检里会拒绝缺模块的新版本）。
+        await asyncio.to_thread(_warn_agent_imports, root_path, result, append_log)
         # 用准备流程自己回报的指纹：它在准备前后各算了一次，确认这期间项目文件
         # 没被动过；本地这份只在它没回报时兜底。
         # 写在项目锁内：写完才放行下一个准备/更新请求，免得它读到半份缓存。

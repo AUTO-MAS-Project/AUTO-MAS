@@ -34,8 +34,9 @@ from app.models.config import MaaEndConfig, MaaEndUserConfig
 from app.models.ConfigBase import MultipleConfig
 from app.models.emulator import DeviceBase, DeviceInfo
 from app.models.schema import WSTaskNoticeData
-from app.models.task import LogRecord, ScriptItem, TaskExecuteBase
+from app.models.task import LogRecord, ScriptItem
 from app.services import Notify, System
+from app.task.base import ScriptAutoProxyBase
 from app.task.emulator_core import close_emulator
 from app.task.general.tools import execute_script_task
 from app.task.proxy_helpers import append_push_log
@@ -72,6 +73,7 @@ from .resource_loader import (
 from .ScriptConfig import maaend_config_mode, maaend_mas_config_dir
 from .tools import push_notification, replace_account_switch_task
 from .tools.backup_archive import archive_mas_runtime_backup, read_overlay_values
+from .update_takeover import snapshot_mxu_logs, update_maaend_after_stage
 
 logger = get_logger("MaaEnd 自动代理")
 
@@ -272,7 +274,7 @@ def _configure_game_pre_action(
     instance["preActions"] = pre_actions
 
 
-class AutoProxyTask(TaskExecuteBase):
+class AutoProxyTask(ScriptAutoProxyBase):
     """MaaEnd 自动代理模式"""
 
     def __init__(
@@ -299,6 +301,7 @@ class AutoProxyTask(TaskExecuteBase):
         self.account_switch_task_name = ""
         self.color_match_failed_message: str | None = None
         self.retryable = True
+        self.update_failed: bool = False
         # 用户级「节点详情推送」开关（Notify.PushLogMode），prepare 时按配置启用
         self.push_log_enabled = False
         self.mode = "Routine"
@@ -427,12 +430,11 @@ class AutoProxyTask(TaskExecuteBase):
         )
 
     def _daily_once_task_names(self) -> set[str]:
+        # 独立送货、采集阶段固定每日一次，日常任务仍由用户选择。
         return {
-            task_name
-            for task_name in _load_json_list(
-                self.cur_user_config.get("Task", "DailyOnceTasks")
-            )
-            if task_name != MAAEND_AUTO_COLLECT_TASK
+            MAAEND_DELIVERY_TASK,
+            MAAEND_AUTO_COLLECT_TASK,
+            *_load_json_list(self.cur_user_config.get("Task", "DailyOnceTasks")),
         }
 
     def _daily_task_records(self) -> dict[str, str]:
@@ -564,23 +566,28 @@ class AutoProxyTask(TaskExecuteBase):
             return
 
         self._prepare_auto_collect_routes()
+        await self._refresh_stage_plan(list(MAAEND_RUN_MOOD_BOOK))
 
+    async def _refresh_stage_plan(self, modes: list[str]) -> None:
+        """重新评估指定的未完成阶段，保留已执行首阶段的前置任务身份。"""
+        first_run_completed = (
+            self.first_run_mode is not None and self.run_book[self.first_run_mode]
+        )
         mode_skip_reasons: dict[str, str] = {}
         missing_task_modes: list[str] = []
-        for mode in MAAEND_RUN_MOOD_BOOK:
+        for mode in modes:
             reason, missing_task = self._mode_skip_reason(mode)
+            self.run_book[mode] = reason is not None
             if reason is None:
                 continue
             mode_skip_reasons[mode] = reason
             if missing_task:
                 missing_task_modes.append(mode)
-        self.first_run_mode = next(
-            (mode for mode in MAAEND_RUN_MOOD_BOOK if mode not in mode_skip_reasons),
-            None,
-        )
-        self.run_book = {
-            mode: mode in mode_skip_reasons for mode in MAAEND_RUN_MOOD_BOOK
-        }
+        if not first_run_completed:
+            self.first_run_mode = next(
+                (mode for mode in MAAEND_RUN_MOOD_BOOK if not self.run_book[mode]),
+                None,
+            )
         for mode, reason in mode_skip_reasons.items():
             logger.info(
                 f"用户 {self.cur_user_item.name} 跳过{MAAEND_RUN_MOOD_BOOK[mode]}阶段: {reason}"
@@ -649,7 +656,13 @@ class AutoProxyTask(TaskExecuteBase):
             return None
         result = [task for task in tasks if isinstance(task, dict)]
         self._drop_removed_medication_task(result)
-        return result
+        # 配置副本可能仍保留新版已移除的任务，阶段计划按当前 PI 声明判断。
+        return [
+            task
+            for task in result
+            if str(task.get("taskName", "")).startswith("__MXU_")
+            or self._maaend_task_supported(str(task.get("taskName", ""))) is not False
+        ]
 
     def _quick_config_mode_skip_reason(self, mode: str) -> tuple[str | None, bool]:
         """快速配置下按 MAS 任务开关与 MaaEnd 配置判断阶段是否可执行。"""
@@ -697,9 +710,13 @@ class AutoProxyTask(TaskExecuteBase):
                     if sanity_task_key["SanityTaskType"] == "Essence"
                     else "ProtocolSpace"
                 )
-                if not any(
-                    str(task.get("taskName", "")) == target_sanity_task_name
-                    for task in tasks
+                if (
+                    not any(
+                        str(task.get("taskName", "")) == target_sanity_task_name
+                        for task in tasks
+                    )
+                    and self._maaend_task_supported(target_sanity_task_name)
+                    is not False
                 ):
                     return None, False
 
@@ -739,13 +756,14 @@ class AutoProxyTask(TaskExecuteBase):
                     return None, False
             return "MaaEnd 配置中没有可执行的日常任务", False
 
+        if self._daily_once_task_done(task_name):
+            return f"{task_label}任务今日已完成", False
+
         tasks = self._source_maaend_tasks()
         if tasks is None:
             return None, False
         if not any(str(task.get("taskName", "")) == task_name for task in tasks):
             return f"MaaEnd 配置中不存在{task_label}任务", True
-        if mode == "Delivery" and self._daily_once_task_done(task_name):
-            return f"{task_label}任务今日已完成", False
         return None, False
 
     def _mode_skip_reason(self, mode: str) -> tuple[str | None, bool]:
@@ -805,6 +823,53 @@ class AutoProxyTask(TaskExecuteBase):
             result_task.cancel()
             await asyncio.gather(exit_task, result_task, return_exceptions=True)
             await self.maaend_log_monitor.stop()
+
+    async def _update_after_first_stage(self, log_offsets: dict[Path, int]) -> None:
+        """按首阶段的下载记录更新，独立记录结果并保留已完成任务。"""
+        root_path = self.maaend_exe_path.parent
+        update_log: LogRecord | None = None
+
+        def update_status(message: str) -> None:
+            nonlocal update_log
+            if update_log is None:
+                update_log = LogRecord(phase="Update", status="MaaEnd 正在更新")
+                self.cur_user_item.log_record[datetime.now()] = update_log
+            update_log.content.append(message + "\n")
+            self.script_info.log = message
+
+        try:
+            version = await update_maaend_after_stage(
+                root_path,
+                log_offsets,
+                process=self.maaend_process_manager.process,
+                on_status=update_status,
+            )
+            if version is not None:
+                await asyncio.to_thread(
+                    MaaEndResourceLoader.get_cached,
+                    root_path,
+                    force_reload=True,
+                )
+                self._source_tasks_cache = None
+                self._prepare_auto_collect_routes()
+                modes = list(MAAEND_RUN_MOOD_BOOK)
+                next_index = modes.index(self.mode) + int(self.run_book[self.mode])
+                await self._refresh_stage_plan(modes[next_index:])
+                self.task_dict = None
+            if update_log is not None:
+                update_log.status = "Success!" if version is not None else "跳过更新"
+        except asyncio.CancelledError:
+            self.update_failed = True
+            if update_log is not None:
+                update_log.status = "MaaEnd 更新被中止"
+            raise
+        except Exception as error:
+            self.update_failed = True
+            message = f"MaaEnd 更新失败，已停止后续任务: {error}"
+            update_status(message)
+            if update_log is not None:
+                update_log.status = message
+            raise
 
     async def main_task(self):
         """自动代理模式主逻辑"""
@@ -968,6 +1033,12 @@ class AutoProxyTask(TaskExecuteBase):
                 break
 
             logger.info(f"运行脚本任务: {self.maaend_exe_path}")
+            # 下载与首阶段任务并行，阶段结束后才按需插入更新。
+            update_log_offsets = None
+            if self.mode == self.first_run_mode:
+                update_log_offsets = await asyncio.to_thread(
+                    snapshot_mxu_logs, self.maaend_exe_path.parent
+                )
             self.wait_event.clear()
             await self.maaend_process_manager.open_process(
                 self.maaend_exe_path,
@@ -987,8 +1058,13 @@ class AutoProxyTask(TaskExecuteBase):
             await asyncio.sleep(1)
             await self._wait_maaend_stage()
 
+            # 先保存首阶段结果，更新失败或取消不能抹掉已经完成的任务。
             if self.cur_user_log.status == "Success!":
                 self.run_book[self.mode] = True
+            if update_log_offsets is not None:
+                await self._update_after_first_stage(update_log_offsets)
+
+            if self.cur_user_log.status == "Success!":
                 self.script_info.log = (
                     f"检测到 MaaEnd 完成{stage_label}任务\n正在等待相关程序结束"
                 )
@@ -1744,6 +1820,9 @@ class AutoProxyTask(TaskExecuteBase):
         # 按本轮任务表写回 MaaEnd 运行配置
         for task in maaend_tasks:
             task_name_value = str(task.get("taskName"))
+            # 进程由 MAS 统一收尾，禁用 MXU 的结束进程任务。
+            if task_name_value == "__MXU_KILLPROC__":
+                task["enabled"] = False
             if task_name_value.startswith("__MXU_"):
                 continue
 
@@ -2035,10 +2114,11 @@ class AutoProxyTask(TaskExecuteBase):
         if self.check_result != "Pass":
             return
 
+        completed = all(self.run_book.values()) and not self.update_failed
         await self.maaend_log_monitor.stop()
         if (
             self.script_info.current_index == len(self.script_info.user_list) - 1
-            and all(self.run_book.values())
+            and completed
             and not self.script_config.get("Game", "CloseOnFinish")
         ):
             try:
@@ -2073,7 +2153,11 @@ class AutoProxyTask(TaskExecuteBase):
                 log_path,
                 log_item.content,
                 log_item.status,
-                phase_label=MAAEND_RUN_MOOD_BOOK.get(log_item.phase, ""),
+                phase_label=(
+                    "更新"
+                    if log_item.phase == "Update"
+                    else MAAEND_RUN_MOOD_BOOK.get(log_item.phase, "")
+                ),
             )
             user_logs_list.append(log_path.with_suffix(".json"))
             stage_log_paths.append(log_path.with_suffix(".log"))
@@ -2104,12 +2188,10 @@ class AutoProxyTask(TaskExecuteBase):
         statistics["start_time"] = self.user_start_time.strftime("%Y-%m-%d %H:%M:%S")
         statistics["end_time"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         statistics["user_result"] = (
-            "代理任务全部完成"
-            if all(self.run_book.values())
-            else self.cur_user_item.result
+            "代理任务全部完成" if completed else self.cur_user_item.result
         )
 
-        success_symbol = "√" if all(self.run_book.values()) else "X"
+        success_symbol = "√" if completed else "X"
 
         if user_logs_list:
             try:
@@ -2129,7 +2211,7 @@ class AutoProxyTask(TaskExecuteBase):
                     ),
                 )
 
-        if all(self.run_book.values()):
+        if completed:
             if (
                 self.cur_user_config.get("Data", "ProxyTimes") == 0
                 and self.cur_user_config.get("Info", "RemainedDay") != -1

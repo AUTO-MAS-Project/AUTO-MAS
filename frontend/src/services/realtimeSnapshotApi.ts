@@ -28,6 +28,8 @@ export interface TaskRuntimeSnapshotItem {
   log: string
   /** 上次推送的 seq；没有推送过时后端给 0 */
   logSeq?: number
+  /** 快照日志第一行在完整日志里的行号 */
+  logFirstLine?: number
 }
 
 export interface TaskRuntimeSnapshot {

@@ -8,6 +8,10 @@ export type GlobalConfig_Update = {
      */
     IfAutoUpdate?: (boolean | null);
     /**
+     * 暂停更新截止日期 YYYY-MM-DD，空字符串表示未暂停
+     */
+    PauseUntil?: (string | null);
+    /**
      * 更新源: GitHub源, Mirror酱源, 自建源, CNB 镜像源
      */
     Source?: ('GitHub' | 'MirrorChyan' | 'AutoSite' | 'CNB' | null);

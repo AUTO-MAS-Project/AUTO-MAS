@@ -23,7 +23,7 @@ from dataclasses import dataclass
 from typing import Literal
 
 NotificationFormat = Literal["text", "markdown", "html"]
-ImagePresentation = Literal["html", "markdown", "base64"]
+ImagePresentation = Literal["html", "markdown", "base64", "rich_media"]
 SummaryPolicy = Literal["never", "preferred", "if_over_limit"]
 BodyTitlePolicy = Literal["never", "always", "when_title_missing"]
 

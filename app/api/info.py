@@ -38,12 +38,7 @@ from fastapi.responses import FileResponse, Response
 
 from app.core import Config
 from app.models.schema import *
-from app.tools.stella_activity import (
-    current_activity_name,
-    fetch_events,
-    fetch_official_banners,
-    match_official_banner,
-)
+from app.tools.stella_official import fetch_official_activities
 from app.utils import get_logger
 
 router = APIRouter(prefix="/api/info", tags=["信息获取"])
@@ -758,29 +753,24 @@ async def get_arknights_activity() -> InfoOut:
 @router.post(
     "/stella/activity",
     tags=["Get"],
-    summary="获取星塔旅人活动数据（StellaBase 中转）",
+    summary="获取星塔旅人活动数据（官网公告）",
     response_model=InfoOut,
     status_code=200,
 )
 async def get_stella_activity() -> InfoOut:
-    """取回星塔旅人的活动排期。
+    """取回星塔旅人的活动一览。
 
-    StellaBase 不放开跨域，浏览器直连拿不到数据，所以统一由后端中转——筛选与
-    格式转换仍由前端完成，与碧蓝档案那条链路一致。取数失败返回错误信封，由卡片
-    显示自己的失败态，不影响其它卡片。
-
-    顺带捎上国服官网的主推横幅（``official``）：StellaBase 的活动大图时有时无，
-    官网那张 795×510 的官方主视觉正好当封面兜底；官网挂了不影响排期本身。
-    其中与当前活动对得上号的那条会带 ``matched: true``，前端优先用它。
+    数据取自国服官网的活动公告：官网 CMS 不放开跨域、也认 Referer，所以由后端
+    取回并按公告正文里的开放时间整理成与其它游戏一致的形状。取数失败返回错误
+    信封，由卡片显示自己的失败态，不影响其它卡片。
 
     Returns:
-        InfoOut: 站点原始响应，另加 ``official`` 横幅列表；取不到排期时返回
-        ``code=500`` 的错误信封。
+        InfoOut: ``{"activities": [...]}``；取不到时返回 ``code=500`` 的错误信封。
     """
 
     try:
-        payload = await fetch_events()
-        if payload is None:
+        data = await fetch_official_activities()
+        if data is None:
             return InfoOut(
                 code=500,
                 status="error",
@@ -788,14 +778,7 @@ async def get_stella_activity() -> InfoOut:
                 data={},
             )
 
-        banners = await fetch_official_banners()
-        # 写副本：fetch_official_banners 给的是模块级缓存本体（TTL 30 分钟），
-        # 直接往上打 matched 会跨请求残留、多条累积，换活动后仍命中上一场的封面
-        official = [dict(item) for item in (banners or [])]
-        matched = match_official_banner(official, current_activity_name(payload))
-        if matched is not None:
-            matched["matched"] = True
-        return InfoOut(data={**payload, "official": official})
+        return InfoOut(data=data)
     except Exception as e:
         logger.opt(exception=True).warning(
             f"get_stella_activity失败: {type(e).__name__}: {e}"

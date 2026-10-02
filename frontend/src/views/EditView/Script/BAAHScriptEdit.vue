@@ -234,6 +234,10 @@
           <div class="section-header">
             <h3>{{ t('edit.runConfiguration') }}</h3>
           </div>
+          <ScriptHardTimeoutField
+            v-model:value="baahConfig.Run.HardTimeLimit"
+            @save="handleChange('Run', 'HardTimeLimit', baahConfig.Run.HardTimeLimit)"
+          />
           <a-row :gutter="24">
             <a-col :span="8">
               <a-form-item>
@@ -283,6 +287,7 @@
 </template>
 
 <script setup lang="ts">
+import ScriptHardTimeoutField from '@/views/EditView/Script/components/ScriptHardTimeoutField.vue'
 import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -330,6 +335,7 @@ interface BAAHScriptForm {
 }
 
 interface BAAHRunForm {
+  HardTimeLimit: number
   RunTimesLimit: number
   RunTimeLimit: number
 }
@@ -355,10 +361,7 @@ const getDefaultBAAHConfig = (): BAAHScriptConfigForm => ({
     IfManageConfig: true,
     PushLogEnabled: true,
   },
-  Run: {
-    RunTimesLimit: 2,
-    RunTimeLimit: 60,
-  },
+  Run: { HardTimeLimit: 120, RunTimesLimit: 2, RunTimeLimit: 60 },
   Emulator: {
     Id: '',
     Index: '',

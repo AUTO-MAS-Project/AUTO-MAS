@@ -43,8 +43,9 @@ from app.models.config import (
 from app.models.ConfigBase import MultipleConfig
 from app.models.emulator import DeviceBase, DeviceInfo
 from app.models.schema import WSTaskNoticeData
-from app.models.task import LogRecord, ScriptItem, TaskExecuteBase
+from app.models.task import LogRecord, ScriptItem
 from app.services import Notify, System
+from app.task.base import ScriptAutoProxyBase
 from app.task.emulator_core import close_emulator
 from app.task.general.tools import execute_script_task
 from app.task.proxy_helpers import (
@@ -68,10 +69,12 @@ from app.utils.constants import (
 )
 from app.utils.io import mark_native_config_injected, read_file, write_file
 
+from . import api_service as maa_api
 from .base_preset import maa_task_identity, seed_maa_base_config
 from .tools import (
     agree_bilibili,
     ensure_game_updated,
+    log_statistics,
     push_notification,
     update_maa,
 )
@@ -89,6 +92,7 @@ from .tools.cultivate import (
     parse_depot_payload,
     resolve_progression,
     summarize_achievements,
+    takeover_notice_patch_value,
 )
 
 # OLD: 旧版 MAA（PR #17392 前）gui.json 的 ClientType 字符串 → 新版枚举整数映射
@@ -551,12 +555,23 @@ def _find_task_source(
     name: str,
     task_type: str,
 ) -> dict | None:
-    """按 TaskType + Name 精确取得原生任务配置。"""
+    """按 TaskType + Name 匹配原生任务，必要时按同类型唯一项兜底。
+
+    MAA 原生任务允许使用空名称；多个同类型任务不能仅按类型区分，避免配置串用。
+    """
 
     identity = (task_type, name)
+    fallback = None
+    fallback_count = 0
     for task in task_queue:
-        if maa_task_identity(task) == identity:
+        task_identity = maa_task_identity(task)
+        if task_identity == identity:
             return deepcopy(task)
+        if task_identity is not None and task_identity[0] == task_type:
+            fallback = task
+            fallback_count += 1
+    if fallback_count == 1:
+        return deepcopy(fallback)
     return None
 
 
@@ -790,7 +805,7 @@ def _build_activity_priority_fight(
     return activity_fight
 
 
-class AutoProxyTask(TaskExecuteBase):
+class AutoProxyTask(ScriptAutoProxyBase):
     """自动代理模式"""
 
     # 养成采集状态：prepare() 每轮重置；类级默认保证未跑 prepare 的
@@ -879,6 +894,8 @@ class AutoProxyTask(TaskExecuteBase):
         # 上一轮是否真的被养成接管抑制过库存保持：只有抑制过才在下一轮
         # 恢复开关值，否则会把已完成的库存保持重新点亮、重试轮整个重跑
         self._depot_maintain_suppressed = False
+        # 已提示过的「找不到原生任务」：重试轮每次都重新合成队列，同一条只提示一次
+        self._missing_task_source_warned: set[str] = set()
 
         self.maa_root_path = Path(self.script_config.get("Info", "Path"))
         self.maa_set_path = self.maa_root_path / "config"
@@ -1058,6 +1075,15 @@ class AutoProxyTask(TaskExecuteBase):
 
                 await self.set_maa(emulator_info)
 
+                # 本轮 MAA 的日志从启动前的文件末尾开始读：gui.log 追加写且跨
+                # 运行保留，历史内容里带完成/失败标志的旧行（时间戳闸门分辨不出
+                # 它们的「未来」时间戳）会被整段当成本轮日志，MAA 刚启动就被判
+                # 失败，随后反复重启模拟器（#19）。
+                log_offset = (
+                    self.maa_log_path.stat().st_size
+                    if self.maa_log_path.is_file()
+                    else 0
+                )
                 logger.info(f"启动MAA进程: {self.maa_exe_path}")
                 self.wait_event.clear()
                 await self.maa_process_manager.open_process(self.maa_exe_path)
@@ -1071,7 +1097,9 @@ class AutoProxyTask(TaskExecuteBase):
                     f"running={await self.maa_process_manager.is_running()}"
                 )
                 await self.maa_log_monitor.start_monitor_file(
-                    self._resolve_log_file_path, self.log_start_time
+                    self._resolve_log_file_path,
+                    self.log_start_time,
+                    initial_offset=log_offset,
                 )
                 await self.wait_event.wait()
                 await self.maa_log_monitor.stop()
@@ -1206,7 +1234,7 @@ class AutoProxyTask(TaskExecuteBase):
                 return
             # 森空岛快照走 TTL 缓存（force=False）：注入时刚强刷过，运行末
             # 复用当轮观测即可；缓存过期才再拉一次（决策 38）
-            skland = await Config.get_maa_cultivate_skland_progression(
+            skland = await maa_api.get_cultivate_skland_progression(
                 str(self.script_info.script_id), str(self.cur_user_uid)
             )
             context = ProviderContext(
@@ -1228,6 +1256,10 @@ class AutoProxyTask(TaskExecuteBase):
                     "CultivateTargets",
                     json.dumps(dump_cultivate_targets(updated), ensure_ascii=False),
                 )
+                # 最后一个目标达成被移除后目标清空：接管已不可能，残留的接管
+                # 提示要一并清掉——这条路不经过用户配置写入漏斗
+                if not updated:
+                    await self._set_cultivate_notice("")
                 removed = summarize_achievements(
                     targets, achievements, load_oper_box_names(context)
                 )
@@ -1259,24 +1291,28 @@ class AutoProxyTask(TaskExecuteBase):
             (养成任务配置, 是否存在原始目标, 是否接管抑制库存保持)
         """
 
-        if not self.cur_user_config.get("Task", "IfCultivate"):
-            await self._set_cultivate_notice("")
-            return None, False, False
+        # 早退判定与配置写入漏斗共用同一口径函数：notice 非 None 即「开关关闭
+        # 或无有效目标」，本轮不可能接管——恢复 dev 原有的开关早退，防止关掉
+        # 养成后仍按残留目标注入并抑制库存保持
+        raw_targets: object
         try:
             raw_targets = json.loads(
                 self.cur_user_config.get("Task", "CultivateTargets")
             )
         except (TypeError, ValueError):
             raw_targets = []
-        targets = parse_cultivate_targets(raw_targets)
-        if not targets:
-            await self._set_cultivate_notice("")
+        notice = takeover_notice_patch_value(
+            self.cur_user_config.get("Task", "IfCultivate"), raw_targets
+        )
+        if notice is not None:
+            await self._set_cultivate_notice(notice)
             return None, False, False
+        targets = parse_cultivate_targets(raw_targets)
 
         try:
             # 森空岛练度注入前强刷（决策 38：注入前重新查询一次，滞后≈0）；
             # 未绑定/凭据失效/网络失败返回 None，链短路落 local，不炸注入
-            skland = await Config.get_maa_cultivate_skland_progression(
+            skland = await maa_api.get_cultivate_skland_progression(
                 str(self.script_info.script_id), str(self.cur_user_uid), force=True
             )
             (
@@ -1345,6 +1381,33 @@ class AutoProxyTask(TaskExecuteBase):
             "Task", "IfDepotMaintain"
         )
         self._depot_maintain_suppressed = False
+
+    async def _warn_missing_task_source(self, source_name: str, affected: str) -> None:
+        """提示 MAA 任务队列里认不出某个原生任务，受影响的任务将按默认值运行。
+
+        认不出有两种情况：队列里没有这类任务；或同类任务有多个、名字又都对不上，
+        按 ``_find_task_source`` 的约定不猜，免得串用别的任务的配置。
+
+        Args:
+            source_name: MAA 任务队列里认不出的任务名。
+            affected: 因此按默认值运行的任务，多个用顿号连接。
+        """
+
+        message = (
+            f"用户 {self.cur_user_item.name} 的 MAA 任务队列里认不出「{source_name}」"
+            f"任务（队列里没有，或有多个同类任务且名字都对不上），{affected}本次按"
+            f"默认设置运行，在 MAA 里为它设置的选项不会生效"
+        )
+        if message in self._missing_task_source_warned:
+            return
+        self._missing_task_source_warned.add(message)
+
+        logger.warning(message)
+        await Publisher.send(
+            id=self.task_info.task_id,
+            type=protocol.TASK_NOTICE,
+            data=WSTaskNoticeData(level="warning", message=message),
+        )
 
     async def set_maa(self, emulator_info: DeviceInfo):
         """配置MAA运行参数"""
@@ -1511,6 +1574,7 @@ class AutoProxyTask(TaskExecuteBase):
                 )
 
         # 优先按任务名称匹配，确保多个 Fight 任务各自继承原生高级配置。
+        missing_sources: set[str] = set()
         for en_task, zh_task in zip(MAA_TASKS, MAA_TASKS_ZH):
             # 默认关闭时不写入新任务，兼容尚未支持该任务类型的 MAA 版本
             # （库存保持、更换主题；更换主题需 MAA v6.17.3+，旧版无法反序列化未知任务类型）
@@ -1520,11 +1584,10 @@ class AutoProxyTask(TaskExecuteBase):
             ):
                 continue
 
-            task_set[en_task] = _find_task_source(
-                source_queue,
-                zh_task,
-                en_task,
-            ) or {
+            source = _find_task_source(source_queue, zh_task, en_task)
+            if source is None:
+                missing_sources.add(en_task)
+            task_set[en_task] = source or {
                 "$type": f"{en_task}Task",
                 "Name": zh_task,
                 "IsEnable": False,
@@ -1533,6 +1596,26 @@ class AutoProxyTask(TaskExecuteBase):
 
         annihilation_source = _find_task_source(source_queue, "剿灭作战", "Fight")
         activity_source = _find_task_source(source_queue, "活动关优先", "Fight")
+
+        # 吃药 / 碎石类任务取不到原生配置就只剩默认值，用户在 MAA 里设的选项
+        # 全部失效却看不出来，必须提示。剿灭作战、活动关优先没有同名任务时本就
+        # 沿用理智作战，只有理智作战也缺失才会落到默认值
+        if "DepotMaintain" in missing_sources:
+            await self._warn_missing_task_source("库存保持", "库存保持")
+        if "Fight" in missing_sources:
+            affected = []
+            if self.task_dict["Fight"] and self.mode == "Routine":
+                affected.append("理智作战")
+            if (
+                self.task_dict["Fight"]
+                and self.mode == "Annihilation"
+                and annihilation_source is None
+            ):
+                affected.append("剿灭作战")
+            if self.mode == "Routine" and activity_stage and activity_source is None:
+                affected.append("活动关优先")
+            if affected:
+                await self._warn_missing_task_source("理智作战", "、".join(affected))
 
         # 库存保持计划：MAS 快速配置面板维护的计划写回原生 PlanList。只覆盖
         # MAS 管理的三项（Stage/DropId/DropCount），其余原生字段（含用户在 MAA 里
@@ -2107,7 +2190,9 @@ class AutoProxyTask(TaskExecuteBase):
             )
             user_logs_list.append(log_path.with_suffix(".json"))
 
-            if await Config.save_maa_log(log_path, log_item.content, log_item.status):
+            if await log_statistics.save_maa_log(
+                log_path, log_item.content, log_item.status
+            ):
                 if_six_star = True
 
         statistics = await Config.merge_statistic_info(user_logs_list)
