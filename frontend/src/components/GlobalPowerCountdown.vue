@@ -73,27 +73,14 @@ const operationLabel = computed(() => {
 const title = computed(() => `${operationLabel.value}倒计时`)
 const message = computed(() => `程序将在倒计时结束后执行 ${operationLabel.value} 操作`)
 
-// 激活窗口到前台
-const focusWindow = async () => {
-  try {
-    if (window.electronAPI?.windowFocus) {
-      await window.electronAPI.windowFocus()
-      logger.info('窗口已激活到前台')
-    }
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.warn(`激活窗口失败: ${errorMsg}`)
-  }
-}
-
-// 倒计时出现时弹窗并拉起窗口（即使在托盘状态）；倒计时结束/取消时关闭
+// 倒计时出现时弹窗；倒计时结束/取消时关闭。
+// 拉起窗口、置顶与系统通知由 useAppLifecycle 在倒计时状态变化时统一请求。
 watch(
   () => powerCountdown.value,
   (current, previous) => {
     if (current && !previous) {
       logger.info(`收到电源倒计时: ${current.operation}, 剩余 ${current.remaining} 秒`)
       visible.value = true
-      void focusWindow()
     } else if (!current && previous) {
       logger.info('电源倒计时结束或已取消，关闭弹窗')
       visible.value = false
