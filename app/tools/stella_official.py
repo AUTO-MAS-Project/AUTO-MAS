@@ -65,8 +65,11 @@ COVER_FETCH_CONCURRENCY = 5
 
 BEIJING = timezone(timedelta(hours=8))
 
-## 「「猎影合围Beta」活动说明」「「空白的稚梦」限时招募开启」……
-ACTIVITY_TITLE = re.compile(r"^「(?P<name>[^「」]+)」(?P<suffix>.*)$")
+## 「「猎影合围Beta」活动说明」「[奋斗吧！大小姐的旅人修炼手册]活动一览」……
+## 书名号各家公告写法不一，半角方括号与【】都是官网自己用过的
+ACTIVITY_TITLE = re.compile(
+    r"^[「\[【](?P<name>[^「」\[\]【】]+)[」\]】](?P<suffix>.*)$"
+)
 ## 标题后缀 → 卡片上的分类标签
 KIND_BY_SUFFIX = (
     ("招募", "招募"),
@@ -74,6 +77,14 @@ KIND_BY_SUFFIX = (
 )
 ## 带活动关的那一类：横幅与 MSS 的活动期判定都只认它
 VERSION_KIND = "版本活动"
+## 同一期活动往往有两篇公告（活动一览、商品上新），同名去重时按分类定去留：
+## 数值小的优先，免得「版本全新商品上新！」把真正的「限时活动一览」顶掉
+KIND_RANK = {
+    "版本活动": 0,
+    "常驻活动": 1,
+    "招募": 2,
+    "活动": 3,
+}
 ## 长期开放、随版本轮换的活动单独归一类，首页给它们单开一栏。
 ## 按关键词认而不是整名：猎影合围以后去掉了 Beta 也照样算
 PERMANENT_KIND = "常驻活动"
@@ -182,14 +193,24 @@ def parse_activities(
             continue
 
         name = matched.group("name").strip()
-        existing = picked.get(name)
-        if existing is not None and datetime.fromisoformat(existing["endTime"]) >= end:
-            continue
-
         description = re.sub(r"\s+", " ", str(row.get("description") or "")).strip()
         kind = _kind_of(title, matched.group("suffix"))
         if any(keyword in name for keyword in PERMANENT_KEYWORDS):
             kind = PERMANENT_KIND
+
+        existing = picked.get(name)
+        if existing is not None:
+            # 同一期会有多篇公告：分类更「重」的那篇说了算（版本一览压过商品上新），
+            # 分类一样才比结束时间，留最晚的那条
+            existing_rank = KIND_RANK.get(existing["kind"], 9)
+            new_rank = KIND_RANK.get(kind, 9)
+            if existing_rank < new_rank:
+                continue
+            if (
+                existing_rank == new_rank
+                and datetime.fromisoformat(existing["endTime"]) >= end
+            ):
+                continue
 
         picked[name] = {
             "name": name,
@@ -306,10 +327,15 @@ async def has_running_official_activity() -> bool | None:
     if data is None:
         return None
 
+    versions = [item for item in data["activities"] if item["kind"] == VERSION_KIND]
+    if not versions:
+        # 一条版本活动都没认出来：多半是官网换写法、解析跟不上，按「说不准」处理。
+        # 报 False 会让调用方把「活动快速战斗」从队列里摘掉，整轮就漏打了
+        logger.warning("星塔旅人这一批公告里没有版本活动，活动期判定按说不准处理")
+        return None
+
     now = datetime.now(BEIJING)
-    for item in data["activities"]:
-        if item["kind"] != VERSION_KIND:
-            continue
+    for item in versions:
         start = datetime.fromisoformat(item["startTime"])
         end = datetime.fromisoformat(item["endTime"])
         if start <= now < end:
