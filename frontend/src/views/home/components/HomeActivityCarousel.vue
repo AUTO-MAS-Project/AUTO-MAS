@@ -450,11 +450,13 @@ onBeforeUnmount(() => {
 .banner-overlay {
   position: absolute;
   inset: 0;
+  /* 只在放标题的左侧压暗，越往右越透：原来 0.88 起的整条压暗会把主图盖掉大半，
+     看着像“只露一角”；右下角的倒计时有自己的底衬，不靠这层 */
   background: linear-gradient(
     90deg,
-    rgba(8, 10, 14, 0.88) 0%,
-    rgba(8, 10, 14, 0.62) 46%,
-    rgba(8, 10, 14, 0.18) 100%
+    rgba(8, 10, 14, 0.78) 0%,
+    rgba(8, 10, 14, 0.42) 46%,
+    rgba(8, 10, 14, 0.08) 100%
   );
 }
 
@@ -506,6 +508,8 @@ onBeforeUnmount(() => {
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
   line-clamp: 2;
+  /* 压暗减了一层，亮封面上的白字靠自身阴影保证读得清 */
+  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.55);
 }
 
 /* 亮色封面几乎没有压暗，左右两角的时间信息共用同一套底衬才读得清 */
