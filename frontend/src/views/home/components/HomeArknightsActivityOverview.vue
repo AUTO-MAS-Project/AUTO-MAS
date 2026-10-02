@@ -204,7 +204,11 @@ const activityCountdownStyle = computed<CSSProperties>(() => ({
   fontWeight: 700,
 }))
 
-const getCountdownValue = (value: string) => new Date(value).getTime()
+/** 时间串解析不出来时按 0 处理：否则倒计时与「剩余」判断会吃到 NaN */
+const getCountdownValue = (value: string) => {
+  const timestamp = new Date(value).getTime()
+  return Number.isNaN(timestamp) ? 0 : timestamp
+}
 
 const formatTime = (value: string) =>
   new Date(value).toLocaleString('zh-CN', {

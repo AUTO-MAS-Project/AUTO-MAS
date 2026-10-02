@@ -634,8 +634,6 @@ _PRTS_NAME = re.compile(r"<a[^>]*>(.*?)</a>", re.S)
 _PRTS_IMAGE = re.compile(r'src="(https://media\.prts\.wiki/[^"]+)"')
 ## 页面给的是 650px 缩略图，铺不满横幅（前端按宽度判铺法），换成 1300px
 _PRTS_THUMB_WIDTH = re.compile(r"/\d+px-")
-## 状态徽标（未开始 / 进行中 / 已结束）：已结束的那些是历史活动，不用回给前端
-_PRTS_STATUS = re.compile(r'<span class="TLDcontainer".*?<span[^>]*>(.*?)</span>', re.S)
 _PRTS_TAG = re.compile(r"<[^>]+>")
 
 
