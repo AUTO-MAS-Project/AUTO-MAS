@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, toRaw } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useRoute } from 'vue-router'
 import { message, Modal } from 'ant-design-vue'
 import type { ThemeColor, ThemeMode } from '@/composables/useTheme'
 import { useTheme } from '@/composables/useTheme'
@@ -44,7 +45,8 @@ const {
 } = useUpdateChecker()
 
 // 活动标签
-const activeKey = ref('basic')
+const route = useRoute()
+const activeKey = ref(route.query.tab === 'function' ? 'function' : 'basic')
 const version = computed(() => import.meta.env.VITE_APP_VERSION || t('setting.versionFailed'))
 const backendUpdateInfo = ref<VersionOut | null>(null)
 
