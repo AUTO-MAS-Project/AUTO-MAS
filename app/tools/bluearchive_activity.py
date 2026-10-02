@@ -43,6 +43,10 @@ ACTIVITY_MAX_PAGES = 2
 ## 这些战斗玩法没有活动关可刷，首页横幅同样只认这一类，两边口径保持一致
 WANTED_KIND = "活动"
 
+## 分类算「活动」、实际没有活动关可刷的那几种：战斗通行证是通行证任务，
+## 「限时网页活动」是站点上的小游戏。首页横幅按同一套关键词排除，两边口径一致
+SKIP_TITLE_KEYWORDS = ("战斗通行证", "网页活动")
+
 BlueArchiveLineType = Literal["JP", "Globle", "CN"]
 
 
@@ -58,7 +62,11 @@ class ActivityInfo:
 def _is_wanted_activity(item: Mapping[str, object]) -> bool:
     """这条活动记录算不算排期要看的活动"""
 
-    return item.get("activity_kind_name") == WANTED_KIND
+    if item.get("activity_kind_name") != WANTED_KIND:
+        return False
+
+    title = str(item.get("title") or "")
+    return not any(keyword in title for keyword in SKIP_TITLE_KEYWORDS)
 
 
 def has_running_activity_in(
