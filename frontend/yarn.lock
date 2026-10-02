@@ -4813,6 +4813,7 @@ __metadata:
     electron-builder-squirrel-windows: "npm:26.15.3"
     electron-log: "npm:^5.4.3"
     form-data: "npm:^4.0.4"
+    jsonc-parser: "npm:3.3.1"
     markdown-it: "npm:^14.1.1"
     markdownlint-cli2: "npm:^0.18.1"
     matter-js: "npm:^0.20.0"

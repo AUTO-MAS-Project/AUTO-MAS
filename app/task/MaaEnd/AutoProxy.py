@@ -429,12 +429,11 @@ class AutoProxyTask(TaskExecuteBase):
         )
 
     def _daily_once_task_names(self) -> set[str]:
+        # 独立送货、采集阶段固定每日一次，日常任务仍由用户选择。
         return {
-            task_name
-            for task_name in _load_json_list(
-                self.cur_user_config.get("Task", "DailyOnceTasks")
-            )
-            if task_name != MAAEND_AUTO_COLLECT_TASK
+            MAAEND_DELIVERY_TASK,
+            MAAEND_AUTO_COLLECT_TASK,
+            *_load_json_list(self.cur_user_config.get("Task", "DailyOnceTasks")),
         }
 
     def _daily_task_records(self) -> dict[str, str]:
@@ -756,13 +755,14 @@ class AutoProxyTask(TaskExecuteBase):
                     return None, False
             return "MaaEnd 配置中没有可执行的日常任务", False
 
+        if self._daily_once_task_done(task_name):
+            return f"{task_label}任务今日已完成", False
+
         tasks = self._source_maaend_tasks()
         if tasks is None:
             return None, False
         if not any(str(task.get("taskName", "")) == task_name for task in tasks):
             return f"MaaEnd 配置中不存在{task_label}任务", True
-        if mode == "Delivery" and self._daily_once_task_done(task_name):
-            return f"{task_label}任务今日已完成", False
         return None, False
 
     def _mode_skip_reason(self, mode: str) -> tuple[str | None, bool]:
@@ -1819,6 +1819,9 @@ class AutoProxyTask(TaskExecuteBase):
         # 按本轮任务表写回 MaaEnd 运行配置
         for task in maaend_tasks:
             task_name_value = str(task.get("taskName"))
+            # 进程由 MAS 统一收尾，禁用 MXU 的结束进程任务。
+            if task_name_value == "__MXU_KILLPROC__":
+                task["enabled"] = False
             if task_name_value.startswith("__MXU_"):
                 continue
 

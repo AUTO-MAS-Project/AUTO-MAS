@@ -505,7 +505,7 @@ export default {
       'When on, the high-traffic settings on this page override the MaaEnd tasks before a run; when off, the full task configuration from the file is used as is',
     maaEndDailyOnceTasks: 'Tasks to run once per day',
     maaEndDailyOnceTasksHint:
-      'After a task completes normally once today, later runs skip it automatically; leave empty to run it every time',
+      'Delivery and auto-collect stages always run once per day and need no selection. Selected routine tasks are skipped after successful completion; failures can be retried. Resets daily at 04:00 UTC+8',
     maaEndDailyOnceTasksPlaceholder: 'Choose tasks to run once per day',
     maaEndAutoCollectConfig: 'Auto-collect configuration',
     maaEndSetResolution: 'Set resolution on launch',
