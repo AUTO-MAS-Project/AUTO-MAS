@@ -97,6 +97,9 @@ const backendStatus = vi.fn()
 const backendRestart = vi.fn()
 const killAllProcesses = vi.fn()
 const appQuit = vi.fn()
+// 电源倒计时警示：主进程侧负责置顶窗口并弹系统通知
+const powerWarningStart = vi.fn()
+const powerWarningEnd = vi.fn()
 let systemResumeListener: (() => void) | null = null
 
 const DISCONNECT_EVENT = { code: 1006, reason: '' }
@@ -140,6 +143,8 @@ beforeEach(() => {
       backendRestart,
       killAllProcesses,
       appQuit,
+      powerWarningStart,
+      powerWarningEnd,
       onSystemResume: (listener: () => void) => {
         systemResumeListener = listener
         return () => {}
@@ -429,5 +434,33 @@ describe('电源倒计时', () => {
     await vi.advanceTimersByTimeAsync(3000)
     expect(powerCountdown.value).toBeNull()
     expect(powerCountdownDisconnected.value).toBe(false)
+  })
+
+  it('倒计时出现时请求主进程把窗口拉到最前，逐秒推送不重复请求', async () => {
+    connectionStateRef.value = 'open'
+    await loadLifecycle()
+
+    pushMessage('power.countdown.updated', COUNTDOWN)
+    expect(powerWarningStart).toHaveBeenCalledTimes(1)
+
+    pushMessage('power.countdown.updated', { operation: 'Shutdown', remaining: 41 })
+    expect(powerWarningStart).toHaveBeenCalledTimes(1)
+    expect(powerWarningEnd).not.toHaveBeenCalled()
+  })
+
+  it('倒计时取消或结束后撤回置顶', async () => {
+    connectionStateRef.value = 'open'
+    cancelPowerPost.mockResolvedValue({ code: 200 })
+    const mod = await loadLifecycle()
+    const { cancelPowerCountdown } = mod.useAppLifecycle()
+
+    pushMessage('power.countdown.updated', COUNTDOWN)
+    await cancelPowerCountdown()
+    expect(powerWarningEnd).toHaveBeenCalledTimes(1)
+
+    // 推送停止（已执行或已结束）时同样撤回，窗口不会永久置顶
+    pushMessage('power.countdown.updated', { operation: 'Shutdown', remaining: 5 })
+    await vi.advanceTimersByTimeAsync(3000)
+    expect(powerWarningEnd).toHaveBeenCalledTimes(2)
   })
 })

@@ -1668,6 +1668,39 @@ ipcMain.handle('window-focus', () => {
   }
 })
 
+// 电源操作倒计时警示：把窗口从托盘/最小化拉到最前并临时置顶。
+// 只调 focus() 会被 Windows 的前台锁定挡下，用户很容易错过即将执行的关机/休眠。
+const POWER_WARNING_TOPMOST_MS = 120000
+let powerWarningTopmostTimer: ReturnType<typeof setTimeout> | undefined
+
+function releasePowerWarningTopmost(): void {
+  if (powerWarningTopmostTimer) {
+    clearTimeout(powerWarningTopmostTimer)
+    powerWarningTopmostTimer = undefined
+  }
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.setAlwaysOnTop(false)
+  }
+}
+
+ipcMain.handle('power-warning:start', () => {
+  if (!mainWindow || mainWindow.isDestroyed()) return
+
+  showMainWindow()
+  mainWindow.setAlwaysOnTop(true, 'screen-saver')
+  mainWindow.moveTop()
+
+  // 渲染进程崩溃或撤回事件丢失时不能让窗口永久置顶，兜底时限取一次 60 秒倒计时的两倍
+  if (powerWarningTopmostTimer) clearTimeout(powerWarningTopmostTimer)
+  powerWarningTopmostTimer = setTimeout(releasePowerWarningTopmost, POWER_WARNING_TOPMOST_MS)
+
+  logger.info('电源操作倒计时警示: 窗口已置顶')
+})
+
+ipcMain.handle('power-warning:end', () => {
+  releasePowerWarningTopmost()
+})
+
 // 添加应用重启处理器
 ipcMain.handle('app-restart', () => {
   logger.info('重启应用程序...')
