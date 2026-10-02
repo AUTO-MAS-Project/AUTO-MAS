@@ -27,14 +27,14 @@
 
 from app.tools.bluearchive_activity import collect_activities, has_running_activity_in
 
-## 判定函数只认这两个字段，时间一律是 Unix 秒
+## 判定函数只认这几个字段，时间一律是 Unix 秒
 NOW = 1_700_000_000
 
 
-def activity(start: float, end: float, item_type: str = "Event") -> dict:
-    """构造一条 Kivo 时间轴条目"""
+def activity(start: float, end: float, kind: str = "活动") -> dict:
+    """构造一条 GameKee 活动条目"""
 
-    return {"type": item_type, "start_time": start, "end_time": end}
+    return {"activity_kind_name": kind, "begin_at": start, "end_at": end}
 
 
 class TestHasRunningActivityIn:
@@ -64,18 +64,18 @@ class TestHasRunningActivityIn:
         assert has_running_activity_in(timeline, NOW) is True
 
     def test_other_types_are_ignored(self) -> None:
-        """卡池、掉落加倍、维护等分类不算活动"""
+        """总力大决、多倍活动这些分类没有活动关，不算活动期"""
 
         timeline = [
-            activity(NOW - 100, NOW + 100, item_type="Gacha"),
-            activity(NOW - 100, NOW + 100, item_type="Campaign"),
+            activity(NOW - 100, NOW + 100, kind="总力大决"),
+            activity(NOW - 100, NOW + 100, kind="多倍活动"),
         ]
         assert has_running_activity_in(timeline, NOW) is False
 
     def test_items_without_numeric_time_are_skipped(self) -> None:
         timeline = [
-            {"type": "Event", "start_time": "2026-01-01", "end_time": None},
-            {"type": "Event"},
+            {"activity_kind_name": "活动", "begin_at": "2026-01-01", "end_at": None},
+            {"activity_kind_name": "活动"},
             activity(NOW + 100, NOW + 200),
         ]
         assert has_running_activity_in(timeline, NOW) is False
@@ -85,11 +85,16 @@ class TestHasRunningActivityIn:
 
 
 def titled_activity(
-    start: float, end: float, title: str = "活动", item_type: str = "Event"
+    start: float, end: float, title: str = "活动", kind: str = "活动"
 ) -> dict:
-    """构造一条带标题的时间轴条目（界面要展示活动名）"""
+    """构造一条带标题的活动条目（界面要展示活动名）"""
 
-    return {"type": item_type, "title": title, "start_time": start, "end_time": end}
+    return {
+        "activity_kind_name": kind,
+        "title": title,
+        "begin_at": start,
+        "end_at": end,
+    }
 
 
 class TestCollectActivities:
@@ -151,14 +156,21 @@ class TestCollectActivities:
         """没有名字的条目界面无法展示，按不存在处理"""
 
         running, upcoming = collect_activities(
-            [{"type": "Event", "start_time": NOW - 100, "end_time": NOW + 100}], NOW
+            [
+                {
+                    "activity_kind_name": "活动",
+                    "begin_at": NOW - 100,
+                    "end_at": NOW + 100,
+                }
+            ],
+            NOW,
         )
 
         assert running is None and upcoming is None
 
     def test_other_types_are_ignored(self) -> None:
         timeline = [
-            titled_activity(NOW - 100, NOW + 100, title="卡池", item_type="Gacha")
+            titled_activity(NOW - 100, NOW + 100, title="卡池", kind="总力大决")
         ]
 
         running, upcoming = collect_activities(timeline, NOW)

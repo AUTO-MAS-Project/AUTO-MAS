@@ -384,11 +384,11 @@ export class Service {
         });
     }
     /**
-     * 获取碧蓝档案活动数据（Kivo 中转）
-     * 按服务器取回碧蓝档案的活动时间轴。
+     * 获取碧蓝档案活动数据（GameKee 中转）
+     * 按服务器取回碧蓝档案的活动。
      *
-     * 这里只做转发：把 Kivo 的响应原样交给前端，筛选与格式转换都由前端完成。
-     * 之所以要绕一道后端，是因为 Kivo 的接口校验 Origin，浏览器直连必定 403。
+     * 这里只做转发：把 GameKee 的响应原样交给前端，分类筛选与格式转换都由前端完成。
+     * 之所以要绕一道后端，一是那个接口认自定义头、二是响应没给跨域头，浏览器直连取不到。
      * @param requestBody
      * @returns InfoOut Successful Response
      * @throws ApiError
@@ -404,6 +404,79 @@ export class Service {
             errors: {
                 422: `Validation Error`,
             },
+        });
+    }
+    /**
+     * 获取碧蓝档案活动图片（GameKee 中转）
+     * 中转 GameKee 的图片。
+     *
+     * 那个 CDN 校验 Referer：带上它自己的站点才给图，页面直连（Referer 是本软件）会被拒。
+     * 所以图片也由后端取回，前端只管引用这个地址。
+     * @param url 图片地址
+     * @returns any Successful Response
+     * @throws ApiError
+     */
+    public static getBluearchiveImageApiInfoBluearchiveImageGet(
+        url: string,
+    ): CancelablePromise<any> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/info/bluearchive/image',
+            query: {
+                'url': url,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 获取终末地版本图与版本名
+     * 终末地的版本图地址与版本名（图是固定地址，前端再走图片中转取回）。
+     * @returns InfoOut Successful Response
+     * @throws ApiError
+     */
+    public static getEndfieldVersionArtApiInfoEndfieldVersionArtGet(): CancelablePromise<InfoOut> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/info/endfield/version-art',
+        });
+    }
+    /**
+     * 获取终末地活动图片（缩放后转发）
+     * 把终末地的活动大图缩到横幅宽度再交给前端。
+     * @param url 图片地址
+     * @returns any Successful Response
+     * @throws ApiError
+     */
+    public static getEndfieldImageApiInfoEndfieldImageGet(
+        url: string,
+    ): CancelablePromise<any> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/info/endfield/image',
+            query: {
+                'url': url,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 获取明日方舟活动数据（PRTS 中转）
+     * 取回明日方舟的活动一览。
+     *
+     * PRTS 的页面里已经带了活动名、分类、起止时间与配图，这里解析成前端好用的形状。
+     * 最近两周一场活动都没有是正常情况（长草期），按空列表返回并照常缓存，
+     * 不然前端会把「没有活动」当成接口出错反复重试。
+     * @returns InfoOut Successful Response
+     * @throws ApiError
+     */
+    public static getArknightsActivityApiInfoArknightsActivityGet(): CancelablePromise<InfoOut> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/info/arknights/activity',
         });
     }
     /**
