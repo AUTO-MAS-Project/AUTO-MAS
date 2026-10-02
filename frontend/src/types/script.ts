@@ -255,6 +255,11 @@ export interface MaaFWScriptConfig {
     /** 由 MAS 启动游戏时，窗口出现后至少再等多少秒才下发第一个任务；0 关闭。 */
     /** DirectExe 下启动前按 exe 反查 Unity 注册表，临时改成所选窗口尺寸，关闭后恢复。 */
     UnityResolution: MaaFWUnityResolution
+    /**
+     * PI v2.8 hotkey 键位映射（仅 Win32）：JSON 文本 `{option 名: {字段名: 组合键}}`，
+     * 只存与 interface 默认不同的字段；读写见 views/EditView/Script/MaaFWScriptEdit/hotkeyOptions.ts。
+     */
+    Hotkeys: string
   }
   Update: {
     /** 自动更新时机：不更新 / 运行前 / 运行后。 */

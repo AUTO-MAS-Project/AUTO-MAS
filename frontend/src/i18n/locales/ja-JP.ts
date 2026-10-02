@@ -1558,6 +1558,17 @@ export default {
       'MAS がゲームを起動する際の 2 段階の待機はこの上限を共有します。まずウィンドウの表示を待ち、次に画面の安定を待ちます。待機中は毎秒画面を確認し、内容があり 5 秒間変化がなければ早めにタスクを開始します。MaaFW の初期化は並行して進みます。Unity 製ゲームはウィンドウが出た時点ではまだ黒画面で読み込み中のことが多く、早すぎるとスクリプト側で認識異常と判定されます。ゲームが既に起動している場合は画面を待ちません。',
     mfwUnityResolutionTip:
       'Unity 製ゲームのみ有効：MAS は起動前に exe のパスからゲームのレジストリを逆引きし、解像度を一時的に選択したサイズのウィンドウモードに変更、ゲーム終了後に元の値へ戻します。ゲームがすでに起動している場合は変更しません。',
+    mfwHotkey: 'キー割り当て',
+    mfwHotkeySet: '設定',
+    mfwHotkeyDefault: 'デフォルト',
+    mfwHotkeyChanged: '{n} 件変更',
+    mfwHotkeyPressKeys: 'キーを押してください…',
+    mfwHotkeyDefaultKey: 'デフォルト {key}',
+    mfwHotkeyRestore: '戻す',
+    mfwHotkeyRestoreAll: 'すべてデフォルトに戻す',
+    mfwHotkeyUnsupported: 'このキーには対応していません',
+    mfwHotkeyTooManyModifiers: '修飾キーは 2 つまで',
+    mfwHotkeySave: '保存',
     thisNameAlsoWritten:
       'この名前は、「貨幣戦争」機能の開拓者名としても三月なのかアシスタント / SRA に書き込まれます',
     thisSubtaskHasNo: 'このサブタスクに編集できる項目はありません',

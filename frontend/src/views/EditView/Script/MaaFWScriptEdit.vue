@@ -104,6 +104,7 @@
             :is-adb-controller="isAdbController"
             :is-desktop-controller="isDesktopController"
             :resource-options="resourceOptions"
+            :effective-resource-name="effectiveResourceName"
             :adb-control-strategy-items="adbControlStrategyItems"
             :selected-emulator-label="selectedEmulatorLabel"
             :interface-dependent-disabled="interfaceDependentDisabled"
@@ -265,6 +266,7 @@ const {
   isAdbController,
   isDesktopController,
   resourceOptions,
+  effectiveResourceName,
   interfaceDependentDisabled,
   selectedEmulatorLabel,
   adbControlStrategyItems,

@@ -93,6 +93,8 @@ export interface MaaFWScriptControlSectionProps {
   isAdbController: boolean
   isDesktopController: boolean
   resourceOptions: MaaFWResourceInfo[]
+  /** 实际生效的资源（Info.Resource 不在可选列表里时退回第一个），键位映射按它挑 option */
+  effectiveResourceName: string
   adbControlStrategyItems: Array<{ label: string; value: string }>
   selectedEmulatorLabel: string
   interfaceDependentDisabled: boolean

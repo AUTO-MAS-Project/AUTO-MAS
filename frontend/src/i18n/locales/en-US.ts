@@ -1700,6 +1700,17 @@ export default {
       'Both waits when MAS launches the game share this cap: first for the window to appear, then for the screen to settle. The screen is sampled once a second and tasks start early once it has content and stays unchanged for 5 seconds; MaaFW initialisation runs in parallel. Unity games are usually still on a black loading screen when the window shows up, and posting tasks too early makes the script report a recognition failure. Not applied to the screen wait when the game is already running.',
     mfwUnityResolutionTip:
       'Unity games only: before launching, MAS looks up the game registry key from the exe path and temporarily switches to the chosen windowed size, restoring the original values after the game closes; nothing is changed if the game is already running.',
+    mfwHotkey: 'Key bindings',
+    mfwHotkeySet: 'Set',
+    mfwHotkeyDefault: 'Default',
+    mfwHotkeyChanged: '{n} changed',
+    mfwHotkeyPressKeys: 'Press keys…',
+    mfwHotkeyDefaultKey: 'Default {key}',
+    mfwHotkeyRestore: 'Restore',
+    mfwHotkeyRestoreAll: 'Restore all defaults',
+    mfwHotkeyUnsupported: 'This key is not supported',
+    mfwHotkeyTooManyModifiers: 'At most two modifier keys',
+    mfwHotkeySave: 'Save',
     thisNameAlsoWritten:
       'This name is also written to March7th Assistant / SRA as the Trailblazer name for the Currency War feature',
     thisSubtaskHasNo: 'This subtask has no editable fields',
