@@ -11,6 +11,68 @@ const appliesTo = (allowed: readonly string[] | undefined, name: string) =>
   !allowed || allowed.length === 0 || allowed.includes(name)
 
 /**
+ * 只挂在某个选项分支下的 hotkey option 的生效条件（最近一层）：用户在任务配置里没选到这个分支时，
+ * 运行时不会叠加脚本级键位，弹窗要说清楚。
+ */
+export interface MaaFWHotkeyGate {
+  /** 上级选项的显示名 */
+  option: string
+  /** 分支的显示名（没有 label 时是 case 名） */
+  caseLabel: string
+  /** 上级是 switch 且分支是「开」 */
+  switchOn: boolean
+}
+
+const SWITCH_ON_CASES = /^(yes|y|true|on|1)$/i
+
+const walkHotkeyOptions = (
+  previewData: MaaFWInterfacePreviewData,
+  controllerName: string,
+  resourceName: string
+) => {
+  const optionByName = new Map(previewData.options.map(option => [option.name, option]))
+  const resource = previewData.resources.find(item => item.name === resourceName)
+  const controller = previewData.controllers.find(item => item.name === controllerName)
+  const tasks = previewData.tasks.filter(
+    task => appliesTo(task.controller, controllerName) && appliesTo(task.resource, resourceName)
+  )
+  // 直接挂在 globalOption / 资源 / 控制器 / 任务上的 option 不受任何分支约束
+  const roots = [
+    ...(previewData.globalOption ?? []),
+    ...(resource?.option ?? []),
+    ...(controller?.option ?? []),
+    ...tasks.flatMap(task => task.option ?? []),
+  ]
+  const direct = new Set(roots)
+
+  const seen = new Set<string>()
+  const collected = new Set<string>()
+  const gates = new Map<string, MaaFWHotkeyGate>()
+  const visit = (name: string, gate: MaaFWHotkeyGate | null) => {
+    if (seen.has(name)) return
+    seen.add(name)
+    const option = optionByName.get(name)
+    if (!option) return
+    if (!appliesTo(option.controller, controllerName)) return
+    if (!appliesTo(option.resource, resourceName)) return
+    if (option.type === 'hotkey' && option.hotkeys?.length) {
+      collected.add(name)
+      if (gate && !direct.has(name)) gates.set(name, gate)
+    }
+    for (const item of option.cases ?? []) {
+      const childGate: MaaFWHotkeyGate = {
+        option: option.label || option.name,
+        caseLabel: item.label || item.name,
+        switchOn: option.type === 'switch' && SWITCH_ON_CASES.test(item.name),
+      }
+      item.option?.forEach(child => visit(child, childGate))
+    }
+  }
+  roots.forEach(name => visit(name, null))
+  return { collected, gates }
+}
+
+/**
  * 对当前控制器 / 资源生效的 hotkey option：来源是 globalOption、当前资源与控制器的 option、
  * 适用任务的 option（含 cases 里的子选项），再按 option 自身的 controller / resource 过滤。
  * 先按 settings 里出现的顺序排，其余按 options 原顺序补齐。
@@ -21,33 +83,7 @@ export const collectHotkeyOptions = (
   resourceName: string
 ): MaaFWOptionInfo[] => {
   if (!previewData) return []
-  const optionByName = new Map(previewData.options.map(option => [option.name, option]))
-  const resource = previewData.resources.find(item => item.name === resourceName)
-  const controller = previewData.controllers.find(item => item.name === controllerName)
-  const tasks = previewData.tasks.filter(
-    task => appliesTo(task.controller, controllerName) && appliesTo(task.resource, resourceName)
-  )
-
-  const seen = new Set<string>()
-  const collected = new Set<string>()
-  const visit = (name: string) => {
-    if (seen.has(name)) return
-    seen.add(name)
-    const option = optionByName.get(name)
-    if (!option) return
-    if (!appliesTo(option.controller, controllerName)) return
-    if (!appliesTo(option.resource, resourceName)) return
-    if (option.type === 'hotkey' && option.hotkeys?.length) collected.add(name)
-    for (const item of option.cases ?? []) item.option?.forEach(visit)
-  }
-  for (const names of [
-    previewData.globalOption ?? [],
-    resource?.option ?? [],
-    controller?.option ?? [],
-    ...tasks.map(task => task.option ?? []),
-  ]) {
-    names.forEach(visit)
-  }
+  const { collected } = walkHotkeyOptions(previewData, controllerName, resourceName)
 
   const settingOrder = new Map<string, number>()
   for (const setting of previewData.settings ?? []) {
@@ -64,6 +100,17 @@ export const collectHotkeyOptions = (
     return rankA === rankB ? a.index - b.index : rankA - rankB
   })
   return ranked.map(({ option }) => option)
+}
+
+/** 只在某个分支下才生效的 hotkey option → 生效条件；直接挂着的不在结果里 */
+export const collectHotkeyGates = (
+  previewData: MaaFWInterfacePreviewData | null,
+  controllerName: string,
+  resourceName: string
+): Record<string, MaaFWHotkeyGate> => {
+  if (!previewData) return {}
+  const { gates } = walkHotkeyOptions(previewData, controllerName, resourceName)
+  return Object.fromEntries(gates)
 }
 
 /** 弹窗副标题：展示的 option 所在的 setting 里只有一个带描述时用它，否则不显示 */

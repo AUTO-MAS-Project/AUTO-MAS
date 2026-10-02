@@ -11,7 +11,12 @@
     <div class="hotkey-modal">
       <div v-if="description" class="hotkey-modal-sub">{{ description }}</div>
       <template v-for="option in options" :key="option.name">
-        <div class="hotkey-group-title">{{ option.label || option.name }}</div>
+        <div class="hotkey-group-title">
+          {{ option.label || option.name }}
+          <span v-if="gates[option.name]" class="hotkey-group-gate">
+            {{ gateText(gates[option.name]) }}
+          </span>
+        </div>
         <div
           v-for="field in option.hotkeys"
           :key="field.name"
@@ -70,7 +75,7 @@ import {
   type HotkeyEventResult,
 } from '@/utils/maafwHotkey'
 import MaaFWHotkeyInput from './MaaFWHotkeyInput.vue'
-import { countChangedHotkeys, type MaaFWHotkeyMap } from './hotkeyOptions'
+import { countChangedHotkeys, type MaaFWHotkeyGate, type MaaFWHotkeyMap } from './hotkeyOptions'
 
 type HotkeyField = MaaFWOptionInfo['hotkeys'][number]
 
@@ -82,6 +87,8 @@ const props = defineProps<{
   values: MaaFWHotkeyMap
   /** 副标题：项目 setting 的 description，没有就是空串 */
   description: string
+  /** 只在某个选项分支下才生效的 option → 生效条件（组标题旁提示） */
+  gates: Record<string, MaaFWHotkeyGate>
 }>()
 
 const emit = defineEmits<{
@@ -119,6 +126,11 @@ watch(
 
 const displayCombo = (value: string | null | undefined) =>
   parseHotkey(value).map(displayKey).join(' + ')
+
+const gateText = (gate: MaaFWHotkeyGate) =>
+  gate.switchOn
+    ? t('edit.mfwHotkeyNeedsSwitch', { option: gate.option })
+    : t('edit.mfwHotkeyNeedsCase', { option: gate.option, case: gate.caseLabel })
 
 const isChanged = (optionName: string, field: HotkeyField) =>
   !sameHotkey(draft[optionName]?.[field.name] ?? '', field.default ?? '')
@@ -193,6 +205,13 @@ const handleSave = () => {
   border-bottom: 1px solid var(--ant-color-border-secondary);
   color: var(--ant-color-text);
   font-weight: 700;
+}
+
+.hotkey-group-gate {
+  margin-left: 8px;
+  color: var(--ant-color-text-tertiary);
+  font-size: 12px;
+  font-weight: 400;
 }
 
 .hotkey-row {

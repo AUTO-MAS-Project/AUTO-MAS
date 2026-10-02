@@ -1625,6 +1625,8 @@ export default {
     mfwHotkeyUnsupported: '不支持该按键',
     mfwHotkeyTooManyModifiers: '最多两个修饰键',
     mfwHotkeySave: '保存',
+    mfwHotkeyNeedsSwitch: '需在用户的任务配置里打开「{option}」才生效',
+    mfwHotkeyNeedsCase: '需在用户的任务配置里把「{option}」选为「{case}」才生效',
     thisNameAlsoWritten: '该名称也会作为货币战争的开拓者名称写入三月七 / SRA',
     thisSubtaskHasNo: '该子任务暂无可编辑字段',
     thisConfigurationFileHas: '该配置文件暂无可编辑的字段',

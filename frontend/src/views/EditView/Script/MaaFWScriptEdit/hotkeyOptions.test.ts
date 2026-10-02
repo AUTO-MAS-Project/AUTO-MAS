@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import type { MaaFWInterfacePreviewData, MaaFWOptionInfo } from '@/types/script'
 import {
+  collectHotkeyGates,
   collectHotkeyOptions,
   countChangedHotkeys,
   effectiveHotkeyValues,
@@ -182,5 +183,60 @@ describe('Game.Hotkeys 读写', () => {
       KeymapGeneral: { UseTool: 'Shift+R' },
       Hidden: { X: 'Ctrl+A' },
     })
+  })
+})
+
+describe('collectHotkeyGates', () => {
+  // 战双 MAA_Punish 的写法：global_option 里的 switch「自定义键位」，Yes 分支才带 hotkey option
+  const punishKeys = option('输入键码', {
+    hotkeys: [{ name: '攻击', label: '攻击', default: 'J' }],
+  })
+  const customSwitch = option('自定义键位', {
+    type: 'switch',
+    label: '自定义键位',
+    cases: [
+      { name: 'Yes', option: ['输入键码'] },
+      { name: 'No', option: [] },
+    ],
+  } as Partial<MaaFWOptionInfo>)
+  const modeSelect = option('模式', {
+    type: 'select',
+    label: '模式',
+    cases: [{ name: 'Manual', label: '手动', option: ['KeymapFight'] }],
+  } as Partial<MaaFWOptionInfo>)
+
+  it('switch 的开分支下的 option 标为需打开开关，仍会列出', () => {
+    const data = preview({
+      globalOption: ['自定义键位'],
+      settings: [],
+      options: [customSwitch, punishKeys],
+    })
+    expect(collectHotkeyOptions(data, 'Win', 'Official').map(item => item.name)).toEqual([
+      '输入键码',
+    ])
+    expect(collectHotkeyGates(data, 'Win', 'Official')).toEqual({
+      输入键码: { option: '自定义键位', caseLabel: 'Yes', switchOn: true },
+    })
+  })
+
+  it('select 分支用分支显示名；同一 option 也直接挂着时不提示', () => {
+    const gated = preview({
+      globalOption: ['模式'],
+      settings: [],
+      options: [modeSelect, keymapFight],
+    })
+    expect(collectHotkeyGates(gated, 'Win', 'Official')).toEqual({
+      KeymapFight: { option: '模式', caseLabel: '手动', switchOn: false },
+    })
+    const alsoDirect = preview({
+      globalOption: ['模式', 'KeymapFight'],
+      settings: [],
+      options: [modeSelect, keymapFight],
+    })
+    expect(collectHotkeyGates(alsoDirect, 'Win', 'Official')).toEqual({})
+  })
+
+  it('没有预览时为空', () => {
+    expect(collectHotkeyGates(null, 'Win', 'Official')).toEqual({})
   })
 })

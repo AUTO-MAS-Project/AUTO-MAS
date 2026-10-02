@@ -20,6 +20,7 @@
       :options="options"
       :values="effectiveValues"
       :description="description"
+      :gates="gates"
       @save="handleSave"
     />
   </a-col>
@@ -32,6 +33,7 @@ import { SettingOutlined } from '@ant-design/icons-vue'
 import type { MaaFWInterfacePreviewData } from '@/types/script'
 import MaaFWHotkeyModal from './MaaFWHotkeyModal.vue'
 import {
+  collectHotkeyGates,
   collectHotkeyOptions,
   countChangedHotkeys,
   effectiveHotkeyValues,
@@ -64,6 +66,9 @@ const options = computed(() =>
 const storedMap = computed(() => parseHotkeyMap(props.value))
 const effectiveValues = computed(() => effectiveHotkeyValues(options.value, storedMap.value))
 const description = computed(() => hotkeySettingDescription(props.previewData, options.value))
+const gates = computed(() =>
+  collectHotkeyGates(props.previewData, props.controllerName, props.resourceName)
+)
 
 const summary = computed(() => {
   const changed = countChangedHotkeys(options.value, storedMap.value)

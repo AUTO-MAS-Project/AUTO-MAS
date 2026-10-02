@@ -1711,6 +1711,9 @@ export default {
     mfwHotkeyUnsupported: 'This key is not supported',
     mfwHotkeyTooManyModifiers: 'At most two modifier keys',
     mfwHotkeySave: 'Save',
+    mfwHotkeyNeedsSwitch: 'Only applies when "{option}" is turned on in the user\'s task settings',
+    mfwHotkeyNeedsCase:
+      'Only applies when "{option}" is set to "{case}" in the user\'s task settings',
     thisNameAlsoWritten:
       'This name is also written to March7th Assistant / SRA as the Trailblazer name for the Currency War feature',
     thisSubtaskHasNo: 'This subtask has no editable fields',
