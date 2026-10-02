@@ -39,13 +39,19 @@ Config = LazyProxy("app.core", "Config")
 # ==================== 部署参数 ====================
 # 新配置中心的后端地址、以及「通用脚本」对应的 project/category，在三个仓库里都没有写死的
 # 生产值，统一收敛到这里；部署方用环境变量覆盖即可，不需要改代码。
-# 默认值沿用分享站域名加新后端的 /api/v1 前缀：新旧接口路径完全不重叠（旧站是
-# /api/list/... 与 /api/upload/...），指向旧站时只会得到明确的失败提示，不会误写旧服务。
+# 默认指向数据管理中心（data.auto-mas.top）的 /api/v1。旧分享站是 /api/list/... 与
+# /api/upload/...，两边路径完全不重叠，误指向旧站时只会得到明确的失败提示，不会误写旧服务。
+#
+# 命名对照：数据管理中心在 38f868b 起把 config 域整体改名为 file 域，同一个值在本项目里
+# 叫 configKey / config_key（沿用桌面端与前端既有的 API 字段名），在数据中心侧叫 file_key。
+# 线上格式一律按数据中心为准，转换只发生在本文件。
 API_BASE_URL = os.environ.get(
-    "AUTO_MAS_CONFIG_CENTER_API", "https://share.auto-mas.top/api/v1"
+    "AUTO_MAS_CONFIG_CENTER_API", "https://data.auto-mas.top/api/v1"
 ).rstrip("/")
 PROJECT_KEY = os.environ.get("AUTO_MAS_CONFIG_CENTER_PROJECT", "auto-mas")
-CATEGORY_KEY = os.environ.get("AUTO_MAS_CONFIG_CENTER_CATEGORY", "general")
+# 数据中心里通用脚本模板所在的分类键是 GeneralConfig，且该键大小写敏感：写成 general
+# 不会报错，只会静默返回 0 条，模板列表就永远是空的。通用脚本模板都发布在这个分类下。
+CATEGORY_KEY = os.environ.get("AUTO_MAS_CONFIG_CENTER_CATEGORY", "GeneralConfig")
 
 # 通用脚本配置实际只有几 KiB，2 MiB 足够留出余量，同时挡住异常的超大响应
 MAX_DOWNLOAD_BYTES = 2 * 1024 * 1024
@@ -107,7 +113,7 @@ class ConfigCenterClient:
         if keyword:
             params["keyword"] = keyword
 
-        data = await self._request("GET", "/configs", params=params)
+        data = await self._request("GET", "/files", params=params)
         items = [self._build_template_item(_) for _ in data.get("items", []) or []]
         pagination = data.get("pagination", {}) or {}
 
@@ -135,9 +141,7 @@ class ConfigCenterClient:
         """
 
         params = {"version_no": version_no} if version_no else None
-        url = (
-            f"{API_BASE_URL}/configs/{PROJECT_KEY}/{CATEGORY_KEY}/{config_key}/download"
-        )
+        url = f"{API_BASE_URL}/files/{PROJECT_KEY}/{CATEGORY_KEY}/{config_key}/download"
 
         async with httpx.AsyncClient(
             proxy=Config.proxy, follow_redirects=True, timeout=REQUEST_TIMEOUT
@@ -308,7 +312,7 @@ class ConfigCenterClient:
 
         data = await self._request(
             "POST",
-            "/user/configs",
+            "/user/files",
             token=token,
             files={"file": (f"{display_name}.json", content, "application/json")},
             data={
@@ -385,7 +389,7 @@ class ConfigCenterClient:
         return {
             "projectKey": str(item.get("project_key", PROJECT_KEY)),
             "categoryKey": str(item.get("category_key", CATEGORY_KEY)),
-            "configKey": str(item.get("config_key", "")),
+            "configKey": str(item.get("file_key", "")),
             "displayName": str(item.get("display_name", "")),
             "description": str(item.get("description") or ""),
             "ownerUsername": str(item.get("owner_username") or ""),

@@ -1138,9 +1138,9 @@ class AppConfig(GlobalConfig):
             if IS_WINDOWS and Path(config["Script"][path]).is_relative_to(
                 Path(os.environ["APPDATA"])
             ):
-                config["Script"][path] = (
-                    f"%APPDATA%/{Path(config['Script'][path]).relative_to(Path(os.environ['APPDATA']))}"
-                )
+                config["Script"][
+                    path
+                ] = f"%APPDATA%/{Path(config['Script'][path]).relative_to(Path(os.environ['APPDATA']))}"
         config["Info"]["RootPath"] = str(Path(r"C:/脚本根目录"))
 
         # 上面只覆盖脚本自身的路径项；游戏路径、命令行等自由文本同样会带出本机用户名，统一打码
@@ -1239,9 +1239,7 @@ class AppConfig(GlobalConfig):
         index = data.pop("instances", [])
         return list(index), data
 
-    async def add_user(
-        self, script_id: str
-    ) -> tuple[
+    async def add_user(self, script_id: str) -> tuple[
         uuid.UUID,
         MaaUserConfig
         | SrcUserConfig
@@ -1891,9 +1889,11 @@ class AppConfig(GlobalConfig):
                 patch[str(key)] = merge_plan_list(
                     columns,
                     dict(meta.get("new_item") or {}),
-                    current.get(str(key))
-                    if isinstance(current.get(str(key)), list)
-                    else [],
+                    (
+                        current.get(str(key))
+                        if isinstance(current.get(str(key)), list)
+                        else []
+                    ),
                     raw if isinstance(raw, list) else [],
                 )
             elif ftype == "bool":
@@ -4674,7 +4674,7 @@ class AppConfig(GlobalConfig):
                 proxy=self.proxy, follow_redirects=True
             ) as client:
                 response = await client.get(
-                    "https://api.auto-mas.top/file/Server/notice.json",
+                    "https://data.auto-mas.top/api/v1/files/auto-mas/Client/notice/download",
                     headers={"If-None-Match": self.get("Data", "NoticeETag")},
                 )
                 if response.status_code == 304:
