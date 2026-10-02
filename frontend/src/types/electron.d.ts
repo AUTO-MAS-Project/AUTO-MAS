@@ -205,6 +205,12 @@ export interface ElectronAPI {
   /** 倒计时结束或取消：撤回置顶 */
   powerWarningEnd?: () => Promise<void>
   appQuit: () => Promise<void>
+  /** 保存前领取退出凭证；准备超时不会强制关闭后端。 */
+  appPrepareQuit?: () => Promise<number | null>
+  /** 保存完成后确认凭证仍有效，开始关闭后端的兜底计时。 */
+  appConfirmQuit?: (token: number) => Promise<boolean>
+  /** 页面保存失败：撤销协调退出，取消兜底计时并重新显示窗口。 */
+  appCancelQuit?: (token?: number) => Promise<void>
 
   // 系统休眠恢复与主进程关闭请求（生命周期协调器消费）
   onSystemResume?: (callback: () => void) => () => void
