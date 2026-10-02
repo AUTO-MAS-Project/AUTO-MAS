@@ -304,8 +304,16 @@
                   show-icon
                   class="path-validation-alert"
                 />
-                <div v-if="okwwConfig.Game.Type === 'Client'" class="derived-client-row">
-                  <span class="label-hint">{{ t('edit.gameClientPathLabel') }}</span>
+                <div class="derived-client-row">
+                  <span class="label-hint">
+                    {{ t('edit.gameClientPathLabel') }}
+                    <a-tooltip
+                      v-if="okwwConfig.Game.Type === 'Launcher'"
+                      :title="t('edit.clientPathOptionalHint')"
+                    >
+                      <QuestionCircleOutlined class="help-icon" />
+                    </a-tooltip>
+                  </span>
                   <a-input-group compact class="path-input-group">
                     <a-input
                       :value="okwwConfig.Game.ClientPath || derivedClientPath"
@@ -887,7 +895,9 @@ const validateGamePath = async (launcherPath: string) => {
   }
 
   gamePathValidation.status = 'valid'
-  gamePathValidation.message = `当前游戏路径合法：已找到 ${executable}`
+  // 只说明启动器文件本身在；客户端能否定位由下方「游戏客户端」行单独反馈，
+  // 别在这里给「路径合法」的全局保证，两个结论会打架
+  gamePathValidation.message = `已找到 ${executable}`
   return true
 }
 
@@ -941,8 +951,8 @@ const saveGamePath = async (launcherPath: string, successMessage: string) => {
       throw error
     }
   })
-  if (success && okwwConfig.Game.Type === 'Client') {
-    // 启动器路径变了，直启模式的客户端路径展示需要重新解码
+  if (success) {
+    // 启动器路径变了，客户端路径展示需要重新解码（两种启动方式都展示该行）
     await refreshDerivedClientPath()
   }
   return success
@@ -971,9 +981,8 @@ const loadScript = async () => {
     if (okwwConfig.Game.Path && okwwConfig.Game.Path !== '.') {
       await validateGamePath(okwwConfig.Game.Path)
     }
-    if (okwwConfig.Game.Type === 'Client') {
-      await refreshDerivedClientPath()
-    }
+    // 两种启动方式都展示客户端路径：启动器态它是可选项，解不出时也在此提示
+    await refreshDerivedClientPath()
     persistedLaunchType = okwwConfig.Game.Type
     requestedLaunchType = okwwConfig.Game.Type
   } catch {
@@ -1107,8 +1116,9 @@ const selectGameRootPath = async () => {
   )
 }
 
-// 直启模式的客户端路径由后端解码启动器得到，仅用于前端展示；任务期真正启动的
-// exe 由后端自行解码，不落盘配置。
+// 客户端路径由后端解码启动器得到，仅用于前端展示；任务期真正要用的 exe 由后端
+// 自行解码，不落盘配置。两种启动方式都拉取：启动器态它是可选项，且解不出时
+// 这条提示是用户唯一的知情渠道（后端会在收尾时退回按进程名匹配）
 // 已手动指定 ClientPath 时展示值不来自解码，跳过调用避免无谓的失败提示
 const refreshDerivedClientPath = async () => {
   if (okwwConfig.Game.ClientPath) return
@@ -1160,12 +1170,11 @@ const handleLaunchTypeChange = async (value: 'Launcher' | 'Client') => {
     return
   }
   persistedLaunchType = value
-  if (value === 'Client') {
-    await refreshDerivedClientPath()
-  }
+  await refreshDerivedClientPath()
 }
 
-// 手动指定直启客户端：留空（恢复自动）时由启动器路径解码定位
+// 手动指定客户端：留空（恢复自动）时由启动器路径解码定位；两种启动方式都可用，
+// 启动器态指定后已运行检测与收尾按精确路径进行
 const saveClientPath = async (clientPath: string) => {
   const previousPath = okwwConfig.Game.ClientPath
   okwwConfig.Game.ClientPath = clientPath
@@ -1185,7 +1194,7 @@ const saveClientPath = async (clientPath: string) => {
       throw error
     }
   })
-  if (success && !clientPath && okwwConfig.Game.Type === 'Client') {
+  if (success && !clientPath) {
     // 清空手动指定后展示值重新来自解码，需要重新拉取，否则只剩占位符
     await refreshDerivedClientPath()
   }
