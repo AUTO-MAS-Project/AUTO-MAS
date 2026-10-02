@@ -261,18 +261,21 @@ class AutoProxyTask(ScriptAutoProxyBase):
                         "请重新选择"
                     )
                 self.game_process_path = client_exe
-            if not launcher_path.is_file() and self.game_process_path is None:
-                # 配置的启动器失效、也没有可用的客户端路径：按兜底来源（注册表 →
-                # 卸载信息）找回。这一步只在两条路都断了时才做——直启用户已手填
-                # 客户端时启动器只服务更新，不必为它打扰用户。
+            # 启动器失效时按兜底来源（注册表 → 卸载信息）找回。直启态已手填客户端
+            # 时启动器只服务更新，不必为它打扰用户；但启动器态没有启动器就拉不起
+            # 游戏，即使已填客户端也必须尝试找回
+            if not launcher_path.is_file() and (
+                self.game_process_path is None or self._game_launch_type() == "Launcher"
+            ):
                 # 命中结果必须告诉用户：静默换到另一份安装会让人不知情
-                fallback = discover_wuthering_waves_fallback(
-                    str(self.cur_user_config.get("Info", "Resource"))
+                fallback = await asyncio.to_thread(
+                    discover_wuthering_waves_fallback,
+                    str(self.cur_user_config.get("Info", "Resource")),
                 )
                 if fallback.launcher_path is not None:
                     launcher_path = fallback.launcher_path
                     # 不能在这里直接推调度台：main_task 每轮开头会重置日志把它
-                    # 清掉，存下来在启动流程内补推（与其它提示同处每轮循环内）
+                    # 清掉，存下来在启动流程内（重置之后）补推一次
                     self._fallback_notice = (
                         f"已按兜底来源找回鸣潮启动器"
                         f"（{launcher_path.as_posix()}），"
