@@ -21,14 +21,13 @@
 
 
 import asyncio
-import json
 
 import psutil
 
 from app.utils.platform import IS_WINDOWS
+from app.utils.platform import window as platform_window
 
 if IS_WINDOWS:
-    import keyboard
     import win32gui
 import time
 from pathlib import Path
@@ -334,28 +333,35 @@ class LDManager(DeviceBase):
             logger.warning(f"设备{idx}未在线，当前状态码: {status}")
             return status
 
-        result = (await self.get_device_info(idx))[idx]
+        hwnd = 0
+        resolve_deadline = time.monotonic() + 1
+        while time.monotonic() < resolve_deadline:
+            result = (await self.get_device_info(idx))[idx]
+            if result.top_hwnd > 0 and win32gui.IsWindow(result.top_hwnd):
+                hwnd = result.top_hwnd
+                break
+            await asyncio.sleep(0.1)
+
+        if hwnd <= 0:
+            raise RuntimeError(f"未找到设备{idx}的主窗口，无法切换窗口可见性")
 
         deadline = time.monotonic() + self.config.get("Info", "MaxWaitTime")
         while time.monotonic() < deadline:
             # 检查窗口可见性是否符合预期
-            if win32gui.IsWindowVisible(result.top_hwnd) == is_visible:
+            if platform_window.is_visible(hwnd) == is_visible:
                 return status
 
             try:
-                keyboard.press_and_release(
-                    "+".join(
-                        _.strip().lower()
-                        for _ in json.loads(self.config.get("Info", "BossKey"))
-                    )
-                )  # 老板键
+                if is_visible:
+                    platform_window.show_window(hwnd)
+                else:
+                    platform_window.hide_window(hwnd)
             except Exception as e:
-                logger.error(f"发送BOSS键失败: {e}")
+                logger.error(f"切换设备{idx}窗口可见性失败: {e}")
 
             await asyncio.sleep(0.5)
 
-        else:
-            raise RuntimeError(f"隐藏设备{idx}窗口超时")
+        raise RuntimeError(f"{'显示' if is_visible else '隐藏'}设备{idx}窗口超时")
 
     async def get_device_info(self, idx: str | None) -> dict[str, LDPlayerDevice]:
         """获取模拟器的信息"""
