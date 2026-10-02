@@ -452,12 +452,17 @@ def _describe_hotkey_value_error(
     interface_model: MaaFWInterface,
     i18n_mapping: dict[str, Any],
 ) -> str:
-    """hotkey 的覆盖下发不了、已跳过时的告警：哪个选项（字段）、什么值、为什么。"""
+    """hotkey 的值下发不了时的告警：哪个选项（字段）、什么值、为什么，改用默认还是整项跳过。"""
 
     target = _hotkey_labels(
         interface_model, exc.option_name, exc.field_name, i18n_mapping
     )
     value = f"的值 {exc.value} " if exc.value is not None else ""
+    if exc.fallback is not None:
+        return (
+            f"快捷键{target}{value}无法使用（{exc.reason}），"
+            f"这一项改用项目默认键位 {exc.fallback}"
+        )
     return (
         f"快捷键{target}{value}无法使用（{exc.reason}），"
         "已跳过该选项的设置，用到它的任务按项目原本的键位跑"

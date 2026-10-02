@@ -87,6 +87,8 @@ class MaaFWHotkeyValueError(ValueError):
     与 ``MaaFWInputValueError`` 同样只带事实（选项名、字段名、值、原因），给人看的整句由
     建计划的一方拼（它有选项与字段的显示名）。``field_name`` / ``value`` 为空表示问题不在某个
     字段的取值上（例如 pipeline 里的占位符写法不对、控制器没有 hotkey 映射）。
+    ``fallback`` 非空表示这一个字段已改用项目默认键位，选项的其余字段照常下发；为空表示
+    整个选项的覆盖已跳过。
     """
 
     def __init__(
@@ -96,11 +98,13 @@ class MaaFWHotkeyValueError(ValueError):
         *,
         value: str | None,
         reason: str,
+        fallback: str | None = None,
     ) -> None:
         self.option_name = option_name
         self.field_name = field_name
         self.value = value
         self.reason = reason
+        self.fallback = fallback
         target = f"{option_name}.{field_name}" if field_name else option_name
         detail = f"值 {value!r} " if value is not None else ""
         super().__init__(f"快捷键 {target} {detail}无法下发：{reason}")
@@ -615,15 +619,34 @@ class MaaFWPipelineOverrideBuilder:
                     hotkey_item.name, raw_text, controller_type, referenced_values
                 )
             except MaaFWHotkeyError as exc:
-                # 快照 / 预设 / 外壳导入里的键位映射不了：与 input 下发不了同一口径，只跳过
-                # 这个选项的覆盖（半替换会把字面量 "{K}" 塞进 pipeline），任务按项目原始
-                # pipeline 跑，不让整轮失败。
+                # 快照 / 预设 / 外壳导入里的键位映射不了：这一个字段改用项目默认键位，同一
+                # 选项的其余字段（含叠上来的脚本级键位）照常下发；默认键位也用不了时才跳过
+                # 整个选项的覆盖（半替换会把字面量 "{K}" 塞进 pipeline），任务按项目原始
+                # pipeline 跑。两种情况都不让整轮失败。
+                fallback = hotkey_item.default or ""
+                fallback_values = None
+                if fallback.strip() and fallback != raw_text:
+                    try:
+                        fallback_values = _resolve_hotkey_placeholders(
+                            hotkey_item.name,
+                            fallback,
+                            controller_type,
+                            referenced_values,
+                        )
+                    except MaaFWHotkeyError:
+                        fallback_values = None
                 self.hotkey_errors.append(
                     MaaFWHotkeyValueError(
-                        option_name, hotkey_item.name, value=raw_text, reason=str(exc)
+                        option_name,
+                        hotkey_item.name,
+                        value=raw_text,
+                        reason=str(exc),
+                        fallback=fallback if fallback_values is not None else None,
                     )
                 )
-                return {}
+                if fallback_values is None:
+                    return {}
+                values = fallback_values
             typed_replacements.update(values)
 
         return cast(
