@@ -456,7 +456,7 @@
 
   <a-modal
     v-model:open="updateModal.open"
-    :title="updateModal.running ? '鸣潮更新进度' : '检查鸣潮更新'"
+    :title="updateModal.running ? t('edit.okwwUpdateProgress') : t('edit.okwwCheckUpdateTitle')"
     :confirm-loading="updateModal.starting"
     :mask-closable="!updateModal.running"
     :footer="updateModal.running ? null : undefined"

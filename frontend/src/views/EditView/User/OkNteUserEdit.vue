@@ -6,7 +6,7 @@
       :is-edit="isEdit"
       script-edit-segment="oknte"
       :user-id="activeUserId"
-      config-label="配置 OK-NTE"
+      :config-label="t('edit.configureOkNte')"
       :config-loading="oknteConfigLoading"
       :config-active="showOknteConfigMask"
       :config-disabled="pageLoading || !activeUserId || configLocked"

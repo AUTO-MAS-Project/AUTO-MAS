@@ -53,12 +53,10 @@
             <a-tooltip>
               <template #title>
                 <div style="max-width: 520px; line-height: 1.6; white-space: normal">
-                  用于切换账号，无需切换则留空。<br />
-                  {{ t('edit.cnServersEnter11') }}
-                  位手机号，若输入手机号中包含「*」则切换账号时将仅通过识别已登录账号列表登录。<br />
+                  {{ t('edit.srcAccountSwitchTipIntro') }}<br />
+                  {{ t('edit.cnServersEnter11') }}<br />
                   {{ t('edit.bilibiliEnterPartUsername') }}
                   {{ t('edit.accountEmailPhoneNumber2') }}
-                  {{ t('edit.accountEmailPhoneNumber') }}
                 </div>
               </template>
               <span class="form-label">

@@ -12,7 +12,7 @@
     <a-empty
       v-if="filteredOptions.length === 0"
       class="option-empty"
-      :description="optionSearchQuery ? '没有匹配的配置项' : '当前任务没有可配置项'"
+      :description="optionSearchQuery ? t('edit.maafwNoMatchingSettings') : t('edit.maafwNoConfigurableOptions')"
     />
 
     <a-collapse
@@ -189,7 +189,7 @@
           v-else
           type="warning"
           show-icon
-          :message="`不支持的配置项类型：${option.type || '未知'}，请联系脚本作者或升级 AUTO-MAS`"
+          :message="t('edit.maafwUnsupportedOptionType', { type: option.type || t('edit.unknownType') })"
         />
 
         <div

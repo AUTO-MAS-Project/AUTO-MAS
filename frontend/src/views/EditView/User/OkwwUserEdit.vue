@@ -6,7 +6,7 @@
       :is-edit="isEdit"
       script-edit-segment="okww"
       :user-id="userId"
-      config-label="配置 ok-ww"
+      :config-label="t('edit.configureOkww')"
       :config-loading="okwwConfigLoading"
       :config-active="showOkwwConfigMask"
       :config-disabled="pageLoading || !userId || configLocked"

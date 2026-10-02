@@ -684,7 +684,7 @@
                               type="text"
                               size="small"
                               :disabled="isGroupFrozen(item)"
-                              aria-label="另存为新配置组"
+                              :aria-label="t('edit.bettergiDuplicateAsNew')"
                               @click.stop="openDuplicateModal(item)"
                             >
                               <template #icon><SaveOutlined /></template>
@@ -696,7 +696,7 @@
                               type="text"
                               size="small"
                               :disabled="isGroupFrozen(item) || !canRenameGroup(item)"
-                              aria-label="修改配置组名称"
+                              :aria-label="t('edit.bettergiRenameAsNew')"
                               @click.stop="openRenameModal(item)"
                             >
                               <template #icon><EditOutlined /></template>
@@ -708,7 +708,7 @@
                               type="text"
                               size="small"
                               :disabled="isGroupFrozen(item)"
-                              aria-label="复制相同配置组"
+                              :aria-label="t('edit.bettergiCopySameAs')"
                               @click.stop="duplicateSameGroup(item)"
                             >
                               <template #icon><CopyOutlined /></template>
