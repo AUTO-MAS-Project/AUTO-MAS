@@ -7,7 +7,7 @@
  */
 export default {
   common: {
-    viewPageDocs: 'View this page docs',
+    viewPageDocs: 'View documentation for this page',
     language: 'Language',
     languageTip: 'Interface display language',
     languageSaveFailed: 'Failed to save the language setting; reverted to the previous one.',
@@ -26,7 +26,7 @@ export default {
       loadFailed: 'Failed to load the changelog; the update can still be downloaded',
     },
     editUser: 'Edit account',
-    addUser2: 'Add a account',
+    addUser2: 'Add an account',
     enabled: 'On',
     disabled: 'Off',
     updateDownloadTest: 'Update download test',
@@ -73,7 +73,7 @@ export default {
     moduleName: 'Module name',
     emulators: 'Emulators',
     testRoute: 'Test route',
-    checkIns: 'Game community',
+    checkIns: 'Community sign-in',
     port: 'Port',
     portNumber: 'Port number',
     warning: 'Warning',
@@ -95,6 +95,11 @@ export default {
     configuring: 'Configuring',
     openConfigFolder: 'Open config folder',
     dragReorder: 'Drag to reorder',
+    restoreWindow: 'Restore',
+    maximizeWindow: 'Maximize',
+    editWebhook: 'Edit Webhook',
+    downloadUpdateVersion: 'Download update {version}',
+    foundNewVersion: 'New version {version} available',
     confirmExit: 'Confirm exit',
     webhookDeleted: 'Webhook deleted',
     webhookUpdated: 'Webhook updated',
@@ -152,7 +157,7 @@ export default {
     cancelUpdateDownload: 'Cancel the update download?',
     visualSelection: 'Visual selection',
     downloadBackground: 'Download in the background',
-    backendStarting: 'Starting the app background service',
+    backendStarting: 'Starting the backend',
     enableThisWebhook: 'Enable this webhook',
     response: 'Response:',
     runCustomScriptBefore: 'Run a custom script before the task',
@@ -221,7 +226,7 @@ export default {
     messageTemplate: 'Message template',
     darkTheme: 'Dark theme',
     addWebhook: 'Add a webhook',
-    addUser: 'Add a account',
+    addUser: 'Add an account',
     addHeader: 'Add a header',
     useButtonAboveAdd: 'Use the button above to add your first webhook',
     specialContent: 'Special content',
@@ -316,7 +321,7 @@ export default {
     maaCultivateSkipResource: 'Skip cultivation plan during resource collection',
     maaCultivateEmpty: 'No cultivation goals yet',
     maaCultivateRecognitionHint:
-      'Progression and inventory rely on MAA in-run recognition; after binding Skland you can set mastery/module goals, and existing goals stay read-only before binding; operators with no settable goals are hidden from the selector automatically; when materials are short, this task takes over the farming of the round and depot maintenance is paused, resuming automatically once materials are complete',
+      'Progression and inventory rely on MAA in-run recognition. After binding Skland you can set mastery/module goals, and existing goals stay read-only before binding. Operators with no settable goals are hidden from the selector automatically; when materials are short, this task takes over the farming of the round and depot maintenance is paused. It resumes automatically once materials are complete',
     maaDataSourceYituliu: 'Data source: Yituliu',
     maaCultivatePreviewTitle: 'Estimated materials',
     maaCultivatePreviewComputing: 'Computing',
@@ -468,12 +473,11 @@ export default {
     accountId: 'Account ID',
     all: 'All',
     userSPasswordStored:
-      "The user's password, stored only so you do not forget it; it has no other effect",
+      "The account's password, stored only so you do not forget it; it has no other effect",
     enterAccountId: 'Enter the account ID',
     goPlan: 'Go to the plan',
     pickGameServerThis: 'Pick the game server this account plays on',
-    bilibiliEnterPartUsername:
-      'For Bilibili, enter part of the account name; you may also enter the B',
+    bilibiliEnterPartUsername: "For Bilibili servers, enter part of the account name; you may also enter the account / email / phone number, separated by '{'|'}'",
     maaConfiguration: 'MAA configuration',
     srcConfiguration: 'SRC configuration',
     doNotSwitch: 'Do not switch',
@@ -497,19 +501,19 @@ export default {
       'Annihilation and the daily run start MAA twice; within a group they run in order',
     annihilationDailyTasksEach: 'Annihilation and the daily tasks each start their own MAA session',
     annihilationStage: 'Annihilation stage',
-    rewardGroupsProtocolSpace: 'Reward groups for protocol-space reward tasks are chosen here',
+    rewardGroupsProtocolSpace: 'Reward groups for Protocol Space (Endfield) reward tasks are chosen here',
     rewardGroup: 'Reward group',
     annihilationMaaStartsOnce:
       'With annihilation on, MAA starts once just for annihilation; when that finishes, MAA starts again for the daily run.',
-    cnServersEnter11: 'For CN servers, enter the 11',
+    srcAccountSwitchTipIntro: 'Used to switch accounts. Leave it empty if no switching is needed.',
+    cnServersEnter11: 'For CN servers, enter the 11-digit phone number. If it contains "*", switching only matches the already-signed-in account list',
     passwordStoredOnlySo:
       'The password is stored only so you do not forget it; it has no other effect',
     passwordStoredOnlySo2:
       'The password is stored only so you do not forget it; it has no other effect',
     import2: 'Import',
     noConfigurationImportedYet: 'No configuration imported yet',
-    whenHighTrafficSettings:
-      'When on, the high-traffic settings on this page override the MaaEnd tasks before a run; when off, the full task configuration from the file is used as is',
+    whenHighTrafficSettings: 'When on, the most-used fields on this page override the MaaEnd tasks before a run; when off, the full task configuration from the file is used as is',
     maaEndOpenConfig: 'Open the MaaEnd window',
     maaEndOpenConfigSharedTip:
       'Edit the shared configuration that every account of this managed script uses, in the MaaEnd window.',
@@ -629,12 +633,10 @@ export default {
     usedSwitchAccountsCn:
       'Used to switch accounts. On CN servers enter the phone number, on Bilibili the Bilibili ID; leave empty if you do not switch',
     usedSwitchAccountsCn2:
-      'Used to switch accounts. On CN servers enter the phone number; either way matching uses the last four digits. Leave empty if you do not switch',
+      'Used to switch accounts. On CN servers enter the phone number; matching always uses the last four digits. Leave empty if you do not switch',
     userSPasswordWhen:
-      "The user's password. When set, signing in with the account and password is used as a fallback; when empty, only the already-signed-in account list is used",
-    accountEmailPhoneNumber: 'account / email / phone number.',
-    accountEmailPhoneNumber2:
-      "account / email / phone number, separated by '{'|'}'. Signing in with a password prefers the B",
+      "The account's password. When set, signing in with the account and password is used as a fallback; when empty, only the already-signed-in account list is used",
+    accountEmailPhoneNumber2: 'When signing in with an account and password, the Bilibili account name is preferred',
     firstMaaSessionAnnihilation: 'First MAA session: annihilation',
     world3: 'World 3',
     secondMaaSessionDaily: 'Second MAA session: daily run',
@@ -851,10 +853,10 @@ export default {
     failure: 'On failure',
     stringSplittingGuide: 'String splitting guide',
     done: 'Done',
-    createFirstUser: 'Create the first account!',
+    createFirstUser: 'Create the first account',
     shellImportTitle: 'Import existing configurations as accounts',
     shellImportHint:
-      'Found {count} {source} configuration(s) in the project folder. Each one you check becomes a account named after it, with its task queue and task options imported. Leave all unchecked to create a single empty account.',
+      'Found {count} {source} configuration(s) in the project folder. Each one you check becomes an account named after it, with its task queue and task options imported. Leave all unchecked to create a single empty account.',
     shellImportSelectAll: 'Select all',
     shellImportSelectedCount: '{selected} / {total} selected',
     shellImportActive: 'In use',
@@ -971,7 +973,7 @@ export default {
     enterPassword: 'Enter the password',
     enterUsername: 'Enter the account name',
     enterAccount: 'Enter the account',
-    pleaseChoose: 'Please choose',
+    pleaseChoose: 'Select an option',
     daysLeftAccount1: 'Days left on the account; -1 means unlimited',
     notificationContent: 'Notification content',
     notificationSettings: 'Notification settings',
@@ -1028,7 +1030,7 @@ export default {
     debug: 'Debug',
     accountSwitchingMethod: 'Account switching method',
     accountSwitchMethodMas: 'MAS account switching',
-    accountSwitchMethodMaaend: 'MAAEND built-in switching',
+    accountSwitchMethodMaaend: 'MaaEnd built-in switching',
     maaendMasAccountSwitchWarningTitle: 'MAS account switching risk',
     maaendMasAccountSwitchWarning:
       'MAS account switching can mix up Zipline data. Disable the "Import/update Zipline coordinates" feature before using it.',
@@ -1038,7 +1040,7 @@ export default {
     configurationManagement: 'Configuration management',
     k0MeansNoLimit: '0 means no limit',
     presetTemplate: 'Preset template',
-    k123456DigitCountLog: '123456) — the digit count in the log is detected automatically.',
+    k123456DigitCountLog: 'The digit count is detected automatically from the log',
     echoDomainNumberF2: 'Echo Domain number in the F2 list',
     sonanceCasketNumberF2: 'Sonance Casket number in the F2 list',
     hsrScriptConfiguration: 'HSR script configuration',
@@ -1087,7 +1089,7 @@ export default {
     okWwScriptConfiguration: 'ok-ww script configuration',
     okWwSettingsSaved: 'ok-ww settings saved',
     okWwPath: 'ok-ww path',
-    originalUiRecommended: '- the original UI is recommended',
+    originalUiRecommended: 'The original UI is recommended',
     march7thPath: 'March7th path',
     uploadFailedCheckYour: 'Upload failed — check your connection and try again',
     uploadThisScriptConfiguration: 'Upload this script configuration to the cloud',
@@ -1102,13 +1104,13 @@ export default {
     giveThisConfigurationName: 'Give this configuration a name you will recognize',
     giveYourScriptConfiguration: 'Give your script configuration a name you will recognize',
     saveSeparateConfigurationThis:
-      'Save a separate configuration for this user, loaded before a run and saved afterwards per the task policy.',
+      'Save a separate configuration for this account, loaded before a run and saved afterwards per the task policy.',
     mainProgramPath: 'Main program path',
     writtenCurrentUserS:
       "Written to the current user's registry only while MAS launches the local game, switching it to windowed mode; the original value is restored when the task finishes, fails, or is stopped and the game closes",
     appliesMarch7thDivergentUniverse:
       'Applies to March7th Divergent Universe only; maps to weekly_divergent_stable_mode',
-    pcControllersOnlySeconds: 'PC controllers only, in seconds',
+    pcControllersOnlySeconds: 'PC control mode only; value in seconds',
     cutFromKeywordEnd:
       'Cut from the keyword to the end of the line; tick "include" to remove the keyword too, otherwise keep it',
     couldNotClearInvalidManagedOverrides: 'Could not remove the stale overrides',
@@ -1128,7 +1130,7 @@ export default {
     taskQueue: 'Task queue',
     taskQueueConfiguration: 'Task queue configuration',
     author: 'Author',
-    useThisUserS: "Use this user's own configuration, isolated from the script configuration.",
+    useThisUserS: "Use this account's own configuration, isolated from the script configuration.",
     useSharedScriptLevel: 'Use the shared configuration for every account.',
     exampleTaskRunS: 'For example: $(task run: (\\S+))',
     exampleStartSEnd: 'For example: $(start: (\\S+));$(end: (\\S+))',
@@ -1148,7 +1150,7 @@ export default {
     couldNotSaveGeneral: 'Could not save the general configuration',
     couldNotSaveConfiguration: 'Could not save the configuration',
     keepClosed: 'Keep closed',
-    redeemCodesRunOnly: 'Redeem codes run only when they change',
+    redeemCodesRunOnly: 'Code redemption runs only when the codes change',
     shareThisConfigurationConfig: 'Share this configuration on the config-sharing site',
     deleteThisTask: 'Delete this task',
     startDayIfIt:
@@ -1227,11 +1229,10 @@ export default {
       'When on, the script log is preprocessed line by line: noisy lines are dropped and content that needs redacting or normalizing is rewritten. Preprocessing runs before task logging, push-log collection, and the success/failure check, and dropped lines never reach any of them — so do not drop the line that carries the success/failure marker.',
     masTakesOverStarting: 'When on, MAS starts and closes the game',
     collectsKeyMomentsFrom:
-      "Choose how this user's key moments appear in the task report: Off = not collected; List = one line each with its collection time; Summary = one line per success/failure/skipped status",
+      "Choose how this account's key moments appear in the task report: Off = not collected; List = one line each with its collection time; Summary = one line per success/failure/skipped status",
     beforeLaunchingGameRun:
       'Before launching the game for a run, MAS checks the official version and updates it; when off the game is launched directly',
-    overridesCurrentScriptConfiguration:
-      'Overrides the current regular configuration with the high-traffic task fields from the overlay panel below; when off the full task settings from the regular configuration are kept',
+    overridesCurrentScriptConfiguration: 'Overrides the current standard configuration with the most-used task fields from the panel below; when off, the full task settings from the standard configuration are kept',
     beforeStartingMaaCompare:
       "Before starting MAA, compare the server's game client version with the one in the emulator. When the client is behind, MAA cannot get past the forced-update screen and just hangs until it times out",
     whenClientDetectedAs:
@@ -1246,8 +1247,7 @@ export default {
     maaendConfigRestoreScriptDesc:
       'Backups of the MaaEnd native config; restoring applies directly to MaaEnd itself. Created automatically (dedup) when opening this edit page, before running MaaEnd or opening its config UI, latest 10 kept',
     // 通用脚本配置恢复（配置格式任意，预览为文件清单；有遮罩会话）
-    generalConfigRestoreUserDesc:
-      'Backups of this account script config; restoring applies directly to the MAS config page. Created automatically (dedup) before running or opening the config UI, latest 10 kept',
+    generalConfigRestoreUserDesc: "Backups of this account's script config; restoring applies directly to the MAS config page. Created automatically (dedup) before running or opening the config UI, latest 10 kept",
     generalConfigRestoreScriptDesc:
       'Backups of the script config path; restoring applies directly to the script itself. Created automatically (dedup) when opening this edit page or before running, latest 10 kept',
     generalViewingTitle: 'Viewing script config',
@@ -1268,8 +1268,8 @@ export default {
     srcViewingTitle: 'Viewing SRC configuration',
     srcViewingDesc: 'The SRC UI shows the selected backup, for viewing only.',
     srcViewingDesc2:
-      'The config is temporarily switched during viewing; click "Close Viewer" when finished.',
-    srcViewClose: 'Close Viewer',
+      'The config is temporarily switched during viewing; click "Close viewer" when finished.',
+    srcViewClose: 'Close viewer',
     srcViewOpened: 'SRC viewer opened',
     srcViewStartFailed: 'Failed to open the SRC viewer',
     // MaaEnd 原生设置/查看会话（措辞对齐 ok-ww / MAA / 一条龙）
@@ -1298,7 +1298,7 @@ export default {
     currentVersion: 'Current version',
     thisVersionHasNothing: 'This version has nothing to configure',
     activeStage: 'Active stage',
-    logDebug: 'Log to debug',
+    logDebug: 'Debug logging',
     requiredEmptyValueDisables:
       'Required; an empty value disables the rule. A line matching this pattern opens the window (inclusive)',
     requiredEmptyValueDisables2:
@@ -1381,6 +1381,7 @@ export default {
     collapseRulesArea: 'Click to collapse the rule editing area',
     pushCollectionOffRules: 'Push collection is off; the rules will not run.',
     description: 'Description',
+    examplePreview: 'Example: ',
     tipFAcceptsBoth:
       'Tip: %f accepts both 3-digit milliseconds (such as 123) and 6-digit microseconds (such as 123456)',
     searchSettings: 'Search settings...',
@@ -1399,7 +1400,7 @@ export default {
     logTimestampFormat: 'Log timestamp format',
     logPathSelected: 'Log path selected',
     starRailGameRoot: 'Star Rail game root directory (contains StarRail.exe)',
-    enableQuickConfiguration: 'Enable overwrite regular configuration',
+    enableQuickConfiguration: 'Enable overriding the standard configuration',
     quickConfigDerivedHint: 'Determined by the configuration layer, not switchable on its own',
     overlayConfigEnabled: 'Override standard configuration',
     overlayConfigEnabledDesc:
@@ -1410,19 +1411,19 @@ export default {
     configSemanticsTitle: 'Configuration in effect for this task',
     configSemanticsSharedOffTitle: 'Runs on the shared base configuration as is',
     configSemanticsSharedOffDesc:
-      'The task runs on the shared base configuration of this managed script. Without overriding the regular configuration, MAS only starts the script and does not modify the shared base configuration itself.',
+      'The task runs on the shared base configuration of this managed script. MAS only starts the script and does not modify the shared base configuration itself.',
     configSemanticsSharedOnTitle: "Shared base configuration + this account's override",
     configSemanticsSharedOnDesc:
       'While the task runs, the fields on this page temporarily override the shared base configuration, and the override applies to this account only. When the task ends, including on failure, cancellation, or error, the previous shared base configuration is restored, so the copy shared by every account under this managed script is never polluted.',
     configSemanticsIndependentOffTitle: 'Runs on the independent base configuration as is',
     configSemanticsIndependentOffDesc:
-      "The task runs on this account's own independent base configuration. Without overriding the regular configuration, MAS only starts the script and does not modify the independent base configuration itself. Other accounts keep using their own configurations.",
+      "The task runs on this account's own independent base configuration. MAS only starts the script and does not modify the independent base configuration itself. Other accounts keep using their own configurations.",
     configSemanticsIndependentOnTitle: "Independent base configuration + this account's override",
     configSemanticsIndependentOnDesc:
       "While the task runs, the fields on this page temporarily override this account's independent base configuration. When the task ends, including on failure, cancellation, or error, it is restored, so this account's independent configuration is never polluted and other accounts are unaffected.",
     configSemanticsNativeOffTitle: "Runs on the external script's native configuration as is",
     configSemanticsNativeOffDesc:
-      'The task starts entirely on the configuration that the external script itself maintains, such as MaaEnd or SRC. Without overriding the regular configuration, MAS only starts the script and neither takes over nor modifies that configuration.',
+      'The task starts entirely on the configuration that the external script itself maintains, such as MaaEnd or SRC. MAS only starts the script and neither takes over nor modifies that configuration.',
     configSemanticsNativeOnTitle:
       "Overrides the script's own configuration with the fields on this page",
     configSemanticsNativeOnDesc:
@@ -1482,7 +1483,7 @@ export default {
     okwwAccountSwitchHint:
       "When enabled, MAS switches to the login account matching the last four digits of the user's phone number after the game launches successfully and before running ok-ww; users without an account ID filled in are not switched",
     oknteAccountSwitchHint:
-      'When "Launch the game before the task" is enabled, MAS switches to the login account matching the last four digits of the user\'s phone number after the game launches successfully and before running ok-nte; users without an account ID filled in are not switched. This switch is unavailable when "Launch the game before the task" is off',
+      'When "Launch the game before the task" is enabled, MAS switches to the login account matching the last four digits of the user\'s phone number after the game launches successfully and before running OK-NTE; users without an account ID filled in are not switched. This switch is unavailable when "Launch the game before the task" is off',
     gameLauncher: 'Game launcher',
     launchType: 'Game launch method',
     launchTypeHint:
@@ -1552,7 +1553,7 @@ export default {
       'MirrorChyan is selected as the update source but no CDK is set, so the update cannot be downloaded from MirrorChyan',
     proxyAddress: 'Proxy address',
     proxyAddressTip:
-      'Network proxy used by this project only. Leave it empty to follow the global setting (Settings → Other → Network proxy); once set, update downloads and runtime environment installs for this project go through this proxy only',
+      'Network proxy used by this project only. Leave it empty to follow the global setting (Settings → About → Network proxy); once set, update downloads and runtime environment installs for this project go through this proxy only',
     proxyAddressPlaceholder: 'e.g. 127.0.0.1:7890, empty follows the global proxy',
     updateResultVersion: 'Latest version',
     updateResultSource: 'Download source',
@@ -1581,16 +1582,15 @@ export default {
       'MirrorChyan CDK unavailable ({status}); the update cannot be downloaded from MirrorChyan. Check the CDK and try again',
     cdkExpiresSoon: 'The MirrorChyan CDK expires on {date}',
     directory: 'Directory',
-    useExistingOkwwConfiguration:
-      'Use the existing Okww configuration and leave the complex settings to the script GUI.',
+    useExistingOkwwConfiguration: 'Use the existing ok-ww configuration and leave the complex settings to the script GUI.',
     useScriptSCurrent:
-      "Use the script's current configuration; this user's own configuration is neither loaded nor written back.",
+      "Use the script's current configuration; this account's own configuration is neither loaded nor written back.",
     useScriptS: "Use the script configuration; not isolated from the user's own configuration.",
-    quickConfig: 'Overwrite regular configuration',
+    quickConfig: 'Override standard configuration',
     configSourceHint:
       "Shared configuration: every account shares one config source. Independent configuration: each account uses its own config source. Native configuration: BGI's native config, shared by the accounts that choose it.",
     configSourceHintBase:
-      "Script uses the shared script-level configuration, User uses this user's own configuration, and Direct control uses the script's existing configuration.",
+      "Script uses the shared script-level configuration, User uses this account's own configuration, and Direct control uses the script's existing configuration.",
     nativeConfigSourceDescription: "Uses the script's own configuration as is.",
     // Tooltip reason when the "Script" config source is disabled (unified wording)
     scriptModeDisabled: 'Not supported',
@@ -1612,7 +1612,7 @@ export default {
       'Root directory of the script; every other path is adjusted relative to it',
     scriptDirectControl: 'Native configuration',
     scriptDirectConfiguration: 'Native configuration',
-    scriptTypeNotMfw: 'The script type is not MFW',
+    scriptTypeNotMfw: 'The script type is not MaaFW',
     scriptTypeNotOk: 'The script type is not OK-NTE',
     scriptTypeNotOk2: 'The script type is not ok-ww',
     whetherGameProcessForce: 'Whether the game process is force-closed after the script finishes',
@@ -1630,7 +1630,7 @@ export default {
     whenSetIfAny:
       'When set: if any success log appears before a failure log, the task counts as a success; otherwise, if no success log is present when the script process ends, it counts as a failure. When empty: if no failure log is present when the script process ends, the task counts as a success',
     lines: 'lines',
-    trackedProcessExecutablePath: 'The tracked process executable path was cleared',
+    trackedProcessExecutablePath: "The tracked process's executable path was cleared",
     trackedProcessExecutableSelected: 'Tracked process executable selected',
     nameTrackedProcess: 'Name of the tracked process',
     pathTrackedProcess: 'Path to the tracked process',
@@ -1673,7 +1673,7 @@ export default {
     mfwUnityResolutionTip:
       'Unity games only: before launching, MAS looks up the game registry key from the exe path and temporarily switches to the chosen windowed size, restoring the original values after the game closes; nothing is changed if the game is already running.',
     thisNameAlsoWritten:
-      'This name is also written to March7th Assistant / SRA as the Trailblazer name for Currency War',
+      'This name is also written to March7th Assistant / SRA as the Trailblazer name for the Currency War feature',
     thisSubtaskHasNo: 'This subtask has no editable fields',
     thisConfigurationFileHas: 'This configuration file has no editable fields',
     details: 'Details',
@@ -1684,7 +1684,7 @@ export default {
     createUserBeforeConfiguring: 'Create the account before configuring OK-NTE',
     setLogFilePath: 'Set the log file path in the script configuration first',
     importMfwProjectScript: 'Import the project on the managed script page first',
-    addEnableUserBefore: 'Add and enable a account before checking for updates',
+    addEnableUserBefore: 'Add and enable an account before checking for updates',
     finishSetupOkWw: 'Finish the setup in the ok-ww window.',
     readingControllersResourcesTasks:
       'Please wait — reading the controllers, resources, tasks, and options from the project definition file (interface.json)',
@@ -1708,16 +1708,16 @@ export default {
     maafwCheckboxCountMax: 'Select at most {max}',
     maafwCheckboxCountCurrent: ' (currently {count})',
     enterEmulatorInstanceIndex: 'Enter the emulator instance index',
-    enterUserName: 'Enter a account name...',
+    enterUserName: 'Enter an account name...',
     enterScriptLaunchArguments: 'Enter the script launch arguments',
     enterScriptLogTimestamp: 'Enter the script log timestamp format',
     enterProcessNameTrack: 'Enter the process name to track',
     enterProcessCommandLine: 'Enter the process command line',
     pickEndfieldExe: 'Pick Endfield.exe',
-    pickActualMfwProject: 'Pick the actual MFW project directory',
+    pickActualMfwProject: 'Pick the actual MaaFW project directory',
     pickDirectoryHoldingMaaend: 'Pick the directory holding MaaEnd.exe',
     pickSraFolderContains: 'Pick the SRA folder (contains SRA-cli.exe)',
-    pickDirectoryHoldingOk: 'Pick the directory holding ok-nte.exe',
+    pickDirectoryHoldingOk: 'Pick the directory holding OK-NTE.exe',
     pickDirectoryHoldingOk2: 'Pick the directory holding ok-ww.exe',
     pickFolderHoldingMaa: 'Pick the folder holding MAA.exe',
     pickFolderHoldingSrc: 'Pick the folder holding SRC.exe',
@@ -1755,7 +1755,7 @@ export default {
     pickMfwProject: 'Pick the project',
     pickDirectoryHoldingMaaend2: 'Pick the directory holding MaaEnd.exe',
     pickExe: 'Pick an exe',
-    pickDirectoryHoldingOk3: 'Pick the directory holding ok-nte.exe',
+    pickDirectoryHoldingOk3: 'Pick the directory holding OK-NTE.exe',
     pickDirectoryHoldingOk4: 'Pick the directory holding ok-ww.exe',
     pickFolderHoldingMaa2: 'Pick the folder holding MAA.exe',
     pickFolderHoldingSrc2: 'Pick the folder holding SRC.exe',
@@ -1764,7 +1764,7 @@ export default {
     pickImportPath: 'Pick the import path',
     pickLocalDirectory: 'Pick a local directory',
     localProjectDirectory: 'Local project directory',
-    pickMfwProjectDirectory: 'Pick the MFW project directory containing interface.json',
+    pickMfwProjectDirectory: 'Pick the MaaFW project directory containing interface.json',
     maafwDirectoryLockedHint:
       'The project has been imported into AUTO-MAS’s own directory; runs and updates happen there and the source directory can be deleted. Create a new managed script to use another project',
     maafwImportingCopy: 'Importing project...',
@@ -1808,7 +1808,7 @@ export default {
     pickHowGameControlled: 'Pick how the game is controlled',
     pickUserWhoseServer: 'Pick the account whose server is checked for updates',
     chooseWhetherMasSwitches:
-      "Choose whether MAS switches between the accounts saved in the game, or MAAEND's built-in task switches by the last four digits of the account",
+      "Choose whether MAS switches between the accounts saved in the game, or MaaEnd's built-in task switches by the last four digits of the account",
     pickProjectDirectory: 'Pick the project directory',
     pickGameSOwn: "Pick the game's own exe; MAS closes it afterwards",
     generalScriptConfiguration: 'General script configuration',
@@ -1875,7 +1875,7 @@ export default {
     bettergiNotBettergiScript: 'This script is not a BetterGI script',
     bettergiConfigure: 'Configure BetterGI',
     bettergiMasConfigTooltip:
-      "Per-user mode: this user's One Dragon tasks and custom groups are configured entirely on this page (MAS is the source of truth); there is no need to edit the MAS independent profile inside BetterGI.",
+      "Per-account mode: this account's OneDragon tasks and custom groups are configured entirely on this page (MAS is the source of truth); there is no need to edit the MAS independent profile inside BetterGI.",
     bettergiConfiguringTitle: 'BetterGI setup in progress',
     bettergiConfiguringDesc: 'Finish your changes in the BetterGI window.',
     bettergiConfiguringDesc2: 'When you are done, click Save settings to end this session.',
@@ -1919,26 +1919,25 @@ export default {
     bettergiServerEurope: 'Europe',
     bettergiServerAmerica: 'America',
     bettergiServerTwHkMo: 'TW/HK/MO',
-    bettergiTaskConfigHint:
-      "Tick the built-in One Dragon groups to run. Under script-controlled mode BetterGI's own settings decide, and this section is read-only",
+    bettergiTaskConfigHint: "Tick the built-in OneDragon groups to run. In native mode, BetterGI's own settings decide, and this section is read-only",
     bettergiDirectModeAlert:
       'Native configuration: enter the OneDragon config name this account uses below (a config that already exists in BetterGI); configure scripts inside BetterGI (click "Configure BetterGI" to open it).',
     bettergiSwitchToMasConfig: 'Switch to independent configuration',
     bettergiMasConfigHowTo: 'How to use task configuration',
     bettergiMasConfigHowTo1a:
-      "This user's One Dragon is on a per-user profile: tasks and custom groups are configured on this page as the MAS source of truth (no need to open BetterGI's One Dragon page). MAS launches One Dragon from the fixed slot",
+      "This account's OneDragon is on a per-account profile: tasks and custom groups are configured on this page as the MAS source of truth (no need to open BetterGI's OneDragon page). MAS launches OneDragon from the fixed slot",
     bettergiMasConfigSlotName: 'MAS独立配置',
     bettergiMasConfigHowTo1b:
-      'and cleans the slot up afterwards. Your own BetterGI profiles (such as 默认配置) stay untouched: the same-named real profile is neither read nor affected by this page.',
+      'and cleans the slot up afterwards. Your own BetterGI profiles (such as 默认配置, the default profile) stay untouched: the same-named real profile is neither read nor affected by this page.',
     bettergiMasConfigHowTo2:
       'The battle party and battle strategy below are the fallback for every combat task (ley line blossoms, domains, boss runs and Stygian Onslaught). An empty party means "do not switch party" (keep the party you entered the task with); an empty strategy lets BetterGI pick one from the party. If a task matches a battle scene in the team table, the party and strategy of that row win.',
     bettergiTeamHowToTitle: 'How to use team settings',
     bettergiTeamHowTo:
       'With the team table enabled, combat tasks (auto domain / auto ley line blossom / auto boss) look it up first: a row matching the battle scene is preferred, and one is picked at random when several match; tasks without a match fall back to the battle party / battle strategy above. Row 0, General, covers every scene and cannot be deleted. Party and strategy names must match what already exists in BetterGI (use "Open strategy folder" to browse strategy files).',
-    bettergiOneDragonName: 'One Dragon profile',
+    bettergiOneDragonName: 'OneDragon profile',
     bettergiOneDragonNameHint:
       'Fixed to MAS独立配置 while independent configuration is on and cannot be changed. With independent configuration off (native mode) it picks the BetterGI profile to use; defaults to 默认配置',
-    bettergiPickOneDragonName: 'Pick a One Dragon profile',
+    bettergiPickOneDragonName: 'Pick a OneDragon profile',
     bettergiDailyRewardParty: 'Reward pickup party',
     bettergiEnterDailyRewardParty: 'Enter the reward pickup party',
     bettergiKeepExistingHint: "Leave empty to keep BetterGI's current setting",
@@ -2007,16 +2006,16 @@ export default {
     bettergiGroupTeapot: 'Serenitea Pot rewards',
     bettergiCustomGroups: 'Custom groups',
     bettergiCustomGroupsTip1:
-      "Source: the custom groups in your BetterGI One Dragon profile beyond the 8 built-in ones (added from BetterGI's One Dragon page). These are not the task-group pills below.",
+      "Source: the custom groups in your BetterGI OneDragon profile beyond the 8 built-in ones (added from BetterGI's OneDragon page). These are not the task-group pills below.",
     bettergiCustomGroupsTip2a:
-      'How it works (this table is only a switch): groups that exist in One Dragon but are not listed here',
+      'How it works (this table is only a switch): groups that exist in OneDragon but are not listed here',
     bettergiCustomGroupsDefaultRun: 'run by default',
     bettergiCustomGroupsTip2b:
       '. Groups added to this table follow their own row switch: on runs, off does not.',
     bettergiCustomGroupsTip3:
-      'Add group picks from your existing BetterGI profile (the account MAS independent copy under per-account mode) which groups to manage here. Groups left out stay in One Dragon and are never dropped because of this table.',
+      'Pick which groups to manage here from the custom groups in your BetterGI profile (the MAS independent copy under per-account mode). Groups left out stay in OneDragon and are never dropped because of this table.',
     bettergiCustomGroupsDesc:
-      'These come from the custom groups in your BetterGI One Dragon profile beyond the 8 built-in ones. The table is only a switch: groups present in One Dragon but absent here run by default, while listed groups follow their row switch (on runs, off does not).',
+      'These come from the custom groups in your BetterGI OneDragon profile beyond the 8 built-in ones. The table is only a switch: groups present in OneDragon but absent here run by default, while listed groups follow their row switch (on runs, off does not).',
     bettergiAddGroup: 'Add group',
     bettergiDeleteGroupConfirm: 'Remove the selected groups?',
     bettergiAdding: 'Adding...',
@@ -2045,8 +2044,8 @@ export default {
     bettergiViewingTitle: 'Viewing BetterGI configuration',
     bettergiViewingDesc: 'The BetterGI UI shows the selected backup, for viewing only.',
     bettergiViewingDesc2:
-      'The config is temporarily opened during viewing; click "Close Viewer" when finished.',
-    bettergiViewClose: 'Close Viewer',
+      'The config is temporarily opened during viewing; click "Close viewer" when finished.',
+    bettergiViewClose: 'Close viewer',
     bettergiViewOpened: 'BetterGI viewer opened',
     bettergiViewStartFailed: 'Failed to open the BetterGI viewer',
     // MaaFW 配置恢复（mas=纯字段侧车；native=项目 config/ + interface.json）
@@ -2118,7 +2117,7 @@ export default {
       '{p0} was not found in the selected directory; pick the Whimbox install root',
     whimboxNotWhimboxScript: 'Script type is not Whimbox',
     whimboxRetryLimitHint:
-      'Maximum retries after a failed run; recoverable failures inside one-dragon steps do not consume retries',
+      'Maximum retries after a failed run; recoverable failures inside OneDragon steps do not consume retries',
     whimboxRunTimeoutHint:
       'Treat the run as stuck after this many minutes without new log output; full multi-account runs take longer, raise as needed',
     whimboxUseAdmin: 'Run as administrator',
@@ -2134,11 +2133,11 @@ export default {
     whimboxOptionsSection: 'Advanced parameters',
     whimboxRunAllAccounts: 'Run all game accounts',
     whimboxRunAllAccountsHint:
-      'When on, the one-dragon runs every logged-in account in turn; the account list is detected by Whimbox itself, no need to register accounts here',
+      'When on, the OneDragon runs every logged-in account in turn; the account list is detected by Whimbox itself, no need to register accounts here',
     whimboxStepHint:
       'Steps and targets are delivered from your Whimbox version (refresh this page after upgrading Whimbox to see new steps); mandatory steps such as launching the game are fixed by Whimbox and not listed',
     whimboxSelectPlaceholder: 'Select',
-    whimboxMultiSelectPlaceholder: 'Multiple choice allowed',
+    whimboxMultiSelectPlaceholder: 'Multiple selection',
     whimboxTextPlaceholder: 'Enter a value',
     whimboxConfigRestoreUserDesc:
       'Backups of MAS-panel task toggles and target parameters (written into Whimbox on run); restoring applies directly to the MAS config page. Created automatically (dedup) when leaving this edit page, latest 10 kept',
@@ -2170,34 +2169,34 @@ export default {
       "Multi-user runs switch each user's account per the selected method; hover a dropdown option for its details",
     zzzodAccountSwitchSingle: 'Single-instance (recommended)',
     zzzodAccountSwitchSingleHint:
-      'Each account gets an independent one-dragon session: inject that account config → single-instance run (no cross-slot switching) → finish and close → next account. A failure only restarts the failed account; accounts are fully isolated',
+      'Each account gets an independent OneDragon session: inject that account config → single-instance run (no cross-slot switching) → finish and close → next account. A failure only restarts the failed account; accounts are fully isolated',
     zzzodAccountSwitchMulti: 'Multi-instance (not recommended)',
     zzzodAccountSwitchMultiHint:
-      'All accounts merge into one multi-account run with the one-dragon switching accounts internally; shortest total time, but one bad slot or failed switch drags the whole round into retries and accounts are not isolated',
+      'All accounts merge into one multi-account run with the OneDragon switching accounts internally; shortest total time, but one bad slot or failed switch drags the whole round into retries and accounts are not isolated',
     zzzodAccountSwitchMas: 'MAS switching (not yet available)',
     zzzodAccountSwitchMasHint:
-      'MAS drives the game to switch accounts then hands over to the one-dragon; not yet available',
+      'MAS drives the game to switch accounts then hands over to the OneDragon; not yet available',
     zzzodCloseGameOnFinishHint:
       'MAS closes the game after the run; the game is also closed when you manually stop the schedule (recommended for multi-account runs)',
     zzzodLaunchBeforeTaskHint:
       'MAS starts the game before running; skipped when the game is already running',
-    zzzodGameArgumentsHint: 'Game launch arguments (not the one-dragon launcher arguments)',
+    zzzodGameArgumentsHint: 'Game launch arguments (not the OneDragon launcher arguments)',
     zzzodRetryLimitHint: 'Give up after this many failures; re-runs skip already completed tasks',
     zzzodRunTimeoutHint:
-      'Times out when the log stays silent; a full one-dragon run usually needs 180+ minutes',
+      'Times out when the log stays silent; a full OneDragon run usually needs 180+ minutes',
     zzzodDuplicateUserName:
       'Another account with this name already exists in this script; pick a different name',
-    zzzodTaskConfigHint: 'Click to overwrite the regular configuration',
+    zzzodTaskConfigHint: 'Click to override the standard configuration',
     zzzodTaskConfigLoadFailed: 'Could not load the task config',
     zzzodTaskConfigSaveFailed: 'Could not save the task config',
     zzzodTaskConfigSaved: 'Task config saved',
-    zzzodTaskJumpHint: 'Click to configure in the one-dragon main interface',
+    zzzodTaskJumpHint: 'Click to configure in the OneDragon main interface',
     zzzodPlanAdd: 'Add plan',
     zzzodPlanDelete: 'Delete plan',
     zzzodPlanRunTimes: 'Run {count} time(s)',
     zzzodPredefinedTeams: 'Predefined teams',
     zzzodPredefinedTeamsHint:
-      'The same 20 teams as the one-dragon team page: team names must match the in-game teams; related tasks match teams by name and apply the bound battle config and members.',
+      'The same 20 teams as the OneDragon team page: team names must match the in-game teams; related tasks match teams by name and apply the bound battle config and members.',
     zzzodTeamNamePlaceholder: 'Team name (same as in game)',
     zzzodTeamBattleConfig: 'Battle config',
     zzzodTeamAgentEmpty: 'Agent',
@@ -2280,7 +2279,7 @@ export default {
       'Shared config is shared by every account of this managed script; restoring overwrites the config other accounts are currently using.',
     // ok-nte 原生配置备份的描述覆写（ok-nte 无直控模式，归档时机与通用措辞不同）
     oknteConfigRestoreScriptDesc:
-      'Backups of the ok-nte native config; restoring applies directly to ok-nte itself. Created automatically (dedup) when opening this edit page, before running ok-nte or opening its config UI, latest 10 kept',
+      'Backups of the OK-NTE native config; restoring applies directly to OK-NTE itself. Created automatically (dedup) when opening this edit page, before running OK-NTE or opening its config UI, latest 10 kept',
     // ok-nte 原生设置/查看会话（措辞对齐一条龙）
     oknteSessionStopFailed: 'Could not stop the OK-NTE setup session',
     oknteSessionStartFailed: 'Could not start the OK-NTE setup session',
@@ -2290,7 +2289,7 @@ export default {
     oknteSessionTimeoutWarn:
       'The OK-NTE setup session is about to time out and will be saved in 30 seconds',
     oknteViewingTitle: 'Viewing OK-NTE config',
-    oknteViewingDesc: 'The ok-nte window shows the selected backup, for viewing only.',
+    oknteViewingDesc: 'The OK-NTE window shows the selected backup, for viewing only.',
     oknteViewingDesc2: 'Viewing temporarily switches the config; click "Close viewer" when done.',
     oknteViewClose: 'Close viewer',
     // ok-ww 原生配置备份的描述覆写（归档时机与通用措辞不同）
@@ -2335,7 +2334,7 @@ export default {
     zzzodPreviewUnlimited: 'Unlimited',
     zzzodOpenNativeConfig: 'Configure in OneDragon',
     zzzodOpenNativeConfigHint:
-      'Open the native zzz-od UI for team setup and other advanced settings; opens the bound dedicated instance (MAS-<account>) seeded from this page, task list and account changes made in the GUI read back here automatically, and the previous active instance is restored on close',
+      'Open the native zzz-od UI for team setup and other advanced settings; opens the bound dedicated instance (MAS-<account>) seeded from this page, task list and account changes made in the GUI read back here automatically. The previous active instance is restored on close',
     zzzodConfiguringTitle: 'ZZZ-OD setup in progress',
     zzzodConfiguringDesc:
       'Switched to the dedicated instance bound to this account; finish team setup there.',
@@ -2358,23 +2357,23 @@ export default {
     zzzodSettingsSaveFailed: 'Could not save the ZZZ-OD settings',
     zzzodUserNameHint: 'Display name used to tell accounts apart in statistics',
     zzzodConfigSourceUserAlert:
-      'Account and task list follow this page; AUTO-MAS injects them into the one-dragon at run time',
+      'Account and task list follow this page; AUTO-MAS injects them into the OneDragon at run time',
     zzzodConfigSourceDirectAlert:
-      "Direct mode edits the selected instance's native one-dragon config and runs with that instance's config; MAS does not inject or interfere",
+      "Direct mode edits the selected instance's native OneDragon config and runs with that instance's config; MAS does not inject or interfere",
     zzzodModeUser: 'Independent configuration',
     zzzodModeUserDesc: "Use this user's independent config, isolated from the native one.",
     zzzodModeDirectDesc:
-      "Edit the one-dragon's native config directly; configure multiple accounts in the Instance management on this page\n(one direct-control user per script)",
+      "Edit the OneDragon's native config directly; configure multiple accounts in the Instance management on this page\n(one direct-control user per script)",
     zzzodDirectInstance: 'Instance to edit',
     zzzodDirectInstanceHint:
-      'Pick the one-dragon account (instance) to edit directly; editing only affects that instance. To decide which account "Run current only" runs, use "Set active" in Instance management, and combine "Launch instance" + "Switch account" for multi-account runs',
+      'Pick the OneDragon account (instance) to edit directly; editing only affects that instance. To decide which account "Run current only" runs, use "Set active" in Instance management, and combine "Launch instance" + "Switch account" for multi-account runs',
     zzzodDirectPickInstance: 'Pick the instance to edit',
     zzzodDirectPickInstanceFirst: 'Pick an instance above first',
     zzzodDirectModeLimit:
       "Only one direct-control user is allowed per script; configure multiple accounts in that user's Instance management",
     zzzodDirectInstanceRun: 'Run instances',
     zzzodDirectInstanceRunHint:
-      'Run current only = run just the selected account; all enabled instances = run every account whose "Launch instance" switch is on, in the one-dragon\'s own order',
+      'Run current only = run just the selected account; all enabled instances = run every account whose "Launch instance" switch is on, in the OneDragon\'s own order',
     zzzodInstanceRunCurrent: 'Run current only',
     zzzodInstanceRunAll: 'All enabled instances',
     zzzodDirectBindAlert:
@@ -2387,14 +2386,14 @@ export default {
     zzzodDragSortHint: 'Drag to reorder',
     zzzodInstancesManage: 'Instance management',
     zzzodInstancesManageHint:
-      'Manage native one-dragon instances: flip the per-instance "Launch instance" switch — with Run instances set to "All enabled instances", only switched-on accounts run. Add, rename or delete instances; changes are written back to one_dragon.yml immediately. Deleting an instance also removes its config directory, so proceed with care.',
+      'Manage native OneDragon instances: flip the per-instance "Launch instance" switch — with Run instances set to "All enabled instances", only switched-on accounts run. Add, rename or delete instances; changes are written back to one_dragon.yml immediately. Deleting an instance also removes its config directory, so proceed with care.',
     zzzodInstanceActiveInOd:
       'Launch instance: this instance participates in the run when Run instances is set to "All enabled instances"',
     zzzodInstanceRunAllSwitch: 'Launch instance',
     zzzodInstanceForceLoginSwitch: 'Switch account before run',
     zzzodInstanceSetActiveTag: 'Set active',
     zzzodInstanceForceLoginHint:
-      'Force login before run: when the one-dragon multi-account run reaches this instance it logs into its account to switch (native one-dragon capability; MAS does not interfere)',
+      'Force login before run: when the OneDragon multi-account run reaches this instance it logs into its account to switch (native OneDragon capability; MAS does not interfere)',
     zzzodInstanceForceLoginFailed: 'Failed to update the switch-account toggle',
     zzzodAccountRequiredTip:
       'Account switching (switch before run / multi-account runs) needs complete login info: CN/International use account + password, CN Bilibili uses the Bilibili account name',
@@ -2422,13 +2421,13 @@ export default {
     zzzodDeleteInstanceSuccess: 'Instance deleted',
     zzzodNativeLoadFailed: 'Could not load the instance native config',
     zzzodNativeSaveFailed: 'Could not save the instance native config',
-    zzzodNativeSaved: "Saved to the selected instance's native one-dragon config",
+    zzzodNativeSaved: "Saved to the selected instance's native OneDragon config",
     zzzodBackupFailed:
       'Could not back up the native config; check Config restore for a recovery point',
     zzzodLoadInstancesFailed: 'Could not load the instance list',
     zzzodSlotsManage: 'MAS instance slots',
     zzzodSlotsManageHint:
-      'Slot directories are instance folders MAS creates inside the one-dragon install; the one-dragon registry and UI never show them. This table shows who owns each slot: a bound account that has not run yet has a slot number but no directory, and an unowned leftover is an old slot no account claims.',
+      'Slot directories are instance folders MAS creates inside the OneDragon install; the OneDragon registry and UI never show them. This table shows who owns each slot: a bound account that has not run yet has a slot number but no directory, and an unowned leftover is an old slot no account claims.',
     zzzodSlotsRefresh: 'Refresh',
     zzzodSlotsClean: 'Clean unowned slots',
     zzzodSlotsCleanConfirm:
@@ -2467,7 +2466,7 @@ export default {
     zzzodRecycleKindSlot: 'Slot content',
     zzzodRecycleKindMas: 'Backup pool',
     zzzodRecycleHint:
-      'Slot contents left by deleted accounts/managed scripts and by manual cleaning are archived here (grouped by slot, shared across managed scripts). Restore puts a snapshot back into a account bound slot (or a newly created account); to roll back a config while the account still exists, use Config restore on the account page.',
+      'Slot contents left by deleted accounts/managed scripts and by manual cleaning are archived here (grouped by slot, shared across managed scripts). Restore puts a snapshot back into an account bound slot (or a newly created account); to roll back a config while the account still exists, use Config restore on the account page.',
     zzzodRecycleEmpty: 'The recycle pool is empty',
     zzzodRecycleRestore: 'Restore',
     zzzodRecycleOpen: 'Open',
@@ -2478,11 +2477,11 @@ export default {
     zzzodRecycleClearDone: 'Recycle pool cleared ({count} record(s))',
     zzzodRecycleClearFailed: 'Could not clear the recycle pool',
     zzzodRecycleRestoreConfirm:
-      'Restore this snapshot (slot {slot}) into a account slot? If the target account already has a bound slot, its current content is archived first.',
+      'Restore this snapshot (slot {slot}) into an account slot? If the target account already has a bound slot, its current content is archived first.',
     zzzodRecycleRestoreTargetHint: 'Snapshot: slot {slot} · {ts}',
     zzzodRecycleRestoreToUser: 'Restore into an existing account',
     zzzodRecycleRestoreToNewUser: 'Create a new account',
-    zzzodRecycleRestoreUserPlaceholder: 'Pick a account',
+    zzzodRecycleRestoreUserPlaceholder: 'Pick an account',
     zzzodRecycleRestoreNewUserName: 'New account name',
     zzzodRecycleRestoreNewUserNameDefault: 'Restored account',
     zzzodRecycleRestoreOverwriteHint:
@@ -2510,7 +2509,7 @@ export default {
     zzzodPickGameExe: 'Pick ZenlessZoneZero.exe',
     zzzodAccount: 'Account',
     zzzodEnterAccount: 'Enter the login account (phone/email)',
-    zzzodAccountHint: 'Used by the one-dragon auto login; leave empty when not needed',
+    zzzodAccountHint: 'Used by the OneDragon auto login; leave empty when not needed',
     zzzodPasswordHint: 'Fill in for account+password login; leave empty to reuse the saved session',
     zzzodEnterPasswordPlaceholder: 'Enter the password (leave empty to reuse the saved session)',
     zzzodBilibiliAccount: 'Bilibili account name',
@@ -2520,10 +2519,10 @@ export default {
     zzzodCustomWinTitle: 'Window title',
     zzzodOneDragonConfig: 'Task configuration',
     zzzodOneDragonConfigHint:
-      'Stored in this account config; MAS writes them into the one-dragon at run time. Tasks with the switch on run in order',
+      'Stored in this account config; MAS writes them into the OneDragon at run time. Tasks with the switch on run in order',
     zzzodOneDragonDesc:
       'One-dragon series tasks on one screen: flip a switch to include a task in the run, and it stays in place when turned off; drag the card handle to adjust the run order.',
-    zzzodLoadOneDragonFailed: 'Could not load the one-dragon task list',
+    zzzodLoadOneDragonFailed: 'Could not load the OneDragon task list',
     zzzodAfterDone: 'Action after run',
     zzzodAfterDoneHint:
       'Action to run after the OneDragon run finishes, same as the OneDragon "After run" dropdown. In independent mode it stays in sync with the OneDragon UI via the config session; in native mode it reads and writes the OneDragon native setting. Delivered by MAS as launch arguments (only applies when the run finishes successfully)',
@@ -2533,9 +2532,9 @@ export default {
     zzzodLaunchArgsTitle: 'Launch Arguments',
     zzzodLaunchArgsDetail: 'Details',
     zzzodLaunchArgsDesc:
-      'Arguments used when the one-dragon starts the game (same source as its in-app game settings); with the master switch off, the game starts without any arguments',
+      'Arguments used when the OneDragon starts the game (same source as its in-app game settings); with the master switch off, the game starts without any arguments',
     zzzodLaunchArgsSwitchHint:
-      'Launch arguments master switch: when off, the one-dragon starts the game without any arguments (including advanced ones)',
+      'Launch arguments master switch: when off, the OneDragon starts the game without any arguments (including advanced ones)',
     zzzodScreenSize: 'Window Size',
     zzzodFullScreen: 'Fullscreen',
     zzzodFullScreenWindowed: 'Windowed',
@@ -2546,16 +2545,16 @@ export default {
     zzzodAdvanceArgsPlaceholder: 'Other custom arguments (use the DX12 switch above)',
     zzzodDx12: 'DX12',
     zzzodDx12Hint:
-      'Launch the game with DX12 (-use-d3d12); same level as other arguments, merged into the one-dragon advanced arguments automatically, requires the master switch to be on',
+      'Launch the game with DX12 (-use-d3d12); same level as other arguments, merged into the OneDragon advanced arguments automatically, requires the master switch to be on',
     bettergiAddScriptToGroup: 'Add script to group',
     bettergiAddScriptToGroupOk: 'Add',
     bettergiAddScriptUnsupported: 'This type cannot be added to a config group yet',
     bettergiAddToDragon: 'Add config group',
     bettergiAddToDragonOk: 'Add',
-    bettergiAlreadyInDragon: 'Already in the one-dragon queue',
+    bettergiAlreadyInDragon: 'Already in the OneDragon queue',
     bettergiChipSelectHint: 'Select items to add to the queue',
     bettergiClearDragon: 'Clear',
-    bettergiClearDragonTitle: 'Clear the one-dragon queue?',
+    bettergiClearDragonTitle: 'Clear the OneDragon queue?',
     bettergiCopySameAs: 'Copy identical config',
     bettergiDuplicateAsNew: 'Save as new config group',
     bettergiDuplicateDone: 'Saved as a new config group',
@@ -2589,7 +2588,7 @@ export default {
     bettergiMultiEnable: 'Enable selected',
     bettergiMultiRemove: 'Remove selected',
     bettergiMultiRemoveContent:
-      'After removal, these config groups will no longer run with the one-dragon',
+      'After removal, these config groups will no longer run with the OneDragon',
     bettergiMultiRemoveTitle: 'Remove the selected config groups?',
     bettergiMultiSelected: 'Selected {count}',
     bettergiOpenBgi: 'Open BetterGI',
@@ -2601,11 +2600,11 @@ export default {
     bettergiPathingEmptyDir: 'Pathing folder is empty',
     bettergiPathingEmptyTree: 'Pathing list is empty',
     bettergiPathingSelectHint: 'Select a pathing to add',
-    bettergiPickCandidateFirst: 'Please select a candidate first',
+    bettergiPickCandidateFirst: 'Select an item first',
     bettergiProjectSaveFailed: 'Failed to save the project',
     bettergiRemoveFromDragonContent:
-      'After removal, this config group will no longer run with the one-dragon',
-    bettergiRemoveFromDragonTitle: 'Remove this item from the one-dragon queue?',
+      'After removal, this config group will no longer run with the OneDragon',
+    bettergiRemoveFromDragonTitle: 'Remove this item from the OneDragon queue?',
     bettergiRenameAsNew: 'Rename config group',
     bettergiRenameDone: 'Renamed to "{name}"',
     bettergiRenameLockedTip:
@@ -2621,13 +2620,45 @@ export default {
       '"Config group name" only changes the display on this page; execution still uses the actual group name. "Name note" distinguishes multiple instances of the same config group.',
     bettergiRenameTitle: 'Edit config group name',
     bettergiScriptGroupEmptyDir: 'Script group folder is empty',
-    bettergiStrategyPickerTip: 'Select the one-dragon common battle strategy',
+    bettergiStrategyPickerTip: 'Select the OneDragon common battle strategy',
     bettergiTabJsEmpty: 'No JS scripts',
     bettergiTabJsScript: 'JS scripts',
     bettergiTabPathing: 'Pathing',
     bettergiTabKeyMouse: 'Recording',
     bettergiTabScriptGroup: 'Config group',
     bettergiDomainPickerClear: 'Clear',
+    maaEndEssenceFarmMode: 'Essence farming mode',
+    depotDeleteSelectedConfirm: 'Delete the {n} selected depot maintenance plans?',
+    maafwNoMatchingSettings: 'No matching settings',
+    maafwNoConfigurableOptions: 'This task has no configurable options',
+    maafwUnsupportedOptionType: 'Unsupported setting type: {type}. Contact the script author or upgrade AUTO-MAS.',
+    unknownType: 'Unknown',
+    savingNow: 'Saving…',
+    autoSaved: 'Saved automatically',
+    saveFailedShort: 'Save failed',
+    saveFailedRetry: 'Save failed. Please try again.',
+    okwwUpdateProgress: 'Wuthering Waves update progress',
+    okwwCheckUpdateTitle: 'Check for Wuthering Waves updates',
+    configureOkww: 'Configure ok-ww',
+    okntePickDirHint: 'Choose any directory containing Neverness To Everness; the NTEGame.exe launcher will be located automatically.',
+    configureOkNte: 'Configure OK-NTE',
+    aboutSharingDetailPrefix: 'All ',
+    aboutSharingSensitive: 'sensitive information',
+    aboutSharingDetailSuffix: ' is removed automatically before uploading; the uploaded content only contains non-sensitive script settings. After the upload passes review, other users can download and use your script configuration. Please make sure the configuration is accurate and clearly described.',
+    bettergiColParty: 'Party',
+    bettergiColStrategy: 'Strategy',
+    bettergiColDomain: 'Domain',
+    bettergiColReward: 'Reward',
+    bettergiColRun: 'Run',
+    bettergiColRegion: 'Region',
+    bettergiColTaskType: 'Task type',
+    bettergiPickerDomainType: 'Location – domain type',
+    bettergiPickerReward: 'Reward item',
+    bettergiPickerBoss: 'Boss',
+    bettergiPickerSelectDomainFirst: 'Select a domain on the left first',
+    bettergiPickerSelectRegionFirst: 'Select a region on the left first',
+    bettergiBossPickerTitle: 'Select a boss',
+    bettergiRewardDefault: 'Default',
     bettergiDomainPickerClearAll: 'Clear all',
     bettergiDomainPickerClearAllConfirm: 'Clear all selected domains?',
     bettergiDomainPickerNone: 'No domains available',
@@ -2755,7 +2786,7 @@ export default {
       filePickerUnavailable:
         'The file picker cannot be opened right now. Restart the app and try again; if it still fails, send us the logs',
       pathPicked: 'Emulator path selected',
-      pathAdjusted: 'Path adjusted automatically: {from} -> {to}',
+      pathAdjusted: 'Path adjusted automatically: {from} → {to}',
       pickFileFailed: 'Could not pick the file',
       pressKeys: 'Press the key combination...',
       bossKeySet: 'Boss key set to {combo}',
@@ -2992,7 +3023,7 @@ export default {
     },
     list: {
       title: 'Accounts',
-      add: 'Add a account',
+      add: 'Add an account',
       colName: 'Name',
       colEnabled: 'Enabled',
       colTags: 'Community status',
@@ -3003,14 +3034,14 @@ export default {
       edit: 'Edit',
       del: 'Delete',
       empty: 'No accounts yet',
-      emptyGuide: 'Use "Add a account" in the top right',
+      emptyGuide: 'Use "Add an account" in the top right',
     },
     edit: {
       title: 'Edit — {name}',
       save: 'Save',
       userName: 'Name',
       miyoushe: 'Miyoushe',
-      miyoushePlaceholder: 'From the browser: F12 -> document.cookie',
+      miyoushePlaceholder: 'Open the site in a browser, press F12, and copy document.cookie',
       qrLogin: 'Get a token by QR code',
       kuro: 'Kuro Games community',
       kuroPlaceholder: 'Paste the login credential you copied from Kuro BBS',
@@ -3086,8 +3117,8 @@ export default {
     emptyRecords: 'No records',
     emptyHistory: 'No history yet',
     emptyHint: 'Adjust the filters and search again.',
-    selectUser: 'Select a account',
-    selectUserDesc: 'Pick a account from the date list on the left to see details.',
+    selectUser: 'Select an account',
+    selectUserDesc: 'Pick an account from the date list on the left to see details.',
     recordList: 'Records',
     recordCount: '{count} records',
     timeRule: 'The game day starts at 04:00 (04:00 to 04:00 the next day)',
@@ -3177,7 +3208,7 @@ export default {
       command: 'Quick start',
       quick: 'Shortcuts',
       satellite: 'Orbit',
-      proxy: 'Agent status',
+      proxy: 'Automation status',
       endfield: 'Arknights: Endfield events',
       starrail: 'Honkai: Star Rail events',
       genshin: 'Genshin Impact events',
@@ -3215,7 +3246,7 @@ export default {
     },
     activityNotes: {
       title: 'Daily notes',
-      selectUser: 'Select a account or character for daily notes',
+      selectUser: 'Select an account or character for daily notes',
       sign: 'Check-ins ({signed}/{total})',
       user: 'Account',
       signed: 'Check-in successful',
@@ -3300,7 +3331,7 @@ export default {
       start: 'Start',
     },
     proxy: {
-      aria: 'Agent status',
+      aria: 'Automation status',
       title: 'Automation status',
       lastTime: 'Last run',
       times: 'Runs',
@@ -3434,7 +3465,7 @@ export default {
     downloadCancelled: 'Download cancelled',
     downloadHasBeenUnder:
       'The download has been under 50 KB/s for 10 seconds. Switch to the CNB source and start over?',
-    lostConnectionBackend: 'Lost connection to the app background service',
+    lostConnectionBackend: 'Lost connection to the backend',
     wecomGroupBot: 'WeCom group bot',
     couldNotSave: 'Could not save',
     saved: 'Saved',
@@ -3448,7 +3479,7 @@ export default {
     couldNotRecoverBackend: 'Could not recover the backend service',
     couldNotStartInstaller: 'Could not start the installer',
     installerStarted: 'The installer started',
-    exportDidNotRespond: 'The export did not respond — check the app',
+    exportDidNotRespond: 'The export did not respond — check the app window for a dialog window for a dialog window for a dialog window for a dialog',
     screenshot: 'Screenshot',
     openMasGroup: 'Open the MAS group',
     noUpdates: 'No updates',
@@ -3719,6 +3750,11 @@ export default {
     },
   },
   logs: {
+  pageTitle: 'Logs',
+  backendLog: 'Backend log',
+  frontendLog: 'Frontend log',
+  followLatest: 'Follow latest',
+  freeBrowse: 'Free scroll',
     package: 'Package logs',
     toast: {
       packageNoResponse: 'Packaging logs did not respond. Check the app.',
@@ -3732,7 +3768,7 @@ export default {
     title: 'Scheduler',
     powerLabel: 'Power action after the task finishes:',
     addTab: 'New run panel',
-    removeIdleTabs: 'Close every idle console',
+    removeIdleTabs: 'Close every idle run panel',
     emptyTabs: 'No run panels yet',
     mainTab: 'Main run panel',
     tabName: 'Run panel {n}',
@@ -3793,7 +3829,7 @@ export default {
       tabAutoCreated: 'Console {title} created automatically',
       tabReused: 'Started in run panel {title}',
       mainTabUndeletable: 'The main console cannot be closed',
-      tabDeleted: 'Console "{title}" closed',
+      tabDeleted: 'Run panel "{title}" closed',
       noIdleTabs: 'No idle consoles to close',
       batchDeleted: 'Closed {count} consoles',
       loadQueueScriptsFailed: 'Could not load the queue. Try again',
@@ -3837,9 +3873,9 @@ export default {
       SRC: 'SRC',
       MaaEnd: 'MaaEnd',
       M9A: 'M9A',
-      MaaFW: 'MFW',
+      MaaFW: 'MaaFW',
       Okww: 'ok-ww',
-      OkNte: 'ok-nte',
+      OkNte: 'OK-NTE',
       HSR: 'HSR',
       BetterGI: 'BetterGI',
       ZzzOd: 'ZZZ-OD',
@@ -3853,13 +3889,13 @@ export default {
       SRC: 'Honkai: Star Rail automation with multi-account daily runs',
       MaaEnd: 'Arknights: Endfield automation, multi-account runs and protocol-space config',
       M9A: 'Reverse: 1999 automation with multi-account daily runs',
-      Okww: 'ok-script line: runs tasks through the -t/-e launch arguments',
+      Okww: 'ok-ww line: runs tasks through the -t/-e launch arguments',
       OkNte: 'Neverness to Everness OK-NTE automation, -t/-e task launch',
       HSR: 'Honkai: Star Rail — March7th / SRA dual-script support',
       BetterGI: 'Genshin OneDragon automation script (BetterGI)',
       ZzzOd: 'Zenless Zone Zero OneDragon · daily automation with instance (account) management',
       BAAH: 'Blue Archive Aris Helper · daily task automation with instance (account) management',
-      Whimbox: 'Infinity Nikki Whimbox · scheduled one-dragon daily automation',
+      Whimbox: 'Infinity Nikki Whimbox · scheduled OneDragon daily automation',
       MSS: 'Stella Sora (MaaStellaSora) · daily task automation with instance (account) management',
       General: 'Generic automation for any script that writes a log file',
     },
@@ -3878,7 +3914,7 @@ export default {
       maaEndUnlockTip: 'When you are done, click "Save and close" to unlock this page.',
       okwwTitle: 'ok-ww setup in progress',
       okwwDesc: 'Finish the setup in the ok-ww window.',
-      okwwUnlockTip: 'Click "Save settings" when you are done to end this session.',
+      okwwUnlockTip: 'Click "Save and close" when you are done to end this session.',
       whimboxTitle: 'Whimbox native setup in progress',
       whimboxDesc:
         'Finish your setup inside Whimbox: download pathing routes, configure the model and keybinds.',
@@ -3959,7 +3995,7 @@ export default {
       back: 'Back',
       createAndConfigure: 'Create and configure',
       createFromTemplate: 'Create from template',
-      mfwSourceHeading: 'Where does the project come from',
+      mfwSourceHeading: 'Where does the project come from?',
       mfwSourceHeadingDesc:
         'Projects imported before can be reused directly, so several managed scripts of one project never need the directory picked again; or start another project.',
       mfwNewProject: 'Another project: pick a local directory',
@@ -3982,13 +4018,13 @@ export default {
         MaaEnd: 'Arknights: Endfield automation and multi-account runs',
         M9A: 'Reverse: 1999 automation',
         MaaFW: 'Runs any MaaFramework project that ships an interface.json',
-        Okww: 'Dedicated ok-script task runner',
+        Okww: 'Dedicated ok-ww task runner',
         OkNte: 'Neverness to Everness OK-NTE automation',
         HSR: 'March7th / SRA dual-script support',
         BetterGI: 'Genshin OneDragon automation script (BetterGI)',
         ZzzOd: 'Zenless Zone Zero OneDragon · daily automation with instance management',
         BAAH: 'Blue Archive Aris Helper · daily task automation with instance management',
-        Whimbox: 'Infinity Nikki Whimbox · scheduled one-dragon daily automation',
+        Whimbox: 'Infinity Nikki Whimbox · scheduled OneDragon daily automation',
         MSS: 'Stella Sora (MaaStellaSora) · daily task automation with instance management',
       },
     },
@@ -4040,7 +4076,7 @@ export default {
       basic: 'Interface',
       function: 'Features',
       notify: 'Notifications',
-      advanced: 'Logs',
+      advanced: 'Advanced',
       others: 'About',
     },
     retention: {
@@ -4110,7 +4146,7 @@ export default {
       retentionTip: 'History older than this is cleaned up automatically',
       silent: 'Silent mode',
       silentTip:
-        'Keeps agent windows in the background to reduce interruptions. Turn this off when reporting a problem or troubleshooting so the windows can be inspected.',
+        'Keeps script windows in the background to reduce interruptions. Turn this off when reporting a problem or troubleshooting so the windows can be inspected.',
       preventSleep: 'Prevent sleep while running',
       preventSleepTip:
         'Stops the system from sleeping while the app is running. The screen can still turn off.',
@@ -4188,12 +4224,12 @@ export default {
       resultTime: 'Send task results',
       resultTimeTip: 'Push the result of a task run at the selected moment',
       statistics: 'Send statistics',
-      statisticsTip: 'Push a notification with auto-agent statistics',
+      statisticsTip: 'Push a notification with automation statistics',
       recruit: 'Send top-tier recruitment alerts',
       recruitTip: 'Push an alert when recruitment shows the Senior Operator tag',
       systemSection: 'System notifications',
       systemEnable: 'Enable system notifications',
-      systemTip: 'Uses plyer for system-level notifications; they do not stay in the action center',
+      systemTip: 'Sent as system notifications; they do not stay in the action center',
       mailSection: 'Email notifications',
       mailDoc: 'Open the email configuration docs',
       mailEnable: 'Enable email notifications',
@@ -4264,19 +4300,18 @@ export default {
     advanced: {
       backupSection: 'Data backup',
       exportBackup: 'Export a data backup',
-      backupDesc:
-        'Export this backup before MAS runs into something unrecoverable. Once saved you can reinstall safely — important data will not be lost.',
+      backupDesc: 'Back up your data now so you can recover if MAS ever runs into something unrecoverable. Once saved you can reinstall safely — important data will not be lost.',
       logSection: 'MAS log export',
       exportLog: 'Export a log archive',
       exportMaaEnd: 'Export a MaaEnd issue bundle',
       issueSection: 'Specialized issue bundles',
-      exportOkww: 'Export an OK-WW issue bundle',
+      exportOkww: 'Export an ok-ww issue bundle',
       exportOkNte: 'Export an OK-NTE issue bundle',
       exportZzzOd: 'Export a ZZZ-OD issue bundle',
       exportWhimbox: 'Export a Whimbox issue bundle',
       exportBetterGI: 'Export a BetterGI issue bundle',
-      exportMaaFW: 'Export an MFW issue bundle',
-      exportMaaFWEmpty: 'No MFW managed scripts yet',
+      exportMaaFW: 'Export an MaaFW issue bundle',
+      exportMaaFWEmpty: 'No MaaFW managed scripts yet',
       exportM9A: 'Export an M9A issue bundle',
       exportMSS: 'Export an MSS issue bundle',
       devSection: 'Developer options',
@@ -4314,7 +4349,7 @@ export default {
       proxyPlaceholder: 'Enter the proxy address',
       githubMirror: 'GitHub download mirror',
       githubMirrorTip:
-        'Only affects how MFW project update packages are downloaded: Auto prefers domestic mirrors and falls back to a direct GitHub connection',
+        'Only affects how MaaFW project update packages are downloaded: Auto prefers mirrors in China and falls back to a direct GitHub connection',
       githubMirrorAuto: 'Auto (mirrors first, direct on failure)',
       githubMirrorOff: 'Off (direct GitHub only)',
       cdk: 'MirrorChyan CDK',
@@ -4381,11 +4416,11 @@ export default {
       testFailed: 'Could not send the test notification',
       versionCopied: 'Version info copied to the clipboard',
       copyFailed: 'Copy failed',
-      exportNoResponse: 'The export did not respond — check the app',
+      exportNoResponse: 'The export did not respond — check the app window for a dialog window for a dialog window for a dialog window for a dialog',
       logExported: 'Log archive exported',
       logExportFailed: 'Log export failed',
       logExportError: 'Log export error: {error}',
-      backupNoResponse: 'The backup did not respond — check the app',
+      backupNoResponse: 'The backup did not respond — check the app window for a dialog window for a dialog window for a dialog window for a dialog',
       backupExported: 'Data backup exported',
       backupExportFailed: 'Data backup export failed',
       backupExportError: 'Data backup export error: {error}',
