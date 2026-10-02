@@ -2,13 +2,7 @@
 // 键位弹窗的「从项目导入」与新建引导最后一步的「同时把键位导入到脚本」共用这里的纯逻辑。
 import type { MaaFWShellInstanceItem } from '@/api'
 import type { MaaFWInterfacePreviewData, MaaFWOptionInfo } from '@/types/script'
-import {
-  HOTKEY_MAX_MODIFIERS,
-  HOTKEY_MODIFIERS,
-  HOTKEY_PRIMARY_KEYS,
-  formatHotkey,
-  parseHotkey,
-} from '@/utils/maafwHotkey'
+import { canonicalHotkey, formatHotkey, isStorableHotkey, parseHotkey } from '@/utils/maafwHotkey'
 import { effectiveHotkeyValues, mergeHotkeyMap, type MaaFWHotkeyMap } from './hotkeyOptions'
 
 /**
@@ -59,14 +53,11 @@ export const restrictHotkeys = (
   return result
 }
 
-// 内容比较用：按展示顺序逐字段列出、组合键归一（别名、大小写、修饰键顺序不算差别）
+// 内容比较用：按展示顺序逐字段列出、组合键归一（与 sameHotkey 同一口径）
 const hotkeySignature = (hotkeys: MaaFWHotkeyMap, options: readonly MaaFWOptionInfo[]) =>
   JSON.stringify(
     options.flatMap(option =>
-      (option.hotkeys ?? []).map(field => {
-        const value = hotkeys[option.name]?.[field.name]
-        return value ? parseHotkey(value).join('+').toUpperCase() : ''
-      })
+      (option.hotkeys ?? []).map(field => canonicalHotkey(hotkeys[option.name]?.[field.name]))
     )
   )
 
@@ -101,18 +92,6 @@ export const collectHotkeyImportCandidates = (
   return [...candidates.filter(item => item.active), ...candidates.filter(item => !item.active)]
 }
 
-/** 组合键能不能存：主键在支持集合里、修饰键都认得且不超过两个 */
-export const isSupportedHotkey = (value: string): boolean => {
-  const keys = parseHotkey(value)
-  if (keys.length === 0) return false
-  const modifiers = keys.slice(0, -1)
-  return (
-    modifiers.length <= HOTKEY_MAX_MODIFIERS &&
-    modifiers.every(key => (HOTKEY_MODIFIERS as readonly string[]).includes(key)) &&
-    HOTKEY_PRIMARY_KEYS.includes(keys[keys.length - 1])
-  )
-}
-
 export interface MaaFWHotkeyImportResult {
   /** 要填进去的字段（按存储串归一过），只含候选里有值且支持的 */
   values: MaaFWHotkeyMap
@@ -137,7 +116,7 @@ export const importHotkeyValues = (
     for (const field of option.hotkeys ?? []) {
       const value = hotkeys[option.name]?.[field.name]
       if (typeof value !== 'string' || !value.trim()) continue
-      if (!isSupportedHotkey(value)) {
+      if (!isStorableHotkey(value)) {
         skipped += 1
         continue
       }
@@ -156,18 +135,6 @@ export const allHotkeyOptions = (
   previewData: MaaFWInterfacePreviewData | null
 ): MaaFWOptionInfo[] =>
   (previewData?.options ?? []).filter(option => option.type === 'hotkey' && option.hotkeys?.length)
-
-/**
- * 引导里写进脚本的那一份：选中的实例里带键位的，外壳上次使用的优先，否则按选中顺序第一份。
- * 一份都没有返回 null。
- */
-export const pickWizardHotkeys = (
-  selected: readonly MaaFWShellHotkeySource[]
-): MaaFWHotkeyMap | null => {
-  const withHotkeys = selected.filter(hasShellInstanceHotkeys)
-  const picked = withHotkeys.find(item => item.active) ?? withHotkeys[0]
-  return picked ? shellInstanceHotkeys(picked) : null
-}
 
 /**
  * 把导入的键位并进 Game.Hotkeys：只动导入里出现的 option，其余条目原样保留；这些 option 里导入没给

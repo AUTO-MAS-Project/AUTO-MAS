@@ -222,19 +222,34 @@ export const parseHotkey = (value: string | null | undefined): string[] => {
 /** 键名数组 → 存储串 */
 export const formatHotkey = (keys: readonly string[]): string => keys.join('+')
 
+/** 组合键的比较形态：别名、大小写、修饰键顺序都归一掉，只用来判断是否相同 */
+export const canonicalHotkey = (value: string | readonly string[] | null | undefined): string =>
+  (typeof value === 'string' || value == null
+    ? parseHotkey(value)
+    : parseHotkey(formatHotkey(value))
+  )
+    .map(key => key.toUpperCase())
+    .join('+')
+
 /** 两个组合键是否相同（别名、大小写、修饰键顺序都不算差别） */
 export const sameHotkey = (
   a: string | readonly string[] | null | undefined,
   b: string | readonly string[] | null | undefined
-): boolean => {
-  const normalize = (value: string | readonly string[] | null | undefined) =>
-    (typeof value === 'string' || value == null
-      ? parseHotkey(value)
-      : parseHotkey(formatHotkey(value))
-    )
-      .map(key => key.toUpperCase())
-      .join('+')
-  return normalize(a) === normalize(b)
+): boolean => canonicalHotkey(a) === canonicalHotkey(b)
+
+/**
+ * 组合键能不能存（导入外壳配置等非录制来源用）：主键在支持集合里、修饰键都认得且不超过两个。
+ * 与录制时 `hotkeyFromKeyboardEvent` 的拒绝条件一致。
+ */
+export const isStorableHotkey = (value: string): boolean => {
+  const keys = parseHotkey(value)
+  if (keys.length === 0) return false
+  const modifiers = keys.slice(0, -1)
+  return (
+    modifiers.length <= HOTKEY_MAX_MODIFIERS &&
+    modifiers.every(isModifier) &&
+    HOTKEY_PRIMARY_KEYS.includes(keys[keys.length - 1])
+  )
 }
 
 // ---- 显示 ----

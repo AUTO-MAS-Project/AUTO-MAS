@@ -2,15 +2,37 @@ import { describe, expect, it } from 'vitest'
 
 import {
   HOTKEY_PRIMARY_KEYS,
+  canonicalHotkey,
   canonicalKeyName,
   displayKey,
   formatHotkey,
   hotkeyFromKeyboardEvent,
+  isStorableHotkey,
   parseHotkey,
   primaryKeyFromCode,
   sameHotkey,
   type HotkeyKeyboardEventLike,
 } from './maafwHotkey'
+
+describe('isStorableHotkey / canonicalHotkey', () => {
+  it('主键不在支持集合里、修饰键认不出或超过两个的不能存（与录制拒绝条件一致）', () => {
+    expect(isStorableHotkey('E')).toBe(true)
+    expect(isStorableHotkey('ctrl+shift+f1')).toBe(true)
+    expect(isStorableHotkey('Esc')).toBe(true)
+    expect(isStorableHotkey('MouseLeft')).toBe(false)
+    expect(isStorableHotkey('Ctrl+Alt+Shift+E')).toBe(false)
+    expect(isStorableHotkey('Q+E')).toBe(false)
+    expect(isStorableHotkey('Ctrl++')).toBe(false)
+    expect(isStorableHotkey('')).toBe(false)
+  })
+
+  it('比较形态归一别名、大小写与修饰键顺序，sameHotkey 用的就是它', () => {
+    expect(canonicalHotkey('shift+control+g')).toBe(canonicalHotkey(['Ctrl', 'Shift', 'G']))
+    expect(canonicalHotkey('Esc')).toBe('ESCAPE')
+    expect(canonicalHotkey(null)).toBe('')
+    expect(sameHotkey('esc', 'Escape')).toBe(true)
+  })
+})
 
 const keydown = (init: Partial<HotkeyKeyboardEventLike>): HotkeyKeyboardEventLike => ({
   code: '',

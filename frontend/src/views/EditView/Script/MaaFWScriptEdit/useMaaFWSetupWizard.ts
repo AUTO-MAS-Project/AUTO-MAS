@@ -15,7 +15,11 @@ import {
   type ShellImportSummary,
 } from './shellInstanceImport'
 import { parseHotkeyMap } from './hotkeyOptions'
-import { allHotkeyOptions, mergeImportedHotkeys, pickWizardHotkeys } from './hotkeyImport'
+import {
+  allHotkeyOptions,
+  collectHotkeyImportCandidates,
+  mergeImportedHotkeys,
+} from './hotkeyImport'
 import type { MaaFWScriptChangeHandler } from './useMaaFWScriptDraft'
 
 interface MaaFWSetupWizardOptions {
@@ -133,13 +137,15 @@ export function useMaaFWSetupWizard({
   const importHotkeysToScript = async (instanceIds: readonly string[]) => {
     if (!importShellHotkeys.value) return
     const selected = new Set(instanceIds)
-    const hotkeys = pickWizardHotkeys(shellInstances.value.filter(item => selected.has(item.id)))
+    const options = allHotkeyOptions(previewData.value)
+    // 与键位弹窗「从项目导入」同一套候选：外壳上次使用的那份优先，否则按选中顺序第一份
+    const hotkeys = collectHotkeyImportCandidates(
+      shellInstances.value.filter(item => selected.has(item.id)),
+      options
+    )[0]?.hotkeys
     if (!hotkeys) return
-    const current = maafwConfig.Game.Hotkeys
-    const existing = parseHotkeyMap(current)
-    const next = JSON.stringify(
-      mergeImportedHotkeys(existing, allHotkeyOptions(previewData.value), hotkeys)
-    )
+    const existing = parseHotkeyMap(maafwConfig.Game.Hotkeys)
+    const next = JSON.stringify(mergeImportedHotkeys(existing, options, hotkeys))
     if (next === JSON.stringify(existing)) return
     maafwConfig.Game.Hotkeys = next
     await handleChange('Game', 'Hotkeys', next)

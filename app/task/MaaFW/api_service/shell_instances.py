@@ -74,11 +74,7 @@ def _candidate_roots(script_id: str, script_config: Any) -> list[Path]:
     return roots
 
 
-def _scan_first_root(roots: list[Path]) -> list[ShellInstance]:
-    return _scan_first_root_at(roots)[1]
-
-
-def _scan_first_root_at(roots: list[Path]) -> tuple[Path | None, list[ShellInstance]]:
+def _scan_first_root(roots: list[Path]) -> tuple[Path | None, list[ShellInstance]]:
     """第一个扫到外壳配置的目录与其中的实例；都没有时为 ``(None, [])``。"""
 
     for root in roots:
@@ -124,7 +120,7 @@ async def list_shell_instances(
     else:
         roots = _candidate_roots(script_id, script_config)
     try:
-        found_root, instances = await asyncio.to_thread(_scan_first_root_at, roots)
+        found_root, instances = await asyncio.to_thread(_scan_first_root, roots)
     except Exception as exc:  # noqa: BLE001 - 扫描只读，失败不该挡住引导
         logger.opt(exception=True).warning(
             f"扫描外壳配置实例失败（{script_id}）：{type(exc).__name__}: {exc}"
@@ -205,7 +201,7 @@ async def import_shell_instances(
         interface = await asyncio.to_thread(load_interface_model_cached, root)
         # 跳过项里写 interface 的显示名（按项目语言文件翻过），与预览同一口径
         translate = await asyncio.to_thread(interface_text_translator, root, interface)
-        instances = await asyncio.to_thread(
+        _, instances = await asyncio.to_thread(
             _scan_first_root, _candidate_roots(script_id, script_config)
         )
     except MaaFWInterfaceLoadError as exc:

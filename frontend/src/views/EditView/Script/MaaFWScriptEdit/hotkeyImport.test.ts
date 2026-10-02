@@ -6,9 +6,7 @@ import {
   collectHotkeyImportCandidates,
   hasShellInstanceHotkeys,
   importHotkeyValues,
-  isSupportedHotkey,
   mergeImportedHotkeys,
-  pickWizardHotkeys,
   restrictHotkeys,
   type MaaFWShellHotkeySource,
 } from './hotkeyImport'
@@ -119,18 +117,7 @@ describe('collectHotkeyImportCandidates', () => {
   })
 })
 
-describe('isSupportedHotkey / importHotkeyValues', () => {
-  it('主键不在支持集合里、修饰键认不出或超过两个的不支持', () => {
-    expect(isSupportedHotkey('E')).toBe(true)
-    expect(isSupportedHotkey('ctrl+shift+f1')).toBe(true)
-    expect(isSupportedHotkey('Esc')).toBe(true)
-    expect(isSupportedHotkey('MouseLeft')).toBe(false)
-    expect(isSupportedHotkey('Ctrl+Alt+Shift+E')).toBe(false)
-    expect(isSupportedHotkey('Q+E')).toBe(false)
-    expect(isSupportedHotkey('Ctrl++')).toBe(false)
-    expect(isSupportedHotkey('')).toBe(false)
-  })
-
+describe('importHotkeyValues', () => {
   it('有值且支持的归一后填入并计数，不支持的跳过计数；修饰键个数不符照样填', () => {
     const fight = option('KeymapFight', {
       hotkeys: [
@@ -155,17 +142,18 @@ describe('isSupportedHotkey / importHotkeyValues', () => {
 })
 
 describe('引导写入脚本', () => {
-  it('pickWizardHotkeys：带键位的里外壳上次使用的优先，否则按选中顺序第一份', () => {
+  it('引导取导入候选的第一份：外壳上次使用的优先，否则按选中顺序第一份带键位的', () => {
+    const options = [option('KeymapFight', { hotkeys: [{ name: 'Combo', default: 'E' }] })]
+    const pick = (selected: MaaFWShellHotkeySource[]) =>
+      collectHotkeyImportCandidates(selected, options)[0]?.hotkeys ?? null
     const a = instance('a', {})
     const b = instance('b', { KeymapFight: { Combo: 'Q' } })
     const c = instance('c', { KeymapFight: { Combo: 'G' } })
-    expect(pickWizardHotkeys([a, b, c])).toEqual({ KeymapFight: { Combo: 'Q' } })
-    expect(pickWizardHotkeys([a, b, { ...c, active: true }])).toEqual({
-      KeymapFight: { Combo: 'G' },
-    })
+    expect(pick([a, b, c])).toEqual({ KeymapFight: { Combo: 'Q' } })
+    expect(pick([a, b, { ...c, active: true }])).toEqual({ KeymapFight: { Combo: 'G' } })
     // 上次使用的那份没键位：退回第一份带键位的
-    expect(pickWizardHotkeys([{ ...a, active: true }, c])).toEqual({ KeymapFight: { Combo: 'G' } })
-    expect(pickWizardHotkeys([a])).toBeNull()
+    expect(pick([{ ...a, active: true }, c])).toEqual({ KeymapFight: { Combo: 'G' } })
+    expect(pick([a])).toBeNull()
     expect(hasShellInstanceHotkeys(a)).toBe(false)
     expect(hasShellInstanceHotkeys(b)).toBe(true)
   })
