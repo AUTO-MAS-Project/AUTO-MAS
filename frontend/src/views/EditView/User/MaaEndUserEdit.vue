@@ -68,6 +68,11 @@
               :config-loading="maaEndConfigLoading"
               :import-loading="maaEndImportLoading"
               :show-config-mask="showMaaEndConfigMask"
+              :quick-config="formData.Info.IfQuickConfig"
+              :quick-config-disabled="
+                loading || isSaving || (!presetSupported && !formData.Info.IfQuickConfig)
+              "
+              @quick-config-change="handleQuickConfigChange"
               @configure="handleMaaEndConfig"
               @import-config="handleImportMaaEndConfig"
               @script-config="handleScriptConfig"
@@ -87,15 +92,6 @@
                 <template #icon><CalendarOutlined /></template>
                 {{ t('edit.goPlan') }}
               </a-button>
-              <span>{{ t('edit.enableQuickConfiguration') }}</span>
-              <a-switch
-                :checked="formData.Info.IfQuickConfig"
-                :disabled="
-                  loading || isSaving || (!presetSupported && !formData.Info.IfQuickConfig)
-                "
-                :aria-label="t('edit.enableQuickConfiguration')"
-                @change="handleQuickConfigChange"
-              />
               <a-button size="small" @click="openRestoreModal">
                 <template #icon><HistoryOutlined /></template>
                 {{ t('edit.configRestoreTitle') }}

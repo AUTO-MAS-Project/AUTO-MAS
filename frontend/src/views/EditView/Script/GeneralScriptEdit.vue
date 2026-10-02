@@ -425,11 +425,11 @@
                   @blur="handleChange('Script', 'LogTimeFormat', formData.logTimeFormat)"
                 />
                 <div class="format-preview">
-                  示例：<span class="format-preview-value">{{ logTimeFormatPreview }}</span>
+                  {{ t('edit.examplePreview')
+                  }}<span class="format-preview-value">{{ logTimeFormatPreview }}</span>
                 </div>
                 <div v-if="hasFractionalSecondToken" class="format-preview-tip">
-                  {{ t('edit.tipFAcceptsBoth') }}
-                  {{ t('edit.k123456DigitCountLog') }}
+                  {{ t('edit.tipFAcceptsBoth') }} {{ t('edit.k123456DigitCountLog') }}
                 </div>
               </a-form-item>
             </a-col>
@@ -916,8 +916,9 @@
       <a-alert :message="t('edit.aboutSharing')" type="info">
         <template #description>
           <p>
-            所有<span style="font-weight: bold"> 敏感信息 </span
-            >均会在上传前自动移除，上传内容仅包含脚本配置的非敏感信息。上传且通过审核后，其他用户可以下载并使用您的脚本配置。请确保配置信息准确且描述清晰。
+            {{ t('edit.aboutSharingDetailPrefix')
+            }}<span style="font-weight: bold"> {{ t('edit.aboutSharingSensitive') }} </span
+            >{{ t('edit.aboutSharingDetailSuffix') }}
           </p>
         </template>
       </a-alert>

@@ -189,10 +189,7 @@
                 <template #label>
                   <span class="form-label">
                     {{ t('edit.gameLauncher') }}
-                    <span class="label-hint"
-                      >选择包含 <strong>Neverness To Everness</strong> 的任意目录，自动定位
-                      NTEGame.exe 启动器</span
-                    >
+                    <span class="label-hint">{{ t('edit.okntePickDirHint') }}</span>
                   </span>
                 </template>
                 <a-input-group compact class="path-input-group">

@@ -38,7 +38,7 @@
           {{ t('edit.addItem') }}
         </a-button>
         <a-popconfirm
-          :title="`确定删除选中的 ${selectedRowKeys.length} 项库存保持计划吗？`"
+          :title="t('edit.depotDeleteSelectedConfirm', { n: selectedRowKeys.length })"
           :ok-text="t('edit.ok')"
           :cancel-text="t('edit.cancel')"
           @confirm="removeSelectedPlans"

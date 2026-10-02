@@ -6,8 +6,15 @@ describe('quick configuration panel visibility', () => {
   // BetterGI 不在列：其快速配置开关已隐藏，改由配置来源派生（直控 = 关，脚本 / 用户 = 开），
   // 于是选择器不再渲染该开关；面板形态仍按来源决定（见本文件最后一条用例）。
   // M9A 也不在列：它已是 MaaFW 的特调类型，页面就是 MaaFWUserEdit.vue，见下一条
-  for (const name of ['MAA', 'SRC', 'MaaEnd', 'Okww', 'OkNte']) {
-    it(`${name} keeps its switch outside the conditional panel`, () => {
+  // 覆写常规配置（overlay）的控件与 base 三态卡片同构，一起渲染在选择器里：
+  // 页面只把 Info.IfQuickConfig 绑进去、接住变更（SRC / MaaEnd 还隔着一层 Section 透传），
+  // 面板门控与「保存失败回滚」的处理保持不变。MAA 例外：布局沿用页头开关，见下方专项用例。
+  const selectorHosts: Record<string, string> = {
+    SRC: '../../SRCUserEdit/BasicInfoSection.vue',
+    MaaEnd: '../../MaaEndUserEdit/ConfigSourceSection.vue',
+  }
+  for (const name of ['SRC', 'MaaEnd', 'Okww', 'OkNte']) {
+    it(`${name} binds the overlay control through the config source selector`, () => {
       const source = readFileSync(new URL(`./${name}UserEdit.vue`, import.meta.url), 'utf8')
       const template = parse(source).descriptor.template!.content
       const panel =
@@ -20,15 +27,56 @@ describe('quick configuration panel visibility', () => {
       expect(template.slice(start, template.indexOf('>', start))).toContain(
         'v-if="formData.Info.IfQuickConfig"'
       )
-      expect(template.indexOf('@change="handleQuickConfigChange"')).toBeLessThan(start)
-      expect(template).not.toContain('@quick-config-change=')
-      expect(template.match(/@change="handleQuickConfigChange"/g)).toHaveLength(1)
+      // 控件已搬进选择器：页面不再自建开关，只把值绑进去并接住变更
+      expect(template).not.toContain('edit.enableQuickConfiguration')
+      const binding = template.indexOf(':quick-config="formData.Info.IfQuickConfig"')
+      expect(binding).toBeGreaterThan(-1)
+      expect(binding).toBeLessThan(start)
+      expect(template).toContain('@quick-config-change="handleQuickConfigChange"')
       expect(source).toMatch(
         /if \(!\(await (handleFieldSave|saveField)\('Info.IfQuickConfig', value\)\)\)/
       )
       expect(source).toContain('formData.Info.IfQuickConfig = previous')
+
+      const host = selectorHosts[name]
+      if (host) {
+        const section = readFileSync(new URL(host, import.meta.url), 'utf8')
+        expect(section).toContain(':quick-config="quickConfig"')
+        expect(section).toContain('@quick-config-change=')
+      }
     })
   }
+
+  it('MAA keeps the header quick configuration switch instead of the selector overlay', () => {
+    // dev 布局决策：MAA 页沿用任务配置标题旁的页头开关，不把覆写控件接进选择器，
+    // 也不经 BasicInfoSection 透传 —— 选择器在未收到 quickConfig 时不渲染覆写卡片。
+    const source = readFileSync(new URL('./MAAUserEdit.vue', import.meta.url), 'utf8')
+    const template = parse(source).descriptor.template!.content
+    const panel = '<TaskPipelineSection'
+    const start = template.indexOf(panel)
+    expect(start).toBeGreaterThan(-1)
+    expect(template.slice(start, template.indexOf('>', start))).toContain(
+      'v-if="formData.Info.IfQuickConfig"'
+    )
+    // 页头开关：绑 checked、接住变更，且出现在面板之前
+    const headerSwitch = template.indexOf(':checked="formData.Info.IfQuickConfig"')
+    expect(headerSwitch).toBeGreaterThan(-1)
+    expect(headerSwitch).toBeLessThan(start)
+    expect(template).toContain('@change="handleQuickConfigChange"')
+    // 不经选择器/Section 透传，避免出现第二个开关
+    expect(template).not.toContain(':quick-config=')
+    expect(template).not.toContain('@quick-config-change=')
+    expect(source).toMatch(
+      /if \(!\(await (handleFieldSave|saveField)\('Info.IfQuickConfig', value\)\)\)/
+    )
+    expect(source).toContain('formData.Info.IfQuickConfig = previous')
+
+    const section = readFileSync(
+      new URL('../../MAAUserEdit/BasicInfoSection.vue', import.meta.url),
+      'utf8'
+    )
+    expect(section).not.toContain(':quick-config=')
+  })
 
   it('MaaFW has neither a quick configuration switch nor a config source selector', () => {
     // MaaFW 是通用引擎，没有可退回的原生配置；两个控件对它没有所指，页面不再提供入口。
@@ -45,17 +93,37 @@ describe('quick configuration panel visibility', () => {
   })
 
   it('keeps the source selector quick configuration opt-in only', () => {
-    // 选择器里的快速配置项只在调用方声明了 v-model 时渲染，未接入的专项不会出现死开关。
+    // 选择器里的覆写配置卡片只在调用方声明了 v-model 时渲染，未接入的专项不会出现死开关。
     const source = readFileSync(new URL('./GeneralConfigModeSelector.vue', import.meta.url), 'utf8')
     expect(source).toContain('v-if="quickConfig !== undefined"')
+  })
+
+  it('renders the overlay cards and the base ⊕ overlay semantics in the selector', () => {
+    // overlay 与 base 同构（同一套卡片样式类），其下动态展示当前子态的生效配置语义。
+    const source = readFileSync(new URL('./GeneralConfigModeSelector.vue', import.meta.url), 'utf8')
+    expect(source).toContain('v-for="option in overlayOptions"')
+    expect(source).toContain('config-mode-option')
+    expect(source).toContain('composeConfigSemantics(props.modelValue, props.quickConfig, t)')
+    expect(source).toContain('class="config-effective"')
+    // 未接入 overlay 的专项拿到的语义为空，面板随之整块隐藏（「仅启动脚本」只对覆写层成立）
+    expect(source).toContain('v-if="semantics.formula"')
+
+    const semantics = readFileSync(new URL('./configSemantics.ts', import.meta.url), 'utf8')
+    // 六个子态各有一套标题 / 说明 key（off / on × 三种 base），不再是短语拼接的公式。
+    expect(semantics).toContain("'edit.configSemanticsSharedOnTitle'")
+    expect(semantics).toContain("'edit.configSemanticsNativeOffDesc'")
   })
 
   it('derives BetterGI quick configuration from the config source', () => {
     // 开关已从 BetterGI 页隐藏：值随配置来源派生（直控 = 关，脚本 / 用户 = 开），切来源时
     // 与 Mode 一起保存；原「关闭前先落盘一条龙组设置」的处理移到切到直控时（面板将隐藏）。
+    // 派生值只读地喂给选择器（让生效语义面板与实际运行一致），页面仍不得自建可切换的控件。
     const source = readFileSync(new URL('./BetterGIUserEdit.vue', import.meta.url), 'utf8')
     const template = parse(source).descriptor.template!.content
-    expect(template).not.toMatch(/quick-config|enableQuickConfiguration|Info\.IfQuickConfig/)
+    expect(template).toContain(':quick-config="formData.Info.IfQuickConfig"')
+    expect(template).toContain(':quick-config-readonly="true"')
+    expect(template).not.toContain('@quick-config-change')
+    expect(template).not.toContain('enableQuickConfiguration')
     expect(source).not.toContain('handleQuickConfigChange')
 
     const handler = source.slice(

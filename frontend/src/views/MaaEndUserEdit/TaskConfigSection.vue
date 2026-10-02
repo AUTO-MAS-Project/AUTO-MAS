@@ -84,7 +84,7 @@
       </a-col>
 
       <a-col v-if="effectiveSanityTaskType === 'Essence'" :xs="24" :sm="12">
-        <a-form-item label="基质刷取模式">
+        <a-form-item :label="t('edit.maaEndEssenceFarmMode')">
           <div v-if="isPlanMode" class="plan-mode-display">
             <span>{{ displayEssenceMenu }}</span>
             <span class="plan-source">{{ t('edit.fromPlan') }}</span>

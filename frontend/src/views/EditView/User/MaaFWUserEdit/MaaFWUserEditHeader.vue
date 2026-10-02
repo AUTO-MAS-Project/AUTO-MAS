@@ -24,11 +24,15 @@
         >
           <LoadingOutlined v-if="saveStatus === 'saving'" spin />
           <CheckCircleOutlined v-else-if="saveStatus === 'saved'" />
-          <a-tooltip v-else :title="saveErrorMessage || '保存失败，请重试'">
+          <a-tooltip v-else :title="saveErrorMessage || t('edit.saveFailedRetry')">
             <CloseCircleOutlined />
           </a-tooltip>
           <span>{{
-            saveStatus === 'saving' ? '保存中…' : saveStatus === 'saved' ? '已自动保存' : '保存失败'
+            saveStatus === 'saving'
+              ? t('edit.savingNow')
+              : saveStatus === 'saved'
+                ? t('edit.autoSaved')
+                : t('edit.saveFailedShort')
           }}</span>
         </span>
       </Transition>
