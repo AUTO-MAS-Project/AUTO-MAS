@@ -342,3 +342,32 @@ async def has_running_official_activity() -> bool | None:
             return True
 
     return False
+
+
+async def permanent_activity_window(keyword: str) -> str | None:
+    """某个常驻活动（如「灾变防线」）当前那一期的开始时刻。
+
+    常驻活动长期开放、随版本轮换：它们每期都会重发一篇同名公告，而
+    :func:`parse_activities` 对同名公告只留结束最晚的那条，所以这里拿到的是
+    「当前这一期」——正好可以当作「这期」的标识。
+
+    一期一个开始时刻，跨月也认得出是同一期；自然月做不了这件事，因为上游更新
+    并不严格按月来。
+
+    Args:
+        keyword: 活动名里的关键词，如 ``灾变防线``。
+
+    Returns:
+        str | None: 期的开始时刻（ISO 8601，形如 ``2026-09-29T12:00+08:00``）；
+        没有这个活动或取不到数据时为 None——调用方要当成「说不准」跳过编排。
+    """
+
+    data = await fetch_official_activities()
+    if data is None:
+        return None
+
+    for item in data["activities"]:
+        if item["kind"] == PERMANENT_KIND and keyword in item["name"]:
+            return str(item["startTime"])
+
+    return None

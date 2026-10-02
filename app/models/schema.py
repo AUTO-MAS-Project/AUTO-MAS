@@ -1243,6 +1243,9 @@ class GlobalConfig_Function(BaseModel):
     IfEnableTelemetry: Optional[bool] = Field(
         default=None, description="启用匿名错误与性能遥测"
     )
+    IfPersonalMss: Optional[bool] = Field(
+        default=None, description="个人版 MaaStellaSora 的专属编排（灾变防线）"
+    )
 
 
 class GlobalConfig_Display(BaseModel):

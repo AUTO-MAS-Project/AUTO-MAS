@@ -3078,6 +3078,13 @@ class MSSUserConfig(MaaFWUserConfig):
                 "Fixed", self.related_config, "PlanConfig", MSSPlanConfig
             ),
         )
+        ## 个人版「灾变防线」的编排记录，形如 {"armed": 期, "done": 期}。
+        ## armed 是上次把它编进队列的那一期，done 是已经确认打完的那一期：
+        ## 用「上次运行是否成功」把 armed 升成 done，所以跑失败的那期下次还会重试。
+        ## 期取活动公告的开始时刻（见 app/tools/stella_official.py），跨月也认得出是同一期。
+        self.Data_PersonalMssDefense = ConfigItem(
+            "Data", "PersonalMssDefense", "{ }", JSONValidator(dict)
+        )
 
         super().__init__()
 
@@ -4890,6 +4897,11 @@ class GlobalConfig(ConfigBase):
         ## 是否启用匿名遥测
         self.Function_IfEnableTelemetry = ConfigItem(
             "Function", "IfEnableTelemetry", True, BoolValidator()
+        )
+        ## 个人版 MSS 的专属编排（灾变防线），只对个人版项目生效，
+        ## 普通版 MSS 与其它脚本都会忽略它。
+        self.Function_IfPersonalMss = ConfigItem(
+            "Function", "IfPersonalMss", False, BoolValidator()
         )
 
         ## Display ----------------------------------------------------------
