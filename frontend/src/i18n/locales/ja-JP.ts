@@ -1570,6 +1570,9 @@ export default {
     mfwHotkeyTooManyModifiers: '修飾キーは 2 つまで',
     mfwHotkeySave: '保存',
     mfwHotkeyNeedsSwitch: 'ユーザーのタスク設定で「{option}」をオンにした場合のみ有効',
+    mfwHotkeySingleKeyOnly:
+      'この項目は単一キーのみ設定できます（Ctrl / Alt / Shift / Win は押されません）',
+    mfwHotkeyNeedsModifiers: 'この項目は修飾キー {n} 個とキー 1 つが必要です（例：{example}）',
     mfwHotkeyNeedsCase: 'ユーザーのタスク設定で「{option}」を「{case}」にした場合のみ有効',
     thisNameAlsoWritten:
       'この名前は、「貨幣戦争」機能の開拓者名としても三月なのかアシスタント / SRA に書き込まれます',

@@ -4239,6 +4239,10 @@ class MaaFWOptionHotkeyInfo(BaseModel):
     label: Optional[str] = Field(default=None, description="热键项显示名称")
     description: Optional[str] = Field(default=None, description="热键项描述")
     default: Optional[str] = Field(default=None, description="默认热键")
+    modifierCount: int = Field(
+        default=0,
+        description="项目 pipeline 用到的修饰键个数（0–2）：录制的组合键须恰好这么多修饰键",
+    )
 
 
 class MaaFWOptionInfo(BaseModel):

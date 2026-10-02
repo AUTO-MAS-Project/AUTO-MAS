@@ -26,6 +26,7 @@ from app.task.MaaFW.tools.core.interface.models import (
     build_pretask_task_name,
     checkbox_count_problem,
     find_pretask_by_task_name,
+    hotkey_modifier_count,
     interface_load_warnings,
     is_pretask_task_name,
     iter_pretasks,
@@ -41,7 +42,7 @@ from app.task.MaaFW.tools.core.interface.task_config import (
     normalize_task_execution_payload,
 )
 
-from .hotkey import MaaFWHotkeyError
+from .hotkey import MaaFWHotkeyError, resolve_hotkey
 from .models import (
     MaaFWPretaskRunPlan,
     MaaFWResolvedPath,
@@ -513,6 +514,21 @@ def _overlay_script_hotkeys(
                     if warning not in warnings:
                         warnings.append(warning)
                     continue
+                # 修饰键比项目 pipeline 用到的多：值照常下发，多出的修饰键不会按下，说一声。
+                # 脚本页录制时已按同一口径拦住，这里兜住导入或手改的值。
+                needed = hotkey_modifier_count(option, field_name)
+                if len(resolve_hotkey(value, "Win32").modifiers) > needed:
+                    target = _hotkey_labels(
+                        interface_model, option_name, field_name, i18n_mapping
+                    )
+                    extra = (
+                        "项目这一项只按单个按键，修饰键不会按下"
+                        if needed == 0
+                        else f"项目这一项只用到 {needed} 个修饰键，多出的不会按下"
+                    )
+                    warning = f"脚本键位{target}设为 {value}，{extra}"
+                    if warning not in warnings:
+                        warnings.append(warning)
                 valid_fields[field_name] = value
             cache[option_name] = valid_fields
         valid_fields = cache[option_name]

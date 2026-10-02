@@ -164,6 +164,20 @@ export const effectiveHotkeyValues = (
   return result
 }
 
+/**
+ * 录到的组合键与项目要的修饰键个数对不上时的原因：项目 pipeline 只按得出 modifierCount 个修饰键，
+ * 少了映射不出它要的占位符，多了运行时不会按下。对得上返回 null。
+ */
+export const hotkeyModifierProblem = (
+  keys: readonly string[],
+  modifierCount: number | undefined
+): 'single-key-only' | 'needs-modifiers' | null => {
+  const required = modifierCount ?? 0
+  const pressed = Math.max(keys.length - 1, 0)
+  if (pressed === required) return null
+  return required === 0 ? 'single-key-only' : 'needs-modifiers'
+}
+
 /** 已改（与默认不同）的字段数 */
 export const countChangedHotkeys = (
   options: readonly MaaFWOptionInfo[],

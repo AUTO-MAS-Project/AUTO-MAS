@@ -17,6 +17,8 @@ from app.task.MaaFW.tools.core.interface.models import (
     MaaFWTask,
     MaaFWTaskOptionValue,
     checkbox_count_problem,
+    hotkey_placeholders,
+    pipeline_template_strings,
 )
 
 from .hotkey import MaaFWHotkeyError, resolve_hotkey
@@ -221,8 +223,8 @@ class MaaFWPipelineOverrideBuilder:
             raise MaaFWHotkeyError(f"未声明的快捷键字段: {option_name}.{field_name}")
         # 占位符写法不合规是 interface 的问题（建覆盖时另报），这里只看值本身。
         referenced_values = _hotkey_referenced_values(
-            hotkey_item.name, _collect_template_strings(option.pipeline_override or {})
-        ) & _hotkey_placeholders(hotkey_item.name)
+            hotkey_item.name, pipeline_template_strings(option.pipeline_override or {})
+        ) & hotkey_placeholders(hotkey_item.name)
         _resolve_hotkey_placeholders(
             hotkey_item.name,
             value,
@@ -564,7 +566,7 @@ class MaaFWPipelineOverrideBuilder:
         if not option.pipeline_override or not option.hotkeys:
             return {}
 
-        template_strings = _collect_template_strings(option.pipeline_override)
+        template_strings = pipeline_template_strings(option.pipeline_override)
         raw_option_value = options.get(option_name)
         typed_replacements: dict[str, object] = {}
         try:
@@ -581,7 +583,7 @@ class MaaFWPipelineOverrideBuilder:
             )
             if not referenced_values:
                 continue
-            invalid_templates = referenced_values - _hotkey_placeholders(
+            invalid_templates = referenced_values - hotkey_placeholders(
                 hotkey_item.name
             )
             if invalid_templates:
@@ -779,24 +781,10 @@ class MaaFWPipelineOverrideBuilder:
         return merged
 
 
-def _hotkey_placeholders(field_name: str) -> set[str]:
-    """一个 hotkey 字段在 pipeline 里允许出现的全部占位符写法（必须作为完整值）。"""
-
-    return {
-        f"{{{field_name}}}",
-        f"{{{field_name}}}.primary",
-        f"{{{field_name}}}.modifier1",
-        f"{{{field_name}}}.modifier2",
-        f"{{{field_name}.primary}}",
-        f"{{{field_name}.modifier1}}",
-        f"{{{field_name}.modifier2}}",
-    }
-
-
 def _hotkey_referenced_values(field_name: str, template_strings: set[str]) -> set[str]:
     """pipeline 里引用到这个字段的字符串值（含写法不合规、占位符只是其中一段的）。"""
 
-    placeholders = _hotkey_placeholders(field_name)
+    placeholders = hotkey_placeholders(field_name)
     return {
         value
         for value in template_strings
@@ -821,19 +809,3 @@ def _resolve_hotkey_placeholders(
             + ", ".join(sorted(missing_placeholders))
         )
     return values
-
-
-def _collect_template_strings(value: Any) -> set[str]:
-    if isinstance(value, dict):
-        collected: set[str] = set()
-        for nested_value in value.values():
-            collected.update(_collect_template_strings(nested_value))
-        return collected
-    if isinstance(value, list):
-        collected = set()
-        for item in value:
-            collected.update(_collect_template_strings(item))
-        return collected
-    if isinstance(value, str):
-        return {value}
-    return set()

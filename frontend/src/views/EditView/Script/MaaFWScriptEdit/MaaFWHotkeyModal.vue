@@ -40,7 +40,7 @@
               :error="Boolean(errorOf(option.name, field.name))"
               :label="field.label || field.name"
               @recording="value => handleRecording(option.name, field.name, value)"
-              @record="result => handleRecord(option.name, field.name, result)"
+              @record="result => handleRecord(option.name, field, result)"
             />
           </div>
           <div v-if="errorOf(option.name, field.name)" class="hotkey-error">
@@ -75,7 +75,12 @@ import {
   type HotkeyEventResult,
 } from '@/utils/maafwHotkey'
 import MaaFWHotkeyInput from './MaaFWHotkeyInput.vue'
-import { countChangedHotkeys, type MaaFWHotkeyGate, type MaaFWHotkeyMap } from './hotkeyOptions'
+import {
+  countChangedHotkeys,
+  hotkeyModifierProblem,
+  type MaaFWHotkeyGate,
+  type MaaFWHotkeyMap,
+} from './hotkeyOptions'
 
 type HotkeyField = MaaFWOptionInfo['hotkeys'][number]
 
@@ -166,15 +171,31 @@ const handleRecording = (optionName: string, fieldName: string, value: boolean) 
   }
 }
 
+const MODIFIER_EXAMPLES = ['', 'Ctrl + E', 'Ctrl + Shift + E']
+
 const handleRecord = (
   optionName: string,
-  fieldName: string,
+  field: HotkeyField,
   result: Exclude<HotkeyEventResult, { kind: 'ignored' } | { kind: 'modifier-only' }>
 ) => {
-  const key = fieldKey(optionName, fieldName)
+  const key = fieldKey(optionName, field.name)
   if (result.kind === 'combo') {
+    // 项目 pipeline 按得出几个修饰键就只能录几个：多了运行时不会按下，少了映射不出
+    const problem = hotkeyModifierProblem(result.keys, field.modifierCount)
+    if (problem === 'single-key-only') {
+      errors[key] = t('edit.mfwHotkeySingleKeyOnly')
+      return
+    }
+    if (problem === 'needs-modifiers') {
+      const count = field.modifierCount ?? 0
+      errors[key] = t('edit.mfwHotkeyNeedsModifiers', {
+        n: count,
+        example: MODIFIER_EXAMPLES[count] ?? MODIFIER_EXAMPLES[2],
+      })
+      return
+    }
     delete errors[key]
-    setValue(optionName, fieldName, formatHotkey(result.keys))
+    setValue(optionName, field.name, formatHotkey(result.keys))
     return
   }
   // 录制失败：值不变，框变红 + 行下提示

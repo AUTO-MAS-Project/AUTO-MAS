@@ -497,6 +497,8 @@ export interface MaaFWOptionInfo {
     label?: string | null
     description?: string | null
     default?: string | null
+    /** 项目 pipeline 用到的修饰键个数（0–2）：录制的组合键须恰好这么多修饰键 */
+    modifierCount?: number
   }>
   defaultCase?: string | string[] | null
   /** PI v2.10.1：checkbox 最少 / 最多选择数，后端已放宽成自洽值；null 为不限 */

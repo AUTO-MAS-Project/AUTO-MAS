@@ -6,10 +6,28 @@ import {
   collectHotkeyOptions,
   countChangedHotkeys,
   effectiveHotkeyValues,
+  hotkeyModifierProblem,
   hotkeySettingDescription,
   mergeHotkeyMap,
   parseHotkeyMap,
 } from './hotkeyOptions'
+
+describe('hotkeyModifierProblem', () => {
+  it('项目只按主键时只接受单键（MaaEnd / 战双）', () => {
+    expect(hotkeyModifierProblem(['G'], 0)).toBeNull()
+    expect(hotkeyModifierProblem(['G'], undefined)).toBeNull()
+    expect(hotkeyModifierProblem(['Ctrl', 'G'], 0)).toBe('single-key-only')
+    expect(hotkeyModifierProblem(['Ctrl', 'Shift', 'G'], undefined)).toBe('single-key-only')
+  })
+
+  it('项目用到修饰键时个数必须一致', () => {
+    expect(hotkeyModifierProblem(['Ctrl', 'E'], 1)).toBeNull()
+    expect(hotkeyModifierProblem(['E'], 1)).toBe('needs-modifiers')
+    expect(hotkeyModifierProblem(['Ctrl', 'Shift', 'E'], 1)).toBe('needs-modifiers')
+    expect(hotkeyModifierProblem(['Ctrl', 'Shift', 'E'], 2)).toBeNull()
+    expect(hotkeyModifierProblem(['Ctrl', 'E'], 2)).toBe('needs-modifiers')
+  })
+})
 
 const option = (name: string, overrides: Partial<MaaFWOptionInfo> = {}): MaaFWOptionInfo => ({
   name,
