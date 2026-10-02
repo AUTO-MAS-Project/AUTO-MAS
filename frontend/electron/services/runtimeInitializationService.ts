@@ -488,6 +488,8 @@ function clampRunningPercent(percent: number): number {
 export interface RuntimeStageOutcome {
   success: boolean
   error?: string
+  /** 第 0 步的全部钉扎来源均因网络失败。 */
+  networkUnavailable?: true
   /** Runtime 的结构化结果码；旧链路不产生。 */
   code?: string
   retryable?: boolean
@@ -703,12 +705,25 @@ export class RuntimeInitializationService {
 
     // 第 0 步：先让 Runtime 自己对上目标版本的钉扎，再交给它去克隆源码。
     const aligned = await this.alignRuntime(bridge)
-    if (!aligned.success) {
+    // 更新服务显式传 targetVersion，不能把切换到新版本的失败当成离线启动。
+    const reuseEnvironment =
+      !aligned.success &&
+      aligned.networkUnavailable === true &&
+      this.options.targetVersion === undefined &&
+      !this.cancelRequested
+    if (!aligned.success && !reuseEnvironment) {
       bridge.fail('python', aligned.error ?? '核对 Runtime 版本失败')
       return aligned
     }
 
-    const outcome = await this.execute(['bootstrap', '--version', version], mirror, bridge)
+    const command = ['bootstrap', '--version', version]
+    if (reuseEnvironment) {
+      logger.warn('网络不可用，跳过 Runtime 更新检查，尝试复用本地运行环境启动')
+      bridge.observe(RUNTIME_BINARY_CHECK_STAGE, '网络不可用，跳过更新检查，正在检查本地运行环境')
+      // Runtime 仍检查仓库版本、环境状态与 venv 完整性；环境未就绪时不会伪装成成功。
+      command.push('--if-needed')
+    }
+    const outcome = await this.execute(command, mirror, bridge)
     if (outcome.success) {
       bridge.finish('运行环境准备完成')
     } else {
@@ -968,6 +983,7 @@ export class RuntimeInitializationService {
           success: false,
           error: result.error,
           code: result.code,
+          ...(result.networkUnavailable ? { networkUnavailable: true as const } : {}),
           retryable: true,
           remediation: ['retry', 'open-log'],
           failedStage: 'python',

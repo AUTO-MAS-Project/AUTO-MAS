@@ -5,8 +5,12 @@
 `flavor.py`：`FLAVOR` 对象（满足 `app/task/MaaFW/tools/embedded/flavor.py` 的 `MaaFWFlavor` 协议）。
 它做的事穷举如下，多一件都没有：
 
-1. `matches_project(interface)`：`mirrorchyan_rid == SSAH` / `github` 指向 `MaaStellaSora/MaaStellaSora` /
-   `name == MaaStellaSora`，任一命中即认领——导入完成后引擎据此把脚本类型定成 `MSSConfig`。
+1. `matches_project(interface)`：`mirrorchyan_rid == SSAH` / `github` 仓库名命中 /
+   `name` 命中，任一即认领；后两条**同一口径**——等于 `MaaStellaSora` 或以 `MaaStellaSora-` 开头
+   （`MaaStellaSoraX` 这种只是同前缀的不算，`https://github.com/MaaStellaSora` 这种组织主页也取不到仓库名）\
+   ——官方版与个人版等
+   衍生版（如 `beichen24a1/MaaStellaSora-Personal`）都认，导入完成后引擎据此把脚本类型定成
+   `MSSConfig`。**认领只定类型**；更新谱系仍按 `mirrorchyan_rid` / `github` / `name` 各自分开。
 2. `decorate_selection(...)`，按这个顺序：
    - 用户 `Info.PlanMode` 引用了 MSS 计划表时，按当天槽位改写 entry `战斗_入口`（悬赏试炼快速战斗）的
      `悬赏试炼关卡` / `悬赏试炼跳过难度选择` / `选择悬赏试炼难度` / `悬赏试炼消耗所有干劲` / `自定义快速作战次数`；

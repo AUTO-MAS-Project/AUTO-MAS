@@ -21,7 +21,6 @@
 #   Contact: DLmaster_361@163.com
 
 
-import asyncio
 import uuid
 from datetime import datetime
 from pathlib import Path
@@ -33,8 +32,10 @@ from fastapi.responses import FileResponse
 from app.core import Config
 from app.models.config import BetterGIConfig as RuntimeBetterGIConfig
 from app.models.config import OkNteConfig as RuntimeOkNteConfig
+from app.models.config import OkwwConfig as RuntimeOkwwConfig
 from app.models.config import WhimboxConfig as RuntimeWhimboxConfig
 from app.models.schema import *
+from app.services.wuthering_waves import resolve_wuthering_waves_process_path
 from app.task.MaaFW.api_service import agent_env as maafw_agent_env_api
 from app.task.MaaFW.api_service import embedded as maafw_embedded_api
 from app.task.MaaFW.api_service import interface as maafw_interface_api
@@ -307,6 +308,48 @@ async def update_script(script: ScriptUpdateIn = Body(...)) -> OutBase:
     return OutBase()
 
 
+@router.get(
+    "/okww/client-path",
+    tags=["Get"],
+    summary="解码鸣潮启动器，返回客户端 exe 路径",
+    response_model=OkwwClientPathOut,
+    status_code=200,
+)
+async def get_okww_client_path_api(scriptId: str) -> OkwwClientPathOut:
+    """解码鸣潮启动器记录，返回客户端 exe 完整路径（仅直启模式的前端展示用）。
+
+    任务期的启动与自动更新链路由后端自行解码，不经过本端点。
+    """
+
+    try:
+        script_config = Config.ScriptConfig[uuid.UUID(scriptId)]
+        if not isinstance(script_config, RuntimeOkwwConfig):
+            raise TypeError("脚本配置类型错误, 不是 OK-WW 类型")
+        launcher_path = Path(str(script_config.get("Game", "Path") or "").strip())
+        client_path = resolve_wuthering_waves_process_path(launcher_path)
+        return OkwwClientPathOut(
+            code=200,
+            status="success",
+            message="",
+            client_path=client_path.as_posix(),
+        )
+    except Exception as e:
+        logger.opt(exception=True).warning(
+            f"get_okww_client_path_api失败: {type(e).__name__}: {e}"
+        )
+        return OkwwClientPathOut(
+            code=(
+                400
+                if isinstance(e, (ValueError, KeyError, TypeError, FileNotFoundError))
+                else 500
+            ),
+            status="error",
+            # message 直接展示给用户，不带异常类名前缀（类名只进上面的日志）
+            message=str(e),
+            client_path="",
+        )
+
+
 @router.post(
     "/delete",
     tags=["Delete"],
@@ -427,6 +470,8 @@ async def get_maaend_options(options: ScriptDeleteIn = Body(...)) -> MaaEndOptio
     try:
         data = await Config.get_maaend_options(options.scriptId)
         return MaaEndOptionsOut(
+            projectName=data["projectName"],
+            projectVersion=data["projectVersion"],
             autoCollectGroups=[
                 MaaEndAutoCollectGroup(**item)
                 for item in data.get("autoCollectGroups", [])
@@ -663,7 +708,9 @@ async def reorder_user(user: UserReorderIn = Body(...)) -> OutBase:
 async def import_infrastructure(user: UserSetIn = Body(...)) -> OutBase:
 
     try:
-        await Config.set_infrastructure(user.scriptId, user.userId, user.jsonFile)
+        from app.task.MAA import api_service as maa_api
+
+        await maa_api.set_infrastructure(user.scriptId, user.userId, user.jsonFile)
     except Exception as e:
         logger.opt(exception=True).warning(
             f"import_infrastructure失败: {type(e).__name__}: {e}"
@@ -685,7 +732,9 @@ async def set_infrast_plan_select(
     user: UserInfrastPlanSelectIn = Body(...),
 ) -> UserInfrastPlanSelectOut:
     try:
-        index = await Config.set_infrast_plan_select(
+        from app.task.MAA import api_service as maa_api
+
+        index = await maa_api.set_infrast_plan_select(
             user.scriptId, user.userId, user.index
         )
     except Exception as e:
@@ -709,7 +758,9 @@ async def get_infrast_plan_select(
     user: UserDeleteIn = Body(...),
 ) -> UserInfrastPlanSelectOut:
     try:
-        index = await Config.get_infrast_plan_select(user.scriptId, user.userId)
+        from app.task.MAA import api_service as maa_api
+
+        index = await maa_api.get_infrast_plan_select(user.scriptId, user.userId)
     except Exception as e:
         logger.opt(exception=True).warning(
             f"get_infrast_plan_select失败: {type(e).__name__}: {e}"
@@ -732,7 +783,11 @@ async def get_user_combox_infrastructure(
 ) -> UserInfrastPlanComboxOut:
 
     try:
-        result = await Config.get_user_combox_infrastructure(user.scriptId, user.userId)
+        from app.task.MAA import api_service as maa_api
+
+        result = await maa_api.get_user_combox_infrastructure(
+            user.scriptId, user.userId
+        )
         data = [UserInfrastPlanComboxItem(**item) for item in result["data"]]
         state = result["state"]
     except Exception as e:
@@ -759,7 +814,9 @@ async def get_user_combox_infrastructure(
 async def get_maa_depot_items(script: ScriptDeleteIn = Body(...)) -> ComboBoxOut:
 
     try:
-        raw_data = await Config.get_maa_depot_items(script.scriptId)
+        from app.task.MAA import api_service as maa_api
+
+        raw_data = await maa_api.get_depot_items(script.scriptId)
         data = [ComboBoxItem(**item) for item in raw_data]
     except Exception as e:
         logger.opt(exception=True).warning(
@@ -783,7 +840,9 @@ async def get_maa_depot_stage_candidates(
 ) -> ComboBoxOut:
 
     try:
-        raw_data = await Config.get_maa_depot_stage_candidates(script.scriptId, itemId)
+        from app.task.MAA import api_service as maa_api
+
+        raw_data = await maa_api.get_depot_stage_candidates(script.scriptId, itemId)
         data = [ComboBoxItem(**item) for item in raw_data]
     except Exception as e:
         return ComboBoxOut(
@@ -804,7 +863,9 @@ async def get_maa_depot_inventory(
 ) -> MaaDepotInventoryOut:
 
     try:
-        raw_data, recognized_at = await Config.get_maa_depot_inventory(
+        from app.task.MAA import api_service as maa_api
+
+        raw_data, recognized_at = await maa_api.get_depot_inventory(
             script.scriptId, userId
         )
         data = [ComboBoxItem(**item) for item in raw_data]
@@ -825,7 +886,9 @@ async def get_maa_depot_inventory(
 async def get_maa_cultivate_skland_bindings() -> ComboBoxOut:
 
     try:
-        raw_data = await Config.get_maa_cultivate_skland_bindings()
+        from app.task.MAA import api_service as maa_api
+
+        raw_data = await maa_api.get_cultivate_skland_bindings()
         data = [ComboBoxItem(**item) for item in raw_data]
     except Exception as e:
         return ComboBoxOut(
@@ -846,7 +909,9 @@ async def get_maa_cultivate_operators(
 ) -> MaaCultivateOperatorsOut:
 
     try:
-        raw_data = await Config.get_maa_cultivate_operators(script.scriptId, userId)
+        from app.task.MAA import api_service as maa_api
+
+        raw_data = await maa_api.get_cultivate_operators(script.scriptId, userId)
         data = [MaaCultivateOperatorOptionItem(**item) for item in raw_data]
     except Exception as e:
         return MaaCultivateOperatorsOut(
@@ -867,7 +932,9 @@ async def get_maa_cultivate_preview(
 ) -> CultivatePreviewOut:
 
     try:
-        data = await Config.get_maa_cultivate_preview(
+        from app.task.MAA import api_service as maa_api
+
+        data = await maa_api.get_cultivate_preview(
             preview.scriptId, preview.userId, preview.targets
         )
     except Exception as e:

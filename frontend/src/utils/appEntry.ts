@@ -3,7 +3,7 @@ import router from '@/router'
 import { bootstrapRealtimeResidents } from '@/bootstrap/realtimeResidents'
 import { connectWithRetry, initializeAppLifecycle } from '@/composables/useAppLifecycle'
 import { startTitlebarVersionCheck } from '@/composables/useVersionService'
-import { useUpdateChecker } from '@/composables/useUpdateChecker'
+import { readUpdatePauseState, useUpdateChecker } from '@/composables/useUpdateChecker'
 import { markAsInitialized } from '@/composables/useAppInitialization'
 
 const logger = window.electronAPI.getLogger('应用入口')
@@ -23,26 +23,40 @@ function startVersionServices() {
     return
   }
 
-  try {
-    logger.info('开始启动版本检查服务...')
+  void (async () => {
+    try {
+      logger.info('开始启动版本检查服务...')
 
-    // 1. 启动标题栏版本信息定时检查（10分钟一次）
-    startTitlebarVersionCheck()
-    logger.info('标题栏版本检查服务已启动（每10分钟检查一次）')
+      // 暂停更新期间服务照常待命（各定时器自行门控跳过检查），到期后自动恢复
+      // 读取失败视为状态未知（null），仅按非暂停记录日志，实际检查由 tick 内门控兜底
+      const paused = (await readUpdatePauseState()) === true
 
-    // 2. 启动版本更新检查（4小时一次）
-    const { startPolling } = useUpdateChecker()
-    void startPolling().catch(error => {
+      // 1. 启动标题栏版本信息定时检查（10分钟一次）
+      await startTitlebarVersionCheck()
+      logger.info(
+        paused
+          ? '标题栏版本检查服务已待命（更新已暂停，暂停期内不检查）'
+          : '标题栏版本检查服务已启动（每10分钟检查一次）'
+      )
+
+      // 2. 启动版本更新检查（4小时一次）
+      const { startPolling } = useUpdateChecker()
+      void startPolling().catch(error => {
+        const errorMsg = error instanceof Error ? error.message : String(error)
+        logger.error(`启动版本更新检查服务失败: ${errorMsg}`)
+      })
+
+      versionServicesStarted = true
+      logger.info(
+        paused
+          ? '版本检查服务已在后台待命（更新已暂停，暂停期内不发起自动检查）'
+          : '所有版本检查服务已在后台启动'
+      )
+    } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error)
-      logger.error(`启动版本更新检查服务失败: ${errorMsg}`)
-    })
-
-    versionServicesStarted = true
-    logger.info('所有版本检查服务已在后台启动')
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`启动版本检查服务失败: ${errorMsg}`)
-  }
+      logger.error(`启动版本检查服务失败: ${errorMsg}`)
+    }
+  })()
 }
 
 /**

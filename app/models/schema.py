@@ -945,6 +945,8 @@ class MaaEndAutoCollectGroup(BaseModel):
 
 
 class MaaEndOptionsOut(OutBase):
+    projectName: str = Field(default="mxu", description="MaaEnd 资源声明的项目名称")
+    projectVersion: str = Field(default="", description="MaaEnd 资源声明的项目版本")
     autoCollectGroups: List[MaaEndAutoCollectGroup] = Field(
         default_factory=list, description="MaaEnd 自动采集地区与分类"
     )
@@ -1433,6 +1435,9 @@ class OpenClawQQStatusOut(OutBase):
 
 class GlobalConfig_Update(BaseModel):
     IfAutoUpdate: Optional[bool] = Field(default=None, description="是否自动更新")
+    PauseUntil: Optional[str] = Field(
+        default=None, description="暂停更新截止日期 YYYY-MM-DD，空字符串表示未暂停"
+    )
     Source: Optional[Literal["GitHub", "MirrorChyan", "AutoSite", "CNB"]] = Field(
         default=None, description="更新源: GitHub源, Mirror酱源, 自建源, CNB 镜像源"
     )
@@ -1796,6 +1801,12 @@ class MaaConfig_Emulator(BaseModel):
 
 
 class MaaConfig_Run(BaseModel):
+    HardTimeLimit: Optional[int] = Field(
+        default=None,
+        ge=1,
+        le=9999,
+        description="单账号运行总时限（分钟），包含等待和全部重试",
+    )
     TaskTransitionMethod: Optional[Literal["NoAction", "ExitGame", "ExitEmulator"]] = (
         Field(default=None, description="简洁任务间切换方式")
     )
@@ -2377,11 +2388,11 @@ class GeneralConfig_Script(BaseModel):
     LogTimeEnd: Optional[int] = Field(default=None, description="日志时间戳结束位置")
     LogTimeFormat: Optional[str] = Field(default=None, description="日志时间戳格式")
     LogHookEnabled: Optional[bool] = Field(
-        default=None, description="日志处理钩子启用开关"
+        default=None, description="日志预处理启用开关"
     )
     LogHookRules: Optional[str] = Field(
         default=None,
-        description='日志处理钩子规则(JSON 数组，每项形如 {"type":"drop|replace","match":正则,"replace":替换文本})；先于任务日志、推送采集与成功/失败判定执行',
+        description='日志预处理规则(JSON 数组，每项形如 {"type":"drop|replace","match":正则,"replace":替换文本})；先于任务日志、推送采集与成功/失败判定执行',
     )
     SuccessLog: Optional[str] = Field(default=None, description="成功时日志")
     SuccessLogMode: Optional[Literal["Split", "Regex"]] = Field(
@@ -2420,6 +2431,12 @@ class GeneralConfig_Game(BaseModel):
 
 
 class GeneralConfig_Run(BaseModel):
+    HardTimeLimit: Optional[int] = Field(
+        default=None,
+        ge=1,
+        le=9999,
+        description="单账号运行总时限（分钟），包含等待和全部重试",
+    )
     ProxyTimesLimit: Optional[int] = Field(default=None, description="每日代理次数限制")
     RunTimesLimit: Optional[int] = Field(default=None, description="重试次数限制")
     RunTimeLimit: Optional[int] = Field(default=None, description="日志超时限制")
@@ -2436,7 +2453,18 @@ class OkwwConfig_Game(BaseModel):
     """OK-WW 游戏配置（复用通用字段）"""
 
     Enabled: Optional[bool] = Field(default=None, description="游戏相关功能是否启用")
-    Path: Optional[str] = Field(default=None, description="游戏启动器路径")
+    Type: Optional[Literal["Launcher", "Client"]] = Field(
+        default=None,
+        description="游戏启动方式：Launcher=经官方启动器，Client=直启客户端",
+    )
+    Path: Optional[str] = Field(
+        default=None,
+        description="鸣潮官方启动器 launcher.exe 路径（两种启动方式均由它定位游戏）",
+    )
+    ClientPath: Optional[str] = Field(
+        default=None,
+        description="直启模式手动指定的客户端程序路径（留空时由启动器路径自动定位）",
+    )
     Arguments: Optional[str] = Field(default=None, description="游戏启动参数")
     WaitTime: Optional[int] = Field(default=None, description="游戏等待启动时间")
     IfAutoUpdate: Optional[bool] = Field(
@@ -2449,6 +2477,12 @@ class OkwwConfig_Game(BaseModel):
         default=None,
         description="运行前强制切换账号（需启用游戏配置；用户未填手机号时不切换）",
     )
+
+
+class OkwwClientPathOut(OutBase):
+    """OK-WW 客户端路径解码结果（仅用于前端展示）"""
+
+    client_path: str = Field(..., description="解码得到的鸣潮客户端 exe 完整路径")
 
 
 class OkwwConfig(BaseModel):
@@ -2634,6 +2668,12 @@ class BAAHConfig_Script(BaseModel):
 
 
 class BAAHConfig_Run(BaseModel):
+    HardTimeLimit: Optional[int] = Field(
+        default=None,
+        ge=1,
+        le=9999,
+        description="单账号运行总时限（分钟），包含等待和全部重试",
+    )
     RunTimesLimit: Optional[int] = Field(default=None, description="重试次数限制")
     RunTimeLimit: Optional[int] = Field(default=None, description="运行时间限制")
 
@@ -2655,6 +2695,12 @@ class BAAHConfig(BaseModel):
 class WhimboxConfig_Run(BaseModel):
     """奇想盒运行配置（复用通用三限语义 + 提权开关）"""
 
+    HardTimeLimit: Optional[int] = Field(
+        default=None,
+        ge=1,
+        le=9999,
+        description="单账号运行总时限（分钟），包含等待和全部重试",
+    )
     ProxyTimesLimit: Optional[int] = Field(
         default=None, description="每日代理次数上限（0=不限）"
     )
@@ -2947,6 +2993,12 @@ class MaaEndConfig_Info(BaseModel):
 
 
 class MaaEndConfig_Run(BaseModel):
+    HardTimeLimit: Optional[int] = Field(
+        default=None,
+        ge=1,
+        le=9999,
+        description="单账号运行总时限（分钟），包含等待和全部重试",
+    )
     RunTimeLimit: Optional[int] = Field(
         default=None, description="运行时间限制（分钟）"
     )
@@ -3187,6 +3239,12 @@ class SrcConfig_Emulator(BaseModel):
 
 
 class SrcConfig_Run(BaseModel):
+    HardTimeLimit: Optional[int] = Field(
+        default=None,
+        ge=1,
+        le=9999,
+        description="单账号运行总时限（分钟），包含等待和全部重试",
+    )
     TaskTransitionMethod: Optional[Literal["ExitGame", "ExitEmulator"]] = Field(
         default=None, description="任务切换方式"
     )

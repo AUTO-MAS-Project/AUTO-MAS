@@ -42,6 +42,7 @@ from app.task.MaaFW.tools.core.interface.preview import (
 from app.task.MaaFW.tools.core.interface.service import (
     MaaFWInterfaceService,
 )
+from app.task.MaaFW.tools.core.interface.task_config import find_missing_task_names
 from app.task.MaaFW.tools.core.runner.environment import (
     ARCHITECTURE_MISMATCH_MARKERS,
     MaaFWRunnerEnvironment,
@@ -54,6 +55,7 @@ from app.task.MaaFW.tools.core.runner.models import (
     MaaFWSkippedTaskPlan,
 )
 from app.task.MaaFW.tools.core.runner.run_plan import (
+    NO_RUNNABLE_TASKS_MESSAGE,
     MaaFWRunPlanError,
     resolve_run_selection,
     select_snapshot_tasks,
@@ -465,6 +467,8 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         self.run_signal: str | None = None
         # 运行前检查发现同一资源本轮已确认在维护、本用户没启动就跳过。
         self.maintenance_skipped = False
+        # 队列里 interface 已没有的任务名（项目更新改了 name），建计划时填，进任务报告
+        self.missing_task_names: list[str] = []
 
     async def check(self) -> str:
         proxy_times = (
@@ -909,12 +913,21 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         # 钩子装饰（首尾任务、切号绑定之类），再按装饰后的列表建计划。通用 MaaFW
         # 没有钩子，仍按快照直接建计划，行为不变。
         flavor = resolve_flavor(self.script_config)
+        missing_skips: list[MaaFWSkippedTaskPlan] = []
         try:
             # 密码字段（PI v2.10.0）在配置里是密文，只在这份内存副本里解开交给计划；
             # 用户配置本身不动，运行后的整表写回也就写不出明文。
             task_snapshot = open_task_snapshot(task_snapshot, interface_model)
+            # 项目更新改了任务 name 后，队列里的旧 id 在归一化时就被滤掉了，运行日志里
+            # 一点痕迹都没有。先按原始快照把它们找出来，建完计划记成跳过。
+            missing_names = find_missing_task_names(task_snapshot, interface_model)
+            missing_skips = [
+                MaaFWSkippedTaskPlan(name=name, reason="interface 内已无该任务")
+                for name in missing_names
+            ]
+            self.missing_task_names = list(dict.fromkeys(missing_names))
             if flavor is None:
-                return MaaFWRunnerService().build_plan(
+                plan = MaaFWRunnerService().build_plan(
                     self.project_path,
                     interface_model,
                     controller_name=controller_name,
@@ -922,6 +935,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                     selected_preset=effective_preset,
                     task_snapshot=task_snapshot or None,
                 )
+                return _with_skipped_tasks(plan, missing_skips)
             task_ids, task_options = select_snapshot_tasks(
                 interface_model,
                 selected_preset=effective_preset,
@@ -937,7 +951,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 # 本方法在工作线程里跑：没给线程安全的回调就只进后端日志。
                 send_log=send_log if send_log is not None else logger.info,
             )
-            return MaaFWRunnerService().build_plan(
+            plan = MaaFWRunnerService().build_plan(
                 self.project_path,
                 interface_model,
                 controller_name=controller_name,
@@ -945,8 +959,15 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 task_ids=task_ids,
                 task_options=task_options,
             )
+            return _with_skipped_tasks(plan, missing_skips)
         except Exception as exc:
-            raise MaaFWRunPlanError(str(exc)) from exc
+            message = str(exc)
+            if missing_skips and NO_RUNNABLE_TASKS_MESSAGE in message:
+                # 队列里只剩虚影时「没有可执行任务」说不清原因，把对不上的任务名带上；
+                # 别的报错（拆用户、找不到 controller……）与虚影无关，不附加
+                names = "、".join(dict.fromkeys(item.name for item in missing_skips))
+                message = f"{message}（interface 内已无：{names}）"
+            raise MaaFWRunPlanError(message) from exc
 
     def _select_run_selection(
         self, interface_model: MaaFWInterface
@@ -2231,7 +2252,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             return
         self.game_resolution_override = override
         self._append_log(
-            f"已临时把 HKCU\\{override.registry_path} 的分辨率设为 "
+            f"已尝试把 HKCU\\{override.registry_path} 的分辨率临时设为 "
             f"{override.label} 窗口模式，游戏关闭后恢复原值"
         )
 
@@ -2635,8 +2656,21 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         与 M9A 专项同形（多次尝试分块列出、最终成功时并集去重），但数据来源
         不同：M9A 只能用 ``M9ALogAnalyzer`` 正则解析日志文本，MaaFW 手里本来
         就有 ``completedTasks`` 与失败摘要，直接用结构化结果，不必反解日志。
+        队列里有失效任务时末尾再附一行。
         """
 
+        details = self._build_attempt_details()
+        missing = self.missing_task_notice()
+        return "\n\n".join(part for part in (details, missing) if part)
+
+    def missing_task_notice(self) -> str:
+        """队列里 interface 已没有的任务（多半是项目更新改了 name）：进用户与脚本两份报告。"""
+
+        if not self.missing_task_names:
+            return ""
+        return f"{MISSING_TASK_NOTICE_PREFIX}: " + "、".join(self.missing_task_names)
+
+    def _build_attempt_details(self) -> str:
         if not self._attempt_reports:
             return ""
 
@@ -2698,7 +2732,10 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             )
             statistics["screenshots"] = screenshot_entries(images)
             signal_message = self._signal_user_message()
-            if self.run_complete:
+            # 有失效任务时照常算完成（次数、状态不动），但不能说成「全部完成」
+            if self.run_complete and self.missing_task_names:
+                statistics["user_result"] = MISSING_TASK_USER_RESULT
+            elif self.run_complete:
                 statistics["user_result"] = "代理任务全部完成"
             elif signal_message is not None:
                 statistics["user_result"] = signal_message
@@ -2708,7 +2745,9 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                     if self.cur_user_log is not None
                     else "代理任务未完成"
                 )
-            if self.run_complete:
+            if self.run_complete and self.missing_task_names:
+                mark = "!"
+            elif self.run_complete:
                 mark = "√"
             elif self._is_maintenance_skip():
                 mark = MAINTENANCE_LAST_STATUS
@@ -2738,6 +2777,16 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
 
     async def _send_success_notify(self) -> None:
         try:
+            if self.missing_task_names:
+                names = "、".join(self.missing_task_names)
+                await Notify.push_plyer(
+                    "MaaFW 自动代理任务完成，但有失效任务",
+                    f"用户 {self.cur_user_item.name} 的队列里有 interface 内已没有的任务，"
+                    f"已跳过：{names}",
+                    f"{self.cur_user_item.name} 有失效任务：{names}",
+                    3,
+                )
+                return
             await Notify.push_plyer(
                 "MaaFW 自动代理任务完成",
                 f"已完成用户 {self.cur_user_item.name} 的 MaaFW 自动代理任务",
@@ -3343,6 +3392,24 @@ def _format_run_overview_log(
     if len(skipped_names) > _RUN_OVERVIEW_LOG_VALUE_LIMIT:
         skipped_names = skipped_names[:_RUN_OVERVIEW_LOG_VALUE_LIMIT] + "..."
     return f"{overview}; skipped_tasks({len(plan.skippedTasks)})={skipped_names}"
+
+
+#: 任务报告里「失效任务」一行的前缀：队列里的任务 interface 已没有，本次跳过。
+MISSING_TASK_NOTICE_PREFIX = (
+    "失效任务（interface 内已无，已跳过，请到用户配置里重新添加）"
+)
+#: 其余任务都跑完、但队列里有失效任务时统计报告的结果：照常算完成，不说「全部完成」。
+MISSING_TASK_USER_RESULT = "代理任务完成，但有失效任务"
+
+
+def _with_skipped_tasks(
+    plan: MaaFWRunPlan, skipped: list[MaaFWSkippedTaskPlan]
+) -> MaaFWRunPlan:
+    """把建计划之外判出的跳过项排在计划自己的跳过项前面。"""
+
+    if not skipped:
+        return plan
+    return plan.model_copy(update={"skippedTasks": [*skipped, *plan.skippedTasks]})
 
 
 def _current_period_keys(now: datetime | None = None) -> tuple[str, str, str]:

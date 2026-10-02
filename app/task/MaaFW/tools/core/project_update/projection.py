@@ -1503,6 +1503,11 @@ def build_projection_rules(
         warnings.extend(
             _bundled_architecture_warnings(roots, base_relative, runtime_relative)
         )
+        mixed_runtime = _mixed_native_runtime_warning(
+            source_root / base_relative if base_relative.parts else source_root
+        )
+        if mixed_runtime:
+            warnings.append(mixed_runtime)
 
     confirmed_shell: dict[Path, str] = {}
     _adopt_small_undeclared_entries(
@@ -2029,13 +2034,172 @@ def _root_native_runtime_files(view: _FileView, directory: Path) -> list[Path]:
     )
 
 
+def shell_native_location(relative: str) -> str | None:
+    """项目相对 posix 路径落在哪个「外壳原生库位置」上，给出位置键（小写）；不在就 None。
+
+    外壳把 MaaFramework 原生库放在三类位置（官方目录 53 个当前发行包实测）：
+
+    - ``maafw``：MXU 与 MFW-PyQt6 的顶层 ``maafw/``，**整个目录**都属于那份运行时
+      （``MaaAgentBinary/``、``plugins/`` 随它的库走）；
+    - ``runtimes/<rid>/native``：MFAAvalonia 的布局，同样整个目录；``runtimes/<rid>``：
+      直接放在 RID 目录下的原生库，**只认** MaaFramework 那套库文件名（旁边是
+      ``native/`` ``lib/`` 子目录）；
+    - ``""``（包根）：PiCLI / Lite，只认 MaaFramework 那套库文件名——包根上还混着外壳
+      自己的 ``MFAAvalonia.dll``、``libloader.dll``、``MaaPiCli.exe``，它们不算。
+
+    自带解释器里的 ``python/**/site-packages/maa/bin`` 不在其中：那是 wheel 自带的、正牌的
+    第二份原生库，版本可以比外壳的低（M9A v4.5.0 是 5.11.1 对 5.11.2）。``plugins/``、
+    ``agent/`` 与 ``.auto_mas*`` 也都不是。
+    """
+
+    parts = relative.split("/")
+    if any(part.casefold().startswith(".auto_mas") for part in parts):
+        return None
+    first = parts[0].casefold()
+    if first == "maafw" and len(parts) >= 2:
+        return "maafw"
+    if first == "runtimes" and len(parts) >= 3:
+        rid = parts[1].casefold()
+        if not _RID_RE.match(rid):
+            return None
+        if len(parts) >= 4 and parts[2].casefold() == "native":
+            return f"runtimes/{rid}/native"
+        if len(parts) == 3 and _is_maafw_runtime_library(parts[2]):
+            return f"runtimes/{rid}"
+        return None
+    if len(parts) == 1 and _is_maafw_runtime_library(parts[0]):
+        return ""
+    return None
+
+
+def _shell_native_core_location(relative: str) -> str | None:
+    """路径是某个外壳原生库位置上**直接放着**的 ``MaaFramework`` 主库时给出位置键。
+
+    在 :func:`_is_maaframework_core` 之上再要求去掉后缀后恰好是 ``MaaFramework``：它按
+    第一个点切，.NET 外壳的托管绑定 ``MaaFramework.Binding.dll`` 也会被它认成主库。
+    """
+
+    location = shell_native_location(relative)
+    if location is None:
+        return None
+    parent, _, name = relative.rpartition("/")
+    if parent.casefold() != location or not _is_maaframework_core(name):
+        return None
+    if PurePosixPath(name.casefold()).stem.removeprefix("lib") != "maaframework":
+        return None
+    return location
+
+
+def abandoned_native_runtime_files(
+    import_files: Iterable[str], package_files: Iterable[str]
+) -> set[str]:
+    """全量包对「导入来的文件」应当清掉的、被淘汰布局的原生库（项目相对 posix 路径）。
+
+    本地导入的目录可能被外壳原地换过布局：MXU（``maafw/``）换成 MFAAvalonia
+    （``runtimes/<rid>/native``）时，两家的更新器都不删新包里没有的顶层目录，旧的
+    ``maafw/`` 就一直留着；导入后它是 ``origin=import``，全量包更新又把它原样带进新载荷。
+    runner 与 agent 各挑一份库，协议版本对不上，每次都等满连接超时（M9A v4.11.0 真机：
+    ``maafw/`` 5.9.2 对 ``runtimes/win-x64/native`` 5.14.0）。
+
+    判据只看新包的清单、不比版本：新包在某个外壳原生库位置（:func:`shell_native_location`）
+    上直接带着 ``MaaFramework`` 主库，而导入来的文件在**另一个**位置上也有主库、新包在那个
+    位置上没有主库——那个位置就是被淘汰的布局，其上导入来的、不在新包里的文件都清掉。
+    刻意收窄的地方：
+
+    - 新包在三类位置上一份主库都不带（只在自带解释器的 ``maa/bin`` 里带、或压根不带）时
+      什么都不清：分不清旧位置是残留还是项目仍要用的那份。
+    - 新包自己也在那个位置带主库（纯 MXU 包更新到新的 MXU 包、PiCLI 包更新到新的 PiCLI
+      包）时不按位置清：主库已经换成新包的，同位置上多出来的旧文件不会让 runner 挑错库。
+    - 旧位置上导入来的文件里没有主库（比如一个只剩 ``plugins/`` 的 ``maafw/``）不清：它
+      不会与新包的那份争。
+    - 包根与 ``runtimes/<rid>`` 只清 MaaFramework 那套库文件名，外壳自己的库与子目录不碰。
+
+    ``maafw/`` 里用户手放的东西会随整个目录一起清：清的前提是这份运行时的主库已被新包换到
+    了别处，``maafw/`` 里的插件与附属文件跟着它的库走，库不在就不会再被加载；清除只发生在
+    新载荷的 staging 里，旧载荷、视图与导入来源都不动。
+    """
+
+    package_list = list(package_files)
+    package_cores = {
+        location
+        for rel in package_list
+        if (location := _shell_native_core_location(rel)) is not None
+    }
+    if not package_cores:
+        return set()
+    import_list = list(import_files)
+    abandoned = {
+        location
+        for rel in import_list
+        if (location := _shell_native_core_location(rel)) is not None
+    } - package_cores
+    if not abandoned:
+        return set()
+    package_set = set(package_list)
+    return {
+        rel
+        for rel in import_list
+        if rel not in package_set and shell_native_location(rel) in abandoned
+    }
+
+
+def _mixed_native_runtime_warning(project_root: Path) -> str | None:
+    """导入时提示：来源目录里几处外壳原生库位置各带一份 MaaFramework、版本还不一样。
+
+    只提示、不删：导入的多半是用户正在用的目录，换过外壳留下的旧库目录由之后的全量包
+    更新清掉（:func:`abandoned_native_runtime_files`）。只看本机架构的 ``runtimes/<rid>``：
+    别的架构投影时本来就剔掉。版本读不出来的不参与「版本不同」的判断。
+    """
+
+    from app.task.MaaFW.tools.core.runner.environment import (
+        PROJECT_MAAFW_DLL_NAME,
+        _read_runtime_maafw_version,
+        host_runtime_rid_dirs,
+        project_maafw_runtime_path,
+    )
+
+    candidates = [project_root / "maafw"]
+    for rid in host_runtime_rid_dirs(project_root):
+        candidates.extend((rid / "native", rid))
+    candidates.append(project_root)
+    found = [
+        (directory, _read_runtime_maafw_version(directory))
+        for directory in candidates
+        if (directory / PROJECT_MAAFW_DLL_NAME).is_file()
+    ]
+    if len(found) < 2 or len({version for _, version in found if version}) < 2:
+        return None
+
+    def label(directory: Path) -> str:
+        try:
+            relative = directory.resolve().relative_to(project_root.resolve())
+        except ValueError:
+            return str(directory)
+        return f"{relative.as_posix()}/" if relative.parts else "根目录"
+
+    versions = dict(found)
+    listed = "、".join(
+        f"{label(directory)}（{version or '版本未知'}）" for directory, version in found
+    )
+    chosen = project_maafw_runtime_path(project_root)
+    used = ""
+    if chosen is not None:
+        version = versions.get(chosen) or _read_runtime_maafw_version(chosen)
+        used = f"运行时用 {label(chosen)}（{version or '版本未知'}），"
+    return (
+        f"检测到混装的 MaaFramework 原生库目录：{listed}。{used}"
+        "其余多半是换过外壳留下的残留，建议用干净的发行包重新导入"
+    )
+
+
 def _bundled_native_runtime_dir(
     roots: tuple[Path, ...], base_relative: Path
 ) -> Path | None:
     """项目自带 MaaFramework 原生库所在目录（相对 ``source_root``）；没有就 None。
 
-    查找逻辑与 runner 同一套（``project_maafw_runtime_path``：先 ``maafw/``，再
-    ``runtimes/<rid>/native``，再有界搜索），叠加视图里先看包、再看项目。MFAAvalonia
+    查找逻辑与 runner 同一套（``project_maafw_runtime_path``：``maafw/`` 与
+    ``runtimes/<rid>/native`` 里本机能加载的取版本最高的，都没有再有界搜索），叠加视图里
+    先看包、再看项目。MFAAvalonia
     布局下找到的是 ``runtimes/win-x64/native``，那里除了 MaaFramework 还有外壳自己的
     原生库；整目录带走，几十 MB，换来的是 runner 用的就是发行包里那份库。来源同时带
     好几种架构（``win-arm64`` + ``win-x64``）时选本机那一种，其余照旧当外壳运行时剔掉；

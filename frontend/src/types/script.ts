@@ -47,6 +47,7 @@ export interface MAAScriptConfig {
     Path: string
   }
   Run: {
+    HardTimeLimit: number
     TaskTransitionMethod: string
     ProxyTimesLimit: number
     ADBSearchRange: number
@@ -87,6 +88,7 @@ export interface GeneralScriptConfig {
     RootPath: string
   }
   Run: {
+    HardTimeLimit: number
     ProxyTimesLimit: number
     RunTimeLimit: number
     RunTimesLimit: number
@@ -129,6 +131,7 @@ export interface SRCScriptConfig {
     Path: string
   }
   Run: {
+    HardTimeLimit: number
     TaskTransitionMethod: string
     ProxyTimesLimit: number
     RunTimesLimit: number
@@ -171,6 +174,7 @@ export interface MaaEndScriptConfig {
     Path: string
   }
   Run: {
+    HardTimeLimit: number
     RunTimeLimit: number
     ProxyTimesLimit: number
     RunTimesLimit: number
@@ -321,10 +325,23 @@ export interface MaaFWTaskSnapshot {
 export interface MaaFWQueuedTaskItem {
   id: string
   task: MaaFWTaskInfo
+  missing?: false
   /** 同名副本中的序号，从 1 起；仅在 `copyTotal > 1` 时需要显示 */
   copyIndex: number
   copyTotal: number
 }
+
+/** 队列里 interface 已经没有的任务（项目更新改了 name）：留成虚影，由用户自己删。 */
+export interface MaaFWMissingQueuedTask {
+  id: string
+  missing: true
+  /** 实例 id 去掉副本后缀后的原任务名 */
+  name: string
+  copyIndex: number
+  copyTotal: number
+}
+
+export type MaaFWQueueEntry = MaaFWQueuedTaskItem | MaaFWMissingQueuedTask
 
 export interface MaaFWUserConfig {
   Info: {

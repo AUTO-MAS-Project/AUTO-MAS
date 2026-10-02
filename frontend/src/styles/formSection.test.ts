@@ -17,6 +17,10 @@ describe('global form-section styles', () => {
     expect(sheet).toContain('.section-header h3 {')
     expect(sheet).toContain('.section-header h3::before {')
     expect(sheet).toContain('.switch-description {')
+    // 子配置块标题（日志预处理）：无通栏分隔线，避免吞掉紧随其后的表单行；
+    // 无主题色竖条——浅底标题条内再加竖条视觉过重
+    expect(sheet).toContain('.sub-section-header {')
+    expect(rules).not.toContain('.sub-section-header h3::before')
   })
 
   it('uses theme tokens instead of hardcoded colors', () => {

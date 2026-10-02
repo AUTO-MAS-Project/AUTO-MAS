@@ -287,6 +287,9 @@ class MaaEndManager(TaskExecuteBase):
             finally:
                 if self.task_info.mode != "ScriptConfig":
                     await self._restore_script_config_from_temp()
+            if isinstance(task, AutoProxyTask) and task.update_failed:
+                # 安装状态未确认时，同一目录上的后续用户也不能继续执行。
+                return
 
     async def final_task(self):
 

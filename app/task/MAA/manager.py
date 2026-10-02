@@ -34,7 +34,6 @@ from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, TaskExecuteBase, UserItem
 from app.task.emulator_core import close_emulator
 from app.task.proxy_helpers import (
-    CONFIG_SOURCE_DIRECT,
     CONFIG_SOURCE_SCRIPT,
     read_config_source,
 )

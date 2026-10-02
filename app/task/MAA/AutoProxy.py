@@ -43,8 +43,9 @@ from app.models.config import (
 from app.models.ConfigBase import MultipleConfig
 from app.models.emulator import DeviceBase, DeviceInfo
 from app.models.schema import WSTaskNoticeData
-from app.models.task import LogRecord, ScriptItem, TaskExecuteBase
+from app.models.task import LogRecord, ScriptItem
 from app.services import Notify, System
+from app.task.base import ScriptAutoProxyBase
 from app.task.emulator_core import close_emulator
 from app.task.general.tools import execute_script_task
 from app.task.proxy_helpers import (
@@ -68,10 +69,12 @@ from app.utils.constants import (
 )
 from app.utils.io import mark_native_config_injected, read_file, write_file
 
+from . import api_service as maa_api
 from .base_preset import maa_task_identity, seed_maa_base_config
 from .tools import (
     agree_bilibili,
     ensure_game_updated,
+    log_statistics,
     push_notification,
     update_maa,
 )
@@ -89,6 +92,7 @@ from .tools.cultivate import (
     parse_depot_payload,
     resolve_progression,
     summarize_achievements,
+    takeover_notice_patch_value,
 )
 
 # OLD: 旧版 MAA（PR #17392 前）gui.json 的 ClientType 字符串 → 新版枚举整数映射
@@ -801,7 +805,7 @@ def _build_activity_priority_fight(
     return activity_fight
 
 
-class AutoProxyTask(TaskExecuteBase):
+class AutoProxyTask(ScriptAutoProxyBase):
     """自动代理模式"""
 
     # 养成采集状态：prepare() 每轮重置；类级默认保证未跑 prepare 的
@@ -1230,7 +1234,7 @@ class AutoProxyTask(TaskExecuteBase):
                 return
             # 森空岛快照走 TTL 缓存（force=False）：注入时刚强刷过，运行末
             # 复用当轮观测即可；缓存过期才再拉一次（决策 38）
-            skland = await Config.get_maa_cultivate_skland_progression(
+            skland = await maa_api.get_cultivate_skland_progression(
                 str(self.script_info.script_id), str(self.cur_user_uid)
             )
             context = ProviderContext(
@@ -1252,6 +1256,10 @@ class AutoProxyTask(TaskExecuteBase):
                     "CultivateTargets",
                     json.dumps(dump_cultivate_targets(updated), ensure_ascii=False),
                 )
+                # 最后一个目标达成被移除后目标清空：接管已不可能，残留的接管
+                # 提示要一并清掉——这条路不经过用户配置写入漏斗
+                if not updated:
+                    await self._set_cultivate_notice("")
                 removed = summarize_achievements(
                     targets, achievements, load_oper_box_names(context)
                 )
@@ -1283,24 +1291,28 @@ class AutoProxyTask(TaskExecuteBase):
             (养成任务配置, 是否存在原始目标, 是否接管抑制库存保持)
         """
 
-        if not self.cur_user_config.get("Task", "IfCultivate"):
-            await self._set_cultivate_notice("")
-            return None, False, False
+        # 早退判定与配置写入漏斗共用同一口径函数：notice 非 None 即「开关关闭
+        # 或无有效目标」，本轮不可能接管——恢复 dev 原有的开关早退，防止关掉
+        # 养成后仍按残留目标注入并抑制库存保持
+        raw_targets: object
         try:
             raw_targets = json.loads(
                 self.cur_user_config.get("Task", "CultivateTargets")
             )
         except (TypeError, ValueError):
             raw_targets = []
-        targets = parse_cultivate_targets(raw_targets)
-        if not targets:
-            await self._set_cultivate_notice("")
+        notice = takeover_notice_patch_value(
+            self.cur_user_config.get("Task", "IfCultivate"), raw_targets
+        )
+        if notice is not None:
+            await self._set_cultivate_notice(notice)
             return None, False, False
+        targets = parse_cultivate_targets(raw_targets)
 
         try:
             # 森空岛练度注入前强刷（决策 38：注入前重新查询一次，滞后≈0）；
             # 未绑定/凭据失效/网络失败返回 None，链短路落 local，不炸注入
-            skland = await Config.get_maa_cultivate_skland_progression(
+            skland = await maa_api.get_cultivate_skland_progression(
                 str(self.script_info.script_id), str(self.cur_user_uid), force=True
             )
             (
@@ -2178,7 +2190,9 @@ class AutoProxyTask(TaskExecuteBase):
             )
             user_logs_list.append(log_path.with_suffix(".json"))
 
-            if await Config.save_maa_log(log_path, log_item.content, log_item.status):
+            if await log_statistics.save_maa_log(
+                log_path, log_item.content, log_item.status
+            ):
                 if_six_star = True
 
         statistics = await Config.merge_statistic_info(user_logs_list)

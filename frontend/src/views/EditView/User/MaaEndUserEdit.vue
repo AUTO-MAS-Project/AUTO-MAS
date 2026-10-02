@@ -68,6 +68,11 @@
               :config-loading="maaEndConfigLoading"
               :import-loading="maaEndImportLoading"
               :show-config-mask="showMaaEndConfigMask"
+              :quick-config="formData.Info.IfQuickConfig"
+              :quick-config-disabled="
+                loading || isSaving || (!presetSupported && !formData.Info.IfQuickConfig)
+              "
+              @quick-config-change="handleQuickConfigChange"
               @configure="handleMaaEndConfig"
               @import-config="handleImportMaaEndConfig"
               @script-config="handleScriptConfig"
@@ -87,15 +92,6 @@
                 <template #icon><CalendarOutlined /></template>
                 {{ t('edit.goPlan') }}
               </a-button>
-              <span>{{ t('edit.enableQuickConfiguration') }}</span>
-              <a-switch
-                :checked="formData.Info.IfQuickConfig"
-                :disabled="
-                  loading || isSaving || (!presetSupported && !formData.Info.IfQuickConfig)
-                "
-                :aria-label="t('edit.enableQuickConfiguration')"
-                @change="handleQuickConfigChange"
-              />
               <a-button size="small" @click="openRestoreModal">
                 <template #icon><HistoryOutlined /></template>
                 {{ t('edit.configRestoreTitle') }}
@@ -303,6 +299,7 @@ let userId = route.params.userId as string
 const isEdit = ref(!!userId)
 const { configLocked } = useScriptConfigLock(() => scriptId)
 const scriptName = ref('')
+const scriptPath = ref('')
 const controllerType = ref<string | null>(null)
 const controllerProtocol = ref<string | null>(null)
 const presetSupported = ref(true)
@@ -571,11 +568,13 @@ const loadScriptInfo = async () => {
   const scriptDetail = await getScript(scriptId)
   if (scriptDetail) {
     scriptName.value = scriptDetail.name
+    scriptPath.value = (scriptDetail.config as { Info?: { Path?: string } }).Info?.Path ?? ''
     controllerType.value = (scriptDetail.config as any).Game?.ControllerType ?? null
   }
 }
 
 const loadMaaEndOptions = async () => {
+  if (!scriptPath.value.trim()) return
   maaEndOptionsLoading.value = true
   try {
     const response = await getMaaEndOptions(scriptId)

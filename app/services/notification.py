@@ -46,9 +46,9 @@ from app.models.notification import (
     DEFAULT_WEBHOOK_TEMPLATE,
     NOTIFICATION_HTML_IMAGE_SOURCE_PATTERN,
     NOTIFICATION_IMAGE_URI_PATTERN,
-    NotificationImage,
     WECOM_ROBOT_HOST,
     WECOM_ROBOT_PATH,
+    NotificationImage,
     WebhookTargetSnapshot,
 )
 from app.utils import LazyProxy, get_logger, resource_path

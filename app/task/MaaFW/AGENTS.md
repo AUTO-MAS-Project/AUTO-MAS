@@ -176,6 +176,11 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   这个变量已被剔除，所以 `maa/bin` 不在、项目自带库（`MaaFramework.dll` + `MaaAgentServer.dll`）又齐时
   由检查替它指过去；不这么做，导入的 M9A 全部卡在「项目 Python 或 MaaFW Agent 模块不可用」，
   更新预检也永远过不去（v5.6.0 真机）。`maa/bin` 在时不设，照旧用 wheel 自带那份。
+  runner 起 agent 时按同一个函数（`agent_env/env.project_python_agent_binary_path`）给 agent 设
+  `MAAFW_BINARY_PATH`（agent PATH 里 runner 那份原生库目录也排在项目目录最前）：M9A 见到已设就沿用，
+  不再自己按 `runtimes/` → `maafw/` 的顺序找，两份原生库并存时也与 runner 同一份。原生 agent
+  （Go / C++）固定从 `maafw/` 加载、指不过去，runner 选的不是它且版本不同时启动前就报混装
+  （`runner._check_native_agent_runtime`），不等连接超时。
   检查失败时界面与报错第一行只给 traceback 的最后一行（项目目录换成 `<项目>`：任务结果与预检失败通知
   只取第一行、再截 200 / 120 字），完整输出逐行带 `[MaaFW 详情] ` 前缀、只进 `.worker.log` / 后端
   日志——worker 转发、`embedded_manager._append_update_log`、编辑页准备环境（`api_service/agent_env.py`）
@@ -295,7 +300,9 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   持本视图预约，切完在预约里确认一次运行环境再放手（前端那次 prepare 会被 `envReady` 短路）。
 - 差量 / 全量只看当前载荷：`source.kind=update`（更新得来的，清单逐文件记包内哈希，指纹就是它
   现在的指纹——载荷不可变）才要差量包，本地导入的一律全量；按旧投影规则建、缺的文件又没补上的
-  载荷（清单 `projectionRevision` 低于 `projection.PROJECTION_REVISION`）也只要全量包。差量基线用 `apply.py: _validate_plan_base`
+  载荷（清单 `projectionRevision` 低于 `projection.PROJECTION_REVISION`）也只要全量包；清单里还留着
+  换外壳前旧布局原生库（`origin=import`、按上一个包的清单判是被淘汰的位置）的也只要全量包，清完就回到
+  差量。差量基线用 `apply.py: _validate_plan_base`
   对载荷清单校验。
 - **投影规则改版**：规则改动会让已登记的载荷少文件时，`PROJECTION_REVISION` 加一，并在
   `project_update/projection_legacy.py` 留一份上一版规则的复刻。运行前检查与手动检查更新时
@@ -306,7 +313,13 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   （`data/manifest_cache.json`、热更新改过的受管文件）原样保留、不留档，只落新增的文件，M9A / MaaEnd
   不会因此重跑热更新。结果记在载荷清单的 `projectionCheck`，
   同组只查一次（`project_update/projection_heal.py`）。全量包清的是旧载荷里 `origin=package` 且不在包内的，加上 `origin=import`、位于新
-  interface 资源目录内、不在包内的（`apply._import_origin_orphans`：用户内容目录与运行时目录不碰）。
+  interface 资源目录内、不在包内的（`apply._import_origin_orphans`：用户内容目录与运行时目录不碰），
+  再加上 `origin=import`、在被新包淘汰的外壳原生库位置上、不在包内的
+  （`projection.abandoned_native_runtime_files`）：位置只有顶层 `maafw/`、`runtimes/<rid>/native`、
+  `runtimes/<rid>` 与包根上的 MaaFramework 原生库，新包在某处带主库、旧的另一处也有主库而新包那处没有，
+  那一处就清——MXU 换 MFAAvalonia 的导入目录里 `maafw/` 5.9.2 与 `runtimes/win-x64/native` 5.14.0
+  并存，runner 与 agent 各挑一份、每次等满连接超时。判据只看新包（投影过滤后）的清单、不比版本；自带解释器的
+  `site-packages/maa/bin` 是正牌的第二份库（可以更旧），永远不碰。导入时同样的混装只在报告里提示、不删。
   `.mas-update` / `.mas-update-cache` 是更新器的保留目录；`debug` / `logs` / `temp` / `__pycache__` /
   `.pycache`、`config/maa_option.json` 与视图标记不计入指纹（agent 子进程与环境准备设了
   `PYTHONPYCACHEPREFIX=<项目根>/.pycache`，镜像树里项目根出现两遍，路径长到会撞 MAX_PATH 时不设

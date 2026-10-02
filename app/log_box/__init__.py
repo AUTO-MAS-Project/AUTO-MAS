@@ -5,7 +5,7 @@ log_box 只对日志本身负责：调用方提供「日志源 + 规则 + 处理
 决定：MAS 进程宿主注入 sink 直接写 push_log；脚本子进程宿主走 @@LOGBOX@@
 标记回传。
 
-hooks 是采集管线入口的日志处理钩子层：按配置规则丢弃/改写日志行，供
+hooks 是采集管线入口的日志预处理层：按配置规则丢弃/改写日志行，供
 LogMonitor（line_hook）与 LogCollect（open 前置处理器）共用同一份规则。
 
 顶层入口：``from app.log_box import log_box, LogType``。

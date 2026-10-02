@@ -180,6 +180,10 @@
           <div class="section-header">
             <h3>{{ t('edit.runConfiguration') }}</h3>
           </div>
+          <ScriptHardTimeoutField
+            v-model:value="bettergiConfig.Run.HardTimeLimit"
+            @save="handleChange('Run', 'HardTimeLimit', bettergiConfig.Run.HardTimeLimit)"
+          />
           <a-row :gutter="24">
             <a-col :span="8">
               <a-form-item>
@@ -266,6 +270,7 @@
                     {{ t('edit.bettergiAccountSwitchMethodMas') }}
                   </a-select-option>
                 </a-select>
+                <span class="control-hint">{{ t('edit.accountSwitch16x9Only') }}</span>
               </a-form-item>
             </a-col>
           </a-row>
@@ -276,6 +281,7 @@
 </template>
 
 <script setup lang="ts">
+import ScriptHardTimeoutField from '@/views/EditView/Script/components/ScriptHardTimeoutField.vue'
 import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
 import DocLink from '@/components/DocLink.vue'
 import { MAS_DOC_URLS } from '@/utils/openExternal'
@@ -312,6 +318,7 @@ interface BetterGIInfoForm {
 }
 
 interface BetterGIRunForm {
+  HardTimeLimit: number
   ProxyTimesLimit: number
   RunTimesLimit: number
   RunTimeLimit: number
@@ -344,6 +351,7 @@ const formData = reactive({
 const bettergiConfig = reactive<BetterGIScriptConfigForm>({
   Info: { Name: '', RootPath: '.' },
   Run: {
+    HardTimeLimit: 120,
     ProxyTimesLimit: 0,
     RunTimesLimit: 3,
     RunTimeLimit: 10,
@@ -547,6 +555,14 @@ onMounted(loadScript)
   align-items: center;
   gap: 8px;
   font-weight: 600;
+}
+
+.control-hint {
+  display: block;
+  margin-top: 4px;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--ant-color-text-tertiary);
 }
 
 .help-icon {

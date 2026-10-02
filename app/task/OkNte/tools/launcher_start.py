@@ -90,6 +90,11 @@ _DOWNLOAD_PROGRESS_TOKENS = ("%", "MB/s", "剩余时间")
 _UPDATE_ACTIVE_GRACE_SECONDS = 600.0
 # 下载进度签名持续无变化的时长上限：百分比/速度/剩余时间长时间不动视为下载卡死
 _DOWNLOAD_STALL_SECONDS = 300.0
+# 「开始游戏」点击重试：被遮挡等场景点击可能被吞（若用固定次数预算，遮罩消失
+# 后预算已尽只能干等超时），改为按时间间隔重试并保留宽松总上限防死循环；点击
+# 生效时启动器会退出或最小化，按钮消失即停止重试。对齐 ok-ww 启动器方案。
+_START_CLICK_LIMIT = 8
+_START_CLICK_INTERVAL_SECONDS = 12.0
 
 
 @lru_cache(maxsize=1)
@@ -385,6 +390,9 @@ def start_game_via_launcher(
         _activate_window(hwnd)
 
         start_clicks = 0
+        last_start_click: float | None = None
+        start_click_exhausted_logged = False
+        exit_wait_polls = 0
         update_clicked = False
         # 点「更新」后按钮是否已离开更新态（被进度 UI 取代过）：用于区分
         # 「更新刚点完、按钮文本尚未切换」与「更新完成、按钮真正变回」
@@ -401,8 +409,13 @@ def start_game_via_launcher(
             try:
                 items = _read_texts(hwnd)
             except RuntimeError:
-                # 启动器点击「开始游戏」后最小化或退出，窗口失效：只等游戏起窗
+                # 启动器点击「开始游戏」后会退出或最小化：只等游戏起窗
                 if start_clicks > 0:
+                    exit_wait_polls += 1
+                    if exit_wait_polls == 1:
+                        on_log("启动器已退出，正在等待游戏窗口出现...")
+                    elif exit_wait_polls % 5 == 0:
+                        on_log("仍在等待游戏窗口出现...")
                     time.sleep(2)
                     continue
                 raise
@@ -439,6 +452,7 @@ def start_game_via_launcher(
                     update_clicked = False
                     start_button_gone = False
                     launcher_upgrade_clicked = False
+                    start_click_exhausted_logged = False
                 time.sleep(2)
                 continue
 
@@ -451,9 +465,12 @@ def start_game_via_launcher(
                 if popup_box is not None:
                     on_log("检测到启动器「提示」弹窗，点击关闭...")
                     _click_box(hwnd, popup_box, after_sleep=2)
-                    # 遮罩期「开始游戏」点击会被吞掉：关掉弹窗后重置点击预算，
-                    # 避免预算在遮罩期耗尽后按钮恢复也无预算可点
+                    # 遮罩期「开始游戏」点击会被吞掉：关掉弹窗后重置点击计数
+                    # 与间隔，立即可重试（耗尽提示标志一并重置，恢复后再次耗尽
+                    # 仍能提示）
                     start_clicks = 0
+                    last_start_click = None
+                    start_click_exhausted_logged = False
                     time.sleep(1)
                     continue
 
@@ -488,12 +505,35 @@ def start_game_via_launcher(
                 # （更新后无重启弹窗时此处是唯一再点入口）
                 on_log("游戏更新完成，按钮已恢复「开始游戏」，继续启动...")
                 start_clicks = 0
+                last_start_click = None
+                start_click_exhausted_logged = False
                 update_clicked = False
                 start_button_gone = False
-            if start_box is not None and start_clicks < 3:
-                on_log("点击启动器「开始游戏」")
+            if start_box is not None and start_clicks >= _START_CLICK_LIMIT:
+                if not start_click_exhausted_logged:
+                    start_click_exhausted_logged = True
+                    on_log(
+                        f"「开始游戏」已点击 {_START_CLICK_LIMIT} 次仍未生效，"
+                        "停止点击并继续等待（可能被遮挡或启动器异常）"
+                    )
+            elif (
+                start_box is not None
+                and start_clicks < _START_CLICK_LIMIT
+                and (
+                    last_start_click is None
+                    or now - last_start_click >= _START_CLICK_INTERVAL_SECONDS
+                )
+            ):
+                if start_clicks == 0:
+                    on_log("点击启动器「开始游戏」")
+                else:
+                    on_log(
+                        f"第 {start_clicks + 1} 次点击「开始游戏」"
+                        "（此前点击未生效，可能被遮挡）"
+                    )
                 _click_box(hwnd, start_box, after_sleep=3)
                 start_clicks += 1
+                last_start_click = now
                 deadline = max(deadline, now + _START_GAME_TIMEOUT)
             elif update_box is not None and not update_clicked:
                 on_log("检测到启动器「更新」按钮，正在更新游戏，等待时间将延长...")
