@@ -193,6 +193,7 @@ interface InstallationOptions {
 }
 
 export interface Installation {
+  scriptId: string
   label: string
   rootPath: string
 }
@@ -240,6 +241,7 @@ export function discoverInstallations(
 
       seenPaths.add(pathKey)
       installations.push({
+        scriptId: instance.uid,
         label: `${options.labelPrefix}-${installations.length + 1}`,
         rootPath: normalizedPath,
       })

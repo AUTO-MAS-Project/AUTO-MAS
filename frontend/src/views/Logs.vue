@@ -287,7 +287,7 @@ onUnmounted(() => {
 <template>
   <div class="logs-container">
     <div class="logs-header">
-      <h1 class="page-title">日志查看</h1>
+      <h1 class="page-title">{{ t('logs.pageTitle') }}</h1>
       <div class="header-actions">
         <a-space :size="12" wrap>
           <a-radio-group
@@ -295,12 +295,12 @@ onUnmounted(() => {
             button-style="solid"
             @change="onLogFileChange"
           >
-            <a-radio-button value="app">后端日志</a-radio-button>
-            <a-radio-button value="frontend">前端日志</a-radio-button>
+            <a-radio-button value="app">{{ t('logs.backendLog') }}</a-radio-button>
+            <a-radio-button value="frontend">{{ t('logs.frontendLog') }}</a-radio-button>
           </a-radio-group>
 
           <a-button :type="logMode === 'follow' ? 'primary' : 'default'" @click="toggleLogMode">
-            {{ logMode === 'follow' ? '保持最新' : '自由浏览' }}
+            {{ logMode === 'follow' ? t('logs.followLatest') : t('logs.freeBrowse') }}
           </a-button>
 
           <a-button :type="realTimeEnabled ? 'primary' : 'default'" @click="toggleRealTime">

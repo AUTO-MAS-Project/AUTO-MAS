@@ -470,6 +470,8 @@ async def get_maaend_options(options: ScriptDeleteIn = Body(...)) -> MaaEndOptio
     try:
         data = await Config.get_maaend_options(options.scriptId)
         return MaaEndOptionsOut(
+            projectName=data["projectName"],
+            projectVersion=data["projectVersion"],
             autoCollectGroups=[
                 MaaEndAutoCollectGroup(**item)
                 for item in data.get("autoCollectGroups", [])

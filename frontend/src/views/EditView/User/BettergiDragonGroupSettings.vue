@@ -649,7 +649,7 @@
       <div class="bettergi-domain-picker-cols">
         <!-- 第一级：地区 -->
         <div class="bettergi-domain-picker-col">
-          <div class="bettergi-domain-picker-col-title">地区</div>
+          <div class="bettergi-domain-picker-col-title">{{ t('edit.bettergiColRegion') }}</div>
           <div class="bettergi-domain-picker-list">
             <div
               v-for="region in domainRegions"
@@ -664,7 +664,9 @@
         </div>
         <!-- 第二级：该地区的秘境（地点-秘境类型） -->
         <div class="bettergi-domain-picker-col">
-          <div class="bettergi-domain-picker-col-title">地点-秘境类型</div>
+          <div class="bettergi-domain-picker-col-title">
+            {{ t('edit.bettergiPickerDomainType') }}
+          </div>
           <div class="bettergi-domain-picker-list">
             <div
               v-for="item in pickRegionDomains"
@@ -679,7 +681,7 @@
         </div>
         <!-- 第三级：奖励物品（圣遗物本无档位，不可选） -->
         <div class="bettergi-domain-picker-col">
-          <div class="bettergi-domain-picker-col-title">奖励物品</div>
+          <div class="bettergi-domain-picker-col-title">{{ t('edit.bettergiPickerReward') }}</div>
           <div class="bettergi-domain-picker-list">
             <template v-if="pickIsArtifact">
               <div class="bettergi-domain-picker-empty">
@@ -697,14 +699,14 @@
                 {{ reward }}
               </div>
               <div v-if="!pickRewards.length" class="bettergi-domain-picker-note">
-                先选择左侧秘境
+                {{ t('edit.bettergiPickerSelectDomainFirst') }}
               </div>
             </template>
           </div>
         </div>
       </div>
       <template #footer>
-        <a-button @click="closeDomainPicker">取消</a-button>
+        <a-button @click="closeDomainPicker">{{ t('edit.cancel') }}</a-button>
         <a-button class="bettergi-domain-picker-clear" @click="onClearDomainPicker">
           {{ t('edit.bettergiDomainPickerClear') }}
         </a-button>
@@ -718,7 +720,7 @@
     <a-modal
       v-if="bossPickerOpen"
       :open="bossPickerOpen"
-      title="选择首领"
+      :title="t('edit.bettergiBossPickerTitle')"
       :width="720"
       centered
       :z-index="1100"
@@ -728,7 +730,7 @@
       <div class="bettergi-domain-picker-cols bettergi-boss-picker-cols">
         <!-- 第一级：地区 -->
         <div class="bettergi-domain-picker-col">
-          <div class="bettergi-domain-picker-col-title">地区</div>
+          <div class="bettergi-domain-picker-col-title">{{ t('edit.bettergiColRegion') }}</div>
           <div class="bettergi-domain-picker-list">
             <div
               v-for="region in bossRegions"
@@ -743,7 +745,7 @@
         </div>
         <!-- 第二级：该地区首领（首领名称-地点） -->
         <div class="bettergi-domain-picker-col">
-          <div class="bettergi-domain-picker-col-title">首领 Boss</div>
+          <div class="bettergi-domain-picker-col-title">{{ t('edit.bettergiPickerBoss') }}</div>
           <div class="bettergi-domain-picker-list">
             <div
               v-for="item in pickRegionBosses"
@@ -755,13 +757,13 @@
               {{ item.label }}
             </div>
             <div v-if="!pickRegionBosses.length" class="bettergi-domain-picker-note">
-              先选择左侧地区
+              {{ t('edit.bettergiPickerSelectRegionFirst') }}
             </div>
           </div>
         </div>
       </div>
       <template #footer>
-        <a-button @click="closeBossPicker">取消</a-button>
+        <a-button @click="closeBossPicker">{{ t('edit.cancel') }}</a-button>
         <a-button class="bettergi-domain-picker-clear" @click="onClearBossPicker">
           {{ t('edit.bettergiDomainPickerClear') }}
         </a-button>
@@ -914,11 +916,11 @@ const weeklySectionToggle = (section: DragonSettingSection, checked: boolean): v
 // 表格列：日期标签 / 队伍(文本) / 策略(弹窗单选) / 秘境(下拉) / 奖励(下拉) / 执行(胶囊开关)
 const weeklyColumns = [
   { title: '', key: 'label', width: 72 },
-  { title: '队伍', key: 'party' },
-  { title: '策略', key: 'strategy' },
-  { title: '秘境', key: 'domain' },
-  { title: '奖励', key: 'reward' },
-  { title: '执行', key: 'run', width: 64 },
+  { title: t('edit.bettergiColParty'), key: 'party' },
+  { title: t('edit.bettergiColStrategy'), key: 'strategy' },
+  { title: t('edit.bettergiColDomain'), key: 'domain' },
+  { title: t('edit.bettergiColReward'), key: 'reward' },
+  { title: t('edit.bettergiColRun'), key: 'run', width: 64 },
 ]
 // 通用周表列：日期标签 + 各行 fields 的列（列标题取该 section 字段最多的行的 field.label，
 // 使「默认」行（无执行列）与周一~周日行（含执行列）共用统一表头；字段值按“行内同下标 field”读取/写回）
@@ -948,10 +950,10 @@ const weeklyFieldCell = (record: WeeklyFieldRow, colKey: string): DragonSettingF
 // 每日地脉花单行表格列：队伍/策略/地区/任务类型/执行（对应 dailyFieldRow.fields 下标 0~4）
 const dailyColumns = [
   { title: '', key: 'label', width: 72 },
-  { title: '队伍', key: 'col0' },
-  { title: '策略', key: 'col1' },
-  { title: '地区', key: 'col2' },
-  { title: '任务类型', key: 'col3' },
+  { title: t('edit.bettergiColParty'), key: 'col0' },
+  { title: t('edit.bettergiColStrategy'), key: 'col1' },
+  { title: t('edit.bettergiColRegion'), key: 'col2' },
+  { title: t('edit.bettergiColTaskType'), key: 'col3' },
 ]
 // 每日地脉花表格：取该行第 index 列的字段（column.key = col0/col1/...）
 const dailyCell = (record: WeeklyFieldRow, colKey: string): DragonSettingField | null => {
@@ -1037,10 +1039,10 @@ const weeklyDomainText = (row: WeeklyDomainTableRow): string => {
 // BGI 语义中 0 与空串都表示“不指定/默认”，合并为一项（value "0"）；rewards 顺序照官方 tp.json。
 // 圣遗物本（BlessDomain）无档位，只给「默认」。
 const weeklyRewardOptions = (row: WeeklyDomainTableRow): SettingFieldOption[] => {
-  if (weeklyIsArtifactDomain(row)) return [{ label: '默认', value: '0' }]
+  if (weeklyIsArtifactDomain(row)) return [{ label: t('edit.bettergiRewardDefault'), value: '0' }]
   const hit = weeklyDomainHit(row)
   const rewards = hit?.rewards || []
-  const base: SettingFieldOption[] = [{ label: '默认', value: '0' }]
+  const base: SettingFieldOption[] = [{ label: t('edit.bettergiRewardDefault'), value: '0' }]
   if (rewards.length > 0) {
     rewards.forEach((name, i) => {
       base.push({ label: name, value: String(i + 1) })

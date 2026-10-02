@@ -425,11 +425,11 @@
                   @blur="handleChange('Script', 'LogTimeFormat', formData.logTimeFormat)"
                 />
                 <div class="format-preview">
-                  示例：<span class="format-preview-value">{{ logTimeFormatPreview }}</span>
+                  {{ t('edit.examplePreview')
+                  }}<span class="format-preview-value">{{ logTimeFormatPreview }}</span>
                 </div>
                 <div v-if="hasFractionalSecondToken" class="format-preview-tip">
-                  {{ t('edit.tipFAcceptsBoth') }}
-                  {{ t('edit.k123456DigitCountLog') }}
+                  {{ t('edit.tipFAcceptsBoth') }} {{ t('edit.k123456DigitCountLog') }}
                 </div>
               </a-form-item>
             </a-col>
@@ -788,6 +788,10 @@
           <div class="section-header">
             <h3>{{ t('edit.runConfiguration') }}</h3>
           </div>
+          <ScriptHardTimeoutField
+            v-model:value="generalConfig.Run.HardTimeLimit"
+            @save="handleChange('Run', 'HardTimeLimit', generalConfig.Run.HardTimeLimit)"
+          />
           <a-row :gutter="24">
             <a-col :span="8">
               <a-form-item>
@@ -912,8 +916,9 @@
       <a-alert :message="t('edit.aboutSharing')" type="info">
         <template #description>
           <p>
-            所有<span style="font-weight: bold"> 敏感信息 </span
-            >均会在上传前自动移除，上传内容仅包含脚本配置的非敏感信息。上传且通过审核后，其他用户可以下载并使用您的脚本配置。请确保配置信息准确且描述清晰。
+            {{ t('edit.aboutSharingDetailPrefix')
+            }}<span style="font-weight: bold"> {{ t('edit.aboutSharingSensitive') }} </span
+            >{{ t('edit.aboutSharingDetailSuffix') }}
           </p>
         </template>
       </a-alert>
@@ -922,6 +927,7 @@
 </template>
 
 <script setup lang="ts">
+import ScriptHardTimeoutField from '@/views/EditView/Script/components/ScriptHardTimeoutField.vue'
 import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
 import { useI18n } from 'vue-i18n'
 import { computed, onMounted, reactive, ref, watch, nextTick } from 'vue'
@@ -1314,11 +1320,7 @@ const generalConfig = reactive<GeneralScriptConfig>({
     Name: '',
     RootPath: '.',
   },
-  Run: {
-    ProxyTimesLimit: 0,
-    RunTimeLimit: 10,
-    RunTimesLimit: 3,
-  },
+  Run: { HardTimeLimit: 120, ProxyTimesLimit: 0, RunTimeLimit: 10, RunTimesLimit: 3 },
   Script: {
     Arguments: '',
     ConfigPath: '.',

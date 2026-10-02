@@ -945,6 +945,8 @@ class MaaEndAutoCollectGroup(BaseModel):
 
 
 class MaaEndOptionsOut(OutBase):
+    projectName: str = Field(default="mxu", description="MaaEnd 资源声明的项目名称")
+    projectVersion: str = Field(default="", description="MaaEnd 资源声明的项目版本")
     autoCollectGroups: List[MaaEndAutoCollectGroup] = Field(
         default_factory=list, description="MaaEnd 自动采集地区与分类"
     )
@@ -1799,6 +1801,12 @@ class MaaConfig_Emulator(BaseModel):
 
 
 class MaaConfig_Run(BaseModel):
+    HardTimeLimit: Optional[int] = Field(
+        default=None,
+        ge=1,
+        le=9999,
+        description="单账号运行总时限（分钟），包含等待和全部重试",
+    )
     TaskTransitionMethod: Optional[Literal["NoAction", "ExitGame", "ExitEmulator"]] = (
         Field(default=None, description="简洁任务间切换方式")
     )
@@ -2423,6 +2431,12 @@ class GeneralConfig_Game(BaseModel):
 
 
 class GeneralConfig_Run(BaseModel):
+    HardTimeLimit: Optional[int] = Field(
+        default=None,
+        ge=1,
+        le=9999,
+        description="单账号运行总时限（分钟），包含等待和全部重试",
+    )
     ProxyTimesLimit: Optional[int] = Field(default=None, description="每日代理次数限制")
     RunTimesLimit: Optional[int] = Field(default=None, description="重试次数限制")
     RunTimeLimit: Optional[int] = Field(default=None, description="日志超时限制")
@@ -2654,6 +2668,12 @@ class BAAHConfig_Script(BaseModel):
 
 
 class BAAHConfig_Run(BaseModel):
+    HardTimeLimit: Optional[int] = Field(
+        default=None,
+        ge=1,
+        le=9999,
+        description="单账号运行总时限（分钟），包含等待和全部重试",
+    )
     RunTimesLimit: Optional[int] = Field(default=None, description="重试次数限制")
     RunTimeLimit: Optional[int] = Field(default=None, description="运行时间限制")
 
@@ -2675,6 +2695,12 @@ class BAAHConfig(BaseModel):
 class WhimboxConfig_Run(BaseModel):
     """奇想盒运行配置（复用通用三限语义 + 提权开关）"""
 
+    HardTimeLimit: Optional[int] = Field(
+        default=None,
+        ge=1,
+        le=9999,
+        description="单账号运行总时限（分钟），包含等待和全部重试",
+    )
     ProxyTimesLimit: Optional[int] = Field(
         default=None, description="每日代理次数上限（0=不限）"
     )
@@ -2967,6 +2993,12 @@ class MaaEndConfig_Info(BaseModel):
 
 
 class MaaEndConfig_Run(BaseModel):
+    HardTimeLimit: Optional[int] = Field(
+        default=None,
+        ge=1,
+        le=9999,
+        description="单账号运行总时限（分钟），包含等待和全部重试",
+    )
     RunTimeLimit: Optional[int] = Field(
         default=None, description="运行时间限制（分钟）"
     )
@@ -3207,6 +3239,12 @@ class SrcConfig_Emulator(BaseModel):
 
 
 class SrcConfig_Run(BaseModel):
+    HardTimeLimit: Optional[int] = Field(
+        default=None,
+        ge=1,
+        le=9999,
+        description="单账号运行总时限（分钟），包含等待和全部重试",
+    )
     TaskTransitionMethod: Optional[Literal["ExitGame", "ExitEmulator"]] = Field(
         default=None, description="任务切换方式"
     )

@@ -29,6 +29,8 @@ from typing import Any
 
 from app.core import Config
 from app.models.config import MaaFWConfig as RuntimeMaaFWConfig
+from app.task.MaaFW.tools.core.log_redact import mask_home_path
+from app.task.MaaFW.tools.core.project_update.state import redact_text
 from app.task.MaaFW.tools.embedded.embedded_project import (
     EmbeddedProjectError,
     GroupMember,
@@ -144,10 +146,23 @@ async def maafw_effective_root(
                 siblings=maafw_sibling_configs(),
             )
         except EmbeddedProjectError as exc:
+            logger.warning(
+                mask_home_path(
+                    redact_text(
+                        f"MFW 脚本 {script_id} 准备副本失败"
+                        f"（来源 {script_config.get('Info', 'Path') or '未设置'}）：{exc}"
+                    )
+                )
+            )
             return None, str(exc)
         except Exception as exc:  # noqa: BLE001 - 磁盘满、文件被占用之类的 OSError 也要给出文案
             logger.opt(exception=True).warning(
-                f"MFW 项目导入失败（{script_id}）：{exc}"
+                mask_home_path(
+                    redact_text(
+                        f"MFW 项目导入失败（{script_id}，来源 "
+                        f"{script_config.get('Info', 'Path') or '未设置'}）：{exc}"
+                    )
+                )
             )
             return None, f"MFW 项目导入失败：{exc}"
         finally:

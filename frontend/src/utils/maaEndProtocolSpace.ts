@@ -177,9 +177,9 @@ export const MAAEND_TASK_GROUPS = [
 
 export type MaaEndTaskSwitch = (typeof MAAEND_TASK_GROUPS)[number]['tasks'][number]['name']
 
-type MaaEndDailyOnceTask = MaaEndTaskSwitch | 'SeizeDeliveryJobs'
+type MaaEndDailyOnceTask = MaaEndTaskSwitch
 
-// 自动采集由自身的路线周期独立管理，不纳入每日仅执行一次任务。
+// 送货、自动采集阶段固定每日一次，这里只提供日常任务选项。
 export const MAAEND_DAILY_ONCE_TASK_OPTIONS: Array<{
   name: MaaEndDailyOnceTask
   label: string
@@ -190,7 +190,6 @@ export const MAAEND_DAILY_ONCE_TASK_OPTIONS: Array<{
       options.push({ name: task.name, label: task.label })
     }
   }
-  options.push({ name: 'SeizeDeliveryJobs', label: '🚚 抢委托送货' })
   return options
 })()
 

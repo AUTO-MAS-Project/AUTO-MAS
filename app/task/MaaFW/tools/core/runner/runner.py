@@ -68,6 +68,7 @@ from app.task.MaaFW.tools.core.agent_env import (
     project_python_agent_binary_path,
     write_agent_compat_shims,
 )
+from app.task.MaaFW.tools.core.log_redact import mask_home_path
 from app.task.MaaFW.tools.core.runner.environment import (
     _read_runtime_maafw_version,
     describe_runtime_architecture_mismatch,
@@ -1784,8 +1785,16 @@ class MaaFWRunner:
             ]
             env = self._build_agent_env(agent_plan)
             creationflags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
+            # 带上实际参数（入口脚本可能已按 CFA 兜底换过），末尾的连接标识不打。
+            launch = " ".join(
+                [
+                    Path(command[0]).name,
+                    *(item for item in agent_plan.command[1:] if item != "<socket_id>"),
+                ]
+            )
+            # 参数与 cwd 里的用户目录换成 <HOME>：这行会经 worker 转发进 app.log。
             self.send_log(
-                f"启动 Agent 子进程: {Path(command[0]).name} (cwd={agent_plan.cwd})"
+                mask_home_path(f"启动 Agent 子进程: {launch} (cwd={agent_plan.cwd})")
             )
             try:
                 process = subprocess.Popen(
