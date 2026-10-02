@@ -330,9 +330,9 @@ const visibleOptions = computed(() => {
     seen.add(optionName)
 
     const option = optionMap.value.get(optionName)
-    // Hotkeys are owned by the MaaFW project itself.  MAS does not capture or
-    // persist them, so omit them from the editor instead of presenting a
-    // misleading "unsupported option" warning.
+    // Hotkeys are game key bindings shared by every user of the script: they
+    // are configured once on the script page (Win32 only, Game.Hotkeys) and
+    // overlaid at run time, so the per-task editor leaves them out.
     if (!option || option.type === 'hotkey' || !isOptionActive(option)) continue
     result.push(option)
   }

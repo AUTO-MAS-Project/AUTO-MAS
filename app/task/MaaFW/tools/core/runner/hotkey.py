@@ -56,8 +56,9 @@ _ALIASES = {
     "BACKQUOTE": "GRAVE",
     "APOSTROPHE": "QUOTE",
     "EQUAL": "EQUALS",
-    "ADD": "PLUS",
-    "SUBTRACT": "MINUS",
+    # 小键盘运算键：主键盘的 `-` 是 MINUS（VK_OEM_MINUS），小键盘的减号另有键码。
+    "ADD": "NUMPADADD",
+    "SUBTRACT": "NUMPADSUBTRACT",
 }
 _MODIFIER_KEYS = frozenset({"CTRL", "ALT", "SHIFT", "META"})
 _FUNCTION_KEY_RE = re.compile(r"F([1-9]|1[0-9]|2[0-4])\Z")
@@ -87,14 +88,20 @@ _WIN32_KEYS = {
     "META": 0x5B,
     "MULTIPLY": 0x6A,
     "PLUS": 0x6B,
-    "MINUS": 0x6D,
     "DECIMAL": 0x6E,
     "DIVIDE": 0x6F,
+    "NUMPADMULTIPLY": 0x6A,
+    "NUMPADADD": 0x6B,
+    "NUMPADSUBTRACT": 0x6D,
+    "NUMPADDECIMAL": 0x6E,
+    "NUMPADDIVIDE": 0x6F,
     "NUMLOCK": 0x90,
     "SCROLLLOCK": 0x91,
     "SEMICOLON": 0xBA,
     "EQUALS": 0xBB,
     "COMMA": 0xBC,
+    # 主键盘的减号（VK_OEM_MINUS）；0x6D 是小键盘减号 VK_SUBTRACT，见 NUMPADSUBTRACT。
+    "MINUS": 0xBD,
     "PERIOD": 0xBE,
     "SLASH": 0xBF,
     "GRAVE": 0xC0,
@@ -142,6 +149,11 @@ _ADB_KEYS = {
     "DIVIDE": 154,
     "MULTIPLY": 155,
     "DECIMAL": 158,
+    "NUMPADDIVIDE": 154,
+    "NUMPADMULTIPLY": 155,
+    "NUMPADSUBTRACT": 156,
+    "NUMPADADD": 157,
+    "NUMPADDECIMAL": 158,
 }
 
 

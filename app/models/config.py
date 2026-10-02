@@ -2894,6 +2894,12 @@ class MaaFWConfig(ConfigBase):
         ## MaaFW 初始化（加载资源、连 controller、起 agent）与之重叠而不是干等。
         ## 只对本轮由 MAS 拉起的游戏生效，AttachOnly 与「游戏已在运行」不等画面。
         self.Game_WaitTime = ConfigItem("Game", "WaitTime", 60, RangeValidator(0, 9999))
+        ## 脚本级键位（PI v2.8 hotkey 选项）：``{option 名: {字段名: 组合键字符串}}``，
+        ## 组合键写成「修饰键+…+主键」（如 ``"Ctrl+E"``）。只存与 interface 默认不同的
+        ## 字段；运行时叠加到每个任务实际生效的 hotkey 选项上，盖过用户快照 / 预设里的值。
+        ## 仅 Win32 控制器生效（Adb 等其他控制器不叠加）。interface 里已没有的 option /
+        ## 字段静默忽略，映射不了的值告警后回落到快照 / 默认值（runner/run_plan.py）。
+        self.Game_Hotkeys = ConfigItem("Game", "Hotkeys", "{}", JSONValidator(dict))
         # 原 Game.CloseOnFinish 开关已删：由 MAS 启动的游戏结束后一律关闭，
         # 其他方式启动的游戏 MAS 从不关闭，没有第三种组合需要用户选。
 

@@ -177,6 +177,7 @@ class MaaFWRunnerService:
         task_ids: list[str] | None = None,
         task_options: dict[str, Any] | None = None,
         managed_env_root: str | Path | None = None,
+        script_hotkeys: dict[str, dict[str, str]] | None = None,
     ) -> MaaFWRunPlan:
         return build_maafw_run_plan(
             project_path,
@@ -188,6 +189,7 @@ class MaaFWRunnerService:
             task_ids=task_ids,
             task_options=task_options,
             managed_env_root=managed_env_root,
+            script_hotkeys=script_hotkeys,
         )
 
     def create_job_payload(
