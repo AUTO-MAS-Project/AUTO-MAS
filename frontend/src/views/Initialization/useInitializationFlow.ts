@@ -114,7 +114,8 @@ export function useInitializationFlow() {
 
   const isDev = import.meta.env.DEV
   const version = import.meta.env.VITE_APP_VERSION
-  const targetBranch = ref(isDev ? 'dev' : `release/${version}`)
+  const isAlpha = /^v?(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)-alpha\.(0|[1-9]\d*)$/.test(version)
+  const targetBranch = ref(isDev || isAlpha ? 'dev' : `release/${version}`)
 
   const RUNTIME_TAKEOVER_STEPS = new Set<InitializationStepKey>(['pip', 'git'])
 

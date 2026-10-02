@@ -131,10 +131,13 @@ const APP_REPO = 'AUTO-MAS-Project/AUTO-MAS'
 /**
  * 目标版本对应的发布分支。
  *
- * 与 Runtime `internal/gitrepo/target.go` 的 `releasePrefix + version` 同一条规则：
+ * 与 Runtime ProductBranch 一致：规范 alpha 使用 dev，其他版本使用 release/<完整版本>。
  * bootstrap 克隆的就是这条分支，第 0 步读的钉扎必须来自同一条分支，两边才是同一份文件。
  */
 export function runtimeReleaseBranch(version: string): string {
+  if (/^v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)-alpha\.(0|[1-9]\d*)$/.test(version)) {
+    return 'dev'
+  }
   return `release/${version}`
 }
 

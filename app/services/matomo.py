@@ -27,6 +27,7 @@ import time
 import uuid
 from typing import Any, Dict, Optional
 
+from app.services.telemetry import resolve_telemetry_version
 from app.utils import LazyProxy, get_logger
 
 logger = get_logger("信息上报")
@@ -74,7 +75,7 @@ class _MatomoHandler:
             "h": time.strftime("%H"),
             "m": time.strftime("%M"),
             "s": time.strftime("%S"),
-            "ua": f"AUTO-MAS/{Config.VERSION} ({platform.system()} {platform.release()})",
+            "ua": f"AUTO-MAS/{resolve_telemetry_version(Config.VERSION)} ({platform.system()} {platform.release()})",
         }
 
         # 添加自定义变量

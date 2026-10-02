@@ -13,6 +13,9 @@
 AppId={{D116A92A-E174-4699-B777-61C5FD837B19}
 AppName={#MyAppName}
 AppVersion={#MyAppVersion}
+#if GetEnv("WINDOWS_VERSION") != ""
+VersionInfoVersion={#GetEnv("WINDOWS_VERSION")}
+#endif
 AppVerName={#MyAppName}
 AppPublisher={#MyAppPublisher}
 AppPublisherURL={#MyAppURL}

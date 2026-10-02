@@ -23,18 +23,32 @@ name: MirrorChyan 更新版本说明
 
 on:
   workflow_dispatch:
+    inputs:
+      version:
+        description: '指定正式/beta 版本，禁止 dev/nightly'
+        type: string
+        required: true
   release:
     types: [edited]
 
 jobs:
   mirrorchyan:
+    if: github.event_name != 'release' || github.event.release.tag_name != 'dev'
     runs-on: macos-latest
 
     steps:
+      - name: 校验明确版本，禁止自动读取最新 nightly
+        shell: pwsh
+        env:
+          VERSION_TAG: ${{ inputs.version || github.event.release.tag_name }}
+        run: |
+          if ($env:VERSION_TAG -notmatch '^v\d+\.\d+\.\d+(-beta\.\d+)?$') { throw '仅同步指定正式版或 beta 的版本说明' }
+
       - id: uploading
         uses: MirrorChyan/release-note-action@f392b50c411981ee6d33c8ed5e91d66d84d56202 # v1
         with:
           mirrorchyan_rid: AUTO_MAS
+          version_name: ${{ inputs.version || github.event.release.tag_name }}
 
           owner: AUTO-MAS-Project
           repo: AUTO-MAS

@@ -19,121 +19,114 @@
 #   Contact: DLmaster_361@163.com
 
 name: 准备发版
-
-# 在 dev（或 release/*）上手动触发：把 changelog.d/ 里的碎片编译进 CHANGELOG.md 的新版本段、
-# 按最新 tag 推进版本号、清空碎片，然后开一个标题为 `Release vX.Y.Z` 的 PR。
-# 维护者在 PR 里补「本次亮点」、整理条目，合并后再手动运行「构建并发布应用程序」。
-# 这个 PR 是唯一允许改动 CHANGELOG.md 与版本号的地方。
-#
-# workflow_dispatch 的工作流必须存在于默认分支才会出现「Run workflow」按钮，
-# 运行时用的是所选分支上的这份文件。
-
+# 从 main/dev 入口运行；所有版本在独立准备分支组装，旧 release 来源不接收准备提交。
 on:
   workflow_dispatch:
     inputs:
       kind:
-        description: '发版类型：beta 公测 N+1；stable 转正（与最后一个 beta 同号）；patch 正式版补丁 Z+1；explicit 手填'
+        description: 'beta 公测；stable 转正；patch 正式补丁；explicit 指定版本'
         type: choice
-        required: true
-        default: beta
         options: [beta, stable, patch, explicit]
+        default: beta
+        required: true
       version:
-        description: 'kind=explicit 时填版本号，如 v6.0.0-beta.1；必须比所选分支可达的最新 tag 新，且不能与任何已有 tag 重号'
+        description: '仅 explicit：vX.Y.Z 或 vX.Y.Z-beta.N'
         type: string
-        required: false
-
+      base_version:
+        description: 'patch 必填：维护线最新正式 tag，如 v5.6.0；explicit 补丁也必须填'
+        type: string
+      fix_commits:
+        description: '补丁必填：修复 SHA，按依赖顺序用空格分隔；含旧 release 上保留碎片的修复'
+        type: string
 permissions:
-  contents: write
-  pull-requests: write
-
+  contents: read
 concurrency:
-  group: prepare-release-${{ github.ref_name }}
+  group: prepare-release
   cancel-in-progress: false
-
+  queue: max
 jobs:
   prepare:
-    name: 编译碎片并开发版 PR
-    runs-on: ubuntu-latest
     if: github.repository == 'AUTO-MAS-Project/AUTO-MAS'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      GH_TOKEN: ${{ secrets.RELEASE_PR_TOKEN }}
+      AUTO_MAS_CHANGELOG_ROOT: ${{ github.workspace }}
+      ENTRY_REF: ${{ github.ref_name }}
     steps:
-      # 分支限制不写进 job 级 if：那样误选 main 只会看到整个运行灰色 skipped，没有任何说明。
-      - name: 只允许在 dev 或 release/* 上运行
-        if: github.ref_name != 'dev' && !startsWith(github.ref_name, 'release/')
-        env:
-          REF_NAME: ${{ github.ref_name }}
+      - name: 要求可写工作流并触发 PR 检查的令牌
         run: |
-          echo "::error::「准备发版」只能在 dev 或 release/* 分支上运行，当前选的是 ${REF_NAME}。请在 Run workflow 的分支下拉框里改选。"
-          exit 1
-
-      - name: 检出代码
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+          if (-not $env:GH_TOKEN) { throw '需要 RELEASE_PR_TOKEN：Contents/Pull requests/Workflows 写权限' }
+          if ($env:ENTRY_REF -notin @('main', 'dev')) { throw '请从 main 或 dev 入口运行，勿从旧 release 分支运行' }
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: dev
           fetch-depth: 0
-          fetch-tags: true
-
-      # 旧的「记录版本贡献者」机器人按 pull_request_target 从默认分支取文件，会给发版 PR 里
-      # 的每一条都再签一次 PR 作者。它在默认分支上没删干净之前，绝不能开发版 PR。
-      - name: 确认默认分支上的旧署名机器人已删除
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          default_branch=$(gh api "repos/${GITHUB_REPOSITORY}" --jq .default_branch)
-          if gh api "repos/${GITHUB_REPOSITORY}/contents/.github/workflows/append-version-contributor.yml?ref=${default_branch}" >/dev/null 2>&1; then
-            echo "::error::默认分支 ${default_branch} 上仍有 .github/workflows/append-version-contributor.yml，它会把发版 PR 的全部条目误签成 PR 作者。请先把它从 ${default_branch} 删除再发版。"
-            exit 1
-          fi
-          echo "默认分支 ${default_branch} 上没有旧机器人，可以继续"
-
-      - name: 设置 Python 环境
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+          token: ${{ secrets.RELEASE_PR_TOKEN }}
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: '3.12'
-
-      # 分支名把目标分支也编进去：dev 与 release/* 在同一个 tag 之后各自准备同一个版本号时，
-      # 否则会共用 chore/release-vX 这一个 head，后跑的那次会改写先开的 PR。
-      - name: 计算发版分支名
-        id: slug
-        env:
-          REF_NAME: ${{ github.ref_name }}
+      - name: 拉取版本基准与修复并保存同一 dev 快照的工具
         run: |
-          echo "base_slug=${REF_NAME//\//-}" >> "$GITHUB_OUTPUT"
-
-      - name: 编译碎片并推进版本号
-        id: release
+          git fetch --no-tags origin
+          if ($LASTEXITCODE -ne 0) { throw '拉取分支失败' }
+          git fetch --no-tags origin 'refs/tags/v*:refs/tags/v*'
+          if ($LASTEXITCODE -ne 0) { throw '拉取版本 tag 失败' }
+          git checkout --detach refs/remotes/origin/dev
+          if ($LASTEXITCODE -ne 0) { throw '检出准备工具快照失败' }
+          $tools = Join-Path $env:RUNNER_TEMP 'release-tools'
+          New-Item -ItemType Directory -Force $tools | Out-Null
+          Copy-Item scripts/changelog.py $tools/
+          Copy-Item .github/scripts/release_automation.py $tools/
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+      - name: 在独立分支组装指定源码
+        id: source
         env:
-          # 解析碎片作者用：把提交换成 GitHub 登录名
-          GH_TOKEN: ${{ github.token }}
           KIND: ${{ inputs.kind }}
           VERSION: ${{ inputs.version }}
+          BASE_VERSION: ${{ inputs.base_version }}
+          FIX_COMMITS: ${{ inputs.fix_commits }}
         run: |
-          # 没带碎片的提交清单写进本次运行的摘要页，发版 PR 正文只留数量和链接
-          run_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
-          args=(--kind "$KIND" --repo "$GITHUB_REPOSITORY" --body-file "$RUNNER_TEMP/pr-body.md" --summary-file "$RUNNER_TEMP/summary.json" --github-output "$GITHUB_OUTPUT" --step-summary "$GITHUB_STEP_SUMMARY" --run-url "$run_url")
-          if [ -n "$VERSION" ]; then
-            args+=(--version "$VERSION")
-          fi
-          python scripts/changelog.py release "${args[@]}"
-          python scripts/changelog.py check
-          cat "$RUNNER_TEMP/summary.json"
-
-      # 用 GITHUB_TOKEN 开的 PR 不会触发 pull_request 工作流，「检查更新日志」在发版 PR 上就不会跑。
-      # 仓库配置了 RELEASE_PR_TOKEN（PAT 或 GitHub App 令牌）时改用它，检查就能照常触发。
-      - name: 开发版 PR
-        id: pr
-        uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1 # v8
-        with:
-          token: ${{ secrets.RELEASE_PR_TOKEN || github.token }}
-          base: ${{ github.ref_name }}
-          branch: chore/release-${{ steps.slug.outputs.base_slug }}-${{ steps.release.outputs.version }}
-          delete-branch: true
-          commit-message: 'chore(release): ${{ steps.release.outputs.version }}'
-          committer: 'github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>'
-          author: '${{ github.actor }} <${{ github.actor_id }}+${{ github.actor }}@users.noreply.github.com>'
-          title: 'Release ${{ steps.release.outputs.version }}'
-          body-path: ${{ runner.temp }}/pr-body.md
-          labels: release
-
-      - name: 结果
+          $tools = Join-Path $env:RUNNER_TEMP 'release-tools'
+          python "$tools/release_automation.py" prepare --changelog "$tools/changelog.py" --kind $env:KIND --version "$env:VERSION" --base-version "$env:BASE_VERSION" --fixes "$env:FIX_COMMITS"
+          if ($LASTEXITCODE -ne 0) { throw '组装失败；检查基准、修复依赖、冲突及兼容性' }
+      - name: 编译所选快照全部剩余碎片并验证
+        env:
+          KIND: ${{ inputs.kind }}
+          VERSION: ${{ inputs.version }}
+          BASE_VERSION: ${{ inputs.base_version }}
         run: |
-          echo "版本号：${{ steps.release.outputs.version }}（基于 ${{ steps.release.outputs.previous_tag }}）"
-          echo "发版 PR：${{ steps.pr.outputs.pull-request-url }}"
+          $tool = Join-Path $env:RUNNER_TEMP 'release-tools/changelog.py'
+          $runUrl = "$env:GITHUB_SERVER_URL/$env:GITHUB_REPOSITORY/actions/runs/$env:GITHUB_RUN_ID"
+          $argsList = @('release', '--kind', $env:KIND, '--body-file', "$env:RUNNER_TEMP/pr-body.md", '--step-summary', $env:GITHUB_STEP_SUMMARY, '--run-url', $runUrl)
+          if ($env:VERSION) { $argsList += @('--version', $env:VERSION) }
+          if ($env:BASE_VERSION) { $argsList += @('--base-version', $env:BASE_VERSION) }
+          python $tool @argsList
+          if ($LASTEXITCODE -ne 0) { throw '准备发版失败' }
+          python $tool check
+          if ($LASTEXITCODE -ne 0) { throw '生成物检查失败' }
+          python $tool guard
+          if ($LASTEXITCODE -ne 0) { throw '发版守门失败' }
+      - name: 创建准备分支和发版 PR
+        env:
+          BASE_BRANCH: ${{ steps.source.outputs.base }}
+          HEAD_BRANCH: ${{ steps.source.outputs.head }}
+          VERSION_TAG: ${{ steps.source.outputs.version }}
+        run: |
+          # base 指向组装后的源码；版本提升仅在 head 的发版 PR 中。
+          git checkout -b $env:HEAD_BRANCH
+          if ($LASTEXITCODE -ne 0) { throw '创建 PR 分支失败' }
+          git add CHANGELOG.md res/version.json frontend/package.json app/core/config.py pyproject.toml uv.lock changelog.d
+          if ($LASTEXITCODE -ne 0) { throw '暂存失败' }
+          git diff --cached --check
+          if ($LASTEXITCODE -ne 0) { throw '差异检查失败' }
+          git commit -m "chore(release): $env:VERSION_TAG"
+          if ($LASTEXITCODE -ne 0) { throw '准备提交失败' }
+          git push --atomic origin $env:BASE_BRANCH $env:HEAD_BRANCH
+          if ($LASTEXITCODE -ne 0) { throw '创建准备分支失败' }
+          gh pr create --base $env:BASE_BRANCH --head $env:HEAD_BRANCH --title "Release $env:VERSION_TAG" --body-file "$env:RUNNER_TEMP/pr-body.md" --label release
+          if ($LASTEXITCODE -ne 0) { throw 'PR 创建失败；分支保留，可手动续建 PR' }
+          "合并后从 main 的构建入口选择 $env:BASE_BRANCH；不要合回旧 release 或 dev。" >> $env:GITHUB_STEP_SUMMARY

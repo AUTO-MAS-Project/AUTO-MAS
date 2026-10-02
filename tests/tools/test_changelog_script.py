@@ -1346,7 +1346,7 @@ def test_pr_check_release_kind_needs_empty_fragments_and_a_bump(repo) -> None:
 
     (repo / "changelog.d/x.fix.md").unlink()
     _commit(repo, "chore(release): clean")
-    assert _check(repo, "dev", "release") == []
+    assert any("独立" in p for p in _check(repo, "dev", "release"))
 
     # 发版 PR 之后又入账：顶部多了带条目的未发布段，检查要红，让维护者重跑准备发版
     _write(

@@ -25,10 +25,10 @@
 
 日常开发不再改 `CHANGELOG.md`：每个 PR 在 `changelog.d/` 下放一个碎片文件，
 文件名 `<PR 号或分支名>.<分类>.md`，首行 `project: <项目键>` 说明改的是哪个专项或本体
-的哪一块，正文一句不超过 50 字、面向用户的话。发版时由 `release` 把全部碎片编译成
-`【项目】做了什么 (#PR) by @作者` 的条目写进 `CHANGELOG.md` 顶部的未发布段（合并即入账，
-工作流调用 `absorb`），同一分类内按项目表的顺序排列；发版时由 `release` 把未发布段改成新的
-版本段、推进版本号，并开出发版 PR。
+的哪一块，正文一句不超过 50 字、面向用户的话。每日仅 dev 调用 `absorb`，把碎片编译成
+`【项目】做了什么 (#PR) by @作者` 的条目写进 `CHANGELOG.md` 顶部的未发布段，
+同一分类内按项目表的顺序排列；独立准备发版时由 `release` 编译剩余碎片、把未发布段改成
+新的版本段并推进版本号，工作流再开出发版 PR。
 `CHANGELOG.md` 顶部第一个 `## [vX.Y.Z]` 标题就是仓库当前的版本号，其余五处版本号与
 `res/version.json` 全部由本脚本从它生成，不要手改：
 
@@ -48,7 +48,7 @@ JSON，末尾补一条「还有 N 条未显示」），发版照常，构建工�
 
     python scripts/changelog.py add fix maa "修复了什么"  # 新建一个碎片（贡献者用）
     python scripts/changelog.py check                     # 校验格式、碎片、版本号（CI 用）
-    python scripts/changelog.py absorb                    # 合并后入账到未发布段（入账工作流用）
+    python scripts/changelog.py absorb                    # 每日仅 dev 入账到未发布段（入账工作流用）
     python scripts/changelog.py release --kind beta       # 编译碎片、推进版本号（发版工作流用）
     python scripts/changelog.py release-note              # 渲染 Release 正文（构建工作流用）
     python scripts/changelog.py guard                     # 构建前守门：版本号已推进且碎片已清空
@@ -57,7 +57,7 @@ JSON，末尾补一条「还有 N 条未显示」），发版照常，构建工�
 
 版本号只有 `vX.Y.Z` 与 `vX.Y.Z-beta.N` 两种形态：预发布号里的 X.Y.Z 就是它将成为的正式号，
 转正与最后一个 beta 同号，正式版热修出 Z+1 的补丁版，N 只增不减。`release --kind` 按这套
-规则从最新 tag 推出下一个版本号，不接受倒退。
+规则按所选发布线推进；nightly alpha 只在构建工作区注入，不占用正式发布号。
 """
 
 from __future__ import annotations
@@ -74,7 +74,9 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Sequence, Tuple, Union
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
+REPO_ROOT = Path(
+    os.environ.get("AUTO_MAS_CHANGELOG_ROOT", Path(__file__).resolve().parent.parent)
+).resolve()
 REPO_URL = "https://github.com/AUTO-MAS-Project/AUTO-MAS"
 GITHUB_REPO = "AUTO-MAS-Project/AUTO-MAS"
 # 未发布版本的对比链接指向开发分支
@@ -240,7 +242,7 @@ PHASE_RANK = {"alpha": 0, "beta": 1, "rc": 2, None: 3}
 RELEASE_HEADING = re.compile(
     rf"^## \[(?P<version>[^\]]+)\] - (?P<date>{UNRELEASED}|\d{{4}}-\d{{2}}-\d{{2}})$"
 )
-# 顶部的未发布段（Keep a Changelog 的 `[Unreleased]`）：合并即入账的条目先放这里，
+# 顶部的未发布段（Keep a Changelog 的 `[Unreleased]`）：每日仅 dev 入账的条目先放这里，
 # 「准备发版」再把它改成带版本号与日期的段。解析成 sections["未发布"]，日期记为「未发布」
 UNRELEASED_HEADING = re.compile(rf"^## \[{UNRELEASED}\]$")
 # 底部的版本对比链接，由 render_changelog 重新生成，解析时跳过
@@ -276,7 +278,7 @@ CHANGELOG_PREAMBLE = """# 更新日志
 
   - 要登记一条更新日志，在 changelog.d/ 下新建一个碎片文件，见 changelog.d/README.md，
     或运行 `python scripts/changelog.py add <分类> <项目键> "<一句话>"`。一条 PR 只放一个碎片。
-  - 带碎片的提交进了 dev 或 release 分支，「入账更新日志碎片」工作流就把它编译进顶部的
+  - 每日仅 dev 的「入账更新日志碎片」任务把碎片编译进顶部的
     `## [未发布]` 段并删掉碎片；「准备发版」再把未发布段改成 `## [vX.Y.Z] - 日期`。
     文件顶部第一个带版本号的标题就是仓库当前的版本号，发版 PR 是唯一改动版本号的地方。
   - 条目写成一行 `【项目】做了什么（仅公测） (#PR 号) by @作者`：项目、PR 号与署名都由脚本
@@ -495,7 +497,7 @@ def render_version_json(current_version: str, sections: Sections) -> str:
 
     只写版本与分类条目，不写日期——这份 JSON 的结构是已发布客户端解析更新提示的契约；
     分类按客户端口径写（去掉只给贡献者看的分类），与 Release 正文首行 JSON 一致。
-    顶部的未发布段也带上（键就是「未发布」）：合并即入账后 dev 构建能看到未发的改动；
+    顶部的未发布段也带上（键就是「未发布」）：每日仅 dev 入账后 dev 构建能看到未发的改动；
     已发布客户端从不读这个文件，Release 正文首行 JSON 另由 select_note_versions 过滤。
     """
 
@@ -556,6 +558,43 @@ def latest_version(versions: Iterable[str]) -> Optional[str]:
     if not valid:
         return None
     return max(valid)[1]
+
+
+def latest_on_line(target: str, versions: Iterable[str]) -> Optional[str]:
+    """Z > 0 的正式维护线只比较同 X.Y 正式 tag；开发线保留 beta 下限。"""
+    key = version_key(target)
+    if key is None:
+        raise ChangelogError(f"版本号 {target} 不合形态")
+    candidates = [
+        v
+        for v in versions
+        if (k := version_key(v)) is not None
+        and k[3] in (PHASE_RANK["beta"], PHASE_RANK[None])
+    ]
+    if key[3] == PHASE_RANK[None] and key[2] > 0:
+        candidates = [
+            v
+            for v in candidates
+            if version_key(v)[:2] == key[:2] and not is_prerelease(v)
+        ]
+    return latest_version(candidates)
+
+
+def check_stable_beta_source(target: str, root: Path = REPO_ROOT) -> Optional[str]:
+    """转正必须包含本周期最新 beta，防止准备后又发布 beta 导致源码遗漏。"""
+    key = version_key(target)
+    if key is None or key[3] != PHASE_RANK[None] or key[2] != 0:
+        return None
+    latest_beta = latest_version(
+        tag
+        for tag in all_tags(root)
+        if (beta := version_key(tag)) is not None
+        and beta[:3] == key[:3]
+        and beta[3] == PHASE_RANK["beta"]
+    )
+    if latest_beta and latest_beta not in reachable_tags("HEAD", root):
+        return f"转正源码未包含最新公测版 {latest_beta}，请合入发布记录后重新准备"
+    return None
 
 
 def next_version(
@@ -1064,17 +1103,18 @@ def fragment_origin(
     relative = fragment.path.resolve().relative_to(root.resolve()).as_posix()
     output = git(
         "log",
+        "-1",
         "--diff-filter=A",
-        "--format=%H%x00%an%x00%ae%x00%s",
+        "--format=%H%x00%an%x00%ae%x00%s%x00%B",
         "--",
         relative,
         root=root,
     ).strip()
     if not output:
         return list(fragment.authors), pr_from_name
-    # git log 最新在前，取第一行：碎片发版后会被删除，同名文件可能被后来的 PR 再次
-    # 新增，要署最近一次新增它的人，而不是历史上第一个用过这个文件名的人
-    sha, name, email, subject = output.splitlines()[0].split("\x00", 3)
+    # 只取最近一次新增：碎片发版后会被删除，同名文件可能被后来的 PR 再次新增，
+    # 要署最近一次新增它的人，而不是历史上第一个用过这个文件名的人。
+    sha, name, email, subject, body = output.split("\x00", 4)
     subject_pr = SUBJECT_PR.search(subject)
     pr = int(subject_pr.group(1)) if subject_pr else pr_from_name
 
@@ -1084,7 +1124,11 @@ def fragment_origin(
     if noreply:
         return [noreply.group("login")], pr
     if resolve_online:
-        login = resolve_login_via_api(repo, sha, token)
+        # 本地准备阶段的 cherry-pick SHA 还未推送；使用 -x 保留的已发布来源查作者。
+        origins = re.findall(
+            r"(?m)^\(cherry picked from commit ([a-f0-9]{40})\)$", body
+        )
+        login = resolve_login_via_api(repo, origins[0] if origins else sha, token)
         if login:
             return [login], pr
     # 退回 git 作者名，但只有长得像登录名的才用：squash 提交里的作者名往往是显示名
@@ -1238,7 +1282,10 @@ def check_version_floor(current_version: str, root: Path = REPO_ROOT) -> Optiona
     if not git_available(root):
         return None
     try:
-        latest = latest_version(reachable_tags("HEAD", root))
+        reachable = reachable_tags("HEAD", root)
+        latest = latest_on_line(current_version, reachable)
+        if latest is None:
+            latest = latest_version(reachable)
     except ChangelogError:
         return None
     if latest is None:
@@ -1283,14 +1330,14 @@ def check_pull_request(
 ) -> List[str]:
     """PR 级别的规则，返回违规说明列表。
 
-    kind：normal（普通 PR）、release（发版 PR）、sync（dev→main 之类的同步 PR）。
+    kind：normal（普通 PR）、release（发版 PR）、record（发布记录）、sync（dev→main）。
     """
 
     problems: List[str] = []
     changes = changed_files(base, "HEAD", root)
     paths = {path for _, path in changes}
 
-    if dev_ref:
+    if dev_ref and kind != "sync":
         # 目标是 release/* 的 PR，不论类型，都不得带入 dev 独有的提交（#673 那种事故的判据）。
         # 放在类型分流之前：发版 PR 被误改目标到 release/* 时同样要拦。
         pr_commits = set(git("rev-list", f"{base}..HEAD", root=root).split())
@@ -1304,9 +1351,51 @@ def check_pull_request(
             )
 
     if kind == "sync":
+        if not all(path.startswith(".github/") for path in paths):
+            problems.append("同步到 main 的 PR 只允许修改 .github/")
+        if not dev_ref or git("rev-parse", "HEAD:.github", root=root) != git(
+            "rev-parse", f"{dev_ref}:.github", root=root
+        ):
+            problems.append("同步 PR 的 .github/ 必须与 dev 完全一致，请更新同步分支")
+        return problems
+
+    if kind == "record":
+        if base != "origin/dev":
+            problems.append("发布记录 PR 只能以 dev 为目标")
+        current_version, sections, dates = parse_changelog(
+            read_text(root / "CHANGELOG.md")
+        )
+        published_text = show_file(f"refs/tags/{current_version}", "CHANGELOG.md", root)
+        if published_text is None:
+            problems.append("发布记录必须对应一个已发布的版本 tag")
+        else:
+            _, published, published_dates = parse_changelog(published_text)
+            for version, categories in published.items():
+                if (
+                    sections.get(version) != categories
+                    or dates.get(version) != published_dates[version]
+                ):
+                    problems.append(
+                        f"{version} 的记录与发布快照不符；请重跑记录作业，保留后续未发布条目"
+                    )
+            if current_version not in reachable_tags("HEAD", root):
+                problems.append(
+                    "发布记录必须保留版本 tag 的祖先关系，请使用 merge commit"
+                )
+        allowed = set(PROTECTED_FILES) | {relative for relative, _ in VERSION_FIELDS}
+        if any(
+            path not in allowed
+            and not (status == "D" and path.startswith("changelog.d/"))
+            for status, path in changes
+        ):
+            problems.append(
+                "发布记录只允许同步版本、更新日志与消费过的碎片，不得带入业务或 CI 改动"
+            )
         return problems
 
     if kind == "release":
+        if not base.startswith("origin/codex/release-base-v"):
+            problems.append("发版 PR 必须以独立的 codex/release-base-v* 准备分支为目标")
         if list_fragments(root / "changelog.d"):
             problems.append(
                 "发版 PR 合并时 changelog.d/ 必须已经清空，请重新运行「准备发版」"
@@ -1325,7 +1414,10 @@ def check_pull_request(
                 problems.append(
                     f"发版 PR 的版本号 {current_version} 比 {base} 上的 {base_version} 还旧"
                 )
-        latest = latest_version(reachable_tags("HEAD", root))
+        latest = latest_on_line(current_version, all_tags(root))
+        source_problem = check_stable_beta_source(current_version, root)
+        if source_problem:
+            problems.append(source_problem)
         if latest is not None and version_key(current_version) <= version_key(latest):  # type: ignore[operator]
             problems.append(
                 f"发版 PR 的版本号 {current_version} 没有比最新 tag {latest} 新"
@@ -1407,6 +1499,36 @@ def check_pull_request(
 
 
 def command_check(arguments: argparse.Namespace) -> int:
+    # 同步和旧 release 热修保留原快照，不用 dev 的模板重新规范化历史生成物。
+    old_release = (
+        arguments.pr_base
+        and arguments.pr_base.startswith("origin/release/")
+        and arguments.pr_kind == "normal"
+    )
+    if arguments.pr_base and (arguments.pr_kind == "sync" or old_release):
+        if old_release:
+            # 未改动的旧碎片沿用旧版本规则，只校验本次新增或修改的碎片。
+            for status, relative in changed_files(arguments.pr_base, "HEAD"):
+                path = REPO_ROOT / relative
+                if (
+                    status != "D"
+                    and relative.startswith("changelog.d/")
+                    and FRAGMENT_NAME.match(path.name)
+                ):
+                    parse_fragment(path, read_text(path))
+        problems = check_pull_request(
+            base=arguments.pr_base,
+            kind=arguments.pr_kind,
+            skip_changelog=arguments.skip_changelog,
+            maintenance=arguments.maintenance,
+            dev_ref=arguments.dev_ref,
+        )
+        if problems:
+            for problem in problems:
+                print(problem, file=sys.stderr)
+            return 1
+        print("PR 来源与差异检查通过，保留目标分支的历史生成物")
+        return 0
     stale = check_generated()
     if stale:
         print("以下文件与 CHANGELOG.md 不一致：", file=sys.stderr)
@@ -1452,9 +1574,13 @@ def command_guard() -> int:
     """
 
     current_version, sections, dates = parse_changelog(read_text(CHANGELOG_PATH))
-    latest = latest_version(reachable_tags("HEAD")) if git_available() else None
+    latest = latest_on_line(current_version, all_tags()) if git_available() else None
     problems: List[str] = []
     pending_count = pending_unreleased(sections, dates)
+    if git_available():
+        source_problem = check_stable_beta_source(current_version)
+        if source_problem:
+            problems.append(source_problem)
     if pending_count:
         problems.append(UNRELEASED_PENDING_MESSAGE.format(count=pending_count))
     if latest is not None and version_key(current_version) <= version_key(latest):  # type: ignore[operator]
@@ -1462,7 +1588,7 @@ def command_guard() -> int:
             f"仓库版本号 {current_version} 没有比最新 tag {latest} 新，"
             "请先运行「准备发版」并合并发版 PR"
         )
-    if latest is not None and current_version in all_tags():
+    if git_available() and current_version in all_tags():
         problems.append(f"tag {current_version} 已经存在，不能重复发布")
     fragments = list_fragments()
     if fragments:
@@ -1586,7 +1712,7 @@ def absorb_fragments(
     authors: Dict[str, Union[None, str, Sequence[str]]],
     prs: Optional[Dict[str, Optional[int]]] = None,
 ) -> Tuple[Sections, Dates]:
-    """合并即入账：把碎片编译进顶部的未发布段，没有就在最上面新建一个 `## [未发布]`。
+    """每日仅 dev 入账：把碎片编译进顶部的未发布段，没有就在最上面新建一个 `## [未发布]`。
 
     顶部已经是未发布段（任一写法）就追加；顶部是已标日期的段——哪怕还没打 tag——也另起
     未发布段，由 `guard` 拦住「发版 PR 之后又入账」的情况，让维护者重跑「准备发版」。
@@ -1694,11 +1820,11 @@ def compile_release(
             "没有任何可发布的内容：changelog.d/ 为空，顶部也没有未发布条目"
         )
 
-    for older in sections:
-        if version_key(older) is not None and version_key(older) >= target_key:  # type: ignore[operator]
-            raise ChangelogError(
-                f"CHANGELOG.md 里已经有不小于 {target} 的版本 {older}，版本号不能倒退"
-            )
+    if target in tagged_set:
+        raise ChangelogError(f"版本 {target} 已经发布过，不能再往里加条目")
+    latest = latest_on_line(target, tagged_set | set(sections))
+    if latest and version_key(latest) >= target_key:
+        raise ChangelogError(f"版本 {target} 没有大于同一发布线上的 {latest}，不能倒退")
 
     pending = {category: order_entries(items) for category, items in pending.items()}
     new_sections: Sections = {target: order_categories(pending)}
@@ -1899,10 +2025,30 @@ def command_release(arguments: argparse.Namespace) -> int:
 
     if not git_available():
         raise ChangelogError("release 需要在 git 仓库里运行")
-    reachable = reachable_tags("HEAD")
     every = all_tags()
-    latest = latest_version(reachable)
+    basis = getattr(arguments, "base_version", None)
+    if basis:
+        if basis not in every or is_prerelease(basis) or version_key(basis) is None:
+            raise ChangelogError("补丁基准必须是已发布的正式版 tag")
+        latest = latest_on_line(next_version("patch", basis), every)
+        if latest != basis:
+            raise ChangelogError(f"补丁应从维护线最新正式版 {latest} 准备")
+        if arguments.kind not in ("patch", "explicit"):
+            raise ChangelogError("补丁基准只适用于 patch 或 explicit")
+    else:
+        if arguments.kind == "patch":
+            raise ChangelogError("patch 必须指定 --base-version 并在独立分支组装修复")
+        latest = latest_version(
+            v
+            for v in every
+            if version_key(v) is not None
+            and version_key(v)[3] in (PHASE_RANK["beta"], PHASE_RANK[None])
+        )
     target = next_version(arguments.kind, latest, arguments.version)
+    if version_key(target)[3] not in (PHASE_RANK["beta"], PHASE_RANK[None]):
+        raise ChangelogError("正式发版只支持正式版和 beta；alpha 由 nightly 构建注入")
+    if basis and target != next_version("patch", basis):
+        raise ChangelogError("补丁 explicit 只能指定基准正式版的 Z+1")
     if target in every:
         raise ChangelogError(f"tag {target} 已经存在，请换一个版本号")
 
@@ -2389,9 +2535,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     check.add_argument(
         "--pr-kind",
-        choices=["normal", "release", "sync"],
+        choices=["normal", "release", "record", "sync"],
         default="normal",
-        help="normal 普通 PR、release 发版 PR、sync 同步 PR",
+        help="normal 普通 PR、release 发版 PR、record 发布记录、sync 同步 PR",
     )
     check.add_argument(
         "--skip-changelog", action="store_true", help="PR 带 skip-changelog 标签"
@@ -2410,6 +2556,9 @@ def build_parser() -> argparse.ArgumentParser:
         "--kind", choices=["beta", "stable", "patch", "explicit"], default="beta"
     )
     release.add_argument("--version", help="--kind explicit 时的版本号")
+    release.add_argument(
+        "--base-version", help="补丁基准正式版 tag，必须是维护线最新正式版"
+    )
     release.add_argument("--date", help="发布日期 YYYY-MM-DD，默认北京时间今天")
     release.add_argument("--repo", default=GITHUB_REPO, help="解析署名用的 owner/repo")
     release.add_argument(
@@ -2427,7 +2576,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     absorb = subparsers.add_parser(
-        "absorb", help="合并后入账：把碎片编译进顶部未发布段并删除（工作流用）"
+        "absorb", help="每日仅 dev 入账：把碎片编译进顶部未发布段并删除（工作流用）"
     )
     absorb.add_argument("--repo", default=GITHUB_REPO, help="解析署名用的 owner/repo")
     absorb.add_argument(

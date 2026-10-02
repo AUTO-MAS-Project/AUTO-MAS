@@ -1,0 +1,41 @@
+name: 同步 dev 工作流到 main PR
+on:
+  push:
+    branches: [dev]
+    paths: ['.github/**']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: sync-github-main
+  cancel-in-progress: false
+jobs:
+  sync:
+    if: github.repository == 'AUTO-MAS-Project/AUTO-MAS'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      GH_TOKEN: ${{ secrets.RELEASE_PR_TOKEN }}
+    steps:
+      - name: 检查工作流写权限令牌
+        run: |
+          if (-not $env:GH_TOKEN) { throw '需要 RELEASE_PR_TOKEN：Contents/Pull requests/Workflows 写权限，不能回退到 GITHUB_TOKEN' }
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: dev
+          fetch-depth: 0
+          token: ${{ secrets.RELEASE_PR_TOKEN }}
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+      - name: 仅同步 .github，普通推送更新同一个 PR
+        run: |
+          # 保存脚本，切换 main 基线后也无需 main 的外部脚本或依赖。
+          $script = Join-Path $env:RUNNER_TEMP 'release_automation.py'
+          Copy-Item .github/scripts/release_automation.py $script
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          python $script sync-github
+          if ($LASTEXITCODE -ne 0) { throw '同步 PR 失败；不改写同步分支历史' }
