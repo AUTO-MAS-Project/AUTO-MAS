@@ -22,6 +22,8 @@
       :description="description"
       :gates="gates"
       :import-candidates="importCandidates"
+      :import-dir="importDir"
+      :script-id="scriptId"
       @save="handleSave"
     />
   </a-col>
@@ -96,6 +98,8 @@ watch(modalOpen, async open => {
 const importCandidates = computed(() =>
   collectHotkeyImportCandidates(shellInstances.value, options.value)
 )
+// 扫到这些配置的目录（导入项目时记下的来源目录，或兜底的内嵌副本）
+const importDir = computed(() => shellInstances.value[0]?.sourceDir ?? '')
 
 const handleSave = (values: MaaFWHotkeyMap) => {
   emit('save', JSON.stringify(mergeHotkeyMap(storedMap.value, options.value, values)))

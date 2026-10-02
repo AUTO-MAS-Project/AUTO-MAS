@@ -18,7 +18,7 @@ import { effectiveHotkeyValues, mergeHotkeyMap, type MaaFWHotkeyMap } from './ho
 export type MaaFWShellHotkeySource = Pick<
   MaaFWShellInstanceItem,
   'id' | 'name' | 'source' | 'active'
-> & { hotkeys?: MaaFWHotkeyMap | null }
+> & { hotkeys?: MaaFWHotkeyMap | null; sourceDir?: string }
 
 /** 实例带的键位（没有就是空表） */
 export const shellInstanceHotkeys = (instance: MaaFWShellHotkeySource): MaaFWHotkeyMap =>

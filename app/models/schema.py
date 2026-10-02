@@ -4427,6 +4427,10 @@ class MaaFWEmbeddedStatusOut(OutBase):
 
 class MaaFWShellInstancesIn(BaseModel):
     scriptId: str = Field(..., min_length=1, description="MFW 脚本 ID")
+    path: Optional[str] = Field(
+        default=None,
+        description="只扫这个目录（键位弹窗「选择其他目录」用，不写回脚本配置）；不传时先扫来源目录再扫内嵌副本",
+    )
 
 
 class MaaFWShellInstanceItem(BaseModel):
@@ -4450,6 +4454,9 @@ class MaaFWShellInstanceItem(BaseModel):
             "hotkey 选项与字段、非空的值（全局 / 资源级在前，任务级覆盖），不与默认值比较；"
             "读不到 interface 时为空"
         ),
+    )
+    sourceDir: str = Field(
+        default="", description="扫到这份配置的目录（同一次列表里都一样）"
     )
 
 

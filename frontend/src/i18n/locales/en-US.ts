@@ -1725,6 +1725,11 @@ export default {
     mfwHotkeyImported: 'Loaded {n} key bindings from the project',
     mfwHotkeyImportSkipped: '; skipped {m} unsupported keys',
     mfwHotkeyImportToScript: 'Also import key bindings into the script',
+    mfwHotkeyImportFrom: 'From {dir}',
+    mfwHotkeyImportPickDir: 'Choose another folder…',
+    mfwHotkeyImportNoConfig: 'No launcher config with key bindings was found in this folder',
+    mfwHotkeyImportPickOne:
+      'Found {n} different sets of key bindings; pick one under "Import from project"',
     thisNameAlsoWritten:
       'This name is also written to March7th Assistant / SRA as the Trailblazer name for the Currency War feature',
     thisSubtaskHasNo: 'This subtask has no editable fields',

@@ -75,13 +75,19 @@ def _candidate_roots(script_id: str, script_config: Any) -> list[Path]:
 
 
 def _scan_first_root(roots: list[Path]) -> list[ShellInstance]:
+    return _scan_first_root_at(roots)[1]
+
+
+def _scan_first_root_at(roots: list[Path]) -> tuple[Path | None, list[ShellInstance]]:
+    """第一个扫到外壳配置的目录与其中的实例；都没有时为 ``(None, [])``。"""
+
     for root in roots:
         if not root.is_dir():
             continue
         found = scan_shell_instances(root)
         if found:
-            return found
-    return []
+            return root, found
+    return None, []
 
 
 def _existing_user_names(script_config: Any) -> list[str]:
@@ -97,17 +103,28 @@ def _interface_name(items: list[Any], raw: str) -> str:
     return raw if raw and any(item.name == raw for item in items) else ""
 
 
-async def list_shell_instances(script_id: str) -> MaaFWApiReply:
-    """``/maafw/shell-instances``：项目目录里外壳保存的配置实例。"""
+async def list_shell_instances(
+    script_id: str, path: str | None = None
+) -> MaaFWApiReply:
+    """``/maafw/shell-instances``：项目目录里外壳保存的配置实例。
+
+    ``path`` 给了就只扫那个目录（键位弹窗「选择其他目录」：来源目录挪过、或平时用的是另一份外壳），
+    不写回 ``Info.Path``；没给时先来源目录再内嵌副本。
+    """
 
     try:
         script_config = maafw_script_config(script_id)
     except (KeyError, ValueError, TypeError) as exc:
         return MaaFWApiReply.error(400, f"MFW 脚本无效: {exc}")
+    if path is not None and path.strip():
+        picked = Path(path.strip())
+        if not picked.is_dir():
+            return MaaFWApiReply.error(400, f"目录不存在: {picked}")
+        roots = [picked]
+    else:
+        roots = _candidate_roots(script_id, script_config)
     try:
-        instances = await asyncio.to_thread(
-            _scan_first_root, _candidate_roots(script_id, script_config)
-        )
+        found_root, instances = await asyncio.to_thread(_scan_first_root_at, roots)
     except Exception as exc:  # noqa: BLE001 - 扫描只读，失败不该挡住引导
         logger.opt(exception=True).warning(
             f"扫描外壳配置实例失败（{script_id}）：{type(exc).__name__}: {exc}"
@@ -147,6 +164,7 @@ async def list_shell_instances(script_id: str) -> MaaFWApiReply:
             if interface
             else instance.resource,
             hotkeys=_instance_hotkeys(instance, interface),
+            sourceDir=str(found_root) if found_root is not None else "",
         )
         for instance, user_name in zip(instances, user_names)
     ]

@@ -39,6 +39,10 @@ export type MaaFWShellInstanceItem = {
      * 实例里记着的键位：{hotkey 选项名: {字段名: 组合键}}，只含 interface 里声明过的hotkey 选项与字段、非空的值（全局 / 资源级在前，任务级覆盖），不与默认值比较；读不到 interface 时为空
      */
     hotkeys?: Record<string, Record<string, string>>;
+    /**
+     * 扫到这份配置的目录（同一次列表里都一样）
+     */
+    sourceDir?: string;
 };
 export namespace MaaFWShellInstanceItem {
     /**

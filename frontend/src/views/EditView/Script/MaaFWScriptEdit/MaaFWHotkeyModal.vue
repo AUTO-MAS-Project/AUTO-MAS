@@ -71,31 +71,34 @@
           <a-button type="link" class="hotkey-reset-all" :disabled="!anyChanged" @click="resetAll">
             {{ t('edit.mfwHotkeyRestoreAll') }}
           </a-button>
-          <!-- 外壳里配过键位才出现：一份直接填，几份不同的给下拉选 -->
-          <a-button
-            v-if="importCandidates.length === 1"
-            type="link"
-            class="hotkey-reset-all"
-            @click="applyImport(importCandidates[0])"
-          >
-            {{ t('edit.mfwHotkeyImport') }}
-          </a-button>
-          <a-dropdown v-else-if="importCandidates.length > 1" :trigger="['click']">
+          <!-- 上面列出在目录里扫到的外壳配置（注明目录），下面总能另选目录：导入项目时记下的
+               来源目录之后不再更新，挪走了或平时用的是另一份外壳就从这里选 -->
+          <a-dropdown :trigger="['click']">
             <a-button type="link" class="hotkey-reset-all">
               {{ t('edit.mfwHotkeyImport') }}
               <DownOutlined />
             </a-button>
             <template #overlay>
               <a-menu>
-                <a-menu-item
-                  v-for="candidate in importCandidates"
-                  :key="candidate.id"
-                  @click="applyImport(candidate)"
+                <a-menu-item-group
+                  v-if="shownCandidates.length > 0"
+                  :title="t('edit.mfwHotkeyImportFrom', { dir: shownDir })"
                 >
-                  {{ candidate.source }} · {{ candidate.name }}
-                  <a-tag v-if="candidate.active" color="green" class="hotkey-import-tag">
-                    {{ t('edit.mfwHotkeyImportLastUsed') }}
-                  </a-tag>
+                  <a-menu-item
+                    v-for="candidate in shownCandidates"
+                    :key="candidate.id"
+                    @click="applyImport(candidate)"
+                  >
+                    {{ candidate.source }} · {{ candidate.name }}
+                    <a-tag v-if="candidate.active" color="green" class="hotkey-import-tag">
+                      {{ t('edit.mfwHotkeyImportLastUsed') }}
+                    </a-tag>
+                  </a-menu-item>
+                </a-menu-item-group>
+                <a-menu-divider v-if="shownCandidates.length > 0" />
+                <a-menu-item key="__pick-dir" @click="pickImportDirectory">
+                  <FolderOpenOutlined />
+                  {{ t('edit.mfwHotkeyImportPickDir') }}
                 </a-menu-item>
               </a-menu>
             </template>
@@ -116,7 +119,8 @@
 import { computed, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { message } from 'ant-design-vue'
-import { DownOutlined } from '@ant-design/icons-vue'
+import { DownOutlined, FolderOpenOutlined } from '@ant-design/icons-vue'
+import { useMaaFWShellInstanceApi } from '@/composables/useMaaFWShellInstanceApi'
 import type { MaaFWOptionInfo } from '@/types/script'
 import {
   displayKey,
@@ -133,7 +137,11 @@ import {
   type MaaFWHotkeyGate,
   type MaaFWHotkeyMap,
 } from './hotkeyOptions'
-import { importHotkeyValues, type MaaFWHotkeyImportCandidate } from './hotkeyImport'
+import {
+  collectHotkeyImportCandidates,
+  importHotkeyValues,
+  type MaaFWHotkeyImportCandidate,
+} from './hotkeyImport'
 
 type HotkeyField = MaaFWOptionInfo['hotkeys'][number]
 
@@ -149,6 +157,10 @@ const props = defineProps<{
   gates: Record<string, MaaFWHotkeyGate>
   /** 「从项目导入」的候选（外壳实例里的键位，已限定到本次展示的字段、相同的已合并）；没有就是空数组 */
   importCandidates: MaaFWHotkeyImportCandidate[]
+  /** 上面这些候选是在哪个目录扫到的（导入项目时记下的来源目录，或兜底的内嵌副本） */
+  importDir: string
+  /** 脚本 ID：「选择其他目录」按它去扫用户选的目录 */
+  scriptId: string
 }>()
 
 const emit = defineEmits<{
@@ -274,6 +286,45 @@ const handleRecord = (
     result.kind === 'too-many-modifiers'
       ? t('edit.mfwHotkeyTooManyModifiers')
       : t('edit.mfwHotkeyUnsupported')
+}
+
+// 「选择其他目录」读到的候选：这次弹窗里有效，关掉再开回到默认目录
+const pickedImport = ref<{ dir: string; candidates: MaaFWHotkeyImportCandidate[] } | null>(null)
+watch(
+  () => props.open,
+  value => {
+    if (value) pickedImport.value = null
+  }
+)
+const shownCandidates = computed(() => pickedImport.value?.candidates ?? props.importCandidates)
+const shownDir = computed(() => pickedImport.value?.dir ?? props.importDir)
+
+const { listShellInstances } = useMaaFWShellInstanceApi()
+const pickImportDirectory = async () => {
+  if (!window.electronAPI?.selectFolder) {
+    message.error(t('edit.filePickingUnavailableRun'))
+    return
+  }
+  const dir = await window.electronAPI.selectFolder()
+  if (!dir) return
+  let candidates: MaaFWHotkeyImportCandidate[]
+  try {
+    candidates = collectHotkeyImportCandidates(
+      await listShellInstances(props.scriptId, dir),
+      props.options
+    )
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : String(error))
+    return
+  }
+  if (candidates.length === 0) {
+    message.warning(t('edit.mfwHotkeyImportNoConfig'))
+    return
+  }
+  pickedImport.value = { dir, candidates }
+  // 只有一份就直接填；几份不同的留在「从项目导入」下拉里让用户挑
+  if (candidates.length === 1) applyImport(candidates[0])
+  else message.info(t('edit.mfwHotkeyImportPickOne', { n: candidates.length }))
 }
 
 // 从项目导入：只填草稿，点「保存」才写；与默认相同 / 不同 / 修饰键个数不符照常显示

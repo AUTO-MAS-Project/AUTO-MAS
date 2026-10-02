@@ -1582,6 +1582,11 @@ export default {
     mfwHotkeyImported: 'プロジェクトから {n} 件のキー割り当てを読み込みました',
     mfwHotkeyImportSkipped: '（非対応のキー {m} 件はスキップ）',
     mfwHotkeyImportToScript: 'キー割り当てもスクリプトに取り込む',
+    mfwHotkeyImportFrom: '{dir} から',
+    mfwHotkeyImportPickDir: '別のフォルダーを選択…',
+    mfwHotkeyImportNoConfig: 'このフォルダーにキー割り当てを含むランチャー設定が見つかりません',
+    mfwHotkeyImportPickOne:
+      '異なるキー割り当てが {n} 件見つかりました。「プロジェクトから読み込む」で選んでください',
     thisNameAlsoWritten:
       'この名前は、「貨幣戦争」機能の開拓者名としても三月なのかアシスタント / SRA に書き込まれます',
     thisSubtaskHasNo: 'このサブタスクに編集できる項目はありません',
