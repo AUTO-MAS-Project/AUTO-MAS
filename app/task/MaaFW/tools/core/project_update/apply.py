@@ -84,6 +84,9 @@ class PackagePlan:
     target_version: str | None = None
     # 内嵌副本里按内容与其它副本共用的文件（``files`` 的子集）：运行时目录与模型类大文件。
     shared: frozenset[str] = frozenset()
+    # 全量包整体接管的目录（``projection.package_takeover_dirs``）：导入来的、新包里没有的
+    # 旧文件在这些目录里也按 stale 清。只有投影落地时才算。
+    takeover_dirs: frozenset[str] = frozenset()
 
 
 def build_package_plan(
@@ -171,10 +174,11 @@ def build_package_plan(
     if package_type == "full" and not _has_interface_file(package_root):
         raise UpdateApplyError("full update package must contain interface.json")
     shared: frozenset[str] = frozenset()
+    takeover_dirs: frozenset[str] = frozenset()
     if projection:
         # 内嵌副本：只按 interface 白名单落盘。这是唯一的枚举口，三张表一起过滤，
         # 下游的清单、孤儿清理、回滚看到的就都是瘦树。
-        files, hashes, deleted, shared = _project_package_entries(
+        files, hashes, deleted, shared, takeover_dirs = _project_package_entries(
             payload_root, project_path, files, hashes, deleted, send_log
         )
     return PackagePlan(
@@ -187,6 +191,7 @@ def build_package_plan(
         base_fingerprint=base_fingerprint,
         target_version=declared_target or target_version,
         shared=shared,
+        takeover_dirs=takeover_dirs,
     )
 
 
@@ -197,12 +202,15 @@ def _project_package_entries(
     hashes: dict[str, str],
     deleted: tuple[str, ...],
     send_log: Callable[[str], None] | None,
-) -> tuple[dict[str, Path], dict[str, str], tuple[str, ...], frozenset[str]]:
+) -> tuple[
+    dict[str, Path], dict[str, str], tuple[str, ...], frozenset[str], frozenset[str]
+]:
     from .projection import (
         ProjectionError,
         describe_dropped_code_files,
         filter_package_entries,
         package_projection_rules,
+        package_takeover_dirs,
     )
 
     try:
@@ -237,6 +245,7 @@ def _project_package_entries(
             for relative in kept_files
             if rules.is_shared_file(Path(relative), _file_size(files[relative]))
         ),
+        package_takeover_dirs(rules, kept_files),
     )
 
 

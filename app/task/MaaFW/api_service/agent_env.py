@@ -42,6 +42,8 @@ from app.task.MaaFW.tools.core.interface.loader import (
     MaaFWInterfaceLoadError,
     load_interface_model_cached,
 )
+from app.task.MaaFW.tools.core.log_redact import mask_home_path
+from app.task.MaaFW.tools.core.project_update.state import redact_text
 from app.task.MaaFW.tools.embedded.update_credentials import (
     resolve_update_proxy_url,
 )
@@ -189,6 +191,12 @@ async def prepare_agent_env(
             # 详情行（健康检查的完整 traceback）只进后端日志，不进面板
             _maafw_env_logger.info(sanitize_log_message(str(line)))
             return
+        # 成功路径以前只回给面板，用户发来的日志包里看不到准备过程（回退说明、隔离
+        # venv、导入检查）：与手动更新同一口径，打码后也进 app.log（用户目录换成 <HOME>、
+        # URL 去掉查询串；面板上照旧是原文）。
+        _maafw_env_logger.info(
+            mask_home_path(redact_text(sanitize_log_message(str(line))))
+        )
         logs.append(line)
         publish_progress(
             {
