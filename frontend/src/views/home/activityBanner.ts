@@ -3,7 +3,6 @@ import type {
   EndfieldActivityOverview,
   HomeModuleKey,
   SraActivityOverview,
-  StellaActivityOverview,
 } from '@/types/home'
 
 /** 各游戏 banner 的主题色，无封面时用来生成底纹；与原卡片上的 accent 保持一致 */
@@ -101,47 +100,29 @@ export const arknightsActivityBanner = (activityData: ActivityItem[]): ActivityB
   }
 }
 
-/** 星塔旅人的活动封面在资源域下，站点给的是 `/stella/assets/...` 这样的相对路径 */
-const STELLA_ASSET_BASE = 'https://api.ennead.cc'
+/**
+ * 星塔旅人的横幅只报「版本活动」。
+ *
+ * 那是会开限时活动关的版本大活动（「遥远的塔」这种），招募与拼图、经营之类的小玩法
+ * 只留在下面的活动卡里；一期版本活动都没有时横幅空着，由轮播显示「暂无进行中的活动」。
+ */
+const STELLA_BANNER_KIND = '版本活动'
 
-export const stellaActivityBanner = (overview: StellaActivityOverview): ActivityBannerSource => {
-  // 站点已按状态分组：进行中的有多条时取最早结束的那条（与其它卡片同口径）；
-  // 一场都没进行时退回「最近结束的那场」，让卡片照碧蓝档案的样子显示已结束
-  const ongoing = [...(overview.current ?? [])].sort(
-    (left, right) => toTimestamp(left.endTime ?? '') - toTimestamp(right.endTime ?? '')
+export const stellaActivityBanner = (overview: SraActivityOverview): ActivityBannerSource => {
+  const now = Date.now()
+  const versions = overview.activities.filter(item =>
+    (item.kind ?? '').includes(STELLA_BANNER_KIND)
   )
-  const lastEnded = [...(overview.ended ?? [])].sort(
-    (left, right) => toTimestamp(right.endTime ?? '') - toTimestamp(left.endTime ?? '')
-  )[0]
-  const activity = ongoing[0] ?? lastEnded
-  // 封面按「越大越优先」排一串候选，由轮播在 onerror 时逐个降级：
-  //   1. 站点 background 1644×900 —— 能铺满，但常 404
-  //   2. 官网横幅 795×510 —— 标题与当前活动对上号的那条（后端标记 matched），
-  //      没对上才退到最新一条
-  //   3. 站点 banner 310×138 —— 只能当右侧贴片
-  const art = (path?: string) =>
-    path ? (path.startsWith('http') ? path : STELLA_ASSET_BASE + path) : ''
-  const officialList = overview.official ?? []
-  const officialTop =
-    officialList.find(item => item.matched && item.banner) ?? officialList.find(item => item.banner)
-  const candidates = [
-    art(activity?.textures?.background),
-    art(officialTop?.banner),
-    art(activity?.textures?.banner),
-  ].filter(Boolean)
+  const activity =
+    versions.find(item => toTimestamp(item.startTime) <= now && toTimestamp(item.endTime) > now) ??
+    versions.find(item => toTimestamp(item.startTime) > now)
 
-  // 没有进行中的活动：标题与封面都留着刚结束的那场，但不显示已经走完的倒计时，
-  // 只留一句「后续活动即将开始」
-  const hasOngoing = ongoing.length > 0
   return {
-    cover: candidates[0] ?? '',
-    coverCandidates: candidates.slice(1),
-    subtitle: activity?.title ?? '',
-    startTime: hasOngoing ? (activity?.startTime ?? '') : '',
-    endTime: hasOngoing ? (activity?.endTime ?? '') : '',
-    // 取到排期就算可用；没有进行中的活动时文案由轮播换「暂无进行中的活动」
+    cover: activity?.cover ?? '',
+    subtitle: activity?.name ?? '',
+    startTime: activity?.startTime ?? '',
+    endTime: activity?.endTime ?? '',
     available: overview.Available,
-    stale: overview.Stale ?? false,
-    ended: !hasOngoing && Boolean(activity),
+    stale: overview.Stale,
   }
 }

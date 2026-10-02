@@ -3281,7 +3281,12 @@ export default {
       reverse1999: 'No Reverse: 1999 events running',
       endfield: 'No banners or events running',
       endfieldNoData: 'No Endfield event data',
+      stellasora: 'No Stella Sora events running',
       noData: 'No data',
+    },
+    stella: {
+      sourceName: 'Official site',
+      permanent: 'Permanent events',
     },
     countdown: {
       dh: 'D[d] H[h]',
