@@ -69,46 +69,51 @@ const lock = async () => {
       </a-button>
     </div>
 
-    <a-result v-if="loadFailed" status="error" :title="t('mystery.loadFailed')">
-      <template #extra>
-        <a-button type="primary" @click="load">{{ t('mystery.retry') }}</a-button>
-      </template>
-    </a-result>
-    <div v-else-if="!store.initialized" class="mystery-loading">
-      <a-spin />
+    <div class="mystery-content">
+      <a-result v-if="loadFailed" status="error" :title="t('mystery.loadFailed')">
+        <template #extra>
+          <a-button type="primary" @click="load">{{ t('mystery.retry') }}</a-button>
+        </template>
+      </a-result>
+      <div v-else-if="!store.initialized" class="mystery-loading">
+        <a-spin />
+      </div>
+      <a-card v-else-if="!store.unlocked" :title="t('mystery.unlockTitle')" class="mystery-unlock">
+        <a-form :model="form" layout="vertical" @finish="unlock">
+          <a-form-item
+            name="accessCode"
+            :rules="[{ required: true, message: t('mystery.accessCodeRequired') }]"
+            :validate-status="error ? 'error' : undefined"
+            :help="error || undefined"
+          >
+            <a-input-password
+              v-model:value="form.accessCode"
+              :aria-label="t('mystery.accessCode')"
+              :placeholder="t('mystery.accessCodePlaceholder')"
+              :disabled="store.saving"
+              size="large"
+              autocomplete="off"
+              @change="error = ''"
+            />
+          </a-form-item>
+          <a-button type="primary" html-type="submit" size="large" block :loading="store.saving">
+            {{ t('mystery.unlock') }}
+          </a-button>
+        </a-form>
+      </a-card>
+      <!-- 后续神秘小功能放在解锁后的区域，当前保留空状态。 -->
+      <a-card v-else class="mystery-features">
+        <a-empty :image="Empty.PRESENTED_IMAGE_SIMPLE" :description="t('mystery.empty')" />
+      </a-card>
     </div>
-    <a-card v-else-if="!store.unlocked" :title="t('mystery.unlockTitle')" class="mystery-unlock">
-      <a-form :model="form" layout="vertical" @finish="unlock">
-        <a-form-item
-          name="accessCode"
-          :label="t('mystery.accessCode')"
-          :rules="[{ required: true, message: t('mystery.accessCodeRequired') }]"
-          :validate-status="error ? 'error' : undefined"
-          :help="error || undefined"
-        >
-          <a-input-password
-            v-model:value="form.accessCode"
-            :placeholder="t('mystery.accessCodePlaceholder')"
-            :disabled="store.saving"
-            autocomplete="off"
-            @change="error = ''"
-          />
-        </a-form-item>
-        <p class="mystery-hint">{{ t('mystery.rememberHint') }}</p>
-        <a-button type="primary" html-type="submit" :loading="store.saving">
-          {{ t('mystery.unlock') }}
-        </a-button>
-      </a-form>
-    </a-card>
-    <!-- 后续神秘小功能放在解锁后的区域，当前保留空状态。 -->
-    <a-card v-else>
-      <a-empty :image="Empty.PRESENTED_IMAGE_SIMPLE" :description="t('mystery.empty')" />
-    </a-card>
   </div>
 </template>
 
 <style scoped>
 .mystery-page {
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
   padding: 24px;
 }
 
@@ -132,17 +137,33 @@ const lock = async () => {
 }
 
 .mystery-unlock {
-  max-width: 400px;
+  width: 100%;
+  max-width: 520px;
+}
+
+.mystery-unlock :deep(.ant-card-head-title) {
+  text-align: center;
+  font-size: 20px;
+}
+
+.mystery-unlock :deep(.ant-card-body) {
+  padding: 32px;
+}
+
+.mystery-content {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.mystery-features {
+  width: 100%;
 }
 
 .mystery-loading {
   min-height: 224px;
   display: grid;
   place-items: center;
-}
-
-.mystery-hint {
-  margin-bottom: 24px;
-  color: var(--ant-color-text-secondary);
 }
 </style>
