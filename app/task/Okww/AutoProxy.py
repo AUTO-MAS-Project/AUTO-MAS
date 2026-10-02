@@ -202,6 +202,9 @@ class AutoProxyTask(ScriptAutoProxyBase):
         self.cur_user_log: LogRecord | None = None
         self.launcher_path: Path | None = None
         self.game_process_path: Path | None = None
+        # check() 阶段发现的寻址兜底提示：调度台日志会在 main_task 每轮开头被
+        # 整体重置，check() 里直接推会被清屏，改存到这里在启动流程内补推
+        self._fallback_notice: str | None = None
         self.okww_process_manager: ProcessManager | None = None
         self.wait_event: asyncio.Event | None = None
         self.script_root_path: Path | None = None
@@ -268,9 +271,12 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 )
                 if fallback.launcher_path is not None:
                     launcher_path = fallback.launcher_path
-                    await self._push_dispatch_log(
+                    # 不能在这里直接推调度台：main_task 每轮开头会重置日志把它
+                    # 清掉，存下来在启动流程内补推（与其它提示同处每轮循环内）
+                    self._fallback_notice = (
                         f"已按兜底来源找回鸣潮启动器"
-                        f"（{launcher_path.as_posix()}），请更新脚本配置中的启动器路径"
+                        f"（{launcher_path.as_posix()}），"
+                        "请更新脚本配置中的启动器路径"
                     )
                 elif (
                     fallback.process_path is not None
@@ -279,7 +285,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
                     # 只有直启态吃客户端兜底：启动器态没有启动器就拉不起游戏，
                     # 报错文案会引导用户改用直启或重新导入启动器
                     self.game_process_path = fallback.process_path
-                    await self._push_dispatch_log(
+                    self._fallback_notice = (
                         f"已按兜底来源找回鸣潮客户端"
                         f"（{self.game_process_path.as_posix()}），"
                         "请更新脚本配置中的启动器路径"
@@ -624,6 +630,11 @@ class AutoProxyTask(ScriptAutoProxyBase):
 
         if isinstance(self.game_manager, ProcessManager):
             await self._ensure_wuthering_waves_updated()
+            # check() 阶段的兜底提示在这里补推：此时本轮日志已重置完，推送能
+            # 留在调度台上；整个任务只推一次（用户已知晓后不必每轮重复）
+            if self._fallback_notice is not None:
+                await self._push_dispatch_log(self._fallback_notice)
+                self._fallback_notice = None
             if self.game_process_path is None:
                 # 路径未知（启动器记录解不出且目录搜索未命中）：只有「名称 + 启动器
                 # 根目录树内」这一层信息，扫到即视为已在运行。不把进程交给进程管理
@@ -661,7 +672,10 @@ class AutoProxyTask(ScriptAutoProxyBase):
 
         launcher_path = self.launcher_path
         if launcher_path is None:
-            raise RuntimeError("未找到鸣潮官方启动器路径，请重新导入启动器")
+            raise RuntimeError(
+                "未找到鸣潮官方启动器路径，请重新导入官方启动器，"
+                "或改用「直接启动」并手动选择游戏客户端文件"
+            )
         await self._push_dispatch_log("未检测到运行中的客户端，正在拉起官方启动器...")
         await self.game_manager.open_process(
             launcher_path,
@@ -687,7 +701,10 @@ class AutoProxyTask(ScriptAutoProxyBase):
 
         game_process_path = self.game_process_path
         if game_process_path is None:
-            raise RuntimeError("未找到鸣潮客户端程序路径，请重新导入启动器")
+            raise RuntimeError(
+                "未找到鸣潮客户端程序路径，请在直启模式下选择游戏客户端文件，"
+                "或重新导入官方启动器以自动定位"
+            )
         await self._push_dispatch_log("未检测到运行中的客户端，正在直启鸣潮...")
         await self.game_manager.open_process(
             game_process_path,
