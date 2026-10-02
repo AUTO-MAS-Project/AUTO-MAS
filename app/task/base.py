@@ -3,6 +3,7 @@
 import asyncio
 from datetime import datetime
 
+from app.models.ConfigBase import ConfigBase
 from app.models.task import LogRecord, ScriptItem, TaskExecuteBase, UserItem
 from app.utils.logger import get_logger
 
@@ -11,11 +12,15 @@ logger = get_logger("脚本运行")
 
 class ScriptAutoProxyBase(TaskExecuteBase):
     # 总时限涵盖等待和全部重试，不随日志推进重置；收尾必须完成后再切换账号。
-    run_timeout_seconds = 120 * 60
     wait_for_finalizer_on_cancel = True
 
     script_info: ScriptItem
+    script_config: ConfigBase
     cur_user_item: UserItem
+
+    @property
+    def run_timeout_seconds(self) -> float:
+        return self.script_config.get("Run", "HardTimeLimit") * 60
 
     async def _run_main_task(self) -> None:
         timeout = asyncio.timeout(self.run_timeout_seconds)

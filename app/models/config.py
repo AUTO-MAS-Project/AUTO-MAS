@@ -1251,6 +1251,10 @@ class MaaConfig(ConfigBase):
         self.Emulator_Index = ConfigItem("Emulator", "Index", "-")
 
         ## Run -------------------------------------------------------------
+        ## 单账号运行总时限（分钟），包含等待和全部重试
+        self.Run_HardTimeLimit = ConfigItem(
+            "Run", "HardTimeLimit", 120, RangeValidator(1, 9999)
+        )
         ## 任务切换方式
         self.Run_TaskTransitionMethod = ConfigItem(
             "Run",
@@ -1587,6 +1591,10 @@ class MaaEndConfig(ConfigBase):
         self.Info_Path = ConfigItem("Info", "Path", "", FolderValidator())
 
         ## Run -------------------------------------------------------------
+        ## 单账号运行总时限（分钟），包含等待和全部重试
+        self.Run_HardTimeLimit = ConfigItem(
+            "Run", "HardTimeLimit", 120, RangeValidator(1, 9999)
+        )
         ## 运行超时阈值
         self.Run_RunTimeLimit = ConfigItem(
             "Run", "RunTimeLimit", 10, RangeValidator(1, 9999)
@@ -2076,6 +2084,10 @@ class SrcConfig(ConfigBase):
         self.Emulator_Index = ConfigItem("Emulator", "Index", "-")
 
         ## Run -------------------------------------------------------------
+        ## 单账号运行总时限（分钟），包含等待和全部重试
+        self.Run_HardTimeLimit = ConfigItem(
+            "Run", "HardTimeLimit", 120, RangeValidator(1, 9999)
+        )
         ## 任务切换方式
         self.Run_TaskTransitionMethod = ConfigItem(
             "Run",
@@ -4039,6 +4051,10 @@ class GeneralConfig(ConfigBase):
         self.Game_EmulatorIndex = ConfigItem("Game", "EmulatorIndex", "-")
 
         ## Run -------------------------------------------------------------
+        ## 单账号运行总时限（分钟），包含等待和全部重试
+        self.Run_HardTimeLimit = ConfigItem(
+            "Run", "HardTimeLimit", 120, RangeValidator(1, 9999)
+        )
         ## 代理次数限制
         self.Run_ProxyTimesLimit = ConfigItem(
             "Run", "ProxyTimesLimit", 0, RangeValidator(0, 9999)
@@ -4097,6 +4113,10 @@ class OkwwConfig(ConfigBase):
             "Game", "AccountSwitch", False, BoolValidator()
         )
         ## Run -------------------------------------------------------------
+        ## 单账号运行总时限（分钟），包含等待和全部重试
+        self.Run_HardTimeLimit = ConfigItem(
+            "Run", "HardTimeLimit", 120, RangeValidator(1, 9999)
+        )
         ## 每日代理次数上限
         self.Run_ProxyTimesLimit = ConfigItem(
             "Run", "ProxyTimesLimit", 0, RangeValidator(0, 9999)
@@ -4202,6 +4222,10 @@ class OkNteConfig(ConfigBase):
         )
 
         ## Run -------------------------------------------------------------
+        ## 单账号运行总时限（分钟），包含等待和全部重试
+        self.Run_HardTimeLimit = ConfigItem(
+            "Run", "HardTimeLimit", 120, RangeValidator(1, 9999)
+        )
         self.Run_ProxyTimesLimit = ConfigItem(
             "Run", "ProxyTimesLimit", 0, RangeValidator(0, 9999)
         )
@@ -4250,6 +4274,10 @@ class BetterGIConfig(ConfigBase):
         self.Info_RootPath = ConfigItem("Info", "RootPath", "", FileValidator())
 
         ## Run -------------------------------------------------------------
+        ## 单账号运行总时限（分钟），包含等待和全部重试
+        self.Run_HardTimeLimit = ConfigItem(
+            "Run", "HardTimeLimit", 120, RangeValidator(1, 9999)
+        )
         self.Run_ProxyTimesLimit = ConfigItem(
             "Run", "ProxyTimesLimit", 0, RangeValidator(0, 9999)
         )
@@ -4631,6 +4659,10 @@ class ZzzOdConfig(ConfigBase):
         )
 
         ## Run -------------------------------------------------------------
+        ## 单账号运行总时限（分钟），包含等待和全部重试
+        self.Run_HardTimeLimit = ConfigItem(
+            "Run", "HardTimeLimit", 120, RangeValidator(1, 9999)
+        )
         ## 每日代理次数上限
         self.Run_ProxyTimesLimit = ConfigItem(
             "Run", "ProxyTimesLimit", 0, RangeValidator(0, 9999)
@@ -5300,6 +5332,10 @@ class BAAHConfig(ConfigBase):
         )
 
         ## Run -------------------------------------------------------------
+        ## 单账号运行总时限（分钟），包含等待和全部重试
+        self.Run_HardTimeLimit = ConfigItem(
+            "Run", "HardTimeLimit", 120, RangeValidator(1, 9999)
+        )
         ## 运行次数限制
         self.Run_RunTimesLimit = ConfigItem(
             "Run", "RunTimesLimit", 2, RangeValidator(1, 9999)
@@ -5455,6 +5491,10 @@ class WhimboxConfig(ConfigBase):
         self.Info_RootPath = ConfigItem("Info", "RootPath", "", FileValidator())
 
         ## Run -------------------------------------------------------------
+        ## 单账号运行总时限（分钟），包含等待和全部重试
+        self.Run_HardTimeLimit = ConfigItem(
+            "Run", "HardTimeLimit", 120, RangeValidator(1, 9999)
+        )
         self.Run_ProxyTimesLimit = ConfigItem(
             "Run", "ProxyTimesLimit", 0, RangeValidator(0, 9999)
         )

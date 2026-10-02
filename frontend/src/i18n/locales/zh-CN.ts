@@ -272,6 +272,9 @@ export default {
     highlightColorsPreview: '高亮颜色与预览设置区域',
   },
   edit: {
+    hardTimeoutMinutes: '单账号运行总时限（分钟）',
+    hardTimeoutHint:
+      '包含启动、等待和全部重试，日志持续更新也不会延长时限；超时后终止本次运行，收尾完成后继续后续账号。',
     configLocked: '任务运行中，配置已锁定；任务结束后可编辑',
     close: '关闭',
     notifyServerChan: 'Server酱',

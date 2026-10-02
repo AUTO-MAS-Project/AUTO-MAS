@@ -387,6 +387,10 @@
           <div class="section-header">
             <h3>{{ t('edit.runConfiguration') }}</h3>
           </div>
+          <ScriptHardTimeoutField
+            v-model:value="maaEndConfig.Run.HardTimeLimit"
+            @save="handleChange('Run', 'HardTimeLimit', maaEndConfig.Run.HardTimeLimit)"
+          />
           <a-row :gutter="24">
             <a-col :span="8">
               <a-form-item>
@@ -495,6 +499,7 @@
 </template>
 
 <script setup lang="ts">
+import ScriptHardTimeoutField from '@/views/EditView/Script/components/ScriptHardTimeoutField.vue'
 import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
 import { useI18n } from 'vue-i18n'
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
@@ -561,6 +566,7 @@ const maaEndConfig = reactive<MaaEndScriptConfig>({
     Path: '',
   },
   Run: {
+    HardTimeLimit: 120,
     RunTimeLimit: 30,
     ProxyTimesLimit: 0,
     RunTimesLimit: 3,

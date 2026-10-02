@@ -108,7 +108,10 @@ def test_adapter_coverage_and_exemptions():
             if isinstance(node, ast.ClassDef) and any(isinstance(base, ast.Name) and base.id == 'ScriptAutoProxyBase' for base in node.bases):
                 actual.add(path.relative_to(root).parts[0])
     assert actual == covered
-    assert ScriptAutoProxyBase.run_timeout_seconds == 7200
+    from app.models.config import MaaConfig
+    proxy = Proxy()
+    proxy.script_config = MaaConfig()
+    assert ScriptAutoProxyBase.run_timeout_seconds.fget(proxy) == 7200
     assert TaskExecuteBase._run_main_task is not ScriptAutoProxyBase._run_main_task
 
 
@@ -137,3 +140,40 @@ def test_repeated_cancel_waits_for_finalizer():
             await task
         assert proxy.finalized and proxy.accomplish.is_set()
     asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("name", ["Maa", "MaaEnd", "Src", "General", "Okww", "OkNte", "BetterGI", "ZzzOd", "BAAH", "Whimbox"])
+def test_hard_timeout_config_persistence_and_runtime(name, tmp_path):
+    from app.models import config as configs
+    from app.models import schema
+    async def scenario():
+        cls = getattr(configs, f"{name}Config")
+        config = cls()
+        path = tmp_path / f"{name}.json"
+        await config.connect(path)
+        assert config.get("Run", "HardTimeLimit") == 120
+        await config.set("Run", "HardTimeLimit", 240)
+        loaded = cls()
+        await loaded.connect(path)
+        assert loaded.get("Run", "HardTimeLimit") == 240
+        proxy = Proxy()
+        proxy.script_config = loaded
+        assert ScriptAutoProxyBase.run_timeout_seconds.fget(proxy) == 240 * 60
+        model = getattr(schema, f"{name}Config")
+        assert model.model_validate({"Run": {"HardTimeLimit": 240}}).Run.HardTimeLimit == 240
+        for invalid in (0, 10000):
+            from pydantic import ValidationError
+            with pytest.raises(ValidationError):
+                model.model_validate({"Run": {"HardTimeLimit": invalid}})
+    asyncio.run(scenario())
+
+
+def test_exempt_configs_do_not_expose_hard_timeout():
+    from app.models import config as configs
+    from app.models import schema
+    for name in ("MaaFW", "M9A", "MSS", "HSR"):
+        config = getattr(configs, f"{name}Config")()
+        assert not hasattr(config, "Run_HardTimeLimit")
+        model = getattr(schema, f"{name}Config")
+        run_model = model.model_fields["Run"].annotation.__args__[0]
+        assert "HardTimeLimit" not in run_model.model_fields
