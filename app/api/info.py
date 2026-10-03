@@ -38,6 +38,7 @@ from fastapi.responses import FileResponse, Response
 
 from app.core import Config
 from app.models.schema import *
+from app.tools.sra_activity import fetch_sra_activities
 from app.tools.stella_official import fetch_official_activities
 from app.utils import get_logger
 
@@ -696,6 +697,9 @@ async def get_arknights_activity() -> InfoOut:
     PRTS 的页面里已经带了活动名、分类、起止时间与配图，这里解析成前端好用的形状。
     最近两周一场活动都没有是正常情况（长草期），按空列表返回并照常缓存，
     不然前端会把「没有活动」当成接口出错反复重试。
+
+    PRTS 在部分网络下会连不上、也挡浏览器直连，真取不到时改用 SRA 托管的那份活动列表
+    顶上：数据没有活动分类，卡片上会少一列标签，但至少不是空的。
     """
 
     global _arknights_cache
@@ -716,12 +720,16 @@ async def get_arknights_activity() -> InfoOut:
         logger.opt(exception=True).warning(
             f"获取明日方舟活动数据失败: {type(e).__name__}: {e}"
         )
-        return InfoOut(
-            code=500,
-            status="error",
-            message=f"{type(e).__name__}: {str(e)}",
-            data={},
-        )
+        fallback = await fetch_sra_activities("ak")
+        if fallback is None:
+            return InfoOut(
+                code=500,
+                status="error",
+                message=f"{type(e).__name__}: {str(e)}",
+                data={},
+            )
+        logger.info("明日方舟活动数据改用 SRA 兜底")
+        data = fallback
 
     _arknights_cache = (time.time(), data)
     return InfoOut(data=data)

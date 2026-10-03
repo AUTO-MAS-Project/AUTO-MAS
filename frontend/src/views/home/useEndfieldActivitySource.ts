@@ -12,6 +12,9 @@ import { createEmptyEndfieldActivityOverview, type EndfieldActivityOverview } fr
 
 const logger = window.electronAPI.getLogger('活动数据')
 
+/** 活动条目的形状（types/home.ts 里没有导出，从概览类型上取） */
+type EndfieldActivityItem = EndfieldActivityOverview['Activities'][number]
+
 const AKEDATA_BASE_URL = 'https://data.akedata.wiki'
 const AKEDATA_MANIFEST_URL = AKEDATA_BASE_URL + '/manifest.json'
 /** 六张表并行下载（gzip 合计约 5.75MB），仅版本更新时触发，慢网放宽至 60s */
@@ -20,6 +23,13 @@ const FETCH_TIMEOUT_MS = 60_000
 const RETRY_DELAY_MS = 30_000
 const MAX_RETRIES = 8
 const SNAPSHOT_KEY = 'auto-mas.home.endfield-snapshot'
+/** AKEData 取不到、本地也没有快照时的兜底源：SRA 托管的终末地活动列表（没有卡池与分类） */
+const SRA_ACTIVITY_URL = 'https://starrailassistant.top/api/v1/activity/end.json'
+const SRA_SOURCE_URL = 'https://starrailassistant.top'
+
+interface SraActivityPayload {
+  activities?: { name?: string; startTime?: string; endTime?: string; cover?: string }[]
+}
 
 const loadSnapshot = (): EndfieldSourceData | null => {
   try {
@@ -80,6 +90,51 @@ export const useEndfieldActivitySource = () => {
       throw new Error('HTTP ' + response.status)
     }
     return response.json()
+  }
+
+  /** SRA 兜底的结果存一份，免得每次退避重试都去拉一遍 */
+  let sraFallback: EndfieldActivityItem[] | null = null
+
+  /**
+   * 取 SRA 托管的终末地活动列表。
+   *
+   * AKEData 的六张表要走五兆多的流量，网络差或对方抽风时整卡会空着；SRA 那份是它自己
+   * 抓好落成的静态 JSON，几百毫秒就能拿到，用来保证卡片至少还有活动可看。代价是它没有
+   * 卡池与活动分类，`Tags` 留空、`Pools` 为空数组。
+   */
+  const loadSraActivities = async (): Promise<EndfieldActivityItem[] | null> => {
+    if (sraFallback !== null) {
+      return sraFallback
+    }
+    try {
+      const response = await fetch(SRA_ACTIVITY_URL, { headers: { Accept: 'application/json' } })
+      if (!response.ok) {
+        throw new Error('HTTP ' + response.status)
+      }
+      const payload = (await response.json()) as SraActivityPayload
+      const items = Array.isArray(payload.activities) ? payload.activities : []
+      const activities = items
+        .filter(item => (item.name ?? '').trim() !== '')
+        .map((item, index) => ({
+          Id: `sra-${index}`,
+          Name: (item.name ?? '').trim(),
+          StartTime: item.startTime ?? '',
+          EndTime: item.endTime ?? '',
+          ImageUrl: '',
+          CoverUrl: item.cover ?? '',
+          Tags: [],
+        }))
+      if (activities.length === 0) {
+        return null
+      }
+      sraFallback = activities
+      return activities
+    } catch (error) {
+      logger.warn(
+        `获取 SRA 终末地活动失败: ${error instanceof Error ? error.message : String(error)}`
+      )
+      return null
+    }
   }
 
   const stripSlashes = (value: string): string => {
@@ -161,9 +216,22 @@ export const useEndfieldActivitySource = () => {
           Message: t('home.endfield.staleMessage'),
         }
       } else {
-        overview.value = {
-          ...createEmptyEndfieldActivityOverview(),
-          Message: t('home.endfield.unavailable'),
+        // 连快照都没有（刚装上、或这台机器一直没成功过）：改用 SRA 那份顶上
+        const fallback = await loadSraActivities()
+        if (fallback !== null) {
+          overview.value = {
+            ...createEmptyEndfieldActivityOverview(),
+            Available: true,
+            SourceName: 'SRA',
+            SourceUrl: SRA_SOURCE_URL,
+            Activities: fallback,
+          }
+          logger.info('终末地活动数据改用 SRA 兜底')
+        } else {
+          overview.value = {
+            ...createEmptyEndfieldActivityOverview(),
+            Message: t('home.endfield.unavailable'),
+          }
         }
       }
       if (retryCount < MAX_RETRIES) {
