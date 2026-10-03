@@ -35,10 +35,11 @@ from app.utils import get_logger
 from app.utils.emulator.tools import (
     AudioMuteRecord,
     apply_launch_audio_mute,
+    apply_window_visibility,
+    resolve_main_window,
     restore_audio_before_close,
 )
 from app.utils.platform import IS_WINDOWS
-from app.utils.platform import window as platform_window
 from app.utils.ProcessManager import ProcessManager, get_main_window_handle
 
 logger = get_logger("通用模拟器管理")
@@ -159,35 +160,15 @@ class GeneralDeviceManager(DeviceBase):
             logger.warning(f"设备{idx}未在线，当前状态码: {status}")
             return status
 
-        # 先解析出该实例自己的窗口句柄: 老板键不带实例信息, 多开时会把别的实例
-        # 一起翻过去(#948), 而把 PID 当句柄传给 IsWindowVisible 的判据恒为假。
-        deadline = time.monotonic() + 1.0
-        hwnd = None
-        while hwnd is None:
-            hwnd = await asyncio.to_thread(self._resolve_target_hwnd, idx)
-            if hwnd is not None:
-                break
-            if time.monotonic() >= deadline:
-                # 解析不到就明确报错, 而不是空转到 MaxWaitTime
-                raise RuntimeError(f"未找到设备{idx}的主窗口，无法切换窗口可见性")
-            await asyncio.sleep(0.5)
-
-        deadline = time.monotonic() + self.config.get("Info", "MaxWaitTime")
-        while time.monotonic() < deadline:
-            if platform_window.is_visible(hwnd) == is_visible:
-                return status
-
-            try:
-                if is_visible:
-                    platform_window.show_window(hwnd)
-                else:
-                    platform_window.hide_window(hwnd)
-            except Exception as e:
-                logger.error(f"切换设备{idx}窗口可见性失败: {e}")
-
-            await asyncio.sleep(0.5)
-
-        raise RuntimeError(f"{'显示' if is_visible else '隐藏'}设备{idx}窗口失败")
+        # 先解析出该实例自己的窗口句柄：老板键不带实例信息，多开时会把别的实例
+        # 一起翻过去（#948），而把 PID 当句柄传给 IsWindowVisible 的判据恒为假。
+        hwnd = await resolve_main_window(
+            idx, lambda: asyncio.to_thread(self._resolve_target_hwnd, idx)
+        )
+        await apply_window_visibility(
+            hwnd, idx, is_visible, self.config.get("Info", "MaxWaitTime")
+        )
+        return status
 
     def _resolve_target_hwnd(self, idx: str) -> int | None:
         """取该实例主窗口句柄: 主进程优先, 主窗口在子进程时再遍历后代进程。

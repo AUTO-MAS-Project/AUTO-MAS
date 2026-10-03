@@ -21,17 +21,10 @@
 
 
 import asyncio
-
-import psutil
-
-from app.utils.platform import IS_WINDOWS
-from app.utils.platform import window as platform_window
-
-if IS_WINDOWS:
-    import win32gui
 import time
 from pathlib import Path
 
+import psutil
 from pydantic import BaseModel
 
 from app.models.config import EmulatorConfig
@@ -40,8 +33,12 @@ from app.utils import ProcessRunner, get_logger
 from app.utils.emulator.tools import (
     AudioMuteRecord,
     apply_launch_audio_mute,
+    apply_window_visibility,
+    resolve_main_window,
     restore_audio_before_close,
 )
+from app.utils.platform import IS_WINDOWS
+from app.utils.platform import window as platform_window
 
 logger = get_logger("雷电模拟器管理")
 
@@ -333,35 +330,24 @@ class LDManager(DeviceBase):
             logger.warning(f"设备{idx}未在线，当前状态码: {status}")
             return status
 
-        hwnd = 0
-        resolve_deadline = time.monotonic() + 1
-        while time.monotonic() < resolve_deadline:
-            result = (await self.get_device_info(idx))[idx]
-            if result.top_hwnd > 0 and win32gui.IsWindow(result.top_hwnd):
-                hwnd = result.top_hwnd
-                break
-            await asyncio.sleep(0.1)
+        hwnd = await resolve_main_window(idx, lambda: self._resolve_target_hwnd(idx))
+        await apply_window_visibility(
+            hwnd, idx, is_visible, self.config.get("Info", "MaxWaitTime")
+        )
+        return status
 
-        if hwnd <= 0:
-            raise RuntimeError(f"未找到设备{idx}的主窗口，无法切换窗口可见性")
+    async def _resolve_target_hwnd(self, idx: str) -> int | None:
+        """取该实例的顶层窗口句柄：``list2`` 报的句柄为 0 或已失效时返回 None。
 
-        deadline = time.monotonic() + self.config.get("Info", "MaxWaitTime")
-        while time.monotonic() < deadline:
-            # 检查窗口可见性是否符合预期
-            if platform_window.is_visible(hwnd) == is_visible:
-                return status
+        一次只读一次 ``list2``（判据与 ``ldplayer14.setVisible`` 一致），句柄没建
+        出来交给调用方重试：反复读会白跑十几次子进程调用。句柄是否有效按
+        :func:`app.utils.platform.window.is_window` 判定，不直接碰 ``win32gui``。
+        """
 
-            try:
-                if is_visible:
-                    platform_window.show_window(hwnd)
-                else:
-                    platform_window.hide_window(hwnd)
-            except Exception as e:
-                logger.error(f"切换设备{idx}窗口可见性失败: {e}")
-
-            await asyncio.sleep(0.5)
-
-        raise RuntimeError(f"{'显示' if is_visible else '隐藏'}设备{idx}窗口超时")
+        device = (await self.get_device_info(idx)).get(idx)
+        if device is None or device.top_hwnd <= 0:
+            return None
+        return device.top_hwnd if platform_window.is_window(device.top_hwnd) else None
 
     async def get_device_info(self, idx: str | None) -> dict[str, LDPlayerDevice]:
         """获取模拟器的信息"""
