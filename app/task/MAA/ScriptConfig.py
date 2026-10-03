@@ -374,6 +374,13 @@ class ScriptConfigTask(TaskExecuteBase):
 
     async def final_task(self):
 
+        # 先请 MAA 自行退出走它的退出保存流程，把用户在 GUI 里的改动落盘；
+        # 直接强杀会打断退出保存，导致本次设置丢失、下次启动恢复原样
+        if await self.maa_process_manager.is_running():
+            if await self.maa_process_manager.close_window():
+                logger.info("已请求 MAA 关闭, 等待其保存配置并退出")
+            if not await self.maa_process_manager.wait_for_exit(15):
+                logger.warning("MAA 未在限定时间内自行退出, 强制结束")
         await self.maa_process_manager.kill()
         await System.kill_process(self.maa_exe_path)
 

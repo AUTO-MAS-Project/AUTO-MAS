@@ -1130,6 +1130,15 @@ class AutoProxyTask(ScriptAutoProxyBase):
                             "Data", "LastResVersion", self.pending_res_version
                         )
                         self.if_game_hot_update = False
+                    # PostActions 自带退出位，MAA 完成代理后会自行退出并把
+                    # GUI 配置落盘；等它退干净再回写，避免读到退出保存前的
+                    # 旧配置，也避免下一轮注入撞上它的退出保存窗口
+                    if not await self.maa_process_manager.wait_for_exit(90):
+                        logger.warning(
+                            f"用户: {self.cur_user_uid} - MAA 未在限定时间内自行退出, 强制结束"
+                        )
+                        await self.maa_process_manager.kill()
+                        await System.kill_process(self.maa_exe_path)
                 else:
                     logger.warning(
                         f"用户: {self.cur_user_uid} - 代理任务异常: {self.cur_user_log.status}"
