@@ -1022,10 +1022,6 @@ export default {
       'ゲームはご自身（またはスクリプト）が起動し、MAS は開いているウィンドウに接続するだけです',
     howLongMasWaits: 'MAS がゲームを起動してから操作可能になるまで待つ最大時間',
     masManagesGame: 'MAS がゲームを起動・終了する',
-    mfwAdbAddress: 'ADB アドレス',
-    mfwAdbAddressPassed:
-      '入力するとこのアドレスに直接接続し、上で選択したエミュレーターは起動しません。タスク終了時にも閉じません',
-    mfwAdbAddressPlaceholder: '空欄の場合は上で選択したエミュレーターを使用します',
     mfwGamePackageName: 'ゲームのパッケージ名',
     mfwGamePackageNamePassed:
       'エミュレーター起動時にゲームも一緒に起動します。MAS がプロジェクトから自動で判別して入力します。判別できない場合や複数ある場合は空のままとなり実行時にゲームを起動しません。ここで手動入力もできます',
