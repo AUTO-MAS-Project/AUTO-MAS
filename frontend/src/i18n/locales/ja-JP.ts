@@ -224,6 +224,8 @@ export default {
     backendUpdateContactSupport:
       'この問題は再試行では解決できません。上記のログファイルを添えて報告してください',
     closingBackend: 'バックエンドを終了しています...',
+    closePreparationTimedOut:
+      '終了前の保存がタイムアウトしたため、終了をキャンセルしました。保存が完了してから再試行してください',
     lightTheme: 'ライトテーマ',
     test: 'テスト',
     messageTemplate: 'メッセージテンプレート',
@@ -468,6 +470,8 @@ export default {
     bilibiliEnterPartUsername:
       "B サーバー（bilibili）ではアカウント名の一部を入力します。アカウント / メールアドレス / 電話番号を「{'|'}」区切りで入力することもできます",
     maaConfiguration: 'MAA 設定',
+    maaEditorReloadBlocked:
+      '変更の保存と設定操作の完了を待ち、MAA の設定画面を閉じてから再読み込みしてください',
     srcConfiguration: 'SRC 設定',
     doNotSwitch: '切り替えない',
     activeStageTakenFrom: 'タグから取得した現在有効なステージ',

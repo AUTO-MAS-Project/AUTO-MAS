@@ -221,6 +221,8 @@ export default {
     backendUpdateContactSupport:
       'Retrying will not fix this; please report the problem together with the log file above',
     closingBackend: 'Closing the backend...',
+    closePreparationTimedOut:
+      'Saving changes before exit timed out. Exit was canceled; wait for saving to finish, then try again.',
     lightTheme: 'Light theme',
     test: 'Test',
     messageTemplate: 'Message template',
@@ -2372,6 +2374,8 @@ export default {
     maaSessionOpened: 'MAA setup opened',
     maaSessionStartFailed: 'Could not start the MAA setup session',
     maaSessionStopFailed: 'Could not stop the MAA setup session',
+    maaEditorReloadBlocked:
+      'Wait for changes to be saved and configuration operations to finish, then close the MAA setup window before refreshing.',
     maaViewOpened: 'MAA viewer opened',
     maaSessionTimeoutWarn:
       'The MAA setup session is about to time out and will be saved in 30 seconds',
