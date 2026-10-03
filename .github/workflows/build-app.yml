@@ -453,25 +453,6 @@ jobs:
           name: build-artifacts
           path: .
 
-      - name: 上传安装包
-        uses: MirrorChyan/uploading-action@ea9a0f6f516fafb6b0a3046a1fe4b0dccb29eca8 # v1
-        with:
-          filetype: local
-          filename: AUTO-MAS-Setup-${{ needs.build.outputs.version_tag }}-x64.zip
-          version_name: ${{ needs.build.outputs.version_tag }}
-          mirrorchyan_rid: AUTO_MAS
-          upload_token: ${{ secrets.MirrorChyanUploadToken }}
-          os: windows
-          arch: x64
-
-      - name: 上传版本说明
-        uses: MirrorChyan/release-note-action@f392b50c411981ee6d33c8ed5e91d66d84d56202 # v1
-        with:
-          version_name: ${{ needs.build.outputs.version_tag }}
-          release_note: ${{ needs.build.outputs.version_changelog }}
-          mirrorchyan_rid: AUTO_MAS
-          upload_token: ${{ secrets.MirrorChyanUploadToken }}
-
       - name: 推送自建源更新
         env:
           DATACENTER_STABLE_FILE_ID: ${{ vars.DATACENTER_RELEASE_STABLE_FILE_ID }}
@@ -492,3 +473,22 @@ jobs:
           curl -fsSL --proto '=https' --tlsv1.2 -o file_update.sh https://data.auto-mas.top/api/v1/tools/file_update.sh
           echo "${FILE_UPDATE_SHA256:?vars.DATACENTER_FILE_UPDATE_SHA256 is not set}  file_update.sh" | shasum -a 256 -c -
           AUTOMAS_TOKEN="${{ secrets.DATACENTER_ACCESS_KEY }}" bash file_update.sh "$PKG" "${TARGETS[@]}" --change-note "$VERSION_TAG"
+
+      - name: 上传安装包
+        uses: MirrorChyan/uploading-action@ea9a0f6f516fafb6b0a3046a1fe4b0dccb29eca8 # v1
+        with:
+          filetype: local
+          filename: AUTO-MAS-Setup-${{ needs.build.outputs.version_tag }}-x64.zip
+          version_name: ${{ needs.build.outputs.version_tag }}
+          mirrorchyan_rid: AUTO_MAS
+          upload_token: ${{ secrets.MirrorChyanUploadToken }}
+          os: windows
+          arch: x64
+
+      - name: 上传版本说明
+        uses: MirrorChyan/release-note-action@f392b50c411981ee6d33c8ed5e91d66d84d56202 # v1
+        with:
+          version_name: ${{ needs.build.outputs.version_tag }}
+          release_note: ${{ needs.build.outputs.version_changelog }}
+          mirrorchyan_rid: AUTO_MAS
+          upload_token: ${{ secrets.MirrorChyanUploadToken }}
