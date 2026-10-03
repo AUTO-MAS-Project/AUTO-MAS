@@ -127,7 +127,6 @@ def collect_activities(
             not name
             or not isinstance(start, (int, float))
             or not isinstance(end, (int, float))
-            or end <= start
         ):
             continue
 

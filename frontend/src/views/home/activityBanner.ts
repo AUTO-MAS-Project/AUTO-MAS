@@ -95,9 +95,11 @@ export const endfieldActivityBanner = (
 
   // 横幅报的是「这个版本」：标题是版本名，倒计时也应当数到本期内容整体结束，
   // 而不是随便挑一场活动。所以取当前活动与卡池里最晚的结束时间当终点。
-  // 数据源没有版本起止时间，这是能拿到的最接近的口径
-  const pending = [...overview.Activities, ...overview.Pools]
-  const ends = pending.map(item => toTimestamp(item.EndTime)).filter(value => value > now)
+  // 起点同理只算还在进行或将要开始的：已结束条目的开始时间会把时间条拉到几周前
+  const pending = [...overview.Activities, ...overview.Pools].filter(
+    item => toTimestamp(item.EndTime) > now
+  )
+  const ends = pending.map(item => toTimestamp(item.EndTime)).filter(value => value > 0)
   const starts = pending.map(item => toTimestamp(item.StartTime)).filter(value => value > 0)
 
   return {
