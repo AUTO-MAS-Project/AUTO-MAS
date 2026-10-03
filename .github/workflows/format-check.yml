@@ -39,6 +39,9 @@ jobs:
           uv sync --locked
           uv run --no-sync ruff format --check .
 
+      - name: 检查模块规模
+        run: uv run --no-sync python scripts/check_module_size.py
+
       - name: 设置 Node.js 环境
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
