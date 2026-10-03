@@ -33,7 +33,7 @@ MAS 用户与 zzz-od 实例槽**固定绑定**：每个用户绑定一个槽（�
 回写，此时回收会拆掉它的现场）。
 
 - 用户态 + 「多实例切换」（脚本级下拉，不推荐）：把全部启用用户的配置
-  注入各自绑定槽（备份 → 注入并清运行记录），随后
+  注入各自绑定槽（备份 → 注入 → 清非保留类应用的运行记录），随后
   ``--onedragon --instance {slot1,slot2,...}`` 一次性运行多账号一条龙——
   zzz-od 内部依次执行各实例并自行切换游戏账号；结果按各实例槽运行记录
   diff 归属到对应用户。
@@ -88,7 +88,9 @@ from .tools import (
     INSTANCE_RUN_CURRENT,
     MAS_SLOT_BASE,
     MAS_SLOT_MAX,
+    PERSISTENT_RUN_RECORD_APPS,
     RUN_STATUS_FAILED,
+    RUN_STATUS_NOT_RUN,
     RUN_STATUS_RUNNING,
     RUN_STATUS_SUCCESS,
     archive_mas_config_backup,
@@ -112,6 +114,10 @@ from .tools import (
     recycle_orphan_slots,
     restore_instance,
     restore_instance_view,
+    restore_plan_run_times,
+    restore_run_record_files,
+    snapshot_plan_run_times,
+    snapshot_run_record_files,
     snapshot_run_records,
     user_field_patch,
     write_app_group,
@@ -146,6 +152,11 @@ _ZZZOD_LAUNCH_STARTED_MARKERS = (
 
 # zzz-od 统一日志（log_utils，按日期滚动，当天固定为 log.txt）
 _ZZZOD_REL_LOG = Path(".log") / "log.txt"
+
+# 实例段边界标记：上游每加载一个实例落「开始加载实例配置 N」（N=实例 idx）。
+# 与 log_box 的节点归属规则同源（见 push_log.py），用于把「本实例是否被本轮
+# 处理过」的证据收窄到具体槽，避免用全轮日志误判未处理的实例
+_ZZZOD_INSTANCE_SEG_PREFIX = "开始加载实例配置 "
 
 # 日志行格式：[HH:mm:ss.SSS] [file.py NN] [LEVEL]: message
 _ZZZOD_LOG_TIME_START = 1
@@ -734,6 +745,49 @@ def _snapshot_all_run_records(root: Path) -> dict[str, int]:
     return aggregated
 
 
+def _judge_baseline(root: Path, idx: int) -> dict[str, int]:
+    """本轮终判基准：注入后的运行记录快照，保留类应用一律按未跑计。
+
+    保留类应用（:data:`PERSISTENT_RUN_RECORD_APPS`）的记录不在注入时清空，
+    其上一轮终态会让「本轮有没有变化」的差分失真——连续两轮失败会因前后同为
+    失败被判成没变化，失败明细与重试提示一起丢掉。基准里把这些应用归零，
+    与 :func:`_judge_after` 的 after 侧归一配对使用。
+    """
+
+    records = snapshot_run_records(root, idx)
+    for app_id in PERSISTENT_RUN_RECORD_APPS:
+        if app_id in records:
+            records[app_id] = RUN_STATUS_NOT_RUN
+    return records
+
+
+def _judge_after(
+    root: Path, idx: int, pre_files: dict[str, bytes | None]
+) -> dict[str, int]:
+    """终判 after 侧：保留类应用仅当记录文件在本轮被上游写过才采信其状态。
+
+    记录保留后，槽内残留上一周期的终态会产出幻影 diff——启动器未启动也会
+    被判成功、启动器自动切换被禁用。以注入时的文件字节为基准：字节未变的
+    记录本轮没被写过（上游每轮 update_status 都会改写 dt/run_time），按未跑
+    计；注入时读取失败（值为 ``None``、状态未知）同样按未跑计——绝不采信
+    可能是上一周期残留的终态。``pre_files`` 为空（注入时不存在任何保留类
+    记录）时无需归一，直接返回真实快照。
+    """
+
+    records = snapshot_run_records(root, idx)
+    if not pre_files:
+        return records
+    current = snapshot_run_record_files(root, idx)
+    for app_id in PERSISTENT_RUN_RECORD_APPS:
+        name = f"{app_id}.yml"
+        if app_id not in records or name not in pre_files:
+            continue
+        pre = pre_files[name]
+        if pre is None or pre == current.get(name):
+            records[app_id] = RUN_STATUS_NOT_RUN
+    return records
+
+
 class AutoProxyTask(ScriptAutoProxyBase):
     """ZZZ-OD 自动代理：逐用户按三态来源拉起启动器 CLI 一条龙并监控"""
 
@@ -801,6 +855,9 @@ class AutoProxyTask(ScriptAutoProxyBase):
         # 槽位归属与注入基准（多实例切换按槽归属用户；单用户模式只有一个槽）
         self._slot_users: dict[int, tuple[UserItem, ZzzOdUserConfig]] = {}
         self._slot_records_before: dict[int, dict[str, int]] = {}
+        # 注入时保留类应用运行记录的字节快照（供 _judge_after 识别本轮写过的文件；
+        # 读取失败的条目值为 None，表示状态未知）
+        self._slot_record_files: dict[int, dict[str, bytes | None]] = {}
         self._multi_uids: set[str] = set()
         self._multi_judged: set[int] = set()
         self._multi_ran = False
@@ -971,7 +1028,8 @@ class AutoProxyTask(ScriptAutoProxyBase):
 
         账号字段只覆盖 MAS 侧非空字段，槽内 game_account.yml 的其余字段
         （platform、自定义窗口标题等）原样保留；启动参数整组覆盖 game.yml；
-        随后清空运行记录让本次任务全部重跑。
+        随后清空非保留类应用的运行记录让本次任务全部重跑（保留类应用承载
+        上游周期进度，见 PERSISTENT_RUN_RECORD_APPS）。
         """
 
         inject_user_fields(self.script_root_path, slot_idx, user_config, apps)
@@ -1039,7 +1097,10 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 self._injected_slots.append((slot, None))
             self._inject_user_config(slot, cfg, apps)
             self._slot_users[slot] = (user_item, cfg)
-            self._slot_records_before[slot] = snapshot_run_records(
+            self._slot_records_before[slot] = _judge_baseline(
+                self.script_root_path, slot
+            )
+            self._slot_record_files[slot] = snapshot_run_record_files(
                 self.script_root_path, slot
             )
             self._multi_uids.add(user_item.user_id)
@@ -1411,7 +1472,11 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 else:
                     slot0 = self._injected_slots[0][0]
                     records_before = self._slot_records_before[slot0]
-                    records_after = snapshot_run_records(self.script_root_path, slot0)
+                    records_after = _judge_after(
+                        self.script_root_path,
+                        slot0,
+                        self._slot_record_files.get(slot0, {}),
+                    )
                     self._judge_final(records_before, records_after, log)
 
                 if self.run_book:
@@ -1573,7 +1638,11 @@ class AutoProxyTask(ScriptAutoProxyBase):
             records_changed = bool(
                 diff_run_records(
                     self._slot_records_before.get(slot0, {}),
-                    snapshot_run_records(self.script_root_path, slot0),
+                    _judge_after(
+                        self.script_root_path,
+                        slot0,
+                        self._slot_record_files.get(slot0, {}),
+                    ),
                 )
             )
         if self._launch_evidence(log, records_changed):
@@ -1612,12 +1681,23 @@ class AutoProxyTask(ScriptAutoProxyBase):
 
         for slot, (user_item, cfg) in self._slot_users.items():
             before = self._slot_records_before.get(slot, {})
-            after = snapshot_run_records(self.script_root_path, slot)
+            after = _judge_after(
+                self.script_root_path, slot, self._slot_record_files.get(slot, {})
+            )
             diffs = diff_run_records(before, after)
             # 节点失败只记录不判异常（次日 zzz-od 按运行记录自行重试）
             failed_apps = _failed_apps(diffs)
             success = any(new == RUN_STATUS_SUCCESS for _, _, new in diffs)
-            ok = fatal is None and not runtime_failed and success
+            # 记录保留后，本周期已全部完成的用户整轮被跳过、diff 为空——有本实例
+            # 的运行证据即判完成，避免重试耗尽。证据必须收窄到本槽：一条龙顺序
+            # 处理各实例，只用全轮日志判断会把「未被处理」的实例误判完成
+            # （上游每加载一个实例都落「开始加载实例配置 N」，见 log_box 同源规则）
+            all_skipped = (
+                not diffs
+                and f"{_ZZZOD_INSTANCE_SEG_PREFIX}{slot}" in log
+                and self._launch_evidence(log, False)
+            )
+            ok = fatal is None and not runtime_failed and (success or all_skipped)
             all_ok = all_ok and ok
 
             user_item.status = "完成" if ok else "异常"
@@ -1709,32 +1789,56 @@ class AutoProxyTask(ScriptAutoProxyBase):
 
         先还原合成视图（原生注册表回来，含原生 instance_run），再逐槽恢复
         备份；槽目录一律保留（配队等复杂配置持久供配置会话维护）。
+        运行产物不随注入现场回滚——计划进度（体力计划/恶名狩猎计划的
+        「已运行次数」）与保留类应用的运行记录（周挑战剩余次数、每日/每周
+        计划次数等周期进度）都是恢复前取快照、恢复后原样写回。
         """
 
         restore_instance_view(self.script_root_path)
         slots, self._injected_slots = self._injected_slots, []
-        slot_user_items = [user_item for user_item, _ in self._slot_users.values()]
+        slot_owner_items = {
+            slot: user_item for slot, (user_item, _) in self._slot_users.items()
+        }
         self._slot_users = {}
         self._slot_records_before = {}
+        self._slot_record_files = {}
         self._multi_uids = set()
         self._multi_judged = set()
         if not slots:
             return
-        try:
-            for slot, backup_dir in slots:
-                if backup_dir is not None and backup_dir.is_dir():
-                    restore_instance(self.script_root_path, slot, backup_dir)
-        except Exception as e:
-            logger.opt(exception=True).warning(f"恢复 ZZZ-OD 注入现场失败: {e}")
-            # 槽里留着 MAS 注入内容：本轮不能按成功收尾，参与用户一律置异常
-            for user_item in slot_user_items or [self.cur_user_item]:
+        failed: list[tuple[int, str]] = []
+        for slot, backup_dir in slots:
+            if backup_dir is None or not backup_dir.is_dir():
+                continue
+            # 逐槽隔离：单槽失败不阻断其它槽恢复，避免一个坏槽让全部槽留着
+            # MAS 注入内容。快照读取本身已容错（失败按无快照处理）
+            try:
+                # 一条龙运行中会把计划进度写回槽内 per-app YAML、把周期进度写进
+                # 运行记录，整目录恢复会连它们一起回滚；先快照再恢复，随后回写
+                plan_run_times = snapshot_plan_run_times(self.script_root_path, slot)
+                record_files = snapshot_run_record_files(self.script_root_path, slot)
+                restore_instance(self.script_root_path, slot, backup_dir)
+                restore_plan_run_times(self.script_root_path, slot, plan_run_times)
+                restore_run_record_files(self.script_root_path, slot, record_files)
+            except Exception as e:  # noqa: BLE001 - 单槽失败隔离，继续恢复其余槽
+                logger.opt(exception=True).warning(
+                    f"恢复 ZZZ-OD 槽 {slot} 注入现场失败: {e}"
+                )
+                failed.append((slot, str(e)))
+        if failed:
+            # 失败槽里留着 MAS 注入内容：只标该槽对应的用户，不牵连已恢复成功的槽
+            for slot, _ in failed:
+                user_item = slot_owner_items.get(slot) or self.cur_user_item
                 user_item.status = "异常"
             await Publisher.send(
                 id=self.task_info.task_id,
                 type=protocol.TASK_NOTICE,
                 data=WSTaskNoticeData(
                     level="error",
-                    message=f"恢复 ZZZ-OD 注入现场失败，原生配置可能残留 MAS 内容: {e}",
+                    message=(
+                        "恢复 ZZZ-OD 注入现场失败，原生配置可能残留 MAS 内容: "
+                        + "；".join(f"槽 {slot}: {reason}" for slot, reason in failed)
+                    ),
                 ),
             )
 
