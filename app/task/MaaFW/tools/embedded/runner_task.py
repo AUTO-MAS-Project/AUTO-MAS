@@ -428,6 +428,9 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         self.base_run_plan: MaaFWRunPlan | None = None
         self.run_plan: MaaFWRunPlan | None = None
         self.cur_user_log: LogRecord | None = None
+        # 运行前检查时本用户的日志还没建（特调钩子建计划时的提示就在这时候到），
+        # 先攒在这里，prepare() 建好日志时并进去
+        self._pending_user_log: list[str] = []
         # 与 MAA 等专项同口径：user_start_time 是本用户这一轮的开始（统计通知用），
         # cur_user_log_started_at 是当前这次尝试的开始（日志记录与 history 文件名用）
         self.user_start_time: datetime | None = None
@@ -562,8 +565,10 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         self.cur_user_log_started_at = start_time
         self.cur_user_item.log_record[start_time] = self.cur_user_log = LogRecord()
         content = self.cur_user_log.content
-        if self.project_update_logs:
-            content.extend(self.project_update_logs)
+        content.extend(self.project_update_logs)
+        content.extend(self._pending_user_log)
+        self._pending_user_log.clear()
+        if content:
             self.script_info.log = "".join(content[-80:])
         # 窗口在这里重建，行号也得跟着回到这份日志的开头；更新日志本身就超过 80 行时，
         # 与 _append_log 用同一套算法把滑出去的行数补上。
@@ -595,14 +600,17 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             if self.maintenance_skipped:
                 # 同一资源已确认在维护：记一份本用户的日志，让代理结果汇总、统计信息与
                 # history 都写明原因（其他跳过原因照旧不记）。
+                # 窗口与行号由 _append_log 按本用户日志算好（前面可能还有更新日志与
+                # 检查阶段的特调提示），不再改写成只剩这一行
                 await self.prepare()
                 self._append_log(self.check_result)
                 if self.cur_user_log is not None:
                     self.cur_user_log.status = self.check_result
-            # 这份日志从零开始，行号回到 1；_append_log 已在上面把本用户的行号算好，
-            # 这里只在没有日志可写时兜底。
-            self.script_info.log_first_line = self.script_info.log_first_line or 1
-            self.script_info.log = self.check_result
+            else:
+                # 没有本用户的日志：窗口只剩检查结果这一行，行号回到 1，
+                # 不接着上一个用户的行号往下数
+                self.script_info.log_first_line = 1
+                self.script_info.log = self.check_result
             return
 
         await self._mark_run_started()
@@ -1119,6 +1127,33 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         ).strip()
         return script_address, "脚本配置" if script_address else ""
 
+    async def _emulator_serves_address(self, emulator_index: str, address: str) -> bool:
+        """手填的 ADB 地址是不是所选模拟器这个实例的。
+
+        模拟器增强（雷电截图与 ldconsole 文本输入、MuMu 截图与输入）按实例号直接取画面、
+        发输入，不经过 ADB 地址。地址指向别的设备时还按所选模拟器建增强，画面和点击都会落到那台模拟器上，
+        雷电没开时还会因为拿不到进程号连不上；所以只有地址正是这个实例时才用增强。
+        """
+        if self.emulator_manager is None:
+            return False
+        try:
+            info = (await self.emulator_manager.getInfo(emulator_index)).get(
+                str(emulator_index)
+            )
+        except Exception as exc:
+            self._append_log(
+                f"读取所选模拟器的 ADB 地址失败，{address} 按普通 ADB 设备连接: {exc}"
+            )
+            return False
+        if info is not None and _same_adb_device(info.adb_address, address):
+            return True
+        instance_address = info.adb_address if info is not None else "未找到该实例"
+        self._append_log(
+            f"ADB 地址 {address} 不是所选模拟器实例的地址（{instance_address}），"
+            "按普通 ADB 设备连接，不使用模拟器增强"
+        )
+        return False
+
     async def _resolve_adb_address(self) -> tuple[str, DeviceInfo | None]:
         if self._cached_adb_address is not None:
             return self._cached_adb_address, self._cached_device_info
@@ -1287,6 +1322,19 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 emulator_config = Config.EmulatorConfig[uuid.UUID(emulator_id)]
                 emulator_type = str(emulator_config.get("Info", "Type") or "")
                 emulator_path = Path(emulator_config.get("Info", "Path"))
+            # 雷电 / MuMu 下面要按实例号建增强；填了 ADB 地址时先确认地址就是这个实例
+            configured_address, _ = self._configured_adb_address()
+            if (
+                emulator_type in {"ldplayer", "mumu"}
+                and configured_address
+                and not await self._emulator_serves_address(
+                    emulator_index, configured_address
+                )
+            ):
+                self._cached_adb_profile = MaaFWAdbControlProfile(
+                    None, False, False, {}
+                )
+                return self._cached_adb_profile
             # build_adb_emulator_extra_capabilities 通过 find_spec 探测运行时 maa，
             # 不会把 maa 载入 sys.modules，满足导入边界约束；返回 {type: {screencap,input}}。
             capabilities = build_adb_emulator_extra_capabilities()
@@ -2833,6 +2881,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         # 失败类的用户日志按 WARNING 进 app.log，事后按级别筛得出来
         (logger.warning if warning else logger.info)(message)
         if self.cur_user_log is None:
+            self._pending_user_log.append(_format_user_log_line(message))
             return
         content = self.cur_user_log.content
         content.append(_format_user_log_line(message))
@@ -3177,6 +3226,25 @@ def _ldplayer_input_text_command(emulator_root: Path, index: int) -> list[str] |
 def _has_input_text_command(config: dict[str, Any]) -> bool:
     command = config.get("command")
     return isinstance(command, dict) and bool(command.get("InputText"))
+
+
+def _same_adb_device(left: str, right: str) -> bool:
+    """两个 ADB 地址是否指向同一台设备。
+
+    只抹平最常见的写法差异：``localhost`` 与 ``127.0.0.1``，以及本机模拟器的
+    ``emulator-<控制台端口>`` 与 ``127.0.0.1:<控制台端口 + 1>``（雷电没开时报的就是前一种）。
+    """
+
+    def normalize(address: str) -> str:
+        address = address.strip().lower()
+        console_port = address.removeprefix("emulator-")
+        if console_port != address and console_port.isdigit():
+            return f"127.0.0.1:{int(console_port) + 1}"
+        if address.startswith("localhost:"):
+            return "127.0.0.1:" + address.removeprefix("localhost:")
+        return address
+
+    return normalize(left) == normalize(right)
 
 
 def _load_json_dict(value: Any) -> dict[str, Any]:
