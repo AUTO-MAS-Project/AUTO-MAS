@@ -1468,6 +1468,8 @@ export default {
     autoUpdateNeedsLauncher:
       '下方未配置官方启动器路径：自动更新不可用；若也没选择游戏客户端，任务无法直启',
     gameClientPathLabel: '游戏客户端',
+    clientPathOptionalHint:
+      '可选：留空时按进程名自动匹配客户端；手动指定后，已运行检测与任务结束时的收尾更精确',
     clientPathPending: '由启动器路径自动定位，或点击「选择文件」手动指定',
     selectFile: '选择文件',
     resetAutoLocate: '恢复自动',
