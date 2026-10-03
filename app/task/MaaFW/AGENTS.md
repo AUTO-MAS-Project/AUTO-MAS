@@ -24,8 +24,9 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   `project_update/updater.py` 引了 `app.utils.constants`——它只在宿主进程里跑；不要再加新的。
 - **worker 子进程**（`runner/worker.py`）以 `python -m` 启动，其导入闭包内的
   `app.*` 只能落在 `app.task.MaaFW.tools.core.` 之下，由
-  `tests/task/test_maafw_worker_import_isolation.py` 钉死。v5.5.0-beta.4 全员 MFW 挂掉，
-  就是链路上多了一处 `from app.utils import ...`。改 runner 子树前先跑这个测试。
+  `tests/task/test_maafw_core.py` 钉死。v5.5.0-beta.4 全员 MFW 挂掉，
+  就是链路上多了一处 `from app.utils import ...`。要放宽这条边界，在那个测试里显式加白名单并在
+  PR 里说明，不要只改这段文字。
 
 ## 项目目录与运行
 
@@ -386,6 +387,10 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
 
 ## 测试与排障
 
+- 改 `tools/core/` 先跑 `tests/task/test_maafw_core.py`：核心最小回归，进仓库、长期保留，只收
+  缺一条就要命的（worker 导入闭包、宿主与 worker 之间的 job 文件和结果、agent 的 maafw 钉版与
+  原生库一致、agent venv 失效判定）。收录标准见 `tests/AGENTS.md`「核心最小回归」；其余 MaaFW
+  测试照旧只在本地跑。
 - 夹具要照抄真实输出的形状（interface 加载结果、更新器返回、运行计划），臆造键名会让
   "读错键"类缺陷全程绿灯。
 - 本地边界测试会在临时目录建很深的树，`--basetemp` 用短路径（如 `%TEMP%\mfwt\pt`），
