@@ -52,6 +52,7 @@ from .AutoProxy import AutoProxyTask
 from .ScriptConfig import ScriptConfigTask
 from .tools import push_notification
 from .tools.backup_archive import archive_native_backup
+from .tools.resource_update import get_resource_write_lock, prepare_queue_resources
 
 logger = get_logger("MAA 调度器")
 
@@ -79,7 +80,7 @@ class MaaManager(TaskExecuteBase):
         self.script_info = script_info
         self.check_result = "-"
         self.prepared = False
-        # 锁是否已建立必须独立于 prepared 记录：prepare() 首句加锁, 而置位
+        # 锁是否已建立必须独立于 prepared 记录：配置锁可能先建立，而置位
         # prepared 要等 prepare() 整体返回, 中途被取消或失败时 final_task
         # 靠这个标志解锁（对齐 SRC 的 config_lock_acquired）
         self.config_lock_acquired = False
@@ -163,13 +164,34 @@ class MaaManager(TaskExecuteBase):
     async def prepare(self):
         """运行前准备"""
 
+        # MAA 资源按需更新：仅自动代理任务触发，配置会话（含只读预览）不该
+        # 被下载阻塞；必须放在锁定配置之前——lock() 之后本安装会被资源更新
+        # 的占用过滤跳过，就更新不到它自己了。内部对全部 MAA 实例扫描，自带
+        # 机器锁/退避/兜底，任何失败只写日志，不影响本轮任务；阶段进度写进
+        # 本脚本项的日志字段，调度台运行期即可见（与 AutoProxy 的状态行同通路）。
+        if self.task_info.mode == "AutoProxy":
+
+            async def _report_progress(line: str) -> None:
+                self.script_info.log = line
+
+            await prepare_queue_resources(progress=_report_progress)
+
         # 锁定脚本配置并加载用户配置
         script_config = Config.ScriptConfig[uuid.UUID(self.script_info.script_id)]
         # lock() 首句即生效，但其内部的子配置遍历还有 await，取消可能打在
         # 半途：标志必须在调用前置位，final_task 才能对任何中断解锁。置位到
         # 生效之间没有让出点；取值放在置位前，脚本不存在时不会留下悬空标志。
-        self.config_lock_acquired = True
-        await script_config.lock()
+        # 配置会话不触发下载，只等本安装正在进行的资源写入；会话先加锁时，
+        # 更新器复查到占用便会跳过。两侧共用互斥，避免启动 GUI 与写入交错。
+        while True:
+            install = Path(script_config.get("Info", "Path"))
+            async with get_resource_write_lock(install):
+                # 等写入期间配置还未锁定，用户可能改了路径，须按当前安装重等。
+                if Path(script_config.get("Info", "Path")) != install:
+                    continue
+                self.config_lock_acquired = True
+                await script_config.lock()
+                break
         self.script_config = script_config
         self.user_config = MultipleConfig([MaaUserConfig])
         await self.user_config.load(await self.script_config.UserData.toDict())
@@ -314,7 +336,7 @@ class MaaManager(TaskExecuteBase):
 
         if not self.prepared:
             # prepare() 未走完就结束：备份目录与模拟器实例可能还没建立，没有
-            # 可收尾的资源。但配置锁在 prepare() 首句就已建立，必须先释放，
+            # 可收尾的资源。但若 prepare() 已建立配置锁，必须先释放，
             # 否则该脚本配置的读写与任务启动会一直被拒到进程重启。
             if self.config_lock_acquired:
                 self.config_lock_acquired = False

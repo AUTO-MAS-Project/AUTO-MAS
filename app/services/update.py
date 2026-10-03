@@ -31,8 +31,6 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-import aiofiles
-import httpx
 from packaging import version
 
 from app.core.ws import Publisher, protocol
@@ -43,10 +41,10 @@ from app.models.schema import (
     WSUpdateProgressData,
 )
 from app.utils import LazyProxy, ProcessRunner, get_logger
-from app.utils.constants import MIRROR_ERROR_INFO
 from app.utils.platform.process import platform_process
 
 from .system import System
+from .update_transport import download_file, request_mirror_resource
 
 logger = get_logger("更新服务")
 
@@ -415,22 +413,19 @@ class _UpdateHandler:
             Exception: Mirror 酱返回业务错误码或无法识别的响应时抛出。
         """
 
-        # 使用 httpx 异步请求
-        async with httpx.AsyncClient(
-            proxy=Config.proxy, follow_redirects=True
-        ) as client:
-            response = await client.get(
-                f"https://mirrorchyan.com/api/resources/AUTO_MAS/latest?user_agent=AutoMasGui&os=win&arch=x64&current_version={current_version}&cdk={Config.get('Update', 'MirrorChyanCDK') if Config.get('Update', 'Source') == 'MirrorChyan' else ''}&channel={Config.get('Update', 'Channel')}"
-            )
-
-        if response.status_code == 200:
-            return response.json()
-
-        result = response.json()
-        if result["code"] in MIRROR_ERROR_INFO:
-            raise Exception(f"获取版本信息时出错: {MIRROR_ERROR_INFO[result['code']]}")
-        raise Exception(
-            "获取版本信息时出错: 意料之外的错误, 请及时联系项目组以获取来自 Mirror 酱的技术支持"
+        return await request_mirror_resource(
+            "AUTO_MAS",
+            params={
+                "os": "win",
+                "arch": "x64",
+                "current_version": current_version,
+                "cdk": Config.get("Update", "MirrorChyanCDK")
+                if Config.get("Update", "Source") == "MirrorChyan"
+                else "",
+                "channel": Config.get("Update", "Channel"),
+            },
+            proxy=Config.proxy,
+            timeout=5,
         )
 
     async def check_update(
@@ -534,6 +529,25 @@ class _UpdateHandler:
 
         logger.info(f"开始下载: {download_url}")
 
+        async def report_progress(downloaded: int, total: int, speed: float) -> None:
+            self._update_download_snapshot(
+                status="downloading",
+                downloaded_size=downloaded,
+                file_size=total,
+                speed=speed,
+                source=source,
+            )
+            await Publisher.send(
+                id=protocol.ID_UPDATE,
+                type=protocol.UPDATE_PROGRESS,
+                data=WSUpdateProgressData(
+                    downloaded_size=downloaded,
+                    file_size=total,
+                    speed=speed,
+                    source=source,
+                ),
+            )
+
         check_times = 3
         while check_times != 0:
             try:
@@ -543,70 +557,12 @@ class _UpdateHandler:
 
                 start_time = time.time()
 
-                # 使用 httpx 异步流式下载
-                async with httpx.AsyncClient(follow_redirects=True) as client:
-                    async with client.stream(
-                        "GET", download_url, timeout=30.0
-                    ) as response:
-                        status_code = response.status_code
-
-                        if status_code not in [200, 206]:
-                            if check_times != -1:
-                                check_times -= 1
-
-                            logger.warning(
-                                f"连接失败: {download_url}, 状态码: {status_code}, 剩余重试次数: {check_times}"
-                            )
-                            await asyncio.sleep(1)
-                            continue
-
-                        logger.info(f"连接成功: {download_url}, 状态码: {status_code}")
-
-                        file_size = int(response.headers.get("content-length", 0) or 0)
-                        downloaded_size = 0
-                        last_download_size = 0
-                        speed = 0
-                        last_time = time.time()
-
-                        # 使用 aiofiles 异步写入临时文件
-                        async with aiofiles.open(
-                            Path.cwd() / "download.temp", "wb"
-                        ) as f:
-                            async for chunk in response.aiter_bytes(chunk_size=8192):
-                                if not chunk:
-                                    continue
-                                await f.write(chunk)
-                                downloaded_size += len(chunk)
-
-                                # 更新指定线程的下载进度, 每秒更新一次
-                                if time.time() - last_time >= 1.0:
-                                    elapsed = time.time() - last_time
-                                    if elapsed <= 0:
-                                        elapsed = 1.0
-                                    speed = (
-                                        downloaded_size - last_download_size
-                                    ) / elapsed
-                                    last_download_size = downloaded_size
-                                    last_time = time.time()
-
-                                    self._update_download_snapshot(
-                                        status="downloading",
-                                        downloaded_size=downloaded_size,
-                                        file_size=file_size,
-                                        speed=speed,
-                                        source=source,
-                                    )
-
-                                    await Publisher.send(
-                                        id=protocol.ID_UPDATE,
-                                        type=protocol.UPDATE_PROGRESS,
-                                        data=WSUpdateProgressData(
-                                            downloaded_size=downloaded_size,
-                                            file_size=file_size,
-                                            speed=speed,
-                                            source=source,
-                                        ),
-                                    )
+                downloaded_size = await download_file(
+                    download_url,
+                    Path.cwd() / "download.temp",
+                    timeout=30,
+                    progress=report_progress,
+                )
 
                 # 重命名临时文件为最终包
                 final_path = Path.cwd() / f"UpdatePack_{download_version}.zip"
