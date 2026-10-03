@@ -119,6 +119,31 @@ class TestCollectActivities:
         assert running is None
         assert upcoming is not None and upcoming.name == "下一个"
 
+    def test_titles_without_stage_are_skipped(self) -> None:
+        """战斗通行证与网页活动分类算「活动」，但都没有活动关，不该被挑出来"""
+
+        timeline = [
+            titled_activity(NOW - 100, NOW + 100, title="诗音的战斗通行证 S1"),
+            titled_activity(
+                NOW - 100, NOW + 100, title="限时网页活动【月饼复制危机！】"
+            ),
+        ]
+
+        running, upcoming = collect_activities(timeline, NOW)
+
+        assert running is None
+        assert upcoming is None
+
+    def test_real_activity_survives_next_to_skipped_titles(self) -> None:
+        timeline = [
+            titled_activity(NOW - 100, NOW + 100, title="诗音的战斗通行证 S1"),
+            titled_activity(NOW - 100, NOW + 100, title="限时活动【夏日天空的约定】"),
+        ]
+
+        running, _ = collect_activities(timeline, NOW)
+
+        assert running is not None and running.name == "限时活动【夏日天空的约定】"
+
     def test_running_prefers_earliest_end(self) -> None:
         """同时有几场进行中时取最早结束的那场，与首页卡片的取值口径一致"""
         timeline = [

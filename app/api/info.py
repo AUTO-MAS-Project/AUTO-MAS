@@ -65,6 +65,8 @@ SRA_BLUEARCHIVE_IDS = {"JP": "ba-jp", "Globle": "ba-global", "CN": "ba-cn"}
 ## 图片域名白名单：中转只认数据源自己的图，免得这个接口变成谁都能用的开放代理。
 ## 最后一个域是 SRA 的图床（兜底数据的封面），它公开可访问、不校验 Referer
 BLUEARCHIVE_IMAGE_HOSTS = ("cdnimg-v2.gamekee.com", "resource.starrailassistant.top")
+## 中转是原样转发（不缩放），给个上限免得被当成流量代理
+BLUEARCHIVE_IMAGE_MAX_BYTES = 8 * 1024 * 1024
 
 ## 明日方舟的活动一览取自 PRTS wiki。那个站对「声称自己是 Chrome」的请求一律 403，
 ## 换个朴素 UA 反而畅通；页面是服务端渲染的表格，每行带
@@ -493,6 +495,13 @@ async def get_bluearchive_image(
         async with httpx.AsyncClient(timeout=20) as client:
             response = await client.get(url, headers=GAMEKEE_HEADERS)
         response.raise_for_status()
+        ## 这个接口带着自定义头去白名单域名取东西再原样吐给前端，所以要确认拿回来的确实是图片：
+        ## 上游报错时可能返回一坨 200 的 HTML，直接转发会让前端拿着垃圾当图；大小也设个上限
+        media_type = response.headers.get("content-type", "").split(";")[0].strip()
+        if not media_type.startswith("image/"):
+            raise ValueError(f"来源不是图片: {media_type or '未给类型'}")
+        if len(response.content) > BLUEARCHIVE_IMAGE_MAX_BYTES:
+            raise ValueError(f"图片过大: {len(response.content)} 字节")
     except Exception as e:
         logger.opt(exception=True).warning(
             f"获取碧蓝档案活动图片失败: {type(e).__name__}: {e}"
@@ -501,7 +510,7 @@ async def get_bluearchive_image(
 
     return Response(
         content=response.content,
-        media_type=response.headers.get("content-type", "image/webp"),
+        media_type=media_type,
         headers={"Cache-Control": "public, max-age=86400"},
     )
 
@@ -514,6 +523,8 @@ ENDFIELD_IMAGE_WIDTH = 1300
 ENDFIELD_IMAGE_CACHE_DIR = Path(tempfile.gettempdir()) / "auto-mas-image-cache"
 ## 活动图按地址换，版本大图却是固定地址换内容，所以缓存还得有有效期
 ENDFIELD_IMAGE_CACHE_TTL = 6 * 3600
+## 缓存只按地址新增、从不回收的话会一直涨：超过这个数量就按修改时间删掉最旧的一批
+ENDFIELD_IMAGE_CACHE_MAX_FILES = 200
 
 ## 终末地的版本大图就是 AKEData 首页顶部那张（打开网站第一眼看到的就是它），
 ## 比活动自带的背景图更稳定：每个版本都会换，且不依赖某个活动是否在跑
@@ -572,6 +583,24 @@ def _cache_is_fresh(path: Path) -> bool:
         return time.time() - path.stat().st_mtime < ENDFIELD_IMAGE_CACHE_TTL
     except OSError:
         return False
+
+
+def _prune_image_cache() -> None:
+    """图缓存超过上限时，按修改时间删掉最旧的一批。
+
+    缩图后的 jpeg 单张几百 KB，活动一换就是新地址、旧文件再没人看，长期运行会一直涨。
+    这里只保留最近用到的那些；万一删掉的正被请求，下次会重新生成。
+    """
+
+    try:
+        files = sorted(
+            ENDFIELD_IMAGE_CACHE_DIR.glob("*.jpg"),
+            key=lambda path: path.stat().st_mtime,
+        )
+    except OSError:
+        return
+    for path in files[: max(0, len(files) - ENDFIELD_IMAGE_CACHE_MAX_FILES)]:
+        path.unlink(missing_ok=True)
 
 
 def _write_thumbnail(payload: bytes, target: Path) -> None:
@@ -638,6 +667,8 @@ async def get_endfield_image(url: str = Query(..., description="图片地址")) 
             response.raise_for_status()
             ## 缩图是 CPU 活，扔给线程跑，别把事件循环钉住
             await asyncio.to_thread(_write_thumbnail, response.content, cache_file)
+            ## 只在新增文件时回收一次，别让每次请求都去扫一遍目录
+            await asyncio.to_thread(_prune_image_cache)
         except Exception as e:
             logger.opt(exception=True).warning(
                 f"获取终末地活动图片失败: {type(e).__name__}: {e}"
