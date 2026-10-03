@@ -78,8 +78,12 @@
               <div class="activity-end-time">
                 {{
                   isUpcoming(activity)
-                    ? t('home.bluearchive.startsAt', { time: formatTime(activity.startTime) })
-                    : t('home.bluearchive.endsAt', { time: formatTime(activity.endTime) })
+                    ? t('home.bluearchive.startsAt', {
+                        time: formatActivityTime(activity.startTime, locale),
+                      })
+                    : t('home.bluearchive.endsAt', {
+                        time: formatActivityTime(activity.endTime, locale),
+                      })
                 }}
               </div>
             </div>
@@ -119,10 +123,11 @@ import type { CSSProperties } from 'vue'
 import { OpenAPI } from '@/api'
 import type { ResourceItem, SraActivityOverview } from '@/types/home'
 import { handleExternalLink } from '@/utils/openExternal'
+import { formatActivityTime } from '@/views/home/activityTime'
 
 defineOptions({ name: 'HomeArknightsActivityOverview' })
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 
 const props = defineProps<{
   overview: SraActivityOverview
@@ -209,15 +214,6 @@ const getCountdownValue = (value: string) => {
   const timestamp = new Date(value).getTime()
   return Number.isNaN(timestamp) ? 0 : timestamp
 }
-
-const formatTime = (value: string) =>
-  new Date(value).toLocaleString('zh-CN', {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-  })
 </script>
 
 <style scoped>

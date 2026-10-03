@@ -67,8 +67,12 @@
               <div class="activity-end-time">
                 {{
                   isUpcoming(item)
-                    ? t('home.countdown.startsAt', { time: formatTime(item.startTime) })
-                    : t('home.endfield.endsAt', { time: formatTime(item.endTime) })
+                    ? t('home.countdown.startsAt', {
+                        time: formatActivityTime(item.startTime, locale),
+                      })
+                    : t('home.endfield.endsAt', {
+                        time: formatActivityTime(item.endTime, locale),
+                      })
                 }}
               </div>
             </div>
@@ -85,6 +89,7 @@ import { computed, ref, watch } from 'vue'
 import type { CSSProperties } from 'vue'
 import type { EndfieldActivityOverview } from '@/types/home'
 import { handleExternalLink } from '@/utils/openExternal'
+import { formatActivityTime } from '@/views/home/activityTime'
 
 defineOptions({
   name: 'HomeEndfieldOverview',
@@ -102,7 +107,7 @@ const emit = defineEmits<{
   refresh: []
 }>()
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 
 const ACCENT = '#ffb45a'
 const MAX_VISIBLE_ITEMS = 10
@@ -191,15 +196,6 @@ const activityCountdownStyle: CSSProperties = {
   fontSize: '14px',
   fontWeight: 700,
 }
-
-const formatTime = (value: string) =>
-  new Date(value).toLocaleString('zh-CN', {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-  })
 </script>
 
 <style scoped>

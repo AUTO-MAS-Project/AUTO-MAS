@@ -57,7 +57,11 @@
                 @finish="emit('refresh')"
               />
               <div class="activity-end-time">
-                {{ t('home.sra.endedAt', { time: formatTime(activity.endTime) }) }}
+                {{
+                  t('home.sra.endedAt', {
+                    time: formatActivityTime(activity.endTime, locale),
+                  })
+                }}
               </div>
             </div>
           </div>
@@ -99,7 +103,11 @@
                 @finish="emit('refresh')"
               />
               <div class="activity-end-time">
-                {{ t('home.sra.endedAt', { time: formatTime(activity.endTime) }) }}
+                {{
+                  t('home.sra.endedAt', {
+                    time: formatActivityTime(activity.endTime, locale),
+                  })
+                }}
               </div>
             </div>
           </div>
@@ -115,10 +123,11 @@ import { computed, ref } from 'vue'
 import type { CSSProperties } from 'vue'
 import type { SraActivityOverview } from '@/types/home'
 import { handleExternalLink } from '@/utils/openExternal'
+import { formatActivityTime } from '@/views/home/activityTime'
 
 defineOptions({ name: 'HomeStellaActivityOverview' })
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 
 const props = withDefaults(
   defineProps<{
@@ -208,15 +217,6 @@ const activityCountdownStyle = computed<CSSProperties>(() => ({
 }))
 
 const getCountdownValue = (value: string) => new Date(value).getTime()
-
-const formatTime = (value: string) =>
-  new Date(value).toLocaleString('zh-CN', {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-  })
 </script>
 
 <style scoped>
