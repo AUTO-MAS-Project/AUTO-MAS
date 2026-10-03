@@ -2990,6 +2990,17 @@ class MaaFWConfig(ConfigBase):
         self.Run_RunTimeLimit = ConfigItem(
             "Run", "RunTimeLimit", 120, RangeValidator(1, 9999)
         )
+        ## 单个任务的时限（分钟），0 表示不限。某个任务卡住时到点只停它、截一张超时图，
+        ## 后面的任务照常跑；不再让一个卡住的任务吃掉整轮 RunTimeLimit 的时间。
+        ## 默认 30：MaaFW 项目里最长的单任务正常也要二十来分钟。
+        self.Run_TaskTimeLimit = ConfigItem(
+            "Run", "TaskTimeLimit", 30, RangeValidator(0, 9999)
+        )
+        ## 按任务名覆盖的单任务时限（分钟），键是 MaaFW 任务名；值 0 表示该任务不限。
+        ## 例：{"日常": 60}
+        self.Run_TaskTimeLimitOverrides = ConfigItem(
+            "Run", "TaskTimeLimitOverrides", "{ }", JSONValidator(dict)
+        )
         ## 每天正常完成一次后，当天剩余时间跳过的 MaaFW 任务名列表
         self.Run_DailyOnceTasks = ConfigItem(
             "Run", "DailyOnceTasks", "[ ]", JSONValidator(list)

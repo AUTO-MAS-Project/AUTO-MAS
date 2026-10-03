@@ -53,6 +53,7 @@ from app.task.MaaFW.tools.core.runner.models import (
     MaaFWRunPlan,
     MaaFWRunResult,
     MaaFWSkippedTaskPlan,
+    task_time_limits_from_config,
 )
 from app.task.MaaFW.tools.core.runner.run_plan import (
     NO_RUNNABLE_TASKS_MESSAGE,
@@ -1480,12 +1481,20 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             raise RuntimeError("MaaFW 运行计划尚未初始化")
         limit_minutes = self.script_config.get("Run", "RunTimeLimit")
         timeout = limit_minutes * 60
+        task_limit_seconds, task_limit_overrides = task_time_limits_from_config(
+            self.script_config
+        )
         # 截止时刻交给 worker：到点它自己停任务、截图、把已完成的任务带回来。
         # 宿主这层只在 worker 没停下时才强杀，那时既没有截图也没有进度。
         run_deadline_at = time.time() + timeout
         try:
             return await asyncio.wait_for(
-                self._run_maafw_worker(device_config, run_deadline_at=run_deadline_at),
+                self._run_maafw_worker(
+                    device_config,
+                    run_deadline_at=run_deadline_at,
+                    task_time_limit_seconds=task_limit_seconds,
+                    task_time_limit_overrides=task_limit_overrides,
+                ),
                 timeout=timeout + _RUN_DEADLINE_GRACE_SECONDS,
             )
         except asyncio.TimeoutError as exc:
@@ -1502,6 +1511,8 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         device_config: MaaFWDeviceConfig,
         *,
         run_deadline_at: float | None = None,
+        task_time_limit_seconds: int = 0,
+        task_time_limit_overrides: dict[str, int] | None = None,
     ) -> MaaFWRunResult:
         if self.run_plan is None:
             raise RuntimeError("MaaFW 运行计划尚未初始化")
@@ -1609,6 +1620,8 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 failure_screenshot_prefix=history_stamp,
                 task_start_not_before=self._task_start_not_before(),
                 run_deadline_at=run_deadline_at,
+                task_time_limit_seconds=task_time_limit_seconds,
+                task_time_limit_overrides=task_time_limit_overrides,
             )
             work_dir = _maafw_runner_jobs_dir()
             job_path = await asyncio.to_thread(
