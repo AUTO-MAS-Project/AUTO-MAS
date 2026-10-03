@@ -444,10 +444,15 @@ def _arrange_defense(
 
     记账放在 ``Data.PersonalMssDefense``：
 
-    - ``armed``：上一次建计划时把它编排进队列了，还欠一个结果。
-    - 再建计划时结算：``Data.LastProxyStatus`` 是「成功」就是打完了（整轮成功意味着队列里
-      每个任务都成功）；是「失败」就记一笔失败日，同一天重试只记一次；还在跑 / 被中止 /
-      维护跳过都不算，下一轮照常再编排。
+    - ``armed``：上一次建计划时把它编排进队列了，还欠一个结果；同时记下那一刻看到的
+      ``LastProxyDate`` / ``ProxyTimes`` / ``LastProxyStatus``（``seen_*``）。
+    - 再建计划时结算：这三个值只要有一个变了，就说明那一轮真的进了 ``run()``，
+      这时才看状态——「成功」就是打完了（整轮成功意味着队列里每个任务都成功），
+      「失败」就记一笔失败日，同一天只记一次；还在跑 / 被中止 / 状态说不清都不记。
+    - 三个值一个都没变，就是那一轮压根没跑到 ``run()``：``check()`` 会在返回 Pass 之前
+      因为「今日次数已满」「游戏维护」「控制方式没配好」「架构不符」之类提前退出，
+      而 ``decorate_selection`` 是在那之前就调过的，此时 ``LastProxyStatus`` 还停在一个
+      跟本轮无关的旧值上。什么都不算，下一轮照常再编排。
     - 失败日攒够 ``DEFENSE_MAX_FAILED_DAYS`` 天就放弃这一期，等下一期公告换了自动重来。
       一期只打一次，攒失败日是为了不让「这一期注定打不成」（比如用户已经在游戏里手打过）
       变成每轮都失败下去。
@@ -469,18 +474,34 @@ def _arrange_defense(
 
     settled = False
     if record.get("armed"):
-        record["armed"] = False
-        settled = True
-        ## check() 跑在 run() 的 _mark_run_started() 前面，这里读到的还是上一轮的结果
-        status = str(_get(user_config, "Data", "LastProxyStatus") or "")
-        if status == "成功":
-            record["done"] = True
-        elif status == "失败":
-            failed_days = [str(day) for day in record.get("failed_days") or []]
-            today = datetime.now().strftime("%Y-%m-%d")
-            if today not in failed_days:
-                failed_days.append(today)
-            record["failed_days"] = failed_days
+        ## 不能只看 LastProxyStatus：这一轮可能压根没跑到 run()（见函数开头那段），
+        ## 那样它停在一个跟本轮无关的旧「成功」上，照着结算会把这一期误判成打过了。
+        ## 判据换成「建计划时看到的那三个值有没有变」——真跑过就一定会变：run() 一进门就
+        ## _mark_run_started()，它必写 LastProxyStatus=运行中，跨天还会改 LastProxyDate
+        ## 并把 ProxyTimes 清零；跑完 final_task 再写成功或失败。
+        seen = (
+            record.get("seen_date"),
+            record.get("seen_times"),
+            record.get("seen_status"),
+        )
+        if all(isinstance(value, str) for value in seen):
+            now = (
+                _as_text(_get(user_config, "Data", "LastProxyDate")),
+                _as_text(_get(user_config, "Data", "ProxyTimes")),
+                _as_text(_get(user_config, "Data", "LastProxyStatus")),
+            )
+            if now != seen:
+                record["armed"] = False
+                settled = True
+                if now[2] == "成功":
+                    record["done"] = True
+                elif now[2] == "失败":
+                    failed_days = [str(day) for day in record.get("failed_days") or []]
+                    today = datetime.now().strftime("%Y-%m-%d")
+                    if today not in failed_days:
+                        failed_days.append(today)
+                    record["failed_days"] = failed_days
+            ## now == seen：这一轮没进过 run()，什么都不算，下一轮照常再编排
 
     present = any(name_of(task_id) == defense for task_id in ids)
 
@@ -514,6 +535,10 @@ def _arrange_defense(
         ids = _insert_before_climb(ids, defense, interface_model, name_of)
         injected = True
     record["armed"] = True
+    ## 记下此刻的运行状态，下一轮拿它比「这一轮到底跑没跑」（见上面的结算段）
+    record["seen_date"] = _as_text(_get(user_config, "Data", "LastProxyDate"))
+    record["seen_times"] = _as_text(_get(user_config, "Data", "ProxyTimes"))
+    record["seen_status"] = _as_text(_get(user_config, "Data", "LastProxyStatus"))
     if _save_defense_record(user_config, record) is not None:
         ## 记不住就别发：脚本在一期已经打过的号上会卡在纪录管理页，整轮陪葬
         if injected:
@@ -526,16 +551,37 @@ def _arrange_defense(
 
 
 def _load_defense_record(user_config: Any) -> dict[str, Any]:
-    """读 ``Data.PersonalMssDefense``；读不出形状就当空记录。"""
+    """读 ``Data.PersonalMssDefense``；形状不对就当空记录。
+
+    只认自己写出去的那几个键与类型。校验是必须的：``failed_days`` 万一被写成字符串，
+    ``for day in ...`` 会逐字符遍历、字符数直接顶到放弃阈值，整个这一期就不打了。
+    坏形状宁可当空——最多本期多打一次，失败日机制兜得住。
+    """
 
     raw = _get(user_config, "Data", "PersonalMssDefense")
-    if isinstance(raw, dict):
-        return dict(raw)
-    try:
-        parsed = json.loads(raw) if isinstance(raw, str) else None
-    except json.JSONDecodeError:
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw)
+        except json.JSONDecodeError:
+            return {}
+    if not isinstance(raw, dict):
         return {}
-    return parsed if isinstance(parsed, dict) else {}
+    if not isinstance(raw.get("period"), str) or not raw["period"]:
+        return {}
+    if not isinstance(raw.get("done"), bool) or not isinstance(raw.get("armed"), bool):
+        return {}
+    failed_days = raw.get("failed_days")
+    if not isinstance(failed_days, list) or not all(
+        isinstance(day, str) for day in failed_days
+    ):
+        return {}
+    return dict(raw)
+
+
+def _as_text(value: Any) -> str:
+    """配置项可能给 None 或数字，比较两轮状态前统一成字符串。"""
+
+    return "" if value is None else str(value)
 
 
 def _save_defense_record(user_config: Any, record: dict[str, Any]) -> Exception | None:
