@@ -27,7 +27,7 @@ import uuid
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Callable, Dict, Literal
+from typing import Callable, Dict, Iterable, Literal
 
 import app.task as task
 from app.core.desktop_guard import ensure_desktop_available
@@ -99,11 +99,12 @@ _SCRIPT_TYPE_BY_CLASS = {cls.__name__: key for key, cls in CLASS_BOOK.items()}
 
 @dataclass(frozen=True)
 class _ManagerBuildContext:
-    """构造脚本调度器所需的额外输入（占用归属与 SRC 根路径）。"""
+    """构造脚本调度器所需的额外输入（占用归属与互斥资源）。"""
 
     script_uid: uuid.UUID
     reservation_owner: str
-    src_root_path: Path | None
+    root_paths: tuple[Path, ...]
+    emulator_key: str | None
     reservations: "_ScriptTaskReservations"
 
 
@@ -112,15 +113,17 @@ def _build_src_manager(
 ) -> TaskExecuteBase:
     """SRC 要把 src 根路径的占用回调交给调度器，占用记在构建上下文的预留表里。"""
 
-    if ctx.src_root_path is None:
+    if not ctx.root_paths:
         raise RuntimeError("SRC 路径占用未初始化")
     return task.SrcManager(
         script_item,
-        reserved_src_root_path=ctx.src_root_path,
+        reserved_src_root_path=ctx.root_paths[0],
+        # 追加历史根目录时要带上模拟器键，别在 re-acquire 时把它丢掉。
         reserve_src_root=lambda root_path: ctx.reservations.try_acquire(
             ctx.script_uid,
             ctx.reservation_owner,
-            src_root_path=root_path,
+            root_paths=(root_path,),
+            emulator_key=ctx.emulator_key,
         ),
     )
 
@@ -169,16 +172,19 @@ class _ScriptTaskReservations:
     def __init__(self) -> None:
         self._owners: dict[tuple[str, str], str] = {}
         self._owner_keys: dict[str, dict[uuid.UUID, set[tuple[str, str]]]] = {}
-        self._src_root_paths: dict[str, Path] = {}
+        self._reserved_root_paths: dict[tuple[str, str], Path] = {}
 
     @staticmethod
     def _resource_keys(
         script_uid: uuid.UUID,
-        src_root_path: Path | None,
+        root_paths: tuple[Path, ...],
+        emulator_key: str | None,
     ) -> set[tuple[str, str]]:
         keys = {("script", str(script_uid))}
-        if src_root_path is not None:
-            keys.add(("src-root", _normalize_src_root_path(src_root_path.resolve())))
+        for root_path in root_paths:
+            keys.add(("install-root", _normalize_src_root_path(root_path)))
+        if emulator_key is not None:
+            keys.add(("emulator", emulator_key))
         return keys
 
     def try_acquire(
@@ -186,29 +192,28 @@ class _ScriptTaskReservations:
         script_uid: uuid.UUID,
         owner: str,
         *,
-        src_root_path: Path | None = None,
+        root_paths: Iterable[Path] = (),
+        emulator_key: str | None = None,
     ) -> bool:
-        resolved_root_path = (
-            src_root_path.resolve() if src_root_path is not None else None
-        )
-        keys = self._resource_keys(script_uid, resolved_root_path)
+        resolved_root_paths = tuple(path.resolve() for path in root_paths)
+        keys = self._resource_keys(script_uid, resolved_root_paths, emulator_key)
         if any(self._owners.get(key) not in (None, owner) for key in keys):
             return False
 
-        root_key = next((key for key in keys if key[0] == "src-root"), None)
-        if root_key is not None and resolved_root_path is not None:
-            root_path = _normalize_src_root_path(resolved_root_path)
-            for key, existing_owner in self._owners.items():
-                if key[0] != "src-root" or existing_owner == owner:
-                    continue
-                existing_src_root_path = self._src_root_paths.get(key)
-                if existing_src_root_path is None:
-                    continue
-                existing_root_path = _normalize_src_root_path(existing_src_root_path)
+        # 父子目录同样算同一个安装目录：所有安装根键参与同一次包含判定。
+        for key, existing_owner in self._owners.items():
+            if key[0] != "install-root" or existing_owner == owner:
+                continue
+            existing_src_root_path = self._reserved_root_paths.get(key)
+            if existing_src_root_path is None:
+                continue
+            existing_root_path = _normalize_src_root_path(existing_src_root_path)
+            for root_path in resolved_root_paths:
+                root_path_key = _normalize_src_root_path(root_path)
                 if (
-                    root_path == existing_root_path
-                    or _is_relative_src_root(root_path, existing_root_path)
-                    or _is_relative_src_root(existing_root_path, root_path)
+                    root_path_key == existing_root_path
+                    or _is_relative_src_root(root_path_key, existing_root_path)
+                    or _is_relative_src_root(existing_root_path, root_path_key)
                 ):
                     return False
 
@@ -217,8 +222,9 @@ class _ScriptTaskReservations:
         self._owner_keys.setdefault(owner, {}).setdefault(script_uid, set()).update(
             keys
         )
-        if root_key is not None and resolved_root_path is not None:
-            self._src_root_paths[root_key] = resolved_root_path
+        for root_path in resolved_root_paths:
+            root_key = ("install-root", _normalize_src_root_path(root_path))
+            self._reserved_root_paths[root_key] = root_path
         return True
 
     def release(self, script_uid: uuid.UUID, owner: str) -> bool:
@@ -233,9 +239,8 @@ class _ScriptTaskReservations:
             )
             if not key_still_reserved and self._owners.get(key) == owner:
                 self._owners.pop(key)
-            if key[0] == "src-root":
-                if not key_still_reserved:
-                    self._src_root_paths.pop(key, None)
+            if key[0] == "install-root" and not key_still_reserved:
+                self._reserved_root_paths.pop(key, None)
         if not self._owner_keys.get(owner):
             self._owner_keys.pop(owner, None)
         return True
@@ -247,16 +252,55 @@ def _normalize_src_root_path(path: Path) -> str:
 
 def _is_relative_src_root(path: Path | str, parent: Path | str) -> bool:
     path = str(path)
-    parent = str(parent)
+    # 父目录是盘根时归一后带尾分隔符（"c:\\"），不先去掉就会拼出双分隔符而判不出子目录。
+    parent = str(parent).rstrip(os.sep)
     return path.startswith(parent + os.sep)
 
 
-def _get_src_root_path(script_config: object) -> Path | None:
-    """返回需要跨配置互斥的 SRC 安装根目录。"""
+def _exclusive_resources(
+    script_config: object,
+) -> tuple[tuple[Path, ...], str | None]:
+    """返回跨配置互斥所需的安装根目录与模拟器实例键。
 
-    if not isinstance(script_config, SrcConfig):
+    安装目录只取运行期真的会写入的来源目录（MAA / MaaEnd / SRC）；MaaFW 跑的是
+    data 下的独立副本，来源目录不进安装目录互斥，否则会把合法的并发压成串行。
+    """
+
+    roots: tuple[Path, ...] = ()
+    if isinstance(script_config, (MaaConfig, SrcConfig, MaaEndConfig)):
+        raw = str(script_config.get("Info", "Path") or "").strip()
+        roots = (Path(raw),) if raw else ()
+    return roots, _emulator_key(script_config)
+
+
+def _emulator_key(script_config: object) -> str | None:
+    """返回「模拟器配置 Id:实例序号」互斥键；未绑定模拟器时返回 None。"""
+
+    if isinstance(script_config, (MaaConfig, SrcConfig, MaaFWConfig, BAAHConfig)):
+        # M9A / MSS 是 MaaFWConfig 的子类，自动覆盖；BAAH 与 MAA 同用 Emulator.Id / Index。
+        emulator_id = script_config.get("Emulator", "Id")
+        index = script_config.get("Emulator", "Index")
+    elif isinstance(script_config, MaaEndConfig):
+        # 这里不看 Game.ControllerType：它是控制器「名字」，协议（Adb/Win32）要读
+        # 控制器配置才知道，调度层不为此去碰文件。Win32 直控的配置留空 "-" 就自
+        # 然没有实例键；真写了模拟器就按占用处理，宁可多串一次也不漏一次冲突。
+        emulator_id = script_config.get("Game", "EmulatorId")
+        index = script_config.get("Game", "EmulatorIndex")
+    elif isinstance(script_config, GeneralConfig):
+        # 通用脚本只在「启用游戏 + 类型为模拟器」时才持有模拟器实例（见 General/manager.py
+        # 的配置检查与 get_emulator_instance 调用）；Client / URL 类型即便残留了模拟器绑定
+        # 也不占实例键，免得把合法并发压成串行。
+        if not script_config.get("Game", "Enabled") or (
+            script_config.get("Game", "Type") != "Emulator"
+        ):
+            return None
+        emulator_id = script_config.get("Game", "EmulatorId")
+        index = script_config.get("Game", "EmulatorIndex")
+    else:
         return None
-    return Path(script_config.get("Info", "Path"))
+    if str(emulator_id or "") in ("", "-") or str(index or "") in ("", "-"):
+        return None
+    return f"{emulator_id}:{index}"
 
 
 class TaskInfo(TaskItem):
@@ -417,7 +461,8 @@ class Task(TaskExecuteBase):
         *,
         script_uid: uuid.UUID,
         reservation_owner: str,
-        src_root_path: Path | None,
+        root_paths: tuple[Path, ...],
+        emulator_key: str | None,
     ):
         """按脚本类型构造对应的脚本调度器，类型不支持时返回 None。
 
@@ -433,7 +478,8 @@ class Task(TaskExecuteBase):
             _ManagerBuildContext(
                 script_uid=script_uid,
                 reservation_owner=reservation_owner,
-                src_root_path=src_root_path,
+                root_paths=root_paths,
+                emulator_key=emulator_key,
                 reservations=self.script_reservations,
             ),
         )
@@ -568,12 +614,15 @@ class Task(TaskExecuteBase):
             return "failed"
 
         script_config = Config.ScriptConfig[script_uid]
-        src_root_path = _get_src_root_path(script_config)
+        root_paths, emulator_key = _exclusive_resources(script_config)
         reservation_owner = self.task_info.task_id
 
         # 与顺序执行同一套原子占用，不再自己判 is_locked 轮询。
         if script_config.is_locked or not self.script_reservations.try_acquire(
-            script_uid, reservation_owner, src_root_path=src_root_path
+            script_uid,
+            reservation_owner,
+            root_paths=root_paths,
+            emulator_key=emulator_key,
         ):
             script_item.status = "等待"
             logger.info(f"循环等待: {entry.script_name} 已被其他任务占用")
@@ -600,7 +649,8 @@ class Task(TaskExecuteBase):
                 script_config,
                 script_uid=script_uid,
                 reservation_owner=reservation_owner,
-                src_root_path=src_root_path,
+                root_paths=root_paths,
+                emulator_key=emulator_key,
             )
             if task_item is None:
                 script_item.status = "异常"
@@ -788,11 +838,12 @@ class Task(TaskExecuteBase):
             # 原子占用脚本，避免两个调度器同时通过布尔锁前置检查。
             reservation_owner = self.task_info.task_id
             script_config = Config.ScriptConfig[current_script_uid]
-            src_root_path = _get_src_root_path(script_config)
+            root_paths, emulator_key = _exclusive_resources(script_config)
             if not self.script_reservations.try_acquire(
                 current_script_uid,
                 reservation_owner,
-                src_root_path=src_root_path,
+                root_paths=root_paths,
+                emulator_key=emulator_key,
             ):
                 script_item.status = "跳过"
                 logger.info(
@@ -831,7 +882,8 @@ class Task(TaskExecuteBase):
                     script_config,
                     script_uid=current_script_uid,
                     reservation_owner=reservation_owner,
-                    src_root_path=src_root_path,
+                    root_paths=root_paths,
+                    emulator_key=emulator_key,
                 )
                 if task_item is None:
                     script_item.status = "异常"
@@ -1185,10 +1237,12 @@ class _TaskManager:
         reservation_acquired = False
         if script_uid is not None:
             script_config = Config.ScriptConfig[script_uid]
+            root_paths, emulator_key = _exclusive_resources(script_config)
             if script_config.is_locked or not self._script_reservations.try_acquire(
                 script_uid,
                 reservation_owner,
-                src_root_path=_get_src_root_path(script_config),
+                root_paths=root_paths,
+                emulator_key=emulator_key,
             ):
                 raise RuntimeError(f"任务 {script_config.get('Info', 'Name')} 已在运行")
             reservation_acquired = True
