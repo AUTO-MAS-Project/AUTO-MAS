@@ -24,7 +24,7 @@
    ``debug/interface/``（子任务失败或被停止各落一张；开始唤醒链不落图，
    上游自会按数量上限清理旧图）。只在通知需要附图时读取本轮最新的一张，
    属于对上游产物的透传读取，不写 MAA 目录。
-2. MAS 补截：上游没落图的场景（登录链失败、进程超时等）通过 adb 截一张
+2. MAS 补截：上游没落图的场景（登录链失败、进程超时等）通过 MaaFW 截一张
    当前画面兜底，复用失败截图工具存入 MAS 的 ``debug/maa-failure/``，
    供通知与问题包共用。
 
@@ -32,15 +32,15 @@
 运行的旧图当成这次的现场。
 """
 
-import asyncio
 from datetime import datetime
 from pathlib import Path
 
+from app.models.emulator import DeviceBase, DeviceInfo
+from app.tools.adb_screenshot import capture_adb_screenshot
 from app.tools.error_screenshot import save_error_screenshot
 from app.utils import get_logger
 
 logger = get_logger("MAA 失败截图")
-
 _FAILURE_IMAGE_SUFFIXES = frozenset({".png"})
 
 
@@ -94,40 +94,28 @@ def collect_maa_failure_image(
 
 
 async def capture_current_screen(
-    *, adb_path: Path | str | None, adb_address: str
+    *,
+    adb_path: Path | str | None,
+    adb_address: str,
+    emulator_manager: DeviceBase | None = None,
+    emulator_index: str = "",
+    emulator_info: DeviceInfo | None = None,
 ) -> Path | None:
-    """通过 adb 补截当前画面并保存为诊断图片，上游没留图时的兜底。
-
-    只在 MAA 已退出之后调用（如收尾阶段）：登录链失败、进程超时这些上游
-    不落图的场景，截到的是"此刻的屏幕"，不保证是异常发生瞬间——MAA 的
-    结束动作可能已把游戏退掉。
-
-    adb 路径传模拟器自带的 adb（MAA 自动探测的通常也是它，同一份二进制
-    不会触发 adb server 版本重启）；路径取不到、地址为空或截图/画面异常
-    （空、纯色——雷电上普通 adb 截图拿不到游戏渲染层）时返回 ``None``。
-    截图是诊断旁路，任何失败只记日志，不抛出。
-    """
-
-    if not adb_path or adb_address in ("", "Unknown"):
+    """MAA 没有本轮原生图时，调用公共截图工具并保存诊断 JPEG。"""
+    device_ref = None
+    if emulator_manager is not None and emulator_index:
+        try:
+            device_ref = emulator_manager.resolve_device(emulator_index)
+        except Exception as exc:  # noqa: BLE001 - 诊断增强失败仍可普通取图
+            logger.warning(f"解析补截实例失败，使用普通 ADB: {exc}")
+    image = await capture_adb_screenshot(
+        adb_path=adb_path,
+        adb_address=adb_address,
+        device_ref=device_ref,
+        emulator_info=emulator_info,
+    )
+    if image is None:
         return None
-    try:
-        # 冷导入放在事件循环上完成，再进线程跑阻塞 IO
-        from app.utils.OCR.OCRtool import OCRTool
-    except Exception as exc:  # noqa: BLE001
-        logger.warning(f"加载 ADB 截图工具失败，通知不带图: {exc}")
-        return None
-
-    def _capture() -> Path | None:
-        image = OCRTool.get_screenshot_with_adb(str(adb_path), adb_address)
-        low, high = image.convert("L").getextrema()
-        if high - low < 8:
-            raise RuntimeError("截图为纯色画面（疑似未取到游戏渲染层），放弃")
-        return save_error_screenshot(
-            image=image, dir_name="maa-failure", file_prefix="failure"
-        )
-
-    try:
-        return await asyncio.to_thread(_capture)
-    except Exception as exc:  # noqa: BLE001
-        logger.warning(f"MAA 补截当前画面失败，通知不带图: {exc}")
-        return None
+    return save_error_screenshot(
+        image=image, dir_name="maa-failure", file_prefix="failure"
+    )

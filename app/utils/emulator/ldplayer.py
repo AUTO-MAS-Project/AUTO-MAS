@@ -342,6 +342,7 @@ class LDManager(DeviceBase):
                     if adb_port != 0
                     else f"emulator-{5554 + int(idx) * 2}"
                 ),
+                pid=info.pid,
             )
 
         return result

@@ -70,6 +70,13 @@ from app.task.notify_core import (
     load_screenshot_images,
     screenshot_entries,
 )
+from app.tools.adb_controller import (
+    build_ldplayer_extra_config,
+    build_mumu_extra_config,
+)
+from app.tools.adb_controller import (
+    same_adb_device as _same_adb_device,
+)
 from app.utils import ProcessInfo, ProcessManager, get_logger
 from app.utils.constants import UTC4
 from app.utils.io import migrate_legacy_dir
@@ -1482,19 +1489,11 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                     f"获取雷电模拟器 extra 信息失败，使用实例索引兜底: {exc}"
                 )
 
-        ld_config: dict[str, Any] = {
-            "enable": True,
-            "index": index,
-            "path": str(emulator_root).replace("\\", "/"),
-            "pid": pid,
-        }
-        ld_library = emulator_root / "ldopengl64.dll"
-        if ld_library.exists():
-            ld_config["lib"] = str(ld_library).replace("\\", "/")
-
         config: dict[str, Any] = {}
         if with_extras:
-            config["extras"] = {"ld": ld_config}
+            config = build_ldplayer_extra_config(
+                manager_path=emulator_path, native_index=index, pid=pid
+            )
         command = _ldplayer_input_text_command(emulator_root, index)
         if command is not None:
             config["command"] = {"InputText": command}
@@ -1506,27 +1505,14 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         emulator_index: str,
         native_index: str | None = None,
     ) -> dict[str, Any]:
-        emulator_root = emulator_path.parent.parent
         # 与雷电分支同口径: MuMu extras 的 index 也按原生索引算,
         # 纳管多个安装时设备号与原生索引不是一回事。
-        mumu_config: dict[str, Any] = {
-            "enable": True,
-            "index": int(native_index if native_index is not None else emulator_index),
-            "path": str(emulator_root).replace("\\", "/"),
-        }
-        for library in (
-            emulator_root / "nx_main" / "sdk" / "external_renderer_ipc.dll",
-            emulator_root / "shell" / "sdk" / "external_renderer_ipc.dll",
-        ):
-            if library.exists():
-                mumu_config["lib"] = str(library).replace("\\", "/")
-                break
-
-        return {
-            "extras": {
-                "mumu": mumu_config,
-            },
-        }
+        return build_mumu_extra_config(
+            manager_path=emulator_path,
+            native_index=int(
+                native_index if native_index is not None else emulator_index
+            ),
+        )
 
     async def _resolve_window_handle(self, controller: MaaFWController) -> int:
         configured_hwnd = self.script_config.get("Device", "HWnd")
@@ -3239,25 +3225,6 @@ def _ldplayer_input_text_command(emulator_root: Path, index: int) -> list[str] |
 def _has_input_text_command(config: dict[str, Any]) -> bool:
     command = config.get("command")
     return isinstance(command, dict) and bool(command.get("InputText"))
-
-
-def _same_adb_device(left: str, right: str) -> bool:
-    """两个 ADB 地址是否指向同一台设备。
-
-    只抹平最常见的写法差异：``localhost`` 与 ``127.0.0.1``，以及本机模拟器的
-    ``emulator-<控制台端口>`` 与 ``127.0.0.1:<控制台端口 + 1>``（雷电没开时报的就是前一种）。
-    """
-
-    def normalize(address: str) -> str:
-        address = address.strip().lower()
-        console_port = address.removeprefix("emulator-")
-        if console_port != address and console_port.isdigit():
-            return f"127.0.0.1:{int(console_port) + 1}"
-        if address.startswith("localhost:"):
-            return "127.0.0.1:" + address.removeprefix("localhost:")
-        return address
-
-    return normalize(left) == normalize(right)
 
 
 def _load_json_dict(value: Any) -> dict[str, Any]:

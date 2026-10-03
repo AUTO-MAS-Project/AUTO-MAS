@@ -23,7 +23,9 @@ MaaFW 是**通用引擎**，不是专项：任何带 `interface.json` 的 MaaFra
   project_update / controller_win32），按零宿主耦合设计。已知例外只有
   `project_update/updater.py` 引了 `app.utils.constants`——它只在宿主进程里跑；不要再加新的。
 - **worker 子进程**（`runner/worker.py`）以 `python -m` 启动，其导入闭包内的
-  `app.*` 只能落在 `app.task.MaaFW.tools.core.` 之下，由
+  `app.*` 只能落在 `app.task.MaaFW.tools.core.` 之下；公共纯工具
+  `app.tools.adb_controller` / `app.tools.python_environment`（及惰性 `app.tools` 包入口）
+  可以复用，但必须只依赖标准库、不能引入宿主。由
   `tests/task/test_maafw_worker_import_isolation.py` 钉死。v5.5.0-beta.4 全员 MFW 挂掉，
   就是链路上多了一处 `from app.utils import ...`。改 runner 子树前先跑这个测试。
 
