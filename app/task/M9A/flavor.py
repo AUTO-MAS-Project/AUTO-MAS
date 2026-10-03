@@ -115,6 +115,8 @@ class M9AFlavor:
     """满足 ``MaaFWFlavor`` 协议的 M9A 特调对象。"""
 
     type_key = TYPE_KEY
+    # 切换账号失败或超时就结束本轮、照常重试：切号没成功，后面的任务会跑在错的账号上
+    abort_round_entries = {SWITCH_ACCOUNT_ENTRY: "切换账号失败"}
 
     def matches_project(self, interface_model: MaaFWInterface) -> bool:
         return is_m9a_project(interface_model)
