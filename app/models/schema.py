@@ -5759,6 +5759,29 @@ class TaskRuntimeSnapshot(BaseModel):
     )
 
 
+class TaskStatusOut(OutBase):
+    """按 taskId 单点查询一个任务的状态, 不携带日志。"""
+
+    taskId: str = Field(..., description="任务 ID")
+    status: Literal["running", "success", "error", "cancelled"] = Field(
+        ..., description="任务状态; running 为运行中, 其余为终态"
+    )
+    detail: Optional[str] = Field(default=None, description="任务结果描述")
+    error: Optional[str] = Field(default=None, description="任务错误信息")
+    mode: Optional[Literal["AutoProxy", "ScriptConfig", "Update"]] = Field(
+        default=None, description="任务模式"
+    )
+    isCycle: bool = Field(default=False, description="是否为循环运行任务")
+    queueId: Optional[str] = Field(default=None, description="调度队列 ID")
+    scriptId: Optional[str] = Field(default=None, description="脚本 ID")
+    userId: Optional[str] = Field(default=None, description="用户 ID")
+    stopping: bool = Field(default=False, description="任务是否正在停止")
+    finishedAt: Optional[str] = Field(
+        default=None,
+        description="任务结束时间, 格式为YYYY-MM-DD HH:MM:SS, 运行中为空",
+    )
+
+
 class WSTaskCompletedData(BaseModel):
     """任务完成消息数据 (type=task.completed)"""
 
