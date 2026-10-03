@@ -4339,6 +4339,15 @@ export default {
       exportBackup: 'Export a data backup',
       backupDesc:
         'Back up your data now so you can recover if MAS ever runs into something unrecoverable. Once saved you can reinstall safely — important data will not be lost.',
+      autoBackup: 'Automatic backup',
+      autoBackupTip:
+        'When enabled, MAS packs the configuration and history into the backup directory on the first launch after a version update, keeping recent backups by version.',
+      backupDir: 'Backup directory',
+      backupDirTip:
+        'Pick an existing absolute directory. Drive roots, system directories and the program directory are not allowed.',
+      backupDirPlaceholder: 'Select a backup directory',
+      pickBackupDir: 'Choose directory',
+      backupDirPickFailed: 'Failed to choose the backup directory',
       logSection: 'MAS log export',
       exportLog: 'Export a log archive',
       exportMaaEnd: 'Export a MaaEnd issue bundle',

@@ -4202,6 +4202,14 @@ export default {
       exportBackup: '导出数据备份',
       backupDesc:
         '当 MAS 遇到无法恢复的问题时，可先导出此备份。保存后即可放心重装软件，重要数据不会因重装而丢失。',
+      autoBackup: '自动备份',
+      autoBackupTip:
+        '开启后，MAS 在版本更新后的首次启动会自动把配置与历史记录打包到备份目录，并按版本滚动保留最近的备份。',
+      backupDir: '备份目录',
+      backupDirTip: '请选择已存在的绝对目录，不要选择盘符根目录、系统目录或程序目录。',
+      backupDirPlaceholder: '请选择备份目录',
+      pickBackupDir: '选择目录',
+      backupDirPickFailed: '选择备份目录失败',
       logSection: 'MAS 本体日志导出',
       exportLog: '导出日志压缩包',
       exportMaaEnd: '导出 MaaEnd 问题包',

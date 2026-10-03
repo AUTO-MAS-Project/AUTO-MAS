@@ -141,6 +141,7 @@ export type { GeneralUserConfig_Info } from './models/GeneralUserConfig_Info';
 export type { GeneralUserConfig_Notify } from './models/GeneralUserConfig_Notify';
 export { GetStageIn } from './models/GetStageIn';
 export type { GlobalConfig } from './models/GlobalConfig';
+export type { GlobalConfig_Backup } from './models/GlobalConfig_Backup';
 export type { GlobalConfig_Display } from './models/GlobalConfig_Display';
 export type { GlobalConfig_Function } from './models/GlobalConfig_Function';
 export type { GlobalConfig_Notify } from './models/GlobalConfig_Notify';

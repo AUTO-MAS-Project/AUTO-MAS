@@ -402,7 +402,11 @@ onMounted(() => {
           />
         </a-tab-pane>
         <a-tab-pane key="advanced" :tab="t('setting.tab.advanced')">
-          <TabAdvanced :open-dev-tools="openDevTools" />
+          <TabAdvanced
+            :open-dev-tools="openDevTools"
+            :settings="settings"
+            :handle-setting-change="handleSettingChange"
+          />
         </a-tab-pane>
         <a-tab-pane key="others" :tab="t('setting.tab.others')">
           <TabOthers

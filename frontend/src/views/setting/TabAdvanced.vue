@@ -1,8 +1,14 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
-import { DownOutlined, DownloadOutlined, QuestionCircleOutlined } from '@ant-design/icons-vue'
+import {
+  DownOutlined,
+  DownloadOutlined,
+  FolderOpenOutlined,
+  QuestionCircleOutlined,
+} from '@ant-design/icons-vue'
 import { message } from 'ant-design-vue'
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
+import type { GlobalConfig } from '@/api'
 import type { RuntimeLaunchModeSetting, RuntimeLaunchModeState } from '@/types/electron'
 
 import { useMaaEndIssueReport } from '@/composables/useMaaEndIssueReport'
@@ -22,8 +28,10 @@ import {
 
 const { t } = useI18n()
 
-const { openDevTools } = defineProps<{
+const { openDevTools, settings, handleSettingChange } = defineProps<{
   openDevTools: () => void
+  settings: GlobalConfig
+  handleSettingChange: (category: keyof GlobalConfig, key: string, value: any) => Promise<void>
 }>()
 
 const logger = window.electronAPI.getLogger('日志管理')
@@ -185,6 +193,43 @@ const exportDataBackup = async () => {
     exportingDataBackup.value = false
   }
 }
+
+// 自动备份：升级后首次启动由后端把配置与历史打包到该目录，并按版本滚动保留最近的备份
+const backupDirInput = ref('')
+const pickingBackupDir = ref(false)
+
+watch(
+  () => settings.Backup?.BackupDir,
+  value => {
+    backupDirInput.value = value ?? ''
+  },
+  { immediate: true }
+)
+
+const commitBackupDir = async () => {
+  const value = backupDirInput.value.trim().replace(/\\/g, '/')
+  if (value === (settings.Backup?.BackupDir ?? '')) return
+  // 目录是否合法（已存在的绝对路径、非盘符根/系统目录/程序目录）由后端 FolderValidator
+  // 校验；保存失败时既有保存链路会弹出后端返回的错误信息，这里把输入框退回已保存的值
+  await handleSettingChange('Backup', 'BackupDir', value)
+  backupDirInput.value = settings.Backup?.BackupDir ?? ''
+}
+
+const pickBackupDir = async () => {
+  pickingBackupDir.value = true
+  try {
+    const picked = await window.electronAPI?.selectFolder?.()
+    if (!picked) return
+    backupDirInput.value = picked.replace(/\\/g, '/')
+    await commitBackupDir()
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.error(`选择备份目录失败: ${errorMsg}`)
+    message.error(t('setting.advanced.backupDirPickFailed'))
+  } finally {
+    pickingBackupDir.value = false
+  }
+}
 </script>
 <template>
   <div class="tab-content">
@@ -202,6 +247,58 @@ const exportDataBackup = async () => {
               {{ t('setting.advanced.exportBackup') }}
             </a-button>
             <span class="backup-description">{{ t('setting.advanced.backupDesc') }}</span>
+          </div>
+        </a-col>
+      </a-row>
+      <a-row :gutter="24">
+        <a-col :span="12">
+          <div class="form-item-vertical">
+            <div class="form-label-wrapper">
+              <span class="form-label">{{ t('setting.advanced.autoBackup') }}</span>
+              <a-tooltip :title="t('setting.advanced.autoBackupTip')">
+                <QuestionCircleOutlined class="help-icon" />
+              </a-tooltip>
+            </div>
+            <a-switch
+              :aria-label="t('setting.advanced.autoBackup')"
+              :checked="settings.Backup?.IfAutoBackup === true"
+              @change="
+                (checked: boolean | string | number) =>
+                  handleSettingChange('Backup', 'IfAutoBackup', Boolean(checked))
+              "
+            />
+          </div>
+        </a-col>
+        <a-col :span="12">
+          <div class="form-item-vertical">
+            <div class="form-label-wrapper">
+              <span class="form-label">{{ t('setting.advanced.backupDir') }}</span>
+              <a-tooltip :title="t('setting.advanced.backupDirTip')">
+                <QuestionCircleOutlined class="help-icon" />
+              </a-tooltip>
+            </div>
+            <a-input-group compact class="path-input-group">
+              <a-input
+                v-model:value="backupDirInput"
+                size="large"
+                class="path-input"
+                :aria-label="t('setting.advanced.backupDir')"
+                :placeholder="t('setting.advanced.backupDirPlaceholder')"
+                @blur="commitBackupDir"
+                @press-enter="commitBackupDir"
+              />
+              <a-button
+                size="large"
+                class="path-button"
+                :loading="pickingBackupDir"
+                @click="pickBackupDir"
+              >
+                <template #icon>
+                  <FolderOpenOutlined />
+                </template>
+                {{ t('setting.advanced.pickBackupDir') }}
+              </a-button>
+            </a-input-group>
           </div>
         </a-col>
       </a-row>
@@ -386,6 +483,31 @@ const exportDataBackup = async () => {
   line-height: 1.6;
   flex: 1 1 360px;
   min-width: 240px;
+}
+
+.path-input-group {
+  display: flex;
+  overflow: hidden;
+  border: 1px solid var(--ant-color-border);
+}
+
+/* 拼接形制：输入框的边框/圆角由外层提供，Ant 默认样式需要显式覆盖 */
+.path-input {
+  flex: 1;
+  min-width: 0;
+  border: none !important;
+  border-radius: 0 !important;
+}
+
+.path-button {
+  flex-shrink: 0;
+  border: none;
+  border-radius: 0;
+  background: var(--ant-color-primary-bg);
+  color: var(--ant-color-primary);
+  font-weight: 600;
+  padding: 0 20px;
+  border-left: 1px solid var(--ant-color-border-secondary);
 }
 
 .maafw-report-tag {
