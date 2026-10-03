@@ -1455,6 +1455,14 @@ class GlobalConfig_Update(BaseModel):
     MirrorChyanCDK: Optional[str] = Field(default=None, description="Mirror酱CDK")
 
 
+class GlobalConfig_Backup(BaseModel):
+    IfAutoBackup: Optional[bool] = Field(
+        default=None, description="版本号变化后的首次启动是否自动备份数据"
+    )
+    BackupDir: Optional[str] = Field(default=None, description="自动备份目录")
+    LastVersion: Optional[str] = Field(default=None, description="上次运行记录的版本号")
+
+
 class GlobalConfig(BaseModel):
     Function: Optional[GlobalConfig_Function] = Field(
         default=None, description="功能相关配置"
@@ -1474,6 +1482,9 @@ class GlobalConfig(BaseModel):
     )
     Update: Optional[GlobalConfig_Update] = Field(
         default=None, description="更新相关配置"
+    )
+    Backup: Optional[GlobalConfig_Backup] = Field(
+        default=None, description="自动备份相关配置"
     )
 
 
