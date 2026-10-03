@@ -744,6 +744,21 @@ class Task(TaskExecuteBase):
         for i in range(start_index):
             self.task_info.script_list[i].status = "跳过"
 
+        # 队列项勾选的「本次跳过」在创建任务时就已冻结: 立刻在任务列表标出, 本次运行
+        # 不执行该项, 开关已由 add_task 清除, 下一次运行恢复正常
+        for script_item in self.task_info.script_list:
+            if script_item.script_id in self.task_info.skip_script_ids:
+                script_item.status = "跳过"
+                logger.info(f"跳过任务: {script_item.script_id}, 队列项已勾选本次跳过")
+                await Publisher.send(
+                    id=self.task_info.task_id,
+                    type=protocol.TASK_NOTICE,
+                    data=WSTaskNoticeData(
+                        level="warning",
+                        message=f"任务 {script_item.name} 已在本次运行中跳过",
+                    ),
+                )
+
         # 依次运行任务。桌面保障是常驻守卫，这里只强制它立刻巡检一次：轮询有几秒窗口，
         # 而任务一旦在幻影屏上起来，游戏就会把坏掉的窗口尺寸记进自己的配置。
         await ensure_desktop_available()
@@ -762,6 +777,10 @@ class Task(TaskExecuteBase):
         ):
             script_item = self.task_info.script_list[self.task_info.current_index]
             current_script_uid = uuid.UUID(script_item.script_id)
+
+            # 队列项勾选了「本次跳过」: 状态已在任务开始时标出, 本次运行不执行该项
+            if script_item.script_id in self.task_info.skip_script_ids:
+                continue
 
             # 检查任务对应脚本是否仍存在
             if current_script_uid not in Config.ScriptConfig:
@@ -944,6 +963,36 @@ class _TaskManager:
         """返回队列中实际引用的脚本 ID。"""
 
         return [script_id for script_id, _ in cls._queue_script_entries(queue_id)]
+
+    @staticmethod
+    def _queue_skip_script_ids(queue_id: uuid.UUID) -> set[str]:
+        """返回队列中勾选了「本次跳过」的队列项所引用的脚本 ID。"""
+
+        return {
+            script_id
+            for queue_item in Config.QueueConfig[queue_id].QueueItem.values()
+            if queue_item.get("Schedule", "SkipOnce")
+            and (script_id := str(queue_item.get("Info", "ScriptId") or "").strip())
+            and script_id != "-"
+        }
+
+    @staticmethod
+    async def _clear_queue_skip_once(
+        queue_id: uuid.UUID, skip_script_ids: set[str]
+    ) -> None:
+        """「本次跳过」是一次性开关, 任务创建成功后立刻回写清除。"""
+
+        if not skip_script_ids:
+            return
+        for queue_item in Config.QueueConfig[queue_id].QueueItem.values():
+            script_id = str(queue_item.get("Info", "ScriptId") or "").strip()
+            if script_id in skip_script_ids and queue_item.get("Schedule", "SkipOnce"):
+                try:
+                    await queue_item.set("Schedule", "SkipOnce", False)
+                except Exception as e:
+                    logger.warning(
+                        f"清除队列项「本次跳过」失败: {type(e).__name__}: {e}"
+                    )
 
     @staticmethod
     def _script_identity(script_id: uuid.UUID) -> WSTaskScriptIdentityData:
@@ -1165,6 +1214,7 @@ class _TaskManager:
         # 创建时冻结任务脚本身份，供 task.created 通知与运行时快照复用；
         # 队列项限定的运行周几随身份一起冻结，顺序执行时据此跳过
         script_run_days: list[list[str]] | None = None
+        skip_script_ids: set[str] = set()
         if queue_id is not None:
             queue_entries = [
                 entry
@@ -1173,6 +1223,7 @@ class _TaskManager:
             ]
             target_script_ids = [script_id for script_id, _ in queue_entries]
             script_run_days = [days for _, days in queue_entries]
+            skip_script_ids = self._queue_skip_script_ids(queue_id)
         elif script_uid is not None and script_uid in Config.ScriptConfig:
             target_script_ids = [script_uid]
         else:
@@ -1206,6 +1257,7 @@ class _TaskManager:
                 script_id=str(script_uid) if script_uid else None,
                 user_id=str(user_uid) if user_uid else None,
                 resume_from_script_id=resume_from_script_id,
+                skip_script_ids=skip_script_ids,
                 trigger_source=trigger_source,
                 is_cycle=is_cycle,
                 view_only=view_only and exec_mode == "ScriptConfig",
@@ -1243,6 +1295,11 @@ class _TaskManager:
             self._creating_tasks -= 1
             if self._creating_tasks == 0:
                 self._creating_tasks_idle.set()
+
+        # 「本次跳过」是一次性开关: 任务已成功创建并开始执行, 立刻回写清除, 下一次
+        # 运行恢复; 创建失败的路径已在上面 raise, 不会吞掉用户这次的设置
+        if queue_id is not None:
+            await self._clear_queue_skip_once(queue_id, skip_script_ids)
 
         return task_uid
 
@@ -1300,6 +1357,9 @@ class _TaskManager:
                         logger.info("等待全部任务中的子任务结束...")
                     for task_item in task_item_list:
                         if not task_item.is_closing:
+                            # 停止全部/退出软件：置位后即使脚本配置开了「手动停止后
+                            # 保留 MAA 与模拟器」也必须完整清理
+                            task_item.task_info.bulk_stop = True
                             task_item.cancel()
                             task_item.is_closing = True
                     await asyncio.gather(
