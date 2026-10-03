@@ -1,13 +1,8 @@
-import { onScopeDispose, ref } from 'vue'
+import { ref } from 'vue'
 import { GetService } from '@/api'
 import { createEmptySraActivityOverview } from '@/types/home'
 import type { SraActivityItem, SraActivityOverview } from '@/types/home'
-
-const logger = window.electronAPI.getLogger('活动数据')
-
-/** 与其它活动源一致的失败重试节奏 */
-const RETRY_DELAY_MS = 30_000
-const MAX_RETRIES = 8
+import { useHomeActivitySource } from './useHomeActivitySource'
 
 /** 后端从官网活动公告里解析出来的条目 */
 interface StellaOfficialActivity {
@@ -75,22 +70,18 @@ const buildOverview = (raw: StellaOfficialActivity[]): SraActivityOverview => {
  * 官网 CMS 不放开跨域、也认 Referer，浏览器直连拿不到，所以取数走后端
  * `POST /api/info/stella/activity`：后端把官网公告整理成与其它游戏一致的形状
  * （活动名、分类、起止时间、封面），这里只做收口与失败降级——与碧蓝档案、
- * 明日方舟那两条链路同一形状。
+ * 明日方舟那两条链路同一形状。这条链路没有快照也没有请求超时，重试节奏与
+ * 可见性挂起交给公共骨架。
  */
 export const useStellaActivitySource = () => {
   const overview = ref<SraActivityOverview>(createEmptySraActivityOverview())
-  const loading = ref(false)
-  const hasData = ref(false)
-  let retryTimer: number | null = null
-  let retryCount = 0
-  let disposed = false
-  let active = false
-  let started = false
-  let retryPending = false
 
-  const load = async () => {
-    if (disposed) return
-    try {
+  const source = useHomeActivitySource<StellaOfficialActivity[]>({
+    // 日志里沿用原本的中文名字，不随界面语言变
+    label: () => '星塔旅人',
+    loadingOnInit: false,
+    loadingOnStart: true,
+    fetchData: async () => {
       const response = await GetService.getStellaActivityApiInfoStellaActivityPost()
       // 生成的客户端对 200 响应一律 resolve，后端用 code=500 表达取数失败，
       // 不查这一层就会把失败当成「拿到了空排期」，卡片显示「暂无进行中的活动」
@@ -98,81 +89,25 @@ export const useStellaActivitySource = () => {
         throw new Error(response.message || 'HTTP ' + response.code)
       }
       const payload = (response.data ?? {}) as { activities?: StellaOfficialActivity[] }
-      overview.value = buildOverview(payload.activities ?? [])
-      hasData.value = true
-      retryCount = 0
-    } catch (requestError) {
-      if (disposed) return
-      const errorMessage =
-        requestError instanceof Error ? requestError.message : String(requestError)
-      logger.warn('获取星塔旅人活动数据失败: ' + errorMessage)
-
-      overview.value = hasData.value
-        ? // 保留上一次的内容并挂上 stale 标记，卡片据此提示数据可能已过期
-          { ...overview.value, Stale: true }
-        : createEmptySraActivityOverview()
-
-      if (retryCount < MAX_RETRIES) {
-        retryCount += 1
-        if (active) {
-          scheduleRetry()
-        } else {
-          // 模块隐藏期间不重试，重新可见时补一次
-          retryPending = true
-        }
-      }
-    } finally {
-      if (!disposed) {
-        loading.value = false
-      }
-    }
-  }
-
-  const scheduleRetry = () => {
-    retryTimer = window.setTimeout(() => {
-      retryTimer = null
-      void load()
-    }, RETRY_DELAY_MS)
-  }
-
-  const start = () => {
-    if (disposed) return
-    active = true
-    if (!started) {
-      started = true
-      loading.value = !hasData.value
-      void load()
-    } else if (retryPending) {
-      retryPending = false
-      void load()
-    }
-  }
-
-  const stop = () => {
-    active = false
-    if (retryTimer !== null) {
-      window.clearTimeout(retryTimer)
-      retryTimer = null
-      retryPending = true
-    }
-  }
-
-  onScopeDispose(() => {
-    disposed = true
-    if (retryTimer !== null) {
-      window.clearTimeout(retryTimer)
-      retryTimer = null
-    }
+      return payload.activities ?? []
+    },
+    applyData: activities => {
+      overview.value = buildOverview(activities)
+    },
+    markStale: () => {
+      // 保留上一次的内容并挂上 stale 标记，卡片据此提示数据可能已过期
+      overview.value = { ...overview.value, Stale: true }
+    },
+    markUnavailable: () => {
+      overview.value = createEmptySraActivityOverview()
+    },
   })
 
   return {
     overview,
-    loading,
-    start,
-    stop,
-    refresh: () => {
-      retryCount = 0
-      void load()
-    },
+    loading: source.loading,
+    start: source.start,
+    stop: source.stop,
+    refresh: source.refresh,
   }
 }
