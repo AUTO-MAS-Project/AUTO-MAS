@@ -1051,8 +1051,7 @@ export default {
     howLongMasWaits: 'MAS 启动游戏后等待进入可操作状态的最长时间',
     masManagesGame: '由 MAS 启动和关闭游戏',
     mfwAdbAddress: 'ADB 地址',
-    mfwAdbAddressPassed:
-      '填了就直接连这个地址，不再启动上面选择的模拟器；任务结束时也不会关闭它',
+    mfwAdbAddressPassed: '填了就直接连这个地址，不再启动上面选择的模拟器；任务结束时也不会关闭它',
     mfwAdbAddressPlaceholder: '留空则使用上面选择的模拟器',
     mfwGamePackageName: '游戏包名',
     mfwGamePackageNamePassed:
