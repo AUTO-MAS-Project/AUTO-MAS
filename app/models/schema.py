@@ -3960,6 +3960,10 @@ class MaaFWConfig_Game(BaseModel):
         default=None,
         description="游戏启动等待时间（秒）：等窗口出现与等画面稳定各最多这么久，画面稳定即提前",
     )
+    Hotkeys: Optional[str] = Field(
+        default=None,
+        description='脚本级键位，JSON 字符串 {option 名: {字段名: 组合键}}（如 "Ctrl+E"），只存与 interface 默认不同的字段；仅 Win32 控制器生效',
+    )
 
 
 class MaaFWConfig_Update(BaseModel):
@@ -4235,6 +4239,10 @@ class MaaFWOptionHotkeyInfo(BaseModel):
     label: Optional[str] = Field(default=None, description="热键项显示名称")
     description: Optional[str] = Field(default=None, description="热键项描述")
     default: Optional[str] = Field(default=None, description="默认热键")
+    modifierCount: int = Field(
+        default=0,
+        description="项目 pipeline 用到的修饰键个数（0–2）：录制的组合键须恰好这么多修饰键",
+    )
 
 
 class MaaFWOptionInfo(BaseModel):
@@ -4419,6 +4427,10 @@ class MaaFWEmbeddedStatusOut(OutBase):
 
 class MaaFWShellInstancesIn(BaseModel):
     scriptId: str = Field(..., min_length=1, description="MFW 脚本 ID")
+    path: Optional[str] = Field(
+        default=None,
+        description="只扫这个目录（键位弹窗「选择其他目录」用，不写回脚本配置）；不传时先扫来源目录再扫内嵌副本",
+    )
 
 
 class MaaFWShellInstanceItem(BaseModel):
@@ -4435,6 +4447,17 @@ class MaaFWShellInstanceItem(BaseModel):
     taskCount: int = Field(default=0, description="实例队列里勾选着的任务数")
     controller: str = Field(default="", description="实例的控制方式（给人看的名字）")
     resource: str = Field(default="", description="实例的资源（给人看的名字）")
+    hotkeys: Dict[str, Dict[str, str]] = Field(
+        default_factory=dict,
+        description=(
+            "实例里记着的键位：{hotkey 选项名: {字段名: 组合键}}，只含 interface 里声明过的"
+            "hotkey 选项与字段、非空的值（全局 / 资源级在前，任务级覆盖），不与默认值比较；"
+            "读不到 interface 时为空"
+        ),
+    )
+    sourceDir: str = Field(
+        default="", description="扫到这份配置的目录（同一次列表里都一样）"
+    )
 
 
 class MaaFWShellInstancesOut(OutBase):

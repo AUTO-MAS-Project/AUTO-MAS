@@ -16,6 +16,7 @@ from .models import (
     SUPPORTED_OPTION_TYPES,
     MaaFWInterface,
     build_pretask_task_name,
+    hotkey_modifier_count,
     iter_pretasks,
     simplified_chinese_language_file,
     task_repeat_count,
@@ -290,6 +291,10 @@ def build_interface_preview_data(
                         "label": tr_text(hotkey_item.label),
                         "description": tr_description(hotkey_item.description),
                         "default": hotkey_item.default,
+                        # 项目 pipeline 只按得出这么多修饰键：脚本页录制时据此限制组合键
+                        "modifierCount": hotkey_modifier_count(
+                            option, hotkey_item.name
+                        ),
                     }
                     for hotkey_item in option.hotkeys or []
                 ],

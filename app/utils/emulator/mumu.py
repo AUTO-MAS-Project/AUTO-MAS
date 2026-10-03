@@ -762,16 +762,30 @@ class MumuManager(DeviceBase):
             logger.error(f"JSON解析错误: {e}")
             return DeviceStatus.UNKNOWN
 
-        return self._get_status_from_data(data_json)
+        entries = self._extract_device_entries(data_json)
+        if not entries:
+            # 输出里只有埋点或 MuMu 自己的错误对象: 拿不到设备状态, 按未知处理而不是抛异常
+            logger.warning(
+                f"MuMu 输出里没有设备信息（实例 {idx}），按未知状态处理: {str(data)[:200]!r}"
+            )
+            return DeviceStatus.UNKNOWN
+
+        entry = next(
+            (e for e in entries if str(e.get("index")) == str(idx)), entries[0]
+        )
+        return self._get_status_from_data(entry)
 
     @staticmethod
     def _get_status_from_data(data: dict[str, object]) -> DeviceStatus:
-        if data["is_android_started"]:
+        if data.get("is_android_started"):
             return DeviceStatus.ONLINE
-        elif data["is_process_started"]:
+        if data.get("is_process_started"):
             return DeviceStatus.STARTING
-        else:
+        if "is_android_started" in data or "is_process_started" in data:
             return DeviceStatus.OFFLINE
+
+        # 状态键缺失: 既不能当离线(会让 _list_running_instances 漏掉实例), 也不能抛异常
+        return DeviceStatus.UNKNOWN
 
     @staticmethod
     def _resolve_adb_address(data: dict[str, object]) -> str | None:
