@@ -474,22 +474,21 @@ jobs:
 
       - name: 推送自建源更新
         env:
-          DATACENTER_ACCESS_KEY: ${{ secrets.DATACENTER_ACCESS_KEY }}
           DATACENTER_STABLE_FILE_ID: ${{ vars.DATACENTER_RELEASE_STABLE_FILE_ID }}
           DATACENTER_BETA_FILE_ID: ${{ vars.DATACENTER_RELEASE_BETA_FILE_ID }}
           VERSION_TAG: ${{ needs.build.outputs.version_tag }}
           IS_PRERELEASE: ${{ needs.build.outputs.is_prerelease }}
+          FILE_UPDATE_SHA256: ${{ vars.DATACENTER_FILE_UPDATE_SHA256 }}
         run: |
-          push_version() {
-            curl -sS --fail --show-error -X POST \
-              "https://data.auto-mas.top/api/v1/user/files/$1/versions" \
-              -H "Authorization: Bearer $DATACENTER_ACCESS_KEY" \
-              -F "file=@AUTO-MAS-Setup-${VERSION_TAG}-x64.zip;type=application/zip"
-          }
+          set -euo pipefail
+          PKG="AUTO-MAS-Setup-${VERSION_TAG}-x64.zip"
 
           if [ "$IS_PRERELEASE" = "true" ]; then
-            push_version "$DATACENTER_BETA_FILE_ID"
+            TARGETS=(--file-id "$DATACENTER_BETA_FILE_ID")
           else
-            push_version "$DATACENTER_STABLE_FILE_ID"
-            push_version "$DATACENTER_BETA_FILE_ID"
+            TARGETS=(--file-id "$DATACENTER_STABLE_FILE_ID" --file-id "$DATACENTER_BETA_FILE_ID")
           fi
+
+          curl -fsSL --proto '=https' --tlsv1.2 -o file_update.sh https://data.auto-mas.top/api/v1/tools/file_update.sh
+          echo "${FILE_UPDATE_SHA256:?vars.DATACENTER_FILE_UPDATE_SHA256 is not set}  file_update.sh" | shasum -a 256 -c -
+          AUTOMAS_TOKEN="${{ secrets.DATACENTER_ACCESS_KEY }}" bash file_update.sh "$PKG" "${TARGETS[@]}" --change-note "$VERSION_TAG"
