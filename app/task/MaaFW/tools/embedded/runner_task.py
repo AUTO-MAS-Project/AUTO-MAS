@@ -428,6 +428,9 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         self.base_run_plan: MaaFWRunPlan | None = None
         self.run_plan: MaaFWRunPlan | None = None
         self.cur_user_log: LogRecord | None = None
+        # 运行前检查时本用户的日志还没建（特调钩子建计划时的提示就在这时候到），
+        # 先攒在这里，prepare() 建好日志时并进去
+        self._pending_user_log: list[str] = []
         # 与 MAA 等专项同口径：user_start_time 是本用户这一轮的开始（统计通知用），
         # cur_user_log_started_at 是当前这次尝试的开始（日志记录与 history 文件名用）
         self.user_start_time: datetime | None = None
@@ -562,8 +565,10 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         self.cur_user_log_started_at = start_time
         self.cur_user_item.log_record[start_time] = self.cur_user_log = LogRecord()
         content = self.cur_user_log.content
-        if self.project_update_logs:
-            content.extend(self.project_update_logs)
+        content.extend(self.project_update_logs)
+        content.extend(self._pending_user_log)
+        self._pending_user_log.clear()
+        if content:
             self.script_info.log = "".join(content[-80:])
         # 窗口在这里重建，行号也得跟着回到这份日志的开头；更新日志本身就超过 80 行时，
         # 与 _append_log 用同一套算法把滑出去的行数补上。
@@ -2833,6 +2838,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         # 失败类的用户日志按 WARNING 进 app.log，事后按级别筛得出来
         (logger.warning if warning else logger.info)(message)
         if self.cur_user_log is None:
+            self._pending_user_log.append(_format_user_log_line(message))
             return
         content = self.cur_user_log.content
         content.append(_format_user_log_line(message))
