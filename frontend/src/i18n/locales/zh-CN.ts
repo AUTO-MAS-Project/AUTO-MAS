@@ -3514,6 +3514,10 @@ export default {
     },
   },
   queue: {
+    extraScriptBeforeTip:
+      '整个队列运行前执行一次，不按账号重复；循环队列每轮执行一次；脚本超时上限 600 秒',
+    extraScriptAfterTip:
+      '整个队列运行结束后执行一次，先于「完成后操作」；手动停止时不执行；脚本超时上限 600 秒',
     title: '调度队列',
     loading: '加载中，请稍候...',
     create: '新建队列',
@@ -3918,6 +3922,9 @@ export default {
       configFailed: '{label} 配置失败: {error}',
       configDone: '{name} 配置已完成',
       configStarted: '已启动 {name} 的{label}配置',
+      maaConfigOverwriteTitle: '会用 MAS 存档覆盖 MAA 当前配置',
+      maaConfigOverwriteContent:
+        '会话开始时，MAA 原生配置会被本账号的 MAS 存档覆盖；会话前的配置已自动归档，可在账号编辑页的「配置恢复」里找回。',
       sessionTimeout: '{name} 配置会话已超时断开',
       startConfigFailed: '启动{label}配置失败',
       startConfigError: '启动{label}配置失败: {error}',

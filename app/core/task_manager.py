@@ -52,6 +52,7 @@ from app.models.task import (
     UserItem,
 )
 from app.runtime_tasks import RuntimeTasks
+from app.task.general.tools import execute_script_task
 from app.tools.push_log import build_task_result_text
 from app.utils import LazyProxy, get_logger
 
@@ -489,7 +490,20 @@ class Task(TaskExecuteBase):
             await self._sleep_until(min(entry.next_run_at for entry in entries))
             return
 
+        # 循环队列每轮跑一对队列级脚本，与账号数量无关。
+        await self._run_queue_extra_script(
+            str(queue_uid),
+            "IfScriptBeforeTask",
+            "ScriptBeforeTask",
+            "队列运行前脚本",
+        )
         await self._run_due_entries(queue_uid, pending)
+        await self._run_queue_extra_script(
+            str(queue_uid),
+            "IfScriptAfterTask",
+            "ScriptAfterTask",
+            "队列运行后脚本",
+        )
 
     async def _sleep_until(self, target: datetime) -> None:
         """睡到目标时刻，单次不超过上限。
@@ -721,6 +735,14 @@ class Task(TaskExecuteBase):
 
         await self.prepare()
 
+        # 队列级运行前脚本：本次运行只跑一次，与账号数量无关。
+        await self._run_queue_extra_script(
+            self.task_info.queue_id,
+            "IfScriptBeforeTask",
+            "ScriptBeforeTask",
+            "队列运行前脚本",
+        )
+
         logger.info(
             f"开始运行任务: {self.task_info.task_id}, 模式: {self.task_info.mode}"
         )
@@ -748,6 +770,28 @@ class Task(TaskExecuteBase):
         # 而任务一旦在幻影屏上起来，游戏就会把坏掉的窗口尺寸记进自己的配置。
         await ensure_desktop_available()
         await self._run_script_list(start_index)
+
+    async def _run_queue_extra_script(
+        self, queue_id: str | None, if_key: str, path_key: str, label: str
+    ) -> bool:
+        """执行队列级额外脚本，返回是否真的发起了执行。
+
+        开关关闭、路径为空、非队列任务时直接跳过；脚本超时上限由
+        execute_script_task 统一控制（600 秒），失败只记日志不打断任务。
+        """
+
+        if queue_id is None:
+            return False
+
+        queue_config = Config.QueueConfig.get(uuid.UUID(str(queue_id)))
+        if queue_config is None or not queue_config.get("Info", if_key):
+            return False
+
+        script_path = str(queue_config.get("Info", path_key) or "").strip()
+        if not script_path:
+            return False
+
+        return await execute_script_task(Path(script_path), label)
 
     def _is_script_scheduled_today(self, index: int) -> bool:
         """队列项的运行周几不含创建任务当天时跳过；非队列任务与缺省项一律运行。"""
@@ -867,6 +911,16 @@ class Task(TaskExecuteBase):
                 task_info=self.task_info.asdict,
             ),
         )
+
+        # 队列级运行后脚本：先于「完成后操作」，保证脚本跑完再关机。
+        # 用户主动停止（含循环任务）时不执行，与「完成后操作」同一口径。
+        if not self.is_closing and not self.task_info.is_cycle:
+            await self._run_queue_extra_script(
+                self.task_info.queue_id,
+                "IfScriptAfterTask",
+                "ScriptAfterTask",
+                "队列运行后脚本",
+            )
 
         # 循环任务只会被用户主动停止，此时不该再执行队列的「完成后操作」——
         # 那会把关机之类的动作接在一次手动停止后面。

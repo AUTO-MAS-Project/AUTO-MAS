@@ -1595,6 +1595,18 @@ class QueueConfig_Info(BaseModel):
     AfterAccomplishDelay: Optional[int] = Field(
         default=None, ge=0, le=1440, description="完成后操作的延时时长(分钟)"
     )
+    IfScriptBeforeTask: Optional[bool] = Field(
+        default=None, description="是否在队列运行前执行脚本"
+    )
+    ScriptBeforeTask: Optional[str] = Field(
+        default=None, description="队列运行前脚本路径"
+    )
+    IfScriptAfterTask: Optional[bool] = Field(
+        default=None, description="是否在队列运行后执行脚本"
+    )
+    ScriptAfterTask: Optional[str] = Field(
+        default=None, description="队列运行后脚本路径"
+    )
 
 
 class QueueConfig(BaseModel):
@@ -1648,7 +1660,7 @@ class MaaUserConfig_Info(BaseModel):
         default=None, description="配置来源（脚本共享、用户独立、直控使用脚本原生配置）"
     )
     IfQuickConfig: Optional[bool] = Field(
-        default=None, description="是否启用快速配置（与配置来源独立）"
+        default=None, description="是否启用覆写常规配置（与配置来源独立）"
     )
     StageMode: Optional[str] = Field(default=None, description="关卡配置模式")
     Server: Optional[
@@ -1909,7 +1921,7 @@ class OkwwUserConfig_Info(GeneralUserConfig_Info):
         description="配置来源（脚本/用户/直控）",
     )
     IfQuickConfig: Optional[bool] = Field(
-        default=None, description="是否启用快速配置覆盖 OK-WW 高频任务字段"
+        default=None, description="是否启用覆写常规配置（覆盖 OK-WW 高频任务字段）"
     )
     Resource: Optional[Literal["官服", "国际服"]] = Field(
         default=None, description="游戏资源"
@@ -1963,7 +1975,7 @@ class OkNteUserConfig_Info(GeneralUserConfig_Info):
         default=None, description="配置来源（脚本/用户/直控）"
     )
     IfQuickConfig: Optional[bool] = Field(
-        default=None, description="是否启用快速配置（与配置来源独立）"
+        default=None, description="是否启用覆写常规配置（与配置来源独立）"
     )
     Resource: Optional[Literal["官服"]] = Field(default=None, description="游戏资源")
 
@@ -2030,7 +2042,7 @@ class BetterGIUserConfig_Info(GeneralUserConfig_Info):
     Id: Optional[str] = Field(default=None, description="账号")
     Password: Optional[str] = Field(default=None, description="密码")
     IfQuickConfig: Optional[bool] = Field(
-        default=None, description="是否启用快速配置（与配置来源独立）"
+        default=None, description="是否启用覆写常规配置（与配置来源独立）"
     )
 
 
@@ -2178,7 +2190,7 @@ class ZzzOdUserConfig_Info(BaseModel):
         description="配置来源（脚本/用户/直控）",
     )
     IfQuickConfig: Optional[bool] = Field(
-        default=None, description="是否启用快速配置（与配置来源独立）"
+        default=None, description="是否启用覆写常规配置（与配置来源独立）"
     )
     SlotIdx: Optional[int] = Field(
         default=None,
@@ -2309,7 +2321,7 @@ class BAAHUserConfig_Info(BaseModel):
         default=None, description="配置来源（脚本/用户/直控）"
     )
     IfQuickConfig: Optional[bool] = Field(
-        default=None, description="是否启用快速配置（与配置来源独立）"
+        default=None, description="是否启用覆写常规配置（与配置来源独立）"
     )
     ConfigName: Optional[str] = Field(
         default=None, description="默认使用的 BAAH 配置文件名"
@@ -2737,7 +2749,7 @@ class WhimboxUserConfig_Info(BaseModel):
     )
     IfQuickConfig: Optional[bool] = Field(
         default=None,
-        description="是否启用覆写层（快速配置，与来源独立；原生态开启时任务前写入面板覆盖集、结束还原）",
+        description="是否启用覆写层（与来源独立；原生态开启时任务前写入面板覆盖集、结束还原）",
     )
     IfScriptBeforeTask: Optional[bool] = Field(
         default=None, description="是否在任务前执行脚本"
@@ -2860,7 +2872,9 @@ class MaaEndUserConfig_Info(BaseModel):
         default=None,
         description="配置来源（脚本共享、用户独立、脚本直控）",
     )
-    IfQuickConfig: Optional[bool] = Field(default=None, description="是否启用快速配置")
+    IfQuickConfig: Optional[bool] = Field(
+        default=None, description="是否启用覆写常规配置（与配置来源独立）"
+    )
     SanityMode: Optional[str] = Field(default=None, description="理智任务配置模式")
     Resource: Optional[Literal["官服"]] = Field(default=None, description="资源名称")
     RemainedDay: Optional[int] = Field(default=None, description="剩余天数")
@@ -3059,7 +3073,7 @@ class SrcUserConfig_Info(BaseModel):
         default=None, description="配置来源（脚本共享、用户独立、直控使用脚本原生配置）"
     )
     IfQuickConfig: Optional[bool] = Field(
-        default=None, description="是否启用快速配置（与配置来源独立）"
+        default=None, description="是否启用覆写常规配置（与配置来源独立）"
     )
     Server: Optional[
         Literal[
@@ -3442,7 +3456,7 @@ class HSRUserConfig_Info(BaseModel):
         default=None, description="配置来源（脚本/用户/直控）"
     )
     IfQuickConfig: Optional[bool] = Field(
-        default=None, description="是否启用快速配置（与配置来源独立）"
+        default=None, description="是否启用覆写常规配置（与配置来源独立）"
     )
     Server: Optional[Literal["CN-Official"]] = Field(
         default=None, description="游戏服务器"
@@ -3833,7 +3847,7 @@ class MaaFWUserConfig_Info(BaseModel):
         default=None, description="配置来源（用户独立、直控使用脚本原生配置）"
     )
     IfQuickConfig: Optional[bool] = Field(
-        default=None, description="是否启用快速配置（与配置来源独立）"
+        default=None, description="是否启用覆写常规配置（与配置来源独立）"
     )
     IfScriptBeforeTask: Optional[bool] = Field(
         default=None, description="是否在任务前执行脚本"

@@ -5,7 +5,7 @@
     </div>
     <a-form-item name="scriptBeforeTask">
       <template #label>
-        <a-tooltip :title="t('comp.runCustomScriptBefore')">
+        <a-tooltip :title="beforeTip || t('comp.runCustomScriptBefore')">
           <span class="form-label">
             {{ t('comp.runScriptBeforeTask') }}
             <QuestionCircleOutlined class="help-icon" />
@@ -48,7 +48,7 @@
     </a-form-item>
     <a-form-item name="scriptAfterTask">
       <template #label>
-        <a-tooltip :title="t('comp.runCustomScriptAfter')">
+        <a-tooltip :title="afterTip || t('comp.runCustomScriptAfter')">
           <span class="form-label">
             {{ t('comp.runScriptAfterTask') }}
             <QuestionCircleOutlined class="help-icon" />
@@ -106,6 +106,9 @@ defineProps<{
   loading: boolean
   // 卡片化页面（如 MaaEnd 用户编辑页）由外层卡片提供标题时隐藏内部标题
   hideSectionHeader?: boolean
+  // 队列级额外脚本的语义与用户/脚本级不同（整个队列只跑一次），用外层文案覆盖
+  beforeTip?: string
+  afterTip?: string
 }>()
 
 const emit = defineEmits<{
