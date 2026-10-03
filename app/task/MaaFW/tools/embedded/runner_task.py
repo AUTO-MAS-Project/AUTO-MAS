@@ -1122,8 +1122,8 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
     async def _emulator_serves_address(self, emulator_index: str, address: str) -> bool:
         """手填的 ADB 地址是不是所选模拟器这个实例的。
 
-        模拟器增强（雷电截图、MuMu 截图与输入）按实例号直接取画面、发输入，不经过 ADB
-        地址。地址指向别的设备时还按所选模拟器建增强，画面和点击都会落到那台模拟器上，
+        模拟器增强（雷电截图与 ldconsole 文本输入、MuMu 截图与输入）按实例号直接取画面、
+        发输入，不经过 ADB 地址。地址指向别的设备时还按所选模拟器建增强，画面和点击都会落到那台模拟器上，
         雷电没开时还会因为拿不到进程号连不上；所以只有地址正是这个实例时才用增强。
         """
         if self.emulator_manager is None:
@@ -1299,13 +1299,6 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             self._cached_adb_profile = MaaFWAdbControlProfile(None, False, False, {})
             return self._cached_adb_profile
 
-        configured_address, _ = self._configured_adb_address()
-        if configured_address and not await self._emulator_serves_address(
-            emulator_index, configured_address
-        ):
-            self._cached_adb_profile = MaaFWAdbControlProfile(None, False, False, {})
-            return self._cached_adb_profile
-
         try:
             # 先问管理器这个设备号的真实归属。持久化的 Info.Type 在纳管多个安装时
             # 不等于设备的真实类型, 直接读它会让雷电专用截图被跳过——而雷电上普通
@@ -1321,6 +1314,19 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 emulator_config = Config.EmulatorConfig[uuid.UUID(emulator_id)]
                 emulator_type = str(emulator_config.get("Info", "Type") or "")
                 emulator_path = Path(emulator_config.get("Info", "Path"))
+            # 雷电 / MuMu 下面要按实例号建增强；填了 ADB 地址时先确认地址就是这个实例
+            configured_address, _ = self._configured_adb_address()
+            if (
+                emulator_type in {"ldplayer", "mumu"}
+                and configured_address
+                and not await self._emulator_serves_address(
+                    emulator_index, configured_address
+                )
+            ):
+                self._cached_adb_profile = MaaFWAdbControlProfile(
+                    None, False, False, {}
+                )
+                return self._cached_adb_profile
             # build_adb_emulator_extra_capabilities 通过 find_spec 探测运行时 maa，
             # 不会把 maa 载入 sys.modules，满足导入边界约束；返回 {type: {screencap,input}}。
             capabilities = build_adb_emulator_extra_capabilities()
