@@ -34,12 +34,11 @@ import re
 import shutil
 from collections.abc import Iterable, Mapping
 from datetime import datetime
-from functools import lru_cache
 from pathlib import Path
 
 from app.utils import get_logger
 from app.utils.io import force_rmtree
-from app.utils.platform import IS_WINDOWS
+from app.utils.platform import IS_WINDOWS, is_long_path_supported
 
 logger = get_logger("配置归档")
 
@@ -190,28 +189,6 @@ def _staging_dir(dest: Path) -> Path:
     return dest.with_name(dest.name + _PARTIAL_SUFFIX)
 
 
-@lru_cache(maxsize=1)
-def _long_paths_enabled() -> bool:
-    """系统是否已开启长路径支持（``LongPathsEnabled``）。
-
-    口径与 ``app.task.MaaFW.tools.core.runtime_pool.host_environment`` 的
-    ``_windows_long_paths_enabled`` 一致：非 Windows 视为支持；Windows 上读
-    注册表 ``LongPathsEnabled``，读不到（键不存在、无权限）按**未开启**处理。
-    """
-
-    if not IS_WINDOWS:
-        return True
-    try:
-        import winreg
-
-        with winreg.OpenKey(
-            winreg.HKEY_LOCAL_MACHINE, r"SYSTEM\CurrentControlSet\Control\FileSystem"
-        ) as key:
-            return int(winreg.QueryValueEx(key, "LongPathsEnabled")[0]) == 1
-    except OSError:
-        return False
-
-
 def _ensure_path_length(target: Path) -> None:
     """预检 Windows ``MAX_PATH``：系统没开长路径支持且超限时在**写盘之前**报错。
 
@@ -234,7 +211,7 @@ def _ensure_path_length(target: Path) -> None:
 
     if (
         IS_WINDOWS
-        and not _long_paths_enabled()
+        and not is_long_path_supported()
         and len(str(target)) >= _WINDOWS_MAX_PATH
     ):
         raise ValueError(
