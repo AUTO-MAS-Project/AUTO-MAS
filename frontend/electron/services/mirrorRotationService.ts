@@ -31,6 +31,31 @@ export interface MirrorRotationProgress {
 
 export type MirrorRotationProgressCallback = (progress: MirrorRotationProgress) => void
 
+// 镜像源探测硬超时：探测失败不代表该源不可用，只会被垫底（#499）
+export const PROBE_TIMEOUT_MS = 3000
+
+/**
+ * 给探测操作包一层硬超时，超时按失败处理
+ */
+function withProbeTimeout(operation: NetworkOperationCallback): NetworkOperationCallback {
+  return (mirror, onProgress) =>
+    new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        reject(new Error('探测超时'))
+      }, PROBE_TIMEOUT_MS)
+      operation(mirror, onProgress).then(
+        value => {
+          clearTimeout(timer)
+          resolve(value)
+        },
+        error => {
+          clearTimeout(timer)
+          reject(error)
+        }
+      )
+    })
+}
+
 // ==================== 镜像源轮替类 ====================
 
 export class MirrorRotationService {
@@ -38,12 +63,14 @@ export class MirrorRotationService {
    * 镜像源轮替执行
    * 按照配置文件镜像源 -> 镜像源列表的顺序依次尝试
    * 如果指定了 preferredMirrorName，则只使用该镜像源（用于重试场景）
+   * 如果传入了 probe，会先并发探测各源延迟，把更快的源排到前面（探测失败退回原顺序）
    */
   async execute(
     mirrors: MirrorSource[],
     operation: NetworkOperationCallback,
     onProgress?: MirrorRotationProgressCallback,
-    preferredMirrorName?: string
+    preferredMirrorName?: string,
+    probe?: NetworkOperationCallback
   ): Promise<{ success: boolean; result?: unknown; error?: string; usedMirror?: MirrorSource }> {
     logger.info('=== 开始镜像源轮替 ===')
     logger.info(`可用镜像源数量: ${mirrors.length}`)
@@ -68,6 +95,10 @@ export class MirrorRotationService {
     } else {
       // 重新排序镜像源：优先使用配置的镜像源
       sortedMirrors = this.sortMirrors(mirrors, preferredMirrorName)
+      // 传入探测回调时，按实测延迟把更快的源排到前面（#499）
+      if (probe && mirrors.length > 1) {
+        sortedMirrors = await this.reorderMirrorsByProbe(mirrors, probe, sortedMirrors)
+      }
     }
 
     // 依次尝试每个镜像源
@@ -113,6 +144,35 @@ export class MirrorRotationService {
       error: preferredMirrorName
         ? `镜像源 ${preferredMirrorName} 操作失败，请检查网络连接或尝试其他镜像源`
         : '所有镜像源都尝试失败，请检查网络连接或稍后重试',
+    }
+  }
+
+  /**
+   * 探测各镜像源延迟并重排：成功的按响应时间升序，失败/超时的垫底但不剔除；
+   * 全部失败或探测第一名与原顺序相同时，退回原顺序
+   */
+  private async reorderMirrorsByProbe(
+    mirrors: MirrorSource[],
+    probe: NetworkOperationCallback,
+    fallback: MirrorSource[]
+  ): Promise<MirrorSource[]> {
+    try {
+      logger.info('开始探测镜像源延迟')
+      const results = await this.testAllMirrors(mirrors, withProbeTimeout(probe))
+      const ordered = results.map(r => r.mirror)
+      if (!results[0].success) {
+        logger.info('所有镜像源探测失败，保持原顺序')
+        return fallback
+      }
+      if (ordered[0].name === fallback[0].name) {
+        return fallback
+      }
+      logger.info(`探测到 ${ordered[0].name} 响应更快，优先使用`)
+      return ordered
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error)
+      logger.warn(`镜像源探测异常，保持原顺序: ${errorMsg}`)
+      return fallback
     }
   }
 
