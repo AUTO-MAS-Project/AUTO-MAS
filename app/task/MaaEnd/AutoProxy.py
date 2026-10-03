@@ -1995,7 +1995,28 @@ class AutoProxyTask(ScriptAutoProxyBase):
             if any(task_id in enabled_ids for task_id in tasks)
         }
 
+        # 原生 CDK（含 MXU 加密值）优先；全局 CDK 仅作运行期补充，
+        # 随 manager 的原生配置快照恢复，不写回脚本或用户配置来源。
+        global_cdk = str(Config.get("Update", "MirrorChyanCDK") or "").strip()
+        if global_cdk:
+            mirror_settings = settings.get("mirrorChyan")
+            if mirror_settings is None:
+                mirror_settings = {}
+                settings["mirrorChyan"] = mirror_settings
+            if not isinstance(mirror_settings, dict):
+                raise ValueError("MaaEnd 镜像更新配置不是有效对象")
+            if not any(
+                str(mirror_settings.get(key) or "").strip()
+                for key in ("cdk", "cdkEncrypted")
+            ):
+                mirror_settings["cdk"] = global_cdk
+
         write_file(self.maaend_set_path / "mxu-MaaEnd.json", maaend_set)
+        mark_native_config_injected(
+            Path.cwd() / f"data/{self.script_info.script_id}/Temp",
+            self.maaend_set_path,
+            script_id=self.script_info.script_id,
+        )
         logger.success("MaaEnd 运行参数配置完成: 自动代理")
 
     async def check_log(
