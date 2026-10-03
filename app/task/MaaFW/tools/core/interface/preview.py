@@ -1,14 +1,16 @@
 from __future__ import annotations
 
-import importlib.util
 import logging
-import os
 import re
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
 from pydantic import BaseModel, Field
+
+from app.tools.adb_controller import (
+    build_adb_emulator_extra_capabilities as build_adb_emulator_extra_capabilities,
+)
 
 from .loader import parse_json_text
 from .models import (
@@ -35,49 +37,6 @@ _WARNED_LANGUAGE_FILES: set[str] = set()
 class MaaFWInterfaceValidationReport(BaseModel):
     ok: bool
     message: str = ""
-
-
-# EmulatorExtras (ADB 截图/输入加速) 是 MaaFW 的 Windows-only 特性。每个模拟器
-# 族支持的加速子集是固定的，此关系表对齐 MaaFW 控制器定义。能力是否真正可用取
-# 决于运行时安装的 maa 是否带 MaaAdbControlUnit.dll，由下方探测函数按真实环境判断。
-_EMULATOR_EXTRA_RELATION: dict[str, dict[str, bool]] = {
-    "mumu": {"screencap": True, "input": True},
-    "ldplayer": {"screencap": True, "input": False},
-}
-
-
-def _maafw_emulator_extras_runtime_available() -> bool:
-    """Return whether the installed MaaFW runtime exposes ADB EmulatorExtras.
-
-    定位运行环境真实安装的 ``maa`` 包并检查 ``MaaAdbControlUnit.dll`` 是否存在。
-    用 ``importlib.util.find_spec`` 定位包目录——它只查找 spec、不执行 ``maa/__init__``
-    也不加载原生绑定，因此**本函数自身**不触发 maa 导入。非 Windows 不可用。
-
-    注意不要据此推断「maa 未被载入主进程」：``app/core/maa_manager.py`` 在模块级
-    ``from maa.tasker import Tasker`` 并在导入时实例化单例，而 ``app.core`` 是全应用
-    公共入口，进程里实际早已完成原生初始化。那是上游基线既有的第二层原生集成，
-    与本层无关，也不要顺手去改它。
-
-    """
-
-    if os.name != "nt":
-        return False
-    spec = importlib.util.find_spec("maa")
-    if spec is None or not spec.submodule_search_locations:
-        return False
-    maa_package_dir = Path(next(iter(spec.submodule_search_locations)))
-    return (maa_package_dir / "bin" / "MaaAdbControlUnit.dll").is_file()
-
-
-def build_adb_emulator_extra_capabilities() -> dict[str, dict[str, bool]]:
-    """Return per-emulator EmulatorExtras capabilities for the installed MaaFW."""
-
-    if not _maafw_emulator_extras_runtime_available():
-        return {}
-    return {
-        emulator_type: dict(relation)
-        for emulator_type, relation in _EMULATOR_EXTRA_RELATION.items()
-    }
 
 
 class MaaFWInterfacePreviewData(BaseModel):

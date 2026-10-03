@@ -48,6 +48,8 @@ class DeviceInfo:
     title: str
     status: DeviceStatus
     adb_address: str
+    # 实例主进程号；未知时为 0，供诊断复用启动时已取得的信息。
+    pid: int = 0
 
 
 @dataclass(frozen=True)

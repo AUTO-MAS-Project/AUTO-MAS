@@ -882,6 +882,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
         self.maa_process_manager = ProcessManager()
         # 本轮打开的模拟器信息；收尾补截失败画面时取 adb 地址用
         self.emulator_info: DeviceInfo | None = None
+        self._emulator_index = ""
         # 失败尝试在关模拟器前补截的现场画面；收尾组装通知时消费
         self._failure_shot: Path | None = None
         # 本用户的失败画面资源（标签+图片），manager 汇总「代理结果」时收集
@@ -1032,8 +1033,13 @@ class AutoProxyTask(ScriptAutoProxyBase):
 
                 try:
                     self.script_info.log = "正在启动模拟器"
+                    # 实例与启动信息成对保存；失败诊断不读取中途修改过的配置索引。
+                    self._emulator_index = str(
+                        self.script_config.get("Emulator", "Index")
+                    )
+                    self.emulator_info = None
                     emulator_info = await self.emulator_manager.open(
-                        self.script_config.get("Emulator", "Index"),
+                        self._emulator_index,
                         ARKNIGHTS_PACKAGE_NAME[
                             self.cur_user_config.get("Info", "Server")
                         ],
@@ -2186,14 +2192,14 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 not_before=self.log_start_time,
             )
             if shot is None:
-                shot = await asyncio.wait_for(
-                    capture_current_screen(
-                        adb_path=self.emulator_manager.get_adb_path(),
-                        adb_address=self.emulator_info.adb_address
-                        if self.emulator_info is not None
-                        else "",
-                    ),
-                    timeout=60,
+                shot = await capture_current_screen(
+                    adb_path=self.emulator_manager.get_adb_path(),
+                    adb_address=self.emulator_info.adb_address
+                    if self.emulator_info is not None
+                    else "",
+                    emulator_manager=self.emulator_manager,
+                    emulator_index=self._emulator_index,
+                    emulator_info=self.emulator_info,
                 )
         except Exception as e:
             logger.warning(f"获取失败画面失败: {e}")
