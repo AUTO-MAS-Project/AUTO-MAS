@@ -1184,7 +1184,9 @@ async def list_maafw_shell_instances(
 ) -> MaaFWShellInstancesOut:
     """新建脚本引导最后一步用：外壳里配好的每份实例都可以导入成一个用户。只读外壳文件。"""
 
-    reply = await maafw_shell_instances_api.list_shell_instances(payload.scriptId)
+    reply = await maafw_shell_instances_api.list_shell_instances(
+        payload.scriptId, payload.path
+    )
     return MaaFWShellInstancesOut(**reply.out_fields())
 
 

@@ -132,6 +132,29 @@
           </a-col>
         </a-row>
 
+        <a-row :gutter="24" class="control-detail-row">
+          <a-col :span="12">
+            <a-form-item>
+              <template #label>
+                <a-tooltip :title="t('edit.mfwAdbAddressPassed')">
+                  <span class="form-label">
+                    {{ t('edit.mfwAdbAddress') }}
+                    <QuestionCircleOutlined class="help-icon" aria-hidden="true" />
+                  </span>
+                </a-tooltip>
+              </template>
+              <a-input
+                v-model:value="maafwConfig.Device.AdbAddress"
+                size="large"
+                :placeholder="t('edit.mfwAdbAddressPlaceholder')"
+                class="modern-input"
+                allow-clear
+                @blur="emit('change', 'Device', 'AdbAddress', maafwConfig.Device.AdbAddress)"
+              />
+            </a-form-item>
+          </a-col>
+        </a-row>
+
         <!-- type=flex + stretch：右边的策略表跟左边「标签 + 输入框」等高，上下边对齐 -->
         <a-row :gutter="24" type="flex" align="stretch" class="control-detail-row">
           <a-col :span="12">
@@ -177,7 +200,7 @@
       </div>
 
       <div v-else-if="isDesktopController" key="win32">
-        <!-- 两行摆完：启动方式 | 游戏 exe ；Unity 分辨率 | 启动参数 | 等待时间 | 启动后再等 -->
+        <!-- 两行摆完：启动方式 | 游戏 exe ；Unity 分辨率 | 启动参数 | 等待时间 | 键位映射 -->
         <a-row :gutter="24" class="control-detail-row">
           <a-col :span="12">
             <a-form-item>
@@ -229,6 +252,16 @@
               </a-input-group>
             </a-form-item>
           </a-col>
+          <!-- 游戏已经开着时第二行整行隐藏，键位映射挪到启动方式右边 -->
+          <MaaFWHotkeyField
+            v-if="launchMode !== 'DirectExe'"
+            :script-id="scriptId"
+            :preview-data="previewData"
+            :controller-name="effectiveControllerName"
+            :resource-name="effectiveResourceName"
+            :value="maafwConfig.Game.Hotkeys"
+            @save="handleHotkeysSave"
+          />
         </a-row>
 
         <a-row v-if="launchMode === 'DirectExe'" :gutter="24" class="control-detail-row">
@@ -287,6 +320,15 @@
               />
             </a-form-item>
           </a-col>
+          <MaaFWHotkeyField
+            v-if="launchMode === 'DirectExe'"
+            :script-id="scriptId"
+            :preview-data="previewData"
+            :controller-name="effectiveControllerName"
+            :resource-name="effectiveResourceName"
+            :value="maafwConfig.Game.Hotkeys"
+            @save="handleHotkeysSave"
+          />
         </a-row>
       </div>
     </Transition>
@@ -303,6 +345,7 @@ import type {
   MaaFWScriptControlSectionEmits,
   MaaFWScriptControlSectionProps,
 } from '../../MaaFWFlavor/sectionContracts'
+import MaaFWHotkeyField from './MaaFWHotkeyField.vue'
 
 const { t } = useI18n()
 
@@ -312,6 +355,12 @@ const props = defineProps<MaaFWScriptControlSectionProps>()
 const emit = defineEmits<MaaFWScriptControlSectionEmits>()
 
 const launchMode = computed<MaaFWLaunchMode>(() => props.maafwConfig.Game.LaunchMode)
+
+// 键位映射弹窗保存：先改草稿再走页面的自动保存通道
+const handleHotkeysSave = (value: string) => {
+  props.maafwConfig.Game.Hotkeys = value
+  emit('change', 'Game', 'Hotkeys', value)
+}
 
 // 只给两档常用尺寸：Unity 播放器只认整数宽高，1080p 是各脚本闸门的基准，720p 留给小屏
 const unityResolutionOptions = computed<Array<{ label: string; value: MaaFWUnityResolution }>>(

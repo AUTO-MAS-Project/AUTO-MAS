@@ -89,6 +89,7 @@ export const getDefaultMaaFWScriptConfig = (): MaaFWScriptConfig => ({
     Arguments: '',
     WaitTime: 60,
     UnityResolution: 'Off',
+    Hotkeys: '{}',
   },
   Update: {
     AutoUpdateMode: 'BeforeRun',
@@ -197,6 +198,8 @@ export function useMaaFWControlConfig(
     }
     return resources[0]?.name || ''
   }
+
+  const effectiveResourceName = computed(() => resolveResourceName(maafwConfig.Info.Resource))
 
   const interfaceDependentDisabled = computed(() => interfaceLoading.value || !previewData.value)
 
@@ -463,6 +466,7 @@ export function useMaaFWControlConfig(
     isAdbController,
     isDesktopController,
     resourceOptions,
+    effectiveResourceName,
     interfaceDependentDisabled,
     selectedEmulatorLabel,
     adbControlStrategyItems,
