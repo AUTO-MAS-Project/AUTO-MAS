@@ -59,10 +59,11 @@ export interface SchedulerTab {
   resumeFromScriptId?: string | null
   resumeScriptOptions?: Array<{ label: string; value: string }>
   resumeScriptLoading?: boolean
-  // 脚本任务单独运行的目标用户；为空表示按脚本自身筛选跑全部用户
-  selectedUserId?: string | null
+  // 脚本自动代理的用户范围；undefined 表示动态全选，数组表示显式子集（[] 为取消全选）
+  selectedUserIds?: string[]
   userOptions?: Array<{ label: string; value: string }>
   userOptionsLoading?: boolean
+  userOptionsLoaded?: boolean
   taskId: string | null
   subscriptionIds?: string[]
   // 日志增量协议的 buffer 与 seq，语义见 schedulerLogBuffer.ts

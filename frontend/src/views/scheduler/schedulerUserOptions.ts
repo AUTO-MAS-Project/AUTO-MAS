@@ -18,3 +18,15 @@ export const toRunnableUserOptions = (
   })
   return options
 }
+
+/** 全选保持不限制范围；刷新显式子集时只移除已不可运行的用户。 */
+export const reconcileSelectedUserIds = (
+  selectedUserIds: string[] | undefined,
+  options: Array<{ value: string }>
+): string[] | undefined => {
+  if (selectedUserIds === undefined) {
+    return undefined
+  }
+  const available = new Set(options.map(option => option.value))
+  return selectedUserIds.filter(id => available.has(id))
+}

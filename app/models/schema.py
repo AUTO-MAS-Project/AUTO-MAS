@@ -5859,6 +5859,10 @@ class TaskCreateIn(DispatchIn):
         default=None,
         description="可选：仅对脚本的自动代理任务生效；只运行该脚本下的这一个用户",
     )
+    userIds: list[str] | None = Field(
+        default=None,
+        description="可选：仅对脚本的自动代理任务生效；只运行指定的多个用户",
+    )
     viewOnly: bool = Field(
         default=False,
         description="可选：仅 ScriptConfig 生效；只读查看会话（不注入基线、不回读字段），用于预览历史备份",
