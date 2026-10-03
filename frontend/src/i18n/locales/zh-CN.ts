@@ -2178,6 +2178,8 @@ export default {
     configRestoreCorruptedDesc:
       '强制恢复会跳过与该文件相关的保护检查（恢复前备份、占用校验），可能覆盖现有配置；是否继续？',
     configRestoreForceAction: '强制恢复',
+    configRestoreUnrestorableTitle: '该备份无法恢复',
+    configRestoreUnrestorableDesc: '备份内容不完整或包含 MAS 临时实例，已禁用恢复。',
     // 备份列表的配置来源标签（备份时点 Info.Mode）
     configRestoreModeScript: '共享',
     configRestoreModeUser: '独立',

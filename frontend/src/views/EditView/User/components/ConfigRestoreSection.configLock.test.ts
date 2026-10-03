@@ -7,8 +7,13 @@ describe('ConfigRestoreSection runtime lock', () => {
   it('disables restore actions while keeping backup preview available', () => {
     expect(source).toContain('disabled?: boolean')
     expect(source).toContain("t('edit.configLocked')")
-    expect(source).toContain(':disabled="disabled" @click="confirmRestore(item)"')
-    expect(source).toContain(':disabled="disabled" @click="handlePreviewDetail"')
+    expect(source).toContain(':disabled="disabled || isRestoreBlocked(item)"')
+    expect(source).toContain(
+      ':disabled="disabled || !previewRestoreAllowed" @click="handlePreviewDetail"'
+    )
+    expect(source).toContain('v-if="previewWarnings.length"')
+    expect(source).toContain("t('edit.configRestoreUnrestorableTitle')")
+    expect(source).toContain('payload.restoreAllowed !== false')
     expect(source).toContain('if (props.disabled) return')
     expect(source).toContain('if (props.disabled || !previewItem.value) return')
   })
