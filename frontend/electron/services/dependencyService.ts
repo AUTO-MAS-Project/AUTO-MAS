@@ -12,6 +12,7 @@ import {
   MirrorRotationService,
   NetworkOperationCallback,
   NetworkOperationProgress,
+  PROBE_TIMEOUT_MS,
 } from './mirrorRotationService'
 import { createPipProgressState, feedPipOutput, pipProgressPercent } from './pipProgress'
 
@@ -249,6 +250,18 @@ export class DependencyService {
       }
     }
 
+    // 安装前探测各镜像源延迟，优先使用更快的源（未指定镜像源时生效）
+    const probeOperation: NetworkOperationCallback | undefined = selectedMirror
+      ? undefined
+      : async mirror => {
+          const base = mirror.url.endsWith('/') ? mirror.url : mirror.url + '/'
+          const response = await fetch(new URL('simple/pip/', base), {
+            signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
+          })
+          await response.body?.cancel().catch(() => {})
+          return { success: response.ok }
+        }
+
     // 使用镜像源轮替
     const result = await this.rotationService.execute(
       mirrors,
@@ -261,7 +274,8 @@ export class DependencyService {
           rotationProgress.totalMirrors
         )
       },
-      selectedMirror
+      selectedMirror,
+      probeOperation
     )
 
     if (!result.success) {
