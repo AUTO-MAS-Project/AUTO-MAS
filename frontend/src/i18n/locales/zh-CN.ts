@@ -1720,6 +1720,18 @@ export default {
       '· 新版爬塔会排到最后；想每周只跑一次，在脚本「运行配置」的「每周完成后跳过」里选上它',
     mssFlavorQueueEmpty:
       '任务队列是空的，计划表也还是「固定」：这一轮没有任何可执行任务，请至少加一个任务或选一张计划表',
+    mssFlavorDefense: '灾变防线',
+    mssFlavorDefenseHint:
+      '打开后，个人版 MaaStellaSora 每期会自动补打一次「灾变防线」（一期只打得到一次，打过就跳过）；右边显示这一期的状态',
+    mssFlavorDefenseOff: '未启用',
+    mssFlavorDefenseDone: '本期已打',
+    mssFlavorDefensePending: '本期未打',
+    mssFlavorDefenseArmed: '已排入队列',
+    mssFlavorDefenseGivenUp: '本期已放弃',
+    mssFlavorDefenseUnknown: '状态未知',
+    mssFlavorDefensePeriod: '本期开始：{period}',
+    mssFlavorDefenseFailedDays: '没跑成的日子：{days}',
+    mssFlavorDefenseSaveFailed: '开关没保存成功，请重试',
     mssFlavorActivityFirst: '活动优先',
     mssFlavorActivityFirstHint:
       '开启后，队列里没加「活动快速战斗」时也会在活动期间自动加入并排到最前；取不到活动数据时不补',

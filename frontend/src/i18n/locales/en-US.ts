@@ -1806,6 +1806,18 @@ export default {
       '· The new tower climb is moved to the end; to climb only once a week, add it to "Skip once done this week" in the script\'s Run configuration',
     mssFlavorQueueEmpty:
       'The task queue is empty and the plan is still Fixed: this run has nothing to execute — add at least one task or pick a plan',
+    mssFlavorDefense: 'Catastrophe Defense',
+    mssFlavorDefenseHint:
+      "When on, the personal-edition MaaStellaSora plays Catastrophe Defense automatically once per period (it can only be played once, so a finished period is skipped); the state on the right is this period's",
+    mssFlavorDefenseOff: 'Disabled',
+    mssFlavorDefenseDone: 'Played this period',
+    mssFlavorDefensePending: 'Not played this period',
+    mssFlavorDefenseArmed: 'Queued for this run',
+    mssFlavorDefenseGivenUp: 'Given up this period',
+    mssFlavorDefenseUnknown: 'State unknown',
+    mssFlavorDefensePeriod: 'Period started: {period}',
+    mssFlavorDefenseFailedDays: 'Days it did not finish: {days}',
+    mssFlavorDefenseSaveFailed: 'The switch was not saved, please try again',
     mssFlavorActivityFirst: 'Activity first',
     mssFlavorActivityFirstHint:
       'When on, the event task is added and moved to the front while an event is live even if the queue does not have it; nothing is added when the event data cannot be fetched',

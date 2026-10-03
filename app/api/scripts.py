@@ -41,6 +41,7 @@ from app.task.MaaFW.api_service import embedded as maafw_embedded_api
 from app.task.MaaFW.api_service import interface as maafw_interface_api
 from app.task.MaaFW.api_service import shell_instances as maafw_shell_instances_api
 from app.task.MaaFW.api_service import update as maafw_update_api
+from app.task.MSS.api_service import defense_status as mss_defense_status
 from app.task.Whimbox.tools.upstream import WheelAssetsConfigSurface
 from app.utils import get_logger
 from app.utils.constants import UTC8
@@ -1154,6 +1155,25 @@ async def list_maafw_shell_instances(
 
     reply = await maafw_shell_instances_api.list_shell_instances(payload.scriptId)
     return MaaFWShellInstancesOut(**reply.out_fields())
+
+
+@router.post(
+    "/maafw/mss/defense-status",
+    tags=["MaaFW"],
+    summary="个人版「灾变防线」这一期的状态",
+    response_model=MssDefenseStatusOut,
+    status_code=200,
+)
+async def get_mss_defense_status(
+    payload: MssDefenseStatusIn = Body(...),
+) -> MssDefenseStatusOut:
+    """MSS 用户页显示「本期灾变防线打了没」。只读，不改任何配置。
+
+    「这一期」由后端按官网那一篇公告的开始时刻算，前端不复刻同一套口径。
+    """
+
+    data = await mss_defense_status(payload.scriptId, payload.userId)
+    return MssDefenseStatusOut(data=MssDefenseStatusData(**data))
 
 
 @router.post(

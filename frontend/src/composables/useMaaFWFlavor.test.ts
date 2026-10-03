@@ -234,7 +234,7 @@ describe('MaaFW 特调注册表', () => {
   it('只有 MSS 在用户页队列上方有独有区块，MaaFW / M9A 什么都不插', () => {
     expect(
       resolveMaaFWFlavorSlot(resolveMaaFWFlavor('MSS'), 'userPage', 'beforeTaskQueue')
-    ).toHaveLength(2)
+    ).toHaveLength(3)
     for (const type of ['MaaFW', 'M9A']) {
       expect(
         resolveMaaFWFlavorSlot(resolveMaaFWFlavor(type), 'userPage', 'beforeTaskQueue')

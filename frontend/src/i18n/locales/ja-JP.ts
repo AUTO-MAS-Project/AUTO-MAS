@@ -1686,6 +1686,18 @@ export default {
       '· 新しい塔登りは最後に回します。週に一度だけ実行するには、スクリプトの「実行設定」の「今週完了したらスキップ」に追加してください',
     mssFlavorQueueEmpty:
       'タスクキューが空で、プランも「固定」のままです。この実行にはタスクがないので、少なくとも 1 つ追加するかプランを選んでください',
+    mssFlavorDefense: '災変防衛線',
+    mssFlavorDefenseHint:
+      'オンにすると、個人版 MaaStellaSora が毎期一度だけ「災変防衛線」を自動で行います（一期に一度しか挑めないため、実行済みの期はスキップします）。右側は今期の状態です',
+    mssFlavorDefenseOff: '無効',
+    mssFlavorDefenseDone: '今期は実行済み',
+    mssFlavorDefensePending: '今期は未実行',
+    mssFlavorDefenseArmed: '今回のキューに追加済み',
+    mssFlavorDefenseGivenUp: '今期は断念',
+    mssFlavorDefenseUnknown: '状態不明',
+    mssFlavorDefensePeriod: '今期の開始：{period}',
+    mssFlavorDefenseFailedDays: '実行できなかった日：{days}',
+    mssFlavorDefenseSaveFailed: 'スイッチを保存できませんでした。もう一度お試しください',
     mssFlavorActivityFirst: 'イベント優先',
     mssFlavorActivityFirstHint:
       'オンにすると、キューにイベントタスクがなくてもイベント期間中は自動で追加して先頭に移動します。イベント情報が取れないときは追加しません',
