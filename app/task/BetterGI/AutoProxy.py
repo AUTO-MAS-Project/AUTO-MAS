@@ -123,11 +123,14 @@ _BGI_SEQUENCE_DONE_MARKER = "一条龙和配置组任务结束"
 # 出现过 [ERR] 后、若连续这么久没有任何新日志行（BGI 既未完成也未退出），判定卡死提前失败。
 # 仅在出错后静默触发，正常推进时 latest_time 会被新行持续刷新、不会误触。
 _BGI_ERR_STALL_MINUTES = 5
-# 累计日志里「当前不在游戏主界面」达到该次数仍未见收尾行：游戏被留在副本/子界面，
-# 提前判本次失败。BGI 等主界面约 30 秒刷一行，日志持续推进 → 卡死/超时兜底永不触发，
-# 不设此规则只能等 RunTimeLimit × RunTimesLimit 三连重试（#744）。
+# 游戏被留在副本/子界面的唯一可见信号：等待行「当前不在游戏主界面」（BGI 源码
+# ScriptService.cs StartGameTask 的 first 分支，每次进入等待循环只打一次，其后循环静默，
+# 没有任何周期性日志推进 → 下方 [ERR]/RunTimeLimit 两条「无新日志停滞」兜底要等满整个
+# RunTimeLimit 才出手）。该行出现后连续这么久没有任何新日志行、也未见收尾行，即判游戏
+# 被留在副本/子界面，提前失败本轮（#744）。阈值与 _BGI_ERR_STALL_MINUTES 同口径
+# （BGI 自身承诺 30 秒自恢复窗口，5 分钟远大于它，不会误杀正常等待）。
 _BGI_MAIN_UI_WAIT_TEXT = "当前不在游戏主界面"
-_BGI_MAIN_UI_WAIT_ABORT = 3
+_BGI_MAIN_UI_WAIT_STALL_MINUTES = _BGI_ERR_STALL_MINUTES
 _BGI_LOG_TIME_START = 1
 _BGI_LOG_TIME_END = 13
 _BGI_LOG_TIME_FORMAT = "%H:%M:%S.%f"
@@ -317,12 +320,12 @@ def _back_to_main_failed_hint(log: str) -> str | None:
 
 
 def _main_ui_wait_abort_hint() -> str:
-    """「BGI 反复等待主界面」提前判负的用户可读提示（#744）。
+    """「等待主界面后停滞」提前判负的用户可读提示（#744）。
 
     复用「回不到主界面」的口径，并点明执行层把人留在了副本/子界面。
     """
     return (
-        "执行层可能把人留在了副本/子界面（BGI 反复等待主界面），"
+        "执行层可能把人留在了副本/子界面（BGI 等待主界面后长时间无进展），"
         "本次任务无法继续；请手动回到主界面后重试"
     )
 
@@ -1771,13 +1774,18 @@ class AutoProxyTask(ScriptAutoProxyBase):
                     # 按进程名判定：BGI 自提权重启会换 PID，跟踪 PID 失效 ≠ 任务已死
                     log_status = "BetterGI 在完成任务前退出"
                     user_item_status = "异常"
-                elif log.count(_BGI_MAIN_UI_WAIT_TEXT) >= _BGI_MAIN_UI_WAIT_ABORT:
-                    # BGI 等主界面约 30 秒刷一行、日志持续推进，下方两条「无新日志
-                    # 停滞」兜底永不触发；达到次数仍无收尾行即判游戏被留在副本/
-                    # 子界面，提前失败本轮（不再 RunTimeLimit 三连重试）。
+                elif _BGI_MAIN_UI_WAIT_TEXT in log and self.is_log_stalled(
+                    latest_time,
+                    minutes=_BGI_MAIN_UI_WAIT_STALL_MINUTES,
+                    key="main_ui_wait",
+                ):
+                    # 等待行只打一次、其后 BGI 循环静默（ScriptService.cs StartGameTask），
+                    # 所以判据不是次数而是「出现等待行后长时间无任何新日志」；收尾行/成功
+                    # 判定在上方已优先，走到这里即等满阈值仍无推进 → 游戏被留在副本/
+                    # 子界面，提前失败本轮（不再空等 RunTimeLimit 超时重试）。
                     log_status = (
-                        f"BGI 反复等待主界面（{_BGI_MAIN_UI_WAIT_ABORT} 次），"
-                        "游戏被留在副本/子界面"
+                        f"BGI 等待主界面后 {_BGI_MAIN_UI_WAIT_STALL_MINUTES} "
+                        "分钟无进展（游戏被留在副本/子界面）"
                     )
                     user_item_status = "异常"
                     hint = _main_ui_wait_abort_hint()
