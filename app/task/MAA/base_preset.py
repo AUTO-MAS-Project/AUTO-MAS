@@ -43,25 +43,35 @@ def seed_maa_base_config(config_dir: Path) -> None:
 
 
 def ensure_maa_default_configuration(gui_set: dict, gui_new_set: dict) -> None:
-    """把 gui.json 的当前方案折到 Default，并保证 gui.new.json 一定有它。
+    """Fold the current configuration into ``Default`` and guarantee both sides.
 
-    MAA 原生配置文件不保证带 Default：直控与「来源目录不存在、沿用安装目录
-    现有配置」两条路都会把用户盘上那份 gui.new.json 原样带进来，而 Current
-    完全可能是 Default。折叠与兜底必须无条件执行，否则后续对
-    Configurations["Default"] 的硬索引会抛 KeyError。
+    MAA's native files are not guaranteed to ship ``Default``: direct control and
+    "source directory missing, keep the configuration in the install directory"
+    both copy the user's own gui.json / gui.new.json in as-is, and ``Current`` may
+    already be ``Default``. Folding and the fallback must therefore run
+    unconditionally, or the later hard indexing of ``Global`` /
+    ``Configurations["Default"]`` raises ``KeyError``.
     """
 
+    if not isinstance(gui_set.get("Global"), dict):
+        gui_set["Global"] = {}
+
+    gui_configurations = gui_set.get("Configurations")
+    if not isinstance(gui_configurations, dict):
+        gui_configurations = gui_set["Configurations"] = {}
     configurations = gui_new_set.get("Configurations")
     if not isinstance(configurations, dict):
         configurations = gui_new_set["Configurations"] = {}
+    gui_configurations.setdefault("Default", {})
     configurations.setdefault("Default", {})
     gui_set.setdefault("Current", "Default")
+
     if gui_set["Current"] != "Default":
-        # 当前方案本身也可能不存在（三方文件手改不一致）：与旧 AutoProxy/ScriptConfig
-        # 已验的写法一致，有才折，没有就保留各自原有的 Default。
+        # The current configuration itself may be missing (hand-edited third-party
+        # files): fold it only when present, as the older verified AutoProxy /
+        # ScriptConfig code did, and otherwise keep each side's own Default.
         current = gui_set["Current"]
-        gui_configurations = gui_set.get("Configurations")
-        if isinstance(gui_configurations, dict) and current in gui_configurations:
+        if current in gui_configurations:
             gui_configurations["Default"] = gui_configurations[current]
         if current in configurations:
             configurations["Default"] = configurations[current]
