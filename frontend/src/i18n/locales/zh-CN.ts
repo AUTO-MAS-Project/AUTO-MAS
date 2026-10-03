@@ -464,6 +464,12 @@ export default {
     enterAccountId: '请输入账号ID',
     goPlan: '跳转到计划表',
     pickGameServerThis: '选择账号所在的游戏服务器',
+    srcGameClientLabel: '客户端',
+    pickGameClient: '请选择客户端',
+    srcGameClientAndroid: '安卓端',
+    srcGameClientCloud: '云游戏安卓端',
+    srcGameClientTip:
+      '选择 SRC 使用的客户端。「安卓端」使用模拟器内的安卓客户端；「云游戏安卓端」由 SRC 在云游戏环境运行，MAS 不做账号密码切换，请在脚本原生界面登录',
     bilibiliEnterPartUsername:
       "B 服输入账号名片段；也可输入 B 站账号/邮箱号/手机号，中间使用「{'|'}」分隔",
     maaConfiguration: 'MAA配置',

@@ -465,6 +465,12 @@ export default {
     enterAccountId: 'アカウント ID を入力してください',
     goPlan: 'プランへ移動',
     pickGameServerThis: 'このアカウントがプレイするゲームサーバーを選びます',
+    srcGameClientLabel: 'クライアント',
+    pickGameClient: 'クライアントを選択してください',
+    srcGameClientAndroid: 'Android',
+    srcGameClientCloud: 'クラウド Android',
+    srcGameClientTip:
+      'SRC が使用するクライアントを選びます。「Android」はエミュレーター内の Android クライアントを使用し、「クラウド Android」はクラウドゲーム環境で動作します。クラウドでは MAS はアカウント切り替えを行いません。SRC の画面でログインしてください',
     bilibiliEnterPartUsername:
       "B サーバー（bilibili）ではアカウント名の一部を入力します。アカウント / メールアドレス / 電話番号を「{'|'}」区切りで入力することもできます",
     maaConfiguration: 'MAA 設定',

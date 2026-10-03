@@ -141,6 +141,29 @@
     </a-row>
 
     <a-row :gutter="24">
+      <a-col :span="12">
+        <a-form-item name="gameClient">
+          <template #label>
+            <a-tooltip :title="t('edit.srcGameClientTip')">
+              <span class="form-label">
+                {{ t('edit.srcGameClientLabel') }}
+                <QuestionCircleOutlined class="help-icon" />
+              </span>
+            </a-tooltip>
+          </template>
+          <a-select
+            v-model:value="formData.Info.GameClient"
+            :placeholder="t('edit.pickGameClient')"
+            :disabled="loading"
+            :options="gameClientOptions"
+            size="large"
+            @change="emitSave('Info.GameClient', formData.Info.GameClient)"
+          />
+        </a-form-item>
+      </a-col>
+    </a-row>
+
+    <a-row :gutter="24">
       <a-col :span="24">
         <GeneralConfigModeSelector
           :model-value="formData.Info.Mode"
@@ -225,6 +248,12 @@ const srcConfigModeOptions: Array<{
     description: t('edit.nativeConfigSourceDescription'),
     icon: 'setting',
   },
+]
+
+// SRC 客户端类型：android = 模拟器内安卓端；cloud_android = 云游戏安卓端
+const gameClientOptions = [
+  { label: t('edit.srcGameClientAndroid'), value: 'android' },
+  { label: t('edit.srcGameClientCloud'), value: 'cloud_android' },
 ]
 
 const emit = defineEmits<{

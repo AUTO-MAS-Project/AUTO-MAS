@@ -240,10 +240,24 @@ class AutoProxyTask(ScriptAutoProxyBase):
             ) and not await self.handle_game_update(emulator_info):
                 break
 
+            # 云游戏安卓端的登录界面与上游流程不同，MAS 不接管账号密码切换
+            cloud_hint = ""
+            src_id = self.cur_user_config.get("Info", "Id")
+            if self.cur_user_config.get("Info", "GameClient") == "cloud_android" and (
+                src_id or self.cur_user_config.get("Info", "Password")
+            ):
+                cloud_hint = (
+                    "\n云游戏安卓端下 MAS 不做账号密码切换，请在脚本原生界面登录"
+                )
+                logger.warning(
+                    "云游戏安卓端下 MAS 不做账号密码切换，请在脚本原生界面登录"
+                )
+                src_id = ""
+
             if await login(
                 emulator_info,
                 STARRAIL_PACKAGE_NAME[self.cur_user_config.get("Info", "Server")],
-                self.cur_user_config.get("Info", "Id"),
+                src_id,
                 self.cur_user_config.get("Info", "Password"),
             ):
                 logger.info(f"用户 {self.cur_user_item.user_id} 登录成功")
@@ -252,7 +266,10 @@ class AutoProxyTask(ScriptAutoProxyBase):
                     return
                 continue
 
-            self.script_info.log = "正在启动模拟器...\n模拟器启动成功\n正在登录「崩坏·星穹铁道」\n「崩坏·星穹铁道」登录成功"
+            self.script_info.log = (
+                "正在启动模拟器...\n模拟器启动成功\n正在登录「崩坏·星穹铁道」\n「崩坏·星穹铁道」登录成功"
+                + cloud_hint
+            )
 
             await self.set_src(emulator_info)
             self.src_webui_port = read_src_webui_port(self.src_set_path)
@@ -570,7 +587,10 @@ class AutoProxyTask(ScriptAutoProxyBase):
         # 模拟器基础配置
         if emulator_info.adb_address != "Unknown":
             src_set["Alas"]["Emulator"]["Serial"] = emulator_info.adb_address
-        src_set["Alas"]["Emulator"]["GameClient"] = "android"
+        # 客户端类型透传上游 Alas.Emulator.GameClient（云游戏安卓端由上游按此字段驱动）
+        src_set["Alas"]["Emulator"]["GameClient"] = (
+            str(self.cur_user_config.get("Info", "GameClient") or "android")
+        )
         src_set["Alas"]["Emulator"]["PackageName"] = self.cur_user_config.get(
             "Info", "Server"
         )

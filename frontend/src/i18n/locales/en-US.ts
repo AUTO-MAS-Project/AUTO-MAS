@@ -477,6 +477,12 @@ export default {
     enterAccountId: 'Enter the account ID',
     goPlan: 'Go to the plan',
     pickGameServerThis: 'Pick the game server this account plays on',
+    srcGameClientLabel: 'Client',
+    pickGameClient: 'Pick a client',
+    srcGameClientAndroid: 'Android',
+    srcGameClientCloud: 'Cloud Android',
+    srcGameClientTip:
+      'Pick the client SRC runs. "Android" uses the Android client inside the emulator; "Cloud Android" runs in the cloud gaming environment, where MAS does not switch accounts — sign in on the SRC screen itself',
     bilibiliEnterPartUsername:
       "For Bilibili servers, enter part of the account name; you may also enter the account / email / phone number, separated by '{'|'}'",
     maaConfiguration: 'MAA configuration',

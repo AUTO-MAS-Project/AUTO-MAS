@@ -241,7 +241,16 @@ class ScriptConfigTask(TaskExecuteBase):
         deploy_set["Run"] = None
 
         # 模拟器基础配置
-        src_set["Alas"]["Emulator"]["GameClient"] = "android"
+        # 客户端类型透传上游 Alas.Emulator.GameClient（默认安卓端，脚本原生配置下无用户项）
+        game_client = "android"
+        if self.cur_user_item.user_id != "Default":
+            game_client = str(
+                self.user_config[uuid.UUID(self.cur_user_item.user_id)].get(
+                    "Info", "GameClient"
+                )
+                or "android"
+            )
+        src_set["Alas"]["Emulator"]["GameClient"] = game_client
         src_set["Alas"]["Emulator"]["GameLanguage"] = "cn"
         src_set["Alas"]["Emulator"]["AdbRestart"] = True
 
