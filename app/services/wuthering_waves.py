@@ -49,15 +49,6 @@ _KURO_LAUNCHER_REGISTRY = r"Software\kurogame\KRLauncher"
 _LAUNCHER_INSTALL_VALUE = "SingleLauncherInstallPath"
 _LAUNCHER_RESOURCE_MARKS = {"官服": "g152", "国际服": "g153"}
 
-# 卸载信息兜底：官方启动器实测不写卸载项，这里只覆盖会写的那种安装方式。
-# 「名字」命中才认，免得把其它游戏的安装位置当成鸣潮。
-_UNINSTALL_KEY_PATHS = (
-    r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall",
-    r"SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall",
-)
-_UNINSTALL_VALUE_NAMES = ("InstallLocation", "DisplayIcon", "UninstallString")
-_UNINSTALL_NAME_TOKENS = ("鸣潮", "wuthering")
-
 # 官方启动器的版本元数据入口。除这两个 URL 外不要硬编码任何 CDN 路径，
 # 其余路径一律从接口返回的清单里取。
 _OFFICIAL_UPDATE_API = {
@@ -195,86 +186,14 @@ def _registry_launcher_roots(resource: str) -> list[Path]:
     return matched + others
 
 
-def _is_wuthering_uninstall_entry(display_name: str, entry_name: str) -> bool:
-    """卸载项是不是鸣潮的：只认名字命中，避免认成其它游戏。"""
-
-    blob = f"{display_name} {entry_name}".casefold()
-    return any(token in blob for token in _UNINSTALL_NAME_TOKENS)
-
-
-def _uninstall_value_path(value: str) -> Path | None:
-    """把卸载项里的写法还原成目录：可执行文件取其所在目录，目录原样取。"""
-
-    text = value.strip().strip('"')
-    if not text:
-        return None
-    # "C:\x\uninst.exe" / C:\x\uninst.exe,0 / C:\x\uninst.exe --arg
-    executable = re.match(r'^"?([^"]+?\.exe)"?(?:\s|,|$)', text, re.IGNORECASE)
-    if executable:
-        directory = Path(executable.group(1).strip()).parent
-        return directory if str(directory) not in ("", ".") else None
-    path = Path(text.rstrip("\\/"))
-    return path if path.is_absolute() else None
-
-
-def _uninstall_launcher_roots() -> list[Path]:
-    """Windows 卸载信息里疑似鸣潮的安装根。
-
-    官方启动器实测**不写**卸载项（本机 221 条枚举零命中），这里覆盖的是会写的
-    那种安装方式，属兜底的兜底。只认「名字」命中鸣潮的条目，免得把其它游戏的
-    安装位置认成鸣潮；InstallLocation / DisplayIcon / UninstallString 都可能是
-    安装根或根下的可执行文件，统一取所在目录作候选。
-    """
-
-    if winreg is None:
-        return []
-
-    roots: list[Path] = []
-    for hive in (winreg.HKEY_LOCAL_MACHINE, winreg.HKEY_CURRENT_USER):
-        for key_path in _UNINSTALL_KEY_PATHS:
-            try:
-                with winreg.OpenKey(hive, key_path) as parent:
-                    count = winreg.QueryInfoKey(parent)[0]
-                    for index in range(count):
-                        try:
-                            entry_name = winreg.EnumKey(parent, index)
-                            with winreg.OpenKey(parent, entry_name) as entry:
-                                try:
-                                    display_name = str(
-                                        winreg.QueryValueEx(entry, "DisplayName")[0]
-                                    )
-                                except OSError:
-                                    display_name = ""
-                                if not _is_wuthering_uninstall_entry(
-                                    display_name, entry_name
-                                ):
-                                    continue
-                                values = []
-                                for name in _UNINSTALL_VALUE_NAMES:
-                                    try:
-                                        values.append(
-                                            str(winreg.QueryValueEx(entry, name)[0])
-                                        )
-                                    except OSError:
-                                        continue
-                        except OSError:
-                            continue
-                        for value in values:
-                            root = _uninstall_value_path(value)
-                            if root is not None:
-                                roots.append(root)
-            except OSError:
-                continue
-    return roots
-
-
 def discover_wuthering_waves_fallback(resource: str) -> WutheringWavesFallback:
-    """配置的启动器路径失效时，按兜底来源找回启动器或客户端。
+    """配置的启动器路径失效时，从注册表找回官方启动器或客户端。
 
-    来源优先级：注册表登记（官方启动器自己写的，最权威）→ Windows 卸载信息。
-    候选根先认 ``launcher.exe``——有它就能复用启动器记录解出安装目录，更新链
-    也一并可用；没有才在根下按约定路径搜客户端。两条都拿不到即返回空结果，
-    由调用方决定报错文案。
+    注册表里只有启动器安装根，**没有**游戏安装目录：命中后仍要靠启动器自己的
+    记录或目录搜索定位游戏，所以它只解决「配置的启动器路径不可用」。候选根先认
+    ``launcher.exe``——有它就能复用启动器记录解出安装目录，更新链也一并可用；
+    没有才在根下按约定路径搜客户端（启动器被删、游戏还在的情形）。拿不到即返回
+    空结果，由调用方决定报错文案。
 
     只回答「在哪」：不改配置，也不代表用户已确认，调用方必须把命中结果告知用户。
 
@@ -285,27 +204,23 @@ def discover_wuthering_waves_fallback(resource: str) -> WutheringWavesFallback:
         命中的启动器路径或客户端路径，两者至多其一非空。
     """
 
-    candidates = [
-        *((root, "注册表") for root in _registry_launcher_roots(resource)),
-        *((root, "卸载信息") for root in _uninstall_launcher_roots()),
-    ]
     seen: set[str] = set()
     client_candidate: Path | None = None
-    for root, source in candidates:
+    for root in _registry_launcher_roots(resource):
         key = str(root).casefold()
         if key in seen:
             continue
         seen.add(key)
         launcher_path = root / _LAUNCHER_EXECUTABLE
         if launcher_path.is_file():
-            logger.info(f"按{source}找回鸣潮启动器: {launcher_path}")
+            logger.info(f"按注册表找回鸣潮启动器: {launcher_path}")
             return WutheringWavesFallback(launcher_path=launcher_path)
         process_path = _find_client_process_below(root)
         if process_path is not None and client_candidate is None:
             # 继续找启动器：启动器模式不能因前一个根只找到客户端而提前失败。
             client_candidate = process_path
     if client_candidate is not None:
-        logger.info(f"已按安装信息找回鸣潮客户端: {client_candidate}")
+        logger.info(f"按注册表找回鸣潮客户端: {client_candidate}")
     return WutheringWavesFallback(process_path=client_candidate)
 
 
