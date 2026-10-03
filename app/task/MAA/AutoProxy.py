@@ -72,7 +72,11 @@ from app.utils.constants import (
 from app.utils.io import mark_native_config_injected, read_file, write_file
 
 from . import api_service as maa_api
-from .base_preset import maa_task_identity, seed_maa_base_config
+from .base_preset import (
+    ensure_maa_default_configuration,
+    maa_task_identity,
+    seed_maa_base_config,
+)
 from .tools import (
     agree_bilibili,
     ensure_game_updated,
@@ -1478,18 +1482,9 @@ class AutoProxyTask(ScriptAutoProxyBase):
         gui_set = read_maa_config_with_fallback(self.maa_set_path, "gui.json")
         gui_new_set = read_maa_config_with_fallback(self.maa_set_path, "gui.new.json")
 
-        # 多配置使用默认配置（gui.new.json 的方案列表可能与 gui.json 不一致，缺失当前方案时保留其自有 Default）
-        if gui_set["Current"] != "Default":
-            gui_set["Configurations"]["Default"] = gui_set["Configurations"][
-                gui_set["Current"]
-            ]
-            gui_new_configurations = gui_new_set.setdefault("Configurations", {})
-            if gui_set["Current"] in gui_new_configurations:
-                gui_new_configurations["Default"] = gui_new_configurations[
-                    gui_set["Current"]
-                ]
-            gui_new_configurations.setdefault("Default", {})
-            gui_set["Current"] = "Default"
+        # 多配置使用默认配置（gui.new.json 的方案列表可能与 gui.json 不一致，缺失当前方案时保留其自有 Default）；
+        # Default 本身也可能缺失——直控/沿用安装目录配置时该文件不由 MAS 生成，兜底必须无条件执行。
+        ensure_maa_default_configuration(gui_set, gui_new_set)
 
         # 各配置部分的引用
         global_set = gui_set["Global"]
