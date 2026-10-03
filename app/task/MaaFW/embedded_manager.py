@@ -1417,10 +1417,8 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
             )
             return
 
-        # task_manager 只放了一个「暂未加载」占位项，真实用户列表由各 manager
-        # 自己填（与 manager.py 的做法一致）。AutoProxy 任务按 current_index
-        # 取当前用户，这一步不做后面必然取到占位项、拿它的随机 uid 去查
-        # user_config 而 KeyError。
+        # AutoProxy 的真实用户列表在这里加载。task_manager 会让尚未轮到的
+        # 脚本保持空表，避免任务总览把占位项显示成真实用户。
         assert self.user_config is not None
         assert self.script_config is not None
         self.script_info.user_list = [

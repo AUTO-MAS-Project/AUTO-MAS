@@ -3956,6 +3956,7 @@ export default {
     overview: {
       title: 'Task overview',
       unknownScript: 'Unknown managed script',
+      waitingToRun: 'Waiting to run',
     },
     modal: {
       cannotDeleteTitle: 'Cannot close this console',
