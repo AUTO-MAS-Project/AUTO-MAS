@@ -32,6 +32,7 @@ pyautogui + DPI 适配模式，OCR 复用通用工具集 `app.tools.ocr`。
 
 import asyncio
 import ctypes
+import re
 import time
 from collections.abc import Callable
 from contextlib import contextmanager
@@ -83,13 +84,20 @@ _LAUNCHER_RESTART_QUIET_SECONDS = 3.0
 # 下载进行中的判定文本：底部状态行「... 下载中 0% (x/x) 当前速度 xx MB/s」
 # 与右下角「暂停下载」按钮（该按钮仅在下载进行中存在）
 _DOWNLOAD_STATE_TEXTS = ("下载中", "暂停下载")
-# 下载进度相关文本特征：用于构造「下载进度签名」，只看下载相关行，
-# 避免首页横幅轮播等无关界面变化干扰卡死判定
-_DOWNLOAD_PROGRESS_TOKENS = ("%", "MB/s", "剩余时间")
+# 下载进度相关文本特征：用于构造「下载进度签名」，只看百分比/体积/速度，
+# 避免首页横幅轮播等无关界面变化干扰卡死判定；「剩余时间」本身不是进度，
+# 不能单独作为签名输入。
+_DOWNLOAD_PROGRESS_TOKENS = ("%", "MB", "GB", "KB")
+# 进度签名剥离模式：剥离「00:40:45」/「40:45」形态的计时文本（至少一组冒号）
+_ELAPSED_TIME_PATTERN = re.compile(r"\d{1,}:\d{2}(?::\d{2})*")
 # 检测到下载态时每次顺延的等待宽限（下载 UI 持续存在就持续等，等效不设总时限）
 _UPDATE_ACTIVE_GRACE_SECONDS = 600.0
-# 下载进度签名持续无变化的时长上限：百分比/速度/剩余时间长时间不动视为下载卡死
+# 下载进度签名持续无变化的时长上限：百分比/体积/速度长时间不动视为下载卡死
 _DOWNLOAD_STALL_SECONDS = 300.0
+# 「更新」点击重试：单次点击防重复下载是有意设计，但点击被吞时需按间隔补点，
+# 以按钮长时间停留原状（未被下载 UI 取代）为被吞判据
+_UPDATE_CLICK_RETRY_SECONDS = 15.0
+_UPDATE_CLICK_RETRY_LIMIT = 3
 # 「开始游戏」点击重试：被遮挡等场景点击可能被吞（若用固定次数预算，遮罩消失
 # 后预算已尽只能干等超时），改为按时间间隔重试并保留宽松总上限防死循环；点击
 # 生效时启动器会退出或最小化，按钮消失即停止重试。对齐 ok-ww 启动器方案。
@@ -290,6 +298,19 @@ def _find_text(items: list[OCRItem], keywords: tuple[str, ...]) -> Box | None:
     return None
 
 
+def _download_progress_texts(items: list[OCRItem]) -> tuple[str, ...]:
+    """取百分比/体积/速度文本并剥离计时，供下载进度签名使用。
+
+    启动器常把剩余时间倒计时和百分比放在同一行；只包含「剩余时间」及
+    计时的条目不命中进度 token，因此不会让倒计时独自续命卡死计时器。
+    """
+    texts = []
+    for text, _ in items:
+        if any(token in text for token in _DOWNLOAD_PROGRESS_TOKENS):
+            texts.append(_ELAPSED_TIME_PATTERN.sub("", text))
+    return tuple(texts)
+
+
 # ── 屏保退出（对齐 ok-nte 上游开工前的 dismiss_screensaver）──────────────
 _SPI_GETSCREENSAVERRUNNING = 0x0072
 
@@ -360,7 +381,7 @@ def start_game_via_launcher(
     ok-nte 上游 launcher_popup_close 的防护顺序）。
 
     游戏下载进行中（「下载中」状态行 /「暂停下载」按钮）基于下载状态动态续延等待，
-    下载多久等多久；同时以百分比/速度/剩余时间构造下载进度签名，长时间无变化
+    下载多久等多久；同时以百分比/体积/速度构造下载进度签名，长时间无变化
     判定下载卡死提前失败。
 
     Args:
@@ -394,8 +415,14 @@ def start_game_via_launcher(
         start_click_exhausted_logged = False
         exit_wait_polls = 0
         update_clicked = False
-        # 点「更新」后按钮是否已离开更新态（被进度 UI 取代过）：用于区分
-        # 「更新刚点完、按钮文本尚未切换」与「更新完成、按钮真正变回」
+        last_update_click: float | None = None
+        update_click_retries = 0
+        update_exhausted_logged = False
+        # 点「更新」后是否确实进入过下载态：作为「按钮被取代」的强证据，
+        # 避免单帧 OCR 漏识别按钮就误判为点击被吞而重复点击
+        update_went_busy = False
+        # 点「更新」后按钮是否已离开更新态（被下载 UI 或「开始游戏」取代过）：
+        # 用于区分「更新刚点完、按钮文本尚未切换」与「更新流程已结束」
         start_button_gone = False
         launcher_upgrade_clicked = False
         last_download_sig: int | None = None
@@ -453,6 +480,12 @@ def start_game_via_launcher(
                     start_button_gone = False
                     launcher_upgrade_clicked = False
                     start_click_exhausted_logged = False
+                    last_update_click = None
+                    update_click_retries = 0
+                    update_exhausted_logged = False
+                    update_went_busy = False
+                    last_download_sig = None
+                    last_download_progress = time.monotonic()
                 time.sleep(2)
                 continue
 
@@ -476,28 +509,28 @@ def start_game_via_launcher(
 
             # 游戏下载进行中：基于下载状态动态续延等待，并以下载进度签名检测卡死
             if _find_text(items, _DOWNLOAD_STATE_TEXTS) is not None:
+                if update_clicked:
+                    update_went_busy = True
                 deadline = max(deadline, now + _UPDATE_ACTIVE_GRACE_SECONDS)
-                progress_sig = hash(
-                    tuple(
-                        text
-                        for text, _ in items
-                        if any(token in text for token in _DOWNLOAD_PROGRESS_TOKENS)
-                    )
-                )
+                progress_texts = _download_progress_texts(items)
+                # 仅剩余时间倒计时不是下载进度；剔除后得到的空签名也必须参与
+                # 停滞判断，否则倒计时独自变化会把 300 秒判定永久推迟。
+                progress_sig = hash(progress_texts)
                 if progress_sig != last_download_sig:
                     last_download_sig = progress_sig
                     last_download_progress = now
                 elif now - last_download_progress >= _DOWNLOAD_STALL_SECONDS:
                     raise RuntimeError(
                         f"启动器下载长时间无进展（{_DOWNLOAD_STALL_SECONDS:g}s 内"
-                        "百分比/速度无变化，疑似卡住），请人工确认下载状态"
+                        "百分比/体积/速度无变化，疑似卡住），请人工确认下载状态"
                     )
                 time.sleep(2)
                 continue
 
             start_box = _find_text(items, ("开始游戏",))
             update_box = None if start_box else _find_text(items, ("更新",))
-            if update_clicked and start_box is None:
+            if update_clicked and start_box is not None:
+                # 「开始游戏」已取代「更新」：停止补点，进入启动流程。
                 start_button_gone = True
             if start_box is not None and update_clicked and start_button_gone:
                 # 更新完成后按钮已真正变回「开始游戏」（中间被进度 UI/遮罩
@@ -509,6 +542,14 @@ def start_game_via_launcher(
                 start_click_exhausted_logged = False
                 update_clicked = False
                 start_button_gone = False
+                last_update_click = None
+                update_click_retries = 0
+                update_exhausted_logged = False
+                update_went_busy = False
+                # 仅在「开始游戏」这一强完成证据出现时重置下载停滞基准；
+                # 单帧漏识别忙碌状态不能让卡死计时重新开始。
+                last_download_sig = None
+                last_download_progress = now
             if start_box is not None and start_clicks >= _START_CLICK_LIMIT:
                 if not start_click_exhausted_logged:
                     start_click_exhausted_logged = True
@@ -539,7 +580,32 @@ def start_game_via_launcher(
                 on_log("检测到启动器「更新」按钮，正在更新游戏，等待时间将延长...")
                 _click_box(hwnd, update_box, after_sleep=3)
                 update_clicked = True
+                last_update_click = now
+                update_click_retries = 0
+                update_exhausted_logged = False
+                update_went_busy = False
                 deadline = max(deadline, now + _UPDATE_TIMEOUT)
+            elif (
+                update_box is not None
+                and update_clicked
+                and not update_went_busy
+                and not start_button_gone
+                and last_update_click is not None
+                and now - last_update_click >= _UPDATE_CLICK_RETRY_SECONDS
+            ):
+                # 点击「更新」后按钮长时间停留原状（未进入下载态）：判定
+                # 点击被吞，按间隔补点，最多补三次。
+                if update_click_retries < _UPDATE_CLICK_RETRY_LIMIT:
+                    on_log("「更新」点击未生效，补点一次...")
+                    _click_box(hwnd, update_box, after_sleep=3)
+                    update_click_retries += 1
+                    last_update_click = now
+                elif not update_exhausted_logged:
+                    update_exhausted_logged = True
+                    on_log(
+                        f"「更新」已补点 {_UPDATE_CLICK_RETRY_LIMIT} 次仍未生效，"
+                        "停止补点并继续等待（可能被遮挡或启动器异常）"
+                    )
             time.sleep(2)
 
         if _find_game_hwnd() is not None:
