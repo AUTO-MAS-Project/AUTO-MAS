@@ -27,5 +27,9 @@ export type MaaFWConfig_Game = {
      * 游戏启动等待时间（秒）：等窗口出现与等画面稳定各最多这么久，画面稳定即提前
      */
     WaitTime?: (number | null);
+    /**
+     * 脚本级键位，JSON 字符串 {option 名: {字段名: 组合键}}（如 "Ctrl+E"），只存与 interface 默认不同的字段；仅 Win32 控制器生效
+     */
+    Hotkeys?: (string | null);
 };
 

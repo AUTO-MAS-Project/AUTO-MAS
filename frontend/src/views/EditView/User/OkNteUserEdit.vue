@@ -6,7 +6,7 @@
       :is-edit="isEdit"
       script-edit-segment="oknte"
       :user-id="activeUserId"
-      config-label="配置 OK-NTE"
+      :config-label="t('edit.configureOkNte')"
       :config-loading="oknteConfigLoading"
       :config-active="showOknteConfigMask"
       :config-disabled="pageLoading || !activeUserId || configLocked"
@@ -145,8 +145,13 @@
                   :model-value="formData.Info.Mode"
                   :options="oknteConfigModeOptions"
                   :disabled="pageLoading"
+                  :quick-config="formData.Info.IfQuickConfig"
+                  :quick-config-disabled="
+                    pageLoading || isInitializing || isSaving || configEditorSaving
+                  "
                   :alert-message="t('edit.configSourceHintBase')"
                   @change="handleConfigModeChange"
+                  @quick-config-change="handleQuickConfigChange"
                 />
               </a-col>
             </a-row>
@@ -285,13 +290,6 @@
       <a-flex class="section-header" justify="space-between" align="center" wrap="wrap" gap="small">
         <h3>{{ t('edit.okNteConfiguration') }}</h3>
         <a-space>
-          <span>{{ t('edit.enableQuickConfiguration') }}</span>
-          <a-switch
-            :checked="formData.Info.IfQuickConfig"
-            :disabled="pageLoading || isInitializing || isSaving || configEditorSaving"
-            :aria-label="t('edit.enableQuickConfiguration')"
-            @change="handleQuickConfigChange"
-          />
           <a-button size="small" @click="openRestoreModal">
             <template #icon><HistoryOutlined /></template>
             {{ t('edit.configRestoreTitle') }}
@@ -429,7 +427,7 @@ const oknteConfigModeOptions: Array<{
     label: t('edit.script'),
     value: '脚本',
     title: t('edit.script'),
-    description: '使用脚本级共享配置',
+    description: t('edit.useSharedScriptLevel'),
     icon: 'file',
   },
   {

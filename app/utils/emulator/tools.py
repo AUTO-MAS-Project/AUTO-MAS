@@ -27,10 +27,12 @@ import time
 from dataclasses import dataclass, field
 
 from app.utils.platform import IS_WINDOWS
+from app.utils.platform import window as platform_window
 
 if IS_WINDOWS:
     import winreg
 from collections import defaultdict
+from collections.abc import Awaitable, Callable
 from contextlib import suppress
 from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple
@@ -584,3 +586,55 @@ async def restore_audio_before_close(
         logger.info(f"已还原模拟器 {idx} 的音频静音状态: {sorted(restored)}")
     else:
         logger.debug(f"模拟器 {idx} 的音频进程已退出，无需还原静音状态")
+
+
+_WINDOW_RESOLVE_TIMEOUT = 1.0
+"""解析实例主窗口句柄的上限（秒）：实例刚启动时窗口可能还没建出来"""
+
+_WINDOW_POLL_INTERVAL = 0.5
+"""窗口句柄重读与可见性轮询的间隔（秒）"""
+
+
+async def resolve_main_window(
+    idx: str, resolve: Callable[[], Awaitable[int | None]]
+) -> int:
+    """在 :data:`_WINDOW_RESOLVE_TIMEOUT` 内反复取该实例的主窗口句柄，取不到报错。
+
+    ``resolve`` 每次给出一个候选句柄（拿不到返回 None），窗口可能等实例起来才
+    建出来，所以按 :data:`_WINDOW_POLL_INTERVAL` 重试到超时为止；解析不到就明确
+    报错，不空转到 ``MaxWaitTime``（#948：把 PID 当句柄传的判据恒为假，只会白等到超时）。
+    """
+
+    deadline = time.monotonic() + _WINDOW_RESOLVE_TIMEOUT
+    while True:
+        hwnd = await resolve()
+        if hwnd:
+            return hwnd
+        if time.monotonic() >= deadline:
+            raise RuntimeError(f"未找到设备{idx}的主窗口，无法切换窗口可见性")
+        await asyncio.sleep(_WINDOW_POLL_INTERVAL)
+
+
+async def apply_window_visibility(
+    hwnd: int, idx: str, is_visible: bool, max_wait: float
+) -> None:
+    """按 ``max_wait`` 轮询切换 ``hwnd`` 的可见性，超时抛 ``RuntimeError``。
+
+    老板键不带实例信息，多开时会把别的实例一起翻过去，所以直接对该实例自己的窗口
+    句柄调 ``ShowWindow``；单次切换失败只记日志，接着重试。
+    """
+
+    deadline = time.monotonic() + max_wait
+    while time.monotonic() < deadline:
+        if platform_window.is_visible(hwnd) == is_visible:
+            return
+        try:
+            if is_visible:
+                platform_window.show_window(hwnd)
+            else:
+                platform_window.hide_window(hwnd)
+        except Exception as e:
+            logger.error(f"切换设备{idx}窗口可见性失败: {e}")
+        await asyncio.sleep(_WINDOW_POLL_INTERVAL)
+
+    raise RuntimeError(f"{'显示' if is_visible else '隐藏'}设备{idx}窗口超时")

@@ -332,7 +332,7 @@
                         <a-button
                           size="small"
                           type="text"
-                          aria-label="重命名实例"
+                          :aria-label="t('edit.zzzodRenameInstance')"
                           @click="openRenameInstance(inst)"
                         >
                           <template #icon><EditOutlined /></template>
@@ -343,7 +343,7 @@
                           size="small"
                           type="text"
                           danger
-                          aria-label="删除实例"
+                          :aria-label="t('edit.zzzodDeleteInstance')"
                           @click="openDeleteInstance(inst)"
                         >
                           <template #icon><DeleteOutlined /></template>

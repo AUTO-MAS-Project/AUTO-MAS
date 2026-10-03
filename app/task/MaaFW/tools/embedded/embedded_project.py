@@ -58,6 +58,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from app.task.MaaFW.tools.core.log_redact import mask_home_path
 from app.task.MaaFW.tools.core.project_update import payloads
 from app.task.MaaFW.tools.core.project_update.apply import (
     project_state_dir_for,
@@ -1324,6 +1325,24 @@ def import_embedded_project(
     # 与其它副本共用的文件（同内容只在磁盘上存一份）。
     report["sharedFiles"] = built.shared_files + finalized.ingested_files
     report["sharedBytes"] = built.shared_bytes + finalized.ingested_bytes
+    # 导入报告只进脚本配置与页面；用户发来的日志包里只有 app.log，总结与每条投影警告
+    # （CFA 入口兜底那条就在这里）都要在这里留一份。
+    # 路径里的用户目录换成 <HOME>（警告原文也可能带绝对路径）。
+    warnings = list(report.get("warnings") or [])
+    logger.info(
+        mask_home_path(
+            f"[MFW 内嵌] 脚本 {script_id} 已从 {source} 导入：版本 {source_version or '未声明'}，"
+            f"渠道 {channel or DEFAULT_CHANNEL}，载荷 {registered.payload_id}"
+            f"（视图用 {registered.target_id}），副本 {final_dir}，"
+            f"来源 {int(report.get('sourceSizeBytes') or 0) / 2**20:.1f} MB → "
+            f"副本 {int(report.get('payloadSizeBytes') or 0) / 2**20:.1f} MB，"
+            f"投影警告 {len(warnings)} 条"
+        )
+    )
+    for warning in warnings:
+        logger.warning(
+            mask_home_path(f"[MFW 内嵌] 导入 {source} 的投影警告：{warning}")
+        )
     return {
         "report": report,
         "sourceVersion": source_version,

@@ -12,7 +12,9 @@
     <a-empty
       v-if="filteredOptions.length === 0"
       class="option-empty"
-      :description="optionSearchQuery ? '没有匹配的配置项' : '当前任务没有可配置项'"
+      :description="
+        optionSearchQuery ? t('edit.maafwNoMatchingSettings') : t('edit.maafwNoConfigurableOptions')
+      "
     />
 
     <a-collapse
@@ -189,7 +191,9 @@
           v-else
           type="warning"
           show-icon
-          :message="`不支持的配置项类型：${option.type || '未知'}，请联系脚本作者或升级 AUTO-MAS`"
+          :message="
+            t('edit.maafwUnsupportedOptionType', { type: option.type || t('edit.unknownType') })
+          "
         />
 
         <div
@@ -326,9 +330,9 @@ const visibleOptions = computed(() => {
     seen.add(optionName)
 
     const option = optionMap.value.get(optionName)
-    // Hotkeys are owned by the MaaFW project itself.  MAS does not capture or
-    // persist them, so omit them from the editor instead of presenting a
-    // misleading "unsupported option" warning.
+    // Hotkeys are game key bindings shared by every user of the script: they
+    // are configured once on the script page (Win32 only, Game.Hotkeys) and
+    // overlaid at run time, so the per-task editor leaves them out.
     if (!option || option.type === 'hotkey' || !isOptionActive(option)) continue
     result.push(option)
   }

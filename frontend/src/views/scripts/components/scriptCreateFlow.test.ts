@@ -5,7 +5,29 @@ import {
   buildCreateSteps,
   buildMfwReuseChoices,
   isMfwFamily,
+  SCRIPT_TYPE_OPTIONS,
 } from './scriptCreateFlow'
+
+describe('scriptCreateFlow · 类型卡片', () => {
+  it('卡片顺序：MaaFW 与各特调按 create.card.after 插回原位', () => {
+    expect(SCRIPT_TYPE_OPTIONS.map(option => [option.value, option.group])).toEqual([
+      ['General', 'general'],
+      ['MaaFW', 'general'],
+      ['MAA', 'specialized'],
+      ['SRC', 'specialized'],
+      ['MaaEnd', 'specialized'],
+      ['M9A', 'specialized'],
+      ['Okww', 'specialized'],
+      ['OkNte', 'specialized'],
+      ['HSR', 'specialized'],
+      ['BetterGI', 'specialized'],
+      ['ZzzOd', 'specialized'],
+      ['BAAH', 'specialized'],
+      ['Whimbox', 'specialized'],
+      ['MSS', 'specialized'],
+    ])
+  })
+})
 
 /**
  * MFW 家族（MaaFW / M9A）新建时多一步「项目从哪来」：选目录走原来的引导页，

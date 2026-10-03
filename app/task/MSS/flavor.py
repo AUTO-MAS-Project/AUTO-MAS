@@ -21,8 +21,9 @@
 运行前在用户勾选的任务实例列表上做三件事，其余与通用 MaaFW 没有任何运行期差别：
 
 1. 活动：队列里有「活动快速战斗」（entry ``活动快速战斗_入口``）时查一次活动排期
-   （``app/tools/stella_activity.py``）。有进行中的活动就把它挪到悬赏试炼前面先打；确实
-   没有活动就把它摘掉；取不到数据时按队列原样跑——真在活动期却摘掉，整轮就漏打了活动。
+   （``app/tools/stella_official.py``，只认会开活动关的「版本活动」）。有进行中的活动
+   就把它挪到悬赏试炼前面先打；确实没有活动就把它摘掉；取不到数据时按队列原样跑——
+   真在活动期却摘掉，整轮就漏打了活动。
 2. 日常：用户选了 MSS 计划表（``Info.PlanMode`` 不是 ``Fixed``）时，按当天槽位改写
    「悬赏试炼快速战斗」（entry ``战斗_入口``）的关卡、是否跳过难度选择与难度、是否消耗
    所有干劲与作战次数；队列里没有这个任务就补上。``Fixed`` 时一个选项都不动。
@@ -146,18 +147,18 @@ def is_mss_project(interface_model: MaaFWInterface | dict[str, Any]) -> bool:
 
 
 def activity_running() -> bool | None:
-    """当前有没有进行中的活动：有 True、确实没有 False、取不到数据 None。
+    """当前有没有进行中的版本活动：有 True、确实没有 False、取不到数据 None。
 
     钩子在建运行计划的工作线程里被调，那里没有事件循环，自己起一个跑完就收；
     万一在事件循环线程里被调，拿不到结果，按「说不准」处理。
     """
 
-    from app.tools.stella_activity import has_running_event_now
+    from app.tools.stella_official import has_running_official_activity
 
     try:
         asyncio.get_running_loop()
     except RuntimeError:
-        return asyncio.run(has_running_event_now())
+        return asyncio.run(has_running_official_activity())
     return None
 
 

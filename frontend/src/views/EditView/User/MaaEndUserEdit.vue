@@ -68,6 +68,11 @@
               :config-loading="maaEndConfigLoading"
               :import-loading="maaEndImportLoading"
               :show-config-mask="showMaaEndConfigMask"
+              :quick-config="formData.Info.IfQuickConfig"
+              :quick-config-disabled="
+                loading || isSaving || (!presetSupported && !formData.Info.IfQuickConfig)
+              "
+              @quick-config-change="handleQuickConfigChange"
               @configure="handleMaaEndConfig"
               @import-config="handleImportMaaEndConfig"
               @script-config="handleScriptConfig"
@@ -78,24 +83,6 @@
           <a-flex id="section-task" justify="space-between" align="center" wrap="wrap" gap="small">
             <h3>{{ t('edit.taskConfiguration') }}</h3>
             <a-space>
-              <a-button
-                v-if="formData.Info.IfQuickConfig && isSanityPlanMode"
-                type="link"
-                class="plans-button"
-                @click="handleGoToPlans"
-              >
-                <template #icon><CalendarOutlined /></template>
-                {{ t('edit.goPlan') }}
-              </a-button>
-              <span>{{ t('edit.enableQuickConfiguration') }}</span>
-              <a-switch
-                :checked="formData.Info.IfQuickConfig"
-                :disabled="
-                  loading || isSaving || (!presetSupported && !formData.Info.IfQuickConfig)
-                "
-                :aria-label="t('edit.enableQuickConfiguration')"
-                @change="handleQuickConfigChange"
-              />
               <a-button size="small" @click="openRestoreModal">
                 <template #icon><HistoryOutlined /></template>
                 {{ t('edit.configRestoreTitle') }}
@@ -104,6 +91,28 @@
           </a-flex>
           <a-card v-if="formData.Info.IfQuickConfig" class="section-card">
             <TaskConfigSection
+              :form-data="formData"
+              :loading="loading"
+              :if-quick-config="formData.Info.IfQuickConfig"
+              @save="handleFieldSave"
+              @save-batch="handleFieldsSave"
+            />
+          </a-card>
+
+          <a-card v-if="formData.Info.IfQuickConfig" id="section-sanity" class="section-card">
+            <template #title>{{ t('edit.maaEndSanitySection') }}</template>
+            <template #extra>
+              <a-button
+                v-if="formData.Task.IfSanity && isSanityPlanMode"
+                type="link"
+                class="plans-button"
+                @click="handleGoToPlans"
+              >
+                <template #icon><CalendarOutlined /></template>
+                {{ t('edit.goPlan') }}
+              </a-button>
+            </template>
+            <SanityConfigSection
               :form-data="formData"
               :loading="loading"
               :if-quick-config="formData.Info.IfQuickConfig"
@@ -265,6 +274,7 @@ import DeliveryConfigSection from '@/views/MaaEndUserEdit/DeliveryConfigSection.
 import type { MaaEndAutoCollectGroup } from '@/api'
 import AutoCollectConfigSection from '@/views/MaaEndUserEdit/AutoCollectConfigSection.vue'
 import TaskConfigSection from '@/views/MaaEndUserEdit/TaskConfigSection.vue'
+import SanityConfigSection from '@/views/MaaEndUserEdit/SanityConfigSection.vue'
 import UserNotifyConfig from '@/components/UserNotifyConfig.vue'
 import ExtraScriptSection from '@/components/ExtraScriptSection.vue'
 import GuiSessionMask from '@/components/GuiSessionMask.vue'
@@ -330,6 +340,7 @@ const anchorItems = computed(() => {
   items.push({ key: 'task', href: '#section-task', title: t('edit.taskConfiguration') })
   if (formData.Info.IfQuickConfig) {
     items.push(
+      { key: 'sanity', href: '#section-sanity', title: t('edit.maaEndSanitySection') },
       { key: 'collect', href: '#section-collect', title: t('edit.maaEndAutoCollectConfig') },
       { key: 'delivery', href: '#section-delivery', title: t('edit.maaEndDeliveryConfig') },
       { key: 'limits', href: '#section-limits', title: t('edit.maaEndDailyOnceTasks') }

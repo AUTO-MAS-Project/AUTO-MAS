@@ -19,6 +19,7 @@
 
 #   Contact: DLmaster_361@163.com
 
+from collections.abc import Sequence
 from dataclasses import replace
 from functools import cache
 
@@ -48,7 +49,7 @@ SIGNATURE_SEP = "\n"
 
 # 喜报图片同时提供本地资源和官网 URL；缺少本地文件时，仍可在支持 URL 的表达中展示。
 SIX_STAR_IMAGE_ID = "maa-six-star"
-SIX_STAR_IMAGE_URL = "https://api.auto-mas.top/file/Resource/six_star.png"
+SIX_STAR_IMAGE_URL = "https://data.auto-mas.top/api/v1/files/auto-mas/Resource/arknights-six-star/download"
 
 
 @cache
@@ -114,21 +115,23 @@ def _six_star_targets(user_config: MaaUserConfig | None) -> list[NotifyTarget]:
             target,
             channels=tuple(
                 (
-                    channel,
-                    replace(
-                        channel_target,
-                        capabilities=replace(
-                            channel_target.capabilities,
-                            formats=("text",),
-                            double_text_newlines=(
-                                "markdown" in channel_target.capabilities.formats
-                                or channel_target.capabilities.double_text_newlines
+                    (
+                        channel,
+                        replace(
+                            channel_target,
+                            capabilities=replace(
+                                channel_target.capabilities,
+                                formats=("text",),
+                                double_text_newlines=(
+                                    "markdown" in channel_target.capabilities.formats
+                                    or channel_target.capabilities.double_text_newlines
+                                ),
                             ),
                         ),
-                    ),
+                    )
+                    if channel.key == "webhook"
+                    else (channel, channel_target)
                 )
-                if channel.key == "webhook"
-                else (channel, channel_target)
                 for channel, channel_target in target.channels
             ),
         )
@@ -142,8 +145,14 @@ async def push_notification(
     message: dict,
     user_config: MaaUserConfig | None,
     task_info: object | None = None,
+    *,
+    images: Sequence[NotificationImage] = (),
 ) -> DispatchResult:
-    """通过所有渠道推送通知; 返回分发的实际尝试/成功/失败结果。"""
+    """通过所有渠道推送通知; 返回分发的实际尝试/成功/失败结果。
+
+    ``images`` 只在「统计信息」模式下随报告附带（失败截图），模板通过
+    资源 ID 引用对应图片。
+    """
 
     logger.info(f"开始推送通知, 模式: {mode}, 标题: {title}")
 
@@ -154,6 +163,7 @@ async def push_notification(
             task_info=task_info,
             result_template="MAA_result.html",
             signature_sep=SIGNATURE_SEP,
+            images=images,
         )
 
     if mode == "统计信息":
@@ -165,6 +175,7 @@ async def push_notification(
                 text=_statistic_text(message),
                 html=template.render(message),
                 signature_sep=SIGNATURE_SEP,
+                images=images,
             ),
             statistic_targets(user_config),
         )

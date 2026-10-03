@@ -346,12 +346,15 @@
             <a-row :gutter="24">
               <a-col :span="24">
                 <!-- 快速配置开关已隐藏：按配置来源派生（直控 = 关，脚本 / 用户 = 开），
-                     见 handleConfigModeChange 与后端 BetterGIUserConfig.load 的加载归一。 -->
+                     见 handleConfigModeChange 与后端 BetterGIUserConfig.load 的加载归一。
+                     派生值仍交给选择器只读展示，让「本次任务生效的配置」与实际运行一致。 -->
                 <GeneralConfigModeSelector
                   :model-value="formData.Info.Mode"
                   :options="bettergiConfigModeOptions"
                   :disabled="pageLoading"
                   :saving="configModeSaving"
+                  :quick-config="formData.Info.IfQuickConfig"
+                  :quick-config-readonly="true"
                   @change="handleConfigModeChange"
                 />
               </a-col>
@@ -681,7 +684,7 @@
                               type="text"
                               size="small"
                               :disabled="isGroupFrozen(item)"
-                              aria-label="另存为新配置组"
+                              :aria-label="t('edit.bettergiDuplicateAsNew')"
                               @click.stop="openDuplicateModal(item)"
                             >
                               <template #icon><SaveOutlined /></template>
@@ -693,7 +696,7 @@
                               type="text"
                               size="small"
                               :disabled="isGroupFrozen(item) || !canRenameGroup(item)"
-                              aria-label="修改配置组名称"
+                              :aria-label="t('edit.bettergiRenameAsNew')"
                               @click.stop="openRenameModal(item)"
                             >
                               <template #icon><EditOutlined /></template>
@@ -705,7 +708,7 @@
                               type="text"
                               size="small"
                               :disabled="isGroupFrozen(item)"
-                              aria-label="复制相同配置组"
+                              :aria-label="t('edit.bettergiCopySameAs')"
                               @click.stop="duplicateSameGroup(item)"
                             >
                               <template #icon><CopyOutlined /></template>
@@ -1372,8 +1375,8 @@ const bettergiConfigModeOptions: Array<{
   disabledReason?: string
 }> = [
   {
-    title: t('edit.scriptConfiguration'),
-    description: t('edit.scriptConfiguration'),
+    title: t('edit.script'),
+    description: t('edit.useSharedScriptLevel'),
     value: '脚本',
     icon: 'file',
     // 「脚本」运行时与「用户」同分支（均按 per-user MAS 配置运行），选了不生效——禁用并说明

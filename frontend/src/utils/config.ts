@@ -12,6 +12,9 @@ export interface FrontendConfig {
   cursorEffect?: CursorEffect
   lowPerformanceMode?: boolean
 
+  // 神秘入口上次解锁的北京时间日期，仅作轻量访问门槛
+  mysteryUnlockedDate?: string
+
   // 界面语言；未设置时跟随系统
   language?: AppLocale
 
@@ -43,6 +46,18 @@ const DEFAULT_CONFIG: FrontendConfig = {
   Function: {
     IfEnableTelemetry: true,
   },
+}
+
+// 保持渲染进程请求顺序；主进程保存时再合并最新文件，避免覆盖窗口等配置。
+let configQueue: Promise<void> = Promise.resolve()
+
+function enqueueConfigOperation<T>(operation: () => Promise<T>): Promise<T> {
+  const pending = configQueue.then(operation)
+  configQueue = pending.then(
+    () => undefined,
+    () => undefined
+  )
+  return pending
 }
 
 // 读取配置（内部使用，不触发保存）
@@ -84,51 +99,57 @@ async function getConfigInternal(): Promise<FrontendConfig> {
 
 // 读取配置（公共接口）
 export async function getConfig(): Promise<FrontendConfig> {
-  const config = await getConfigInternal()
+  return enqueueConfigOperation(async () => {
+    const config = await getConfigInternal()
 
-  // 如果是从localStorage迁移的配置，保存到文件并清理localStorage
-  const hasLocalStorage =
-    localStorage.getItem('app-config') || localStorage.getItem('theme-settings')
-  if (hasLocalStorage) {
-    try {
-      await window.electronAPI.saveConfig(config)
-      localStorage.removeItem('app-config')
-      localStorage.removeItem('theme-settings')
-      localStorage.removeItem('app-initialized')
-      logger.info('配置已从localStorage迁移到文件')
-    } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : String(error)
-      logger.error(`迁移配置失败: ${errorMsg}`)
+    // 如果是从localStorage迁移的配置，保存到文件并清理localStorage
+    const hasLocalStorage =
+      localStorage.getItem('app-config') || localStorage.getItem('theme-settings')
+    if (hasLocalStorage) {
+      try {
+        // 迁移只补齐缺失字段，不能用读取时的快照覆盖主进程的新值。
+        await window.electronAPI.saveConfig({}, config)
+        localStorage.removeItem('app-config')
+        localStorage.removeItem('theme-settings')
+        localStorage.removeItem('app-initialized')
+        logger.info('配置已从localStorage迁移到文件')
+      } catch (error) {
+        const errorMsg = error instanceof Error ? error.message : String(error)
+        logger.error(`迁移配置失败: ${errorMsg}`)
+      }
     }
-  }
 
-  return config
+    return config
+  })
 }
 
 // 保存配置
 export async function saveConfig(config: Partial<FrontendConfig>): Promise<void> {
-  try {
-    logger.info(`开始保存配置: 键=${Object.keys(config).join(',')}`)
-    const currentConfig = await getConfigInternal() // 使用内部函数避免递归
-    const newConfig = { ...currentConfig, ...config }
-    await window.electronAPI.saveConfig(newConfig)
-    logger.info('配置保存成功')
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`保存配置失败: ${errorMsg}`)
-    throw error
-  }
+  return enqueueConfigOperation(async () => {
+    try {
+      logger.info(`开始保存配置: 键=${Object.keys(config).join(',')}`)
+      const defaults = await getConfigInternal() // 保留默认值和旧配置迁移
+      await window.electronAPI.saveConfig(config, defaults)
+      logger.info('配置保存成功')
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error)
+      logger.error(`保存配置失败: ${errorMsg}`)
+      throw error
+    }
+  })
 }
 
 // 重置配置
 export async function resetConfig(): Promise<void> {
-  try {
-    await window.electronAPI.resetConfig()
-    localStorage.removeItem('app-config')
-    localStorage.removeItem('theme-settings')
-    localStorage.removeItem('app-initialized')
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`重置配置失败: ${errorMsg}`)
-  }
+  return enqueueConfigOperation(async () => {
+    try {
+      await window.electronAPI.resetConfig()
+      localStorage.removeItem('app-config')
+      localStorage.removeItem('theme-settings')
+      localStorage.removeItem('app-initialized')
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error)
+      logger.error(`重置配置失败: ${errorMsg}`)
+    }
+  })
 }

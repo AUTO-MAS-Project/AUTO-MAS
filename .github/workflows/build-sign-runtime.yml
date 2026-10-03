@@ -1,0 +1,201 @@
+name: 构建并签名 Runtime
+run-name: Runtime signing ${{ inputs.request_id }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      runtime_tag:
+        description: Runtime release tag
+        required: true
+        type: string
+      runtime_commit:
+        description: Full Runtime source commit
+        required: true
+        type: string
+      request_id:
+        description: Runtime workflow run ID and attempt
+        required: true
+        type: string
+      build_date:
+        description: UTC build date from Runtime release workflow
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: runtime-signing-${{ inputs.request_id }}
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: pwsh
+
+jobs:
+  build:
+    if: github.repository == 'AUTO-MAS-Project/AUTO-MAS' && github.ref == 'refs/heads/main'
+    runs-on: windows-latest
+    timeout-minutes: 30
+    env:
+      AUTO_MAS_TELEMETRY: disabled
+    steps:
+      - name: 校验签名请求
+        env:
+          RUNTIME_TAG: ${{ inputs.runtime_tag }}
+          SOURCE_COMMIT: ${{ inputs.runtime_commit }}
+          REQUEST_ID: ${{ inputs.request_id }}
+          BUILD_DATE: ${{ inputs.build_date }}
+          CERTIFICATE_THUMBPRINT: ${{ vars.RUNTIME_SIGNING_CERTIFICATE_THUMBPRINT }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ($env:RUNTIME_TAG -cnotmatch '^v\d+\.\d+\.\d+(?:[-+][A-Za-z0-9._-]+)?$' -or
+              $env:RUNTIME_TAG.Length -gt 128 -or $env:RUNTIME_TAG.Contains('..') -or
+              $env:RUNTIME_TAG.EndsWith('.') -or $env:RUNTIME_TAG.EndsWith('.lock') -or
+              $env:SOURCE_COMMIT -cnotmatch '^[0-9a-f]{40}$' -or
+              $env:REQUEST_ID -cnotmatch '^[1-9][0-9]*-[1-9][0-9]*$' -or
+              $env:BUILD_DATE -cnotmatch '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$') {
+            throw 'invalid runtime signing request'
+          }
+          if ($env:CERTIFICATE_THUMBPRINT -cnotmatch '^[0-9A-Fa-f]{40}$') {
+            throw 'missing Runtime signing certificate thumbprint'
+          }
+          $request = $env:REQUEST_ID -split '-'
+          $sourceRunJSON = & gh api "repos/AUTO-MAS-Project/AUTO-MAS-Runtime/actions/runs/$($request[0])"
+          if ($LASTEXITCODE -ne 0) { throw 'unable to verify Runtime source workflow' }
+          $sourceRun = $sourceRunJSON | ConvertFrom-Json
+          if ($sourceRun.repository.full_name -cne 'AUTO-MAS-Project/AUTO-MAS-Runtime' -or
+              $sourceRun.event -cne 'push' -or $sourceRun.path -cne '.github/workflows/release.yml' -or
+              $sourceRun.head_sha -cne $env:SOURCE_COMMIT -or $sourceRun.run_attempt -ne [int]$request[1] -or
+              $sourceRun.status -cne 'in_progress') {
+            throw 'Runtime source workflow does not match the signing request'
+          }
+
+      - name: 签出准确 Runtime 源码
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: AUTO-MAS-Project/AUTO-MAS-Runtime
+          ref: ${{ inputs.runtime_commit }}
+          path: runtime-source
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: 校验 Runtime tag 与主分支
+        working-directory: runtime-source
+        env:
+          RUNTIME_TAG: ${{ inputs.runtime_tag }}
+          SOURCE_COMMIT: ${{ inputs.runtime_commit }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $head = & git rev-parse --verify 'HEAD^{commit}'
+          if ($LASTEXITCODE -ne 0 -or $head -cne $env:SOURCE_COMMIT) { throw 'Runtime checkout mismatch' }
+          $tag = & git rev-parse --verify "refs/tags/$($env:RUNTIME_TAG)^{commit}"
+          if ($LASTEXITCODE -ne 0 -or $tag -cne $env:SOURCE_COMMIT) { throw 'Runtime release tag mismatch' }
+          & git merge-base --is-ancestor $env:SOURCE_COMMIT refs/remotes/origin/main
+          if ($LASTEXITCODE -ne 0) { throw 'Runtime release source is not merged into main' }
+
+      - name: 配置 Go
+        uses: actions/setup-go@44694675825211faa026b3c33043df3e48a5fa00 # v6.0.0
+        with:
+          go-version-file: runtime-source/go.mod
+          cache-dependency-path: runtime-source/go.sum
+
+      - name: 验证与构建 Runtime
+        working-directory: runtime-source
+        env:
+          RUNTIME_TAG: ${{ inputs.runtime_tag }}
+          SOURCE_COMMIT: ${{ inputs.runtime_commit }}
+          BUILD_DATE: ${{ inputs.build_date }}
+          AUTO_MAS_SENTRY_DSN: ${{ secrets.RUNTIME_SENTRY_DSN }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ([string]::IsNullOrWhiteSpace($env:AUTO_MAS_SENTRY_DSN)) { throw 'missing RUNTIME_SENTRY_DSN' }
+          & go test -p 2 ./... -count=1
+          if ($LASTEXITCODE -ne 0) { throw 'Runtime release tests failed' }
+          & ./scripts/build-runtime-release.ps1 -Tag $env:RUNTIME_TAG -SourceCommit $env:SOURCE_COMMIT `
+            -BuildDate $env:BUILD_DATE -OutputDirectory (Join-Path $env:RUNNER_TEMP 'runtime-unsigned')
+
+      - name: 上传未签名 Runtime
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: runtime-unsigned-${{ inputs.request_id }}
+          path: ${{ runner.temp }}/runtime-unsigned/auto-mas-runtime.exe
+          if-no-files-found: error
+          retention-days: 7
+
+  sign:
+    needs: build
+    runs-on: windows-latest
+    timeout-minutes: 75
+    steps:
+      - name: 签出 Runtime 验证脚本
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: AUTO-MAS-Project/AUTO-MAS-Runtime
+          ref: ${{ inputs.runtime_commit }}
+          path: runtime-source
+          persist-credentials: false
+
+      - name: 下载未签名 Runtime
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: runtime-unsigned-${{ inputs.request_id }}
+          path: unsigned
+
+      - name: 上传供 SignPath 校验的 Runtime
+        id: unsigned
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: runtime-signing-input-${{ inputs.request_id }}
+          path: unsigned/auto-mas-runtime.exe
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: 签名运行时
+        uses: signpath/github-action-submit-signing-request@c92b958760219087e01f8d67a1669ed57afe2627 # v2.3
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          github-token: ${{ github.token }}
+          organization-id: '787a1d5f-6177-4f30-9559-d2646473584a'
+          project-slug: AUTO_MAA
+          signing-policy-slug: release-signing
+          artifact-configuration-slug: AUTO-MAS_Runtime
+          github-artifact-id: ${{ steps.unsigned.outputs.artifact-id }}
+          wait-for-completion: true
+          wait-for-completion-timeout-in-seconds: 3600
+          output-artifact-directory: signed
+          parameters: |
+            version: ${{ toJSON(inputs.runtime_tag) }}
+
+      - name: 验签并生成回传清单
+        env:
+          RUNTIME_TAG: ${{ inputs.runtime_tag }}
+          SOURCE_COMMIT: ${{ inputs.runtime_commit }}
+          REQUEST_ID: ${{ inputs.request_id }}
+          BUILD_DATE: ${{ inputs.build_date }}
+          CERTIFICATE_THUMBPRINT: ${{ vars.RUNTIME_SIGNING_CERTIFICATE_THUMBPRINT }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $binaryName = "auto-mas-runtime-$($env:RUNTIME_TAG).exe"
+          $binary = Join-Path $env:GITHUB_WORKSPACE "signed/$binaryName"
+          Move-Item -LiteralPath 'signed/auto-mas-runtime.exe' -Destination $binary
+          & ./runtime-source/scripts/verify-runtime-release.ps1 -BinaryPath $binary -Tag $env:RUNTIME_TAG `
+            -SourceCommit $env:SOURCE_COMMIT -BuildDate $env:BUILD_DATE -RequireSignature `
+            -CertificateThumbprint $env:CERTIFICATE_THUMBPRINT
+          @{
+            schema = 1; tag = $env:RUNTIME_TAG; commit = $env:SOURCE_COMMIT; buildDate = $env:BUILD_DATE
+            requestID = $env:REQUEST_ID; signingRunID = $env:GITHUB_RUN_ID; signingRunAttempt = $env:GITHUB_RUN_ATTEMPT
+            binaryName = $binaryName; sha256 = (Get-FileHash -LiteralPath $binary -Algorithm SHA256).Hash.ToLowerInvariant()
+          } | ConvertTo-Json | Set-Content -LiteralPath 'signed/signing-manifest.json' -Encoding utf8NoBOM
+
+      - name: 上传已签名 Runtime
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: runtime-signed-${{ inputs.request_id }}
+          path: |
+            signed/auto-mas-runtime-${{ inputs.runtime_tag }}.exe
+            signed/signing-manifest.json
+          if-no-files-found: error
+          retention-days: 7

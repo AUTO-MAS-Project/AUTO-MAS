@@ -232,6 +232,15 @@
             </table>
             {% endfor %}
             {% endif %}
+
+            {% if screenshots %}
+            <p class="result-label">失败截图</p>
+            {% for shot in screenshots %}
+            <p>{{ shot.label | e }}</p>
+            <img src="{{ shot.image_ref }}" alt="{{ shot.label | e }}"
+                style="max-width: 100%; border: 1px solid #ddd; border-radius: 8px;">
+            {% endfor %}
+            {% endif %}
         </div>
 
         <p class="signature">AUTO-MAS 敬上</p>
