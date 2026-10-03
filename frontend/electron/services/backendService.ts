@@ -457,7 +457,9 @@ export class BackendService {
       // 采纳句柄前必须确认这次跑起来的后端就是期望版本（issue #30）；
       // 不匹配时先关闭 Runtime 再报错，绝不静默接管旧版本后端。
       try {
-        this.assertBackendVersionMatches(await this.fetchRunningBackendVersion(outcome.baseUrl, 5000))
+        this.assertBackendVersionMatches(
+          await this.fetchRunningBackendVersion(outcome.baseUrl, 5000)
+        )
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error)
         logger.error(`后端版本校验失败，关闭 Runtime: ${message}`)
@@ -1101,7 +1103,9 @@ export class BackendService {
     const expected = resolveRuntimeTargetVersion()
     if (actual !== null && toRuntimeVersion(actual) === expected) return
     const actualText = actual ?? '未上报（后端不可达或健康检查协议过旧）'
-    throw new Error(`后端版本不匹配：期望 ${expected}，实际 ${actualText}；请更新后端或关闭旧后端后重试`)
+    throw new Error(
+      `后端版本不匹配：期望 ${expected}，实际 ${actualText}；请更新后端或关闭旧后端后重试`
+    )
   }
 
   async waitUntilReady(timeoutMs: number = 60000): Promise<void> {
