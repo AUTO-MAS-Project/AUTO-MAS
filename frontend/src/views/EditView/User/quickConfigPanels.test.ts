@@ -66,10 +66,9 @@ describe('quick configuration panel visibility', () => {
     // 不经选择器/Section 透传，避免出现第二个开关
     expect(template).not.toContain(':quick-config=')
     expect(template).not.toContain('@quick-config-change=')
-    expect(source).toMatch(
-      /if \(!\(await (handleFieldSave|saveField)\('Info.IfQuickConfig', value\)\)\)/
-    )
-    expect(source).toContain('formData.Info.IfQuickConfig = previous')
+    // MAA 的失败恢复由字段队列处理，开关不能再按整轮保存结果回滚。
+    expect(source).toContain("await handleFieldSave('Info.IfQuickConfig', value)")
+    expect(source).not.toContain('formData.Info.IfQuickConfig = previous')
 
     const section = readFileSync(
       new URL('../../MAAUserEdit/BasicInfoSection.vue', import.meta.url),

@@ -8,6 +8,7 @@ import { ref, type Ref } from 'vue'
 import { Modal, notification } from 'ant-design-vue'
 import { Service } from '@/api'
 import { useAppClosing } from '@/composables/useAppClosing'
+import { cancelAppClose, prepareAppClose } from '@/composables/appCloseGuards'
 import { useUpdateChecker } from '@/composables/useUpdateChecker'
 import { clearStageOptionsCache } from '@/composables/usePlanDataCoordinator'
 import { cancelBackgroundInitCheck, checkBackgroundInit } from '@/services/backgroundInitNotice'
@@ -83,6 +84,8 @@ let residentSubscriptionIds: string[] = []
 
 // 正常关闭流程状态（权威，优先级最高）
 let closePromise: Promise<void> | null = null
+// 保存准备可以撤销；只有真正开始关闭后端后，断线才进入禁止重连的终态。
+let backendClosing = false
 let shutdownReadyReceived = false
 let closeRequestedByBackend = false
 let taskkillDone = false
@@ -122,7 +125,7 @@ let powerCountdownStaleTimer: number | undefined
 
 const delay = (ms: number): Promise<void> => new Promise(resolve => window.setTimeout(resolve, ms))
 
-const isClosing = (): boolean => closePromise !== null
+const isClosing = (): boolean => backendClosing
 
 // 计划内的后端重启窗口期：断开是预期的，既不提示也不自行恢复
 const isIntentionalRestart = (): boolean => intentionalRestartActive
@@ -149,7 +152,7 @@ const handleShutdownReady = (): void => {
 const handleCloseRequested = (): void => {
   logger.info('收到后端关闭请求 frontend.close.requested，前端开始退出')
   closeRequestedByBackend = true
-  if (closePromise) return
+  if (isClosing()) return
   closePromise = runBackendRequestedClose().catch(error => {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`后端请求关闭流程异常: ${errorMsg}`)
@@ -434,6 +437,7 @@ const runRuntimeSupervisedClose = async (): Promise<void> => {
 }
 
 const runCloseFlow = async (): Promise<void> => {
+  backendClosing = true
   logger.info('开始执行退出并关闭后端流程')
   const { showClosingOverlay } = useAppClosing()
   showClosingOverlay()
@@ -508,6 +512,7 @@ const runCloseFlow = async (): Promise<void> => {
 }
 
 const runBackendRequestedClose = async (): Promise<void> => {
+  backendClosing = true
   // 后端主动要求前端关闭：后端自行退出中，前端不再发 /close、不重启、不 taskkill
   const { showClosingOverlay } = useAppClosing()
   showClosingOverlay()
@@ -532,7 +537,37 @@ const runBackendRequestedClose = async (): Promise<void> => {
  */
 export function closeApp(): Promise<void> {
   if (closePromise) return closePromise
-  closePromise = runCloseFlow().catch(async error => {
+  closePromise = (async () => {
+    let prepared = false
+    let preparationToken: number | null | undefined
+    try {
+      // 保存期间的超时只能撤销退出，保存完成后再启动后端关闭的强制清理兜底。
+      preparationToken = await window.electronAPI?.appPrepareQuit?.()
+      if (preparationToken !== null) prepared = await prepareAppClose()
+      if (prepared && preparationToken !== undefined && preparationToken !== null) {
+        prepared = (await window.electronAPI?.appConfirmQuit?.(preparationToken)) === true
+        if (!prepared) notification.warning({ message: t('comp.closePreparationTimedOut') })
+      }
+    } catch (error) {
+      prepared = false
+      logger.error(`退出前保存失败: ${error instanceof Error ? error.message : String(error)}`)
+    }
+    // 后端主动关闭已接管退出，准备阶段的迟到结果不能撤销它或再请求一次关闭。
+    if (closeRequestedByBackend) return
+    if (!prepared) {
+      // 主进程可能已隐藏窗口并启动兜底计时；取消退出必须同时撤销它们。
+      try {
+        cancelAppClose()
+        await window.electronAPI?.appCancelQuit?.(preparationToken ?? undefined)
+      } catch (error) {
+        logger.error(`取消退出失败: ${error instanceof Error ? error.message : String(error)}`)
+      } finally {
+        closePromise = null
+      }
+      return
+    }
+    await runCloseFlow()
+  })().catch(async error => {
     // 关闭流程异常时只在确认后端已退出后通知主进程结束；否则保留遮罩，
     // 由 Electron 主进程的最终超时兜底再次执行串行 taskkill。
     const errorMsg = error instanceof Error ? error.message : String(error)
