@@ -807,19 +807,19 @@ export default {
     stringSplittingGuide: '文字列分割のガイド',
     done: '完了',
     createFirstUser: '最初のアカウントを作成！',
-    shellQueueImport: 'シェルからキューをインポート',
-    shellQueueImportHint: 'シェル側でキューを変更したあと、もう一度同期するときに使います',
-    shellQueueImportTitle: 'シェルからキューをインポート',
+    shellQueueImport: '設定をインポート',
+    shellQueueImportTitle: '設定をインポート',
     shellQueueImportOk: 'キューを置き換える',
     shellQueueImportActive: 'シェルが現在使用中',
-    shellQueueImportTaskCount: '{count} 件のタスク',
-    shellQueueImportEmpty:
-      'このプロジェクトのディレクトリにシェルの設定が見つかりません。先にスクリプトページでプロジェクトディレクトリを選んでください',
+    shellQueueImportTaskCount: 'シェル内に {count} 件のタスク',
+    shellQueueImportDefaultDir: 'スクリプトのプロジェクトフォルダー',
+    shellQueueImportDir: '読み込み元：{dir}',
+    shellQueueImportPickDir: '別のフォルダーを選ぶ',
+    shellQueueImportNone: 'このフォルダーにシェルの設定がありません',
     shellQueueImportNote:
       'この設定のタスクとオプションで現在のユーザーのキューを置き換えます。元のキューは失われます。',
     shellQueueImportDone: '{count} 件のタスクをインポートしました',
-    shellQueueImportSkipped:
-      '{count} 件はこのプロジェクトに一致しないため取り込みませんでした：{items}',
+    shellQueueImportSkippedTitle: '{count} 件を取り込めませんでした',
     shellQueueImportFailed: 'シェル設定のインポートに失敗しました',
     shellImportTitle: '既存の設定をアカウントとして取り込む',
     shellImportHint:

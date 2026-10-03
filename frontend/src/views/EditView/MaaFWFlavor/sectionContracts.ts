@@ -204,7 +204,7 @@ export interface MaaFWUserBasicInfoSectionEmits {
   save: [key: string, value: unknown]
 }
 
-/** 用户页 `queueHeader`：「任务队列配置」标题与配置恢复入口、队列提示、受管任务提示 */
+/** 用户页 `queueHeader`：「任务队列配置」标题与配置导入 / 配置恢复入口、队列提示、受管任务提示 */
 export interface MaaFWUserQueueHeaderSectionProps {
   /** 特调的队列提示，一行一个框（没有就是空数组） */
   queueHintLines: string[]
@@ -215,6 +215,8 @@ export interface MaaFWUserQueueHeaderSectionProps {
 export interface MaaFWUserQueueHeaderSectionEmits {
   /** 点了「配置恢复」：页面打开恢复弹窗 */
   'open-restore': []
+  /** 「配置导入」把一份外壳配置算成了任务快照：页面换进本地状态 */
+  imported: [snapshot: Record<string, unknown>]
 }
 
 /** 「添加任务」级联菜单的一项 */
