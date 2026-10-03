@@ -10,6 +10,7 @@ import { message } from 'ant-design-vue'
 import type { GlobalConfig, VirtualDisplayCheckOut } from '@/api'
 import { ActionService, GetService } from '@/api'
 import { handleExternalLink, openExternalUrl } from '@/utils/openExternal'
+import { navigateTo } from '@/router'
 
 const { t } = useI18n()
 
@@ -538,10 +539,25 @@ const { settings, historyRetentionOptions, voiceTypeOptions, handleSettingChange
         </a-col>
       </a-row>
     </div>
+    <div class="mystery-entry">
+      <a-button type="text" size="small" @click="navigateTo('/settings/mystery')">
+        {{ t('mystery.entry') }}
+      </a-button>
+    </div>
   </div>
 </template>
 
 <style scoped>
+.mystery-entry {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.mystery-entry :deep(.ant-btn) {
+  color: var(--ant-color-text-tertiary);
+  font-size: 12px;
+}
+
 .vdd-alert {
   margin-bottom: 16px;
 }

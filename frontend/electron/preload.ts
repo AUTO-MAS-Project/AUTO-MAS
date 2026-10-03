@@ -63,7 +63,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   stopBackend: () => ipcRenderer.invoke('backend-stop'),
 
   // 配置文件操作
-  saveConfig: (config: unknown) => ipcRenderer.invoke('save-config', config),
+  saveConfig: (config: unknown, defaults?: unknown) =>
+    ipcRenderer.invoke('save-config', config, defaults),
   loadConfig: () => ipcRenderer.invoke('load-config'),
   resetConfig: () => ipcRenderer.invoke('reset-config'),
 

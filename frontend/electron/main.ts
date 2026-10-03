@@ -34,6 +34,7 @@ import {
   markForceQuitFailed,
 } from './quitCoordinationState'
 import { decideRendererRecovery } from './rendererCrashRecovery'
+import { patchConfigFile } from './utils/configFile'
 
 import { getLogger, initializeLogger } from './services/logger'
 import { readLogContent, readLogIncrement } from './services/logFileReader'
@@ -1869,18 +1870,13 @@ ipcMain.handle('get-app-path', async (_event, name: Parameters<typeof app.getPat
 // 这些 IPC 处理器已在 initializationHandlers.ts 中实现
 
 // 配置文件操作
-ipcMain.handle('save-config', async (_event, config) => {
+ipcMain.handle('save-config', (_event, patch, defaults) => {
   try {
     const appRoot = getAppRoot()
     const configDir = path.join(appRoot, 'config')
     const configPath = path.join(configDir, 'frontend_config.json')
 
-    // 确保config目录存在
-    if (!fs.existsSync(configDir)) {
-      fs.mkdirSync(configDir, { recursive: true })
-    }
-
-    fs.writeFileSync(configPath, JSON.stringify(config, null, 2), 'utf8')
+    const config = patchConfigFile(configPath, patch, defaults) as AppConfig
     logger.info(`配置已保存到: ${configPath}`)
 
     // 如果是UI配置更新，需要更新托盘状态
