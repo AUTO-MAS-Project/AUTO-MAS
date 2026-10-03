@@ -5,8 +5,8 @@ const createQr = vi.fn()
 const checkQr = vi.fn()
 const saveQr = vi.fn()
 
-vi.mock('./useGameSignApi', () => ({
-  useGameSignApi: () => ({
+vi.mock('./useTokenApi', () => ({
+  useTokenApi: () => ({
     listAccounts: vi.fn(),
     reorderAccounts: vi.fn(),
     manualSign: vi.fn(),

@@ -1,13 +1,7 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
 import { ref, computed, onMounted } from 'vue'
-import {
-  EditOutlined,
-  DeleteOutlined,
-  PlusOutlined,
-  SwapOutlined,
-  QrcodeOutlined,
-} from '@ant-design/icons-vue'
+import { EditOutlined, DeleteOutlined, PlusOutlined, SwapOutlined } from '@ant-design/icons-vue'
 import { message, Modal } from 'ant-design-vue'
 import draggable from 'vuedraggable'
 import type { GameSignAccountGroupConfig, ToolsConfig_GameSign } from '@/api'
@@ -15,9 +9,7 @@ import { useGameSignAccountApi } from '@/composables/useGameSignAccountApi'
 import DocLink from '@/components/DocLink.vue'
 import { MAS_DOC_URLS } from '@/utils/openExternal'
 import { getConfig, saveConfig } from '@/utils/config'
-import QrLoginModal from './QrLoginModal.vue'
 import { useGameSignApi } from './useGameSignApi'
-import { useQrLogin, type QrLoginProvider } from './useQrLogin'
 import {
   buildUserTagsMap,
   getSignDetailAlias,
@@ -85,12 +77,11 @@ const asRecord = (value: unknown): Record<string, unknown> =>
 
 const asString = (value: unknown) => (typeof value === 'string' ? value : '')
 
-const { addAccount, updateAccount, loginTaygedo, deleteAccount } = useGameSignAccountApi()
+const { addAccount, updateAccount, deleteAccount } = useGameSignAccountApi()
 const { listAccounts, reorderAccounts, manualSign } = useGameSignApi()
 const accounts = ref<AccountInstance[]>([])
 const addLoading = ref(false)
 const isDragging = ref(false)
-const credentialAction = ref<'taygedo-login' | null>(null)
 
 const loadAccounts = async () => {
   try {
@@ -221,47 +212,12 @@ const onDragEnd = async (evt: DragEndEvent) => {
 
 const editModalVisible = ref(false)
 const editingAccount = ref<AccountInstance | null>(null)
-const taygedoLoginModalVisible = ref(false)
-const taygedoLoginAccountId = ref('')
-const taygedoLoginPhone = ref('')
-const taygedoLoginPassword = ref('')
-const qrLoginProvider = ref<QrLoginProvider>('miyoushe')
-
-const openMiyousheQrLogin = () => {
-  qrLoginProvider.value = 'miyoushe'
-  void startQrLogin()
-}
-
-const openSklandQrLogin = () => {
-  qrLoginProvider.value = 'skland'
-  void startQrLogin()
-}
-
-const closeTaygedoLoginModal = () => {
-  taygedoLoginModalVisible.value = false
-  taygedoLoginAccountId.value = ''
-  taygedoLoginPhone.value = ''
-  taygedoLoginPassword.value = ''
-  credentialAction.value = null
-}
-
-const openTaygedoLoginModal = () => {
-  if (!editingAccount.value) return
-  taygedoLoginAccountId.value = editingAccount.value.uid
-  taygedoLoginPhone.value = ''
-  taygedoLoginPassword.value = ''
-  taygedoLoginModalVisible.value = true
-}
-
 const openEditModal = (account: AccountInstance) => {
-  closeTaygedoLoginModal()
   editingAccount.value = { ...account }
   editModalVisible.value = true
 }
 
 const handleEditModalCancel = () => {
-  closeQrModal()
-  closeTaygedoLoginModal()
   editModalVisible.value = false
   editingAccount.value = null
 }
@@ -277,7 +233,6 @@ const handleEditModalOk = async () => {
       accounts.value[idx] = { ...editingAccount.value }
     }
     message.success(t('gamesign.toast.tokenSaved'))
-    closeQrModal()
     editModalVisible.value = false
     editingAccount.value = null
   } catch (error) {
@@ -286,69 +241,6 @@ const handleEditModalOk = async () => {
     message.error(t('gamesign.toast.saveFailed'))
   }
 }
-
-const handleTaygedoLogin = async () => {
-  const accountId = taygedoLoginAccountId.value
-  const phone = taygedoLoginPhone.value.trim()
-  const password = taygedoLoginPassword.value
-  if (!accountId) return
-  if (!phone || !password) {
-    message.warning(t('gamesign.toast.needTaygedoCredential'))
-    return
-  }
-  credentialAction.value = 'taygedo-login'
-  try {
-    await loginTaygedo(accountId, phone, password)
-    await loadAccounts()
-    const updated = accounts.value.find(item => item.uid === accountId)
-    if (updated && editingAccount.value?.uid === accountId) {
-      editingAccount.value = { ...updated }
-    }
-    closeTaygedoLoginModal()
-  } catch {
-    // loginTaygedo 已展示错误提示，保留二级弹窗供用户重新输入。
-  } finally {
-    taygedoLoginPhone.value = ''
-    taygedoLoginPassword.value = ''
-    credentialAction.value = null
-  }
-}
-
-// ==================== 米游社 / 森空岛扫码登录 ====================
-// 会话状态机在 useQrLogin，弹窗在 QrLoginModal，这里只提供「存到哪个账号」
-// 和存完之后的本地同步。沿用原来的变量名，模板不用改。
-
-const {
-  visible: qrModalVisible,
-  loading: qrLoading,
-  status: qrStatus,
-  statusText: qrStatusText,
-  qrCodeDataUrl,
-  start: startQrLogin,
-  cancel: closeQrModal,
-} = useQrLogin({
-  getAccountId: () => editingAccount.value?.uid,
-  provider: () => qrLoginProvider.value,
-  onSaved: async (accountId, credential, isStillCurrent) => {
-    // 森空岛完整凭据由后端用 scanCode 保存，这里只刷新账号；米游社仍先回填 Cookie。
-    if (qrLoginProvider.value === 'miyoushe' && editingAccount.value?.uid === accountId) {
-      editingAccount.value.MiyousheToken = credential
-    }
-    await loadAccounts()
-    if (!isStillCurrent()) return
-    const savedAccount = accounts.value.find(account => account.uid === accountId)
-    if (savedAccount && editingAccount.value?.uid === accountId) {
-      // 只回填本次扫码拿到的那一个凭据字段。整体替换成服务端副本会把弹窗里
-      // 其他还没保存的输入（用户名、手动粘贴的其他平台 Token）静默冲掉。
-      const credentialField = qrLoginProvider.value === 'skland' ? 'SklandToken' : 'MiyousheToken'
-      editingAccount.value[credentialField] = savedAccount[credentialField]
-    }
-    if (onRefreshConfig) {
-      await onRefreshConfig()
-    }
-  },
-  logger,
-})
 
 // ==================== 签到结果解析（按用户绑定） ====================
 // 解析与聚合逻辑都在 gameSignDisplay.ts，这里只负责接上响应式
@@ -755,17 +647,6 @@ onMounted(() => {
             :placeholder="t('gamesign.edit.miyoushePlaceholder')"
             allow-clear
           />
-          <a-button
-            size="small"
-            danger
-            class="credential-helper-btn"
-            style="margin-top: 6px"
-            :loading="qrLoading"
-            @click="openMiyousheQrLogin"
-          >
-            <template #icon><QrcodeOutlined /></template>
-            {{ t('gamesign.edit.qrLogin') }}
-          </a-button>
         </div>
         <a-divider orientation="left" class="community-divider">{{
           t('gamesign.edit.kuro')
@@ -788,18 +669,6 @@ onMounted(() => {
             :placeholder="t('gamesign.edit.sklandPlaceholder')"
             allow-clear
           />
-          <a-button
-            size="small"
-            danger
-            class="credential-helper-btn"
-            style="margin-top: 6px"
-            :loading="qrLoading"
-            :disabled="qrLoading || credentialAction !== null"
-            @click="openSklandQrLogin"
-          >
-            <template #icon><QrcodeOutlined /></template>
-            {{ t('gamesign.edit.qrLogin') }}
-          </a-button>
         </div>
         <a-divider orientation="left" class="community-divider">{{
           t('gamesign.edit.taygedo')
@@ -811,83 +680,9 @@ onMounted(() => {
             :placeholder="t('gamesign.edit.taygedoPlaceholder')"
             allow-clear
           />
-          <a-button
-            size="small"
-            danger
-            class="credential-helper-btn"
-            style="margin-top: 6px"
-            :loading="credentialAction === 'taygedo-login'"
-            :disabled="credentialAction !== null"
-            @click="openTaygedoLoginModal"
-          >
-            {{ t('gamesign.edit.passwordLogin') }}
-          </a-button>
         </div>
       </div>
     </a-modal>
-
-    <!-- 塔吉多账号密码登录弹窗 -->
-    <a-modal
-      v-model:open="taygedoLoginModalVisible"
-      :title="t('gamesign.login.taygedoTitle')"
-      :footer="null"
-      :width="420"
-      @cancel="closeTaygedoLoginModal"
-    >
-      <div class="modal-form">
-        <a-alert class="credential-disclaimer" type="warning" show-icon>
-          <template #message>{{ t('gamesign.login.disclaimerTitle') }}</template>
-          <template #description>{{ credentialPrivacyNotice }}</template>
-        </a-alert>
-        <div class="form-item-vertical">
-          <span class="form-label">{{ t('gamesign.login.currentAccount') }}</span>
-          <a-input :value="editingAccount?.Name || ''" disabled />
-        </div>
-        <div class="form-item-vertical">
-          <span class="form-label">{{ t('gamesign.login.taygedoAccount') }}</span>
-          <a-input
-            v-model:value="taygedoLoginPhone"
-            autocomplete="off"
-            :placeholder="t('gamesign.login.taygedoAccountPlaceholder')"
-            allow-clear
-          />
-        </div>
-        <div class="form-item-vertical">
-          <span class="form-label">{{ t('gamesign.login.password') }}</span>
-          <a-input-password
-            v-model:value="taygedoLoginPassword"
-            autocomplete="new-password"
-            :placeholder="t('gamesign.login.taygedoPasswordPlaceholder')"
-            allow-clear
-          />
-        </div>
-        <a-space style="width: 100%; justify-content: flex-end">
-          <a-button @click="closeTaygedoLoginModal">{{ t('common.cancel') }}</a-button>
-          <a-button
-            type="primary"
-            danger
-            class="credential-helper-btn"
-            :loading="credentialAction === 'taygedo-login'"
-            :disabled="credentialAction !== null"
-            @click="handleTaygedoLogin"
-          >
-            {{ t('gamesign.login.submit') }}
-          </a-button>
-        </a-space>
-      </div>
-    </a-modal>
-
-    <!-- 扫码登录弹窗 -->
-    <QrLoginModal
-      :open="qrModalVisible"
-      :status="qrStatus"
-      :status-text="qrStatusText"
-      :qr-code-data-url="qrCodeDataUrl"
-      :loading="qrLoading"
-      :provider="qrLoginProvider"
-      @cancel="closeQrModal"
-      @retry="startQrLogin"
-    />
   </div>
 </template>
 
@@ -1324,8 +1119,7 @@ onMounted(() => {
   margin-bottom: 16px;
 }
 
-.game-sign-notice,
-.credential-disclaimer {
+.game-sign-notice {
   margin-bottom: 16px;
 }
 
@@ -1343,13 +1137,8 @@ onMounted(() => {
   color: var(--ant-color-text-secondary);
 }
 
-.game-sign-notice :deep(.ant-alert-description),
-.credential-disclaimer :deep(.ant-alert-description) {
+.game-sign-notice :deep(.ant-alert-description) {
   line-height: 1.6;
-}
-
-.credential-helper-btn {
-  font-weight: 700;
 }
 
 .community-divider {

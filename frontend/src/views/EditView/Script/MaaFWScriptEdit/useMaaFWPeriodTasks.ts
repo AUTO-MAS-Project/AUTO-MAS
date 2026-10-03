@@ -7,6 +7,12 @@ import {
   stringifyTaskNameList,
   type PeriodKey,
 } from './periodTasks'
+import {
+  countTaskLimitOverrides,
+  parseTaskLimitOverrides,
+  pruneTaskLimitOverrides,
+  stringifyTaskLimitOverrides,
+} from './taskTimeLimits'
 import type { MaaFWScriptChangeHandler } from './useMaaFWScriptDraft'
 
 /** 「每日 / 每周 / 每月只跑一次」的任务选择：本地列表、下拉选项、改动落盘与按 interface 修剪。 */
@@ -43,6 +49,13 @@ export function useMaaFWPeriodTasks(
       if (next.length !== current.length) {
         await handlePeriodTaskChange(key, next)
       }
+    }
+    // 按任务设置的单任务时限同样跟着 interface 走：任务名不在当前项目里就丢掉（变了才落盘）
+    const overrides = parseTaskLimitOverrides(maafwConfig.Run.TaskTimeLimitOverrides)
+    const nextOverrides = pruneTaskLimitOverrides(overrides, available)
+    if (countTaskLimitOverrides(nextOverrides) !== countTaskLimitOverrides(overrides)) {
+      maafwConfig.Run.TaskTimeLimitOverrides = stringifyTaskLimitOverrides(nextOverrides)
+      await handleChange('Run', 'TaskTimeLimitOverrides', maafwConfig.Run.TaskTimeLimitOverrides)
     }
   }
 

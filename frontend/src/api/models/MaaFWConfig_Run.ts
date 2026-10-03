@@ -16,6 +16,14 @@ export type MaaFWConfig_Run = {
      */
     RunTimeLimit?: (number | null);
     /**
+     * 单任务时限（分钟），0 表示不限
+     */
+    TaskTimeLimit?: (number | null);
+    /**
+     * 按任务名覆盖的单任务时限（分钟），值 0 表示不限
+     */
+    TaskTimeLimitOverrides?: (string | Record<string, any> | null);
+    /**
      * 每日正常完成一次后当天跳过的 MaaFW 任务名列表
      */
     DailyOnceTasks?: (string | Array<string> | null);

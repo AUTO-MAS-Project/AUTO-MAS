@@ -4004,6 +4004,12 @@ class MaaFWConfig_Run(BaseModel):
     RunTimeLimit: Optional[int] = Field(
         default=None, description="运行时间限制（分钟）"
     )
+    TaskTimeLimit: Optional[int] = Field(
+        default=None, description="单任务时限（分钟），0 表示不限"
+    )
+    TaskTimeLimitOverrides: Optional[Union[str, Dict[str, Any]]] = Field(
+        default=None, description="按任务名覆盖的单任务时限（分钟），值 0 表示不限"
+    )
     DailyOnceTasks: Optional[Union[str, List[str]]] = Field(
         default=None, description="每日正常完成一次后当天跳过的 MaaFW 任务名列表"
     )

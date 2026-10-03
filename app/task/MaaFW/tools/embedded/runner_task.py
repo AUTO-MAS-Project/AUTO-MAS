@@ -972,6 +972,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 task_options=task_options,
                 script_hotkeys=script_hotkeys,
             )
+            plan = _mark_abort_round_tasks(plan, flavor)
             return _with_skipped_tasks(plan, missing_skips)
         except Exception as exc:
             message = str(exc)
@@ -1556,12 +1557,20 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             raise RuntimeError("MaaFW 运行计划尚未初始化")
         limit_minutes = self.script_config.get("Run", "RunTimeLimit")
         timeout = limit_minutes * 60
+        task_limit_seconds, task_limit_overrides = task_time_limits_from_config(
+            self.script_config
+        )
         # 截止时刻交给 worker：到点它自己停任务、截图、把已完成的任务带回来。
         # 宿主这层只在 worker 没停下时才强杀，那时既没有截图也没有进度。
         run_deadline_at = time.time() + timeout
         try:
             return await asyncio.wait_for(
-                self._run_maafw_worker(device_config, run_deadline_at=run_deadline_at),
+                self._run_maafw_worker(
+                    device_config,
+                    run_deadline_at=run_deadline_at,
+                    task_time_limit_seconds=task_limit_seconds,
+                    task_time_limit_overrides=task_limit_overrides,
+                ),
                 timeout=timeout + _RUN_DEADLINE_GRACE_SECONDS,
             )
         except asyncio.TimeoutError as exc:
@@ -1578,6 +1587,8 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         device_config: MaaFWDeviceConfig,
         *,
         run_deadline_at: float | None = None,
+        task_time_limit_seconds: int = 0,
+        task_time_limit_overrides: dict[str, int] | None = None,
     ) -> MaaFWRunResult:
         if self.run_plan is None:
             raise RuntimeError("MaaFW 运行计划尚未初始化")
@@ -1685,6 +1696,8 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 failure_screenshot_prefix=history_stamp,
                 task_start_not_before=self._task_start_not_before(),
                 run_deadline_at=run_deadline_at,
+                task_time_limit_seconds=task_time_limit_seconds,
+                task_time_limit_overrides=task_time_limit_overrides,
             )
             work_dir = _maafw_runner_jobs_dir()
             job_path = await asyncio.to_thread(
@@ -3275,6 +3288,37 @@ def _load_script_hotkeys(value: Any) -> dict[str, dict[str, str]]:
     return result
 
 
+def _minutes_to_seconds(minutes: Any) -> int:
+    """配置里的分钟数换算成秒。0 / 负数 / 写坏的值都当「不限」（返回 0）。"""
+
+    try:
+        value = int(minutes)
+    except (TypeError, ValueError):
+        return 0
+    return value * 60 if value > 0 else 0
+
+
+def task_time_limits_from_config(config: Any) -> tuple[int, dict[str, int]]:
+    """读 Run.TaskTimeLimit / Run.TaskTimeLimitOverrides 并换算成秒。
+
+    宿主在拉起 worker 之前算一次，随 job 文件下发：worker 是独立进程，读不到 Config，
+    核心包也只收秒数，不认宿主的配置键。
+
+    Returns:
+        (默认单任务时限秒数, {任务名: 时限秒数})，0 表示不限。
+    """
+
+    default_seconds = _minutes_to_seconds(config.get("Run", "TaskTimeLimit"))
+    # 配置系统里 JSON 项存的是字符串（JSONValidator），读出来再解析一次。
+    overrides = {
+        str(name): _minutes_to_seconds(minutes)
+        for name, minutes in _load_json_dict(
+            config.get("Run", "TaskTimeLimitOverrides")
+        ).items()
+    }
+    return default_seconds, overrides
+
+
 def _load_json_list(value: Any) -> list[str]:
     if isinstance(value, list):
         return [str(item) for item in value if str(item).strip()]
@@ -3518,6 +3562,24 @@ MISSING_TASK_NOTICE_PREFIX = (
 )
 #: 其余任务都跑完、但队列里有失效任务时统计报告的结果：照常算完成，不说「全部完成」。
 MISSING_TASK_USER_RESULT = "代理任务完成，但有失效任务"
+
+
+def _mark_abort_round_tasks(plan: MaaFWRunPlan, flavor: Any) -> MaaFWRunPlan:
+    """把特调声明的关键任务（``abort_round_entries``：entry → 失败时报的话）标到计划上。
+
+    runner 据此在这些任务失败或超时时直接结束本轮，见 ``MaaFWTaskRunPlan.abortRoundMessage``。
+    """
+
+    entries: dict[str, str] = getattr(flavor, "abort_round_entries", None) or {}
+    if not entries:
+        return plan
+    tasks = [
+        task.model_copy(update={"abortRoundMessage": entries[task.entry]})
+        if task.entry in entries
+        else task
+        for task in plan.tasks
+    ]
+    return plan.model_copy(update={"tasks": tasks})
 
 
 def _with_skipped_tasks(

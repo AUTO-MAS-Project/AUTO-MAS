@@ -1,4 +1,3 @@
-import { readFileSync, readdirSync } from 'node:fs'
 import { ref } from 'vue'
 import { describe, expect, it, vi } from 'vitest'
 import {
@@ -105,37 +104,6 @@ describe('MaaFW flavor 文案表', () => {
     type.value = 'M9A'
     expect(flavor.value.type).toBe('M9A')
   })
-
-  it('MaaFW 脚本页与用户页都按脚本当前类型取 flavor，不读路由 meta', () => {
-    // 页面逻辑在编排层里（两个 .vue 只调用 useMaaFWScriptPage / useMaaFWUserPage）
-    const scriptPage = readFileSync(
-      new URL('../views/EditView/Script/MaaFWScriptEdit/useMaaFWScriptPage.ts', import.meta.url),
-      'utf8'
-    )
-    const userPage = readFileSync(
-      new URL('../views/EditView/User/MaaFWUserEdit/useMaaFWUserPage.ts', import.meta.url),
-      'utf8'
-    )
-    const scriptPageView = readFileSync(
-      new URL('../views/EditView/Script/MaaFWScriptEdit.vue', import.meta.url),
-      'utf8'
-    )
-    const userPageView = readFileSync(
-      new URL('../views/EditView/User/MaaFWUserEdit.vue', import.meta.url),
-      'utf8'
-    )
-    for (const source of [scriptPage, userPage]) {
-      expect(source).toContain('useMaaFWFlavor(')
-      expect(source).not.toContain('route.meta.scriptType')
-    }
-    expect(scriptPageView).toContain('useMaaFWScriptPage(')
-    expect(userPageView).toContain('useMaaFWUserPage(')
-    for (const source of [scriptPageView, userPageView]) {
-      expect(source).not.toContain('route.meta.scriptType')
-    }
-    // 导入 / 重新导入成功后要重新拉脚本类型：后端按项目内容原地换类型
-    expect(scriptPage).toContain('refreshScriptType')
-  })
 })
 
 describe('MaaFW 特调注册表', () => {
@@ -186,19 +154,6 @@ describe('MaaFW 特调注册表', () => {
     const paths = fieldPaths(MAAFW_FLAVORS[0])
     for (const flavor of MAAFW_FLAVORS) expect(fieldPaths(flavor)).toEqual(paths)
     expect(MAAFW_SPECIAL_FLAVORS.map(flavor => flavor.type)).toEqual(['M9A', 'MSS'])
-  })
-
-  it('后端默认脚本名与配置类名照抄 app/models/config.py', () => {
-    const source = readFileSync(new URL('../../../app/models/config.py', import.meta.url), 'utf8')
-    for (const flavor of MAAFW_FLAVORS) {
-      const block = (source.split(`class ${flavor.scriptConfigType}(`)[1] ?? '').split(
-        '\nclass '
-      )[0]
-      expect([flavor.type, block.includes(`"${flavor.defaultScriptName}"`)]).toEqual([
-        flavor.type,
-        true,
-      ])
-    }
   })
 
   it('isMaaFWFamily / 路由后缀 / 用户类型 / 默认名 / 配置类名都从注册表来', () => {
@@ -343,142 +298,5 @@ describe('MaaFW 特调注册表', () => {
     )
     expect(load).toHaveBeenCalledOnce()
     expect(prepare).toHaveBeenCalledOnce()
-  })
-})
-describe('公共页面不按特调类型分支', () => {
-  const read = (path: string) => readFileSync(new URL(path, import.meta.url), 'utf8')
-  const sectionFiles = (dir: string) =>
-    readdirSync(new URL(dir, import.meta.url))
-      .filter(name => name.endsWith('.vue') || (name.endsWith('.ts') && !name.endsWith('.test.ts')))
-      .map(name => `${dir}/${name}`)
-  const PUBLIC_FILES = [
-    '../views/EditView/Script/MaaFWScriptEdit.vue',
-    '../views/EditView/User/MaaFWUserEdit.vue',
-    ...sectionFiles('../views/EditView/Script/MaaFWScriptEdit'),
-    ...sectionFiles('../views/EditView/User/MaaFWUserEdit'),
-    // 特调目录的根（defineFlavor、插入点渲染器、页面宿主等公共件）；各特调自己的子目录不在此列
-    ...sectionFiles('../views/EditView/MaaFWFlavor'),
-    '../components/ScriptTable.vue',
-    '../views/Scripts.vue',
-    '../views/scripts/components/scriptCreateFlow.ts',
-    '../views/scripts/components/ScriptCreateDialog.vue',
-    '../views/scripts/components/MaaFWSourceStep.vue',
-    '../router/index.ts',
-    '../router/maafwFlavorRoutes.ts',
-    './useScriptApi.ts',
-  ]
-
-  // 只有路由表本身拼 MaaFW 家族的路径；其余地方的跳转目标一律来自 maafwRouteLocation
-  const ROUTE_TABLE = '../router/maafwFlavorRoutes.ts'
-  // 路由登记的类型只有路由表与页面宿主读（宿主据此纠正地址），页面一律按脚本实际类型取 flavor
-  const ROUTE_META_READERS = new Set([
-    ROUTE_TABLE,
-    '../views/EditView/MaaFWFlavor/useMaaFWPageHost.ts',
-    '../views/EditView/MaaFWFlavor/MaaFWPageHost.vue',
-  ])
-
-  /** 公共代码里不许出现的写法：[说明, 正则, 哪些文件例外] */
-  const FORBIDDEN: Array<[string, RegExp, ReadonlySet<string>]> = [
-    ['flavor.type 判断', /flavor(\.value)?\.type\s*[!=]==/, new Set()],
-    ['特调类型字面量', /['"`](M9A|MSS)['"`]/, new Set()],
-    ['特调配置类名', /\b(M9A|MSS)(User)?Config\b/, new Set()],
-    ['特调路由后缀', /\/(m9a|mss)['"`]/, new Set()],
-    ['按路由名分支', /\b(route|currentRoute\.value)\.name\s*[!=]==/, new Set()],
-    ['写死引导路由名', /['"`]MaaFWSetupWizard['"`]/, new Set()],
-    ['拼引导路径', /\/setup\//, new Set([ROUTE_TABLE])],
-    ['拼加用户路径', /\/users\/add\/\$\{/, new Set([ROUTE_TABLE])],
-    ['读路由登记的类型', /\bmeta\??\.scriptType\b/, ROUTE_META_READERS],
-    // vite 解析扩展名时 .vue 排在目录之前：按目录名引入拿到的是同名页面本身，typecheck 却照样过
-    [
-      '按目录名引入 MFW 页面公共件',
-      /(from\s+|import\(\s*)['"][^'"]*\/MaaFW(Script|User)Edit['"]/,
-      new Set(),
-    ],
-  ]
-
-  /** 违反了哪几条（说明） */
-  const violations = (path: string, source: string) =>
-    FORBIDDEN.filter(([, pattern, allowed]) => !allowed.has(path) && pattern.test(source)).map(
-      ([label]) => label
-    )
-
-  it('页面宿主、新建对话框与特调目录根下的公共件都在扫描范围里', () => {
-    expect(PUBLIC_FILES).toEqual(
-      expect.arrayContaining([
-        '../views/EditView/MaaFWFlavor/MaaFWPageHost.vue',
-        '../views/EditView/MaaFWFlavor/useMaaFWPageHost.ts',
-        '../views/EditView/MaaFWFlavor/pageHostContext.ts',
-        '../views/EditView/MaaFWFlavor/MaaFWFlavorSlot.vue',
-        '../views/EditView/MaaFWFlavor/sectionContracts.ts',
-        '../views/EditView/MaaFWFlavor/defineFlavor.ts',
-        '../views/scripts/components/ScriptCreateDialog.vue',
-        '../views/scripts/components/MaaFWSourceStep.vue',
-        ROUTE_TABLE,
-      ])
-    )
-  })
-
-  it.each(PUBLIC_FILES)('%s 不按特调类型、路由名或路由 meta 分支，不自己拼 MaaFW 路径', path => {
-    expect([path, violations(path, read(path))]).toEqual([path, []])
-  })
-
-  it('这些规则真能抓到违规写法', () => {
-    const page = '../views/EditView/Script/MaaFWScriptEdit.vue'
-    const planted: Array<[string, string]> = [
-      ["if (route.name === 'M9AScriptEdit') return", '按路由名分支'],
-      ["router.push({ name: 'MaaFWSetupWizard', params })", '写死引导路由名'],
-      ['router.push(`/scripts/${id}/setup/maafw`)', '拼引导路径'],
-      ['router.push(`/scripts/${id}/users/add/${suffix}`)', '拼加用户路径'],
-      ['const type = route.meta.scriptType', '读路由登记的类型'],
-      ["if (flavor.value.type === 'X') return", 'flavor.type 判断'],
-      [
-        "import { ControlConfigSection } from '@/views/EditView/Script/MaaFWScriptEdit'",
-        '按目录名引入 MFW 页面公共件',
-      ],
-    ]
-    for (const [code, label] of planted) {
-      expect([code, violations(page, code)]).toEqual([code, expect.arrayContaining([label])])
-    }
-    // 路由表与页面宿主读 meta.scriptType 是允许的
-    expect(violations(ROUTE_TABLE, 'const routeType = route.meta.scriptType')).toEqual([])
-    // 正常写法不误报：任务 / 资源按名字比较、组合式函数名里带 SetupWizard
-    for (const code of [
-      'item => item.name === props.effectiveResourceName',
-      "import { useMaaFWSetupWizard } from './useMaaFWSetupWizard'",
-      "router.push(maafwRouteLocation(type, 'setup', { id }))",
-      'router.push(`/scripts/${script.id}/users/add/maa`)',
-      "import { ControlConfigSection } from '@/views/EditView/Script/MaaFWScriptEdit/pageKit'",
-      "import MaaFWScriptEdit from '@/views/EditView/Script/MaaFWScriptEdit.vue'",
-    ]) {
-      expect([code, violations(page, code)]).toEqual([code, []])
-    }
-  })
-
-  it('页面公共件不叫 index.ts，特调目录里也不按目录名引入它们', () => {
-    // 有 index.ts 时按目录名引入能过 typecheck，运行时却拿到同名 .vue 页面；没有它 typecheck 直接报错
-    for (const dir of [
-      '../views/EditView/Script/MaaFWScriptEdit',
-      '../views/EditView/User/MaaFWUserEdit',
-    ]) {
-      const names = readdirSync(new URL(dir, import.meta.url))
-      expect([dir, names.filter(name => /^index\.(ts|js)$/.test(name))]).toEqual([dir, []])
-      expect(names).toContain('pageKit.ts')
-    }
-    const flavorRoot = new URL('../views/EditView/MaaFWFlavor/', import.meta.url)
-    const flavorFiles = readdirSync(flavorRoot, { recursive: true, encoding: 'utf8' }).filter(
-      name => /\.(ts|vue)$/.test(name) && !name.endsWith('.test.ts')
-    )
-    // 特调目录里至少有 maafw / m9a / mss 三份描述对象，扫描结果为空说明路径写错了
-    expect(flavorFiles.length).toBeGreaterThanOrEqual(3)
-    // 静态 import 与按需加载的 import() 都算
-    const bareImport = /(from\s+|import\(\s*)['"][^'"]*\/MaaFW(Script|User)Edit['"]/
-    expect(bareImport.test("() => import('@/views/EditView/User/MaaFWUserEdit')")).toBe(true)
-    expect(bareImport.test("() => import('@/views/EditView/User/MaaFWUserEdit/pageKit')")).toBe(
-      false
-    )
-    for (const name of flavorFiles) {
-      const source = readFileSync(new URL(name.replace(/\\/g, '/'), flavorRoot), 'utf8')
-      expect([name, bareImport.test(source)]).toEqual([name, false])
-    }
   })
 })

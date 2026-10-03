@@ -54,6 +54,10 @@ MUMU_FORCE_KILL_KEYWORDS = (
 )
 # 强力清理后等进程真正退出的上限（秒），kill 是异步的，发完信号不等于已经没了
 MUMU_FORCE_KILL_WAIT_SECONDS = 10
+# 关闭后离线要连续保持多久才算关完（秒）。实测 MuMu 6.8：shutdown 后 info 先报一次离线
+# （info_source=local），紧接着的一次偶尔又回关机前的旧快照报在线（pid 已退出），
+# 之后才稳定离线；这时立刻重开会把旧快照当成「已在线」，跳过启动
+MUMU_CLOSE_SETTLE_SECONDS = 2
 MUMU_STORE_PACKAGE = "com.mumu.store"
 MUMU_STORE_OVERLAY_APP_OP = "SYSTEM_ALERT_WINDOW"
 
@@ -343,13 +347,22 @@ class MumuManager(DeviceBase):
         while time.monotonic() < deadline:
             status = await self.getStatus(idx)
             if status == DeviceStatus.ONLINE:
+                # 状态和地址以同一份 info 为准：刚关闭时 info 偶尔回一份旧快照报在线，
+                # 下一次已是离线，照样返回只会拿到推算的 ADB 地址
+                info = (await self.getInfo(idx))[idx]
+                if info.status != DeviceStatus.ONLINE:
+                    logger.warning(
+                        f"模拟器 {idx} 报在线后又报 {info.status.name}，继续等待状态稳定"
+                    )
+                    await asyncio.sleep(0.1)
+                    continue
                 logger.info(
                     f"模拟器已在线，跳过应用启动检查: {idx} - {package_name} - "
                     f"用时: {time.monotonic() - started_at:.3f}秒"
                 )
                 if Config.get("Function", "IfBlockAd"):
                     await self._block_store_overlay_ads(idx)
-                return (await self.getInfo(idx))[idx]
+                return info
             elif status == DeviceStatus.OFFLINE:
                 logger.info(f"模拟器离线，开始执行启动流程: {idx} - {package_name}")
                 break
@@ -527,13 +540,24 @@ class MumuManager(DeviceBase):
                 f"{time.monotonic() - started_at:.3f}秒"
             )
             deadline = time.monotonic() + self.config.get("Info", "MaxWaitTime")
+            offline_since: float | None = None
             while time.monotonic() < deadline:
                 status = await self.getStatus(idx)
-                if status == DeviceStatus.OFFLINE:
+                if status != DeviceStatus.OFFLINE:
+                    if offline_since is not None:
+                        logger.warning(
+                            f"模拟器 {idx} 报离线后又报 {status.name}，继续等待状态稳定"
+                        )
+                    offline_since = None
+                elif offline_since is None:
+                    offline_since = time.monotonic()
+                elif time.monotonic() - offline_since >= MUMU_CLOSE_SETTLE_SECONDS:
                     return DeviceStatus.OFFLINE
                 await asyncio.sleep(0.1)
 
             else:
+                if status == DeviceStatus.OFFLINE:
+                    return DeviceStatus.OFFLINE
                 if status in [DeviceStatus.ERROR, DeviceStatus.UNKNOWN]:
                     raise RuntimeError(f"模拟器 {idx} 关闭失败, 状态码: {status}")
                 raise RuntimeError(f"模拟器 {idx} 关闭超时, 当前状态码: {status}")

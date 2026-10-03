@@ -132,12 +132,13 @@ export interface MaaFWScriptUpdateSectionEmits {
   'apply-update': []
 }
 
-/** 脚本页 `run`：运行参数与每日 / 每周 / 每月只跑一次的任务 */
+/** 脚本页 `run`：运行参数、单任务时限与每日 / 每周 / 每月只跑一次的任务 */
 export interface MaaFWScriptRunSectionProps {
   maafwConfig: MaaFWScriptConfig
   dailyOnceTasks: string[]
   weeklyOnceTasks: string[]
   monthlyOnceTasks: string[]
+  /** interface 里的任务（去掉 pretask 伪任务）：周期跳过下拉与「按任务设置时限」弹窗共用 */
   periodTaskOptions: Array<{ label: string; value: string }>
   interfaceDependentDisabled: boolean
 }
