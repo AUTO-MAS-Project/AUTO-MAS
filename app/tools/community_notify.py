@@ -578,13 +578,33 @@ async def dispatch_community_notification(
     )
 
 
+async def _report_notification_failure(failed_channels: list[str]) -> None:
+    """通知渠道级失败改用系统提示回传，不让发送结果只留在日志里。
+
+    Args:
+        failed_channels: 本次分发中发送失败的渠道名。
+    """
+
+    await Config.push_system_notice(
+        level="warning",
+        title="游戏社区通知发送不完整",
+        lines=[
+            f"发送失败的渠道：{'、'.join(failed_channels)}",
+            "签到结果已保存，请检查这些渠道的通知配置后重试。",
+        ],
+    )
+
+
 async def push_community_notification(
     results: list[dict[str, object]],
 ) -> list[str]:
-    """推送手动或启动时触发的社区通知，返回失败渠道。"""
+    """推送手动或启动时触发的社区通知，返回失败渠道；失败时另发系统提示。"""
 
     dispatch_result = await dispatch_community_notification(results)
-    return list(dispatch_result.failed)
+    failed_channels = list(dispatch_result.failed)
+    if failed_channels:
+        await _report_notification_failure(failed_channels)
+    return failed_channels
 
 
 __all__ = [
