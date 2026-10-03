@@ -64,6 +64,9 @@ Use the narrowest module boundary first. Promote to shared directories only afte
 6. Pages own business flow such as navigation, closing dialogs, and local state updates.
 7. Static-resource checks such as audio `HEAD` requests are not precedent for backend business API calls.
 8. Backend schema changes require regenerating frontend API clients; do not manually patch OpenAPI output.
+9. Do not hand-roll `axios` + `OpenAPI.BASE` URLs in composables either. If the endpoint is in the generated `Service`, call it; if it is missing, regenerate the client rather than bypass it.
+10. Generated services throw `ApiError` on non-2xx responses. Read the backend's message from `error.body` after narrowing it (`instanceof ApiError`, object check, `typeof message === 'string'`), then rethrow as `Error`. Wanting `AxiosError.response.data` is not a reason to skip the generated client. `useMaaFWUpdateApi.ts` and `useHSRPluginApi.ts` are the reference.
+11. Pass generated enums (e.g. `MaaFWProjectUpdateIn.action.CHECK`) instead of string literals cast to the request type.
 
 ## Routing, State, Config
 
@@ -107,7 +110,7 @@ Maintenance note: the warning budget of 1 exists only because that single `vue/n
 | --- | --- | --- |
 | Any business code | `yarn lint --max-warnings 1` | exit 0. The budget of 1 covers the single known warning (`vue/no-v-html`, introduced with #399), so any additional warning fails the gate. Plain `yarn lint` prints warnings but does not fail on them. |
 | Types, props/emits, API usage, generated-client consumption | `yarn typecheck` | 0 errors |
-| A module with a sibling `*.test.ts`, or shared logic/styles under test | `yarn test` | fully green |
+| A module with a sibling `*.test.ts`, or shared logic under test | `yarn test` | fully green |
 | Build, routing, or Electron entry | `yarn build` | succeeds |
 | Documentation only | file existence, headings, sections, `git status --short` | — |
 | UI | also follow `mas-frontend-ui` verification | — |
@@ -131,11 +134,20 @@ Three established patterns, in order of preference:
 
 1. **Pure logic** — extract the logic out of the `.vue` file into a sibling `.ts`, then import and test it directly. `views/scripts/scriptSearch.ts` with `scriptSearch.test.ts` is the reference. This is the main reason to extract logic from a component: testability.
 2. **Composables** — test in node with `vi.mock()` for boundaries. Mock `@/api` (the generated `Service`) and `ant-design-vue` (`message`) rather than reaching for a DOM. See `composables/useEmulatorDeviceOptions.test.ts`.
-3. **Component structure** — `readFileSync` the `.vue` (or `.css`) source and assert on its text. Used to lock in constraints that have no runtime assertion point, such as overlay `z-index`, viewport-height clamps, and stylesheet imports. See `views/scripts/components/ScriptCreateDialog.test.ts` and `styles/scrollbar.test.ts`.
+3. **Component rendering** — when what a component shows for given props or state is the behavior under test, render it with `createSSRApp` + `renderToString` from `@vue/server-renderer` (ships with `vue`) and assert on the HTML. Stub Ant Design Vue components with slot-passthrough placeholders so the assertion covers this component's decisions, not antd's markup. See `views/Initialization/components/LaunchFailure.test.ts` and `views/EditView/MaaFWFlavor/MaaFWFlavorSlot.test.ts`.
 
 Do not introduce `mount()`, `jsdom`, `happy-dom`, or `@vue/test-utils` for a routine change; that is a project-wide testing-stack decision, not a task-level one. If a behavior genuinely cannot be covered by these three patterns, say so in your result instead of adding a test dependency.
 
-Pattern 3 is how several `mas-frontend-ui` layout rules are actually enforced. When you change an overlay's `z-index`, a dialog's height clamp, or a global stylesheet import, expect a source-text test to assert on the exact string you edited, and update it in the same change.
+### Source-text tests
+
+Do not write tests that `readFileSync` a `.vue`, `.ts`, or `.css` file and assert it contains or lacks particular code — template bindings, handler bodies, style values, imports, or "does not use X" architecture greps. They break on harmless refactors, pass on broken behavior, and were removed in bulk for that reason. Cover the behavior with one of the three patterns above, or leave it to review and say so.
+
+Reading source text is acceptable only when nothing importable exists:
+
+1. **Cross-language contracts** — a frontend constant that must mirror a Python backend value. See `utils/maafwTaskInstance.test.ts` and `views/setting/notifyChannelsI18n.test.ts`.
+2. **Repo-wide scans** — such as every literal `t('ns.key')` in `src` existing in `zh-CN`. See `i18n/locales.test.ts`.
+
+When an existing source-text test fails because you refactored the code it greps, and it guards neither kind of contract, delete it rather than re-pinning the new string.
 
 ## Red Lines
 
@@ -152,7 +164,9 @@ Pattern 3 is how several `mas-frontend-ui` layout rules are actually enforced. W
 | "`yarn lint` is failing, but the repo baseline is dirty anyway." | It is not. Clean `dev` passes lint, typecheck and tests. A failure is yours until you verify otherwise on an untouched checkout. |
 | "Lint passed, so the types are fine." | The two are orthogonal and check different things. Run both. |
 | "I'll fix the surrounding lint noise while I'm here." | `weekly-format.yml` already formats `dev` every Monday. Unrelated cleanup buries your real diff. |
-| "I need jsdom to test this component." | Tests run in node with no DOM. Extract logic to a sibling `.ts`, or assert on source text. |
+| "I need jsdom to test this component." | Tests run in node with no DOM. Extract logic to a sibling `.ts`, or render with `@vue/server-renderer`. |
+| "I'll lock this in with a test that greps the `.vue` source." | Source-text assertions on implementation details are not accepted. Test behavior, or leave it to review. |
+| "The generated client throws `ApiError`, so I'll call axios directly to read the error message." | Read it from `ApiError.body`. Business requests always go through the generated client. |
 
 ## Final Response
 For frontend tasks, report:

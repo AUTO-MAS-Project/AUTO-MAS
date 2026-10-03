@@ -1,0 +1,44 @@
+#   AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software
+#   Copyright © 2025-2026 AUTO-MAS Team
+
+name: 按更新日志碎片设置标签
+
+# fork PR 也需要写标签权限。只执行默认分支上的脚本，PR 内容仅通过 API 当作数据读取。
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+  # 给 PR 加标签：官方文档说 Issues 与 Pull requests 的 write 权限任选其一即可，
+  # 这里两个都声明，免得在只认 pull-requests 的仓库设置下拿不到写权限
+  pull-requests: write
+  issues: write
+
+concurrency:
+  group: label-changelog-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
+jobs:
+  label:
+    name: 同步碎片标签
+    runs-on: ubuntu-latest
+    steps:
+      - name: 检出可信脚本
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: 设置 Python 环境
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+
+      - name: 按碎片分类与项目同步标签
+        # 这一步只是给维护者加路标：标签写权限取决于仓库设置与 PR 来源，拿不到时提示即可，
+        # 不该让整个工作流失败（碎片本身是否合规由「检查更新日志碎片与版本号」独立判断）
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: python scripts/label_changelog.py

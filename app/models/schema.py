@@ -28,12 +28,21 @@ from typing import (
     Generic,
     List,
     Literal,
+    NamedTuple,
     Optional,
     TypeVar,
     Union,
 )
 
-from pydantic import BaseModel, ConfigDict, Field, JsonValue, SecretStr, field_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    JsonValue,
+    SecretStr,
+    ValidationInfo,
+    field_validator,
+)
 
 TPlanInfo = TypeVar("TPlanInfo")
 TPlanItem = TypeVar("TPlanItem")
@@ -2317,15 +2326,15 @@ class BAAHUserConfig_Info(BaseModel):
     ConfigName: Optional[str] = Field(
         default=None, description="默认使用的 BAAH 配置文件名"
     )
-    ActivityConfigName: Optional[str] = Field(
-        default=None, description="活动期间使用的 BAAH 配置文件名"
-    )
-    IfActivityAdapt: Optional[bool] = Field(
-        default=None, description="是否按碧蓝档案有没有活动切换使用的配置文件"
+    StageMode: Optional[str] = Field(
+        default=None, description="关卡计划表；Fixed 表示按脚本配置"
     )
     ActivityLineType: Optional[Literal["JP", "Globle", "CN"]] = Field(
         default=None,
         description="活动排期按哪个服判断: JP 日服, Globle 国际服, CN 国服",
+    )
+    IfEventFirst: Optional[bool] = Field(
+        default=None, description="活动期间把活动关卡排到最前"
     )
     Notes: Optional[str] = Field(default=None, description="备注")
     Tag: Optional[str] = Field(
@@ -2841,17 +2850,6 @@ class WhimboxTaskCatalogOut(OutBase):
     """任务目录响应"""
 
     data: WhimboxTaskCatalogData = Field(default_factory=WhimboxTaskCatalogData)
-
-
-class BlueArchiveActivityStatusOut(OutBase):
-    """碧蓝档案活动状态：进行中的活动，或下一个未开始的活动"""
-
-    Running: bool = Field(default=False, description="当前是否有进行中的活动")
-    Name: str = Field(default="", description="进行中的活动名称")
-    StartTime: str = Field(default="", description="进行中活动的开始时间")
-    EndTime: str = Field(default="", description="进行中活动的结束时间")
-    NextName: str = Field(default="", description="下一个活动的名称")
-    NextStartTime: str = Field(default="", description="下一个活动的开始时间")
 
 
 class MaaEndUserConfig_Info(BaseModel):
@@ -3963,6 +3961,10 @@ class MaaFWConfig_Game(BaseModel):
         default=None,
         description="游戏启动等待时间（秒）：等窗口出现与等画面稳定各最多这么久，画面稳定即提前",
     )
+    Hotkeys: Optional[str] = Field(
+        default=None,
+        description='脚本级键位，JSON 字符串 {option 名: {字段名: 组合键}}（如 "Ctrl+E"），只存与 interface 默认不同的字段；仅 Win32 控制器生效',
+    )
 
 
 class MaaFWConfig_Update(BaseModel):
@@ -4004,6 +4006,12 @@ class MaaFWConfig_Run(BaseModel):
     RunTimesLimit: Optional[int] = Field(default=None, description="运行次数限制")
     RunTimeLimit: Optional[int] = Field(
         default=None, description="运行时间限制（分钟）"
+    )
+    TaskTimeLimit: Optional[int] = Field(
+        default=None, description="单任务时限（分钟），0 表示不限"
+    )
+    TaskTimeLimitOverrides: Optional[Union[str, Dict[str, Any]]] = Field(
+        default=None, description="按任务名覆盖的单任务时限（分钟），值 0 表示不限"
     )
     DailyOnceTasks: Optional[Union[str, List[str]]] = Field(
         default=None, description="每日正常完成一次后当天跳过的 MaaFW 任务名列表"
@@ -4238,6 +4246,10 @@ class MaaFWOptionHotkeyInfo(BaseModel):
     label: Optional[str] = Field(default=None, description="热键项显示名称")
     description: Optional[str] = Field(default=None, description="热键项描述")
     default: Optional[str] = Field(default=None, description="默认热键")
+    modifierCount: int = Field(
+        default=0,
+        description="项目 pipeline 用到的修饰键个数（0–2）：录制的组合键须恰好这么多修饰键",
+    )
 
 
 class MaaFWOptionInfo(BaseModel):
@@ -4422,6 +4434,10 @@ class MaaFWEmbeddedStatusOut(OutBase):
 
 class MaaFWShellInstancesIn(BaseModel):
     scriptId: str = Field(..., min_length=1, description="MFW 脚本 ID")
+    path: Optional[str] = Field(
+        default=None,
+        description="只扫这个目录（键位弹窗「选择其他目录」用，不写回脚本配置）；不传时先扫来源目录再扫内嵌副本",
+    )
 
 
 class MaaFWShellInstanceItem(BaseModel):
@@ -4438,6 +4454,17 @@ class MaaFWShellInstanceItem(BaseModel):
     taskCount: int = Field(default=0, description="实例队列里勾选着的任务数")
     controller: str = Field(default="", description="实例的控制方式（给人看的名字）")
     resource: str = Field(default="", description="实例的资源（给人看的名字）")
+    hotkeys: Dict[str, Dict[str, str]] = Field(
+        default_factory=dict,
+        description=(
+            "实例里记着的键位：{hotkey 选项名: {字段名: 组合键}}，只含 interface 里声明过的"
+            "hotkey 选项与字段、非空的值（全局 / 资源级在前，任务级覆盖），不与默认值比较；"
+            "读不到 interface 时为空"
+        ),
+    )
+    sourceDir: str = Field(
+        default="", description="扫到这份配置的目录（同一次列表里都一样）"
+    )
 
 
 class MaaFWShellInstancesOut(OutBase):
@@ -4607,8 +4634,10 @@ class MaaFWAgentEnvPrepareOut(OutBase):
     )
 
 
-PlanConfigType = Literal["MaaPlanConfig", "MaaEndPlanConfig", "MSSPlanConfig"]
-PlanComboxConsumer = Literal["maa", "maaend", "mss"]
+PlanConfigType = Literal[
+    "MaaPlanConfig", "MaaEndPlanConfig", "BAAHPlanConfig", "MSSPlanConfig"
+]
+PlanComboxConsumer = Literal["maa", "maaend", "baah", "mss"]
 
 
 class PlanIndexItem(BaseModel):
@@ -4719,6 +4748,214 @@ class MaaEndPlanConfig(WeeklyPlanConfig[MaaEndPlanConfig_Info, MaaEndPlanConfig_
     model_config = ConfigDict(extra="forbid")
 
 
+class BAAHPlanConfig_Info(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    Name: str = Field(default="新 BAAH 计划表", description="计划表名称")
+    Mode: Literal["ALL", "Weekly"] = Field(default="ALL", description="计划表模式")
+
+
+class BAAHSlotRule(NamedTuple):
+    """BAAH 计划表某一位的取值规则。
+
+    六个字段都是「三位一组」的整数列表，位置含义随字段而变（序号、地区、关卡、
+    次数、开关），同一位在不同字段上的合法范围也不同，所以逐位列出规则表，
+    校验与修正都从这张表读，避免两边各写一份后漂移。
+    """
+
+    title: str  # 这一位的中文名，报错信息里用
+    minimum: int  # 允许的最小值
+    maximum: Optional[int] = None  # 允许的最大值，None 表示不设上限
+    allowed: tuple[int, ...] = ()  # 区间之外额外允许的取值（如关卡位的 -1）
+    fallback: Optional[int] = None  # 越界时的修正目标，None 表示就近钳到区间端点
+
+
+# 六类关卡的计划表 key 逐位规则。前端 BAAHPlanTable.vue 的 parts 与
+# app/models/config.py 的 BAAH_PLAN_KEY_SHAPE 都以这张表为准：次数位 -1 表示最大
+# 次数、0 表示不扫荡，所以下限是 -1；悬赏通缉/特殊任务/学园交流会的关卡位允许 -1
+# （BAAH 用它表示最高关），但 0 会让上游提示「关卡序号为0，无法扫荡」；困难图与
+# 普通图走上游的滚动关卡选择，负下标算不出坐标，只能从 1 开始。
+BAAH_PLAN_KEY_SLOT_RULES: dict[str, tuple[BAAHSlotRule, ...]] = {
+    "Event": (
+        BAAHSlotRule("活动关卡序号", minimum=1),
+        BAAHSlotRule("活动扫荡次数", minimum=-1),
+        BAAHSlotRule("活动关卡开关", minimum=0, maximum=1, fallback=1),
+    ),
+    "Wanted": (
+        BAAHSlotRule("地区", minimum=1),
+        BAAHSlotRule("关卡", minimum=1, allowed=(-1,)),
+        BAAHSlotRule("扫荡次数", minimum=-1),
+        BAAHSlotRule("开关", minimum=0, maximum=1, fallback=1),
+    ),
+    "Special": (
+        BAAHSlotRule("地区", minimum=1),
+        BAAHSlotRule("关卡", minimum=1, allowed=(-1,)),
+        BAAHSlotRule("扫荡次数", minimum=-1),
+        BAAHSlotRule("开关", minimum=0, maximum=1, fallback=1),
+    ),
+    "Exchange": (
+        BAAHSlotRule("学院", minimum=1),
+        BAAHSlotRule("关卡", minimum=1, allowed=(-1,)),
+        BAAHSlotRule("扫荡次数", minimum=-1),
+        BAAHSlotRule("开关", minimum=0, maximum=1, fallback=1),
+    ),
+    "Hard": (
+        BAAHSlotRule("章节", minimum=1),
+        BAAHSlotRule("关卡", minimum=1),
+        BAAHSlotRule("扫荡次数", minimum=-1),
+        BAAHSlotRule("开关", minimum=0, maximum=1, fallback=1),
+    ),
+    "Normal": (
+        BAAHSlotRule("章节", minimum=1),
+        BAAHSlotRule("关卡", minimum=1),
+        BAAHSlotRule("扫荡次数", minimum=-1),
+        BAAHSlotRule("开关", minimum=0, maximum=1, fallback=1),
+    ),
+}
+"""BAAH 计划表 key 的逐位取值规则，缺省的可选位不在表内时不校验"""
+
+
+def _baah_slot_expected(rule: BAAHSlotRule) -> str:
+    """把一位的合法取值说成一句人话，用于校验报错。"""
+
+    if rule.allowed:
+        extra = "、".join(str(item) for item in rule.allowed)
+        return f"只能填 {extra} 或不小于 {rule.minimum}"
+    if rule.maximum is None:
+        return f"必须不小于 {rule.minimum}"
+    if rule.minimum == rule.maximum:
+        return f"只能是 {rule.minimum}"
+    return f"只能填 {rule.minimum} 到 {rule.maximum}"
+
+
+def baah_plan_slot_error(field: str, index: int, value: int) -> Optional[str]:
+    """该位不合法时返回完整的中文原因（含字段、位次与期望取值），合法返回 None。"""
+
+    rules = BAAH_PLAN_KEY_SLOT_RULES.get(field)
+    # 列表比规则表短是合法的（可选位可以缺省），超出规则表的位不做判断。
+    if rules is None or index >= len(rules):
+        return None
+
+    rule = rules[index]
+    if value in rule.allowed:
+        return None
+    if value < rule.minimum or (rule.maximum is not None and value > rule.maximum):
+        return (
+            f"{field} 第 {index + 1} 位（{rule.title}）{_baah_slot_expected(rule)}，"
+            f"当前为 {value}"
+        )
+    return None
+
+
+def fix_baah_plan_slot(field: str, index: int, value: int) -> int:
+    """把越界的一位修正到最近的合法值，规则表里没有的位原样返回。"""
+
+    rules = BAAH_PLAN_KEY_SLOT_RULES.get(field)
+    if rules is None or index >= len(rules):
+        return value
+
+    rule = rules[index]
+    if value in rule.allowed:
+        return value
+    if value < rule.minimum:
+        return rule.minimum if rule.fallback is None else rule.fallback
+    if rule.maximum is not None and value > rule.maximum:
+        return rule.maximum if rule.fallback is None else rule.fallback
+    return value
+
+
+# key 里每个字段非空时的最短长度。每一位的含义固定（地区 / 关卡 / 次数），只写一位
+# 会让后面的位整体错位。下限不能写在 Field 的 min_length 上：空数组是合法取值
+# （今天不打这一类），min_length 会把空数组一起拒掉，只能在下面逐位校验里判断。
+BAAH_PLAN_KEY_MIN_LENGTH = 2
+
+
+class BAAHPlanKey(BaseModel):
+    """BAAH 计划表某一天要打的关卡。
+
+    六个字段各自有三种状态，缺一不可地区分：
+    缺席（字段不在 key 里）＝今天这一类不干预，BAAH 沿用自己配置文件里的关卡与开关；
+    空数组＝今天不打这一类；有值（如 ``[3, -1, 1]``）＝今天按这个参数打这一类。
+    因此默认值是 ``None`` 而不是某套具体关卡：补成默认值会把「不干预」静默变成
+    「按默认关卡打」。
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    Event: Optional[list[int]] = Field(
+        default=None,
+        max_length=3,
+        description="活动关卡：关卡序号、扫荡次数；缺席表示今天不干预这一类",
+    )
+    Wanted: Optional[list[int]] = Field(
+        default=None,
+        max_length=4,
+        description="悬赏通缉：地区、关卡、次数；缺席表示今天不干预这一类",
+    )
+    Special: Optional[list[int]] = Field(
+        default=None,
+        max_length=4,
+        description="特殊任务：地区、关卡、次数；缺席表示今天不干预这一类",
+    )
+    Exchange: Optional[list[int]] = Field(
+        default=None,
+        max_length=4,
+        description="学园交流会：学院、关卡、次数；缺席表示今天不干预这一类",
+    )
+    Hard: Optional[list[int]] = Field(
+        default=None,
+        max_length=4,
+        description="困难图扫荡：章节、关卡、次数；缺席表示今天不干预这一类",
+    )
+    Normal: Optional[list[int]] = Field(
+        default=None,
+        max_length=4,
+        description="普通图扫荡：章节、关卡、次数；缺席表示今天不干预这一类",
+    )
+
+    @field_validator("Event", "Wanted", "Special", "Exchange", "Hard", "Normal")
+    @classmethod
+    def validate_slot_values(
+        cls, value: Optional[list[int]], info: ValidationInfo
+    ) -> Optional[list[int]]:
+        """逐位校验取值，并检查非空值的长度下限。
+
+        只限制长度挡不住负数与 0，而它们会被原样传给 BAAH：悬赏通缉/特殊任务/
+        学园交流会的关卡位 0 会让上游提示「关卡序号为0，无法扫荡」，困难图与普通
+        图的关卡位走滚动选择，负数算不出坐标。规则表见 BAAH_PLAN_KEY_SLOT_RULES。
+
+        ``None``（缺席）与空数组（今天不打这一类）都是合法取值，直接放行。
+        """
+
+        if value is None or len(value) == 0:
+            return value
+
+        if len(value) < BAAH_PLAN_KEY_MIN_LENGTH:
+            raise ValueError(
+                f"{info.field_name} 至少要写 {BAAH_PLAN_KEY_MIN_LENGTH} 位"
+                f"（每一位含义固定），当前为 {value}"
+            )
+
+        for index, item in enumerate(value):
+            error = baah_plan_slot_error(info.field_name, index, item)
+            if error is not None:
+                raise ValueError(error)
+        return value
+
+
+class BAAHPlanConfig_Item(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    Key: BAAHPlanKey = Field(
+        default_factory=BAAHPlanKey,
+        description="BAAH 计划表专项 key",
+    )
+
+
+class BAAHPlanConfig(WeeklyPlanConfig[BAAHPlanConfig_Info, BAAHPlanConfig_Item]):
+    model_config = ConfigDict(extra="forbid")
+
+
 class MSSPlanConfig_Info(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -4754,8 +4991,8 @@ class MSSPlanConfig(WeeklyPlanConfig[MSSPlanConfig_Info, MSSPlanConfig_Item]):
     model_config = ConfigDict(extra="forbid")
 
 
-PlanCreateType = Literal["MaaPlan", "MaaEndPlan", "MSSPlan"]
-PlanConfigData = MaaPlanConfig | MaaEndPlanConfig | MSSPlanConfig
+PlanCreateType = Literal["MaaPlan", "MaaEndPlan", "BAAHPlan", "MSSPlan"]
+PlanConfigData = MaaPlanConfig | MaaEndPlanConfig | BAAHPlanConfig | MSSPlanConfig
 
 
 class HistoryIndexItem(BaseModel):
@@ -4903,16 +5140,79 @@ class ScriptReorderIn(BaseModel):
     indexList: List[str] = Field(..., description="脚本ID列表, 按新顺序排列")
 
 
-class ScriptUrlIn(BaseModel):
+class ShareTemplateListIn(BaseModel):
+    page: int = Field(default=1, ge=1, description="页码, 从 1 开始")
+    pageSize: int = Field(default=20, ge=1, le=100, description="每页条数")
+    keyword: Optional[str] = Field(default=None, description="搜索关键字")
+
+
+class ShareTemplateItem(BaseModel):
+    projectKey: str = Field(..., description="配置中心项目标识")
+    categoryKey: str = Field(..., description="配置中心分类标识")
+    configKey: str = Field(..., description="配置中心配置标识")
+    displayName: str = Field(..., description="配置名称")
+    description: str = Field(default="", description="配置描述")
+    ownerUsername: str = Field(default="", description="分享者用户名")
+    publishedVersionNo: Optional[int] = Field(
+        default=None, description="已发布的版本号"
+    )
+    publishedAt: str = Field(default="", description="发布时间")
+    updatedAt: str = Field(default="", description="更新时间")
+
+
+class ShareTemplateListOut(OutBase):
+    items: List[ShareTemplateItem] = Field(
+        default_factory=list, description="配置模板列表"
+    )
+    page: int = Field(default=1, description="当前页码")
+    pageSize: int = Field(default=20, description="每页条数")
+    total: int = Field(default=0, description="模板总数")
+    hasNext: bool = Field(default=False, description="是否还有下一页")
+
+
+class ScriptShareInspectIn(BaseModel):
     scriptId: str = Field(..., description="脚本ID")
-    url: str = Field(..., description="配置文件URL")
+    config_name: str = Field(..., min_length=1, max_length=64, description="配置名称")
+
+
+class ScriptTemplateImportIn(BaseModel):
+    scriptId: str = Field(..., description="脚本ID")
+    configKey: str = Field(..., description="配置中心配置标识")
+    versionNo: Optional[int] = Field(
+        default=None, ge=1, description="版本号, 为空表示已发布的最新版本"
+    )
 
 
 class ScriptUploadIn(BaseModel):
     scriptId: str = Field(..., description="脚本ID")
-    config_name: str = Field(..., description="配置名称")
-    author: str = Field(..., description="作者")
-    description: str = Field(..., description="描述")
+    config_name: str = Field(..., min_length=1, max_length=64, description="配置名称")
+    description: str = Field(..., min_length=1, max_length=500, description="描述")
+    acknowledged: bool = Field(
+        default=False, description="是否已确认分享前检查出的隐私风险项"
+    )
+
+
+class ShareRiskItem(BaseModel):
+    field: str = Field(..., description="存在风险的配置项")
+    reason: str = Field(..., description="风险说明")
+
+
+class ShareInspectOut(OutBase):
+    risks: List[ShareRiskItem] = Field(
+        default_factory=list, description="分享前检查出的隐私风险项"
+    )
+
+
+class ShareAuthStatusOut(OutBase):
+    authStatus: Literal["idle", "pending", "authorized", "denied", "expired"] = Field(
+        ..., description="配置中心授权状态"
+    )
+    username: str = Field(default="", description="已授权用户的用户名")
+    displayName: str = Field(default="", description="已授权用户的显示名")
+    userCode: str = Field(default="", description="待用户在浏览器确认的短授权码")
+    verificationUri: str = Field(default="", description="浏览器授权页地址")
+    expiresIn: int = Field(default=0, description="剩余有效秒数")
+    interval: int = Field(default=5, description="建议的轮询间隔秒数")
 
 
 class UserInBase(BaseModel):
@@ -5722,6 +6022,29 @@ class TaskRuntimeSnapshot(BaseModel):
     tasks: List[TaskRuntimeSnapshotItem] = Field(default_factory=list)
     scheduledScripts: List[WSTaskScriptIdentityData] = Field(
         default_factory=list, description="已启用定时队列关联的脚本静态标识"
+    )
+
+
+class TaskStatusOut(OutBase):
+    """按 taskId 单点查询一个任务的状态, 不携带日志。"""
+
+    taskId: str = Field(..., description="任务 ID")
+    status: Literal["running", "success", "error", "cancelled"] = Field(
+        ..., description="任务状态; running 为运行中, 其余为终态"
+    )
+    detail: Optional[str] = Field(default=None, description="任务结果描述")
+    error: Optional[str] = Field(default=None, description="任务错误信息")
+    mode: Optional[Literal["AutoProxy", "ScriptConfig", "Update"]] = Field(
+        default=None, description="任务模式"
+    )
+    isCycle: bool = Field(default=False, description="是否为循环运行任务")
+    queueId: Optional[str] = Field(default=None, description="调度队列 ID")
+    scriptId: Optional[str] = Field(default=None, description="脚本 ID")
+    userId: Optional[str] = Field(default=None, description="用户 ID")
+    stopping: bool = Field(default=False, description="任务是否正在停止")
+    finishedAt: Optional[str] = Field(
+        default=None,
+        description="任务结束时间, 格式为YYYY-MM-DD HH:MM:SS, 运行中为空",
     )
 
 

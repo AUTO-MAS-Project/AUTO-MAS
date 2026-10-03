@@ -89,6 +89,24 @@ KIND_RANK = {
 ## 按关键词认而不是整名：猎影合围以后去掉了 Beta 也照样算
 PERMANENT_KIND = "常驻活动"
 PERMANENT_KEYWORDS = ("灾变防线", "创业激励基金", "猎影合围")
+
+
+def classify_activity_name(name: str) -> str:
+    """按公告标题给活动定分类。
+
+    官网公告没有分类字段，分类只能从标题看：命中常驻关键词的是「常驻活动」，
+    带「一览」的是「版本活动」，带「招募」的是「招募」，其余归到「活动」。
+    SRA 兜底那份数据也没有分类，同样用它补上，免得前端的横幅与分组筛选落空。
+    """
+
+    if any(keyword in name for keyword in PERMANENT_KEYWORDS):
+        return PERMANENT_KIND
+    for keyword, kind in KIND_BY_SUFFIX:
+        if keyword in name:
+            return kind
+    return "活动"
+
+
 ## 带这些字样的公告不是活动：维护、兑换码、问卷、充值之类
 SKIP_TITLE = re.compile(
     r"维护|更新说明|兑换|问卷|举报|封禁|处罚|支付|充值|客服|反馈|补偿|直播|前瞻|预约|测试|下载|问题说明"

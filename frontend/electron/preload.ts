@@ -24,6 +24,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   powerWarningStart: () => ipcRenderer.invoke('power-warning:start'),
   powerWarningEnd: () => ipcRenderer.invoke('power-warning:end'),
   appQuit: () => ipcRenderer.invoke('app-quit'),
+  appPrepareQuit: () => ipcRenderer.invoke('app-prepare-quit'),
+  appConfirmQuit: (token: number) => ipcRenderer.invoke('app-confirm-quit', token),
+  appCancelQuit: (token?: number) => ipcRenderer.invoke('app-cancel-quit', token),
   appRestart: () => ipcRenderer.invoke('app-restart'),
 
   // 系统休眠恢复与主进程关闭请求（生命周期协调器消费）
@@ -63,7 +66,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   stopBackend: () => ipcRenderer.invoke('backend-stop'),
 
   // 配置文件操作
-  saveConfig: (config: unknown) => ipcRenderer.invoke('save-config', config),
+  saveConfig: (config: unknown, defaults?: unknown) =>
+    ipcRenderer.invoke('save-config', config, defaults),
   loadConfig: () => ipcRenderer.invoke('load-config'),
   resetConfig: () => ipcRenderer.invoke('reset-config'),
 

@@ -54,8 +54,14 @@ import type { QueueItemGetOut } from '../models/QueueItemGetOut';
 import type { ScriptDeleteIn } from '../models/ScriptDeleteIn';
 import type { ScriptGetIn } from '../models/ScriptGetIn';
 import type { ScriptGetOut } from '../models/ScriptGetOut';
+import type { ScriptShareInspectIn } from '../models/ScriptShareInspectIn';
 import type { SettingGetOut } from '../models/SettingGetOut';
+import type { ShareAuthStatusOut } from '../models/ShareAuthStatusOut';
+import type { ShareInspectOut } from '../models/ShareInspectOut';
+import type { ShareTemplateListIn } from '../models/ShareTemplateListIn';
+import type { ShareTemplateListOut } from '../models/ShareTemplateListOut';
 import type { TaskRuntimeSnapshot } from '../models/TaskRuntimeSnapshot';
+import type { TaskStatusOut } from '../models/TaskStatusOut';
 import type { TimeSetGetIn } from '../models/TimeSetGetIn';
 import type { TimeSetGetOut } from '../models/TimeSetGetOut';
 import type { ToolsGetOut } from '../models/ToolsGetOut';
@@ -190,17 +196,6 @@ export class GetService {
         });
     }
     /**
-     * 获取配置分享中心的配置信息
-     * @returns InfoOut Successful Response
-     * @throws ApiError
-     */
-    public static getWebConfigApiInfoWebconfigPost(): CancelablePromise<InfoOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/info/webconfig',
-        });
-    }
-    /**
      * 信息总览
      * @returns InfoOut Successful Response
      * @throws ApiError
@@ -212,11 +207,14 @@ export class GetService {
         });
     }
     /**
-     * 获取碧蓝档案活动数据（Kivo 中转）
-     * 按服务器取回碧蓝档案的活动时间轴。
+     * 获取碧蓝档案活动数据（GameKee 中转）
+     * 按服务器取回碧蓝档案的活动。
      *
-     * 这里只做转发：把 Kivo 的响应原样交给前端，筛选与格式转换都由前端完成。
-     * 之所以要绕一道后端，是因为 Kivo 的接口校验 Origin，浏览器直连必定 403。
+     * 这里只做转发：把 GameKee 的响应原样交给前端，分类筛选与格式转换都由前端完成。
+     * 之所以要绕一道后端，一是那个接口认自定义头、二是响应没给跨域头，浏览器直连取不到。
+     *
+     * GameKee 取不到时改用 SRA 托管的那份：那一份已经筛掉非活动条目，这里换成 GameKee
+     * 的字段形状再交给前端，省得让前端认识第二套数据源。
      * @param requestBody
      * @returns InfoOut Successful Response
      * @throws ApiError
@@ -235,15 +233,94 @@ export class GetService {
         });
     }
     /**
+     * 获取碧蓝档案活动图片（GameKee 中转）
+     * 中转 GameKee 的图片。
+     *
+     * 那个 CDN 校验 Referer：带上它自己的站点才给图，页面直连（Referer 是本软件）会被拒。
+     * 所以图片也由后端取回，前端只管引用这个地址。
+     * @param url 图片地址
+     * @returns any Successful Response
+     * @throws ApiError
+     */
+    public static getBluearchiveImageApiInfoBluearchiveImageGet(
+        url: string,
+    ): CancelablePromise<any> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/info/bluearchive/image',
+            query: {
+                'url': url,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 获取终末地版本图与版本名
+     * 终末地的版本图地址与版本名（图是固定地址，前端再走图片中转取回）。
+     * @returns InfoOut Successful Response
+     * @throws ApiError
+     */
+    public static getEndfieldVersionArtApiInfoEndfieldVersionArtGet(): CancelablePromise<InfoOut> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/info/endfield/version-art',
+        });
+    }
+    /**
+     * 获取终末地活动图片（缩放后转发）
+     * 把终末地的活动大图缩到横幅宽度再交给前端。
+     * @param url 图片地址
+     * @returns any Successful Response
+     * @throws ApiError
+     */
+    public static getEndfieldImageApiInfoEndfieldImageGet(
+        url: string,
+    ): CancelablePromise<any> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/info/endfield/image',
+            query: {
+                'url': url,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 获取明日方舟活动数据（PRTS 中转）
+     * 取回明日方舟的活动一览。
+     *
+     * PRTS 的页面里已经带了活动名、分类、起止时间与配图，这里解析成前端好用的形状。
+     * 最近两周一场活动都没有是正常情况（长草期），按空列表返回并照常缓存，
+     * 不然前端会把「没有活动」当成接口出错反复重试。
+     *
+     * PRTS 在部分网络下会连不上、也挡浏览器直连，真取不到时改用 SRA 托管的那份活动列表
+     * 顶上：数据没有活动分类，卡片上会少一列标签，但至少不是空的。
+     * @returns InfoOut Successful Response
+     * @throws ApiError
+     */
+    public static getArknightsActivityApiInfoArknightsActivityGet(): CancelablePromise<InfoOut> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/info/arknights/activity',
+        });
+    }
+    /**
      * 获取星塔旅人活动数据（官网公告）
      * 取回星塔旅人的活动一览。
      *
      * 数据取自国服官网的活动公告：官网 CMS 不放开跨域、也认 Referer，所以由后端
-     * 取回并按公告正文里的开放时间整理成与其它游戏一致的形状。取数失败返回错误
-     * 信封，由卡片显示自己的失败态，不影响其它卡片。
+     * 取回并按公告正文里的开放时间整理成与其它游戏一致的形状。
+     *
+     * 官网取不到、或者这一次一篇活动公告都没识别出来时，改用 SRA 托管的那份顶上：
+     * 对方的抓取在它自己的服务器上完成，用户本机到不了官网也能看到活动。那份数据没有
+     * 分类，按本模块给星塔旅人定的判据补一个，否则前端的横幅与常驻分组会全落空。
      *
      * Returns:
-     * InfoOut: ``{"activities": [...]}``；取不到时返回 ``code=500`` 的错误信封。
+     * InfoOut: ``{"activities": [...]}``；两处都取不到时返回 ``code=500`` 的错误信封。
      * @returns InfoOut Successful Response
      * @throws ApiError
      */
@@ -290,6 +367,25 @@ export class GetService {
             query: {
                 'scriptId': scriptId,
             },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 分享前检查脚本配置中的隐私风险
+     * @param requestBody
+     * @returns ShareInspectOut Successful Response
+     * @throws ApiError
+     */
+    public static inspectScriptShareApiScriptsShareInspectPost(
+        requestBody: ScriptShareInspectIn,
+    ): CancelablePromise<ShareInspectOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/share/inspect',
+            body: requestBody,
+            mediaType: 'application/json',
             errors: {
                 422: `Validation Error`,
             },
@@ -737,6 +833,27 @@ export class GetService {
         });
     }
     /**
+     * 按 taskId 查询单个任务状态
+     * 返回运行中或最近完成任务的终态；不包含日志。
+     * @param taskId
+     * @returns TaskStatusOut Successful Response
+     * @throws ApiError
+     */
+    public static getTaskStatusApiDispatchTaskTaskIdGet(
+        taskId: string,
+    ): CancelablePromise<TaskStatusOut> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/dispatch/task/{task_id}',
+            path: {
+                'task_id': taskId,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
      * 获取电源倒计时初始快照
      * 返回当前倒计时；WS 只承载后续逐秒更新与取消事件。
      * @returns PowerCountdownSnapshot Successful Response
@@ -893,6 +1010,47 @@ export class GetService {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/setting/virtual-display/status',
+        });
+    }
+    /**
+     * 获取配置中心已发布的通用脚本配置
+     * @param requestBody
+     * @returns ShareTemplateListOut Successful Response
+     * @throws ApiError
+     */
+    public static listShareTemplatesApiShareTemplatesPost(
+        requestBody: ShareTemplateListIn,
+    ): CancelablePromise<ShareTemplateListOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/share/templates',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 获取配置中心授权状态
+     * @returns ShareAuthStatusOut Successful Response
+     * @throws ApiError
+     */
+    public static getShareAuthStatusApiShareAuthStatusPost(): CancelablePromise<ShareAuthStatusOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/share/auth/status',
+        });
+    }
+    /**
+     * 轮询配置中心授权结果
+     * @returns ShareAuthStatusOut Successful Response
+     * @throws ApiError
+     */
+    public static pollShareAuthApiShareAuthPollPost(): CancelablePromise<ShareAuthStatusOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/share/auth/poll',
         });
     }
     /**

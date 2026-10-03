@@ -42,6 +42,42 @@ def seed_maa_base_config(config_dir: Path) -> None:
             write_file(path, deepcopy(preset))
 
 
+def ensure_maa_default_configuration(gui_set: dict, gui_new_set: dict) -> None:
+    """Fold the current configuration into ``Default`` and guarantee both sides.
+
+    MAA's native files are not guaranteed to ship ``Default``: direct control and
+    "source directory missing, keep the configuration in the install directory"
+    both copy the user's own gui.json / gui.new.json in as-is, and ``Current`` may
+    already be ``Default``. Folding and the fallback must therefore run
+    unconditionally, or the later hard indexing of ``Global`` /
+    ``Configurations["Default"]`` raises ``KeyError``.
+    """
+
+    if not isinstance(gui_set.get("Global"), dict):
+        gui_set["Global"] = {}
+
+    gui_configurations = gui_set.get("Configurations")
+    if not isinstance(gui_configurations, dict):
+        gui_configurations = gui_set["Configurations"] = {}
+    configurations = gui_new_set.get("Configurations")
+    if not isinstance(configurations, dict):
+        configurations = gui_new_set["Configurations"] = {}
+    gui_configurations.setdefault("Default", {})
+    configurations.setdefault("Default", {})
+    gui_set.setdefault("Current", "Default")
+
+    if gui_set["Current"] != "Default":
+        # The current configuration itself may be missing (hand-edited third-party
+        # files): fold it only when present, as the older verified AutoProxy /
+        # ScriptConfig code did, and otherwise keep each side's own Default.
+        current = gui_set["Current"]
+        if current in gui_configurations:
+            gui_configurations["Default"] = gui_configurations[current]
+        if current in configurations:
+            configurations["Default"] = configurations[current]
+        gui_set["Current"] = "Default"
+
+
 def maa_task_identity(task: object) -> tuple[str, str] | None:
     """Return the stable business identity of one MAA task.
 

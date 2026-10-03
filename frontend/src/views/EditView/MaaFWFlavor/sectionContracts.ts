@@ -78,6 +78,8 @@ export interface MaaFWScriptBasicInfoSectionEmits {
  * （与游戏包名并排，有内容时两列），页面在当前特调登记了同名插入点时才填它；替换这个分节要保留它。
  */
 export interface MaaFWScriptControlSectionProps {
+  /** 脚本 ID：键位映射弹窗「从项目导入」按它读外壳配置实例 */
+  scriptId: string
   maafwConfig: MaaFWScriptConfig
   previewData: MaaFWInterfacePreviewData | null
   interfaceLoading: boolean
@@ -93,6 +95,8 @@ export interface MaaFWScriptControlSectionProps {
   isAdbController: boolean
   isDesktopController: boolean
   resourceOptions: MaaFWResourceInfo[]
+  /** 实际生效的资源（Info.Resource 不在可选列表里时退回第一个），键位映射按它挑 option */
+  effectiveResourceName: string
   adbControlStrategyItems: Array<{ label: string; value: string }>
   selectedEmulatorLabel: string
   interfaceDependentDisabled: boolean
@@ -128,12 +132,13 @@ export interface MaaFWScriptUpdateSectionEmits {
   'apply-update': []
 }
 
-/** 脚本页 `run`：运行参数与每日 / 每周 / 每月只跑一次的任务 */
+/** 脚本页 `run`：运行参数、单任务时限与每日 / 每周 / 每月只跑一次的任务 */
 export interface MaaFWScriptRunSectionProps {
   maafwConfig: MaaFWScriptConfig
   dailyOnceTasks: string[]
   weeklyOnceTasks: string[]
   monthlyOnceTasks: string[]
+  /** interface 里的任务（去掉 pretask 伪任务）：周期跳过下拉与「按任务设置时限」弹窗共用 */
   periodTaskOptions: Array<{ label: string; value: string }>
   interfaceDependentDisabled: boolean
 }
@@ -150,11 +155,14 @@ export interface MaaFWScriptRunSectionEmits {
 export interface MaaFWScriptShellImportSectionProps {
   instances: MaaFWShellInstanceItem[]
   selectedIds: string[]
+  /** 「同时把键位导入到脚本」：选中的实例里有带键位的才显示这个开关，默认开 */
+  importHotkeys: boolean
   disabled?: boolean
 }
 
 export interface MaaFWScriptShellImportSectionEmits {
   'update:selectedIds': [ids: string[]]
+  'update:importHotkeys': [value: boolean]
 }
 
 /** 脚本页分节键 → props 契约 */

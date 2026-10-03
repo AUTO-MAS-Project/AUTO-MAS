@@ -221,6 +221,8 @@ export default {
     backendUpdateContactSupport:
       'Retrying will not fix this; please report the problem together with the log file above',
     closingBackend: 'Closing the backend...',
+    closePreparationTimedOut:
+      'Saving changes before exit timed out. Exit was canceled; wait for saving to finish, then try again.',
     lightTheme: 'Light theme',
     test: 'Test',
     messageTemplate: 'Message template',
@@ -852,6 +854,26 @@ export default {
     whenSavingMasEncrypts:
       'When saving, MAS encrypts the account password. Without SRA configured, or when the SRA module is unused, the password is not used for account switching.',
     aboutSharing: 'About sharing',
+    share: {
+      loginRequired: 'Sign in to the config center first',
+      loginRequiredDesc:
+        'The author is taken from your signed-in account, so there is nothing to fill in by hand.',
+      startLogin: 'Sign in to config center',
+      startFailed: 'Could not start the config center sign-in',
+      pendingDesc:
+        'The authorization page is open in your browser. Check the code below, then choose Approve:',
+      reopenBrowser: 'Reopen the page',
+      cancelAuth: 'Cancel sign-in',
+      authorized: 'Signed in to the config center: {name}',
+      signedInAs: 'Sharing as {name}',
+      signedInDesc:
+        'The upload enters the config center review queue and becomes visible once approved.',
+      switchAccount: 'Use another account',
+      riskTitle: 'These fields may still contain something you should not publish',
+      riskConfirm: 'I confirm the items above are safe to share publicly',
+      privacyNotice:
+        'Known paths such as the script root and script path are replaced with placeholders before upload, and user data is never uploaded. The upload enters the review queue and becomes downloadable once approved.',
+    },
     singleFile: 'Single file',
     match: 'Match',
     multiLineAggregationGuide: 'Multi-line aggregation guide',
@@ -1058,6 +1080,10 @@ export default {
       'You (or the script) start the game; MAS only attaches to the window that is already open',
     howLongMasWaits: 'How long MAS waits after launching the game before it is playable',
     masManagesGame: 'MAS starts and closes the game',
+    mfwAdbAddress: 'ADB address',
+    mfwAdbAddressPassed:
+      'When filled, MAS connects to this address instead of launching the emulator above, and does not close it when the task ends',
+    mfwAdbAddressPlaceholder: 'Leave empty to use the emulator selected above',
     mfwGamePackageName: 'Game package name',
     mfwGamePackageNamePassed:
       'Starts the game together with the emulator. MAS fills this in from the project automatically; when it cannot tell or finds several, the field stays empty and the game is not started, and you can fill it in here',
@@ -1173,6 +1199,7 @@ export default {
     lineMatchingThisPattern:
       'A line matching this pattern closes the window (inclusive); leave empty for no end condition',
     singleRunTimeLimit: 'Single-run time limit (minutes)',
+    singleTaskTimeLimit: 'Single-task time limit (minutes, 0 = unlimited)',
     echoOfWarStartDay: 'Echo of War start day',
     trailingKeyword: 'Trailing keyword',
     reportIssueGo: 'Report an issue, or go to',
@@ -1471,6 +1498,16 @@ export default {
     extraTasksThatRun: 'Extra tasks that run after the daily tasks',
     skipOnceDoneToday: 'Skip once done today',
     skipOnceDoneThis2: 'Skip once done this month',
+    taskTimeLimitOverrides: 'Per-task time limits',
+    taskTimeLimitSet: 'Set',
+    taskTimeLimitAllDefault: 'All follow the default',
+    taskTimeLimitChanged: 'Set per task: {n}',
+    taskTimeLimitModalSub: 'Leave empty to follow the default; 0 means unlimited',
+    taskTimeLimitDefault: 'Default {n} min',
+    taskTimeLimitDefaultUnlimited: 'Default: unlimited',
+    taskTimeLimitRestore: 'Restore',
+    taskTimeLimitRestoreAll: 'Restore all defaults',
+    taskTimeLimitSave: 'Save',
     exampleStarrailExe: 'For example StarRail.exe',
     nothingConfigure: 'Nothing to configure',
     spendSanityFarm: 'Spend sanity to farm',
@@ -1680,6 +1717,36 @@ export default {
       'Both waits when MAS launches the game share this cap: first for the window to appear, then for the screen to settle. The screen is sampled once a second and tasks start early once it has content and stays unchanged for 5 seconds; MaaFW initialisation runs in parallel. Unity games are usually still on a black loading screen when the window shows up, and posting tasks too early makes the script report a recognition failure. Not applied to the screen wait when the game is already running.',
     mfwUnityResolutionTip:
       'Unity games only: before launching, MAS looks up the game registry key from the exe path and temporarily switches to the chosen windowed size, restoring the original values after the game closes; nothing is changed if the game is already running.',
+    mfwHotkey: 'Key bindings',
+    mfwHotkeySet: 'Set',
+    mfwHotkeyDefault: 'Default',
+    mfwHotkeyChanged: '{n} changed',
+    mfwHotkeyPressKeys: 'Press keys…',
+    mfwHotkeyDefaultKey: 'Default {key}',
+    mfwHotkeyRestore: 'Restore',
+    mfwHotkeyRestoreAll: 'Restore all defaults',
+    mfwHotkeyUnsupported: 'This key is not supported',
+    mfwHotkeyTooManyModifiers: 'At most two modifier keys',
+    mfwHotkeySave: 'Save',
+    mfwHotkeyNeedsSwitch: 'Only applies when "{option}" is turned on in the user\'s task settings',
+    mfwHotkeyNoCombo: 'This project only presses single keys; key combinations are not supported',
+    mfwHotkeyAllCombo:
+      'Every binding in this project needs {n} modifier key(s) plus one key, e.g. {example}',
+    mfwHotkeySomeCombo:
+      'Some bindings need a key combination (marked next to them); the rest take a single key',
+    mfwHotkeyComboTag: '{n} modifier(s) + key',
+    mfwHotkeyNeedsCase:
+      'Only applies when "{option}" is set to "{case}" in the user\'s task settings',
+    mfwHotkeyImport: 'Import from project',
+    mfwHotkeyImportLastUsed: 'Last used',
+    mfwHotkeyImported: 'Loaded {n} key bindings from the project',
+    mfwHotkeyImportSkipped: '; skipped {m} unsupported keys',
+    mfwHotkeyImportToScript: 'Also import key bindings into the script',
+    mfwHotkeyImportFrom: 'From {dir}',
+    mfwHotkeyImportPickDir: 'Choose another folder…',
+    mfwHotkeyImportNoConfig: 'No launcher config with key bindings was found in this folder',
+    mfwHotkeyImportPickOne:
+      'Found {n} different sets of key bindings; pick one under "Import from project"',
     thisNameAlsoWritten:
       'This name is also written to March7th Assistant / SRA as the Trailblazer name for the Currency War feature',
     thisSubtaskHasNo: 'This subtask has no editable fields',
@@ -2099,19 +2166,17 @@ export default {
     baahRunTimeLimitHint:
       'Longest the run may go without new log output, in minutes; exceeding it counts as a failed run',
     baahConfigName: 'Default config name',
-    baahConfigNameHint:
-      'The config used normally; this app launches it as BAAH.exe <name>.json. With activity adaptation enabled it is replaced by the "Event-period config file name" while an event is running',
+    baahConfigNameHint: 'The config used normally; this app launches it as BAAH.exe <name>.json',
     baahConfigNamePlaceholder: 'Pick the config used normally',
-    baahActivityConfigName: 'Event-period config file name',
-    baahActivityConfigNameHint:
-      'With "Activity adaptation" enabled above, BAAH is started with this config while Blue Archive has an ongoing event; leave it empty, or when the event schedule cannot be fetched, the default config name is used instead',
-    baahActivityConfigNamePlaceholder: 'Leave empty to always use the default config',
-    baahIfActivityAdapt: 'Activity adaptation',
-    baahIfActivityAdaptHint:
-      'Switch the config file by the Blue Archive event schedule: the "Event-period config file name" while an event is running, otherwise the "Default config name"',
+    baahStageMode: 'Stage plan',
+    baahStageModeHint:
+      'Schedule which stages to run each day from a plan; "Fixed" keeps the stage settings you made inside BAAH. A plan runs either the same stages every day or a weekly schedule',
+    baahIfEventFirst: 'Event stages first',
+    baahIfEventFirstHint:
+      'While Blue Archive has an ongoing event, the event-stage task is moved to the front and turned on; with no event, or when the event schedule cannot be fetched, your task order is left untouched',
     baahActivityLineType: 'Event schedule server',
     baahActivityLineTypeHint:
-      'Which server schedule decides whether an event is running; servers hold events at different times, so pick the one your account plays on',
+      'Which server schedule decides whether an event is running; servers hold events at different times, so pick the one your account plays on. "Event stages first" also uses the server picked here',
     baahActivityLineCN: 'CN',
     baahActivityLineJP: 'JP',
     baahActivityLineGloble: 'Global',
@@ -2334,6 +2399,8 @@ export default {
     maaSessionOpened: 'MAA setup opened',
     maaSessionStartFailed: 'Could not start the MAA setup session',
     maaSessionStopFailed: 'Could not stop the MAA setup session',
+    maaEditorReloadBlocked:
+      'Wait for changes to be saved and configuration operations to finish, then close the MAA setup window before refreshing.',
     maaViewOpened: 'MAA viewer opened',
     maaSessionTimeoutWarn:
       'The MAA setup session is about to time out and will be saved in 30 seconds',
@@ -3029,7 +3096,7 @@ export default {
       toolDesc:
         'The game community tool stores your community credentials and runs check-ins at startup, on schedule, or on demand.',
       privacyNotice:
-        'Signing in by QR code or password never saves the account, phone number, or password; the password is used for this sign-in only and is not written to config, logs, or notifications.',
+        'Community credentials are encrypted on this device for check-ins and daily notes. Keep them safe.',
       enable: 'Enable community tools',
       enableDesc: 'Runs community check-ins with the MAS task scheduler.',
       activityEnable: 'Enable daily notes',
@@ -3065,7 +3132,7 @@ export default {
       save: 'Save',
       userName: 'Name',
       miyoushe: 'Miyoushe',
-      miyoushePlaceholder: 'Open the site in a browser, press F12, and copy document.cookie',
+      miyoushePlaceholder: 'Paste an existing Miyoushe Cookie',
       qrLogin: 'Get a token by QR code',
       kuro: 'Kuro Games community',
       kuroPlaceholder: 'Paste the login credential you copied from Kuro BBS',
@@ -3099,7 +3166,7 @@ export default {
       saving: 'Saving the credentials...',
       saveTokenFailed: 'Could not save the token',
       scannedButSaveFailed: 'Scan succeeded, but the token could not be saved',
-      success: 'Signed in — the token is filled in for you',
+      success: 'Signed in — the token is saved to the selected account group',
       loginSuccess: 'Miyoushe QR sign-in succeeded',
       sklandLoginSuccess: 'Skland QR sign-in succeeded',
       queryFailed: 'Could not query the status',
@@ -3258,8 +3325,9 @@ export default {
       arknights: 'Arknights',
     },
     carousel: {
-      remaining: 'Time left',
+      remaining: 'Event time left',
       startsIn: 'Starts in',
+      versionBadge: 'Version {version}',
       prev: 'Previous game',
       next: 'Next game',
       loading: 'Loading events…',
@@ -3291,8 +3359,6 @@ export default {
       wutheringwaves: 'No Wuthering Waves events running',
       nte: 'No Neverness to Everness events running',
       reverse1999: 'No Reverse: 1999 events running',
-      endfield: 'No banners or events running',
-      endfieldNoData: 'No Endfield event data',
       stellasora: 'No Stella Sora events running',
       noData: 'No data',
     },
@@ -3301,26 +3367,31 @@ export default {
       permanent: 'Permanent events',
     },
     countdown: {
+      d: 'D[d]',
       dh: 'D[d] H[h]',
       dhm: 'D[d] H[h] m[m]',
       dhms: 'D[d] H[h] m[m] ss[s]',
+      startsIn: 'Starts in',
+      left: 'Left',
+      startsAt: 'Starts {time}',
       ended: '[Event ended]',
     },
     arknights: {
-      endTime: 'Ends:',
-      remaining: 'Time left in this event',
       resourceToday: "Today's open resource stages",
-      activityEnded: 'Event ended',
+      startsIn: 'Starts in',
+      countdownLeft: 'Left',
+      source: 'PRTSwiki',
+      noActivity: 'No events',
+      unavailable: 'Arknights event data is unavailable',
     },
     endfield: {
       stale: 'Cached',
       staleMessage: 'Using the last successfully fetched event data',
       unavailable: 'Endfield event data is temporarily unavailable',
       source: 'Source: {name}',
-      poolSection: 'Current banners',
       upCharacters: 'Rate-up: {names}',
       endsAt: 'Ends {time}',
-      concurrent: 'Running alongside',
+      noActivity: 'No events',
       ongoing: '{count} ongoing | {count} ongoing',
     },
     sra: {
@@ -3332,13 +3403,8 @@ export default {
       endedAt: 'Ends {time}',
     },
     bluearchive: {
-      versionBadge: '{version}',
       endsAt: 'Ends {time}',
       startsAt: 'Starts {time}',
-      versionRemaining: 'Event time remaining',
-      startsIn: 'Starts in',
-      nextVersionSoon: 'More events are coming soon',
-      versionTime: 'Event period:',
       serverLabel: 'Server',
       serverDragHint: 'Drag to reorder servers',
       server: {
@@ -3351,7 +3417,7 @@ export default {
       noActivity: 'No events running',
       stale: 'Cached',
       staleMessage: 'Using the last successfully fetched event data',
-      source: 'Kivo Wiki',
+      source: 'GameKee',
     },
     command: {
       aria: 'Quick task launcher',
@@ -3573,8 +3639,20 @@ export default {
     viewLabel: 'View:',
     viewConfig: 'Configuration',
     viewSimple: 'Simplified',
+    // Stage layout: the two ways a BAAH plan can be arranged
+    baahLayout: {
+      label: 'Layout:',
+      mixed: 'Mixed stages',
+      single: 'One type per day',
+      emptyOption: 'None',
+    },
     typeFallback: 'plan',
-    type: { maa: 'MAA plan', maaEnd: 'MaaEnd plan', mss: 'MSS plan' },
+    type: {
+      maa: 'MAA plan',
+      maaEnd: 'MaaEnd plan',
+      baah: 'BAAH plan',
+      mss: 'MSS plan',
+    },
     week: {
       ALL: 'Every day',
       Monday: 'Mon',
@@ -3606,6 +3684,42 @@ export default {
       stagePlaceholder: 'Enter a stage code',
       noSwitch: 'Keep as is',
       usedSuffix: '{label} (already used)',
+    },
+    // BAAH stage plan: every position of the six stage kinds is fixed, so the hints spell out what each one is and whether -1 is allowed
+    baah: {
+      event: 'Event stage',
+      wanted: 'Bounty hunt',
+      special: 'Special task',
+      exchange: 'Academy exchange',
+      hard: 'Hard stages',
+      normal: 'Normal stages',
+      eventHint: 'Event stage: stage number / sweep count (-1 = maximum)',
+      wantedHint: 'Bounty hunt: area / stage (-1 = last stage) / count (-1 = maximum)',
+      specialHint: 'Special task: area / stage (-1 = last stage) / count (-1 = maximum)',
+      exchangeHint: 'Academy exchange: academy / stage (-1 = last stage) / count (-1 = maximum)',
+      hardHint: 'Hard stages: chapter / stage / count (-1 = maximum); the stage cannot be -1',
+      normalHint: 'Normal stages: chapter / stage / count (-1 = maximum); the stage cannot be -1',
+      partStageIndex: 'Stage number',
+      partTimes: 'Times',
+      partRegion: 'Area',
+      partLevelHighest: 'Stage',
+      partLevel: 'Stage',
+      partAcademy: 'Academy',
+      partChapter: 'Chapter',
+      partLevelZeroFixed: 'The stage must be -1 (last stage) or at least 1; changed to 1',
+      // One row per thing in the one-kind-per-day layout, so the hint spells out that row's range
+      rowKind: 'Stage type',
+      rowStage: 'Stage name',
+      rowTimes: 'Battle count',
+      rowKindHint: 'Which stage kind to run today; "None" runs none of the six',
+      rowStageHint:
+        'Which stage of that kind to run; bounty hunt, special task and academy exchange can pick the last stage from the end that can be raided (it steps one stage back when that one cannot be raided), while hard and normal stages only take a concrete stage number',
+      rowTimesHint: 'How many times to run it; "Max runs" sweeps every remaining run at once',
+      // The dropdown entry that stands for -1: the last raid-able stage, or the maximum run count
+      stageHighest: 'Last raid-able',
+      timesMax: 'Max runs',
+      // The switch row above each stage kind in the mixed layout
+      partEnabled: 'Enabled',
     },
     toast: {
       created: 'Created a new {type}: "{name}"',

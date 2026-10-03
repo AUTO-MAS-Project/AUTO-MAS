@@ -10,6 +10,7 @@ import { message } from 'ant-design-vue'
 import type { GlobalConfig, VirtualDisplayCheckOut } from '@/api'
 import { ActionService, GetService } from '@/api'
 import { handleExternalLink, openExternalUrl } from '@/utils/openExternal'
+import { navigateTo } from '@/router'
 
 const { t } = useI18n()
 
@@ -591,10 +592,19 @@ async function submitPersonalMssPassword() {
         </a-col>
       </a-row>
     </div>
-    <div class="personal-mss-entry">
-      <a-button type="text" size="small" @click="openPersonalMssEntry">
-        {{ personalMssEntryLabel }}
-      </a-button>
+    <!-- 两个小入口并排放在虚拟显示器这一节下面：左边是群友的「神秘入口」，
+         右边是个人版编排的「并非神秘入口」，样式共用一层容器 -->
+    <div class="flavor-entries">
+      <div class="mystery-entry">
+        <a-button type="text" size="small" @click="navigateTo('/settings/mystery')">
+          {{ t('mystery.entry') }}
+        </a-button>
+      </div>
+      <div class="personal-mss-entry">
+        <a-button type="text" size="small" @click="openPersonalMssEntry">
+          {{ personalMssEntryLabel }}
+        </a-button>
+      </div>
     </div>
 
     <a-modal
@@ -616,12 +626,13 @@ async function submitPersonalMssPassword() {
 </template>
 
 <style scoped>
-.personal-mss-entry {
+.flavor-entries {
   display: flex;
   justify-content: flex-end;
+  gap: 8px;
 }
 
-.personal-mss-entry :deep(.ant-btn) {
+.flavor-entries :deep(.ant-btn) {
   color: var(--ant-color-text-tertiary);
   font-size: 12px;
 }

@@ -89,6 +89,7 @@
           />
           <component
             :is="sections.control"
+            :script-id="scriptId"
             :maafw-config="maafwConfig"
             :preview-data="previewData"
             :interface-loading="previewLoading"
@@ -104,6 +105,7 @@
             :is-adb-controller="isAdbController"
             :is-desktop-controller="isDesktopController"
             :resource-options="resourceOptions"
+            :effective-resource-name="effectiveResourceName"
             :adb-control-strategy-items="adbControlStrategyItems"
             :selected-emulator-label="selectedEmulatorLabel"
             :interface-dependent-disabled="interfaceDependentDisabled"
@@ -186,6 +188,7 @@
         :is="sections.shellImport"
         v-if="isWizard && currentStep === stepItems.length - 1 && shellInstances.length > 0"
         v-model:selected-ids="selectedShellInstanceIds"
+        v-model:import-hotkeys="importShellHotkeys"
         :instances="shellInstances"
         :disabled="shellImporting"
       />
@@ -265,6 +268,7 @@ const {
   isAdbController,
   isDesktopController,
   resourceOptions,
+  effectiveResourceName,
   interfaceDependentDisabled,
   selectedEmulatorLabel,
   adbControlStrategyItems,
@@ -305,6 +309,7 @@ const {
   canLeaveCurrentStep,
   shellInstances,
   selectedShellInstanceIds,
+  importShellHotkeys,
   shellImporting,
   finishButtonLabel,
   handleFinishWizard,

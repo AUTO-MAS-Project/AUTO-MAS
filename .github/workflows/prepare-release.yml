@@ -47,8 +47,9 @@ permissions:
   pull-requests: write
 
 concurrency:
-  group: prepare-release-${{ github.ref_name }}
+  group: changelog-${{ github.ref_name }}
   cancel-in-progress: false
+  queue: max
 
 jobs:
   prepare:
@@ -65,9 +66,11 @@ jobs:
           echo "::error::「准备发版」只能在 dev 或 release/* 分支上运行，当前选的是 ${REF_NAME}。请在 Run workflow 的分支下拉框里改选。"
           exit 1
 
+      # 与晚间入账共用分支锁，排队后检出最新分支。
       - name: 检出代码
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ github.ref_name }}
           fetch-depth: 0
           fetch-tags: true
 
@@ -98,7 +101,8 @@ jobs:
         run: |
           echo "base_slug=${REF_NAME//\//-}" >> "$GITHUB_OUTPUT"
 
-      - name: 编译碎片并推进版本号
+      # release 一并入账晚间任务尚未处理的碎片，保留署名与 PR 号。
+      - name: 发版前入账碎片并推进版本号
         id: release
         env:
           # 解析碎片作者用：把提交换成 GitHub 登录名

@@ -1,0 +1,12 @@
+# 只接 github-actions 的 SHA 升级：uv.lock 由 check-uv-lock.yml 把关、前端由 yarn install --immutable 把关，
+# Dependabot 改这两个生态的锁文件容易出错，所以不接 pip / npm。
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      actions:
+        patterns: ["*"]   # 一次 PR 更新全部 action，避免每周开一堆 PR

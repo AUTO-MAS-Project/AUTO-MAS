@@ -47,8 +47,9 @@ const browserDevElectronAPI = {
   windowFocus: async () => window.focus(),
   selectFolder: async () => null,
   selectFile: async () => [],
-  saveConfig: async (config: unknown) => {
-    localStorage.setItem(CONFIG_KEY, JSON.stringify(config))
+  saveConfig: async (config: Record<string, unknown>, defaults?: Record<string, unknown>) => {
+    const current = readJsonStorage<Record<string, unknown>>(CONFIG_KEY)
+    localStorage.setItem(CONFIG_KEY, JSON.stringify({ ...defaults, ...current, ...config }))
   },
   loadConfig: async () => readJsonStorage(CONFIG_KEY),
   resetConfig: async () => {

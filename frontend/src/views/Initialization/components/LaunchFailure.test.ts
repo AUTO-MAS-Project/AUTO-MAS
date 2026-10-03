@@ -62,15 +62,15 @@ describe('LaunchFailure', () => {
       failureLogs: '[stdout]\nresolved 1 package\n\n[stderr]\nnetwork unreachable',
     })
 
-    // 依赖段在 Runtime 下换不了镜像，所以是普通重试而不是换源重试，也不带源列表
-    expect(buttonLabels(html)).toEqual(['重试', '重建运行环境', '查看日志'])
+    // 此结果只声明 retry-sync，因此是普通重试，也不带源列表；求助入口始终保留。
+    expect(buttonLabels(html)).toEqual(['重试', '重建运行环境', '查看日志', '加群寻求帮助'])
     expect(html).not.toContain('换一个源重试')
     // 日志仍然整块给出，只是收进「详细信息」
     expect(html).toContain('详细信息')
     expect(html).toContain('network unreachable')
   })
 
-  it('INTERNAL_ERROR 只给打开日志，并附上内部错误说明', async () => {
+  it('INTERNAL_ERROR 保留日志与求助入口，并附上内部错误说明', async () => {
     const plan = decideFailureActions({
       code: 'INTERNAL_ERROR',
       retryable: false,
@@ -86,7 +86,7 @@ describe('LaunchFailure', () => {
       showMirrorSelection: plan.showMirrorSelection,
     })
 
-    expect(buttonLabels(html)).toEqual(['查看日志'])
+    expect(buttonLabels(html)).toEqual(['查看日志', '加群寻求帮助'])
     expect(html).toContain('这是程序内部的问题')
   })
 
@@ -103,7 +103,7 @@ describe('LaunchFailure', () => {
       ],
     })
 
-    expect(buttonLabels(html)).toEqual(['换个下载源重试', '查看日志'])
+    expect(buttonLabels(html)).toEqual(['换个下载源重试', '查看日志', '加群寻求帮助'])
     expect(html).toContain('换一个源重试')
     expect(html).toContain('CNB 官方镜像')
   })
@@ -120,7 +120,7 @@ describe('LaunchFailure', () => {
       showSkipButton: true,
     })
 
-    expect(buttonLabels(html)).toEqual(['重试', '查看日志'])
+    expect(buttonLabels(html)).toEqual(['重试', '查看日志', '加群寻求帮助'])
     expect(html).toContain('跳过此步骤')
   })
 
@@ -133,7 +133,7 @@ describe('LaunchFailure', () => {
       ],
     })
 
-    expect(buttonLabels(html)).toEqual(['检查运行环境'])
+    expect(buttonLabels(html)).toEqual(['检查运行环境', '加群寻求帮助'])
     expect(html).toContain('受管布局')
     expect(html).toContain('repo 缺失')
     expect(html).toContain('3.12.6')
@@ -142,6 +142,8 @@ describe('LaunchFailure', () => {
   it('可跳过的步骤把后果写在按钮旁边', async () => {
     const html = await renderFailure({ showSkipButton: true })
 
+    expect(buttonLabels(html)).toEqual(['加群寻求帮助'])
+    expect(html).toContain('如果重试后仍无法解决，可以加入 QQ 群，带上日志寻求帮助。')
     expect(html).toContain('跳过此步骤')
     expect(html).toContain('程序可能无法正常运行')
   })

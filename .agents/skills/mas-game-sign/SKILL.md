@@ -153,13 +153,13 @@ reason        失败原因
 
 | 入口 | 特点 |
 | --- | --- |
-| `POST /api/tools/sign`（`manual_game_sign`） | `force=True`；通知走 `_dispatch_game_sign_notification`，`asyncio.shield` + 0.1s 超时后转后台，不阻塞响应 |
+| `POST /api/tools/sign`（`manual_game_sign`） | `force=True`；通知走 `_dispatch_community_notification`，`asyncio.shield` + 1.1s（`NOTIFICATION_FAST_PATH_WAIT_SECONDS`）超时后转后台，不阻塞响应；渠道级失败另有系统提示兜底 |
 | `timer._execute_game_sign(source=...)` | `force=False`；`source` 在 `_TASK_GAME_SIGN_SOURCES` 内时结果交由**任务完成通知**消费，其余自动来源单独推送 |
 | `timer.try_game_sign_for_task` | MAS 任务前置签到 |
 
-`GameSign.NotifyEnabled` 是通知总开关，两条路径都要检查。后台通知任务必须持有强引用（`_PENDING_GAME_SIGN_NOTIFICATIONS`）并挂 `add_done_callback` 记录失败，否则任务可能被 GC。
+`GameSign.NotifyEnabled` 是通知总开关，两条路径都要检查。后台通知任务必须持有强引用（`_PENDING_COMMUNITY_NOTIFICATIONS`）并挂 `add_done_callback`，否则任务可能被 GC；渠道级失败由 `push_community_notification` 另发一条系统提示（`Config.push_system_notice`），不只写日志。
 
-`_check_system_time()` 只告警不阻断，且**不占签到锁**（在 `run_all_sign_in` 里以独立 task 起、finally 里取消）。时间源不可用时静默 `debug`。不要把它改成阻断条件。
+`check_community_system_time()` 只告警不阻断，且**不占签到锁**（在 `run_community_sign_in` 里以独立 task 起、finally 里取消）。时间源不可用时静默 `debug`。被取消的那一次不写检查缓存（只在跑完后打点），否则接下来一个检查周期都会命中缓存、偏差提示不再出现。不要把它改成阻断条件。
 
 ## 已知不一致（改动时留意，不要照抄）
 

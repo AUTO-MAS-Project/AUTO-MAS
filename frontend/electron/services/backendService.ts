@@ -28,7 +28,7 @@ import {
   resolveRuntimeLaunchMode,
 } from './runtime'
 import { readRuntimeBinaryPin, syncRuntimeBinary } from './runtimeBinaryService'
-import { resolveRuntimeTargetVersion } from './runtimeInitializationService'
+import { resolveRuntimeTargetVersion, toRuntimeVersion } from './runtimeInitializationService'
 
 import { getLogger } from './logger'
 import { observeMainOperation, recordMainCount, recordMainDuration } from './sentry'
@@ -454,6 +454,24 @@ export class BackendService {
     }
 
     if (outcome !== 'timeout' && 'baseUrl' in outcome) {
+      // 采纳句柄前必须确认这次跑起来的后端就是期望版本（issue #30）；
+      // 不匹配时先关闭 Runtime 再报错，绝不静默接管旧版本后端。
+      try {
+        this.assertBackendVersionMatches(
+          await this.fetchRunningBackendVersion(outcome.baseUrl, 5000)
+        )
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        logger.error(`后端版本校验失败，关闭 Runtime: ${message}`)
+        try {
+          await handle.shutdown({ timeoutMs: RUNTIME_SHUTDOWN_TIMEOUT_MS })
+        } catch (shutdownError) {
+          const shutdownMessage =
+            shutdownError instanceof Error ? shutdownError.message : String(shutdownError)
+          logger.warn(`关闭版本不匹配的 Runtime 未确认完成: ${shutdownMessage}`)
+        }
+        return this.buildRuntimeStartFailure(error, stdoutLines, stderrLines)
+      }
       this.adoptRuntimeHandle(handle, outcome.baseUrl)
       logger.info(`后端服务启动成功，Runtime PID: ${handle.pid}，后端地址: ${outcome.baseUrl}`)
       return { success: true }
@@ -712,6 +730,7 @@ export class BackendService {
     const metaUrl = `${apiEndpoint}/api/core/ws_meta`
     const closeUrl = `${apiEndpoint}/api/core/close`
 
+    let reuseDevBackend = false
     try {
       logger.info(`启动前检查旧后端: ${metaUrl}`)
       const metaResponse = await this.fetchWithTimeout(metaUrl, { method: 'GET' }, 3000)
@@ -724,13 +743,21 @@ export class BackendService {
         this.lastKnownBackendDevMode = meta.devMode
       }
       if (meta.devMode) {
-        logger.info('检测到开发模式旧后端，复用现有后端进程')
-        return false
+        reuseDevBackend = true
       }
     } catch (error) {
       const errorMsg = error instanceof Error ? `${error.name}: ${error.message}` : String(error)
       logger.debug(`启动前未发现旧后端: ${errorMsg}`)
       return true
+    }
+
+    if (reuseDevBackend) {
+      // 静默复用前必须确认版本一致（issue #30）：否则会把旧版本后端悄悄留给本次会话。
+      // 校验放在 try/catch 之外，版本错误不能被上面的「未发现旧后端」吞掉。
+      const reusedVersion = await this.fetchRunningBackendVersion(apiEndpoint, 3000)
+      this.assertBackendVersionMatches(reusedVersion)
+      logger.info('检测到开发模式旧后端，版本一致，复用现有后端进程')
+      return false
     }
 
     logger.info(`检测到生产模式旧后端，尝试通过 ${closeUrl} 关闭`)
@@ -1043,6 +1070,44 @@ export class BackendService {
     return operation
   }
 
+  /** 从健康检查响应里提取后端版本；未上报或格式异常时返回 null。 */
+  private extractHealthVersion(payload: unknown): string | null {
+    if (!payload || typeof payload !== 'object') return null
+    const version = (payload as { version?: unknown }).version
+    return typeof version === 'string' && version.trim() !== '' ? version : null
+  }
+
+  /**
+   * 读取目标地址上正在运行的后端版本。
+   * 返回 null 表示「无法确认版本」（不可达、响应异常或协议过旧未上报），由调用方 fail-closed。
+   */
+  private async fetchRunningBackendVersion(
+    apiEndpoint: string,
+    timeoutMs: number
+  ): Promise<string | null> {
+    try {
+      const healthUrl = `${apiEndpoint}${this.startupHealthPath}`
+      const response = await this.fetchWithTimeout(healthUrl, { method: 'GET' }, timeoutMs)
+      if (!response.ok) return null
+      return this.extractHealthVersion(await response.json())
+    } catch {
+      return null
+    }
+  }
+
+  /**
+   * 前后端版本一致性闸门（issue #30）：启动服务必须保证前后端版本匹配，
+   * 不匹配或无法确认版本都要显式报错，绝不静默复用旧版本后端。
+   */
+  private assertBackendVersionMatches(actual: string | null): void {
+    const expected = resolveRuntimeTargetVersion()
+    if (actual !== null && toRuntimeVersion(actual) === expected) return
+    const actualText = actual ?? '未上报（后端不可达或健康检查协议过旧）'
+    throw new Error(
+      `后端版本不匹配：期望 ${expected}，实际 ${actualText}；请更新后端或关闭旧后端后重试`
+    )
+  }
+
   async waitUntilReady(timeoutMs: number = 60000): Promise<void> {
     const healthUrl = `${this.mirrorService.getApiEndpoint('local')}${this.startupHealthPath}`
     const startedAt = Date.now()
@@ -1055,16 +1120,20 @@ export class BackendService {
         throw new Error('后端进程已退出')
       }
 
+      // 版本校验抛错必须穿透这里的「尚未监听」catch，否则会被当成未就绪无限重试。
+      let health: { ready?: boolean; version?: unknown } | null = null
       try {
         const response = await this.fetchWithTimeout(healthUrl, { method: 'GET' }, 1000)
         if (response.ok) {
-          const health = (await response.json()) as { ready?: boolean }
-          if (health.ready) {
-            return
-          }
+          health = (await response.json()) as { ready?: boolean; version?: unknown }
         }
       } catch {
         // 后端尚未监听，继续等待。
+      }
+      if (health?.ready) {
+        // 就绪即校验版本（issue #30）：旧链路的复用与全新启动都汇聚到这里。
+        this.assertBackendVersionMatches(this.extractHealthVersion(health))
+        return
       }
 
       if (this.forceStopRequested) {
