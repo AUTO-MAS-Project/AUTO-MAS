@@ -1,0 +1,2 @@
+project: scheduler
+统一计划选择的拖拽图标与其他列表的点阵样式
