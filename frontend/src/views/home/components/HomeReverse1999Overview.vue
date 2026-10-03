@@ -44,7 +44,7 @@
             :value-style="activityCountdownStyle"
           />
           <div class="activity-row-time">
-            {{ t('home.sra.endedAt', { time: formatTime(activity.endTime) }) }}
+            {{ t('home.sra.endedAt', { time: formatActivityTime(activity.endTime, locale) }) }}
           </div>
         </div>
       </div>
@@ -63,10 +63,11 @@ import { computed } from 'vue'
 import type { CSSProperties } from 'vue'
 import type { Reverse1999ActivityOverview } from '@/types/home'
 import { handleExternalLink } from '@/utils/openExternal'
+import { formatActivityTime } from '@/views/home/activityTime'
 
 defineOptions({ name: 'HomeReverse1999Overview' })
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 
 const props = withDefaults(
   defineProps<{
@@ -98,16 +99,9 @@ const activityCountdownStyle = computed<CSSProperties>(() => ({
 }))
 
 const getCountdownValue = (value: string) => new Date(value).getTime()
-
-const formatTime = (value: string) =>
-  new Date(value).toLocaleString('zh-CN', {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-  })
 </script>
+
+<style scoped src="./activityCard.css"></style>
 
 <style scoped>
 .r1999-card {
@@ -118,20 +112,6 @@ const formatTime = (value: string) =>
 .r1999-card :deep(.ant-card-head-title) {
   font-size: 18px;
   font-weight: 600;
-}
-
-.card-extra {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.source-link {
-  font-size: 13px;
-}
-
-.status-alert {
-  margin-bottom: 16px;
 }
 
 .activity-rows {

@@ -24,6 +24,7 @@ import asyncio
 import os
 import time
 import uuid
+from collections import OrderedDict
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -35,6 +36,7 @@ from app.models.config import CLASS_BOOK
 from app.models.schema import (
     TaskRuntimeSnapshot,
     TaskRuntimeSnapshotItem,
+    TaskStatusOut,
     WSPowerSignData,
     WSTaskCompletedData,
     WSTaskCreatedData,
@@ -95,6 +97,11 @@ System = LazyProxy("app.services", "System")
 
 # 脚本配置类名 → 脚本类型键（与 ScriptCreateIn.type 词表一致）
 _SCRIPT_TYPE_BY_CLASS = {cls.__name__: key for key, cls in CLASS_BOOK.items()}
+
+# 最近完成任务的状态留存：任务一结束就会从运行快照摘掉，凭 taskId 单点查询
+# 只能靠这里回读终态，所以留一个有限窗口（条数上限 + 留存时长）。
+_RECENT_RESULTS_MAX = 200
+_RECENT_RESULTS_TTL_SECONDS = 1800
 
 
 @dataclass(frozen=True)
@@ -367,10 +374,13 @@ class Task(TaskExecuteBase):
         script_identities: list[WSTaskScriptIdentityData],
         script_reservations: _ScriptTaskReservations | None = None,
         script_run_days: list[list[str]] | None = None,
+        on_finished: Callable[[TaskStatusOut], None] | None = None,
     ):
         super().__init__()
         self.task_info = task_info
         self.script_identities = script_identities
+        # 结束时的终态回调（调度器用来留存结果，供 taskId 单点查询）
+        self._on_finished = on_finished
         # 队列项限定的运行周几，与 script_identities 一一对应；非队列任务为 None。
         # 以任务创建那一刻的星期为准，队列跨过午夜后后面的项不会按第二天算。
         self.script_run_days = script_run_days
@@ -907,18 +917,35 @@ class Task(TaskExecuteBase):
 
         logger.info(f"任务结束: {self.task_info.task_id}")
 
+        # 完成面板文本带采集节点详情（与推送报告同源渲染），
+        # 未配置推送的用户在调度台也能看到
+        result_text = build_task_result_text(self.task_info.script_list)
         await Publisher.send(
             id=str(self.task_info.task_id),
             type=protocol.TASK_COMPLETED,
             data=WSTaskCompletedData(
-                # 完成面板文本带采集节点详情（与推送报告同源渲染），
-                # 未配置推送的用户在调度台也能看到
-                result=build_task_result_text(self.task_info.script_list),
+                result=result_text,
                 outcome=self._exit_result,
                 error=self._exit_error,
                 task_info=self.task_info.asdict,
             ),
         )
+        # 同一步里先留存终态：任务从运行快照摘掉后仍要能凭 taskId 查到
+        if self._on_finished is not None:
+            self._on_finished(
+                TaskStatusOut(
+                    taskId=str(self.task_info.task_id),
+                    status=self._exit_result,
+                    detail=result_text,
+                    error=self._exit_error,
+                    mode=self.task_info.mode,
+                    isCycle=self.task_info.is_cycle,
+                    queueId=self.task_info.queue_id,
+                    scriptId=self.task_info.script_id,
+                    userId=self.task_info.user_id,
+                    finishedAt=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                )
+            )
 
         # 循环任务只会被用户主动停止，此时不该再执行队列的「完成后操作」——
         # 那会把关机之类的动作接在一次手动停止后面。
@@ -966,6 +993,10 @@ class _TaskManager:
 
         self.task_info: Dict[uuid.UUID, TaskInfo] = {}
         self.task_handler: Dict[uuid.UUID, Task] = {}
+        # taskId → (结束时刻的单调读数, 终态)，供单点查询在任务摘掉后回读
+        self._recent_results: OrderedDict[str, tuple[float, TaskStatusOut]] = (
+            OrderedDict()
+        )
         self._script_reservations = _ScriptTaskReservations()
         self._cleanup_tasks: set[asyncio.Task[None]] = set()
         self._stop_all_lock = asyncio.Lock()
@@ -1029,6 +1060,50 @@ class _TaskManager:
                 identities.setdefault(script_id, self._script_identity(script_id))
 
         return list(identities.values())
+
+    def _remember_result(self, status: TaskStatusOut) -> None:
+        """留存刚结束任务的终态，供已摘掉的任务按 taskId 回查。"""
+
+        self._recent_results.pop(status.taskId, None)
+        self._recent_results[status.taskId] = (time.monotonic(), status)
+        while len(self._recent_results) > _RECENT_RESULTS_MAX:
+            self._recent_results.popitem(last=False)
+
+    def _prune_recent_results(self) -> None:
+        """丢弃超出留存时长的终态，避免陈旧结果被当成刚结束的任务。"""
+
+        deadline = time.monotonic() - _RECENT_RESULTS_TTL_SECONDS
+        while self._recent_results:
+            finished_at, _ = next(iter(self._recent_results.values()))
+            if finished_at > deadline:
+                break
+            self._recent_results.popitem(last=False)
+
+    def get_task_status(self, task_id: str) -> TaskStatusOut | None:
+        """按 taskId 单点返回运行中或最近完成任务的终态；找不到返回 None。"""
+
+        try:
+            task_uid = uuid.UUID(task_id)
+        except ValueError:
+            return None
+
+        task_info = self.task_info.get(task_uid)
+        if task_info is not None:
+            handler = self.task_handler.get(task_uid)
+            return TaskStatusOut(
+                taskId=task_id,
+                status="running",
+                mode=task_info.mode,
+                isCycle=task_info.is_cycle,
+                queueId=task_info.queue_id,
+                scriptId=task_info.script_id,
+                userId=task_info.user_id,
+                stopping=bool(handler and handler.is_closing),
+            )
+
+        self._prune_recent_results()
+        remembered = self._recent_results.get(task_id)
+        return remembered[1] if remembered is not None else None
 
     def get_runtime_snapshot(self) -> TaskRuntimeSnapshot:
         """返回任务运行状态与定时队列的 HTTP 初始快照。"""
@@ -1296,6 +1371,7 @@ class _TaskManager:
                 script_identities,
                 self._script_reservations,
                 script_run_days=script_run_days,
+                on_finished=self._remember_result,
             )
             await Publisher.send(
                 id=protocol.ID_TASK_MANAGER,

@@ -1,17 +1,36 @@
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Empty, message } from 'ant-design-vue'
-import { ArrowLeftOutlined, LockOutlined } from '@ant-design/icons-vue'
+import { useRoute } from 'vue-router'
+import { message } from 'ant-design-vue'
+import { ArrowLeftOutlined, ArrowRightOutlined, LockOutlined } from '@ant-design/icons-vue'
 import { navigateTo } from '@/router'
 import { useMysteryStore } from '@/stores/mystery'
 
 const { t } = useI18n()
+const route = useRoute()
 const store = useMysteryStore()
 const logger = window.electronAPI.getLogger('神秘入口')
 const form = reactive({ accessCode: '' })
 const error = ref('')
 const loadFailed = ref(false)
+
+const isFeaturePage = computed(() => route.name !== 'Mystery')
+const pageTitle = computed(() =>
+  store.unlocked && typeof route.meta.mysteryTitleKey === 'string'
+    ? t(route.meta.mysteryTitleKey)
+    : t('mystery.entry')
+)
+
+const back = () => {
+  if (isFeaturePage.value) {
+    navigateTo('/settings/mystery')
+  } else {
+    navigateTo('/settings', { query: { tab: 'function' } })
+  }
+}
+
+const openTokens = () => navigateTo('/settings/mystery/tokens')
 
 const load = async () => {
   loadFailed.value = false
@@ -57,11 +76,11 @@ const lock = async () => {
   <div class="mystery-page">
     <div class="mystery-header">
       <div class="mystery-heading">
-        <a-button @click="navigateTo('/settings', { query: { tab: 'function' } })">
+        <a-button @click="back">
           <template #icon><ArrowLeftOutlined /></template>
-          {{ t('mystery.back') }}
+          {{ t(isFeaturePage ? 'mystery.backToOverview' : 'mystery.back') }}
         </a-button>
-        <h1>{{ t('mystery.entry') }}</h1>
+        <h1>{{ pageTitle }}</h1>
       </div>
       <a-button v-if="store.unlocked" :loading="store.saving" @click="lock">
         <template #icon><LockOutlined /></template>
@@ -69,7 +88,7 @@ const lock = async () => {
       </a-button>
     </div>
 
-    <div class="mystery-content">
+    <div class="mystery-content" :class="{ 'mystery-content-unlocked': store.unlocked }">
       <a-result v-if="loadFailed" status="error" :title="t('mystery.loadFailed')">
         <template #extra>
           <a-button type="primary" @click="load">{{ t('mystery.retry') }}</a-button>
@@ -101,10 +120,25 @@ const lock = async () => {
           </a-button>
         </a-form>
       </a-card>
-      <!-- 后续神秘小功能放在解锁后的区域，当前保留空状态。 -->
-      <a-card v-else class="mystery-features">
-        <a-empty :image="Empty.PRESENTED_IMAGE_SIMPLE" :description="t('mystery.empty')" />
-      </a-card>
+      <!-- 子页面共用解锁门槛，锁定或跨日后卸载正在运行的功能。 -->
+      <router-view v-else-if="isFeaturePage" />
+      <a-row v-else :gutter="[16, 16]">
+        <a-col :xs="24" :sm="12" :lg="8">
+          <a-card
+            hoverable
+            :title="t('mystery.tokens.title')"
+            :aria-label="t('mystery.tokens.title')"
+            role="button"
+            tabindex="0"
+            @click="openTokens"
+            @keydown.enter="openTokens"
+            @keydown.space.prevent="openTokens"
+          >
+            <template #extra><ArrowRightOutlined /></template>
+            {{ t('mystery.tokens.entryDescription') }}
+          </a-card>
+        </a-col>
+      </a-row>
     </div>
   </div>
 </template>
@@ -157,8 +191,8 @@ const lock = async () => {
   justify-content: center;
 }
 
-.mystery-features {
-  width: 100%;
+.mystery-content-unlocked {
+  display: block;
 }
 
 .mystery-loading {

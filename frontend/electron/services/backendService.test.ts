@@ -228,9 +228,10 @@ beforeEach(() => {
   // 宿主环境若带着这个变量，会经 process.env 原样继承，干扰对「不设」的断言。
   delete process.env.AUTO_MAS_ENV
   // 旧链路启动前会探测是否已有后端：默认不可达。
+  // health 默认带 version 且与前端 mock 版本（5.5.0-beta.3 归一化后）一致。
   fetchMock.mockImplementation(async (url: unknown) => {
     if (String(url).includes('/api/core/health')) {
-      return { ok: true, json: async () => ({ ready: true }) }
+      return { ok: true, json: async () => ({ ready: true, version: 'v5.5.0-beta.3' }) }
     }
     throw new Error('connect ECONNREFUSED')
   })
@@ -273,6 +274,55 @@ describe('灰度开关关闭时', () => {
     expect(spawnedEnv().AUTO_MAS_HTTP_PORT).toBe('36164')
     expect(service.isRuntimeSupervised()).toBe(false)
     expect(service.getRuntimeApiEndpoints()).toBeNull()
+  })
+
+  it('旧链路 spawn 出的旧版本后端就绪时显式报错，不许静默启动不匹配的后端', async () => {
+    const service = createService()
+    mockSpawn()
+    fetchMock.mockImplementation(async (url: unknown) => {
+      if (String(url).includes('/api/core/health')) {
+        return { ok: true, json: async () => ({ ready: true, version: 'v5.6.1' }) }
+      }
+      throw new Error('connect ECONNREFUSED')
+    })
+
+    const result = await service.startBackend({
+      pythonPath: EXISTING_EXE,
+      mainPyPath: EXISTING_EXE,
+      timeout: 5000,
+    })
+
+    expect(result.success).toBe(false)
+    expect(result.error).toContain('后端版本不匹配')
+    expect(result.error).toContain('v5.6.1')
+    expect(result.error).toContain('v5.5.0-beta.3')
+  })
+
+  it('旧链路检测到旧版本开发模式后端时不静默复用，显式报错且不 spawn 新进程', async () => {
+    const service = createService()
+    mockSpawn()
+    // /api/core/ws_meta：devMode 旧后端在跑，但 health 版本与前端不一致。
+    fetchMock.mockImplementation(async (url: unknown) => {
+      if (String(url).includes('/api/core/ws_meta')) {
+        return { ok: true, json: async () => ({ devMode: true }) }
+      }
+      if (String(url).includes('/api/core/health')) {
+        return { ok: true, json: async () => ({ ready: true, version: 'v5.6.1' }) }
+      }
+      throw new Error('connect ECONNREFUSED')
+    })
+
+    const result = await service.startBackend({
+      pythonPath: EXISTING_EXE,
+      mainPyPath: EXISTING_EXE,
+      timeout: 5000,
+    })
+
+    expect(result.success).toBe(false)
+    expect(result.error).toContain('后端版本不匹配')
+    expect(result.error).toContain('v5.6.1')
+    expect(result.error).toContain('v5.5.0-beta.3')
+    expect(spawnMock).not.toHaveBeenCalled()
   })
 
   it('getStatus 标记 runtimeSupervised=false，渲染进程据此沿用 POST /close 的旧关闭流程', () => {
@@ -386,6 +436,36 @@ describe('development 模式', () => {
     expect(killAllMock).not.toHaveBeenCalled()
   })
 
+  it('Runtime 报告就绪但后端版本不匹配时显式失败，不采纳句柄', async () => {
+    const service = createService()
+    mockSpawn()
+    // Runtime 经 ndjson 上报的 baseUrl 上跑着旧版本后端。
+    fetchMock.mockImplementation(async (url: unknown) => {
+      if (String(url).includes('/api/core/health')) {
+        return { ok: true, json: async () => ({ ready: true, version: 'v5.6.1' }) }
+      }
+      throw new Error('connect ECONNREFUSED')
+    })
+
+    const pending = service.startBackend()
+    const child = await passEnvironmentEnsure()
+    child.stdout.feed(helloLine + runningStateLine)
+    // 闸门会先向 Runtime 发 shutdown 再报错；模拟 Runtime 响应并给出终态。
+    await vi.waitFor(() => expect(child.stdin.chunks).toHaveLength(1))
+    expect(JSON.parse(child.stdin.chunks[0].trimEnd())).toMatchObject({ command: 'shutdown' })
+    child.stdout.feed(stoppedResultLine)
+    child.close(0)
+    const result = await pending
+
+    expect(result.success).toBe(false)
+    expect(result.error).toContain('后端版本不匹配')
+    expect(result.error).toContain('v5.6.1')
+    expect(result.error).toContain('v5.5.0-beta.3')
+    expect(service.getRuntimeApiEndpoints()).toBeNull()
+    expect(service.isRuntimeSupervised()).toBe(true)
+    expect(killAllMock).not.toHaveBeenCalled()
+  })
+
   it('stopBackend 只发一次 shutdown，不做任何进程清理', async () => {
     const service = createService()
     mockSpawn()
@@ -407,9 +487,10 @@ describe('development 模式', () => {
     expect(await pendingStop).toEqual({ success: true })
     expect(child.stdin.chunks).toHaveLength(1)
     // 进程树归 Runtime 的 Job Object 管，这里不许再有 scoped taskkill，
-    // 也不再自己发 POST /api/core/close。
+    // 也不再自己发 POST /api/core/close（启动闸门的健康检查除外）。
     expect(killAllMock).not.toHaveBeenCalled()
-    expect(fetchMock).not.toHaveBeenCalled()
+    const fetchedUrls = fetchMock.mock.calls.map(([url]) => String(url))
+    expect(fetchedUrls.some(url => url.includes('/api/core/close'))).toBe(false)
     expect(child.killed).toBe(false)
     expect(service.getRuntimeApiEndpoints()).toBeNull()
     expect(service.getStatus().isRunning).toBe(false)

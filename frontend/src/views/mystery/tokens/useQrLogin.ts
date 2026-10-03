@@ -1,7 +1,7 @@
 /**
  * 米游社 / 森空岛扫码登录的会话状态机。
  *
- * 从 TabGameSign.vue 抽出来的部分：持有二维码会话（ticket/device）、轮询定时器、
+ * 持有二维码会话（ticket/device）、轮询定时器、
  * AbortController 与展示状态；不碰账号列表、不碰弹窗以外的界面。
  *
  * 会话失效只认自己的 sessionId：每次 start() / cancel() 都让它自增，
@@ -15,7 +15,7 @@ import { message } from 'ant-design-vue'
 import { translate } from '@/i18n'
 import QRCode from 'qrcode'
 import type { CancelablePromise, OutBase, QrCheckOut, QrCreateOut } from '@/api'
-import { useGameSignApi } from './useGameSignApi'
+import { useTokenApi } from './useTokenApi'
 
 export type QrLoginProvider = 'miyoushe' | 'skland'
 
@@ -77,7 +77,7 @@ export function useQrLogin({ getAccountId, onSaved, logger, provider }: QrLoginO
     createSklandQr,
     checkSklandQr,
     saveSklandQr,
-  } = useGameSignApi()
+  } = useTokenApi()
 
   const resolveProvider = (): QrLoginProvider => {
     if (typeof provider === 'function') return provider()

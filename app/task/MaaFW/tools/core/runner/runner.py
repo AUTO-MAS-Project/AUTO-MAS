@@ -280,6 +280,9 @@ STARTUP_SCREEN_BLANK_STD = 6.0
 # 20s 覆盖两款游戏 logo / 健康提示 / 加载动画的总时长，再长就是在白等。
 STARTUP_SCREEN_CONTENT_SECONDS = 20
 RUN_TIMEOUT_MESSAGE = "MaaFW 任务运行超时"
+# 单个任务超过 Run.TaskTimeLimit：停它、截图、记一条任务失败，后面的任务照常跑；
+# 计划里第一个任务超时则结束本轮。
+TASK_TIMEOUT_MESSAGE = "MaaFW 单任务超时"
 
 
 class MaaFWRunTimeoutError(RuntimeError):
@@ -780,6 +783,8 @@ class MaaFWRunner:
         failure_screenshot_prefix: str = "",
         task_start_not_before: float | None = None,
         run_deadline_at: float | None = None,
+        task_time_limit_seconds: int = 0,
+        task_time_limit_overrides: dict[str, int] | None = None,
     ) -> None:
         self.plan: MaaFWRunPlan = plan
         self.resource: Resource | None = None
@@ -822,6 +827,20 @@ class MaaFWRunner:
         # 正在投递的任务名，与 _task_in_flight 同进同出；信号判定据此记下命中的是哪个任务。
         self._in_flight_task: str | None = None
         self._deadline_stop_posted: bool = False
+        # 单任务时限（秒）。某个任务卡住时只停它、截图，后面的任务照常跑；0 表示不限。
+        # 宿主按 Run.TaskTimeLimit / Run.TaskTimeLimitOverrides 换算后随 job 文件下发。
+        self._task_time_limit_seconds: int = max(0, int(task_time_limit_seconds or 0))
+        self._task_time_limit_overrides: dict[str, int] = {
+            str(name): max(0, int(seconds))
+            for name, seconds in (task_time_limit_overrides or {}).items()
+        }
+        self._task_deadline_task: str | None = None
+        self._task_deadline_at: float | None = None
+        self._task_deadline_limit_seconds: int = 0
+        self._task_deadline_hit: threading.Event = threading.Event()
+        self._task_deadline_timer: threading.Timer | None = None
+        self._task_deadline_stop_posted: bool = False
+        self._completed_tasks: list[str] = []
         # 项目声明的信号节点（attach.auto_mas），资源加载后扫描得到：节点名 → 声明。
         # 每个任务下发时强开它们（叠在任务自身与选项覆盖之后）。
         self._signal_specs: dict[str, MaaFWSignalSpec] = {}
@@ -965,7 +984,10 @@ class MaaFWRunner:
         self._external_stop_seen.clear()
         self._deadline_hit.clear()
         self._deadline_stop_posted = False
+        self._task_deadline_hit.clear()
+        self._task_deadline_stop_posted = False
         self._failure_screenshots = []
+        self._completed_tasks = []
         with self._signal_lock:
             self._signal_hit = None
             self._signal_task = None
@@ -1041,6 +1063,7 @@ class MaaFWRunner:
                 timedOut=isinstance(exc, MaaFWRunTimeoutError),
             )
         finally:
+            self._cancel_task_deadline_timer()
             self._cancel_deadline_timer()
             self._join_signal_stop()
 
@@ -1106,6 +1129,112 @@ class MaaFWRunner:
         if task_name is not None:
             self._capture_failure_screenshot(task_name, kind="timeout")
         raise MaaFWRunTimeoutError(RUN_TIMEOUT_MESSAGE)
+
+    def _task_deadline_seconds(self, task: MaaFWTaskRunPlan) -> int:
+        """这个任务的单任务时限（秒）：按任务名覆盖优先，0 表示不限。"""
+
+        if task.name in self._task_time_limit_overrides:
+            return self._task_time_limit_overrides[task.name]
+        return self._task_time_limit_seconds
+
+    def _start_task_deadline_timer(self, task: MaaFWTaskRunPlan) -> None:
+        """给刚投递的任务起单任务定时器。
+
+        调用方必须持有 _post_lock：定时器到点要能确定「这个任务正在跑」，投递与
+        置位（_set_task_in_flight）必须在同一把锁里，否则卡住的任务没人停。
+        """
+
+        self._cancel_task_deadline_timer()
+        self._task_deadline_hit.clear()
+        self._task_deadline_stop_posted = False
+        self._task_deadline_task = task.name
+        seconds = self._task_deadline_seconds(task)
+        self._task_deadline_limit_seconds = seconds
+        self._task_deadline_at = None
+        if seconds <= 0:
+            return
+        deadline_at = time.time() + seconds
+        if self._run_deadline_at is not None:
+            # 整轮截止更早时按整轮收尾，别让任务级定时器先把停止投出去。
+            deadline_at = min(deadline_at, self._run_deadline_at)
+        self._task_deadline_at = deadline_at
+        timer = threading.Timer(
+            max(0.0, deadline_at - time.time()), self._on_task_deadline
+        )
+        timer.name = "maafw-task-deadline"
+        timer.daemon = True
+        self._task_deadline_timer = timer
+        timer.start()
+
+    def _cancel_task_deadline_timer(self) -> None:
+        timer = self._task_deadline_timer
+        self._task_deadline_timer = None
+        if timer is not None:
+            timer.cancel()
+
+    def _on_task_deadline(self) -> None:
+        # 与 _on_run_deadline 一样，定时器线程里只置位并让正在跑的任务停下，
+        # 截图与收尾都回主线程做。
+        if self._run_deadline_at is not None and (
+            self._task_deadline_at is None
+            or self._run_deadline_at <= self._task_deadline_at
+        ):
+            self._on_run_deadline()
+            return
+        with self._post_lock:
+            # 上一个任务的定时器可能已触发、正等这把锁：任务名对不上就当场作废，
+            # 否则它会把接下来投递的那个任务停掉。
+            stale = self._in_flight_task != self._task_deadline_task
+            if not self._task_in_flight or stale:
+                return
+            self._task_deadline_hit.set()
+        if self._stop_requested.is_set():
+            return
+        self.send_log(f"{TASK_TIMEOUT_MESSAGE}，正在停止当前任务并截图")
+        self._task_deadline_stop_posted = True
+        try:
+            self._post_self_stop()
+        except Exception as exc:
+            self.send_log(f"超时停止 MaaFW tasker 失败: {exc}")
+
+    def _handle_task_deadline(self, task: MaaFWTaskRunPlan, index: int) -> bool:
+        """本任务被单任务时限停掉时收尾；返回 True 让调用方跳到下一个任务。
+
+        计划里的第一个任务超时直接按失败结束本轮：它往往是前置任务（M9A 特调的
+        第一个任务是受管的「启动游戏」），前置都没做完，后面的任务没有意义。看的是
+        计划位置而不是「还没有任务完成」——第一个任务失败后第二个超时照样继续。
+
+        特调声明的关键任务（``abortRoundMessage``，如 M9A 的切换账号）超时同样结束本轮，
+        报它声明的那句话。
+
+        其余任务超时记一条任务失败再继续：整轮按普通任务失败结算（不算成功、带超时
+        截图进失败通知），宿主照常重试。
+        """
+
+        if not self._task_deadline_hit.is_set():
+            return False
+        self._capture_failure_screenshot(task.name, kind="timeout")
+        limit_text = _format_task_limit(self._task_deadline_limit_seconds)
+        display_name = _task_display_name(task)
+        if index == 0 or task.abortRoundMessage:
+            reason = f"{TASK_TIMEOUT_MESSAGE}（限制 {limit_text}）"
+            if task.abortRoundMessage:
+                reason = f"{task.abortRoundMessage}：{reason}"
+            raise RuntimeError(f"{reason}，本轮已结束: {display_name}")
+        self._failed_task_errors.append(
+            (task.name, f"{TASK_TIMEOUT_MESSAGE}（限制 {limit_text}）")
+        )
+        # 与普通任务失败同一口径：最后一个任务不说「继续后续任务」。
+        if index + 1 < len(self.plan.tasks):
+            self.send_log(
+                f"{TASK_TIMEOUT_MESSAGE}（限制 {limit_text}），已停止并继续后续任务: "
+                f"{display_name}"
+            )
+        else:
+            self.send_log(
+                f"{TASK_TIMEOUT_MESSAGE}（限制 {limit_text}），已停止: {display_name}"
+            )
+        return True
 
     def cleanup(self) -> None:
         self._stop_requested.set()
@@ -2444,6 +2573,9 @@ class MaaFWRunner:
             with self._focus_lock:
                 self._focus_log_count = 0
             self._failed_controller_actions.clear()
+            # 上一个任务超时留下的标记要在投递前清掉：投递本身抛错时定时器还没起，
+            # 不清的话这次投递失败会被当成「单任务超时」收尾。
+            self._task_deadline_hit.clear()
             pipeline_override = self._task_pipeline_override(task)
             try:
                 with self._post_lock:
@@ -2456,12 +2588,18 @@ class MaaFWRunner:
                             job = tasker.post_task(task.entry, pipeline_override)
                         else:
                             job = tasker.post_task(task.entry)
+                        # 仍在投递锁内：定时器到点前一定看得到「这个任务在跑」。
+                        self._start_task_deadline_timer(task)
                     except BaseException:
+                        self._cancel_task_deadline_timer()
                         self._set_task_in_flight(None)
                         raise
                 try:
                     self._wait_job(job)
                 finally:
+                    # 先撤定时器再撤「在跑」标记：撤了标记之后触发的定时器会看到
+                    # 「没有任务在跑」而直接放过，不会再停掉下一个任务。
+                    self._cancel_task_deadline_timer()
                     self._set_task_in_flight(None)
             except Exception as exc:
                 if self._stop_requested.is_set():
@@ -2476,6 +2614,11 @@ class MaaFWRunner:
                 # 超时的 post_stop 也会让当前任务以失败返回，要先于普通失败判定：
                 # 否则它会被记成任务失败，甚至被 `_external_stop_active` 当成脚本侧强停。
                 self._raise_if_deadline_hit(task.name, only_if_stopped=True)
+                # 单任务时限到了同样是 post_stop 打断的返回，要早于普通失败判定，
+                # 否则用户看到的是「任务失败」而不是「超时」。
+                if self._handle_task_deadline(task, index):
+                    time.sleep(0.1)
+                    continue
                 message = str(exc)
                 self._failed_task_errors.append((task.name, message))
                 self._capture_failure_screenshot(task.name)
@@ -2487,6 +2630,11 @@ class MaaFWRunner:
                     raise RuntimeError(
                         f"游戏未能启动（{actions} 失败），本轮剩余任务已跳过: "
                         f"{display_name}: {message}"
+                    ) from exc
+                if task.abortRoundMessage:
+                    # 特调声明的关键任务（如切换账号）没做成，后面的任务会跑在错的状态上
+                    raise RuntimeError(
+                        f"{task.abortRoundMessage}，本轮已结束: {display_name}: {message}"
                     ) from exc
                 if self._external_stop_active(tasker):
                     self.send_log(
@@ -2511,6 +2659,11 @@ class MaaFWRunner:
             if self._finish_on_signal(task, display_name):
                 break
             self._raise_if_deadline_hit(task.name, only_if_stopped=True)
+            # 被单任务时限 post_stop 打断的入口也可能回报成功，同样要早于
+            # _external_stop_active（我们自己的强停会把 stopping 置位）。
+            if self._handle_task_deadline(task, index):
+                time.sleep(0.1)
+                continue
             # MaaFW 会把「被 post_stop 打断」的入口回报成 Task.Succeeded——强停是
             # 由 pipeline 里的动作节点触发的，那个节点本身返回成功。只看
             # `job.failed` 会把一件没做的事记成「任务完成」，整轮还可能被报成
@@ -3090,6 +3243,14 @@ def _format_task_config_detail_log(task: MaaFWTaskRunPlan) -> str:
         f"name={task.name}; entry={task.entry}; options={option_text}; "
         f"override_nodes={override_text}"
     )
+
+
+def _format_task_limit(seconds: int) -> str:
+    """把时限秒数写成用户能对照配置看的单位（整分钟写分钟）。"""
+
+    if seconds > 0 and seconds % 60 == 0:
+        return f"{seconds // 60} 分钟"
+    return f"{seconds} 秒"
 
 
 def _task_display_name(task: MaaFWTaskRunPlan) -> str:

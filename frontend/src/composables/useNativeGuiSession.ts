@@ -44,6 +44,8 @@ export function useNativeGuiSession(options: {
   const showConfigMask = ref(false)
   const showViewMask = ref(false)
   const stopping = ref(false)
+  let stoppingPromise: Promise<boolean> | null = null
+  let keepFailedSession = false
 
   // 原生设置会话超时自动保存的时长与提前提醒的提前量（避免无预告直接中断会话）
   const SESSION_TIMEOUT_MS = 30 * 60 * 1000
@@ -68,33 +70,40 @@ export function useNativeGuiSession(options: {
     }
   }
 
-  const stopSession = async (keepOnFailure = false): Promise<boolean> => {
+  const stopSession = (keepOnFailure = false): Promise<boolean> => {
+    if (stoppingPromise) {
+      keepFailedSession ||= keepOnFailure
+      return stoppingPromise
+    }
     const currentTaskId = taskId.value
     if (!currentTaskId) {
       clearSession()
-      return true
+      return Promise.resolve(true)
     }
-    if (stopping.value) return false
-
+    keepFailedSession = keepOnFailure
     stopping.value = true
-    try {
-      const response = await Service.stopTaskApiDispatchStopPost({ taskId: currentTaskId })
-      if (response.code !== 200) {
-        throw new Error(response.message || t(keys.stopFailed))
+    stoppingPromise = Promise.resolve().then(async () => {
+      try {
+        const response = await Service.stopTaskApiDispatchStopPost({ taskId: currentTaskId })
+        if (response.code !== 200) {
+          throw new Error(response.message || t(keys.stopFailed))
+        }
+        clearSession()
+        return true
+      } catch (e) {
+        logger.error(e instanceof Error ? e.message : String(e))
+        // 任一等待者要求保留失败会话，就保留现场供重试，不能由另一调用者清空。
+        if (!keepFailedSession) clearSession()
+        return false
+      } finally {
+        stopping.value = false
+        stoppingPromise = null
       }
-      clearSession()
-      return true
-    } catch (e) {
-      logger.error(e instanceof Error ? e.message : String(e))
-      if (keepOnFailure) return false
-      clearSession()
-      return false
-    } finally {
-      stopping.value = false
-    }
+    })
+    return stoppingPromise
   }
 
-  const startSession = async (startTaskId: string, viewOnly = false): Promise<void> => {
+  const startSession = async (startTaskId: string, viewOnly = false): Promise<boolean> => {
     try {
       configLoading.value = true
       const response = await Service.addTaskApiDispatchStartPost({
@@ -124,16 +133,18 @@ export function useNativeGuiSession(options: {
       if (viewOnly) {
         // 查看会话：超时静默关闭，不提示也不触发「保存」
         configTimeout = window.setTimeout(() => void stopSession(), SESSION_TIMEOUT_MS)
-        return
+        return true
       }
       warningTimeout = window.setTimeout(() => {
         message.warning(t(keys.timeoutWarn))
       }, SESSION_TIMEOUT_MS - SESSION_WARNING_ADVANCE_MS)
       configTimeout = window.setTimeout(saveSession, SESSION_TIMEOUT_MS)
+      return true
     } catch (e) {
       logger.error(e instanceof Error ? e.message : String(e))
       message.error(e instanceof Error ? e.message : t(keys.startFailed))
       clearSession()
+      return false
     } finally {
       configLoading.value = false
     }
