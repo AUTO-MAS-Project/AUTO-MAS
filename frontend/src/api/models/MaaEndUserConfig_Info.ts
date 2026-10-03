@@ -28,6 +28,10 @@ export type MaaEndUserConfig_Info = {
      */
     IfQuickConfig?: (boolean | null);
     /**
+     * 理智任务执行策略：MAS 指定任务或 MaaEnd 原生策略
+     */
+    SanityStrategy?: ('MAS' | 'Native' | null);
+    /**
      * 理智任务配置模式
      */
     SanityMode?: (string | null);

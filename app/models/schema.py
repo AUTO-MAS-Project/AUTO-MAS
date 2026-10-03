@@ -2862,6 +2862,9 @@ class MaaEndUserConfig_Info(BaseModel):
         description="配置来源（脚本共享、用户独立、脚本直控）",
     )
     IfQuickConfig: Optional[bool] = Field(default=None, description="是否启用快速配置")
+    SanityStrategy: Optional[Literal["MAS", "Native"]] = Field(
+        default=None, description="理智任务执行策略：MAS 指定任务或 MaaEnd 原生策略"
+    )
     SanityMode: Optional[str] = Field(default=None, description="理智任务配置模式")
     Resource: Optional[Literal["官服"]] = Field(default=None, description="资源名称")
     RemainedDay: Optional[int] = Field(default=None, description="剩余天数")

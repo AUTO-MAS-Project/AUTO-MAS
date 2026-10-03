@@ -119,6 +119,7 @@ _OVERLAY_INFO_KEYS = (
     "Mode",
     "Id",
     "IfQuickConfig",
+    "SanityStrategy",
     "SanityMode",
 )
 """MAS 页面基础字段（UserData.Info）：来源仅预览，账号/快速配置/理智模式参与回填"""
@@ -203,6 +204,7 @@ _QUICK_CONFIG_TASKS = (*MAAEND_TASKS, MAAEND_DELIVERY_TASK, MAAEND_AUTO_COLLECT_
 _OVERLAY_FIELD_LABELS = {
     "Mode": "配置文件来源",
     "Id": "账号",
+    "SanityStrategy": "理智任务执行策略",
     "SanityMode": "理智任务配置模式",
     "IfSeizeDeliveryJobs": "抢委托送货",
     "SeizeDeliveryJobsReward": "送货最低接取价格（万）",
@@ -761,6 +763,8 @@ def _overlay_value(key: str, value) -> str:
     }.get(key)
     if enum is not None:
         text = enum.get(str(value), str(value))
+    elif key == "SanityStrategy":
+        text = "MaaEnd 原生策略" if value == "Native" else "MAS 指定任务"
     elif key == "SanityMode":
         # 计划表 UID 无意义，restore_service 会尽力补计划名称
         text = "固定" if str(value) == "Fixed" else "计划表"
@@ -905,14 +909,28 @@ def build_overlay_summary(
             {"key": "账号", "value": _overlay_value("Id", overlay["Id"])}
         )
     if quick_config_on:
+        if "SanityStrategy" in overlay:
+            config_rows.append(
+                {
+                    "key": "理智任务执行策略",
+                    "value": _overlay_value(
+                        "SanityStrategy", overlay["SanityStrategy"]
+                    ),
+                }
+            )
         if "SanityMode" in overlay:
             config_rows.append(
                 {
-                    "key": "理智任务配置模式",
+                    "key": (
+                        "理智任务配置模式（未应用）"
+                        if overlay.get("SanityStrategy") == "Native"
+                        else "理智任务配置模式"
+                    ),
                     "value": _overlay_value("SanityMode", overlay["SanityMode"]),
                 }
             )
-        config_rows.extend(_sanity_rows(overlay))
+        if overlay.get("SanityStrategy") != "Native":
+            config_rows.extend(_sanity_rows(overlay))
         if "SeizeDeliveryJobsReward" in overlay:
             config_rows.append(
                 {
