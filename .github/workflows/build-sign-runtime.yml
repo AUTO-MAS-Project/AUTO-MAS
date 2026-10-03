@@ -153,15 +153,15 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-      - name: 签名 Runtime
-        uses: signpath/github-action-submit-signing-request@f6d04783b4569d051e0c80105fe66e82819d0092 # v3
+      - name: 签名运行时
+        uses: signpath/github-action-submit-signing-request@c92b958760219087e01f8d67a1669ed57afe2627 # v2.3
         with:
           api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
           github-token: ${{ github.token }}
           organization-id: '787a1d5f-6177-4f30-9559-d2646473584a'
           project-slug: AUTO_MAA
           signing-policy-slug: release-signing
-          artifact-configuration-slug: AUTO-MAS_Runtime
+          artifact-configuration-slug: AUTO-MAS-Runtime
           github-artifact-id: ${{ steps.unsigned.outputs.artifact-id }}
           wait-for-completion: true
           wait-for-completion-timeout-in-seconds: 3600
