@@ -18,9 +18,9 @@
 
 #   Contact: DLmaster_361@163.com
 
-# 每天北京时间 23:30 统一入账 dev / release/* 上的碎片，也支持手动补跑。
-# 准备发版会直接把剩余碎片编译进发版 PR，不必等待晚间入账。
-# schedule 只在默认分支触发，因此先枚举目标分支，再检出各分支顶端入账。
+# 每天北京时间 23:30 统一入账 dev 上的碎片，也支持手动补跑。
+# release/* 由准备发版在发版前直接编译剩余碎片，不参加晚间入账。
+# schedule 只在默认分支触发，因此先确认 dev 已启用流程，再检出分支顶端入账。
 # 机器人用 GITHUB_TOKEN 推送，不会触发别的工作流，也不会触发自己。
 
 name: 入账更新日志碎片
@@ -43,7 +43,7 @@ jobs:
     outputs:
       branches: ${{ steps.branches.outputs.branches }}
     steps:
-      - name: 列出 dev 与 release 分支
+      - name: 选择 dev 分支
         id: branches
         env:
           GH_TOKEN: ${{ github.token }}
@@ -51,12 +51,17 @@ jobs:
           REF_NAME: ${{ github.ref_name }}
         run: |
           if [ "$EVENT_NAME" = "schedule" ]; then
-            branches=$(gh api --paginate --slurp "repos/${GITHUB_REPOSITORY}/branches?per_page=100" \
-              --jq '[.[][] | .name | select(. == "dev" or startswith("release/"))]')
-          elif [[ "$REF_NAME" == dev || "$REF_NAME" == release/* ]]; then
-            branches=$(jq -cn --arg branch "$REF_NAME" '[$branch]')
+            if gh api "repos/${GITHUB_REPOSITORY}/contents/scripts/changelog.py?ref=dev" >/dev/null 2>&1 \
+              && gh api "repos/${GITHUB_REPOSITORY}/contents/.github/workflows/absorb-changelog.yml?ref=dev" >/dev/null 2>&1; then
+              branches='["dev"]'
+            else
+              echo "::error::dev 尚未接入新的碎片入账流程"
+              exit 1
+            fi
+          elif [ "$REF_NAME" = dev ]; then
+            branches='["dev"]'
           else
-            echo "::error::只能在 dev 或 release/* 分支上手动入账"
+            echo "::error::只能在 dev 分支上手动入账"
             exit 1
           fi
           echo "branches=$(echo "$branches" | jq -c .)" >> "$GITHUB_OUTPUT"
@@ -74,6 +79,7 @@ jobs:
     concurrency:
       group: changelog-${{ matrix.branch }}
       cancel-in-progress: false
+      queue: max
 
     steps:
       # 检出分支顶端而不是触发这次运行的提交：排队的运行如果检出旧 SHA，会把上一次已经
