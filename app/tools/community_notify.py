@@ -38,6 +38,11 @@ logger = get_logger("游戏社区通知")
 
 NOTIFICATION_SEND_ATTEMPTS = 2
 NOTIFICATION_RETRY_DELAY_SECONDS = 1
+# 手动「全部签到」的快路径等待窗口：恰好覆盖一次重试后仍失败的最早返回时间，
+# 渠道级失败才能在完成响应里回传；更慢的渠道仍转后台发送。
+NOTIFICATION_FAST_PATH_WAIT_SECONDS = (
+    NOTIFICATION_RETRY_DELAY_SECONDS * (NOTIFICATION_SEND_ATTEMPTS - 1) + 0.1
+)
 _SUCCESS_STATUSES = {"成功", "已签到"}
 _PLATFORM_ORDER = ("森空岛", "米游社", "库街区", "塔吉多", "云异环")
 NotificationBodyFormat = Literal["text", "markdown"]
