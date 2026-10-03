@@ -101,6 +101,8 @@ const activityCountdownStyle = computed<CSSProperties>(() => ({
 const getCountdownValue = (value: string) => new Date(value).getTime()
 </script>
 
+<style scoped src="./activityCard.css"></style>
+
 <style scoped>
 .r1999-card {
   border-radius: 8px;
@@ -110,20 +112,6 @@ const getCountdownValue = (value: string) => new Date(value).getTime()
 .r1999-card :deep(.ant-card-head-title) {
   font-size: 18px;
   font-weight: 600;
-}
-
-.card-extra {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.source-link {
-  font-size: 13px;
-}
-
-.status-alert {
-  margin-bottom: 16px;
 }
 
 .activity-rows {

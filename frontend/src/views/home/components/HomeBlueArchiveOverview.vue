@@ -203,6 +203,8 @@ const activityCountdownStyle = computed<CSSProperties>(() => ({
 const getCountdownValue = (value: string) => new Date(value).getTime()
 </script>
 
+<style scoped src="./activityCard.css"></style>
+
 <style scoped>
 .bluearchive-card {
   border-radius: 8px;
@@ -212,16 +214,6 @@ const getCountdownValue = (value: string) => new Date(value).getTime()
 .bluearchive-card :deep(.ant-card-head-title) {
   font-size: 18px;
   font-weight: 600;
-}
-
-.card-extra {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.source-link {
-  font-size: 13px;
 }
 
 .server-switch {
@@ -281,24 +273,6 @@ const getCountdownValue = (value: string) => new Date(value).getTime()
   outline-offset: -2px;
 }
 
-.status-alert {
-  margin-bottom: 16px;
-}
-
-.empty-state {
-  padding: 24px 0;
-}
-
-/* ---------- 活动卡片（带封面，横排） ---------- */
-.activity-list {
-  display: flex;
-  gap: 16px;
-  overflow-x: auto;
-  scroll-snap-type: x mandatory;
-  -webkit-overflow-scrolling: touch;
-  scrollbar-width: thin;
-}
-
 .activity-item {
   min-width: 0;
   width: 266px;
@@ -320,51 +294,6 @@ const getCountdownValue = (value: string) => new Date(value).getTime()
   transition:
     transform 0.25s ease,
     box-shadow 0.25s ease;
-}
-
-.activity-card:hover .activity-item {
-  transform: translateY(-3px);
-  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.18);
-}
-
-.activity-image {
-  width: 100%;
-  height: 100%;
-  position: absolute;
-  inset: 0;
-  object-fit: cover;
-  transition: transform 0.35s ease;
-}
-
-.activity-card:hover .activity-image {
-  transform: scale(1.05);
-}
-
-.activity-overlay {
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(
-    180deg,
-    rgba(11, 18, 32, 0.05) 0%,
-    rgba(11, 18, 32, 0.3) 40%,
-    rgba(11, 18, 32, 0.88) 100%
-  );
-}
-
-.activity-content {
-  width: 100%;
-  min-width: 0;
-  position: relative;
-  z-index: 1;
-  padding: 14px 16px;
-}
-
-.activity-head {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-  margin-bottom: 8px;
 }
 
 /* 分类标签：活动 / 总力大决 / 爬塔 / 多倍活动 … */
@@ -397,19 +326,6 @@ const getCountdownValue = (value: string) => new Date(value).getTime()
   gap: 8px;
 }
 
-.activity-meta :deep(.ant-statistic-content) {
-  line-height: 1.4;
-}
-
-.activity-end-time {
-  min-width: 0;
-  overflow: hidden;
-  color: rgba(255, 255, 255, 0.8);
-  font-size: 12px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .activity-desc {
   max-height: 0;
   overflow: auto;
@@ -432,12 +348,6 @@ const getCountdownValue = (value: string) => new Date(value).getTime()
   max-height: 60px;
   opacity: 1;
   margin-bottom: 8px;
-}
-
-@media (max-width: 560px) {
-  .activity-card {
-    width: 180px;
-  }
 }
 
 /* 还没开场的那几张压暗一点，一眼能看出哪个正在跑 */

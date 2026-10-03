@@ -1,0 +1,94 @@
+/* 首页活动卡片共用的样式：卡片列表与卡片、图与遮罩、内容与时间、状态提示。
+   各游戏的活动卡片结构一致，这里只放声明完全相同的部分；组件自己的主题色、
+   描述展开高度等差异仍留在组件内。 */
+
+.activity-list {
+  display: flex;
+  gap: 16px;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+}
+
+.activity-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  margin-bottom: 8px;
+}
+
+.activity-card:hover .activity-item {
+  transform: translateY(-3px);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.18);
+}
+
+.activity-image {
+  width: 100%;
+  height: 100%;
+  position: absolute;
+  inset: 0;
+  object-fit: cover;
+  transition: transform 0.35s ease;
+}
+
+.activity-card:hover .activity-image {
+  transform: scale(1.05);
+}
+
+.activity-overlay {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    180deg,
+    rgba(11, 18, 32, 0.05) 0%,
+    rgba(11, 18, 32, 0.3) 40%,
+    rgba(11, 18, 32, 0.88) 100%
+  );
+}
+
+.activity-content {
+  width: 100%;
+  min-width: 0;
+  position: relative;
+  z-index: 1;
+  padding: 14px 16px;
+}
+
+.activity-end-time {
+  min-width: 0;
+  overflow: hidden;
+  color: rgba(255, 255, 255, 0.8);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.activity-meta :deep(.ant-statistic-content) {
+  line-height: 1.4;
+}
+
+.empty-state {
+  padding: 24px 0;
+}
+
+.status-alert {
+  margin-bottom: 16px;
+}
+
+.source-link {
+  font-size: 13px;
+}
+
+.card-extra {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+@media (max-width: 560px) {
+  .activity-card {
+    width: 180px;
+  }
+}
