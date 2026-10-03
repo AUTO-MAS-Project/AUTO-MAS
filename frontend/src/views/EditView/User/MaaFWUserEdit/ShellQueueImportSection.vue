@@ -22,7 +22,7 @@
         {{ t('edit.shellQueueImportDir', { dir: shownDir }) }}
       </span>
       <a-button type="link" size="small" @click="pickDirectory">
-        {{ t('edit.shellQueueImportPickDir') }}
+        {{ t('edit.mfwHotkeyImportPickDir') }}
       </a-button>
     </div>
 
@@ -43,12 +43,11 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, h, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute } from 'vue-router'
 import { message, notification } from 'ant-design-vue'
 import { ImportOutlined } from '@ant-design/icons-vue'
-import { h } from 'vue'
 import type { MaaFWShellInstanceItem } from '@/api'
 import { useMaaFWShellInstanceApi } from '@/composables/useMaaFWShellInstanceApi'
 
@@ -75,7 +74,8 @@ const { t } = useI18n()
 const route = useRoute()
 const scriptId = route.params.scriptId as string
 const userId = route.params.userId as string
-const { listShellInstances, applyShellInstanceToUser } = useMaaFWShellInstanceApi()
+const { listShellInstances, pickShellInstanceDirectory, applyShellInstanceToUser } =
+  useMaaFWShellInstanceApi()
 
 const loading = ref(false)
 const applying = ref(false)
@@ -99,7 +99,7 @@ const instanceOptions = computed(() =>
     label: [
       item.name,
       item.source,
-      item.active ? t('edit.shellQueueImportActive') : '',
+      item.active ? t('edit.shellImportActive') : '',
       t('edit.shellQueueImportTaskCount', { count: item.taskCount }),
     ]
       .filter(Boolean)
@@ -107,41 +107,39 @@ const instanceOptions = computed(() =>
   }))
 )
 
-const load = async (dir?: string) => {
-  loading.value = true
-  try {
-    const found = await listShellInstances(scriptId, dir)
-    instances.value = found
-    // 默认选外壳上次用的那份，与引导里同一个口径
-    picked.value = found.length > 0 ? (found.find(item => item.active) || found[0]).id : ''
-    return true
-  } catch (error) {
-    message.error(error instanceof Error ? error.message : t('edit.shellQueueImportFailed'))
-    return false
-  } finally {
-    loading.value = false
-  }
+/** 换上一批实例，默认选外壳上次用的那份（与引导里同一个口径） */
+const showInstances = (found: MaaFWShellInstanceItem[]) => {
+  instances.value = found
+  picked.value = found.length > 0 ? (found.find(item => item.active) || found[0]).id : ''
 }
 
 const openDialog = async () => {
   pickedDir.value = ''
-  // 默认目录里一份都没有也要开：弹窗里能改指别的目录，那正是「脚本挪过位置」时的出路
-  await load()
+  loading.value = true
+  try {
+    showInstances(await listShellInstances(scriptId))
+  } catch (error) {
+    // 上次「选择其他目录」列出来的那批不能留着：目录已经回到默认，覆盖时会去默认目录按 ID 找
+    showInstances([])
+    message.error(error instanceof Error ? error.message : t('edit.shellQueueImportFailed'))
+  } finally {
+    loading.value = false
+  }
+  // 默认目录里一份都没有、读失败也要开：弹窗里能改指别的目录，那正是「脚本挪过位置」时的出路
   modalOpen.value = true
 }
 
 const pickDirectory = async () => {
-  if (!window.electronAPI?.selectFolder) {
-    message.error(t('edit.filePickingUnavailableRun'))
-    return
-  }
-  const dir = await window.electronAPI.selectFolder()
-  if (!dir) return
-  if (await load(dir)) {
-    pickedDir.value = dir
-    if (instances.value.length === 0) {
+  try {
+    const found = await pickShellInstanceDirectory(scriptId)
+    if (!found) return
+    showInstances(found.instances)
+    pickedDir.value = found.dir
+    if (found.instances.length === 0) {
       message.warning(t('edit.shellQueueImportNone'))
     }
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : t('edit.shellQueueImportFailed'))
   }
 }
 
@@ -171,7 +169,6 @@ const apply = async () => {
         message: t('edit.shellQueueImportSkippedTitle', { count: skipped.length }),
         description: h(
           'ul',
-          { class: 'shell-queue-import-skipped' },
           skipped.map(item => h('li', item))
         ),
         duration: 0,

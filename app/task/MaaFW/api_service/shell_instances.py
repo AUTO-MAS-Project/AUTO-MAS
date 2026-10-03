@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -43,6 +44,7 @@ from app.task.MaaFW.tools.core.interface.models import MaaFWInterface
 from app.task.MaaFW.tools.core.interface.preview import interface_text_translator
 from app.task.MaaFW.tools.embedded.embedded_project import embedded_project_dir
 from app.task.MaaFW.tools.embedded.shell_instances import (
+    ShellImportPlan,
     ShellInstance,
     Translate,
     assign_user_names,
@@ -114,6 +116,98 @@ def _interface_name(items: list[Any], raw: str) -> str:
     """脚本上记的 controller / resource 名在 interface 里存在才算数，否则当作不限。"""
 
     return raw if raw and any(item.name == raw for item in items) else ""
+
+
+@dataclass
+class _ImportContext:
+    """「导入成用户」与「覆盖到已有用户」共用的准备结果。"""
+
+    interface: MaaFWInterface
+    translate: Translate
+    instances: list[ShellInstance]
+    #: 脚本当前的控制方式 / 资源（interface 里的名字，空串表示不限）
+    script_controller: str
+    script_resource: str
+
+
+async def _load_import_context(
+    script_id: str, script_config: Any, roots: list[Path], *, action: str
+) -> _ImportContext | MaaFWApiReply:
+    """读 interface 与显示名翻译、扫 ``roots`` 里的外壳实例；失败时返回端点直接交回的错误。
+
+    ``action`` 只用来写日志（「导入外壳配置实例」/「覆盖外壳配置到用户」）。
+    """
+
+    root, error = await maafw_effective_root(script_id, "")
+    if root is None:
+        return MaaFWApiReply.error(400, error)
+    try:
+        interface = await asyncio.to_thread(load_interface_model_cached, root)
+        # 跳过项里写 interface 的显示名（按项目语言文件翻过），与预览同一口径
+        translate = await asyncio.to_thread(interface_text_translator, root, interface)
+        _, instances = await asyncio.to_thread(_scan_first_root, roots)
+    except MaaFWInterfaceLoadError as exc:
+        return MaaFWApiReply.error(400, str(exc))
+    except Exception as exc:  # noqa: BLE001 - 文件系统异常也要给出文案
+        logger.opt(exception=True).warning(
+            f"{action}失败（{script_id}）：{type(exc).__name__}: {exc}"
+        )
+        return MaaFWApiReply.error(500, f"读取外壳配置失败: {exc}")
+    return _ImportContext(
+        interface=interface,
+        translate=translate,
+        instances=instances,
+        script_controller=_interface_name(
+            interface.controller, str(script_config.get("Info", "Controller") or "")
+        ),
+        script_resource=_interface_name(
+            interface.resource, str(script_config.get("Info", "Resource") or "")
+        ),
+    )
+
+
+async def _plan_import(
+    instance: ShellInstance,
+    context: _ImportContext,
+    result: MaaFWShellInstanceImportItem,
+) -> ShellImportPlan | None:
+    """换算一份实例；换算失败时把原因写进 ``result.error`` 并返回 None。"""
+
+    try:
+        return await asyncio.to_thread(
+            plan_instance_import,
+            instance,
+            context.interface,
+            script_controller=context.script_controller,
+            script_resource=context.script_resource,
+            translate=context.translate,
+        )
+    except Exception as exc:  # noqa: BLE001 - 换算失败要把原因交回界面
+        logger.opt(exception=True).warning(
+            f"换算外壳配置实例失败（{instance.id}）：{type(exc).__name__}: {exc}"
+        )
+        result.error = f"读不懂这份配置: {exc}"
+        return None
+
+
+def _task_update(plan: ShellImportPlan) -> dict[str, Any]:
+    """换算结果写进用户配置的 ``Task`` 分组：整份任务快照换掉，已选预设清空。"""
+
+    return {
+        "SelectedPreset": "",
+        "TaskSnapshot": json.dumps(plan.snapshot, ensure_ascii=False),
+    }
+
+
+def _mark_imported(result: MaaFWShellInstanceImportItem, plan: ShellImportPlan) -> str:
+    """把换算结果填进成功的结果项；返回日志末尾的跳过说明（没有跳过为空串）。"""
+
+    result.success = True
+    result.importedTaskCount = plan.task_count
+    result.skipped = plan.skipped
+    if not plan.skipped:
+        return ""
+    return f"，跳过 {len(plan.skipped)} 项：{'、'.join(plan.skipped)}"
 
 
 async def list_shell_instances(
@@ -207,24 +301,16 @@ async def import_shell_instances(
         script_config = maafw_script_config(script_id)
     except (KeyError, ValueError, TypeError) as exc:
         return MaaFWApiReply.error(400, f"MFW 脚本无效: {exc}")
-    root, error = await maafw_effective_root(script_id, "")
-    if root is None:
-        return MaaFWApiReply.error(400, error)
-    try:
-        interface = await asyncio.to_thread(load_interface_model_cached, root)
-        # 跳过项里写 interface 的显示名（按项目语言文件翻过），与预览同一口径
-        translate = await asyncio.to_thread(interface_text_translator, root, interface)
-        _, instances = await asyncio.to_thread(
-            _scan_first_root, _candidate_roots(script_id, script_config)
-        )
-    except MaaFWInterfaceLoadError as exc:
-        return MaaFWApiReply.error(400, str(exc))
-    except Exception as exc:  # noqa: BLE001 - 文件系统异常也要给出文案
-        logger.opt(exception=True).warning(
-            f"导入外壳配置实例失败（{script_id}）：{type(exc).__name__}: {exc}"
-        )
-        return MaaFWApiReply.error(500, f"读取外壳配置失败: {exc}")
+    context = await _load_import_context(
+        script_id,
+        script_config,
+        _candidate_roots(script_id, script_config),
+        action="导入外壳配置实例",
+    )
+    if isinstance(context, MaaFWApiReply):
+        return context
 
+    instances = context.instances
     by_id = {instance.id: instance for instance in instances}
     name_by_id = dict(
         zip(
@@ -234,12 +320,6 @@ async def import_shell_instances(
                 _existing_user_names(script_config),
             ),
         )
-    )
-    script_controller = _interface_name(
-        interface.controller, str(script_config.get("Info", "Controller") or "")
-    )
-    script_resource = _interface_name(
-        interface.resource, str(script_config.get("Info", "Resource") or "")
     )
 
     results: list[MaaFWShellInstanceImportItem] = []
@@ -254,15 +334,7 @@ async def import_shell_instances(
             )
             continue
         results.append(
-            await _import_one(
-                script_id,
-                instance,
-                name_by_id[instance.id],
-                interface,
-                script_controller=script_controller,
-                script_resource=script_resource,
-                translate=translate,
-            )
+            await _import_one(script_id, instance, name_by_id[instance.id], context)
         )
     return MaaFWApiReply(data=results)
 
@@ -292,23 +364,15 @@ async def apply_shell_instance_to_user(
     roots, error = _requested_roots(script_id, script_config, path)
     if roots is None:
         return MaaFWApiReply.error(400, error)
-    root, error = await maafw_effective_root(script_id, "")
-    if root is None:
-        return MaaFWApiReply.error(400, error)
-    try:
-        interface = await asyncio.to_thread(load_interface_model_cached, root)
-        # 跳过项里写 interface 的显示名（按项目语言文件翻过），与预览同一口径
-        translate = await asyncio.to_thread(interface_text_translator, root, interface)
-        _, instances = await asyncio.to_thread(_scan_first_root, roots)
-    except MaaFWInterfaceLoadError as exc:
-        return MaaFWApiReply.error(400, str(exc))
-    except Exception as exc:  # noqa: BLE001 - 文件系统异常也要给出文案
-        logger.opt(exception=True).warning(
-            f"覆盖外壳配置到用户失败（{script_id}）：{type(exc).__name__}: {exc}"
-        )
-        return MaaFWApiReply.error(500, f"读取外壳配置失败: {exc}")
+    context = await _load_import_context(
+        script_id, script_config, roots, action="覆盖外壳配置到用户"
+    )
+    if isinstance(context, MaaFWApiReply):
+        return context
 
-    instance = next((item for item in instances if item.id == instance_id), None)
+    instance = next(
+        (item for item in context.instances if item.id == instance_id), None
+    )
     if instance is None:
         logger.warning(f"覆盖外壳配置：找不到实例 {instance_id}")
         return MaaFWApiReply.error(404, INSTANCE_NOT_FOUND)
@@ -319,34 +383,13 @@ async def apply_shell_instance_to_user(
         userId=user_id,
         name=str(user.get("Info", "Name") or ""),
     )
-    try:
-        plan = await asyncio.to_thread(
-            plan_instance_import,
-            instance,
-            interface,
-            script_controller=_interface_name(
-                interface.controller, str(script_config.get("Info", "Controller") or "")
-            ),
-            script_resource=_interface_name(
-                interface.resource, str(script_config.get("Info", "Resource") or "")
-            ),
-            translate=translate,
-        )
-    except Exception as exc:  # noqa: BLE001 - 换算失败要把原因交回界面
-        logger.opt(exception=True).warning(
-            f"换算外壳配置实例失败（{instance.id}）：{type(exc).__name__}: {exc}"
-        )
-        result.error = f"读不懂这份配置: {exc}"
+    plan = await _plan_import(instance, context, result)
+    if plan is None:
         return MaaFWApiReply(data={"result": result})
 
-    update: dict[str, dict[str, Any]] = {
-        # 整份任务快照换掉：这就是「覆盖」，用户页上的队列与选项都会变成外壳那份。
-        # 名字不动——这个入口是「再同步一次队列」，不是重命名用户。
-        "Task": {
-            "SelectedPreset": "",
-            "TaskSnapshot": json.dumps(plan.snapshot, ensure_ascii=False),
-        }
-    }
+    # 整份任务快照换掉：这就是「覆盖」，用户页上的队列与选项都会变成外壳那份。
+    # 名字不动——这个入口是「再同步一次队列」，不是重命名用户。
+    update: dict[str, dict[str, Any]] = {"Task": _task_update(plan)}
     try:
         # update_user 原地改 update：特调整理（M9A 收走受管任务、切换账号并进 Info）与密码加密
         # 都写回这份字典，写完它就是实际落盘的样子
@@ -356,17 +399,10 @@ async def apply_shell_instance_to_user(
         result.error = f"写入用户配置失败: {exc}"
         return MaaFWApiReply(data={"result": result})
 
-    result.success = True
-    result.importedTaskCount = plan.task_count
-    result.skipped = plan.skipped
+    skipped_note = _mark_imported(result, plan)
     logger.info(
         f"已把 {instance.source} 实例「{instance.name}」的任务队列覆盖到用户"
-        f"「{result.name}」（{user_id}）：{plan.task_count} 个任务"
-        + (
-            f"，跳过 {len(plan.skipped)} 项：{'、'.join(plan.skipped)}"
-            if plan.skipped
-            else ""
-        )
+        f"「{result.name}」（{user_id}）：{plan.task_count} 个任务{skipped_note}"
     )
     # 交回实际落盘的快照与特调改过的 Info：界面拿到就刷新本地状态，不用回头拉一次用户配置；
     # 交 plan.snapshot 的话，M9A 收走的受管任务会留在页面队列里、账号也对不上
@@ -389,29 +425,14 @@ async def _import_one(
     script_id: str,
     instance: ShellInstance,
     user_name: str,
-    interface: MaaFWInterface,
-    *,
-    script_controller: str,
-    script_resource: str,
-    translate: Translate,
+    context: _ImportContext,
 ) -> MaaFWShellInstanceImportItem:
     result = MaaFWShellInstanceImportItem(
         instanceId=instance.id, instanceName=instance.name, name=user_name
     )
-    try:
-        plan = await asyncio.to_thread(
-            plan_instance_import,
-            instance,
-            interface,
-            script_controller=script_controller,
-            script_resource=script_resource,
-            translate=translate,
-        )
-    except Exception as exc:  # noqa: BLE001 - 一份实例换算失败不影响其它实例
-        logger.opt(exception=True).warning(
-            f"换算外壳配置实例失败（{instance.id}）：{type(exc).__name__}: {exc}"
-        )
-        result.error = f"读不懂这份配置: {exc}"
+    # 一份实例换算失败不影响其它实例：原因已写进 result.error
+    plan = await _plan_import(instance, context, result)
+    if plan is None:
         return result
 
     try:
@@ -428,10 +449,7 @@ async def _import_one(
                 # 只写名字：Info.Controller / Info.Resource 保持空串，与用户页保存的形状一致——
                 # 运行器与用户页都只看脚本级的这两项，写进用户配置没有作用
                 "Info": {"Name": user_name},
-                "Task": {
-                    "SelectedPreset": "",
-                    "TaskSnapshot": json.dumps(plan.snapshot, ensure_ascii=False),
-                },
+                "Task": _task_update(plan),
             },
         )
     except Exception as exc:  # noqa: BLE001 - 写不进去就把刚建的空用户撤掉
@@ -443,17 +461,10 @@ async def _import_one(
         result.error = f"写入用户配置失败: {exc}"
         return result
 
-    result.success = True
     result.userId = str(uid)
-    result.importedTaskCount = plan.task_count
-    result.skipped = plan.skipped
+    skipped_note = _mark_imported(result, plan)
     logger.info(
         f"已从 {instance.source} 实例「{instance.name}」建用户「{user_name}」（{uid}）："
-        f"导入 {plan.task_count} 个任务"
-        + (
-            f"，跳过 {len(plan.skipped)} 项：{'、'.join(plan.skipped)}"
-            if plan.skipped
-            else ""
-        )
+        f"导入 {plan.task_count} 个任务{skipped_note}"
     )
     return result

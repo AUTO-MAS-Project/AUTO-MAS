@@ -858,11 +858,9 @@ export default {
     shellQueueImport: '配置导入',
     shellQueueImportTitle: '配置导入',
     shellQueueImportOk: '覆盖队列',
-    shellQueueImportActive: '外壳当前使用中',
     shellQueueImportTaskCount: '外壳里 {count} 个任务',
     shellQueueImportDefaultDir: '脚本的项目目录',
     shellQueueImportDir: '读取目录：{dir}',
-    shellQueueImportPickDir: '选择其他目录',
     shellQueueImportNone: '这个目录里没有外壳保存的配置',
     shellQueueImportNote:
       '会用这份配置的任务与选项覆盖当前用户的队列，队列里原有的任务会被替换掉。',

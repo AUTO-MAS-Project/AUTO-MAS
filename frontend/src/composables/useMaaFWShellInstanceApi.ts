@@ -1,5 +1,6 @@
 import { MaaFwService } from '@/api'
 import type { MaaFWShellInstanceImportItem, MaaFWShellInstanceItem } from '@/api'
+import { t } from '@/i18n'
 
 /**
  * 外壳（MFAAvalonia / MXU / MFW-PyQt6）配置实例客户端：新建 MFW 脚本引导的最后一步用它把外壳里配好的
@@ -23,6 +24,21 @@ export function useMaaFWShellInstanceApi() {
       throw new Error(response.message || '读取外壳配置失败')
     }
     return response.data ?? []
+  }
+
+  /**
+   * 「选择其他目录」：弹系统选目录框，只扫选中的那个目录（不写回脚本配置）。键位弹窗与用户页
+   * 「配置导入」共用。取消选择返回 null；没有选目录能力（浏览器里）或扫描失败时抛带文案的 Error。
+   */
+  const pickShellInstanceDirectory = async (
+    scriptId: string
+  ): Promise<{ dir: string; instances: MaaFWShellInstanceItem[] } | null> => {
+    if (!window.electronAPI?.selectFolder) {
+      throw new Error(t('edit.filePickingUnavailableRun'))
+    }
+    const dir = await window.electronAPI.selectFolder()
+    if (!dir) return null
+    return { dir, instances: await listShellInstances(scriptId, dir) }
   }
 
   /** 每个实例建一个用户，结果顺序同请求。 */
@@ -81,5 +97,10 @@ export function useMaaFWShellInstanceApi() {
     }
   }
 
-  return { listShellInstances, importShellInstances, applyShellInstanceToUser }
+  return {
+    listShellInstances,
+    pickShellInstanceDirectory,
+    importShellInstances,
+    applyShellInstanceToUser,
+  }
 }

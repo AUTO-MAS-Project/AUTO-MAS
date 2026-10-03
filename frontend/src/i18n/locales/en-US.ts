@@ -884,11 +884,9 @@ export default {
     shellQueueImport: 'Import config',
     shellQueueImportTitle: 'Import config',
     shellQueueImportOk: 'Replace queue',
-    shellQueueImportActive: 'Currently used by the shell',
     shellQueueImportTaskCount: '{count} tasks in the shell',
     shellQueueImportDefaultDir: "the script's project folder",
     shellQueueImportDir: 'Reading from: {dir}',
-    shellQueueImportPickDir: 'Choose another folder',
     shellQueueImportNone: 'No shell config in this folder',
     shellQueueImportNote:
       'This replaces the tasks and options of the current user with the ones from that config.',

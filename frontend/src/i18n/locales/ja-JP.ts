@@ -814,11 +814,9 @@ export default {
     shellQueueImport: '設定をインポート',
     shellQueueImportTitle: '設定をインポート',
     shellQueueImportOk: 'キューを置き換える',
-    shellQueueImportActive: 'シェルが現在使用中',
     shellQueueImportTaskCount: 'シェル内に {count} 件のタスク',
     shellQueueImportDefaultDir: 'スクリプトのプロジェクトフォルダー',
     shellQueueImportDir: '読み込み元：{dir}',
-    shellQueueImportPickDir: '別のフォルダーを選ぶ',
     shellQueueImportNone: 'このフォルダーにシェルの設定がありません',
     shellQueueImportNote:
       'この設定のタスクとオプションで現在のユーザーのキューを置き換えます。元のキューは失われます。',
