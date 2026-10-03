@@ -132,6 +132,29 @@
           </a-col>
         </a-row>
 
+        <a-row :gutter="24" class="control-detail-row">
+          <a-col :span="12">
+            <a-form-item>
+              <template #label>
+                <a-tooltip :title="t('edit.mfwAdbAddressPassed')">
+                  <span class="form-label">
+                    {{ t('edit.mfwAdbAddress') }}
+                    <QuestionCircleOutlined class="help-icon" aria-hidden="true" />
+                  </span>
+                </a-tooltip>
+              </template>
+              <a-input
+                v-model:value="maafwConfig.Device.AdbAddress"
+                size="large"
+                :placeholder="t('edit.mfwAdbAddressPlaceholder')"
+                class="modern-input"
+                allow-clear
+                @blur="emit('change', 'Device', 'AdbAddress', maafwConfig.Device.AdbAddress)"
+              />
+            </a-form-item>
+          </a-col>
+        </a-row>
+
         <!-- type=flex + stretch：右边的策略表跟左边「标签 + 输入框」等高，上下边对齐 -->
         <a-row :gutter="24" type="flex" align="stretch" class="control-detail-row">
           <a-col :span="12">

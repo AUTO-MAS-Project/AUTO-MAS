@@ -1078,6 +1078,10 @@ export default {
       'You (or the script) start the game; MAS only attaches to the window that is already open',
     howLongMasWaits: 'How long MAS waits after launching the game before it is playable',
     masManagesGame: 'MAS starts and closes the game',
+    mfwAdbAddress: 'ADB address',
+    mfwAdbAddressPassed:
+      'When filled, MAS connects to this address instead of launching the emulator above, and does not close it when the task ends',
+    mfwAdbAddressPlaceholder: 'Leave empty to use the emulator selected above',
     mfwGamePackageName: 'Game package name',
     mfwGamePackageNamePassed:
       'Starts the game together with the emulator. MAS fills this in from the project automatically; when it cannot tell or finds several, the field stays empty and the game is not started, and you can fill it in here',
