@@ -9,7 +9,7 @@ Runtime 验签后自行发布自己的 GitHub/CNB Release。
 
 1. 在 SignPath 现有组织 `787a1d5f-6177-4f30-9559-d2646473584a`、项目 `AUTO_MAA`
    下新增专用 artifact configuration，XML 使用 [runtime.xml](../.signpath/runtime.xml)。
-   按用户最新提供的签名步骤，slug 为 `AUTO-MAS-Runtime`，工作流固定使用这个专用配置。
+   按用户确认的实际配置，slug 为 `AUTO-MAS_Runtime`（下划线），工作流固定使用这个专用配置。
    签名 action 固定为 `c92b958760219087e01f8d67a1669ed57afe2627`（v2.3），
    `github-artifact-id` 使用上传步骤输出，`output-artifact-directory` 为 `signed`。
    确认 `release-signing` 允许主仓库 main 构建 Runtime 子项目；保持原有审批要求。
