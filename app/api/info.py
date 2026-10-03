@@ -59,8 +59,12 @@ GAMEKEE_HEADERS = {
 ## 对外仍沿用 Kivo 时代的服务器标识，内部换成 GameKee 的 serverId
 GAMEKEE_SERVER_IDS = {"JP": 15, "Globle": 17, "CN": 16}
 
-## 图片域名白名单：中转只认数据源自己的图，免得这个接口变成谁都能用的开放代理
-GAMEKEE_IMAGE_HOSTS = ("cdnimg-v2.gamekee.com",)
+## 兜底数据来自 SRA 时用它自己的游戏标识，与 GameKee 的服务器标识一一对应
+SRA_BLUEARCHIVE_IDS = {"JP": "ba-jp", "Globle": "ba-global", "CN": "ba-cn"}
+
+## 图片域名白名单：中转只认数据源自己的图，免得这个接口变成谁都能用的开放代理。
+## 最后一个域是 SRA 的图床（兜底数据的封面），它公开可访问、不校验 Referer
+BLUEARCHIVE_IMAGE_HOSTS = ("cdnimg-v2.gamekee.com", "resource.starrailassistant.top")
 
 ## 明日方舟的活动一览取自 PRTS wiki。那个站对「声称自己是 Chrome」的请求一律 403，
 ## 换个朴素 UA 反而畅通；页面是服务端渲染的表格，每行带
@@ -365,6 +369,42 @@ async def get_overview() -> InfoOut:
     )
 
 
+def _epoch_seconds(value: str) -> int:
+    """ISO 时间串 → Unix 秒；解析不出来返回 0。"""
+
+    try:
+        return int(datetime.fromisoformat(value).timestamp())
+    except ValueError:
+        return 0
+
+
+def _to_gamekee_rows(activities: list[dict[str, object]]) -> list[dict[str, object]]:
+    """把 SRA 的活动条目换成 GameKee 表的字段形状。
+
+    前端只认 GameKee 那一套（title / activity_kind_name / begin_at…），照着拼一份
+    省得让前端认识第二套数据源；SRA 已经滤掉非活动条目，分类固定写「活动」。
+    """
+
+    rows: list[dict[str, object]] = []
+    for item in activities:
+        name = str(item.get("name") or "").strip()
+        begin = _epoch_seconds(str(item.get("startTime") or ""))
+        end = _epoch_seconds(str(item.get("endTime") or ""))
+        if not name or not begin or not end:
+            continue
+        rows.append(
+            {
+                "title": name,
+                "picture": str(item.get("cover") or ""),
+                "description": str(item.get("description") or ""),
+                "activity_kind_name": "活动",
+                "begin_at": begin,
+                "end_at": end,
+            }
+        )
+    return rows
+
+
 @router.post(
     "/bluearchive/activity",
     tags=["Get"],
@@ -379,6 +419,9 @@ async def get_bluearchive_activity(
 
     这里只做转发：把 GameKee 的响应原样交给前端，分类筛选与格式转换都由前端完成。
     之所以要绕一道后端，一是那个接口认自定义头、二是响应没给跨域头，浏览器直连取不到。
+
+    GameKee 取不到时改用 SRA 托管的那份：那一份已经筛掉非活动条目，这里换成 GameKee
+    的字段形状再交给前端，省得让前端认识第二套数据源。
     """
 
     cache_key = f"{payload.line_type}:{payload.page}:{payload.page_size}"
@@ -409,12 +452,19 @@ async def get_bluearchive_activity(
         logger.opt(exception=True).warning(
             f"获取碧蓝档案活动数据失败({payload.line_type}): {type(e).__name__}: {e}"
         )
-        return InfoOut(
-            code=500,
-            status="error",
-            message=f"{type(e).__name__}: {str(e)}",
-            data={},
-        )
+        ## SRA 一次给全，翻页请求不再重复给同一批活动
+        if payload.page > 1:
+            return InfoOut(data={"code": 0, "data": []})
+        fallback = await fetch_sra_activities(SRA_BLUEARCHIVE_IDS[payload.line_type])
+        if fallback is None:
+            return InfoOut(
+                code=500,
+                status="error",
+                message=f"{type(e).__name__}: {str(e)}",
+                data={},
+            )
+        logger.info(f"碧蓝档案活动数据改用 SRA 兜底({payload.line_type})")
+        data = {"code": 0, "data": _to_gamekee_rows(fallback["activities"])}
 
     _prune_bluearchive_cache(time.time())
     _bluearchive_cache[cache_key] = (time.time(), data)
@@ -436,7 +486,7 @@ async def get_bluearchive_image(
     """
 
     parsed = urlparse(url)
-    if parsed.scheme != "https" or parsed.hostname not in GAMEKEE_IMAGE_HOSTS:
+    if parsed.scheme != "https" or parsed.hostname not in BLUEARCHIVE_IMAGE_HOSTS:
         raise HTTPException(status_code=400, detail="只允许中转碧蓝档案活动图片")
 
     try:

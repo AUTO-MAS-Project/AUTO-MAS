@@ -94,6 +94,7 @@ async def fetch_sra_activities(game: str) -> dict[str, object] | None:
             "name": str(item.get("name") or "").strip(),
             ## 分类留空：SRA 不给活动种类，前端据此不显示标签
             "kind": "",
+            "description": str(item.get("description") or "").strip(),
             "startTime": _beijing_time(item.get("startTime")),
             "endTime": _beijing_time(item.get("endTime")),
             "cover": str(item.get("cover") or ""),
