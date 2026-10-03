@@ -109,10 +109,7 @@ class OkwwManager(TaskExecuteBase):
         # AutoProxy 模式只做用户列表可用性校验；逐用户配置文件检查放到 AutoProxyTask.check()
         if self.task_info.mode == "AutoProxy":
             script_uid = uuid.UUID(self.script_info.script_id)
-            if (not self.script_info.user_list) or (
-                self.script_info.user_list
-                and self.script_info.user_list[0].name == "暂未加载"
-            ):
+            if not self.script_info.user_list:
                 self.script_info.user_list = [
                     UserItem(
                         user_id=str(uid), name=config.get("Info", "Name"), status="等待"

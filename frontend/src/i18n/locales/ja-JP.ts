@@ -3328,6 +3328,7 @@ export default {
     overview: {
       title: 'タスク概要',
       unknownScript: '不明なマネージドスクリプト',
+      waitingToRun: '実行待ち',
     },
     modal: {
       cannotDeleteTitle: 'この実行パネルは閉じられません',
