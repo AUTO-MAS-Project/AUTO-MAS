@@ -49,6 +49,7 @@ permissions:
 concurrency:
   group: changelog-${{ github.ref_name }}
   cancel-in-progress: false
+  queue: max
 
 jobs:
   prepare:
