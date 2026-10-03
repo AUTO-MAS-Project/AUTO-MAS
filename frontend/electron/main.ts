@@ -34,6 +34,7 @@ import {
   markForceQuitFailed,
 } from './quitCoordinationState'
 import { decideRendererRecovery } from './rendererCrashRecovery'
+import { patchConfigFile } from './utils/configFile'
 
 import { getLogger, initializeLogger } from './services/logger'
 import { readLogContent, readLogIncrement } from './services/logFileReader'
@@ -209,6 +210,9 @@ let forceQuitInProgress = false
 let quitRequestInFlight = false
 let relaunchAfterQuit = false
 let quitFallbackTimer: NodeJS.Timeout | null = null
+let quitPreparationSequence = 0
+let activeQuitPreparation: number | null = null
+let quitPreparationExpired = false
 const RENDERER_QUIT_FALLBACK_MS = 25000
 let saveWindowStateTimeout: NodeJS.Timeout | null = null
 let rendererCrashes: number[] = []
@@ -479,6 +483,17 @@ function clearQuitFallback(): void {
     clearTimeout(quitFallbackTimer)
     quitFallbackTimer = null
   }
+}
+
+function cancelQuitRequest(token?: number): void {
+  if (coordinatedQuit || forceQuitInProgress) return
+  if (token !== undefined && token !== activeQuitPreparation) return
+  clearQuitFallback()
+  activeQuitPreparation = null
+  quitPreparationExpired = false
+  quitRequestInFlight = false
+  relaunchAfterQuit = false
+  showMainWindow()
 }
 
 function finishCoordinatedQuit(): void {
@@ -768,6 +783,8 @@ function createWindow() {
   // 托盘和显示/隐藏都正常，但里面的 frame 已经没了，用户看到的是一个永远黑着的
   // 窗口，只能从任务管理器强杀。没有这个监听时日志里也不会留下任何记录。
   win.webContents.on('render-process-gone', (_event, details) => {
+    // 保存准备期间 renderer 消失就取消退出并按通常崩溃流程恢复，不能等一个永远不会完成的守卫。
+    if (activeQuitPreparation !== null) cancelQuitRequest(activeQuitPreparation)
     const decision = decideRendererRecovery({
       reason: details.reason,
       exitCode: details.exitCode,
@@ -1461,7 +1478,7 @@ registerIssueReportExporter(
   'maaend:exportIssueReport',
   '导出 MaaEnd 问题包',
   'MaaEnd-logs',
-  createMaaEndIssueReport
+  (appRoot, zipPath) => createMaaEndIssueReport(appRoot, zipPath, getLocalApiEndpoint())
 )
 registerIssueReportExporter(
   'okww:exportIssueReport',
@@ -1668,6 +1685,39 @@ ipcMain.handle('window-focus', () => {
   }
 })
 
+// 电源操作倒计时警示：把窗口从托盘/最小化拉到最前并临时置顶。
+// 只调 focus() 会被 Windows 的前台锁定挡下，用户很容易错过即将执行的关机/休眠。
+const POWER_WARNING_TOPMOST_MS = 120000
+let powerWarningTopmostTimer: ReturnType<typeof setTimeout> | undefined
+
+function releasePowerWarningTopmost(): void {
+  if (powerWarningTopmostTimer) {
+    clearTimeout(powerWarningTopmostTimer)
+    powerWarningTopmostTimer = undefined
+  }
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.setAlwaysOnTop(false)
+  }
+}
+
+ipcMain.handle('power-warning:start', () => {
+  if (!mainWindow || mainWindow.isDestroyed()) return
+
+  showMainWindow()
+  mainWindow.setAlwaysOnTop(true, 'screen-saver')
+  mainWindow.moveTop()
+
+  // 渲染进程崩溃或撤回事件丢失时不能让窗口永久置顶，兜底时限取一次 60 秒倒计时的两倍
+  if (powerWarningTopmostTimer) clearTimeout(powerWarningTopmostTimer)
+  powerWarningTopmostTimer = setTimeout(releasePowerWarningTopmost, POWER_WARNING_TOPMOST_MS)
+
+  logger.info('电源操作倒计时警示: 窗口已置顶')
+})
+
+ipcMain.handle('power-warning:end', () => {
+  releasePowerWarningTopmost()
+})
+
 // 添加应用重启处理器
 ipcMain.handle('app-restart', () => {
   logger.info('重启应用程序...')
@@ -1678,6 +1728,46 @@ ipcMain.handle('app-restart', () => {
 // renderer 仅在后端优雅关闭或超时兜底完成后调用，作为最终退出确认。
 ipcMain.handle('app-quit', () => {
   finishCoordinatedQuit()
+})
+
+ipcMain.handle('app-prepare-quit', () => {
+  if (coordinatedQuit || forceQuitInProgress) return null
+  if (activeQuitPreparation !== null) return activeQuitPreparation
+  clearQuitFallback()
+  quitRequestInFlight = true
+  const token = ++quitPreparationSequence
+  activeQuitPreparation = token
+  quitPreparationExpired = false
+  quitFallbackTimer = setTimeout(() => {
+    quitFallbackTimer = null
+    quitPreparationExpired = true
+    logger.warn('退出前保存超时，撤销本次退出并等待页面保存完成')
+    // 保存请求不能撤回，保留请求锁，避免重复退出重新启动强制清理计时。
+    showMainWindow()
+  }, RENDERER_QUIT_FALLBACK_MS)
+  return token
+})
+
+ipcMain.handle('app-confirm-quit', (_event, token: number) => {
+  if (
+    activeQuitPreparation === null ||
+    token !== activeQuitPreparation ||
+    quitPreparationExpired ||
+    coordinatedQuit ||
+    forceQuitInProgress
+  )
+    return false
+  activeQuitPreparation = null
+  clearQuitFallback()
+  quitFallbackTimer = setTimeout(() => {
+    void forceQuitAfterRendererTimeout('renderer 保存完成后关闭超时')
+  }, RENDERER_QUIT_FALLBACK_MS)
+  return true
+})
+
+// 页面尚未保存时，后端还未进入关闭流程，允许取消主进程发出的退出请求。
+ipcMain.handle('app-cancel-quit', (_event, token?: number) => {
+  cancelQuitRequest(token)
 })
 
 // 添加进程管理相关的 IPC 处理器
@@ -1836,18 +1926,13 @@ ipcMain.handle('get-app-path', async (_event, name: Parameters<typeof app.getPat
 // 这些 IPC 处理器已在 initializationHandlers.ts 中实现
 
 // 配置文件操作
-ipcMain.handle('save-config', async (_event, config) => {
+ipcMain.handle('save-config', (_event, patch, defaults) => {
   try {
     const appRoot = getAppRoot()
     const configDir = path.join(appRoot, 'config')
     const configPath = path.join(configDir, 'frontend_config.json')
 
-    // 确保config目录存在
-    if (!fs.existsSync(configDir)) {
-      fs.mkdirSync(configDir, { recursive: true })
-    }
-
-    fs.writeFileSync(configPath, JSON.stringify(config, null, 2), 'utf8')
+    const config = patchConfigFile(configPath, patch, defaults) as AppConfig
     logger.info(`配置已保存到: ${configPath}`)
 
     // 如果是UI配置更新，需要更新托盘状态

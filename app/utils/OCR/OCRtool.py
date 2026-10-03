@@ -421,7 +421,7 @@ class OCRTool:
         Args:
             adb_path (str): ADB 可执行文件的路径。
             serial (str): 设备序列号。
-            args (list[str]): screencap 子命令及参数。
+            args (list[str]): 设备端命令及参数。
 
         Returns:
             subprocess.CompletedProcess: 最后一次执行的结果，由调用方检查 returncode。
@@ -458,7 +458,9 @@ class OCRTool:
         """
         try:
             # 依次尝试 exec-out 与 shell 通道执行，兼容不支持 exec-out 的旧版 adb
-            result = OCRTool._adb_run(adb_path, serial, ["screencap", "-p"])
+            result = OCRTool._adb_run(
+                adb_path=adb_path, serial=serial, args=["screencap", "-p"]
+            )
 
             if result.returncode != 0:
                 error_msg = (
@@ -475,19 +477,28 @@ class OCRTool:
             if not image_data:
                 raise RuntimeError("ADB screencap 返回空数据")
 
-            # 使用 PIL 从字节流加载图像
+            # 完整解码图像，避免仅检查头部后把像素损坏留到保存时才暴露。
             from io import BytesIO
 
             try:
                 pillow_img = Image.open(BytesIO(image_data))
-            except Exception:
+                pillow_img.load()
+            except Exception as img_error:
+                logger.debug(f"PNG 原始数据解析失败: {img_error}，尝试换行修复")
                 # Windows 环境下需要处理换行符问题
                 # 旧版 adb 的 pty 会把 \n (0x0A) 转换为 \r\n (0x0D 0x0A)，破坏 PNG 文件格式；
                 # 但 PNG 签名本身就含 \r\n，现代 adb 原样返回二进制数据，
                 # 不能无条件替换，只有在原样解析失败时才尝试换行修复
-                image_data = image_data.replace(b"\r\n", b"\n")
+                # PNG 签名首行原本含一个 CR，多出的 CR 标识叠加的换行膨胀次数。
+                signature_line = image_data.partition(b"\n")[0]
+                newline_expansions = 1
+                if signature_line.rstrip(b"\r") == b"\x89PNG":
+                    newline_expansions = max(1, len(signature_line) - len(b"\x89PNG\r"))
+                for _ in range(newline_expansions):
+                    image_data = image_data.replace(b"\r\n", b"\n")
                 try:
                     pillow_img = Image.open(BytesIO(image_data))
+                    pillow_img.load()
                 except Exception as img_error:
                     # 如果 PNG 方法失败，记录详细信息并尝试降级到 raw 方法
                     logger.warning(
@@ -515,7 +526,7 @@ class OCRTool:
         """
         使用 ADB screencap raw 命令获取原始像素数据（备用方法）。
 
-        该方法适用于不支持 PNG 输出的设备。获取的是 RGBA 原始像素数据。
+        该方法适用于不支持 PNG 输出的设备。获取的是 RGBA/RGBX 原始像素数据。
 
         Args:
             adb_path (str): ADB 可执行文件的路径。
@@ -530,8 +541,13 @@ class OCRTool:
         import struct
 
         try:
-            # 依次尝试 exec-out 与 shell 通道执行，兼容不支持 exec-out 的旧版 adb
-            result = OCRTool._adb_run(adb_path, serial, ["screencap"])
+            # 同一次命令先输出 SDK 版本，再输出截图；版本行同时标识 pty 换行膨胀。
+            # Android 8.1（SDK 27）起增加 colorspace，不能仅凭长度猜测头部格式。
+            result = OCRTool._adb_run(
+                adb_path=adb_path,
+                serial=serial,
+                args=["getprop ro.build.version.sdk; screencap"],
+            )
 
             if result.returncode != 0:
                 error_msg = (
@@ -543,51 +559,53 @@ class OCRTool:
                     f"ADB screencap raw 命令失败 (返回码: {result.returncode}): {error_msg}"
                 )
 
-            raw_data = result.stdout
-            if len(raw_data) < 12:
+            version_data, separator, raw_data = result.stdout.partition(b"\n")
+            sdk_version = version_data.strip()
+            if not separator or not sdk_version.isdigit() or int(sdk_version) <= 0:
+                raise RuntimeError("ADB screencap raw 无法确定设备 Android 版本")
+
+            # getprop 的版本行原本以 LF 结束，CRLF 表示 pty 已膨胀整份输出。
+            # 先逆变换，再解析头部，保留二进制安全通道中原有的 CRLF 像素字节。
+            newline_expansions = len(version_data) - len(version_data.rstrip(b"\r"))
+            for _ in range(newline_expansions):
+                raw_data = raw_data.replace(b"\r\n", b"\n")
+
+            header_size = 16 if int(sdk_version) >= 27 else 12
+            if len(raw_data) < header_size:
                 raise RuntimeError("ADB screencap raw 返回数据不足（无法解析头部信息）")
 
             # 解析头部信息
             # 旧系统共 12 字节: width (4 bytes), height (4 bytes), format (4 bytes)
-            # Android 10+ 末尾多一个 colorspace (4 bytes)，共 16 字节
+            # Android 8.1+ 末尾多一个 colorspace (4 bytes)，共 16 字节
             width, height, pixel_format = struct.unpack("<III", raw_data[:12])
 
             logger.debug(
                 f"ADB screencap raw 头部: width={width}, height={height}, format={pixel_format}"
             )
 
-            # 检查像素格式（1 = RGBA_8888）
-            if pixel_format != 1:
-                logger.warning(f"未知的像素格式: {pixel_format}，尝试按 RGBA 处理")
+            if width == 0 or height == 0:
+                raise RuntimeError(f"ADB screencap raw 图像尺寸无效: {width}x{height}")
+            # RGBA_8888 和 RGBX_8888 均为每像素 4 字节，其他格式不能按 RGBA 解码。
+            if pixel_format not in (1, 2):
+                raise RuntimeError(
+                    f"ADB screencap raw 不支持的像素格式: {pixel_format}"
+                )
 
-            # RGBA 每像素 4 字节，数据长度必须精确匹配 12 或 16 字节头两种尺寸之一；
-            # 旧版 adb 的 pty 会把 \n (0x0A) 转换为 \r\n (0x0D 0x0A)，数据膨胀导致像素错位（花屏），
-            # 因此长度对不上时先做换行修复再校验；宽高字节本身含 \n 时（如宽 2560 = 00 0A 00 00），
-            # 修复前解析出的宽高是错的，修复后需重新解析头部再校验，仍不匹配则报错而不是输出错位图像
-            frame_size = width * height * 4
-            if len(raw_data) not in (12 + frame_size, 16 + frame_size):
-                raw_data = raw_data.replace(b"\r\n", b"\n")
-                if len(raw_data) not in (12 + frame_size, 16 + frame_size):
-                    if len(raw_data) < 12:
-                        raise RuntimeError(
-                            "ADB screencap raw 返回数据不足（无法解析头部信息）"
-                        )
-                    width, height, pixel_format = struct.unpack("<III", raw_data[:12])
-                    logger.debug(
-                        f"ADB screencap raw 头部(换行修复后): width={width}, height={height}, format={pixel_format}"
-                    )
-                    frame_size = width * height * 4
-                if len(raw_data) not in (12 + frame_size, 16 + frame_size):
-                    raise RuntimeError(
-                        f"ADB screencap raw 数据大小异常 (预期: {12 + frame_size} 或 {16 + frame_size}, 实际: {len(raw_data)})"
-                    )
+            expected_size = header_size + width * height * 4
+            if len(raw_data) != expected_size:
+                raise RuntimeError(
+                    f"ADB screencap raw 数据大小异常 (预期: {expected_size}, 实际: {len(raw_data)})"
+                )
 
             # 提取像素数据（跳过头部）
-            header_size = 16 if len(raw_data) == 16 + frame_size else 12
-            pixel_data = raw_data[header_size : header_size + frame_size]
+            pixel_data = raw_data[header_size:]
 
-            # 创建 PIL 图像（RGBA 格式）
-            pillow_img = Image.frombytes("RGBA", (width, height), pixel_data)
+            # 创建 PIL 图像
+            pillow_img = Image.frombytes(
+                mode="RGBA" if pixel_format == 1 else "RGBX",
+                size=(width, height),
+                data=pixel_data,
+            )
 
             # 转换为 RGB（去除 Alpha 通道）
             pillow_img = pillow_img.convert("RGB")

@@ -47,6 +47,7 @@ export interface MAAScriptConfig {
     Path: string
   }
   Run: {
+    HardTimeLimit: number
     TaskTransitionMethod: string
     ProxyTimesLimit: number
     ADBSearchRange: number
@@ -87,6 +88,7 @@ export interface GeneralScriptConfig {
     RootPath: string
   }
   Run: {
+    HardTimeLimit: number
     ProxyTimesLimit: number
     RunTimeLimit: number
     RunTimesLimit: number
@@ -129,6 +131,7 @@ export interface SRCScriptConfig {
     Path: string
   }
   Run: {
+    HardTimeLimit: number
     TaskTransitionMethod: string
     ProxyTimesLimit: number
     RunTimesLimit: number
@@ -171,6 +174,7 @@ export interface MaaEndScriptConfig {
     Path: string
   }
   Run: {
+    HardTimeLimit: number
     RunTimeLimit: number
     ProxyTimesLimit: number
     RunTimesLimit: number
@@ -251,6 +255,11 @@ export interface MaaFWScriptConfig {
     /** 由 MAS 启动游戏时，窗口出现后至少再等多少秒才下发第一个任务；0 关闭。 */
     /** DirectExe 下启动前按 exe 反查 Unity 注册表，临时改成所选窗口尺寸，关闭后恢复。 */
     UnityResolution: MaaFWUnityResolution
+    /**
+     * PI v2.8 hotkey 键位映射（仅 Win32）：JSON 文本 `{option 名: {字段名: 组合键}}`，
+     * 只存与 interface 默认不同的字段；读写见 views/EditView/Script/MaaFWScriptEdit/hotkeyOptions.ts。
+     */
+    Hotkeys: string
   }
   Update: {
     /** 自动更新时机：不更新 / 运行前 / 运行后。 */
@@ -321,10 +330,23 @@ export interface MaaFWTaskSnapshot {
 export interface MaaFWQueuedTaskItem {
   id: string
   task: MaaFWTaskInfo
+  missing?: false
   /** 同名副本中的序号，从 1 起；仅在 `copyTotal > 1` 时需要显示 */
   copyIndex: number
   copyTotal: number
 }
+
+/** 队列里 interface 已经没有的任务（项目更新改了 name）：留成虚影，由用户自己删。 */
+export interface MaaFWMissingQueuedTask {
+  id: string
+  missing: true
+  /** 实例 id 去掉副本后缀后的原任务名 */
+  name: string
+  copyIndex: number
+  copyTotal: number
+}
+
+export type MaaFWQueueEntry = MaaFWQueuedTaskItem | MaaFWMissingQueuedTask
 
 export interface MaaFWUserConfig {
   Info: {
@@ -475,6 +497,8 @@ export interface MaaFWOptionInfo {
     label?: string | null
     description?: string | null
     default?: string | null
+    /** 项目 pipeline 用到的修饰键个数（0–2）：录制的组合键须恰好这么多修饰键 */
+    modifierCount?: number
   }>
   defaultCase?: string | string[] | null
   /** PI v2.10.1：checkbox 最少 / 最多选择数，后端已放宽成自洽值；null 为不限 */

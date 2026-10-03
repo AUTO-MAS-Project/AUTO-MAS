@@ -46,9 +46,9 @@ from app.models.notification import (
     DEFAULT_WEBHOOK_TEMPLATE,
     NOTIFICATION_HTML_IMAGE_SOURCE_PATTERN,
     NOTIFICATION_IMAGE_URI_PATTERN,
-    NotificationImage,
     WECOM_ROBOT_HOST,
     WECOM_ROBOT_PATH,
+    NotificationImage,
     WebhookTargetSnapshot,
 )
 from app.utils import LazyProxy, get_logger, resource_path
@@ -563,10 +563,15 @@ class Notification:
 
         async with httpx.AsyncClient(**_webhook_client_kwargs(url)) as client:
             if webhook.get("Data", "Method") == "POST":
-                if isinstance(data, dict):
-                    response = await client.post(url=url, json=data, headers=headers)
-                elif isinstance(data, str):
+                if isinstance(data, str):
                     response = await client.post(url=url, content=data, headers=headers)
+                elif data is None:
+                    # httpx 的 json=None 会发送空请求体，JSON null 需显式发送。
+                    response = await client.post(
+                        url=url, content="null", headers=headers
+                    )
+                else:
+                    response = await client.post(url=url, json=data, headers=headers)
             elif webhook.get("Data", "Method") == "GET":
                 if isinstance(data, dict):
                     # Flatten params to ensure all values are str or list of str

@@ -19,7 +19,6 @@ import type { BetterGIScriptGroupSaveIn } from '../models/BetterGIScriptGroupSav
 import type { BetterGIScriptReadmeOut } from '../models/BetterGIScriptReadmeOut';
 import type { BetterGIScriptSettingsUiOut } from '../models/BetterGIScriptSettingsUiOut';
 import type { BlueArchiveActivityIn } from '../models/BlueArchiveActivityIn';
-import type { BlueArchiveActivityStatusOut } from '../models/BlueArchiveActivityStatusOut';
 import type { Body_batch_update_oknte_configs_api_scripts_oknte_configs_batch_update_post } from '../models/Body_batch_update_oknte_configs_api_scripts_oknte_configs_batch_update_post';
 import type { Body_get_maa_cultivate_operators_api_scripts_maa_cultivate_operators_post } from '../models/Body_get_maa_cultivate_operators_api_scripts_maa_cultivate_operators_post';
 import type { Body_get_maa_depot_inventory_api_scripts_maa_depot_inventory_post } from '../models/Body_get_maa_depot_inventory_api_scripts_maa_depot_inventory_post';
@@ -87,6 +86,7 @@ import type { MaaFWShellInstancesIn } from '../models/MaaFWShellInstancesIn';
 import type { MaaFWShellInstancesOut } from '../models/MaaFWShellInstancesOut';
 import type { NoticeOut } from '../models/NoticeOut';
 import type { NotifyChannelsOut } from '../models/NotifyChannelsOut';
+import type { OkwwClientPathOut } from '../models/OkwwClientPathOut';
 import type { OutBase } from '../models/OutBase';
 import type { PatternDebugIn } from '../models/PatternDebugIn';
 import type { PatternDebugOut } from '../models/PatternDebugOut';
@@ -124,11 +124,16 @@ import type { ScriptDeleteIn } from '../models/ScriptDeleteIn';
 import type { ScriptGetIn } from '../models/ScriptGetIn';
 import type { ScriptGetOut } from '../models/ScriptGetOut';
 import type { ScriptReorderIn } from '../models/ScriptReorderIn';
+import type { ScriptShareInspectIn } from '../models/ScriptShareInspectIn';
+import type { ScriptTemplateImportIn } from '../models/ScriptTemplateImportIn';
 import type { ScriptUpdateIn } from '../models/ScriptUpdateIn';
 import type { ScriptUploadIn } from '../models/ScriptUploadIn';
-import type { ScriptUrlIn } from '../models/ScriptUrlIn';
 import type { SettingGetOut } from '../models/SettingGetOut';
 import type { SettingUpdateIn } from '../models/SettingUpdateIn';
+import type { ShareAuthStatusOut } from '../models/ShareAuthStatusOut';
+import type { ShareInspectOut } from '../models/ShareInspectOut';
+import type { ShareTemplateListIn } from '../models/ShareTemplateListIn';
+import type { ShareTemplateListOut } from '../models/ShareTemplateListOut';
 import type { SklandQrCheckIn } from '../models/SklandQrCheckIn';
 import type { SklandQrCheckOut } from '../models/SklandQrCheckOut';
 import type { SklandQrCreateOut } from '../models/SklandQrCreateOut';
@@ -367,17 +372,6 @@ export class Service {
         });
     }
     /**
-     * 获取配置分享中心的配置信息
-     * @returns InfoOut Successful Response
-     * @throws ApiError
-     */
-    public static getWebConfigApiInfoWebconfigPost(): CancelablePromise<InfoOut> {
-        return __request(OpenAPI, {
-            method: 'POST',
-            url: '/api/info/webconfig',
-        });
-    }
-    /**
      * 信息总览
      * @returns InfoOut Successful Response
      * @throws ApiError
@@ -389,11 +383,11 @@ export class Service {
         });
     }
     /**
-     * 获取碧蓝档案活动数据（Kivo 中转）
-     * 按服务器取回碧蓝档案的活动时间轴。
+     * 获取碧蓝档案活动数据（GameKee 中转）
+     * 按服务器取回碧蓝档案的活动。
      *
-     * 这里只做转发：把 Kivo 的响应原样交给前端，筛选与格式转换都由前端完成。
-     * 之所以要绕一道后端，是因为 Kivo 的接口校验 Origin，浏览器直连必定 403。
+     * 这里只做转发：把 GameKee 的响应原样交给前端，分类筛选与格式转换都由前端完成。
+     * 之所以要绕一道后端，一是那个接口认自定义头、二是响应没给跨域头，浏览器直连取不到。
      * @param requestBody
      * @returns InfoOut Successful Response
      * @throws ApiError
@@ -412,20 +406,88 @@ export class Service {
         });
     }
     /**
-     * 获取星塔旅人活动数据（StellaBase 中转）
-     * 取回星塔旅人的活动排期。
+     * 获取碧蓝档案活动图片（GameKee 中转）
+     * 中转 GameKee 的图片。
      *
-     * StellaBase 不放开跨域，浏览器直连拿不到数据，所以统一由后端中转——筛选与
-     * 格式转换仍由前端完成，与碧蓝档案那条链路一致。取数失败返回错误信封，由卡片
-     * 显示自己的失败态，不影响其它卡片。
+     * 那个 CDN 校验 Referer：带上它自己的站点才给图，页面直连（Referer 是本软件）会被拒。
+     * 所以图片也由后端取回，前端只管引用这个地址。
+     * @param url 图片地址
+     * @returns any Successful Response
+     * @throws ApiError
+     */
+    public static getBluearchiveImageApiInfoBluearchiveImageGet(
+        url: string,
+    ): CancelablePromise<any> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/info/bluearchive/image',
+            query: {
+                'url': url,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 获取终末地版本图与版本名
+     * 终末地的版本图地址与版本名（图是固定地址，前端再走图片中转取回）。
+     * @returns InfoOut Successful Response
+     * @throws ApiError
+     */
+    public static getEndfieldVersionArtApiInfoEndfieldVersionArtGet(): CancelablePromise<InfoOut> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/info/endfield/version-art',
+        });
+    }
+    /**
+     * 获取终末地活动图片（缩放后转发）
+     * 把终末地的活动大图缩到横幅宽度再交给前端。
+     * @param url 图片地址
+     * @returns any Successful Response
+     * @throws ApiError
+     */
+    public static getEndfieldImageApiInfoEndfieldImageGet(
+        url: string,
+    ): CancelablePromise<any> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/info/endfield/image',
+            query: {
+                'url': url,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 获取明日方舟活动数据（PRTS 中转）
+     * 取回明日方舟的活动一览。
      *
-     * 顺带捎上国服官网的主推横幅（``official``）：StellaBase 的活动大图时有时无，
-     * 官网那张 795×510 的官方主视觉正好当封面兜底；官网挂了不影响排期本身。
-     * 其中与当前活动对得上号的那条会带 ``matched: true``，前端优先用它。
+     * PRTS 的页面里已经带了活动名、分类、起止时间与配图，这里解析成前端好用的形状。
+     * 最近两周一场活动都没有是正常情况（长草期），按空列表返回并照常缓存，
+     * 不然前端会把「没有活动」当成接口出错反复重试。
+     * @returns InfoOut Successful Response
+     * @throws ApiError
+     */
+    public static getArknightsActivityApiInfoArknightsActivityGet(): CancelablePromise<InfoOut> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/info/arknights/activity',
+        });
+    }
+    /**
+     * 获取星塔旅人活动数据（官网公告）
+     * 取回星塔旅人的活动一览。
+     *
+     * 数据取自国服官网的活动公告：官网 CMS 不放开跨域、也认 Referer，所以由后端
+     * 取回并按公告正文里的开放时间整理成与其它游戏一致的形状。取数失败返回错误
+     * 信封，由卡片显示自己的失败态，不影响其它卡片。
      *
      * Returns:
-     * InfoOut: 站点原始响应，另加 ``official`` 横幅列表；取不到排期时返回
-     * ``code=500`` 的错误信封。
+     * InfoOut: ``{"activities": [...]}``；取不到时返回 ``code=500`` 的错误信封。
      * @returns InfoOut Successful Response
      * @throws ApiError
      */
@@ -493,6 +555,29 @@ export class Service {
         });
     }
     /**
+     * 解码鸣潮启动器，返回客户端 exe 路径
+     * 解码鸣潮启动器记录，返回客户端 exe 完整路径（仅直启模式的前端展示用）。
+     *
+     * 任务期的启动与自动更新链路由后端自行解码，不经过本端点。
+     * @param scriptId
+     * @returns OkwwClientPathOut Successful Response
+     * @throws ApiError
+     */
+    public static getOkwwClientPathApiApiScriptsOkwwClientPathGet(
+        scriptId: string,
+    ): CancelablePromise<OkwwClientPathOut> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/scripts/okww/client-path',
+            query: {
+                'scriptId': scriptId,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
      * 删除脚本
      * @param requestBody
      * @returns OutBase Successful Response
@@ -531,13 +616,13 @@ export class Service {
         });
     }
     /**
-     * 从网络加载脚本配置
+     * 从配置中心导入脚本配置
      * @param requestBody
      * @returns OutBase Successful Response
      * @throws ApiError
      */
     public static importScriptFromWebApiScriptsImportWebPost(
-        requestBody: ScriptUrlIn,
+        requestBody: ScriptTemplateImportIn,
     ): CancelablePromise<OutBase> {
         return __request(OpenAPI, {
             method: 'POST',
@@ -550,7 +635,26 @@ export class Service {
         });
     }
     /**
-     * 上传脚本配置到网络
+     * 分享前检查脚本配置中的隐私风险
+     * @param requestBody
+     * @returns ShareInspectOut Successful Response
+     * @throws ApiError
+     */
+    public static inspectScriptShareApiScriptsShareInspectPost(
+        requestBody: ScriptShareInspectIn,
+    ): CancelablePromise<ShareInspectOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/share/inspect',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 分享脚本配置到配置中心
      * @param requestBody
      * @returns OutBase Successful Response
      * @throws ApiError
@@ -1305,27 +1409,6 @@ export class Service {
             url: '/api/scripts/baah/config-names',
             query: {
                 'scriptId': scriptId,
-            },
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-    /**
-     * 获取碧蓝档案活动状态
-     * 返回指定服正在进行的活动，没有则返回下一个未开始的活动。
-     * @param lineType
-     * @returns BlueArchiveActivityStatusOut Successful Response
-     * @throws ApiError
-     */
-    public static getBaahActivityStatusApiApiScriptsBaahActivityStatusGet(
-        lineType: 'JP' | 'Globle' | 'CN' = 'CN',
-    ): CancelablePromise<BlueArchiveActivityStatusOut> {
-        return __request(OpenAPI, {
-            method: 'GET',
-            url: '/api/scripts/baah/activity-status',
-            query: {
-                'lineType': lineType,
             },
             errors: {
                 422: `Validation Error`,
@@ -3698,6 +3781,69 @@ export class Service {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/setting/virtual-display/status',
+        });
+    }
+    /**
+     * 获取配置中心已发布的通用脚本配置
+     * @param requestBody
+     * @returns ShareTemplateListOut Successful Response
+     * @throws ApiError
+     */
+    public static listShareTemplatesApiShareTemplatesPost(
+        requestBody: ShareTemplateListIn,
+    ): CancelablePromise<ShareTemplateListOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/share/templates',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 获取配置中心授权状态
+     * @returns ShareAuthStatusOut Successful Response
+     * @throws ApiError
+     */
+    public static getShareAuthStatusApiShareAuthStatusPost(): CancelablePromise<ShareAuthStatusOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/share/auth/status',
+        });
+    }
+    /**
+     * 发起配置中心浏览器授权
+     * @returns ShareAuthStatusOut Successful Response
+     * @throws ApiError
+     */
+    public static startShareAuthApiShareAuthStartPost(): CancelablePromise<ShareAuthStatusOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/share/auth/start',
+        });
+    }
+    /**
+     * 轮询配置中心授权结果
+     * @returns ShareAuthStatusOut Successful Response
+     * @throws ApiError
+     */
+    public static pollShareAuthApiShareAuthPollPost(): CancelablePromise<ShareAuthStatusOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/share/auth/poll',
+        });
+    }
+    /**
+     * 取消等待中的配置中心授权
+     * @returns ShareAuthStatusOut Successful Response
+     * @throws ApiError
+     */
+    public static cancelShareAuthApiShareAuthCancelPost(): CancelablePromise<ShareAuthStatusOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/share/auth/cancel',
         });
     }
     /**

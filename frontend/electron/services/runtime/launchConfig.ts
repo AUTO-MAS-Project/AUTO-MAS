@@ -2,7 +2,7 @@
  * Runtime 后端监督链路的灰度开关与可执行文件定位
  *
  * 灰度期同时存在两条后端启动链路：
- * - `off`（默认）：Electron 自己 spawn `python.exe`，就绪靠健康检查，停止靠 scoped taskkill；
+ * - `off`（源码开发默认）：Electron 自己 spawn `python.exe`，就绪靠健康检查，停止靠 scoped taskkill；
  * - `development` / `managed`：交给 `auto-mas-runtime.exe backend supervise` 监督。
  *
  * 一次生命周期只走一条链路：模式非 `off` 却找不到可执行文件时，按 `RUNTIME_NOT_FOUND`
@@ -12,8 +12,8 @@
  * 1. 环境变量 `AUTO_MAS_RUNTIME_MODE`；
  * 2. 设置界面持久化的用户选择（`<appRoot>/config/frontend_config.json` 的
  *    `Runtime.LaunchMode`，与 `main.ts` 的 `loadConfig()/saveConfig()` 同一份文件）；
- * 3. 构建默认值：打包安装且已捆绑 Runtime 时默认 `managed`，否则 `off`——即打包安装且带
- *    Runtime 的用户默认走新链路，开发者跑源码默认仍走旧链路，除非显式设了环境变量。
+ * 3. 构建默认值：打包安装默认 `managed`，源码开发默认 `off`。Runtime 文件缺失不改变
+ *    启动模式，避免自动恢复时启动安装根目录残留的旧后端。
  *
  * 任一级取值非法都记 warning 后落到下一级，不再像早前只有环境变量一级时那样直接判 `off`。
  */
@@ -135,10 +135,9 @@ function readPersistedLaunchMode(appRoot: string): string | undefined {
   }
 }
 
-/** 构建默认值：打包安装且已捆绑 Runtime 才默认切新链路，源码开发默认走旧链路。 */
+/** 构建默认值只由打包状态决定，Runtime 缺失由启动流程报错，不能切换到旧链路。 */
 function resolveBuildDefaultLaunchMode(): RuntimeLaunchMode {
-  const packaged = Boolean(app?.isPackaged)
-  return packaged && resolveRuntimeExecutable() !== null ? 'managed' : 'off'
+  return app?.isPackaged ? 'managed' : 'off'
 }
 
 /**

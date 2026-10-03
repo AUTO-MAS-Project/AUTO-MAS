@@ -8,6 +8,7 @@ import { ref, type Ref } from 'vue'
 import { Modal, notification } from 'ant-design-vue'
 import { Service } from '@/api'
 import { useAppClosing } from '@/composables/useAppClosing'
+import { cancelAppClose, prepareAppClose } from '@/composables/appCloseGuards'
 import { useUpdateChecker } from '@/composables/useUpdateChecker'
 import { clearStageOptionsCache } from '@/composables/usePlanDataCoordinator'
 import { cancelBackgroundInitCheck, checkBackgroundInit } from '@/services/backgroundInitNotice'
@@ -83,6 +84,8 @@ let residentSubscriptionIds: string[] = []
 
 // 正常关闭流程状态（权威，优先级最高）
 let closePromise: Promise<void> | null = null
+// 保存准备可以撤销；只有真正开始关闭后端后，断线才进入禁止重连的终态。
+let backendClosing = false
 let shutdownReadyReceived = false
 let closeRequestedByBackend = false
 let taskkillDone = false
@@ -115,12 +118,14 @@ const backendStatus: Ref<BackendStatus> = ref('unknown')
 const powerCountdown: Ref<WSPowerCountdownData | null> = ref(null)
 // 倒计时推送因主连接断开而中断：弹窗保留（仍可取消），剩余秒数停在最后一次推送
 const powerCountdownDisconnected: Ref<boolean> = ref(false)
+// 同一次倒计时只向主进程请求一次警示；结束或取消时撤回，避免窗口永久置顶
+let powerWarningRaised = false
 
 let powerCountdownStaleTimer: number | undefined
 
 const delay = (ms: number): Promise<void> => new Promise(resolve => window.setTimeout(resolve, ms))
 
-const isClosing = (): boolean => closePromise !== null
+const isClosing = (): boolean => backendClosing
 
 // 计划内的后端重启窗口期：断开是预期的，既不提示也不自行恢复
 const isIntentionalRestart = (): boolean => intentionalRestartActive
@@ -147,7 +152,7 @@ const handleShutdownReady = (): void => {
 const handleCloseRequested = (): void => {
   logger.info('收到后端关闭请求 frontend.close.requested，前端开始退出')
   closeRequestedByBackend = true
-  if (closePromise) return
+  if (isClosing()) return
   closePromise = runBackendRequestedClose().catch(error => {
     const errorMsg = error instanceof Error ? error.message : String(error)
     logger.error(`后端请求关闭流程异常: ${errorMsg}`)
@@ -171,13 +176,40 @@ const armPowerCountdownStaleTimer = (): void => {
     // 连接正常而更新停止（已执行或已结束）：清除展示状态
     powerCountdown.value = null
     powerCountdownDisconnected.value = false
+    dismissPowerWarning()
   }, POWER_COUNTDOWN_STALE_MS)
+}
+
+/**
+ * 请求主进程把窗口拉到最前并临时置顶。
+ * 光靠窗口 focus() 会被 Windows 的前台锁定挡下，用户很容易错过即将执行的电源操作。
+ */
+const raisePowerWarning = (): void => {
+  if (powerWarningRaised) return
+  powerWarningRaised = true
+  const request = window.electronAPI?.powerWarningStart?.()
+  void request?.catch(error => {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.warn(`请求窗口置顶失败: ${errorMsg}`)
+  })
+}
+
+/** 撤回置顶（倒计时结束、已取消，或推送中断后按超时清除时调用）。 */
+const dismissPowerWarning = (): void => {
+  if (!powerWarningRaised) return
+  powerWarningRaised = false
+  const request = window.electronAPI?.powerWarningEnd?.()
+  void request?.catch(error => {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.warn(`撤回窗口置顶失败: ${errorMsg}`)
+  })
 }
 
 const handlePowerCountdownUpdated = (data: WSPowerCountdownData): void => {
   powerMutationSequence++
   powerCountdown.value = data
   powerCountdownDisconnected.value = false
+  raisePowerWarning()
   if (powerCountdownStaleTimer !== undefined) {
     window.clearTimeout(powerCountdownStaleTimer)
   }
@@ -193,6 +225,7 @@ const handlePowerCountdownCancelled = (): void => {
   }
   powerCountdown.value = null
   powerCountdownDisconnected.value = false
+  dismissPowerWarning()
 }
 
 /**
@@ -373,6 +406,8 @@ export function disposeAppLifecycle(): void {
     window.clearTimeout(powerCountdownStaleTimer)
     powerCountdownStaleTimer = undefined
   }
+  // 释放后不再有倒计时推送，别把窗口留在置顶状态
+  dismissPowerWarning()
   endIntentionalBackendRestart('生命周期协调器释放')
   dismissDisconnectIncident()
   // 4 小时更新检查是应用级定时器，跟着生命周期一起停，不绑任何页面
@@ -402,6 +437,7 @@ const runRuntimeSupervisedClose = async (): Promise<void> => {
 }
 
 const runCloseFlow = async (): Promise<void> => {
+  backendClosing = true
   logger.info('开始执行退出并关闭后端流程')
   const { showClosingOverlay } = useAppClosing()
   showClosingOverlay()
@@ -476,6 +512,7 @@ const runCloseFlow = async (): Promise<void> => {
 }
 
 const runBackendRequestedClose = async (): Promise<void> => {
+  backendClosing = true
   // 后端主动要求前端关闭：后端自行退出中，前端不再发 /close、不重启、不 taskkill
   const { showClosingOverlay } = useAppClosing()
   showClosingOverlay()
@@ -500,7 +537,37 @@ const runBackendRequestedClose = async (): Promise<void> => {
  */
 export function closeApp(): Promise<void> {
   if (closePromise) return closePromise
-  closePromise = runCloseFlow().catch(async error => {
+  closePromise = (async () => {
+    let prepared = false
+    let preparationToken: number | null | undefined
+    try {
+      // 保存期间的超时只能撤销退出，保存完成后再启动后端关闭的强制清理兜底。
+      preparationToken = await window.electronAPI?.appPrepareQuit?.()
+      if (preparationToken !== null) prepared = await prepareAppClose()
+      if (prepared && preparationToken !== undefined && preparationToken !== null) {
+        prepared = (await window.electronAPI?.appConfirmQuit?.(preparationToken)) === true
+        if (!prepared) notification.warning({ message: t('comp.closePreparationTimedOut') })
+      }
+    } catch (error) {
+      prepared = false
+      logger.error(`退出前保存失败: ${error instanceof Error ? error.message : String(error)}`)
+    }
+    // 后端主动关闭已接管退出，准备阶段的迟到结果不能撤销它或再请求一次关闭。
+    if (closeRequestedByBackend) return
+    if (!prepared) {
+      // 主进程可能已隐藏窗口并启动兜底计时；取消退出必须同时撤销它们。
+      try {
+        cancelAppClose()
+        await window.electronAPI?.appCancelQuit?.(preparationToken ?? undefined)
+      } catch (error) {
+        logger.error(`取消退出失败: ${error instanceof Error ? error.message : String(error)}`)
+      } finally {
+        closePromise = null
+      }
+      return
+    }
+    await runCloseFlow()
+  })().catch(async error => {
     // 关闭流程异常时只在确认后端已退出后通知主进程结束；否则保留遮罩，
     // 由 Electron 主进程的最终超时兜底再次执行串行 taskkill。
     const errorMsg = error instanceof Error ? error.message : String(error)

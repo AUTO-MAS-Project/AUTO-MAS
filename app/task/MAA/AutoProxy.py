@@ -42,11 +42,14 @@ from app.models.config import (
 )
 from app.models.ConfigBase import MultipleConfig
 from app.models.emulator import DeviceBase, DeviceInfo
+from app.models.notification import NotificationImage
 from app.models.schema import WSTaskNoticeData
-from app.models.task import LogRecord, ScriptItem, TaskExecuteBase
+from app.models.task import LogRecord, ScriptItem
 from app.services import Notify, System
+from app.task.base import ScriptAutoProxyBase
 from app.task.emulator_core import close_emulator
 from app.task.general.tools import execute_script_task
+from app.task.notify_core import load_screenshot_images, screenshot_entries
 from app.task.proxy_helpers import (
     CONFIG_SOURCE_SCRIPT,
     CONFIG_SOURCE_USER,
@@ -68,10 +71,16 @@ from app.utils.constants import (
 )
 from app.utils.io import mark_native_config_injected, read_file, write_file
 
-from .base_preset import maa_task_identity, seed_maa_base_config
+from . import api_service as maa_api
+from .base_preset import (
+    ensure_maa_default_configuration,
+    maa_task_identity,
+    seed_maa_base_config,
+)
 from .tools import (
     agree_bilibili,
     ensure_game_updated,
+    log_statistics,
     push_notification,
     update_maa,
 )
@@ -89,7 +98,9 @@ from .tools.cultivate import (
     parse_depot_payload,
     resolve_progression,
     summarize_achievements,
+    takeover_notice_patch_value,
 )
+from .tools.screenshot import capture_current_screen, collect_maa_failure_image
 
 # OLD: 旧版 MAA（PR #17392 前）gui.json 的 ClientType 字符串 → 新版枚举整数映射
 # 新版：Official=0, Bilibili=1, YoStarEN=2, YoStarJP=3, YoStarKR=4, txwy=5
@@ -801,7 +812,7 @@ def _build_activity_priority_fight(
     return activity_fight
 
 
-class AutoProxyTask(TaskExecuteBase):
+class AutoProxyTask(ScriptAutoProxyBase):
     """自动代理模式"""
 
     # 养成采集状态：prepare() 每轮重置；类级默认保证未跑 prepare 的
@@ -869,6 +880,12 @@ class AutoProxyTask(TaskExecuteBase):
     async def prepare(self):
 
         self.maa_process_manager = ProcessManager()
+        # 本轮打开的模拟器信息；收尾补截失败画面时取 adb 地址用
+        self.emulator_info: DeviceInfo | None = None
+        # 失败尝试在关模拟器前补截的现场画面；收尾组装通知时消费
+        self._failure_shot: Path | None = None
+        # 本用户的失败画面资源（标签+图片），manager 汇总「代理结果」时收集
+        self.report_image_pairs: list[tuple[str, NotificationImage]] = []
         self.maa_log_monitor = LogMonitor(
             (1, 20),
             "%Y-%m-%d %H:%M:%S",
@@ -1021,6 +1038,7 @@ class AutoProxyTask(TaskExecuteBase):
                             self.cur_user_config.get("Info", "Server")
                         ],
                     )
+                    self.emulator_info = emulator_info
                 except Exception as e:
                     logger.opt(exception=True).warning(
                         f"用户: {self.cur_user_uid} - 模拟器启动失败: {e}"
@@ -1071,6 +1089,15 @@ class AutoProxyTask(TaskExecuteBase):
 
                 await self.set_maa(emulator_info)
 
+                # 本轮 MAA 的日志从启动前的文件末尾开始读：gui.log 追加写且跨
+                # 运行保留，历史内容里带完成/失败标志的旧行（时间戳闸门分辨不出
+                # 它们的「未来」时间戳）会被整段当成本轮日志，MAA 刚启动就被判
+                # 失败，随后反复重启模拟器（#19）。
+                log_offset = (
+                    self.maa_log_path.stat().st_size
+                    if self.maa_log_path.is_file()
+                    else 0
+                )
                 logger.info(f"启动MAA进程: {self.maa_exe_path}")
                 self.wait_event.clear()
                 await self.maa_process_manager.open_process(self.maa_exe_path)
@@ -1084,7 +1111,9 @@ class AutoProxyTask(TaskExecuteBase):
                     f"running={await self.maa_process_manager.is_running()}"
                 )
                 await self.maa_log_monitor.start_monitor_file(
-                    self._resolve_log_file_path, self.log_start_time
+                    self._resolve_log_file_path,
+                    self.log_start_time,
+                    initial_offset=log_offset,
                 )
                 await self.wait_event.wait()
                 await self.maa_log_monitor.stop()
@@ -1110,6 +1139,9 @@ class AutoProxyTask(TaskExecuteBase):
                     )
 
                     await self.maa_process_manager.kill()
+                    # 关模拟器之前把现场画面留下来：模拟器一关 adb 就补不到了。
+                    # 每次失败尝试都刷新，最后一次失败的画面才是最终现场。
+                    self._failure_shot = await self._take_failure_shot()
                     await close_emulator(self)
                     await System.kill_process(self.maa_exe_path)
 
@@ -1219,7 +1251,7 @@ class AutoProxyTask(TaskExecuteBase):
                 return
             # 森空岛快照走 TTL 缓存（force=False）：注入时刚强刷过，运行末
             # 复用当轮观测即可；缓存过期才再拉一次（决策 38）
-            skland = await Config.get_maa_cultivate_skland_progression(
+            skland = await maa_api.get_cultivate_skland_progression(
                 str(self.script_info.script_id), str(self.cur_user_uid)
             )
             context = ProviderContext(
@@ -1241,6 +1273,10 @@ class AutoProxyTask(TaskExecuteBase):
                     "CultivateTargets",
                     json.dumps(dump_cultivate_targets(updated), ensure_ascii=False),
                 )
+                # 最后一个目标达成被移除后目标清空：接管已不可能，残留的接管
+                # 提示要一并清掉——这条路不经过用户配置写入漏斗
+                if not updated:
+                    await self._set_cultivate_notice("")
                 removed = summarize_achievements(
                     targets, achievements, load_oper_box_names(context)
                 )
@@ -1272,24 +1308,28 @@ class AutoProxyTask(TaskExecuteBase):
             (养成任务配置, 是否存在原始目标, 是否接管抑制库存保持)
         """
 
-        if not self.cur_user_config.get("Task", "IfCultivate"):
-            await self._set_cultivate_notice("")
-            return None, False, False
+        # 早退判定与配置写入漏斗共用同一口径函数：notice 非 None 即「开关关闭
+        # 或无有效目标」，本轮不可能接管——恢复 dev 原有的开关早退，防止关掉
+        # 养成后仍按残留目标注入并抑制库存保持
+        raw_targets: object
         try:
             raw_targets = json.loads(
                 self.cur_user_config.get("Task", "CultivateTargets")
             )
         except (TypeError, ValueError):
             raw_targets = []
-        targets = parse_cultivate_targets(raw_targets)
-        if not targets:
-            await self._set_cultivate_notice("")
+        notice = takeover_notice_patch_value(
+            self.cur_user_config.get("Task", "IfCultivate"), raw_targets
+        )
+        if notice is not None:
+            await self._set_cultivate_notice(notice)
             return None, False, False
+        targets = parse_cultivate_targets(raw_targets)
 
         try:
             # 森空岛练度注入前强刷（决策 38：注入前重新查询一次，滞后≈0）；
             # 未绑定/凭据失效/网络失败返回 None，链短路落 local，不炸注入
-            skland = await Config.get_maa_cultivate_skland_progression(
+            skland = await maa_api.get_cultivate_skland_progression(
                 str(self.script_info.script_id), str(self.cur_user_uid), force=True
             )
             (
@@ -1442,18 +1482,9 @@ class AutoProxyTask(TaskExecuteBase):
         gui_set = read_maa_config_with_fallback(self.maa_set_path, "gui.json")
         gui_new_set = read_maa_config_with_fallback(self.maa_set_path, "gui.new.json")
 
-        # 多配置使用默认配置（gui.new.json 的方案列表可能与 gui.json 不一致，缺失当前方案时保留其自有 Default）
-        if gui_set["Current"] != "Default":
-            gui_set["Configurations"]["Default"] = gui_set["Configurations"][
-                gui_set["Current"]
-            ]
-            gui_new_configurations = gui_new_set.setdefault("Configurations", {})
-            if gui_set["Current"] in gui_new_configurations:
-                gui_new_configurations["Default"] = gui_new_configurations[
-                    gui_set["Current"]
-                ]
-            gui_new_configurations.setdefault("Default", {})
-            gui_set["Current"] = "Default"
+        # 多配置使用默认配置（gui.new.json 的方案列表可能与 gui.json 不一致，缺失当前方案时保留其自有 Default）；
+        # Default 本身也可能缺失——直控/沿用安装目录配置时该文件不由 MAS 生成，兜底必须无条件执行。
+        ensure_maa_default_configuration(gui_set, gui_new_set)
 
         # 各配置部分的引用
         global_set = gui_set["Global"]
@@ -2078,8 +2109,14 @@ class AutoProxyTask(TaskExecuteBase):
         elif "任务出错: 开始唤醒" in log:
             self.cur_user_log.status = "MAA 未能正确登录 PRTS"
         # MAA v6.18.0-beta.3 起任务出错时收尾标题改为「任务已完成，但出现错误！」，
-        # 只有全部成功才打「任务已全部完成！」，完成判定两个都要认。
-        elif "任务已全部完成！" in log or "任务已完成，但出现错误！" in log:
+        # 只有全部成功才打「任务已全部完成！」；v6.19.0-beta.1（5e502a811）又把
+        # 出错标题改为「任务已结束，以下任务出现错误:」并附失败任务清单，
+        # 完成判定三个都要认。
+        elif (
+            "任务已全部完成！" in log
+            or "任务已完成，但出现错误！" in log
+            or "任务已结束，以下任务出现错误" in log
+        ):
             # 关闭时不读取/反推来源队列；成功与失败均取自 MAA 本轮输出。
             for en_task, zh_task in zip(MAA_TASKS, MAA_TASKS_ZH):
                 if (
@@ -2134,6 +2171,35 @@ class AutoProxyTask(TaskExecuteBase):
             logger.info(f"MAA 任务结果: {self.cur_user_log.status}, 日志锁已释放")
             self.wait_event.set()
 
+    async def _take_failure_shot(self) -> Path | None:
+        """取一张失败现场画面：上游 debug/interface 图优先，adb 补截兜底。
+
+        上游图是 MAA 在任务链失败/停止瞬间落的缓存帧；登录链失败、进程超时
+        这些上游不落图的场景走 adb 补截当前画面（截到的可能是 MAA 结束动作
+        退游戏后的桌面）。诊断旁路：任何失败只记日志并返回 ``None``。
+        """
+
+        try:
+            shot: Path | None = await asyncio.to_thread(
+                collect_maa_failure_image,
+                self.maa_root_path,
+                not_before=self.log_start_time,
+            )
+            if shot is None:
+                shot = await asyncio.wait_for(
+                    capture_current_screen(
+                        adb_path=self.emulator_manager.get_adb_path(),
+                        adb_address=self.emulator_info.adb_address
+                        if self.emulator_info is not None
+                        else "",
+                    ),
+                    timeout=60,
+                )
+        except Exception as e:
+            logger.warning(f"获取失败画面失败: {e}")
+            return None
+        return shot
+
     async def final_task(self):
         if self.check_result != "Pass":
             logger.info(f"MAA 检查未通过，跳过任务收尾: {self.check_result}")
@@ -2147,8 +2213,20 @@ class AutoProxyTask(TaskExecuteBase):
         await self.maa_process_manager.kill()
         await System.kill_process(self.maa_exe_path)
         logger.info(f"MAA 收尾: 结束残留 MAA 进程: {self.maa_exe_path}")
+
         logger.info("MAA 收尾: 回写 MAA 配置")
         await agree_bilibili(self.maa_tasks_path, False)
+
+        # 是否成功提前判定：ExitEmulator 模式随后就关闭模拟器，失败画面的
+        # 补截必须赶在关模拟器之前
+        if_success = self.run_book["Annihilation"] and self.run_book["Routine"]
+
+        # 失败画面：失败尝试路径已在关模拟器前留下的优先；否则现在取
+        # （用户手动中止等未走失败清理的路径，模拟器此时仍开着）。成功轮不取。
+        failure_shot: Path | None = self._failure_shot
+        if not if_success and failure_shot is None:
+            failure_shot = await self._take_failure_shot()
+
         if self.script_config.get("Run", "TaskTransitionMethod") == "ExitEmulator":
             logger.info("用户任务结束, 关闭模拟器")
             await close_emulator(self)
@@ -2167,7 +2245,9 @@ class AutoProxyTask(TaskExecuteBase):
             )
             user_logs_list.append(log_path.with_suffix(".json"))
 
-            if await Config.save_maa_log(log_path, log_item.content, log_item.status):
+            if await log_statistics.save_maa_log(
+                log_path, log_item.content, log_item.status
+            ):
                 if_six_star = True
 
         statistics = await Config.merge_statistic_info(user_logs_list)
@@ -2185,13 +2265,33 @@ class AutoProxyTask(TaskExecuteBase):
                 self._cultivate_achievement_summary
             )
 
-        # 判断是否成功
-        if_success = self.run_book["Annihilation"] and self.run_book["Routine"]
         success_symbol = "√" if if_success else "X"
 
-        # 任务被中止时，只要日志中已经完成过体力任务，也应发送掉落统计。
-        should_send_statistics = if_success or _has_completed_sanity_task(
-            list(self.cur_user_item.log_record.values())
+        # 任务被中止时，只要日志中已经完成过体力任务，也应发送掉落统计；
+        # 失败轮取到现场画面时同样发送——登录失败这类开局即败的轮次，用户
+        # 只能靠图看到卡在哪，不能因为没跑过体力就把现场吞掉。
+        images: list[NotificationImage] = []
+        if not if_success and failure_shot is not None:
+            try:
+                loaded = await asyncio.to_thread(
+                    load_screenshot_images,
+                    [(self.cur_user_item.name, failure_shot)],
+                    # ID 带用户序号：manager 汇总拼接各用户的图，前缀不唯一
+                    # 会让邮件里同名 cid 互相覆盖
+                    image_id_prefix=f"maa{self.script_info.current_index}",
+                )
+                images = [image for _, image in loaded]
+                # 模板的「失败截图」块在这里组装；payload 走展平后的 images
+                statistics["screenshots"] = screenshot_entries(loaded)
+                # 供 manager 汇总「代理结果」收集（MaaFW 同款）
+                self.report_image_pairs = list(loaded)
+            except Exception as e:
+                logger.warning(f"失败画面转码失败，通知不带图: {e}")
+                images = []
+        should_send_statistics = (
+            if_success
+            or bool(images)
+            or _has_completed_sanity_task(list(self.cur_user_item.log_record.values()))
         )
         if should_send_statistics:
             try:
@@ -2200,6 +2300,7 @@ class AutoProxyTask(TaskExecuteBase):
                     f"{datetime.now().strftime('%m-%d')} |{success_symbol}|  {self.cur_user_item.name} 的自动代理统计报告",
                     statistics,
                     self.cur_user_config,
+                    images=images,
                 )
             except Exception as e:
                 logger.opt(exception=True).warning(f"推送统计通知时出现异常: {e}")

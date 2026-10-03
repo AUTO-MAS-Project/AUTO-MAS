@@ -10,6 +10,7 @@
 ## 开工前
 
 - 先确认当前分支、远端和工作区状态；不要回滚、覆盖或格式化无关改动。
+- 开工就从最新的 `origin/dev` 拉分支（先 `git fetch`；fork 里是上游 `dev`），不要在旧的本地 `dev` 或旧分支上接着改——分支越旧，同步时越容易把这期间别人合入的改动整份盖掉。
 - 仓库根目录没有 `.env` 时，提醒用户从 `.env.example` 复制一份（`copy .env.example .env`）后再开发；该文件不纳入版本库，缺少它的源码环境会被判定为生产环境，后端会真实向 Sentry 上报错误与性能数据。
 - 必须确认存在并加载 `.agents/skills/mas-skills/SKILL.md`；若不存在，明确提示用户缺少项目附属 Skills，并拒绝开工。
 - 加载 `mas-skills` 后，再按任务选择最小必要的 `mas-*` Skill。
@@ -23,16 +24,16 @@
 ## 分支与 PR
 
 - `main`：禁止协助 push / force push；禁止以 `main` 为 base 创建 PR。仅维护者将 `dev` 合入 `main` 用于发布。
-- `dev`：上游社区贡献的合并目标。外部贡献者应在自己的 fork 中从上游 `dev` 拉出开发分支，再向 `AUTO-MAS-Project/AUTO-MAS:dev` 提 PR。维护者直推 `dev` 的小修复同样适用碎片规则：用户可见的改动带一个 `changelog.d/` 碎片（格式同下），且不改 `CHANGELOG.md` 与版本号；带碎片的提交一进 `dev`，「入账更新日志碎片」工作流就会把它编译进 `CHANGELOG.md` 顶部的「未发布」段并删掉碎片。
+- `dev`：上游社区贡献的合并目标。外部贡献者应在自己的 fork 中从上游 `dev` 拉出开发分支，再向 `AUTO-MAS-Project/AUTO-MAS:dev` 提 PR。维护者直推 `dev` 的小修复同样适用碎片规则：用户可见的改动带一个 `changelog.d/` 碎片（格式同下），且不改 `CHANGELOG.md` 与版本号；「入账更新日志碎片」工作流每天北京时间 23:30 统一把已合并的碎片编译进 `CHANGELOG.md` 顶部的「未发布」段并删掉碎片；准备发版时再编译剩余碎片。
 - `tests/`：测试照旧在本地编写并运行，把验证命令与结论写进 PR 正文；**功能实现与 bug 修复的测试属于一次性验证产物**，实现改完、问题复现过后就没有长期价值，留在仓库只会持续抬高每次跑测试的时间成本，不提交；只有跨功能通用的公共与纯逻辑测试才进仓库。**提交前用 `git status` 自查，默认不提交 `tests/` 下的任何新增或修改**；确有例外时在 PR 正文单独说明理由，由维护者评估。
-- `release/{version}`：由发布流程维护，不接受直推。修复先进 `dev`，再以 cherry-pick PR 进 release 分支；PR 不得带入 `dev` 独有的提交，CI 会检查。cherry-pick PR 只带碎片（格式同下，合并后同样自动入账），不改版本号、不编译更新日志；要出补丁版时，在最新 tag 对应的 release 分支上运行「准备发版」（每次发版都会新建 `release/<tag>` 分支，在更老的分支上准备会因版本号重号被拒）。本流程上线前建出的 release 分支仍按旧规则运行，要在其上沿用新规则，需把新工作流、`scripts/changelog.py` 与 `sync` 后的 `CHANGELOG.md` 一并 cherry-pick 进去。
+- `release/{version}`：由发布流程维护，不接受直推。修复先进 `dev`，再以 cherry-pick PR 进 release 分支；PR 不得带入 `dev` 独有的提交，CI 会检查。cherry-pick PR 只带碎片（格式同下，同样晚间统一入账，发版前再编译剩余碎片），不改版本号、不编译更新日志；要出补丁版时，在最新 tag 对应的 release 分支上运行「准备发版」（每次发版都会新建 `release/<tag>` 分支，在更老的分支上准备会因版本号重号被拒）。本流程上线前建出的 release 分支仍按旧规则运行，要在其上沿用新规则，需把新工作流、`scripts/changelog.py` 与 `sync` 后的 `CHANGELOG.md` 一并 cherry-pick 进去。
 - 发版 PR：标题 `Release vX.Y.Z`，由「准备发版」工作流从 `dev` 或 `release/*` 创建，是唯一允许修改 `CHANGELOG.md`、`res/version.json` 与版本号的 PR；合并后由维护者手动运行「构建并发布应用程序」。外部贡献者不要开这类 PR。
 - 版本号只有 `vX.Y.Z` 与 `vX.Y.Z-beta.N` 两种形态：预发布号里的 `X.Y.Z` 就是将来的正式号，转正与最后一个 beta 同号；正式版热修出 `Z+1` 补丁版，从 release 分支发；N 只增不减。版本号由发版 PR 写入，其他 PR 不要改。
 
 ## 写作约束
 
 - Issue 只描述用户可观察的问题、需求、复现信息、环境与日志。
-- PR 正文保持 1 到 4 条摘要；关联 Issue 时使用 `Closes #n`。
+- PR 正文保持 1 到 4 条摘要；关联 Issue 时使用 `Closes #n`。写法与补充章节见 [.agents/skills/pr](.agents/skills/pr)。
 - 用户可见的功能或问题修复必须随 PR 新增一个更新日志碎片：在 `changelog.d/` 下新建 `<PR 号或分支名>.<分类>.md`，首行 `project: <项目键>`（**必填**，键见 `changelog.d/README.md` 的项目表：14 个专项（BetterGI 的键与显示名是 `bgi`、MaaEnd 是 `end`）加 主页 / 调度 / 模拟器 / 通知 / 工具 / 设置 / 更新 / Runtime，没有兜底键，归不进的按 README 的就近表归；只有 `dev` 碎片可以不写），正文一句面向用户的话、**不超过 50 字**，**一条 PR 只放一个碎片，并必须用一句最简洁的语言概括该 PR 的意义**，将全部改动合并为一句话。可用 `python scripts/changelog.py add <分类> <项目键> "<一句话>"` 生成（`dev` 碎片项目键写 `-`）。不要改 `CHANGELOG.md`、`res/version.json` 和任何版本号，它们只由入账工作流与发版 PR 更新；正文里不要写项目名前缀、PR 号和 ` by @用户` 署名，入账时按碎片的合并提交自动补成 `【项目】做了什么 (#PR) by @作者`。
 - 碎片分类写在文件名后缀：`breaking` 破坏性变更（置顶）、`feat` 新增、`change` 变更、`remove` 移除（含弃用）、`fix` 修复、`security` 安全、`dev` 开发流程（只影响贡献者，不进公告）。「本次亮点」没有后缀，由维护者给碎片加一行 `highlight: true` 标出，这条就进「本次亮点」而不是原分类。`CHANGELOG.md` 由脚本按 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 编译，不要手改。
 - 可选头部行：`author: 甲, 乙` 覆盖署名（替别人提交，或多人合作的 PR 把人列全；脚本不读 Co-authored-by，多人 PR 只有这一条路）；`highlight: true` 标亮点；`beta-only: true` 表示只进公测公告、转正汇总时自动丢掉。只加减 `highlight:` / `beta-only:` 不算改别人的碎片，其余改动别人的碎片会被检查拒绝。

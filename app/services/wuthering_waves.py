@@ -33,6 +33,8 @@ logger = get_logger("鸣潮更新检查")
 _CLIENT_RELATIVE_PATH = Path("Client/Binaries/Win64/Client-Win64-Shipping.exe")
 _LAUNCHER_PREFERENCE_RELATIVE_PATH = Path("kr_game_cache/kr_game_temp.bin")
 _LAUNCHER_STATE_RELATIVE_PATH = Path("launcherDownloadConfig.json")
+# 启动器记录不可用时，在启动器目录树下试的最大嵌套层数（安装目录是它的子目录）
+_CLIENT_SEARCH_MAX_DEPTH = 2
 
 # 官方启动器的版本元数据入口。除这两个 URL 外不要硬编码任何 CDN 路径，
 # 其余路径一律从接口返回的清单里取。
@@ -64,6 +66,32 @@ class WutheringWavesUpdateInfo:
     api_url: str
 
 
+def _resources_install_dir(payload: Any) -> str:
+    """从启动器记录的 `resources` 里取游戏安装目录（改版后的新位置）。
+
+    旧记录的安装目录是顶层 `installDirPath`；新记录顶层只剩启动器偏好项，
+    安装目录按 HD/UHD/SD 各记一条，且 `resources` 是「装着 JSON 的字符串」，
+    要解两层。取不到一律返回空串——**绝不能放行成空 Path**，
+    `Path("")` 是当前工作目录，更新链会照着它往盘上写。
+    """
+
+    if not isinstance(payload, dict):
+        return ""
+    value: Any = payload.get("resources")
+    if isinstance(value, str):
+        try:
+            value = json.loads(value)
+        except json.JSONDecodeError:
+            return ""
+    if not isinstance(value, list):
+        return ""
+    for item in value:
+        install_dir = item.get("installDirPath") if isinstance(item, dict) else None
+        if isinstance(install_dir, str) and install_dir.strip():
+            return install_dir
+    return ""
+
+
 def _decode_official_launcher_install_dir(launcher_path: Path) -> Path:
     """Decode the official launcher's read-only game install metadata."""
 
@@ -84,7 +112,13 @@ def _decode_official_launcher_install_dir(launcher_path: Path) -> Path:
 
     install_dir = payload.get("installDirPath") if isinstance(payload, dict) else None
     if not isinstance(install_dir, str) or not install_dir.strip():
-        raise ValueError("鸣潮启动器游戏路径记录缺少 installDirPath，请重新导入启动器")
+        # 启动器改版后顶层不再有 installDirPath，安装目录迁进了 resources
+        install_dir = _resources_install_dir(payload)
+    if not isinstance(install_dir, str) or not install_dir.strip():
+        raise ValueError(
+            "鸣潮启动器未记录游戏安装目录，"
+            "请在「直接启动」下手动选择游戏客户端文件，或重新导入官方启动器"
+        )
 
     return Path(install_dir)
 
@@ -97,6 +131,23 @@ def resolve_wuthering_waves_install_dir(launcher_path: Path) -> Path:
     return _decode_official_launcher_install_dir(launcher_path)
 
 
+def is_wuthering_waves_record_usable(launcher_path: Path) -> bool:
+    """本地记录能否支撑启动前自动更新。
+
+    更新检查依赖两份本地记录：启动器记录解出的安装目录，与该目录下的
+    ``launcherDownloadConfig.json``（缺一即无法判断版本）。客户端 exe 有
+    目录搜索兜底，更新没有——记录读不出来时启动照跑、更新无从下手，
+    调用方据此决定要不要提示用户，别让更新静默停掉。
+    """
+
+    try:
+        install_dir = resolve_wuthering_waves_install_dir(launcher_path)
+        read_wuthering_waves_local_state(install_dir)
+    except (FileNotFoundError, ValueError):
+        return False
+    return True
+
+
 def _decode_official_launcher_process_path(launcher_path: Path) -> Path:
     install_dir = _decode_official_launcher_install_dir(launcher_path)
     process_path = install_dir / _CLIENT_RELATIVE_PATH
@@ -107,12 +158,43 @@ def _decode_official_launcher_process_path(launcher_path: Path) -> Path:
     return process_path
 
 
+def _find_client_process_below(root: Path) -> Path | None:
+    """在启动器目录树下按有限深度找鸣潮客户端 exe。
+
+    安装目录是启动器目录的子目录（实测 `launcher.exe` 同级还套着一层
+    `Wuthering Waves Game`），记录不可用时靠它自愈；只按约定相对路径
+    逐层试，不做整树遍历。
+    """
+
+    for depth in range(_CLIENT_SEARCH_MAX_DEPTH + 1):
+        pattern = "/".join(["*"] * depth + [_CLIENT_RELATIVE_PATH.as_posix()])
+        for candidate in sorted(root.glob(pattern)):
+            if candidate.is_file():
+                return candidate
+    return None
+
+
 def resolve_wuthering_waves_process_path(launcher_path: Path) -> Path:
-    """Resolve the game process exe without reading or modifying game resources."""
+    """Resolve the game process exe without reading or modifying game resources.
+
+    记录解不出安装目录时退回目录搜索：上游改过记录结构，改版期整批用户会同时
+    失去启动能力，而「重新导入启动器」修不了记录内容。搜索只服务启动、已运行
+    检测与收尾，**不进更新链**——更新要往安装目录写盘，不允许猜。
+    """
 
     if not launcher_path.is_file():
         raise FileNotFoundError("鸣潮启动器不存在，请重新导入启动器")
-    return _decode_official_launcher_process_path(launcher_path)
+    try:
+        return _decode_official_launcher_process_path(launcher_path)
+    except (FileNotFoundError, ValueError):
+        if launcher_path.name.lower() != "launcher.exe":
+            # 选错文件是配置错误，要原样报出去，别靠目录搜索掩盖
+            raise
+        process_path = _find_client_process_below(launcher_path.parent)
+        if process_path is None:
+            raise
+        logger.warning(f"鸣潮启动器记录不可用，已按目录搜索定位客户端: {process_path}")
+        return process_path
 
 
 def read_wuthering_waves_local_state(install_dir: Path) -> WutheringWavesLocalState:

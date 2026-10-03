@@ -6,8 +6,11 @@
           :model-value="formData.Info.Mode"
           :options="maaEndConfigModeOptions"
           :disabled="loading"
+          :quick-config="quickConfig"
+          :quick-config-disabled="quickConfigDisabled"
           :alert-message="t('edit.configSourceHintBase')"
           @change="$emit('modeChange', $event)"
+          @quick-config-change="$emit('quickConfigChange', $event)"
         />
       </a-col>
     </a-row>
@@ -16,23 +19,20 @@
       <a-col :span="24">
         <a-form-item :label="t('edit.maaEndConfigActions')">
           <div class="config-source-control">
-            <a-button
-              v-if="formData.Info.Mode !== '直控'"
-              type="primary"
-              ghost
-              :loading="configLoading"
-              :disabled="loading || showConfigMask"
-              @click="$emit('configure')"
-            >
-              <template #icon>
-                <SettingOutlined />
-              </template>
-              {{
-                showConfigMask
-                  ? t('edit.maaEndConfiguring')
-                  : t('edit.maaEndConfigureSource', { source: currentConfigModeLabel })
-              }}
-            </a-button>
+            <a-tooltip v-if="formData.Info.Mode !== '直控'" :title="maaEndOpenConfigTip">
+              <a-button
+                type="primary"
+                ghost
+                :loading="configLoading"
+                :disabled="loading || showConfigMask"
+                @click="$emit('configure')"
+              >
+                <template #icon>
+                  <SettingOutlined />
+                </template>
+                {{ showConfigMask ? t('edit.maaEndConfiguring') : t('edit.maaEndOpenConfig') }}
+              </a-button>
+            </a-tooltip>
             <a-button
               v-if="formData.Info.Mode !== '直控'"
               type="default"
@@ -74,16 +74,23 @@ defineEmits<{
   importConfig: []
   scriptConfig: []
   modeChange: [value: boolean | string]
+  quickConfigChange: [value: boolean]
 }>()
 
 const formData = defineModel<any>('formData', { required: true })
-defineProps<{
-  loading: boolean
-  configLoading?: boolean
-  importLoading?: boolean
-  showConfigMask?: boolean
-}>()
+withDefaults(
+  defineProps<{
+    loading: boolean
+    configLoading?: boolean
+    importLoading?: boolean
+    showConfigMask?: boolean
+    quickConfig?: boolean | undefined
+    quickConfigDisabled?: boolean | undefined
+  }>(),
+  { quickConfig: undefined, quickConfigDisabled: undefined }
+)
 
+// 配置来源三态卡片（value 为后端 Info.Mode 取值，驱动逻辑需保持原样；文案走词表，与其它专项同一套 key）
 const maaEndConfigModeOptions: Array<{
   value: '脚本' | '用户' | '直控'
   title: string
@@ -92,26 +99,29 @@ const maaEndConfigModeOptions: Array<{
 }> = [
   {
     value: '脚本',
-    title: '脚本',
-    description: '使用脚本级共享配置，所有用户共用。',
+    title: t('edit.script'),
+    description: t('edit.useSharedScriptLevel'),
     icon: 'file',
   },
   {
     value: '用户',
-    title: '用户',
-    description: '使用当前用户独立配置，与脚本配置隔离。',
+    title: t('edit.user'),
+    description: t('edit.useThisUserS'),
     icon: 'database',
   },
   {
     value: '直控',
-    title: '直控',
-    description: '直接使用 MaaEnd 原有配置，由 MaaEnd GUI 维护。',
+    title: t('edit.directControl'),
+    description: t('edit.nativeConfigSourceDescription'),
     icon: 'setting',
   },
 ]
 
-const currentConfigModeLabel = computed(() =>
-  formData.value.Info.Mode === '用户' ? '用户独立' : '脚本共享'
+// 入口只说「打开 MaaEnd 配置界面」，共享/独立的范围放进提示，避免「配置共享/配置独立」这种抽象说法。
+const maaEndOpenConfigTip = computed(() =>
+  formData.value.Info.Mode === '用户'
+    ? t('edit.maaEndOpenConfigIndependentTip')
+    : t('edit.maaEndOpenConfigSharedTip')
 )
 </script>
 

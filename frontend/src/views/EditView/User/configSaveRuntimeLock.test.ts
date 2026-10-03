@@ -31,11 +31,11 @@ describe('user config runtime save lock', () => {
     }
 
     const maa = readSource('./MAAUserEdit.vue')
-    expect(maa).toContain(
-      "const path = await window.electronAPI?.selectFile([\n      { name: t('edit.jsonFiles'), extensions: ['json'] },"
+    expect(maa).toMatch(
+      /const path = await window\.electronAPI\?\.selectFile\(\[\s*\{ name: t\('edit.jsonFiles'\), extensions: \['json'\] \},/
     )
     expect(maa.indexOf('if (path && path.length > 0)')).toBeLessThan(
-      maa.indexOf("if (configLocked.value) {\n        message.error(t('edit.configLocked'))")
+      maa.search(/if \(configLocked\.value\) \{\s*message\.error\(t\('edit.configLocked'\)\)/)
     )
 
     const zzzod = readSource('./ZzzOdUserEdit.vue')

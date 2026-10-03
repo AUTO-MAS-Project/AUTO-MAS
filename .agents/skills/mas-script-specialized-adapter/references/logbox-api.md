@@ -51,6 +51,12 @@ log_box 是**进程无关**的组件，结果落点由**宿主**决定：
 
 - **宿主 = MAS 进程**（专项适配器内实例化）：构造时注入 `sink(log_type, text, ts)`
   直接写 `cur_user_item.push_log`，对适配器完全透明。**这是当前唯一已接通的宿主路径**。
+  节点详情上调度台有两条通用通道，都不在 sink 里做：① 运行期——manager 报告聚合后调
+  `app/tools/push_log.py` 的 `mirror_report_to_dispatch(script_info, report_text)`
+  把报告正文整块镜像进调度台日志；② 完成后——任务完成事件的结果文本由 task_manager
+  用 `build_task_result_text` 组装（前端完成时会用这段文本整体替换日志面板，
+  **这是任务结束后的最终展示面**）。两者与推送报告同一份 `build_user_result_text`
+  渲染、同一套 PushLogMode 与「失败」过滤，未配置推送的用户也能看到同样详情。
 - **宿主 = 用户脚本子进程**（`from app.log_box import log_box`）：不注入 sink，
   box 把处理结果渲染为 `@@LOGBOX@@` 受控 stdout 标记回传，MAS 侧
   `check_log` 嗅探后写入 `cur_user_item.push_log`。
@@ -329,8 +335,8 @@ push_log 落进 `cur_user_item.push_log`（`list[tuple]`，元素为 `(log_type,
   紧跟该用户的节点详情，多账号任务时各用户节点归属清晰；「失败」类型条目仅在
   任务存在未完成用户时纳入（与 MAS 原生推送策略一致）。节点详情按用户级
   `push_log_mode`（`Notify.PushLogMode`）三态呈现：关闭 = 不输出；逐条 = 逐条带
-  采集时间戳（HH:MM）前缀；汇总 = 按（账号, 状态）聚合为一行；未设置模式的用户
-  （如通用脚本）保持逐条原样输出。
+  采集时间戳（HH:MM）前缀；汇总 = 按（账号, 状态）聚合为一行；未设置
+  `push_log_mode` 属性的对象按逐条输出（`UserItem` 字段默认「汇总」）。
 - 注入端点 = **专项 `manager.final_task` 汇总**：用它替代原 result 拼接，产物写入
   报告的 `result` 字段，随后 `push_notification("代理结果")` 交
   `app/task/notify_core.py` 的 `push_proxy_result` 推送。现行参考实现：okww 与

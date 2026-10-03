@@ -36,7 +36,11 @@ describe('ConfigRestoreSection runtime lock', () => {
     for (const filename of pages) {
       const pageUrl = `../${filename}`
       const pageSource = readFileSync(new URL(pageUrl, import.meta.url), 'utf8')
-      expect(pageSource).toContain(':disabled="configLocked"')
+      expect(pageSource).toContain(
+        filename === 'MAAUserEdit.vue'
+          ? ':disabled="configLocked || editorBusy"'
+          : ':disabled="configLocked"'
+      )
     }
   })
 

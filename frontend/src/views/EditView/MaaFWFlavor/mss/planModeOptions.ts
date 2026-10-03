@@ -1,5 +1,5 @@
 // MSS 用户页「计划表」下拉的选项：固定 + MSS 消费方的计划表。
-// 由 prepareUserPage 在页面加载期间取好（和读取 interface 并行），下拉渲染出来时选项已经在了，
+// 由 userPage.prepare 在页面加载期间取好（和读取 interface 并行），下拉渲染出来时选项已经在了，
 // 不会先闪一下计划表 id。页面同一时刻只有一个，模块级状态足够，每次进页面重取。
 
 import { shallowRef } from 'vue'

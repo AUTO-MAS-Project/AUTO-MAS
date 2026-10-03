@@ -3,6 +3,7 @@ from __future__ import annotations
 from .env import (
     build_agent_env_manifest,
     prepare_agent_envs,
+    project_python_agent_binary_path,
     write_agent_compat_shims,
 )
 from .models import (
@@ -26,6 +27,7 @@ __all__ = [
     "build_maafw_agent_command_plans",
     "compute_isolated_venv_path",
     "prepare_agent_envs",
+    "project_python_agent_binary_path",
     "venv_python_exe",
     "write_agent_compat_shims",
 ]

@@ -19,6 +19,14 @@ export type MaaEndOptionsOut = {
      */
     message?: string;
     /**
+     * MaaEnd 资源声明的项目名称
+     */
+    projectName?: string;
+    /**
+     * MaaEnd 资源声明的项目版本
+     */
+    projectVersion?: string;
+    /**
      * MaaEnd 自动采集地区与分类
      */
     autoCollectGroups?: Array<MaaEndAutoCollectGroup>;

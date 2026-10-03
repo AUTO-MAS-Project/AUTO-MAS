@@ -1,9 +1,11 @@
 import { translate as t } from '@/i18n'
 import { ref } from 'vue'
 import { Service } from '@/api'
+import type { GlobalConfig_Update } from '@/api'
 import { message } from 'ant-design-vue'
 import { useAudioPlayer } from '@/composables/useAudioPlayer'
 import type { ChangelogData } from '@/utils/changelog'
+import { isUpdatePaused } from '@/composables/updatePause'
 
 const logger = window.electronAPI.getLogger('更新检查器')
 
@@ -52,22 +54,26 @@ const showUpdateModal = (data: ChangelogData, version: string) => {
   lastShownVersion = version
 }
 
-// 检查自动更新设置是否开启
-const checkAutoUpdateEnabled = async (): Promise<boolean> => {
+// 拉取 Update 配置段（自动更新开关与暂停截止日期一次读完）；返回 null 表示读取失败
+const fetchUpdateSettings = async (): Promise<GlobalConfig_Update | null> => {
   try {
     const response = await Service.getScriptsApiSettingGetPost()
     if (response.code === 200 && response.data) {
-      const isEnabled = response.data.Update?.IfAutoUpdate === true
-      if (!isEnabled) {
-        logger.info('自动更新已关闭，禁用自动检查更新')
-      }
-      return isEnabled
+      return response.data.Update ?? {}
     }
+    logger.warn(`获取更新设置失败: code=${response.code}`)
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.warn(`获取自动更新设置失败: ${errorMsg}`)
+    logger.warn(`获取更新设置失败: ${errorMsg}`)
   }
-  return false
+  return null
+}
+
+// 暂停更新状态三态：true=暂停中 / false=未暂停 / null=读取失败（状态未知，按失败关闭处理）
+export const readUpdatePauseState = async (): Promise<boolean | null> => {
+  const updateSettings = await fetchUpdateSettings()
+  if (!updateSettings) return null
+  return isUpdatePaused(updateSettings.PauseUntil)
 }
 
 export function useUpdateChecker() {
@@ -75,10 +81,19 @@ export function useUpdateChecker() {
   const pollOnce = async () => {
     if (isPolling.value) return
 
-    // 检查自动更新设置是否开启
-    const autoUpdateEnabled = await checkAutoUpdateEnabled()
-    if (!autoUpdateEnabled) {
+    // 一次读完开关与暂停状态；读取失败时状态未知，按失败关闭跳过本次自动检查
+    const updateSettings = await fetchUpdateSettings()
+    if (!updateSettings) {
+      logger.info('更新设置读取失败，跳过本次定时检查')
+      return
+    }
+    if (updateSettings.IfAutoUpdate !== true) {
       logger.info('自动检查更新已关闭，跳过定时检查')
+      return
+    }
+    if (isUpdatePaused(updateSettings.PauseUntil)) {
+      // startPolling 仍会起定时器，到期后下个 tick 自动恢复
+      logger.info('更新已暂停，跳过定时检查')
       return
     }
 
@@ -161,15 +176,24 @@ export function useUpdateChecker() {
     if (startPollingRequest) return startPollingRequest
 
     startPollingRequest = (async () => {
-      // 检查自动更新设置是否开启
-      const autoUpdateEnabled = await checkAutoUpdateEnabled()
-      if (!autoUpdateEnabled) {
+      // 一次读完开关与暂停状态；读取失败时状态未知，按失败关闭不起定时器
+      const updateSettings = await fetchUpdateSettings()
+      if (!updateSettings) {
+        logger.info('更新设置读取失败，不启动定时任务')
+        return
+      }
+      if (updateSettings.IfAutoUpdate !== true) {
         logger.info('自动检查更新已关闭，不启动定时任务')
         return
       }
       if (updateCheckTimer) return
 
-      logger.info('启动定时版本检查任务')
+      // 暂停更新期间定时器照常待命（每次 tick 由 pollOnce 门控跳过），到期后自动恢复
+      if (isUpdatePaused(updateSettings.PauseUntil)) {
+        logger.info('更新已暂停，定时版本检查任务待命（暂停期内不检查，到期后自动恢复）')
+      } else {
+        logger.info('启动定时版本检查任务')
+      }
 
       // 延迟3秒后再执行首次检查，确保后端已经完全启动
       initialUpdateCheckTimer = setTimeout(async () => {

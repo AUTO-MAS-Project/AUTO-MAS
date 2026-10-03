@@ -58,6 +58,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from app.task.MaaFW.tools.core.log_redact import mask_home_path
 from app.task.MaaFW.tools.core.project_update import payloads
 from app.task.MaaFW.tools.core.project_update.apply import (
     project_state_dir_for,
@@ -72,7 +73,9 @@ from app.task.MaaFW.tools.core.project_update.contracts import (
     VIEW_MARKER_FILE_NAME,
 )
 from app.task.MaaFW.tools.core.project_update.projection import (
+    PROJECTION_REVISION,
     ProjectionError,
+    ProjectionPlan,
     build_projection_plan,
     is_shared_path,
     read_json_object,
@@ -452,6 +455,8 @@ class ViewResult:
     dropped: list[str] = field(default_factory=list)
     archive_dir: Path | None = None
     elapsed: float = 0.0
+    # 导入时从来源目录放进视图的私有状态文件（debug/ 下不是日志的那些，见 _seed_private_state）。
+    seeded: list[str] = field(default_factory=list)
 
 
 def _payload_or_error(root: Path, lineage: str, payload_id: str) -> tuple[Path, dict]:
@@ -507,6 +512,25 @@ def _differs_from(path: Path, payload_file: Path, entry: Mapping[str, Any]) -> b
     return sha256_file(path) != str(entry.get("sha256") or "")
 
 
+def _is_content_superset(
+    old_files: Mapping[str, Mapping[str, Any]],
+    new_files: Mapping[str, Mapping[str, Any]],
+) -> bool:
+    """新载荷是不是旧载荷的超集、共同路径内容相同（按清单哈希，大小写不敏感）。"""
+
+    if not old_files:
+        return False
+    new_hashes = {
+        rel.casefold(): str(entry.get("sha256") or "").lower()
+        for rel, entry in new_files.items()
+    }
+    for rel, entry in old_files.items():
+        digest = str(entry.get("sha256") or "").lower()
+        if not digest or new_hashes.get(rel.casefold()) != digest:
+            return False
+    return True
+
+
 def _local_modified_dir(
     view: Path, from_id: str, to_id: str, base: Path | None
 ) -> Path:
@@ -528,8 +552,13 @@ def _build_view_tree(
     private: Iterable[str] = (),
     archive_dropped: bool = False,
     same_payload: bool = False,
+    fills_only: bool = False,
 ) -> None:
     """§3.2 第 2–3 步：载荷的链接森林 + 私有状态承载。写 staging 一律 ``place_fresh``。
+
+    ``fills_only``：新载荷只是旧载荷加了些文件（投影补齐）。视图里已有的文件一律原样带过去
+    （版本绑定状态、被本地改过的受管文件、与新增路径同名的私有文件），不留档；只有视图里
+    没有的路径用新载荷的。
 
     载荷文件满足共用谓词的挂硬链接（与载荷 / blob 同一 inode），其余复制成视图私有的新
     文件——小文件、``config/`` 这些 agent 可能原地写的，视图里必须是自己的一份。
@@ -592,6 +621,15 @@ def _build_view_tree(
             parent = parent.parent
         return False
 
+    def _keep_view_copy(path: Path, rel: str, rel_path: Path) -> None:
+        """视图这份替掉 staging 里的载荷链接（``place_fresh`` 只摘目录项，不写载荷）。"""
+
+        if _blocked(rel_path):
+            _archive(path, rel)
+            return
+        payloads.place_fresh(path, staging / rel, link=True)
+        result.carried += 1
+
     for current, dir_names, file_names in os.walk(carry_from, onerror=_walk_error):
         current_path = Path(current)
         relative_dir = current_path.relative_to(carry_from)
@@ -615,7 +653,7 @@ def _build_view_tree(
             path = current_path / name
             rel = (relative_dir / name).as_posix()
             key = rel.casefold()
-            if key in VERSION_BOUND_STATE_FILES and not same_payload:
+            if key in VERSION_BOUND_STATE_FILES and not (same_payload or fills_only):
                 # 换载荷：staging 里已是新载荷那份（或没有），视图这份不带，见 contracts。
                 continue
             if _is_maafw_binding_path(key):
@@ -646,14 +684,22 @@ def _build_view_tree(
                     payloads.place_fresh(path, staging / rel, link=True)
                     result.carried += 1
                 elif _differs_from(path, payload_path / new_rel, new_files[new_rel]):
-                    # 新版本开始自带这个路径：载荷优先，视图那份留档。绝不能往 staging 里
-                    # 那个载荷硬链接上写（写穿防线）。
-                    _archive(path, rel)
+                    if fills_only:
+                        # 补齐：视图里已有的（用户自己拷进来的、#1110 写进来的）照旧用。
+                        _keep_view_copy(path, rel, relative_dir / name)
+                    else:
+                        # 新版本开始自带这个路径：载荷优先，视图那份留档。绝不能往 staging
+                        # 里那个载荷硬链接上写（写穿防线）。
+                        _archive(path, rel)
                 continue
             if old_payload_path is not None and _differs_from(
                 path, old_payload_path / old_rel, old_files[old_rel]
             ):
-                _archive(path, rel)
+                if fills_only:
+                    # 补齐不换内容：被本地改过（热更新）的受管文件原样带过去，不留档。
+                    _keep_view_copy(path, rel, relative_dir / name)
+                else:
+                    _archive(path, rel)
             elif archive_dropped and (
                 new_rel is None
                 or str(old_files[old_rel].get("sha256") or "").lower()
@@ -665,6 +711,37 @@ def _build_view_tree(
             # 在新载荷里 → staging 已是新内容；不在 → 新版本删掉了，不带。
 
 
+def _seed_private_state(
+    staging: Path, seed: Mapping[str, Path], result: ViewResult
+) -> None:
+    """导入：来源目录里投影留下、但载荷不收的运行期状态（``debug/`` 下不是日志的文件，
+    如 MaaEnd 的 ``debug/record/``、MPA 的 ``debug/*_zone_offset.json``）作为视图私有文件放进
+    staging。视图里已有同名文件（本脚本自己跑出来的）一律以视图为准；与新载荷撞路径的不放。
+    一律**复制**：链接会让 agent 原地写视图时写穿到用户的来源目录。"""
+
+    for rel, source in sorted(seed.items()):
+        target = staging / rel
+        if os.path.lexists(target):
+            continue
+        parent = target.parent
+        blocked = False
+        while parent != staging and staging in parent.parents:
+            if parent.exists() and not parent.is_dir():
+                blocked = True
+                break
+            parent = parent.parent
+        if blocked:
+            continue
+        try:
+            payloads.place_fresh(source, target, link=False)
+        except OSError as exc:
+            logger.warning(
+                f"[MFW 内嵌] 来源目录的运行期状态没放进视图，跳过: {rel}: {exc}"
+            )
+            continue
+        result.seeded.append(rel)
+
+
 def _realize_view(
     view: Path,
     lineage: str,
@@ -674,10 +751,12 @@ def _realize_view(
     carry: bool,
     switched_by: Mapping[str, Any] | None = None,
     assume_marker: Mapping[str, Any] | None = None,
+    seed_private: Mapping[str, Path] | None = None,
 ) -> ViewResult:
     """按载荷（重）建视图并原子换入。``carry=True`` 且视图有标记时就是 :func:`switch_view`；
     否则整棵换掉（没有标记的老副本、全新脚本）。``assume_marker`` 给没有标记的老副本
-    用（采纳）：把它当成已经挂在那个载荷上，私有文件照常带过去。"""
+    用（采纳）：把它当成已经挂在那个载荷上，私有文件照常带过去。``seed_private``（导入用，
+    项目相对路径 → 来源文件）：视图里没有的才放进去，见 :func:`_seed_private_state`。"""
 
     started = time.monotonic()
     root = payloads_root(base)
@@ -725,6 +804,18 @@ def _realize_view(
         version=version,
         from_payload=from_id,
     )
+    same_payload = bool(from_id) and from_id == payload_id
+    # 补齐切换（``projection_heal`` 按新投影规则重建出的同版本载荷）：新载荷是旧载荷的超集、
+    # 共同路径内容一字不差。按「同内容」处理：视图里的文件（版本绑定状态、被热更新改过的
+    # 受管文件）原样保留、不留档，只有视图里没有的新增文件落进来。只认同版本（与 archive_dropped
+    # 同一判据）：真正换版本时新版本恰好只多了文件（interface 没写 version 的项目新旧 interface
+    # 一字不差），也得按换版本走——新增路径上视图里的旧内容留档、以新版本为准。
+    fills_only = (
+        not same_payload
+        and old_payload_path is not None
+        and _same_version(str(old_manifest_version or ""), str(version or ""))
+        and _is_content_superset(old_files, new_files)
+    )
     journal = _journal_path(view.name, base)
     if journal.exists():
         raise EmbeddedProjectError("该脚本的项目上一次切换版本还没收尾，请重启后再试")
@@ -754,16 +845,20 @@ def _realize_view(
             carry_from=carry_from,
             old_files=old_files,
             old_payload_path=old_payload_path,
-            same_payload=bool(from_id) and from_id == payload_id,
+            same_payload=same_payload,
+            fills_only=fills_only,
             archive_dir=lambda: _local_modified_dir(view, from_id, payload_id, base),
             result=result,
             private=payloads.private_paths(root, lineage),
             archive_dropped=bool(
                 old_payload_path is not None
                 and from_id != payload_id
+                and not fills_only
                 and _same_version(str(old_manifest_version or ""), str(version or ""))
             ),
         )
+        if seed_private:
+            _seed_private_state(staging, seed_private, result)
         marker: dict[str, Any] = {
             "schemaVersion": VIEW_SCHEMA_VERSION,
             "lineage": lineage,
@@ -1047,6 +1142,56 @@ def _config_class_name(project_dir: Path) -> str:
         return ""
 
 
+# 导入时从来源 ``debug/`` 放进视图的只是状态文件：日志、截图、临时文件与大文件都不要。
+_SEED_SKIP_SUFFIXES = frozenset(
+    {".log", ".tmp", ".temp", ".pyc", ".pyo", ".png", ".jpg", ".jpeg", ".bmp", ".webp"}
+)
+_SEED_MAX_FILE_BYTES = 1024 * 1024
+_SEED_SKIP_DIR_NAMES = frozenset(
+    {"__pycache__", ".git", ".mas-update", ".mas-update-cache"}
+)
+
+
+def _runtime_state_seed(plan: ProjectionPlan) -> dict[str, Path]:
+    """来源目录顶层 ``debug/`` 里的状态文件：项目相对路径 → 来源文件。
+
+    它们是项目读回的持久状态（MaaEnd 的 ``debug/record/``、MPA 的 ``debug/*_zone_offset.json``），
+    属于这个脚本、不属于任何版本，登记载荷前 ``debug/`` 整个被剔掉
+    （``payloads.PAYLOAD_STRIP_ROOT_DIRS``），由 :func:`_seed_private_state` 放进视图。**不看投影
+    的去留**：``debug/`` 里截图多了会超过顶层 64 MB 被整个当成外壳丢掉，状态不能跟着丢。只挑
+    不是日志（``.log`` 与轮转出的 ``*.log.*``）、不是截图 / 临时文件、单个不超过 1 MB 的。
+    """
+
+    debug_dir = plan.rules.interface_base / "debug"
+    if not debug_dir.is_dir():
+        return {}
+    seed: dict[str, Path] = {}
+
+    def _error(exc: OSError) -> None:
+        logger.debug(f"[MFW 内嵌] 读取来源 debug/ 失败，跳过: {exc.filename}: {exc}")
+
+    for current, dir_names, file_names in os.walk(debug_dir, onerror=_error):
+        dir_names[:] = [
+            name for name in dir_names if name.casefold() not in _SEED_SKIP_DIR_NAMES
+        ]
+        base = Path(current)
+        for name in file_names:
+            folded = name.casefold()
+            if Path(folded).suffix in _SEED_SKIP_SUFFIXES or ".log." in folded:
+                continue
+            path = base / name
+            try:
+                if not path.is_file() or path.is_symlink():
+                    continue
+                if path.stat().st_size > _SEED_MAX_FILE_BYTES:
+                    continue
+            except OSError:
+                continue
+            rel = path.relative_to(plan.rules.interface_base).as_posix()
+            seed[rel] = path
+    return seed
+
+
 def import_embedded_project(
     script_id: str,
     source_path: str | Path,
@@ -1126,6 +1271,7 @@ def import_embedded_project(
                 "maafw": plan.bundled_maafw_version or "",
                 "python": plan.bundled_python_version or "",
             },
+            projection_revision=PROJECTION_REVISION,
         )
         payloads.add_known_source(store_root, lineage, str(source))
     except payloads.PayloadError as exc:
@@ -1136,8 +1282,20 @@ def import_embedded_project(
         raise
 
     view_result = _realize_view(
-        final_dir, lineage, registered.target_id, base=base, carry=True
+        final_dir,
+        lineage,
+        registered.target_id,
+        base=base,
+        carry=True,
+        seed_private=_runtime_state_seed(plan),
     )
+    if view_result.seeded:
+        preview = ", ".join(view_result.seeded[:10])
+        more = " ..." if len(view_result.seeded) > 10 else ""
+        logger.info(
+            f"[MFW 内嵌] 来源目录里 {len(view_result.seeded)} 个运行期状态文件（debug/ 下不是"
+            f"日志的）已作为视图私有文件放进 {final_dir.name}，不进载荷: {preview}{more}"
+        )
     if registered.target_id != registered.payload_id:
         logger.info(
             f"[MFW 内嵌] 导入的版本 {source_version} 不比组里的新，"
@@ -1167,6 +1325,24 @@ def import_embedded_project(
     # 与其它副本共用的文件（同内容只在磁盘上存一份）。
     report["sharedFiles"] = built.shared_files + finalized.ingested_files
     report["sharedBytes"] = built.shared_bytes + finalized.ingested_bytes
+    # 导入报告只进脚本配置与页面；用户发来的日志包里只有 app.log，总结与每条投影警告
+    # （CFA 入口兜底那条就在这里）都要在这里留一份。
+    # 路径里的用户目录换成 <HOME>（警告原文也可能带绝对路径）。
+    warnings = list(report.get("warnings") or [])
+    logger.info(
+        mask_home_path(
+            f"[MFW 内嵌] 脚本 {script_id} 已从 {source} 导入：版本 {source_version or '未声明'}，"
+            f"渠道 {channel or DEFAULT_CHANNEL}，载荷 {registered.payload_id}"
+            f"（视图用 {registered.target_id}），副本 {final_dir}，"
+            f"来源 {int(report.get('sourceSizeBytes') or 0) / 2**20:.1f} MB → "
+            f"副本 {int(report.get('payloadSizeBytes') or 0) / 2**20:.1f} MB，"
+            f"投影警告 {len(warnings)} 条"
+        )
+    )
+    for warning in warnings:
+        logger.warning(
+            mask_home_path(f"[MFW 内嵌] 导入 {source} 的投影警告：{warning}")
+        )
     return {
         "report": report,
         "sourceVersion": source_version,

@@ -6,10 +6,7 @@
           <router-link to="/scripts" class="breadcrumb-link">{{ t('edit.scripts') }}</router-link>
         </a-breadcrumb-item>
         <a-breadcrumb-item>
-          <router-link
-            :to="`/scripts/${scriptId}/edit/${scriptRouteSuffix}`"
-            class="breadcrumb-link"
-          >
+          <router-link :to="scriptRoute" class="breadcrumb-link">
             {{ scriptName || 'MFW' }}
           </router-link>
         </a-breadcrumb-item>
@@ -24,11 +21,15 @@
         >
           <LoadingOutlined v-if="saveStatus === 'saving'" spin />
           <CheckCircleOutlined v-else-if="saveStatus === 'saved'" />
-          <a-tooltip v-else :title="saveErrorMessage || '保存失败，请重试'">
+          <a-tooltip v-else :title="saveErrorMessage || t('edit.saveFailedRetry')">
             <CloseCircleOutlined />
           </a-tooltip>
           <span>{{
-            saveStatus === 'saving' ? '保存中…' : saveStatus === 'saved' ? '已自动保存' : '保存失败'
+            saveStatus === 'saving'
+              ? t('edit.savingNow')
+              : saveStatus === 'saved'
+                ? t('edit.autoSaved')
+                : t('edit.saveFailedShort')
           }}</span>
         </span>
       </Transition>
@@ -61,23 +62,17 @@ import {
   LoadingOutlined,
 } from '@ant-design/icons-vue'
 import { useUserApi } from '@/composables/useUserApi'
+import type {
+  MaaFWUserHeaderSectionEmits,
+  MaaFWUserHeaderSectionProps,
+} from '../../MaaFWFlavor/sectionContracts'
 
 const { t } = useI18n()
 
-const props = defineProps<{
-  saveStatus: 'idle' | 'saving' | 'saved' | 'error'
-  saveErrorMessage: string
-  scriptId: string
-  scriptName: string
-  /** 脚本页路由后缀（maafw / m9a / mss，取自特调注册表） */
-  scriptRouteSuffix: string
-  isEdit: boolean
-  userId?: string
-}>()
+// props / 事件的契约在 sectionContracts（特调替换这个分节时按同一份契约接收）
+const props = defineProps<MaaFWUserHeaderSectionProps>()
 
-const emit = defineEmits<{
-  cancel: []
-}>()
+const emit = defineEmits<MaaFWUserHeaderSectionEmits>()
 
 const { loading: folderLoading, openUserConfigFolder } = useUserApi()
 

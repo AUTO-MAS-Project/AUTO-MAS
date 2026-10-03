@@ -30,11 +30,12 @@ from app.core.ws import Publisher, protocol
 from app.models.config import MaaConfig, MaaUserConfig
 from app.models.ConfigBase import MultipleConfig
 from app.models.emulator import DeviceProvider
+from app.models.notification import NotificationImage
 from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, TaskExecuteBase, UserItem
 from app.task.emulator_core import close_emulator
+from app.task.notify_core import NOTIFY_SCREENSHOT_LIMIT, screenshot_entries
 from app.task.proxy_helpers import (
-    CONFIG_SOURCE_DIRECT,
     CONFIG_SOURCE_SCRIPT,
     read_config_source,
 )
@@ -282,6 +283,8 @@ class MaaManager(TaskExecuteBase):
             return
 
         self.begin_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        # 各用户失败画面（标签+图片）按序累积，供汇总「代理结果」带图
+        self._rollup_image_pairs: list[tuple[str, NotificationImage]] = []
         await self.prepare()
         # prepare() 内每次 await 都可能被中止。只有它整体返回后，收尾依赖的
         # 配置锁、备份目录与模拟器实例才确实建立，此时才允许 final_task 收尾
@@ -302,6 +305,9 @@ class MaaManager(TaskExecuteBase):
                 kwargs["view_only"] = self.task_info.view_only
             task = METHOD_BOOK[self.task_info.mode](**kwargs)
             await self.spawn(task)
+            # AutoProxyTask 失败时在关模拟器前存有现场画面；ScriptConfig 会话没有
+            if getattr(task, "report_image_pairs", None):
+                self._rollup_image_pairs.extend(task.report_image_pairs)
 
     async def final_task(self):
         """运行结束后的收尾工作"""
@@ -360,12 +366,17 @@ class MaaManager(TaskExecuteBase):
             }
 
             try:
+                # 汇总带图（MaaFW 同款）：各失败用户的现场画面，多了取最后几张
+                rollup_pairs = self._rollup_image_pairs[-NOTIFY_SCREENSHOT_LIMIT:]
+                if rollup_pairs:
+                    result["screenshots"] = screenshot_entries(rollup_pairs)
                 await push_notification(
                     mode="代理结果",
                     title=title,
                     message=result,
                     user_config=None,
                     task_info=self.task_info,
+                    images=[image for _, image in rollup_pairs],
                 )
             except Exception as e:
                 logger.opt(exception=True).warning(f"推送代理结果时出现异常: {e}")

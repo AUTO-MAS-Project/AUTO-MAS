@@ -274,21 +274,6 @@ class TaskItem(ABC):
             for script_item in self.script_list
         ]
 
-    @property
-    def result(self) -> str:
-        """任务执行情况的简要结果"""
-
-        if not self.script_list:
-            return "任务未加载"
-        return "\n\n\n".join(
-            [
-                f"{script.name}：\n\n"
-                f"    已完成用户数：{sum(1 for user in script.user_list if user.status == '完成')}；未完成用户数：{sum(1 for user in script.user_list if user.status != '完成')}\n\n"
-                f"    {script.result.replace('\n', '\n    ')}"
-                for script in self.script_list
-            ]
-        )
-
 
 @dataclass
 class TaskExecuteBase(ABC):
@@ -342,10 +327,13 @@ class TaskExecuteBase(ABC):
     @abstractmethod
     async def on_crash(self, e): ...
 
+    async def _run_main_task(self) -> None:
+        await self.main_task()
+
     async def _execute_task(self, parent_tg: asyncio.TaskGroup):
         self._task_group = parent_tg
         try:
-            await self.main_task()
+            await self._run_main_task()
         except asyncio.CancelledError:
             self.stopped_manually = True
             raise

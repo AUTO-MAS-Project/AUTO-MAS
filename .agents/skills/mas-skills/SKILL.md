@@ -29,6 +29,8 @@ Apply these project rules directly when they overlap with a task:
 6. Contribution style follows Conventional Commits, Google-style backend docstrings where useful, config-item comments, and keyword arguments for booleans or multi-argument calls.
 7. CI must pin every external reference to immutable content: GitHub Actions `uses` entries use a full 40-character commit SHA with a `# <tag>` version comment (resolve annotated tags to the peeled commit), and container images use `@sha256:<digest>`. Apply this across GitHub workflows, composite actions, and CNB pipelines; local actions such as `./.github/actions/...` are the only exception. Never leave a mutable tag, branch, or short hash. When changing CI, scan every `uses:` and `image:` reference and verify that all external references remain pinned.
 
+8. Start every branch from the latest upstream `dev` (`git fetch` first; in a fork, branch off upstream `dev`), never from a stale local `dev`: a branch built on an old baseline silently overwrites other people's merged work when it is synced, with no conflict and green type checks. Branch rules: <https://doc.auto-mas.top/developer/development-specifications.html>.
+
 ## Sub-Skills
 Use these skills as needed:
 
@@ -111,7 +113,7 @@ When using this hub:
 3. Apply only the minimum set required by the task.
 4. Keep compatibility-first decisions for legacy modules unless explicitly asked to refactor broadly.
 5. In review tasks, call out where findings follow known maintainer preferences rather than only generic engineering taste.
-6. For Issue/PR body writing, follow the docs site instead of inventing repository-specific text here.
+6. For Issue/PR body writing, follow the docs site instead of inventing repository-specific text here; the drafting techniques live in the `pr` skill.
 7. For frontend tasks, state whether `mas-frontend-standards` and `mas-frontend-ui` were selected and why.
 
 ## Review Checklist

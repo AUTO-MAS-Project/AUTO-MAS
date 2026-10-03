@@ -14,7 +14,8 @@ interface 里各层级的 ``icon``（用户页展示项目 / 任务图标）与�
 里 languages 没声明的那 37 个文件；M9A 的 ``data/activity``（agent 热更新的活动表）；
 MaaYYs 的 ``assets/答案.csv``（逢魔答题）与 ``resource_pack`` 里没声明的子目录。把它们
 去掉，副本上的运行就和路径模式不一样。而大的顶层条目（MFAAvalonia 的 ``libs/`` 141 MB、
-M9A 的 ``temp_res`` 185 MB、PyQt 外壳的 ``PySide6/``）都是外壳运行时。所以每个没被完整
+PyQt 外壳的 ``PySide6/``）都是外壳运行时（M9A 用户目录里 185 MB 的 ``temp_res`` 是 MFAAvalonia
+自更新的临时目录，按名字剔）。所以每个没被完整
 声明的顶层条目，剩余部分 ≤ 64 MB 就以"保留根"的口径带走（里面照常按分类表剔除），
 更大的才丢；根目录上没声明的可执行文件与库（``.exe`` / ``.dll`` / ``.pyd`` …）一律不要，
 它们只可能是外壳。外壳若是冻结的 Python 程序（MFW.exe 旁边直接放着 ``python312.dll``），
@@ -50,16 +51,30 @@ import fnmatch
 import json
 import os
 import re
-from collections.abc import Callable, Iterable, Iterator
+from collections.abc import Callable, Iterable, Iterator, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
+from types import MappingProxyType
 from typing import Any
 
 import json5
 
+from ..interface.agent_entry import (
+    CFA_FALLBACK_AGENT_ENTRY,
+    describe_cfa_agent_entry_fallback,
+    is_python_entry_arg,
+    is_relative_entry_path,
+)
 from .blob_store import LINK_MIN_BYTES, RuntimeBlobStore, place_fresh
 
 MAX_REPORT_ITEMS = 128
+
+# 投影规则的版本，记进载荷清单的 ``projectionRevision``（没有这个字段的是 0 = v5.6.0 的规则）。
+# 规则改动会让已登记的载荷少文件时加一，并在 ``projection_legacy`` 里留一份旧版复刻：
+# ``projection_heal`` 据此给旧载荷补齐一次，更新时旧载荷也只要全量包。
+# 1 = 目录名只在发行包顶层算数（#1104）；2 = 只剔确认是外壳的：按名字剔的只剩界面程序与
+# 顶层运行期目录，自带运行时 / 解释器 / .NET 托管库按内容确认，文件名规则只在顶层算数。
+PROJECTION_REVISION = 2
 
 # 白名单之外的顶层条目：剩余部分不超过这个大小就留下（数据文件级别），再大就是外壳运行时。
 UNDECLARED_KEEP_LIMIT = 64 * 1024 * 1024
@@ -85,43 +100,39 @@ DOTNET_SHELL_FILE_PREFIXES = (
     "system.",
 )
 
+# **能确认是外壳才剔，确认不了一律保留**（投影规则第 2 版）。只凭名字就剔的目录只剩下面
+# 这些，而且**只在发行包顶层算数**（包根或 interface 所在目录的直接子项）：界面程序本体
+# 与 Qt 界面运行时（名字没有歧义），以及用户在用目录里的运行期产物——导入的多半是用户
+# 一直在用的目录，顶层的 cache/ logs/ update/ 是 MaaFramework、MFAA / MXU 与更新器运行时
+# 写出来的，不是项目文件；更新包走同一张表，导入与更新的载荷才一致。
+# 叫 runtime / python / venv / web / frontend / build 的目录不再按名字剔：没声明的顶层目录
+# 是 Python 解释器、.NET 外壳托管库 / RID 资产、标准形态的 MaaFramework 原生库目录的，按
+# **内容**确认后整目录剔；只是某处带着一份 MaaFramework 原生库的，只剔那几个库文件
+# （``ProjectionRules.confirmed_shell``，见 :func:`_confirmed_shell_reason`）。其余照常带走
+# （顶层 64 MB 的上限照旧）。以前按名字逐级匹配把 MaaFgo v2.0.03 的 agent/battle/runtime/
+# 当成外壳剔掉，agent 一起来就 ModuleNotFoundError。
 EXCLUDED_DIRECTORY_REASONS: dict[str, str] = {
     ".git": "source-control",
     ".github": "source-control",
     ".idea": "editor-state",
     ".vscode": "editor-state",
-    "ui": "ui-shell",
-    "gui": "ui-shell",
-    "frontend": "ui-shell",
-    "web": "ui-shell",
-    "webui": "ui-shell",
-    "electron": "ui-shell",
     "mfaavalonia": "ui-shell",
     "mxu": "ui-shell",
     "mfw": "ui-shell",
     "maapicli": "ui-shell",
-    "node_modules": "ui-runtime",
     "pyside6": "ui-runtime",
     "pyside2": "ui-runtime",
     "pyqt6": "ui-runtime",
     "pyqt5": "ui-runtime",
     "shiboken6": "ui-runtime",
     "shiboken2": "ui-runtime",
-    # 发行包自带的原生库目录：副本里由运行池按投影标记的版本提供，整目录不进。
-    "maafw": "embedded-runtime",
-    "runtime": "embedded-runtime",
-    "runtimes": "embedded-runtime",
-    "python": "embedded-python",
-    "python-runtime": "embedded-python",
-    "python_runtime": "embedded-python",
-    "python-embed": "embedded-python",
-    "python_embed": "embedded-python",
-    ".venv": "embedded-python",
-    "venv": "embedded-python",
     "__pycache__": "cache",
     ".cache": "cache",
     "cache": "cache",
-    "debug": "cache",
+    # 顶层 debug/ 不按名字剔：里面除了日志（``.log`` 任何深度都剔）还有项目会读回的持久状态——
+    # MaaEnd 的 debug/record/（random_salt.txt 算账号 ID、IMS.json、Ziplines.json）、MPA 的
+    # debug/*_zone_offset.json。载荷登记前 debug/ 照旧整个剔掉（payloads.PAYLOAD_STRIP_ROOT_DIRS），
+    # 导入时这部分作为视图私有状态放进视图（embedded_project.import_embedded_project）。
     "logs": "cache",
     "log": "cache",
     ".pytest_cache": "cache",
@@ -139,13 +150,21 @@ EXCLUDED_DIRECTORY_REASONS: dict[str, str] = {
     ".tmp": "temporary",
     "backup": "temporary",
     "backups": "temporary",
-    "build": "build-output",
-    "dist": "build-output",
+    # MFAAvalonia 自更新的临时目录：2026-03 之前的版本直接建在程序根目录下（资源包 zip 与
+    # 解压出的整份发行包，M9A 用户目录里的 temp_res/ 有 185 MB，里面还有一份 interface.json），
+    # 之后挪进了 temp/。见 MFAAvalonia Helper/VersionChecker.cs、AppPaths.cs。
+    "temp_res": "temporary",
+    "temp_mfa": "temporary",
+    "temp_maafw": "temporary",
 }
-# 上表的目录名**只在发行包顶层算数**（包根或 interface 所在目录的直接子项）：深处的
-# runtime / cache / update / ui 只是名字撞上了，以前逐级匹配把 MaaFgo v2.0.03 的
-# agent/battle/runtime/ 当成外壳剔掉，agent 一起来就 ModuleNotFoundError。
-# 只有下面这些没有歧义的缓存 / 版本库 / MAS 更新器目录任何深度都剔。
+# MaaFramework 原生库的 MSVC 导入库（``MaaFramework.lib``、``MaaToolkit.lib`` …）只在链接
+# 插件时用，运行时用不到：任何深度都剔（原样带走的运行时目录除外）。只认第 1 版按文件名族
+# 剔过的这几族，免得已登记的载荷因为规则改版被当成缺文件或多文件（M9A MFAA 的
+# ``plugins/win-x64/MaaAgentClient.lib`` 第 1 版就留着）。
+MAAFW_IMPORT_LIBRARY_STEMS = frozenset(
+    {"maaframework", "maatoolkit", "maaadbcontrolunit", "maahttp"}
+)
+# 没有歧义的缓存 / 版本库 / 编辑器 / MAS 更新器目录任何深度都剔。
 ANYWHERE_EXCLUDED_DIRECTORY_NAMES = frozenset(
     {
         "__pycache__",
@@ -226,7 +245,6 @@ def is_shared_path(
 
 
 KNOWN_UI_SHELL_STEMS = {"mfaavalonia", "mxu", "mfw", "maapicli"}
-SHELL_SUFFIXES = {".bat", ".cmd", ".exe", ".ps1", ".sh"}
 DEPENDENCY_DIR_NAMES = {"agent", "agents", "lock", "locks", "plugins", "requirements"}
 DEPENDENCY_FILE_PATTERNS = (
     "requirements*.txt",
@@ -309,17 +327,29 @@ class ProjectionRules:
     ``source_root`` 是用户指向的目录，``interface_base`` 是 interface.json 所在目录
     （release 布局二者相同，assets 布局后者是 ``source_root/assets``）。输出路径一律
     相对 ``interface_base``，这就是 assets 布局的"提升"。
+
+    ``targets`` 建好就冻结（构造时拷成只读的 ``MappingProxyType``）：:meth:`keeps` 按它
+    建的前缀索引只建一次。要换白名单就新建一份规则，别在原地改。
     """
 
     source_root: Path
     interface_base: Path
-    targets: dict[Path, TargetMode]
+    targets: Mapping[Path, TargetMode]
     required: list[RequiredPath]
     agents: list[dict[str, Any]]
     conservative: bool
     warnings: list[str] = field(default_factory=list)
     # 导入时声明了但发行包里没有的 resource（名字）：副本里不可用，其余照常导入。
     unavailable_resources: list[str] = field(default_factory=list)
+    # 按内容确认是外壳 / 自带运行时的顶层目录（没被 interface 声明的），以及这类目录里
+    # 按内容确认的原生库文件 → 原因。
+    confirmed_shell: dict[Path, str] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        # 拷一份再冻结：调用方手里那个 dict 之后再改也影响不到规则（写入点都在构造之前，
+        # 见 build_projection_rules 的 add_target / _adopt_small_undeclared_entries）。
+        if not isinstance(self.targets, MappingProxyType):
+            self.targets = MappingProxyType(dict(self.targets))
 
     def exclusion_reason(
         self, relative: Path, *, is_directory: bool = False
@@ -327,7 +357,10 @@ class ProjectionRules:
         """按分类表判断，「顶层」按本项目的 interface 所在目录算。"""
 
         return exclusion_reason(
-            relative, is_directory=is_directory, base=self.base_relative
+            relative,
+            is_directory=is_directory,
+            base=self.base_relative,
+            confirmed=self.confirmed_shell,
         )
 
     @property
@@ -360,12 +393,36 @@ class ProjectionRules:
 
         return is_shared_path(relative, size, private_paths)
 
-    def keeps(self, relative: Path, *, is_directory: bool = False) -> bool:
-        """这个源相对路径要不要进副本。"""
+    def _targets_by_path(self) -> dict[Path, list[tuple[Path, TargetMode]]]:
+        """白名单目标按路径分桶（``Path`` 的相等与哈希就是 pathlib 的口径：Windows 上
+        不分大小写）。目标表在构造时已冻结，索引按它建一次；整个换掉 ``targets``（赋一个
+        新的只读表）时按对象身份认出来重建。"""
 
+        cached = self.__dict__.get("_targets_index")
+        if cached is not None and cached[0] is self.targets:
+            return cached[1]
+        index: dict[Path, list[tuple[Path, TargetMode]]] = {}
         for target, mode in self.targets.items():
-            if not _is_relative_to(relative, target):
-                continue
+            index.setdefault(target, []).append((target, mode))
+        self.__dict__["_targets_index"] = (self.targets, index)
+        return index
+
+    def keeps(self, relative: Path, *, is_directory: bool = False) -> bool:
+        """这个源相对路径要不要进副本。
+
+        只看 ``relative`` 自己与它的各级上级里哪些是白名单目标（与逐个目标
+        ``relative_to`` 判「在不在它下面」等价：pathlib 的 ``is_relative_to`` 就是「相等或
+        是某级上级」），条目数 × 目标数降成条目数 × 路径深度——MaaFgo 一万多个条目、几百个
+        目标时逐个比要几分钟。任何一个命中的目标放行就保留，与目标的先后无关。
+        """
+
+        index = self._targets_by_path()
+        matches = [
+            pair
+            for candidate in (relative, *relative.parents)
+            for pair in index.get(candidate, ())
+        ]
+        for target, mode in matches:
             target_is_directory = target == ROOT or (relative != target or is_directory)
             if (
                 target_exclusion_reason(
@@ -375,6 +432,7 @@ class ProjectionRules:
                     target_is_directory=target_is_directory,
                     is_directory=is_directory,
                     base=self.base_relative,
+                    confirmed=self.confirmed_shell,
                 )
                 is None
             ):
@@ -463,16 +521,28 @@ def _top_level_indexes(path: Path, base: Path) -> frozenset[int]:
 
 
 def exclusion_reason(
-    path: Path, *, is_directory: bool = False, base: Path = ROOT
+    path: Path,
+    *,
+    is_directory: bool = False,
+    base: Path = ROOT,
+    confirmed: Mapping[Path, str] | None = None,
 ) -> str | None:
     """按分类表判断一个相对路径为什么不该进副本；None 表示没有理由。
 
-    目录名规则只看发行包顶层（包根与 ``base`` 即 interface 所在目录的直接子项）：
-    深处叫 ``runtime`` / ``cache`` / ``update`` 的是项目自己的代码或数据
-    （MaaFgo 的 ``agent/battle/runtime/``）。``ANYWHERE_EXCLUDED_DIRECTORY_NAMES``
-    里没有歧义的缓存任何深度都剔。文件名规则不变。
+    **只在发行包顶层**（包根与 ``base`` 即 interface 所在目录的直接子项）按名字剔：
+    :data:`EXCLUDED_DIRECTORY_REASONS` 里的目录、界面程序家族（MFAAvalonia / MXU / MFW /
+    MaaPiCli）的目录与文件、MaaFramework / Python 解释器的库与可执行文件；``confirmed``
+    里按内容确认过的顶层目录（:attr:`ProjectionRules.confirmed_shell`）。深处叫
+    ``runtime`` / ``cache`` / ``mfw.py`` / ``MaaFramework.dll`` 的是项目自己的东西（MaaFgo 的
+    ``agent/battle/runtime/``）。任何深度都剔的只有没有歧义的缓存 / 版本库目录
+    （:data:`ANYWHERE_EXCLUDED_DIRECTORY_NAMES`）与字节码、临时文件、日志后缀。
     """
 
+    if confirmed and not is_directory:
+        # 没被声明的顶层目录里、按内容确认的原生库文件本身（目录其余照常带走）。
+        hit = confirmed.get(path)
+        if hit:
+            return hit
     parts = path.parts if is_directory else path.parts[:-1]
     top = _top_level_indexes(path, base)
     for index, part in enumerate(parts):
@@ -481,36 +551,34 @@ def exclusion_reason(
             return EXCLUDED_DIRECTORY_REASONS.get(normalized, "cache")
         if index not in top:
             continue
+        if confirmed:
+            hit = confirmed.get(Path(*path.parts[: index + 1]))
+            if hit:
+                return hit
         reason = EXCLUDED_DIRECTORY_REASONS.get(normalized)
         if reason:
             return reason
-        family = normalized.split(".", 1)[0]
-        if family in KNOWN_UI_SHELL_STEMS:
+        if normalized.split(".", 1)[0] in KNOWN_UI_SHELL_STEMS:
             return "ui-shell"
-        if family in KNOWN_RUNTIME_STEMS:
-            return "embedded-runtime"
     if is_directory:
         return None
     name = path.name.casefold()
     suffix = path.suffix.casefold()
-    family = name.split(".", 1)[0]
-    if family in KNOWN_UI_SHELL_STEMS:
-        return "ui-shell"
-    if family in KNOWN_RUNTIME_STEMS:
-        return "embedded-runtime"
     if suffix in EXCLUDED_FILE_SUFFIXES:
         return "cache-or-temporary"
-    if name in KNOWN_RUNTIME_FILE_NAMES or (
-        name.startswith("python") and suffix in {".dll", ".exe", ".so", ".dylib"}
+    family = name.split(".", 1)[0]
+    if suffix == ".lib" and family in MAAFW_IMPORT_LIBRARY_STEMS:
+        return "embedded-runtime"
+    if len(path.parts) - 1 not in top:
+        return None
+    if family in KNOWN_UI_SHELL_STEMS:
+        return "ui-shell"
+    if (
+        family in KNOWN_RUNTIME_STEMS
+        or name in KNOWN_RUNTIME_FILE_NAMES
+        or (name.startswith("python") and suffix in {".dll", ".exe", ".so", ".dylib"})
     ):
         return "embedded-runtime"
-    stem = path.stem.casefold()
-    if suffix in SHELL_SUFFIXES and (
-        "update" in stem
-        or "updater" in stem
-        or stem.endswith(("gui", "ui", "launcher"))
-    ):
-        return "ui-or-updater-shell"
     return None
 
 
@@ -522,6 +590,7 @@ def target_exclusion_reason(
     target_is_directory: bool,
     is_directory: bool = False,
     base: Path = ROOT,
+    confirmed: Mapping[Path, str] | None = None,
 ) -> str | None:
     """在某个白名单目标之下判断 ``path``。
 
@@ -532,7 +601,9 @@ def target_exclusion_reason(
     """
 
     if not mode.complete or not mode.allow_excluded_root or target == ROOT:
-        return exclusion_reason(path, is_directory=is_directory, base=base)
+        return exclusion_reason(
+            path, is_directory=is_directory, base=base, confirmed=confirmed
+        )
     inner = path.relative_to(target) if target_is_directory else Path(path.name)
     if mode.verbatim_runtime:
         # 原样带走的运行时目录：CPython 发行版里本来就有 build / debug / logs 这些
@@ -551,8 +622,13 @@ def target_exclusion_reason(
 
 
 class _FileView:
-    def __init__(self, roots: tuple[Path, ...]) -> None:
+    def __init__(
+        self, roots: tuple[Path, ...], sizes: Mapping[str, int] | None = None
+    ) -> None:
         self.roots = roots
+        # 给了就按它报大小（posix 相对路径 → 字节）：按发行包条目表建的空文件骨架上算
+        # 白名单时用，大小取中央目录里记的。
+        self.sizes = sizes
 
     def locate(self, relative: Path) -> Path | None:
         for root in self.roots:
@@ -585,6 +661,8 @@ class _FileView:
         return read_json_object(located, label)
 
     def size(self, relative: Path) -> int:
+        if self.sizes is not None:
+            return int(self.sizes.get(relative.as_posix(), 0))
         located = self.locate(relative)
         try:
             return located.stat().st_size if located is not None else 0
@@ -867,11 +945,18 @@ def _retention_root(relative: Path, view: _FileView) -> Path:
     return parent if parent != ROOT else relative
 
 
-#: 分类表里按「内嵌解释器」处理的目录名（python / venv / .venv / python-embed …）。
+#: 常见的内嵌解释器目录名（python / venv / .venv / python-embed …）：叫这个名字、其实只放
+#: 源码的 agent 目录按完整目标带走（见 :func:`_python_named_source_prefix`）。
 EMBEDDED_PYTHON_DIR_NAMES = frozenset(
-    name
-    for name, reason in EXCLUDED_DIRECTORY_REASONS.items()
-    if reason == "embedded-python"
+    {
+        "python",
+        "python-runtime",
+        "python_runtime",
+        "python-embed",
+        "python_embed",
+        ".venv",
+        "venv",
+    }
 )
 
 
@@ -945,12 +1030,14 @@ def build_projection_rules(
     *,
     strict: bool = True,
     overlay_root: Path | None = None,
+    sizes: Mapping[str, int] | None = None,
 ) -> ProjectionRules:
     """从 interface 声明算出白名单。
 
     ``strict``：导入时为真——声明的路径必须存在，缺了就是发行包不合规。差量落地时
     为假——新版本新增的目录本来就还不在项目里。
     ``overlay_root``：差量包的 payload 根，排在项目目录前面参与查找。
+    ``sizes``：文件大小以它为准（posix 相对路径 → 字节），给按条目表建的空文件骨架用。
     """
 
     source_root = source_root.resolve()
@@ -959,7 +1046,7 @@ def build_projection_rules(
         if overlay_root is not None
         else (source_root,)
     )
-    view = _FileView(roots)
+    view = _FileView(roots, sizes)
     # interface 在哪一层？叠加视图里以包内的为准，包里没有再看项目。
     interface_base: Path | None = None
     interface_relative: Path | None = None
@@ -1048,6 +1135,28 @@ def build_projection_rules(
         if must_exist and strict and not view.exists(relative):
             raise ProjectionError(f"{label} 声明的路径不存在：{raw}")
         return relative
+
+    def cfa_agent_entry(raw: str, label: str) -> Path | None:
+        """相对写法的入口脚本经 ``..`` 越出 interface 所在目录、而 CFA 的兜底入口在时
+        返回兜底入口；否则 None，照原来的严格校验走（见 ``interface.agent_entry``）。"""
+
+        if not is_relative_entry_path(raw):
+            # 绝对路径 / 盘符：照旧报「必须是项目内的相对路径」，不兜底。
+            return None
+        try:
+            relative = _normalize_declared_path(raw, base_relative, label)
+        except ProjectionError:
+            # 相对写法只有「逃出了项目目录」这一种失败。
+            relative = None
+        if relative is not None and _is_relative_to(relative, base_relative):
+            return None
+        fallback = base_relative / CFA_FALLBACK_AGENT_ENTRY
+        if not view.is_file(fallback):
+            return None
+        warnings.append(
+            f"{label}：{describe_cfa_agent_entry_fallback(raw, fallback.as_posix())}"
+        )
+        return fallback
 
     def declare_executable(raw: str, label: str) -> Path:
         relative = _normalize_declared_path(raw, base_relative, label)
@@ -1287,13 +1396,21 @@ def build_projection_rules(
                     raise ProjectionError(f"{label} 声明的路径不存在：{child_exec}")
                 else:
                     warnings.append(f"{label} 声明的路径当前不存在：{child_exec}")
+            python_entry_seen = False
             for arg_index, raw_arg in enumerate(child_args):
                 if not looks_like_local_path(raw_arg):
                     continue
                 label = f"agent[{index}].child_args[{arg_index}]"
                 if looks_like_script_file(raw_arg):
                     # 脚本 / 可执行文件路径就是 agent 的入口，缺了必然跑不起来：照旧严格。
-                    arg_relative = declare(raw_arg, label, must_exist=True)
+                    # 第一个 Python 入口先过 CFA 兜底（与 agent_env.planner 同一规则）。
+                    fallback_entry = None
+                    if not python_entry_seen and is_python_entry_arg(raw_arg):
+                        python_entry_seen = True
+                        fallback_entry = cfa_agent_entry(raw_arg, label)
+                    arg_relative = fallback_entry or declare(
+                        raw_arg, label, must_exist=True
+                    )
                     if arg_relative is None:
                         continue
                 else:
@@ -1456,8 +1573,16 @@ def build_projection_rules(
         warnings.extend(
             _bundled_architecture_warnings(roots, base_relative, runtime_relative)
         )
+        mixed_runtime = _mixed_native_runtime_warning(
+            source_root / base_relative if base_relative.parts else source_root
+        )
+        if mixed_runtime:
+            warnings.append(mixed_runtime)
 
-    _adopt_small_undeclared_entries(view, base_relative, targets, warnings)
+    confirmed_shell: dict[Path, str] = {}
+    _adopt_small_undeclared_entries(
+        view, base_relative, targets, warnings, confirmed_shell
+    )
 
     conservative = opaque_found
     if conservative:
@@ -1484,6 +1609,7 @@ def build_projection_rules(
         conservative=conservative,
         warnings=warnings,
         unavailable_resources=unavailable_resources,
+        confirmed_shell=confirmed_shell,
     )
     return rules
 
@@ -1586,6 +1712,7 @@ def build_projection_plan(source_root: Path) -> ProjectionPlan:
                     mode=mode,
                     target_is_directory=False,
                     base=rules.base_relative,
+                    confirmed=rules.confirmed_shell,
                 )
                 is None
             ):
@@ -1610,6 +1737,7 @@ def build_projection_plan(source_root: Path) -> ProjectionPlan:
                     target_is_directory=True,
                     is_directory=True,
                     base=rules.base_relative,
+                    confirmed=rules.confirmed_shell,
                 )
                 is None
             ):
@@ -1625,6 +1753,7 @@ def build_projection_plan(source_root: Path) -> ProjectionPlan:
                     mode=mode,
                     target_is_directory=True,
                     base=rules.base_relative,
+                    confirmed=rules.confirmed_shell,
                 )
                 is None
             ):
@@ -1748,11 +1877,101 @@ def _is_cpython_bundled_file(path: Path) -> bool:
     )
 
 
+#: 「目录里只有原生库」按这些后缀认（调试符号与导入库也算原生库的一部分）。
+_NATIVE_ONLY_SUFFIXES = frozenset({".dll", ".so", ".dylib", ".lib", ".pdb"})
+#: .NET / NuGet 的运行时资产布局 ``runtimes/<rid>/native|lib/``：RID 形如 win-x64、
+#: linux-musl-arm64、osx-arm64。
+_RID_RE = re.compile(
+    r"^(win|linux|linux-musl|linux-bionic|osx|maccatalyst|android|ios|freebsd|unix|browser)"
+    r"(-[a-z0-9]+)*$"
+)
+
+
+def _looks_like_rid_asset_tree(view: _FileView, directory: Path) -> bool:
+    """目录的子目录全是 RID，而且是按架构分发的运行时：每个 RID 下都只有 ``native/`` /
+    ``lib/``（.NET 外壳 MFAAvalonia 的运行时资产），或者某个 RID 目录（或它的 ``native/``）
+    里直接放着 MaaFramework 原生库（MFW-PyQt6 外壳的 ``runtimes/win-x64/``）。runner 用的
+    那一份早已是原样带走的目标。"""
+
+    children = view.iter_entries(directory)
+    if not children or not all(
+        view.is_dir(child) and _RID_RE.match(child.name.casefold())
+        for child in children
+    ):
+        return False
+    if all(
+        (kinds := {entry.name.casefold() for entry in view.iter_entries(child)})
+        and kinds <= {"native", "lib"}
+        for child in children
+    ):
+        return True
+    return any(
+        view.is_file(entry) and _is_maaframework_core(entry.name)
+        for child in children
+        for folder in (child, child / "native")
+        for entry in view.iter_entries(folder)
+    )
+
+
+def _is_maaframework_core(name: str) -> bool:
+    """``MaaFramework.dll`` / ``libMaaFramework.so`` / ``libMaaFramework.dylib``。"""
+
+    stem = name.casefold().split(".", 1)[0].removeprefix("lib")
+    return stem == "maaframework" and _is_maafw_runtime_library(name)
+
+
+def _confirmed_shell_reason(view: _FileView, directory: Path) -> str | None:
+    """没被声明的顶层目录，按**内容**确认**整个目录**是外壳或自带运行时才给出原因：
+
+    - 目录本身就是一个 Python 解释器（发行版 / 嵌入式包 / venv，见
+      :func:`_is_python_interpreter_dir`）——agent 声明的那个早已是原样带走的目标；
+    - .NET 外壳的托管库目录（``Avalonia*.dll`` / ``System.*.dll`` …）；
+    - .NET 按架构分发的运行时资产（``runtimes/<rid>/native|lib``，见
+      :func:`_looks_like_rid_asset_tree`）；
+    - MaaFramework 运行时的标准形态：``MaaFramework`` 原生库就直接放在这个目录里（``maafw/``
+      那种），或者整个目录里只有原生库（``bin/*.dll`` 那种）。runner 用的那份
+      （``_bundled_native_runtime_dir``）早已是原样带走的目标，这里是其它架构 / 副本。
+    名字叫 runtime / python / web 但内容对不上的一律不算。目录里只是某处带着原生库的
+    （``libs/maa/bin/MaaFramework.dll`` 旁边还有 ``.py``），整目录照常带走，只剔那几个
+    原生库文件（:func:`_confirmed_runtime_files`）。
+    """
+
+    if _is_python_interpreter_dir(view, directory):
+        return "embedded-python"
+    if _looks_like_dotnet_shell_dir(view, directory):
+        return "ui-runtime"
+    if _looks_like_rid_asset_tree(view, directory):
+        return "embedded-runtime"
+    if any(
+        view.is_file(entry) and _is_maaframework_core(entry.name)
+        for entry in view.iter_entries(directory)
+    ):
+        return "embedded-runtime"
+    files = view.walk_files(directory)
+    if (
+        files
+        and all(path.suffix.casefold() in _NATIVE_ONLY_SUFFIXES for path in files)
+        and any(_is_maaframework_core(path.name) for path in files)
+    ):
+        return "embedded-runtime"
+    return None
+
+
+def _confirmed_runtime_files(view: _FileView, directory: Path) -> list[Path]:
+    """整目录确认不了、但里面带着一份 MaaFramework 运行时的：那一份的原生库文件本身。"""
+
+    files = view.walk_files(directory)
+    if not any(_is_maaframework_core(path.name) for path in files):
+        return []
+    return [path for path in files if _is_maafw_runtime_library(path.name)]
+
+
 def _adopt_small_undeclared_entries(
     view: _FileView,
     base_relative: Path,
     targets: dict[Path, TargetMode],
     warnings: list[str],
+    confirmed: dict[Path, str],
 ) -> None:
     """白名单之外的顶层条目：剩余部分 ≤ 64 MB 的以"保留根"口径带走，更大的丢。
 
@@ -1760,6 +1979,8 @@ def _adopt_small_undeclared_entries(
     声明过的子目录不重复算。根目录上没声明的可执行文件与库一律不要；外壳是冻结的
     Python 程序时（根上直接放着没人声明的 ``python3xx.dll``），它散在根目录的二进制
     依赖包也不要——agent 的 ``PYTHONPATH`` 是项目根，半截包会盖住真正的模块。
+    按内容确认是外壳 / 自带运行时的顶层目录记进 ``confirmed``（见
+    :func:`_confirmed_shell_reason`）。
     """
 
     # 被完整目标覆盖 = 自己或某个祖先是完整目标（根除外）。按祖先查集合，不再对每个
@@ -1787,23 +2008,15 @@ def _adopt_small_undeclared_entries(
             continue
         is_dir = view.is_dir(entry)
         reason = exclusion_reason(entry, is_directory=is_dir, base=base_relative)
-        if (
-            reason == "embedded-python"
-            and is_dir
-            and not _is_python_interpreter_dir(view, entry)
-        ):
-            # 叫 python / venv 却没有解释器的目录只是项目源码（agent 会 import 的
-            # 辅助脚本），按名字当解释器丢掉就和路径模式不一样了。名字本身豁免，
-            # 里面照常按分类表剔除。
-            remainder = sum(
-                view.size(path)
-                for path in view.walk_files(entry)
-                if _cache_exclusion_reason(path.relative_to(entry)) is None
-            )
-            if remainder <= UNDECLARED_KEEP_LIMIT:
-                targets[entry] = TargetMode(True, True)
-                complete_targets.add(entry)
-            continue
+        if reason is None and is_dir and entry not in targets:
+            # 没被声明的顶层目录：按内容确认是不是自带运行时 / 外壳托管库。确认了就记下，
+            # 保守模式的整棵根也按它剔；确认不了照常按大小决定去留。
+            reason = _confirmed_shell_reason(view, entry)
+            if reason is not None:
+                confirmed[entry] = reason
+            else:
+                for native in _confirmed_runtime_files(view, entry):
+                    confirmed[native] = "embedded-runtime"
         if reason is not None:
             continue
         if not is_dir:
@@ -1811,8 +2024,6 @@ def _adopt_small_undeclared_entries(
                 continue
             if view.size(entry) <= UNDECLARED_KEEP_LIMIT:
                 targets.setdefault(entry, TargetMode(False, False))
-            continue
-        if _looks_like_dotnet_shell_dir(view, entry):
             continue
         if frozen_shell and _looks_like_frozen_python_package_dir(view, entry):
             frozen_packages.append(entry.name)
@@ -1893,13 +2104,313 @@ def _root_native_runtime_files(view: _FileView, directory: Path) -> list[Path]:
     )
 
 
+def shell_native_location(relative: str) -> str | None:
+    """项目相对 posix 路径落在哪个「外壳原生库位置」上，给出位置键（小写）；不在就 None。
+
+    外壳把 MaaFramework 原生库放在三类位置（官方目录 53 个当前发行包实测）：
+
+    - ``maafw``：MXU 与 MFW-PyQt6 的顶层 ``maafw/``，**整个目录**都属于那份运行时
+      （``MaaAgentBinary/``、``plugins/`` 随它的库走）；
+    - ``runtimes/<rid>/native``：MFAAvalonia 的布局，同样整个目录；``runtimes/<rid>``：
+      直接放在 RID 目录下的原生库，**只认** MaaFramework 那套库文件名（旁边是
+      ``native/`` ``lib/`` 子目录）；
+    - ``""``（包根）：PiCLI / Lite，只认 MaaFramework 那套库文件名——包根上还混着外壳
+      自己的 ``MFAAvalonia.dll``、``libloader.dll``、``MaaPiCli.exe``，它们不算。
+
+    自带解释器里的 ``python/**/site-packages/maa/bin`` 不在其中：那是 wheel 自带的、正牌的
+    第二份原生库，版本可以比外壳的低（M9A v4.5.0 是 5.11.1 对 5.11.2）。``plugins/``、
+    ``agent/`` 与 ``.auto_mas*`` 也都不是。
+    """
+
+    parts = relative.split("/")
+    if any(part.casefold().startswith(".auto_mas") for part in parts):
+        return None
+    first = parts[0].casefold()
+    if first == "maafw" and len(parts) >= 2:
+        return "maafw"
+    if first == "runtimes" and len(parts) >= 3:
+        rid = parts[1].casefold()
+        if not _RID_RE.match(rid):
+            return None
+        if len(parts) >= 4 and parts[2].casefold() == "native":
+            return f"runtimes/{rid}/native"
+        if len(parts) == 3 and _is_maafw_runtime_library(parts[2]):
+            return f"runtimes/{rid}"
+        return None
+    if len(parts) == 1 and _is_maafw_runtime_library(parts[0]):
+        return ""
+    return None
+
+
+def _shell_native_core_location(relative: str) -> str | None:
+    """路径是某个外壳原生库位置上**直接放着**的 ``MaaFramework`` 主库时给出位置键。
+
+    在 :func:`_is_maaframework_core` 之上再要求去掉后缀后恰好是 ``MaaFramework``：它按
+    第一个点切，.NET 外壳的托管绑定 ``MaaFramework.Binding.dll`` 也会被它认成主库。
+    """
+
+    location = shell_native_location(relative)
+    if location is None:
+        return None
+    parent, _, name = relative.rpartition("/")
+    if parent.casefold() != location or not _is_maaframework_core(name):
+        return None
+    if PurePosixPath(name.casefold()).stem.removeprefix("lib") != "maaframework":
+        return None
+    return location
+
+
+#: MaaFramework 随原生库一起分发、由发行包整体铺下的顶层目录（不是项目自己的东西）。
+MAAFW_COMPANION_DIR_NAMES = frozenset({"maaagentbinary"})
+
+
+def package_takeover_dirs(
+    rules: ProjectionRules, package_files: Iterable[str]
+) -> frozenset[str]:
+    """全量包「整体接管」的目录（项目相对 posix 路径）：新版本里这些目录的内容就是发行包
+    铺的那一份，导入来的、新包里没有的旧文件不该留下。
+
+    判据只从投影规则与新包的文件表来，不认项目名，三类都要求新包里**确实有**这个目录下
+    的文件（新包不带的目录不算接管，换布局由 :func:`abandoned_native_runtime_files` 按位置管）：
+
+    - MaaFramework 原生库布局里明确的那几种：``maafw/``、``runtimes/<rid>/native``（原样
+      带走的运行时目标里、位置正好是这两种的），以及随附的 ``MaaAgentBinary/``
+      （:data:`MAAFW_COMPANION_DIR_NAMES`）。有界搜索找到的任意目录（``bin/`` 里放着
+      ``MaaFramework.dll``）不算——那里可能混着项目自己的东西。
+    - 项目自带解释器所在目录（原样带走的运行时目标、不是上面的原生库布局）：目录名是
+      :data:`EMBEDDED_PYTHON_DIR_NAMES` 之一，或者新包里它确实是一个解释器目录
+      （与 :func:`_is_python_interpreter_dir` 同一组特征）。投影保守模式（agent 是 custom /
+      command / 不透明形态，代码可能在任何地方）下不认解释器目录。
+
+    另外，接管目录与声明的资源目录（``resource`` / ``attach_resource_path``）、agent 代码目录
+    （``child_args`` / ``pretask`` 参数所在目录）**相等、包含或落在其内**的一律不算：
+    ``child_exec: ./agent/python.exe`` 时解释器目录就是 ``agent/``，那里是项目代码。
+    用户数据、配置、运行期状态、``preset/``、``tasks/`` 都不在这些目录里。
+    """
+
+    files = [str(rel).replace("\\", "/") for rel in package_files]
+    folded_files = {rel.casefold() for rel in files}
+    base = rules.base_relative
+
+    def native_layout(target: Path) -> bool:
+        try:
+            parts = [part.casefold() for part in target.relative_to(base).parts]
+        except ValueError:
+            return False
+        if parts == ["maafw"]:
+            return True
+        return (
+            len(parts) == 3
+            and parts[0] == "runtimes"
+            and bool(_RID_RE.match(parts[1]))
+            and parts[2] == "native"
+        )
+
+    def interpreter_dir(target: Path) -> bool:
+        if target.name.casefold() in EMBEDDED_PYTHON_DIR_NAMES:
+            return True
+        prefix = target.as_posix().casefold()
+        markers = (
+            "python.exe",
+            "pythonw.exe",
+            "python",
+            "python3",
+            "pyvenv.cfg",
+            "python3.dll",
+            "scripts/python.exe",
+            "bin/python",
+            "bin/python3",
+        )
+        if any(f"{prefix}/{marker}" in folded_files for marker in markers):
+            return True
+        return any(
+            rel.startswith(f"{prefix}/")
+            and "/" not in rel[len(prefix) + 1 :]
+            and _PYTHON_DLL_RE.match(rel[len(prefix) + 1 :])
+            for rel in folded_files
+        )
+
+    protected: list[Path] = []
+    for required in rules.required:
+        label = required.label
+        if label.startswith(("resource ", "controller[")):
+            protected.append(required.path)
+        elif ".child_args[" in label or (
+            label.startswith("pretask[") and ".args[" in label
+        ):
+            path = required.path
+            protected.append(path if required.is_directory else path.parent)
+    protected = [path for path in protected if path not in (ROOT, base)]
+
+    def overlaps(target: Path) -> bool:
+        return any(
+            target == path
+            or _is_relative_to(path, target)
+            or _is_relative_to(target, path)
+            for path in protected
+        )
+
+    candidates: dict[str, Path] = {}
+    for target, mode in rules.targets.items():
+        if not mode.verbatim_runtime or target in (ROOT, base):
+            continue
+        if native_layout(target) or (
+            not rules.conservative and interpreter_dir(target)
+        ):
+            candidates.setdefault(target.as_posix().casefold(), target)
+    for rel in files:
+        top = rel.split("/", 1)[0]
+        if "/" in rel and top.casefold() in MAAFW_COMPANION_DIR_NAMES:
+            candidates.setdefault(top.casefold(), Path(top))
+    present: set[str] = set()
+    for key, directory in candidates.items():
+        prefix = f"{key}/"
+        if overlaps(directory):
+            continue
+        if any(rel.startswith(prefix) for rel in folded_files):
+            present.add(directory.as_posix())
+    return frozenset(present)
+
+
+def takeover_orphans(
+    import_files: Iterable[str],
+    package_files: Iterable[str],
+    takeover_dirs: Iterable[str],
+) -> set[str]:
+    """导入来的文件里、落在接管目录（:func:`package_takeover_dirs`）下、新包里没有的那些。
+
+    全量包对 ``origin=package`` 的旧文件本来就是「不在包里就删」；导入来的文件只在资源目录
+    （``apply._import_origin_orphans``）与被淘汰的原生库位置上清，其余原样带进新载荷。接管
+    目录里这样留下来就是新旧两版混在一起：M9A v4.11.0（导入）→ v4.11.1 后自带解释器里同时有
+    ``maafw-5.14.0.dist-info`` 与 ``maafw-5.14.2.dist-info``，``importlib.metadata`` / pip 可能
+    读到旧的。我们自己铺的 ``.auto_mas*`` 不碰。
+    """
+
+    prefixes = tuple(f"{item.casefold().rstrip('/')}/" for item in takeover_dirs)
+    if not prefixes:
+        return set()
+    package = {str(rel).casefold() for rel in package_files}
+    orphans: set[str] = set()
+    for rel in import_files:
+        folded = rel.casefold()
+        if folded in package or not folded.startswith(prefixes):
+            continue
+        if any(part.startswith(".auto_mas") for part in folded.split("/")):
+            continue
+        orphans.add(rel)
+    return orphans
+
+
+def abandoned_native_runtime_files(
+    import_files: Iterable[str], package_files: Iterable[str]
+) -> set[str]:
+    """全量包对「导入来的文件」应当清掉的、被淘汰布局的原生库（项目相对 posix 路径）。
+
+    本地导入的目录可能被外壳原地换过布局：MXU（``maafw/``）换成 MFAAvalonia
+    （``runtimes/<rid>/native``）时，两家的更新器都不删新包里没有的顶层目录，旧的
+    ``maafw/`` 就一直留着；导入后它是 ``origin=import``，全量包更新又把它原样带进新载荷。
+    runner 与 agent 各挑一份库，协议版本对不上，每次都等满连接超时（M9A v4.11.0 真机：
+    ``maafw/`` 5.9.2 对 ``runtimes/win-x64/native`` 5.14.0）。
+
+    判据只看新包的清单、不比版本：新包在某个外壳原生库位置（:func:`shell_native_location`）
+    上直接带着 ``MaaFramework`` 主库，而导入来的文件在**另一个**位置上也有主库、新包在那个
+    位置上没有主库——那个位置就是被淘汰的布局，其上导入来的、不在新包里的文件都清掉。
+    刻意收窄的地方：
+
+    - 新包在三类位置上一份主库都不带（只在自带解释器的 ``maa/bin`` 里带、或压根不带）时
+      什么都不清：分不清旧位置是残留还是项目仍要用的那份。
+    - 新包自己也在那个位置带主库（纯 MXU 包更新到新的 MXU 包、PiCLI 包更新到新的 PiCLI
+      包）时不按位置清：主库已经换成新包的，同位置上多出来的旧文件不会让 runner 挑错库。
+    - 旧位置上导入来的文件里没有主库（比如一个只剩 ``plugins/`` 的 ``maafw/``）不清：它
+      不会与新包的那份争。
+    - 包根与 ``runtimes/<rid>`` 只清 MaaFramework 那套库文件名，外壳自己的库与子目录不碰。
+
+    ``maafw/`` 里用户手放的东西会随整个目录一起清：清的前提是这份运行时的主库已被新包换到
+    了别处，``maafw/`` 里的插件与附属文件跟着它的库走，库不在就不会再被加载；清除只发生在
+    新载荷的 staging 里，旧载荷、视图与导入来源都不动。
+    """
+
+    package_list = list(package_files)
+    package_cores = {
+        location
+        for rel in package_list
+        if (location := _shell_native_core_location(rel)) is not None
+    }
+    if not package_cores:
+        return set()
+    import_list = list(import_files)
+    abandoned = {
+        location
+        for rel in import_list
+        if (location := _shell_native_core_location(rel)) is not None
+    } - package_cores
+    if not abandoned:
+        return set()
+    package_set = set(package_list)
+    return {
+        rel
+        for rel in import_list
+        if rel not in package_set and shell_native_location(rel) in abandoned
+    }
+
+
+def _mixed_native_runtime_warning(project_root: Path) -> str | None:
+    """导入时提示：来源目录里几处外壳原生库位置各带一份 MaaFramework、版本还不一样。
+
+    只提示、不删：导入的多半是用户正在用的目录，换过外壳留下的旧库目录由之后的全量包
+    更新清掉（:func:`abandoned_native_runtime_files`）。只看本机架构的 ``runtimes/<rid>``：
+    别的架构投影时本来就剔掉。版本读不出来的不参与「版本不同」的判断。
+    """
+
+    from app.task.MaaFW.tools.core.runner.environment import (
+        PROJECT_MAAFW_DLL_NAME,
+        _read_runtime_maafw_version,
+        host_runtime_rid_dirs,
+        project_maafw_runtime_path,
+    )
+
+    candidates = [project_root / "maafw"]
+    for rid in host_runtime_rid_dirs(project_root):
+        candidates.extend((rid / "native", rid))
+    candidates.append(project_root)
+    found = [
+        (directory, _read_runtime_maafw_version(directory))
+        for directory in candidates
+        if (directory / PROJECT_MAAFW_DLL_NAME).is_file()
+    ]
+    if len(found) < 2 or len({version for _, version in found if version}) < 2:
+        return None
+
+    def label(directory: Path) -> str:
+        try:
+            relative = directory.resolve().relative_to(project_root.resolve())
+        except ValueError:
+            return str(directory)
+        return f"{relative.as_posix()}/" if relative.parts else "根目录"
+
+    versions = dict(found)
+    listed = "、".join(
+        f"{label(directory)}（{version or '版本未知'}）" for directory, version in found
+    )
+    chosen = project_maafw_runtime_path(project_root)
+    used = ""
+    if chosen is not None:
+        version = versions.get(chosen) or _read_runtime_maafw_version(chosen)
+        used = f"运行时用 {label(chosen)}（{version or '版本未知'}），"
+    return (
+        f"检测到混装的 MaaFramework 原生库目录：{listed}。{used}"
+        "其余多半是换过外壳留下的残留，建议用干净的发行包重新导入"
+    )
+
+
 def _bundled_native_runtime_dir(
     roots: tuple[Path, ...], base_relative: Path
 ) -> Path | None:
     """项目自带 MaaFramework 原生库所在目录（相对 ``source_root``）；没有就 None。
 
-    查找逻辑与 runner 同一套（``project_maafw_runtime_path``：先 ``maafw/``，再
-    ``runtimes/<rid>/native``，再有界搜索），叠加视图里先看包、再看项目。MFAAvalonia
+    查找逻辑与 runner 同一套（``project_maafw_runtime_path``：``maafw/`` 与
+    ``runtimes/<rid>/native`` 里本机能加载的取版本最高的，都没有再有界搜索），叠加视图里
+    先看包、再看项目。MFAAvalonia
     布局下找到的是 ``runtimes/win-x64/native``，那里除了 MaaFramework 还有外壳自己的
     原生库；整目录带走，几十 MB，换来的是 runner 用的就是发行包里那份库。来源同时带
     好几种架构（``win-arm64`` + ``win-x64``）时选本机那一种，其余照旧当外壳运行时剔掉；
@@ -2069,15 +2580,22 @@ def materialize_projection(
 # --------------------------------------------------------------------------
 
 
-def package_projection_rules(payload_root: Path, project_root: Path) -> ProjectionRules:
+def package_projection_rules(
+    payload_root: Path,
+    project_root: Path,
+    *,
+    sizes: Mapping[str, int] | None = None,
+) -> ProjectionRules:
     """更新包落地时的白名单：包内 interface 优先，其次项目现有的；不查存在性。
 
     只支持 release 布局的包（interface.json 在包根）：内嵌副本本身就是提升后的
     release 布局，assets 布局的源码 zip 从来不是更新器的输入。
+    ``sizes``：区间差量更新在按中央目录建的空文件骨架上算时给（包内取中央目录、其余取
+    项目里的实际大小），与整包解压后算的同一张白名单。
     """
 
     rules = build_projection_rules(
-        project_root, strict=False, overlay_root=payload_root
+        project_root, strict=False, overlay_root=payload_root, sizes=sizes
     )
     if rules.base_relative != ROOT:
         raise ProjectionError(
@@ -2165,6 +2683,7 @@ def filter_package_entries(
 __all__ = [
     "EXCLUDED_DIRECTORY_REASONS",
     "MAX_REPORT_ITEMS",
+    "PROJECTION_REVISION",
     "SHARED_EXCLUDED_ROOT_DIRS",
     "SHARED_EXCLUDED_SUFFIXES",
     "ProjectionError",
@@ -2184,6 +2703,8 @@ __all__ = [
     "looks_like_local_path",
     "materialize_projection",
     "package_projection_rules",
+    "package_takeover_dirs",
     "read_json_object",
+    "takeover_orphans",
     "target_exclusion_reason",
 ]
