@@ -41,6 +41,8 @@ export interface HomeActivitySourceOptions<T> {
   isObsolete?: (tag: unknown) => boolean
   /** 首次 start 时的额外动作（例如同时去取版本宣传图） */
   onFirstStart?: () => void
+  /** 已经有同一份数据在取时返回 true：这一轮直接跳过，不重复发请求 */
+  isBusy?: () => boolean
 }
 
 export interface HomeActivitySource {
@@ -85,6 +87,8 @@ export const useHomeActivitySource = <T>(
 
   const load = async () => {
     if (disposed) return
+    // 同一份数据已经在取：跳过这一轮，别把两个并发请求的结果来回盖
+    if (options.isBusy?.() === true) return
     const tag = options.requestTag?.()
     let timer: number | null = null
     try {
