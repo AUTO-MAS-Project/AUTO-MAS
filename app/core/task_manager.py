@@ -252,7 +252,8 @@ def _normalize_src_root_path(path: Path) -> str:
 
 def _is_relative_src_root(path: Path | str, parent: Path | str) -> bool:
     path = str(path)
-    parent = str(parent)
+    # 父目录是盘根时归一后带尾分隔符（"c:\\"），不先去掉就会拼出双分隔符而判不出子目录。
+    parent = str(parent).rstrip(os.sep)
     return path.startswith(parent + os.sep)
 
 
@@ -275,14 +276,24 @@ def _exclusive_resources(
 def _emulator_key(script_config: object) -> str | None:
     """返回「模拟器配置 Id:实例序号」互斥键；未绑定模拟器时返回 None。"""
 
-    if isinstance(script_config, (MaaConfig, SrcConfig, MaaFWConfig)):
-        # M9A / MSS 是 MaaFWConfig 的子类，自动覆盖。
+    if isinstance(script_config, (MaaConfig, SrcConfig, MaaFWConfig, BAAHConfig)):
+        # M9A / MSS 是 MaaFWConfig 的子类，自动覆盖；BAAH 与 MAA 同用 Emulator.Id / Index。
         emulator_id = script_config.get("Emulator", "Id")
         index = script_config.get("Emulator", "Index")
     elif isinstance(script_config, MaaEndConfig):
         # 这里不看 Game.ControllerType：它是控制器「名字」，协议（Adb/Win32）要读
         # 控制器配置才知道，调度层不为此去碰文件。Win32 直控的配置留空 "-" 就自
         # 然没有实例键；真写了模拟器就按占用处理，宁可多串一次也不漏一次冲突。
+        emulator_id = script_config.get("Game", "EmulatorId")
+        index = script_config.get("Game", "EmulatorIndex")
+    elif isinstance(script_config, GeneralConfig):
+        # 通用脚本只在「启用游戏 + 类型为模拟器」时才持有模拟器实例（见 General/manager.py
+        # 的配置检查与 get_emulator_instance 调用）；Client / URL 类型即便残留了模拟器绑定
+        # 也不占实例键，免得把合法并发压成串行。
+        if not script_config.get("Game", "Enabled") or (
+            script_config.get("Game", "Type") != "Emulator"
+        ):
+            return None
         emulator_id = script_config.get("Game", "EmulatorId")
         index = script_config.get("Game", "EmulatorIndex")
     else:
