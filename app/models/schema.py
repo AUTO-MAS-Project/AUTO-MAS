@@ -1528,6 +1528,9 @@ class QueueItem_Schedule(BaseModel):
     NextRunAt: Optional[str] = Field(
         default=None, description="下次运行时间, 格式为YYYY-MM-DD HH:MM:SS"
     )
+    SkipOnce: Optional[bool] = Field(
+        default=None, description="一次性: 该队列的下一次运行跳过本项, 运行后自动清除"
+    )
 
 
 class QueueItem_Data(BaseModel):
@@ -1809,6 +1812,9 @@ class MaaConfig_Run(BaseModel):
     )
     TaskTransitionMethod: Optional[Literal["NoAction", "ExitGame", "ExitEmulator"]] = (
         Field(default=None, description="简洁任务间切换方式")
+    )
+    KeepAliveOnManualStop: Optional[bool] = Field(
+        default=None, description="手动停止单个任务时保留 MAA 与模拟器"
     )
     ProxyTimesLimit: Optional[int] = Field(default=None, description="每日代理次数限制")
     RunTimesLimit: Optional[int] = Field(default=None, description="重试次数限制")

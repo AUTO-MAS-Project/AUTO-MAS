@@ -33,6 +33,7 @@ from app.models.emulator import DeviceProvider
 from app.models.notification import NotificationImage
 from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, TaskExecuteBase, UserItem
+from app.task.base import keep_runtime_on_manual_stop
 from app.task.emulator_core import close_emulator
 from app.task.notify_core import NOTIFY_SCREENSHOT_LIMIT, screenshot_entries
 from app.task.proxy_helpers import (
@@ -330,6 +331,8 @@ class MaaManager(TaskExecuteBase):
 
         if self.check_result != "Pass":
             self.script_info.status = "异常"
+            # 同通用脚本: 提前返回时用户代理状态不会被写回, 留一条可检索的痕迹
+            logger.warning(f"本轮未通过检查, 用户代理状态未写回: {self.check_result}")
             return self.check_result
 
         logger.info("MAA 主任务已结束, 开始执行后续操作")
@@ -338,7 +341,9 @@ class MaaManager(TaskExecuteBase):
         logger.success(f"已解锁脚本配置 {self.script_info.script_id}")
 
         if self.task_info.mode in ["AutoProxy"]:
-            await close_emulator(self)
+            # 手动停止单个任务且脚本配置要求保留时，模拟器留给用户
+            if not keep_runtime_on_manual_stop(self):
+                await close_emulator(self)
             await Config.ScriptConfig[
                 uuid.UUID(self.script_info.script_id)
             ].UserData.load(await self.user_config.toDict())
