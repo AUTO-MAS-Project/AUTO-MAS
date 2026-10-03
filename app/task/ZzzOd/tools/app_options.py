@@ -54,7 +54,9 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-from app.utils.io import read_file, write_file
+from app.utils.io import read_dict_file, write_file
+
+from .zzz_od_config import _YAML_LOCK
 
 # 应用配置存储子目录（一条龙默认组，与 _group.yml 同目录）
 _APP_GROUP_ID = "one_dragon"
@@ -839,7 +841,7 @@ def app_config_path(root: Path, slot_idx: int, app_id: str) -> Path:
 def read_app_config(root: Path, slot_idx: int, app_id: str) -> dict:
     """读取应用配置（文件不存在返回空 dict，由调用方回退默认值）。"""
 
-    return dict(read_file(app_config_path(root, slot_idx, app_id)) or {})
+    return read_dict_file(app_config_path(root, slot_idx, app_id), allow_empty=True)
 
 
 def write_app_config(
@@ -848,7 +850,8 @@ def write_app_config(
     """按 patch 更新应用配置（读-改-写，保留未知字段），返回完整配置。"""
 
     path = app_config_path(root, slot_idx, app_id)
-    data = read_file(path) or {}
-    data.update(values)
-    write_file(path, data)
-    return data
+    with _YAML_LOCK:
+        data = read_dict_file(path, allow_empty=True)
+        data.update(values)
+        write_file(path, data)
+        return data
