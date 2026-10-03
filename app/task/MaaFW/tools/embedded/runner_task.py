@@ -600,14 +600,17 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             if self.maintenance_skipped:
                 # 同一资源已确认在维护：记一份本用户的日志，让代理结果汇总、统计信息与
                 # history 都写明原因（其他跳过原因照旧不记）。
+                # 窗口与行号由 _append_log 按本用户日志算好（前面可能还有更新日志与
+                # 检查阶段的特调提示），不再改写成只剩这一行
                 await self.prepare()
                 self._append_log(self.check_result)
                 if self.cur_user_log is not None:
                     self.cur_user_log.status = self.check_result
-            # 这份日志从零开始，行号回到 1；_append_log 已在上面把本用户的行号算好，
-            # 这里只在没有日志可写时兜底。
-            self.script_info.log_first_line = self.script_info.log_first_line or 1
-            self.script_info.log = self.check_result
+            else:
+                # 没有本用户的日志：窗口只剩检查结果这一行，行号回到 1，
+                # 不接着上一个用户的行号往下数
+                self.script_info.log_first_line = 1
+                self.script_info.log = self.check_result
             return
 
         await self._mark_run_started()
