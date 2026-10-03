@@ -26,10 +26,10 @@ jobs:
 
     steps:
       - name: 检出代码
-        uses: actions/checkout@v7.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: 设置 uv
-        uses: astral-sh/setup-uv@v10.0.1
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
           version: "0.12.3"
           python-version: "3.12"
@@ -40,7 +40,7 @@ jobs:
           uv run --no-sync ruff format --check .
 
       - name: 设置 Node.js 环境
-        uses: actions/setup-node@v7.0.0
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: '24'
 
@@ -63,4 +63,4 @@ jobs:
 
       - name: 检查前端格式
         working-directory: frontend
-        run: yarn oxfmt . --check
+        run: yarn format:check

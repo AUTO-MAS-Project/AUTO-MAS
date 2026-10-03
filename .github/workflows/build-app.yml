@@ -50,12 +50,12 @@ jobs:
 
     steps:
       - name: 签出代码
-        uses: actions/checkout@v7.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
 
       - name: 设置 Python 环境
-        uses: actions/setup-python@v7.0.0
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
 
@@ -111,27 +111,97 @@ jobs:
           Write-Host "前置检查通过：将发布 $env:VERSION_TAG"
         shell: pwsh
 
-      - name: 构建并准备 Windows 解压包
-        uses: ./.github/actions/build-windows-unpacked
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          sentry-auth-token: ${{ secrets.SENTRY_AUTH_TOKEN }}
-          sentry-org: ${{ vars.SENTRY_ORG }}
-          sentry-project: ${{ vars.SENTRY_PROJECT }}
+      - name: 读取 Runtime 版本
+        run: |
+          $runtimeVersionFile = Join-Path '${{ github.workspace }}' 'res\runtime-version.txt'
+          $runtimeVersion = (Get-Content -LiteralPath $runtimeVersionFile -Raw).Trim()
+          if ($runtimeVersion -notmatch '^v\d+(\.\d+)*([-+][0-9A-Za-z.-]+)?$') {
+            throw "Runtime 版本格式无效：$runtimeVersion"
+          }
+          Add-Content -LiteralPath $env:GITHUB_ENV -Value "RUNTIME_VERSION=$runtimeVersion" -Encoding utf8
+          Write-Host "本次构建使用 Runtime $runtimeVersion"
+        shell: pwsh
 
-      - name: 移出未签名主程序
-        run: Move-Item -LiteralPath 'frontend\dist\win-unpacked\AUTO-MAS.exe' -Destination 'AUTO-MAS.exe'
+      - name: 下载并校验 Runtime 可执行文件
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $runtimeDir = Join-Path "${{ github.workspace }}" 'runtime'
+          New-Item -ItemType Directory -Force -Path $runtimeDir | Out-Null
+
+          $exeName = "auto-mas-runtime-$env:RUNTIME_VERSION.exe"
+
+          gh release download $env:RUNTIME_VERSION `
+            -R AUTO-MAS-Project/AUTO-MAS-Runtime `
+            -D $runtimeDir `
+            -p $exeName `
+            -p 'SHA256SUMS.txt' `
+            --clobber
+          if ($LASTEXITCODE -ne 0) {
+            throw "下载 Runtime $env:RUNTIME_VERSION 失败"
+          }
+
+          Push-Location $runtimeDir
+          try {
+            $sumsLine = Select-String -Path 'SHA256SUMS.txt' -Pattern ([regex]::Escape($exeName)) |
+              Select-Object -First 1
+            if (-not $sumsLine) {
+              throw "SHA256SUMS.txt 中找不到 $exeName 对应的记录"
+            }
+            $expectedHash = ($sumsLine.Line -split '\s+')[0].ToUpperInvariant()
+            $actualHash = (Get-FileHash -Path $exeName -Algorithm SHA256).Hash.ToUpperInvariant()
+
+            Write-Host "期望哈希: $expectedHash"
+            Write-Host "实际哈希: $actualHash"
+
+            if ($actualHash -ne $expectedHash) {
+              throw "SHA-256 校验失败：$exeName 与 SHA256SUMS.txt 不匹配，可能下载损坏或被篡改"
+            }
+
+            # Electron 侧固定按 auto-mas-runtime.exe 定位（frontend/electron/services/runtime/launchConfig.ts）
+            Move-Item -Path $exeName -Destination 'auto-mas-runtime.exe' -Force
+            Remove-Item 'SHA256SUMS.txt'
+            Write-Host "Runtime $env:RUNTIME_VERSION 校验通过：$runtimeDir\auto-mas-runtime.exe"
+          } finally {
+            Pop-Location
+          }
+        shell: pwsh
+
+      - name: 设置 Node.js 环境
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "20"
+
+      - name: 构建应用程序
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_ORG: ${{ vars.SENTRY_ORG }}
+          SENTRY_PROJECT: ${{ vars.SENTRY_PROJECT }}
+        run: |
+          cd frontend
+          corepack enable
+          corepack prepare yarn@4.9.1 --activate
+          yarn install
+          yarn build
+          Move-Item -Path "dist\win-unpacked\AUTO-MAS.exe" -Destination "..\AUTO-MAS.exe"
+        shell: pwsh
+
+      - name: 放入 Runtime 可执行文件
+        run: |
+          $target = 'frontend\dist\win-unpacked\resources'
+          New-Item -ItemType Directory -Force -Path $target | Out-Null
+          Copy-Item -Path 'runtime\auto-mas-runtime.exe' -Destination (Join-Path $target 'auto-mas-runtime.exe') -Force
         shell: pwsh
 
       - name: 上传未签名主程序
         id: upload-unsigned-main-program
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: AUTO-MAS
           path: AUTO-MAS.exe
 
       - name: 签名主程序
-        uses: signpath/github-action-submit-signing-request@v2.3
+        uses: signpath/github-action-submit-signing-request@c92b958760219087e01f8d67a1669ed57afe2627 # v2.3
         with:
           api-token: "${{ secrets.SIGNPATH_API_TOKEN }}"
           organization-id: "787a1d5f-6177-4f30-9559-d2646473584a"
@@ -143,7 +213,7 @@ jobs:
           output-artifact-directory: 'frontend\dist\win-unpacked'
 
       - name: 构建安装包
-        uses: Minionguyjpro/Inno-Setup-Action@v1.2.7
+        uses: Minionguyjpro/Inno-Setup-Action@36abc9fdddc244a69f4895566fa5b2d8d5854e43 # v1.2.7
         env:
           VERSION_TAG: ${{ steps.generate_version_info.outputs.version_tag }}
         with:
@@ -158,14 +228,14 @@ jobs:
       - name: 上传未签名安装程序
         if: steps.generate_version_info.outputs.is_prerelease != 'true'
         id: upload-unsigned-setup-program
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: AUTO-MAS-Unsigned-Setup
           path: AUTO-MAS-Setup.exe
 
       - name: 签名安装程序
         if: steps.generate_version_info.outputs.is_prerelease != 'true'
-        uses: signpath/github-action-submit-signing-request@v2.3
+        uses: signpath/github-action-submit-signing-request@c92b958760219087e01f8d67a1669ed57afe2627 # v2.3
         with:
           api-token: "${{ secrets.SIGNPATH_API_TOKEN }}"
           organization-id: "787a1d5f-6177-4f30-9559-d2646473584a"
@@ -188,7 +258,7 @@ jobs:
         shell: pwsh
 
       - name: 上传构建产物
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: build-artifacts
           path: AUTO-MAS-*-x64.zip
@@ -200,10 +270,10 @@ jobs:
     needs: build
     steps:
       - name: 签出代码
-        uses: actions/checkout@v7.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: 下载构建产物
-        uses: actions/download-artifact@v8.0.1
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: build-artifacts
           path: artifacts
@@ -235,7 +305,7 @@ jobs:
           gh workflow run sync-cnb.yml --ref "release/${{ needs.build.outputs.version_tag }}"
 
       - name: 发布发行版
-        uses: softprops/action-gh-release@v3.0.2
+        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           tag_name: ${{ needs.build.outputs.version_tag }}
@@ -335,10 +405,10 @@ jobs:
 
     steps:
       - name: 签出代码
-        uses: actions/checkout@v7.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: 设置 Python 环境
-        uses: actions/setup-python@v7.0.0
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.x"
 
@@ -368,13 +438,13 @@ jobs:
 
     steps:
       - name: 下载构建产物
-        uses: actions/download-artifact@v8.0.1
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: build-artifacts
           path: .
 
       - name: 上传安装包
-        uses: MirrorChyan/uploading-action@v1
+        uses: MirrorChyan/uploading-action@ea9a0f6f516fafb6b0a3046a1fe4b0dccb29eca8 # v1
         with:
           filetype: local
           filename: AUTO-MAS-Setup-${{ needs.build.outputs.version_tag }}-x64.zip
@@ -385,27 +455,31 @@ jobs:
           arch: x64
 
       - name: 上传版本说明
-        uses: MirrorChyan/release-note-action@v1
+        uses: MirrorChyan/release-note-action@f392b50c411981ee6d33c8ed5e91d66d84d56202 # v1
         with:
           version_name: ${{ needs.build.outputs.version_tag }}
           release_note: ${{ needs.build.outputs.version_changelog }}
           mirrorchyan_rid: AUTO_MAS
           upload_token: ${{ secrets.MirrorChyanUploadToken }}
 
-      - name: 触发自建源更新
+      - name: 推送自建源更新
+        env:
+          DATACENTER_ACCESS_KEY: ${{ secrets.DATACENTER_ACCESS_KEY }}
+          DATACENTER_STABLE_FILE_ID: ${{ vars.DATACENTER_RELEASE_STABLE_FILE_ID }}
+          DATACENTER_BETA_FILE_ID: ${{ vars.DATACENTER_RELEASE_BETA_FILE_ID }}
+          VERSION_TAG: ${{ needs.build.outputs.version_tag }}
+          IS_PRERELEASE: ${{ needs.build.outputs.is_prerelease }}
         run: |
-          if [ "${{ needs.build.outputs.is_prerelease }}" = "true" ]; then
-            CHANNEL="beta"
+          push_version() {
+            curl -sS --fail --show-error -X POST \
+              "https://data.auto-mas.top/api/v1/user/files/$1/versions" \
+              -H "Authorization: Bearer $DATACENTER_ACCESS_KEY" \
+              -F "file=@AUTO-MAS-Setup-${VERSION_TAG}-x64.zip;type=application/zip"
+          }
+
+          if [ "$IS_PRERELEASE" = "true" ]; then
+            push_version "$DATACENTER_BETA_FILE_ID"
           else
-            CHANNEL="stable"
+            push_version "$DATACENTER_STABLE_FILE_ID"
+            push_version "$DATACENTER_BETA_FILE_ID"
           fi
-
-          PAYLOAD=$(jq -n \
-            --arg version "${{ needs.build.outputs.version_tag }}" \
-            --arg res_id "AUTO_MAS" \
-            --arg channel "$CHANNEL" \
-            --arg os "win" \
-            --arg arch "x64" \
-            '{version: $version, res_id: $res_id, channel: $channel, os: $os, arch: $arch}')
-
-          curl -X POST "${{ secrets.UPDATE_URL }}" -H "Content-Type: application/json" -d "$PAYLOAD"
