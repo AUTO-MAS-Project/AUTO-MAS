@@ -1,6 +1,7 @@
 # ocr_tool.py
 import subprocess
 import unicodedata
+from collections import deque
 from pathlib import Path
 
 import cv2
@@ -312,16 +313,48 @@ class OCRTool:
             RuntimeError: 如果 ADB 命令执行失败或截图失败。
             FileNotFoundError: 如果 ADB 可执行文件不存在。
         """
-        # 清理剪贴板粘贴带出的不可见字符与引号（如资源管理器「复制文件地址」的 U+202A）
-        # 用 Unicode Cf（格式字符）全类过滤，覆盖逐个枚举漏掉的 U+2060 等
-        adb_path = (
-            "".join(c for c in adb_path if unicodedata.category(c) != "Cf")
-            .strip()
-            .strip("\"'")
-        )
-        adb_path_obj = Path(adb_path)
-        if not adb_path_obj.exists():
-            raise FileNotFoundError(f"ADB 可执行文件不存在: {adb_path}")
+        # 优先保留真实路径，目录名中的空白和 Unicode 格式字符可能有意义。
+        # 按最少清理步骤检查外围候选，避免一次剥掉目录名中有效的前后缀。
+        # 每步移除一个外围字符或一对引号；同层依次尝试左侧、右侧、成对引号。
+        pending_paths = deque([adb_path])
+        seen_paths = {adb_path}
+        path_candidates = []
+        while pending_paths:
+            candidate = pending_paths.popleft()
+            if Path(candidate).is_file():
+                adb_path = candidate
+                break
+            path_candidates.append(candidate)
+            stripped_paths = []
+            if candidate and (
+                candidate[0].isspace() or unicodedata.category(candidate[0]) == "Cf"
+            ):
+                stripped_paths.append(candidate[1:])
+            if candidate and (
+                candidate[-1].isspace() or unicodedata.category(candidate[-1]) == "Cf"
+            ):
+                stripped_paths.append(candidate[:-1])
+            if (
+                len(candidate) >= 2
+                and candidate[0] in ('"', "'")
+                and candidate[-1] == candidate[0]
+            ):
+                stripped_paths.append(candidate[1:-1])
+            for stripped_path in stripped_paths:
+                if stripped_path not in seen_paths:
+                    seen_paths.add(stripped_path)
+                    pending_paths.append(stripped_path)
+        else:
+            # 外围清理无有效文件时，再尝试去掉复制混入路径内部的格式字符。
+            for candidate in path_candidates:
+                cleaned_path = "".join(
+                    char for char in candidate if unicodedata.category(char) != "Cf"
+                )
+                if Path(cleaned_path).is_file():
+                    adb_path = cleaned_path
+                    break
+            else:
+                raise FileNotFoundError(f"ADB 可执行文件不存在: {adb_path}")
 
         try:
             # 先确保设备已连接
@@ -426,7 +459,6 @@ class OCRTool:
         Returns:
             subprocess.CompletedProcess: 最后一次执行的结果，由调用方检查 returncode。
         """
-        result: subprocess.CompletedProcess | None = None
         for proto in ("exec-out", "shell"):
             result = subprocess.run(
                 [adb_path, "-s", serial, proto, *args],
@@ -437,8 +469,6 @@ class OCRTool:
             if result.returncode == 0:
                 break
             logger.debug(f"adb {proto} 通道执行失败 (返回码: {result.returncode})")
-        if result is None:
-            raise RuntimeError("没有可用的 adb 通道")
         return result
 
     @staticmethod
