@@ -16,7 +16,7 @@ export type MaaUserConfig_Info = {
      */
     Mode?: ('脚本' | '用户' | '直控' | null);
     /**
-     * 是否启用快速配置（与配置来源独立）
+     * 是否启用覆写常规配置（与配置来源独立）
      */
     IfQuickConfig?: (boolean | null);
     /**
