@@ -1,6 +1,6 @@
 """MaaFW 核心最小回归：跨 MFW 各专项的公共测试。
 
-M9A、MaaEnd 等所有基于 MaaFW 的专项，以及直接导入的 ``interface.json`` 项目，都跑在同一套
+M9A 等以 MFW 特调运行的专项，以及直接导入的各个 ``interface.json`` 项目，都跑在同一套
 通用引擎上；这里守的是它们共用的那部分，不属于任何单个专项或单个功能的一次性测试。
 
 只覆盖通用引擎 ``app/task/MaaFW/tools/core/``，不覆盖专项；只收缺一条就要命的：
@@ -639,7 +639,7 @@ def test_native_agent_version_mismatch_fails_before_spawn(
 def test_native_agent_on_plain_layout_not_blocked(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """只有 maafw/ 一份的常规布局（MaaEnd、MaaYYs），宿主同时给了运行池里另一版本的官方库，
+    """项目只自带 maafw/ 一份原生库的常规布局，宿主同时给了运行池里另一版本的官方库，
     runner 用的仍是项目那份，核对必须放行；误报就是所有原生 agent 项目都启动不了。"""
 
     from app.task.MaaFW.tools.core.runner.runner import MaaFWRunner
