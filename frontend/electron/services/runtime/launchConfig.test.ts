@@ -175,10 +175,14 @@ describe('resolveRuntimeLaunchModeDetail：构建默认值的四种组合', () =
     expect(resolveRuntimeLaunchModeDetail(appRoot)).toEqual({ mode: 'managed', source: 'default' })
   })
 
-  it('打包 + 未捆绑 Runtime → off', () => {
+  it('打包 + Runtime 缺失 → managed，路径交给启动流程报错', () => {
     setPackaged(true)
 
-    expect(resolveRuntimeLaunchModeDetail(appRoot)).toEqual({ mode: 'off', source: 'default' })
+    expect(resolveRuntimeLaunchModeDetail(appRoot)).toEqual({ mode: 'managed', source: 'default' })
+    expect(resolveRuntimeLaunchConfig(appRoot)).toMatchObject({
+      mode: 'managed',
+      runtimePath: null,
+    })
   })
 
   it('未打包 + 已捆绑 Runtime → off（源码开发默认仍走旧链路）', () => {
