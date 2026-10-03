@@ -119,6 +119,7 @@ export const maafwSectionDeclarationChecks = () => [
       props: {
         instances: { type: Array, required: true },
         selectedIds: { type: Number, required: true },
+        importHotkeys: { type: Boolean, required: true },
         disabled: Boolean,
       },
     })
@@ -129,6 +130,7 @@ export const maafwSectionDeclarationChecks = () => [
       props: {
         instances: { type: Array, required: true },
         selectedIds: { type: Array as PropType<string[]>, required: true },
+        importHotkeys: { type: Boolean, required: true },
         disabled: Boolean,
         extra: { type: String, required: true },
       },
@@ -140,6 +142,7 @@ export const maafwSectionDeclarationChecks = () => [
       props: {
         instances: { type: Array, required: true },
         selectedIds: { type: Array as PropType<string[]>, required: true },
+        importHotkeys: { type: Boolean, required: true },
         disabled: Boolean,
         extra: { type: String, default: '' },
       },

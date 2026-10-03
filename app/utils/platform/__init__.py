@@ -1,4 +1,5 @@
 import sys
+from functools import lru_cache
 
 IS_WINDOWS = sys.platform == "win32"
 
@@ -25,4 +26,26 @@ else:
 # 模块加载时求值一次：子进程会继承本进程的管理员令牌，据此决定是否走 runas
 IS_ELEVATED = is_admin()
 
-__all__ = ["IS_WINDOWS", "IS_ELEVATED", "is_admin"]
+
+@lru_cache(maxsize=1)
+def is_long_path_supported() -> bool:
+    """当前系统是否已开启长路径支持（``LongPathsEnabled``）。
+
+    非 Windows 无此限制，视为已支持；Windows 上读注册表开关，读不到（键不
+    存在、无权限）按**未开启**处理。开关改完要重启才生效，故只求值一次。
+    """
+
+    if not IS_WINDOWS:
+        return True
+    try:
+        import winreg
+
+        with winreg.OpenKey(
+            winreg.HKEY_LOCAL_MACHINE, r"SYSTEM\CurrentControlSet\Control\FileSystem"
+        ) as key:
+            return int(winreg.QueryValueEx(key, "LongPathsEnabled")[0]) == 1
+    except OSError:
+        return False
+
+
+__all__ = ["IS_WINDOWS", "IS_ELEVATED", "is_admin", "is_long_path_supported"]

@@ -107,6 +107,10 @@ def is_visible(hwnd: int) -> bool:
     return bool(win32gui.IsWindowVisible(hwnd))
 
 
+def is_window(hwnd: int) -> bool:
+    return bool(win32gui.IsWindow(hwnd))
+
+
 def show_window(hwnd: int) -> bool:
     win32gui.ShowWindow(hwnd, win32con.SW_SHOW)
     return True

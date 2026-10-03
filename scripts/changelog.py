@@ -26,7 +26,7 @@
 日常开发不再改 `CHANGELOG.md`：每个 PR 在 `changelog.d/` 下放一个碎片文件，
 文件名 `<PR 号或分支名>.<分类>.md`，首行 `project: <项目键>` 说明改的是哪个专项或本体
 的哪一块，正文一句不超过 50 字、面向用户的话。发版时由 `release` 把全部碎片编译成
-`【项目】做了什么 (#PR) by @作者` 的条目写进 `CHANGELOG.md` 顶部的未发布段（合并即入账，
+`【项目】做了什么 (#PR) by @作者` 的条目写进 `CHANGELOG.md` 顶部的未发布段（每天晚间统一入账，
 工作流调用 `absorb`），同一分类内按项目表的顺序排列；发版时由 `release` 把未发布段改成新的
 版本段、推进版本号，并开出发版 PR。
 `CHANGELOG.md` 顶部第一个 `## [vX.Y.Z]` 标题就是仓库当前的版本号，其余五处版本号与
@@ -1586,7 +1586,7 @@ def absorb_fragments(
     authors: Dict[str, Union[None, str, Sequence[str]]],
     prs: Optional[Dict[str, Optional[int]]] = None,
 ) -> Tuple[Sections, Dates]:
-    """合并即入账：把碎片编译进顶部的未发布段，没有就在最上面新建一个 `## [未发布]`。
+    """统一入账：把碎片编译进顶部的未发布段，没有就在最上面新建一个 `## [未发布]`。
 
     顶部已经是未发布段（任一写法）就追加；顶部是已标日期的段——哪怕还没打 tag——也另起
     未发布段，由 `guard` 拦住「发版 PR 之后又入账」的情况，让维护者重跑「准备发版」。

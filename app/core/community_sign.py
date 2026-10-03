@@ -35,6 +35,7 @@ from app.tools.community_credentials import is_community_credential_configured
 from app.tools.community_sign_provider import (
     check_community_system_time,
     get_community_sign_providers,
+    last_system_time_offset,
     read_community_token,
     run_community_provider,
 )
@@ -58,6 +59,10 @@ _community_sign_flow_lock = asyncio.Lock()
 _community_sign_lock_owner: ContextVar[asyncio.Task | None] = ContextVar(
     "community_sign_lock_owner", default=None
 )
+
+# 系统时钟偏差超过该阈值时，在签到失败原因里补一句校准提示。
+_SYSTEM_TIME_HINT_SECONDS = 300.0
+_SIGNED_STATUSES = ("成功", "已签到")
 
 
 @asynccontextmanager
@@ -124,6 +129,25 @@ def all_enabled_community_platforms_signed(
     return True
 
 
+def _attach_system_time_hint(
+    results: list[dict[str, object]],
+) -> list[dict[str, object]]:
+    """系统时钟偏差过大时，在失败结果的原因里补一句校准提示。"""
+
+    offset = last_system_time_offset()
+    if offset is None or offset <= _SYSTEM_TIME_HINT_SECONDS:
+        return results
+
+    hint = f"疑似系统时钟偏差约 {offset:.0f} 秒，建议先校准系统时间"
+    for item in results:
+        # 占位失败与已签到的条目没有可展示的失败原因。
+        if item.get("_notification_only") or item.get("status") in _SIGNED_STATUSES:
+            continue
+        reason = str(item.get("reason") or "").strip()
+        item["reason"] = f"{reason}；{hint}" if reason else hint
+    return results
+
+
 async def run_community_sign_in(force: bool = False) -> list[dict[str, object]]:
     """协调执行游戏社区签到，避免重复签到和重复通知。"""
 
@@ -132,12 +156,14 @@ async def run_community_sign_in(force: bool = False) -> list[dict[str, object]]:
     acquired = False
     try:
         acquired = await _enter_community_sign_lock()
-        return await _run_configured_community_sign_in(force=force)
+        results = await _run_configured_community_sign_in(force=force)
     finally:
         _exit_community_sign_lock(acquired)
         if not time_check_task.done():
             time_check_task.cancel()
         await asyncio.gather(time_check_task, return_exceptions=True)
+    # 自检任务在 finally 收尾，此处才拿得到本轮时间偏差。
+    return _attach_system_time_hint(results)
 
 
 async def _run_configured_community_sign_in(

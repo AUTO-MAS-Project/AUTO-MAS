@@ -1078,6 +1078,10 @@ export default {
       'You (or the script) start the game; MAS only attaches to the window that is already open',
     howLongMasWaits: 'How long MAS waits after launching the game before it is playable',
     masManagesGame: 'MAS starts and closes the game',
+    mfwAdbAddress: 'ADB address',
+    mfwAdbAddressPassed:
+      'When filled, MAS connects to this address instead of launching the emulator above, and does not close it when the task ends',
+    mfwAdbAddressPlaceholder: 'Leave empty to use the emulator selected above',
     mfwGamePackageName: 'Game package name',
     mfwGamePackageNamePassed:
       'Starts the game together with the emulator. MAS fills this in from the project automatically; when it cannot tell or finds several, the field stays empty and the game is not started, and you can fill it in here',
@@ -1702,6 +1706,36 @@ export default {
       'Both waits when MAS launches the game share this cap: first for the window to appear, then for the screen to settle. The screen is sampled once a second and tasks start early once it has content and stays unchanged for 5 seconds; MaaFW initialisation runs in parallel. Unity games are usually still on a black loading screen when the window shows up, and posting tasks too early makes the script report a recognition failure. Not applied to the screen wait when the game is already running.',
     mfwUnityResolutionTip:
       'Unity games only: before launching, MAS looks up the game registry key from the exe path and temporarily switches to the chosen windowed size, restoring the original values after the game closes; nothing is changed if the game is already running.',
+    mfwHotkey: 'Key bindings',
+    mfwHotkeySet: 'Set',
+    mfwHotkeyDefault: 'Default',
+    mfwHotkeyChanged: '{n} changed',
+    mfwHotkeyPressKeys: 'Press keys…',
+    mfwHotkeyDefaultKey: 'Default {key}',
+    mfwHotkeyRestore: 'Restore',
+    mfwHotkeyRestoreAll: 'Restore all defaults',
+    mfwHotkeyUnsupported: 'This key is not supported',
+    mfwHotkeyTooManyModifiers: 'At most two modifier keys',
+    mfwHotkeySave: 'Save',
+    mfwHotkeyNeedsSwitch: 'Only applies when "{option}" is turned on in the user\'s task settings',
+    mfwHotkeyNoCombo: 'This project only presses single keys; key combinations are not supported',
+    mfwHotkeyAllCombo:
+      'Every binding in this project needs {n} modifier key(s) plus one key, e.g. {example}',
+    mfwHotkeySomeCombo:
+      'Some bindings need a key combination (marked next to them); the rest take a single key',
+    mfwHotkeyComboTag: '{n} modifier(s) + key',
+    mfwHotkeyNeedsCase:
+      'Only applies when "{option}" is set to "{case}" in the user\'s task settings',
+    mfwHotkeyImport: 'Import from project',
+    mfwHotkeyImportLastUsed: 'Last used',
+    mfwHotkeyImported: 'Loaded {n} key bindings from the project',
+    mfwHotkeyImportSkipped: '; skipped {m} unsupported keys',
+    mfwHotkeyImportToScript: 'Also import key bindings into the script',
+    mfwHotkeyImportFrom: 'From {dir}',
+    mfwHotkeyImportPickDir: 'Choose another folder…',
+    mfwHotkeyImportNoConfig: 'No launcher config with key bindings was found in this folder',
+    mfwHotkeyImportPickOne:
+      'Found {n} different sets of key bindings; pick one under "Import from project"',
     thisNameAlsoWritten:
       'This name is also written to March7th Assistant / SRA as the Trailblazer name for the Currency War feature',
     thisSubtaskHasNo: 'This subtask has no editable fields',
