@@ -105,7 +105,9 @@
                   !localSelectedMode ||
                   disabled ||
                   !taskOptions.some(option => option.value === localSelectedTaskId) ||
-                  (showUserSelect && (userOptionsLoading || localSelectedUserIds.length === 0))
+                  (showUserSelect &&
+                    (userOptionsLoading ||
+                      (selectedUserIds !== undefined && localSelectedUserIds.length === 0)))
             "
             size="large"
             @click="onAction"
@@ -192,7 +194,7 @@ interface Emits {
 
   (e: 'update:selectedMode', value: TaskCreateIn.mode | null): void
   (e: 'update:resumeFromScriptId', value: string | null): void
-  (e: 'update:selectedUserIds', value: string[]): void
+  (e: 'update:selectedUserIds', value: string[] | undefined): void
 
   (e: 'start'): void
 
@@ -213,7 +215,7 @@ const props = withDefaults(defineProps<Props>(), {
   resumeFromScriptId: null,
   resumeScriptOptions: () => [],
   resumeScriptLoading: false,
-  selectedUserIds: () => [],
+  selectedUserIds: undefined,
   userOptions: () => [],
   userOptionsLoading: false,
   runningTaskLabel: '',
@@ -229,8 +231,15 @@ const localSelectedTaskId = ref(props.selectedTaskId)
 const localSelectedMode = ref(props.selectedMode)
 const localResumeFromScriptId = ref(props.resumeFromScriptId ?? null)
 const localSelectedUserIds = computed({
-  get: () => props.selectedUserIds ?? [],
-  set: value => emit('update:selectedUserIds', [...value]),
+  get: () => props.selectedUserIds ?? props.userOptions.map(option => option.value),
+  set: value => {
+    // 仅用户主动勾满列表时切回全选；选项刷新不能把显式子集扩大成全部用户。
+    const allSelected =
+      props.userOptions.length > 0 &&
+      value.length === props.userOptions.length &&
+      props.userOptions.every(option => value.includes(option.value))
+    emit('update:selectedUserIds', allSelected ? undefined : [...value])
+  },
 })
 
 // 「循环运行」只对循环队列开放，其余任务仍然只有自动代理
@@ -339,7 +348,7 @@ const onResumeDropdownVisibleChange = (open: boolean) => {
 }
 
 const selectAllUsers = () => {
-  localSelectedUserIds.value = (props.userOptions ?? []).map(item => item.value)
+  emit('update:selectedUserIds', undefined)
 }
 
 const clearAllUsers = () => {

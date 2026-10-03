@@ -610,7 +610,7 @@ export function useSchedulerLogic() {
     }
   }
 
-  // 脚本任务可以只跑其中一个用户，下拉口径与各脚本适配器一致：已启用且剩余天数不为 0
+  // 列表用于展示与校正显式子集；全选始终由后端执行时筛选可运行用户。
   const loadUserOptions = async (tab: SchedulerTab) => {
     // 任务下拉还没加载完时判断不出任务类型，此时保留当前选择，等选项可用后再刷新。
     if (!taskOptions.value.length) return
@@ -705,12 +705,16 @@ export function useSchedulerLogic() {
       return
     }
 
-    if (tab.selectedMode === TaskCreateIn.mode.AUTO_PROXY && isScriptTask(tab)) {
+    if (
+      tab.selectedMode === TaskCreateIn.mode.AUTO_PROXY &&
+      isScriptTask(tab) &&
+      tab.selectedUserIds !== undefined
+    ) {
       if (!tab.userOptionsLoaded || tab.userOptionsLoading) {
         message.error(t('scheduler.toast.loadScriptUsersFailed'))
         return
       }
-      if (!tab.selectedUserIds?.length) {
+      if (!tab.selectedUserIds.length) {
         message.error(t('scheduler.toast.needRunUsers'))
         return
       }

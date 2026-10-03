@@ -59,7 +59,7 @@ export interface SchedulerTab {
   resumeFromScriptId?: string | null
   resumeScriptOptions?: Array<{ label: string; value: string }>
   resumeScriptLoading?: boolean
-  // 脚本自动代理要运行的用户集合；undefined 表示尚未初始化，[] 表示主动取消全选
+  // 脚本自动代理的用户范围；undefined 表示动态全选，数组表示显式子集（[] 为取消全选）
   selectedUserIds?: string[]
   userOptions?: Array<{ label: string; value: string }>
   userOptionsLoading?: boolean

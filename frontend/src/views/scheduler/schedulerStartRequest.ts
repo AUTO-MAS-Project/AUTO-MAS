@@ -1,6 +1,6 @@
 import { TaskCreateIn } from '@/api/models/TaskCreateIn'
 
-/** 构造启动请求；空数组必须保留为显式用户范围。 */
+/** 全选省略 userIds，由后端执行时筛选；显式集合（含空数组）原样传递。 */
 export const buildStartTaskRequest = (
   taskId: string,
   mode: TaskCreateIn.mode,
