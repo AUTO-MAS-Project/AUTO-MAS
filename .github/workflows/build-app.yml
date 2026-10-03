@@ -199,7 +199,7 @@ jobs:
           path: AUTO-MAS.exe
 
       - name: 签名主程序
-        uses: signpath/github-action-submit-signing-request@c92b958760219087e01f8d67a1669ed57afe2627 # v2.3
+        uses: signpath/github-action-submit-signing-request@f6d04783b4569d051e0c80105fe66e82819d0092 # v3.0
         with:
           api-token: "${{ secrets.SIGNPATH_API_TOKEN }}"
           organization-id: "787a1d5f-6177-4f30-9559-d2646473584a"
@@ -211,7 +211,7 @@ jobs:
           output-artifact-directory: 'frontend\dist\win-unpacked'
 
       - name: 构建安装包
-        uses: Minionguyjpro/Inno-Setup-Action@36abc9fdddc244a69f4895566fa5b2d8d5854e43 # v1.2.7
+        uses: Minionguyjpro/Inno-Setup-Action@ec985ef724d1fb4a05bfbc1a8e49930dc76d2b0c # v1.2.9
         env:
           VERSION_TAG: ${{ steps.generate_version_info.outputs.version_tag }}
         with:
@@ -233,7 +233,7 @@ jobs:
 
       - name: 签名安装程序
         if: steps.generate_version_info.outputs.is_prerelease != 'true'
-        uses: signpath/github-action-submit-signing-request@c92b958760219087e01f8d67a1669ed57afe2627 # v2.3
+        uses: signpath/github-action-submit-signing-request@f6d04783b4569d051e0c80105fe66e82819d0092 # v3.0
         with:
           api-token: "${{ secrets.SIGNPATH_API_TOKEN }}"
           organization-id: "787a1d5f-6177-4f30-9559-d2646473584a"
@@ -309,7 +309,7 @@ jobs:
           gh workflow run sync-cnb.yml --ref "release/${{ needs.build.outputs.version_tag }}"
 
       - name: 发布发行版
-        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           tag_name: ${{ needs.build.outputs.version_tag }}
