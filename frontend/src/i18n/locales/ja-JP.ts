@@ -2841,6 +2841,7 @@ export default {
     firstRunEstimate: '初回の準備には数分かかります。その間はほかの作業をしていても問題ありません',
     slowHint: 'いつもより時間がかかっています。バックエンドの応答を待っています',
     viewLog: 'ログを見る',
+    switchMirror: 'ミラーを変更',
     transferSource: '{source} から',
     probeUnavailable: '{source} は利用できません',
   },
@@ -3762,6 +3763,15 @@ export default {
       exportBackup: 'バックアップを書き出す',
       backupDesc:
         'MAS が復旧できない問題に遭遇する前に、このバックアップを書き出しておいてください。保存しておけば安心して再インストールでき、重要なデータが失われることはありません。',
+      autoBackup: '自動バックアップ',
+      autoBackupTip:
+        '有効にすると、バージョン更新後の初回起動時に設定と履歴をバックアップ先ディレクトリへ自動でまとめ、バージョンごとに直近のバックアップを保持します。',
+      backupDir: 'バックアップ先ディレクトリ',
+      backupDirTip:
+        '存在する絶対パスを指定してください。ドライブ直下、システムディレクトリ、プログラムのディレクトリは指定できません。',
+      backupDirPlaceholder: 'バックアップ先を選択してください',
+      pickBackupDir: 'ディレクトリを選択',
+      backupDirPickFailed: 'バックアップ先ディレクトリの選択に失敗しました',
       logSection: 'MAS 本体のログ書き出し',
       exportLog: 'ログのアーカイブを書き出す',
       exportMaaEnd: 'MaaEnd の問題報告パッケージを書き出す',

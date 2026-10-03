@@ -179,6 +179,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke('pull-repository', targetBranch, selectedMirror, rebuild),
   installDependencies: (selectedMirror?: string, rebuild?: boolean) =>
     ipcRenderer.invoke('install-dependencies', selectedMirror, rebuild),
+  // 安装中换源（#499）：中止当前安装并用指定镜像源重跑，结果由换源流程接管
+  switchDependencyMirror: (selectedMirror: string) =>
+    ipcRenderer.invoke('switch-dependency-mirror', selectedMirror),
   getMirrors: (type: string) => ipcRenderer.invoke('get-mirrors', type),
   getRuntimeInitContext: () => ipcRenderer.invoke('get-runtime-init-context'),
 

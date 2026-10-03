@@ -6,13 +6,16 @@
 import * as fs from 'fs'
 import * as path from 'path'
 import * as crypto from 'crypto'
-import { spawn } from 'child_process'
+import { spawn, ChildProcess } from 'child_process'
 import { MirrorService, MirrorSource } from './mirrorService'
 import {
+  MIRROR_SWITCH_ABORTED,
   MirrorRotationService,
   NetworkOperationCallback,
   NetworkOperationProgress,
+  PROBE_TIMEOUT_MS,
 } from './mirrorRotationService'
+import { createPipProgressState, feedPipOutput, pipProgressPercent } from './pipProgress'
 
 import { getLogger } from './logger'
 const logger = getLogger('后端依赖安装服务')
@@ -40,6 +43,43 @@ export interface DependencyProgress {
 
 export type DependencyProgressCallback = (progress: DependencyProgress) => void
 
+// ==================== 安装中换源：活动安装跟踪（#499） ====================
+
+// IPC 处理器每次调用都会 new 一个 DependencyService，中止状态只能放在模块级；
+// 同一时刻只有一条安装流水（初始化窗口只有一个）
+interface ActiveInstallHandle {
+  aborted: boolean
+  pipProc: ChildProcess | null
+  onSettled?: () => void
+}
+
+let activeInstall: ActiveInstallHandle | null = null
+
+/**
+ * 中止正在进行的依赖安装并等它完全收尾（避免两次 pip 并发）。
+ * 返回是否有安装被中止；没有进行中的安装时返回 false。
+ * 被中止的安装会以 MIRROR_SWITCH_ABORTED 失败收尾，哈希不会落盘。
+ */
+export async function abortActiveDependencyInstall(): Promise<boolean> {
+  const handle = activeInstall
+  if (!handle) return false
+  logger.info('收到安装中止请求（换源），停止当前依赖安装')
+  handle.aborted = true
+  handle.pipProc?.kill()
+  await new Promise<void>(resolve => {
+    if (activeInstall !== handle) {
+      resolve()
+      return
+    }
+    const prev = handle.onSettled
+    handle.onSettled = () => {
+      prev?.()
+      resolve()
+    }
+  })
+  return true
+}
+
 // ==================== 依赖安装服务类 ====================
 
 export class DependencyService {
@@ -65,8 +105,17 @@ export class DependencyService {
   async installDependencies(
     onProgress?: DependencyProgressCallback,
     selectedMirror?: string,
-    forceInstall: boolean = false
+    forceInstall: boolean = false,
+    forceReinstall: boolean = false
   ): Promise<{ success: boolean; error?: string; skipped?: boolean }> {
+    // 注册活动安装句柄，让「安装中换源」能找到并中止本次安装（#499）；
+    // 若有更老的句柄残留（异常路径），先标记中止，避免误杀新安装的 pip
+    const handle: ActiveInstallHandle = { aborted: false, pipProc: null }
+    if (activeInstall) {
+      logger.warn('发现残留的上一安装句柄，标记中止后接管')
+      activeInstall.aborted = true
+    }
+    activeInstall = handle
     try {
       // 第一步：环境检查
       onProgress?.({
@@ -102,6 +151,12 @@ export class DependencyService {
 
       logger.info(`依赖检查结果: ${JSON.stringify(checkResult)}`)
 
+      // 检查阶段收到换源中止：不进入安装，直接以中止收尾（#499）
+      if (handle.aborted) {
+        logger.info('依赖检查阶段被中止，跳过安装')
+        return { success: false, error: MIRROR_SWITCH_ABORTED }
+      }
+
       // 第二步：安装依赖
       // 不在这里发送 progress: 0，避免进度条跳回0
       const installResult = await this.performInstall(
@@ -117,7 +172,9 @@ export class DependencyService {
             },
           })
         },
-        selectedMirror
+        selectedMirror,
+        handle,
+        forceReinstall
       )
 
       if (!installResult.success) {
@@ -140,6 +197,11 @@ export class DependencyService {
       const errorMsg = error instanceof Error ? error.message : String(error)
       logger.error(`依赖安装失败: ${errorMsg}`)
       return { success: false, error: errorMsg }
+    } finally {
+      if (activeInstall === handle) {
+        activeInstall = null
+      }
+      handle.onSettled?.()
     }
   }
 
@@ -223,22 +285,33 @@ export class DependencyService {
       mirrorIndex: number,
       totalMirrors: number
     ) => void,
-    selectedMirror?: string
+    selectedMirror?: string,
+    handle?: ActiveInstallHandle,
+    forceReinstall: boolean = false
   ): Promise<{ success: boolean; error?: string }> {
     const mirrors = this.mirrorService.getMirrors('pip_mirror')
 
     // 定义依赖安装操作
     const installOperation: NetworkOperationCallback = async (mirror, onOpProgress) => {
+      // 换源中止：新安装已在别处发起，本操作不再起 pip（#499）
+      if (handle?.aborted) {
+        return { success: false, error: MIRROR_SWITCH_ABORTED }
+      }
       try {
         // 1. 检查并安装基础工具
         onOpProgress({ progress: 20, description: '检查基础工具...' })
-        await this.ensureBasicTools(mirror)
+        await this.ensureBasicTools(mirror, handle)
 
         // 2. 安装依赖
         onOpProgress({ progress: 40, description: '安装依赖包...' })
-        await this.installRequirements(mirror, progress => {
-          onOpProgress({ progress, description: '安装依赖包...' })
-        })
+        await this.installRequirements(
+          mirror,
+          progress => {
+            onOpProgress({ progress, description: '安装依赖包...' })
+          },
+          handle,
+          forceReinstall
+        )
 
         onOpProgress({ progress: 100, description: '安装完成' })
         return { success: true }
@@ -247,6 +320,18 @@ export class DependencyService {
         return { success: false, error: errorMsg }
       }
     }
+
+    // 安装前探测各镜像源延迟，优先使用更快的源（未指定镜像源时生效）
+    const probeOperation: NetworkOperationCallback | undefined = selectedMirror
+      ? undefined
+      : async mirror => {
+          const base = mirror.url.endsWith('/') ? mirror.url : mirror.url + '/'
+          const response = await fetch(new URL('simple/pip/', base), {
+            signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
+          })
+          await response.body?.cancel().catch(() => {})
+          return { success: response.ok }
+        }
 
     // 使用镜像源轮替
     const result = await this.rotationService.execute(
@@ -260,7 +345,9 @@ export class DependencyService {
           rotationProgress.totalMirrors
         )
       },
-      selectedMirror
+      selectedMirror,
+      probeOperation,
+      () => handle?.aborted ?? false
     )
 
     if (!result.success) {
@@ -274,7 +361,10 @@ export class DependencyService {
   /**
    * 确保基础工具已安装（setuptools, wheel）
    */
-  private async ensureBasicTools(mirror: MirrorSource): Promise<void> {
+  private async ensureBasicTools(
+    mirror: MirrorSource,
+    handle?: ActiveInstallHandle
+  ): Promise<void> {
     logger.info('=== 检查基础工具 ===')
 
     // 检查 setuptools 和 wheel 是否已安装
@@ -288,6 +378,11 @@ export class DependencyService {
     logger.info('正在安装基础工具...')
 
     await new Promise<void>((resolve, _reject) => {
+      // 换源中止：不再起新的 pip（#499）
+      if (handle?.aborted) {
+        resolve()
+        return
+      }
       const hostname = new URL(mirror.url).hostname
 
       const proc = spawn(
@@ -310,6 +405,8 @@ export class DependencyService {
         }
       )
 
+      if (handle) handle.pipProc = proc
+
       proc.stdout?.on('data', data => {
         logger.info(`setuptools/wheel: ${data.toString().trim()}`)
       })
@@ -319,6 +416,12 @@ export class DependencyService {
       })
 
       proc.on('close', code => {
+        if (handle && handle.pipProc === proc) handle.pipProc = null
+        if (handle?.aborted) {
+          // 保持容错 resolve；中止由后续 installRequirements 的拒起/拒绝收口
+          resolve()
+          return
+        }
         if (code === 0) {
           logger.info('基础工具安装完成')
           resolve()
@@ -372,65 +475,56 @@ export class DependencyService {
    */
   private installRequirements(
     mirror: MirrorSource,
-    onProgress?: (progress: number) => void
+    onProgress?: (progress: number) => void,
+    handle?: ActiveInstallHandle,
+    forceReinstall: boolean = false
   ): Promise<void> {
     return new Promise((resolve, reject) => {
+      // 换源中止：拒起新 pip（#499）
+      if (handle?.aborted) {
+        reject(new Error(MIRROR_SWITCH_ABORTED))
+        return
+      }
       const hostname = new URL(mirror.url).hostname
 
-      const proc = spawn(
-        this.pythonExe,
-        [
-          '-m',
-          'pip',
-          'install',
-          '-r',
-          this.requirementsPath,
-          '-i',
-          mirror.url,
-          '--trusted-host',
-          hostname,
-          '--no-warn-script-location',
-        ],
-        {
-          cwd: this.appRoot,
-          stdio: 'pipe',
-        }
-      )
+      const args = [
+        '-m',
+        'pip',
+        'install',
+        '-r',
+        this.requirementsPath,
+        '-i',
+        mirror.url,
+        '--trusted-host',
+        hostname,
+        '--no-warn-script-location',
+      ]
+      // 换源重跑：--force-reinstall 重解包已缓存 wheel，修复中止瞬间可能留下的半写 dist
+      if (forceReinstall) args.push('--force-reinstall')
+
+      const proc = spawn(this.pythonExe, args, {
+        cwd: this.appRoot,
+        stdio: 'pipe',
+      })
+      if (handle) handle.pipProc = proc
 
       let stdoutData = ''
       let stderrData = ''
-      let totalPackages = 0
-      let installedPackages = 0
+      const pipState = createPipProgressState()
+      let lastProgress = pipProgressPercent(pipState)
 
       proc.stdout?.on('data', data => {
         const output = data.toString().trim()
         stdoutData += output
         logger.info(`pip install: ${output}`)
 
-        // 解析pip输出，统计安装进度
-        // 匹配 "Collecting xxx" 来统计总包数
-        const collectingMatches = output.match(/Collecting\s+\S+/g)
-        if (collectingMatches) {
-          totalPackages += collectingMatches.length
-        }
-
-        // 匹配 "Installing collected packages:" 或 "Successfully installed" 来统计已安装包数
-        const installingMatch = output.match(/Installing collected packages:/)
-        if (installingMatch) {
-          // 开始安装阶段
-          installedPackages = Math.floor(totalPackages * 0.8) // 假设收集完成后进度到80%
-          if (onProgress) {
-            const progress = 40 + (installedPackages / Math.max(totalPackages, 1)) * 50 // 40% - 90%
-            onProgress(Math.min(progress, 90))
-          }
-        }
-
-        const successMatch = output.match(/Successfully installed/)
-        if (successMatch) {
-          installedPackages = totalPackages
-          if (onProgress) {
-            onProgress(95) // 安装完成，进度到95%
-          }
+        // #499：按已完成下载的字节数推进 40-90 的进度段，
+        // 解析不到字节时 pipProgress 内部回退旧的包数锚点
+        feedPipOutput(pipState, data.toString())
+        const progress = pipProgressPercent(pipState)
+        if (progress !== lastProgress && onProgress) {
+          lastProgress = progress
+          onProgress(progress)
         }
       })
 
@@ -441,7 +535,15 @@ export class DependencyService {
       })
 
       proc.on('close', code => {
+        if (handle && handle.pipProc === proc) handle.pipProc = null
         logger.info(`pip install 退出码: ${code}`)
+
+        // 被换源中止的 pip 必须先判中止：空 stderr 会走 !hasActualError 假成功，
+        // 进而把未装完的哈希落盘（#499）
+        if (handle?.aborted) {
+          reject(new Error(MIRROR_SWITCH_ABORTED))
+          return
+        }
 
         // 检查是否有实际错误
         const hasActualError =

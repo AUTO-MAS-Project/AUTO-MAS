@@ -36,6 +36,7 @@ dependencies = [
     "maafw>=5.12,<6.0",
     "mss==9.0.2",
     "fastapi-mcp==0.4.0",
+    "mcp<2",
     "json5==0.14.0",
     "protobuf==7.36.1",
     "pyyaml==6.0.3",

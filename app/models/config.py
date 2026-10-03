@@ -5058,6 +5058,17 @@ class GlobalConfig(ConfigBase):
             "Update", "MirrorChyanCDK", "", EncryptValidator()
         )
 
+        ## Backup -----------------------------------------------------------
+        ## 版本号变化后的首次启动是否自动备份 data/config/history（#949）
+        self.Backup_IfAutoBackup = ConfigItem(
+            "Backup", "IfAutoBackup", False, BoolValidator()
+        )
+        ## 自动备份目录：FolderValidator 要求是「已存在」的绝对路径，并拒绝盘符根、
+        ## 系统目录与项目根目录（备份应当放在安装目录之外）
+        self.Backup_BackupDir = ConfigItem("Backup", "BackupDir", "", FolderValidator())
+        ## 上次运行记录的版本号；只有它与当前版本号不同才认为发生了版本变化
+        self.Backup_LastVersion = ConfigItem("Backup", "LastVersion", "")
+
         ## Data -------------------------------------------------------------
         ## 唯一标识符
         self.Data_UID = ConfigItem("Data", "UID", str(uuid.uuid4()), UUIDValidator())

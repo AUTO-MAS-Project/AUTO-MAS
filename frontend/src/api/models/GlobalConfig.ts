@@ -2,6 +2,7 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
+import type { GlobalConfig_Backup } from './GlobalConfig_Backup';
 import type { GlobalConfig_Display } from './GlobalConfig_Display';
 import type { GlobalConfig_Function } from './GlobalConfig_Function';
 import type { GlobalConfig_Notify } from './GlobalConfig_Notify';
@@ -38,5 +39,9 @@ export type GlobalConfig = {
      * 更新相关配置
      */
     Update?: (GlobalConfig_Update | null);
+    /**
+     * 自动备份相关配置
+     */
+    Backup?: (GlobalConfig_Backup | null);
 };
 

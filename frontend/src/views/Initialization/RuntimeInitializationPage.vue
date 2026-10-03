@@ -27,7 +27,17 @@
       :steps="launchSteps"
       :action-label="t('launch.viewLog')"
       @action="openLaunchLogWindow('初始化流程')"
-    />
+    >
+      <template v-if="mirrorSwitchAvailable && dependencyMirrors.length > 0" #extra>
+        <p class="switch-mirror-title">{{ t('launch.switchMirror') }}</p>
+        <MirrorSelectPanel
+          :mirrors="dependencyMirrors"
+          :selected-mirror="dependencySelectedMirror"
+          :class="{ switching: mirrorSwitching }"
+          @update:selected-mirror="handleSwitchMirror"
+        />
+      </template>
+    </LaunchStatus>
   </div>
 </template>
 
@@ -36,6 +46,7 @@ import { useI18n } from 'vue-i18n'
 import LaunchStatus from '@/components/LaunchStatus.vue'
 import { openLaunchLogWindow } from '@/utils/launch'
 import LaunchFailure from './components/LaunchFailure.vue'
+import MirrorSelectPanel from './components/MirrorSelectPanel.vue'
 import RuntimeBackendStartPanel from './components/RuntimeBackendStartPanel.vue'
 import { useInitializationFlow } from './useInitializationFlow'
 
@@ -44,6 +55,8 @@ defineOptions({ name: 'RuntimeInitializationPage' })
 const { t } = useI18n()
 const {
   currentStep,
+  dependencyMirrors,
+  dependencySelectedMirror,
   failureProps,
   flowKind,
   handleBackendComplete,
@@ -52,9 +65,12 @@ const {
   handleFailureAction,
   handleMirrorSelect,
   handleSkip,
+  handleSwitchMirror,
   hasFailed,
   isBackendStep,
   launchSteps,
+  mirrorSwitchAvailable,
+  mirrorSwitching,
   statusDetails,
   statusHint,
   statusProgress,
@@ -63,6 +79,17 @@ const {
 </script>
 
 <style scoped>
+.switch-mirror-title {
+  margin: 16px 0 0;
+  color: var(--ant-color-text-tertiary);
+  font-size: 12.5px;
+}
+
+.switching {
+  pointer-events: none;
+  opacity: 0.6;
+}
+
 .launch-page {
   position: relative;
   display: grid;

@@ -304,8 +304,60 @@ class AppConfig(GlobalConfig):
                 self._repo = None
         return self._repo
 
+    async def _backup_before_upgrade(self) -> None:
+        """版本号变化后的首次启动先备份用户数据（#949）。
+
+        必须在 check_data() 之前跑：它和数据/配置迁移都会改写落盘结构，那时再备份就兜不住
+        最需要兜的那一段。备份失败不阻断启动，只在界面上提示。
+        """
+
+        from app.services.auto_backup import run_upgrade_backup
+
+        try:
+            report = await asyncio.to_thread(
+                run_upgrade_backup,
+                self.config_path.parent,
+                self.config_path,
+                self.VERSION,
+            )
+        except Exception as exc:  # noqa: BLE001 - 备份失败不该挡住启动
+            logger.opt(exception=True).warning(f"升级自动备份失败：{exc}")
+            return
+        if report is None:
+            return
+
+        if report["error"] is not None:
+            self.startup_notices.append(
+                {
+                    "level": "warning",
+                    "title": "数据自动备份失败",
+                    "lines": [
+                        f"本次启动未能自动备份数据：{report['error']}",
+                        "下次启动会再试一次；也可以在设置里手动导出数据备份。",
+                    ],
+                }
+            )
+            return
+        if report["created"] is None:
+            return
+
+        lines = [f"升级前的数据已备份为 {report['created']}"]
+        if report["removed"]:
+            lines.append(
+                f"已清理 {len(report['removed'])} 份更早的自动备份（只删本工具生成的备份文件）"
+            )
+        lines.append(
+            "自动备份每两个次版本滚动删除一次，如需每个版本都留一份，请在设置里手动导出。"
+        )
+        self.startup_notices.append(
+            {"level": "info", "title": "数据已自动备份", "lines": lines}
+        )
+
     async def init_config(self) -> None:
         """初始化配置管理"""
+
+        # 版本号变化后的首次启动：先把用户数据备份出去，再让迁移改写落盘结构（#949）
+        await self._backup_before_upgrade()
 
         await self.check_data()
 
