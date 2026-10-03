@@ -963,6 +963,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 task_options=task_options,
                 script_hotkeys=script_hotkeys,
             )
+            plan = _mark_abort_round_tasks(plan, flavor)
             return _with_skipped_tasks(plan, missing_skips)
         except Exception as exc:
             message = str(exc)
@@ -3465,6 +3466,24 @@ MISSING_TASK_NOTICE_PREFIX = (
 )
 #: 其余任务都跑完、但队列里有失效任务时统计报告的结果：照常算完成，不说「全部完成」。
 MISSING_TASK_USER_RESULT = "代理任务完成，但有失效任务"
+
+
+def _mark_abort_round_tasks(plan: MaaFWRunPlan, flavor: Any) -> MaaFWRunPlan:
+    """把特调声明的关键任务（``abort_round_entries``：entry → 失败时报的话）标到计划上。
+
+    runner 据此在这些任务失败或超时时直接结束本轮，见 ``MaaFWTaskRunPlan.abortRoundMessage``。
+    """
+
+    entries: dict[str, str] = getattr(flavor, "abort_round_entries", None) or {}
+    if not entries:
+        return plan
+    tasks = [
+        task.model_copy(update={"abortRoundMessage": entries[task.entry]})
+        if task.entry in entries
+        else task
+        for task in plan.tasks
+    ]
+    return plan.model_copy(update={"tasks": tasks})
 
 
 def _with_skipped_tasks(

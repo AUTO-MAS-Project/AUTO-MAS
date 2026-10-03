@@ -60,6 +60,14 @@
   通知，**不走重试**（客户端不更新，重试多少次都一样）；其余状态照常继续，``message`` 进日志。
 - **异常**：钩子抛任何 ``Exception`` 都只记警告、照常继续，不能挡住代理；``CancelledError``
   （用户停止）必须照常向上传——钩子里的下载 / 安装都要能被取消打断，不能在线程里死等。
+
+可选属性 ``abort_round_entries``（关键任务）的契约：
+
+- **形状**：``dict[str, str]``，任务 entry → 这个任务失败时报给用户的话（如 M9A 的
+  ``{"SwitchAccount": "切换账号失败"}``）。同样按 ``getattr`` 探测，不进协议。
+- **效果**：建运行计划后由 ``runner_task._mark_abort_round_tasks`` 标到对应任务的
+  ``abortRoundMessage`` 上；这些任务失败或单任务超时时本轮直接结束（不再跑后面的任务），
+  按普通失败结算、宿主照常重试。普通任务失败仍是记失败后继续。
 """
 
 from __future__ import annotations

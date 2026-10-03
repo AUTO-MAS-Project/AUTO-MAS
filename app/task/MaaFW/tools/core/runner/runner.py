@@ -1204,6 +1204,9 @@ class MaaFWRunner:
         第一个任务是受管的「启动游戏」），前置都没做完，后面的任务没有意义。看的是
         计划位置而不是「还没有任务完成」——第一个任务失败后第二个超时照样继续。
 
+        特调声明的关键任务（``abortRoundMessage``，如 M9A 的切换账号）超时同样结束本轮，
+        报它声明的那句话。
+
         其余任务超时记一条任务失败再继续：整轮按普通任务失败结算（不算成功、带超时
         截图进失败通知），宿主照常重试。
         """
@@ -1213,10 +1216,11 @@ class MaaFWRunner:
         self._capture_failure_screenshot(task.name, kind="timeout")
         limit_text = _format_task_limit(self._task_deadline_limit_seconds)
         display_name = _task_display_name(task)
-        if index == 0:
-            raise RuntimeError(
-                f"{TASK_TIMEOUT_MESSAGE}（限制 {limit_text}），本轮已结束: {display_name}"
-            )
+        if index == 0 or task.abortRoundMessage:
+            reason = f"{TASK_TIMEOUT_MESSAGE}（限制 {limit_text}）"
+            if task.abortRoundMessage:
+                reason = f"{task.abortRoundMessage}：{reason}"
+            raise RuntimeError(f"{reason}，本轮已结束: {display_name}")
         self._failed_task_errors.append(
             (task.name, f"{TASK_TIMEOUT_MESSAGE}（限制 {limit_text}）")
         )
@@ -2626,6 +2630,11 @@ class MaaFWRunner:
                     raise RuntimeError(
                         f"游戏未能启动（{actions} 失败），本轮剩余任务已跳过: "
                         f"{display_name}: {message}"
+                    ) from exc
+                if task.abortRoundMessage:
+                    # 特调声明的关键任务（如切换账号）没做成，后面的任务会跑在错的状态上
+                    raise RuntimeError(
+                        f"{task.abortRoundMessage}，本轮已结束: {display_name}: {message}"
                     ) from exc
                 if self._external_stop_active(tasker):
                     self.send_log(
