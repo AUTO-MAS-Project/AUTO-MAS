@@ -254,6 +254,118 @@ async def import_shell_instances(
     return MaaFWApiReply(data=results)
 
 
+async def apply_shell_instance_to_user(
+    script_id: str, user_id: str, instance_id: str
+) -> MaaFWApiReply:
+    """``/maafw/shell-instances/apply``：把一份外壳配置的任务队列与选项覆盖到指定用户。
+
+    与 :func:`import_shell_instances` 共用同一条换算（``plan_instance_import``），只差落到哪儿：
+    那个一份实例建一个新用户（新建脚本引导里的一次性迁移），这个写进已有的某个用户——脚本建好
+    之后又在外壳里调过队列、想再同步一次时用。对不上的任务 / 选项同样进 ``skipped``，与引导
+    那次的判定一字不差。
+    """
+
+    try:
+        script_config = maafw_script_config(script_id)
+    except (KeyError, ValueError, TypeError) as exc:
+        return MaaFWApiReply.error(400, f"MFW 脚本无效: {exc}")
+
+    user = _user_of(script_config, user_id)
+    if user is None:
+        return MaaFWApiReply.error(404, "这个用户已经不在这个脚本里了")
+
+    root, error = await maafw_effective_root(script_id, "")
+    if root is None:
+        return MaaFWApiReply.error(400, error)
+    try:
+        interface = await asyncio.to_thread(load_interface_model_cached, root)
+        # 跳过项里写 interface 的显示名（按项目语言文件翻过），与预览同一口径
+        translate = await asyncio.to_thread(interface_text_translator, root, interface)
+        _, instances = await asyncio.to_thread(
+            _scan_first_root, _candidate_roots(script_id, script_config)
+        )
+    except MaaFWInterfaceLoadError as exc:
+        return MaaFWApiReply.error(400, str(exc))
+    except Exception as exc:  # noqa: BLE001 - 文件系统异常也要给出文案
+        logger.opt(exception=True).warning(
+            f"覆盖外壳配置到用户失败（{script_id}）：{type(exc).__name__}: {exc}"
+        )
+        return MaaFWApiReply.error(500, f"读取外壳配置失败: {exc}")
+
+    instance = next((item for item in instances if item.id == instance_id), None)
+    if instance is None:
+        logger.warning(f"覆盖外壳配置：找不到实例 {instance_id}")
+        return MaaFWApiReply.error(404, INSTANCE_NOT_FOUND)
+
+    result = MaaFWShellInstanceImportItem(
+        instanceId=instance.id,
+        instanceName=instance.name,
+        userId=user_id,
+        name=str(user.get("Info", "Name") or ""),
+    )
+    try:
+        plan = await asyncio.to_thread(
+            plan_instance_import,
+            instance,
+            interface,
+            script_controller=_interface_name(
+                interface.controller, str(script_config.get("Info", "Controller") or "")
+            ),
+            script_resource=_interface_name(
+                interface.resource, str(script_config.get("Info", "Resource") or "")
+            ),
+            translate=translate,
+        )
+    except Exception as exc:  # noqa: BLE001 - 换算失败要把原因交回界面
+        logger.opt(exception=True).warning(
+            f"换算外壳配置实例失败（{instance.id}）：{type(exc).__name__}: {exc}"
+        )
+        result.error = f"读不懂这份配置: {exc}"
+        return MaaFWApiReply(data={"result": result})
+
+    try:
+        await Config.update_user(
+            script_id,
+            user_id,
+            {
+                # 整份任务快照换掉：这就是「覆盖」，用户页上的队列与选项都会变成外壳那份。
+                # 名字不动——这个入口是「再同步一次队列」，不是重命名用户。
+                "Task": {
+                    "SelectedPreset": "",
+                    "TaskSnapshot": json.dumps(plan.snapshot, ensure_ascii=False),
+                }
+            },
+        )
+    except Exception as exc:  # noqa: BLE001 - 脚本运行中等情况会拒绝写入
+        logger.warning(f"覆盖外壳配置实例 {instance.id} 到用户 {user_id} 失败：{exc}")
+        result.error = f"写入用户配置失败: {exc}"
+        return MaaFWApiReply(data={"result": result})
+
+    result.success = True
+    result.importedTaskCount = plan.task_count
+    result.skipped = plan.skipped
+    logger.info(
+        f"已把 {instance.source} 实例「{instance.name}」的任务队列覆盖到用户"
+        f"「{result.name}」（{user_id}）：{plan.task_count} 个任务"
+        + (
+            f"，跳过 {len(plan.skipped)} 项：{'、'.join(plan.skipped)}"
+            if plan.skipped
+            else ""
+        )
+    )
+    # 快照一起交回界面：它拿到就刷新本地队列，不用回头拉一次用户配置
+    return MaaFWApiReply(data={"result": result, "snapshot": plan.snapshot})
+
+
+def _user_of(script_config: Any, user_id: str) -> Any | None:
+    """按 ID 取用户配置；这个脚本里没有就返回 None。"""
+
+    for key, user in script_config.UserData.items():
+        if str(key) == str(user_id):
+            return user
+    return None
+
+
 async def _import_one(
     script_id: str,
     instance: ShellInstance,

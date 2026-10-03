@@ -41,5 +41,38 @@ export function useMaaFWShellInstanceApi() {
     return response.data ?? []
   }
 
-  return { listShellInstances, importShellInstances }
+  /**
+   * 把一份外壳实例的任务队列与选项覆盖到**已有**的某个用户：脚本建好之后又在外壳里调过队列时，
+   * 用它再同步一次。换算与「导入成用户」同一条，所以对不上的任务 / 选项同样在结果的 `skipped` 里；
+   * 一起回来的 `snapshot` 是算好的最终队列（原始 JSON，形状由调用方按自己的快照类型规整）。
+   */
+  const applyShellInstanceToUser = async (
+    scriptId: string,
+    userId: string,
+    instanceId: string
+  ): Promise<{
+    result: MaaFWShellInstanceImportItem
+    snapshot: Record<string, unknown> | null
+  }> => {
+    const response =
+      await MaaFwService.applyMaafwShellInstanceApiScriptsMaafwShellInstancesApplyPost({
+        scriptId,
+        userId,
+        instanceId,
+      })
+    if (response.code !== 200) {
+      throw new Error(response.message || '导入外壳配置失败')
+    }
+    const result = response.data?.result
+    // 单项的失败（换算不了、用户配置写不进去）走 HTTP 200 + error 字段，这里当失败抛出去
+    if (!result || result.error) {
+      throw new Error(result?.error || '导入外壳配置失败')
+    }
+    return {
+      result,
+      snapshot: (response.data?.snapshot as Record<string, unknown> | null) ?? null,
+    }
+  }
+
+  return { listShellInstances, importShellInstances, applyShellInstanceToUser }
 }

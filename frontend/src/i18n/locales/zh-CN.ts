@@ -854,6 +854,18 @@ export default {
     stringSplittingGuide: '字符串切割指南',
     done: '完成',
     createFirstUser: '创建第一个账号',
+    shellQueueImport: '从外壳导入队列',
+    shellQueueImportHint: '脚本建好之后又在外壳里改过队列时，用它再同步一次',
+    shellQueueImportTitle: '从外壳导入队列',
+    shellQueueImportOk: '覆盖队列',
+    shellQueueImportActive: '外壳当前使用中',
+    shellQueueImportTaskCount: '{count} 个任务',
+    shellQueueImportEmpty: '这个项目的目录里没有外壳保存的配置，先在脚本页选一次项目目录',
+    shellQueueImportNote:
+      '会用这份配置的任务与选项覆盖当前用户的队列，队列里原有的任务会被替换掉。',
+    shellQueueImportDone: '已导入 {count} 个任务',
+    shellQueueImportSkipped: '有 {count} 项在当前项目里对不上，没导进来：{items}',
+    shellQueueImportFailed: '导入外壳配置失败',
     shellImportTitle: '导入已有配置为账号',
     shellImportHint:
       '在项目目录里找到 {count} 份 {source} 配置。勾选的每一份会创建一个账号，账号名就是配置名，任务队列和任务选项一起导入；不勾选就只建一个空的新账号。',

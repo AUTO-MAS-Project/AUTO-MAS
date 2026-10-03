@@ -60,6 +60,13 @@
             :managed-queue-alert="managedQueueAlert"
             @open-restore="restoreOpen = true"
           />
+          <!-- 脚本建好之后又在外壳里调过队列时，从这里再同步一次（引导那一步只在新建脚本时走一次） -->
+          <ShellQueueImportSection
+            :script-id="scriptId"
+            :user-id="userIdHolder.value"
+            :disabled="configLocked"
+            @imported="handleShellImported"
+          />
           <!-- 特调独有区块（如 MSS 的计划表与活动优先），由特调注册表按需加载 -->
           <MaaFWFlavorSlot
             part="userPage"
@@ -170,6 +177,8 @@ import UserNotifyConfig from '@/components/UserNotifyConfig.vue'
 import ConfigRestoreSection from '@/views/EditView/User/components/ConfigRestoreSection.vue'
 import MaaFWFlavorSlot from '@/views/EditView/MaaFWFlavor/MaaFWFlavorSlot.vue'
 import { useMaaFWSections } from '@/composables/useMaaFWFlavor'
+import { normalizeTaskSnapshot } from './MaaFWUserEdit/maafwTaskSnapshot'
+import ShellQueueImportSection from './MaaFWUserEdit/ShellQueueImportSection.vue'
 // MFW 默认分节静态引入：通用 MFW 打开不闪；特调的替换分节由注册表按需加载
 import { MAAFW_USER_PAGE_SECTIONS, useMaaFWUserPage } from './MaaFWUserEdit/pageKit'
 
@@ -225,6 +234,7 @@ const {
   addTaskCascaderOptions,
   hasNewTasks,
   handleAddTaskCascaderChange,
+  persistQueuedSnapshot,
   MAAFW_DISPLAY_NAME,
   restoreOpen,
   restoreTargets,
@@ -236,6 +246,14 @@ const {
 
 // 各分节：默认用 MFW 的，当前特调替换了哪节就换成它的（契约见 MaaFWFlavor/sectionContracts）
 const sections = useMaaFWSections(flavor, 'userPage', MAAFW_USER_PAGE_SECTIONS)
+
+/** 从外壳导进来的队列：规整成用户页自己的快照形状换掉本地状态，再按平时的保存路径落下去 */
+const handleShellImported = async (snapshot: Record<string, unknown>) => {
+  taskSnapshot.value = normalizeTaskSnapshot(snapshot, previewData.value, {
+    keepMissing: true,
+  })
+  await persistQueuedSnapshot()
+}
 </script>
 
 <style scoped>

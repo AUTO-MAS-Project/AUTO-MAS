@@ -590,8 +590,11 @@ describe('用户页队列标题分节 queueHeader', () => {
       managedQueueAlert: { type: 'warning', message: '要拆用户' },
     })
     const start = html.indexOf('<div class="AFlex section-header"')
-    const end = html.indexOf('<section data-section="default:taskQueue">')
+    // 区间末端取 queueHeader 之后、任务队列之前的那个「从外壳导入队列」（它不属于 queueHeader），
+    // 这样这条断言只看这一节的输出，不会把后面加的区块算进来
+    const end = html.indexOf('<div class="shell-queue-import"')
     expect(start).toBeGreaterThanOrEqual(0)
+    expect(end).toBeGreaterThan(start)
     expect(html.slice(start, end)).toBe(
       '<div class="AFlex section-header"><h3>任务队列配置</h3><div class="AButton"> 配置恢复</div></div>' +
         '<div class="AAlert flavor-queue-hint"></div>'.repeat(3)

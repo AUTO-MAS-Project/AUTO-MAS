@@ -4471,12 +4471,21 @@ class MaaFWShellInstanceImportIn(BaseModel):
     )
 
 
+class MaaFWShellInstanceApplyIn(BaseModel):
+    scriptId: str = Field(..., min_length=1, description="MFW 脚本 ID")
+    userId: str = Field(..., min_length=1, description="要覆盖任务队列的用户 ID")
+    instanceId: str = Field(..., min_length=1, description="从哪份外壳实例导入")
+
+
 class MaaFWShellInstanceImportItem(BaseModel):
     instanceId: str = Field(..., description="实例 ID")
     instanceName: str = Field(default="", description="外壳里的实例名")
-    success: bool = Field(default=False, description="是否建成了用户")
-    userId: str = Field(default="", description="新用户 ID（失败时为空）")
-    name: str = Field(default="", description="新用户名")
+    success: bool = Field(default=False, description="是否导入成功")
+    userId: str = Field(
+        default="",
+        description="用户 ID：建成新用户时就是它，覆盖已有用户时是那个用户",
+    )
+    name: str = Field(default="", description="用户名")
     importedTaskCount: int = Field(default=0, description="导入进队列的任务数")
     skipped: List[str] = Field(
         default_factory=list, description="当前项目里对不上、没导入的任务 / 选项 / 取值"
@@ -4487,6 +4496,30 @@ class MaaFWShellInstanceImportItem(BaseModel):
 class MaaFWShellInstanceImportOut(OutBase):
     data: List[MaaFWShellInstanceImportItem] = Field(
         default_factory=list, description="逐个实例的导入结果，顺序同请求"
+    )
+
+
+class MaaFWShellInstanceApplyData(BaseModel):
+    """覆盖到已有用户的结果：除了逐项成败与跳过项，还带一份算好的任务快照。
+
+    快照是换算出来的最终队列，界面直接拿去刷新本地状态，不用再回头拉一次用户配置——
+    那样会把用户还没保存的其它改动一起冲掉。
+    """
+
+    result: Optional[MaaFWShellInstanceImportItem] = Field(
+        default=None,
+        description="这次覆盖的结果；失败原因在 result.error 里，连结果是空的（找不到用户 / 实例）时为 null",
+    )
+    snapshot: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="覆盖进用户的任务快照；失败时为空",
+    )
+
+
+class MaaFWShellInstanceApplyOut(OutBase):
+    data: MaaFWShellInstanceApplyData = Field(
+        default_factory=MaaFWShellInstanceApplyData,
+        description="覆盖结果与任务快照",
     )
 
 

@@ -16,6 +16,8 @@ import type { MaaFWInterfacePreviewIn } from '../models/MaaFWInterfacePreviewIn'
 import type { MaaFWInterfacePreviewOut } from '../models/MaaFWInterfacePreviewOut';
 import type { MaaFWProjectUpdateIn } from '../models/MaaFWProjectUpdateIn';
 import type { MaaFWProjectUpdateOut } from '../models/MaaFWProjectUpdateOut';
+import type { MaaFWShellInstanceApplyIn } from '../models/MaaFWShellInstanceApplyIn';
+import type { MaaFWShellInstanceApplyOut } from '../models/MaaFWShellInstanceApplyOut';
 import type { MaaFWShellInstanceImportIn } from '../models/MaaFWShellInstanceImportIn';
 import type { MaaFWShellInstanceImportOut } from '../models/MaaFWShellInstanceImportOut';
 import type { MaaFWShellInstancesIn } from '../models/MaaFWShellInstancesIn';
@@ -147,6 +149,29 @@ export class MaaFwService {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/scripts/maafw/shell-instances/import',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 把一份外壳配置的任务队列覆盖到已有用户
+     * 脚本已经建好之后又在外壳里调过队列时，把那份队列与选项再同步到某个用户。
+     *
+     * 与「导入成用户」共用同一套换算，所以当前项目里对不上的任务 / 选项同样会被跳过并列在结果里。
+     * 覆盖的是任务队列与任务选项，用户名不动。
+     * @param requestBody
+     * @returns MaaFWShellInstanceApplyOut Successful Response
+     * @throws ApiError
+     */
+    public static applyMaafwShellInstanceApiScriptsMaafwShellInstancesApplyPost(
+        requestBody: MaaFWShellInstanceApplyIn,
+    ): CancelablePromise<MaaFWShellInstanceApplyOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/scripts/maafw/shell-instances/apply',
             body: requestBody,
             mediaType: 'application/json',
             errors: {
