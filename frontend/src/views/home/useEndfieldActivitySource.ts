@@ -79,9 +79,7 @@ export const useEndfieldActivitySource = () => {
         : ''
       versionName.value = payload?.name ?? ''
     } catch (error) {
-      logger.warn(
-        `获取终末地版本图失败: ${error instanceof Error ? error.message : String(error)}`
-      )
+      logger.warn(`获取终末地版本图失败: ${error instanceof Error ? error.message : String(error)}`)
     }
   }
 
