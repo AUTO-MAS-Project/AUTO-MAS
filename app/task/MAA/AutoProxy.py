@@ -74,6 +74,7 @@ from app.utils.io import mark_native_config_injected, read_file, write_file
 from . import api_service as maa_api
 from .base_preset import (
     ensure_maa_default_configuration,
+    get_maa_base_preset,
     maa_task_identity,
     seed_maa_base_config,
 )
@@ -1538,6 +1539,11 @@ class AutoProxyTask(ScriptAutoProxyBase):
         source_queue = gui_new_set["Configurations"]["Default"].get("TaskQueue", [])
         if not isinstance(source_queue, list):
             source_queue = []
+        # 存档队列里缺的任务（用户在 MAA 原生界面删掉过它）由随包预设补齐，
+        # 见下方 MAA_TASKS 装配循环
+        preset_queue = get_maa_base_preset("gui.new.json")["Configurations"]["Default"][
+            "TaskQueue"
+        ]
         # 活动关优先是独立任务，仅由自身开关控制，不受理智作战开关影响
         activity_stage = None
         if self.mode == "Routine" and self.cur_user_config.get(
@@ -1595,6 +1601,11 @@ class AutoProxyTask(ScriptAutoProxyBase):
             source = _find_task_source(source_queue, zh_task, en_task)
             if source is None:
                 missing_sources.add(en_task)
+                # 缺了就补随包预设的同名任务，不能塞空壳：MAA 反序列化缺字段的
+                # 任务会回填它自己的占位默认值（信用收支落成
+                # {{ HighPriorityDefault }} / {{ BlacklistDefault }}）并落盘，
+                # 用户之后在 MAA 里再也改不回来
+                source = _find_task_source(preset_queue, zh_task, en_task)
             task_set[en_task] = source or {
                 "$type": f"{en_task}Task",
                 "Name": zh_task,
