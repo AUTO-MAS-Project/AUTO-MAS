@@ -18,3 +18,17 @@ export const toRunnableUserOptions = (
   })
   return options
 }
+
+/** 首次加载默认全选；刷新时只移除已不可运行的用户。 */
+export const reconcileSelectedUserIds = (
+  selectedUserIds: string[] | undefined,
+  options: Array<{ value: string }>
+): string[] | undefined => {
+  const availableIds = options.map(option => option.value)
+  if (selectedUserIds === undefined) {
+    // 暂无可运行用户时保留未初始化状态，后续出现用户仍可默认全选。
+    return availableIds.length ? availableIds : undefined
+  }
+  const available = new Set(availableIds)
+  return selectedUserIds.filter(id => available.has(id))
+}

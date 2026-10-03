@@ -138,6 +138,7 @@ class TaskItem(ABC):
     queue_id: str | None  # 执行的队列ID
     script_id: str | None  # 执行的脚本ID
     user_id: str | None  # 执行的用户ID
+    user_ids: frozenset[str] | None = None  # 自动代理时指定的多个用户；None 表示不限制
     script_list: List[ScriptItem] = field(default_factory=list)  # 脚本信息列表
     current_index: int = -1  # 当前执行的脚本索引，-1 表示未开始
     resume_from_script_id: str | None = None  # 可选：从指定脚本ID开始执行（仅队列任务）
@@ -248,8 +249,12 @@ class TaskItem(ABC):
             user_id (str): 待判定的用户ID。
 
         Returns:
-            bool: 未指定单独运行的用户时恒为 True。
+            bool: AutoProxy 指定 user_ids 时仅匹配集合内用户，指定 user_id 时
+            仅匹配该用户；两者均未指定或非 AutoProxy 模式时恒为 True。
         """
+
+        if self.mode == "AutoProxy" and self.user_ids is not None:
+            return user_id in self.user_ids
 
         target = self.target_user_id
         return target is None or user_id == target
