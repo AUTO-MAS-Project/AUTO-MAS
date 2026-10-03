@@ -1252,6 +1252,9 @@ class GlobalConfig_Function(BaseModel):
     IfEnableTelemetry: Optional[bool] = Field(
         default=None, description="启用匿名错误与性能遥测"
     )
+    IfPersonalMss: Optional[bool] = Field(
+        default=None, description="个人版 MaaStellaSora 的专属编排（灾变防线）"
+    )
 
 
 class GlobalConfig_Display(BaseModel):
@@ -4494,6 +4497,32 @@ class MaaFWShellInstanceImportOut(OutBase):
     data: List[MaaFWShellInstanceImportItem] = Field(
         default_factory=list, description="逐个实例的导入结果，顺序同请求"
     )
+
+
+class MssDefenseStatusIn(BaseModel):
+    scriptId: str = Field(..., min_length=1, description="MSS 脚本 ID")
+    userId: str = Field(..., min_length=1, description="用户 ID")
+
+
+class MssDefenseStatusData(BaseModel):
+    """个人版「灾变防线」这一期的状态：用户页拿它显示「本期未打 / 已打」。"""
+
+    period: str = Field(
+        default="", description="当前这一期的开始时刻；取不到官网公告时为空"
+    )
+    known: bool = Field(
+        default=False, description="这一期认得出来吗（取不到官网公告时为 false）"
+    )
+    done: bool = Field(default=False, description="这一期已经打过")
+    armed: bool = Field(default=False, description="已经排进队列、在等这一轮的结果")
+    failedDays: List[str] = Field(
+        default_factory=list, description="这一期编排过但没跑成的日子"
+    )
+    givenUp: bool = Field(default=False, description="失败日攒够了，这一期不再自动编排")
+
+
+class MssDefenseStatusOut(OutBase):
+    data: MssDefenseStatusData = Field(default_factory=MssDefenseStatusData)
 
 
 class MaaFWProjectUpdateIn(BaseModel):
