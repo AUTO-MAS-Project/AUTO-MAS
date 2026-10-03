@@ -188,6 +188,7 @@ class LDManager(DeviceBase):
         生效，所以放在实例启动前、每次都设：开着设 1、关着设 0。写不上只记警告，不拦启动，
         失败原因带上 returncode、stdout 与 stderr，免得只留一句「命令执行失败」。
         """
+        # 延迟导入：本模块是 2.0 的基类，模块加载期导入 emulator2 会形成导入环
         from app.utils.emulator2.master_mode import (
             is_master_mode_enabled,
             ldplayer_clean_mode_args,

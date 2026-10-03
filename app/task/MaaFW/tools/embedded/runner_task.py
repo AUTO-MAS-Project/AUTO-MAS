@@ -530,9 +530,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                     emulator_id == "-" or emulator_index in ("", "-")
                 ):
                     self.cur_user_item.status = "异常"
-                    return (
-                        "当前 MaaFW controller 需要 ADB，请在脚本管理页选择模拟器和实例"
-                    )
+                    return "当前 MaaFW controller 需要 ADB，请在脚本管理页选择模拟器和实例，或填写 ADB 地址"
             elif game_path_error is not None:
                 self.cur_user_item.status = "异常"
                 return game_path_error
@@ -1128,11 +1126,15 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             return configured_address, None
 
         if self.emulator_manager is None:
-            raise RuntimeError("当前 controller 需要 ADB，请在脚本管理页选择模拟器")
+            raise RuntimeError(
+                "当前 controller 需要 ADB，请在脚本管理页选择模拟器，或填写 ADB 地址"
+            )
 
         emulator_index = self.script_config.get("Emulator", "Index")
         if emulator_index in ("", "-"):
-            raise RuntimeError("当前 controller 需要 ADB，请在脚本管理页选择模拟器实例")
+            raise RuntimeError(
+                "当前 controller 需要 ADB，请在脚本管理页选择模拟器实例，或填写 ADB 地址"
+            )
 
         package_name = await self._resolve_game_package()
         self._launched_package_name = package_name

@@ -1001,6 +1001,14 @@ class LDPlayer14Manager(AppLaunchMixin, LDManager):
         """
         return None
 
+    async def _apply_cleanmode(self) -> None:
+        """保留父类兼容入口，但不再写一遍。
+
+        全局开关已由 :meth:`prepare_launch` 在启动前设过，父类这一步是给没有该钩子的 1.0
+        留的；两边都走会让一次冷启动把同一条 ``globalsetting`` 发两遍（#389）。
+        """
+        return None
+
     async def setVisible(self, idx: str, is_visible: bool) -> DeviceStatus:
         """按 ``list2`` 给出的该实例顶层窗口句柄切换可见性。
 
