@@ -3695,6 +3695,10 @@ export default {
     },
   },
   queue: {
+    extraScriptBeforeTip:
+      'Runs once before the whole queue (not per account); once per round for cycle queues; 600s timeout',
+    extraScriptAfterTip:
+      'Runs once after the whole queue, before the After-Accomplish action; skipped on manual stop; 600s timeout',
     title: 'Queues',
     loading: 'Loading...',
     create: 'New queue',
@@ -4113,6 +4117,9 @@ export default {
       configFailed: '{label} configuration failed: {error}',
       configDone: '{name} is configured',
       configStarted: 'Started the {label} configuration for {name}',
+      maaConfigOverwriteTitle: 'The MAS archive will overwrite your current MAA config',
+      maaConfigOverwriteContent:
+        'When the session starts, the MAA native config is overwritten by the MAS archive of this account. The pre-session config was archived automatically and can be restored from "Config restore" on the account page.',
       sessionTimeout: 'The configuration session for {name} timed out',
       startConfigFailed: 'Could not start the {label} configuration',
       startConfigError: 'Could not start the {label} configuration: {error}',

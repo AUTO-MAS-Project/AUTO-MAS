@@ -3397,7 +3397,7 @@ async def get_whimbox_task_catalog_api(
 async def get_oknte_configs_list(script_id: str, user_id: str):
     """
     获取 OK-NTE 配置文件列表及 schema 定义。
-    读写用户快速配置目录，首次从已有来源初始化，不修改来源文件。
+    读写账号的覆写层配置目录，首次从已有来源初始化，不修改来源文件。
 
     Args:
         script_id: OK-NTE 脚本 ID

@@ -780,6 +780,20 @@ class QueueConfig(ConfigBase):
         self.Info_AfterAccomplishDelay = ConfigItem(
             "Info", "AfterAccomplishDelay", 0, RangeValidator(0, 1440)
         )
+        ## 队列级运行前脚本: 一次运行只执行一次, 循环队列每轮执行一次, 与账号数量无关
+        self.Info_IfScriptBeforeTask = ConfigItem(
+            "Info", "IfScriptBeforeTask", False, BoolValidator()
+        )
+        self.Info_ScriptBeforeTask = ConfigItem(
+            "Info", "ScriptBeforeTask", "", FileValidator()
+        )
+        ## 队列级运行后脚本: 运行结束后执行一次, 先于「完成后操作」
+        self.Info_IfScriptAfterTask = ConfigItem(
+            "Info", "IfScriptAfterTask", False, BoolValidator()
+        )
+        self.Info_ScriptAfterTask = ConfigItem(
+            "Info", "ScriptAfterTask", "", FileValidator()
+        )
 
         ## Data ------------------------------------------------------------
         ## 上次定时启动时间

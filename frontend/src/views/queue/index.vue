@@ -217,6 +217,17 @@
             </a-col>
           </a-row>
         </div>
+
+        <!-- 队列级额外脚本：整个队列运行前后各执行一次，不按账号重复 -->
+        <a-form v-if="currentQueueExtraScriptForm?.Info" layout="vertical" class="config-section">
+          <ExtraScriptSection
+            v-model:form-data="currentQueueExtraScriptForm"
+            :loading="loading"
+            :before-tip="t('queue.extraScriptBeforeTip')"
+            :after-tip="t('queue.extraScriptAfterTip')"
+            @save="handleQueueExtraScriptSave"
+          />
+        </a-form>
         <a-divider />
 
         <!-- 定时项管理 -->
@@ -252,6 +263,7 @@ import { useI18n } from 'vue-i18n'
 import { Service } from '@/api'
 import QueueItemManager from '@/views/queue/components/QueueItemManager.vue'
 import TimeSetManager from '@/views/queue/components/TimeSetManager.vue'
+import ExtraScriptSection from '@/components/ExtraScriptSection.vue'
 import {
   DeleteOutlined,
   EditOutlined,
@@ -754,6 +766,22 @@ const handleSaveChange = async (key: string, value: any): Promise<boolean> => {
     await refreshQueueConfig()
     return false
   }
+}
+
+// 队列级额外脚本：组件直接改 formData.Info.*，这里只提供当前队列配置对象的读写代理
+const currentQueueExtraScriptForm = computed({
+  get: () => currentQueueData.value?.[activeQueueId.value] ?? null,
+  set: value => {
+    const queueId = activeQueueId.value
+    if (currentQueueData.value && queueId) {
+      currentQueueData.value[queueId] = value
+    }
+  },
+})
+
+// 组件回传的字段名带 Info. 前缀，剥掉后交给统一的即时保存
+const handleQueueExtraScriptSave = async (key: string, value: any) => {
+  await handleConfigChange(key.startsWith('Info.') ? key.slice(5) : key, value)
 }
 
 // 注意：配置保存已改为即时保存，由各个 @change 事件触发，不再使用 watch 自动保存

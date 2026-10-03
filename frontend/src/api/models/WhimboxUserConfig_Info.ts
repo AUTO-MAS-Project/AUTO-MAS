@@ -27,7 +27,7 @@ export type WhimboxUserConfig_Info = {
      */
     Mode?: ('脚本' | '用户' | '直控' | null);
     /**
-     * 是否启用覆写层（快速配置，与来源独立；原生态开启时任务前写入面板覆盖集、结束还原）
+     * 是否启用覆写层（与来源独立；原生态开启时任务前写入面板覆盖集、结束还原）
      */
     IfQuickConfig?: (boolean | null);
     /**

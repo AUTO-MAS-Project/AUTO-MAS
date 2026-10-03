@@ -55,7 +55,7 @@ export type OkwwUserConfig_Info = {
      */
     Id?: (string | null);
     /**
-     * 是否启用快速配置覆盖 OK-WW 高频任务字段
+     * 是否启用覆写常规配置（覆盖 OK-WW 高频任务字段）
      */
     IfQuickConfig?: (boolean | null);
     /**

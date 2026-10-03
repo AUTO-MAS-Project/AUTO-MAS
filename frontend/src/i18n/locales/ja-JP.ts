@@ -3069,6 +3069,10 @@ export default {
     },
   },
   queue: {
+    extraScriptBeforeTip:
+      'キュー全体の実行前に1回だけ実行（アカウントごとではありません）。循環キューは毎回実行。上限600秒',
+    extraScriptAfterTip:
+      'キュー全体の実行後に1回実行（「完了後の操作」より先）。手動停止時は実行しません。上限600秒',
     title: 'キュー管理',
     loading: '読み込み中です...',
     create: '新規キュー',
@@ -3495,6 +3499,9 @@ export default {
       configFailed: '{label} の設定に失敗しました: {error}',
       configDone: '{name} の設定が完了しました',
       configStarted: '{name} の{label}設定を開始しました',
+      maaConfigOverwriteTitle: 'MAS のセーブデータで MAA の現在の設定を上書きします',
+      maaConfigOverwriteContent:
+        'セッション開始時に、MAA の設定はこのアカウントの MAS セーブデータで上書きされます。セッション前の設定は自動でアーカイブ済みで、アカウント編集ページの「配置恢复」（設定の復元）から取り戻せます。',
       sessionTimeout: '{name} の設定セッションがタイムアウトしました',
       startConfigFailed: '{label}の設定を開始できませんでした',
       startConfigError: '{label}の設定を開始できませんでした: {error}',

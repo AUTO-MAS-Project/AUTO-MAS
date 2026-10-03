@@ -363,7 +363,7 @@ export interface MaaFWUserConfig {
     Password: string
     Resource?: string
     Mode?: '脚本' | '用户' | '直控'
-    /** 快速配置：独立于配置来源的用户级开关 */
+    /** 覆写常规配置：独立于配置来源的账号级开关 */
     IfQuickConfig?: boolean
     /** 仅 MSS 用户携带：悬赏试炼关卡来源（Fixed 或 MSS 计划表 UUID） */
     PlanMode?: string
