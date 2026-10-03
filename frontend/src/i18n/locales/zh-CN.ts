@@ -1063,9 +1063,6 @@ export default {
     masOnlyTakesOver: '游戏由你自己（或脚本）启动，MAS 只连接已经打开的窗口',
     howLongMasWaits: 'MAS 启动游戏后等待进入可操作状态的最长时间',
     masManagesGame: '由 MAS 启动和关闭游戏',
-    mfwAdbAddress: 'ADB 地址',
-    mfwAdbAddressPassed: '填了就直接连这个地址，不再启动上面选择的模拟器；任务结束时也不会关闭它',
-    mfwAdbAddressPlaceholder: '留空则使用上面选择的模拟器',
     mfwGamePackageName: '游戏包名',
     mfwGamePackageNamePassed:
       '启动模拟器时顺带把游戏拉起来。MAS 会从项目里自动识别并填入；识别不出或识别到多个时留空、运行时不启动游戏，可在此手动填写',
