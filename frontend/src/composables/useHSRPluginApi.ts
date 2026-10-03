@@ -1,5 +1,4 @@
-import axios from 'axios'
-import { OpenAPI } from '@/api/core/OpenAPI'
+import { ApiError, HsrService, HSRUpdateIn } from '@/api'
 
 /** Engines exposed by the built-in HSR adapter. */
 export type HSREngine = 'SRA' | 'M7A'
@@ -23,7 +22,6 @@ interface HSRAdapterCapability {
   engine: HSREngine
   display_name: string
   version?: string | null
-  supported_modes: string[]
   capabilities: string[] | Record<string, unknown>
   ready?: boolean | null
   ready_reason?: string
@@ -45,6 +43,25 @@ interface HSRManagedFieldOption {
   label: string
 }
 
+/**
+ * 字段分组：`common` 在模块弹窗里平铺，其余各成一个默认收起的折叠面板。
+ * 分组显示名由前端词表 `edit.hsrFieldGroup.<group>` 提供，后端只给 key。
+ */
+export type HSRManagedFieldGroup =
+  | 'common'
+  | 'team'
+  | 'support'
+  | 'activity'
+  | 'replenish'
+  | 'reroll'
+  | 'misc'
+
+/** 只有同模块同引擎里字段 `key` 的当前值在 `values` 中时才显示该字段。 */
+export interface HSRManagedFieldVisibleWhen {
+  key: string
+  values: unknown[]
+}
+
 export interface HSRManagedField {
   key: string
   label: string
@@ -55,6 +72,14 @@ export interface HSRManagedField {
   minimum?: number | null
   maximum?: number | null
   readonly?: boolean
+  // 以下四项是后续新增的契约字段，全部可选：后端没给时按 common / 未覆盖 / 无原值 / 恒显示处理
+  /** 分组；缺省视为 `common`。后端新增的未知分组照样成一个折叠面板。 */
+  group?: HSRManagedFieldGroup | string | null
+  /** 当前计划对该键有生效中的覆盖值。 */
+  overridden?: boolean | null
+  /** 引擎原生配置里的值；单项恢复后前端直接显示它，不必重拉。 */
+  native_value?: unknown
+  visible_when?: HSRManagedFieldVisibleWhen | null
 }
 
 export type HSRDroppedOverrideReason = 'unknown' | 'type'
@@ -67,12 +92,12 @@ export interface HSRDroppedOverride {
   message: string
 }
 
-interface HSRManagedEngineForm {
+export interface HSRManagedEngineForm {
   key?: string
   engine: HSREngine
   fields: HSRManagedField[]
   source?: string | null
-  /** 表单级人类可读提示（如三月七助手缺少配置说明文件）。 */
+  /** 表单级人类可读提示（如三月七缺少配置说明文件）。 */
   warnings?: string[]
   /** 在当前源配置中失效、运行时会被忽略的覆盖值；对应后端 `HSRManagedForm.dropped_overrides`。 */
   dropped_overrides?: HSRDroppedOverride[]
@@ -102,8 +127,13 @@ export interface HSRManagedTask extends HSRTaskCapability {
   forms: Partial<Record<HSREngine, HSRManagedEngineForm>>
 }
 
+/** 任务计划挂在谁身上：script = 脚本共享计划，user = 该用户自己的计划。 */
+export type HSRPlanOwner = 'script' | 'user'
+
 export interface HSRManagedConfigSnapshot {
   revision: number | string
+  /** 表单值取自哪份计划；与用户的配置来源（Info.Mode）一一对应，直控按 user 返回。 */
+  plan_owner?: HSRPlanOwner
   tasks: HSRManagedTask[]
   task_mapping: Record<string, HSREngine>
   warnings: string[]
@@ -130,13 +160,6 @@ export interface HSRSRAProfilesSnapshot {
   profiles: HSRSRAProfile[]
 }
 
-interface HSRDirectConfigImportResult {
-  engine: HSREngine
-  source?: string | null
-  imported_at?: string | null
-  size?: number
-}
-
 /** `check` 只查版本；`apply` 查完就地安装（目录被任务占用时后端回 409）。 */
 export type HSRUpdateAction = 'check' | 'apply'
 
@@ -155,6 +178,28 @@ export interface HSRUpdateResult {
   message: string
 }
 
+/** 后端 `/hsr/cloud-login` 的结果：`last_login` 为本次确认已登录的 ISO 时间。 */
+export interface HSRCloudLoginResult {
+  logged_in: boolean
+  last_login?: string | null
+  message: string
+}
+
+/** 从脚本 `Cloud.LastLogin`（user_id → ISO 时间的 JSON）里取某个用户的记录。 */
+export const getHSRCloudLastLogin = (raw: unknown, userId: string): string => {
+  let parsed: unknown = raw
+  if (typeof raw === 'string') {
+    try {
+      parsed = JSON.parse(raw)
+    } catch {
+      return ''
+    }
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return ''
+  const value = (parsed as Record<string, unknown>)[userId]
+  return typeof value === 'string' ? value : ''
+}
+
 export interface HSRCapabilitySnapshot {
   revision: number | string
   available: boolean
@@ -162,7 +207,6 @@ export interface HSRCapabilitySnapshot {
   candidate_engines: HSREngine[]
   configured_engines: HSREngine[]
   effective_engines: HSREngine[]
-  supported_modes: string[]
   adapters: HSRAdapterCapability[] | Record<string, HSRAdapterCapability>
   tasks: HSRTaskCapability[] | Record<string, HSRTaskCapability>
   warnings: string[]
@@ -180,13 +224,6 @@ export const filterHSRCapabilityWarnings = (warnings?: readonly string[] | null)
       !warning.startsWith('old dev 使用内置 HSRConfig/HSRUserConfig；未加载插件注册表') &&
       !warning.startsWith('能力来源为原生配置域 inspect，未读取配置正文')
   )
-
-interface PluginEnvelope<T> {
-  code?: number
-  status?: string
-  message?: string
-  data?: T
-}
 
 type HSRStageSource = Record<string, unknown>
 
@@ -213,35 +250,25 @@ interface HSRStageCategory {
   options: HSRStageOption[]
 }
 
-/**
- * Old dev keeps the HSR API under /api/scripts/hsr.  Keep the adapter client
- * independent from generated OpenAPI services so the plugin-shaped UI can be
- * used with either the old envelope or a direct JSON response.
- */
-const url = (path: string) => `${OpenAPI.BASE}/api/scripts/hsr${path}`
-
-const unwrap = <T>(response: { data: PluginEnvelope<T> | T }): T => {
-  const payload = response.data as PluginEnvelope<T>
-  if (payload && typeof payload === 'object' && 'code' in payload && payload.code !== undefined) {
+/** 生成客户端负责请求；保留旧后端的信封与直接响应兼容。 */
+const unwrap = <T>(payload: unknown): T => {
+  if (isRecord(payload) && 'code' in payload && payload.code !== undefined) {
     if (payload.code !== 200) {
-      throw new Error(payload.message || 'HSR 请求失败')
+      throw new Error(
+        typeof payload.message === 'string' && payload.message ? payload.message : 'HSR 请求失败'
+      )
     }
     return (payload.data === undefined ? payload : payload.data) as T
   }
-  return response.data as T
+  return payload as T
 }
 
-const requestPluginData = async <T>(
-  request: Promise<{ data: PluginEnvelope<T> | T }>
-): Promise<T> => {
+const requestPluginData = async <T>(request: Promise<unknown>): Promise<T> => {
   try {
-    return unwrap(await request)
+    return unwrap<T>(await request)
   } catch (error) {
-    if (axios.isAxiosError<PluginEnvelope<unknown>>(error)) {
-      const payload = error.response?.data
-      if (payload && typeof payload === 'object' && 'message' in payload && payload.message) {
-        throw new Error(String(payload.message))
-      }
+    if (error instanceof ApiError && isRecord(error.body) && error.body.message) {
+      throw new Error(String(error.body.message))
     }
     throw error
   }
@@ -282,10 +309,8 @@ const normalizeStageOptions = (
 
 export function useHSRPluginApi() {
   const getCapabilities = async (scriptId?: string): Promise<HSRCapabilitySnapshot> => {
-    return requestPluginData(
-      axios.get<PluginEnvelope<HSRCapabilitySnapshot>>(url('/capabilities'), {
-        params: scriptId ? { scriptId } : undefined,
-      })
+    return requestPluginData<HSRCapabilitySnapshot>(
+      HsrService.getHsrCapabilitiesApiApiScriptsHsrCapabilitiesGet(scriptId)
     )
   }
 
@@ -293,17 +318,12 @@ export function useHSRPluginApi() {
     scriptId: string,
     engine: HSREngine,
     userId?: string,
-    slot = 'main'
+    slot: 'main' | 'eow' = 'main'
   ): Promise<{ engine: HSREngine; categories: HSRStageCategory[] }> => {
     const data = await requestPluginData<{
       engine: HSREngine
       categories?: HSRStageSource[]
-    }>(
-      axios.get<PluginEnvelope<{ engine: HSREngine; categories?: HSRStageSource[] }>>(
-        url('/stage-options'),
-        { params: { scriptId, userId, engine, slot } }
-      )
-    )
+    }>(HsrService.getHsrStageOptionsApiApiScriptsHsrStageOptionsGet(scriptId, engine, userId, slot))
     return normalizeStageOptions(data, engine)
   }
 
@@ -311,48 +331,15 @@ export function useHSRPluginApi() {
     scriptId: string,
     userId: string
   ): Promise<HSRManagedConfigSnapshot> => {
-    return requestPluginData(
-      axios.get<PluginEnvelope<HSRManagedConfigSnapshot>>(url('/managed-config'), {
-        params: { scriptId, userId },
-      })
+    return requestPluginData<HSRManagedConfigSnapshot>(
+      HsrService.getHsrManagedConfigApiApiScriptsHsrManagedConfigGet(scriptId, userId)
     )
   }
 
   /** 列出脚本可选的 SRA 配置档案，并标出当前生效的那份。 */
   const getSraProfiles = async (scriptId: string): Promise<HSRSRAProfilesSnapshot> => {
-    return requestPluginData(
-      axios.get<PluginEnvelope<HSRSRAProfilesSnapshot>>(url('/sra-profiles'), {
-        params: { scriptId },
-      })
-    )
-  }
-
-  const importDirectConfig = async (
-    scriptId: string,
-    userId: string,
-    engine: HSREngine
-  ): Promise<HSRDirectConfigImportResult> => {
-    return requestPluginData(
-      axios.post<PluginEnvelope<HSRDirectConfigImportResult>>(url('/direct-config/import'), {
-        scriptId,
-        userId,
-        engine,
-      })
-    )
-  }
-
-  /** 清掉该用户的直控快照，直控回到直接使用脚本当前配置。 */
-  const clearDirectConfig = async (
-    scriptId: string,
-    userId: string,
-    engine: HSREngine
-  ): Promise<HSRDirectConfigImportResult> => {
-    return requestPluginData(
-      axios.post<PluginEnvelope<HSRDirectConfigImportResult>>(url('/direct-config/clear'), {
-        scriptId,
-        userId,
-        engine,
-      })
+    return requestPluginData<HSRSRAProfilesSnapshot>(
+      HsrService.getHsrSraProfilesApiApiScriptsHsrSraProfilesGet(scriptId)
     )
   }
 
@@ -362,12 +349,22 @@ export function useHSRPluginApi() {
     engine: HSREngine,
     action: HSRUpdateAction
   ): Promise<HSRUpdateResult> => {
-    return requestPluginData(
-      axios.post<PluginEnvelope<HSRUpdateResult>>(url('/update'), {
+    return requestPluginData<HSRUpdateResult>(
+      HsrService.postHsrUpdateApiApiScriptsHsrUpdatePost({
         scriptId,
-        engine,
-        action,
+        engine: HSRUpdateIn.engine[engine],
+        action: action === 'check' ? HSRUpdateIn.action.CHECK : HSRUpdateIn.action.APPLY,
       })
+    )
+  }
+
+  /**
+   * 为用户登录云·星穹铁道：后端起该用户的云浏览器并跑三月七的 game 任务，
+   * 阻塞到三月七退出（用户登录、进游戏或超时）；脚本运行中返回 409。
+   */
+  const cloudLogin = async (scriptId: string, userId: string): Promise<HSRCloudLoginResult> => {
+    return requestPluginData<HSRCloudLoginResult>(
+      HsrService.postHsrCloudLoginApiApiScriptsHsrCloudLoginPost({ scriptId, userId })
     )
   }
 
@@ -376,8 +373,7 @@ export function useHSRPluginApi() {
     getStageOptions,
     getManagedConfig,
     getSraProfiles,
-    importDirectConfig,
-    clearDirectConfig,
     runEngineUpdate,
+    cloudLogin,
   }
 }

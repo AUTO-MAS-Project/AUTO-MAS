@@ -22,7 +22,7 @@
 要四十分钟；初始化 clone 主仓早就在用 gh-proxy 那组镜像，项目包一直没用上。
 
 镜像清单与开关都只在接缝层读，核心包
-（``tools/core/automas_maafw_project_update``）只收一串 ``(名字, URL)`` 备选，
+（``tools/core/project_update``）只收一串 ``(名字, URL)`` 备选，
 自己不认识 ``Config``，也不知道 GitHub 长什么样。
 
 **镜像只在能校验完整性时才用**：经第三方转发的字节必须对得上发布方的

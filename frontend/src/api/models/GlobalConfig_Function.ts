@@ -27,5 +27,9 @@ export type GlobalConfig_Function = {
      * 启用匿名错误与性能遥测
      */
     IfEnableTelemetry?: (boolean | null);
+    /**
+     * 个人版 MaaStellaSora 的专属编排（灾变防线）
+     */
+    IfPersonalMss?: (boolean | null);
 };
 

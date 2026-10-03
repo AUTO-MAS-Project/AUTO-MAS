@@ -22,7 +22,11 @@
 
 继承旧 ``LDManager`` 的启动、关闭、状态、实例锁和配置守卫。
 「大雷主人模式」沿用旧版全局开关，在启动前应用安装级设置，保留游戏中心入口。
-老板键按实例读取；设置写入与配置守卫使用同一把实例锁。
+窗口显示 / 隐藏不沿用父类的老板键，按 ``list2`` 的 ``top_hwnd`` 精确切换该实例的窗口：
+老板键是全局热键、不带实例信息，雷电默认各实例都是 Ctrl+Q，
+多开时会把别的实例一起翻过去（#948）。``SW_HIDE`` 不连带主窗口名下的弹窗（辅助屏等），
+主窗口隐藏期间另有巡检把它们一起藏住。静默模式下冷启动的实例在启动途中窗口一出现
+就隐藏，与 MuMu 口径一致。设置写入与配置守卫使用同一把实例锁。
 启动后多一道「虚拟机真的起来了吗」的核对，VBox 服务卡住时自愈一次，见 :mod:`.vbox`。
 """
 
@@ -40,10 +44,10 @@ from app.models.emulator import DeviceInfo, DeviceRef, DeviceStatus
 from app.utils import ProcessRunner, get_logger
 from app.utils.emulator.ldplayer import _INSTANCE_CONFIG_SNAPSHOTS, LDManager
 from app.utils.platform import IS_WINDOWS
+from app.utils.platform import window as platform_window
 
 from .adb import candidate_serial, parse_adb_devices, resolve_serial
 from .applaunch import AppLaunchMixin, is_package_missing, is_package_present
-from .bosskey import BossKey, read_boss_key
 from .master_mode import is_master_mode_enabled, ldplayer_clean_mode_args
 from .settings import (
     InstanceSettings,
@@ -78,8 +82,17 @@ def _dig_flat(config: dict, key: str) -> str | None:
 
 
 if IS_WINDOWS:
-    import keyboard
+    import ctypes
+    from ctypes import wintypes
+
+    import pywintypes
+    import win32con
     import win32gui
+
+    # 私有一份 user32，声明原型不影响进程里其它走 ctypes.windll.user32 的代码
+    _user32 = ctypes.WinDLL("user32")
+    _user32.ShowWindowAsync.argtypes = [wintypes.HWND, ctypes.c_int]
+    _user32.ShowWindowAsync.restype = wintypes.BOOL
 
 logger = get_logger("Emulator2 雷电管理")
 
@@ -108,18 +121,47 @@ _OWNERSHIP_CACHE_SECONDS = 30.0
 _ZOMBIE_QUIT_TIMEOUT = 15.0
 #: 雷电修复工具的提示，自愈做不了或做了没用时都指到这里。
 _REPAIR_HINT = "请关闭所有雷电实例后运行雷电修复工具（安装目录下的 dnrepairer.exe）"
+#: 静默模式冷启动时压窗口的间隔。拿到句柄后每轮只剩两次 user32 调用，
+#: 这个间隔就是窗口最多露出来的时长。
+_EARLY_HIDE_INTERVAL = 0.1
+#: 主窗口隐藏期间巡检其名下弹窗的间隔，也就是辅助屏这类弹窗最多露出来的时长。
+_OWNED_POPUP_INTERVAL = 0.5
 
 
-class BossKeyUnavailableError(RuntimeError):
-    """无法确定该实例的老板键，隐藏操作不可用。
+def _visible_owned_windows(owner: int) -> list[int]:
+    """``owner`` 名下（``GW_OWNER``）当前可见的顶层窗口。
 
-    带上 ``reason`` 供界面区分：是认不出修饰键、认不出按键，还是配置读不出来。
+    ``SW_HIDE`` 只藏主窗口本身，被它拥有的窗口不会跟着藏：雷电 14 的「辅助屏」
+    （``LDLDBroadScreenWnd``，游戏切到前台时弹出）、AI 助手等弹窗都属于这一类。
+    每个实例是单独的 ``dnplayer`` 进程，按拥有者找不会碰到别的实例。
+    ``owner`` 不是有效句柄时返回空：无拥有者窗口的 ``GW_OWNER`` 就是 0，
+    否则会把整个桌面都算进来。
     """
+    if owner <= 0:
+        return []
+    found: list[int] = []
 
-    def __init__(self, idx: str, reason: str) -> None:
-        super().__init__(f"无法确定雷电实例 {idx} 的老板键: {reason}")
-        self.idx = idx
-        self.reason = reason
+    def collect(hwnd: int, _: object) -> bool:
+        try:
+            owned = win32gui.GetWindow(hwnd, win32con.GW_OWNER) == owner
+        except pywintypes.error:
+            # 枚举途中桌面上任何一个窗口被销毁都会走到这里，跳过它，不废掉整轮枚举
+            return True
+        if owned and platform_window.is_visible(hwnd):
+            found.append(hwnd)
+        return True
+
+    win32gui.EnumWindows(collect, None)
+    return found
+
+
+def _show_window_async(hwnd: int, cmd: int) -> None:
+    """``ShowWindowAsync``：只投递消息，不等对方界面线程处理。
+
+    弹窗巡检在事件循环线程里跑几个小时，同步的 ``ShowWindow`` 碰上 dnplayer 界面线程
+    未响应会一直阻塞，整个后端跟着停住；pywin32 没有包这个函数，直接走 ctypes。
+    """
+    _user32.ShowWindowAsync(hwnd, cmd)
 
 
 class LDPlayer14Manager(AppLaunchMixin, LDManager):
@@ -145,6 +187,148 @@ class LDPlayer14Manager(AppLaunchMixin, LDManager):
     #: 序列号 -> (是不是别家的, 缓存到什么时候)。同上放类属性；
     #: 「谁占着这个端口」本来就是整机的事实，几个管理器实例共用一份反而更对。
     _ownership_cache: dict[str, tuple[bool, float]] = {}
+
+    #: 主窗口句柄 -> 隐藏期间巡检其名下弹窗的任务 / 巡检藏起来的弹窗。
+    #: 同上放类属性：隐藏由一次请求发起，巡检要跨过之后的请求一直跑到主窗口重新显示。
+    _popup_guards: dict[int, asyncio.Task] = {}
+    _hidden_popups: dict[int, set[int]] = {}
+
+    async def open(self, idx: str, package_name: str = "") -> DeviceInfo:
+        """静默模式下冷启动的实例，启动途中窗口一出现就隐藏，直到启动流程走完。
+
+        原先要等安卓起来、应用拉起、``open`` 返回之后调用方才调 :meth:`setVisible`，
+        这一整段窗口都开着；只有 MAA / MaaFW 事后会隐藏，其余专项一直不藏。
+        本来就在线的实例不动，不替用户藏起正开着的窗口；但它的主窗口若本来就是藏着的
+        （上一个后端进程藏的），接着巡检其名下弹窗——BAAH、MaaEnd、SRC 只调 ``open``
+        不调 :meth:`setVisible`，不在这里起就没人起。
+        """
+        from app.core import Config
+
+        if not IS_WINDOWS or not Config.get("Function", "IfSilence"):
+            return await super().open(idx, package_name)
+        if await self.getStatus(idx) == DeviceStatus.ONLINE:
+            info = await super().open(idx, package_name)
+            await self._guard_owned_popups_if_hidden(idx)
+            return info
+
+        watcher = asyncio.create_task(self._keep_hidden(idx))
+        try:
+            return await super().open(idx, package_name)
+        finally:
+            watcher.cancel()
+            await asyncio.gather(watcher, return_exceptions=True)
+
+    async def _keep_hidden(self, idx: str) -> None:
+        """每隔 :data:`_EARLY_HIDE_INTERVAL` 把该实例的窗口压回隐藏，直到被取消。
+
+        句柄只在还没拿到或已失效时（刚 ``launch``、自愈重启）才重读 ``list2``，
+        拿到之后只剩 user32 调用，不跟父类的状态轮询抢着起子进程。
+        启动途中雷电自己再把窗口翻出来，也会在下一轮被压回去。
+        """
+        hwnd = 0
+        hidden = warned = False
+        while True:
+            if hwnd <= 0 or not win32gui.IsWindow(hwnd):
+                try:
+                    hwnd = (await self.get_device_info(idx))[idx].top_hwnd
+                except Exception:  # noqa: BLE001 - 读不到就下一轮再读, 不影响启动
+                    hwnd = 0
+            if hwnd > 0 and platform_window.is_visible(hwnd):
+                try:
+                    platform_window.hide_window(hwnd)
+                except Exception as e:  # noqa: BLE001 - 同上
+                    if not warned:
+                        logger.warning(f"静默模式隐藏雷电实例 {idx} 窗口失败: {e}")
+                        warned = True
+                else:
+                    if not hidden:
+                        logger.info(f"静默模式: 雷电实例 {idx} 的窗口已在启动途中隐藏")
+                        hidden = True
+            if hwnd > 0 and not platform_window.is_visible(hwnd):
+                self._guard_owned_popups(idx, hwnd)
+            await asyncio.sleep(_EARLY_HIDE_INTERVAL)
+
+    def _hide_owned_popups(self, idx: str, owner: int) -> None:
+        """藏起 ``owner`` 名下正显示着的弹窗，记下来等主窗口显示时还原。
+
+        异步隐藏要等 dnplayer 处理完消息才生效，它卡着的时候下一轮还会看到同一个窗口，
+        所以日志只在第一次藏它时记。
+        """
+        hidden = self._hidden_popups.setdefault(owner, set())
+        for hwnd in _visible_owned_windows(owner):
+            _show_window_async(hwnd, win32con.SW_HIDE)
+            if hwnd in hidden:
+                continue
+            hidden.add(hwnd)
+            logger.info(
+                f"静默模式: 已隐藏雷电实例 {idx} 主窗口名下的弹窗 "
+                f"hwnd={hwnd} 类名={win32gui.GetClassName(hwnd)!r} "
+                f"标题={win32gui.GetWindowText(hwnd)!r}"
+            )
+
+    def _restore_owned_popups(self, idx: str, owner: int) -> None:
+        """把巡检藏起来、至今还在 ``owner`` 名下的弹窗重新显示出来。
+
+        不还原的话，被藏的若是模态对话框，主窗口显示出来后一直是禁用的，看着像卡死。
+        """
+        for hwnd in self._hidden_popups.pop(owner, set()):
+            try:
+                if win32gui.GetWindow(hwnd, win32con.GW_OWNER) != owner:
+                    continue
+            except pywintypes.error:  # 已销毁
+                continue
+            _show_window_async(hwnd, win32con.SW_SHOW)
+            logger.info(f"已还原雷电实例 {idx} 主窗口名下的弹窗 hwnd={hwnd}")
+
+    async def _guard_owned_popups_if_hidden(self, idx: str) -> None:
+        """主窗口此刻是藏着的就起弹窗巡检；读不到句柄就算了，不影响 ``open``。"""
+        try:
+            hwnd = (await self.get_device_info(idx))[idx].top_hwnd
+            if (
+                hwnd > 0
+                and win32gui.IsWindow(hwnd)
+                and not platform_window.is_visible(hwnd)
+            ):
+                self._guard_owned_popups(idx, hwnd)
+        except Exception as e:  # noqa: BLE001 - 只影响弹窗
+            logger.warning(f"检查雷电实例 {idx} 主窗口是否隐藏失败: {e}")
+
+    def _guard_owned_popups(self, idx: str, owner: int) -> None:
+        """主窗口隐藏期间巡检其名下弹窗；已在巡检就不重复起。"""
+        task = self._popup_guards.get(owner)
+        if task is not None and not task.done():
+            return
+        self._popup_guards[owner] = asyncio.create_task(
+            self._watch_owned_popups(idx, owner)
+        )
+
+    async def _watch_owned_popups(self, idx: str, owner: int) -> None:
+        """每隔 :data:`_OWNED_POPUP_INTERVAL` 藏一次 ``owner`` 名下冒出来的弹窗。
+
+        辅助屏在游戏切到前台时才弹，而拉起游戏（包括 MAA 自己 ``am start``）往往在
+        主窗口隐藏之后，所以隐藏那一刻顺手藏一遍不够，要一直盯到主窗口重新显示。
+        主窗口被关掉就退出；被显示出来（:meth:`setVisible` 或用户自己）就还原弹窗再退出。
+        """
+        warned = False
+        try:
+            while win32gui.IsWindow(owner) and not platform_window.is_visible(owner):
+                try:
+                    self._hide_owned_popups(idx, owner)
+                except Exception as e:  # noqa: BLE001 - 单次失败下一轮再试
+                    if not warned:
+                        logger.warning(f"隐藏雷电实例 {idx} 主窗口名下的弹窗失败: {e}")
+                        warned = True
+                await asyncio.sleep(_OWNED_POPUP_INTERVAL)
+            if win32gui.IsWindow(owner):
+                try:
+                    self._restore_owned_popups(idx, owner)
+                except Exception as e:  # noqa: BLE001 - 还原不了也只影响弹窗
+                    logger.warning(f"还原雷电实例 {idx} 主窗口名下的弹窗失败: {e}")
+        finally:
+            if self._popup_guards.get(owner) is asyncio.current_task():
+                del self._popup_guards[owner]
+            if not win32gui.IsWindow(owner):
+                self._hidden_popups.pop(owner, None)
 
     async def _open_locked(self, idx: str, package_name: str) -> DeviceInfo:
         """在父类启动流程之上核对虚拟机是否真的起来，没起来就自愈一次。
@@ -372,10 +556,6 @@ class LDPlayer14Manager(AppLaunchMixin, LDManager):
             logger.warning(f"读取雷电实例 {idx} 配置失败: {e}")
             return None
         return data if isinstance(data, dict) else None
-
-    def get_boss_key(self, idx: str) -> BossKey:
-        """取该实例的老板键。"""
-        return read_boss_key(self.read_instance_config(idx))
 
     def _get_instance_vbox_path(self, idx: str) -> Path | None:
         idx_text = str(idx)
@@ -821,12 +1001,23 @@ class LDPlayer14Manager(AppLaunchMixin, LDManager):
         """
         return None
 
-    async def setVisible(self, idx: str, is_visible: bool) -> DeviceStatus:
-        """用**该实例自己的**老板键切换窗口可见性。
+    async def _apply_cleanmode(self) -> None:
+        """保留父类兼容入口，但不再写一遍。
 
-        与父类的差别只在老板键从哪来：父类读配置级的 ``Info.BossKey``，
-        这里读 ``leidianN.config`` 的 ``hotkeySettings.bossKey``。
-        认不出时抛 :class:`BossKeyUnavailableError`，**不回落任何猜测组合**。
+        全局开关已由 :meth:`prepare_launch` 在启动前设过，父类这一步是给没有该钩子的 1.0
+        留的；两边都走会让一次冷启动把同一条 ``globalsetting`` 发两遍（#389）。
+        """
+        return None
+
+    async def setVisible(self, idx: str, is_visible: bool) -> DeviceStatus:
+        """按 ``list2`` 给出的该实例顶层窗口句柄切换可见性。
+
+        父类发的是全局老板键：老板键不带实例信息，多开时会把别的实例一起翻过去
+        （#948）。这里直接对该实例的 ``top_hwnd`` 调 ``ShowWindow``；句柄为 0 或
+        已失效时等待重读，不回落到老板键。
+
+        老板键会连主窗口名下的弹窗（辅助屏等）一起藏，``SW_HIDE`` 不会，所以隐藏后
+        另起巡检接着藏，显示时把藏过的还原，见 :meth:`_watch_owned_popups`。
         """
         if not IS_WINDOWS:
             raise RuntimeError("切换模拟器窗口可见性仅支持 Windows 平台")
@@ -836,26 +1027,43 @@ class LDPlayer14Manager(AppLaunchMixin, LDManager):
             logger.warning(f"设备{idx}未在线，当前状态码: {status}")
             return status
 
-        boss_key = self.get_boss_key(idx)
-        hotkey = boss_key.hotkey
-        if hotkey is None:
-            raise BossKeyUnavailableError(idx, boss_key.reason)
-        if boss_key.reason == "default":
-            logger.info(f"雷电实例 {idx} 未自定义老板键，使用雷电默认 {hotkey}")
-
         device = (await self.get_device_info(idx))[idx]
 
         deadline = time.monotonic() + self.config.get("Info", "MaxWaitTime")
         while time.monotonic() < deadline:
-            if win32gui.IsWindowVisible(device.top_hwnd) == is_visible:
+            hwnd = device.top_hwnd
+            if hwnd <= 0 or not win32gui.IsWindow(hwnd):
+                # 实例刚启动时窗口可能还没建出来，等一会儿重新读取
+                await asyncio.sleep(0.5)
+                device = (await self.get_device_info(idx))[idx]
+                continue
+            if platform_window.is_visible(hwnd) == is_visible:
+                self._sync_owned_popups(idx, hwnd, is_visible)
                 return status
             try:
-                keyboard.press_and_release(hotkey)
-            except Exception as e:  # noqa: BLE001 - 与父类一致, 单次发送失败不终止重试
-                logger.error(f"发送老板键失败: {e}")
+                if is_visible:
+                    platform_window.show_window(hwnd)
+                else:
+                    platform_window.hide_window(hwnd)
+            except Exception as e:  # noqa: BLE001 - 与父类一致, 单次失败不终止重试
+                logger.error(f"切换设备{idx}窗口可见性失败: {e}")
             await asyncio.sleep(0.5)
 
-        raise RuntimeError(f"隐藏设备{idx}窗口超时")
+        raise RuntimeError(f"{'显示' if is_visible else '隐藏'}设备{idx}窗口超时")
+
+    def _sync_owned_popups(self, idx: str, owner: int, is_visible: bool) -> None:
+        """主窗口切换到位后，让它名下的弹窗跟上：隐藏则立即藏一遍并起巡检，显示则还原。"""
+        try:
+            if is_visible:
+                task = self._popup_guards.pop(owner, None)
+                if task is not None:
+                    task.cancel()
+                self._restore_owned_popups(idx, owner)
+            else:
+                self._guard_owned_popups(idx, owner)
+                self._hide_owned_popups(idx, owner)
+        except Exception as e:  # noqa: BLE001 - 主窗口已经到位, 弹窗处理失败不算切换失败
+            logger.warning(f"处理雷电实例 {idx} 主窗口名下的弹窗失败: {e}")
 
 
 async def build_manager(

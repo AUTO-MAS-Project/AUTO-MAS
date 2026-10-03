@@ -36,5 +36,5 @@
 
 [#133 MaaEnd](https://github.com/AUTO-MAS-Project/AUTO-MAS/pull/133) ·
 [#152 计划表](https://github.com/AUTO-MAS-Project/AUTO-MAS/pull/152) ·
-[#154 M9A](https://github.com/AUTO-MAS-Project/AUTO-MAS/pull/154) ·
+[#154 M9A（旧专项，#973 已并入 MFW，仅作历史参考）](https://github.com/AUTO-MAS-Project/AUTO-MAS/pull/154) ·
 [727aafb SRC 风格](https://github.com/AUTO-MAS-Project/AUTO-MAS/commit/727aafbaf5e21fc81e85e795a5cd5b77ac508e60)

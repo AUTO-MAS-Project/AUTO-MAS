@@ -3,12 +3,10 @@
 /* tslint:disable */
 /* eslint-disable */
 import type { MaaFWConfig_Device } from './MaaFWConfig_Device';
+import type { MaaFWConfig_Embedded } from './MaaFWConfig_Embedded';
 import type { MaaFWConfig_Emulator } from './MaaFWConfig_Emulator';
 import type { MaaFWConfig_Game } from './MaaFWConfig_Game';
 import type { MaaFWConfig_Info } from './MaaFWConfig_Info';
-import type { MaaFWConfig_Managed } from './MaaFWConfig_Managed';
-import type { MaaFWConfig_ManagedRemote } from './MaaFWConfig_ManagedRemote';
-import type { MaaFWConfig_ManagedRuntime } from './MaaFWConfig_ManagedRuntime';
 import type { MaaFWConfig_Run } from './MaaFWConfig_Run';
 import type { MaaFWConfig_Selection } from './MaaFWConfig_Selection';
 import type { MaaFWConfig_Update } from './MaaFWConfig_Update';
@@ -34,17 +32,9 @@ export type MaaFWConfig = {
      */
     Update?: (MaaFWConfig_Update | null);
     /**
-     * 托管项目资源
+     * 内嵌副本
      */
-    Managed?: (MaaFWConfig_Managed | null);
-    /**
-     * 共享运行时绑定
-     */
-    ManagedRuntime?: (MaaFWConfig_ManagedRuntime | null);
-    /**
-     * 托管资源远程来源
-     */
-    ManagedRemote?: (MaaFWConfig_ManagedRemote | null);
+    Embedded?: (MaaFWConfig_Embedded | null);
     /**
      * 脚本运行配置
      */

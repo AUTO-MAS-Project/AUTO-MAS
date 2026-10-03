@@ -11,6 +11,7 @@ const modalDestroy = vi.fn()
 const notificationWarning = vi.fn()
 const notificationInfo = vi.fn()
 const notificationClose = vi.fn()
+const showClosingOverlay = vi.fn()
 
 vi.mock('ant-design-vue', () => ({
   Modal: {
@@ -37,7 +38,7 @@ vi.mock('@/api', () => ({
 }))
 
 vi.mock('@/composables/useAppClosing', () => ({
-  useAppClosing: () => ({ showClosingOverlay: vi.fn() }),
+  useAppClosing: () => ({ showClosingOverlay }),
 }))
 
 vi.mock('@/services/realtimeSnapshotApi', () => ({
@@ -233,7 +234,7 @@ describe('useAppLifecycle 断开提示', () => {
     const mod = await loadLifecycle()
 
     void mod.closeApp()
-    await Promise.resolve()
+    await vi.waitFor(() => expect(showClosingOverlay).toHaveBeenCalledTimes(1))
 
     emitDisconnected(SUPERSEDED_EVENT)
     await Promise.resolve()
@@ -250,7 +251,7 @@ describe('useAppLifecycle 断开提示', () => {
 
     // 不等待关闭流程完成（它会等 backend.shutdown.ready 或超时），只需进入关闭态
     void mod.closeApp()
-    await Promise.resolve()
+    await vi.waitFor(() => expect(showClosingOverlay).toHaveBeenCalledTimes(1))
 
     emitDisconnected()
     listeners.cycleFailed.forEach(l => l())

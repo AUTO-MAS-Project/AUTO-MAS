@@ -52,14 +52,15 @@ Design backend functions that are predictable, easy to trace, and easy to evolve
 5. Use `async` only when awaiting IO or async coordination primitives.
 6. Keep cancellation-safe cleanup in `finally` blocks for long-running flows.
 7. Avoid mixing sync blocking calls directly in async hot paths.
-8. Keep task spawning in orchestrator-level functions, not leaf utilities.
-9. Trust existing base-layer guarantees instead of repeating their correction logic in every function.
-10. Prefer one clear wait/check block over several tiny sleeps, logs, or staged wrappers that express the same step.
-11. When success/failure depends on log text, log timestamps, and process exit together, keep that decision rule centralized and readable instead of scattering partial checks across helpers.
-12. `TaskExecuteBase.main_task`, `final_task`, and `on_crash` are the required execution contract for task classes; keep their responsibilities distinct.
-13. `main_task` and `final_task` may raise normally, but `on_crash` must protect itself from uncaught exceptions.
-14. Await child task spawning through `await self.spawn(...)`; do not fire child tasks without awaiting unless the owning orchestration has a documented reason.
-15. Use `.cancel()` plus `await .accomplish.wait()` when parent code must wait for nested task shutdown and cleanup to finish.
+8. Do not ship a function body containing module lazy imports to a thread pool (`asyncio.to_thread`/`run_in_executor`): resolve imports on the event loop or at startup, then pass the imported callables to the thread. Concurrent cold imports of one package from multiple worker threads can deadlock on CPython's per-module import locks or observe half-initialized modules.
+9. Keep task spawning in orchestrator-level functions, not leaf utilities.
+10. Trust existing base-layer guarantees instead of repeating their correction logic in every function.
+11. Prefer one clear wait/check block over several tiny sleeps, logs, or staged wrappers that express the same step.
+12. When success/failure depends on log text, log timestamps, and process exit together, keep that decision rule centralized and readable instead of scattering partial checks across helpers.
+13. `TaskExecuteBase.main_task`, `final_task`, and `on_crash` are the required execution contract for task classes; keep their responsibilities distinct.
+14. `main_task` and `final_task` may raise normally, but `on_crash` must protect itself from uncaught exceptions.
+15. Await child task spawning through `await self.spawn(...)`; do not fire child tasks without awaiting unless the owning orchestration has a documented reason.
+16. Use `.cancel()` plus `await .accomplish.wait()` when parent code must wait for nested task shutdown and cleanup to finish.
 
 ## Placement
 1. `api`: parse input, call core/service, map output.

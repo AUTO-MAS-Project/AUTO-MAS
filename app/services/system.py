@@ -131,7 +131,12 @@ class _SystemHandler:
         if mode == "KillSelf" and Config.server is not None:
             logger.info("执行退出主程序操作")
             if not from_frontend:
-                await self._request_frontend_close()
+                try:
+                    await self._request_frontend_close()
+                except TimeoutError as e:
+                    # 退出是用户设定的完成后操作或安装更新的要求，前端卡死不能让
+                    # 后端就此留下不退；此前这里只抛异常，退出被静默放弃。
+                    logger.error(f"{e}，仍继续退出主程序")
             Config.server.should_exit = True
             return
 
@@ -159,7 +164,9 @@ class _SystemHandler:
             timeout=self.frontend_close_timeout
         )
         if not disconnected:
-            raise TimeoutError("前端未在规定时间内完成关闭，已取消系统电源操作")
+            raise TimeoutError(
+                f"前端未在 {self.frontend_close_timeout:g} 秒内断开主连接"
+            )
 
         # 主连接断开是 renderer 退出的可观测边界；给 Electron 窗口销毁留出短暂调度时间。
         await asyncio.sleep(0.2)
@@ -214,6 +221,18 @@ class _SystemHandler:
             delay = Config.power_delay
             self._power_cancelled_event_task = None
             power_task = asyncio.create_task(self._power_task(power_sign, delay))
+
+            def _on_done(done_task: asyncio.Task) -> None:
+                # 电源任务无人 await，异常只能在这里取出记录，否则失败不留痕迹
+                if done_task.cancelled():
+                    return
+                exc = done_task.exception()
+                if exc is not None:
+                    logger.opt(exception=exc).error(
+                        f"电源操作 {power_sign} 执行失败: {type(exc).__name__}: {exc}"
+                    )
+
+            power_task.add_done_callback(_on_done)
             self.power_task = power_task
             logger.info(
                 f"电源任务已启动, {delay + self.countdown}秒后执行: {power_sign}"

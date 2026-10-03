@@ -12,6 +12,7 @@ import type { GlobalConfig, VersionOut } from '@/api'
 import ChangelogView from '@/components/ChangelogView.vue'
 import type { ChangelogData } from '@/utils/changelog'
 import { MAS_QQ_GROUP_URL, handleExternalLink } from '@/utils/openExternal'
+import { formatPauseUntil, getPauseDisabledDate, isUpdatePaused } from '@/composables/updatePause'
 
 const logger = window.electronAPI.getLogger('设置-其他')
 
@@ -41,6 +42,17 @@ const githubMirrorOptions = computed(() => [
   { label: t('setting.others.githubMirrorAuto'), value: 'Auto' },
   { label: t('setting.others.githubMirrorOff'), value: 'Off' },
 ])
+
+// 暂停更新：暂停中只展示状态条，未暂停展示日期选择器（最短 1 天、最长 35 天）
+const pauseUntil = computed(() => settings.Update?.PauseUntil ?? '')
+const isPaused = computed(() => isUpdatePaused(pauseUntil.value))
+// 回调内会取当前日期，创建一次即可（跨午夜也不会按旧边界放行）
+const pauseDisabledDate = getPauseDisabledDate()
+const pauseUntilDisplay = computed(() => formatPauseUntil(pauseUntil.value))
+
+const handlePauseUntilChange = (value: string | null) => {
+  void handleSettingChange('Update', 'PauseUntil', value ?? '')
+}
 
 // 当前版本的更新日志在编译期从 res/version.json 注入（res/ 不进 Electron 产物）
 const changelogVisible = ref(false)
@@ -102,6 +114,37 @@ const copyAllInfo = async () => {
           {{ t('setting.others.checkUpdate') }}
         </a-button>
       </div>
+      <!-- 暂停中：显著状态条（含副标题提示）；日期选择器常驻，暂停期间也可改截止日期 -->
+      <a-alert
+        v-if="isPaused"
+        type="info"
+        show-icon
+        class="pause-status-alert"
+        :message="t('setting.others.pauseStatus', { date: pauseUntilDisplay })"
+        :description="t('setting.others.pauseStatusHint')"
+      />
+      <a-row :gutter="24">
+        <a-col :span="8">
+          <div class="form-item-vertical">
+            <div class="form-label-wrapper">
+              <span class="form-label">{{ t('setting.others.pauseUpdates') }}</span>
+              <a-tooltip :title="t('setting.others.pauseUpdatesTip')">
+                <QuestionCircleOutlined class="help-icon" />
+              </a-tooltip>
+            </div>
+            <a-date-picker
+              :value="pauseUntil || undefined"
+              format="YYYY-MM-DD"
+              value-format="YYYY-MM-DD"
+              :disabled-date="pauseDisabledDate"
+              :placeholder="t('setting.others.pausePlaceholder')"
+              size="large"
+              style="width: 100%"
+              @change="handlePauseUntilChange"
+            />
+          </div>
+        </a-col>
+      </a-row>
       <a-row :gutter="24">
         <a-col :span="8">
           <div class="form-item-vertical">
@@ -369,6 +412,10 @@ const copyAllInfo = async () => {
   display: inline-flex;
   align-items: center;
   gap: 4px;
+}
+
+.pause-status-alert {
+  margin-bottom: 16px;
 }
 
 .form-hint {

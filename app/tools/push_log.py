@@ -7,7 +7,14 @@
   报告文本，多账号任务时各用户节点归属清晰；「失败」类型条目仅在任务存在
   未完成用户时纳入（与 MAS 原生推送策略一致）。节点详情按用户级推送模式
   （``user.push_log_mode``）呈现：关闭 = 不输出；逐条 = 逐条带时间戳；
-  汇总 = 按状态聚合为一行。未设置模式的用户（如通用脚本）保持逐条原样输出。
+  汇总 = 按状态聚合为一行。未设置 ``push_log_mode`` 属性的对象按逐条输出。
+- ``build_task_result_text``：任务完成事件的结果文本——按脚本组装「脚本名 +
+  完成计数 + 缩进的用户结果与节点详情」，有采集节点的脚本用户部分与推送
+  报告同源渲染；调度台在任务完成时会用这段文本替换日志面板，未配置推送
+  的用户由此看到与推送报告相同的详情。
+- ``mirror_report_to_dispatch``：把上述报告文本整块镜像进调度台日志，在
+  manager 报告聚合后调用一次（多脚本任务运行期即可见），未配置推送的用户
+  也能在调度中心看到同样的节点详情。
 """
 
 from __future__ import annotations
@@ -112,3 +119,65 @@ def build_user_result_text(users: Iterable, has_uncompleted: bool) -> str:
             node_lines = _render_scatter(entries)
         blocks.append("\n".join([f"{user.name}: {user.result}"] + node_lines))
     return "\n\n".join(blocks)
+
+
+def build_task_result_text(scripts: Iterable) -> str:
+    """任务完成事件的结果文本：按脚本组装「脚本名 + 完成计数 + 用户结果与节点详情」
+
+    版式与任务完成摘要一致（脚本名 + 完成计数 + 4 空格缩进的用户行），但
+    脚本的用户部分在有采集节点时改用 ``build_user_result_text`` 渲染——调度台
+    在任务完成时用这段文本替换日志面板，未配置推送的用户由此看到与推送
+    报告相同的详情；没有采集节点的脚本（MAA / 通用脚本未开启推送日志等）
+    维持原简要结果，版式不变。
+    """
+
+    script_list = list(scripts)
+    if not script_list:
+        return "任务未加载"
+    blocks: list[str] = []
+    for script in script_list:
+        if not script.user_list:
+            # 尚未轮到、按周几/锁定跳过或运行前检查失败的脚本没有真实用户；
+            # 这里不能再输出旧的「暂未加载」用户行，也不能把空表计成一位未完成用户。
+            status_text = {
+                "等待": "等待运行",
+                "跳过": "已跳过",
+                "异常": "检查失败",
+            }.get(script.status, "未运行")
+            blocks.append(f"{script.name}：\n\n    {status_text}")
+            continue
+
+        user_text = (
+            build_user_result_text(
+                script.user_list,
+                # 失败条目过滤与各 manager 推送报告同口径：仅异常/等待算未完成
+                any(user.status in ("异常", "等待") for user in script.user_list),
+            )
+            if any(user.push_log for user in script.user_list)
+            else script.result
+        )
+        # 逐行缩进且空行保持为空，避免块间空行变成带 4 空格的行
+        indented = "\n".join(
+            f"    {line}" if line else line for line in user_text.split("\n")
+        )
+        blocks.append(
+            f"{script.name}：\n\n"
+            f"    已完成用户数：{sum(1 for user in script.user_list if user.status == '完成')}"
+            f"；未完成用户数：{sum(1 for user in script.user_list if user.status != '完成')}\n\n"
+            f"{indented}"
+        )
+    return "\n\n\n".join(blocks)
+
+
+def mirror_report_to_dispatch(script_info: object, report_text: str) -> None:
+    """把推送报告正文整块镜像进调度台日志（manager 报告聚合后调用一次）
+
+    与推送报告共用 ``build_user_result_text`` 的同一份渲染结果：节点详情按
+    用户级 ``push_log_mode`` 呈现逐条/汇总、「失败」类型过滤也完全一致，
+    未配置推送的用户在调度中心同样能看到详情；报告为空（无用户）时跳过。
+    """
+
+    if not report_text:
+        return
+    prev = script_info.log
+    script_info.log = f"{prev}\n{report_text}" if prev else report_text

@@ -364,11 +364,11 @@ class _UpdateHandler:
             )
             if mirror_url is None:
                 logger.warning("MirrorChyan 未返回下载链接, 使用自建下载站")
-                return f"https://download.auto-mas.top/d/AUTO-MAS/AUTO-MAS-Setup-{remote_version}-x64.zip"
+                return f"https://data.auto-mas.top/api/v1/files/auto-mas/Release/{'beta' if 'beta' in remote_version else 'stable'}/download"
             return mirror_url
 
         if source == "AutoSite":
-            return f"https://download.auto-mas.top/d/AUTO-MAS/AUTO-MAS-Setup-{remote_version}-x64.zip"
+            return f"https://data.auto-mas.top/api/v1/files/auto-mas/Release/{'beta' if 'beta' in remote_version else 'stable'}/download"
 
         if source == "CNB":
             return f"https://cnb.cool/AUTO-MAS-Project/AUTO-MAS/-/releases/download/{remote_version}/AUTO-MAS-Setup-{remote_version}-x64.zip"
@@ -640,7 +640,7 @@ class _UpdateHandler:
             await Publisher.send(
                 id=protocol.ID_UPDATE,
                 type=protocol.UPDATE_FAILED,
-                data={"message": "已有更新任务在进行中, 请勿重复操作"},
+                data=WSUpdateFailedData(message="已有更新任务在进行中, 请勿重复操作"),
             )
             return None
 
@@ -658,7 +658,7 @@ class _UpdateHandler:
             await Publisher.send(
                 id=protocol.ID_UPDATE,
                 type=protocol.UPDATE_FAILED,
-                data={"message": "未检测到更新包, 请先下载更新"},
+                data=WSUpdateFailedData(message="未检测到更新包, 请先下载更新"),
             )
             self.is_locked = False
             return None
@@ -675,7 +675,7 @@ class _UpdateHandler:
             await Publisher.send(
                 id=protocol.ID_UPDATE,
                 type=protocol.UPDATE_FAILED,
-                data={"message": f"解压失败, {type(e).__name__}: {e}"},
+                data=WSUpdateFailedData(message=f"解压失败, {type(e).__name__}: {e}"),
             )
             self.is_locked = False
             return None

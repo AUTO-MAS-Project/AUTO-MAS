@@ -64,7 +64,7 @@
             v-model:value="formData.Info.Account"
             size="large"
             autocomplete="off"
-            :placeholder="t('edit.localNoteOnly')"
+            :placeholder="accountPlaceholder || t('edit.localNoteOnly')"
             @blur="emitSave('Info.Account', formData.Info.Account)"
           />
         </a-form-item>
@@ -108,23 +108,17 @@
 import { useI18n } from 'vue-i18n'
 import { computed } from 'vue'
 import { QuestionCircleOutlined } from '@ant-design/icons-vue'
-import type { MaaFWUserConfig } from '@/types/script'
+import type {
+  MaaFWUserBasicInfoSectionEmits,
+  MaaFWUserBasicInfoSectionProps,
+} from '../../MaaFWFlavor/sectionContracts'
 
 const { t } = useI18n()
 
-type MaaFWUserFormData = MaaFWUserConfig & {
-  userName: string
-}
+// props / 事件的契约在 sectionContracts（特调替换这个分节时按同一份契约接收）
+const props = defineProps<MaaFWUserBasicInfoSectionProps>()
 
-const props = defineProps<{
-  formData: MaaFWUserFormData
-  interfaceDependentDisabled: boolean
-  accountRecordTooltip: string
-}>()
-
-const emit = defineEmits<{
-  save: [key: string, value: unknown]
-}>()
+const emit = defineEmits<MaaFWUserBasicInfoSectionEmits>()
 
 const emitSave = (key: string, value: unknown) => {
   emit('save', key, value)

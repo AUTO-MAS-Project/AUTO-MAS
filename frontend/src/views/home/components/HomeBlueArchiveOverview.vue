@@ -3,7 +3,7 @@
     <template #extra>
       <div class="card-extra">
         <a-typography-link
-          href="https://kivo.wiki/timeline"
+          href="https://www.gamekee.com/ba/huodong/16"
           target="_blank"
           rel="noreferrer"
           class="source-link"
@@ -45,84 +45,59 @@
     />
 
     <div
-      v-if="overview.Available && !currentLoading && !overview.activities.length"
+      v-if="overview.Available && !currentLoading && !displayActivities.length"
       class="empty-state"
     >
       <a-empty :description="t('home.bluearchive.noActivity')" />
     </div>
 
-    <!-- 活动 Banner（超高竖图只显示上部条带） -->
-    <div v-else-if="overview.Available && !currentLoading && versionCover" class="version-banner">
-      <img
-        :key="versionCover"
-        :src="versionCover"
-        :alt="overview.versionName"
-        class="version-cover"
-        decoding="async"
-        @error="failedVersionCover = true"
-      />
-      <div class="version-overlay" />
-
-      <div class="version-content">
-        <div class="version-badge">
-          <span class="badge-dot" />
-          <span class="badge-text">{{
-            t('home.bluearchive.versionBadge', { version: overview.version })
-          }}</span>
+    <!-- 同时可能有好几场活动在跑，按结束时间先后的卡片横排，与其它游戏的活动卡一致 -->
+    <div v-else-if="overview.Available && !currentLoading" class="activity-list">
+      <div
+        v-for="activity in displayActivities"
+        :key="activity.name"
+        class="activity-card"
+        :class="{ 'is-upcoming': isUpcoming(activity) }"
+      >
+        <div class="activity-item">
+          <img
+            v-if="getActivityImage(activity)"
+            :src="getActivityImage(activity)"
+            :alt="activity.name"
+            class="activity-image"
+            referrerpolicy="no-referrer"
+            decoding="async"
+            @error="handleImageError(activity.name)"
+          />
+          <div class="activity-overlay" />
+          <div class="activity-content">
+            <div class="activity-head">
+              <span v-if="activity.kind" class="activity-kind">{{ activity.kind }}</span>
+              <span class="activity-name">{{ activity.name }}</span>
+            </div>
+            <div v-if="activity.description" class="activity-desc">
+              {{ activity.description }}
+            </div>
+            <div class="activity-meta">
+              <a-statistic-countdown
+                :value="getCountdownValue(countdownTarget(activity))"
+                :format="t('home.countdown.dh')"
+                :value-style="activityCountdownStyle"
+              />
+              <div class="activity-end-time">
+                {{
+                  isUpcoming(activity)
+                    ? t('home.bluearchive.startsAt', {
+                        time: formatActivityTime(activity.startTime, locale),
+                      })
+                    : t('home.bluearchive.endsAt', {
+                        time: formatActivityTime(activity.endTime, locale),
+                      })
+                }}
+              </div>
+            </div>
+          </div>
         </div>
-
-        <div class="version-name">{{ overview.versionName }}</div>
-
-        <div class="version-time">
-          <ClockCircleOutlined class="version-time-icon" />
-          <span>{{ timeLabel }}</span>
-        </div>
-
-        <div v-if="activeActivities.length" class="activity-tags">
-          <a-tag
-            v-for="activity in activeActivities"
-            :key="`${activity.name}-${activity.endTime}`"
-            class="activity-tag"
-          >
-            {{ activity.name }}
-          </a-tag>
-        </div>
-      </div>
-
-      <div class="version-remaining">
-        <div class="remaining-label">{{ remainingLabel }}</div>
-        <a-statistic-countdown
-          v-if="countdownTarget"
-          :value="countdownTarget"
-          :format="t('home.countdown.dh')"
-          :value-style="remainingCountdownStyle"
-        />
-        <div v-if="currentPhase !== 'upcoming'" class="remaining-sub">
-          {{ t('home.bluearchive.nextVersionSoon') }}
-        </div>
-      </div>
-    </div>
-
-    <!-- 无活动封面：简洁信息条 -->
-    <div v-else-if="overview.Available && !currentLoading" class="version-info">
-      <div class="version-info-left">
-        <div class="version-info-name">{{ overview.versionName }}</div>
-        <div class="version-info-time">
-          <ClockCircleOutlined class="version-info-time-icon" />
-          <span class="version-info-time-label">{{ t('home.bluearchive.versionTime') }}</span>
-          <span class="version-info-time-value"
-            >{{ formatTime(overview.startTime) }} ~ {{ formatTime(overview.endTime) }}</span
-          >
-        </div>
-      </div>
-
-      <div class="version-info-right">
-        <a-statistic-countdown
-          :title="remainingLabel"
-          :value="countdownTarget"
-          :format="currentPhase === 'ended' ? t('home.countdown.ended') : t('home.countdown.dh')"
-          :value-style="plainRemainingCountdownStyle"
-        />
       </div>
     </div>
   </a-card>
@@ -132,7 +107,6 @@
 import { useI18n } from 'vue-i18n'
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import type { CSSProperties } from 'vue'
-import { ClockCircleOutlined } from '@ant-design/icons-vue'
 import { blueArchivePresentation } from '@/views/home/blueArchivePresentation'
 import { createEmptySraActivityOverview } from '@/types/home'
 import type {
@@ -141,10 +115,11 @@ import type {
   BlueArchiveServerOverview,
 } from '@/types/home'
 import { handleExternalLink } from '@/utils/openExternal'
+import { formatActivityTime } from '@/views/home/activityTime'
 
 defineOptions({ name: 'HomeBlueArchiveOverview' })
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 
 const props = defineProps<{
   servers: BlueArchiveServerOverview[]
@@ -157,11 +132,9 @@ const emit = defineEmits<{
 }>()
 
 const ACCENT = '#3ba9ee'
-const MAX_VISIBLE_ACTIVITIES = 4
-const failedVersionCover = ref(false)
+const MAX_VISIBLE_ACTIVITIES = 6
 
-// 阶段与倒计时目标都取决于「现在」，而 Date.now() 不是响应式的：用每秒走一格的时钟驱动，
-// 否则跨过活动的开始或结束时，倒计时已经归零、标签却还停在原来的阶段
+// 倒计时归零要立刻反映到列表上，而 Date.now() 不是响应式的：用每秒走一格的时钟驱动
 const now = ref(Date.now())
 const clockTimer = window.setInterval(() => {
   now.value = Date.now()
@@ -184,95 +157,53 @@ const overview = computed<BlueArchiveActivityOverview>(() =>
 // 每个服各有自己的加载态，卡片只关心当前选中的这个服
 const currentLoading = computed(() => props.loadingByServer[props.selected] === true)
 
-// 失败状态只属于当前封面；同服活动刷新换图或切服后都应重新尝试。
-watch([() => props.selected, () => overview.value.cover], () => {
-  failedVersionCover.value = false
+const failedImageNames = ref(new Set<string>())
+
+// 换服或活动刷新后，失败的封面图要重新尝试
+watch([() => props.selected, () => overview.value.activities], () => {
+  failedImageNames.value = new Set()
 })
 
-const activeActivities = computed(() => {
-  return overview.value.activities
-    .filter(activity => {
-      return (
+const isUpcoming = (activity: BlueArchiveActivityOverview['activities'][number]) =>
+  getCountdownValue(activity.startTime) > now.value
+
+const countdownTarget = (activity: BlueArchiveActivityOverview['activities'][number]) =>
+  isUpcoming(activity) ? activity.startTime : activity.endTime
+
+const displayActivities = computed(() => {
+  const running = overview.value.activities
+    .filter(
+      activity =>
         getCountdownValue(activity.startTime) <= now.value &&
         getCountdownValue(activity.endTime) > now.value
-      )
-    })
+    )
     .sort((left, right) => getCountdownValue(left.endTime) - getCountdownValue(right.endTime))
-    .slice(0, MAX_VISIBLE_ACTIVITIES)
+  // 只列进行中的话，长草期整片卡片是空的；即将开始的按开始时间跟在后头，卡片上另有标记
+  const upcoming = overview.value.activities
+    .filter(activity => getCountdownValue(activity.startTime) > now.value)
+    .sort((left, right) => getCountdownValue(left.startTime) - getCountdownValue(right.startTime))
+  return [...running, ...upcoming].slice(0, MAX_VISIBLE_ACTIVITIES)
 })
 
-const versionCover = computed(() => {
-  if (failedVersionCover.value) return ''
-  return overview.value.cover || ''
-})
-
-const remainingCountdownStyle = computed<CSSProperties>(() => ({
-  color: ACCENT,
-  fontSize: '28px',
-  fontWeight: 700,
-  lineHeight: 1.1,
-  fontVariantNumeric: 'tabular-nums',
-}))
-
-const getPlainTimeStatus = (value: string): 'normal' | 'warning' | 'ended' => {
-  const remaining = getCountdownValue(value) - now.value
-  if (remaining <= 0) return 'ended'
-  if (remaining <= 2 * 24 * 60 * 60 * 1000) return 'warning'
-  return 'normal'
+const getActivityImage = (activity: BlueArchiveActivityOverview['activities'][number]) => {
+  if (failedImageNames.value.has(activity.name)) return ''
+  return activity.cover || ''
 }
 
-const plainRemainingCountdownStyle = computed<CSSProperties>(() => {
-  const status = getPlainTimeStatus(overview.value.endTime)
-  if (status === 'ended') {
-    return { color: 'var(--ant-color-error)', fontWeight: 600, fontSize: '18px' }
-  }
-  if (status === 'warning') {
-    return { color: 'var(--ant-color-warning)', fontWeight: 600, fontSize: '18px' }
-  }
-  return { color: 'var(--ant-color-text)', fontWeight: 600, fontSize: '18px' }
-})
+const handleImageError = (activityName: string) => {
+  failedImageNames.value = new Set(failedImageNames.value).add(activityName)
+}
 
-// 卡片当前展示的是哪一种活动：进行中、还没开始、刚结束，或没有能展示的活动
-const currentPhase = computed<'running' | 'upcoming' | 'ended' | 'none'>(() => {
-  const { startTime, endTime } = overview.value
-  if (!endTime) return 'none'
-  if (now.value >= getCountdownValue(endTime)) return 'ended'
-  if (now.value < getCountdownValue(startTime)) return 'upcoming'
-  return 'running'
-})
-
-const remainingLabel = computed(() => {
-  if (currentPhase.value === 'ended') return t('home.countdown.ended')
-  if (currentPhase.value === 'upcoming') return t('home.bluearchive.startsIn')
-  return t('home.bluearchive.versionRemaining')
-})
-
-// 展示还没开始的那一场时说「几点结束」是错的，改说「几点开始」
-const timeLabel = computed(() =>
-  currentPhase.value === 'upcoming'
-    ? t('home.bluearchive.startsAt', { time: formatTime(overview.value.startTime) })
-    : t('home.bluearchive.endsAt', { time: formatTime(overview.value.endTime) })
-)
-
-// 展示还没开始的活动时，倒计时要数到它的开始时间；已结束或没有活动就干脆不显示倒计时
-const countdownTarget = computed(() => {
-  if (currentPhase.value === 'ended' || currentPhase.value === 'none') return 0
-  const value =
-    currentPhase.value === 'upcoming' ? overview.value.startTime : overview.value.endTime
-  return getCountdownValue(value)
-})
+const activityCountdownStyle = computed<CSSProperties>(() => ({
+  color: ACCENT,
+  fontSize: '14px',
+  fontWeight: 700,
+}))
 
 const getCountdownValue = (value: string) => new Date(value).getTime()
-
-const formatTime = (value: string) =>
-  new Date(value).toLocaleString('zh-CN', {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-  })
 </script>
+
+<style scoped src="./activityCard.css"></style>
 
 <style scoped>
 .bluearchive-card {
@@ -283,16 +214,6 @@ const formatTime = (value: string) =>
 .bluearchive-card :deep(.ant-card-head-title) {
   font-size: 18px;
   font-weight: 600;
-}
-
-.card-extra {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.source-link {
-  font-size: 13px;
 }
 
 .server-switch {
@@ -352,258 +273,89 @@ const formatTime = (value: string) =>
   outline-offset: -2px;
 }
 
-.status-alert {
-  margin-bottom: 16px;
-}
-
-.empty-state {
-  padding: 24px 0;
-}
-
-/* ---------- 活动 Banner ---------- */
-.version-banner {
+.activity-item {
+  min-width: 0;
+  width: 266px;
+  flex-shrink: 0;
+  height: 150px;
   position: relative;
   display: flex;
-  align-items: stretch;
-  justify-content: space-between;
-  min-height: 380px;
+  align-items: flex-end;
   overflow: hidden;
-  border: 1px solid transparent;
   border-radius: 10px;
+  scroll-snap-align: start;
   background:
     radial-gradient(
-      ellipse at 78% 20%,
-      color-mix(in srgb, var(--bluearchive-accent) 14%, transparent),
+      ellipse at 20% 0%,
+      color-mix(in srgb, var(--bluearchive-accent) 16%, transparent),
       transparent 55%
     ),
-    radial-gradient(ellipse at 90% 85%, rgba(64, 128, 255, 0.18), transparent 60%),
-    linear-gradient(135deg, #0b1220 0%, #101a2e 55%, #0e1a2b 100%);
+    linear-gradient(150deg, #14203a 0%, #0b1220 60%, #101a2e 100%);
+  transition:
+    transform 0.25s ease,
+    box-shadow 0.25s ease;
 }
 
-.version-cover {
-  width: 100%;
-  height: 100%;
-  position: absolute;
-  inset: 0;
-  object-fit: cover;
-  /* Kivo 时间轴配图多为竖图，只显示上部约 14% 处的条带 */
-  object-position: right 14%;
-}
-
-.version-overlay {
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(
-    90deg,
-    rgba(11, 18, 32, 0.9) 0%,
-    rgba(11, 18, 32, 0.72) 42%,
-    rgba(11, 18, 32, 0.15) 100%
-  );
-}
-
-.version-content {
-  position: relative;
-  z-index: 1;
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  padding: 28px 32px;
-  color: white;
-}
-
-.version-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  align-self: flex-start;
-  padding: 4px 12px;
-  margin-bottom: 12px;
-  border: 1px solid color-mix(in srgb, var(--bluearchive-accent) 45%, transparent);
-  border-radius: 999px;
-  background: rgba(11, 18, 32, 0.55);
-}
-
-.badge-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--bluearchive-accent);
-  box-shadow: 0 0 8px color-mix(in srgb, var(--bluearchive-accent) 80%, transparent);
-}
-
-.badge-text {
-  color: var(--bluearchive-accent);
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-}
-
-.version-name {
-  margin-bottom: 14px;
-  color: white;
-  font-size: 30px;
-  font-weight: 700;
-  line-height: 1.2;
-  letter-spacing: 0.01em;
-  overflow-wrap: anywhere;
-}
-
-.version-time {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  align-self: flex-start;
-  padding: 6px 16px;
-  border: 1px solid rgba(255, 255, 255, 0.16);
-  border-radius: 999px;
-  background: rgba(11, 18, 32, 0.5);
-  color: white;
-  font-size: 15px;
-  font-weight: 500;
-}
-
-.version-time-icon {
-  color: var(--bluearchive-accent);
-  font-size: 15px;
-}
-
-/* ---------- 活动标签 ---------- */
-.activity-tags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 12px;
-}
-
-.activity-tag {
-  margin-inline-end: 0;
-  border: 1px solid color-mix(in srgb, var(--bluearchive-accent) 45%, transparent);
-  border-radius: 999px;
-  background: rgba(11, 18, 32, 0.55);
-  color: white;
-  font-size: 13px;
-  font-weight: 500;
-  line-height: 22px;
-}
-
-/* ---------- 剩余时间 ---------- */
-/* 贴右下角、压成一行：封面里的人物多在画面中部，浮层居中会挡脸 */
-.version-remaining {
-  position: relative;
-  z-index: 1;
-  align-self: flex-end;
-  margin: 0 28px 20px 0;
-  padding: 12px 22px;
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  flex-wrap: wrap;
-  border: 1px solid color-mix(in srgb, var(--bluearchive-accent) 35%, transparent);
-  border-radius: 12px;
-  background: rgba(11, 18, 32, 0.6);
-  backdrop-filter: blur(10px);
-  box-shadow:
-    0 8px 32px rgba(0, 0, 0, 0.35),
-    inset 0 0 24px color-mix(in srgb, var(--bluearchive-accent) 5%, transparent);
-  white-space: nowrap;
-}
-
-.remaining-label {
-  color: rgba(255, 255, 255, 0.75);
-  font-size: 13px;
-  line-height: 1;
-  letter-spacing: 0.08em;
-}
-
-.version-remaining :deep(.ant-statistic-content) {
-  color: var(--bluearchive-accent);
-  font-size: 28px;
-  font-weight: 700;
-  line-height: 1.1;
-  font-variant-numeric: tabular-nums;
-  text-shadow: 0 0 20px color-mix(in srgb, var(--bluearchive-accent) 35%, transparent);
-}
-
-.remaining-sub {
-  color: rgba(255, 255, 255, 0.5);
-  font-size: 12px;
-  line-height: 1;
-}
-
-/* ---------- 无封面：简洁信息条 ---------- */
-.version-info {
-  padding: 16px;
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 24px;
-  border: 1px solid var(--ant-color-border);
-  border-radius: 8px;
-}
-
-.version-info-left {
-  min-width: 0;
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.version-info-name {
-  color: var(--ant-color-text);
-  font-size: 18px;
-  font-weight: 600;
-  line-height: 1.2;
-  overflow-wrap: anywhere;
-}
-
-.version-info-time {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 14px;
-}
-
-.version-info-time-icon,
-.version-info-time-label {
-  color: var(--ant-color-text-secondary);
-}
-
-.version-info-time-value {
-  color: var(--ant-color-text);
-  font-weight: 500;
-}
-
-.version-info-right {
+/* 分类标签：活动 / 总力大决 / 爬塔 / 多倍活动 … */
+.activity-kind {
   flex-shrink: 0;
-  text-align: right;
+  padding: 1px 6px;
+  border: 1px solid color-mix(in srgb, var(--bluearchive-accent) 45%, transparent);
+  border-radius: 4px;
+  background: rgba(11, 18, 32, 0.55);
+  color: var(--bluearchive-accent);
+  font-size: 11px;
+  line-height: 16px;
 }
 
-@media (max-width: 800px) {
-  .version-banner {
-    flex-direction: column;
-    min-height: 320px;
-  }
+.activity-name {
+  min-width: 0;
+  overflow: hidden;
+  color: white;
+  font-size: 15px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+}
 
-  .version-name {
-    font-size: 26px;
-  }
+.activity-meta {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
 
-  .version-remaining {
-    align-self: stretch;
-    justify-content: flex-end;
-    margin: 0 24px 20px;
-  }
+.activity-desc {
+  max-height: 0;
+  overflow: auto;
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 12px;
+  line-height: 1.5;
+  opacity: 0;
+  text-shadow:
+    0 0 3px #000,
+    0 0 6px #000;
+  transition:
+    max-height 0.3s ease,
+    opacity 0.3s ease,
+    margin 0.3s ease;
+  margin-bottom: 0;
+  scrollbar-width: none;
+}
 
-  .version-info {
-    flex-direction: column;
-    gap: 16px;
-  }
+.activity-card:hover .activity-desc {
+  max-height: 60px;
+  opacity: 1;
+  margin-bottom: 8px;
+}
 
-  .version-info-right {
-    text-align: left;
-  }
+/* 还没开场的那几张压暗一点，一眼能看出哪个正在跑 */
+.activity-card.is-upcoming {
+  opacity: 0.72;
+}
+
+.activity-card.is-upcoming:hover {
+  opacity: 1;
 }
 </style>

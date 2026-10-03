@@ -164,14 +164,22 @@
           <!-- 检查 / 更新的入口就放在过程面板标题行右侧：点完按钮，结果就在下面这个日志框里，
                与「运行环境」面板把「准备运行环境」放标题行右侧同一口径 -->
           <div class="update-process-actions">
-            <a-button size="small" :loading="updateChecking" @click="emit('check-update')">{{
-              t('edit.checkUpdates2')
-            }}</a-button>
+            <!-- 检查与更新共用下面这个过程面板：一个在跑时另一个不能点，否则后点的那次把面板
+                 重置并先以终态收尾，正在跑的那次之后的进度全被当成迟到事件丢掉 -->
             <a-button
-              v-if="updateResult && updateResult.installable"
+              size="small"
+              :loading="updateChecking"
+              :disabled="updateApplying"
+              @click="emit('check-update')"
+              >{{ t('edit.checkUpdates2') }}</a-button
+            >
+            <!-- apply 的响应沿用检查结果的 installable=true，更新成功后按钮还挂在那；updated 为真时隐藏 -->
+            <a-button
+              v-if="updateResult && updateResult.installable && !updateResult.updated"
               type="primary"
               size="small"
               :loading="updateApplying"
+              :disabled="updateChecking"
               @click="emit('apply-update')"
             >
               {{ t('edit.update') }}
@@ -217,47 +225,34 @@ import {
   LoadingOutlined,
   QuestionCircleOutlined,
 } from '@ant-design/icons-vue'
-import type { MaaFWUpdateResult } from '@/composables/useMaaFWUpdateApi'
 import {
   resolveCdkExpiry,
   resolveCdkWarning,
   type MaaFWAutoUpdateMode,
 } from '@/composables/useMaaFWProjectUpdate'
-import type { MaaFWInterfacePreviewData, MaaFWScriptConfig } from '@/types/script'
 import { handleExternalLink } from '@/utils/openExternal'
 import {
   formatAppliedFiles,
   formatDownloadSize,
   formatDownloadSpeed,
+  formatExtractedFiles,
+  formatExtractedSize,
   progressBarPercent,
   type MaaFWUpdateProgressPhase,
-  type MaaFWUpdateProgressState,
 } from './updateProgress'
+import type {
+  MaaFWScriptUpdateSectionEmits,
+  MaaFWScriptUpdateSectionProps,
+} from '../../MaaFWFlavor/sectionContracts'
 
 const MIRRORCHYAN_CDK_URL = 'https://mirrorchyan.com?source=automas_script_update'
 
 const { t } = useI18n()
 
-const props = defineProps<{
-  maafwConfig: MaaFWScriptConfig
-  previewData: MaaFWInterfacePreviewData | null
-  isAutoUpdateDisabled: boolean
-  updateChecking: boolean
-  updateApplying: boolean
-  updateError: string
-  updateResult: MaaFWUpdateResult | null
-  updateProgress: MaaFWUpdateProgressState
-  /** 本次进入页面时 CDK 是从 MAS 更新设置里自动填入的 */
-  cdkPrefilled: boolean
-  updateSourceOptions: Array<{ label: string; value: string }>
-  updateChannelOptions: Array<{ label: string; value: string }>
-}>()
+// props / 事件的契约在 sectionContracts（特调替换这个分节时按同一份契约接收）
+const props = defineProps<MaaFWScriptUpdateSectionProps>()
 
-const emit = defineEmits<{
-  change: [category: keyof MaaFWScriptConfig, key: string, value: unknown]
-  'check-update': []
-  'apply-update': []
-}>()
+const emit = defineEmits<MaaFWScriptUpdateSectionEmits>()
 
 const autoUpdateModeOptions = computed<Array<{ label: string; value: MaaFWAutoUpdateMode }>>(() => [
   { label: t('edit.autoUpdateModeOff'), value: 'Off' },
@@ -311,6 +306,7 @@ const cdkExpiryMessage = computed(() => {
 const PHASE_LABEL_KEYS: Record<Exclude<MaaFWUpdateProgressPhase, 'idle'>, string> = {
   checking: 'edit.updatePhaseChecking',
   downloading: 'edit.updatePhaseDownloading',
+  extracting: 'edit.updatePhaseExtracting',
   preparing: 'edit.updatePhasePreparing',
   applying: 'edit.updatePhaseApplying',
   validating: 'edit.updatePhaseValidating',
@@ -334,12 +330,21 @@ const summaryTone = computed<'running' | 'success' | 'failed'>(() => {
   return 'running'
 })
 
-// 下载阶段给「已下 / 总量 · 速度」，覆盖阶段给「n/m 个文件」，其余阶段给后端那句描述。
+// 下载阶段给「已下 / 总量 · 速度」，解压阶段给「n/m 个文件 · 已解压 / 总量」，覆盖阶段给
+// 「n/m 个文件」，其余阶段给后端那句描述。
 const summaryDetail = computed(() => {
   const state = props.updateProgress
   if (state.phase === 'downloading') {
     const parts = [formatDownloadSize(state), formatDownloadSpeed(state)].filter(Boolean)
     return parts.join('  ·  ')
+  }
+  if (state.phase === 'extracting') {
+    const files = formatExtractedFiles(state)
+    const parts = [
+      files ? t('edit.updateFilesApplied', { files }) : '',
+      formatExtractedSize(state),
+    ].filter(Boolean)
+    return parts.length ? parts.join('  ·  ') : state.message
   }
   if (state.phase === 'applying') {
     const files = formatAppliedFiles(state)

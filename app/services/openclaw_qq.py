@@ -31,15 +31,22 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import json
+import re
 import secrets
 import uuid
+from collections.abc import Sequence
+from contextlib import suppress
 from dataclasses import dataclass
 from time import monotonic
-from typing import Any
-from urllib.parse import quote
+from typing import Any, Callable
+from urllib.parse import quote, urlparse
 
 import httpx
+import websockets
+from websockets.asyncio.client import ClientConnection
 
+from app.models.notification import NotificationImage
 from app.utils import LazyProxy, get_logger
 from app.utils.platform import secret as platform_secret
 
@@ -55,9 +62,19 @@ QR_CONNECT_URL = "https://q.qq.com/qqbot/openclaw/connect.html"
 QR_SESSION_TTL_SECONDS = 5 * 60
 QR_REQUEST_TIMEOUT_SECONDS = 15
 API_REQUEST_TIMEOUT_SECONDS = 15
+MEDIA_UPLOAD_TIMEOUT_SECONDS = 60
+MAX_IMAGE_UPLOAD_BYTES = 30 * 1024 * 1024
 TEXT_CHUNK_LIMIT = 3800
 MESSAGE_SEQUENCE_MAX = 0xFFFFFFFF
 USER_AGENT = "AUTO-MAS QQ Official Bot"
+GATEWAY_READY_TIMEOUT_SECONDS = 30
+GATEWAY_RECONNECT_DELAYS = (2, 5, 10, 30)
+GATEWAY_INTENTS = 1 << 25  # C2C_GROUP_AT_MESSAGES
+# Identify 连续被拒达到该次数后，降级为最小事件订阅保住网关连接
+GATEWAY_IDENTIFY_FALLBACK_AFTER = 3
+# 平台审查拒绝正文含链接时，把链接替换为该占位文本后补发
+_URL_PATTERN = re.compile(r"https?://[^\s]+|www\.[^\s]+", re.IGNORECASE)
+_URL_PLACEHOLDER = "[链接已省略]"
 
 
 @dataclass
@@ -67,6 +84,7 @@ class _QrSession:
     task_id: str
     aes_key: bytes
     created_at: float
+    bound_at: float | None = None
 
     @property
     def expired(self) -> bool:
@@ -213,12 +231,17 @@ class OpenClawQQManager:
         self._config_lock = asyncio.Lock()
         self._send_lock = asyncio.Lock()
         self._credential_lock = asyncio.Lock()
+        self._gateway_lock = asyncio.Lock()
         self._hooks_bound = False
         self._runtime_credentials: _RuntimeCredentials | None = None
         self._secret_storage_available: bool | None = None
         self._access_token = ""
         self._access_token_expires_at = 0.0
         self._msg_seq = 0
+        self._gateway_task: asyncio.Task[None] | None = None
+        self._gateway_ready = asyncio.Event()
+        self._gateway_online = False
+        self._gateway_seen_ready = False
 
     def bind_config_hooks(self) -> None:
         """绑定通知开关变化，关闭时立即丢弃本地访问令牌。"""
@@ -229,9 +252,13 @@ class OpenClawQQManager:
         self._hooks_bound = True
 
     async def start(self) -> None:
-        """在后端启动时绑定配置钩子；访问令牌按需获取。"""
+        """在后端启动时恢复已绑定机器人的网关连接。"""
 
         self.bind_config_hooks()
+        async with self._credential_lock:
+            app_id, client_secret, user_openid = self._credentials()
+            if app_id and client_secret and user_openid:
+                await self._start_gateway(app_id, client_secret)
 
     async def stop(self) -> None:
         """停止服务并清理短期访问令牌和临时二维码。"""
@@ -239,7 +266,9 @@ class OpenClawQQManager:
         async with self._session_lock:
             self._sessions.clear()
             self._session_generation += 1
-        self._invalidate_access_token()
+        async with self._credential_lock:
+            await self._stop_gateway()
+            self._invalidate_access_token()
 
     async def _on_enabled_changed(self, enabled: Any) -> None:
         if not bool(enabled):
@@ -284,8 +313,18 @@ class OpenClawQQManager:
         app_id, client_secret, user_openid = self._credentials()
         connected = bool(app_id and client_secret and user_openid)
         if connected:
-            state = "connected"
-            message = "QQ 官方机器人已绑定，通知可以发送"
+            state = (
+                "connected"
+                if self._gateway_online
+                else "reconnecting"
+                if self._gateway_seen_ready
+                else "connecting"
+            )
+            message = (
+                "QQ 官方机器人消息网关已连接；发送通知仍需与机器人建立好友关系"
+                if self._gateway_online
+                else "QQ 官方机器人已绑定，正在连接消息网关"
+            )
         else:
             state = "disconnected"
             message = "请扫码绑定 QQ 官方机器人"
@@ -336,7 +375,11 @@ class OpenClawQQManager:
         return QrStartResult(session_id=session_id, qr_url=qr_url)
 
     async def check_login(self, session_id: str) -> QrCheckResult:
-        """轮询扫码绑定任务，完成后保存官方机器人凭据。"""
+        """轮询扫码与网关状态；确认绑定后先保存凭据，再等待网关就绪。
+
+        凭据已保存但网关未就绪时返回 connecting；网关 READY 后才返回
+        connected=True。等待超时不会清除已保存的凭据，后台仍会重连。
+        """
 
         async with self._session_lock:
             session = self._sessions.get(session_id)
@@ -345,6 +388,27 @@ class OpenClawQQManager:
                     session_id=session_id,
                     state="error",
                     message="二维码登录会话不存在，请重新生成",
+                )
+            if session.bound_at is not None:
+                if self._gateway_ready.is_set():
+                    self._sessions.pop(session_id, None)
+                    return QrCheckResult(
+                        session_id=session_id,
+                        state="connected",
+                        connected=True,
+                        message="QQ 官方机器人扫码绑定成功",
+                    )
+                if monotonic() - session.bound_at >= GATEWAY_READY_TIMEOUT_SECONDS:
+                    self._sessions.pop(session_id, None)
+                    return QrCheckResult(
+                        session_id=session_id,
+                        state="error",
+                        message="QQ 已绑定，但消息网关连接超时；通知发送可能仍可用，可稍后查看连接状态",
+                    )
+                return QrCheckResult(
+                    session_id=session_id,
+                    state="connecting",
+                    message="QQ 已绑定，正在连接消息网关",
                 )
             if session.expired:
                 self._sessions.pop(session_id, None)
@@ -432,10 +496,11 @@ class OpenClawQQManager:
                 message="二维码已过期，请重新生成",
             )
         if status != 2:
+            # 平台后续可能新增中间状态；未知状态继续等待，仅过期等明确结果终止。
             return QrCheckResult(
                 session_id=session_id,
-                state="error",
-                message=f"QQ 登录返回未知状态：{status}",
+                state="waiting",
+                message=f"QQ 登录返回未知状态（{status}），将继续等待确认结果",
             )
 
         app_id = str(data.get("bot_appid") or "").strip()
@@ -466,12 +531,14 @@ class OpenClawQQManager:
                             state="error",
                             message="二维码登录会话已关闭，请重新生成",
                         )
-                    self._sessions.pop(session_id, None)
-                await self._save_credentials_locked(
-                    app_id=app_id,
-                    client_secret=client_secret,
-                    user_openid=user_openid,
-                )
+                    # 会话锁覆盖保存与启动；解绑或重新扫码只能在本次绑定完成后失效会话。
+                    await self._save_credentials_locked(
+                        app_id=app_id,
+                        client_secret=client_secret,
+                        user_openid=user_openid,
+                    )
+                    session.bound_at = monotonic()
+                    await self._start_gateway(app_id, client_secret)
         except (ValueError, RuntimeError) as exc:
             async with self._session_lock:
                 if (
@@ -494,9 +561,8 @@ class OpenClawQQManager:
                 )
         return QrCheckResult(
             session_id=session_id,
-            state="connected",
-            connected=True,
-            message="QQ 官方机器人扫码绑定成功",
+            state="connecting",
+            message="QQ 已绑定，正在连接消息网关",
         )
 
     async def unbind(self) -> None:
@@ -507,6 +573,7 @@ class OpenClawQQManager:
             self._sessions.clear()
             self._session_generation += 1
         async with self._send_lock, self._credential_lock:
+            await self._stop_gateway()
             self._runtime_credentials = None
             self._invalidate_access_token()
             values = {
@@ -519,8 +586,180 @@ class OpenClawQQManager:
             async with self._config_lock:
                 await Config.update({"Notify": values})
 
-    async def send(self, title: str, content: str) -> None:
-        """通过官方 C2C 接口发送通知，长文本自动拆分。"""
+    async def _start_gateway(self, app_id: str, client_secret: str) -> None:
+        """使用当前凭据启动唯一的 QQ 网关连接任务。"""
+
+        async with self._gateway_lock:
+            await self._stop_gateway_locked()
+            self._gateway_seen_ready = False
+            self._gateway_task = asyncio.create_task(
+                self._run_gateway(app_id, client_secret), name="openclaw-qq-gateway"
+            )
+
+    async def _stop_gateway(self) -> None:
+        async with self._gateway_lock:
+            await self._stop_gateway_locked()
+
+    async def _stop_gateway_locked(self) -> None:
+        """在网关锁内等待旧任务退出并清理连接状态。"""
+
+        task = self._gateway_task
+        self._gateway_task = None
+        if task is not None:
+            task.cancel()
+            with suppress(asyncio.CancelledError):
+                await task
+        self._gateway_online = False
+        self._gateway_ready.clear()
+
+    async def _run_gateway(self, app_id: str, client_secret: str) -> None:
+        """维持官方网关会话；断线后重新鉴权并连接。"""
+
+        retry = 0
+        identify_fail_count = 0
+        while True:
+            ready = False
+            rejected = False
+            try:
+                token = await self._ensure_access_token(app_id, client_secret)
+                gateway = await self._request_json(
+                    "GET",
+                    f"{API_BASE_URL}/gateway",
+                    body=None,
+                    headers=_headers(app_id=app_id, access_token=token),
+                    timeout=API_REQUEST_TIMEOUT_SECONDS,
+                )
+                url = str(gateway.get("url") or "").strip()
+                parsed = urlparse(url)
+                if parsed.scheme != "wss" or not (
+                    parsed.hostname == "qq.com"
+                    or (parsed.hostname or "").endswith(".qq.com")
+                ):
+                    raise RuntimeError("QQ 网关返回了无效的连接地址")
+
+                async with websockets.connect(
+                    url,
+                    additional_headers={"User-Agent": USER_AGENT},
+                    proxy=Config.proxy,
+                    open_timeout=API_REQUEST_TIMEOUT_SECONDS,
+                    ping_interval=None,
+                ) as connection:
+                    sequence: int | None = None
+                    heartbeat: asyncio.Task[None] | None = None
+                    interval_ms = 30000
+                    try:
+                        while True:
+                            raw = await asyncio.wait_for(
+                                connection.recv(),
+                                timeout=(
+                                    max(60, interval_ms / 1000 * 2) if ready else 15
+                                ),
+                            )
+                            payload = json.loads(raw)
+                            if not isinstance(payload, dict):
+                                continue
+                            if isinstance(payload.get("s"), int):
+                                sequence = payload["s"]
+                            op = payload.get("op")
+                            if op == 10:
+                                data = payload.get("d") or {}
+                                interval = _as_int(data.get("heartbeat_interval"))
+                                if not interval or interval < 1000:
+                                    raise RuntimeError("QQ 网关心跳间隔无效")
+                                interval_ms = interval
+                                # 机器人缺少事件权限时 Identify 会被拒；本服务只通过
+                                # HTTP 主动发通知，降级为最小订阅以保持网关在线。
+                                intents = (
+                                    GATEWAY_INTENTS
+                                    if identify_fail_count
+                                    < GATEWAY_IDENTIFY_FALLBACK_AFTER
+                                    else 0
+                                )
+                                await connection.send(
+                                    json.dumps(
+                                        {
+                                            "op": 2,
+                                            "d": {
+                                                "token": f"QQBot {token}",
+                                                "intents": intents,
+                                                "shard": [0, 1],
+                                                "properties": {
+                                                    "$os": "AUTO-MAS",
+                                                    "$browser": "AUTO-MAS",
+                                                    "$device": "AUTO-MAS",
+                                                },
+                                            },
+                                        }
+                                    )
+                                )
+                                heartbeat = asyncio.create_task(
+                                    self._gateway_heartbeat(
+                                        connection, interval, lambda: sequence
+                                    )
+                                )
+                            elif op == 0 and payload.get("t") == "READY":
+                                ready = True
+                                self._gateway_online = True
+                                self._gateway_seen_ready = True
+                                self._gateway_ready.set()
+                                logger.info("QQ 官方机器人消息网关已连接")
+                            elif op == 9:
+                                identify_fail_count += 1
+                                rejected = True
+                                if (
+                                    identify_fail_count
+                                    == GATEWAY_IDENTIFY_FALLBACK_AFTER
+                                ):
+                                    logger.warning(
+                                        "QQ 消息网关鉴权连续被拒，已降级为最小事件订阅"
+                                    )
+                                self._invalidate_access_token()
+                                break
+                            elif op == 7:
+                                break
+                    finally:
+                        if heartbeat is not None:
+                            heartbeat.cancel()
+                            with suppress(asyncio.CancelledError):
+                                await heartbeat
+                raise RuntimeError("QQ 消息网关连接已断开")
+            except asyncio.CancelledError:
+                raise
+            except websockets.exceptions.ConnectionClosed as exc:
+                if exc.code == 4004:
+                    self._invalidate_access_token()
+                logger.warning(f"QQ 消息网关断开，关闭码：{exc.code}")
+            except Exception as exc:
+                logger.warning(f"QQ 消息网关连接失败：{type(exc).__name__}")
+            finally:
+                self._gateway_online = False
+                self._gateway_ready.clear()
+            retry = 0 if ready else min(retry + 1, len(GATEWAY_RECONNECT_DELAYS) - 1)
+            if not rejected:
+                # 本轮未收到 op 9 时清零，计数只反映连续的鉴权拒绝。
+                identify_fail_count = 0
+            await asyncio.sleep(GATEWAY_RECONNECT_DELAYS[retry])
+
+    @staticmethod
+    async def _gateway_heartbeat(
+        connection: ClientConnection,
+        interval_ms: int,
+        sequence: Callable[[], int | None],
+    ) -> None:
+        """按 QQ Hello 指定的间隔发送应用层心跳。"""
+
+        while True:
+            await asyncio.sleep(interval_ms / 1000 * 0.8)
+            await connection.send(json.dumps({"op": 1, "d": sequence()}))
+
+    async def send(
+        self,
+        title: str,
+        content: str,
+        *,
+        images: Sequence[NotificationImage] = (),
+    ) -> None:
+        """通过官方 C2C 接口发送正文和图片；长文本自动拆分，链接被拒时去除后补发。"""
 
         async with self._send_lock:
             app_id, client_secret, user_openid = self._credentials()
@@ -536,12 +775,37 @@ class OpenClawQQManager:
                     "msg_seq": self._next_msg_seq(),
                     "content": chunk,
                 }
-                await self._send_message_with_token(
-                    app_id=app_id,
-                    client_secret=client_secret,
-                    user_openid=user_openid,
-                    body=body,
-                )
+                try:
+                    await self._send_message_with_token(
+                        app_id=app_id,
+                        client_secret=client_secret,
+                        user_openid=user_openid,
+                        body=body,
+                    )
+                except RuntimeError as exc:
+                    # 平台审查会拒绝正文含链接的整段消息；去除链接补发一次。
+                    if not _is_url_reject_error(str(exc)):
+                        raise
+                    logger.info("QQ 通知正文包含链接被平台拒绝，去除链接后重发")
+                    body["msg_seq"] = self._next_msg_seq()
+                    body["content"] = _URL_PATTERN.sub(_URL_PLACEHOLDER, chunk)
+                    await self._send_message_with_token(
+                        app_id=app_id,
+                        client_secret=client_secret,
+                        user_openid=user_openid,
+                        body=body,
+                    )
+            for image in images:
+                try:
+                    await self._send_image_with_token(
+                        app_id=app_id,
+                        client_secret=client_secret,
+                        user_openid=user_openid,
+                        image=image,
+                    )
+                except Exception as exc:
+                    # 正文已经送达，单张图片失败不应让通知进入渠道级重试。
+                    logger.warning(f"QQ 官方机器人图片发送失败: {image.id} - {exc}")
             logger.success(f"QQ官方机器人通知推送成功: {title}")
 
     def _next_msg_seq(self) -> int:
@@ -560,16 +824,85 @@ class OpenClawQQManager:
     ) -> None:
         """发送单段消息，并在访问令牌过期时无感重试一次。"""
 
+        endpoint = f"{API_BASE_URL}/v2/users/{quote(user_openid, safe='')}/messages"
+        await self._request_with_token(
+            app_id=app_id,
+            client_secret=client_secret,
+            endpoint=endpoint,
+            body=body,
+            operation="QQ 通知发送",
+        )
+
+    async def _send_image_with_token(
+        self,
+        *,
+        app_id: str,
+        client_secret: str,
+        user_openid: str,
+        image: NotificationImage,
+    ) -> None:
+        """上传一张 QQ C2C 图片并发送对应的富媒体消息。"""
+
+        upload_body: dict[str, Any] = {"file_type": 1, "srv_send_msg": False}
+        if image.data is not None:
+            if not image.data:
+                raise ValueError("图片数据为空")
+            if len(image.data) > MAX_IMAGE_UPLOAD_BYTES:
+                raise ValueError("图片超过 QQ 官方机器人的 30 MB 上限")
+            upload_body["file_data"] = base64.b64encode(image.data).decode("ascii")
+        elif image.url:
+            upload_body["url"] = image.url
+        else:
+            raise ValueError("图片没有可上传的数据或 URL")
+
+        upload_endpoint = f"{API_BASE_URL}/v2/users/{quote(user_openid, safe='')}/files"
+        upload = await self._request_with_token(
+            app_id=app_id,
+            client_secret=client_secret,
+            endpoint=upload_endpoint,
+            body=upload_body,
+            operation="QQ 图片上传",
+            timeout=MEDIA_UPLOAD_TIMEOUT_SECONDS,
+        )
+        file_info = upload.get("file_info")
+        if not isinstance(file_info, str) or not file_info:
+            raise RuntimeError("QQ 图片上传响应缺少 file_info")
+
+        await self._send_message_with_token(
+            app_id=app_id,
+            client_secret=client_secret,
+            user_openid=user_openid,
+            body={
+                "msg_type": 7,
+                "msg_seq": self._next_msg_seq(),
+                # QQ 富媒体单聊当前要求 content 非空，空格是官方文档给出的兼容值。
+                "content": " ",
+                "media": {"file_info": file_info},
+            },
+        )
+        logger.success(f"QQ 官方机器人图片发送成功: {image.id}")
+
+    async def _request_with_token(
+        self,
+        *,
+        app_id: str,
+        client_secret: str,
+        endpoint: str,
+        body: dict[str, Any],
+        operation: str,
+        timeout: float = API_REQUEST_TIMEOUT_SECONDS,
+    ) -> dict[str, Any]:
+        """发起带访问令牌的接口请求，并在令牌失效时重试一次。"""
+
         for attempt in range(2):
             access_token = await self._ensure_access_token(app_id, client_secret)
-            endpoint = f"{API_BASE_URL}/v2/users/{quote(user_openid, safe='')}/messages"
             try:
                 response = await self._request_json(
                     "POST",
                     endpoint,
                     body=body,
                     headers=_headers(app_id=app_id, access_token=access_token),
-                    timeout=API_REQUEST_TIMEOUT_SECONDS,
+                    timeout=timeout,
                 )
             except RuntimeError as exc:
                 if attempt == 0 and _is_token_error(exc):
@@ -581,8 +914,11 @@ class OpenClawQQManager:
                 if attempt == 0 and code in (401, 401001, 11200, 11201):
                     self._invalidate_access_token()
                     continue
-                raise RuntimeError(f"QQ 通知发送失败：{_business_message(response)}")
-            return
+                raise RuntimeError(
+                    f"{operation}失败（错误码 {code}）：{_business_message(response)}"
+                )
+            return response
+        raise RuntimeError(f"{operation}失败：访问令牌重试后仍无效")
 
     async def _ensure_access_token(self, app_id: str, client_secret: str) -> str:
         """按需换取并缓存官方 access_token。"""
@@ -689,9 +1025,24 @@ class OpenClawQQManager:
                 response.raise_for_status()
                 payload = response.json()
         except httpx.HTTPStatusError as exc:
+            details: list[str] = []
+            try:
+                error_payload = exc.response.json()
+            except ValueError:
+                error_payload = None
+            if isinstance(error_payload, dict):
+                code = _business_code(error_payload)
+                if code not in (None, 0):
+                    details.append(f"QQ 错误码 {code}")
+                reason = _business_message(error_payload)
+                if reason != "未知错误":
+                    details.append(" ".join(reason.split())[:160])
+                if code == 40054004:
+                    details.append("请先在扫码所用 QQ 中添加该机器人为好友，再重试通知")
+            suffix = f"，{'，'.join(details)}" if details else ""
             raise RemoteHTTPError(
                 exc.response.status_code,
-                f"QQ 官方机器人 HTTP 请求失败（状态码 {exc.response.status_code}）",
+                f"QQ 官方机器人 HTTP 请求失败（状态码 {exc.response.status_code}{suffix}）",
             ) from exc
         except httpx.HTTPError as exc:
             raise RuntimeError("QQ 官方机器人网络请求失败") from exc
@@ -700,6 +1051,12 @@ class OpenClawQQManager:
         if not isinstance(payload, dict):
             raise RuntimeError("QQ 官方机器人响应格式无效")
         return payload
+
+
+def _is_url_reject_error(error: str) -> bool:
+    """判断发送失败是否因平台审查拒绝了正文里的链接。"""
+
+    return "304003" in error or "40034028" in error or "不允许包含url" in error
 
 
 def _is_token_error(error: RuntimeError) -> bool:

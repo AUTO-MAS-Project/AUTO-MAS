@@ -1,5 +1,5 @@
 <template>
-  <div class="user-edit-container">
+  <div ref="pageRef" class="user-edit-container">
     <!-- 原生 GUI 会话遮罩（配置会话 / 查看会话，公用组件对齐 ok-ww / ok-nte） -->
     <GuiSessionMask
       :open="showMaaConfigMask"
@@ -37,16 +37,18 @@
       :script-name="scriptName"
       :is-edit="isEdit"
       :user-mode="formData.Info.Mode"
-      :maa-config-loading="maaConfigLoading"
+      :maa-config-loading="preparingSession || maaConfigLoading"
+      :leaving="leavingPage"
       :show-maa-config-mask="showMaaConfigMask"
       :loading="loading"
-      :config-locked="configLocked"
+      :config-locked="configLocked || editorBusy"
+      :user-id="userId"
       @handle-m-a-a-config="handleMAAConfig"
       @handle-cancel="handleCancel"
     />
 
     <ConfigLockPanel :script-id="scriptId" content-class="user-edit-content">
-      <a-card class="config-card">
+      <a-card class="config-card" :inert="editorBusy">
         <a-form
           ref="formRef"
           :model="formData"
@@ -75,7 +77,7 @@
               <span>{{ t('edit.enableQuickConfiguration') }}</span>
               <a-switch
                 :checked="formData.Info.IfQuickConfig"
-                :disabled="loading || isInitializing || isSaving"
+                :disabled="loading || isInitializing"
                 :aria-label="t('edit.enableQuickConfiguration')"
                 @change="handleQuickConfigChange"
               />
@@ -105,7 +107,7 @@
             :load-skland-role-options="loadSklandRoleOptions"
             :skland-role-loading="sklandRoleLoading"
             :skland-role-error="sklandRoleError"
-            :load-depot-stage-candidates="loadDepotStageCandidates"
+            :depot-plan-editor="depotPlanEditor"
             :cultivate-operator-catalog="cultivateOperatorCatalog"
             :cultivate-operator-options-loading="cultivateOperatorOptionsLoading"
             :cultivate-operator-options-error="cultivateOperatorOptionsError"
@@ -181,12 +183,11 @@
     <!-- ══ 配置恢复（通用组件：MAS 用户配置在前、MAA 原生配置在后）══ -->
     <ConfigRestoreSection
       v-model:open="restoreOpen"
-      :disabled="configLocked"
+      :disabled="configLocked || editorBusy"
       :script-name="MAA_DISPLAY_NAME"
       :targets="restoreTargets"
       :api="restoreApi"
       :script-desc="t('edit.maaConfigRestoreScriptDesc')"
-      :on-restored="handleRestored"
       :on-detail="handleRestoreView"
     >
       <!-- mas 备份为任务配置侧车、native 备份为 gui 文件摘要，共用文件集插槽 -->
@@ -214,7 +215,7 @@
 import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
 import { useScriptConfigLock } from '@/composables/useScriptConfigLock'
 import { useI18n } from 'vue-i18n'
-import { computed, h, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
+import { computed, h, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { message, Modal } from 'ant-design-vue'
 import { EyeOutlined, HistoryOutlined, SettingOutlined } from '@ant-design/icons-vue'
@@ -237,6 +238,11 @@ import BasicInfoSection from '@/views/MAAUserEdit/BasicInfoSection.vue'
 import StageConfigSection from '@/views/MAAUserEdit/StageConfigSection.vue'
 import TaskPipelineSection from '@/views/MAAUserEdit/TaskPipelineSection.vue'
 import { summarizeFight } from '@/views/MAAUserEdit/taskSummaries'
+import { getDepotMaintainPreset } from '@/views/MAAUserEdit/depotMaintainPresets'
+import { useDepotMaintainPlanEditor } from '@/views/MAAUserEdit/useDepotMaintainPlanEditor'
+import { useMAAFieldSave } from '@/views/MAAUserEdit/useMAAFieldSave'
+import { useMAAEditorLifecycle } from '@/views/MAAUserEdit/useMAAEditorLifecycle'
+import { getGameDayOffset } from '@/views/MAAUserEdit/periodMarkers'
 import type { CultivateOperatorCatalogEntry } from '@/views/MAAUserEdit/cultivateTargets'
 import UserNotifyConfig from '@/components/UserNotifyConfig.vue'
 import ExtraScriptSection from '@/components/ExtraScriptSection.vue'
@@ -263,19 +269,12 @@ const {
 } = useMaaGuiSession()
 
 const formRef = ref<FormInstance>()
-const loading = computed(() => userLoading.value)
-const isInitializing = ref(true) // 标记是否正在初始化
-const isSaving = ref(false) // 标记是否正在保存
-const pendingFieldSaves = new Map<string, any>()
-let fieldSavePromise: Promise<boolean> | null = null
-
-const reportFieldSaveFailure = () => {
-  const errorMsg = userError.value
-  if (!errorMsg || errorMsg.includes('HTTP error')) {
-    message.error(t('edit.couldNotSaveUser'))
-  }
-  logger.error(`保存失败: ${errorMsg || '用户 API 未返回成功'}`)
-}
+const pageRef = ref<HTMLElement>()
+const isInitializing = ref(true)
+// 字段请求不禁用整棵编辑树，后续输入由保存队列保留；独占操作才锁定编辑。
+const loading = computed(
+  () => editorBusy.value || isInitializing.value || (userLoading.value && !isSaving.value)
+)
 
 // 路由参数
 const scriptId = route.params.scriptId as string
@@ -303,6 +302,7 @@ const depotItemOptionsError = ref('')
 // 库存保持关卡候选（按物品缓存，含每理智效率）与仓库库存
 const depotStageCandidates = ref<Record<string, Array<{ label: string; value: string }>>>({})
 const depotStageCandidatesLoading = ref<string[]>([])
+const depotStageCandidatePromises = new Map<string, Promise<void>>()
 const depotInventory = ref<Record<string, number>>({})
 const depotInventoryTime = ref('')
 
@@ -517,14 +517,14 @@ const getPlanCurrentConfig = (planData: any) => {
   if (mode === 'ALL') {
     return planData.ALL || null
   } else if (mode === 'Weekly') {
-    // 使用东4区时区的今天是星期几（已经是数字0-6）
-    const todayWeekday = getWeekdayInTimezone(4)
+    // 按用户区服的游戏日时区取今天是星期几（已经是数字0-6），与后端计划表取值一致
+    const todayWeekday = getWeekdayInTimezone(getGameDayOffset(formData.Info.Server))
 
     const weekdays = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
     const today = weekdays[todayWeekday]
 
     logger.debug(`计划表周模式调试: 
-      东4区星期几: ${todayWeekday},
+      游戏日星期几: ${todayWeekday},
       星期: ${today},
       计划数据: ${JSON.stringify(planData)}`)
 
@@ -580,11 +580,11 @@ const getDefaultMAAUserData = () => ({
     IfAward: true,
     IfSwitchTheme: false,
     IfRecruit: true,
-    IfDepotMaintain: false,
-    DepotMaintainPlans: '[]',
+    IfDepotMaintain: true,
+    DepotMaintainPlans: JSON.stringify(getDepotMaintainPreset('all')),
     IfCultivate: false,
     IfGreenTicketStore: false,
-    IfActivityFirst: false,
+    IfActivityFirst: true,
     ActivityStageIndex: 1,
     ActivityMedicineNumb: 0,
     CultivateTargets: '[]',
@@ -652,7 +652,7 @@ const rules = computed(() => {
   return baseRules
 })
 
-// 同步扁平化字段与嵌套数据
+// 同步扁平化验证字段与嵌套数据，避免同一轮更新中的旧值覆盖新草稿。
 watch(
   () => formData.Info.Name,
   newVal => {
@@ -660,7 +660,7 @@ watch(
       formData.userName = newVal || ''
     }
   },
-  { immediate: true }
+  { immediate: true, flush: 'sync' }
 )
 
 watch(
@@ -670,7 +670,7 @@ watch(
       formData.userId = newVal || ''
     }
   },
-  { immediate: true }
+  { immediate: true, flush: 'sync' }
 )
 
 // 基建配置名称和索引保持独立，不自动同步
@@ -681,7 +681,8 @@ watch(
     if (formData.Info.Name !== newVal) {
       formData.Info.Name = newVal || ''
     }
-  }
+  },
+  { flush: 'sync' }
 )
 
 watch(
@@ -690,81 +691,56 @@ watch(
     if (formData.Info.Id !== newVal) {
       formData.Info.Id = newVal || ''
     }
-  }
+  },
+  { flush: 'sync' }
 )
 
-// 即时保存单个字段变更。保存中的后续变更保留最后一次值，避免被 isSaving 直接丢弃。
-const handleFieldSave = async (key: string, value: any): Promise<boolean> => {
-  if (isInitializing.value || !userId) return false
-
-  pendingFieldSaves.set(key, value)
-  if (fieldSavePromise) return fieldSavePromise
-
-  const savePromise = (async (): Promise<boolean> => {
-    isSaving.value = true
-    try {
-      while (pendingFieldSaves.size > 0) {
-        const pendingEntry = pendingFieldSaves.entries().next().value as [string, any] | undefined
-        if (!pendingEntry) break
-
-        const [pendingKey, pendingValue] = pendingEntry
-        pendingFieldSaves.delete(pendingKey)
-
-        // 解析 key 路径，例如 "Info.Status" -> { Info: { Status: value } }
-        const parts = pendingKey.split('.')
-        let userData: Record<string, any> = {}
-        let current = userData
-        let localTarget: any = formData
-
-        for (let i = 0; i < parts.length - 1; i++) {
-          current[parts[i]] = {}
-          current = current[parts[i]]
-          localTarget = localTarget[parts[i]]
-        }
-        current[parts[parts.length - 1]] = pendingValue
-        localTarget[parts[parts.length - 1]] = pendingValue
-
-        // 特殊处理：userName 和 userId 需要同步到 Info
-        if (pendingKey === 'userName') {
-          userData = { Info: { Name: pendingValue } }
-        } else if (pendingKey === 'userId') {
-          userData = { Info: { Id: pendingValue } }
-        }
-
-        const success = await updateUser(scriptId, userId, userData)
-        if (!success) {
-          pendingFieldSaves.clear()
-          reportFieldSaveFailure()
-          return false
-        }
-
-        logger.info(`用户配置已保存: ${pendingKey}`)
+const fieldSave = useMAAFieldSave({
+  formData,
+  defaults: getDefaultMAAUserData,
+  canSave: () => !isInitializing.value && !!userId,
+  save: patch => updateUser(scriptId, userId, patch),
+  readSaved: async () => {
+    const response = await getUsers(scriptId, userId)
+    return response?.code === 200 ? (response.data[userId] ?? null) : null
+  },
+  hasDraft: key => key === 'Task.DepotMaintainPlans' && depotPlanEditor.hasPendingEdits(),
+  onFailure: () => {
+    const errorMsg = userError.value
+    if (!errorMsg || errorMsg.includes('HTTP error')) message.error(t('edit.couldNotSaveUser'))
+    logger.error(`保存失败: ${errorMsg || '用户 API 未返回成功'}`)
+  },
+  onError: error => {
+    logger.error(`保存异常: ${error instanceof Error ? error.message : String(error)}`)
+  },
+  onSaved: (key, value) => {
+    // 后端清空养成提示后，仅依据本次已保存的值同步当前页。
+    if (key === 'Task.IfCultivate' && !value) {
+      formData.Data.CultivateNotice = ''
+    } else if (key === 'Task.CultivateTargets') {
+      let hasTargets = false
+      try {
+        const parsed: unknown = JSON.parse(String(value ?? '[]'))
+        hasTargets =
+          Array.isArray(parsed) &&
+          parsed.some((target: unknown) => {
+            if (!target || typeof target !== 'object') return false
+            const goals = (target as { goals?: unknown }).goals
+            return Array.isArray(goals) && goals.length > 0
+          })
+      } catch {
+        hasTargets = false
       }
-      return true
-    } catch (error) {
-      pendingFieldSaves.clear()
-      reportFieldSaveFailure()
-      if (error instanceof Error) {
-        logger.error(`保存异常: ${error.message}`)
-      }
-      return false
-    } finally {
-      isSaving.value = false
-      fieldSavePromise = null
+      if (!hasTargets) formData.Data.CultivateNotice = ''
     }
-  })()
-  fieldSavePromise = savePromise
-
-  return savePromise
-}
+    logger.info(`用户配置已保存: ${key}`)
+  },
+})
+const { isSaving, saveField: handleFieldSave } = fieldSave
 
 // 快速配置开关：与配置来源独立，真实保存
 const handleQuickConfigChange = async (value: boolean) => {
-  const previous = formData.Info.IfQuickConfig
-  formData.Info.IfQuickConfig = value
-  if (!(await handleFieldSave('Info.IfQuickConfig', value))) {
-    formData.Info.IfQuickConfig = previous
-  }
+  await handleFieldSave('Info.IfQuickConfig', value)
 }
 
 // 配置来源切换：校验 value ∈ options → 赋值 Info.Mode → 保存
@@ -831,7 +807,8 @@ const createUserImmediately = async () => {
 }
 
 // 加载用户数据
-const loadUserData = async () => {
+const loadUserData = async (): Promise<boolean> => {
+  isInitializing.value = true
   try {
     const userResponse = await getUsers(scriptId, userId)
 
@@ -870,8 +847,11 @@ const loadUserData = async () => {
         // 必须在放开 isInitializing 之后：目录走 jsdelivr 兜底拉取时最长 30s，
         // 期间用户在页面上的改动会被 handleFieldSave 静默丢弃（组件自带 loading）。
         // 库存列读当前用户识别档案（决策 31）；两者无依赖，并行加载避免目录
-        // 慢时库存列被串行阻塞
+        // 慢时库存列被串行阻塞。关卡候选预取不等它们：只读已落盘的计划，
+        // 纯后台取数，放前面避免被目录最坏 30s 拖住
+        preloadDepotStageCandidates()
         await Promise.all([loadCultivateOperatorOptions(), loadDepotInventory()])
+        return true
       } else {
         message.error(t('edit.userDoesNotExist'))
         handleCancel()
@@ -885,6 +865,7 @@ const loadUserData = async () => {
     logger.error(`加载用户数据失败: ${errorMsg}`)
     message.error(t('edit.couldNotLoadUser2'))
   }
+  return false
 }
 
 const appendConfiguredCustomStages = () => {
@@ -975,29 +956,51 @@ const loadDepotItemOptions = async () => {
 
 const loadDepotStageCandidates = async (itemId: string) => {
   if (!itemId || depotStageCandidates.value[itemId]) return
-  if (depotStageCandidatesLoading.value.includes(itemId)) return
+  const pending = depotStageCandidatePromises.get(itemId)
+  if (pending) return pending
   depotStageCandidatesLoading.value.push(itemId)
+  const loadingCandidates = (async () => {
+    try {
+      const response =
+        await Service.getMaaDepotStageCandidatesApiScriptsMaaDepotStageCandidatesPost({
+          script: { scriptId },
+          itemId,
+        })
+      // 空数组表示已完成但无候选，编辑器保留原选项，同时避免无限重试。
+      depotStageCandidates.value[itemId] =
+        response.code === 200
+          ? response.data
+              .filter(option => option.value)
+              .map(option => ({ label: option.label, value: option.value as string }))
+          : []
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error)
+      logger.error(`加载库存保持关卡候选失败: ${errorMsg}`)
+      depotStageCandidates.value[itemId] = []
+    } finally {
+      depotStageCandidatesLoading.value = depotStageCandidatesLoading.value.filter(
+        id => id !== itemId
+      )
+      depotStageCandidatePromises.delete(itemId)
+    }
+  })()
+  // 预取与编辑共享同一个请求，冲刷编辑时也要等正在预取的候选。
+  depotStageCandidatePromises.set(itemId, loadingCandidates)
+  await loadingCandidates
+}
+
+// 库存保持关卡候选进页预取：首次展开面板时逐行等响应，关卡列会随各请求
+// 返回肉眼可见地逐个刷新。改在进页后台预取（折叠状态下面板未挂载，响应
+// 到达零渲染），展开时编辑器的预加载全命中缓存不再发请求。单条失败写入
+// 空数组由 loadDepotStageCandidates 自身的兜底语义处理
+const preloadDepotStageCandidates = () => {
   try {
-    const response = await Service.getMaaDepotStageCandidatesApiScriptsMaaDepotStageCandidatesPost({
-      script: { scriptId },
-      itemId,
-    })
-    // 失败/无候选时写入空数组作为"已完成"标记：编辑器据此回退全量关卡表
-    // （undefined 才表示加载中），同时避免失败后无限重试
-    depotStageCandidates.value[itemId] =
-      response.code === 200
-        ? response.data
-            .filter(option => option.value)
-            .map(option => ({ label: option.label, value: option.value as string }))
-        : []
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`加载库存保持关卡候选失败: ${errorMsg}`)
-    depotStageCandidates.value[itemId] = []
-  } finally {
-    depotStageCandidatesLoading.value = depotStageCandidatesLoading.value.filter(
-      id => id !== itemId
-    )
+    const plans: Array<{ DropId?: string }> = JSON.parse(formData.Task.DepotMaintainPlans || '[]')
+    for (const itemId of new Set(plans.map(plan => plan?.DropId).filter(Boolean))) {
+      void loadDepotStageCandidates(itemId as string)
+    }
+  } catch {
+    logger.warn('库存保持候选预取失败，展开时按需加载')
   }
 }
 
@@ -1151,78 +1154,80 @@ const loadStageModeOptions = async () => {
 }
 
 // 手动选班 = 把轮换起点拨到该班（无时段表存 MAS 用户字段、由 MAS 推进；时段表只有自动）
-const handleInfrastPlanSelectChange = async (index: number, label: string) => {
-  if (configLocked.value) return
-  try {
-    const result = await Service.setInfrastPlanSelectApiScriptsUserInfrastructurePlanSelectPost({
-      scriptId: scriptId,
-      userId: userId,
-      index: index,
-    })
-    if (!result || result.code !== 200) {
-      message.error(t('edit.maaCustomInfrastPlanSelectFailed'))
-      return
-    }
-    // 后端会把「自动」归一成第一班, 以返回值为准, 免得刷新前后显示不一致
-    infrastPlanSelect.value = result.index ?? index
-    message.success(t('edit.maaCustomInfrastPlanSelected', { name: label }))
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`设置基建班次失败: ${errorMsg}`)
-    message.error(t('edit.maaCustomInfrastPlanSelectFailed'))
-  }
-}
-
-// 选择并导入基建配置文件
-const selectAndImportInfrastructureConfig = async () => {
-  if (!isEdit.value) {
-    message.warning(t('edit.saveUserBeforeImporting'))
-    return
-  }
-  if (configLocked.value) return
-
-  try {
-    // 选择文件
-    const path = await window.electronAPI?.selectFile([
-      { name: t('edit.jsonFiles'), extensions: ['json'] },
-      { name: t('edit.allFiles'), extensions: ['*'] },
-    ])
-
-    if (path && path.length > 0) {
-      if (configLocked.value) {
-        message.error(t('edit.configLocked'))
-        return
-      }
-      infrastructureImporting.value = true
-
-      // 直接导入配置
-      const result = await Service.importInfrastructureApiScriptsUserInfrastructurePost({
+const handleInfrastPlanSelectChange = (index: number, label: string) =>
+  trackEdit(async () => {
+    if (configLocked.value) return
+    try {
+      const result = await Service.setInfrastPlanSelectApiScriptsUserInfrastructurePlanSelectPost({
         scriptId: scriptId,
         userId: userId,
-        jsonFile: path[0],
+        index: index,
       })
-
-      if (result && result.code === 200) {
-        // 从文件路径中提取文件名作为 InfrastName
-        const fileName = path[0].split('\\').pop()?.split('/').pop() || ''
-        formData.Info.InfrastName = fileName.replace('.json', '')
-
-        message.success(t('edit.baseConfigurationImported'))
-
-        // 重新加载基建配置选项与当前班次
-        await loadInfrastructureOptions()
-      } else {
-        message.error(t('edit.couldNotImportBase'))
+      if (!result || result.code !== 200) {
+        message.error(t('edit.maaCustomInfrastPlanSelectFailed'))
+        return
       }
+      // 后端会把「自动」归一成第一班, 以返回值为准, 免得刷新前后显示不一致
+      infrastPlanSelect.value = result.index ?? index
+      message.success(t('edit.maaCustomInfrastPlanSelected', { name: label }))
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error)
+      logger.error(`设置基建班次失败: ${errorMsg}`)
+      message.error(t('edit.maaCustomInfrastPlanSelectFailed'))
     }
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error)
-    logger.error(`基建配置导入失败: ${errorMsg}`)
-    message.error(t('edit.couldNotImportBase'))
-  } finally {
-    infrastructureImporting.value = false
-  }
-}
+  })
+
+// 选择并导入基建配置文件
+const selectAndImportInfrastructureConfig = () =>
+  trackEdit(async () => {
+    if (!isEdit.value) {
+      message.warning(t('edit.saveUserBeforeImporting'))
+      return
+    }
+    if (configLocked.value) return
+
+    try {
+      // 选择文件
+      const path = await window.electronAPI?.selectFile([
+        { name: t('edit.jsonFiles'), extensions: ['json'] },
+        { name: t('edit.allFiles'), extensions: ['*'] },
+      ])
+
+      if (path && path.length > 0) {
+        if (configLocked.value) {
+          message.error(t('edit.configLocked'))
+          return
+        }
+        infrastructureImporting.value = true
+
+        // 直接导入配置
+        const result = await Service.importInfrastructureApiScriptsUserInfrastructurePost({
+          scriptId: scriptId,
+          userId: userId,
+          jsonFile: path[0],
+        })
+
+        if (result && result.code === 200) {
+          // 从文件路径中提取文件名作为 InfrastName
+          const fileName = path[0].split('\\').pop()?.split('/').pop() || ''
+          formData.Info.InfrastName = fileName.replace('.json', '')
+
+          message.success(t('edit.baseConfigurationImported'))
+
+          // 重新加载基建配置选项与当前班次
+          await loadInfrastructureOptions()
+        } else {
+          message.error(t('edit.couldNotImportBase'))
+        }
+      }
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error)
+      logger.error(`基建配置导入失败: ${errorMsg}`)
+      message.error(t('edit.couldNotImportBase'))
+    } finally {
+      infrastructureImporting.value = false
+    }
+  })
 
 // 加载基建配置选项
 const loadInfrastructureOptions = async () => {
@@ -1261,10 +1266,56 @@ const loadInfrastructureOptions = async () => {
   }
 }
 
+const depotPlanEditor = useDepotMaintainPlanEditor({
+  getSavedPlans: () => formData.Task.DepotMaintainPlans,
+  savePlans: value => {
+    void handleFieldSave('Task.DepotMaintainPlans', value)
+  },
+  loadStageCandidates: async itemId => {
+    if (!isInitializing.value) await loadDepotStageCandidates(itemId)
+  },
+  getBestStage: itemId => depotStageCandidates.value[itemId]?.[0]?.value,
+  isLoading: () => loading.value,
+})
+
+const {
+  preparingSession,
+  leavingPage,
+  editorBusy,
+  startConfiguration,
+  restoreConfiguration,
+  trackEdit,
+} = useMAAEditorLifecycle({
+  pageRef,
+  canStart: () => !configLocked.value && !isInitializing.value && !!userId,
+  flushEdits: async () => {
+    if (isInitializing.value) return fieldSave.waitForPending()
+    await depotPlanEditor.flushPendingEdits()
+    await nextTick()
+    return fieldSave.flush()
+  },
+  waitForSaves: fieldSave.waitForPending,
+  flushImmediateEdits: depotPlanEditor.savePlans,
+  hasPendingEdits: () =>
+    fieldSave.hasPendingEdits() || depotPlanEditor.hasPendingEdits() || !!maaTaskId.value,
+  disposeEdits: depotPlanEditor.dispose,
+  startSession,
+  stopSession,
+  backup: () => ensureMaaBackup('mas'),
+  onSaveError: error => {
+    logger.error(`提交编辑失败: ${error instanceof Error ? error.message : String(error)}`)
+    message.error(t('edit.couldNotSaveUser'))
+  },
+  onStopFailure: () => message.error(t('edit.maaSessionStopFailed')),
+  onUnloadBlocked: () => message.warning(t('edit.maaEditorReloadBlocked')),
+})
+
 const handleMAAConfig = async () => {
-  if (configLocked.value) return
-  if (!userId) return
-  await startSession(userId)
+  await startConfiguration(userId)
+}
+
+const handleCancel = async () => {
+  await router.push('/scripts')
 }
 
 const handleSaveMAAConfig = () => {
@@ -1369,13 +1420,6 @@ const addCustomStage3 = (stageName: string) => {
   }
 }
 
-const handleCancel = async () => {
-  const pendingSave = fieldSavePromise
-  if (pendingSave && !(await pendingSave)) return
-
-  await stopSession()
-  router.push('/scripts')
-}
 const updateMedicineNumb = (value: number) => {
   if (!isPlanMode.value) {
     formData.Info.MedicineNumb = value
@@ -1428,15 +1472,37 @@ const restoreApi = {
     Service.listConfigBackupsApiApiScriptsBackupListGet(scriptId, userId, target),
   preview: async (target: string, time: string) =>
     Service.getConfigBackupPreviewApiApiScriptsBackupPreviewGet(scriptId, userId, time, target),
-  restore: async (target: string, time: string) =>
-    Service.restoreConfigBackupApiApiScriptsBackupRestorePost({
-      scriptId,
-      userId,
-      time,
-      target,
-    }),
+  restore: (target: string, time: string, force?: boolean) =>
+    restoreBackup(target, time, false, force),
   readFile: async (target: string, time: string, path: string) =>
     Service.getConfigBackupFileApiApiScriptsBackupFileGet(scriptId, userId, time, target, path),
+}
+
+// 一键恢复与详细查看共用恢复事务：旧编辑先完成，恢复和重载期间保持锁定。
+const restoreBackup = async (target: string, time: string, viewOnly = false, force = false) => {
+  let response:
+    | Awaited<ReturnType<typeof Service.restoreConfigBackupApiApiScriptsBackupRestorePost>>
+    | undefined
+  const restored = await restoreConfiguration(
+    async () => {
+      response = await Service.restoreConfigBackupApiApiScriptsBackupRestorePost({
+        scriptId,
+        userId,
+        time,
+        target,
+        force,
+      })
+      if (response.code !== 200) return false
+      restoreOpen.value = false
+      if (target === 'mas' && !(await loadUserData())) return false
+      return true
+    },
+    viewOnly ? (target === 'mas' ? userId : scriptId) : undefined
+  )
+  if (restored && response) return response
+  // 保留 409 给恢复基座执行损坏配置的二次确认；已恢复但重载/启动失败不能报成功。
+  if (response && response.code !== 200) return response
+  return { code: 400, message: t('edit.configRestoreFailed') }
 }
 
 const openRestoreModal = () => {
@@ -1451,15 +1517,6 @@ interface MaaPreviewFileView {
 }
 const previewFiles = (raw: unknown): MaaPreviewFileView[] =>
   (raw as { fileCards?: MaaPreviewFileView[] } | null)?.fileCards ?? []
-
-// 一键恢复成功：mas 恢复含页面核心配置（Info/Task）回填，重拉表单——否则
-// 旧表单值在下次保存时会静默覆盖回滚结果；native 恢复不影响本页表单
-const handleRestored = async (target: string) => {
-  restoreOpen.value = false
-  if (target === 'mas') {
-    await loadUserData()
-  }
-}
 
 // 「查看详细配置」语义（对齐一条龙）：恢复该时点 + 拉起查看会话预览。
 // 弹窗文案必须显式区分——该按钮极易被误以为只读，实际会真覆盖当前配置。
@@ -1504,25 +1561,9 @@ const handleRestoreView = (
         }
 
         try {
-          const resp = await Service.restoreConfigBackupApiApiScriptsBackupRestorePost({
-            scriptId,
-            userId,
-            time: item.time,
-            target,
-          })
-          // 后端失败走 HTTP 200 + body code=400，须显式检查返回体：备份不存在/
-          // 路径未设置等抛错若被吞掉，会照常关弹窗并打开查看会话
+          const resp = await restoreBackup(target, item.time, true)
           if (resp.code !== 200) {
             throw new Error(resp.message || t('edit.configRestoreFailed'))
-          }
-          restoreOpen.value = false
-          if (target === 'mas') {
-            // 恢复后重拉表单：后端 UserData 已回填，不重拉会让旧表单值在
-            // 下次保存时整块写回、覆盖恢复结果（对齐一键恢复 handleRestored）
-            await loadUserData()
-            await startSession(userId, true)
-          } else {
-            await startSession(scriptId, true)
           }
           resolve(true)
         } catch (e) {
@@ -1636,16 +1677,6 @@ onMounted(async () => {
     },
     { immediate: false }
   )
-})
-
-onUnmounted(() => {
-  // 退出编辑页：先停会话再归档 MAS 侧终态——并行会与 final_task 的
-  // rmtree/copytree 回写撞车，归档到半程状态；会话未开时 stopSession
-  // 立即返回，不影响归档时机
-  void (async () => {
-    await stopSession()
-    await ensureMaaBackup('mas')
-  })()
 })
 </script>
 

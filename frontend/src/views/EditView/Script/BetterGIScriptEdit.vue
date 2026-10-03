@@ -150,12 +150,40 @@
               </a-form-item>
             </a-col>
           </a-row>
+
+          <a-row :gutter="24">
+            <a-col :span="12">
+              <a-form-item>
+                <template #label>
+                  <span class="form-label">
+                    {{ t('edit.genshinUpdateAuto') }}
+                    <a-tooltip :title="t('edit.genshinUpdateAutoHint')">
+                      <QuestionCircleOutlined class="help-icon" />
+                    </a-tooltip>
+                  </span>
+                </template>
+                <a-select
+                  v-model:value="bettergiConfig.Game.IfAutoUpdate"
+                  size="large"
+                  style="width: 100%"
+                  @change="handleChange('Game', 'IfAutoUpdate', bettergiConfig.Game.IfAutoUpdate)"
+                >
+                  <a-select-option :value="true">{{ t('edit.yes') }}</a-select-option>
+                  <a-select-option :value="false">{{ t('edit.no') }}</a-select-option>
+                </a-select>
+              </a-form-item>
+            </a-col>
+          </a-row>
         </div>
 
         <div class="form-section">
           <div class="section-header">
             <h3>{{ t('edit.runConfiguration') }}</h3>
           </div>
+          <ScriptHardTimeoutField
+            v-model:value="bettergiConfig.Run.HardTimeLimit"
+            @save="handleChange('Run', 'HardTimeLimit', bettergiConfig.Run.HardTimeLimit)"
+          />
           <a-row :gutter="24">
             <a-col :span="8">
               <a-form-item>
@@ -218,6 +246,34 @@
               </a-form-item>
             </a-col>
           </a-row>
+          <a-row :gutter="24">
+            <a-col :span="8">
+              <a-form-item>
+                <template #label>
+                  <span class="form-label">
+                    {{ t('edit.bettergiAccountSwitchMethod') }}
+                    <a-tooltip :title="t('edit.bettergiAccountSwitchMethodHint')">
+                      <QuestionCircleOutlined class="help-icon" />
+                    </a-tooltip>
+                  </span>
+                </template>
+                <a-select
+                  v-model:value="bettergiConfig.Run.AccountSwitchMethod"
+                  size="large"
+                  style="width: 100%"
+                  @change="handleAccountSwitchMethodChange"
+                >
+                  <a-select-option value="BGI">
+                    {{ t('edit.bettergiAccountSwitchMethodBgi') }}
+                  </a-select-option>
+                  <a-select-option value="MAS">
+                    {{ t('edit.bettergiAccountSwitchMethodMas') }}
+                  </a-select-option>
+                </a-select>
+                <span class="control-hint">{{ t('edit.accountSwitch16x9Only') }}</span>
+              </a-form-item>
+            </a-col>
+          </a-row>
         </div>
       </a-form>
     </a-card>
@@ -225,6 +281,7 @@
 </template>
 
 <script setup lang="ts">
+import ScriptHardTimeoutField from '@/views/EditView/Script/components/ScriptHardTimeoutField.vue'
 import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
 import DocLink from '@/components/DocLink.vue'
 import { MAS_DOC_URLS } from '@/utils/openExternal'
@@ -261,15 +318,18 @@ interface BetterGIInfoForm {
 }
 
 interface BetterGIRunForm {
+  HardTimeLimit: number
   ProxyTimesLimit: number
   RunTimesLimit: number
   RunTimeLimit: number
   UseAdmin: boolean
+  AccountSwitchMethod: 'BGI' | 'MAS'
 }
 
 interface BetterGIGameForm {
   Controller: string
   CloseOnFinish: boolean
+  IfAutoUpdate: boolean
 }
 
 interface BetterGIScriptConfigForm {
@@ -290,8 +350,19 @@ const formData = reactive({
 
 const bettergiConfig = reactive<BetterGIScriptConfigForm>({
   Info: { Name: '', RootPath: '.' },
-  Run: { ProxyTimesLimit: 0, RunTimesLimit: 3, RunTimeLimit: 10, UseAdmin: true },
-  Game: { Controller: '电脑端-前台', CloseOnFinish: true },
+  Run: {
+    HardTimeLimit: 120,
+    ProxyTimesLimit: 0,
+    RunTimesLimit: 3,
+    RunTimeLimit: 10,
+    UseAdmin: true,
+    AccountSwitchMethod: 'MAS',
+  },
+  Game: {
+    Controller: '电脑端-前台',
+    CloseOnFinish: true,
+    IfAutoUpdate: false,
+  },
 })
 
 const rules = computed(() => ({
@@ -315,6 +386,12 @@ const handleChange = async (category: string, key: string, value: unknown) => {
       logger.error(msg)
     }
   }, `${category}.${key}`)
+}
+
+const handleAccountSwitchMethodChange = async (
+  value: BetterGIScriptConfigForm['Run']['AccountSwitchMethod']
+) => {
+  await handleChange('Run', 'AccountSwitchMethod', value)
 }
 
 const applyRootPathDefaults = async (rootPath: string) => {
@@ -478,6 +555,14 @@ onMounted(loadScript)
   align-items: center;
   gap: 8px;
   font-weight: 600;
+}
+
+.control-hint {
+  display: block;
+  margin-top: 4px;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--ant-color-text-tertiary);
 }
 
 .help-icon {

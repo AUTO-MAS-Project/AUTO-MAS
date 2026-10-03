@@ -17,7 +17,7 @@
 
 
 from pathlib import Path
-from typing import Callable
+from typing import Any, Callable
 
 from app.models.config import HSRConfig, HSRUserConfig
 from app.models.task import UserItem
@@ -165,6 +165,7 @@ class HSRSRAControl:
         *,
         user_item: UserItem,
         user_cfg: HSRUserConfig,
+        plan: Any,
         user_name: str,
         uid: str,
         module: HSRTaskModule,
@@ -175,7 +176,7 @@ class HSRSRAControl:
         daily_eow_enabled: bool,
         redeem_codes_enabled: bool = True,
     ) -> HSRRunItem | None:
-        """创建一个 SRA 模块队列项。"""
+        """创建一个 SRA 模块队列项（副本与托管覆盖读 ``plan``）。"""
 
         timeout_seconds = self._module_timeout_seconds(module.key)
         if module.key == "Daily":
@@ -185,6 +186,7 @@ class HSRSRAControl:
                 user_cfg,
                 daily_eow_enabled=daily_eow_enabled,
                 redeem_codes_enabled=redeem_codes_enabled,
+                plan=plan,
             )
             tasklist = cfg.get("trailblazePower", {}).get("tasklist") or []
             description = (
@@ -198,6 +200,7 @@ class HSRSRAControl:
                 self.script_config,
                 user_cfg,
                 redeem_codes_enabled=redeem_codes_enabled,
+                plan=plan,
             )
             description = f"SRA {module.sra_task}：{module.description}"
 
@@ -267,7 +270,7 @@ class HSRSRAControl:
         self,
         *,
         user_item: UserItem,
-        user_cfg: HSRUserConfig,
+        plan: Any,
         user_name: str,
         uid: str,
         phase: HSRPhase,
@@ -278,7 +281,7 @@ class HSRSRAControl:
         """创建只跑历战余响的 SRA 队列项，排在体力模块之前先占用周本次数。"""
 
         timeout_seconds = self._module_timeout_seconds("Daily")
-        cfg = build_sra_echo_of_war_config(self.script_config, user_cfg)
+        cfg = build_sra_echo_of_war_config(self.script_config, plan)
         temp_path = write_sra_temp_config(cfg, script_id, uid, "EchoOfWar")
         temp_files.append(temp_path)
 

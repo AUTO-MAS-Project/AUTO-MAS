@@ -60,6 +60,8 @@ TASK_CREATED = "task.created"
 
 # 应用生命周期与电源（id=Main）
 BACKEND_SHUTDOWN_READY = "backend.shutdown.ready"
+# 启动期攒下来、主连接建立后一次性发出的系统通知（id=Main）：配置迁移结果之类。
+SYSTEM_NOTICE = "system.notice"
 FRONTEND_CLOSE_REQUESTED = "frontend.close.requested"
 POWER_COUNTDOWN_UPDATED = "power.countdown.updated"
 POWER_COUNTDOWN_CANCELLED = "power.countdown.cancelled"

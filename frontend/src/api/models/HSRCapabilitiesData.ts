@@ -30,10 +30,6 @@ export type HSRCapabilitiesData = {
      */
     effective_engines?: Array<'M7A' | 'SRA'>;
     /**
-     * 支持的运行模式
-     */
-    supported_modes?: Array<string>;
-    /**
      * 引擎适配器
      */
     adapters?: Array<HSRCapabilityAdapter>;

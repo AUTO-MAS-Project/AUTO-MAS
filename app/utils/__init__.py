@@ -31,6 +31,7 @@ from .security import (
     dpapi_decrypt,
     dpapi_encrypt,
     format_exception_reason,
+    looks_like_dpapi_blob,
     sanitize_log_message,
 )
 from .supervision import is_backend_dev_mode, is_supervised
@@ -60,6 +61,11 @@ _LAZY_EXPORTS = {
     "decode_bytes": (".tools", "decode_bytes"),
     "busy_wait": (".tools", "busy_wait"),
     "WebSocketClient": (".websocket", "WebSocketClient"),
+    "MirrorChyanError": (".mirrorchyan", "MirrorChyanError"),
+    "compare_mirrorchyan_versions": (
+        ".mirrorchyan",
+        "compare_mirrorchyan_versions",
+    ),
 }
 
 
@@ -133,6 +139,7 @@ __all__ = [
     "get_logger",
     "dpapi_encrypt",
     "dpapi_decrypt",
+    "looks_like_dpapi_blob",
     "format_exception_reason",
     "sanitize_log_message",
     "is_backend_dev_mode",
@@ -146,6 +153,8 @@ __all__ = [
     "decode_bytes",
     "busy_wait",
     "WebSocketClient",
+    "MirrorChyanError",
+    "compare_mirrorchyan_versions",
     "RegexMatcher",
     "MultiLineAggregator",
     "compile_regex",

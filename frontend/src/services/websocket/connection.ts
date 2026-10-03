@@ -321,6 +321,9 @@ export async function connect(): Promise<boolean> {
     return false
   }
   if (socket && socket.readyState === WebSocket.OPEN) {
+    // scheduleReconnect 会把状态改成 reconnecting 再在计时器里调到这里；
+    // 连接其实一直可用，早退前把状态校正回 open，否则诊断显示停在重连中
+    state.value = 'open'
     return true
   }
   if (connectPromise) {
@@ -448,6 +451,12 @@ export function scheduleReconnect(delayMs: number = RECONNECT_DELAY_MAX): void {
   if (state.value === 'closed' || state.value === 'superseded') return
   automaticReconnectEnabled = true
   clearReconnectTimer()
+  // 协调器可能在 await 期间连接已自行恢复后才来安排重连：连接可用就什么都不做，
+  // 否则状态被降成 reconnecting，关闭流程会把可用的连接误判成断线
+  if (socket && socket.readyState === WebSocket.OPEN) {
+    logger.info('主 WebSocket 已连接，忽略安排的重连')
+    return
+  }
   state.value = 'reconnecting'
   reconnectTimer = window.setTimeout(() => {
     reconnectTimer = undefined

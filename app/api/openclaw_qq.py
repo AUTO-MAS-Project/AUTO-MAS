@@ -44,7 +44,10 @@ logger = get_logger("QQ 机器人通知 API")
     response_model=OpenClawQQStatusOut,
 )
 async def get_status() -> OpenClawQQStatusOut:
-    """返回 QQ 绑定状态，不返回协议凭据。"""
+    """返回 QQ 绑定及网关状态，不返回协议凭据。
+
+    connected 表示凭据已绑定；state 表示网关是连接中、已连接还是重连中。
+    """
 
     try:
         state = openclaw_qq_manager.status()
@@ -101,7 +104,12 @@ async def start_login() -> OpenClawQQQrStartOut:
 async def check_login(
     body: OpenClawQQQrCheckIn = Body(...),
 ) -> OpenClawQQQrCheckOut:
-    """轮询二维码状态；确认后自动保存 QQ 机器人凭据。"""
+    """轮询二维码与消息网关状态。
+
+    扫码确认后先保存凭据，此时可能返回 state=connecting、connected=false；
+    网关 READY 后返回 state=connected、connected=true。网关等待超时
+    返回 state=error，但绑定凭据仍保留，后台继续重连。
+    """
 
     try:
         result = await openclaw_qq_manager.check_login(session_id=body.sessionId)

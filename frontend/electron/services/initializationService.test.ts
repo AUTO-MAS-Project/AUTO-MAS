@@ -69,6 +69,16 @@ vi.mock('./logger', () => ({
     silly: vi.fn(),
   }),
 }))
+// 第 0 步（Runtime 对齐）真实实现会联网读钉扎、跑 exe；这里只关心编排有没有经过它。
+// 模块内部互相调用不经过 mock，所以要桩的是 RuntimeInitializationService 导入的这个入口。
+const { alignCalls } = vi.hoisted(() => ({ alignCalls: [] as { version: string }[] }))
+vi.mock('./runtimeBinaryService', async importActual => ({
+  ...(await importActual<typeof import('./runtimeBinaryService')>()),
+  alignRuntimeBinaryWithVersion: async (options: { version: string }) => {
+    alignCalls.push({ version: options.version })
+    return { status: 'skipped' }
+  },
+}))
 vi.mock('electron', () => ({ app: { getVersion: () => '5.5.0-beta.3' } }))
 
 // ==================== 假 RuntimeClient ====================
@@ -222,6 +232,7 @@ function collect(): {
 
 beforeEach(() => {
   installCalls.length = 0
+  alignCalls.length = 0
   runtimeClientCalls.length = 0
   delete process.env[RUNTIME_MODE_ENV]
   delete process.env[RUNTIME_EXE_ENV]
@@ -303,6 +314,8 @@ describe('managed 模式', () => {
     const result = await new InitializationService(APP_ROOT).initialize(onProgress)
 
     expect(result.success).toBe(true)
+    // 第 0 步在 bootstrap 命令之前，目标版本是应用自身版本。
+    expect(alignCalls).toEqual([{ version: 'v5.5.0-beta.3' }])
     expect(runtimeClientCalls).toEqual([['bootstrap', '--version', 'v5.5.0-beta.3']])
     expect(installCalls).toEqual(['backend'])
 

@@ -28,7 +28,10 @@ import {
 import type { ComboBoxItem } from '@/api/models/ComboBoxItem'
 import { type SchedulerTab, type SchedulerStatus, TASK_MODE_OPTIONS } from './schedulerConstants'
 import { applyTaskLogUpdate, trimLogBuffer } from './schedulerLogBuffer'
-import { toRunnableUserOptions } from './schedulerUserOptions'
+import { findReusableSchedulerTab } from './schedulerTabReuse'
+import { reconcileSelectedUserIds, toRunnableUserOptions } from './schedulerUserOptions'
+import { buildStartTaskRequest } from './schedulerStartRequest'
+import { resolveTaskCompletionFeedback } from '@/utils/taskFailures'
 
 // 运行态里的脚本执行模式 → 词表标签；词表里没有的模式（如 Update）保留原值
 const runtimeModeLabel = (mode: string | null): string | null => {
@@ -51,8 +54,13 @@ const STOP_COMPLETION_GRACE_MS = 1500
 let storageSaveTimer: number | null = null
 const pendingLogUpdates = new Map<string, number>()
 const pendingLogContents = new Map<string, string>()
+// 同一标签页可能连续刷新用户列表；旧请求不得覆盖较新的选择和加载状态。
+const latestUserOptionsRequest = new WeakMap<SchedulerTab, object>()
 // 序号断裂后正在等快照重建 buffer 的标签页，期间到达的增量直接丢弃、不重复拉快照
 const pendingLogResyncs = new Set<string>()
+// 手动启动还在等 /dispatch/start 返回的标签页：同队列的定时任务此时复用它的话，
+// 返回后会被手动任务的 taskId 覆盖，定时任务就没有调度台可显示了
+const startingTabKeys = new Set<string>()
 // keep-alive 停用期间只更新 buffer，不往日志面板写；激活时一次性刷新
 let schedulerViewActive = true
 // MaaEnd 失败导出弹窗全局去重，避免同一批错误连环弹窗
@@ -61,6 +69,8 @@ let maaEndFailureModalOpen = false
 const getDefaultTabRuntimeState = () => ({
   logBuffer: '',
   logSeq: undefined,
+  logFirstLine: 1,
+  displayLogFirstLine: 1,
   lastLogContent: '',
   overviewData: undefined,
   lastMessageHash: '',
@@ -68,13 +78,17 @@ const getDefaultTabRuntimeState = () => ({
   cycleNextList: [],
 })
 
-const trimLogForRender = (content: string) => {
-  if (content.length <= LOG_RENDER_MAX_CHARS) return content
+const trimLogForRender = (content: string, firstLine: number) => {
+  if (content.length <= LOG_RENDER_MAX_CHARS) return { content, firstLine }
 
+  const dropped = content.slice(0, content.length - LOG_RENDER_MAX_CHARS)
   const trimmed = content.slice(-LOG_RENDER_MAX_CHARS)
   const firstLineBreak = trimmed.indexOf('\n')
   const tail = firstLineBreak >= 0 ? trimmed.slice(firstLineBreak + 1) : trimmed
-  return `${t('scheduler.log.truncated')}\n\n${tail}`
+  return {
+    content: `${t('scheduler.log.truncated')}\n\n${tail}`,
+    firstLine: firstLine + dropped.split('\n').length - 1 + (firstLineBreak >= 0 ? 1 : 0) - 2,
+  }
 }
 
 const clearPendingLogUpdate = (tabKey: string) => {
@@ -96,9 +110,10 @@ const toPersistedTab = (tab: SchedulerTab): SchedulerTab => ({
   resumeFromScriptId: tab.resumeFromScriptId ?? null,
   resumeScriptOptions: tab.resumeScriptOptions ? [...tab.resumeScriptOptions] : [],
   resumeScriptLoading: false,
-  selectedUserId: tab.selectedUserId ?? null,
+  selectedUserIds: tab.selectedUserIds ? [...tab.selectedUserIds] : undefined,
   userOptions: tab.userOptions ? [...tab.userOptions] : [],
   userOptionsLoading: false,
+  userOptionsLoaded: false,
   taskId: tab.taskId,
   subscriptionIds: [],
   runningTaskLabel: tab.runningTaskLabel,
@@ -109,13 +124,21 @@ const toPersistedTab = (tab: SchedulerTab): SchedulerTab => ({
   ...getDefaultTabRuntimeState(),
 })
 
-const normalizePersistedTab = (tab: SchedulerTab): SchedulerTab => ({
+const normalizePersistedTab = (
+  tab: SchedulerTab & { selectedUserId?: string | null }
+): SchedulerTab => ({
   ...tab,
   ...getDefaultTabRuntimeState(),
   resumeScriptOptions: tab.resumeScriptOptions || [],
   resumeScriptLoading: false,
+  selectedUserIds: Array.isArray(tab.selectedUserIds)
+    ? [...tab.selectedUserIds]
+    : tab.selectedUserId
+      ? [tab.selectedUserId]
+      : undefined,
   userOptions: tab.userOptions || [],
   userOptionsLoading: false,
+  userOptionsLoaded: false,
   subscriptionIds: [],
   logMode: tab.logMode || 'follow',
 })
@@ -152,9 +175,10 @@ const loadTabsFromStorage = (): SchedulerTab[] => {
       resumeFromScriptId: null,
       resumeScriptOptions: [],
       resumeScriptLoading: false,
-      selectedUserId: null,
+      selectedUserIds: undefined,
       userOptions: [],
       userOptionsLoading: false,
+      userOptionsLoaded: false,
       taskId: null,
       logBuffer: '',
       lastLogContent: '',
@@ -271,13 +295,16 @@ export function useSchedulerLogic() {
       return existing
     }
 
-    // 使用现有的addSchedulerTab函数创建新调度台，并传入特定的配置选项
-    const newTab = addSchedulerTab({
-      title: t('scheduler.tabName', { n: tabCounter }),
-      status: '运行',
-      taskId,
-      selectedTaskId: queueId, // 传入队列ID作为选中的任务ID
-    })
+    // 同一队列 / 脚本上次用过的调度台空着就接着用，没有才新建
+    const reusedTab = reuseSchedulerTab(taskId, queueId)
+    const newTab =
+      reusedTab ??
+      addSchedulerTab({
+        title: t('scheduler.tabName', { n: tabCounter }),
+        status: '运行',
+        taskId,
+        selectedTaskId: queueId, // 传入队列ID作为选中的任务ID
+      })
 
     // 设置运行时文本快照，确保自动启动的任务也能正确显示
     if (taskName) newTab.runningTaskLabel = taskName
@@ -287,8 +314,13 @@ export function useSchedulerLogic() {
     // 立即订阅该任务的WebSocket消息
     subscribeToTask(newTab)
 
-    logger.info(`已创建新的自动调度台: ${newTab.title}, 任务ID=${taskId}`)
-    if (notifyUser) message.success(t('scheduler.toast.tabAutoCreated', { title: newTab.title }))
+    if (reusedTab) {
+      logger.info(`已复用自动调度台: ${newTab.title}, 任务ID=${taskId}`)
+      if (notifyUser) message.success(t('scheduler.toast.tabReused', { title: newTab.title }))
+    } else {
+      logger.info(`已创建新的自动调度台: ${newTab.title}, 任务ID=${taskId}`)
+      if (notifyUser) message.success(t('scheduler.toast.tabAutoCreated', { title: newTab.title }))
+    }
 
     saveTabsToStorage(schedulerTabs.value)
     return newTab
@@ -334,9 +366,10 @@ export function useSchedulerLogic() {
       resumeFromScriptId: null,
       resumeScriptOptions: [],
       resumeScriptLoading: false,
-      selectedUserId: null,
+      selectedUserIds: undefined,
       userOptions: [],
       userOptionsLoading: false,
+      userOptionsLoaded: false,
       taskId: options?.taskId || null,
       logBuffer: '',
       lastLogContent: '',
@@ -344,6 +377,28 @@ export function useSchedulerLogic() {
     schedulerTabs.value.push(tab)
     activeSchedulerTab.value = tab.key
 
+    return tab
+  }
+
+  // 把新任务挂到可复用的调度台上（判据见 findReusableSchedulerTab），先清掉上一轮的日志与总览；
+  // 没有可复用的返回 undefined，由调用方新建
+  const reuseSchedulerTab = (taskId: string, selectedTaskId?: string) => {
+    const tab = findReusableSchedulerTab(schedulerTabs.value, selectedTaskId, startingTabKeys)
+    if (!tab) return undefined
+
+    unsubscribeTab(tab)
+    clearPendingLogUpdate(tab.key)
+    pendingLogResyncs.delete(tab.key)
+    tab.status = '运行'
+    tab.taskId = taskId
+    tab.logBuffer = ''
+    tab.logSeq = undefined
+    tab.logFirstLine = 1
+    tab.displayLogFirstLine = 1
+    tab.lastLogContent = ''
+    tab.overviewData = undefined
+    tab.cycleNextList = []
+    activeSchedulerTab.value = tab.key
     return tab
   }
 
@@ -369,12 +424,14 @@ export function useSchedulerLogic() {
       return existingTab
     }
 
-    const tab = addSchedulerTab({
-      title: taskLabel,
-      status: '运行',
-      taskId,
-      selectedTaskId,
-    })
+    const tab =
+      reuseSchedulerTab(taskId, selectedTaskId) ??
+      addSchedulerTab({
+        title: taskLabel,
+        status: '运行',
+        taskId,
+        selectedTaskId,
+      })
     tab.selectedMode = selectedMode
     tab.runningTaskLabel = taskLabel
     tab.runningModeLabel = modeLabel
@@ -553,24 +610,29 @@ export function useSchedulerLogic() {
     }
   }
 
-  // 脚本任务可以只跑其中一个用户，下拉口径与各脚本适配器一致：已启用且剩余天数不为 0
+  // 列表用于展示与校正显式子集；全选始终由后端执行时筛选可运行用户。
   const loadUserOptions = async (tab: SchedulerTab) => {
-    // 任务下拉还没加载完时判断不出任务类型，此时清空会把 sessionStorage 恢复出来的
-    // 选择一并抹掉，让刷新后的启动静默退化成跑全部用户。宁可什么都不做，等下拉打开时再刷。
+    // 任务下拉还没加载完时判断不出任务类型，此时保留当前选择，等选项可用后再刷新。
     if (!taskOptions.value.length) return
 
     if (!tab.selectedTaskId || !isScriptTask(tab)) {
+      latestUserOptionsRequest.delete(tab)
       tab.userOptions = []
-      tab.selectedUserId = null
+      tab.selectedUserIds = undefined
       tab.userOptionsLoading = false
+      tab.userOptionsLoaded = false
       return
     }
 
-    // 连续切换任务项时旧请求可能后返回；只有仍指向发起时那个脚本才允许写回状态
+    // 切换任务或重复刷新时，仅最新请求可以写回用户列表与选择。
     const requestedTaskId = tab.selectedTaskId
-    const isStale = () => tab.selectedTaskId !== requestedTaskId
+    const request = {}
+    latestUserOptionsRequest.set(tab, request)
+    const isStale = () =>
+      tab.selectedTaskId !== requestedTaskId || latestUserOptionsRequest.get(tab) !== request
 
     tab.userOptionsLoading = true
+    tab.userOptionsLoaded = false
     try {
       const response = await Service.getUserApiScriptsUserGetPost({
         scriptId: requestedTaskId,
@@ -578,22 +640,18 @@ export function useSchedulerLogic() {
       })
       if (isStale()) return
       if (response.code !== 200) {
-        tab.userOptions = []
-        tab.selectedUserId = null
+        message.error(t('scheduler.toast.loadScriptUsersFailed'))
         return
       }
 
       const options = toRunnableUserOptions(response)
       tab.userOptions = options
-      if (tab.selectedUserId && !options.some(item => item.value === tab.selectedUserId)) {
-        tab.selectedUserId = null
-      }
+      tab.selectedUserIds = reconcileSelectedUserIds(tab.selectedUserIds, options)
+      tab.userOptionsLoaded = true
     } catch (error) {
       if (isStale()) return
       const errorMsg = error instanceof Error ? error.message : String(error)
       logger.error(`加载脚本用户列表失败: ${errorMsg}`)
-      tab.userOptions = []
-      tab.selectedUserId = null
       message.error(t('scheduler.toast.loadScriptUsersFailed'))
     } finally {
       if (!isStale()) {
@@ -605,7 +663,9 @@ export function useSchedulerLogic() {
   const handleTaskSelectionChange = async (tab: SchedulerTab, taskId: string | null) => {
     tab.selectedTaskId = taskId
     tab.resumeFromScriptId = null
-    tab.selectedUserId = null
+    tab.selectedUserIds = undefined
+    tab.userOptions = []
+    tab.userOptionsLoaded = false
     await Promise.all([loadResumeScriptOptions(tab), loadUserOptions(tab), loadCycleQueueFlag(tab)])
   }
 
@@ -640,18 +700,34 @@ export function useSchedulerLogic() {
       return
     }
 
+    if (!taskOptions.value.some(option => option.value === tab.selectedTaskId)) {
+      message.error(t('scheduler.toast.taskOptionsUnavailable'))
+      return
+    }
+
+    if (
+      tab.selectedMode === TaskCreateIn.mode.AUTO_PROXY &&
+      isScriptTask(tab) &&
+      tab.selectedUserIds !== undefined
+    ) {
+      if (!tab.userOptionsLoaded || tab.userOptionsLoading) {
+        message.error(t('scheduler.toast.loadScriptUsersFailed'))
+        return
+      }
+      if (!tab.selectedUserIds.length) {
+        message.error(t('scheduler.toast.needRunUsers'))
+        return
+      }
+    }
+
+    startingTabKeys.add(tab.key)
     try {
-      const requestBody: TaskCreateIn & { resumeFromScriptId?: string } = {
-        taskId: tab.selectedTaskId,
-        mode: tab.selectedMode,
-      }
-      if (tab.resumeFromScriptId) {
-        requestBody.resumeFromScriptId = tab.resumeFromScriptId
-      }
-      // 指定单个用户只对自动代理有意义，其他模式后端一律拒绝；切走模式后不再带上
-      if (tab.selectedUserId && tab.selectedMode === TaskCreateIn.mode.AUTO_PROXY) {
-        requestBody.userId = tab.selectedUserId
-      }
+      const requestBody = buildStartTaskRequest(
+        tab.selectedTaskId,
+        tab.selectedMode,
+        tab.resumeFromScriptId,
+        isScriptTask(tab) ? tab.selectedUserIds : undefined
+      )
 
       const response = await Service.addTaskApiDispatchStartPost(requestBody)
 
@@ -665,6 +741,8 @@ export function useSchedulerLogic() {
         // 清空之前的状态
         tab.logBuffer = ''
         tab.logSeq = undefined
+        tab.logFirstLine = 1
+        tab.displayLogFirstLine = 1
         pendingLogResyncs.delete(tab.key)
         tab.lastLogContent = ''
         tab.cycleNextList = []
@@ -687,6 +765,8 @@ export function useSchedulerLogic() {
       const errorMsg = error instanceof Error ? error.message : String(error)
       logger.error(`启动任务失败: ${errorMsg}`)
       message.error(t('scheduler.toast.startTaskFailed'))
+    } finally {
+      startingTabKeys.delete(tab.key)
     }
   }
 
@@ -812,9 +892,10 @@ export function useSchedulerLogic() {
   }
 
   const applyLogContentUpdate = (tab: SchedulerTab, content: string) => {
-    const nextContent = trimLogForRender(content)
-    if (tab.lastLogContent !== nextContent) {
-      tab.lastLogContent = nextContent
+    const rendered = trimLogForRender(content, tab.logFirstLine ?? 1)
+    tab.displayLogFirstLine = rendered.firstLine
+    if (tab.lastLogContent !== rendered.content) {
+      tab.lastLogContent = rendered.content
     }
   }
 
@@ -1021,6 +1102,7 @@ export function useSchedulerLogic() {
     // 清空日志并显示原始代理结果信息
     const resultText = data.result
     if (resultText && typeof resultText === 'string') {
+      tab.logFirstLine = 1
       scheduleLogContentUpdate(tab, resultText, true)
       logger.info('已清空日志并显示任务结果')
     }
@@ -1029,8 +1111,11 @@ export function useSchedulerLogic() {
     tab.logMode = 'browse'
     logger.info('已切换日志模式为自由浏览')
 
+    // outcome 只反映任务级错误：用户 / 脚本跑失败时后端仍报 success，这里再看 task_info
+    const feedback = resolveTaskCompletionFeedback(data)
+
     // 使用Vue的响应式更新方式
-    tab.status = data.outcome === 'error' ? '异常' : '结束'
+    tab.status = feedback.kind === 'error' || feedback.kind === 'partialFailure' ? '异常' : '结束'
     tab.cycleNextList = []
     logger.info(`已更新tab.status，当前tab状态: ${JSON.stringify(tab.status)}`)
 
@@ -1048,14 +1133,27 @@ export function useSchedulerLogic() {
     if (tabIndex !== -1) {
       const updatedTab: SchedulerTab = { ...tab }
       schedulerTabs.value.splice(tabIndex, 1, updatedTab)
+      // 刷新数组中的响应式对象，让外部启动或恢复的脚本也能直接再次运行。
+      const currentTab = schedulerTabs.value[tabIndex]
+      if (isScriptTask(currentTab)) {
+        void loadUserOptions(currentTab)
+      }
     }
 
     const { playSound } = useAudioPlayer()
-    if (data.outcome === 'error') {
+    if (feedback.kind === 'error') {
       await playSound('error_occurred')
       message.error(data.error || t('scheduler.toast.taskRunFailed'))
-    } else if (data.outcome === 'cancelled') {
+    } else if (feedback.kind === 'cancelled') {
       message.warning(t('scheduler.toast.taskCancelled'))
+    } else if (feedback.kind === 'partialFailure') {
+      await playSound('error_occurred')
+      const { users, scripts } = feedback.failures
+      message.warning(
+        users > 0
+          ? t('scheduler.toast.taskDoneWithFailedUsers', { count: users })
+          : t('scheduler.toast.taskDoneWithFailedScripts', { count: scripts })
+      )
     } else {
       await playSound('task_completed')
       message.success(t('scheduler.toast.taskDone'))
@@ -1280,6 +1378,7 @@ export function useSchedulerLogic() {
     // 快照里的 log 是上次推送的完整日志尾部，直接作为 buffer 基线，与下一条增量衔接
     tab.logBuffer = trimLogBuffer(state.log ?? '')
     tab.logSeq = state.logSeq
+    tab.logFirstLine = state.logFirstLine ?? 1
     pendingLogResyncs.delete(tab.key)
     if (tab.logBuffer || tab.lastLogContent) scheduleLogContentUpdate(tab, tab.logBuffer, true)
   }
@@ -1293,6 +1392,10 @@ export function useSchedulerLogic() {
     tab.taskId = null
     tab.logMode = 'browse'
     schedulerTabs.value = [...schedulerTabs.value]
+    // 完成消息缺失时，快照确认结束也要准备下一轮的用户选择。
+    if (isScriptTask(tab)) {
+      void loadUserOptions(tab)
+    }
     saveTabsToStorage(schedulerTabs.value)
   }
 

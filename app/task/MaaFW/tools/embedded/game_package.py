@@ -51,8 +51,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal
 
-from app.task.MaaFW.tools.core.automas_maafw_interface.loader import parse_json_text
-from app.task.MaaFW.tools.core.automas_maafw_interface.models import MaaFWInterface
+from app.task.MaaFW.tools.core.interface.loader import parse_json_text
+from app.task.MaaFW.tools.core.interface.models import MaaFWInterface
 from app.utils import get_logger
 
 logger = get_logger("MaaFW 包名识别")

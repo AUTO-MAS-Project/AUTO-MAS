@@ -18,8 +18,8 @@
 
 """运行前更新的「预检备忘」闸门：上次装不上的版本，这次先轻探再决定要不要更新。
 
-更新事务在提交前真建运行环境（``tools/embedded/precheck.py``），建不出来就回滚
-并写一份备忘（``precheck_memo.py``）。之后每次运行前更新走到「确认有新版本」
+新版本登记前在 staging 上真建运行环境（``tools/embedded/precheck.py``），建不出来
+就丢掉新版本并按谱系 + 版本写一份备忘（``precheck_memo.py``）。之后每次运行前更新走到「确认有新版本」
 那一步时，核心包会 await 这里构造的闸门：
 
 - 没备忘、或备忘记的不是这个目标版本 → 放行（正常更新，预检再真建一次）。
@@ -43,17 +43,17 @@ from packaging.requirements import InvalidRequirement, Requirement
 from packaging.utils import canonicalize_name
 from packaging.version import InvalidVersion, Version
 
-from app.task.MaaFW.tools.core.automas_maafw_project_update.precheck_memo import (
+from app.task.MaaFW.tools.core.project_update.precheck_memo import (
     KIND_BINDING_UNAVAILABLE,
     clear_runtime_precheck,
     memo_matches_version,
     read_runtime_precheck,
     write_runtime_precheck,
 )
-from app.task.MaaFW.tools.core.automas_maafw_runtime_pool.binding_fallback import (
+from app.task.MaaFW.tools.core.runtime_pool.binding_fallback import (
     pep440_to_maafw_tag,
 )
-from app.task.MaaFW.tools.core.automas_maafw_runtime_pool.installer import (
+from app.task.MaaFW.tools.core.runtime_pool.installer import (
     is_package_index_offline,
     resolve_package_index_candidates,
 )
@@ -196,23 +196,22 @@ def _summarize_reason(reason: object) -> str:
 
 
 def build_precheck_gate(
-    project_path: str | Path,
+    memo_path_for: Callable[[str], Path],
     *,
     project_name: str | None = None,
     proxy: httpx.Proxy | None = None,
     send_log: Callable[[str], None] | None = None,
-    operation_root: Path | None = None,
     probe: BindingProbe | None = None,
 ) -> PrecheckGate:
     """构造给 ``update_maafw_project_if_needed(precheck_gate=...)`` 的闸门。
 
-    返回值非空即「本次跳过更新」的原因，由核心包按「有更新但不可安装」记
-    日志并返回 ``skipped_reason``（这里不再重复记同一句）。``probe`` 只给
-    测试替换轻探；生产用 :func:`probe_binding_available` 加 Runtime 注入的
-    索引候选与离线判据。
+    ``memo_path_for(目标版本)`` 给出该谱系该版本的备忘路径（组共有：一个成员预检过
+    某版本失败，组里谁也不再为它下包）。返回值非空即「本次跳过更新」的原因，由核心包
+    按「有更新但不可安装」记日志并返回 ``skipped_reason``（这里不再重复记同一句）。
+    ``probe`` 只给测试替换轻探；生产用 :func:`probe_binding_available` 加 Runtime
+    注入的索引候选与离线判据。
     """
 
-    root = Path(project_path)
     log = send_log or (lambda _message: None)
     name = str(project_name or "").strip() or "MFW 项目"
 
@@ -227,15 +226,12 @@ def build_precheck_gate(
         )
 
     async def gate(latest: str) -> str | None:
-        memo = await asyncio.to_thread(
-            read_runtime_precheck, root, operation_root=operation_root
-        )
+        memo_path = memo_path_for(latest)
+        memo = await asyncio.to_thread(read_runtime_precheck, memo_path)
         if memo is None:
             return None
         if not memo_matches_version(memo, latest):
-            await asyncio.to_thread(
-                clear_runtime_precheck, root, operation_root=operation_root
-            )
+            await asyncio.to_thread(clear_runtime_precheck, memo_path)
             log(
                 f"上次运行环境预检失败记的是 {memo.get('targetVersion')}，"
                 f"目标版本已变为 {latest}，重新尝试更新"
@@ -246,9 +242,7 @@ def build_precheck_gate(
         requirement = str(memo.get("requirement") or "maafw").strip() or "maafw"
         if memo.get("kind") != KIND_BINDING_UNAVAILABLE:
             memo["attempts"] = attempts
-            await asyncio.to_thread(
-                write_runtime_precheck, root, memo, operation_root=operation_root
-            )
+            await asyncio.to_thread(write_runtime_precheck, memo_path, memo)
             return (
                 f"上次对 {latest} 的运行环境预检失败"
                 f"（{_summarize_reason(memo.get('reason'))}），"
@@ -264,16 +258,12 @@ def build_precheck_gate(
                 logger.warning(f"轻探 maafw {version} 是否可得时出错：{exc}")
                 available = False
         if available:
-            await asyncio.to_thread(
-                clear_runtime_precheck, root, operation_root=operation_root
-            )
+            await asyncio.to_thread(clear_runtime_precheck, memo_path)
             log(f"maafw {version} 现已可得，重新尝试更新 {latest}")
             return None
 
         memo["attempts"] = attempts
-        await asyncio.to_thread(
-            write_runtime_precheck, root, memo, operation_root=operation_root
-        )
+        await asyncio.to_thread(write_runtime_precheck, memo_path, memo)
         needed = f"maafw {version}" if version else requirement
         return (
             f"{name} {latest} 需要 {needed}，"

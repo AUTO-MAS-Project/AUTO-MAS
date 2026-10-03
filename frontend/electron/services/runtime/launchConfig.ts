@@ -2,7 +2,7 @@
  * Runtime 后端监督链路的灰度开关与可执行文件定位
  *
  * 灰度期同时存在两条后端启动链路：
- * - `off`（默认）：Electron 自己 spawn `python.exe`，就绪靠健康检查，停止靠 scoped taskkill；
+ * - `off`（源码开发默认）：Electron 自己 spawn `python.exe`，就绪靠健康检查，停止靠 scoped taskkill；
  * - `development` / `managed`：交给 `auto-mas-runtime.exe backend supervise` 监督。
  *
  * 一次生命周期只走一条链路：模式非 `off` 却找不到可执行文件时，按 `RUNTIME_NOT_FOUND`
@@ -12,8 +12,8 @@
  * 1. 环境变量 `AUTO_MAS_RUNTIME_MODE`；
  * 2. 设置界面持久化的用户选择（`<appRoot>/config/frontend_config.json` 的
  *    `Runtime.LaunchMode`，与 `main.ts` 的 `loadConfig()/saveConfig()` 同一份文件）；
- * 3. 构建默认值：打包安装且已捆绑 Runtime 时默认 `managed`，否则 `off`——即打包安装且带
- *    Runtime 的用户默认走新链路，开发者跑源码默认仍走旧链路，除非显式设了环境变量。
+ * 3. 构建默认值：打包安装默认 `managed`，源码开发默认 `off`。Runtime 文件缺失不改变
+ *    启动模式，避免自动恢复时启动安装根目录残留的旧后端。
  *
  * 任一级取值非法都记 warning 后落到下一级，不再像早前只有环境变量一级时那样直接判 `off`。
  */
@@ -135,10 +135,9 @@ function readPersistedLaunchMode(appRoot: string): string | undefined {
   }
 }
 
-/** 构建默认值：打包安装且已捆绑 Runtime 才默认切新链路，源码开发默认走旧链路。 */
+/** 构建默认值只由打包状态决定，Runtime 缺失由启动流程报错，不能切换到旧链路。 */
 function resolveBuildDefaultLaunchMode(): RuntimeLaunchMode {
-  const packaged = Boolean(app?.isPackaged)
-  return packaged && resolveRuntimeExecutable() !== null ? 'managed' : 'off'
+  return app?.isPackaged ? 'managed' : 'off'
 }
 
 /**
@@ -189,9 +188,44 @@ function isExistingFile(candidate: string): boolean {
 }
 
 /**
+ * Runtime 随本体更新时给旧 exe 让路用的备份后缀（`runtimeBinaryService`）。
+ *
+ * 定义在这里而不是那边：定位 exe 的人要认识它才能在 exe 缺失时把备份找回来，而
+ * `runtimeBinaryService` 依赖本模块，反向引用会成环。
+ */
+export const RUNTIME_BACKUP_SUFFIX = '.old'
+
+/**
+ * exe 缺失而备份 `<exe>.old` 还在时，把备份改回正式路径。
+ *
+ * 只有一种情形会留下这个状态：随本体更新替换 exe 时，旧文件已改名让路、新文件没挪进来、
+ * 把旧文件改回去也失败（多半是安全软件正抓着它）。此时目录里没有 `auto-mas-runtime.exe`，
+ * 任何依赖定位的路径（启动、第 0 步）都进不去，只有定位这一步能救——所以恢复放在这里，
+ * 而不是等同步逻辑再来清理。返回是否真的恢复了。
+ */
+export function recoverRuntimeBackup(runtimePath: string): boolean {
+  if (isExistingFile(runtimePath)) return false
+  const backupPath = `${runtimePath}${RUNTIME_BACKUP_SUFFIX}`
+  if (!isExistingFile(backupPath)) return false
+  try {
+    fs.renameSync(backupPath, runtimePath)
+    logger.warn(`${runtimePath} 缺失，已用上次替换留下的备份 ${backupPath} 恢复`)
+    return true
+  } catch (error) {
+    logger.warn(
+      `${runtimePath} 缺失，且备份 ${backupPath} 无法改回: ${
+        error instanceof Error ? error.message : String(error)
+      }`
+    )
+    return false
+  }
+}
+
+/**
  * 定位 `auto-mas-runtime.exe`。
  *
- * 优先用环境变量显式指定的路径，其次查安装包捆绑位置 `process.resourcesPath`。
+ * 优先用环境变量显式指定的路径，其次查安装包捆绑位置 `process.resourcesPath`；捆绑位置
+ * 缺失但留有随本体更新的备份时先把备份改回来（见 {@link recoverRuntimeBackup}）。
  * 尚未捆绑时返回 null，由调用方转成 `RUNTIME_NOT_FOUND`。
  */
 export function resolveRuntimeExecutable(): string | null {
@@ -207,7 +241,7 @@ export function resolveRuntimeExecutable(): string | null {
   const resourcesPath = typeof process.resourcesPath === 'string' ? process.resourcesPath : ''
   if (resourcesPath) {
     const bundled = path.join(resourcesPath, RUNTIME_EXECUTABLE_NAME)
-    if (isExistingFile(bundled)) {
+    if (isExistingFile(bundled) || recoverRuntimeBackup(bundled)) {
       return bundled
     }
   }

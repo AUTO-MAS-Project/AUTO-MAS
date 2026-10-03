@@ -50,5 +50,13 @@ export type MaaFWOptionInfo = {
      * 默认 case
      */
     defaultCase?: (string | Array<string> | null);
+    /**
+     * checkbox 最少选择数，未限制为 None
+     */
+    minCount?: (number | null);
+    /**
+     * checkbox 最多选择数，未限制为 None
+     */
+    maxCount?: (number | null);
 };
 

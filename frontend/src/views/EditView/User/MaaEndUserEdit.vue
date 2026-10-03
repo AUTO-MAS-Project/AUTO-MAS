@@ -4,8 +4,8 @@
     <GuiSessionMask
       :open="showMaaEndConfigMask"
       :icon="SettingOutlined"
-      :title="t('edit.maaendConfigurationProgress')"
-      :description="`${t('edit.maaendConfigurationWindowOpen')}\n${t('edit.clickSaveConfigurationWhen')}`"
+      :title="maaEndConfigMaskTitle"
+      :description="`${maaEndConfigMaskDesc}\n${t('edit.clickSaveConfigurationWhen')}`"
     >
       <template #actions>
         <a-button v-if="maaEndTaskId" type="primary" size="large" @click="handleSaveMaaEndConfig">
@@ -36,6 +36,7 @@
       :script-id="scriptId"
       :script-name="scriptName"
       :is-edit="isEdit"
+      :user-id="userId"
       @handle-cancel="handleCancel"
     />
 
@@ -67,6 +68,11 @@
               :config-loading="maaEndConfigLoading"
               :import-loading="maaEndImportLoading"
               :show-config-mask="showMaaEndConfigMask"
+              :quick-config="formData.Info.IfQuickConfig"
+              :quick-config-disabled="
+                loading || isSaving || (!presetSupported && !formData.Info.IfQuickConfig)
+              "
+              @quick-config-change="handleQuickConfigChange"
               @configure="handleMaaEndConfig"
               @import-config="handleImportMaaEndConfig"
               @script-config="handleScriptConfig"
@@ -77,24 +83,6 @@
           <a-flex id="section-task" justify="space-between" align="center" wrap="wrap" gap="small">
             <h3>{{ t('edit.taskConfiguration') }}</h3>
             <a-space>
-              <a-button
-                v-if="formData.Info.IfQuickConfig && isSanityPlanMode"
-                type="link"
-                class="plans-button"
-                @click="handleGoToPlans"
-              >
-                <template #icon><CalendarOutlined /></template>
-                {{ t('edit.goPlan') }}
-              </a-button>
-              <span>{{ t('edit.enableQuickConfiguration') }}</span>
-              <a-switch
-                :checked="formData.Info.IfQuickConfig"
-                :disabled="
-                  loading || isSaving || (!presetSupported && !formData.Info.IfQuickConfig)
-                "
-                :aria-label="t('edit.enableQuickConfiguration')"
-                @change="handleQuickConfigChange"
-              />
               <a-button size="small" @click="openRestoreModal">
                 <template #icon><HistoryOutlined /></template>
                 {{ t('edit.configRestoreTitle') }}
@@ -103,6 +91,28 @@
           </a-flex>
           <a-card v-if="formData.Info.IfQuickConfig" class="section-card">
             <TaskConfigSection
+              :form-data="formData"
+              :loading="loading"
+              :if-quick-config="formData.Info.IfQuickConfig"
+              @save="handleFieldSave"
+              @save-batch="handleFieldsSave"
+            />
+          </a-card>
+
+          <a-card v-if="formData.Info.IfQuickConfig" id="section-sanity" class="section-card">
+            <template #title>{{ t('edit.maaEndSanitySection') }}</template>
+            <template #extra>
+              <a-button
+                v-if="formData.Task.IfSanity && isSanityPlanMode"
+                type="link"
+                class="plans-button"
+                @click="handleGoToPlans"
+              >
+                <template #icon><CalendarOutlined /></template>
+                {{ t('edit.goPlan') }}
+              </a-button>
+            </template>
+            <SanityConfigSection
               :form-data="formData"
               :loading="loading"
               :if-quick-config="formData.Info.IfQuickConfig"
@@ -139,7 +149,12 @@
             />
           </a-card>
 
-          <a-collapse id="section-limits" class="optional-section" :bordered="false">
+          <a-collapse
+            v-if="formData.Info.IfQuickConfig"
+            id="section-limits"
+            class="optional-section"
+            :bordered="false"
+          >
             <a-collapse-panel key="limits" :header="t('edit.maaEndDailyOnceTasks')">
               <DailyOnceSection
                 :value="formData.Task.DailyOnceTasks"
@@ -259,6 +274,7 @@ import DeliveryConfigSection from '@/views/MaaEndUserEdit/DeliveryConfigSection.
 import type { MaaEndAutoCollectGroup } from '@/api'
 import AutoCollectConfigSection from '@/views/MaaEndUserEdit/AutoCollectConfigSection.vue'
 import TaskConfigSection from '@/views/MaaEndUserEdit/TaskConfigSection.vue'
+import SanityConfigSection from '@/views/MaaEndUserEdit/SanityConfigSection.vue'
 import UserNotifyConfig from '@/components/UserNotifyConfig.vue'
 import ExtraScriptSection from '@/components/ExtraScriptSection.vue'
 import GuiSessionMask from '@/components/GuiSessionMask.vue'
@@ -297,6 +313,7 @@ let userId = route.params.userId as string
 const isEdit = ref(!!userId)
 const { configLocked } = useScriptConfigLock(() => scriptId)
 const scriptName = ref('')
+const scriptPath = ref('')
 const controllerType = ref<string | null>(null)
 const controllerProtocol = ref<string | null>(null)
 const presetSupported = ref(true)
@@ -317,19 +334,19 @@ const isSanityPlanMode = computed(() => formData.Info.SanityMode !== 'Fixed')
 
 const getAnchorContainer = () => document.querySelector<HTMLElement>('.content-area') ?? window
 
-// 每日执行限制属于调度，独立于快速配置。
 const anchorItems = computed(() => {
   const items = [{ key: 'basic', href: '#section-basic', title: t('edit.basicInfo') }]
   items.push({ key: 'source', href: '#section-source', title: t('edit.configurationSource') })
   items.push({ key: 'task', href: '#section-task', title: t('edit.taskConfiguration') })
   if (formData.Info.IfQuickConfig) {
     items.push(
+      { key: 'sanity', href: '#section-sanity', title: t('edit.maaEndSanitySection') },
       { key: 'collect', href: '#section-collect', title: t('edit.maaEndAutoCollectConfig') },
-      { key: 'delivery', href: '#section-delivery', title: t('edit.maaEndDeliveryConfig') }
+      { key: 'delivery', href: '#section-delivery', title: t('edit.maaEndDeliveryConfig') },
+      { key: 'limits', href: '#section-limits', title: t('edit.maaEndDailyOnceTasks') }
     )
   }
   items.push(
-    { key: 'limits', href: '#section-limits', title: t('edit.maaEndDailyOnceTasks') },
     { key: 'script', href: '#section-script', title: t('comp.extraScripts') },
     { key: 'notify', href: '#section-notify', title: t('edit.notificationSettings') }
   )
@@ -434,6 +451,20 @@ const formData = reactive({
   userName: '',
   ...getDefaultMaaEndUserData(),
 })
+
+// 遮罩文案按配置来源区分：脚本=脚本级共享配置、用户=当前用户独立配置。
+// 直控直接用 MaaEnd 原有配置，在 MaaEnd 里改，MAS 不给配置入口，走不到这里。
+const maaEndConfigMaskTitle = computed(() =>
+  formData.Info.Mode === '用户'
+    ? t('scripts.mask.maaEndUserTitle')
+    : t('scripts.mask.maaEndScriptTitle')
+)
+
+const maaEndConfigMaskDesc = computed(() =>
+  formData.Info.Mode === '用户'
+    ? t('scripts.mask.maaEndUserDesc', { name: formData.Info.Name || '' })
+    : t('scripts.mask.maaEndScriptDesc')
+)
 
 const rules = computed<Record<string, Rule[]>>(() => ({
   userName: [
@@ -552,11 +583,13 @@ const loadScriptInfo = async () => {
   const scriptDetail = await getScript(scriptId)
   if (scriptDetail) {
     scriptName.value = scriptDetail.name
+    scriptPath.value = (scriptDetail.config as { Info?: { Path?: string } }).Info?.Path ?? ''
     controllerType.value = (scriptDetail.config as any).Game?.ControllerType ?? null
   }
 }
 
 const loadMaaEndOptions = async () => {
+  if (!scriptPath.value.trim()) return
   maaEndOptionsLoading.value = true
   try {
     const response = await getMaaEndOptions(scriptId)

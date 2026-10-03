@@ -30,16 +30,19 @@ from app.log_box import LogCollect, LogType, log_box
 from app.models.config import OkwwConfig, OkwwUserConfig
 from app.models.ConfigBase import MultipleConfig
 from app.models.schema import WSTaskNoticeData
-from app.models.task import LogRecord, ScriptItem, TaskExecuteBase, UserItem
+from app.models.task import LogRecord, ScriptItem, UserItem
 from app.services import Notify, System
 from app.services.wuthering_waves import (
     check_wuthering_waves_update,
+    is_wuthering_waves_record_usable,
     resolve_wuthering_waves_process_path,
 )
 from app.services.wuthering_waves_updater import update_wuthering_waves
+from app.task.base import ScriptAutoProxyBase
 from app.task.general.tools import execute_script_task
 from app.task.proxy_helpers import (
     append_push_log,
+    find_pids_by_name,
     push_dispatch_log,
     split_args,
 )
@@ -68,11 +71,20 @@ from .tools.backup_archive import (
     owner_for_mode,
     read_overlay_values,
 )
+from .tools.launcher_start import (
+    async_start_game_via_launcher,
+    find_launcher_pids,
+    has_launcher_window,
+)
 
 logger = get_logger("OK-WW 自动代理")
 
 # 鸣潮 PC 客户端窗口进程名固定，MAS 接管启动前据此避免重复拉起
 _WUWA_CLIENT_PROCESS = "Client-Win64-Shipping.exe"
+
+# 直启客户端时 MAS 内置的启动参数：实测可绕过官方启动器校验直接进入游戏，
+# 与用户自配的 Game.Arguments 并存不冲突
+_WUWA_DIRECT_LAUNCH_ARG = "-krqlv=hd"
 
 # 多用户切换时等待旧游戏完全退出的上限（秒）：
 # ok-ww 恒带 `-e` 自退游戏，客户端进程退出不是瞬时的；若不等待完全退出，
@@ -82,9 +94,12 @@ _GAME_EXIT_WAIT_SECONDS = 90
 
 # ── okww 专项硬编码（不存 ConfigItem，随 MAS 版本同步）──────────────
 # 对齐 MaaEnd：专项内置日志片段，Okww 不向用户暴露成功/失败日志关键词配置。
+# 「游戏更新成功」是环境变更而非脚本错误，命中后至少保证再跑一轮（见 main_task）。
+_OKWW_GAME_UPDATED_LOG = "游戏更新成功, 游戏即将重启"
+_OKWW_GAME_UPDATED_MSG = "游戏更新成功，即将重启任务"
 _OKWW_BUILTIN_FATAL: tuple[tuple[str, str], ...] = (
     ("connected:False", "OK-WW 未连接游戏客户端"),
-    ("游戏更新成功, 游戏即将重启", "游戏更新成功，即将重启任务"),
+    (_OKWW_GAME_UPDATED_LOG, _OKWW_GAME_UPDATED_MSG),
     ("info_set 错误", "OK-WW 流程产生错误，请检查游戏状态"),
 )
 _OKWW_SUCCESS_LOG = "Window closed exit_event.is_set"
@@ -158,7 +173,7 @@ def _configure_okww_launcher(script_root_path: Path) -> None:
     logger.info("已补齐 OK-WW 启动器默认设置")
 
 
-class AutoProxyTask(TaskExecuteBase):
+class AutoProxyTask(ScriptAutoProxyBase):
     """OK-WW 自动代理：拼 `-t N -e` 启动参数并监控日志"""
 
     def __init__(
@@ -224,12 +239,39 @@ class AutoProxyTask(TaskExecuteBase):
                 str(self.script_config.get("Game", "Path") or "").strip()
             )
             self.launcher_path = launcher_path
-            try:
-                self.game_process_path = resolve_wuthering_waves_process_path(
-                    launcher_path
-                )
-            except (FileNotFoundError, ValueError) as e:
-                return str(e)
+            client_path = str(
+                self.script_config.get("Game", "ClientPath") or ""
+            ).strip()
+            if self._game_launch_type() == "Client" and client_path:
+                # 直启且手动指定了客户端程序：以指定值为准；启动器路径仅服务
+                # MAS 前置更新（不可用时运行期降级跳过，不阻断启动）。
+                # 文件名必须与客户端进程名完全一致（含大小写）：已运行检测、
+                # 进程搜索与按名兜底全部是精确匹配，指向其它名字的 exe 会让
+                # 这几条链同时失效
+                client_exe = Path(client_path)
+                if not client_exe.is_file():
+                    return "所选鸣潮客户端程序不存在，请重新选择"
+                if client_exe.name != _WUWA_CLIENT_PROCESS:
+                    return (
+                        f"所选程序不是鸣潮客户端（应为 {_WUWA_CLIENT_PROCESS}），"
+                        "请重新选择"
+                    )
+                self.game_process_path = client_exe
+            else:
+                # 客户端 exe 由启动器路径解码（直启未手填客户端、启动器态都走这里）
+                try:
+                    self.game_process_path = resolve_wuthering_waves_process_path(
+                        launcher_path
+                    )
+                except (FileNotFoundError, ValueError) as e:
+                    if self._game_launch_type() == "Client":
+                        # 直启侧还有「直接指定客户端文件」这条自足的路，别把用户
+                        # 打发去重新导入启动器
+                        return (
+                            "未找到鸣潮客户端程序：请在直启模式下选择游戏客户端"
+                            "文件，或重新导入官方启动器以自动定位"
+                        )
+                    return str(e)
 
         config_mode = _okww_config_mode(self.cur_user_config.get("Info", "Mode"))
         if config_mode == "直控":
@@ -240,7 +282,9 @@ class AutoProxyTask(TaskExecuteBase):
                 return "未找到 OK-WW 脚本原有配置，请先在 OK-WW 中保存设置"
         else:
             try:
-                await Config.ensure_okww_user_config(
+                from .tools.config_dir import ensure_user_config_dir
+
+                await ensure_user_config_dir(
                     script_id=self.script_info.script_id,
                     user_id=str(self.cur_user_uid),
                     mode=config_mode,
@@ -448,21 +492,32 @@ class AutoProxyTask(TaskExecuteBase):
         except Exception:
             pass
 
+    def _game_launch_type(self) -> str:
+        """游戏启动方式（缺省回落直启态）：Client=直启客户端，Launcher=经官方启动器。"""
+
+        return str(self.script_config.get("Game", "Type") or "Client")
+
     async def _ensure_wuthering_waves_updated(self) -> None:
         """确保游戏已是官方最新版，需要时由 MAS 自行下载覆写。
 
         全程不启动官方启动器、不做界面识别：版本元数据取自官方接口，
         包体下载、md5 校验、增量应用与覆写全部由 MAS 完成。
+        更新靠启动器路径解码游戏安装目录来确定更新目标，与启动方式无关：直启且
+        手动指定了 Game.ClientPath 时，启动器路径也只为更新服务，启动不经过它；
+        未配置启动器或路径失效时更新检查不可用（降级跳过，不阻断启动）。
 
         接口不可用属于「无法判断」，放行启动流程（旧客户端通常仍能登录，
         不该因为查不到版本就拦住用户）；而更新已确认需要却失败，
         则必须抛错阻断，否则会拿旧客户端撞登录失败。
         """
 
-        if self.launcher_path is None:
-            return
         if not self.script_config.get("Game", "IfAutoUpdate"):
             logger.info("已关闭启动前自动更新，跳过鸣潮更新检查")
+            return
+        # 直启可只填客户端路径，此时启动器可能没配或路径已失效：安装目录只能从
+        # 启动器记录解码，更新检查无从下手，按预期跳过而不是报「更新检查失败」
+        if self.launcher_path is None or not self.launcher_path.is_file():
+            logger.info("鸣潮启动器未配置或文件不存在，跳过启动前自动更新检查")
             return
         resource = str(self.cur_user_config.get("Info", "Resource"))
         try:
@@ -472,7 +527,31 @@ class AutoProxyTask(TaskExecuteBase):
             )
         except Exception as e:
             logger.warning(f"鸣潮官方更新检查失败，将继续启动游戏: {e}")
+            # 本地记录（启动器记录或版本记录）读不出来时客户端靠目录搜索还能
+            # 拉起来，更新却无从下手：不说一声用户会一直停在旧版。接口/网络
+            # 问题属「无法判断」，按既有决策静默放行
+            if not is_wuthering_waves_record_usable(self.launcher_path):
+                await self._push_dispatch_log(
+                    "鸣潮本地更新记录不可用，已跳过启动前自动更新，"
+                    "请用官方启动器检查游戏更新"
+                )
             return
+
+        # 直启可手动指定客户端：若它不在启动器记录的安装目录内，更新会打到另一
+        # 份安装上，直启的那个客户端永远升不上去。只提示不改行为
+        client_path = str(self.script_config.get("Game", "ClientPath") or "").strip()
+        if (
+            self._game_launch_type() == "Client"
+            and client_path
+            and not Path(client_path).is_relative_to(update_info.install_dir)
+        ):
+            message = (
+                f"手动指定的客户端不在启动器记录的安装目录内"
+                f"（{update_info.install_dir}），自动更新不会作用于该客户端，"
+                "请确认两者指向同一份安装"
+            )
+            logger.warning(message)
+            await self._push_dispatch_log(message)
 
         if update_info.predownload_available:
             logger.info(
@@ -496,7 +575,13 @@ class AutoProxyTask(TaskExecuteBase):
         )
 
     async def _mas_launch_game_before_task(self) -> None:
-        """检查并触发官方启动器更新，然后启动鸣潮客户端。"""
+        """检查并触发官方更新，然后按启动方式拉起鸣潮客户端。
+
+        Client 态（默认）：直启客户端 exe，MAS 内置 ``-krqlv=hd``（实测可绕过
+        启动器校验），与用户自配的 Game.Arguments 并存；
+        Launcher 态：MAS 拉起官方启动器后由 OCR 流程点击「进入游戏」
+        （launcher_start），启动器出现更新/下载时按下载态等待。
+        """
 
         if isinstance(self.game_manager, ProcessManager):
             await self._ensure_wuthering_waves_updated()
@@ -513,14 +598,54 @@ class AutoProxyTask(TaskExecuteBase):
                     await self._note_launch_arguments_skipped()
                     return
 
-            await self.game_manager.open_process(
-                self.game_process_path,
-                *split_args(self.script_config.get("Game", "Arguments")),
-            )
+            if self._game_launch_type() == "Client":
+                await self._launch_game_direct()
+            else:
+                await self._launch_game_via_launcher()
             wait_time = max(int(self.script_config.get("Game", "WaitTime")), 0)
             if wait_time:
                 await self._push_dispatch_log(f"等待游戏启动（{wait_time} 秒）...")
                 await asyncio.sleep(wait_time)
+
+    async def _launch_game_via_launcher(self) -> None:
+        """经官方启动器拉起游戏：开启动器并等待 OCR 点击「进入游戏」。"""
+
+        launcher_path = self.launcher_path
+        if launcher_path is None:
+            raise RuntimeError("未找到鸣潮官方启动器路径，请重新导入启动器")
+        await self._push_dispatch_log("未检测到运行中的客户端，正在拉起官方启动器...")
+        await self.game_manager.open_process(
+            launcher_path,
+            *split_args(self.script_config.get("Game", "Arguments")),
+        )
+        await self._push_dispatch_log("启动器已拉起，正在等待点击「进入游戏」...")
+        # 启动器交互在后台线程内同步执行，on_log 契约是同步回调；
+        # _push_dispatch_log 是 async 方法，须经 run_coroutine_threadsafe
+        # 调度回事件循环（与账号切换的 _push_switch_log 同理）。
+        launch_loop = asyncio.get_running_loop()
+
+        def _push_launch_log(line: str) -> None:
+            asyncio.run_coroutine_threadsafe(self._push_dispatch_log(line), launch_loop)
+
+        await async_start_game_via_launcher(launcher_path, on_log=_push_launch_log)
+
+    async def _launch_game_direct(self) -> None:
+        """直启客户端 exe：内置 -krqlv=hd，与用户启动参数并存。
+
+        待启动的客户端 exe 来自 check()：手动指定了 Game.ClientPath 时用该值，
+        否则由启动器路径解码得到。MAS 不打开启动器界面。
+        """
+
+        game_process_path = self.game_process_path
+        if game_process_path is None:
+            raise RuntimeError("未找到鸣潮客户端程序路径，请重新导入启动器")
+        await self._push_dispatch_log("未检测到运行中的客户端，正在直启鸣潮...")
+        await self.game_manager.open_process(
+            game_process_path,
+            _WUWA_DIRECT_LAUNCH_ARG,
+            *split_args(self.script_config.get("Game", "Arguments")),
+        )
+        await self._push_dispatch_log("鸣潮启动指令已发送")
 
     def _game_process_info(self) -> ProcessInfo:
         return ProcessInfo(
@@ -547,11 +672,13 @@ class AutoProxyTask(TaskExecuteBase):
         self.cur_user_item.status = "运行"
 
         run_limit = int(self.script_config.get("Run", "RunTimesLimit"))
-        for i in range(run_limit):
-            if self.run_book:
-                break
+        attempt = 0
+        game_update_extended = False
+        # while 而非 for：游戏更新成功时 run_limit 会在轮次内延长（至少再跑一轮）
+        while attempt < run_limit and not self.run_book:
+            attempt += 1
             logger.info(
-                f"用户 {self.cur_user_item.name} - 尝试次数: {i + 1}/{run_limit}"
+                f"用户 {self.cur_user_item.name} - 尝试次数: {attempt}/{run_limit}"
             )
             self.cur_user_item.status = "运行"
             self.log_start_time = datetime.now()
@@ -595,9 +722,9 @@ class AutoProxyTask(TaskExecuteBase):
                         )
                     except Exception:
                         pass
-                    if i + 1 < run_limit:
+                    if attempt < run_limit:
                         await self._push_dispatch_log(
-                            f"游戏启动失败，将在稍后重试 ({i + 1}/{run_limit})"
+                            f"游戏启动失败，将在稍后重试 ({attempt}/{run_limit})"
                         )
                         await asyncio.sleep(10)
                     else:
@@ -634,9 +761,9 @@ class AutoProxyTask(TaskExecuteBase):
                         )
                     except Exception as e:
                         await self.handle_pre_okww_error("鸣潮账号切换失败", e)
-                        if i + 1 < run_limit:
+                        if attempt < run_limit:
                             await self._push_dispatch_log(
-                                f"鸣潮账号切换失败，将在稍后重试 ({i + 1}/{run_limit})"
+                                f"鸣潮账号切换失败，将在稍后重试 ({attempt}/{run_limit})"
                             )
                             await asyncio.sleep(10)
                         else:
@@ -699,8 +826,22 @@ class AutoProxyTask(TaskExecuteBase):
                     Path(self.cur_user_config.get("Info", "ScriptAfterTask")),
                     "脚本后任务",
                 )
-            if i + 1 < run_limit:
-                self.script_info.log += f"\n将在稍后重试 ({i + 1}/{run_limit})"
+            if attempt < run_limit:
+                self.script_info.log += f"\n将在稍后重试 ({attempt}/{run_limit})"
+                await asyncio.sleep(10)
+            elif (
+                self.cur_user_log.status == _OKWW_GAME_UPDATED_MSG
+                and not game_update_extended
+            ):
+                # 「游戏更新成功」是环境变更而非脚本错误：次数用尽也至少再跑
+                # 一轮，否则鸣潮客户端自更新后任务直接以失败收尾。
+                # 每个任务只延长一次：再命中说明更新根本没应用成功，属持久性
+                # 环境问题，继续盲重试大概率白跑，按异常收尾交用户排查
+                game_update_extended = True
+                run_limit = attempt + 1
+                self.script_info.log += (
+                    f"\n游戏更新成功，将重启任务 ({attempt}/{run_limit})"
+                )
                 await asyncio.sleep(10)
 
     def _game_management_enabled(self) -> bool:
@@ -710,7 +851,8 @@ class AutoProxyTask(TaskExecuteBase):
         """按内置日志判定结果，未见成功日志便退出则视为异常。"""
         log = "".join(log_content)
         self.cur_user_log.content = log_content
-        self.script_info.log = log[-4000:] if len(log) > 4000 else log
+        self.script_info.log_first_line = log[:-4000].count("\n") + 1
+        self.script_info.log = log[-4000:]
 
         log_status = "OK-WW 正常运行中"
         user_item_status: str | None = None
@@ -911,7 +1053,7 @@ class AutoProxyTask(TaskExecuteBase):
                 logger.opt(exception=True).warning(f"中止 OK-WW 追踪进程失败: {e}")
 
     async def _kill_game_process(self) -> None:
-        """结束游戏：任务结束/失败/异常时始终触发（由 Game.Enabled 总开关控制）"""
+        """结束游戏与官方启动器：任务结束/失败/异常时始终触发（由 Game.Enabled 总开关控制）"""
         if isinstance(self.game_manager, ProcessManager):
             if (
                 self.game_process_path is not None
@@ -935,6 +1077,52 @@ class AutoProxyTask(TaskExecuteBase):
                 await System.kill_process(self.game_process_path)
             except Exception as e:
                 logger.opt(exception=True).warning(f"兜底强杀鸣潮客户端失败: {e}")
+        if self._game_launch_type() == "Client":
+            # 直启可手动指定客户端：若它与实际运行的那份安装不一致，上面的按
+            # 路径匹配会漏杀。进程名固定且专属鸣潮，按名兜底避免游戏残留；
+            # 有没杀掉的（多为提权进程）要提示用户，不能静默。
+            # 注意 kill_process_by_pid 失败时返回 False 而非抛异常，必须看返回值
+            failed = 0
+            for pid in await asyncio.to_thread(find_pids_by_name, _WUWA_CLIENT_PROCESS):
+                try:
+                    if not await System.kill_process_by_pid(pid):
+                        failed += 1
+                except Exception as e:
+                    failed += 1
+                    logger.opt(exception=True).warning(
+                        f"按进程名结束鸣潮客户端失败 PID: {pid}, {e}"
+                    )
+            if failed:
+                message = (
+                    f"有 {failed} 个鸣潮客户端进程未能结束（可能是提权进程，"
+                    "MAS 无权结束），请人工确认关闭"
+                )
+                logger.warning(message)
+                await self._push_dispatch_log(message)
+        if self.launcher_path is not None and self._game_launch_type() == "Launcher":
+            try:
+                # 启动器是进程家族：顶层 launcher.exe 引导器 + 版本目录下的
+                # launcher_main.exe（真窗口，版本目录随自更新变化）。launcher.exe
+                # 是通用进程名，按「家族 + 安装根目录树内」限定清理，避免误伤
+                # 无关程序；每步独立捕获，失败不阻断收尾。
+                # 仅启动器启动态清理：直启态 MAS 未打开启动器，不关用户自己的
+                # 启动器窗口
+                pids = await asyncio.to_thread(find_launcher_pids, self.launcher_path)
+                for pid in pids:
+                    # 游戏清理在先，启动器进程树里只剩 webview 等子进程，
+                    # 连树一并带走避免残留；游戏若意外仍在树内也属应关范围
+                    await System.kill_process_by_pid(pid, kill_tree=True)
+                # 清理后复核：exe 不可读（提权）的启动器进程不在上面的结果内，
+                # 用窗口定位口径再查一次，避免静默残留
+                if await asyncio.to_thread(has_launcher_window, self.launcher_path):
+                    message = (
+                        "检测到鸣潮官方启动器窗口仍残留（可能是提权进程，"
+                        "MAS 无权结束），请人工确认关闭"
+                    )
+                    logger.warning(message)
+                    await self._push_dispatch_log(message)
+            except Exception as e:
+                logger.opt(exception=True).warning(f"关闭鸣潮官方启动器失败: {e}")
 
     async def kill_managed_process(self, *, kill_game: bool = True) -> None:
         """中止 ok-ww；kill_game 为真时结束游戏"""

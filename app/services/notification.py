@@ -21,18 +21,20 @@
 
 
 import asyncio
+import base64
+import hashlib
 import ipaddress
 import json
 import re
 import smtplib
 from collections.abc import Sequence
-from dataclasses import dataclass
 from datetime import datetime
 from email.header import Header
 from email.mime.image import MIMEImage
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.utils import formataddr
+from html import escape as html_escape
 from typing import Literal
 from urllib.parse import urlparse
 
@@ -40,6 +42,15 @@ import httpx
 from plyer import notification
 
 from app.models.config import Webhook
+from app.models.notification import (
+    DEFAULT_WEBHOOK_TEMPLATE,
+    NOTIFICATION_HTML_IMAGE_SOURCE_PATTERN,
+    NOTIFICATION_IMAGE_URI_PATTERN,
+    WECOM_ROBOT_HOST,
+    WECOM_ROBOT_PATH,
+    NotificationImage,
+    WebhookTargetSnapshot,
+)
 from app.utils import LazyProxy, get_logger, resource_path
 from app.utils.constants import UTC4
 
@@ -49,23 +60,41 @@ logger = get_logger("通知服务")
 Config = LazyProxy("app.core", "Config")
 
 SMTP_TIMEOUT_SECONDS = 15
-DEFAULT_WEBHOOK_TEMPLATE = '{"title": "{title}", "content": "{content}"}'
 # OneBot 图片段里的占位写法，前端预设与这里必须一致。
 WEBHOOK_IMAGE_PLACEHOLDER = "base64://{image_base64}"
+# 企业微信群机器人按 host + path 认（key 在 query 里）；图片消息只收 JPG/PNG，
+# 原图不超过 2MB。
+WECOM_IMAGE_MAX_BYTES = 2 * 1024 * 1024
+_MAIL_IMAGE_TAG_PATTERN = re.compile(r"<img\b[^>]*>", re.IGNORECASE)
 
 
-@dataclass(frozen=True)
-class MailInlineImage:
-    """随网页邮件一起发送的内嵌图片，正文用 ``<img src="cid:{cid}">`` 引用。
+def _rewrite_mail_image_sources(
+    content: str,
+    replacements: dict[str, str],
+    fallback_images: dict[str, NotificationImage],
+) -> str:
+    """把渲染器确认过的完整资源地址编码为邮件协议地址。"""
 
-    走 ``multipart/related`` + Content-ID，而不是把 base64 直接写进 ``<img src>``：
-    data URI 在 QQ 邮箱、Gmail、Outlook 里都会被拦掉，六星喜报以前就是这么
-    失效的（c8d3c41e6 改成了外链）。
-    """
+    def replace_failed_tag(match: re.Match[str]) -> str:
+        tag = match.group(0)
+        source = NOTIFICATION_HTML_IMAGE_SOURCE_PATTERN.search(tag)
+        if source is None:
+            return tag
+        image_id = source.group("id")
+        if image_id in fallback_images:
+            return html_escape(fallback_images[image_id].alt)
+        return tag
 
-    cid: str
-    data: bytes
-    subtype: str = "png"
+    if fallback_images:
+        content = _MAIL_IMAGE_TAG_PATTERN.sub(replace_failed_tag, content)
+
+    def encode_reference(match: re.Match[str]) -> str:
+        replacement = replacements.get(match.group("id"))
+        if replacement is None:
+            return match.group(0)
+        return html_escape(replacement, quote=True)
+
+    return NOTIFICATION_IMAGE_URI_PATTERN.sub(encode_reference, content)
 
 
 # Windows 通知最终写入 NOTIFYICONDATA 的定长字段：标题落在 szInfoTitle（64 个
@@ -171,6 +200,15 @@ def _is_webhook_image_placeholder(obj: object) -> bool:
     )
 
 
+def _is_wecom_robot(url: str) -> bool:
+    """是不是企业微信群机器人的 Webhook 地址。"""
+
+    parsed = urlparse(url)
+    return (parsed.hostname or "").lower() == WECOM_ROBOT_HOST and (
+        parsed.path == WECOM_ROBOT_PATH
+    )
+
+
 class Notification:
     async def push_plyer(self, title: str, message: str, ticker: str, t: int) -> None:
         """
@@ -214,7 +252,7 @@ class Notification:
         content: str,
         to_address: str,
         *,
-        images: Sequence[MailInlineImage] = (),
+        images: Sequence[NotificationImage] = (),
     ) -> None:
         """
         推送邮件通知
@@ -229,7 +267,7 @@ class Notification:
             邮件内容
         to_address: str
             收件人地址
-        images: Sequence[MailInlineImage], optional
+        images: Sequence[NotificationImage], optional
             网页模式下随信内嵌的图片；文本模式忽略
         """
 
@@ -252,10 +290,39 @@ class Notification:
         ):
             raise ValueError("邮件通知的接收邮箱格式错误或为空")
 
+        email_images = []
+        if mode == "网页":
+            replacements: dict[str, str] = {}
+            fallback_images: dict[str, NotificationImage] = {}
+            for image in images:
+                if image.data is None:
+                    replacements[image.id] = image.url or image.alt
+                    continue
+                try:
+                    subtype = image.mime_type.split("/", 1)[-1]
+                    part = MIMEImage(image.data, _subtype=subtype)
+                except Exception as exc:
+                    fallback_images[image.id] = image
+                    logger.warning(
+                        f"网页邮件图片 {image.id} 无法内嵌，已保留替代文字: {exc}"
+                    )
+                    continue
+                part.add_header("Content-ID", f"<{image.id}>")
+                part.add_header(
+                    "Content-Disposition",
+                    "inline",
+                    filename=f"{image.id}.{subtype}",
+                )
+                replacements[image.id] = f"cid:{image.id}"
+                email_images.append(part)
+            content = _rewrite_mail_image_sources(
+                content, replacements, fallback_images
+            )
+
         # 定义邮件正文
         if mode == "文本":
             message = MIMEText(content, "plain", "utf-8")
-        elif mode == "网页" and images:
+        elif mode == "网页" and email_images:
             message = MIMEMultipart("related")
         elif mode == "网页":
             message = MIMEMultipart("alternative")
@@ -272,14 +339,7 @@ class Notification:
 
         if mode == "网页":
             message.attach(MIMEText(content, "html", "utf-8"))
-            for image in images:
-                part = MIMEImage(image.data, _subtype=image.subtype)
-                part.add_header("Content-ID", f"<{image.cid}>")
-                part.add_header(
-                    "Content-Disposition",
-                    "inline",
-                    filename=f"{image.cid}.{image.subtype}",
-                )
+            for part in email_images:
                 message.attach(part)
 
         smtp_server = Config.get("Notify", "SMTPServerAddress")
@@ -350,25 +410,13 @@ class Notification:
         )
         logger.success(f"中国移动5G短信通知已提交: {title}")
 
-    async def send_openclaw_weixin(self, title: str, content: str) -> None:
-        """通过微信 Claw 通道推送通知。
-
-        登录凭据和会话上下文由扫码登录管理器维护，通知层不读取或暴露协议
-        细节；长文本拆分、业务错误和上下文失效也由管理器统一处理。
-
-        Args:
-            title: 通知标题。
-            content: 已渲染的通知正文。
-
-        Raises:
-            ValueError: 尚未绑定微信账号时抛出。
-            RuntimeError: 网关返回 HTTP 或业务错误时抛出。
-        """
-        from app.services.openclaw_weixin import openclaw_weixin_manager
-
-        await openclaw_weixin_manager.send(title=title, content=content)
-
-    async def send_openclaw_qq(self, title: str, content: str) -> None:
+    async def send_openclaw_qq(
+        self,
+        title: str,
+        content: str,
+        *,
+        images: Sequence[NotificationImage] = (),
+    ) -> None:
         """通过 QQ 官方机器人通道推送通知。
 
         登录凭据由扫码登录管理器维护，通知层不读取或暴露协议细节；长文本
@@ -377,6 +425,7 @@ class Notification:
         Args:
             title: 通知标题。
             content: 已渲染的通知正文。
+            images: 随通知发送的图片资源。
 
         Raises:
             ValueError: 尚未绑定 QQ 官方机器人时抛出。
@@ -384,15 +433,15 @@ class Notification:
         """
         from app.services.openclaw_qq import openclaw_qq_manager
 
-        await openclaw_qq_manager.send(title=title, content=content)
+        await openclaw_qq_manager.send(title=title, content=content, images=images)
 
     async def WebhookPush(
         self,
         title: str,
         content: str,
-        webhook: Webhook,
+        webhook: Webhook | WebhookTargetSnapshot,
         *,
-        image_base64: str = "",
+        images: Sequence[NotificationImage] = (),
     ) -> None:
         """
         Webhook 推送通知
@@ -403,11 +452,17 @@ class Notification:
             通知标题
         content: str
             通知内容
-        webhook: Webhook
-            Webhook配置对象
-        image_base64: str, optional
-            可选图片的纯 Base64 数据，供 OneBot 等协议使用
+        webhook: Webhook | WebhookTargetSnapshot
+            Webhook 配置或创建目标时的只读快照
+        images: Sequence[NotificationImage], optional
+            可选图片资源，由 Webhook 协议适配器编码
         """
+        image = images[-1] if images else None
+        image_base64 = (
+            base64.b64encode(image.data).decode("ascii")
+            if image is not None and image.data is not None
+            else ""
+        )
         if not webhook.get("Info", "Enabled"):
             return
 
@@ -508,10 +563,15 @@ class Notification:
 
         async with httpx.AsyncClient(**_webhook_client_kwargs(url)) as client:
             if webhook.get("Data", "Method") == "POST":
-                if isinstance(data, dict):
-                    response = await client.post(url=url, json=data, headers=headers)
-                elif isinstance(data, str):
+                if isinstance(data, str):
                     response = await client.post(url=url, content=data, headers=headers)
+                elif data is None:
+                    # httpx 的 json=None 会发送空请求体，JSON null 需显式发送。
+                    response = await client.post(
+                        url=url, content="null", headers=headers
+                    )
+                else:
+                    response = await client.post(url=url, json=data, headers=headers)
             elif webhook.get("Data", "Method") == "GET":
                 if isinstance(data, dict):
                     # Flatten params to ensure all values are str or list of str
@@ -536,6 +596,66 @@ class Notification:
         logger.success(
             f"自定义Webhook推送成功: {webhook.get('Info', 'Name')} - {title}"
         )
+
+        # 企业微信群机器人的文本消息放不下图，失败截图要单独补发一条图片消息；
+        # 模板里自己写了 {image_base64} 的说明用户已经处理过图，不再补发。
+        if image_base64 and "{image_base64}" not in template and _is_wecom_robot(url):
+            await self._push_wecom_image(
+                url, image_base64, headers, webhook.get("Info", "Name")
+            )
+
+    async def _push_wecom_image(
+        self, url: str, image_base64: str, headers: dict, name: str
+    ) -> None:
+        """给企业微信群机器人补发一条图片消息。
+
+        正文那条已经送达，图片发不出去只记警告，不让整条通知算失败。日志里
+        不带 URL，里面的 key 就是机器人的发送凭据。
+
+        Args:
+            url: 企业微信群机器人 Webhook 地址。
+            image_base64: 图片的纯 Base64 数据。
+            headers: 与正文那条相同的请求头。
+            name: Webhook 名称，只用于日志。
+        """
+
+        try:
+            raw = base64.b64decode(image_base64, validate=True)
+        except ValueError:
+            logger.warning(f"企业微信图片补发跳过: {name} - 图片不是有效的 Base64")
+            return
+        if len(raw) > WECOM_IMAGE_MAX_BYTES:
+            logger.warning(
+                f"企业微信图片补发跳过: {name} - 图片 {len(raw)} 字节，超过 2MB 上限"
+            )
+            return
+        if not raw.startswith((b"\xff\xd8\xff", b"\x89PNG\r\n\x1a\n")):
+            logger.warning(f"企业微信图片补发跳过: {name} - 只支持 JPG/PNG")
+            return
+
+        data = {
+            "msgtype": "image",
+            "image": {
+                "base64": image_base64,
+                "md5": hashlib.md5(raw).hexdigest(),
+            },
+        }
+        try:
+            async with httpx.AsyncClient(**_webhook_client_kwargs(url)) as client:
+                response = await client.post(url=url, json=data, headers=headers)
+        except Exception as e:
+            logger.warning(f"企业微信图片补发失败: {name} - {type(e).__name__} {e}")
+            return
+        if not response.is_success:
+            logger.warning(
+                f"企业微信图片补发失败: {name} - HTTP {response.status_code}: {response.text}"
+            )
+            return
+        failure = webhook_body_failure(response.text, url)
+        if failure is not None:
+            logger.warning(f"企业微信图片补发失败: {name} - 服务端拒绝: {failure}")
+            return
+        logger.success(f"企业微信图片补发成功: {name}")
 
     async def send_koishi(
         self,

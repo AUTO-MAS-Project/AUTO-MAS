@@ -1,6 +1,6 @@
-import { computed, onScopeDispose, reactive, ref } from 'vue'
+import { computed, onScopeDispose, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { BlueArchiveActivityIn, GetService } from '@/api'
+import { BlueArchiveActivityIn, GetService, OpenAPI } from '@/api'
 import { createEmptySraActivityOverview } from '@/types/home'
 import type {
   BlueArchiveActivityOverview,
@@ -8,36 +8,30 @@ import type {
   BlueArchiveServerOverview,
 } from '@/types/home'
 import type { Ref } from 'vue'
+import { useHomeActivitySource } from './useHomeActivitySource'
+import type { HomeActivitySource } from './useHomeActivitySource'
 
-const logger = window.electronAPI.getLogger('活动数据')
-
-/** 与其它活动源一致的请求超时与失败重试节奏 */
+/** 请求超时；重试节奏与快照调度交给公共骨架 */
 const FETCH_TIMEOUT_MS = 20_000
-const RETRY_DELAY_MS = 30_000
-const MAX_RETRIES = 8
 const REFRESH_INTERVAL_MS = 10 * 60 * 1000
 
 /**
- * 数据取自 Kivo 古书馆时间轴，但那个接口对 Origin 做了白名单校验（只放行
- * kivo.wiki 自己的来源），浏览器直连必定 403，因此统一走本软件后端中转。
- * 后端只做转发，筛选与格式转换仍在这里完成。
+ * 数据取自 GameKee 的活动表（三个服都有），那个接口认自定义头、响应也没给跨域头，
+ * 浏览器直连取不到，因此统一走本软件后端中转。后端只做转发，筛选与格式转换在这里完成。
  */
 
-/** 每页 50 条且按时间倒序，3 页足以覆盖最近数周 */
-const PAGE_SIZE = 50
-const MAX_PAGES = 3
+/** 每页 100 条、两页足够放下三个服的当期活动与最近结束的那些 */
+const PAGE_SIZE = 100
+const MAX_PAGES = 2
 
 /** 往前多带几天已经结束的活动，让卡片在活动间隙里也有内容可显示 */
 const RECENT_WINDOW_DAYS = 14
 const SECONDS_PER_DAY = 86_400
 
-/** Kivo 的 body_summary 很长（含话题标签），按卡片展示宽度截断 */
+/** GameKee 的 description 与图片都很短，按卡片展示宽度截断 */
 const DESCRIPTION_MAX_LENGTH = 200
 
-/** 只取「活动」；卡池、掉落加倍、维护等分类不进卡片 */
-const WANTED_TYPE = 'Event'
-
-/** 三个服与 Kivo 的 line_type 对应关系（国际服的原文拼写就是 Globle） */
+/** 三个服与后端入参的对应关系（国际服的原文拼写就是 Globle） */
 const SERVER_LINE_TYPES: Record<BlueArchiveServerKey, BlueArchiveActivityIn.line_type> = {
   jp: BlueArchiveActivityIn.line_type.JP,
   global: BlueArchiveActivityIn.line_type.GLOBLE,
@@ -59,21 +53,23 @@ const readSelectedServer = (): BlueArchiveServerKey => {
 
 /**
  * 固定 +08:00 偏移（Asia/Shanghai 无夏令时）。
- * Kivo 的时间戳是 Unix 秒，而 SRA 格式的时间字段不带时区标记、按其惯例填北京时间。
+ * GameKee 的时间戳是 Unix 秒，而 SRA 格式的时间字段不带时区标记、按其惯例填北京时间。
  */
 const TIMEZONE_OFFSET_MS = 8 * 60 * 60 * 1000
 
-interface KivoTimelineItem {
+interface GameKeeActivity {
   title?: string
-  image?: string
-  body_summary?: string
-  type?: string
-  start_time?: number
-  end_time?: number
+  picture?: string
+  description?: string
+  /** 中文分类名：活动 / 总力大决 / 爬塔 / 多倍活动 / 战术测试 / 指引任务 / 其他 */
+  activity_kind_name?: string
+  begin_at?: number
+  end_at?: number
 }
 
-interface KivoTimelineResponse {
-  data?: { timeline?: KivoTimelineItem[] }
+interface GameKeeResponse {
+  code?: number
+  data?: GameKeeActivity[]
 }
 
 /** 快照里存整份 overview，恢复时重置 Stale / Message 这两个运行时元数据 */
@@ -112,26 +108,29 @@ const currentMonth = (): string => {
   return shifted.getUTCFullYear() + '-' + pad(shifted.getUTCMonth() + 1)
 }
 
-/** Kivo 的图片地址是协议相对 URL（//static...），补全为 https */
+/**
+ * GameKee 的图片地址是协议相对 URL（//cdnimg...），补全成 https 后还要走后端中转：
+ * 那个 CDN 校验 Referer，页面直连（Referer 是本软件）必定被拒。
+ */
 const normalizeImage = (image: string | undefined): string => {
   if (!image) return ''
-  return image.startsWith('//') ? 'https:' + image : image
+  const absolute = image.startsWith('//') ? 'https:' + image : image
+  return `${OpenAPI.BASE}/api/info/bluearchive/image?url=${encodeURIComponent(absolute)}`
 }
 
 /**
  * 原始时间轴 → SRA 活动条目：筛分类、去重、按开始时间升序。
  *
- * 与 Kivo 时间轴的取值口径保持一致：同一活动可能被拆成「活动」与
+ * 与数据源的取值口径保持一致：同一活动可能被拆成「活动」与
  * 「活动介绍PV」等多条记录，只保留结束时间最晚的那条。
  */
-const buildActivities = (items: KivoTimelineItem[], nowSeconds: number) => {
+const buildActivities = (items: GameKeeActivity[], nowSeconds: number) => {
   const horizon = nowSeconds - RECENT_WINDOW_DAYS * SECONDS_PER_DAY
-  const picked = new Map<string, { item: KivoTimelineItem; start: number; end: number }>()
+  const picked = new Map<string, { item: GameKeeActivity; start: number; end: number }>()
 
   for (const item of items) {
-    if (item.type !== WANTED_TYPE) continue
-    const start = item.start_time
-    const end = item.end_time
+    const start = item.begin_at
+    const end = item.end_at
     if (typeof start !== 'number' || typeof end !== 'number') continue
     if (end < horizon) continue
 
@@ -147,23 +146,24 @@ const buildActivities = (items: KivoTimelineItem[], nowSeconds: number) => {
     .sort((left, right) => left[1].start - right[1].start)
     .map(([name, row]) => ({
       name,
-      description: (row.item.body_summary ?? '').trim().slice(0, DESCRIPTION_MAX_LENGTH),
+      description: (row.item.description ?? '').trim().slice(0, DESCRIPTION_MAX_LENGTH),
       startTime: formatTime(row.start),
       endTime: formatTime(row.end),
-      cover: normalizeImage(row.item.image),
+      cover: normalizeImage(row.item.picture),
+      kind: row.item.activity_kind_name ?? '',
     }))
 }
 
 /**
  * 横幅的起始 / 结束取**当前这批活动**的区间。
  *
- * 直接拿整份数据里最晚的结束时间是不对的：Kivo 会提前放出后面的活动，
+ * 直接拿整份数据里最晚的结束时间是不对的：数据源会提前放出后面的活动，
  * 于是「剩余时间」倒数的会是还没开始的那一期。所以先看正在进行中的活动，
  * 没有进行中的就退回最近结束的那一次（横幅如实显示「已结束」），
  * 两者都没有才用还没开始的活动。
  */
 const buildOverview = (
-  items: KivoTimelineItem[],
+  items: GameKeeActivity[],
   versionName: string
 ): BlueArchiveActivityOverview => {
   const activities = buildActivities(items, Date.now() / 1000)
@@ -190,23 +190,12 @@ const buildOverview = (
   }
 }
 
-/** 一个服务器的运行时状态：重试计数与定时器按服隔离，一个服挂掉不拖累另外两个 */
-interface ServerRuntime {
-  key: BlueArchiveServerKey
-  overview: Ref<BlueArchiveActivityOverview>
-  retryTimer: number | null
-  retryCount: number
-  hasData: boolean
-  retryPending: boolean
-  requesting: boolean
-}
-
-/** 拉取一个服的完整时间轴（分页直到空页或达到页数上限） */
+/** 拉取一个服的完整活动列表（分页直到空页或达到页数上限） */
 const fetchTimeline = async (
   server: BlueArchiveServerKey,
   signal: AbortSignal
-): Promise<KivoTimelineItem[]> => {
-  const items: KivoTimelineItem[] = []
+): Promise<GameKeeActivity[]> => {
+  const items: GameKeeActivity[] = []
   for (let page = 1; page <= MAX_PAGES; page += 1) {
     const request = GetService.getBluearchiveActivityApiInfoBluearchiveActivityPost({
       line_type: SERVER_LINE_TYPES[server],
@@ -219,19 +208,23 @@ const fetchTimeline = async (
     const cancelOnAbort = () => request.cancel()
     signal.addEventListener('abort', cancelOnAbort, { once: true })
 
-    let payload: KivoTimelineResponse
+    let payload: GameKeeResponse
     try {
       const result = await request
       if (result.code !== 200) {
         throw new Error(result.message || 'HTTP ' + result.code)
       }
-      // 后端把 Kivo 的响应原样放在 data 里
-      payload = result.data as unknown as KivoTimelineResponse
+      // 后端把 GameKee 的响应原样放在 data 里
+      payload = result.data as unknown as GameKeeResponse
     } finally {
       signal.removeEventListener('abort', cancelOnAbort)
     }
 
-    const batch = payload.data?.timeline
+    if (payload.code !== 0) {
+      throw new Error(payload.code ? `GameKee ${payload.code}` : 'GameKee 响应异常')
+    }
+
+    const batch = payload.data
     if (!Array.isArray(batch) || batch.length === 0) break
     items.push(...batch)
   }
@@ -239,12 +232,11 @@ const fetchTimeline = async (
 }
 
 /**
- * 碧蓝档案活动数据的直连数据源（Kivo 古书馆时间轴）。
+ * 碧蓝档案活动数据的直连数据源（GameKee 活动表）。
  *
- * 与其它活动源的职责一致：带超时、失败退避重试、本地快照
- * （stale-while-revalidate）与独立失败态。区别在于碧蓝档案分日/国际/国
- * 三个服，这里为每个服各跑一份完整状态——请求、重试、快照、错误都不互通，
- * 所以一个服不可用时另外两个服照常显示，卡片也只需切显示、无需重新请求。
+ * 与其它活动源一样，取数、超时、失败退避重试、快照与失败态都交给公共骨架；区别在于
+ * 碧蓝档案分日 / 国际 / 国三个服，所以这里给每个服各起一份骨架实例：请求、重试、快照、
+ * 加载态互相不打扰，一个服取不到时另外两个照常显示，卡片只需切显示、无需重新请求。
  */
 export const useBlueArchiveActivitySource = () => {
   const { t } = useI18n()
@@ -253,16 +245,11 @@ export const useBlueArchiveActivitySource = () => {
   const serverVersionName = (server: BlueArchiveServerKey) =>
     t('home.bluearchive.versionName', { server: serverLabel(server) })
 
-  const runtimes: ServerRuntime[] = SERVER_KEYS.map(key => ({
-    key,
-    overview: ref<BlueArchiveActivityOverview>(createEmptySraActivityOverview()),
-    retryTimer: null,
-    retryCount: 0,
-    hasData: false,
-    retryPending: false,
-    requesting: false,
-  }))
-
+  const overviewByServer: Record<BlueArchiveServerKey, Ref<BlueArchiveActivityOverview>> = {
+    jp: ref(createEmptySraActivityOverview()),
+    global: ref(createEmptySraActivityOverview()),
+    cn: ref(createEmptySraActivityOverview()),
+  }
   const loadingByServer: Record<BlueArchiveServerKey, boolean> = reactive({
     jp: false,
     global: false,
@@ -270,122 +257,108 @@ export const useBlueArchiveActivitySource = () => {
   })
   const selectedServer = ref<BlueArchiveServerKey>(readSelectedServer())
 
+  // 每个服各跑一份完整调度：请求、重试、快照、加载态互相不打扰，
+  // 一个服取不到时另外两个照常显示，卡片只切显示、不必重新请求
+  const sources = {} as Record<BlueArchiveServerKey, HomeActivitySource>
+
+  for (const key of SERVER_KEYS) {
+    // 这个服是否已有请求在飞：交给骨架的 isBusy 钩子，同一份数据不会被并发拉两次
+    let busy = false
+    const source = useHomeActivitySource<GameKeeActivity[]>({
+      // 日志与失败文案里用这个服自己的名字
+      label: () => serverLabel(key),
+      timeoutMs: FETCH_TIMEOUT_MS,
+      isBusy: () => busy,
+      restoreSnapshot: () => {
+        try {
+          const raw = localStorage.getItem(snapshotKey(key))
+          if (!raw) return false
+          const cached = JSON.parse(raw) as BlueArchiveActivityOverview
+          overviewByServer[key].value = {
+            ...createEmptySraActivityOverview(),
+            ...cached,
+            Stale: true,
+            Message: t('home.bluearchive.staleMessage'),
+            // 服名随界面语言变化，按当前语言重算，避免切换语言后残留旧语言的版本名
+            versionName: serverVersionName(key),
+          }
+          return true
+        } catch {
+          // 快照损坏按无缓存处理
+          return false
+        }
+      },
+      saveSnapshot: overview => {
+        try {
+          localStorage.setItem(snapshotKey(key), JSON.stringify(overview))
+        } catch {
+          // 本地存储不可用时仅跳过快照缓存
+        }
+      },
+      fetchData: async signal => {
+        busy = true
+        try {
+          return await fetchTimeline(key, signal)
+        } finally {
+          busy = false
+        }
+      },
+      applyData: items => {
+        overviewByServer[key].value = buildOverview(items, serverVersionName(key))
+      },
+      markStale: () => {
+        overviewByServer[key].value = {
+          ...overviewByServer[key].value,
+          Stale: true,
+          Message: t('home.bluearchive.staleMessage'),
+        }
+      },
+      markUnavailable: label => {
+        overviewByServer[key].value = {
+          ...createEmptySraActivityOverview(),
+          Message: t('home.bluearchive.unavailable', { server: label }),
+        }
+      },
+    })
+    sources[key] = source
+    // 加载态按服同步给卡片（骨架每个实例各有一个 loading）
+    watch(
+      source.loading,
+      value => {
+        loadingByServer[key] = value
+      },
+      { immediate: true }
+    )
+  }
+
   let active = false
   let started = false
   let disposed = false
   let refreshTimer: number | null = null
 
-  // 启动先用上次快照填卡片，不等网络
-  for (const runtime of runtimes) {
-    try {
-      const raw = localStorage.getItem(snapshotKey(runtime.key))
-      if (raw) {
-        const cached = JSON.parse(raw) as BlueArchiveActivityOverview
-        runtime.overview.value = {
-          ...createEmptySraActivityOverview(),
-          ...cached,
-          Stale: true,
-          Message: t('home.bluearchive.staleMessage'),
-          // 服名随界面语言变化，按当前语言重算，避免切换语言后残留旧语言的版本名
-          versionName: serverVersionName(runtime.key),
-        }
-        runtime.hasData = true
-      }
-    } catch {
-      // 快照损坏按无缓存处理
-    }
-    if (!runtime.hasData) {
-      loadingByServer[runtime.key] = true
-    }
-  }
-
-  const loadServer = async (runtime: ServerRuntime) => {
-    if (disposed || runtime.requesting) return
-    runtime.requesting = true
-    try {
-      const controller = new AbortController()
-      const timer = window.setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS)
-      let items: KivoTimelineItem[]
-      try {
-        items = await fetchTimeline(runtime.key, controller.signal)
-      } finally {
-        window.clearTimeout(timer)
-      }
-      if (disposed) return
-
-      const overview = buildOverview(items, serverVersionName(runtime.key))
-      runtime.overview.value = overview
-      runtime.hasData = true
-      runtime.retryCount = 0
-      try {
-        localStorage.setItem(snapshotKey(runtime.key), JSON.stringify(overview))
-      } catch {
-        // 本地存储不可用时仅跳过快照缓存
-      }
-    } catch (requestError) {
-      if (disposed) return
-      const errorMessage =
-        requestError instanceof Error ? requestError.message : String(requestError)
-      logger.warn('获取碧蓝档案' + serverLabel(runtime.key) + '活动数据失败: ' + errorMessage)
-
-      runtime.overview.value = runtime.hasData
-        ? {
-            ...runtime.overview.value,
-            Stale: true,
-            Message: t('home.bluearchive.staleMessage'),
-          }
-        : {
-            ...createEmptySraActivityOverview(),
-            Message: t('home.bluearchive.unavailable', { server: serverLabel(runtime.key) }),
-          }
-
-      if (runtime.retryCount < MAX_RETRIES) {
-        runtime.retryCount += 1
-        if (active) {
-          scheduleRetry(runtime)
-        } else {
-          // 模块隐藏期间不重试，重新可见时补一次
-          runtime.retryPending = true
-        }
-      }
-    } finally {
-      runtime.requesting = false
-      if (!disposed) {
-        loadingByServer[runtime.key] = false
-      }
-    }
-  }
-
-  const scheduleRetry = (runtime: ServerRuntime) => {
-    runtime.retryTimer = window.setTimeout(() => {
-      runtime.retryTimer = null
-      void loadServer(runtime)
-    }, RETRY_DELAY_MS)
-  }
-
+  /** 卡片还挂在页面上时，每 10 分钟把三个服都刷一遍 */
   const scheduleRefresh = () => {
     if (!active || disposed || refreshTimer !== null) return
     refreshTimer = window.setTimeout(() => {
       refreshTimer = null
-      for (const runtime of runtimes) void loadServer(runtime)
+      for (const key of SERVER_KEYS) sources[key].reload()
       scheduleRefresh()
     }, REFRESH_INTERVAL_MS)
   }
 
-  // 模块可见时才发请求；隐藏时停掉重试定时器，重新可见时把攒下的重试补上
+  // 模块可见时才发请求；隐藏时停掉重试定时器，重新可见时立即重校验一遍
   const start = () => {
     if (disposed) return
     active = true
-    if (!started) {
-      started = true
-      for (const runtime of runtimes) void loadServer(runtime)
-    } else {
-      // 栏目重新显示时立即校验，避免继续展示隐藏期间已经过期的活动。
-      for (const runtime of runtimes) {
-        runtime.retryPending = false
-        void loadServer(runtime)
+    for (const key of SERVER_KEYS) {
+      if (started) {
+        // 栏目重新显示：隐藏期间活动可能已经过期，直接重取而不是等退避重试
+        sources[key].resume()
+      } else {
+        sources[key].start()
       }
     }
+    started = true
     scheduleRefresh()
   }
 
@@ -395,13 +368,7 @@ export const useBlueArchiveActivitySource = () => {
       window.clearTimeout(refreshTimer)
       refreshTimer = null
     }
-    for (const runtime of runtimes) {
-      if (runtime.retryTimer !== null) {
-        window.clearTimeout(runtime.retryTimer)
-        runtime.retryTimer = null
-        runtime.retryPending = true
-      }
-    }
+    for (const key of SERVER_KEYS) sources[key].stop()
   }
 
   onScopeDispose(() => {
@@ -410,20 +377,14 @@ export const useBlueArchiveActivitySource = () => {
       window.clearTimeout(refreshTimer)
       refreshTimer = null
     }
-    for (const runtime of runtimes) {
-      if (runtime.retryTimer !== null) {
-        window.clearTimeout(runtime.retryTimer)
-        runtime.retryTimer = null
-      }
-    }
   })
 
   return {
     servers: computed<BlueArchiveServerOverview[]>(() =>
-      runtimes.map(runtime => ({
-        key: runtime.key,
-        label: serverLabel(runtime.key),
-        overview: runtime.overview.value,
+      SERVER_KEYS.map(key => ({
+        key,
+        label: serverLabel(key),
+        overview: overviewByServer[key].value,
       }))
     ),
     selectedServer,
@@ -440,10 +401,7 @@ export const useBlueArchiveActivitySource = () => {
     start,
     stop,
     refresh: () => {
-      for (const runtime of runtimes) {
-        runtime.retryCount = 0
-        void loadServer(runtime)
-      }
+      for (const key of SERVER_KEYS) sources[key].refresh()
     },
   }
 }

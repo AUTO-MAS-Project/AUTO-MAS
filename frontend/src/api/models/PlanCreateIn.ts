@@ -9,6 +9,8 @@ export namespace PlanCreateIn {
     export enum type {
         MAA_PLAN = 'MaaPlan',
         MAA_END_PLAN = 'MaaEndPlan',
+        BAAHPLAN = 'BAAHPlan',
+        MSSPLAN = 'MSSPlan',
     }
 }
 
