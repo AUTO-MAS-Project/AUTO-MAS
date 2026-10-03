@@ -27,8 +27,10 @@ zzz-od 的 YAML 是唯一事实源，本模块只做最小封装（读-改-写 +
 
 MAS 用户配置（MaaEnd 式字段化）：账号/区服/任务编排存于
 ``ZzzOdUserConfig`` 的 ConfigItem 字段（web 直接编辑），运行时由字段生成
-game_account.yml 与 one_dragon/_group.yml 写入当前活跃实例槽（备份 →
-写入并清运行记录 → 恢复，MAS 不留痕迹）；「直控」模式全程不写槽。
+game_account.yml 与 one_dragon/_group.yml 写入各用户绑定槽（备份 →
+写入并清运行记录 → 恢复；保留类应用的周期进度与计划进度属运行产物，
+不参与清空，整目录还原后按快照原样回写，见
+:data:`PERSISTENT_RUN_RECORD_APPS`）；「直控」模式全程不写槽。
 """
 
 import shutil
@@ -36,7 +38,13 @@ import threading
 from pathlib import Path
 from typing import Any, Callable
 
-from app.utils.io import read_dict_file, read_file, replace_dir, write_file
+from app.utils.io import (
+    atomic_write,
+    read_dict_file,
+    read_file,
+    replace_dir,
+    write_file,
+)
 from app.utils.logger import get_logger
 
 logger = get_logger("绝区零一条龙配置")
@@ -88,6 +96,26 @@ DEFAULT_GAME_ACCOUNT: dict[str, Any] = {
 
 # 实例目录内的运行态目录：不属于配置包，注入/回读时排除、注入前清理
 _RUN_RECORD_DIR = "app_run_record"
+
+# 带周期进度的运行记录（app_id）。上游把周期进度写进 app_run_record/<app_id>.yml，
+# 并按 dt（跨天）与周日界（跨周）自行重置（见上游 base/operation/
+# application_run_record.py 与各 app 的 *RunRecord）。这些应用**不参与**注入前的
+# 清空与收尾的整目录还原：进度清掉就再回不来，周挑战剩余次数、每日/每周计划次数、
+# 每周经验目标、已用兑换码等周期语义会整体失效，表现为每次任务都从头刷。
+# 其余应用的记录只有 run_status/dt/run_time，清空即「本轮重跑」，符合 MAS 设计。
+PERSISTENT_RUN_RECORD_APPS: frozenset[str] = frozenset(
+    {
+        "charge_plan",  # 体力计划：current_charge_power_snapshot（体力估算）
+        "notorious_hunt",  # 恶名狩猎：left_times（周挑战剩余次数）
+        "lost_void",  # 迷失之地：daily/weekly_run_times + 悬赏/业绩/周期奖励达标标记
+        "withered_domain",  # 枯萎之都：daily/weekly_run_times + no_eval_point 等
+        "intel_board",  # 情报板：progress_complete / 计数 / base_exp（每周经验目标）
+        "world_patrol",  # 锄大地：finished / completed_rounds / routes_per_round
+        "life_on_line",  # 生活行动：daily_run_times
+        "redemption_code",  # 兑换码：used_code_list（已兑换过的码）
+        "shiyu_defense",  # 式舆防卫战：critical_history（当日节点进度）
+    }
+)
 
 # 一条龙用 non-atomic 写落盘，进程被杀/断电会在 YAML 里留下 NUL 填充，YAML
 # 解析器遇到 NUL 直接抛 ReaderError；读侧一律按 ``.sanitized.yaml`` 容错读
@@ -845,13 +873,65 @@ def diff_run_records(
 
 
 def clear_run_records(root: Path, idx: int) -> None:
-    """清空实例运行记录，让 zzz-od 把所有任务视为未完成（每用户独立跑）。
+    """清空实例运行记录，让 zzz-od 把任务视为未完成（每用户独立跑）。
 
     注入用户配置后调用：清空后快照即为全零基准，跑完 diff 出的即本用户
-    本次结果。
+    本次结果。:data:`PERSISTENT_RUN_RECORD_APPS` 的记录原样保留——它们承载
+    上游的周期进度，清掉后收尾还会整目录还原，进度再也回不来。
     """
 
-    shutil.rmtree(instance_dir(root, idx) / _RUN_RECORD_DIR, ignore_errors=True)
+    record_dir = instance_dir(root, idx) / _RUN_RECORD_DIR
+    if not record_dir.is_dir():
+        return
+    keep = {f"{app_id}.yml" for app_id in PERSISTENT_RUN_RECORD_APPS}
+    for path in record_dir.iterdir():
+        if path.is_file() and path.name not in keep:
+            path.unlink(missing_ok=True)
+
+
+def snapshot_run_record_files(root: Path, idx: int) -> dict[str, bytes | None]:
+    """快照保留类应用的运行记录文件（文件名 → 原文；读取失败记 ``None``）。
+
+    这些记录由上游在运行中更新，属运行产物；收尾的整目录还原会把它们一起
+    回滚，故恢复前先取快照、恢复后原样写回（见 :func:`restore_run_record_files`）。
+
+    读取容错：单文件读失败（被占用等）记为 ``None`` 而不是丢掉该键。丢掉会让
+    判定侧把「注入时读取失败」误当成「注入时不存在、本轮新写」而采信陈旧终态
+    （幻影 diff）；记 ``None`` 才能让 :func:`restore_run_record_files` 与判定
+    侧都把这类文件按「未知 = 本轮未跑」处理，同时不阻断整目录恢复。
+    """
+
+    record_dir = instance_dir(root, idx) / _RUN_RECORD_DIR
+    if not record_dir.is_dir():
+        return {}
+    snapshot: dict[str, bytes | None] = {}
+    for app_id in sorted(PERSISTENT_RUN_RECORD_APPS):
+        path = record_dir / f"{app_id}.yml"
+        if not path.is_file():
+            continue
+        try:
+            snapshot[path.name] = path.read_bytes()
+        except OSError as exc:
+            logger.warning(f"运行记录快照读取失败，本轮按未跑处理：{path.name}: {exc}")
+            snapshot[path.name] = None
+    return snapshot
+
+
+def restore_run_record_files(
+    root: Path, idx: int, snapshot: dict[str, bytes | None]
+) -> None:
+    """把运行记录快照写回实例（恢复现场后进行）。
+
+    快照里的 ``None``（读取失败、状态未知）不写回——宁可不写，也不拿未知内容
+    覆盖上游刚写的记录。
+    """
+
+    if not snapshot:
+        return
+    record_dir = instance_dir(root, idx) / _RUN_RECORD_DIR
+    for name, payload in snapshot.items():
+        if payload is not None:
+            atomic_write(record_dir / name, payload)
 
 
 # ── 实例槽备份 / 恢复（运行与配置会话的现场保护）──
