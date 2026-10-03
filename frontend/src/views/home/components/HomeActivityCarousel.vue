@@ -67,13 +67,13 @@
                 :class="{ 'has-remaining': item.endTime || item.ended }"
               >
                 <span v-if="item.startTime" class="meta-time">
-                  {{ formatBannerTime(item.startTime) }}
+                  {{ formatActivityTime(item.startTime, locale) }}
                 </span>
                 <span v-if="item.startTime && item.endTime" class="meta-sep" aria-hidden="true">
                   ~
                 </span>
                 <span v-if="item.endTime" class="meta-time">
-                  {{ formatBannerTime(item.endTime) }}
+                  {{ formatActivityTime(item.endTime, locale) }}
                 </span>
               </div>
 
@@ -128,6 +128,7 @@ import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import type { CSSProperties } from 'vue'
 import { LeftOutlined, RightOutlined } from '@ant-design/icons-vue'
 import type { ActivityBannerItem, HomeModuleKey } from '@/types/home'
+import { formatActivityTime } from '@/views/home/activityTime'
 
 defineOptions({
   name: 'HomeActivityCarousel',
@@ -143,7 +144,7 @@ const props = withDefaults(defineProps<Props>(), {
   autoplayInterval: 6000,
 })
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 
 /**
  * 封面的铺法。横幅只有 300px 高、接近 5:1，而各家给的图形状差得远，
@@ -281,16 +282,6 @@ const bannerSubtitle = (item: ActivityBannerItem) => {
 /** 徽章：有版本号就报版本，没有的游戏退回游戏名 */
 const bannerBadge = (item: ActivityBannerItem) =>
   item.version ? t('home.carousel.versionBadge', { version: item.version }) : item.title
-
-// 与各活动卡片里的 formatTime 同格式，起止时间在整页是一个口径
-const formatBannerTime = (value: string) =>
-  new Date(value).toLocaleString('zh-CN', {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-  })
 
 const countdownValue = (time: string) => {
   const timestamp = new Date(time).getTime()

@@ -78,8 +78,12 @@
               <div class="activity-end-time">
                 {{
                   isUpcoming(activity)
-                    ? t('home.bluearchive.startsAt', { time: formatTime(activity.startTime) })
-                    : t('home.bluearchive.endsAt', { time: formatTime(activity.endTime) })
+                    ? t('home.bluearchive.startsAt', {
+                        time: formatActivityTime(activity.startTime, locale),
+                      })
+                    : t('home.bluearchive.endsAt', {
+                        time: formatActivityTime(activity.endTime, locale),
+                      })
                 }}
               </div>
             </div>
@@ -119,10 +123,11 @@ import type { CSSProperties } from 'vue'
 import { OpenAPI } from '@/api'
 import type { ResourceItem, SraActivityOverview } from '@/types/home'
 import { handleExternalLink } from '@/utils/openExternal'
+import { formatActivityTime } from '@/views/home/activityTime'
 
 defineOptions({ name: 'HomeArknightsActivityOverview' })
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 
 const props = defineProps<{
   overview: SraActivityOverview
@@ -209,16 +214,9 @@ const getCountdownValue = (value: string) => {
   const timestamp = new Date(value).getTime()
   return Number.isNaN(timestamp) ? 0 : timestamp
 }
-
-const formatTime = (value: string) =>
-  new Date(value).toLocaleString('zh-CN', {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-  })
 </script>
+
+<style scoped src="./activityCard.css"></style>
 
 <style scoped>
 .arknights-card {
@@ -229,34 +227,6 @@ const formatTime = (value: string) =>
 .arknights-card :deep(.ant-card-head-title) {
   font-size: 18px;
   font-weight: 600;
-}
-
-.card-extra {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.source-link {
-  font-size: 13px;
-}
-
-.status-alert {
-  margin-bottom: 16px;
-}
-
-.empty-state {
-  padding: 24px 0;
-}
-
-/* ---------- 活动卡片 ---------- */
-.activity-list {
-  display: flex;
-  gap: 16px;
-  overflow-x: auto;
-  scroll-snap-type: x mandatory;
-  -webkit-overflow-scrolling: touch;
-  scrollbar-width: thin;
 }
 
 .activity-item {
@@ -280,51 +250,6 @@ const formatTime = (value: string) =>
   transition:
     transform 0.25s ease,
     box-shadow 0.25s ease;
-}
-
-.activity-card:hover .activity-item {
-  transform: translateY(-3px);
-  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.18);
-}
-
-.activity-image {
-  width: 100%;
-  height: 100%;
-  position: absolute;
-  inset: 0;
-  object-fit: cover;
-  transition: transform 0.35s ease;
-}
-
-.activity-card:hover .activity-image {
-  transform: scale(1.05);
-}
-
-.activity-overlay {
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(
-    180deg,
-    rgba(11, 18, 32, 0.05) 0%,
-    rgba(11, 18, 32, 0.3) 40%,
-    rgba(11, 18, 32, 0.88) 100%
-  );
-}
-
-.activity-content {
-  width: 100%;
-  min-width: 0;
-  position: relative;
-  z-index: 1;
-  padding: 14px 16px;
-}
-
-.activity-head {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-  margin-bottom: 8px;
 }
 
 .activity-kind {
@@ -370,19 +295,6 @@ const formatTime = (value: string) =>
   flex-shrink: 0;
   color: rgba(255, 255, 255, 0.75);
   font-size: 12px;
-}
-
-.activity-meta :deep(.ant-statistic-content) {
-  line-height: 1.4;
-}
-
-.activity-end-time {
-  min-width: 0;
-  overflow: hidden;
-  color: rgba(255, 255, 255, 0.8);
-  font-size: 12px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 /* ---------- 今日开放资源收集 ---------- */
@@ -452,11 +364,5 @@ const formatTime = (value: string) =>
 .resource-tip {
   color: var(--ant-color-text-secondary);
   font-size: 12px;
-}
-
-@media (max-width: 560px) {
-  .activity-card {
-    width: 180px;
-  }
 }
 </style>
