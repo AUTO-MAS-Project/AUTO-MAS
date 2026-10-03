@@ -1,5 +1,7 @@
 # ocr_tool.py
 import subprocess
+import unicodedata
+from collections import deque
 from pathlib import Path
 
 import cv2
@@ -292,7 +294,6 @@ class OCRTool:
         cls, adb_path: str, serial: str, use_screencap: bool = True
     ) -> Image.Image:
         """
-        实验性，未测试
         通过 ADB 端口获取设备截图。
 
         支持两种截图方法：
@@ -312,9 +313,48 @@ class OCRTool:
             RuntimeError: 如果 ADB 命令执行失败或截图失败。
             FileNotFoundError: 如果 ADB 可执行文件不存在。
         """
-        adb_path_obj = Path(adb_path)
-        if not adb_path_obj.exists():
-            raise FileNotFoundError(f"ADB 可执行文件不存在: {adb_path}")
+        # 优先保留真实路径，目录名中的空白和 Unicode 格式字符可能有意义。
+        # 按最少清理步骤检查外围候选，避免一次剥掉目录名中有效的前后缀。
+        # 每步移除一个外围字符或一对引号；同层依次尝试左侧、右侧、成对引号。
+        pending_paths = deque([adb_path])
+        seen_paths = {adb_path}
+        path_candidates = []
+        while pending_paths:
+            candidate = pending_paths.popleft()
+            if Path(candidate).is_file():
+                adb_path = candidate
+                break
+            path_candidates.append(candidate)
+            stripped_paths = []
+            if candidate and (
+                candidate[0].isspace() or unicodedata.category(candidate[0]) == "Cf"
+            ):
+                stripped_paths.append(candidate[1:])
+            if candidate and (
+                candidate[-1].isspace() or unicodedata.category(candidate[-1]) == "Cf"
+            ):
+                stripped_paths.append(candidate[:-1])
+            if (
+                len(candidate) >= 2
+                and candidate[0] in ('"', "'")
+                and candidate[-1] == candidate[0]
+            ):
+                stripped_paths.append(candidate[1:-1])
+            for stripped_path in stripped_paths:
+                if stripped_path not in seen_paths:
+                    seen_paths.add(stripped_path)
+                    pending_paths.append(stripped_path)
+        else:
+            # 外围清理无有效文件时，再尝试去掉复制混入路径内部的格式字符。
+            for candidate in path_candidates:
+                cleaned_path = "".join(
+                    char for char in candidate if unicodedata.category(char) != "Cf"
+                )
+                if Path(cleaned_path).is_file():
+                    adb_path = cleaned_path
+                    break
+            else:
+                raise FileNotFoundError(f"ADB 可执行文件不存在: {adb_path}")
 
         try:
             # 先确保设备已连接
@@ -401,6 +441,37 @@ class OCRTool:
             raise
 
     @staticmethod
+    def _adb_run(
+        adb_path: str, serial: str, args: list[str]
+    ) -> subprocess.CompletedProcess:
+        """
+        依次尝试 exec-out 与 shell 通道执行 adb 命令，返回首个成功通道的结果。
+
+        exec-out 不经 pty、二进制安全；不支持 exec 服务的旧版 adb/adbd 会执行失败，
+        此时回退 shell 通道——其输出会经 pty 把 \n (0x0A) 膨胀成 \r\n (0x0D 0x0A)，
+        由调用方做换行修复。
+
+        Args:
+            adb_path (str): ADB 可执行文件的路径。
+            serial (str): 设备序列号。
+            args (list[str]): 设备端命令及参数。
+
+        Returns:
+            subprocess.CompletedProcess: 最后一次执行的结果，由调用方检查 returncode。
+        """
+        for proto in ("exec-out", "shell"):
+            result = subprocess.run(
+                [adb_path, "-s", serial, proto, *args],
+                capture_output=True,
+                timeout=30,
+                check=False,
+            )
+            if result.returncode == 0:
+                break
+            logger.debug(f"adb {proto} 通道执行失败 (返回码: {result.returncode})")
+        return result
+
+    @staticmethod
     def _adb_screencap_png(adb_path: str, serial: str) -> Image.Image:
         """
         使用 ADB screencap 命令获取 PNG 格式截图（推荐方法）。
@@ -416,9 +487,10 @@ class OCRTool:
             RuntimeError: 如果命令执行失败。
         """
         try:
-            # 执行 adb shell screencap -p 并直接捕获输出
-            cmd = [adb_path, "-s", serial, "shell", "screencap", "-p"]
-            result = subprocess.run(cmd, capture_output=True, timeout=30, check=False)
+            # 依次尝试 exec-out 与 shell 通道执行，兼容不支持 exec-out 的旧版 adb
+            result = OCRTool._adb_run(
+                adb_path=adb_path, serial=serial, args=["screencap", "-p"]
+            )
 
             if result.returncode != 0:
                 error_msg = (
@@ -435,30 +507,43 @@ class OCRTool:
             if not image_data:
                 raise RuntimeError("ADB screencap 返回空数据")
 
-            # Windows 环境下需要处理换行符问题
-            # screencap -p 在 Windows 上会将 \n (0x0A) 转换为 \r\n (0x0D 0x0A)
-            # 这会破坏 PNG 文件格式，需要将 \r\n 替换回 \n
-            image_data = image_data.replace(b"\r\n", b"\n")
-
-            logger.debug(f"ADB screencap 返回数据大小: {len(image_data)} 字节")
-
-            # 使用 PIL 从字节流加载图像
+            # 完整解码图像，避免仅检查头部后把像素损坏留到保存时才暴露。
             from io import BytesIO
 
             try:
                 pillow_img = Image.open(BytesIO(image_data))
-                logger.info(
-                    f"成功通过 ADB screencap 获取截图 (设备: {serial}, 尺寸: {pillow_img.size})"
-                )
-                return pillow_img
+                pillow_img.load()
             except Exception as img_error:
-                # 如果 PNG 方法失败，记录详细信息并尝试降级到 raw 方法
-                logger.warning(f"PNG 数据解析失败: {img_error}，尝试使用 raw 方法...")
-                # 保存调试信息
-                if len(image_data) > 0:
+                logger.debug(f"PNG 原始数据解析失败: {img_error}，尝试换行修复")
+                # Windows 环境下需要处理换行符问题
+                # 旧版 adb 的 pty 会把 \n (0x0A) 转换为 \r\n (0x0D 0x0A)，破坏 PNG 文件格式；
+                # 但 PNG 签名本身就含 \r\n，现代 adb 原样返回二进制数据，
+                # 不能无条件替换，只有在原样解析失败时才尝试换行修复
+                # PNG 签名首行原本含一个 CR，多出的 CR 标识叠加的换行膨胀次数。
+                signature_line = image_data.partition(b"\n")[0]
+                newline_expansions = 1
+                if signature_line.rstrip(b"\r") == b"\x89PNG":
+                    newline_expansions = max(1, len(signature_line) - len(b"\x89PNG\r"))
+                for _ in range(newline_expansions):
+                    image_data = image_data.replace(b"\r\n", b"\n")
+                try:
+                    pillow_img = Image.open(BytesIO(image_data))
+                    pillow_img.load()
+                except Exception as img_error:
+                    # 如果 PNG 方法失败，记录详细信息并尝试降级到 raw 方法
+                    logger.warning(
+                        f"PNG 数据解析失败: {img_error}，尝试使用 raw 方法..."
+                    )
+                    # 保存调试信息
                     logger.debug(f"数据前 100 字节: {image_data[:100]}")
-                # 降级到 raw 方法
-                return OCRTool._adb_screencap_raw(adb_path, serial)
+                    # 降级到 raw 方法
+                    return OCRTool._adb_screencap_raw(adb_path, serial)
+
+            logger.debug(f"ADB screencap 返回数据大小: {len(image_data)} 字节")
+            logger.info(
+                f"成功通过 ADB screencap 获取截图 (设备: {serial}, 尺寸: {pillow_img.size})"
+            )
+            return pillow_img
 
         except subprocess.TimeoutExpired:
             raise RuntimeError(f"ADB screencap 命令超时 (设备: {serial})")
@@ -471,7 +556,7 @@ class OCRTool:
         """
         使用 ADB screencap raw 命令获取原始像素数据（备用方法）。
 
-        该方法适用于不支持 PNG 输出的设备。获取的是 RGBA 原始像素数据。
+        该方法适用于不支持 PNG 输出的设备。获取的是 RGBA/RGBX 原始像素数据。
 
         Args:
             adb_path (str): ADB 可执行文件的路径。
@@ -486,9 +571,13 @@ class OCRTool:
         import struct
 
         try:
-            # 执行 adb shell screencap（原始格式）
-            cmd = [adb_path, "-s", serial, "shell", "screencap"]
-            result = subprocess.run(cmd, capture_output=True, timeout=30, check=False)
+            # 同一次命令先输出 SDK 版本，再输出截图；版本行同时标识 pty 换行膨胀。
+            # Android 8.1（SDK 27）起增加 colorspace，不能仅凭长度猜测头部格式。
+            result = OCRTool._adb_run(
+                adb_path=adb_path,
+                serial=serial,
+                args=["getprop ro.build.version.sdk; screencap"],
+            )
 
             if result.returncode != 0:
                 error_msg = (
@@ -500,34 +589,53 @@ class OCRTool:
                     f"ADB screencap raw 命令失败 (返回码: {result.returncode}): {error_msg}"
                 )
 
-            raw_data = result.stdout
-            if len(raw_data) < 12:
+            version_data, separator, raw_data = result.stdout.partition(b"\n")
+            sdk_version = version_data.strip()
+            if not separator or not sdk_version.isdigit() or int(sdk_version) <= 0:
+                raise RuntimeError("ADB screencap raw 无法确定设备 Android 版本")
+
+            # getprop 的版本行原本以 LF 结束，CRLF 表示 pty 已膨胀整份输出。
+            # 先逆变换，再解析头部，保留二进制安全通道中原有的 CRLF 像素字节。
+            newline_expansions = len(version_data) - len(version_data.rstrip(b"\r"))
+            for _ in range(newline_expansions):
+                raw_data = raw_data.replace(b"\r\n", b"\n")
+
+            header_size = 16 if int(sdk_version) >= 27 else 12
+            if len(raw_data) < header_size:
                 raise RuntimeError("ADB screencap raw 返回数据不足（无法解析头部信息）")
 
-            # 解析头部信息（前 12 字节）
-            # 格式: width (4 bytes), height (4 bytes), format (4 bytes)
+            # 解析头部信息
+            # 旧系统共 12 字节: width (4 bytes), height (4 bytes), format (4 bytes)
+            # Android 8.1+ 末尾多一个 colorspace (4 bytes)，共 16 字节
             width, height, pixel_format = struct.unpack("<III", raw_data[:12])
 
             logger.debug(
                 f"ADB screencap raw 头部: width={width}, height={height}, format={pixel_format}"
             )
 
-            # 检查像素格式（1 = RGBA_8888）
-            if pixel_format != 1:
-                logger.warning(f"未知的像素格式: {pixel_format}，尝试按 RGBA 处理")
-
-            # 计算预期的数据大小（RGBA 每像素 4 字节）
-            expected_size = width * height * 4 + 12
-            if len(raw_data) < expected_size:
+            if width == 0 or height == 0:
+                raise RuntimeError(f"ADB screencap raw 图像尺寸无效: {width}x{height}")
+            # RGBA_8888 和 RGBX_8888 均为每像素 4 字节，其他格式不能按 RGBA 解码。
+            if pixel_format not in (1, 2):
                 raise RuntimeError(
-                    f"ADB screencap raw 数据不完整 (预期: {expected_size}, 实际: {len(raw_data)})"
+                    f"ADB screencap raw 不支持的像素格式: {pixel_format}"
                 )
 
-            # 提取像素数据（跳过前 12 字节的头部）
-            pixel_data = raw_data[12 : 12 + width * height * 4]
+            expected_size = header_size + width * height * 4
+            if len(raw_data) != expected_size:
+                raise RuntimeError(
+                    f"ADB screencap raw 数据大小异常 (预期: {expected_size}, 实际: {len(raw_data)})"
+                )
 
-            # 创建 PIL 图像（RGBA 格式）
-            pillow_img = Image.frombytes("RGBA", (width, height), pixel_data)
+            # 提取像素数据（跳过头部）
+            pixel_data = raw_data[header_size:]
+
+            # 创建 PIL 图像
+            pillow_img = Image.frombytes(
+                mode="RGBA" if pixel_format == 1 else "RGBX",
+                size=(width, height),
+                data=pixel_data,
+            )
 
             # 转换为 RGB（去除 Alpha 通道）
             pillow_img = pillow_img.convert("RGB")
