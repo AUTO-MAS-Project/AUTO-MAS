@@ -13,6 +13,7 @@ import {
   NetworkOperationCallback,
   NetworkOperationProgress,
 } from './mirrorRotationService'
+import { createPipProgressState, feedPipOutput, pipProgressPercent } from './pipProgress'
 
 import { getLogger } from './logger'
 const logger = getLogger('后端依赖安装服务')
@@ -399,38 +400,21 @@ export class DependencyService {
 
       let stdoutData = ''
       let stderrData = ''
-      let totalPackages = 0
-      let installedPackages = 0
+      const pipState = createPipProgressState()
+      let lastProgress = pipProgressPercent(pipState)
 
       proc.stdout?.on('data', data => {
         const output = data.toString().trim()
         stdoutData += output
         logger.info(`pip install: ${output}`)
 
-        // 解析pip输出，统计安装进度
-        // 匹配 "Collecting xxx" 来统计总包数
-        const collectingMatches = output.match(/Collecting\s+\S+/g)
-        if (collectingMatches) {
-          totalPackages += collectingMatches.length
-        }
-
-        // 匹配 "Installing collected packages:" 或 "Successfully installed" 来统计已安装包数
-        const installingMatch = output.match(/Installing collected packages:/)
-        if (installingMatch) {
-          // 开始安装阶段
-          installedPackages = Math.floor(totalPackages * 0.8) // 假设收集完成后进度到80%
-          if (onProgress) {
-            const progress = 40 + (installedPackages / Math.max(totalPackages, 1)) * 50 // 40% - 90%
-            onProgress(Math.min(progress, 90))
-          }
-        }
-
-        const successMatch = output.match(/Successfully installed/)
-        if (successMatch) {
-          installedPackages = totalPackages
-          if (onProgress) {
-            onProgress(95) // 安装完成，进度到95%
-          }
+        // #499：按已完成下载的字节数推进 40-90 的进度段，
+        // 解析不到字节时 pipProgress 内部回退旧的包数锚点
+        feedPipOutput(pipState, data.toString())
+        const progress = pipProgressPercent(pipState)
+        if (progress !== lastProgress && onProgress) {
+          lastProgress = progress
+          onProgress(progress)
         }
       })
 
