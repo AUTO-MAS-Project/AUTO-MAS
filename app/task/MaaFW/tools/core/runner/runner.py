@@ -280,7 +280,8 @@ STARTUP_SCREEN_BLANK_STD = 6.0
 # 20s 覆盖两款游戏 logo / 健康提示 / 加载动画的总时长，再长就是在白等。
 STARTUP_SCREEN_CONTENT_SECONDS = 20
 RUN_TIMEOUT_MESSAGE = "MaaFW 任务运行超时"
-# 单个任务超过 Run.TaskTimeLimit：只停它、截图，后面的任务照常跑。
+# 单个任务超过 Run.TaskTimeLimit：停它、截图、记一条任务失败，后面的任务照常跑；
+# 计划里第一个任务超时则结束本轮。
 TASK_TIMEOUT_MESSAGE = "MaaFW 单任务超时"
 
 
@@ -2568,6 +2569,9 @@ class MaaFWRunner:
             with self._focus_lock:
                 self._focus_log_count = 0
             self._failed_controller_actions.clear()
+            # 上一个任务超时留下的标记要在投递前清掉：投递本身抛错时定时器还没起，
+            # 不清的话这次投递失败会被当成「单任务超时」收尾。
+            self._task_deadline_hit.clear()
             pipeline_override = self._task_pipeline_override(task)
             try:
                 with self._post_lock:

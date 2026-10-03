@@ -143,8 +143,9 @@ class MaaFWRunnerJobPayload(BaseModel):
     # 单次运行的截止墙钟时刻（time.time() 秒）。到点 worker 自己停掉当前任务、
     # 截一张图再把结果发回来，宿主只在 worker 没能及时停下时才强杀。None 表示不限。
     runDeadlineAt: float | None = None
-    # 单个任务的时限（秒）。到点只停这一个任务、截一张超时图再继续后面的任务，而不是
-    # 把整轮判失败；None / 0 表示不限。宿主按 Run.TaskTimeLimit 换算后随 job 文件下发。
+    # 单个任务的时限（秒）。到点只停这一个任务、截一张超时图，记一条任务失败再继续后面的
+    # 任务（计划里第一个任务超时则结束本轮）；None / 0 表示不限。宿主按 Run.TaskTimeLimit
+    # 换算后随 job 文件下发。
     taskTimeLimitSeconds: int | None = None
     # 按任务名覆盖的单任务时限（秒），键是 MaaFWTaskRunPlan.name；值 0 表示该任务不限。
     taskTimeLimitOverrides: dict[str, int] | None = None

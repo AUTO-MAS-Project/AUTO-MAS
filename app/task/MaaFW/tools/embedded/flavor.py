@@ -281,9 +281,15 @@ def decide_project_config_class(interface_model: MaaFWInterface) -> type:
 
 
 def user_config_type_transform(config_class: type) -> Callable[[dict], dict]:
-    """``MultipleConfig.retype`` 用的字典改写：把用户子配置的类型名换成新脚本类的用户类。"""
+    """``MultipleConfig.retype`` 用的字典改写：把用户子配置的类型名换成新脚本类的用户类。
+
+    顺带补上新类自带的按任务时限：数据整表搬过去，旧类的空覆盖表会盖掉新类的默认值
+    （通用 MaaFW 脚本导入 M9A 目录变成 M9A 时就拿不到 M9A 内置的那几条）。覆盖表还是
+    空的才补，用户配过的不动。
+    """
 
     user_type_name = config_class.USER_CONFIG_CLASS.__name__
+    default_overrides = getattr(config_class, "DEFAULT_TASK_TIME_LIMIT_OVERRIDES", "")
 
     def transform(payload: dict) -> dict:
         # ConfigBase.toDict 把子配置放在 SubConfigsInfo 下，用户表是其中的 UserData。
@@ -292,9 +298,27 @@ def user_config_type_transform(config_class: type) -> Callable[[dict], dict]:
             for instance in user_data.get("instances") or []:
                 if isinstance(instance, dict):
                     instance["type"] = user_type_name
+        run = payload.get("Run")
+        if (
+            default_overrides
+            and isinstance(run, dict)
+            and _is_empty_json_object(run.get("TaskTimeLimitOverrides"))
+        ):
+            run["TaskTimeLimitOverrides"] = default_overrides
         return payload
 
     return transform
+
+
+def _is_empty_json_object(value: Any) -> bool:
+    if isinstance(value, dict):
+        return not value
+    if not isinstance(value, str):
+        return value is None
+    try:
+        return json.loads(value or "{}") == {}
+    except ValueError:
+        return False
 
 
 __all__ = [
