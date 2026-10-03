@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -149,37 +148,3 @@ class MaaFWRunnerJobPayload(BaseModel):
     taskTimeLimitSeconds: int | None = None
     # 按任务名覆盖的单任务时限（秒），键是 MaaFWTaskRunPlan.name；值 0 表示该任务不限。
     taskTimeLimitOverrides: dict[str, int] | None = None
-
-
-def _minutes_to_seconds(minutes: Any) -> int:
-    """配置里的分钟数换算成秒。0 / 负数 / 写坏的值都当「不限」（返回 0）。"""
-
-    try:
-        value = int(minutes)
-    except (TypeError, ValueError):
-        return 0
-    return value * 60 if value > 0 else 0
-
-
-def task_time_limits_from_config(config: Any) -> tuple[int, dict[str, int]]:
-    """读 Run.TaskTimeLimit / Run.TaskTimeLimitOverrides 并换算成秒。
-
-    宿主在拉起 worker 之前算一次，随 job 文件下发：worker 是独立进程，读不到 Config。
-    返回 (默认单任务时限秒数, {任务名: 时限秒数})，0 表示不限。
-    """
-
-    default_seconds = _minutes_to_seconds(config.get("Run", "TaskTimeLimit"))
-    # 配置系统里 JSON 项存的是字符串（JSONValidator），读出来再解析一次。
-    raw_overrides = config.get("Run", "TaskTimeLimitOverrides")
-    if isinstance(raw_overrides, str):
-        try:
-            raw_overrides = json.loads(raw_overrides)
-        except json.JSONDecodeError:
-            raw_overrides = None
-    overrides: dict[str, int] = {}
-    if isinstance(raw_overrides, dict):
-        overrides = {
-            str(name): _minutes_to_seconds(minutes)
-            for name, minutes in raw_overrides.items()
-        }
-    return default_seconds, overrides

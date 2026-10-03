@@ -53,7 +53,6 @@ from app.task.MaaFW.tools.core.runner.models import (
     MaaFWRunPlan,
     MaaFWRunResult,
     MaaFWSkippedTaskPlan,
-    task_time_limits_from_config,
 )
 from app.task.MaaFW.tools.core.runner.run_plan import (
     NO_RUNNABLE_TASKS_MESSAGE,
@@ -3190,6 +3189,37 @@ def _load_script_hotkeys(value: Any) -> dict[str, dict[str, str]]:
         if cleaned:
             result[option_name] = cleaned
     return result
+
+
+def _minutes_to_seconds(minutes: Any) -> int:
+    """配置里的分钟数换算成秒。0 / 负数 / 写坏的值都当「不限」（返回 0）。"""
+
+    try:
+        value = int(minutes)
+    except (TypeError, ValueError):
+        return 0
+    return value * 60 if value > 0 else 0
+
+
+def task_time_limits_from_config(config: Any) -> tuple[int, dict[str, int]]:
+    """读 Run.TaskTimeLimit / Run.TaskTimeLimitOverrides 并换算成秒。
+
+    宿主在拉起 worker 之前算一次，随 job 文件下发：worker 是独立进程，读不到 Config，
+    核心包也只收秒数，不认宿主的配置键。
+
+    Returns:
+        (默认单任务时限秒数, {任务名: 时限秒数})，0 表示不限。
+    """
+
+    default_seconds = _minutes_to_seconds(config.get("Run", "TaskTimeLimit"))
+    # 配置系统里 JSON 项存的是字符串（JSONValidator），读出来再解析一次。
+    overrides = {
+        str(name): _minutes_to_seconds(minutes)
+        for name, minutes in _load_json_dict(
+            config.get("Run", "TaskTimeLimitOverrides")
+        ).items()
+    }
+    return default_seconds, overrides
 
 
 def _load_json_list(value: Any) -> list[str]:

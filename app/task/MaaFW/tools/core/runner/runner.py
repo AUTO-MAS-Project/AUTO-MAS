@@ -830,8 +830,8 @@ class MaaFWRunner:
         # 宿主按 Run.TaskTimeLimit / Run.TaskTimeLimitOverrides 换算后随 job 文件下发。
         self._task_time_limit_seconds: int = max(0, int(task_time_limit_seconds or 0))
         self._task_time_limit_overrides: dict[str, int] = {
-            str(name): max(0, int(minutes))
-            for name, minutes in (task_time_limit_overrides or {}).items()
+            str(name): max(0, int(seconds))
+            for name, seconds in (task_time_limit_overrides or {}).items()
         }
         self._task_deadline_task: str | None = None
         self._task_deadline_at: float | None = None
@@ -1196,11 +1196,15 @@ class MaaFWRunner:
         except Exception as exc:
             self.send_log(f"超时停止 MaaFW tasker 失败: {exc}")
 
-    def _handle_task_deadline(self, task: MaaFWTaskRunPlan) -> bool:
+    def _handle_task_deadline(self, task: MaaFWTaskRunPlan, index: int) -> bool:
         """本任务被单任务时限停掉时收尾；返回 True 让调用方跳到下一个任务。
 
-        本轮一个任务都还没完成时不再说「继续后续任务」：这个任务就是第一个，
-        后面未必还有能继续的，直接按失败结束本轮（文案里带「本轮已结束」）。
+        计划里的第一个任务超时直接按失败结束本轮：它往往是前置任务（M9A 特调的
+        第一个任务是受管的「启动游戏」），前置都没做完，后面的任务没有意义。看的是
+        计划位置而不是「还没有任务完成」——第一个任务失败后第二个超时照样继续。
+
+        其余任务超时记一条任务失败再继续：整轮按普通任务失败结算（不算成功、带超时
+        截图进失败通知），宿主照常重试。
         """
 
         if not self._task_deadline_hit.is_set():
@@ -1208,14 +1212,23 @@ class MaaFWRunner:
         self._capture_failure_screenshot(task.name, kind="timeout")
         limit_text = _format_task_limit(self._task_deadline_limit_seconds)
         display_name = _task_display_name(task)
-        if not self._completed_tasks:
+        if index == 0:
             raise RuntimeError(
                 f"{TASK_TIMEOUT_MESSAGE}（限制 {limit_text}），本轮已结束: {display_name}"
             )
-        self.send_log(
-            f"{TASK_TIMEOUT_MESSAGE}（限制 {limit_text}），已停止并继续后续任务: "
-            f"{display_name}"
+        self._failed_task_errors.append(
+            (task.name, f"{TASK_TIMEOUT_MESSAGE}（限制 {limit_text}）")
         )
+        # 与普通任务失败同一口径：最后一个任务不说「继续后续任务」。
+        if index + 1 < len(self.plan.tasks):
+            self.send_log(
+                f"{TASK_TIMEOUT_MESSAGE}（限制 {limit_text}），已停止并继续后续任务: "
+                f"{display_name}"
+            )
+        else:
+            self.send_log(
+                f"{TASK_TIMEOUT_MESSAGE}（限制 {limit_text}），已停止: {display_name}"
+            )
         return True
 
     def cleanup(self) -> None:
@@ -2595,7 +2608,7 @@ class MaaFWRunner:
                 self._raise_if_deadline_hit(task.name, only_if_stopped=True)
                 # 单任务时限到了同样是 post_stop 打断的返回，要早于普通失败判定，
                 # 否则用户看到的是「任务失败」而不是「超时」。
-                if self._handle_task_deadline(task):
+                if self._handle_task_deadline(task, index):
                     time.sleep(0.1)
                     continue
                 message = str(exc)
@@ -2635,7 +2648,7 @@ class MaaFWRunner:
             self._raise_if_deadline_hit(task.name, only_if_stopped=True)
             # 被单任务时限 post_stop 打断的入口也可能回报成功，同样要早于
             # _external_stop_active（我们自己的强停会把 stopping 置位）。
-            if self._handle_task_deadline(task):
+            if self._handle_task_deadline(task, index):
                 time.sleep(0.1)
                 continue
             # MaaFW 会把「被 post_stop 打断」的入口回报成 Task.Succeeded——强停是
