@@ -92,38 +92,41 @@ async def check_community_system_time(
     """检查系统时间偏差并提示用户，不阻断签到流程。
 
     时间源不可信或不可用时（服务退役、被劫持的网络等）仅记录日志并返回
-    None，调用方据此不展示提示；真正对时间敏感的只有米游社 DS 签名，其
-    容差远大于此处阈值，因此偏差过大时也只告警，由具体平台的签到结果
-    反映实际影响。
+    None，且本次检查不写缓存时间戳，下一次签到会重新自检；真正对时间敏感
+    的只有米游社 DS 签名，其容差远大于此处阈值，因此偏差过大时也只告警，
+    由具体平台的签到结果反映实际影响。
+
+    Returns:
+        本次测得的偏差绝对值（秒）；时间源不可用或返回无效数据时为 None。
     """
     global _last_system_time_offset, _system_time_checked_at
     now = time_source.monotonic()
     if now - _system_time_checked_at < _SYSTEM_TIME_CHECK_INTERVAL:
         return _last_system_time_offset
-    # 无论时间服务成功与否，都缓存本次尝试，避免网络异常时每次签到重复等待。
-    _system_time_checked_at = now
-
+    # 只有跑完的时间检查才写缓存。签到先结束时该任务会被取消，若取消前就已
+    # 打点，接下来一个检查周期都会命中缓存并返回 None，偏差提示再也不出现。
+    offset: float | None = None
     try:
         async with httpx.AsyncClient(proxy=Config.proxy, trust_env=False) as client:
             resp = await client.get(
                 "https://worldtimeapi.org/api/timezone/Asia/Shanghai", timeout=5
             )
         api_time = resp.json().get("unixtime", 0)
-        if not api_time:
-            return None
-        local_time = time_source.time()
-        offset = abs(api_time - local_time)
-        _last_system_time_offset = offset
-        if offset > _SYSTEM_TIME_WARN_SECONDS:
-            logger.warning(
-                f"系统时间与网络时间偏差约 {offset:.0f} 秒，部分平台签到可能失败，建议校准系统时间"
-            )
-        elif offset > 30:
-            logger.info(f"系统时间偏差 {offset:.0f} 秒，在可接受范围内")
-        return offset
+        if api_time:
+            offset = abs(api_time - time_source.time())
     except Exception as e:
         logger.debug(f"时间校准跳过: {e}")
+    _system_time_checked_at = now
+    if offset is None:
         return None
+    _last_system_time_offset = offset
+    if offset > _SYSTEM_TIME_WARN_SECONDS:
+        logger.warning(
+            f"系统时间与网络时间偏差约 {offset:.0f} 秒，部分平台签到可能失败，建议校准系统时间"
+        )
+    elif offset > 30:
+        logger.info(f"系统时间偏差 {offset:.0f} 秒，在可接受范围内")
+    return offset
 
 
 def last_system_time_offset() -> float | None:
