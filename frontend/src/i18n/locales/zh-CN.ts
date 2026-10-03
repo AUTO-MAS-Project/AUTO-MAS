@@ -1637,6 +1637,7 @@ export default {
     mfwHotkeySomeCombo: '部分键位要设组合键（已在项旁标出），其余只能设单个按键',
     mfwHotkeyComboTag: '{n} 个修饰键 + 按键',
     mfwHotkeyNeedsCase: '需在用户的任务配置里把「{option}」选为「{case}」才生效',
+    mfwHotkeyControllerUnsupported: '该控制器的快捷键暂不支持，仅 Win32 控制器可设置',
     mfwHotkeyImport: '从项目导入',
     mfwHotkeyImportLastUsed: '上次使用',
     mfwHotkeyImported: '已从项目读入 {n} 个键位',

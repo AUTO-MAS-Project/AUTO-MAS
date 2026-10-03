@@ -1583,6 +1583,7 @@ export default {
       '一部のキーは組み合わせが必要です（項目の横に表示）。それ以外は単一キーのみ',
     mfwHotkeyComboTag: '修飾キー {n} 個 + キー',
     mfwHotkeyNeedsCase: 'ユーザーのタスク設定で「{option}」を「{case}」にした場合のみ有効',
+    mfwHotkeyControllerUnsupported: 'このコントローラーではキーを設定できません（Win32 のみ）',
     mfwHotkeyImport: 'プロジェクトから読み込む',
     mfwHotkeyImportLastUsed: '前回使用',
     mfwHotkeyImported: 'プロジェクトから {n} 件のキー割り当てを読み込みました',

@@ -1726,6 +1726,8 @@ export default {
     mfwHotkeyComboTag: '{n} modifier(s) + key',
     mfwHotkeyNeedsCase:
       'Only applies when "{option}" is set to "{case}" in the user\'s task settings',
+    mfwHotkeyControllerUnsupported:
+      'Key binding recording is only available for the Win32 controller',
     mfwHotkeyImport: 'Import from project',
     mfwHotkeyImportLastUsed: 'Last used',
     mfwHotkeyImported: 'Loaded {n} key bindings from the project',
