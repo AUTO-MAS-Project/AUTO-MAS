@@ -39,7 +39,7 @@ from fastapi.responses import FileResponse, Response
 from app.core import Config
 from app.models.schema import *
 from app.tools.sra_activity import fetch_sra_activities
-from app.tools.stella_official import fetch_official_activities
+from app.tools.stella_official import classify_activity_name, fetch_official_activities
 from app.utils import get_logger
 
 router = APIRouter(prefix="/api/info", tags=["信息获取"])
@@ -746,31 +746,36 @@ async def get_stella_activity() -> InfoOut:
     """取回星塔旅人的活动一览。
 
     数据取自国服官网的活动公告：官网 CMS 不放开跨域、也认 Referer，所以由后端
-    取回并按公告正文里的开放时间整理成与其它游戏一致的形状。取数失败返回错误
-    信封，由卡片显示自己的失败态，不影响其它卡片。
+    取回并按公告正文里的开放时间整理成与其它游戏一致的形状。
+
+    官网取不到、或者这一次一篇活动公告都没识别出来时，改用 SRA 托管的那份顶上：
+    对方的抓取在它自己的服务器上完成，用户本机到不了官网也能看到活动。那份数据没有
+    分类，按本模块给星塔旅人定的判据补一个，否则前端的横幅与常驻分组会全落空。
 
     Returns:
-        InfoOut: ``{"activities": [...]}``；取不到时返回 ``code=500`` 的错误信封。
+        InfoOut: ``{"activities": [...]}``；两处都取不到时返回 ``code=500`` 的错误信封。
     """
 
     try:
         data = await fetch_official_activities()
-        if data is None:
+    except Exception as e:
+        logger.opt(exception=True).warning(
+            f"get_stella_activity失败: {type(e).__name__}: {e}"
+        )
+        data = None
+
+    if data is None:
+        fallback = await fetch_sra_activities("xtlr")
+        if fallback is None:
             return InfoOut(
                 code=500,
                 status="error",
                 message="星塔旅人活动数据暂不可用",
                 data={},
             )
+        for item in fallback["activities"]:
+            item["kind"] = classify_activity_name(str(item["name"]))
+        logger.info("星塔旅人活动数据改用 SRA 兜底")
+        data = fallback
 
-        return InfoOut(data=data)
-    except Exception as e:
-        logger.opt(exception=True).warning(
-            f"get_stella_activity失败: {type(e).__name__}: {e}"
-        )
-        return InfoOut(
-            code=500,
-            status="error",
-            message="星塔旅人活动数据暂不可用",
-            data={},
-        )
+    return InfoOut(data=data)
