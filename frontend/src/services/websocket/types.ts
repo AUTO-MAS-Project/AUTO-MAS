@@ -128,6 +128,8 @@ export interface WSTaskLogUpdatedData {
   log: string
   seq: number
   append: boolean
+  /** log 第一行在完整日志里的行号；append 为 true 时忽略，界面接着已有行号往后数 */
+  firstLine?: number
 }
 
 /** 任务完成消息数据 (type=task.completed) */

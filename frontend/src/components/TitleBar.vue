@@ -65,7 +65,7 @@
         </button>
         <button
           class="control-button maximize-button"
-          :title="isMaximized ? '还原' : '最大化'"
+          :title="isMaximized ? t('comp.restoreWindow') : t('comp.maximizeWindow')"
           @click="toggleMaximize"
         >
           <BorderOutlined />

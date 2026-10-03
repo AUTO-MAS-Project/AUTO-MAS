@@ -263,6 +263,13 @@
                     </a-tooltip>
                   </template>
                 </a-select>
+                <span class="control-hint">
+                  {{
+                    t('edit.accountSwitch16x9ArgHint', {
+                      p0: '-screen-width 1920 -screen-height 1080',
+                    })
+                  }}
+                </span>
               </a-form-item>
             </a-col>
           </a-row>
@@ -272,6 +279,10 @@
           <div class="section-header">
             <h3>{{ t('edit.runConfiguration') }}</h3>
           </div>
+          <ScriptHardTimeoutField
+            v-model:value="zzzodConfig.Run.HardTimeLimit"
+            @save="handleChange('Run', 'HardTimeLimit', zzzodConfig.Run.HardTimeLimit)"
+          />
           <a-row :gutter="24">
             <a-col :span="8">
               <a-form-item>
@@ -344,6 +355,7 @@
 </template>
 
 <script setup lang="ts">
+import ScriptHardTimeoutField from '@/views/EditView/Script/components/ScriptHardTimeoutField.vue'
 import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
 import ZzzOdSlotManage from './ZzzOdSlotManage.vue'
 import { computed, onMounted, reactive, ref } from 'vue'
@@ -379,6 +391,7 @@ interface ZzzOdInfoForm {
 }
 
 interface ZzzOdRunForm {
+  HardTimeLimit: number
   ProxyTimesLimit: number
   RunTimesLimit: number
   RunTimeLimit: number
@@ -412,7 +425,7 @@ const formData = reactive({
 
 const zzzodConfig = reactive<ZzzOdScriptConfigForm>({
   Info: { Name: '', RootPath: '.' },
-  Run: { ProxyTimesLimit: 0, RunTimesLimit: 3, RunTimeLimit: 180 },
+  Run: { HardTimeLimit: 120, ProxyTimesLimit: 0, RunTimesLimit: 3, RunTimeLimit: 180 },
   Game: {
     Enabled: false,
     LaunchBeforeTask: false,
@@ -660,6 +673,14 @@ onMounted(loadScript)
   align-items: center;
   gap: 8px;
   font-weight: 600;
+}
+
+.control-hint {
+  display: block;
+  margin-top: 4px;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--ant-color-text-tertiary);
 }
 
 .help-icon {

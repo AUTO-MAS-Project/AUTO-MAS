@@ -66,6 +66,8 @@ let maaEndFailureModalOpen = false
 const getDefaultTabRuntimeState = () => ({
   logBuffer: '',
   logSeq: undefined,
+  logFirstLine: 1,
+  displayLogFirstLine: 1,
   lastLogContent: '',
   overviewData: undefined,
   lastMessageHash: '',
@@ -73,13 +75,17 @@ const getDefaultTabRuntimeState = () => ({
   cycleNextList: [],
 })
 
-const trimLogForRender = (content: string) => {
-  if (content.length <= LOG_RENDER_MAX_CHARS) return content
+const trimLogForRender = (content: string, firstLine: number) => {
+  if (content.length <= LOG_RENDER_MAX_CHARS) return { content, firstLine }
 
+  const dropped = content.slice(0, content.length - LOG_RENDER_MAX_CHARS)
   const trimmed = content.slice(-LOG_RENDER_MAX_CHARS)
   const firstLineBreak = trimmed.indexOf('\n')
   const tail = firstLineBreak >= 0 ? trimmed.slice(firstLineBreak + 1) : trimmed
-  return `${t('scheduler.log.truncated')}\n\n${tail}`
+  return {
+    content: `${t('scheduler.log.truncated')}\n\n${tail}`,
+    firstLine: firstLine + dropped.split('\n').length - 1 + (firstLineBreak >= 0 ? 1 : 0) - 2,
+  }
 }
 
 const clearPendingLogUpdate = (tabKey: string) => {
@@ -373,6 +379,8 @@ export function useSchedulerLogic() {
     tab.taskId = taskId
     tab.logBuffer = ''
     tab.logSeq = undefined
+    tab.logFirstLine = 1
+    tab.displayLogFirstLine = 1
     tab.lastLogContent = ''
     tab.overviewData = undefined
     tab.cycleNextList = []
@@ -701,6 +709,8 @@ export function useSchedulerLogic() {
         // 清空之前的状态
         tab.logBuffer = ''
         tab.logSeq = undefined
+        tab.logFirstLine = 1
+        tab.displayLogFirstLine = 1
         pendingLogResyncs.delete(tab.key)
         tab.lastLogContent = ''
         tab.cycleNextList = []
@@ -850,9 +860,10 @@ export function useSchedulerLogic() {
   }
 
   const applyLogContentUpdate = (tab: SchedulerTab, content: string) => {
-    const nextContent = trimLogForRender(content)
-    if (tab.lastLogContent !== nextContent) {
-      tab.lastLogContent = nextContent
+    const rendered = trimLogForRender(content, tab.logFirstLine ?? 1)
+    tab.displayLogFirstLine = rendered.firstLine
+    if (tab.lastLogContent !== rendered.content) {
+      tab.lastLogContent = rendered.content
     }
   }
 
@@ -1059,6 +1070,7 @@ export function useSchedulerLogic() {
     // 清空日志并显示原始代理结果信息
     const resultText = data.result
     if (resultText && typeof resultText === 'string') {
+      tab.logFirstLine = 1
       scheduleLogContentUpdate(tab, resultText, true)
       logger.info('已清空日志并显示任务结果')
     }
@@ -1329,6 +1341,7 @@ export function useSchedulerLogic() {
     // 快照里的 log 是上次推送的完整日志尾部，直接作为 buffer 基线，与下一条增量衔接
     tab.logBuffer = trimLogBuffer(state.log ?? '')
     tab.logSeq = state.logSeq
+    tab.logFirstLine = state.logFirstLine ?? 1
     pendingLogResyncs.delete(tab.key)
     if (tab.logBuffer || tab.lastLogContent) scheduleLogContentUpdate(tab, tab.logBuffer, true)
   }

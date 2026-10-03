@@ -7,6 +7,10 @@
  */
 export type WhimboxConfig_Run = {
     /**
+     * 单账号运行总时限（分钟），包含等待和全部重试
+     */
+    HardTimeLimit?: (number | null);
+    /**
      * 每日代理次数上限（0=不限）
      */
     ProxyTimesLimit?: (number | null);

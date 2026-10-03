@@ -200,6 +200,10 @@ export interface ElectronAPI {
   appRestart: () => Promise<void>
   windowIsMaximized: () => Promise<boolean>
   windowFocus: () => Promise<void>
+  /** 电源操作倒计时开始：把窗口拉到最前并临时置顶 */
+  powerWarningStart?: () => Promise<void>
+  /** 倒计时结束或取消：撤回置顶 */
+  powerWarningEnd?: () => Promise<void>
   appQuit: () => Promise<void>
 
   // 系统休眠恢复与主进程关闭请求（生命周期协调器消费）

@@ -20,7 +20,7 @@
 
 """碧蓝档案活动排期查询。
 
-取数复用上游的 Kivo 中转接口（``POST /api/info/bluearchive/activity``），本模块
+取数复用上游的 GameKee 中转接口（``POST /api/info/bluearchive/activity``），本模块
 只负责把它翻译成两个口径：调度侧要「当前有没有进行中的活动」，界面还要活动名与
 起止时间。取数失败返回 None，由调用方退回默认行为。
 """
@@ -38,56 +38,16 @@ logger = get_logger("碧蓝档案活动")
 ACTIVITY_PAGE_SIZE = 100
 ACTIVITY_MAX_PAGES = 2
 
-## 只有「活动」算活动，卡池、掉落加倍、维护等分类不算
-WANTED_TYPE = "Event"
+## GameKee 把活动分成「活动 / 总力大决 / 爬塔 / 多倍活动 / 战术测试 …」几类。
+## 只有「活动」会开活动关，也才是调度侧要切配置的那段时间——总力战、大决战
+## 这些战斗玩法没有活动关可刷，首页横幅同样只认这一类，两边口径保持一致
+WANTED_KIND = "活动"
 
-## Kivo 把公告也塞进 Event 分类：总决算、登录签到、宣传活动、常驻化都在里面。
-## 只用 type 判断会让「有活动」几乎恒为真（实测过去 90 天 CN 92% / JP 96%），
-## 「活动关优先」就退化成常开。标题必须带「活动」二字、且不含下列公告词才算
-## 活动档期（Kivo 的标题统一是中文，JP / 国际服条目也一样）。
-ACTIVITY_TITLE_KEYWORD = "活动"
-ANNOUNCEMENT_TITLE_KEYWORDS = (
-    "常驻",
-    "登录",
-    "登入",
-    "签到",
-    "总决算",
-    "宣传",
-    "纪念",
-)
-
-## 正常活动档期在几天到数周之间：单日公告不足一天，常驻化条目可以挂几个月
-MIN_ACTIVITY_SECONDS = 24 * 60 * 60
-MAX_ACTIVITY_SECONDS = 60 * 24 * 60 * 60
+## 分类算「活动」、实际没有活动关可刷的那几种：战斗通行证是通行证任务，
+## 「限时网页活动」是站点上的小游戏。首页横幅按同一套关键词排除，两边口径一致
+SKIP_TITLE_KEYWORDS = ("战斗通行证", "网页活动")
 
 BlueArchiveLineType = Literal["JP", "Globle", "CN"]
-
-
-def _is_activity_entry(item: Mapping[str, object]) -> bool:
-    """判断一条 Kivo 时间轴条目是不是有档期的活动。
-
-    Args:
-        item: 时间轴条目，含 ``type`` / ``title`` / ``start_time`` / ``end_time``。
-
-    Returns:
-        bool: 是活动档期时为 True。
-    """
-
-    if item.get("type") != WANTED_TYPE:
-        return False
-
-    title = str(item.get("title") or "")
-    if ACTIVITY_TITLE_KEYWORD not in title:
-        return False
-    if any(word in title for word in ANNOUNCEMENT_TITLE_KEYWORDS):
-        return False
-
-    start = item.get("start_time")
-    end = item.get("end_time")
-    if not isinstance(start, (int, float)) or not isinstance(end, (int, float)):
-        return False
-
-    return MIN_ACTIVITY_SECONDS <= end - start <= MAX_ACTIVITY_SECONDS
 
 
 @dataclass(frozen=True)
@@ -99,13 +59,24 @@ class ActivityInfo:
     end_time: float
 
 
+def _is_wanted_activity(item: Mapping[str, object]) -> bool:
+    """这条活动记录算不算排期要看的活动"""
+
+    if item.get("activity_kind_name") != WANTED_KIND:
+        return False
+
+    title = str(item.get("title") or "")
+    return not any(keyword in title for keyword in SKIP_TITLE_KEYWORDS)
+
+
 def has_running_activity_in(
     items: Sequence[Mapping[str, object]], now_seconds: float
 ) -> bool:
-    """判断给定时间轴上是否存在正在进行中的活动。
+    """判断给定活动列表里是否存在正在进行中的活动。
 
     Args:
-        items: Kivo 时间轴条目，每项含 ``type`` 与 ``start_time`` / ``end_time``（Unix 秒）。
+        items: GameKee 的活动条目，每项含 ``activity_kind_name`` 与
+            ``begin_at`` / ``end_at``（Unix 秒）。
         now_seconds: 判定时刻的 Unix 秒。
 
     Returns:
@@ -113,14 +84,16 @@ def has_running_activity_in(
     """
 
     for item in items:
-        if not _is_activity_entry(item):
+        if not _is_wanted_activity(item):
             continue
 
-        start = item.get("start_time")
-        end = item.get("end_time")
-        if isinstance(start, (int, float)) and isinstance(end, (int, float)):
-            if start <= now_seconds < end:
-                return True
+        start = item.get("begin_at")
+        end = item.get("end_at")
+        if not isinstance(start, (int, float)) or not isinstance(end, (int, float)):
+            continue
+
+        if start <= now_seconds < end:
+            return True
 
     return False
 
@@ -134,7 +107,7 @@ def collect_activities(
     没有标题、时间不是数字、开始与结束同一时刻的条目一律跳过。
 
     Args:
-        items: Kivo 时间轴条目。
+        items: GameKee 的活动条目。
         now_seconds: 判定时刻的 Unix 秒。
 
     Returns:
@@ -144,11 +117,11 @@ def collect_activities(
     picked: dict[str, ActivityInfo] = {}
 
     for item in items:
-        if not _is_activity_entry(item):
+        if not _is_wanted_activity(item):
             continue
 
-        start = item.get("start_time")
-        end = item.get("end_time")
+        start = item.get("begin_at")
+        end = item.get("end_at")
         name = str(item.get("title") or "").strip()
         if (
             not name
@@ -183,13 +156,13 @@ def collect_activities(
 async def _fetch_page(
     line_type: BlueArchiveLineType, page: int
 ) -> list[Mapping[str, object]] | None:
-    """取回一页时间轴条目。
+    """取回一页活动条目。
 
     取数复用上游 ``POST /api/info/bluearchive/activity`` 的转发逻辑与它自带的缓存，
-    本模块不再自己维护 Kivo 的地址、请求头与缓存。
+    本模块不再自己维护 GameKee 的地址、请求头与缓存。
 
     Args:
-        line_type: 服务器标识，取 Kivo 的原文拼写。
+        line_type: 服务器标识，取 GameKee 时代的原文拼写。
         page: 页码，从 1 开始。
 
     Returns:
@@ -213,8 +186,7 @@ async def _fetch_page(
         )
         return None
 
-    kivo = response.data.get("data")
-    batch = kivo.get("timeline") if isinstance(kivo, Mapping) else None
+    batch = response.data.get("data") if isinstance(response.data, Mapping) else None
     if not isinstance(batch, list):
         logger.warning(f"碧蓝档案活动排期结构异常({line_type} 第 {page} 页)")
         return None

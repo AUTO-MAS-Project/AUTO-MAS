@@ -300,51 +300,6 @@ def main():
             其余步骤失败时仍为 ready，失败步骤只写进 background_warnings。
             """
 
-            def _patch_fastapi_mcp_ref_recursion(max_depth: int = 96) -> None:
-                """给 fastapi_mcp 的 $ref 解析加递归深度上限。
-
-                库实现（openapi.utils.resolve_schema_references）在模型互相
-                $ref 引用时会无限展开（A→B→A…），递归 ~1000 层即 RecursionError，
-                导致 MCP 挂载失败。
-                这里以相同逻辑但带深度上限的实现替换；超限的 $ref 原样保留，
-                仅影响 MCP 工具 schema 的展示完整度，不再炸初始化。
-                需同时替换 utils 与 convert 两处按名绑定的引用。
-                """
-                import fastapi_mcp.openapi.convert as _fm_convert
-                from fastapi_mcp.openapi import utils as _fm_utils
-
-                def resolve_with_depth_limit(schema_part, reference_schema, _depth=0):
-                    schema_part = schema_part.copy()
-                    if "$ref" in schema_part and _depth < max_depth:
-                        ref_path = schema_part["$ref"]
-                        # 标准 OpenAPI 引用格式："#/components/schemas/ModelName"
-                        if ref_path.startswith("#/components/schemas/"):
-                            model_name = ref_path.split("/")[-1]
-                            components = reference_schema.get("components") or {}
-                            schemas = components.get("schemas") or {}
-                            if model_name in schemas:
-                                ref_schema = schemas[model_name].copy()
-                                schema_part.pop("$ref")
-                                schema_part.update(ref_schema)
-                    for key, value in schema_part.items():
-                        if isinstance(value, dict):
-                            schema_part[key] = resolve_with_depth_limit(
-                                value, reference_schema, _depth + 1
-                            )
-                        elif isinstance(value, list):
-                            schema_part[key] = [
-                                resolve_with_depth_limit(
-                                    item, reference_schema, _depth + 1
-                                )
-                                if isinstance(item, dict)
-                                else item
-                                for item in value
-                            ]
-                    return schema_part
-
-                _fm_utils.resolve_schema_references = resolve_with_depth_limit
-                _fm_convert.resolve_schema_references = resolve_with_depth_limit
-
             # 各步骤各自容错：任一步抛异常只记日志，不连带跳过后面的步骤，
             # 尤其不能跳过主定时器（队列定时按分钟精确匹配，没起来就整夜不触发）。
             warnings: list[str] = []
@@ -375,40 +330,9 @@ def main():
                     warnings.append(failure)
 
             async def mount_mcp() -> None:
-                import importlib
+                from app.api.mcp import mount_mcp as mount_mcp_server
 
-                # MCP 构建需要遍历完整 OpenAPI schema (约 1s)，后移到后台
-                # 导入与构建均为重 CPU 操作，放入线程避免阻塞事件循环推迟 API 响应
-                # Starlette 支持运行期追加路由，首个 /mcp 请求前挂载完成即可
-                if os.getenv("AUTO_MAS_ENABLE_MCP", "1") == "1":
-                    fastapi_mcp = await asyncio.to_thread(
-                        importlib.import_module, "fastapi_mcp"
-                    )
-                    _patch_fastapi_mcp_ref_recursion()
-
-                    mcp = await asyncio.to_thread(
-                        fastapi_mcp.FastApiMCP,
-                        app,
-                        name="AUTO-MAS MCP",
-                        description="MCP server for AUTO-MAS: A Multi-Script, Multi-Config Management and Automation Software",
-                        describe_full_response_schema=True,
-                        describe_all_responses=True,
-                        exclude_tags=["Delete"],
-                    )
-                    mcp.mount_http()
-                    # 通知渠道描述只服务设置页渲染，不作为 MCP 工具暴露。
-                    # fastapi-mcp==0.4.0 的 exclude_operations 与 exclude_tags 取并集，
-                    # 两者同时传会让两个排除都失效（Delete 路由也会漏出去），只能在
-                    # 挂载后从工具清单里剪掉；handle_list_tools / handle_call_tool
-                    # 实时读这两个属性，剪除即生效。
-                    notify_channels_op = (
-                        "get_notify_channels_api_setting_notify_channels_get"
-                    )
-                    mcp.tools = [t for t in mcp.tools if t.name != notify_channels_op]
-                    mcp.operation_map.pop(notify_channels_op, None)
-                    logger.info("MCP 服务已挂载")
-                else:
-                    logger.info("MCP 服务未启用，跳过路由挂载")
+                await mount_mcp_server(app)
 
             async def init_arknight_win32() -> None:
                 import importlib
@@ -604,6 +528,7 @@ def main():
         queue_router,
         scripts_router,
         setting_router,
+        share_router,
         skland_qr_router,
         tools_router,
         update_router,
@@ -635,6 +560,7 @@ def main():
     app.include_router(history_router)
     app.include_router(tools_router)
     app.include_router(setting_router)
+    app.include_router(share_router)
     app.include_router(update_router)
     app.include_router(ocr_router)
     app.include_router(openclaw_qq_router)

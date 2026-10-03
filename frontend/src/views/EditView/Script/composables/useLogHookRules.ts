@@ -1,5 +1,5 @@
 import { translate as t } from '@/i18n'
-import { computed, ref, watch, type Ref } from 'vue'
+import { computed, nextTick, ref, watch, type Ref } from 'vue'
 import { message } from 'ant-design-vue'
 
 import { validateRegexPattern } from '../logRegex'
@@ -86,57 +86,86 @@ const ruleDisplayName = (rule: LogHookRule, idx: number): string =>
 interface UseLogHookRulesOptions {
   rulesJson: Ref<string>
   onChange?: (json: string) => void
+  /** 总开关（日志预处理启用状态）：关闭时没有任何规则会实际执行 */
+  masterEnabled?: Ref<boolean>
 }
 
 export function useLogHookRules(options: UseLogHookRulesOptions) {
-  const { rulesJson, onChange } = options
-  const rules = ref<LogHookRule[]>([createHookRule('drop')])
+  const { rulesJson, onChange, masterEnabled } = options
+  // 默认不展示任何规则卡片，首次点击「添加规则」后才出现，避免误导用户已存在生效规则
+  const rules = ref<LogHookRule[]>([])
 
   const syncFromJson = () => {
-    const parsed = parseLogHookRules(rulesJson.value || '')
-    rules.value = parsed.length > 0 ? parsed : [createHookRule('drop')]
+    rules.value = parseLogHookRules(rulesJson.value || '')
   }
 
-  const save = () => {
+  // 标记本次 rulesJson 回写来自本地 save，watcher 需跳过以防已添加的空规则被立即移除
+  let localEcho = false
+  const emitJson = (json: string) => {
+    localEcho = true
+    onChange?.(json)
+    nextTick(() => {
+      localEcho = false
+    })
+  }
+
+  /**
+   * 保存当前规则到 json。结构性操作（新增/删除/切类型/排序）时传入 { warn: false }，
+   * 避免新建空规则或切换类型在用户尚未编辑时立即弹出「缺匹配正则」的提示；
+   * 仅在实际字段编辑时对缺匹配正则或正则非法的启用规则给出可见提示。
+   */
+  const save = (options: { warn?: boolean } = {}) => {
     const json = serializeLogHookRules(rules.value)
-    // 启用中的规则缺少匹配正则或正则语法非法时后端会跳过，保存配置与运行行为
-    // 不一致，这里给出可见提示而非静默失效
-    const dropped: string[] = []
-    const invalid: string[] = []
-    rules.value.forEach((rule, idx) => {
-      if (rule.enabled === false) return
-      const match = (rule.match || '').trim()
-      if (!match) {
-        dropped.push(ruleDisplayName(rule, idx))
+    if (options.warn !== false) {
+      // 启用中的规则缺少匹配正则或正则语法非法时后端会跳过，保存配置与运行行为
+      // 不一致，这里给出可见提示而非静默失效
+      const dropped: string[] = []
+      const invalid: string[] = []
+      rules.value.forEach((rule, idx) => {
+        if (rule.enabled === false) return
+        const match = (rule.match || '').trim()
+        if (!match) {
+          dropped.push(ruleDisplayName(rule, idx))
+          return
+        }
+        if (validateRegexPattern(match)) {
+          invalid.push(ruleDisplayName(rule, idx))
+        }
+      })
+      if (dropped.length > 0) {
+        message.warning(t('edit.p0HasNoMatch', { p0: dropped.join('、') }))
+      }
+      if (invalid.length > 0) {
+        message.warning(t('edit.matchPatternP0Has', { p0: invalid.join('、') }))
+      }
+    }
+    emitJson(json)
+  }
+
+  watch(
+    rulesJson,
+    () => {
+      // 本次回写来自本地 save 同步写回的 v-model（nextTick 内），跳过防止刚添加的空规则被立即移除
+      if (localEcho) return
+      // 异步保存后父组件 refreshScript 会回写后端序列化结果：若该值与当前本地规则的序列化结果
+      // 等价（空/待编辑规则会被 serialize 暂时剔除），说明仅是本地 save 的回显而非外部改动，
+      // 应保留本地尚未落盘的空规则卡片，避免刚添加的空规则被异步刷新清掉或类型被重置
+      if ((rulesJson.value || '') === serializeLogHookRules(rules.value)) {
         return
       }
-      if (validateRegexPattern(match)) {
-        invalid.push(ruleDisplayName(rule, idx))
-      }
-    })
-    if (dropped.length > 0) {
-      message.warning(t('edit.p0HasNoMatch', { p0: dropped.join('、') }))
-    }
-    if (invalid.length > 0) {
-      message.warning(t('edit.matchPatternP0Has', { p0: invalid.join('、') }))
-    }
-    onChange?.(json)
-  }
-
-  watch(rulesJson, syncFromJson, { immediate: true })
+      syncFromJson()
+    },
+    { immediate: true }
+  )
 
   const addRule = (type: LogHookType) => {
     rules.value.push(createHookRule(type))
-    save()
+    save({ warn: false })
   }
 
   const removeRule = (idx: number) => {
     rules.value.splice(idx, 1)
-    // 删除后若为空，保留一个空丢弃规则作为占位，避免用户困惑
-    if (rules.value.length === 0) {
-      rules.value.push(createHookRule('drop'))
-    }
-    save()
+    save({ warn: false })
   }
 
   const updateRuleType = (idx: number, type: LogHookType) => {
@@ -148,14 +177,20 @@ export function useLogHookRules(options: UseLogHookRulesOptions) {
       type,
       replace: type === 'replace' ? old.replace || '' : undefined,
     }
-    save()
+    save({ warn: false })
   }
 
   const onRuleFieldChange = () => {
     save()
   }
 
-  const activeRuleCount = computed(() => rules.value.filter(r => r.enabled !== false).length)
+  // 与运行/序列化语义一致才算生效：总开关开启、规则启用且填写了匹配正则
+  // （匹配正则为空的启用规则会在序列化时被剔除，后端也不会编译它）
+  const activeRuleCount = computed(() =>
+    masterEnabled?.value !== false
+      ? rules.value.filter(r => r.enabled !== false && (r.match || '').trim()).length
+      : 0
+  )
 
   return {
     rules,

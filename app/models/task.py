@@ -94,6 +94,9 @@ class ScriptItem:
     user_list: List[UserItem] = field(default_factory=list)  # 用户信息列表
     current_index: int = -1  # 当前执行的用户索引，-1 表示未开始
     log: str = ""  # 脚本执行日志
+    # log 第一行在完整日志里的行号。**截断日志的生产者要一起维护它**（如 MaaFW 只留
+    # 最近 80 条），界面才能显示真实行号而不是每次都从 1 重数；不截断就保持 1。
+    log_first_line: int = 1
     _task_item_ref: Optional[weakref.ReferenceType[TaskItem]] = None
 
     def __setattr__(self, name, value):
@@ -151,8 +154,11 @@ class TaskItem(ABC):
         default=None, init=False, repr=False, compare=False
     )
     _change_dirty: bool = field(default=False, init=False, repr=False, compare=False)
-    # 日志增量推送状态: 上次推送的完整日志 (不截断) 与推送序号, 见 TaskInfo.on_change
+    # 日志增量推送状态：上次推送的完整日志（不截断）、首行基准与推送序号
     _last_pushed_log: str = field(default="", init=False, repr=False, compare=False)
+    _last_pushed_log_first_line: int = field(
+        default=1, init=False, repr=False, compare=False
+    )
     _log_seq: int = field(default=0, init=False, repr=False, compare=False)
 
     @property
@@ -268,21 +274,6 @@ class TaskItem(ABC):
             for script_item in self.script_list
         ]
 
-    @property
-    def result(self) -> str:
-        """任务执行情况的简要结果"""
-
-        if not self.script_list:
-            return "任务未加载"
-        return "\n\n\n".join(
-            [
-                f"{script.name}：\n\n"
-                f"    已完成用户数：{sum(1 for user in script.user_list if user.status == '完成')}；未完成用户数：{sum(1 for user in script.user_list if user.status != '完成')}\n\n"
-                f"    {script.result.replace('\n', '\n    ')}"
-                for script in self.script_list
-            ]
-        )
-
 
 @dataclass
 class TaskExecuteBase(ABC):
@@ -336,10 +327,13 @@ class TaskExecuteBase(ABC):
     @abstractmethod
     async def on_crash(self, e): ...
 
+    async def _run_main_task(self) -> None:
+        await self.main_task()
+
     async def _execute_task(self, parent_tg: asyncio.TaskGroup):
         self._task_group = parent_tg
         try:
-            await self.main_task()
+            await self._run_main_task()
         except asyncio.CancelledError:
             self.stopped_manually = True
             raise

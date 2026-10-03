@@ -12,11 +12,11 @@ describe('applyTaskLogUpdate', () => {
   it('append=false 整体替换并记下 seq', () => {
     const state = fresh()
     expect(applyTaskLogUpdate(state, { log: 'a\nb\n', seq: 1, append: false })).toBe('replace')
-    expect(state).toEqual({ logBuffer: 'a\nb\n', logSeq: 1 })
+    expect(state).toEqual({ logBuffer: 'a\nb\n', logSeq: 1, logFirstLine: 1 })
 
     // 日志被重置时后端再次推 append=false，同样整体替换
     expect(applyTaskLogUpdate(state, { log: 'x\n', seq: 2, append: false })).toBe('replace')
-    expect(state).toEqual({ logBuffer: 'x\n', logSeq: 2 })
+    expect(state).toEqual({ logBuffer: 'x\n', logSeq: 2, logFirstLine: 1 })
   })
 
   it('连续 append 按序追加', () => {
@@ -24,7 +24,7 @@ describe('applyTaskLogUpdate', () => {
     applyTaskLogUpdate(state, { log: '1\n', seq: 1, append: false })
     expect(applyTaskLogUpdate(state, { log: '2\n', seq: 2, append: true })).toBe('append')
     expect(applyTaskLogUpdate(state, { log: '3\n', seq: 3, append: true })).toBe('append')
-    expect(state).toEqual({ logBuffer: '1\n2\n3\n', logSeq: 3 })
+    expect(state).toEqual({ logBuffer: '1\n2\n3\n', logSeq: 3, logFirstLine: 1 })
   })
 
   it('没有基线就收到 append 时要求重同步，本条丢弃', () => {
@@ -37,7 +37,7 @@ describe('applyTaskLogUpdate', () => {
     const state = fresh()
     applyTaskLogUpdate(state, { log: '1\n', seq: 1, append: false })
     expect(applyTaskLogUpdate(state, { log: '3\n', seq: 3, append: true })).toBe('resync')
-    expect(state).toEqual({ logBuffer: '1\n', logSeq: undefined })
+    expect(state).toEqual({ logBuffer: '1\n', logSeq: undefined, logFirstLine: 1 })
     // 重同步期间到达的下一条增量：没有基线，仍然丢弃
     expect(applyTaskLogUpdate(state, { log: '4\n', seq: 4, append: true })).toBe('resync')
     expect(state.logBuffer).toBe('1\n')
@@ -51,7 +51,27 @@ describe('applyTaskLogUpdate', () => {
     state.logBuffer = '1\n2\n3\n'
     state.logSeq = 3
     expect(applyTaskLogUpdate(state, { log: '4\n', seq: 4, append: true })).toBe('append')
-    expect(state).toEqual({ logBuffer: '1\n2\n3\n4\n', logSeq: 4 })
+    expect(state).toEqual({ logBuffer: '1\n2\n3\n4\n', logSeq: 4, logFirstLine: 1 })
+  })
+
+  it('整体替换时记下首行号，追加不改变它', () => {
+    const state = fresh()
+    // 后端只推最近一段，但会说明这段是从完整日志的第 1040 行开始的
+    applyTaskLogUpdate(state, { log: 'x\n', seq: 1, append: false, firstLine: 1040 })
+    expect(state.logFirstLine).toBe(1040)
+
+    applyTaskLogUpdate(state, { log: 'y\n', seq: 2, append: true })
+    expect(state.logFirstLine).toBe(1040)
+
+    // 下一次整体替换以后再端给的为准（窗口继续往后滑）
+    applyTaskLogUpdate(state, { log: 'z\n', seq: 3, append: false, firstLine: 1200 })
+    expect(state.logFirstLine).toBe(1200)
+  })
+
+  it('后端不带 firstLine 时退回从 1 起', () => {
+    const state = fresh()
+    applyTaskLogUpdate(state, { log: 'a\n', seq: 1, append: false })
+    expect(state.logFirstLine).toBe(1)
   })
 
   it('buffer 超过 200,000 字符时丢头留尾', () => {

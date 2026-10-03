@@ -245,7 +245,9 @@ class HSRAutoProxyTask(TaskExecuteBase):
                 self._log_lines.append(formatted)
                 appended_lines.append(formatted)
         if len(self._log_lines) > max_lines:
+            dropped_lines = len(self._log_lines) - max_lines
             del self._log_lines[:-max_lines]
+            self.script_info.log_first_line += dropped_lines
         self.script_info.log = "\n".join(self._log_lines)
         if self._current_user_log is not None:
             if self._current_user_log.status in ("未开始监看日志", ""):

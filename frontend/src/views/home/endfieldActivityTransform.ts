@@ -34,6 +34,8 @@ interface RawActivity {
   name: TextRef
   timeId?: string
   tabImg?: string
+  /** 活动背景大图（原生尺寸，单张可能 20MB） */
+  bgImg?: string
   tagIds?: (string | number)[]
   sortId?: number
 }
@@ -52,6 +54,8 @@ interface ResolvedEndfieldActivity {
   startTime: Date | null
   endTime: Date | null
   imageUrl: string
+  /** 背景大图的原始地址（消费方负责换成后端缩放地址）；没有时为空串 */
+  coverUrl: string
   tags: string[]
   sortId: number
 }
@@ -254,6 +258,17 @@ export const resolveEndfieldSourceData = (
         encodeURIComponent(tabImage) +
         '.png'
       : ''
+    // 背景图是原生大图（单张可能 20MB），这里只给出原始地址，
+    // 由消费方换成后端缩放后的地址再显示
+    const bgImage = activity.bgImg
+    const coverUrl = bgImage
+      ? AKEDATA_BASE_URL +
+        '/' +
+        AKEDATA_ACTIVITY_IMAGE_PATH +
+        '/' +
+        encodeURIComponent(bgImage) +
+        '.png'
+      : ''
     const tags = (activity.tagIds ?? []).map(tagId =>
       resolveName(tagLookup.get(tagId)?.name, textLookup, String(tagId))
     )
@@ -263,6 +278,7 @@ export const resolveEndfieldSourceData = (
       startTime: parseActivityTime(timeRange.openTime),
       endTime: parseActivityTime(timeRange.closeTime),
       imageUrl,
+      coverUrl,
       tags,
       sortId: typeof activity.sortId === 'number' ? activity.sortId : activityIndex,
     })
@@ -381,6 +397,7 @@ export const buildEndfieldOverview = (
       StartTime: activity.startTime ? formatDateTime(activity.startTime) : '',
       EndTime: activity.endTime ? formatDateTime(activity.endTime) : '',
       ImageUrl: activity.imageUrl,
+      CoverUrl: activity.coverUrl,
       Tags: [...activity.tags],
     })),
   }

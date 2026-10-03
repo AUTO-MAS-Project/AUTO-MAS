@@ -1251,6 +1251,10 @@ class MaaConfig(ConfigBase):
         self.Emulator_Index = ConfigItem("Emulator", "Index", "-")
 
         ## Run -------------------------------------------------------------
+        ## 单账号运行总时限（分钟），包含等待和全部重试
+        self.Run_HardTimeLimit = ConfigItem(
+            "Run", "HardTimeLimit", 120, RangeValidator(1, 9999)
+        )
         ## 任务切换方式
         self.Run_TaskTransitionMethod = ConfigItem(
             "Run",
@@ -1587,6 +1591,10 @@ class MaaEndConfig(ConfigBase):
         self.Info_Path = ConfigItem("Info", "Path", "", FolderValidator())
 
         ## Run -------------------------------------------------------------
+        ## 单账号运行总时限（分钟），包含等待和全部重试
+        self.Run_HardTimeLimit = ConfigItem(
+            "Run", "HardTimeLimit", 120, RangeValidator(1, 9999)
+        )
         ## 运行超时阈值
         self.Run_RunTimeLimit = ConfigItem(
             "Run", "RunTimeLimit", 10, RangeValidator(1, 9999)
@@ -1708,10 +1716,14 @@ class MaaEndConfig(ConfigBase):
     async def preload_resource(self) -> None:
         """尝试预加载 MaaEnd 动态资源，失败时保留现有配置。"""
 
+        root_path = str(self.get("Info", "Path")).strip()
+        if not root_path:
+            return
+
         def _try_load_in_thread():
             from app.task.MaaEnd.resource_loader import try_load_maaend_options
 
-            return try_load_maaend_options(Path(self.get("Info", "Path")))
+            return try_load_maaend_options(Path(root_path))
 
         resource = await asyncio.to_thread(_try_load_in_thread)
         if resource is None:
@@ -1722,9 +1734,13 @@ class MaaEndConfig(ConfigBase):
     def get_loaded_resource(self) -> dict[str, Any]:
         """读取已经载入内存的 MaaEnd 动态资源。"""
 
+        root_path = str(self.get("Info", "Path")).strip()
+        if not root_path:
+            raise ValueError("MaaEnd 路径未配置")
+
         from app.task.MaaEnd.resource_loader import get_loaded_maaend_options
 
-        return get_loaded_maaend_options(Path(self.get("Info", "Path")))
+        return get_loaded_maaend_options(Path(root_path))
 
 
 class SrcUserConfig(ConfigBase):
@@ -2068,6 +2084,10 @@ class SrcConfig(ConfigBase):
         self.Emulator_Index = ConfigItem("Emulator", "Index", "-")
 
         ## Run -------------------------------------------------------------
+        ## 单账号运行总时限（分钟），包含等待和全部重试
+        self.Run_HardTimeLimit = ConfigItem(
+            "Run", "HardTimeLimit", 120, RangeValidator(1, 9999)
+        )
         ## 任务切换方式
         self.Run_TaskTransitionMethod = ConfigItem(
             "Run",
@@ -2874,6 +2894,12 @@ class MaaFWConfig(ConfigBase):
         ## MaaFW 初始化（加载资源、连 controller、起 agent）与之重叠而不是干等。
         ## 只对本轮由 MAS 拉起的游戏生效，AttachOnly 与「游戏已在运行」不等画面。
         self.Game_WaitTime = ConfigItem("Game", "WaitTime", 60, RangeValidator(0, 9999))
+        ## 脚本级键位（PI v2.8 hotkey 选项）：``{option 名: {字段名: 组合键字符串}}``，
+        ## 组合键写成「修饰键+…+主键」（如 ``"Ctrl+E"``）。只存与 interface 默认不同的
+        ## 字段；运行时叠加到每个任务实际生效的 hotkey 选项上，盖过用户快照 / 预设里的值。
+        ## 仅 Win32 控制器生效（Adb 等其他控制器不叠加）。interface 里已没有的 option /
+        ## 字段静默忽略，映射不了的值告警后回落到快照 / 默认值（runner/run_plan.py）。
+        self.Game_Hotkeys = ConfigItem("Game", "Hotkeys", "{}", JSONValidator(dict))
         # 原 Game.CloseOnFinish 开关已删：由 MAS 启动的游戏结束后一律关闭，
         # 其他方式启动的游戏 MAS 从不关闭，没有第三种组合需要用户选。
 
@@ -4106,12 +4132,12 @@ class GeneralConfig(ConfigBase):
         self.Script_LogTimeFormat = ConfigItem(
             "Script", "LogTimeFormat", "%Y-%m-%d %H:%M:%S"
         )
-        ## 日志处理钩子启用开关：关闭时保留规则配置，行为与未配置钩子完全一致
+        ## 日志预处理启用开关：关闭时保留规则配置，行为与未配置预处理完全一致
         self.Script_LogHookEnabled = ConfigItem(
             "Script", "LogHookEnabled", False, BoolValidator()
         )
-        ## 日志处理钩子规则（JSON 数组，每项形如 {"type":"drop|replace",...}）；
-        ## 钩子先于任务日志、推送日志采集与成功/失败判定执行，丢弃的行不进入下游
+        ## 日志预处理规则（JSON 数组，每项形如 {"type":"drop|replace",...}）；
+        ## 预处理先于任务日志、推送日志采集与成功/失败判定执行，丢弃的行不进入下游
         self.Script_LogHookRules = ConfigItem("Script", "LogHookRules", "")
         ## 成功日志匹配
         self.Script_SuccessLog = ConfigItem("Script", "SuccessLog", "")
@@ -4164,6 +4190,10 @@ class GeneralConfig(ConfigBase):
         self.Game_EmulatorIndex = ConfigItem("Game", "EmulatorIndex", "-")
 
         ## Run -------------------------------------------------------------
+        ## 单账号运行总时限（分钟），包含等待和全部重试
+        self.Run_HardTimeLimit = ConfigItem(
+            "Run", "HardTimeLimit", 120, RangeValidator(1, 9999)
+        )
         ## 代理次数限制
         self.Run_ProxyTimesLimit = ConfigItem(
             "Run", "ProxyTimesLimit", 0, RangeValidator(0, 9999)
@@ -4196,9 +4226,16 @@ class OkwwConfig(ConfigBase):
         ## Game ------------------------------------------------------------
         ## 是否由 MAS 管理游戏进程
         self.Game_Enabled = ConfigItem("Game", "Enabled", False, BoolValidator())
-        ## 鸣潮启动器路径
+        ## 游戏启动方式：Client=直启客户端（内置 -krqlv=hd），Launcher=经官方启动器
+        ## 默认值必须排首位：值非法时 correct() 回落到 options[0]
+        self.Game_Type = ConfigItem(
+            "Game", "Type", "Client", OptionsValidator(["Client", "Launcher"])
+        )
+        ## 鸣潮官方启动器路径（两种启动方式均由它定位游戏安装目录）
         self.Game_Path = ConfigItem("Game", "Path", "", FileValidator())
-        ## 鸣潮启动参数
+        ## 直启模式下手动指定的客户端程序路径（留空则由启动器路径自动定位）
+        self.Game_ClientPath = ConfigItem("Game", "ClientPath", "", FileValidator())
+        ## 鸣潮启动参数（直启时 MAS 会额外内置 -krqlv=hd，与本参数并存）
         self.Game_Arguments = ConfigItem("Game", "Arguments", "", ArgumentValidator())
         ## 等待游戏启动时间
         self.Game_WaitTime = ConfigItem("Game", "WaitTime", 60, RangeValidator(0, 9999))
@@ -4215,6 +4252,10 @@ class OkwwConfig(ConfigBase):
             "Game", "AccountSwitch", False, BoolValidator()
         )
         ## Run -------------------------------------------------------------
+        ## 单账号运行总时限（分钟），包含等待和全部重试
+        self.Run_HardTimeLimit = ConfigItem(
+            "Run", "HardTimeLimit", 120, RangeValidator(1, 9999)
+        )
         ## 每日代理次数上限
         self.Run_ProxyTimesLimit = ConfigItem(
             "Run", "ProxyTimesLimit", 0, RangeValidator(0, 9999)
@@ -4320,6 +4361,10 @@ class OkNteConfig(ConfigBase):
         )
 
         ## Run -------------------------------------------------------------
+        ## 单账号运行总时限（分钟），包含等待和全部重试
+        self.Run_HardTimeLimit = ConfigItem(
+            "Run", "HardTimeLimit", 120, RangeValidator(1, 9999)
+        )
         self.Run_ProxyTimesLimit = ConfigItem(
             "Run", "ProxyTimesLimit", 0, RangeValidator(0, 9999)
         )
@@ -4368,6 +4413,10 @@ class BetterGIConfig(ConfigBase):
         self.Info_RootPath = ConfigItem("Info", "RootPath", "", FileValidator())
 
         ## Run -------------------------------------------------------------
+        ## 单账号运行总时限（分钟），包含等待和全部重试
+        self.Run_HardTimeLimit = ConfigItem(
+            "Run", "HardTimeLimit", 120, RangeValidator(1, 9999)
+        )
         self.Run_ProxyTimesLimit = ConfigItem(
             "Run", "ProxyTimesLimit", 0, RangeValidator(0, 9999)
         )
@@ -4403,6 +4452,11 @@ class BetterGIConfig(ConfigBase):
         ## 任务结束后关闭游戏
         self.Game_CloseOnFinish = ConfigItem(
             "Game", "CloseOnFinish", True, BoolValidator()
+        )
+
+        ## 是否在启动 BetterGI 前由 MAS 检查并接管原神客户端更新
+        self.Game_IfAutoUpdate = ConfigItem(
+            "Game", "IfAutoUpdate", False, BoolValidator()
         )
 
         self.UserData = MultipleConfig([BetterGIUserConfig])
@@ -4744,6 +4798,10 @@ class ZzzOdConfig(ConfigBase):
         )
 
         ## Run -------------------------------------------------------------
+        ## 单账号运行总时限（分钟），包含等待和全部重试
+        self.Run_HardTimeLimit = ConfigItem(
+            "Run", "HardTimeLimit", 120, RangeValidator(1, 9999)
+        )
         ## 每日代理次数上限
         self.Run_ProxyTimesLimit = ConfigItem(
             "Run", "ProxyTimesLimit", 0, RangeValidator(0, 9999)
@@ -5104,6 +5162,8 @@ class GlobalConfig(ConfigBase):
         self.Update_IfAutoUpdate = ConfigItem(
             "Update", "IfAutoUpdate", False, BoolValidator()
         )
+        ## 暂停更新截止日期（YYYY-MM-DD，空串表示未暂停）
+        self.Update_PauseUntil = ConfigItem("Update", "PauseUntil", "")
         ## 更新源
         self.Update_Source = ConfigItem(
             "Update",
@@ -5173,17 +5233,6 @@ class GlobalConfig(ConfigBase):
         )
         ## 公告内容
         self.Data_Notice = ConfigItem("Data", "Notice", "{ }", JSONValidator())
-        ## 上次 Web 配置更新时间
-        self.Data_LastWebConfigUpdated = ConfigItem(
-            "Data",
-            "LastWebConfigUpdated",
-            "2000-01-01 00:00:00",
-            DateTimeValidator("%Y-%m-%d %H:%M:%S"),
-        )
-        ## Web 配置
-        self.Data_WebConfig = ConfigItem(
-            "Data", "WebConfig", "[ ]", JSONValidator(list)
-        )
         super().__init__()
 
         ## 模拟器配置列表
@@ -5459,6 +5508,10 @@ class BAAHConfig(ConfigBase):
         )
 
         ## Run -------------------------------------------------------------
+        ## 单账号运行总时限（分钟），包含等待和全部重试
+        self.Run_HardTimeLimit = ConfigItem(
+            "Run", "HardTimeLimit", 120, RangeValidator(1, 9999)
+        )
         ## 运行次数限制
         self.Run_RunTimesLimit = ConfigItem(
             "Run", "RunTimesLimit", 2, RangeValidator(1, 9999)
@@ -5614,6 +5667,10 @@ class WhimboxConfig(ConfigBase):
         self.Info_RootPath = ConfigItem("Info", "RootPath", "", FileValidator())
 
         ## Run -------------------------------------------------------------
+        ## 单账号运行总时限（分钟），包含等待和全部重试
+        self.Run_HardTimeLimit = ConfigItem(
+            "Run", "HardTimeLimit", 120, RangeValidator(1, 9999)
+        )
         self.Run_ProxyTimesLimit = ConfigItem(
             "Run", "ProxyTimesLimit", 0, RangeValidator(0, 9999)
         )

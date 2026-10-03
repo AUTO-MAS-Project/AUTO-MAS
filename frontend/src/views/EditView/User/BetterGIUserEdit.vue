@@ -289,51 +289,72 @@
                  渠道可识别时自动联动游戏服务器，无法识别或不一致时气泡提醒 -->
             <a-row :gutter="24">
               <a-col :span="24">
-                <a-form-item>
-                  <template #label>
-                    <span class="form-label">
-                      {{ t('edit.bettergiGameClient') }}
-                      <a-tooltip :title="t('edit.bettergiGameClientHint')">
-                        <QuestionCircleOutlined class="help-icon" />
-                      </a-tooltip>
+                <div class="game-client-row">
+                  <a-form-item>
+                    <template #label>
+                      <span class="form-label">
+                        {{ t('edit.bettergiGameClient') }}
+                        <a-tooltip :title="t('edit.bettergiGameClientHint')">
+                          <QuestionCircleOutlined class="help-icon" />
+                        </a-tooltip>
+                      </span>
+                    </template>
+                    <a-input-group compact class="path-input-group">
+                      <a-input
+                        v-model:value="gamePathInput"
+                        :placeholder="gamePathPlaceholder"
+                        size="large"
+                        class="path-input"
+                        @blur="handleGamePathSaved"
+                      />
+                      <a-button size="large" class="path-button" @click="selectGameClient">
+                        <template #icon>
+                          <FolderOpenOutlined />
+                        </template>
+                        {{ t('edit.pickFile') }}
+                      </a-button>
+                      <a-button
+                        size="large"
+                        class="path-button"
+                        :disabled="!gamePathInput"
+                        @click="clearGameClient"
+                      >
+                        {{ t('edit.bettergiGameClientRestore') }}
+                      </a-button>
+                    </a-input-group>
+                  </a-form-item>
+                  <a-tooltip
+                    :title="updateUnsupported ? t('edit.bettergiUpdateUnsupportedHint') : ''"
+                  >
+                    <span class="game-client-check">
+                      <a-button
+                        size="large"
+                        :disabled="updateCheckDisabled"
+                        @click="handleCheckUpdate"
+                      >
+                        <template #icon>
+                          <ThunderboltOutlined />
+                        </template>
+                        {{ t('edit.checkUpdates') }}
+                      </a-button>
                     </span>
-                  </template>
-                  <a-input-group compact class="path-input-group">
-                    <a-input
-                      v-model:value="gamePathInput"
-                      :placeholder="gamePathPlaceholder"
-                      size="large"
-                      class="path-input"
-                      @blur="handleGamePathSaved"
-                    />
-                    <a-button size="large" class="path-button" @click="selectGameClient">
-                      <template #icon>
-                        <FolderOpenOutlined />
-                      </template>
-                      {{ t('edit.pickFile') }}
-                    </a-button>
-                    <a-button
-                      size="large"
-                      class="path-button"
-                      :disabled="!gamePathInput"
-                      @click="clearGameClient"
-                    >
-                      {{ t('edit.bettergiGameClientRestore') }}
-                    </a-button>
-                  </a-input-group>
-                </a-form-item>
+                  </a-tooltip>
+                </div>
               </a-col>
             </a-row>
 
             <a-row :gutter="24">
               <a-col :span="24">
                 <!-- 快速配置开关已隐藏：按配置来源派生（直控 = 关，脚本 / 用户 = 开），
-                     见 handleConfigModeChange 与后端 BetterGIUserConfig.load 的加载归一。 -->
+                     见 handleConfigModeChange 与后端 BetterGIUserConfig.load 的加载归一。
+                     派生值仍交给选择器只读展示，让「本次任务生效的配置」与实际运行一致。 -->
                 <GeneralConfigModeSelector
                   :model-value="formData.Info.Mode"
                   :options="bettergiConfigModeOptions"
                   :disabled="pageLoading"
                   :saving="configModeSaving"
+                  :quick-config="formData.Info.IfQuickConfig"
+                  :quick-config-readonly="true"
                   @change="handleConfigModeChange"
                 />
               </a-col>
@@ -663,7 +684,7 @@
                               type="text"
                               size="small"
                               :disabled="isGroupFrozen(item)"
-                              aria-label="另存为新配置组"
+                              :aria-label="t('edit.bettergiDuplicateAsNew')"
                               @click.stop="openDuplicateModal(item)"
                             >
                               <template #icon><SaveOutlined /></template>
@@ -675,7 +696,7 @@
                               type="text"
                               size="small"
                               :disabled="isGroupFrozen(item) || !canRenameGroup(item)"
-                              aria-label="修改配置组名称"
+                              :aria-label="t('edit.bettergiRenameAsNew')"
                               @click.stop="openRenameModal(item)"
                             >
                               <template #icon><EditOutlined /></template>
@@ -687,7 +708,7 @@
                               type="text"
                               size="small"
                               :disabled="isGroupFrozen(item)"
-                              aria-label="复制相同配置组"
+                              :aria-label="t('edit.bettergiCopySameAs')"
                               @click.stop="duplicateSameGroup(item)"
                             >
                               <template #icon><CopyOutlined /></template>
@@ -1224,6 +1245,32 @@
         </div>
       </template>
     </ConfigRestoreSection>
+
+    <a-modal
+      v-model:open="updateModal.open"
+      :title="
+        updateModal.running
+          ? t('edit.bettergiUpdateProgressTitle')
+          : t('edit.bettergiCheckUpdateTitle')
+      "
+      :confirm-loading="updateModal.starting"
+      :mask-closable="!updateModal.running"
+      :footer="updateModal.running || updateModal.done ? null : undefined"
+      @ok="startUpdate"
+      @cancel="handleUpdateModalCancel"
+    >
+      <!-- 出结论后也要留着日志：后端专门推的「已是最新 / 更新完成 x -> y」就在里面 -->
+      <template v-if="updateModal.running || updateModal.done">
+        <div class="update-log-area">
+          <pre class="update-log-content">{{
+            updateModal.log || t('edit.bettergiUpdateConnecting')
+          }}</pre>
+        </div>
+      </template>
+      <template v-else>
+        <a-alert type="info" show-icon :message="t('edit.bettergiWillBeUpdated')" />
+      </template>
+    </a-modal>
   </div>
 </template>
 
@@ -1252,6 +1299,7 @@ import {
   QuestionCircleOutlined,
   SaveOutlined,
   SettingOutlined,
+  ThunderboltOutlined,
 } from '@ant-design/icons-vue'
 import {
   BetterGiService,
@@ -1284,6 +1332,7 @@ import GeneralConfigModeSelector from './GeneralConfigModeSelector.vue'
 import BettergiDragonGroupSettings from './BettergiDragonGroupSettings.vue'
 import BettergiGroupProjectEditor from './BettergiGroupProjectEditor.vue'
 import BettergiTeamSettings from './BettergiTeamSettings.vue'
+import { useBetterGIUpdate } from './useBetterGIUpdate'
 
 const { t } = useI18n()
 const logger = window.electronAPI.getLogger('BetterGI用户编辑')
@@ -1307,6 +1356,10 @@ const handleOpenFolder = async () => {
 }
 const userId = ref((route.params.userId as string) || '')
 const isEdit = ref(!!userId.value)
+// 「检查更新」只针对当前用户：游戏客户端是用户级配置，uid 在新建用户保存后才补上
+const { updateModal, handleCheckUpdate, startUpdate, handleUpdateModalCancel } = useBetterGIUpdate(
+  () => userId.value
+)
 const { configLocked } = useScriptConfigLock(() => scriptId)
 const scriptName = ref(t('edit.bettergiScriptFallbackName'))
 
@@ -1322,8 +1375,8 @@ const bettergiConfigModeOptions: Array<{
   disabledReason?: string
 }> = [
   {
-    title: t('edit.scriptConfiguration'),
-    description: t('edit.scriptConfiguration'),
+    title: t('edit.script'),
+    description: t('edit.useSharedScriptLevel'),
     value: '脚本',
     icon: 'file',
     // 「脚本」运行时与「用户」同分支（均按 per-user MAS 配置运行），选了不生效——禁用并说明
@@ -1529,6 +1582,19 @@ const channelLabel = (channel: string) => {
       return channel
   }
 }
+
+// 「检查更新」只在官服/国际服客户端上可用：后端对 B 服硬拒（版本节奏与官服
+// 不同，用官服清单更新会写坏客户端）。以实际识别到的客户端为准，识别不出时
+// 退回用户选的服务器推断。
+const updateUnsupported = computed(() => {
+  const channel =
+    gameClientInfo.value?.channel || RESOURCE_EXPECTED_CHANNEL[formData.Switch.Resource] || ''
+  return channel === 'B服'
+})
+
+const updateCheckDisabled = computed(
+  () => pageLoading.value || !userId.value || configLocked.value || updateUnsupported.value
+)
 
 const syncGamePathInput = () => {
   gamePathInput.value = formData.Switch.GamePath || gameClientInfo.value?.globalPath || ''
@@ -5910,5 +5976,41 @@ onUnmounted(() => {
   font-weight: 600;
   padding: 0 20px;
   border-left: 1px solid var(--ant-color-border-secondary);
+}
+
+/* 「检查更新」独立于路径输入组：输入框与它共占一行，按钮贴右并与输入框底对齐 */
+.game-client-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+.game-client-row :deep(.ant-form-item) {
+  margin-bottom: 0;
+  flex: 1;
+  min-width: 0;
+}
+
+.game-client-check {
+  flex-shrink: 0;
+}
+
+.update-log-area {
+  max-height: 320px;
+  overflow-y: auto;
+  padding: 12px;
+  border: 1px solid var(--ant-color-border);
+  border-radius: 8px;
+  background: var(--ant-color-bg-layout);
+}
+
+.update-log-content {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-all;
+  color: var(--ant-color-text);
 }
 </style>

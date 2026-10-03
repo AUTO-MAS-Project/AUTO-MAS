@@ -53,12 +53,10 @@
             <a-tooltip>
               <template #title>
                 <div style="max-width: 520px; line-height: 1.6; white-space: normal">
-                  用于切换账号，无需切换则留空。<br />
-                  {{ t('edit.cnServersEnter11') }}
-                  位手机号，若输入手机号中包含「*」则切换账号时将仅通过识别已登录账号列表登录。<br />
+                  {{ t('edit.srcAccountSwitchTipIntro') }}<br />
+                  {{ t('edit.cnServersEnter11') }}<br />
                   {{ t('edit.bilibiliEnterPartUsername') }}
                   {{ t('edit.accountEmailPhoneNumber2') }}
-                  {{ t('edit.accountEmailPhoneNumber') }}
                 </div>
               </template>
               <span class="form-label">
@@ -148,8 +146,12 @@
           :model-value="formData.Info.Mode"
           :options="srcConfigModeOptions"
           :disabled="loading"
+          :saving="quickConfigDisabled"
+          :quick-config="quickConfig"
+          :quick-config-disabled="quickConfigDisabled"
           :alert-message="t('edit.configSourceHintBase')"
           @change="emit('modeChange', $event)"
+          @quick-config-change="emit('quickConfigChange', $event)"
         />
       </a-col>
     </a-row>
@@ -184,10 +186,15 @@ const { t } = useI18n()
 
 const formData = defineModel<any>('formData', { required: true })
 
-defineProps<{
-  loading: boolean
-  serverOptions: any[]
-}>()
+withDefaults(
+  defineProps<{
+    loading: boolean
+    serverOptions: any[]
+    quickConfig?: boolean | undefined
+    quickConfigDisabled?: boolean | undefined
+  }>(),
+  { quickConfig: undefined, quickConfigDisabled: undefined }
+)
 
 // 配置来源三态卡片（value 为后端 Info.Mode 取值，驱动逻辑需保持原样；文案走词表）
 const srcConfigModeOptions: Array<{
@@ -223,6 +230,7 @@ const srcConfigModeOptions: Array<{
 const emit = defineEmits<{
   save: [key: string, value: any]
   modeChange: [value: boolean | string]
+  quickConfigChange: [value: boolean]
 }>()
 
 const emitSave = (key: string, value: any) => {

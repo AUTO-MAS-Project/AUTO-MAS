@@ -21,8 +21,9 @@
 运行前在用户勾选的任务实例列表上做三件事，其余与通用 MaaFW 没有任何运行期差别：
 
 1. 活动：队列里有「活动快速战斗」（entry ``活动快速战斗_入口``）时查一次活动排期
-   （``app/tools/stella_activity.py``）。有进行中的活动就把它挪到悬赏试炼前面先打；确实
-   没有活动就把它摘掉；取不到数据时按队列原样跑——真在活动期却摘掉，整轮就漏打了活动。
+   （``app/tools/stella_official.py``，只认会开活动关的「版本活动」）。有进行中的活动
+   就把它挪到悬赏试炼前面先打；确实没有活动就把它摘掉；取不到数据时按队列原样跑——
+   真在活动期却摘掉，整轮就漏打了活动。
 2. 日常：用户选了 MSS 计划表（``Info.PlanMode`` 不是 ``Fixed``）时，按当天槽位改写
    「悬赏试炼快速战斗」（entry ``战斗_入口``）的关卡、是否跳过难度选择与难度、是否消耗
    所有干劲与作战次数；队列里没有这个任务就补上。``Fixed`` 时一个选项都不动。
@@ -36,7 +37,6 @@
 from __future__ import annotations
 
 import asyncio
-import re
 import uuid
 from collections.abc import Callable
 from typing import Any
@@ -64,9 +64,9 @@ SWITCH_OFF = "No"
 
 PLAN_MODE_FIXED = "Fixed"
 
-_GITHUB_MSS_RE = re.compile(
-    r"(^|[/:])MaaStellaSora/MaaStellaSora(\.git)?/?$", re.IGNORECASE
-)
+## 项目唯一标识符前缀：官方版是 MaaStellaSora，衍生版在其后加后缀（个人版 MaaStellaSora-Personal）。
+## github 仓库名按同一口径认。
+_MSS_PROJECT_NAME = "maastellasora"
 
 
 def task_name_for_entry(interface_model: MaaFWInterface, entry: str) -> str | None:
@@ -78,8 +78,58 @@ def task_name_for_entry(interface_model: MaaFWInterface, entry: str) -> str | No
     return None
 
 
+def github_repo_name(github: str) -> str:
+    """``github`` 里的仓库名；给不出 ``owner/repo`` 这种两段路径时返回空串。
+
+    认这些写法：``https://github.com/owner/repo``、``https://github.com/owner/repo.git``、
+    ``git@github.com:owner/repo.git``、``owner/repo``。
+    只给一段的（如 ``https://github.com/MaaStellaSora`` 这种组织主页）返回空串——
+    它不是一个仓库，按仓库名认领会把整个组织名下的项目都算进来。
+    """
+
+    cleaned = github.strip()
+    if "://" in cleaned:
+        cleaned = cleaned.split("://", 1)[1]
+    cleaned = cleaned.replace(":", "/")
+    cleaned = cleaned.strip("/")
+    if cleaned.endswith(".git"):
+        cleaned = cleaned[: -len(".git")]
+    parts = [part for part in cleaned.split("/") if part]
+    if parts and ("." in parts[0] or "@" in parts[0]):
+        ## 首段是主机名（github.com / git@github.com），去掉后剩下的才是路径
+        parts = parts[1:]
+    if len(parts) < 2:
+        return ""
+    return parts[-1]
+
+
+def _is_mss_project_key(value: str) -> bool:
+    """项目标识符是否属于 MSS：等于 ``MaaStellaSora``，或以 ``MaaStellaSora-`` 开头。
+
+    后缀必须是连字符分隔的——``MaaStellaSora-Personal`` ✓、``MaaStellaSoraX`` ✗，
+    免得把碰巧同前缀的无关项目认成衍生版。``github`` 与 ``name`` 走同一口径。
+    """
+
+    normalized = value.strip().casefold()
+    return normalized == _MSS_PROJECT_NAME or normalized.startswith(
+        f"{_MSS_PROJECT_NAME}-"
+    )
+
+
 def is_mss_project(interface_model: MaaFWInterface | dict[str, Any]) -> bool:
-    """三条判据任一命中：``mirrorchyan_rid == SSAH``、``github`` 指向 MaaStellaSora、``name == MaaStellaSora``。"""
+    """官方版与其衍生版（个人版）都认领，三条判据任一命中即可：
+
+    - ``mirrorchyan_rid == SSAH``：官方版在 MirrorChyan 的分发标识；
+    - ``github`` 仓库名（``owner/repo`` 里的 repo）命中同一口径：官方
+      ``MaaStellaSora/MaaStellaSora``、个人版 ``beichen24a1/MaaStellaSora-Personal`` 都命中；
+    - ``name``（PI 的项目唯一标识符）命中同一口径。
+
+    后两条共用 ``_is_mss_project_key``：**等于 ``MaaStellaSora`` 或以 ``MaaStellaSora-`` 开头**。
+    只给 ``https://github.com/MaaStellaSora`` 这种组织主页时仓库名取不到，不会认领。
+
+    认领只决定**脚本类型**（都用 ``MSSConfig`` 与同一套运行期装饰）；更新谱系仍按
+    ``mirrorchyan_rid`` / ``github`` / ``name`` 各自分开，衍生版不会被官方版的更新包覆盖。
+    """
 
     if isinstance(interface_model, dict):
         rid = interface_model.get("mirrorchyan_rid")
@@ -91,24 +141,24 @@ def is_mss_project(interface_model: MaaFWInterface | dict[str, Any]) -> bool:
         name = getattr(interface_model, "name", None)
     if str(rid or "").strip().casefold() == "ssah":
         return True
-    if _GITHUB_MSS_RE.search(str(github or "").strip()):
+    if _is_mss_project_key(github_repo_name(str(github or ""))):
         return True
-    return str(name or "").strip().casefold() == "maastellasora"
+    return _is_mss_project_key(str(name or ""))
 
 
 def activity_running() -> bool | None:
-    """当前有没有进行中的活动：有 True、确实没有 False、取不到数据 None。
+    """当前有没有进行中的版本活动：有 True、确实没有 False、取不到数据 None。
 
     钩子在建运行计划的工作线程里被调，那里没有事件循环，自己起一个跑完就收；
     万一在事件循环线程里被调，拿不到结果，按「说不准」处理。
     """
 
-    from app.tools.stella_activity import has_running_event_now
+    from app.tools.stella_official import has_running_official_activity
 
     try:
         asyncio.get_running_loop()
     except RuntimeError:
-        return asyncio.run(has_running_event_now())
+        return asyncio.run(has_running_official_activity())
     return None
 
 

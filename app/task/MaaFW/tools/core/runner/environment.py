@@ -3,9 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import os
-import platform as platform_module
 import re
-import struct
 import sys
 import sysconfig
 import threading
@@ -27,6 +25,20 @@ from app.task.MaaFW.tools.core.runtime_pool import (
     build_runtime_id,
     install_extra_packages,
     install_python_runtime,
+)
+
+# 架构判定在运行池这一层（runtime_pool / project_update 要在模块层用），这里原样转出。
+from app.task.MaaFW.tools.core.runtime_pool.architecture import (  # noqa: F401 - 转出
+    RID_ARCHITECTURE_ALIASES,
+    SUPPORTED_ARCHITECTURE,
+    UNSUPPORTED_ARCHITECTURE_MARKER,
+    ArchitectureTarget,
+    MaaFWUnsupportedArchitectureError,
+    architecture_from_build_platform,
+    describe_unsupported_architecture,
+    host_architecture,
+    runtime_identity_architecture,
+    supported_architecture_target,
 )
 from app.task.MaaFW.tools.core.runtime_pool.binding import (
     BindingInfo,
@@ -164,6 +176,8 @@ def prepare_runner_environment(
     被池删掉，manifest 只在安装完整成功后才写入。
     """
 
+    # 不是 x64 就别建 venv、下 binding：后面每一步都只按 x64 选包。
+    supported_architecture_target()
     _report_environment_progress(
         progress,
         "resolving",
@@ -811,20 +825,6 @@ _MAAFW_DLL_VERSION_RE = re.compile(
 )
 
 
-# .NET RID 架构段的各种写法 -> ``host_architecture()`` 的取值。发行包用的是 .NET 的
-# 规范写法（win-x64 / win-arm64），别名兜住 Python 与 Linux 的叫法。
-_RID_ARCHITECTURE_ALIASES = {
-    "x64": "x64",
-    "amd64": "x64",
-    "x86_64": "x64",
-    "arm64": "arm64",
-    "aarch64": "arm64",
-    "x86": "x86",
-    "i386": "x86",
-    "i686": "x86",
-}
-
-
 def _host_rid_os_prefixes() -> tuple[str, ...]:
     if sys.platform == "win32":
         return ("win",)
@@ -845,7 +845,7 @@ def runtime_identifier_matches_host(rid: str) -> bool:
     system, separator, architecture = str(rid).casefold().rpartition("-")
     if not separator:
         return False
-    if _RID_ARCHITECTURE_ALIASES.get(architecture) != host_architecture():
+    if RID_ARCHITECTURE_ALIASES.get(architecture) != host_architecture():
         return False
     return any(system.startswith(prefix) for prefix in _host_rid_os_prefixes())
 
@@ -927,17 +927,66 @@ def project_maafw_runtime_path(project_path: Path | None) -> Path | None:
     # 与本机架构不符的（PE 头读得出且对不上）跳过继续找；一个对得上的都没有时退回
     # 第一份不符的，让调用方走架构不符的报错（describe_runtime_architecture_mismatch）。
     mismatched: Path | None = None
+    loadable: list[Path] = []
     for candidate in _iter_project_maafw_candidates(project_path):
         if not (candidate / PROJECT_MAAFW_DLL_NAME).is_file():
             continue
         if _runtime_loadable_on_host(candidate):
-            return candidate
-        if mismatched is None:
+            loadable.append(candidate)
+        elif mismatched is None:
             mismatched = candidate
+    if loadable:
+        return _newest_runtime(loadable)
     found = _search_project_maafw_dll(project_path)
     if found is not None and (mismatched is None or _runtime_loadable_on_host(found)):
         return found
     return mismatched
+
+
+def _newest_runtime(candidates: list[Path]) -> Path:
+    """同时有好几份原生库时取版本最高的。读不出版本的那份不参与比较；版本相同、或一份
+    都读不出时按候选顺序取第一份。问题包检查（``maafwProjectRuntimeProbe.ts`` 的
+    ``findNativeDir``）按同一口径选，改时两边一起改。
+
+    多份并存几乎都是残留：本地导入的目录被外壳原地升级过（老布局的 ``maafw/`` 留着），
+    全量包更新又把导入来的文件原样带进新载荷。M9A v4.11.0 实测 ``maafw/`` 是 5.9.2、
+    ``runtimes/win-x64/native`` 是 5.14.0；它的 agent（``agent/maafw_paths.py``）先找
+    ``runtimes/``，按固定顺序先取 ``maafw/`` 的 runner 就与 agent 协议不一致（7 对 8），
+    每次都等满连接超时。残留天然比发行包带的旧，取最高版本不依赖任何布局约定。
+    """
+
+    if len(candidates) == 1:
+        return candidates[0]
+    best = candidates[0]
+    best_version: Version | None = None
+    for candidate in candidates:
+        text = _read_runtime_maafw_version(candidate)
+        if text is None:
+            continue
+        version = Version(text)
+        if best_version is None or version > best_version:
+            best, best_version = candidate, version
+    return best
+
+
+def _read_runtime_maafw_version(runtime_path: Path) -> str | None:
+    """原生库里内嵌的版本串，规范化成 PEP 440；不是恰好一个或解析不了时 None。"""
+
+    try:
+        data = (runtime_path / PROJECT_MAAFW_DLL_NAME).read_bytes()
+    except OSError:
+        return None
+
+    found = {
+        match.group(1).decode("ascii", errors="ignore")
+        for match in _MAAFW_DLL_VERSION_RE.finditer(data)
+    }
+    if len(found) != 1:
+        return None
+    try:
+        return str(Version(found.pop()))
+    except InvalidVersion:
+        return None
 
 
 def _runtime_loadable_on_host(runtime_path: Path) -> bool:
@@ -999,28 +1048,13 @@ def detect_pe_architecture(path: Path) -> str | None:
     return _PE_MACHINE_ARCHITECTURES.get(machine)
 
 
-def host_architecture() -> str:
-    """当前解释器进程的架构（DLL 由本进程加载，要的是进程而不是系统的架构）。
-
-    按解释器的构建平台判断（``sysconfig.get_platform()``：``win-amd64`` / ``win-arm64``
-    / ``linux-x86_64`` / ``linux-aarch64``）。不能看 ``platform.machine()``：3.12 在
-    Windows 上先问 WMI 的 CPU 架构，arm64 机器上仿真跑的 x64 解释器会得到 ARM64。
-    构建平台看不出架构时（macOS 的 ``universal2``）才退回 ``platform.machine()``。
-    """
-
-    if struct.calcsize("P") != 8:
-        return "x86"
-    build_platform = sysconfig.get_platform().casefold()
-    architecture = _RID_ARCHITECTURE_ALIASES.get(build_platform.rpartition("-")[2])
-    if architecture in ("x64", "arm64"):
-        return architecture
-    machine = platform_module.machine().casefold()
-    return "arm64" if "arm" in machine or "aarch" in machine else "x64"
-
-
-# 架构不符报错（describe_runtime_architecture_mismatch 的各种文案）里一定有其一；宿主侧
-# 靠它认出「重试也没用」，别只改文案不改这里。
-ARCHITECTURE_MISMATCH_MARKERS = ("架构，本机是 ", "架构的 MaaFramework，本机是 ")
+# 架构不符报错（describe_runtime_architecture_mismatch 的各种文案、「只支持 x64」提示）
+# 里一定有其一；宿主侧靠它认出「重试也没用」，别只改文案不改这里。
+ARCHITECTURE_MISMATCH_MARKERS = (
+    "架构，本机是 ",
+    "架构的 MaaFramework，本机是 ",
+    UNSUPPORTED_ARCHITECTURE_MARKER,
+)
 
 
 def describe_runtime_architecture_mismatch(
@@ -1141,21 +1175,7 @@ def probe_bundled_maafw_version(project_path: Path) -> str | None:
     runtime_path = project_maafw_runtime_path(project_path)
     if runtime_path is None:
         return None
-    try:
-        data = (runtime_path / PROJECT_MAAFW_DLL_NAME).read_bytes()
-    except OSError:
-        return None
-
-    found = {
-        match.group(1).decode("ascii", errors="ignore")
-        for match in _MAAFW_DLL_VERSION_RE.finditer(data)
-    }
-    if len(found) != 1:
-        return None
-    try:
-        return str(Version(found.pop()))
-    except InvalidVersion:
-        return None
+    return _read_runtime_maafw_version(runtime_path)
 
 
 def _bundled_project_maafw_requirement(project_path: Path) -> str | None:

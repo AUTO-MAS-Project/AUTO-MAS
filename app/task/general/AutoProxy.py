@@ -39,8 +39,9 @@ from app.models.config import GeneralConfig, GeneralUserConfig
 from app.models.ConfigBase import MultipleConfig
 from app.models.emulator import DeviceBase
 from app.models.schema import WSTaskNoticeData
-from app.models.task import LogRecord, ScriptItem, TaskExecuteBase
+from app.models.task import LogRecord, ScriptItem
 from app.services import Notify, System
+from app.task.base import ScriptAutoProxyBase
 from app.task.proxy_helpers import CONFIG_SOURCE_DIRECT, read_config_source
 from app.utils import (
     LogMonitor,
@@ -109,7 +110,7 @@ def _format_to_prefix_regex(fmt: str) -> re.Pattern[str]:
     return re.compile("^" + "".join(parts))  # 不加 $ → re.match 做前缀匹配
 
 
-class AutoProxyTask(TaskExecuteBase):
+class AutoProxyTask(ScriptAutoProxyBase):
     """自动代理模式"""
 
     def __init__(
@@ -255,7 +256,7 @@ class AutoProxyTask(TaskExecuteBase):
         for name, matcher in (("成功", self.success_log), ("失败", self.error_log)):
             if matcher.invalid:
                 logger.warning(f"通用脚本{name}日志正则语法错误，该标志将不会命中")
-        # 日志处理钩子：受 LogHookEnabled 总开关控制，关闭时保留规则但不挂接
+        # 日志预处理：受 LogHookEnabled 总开关控制，关闭时保留规则但不挂接
         self.log_line_hook = (
             make_line_hook(self.script_config.get("Script", "LogHookRules"))
             if self.script_config.get("Script", "LogHookEnabled")

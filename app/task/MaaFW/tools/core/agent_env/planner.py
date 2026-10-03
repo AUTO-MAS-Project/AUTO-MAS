@@ -6,6 +6,12 @@ from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
 
+from app.task.MaaFW.tools.core.interface.agent_entry import (
+    CFA_FALLBACK_AGENT_ENTRY,
+    describe_cfa_agent_entry_fallback,
+    is_python_entry_arg,
+    is_relative_entry_path,
+)
 from app.task.MaaFW.tools.core.interface.models import MaaFWAgent
 
 from .models import MaaFWAgentCommandPlan
@@ -164,9 +170,12 @@ def _build_agent_command_plan(
     *,
     managed_env_root: str | Path | None,
 ) -> MaaFWAgentCommandPlan:
-    child_args = [
-        _replace_project_dir(arg, base_dir) for arg in agent_config.child_args or []
-    ]
+    raw_args = [str(arg) for arg in agent_config.child_args or []]
+    child_args = [_replace_project_dir(arg, base_dir) for arg in raw_args]
+    # 要在 _resolve_executable 之前：自带 Python 的判定会看入口参数在不在。
+    child_args, entry_fallback_reason = _apply_cfa_agent_entry_fallback(
+        base_dir, child_args, raw_args
+    )
     embedded_requested = agent_config.embedded is True
     executable = _resolve_executable(
         base_dir,
@@ -181,7 +190,14 @@ def _build_agent_command_plan(
     ):
         child_args = ["-u", str((base_dir / "agent" / "main.py").resolve())]
 
-    fallback_reason = executable["fallback_reason"]
+    fallback_reason = (
+        "; ".join(
+            reason
+            for reason in (entry_fallback_reason, executable["fallback_reason"])
+            if reason
+        )
+        or None
+    )
     if embedded_requested:
         isolation_reason = (
             "embedded agent 已切换为隔离子进程，避免污染 AUTO-MAS 主进程 Python 环境"
@@ -207,6 +223,34 @@ def _build_agent_command_plan(
         timeout=agent_config.timeout,
         embedded=False,
     )
+
+
+def _apply_cfa_agent_entry_fallback(
+    base_dir: Path, child_args: list[str], raw_args: list[str]
+) -> tuple[list[str], str | None]:
+    """第一个 Python 入口脚本是相对写法、经 ``..`` 越出项目目录，而 CFA 的兜底入口在时，
+    换成兜底入口的绝对路径（见 ``interface.agent_entry``）；其余参数原样。返回
+    ``(参数, 说明)``。``raw_args`` 是替换 ``{PROJECT_DIR}`` 之前的原参数（与 ``child_args``
+    逐项对应）：绝对写法按它判断，替换后的 ``{PROJECT_DIR}`` 本身就是绝对路径。"""
+
+    for position, arg in enumerate(child_args):
+        if not is_python_entry_arg(arg):
+            continue
+        if not is_relative_entry_path(raw_args[position]):
+            # 绝对路径 / 盘符：原样交给解释器，不改跑兜底入口。
+            return child_args, None
+        try:
+            _resolve_project_path(base_dir, arg)
+            return child_args, None
+        except MaaFWAgentEnvError:
+            pass
+        fallback = (base_dir / CFA_FALLBACK_AGENT_ENTRY).resolve()
+        if not (_is_within_base_dir(fallback, base_dir) and fallback.is_file()):
+            return child_args, None
+        replaced = list(child_args)
+        replaced[position] = str(fallback)
+        return replaced, describe_cfa_agent_entry_fallback(arg, str(fallback))
+    return child_args, None
 
 
 def _resolve_executable(
