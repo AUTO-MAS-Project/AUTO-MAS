@@ -97,7 +97,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Runtime release source is not merged into main' }
 
       - name: 配置 Go
-        uses: actions/setup-go@44694675825211faa026b3c33043df3e48a5fa00 # v6.0.0
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: runtime-source/go.mod
           cache-dependency-path: runtime-source/go.sum
@@ -154,7 +154,7 @@ jobs:
           retention-days: 7
 
       - name: 签名运行时
-        uses: signpath/github-action-submit-signing-request@c92b958760219087e01f8d67a1669ed57afe2627 # v2.3
+        uses: signpath/github-action-submit-signing-request@f6d04783b4569d051e0c80105fe66e82819d0092 # v3.0
         with:
           api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
           github-token: ${{ github.token }}
