@@ -74,6 +74,23 @@ def _candidate_roots(script_id: str, script_config: Any) -> list[Path]:
     return roots
 
 
+def _requested_roots(
+    script_id: str, script_config: Any, path: str | None
+) -> tuple[list[Path] | None, str]:
+    """列表与覆盖共用的「去哪儿找」：给了 ``path`` 就只认那个目录，否则 :func:`_candidate_roots`。
+
+    两边必须同一口径：实例 ID 只是外壳里的文件名 / 配置 id，同一份外壳拷两份 ID 就一样，
+    列表从别的目录列出来、覆盖却回默认目录按 ID 找，会悄悄导进另一份配置。
+    """
+
+    if path is not None and path.strip():
+        picked = Path(path.strip())
+        if not picked.is_dir():
+            return None, f"目录不存在: {picked}"
+        return [picked], ""
+    return _candidate_roots(script_id, script_config), ""
+
+
 def _scan_first_root(roots: list[Path]) -> tuple[Path | None, list[ShellInstance]]:
     """第一个扫到外壳配置的目录与其中的实例；都没有时为 ``(None, [])``。"""
 
@@ -112,13 +129,9 @@ async def list_shell_instances(
         script_config = maafw_script_config(script_id)
     except (KeyError, ValueError, TypeError) as exc:
         return MaaFWApiReply.error(400, f"MFW 脚本无效: {exc}")
-    if path is not None and path.strip():
-        picked = Path(path.strip())
-        if not picked.is_dir():
-            return MaaFWApiReply.error(400, f"目录不存在: {picked}")
-        roots = [picked]
-    else:
-        roots = _candidate_roots(script_id, script_config)
+    roots, error = _requested_roots(script_id, script_config, path)
+    if roots is None:
+        return MaaFWApiReply.error(400, error)
     try:
         found_root, instances = await asyncio.to_thread(_scan_first_root, roots)
     except Exception as exc:  # noqa: BLE001 - 扫描只读，失败不该挡住引导
@@ -255,7 +268,7 @@ async def import_shell_instances(
 
 
 async def apply_shell_instance_to_user(
-    script_id: str, user_id: str, instance_id: str
+    script_id: str, user_id: str, instance_id: str, path: str | None = None
 ) -> MaaFWApiReply:
     """``/maafw/shell-instances/apply``：把一份外壳配置的任务队列与选项覆盖到指定用户。
 
@@ -263,6 +276,8 @@ async def apply_shell_instance_to_user(
     那个一份实例建一个新用户（新建脚本引导里的一次性迁移），这个写进已有的某个用户——脚本建好
     之后又在外壳里调过队列、想再同步一次时用。对不上的任务 / 选项同样进 ``skipped``，与引导
     那次的判定一字不差。
+
+    ``path`` 与列表时传的一致：实例是从哪个目录列出来的，就回哪个目录按 ID 找。
     """
 
     try:
@@ -274,6 +289,9 @@ async def apply_shell_instance_to_user(
     if user is None:
         return MaaFWApiReply.error(404, "这个用户已经不在这个脚本里了")
 
+    roots, error = _requested_roots(script_id, script_config, path)
+    if roots is None:
+        return MaaFWApiReply.error(400, error)
     root, error = await maafw_effective_root(script_id, "")
     if root is None:
         return MaaFWApiReply.error(400, error)
@@ -281,9 +299,7 @@ async def apply_shell_instance_to_user(
         interface = await asyncio.to_thread(load_interface_model_cached, root)
         # 跳过项里写 interface 的显示名（按项目语言文件翻过），与预览同一口径
         translate = await asyncio.to_thread(interface_text_translator, root, interface)
-        _, instances = await asyncio.to_thread(
-            _scan_first_root, _candidate_roots(script_id, script_config)
-        )
+        _, instances = await asyncio.to_thread(_scan_first_root, roots)
     except MaaFWInterfaceLoadError as exc:
         return MaaFWApiReply.error(400, str(exc))
     except Exception as exc:  # noqa: BLE001 - 文件系统异常也要给出文案
@@ -323,19 +339,18 @@ async def apply_shell_instance_to_user(
         result.error = f"读不懂这份配置: {exc}"
         return MaaFWApiReply(data={"result": result})
 
+    update: dict[str, dict[str, Any]] = {
+        # 整份任务快照换掉：这就是「覆盖」，用户页上的队列与选项都会变成外壳那份。
+        # 名字不动——这个入口是「再同步一次队列」，不是重命名用户。
+        "Task": {
+            "SelectedPreset": "",
+            "TaskSnapshot": json.dumps(plan.snapshot, ensure_ascii=False),
+        }
+    }
     try:
-        await Config.update_user(
-            script_id,
-            user_id,
-            {
-                # 整份任务快照换掉：这就是「覆盖」，用户页上的队列与选项都会变成外壳那份。
-                # 名字不动——这个入口是「再同步一次队列」，不是重命名用户。
-                "Task": {
-                    "SelectedPreset": "",
-                    "TaskSnapshot": json.dumps(plan.snapshot, ensure_ascii=False),
-                }
-            },
-        )
+        # update_user 原地改 update：特调整理（M9A 收走受管任务、切换账号并进 Info）与密码加密
+        # 都写回这份字典，写完它就是实际落盘的样子
+        await Config.update_user(script_id, user_id, update)
     except Exception as exc:  # noqa: BLE001 - 脚本运行中等情况会拒绝写入
         logger.warning(f"覆盖外壳配置实例 {instance.id} 到用户 {user_id} 失败：{exc}")
         result.error = f"写入用户配置失败: {exc}"
@@ -353,8 +368,12 @@ async def apply_shell_instance_to_user(
             else ""
         )
     )
-    # 快照一起交回界面：它拿到就刷新本地队列，不用回头拉一次用户配置
-    return MaaFWApiReply(data={"result": result, "snapshot": plan.snapshot})
+    # 交回实际落盘的快照与特调改过的 Info：界面拿到就刷新本地状态，不用回头拉一次用户配置；
+    # 交 plan.snapshot 的话，M9A 收走的受管任务会留在页面队列里、账号也对不上
+    stored = update["Task"]["TaskSnapshot"]
+    snapshot = json.loads(stored) if isinstance(stored, str) else stored
+    info = dict(update.get("Info") or {})
+    return MaaFWApiReply(data={"result": result, "snapshot": snapshot, "info": info})
 
 
 def _user_of(script_config: Any, user_id: str) -> Any | None:

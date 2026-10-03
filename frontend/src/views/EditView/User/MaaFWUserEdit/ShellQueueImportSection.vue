@@ -64,8 +64,11 @@ import { useMaaFWShellInstanceApi } from '@/composables/useMaaFWShellInstanceApi
  */
 
 const emit = defineEmits<{
-  /** 算好的任务快照（原始 JSON），由父级按用户页自己的快照类型规整后换进本地状态 */
-  imported: [snapshot: Record<string, unknown>]
+  /**
+   * 实际写进用户配置的任务快照（原始 JSON）与特调一并改掉的用户信息字段，
+   * 由父级按用户页自己的形状换进本地状态
+   */
+  imported: [snapshot: Record<string, unknown>, info: Record<string, unknown>]
 }>()
 
 const { t } = useI18n()
@@ -145,13 +148,19 @@ const pickDirectory = async () => {
 const apply = async () => {
   applying.value = true
   try {
-    const { result, snapshot } = await applyShellInstanceToUser(scriptId, userId, picked.value)
+    // 列表从哪个目录读的就回哪个目录找：实例 ID 只是外壳里的文件名，换了目录可能撞名
+    const { result, snapshot, info } = await applyShellInstanceToUser(
+      scriptId,
+      userId,
+      picked.value,
+      pickedDir.value || undefined
+    )
     if (!snapshot) {
       message.error(t('edit.shellQueueImportFailed'))
       return
     }
     // 父级是同步的：换本地状态而已，写库那次请求后端已经做完了
-    emit('imported', snapshot)
+    emit('imported', snapshot, info)
     modalOpen.value = false
     message.success(t('edit.shellQueueImportDone', { count: result.importedTaskCount ?? 0 }))
     const skipped = result.skipped ?? []

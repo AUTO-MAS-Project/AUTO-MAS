@@ -44,21 +44,27 @@ export function useMaaFWShellInstanceApi() {
   /**
    * 把一份外壳实例的任务队列与选项覆盖到**已有**的某个用户：脚本建好之后又在外壳里调过队列时，
    * 用它再同步一次。换算与「导入成用户」同一条，所以对不上的任务 / 选项同样在结果的 `skipped` 里；
-   * 一起回来的 `snapshot` 是算好的最终队列（原始 JSON，形状由调用方按自己的快照类型规整）。
+   * 一起回来的 `snapshot` 是实际写进用户配置的队列（原始 JSON，形状由调用方按自己的快照类型规整），
+   * `info` 是写入时特调一并改掉的用户信息字段（如 M9A 的账号）。
+   *
+   * `path` 与列出这份实例时传的一致：实例 ID 只是外壳里的文件名，不带目录就会回默认目录按 ID 找。
    */
   const applyShellInstanceToUser = async (
     scriptId: string,
     userId: string,
-    instanceId: string
+    instanceId: string,
+    path?: string
   ): Promise<{
     result: MaaFWShellInstanceImportItem
     snapshot: Record<string, unknown> | null
+    info: Record<string, unknown>
   }> => {
     const response =
       await MaaFwService.applyMaafwShellInstanceApiScriptsMaafwShellInstancesApplyPost({
         scriptId,
         userId,
         instanceId,
+        ...(path ? { path } : {}),
       })
     if (response.code !== 200) {
       throw new Error(response.message || '导入外壳配置失败')
@@ -71,6 +77,7 @@ export function useMaaFWShellInstanceApi() {
     return {
       result,
       snapshot: (response.data?.snapshot as Record<string, unknown> | null) ?? null,
+      info: response.data?.info ?? {},
     }
   }
 

@@ -4484,6 +4484,10 @@ class MaaFWShellInstanceApplyIn(BaseModel):
     scriptId: str = Field(..., min_length=1, description="MFW 脚本 ID")
     userId: str = Field(..., min_length=1, description="要覆盖任务队列的用户 ID")
     instanceId: str = Field(..., min_length=1, description="从哪份外壳实例导入")
+    path: Optional[str] = Field(
+        default=None,
+        description="实例从哪个目录列出来的就传哪个（弹窗「选择其他目录」选的）；不传时先来源目录再内嵌副本，与列表同一口径",
+    )
 
 
 class MaaFWShellInstanceImportItem(BaseModel):
@@ -4509,10 +4513,11 @@ class MaaFWShellInstanceImportOut(OutBase):
 
 
 class MaaFWShellInstanceApplyData(BaseModel):
-    """覆盖到已有用户的结果：除了逐项成败与跳过项，还带一份算好的任务快照。
+    """覆盖到已有用户的结果：除了逐项成败与跳过项，还带实际写进用户配置的任务快照。
 
-    快照是换算出来的最终队列，界面直接拿去刷新本地状态，不用再回头拉一次用户配置——
-    那样会把用户还没保存的其它改动一起冲掉。
+    界面直接拿它刷新本地状态，不用再回头拉一次用户配置——那样会把用户还没保存的其它改动
+    一起冲掉。快照与 ``info`` 都是写入漏斗处理之后的样子（特调整理、密码加密），与读用户配置
+    拿到的一致。
     """
 
     result: Optional[MaaFWShellInstanceImportItem] = Field(
@@ -4521,7 +4526,11 @@ class MaaFWShellInstanceApplyData(BaseModel):
     )
     snapshot: Optional[Dict[str, Any]] = Field(
         default=None,
-        description="覆盖进用户的任务快照；失败时为空",
+        description="实际写进用户配置的任务快照；失败时为空",
+    )
+    info: Dict[str, Any] = Field(
+        default_factory=dict,
+        description="写入时特调一并改掉的用户信息字段（如 M9A 把切换账号收进 Account）；没有为空",
     )
 
 

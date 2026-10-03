@@ -240,15 +240,18 @@ const {
 const sections = useMaaFWSections(flavor, 'userPage', MAAFW_USER_PAGE_SECTIONS)
 
 /**
- * 「配置导入」把外壳里的队列算成了任务快照：规整成用户页自己的形状换进本地状态就行——
+ * 「配置导入」把外壳里的队列写进了用户：把实际落盘的快照规整成用户页自己的形状换进本地状态就行——
  * 写库那次请求后端已经做完了，这里再来一次 persistQueuedSnapshot 就是同一个动作写两遍。
+ * 特调整理时一并改掉的账号 / 备注（M9A 把切换账号收进账号）也同步过来，否则页面上还是旧值。
  */
-const handleShellImported = (snapshot: Record<string, unknown>) => {
+const handleShellImported = (snapshot: Record<string, unknown>, info: Record<string, unknown>) => {
   taskSnapshot.value = normalizeTaskSnapshot(snapshot, previewData.value, {
     keepMissing: true,
   })
   // 队列被换掉了，原来选的预设不再对得上（后端那次写入也清了它）
   formData.Task.SelectedPreset = ''
+  if (typeof info.Account === 'string') formData.Info.Account = info.Account
+  if (typeof info.Notes === 'string') formData.Info.Notes = info.Notes
 }
 </script>
 

@@ -6,7 +6,7 @@
     <a-space>
       <!-- 从外壳（MFAAvalonia / MXU / MFW-PyQt6）把配好的队列搬过来：引导最后一步只在新建
            脚本时走一次，脚本建好之后再同步就走这里 -->
-      <ShellQueueImportSection @imported="emit('imported', $event)" />
+      <ShellQueueImportSection @imported="(snapshot, info) => emit('imported', snapshot, info)" />
       <a-button size="small" @click="emit('open-restore')">
         <template #icon>
           <HistoryOutlined />

@@ -1246,7 +1246,7 @@ async def apply_maafw_shell_instance(
     """
 
     reply = await maafw_shell_instances_api.apply_shell_instance_to_user(
-        payload.scriptId, payload.userId, payload.instanceId
+        payload.scriptId, payload.userId, payload.instanceId, payload.path
     )
     return MaaFWShellInstanceApplyOut(**reply.out_fields())
 
