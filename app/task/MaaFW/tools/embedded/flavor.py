@@ -60,6 +60,14 @@
   通知，**不走重试**（客户端不更新，重试多少次都一样）；其余状态照常继续，``message`` 进日志。
 - **异常**：钩子抛任何 ``Exception`` 都只记警告、照常继续，不能挡住代理；``CancelledError``
   （用户停止）必须照常向上传——钩子里的下载 / 安装都要能被取消打断，不能在线程里死等。
+
+可选属性 ``abort_round_entries``（关键任务）的契约：
+
+- **形状**：``dict[str, str]``，任务 entry → 这个任务失败时报给用户的话（如 M9A 的
+  ``{"SwitchAccount": "切换账号失败"}``）。同样按 ``getattr`` 探测，不进协议。
+- **效果**：建运行计划后由 ``runner_task._mark_abort_round_tasks`` 标到对应任务的
+  ``abortRoundMessage`` 上；这些任务失败或单任务超时时本轮直接结束（不再跑后面的任务），
+  按普通失败结算、宿主照常重试。普通任务失败仍是记失败后继续。
 """
 
 from __future__ import annotations
@@ -281,9 +289,15 @@ def decide_project_config_class(interface_model: MaaFWInterface) -> type:
 
 
 def user_config_type_transform(config_class: type) -> Callable[[dict], dict]:
-    """``MultipleConfig.retype`` 用的字典改写：把用户子配置的类型名换成新脚本类的用户类。"""
+    """``MultipleConfig.retype`` 用的字典改写：把用户子配置的类型名换成新脚本类的用户类。
+
+    顺带补上新类自带的按任务时限：数据整表搬过去，旧类的空覆盖表会盖掉新类的默认值
+    （通用 MaaFW 脚本导入 M9A 目录变成 M9A 时就拿不到 M9A 内置的那几条）。覆盖表还是
+    空的才补，用户配过的不动。
+    """
 
     user_type_name = config_class.USER_CONFIG_CLASS.__name__
+    default_overrides = getattr(config_class, "DEFAULT_TASK_TIME_LIMIT_OVERRIDES", "")
 
     def transform(payload: dict) -> dict:
         # ConfigBase.toDict 把子配置放在 SubConfigsInfo 下，用户表是其中的 UserData。
@@ -292,9 +306,27 @@ def user_config_type_transform(config_class: type) -> Callable[[dict], dict]:
             for instance in user_data.get("instances") or []:
                 if isinstance(instance, dict):
                     instance["type"] = user_type_name
+        run = payload.get("Run")
+        if (
+            default_overrides
+            and isinstance(run, dict)
+            and _is_empty_json_object(run.get("TaskTimeLimitOverrides"))
+        ):
+            run["TaskTimeLimitOverrides"] = default_overrides
         return payload
 
     return transform
+
+
+def _is_empty_json_object(value: Any) -> bool:
+    if isinstance(value, dict):
+        return not value
+    if not isinstance(value, str):
+        return value is None
+    try:
+        return json.loads(value or "{}") == {}
+    except ValueError:
+        return False
 
 
 __all__ = [

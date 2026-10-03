@@ -1,14 +1,6 @@
-import axios from 'axios'
-import { OpenAPI } from '@/api/core/OpenAPI'
+import { ApiError, MaaFwService, MaaFWProjectUpdateIn, type MaaFWProjectUpdateOut } from '@/api'
 
-/**
- * MaaFW 项目更新客户端。
- *
- * `POST /api/scripts/maafw/update` 已进生成的 `MaaFwService`（2026-08-30 重跑
- * openapi），但这里仍参照 `useHSRPluginApi` 直接用 axios + `OpenAPI.BASE` 调用：
- * 下面的错误处理要从 `AxiosError.response.data.message` 里取后端给的文案，而生成的
- * 客户端抛的是 `ApiError`，直接换会把这条错误路径吃掉。切换要连错误处理一起改。
- */
+/** MaaFW 项目更新：复用生成客户端，统一页面结果与错误提示。 */
 export interface MaaFWUpdateResult {
   checked: boolean
   updated: boolean
@@ -30,13 +22,6 @@ export interface MaaFWUpdateResult {
   cdkExpiredTime?: number | null
 }
 
-interface MaaFWUpdateEnvelope {
-  code: number
-  status: string
-  message: string
-  data: Omit<MaaFWUpdateResult, 'message'> | null
-}
-
 const EMPTY_DATA: Omit<MaaFWUpdateResult, 'message'> = {
   checked: false,
   updated: false,
@@ -47,20 +32,32 @@ const EMPTY_DATA: Omit<MaaFWUpdateResult, 'message'> = {
   source: null,
 }
 
-const endpoint = () => `${OpenAPI.BASE}/api/scripts/maafw/update`
-
 export function useMaaFWUpdateApi() {
   const request = async (
     scriptId: string,
     action: 'check' | 'apply'
   ): Promise<MaaFWUpdateResult> => {
-    let payload: MaaFWUpdateEnvelope
+    let payload: MaaFWProjectUpdateOut
     try {
-      const response = await axios.post<MaaFWUpdateEnvelope>(endpoint(), { scriptId, action })
-      payload = response.data
+      payload = await MaaFwService.updateMaafwProjectApiScriptsMaafwUpdatePost({
+        scriptId,
+        action:
+          action === 'check'
+            ? MaaFWProjectUpdateIn.action.CHECK
+            : MaaFWProjectUpdateIn.action.APPLY,
+      })
     } catch (error) {
-      if (axios.isAxiosError<MaaFWUpdateEnvelope>(error) && error.response?.data?.message) {
-        throw new Error(error.response.data.message)
+      if (error instanceof ApiError) {
+        const body: unknown = error.body
+        if (
+          body &&
+          typeof body === 'object' &&
+          'message' in body &&
+          typeof body.message === 'string' &&
+          body.message
+        ) {
+          throw new Error(body.message)
+        }
       }
       throw error instanceof Error ? error : new Error(String(error))
     }
@@ -68,7 +65,7 @@ export function useMaaFWUpdateApi() {
     if (payload.code !== 200) {
       throw new Error(payload.message || 'MFW 项目更新请求失败')
     }
-    return { ...EMPTY_DATA, ...(payload.data ?? {}), message: payload.message }
+    return { ...EMPTY_DATA, ...(payload.data ?? {}), message: payload.message ?? '' }
   }
 
   const checkMaaFWUpdate = (scriptId: string): Promise<MaaFWUpdateResult> =>

@@ -210,6 +210,9 @@ let forceQuitInProgress = false
 let quitRequestInFlight = false
 let relaunchAfterQuit = false
 let quitFallbackTimer: NodeJS.Timeout | null = null
+let quitPreparationSequence = 0
+let activeQuitPreparation: number | null = null
+let quitPreparationExpired = false
 const RENDERER_QUIT_FALLBACK_MS = 25000
 let saveWindowStateTimeout: NodeJS.Timeout | null = null
 let rendererCrashes: number[] = []
@@ -480,6 +483,17 @@ function clearQuitFallback(): void {
     clearTimeout(quitFallbackTimer)
     quitFallbackTimer = null
   }
+}
+
+function cancelQuitRequest(token?: number): void {
+  if (coordinatedQuit || forceQuitInProgress) return
+  if (token !== undefined && token !== activeQuitPreparation) return
+  clearQuitFallback()
+  activeQuitPreparation = null
+  quitPreparationExpired = false
+  quitRequestInFlight = false
+  relaunchAfterQuit = false
+  showMainWindow()
 }
 
 function finishCoordinatedQuit(): void {
@@ -769,6 +783,8 @@ function createWindow() {
   // 托盘和显示/隐藏都正常，但里面的 frame 已经没了，用户看到的是一个永远黑着的
   // 窗口，只能从任务管理器强杀。没有这个监听时日志里也不会留下任何记录。
   win.webContents.on('render-process-gone', (_event, details) => {
+    // 保存准备期间 renderer 消失就取消退出并按通常崩溃流程恢复，不能等一个永远不会完成的守卫。
+    if (activeQuitPreparation !== null) cancelQuitRequest(activeQuitPreparation)
     const decision = decideRendererRecovery({
       reason: details.reason,
       exitCode: details.exitCode,
@@ -1712,6 +1728,46 @@ ipcMain.handle('app-restart', () => {
 // renderer 仅在后端优雅关闭或超时兜底完成后调用，作为最终退出确认。
 ipcMain.handle('app-quit', () => {
   finishCoordinatedQuit()
+})
+
+ipcMain.handle('app-prepare-quit', () => {
+  if (coordinatedQuit || forceQuitInProgress) return null
+  if (activeQuitPreparation !== null) return activeQuitPreparation
+  clearQuitFallback()
+  quitRequestInFlight = true
+  const token = ++quitPreparationSequence
+  activeQuitPreparation = token
+  quitPreparationExpired = false
+  quitFallbackTimer = setTimeout(() => {
+    quitFallbackTimer = null
+    quitPreparationExpired = true
+    logger.warn('退出前保存超时，撤销本次退出并等待页面保存完成')
+    // 保存请求不能撤回，保留请求锁，避免重复退出重新启动强制清理计时。
+    showMainWindow()
+  }, RENDERER_QUIT_FALLBACK_MS)
+  return token
+})
+
+ipcMain.handle('app-confirm-quit', (_event, token: number) => {
+  if (
+    activeQuitPreparation === null ||
+    token !== activeQuitPreparation ||
+    quitPreparationExpired ||
+    coordinatedQuit ||
+    forceQuitInProgress
+  )
+    return false
+  activeQuitPreparation = null
+  clearQuitFallback()
+  quitFallbackTimer = setTimeout(() => {
+    void forceQuitAfterRendererTimeout('renderer 保存完成后关闭超时')
+  }, RENDERER_QUIT_FALLBACK_MS)
+  return true
+})
+
+// 页面尚未保存时，后端还未进入关闭流程，允许取消主进程发出的退出请求。
+ipcMain.handle('app-cancel-quit', (_event, token?: number) => {
+  cancelQuitRequest(token)
 })
 
 // 添加进程管理相关的 IPC 处理器

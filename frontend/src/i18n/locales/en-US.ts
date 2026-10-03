@@ -221,6 +221,8 @@ export default {
     backendUpdateContactSupport:
       'Retrying will not fix this; please report the problem together with the log file above',
     closingBackend: 'Closing the backend...',
+    closePreparationTimedOut:
+      'Saving changes before exit timed out. Exit was canceled; wait for saving to finish, then try again.',
     lightTheme: 'Light theme',
     test: 'Test',
     messageTemplate: 'Message template',
@@ -1197,6 +1199,7 @@ export default {
     lineMatchingThisPattern:
       'A line matching this pattern closes the window (inclusive); leave empty for no end condition',
     singleRunTimeLimit: 'Single-run time limit (minutes)',
+    singleTaskTimeLimit: 'Single-task time limit (minutes, 0 = unlimited)',
     echoOfWarStartDay: 'Echo of War start day',
     trailingKeyword: 'Trailing keyword',
     reportIssueGo: 'Report an issue, or go to',
@@ -1495,6 +1498,16 @@ export default {
     extraTasksThatRun: 'Extra tasks that run after the daily tasks',
     skipOnceDoneToday: 'Skip once done today',
     skipOnceDoneThis2: 'Skip once done this month',
+    taskTimeLimitOverrides: 'Per-task time limits',
+    taskTimeLimitSet: 'Set',
+    taskTimeLimitAllDefault: 'All follow the default',
+    taskTimeLimitChanged: 'Set per task: {n}',
+    taskTimeLimitModalSub: 'Leave empty to follow the default; 0 means unlimited',
+    taskTimeLimitDefault: 'Default {n} min',
+    taskTimeLimitDefaultUnlimited: 'Default: unlimited',
+    taskTimeLimitRestore: 'Restore',
+    taskTimeLimitRestoreAll: 'Restore all defaults',
+    taskTimeLimitSave: 'Save',
     exampleStarrailExe: 'For example StarRail.exe',
     nothingConfigure: 'Nothing to configure',
     spendSanityFarm: 'Spend sanity to farm',
@@ -2374,6 +2387,8 @@ export default {
     maaSessionOpened: 'MAA setup opened',
     maaSessionStartFailed: 'Could not start the MAA setup session',
     maaSessionStopFailed: 'Could not stop the MAA setup session',
+    maaEditorReloadBlocked:
+      'Wait for changes to be saved and configuration operations to finish, then close the MAA setup window before refreshing.',
     maaViewOpened: 'MAA viewer opened',
     maaSessionTimeoutWarn:
       'The MAA setup session is about to time out and will be saved in 30 seconds',

@@ -23,10 +23,10 @@ from changelog import (
 
 TYPE_LABELS = {
     "breaking": "类型: 破坏性变更",
-    "feat": "enhancement",
+    "feat": "类型: 新增",
     "change": "类型: 变更",
     "remove": "类型: 移除",
-    "fix": "bug",
+    "fix": "类型: 修复",
     "security": "类型: 安全",
     "dev": "类型: 开发流程",
 }

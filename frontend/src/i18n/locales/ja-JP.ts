@@ -224,6 +224,8 @@ export default {
     backendUpdateContactSupport:
       'この問題は再試行では解決できません。上記のログファイルを添えて報告してください',
     closingBackend: 'バックエンドを終了しています...',
+    closePreparationTimedOut:
+      '終了前の保存がタイムアウトしたため、終了をキャンセルしました。保存が完了してから再試行してください',
     lightTheme: 'ライトテーマ',
     test: 'テスト',
     messageTemplate: 'メッセージテンプレート',
@@ -468,6 +470,8 @@ export default {
     bilibiliEnterPartUsername:
       "B サーバー（bilibili）ではアカウント名の一部を入力します。アカウント / メールアドレス / 電話番号を「{'|'}」区切りで入力することもできます",
     maaConfiguration: 'MAA 設定',
+    maaEditorReloadBlocked:
+      '変更の保存と設定操作の完了を待ち、MAA の設定画面を閉じてから再読み込みしてください',
     srcConfiguration: 'SRC 設定',
     doNotSwitch: '切り替えない',
     activeStageTakenFrom: 'タグから取得した現在有効なステージ',
@@ -1124,6 +1128,7 @@ export default {
     lineMatchingThisPattern:
       'この正規表現に一致した行を範囲の終わりとします（その行を含む）。空の場合は終わりを限定しません',
     singleRunTimeLimit: '1 回の実行時間の上限（分）',
+    singleTaskTimeLimit: '単一タスクの制限時間（分、0 で無制限）',
     echoOfWarStartDay: '歴戦余韻の開始日',
     trailingKeyword: '末尾を切るキーワード',
     reportIssueGo: 'でフィードバックするか、こちらへ：',
@@ -1382,6 +1387,16 @@ export default {
     extraTasksThatRun: '日課のあとに実行する追加タスク',
     skipOnceDoneToday: '今日完了したらスキップ',
     skipOnceDoneThis2: '今月完了したらスキップ',
+    taskTimeLimitOverrides: 'タスクごとの制限時間',
+    taskTimeLimitSet: '設定',
+    taskTimeLimitAllDefault: 'すべてデフォルトに従う',
+    taskTimeLimitChanged: '{n} 件のタスクを個別設定',
+    taskTimeLimitModalSub: '空欄はデフォルトに従い、0 で無制限',
+    taskTimeLimitDefault: 'デフォルト {n} 分',
+    taskTimeLimitDefaultUnlimited: 'デフォルトは無制限',
+    taskTimeLimitRestore: '戻す',
+    taskTimeLimitRestoreAll: 'すべてデフォルトに戻す',
+    taskTimeLimitSave: '保存',
     exampleStarrailExe: '例: StarRail.exe',
     nothingConfigure: '設定できるタスクがありません',
     spendSanityFarm: '理性を消費して周回',

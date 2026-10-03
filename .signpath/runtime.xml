@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<artifact-configuration xmlns="http://signpath.io/artifact-configuration/v1">
+  <parameters>
+    <parameter name="version" required="true" />
+  </parameters>
+  <zip-file>
+    <pe-file path="auto-mas-runtime.exe"
+             product-name="AUTO-MAS Runtime"
+             product-version="${version}"
+             file-version="${version}"
+             original-filename="auto-mas-runtime.exe">
+      <authenticode-sign />
+    </pe-file>
+  </zip-file>
+</artifact-configuration>
