@@ -3084,7 +3084,7 @@ export default {
       toolDesc:
         'The game community tool stores your community credentials and runs check-ins at startup, on schedule, or on demand.',
       privacyNotice:
-        'Signing in by QR code or password never saves the account, phone number, or password; the password is used for this sign-in only and is not written to config, logs, or notifications.',
+        'Community credentials are encrypted on this device for check-ins and daily notes. Keep them safe.',
       enable: 'Enable community tools',
       enableDesc: 'Runs community check-ins with the MAS task scheduler.',
       activityEnable: 'Enable daily notes',
@@ -3120,7 +3120,7 @@ export default {
       save: 'Save',
       userName: 'Name',
       miyoushe: 'Miyoushe',
-      miyoushePlaceholder: 'Open the site in a browser, press F12, and copy document.cookie',
+      miyoushePlaceholder: 'Paste an existing Miyoushe Cookie',
       qrLogin: 'Get a token by QR code',
       kuro: 'Kuro Games community',
       kuroPlaceholder: 'Paste the login credential you copied from Kuro BBS',
@@ -3154,7 +3154,7 @@ export default {
       saving: 'Saving the credentials...',
       saveTokenFailed: 'Could not save the token',
       scannedButSaveFailed: 'Scan succeeded, but the token could not be saved',
-      success: 'Signed in — the token is filled in for you',
+      success: 'Signed in — the token is saved to the selected account group',
       loginSuccess: 'Miyoushe QR sign-in succeeded',
       sklandLoginSuccess: 'Skland QR sign-in succeeded',
       queryFailed: 'Could not query the status',

@@ -2480,7 +2480,7 @@ export default {
       toolDesc:
         'ゲームコミュニティツールは各コミュニティの認証情報を管理し、起動時・スケジュール実行時・手動実行時にチェックインします。',
       privacyNotice:
-        'QR またはパスワードでのログイン時、アカウント・電話番号・パスワードは保存されません。パスワードは今回のログインにのみ使われ、設定・ログ・通知には書き込まれません。',
+        '認証情報はチェックインとデイリーノートのため、この端末に暗号化して保存されます。大切に保管してください。',
       enable: 'コミュニティツールを有効にする',
       enableDesc: 'MAS のタスクスケジュールに従ってコミュニティのチェックインを実行します。',
       activityEnable: 'デイリーノートを有効にする',
@@ -2513,7 +2513,7 @@ export default {
       save: '保存',
       userName: 'アカウント名',
       miyoushe: '米游社（中国版 HoYoLAB）',
-      miyoushePlaceholder: 'ブラウザで F12 → document.cookie から取得',
+      miyoushePlaceholder: '既存の米游社 Cookie を貼り付けてください',
       qrLogin: 'QR コードでトークンを取得',
       kuro: '庫街区（Kuro Games コミュニティ）',
       kuroPlaceholder: '庫街区からコピーしたログイン情報を貼り付けてください',
@@ -2547,7 +2547,7 @@ export default {
       saving: '認証情報を保存しています...',
       saveTokenFailed: 'トークンを保存できませんでした',
       scannedButSaveFailed: '読み取りには成功しましたが、トークンを保存できませんでした',
-      success: 'ログインしました。トークンを自動入力しました',
+      success: 'ログインしました。選択したアカウントグループにトークンを保存しました',
       loginSuccess: '米游社 QR ログインに成功しました',
       sklandLoginSuccess: '森空島 QR ログインに成功しました',
       queryFailed: '状態を取得できませんでした',
