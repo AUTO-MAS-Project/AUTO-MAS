@@ -525,11 +525,12 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             if self.run_plan.controllerType == "Adb":
                 emulator_id = self.script_config.get("Emulator", "Id")
                 emulator_index = self.script_config.get("Emulator", "Index")
-                if emulator_id == "-" or emulator_index in ("", "-"):
+                configured_address, _ = self._configured_adb_address()
+                if not configured_address and (
+                    emulator_id == "-" or emulator_index in ("", "-")
+                ):
                     self.cur_user_item.status = "异常"
-                    return (
-                        "当前 MaaFW controller 需要 ADB，请在脚本管理页选择模拟器和实例"
-                    )
+                    return "当前 MaaFW controller 需要 ADB，请在脚本管理页选择模拟器和实例，或填写 ADB 地址"
             elif game_path_error is not None:
                 self.cur_user_item.status = "异常"
                 return game_path_error
@@ -1102,15 +1103,42 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             )
         return ""
 
+    def _configured_adb_address(self) -> tuple[str, str]:
+        """脚本里手填的 ADB 地址，返回 ``(地址, 来源)``；都没填就是 ``("", "")``。
+
+        用户级 ``Device.AdbAddress`` 覆盖脚本级，两个字段默认都是空串。填了地址就直接连它，
+        不去启动模拟器，自然也没接管：没接管的设备 MAS 不管开关（#205）。
+        """
+        user_address = str(
+            self.cur_user_config.get("Device", "AdbAddress") or ""
+        ).strip()
+        if user_address:
+            return user_address, "用户配置"
+        script_address = str(
+            self.script_config.get("Device", "AdbAddress") or ""
+        ).strip()
+        return script_address, "脚本配置" if script_address else ""
+
     async def _resolve_adb_address(self) -> tuple[str, DeviceInfo | None]:
         if self._cached_adb_address is not None:
             return self._cached_adb_address, self._cached_device_info
+
+        configured_address, source = self._configured_adb_address()
+        if configured_address:
+            self._cached_adb_address = configured_address
+            self._append_log(f"使用{source}的 ADB 地址: {configured_address}")
+            return configured_address, None
+
         if self.emulator_manager is None:
-            raise RuntimeError("当前 controller 需要 ADB，请在脚本管理页选择模拟器")
+            raise RuntimeError(
+                "当前 controller 需要 ADB，请在脚本管理页选择模拟器，或填写 ADB 地址"
+            )
 
         emulator_index = self.script_config.get("Emulator", "Index")
         if emulator_index in ("", "-"):
-            raise RuntimeError("当前 controller 需要 ADB，请在脚本管理页选择模拟器实例")
+            raise RuntimeError(
+                "当前 controller 需要 ADB，请在脚本管理页选择模拟器实例，或填写 ADB 地址"
+            )
 
         package_name = await self._resolve_game_package()
         self._launched_package_name = package_name

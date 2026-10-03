@@ -181,6 +181,34 @@ class LDManager(DeviceBase):
         async with self._get_instance_lock(idx):
             return await self._open_locked(idx, package_name)
 
+    async def _apply_cleanmode(self) -> None:
+        """启动前把安装级的去广告开关写一次。
+
+        ``globalsetting --cleanmode`` 管的是**整个安装**的安卓桌面，宿主只在 VM 冷启动时
+        生效，所以放在实例启动前、每次都设：开着设 1、关着设 0。写不上只记警告，不拦启动，
+        失败原因带上 returncode、stdout 与 stderr，免得只留一句「命令执行失败」。
+        """
+        # 延迟导入：本模块是 2.0 的基类，模块加载期导入 emulator2 会形成导入环
+        from app.utils.emulator2.master_mode import (
+            is_master_mode_enabled,
+            ldplayer_clean_mode_args,
+        )
+
+        enabled = is_master_mode_enabled()
+        try:
+            result = await ProcessRunner.run_process(
+                self.emulator_path,
+                *ldplayer_clean_mode_args(enabled),
+                timeout=self.config.get("Info", "MaxWaitTime"),
+                if_merge_std=True,
+                breakaway=True,
+            )
+        except Exception as e:  # noqa: BLE001 - 去广告失败不该拦住启动
+            logger.warning(f"设置模拟器去广告失败: {type(e).__name__}: {e}")
+            return
+        if result.returncode != 0:
+            logger.warning(f"设置模拟器去广告失败: {result.failure_detail()}")
+
     async def _open_locked(self, idx: str, package_name: str) -> DeviceInfo:
         logger.info(f"开始启动模拟器 {idx}  - {package_name}")
 
@@ -198,6 +226,7 @@ class LDManager(DeviceBase):
             raise RuntimeError(f"模拟器 {idx} 无法启动, 当前状态码: {status}")
 
         await self._capture_instance_config(idx)
+        await self._apply_cleanmode()
 
         result = await ProcessRunner.run_process(
             self.emulator_path,
