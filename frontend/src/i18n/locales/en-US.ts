@@ -1054,6 +1054,10 @@ export default {
     readInterface: 'Read the interface',
     debug: 'Debug',
     accountSwitchingMethod: 'Account switching method',
+    keepAliveOnManualStop: 'Keep MAA and the emulator after a manual stop',
+    keepAliveOnManualStopTip:
+      'When enabled, manually stopping a single task in the dashboard keeps MAA and the emulator open so you can continue by hand; "Stop all", exiting the app and a normal finish still clean up completely',
+
     accountSwitchMethodMas: 'MAS account switching',
     accountSwitchMethodMaaend: 'MaaEnd built-in switching',
     maaendMasAccountSwitchWarningTitle: 'MAS account switching risk',
@@ -3724,6 +3728,8 @@ export default {
       colActions: 'Actions',
       dragSort: 'Drag to reorder',
       selectScript: 'Select a managed script',
+      skipOnce: 'Skip once',
+      skipOnceTip: "Skip this task on the queue's next run; it turns off automatically afterwards",
       deleteConfirm: 'Delete this task?',
     },
     cycle: {

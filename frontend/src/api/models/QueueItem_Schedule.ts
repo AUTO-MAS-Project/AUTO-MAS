@@ -31,5 +31,9 @@ export type QueueItem_Schedule = {
      * 下次运行时间, 格式为YYYY-MM-DD HH:MM:SS
      */
     NextRunAt?: (string | null);
+    /**
+     * 一次性: 该队列的下一次运行跳过本项, 运行后自动清除
+     */
+    SkipOnce?: (boolean | null);
 };
 

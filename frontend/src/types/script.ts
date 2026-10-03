@@ -49,6 +49,7 @@ export interface MAAScriptConfig {
   Run: {
     HardTimeLimit: number
     TaskTransitionMethod: string
+    KeepAliveOnManualStop: boolean
     ProxyTimesLimit: number
     ADBSearchRange: number
     RunTimesLimit: number
