@@ -4188,8 +4188,7 @@ export default {
       voiceTypeTip: 'How much the voice prompts say',
       personalMssEntry: 'Not a mystery entrance',
       personalMssEntryOn: 'Not a mystery entrance (enabled)',
-      personalMssHint:
-        'Enter the password to enable the personal-edition MaaStellaSora jobs (Catastrophe Defense).',
+      personalMssHint: "Enter the password to enable Beichen's side-project MSS support",
       personalMssPassword: 'Password',
       personalMssPlaceholder: 'Enter the password',
       personalMssWrong: 'Wrong password',

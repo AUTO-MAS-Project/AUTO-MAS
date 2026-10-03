@@ -3612,8 +3612,7 @@ export default {
       voiceTypeTip: '音声ガイドの詳しさを選びます',
       personalMssEntry: '謎の入口ではありません',
       personalMssEntryOn: '謎の入口ではありません（有効）',
-      personalMssHint:
-        'パスワードを入力すると、個人版 MaaStellaSora の専用進行（災変防衛線）が有効になります。',
+      personalMssHint: 'パスワードを入力すると、北晨の私作版 MSS サポートが有効になります',
       personalMssPassword: 'パスワード',
       personalMssPlaceholder: 'パスワードを入力',
       personalMssWrong: 'パスワードが違います',

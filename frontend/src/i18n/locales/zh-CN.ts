@@ -4020,7 +4020,7 @@ export default {
       voiceTypeTip: '选择语音提示的详细程度',
       personalMssEntry: '并非神秘入口',
       personalMssEntryOn: '并非神秘入口（已启用）',
-      personalMssHint: '输入密码，启用个人版 MaaStellaSora 的专属编排（灾变防线）。',
+      personalMssHint: '输入密码，启用北晨的私活版 MSS 支持',
       personalMssPassword: '密码',
       personalMssPlaceholder: '请输入密码',
       personalMssWrong: '密码不对',
