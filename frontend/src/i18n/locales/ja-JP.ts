@@ -2808,6 +2808,7 @@ export default {
     firstRunEstimate: '初回の準備には数分かかります。その間はほかの作業をしていても問題ありません',
     slowHint: 'いつもより時間がかかっています。バックエンドの応答を待っています',
     viewLog: 'ログを見る',
+    switchMirror: 'ミラーを変更',
     transferSource: '{source} から',
     probeUnavailable: '{source} は利用できません',
   },

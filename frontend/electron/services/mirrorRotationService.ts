@@ -56,6 +56,9 @@ function withProbeTimeout(operation: NetworkOperationCallback): NetworkOperation
     })
 }
 
+// 换源中止约定：轮替/安装层与渲染层跨进程共用的中止错误标识（#499）
+export const MIRROR_SWITCH_ABORTED = 'MIRROR_SWITCH_ABORTED'
+
 // ==================== 镜像源轮替类 ====================
 
 export class MirrorRotationService {
@@ -64,13 +67,15 @@ export class MirrorRotationService {
    * 按照配置文件镜像源 -> 镜像源列表的顺序依次尝试
    * 如果指定了 preferredMirrorName，则只使用该镜像源（用于重试场景）
    * 如果传入了 probe，会先并发探测各源延迟，把更快的源排到前面（探测失败退回原顺序）
+   * 如果传入了 shouldAbort，每次换源前检查；返回 true 时停止轮替并返回 MIRROR_SWITCH_ABORTED（#499 安装中换源）
    */
   async execute(
     mirrors: MirrorSource[],
     operation: NetworkOperationCallback,
     onProgress?: MirrorRotationProgressCallback,
     preferredMirrorName?: string,
-    probe?: NetworkOperationCallback
+    probe?: NetworkOperationCallback,
+    shouldAbort?: () => boolean
   ): Promise<{ success: boolean; result?: unknown; error?: string; usedMirror?: MirrorSource }> {
     logger.info('=== 开始镜像源轮替 ===')
     logger.info(`可用镜像源数量: ${mirrors.length}`)
@@ -103,6 +108,11 @@ export class MirrorRotationService {
 
     // 依次尝试每个镜像源
     for (let i = 0; i < sortedMirrors.length; i++) {
+      // 换源中止：用户已在别处发起新安装，本轮不再尝试后续镜像源（#499）
+      if (shouldAbort?.()) {
+        logger.info('安装已被中止，停止镜像源轮替')
+        return { success: false, error: MIRROR_SWITCH_ABORTED }
+      }
       const mirror = sortedMirrors[i]
       logger.info(`尝试镜像源 [${i + 1}/${sortedMirrors.length}]: ${mirror.name}`)
       logger.info(`URL: ${mirror.url}`)
@@ -135,6 +145,12 @@ export class MirrorRotationService {
         const errorMsg = error instanceof Error ? error.message : String(error)
         logger.error(`镜像源 ${mirror.name} 发生异常: ${errorMsg}`)
       }
+    }
+
+    // 最后一个源尝试期间被中止：同样按中止而非「全部失败」收尾（#499）
+    if (shouldAbort?.()) {
+      logger.info('安装已被中止，停止镜像源轮替')
+      return { success: false, error: MIRROR_SWITCH_ABORTED }
     }
 
     // 所有镜像源都失败
