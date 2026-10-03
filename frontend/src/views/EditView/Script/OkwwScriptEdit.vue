@@ -657,6 +657,12 @@ const derivedClientPath = ref('')
 
 // 已持久化的启动方式：保存失败时回滚到它
 let persistedLaunchType: 'Launcher' | 'Client' | null = null
+// 已持久化的路径字段：保存失败时回滚到它。锚在「最近一次保存成功的值」上而不是
+// 调用时的快照——同字段并发保存时，早先请求的快照可能正是另一个尚未落盘的中间值，
+// 两次都失败会把界面留在从未持久化的值上
+let persistedRootPath = ''
+let persistedGamePath = ''
+let persistedClientPath = ''
 
 interface UpdateUserOption {
   uid: string
@@ -926,32 +932,33 @@ const applyRootPathDefaults = async (rootPath: string, successMessage = 'ok-ww �
     return false
   }
   const norm = rootPath.replace(/\\/g, '/').replace(/\/+$/g, '')
-  const previousPath = okwwConfig.Info.RootPath
   okwwConfig.Info.RootPath = norm
 
-  return saveField(
+  const success = await saveField(
     { Info: { RootPath: norm } },
     () => {
-      okwwConfig.Info.RootPath = previousPath
+      okwwConfig.Info.RootPath = persistedRootPath
     },
     successMessage
   )
+  if (success) persistedRootPath = norm
+  return success
 }
 
 const saveGamePath = async (launcherPath: string, successMessage: string) => {
   const normalized = launcherPath.replace(/\\/g, '/')
   if (!(await validateGamePath(normalized))) return false
-  const previousPath = okwwConfig.Game.Path
   okwwConfig.Game.Path = normalized
   const success = await saveField(
     { Game: { Path: normalized } },
     async () => {
-      okwwConfig.Game.Path = previousPath
-      await validateGamePath(previousPath)
+      okwwConfig.Game.Path = persistedGamePath
+      await validateGamePath(persistedGamePath)
     },
     successMessage
   )
   if (success) {
+    persistedGamePath = normalized
     // 启动器路径变了，客户端路径展示需要重新解码（两种启动方式都展示该行）
     await refreshDerivedClientPath()
   }
@@ -984,6 +991,9 @@ const loadScript = async () => {
     // 两种启动方式都展示客户端路径：启动器态它是可选项，解不出时也在此提示
     await refreshDerivedClientPath()
     persistedLaunchType = okwwConfig.Game.Type
+    persistedRootPath = okwwConfig.Info.RootPath
+    persistedGamePath = okwwConfig.Game.Path
+    persistedClientPath = okwwConfig.Game.ClientPath
   } catch {
     message.error(t('edit.couldNotLoadScript'))
   } finally {
@@ -1173,18 +1183,20 @@ const handleLaunchTypeChange = async (value: 'Launcher' | 'Client') => {
 // 手动指定客户端：留空（恢复自动）时由启动器路径解码定位；两种启动方式都可用，
 // 启动器态指定后已运行检测与收尾按精确路径进行
 const saveClientPath = async (clientPath: string) => {
-  const previousPath = okwwConfig.Game.ClientPath
   okwwConfig.Game.ClientPath = clientPath
   const success = await saveField(
     { Game: { ClientPath: clientPath } },
     () => {
-      okwwConfig.Game.ClientPath = previousPath
+      okwwConfig.Game.ClientPath = persistedClientPath
     },
     t(clientPath ? 'edit.clientPathSaved' : 'edit.clientPathReset')
   )
-  if (success && !clientPath) {
-    // 清空手动指定后展示值重新来自解码，需要重新拉取，否则只剩占位符
-    await refreshDerivedClientPath()
+  if (success) {
+    persistedClientPath = clientPath
+    if (!clientPath) {
+      // 清空手动指定后展示值重新来自解码，需要重新拉取，否则只剩占位符
+      await refreshDerivedClientPath()
+    }
   }
   return success
 }

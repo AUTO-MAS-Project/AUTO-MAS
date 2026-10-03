@@ -8,6 +8,9 @@ const page = readFileSync(new URL('./OkwwScriptEdit.vue', import.meta.url), 'utf
 const script = page.match(/<script setup lang="ts">([\s\S]*?)<\/script>/)?.[1] || ''
 const names = new Set([
   'persistedLaunchType',
+  'persistedRootPath',
+  'persistedGamePath',
+  'persistedClientPath',
   'saveField',
   'applyRootPathDefaults',
   'saveGamePath',
@@ -50,6 +53,9 @@ const setup = (updateScript = vi.fn().mockResolvedValue(true)) => {
     'validateGamePath',
     'refreshDerivedClientPath',
     `${body}\npersistedLaunchType = okwwConfig.Game.Type;
+    persistedRootPath = okwwConfig.Info.RootPath;
+    persistedGamePath = okwwConfig.Game.Path;
+    persistedClientPath = okwwConfig.Game.ClientPath;
     return { applyRootPathDefaults, saveGamePath, saveClientPath, handleLaunchTypeChange };`
   )(
     config,
@@ -114,6 +120,18 @@ describe('OK-WW 编辑页保存', () => {
     await state.methods.saveClientPath('')
     expect(state.config.Game.ClientPath).toBe('')
     expect(state.refresh).toHaveBeenCalledTimes(2)
+  })
+
+  it('同字段连续保存都失败时回滚到已持久化值，不停留在中间值', async () => {
+    const first = deferred<boolean>()
+    const update = vi.fn().mockReturnValueOnce(first.promise).mockResolvedValueOnce(false)
+    const state = setup(update)
+    const one = state.methods.saveClientPath('mid-client.exe')
+    const two = state.methods.saveClientPath('new-client.exe')
+    first.resolve(false)
+    await Promise.all([one, two])
+    expect(state.config.Game.ClientPath).toBe('old-client.exe')
+    expect(update).toHaveBeenCalledTimes(2)
   })
 
   it.each([
