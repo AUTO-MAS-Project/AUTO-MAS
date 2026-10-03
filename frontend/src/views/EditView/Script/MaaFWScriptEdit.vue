@@ -170,10 +170,8 @@
             :monthly-once-tasks="monthlyOnceTasks"
             :period-task-options="periodTaskOptions"
             :interface-dependent-disabled="interfaceDependentDisabled"
-            :task-limit-override-rows="taskLimitOverrideRows"
             @change="handleChange"
             @period-task-change="handlePeriodTaskChange"
-            @task-limit-override-change="handleTaskLimitOverrideChange"
           />
           <MaaFWFlavorSlot
             part="scriptPage"
@@ -283,8 +281,6 @@ const {
   monthlyOnceTasks,
   periodTaskOptions,
   handlePeriodTaskChange,
-  taskLimitOverrideRows,
-  handleTaskLimitOverrideChange,
   envPreparing,
   envReady,
   envFailed,
