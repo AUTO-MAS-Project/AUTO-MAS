@@ -4480,12 +4480,25 @@ class MaaFWShellInstanceImportIn(BaseModel):
     )
 
 
+class MaaFWShellInstanceApplyIn(BaseModel):
+    scriptId: str = Field(..., min_length=1, description="MFW 脚本 ID")
+    userId: str = Field(..., min_length=1, description="要覆盖任务队列的用户 ID")
+    instanceId: str = Field(..., min_length=1, description="从哪份外壳实例导入")
+    path: Optional[str] = Field(
+        default=None,
+        description="实例从哪个目录列出来的就传哪个（弹窗「选择其他目录」选的）；不传时先来源目录再内嵌副本，与列表同一口径",
+    )
+
+
 class MaaFWShellInstanceImportItem(BaseModel):
     instanceId: str = Field(..., description="实例 ID")
     instanceName: str = Field(default="", description="外壳里的实例名")
-    success: bool = Field(default=False, description="是否建成了用户")
-    userId: str = Field(default="", description="新用户 ID（失败时为空）")
-    name: str = Field(default="", description="新用户名")
+    success: bool = Field(default=False, description="是否导入成功")
+    userId: str = Field(
+        default="",
+        description="用户 ID：建成新用户时就是它，覆盖已有用户时是那个用户",
+    )
+    name: str = Field(default="", description="用户名")
     importedTaskCount: int = Field(default=0, description="导入进队列的任务数")
     skipped: List[str] = Field(
         default_factory=list, description="当前项目里对不上、没导入的任务 / 选项 / 取值"
@@ -4496,6 +4509,35 @@ class MaaFWShellInstanceImportItem(BaseModel):
 class MaaFWShellInstanceImportOut(OutBase):
     data: List[MaaFWShellInstanceImportItem] = Field(
         default_factory=list, description="逐个实例的导入结果，顺序同请求"
+    )
+
+
+class MaaFWShellInstanceApplyData(BaseModel):
+    """覆盖到已有用户的结果：除了逐项成败与跳过项，还带实际写进用户配置的任务快照。
+
+    界面直接拿它刷新本地状态，不用再回头拉一次用户配置——那样会把用户还没保存的其它改动
+    一起冲掉。快照与 ``info`` 都是写入漏斗处理之后的样子（特调整理、密码加密），与读用户配置
+    拿到的一致。
+    """
+
+    result: Optional[MaaFWShellInstanceImportItem] = Field(
+        default=None,
+        description="这次覆盖的结果；失败原因在 result.error 里，连结果是空的（找不到用户 / 实例）时为 null",
+    )
+    snapshot: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="实际写进用户配置的任务快照；失败时为空",
+    )
+    info: Dict[str, Any] = Field(
+        default_factory=dict,
+        description="写入时特调一并改掉的用户信息字段（如 M9A 把切换账号收进 Account）；没有为空",
+    )
+
+
+class MaaFWShellInstanceApplyOut(OutBase):
+    data: MaaFWShellInstanceApplyData = Field(
+        default_factory=MaaFWShellInstanceApplyData,
+        description="覆盖结果与任务快照",
     )
 
 

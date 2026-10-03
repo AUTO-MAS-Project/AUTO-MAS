@@ -811,6 +811,18 @@ export default {
     stringSplittingGuide: '文字列分割のガイド',
     done: '完了',
     createFirstUser: '最初のアカウントを作成！',
+    shellQueueImport: '設定をインポート',
+    shellQueueImportTitle: '設定をインポート',
+    shellQueueImportOk: 'キューを置き換える',
+    shellQueueImportTaskCount: 'シェル内に {count} 件のタスク',
+    shellQueueImportDefaultDir: 'スクリプトのプロジェクトフォルダー',
+    shellQueueImportDir: '読み込み元：{dir}',
+    shellQueueImportNone: 'このフォルダーにシェルの設定がありません',
+    shellQueueImportNote:
+      'この設定のタスクとオプションで現在のユーザーのキューを置き換えます。元のキューは失われます。',
+    shellQueueImportDone: '{count} 件のタスクをインポートしました',
+    shellQueueImportSkippedTitle: '{count} 件を取り込めませんでした',
+    shellQueueImportFailed: 'シェル設定のインポートに失敗しました',
     shellImportTitle: '既存の設定をアカウントとして取り込む',
     shellImportHint:
       'プロジェクトフォルダーに {source} の設定が {count} 件見つかりました。チェックした設定ごとにアカウントを作成し、アカウント名は設定名、タスクキューとタスクオプションも取り込みます。チェックしなければ空のアカウントを 1 人だけ作成します。',

@@ -881,6 +881,18 @@ export default {
     stringSplittingGuide: 'String splitting guide',
     done: 'Done',
     createFirstUser: 'Create the first account',
+    shellQueueImport: 'Import config',
+    shellQueueImportTitle: 'Import config',
+    shellQueueImportOk: 'Replace queue',
+    shellQueueImportTaskCount: '{count} tasks in the shell',
+    shellQueueImportDefaultDir: "the script's project folder",
+    shellQueueImportDir: 'Reading from: {dir}',
+    shellQueueImportNone: 'No shell config in this folder',
+    shellQueueImportNote:
+      'This replaces the tasks and options of the current user with the ones from that config.',
+    shellQueueImportDone: 'Imported {count} tasks',
+    shellQueueImportSkippedTitle: '{count} items were skipped',
+    shellQueueImportFailed: 'Failed to import the shell config',
     shellImportTitle: 'Import existing configurations as accounts',
     shellImportHint:
       'Found {count} {source} configuration(s) in the project folder. Each one you check becomes an account named after it, with its task queue and task options imported. Leave all unchecked to create a single empty account.',
