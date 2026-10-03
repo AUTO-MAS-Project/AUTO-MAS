@@ -187,6 +187,30 @@
           </a-form-item>
         </div>
 
+        <!-- #1127 键位映射：热键项按任务存自己的键位（只存与默认不同的字段），录制沿用
+             脚本页的 MaaFWHotkeyModal；键码表只有 Win32 的，其它控制器禁用并说明 -->
+        <div v-else-if="option.type === 'hotkey'" class="hotkey-group">
+          <a-input-group compact class="hotkey-input-group">
+            <a-input :value="getHotkeySummary(option)" readonly class="hotkey-input" />
+            <a-tooltip
+              v-if="!isHotkeyRecordingAvailable"
+              :title="t('edit.mfwHotkeyControllerUnsupported')"
+            >
+              <a-button class="hotkey-button" disabled>
+                {{ t('edit.mfwHotkeySet') }}
+              </a-button>
+            </a-tooltip>
+            <a-button
+              v-else
+              class="hotkey-button"
+              :disabled="props.disabled"
+              @click="openHotkeyModal(option.name)"
+            >
+              {{ t('edit.mfwHotkeySet') }}
+            </a-button>
+          </a-input-group>
+        </div>
+
         <a-alert
           v-else
           type="warning"
@@ -230,6 +254,19 @@
           />
         </div>
       </div>
+
+      <MaaFWHotkeyModal
+        :open="hotkeyModalOptionName !== ''"
+        :options="getHotkeyModalOptions()"
+        :values="getHotkeyModalValues()"
+        :description="''"
+        :gates="{}"
+        :import-candidates="[]"
+        :import-dir="''"
+        :script-id="''"
+        @update:open="closeHotkeyModal"
+        @save="handleHotkeySave"
+      />
     </template>
   </div>
 </template>
@@ -241,6 +278,13 @@ import { message } from 'ant-design-vue'
 import { QuestionCircleOutlined } from '@ant-design/icons-vue'
 import { buildMaaFWAssetUrl } from '@/composables/useMaaFWApi'
 import MaaFWDescriptionView from './MaaFWDescriptionView.vue'
+import MaaFWHotkeyModal from '@/views/EditView/Script/MaaFWScriptEdit/MaaFWHotkeyModal.vue'
+import type { MaaFWHotkeyMap } from '@/views/EditView/Script/MaaFWScriptEdit/hotkeyOptions'
+import {
+  hotkeyChangedCount,
+  hotkeyModalValues as hotkeyModalFieldValues,
+  hotkeySavedValue,
+} from './maafwTaskHotkeys'
 import {
   getCheckboxCountState,
   hasStoredSecret,
@@ -330,10 +374,9 @@ const visibleOptions = computed(() => {
     seen.add(optionName)
 
     const option = optionMap.value.get(optionName)
-    // Hotkeys are game key bindings shared by every user of the script: they
-    // are configured once on the script page (Win32 only, Game.Hotkeys) and
-    // overlaid at run time, so the per-task editor leaves them out.
-    if (!option || option.type === 'hotkey' || !isOptionActive(option)) continue
+    // hotkey 选项按任务编辑（#1127）：每个任务实例自己的键位写进 taskOptions（只存与默认
+    // 不同的字段），脚本级 Game.Hotkeys 仍是共享默认；录制只在 Win32 控制器下开放。
+    if (!option || !isOptionActive(option)) continue
     result.push(option)
   }
   return result
@@ -355,6 +398,7 @@ const optionTypeLabels: Record<string, string> = {
   scan_select: '扫描选择',
   checkbox: '多选选项',
   input: '输入选项',
+  hotkey: '快捷键选项',
 }
 
 const optionGroups = computed<OptionGroup[]>(() => {
@@ -495,6 +539,39 @@ const getBooleanInputValue = (option: MaaFWOptionInfo, inputName: string) => {
 
 const emitOptionValue = (optionName: string, value: MaaFWTaskOptionValue) => {
   emit('update', { optionName, value })
+}
+
+// #1127 键位映射：热键项按任务录制，沿用脚本页的 MaaFWHotkeyModal；键码表只有 Win32 的
+//（utils/maafwHotkey 与 hotkey.py 的 Win32 表对齐），其它控制器没有对应键码，禁用并说明。
+const isHotkeyRecordingAvailable = computed(() => props.controllerName === 'Win32')
+const hotkeyModalOptionName = ref('')
+const hotkeyModalOption = computed<MaaFWOptionInfo | null>(() => {
+  const option = optionMap.value.get(hotkeyModalOptionName.value)
+  return option && option.type === 'hotkey' ? option : null
+})
+const openHotkeyModal = (optionName: string) => {
+  hotkeyModalOptionName.value = optionName
+}
+const closeHotkeyModal = (open: boolean) => {
+  if (!open) hotkeyModalOptionName.value = ''
+}
+const getHotkeyModalOptions = () => (hotkeyModalOption.value ? [hotkeyModalOption.value] : [])
+const getHotkeyModalValues = (): MaaFWHotkeyMap =>
+  hotkeyModalOption.value
+    ? hotkeyModalFieldValues(
+        hotkeyModalOption.value,
+        props.taskOptions[hotkeyModalOption.value.name]
+      )
+    : {}
+const getHotkeySummary = (option: MaaFWOptionInfo) => {
+  const changed = hotkeyChangedCount(option, props.taskOptions[option.name])
+  return changed > 0 ? t('edit.mfwHotkeyChanged', { n: changed }) : t('edit.mfwHotkeyDefault')
+}
+// 弹窗保存：与默认相同的字段不存（后端空串回默认），写进 taskOptions
+const handleHotkeySave = (values: MaaFWHotkeyMap) => {
+  const option = hotkeyModalOption.value
+  if (!option) return
+  emitOptionValue(option.name, hotkeySavedValue(option, props.taskOptions[option.name], values))
 }
 
 const validateInputValue = (inputItem: MaaFWOptionInputInfo, value: string) => {
@@ -772,6 +849,32 @@ const getActiveNestedOptionGroups = (option: MaaFWOptionInfo) => {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+}
+
+.hotkey-input-group {
+  display: flex;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid var(--ant-color-border);
+}
+
+.hotkey-input {
+  flex: 1;
+  border: none !important;
+  border-radius: 0 !important;
+}
+
+.hotkey-input:focus {
+  box-shadow: none !important;
+}
+
+.hotkey-button {
+  border: none;
+  border-left: 1px solid var(--ant-color-border-secondary);
+  border-radius: 0;
+  background: var(--ant-color-primary-bg);
+  color: var(--ant-color-primary);
+  font-weight: 600;
 }
 
 .sub-options {

@@ -467,6 +467,12 @@ export default {
     enterAccountId: 'アカウント ID を入力してください',
     goPlan: 'プランへ移動',
     pickGameServerThis: 'このアカウントがプレイするゲームサーバーを選びます',
+    srcGameClientLabel: 'クライアント',
+    pickGameClient: 'クライアントを選択してください',
+    srcGameClientAndroid: 'Android',
+    srcGameClientCloud: 'クラウド Android',
+    srcGameClientTip:
+      'SRC が使用するクライアントを選びます。「Android」はエミュレーター内の Android クライアントを使用し、「クラウド Android」はクラウドゲーム環境で動作します。クラウドでは MAS はアカウント切り替えを行いません。SRC の画面でログインしてください',
     bilibiliEnterPartUsername:
       "B サーバー（bilibili）ではアカウント名の一部を入力します。アカウント / メールアドレス / 電話番号を「{'|'}」区切りで入力することもできます",
     maaConfiguration: 'MAA 設定',
@@ -1596,6 +1602,7 @@ export default {
       '一部のキーは組み合わせが必要です（項目の横に表示）。それ以外は単一キーのみ',
     mfwHotkeyComboTag: '修飾キー {n} 個 + キー',
     mfwHotkeyNeedsCase: 'ユーザーのタスク設定で「{option}」を「{case}」にした場合のみ有効',
+    mfwHotkeyControllerUnsupported: 'このコントローラーではキーを設定できません（Win32 のみ）',
     mfwHotkeyImport: 'プロジェクトから読み込む',
     mfwHotkeyImportLastUsed: '前回使用',
     mfwHotkeyImported: 'プロジェクトから {n} 件のキー割り当てを読み込みました',

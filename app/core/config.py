@@ -2197,40 +2197,49 @@ class AppConfig(GlobalConfig):
         target_dir = instance_dir(root, slot)
         target_dir.mkdir(parents=True, exist_ok=True)
 
-        def _align_yml(rel_parts: list[str]) -> None:
-            source_yml = source_dir.joinpath(*rel_parts)
-            target_yml = target_dir.joinpath(*rel_parts)
-            target_yml.parent.mkdir(parents=True, exist_ok=True)
-            if source_yml.is_file():
-                shutil.copyfile(source_yml, target_yml)
-            else:
-                target_yml.unlink(missing_ok=True)
+        # 来源实例就是本用户绑定的槽时（「导入自己」），整段实例级对齐都是自我
+        # 拷贝：shutil.copyfile 会抛 SameFileError（Sentry AUTO-MAS-BACKEND-EM），
+        # 且内容本就是目标状态，整段跳过
+        same_slot = source_dir.resolve() == target_dir.resolve()
+        if same_slot:
+            align_note = f"来源实例与绑定槽 {slot:02d} 相同, 跳过实例级对齐"
+        else:
+            align_note = f"应用通知/按键配置/体力计划已对齐槽 {slot:02d}"
 
-        _align_yml(("notify.yml",))
-        _align_yml(("team.yml",))
-        _align_yml(("game.yml",))
-
-        source_one_dragon = source_dir / "one_dragon"
-        target_one_dragon = target_dir / "one_dragon"
-        if target_one_dragon.is_dir():
-            for target_yml in target_one_dragon.glob("*.yml"):
-                if (
-                    target_yml.name != "_group.yml"
-                    and not (source_one_dragon / target_yml.name).is_file()
-                ):
+            def _align_yml(rel_parts: list[str]) -> None:
+                source_yml = source_dir.joinpath(*rel_parts)
+                target_yml = target_dir.joinpath(*rel_parts)
+                target_yml.parent.mkdir(parents=True, exist_ok=True)
+                if source_yml.is_file():
+                    shutil.copyfile(source_yml, target_yml)
+                else:
                     target_yml.unlink(missing_ok=True)
-        if source_one_dragon.is_dir():
-            target_one_dragon.mkdir(parents=True, exist_ok=True)
-            for source_yml in source_one_dragon.glob("*.yml"):
-                if source_yml.name == "_group.yml":
-                    continue
-                shutil.copyfile(source_yml, target_one_dragon / source_yml.name)
+
+            _align_yml(("notify.yml",))
+            _align_yml(("team.yml",))
+            _align_yml(("game.yml",))
+
+            source_one_dragon = source_dir / "one_dragon"
+            target_one_dragon = target_dir / "one_dragon"
+            if target_one_dragon.is_dir():
+                for target_yml in target_one_dragon.glob("*.yml"):
+                    if (
+                        target_yml.name != "_group.yml"
+                        and not (source_one_dragon / target_yml.name).is_file()
+                    ):
+                        target_yml.unlink(missing_ok=True)
+            if source_one_dragon.is_dir():
+                target_one_dragon.mkdir(parents=True, exist_ok=True)
+                for source_yml in source_one_dragon.glob("*.yml"):
+                    if source_yml.name == "_group.yml":
+                        continue
+                    shutil.copyfile(source_yml, target_one_dragon / source_yml.name)
 
         await self.ScriptConfig.save()
         logger.info(
             f"ZZZ-OD 用户 {uid} 已从实例 {int(instance_idx):02d} 导入配置"
             f"(账号字段 {imported_accounts} 项, 任务 {len(all_apps)} 项, "
-            f"应用通知/按键配置/体力计划已对齐槽 {slot:02d})"
+            f"{align_note})"
         )
         return {
             "instanceIdx": int(instance_idx),

@@ -73,7 +73,8 @@
           </a-button>
           <!-- 上面列出在目录里扫到的外壳配置（注明目录），下面总能另选目录：导入项目时记下的
                来源目录之后不再更新，挪走了或平时用的是另一份外壳就从这里选 -->
-          <a-dropdown :trigger="['click']">
+          <!-- 任务页（无 scriptId）不显示「从项目导入」：导入读的是外壳配置实例，脚本页才有 -->
+          <a-dropdown v-if="scriptId" :trigger="['click']">
             <a-button type="link" class="hotkey-reset-all">
               {{ t('edit.mfwHotkeyImport') }}
               <DownOutlined />

@@ -244,6 +244,7 @@ const getDefaultSRCUserData = () => ({
     Mode: '脚本',
     IfQuickConfig: true,
     Server: 'CN-Official',
+    GameClient: 'android',
     RemainedDay: -1,
     IfScriptBeforeTask: false,
     ScriptBeforeTask: '',

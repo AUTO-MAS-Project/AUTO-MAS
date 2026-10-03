@@ -1782,6 +1782,13 @@ class SrcUserConfig(ConfigBase):
                 ]
             ),
         )
+        ## 客户端（安卓端/云游戏安卓端）
+        self.Info_GameClient = ConfigItem(
+            "Info",
+            "GameClient",
+            "android",
+            OptionsValidator(["android", "cloud_android"]),
+        )
         ## 剩余天数
         self.Info_RemainedDay = ConfigItem(
             "Info", "RemainedDay", -1, RangeValidator(-1, 9999)

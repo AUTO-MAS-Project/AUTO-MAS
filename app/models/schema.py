@@ -3073,6 +3073,9 @@ class SrcUserConfig_Info(BaseModel):
             "OVERSEA-TWHKMO",
         ]
     ] = Field(default=None, description="游戏服务器")
+    GameClient: Optional[Literal["android", "cloud_android"]] = Field(
+        default=None, description="客户端（安卓端、云游戏安卓端）"
+    )
     RemainedDay: Optional[int] = Field(default=None, description="剩余天数")
     IfScriptBeforeTask: Optional[bool] = Field(
         default=None, description="是否在任务前执行脚本"
