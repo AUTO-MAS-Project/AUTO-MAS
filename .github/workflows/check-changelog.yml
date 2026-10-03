@@ -45,6 +45,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       # 版本号守门要看 tag，release 分支的守门要看 dev；pull_request 的检出默认都没有。
       - name: 拉取目标分支、dev 与全部 tag

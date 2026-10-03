@@ -69,6 +69,7 @@ MCP_INCLUDED_OPERATIONS = (
     "update_time_set_api_queue_time_update_post",
     "reorder_time_set_api_queue_time_order_post",
     "get_task_runtime_snapshot_api_dispatch_runtime_snapshot_get",
+    "get_task_status_api_dispatch_task__task_id__get",
     "add_task_api_dispatch_start_post",
     "stop_task_api_dispatch_stop_post",
     # 只读历史索引，用于核对已结束的运行；不开放接受文件路径的历史详情。
@@ -202,8 +203,8 @@ async def mount_mcp(app: FastAPI) -> None:
                 "OK-NTE 先查询配置 schema，BAAH 先查询已有配置文件名。"
                 "保存后回读核对；检查业务 code，失败时不要猜测 ID、字段或选项。"
                 "任务创建成功仅表示已受理，不代表脚本运行成功。"
-                "运行快照只包含当前任务；任务消失后查询历史索引中的 DONE/ERROR，"
-                "没有匹配记录时不能判定成功。"
+                "运行快照只包含当前任务；任务结束后按 taskId 查任务状态取终态，"
+                "更早的结果查历史索引中的 DONE/ERROR，没有匹配记录时不能判定成功。"
             ),
             describe_full_response_schema=False,
             describe_all_responses=False,
@@ -232,12 +233,20 @@ async def mount_mcp(app: FastAPI) -> None:
                     "Win32 需配置游戏路径。控制器、基质与采集选项使用返回的真实值；"
                     "检查返回的 code，查询失败时先处理错误，不要猜测选项。"
                 )
+            elif tool.name == "get_task_status_api_dispatch_task__task_id__get":
+                tool.description += (
+                    "\n\n按 taskId 单点查询一个任务：运行中返回 running，已结束返回"
+                    "success/error/cancelled 及结果文本与错误信息，不返回日志。"
+                    "code=404 表示该 id 既不在运行中，也不在最近完成的记录里，"
+                    "结果未知，不要判成功。"
+                )
             elif tool.name == "search_history_api_history_search_post":
                 tool.description += (
                     "\n\n用于查询已结束运行的结果，建议按运行日期使用 DAILY 模式。"
                     "按用户和记录时间核对 index 中的 status（DONE/ERROR）与 result。"
-                    "该接口不按 taskId 精确检索；记录缺失或无法唯一对应时，"
-                    "结果仍未知，不能把任务从运行快照消失视为成功。"
+                    "该接口不按 taskId 精确检索，按 taskId 取终态请用任务状态查询；"
+                    "记录缺失或无法唯一对应时，结果仍未知，"
+                    "不能把任务从运行快照消失视为成功。"
                 )
         mcp.mount_http()
         logger.info(f"MCP 服务已挂载，共 {len(mcp.tools)} 个工具")
