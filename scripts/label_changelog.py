@@ -75,6 +75,13 @@ def github_api(
     return json.loads(result.stdout) if result.stdout.strip() else None
 
 
+def api_error(error: subprocess.CalledProcessError) -> str:
+    """把 gh 的报错压成一行，方便放进工作流注解里。"""
+
+    detail = (error.stderr or "").strip() or (error.stdout or "").strip()
+    return detail.replace("\n", " ") or f"退出码 {error.returncode}"
+
+
 def fragment_labels(filename: str, content: str) -> set[str]:
     """复用入账解析器，亮点和仅公测标记不改变碎片原分类。"""
 
@@ -147,9 +154,19 @@ def main() -> None:
     issue = f"repos/{repo}/issues/{number}/labels"
     additions = sorted(desired - existing)
     if additions:
-        github_api(issue, method="POST", payload={"labels": additions})
+        try:
+            github_api(issue, method="POST", payload={"labels": additions})
+        except subprocess.CalledProcessError as error:
+            # 能不能写标签取决于仓库设置与 PR 来源，做不到时不该让整个工作流失败：
+            # 标签只是给维护者看的路标，碎片本身对不对由检查工作流独立判断
+            print(
+                f"::warning::添加标签失败（{', '.join(additions)}）：{api_error(error)}"
+            )
     for label in sorted((existing & MANAGED_LABELS) - desired):
-        github_api(f"{issue}/{quote(label, safe='')}", method="DELETE")
+        try:
+            github_api(f"{issue}/{quote(label, safe='')}", method="DELETE")
+        except subprocess.CalledProcessError as error:
+            print(f"::warning::移除标签 {label} 失败：{api_error(error)}")
     print("碎片标签：" + "、".join(sorted(desired)))
 
 

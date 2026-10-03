@@ -33,6 +33,9 @@ jobs:
           python-version: '3.12'
 
       - name: 按碎片分类与项目同步标签
+        # 这一步只是给维护者加路标：标签写权限取决于仓库设置与 PR 来源，拿不到时提示即可，
+        # 不该让整个工作流失败（碎片本身是否合规由「检查更新日志碎片与版本号」独立判断）
+        continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
