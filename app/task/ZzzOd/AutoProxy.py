@@ -66,8 +66,9 @@ from app.log_box import LogCollect, log_box
 from app.models.config import ZzzOdConfig, ZzzOdUserConfig
 from app.models.ConfigBase import MultipleConfig
 from app.models.schema import WSTaskNoticeData
-from app.models.task import LogRecord, ScriptItem, TaskExecuteBase, UserItem
+from app.models.task import LogRecord, ScriptItem, UserItem
 from app.services import Notify, System
+from app.task.base import ScriptAutoProxyBase
 from app.task.general.tools import execute_script_task
 from app.task.proxy_helpers import (
     find_pids_by_name,
@@ -733,7 +734,7 @@ def _snapshot_all_run_records(root: Path) -> dict[str, int]:
     return aggregated
 
 
-class AutoProxyTask(TaskExecuteBase):
+class AutoProxyTask(ScriptAutoProxyBase):
     """ZZZ-OD 自动代理：逐用户按三态来源拉起启动器 CLI 一条龙并监控"""
 
     # 取消时等 final_task 完整收尾（SRC/MaaFW 同款）：不设此 flag 时外层取消会

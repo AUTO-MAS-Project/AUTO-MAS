@@ -20,6 +20,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   windowClose: () => ipcRenderer.invoke('window-close'),
   windowIsMaximized: () => ipcRenderer.invoke('window-is-maximized'),
   windowFocus: () => ipcRenderer.invoke('window-focus'),
+  // 电源操作倒计时警示：主进程负责把窗口拉到最前并临时置顶
+  powerWarningStart: () => ipcRenderer.invoke('power-warning:start'),
+  powerWarningEnd: () => ipcRenderer.invoke('power-warning:end'),
   appQuit: () => ipcRenderer.invoke('app-quit'),
   appRestart: () => ipcRenderer.invoke('app-restart'),
 
@@ -60,7 +63,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   stopBackend: () => ipcRenderer.invoke('backend-stop'),
 
   // 配置文件操作
-  saveConfig: (config: unknown) => ipcRenderer.invoke('save-config', config),
+  saveConfig: (config: unknown, defaults?: unknown) =>
+    ipcRenderer.invoke('save-config', config, defaults),
   loadConfig: () => ipcRenderer.invoke('load-config'),
   resetConfig: () => ipcRenderer.invoke('reset-config'),
 

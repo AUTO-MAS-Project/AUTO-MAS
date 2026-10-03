@@ -462,20 +462,24 @@ jobs:
           mirrorchyan_rid: AUTO_MAS
           upload_token: ${{ secrets.MirrorChyanUploadToken }}
 
-      - name: 触发自建源更新
+      - name: 推送自建源更新
+        env:
+          DATACENTER_ACCESS_KEY: ${{ secrets.DATACENTER_ACCESS_KEY }}
+          DATACENTER_STABLE_FILE_ID: ${{ vars.DATACENTER_RELEASE_STABLE_FILE_ID }}
+          DATACENTER_BETA_FILE_ID: ${{ vars.DATACENTER_RELEASE_BETA_FILE_ID }}
+          VERSION_TAG: ${{ needs.build.outputs.version_tag }}
+          IS_PRERELEASE: ${{ needs.build.outputs.is_prerelease }}
         run: |
-          if [ "${{ needs.build.outputs.is_prerelease }}" = "true" ]; then
-            CHANNEL="beta"
+          push_version() {
+            curl -sS --fail --show-error -X POST \
+              "https://data.auto-mas.top/api/v1/user/files/$1/versions" \
+              -H "Authorization: Bearer $DATACENTER_ACCESS_KEY" \
+              -F "file=@AUTO-MAS-Setup-${VERSION_TAG}-x64.zip;type=application/zip"
+          }
+
+          if [ "$IS_PRERELEASE" = "true" ]; then
+            push_version "$DATACENTER_BETA_FILE_ID"
           else
-            CHANNEL="stable"
+            push_version "$DATACENTER_STABLE_FILE_ID"
+            push_version "$DATACENTER_BETA_FILE_ID"
           fi
-
-          PAYLOAD=$(jq -n \
-            --arg version "${{ needs.build.outputs.version_tag }}" \
-            --arg res_id "AUTO_MAS" \
-            --arg channel "$CHANNEL" \
-            --arg os "win" \
-            --arg arch "x64" \
-            '{version: $version, res_id: $res_id, channel: $channel, os: $os, arch: $arch}')
-
-          curl -X POST "${{ secrets.UPDATE_URL }}" -H "Content-Type: application/json" -d "$PAYLOAD"

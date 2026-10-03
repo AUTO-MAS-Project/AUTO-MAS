@@ -31,8 +31,8 @@ const OPTIONS = [
 
 const m9a = resolveMaaFWFlavor('M9A')
 const maafw = resolveMaaFWFlavor('MaaFW')
-const m9aEntries = new Set(m9a.managedTaskEntries)
-const maafwEntries = new Set(maafw.managedTaskEntries)
+const m9aEntries = new Set(m9a.userPage.managed.entries)
+const maafwEntries = new Set(maafw.userPage.managed.entries)
 
 const switchOptions = (account: string) => ({ '目标账号(可选)': { 账号: account } })
 
@@ -43,8 +43,8 @@ const stateOf = (
   flavor = m9a
 ) =>
   managedMaaFWQueueState(queued, {
-    managedEntries: new Set(flavor.managedTaskEntries),
-    accountTask: flavor.managedAccountTask,
+    managedEntries: new Set(flavor.userPage.managed.entries),
+    accountTask: flavor.userPage.managed.accountTask,
     resourceName,
     taskOptions,
     options: OPTIONS,
@@ -61,7 +61,7 @@ describe('MaaFW 特调的受管任务', () => {
 
   it('通用 MaaFW 与没声明受管任务的特调一个都不滤', () => {
     expect(withoutManagedMaaFWTasks(TASKS, maafwEntries)).toHaveLength(TASKS.length)
-    expect(resolveMaaFWFlavor('MSS').managedTaskEntries).toEqual([])
+    expect(resolveMaaFWFlavor('MSS').userPage.managed.entries).toEqual([])
   })
 
   it('按 entry 判，不按任务名', () => {

@@ -30,8 +30,9 @@ from app.core.ws import Publisher, protocol
 from app.models.config import BetterGIConfig, BetterGIUserConfig
 from app.models.ConfigBase import MultipleConfig
 from app.models.schema import WSTaskNoticeData
-from app.models.task import LogRecord, ScriptItem, TaskExecuteBase, UserItem
+from app.models.task import LogRecord, ScriptItem, UserItem
 from app.services import Notify, System
+from app.task.base import ScriptAutoProxyBase
 from app.task.general.tools import execute_script_task
 from app.task.proxy_helpers import (
     CONFIG_SOURCE_DIRECT,
@@ -341,7 +342,7 @@ def _merge_one_dragon_reports(*phases: list[dict] | None) -> list[dict] | None:
     return merged
 
 
-class AutoProxyTask(TaskExecuteBase):
+class AutoProxyTask(ScriptAutoProxyBase):
     """BetterGI 自动代理：拼 `startOneDragon <configName>` 启动并监控日志"""
 
     def __init__(

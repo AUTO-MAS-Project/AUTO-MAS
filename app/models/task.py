@@ -332,10 +332,13 @@ class TaskExecuteBase(ABC):
     @abstractmethod
     async def on_crash(self, e): ...
 
+    async def _run_main_task(self) -> None:
+        await self.main_task()
+
     async def _execute_task(self, parent_tg: asyncio.TaskGroup):
         self._task_group = parent_tg
         try:
-            await self.main_task()
+            await self._run_main_task()
         except asyncio.CancelledError:
             self.stopped_manually = True
             raise

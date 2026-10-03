@@ -65,7 +65,7 @@ from app.task.MaaFW.tools.core.runtime_pool.host_environment import (
     subprocess_proxy_scope,
 )
 from app.task.MaaFW.tools.notify import push_notification
-from app.task.MaaFW.tools.notify.report import (
+from app.task.notify_core import (
     NOTIFY_SCREENSHOT_LIMIT,
     load_screenshot_images,
     screenshot_entries,
@@ -525,11 +525,12 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             if self.run_plan.controllerType == "Adb":
                 emulator_id = self.script_config.get("Emulator", "Id")
                 emulator_index = self.script_config.get("Emulator", "Index")
-                if emulator_id == "-" or emulator_index in ("", "-"):
+                configured_address, _ = self._configured_adb_address()
+                if not configured_address and (
+                    emulator_id == "-" or emulator_index in ("", "-")
+                ):
                     self.cur_user_item.status = "异常"
-                    return (
-                        "当前 MaaFW controller 需要 ADB，请在脚本管理页选择模拟器和实例"
-                    )
+                    return "当前 MaaFW controller 需要 ADB，请在脚本管理页选择模拟器和实例，或填写 ADB 地址"
             elif game_path_error is not None:
                 self.cur_user_item.status = "异常"
                 return game_path_error
@@ -913,6 +914,8 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         # 钩子装饰（首尾任务、切号绑定之类），再按装饰后的列表建计划。通用 MaaFW
         # 没有钩子，仍按快照直接建计划，行为不变。
         flavor = resolve_flavor(self.script_config)
+        # 脚本级键位（Game.Hotkeys）：坏 JSON / 不是对象当空，字段级的校验在建计划时做。
+        script_hotkeys = _load_script_hotkeys(self.script_config.get("Game", "Hotkeys"))
         missing_skips: list[MaaFWSkippedTaskPlan] = []
         try:
             # 密码字段（PI v2.10.0）在配置里是密文，只在这份内存副本里解开交给计划；
@@ -934,6 +937,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                     resource_name=resource_name,
                     selected_preset=effective_preset,
                     task_snapshot=task_snapshot or None,
+                    script_hotkeys=script_hotkeys,
                 )
                 return _with_skipped_tasks(plan, missing_skips)
             task_ids, task_options = select_snapshot_tasks(
@@ -958,6 +962,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 resource_name=resource_name,
                 task_ids=task_ids,
                 task_options=task_options,
+                script_hotkeys=script_hotkeys,
             )
             return _with_skipped_tasks(plan, missing_skips)
         except Exception as exc:
@@ -1098,15 +1103,42 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             )
         return ""
 
+    def _configured_adb_address(self) -> tuple[str, str]:
+        """脚本里手填的 ADB 地址，返回 ``(地址, 来源)``；都没填就是 ``("", "")``。
+
+        用户级 ``Device.AdbAddress`` 覆盖脚本级，两个字段默认都是空串。填了地址就直接连它，
+        不去启动模拟器，自然也没接管：没接管的设备 MAS 不管开关（#205）。
+        """
+        user_address = str(
+            self.cur_user_config.get("Device", "AdbAddress") or ""
+        ).strip()
+        if user_address:
+            return user_address, "用户配置"
+        script_address = str(
+            self.script_config.get("Device", "AdbAddress") or ""
+        ).strip()
+        return script_address, "脚本配置" if script_address else ""
+
     async def _resolve_adb_address(self) -> tuple[str, DeviceInfo | None]:
         if self._cached_adb_address is not None:
             return self._cached_adb_address, self._cached_device_info
+
+        configured_address, source = self._configured_adb_address()
+        if configured_address:
+            self._cached_adb_address = configured_address
+            self._append_log(f"使用{source}的 ADB 地址: {configured_address}")
+            return configured_address, None
+
         if self.emulator_manager is None:
-            raise RuntimeError("当前 controller 需要 ADB，请在脚本管理页选择模拟器")
+            raise RuntimeError(
+                "当前 controller 需要 ADB，请在脚本管理页选择模拟器，或填写 ADB 地址"
+            )
 
         emulator_index = self.script_config.get("Emulator", "Index")
         if emulator_index in ("", "-"):
-            raise RuntimeError("当前 controller 需要 ADB，请在脚本管理页选择模拟器实例")
+            raise RuntimeError(
+                "当前 controller 需要 ADB，请在脚本管理页选择模拟器实例，或填写 ADB 地址"
+            )
 
         package_name = await self._resolve_game_package()
         self._launched_package_name = package_name
@@ -2729,6 +2761,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             images = await asyncio.to_thread(
                 load_screenshot_images,
                 self._collect_failure_screenshots()[-NOTIFY_SCREENSHOT_LIMIT:],
+                image_id_prefix="maafw",
             )
             statistics["screenshots"] = screenshot_entries(images)
             signal_message = self._signal_user_message()
@@ -3155,6 +3188,23 @@ def _load_json_dict(value: Any) -> dict[str, Any]:
             if isinstance(data, dict):
                 return data
     return {}
+
+
+def _load_script_hotkeys(value: Any) -> dict[str, dict[str, str]]:
+    """``Game.Hotkeys`` → ``{option 名: {字段名: 组合键}}``；不成形的部分丢掉。"""
+
+    result: dict[str, dict[str, str]] = {}
+    for option_name, fields in _load_json_dict(value).items():
+        if not isinstance(option_name, str) or not isinstance(fields, dict):
+            continue
+        cleaned = {
+            field_name: field_value
+            for field_name, field_value in fields.items()
+            if isinstance(field_name, str) and isinstance(field_value, str)
+        }
+        if cleaned:
+            result[option_name] = cleaned
+    return result
 
 
 def _load_json_list(value: Any) -> list[str]:

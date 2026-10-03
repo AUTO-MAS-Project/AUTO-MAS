@@ -110,26 +110,17 @@
 
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
-import type { MaaFWScriptConfig } from '@/types/script'
+import type {
+  MaaFWScriptRunSectionEmits,
+  MaaFWScriptRunSectionProps,
+} from '../../MaaFWFlavor/sectionContracts'
 
 const { t } = useI18n()
 
-defineProps<{
-  maafwConfig: MaaFWScriptConfig
-  dailyOnceTasks: string[]
-  weeklyOnceTasks: string[]
-  monthlyOnceTasks: string[]
-  periodTaskOptions: Array<{ label: string; value: string }>
-  interfaceDependentDisabled: boolean
-}>()
+// props / 事件的契约在 sectionContracts（特调替换这个分节时按同一份契约接收）
+defineProps<MaaFWScriptRunSectionProps>()
 
-const emit = defineEmits<{
-  change: [category: keyof MaaFWScriptConfig, key: string, value: unknown]
-  'period-task-change': [
-    key: 'DailyOnceTasks' | 'WeeklyOnceTasks' | 'MonthlyOnceTasks',
-    values: string[],
-  ]
-}>()
+const emit = defineEmits<MaaFWScriptRunSectionEmits>()
 </script>
 
 <style scoped>

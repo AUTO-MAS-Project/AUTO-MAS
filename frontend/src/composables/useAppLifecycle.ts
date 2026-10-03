@@ -115,6 +115,8 @@ const backendStatus: Ref<BackendStatus> = ref('unknown')
 const powerCountdown: Ref<WSPowerCountdownData | null> = ref(null)
 // 倒计时推送因主连接断开而中断：弹窗保留（仍可取消），剩余秒数停在最后一次推送
 const powerCountdownDisconnected: Ref<boolean> = ref(false)
+// 同一次倒计时只向主进程请求一次警示；结束或取消时撤回，避免窗口永久置顶
+let powerWarningRaised = false
 
 let powerCountdownStaleTimer: number | undefined
 
@@ -171,13 +173,40 @@ const armPowerCountdownStaleTimer = (): void => {
     // 连接正常而更新停止（已执行或已结束）：清除展示状态
     powerCountdown.value = null
     powerCountdownDisconnected.value = false
+    dismissPowerWarning()
   }, POWER_COUNTDOWN_STALE_MS)
+}
+
+/**
+ * 请求主进程把窗口拉到最前并临时置顶。
+ * 光靠窗口 focus() 会被 Windows 的前台锁定挡下，用户很容易错过即将执行的电源操作。
+ */
+const raisePowerWarning = (): void => {
+  if (powerWarningRaised) return
+  powerWarningRaised = true
+  const request = window.electronAPI?.powerWarningStart?.()
+  void request?.catch(error => {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.warn(`请求窗口置顶失败: ${errorMsg}`)
+  })
+}
+
+/** 撤回置顶（倒计时结束、已取消，或推送中断后按超时清除时调用）。 */
+const dismissPowerWarning = (): void => {
+  if (!powerWarningRaised) return
+  powerWarningRaised = false
+  const request = window.electronAPI?.powerWarningEnd?.()
+  void request?.catch(error => {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    logger.warn(`撤回窗口置顶失败: ${errorMsg}`)
+  })
 }
 
 const handlePowerCountdownUpdated = (data: WSPowerCountdownData): void => {
   powerMutationSequence++
   powerCountdown.value = data
   powerCountdownDisconnected.value = false
+  raisePowerWarning()
   if (powerCountdownStaleTimer !== undefined) {
     window.clearTimeout(powerCountdownStaleTimer)
   }
@@ -193,6 +222,7 @@ const handlePowerCountdownCancelled = (): void => {
   }
   powerCountdown.value = null
   powerCountdownDisconnected.value = false
+  dismissPowerWarning()
 }
 
 /**
@@ -373,6 +403,8 @@ export function disposeAppLifecycle(): void {
     window.clearTimeout(powerCountdownStaleTimer)
     powerCountdownStaleTimer = undefined
   }
+  // 释放后不再有倒计时推送，别把窗口留在置顶状态
+  dismissPowerWarning()
   endIntentionalBackendRestart('生命周期协调器释放')
   dismissDisconnectIncident()
   // 4 小时更新检查是应用级定时器，跟着生命周期一起停，不绑任何页面

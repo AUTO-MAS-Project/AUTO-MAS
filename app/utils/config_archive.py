@@ -38,6 +38,7 @@ from pathlib import Path
 
 from app.utils import get_logger
 from app.utils.io import force_rmtree
+from app.utils.platform import IS_WINDOWS, is_long_path_supported
 
 logger = get_logger("配置归档")
 
@@ -58,6 +59,15 @@ MODE_FILE_NAME = "_mas_mode"
 
 供备份列表类型标签与跨来源恢复校验用；只存归档内，不是配置内容。
 """
+
+_PARTIAL_SUFFIX = ".partial"
+"""归档暂存目录后缀：复制期间为 <时间戳>.partial，全部写完后改名为时间戳目录。
+
+不匹配 _TS_PATTERN，因此暂存态天然不进列表、不参与去重、不能被恢复选中。
+"""
+
+_WINDOWS_MAX_PATH = 260
+"""Windows 未开启长路径支持时的 MAX_PATH 上限。"""
 
 
 def write_backup_mode(backup_dir: Path, mode: str) -> None:
@@ -173,6 +183,44 @@ def _coerce_bytes(source: "Path | str | bytes") -> bytes:
     return Path(source).read_bytes()
 
 
+def _staging_dir(dest: Path) -> Path:
+    """归档暂存目录：``<时间戳>.partial``（同名字段见 :data:`_PARTIAL_SUFFIX`）。"""
+
+    return dest.with_name(dest.name + _PARTIAL_SUFFIX)
+
+
+def _ensure_path_length(target: Path) -> None:
+    """预检 Windows ``MAX_PATH``：系统没开长路径支持且超限时在**写盘之前**报错。
+
+    Windows 未开启长路径支持时，路径达到 260 字符会让 ``mkdir``/``copyfile``
+    抛 ``FileNotFoundError``（指向凭空少一层的父目录），用户看到的是一句
+    无从下手的报错，且失败点落在复制循环中途。这里提前判定并给出可操作
+    的提示，同时让失败发生在建目录、删除目标之前。
+
+    系统开了长路径支持时这类路径本来就能正常读写（Python 3.6+ 进程带
+    longPathAware 清单，只要注册表开关打开即可），此时预检只会把本来能
+    完成的备份拦下来，所以不判。
+
+    Args:
+        target: 即将写入的目标绝对路径。
+
+    Raises:
+        ValueError: Windows 未开启长路径支持且路径长度达到
+            :data:`_WINDOWS_MAX_PATH`。
+    """
+
+    if (
+        IS_WINDOWS
+        and not is_long_path_supported()
+        and len(str(target)) >= _WINDOWS_MAX_PATH
+    ):
+        raise ValueError(
+            f"备份路径过长（{len(str(target))} 字符，达到 Windows 上限 "
+            f"{_WINDOWS_MAX_PATH}）：{target}；"
+            "请把脚本配置路径改到层级更浅的目录，或开启系统长路径支持后重试"
+        )
+
+
 def _archive(
     files: dict[str, "Path | str | bytes"],
     store_root: Path,
@@ -227,19 +275,34 @@ def _archive(
         except OSError as e:
             logger.warning(f"备份指纹对比失败，照常归档: {e}")
 
-    dest = store_root / datetime.now().strftime(_TIME_FORMAT)
+    now = datetime.now().strftime(_TIME_FORMAT)
+    dest = store_root / now
     serial = 1
-    while dest.exists():  # 同秒内多次备份（理论罕见）顺延序号
+    while (
+        dest.exists() or _staging_dir(dest).exists()
+    ):  # 同秒内多次备份（理论罕见）顺延序号
         serial += 1
-        dest = store_root / f"{datetime.now().strftime(_TIME_FORMAT)}-{serial}"
+        dest = store_root / f"{now}-{serial}"
+    staging = _staging_dir(dest)
     dest.parent.mkdir(parents=True, exist_ok=True)
-    for rel, source in files.items():
-        target = dest / rel
-        target.parent.mkdir(parents=True, exist_ok=True)
-        if isinstance(source, Path):
-            shutil.copyfile(source, target)
-        else:
-            target.write_bytes(_coerce_bytes(source))
+    try:
+        # 先全量写到暂存目录，全部成功后再改名转正：中途失败（磁盘满、
+        # 文件被占用、路径超长……）时清掉暂存目录，盘上不会留下任何命名
+        # 符合 _TS_PATTERN 的目录，列表/去重/恢复都看不到半截归档。
+        for rel, source in files.items():
+            target = staging / rel
+            _ensure_path_length(target)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            if isinstance(source, Path):
+                shutil.copyfile(source, target)
+            else:
+                target.write_bytes(_coerce_bytes(source))
+        # 同目录改名在同一卷上是原子的：列表只会看到完整归档
+        staging.rename(dest)
+    except BaseException:
+        # 失败清理暂存目录（同 app/utils/io.py 的 atomic_write），再把原异常扩散给调用方
+        force_rmtree(staging)
+        raise
 
     for old in list_times(store_root)[keep:]:
         if old in protect:  # force 归档（恢复前存底）不清任何现存归档
@@ -360,6 +423,10 @@ def restore_dir(store_root: Path, ts: str, target: Path) -> None:
     if not restored:
         raise ValueError(f"备份内容为空: {ts}")
     target = Path(target)
+    # 长路径预检要在 force_rmtree 之前：「先删后拷」一旦写不回去，用户目录已经没了，
+    # 比归档失败贵得多；预检让这种情况在删除之前就报错。
+    for rel in restored:
+        _ensure_path_length(target / rel)
     # 先清再拷，逐文件写回：目标残留目录被占用时不再「部分已删、备份一个
     # 没拷回」；删除走 force_rmtree：目标带只读文件（如脚本自带的 .git 对象）
     # 时普通 rmtree 删不掉，残留会让随后的写回失败。

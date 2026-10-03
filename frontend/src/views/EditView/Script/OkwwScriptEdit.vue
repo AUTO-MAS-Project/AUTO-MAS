@@ -387,6 +387,10 @@
           <div class="section-header">
             <h3>{{ t('edit.runConfiguration') }}</h3>
           </div>
+          <ScriptHardTimeoutField
+            v-model:value="okwwConfig.Run.HardTimeLimit"
+            @save="handleChange('Run', 'HardTimeLimit', okwwConfig.Run.HardTimeLimit)"
+          />
           <a-row :gutter="24">
             <a-col :span="8">
               <a-form-item>
@@ -456,7 +460,7 @@
 
   <a-modal
     v-model:open="updateModal.open"
-    :title="updateModal.running ? '鸣潮更新进度' : '检查鸣潮更新'"
+    :title="updateModal.running ? t('edit.okwwUpdateProgress') : t('edit.okwwCheckUpdateTitle')"
     :confirm-loading="updateModal.starting"
     :mask-closable="!updateModal.running"
     :footer="updateModal.running ? null : undefined"
@@ -506,6 +510,7 @@
 </template>
 
 <script setup lang="ts">
+import ScriptHardTimeoutField from '@/views/EditView/Script/components/ScriptHardTimeoutField.vue'
 import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
 import DocLink from '@/components/DocLink.vue'
 import { MAS_DOC_URLS } from '@/utils/openExternal'
@@ -574,6 +579,7 @@ interface OkwwGameForm {
 }
 
 interface OkwwRunForm {
+  HardTimeLimit: number
   ProxyTimesLimit: number
   RunTimesLimit: number
   RunTimeLimit: number
@@ -608,7 +614,7 @@ const okwwConfig = reactive<OkwwScriptConfigForm>({
     IfAutoUpdate: true,
     UpdateFullSyncLimit: 30,
   },
-  Run: { ProxyTimesLimit: 0, RunTimesLimit: 3, RunTimeLimit: 60 },
+  Run: { HardTimeLimit: 120, ProxyTimesLimit: 0, RunTimesLimit: 3, RunTimeLimit: 60 },
 })
 
 const rules = {

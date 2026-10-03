@@ -524,28 +524,7 @@ def plan_instance_import(
 
     # 全局 / 资源级选项：MAS 把它们并进每个任务的选项表（见 build_task_option_maps），
     # 所以换算一次，再分给选项表里有它们的任务
-    shared_values: dict[str, MaaFWTaskOptionValue] = {}
-    if instance.source == SOURCE_MXU and instance.global_options:
-        shared_values = _mxu_option_values(
-            instance.global_options, interface.option, "全局选项", labels, skipped
-        )
-    if instance.source == SOURCE_MFAA and instance.resource_options is not None:
-        shared_values = _mfaa_resource_option_values(
-            instance, interface.option, labels, skipped
-        )
-    if instance.source == SOURCE_MFW:
-        for raw_shared, prefix in (
-            (instance.global_options, "全局选项"),
-            (instance.resource_options, "资源选项"),
-        ):
-            if raw_shared is None or raw_shared == {}:
-                continue
-            if not isinstance(raw_shared, dict):
-                skipped.append(f"{prefix}（格式无法识别）")
-                continue
-            _mfw_collect_options(
-                raw_shared, interface.option, prefix, labels, shared_values, skipped
-            )
+    shared_values = _shared_option_values(instance, interface, labels, skipped)
 
     def collect_task_options(
         raw_options: Any, option_map: Mapping[str, MaaFWOption], prefix: str
@@ -553,28 +532,17 @@ def plan_instance_import(
         """一条任务自己的选项，叠在全局 / 资源级选项上（任务自己记的优先）。"""
 
         values = {k: v for k, v in shared_values.items() if k in option_map}
-        if instance.source == SOURCE_MFAA:
-            _mfaa_collect_options(
-                raw_options or [],
+        values.update(
+            _task_own_option_values(
+                instance,
+                raw_options,
                 option_map,
                 interface.option,
                 prefix,
                 labels,
-                values,
                 skipped,
             )
-        elif instance.source == SOURCE_MFW:
-            task_values: dict[str, MaaFWTaskOptionValue] = {}
-            _mfw_collect_options(
-                raw_options or {}, option_map, prefix, labels, task_values, skipped
-            )
-            values.update(task_values)
-        else:
-            values.update(
-                _mxu_option_values(
-                    raw_options or {}, option_map, prefix, labels, skipped
-                )
-            )
+        )
         return values
 
     # MXU 把前置任务（pretask）当成队列里的一条 ``__MXU_PRETASK__<名>`` 存，MAS 的队列也认
@@ -672,6 +640,121 @@ def plan_instance_import(
         # 同一个选项在嵌套分支里可能出现多次（MFW-PyQt6 的 branches），同样的跳过只记一次
         skipped=list(dict.fromkeys(skipped)),
     )
+
+
+def collect_instance_hotkeys(
+    instance: ShellInstance, interface: MaaFWInterface
+) -> dict[str, dict[str, str]]:
+    """一份实例里记着的键位：``{hotkey 选项名: {字段名: 组合键}}``，给脚本级 ``Game.Hotkeys`` 用。
+
+    选项换算与 ``plan_instance_import`` 同一套：MXU 读 ``globalOptionValues`` 与各任务的
+    ``optionValues``，MFAAvalonia 读当前资源的 ``ResourceOptionItems`` 与各任务的选项，MFW-PyQt6
+    读 ``global_options``、资源级 ``setting_options`` 与各任务的 ``task_option``（含嵌套分支）。
+    先全局 / 资源级、再按队列顺序逐个任务覆盖（同一字段后出现的为准）。只留 interface 里
+    ``type == "hotkey"`` 的选项、其 ``hotkeys`` 里声明过的字段、非空的值；不与默认值比较，
+    对不上的项也不记跳过（这里不是导入，跳过项由导入用户那条路报）。
+    """
+
+    # 嵌套在 select / switch 分支下的 hotkey 选项要先认出上级才走得进去，所以按全部选项换算、
+    # 最后再挑 hotkey
+    skipped: list[str] = []
+    labels = _Labels(interface, None)
+    layers = [_shared_option_values(instance, interface, labels, skipped)]
+    for task in instance.tasks:
+        layers.append(
+            _task_own_option_values(
+                instance,
+                task.raw_options,
+                interface.option,
+                interface.option,
+                "",
+                labels,
+                skipped,
+            )
+        )
+
+    hotkeys: dict[str, dict[str, str]] = {}
+    for values in layers:
+        for name, value in values.items():
+            definition = interface.option.get(name)
+            if (
+                definition is None
+                or definition.type != "hotkey"
+                or not isinstance(value, dict)
+            ):
+                continue
+            declared = {item.name for item in definition.hotkeys or []}
+            for field_name, combo in value.items():
+                if field_name in declared and isinstance(combo, str) and combo.strip():
+                    hotkeys.setdefault(name, {})[field_name] = combo.strip()
+    return hotkeys
+
+
+def _shared_option_values(
+    instance: ShellInstance,
+    interface: MaaFWInterface,
+    labels: _Labels,
+    skipped: list[str],
+) -> dict[str, MaaFWTaskOptionValue]:
+    """全局 / 资源级选项：MXU 的 ``globalOptionValues``、MFAAvalonia 当前资源的
+    ``ResourceOptionItems``、MFW-PyQt6 的 ``global_options`` 与资源级 ``setting_options``。"""
+
+    shared_values: dict[str, MaaFWTaskOptionValue] = {}
+    if instance.source == SOURCE_MXU and instance.global_options:
+        shared_values = _mxu_option_values(
+            instance.global_options, interface.option, "全局选项", labels, skipped
+        )
+    if instance.source == SOURCE_MFAA and instance.resource_options is not None:
+        shared_values = _mfaa_resource_option_values(
+            instance, interface.option, labels, skipped
+        )
+    if instance.source == SOURCE_MFW:
+        for raw_shared, prefix in (
+            (instance.global_options, "全局选项"),
+            (instance.resource_options, "资源选项"),
+        ):
+            if raw_shared is None or raw_shared == {}:
+                continue
+            if not isinstance(raw_shared, dict):
+                skipped.append(f"{prefix}（格式无法识别）")
+                continue
+            _mfw_collect_options(
+                raw_shared, interface.option, prefix, labels, shared_values, skipped
+            )
+    return shared_values
+
+
+def _task_own_option_values(
+    instance: ShellInstance,
+    raw_options: Any,
+    option_map: Mapping[str, MaaFWOption],
+    all_options: Mapping[str, MaaFWOption],
+    prefix: str,
+    labels: _Labels,
+    skipped: list[str],
+) -> dict[str, MaaFWTaskOptionValue]:
+    """一条任务自己记的选项（不含全局 / 资源级），按实例来源的格式换算。"""
+
+    values: dict[str, MaaFWTaskOptionValue] = {}
+    if instance.source == SOURCE_MFAA:
+        _mfaa_collect_options(
+            raw_options or [],
+            option_map,
+            all_options,
+            prefix,
+            labels,
+            values,
+            skipped,
+        )
+    elif instance.source == SOURCE_MFW:
+        _mfw_collect_options(
+            raw_options or {}, option_map, prefix, labels, values, skipped
+        )
+    else:
+        values.update(
+            _mxu_option_values(raw_options or {}, option_map, prefix, labels, skipped)
+        )
+    return values
 
 
 def _case_names(definition: MaaFWOption) -> list[str]:
@@ -1003,6 +1086,7 @@ __all__ = [
     "ShellTask",
     "Translate",
     "assign_user_names",
+    "collect_instance_hotkeys",
     "display_name",
     "plan_instance_import",
     "scan_shell_instances",

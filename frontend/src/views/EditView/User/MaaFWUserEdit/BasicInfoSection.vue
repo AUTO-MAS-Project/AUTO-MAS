@@ -108,25 +108,17 @@
 import { useI18n } from 'vue-i18n'
 import { computed } from 'vue'
 import { QuestionCircleOutlined } from '@ant-design/icons-vue'
-import type { MaaFWUserConfig } from '@/types/script'
+import type {
+  MaaFWUserBasicInfoSectionEmits,
+  MaaFWUserBasicInfoSectionProps,
+} from '../../MaaFWFlavor/sectionContracts'
 
 const { t } = useI18n()
 
-type MaaFWUserFormData = MaaFWUserConfig & {
-  userName: string
-}
+// props / 事件的契约在 sectionContracts（特调替换这个分节时按同一份契约接收）
+const props = defineProps<MaaFWUserBasicInfoSectionProps>()
 
-const props = defineProps<{
-  formData: MaaFWUserFormData
-  interfaceDependentDisabled: boolean
-  accountRecordTooltip: string
-  /** 账号字段占位：特调类型（M9A）把账号绑成切号任务，文案不再是「仅本地记录」 */
-  accountPlaceholder?: string
-}>()
-
-const emit = defineEmits<{
-  save: [key: string, value: unknown]
-}>()
+const emit = defineEmits<MaaFWUserBasicInfoSectionEmits>()
 
 const emitSave = (key: string, value: unknown) => {
   emit('save', key, value)

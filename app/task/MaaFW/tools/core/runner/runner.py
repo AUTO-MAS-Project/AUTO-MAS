@@ -68,6 +68,7 @@ from app.task.MaaFW.tools.core.agent_env import (
     project_python_agent_binary_path,
     write_agent_compat_shims,
 )
+from app.task.MaaFW.tools.core.log_redact import mask_home_path
 from app.task.MaaFW.tools.core.runner.environment import (
     _read_runtime_maafw_version,
     describe_runtime_architecture_mismatch,
@@ -1266,10 +1267,13 @@ class MaaFWRunner:
         self.send_log(f"已加载资源: {path_info.resolved}")
 
     def _check_resource_hash(self) -> None:
-        """interface 声明了 resource.hash 时与 MaaResourceGetHash 比对，不一致只告警。
+        """interface 声明了 resource.hash 时与 MaaResourceGetHash 比对，不一致只记详情。
 
         协议要求「应向用户发出警告，但不应阻止继续使用」；大小写不敏感（MFAA 同）。
-        取不到实际值（老 binding、原生层报错）时不告警，免得把环境问题说成资源被改。
+        但这个 hash 只由文件大小按遍历顺序算出，项目 CI 在打包目录上算、和最终发行包的
+        文件集合不同就会对不上（MaaEnd 正式版每次都是，MXU 里同样告警），用户既判断不了
+        也做不了什么，所以不一致只进 ``.worker.log``，不上界面与用户日志。
+        取不到实际值（老 binding、原生层报错）时不记，免得把环境问题说成资源被改。
         """
 
         expected = (self.plan.resource.hash or "").strip()
@@ -1289,7 +1293,7 @@ class MaaFWRunner:
             label if label and not label.startswith("$") else self.plan.resource.name
         )
         self.send_log(
-            f"资源完整性校验不一致（资源 {resource_name}）：interface 声明 {expected}，"
+            f"{DETAIL_LOG_PREFIX}资源完整性校验不一致（资源 {resource_name}）：interface 声明 {expected}，"
             f"实际加载得到 {actual}。资源文件可能被改动或更新不完整，建议重新下载或"
             "更新该项目；本次照常运行"
         )
@@ -1781,8 +1785,16 @@ class MaaFWRunner:
             ]
             env = self._build_agent_env(agent_plan)
             creationflags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
+            # 带上实际参数（入口脚本可能已按 CFA 兜底换过），末尾的连接标识不打。
+            launch = " ".join(
+                [
+                    Path(command[0]).name,
+                    *(item for item in agent_plan.command[1:] if item != "<socket_id>"),
+                ]
+            )
+            # 参数与 cwd 里的用户目录换成 <HOME>：这行会经 worker 转发进 app.log。
             self.send_log(
-                f"启动 Agent 子进程: {Path(command[0]).name} (cwd={agent_plan.cwd})"
+                mask_home_path(f"启动 Agent 子进程: {launch} (cwd={agent_plan.cwd})")
             )
             try:
                 process = subprocess.Popen(

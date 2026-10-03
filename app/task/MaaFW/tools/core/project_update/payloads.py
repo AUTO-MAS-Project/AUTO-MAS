@@ -60,6 +60,7 @@ from .projection import (
     materialize_projection,
     read_json_object,
     shell_native_location,
+    takeover_orphans,
 )
 from .state import DurableFileLock
 
@@ -576,13 +577,16 @@ def build_from_package(
     expected_package_type: str | None = None,
     target_version: str | None = None,
     cancelled: Callable[[], bool] | None = None,
+    package_entries: Mapping[str, Path] | None = None,
+    takeover_dirs: Iterable[str] = (),
 ) -> PackageBuild:
     """旧载荷 + 更新包 → staging 里的新载荷树（§3.1 第 4 步）。
 
     - 全量包：stale = 旧载荷里 ``origin=package`` 且不在包内的 ∪ ``origin=import``、位于
       新 interface 声明的资源目录内、且不在包内的 ∪ ``origin=import``、在被新包淘汰的外壳
-      原生库位置上、且不在包内的（``projection.abandoned_native_runtime_files``）；其余
-      ``import`` 文件带进新载荷。
+      原生库位置上、且不在包内的（``projection.abandoned_native_runtime_files``）∪
+      ``origin=import``、位于新包整体接管的目录（自带解释器、原生库目录、``MaaAgentBinary``）
+      里、且不在包内的（``projection.takeover_orphans``）；其余 ``import`` 文件带进新载荷。
     - 差量包：以旧载荷清单为基线校验（载荷不可变，清单记的指纹就是它当前的指纹），
       stale = 包声明的删除表。
     包内条目一律 ``origin=package``。失败时调用方直接丢掉 staging。
@@ -592,6 +596,12 @@ def build_from_package(
     成新版本骨架，带 ``stagedFiles``）→ ``applying``（逐文件套包，带
     ``appliedFiles`` / ``totalFiles``）。``cancelled()`` 为真时在两步之间抛
     :class:`PayloadCancelled`，staging 由调用方丢弃。
+
+    ``package_entries``：GitHub 源的区间差量（``range_delta.py``）已经按整包的投影白名单
+    定好的条目表（包内相对路径 → ``package_root`` 下的文件）。给了就当全量包用，不再枚举
+    ``package_root``、不再投影第二遍——那棵树只是「旧载荷里没变的 + 按区间取回的」，缺着
+    外壳文件，在它上面重算白名单与整包下载的未必是同一张。``takeover_dirs`` 随它一起给：
+    区间那一路按同一套投影规则算好的整体接管目录（整包这一路由 ``build_package_plan`` 算）。
     """
 
     def emit(stage: str, **payload: Any) -> None:
@@ -617,17 +627,28 @@ def build_from_package(
     }
     # 计划只读旧载荷（投影白名单的叠加视图、差量基线版本），不碰 staging。
     try:
-        plan = build_package_plan(
-            package_root,
-            extract_dir,
-            old_root,
-            old_manifest=compat_manifest,
-            expected_package_type=expected_package_type,  # type: ignore[arg-type]
-            target_version=target_version,
-            projection=True,
-            send_log=send_log,
-            check_cancel=check_cancel,
-        )
+        if package_entries is not None:
+            plan = PackagePlan(
+                package_type="full",
+                package_root=Path(package_root),
+                files={rel: Path(path) for rel, path in package_entries.items()},
+                hashes={},
+                deleted=(),
+                target_version=target_version,
+                takeover_dirs=frozenset(takeover_dirs),
+            )
+        else:
+            plan = build_package_plan(
+                package_root,
+                extract_dir,
+                old_root,
+                old_manifest=compat_manifest,
+                expected_package_type=expected_package_type,  # type: ignore[arg-type]
+                target_version=target_version,
+                projection=True,
+                send_log=send_log,
+                check_cancel=check_cancel,
+            )
         _validate_plan_base(
             old_root,
             plan,
@@ -658,6 +679,28 @@ def build_from_package(
                 + f"，共 {len(abandoned)} 个文件"
             )
         stale |= abandoned
+        # 新包整体接管的目录（自带解释器、MaaFramework 原生库、MaaAgentBinary）：导入来的、
+        # 新包里没有的旧文件也清掉，否则新旧两版混在一起（两份 maafw dist-info）。导入来的文件
+        # 一直是 origin=import，上面第一条永远清不到它们，所以这里在第一次全量包就清；用户手装
+        # 进自带解释器的包也在其中，MAS 不负责重装（看项目自己的部署脚本）。
+        taken = takeover_orphans(import_files, plan.files, plan.takeover_dirs) - stale
+        if taken and send_log is not None:
+            dirs = sorted(
+                {
+                    next(
+                        directory
+                        for directory in plan.takeover_dirs
+                        if rel.casefold().startswith(f"{directory.casefold()}/")
+                    )
+                    for rel in taken
+                }
+            )
+            send_log(
+                "清掉新包整体接管的目录里导入时带来、新版本已没有的旧文件："
+                + "、".join(f"{item}/" for item in dirs)
+                + f"，共 {len(taken)} 个文件"
+            )
+        stale |= taken
     else:
         # 删除表里可能是目录（``deleted_dir``）：目录下的旧文件一起清。
         deleted = [item.rstrip("/") for item in plan.deleted if item]
@@ -687,7 +730,15 @@ def build_from_package(
     for rel, source in plan.files.items():
         target = staging / rel
         size = source.stat().st_size
-        if blob_store is not None and is_shared_path(rel, size, private_list):
+        if (
+            package_entries is not None
+            and os.path.lexists(target)
+            and os.path.samefile(source, target)
+        ):
+            # 区间差量里没变的文件：包里那份就是从旧载荷链过来的，骨架里已是同一个
+            # inode，不用再算一遍哈希、也不用动它。整包与差量包路径不做这个判断。
+            pass
+        elif blob_store is not None and is_shared_path(rel, size, private_list):
             blob_store.place(source, target)
         else:
             target.parent.mkdir(parents=True, exist_ok=True)

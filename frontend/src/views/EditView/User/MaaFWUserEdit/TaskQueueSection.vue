@@ -376,22 +376,16 @@ import {
   PlusOutlined,
   ThunderboltOutlined,
 } from '@ant-design/icons-vue'
-import type { VNode } from 'vue'
 import { buildMaaFWAssetUrl } from '@/composables/useMaaFWApi'
 import MaaFWDescriptionView from '../MaaFWDescriptionView.vue'
 import MaaFWTaskOptionEditor from '../MaaFWTaskOptionEditor.vue'
 import MaaFWNewBadge from './MaaFWNewBadge.vue'
-import type { MaaFWPresetQueueEntry } from '../maafwPresetQueue'
 import { describeMaaFWMissingTaskSettings } from '../maafwTaskChanges'
+import type { MaaFWMissingQueuedTask, MaaFWQueueEntry, MaaFWTaskInfo } from '@/types/script'
 import type {
-  MaaFWInterfacePreviewData,
-  MaaFWMissingQueuedTask,
-  MaaFWPresetInfo,
-  MaaFWQueueEntry,
-  MaaFWTaskInfo,
-  MaaFWTaskOptionValue,
-  MaaFWTaskSnapshot,
-} from '@/types/script'
+  MaaFWUserTaskQueueSectionEmits,
+  MaaFWUserTaskQueueSectionProps,
+} from '../../MaaFWFlavor/sectionContracts'
 
 const { t } = useI18n()
 
@@ -400,58 +394,16 @@ type DisplayItem = {
   label?: string | null
 }
 
-type AddTaskCascaderOption = {
-  value: string
-  label: string | VNode
-  searchText: string
-  children?: AddTaskCascaderOption[]
-}
-
 type AddTaskCascaderPathOption = {
   label?: unknown
   searchText?: string
   value?: string | number
 }
 
-type PresetTemplate = {
-  preset: MaaFWPresetInfo
-  /** 预设里当前可用的各项，重复任务是各自的实例 id */
-  entries: MaaFWPresetQueueEntry[]
-}
+// props / 事件的契约在 sectionContracts（特调替换这个分节时按同一份契约接收）
+const props = defineProps<MaaFWUserTaskQueueSectionProps>()
 
-const props = defineProps<{
-  interfaceLoading: boolean
-  previewData: MaaFWInterfacePreviewData | null
-  interfaceDependentDisabled: boolean
-  availableTasks: MaaFWTaskInfo[]
-  orderedTasks: MaaFWQueueEntry[]
-  addTaskCascaderValue: string[]
-  addTaskCascaderOptions: AddTaskCascaderOption[]
-  /** 「添加任务」里有用户没见过的任务：输入框后缀显示 NEW 而不是加号 */
-  hasNewTasks: boolean
-  presetTemplates: PresetTemplate[]
-  showPresetModal: boolean
-  taskByName: Map<string, MaaFWTaskInfo>
-  selectedTask: MaaFWTaskInfo | null
-  selectedTaskId: string
-  taskSnapshot: MaaFWTaskSnapshot
-  effectiveControllerName: string
-  effectiveResourceName: string
-}>()
-
-const emit = defineEmits<{
-  'update:addTaskCascaderValue': [value: string[]]
-  'update:showPresetModal': [value: boolean]
-  addTaskCascaderChange: [value: unknown]
-  applyPresetTemplate: [presetName: string]
-  reorderTasks: [taskIds: string[]]
-  selectTask: [taskId: string]
-  moveTask: [taskId: string, direction: -1 | 1]
-  taskDragEnd: []
-  taskOptionUpdate: [taskId: string, payload: { optionName: string; value: MaaFWTaskOptionValue }]
-  deleteSelectedTask: []
-  deleteTask: [taskId: string]
-}>()
+const emit = defineEmits<MaaFWUserTaskQueueSectionEmits>()
 
 const queuedTaskItemsModel = computed({
   get: () => props.orderedTasks,

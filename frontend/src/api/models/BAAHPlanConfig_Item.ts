@@ -2,14 +2,11 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
-export type ScriptUrlIn = {
+import type { BAAHPlanKey } from './BAAHPlanKey';
+export type BAAHPlanConfig_Item = {
     /**
-     * 脚本ID
+     * BAAH 计划表专项 key
      */
-    scriptId: string;
-    /**
-     * 配置文件URL
-     */
-    url: string;
+    Key?: BAAHPlanKey;
 };
 

@@ -34,6 +34,7 @@ import {
   markForceQuitFailed,
 } from './quitCoordinationState'
 import { decideRendererRecovery } from './rendererCrashRecovery'
+import { patchConfigFile } from './utils/configFile'
 
 import { getLogger, initializeLogger } from './services/logger'
 import { readLogContent, readLogIncrement } from './services/logFileReader'
@@ -1461,7 +1462,7 @@ registerIssueReportExporter(
   'maaend:exportIssueReport',
   '导出 MaaEnd 问题包',
   'MaaEnd-logs',
-  createMaaEndIssueReport
+  (appRoot, zipPath) => createMaaEndIssueReport(appRoot, zipPath, getLocalApiEndpoint())
 )
 registerIssueReportExporter(
   'okww:exportIssueReport',
@@ -1668,6 +1669,39 @@ ipcMain.handle('window-focus', () => {
   }
 })
 
+// 电源操作倒计时警示：把窗口从托盘/最小化拉到最前并临时置顶。
+// 只调 focus() 会被 Windows 的前台锁定挡下，用户很容易错过即将执行的关机/休眠。
+const POWER_WARNING_TOPMOST_MS = 120000
+let powerWarningTopmostTimer: ReturnType<typeof setTimeout> | undefined
+
+function releasePowerWarningTopmost(): void {
+  if (powerWarningTopmostTimer) {
+    clearTimeout(powerWarningTopmostTimer)
+    powerWarningTopmostTimer = undefined
+  }
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.setAlwaysOnTop(false)
+  }
+}
+
+ipcMain.handle('power-warning:start', () => {
+  if (!mainWindow || mainWindow.isDestroyed()) return
+
+  showMainWindow()
+  mainWindow.setAlwaysOnTop(true, 'screen-saver')
+  mainWindow.moveTop()
+
+  // 渲染进程崩溃或撤回事件丢失时不能让窗口永久置顶，兜底时限取一次 60 秒倒计时的两倍
+  if (powerWarningTopmostTimer) clearTimeout(powerWarningTopmostTimer)
+  powerWarningTopmostTimer = setTimeout(releasePowerWarningTopmost, POWER_WARNING_TOPMOST_MS)
+
+  logger.info('电源操作倒计时警示: 窗口已置顶')
+})
+
+ipcMain.handle('power-warning:end', () => {
+  releasePowerWarningTopmost()
+})
+
 // 添加应用重启处理器
 ipcMain.handle('app-restart', () => {
   logger.info('重启应用程序...')
@@ -1836,18 +1870,13 @@ ipcMain.handle('get-app-path', async (_event, name: Parameters<typeof app.getPat
 // 这些 IPC 处理器已在 initializationHandlers.ts 中实现
 
 // 配置文件操作
-ipcMain.handle('save-config', async (_event, config) => {
+ipcMain.handle('save-config', (_event, patch, defaults) => {
   try {
     const appRoot = getAppRoot()
     const configDir = path.join(appRoot, 'config')
     const configPath = path.join(configDir, 'frontend_config.json')
 
-    // 确保config目录存在
-    if (!fs.existsSync(configDir)) {
-      fs.mkdirSync(configDir, { recursive: true })
-    }
-
-    fs.writeFileSync(configPath, JSON.stringify(config, null, 2), 'utf8')
+    const config = patchConfigFile(configPath, patch, defaults) as AppConfig
     logger.info(`配置已保存到: ${configPath}`)
 
     // 如果是UI配置更新，需要更新托盘状态

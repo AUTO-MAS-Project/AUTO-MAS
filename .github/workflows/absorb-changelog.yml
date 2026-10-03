@@ -18,42 +18,62 @@
 
 #   Contact: DLmaster_361@163.com
 
-# 合并即入账：PR 合并（或直推）带着 changelog.d/ 里的碎片进了 dev / release 分支，
-# 就把碎片编译进 CHANGELOG.md 顶部的「## [未发布]」段与 res/version.json，删掉碎片，
-# 以机器人身份推回去。作者与 PR 号取自合并那一刻的提交，「准备发版」只剩把未发布段改成
-# 版本号加日期。
-#
-# 用 push 触发而不是 pull_request_target：push 跑的是被推分支自己的这份文件，不会像旧的
-# 署名机器人那样跑默认分支上的过期副本；直推带碎片的提交也一并入账。
+# 每天北京时间 23:30 统一入账 dev / release/* 上的碎片，也支持手动补跑。
+# 准备发版会直接把剩余碎片编译进发版 PR，不必等待晚间入账。
+# schedule 只在默认分支触发，因此先枚举目标分支，再检出各分支顶端入账。
 # 机器人用 GITHUB_TOKEN 推送，不会触发别的工作流，也不会触发自己。
 
 name: 入账更新日志碎片
 
 on:
-  push:
-    branches:
-      - dev
-      - 'release/**'
-    paths:
-      - 'changelog.d/**'
+  schedule:
+    - cron: '30 15 * * *' # UTC，北京时间 23:30
   workflow_dispatch:
 
 permissions:
   contents: write
   actions: write
 
-# 同一分支串行，排队不取消：后一次运行会在分支顶端重跑，已入账的碎片不会重复编译
-concurrency:
-  group: changelog-${{ github.ref }}
-  cancel-in-progress: false
-
 jobs:
+  branches:
+    name: 选择入账分支
+    runs-on: ubuntu-latest
+    # fork 上入账会删掉贡献者 PR 里的碎片；仅显式开启变量时允许实测。
+    if: github.repository == 'AUTO-MAS-Project/AUTO-MAS' || vars.CHANGELOG_ABSORB_ON_FORK == 'true'
+    outputs:
+      branches: ${{ steps.branches.outputs.branches }}
+    steps:
+      - name: 列出 dev 与 release 分支
+        id: branches
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_NAME: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          if [ "$EVENT_NAME" = "schedule" ]; then
+            branches=$(gh api --paginate --slurp "repos/${GITHUB_REPOSITORY}/branches?per_page=100" \
+              --jq '[.[][] | .name | select(. == "dev" or startswith("release/"))]')
+          elif [[ "$REF_NAME" == dev || "$REF_NAME" == release/* ]]; then
+            branches=$(jq -cn --arg branch "$REF_NAME" '[$branch]')
+          else
+            echo "::error::只能在 dev 或 release/* 分支上手动入账"
+            exit 1
+          fi
+          echo "branches=$(echo "$branches" | jq -c .)" >> "$GITHUB_OUTPUT"
+
   absorb:
     name: 碎片入账
     runs-on: ubuntu-latest
-    # 贡献者的 fork 上不能跑：机器人会删掉他 PR 里的碎片、改动保护文件，PR 到上游直接被检查拒绝。
-    # 在 fork 上实测时临时设仓库变量 CHANGELOG_ABSORB_ON_FORK=true。
-    if: github.repository == 'AUTO-MAS-Project/AUTO-MAS' || vars.CHANGELOG_ABSORB_ON_FORK == 'true'
+    needs: branches
+    if: needs.branches.outputs.branches != '[]'
+    strategy:
+      fail-fast: false
+      matrix:
+        branch: ${{ fromJSON(needs.branches.outputs.branches) }}
+    # 与准备发版共用分支锁；已入账的碎片不会重复编译。
+    concurrency:
+      group: changelog-${{ matrix.branch }}
+      cancel-in-progress: false
 
     steps:
       # 检出分支顶端而不是触发这次运行的提交：排队的运行如果检出旧 SHA，会把上一次已经
@@ -61,7 +81,7 @@ jobs:
       - name: 检出分支
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ github.ref_name }}
+          ref: ${{ matrix.branch }}
           fetch-depth: 0
 
       - name: 设置 Python 环境
@@ -73,7 +93,7 @@ jobs:
         id: absorb
         env:
           GH_TOKEN: ${{ github.token }}
-          BRANCH: ${{ github.ref_name }}
+          BRANCH: ${{ matrix.branch }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -109,4 +129,5 @@ jobs:
         continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh workflow run sync-cnb.yml --ref "${{ github.ref_name }}"
+          BRANCH: ${{ matrix.branch }}
+        run: gh workflow run sync-cnb.yml --ref "$BRANCH"

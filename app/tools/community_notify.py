@@ -38,6 +38,11 @@ logger = get_logger("游戏社区通知")
 
 NOTIFICATION_SEND_ATTEMPTS = 2
 NOTIFICATION_RETRY_DELAY_SECONDS = 1
+# 手动「全部签到」的快路径等待窗口：恰好覆盖一次重试后仍失败的最早返回时间，
+# 渠道级失败才能在完成响应里回传；更慢的渠道仍转后台发送。
+NOTIFICATION_FAST_PATH_WAIT_SECONDS = (
+    NOTIFICATION_RETRY_DELAY_SECONDS * (NOTIFICATION_SEND_ATTEMPTS - 1) + 0.1
+)
 _SUCCESS_STATUSES = {"成功", "已签到"}
 _PLATFORM_ORDER = ("森空岛", "米游社", "库街区", "塔吉多", "云异环")
 NotificationBodyFormat = Literal["text", "markdown"]
@@ -573,13 +578,33 @@ async def dispatch_community_notification(
     )
 
 
+async def _report_notification_failure(failed_channels: list[str]) -> None:
+    """通知渠道级失败改用系统提示回传，不让发送结果只留在日志里。
+
+    Args:
+        failed_channels: 本次分发中发送失败的渠道名。
+    """
+
+    await Config.push_system_notice(
+        level="warning",
+        title="游戏社区通知发送不完整",
+        lines=[
+            f"发送失败的渠道：{'、'.join(failed_channels)}",
+            "签到结果已保存，请检查这些渠道的通知配置后重试。",
+        ],
+    )
+
+
 async def push_community_notification(
     results: list[dict[str, object]],
 ) -> list[str]:
-    """推送手动或启动时触发的社区通知，返回失败渠道。"""
+    """推送手动或启动时触发的社区通知，返回失败渠道；失败时另发系统提示。"""
 
     dispatch_result = await dispatch_community_notification(results)
-    return list(dispatch_result.failed)
+    failed_channels = list(dispatch_result.failed)
+    if failed_channels:
+        await _report_notification_failure(failed_channels)
+    return failed_channels
 
 
 __all__ = [

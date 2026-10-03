@@ -177,6 +177,10 @@
           <div class="section-header">
             <h3>{{ t('edit.runConfiguration') }}</h3>
           </div>
+          <ScriptHardTimeoutField
+            v-model:value="srcConfig.Run.HardTimeLimit"
+            @save="handleChange('Run', 'HardTimeLimit', srcConfig.Run.HardTimeLimit)"
+          />
           <a-row :gutter="24">
             <a-col :span="8">
               <a-form-item>
@@ -349,6 +353,7 @@
 </template>
 
 <script setup lang="ts">
+import ScriptHardTimeoutField from '@/views/EditView/Script/components/ScriptHardTimeoutField.vue'
 import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
 import DocLink from '@/components/DocLink.vue'
 import { MAS_DOC_URLS } from '@/utils/openExternal'
@@ -409,6 +414,7 @@ const srcConfig = reactive<SRCScriptConfig>({
     Path: '.',
   },
   Run: {
+    HardTimeLimit: 120,
     TaskTransitionMethod: 'ExitEmulator',
     ProxyTimesLimit: 0,
     RunTimesLimit: 3,

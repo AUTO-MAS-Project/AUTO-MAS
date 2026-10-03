@@ -326,6 +326,61 @@ class MaaFWOption(BaseModel):
         return coerce_option_count(value)
 
 
+def pipeline_template_strings(value: Any) -> set[str]:
+    """pipeline_override 里出现的全部字符串值（递归进字典与列表）。"""
+
+    if isinstance(value, dict):
+        collected: set[str] = set()
+        for nested_value in value.values():
+            collected.update(pipeline_template_strings(nested_value))
+        return collected
+    if isinstance(value, list):
+        collected = set()
+        for item in value:
+            collected.update(pipeline_template_strings(item))
+        return collected
+    if isinstance(value, str):
+        return {value}
+    return set()
+
+
+def hotkey_placeholders(field_name: str) -> set[str]:
+    """一个 hotkey 字段在 pipeline 里允许出现的全部占位符写法（必须作为完整值）。
+
+    ProjectInterface 文档里 ``{F}.primary``（旧）与 ``{F.primary}``（现）两种写法都有，都认。
+    """
+
+    return {
+        f"{{{field_name}}}",
+        f"{{{field_name}}}.primary",
+        f"{{{field_name}}}.modifier1",
+        f"{{{field_name}}}.modifier2",
+        f"{{{field_name}.primary}}",
+        f"{{{field_name}.modifier1}}",
+        f"{{{field_name}.modifier2}}",
+    }
+
+
+def hotkey_modifier_count(option: MaaFWOption, field_name: str) -> int:
+    """项目 pipeline 里这个 hotkey 字段要几个修饰键：用到 modifier2 是 2，只用到 modifier1 是 1，否则 0。
+
+    少于这个数映射不出 pipeline 要的占位符；多出来的修饰键运行时不会被按下。
+    """
+
+    used = pipeline_template_strings(
+        option.pipeline_override or {}
+    ) & hotkey_placeholders(field_name)
+    if any(
+        value.endswith("modifier2}") or value.endswith(".modifier2") for value in used
+    ):
+        return 2
+    if any(
+        value.endswith("modifier1}") or value.endswith(".modifier1") for value in used
+    ):
+        return 1
+    return 0
+
+
 def coerce_option_count(value: Any) -> int | None:
     """把 ``min_count`` / ``max_count`` 宽松地归一成非负整数；不可用时返回 None。
 

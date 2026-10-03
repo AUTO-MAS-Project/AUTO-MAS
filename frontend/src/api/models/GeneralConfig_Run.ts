@@ -4,6 +4,10 @@
 /* eslint-disable */
 export type GeneralConfig_Run = {
     /**
+     * 单账号运行总时限（分钟），包含等待和全部重试
+     */
+    HardTimeLimit?: (number | null);
+    /**
      * 每日代理次数限制
      */
     ProxyTimesLimit?: (number | null);

@@ -189,10 +189,7 @@
                 <template #label>
                   <span class="form-label">
                     {{ t('edit.gameLauncher') }}
-                    <span class="label-hint"
-                      >选择包含 <strong>Neverness To Everness</strong> 的任意目录，自动定位
-                      NTEGame.exe 启动器</span
-                    >
+                    <span class="label-hint">{{ t('edit.okntePickDirHint') }}</span>
                   </span>
                 </template>
                 <a-input-group compact class="path-input-group">
@@ -266,6 +263,10 @@
           <div class="section-header">
             <h3>{{ t('edit.runConfiguration') }}</h3>
           </div>
+          <ScriptHardTimeoutField
+            v-model:value="oknteConfig.Run.HardTimeLimit"
+            @save="handleChange('Run', 'HardTimeLimit', oknteConfig.Run.HardTimeLimit)"
+          />
           <a-row :gutter="24">
             <a-col :span="8">
               <a-form-item>
@@ -335,6 +336,7 @@
 </template>
 
 <script setup lang="ts">
+import ScriptHardTimeoutField from '@/views/EditView/Script/components/ScriptHardTimeoutField.vue'
 import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
 import { useI18n } from 'vue-i18n'
 import { onMounted, reactive, ref } from 'vue'
@@ -422,7 +424,7 @@ const oknteConfig = reactive<OkNteFormConfig>({
     CloseOnFinish: true,
     AccountSwitch: false,
   },
-  Run: { ProxyTimesLimit: 0, RunTimesLimit: 1, RunTimeLimit: 120 },
+  Run: { HardTimeLimit: 120, ProxyTimesLimit: 0, RunTimesLimit: 1, RunTimeLimit: 120 },
 })
 
 const rules = {
