@@ -10,7 +10,9 @@ on:
 
 permissions:
   contents: read
-  pull-requests: read
+  # 给 PR 加标签：官方文档说 Issues 与 Pull requests 的 write 权限任选其一即可，
+  # 这里两个都声明，免得在只认 pull-requests 的仓库设置下拿不到写权限
+  pull-requests: write
   issues: write
 
 concurrency:
