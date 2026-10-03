@@ -54,18 +54,18 @@ GitHub Actions 构建物下载和上传脚本
 安装依赖：pip install -r requirements.txt
 """
 
+import json
 import os
 import sys
-import json
-import requests
 import zipfile
 from pathlib import Path
-from typing import List, Dict, Optional
-from tqdm import tqdm
+from typing import Dict, List, Optional
+
+import requests
 
 # 导入 CNBReleaseUploader
 from cnb_release import CNBReleaseUploader
-
+from tqdm import tqdm
 
 DEFAULT_OWNER = "AUTO-MAS-Project"
 DEFAULT_REPO = "AUTO-MAS"
@@ -138,7 +138,7 @@ class GitHubActionsDownloader:
                 return None
 
             latest_run = runs[0]
-            print(f"✅ 找到最新的工作流运行:")
+            print("✅ 找到最新的工作流运行:")
             print(f"   Run ID: {latest_run['id']}")
             print(f"   创建时间: {latest_run['created_at']}")
             print(f"   状态: {latest_run['status']} / {latest_run['conclusion']}")
@@ -582,7 +582,7 @@ def main():
         success_count = sum(1 for result in upload_results if result)
         total_count = len(upload_results)
 
-        print(f"\n📊 上传结果汇总:")
+        print("\n📊 上传结果汇总:")
         print(f"   ✅ 成功: {success_count}/{total_count}")
 
         if success_count < total_count:
