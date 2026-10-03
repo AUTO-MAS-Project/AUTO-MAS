@@ -63,7 +63,8 @@ describe('LaunchFailure', () => {
     })
 
     // 依赖段在 Runtime 下换不了镜像，所以是普通重试而不是换源重试，也不带源列表
-    expect(buttonLabels(html)).toEqual(['重试', '重建运行环境', '查看日志'])
+    // 求助按钮无条件渲染，出现在所有失败视图
+    expect(buttonLabels(html)).toEqual(['重试', '重建运行环境', '查看日志', '加群寻求帮助'])
     expect(html).not.toContain('换一个源重试')
     // 日志仍然整块给出，只是收进「详细信息」
     expect(html).toContain('详细信息')
@@ -86,7 +87,7 @@ describe('LaunchFailure', () => {
       showMirrorSelection: plan.showMirrorSelection,
     })
 
-    expect(buttonLabels(html)).toEqual(['查看日志'])
+    expect(buttonLabels(html)).toEqual(['查看日志', '加群寻求帮助'])
     expect(html).toContain('这是程序内部的问题')
   })
 
@@ -103,7 +104,7 @@ describe('LaunchFailure', () => {
       ],
     })
 
-    expect(buttonLabels(html)).toEqual(['换个下载源重试', '查看日志'])
+    expect(buttonLabels(html)).toEqual(['换个下载源重试', '查看日志', '加群寻求帮助'])
     expect(html).toContain('换一个源重试')
     expect(html).toContain('CNB 官方镜像')
   })
@@ -120,7 +121,7 @@ describe('LaunchFailure', () => {
       showSkipButton: true,
     })
 
-    expect(buttonLabels(html)).toEqual(['重试', '查看日志'])
+    expect(buttonLabels(html)).toEqual(['重试', '查看日志', '加群寻求帮助'])
     expect(html).toContain('跳过此步骤')
   })
 
@@ -133,7 +134,7 @@ describe('LaunchFailure', () => {
       ],
     })
 
-    expect(buttonLabels(html)).toEqual(['检查运行环境'])
+    expect(buttonLabels(html)).toEqual(['检查运行环境', '加群寻求帮助'])
     expect(html).toContain('受管布局')
     expect(html).toContain('repo 缺失')
     expect(html).toContain('3.12.6')
