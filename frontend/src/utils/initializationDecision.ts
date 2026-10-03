@@ -264,6 +264,20 @@ export function decideFailureActions(context: FailureContext): FailureActionPlan
 }
 
 /**
+ * 安装进行中能不能换镜像源（#499）。
+ *
+ * 与失败态的 showMirrorSelection 解耦：失败态由失败处置计划决定，这里只看
+ * 「这一步是不是本地 pip 在装依赖」——Runtime 链路接管依赖安装时主进程没有
+ * 可中止的本地 pip，不给换源入口。
+ */
+export function canChooseMirror(
+  stepKey: string,
+  runtimeMode: RuntimeInitMode | undefined
+): boolean {
+  return stepKey === 'dependency' && (runtimeMode === undefined || runtimeMode === 'off')
+}
+
+/**
  * 过滤「换镜像重试」的候选列表。
  *
  * Runtime 只收得下自己镜像目录里有对应源的那几个键，键名由主进程从 W9b 的映射表原样导出

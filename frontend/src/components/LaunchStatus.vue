@@ -40,6 +40,9 @@
     <button v-if="actionLabel" type="button" class="launch-action" @click="emit('action')">
       {{ actionLabel }}
     </button>
+
+    <!-- 进行中的额外入口，例如安装依赖时的「更换镜像源」（#499）；不传不占位。 -->
+    <slot name="extra"></slot>
   </div>
 </template>
 

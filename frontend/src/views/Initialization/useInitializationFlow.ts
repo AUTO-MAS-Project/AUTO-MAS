@@ -3,7 +3,14 @@ import { useI18n } from 'vue-i18n'
 import { message } from 'ant-design-vue'
 import { enterApp, forceEnterApp } from '@/utils/appEntry.ts'
 import { getBackendVersion } from '@/composables/useVersionService'
-import { decideFailureActions, filterRuntimeMirrors } from '@/utils/initializationDecision'
+import {
+  canChooseMirror,
+  decideFailureActions,
+  filterRuntimeMirrors,
+} from '@/utils/initializationDecision'
+
+// 与主进程 mirrorRotationService 的跨进程中止约定（#499 安装中换源）
+const MIRROR_SWITCH_ABORTED = 'MIRROR_SWITCH_ABORTED'
 import {
   getInitializationStageKey,
   getInitializationStageStatus,
@@ -420,6 +427,11 @@ export function useInitializationFlow() {
       }
 
       if (!result.success) {
+        // 安装被换源操作中止：换源重跑已在进行，本调用静默退出，由换源流程接管（#499）
+        if (result.error === MIRROR_SWITCH_ABORTED) {
+          logger.info(`步骤 ${stepKey} 被换源操作中止，由换源流程接管`)
+          return false
+        }
         failure = result
         throw new Error(result.error || t('init.msg.execFailed'))
       }
@@ -461,6 +473,53 @@ export function useInitializationFlow() {
 
   function handleMirrorSelect(mirrorKey: string) {
     currentState.value.selectedMirror = mirrorKey
+  }
+
+  // ==================== 安装中换源（#499） ====================
+
+  /** 换源重跑进行中：进度面板里的镜像选项要防连点。 */
+  const mirrorSwitching = ref(false)
+
+  /** 进行中能不能给「更换镜像源」入口：仅旧链路的依赖安装段。 */
+  const mirrorSwitchAvailable = computed(
+    () =>
+      canChooseMirror(currentStep.value.key, runtimeMode.value) &&
+      currentState.value.status === 'processing'
+  )
+
+  /** 依赖段可选镜像与当前选中（与失败态同一份配置）。 */
+  const dependencyMirrors = computed(() => stepStates.value.dependency.mirrors)
+  const dependencySelectedMirror = computed(() => stepStates.value.dependency.selectedMirror)
+
+  async function handleSwitchMirror(mirrorKey: string) {
+    if (mirrorSwitching.value) return
+    const state = stepStates.value.dependency
+    state.selectedMirror = mirrorKey
+    mirrorSwitching.value = true
+    try {
+      logger.info(`安装中切换镜像源: ${mirrorKey}`)
+      const result = await window.electronAPI.switchDependencyMirror(mirrorKey)
+      if (result.success) {
+        state.status = 'success'
+        state.message = ''
+        state.progress = 100
+        state.progressIndeterminate = false
+        logger.info('换源后依赖安装完成')
+        await continueAfterCurrentStep()
+        return
+      }
+      if (result.error === MIRROR_SWITCH_ABORTED) {
+        // 又被更新的换源请求中止：由那一次接管，本次静默
+        logger.info('换源安装被更新的换源请求中止')
+        return
+      }
+      markStepFailed('dependency', result.error || t('init.msg.execFailed'), result)
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error)
+      markStepFailed('dependency', errorMessage, {})
+    } finally {
+      mirrorSwitching.value = false
+    }
   }
 
   function resetFailureState(state: StepState) {
@@ -742,6 +801,8 @@ export function useInitializationFlow() {
 
   return {
     currentStep,
+    dependencyMirrors,
+    dependencySelectedMirror,
     failureProps,
     flowKind,
     handleBackendComplete,
@@ -750,9 +811,12 @@ export function useInitializationFlow() {
     handleFailureAction,
     handleMirrorSelect,
     handleSkip,
+    handleSwitchMirror,
     hasFailed,
     isBackendStep,
     launchSteps,
+    mirrorSwitchAvailable,
+    mirrorSwitching,
     statusDetails,
     statusHint,
     statusProgress,

@@ -387,6 +387,8 @@ export interface ElectronAPI {
     selectedMirror?: string,
     rebuild?: boolean
   ) => Promise<InstallStageResult & { skipped?: boolean }>
+  /** 安装中换源（#499）：中止当前依赖安装并用指定镜像源重跑。 */
+  switchDependencyMirror: (selectedMirror: string) => Promise<InstallStageResult>
   getMirrors: (type: ElectronMirrorType) => Promise<ElectronMirrorSource[]>
   /** 初始化界面开局问一次：走没走 Runtime、回退日志文件、各段可用镜像键。 */
   getRuntimeInitContext?: () => Promise<RuntimeInitContext>

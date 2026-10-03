@@ -413,6 +413,61 @@ export function registerInitializationHandlers(_mainWindow: BrowserWindow) {
     }
   )
 
+  // ==================== 安装中换源（#499） ====================
+
+  // 原子完成「中止当前安装 → 等收尾 → 带 --force-reinstall 用新镜像源重跑」。
+  // 旧调用以 MIRROR_SWITCH_ABORTED 收尾，渲染层对它静默；本通道的结果由换源流程接管。
+  ipcMain.handle(
+    'switch-dependency-mirror',
+    async (event, selectedMirror: unknown): Promise<{ success: boolean; error?: string }> => {
+      if (typeof selectedMirror !== 'string' || !selectedMirror) {
+        throw new TypeError(`不支持的镜像源: ${String(selectedMirror)}`)
+      }
+      logger.info(`安装中切换镜像源: ${selectedMirror}`)
+
+      // Runtime 链路接管依赖安装时没有可中止的本地 pip，拒绝换源
+      const runtimeOutcome = await runStageViaRuntime(
+        event,
+        'dependency',
+        'dependency-progress',
+        selectedMirror
+      )
+      if (runtimeOutcome) {
+        return { success: false, error: 'Runtime 链路不支持安装中换源' }
+      }
+
+      const appRoot = getAppRoot()
+      const initService = getInitService()
+      const mirrorService = initService.getMirrorService()
+
+      // 信任边界校验：镜像源必须在 pip_mirror 列表里
+      if (!mirrorService.getMirrors('pip_mirror').some(m => m.name === selectedMirror)) {
+        return { success: false, error: `未找到指定的镜像源: ${selectedMirror}` }
+      }
+
+      const { DependencyService, abortActiveDependencyInstall } =
+        await import('../services/dependencyService')
+
+      // 先中止并等旧安装完全收尾，再开新安装，避免两次 pip 并发
+      await abortActiveDependencyInstall()
+
+      const depService = new DependencyService(appRoot, mirrorService)
+      const result = await depService.installDependencies(
+        progress => {
+          sendToSender(event, 'dependency-progress', progress)
+        },
+        selectedMirror,
+        true,
+        true
+      )
+
+      if (!result.success) {
+        logger.error(`换源后依赖安装失败: ${result.error}`)
+      }
+      return result
+    }
+  )
+
   // ==================== 获取镜像源列表 ====================
 
   ipcMain.handle('get-mirrors', async (_event, type: unknown) => {

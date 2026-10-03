@@ -3436,6 +3436,7 @@ export default {
       'First-time setup usually takes a few minutes. Feel free to do something else.',
     slowHint: 'This is slower than usual. Still waiting for the backend.',
     viewLog: 'Open the log',
+    switchMirror: 'Switch mirror',
     transferSource: 'from {source}',
     probeUnavailable: '{source} unavailable',
   },
