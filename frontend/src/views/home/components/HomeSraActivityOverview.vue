@@ -57,7 +57,11 @@
                 @finish="emit('refresh')"
               />
               <div class="activity-end-time">
-                {{ t('home.sra.endedAt', { time: formatTime(activity.endTime) }) }}
+                {{
+                  t('home.sra.endedAt', {
+                    time: formatActivityTime(activity.endTime, locale),
+                  })
+                }}
               </div>
             </div>
           </div>
@@ -75,10 +79,11 @@ import { computed, ref } from 'vue'
 import type { CSSProperties } from 'vue'
 import type { SraActivityOverview } from '@/types/home'
 import { handleExternalLink } from '@/utils/openExternal'
+import { formatActivityTime } from '@/views/home/activityTime'
 
 defineOptions({ name: 'HomeSraActivityOverview' })
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 
 const props = withDefaults(
   defineProps<{
@@ -145,16 +150,9 @@ const activityCountdownStyle = computed<CSSProperties>(() => ({
 }))
 
 const getCountdownValue = (value: string) => new Date(value).getTime()
-
-const formatTime = (value: string) =>
-  new Date(value).toLocaleString('zh-CN', {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-  })
 </script>
+
+<style scoped src="./activityCard.css"></style>
 
 <style scoped>
 .sra-card {
@@ -165,30 +163,6 @@ const formatTime = (value: string) =>
 .sra-card :deep(.ant-card-head-title) {
   font-size: 18px;
   font-weight: 600;
-}
-
-.card-extra {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.source-link {
-  font-size: 13px;
-}
-
-.status-alert {
-  margin-bottom: 16px;
-}
-
-/* ---------- 活动列表（有封面：深色封面卡片） ---------- */
-.activity-list {
-  display: flex;
-  gap: 16px;
-  overflow-x: auto;
-  scroll-snap-type: x mandatory;
-  -webkit-overflow-scrolling: touch;
-  scrollbar-width: thin;
 }
 
 .activity-item {
@@ -214,43 +188,6 @@ const formatTime = (value: string) =>
     box-shadow 0.25s ease;
 }
 
-.activity-card:hover .activity-item {
-  transform: translateY(-3px);
-  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.18);
-}
-
-.activity-image {
-  width: 100%;
-  height: 100%;
-  position: absolute;
-  inset: 0;
-  object-fit: cover;
-  transition: transform 0.35s ease;
-}
-
-.activity-card:hover .activity-image {
-  transform: scale(1.05);
-}
-
-.activity-overlay {
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(
-    180deg,
-    rgba(11, 18, 32, 0.05) 0%,
-    rgba(11, 18, 32, 0.3) 40%,
-    rgba(11, 18, 32, 0.88) 100%
-  );
-}
-
-.activity-content {
-  width: 100%;
-  min-width: 0;
-  position: relative;
-  z-index: 1;
-  padding: 14px 16px;
-}
-
 .activity-name {
   min-width: 0;
   margin-bottom: 8px;
@@ -268,19 +205,6 @@ const formatTime = (value: string) =>
   align-items: baseline;
   justify-content: space-between;
   gap: 8px;
-}
-
-.activity-meta :deep(.ant-statistic-content) {
-  line-height: 1.4;
-}
-
-.activity-end-time {
-  min-width: 0;
-  overflow: hidden;
-  color: rgba(255, 255, 255, 0.8);
-  font-size: 12px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .activity-desc {
@@ -387,12 +311,8 @@ const formatTime = (value: string) =>
   max-height: 60px;
   opacity: 1;
 }
-
+/* 公共样式已给 .activity-card 兜了 180px，这里只补素色列表在窄屏下更宽的取值 */
 @media (max-width: 560px) {
-  .activity-card {
-    width: 180px;
-  }
-
   .activity-list.is-plain .activity-card {
     width: 200px;
   }

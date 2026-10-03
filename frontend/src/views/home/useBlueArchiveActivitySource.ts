@@ -1,4 +1,4 @@
-import { computed, onScopeDispose, reactive, ref } from 'vue'
+import { computed, onScopeDispose, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { BlueArchiveActivityIn, GetService, OpenAPI } from '@/api'
 import { createEmptySraActivityOverview } from '@/types/home'
@@ -8,13 +8,11 @@ import type {
   BlueArchiveServerOverview,
 } from '@/types/home'
 import type { Ref } from 'vue'
+import { useHomeActivitySource } from './useHomeActivitySource'
+import type { HomeActivitySource } from './useHomeActivitySource'
 
-const logger = window.electronAPI.getLogger('活动数据')
-
-/** 与其它活动源一致的请求超时与失败重试节奏 */
+/** 请求超时；重试节奏与快照调度交给公共骨架 */
 const FETCH_TIMEOUT_MS = 20_000
-const RETRY_DELAY_MS = 30_000
-const MAX_RETRIES = 8
 const REFRESH_INTERVAL_MS = 10 * 60 * 1000
 
 /**
@@ -192,17 +190,6 @@ const buildOverview = (
   }
 }
 
-/** 一个服务器的运行时状态：重试计数与定时器按服隔离，一个服挂掉不拖累另外两个 */
-interface ServerRuntime {
-  key: BlueArchiveServerKey
-  overview: Ref<BlueArchiveActivityOverview>
-  retryTimer: number | null
-  retryCount: number
-  hasData: boolean
-  retryPending: boolean
-  requesting: boolean
-}
-
 /** 拉取一个服的完整活动列表（分页直到空页或达到页数上限） */
 const fetchTimeline = async (
   server: BlueArchiveServerKey,
@@ -247,10 +234,9 @@ const fetchTimeline = async (
 /**
  * 碧蓝档案活动数据的直连数据源（GameKee 活动表）。
  *
- * 与其它活动源的职责一致：带超时、失败退避重试、本地快照
- * （stale-while-revalidate）与独立失败态。区别在于碧蓝档案分日/国际/国
- * 三个服，这里为每个服各跑一份完整状态——请求、重试、快照、错误都不互通，
- * 所以一个服不可用时另外两个服照常显示，卡片也只需切显示、无需重新请求。
+ * 与其它活动源一样，取数、超时、失败退避重试、快照与失败态都交给公共骨架；区别在于
+ * 碧蓝档案分日 / 国际 / 国三个服，所以这里给每个服各起一份骨架实例：请求、重试、快照、
+ * 加载态互相不打扰，一个服取不到时另外两个照常显示，卡片只需切显示、无需重新请求。
  */
 export const useBlueArchiveActivitySource = () => {
   const { t } = useI18n()
@@ -259,16 +245,11 @@ export const useBlueArchiveActivitySource = () => {
   const serverVersionName = (server: BlueArchiveServerKey) =>
     t('home.bluearchive.versionName', { server: serverLabel(server) })
 
-  const runtimes: ServerRuntime[] = SERVER_KEYS.map(key => ({
-    key,
-    overview: ref<BlueArchiveActivityOverview>(createEmptySraActivityOverview()),
-    retryTimer: null,
-    retryCount: 0,
-    hasData: false,
-    retryPending: false,
-    requesting: false,
-  }))
-
+  const overviewByServer: Record<BlueArchiveServerKey, Ref<BlueArchiveActivityOverview>> = {
+    jp: ref(createEmptySraActivityOverview()),
+    global: ref(createEmptySraActivityOverview()),
+    cn: ref(createEmptySraActivityOverview()),
+  }
   const loadingByServer: Record<BlueArchiveServerKey, boolean> = reactive({
     jp: false,
     global: false,
@@ -276,122 +257,108 @@ export const useBlueArchiveActivitySource = () => {
   })
   const selectedServer = ref<BlueArchiveServerKey>(readSelectedServer())
 
+  // 每个服各跑一份完整调度：请求、重试、快照、加载态互相不打扰，
+  // 一个服取不到时另外两个照常显示，卡片只切显示、不必重新请求
+  const sources = {} as Record<BlueArchiveServerKey, HomeActivitySource>
+
+  for (const key of SERVER_KEYS) {
+    // 这个服是否已有请求在飞：交给骨架的 isBusy 钩子，同一份数据不会被并发拉两次
+    let busy = false
+    const source = useHomeActivitySource<GameKeeActivity[]>({
+      // 日志与失败文案里用这个服自己的名字
+      label: () => serverLabel(key),
+      timeoutMs: FETCH_TIMEOUT_MS,
+      isBusy: () => busy,
+      restoreSnapshot: () => {
+        try {
+          const raw = localStorage.getItem(snapshotKey(key))
+          if (!raw) return false
+          const cached = JSON.parse(raw) as BlueArchiveActivityOverview
+          overviewByServer[key].value = {
+            ...createEmptySraActivityOverview(),
+            ...cached,
+            Stale: true,
+            Message: t('home.bluearchive.staleMessage'),
+            // 服名随界面语言变化，按当前语言重算，避免切换语言后残留旧语言的版本名
+            versionName: serverVersionName(key),
+          }
+          return true
+        } catch {
+          // 快照损坏按无缓存处理
+          return false
+        }
+      },
+      saveSnapshot: overview => {
+        try {
+          localStorage.setItem(snapshotKey(key), JSON.stringify(overview))
+        } catch {
+          // 本地存储不可用时仅跳过快照缓存
+        }
+      },
+      fetchData: async signal => {
+        busy = true
+        try {
+          return await fetchTimeline(key, signal)
+        } finally {
+          busy = false
+        }
+      },
+      applyData: items => {
+        overviewByServer[key].value = buildOverview(items, serverVersionName(key))
+      },
+      markStale: () => {
+        overviewByServer[key].value = {
+          ...overviewByServer[key].value,
+          Stale: true,
+          Message: t('home.bluearchive.staleMessage'),
+        }
+      },
+      markUnavailable: label => {
+        overviewByServer[key].value = {
+          ...createEmptySraActivityOverview(),
+          Message: t('home.bluearchive.unavailable', { server: label }),
+        }
+      },
+    })
+    sources[key] = source
+    // 加载态按服同步给卡片（骨架每个实例各有一个 loading）
+    watch(
+      source.loading,
+      value => {
+        loadingByServer[key] = value
+      },
+      { immediate: true }
+    )
+  }
+
   let active = false
   let started = false
   let disposed = false
   let refreshTimer: number | null = null
 
-  // 启动先用上次快照填卡片，不等网络
-  for (const runtime of runtimes) {
-    try {
-      const raw = localStorage.getItem(snapshotKey(runtime.key))
-      if (raw) {
-        const cached = JSON.parse(raw) as BlueArchiveActivityOverview
-        runtime.overview.value = {
-          ...createEmptySraActivityOverview(),
-          ...cached,
-          Stale: true,
-          Message: t('home.bluearchive.staleMessage'),
-          // 服名随界面语言变化，按当前语言重算，避免切换语言后残留旧语言的版本名
-          versionName: serverVersionName(runtime.key),
-        }
-        runtime.hasData = true
-      }
-    } catch {
-      // 快照损坏按无缓存处理
-    }
-    if (!runtime.hasData) {
-      loadingByServer[runtime.key] = true
-    }
-  }
-
-  const loadServer = async (runtime: ServerRuntime) => {
-    if (disposed || runtime.requesting) return
-    runtime.requesting = true
-    try {
-      const controller = new AbortController()
-      const timer = window.setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS)
-      let items: GameKeeActivity[]
-      try {
-        items = await fetchTimeline(runtime.key, controller.signal)
-      } finally {
-        window.clearTimeout(timer)
-      }
-      if (disposed) return
-
-      const overview = buildOverview(items, serverVersionName(runtime.key))
-      runtime.overview.value = overview
-      runtime.hasData = true
-      runtime.retryCount = 0
-      try {
-        localStorage.setItem(snapshotKey(runtime.key), JSON.stringify(overview))
-      } catch {
-        // 本地存储不可用时仅跳过快照缓存
-      }
-    } catch (requestError) {
-      if (disposed) return
-      const errorMessage =
-        requestError instanceof Error ? requestError.message : String(requestError)
-      logger.warn('获取碧蓝档案' + serverLabel(runtime.key) + '活动数据失败: ' + errorMessage)
-
-      runtime.overview.value = runtime.hasData
-        ? {
-            ...runtime.overview.value,
-            Stale: true,
-            Message: t('home.bluearchive.staleMessage'),
-          }
-        : {
-            ...createEmptySraActivityOverview(),
-            Message: t('home.bluearchive.unavailable', { server: serverLabel(runtime.key) }),
-          }
-
-      if (runtime.retryCount < MAX_RETRIES) {
-        runtime.retryCount += 1
-        if (active) {
-          scheduleRetry(runtime)
-        } else {
-          // 模块隐藏期间不重试，重新可见时补一次
-          runtime.retryPending = true
-        }
-      }
-    } finally {
-      runtime.requesting = false
-      if (!disposed) {
-        loadingByServer[runtime.key] = false
-      }
-    }
-  }
-
-  const scheduleRetry = (runtime: ServerRuntime) => {
-    runtime.retryTimer = window.setTimeout(() => {
-      runtime.retryTimer = null
-      void loadServer(runtime)
-    }, RETRY_DELAY_MS)
-  }
-
+  /** 卡片还挂在页面上时，每 10 分钟把三个服都刷一遍 */
   const scheduleRefresh = () => {
     if (!active || disposed || refreshTimer !== null) return
     refreshTimer = window.setTimeout(() => {
       refreshTimer = null
-      for (const runtime of runtimes) void loadServer(runtime)
+      for (const key of SERVER_KEYS) sources[key].reload()
       scheduleRefresh()
     }, REFRESH_INTERVAL_MS)
   }
 
-  // 模块可见时才发请求；隐藏时停掉重试定时器，重新可见时把攒下的重试补上
+  // 模块可见时才发请求；隐藏时停掉重试定时器，重新可见时立即重校验一遍
   const start = () => {
     if (disposed) return
     active = true
-    if (!started) {
-      started = true
-      for (const runtime of runtimes) void loadServer(runtime)
-    } else {
-      // 栏目重新显示时立即校验，避免继续展示隐藏期间已经过期的活动。
-      for (const runtime of runtimes) {
-        runtime.retryPending = false
-        void loadServer(runtime)
+    for (const key of SERVER_KEYS) {
+      if (started) {
+        // 栏目重新显示：隐藏期间活动可能已经过期，直接重取而不是等退避重试
+        sources[key].resume()
+      } else {
+        sources[key].start()
       }
     }
+    started = true
     scheduleRefresh()
   }
 
@@ -401,13 +368,7 @@ export const useBlueArchiveActivitySource = () => {
       window.clearTimeout(refreshTimer)
       refreshTimer = null
     }
-    for (const runtime of runtimes) {
-      if (runtime.retryTimer !== null) {
-        window.clearTimeout(runtime.retryTimer)
-        runtime.retryTimer = null
-        runtime.retryPending = true
-      }
-    }
+    for (const key of SERVER_KEYS) sources[key].stop()
   }
 
   onScopeDispose(() => {
@@ -416,20 +377,14 @@ export const useBlueArchiveActivitySource = () => {
       window.clearTimeout(refreshTimer)
       refreshTimer = null
     }
-    for (const runtime of runtimes) {
-      if (runtime.retryTimer !== null) {
-        window.clearTimeout(runtime.retryTimer)
-        runtime.retryTimer = null
-      }
-    }
   })
 
   return {
     servers: computed<BlueArchiveServerOverview[]>(() =>
-      runtimes.map(runtime => ({
-        key: runtime.key,
-        label: serverLabel(runtime.key),
-        overview: runtime.overview.value,
+      SERVER_KEYS.map(key => ({
+        key,
+        label: serverLabel(key),
+        overview: overviewByServer[key].value,
       }))
     ),
     selectedServer,
@@ -446,10 +401,7 @@ export const useBlueArchiveActivitySource = () => {
     start,
     stop,
     refresh: () => {
-      for (const runtime of runtimes) {
-        runtime.retryCount = 0
-        void loadServer(runtime)
-      }
+      for (const key of SERVER_KEYS) sources[key].refresh()
     },
   }
 }

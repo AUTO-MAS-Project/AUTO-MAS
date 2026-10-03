@@ -1,5 +1,13 @@
 <template>
-  <a-modal :open="open" :title="modalTitle" :footer="null" :width="360" @cancel="emit('cancel')">
+  <a-modal
+    :open="open"
+    :title="modalTitle"
+    :footer="null"
+    :width="360"
+    :body-style="{ maxHeight: 'calc(100vh - 180px)', overflowY: 'auto' }"
+    centered
+    @cancel="emit('cancel')"
+  >
     <div class="qr-login-container">
       <!-- 二维码 -->
       <div

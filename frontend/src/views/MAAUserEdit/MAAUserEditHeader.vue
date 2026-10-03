@@ -49,7 +49,12 @@
         </template>
         {{ t('edit.configuring') }}
       </a-button>
-      <a-button size="large" class="cancel-button" @click="$emit('handleCancel')">
+      <a-button
+        size="large"
+        class="cancel-button"
+        :loading="leaving"
+        @click="$emit('handleCancel')"
+      >
         <template #icon>
           <ArrowLeftOutlined />
         </template>
@@ -74,6 +79,7 @@ const props = defineProps<{
   maaConfigLoading: boolean
   showMaaConfigMask: boolean
   loading: boolean
+  leaving?: boolean
   configLocked: boolean
   userId?: string
 }>()

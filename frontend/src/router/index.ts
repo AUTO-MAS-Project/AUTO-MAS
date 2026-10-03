@@ -337,6 +337,20 @@ const routes = [
     meta: { title: '设置' },
   },
   {
+    path: '/settings/mystery',
+    name: 'Mystery',
+    component: () => import('../views/mystery/index.vue'),
+    meta: { title: '神秘入口' },
+    children: [
+      {
+        path: 'tokens',
+        name: 'MysteryTokens',
+        component: () => import('../views/mystery/tokens/index.vue'),
+        meta: { title: 'Token 获取', mysteryTitleKey: 'mystery.tokens.title' },
+      },
+    ],
+  },
+  {
     path: '/logs',
     name: 'Logs',
     component: () => import('../views/Logs.vue'),

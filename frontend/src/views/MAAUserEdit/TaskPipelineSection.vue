@@ -206,6 +206,7 @@
         @change="emitSave('Task.IfDepotMaintain', $event)"
       >
         <DepotMaintainPlanEditor
+          :editor="depotPlanEditor"
           :form-data="formData"
           :loading="loading"
           :stage-options="stageOptions"
@@ -216,8 +217,6 @@
           :stage-candidates-loading="depotStageCandidatesLoading"
           :inventory="depotInventory"
           :depot-inventory-time="depotInventoryTime"
-          :load-stage-candidates="loadDepotStageCandidates"
-          @save="emitSave"
         />
       </PipelineRow>
 
@@ -344,6 +343,7 @@ import { computed } from 'vue'
 import PipelineRow from './PipelineRow.vue'
 import LabelWithHint from './LabelWithHint.vue'
 import DepotMaintainPlanEditor from './DepotMaintainPlanEditor.vue'
+import type { DepotMaintainPlanEditorState } from './useDepotMaintainPlanEditor'
 
 import CultivateTargetEditor from './CultivateTargetEditor.vue'
 import type {
@@ -379,6 +379,7 @@ const props = defineProps<{
   activityStageError: string
   displayActivityStageIndex?: number
   depotItemOptions: SelectOption[]
+  depotPlanEditor: DepotMaintainPlanEditorState
   depotItemOptionsLoading: boolean
   depotItemOptionsError: string
   /** 按物品缓存的关卡候选（含每理智效率，来自一图流数据层；[] 表示已加载但无候选） */
@@ -389,8 +390,6 @@ const props = defineProps<{
   depotInventory: Record<string, number>
   /** 库存档案的最近识别时间（本地格式；空串=未识别） */
   depotInventoryTime: string
-  /** 按需加载某物品的关卡候选（父级负责请求与缓存） */
-  loadDepotStageCandidates: (itemId: string) => Promise<void>
   /** 干员目录（一图流全量表，含技能/模组名称目录；[] 表示已加载但为空） */
   cultivateOperatorCatalog: OperatorCatalogEntry[]
   /** 森空岛绑定下拉：合并所有已配置凭据账号组的角色 */

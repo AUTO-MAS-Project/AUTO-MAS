@@ -2776,7 +2776,7 @@ def _migrate_maafw_auto_update_mode(data: dict) -> dict:
 class MaaFWConfig(ConfigBase):
     """MaaFW 项目配置。
 
-    特调类型（M9A）是它的子类：字段集完全一致，只改下面三个类属性。``ConfigBase.__init__``
+    特调类型（M9A）是它的子类：字段集完全一致，只改下面几个类属性。``ConfigBase.__init__``
     在各子类 ``__init__`` 末尾才登记条目，子类不能在 ``super().__init__()`` 之后覆盖
     ``ConfigItem``，所以默认值与用户类都由类属性驱动。
     """
@@ -2790,6 +2790,8 @@ class MaaFWConfig(ConfigBase):
     ## 特调钩子：``"模块路径:属性名"``，运行期由 MaaFW 引擎按需导入（避免 models 反向依赖 task）；
     ## 通用 MaaFW 为 None。钩子装饰任务选择（可选再接管游戏客户端更新），引擎里不出现任何专项名字。
     FLAVOR: str | None = None
+    ## Run.TaskTimeLimitOverrides 的默认值（JSON 字符串，任务名 → 分钟）；通用 MaaFW 不内置
+    DEFAULT_TASK_TIME_LIMIT_OVERRIDES = "{ }"
 
     def __init__(self) -> None:
 
@@ -2990,6 +2992,23 @@ class MaaFWConfig(ConfigBase):
         self.Run_RunTimeLimit = ConfigItem(
             "Run", "RunTimeLimit", 120, RangeValidator(1, 9999)
         )
+        ## 单个任务的时限（分钟），0 表示不限。某个任务卡住时到点只停它、截一张超时图，
+        ## 记一条任务失败后接着跑后面的任务（计划里第一个任务超时则结束本轮）；不再让
+        ## 一个卡住的任务吃掉整轮 RunTimeLimit 的时间。
+        ## 默认 45 而不是 30：M9A 智能均衡刷材料正常 1–22 分钟，自动深眠在新内容日
+        ## 实测 33.7 分钟，30 会误伤正常运行。
+        self.Run_TaskTimeLimit = ConfigItem(
+            "Run", "TaskTimeLimit", 45, RangeValidator(0, 9999)
+        )
+        ## 按任务名覆盖的单任务时限（分钟），键是 MaaFW 任务名；值 0 表示该任务不限。
+        ## 默认值由类属性 DEFAULT_TASK_TIME_LIMIT_OVERRIDES 决定（特调可内置几条）；
+        ## 只在配置里没有这个键时生效，用户存过的值（含清空成 {}）原样保留。
+        self.Run_TaskTimeLimitOverrides = ConfigItem(
+            "Run",
+            "TaskTimeLimitOverrides",
+            self.DEFAULT_TASK_TIME_LIMIT_OVERRIDES,
+            JSONValidator(dict),
+        )
         ## 每天正常完成一次后，当天剩余时间跳过的 MaaFW 任务名列表
         self.Run_DailyOnceTasks = ConfigItem(
             "Run", "DailyOnceTasks", "[ ]", JSONValidator(list)
@@ -3050,14 +3069,20 @@ class M9AConfig(MaaFWConfig):
     """M9A 脚本配置：MaaFW 的特调类型。
 
     字段集与 MaaFW 完全一致，运行、更新、内嵌副本全部走 MaaFW 引擎；差别只有类型身份
-    （键 / 图标 / 创建卡）、默认脚本名，以及运行前的队列装饰（启动 / 关闭游戏首尾、
-    ``Info.Account`` 绑定切号）。旧版 M9A 专项的配置形状在启动时由
+    （键 / 图标 / 创建卡）、默认脚本名、内置的按任务单任务时限，以及运行前的队列装饰
+    （启动 / 关闭游戏首尾、``Info.Account`` 绑定切号）。旧版 M9A 专项的配置形状在启动时由
     ``app/task/M9A/migration.py`` 一次性迁到这个形状。
     """
 
     DEFAULT_SCRIPT_NAME = "新 M9A 脚本"
     USER_CONFIG_CLASS = M9AUserConfig
     FLAVOR = "app.task.M9A.flavor:FLAVOR"
+    ## 键是 M9A interface 的任务名。智能均衡刷材料正常 1–22 分钟，按默认 45；自动深眠
+    ## 新内容日实测 33.7 分钟，与自动醒梦一样放到 60。新建与升级上来的脚本都带这三条，
+    ## 用户在脚本页「按任务设置时限」里看得见、改得了。
+    DEFAULT_TASK_TIME_LIMIT_OVERRIDES = (
+        '{"智能均衡刷材料": 45, "自动深眠": 60, "自动醒梦": 60}'
+    )
 
 
 class MSSUserConfig(MaaFWUserConfig):
@@ -3083,6 +3108,13 @@ class MSSUserConfig(MaaFWUserConfig):
             TypedMultipleUIDValidator(
                 "Fixed", self.related_config, "PlanConfig", MSSPlanConfig
             ),
+        )
+        ## 个人版「灾变防线」的编排记录，形如 {"armed": 期, "done": 期}。
+        ## armed 是上次把它编进队列的那一期，done 是已经确认打完的那一期：
+        ## 用「上次运行是否成功」把 armed 升成 done，所以跑失败的那期下次还会重试。
+        ## 期取活动公告的开始时刻（见 app/tools/stella_official.py），跨月也认得出是同一期。
+        self.Data_PersonalMssDefense = ConfigItem(
+            "Data", "PersonalMssDefense", "{ }", JSONValidator(dict)
         )
 
         super().__init__()
@@ -5029,6 +5061,11 @@ class GlobalConfig(ConfigBase):
         ## 是否启用匿名遥测
         self.Function_IfEnableTelemetry = ConfigItem(
             "Function", "IfEnableTelemetry", True, BoolValidator()
+        )
+        ## 个人版 MSS 的专属编排（灾变防线），只对个人版项目生效，
+        ## 普通版 MSS 与其它脚本都会忽略它。
+        self.Function_IfPersonalMss = ConfigItem(
+            "Function", "IfPersonalMss", False, BoolValidator()
         )
 
         ## Display ----------------------------------------------------------

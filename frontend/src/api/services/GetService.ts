@@ -61,6 +61,7 @@ import type { ShareInspectOut } from '../models/ShareInspectOut';
 import type { ShareTemplateListIn } from '../models/ShareTemplateListIn';
 import type { ShareTemplateListOut } from '../models/ShareTemplateListOut';
 import type { TaskRuntimeSnapshot } from '../models/TaskRuntimeSnapshot';
+import type { TaskStatusOut } from '../models/TaskStatusOut';
 import type { TimeSetGetIn } from '../models/TimeSetGetIn';
 import type { TimeSetGetOut } from '../models/TimeSetGetOut';
 import type { ToolsGetOut } from '../models/ToolsGetOut';
@@ -829,6 +830,27 @@ export class GetService {
         return __request(OpenAPI, {
             method: 'GET',
             url: '/api/dispatch/runtime-snapshot',
+        });
+    }
+    /**
+     * 按 taskId 查询单个任务状态
+     * 返回运行中或最近完成任务的终态；不包含日志。
+     * @param taskId
+     * @returns TaskStatusOut Successful Response
+     * @throws ApiError
+     */
+    public static getTaskStatusApiDispatchTaskTaskIdGet(
+        taskId: string,
+    ): CancelablePromise<TaskStatusOut> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/dispatch/task/{task_id}',
+            path: {
+                'task_id': taskId,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
         });
     }
     /**

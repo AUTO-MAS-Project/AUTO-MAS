@@ -1252,6 +1252,9 @@ class GlobalConfig_Function(BaseModel):
     IfEnableTelemetry: Optional[bool] = Field(
         default=None, description="启用匿名错误与性能遥测"
     )
+    IfPersonalMss: Optional[bool] = Field(
+        default=None, description="个人版 MaaStellaSora 的专属编排（灾变防线）"
+    )
 
 
 class GlobalConfig_Display(BaseModel):
@@ -4004,6 +4007,12 @@ class MaaFWConfig_Run(BaseModel):
     RunTimeLimit: Optional[int] = Field(
         default=None, description="运行时间限制（分钟）"
     )
+    TaskTimeLimit: Optional[int] = Field(
+        default=None, description="单任务时限（分钟），0 表示不限"
+    )
+    TaskTimeLimitOverrides: Optional[Union[str, Dict[str, Any]]] = Field(
+        default=None, description="按任务名覆盖的单任务时限（分钟），值 0 表示不限"
+    )
     DailyOnceTasks: Optional[Union[str, List[str]]] = Field(
         default=None, description="每日正常完成一次后当天跳过的 MaaFW 任务名列表"
     )
@@ -4521,6 +4530,32 @@ class MaaFWShellInstanceApplyOut(OutBase):
         default_factory=MaaFWShellInstanceApplyData,
         description="覆盖结果与任务快照",
     )
+
+
+class MssDefenseStatusIn(BaseModel):
+    scriptId: str = Field(..., min_length=1, description="MSS 脚本 ID")
+    userId: str = Field(..., min_length=1, description="用户 ID")
+
+
+class MssDefenseStatusData(BaseModel):
+    """个人版「灾变防线」这一期的状态：用户页拿它显示「本期未打 / 已打」。"""
+
+    period: str = Field(
+        default="", description="当前这一期的开始时刻；取不到官网公告时为空"
+    )
+    known: bool = Field(
+        default=False, description="这一期认得出来吗（取不到官网公告时为 false）"
+    )
+    done: bool = Field(default=False, description="这一期已经打过")
+    armed: bool = Field(default=False, description="已经排进队列、在等这一轮的结果")
+    failedDays: List[str] = Field(
+        default_factory=list, description="这一期编排过但没跑成的日子"
+    )
+    givenUp: bool = Field(default=False, description="失败日攒够了，这一期不再自动编排")
+
+
+class MssDefenseStatusOut(OutBase):
+    data: MssDefenseStatusData = Field(default_factory=MssDefenseStatusData)
 
 
 class MaaFWProjectUpdateIn(BaseModel):
@@ -6020,6 +6055,29 @@ class TaskRuntimeSnapshot(BaseModel):
     tasks: List[TaskRuntimeSnapshotItem] = Field(default_factory=list)
     scheduledScripts: List[WSTaskScriptIdentityData] = Field(
         default_factory=list, description="已启用定时队列关联的脚本静态标识"
+    )
+
+
+class TaskStatusOut(OutBase):
+    """按 taskId 单点查询一个任务的状态, 不携带日志。"""
+
+    taskId: str = Field(..., description="任务 ID")
+    status: Literal["running", "success", "error", "cancelled"] = Field(
+        ..., description="任务状态; running 为运行中, 其余为终态"
+    )
+    detail: Optional[str] = Field(default=None, description="任务结果描述")
+    error: Optional[str] = Field(default=None, description="任务错误信息")
+    mode: Optional[Literal["AutoProxy", "ScriptConfig", "Update"]] = Field(
+        default=None, description="任务模式"
+    )
+    isCycle: bool = Field(default=False, description="是否为循环运行任务")
+    queueId: Optional[str] = Field(default=None, description="调度队列 ID")
+    scriptId: Optional[str] = Field(default=None, description="脚本 ID")
+    userId: Optional[str] = Field(default=None, description="用户 ID")
+    stopping: bool = Field(default=False, description="任务是否正在停止")
+    finishedAt: Optional[str] = Field(
+        default=None,
+        description="任务结束时间, 格式为YYYY-MM-DD HH:MM:SS, 运行中为空",
     )
 
 

@@ -41,6 +41,7 @@ export const MSS_FLAVOR = defineMaaFWFlavor({
       beforeTaskQueue: [
         defineMaaFWLazyComponent(() => import('./MSSPlanModeField.vue')),
         defineMaaFWLazyComponent(() => import('./MSSActivityFirstField.vue')),
+        defineMaaFWLazyComponent(() => import('./MSSDefenseField.vue')),
       ],
     },
     // 计划表选项的取数逻辑和组件一样按需加载：注册表会被脚本列表、路由等处引入，不带上 API 依赖
