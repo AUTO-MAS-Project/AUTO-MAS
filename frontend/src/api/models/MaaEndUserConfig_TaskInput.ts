@@ -4,6 +4,14 @@
 /* eslint-disable */
 export type MaaEndUserConfig_TaskInput = {
     /**
+     * 上游库存目标输入值，原字段名与字符串值透传
+     */
+    SupplyPlanLimits?: (string | null);
+    /**
+     * 库存任务领取方式，由 MaaEnd 声明
+     */
+    ProtocolSpaceObtainModeClaim?: (string | null);
+    /**
      * 自动采集通用资源路线
      */
     AutoCollectCommonRoutes?: null;

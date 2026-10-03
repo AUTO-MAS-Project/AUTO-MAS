@@ -1,16 +1,17 @@
 <template>
   <div>
-    <div class="sanity-task-toggle" :class="{ 'sanity-task-enabled': showSanityDetail }">
-      <span>{{ t('edit.maaEndEnableSanity') }}</span>
-      <a-switch
-        v-model:checked="formData.Task.IfSanity"
-        :disabled="controlsDisabled"
-        :aria-label="t('edit.maaEndEnableSanity')"
-        @change="emitSave('Task.IfSanity', formData.Task.IfSanity)"
-      />
-    </div>
-
-    <a-row v-if="showSanityDetail" :gutter="24">
+    <SanityStrategySection
+      :enabled="formData.Task.IfSanity"
+      :show-detail="showSanityDetail"
+      :strategy="formData.Info.SanityStrategy"
+      :disabled="controlsDisabled"
+      :config-loading="configLoading"
+      :show-config-mask="showConfigMask"
+      @enable="value => emitSave('Task.IfSanity', value)"
+      @save="value => emitSave('Info.SanityStrategy', value)"
+      @configure="emit('configure')"
+    />
+    <a-row v-if="showSanityDetail && isMasStrategy" :gutter="24">
       <a-col :xs="24" :sm="12">
         <a-form-item :label="t('edit.sanityTaskConfigurationMode')">
           <a-select
@@ -123,6 +124,7 @@
 import { useI18n } from 'vue-i18n'
 import { computed, watch } from 'vue'
 import { QuestionCircleOutlined } from '@ant-design/icons-vue'
+import SanityStrategySection from './SanityStrategySection.vue'
 import type { ComboBoxItem } from '@/api'
 import {
   PROTOCOL_SPACE_TASK_FIELD_MAP,
@@ -162,6 +164,8 @@ const props = withDefaults(
     optionsLoading?: boolean
     optionsLoaded?: boolean
     isPlanMode?: boolean
+    configLoading?: boolean
+    showConfigMask?: boolean
     // 默认值不写在 withDefaults 里：defineProps 会被提升到 setup() 之外，
     // 引用不到 useI18n() 的 t。兜底见下方 resolvedSanityModeOptions。
     // oxlint-disable-next-line vue/require-default-prop
@@ -174,6 +178,8 @@ const props = withDefaults(
     optionsLoading: false,
     optionsLoaded: false,
     isPlanMode: false,
+    configLoading: false,
+    showConfigMask: false,
     essenceMenuOptions: () => [],
     essenceTargetWeaponGroups: () => [],
     planModeConfig: null,
@@ -189,14 +195,18 @@ const resolvedSanityModeOptions = computed(
 const emit = defineEmits<{
   save: [key: string, value: any]
   saveBatch: [changes: FieldChange[]]
+  configure: []
 }>()
 
 const formData = props.formData
+const isMasStrategy = computed(() => (formData.Info.SanityStrategy ?? 'MAS') === 'MAS')
 const controlsDisabled = computed(() => {
   return props.loading || !props.ifQuickConfig
 })
 
-const optionControlsDisabled = computed(() => controlsDisabled.value || props.optionsLoading)
+const optionControlsDisabled = computed(
+  () => controlsDisabled.value || props.optionsLoading || !isMasStrategy.value
+)
 const displayPlanConfig = computed(() =>
   props.planModeConfig ? normalizeMaaEndSanityConfig(props.planModeConfig) : null
 )
@@ -327,17 +337,10 @@ const currentTaskValue = computed({
   },
 })
 
-const currentTaskOption = computed(() =>
-  currentTaskOptions.value.find(option => option.value === currentTaskValue.value)
-)
-
 const rewardGroupEnabled = computed(() => {
   if (normalizedSanityTaskType.value === 'Essence') return false
-  return Boolean(
-    currentTaskOption.value &&
-    'rewards' in currentTaskOption.value &&
-    currentTaskOption.value.rewards
-  )
+  const option = currentTaskOptions.value.find(option => option.value === currentTaskValue.value)
+  return Boolean(option && 'rewards' in option && option.rewards)
 })
 
 const taskOptionLabel = computed(() =>
@@ -453,6 +456,7 @@ watch(
   [
     () => props.loading,
     () => props.optionsLoading,
+    () => formData.Info.SanityStrategy,
     () => formData.Task.SanityTaskType,
     () => props.essenceLocationOptions,
     () => props.essenceMenuOptions,
@@ -483,17 +487,6 @@ watch(
 </script>
 
 <style scoped>
-.sanity-task-toggle {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  min-height: 44px;
-}
-
-.sanity-task-enabled {
-  margin-bottom: 24px;
-}
-
 .plan-mode-display {
   min-height: 40px;
   padding: 8px 12px;

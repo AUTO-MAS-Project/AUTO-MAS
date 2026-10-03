@@ -1075,7 +1075,16 @@ class MaaEndLauncherPathOut(OutBase):
     )
 
 
+class MaaEndInventoryOptions(BaseModel):
+    description: str = Field(..., description="上游库存目标填写说明")
+    inputs: list[ComboBoxItem] = Field(..., description="上游库存目标输入字段")
+    claimModes: list[ComboBoxItem] = Field(..., description="上游库存任务领取方式")
+
+
 class MaaEndOptionsOut(OutBase):
+    inventory: MaaEndInventoryOptions | None = Field(
+        default=None, description="上游库存目标选项，旧版不支持时为空"
+    )
     launchGameControllers: list[str] = Field(
         default_factory=list, description="支持 MaaEnd 原生启动的控制器"
     )
@@ -2264,6 +2273,7 @@ async def get_maaend_options(options: ScriptDeleteIn = Body(...)) -> MaaEndOptio
             gameSettingControllers=data["gameSettingControllers"],
             projectName=data["projectName"],
             projectVersion=data["projectVersion"],
+            inventory=data.get("inventory"),
             autoCollectGroups=[
                 MaaEndAutoCollectGroup(**item)
                 for item in data.get("autoCollectGroups", [])

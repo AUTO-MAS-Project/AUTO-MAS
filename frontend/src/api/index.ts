@@ -421,6 +421,7 @@ export type { MaaEndConfig_Run } from './models/MaaEndConfig_Run';
 export type { MaaEndConfig_RunInput } from './models/MaaEndConfig_RunInput';
 export type { MaaEndConfigInput } from './models/MaaEndConfigInput';
 export type { MaaEndEssenceTargetGroup } from './models/MaaEndEssenceTargetGroup';
+export type { MaaEndInventoryOptions } from './models/MaaEndInventoryOptions';
 export type { MaaEndLauncherPathOut } from './models/MaaEndLauncherPathOut';
 export type { MaaEndOptionsOut } from './models/MaaEndOptionsOut';
 export type { MaaEndPlanConfig } from './models/MaaEndPlanConfig';

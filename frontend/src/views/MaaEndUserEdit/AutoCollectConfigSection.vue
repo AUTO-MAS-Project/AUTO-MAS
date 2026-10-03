@@ -35,6 +35,10 @@
       </a-col>
     </a-row>
 
+    <a-form-item v-if="enabled">
+      <a-alert type="info" show-icon :message="t('edit.maaEndCollectInventoryHint')" />
+    </a-form-item>
+
     <a-spin v-if="enabled" :spinning="optionsLoading">
       <a-alert
         v-if="!optionsLoading && !groups.length"
