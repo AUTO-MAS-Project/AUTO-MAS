@@ -552,7 +552,9 @@ async def create_qr_login(proxy: str | None = None) -> dict:
 
     try:
         headers = _qr_headers(device)
-        async with httpx.AsyncClient(proxy=proxy or Config.proxy) as client:
+        async with httpx.AsyncClient(
+            proxy=proxy or Config.proxy, trust_env=False
+        ) as client:
             resp = await client.post(
                 CREATE_QRCODE_URL,
                 headers=headers,
@@ -861,7 +863,9 @@ async def check_qr_status(
 
     try:
         headers = _qr_headers(device)
-        async with httpx.AsyncClient(proxy=proxy or Config.proxy) as client:
+        async with httpx.AsyncClient(
+            proxy=proxy or Config.proxy, trust_env=False
+        ) as client:
             resp = await client.post(
                 CHECK_QRCODE_URL,
                 headers=headers,
