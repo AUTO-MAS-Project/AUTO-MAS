@@ -861,14 +861,17 @@ def snapshot_plan_run_times(root: Path, slot_idx: int) -> dict[str, dict[str, in
     :func:`restore_plan_run_times` 按 plan_id 回写，进度不因 MAS 而丢失。
 
     读取容错：槽内 YAML 是上游 non-atomic 写的，进程被杀可能留 NUL 填充而
-    解析失败；此处只做尽力而为的抢救，异常按「无快照」处理——快照失败绝不
-    能阻断调用方的整目录恢复（那会让 MAS 注入内容残留在原生槽）。
+    解析失败；此处按 ``.sanitized.yaml`` 容错读（与运行记录读侧同口径），
+    并对确实读不出的 app 逐项跳过——快照失败绝不能阻断调用方的整目录恢复
+    （那会让 MAS 注入内容残留在原生槽）。
     """
 
     snapshot: dict[str, dict[str, int]] = {}
     for app_id, field in _plan_list_fields():
         try:
-            items = read_app_config(root, slot_idx, app_id).get(field)
+            items = read_app_config(
+                root, slot_idx, app_id, format=".sanitized.yaml"
+            ).get(field)
         except Exception as exc:  # noqa: BLE001 - 抢救失败不阻断恢复
             logger.warning(f"计划进度快照读取失败，本轮按无进度处理：{app_id}: {exc}")
             continue
@@ -892,7 +895,9 @@ def restore_plan_run_times(
     """把快照里的已运行次数写回槽内计划（按 plan_id 匹配，其余字段原样保留）。
 
     逐 app 容错：坏档（上游 non-atomic 写残留 NUL 被备份带回来）只跳过该 app
-    的进度回写，不中断同槽其余产物恢复，也不冒泡阻断调用方。
+    的进度回写，不中断同槽其余产物恢复，也不冒泡阻断调用方。读取按
+    ``.sanitized.yaml``（与快照侧同口径），写回直接用已持有的整份数据——不再
+    经 ``write_app_config`` 二次严格读盘，否则坏档时那一次读会白丢本 app 进度。
     """
 
     if not snapshot:
@@ -904,7 +909,7 @@ def restore_plan_run_times(
         # 整个 app 包 try：读或写失败都只丢这一个 app 的进度回写，不阻断同槽
         # 其余产物恢复（尤其不能挡住运行记录回写，那会让周期进度被还原回滚）
         try:
-            data = read_app_config(root, slot_idx, app_id)
+            data = read_app_config(root, slot_idx, app_id, format=".sanitized.yaml")
             items = data.get(field)
             if not isinstance(items, list):
                 continue
@@ -920,7 +925,7 @@ def restore_plan_run_times(
                     item["run_times"] = runs[plan_id]
                     changed = True
             if changed:
-                write_app_config(root, slot_idx, app_id, {field: items})
+                write_file(app_config_path(root, slot_idx, app_id), data)
         except Exception as exc:  # noqa: BLE001 - 坏档只丢该 app 进度，不阻断恢复
             logger.warning(f"计划进度回写失败，跳过该任务：{app_id}: {exc}")
 
@@ -931,10 +936,16 @@ def app_config_path(root: Path, slot_idx: int, app_id: str) -> Path:
     return root / "config" / f"{int(slot_idx):02d}" / _APP_GROUP_ID / f"{app_id}.yml"
 
 
-def read_app_config(root: Path, slot_idx: int, app_id: str) -> dict:
-    """读取应用配置（文件不存在返回空 dict，由调用方回退默认值）。"""
+def read_app_config(
+    root: Path, slot_idx: int, app_id: str, *, format: str | None = None
+) -> dict:
+    """读取应用配置（文件不存在返回空 dict，由调用方回退默认值）。
 
-    return dict(read_file(app_config_path(root, slot_idx, app_id)) or {})
+    ``format`` 强制解析器后缀：槽内有上游 non-atomic 写残留 NUL 的 YAML 时传
+    ``.sanitized.yaml`` 才能容错读回（见 ``app.utils.io``），否则严格解析会抛异常。
+    """
+
+    return dict(read_file(app_config_path(root, slot_idx, app_id), format=format) or {})
 
 
 def write_app_config(

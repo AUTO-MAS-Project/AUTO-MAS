@@ -153,11 +153,6 @@ _ZZZOD_LAUNCH_STARTED_MARKERS = (
 # zzz-od 统一日志（log_utils，按日期滚动，当天固定为 log.txt）
 _ZZZOD_REL_LOG = Path(".log") / "log.txt"
 
-# 实例段边界标记：上游每加载一个实例落「开始加载实例配置 N」（N=实例 idx）。
-# 与 log_box 的节点归属规则同源（见 push_log.py），用于把「本实例是否被本轮
-# 处理过」的证据收窄到具体槽，避免用全轮日志误判未处理的实例
-_ZZZOD_INSTANCE_SEG_PREFIX = "开始加载实例配置 "
-
 # 日志行格式：[HH:mm:ss.SSS] [file.py NN] [LEVEL]: message
 _ZZZOD_LOG_TIME_START = 1
 _ZZZOD_LOG_TIME_END = 13
@@ -786,6 +781,20 @@ def _judge_after(
         if pre is None or pre == current.get(name):
             records[app_id] = RUN_STATUS_NOT_RUN
     return records
+
+
+def _judge_all_skipped(log: str, diffs: list) -> bool:
+    """本轮该槽无任何运行记录变化时，是否属「任务已全部完成、被上游整轮跳过」。
+
+    判据是「整轮跑完」标志：一条龙走完所有实例才会落
+    ``指令[ 一条龙 ] 执行成功``（见 :data:`_ZZZOD_ONE_DRAGON_SUCCESS`）。
+    记录保留后，本周期已完成的槽会全程无记录变化，需要这条回落避免重试耗尽；
+    但只有它成立时空 diff 才等价于「该实例的应用组把每个启用任务都按已完成
+    跳过」——启动器起过、实例被加载过都发生在应用组之前，单独用它们判断会把
+    「实例还没跑到就退出」误判成完成。
+    """
+
+    return not diffs and _ZZZOD_ONE_DRAGON_SUCCESS in log
 
 
 class AutoProxyTask(ScriptAutoProxyBase):
@@ -1688,15 +1697,10 @@ class AutoProxyTask(ScriptAutoProxyBase):
             # 节点失败只记录不判异常（次日 zzz-od 按运行记录自行重试）
             failed_apps = _failed_apps(diffs)
             success = any(new == RUN_STATUS_SUCCESS for _, _, new in diffs)
-            # 记录保留后，本周期已全部完成的用户整轮被跳过、diff 为空——有本实例
-            # 的运行证据即判完成，避免重试耗尽。证据必须收窄到本槽：一条龙顺序
-            # 处理各实例，只用全轮日志判断会把「未被处理」的实例误判完成
-            # （上游每加载一个实例都落「开始加载实例配置 N」，见 log_box 同源规则）
-            all_skipped = (
-                not diffs
-                and f"{_ZZZOD_INSTANCE_SEG_PREFIX}{slot}" in log
-                and self._launch_evidence(log, False)
-            )
+            # 记录保留后，本周期已全部完成的用户整轮被跳过、diff 为空，需要
+            # 回落判完成（详见 _judge_all_skipped：以「整轮跑完」为判据，
+            # 不用启动器/实例加载证据，那两者都发生在应用组之前）
+            all_skipped = _judge_all_skipped(log, diffs)
             ok = fatal is None and not runtime_failed and (success or all_skipped)
             all_ok = all_ok and ok
 
