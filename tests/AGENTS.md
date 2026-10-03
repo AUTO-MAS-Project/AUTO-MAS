@@ -18,8 +18,9 @@
 
 ## 核心最小回归
 
-`tests/task/test_maafw_core.py` 是 MaaFW 通用引擎（`app/task/MaaFW/tools/core/`）的最小回归集，
-**进仓库、长期保留**，不属于下文「默认不提交」的一次性测试，清理测试时也不要删它。
+`tests/task/test_maafw_core.py` 是 MaaFW 通用引擎（`app/task/MaaFW/tools/core/`）的最小回归集。
+所有基于 MaaFW 的专项（M9A、MaaEnd 等）都跑在这套核心上，它属于根 `AGENTS.md`「分支与 PR」所说的
+跨功能通用测试，**进仓库、长期保留**，清理测试时不要删它。
 
 - 范围只到核心，不覆盖专项；只收缺一条就要命的：守的东西一改坏，MFW 运行就成片失败
   （worker / agent 起不来、宿主与 worker 之间的数据传不过去、agent 与 runner 版本对不上之类）。
