@@ -67,26 +67,41 @@
               />
             </div>
             <div v-if="!showCycleConfig" class="row-cell days-cell">
-              <a-select
-                v-model:value="record.schedule.Days"
-                mode="multiple"
-                size="small"
-                style="width: 100%"
-                class="days-select"
-                :placeholder="t('queue.time.selectDays')"
-                :disabled="locked"
-                :max-tag-count="7"
-                :bordered="false"
-                @change="saveDays(record)"
-              >
-                <a-select-option value="Monday">{{ t('queue.time.Monday') }}</a-select-option>
-                <a-select-option value="Tuesday">{{ t('queue.time.Tuesday') }}</a-select-option>
-                <a-select-option value="Wednesday">{{ t('queue.time.Wednesday') }}</a-select-option>
-                <a-select-option value="Thursday">{{ t('queue.time.Thursday') }}</a-select-option>
-                <a-select-option value="Friday">{{ t('queue.time.Friday') }}</a-select-option>
-                <a-select-option value="Saturday">{{ t('queue.time.Saturday') }}</a-select-option>
-                <a-select-option value="Sunday">{{ t('queue.time.Sunday') }}</a-select-option>
-              </a-select>
+              <div class="days-panel">
+                <a-select
+                  v-model:value="record.schedule.Days"
+                  mode="multiple"
+                  size="small"
+                  style="width: 100%"
+                  class="days-select"
+                  :placeholder="t('queue.time.selectDays')"
+                  :disabled="locked"
+                  :max-tag-count="7"
+                  :bordered="false"
+                  @change="saveDays(record)"
+                >
+                  <a-select-option value="Monday">{{ t('queue.time.Monday') }}</a-select-option>
+                  <a-select-option value="Tuesday">{{ t('queue.time.Tuesday') }}</a-select-option>
+                  <a-select-option value="Wednesday">{{
+                    t('queue.time.Wednesday')
+                  }}</a-select-option>
+                  <a-select-option value="Thursday">{{ t('queue.time.Thursday') }}</a-select-option>
+                  <a-select-option value="Friday">{{ t('queue.time.Friday') }}</a-select-option>
+                  <a-select-option value="Saturday">{{ t('queue.time.Saturday') }}</a-select-option>
+                  <a-select-option value="Sunday">{{ t('queue.time.Sunday') }}</a-select-option>
+                </a-select>
+                <a-tooltip :title="t('queue.item.skipOnceTip')">
+                  <span class="skip-once-line">
+                    <a-switch
+                      v-model:checked="record.schedule.SkipOnce"
+                      size="small"
+                      :disabled="locked"
+                      @change="saveSchedule(record, { SkipOnce: record.schedule.SkipOnce })"
+                    />
+                    <span class="skip-once-text">{{ t('queue.item.skipOnce') }}</span>
+                  </span>
+                </a-tooltip>
+              </div>
             </div>
             <div v-if="showCycleConfig" class="row-cell cycle-cell">
               <div class="cycle-panel">
@@ -275,6 +290,8 @@ const CYCLE_SCHEDULE_DEFAULTS = {
   IntervalMinutes: 480,
   IntervalAnchor: 'start',
   NextRunAt: CYCLE_EMPTY_TIME,
+  // 一次性开关：只在非循环队列任务里显示，运行后由后端自动清除
+  SkipOnce: false,
 }
 
 // 补齐循环配置并派生时间选择器需要的 dayjs 值。
@@ -750,6 +767,22 @@ onMounted(() => {
 .row-cell.days-cell {
   flex: 1 1 360px;
   min-width: 0;
+}
+
+.days-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+}
+
+.skip-once-line {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--ant-color-text-secondary);
+  cursor: pointer;
 }
 
 .cycle-panel {

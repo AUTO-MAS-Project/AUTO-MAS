@@ -377,6 +377,9 @@ class GeneralManager(TaskExecuteBase):
 
         if self.check_result != "Pass":
             self.script_info.status = "异常"
+            # 提前返回时用户代理状态不会被写回, 过去这段是静默的, 复测无法判断
+            # 标签未更新是走了这里还是别的分支
+            logger.warning(f"本轮未通过检查, 用户代理状态未写回: {self.check_result}")
             return self.check_result
 
         logger.info("通用脚本任务已结束, 开始执行后续操作")

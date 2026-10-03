@@ -695,6 +695,11 @@ class QueueItem(ConfigBase):
             DateTimeValidator("%Y-%m-%d %H:%M:%S"),
         )
 
+        ## 本次跳过, 一次性开关: 该队列的下一次运行跳过本项, 运行后自动清除
+        self.Schedule_SkipOnce = ConfigItem(
+            "Schedule", "SkipOnce", False, BoolValidator()
+        )
+
         ## Data ------------------------------------------------------------
         ## 上次循环开始时间
         self.Data_LastCycleStartedAt = ConfigItem(
@@ -1261,6 +1266,10 @@ class MaaConfig(ConfigBase):
             "TaskTransitionMethod",
             "ExitEmulator",
             OptionsValidator(["NoAction", "ExitGame", "ExitEmulator"]),
+        )
+        ## 手动停止单个任务时保留 MAA 与模拟器（「停止全部」/退出软件不受影响）
+        self.Run_KeepAliveOnManualStop = ConfigItem(
+            "Run", "KeepAliveOnManualStop", False, BoolValidator()
         )
         ## 代理次数限制
         self.Run_ProxyTimesLimit = ConfigItem(

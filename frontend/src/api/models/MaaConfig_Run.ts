@@ -12,6 +12,10 @@ export type MaaConfig_Run = {
      */
     TaskTransitionMethod?: ('NoAction' | 'ExitGame' | 'ExitEmulator' | null);
     /**
+     * 手动停止单个任务时保留 MAA 与模拟器
+     */
+    KeepAliveOnManualStop?: (boolean | null);
+    /**
      * 每日代理次数限制
      */
     ProxyTimesLimit?: (number | null);

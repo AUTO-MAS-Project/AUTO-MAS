@@ -10,6 +10,26 @@ from app.utils.logger import get_logger
 logger = get_logger("脚本运行")
 
 
+def keep_runtime_on_manual_stop(owner) -> bool:
+    """手动停止单个任务时是否保留 MAA 与模拟器。
+
+    「停止全部」与退出软件同样会把子任务标成 stopped_manually，所以必须靠
+    task_info.bulk_stop 区分：只有单任务手动停止且脚本配置打开了开关才保留。
+    """
+    task_info = getattr(owner, "task_info", None)
+    if not getattr(owner, "stopped_manually", False) or task_info is None:
+        return False
+    if getattr(task_info, "bulk_stop", False):
+        return False
+    script_config = getattr(owner, "script_config", None)
+    if script_config is None:
+        return False
+    try:
+        return bool(script_config.get("Run", "KeepAliveOnManualStop"))
+    except AttributeError:
+        return False
+
+
 class ScriptAutoProxyBase(TaskExecuteBase):
     # 总时限涵盖等待和全部重试，不随日志推进重置；收尾必须完成后再切换账号。
     wait_for_finalizer_on_cancel = True

@@ -1029,6 +1029,10 @@ export default {
     readInterface: '读取 interface',
     debug: '调试',
     accountSwitchingMethod: '账号切换方法',
+    keepAliveOnManualStop: '手动停止后保留 MAA 与模拟器',
+    keepAliveOnManualStopTip:
+      '打开后，在调度台手动停止单个任务时不会关闭 MAA 与模拟器，方便接着手动操作；「停止全部」、退出软件与任务自然结束仍会完整清理',
+
     accountSwitchMethodMas: 'MAS 自建切号',
     accountSwitchMethodMaaend: 'MaaEnd 内置切号',
     maaendMasAccountSwitchWarningTitle: 'MAS 自建切号风险提示',
@@ -3672,6 +3676,8 @@ export default {
       colActions: '操作',
       dragSort: '拖拽排序',
       selectScript: '请选择托管',
+      skipOnce: '本次跳过',
+      skipOnceTip: '下一次运行该队列时跳过本项，运行后自动取消',
       deleteConfirm: '确定要删除这个任务吗？',
     },
     cycle: {

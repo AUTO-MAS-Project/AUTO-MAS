@@ -985,6 +985,10 @@ export default {
     readInterface: 'インターフェースを読み込む',
     debug: 'デバッグ',
     accountSwitchingMethod: 'アカウントの切り替え方法',
+    keepAliveOnManualStop: '手動停止後も MAA とエミュレーターを残す',
+    keepAliveOnManualStopTip:
+      '有効にすると、ダッシュボードで単一タスクを手動停止しても MAA とエミュレーターを閉じません（そのまま手動操作できます）。「すべて停止」・アプリ終了・正常終了ではこれまで通り完全に片付けます',
+
     accountSwitchMethodMas: 'MAS の自動切り替え',
     accountSwitchMethodMaaend: 'MaaEnd 内蔵切り替え',
     maaendMasAccountSwitchWarningTitle: 'MAS のアカウント切り替えに関する注意',
@@ -3203,6 +3207,8 @@ export default {
       colActions: '操作',
       dragSort: 'ドラッグして並び替え',
       selectScript: 'マネージドスクリプトを選択してください',
+      skipOnce: '今回のみスキップ',
+      skipOnceTip: '次回このキューの実行でこのタスクをスキップします。実行後に自動で解除されます',
       deleteConfirm: 'このタスクを削除しますか？',
     },
     cycle: {

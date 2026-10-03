@@ -241,6 +241,25 @@
             </a-col>
           </a-row>
           <a-row :gutter="24">
+            <a-col :span="12">
+              <a-form-item>
+                <template #label>
+                  <a-tooltip :title="t('edit.keepAliveOnManualStopTip')">
+                    <span class="form-label">
+                      {{ t('edit.keepAliveOnManualStop') }}
+                      <QuestionCircleOutlined class="help-icon" />
+                    </span>
+                  </a-tooltip>
+                </template>
+                <a-switch
+                  v-model:checked="maaConfig.Run.KeepAliveOnManualStop"
+                  size="large"
+                  @change="handleChange('Run', 'KeepAliveOnManualStop', $event)"
+                />
+              </a-form-item>
+            </a-col>
+          </a-row>
+          <a-row :gutter="24">
             <a-col :span="8">
               <a-form-item>
                 <template #label>
@@ -453,6 +472,7 @@ const maaConfig = reactive<MAAScriptConfig>({
   Run: {
     HardTimeLimit: 120,
     TaskTransitionMethod: 'ExitEmulator',
+    KeepAliveOnManualStop: false,
     ProxyTimesLimit: 0,
     ADBSearchRange: 0,
     RunTimesLimit: 3,

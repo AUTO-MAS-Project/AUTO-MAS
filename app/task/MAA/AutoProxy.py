@@ -46,7 +46,7 @@ from app.models.notification import NotificationImage
 from app.models.schema import WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem
 from app.services import Notify, System
-from app.task.base import ScriptAutoProxyBase
+from app.task.base import ScriptAutoProxyBase, keep_runtime_on_manual_stop
 from app.task.emulator_core import close_emulator
 from app.task.general.tools import execute_script_task
 from app.task.notify_core import load_screenshot_images, screenshot_entries
@@ -2220,10 +2220,16 @@ class AutoProxyTask(ScriptAutoProxyBase):
 
         logger.info("MAA 收尾: 停止日志监控")
         await self.maa_log_monitor.stop()
-        logger.info("MAA 收尾: 停止 MAA 进程")
-        await self.maa_process_manager.kill()
-        await System.kill_process(self.maa_exe_path)
-        logger.info(f"MAA 收尾: 结束残留 MAA 进程: {self.maa_exe_path}")
+        # 手动停止单个任务且脚本配置要求保留时，MAA 与模拟器原地留下，用户可
+        # 接着手动操作；「停止全部」/退出软件/自然结束都走下面的清理分支
+        keep_runtime = keep_runtime_on_manual_stop(self)
+        if keep_runtime:
+            logger.info("手动停止单个任务: 按脚本配置保留 MAA 与模拟器")
+        else:
+            logger.info("MAA 收尾: 停止 MAA 进程")
+            await self.maa_process_manager.kill()
+            await System.kill_process(self.maa_exe_path)
+            logger.info(f"MAA 收尾: 结束残留 MAA 进程: {self.maa_exe_path}")
 
         logger.info("MAA 收尾: 回写 MAA 配置")
         await agree_bilibili(self.maa_tasks_path, False)
@@ -2238,7 +2244,10 @@ class AutoProxyTask(ScriptAutoProxyBase):
         if not if_success and failure_shot is None:
             failure_shot = await self._take_failure_shot()
 
-        if self.script_config.get("Run", "TaskTransitionMethod") == "ExitEmulator":
+        if (
+            not keep_runtime
+            and self.script_config.get("Run", "TaskTransitionMethod") == "ExitEmulator"
+        ):
             logger.info("用户任务结束, 关闭模拟器")
             await close_emulator(self)
 
