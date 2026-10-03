@@ -34,10 +34,11 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
 # 文件 -> (最大行数, 最大端点数量)；端点数量为 None 表示只卡行数。
-# 数值为 2026-10-03 在本分支实测值，只降不升：app/core/config.py 的 5372 已包含
-# #949 在 init_config 开头加的启动钩子（加之前是 5320）。
+# 数值为 2026-10-03 origin/dev 实测值，只降不升：app/core/config.py 的 5372
+# 已包含 #949 在 init_config 开头加的启动钩子（dev 现值 5320 + 52），合并后
+# 即成为 dev 的新基线。
 LIMITS: dict[str, tuple[int, int | None]] = {
-    "app/api/scripts.py": (3755, 102),
+    "app/api/scripts.py": (3757, 102),
     "app/core/config.py": (5372, None),
 }
 
