@@ -30,6 +30,12 @@
   - 开发流程：只影响贡献者、用户看不见的改动，不进公告。
 -->
 
+## [未发布]
+
+### 修复
+
+- 【MAA】修复 MAA 原生界面删掉任务后，该任务的设置重新打开变成占位符的问题 (#1208) by @1w1w11w1
+
 ## [v5.6.2] - 2026-10-04
 
 ### 破坏性变更
@@ -389,6 +395,7 @@
 - OK-NTE专项 修复任务结束后异环启动器进程残留并持续占用内存的问题 by @qiyinxi by @HarcoChen
 - MAA专项 修复开启活动关优先后普通理智作战的理智药额度被静默清零的问题，两个作战任务各自使用独立理智药额度 by @qiyinxi by @HarcoChen
 
+[未发布]: https://github.com/AUTO-MAS-Project/AUTO-MAS/compare/v5.6.2...dev
 [v5.6.2]: https://github.com/AUTO-MAS-Project/AUTO-MAS/compare/v5.6.1...v5.6.2
 [v5.6.1]: https://github.com/AUTO-MAS-Project/AUTO-MAS/compare/v5.6.0...v5.6.1
 [v5.6.0]: https://github.com/AUTO-MAS-Project/AUTO-MAS/compare/v5.5.0...v5.6.0
