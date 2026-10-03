@@ -123,6 +123,11 @@ _BGI_SEQUENCE_DONE_MARKER = "一条龙和配置组任务结束"
 # 出现过 [ERR] 后、若连续这么久没有任何新日志行（BGI 既未完成也未退出），判定卡死提前失败。
 # 仅在出错后静默触发，正常推进时 latest_time 会被新行持续刷新、不会误触。
 _BGI_ERR_STALL_MINUTES = 5
+# 累计日志里「当前不在游戏主界面」达到该次数仍未见收尾行：游戏被留在副本/子界面，
+# 提前判本次失败。BGI 等主界面约 30 秒刷一行，日志持续推进 → 卡死/超时兜底永不触发，
+# 不设此规则只能等 RunTimeLimit × RunTimesLimit 三连重试（#744）。
+_BGI_MAIN_UI_WAIT_TEXT = "当前不在游戏主界面"
+_BGI_MAIN_UI_WAIT_ABORT = 3
 _BGI_LOG_TIME_START = 1
 _BGI_LOG_TIME_END = 13
 _BGI_LOG_TIME_FORMAT = "%H:%M:%S.%f"
@@ -308,6 +313,17 @@ def _back_to_main_failed_hint(log: str) -> str | None:
     return (
         "切换队伍失败：游戏被留在副本/子界面（未能返回主界面），"
         "本次领奖等后续步骤未干成；请手动回到主界面后重试"
+    )
+
+
+def _main_ui_wait_abort_hint() -> str:
+    """「BGI 反复等待主界面」提前判负的用户可读提示（#744）。
+
+    复用「回不到主界面」的口径，并点明执行层把人留在了副本/子界面。
+    """
+    return (
+        "执行层可能把人留在了副本/子界面（BGI 反复等待主界面），"
+        "本次任务无法继续；请手动回到主界面后重试"
     )
 
 
@@ -1755,6 +1771,20 @@ class AutoProxyTask(ScriptAutoProxyBase):
                     # 按进程名判定：BGI 自提权重启会换 PID，跟踪 PID 失效 ≠ 任务已死
                     log_status = "BetterGI 在完成任务前退出"
                     user_item_status = "异常"
+                elif log.count(_BGI_MAIN_UI_WAIT_TEXT) >= _BGI_MAIN_UI_WAIT_ABORT:
+                    # BGI 等主界面约 30 秒刷一行、日志持续推进，下方两条「无新日志
+                    # 停滞」兜底永不触发；达到次数仍无收尾行即判游戏被留在副本/
+                    # 子界面，提前失败本轮（不再 RunTimeLimit 三连重试）。
+                    log_status = (
+                        f"BGI 反复等待主界面（{_BGI_MAIN_UI_WAIT_ABORT} 次），"
+                        "游戏被留在副本/子界面"
+                    )
+                    user_item_status = "异常"
+                    hint = _main_ui_wait_abort_hint()
+                    if hint not in self._bgi_hints_pushed:
+                        self._bgi_hints_pushed.add(hint)
+                        logger.warning(f"用户 {self.cur_user_item.name} {hint}")
+                        await self._push_dispatch_log(f"BetterGI 运行异常：{hint}")
                 elif "[ERR]" in log and self.is_log_stalled(
                     latest_time, minutes=_BGI_ERR_STALL_MINUTES, key="err"
                 ):
