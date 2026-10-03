@@ -24,6 +24,7 @@ import type {
   ScriptType,
 } from '@/types/script'
 import type { MfwReuseChoice } from '@/views/scripts/components/scriptCreateFlow'
+import type { TaskLimitOverrideRow } from '../Script/MaaFWScriptEdit/periodTasks'
 import type { MaaFWUpdateProgressState } from '../Script/MaaFWScriptEdit/updateProgress'
 import type { MaaFWPresetQueueEntry } from '../User/maafwPresetQueue'
 
@@ -132,12 +133,14 @@ export interface MaaFWScriptUpdateSectionEmits {
   'apply-update': []
 }
 
-/** 脚本页 `run`：运行参数与每日 / 每周 / 每月只跑一次的任务 */
+/** 脚本页 `run`：运行参数、单任务时限与每日 / 每周 / 每月只跑一次的任务 */
 export interface MaaFWScriptRunSectionProps {
   maafwConfig: MaaFWScriptConfig
   dailyOnceTasks: string[]
   weeklyOnceTasks: string[]
   monthlyOnceTasks: string[]
+  /** 按任务名覆盖的单任务时限（分钟）；页面持本地状态，改动由 section 发事件回去落盘 */
+  taskLimitOverrideRows: TaskLimitOverrideRow[]
   periodTaskOptions: Array<{ label: string; value: string }>
   interfaceDependentDisabled: boolean
 }
@@ -148,6 +151,7 @@ export interface MaaFWScriptRunSectionEmits {
     key: 'DailyOnceTasks' | 'WeeklyOnceTasks' | 'MonthlyOnceTasks',
     values: string[],
   ]
+  'task-limit-override-change': [rows: TaskLimitOverrideRow[]]
 }
 
 /** 脚本页 `shellImport`：引导最后一步，把外壳里配好的实例导入成用户 */

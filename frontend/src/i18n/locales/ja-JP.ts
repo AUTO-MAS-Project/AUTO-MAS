@@ -1120,6 +1120,7 @@ export default {
     lineMatchingThisPattern:
       'この正規表現に一致した行を範囲の終わりとします（その行を含む）。空の場合は終わりを限定しません',
     singleRunTimeLimit: '1 回の実行時間の上限（分）',
+    singleTaskTimeLimit: '単一タスクの制限時間（分、0 で無制限）',
     echoOfWarStartDay: '歴戦余韻の開始日',
     trailingKeyword: '末尾を切るキーワード',
     reportIssueGo: 'でフィードバックするか、こちらへ：',
@@ -1378,6 +1379,8 @@ export default {
     extraTasksThatRun: '日課のあとに実行する追加タスク',
     skipOnceDoneToday: '今日完了したらスキップ',
     skipOnceDoneThis2: '今月完了したらスキップ',
+    taskTimeLimitOverrides: 'タスクごとの制限時間の上書き（分、0 で無制限）',
+    addTaskTimeLimitOverride: 'タスクの制限時間を追加',
     exampleStarrailExe: '例: StarRail.exe',
     nothingConfigure: '設定できるタスクがありません',
     spendSanityFarm: '理性を消費して周回',

@@ -37,3 +37,41 @@ export const parseTaskNameList = (value: unknown): string[] => {
 }
 
 export const stringifyTaskNameList = (value: string[]): string => JSON.stringify(value)
+
+/** 按任务名覆盖的单任务时限：分钟数，0 表示该任务不限。 */
+export interface TaskLimitOverrideRow {
+  name: string
+  minutes: number
+}
+
+export const normalizeTaskLimitMinutes = (value: unknown): number => {
+  const minutes = Math.trunc(Number(value))
+  return Number.isFinite(minutes) && minutes > 0 ? minutes : 0
+}
+
+// 覆盖表同样以 JSON 字符串保存（任务名 → 分钟），值 0 表示该任务不限；
+// 兼容后端某天直接返回对象、以及分钟被存成字符串的情况。
+export const parseTaskLimitOverrides = (value: unknown): TaskLimitOverrideRow[] => {
+  let source: unknown = value
+  if (typeof source === 'string') {
+    if (!source.trim()) return []
+    try {
+      source = JSON.parse(source)
+    } catch {
+      return []
+    }
+  }
+  if (!source || typeof source !== 'object' || Array.isArray(source)) return []
+  return Object.entries(source as Record<string, unknown>)
+    .filter(([name]) => Boolean(name))
+    .map(([name, minutes]) => ({ name, minutes: normalizeTaskLimitMinutes(minutes) }))
+}
+
+export const stringifyTaskLimitOverrides = (rows: TaskLimitOverrideRow[]): string =>
+  JSON.stringify(
+    Object.fromEntries(
+      rows
+        .filter(row => Boolean(row.name))
+        .map(row => [row.name, normalizeTaskLimitMinutes(row.minutes)] as const)
+    )
+  )

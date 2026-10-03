@@ -300,6 +300,10 @@ export interface MaaFWScriptConfig {
     DailyOnceTasks: string | string[]
     WeeklyOnceTasks: string | string[]
     MonthlyOnceTasks: string | string[]
+    /** 单任务时限（分钟），0 表示不限。 */
+    TaskTimeLimit: number
+    /** 按任务名覆盖的单任务时限（分钟）的 JSON 文本，值 0 表示该任务不限。 */
+    TaskTimeLimitOverrides: string | Record<string, number>
     /** 只有 flavor 支持游戏更新（M9A）时才在编辑页出现；通用 MaaFW 后端不读。 */
     GameUpdateMode: MaaFWGameUpdateMode
   }

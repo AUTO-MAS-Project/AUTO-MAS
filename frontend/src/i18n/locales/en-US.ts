@@ -1193,6 +1193,7 @@ export default {
     lineMatchingThisPattern:
       'A line matching this pattern closes the window (inclusive); leave empty for no end condition',
     singleRunTimeLimit: 'Single-run time limit (minutes)',
+    singleTaskTimeLimit: 'Single-task time limit (minutes, 0 = unlimited)',
     echoOfWarStartDay: 'Echo of War start day',
     trailingKeyword: 'Trailing keyword',
     reportIssueGo: 'Report an issue, or go to',
@@ -1491,6 +1492,8 @@ export default {
     extraTasksThatRun: 'Extra tasks that run after the daily tasks',
     skipOnceDoneToday: 'Skip once done today',
     skipOnceDoneThis2: 'Skip once done this month',
+    taskTimeLimitOverrides: 'Per-task overrides for the time limit (minutes, 0 = unlimited)',
+    addTaskTimeLimitOverride: 'Add a task time limit',
     exampleStarrailExe: 'For example StarRail.exe',
     nothingConfigure: 'Nothing to configure',
     spendSanityFarm: 'Spend sanity to farm',

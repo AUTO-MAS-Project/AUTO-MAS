@@ -110,6 +110,8 @@ export const getDefaultMaaFWScriptConfig = (): MaaFWScriptConfig => ({
     DailyOnceTasks: '[ ]',
     WeeklyOnceTasks: '[ ]',
     MonthlyOnceTasks: '[ ]',
+    TaskTimeLimit: 30,
+    TaskTimeLimitOverrides: '{ }',
     GameUpdateMode: 'Off',
   },
 })
