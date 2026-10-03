@@ -1,9 +1,8 @@
 """MaaFW 核心最小回归。
 
 只覆盖通用引擎 ``app/task/MaaFW/tools/core/``，不覆盖专项；只收缺一条就要命的：
-守的东西一改坏，MFW 运行就成片失败。每条都要便宜稳定：不联网、不要模拟器或真实安装包、
-不建真 venv、不 skip。功能与 bug 的边界测试照旧只在本地跑，不往这里放。改 ``tools/core/``
-前先跑：
+守的东西一改坏，MFW 运行就成片失败。收录标准见 ``tests/AGENTS.md``「核心最小回归」；
+功能与 bug 的边界测试照旧只在本地跑，不往这里放。改 ``tools/core/`` 前先跑：
 
     python -m pytest tests/task/test_maafw_core.py -q
 """
