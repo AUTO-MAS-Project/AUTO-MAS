@@ -474,6 +474,17 @@ class AutoProxyTask(ScriptAutoProxyBase):
             return self._daily_once_task_done(task_name)
         if self._daily_once_task_done(task_name):
             return True
+        if self.cur_user_config.get("Info", "SanityStrategy") == "Native":
+            tasks = self._source_maaend_tasks()
+            sanity_tasks = [
+                str(task["taskName"])
+                for task in tasks or []
+                if task.get("taskName") in _MAAEND_SANITY_TASK_NAMES
+                and task.get("enabled", False)
+            ]
+            return bool(sanity_tasks) and all(
+                self._daily_once_task_done(name) for name in sanity_tasks
+            )
         try:
             sanity_task_key, _ = self.cur_user_config.get_effective_sanity_task_key()
         except ValueError:
@@ -667,6 +678,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
     def _quick_config_mode_skip_reason(self, mode: str) -> tuple[str | None, bool]:
         """快速配置下按 MAS 任务开关与 MaaEnd 配置判断阶段是否可执行。"""
 
+        native_sanity = self.cur_user_config.get("Info", "SanityStrategy") == "Native"
         if mode == "Delivery":
             if not self.cur_user_config.get("Task", "IfSeizeDeliveryJobs"):
                 return "快速配置未开启抢委托送货", False
@@ -699,9 +711,11 @@ class AutoProxyTask(ScriptAutoProxyBase):
 
             # MaaEnd 2.28 的 AutoEssence 任务可能尚未出现在旧配置实例中；
             # set_maaend 会在临时运行配置中补齐任务，不能在这里提前跳过理智阶段。
-            if self.cur_user_config.get(
-                "Task", "IfSanity"
-            ) and not self._quick_task_daily_once_done("Sanity"):
+            if (
+                not native_sanity
+                and self.cur_user_config.get("Task", "IfSanity")
+                and not self._quick_task_daily_once_done("Sanity")
+            ):
                 sanity_task_key, _ = (
                     self.cur_user_config.get_effective_sanity_task_key()
                 )
@@ -732,6 +746,12 @@ class AutoProxyTask(ScriptAutoProxyBase):
                     continue
                 if task_name in _MAAEND_SANITY_TASK_NAMES:
                     if not self.cur_user_config.get("Task", "IfSanity"):
+                        continue
+                    if native_sanity:
+                        if task.get(
+                            "enabled", False
+                        ) and not self._daily_once_task_done(task_name):
+                            return None, False
                         continue
                     if target_sanity_task_name is None:
                         sanity_task_key, _ = (
@@ -1711,7 +1731,8 @@ class AutoProxyTask(ScriptAutoProxyBase):
         sanity_task_key = {}
         sanity_task_type = ""
         target_task_name = ""
-        if if_quick_config:
+        native_sanity = self.cur_user_config.get("Info", "SanityStrategy") == "Native"
+        if if_quick_config and not native_sanity:
             sanity_task_key, _ = self.cur_user_config.get_effective_sanity_task_key()
             sanity_task_type = sanity_task_key["SanityTaskType"]
             target_task_name = (
@@ -1731,7 +1752,13 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 "Task", "IfSanity"
             )
             target_sanity_task_exists = any(
-                task.get("taskName") == target_task_name for task in maaend_tasks
+                (
+                    task.get("taskName") in _MAAEND_SANITY_TASK_NAMES
+                    and task.get("enabled", False)
+                    if native_sanity
+                    else task.get("taskName") == target_task_name
+                )
+                for task in maaend_tasks
             )
             sanity_missing = sanity_switch_enabled and not target_sanity_task_exists
             sanity_managed = if_quick_config and (
@@ -1751,7 +1778,10 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 task_enabled = bool(task.get("enabled", False))
                 if if_quick_config:
                     if task_name_value in ("ProtocolSpace", "AutoEssence"):
-                        if sanity_managed:
+                        if native_sanity:
+                            # 原生策略沿用已选任务，MAS 理智开关只控制整组是否运行。
+                            task_enabled = task_enabled and sanity_switch_enabled
+                        elif sanity_managed:
                             task_enabled = (
                                 sanity_switch_enabled
                                 and task_name_value == target_task_name
@@ -1794,7 +1824,10 @@ class AutoProxyTask(ScriptAutoProxyBase):
 
             if sanity_missing:
                 warning_message = (
-                    f"用户 {self.cur_user_item.name} 当前 MaaEnd 配置中缺少 {target_task_name} 任务，"
+                    f"用户 {self.cur_user_item.name} 未在 MaaEnd 配置中启用理智任务，"
+                    "请在「配置库存目标」中启用协议空间或基质刷取"
+                    if native_sanity
+                    else f"用户 {self.cur_user_item.name} 当前 MaaEnd 配置中缺少 {target_task_name} 任务，"
                     "已跳过理智任务快速配置"
                 )
                 logger.warning(warning_message)
