@@ -18,9 +18,11 @@
 
 """OK-WW（鸣潮）通过官方启动器拉起游戏。
 
-鸣潮已不允许直启客户端 exe，必须经官方启动器（launcher.exe）进入游戏。本模块
-对齐 ok-nte 专项 launcher_start 的方案，交互与截图采用与账号切换一致的前台
-pyautogui + DPI 适配模式，OCR 复用通用工具集 `app.tools.ocr`。
+本模块是「启动器启动」方式（``Game.Type = Launcher``）的实现：由 MAS 拉起官方
+启动器（launcher.exe）并点「进入游戏」。另一种「直接启动」方式（``Client``，默认）
+由 AutoProxy 的 _launch_game_direct 直接拉起客户端 exe，不经过本模块。
+交互与截图采用与账号切换一致的前台 pyautogui + DPI 适配模式，OCR 复用通用工具集
+`app.tools.ocr`。
 
 流程::
 

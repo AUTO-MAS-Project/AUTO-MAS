@@ -32,8 +32,10 @@ from fastapi.responses import FileResponse
 from app.core import Config
 from app.models.config import BetterGIConfig as RuntimeBetterGIConfig
 from app.models.config import OkNteConfig as RuntimeOkNteConfig
+from app.models.config import OkwwConfig as RuntimeOkwwConfig
 from app.models.config import WhimboxConfig as RuntimeWhimboxConfig
 from app.models.schema import *
+from app.services.wuthering_waves import resolve_wuthering_waves_process_path
 from app.task.MaaFW.api_service import agent_env as maafw_agent_env_api
 from app.task.MaaFW.api_service import embedded as maafw_embedded_api
 from app.task.MaaFW.api_service import interface as maafw_interface_api
@@ -304,6 +306,48 @@ async def update_script(script: ScriptUpdateIn = Body(...)) -> OutBase:
             code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
         )
     return OutBase()
+
+
+@router.get(
+    "/okww/client-path",
+    tags=["Get"],
+    summary="解码鸣潮启动器，返回客户端 exe 路径",
+    response_model=OkwwClientPathOut,
+    status_code=200,
+)
+async def get_okww_client_path_api(scriptId: str) -> OkwwClientPathOut:
+    """解码鸣潮启动器记录，返回客户端 exe 完整路径（仅直启模式的前端展示用）。
+
+    任务期的启动与自动更新链路由后端自行解码，不经过本端点。
+    """
+
+    try:
+        script_config = Config.ScriptConfig[uuid.UUID(scriptId)]
+        if not isinstance(script_config, RuntimeOkwwConfig):
+            raise TypeError("脚本配置类型错误, 不是 OK-WW 类型")
+        launcher_path = Path(str(script_config.get("Game", "Path") or "").strip())
+        client_path = resolve_wuthering_waves_process_path(launcher_path)
+        return OkwwClientPathOut(
+            code=200,
+            status="success",
+            message="",
+            client_path=client_path.as_posix(),
+        )
+    except Exception as e:
+        logger.opt(exception=True).warning(
+            f"get_okww_client_path_api失败: {type(e).__name__}: {e}"
+        )
+        return OkwwClientPathOut(
+            code=(
+                400
+                if isinstance(e, (ValueError, KeyError, TypeError, FileNotFoundError))
+                else 500
+            ),
+            status="error",
+            # message 直接展示给用户，不带异常类名前缀（类名只进上面的日志）
+            message=str(e),
+            client_path="",
+        )
 
 
 @router.post(

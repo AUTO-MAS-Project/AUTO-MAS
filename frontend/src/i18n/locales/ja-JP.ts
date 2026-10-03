@@ -1047,7 +1047,6 @@ export default {
       'MAS がローカルのゲームを起動する間だけ、現在のユーザーのレジストリに書き込んでウィンドウモードに切り替えます。タスクの完了・失敗・手動停止でゲームを閉じたあと、元の値に戻します',
     appliesMarch7thDivergentUniverse:
       '三月なのかの模擬宇宙・分岐宇宙にのみ適用され、weekly_divergent_stable_mode に対応します',
-    officialWutheringWavesLauncher: '鳴潮の公式ランチャーのみ対応',
     pcControllersOnlySeconds: 'PC 側のコントローラーのみ設定が必要です。単位は秒',
     cutFromKeywordEnd:
       'キーワードから行末までを切り取ります。「含める」にチェックするとキーワードごと削除し、外すとキーワードは残します',
@@ -1342,6 +1341,26 @@ export default {
     gameLaunchArgumentsNot: 'ゲームの起動引数（OK-NTE の引数ではありません）',
     gameLaunchArgumentsNot2: 'ゲームの起動引数（ok-ww の引数ではありません）',
     gameLauncher: 'ゲームランチャー',
+    launchType: 'ゲームの起動方法',
+    launchTypeHint:
+      'ランチャー起動：公式ランチャー経由でゲームに入ります。直接起動：ランチャーを開かずゲームクライアントを直接起動します（MAS が -krqlv=hd を付与）。どちらもランチャーのパスでゲームを特定します',
+    launchViaLauncher: 'ランチャー起動',
+    launchDirectly: '直接起動',
+    autoUpdateNeedsLauncher:
+      '下で公式ランチャーのパスが未設定です：自動更新は使えず、ゲームクライアントも未選択だと直接起動できません',
+    gameClientPathLabel: 'ゲームクライアント',
+    clientPathPending: 'ランチャーのパスから自動特定、またはファイルを手動で選択',
+    selectFile: 'ファイルを選択',
+    resetAutoLocate: '自動に戻す',
+    clientPathLocateFailed: 'ゲームクライアントのパスを自動特定できませんでした：{message}',
+    clientPathLocateFailedHint:
+      'ゲームクライアントのパスを自動特定できませんでした。ランチャーのパスを確認するか、クライアントのファイルを手動で選択してください',
+    clientPathSaved: '鳴潮クライアントのパスを保存しました',
+    clientPathReset: '自動特定に戻しました',
+    launchTypeSaveFailed: 'ゲームの起動方法を保存できませんでした。元の設定に戻しました',
+    invalidClientFileTitle: '選択したファイルは無効です',
+    invalidClientFileContent:
+      '鳴潮のゲームクライアント Client-Win64-Shipping.exe を選択してください。',
     whichPlatformGameRuns: 'ゲームを動かすプラットフォーム',
     gameUpdate: 'ゲームの更新',
     gameUpdateTimeoutMinutes: 'ゲーム更新のタイムアウト（分）',

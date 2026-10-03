@@ -32,6 +32,12 @@
 
 ## [未发布]
 
+### 修复
+
+- 【ok-ww】修复新版鸣潮启动器下自动定位游戏客户端失败、导致任务无法启动的问题 (#1154) by @AthenaHibou
+
+## [v5.6.1] - 2026-10-01
+
 ### 新增
 
 - 【end】新增阶段间自动更新，下载与首阶段任务并行 (#1041) by @HarcoChen
@@ -40,12 +46,11 @@
 - 【MFW】识别到游戏停服维护时跳过本次运行，需要更新游戏客户端时不再反复重试，并发送通知 (#1091) by @qiyinxi
 - 【MFW】项目更新改了任务名后，队列留旧任务虚影、任务报告提示失效；新任务在添加菜单里标 NEW (#1147) by @qiyinxi
 - 【调度】调度中心的日志现在也会显示任务节点详情，未配置推送也能看到 (#1108) by @AthenaHibou
-- 【通知】QQ 官方机器人可发送 MaaEnd 失败报告中的最新三张报错图片（仅公测） (#1109) by @HarcoChen
 - 【更新】支持暂停更新1~35天，期间不再自动检查，手动检查即恢复 by @Shasnow
 
 ### 变更
 
-- 【ok-ww】鸣潮改为经官方启动器进入游戏，更新弹窗与账号切换全程自动处理；异环启动器点击被遮挡后可自动恢复 (#1139) by @AthenaHibou
+- 【ok-ww】鸣潮支持选择游戏启动方式（默认直启客户端），更新弹窗与账号切换全程自动处理；异环启动器点击被遮挡后可自动恢复 (#1139) by @AthenaHibou
 - 【MFW】临时设置 Unity 分辨率的日志改为「已尝试」，游戏按自身设置覆盖时不再像已生效 (#1146) by @qiyinxi
 - 【通用脚本】日志预处理更名并默认折叠，规则不再误弹提示；时间戳录入区更紧凑，计数文案接入多语言 (#1081) by @AthenaHibou
 - 【主页】新增一条首页轮换文案 (#1131) by @qiyinxi
@@ -57,7 +62,6 @@
 ### 修复
 
 - 【MAA】修复 MAA 连不上 MuMu 模拟器、每轮任务刚开始就中止的问题 (#1085) by @1w1w11w1
-- 【MAA】修复 MAA 库存保持高级设置运行时不生效（仅公测） (#1099) by @1w1w11w1
 - 【MAA】MAA 队列里认不出库存保持或理智作战任务时给出提示，不再静默按默认设置运行 (#1093) by @qiyinxi
 - 【MAA】修复 MAA 用户编辑页不显示「打开配置文件夹」，海外服计划表周模式预览仍按国服换日 (#1095) by @qiyinxi
 - 【MAA】修复 MAA 旧日志残留导致任务刚启动就被判定失败，模拟器反复重启 (#1124) by @1w1w11w1
@@ -66,7 +70,6 @@
 - 【M9A】修复 M9A 更新到 v4.11.0 后每次卡在等待 Agent 启动、10 分钟后超时 (#1140) by @qiyinxi
 - 【M9A】修复 M9A 目录里残留旧版原生库时仍卡在等待 Agent 启动直到超时 (#1143) by @qiyinxi
 - 【ok-ww】修复鸣潮游戏更新完成后 OK-WW 直接结束、不重启任务继续每日的问题 (#1125) by @AthenaHibou
-- 【MSS】修复星塔旅人计划表「简化视图」里的配置只能看、改不动的问题（仅公测） (#1018) by @beichen24a1
 - 【MFW】运行前环境检查失败时，日志和问题包里能看到具体原因 (#1088) by @qiyinxi
 - 【MFW】修复发行包同时带多种架构的原生插件时 MFW 整轮运行失败 (#1102) by @qiyinxi
 - 【MFW】修复 MaaFgo v2.0.03 等项目代码中名为 runtime 的子目录被漏装导致无法运行 (#1104) by @qiyinxi
@@ -341,7 +344,8 @@
 - OK-NTE专项 修复任务结束后异环启动器进程残留并持续占用内存的问题 by @qiyinxi by @HarcoChen
 - MAA专项 修复开启活动关优先后普通理智作战的理智药额度被静默清零的问题，两个作战任务各自使用独立理智药额度 by @qiyinxi by @HarcoChen
 
-[未发布]: https://github.com/AUTO-MAS-Project/AUTO-MAS/compare/v5.6.0...dev
+[未发布]: https://github.com/AUTO-MAS-Project/AUTO-MAS/compare/v5.6.1...dev
+[v5.6.1]: https://github.com/AUTO-MAS-Project/AUTO-MAS/compare/v5.6.0...v5.6.1
 [v5.6.0]: https://github.com/AUTO-MAS-Project/AUTO-MAS/compare/v5.5.0...v5.6.0
 [v5.5.0]: https://github.com/AUTO-MAS-Project/AUTO-MAS/compare/v5.4.0...v5.5.0
 [v5.4.0]: https://github.com/AUTO-MAS-Project/AUTO-MAS/releases/tag/v5.4.0
