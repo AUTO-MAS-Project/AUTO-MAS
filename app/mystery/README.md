@@ -12,4 +12,4 @@
 米游社、森空岛扫码登录及塔吉多账密登录的前端实现统一放在
 `frontend/src/views/mystery/tokens/`。获取的凭据保存到用户选择的社区账号组，
 普通社区页面只保留已有凭据录入。库街区凭据获取引导用户使用
-[Better-MAS-Tools（BMS）](https://github.com/Lance0174/Better-MAS-Tools) 本体。
+[Better-MAS-Tools（BMT）](https://github.com/Lance0174/Better-MAS-Tools) 本体。

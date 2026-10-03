@@ -4041,7 +4041,7 @@ export default {
     lock: '重新锁定',
     tokens: {
       title: 'Token 获取',
-      entryDescription: '获取米游社、森空岛和塔吉多凭据，库街区请使用 BMS。',
+      entryDescription: '获取米游社、森空岛和塔吉多凭据，库街区请使用 BMT。',
       description: '米游社、森空岛和塔吉多获取成功后自动保存到所选社区账号组。',
       account: '保存到账号组',
       accountPlaceholder: '选择要保存 Token 的社区账号组',
@@ -4052,9 +4052,9 @@ export default {
       sklandDescription: '使用森空岛 App 扫码登录，获取社区登录凭据。',
       taygedoDescription: '使用塔吉多账号密码登录，获取塔吉多与云异环凭据。',
       kuroDescription:
-        '库街区 Token 获取已迁至 BMS，请使用 BMS 本体登录并复制凭据，再回到游戏社区的账号编辑页粘贴保存。',
-      openBms: '打开 Better-MAS-Tools（BMS）',
-      openFailed: '打开 BMS 项目失败，请重试',
+        '库街区 Token 获取已迁至 BMT，请使用 BMT 本体登录并复制凭据，再回到游戏社区的账号编辑页粘贴保存。',
+      openBmt: '打开 Better-MAS-Tools（BMT）',
+      openFailed: '打开 BMT 项目失败，请重试',
       privacyNotice:
         '手机号与密码仅用于本次登录，不会写入配置、日志或通知。获取的凭据会加密保存在本机。',
       saved: '{platform} Token 已保存到「{name}」',

@@ -80,7 +80,7 @@ const loadAccounts = async () => {
     if (!Array.isArray(data.instances)) throw new Error('Account list invalid')
     // 只保留选择器需要的名称和 UUID，不把账号列表中的明文凭据留在页面状态里。
     accounts.value = data.instances.flatMap((instance: { uid?: string; type?: string }) => {
-      if (instance.type !== 'GameSignAccount' || !instance.uid) return []
+      if (instance.type !== 'GameSignAccountGroup' || !instance.uid) return []
       const config = data[instance.uid] as { GameSignAccount?: { Name?: string } } | undefined
       return [
         { uid: instance.uid, name: config?.GameSignAccount?.Name || t('gamesign.defaultUserName') },
@@ -152,7 +152,7 @@ const submitTaygedo = async () => {
   }
 }
 
-const openBms = async () => {
+const openBmt = async () => {
   if (!(await openExternalUrl('https://github.com/Lance0174/Better-MAS-Tools')) && active) {
     message.error(t('mystery.tokens.openFailed'))
   }
@@ -237,7 +237,7 @@ onBeforeUnmount(() => {
       <a-col :xs="24" :lg="12">
         <a-card :title="t('gamesign.edit.kuro')" class="token-card">
           <p>{{ t('mystery.tokens.kuroDescription') }}</p>
-          <a-button @click="openBms">{{ t('mystery.tokens.openBms') }}</a-button>
+          <a-button @click="openBmt">{{ t('mystery.tokens.openBmt') }}</a-button>
         </a-card>
       </a-col>
     </a-row>
