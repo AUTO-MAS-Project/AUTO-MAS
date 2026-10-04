@@ -848,6 +848,8 @@ class AutoProxyTask(ScriptAutoProxyBase):
             self.cur_user_config, CONFIG_SOURCE_SCRIPT
         )
         self.check_result = "-"
+        # 首个 LogRecord 在真正开始跑任务时才创建, 收尾逻辑要能在它之前安全取值
+        self.cur_user_log: LogRecord | None = None
         self._annihilation_weekly_completion_recorded = False
         # 无时段排班表本轮注入的班次：同一用户的多次重试都注入这一个值，
         # 基建换班完成后只把用户配置里的指针推进一次
@@ -2220,7 +2222,10 @@ class AutoProxyTask(ScriptAutoProxyBase):
 
         logger.info("MAA 收尾: 停止日志监控")
         await self.maa_log_monitor.stop()
-        if self.stopped_manually or self.cur_user_log.status == "MAA 正常运行中":
+        if self.stopped_manually or (
+            self.cur_user_log is not None
+            and self.cur_user_log.status == "MAA 正常运行中"
+        ):
             # MAA 还在跑任务时给它发关闭消息只会弹出「确定要退出吗」的确认框, 把
             # 收尾卡在那里等人点确认: 任务被中止(手动停止/总时限到期/异常)与 MAA 仍
             # 在运行任务这两种情况都直接强杀, 只有 MAA 空闲时才等它自己退出落盘
