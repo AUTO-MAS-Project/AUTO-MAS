@@ -9,12 +9,18 @@
  * `screenrecord webrtc start`; layout: u32 width, height, fps, frameNumber; u64 tsUs; BGRA rows
  * top-down). MaaCore expects RGBA rows bottom-up, so capture converts while copying.
  *
- * Instance mapping for nemu_connect(path, index):
- *   index >= 5554  -> index is the emulator console port
- *   otherwise      -> index is the native index, console port = 20000 + 10 * index
+ * Instance mapping for nemu_connect(path, index), see index_to_port():
+ *   index >= 20000                     -> index is the emulator console port
+ *   5554 + 2 * index in 20000..20100   -> MAA's GUI derives index = (port - 5554) / 2 from an
+ *                                         "emulator-<port>" address (MuMu's old serial scheme)
+ *   index >= 5554                      -> index is the emulator console port
+ *   otherwise                          -> index is AUTO-MAS's native index, console port = 20000 + 10 * index
+ *                                         (AUTO-MAS port blocks; aemu-lab's copy uses its older 2 * index)
  * Input functions are deliberately not exported: MaaCore then keeps adb/minitouch for input.
  *
- * Build: see build.ps1 (MinGW-w64 gcc, static libgcc, links ws2_32). The built DLL is committed next to\n * this file; AUTO-MAS copies it into <root>\\mumu-shim\\shell\\sdk\\ for every official-emulator install.
+ * Source: aemu-lab tools/avdshim/avdshim.c (09-30), only the native-index step differs.
+ * Build: see build.ps1 (MinGW-w64 gcc, static libgcc, links ws2_32). The built DLL is committed next to
+ * this file; AUTO-MAS copies it into <root>\mumu-shim\shell\sdk\ for every official-emulator install.
  */
 
 #define WIN32_LEAN_AND_MEAN
@@ -201,13 +207,25 @@ static Slot* get_slot(int handle)
     return s->used ? s : NULL;
 }
 
+static int index_to_port(int index)
+{
+    if (index >= 20000) {
+        return index;
+    }
+    if (index >= 5554) {
+        int maa = 5554 + 2 * index;
+        return (maa >= 20000 && maa <= 20100) ? maa : index;
+    }
+    return DEFAULT_PORT_BASE + PORT_STEP * index;
+}
+
 EXPORT int nemu_connect(const wchar_t* path, int index)
 {
     if (path && path[0] && wcslen(path) < MAX_PATH - 16) {
         wcscpy(g_log_path, path);
         wcscat(g_log_path, L"\\avdshim.log");
     }
-    int port = index >= 5554 ? index : DEFAULT_PORT_BASE + PORT_STEP * index;
+    int port = index_to_port(index);
 
     EnterCriticalSection(&g_lock);
     int handle = 0;
