@@ -150,7 +150,7 @@ def wait_autoplay_game(
 
     启动器带 /autoplay 参数时无需点击与 OCR 交互，「游戏已就绪」等价于
     HTGame.exe 出现可见窗口，轮询该窗口即可判定；超时返回 False（调用方按
-    启动失败处理），本函数不抛错。
+    启动失败处理），仅非 Windows 平台抛 RuntimeError。
 
     Args:
         launcher_path: 启动器 exe 路径（用于日志标明是哪个启动器静默拉起）。
@@ -159,8 +159,16 @@ def wait_autoplay_game(
 
     Returns:
         游戏窗口出现返回 True；超时返回 False。
+
+    Raises:
+        RuntimeError: 非 Windows 平台（窗口轮询依赖 win32gui，退屏保依赖 pyautogui）。
     """
 
+    if not IS_WINDOWS:
+        raise RuntimeError("OK-NTE 启动器启动仅支持 Windows 平台")
+    # 开工前退出屏保：屏保全屏覆盖会让后续窗口截图变成黑屏（沿用旧点击启动路径与
+    # ok-nte 上游 LauncherTask 的行为）
+    dismiss_screensaver()
     on_log = on_log or (lambda msg: logger.info(msg))
     limit = _AUTOPLAY_START_TIMEOUT if timeout is None else timeout
     started = time.monotonic()
