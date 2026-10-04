@@ -46,6 +46,7 @@ from app.task.proxy_helpers import (
 )
 from app.utils import LogMonitor, ProcessManager, get_logger, strptime
 from app.utils.constants import STARRAIL_PACKAGE_NAME, UTC4
+from app.utils.emulator2.avd.manager import IncompatibleGameError
 from app.utils.io import read_file, write_file
 
 from .tools import (
@@ -228,6 +229,10 @@ class AutoProxyTask(ScriptAutoProxyBase):
             except Exception as e:
                 if not await self.handle_pre_src_error("模拟器启动失败", e):
                     return
+                # 官方模拟器明确不支持这个游戏（如镜像不支持星铁普通模式）：重试只会一遍遍重开模拟器，
+                # 本用户本次直接判失败
+                if isinstance(e, IncompatibleGameError):
+                    break
                 continue
 
             self.script_info.log = (

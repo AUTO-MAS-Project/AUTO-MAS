@@ -508,6 +508,10 @@ def _schedule_drop_caches(manager: _AvdCore, idx: str) -> None:
     task.add_done_callback(lambda _: _DROP_CACHES.pop(key, None))
 
 
+#: 星铁 Vulkan 修复：同一实例串行；镜像不对的实例记下原因，之后直接报错不再开机。
+_VULKAN_LOCKS: dict[str, asyncio.Lock] = {}
+_VULKAN_UNSUPPORTED: dict[str, str] = {}
+
 #: ``{实例键: 游戏启动看门狗任务}``。启动成功后它还在后台看一段，关机 / 再次拉起时取消。
 _GAME_GUARDS: dict[str, asyncio.Task] = {}
 
@@ -1328,6 +1332,8 @@ class _AvdCore(DeviceBase):
             # 被看门狗强杀过的实例进程已经不在，只剩状态标记
             _FROZEN.pop(_instance_key(self.root, str(native_index)), None)
         await asyncio.to_thread(delete_instance_files, self.root, native_index)
+        # 同一索引以后新建的是另一台实例，之前「镜像不支持星铁普通模式」的结论不能沿用
+        _VULKAN_UNSUPPORTED.pop(_instance_key(self.root, str(native_index)), None)
         logger.info(f"已删除官方模拟器实例 {native_index}")
 
     # ---- 实例选项 ------------------------------------------------------
@@ -1422,6 +1428,9 @@ class AvdManager(AppLaunchMixin, _AvdCore):
             reason = incompatible_reason(package_name)
             if reason is not None:
                 raise IncompatibleGameError(reason)
+            known = _VULKAN_UNSUPPORTED.get(_instance_key(self.root, str(idx)))
+            if known is not None and package_name in VULKAN_FIX_PACKAGES:
+                raise IncompatibleGameError(known)
         # AppLaunchMixin 有意不把包名传给开机那一步；内存按游戏给，所以在这里记下
         self._open_package = package_name or ""
         return await super().open(idx, package_name)
@@ -1467,6 +1476,10 @@ class AvdManager(AppLaunchMixin, _AvdCore):
         强停 → 拉起 → 每 3 秒采样；启动卡死就留证据、强停、重开，最多重开 5 次。第一次启动成功就返回，
         看门狗在后台继续看到拉起后第 300 秒，期间死锁同样重开。看门狗自己出错（例如客体没有 ``su``）
         返回 ``None``，调用方按普通方式拉起。
+
+        avd-game.ps1 拉起前丢弃客体 ping 的 iptables 规则不搬：那是给 slirp 的 ICMP 套接字堆积兜底的
+        （崩坏三每次启动 ping 约 700 次/秒，拖垮 slirp 主循环），自编模拟器从 sdk-mas9 起已在模拟器里修好；
+        官方 37.1.11 那条路径只作开发兜底。
         """
         _, output = await self._shell(idx, f"pm path {package_name}")
         if is_package_missing(output):
@@ -1545,6 +1558,11 @@ class AvdManager(AppLaunchMixin, _AvdCore):
         waiter = asyncio.create_task(guard.started.wait())
         try:
             await asyncio.wait({task, waiter}, return_when=asyncio.FIRST_COMPLETED)
+        except asyncio.CancelledError:
+            # 调用方不等了（任务被停、open 超时）：还没启动成功的看门狗不能留在后台接着强停 / 重开游戏
+            if not guard.started.is_set():
+                _cancel_game_guard(key)
+            raise
         finally:
             waiter.cancel()
         if guard.started.is_set():
@@ -1565,8 +1583,18 @@ class AvdManager(AppLaunchMixin, _AvdCore):
         缓存时从客体拉出原库，在这里核对 sha256、改 5 字节、推回去（:mod:`.vulkanfix`）。哈希对不上
         就不打补丁，抛 :class:`IncompatibleGameError`（「这个镜像版本不支持星铁普通模式」）。
         重启 zygote 会结束客体上所有应用，所以只在拉起星铁前做；本次开机已经做过就什么都不做。
-        返回客体脚本的状态词（MOUNTED / ALREADY）。
+        同一实例串行做（并发拉起时不会挂两次、重启两次 zygote）。返回客体脚本的状态词（MOUNTED / ALREADY）。
+        镜像不对的结论记在进程里，之后对这台实例拉星铁直接报错、不再开机（脚本的重试会一遍遍重开模拟器）。
         """
+        key = _instance_key(self.root, idx)
+        async with _VULKAN_LOCKS.setdefault(key, asyncio.Lock()):
+            try:
+                return await self._ensure_vulkan_fix(idx)
+            except IncompatibleGameError as e:
+                _VULKAN_UNSUPPORTED[key] = str(e)
+                raise
+
+    async def _ensure_vulkan_fix(self, idx: str) -> str:
         remote = f"{GUEST_TMP_DIR}/vulkanfix.sh"
         if not await self._push(idx, guest_script("vulkanfix.sh"), remote):
             raise RuntimeError(f"实例 {idx} 推送星铁 Vulkan 修复脚本失败")
@@ -1589,9 +1617,16 @@ class AvdManager(AppLaunchMixin, _AvdCore):
             return "ALREADY"
         if not status.startswith("MOUNTED"):
             logger.warning(f"实例 {idx} 星铁 Vulkan 修复没做: {status}")
-            if status.startswith("SKIPPED"):
+            if status.startswith("SKIPPED image"):
                 raise IncompatibleGameError(
                     f"{UNSUPPORTED_IMAGE_MESSAGE}（客体驱动库不是预期版本，没有打补丁）"
+                )
+            if status.startswith("SKIPPED patched"):
+                # 客体里那份改好的库校验不对（写入失败、空间不足）：脚本已把它删掉，下次重新生成上传。
+                # 不是镜像问题，可以重试
+                raise RuntimeError(
+                    f"实例 {idx} 星铁 Vulkan 修复没挂上：客体里改好的驱动库副本校验不对"
+                    "（可能客体空间不足或写入失败），已删掉坏副本，下次拉起时重新生成"
                 )
             raise RuntimeError(f"实例 {idx} 星铁 Vulkan 修复失败: {status[-200:]}")
         started = time.monotonic()

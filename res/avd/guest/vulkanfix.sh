@@ -12,8 +12,9 @@
 # relabelled for /vendor and then no longer writable by adb, so the host uploads under a separate name.
 #
 # Prints one status word first: MOUNTED (done now, zygote restarted), ALREADY (mounted earlier this boot),
-# NEED_UPLOAD (no valid cached copy: upload the patched file to $u and run again), SKIPPED (image library or
-# patched copy has an unexpected hash: nothing changed).
+# NEED_UPLOAD (no valid cached copy: upload the patched file to $u and run again), SKIPPED image (the image's
+# library has an unexpected hash: nothing changed), SKIPPED patched (the copy in $p is bad: it is removed, nothing
+# mounted; the next run asks for a new upload).
 v=/vendor/lib64/libvulkan_enc.so
 p=/data/local/tmp/libvulkan_enc.khrfix.so
 u=/data/local/tmp/khrfix-upload.so
@@ -25,7 +26,7 @@ if [ "$(sha256sum $p 2>/dev/null | cut -d' ' -f1)" != "$fix" ]; then
   [ "$(sha256sum $u 2>/dev/null | cut -d' ' -f1)" = "$fix" ] || { echo "NEED_UPLOAD"; exit 0; }
   rm -f $p; cp $u $p; rm -f $u
 fi
-[ "$(sha256sum $p | cut -d' ' -f1)" = "$fix" ] || { echo "SKIPPED patched copy hash mismatch"; exit 0; }
+[ "$(sha256sum $p | cut -d' ' -f1)" = "$fix" ] || { rm -f $p; echo "SKIPPED patched copy hash mismatch"; exit 0; }
 chmod 644 $p; chcon $(ls -Z $v | cut -d' ' -f1) $p; mount --bind $p $v
 setprop ctl.restart zygote
 echo "MOUNTED zygote restarted"
