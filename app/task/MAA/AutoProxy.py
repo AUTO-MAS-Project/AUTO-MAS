@@ -2220,8 +2220,14 @@ class AutoProxyTask(ScriptAutoProxyBase):
 
         logger.info("MAA 收尾: 停止日志监控")
         await self.maa_log_monitor.stop()
-        logger.info("MAA 收尾: 停止 MAA 进程")
-        await self.maa_process_manager.close()
+        if self.stopped_manually:
+            # 用户强制停止时 MAA 多半还在跑任务, 给它发关闭消息只会弹出
+            # 「确定要退出吗」的确认框并把收尾卡在那里等人点确认; 强制停止就该强杀
+            logger.info("MAA 收尾: 用户强制停止, 直接强杀 MAA 进程")
+            await self.maa_process_manager.kill()
+        else:
+            logger.info("MAA 收尾: 停止 MAA 进程")
+            await self.maa_process_manager.close()
         await System.kill_process(self.maa_exe_path)
         logger.info(f"MAA 收尾: 结束残留 MAA 进程: {self.maa_exe_path}")
 
