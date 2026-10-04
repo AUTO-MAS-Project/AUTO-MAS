@@ -505,3 +505,16 @@ class ProcessManager:
             return window.activate_window(hwnd)
         except Exception:
             return False
+
+    async def close(self) -> None:
+        """请被管理进程自行退出，等它走完退出时的配置保存
+
+        启动瞬间主窗口可能还是临时的启动画面, 关闭消息打不到真正的窗口上,
+        所以每轮按当前句柄再请求一次, 直到进程退出。
+        """
+
+        while await self.is_running():
+            hwnd = self.main_hwnd
+            if hwnd is None or not window.close_window(hwnd):
+                return
+            await asyncio.sleep(0.2)
