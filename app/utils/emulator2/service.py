@@ -369,7 +369,7 @@ async def add_path(
     await _save(emulator_id, paths, manager.slots)
 
     if record.type == "avd":
-        # 内测包解压出来就是齐的，没走过下载就没有 mas-avd.json：补一份，不要求先下载或同意许可
+        # 组件随内测包提供，MAS 不下载；解压出来的根目录可能还没有 mas-avd.json：补一份
         from .avd.components import ensure_metadata
 
         try:
@@ -378,7 +378,7 @@ async def add_path(
         except OSError as e:
             logger.warning(f"魔改 AVD {resolved_path} 补写 mas-avd.json 失败: {e}")
 
-    # 魔改 AVD 根目录里一台实例都没有（刚解压的内测包、刚下载完的根目录）：按默认值建第一台，
+    # 魔改 AVD 根目录里一台实例都没有（刚解压的内测包）：按默认值建第一台，
     # 测试者加完就能直接用。已经有实例的不动；建不出来不影响路径本身已经加好
     if record.type == "avd" and native_indexes is not None and not native_indexes:
         try:

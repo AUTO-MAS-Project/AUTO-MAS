@@ -1025,7 +1025,7 @@ class _AvdCore(DeviceBase):
             logger.info(f"魔改 AVD 实例 {idx} 初始化完成（桌面: {launcher}）")
 
     async def _install_launcher(self, idx: str) -> str:
-        """装轻量桌面并设为默认、禁用原生桌面。没下载到就保留原生桌面。"""
+        """装轻量桌面并设为默认、禁用原生桌面。内测包里没带轻量桌面就保留原生桌面。"""
         apk = launcher_apk(self.root)
         if not apk.is_file():
             return "pixel"
