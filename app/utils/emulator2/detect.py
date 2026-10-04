@@ -175,9 +175,19 @@ def resolve_manager_exe(install_path: str, emulator_type: str) -> Path | None:
 
 
 def avd_root_of(install_path: str) -> Path:
-    """魔改 AVD 的「安装路径」可能是根目录，也可能是用户直接选的 ``emulator.exe``。"""
+    """魔改 AVD 的「安装路径」可能是根目录，也可能是用户直接选的 ``<根>\\sdk\\emulator\\emulator.exe``。
+
+    只有路径确实是这个布局时才往上退两层；别处的 ``emulator.exe``（层数不够、或不在
+    ``sdk\\emulator`` 下）原样返回，交给调用方按「不是魔改 AVD 根目录」处理。"""
+    from .avd.constants import SDK_DIR
+
     path = Path(install_path)
-    if path.name.lower() == "emulator.exe":
+    if (
+        path.name.lower() == "emulator.exe"
+        and len(path.parents) >= 3
+        and path.parent.name.lower() == "emulator"
+        and path.parent.parent.name.lower() == SDK_DIR.lower()
+    ):
         return path.parents[2]
     return path
 
