@@ -11,6 +11,7 @@ import { useI18n } from 'vue-i18n'
 import { message } from 'ant-design-vue'
 import {
   AppstoreOutlined,
+  ControlOutlined,
   DeleteOutlined,
   LoadingOutlined,
   EyeInvisibleOutlined,
@@ -45,6 +46,9 @@ import {
   type Pending,
   type PendingOp,
 } from './emulator2Status'
+import { createOptions, defaultAvdOptions, type AvdOptionsForm } from './avdLogic'
+import AvdOptionsDialog from './components/AvdOptionsDialog.vue'
+import AvdOptionsFields from './components/AvdOptionsFields.vue'
 import AvdRootDialog from './components/AvdRootDialog.vue'
 import type {
   Emulator2AffectedScript,
@@ -316,12 +320,23 @@ const onAvdAdded = async () => {
   await loadDevices({ silent: true })
 }
 
+const avdOptionsOpen = ref(false)
+const avdOptionsTarget = ref<Emulator2DeviceItem | null>(null)
+const openAvdOptions = (device: Emulator2DeviceItem) => {
+  avdOptionsTarget.value = device
+  avdOptionsOpen.value = true
+}
+
+const isAvdRow = (row: DeviceRow) => row.realType === 'avd' && !row.pendingKey
+
 // ---- 新建 / 删除实例 ----
 
 const createOpen = ref(false)
 const creating = ref(false)
 const createPathId = ref('')
 const createName = ref('')
+/** 在官方模拟器下新建时一并设好的选项 */
+const createAvd = ref<AvdOptionsForm>(defaultAvdOptions())
 
 const pathSelectOptions = computed(() =>
   paths.value.map(item => ({
@@ -330,9 +345,14 @@ const pathSelectOptions = computed(() =>
   }))
 )
 
+const createOnAvd = computed(
+  () => paths.value.find(item => item.pathId === createPathId.value)?.type === 'avd'
+)
+
 const openCreate = () => {
   createPathId.value = paths.value[0]?.pathId ?? ''
   createName.value = ''
+  createAvd.value = defaultAvdOptions()
   createOpen.value = true
 }
 
@@ -367,6 +387,7 @@ const confirmCreate = async () => {
       emulatorId: props.emulatorId,
       pathId: createPathId.value,
       name: createName.value || null,
+      ...(createOnAvd.value ? createOptions(createAvd.value) : {}),
     })
     if (response.code !== 200 || !response.ok) {
       message.error(response.message)
@@ -890,7 +911,7 @@ const deviceColumns = computed(() => [
   { title: t('emulator2.colCpu'), key: 'cpu', width: 64 },
   { title: t('emulator2.colMemory'), key: 'memory', width: 96 },
   { title: t('emulator2.colFps'), key: 'fps', width: 72 },
-  { title: t('emulator.colAction'), key: 'action', width: 216 },
+  { title: t('emulator.colAction'), key: 'action', width: 248 },
 ])
 
 watch(
@@ -1205,6 +1226,16 @@ defineExpose({ reload: loadAll, applyStableMode, captureBaselines, openPaths })
                     @click="openStore(record)"
                   />
                 </a-tooltip>
+                <a-tooltip v-if="isAvdRow(record)" :title="t('emulator2.avd.options')">
+                  <a-button
+                    size="small"
+                    type="text"
+                    :icon="h(ControlOutlined)"
+                    :aria-label="t('emulator2.avd.options')"
+                    :disabled="record.availability !== 'ok'"
+                    @click="openAvdOptions(record)"
+                  />
+                </a-tooltip>
                 <a-tooltip
                   :title="
                     actionsOf(record).settings ? t('emulator2.settings') : blockedReason(record)
@@ -1453,6 +1484,7 @@ defineExpose({ reload: loadAll, applyStableMode, captureBaselines, openPaths })
         <a-form-item :label="t('emulator2.createName')">
           <a-input v-model:value="createName" :placeholder="t('emulator2.createNamePlaceholder')" />
         </a-form-item>
+        <AvdOptionsFields v-if="createOnAvd" v-model="createAvd" />
       </a-form>
       <a-alert type="info" show-icon :message="t('emulator2.createHint')" />
     </a-modal>
@@ -1544,6 +1576,15 @@ defineExpose({ reload: loadAll, applyStableMode, captureBaselines, openPaths })
       :emulator-id="emulatorId"
       :initial-root="avdRootInitial"
       @added="onAvdAdded"
+    />
+
+    <!-- 官方模拟器实例选项 -->
+    <AvdOptionsDialog
+      v-if="avdOptionsTarget"
+      v-model:open="avdOptionsOpen"
+      :emulator-id="emulatorId"
+      :device-slot="avdOptionsTarget.slot"
+      :title="avdOptionsTarget.title || avdOptionsTarget.alias || ''"
     />
 
     <!-- 移除路径 -->
