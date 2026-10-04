@@ -60,6 +60,7 @@ from .constants import (
     MAX_NATIVE_INDEX,
     METADATA_FILE,
     REQUIRED_COMPONENTS,
+    SCRIPT_ADB_SERVER_PORT,
     SDK_DIR,
     Component,
     DownloadSource,
@@ -161,13 +162,38 @@ def adb_server_port(root: str | Path) -> int:
 
     不收 5037（生产在用），也不收任何一台实例的控制台 / adb / gRPC 端口；不合规时回到 20050。
     """
-    raw = read_metadata(root).get("adbServerPort")
+    port = _metadata_port(root, "adbServerPort")
+    return port if port is not None else ADB_SERVER_PORT
+
+
+def script_adb_server_port(root: str | Path) -> int:
+    """脚本（MAA、MaaFW 的 worker / agent）在官方模拟器实例上用的 adb server 端口。
+
+    ``mas-avd.json`` 的 ``scriptAdbServerPort``，默认 20049。脚本用 SDK 的新版 adb，跑在 5037 上会和
+    雷电 / MuMu 自带的旧版 adb 互杀 server、掉线（用户定：单独一个端口）。校验同 ``adbServerPort``，
+    另外不能和私有 server 同一个端口；不合规时回到默认值。
+    """
+    private = adb_server_port(root)
+    port = _metadata_port(root, "scriptAdbServerPort")
+    if port is not None and port != private:
+        return port
+    return SCRIPT_ADB_SERVER_PORT if SCRIPT_ADB_SERVER_PORT != private else 20048
+
+
+def script_adb_env(root: str | Path) -> dict[str, str]:
+    """脚本进程要叠加的环境变量：只把它的 adb 指到 :func:`script_adb_server_port`。"""
+    return {"ANDROID_ADB_SERVER_PORT": str(script_adb_server_port(root))}
+
+
+def _metadata_port(root: str | Path, key: str) -> int | None:
+    """``mas-avd.json`` 里的端口：不收 5037（生产在用），也不收任何实例的控制台 / adb / gRPC 端口。"""
+    raw = read_metadata(root).get(key)
     try:
         port = int(raw)
     except (TypeError, ValueError):
-        return ADB_SERVER_PORT
+        return None
     if not 1024 <= port <= 65535 or port == 5037 or port in _instance_ports():
-        return ADB_SERVER_PORT
+        return None
     return port
 
 
@@ -965,6 +991,8 @@ __all__ = [
     "root_from_manager_exe",
     "root_key",
     "runtime_sdk_dir",
+    "script_adb_env",
+    "script_adb_server_port",
     "sdk_dir",
     "start_job",
     "update_metadata",

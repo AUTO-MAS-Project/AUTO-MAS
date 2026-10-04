@@ -1361,6 +1361,29 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         )
         return MaaFWAdbControlProfile("avd", True, False, config)
 
+    def _script_adb_env(self) -> dict[str, str]:
+        """官方模拟器实例上叠加给 worker（agent 与它们起的 adb 继承）和 pretask 的环境变量：
+        ``ANDROID_ADB_SERVER_PORT=<scriptAdbServerPort>``（默认 20049）。脚本用 SDK 的新版 adb，
+        放在 5037 上会和雷电 / MuMu 自带的旧版 adb 互杀 server。其余模拟器返回空字典。"""
+        emulator_index = self.script_config.get("Emulator", "Index")
+        if self.script_config.get("Emulator", "Id") == "-" or emulator_index in (
+            "",
+            "-",
+        ):
+            return {}
+        device_ref = None
+        with suppress(Exception):
+            resolve_device = getattr(self.emulator_manager, "resolve_device", None)
+            device_ref = resolve_device(emulator_index) if resolve_device else None
+        if device_ref is None or device_ref.emulator_type != "avd":
+            return {}
+        from app.utils.emulator2.avd.components import (
+            root_from_manager_exe,
+            script_adb_env,
+        )
+
+        return script_adb_env(root_from_manager_exe(device_ref.manager_path))
+
     def _check_avd_runtime_version(self, maafw_version: str | None) -> None:
         """官方模拟器要 AVDExtras：运行环境的 MaaFramework 低于 5.7.0 时明确报错，不让它静默回落。"""
         profile = self._cached_adb_profile
@@ -1705,13 +1728,21 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             job_path = await asyncio.to_thread(
                 service.write_job_file, payload, work_dir
             )
+            # 官方模拟器实例：worker 及其 agent、adb 子进程的 adb 走脚本专用 server。
+            # 另拷一份，不改运行环境对象里那份（可能被缓存复用）
+            script_env = self._script_adb_env()
+            worker_env = (
+                {**runner_environment.env, **script_env}
+                if script_env
+                else runner_environment.env
+            )
             process = await asyncio.create_subprocess_exec(
                 str(runner_environment.python_executable),
                 "-m",
                 "app.task.MaaFW.tools.core.runner.worker",
                 str(job_path),
                 cwd=str(Path.cwd()),
-                env=runner_environment.env,
+                env=worker_env,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
@@ -1998,6 +2029,8 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         env["PYTHONIOENCODING"] = "utf-8"
         env["PYTHONUTF8"] = "1"
         env.update(self.run_plan.piEnv)
+        # 官方模拟器实例：pretask 若用 adb，也走脚本专用 server（同 worker）
+        env.update(self._script_adb_env())
         creationflags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
         for pretask in self.run_plan.pretasks:
             display_name = _task_display_name(pretask)

@@ -33,6 +33,10 @@ PORT_STEP = 10
 #: 所有官方模拟器实例共用的私有 adb server。模拟器只向它注册，**永远不碰 5037**：
 #: 5037 是雷电 / MuMu / 生产 MAA 在用的，不同版本的 adb 抢 5037 会互相杀 server。
 ADB_SERVER_PORT = 20050
+#: 脚本（MAA、MaaFW）在官方模拟器实例上用的 adb server。脚本用 SDK 的新版 adb，放在 5037 上会和
+#: 雷电 / MuMu 自带的旧版 adb 互杀 server（用户定：单独一个端口）。``mas-avd.json`` 的
+#: ``scriptAdbServerPort`` 可改。
+SCRIPT_ADB_SERVER_PORT = 20049
 #: 原生索引上限。i=5 的端口段 20050–20052 正好压在私有 adb server 上，不能用。
 MAX_NATIVE_INDEX = 9
 RESERVED_NATIVE_INDEXES = frozenset({5})

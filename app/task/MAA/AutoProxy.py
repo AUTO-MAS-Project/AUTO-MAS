@@ -23,6 +23,7 @@
 import asyncio
 import calendar
 import json
+import os
 import re
 import shutil
 import time
@@ -69,7 +70,7 @@ from app.utils.constants import (
     UTC4,
     game_now,
 )
-from app.utils.emulator2.avd.components import root_from_manager_exe
+from app.utils.emulator2.avd.components import root_from_manager_exe, script_adb_env
 from app.utils.emulator2.avd.constants import console_port as avd_console_port
 from app.utils.emulator2.avd.maa_shim import (
     apply_maa_avd_settings,
@@ -1108,7 +1109,9 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 )
                 logger.info(f"启动MAA进程: {self.maa_exe_path}")
                 self.wait_event.clear()
-                await self.maa_process_manager.open_process(self.maa_exe_path)
+                await self.maa_process_manager.open_process(
+                    self.maa_exe_path, env=self._maa_process_env()
+                )
                 logger.info(
                     f"MAA 进程已创建: {self.maa_exe_path} - "
                     f"PID: {self.maa_process_manager.main_pid}"
@@ -1838,6 +1841,20 @@ class AutoProxyTask(ScriptAutoProxyBase):
             root_from_manager_exe(device_ref.manager_path),
             avd_console_port(device_ref.native_index),
         )
+
+    def _maa_process_env(self) -> dict[str, str] | None:
+        """MAA 进程的环境变量。官方模拟器实例上把它（连同 MaaCore 起的 adb）指到脚本专用的 adb
+        server（``scriptAdbServerPort``，默认 20049）：MAA 用 SDK 的新版 adb，放在 5037 上会和雷电 /
+        MuMu 自带的旧版 adb 互杀 server。其余模拟器返回 ``None``，照旧继承 MAS 的环境。"""
+        avd = self._resolve_avd_device()
+        if avd is None:
+            return None
+        env = dict(os.environ)
+        env.update(script_adb_env(avd[0]))
+        logger.info(
+            f"官方模拟器实例：MAA 的 adb 走脚本专用 server（端口 {env['ANDROID_ADB_SERVER_PORT']}）"
+        )
+        return env
 
     def _configure_maa_runtime(
         self, gui_set: dict, gui_new_set: dict, emulator_info: DeviceInfo
