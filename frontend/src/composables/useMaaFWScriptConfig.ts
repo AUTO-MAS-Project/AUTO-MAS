@@ -3,6 +3,7 @@ import { computed, ref, type Ref } from 'vue'
 import { message } from 'ant-design-vue'
 import { Emulator20Service, Service, type ComboBoxItem } from '@/api'
 import type { MaaFWInterfacePreviewData, MaaFWScriptConfig } from '@/types/script'
+import { markModAvdOptions } from '@/views/Emulator/avdLogic'
 
 const logger = window.electronAPI.getLogger('MaaFW脚本编辑')
 
@@ -128,12 +129,15 @@ type PersistFn = (
  * 从 mfwa 的 useMaaFWScriptConfig.ts 摘取控制器解析、资源过滤、模拟器选项
  * 加载与 ADB 控制策略提示部分，去掉 managed / agent-env / progress-socket
  * 依赖，供 ControlConfigSection.vue 使用。
+ *
+ * ``allowModAvd``：这个脚本能不能用魔改 AVD（目前只有 M9A）。不能时设备下拉里的魔改 AVD 实例置灰。
  */
 export function useMaaFWControlConfig(
   maafwConfig: MaaFWScriptConfig,
   previewData: Ref<MaaFWInterfacePreviewData | null>,
   interfaceLoading: Ref<boolean>,
-  handleChange: PersistFn
+  handleChange: PersistFn,
+  allowModAvd: () => boolean = () => false
 ) {
   const emulatorLoading = ref(false)
   const emulatorOptionsReady = ref(false)
@@ -270,10 +274,22 @@ export function useMaaFWControlConfig(
     return emulator2DeviceTypeBySlot.value[slot] ?? null
   })
 
+  // 魔改 AVD 目前只支持 M9A：别的脚本里它的实例置灰并写明原因（保存与运行时后端还会再拦）
+  const emulatorDeviceSelectOptions = computed(() =>
+    markModAvdOptions(
+      emulatorDeviceOptions.value,
+      value => value !== null && emulator2DeviceTypeBySlot.value[value] === 'avd',
+      allowModAvd(),
+      t('emulator2.avd.m9aOnly')
+    )
+  )
+
+  const selectedCapabilityType = computed(() =>
+    isMultiEmulatorConfig.value ? selectedDeviceRealType.value : selectedEmulatorType.value
+  )
+
   const selectedEmulatorCapability = computed(() => {
-    const emulatorType = isMultiEmulatorConfig.value
-      ? selectedDeviceRealType.value
-      : selectedEmulatorType.value
+    const emulatorType = selectedCapabilityType.value
     if (!emulatorType) return null
     return previewData.value?.controlCapabilities.emulatorExtras[emulatorType] || null
   })
@@ -285,11 +301,16 @@ export function useMaaFWControlConfig(
     const inputWithExtras = Boolean(capability?.input)
 
     // 只列截图与输入两行，值只给一个词：模拟器是上面刚选的，不必再重复；集合怎么组的不解释
+    // 魔改 AVD 的 EmulatorExtras（AVDExtras）截图走共享内存，不是 adb，不能套雷电 / MuMu 那句
+    const extrasText =
+      selectedCapabilityType.value === 'avd'
+        ? t('edit.adbStrategyAvdExtras')
+        : t('edit.adbStrategyEmulatorExtras')
     const pick = (withExtras: boolean) =>
       perDevice
         ? t('edit.adbStrategyPerDevice')
         : withExtras
-          ? t('edit.adbStrategyEmulatorExtras')
+          ? extrasText
           : t('edit.adbStrategyDefault')
     return [
       { label: t('misc.screenshot'), value: pick(screencapWithExtras) },
@@ -459,7 +480,7 @@ export function useMaaFWControlConfig(
     emulatorOptionsReady,
     emulatorDeviceLoading,
     emulatorOptions,
-    emulatorDeviceOptions,
+    emulatorDeviceOptions: emulatorDeviceSelectOptions,
     emulatorTypeById,
     isMultiEmulatorConfig,
     controllerOptions,

@@ -9,6 +9,7 @@ import type { VNode } from 'vue'
 import type { ComboBoxItem, MaaFWShellInstanceItem } from '@/api'
 import type { MaaFWFlavorType, MaaFWUserFormData } from '@/composables/maafwFlavorTypes'
 import type { MaaFWEmbeddedStatus } from '@/composables/useMaaFWEmbeddedApi'
+import type { EmulatorDeviceOption } from '@/composables/useEmulatorDeviceOptions'
 import type { EmulatorType } from '@/composables/useMaaFWScriptConfig'
 import type { MaaFWUpdateResult } from '@/composables/useMaaFWUpdateApi'
 import type {
@@ -87,7 +88,8 @@ export interface MaaFWScriptControlSectionProps {
   emulatorOptionsReady: boolean
   emulatorDeviceLoading: boolean
   emulatorOptions: ComboBoxItem[]
-  emulatorDeviceOptions: ComboBoxItem[]
+  /** 魔改 AVD 实例在非 M9A 脚本里 ``disabled``（魔改 AVD 目前只支持 M9A） */
+  emulatorDeviceOptions: EmulatorDeviceOption[]
   emulatorTypeById: Record<string, EmulatorType>
   controllerOptions: MaaFWControllerInfo[]
   effectiveControllerName: string
