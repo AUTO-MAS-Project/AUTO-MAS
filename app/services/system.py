@@ -142,9 +142,11 @@ class _SystemHandler:
 
         if mode not in power.supported_actions:
             raise RuntimeError(f"当前平台不支持电源操作: {mode}")
-        # 强制关机（shutdown /f）不等程序退出，官方模拟器实例同样要先 sync 再关
+        # 强制关机（shutdown /f）不等程序退出，官方模拟器实例同样要先 sync 再关；
+        # 其余模拟器的进程清理仍只在原来三种操作上做
         if mode in {"Shutdown", "ShutdownForce", "Reboot", "Logoff"}:
             await self.close_avd_instances()
+        if mode in {"Shutdown", "Reboot", "Logoff"}:
             await self.kill_emulator_processes()
         logger.info(f"执行电源操作: {mode}")
         # 系统电源动作必须先于前端关闭执行：请求前端退出会让 Electron 退出并连带结束后端进程，
