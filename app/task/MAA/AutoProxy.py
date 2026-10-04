@@ -2221,8 +2221,8 @@ class AutoProxyTask(ScriptAutoProxyBase):
         logger.info("MAA 收尾: 停止日志监控")
         await self.maa_log_monitor.stop()
         logger.info("MAA 收尾: 停止 MAA 进程")
-        # MAA 很可能还在跑任务: 对它发关闭消息只会弹出「确定要退出吗」的确认框, 把收尾
-        # 卡在等人点确认上; 需要等它自己退出去落盘的只有配置会话 (ScriptConfig)。
+        # 任务收尾时 MAA 多半还在跑任务, 发关闭消息会弹「确定要退出吗」把收尾卡住;
+        # 需要等 MAA 自己退出去落盘的只有配置会话 (ScriptConfig)。
         await self.maa_process_manager.kill()
         await System.kill_process(self.maa_exe_path)
         logger.info(f"MAA 收尾: 结束残留 MAA 进程: {self.maa_exe_path}")
