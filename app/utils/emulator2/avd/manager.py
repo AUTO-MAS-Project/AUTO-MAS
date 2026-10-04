@@ -60,7 +60,7 @@ from ..applaunch import (
 )
 from ..settings import FieldValue, InstanceSettings, SettingsConflictError
 from ..settings import validate_changes as validate_setting_changes
-from . import host
+from . import host, precheck
 from .components import (
     component_installed,
     emulator_exe,
@@ -859,11 +859,9 @@ class _AvdCore(DeviceBase):
 
     async def _launch(self, idx: str, instance: AvdInstance) -> None:
         self._check_components()
-        accel = await host.check_acceleration(self.root)
-        if not accel.ok:
-            raise RuntimeError(f"{host.ACCEL_GUIDE}（检查结果：{accel.detail}）")
+        # 电脑检查用的内存就是下面 -memory 要传的值（按游戏自动时也是算好的这一个）
         memory_mb = memory_for(instance_meta(self.root, idx), self._open_package)
-        host.check_host_memory(memory_mb)
+        await precheck.check_before_launch(self.root, memory_mb)
 
         port = console_port(idx)
         ports = [port, port + 1, port + 2]

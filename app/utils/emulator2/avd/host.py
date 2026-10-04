@@ -18,7 +18,8 @@
 
 #   Contact: DLmaster_361@163.com
 
-"""官方模拟器的宿主侧操作：私有 adb、控制台、进程、硬件加速与内存检查。
+"""官方模拟器的宿主侧操作：私有 adb、控制台、进程、硬件加速检查（开机前的整套电脑检查见
+:mod:`.precheck`）。
 
 两个实测出来的硬约束（预研 §6.1、§6.14）：
 
@@ -56,7 +57,6 @@ from .components import (
     script_adb_server_port,
 )
 from .constants import (
-    HOST_MEMORY_OVERHEAD_MB,
     METADATA_FILE,
     PORT_BASE,
     PORT_STEP,
@@ -816,14 +816,6 @@ class AccelCheck:
     detail: str
 
 
-#: 硬件加速不可用时给用户的说法。
-ACCEL_GUIDE = (
-    "这台电脑的硬件虚拟化（Windows 虚拟机监控程序平台）不可用，官方模拟器无法启动。"
-    "请先在 BIOS 里打开 CPU 虚拟化（Intel VT-x / AMD SVM），再在「启用或关闭 Windows 功能」"
-    "里勾选「Windows 虚拟机监控程序平台」并重启电脑"
-)
-
-
 def parse_accel_check(returncode: int, output: str) -> AccelCheck:
     """``emulator -accel-check`` 的判定：返回码 0 且说「usable」才算可用。"""
     text = (output or "").strip()
@@ -852,15 +844,3 @@ async def check_acceleration(root: str | Path, *, use_cache: bool = True) -> Acc
         result = AccelCheck(False, f"{type(e).__name__}: {e}")
     _accel_cache[key] = (time.monotonic(), result.ok, result.detail)
     return result
-
-
-def check_host_memory(memory_mb: int) -> None:
-    """宿主可用内存够不够起这台：按「客体内存 + 1.5 GB」估。不够直接拒绝。"""
-    available_mb = psutil.virtual_memory().available // (1024 * 1024)
-    needed_mb = int(memory_mb) + HOST_MEMORY_OVERHEAD_MB
-    if available_mb < needed_mb:
-        raise RuntimeError(
-            f"电脑可用内存不足：这台官方模拟器实例分配了 {memory_mb / 1024:.0f} GB 内存，"
-            f"启动约需 {needed_mb / 1024:.1f} GB，当前只剩 {available_mb / 1024:.1f} GB。"
-            "请关闭部分程序，或在实例设置里调小内存"
-        )

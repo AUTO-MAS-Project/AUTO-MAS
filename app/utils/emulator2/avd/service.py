@@ -37,7 +37,7 @@ from typing import Any
 
 from app.utils import get_logger
 
-from . import components, host
+from . import components, precheck
 from .components import ComponentError, InstallJob
 from .constants import DOWNLOAD_SOURCES, LICENSE_ID, POWER_CLOSE_TIMEOUT_SECONDS
 
@@ -57,17 +57,20 @@ def _normalize_root(root: str) -> Path:
 
 
 async def status(root: str, *, check_acceleration: bool = True) -> dict[str, Any]:
-    """根目录现状：组件、磁盘、许可、硬件加速、最近一次下载任务。只读。"""
+    """根目录现状：组件、磁盘、许可、硬件加速、开机前电脑检查、最近一次下载任务。只读。"""
     path = _normalize_root(root)
     result = await asyncio.to_thread(components.install_status, path)
     result["accelerationOk"] = None
     result["accelerationDetail"] = ""
-    if check_acceleration and components.emulator_exe(path).is_file():
-        accel = await host.check_acceleration(path)
+    result["prechecks"] = []
+    if check_acceleration:
+        # 内存按默认档实例估（各实例实际开机时按它要传的 -memory 再查一次）
+        items = await precheck.run_prechecks(path)
+        result["prechecks"] = [item.as_dict() for item in items]
+        accel = next(item for item in items if item.id == "acceleration")
         result["accelerationOk"] = accel.ok
-        result["accelerationDetail"] = (
-            accel.detail if accel.ok else f"{host.ACCEL_GUIDE}（{accel.detail}）"
-        )
+        if accel.ok is not None:
+            result["accelerationDetail"] = accel.reason if accel.ok else accel.message()
     job = components.get_job(path)
     result["job"] = dict(job.snapshot) if job is not None and job.snapshot else None
     return result

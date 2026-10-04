@@ -351,6 +351,14 @@ STARTUP_GUARD_WATCH_SECONDS = (
 #: 4 GB 客体 4.6–5.0 GB）。宿主可用内存不够就拒绝启动，不让系统开始换页。
 HOST_MEMORY_OVERHEAD_MB = 1536
 
+#: 开机前实例所在盘至少要剩这么多（GB）：数据盘是稀疏文件，随游戏写入增长（崩坏三一款 36 GB），
+#: 盘写满时客体写失败、实例数据会损坏。低于这个值拒绝开机。
+MIN_FREE_DISK_GB_TO_BOOT = 8
+#: 电脑检查里 Vulkan 探测结果缓存多久（秒）：显卡驱动不会频繁变，免得每次开机都起一次子进程。
+VULKAN_PROBE_CACHE_SECONDS = 600.0
+#: Vulkan 探测子进程的超时（秒）。
+VULKAN_PROBE_TIMEOUT_SECONDS = 30.0
+
 #: 首次开机后禁用的手机预装应用（``pm disable-user --user 0``，``pm enable`` 可逆）。
 #: 谷歌服务、WebView、Chrome、键盘、文件选择器、安装器、网络与电话组件都保留（预研 §6.11）。
 DEBLOAT_PACKAGES: tuple[str, ...] = (
