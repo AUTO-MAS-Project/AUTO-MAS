@@ -3789,7 +3789,6 @@ export default {
       modeLabel: '模式：',
       resumePlaceholder: '从指定托管继续（默认第一个）',
       userPlaceholder: '单独运行指定账号（默认全部）',
-      runUsersPlaceholder: '运行账号',
       selectAllUsers: '全选',
       clearAllUsers: '取消全选',
       runScopeTitle: '本次运行范围',

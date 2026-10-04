@@ -3947,7 +3947,6 @@ export default {
       modeLabel: 'Mode:',
       resumePlaceholder: 'Resume from a specific managed script (defaults to the first)',
       userPlaceholder: 'Run one account only (defaults to all)',
-      runUsersPlaceholder: 'Accounts to run',
       selectAllUsers: 'Select all',
       clearAllUsers: 'Clear all',
       runScopeTitle: 'Run scope',

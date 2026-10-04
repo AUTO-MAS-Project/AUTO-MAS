@@ -3322,7 +3322,6 @@ export default {
       modeLabel: 'モード：',
       resumePlaceholder: '指定したマネージドスクリプトから再開（既定は先頭）',
       userPlaceholder: '指定アカウントのみ実行（既定は全員）',
-      runUsersPlaceholder: '実行するアカウント',
       selectAllUsers: 'すべて選択',
       clearAllUsers: 'すべて解除',
       runScopeTitle: '今回の実行範囲',

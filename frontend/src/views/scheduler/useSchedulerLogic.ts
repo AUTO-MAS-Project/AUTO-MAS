@@ -1100,12 +1100,17 @@ export function useSchedulerLogic() {
         applyLogContentUpdate(tab, content)
       }
 
-      // 停在调度台以外时可能在队列配置页改了队列项或账号，回到调度台重新拉一次，
+      // 停在调度台以外时可能在队列配置页或托管管理里改了队列项/账号，回到调度台重新拉一次，
       // 否则旧列表会让「勾选=本次运行」失真（新加的账号默认不在运行范围内）。
       // 首次激活不重复拉：initialize 的预加载已经做过一次。
-      if (schedulerViewLeft && tab.status !== '运行' && isQueueTask(tab)) {
-        void loadResumeScriptOptions(tab)
-        void loadQueueScope(tab)
+      if (schedulerViewLeft && tab.status !== '运行') {
+        if (isQueueTask(tab)) {
+          void loadResumeScriptOptions(tab)
+          void loadQueueScope(tab)
+        } else if (isScriptTask(tab)) {
+          // 「本次运行范围」是脚本任务唯一的账号入口，不重拉就看不到已删账号
+          void loadUserOptions(tab)
+        }
       }
     }
   }
