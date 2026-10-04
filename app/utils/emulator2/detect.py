@@ -156,10 +156,12 @@ def resolve_manager_exe(install_path: str, emulator_type: str) -> Path | None:
     if not install_path:
         return None
     if emulator_type == "avd":
-        from .avd.components import emulator_exe
+        from .avd.components import emulator_exe, manager_key_exe
 
-        exe = emulator_exe(avd_root_of(install_path))
-        return exe if exe.is_file() else None
+        # 主管理器路径固定落在根目录下（实例锁的键、反推根目录都靠它）；能不能用看实际要
+        # 启动的程序——指定了本地 SDK 时两者不是同一个文件
+        root = avd_root_of(install_path)
+        return manager_key_exe(root) if emulator_exe(root).is_file() else None
     from app.utils.emulator.tools import find_emulator_manager_path
 
     resolved = Path(find_emulator_manager_path(install_path, emulator_type))

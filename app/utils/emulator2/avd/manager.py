@@ -956,8 +956,9 @@ async def build_manager(
     manager_exe: str, max_wait_time: int, force_kill_on_close: bool = False
 ) -> AvdManager:
     """与雷电 / MuMu 的 ``build_manager`` 同签名。``manager_exe`` 是 ``sdk\\emulator\\emulator.exe``。"""
-    if not Path(manager_exe).is_file():
-        raise RuntimeError(f"找不到官方模拟器程序 {manager_exe}")
+    exe = emulator_exe(root_from_manager_exe(manager_exe))
+    if not exe.is_file():
+        raise RuntimeError(f"找不到官方模拟器程序 {exe}")
     return AvdManager(manager_exe, max_wait_time, force_kill_on_close)
 
 

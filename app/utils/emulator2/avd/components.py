@@ -49,6 +49,7 @@ import httpx
 from app.utils import get_logger
 
 from .constants import (
+    ADB_SERVER_PORT,
     AVD_DIR,
     COMPONENTS_DIR,
     DOWNLOAD_SOURCES,
@@ -113,15 +114,53 @@ def root_key(root: str | Path) -> str:
 
 
 def sdk_dir(root: str | Path) -> Path:
+    """组件下载器解压的目标：``<根>\\sdk``。实际运行用哪个 SDK 见 :func:`runtime_sdk_dir`。"""
     return Path(root) / SDK_DIR
 
 
-def emulator_exe(root: str | Path) -> Path:
+def local_sdk_root(root: str | Path) -> Path | None:
+    """``mas-avd.json`` 的 ``sdkRoot``：指定的本地 SDK 根目录（开发阶段指向自编模拟器）。
+
+    设了它，模拟器、adb、系统镜像都从这里取，``<根>\\sdk`` 不再用；不建链接，
+    组件下载器照旧往 ``<根>\\sdk`` 下。没设返回 ``None``。
+    """
+    raw = read_metadata(root).get("sdkRoot")
+    if isinstance(raw, str) and raw.strip():
+        return Path(raw.strip())
+    return None
+
+
+def runtime_sdk_dir(root: str | Path) -> Path:
+    """实际运行用的 SDK 根：指定了本地 SDK 就用它，否则是下载器装的 ``<根>\\sdk``。"""
+    return local_sdk_root(root) or sdk_dir(root)
+
+
+def manager_key_exe(root: str | Path) -> Path:
+    """这条安装的「主管理器程序」路径：``<根>\\sdk\\emulator\\emulator.exe``。
+
+    它是 ``DeviceRef.manager_path`` 与实例锁的键，靠它反推根目录
+    （:func:`root_from_manager_exe`），所以始终落在根目录下，不随 ``sdkRoot`` 变；
+    指定了本地 SDK 时这个文件可以不存在，真正启动的程序见 :func:`emulator_exe`。
+    """
     return sdk_dir(root) / "emulator" / "emulator.exe"
 
 
+def emulator_exe(root: str | Path) -> Path:
+    return runtime_sdk_dir(root) / "emulator" / "emulator.exe"
+
+
 def adb_exe(root: str | Path) -> Path:
-    return sdk_dir(root) / "platform-tools" / "adb.exe"
+    return runtime_sdk_dir(root) / "platform-tools" / "adb.exe"
+
+
+def adb_server_port(root: str | Path) -> int:
+    """私有 adb server 的端口：``mas-avd.json`` 的 ``adbServerPort``，没设用 20050。"""
+    raw = read_metadata(root).get("adbServerPort")
+    try:
+        port = int(raw)
+    except (TypeError, ValueError):
+        return ADB_SERVER_PORT
+    return port if 1024 <= port <= 65535 and port != 5037 else ADB_SERVER_PORT
 
 
 def avd_home(root: str | Path) -> Path:
@@ -190,7 +229,15 @@ def _read_properties_text(text: str) -> dict[str, str]:
 
 
 def component_installed(root: str | Path, component: Component) -> bool:
-    """组件是否已按固定版本装好：版本号对得上，关键文件都在。"""
+    """组件是否已按固定版本装好：版本号对得上，关键文件都在。
+
+    指定了本地 SDK（``sdkRoot``）时只看关键文件在不在、不卡版本：那是开发者自己给的 SDK
+    （自编模拟器版本号和下载器固定的不同）。
+    """
+    local = local_sdk_root(root)
+    if local is not None:
+        target = local / component.target
+        return all((target / name).is_file() for name in _KEY_FILES[component.id])
     target = sdk_dir(root) / component.target
     props = _read_properties(target / "source.properties")
     if props.get("Pkg.Revision") != _expected_revision(component):
@@ -208,7 +255,7 @@ def launcher_downloaded(root: str | Path) -> bool:
 
 def read_emulator_version(root: str | Path) -> str | None:
     """``sdk\\emulator\\source.properties`` 的 ``Pkg.Revision``。没有返回 ``None``。"""
-    props = _read_properties(sdk_dir(root) / "emulator" / "source.properties")
+    props = _read_properties(runtime_sdk_dir(root) / "emulator" / "source.properties")
     return props.get("Pkg.Revision") or None
 
 
@@ -877,6 +924,7 @@ __all__ = [
     "DownloadCancelled",
     "InstallJob",
     "adb_exe",
+    "adb_server_port",
     "avd_home",
     "check_disk_space",
     "component_installed",
@@ -891,12 +939,15 @@ __all__ = [
     "launcher_apk",
     "launcher_downloaded",
     "list_sources",
+    "local_sdk_root",
+    "manager_key_exe",
     "parse_license",
     "probe_sources",
     "read_emulator_version",
     "read_metadata",
     "root_from_manager_exe",
     "root_key",
+    "runtime_sdk_dir",
     "sdk_dir",
     "start_job",
     "update_metadata",

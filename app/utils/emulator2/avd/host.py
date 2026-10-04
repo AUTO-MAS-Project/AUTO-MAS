@@ -22,8 +22,9 @@
 
 两个实测出来的硬约束（预研 §6.1、§6.14）：
 
-- **adb 只走私有 server（20050）。** 模拟器进程带 ``ANDROID_ADB_SERVER_PORT=20050`` 启动，
-  只向它注册；我们自己的每条 adb 命令都带 ``-P 20050``。5037 一次都不碰。
+- **adb 只走私有 server（默认 20050，``mas-avd.json`` 的 ``adbServerPort`` 可改）。** 模拟器进程带
+  ``ANDROID_ADB_SERVER_PORT=<该端口>`` 启动，只向它注册；我们自己的每条 adb 命令都带 ``-P <该端口>``。
+  5037 一次都不碰。server 重启后模拟器不会再来登记，由 :func:`reregister_emulator` 替它登记。
 - **起模拟器和 adb server 都不能让它们继承我们的句柄。** 继承了调用方的输出管道，
   读输出的一方就会一直等到模拟器退出。这里用 ``subprocess.Popen`` 把标准输入输出全指到
   文件 / 空设备，Python 在 Windows 上此时只把这几个句柄交给子进程（handle list）。
@@ -44,8 +45,14 @@ import psutil
 from app.utils import get_logger
 from app.utils.platform.common.process_runner import create_subprocess, decode_bytes
 
-from .components import adb_exe, avd_home, emulator_exe, sdk_dir
-from .constants import ADB_SERVER_PORT, HOST_MEMORY_OVERHEAD_MB
+from .components import (
+    adb_exe,
+    adb_server_port,
+    avd_home,
+    emulator_exe,
+    runtime_sdk_dir,
+)
+from .constants import HOST_MEMORY_OVERHEAD_MB, PORT_BASE, PORT_STEP
 
 logger = get_logger("官方模拟器宿主")
 
@@ -71,13 +78,13 @@ def serial_of(console_port: int) -> str:
 def emulator_env(root: str | Path) -> dict[str, str]:
     """模拟器进程的环境变量：SDK、AVD 目录都指向这条安装，adb 只注册到私有 server。"""
     env = dict(os.environ)
-    sdk = str(sdk_dir(root))
+    sdk = str(runtime_sdk_dir(root))
     env.update(
         {
             "ANDROID_SDK_ROOT": sdk,
             "ANDROID_HOME": sdk,
             "ANDROID_AVD_HOME": str(avd_home(root)),
-            "ANDROID_ADB_SERVER_PORT": str(ADB_SERVER_PORT),
+            "ANDROID_ADB_SERVER_PORT": str(adb_server_port(root)),
         }
     )
     return env
@@ -133,17 +140,106 @@ async def ensure_adb_server(root: str | Path) -> None:
     必须由我们以脱离方式起：让 adb 客户端在普通命令里顺手拉起 server，server 会继承
     这条命令的输出管道，读输出的协程就一直等不到结束。
     """
-    if await asyncio.to_thread(_port_listening, ADB_SERVER_PORT):
+    port = adb_server_port(root)
+    if await asyncio.to_thread(_port_listening, port):
         return
     adb = adb_exe(root)
-    logger.info(f"启动官方模拟器私有 adb server（端口 {ADB_SERVER_PORT}）")
+    logger.info(f"启动官方模拟器私有 adb server（端口 {port}）")
     process = _popen_detached(
-        [str(adb), "-P", str(ADB_SERVER_PORT), "start-server"],
+        [str(adb), "-P", str(port), "start-server"],
         env=emulator_env(root),
         stdout=subprocess.DEVNULL,
     )
     with suppress(subprocess.TimeoutExpired):
         await asyncio.to_thread(process.wait, 20)
+
+
+#: 私有 server 上找不到 ``emulator-<端口>`` 时，adb 客户端的报错（新旧两种前缀）。
+_DEVICE_NOT_FOUND_MARKS = ("not found",)
+#: 重新登记后等设备回到 ``device`` 状态的上限（第 2 步实测 451 ms）。
+_REREGISTER_WAIT_SECONDS = 5.0
+#: 同一台设备的重新登记串行做，免得轮询并发时一起发。
+_REREGISTER_LOCKS: dict[str, asyncio.Lock] = {}
+
+
+def _console_port_of(serial: str) -> int | None:
+    """``emulator-<控制台端口>`` → 控制台端口；不是这种序列号返回 ``None``。"""
+    prefix = "emulator-"
+    if not serial.startswith(prefix) or not serial[len(prefix) :].isdecimal():
+        return None
+    port = int(serial[len(prefix) :])
+    return port if port >= PORT_BASE and (port - PORT_BASE) % PORT_STEP == 0 else None
+
+
+def device_missing(serial: str, output: str) -> bool:
+    """这条 adb 输出是不是「私有 server 上没有这台设备」。"""
+    text = output.lower()
+    return serial.lower() in text and any(m in text for m in _DEVICE_NOT_FOUND_MARKS)
+
+
+async def register_emulator(server_port: int, emulator_adb_port: int) -> None:
+    """替模拟器向私有 adb server 登记：发 ``host:emulator:<adb 端口>``（4 位十六进制长度 + 内容）。
+
+    模拟器只在开机时向 server 登记一次，server 重启（被别人 kill-server、崩溃）后就再也不认识
+    它。这正是模拟器自己开机时发的那条消息，server 不回包；重复发不会出现重复条目
+    （10-04 第 2 步实测：451 ms 恢复成 ``emulator-<控制台端口>``，shell 与 emu 控制台都正常）。
+    """
+    message = f"host:emulator:{emulator_adb_port}"
+    payload = f"{len(message):04x}{message}".encode("ascii")
+    _, writer = await asyncio.wait_for(
+        asyncio.open_connection("127.0.0.1", server_port), timeout=5
+    )
+    try:
+        writer.write(payload)
+        await writer.drain()
+        await asyncio.sleep(0.2)
+    finally:
+        writer.close()
+        with suppress(Exception):
+            await writer.wait_closed()
+
+
+async def reregister_emulator(root: str | Path, serial: str) -> bool:
+    """私有 server 丢了 ``emulator-<控制台端口>`` 时把它登记回来，返回是否恢复。
+
+    只在这台模拟器的 adb 端口确实有人在听（模拟器还活着）时才发，不往空端口登记。
+    """
+    console = _console_port_of(serial)
+    if console is None:
+        return False
+    lock = _REREGISTER_LOCKS.setdefault(serial, asyncio.Lock())
+    async with lock:
+        server_port = adb_server_port(root)
+        code, output = await _run_adb_once(root, "get-state", serial=serial, timeout=5)
+        if code == 0 and output.strip() == "device":
+            return True  # 别的协程刚登记回来
+        if not await asyncio.to_thread(_port_listening, console + 1):
+            return False
+        logger.warning(
+            f"私有 adb server（端口 {server_port}）上没有 {serial}，按 adb 端口 "
+            f"{console + 1} 重新登记"
+        )
+        started = time.monotonic()
+        try:
+            await register_emulator(server_port, console + 1)
+        except (OSError, asyncio.TimeoutError, TimeoutError) as e:
+            logger.warning(f"重新登记 {serial} 失败: {e}")
+            return False
+        while time.monotonic() - started < _REREGISTER_WAIT_SECONDS:
+            code, output = await _run_adb_once(
+                root, "get-state", serial=serial, timeout=5
+            )
+            if code == 0 and output.strip() == "device":
+                logger.info(
+                    f"{serial} 已重新登记到私有 adb server（用时 "
+                    f"{(time.monotonic() - started) * 1000:.0f} ms）"
+                )
+                return True
+            await asyncio.sleep(0.2)
+        logger.warning(
+            f"重新登记 {serial} 后 {_REREGISTER_WAIT_SECONDS:.0f} 秒仍未上线"
+        )
+        return False
 
 
 async def run_adb(
@@ -155,10 +251,27 @@ async def run_adb(
     """跑一条私有 server 上的 adb 命令，返回 ``(返回码, 合并输出)``。**不抛异常。**
 
     轮询会一秒一条，所以这里不像 ``ProcessRunner`` 那样每条都记 info 日志。
+    私有 server 上找不到 ``emulator-<控制台端口>`` 时先重新登记（:func:`reregister_emulator`），
+    登记回来就重跑一次。
     """
+    code, output = await _run_adb_once(root, *args, serial=serial, timeout=timeout)
+    if code != 0 and serial and device_missing(serial, output):
+        if await reregister_emulator(root, serial):
+            code, output = await _run_adb_once(
+                root, *args, serial=serial, timeout=timeout
+            )
+    return code, output
+
+
+async def _run_adb_once(
+    root: str | Path,
+    *args: str,
+    serial: str | None = None,
+    timeout: float = ADB_TIMEOUT,
+) -> tuple[int, str]:
     try:
         await ensure_adb_server(root)
-        command = ["-P", str(ADB_SERVER_PORT)]
+        command = ["-P", str(adb_server_port(root))]
         if serial:
             command += ["-s", serial]
         process = await create_subprocess(
