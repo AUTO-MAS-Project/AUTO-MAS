@@ -210,6 +210,9 @@ async def create_instance(
                 "cpu": payload.cpu,
                 "data_partition_gb": payload.dataPartitionGb,
                 "headless": payload.headless,
+                "resolution": payload.resolution,
+                "balloon": payload.balloon,
+                "guest_angle": payload.guestAngle,
             },
         )
     except Exception as e:

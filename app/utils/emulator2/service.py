@@ -358,7 +358,8 @@ async def create_instance(
     """在某条模拟器安装下新建一个实例，并给它分配设备号。
 
     ``options`` 只对官方模拟器生效（``memory_mb`` / ``cpu`` / ``data_partition_gb`` /
-    ``headless`` / ``native_index``）：雷电 / MuMu 新建时用的是模拟器自己的默认配置。
+    ``headless`` / ``resolution`` / ``balloon`` / ``guest_angle`` / ``native_index``）：
+    雷电 / MuMu 新建时用的是模拟器自己的默认配置。
     """
     manager = await build_manager(emulator_id)
     path = manager.path_of(path_id)

@@ -5574,6 +5574,18 @@ class Emulator2InstanceCreateIn(BaseModel):
         default=None,
         description="仅官方模拟器: 是否无头运行 (没有窗口, 即静默模式), 留空为 true",
     )
+    resolution: Optional[Literal["720", "1080"]] = Field(
+        default=None,
+        description="仅官方模拟器: 显示档位 720 (1280x720) / 1080 (1920x1080), 留空为 720",
+    )
+    balloon: Optional[bool] = Field(
+        default=None,
+        description="仅官方模拟器: 空闲页上报 (气球), 留空为 true",
+    )
+    guestAngle: Optional[bool] = Field(
+        default=None,
+        description="仅官方模拟器: 客体走镜像自带 ANGLE (GuestAngle), 留空为 false",
+    )
 
 
 class Emulator2InstanceCreateOut(OutBase):
