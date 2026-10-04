@@ -143,6 +143,7 @@ class _SystemHandler:
         if mode not in power.supported_actions:
             raise RuntimeError(f"当前平台不支持电源操作: {mode}")
         if mode in {"Shutdown", "Reboot", "Logoff"}:
+            await self.close_avd_instances()
             await self.kill_emulator_processes()
         logger.info(f"执行电源操作: {mode}")
         # 系统电源动作必须先于前端关闭执行：请求前端退出会让 Electron 退出并连带结束后端进程，
@@ -276,6 +277,19 @@ class _SystemHandler:
         else:
             logger.warning("当前无电源任务在运行")
             raise RuntimeError("当前无电源任务在运行")
+
+    async def close_avd_instances(self) -> None:
+        """按进程名强杀之前，先把在跑的官方模拟器实例正常关掉（先 sync）。
+
+        强杀不走客体关机流程，客体页缓存里没写回的数据会丢。整体限时（30 秒），出错只记日志，
+        不拦住电源操作。
+        """
+        try:
+            from app.utils.emulator2.avd import service as avd_service
+
+            await avd_service.close_running_instances()
+        except Exception as e:  # noqa: BLE001 - 关不掉也要继续关机
+            logger.warning(f"关闭官方模拟器实例失败，继续电源操作: {e}")
 
     async def kill_emulator_processes(self):
         """这里暂时仅支持 MuMu 模拟器"""

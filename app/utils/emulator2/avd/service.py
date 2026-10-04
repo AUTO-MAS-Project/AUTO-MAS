@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import asyncio
 import uuid
+from collections.abc import Awaitable, Callable
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -38,7 +39,7 @@ from app.utils import get_logger
 
 from . import components, host
 from .components import ComponentError, InstallJob
-from .constants import DOWNLOAD_SOURCES, LICENSE_ID
+from .constants import DOWNLOAD_SOURCES, LICENSE_ID, POWER_CLOSE_TIMEOUT_SECONDS
 
 logger = get_logger("官方模拟器服务")
 
@@ -220,6 +221,90 @@ async def wait_job(root: str) -> dict[str, Any] | None:
         return None
     await asyncio.shield(job.task)
     return dict(job.snapshot)
+
+
+# ---- 关机 / 重启 / 注销前 ---------------------------------------------------
+
+
+def _avd_roots() -> list[Path]:
+    """Emulator 2.0 配置里纳管的全部官方模拟器根目录（去重）。"""
+    from app.core import Config
+
+    from ..detect import avd_root_of
+    from ..facade import load_paths
+
+    roots: dict[str, Path] = {}
+    for config in list(Config.EmulatorConfig.values()):
+        try:
+            if config.get("Info", "Type") != "emulator2":
+                continue
+            paths = load_paths(config.get("Info", "Paths"))
+        except Exception as e:  # noqa: BLE001 - 一条配置读不出不影响其余
+            logger.warning(f"读取模拟器配置失败，跳过: {e}")
+            continue
+        for path in paths:
+            if path.type == "avd":
+                root = avd_root_of(path.install_path)
+                roots.setdefault(components.root_key(root), root)
+    return list(roots.values())
+
+
+async def close_instances(
+    targets: list[tuple[str, Callable[[], Awaitable[object]]]], *, timeout: float
+) -> dict[str, str]:
+    """并发跑一组关机动作，整体不超过 ``timeout`` 秒。单个失败 / 超时只记日志。
+
+    返回 ``{名字: closed / failed / timeout}``。超时的动作被取消（不等它）。
+    """
+    if not targets:
+        return {}
+    tasks = {
+        asyncio.create_task(action(), name=f"avd-close-{name}"): name
+        for name, action in targets
+    }
+    done, pending = await asyncio.wait(tasks, timeout=timeout)
+    results: dict[str, str] = {}
+    for task in done:
+        name = tasks[task]
+        error = task.exception()
+        if error is None:
+            results[name] = "closed"
+        else:
+            results[name] = "failed"
+            logger.warning(f"官方模拟器实例 {name} 关机失败: {error}")
+    for task in pending:
+        name = tasks[task]
+        task.cancel()
+        results[name] = "timeout"
+        logger.warning(f"官方模拟器实例 {name} 未在 {timeout:.0f} 秒内关完，放弃等待")
+    return results
+
+
+async def close_running_instances(
+    *, timeout: float = POWER_CLOSE_TIMEOUT_SECONDS
+) -> dict[str, str]:
+    """关机 / 重启 / 注销前，对正在跑的官方模拟器实例逐个走 ``close``（先 ``sync`` 再关）。
+
+    电源路径之后会按进程名强杀模拟器，强杀不走客体关机流程，页缓存里没写回的数据会丢（10-03 星铁
+    热更新清单变 0 字节）。这里整体限时，不让关机卡住；出任何错都只记日志。
+    """
+    from .components import manager_key_exe
+    from .manager import AvdManager
+
+    targets: list[tuple[str, Callable[[], Awaitable[object]]]] = []
+    for root in await asyncio.to_thread(_avd_roots):
+        try:
+            manager = AvdManager(manager_key_exe(root), 60, False)
+            running = await asyncio.to_thread(manager._scan_processes)
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"列出 {root} 的官方模拟器实例失败: {e}")
+            continue
+        for idx in running:
+            targets.append((f"{root}#{idx}", lambda m=manager, i=idx: m.close(i)))
+    if not targets:
+        return {}
+    logger.info(f"关机前先正常关闭 {len(targets)} 台官方模拟器实例（先 sync）")
+    return await close_instances(targets, timeout=timeout)
 
 
 # ---- 实例选项 -------------------------------------------------------------
