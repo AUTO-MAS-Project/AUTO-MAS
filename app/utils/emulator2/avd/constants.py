@@ -37,6 +37,11 @@ ADB_SERVER_PORT = 20050
 #: 雷电 / MuMu 自带的旧版 adb 互杀 server（用户定：单独一个端口）。``mas-avd.json`` 的
 #: ``scriptAdbServerPort`` 可改。
 SCRIPT_ADB_SERVER_PORT = 20049
+#: 我们起的 adb server（私有、脚本专用）都带这个环境变量：关掉 adb server 对 5555–5585 本地端口的
+#: 模拟器扫描。不关的话它们会自动连上同机的雷电等模拟器（10-04 实测 20058 / 20059 都挂上了生产雷电的
+#: ``emulator-5560``），和生产抢同一个 adbd。官方模拟器实例在 20000 段、靠 ``host:emulator`` 登记，
+#: 本来就不在扫描范围里，关掉不影响。值小于 5555 时 adb 一个端口都不扫。
+ADB_NO_LOCAL_SCAN_ENV = {"ADB_LOCAL_TRANSPORT_MAX_PORT": "5554"}
 #: 原生索引上限。i=5 的端口段 20050–20052 正好压在私有 adb server 上，不能用。
 MAX_NATIVE_INDEX = 9
 RESERVED_NATIVE_INDEXES = frozenset({5})

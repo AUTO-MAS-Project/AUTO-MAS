@@ -49,6 +49,7 @@ import httpx
 from app.utils import get_logger
 
 from .constants import (
+    ADB_NO_LOCAL_SCAN_ENV,
     ADB_SERVER_PORT,
     AVD_DIR,
     COMPONENTS_DIR,
@@ -181,8 +182,12 @@ def script_adb_server_port(root: str | Path) -> int:
 
 
 def script_adb_env(root: str | Path) -> dict[str, str]:
-    """脚本进程要叠加的环境变量：只把它的 adb 指到 :func:`script_adb_server_port`。"""
-    return {"ANDROID_ADB_SERVER_PORT": str(script_adb_server_port(root))}
+    """脚本进程要叠加的环境变量：把它的 adb 指到 :func:`script_adb_server_port`；脚本的 adb 万一
+    自己拉起这个 server，也不让它去扫 5555–5585 连上同机的雷电（:data:`~.constants.ADB_NO_LOCAL_SCAN_ENV`）。"""
+    return {
+        "ANDROID_ADB_SERVER_PORT": str(script_adb_server_port(root)),
+        **ADB_NO_LOCAL_SCAN_ENV,
+    }
 
 
 def _metadata_port(root: str | Path, key: str) -> int | None:

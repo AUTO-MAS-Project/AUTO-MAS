@@ -57,6 +57,7 @@ from .components import (
     script_adb_server_port,
 )
 from .constants import (
+    ADB_NO_LOCAL_SCAN_ENV,
     METADATA_FILE,
     PORT_BASE,
     PORT_STEP,
@@ -95,6 +96,8 @@ def emulator_env(root: str | Path) -> dict[str, str]:
             "ANDROID_HOME": sdk,
             "ANDROID_AVD_HOME": str(avd_home(root)),
             "ANDROID_ADB_SERVER_PORT": str(adb_server_port(root)),
+            # 我们起的 adb server 不去扫 5555–5585，免得连上同机的雷电（见常量说明）
+            **ADB_NO_LOCAL_SCAN_ENV,
         }
     )
     return env
