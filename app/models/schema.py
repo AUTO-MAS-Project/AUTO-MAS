@@ -4013,6 +4013,9 @@ class MaaFWConfig_Run(BaseModel):
     TaskTimeLimitOverrides: Optional[Union[str, Dict[str, Any]]] = Field(
         default=None, description="按任务名覆盖的单任务时限（分钟），值 0 表示不限"
     )
+    LoopGuard: Optional[bool] = Field(
+        default=None, description="原地打转检测（实验性，默认关）"
+    )
     DailyOnceTasks: Optional[Union[str, List[str]]] = Field(
         default=None, description="每日正常完成一次后当天跳过的 MaaFW 任务名列表"
     )
