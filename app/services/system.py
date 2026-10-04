@@ -142,7 +142,8 @@ class _SystemHandler:
 
         if mode not in power.supported_actions:
             raise RuntimeError(f"当前平台不支持电源操作: {mode}")
-        if mode in {"Shutdown", "Reboot", "Logoff"}:
+        # 强制关机（shutdown /f）不等程序退出，官方模拟器实例同样要先 sync 再关
+        if mode in {"Shutdown", "ShutdownForce", "Reboot", "Logoff"}:
             await self.close_avd_instances()
             await self.kill_emulator_processes()
         logger.info(f"执行电源操作: {mode}")

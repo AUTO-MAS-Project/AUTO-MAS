@@ -59,6 +59,7 @@ from .constants import (
     PORT_BASE,
     PORT_STEP,
     SHADER_CACHE_DIR,
+    avd_name,
 )
 
 logger = get_logger("官方模拟器宿主")
@@ -141,15 +142,15 @@ def busy_ports(ports: list[int]) -> list[int]:
     return sorted(busy)
 
 
-async def ensure_adb_server(root: str | Path) -> None:
-    """私有 adb server 没在跑就把它起来。
+async def ensure_adb_server(root: str | Path, *, timeout: float = 20.0) -> bool:
+    """私有 adb server 没在跑就把它起来，最多等 ``timeout`` 秒；返回之后它是否在听。
 
     必须由我们以脱离方式起：让 adb 客户端在普通命令里顺手拉起 server，server 会继承
     这条命令的输出管道，读输出的协程就一直等不到结束。
     """
     port = adb_server_port(root)
     if await asyncio.to_thread(_port_listening, port):
-        return
+        return True
     adb = adb_exe(root)
     logger.info(f"启动官方模拟器私有 adb server（端口 {port}）")
     process = _popen_detached(
@@ -158,7 +159,15 @@ async def ensure_adb_server(root: str | Path) -> None:
         stdout=subprocess.DEVNULL,
     )
     with suppress(subprocess.TimeoutExpired):
-        await asyncio.to_thread(process.wait, 20)
+        await asyncio.to_thread(process.wait, timeout)
+    return await asyncio.to_thread(_port_listening, port)
+
+
+#: ``open`` 正在等开机的实例（序列号）。这段时间模拟器还没向私有 server 登记是正常的，
+#: 任何路径（含面板每秒的状态轮询）都不替它登记。
+BOOTING: set[str] = set()
+#: qemu 起来不到这么久也不替它登记：开机还没走到登记那一步（MAS 重启后接管、别处起的都算）。
+_REREGISTER_MIN_QEMU_AGE_SECONDS = 60.0
 
 
 #: 私有 server 上找不到 ``emulator-<端口>`` 时，adb 客户端的报错（新旧两种前缀）。
@@ -185,11 +194,20 @@ def device_missing(serial: str, output: str) -> bool:
 
 
 def adb_port_owned_by_instance(console: int) -> bool:
-    """这台实例的 adb 端口（控制台 + 1）确实由它自己的 qemu 在听。
+    """这台实例的 adb 端口（控制台 + 1）确实由它自己的 qemu 在听。"""
+    return instance_qemu_on_adb_port(console) is not None
+
+
+def instance_qemu_on_adb_port(console: int) -> psutil.Process | None:
+    """在听这台实例 adb 端口（控制台 + 1）的、确实是它自己的 qemu 进程；不是返回 ``None``。
 
     只看「有人在听」不够：端口可能被别的程序占着；往那里登记等于把别人的端口塞给私有 server。
-    要求监听进程是 ``qemu-system*``，且命令行里 ``-ports`` 是 ``<控制台>,<控制台 + 1>``。
+    要求监听进程是 ``qemu-system*``，命令行里 ``-ports`` 是 ``<控制台>,<控制台 + 1>``，
+    且 ``-avd`` 是这个端口段对应的实例名 ``mas_<i>``。
     """
+    if (console - PORT_BASE) % PORT_STEP:
+        return None
+    expected_avd = avd_name((console - PORT_BASE) // PORT_STEP)
     pid = None
     for conn in psutil.net_connections(kind="tcp"):
         if (
@@ -200,18 +218,21 @@ def adb_port_owned_by_instance(console: int) -> bool:
             pid = conn.pid
             break
     if not pid:
-        return False
+        return None
     try:
         process = psutil.Process(pid)
         if not process.name().lower().startswith("qemu-system"):
-            return False
+            return None
         cmdline = process.cmdline()
     except (psutil.NoSuchProcess, psutil.AccessDenied):
-        return False
-    return any(
-        token == "-ports" and following == f"{console},{console + 1}"
-        for token, following in zip(cmdline, cmdline[1:])
-    )
+        return None
+    pairs = set(zip(cmdline, cmdline[1:]))
+    if ("-ports", f"{console},{console + 1}") in pairs and (
+        "-avd",
+        expected_avd,
+    ) in pairs:
+        return process
+    return None
 
 
 async def register_emulator(server_port: int, emulator_adb_port: int) -> None:
@@ -239,10 +260,21 @@ async def register_emulator(server_port: int, emulator_adb_port: int) -> None:
 async def reregister_emulator(root: str | Path, serial: str) -> bool:
     """私有 server 丢了 ``emulator-<控制台端口>`` 时把它登记回来，返回是否恢复。
 
-    只在这台模拟器的 adb 端口确实有人在听（模拟器还活着）时才发，不往空端口登记。
+    只在这台模拟器的 adb 端口确实由它自己的 qemu 在听（模拟器还活着）时才发，不往空端口登记。
+    开机期间不登记（模拟器自己会来登记，替它登记只会白等 5 秒）：``open`` 正在等开机的实例
+    （:data:`BOOTING`），以及 qemu 起来不到 60 秒的实例，都直接返回 ``False``。
     """
     console = _console_port_of(serial)
-    if console is None:
+    if console is None or serial in BOOTING:
+        return False
+    process = await asyncio.to_thread(instance_qemu_on_adb_port, console)
+    if process is None:
+        return False
+    try:
+        age = time.time() - process.create_time()
+    except psutil.Error:
+        return False
+    if age < _REREGISTER_MIN_QEMU_AGE_SECONDS:
         return False
     lock = _REREGISTER_LOCKS.setdefault(serial, asyncio.Lock())
     async with lock:
@@ -250,8 +282,6 @@ async def reregister_emulator(root: str | Path, serial: str) -> bool:
         code, output = await _run_adb_once(root, "get-state", serial=serial, timeout=5)
         if code == 0 and output.strip() == "device":
             return True  # 别的协程刚登记回来
-        if not await asyncio.to_thread(adb_port_owned_by_instance, console):
-            return False
         logger.warning(
             f"私有 adb server（端口 {server_port}）上没有 {serial}，按 adb 端口 "
             f"{console + 1} 重新登记"

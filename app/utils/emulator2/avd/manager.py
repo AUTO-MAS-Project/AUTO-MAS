@@ -69,6 +69,7 @@ from .components import (
     root_key,
 )
 from .constants import (
+    ADB_SERVER_START_TIMEOUT_ON_CLOSE_SECONDS,
     BALLOON_PAGE_REPORTING_ORDER,
     CACHE_DIR,
     CLOSE_TIMEOUT_SECONDS,
@@ -115,7 +116,13 @@ from .constants import (
 from .drop_caches import DROP_SCRIPT as DROP_CACHES_DROP_SCRIPT
 from .drop_caches import MARK_SCRIPT as DROP_CACHES_MARK_SCRIPT
 from .drop_caches import PROBE_SCRIPT as DROP_CACHES_PROBE_SCRIPT
-from .drop_caches import GuestIoSample, parse_drop, parse_probe, run_drop_caches
+from .drop_caches import (
+    DropOutcome,
+    GuestIoSample,
+    parse_drop,
+    parse_probe,
+    run_drop_caches,
+)
 from .instances import (
     AvdInstance,
     apply_resolution,
@@ -487,7 +494,7 @@ def _schedule_drop_caches(manager: _AvdCore, idx: str) -> None:
     async def probe() -> GuestIoSample:
         return parse_probe(await su(DROP_CACHES_PROBE_SCRIPT))
 
-    async def drop() -> tuple[bool, int | None, int | None]:
+    async def drop() -> DropOutcome:
         return parse_drop(await su(DROP_CACHES_DROP_SCRIPT))
 
     async def mark() -> None:
@@ -513,7 +520,10 @@ def _schedule_drop_caches(manager: _AvdCore, idx: str) -> None:
                 f"；客体 Cached 清前 {result.cached_before_kb} kB → "
                 f"清后 {result.cached_after_kb} kB"
             )
-        logger.info(line)
+        if result.action == "failed":
+            logger.warning(line)
+        else:
+            logger.info(line)
 
     task = asyncio.create_task(run(), name=f"avd-drop-caches-{key}")
     _DROP_CACHES[key] = task
@@ -780,11 +790,27 @@ class _AvdCore(DeviceBase):
 
         process = await asyncio.to_thread(host.find_qemu_process, instance.name, port)
         launched = process is None
-        if launched:
-            await self._launch(idx, instance)
-        else:
-            logger.info(f"官方模拟器实例 {idx} 已在运行（pid {process.pid}）")
+        serial = host.serial_of(port)
+        try:
+            if launched:
+                # 开机期间所有路径（含面板每秒的状态轮询）都不替它重新登记
+                host.BOOTING.add(serial)
+                await self._launch(idx, instance)
+            else:
+                logger.info(f"官方模拟器实例 {idx} 已在运行（pid {process.pid}）")
+            process = await self._wait_boot(idx, instance, launched, max_wait)
+        finally:
+            if launched:
+                host.BOOTING.discard(serial)
 
+        await self._after_boot(idx, instance)
+        _start_watchdog(self.root, idx, process.pid)
+        return self._device_info(idx, instance.title, DeviceStatus.ONLINE)
+
+    async def _wait_boot(
+        self, idx: str, instance: AvdInstance, launched: bool, max_wait: float
+    ) -> psutil.Process:
+        port = console_port(idx)
         deadline = time.monotonic() + max_wait
         while True:
             process = await asyncio.to_thread(
@@ -796,7 +822,7 @@ class _AvdCore(DeviceBase):
             if process is not None and await self._boot_completed(
                 idx, reregister=not launched
             ):
-                break
+                return process
             if time.monotonic() >= deadline:
                 raise RuntimeError(
                     f"官方模拟器实例 {idx} 启动超时（{max_wait:.0f} 秒内安卓没有启动完成）"
@@ -810,10 +836,6 @@ class _AvdCore(DeviceBase):
                         f"{self._log_tail()}"
                     )
             await asyncio.sleep(_BOOT_POLL_SECONDS)
-
-        await self._after_boot(idx, instance)
-        _start_watchdog(self.root, idx, process.pid)
-        return self._device_info(idx, instance.title, DeviceStatus.ONLINE)
 
     _launcher = None
     _log_path: Path | None = None
@@ -1155,14 +1177,20 @@ class _AvdCore(DeviceBase):
         # 时限：调用方（任务收尾 close_emulator）整体只给 30 秒，超了连强杀都执行不到。
         # sync 5 + 控制台 kill 3 + 等退出 15 + 强杀后等 5 = 28 秒以内。sync 不走重新登记（会多等 5 秒）。
         started = time.monotonic()
-        code, output = await host.run_adb(
-            self.root,
-            "shell",
-            "sync",
-            serial=host.serial_of(port),
-            timeout=SYNC_TIMEOUT_SECONDS,
-            reregister=False,
-        )
+        # 私有 server 要是没在跑，起它也算进预算：最多等几秒，起不来就不 sync 了，直接关
+        if await host.ensure_adb_server(
+            self.root, timeout=ADB_SERVER_START_TIMEOUT_ON_CLOSE_SECONDS
+        ):
+            code, output = await host.run_adb(
+                self.root,
+                "shell",
+                "sync",
+                serial=host.serial_of(port),
+                timeout=SYNC_TIMEOUT_SECONDS,
+                reregister=False,
+            )
+        else:
+            code, output = -1, "私有 adb server 起不来"
         if code == 0:
             logger.info(
                 f"官方模拟器实例 {idx} 关机前 sync 完成（{(time.monotonic() - started) * 1000:.0f} ms）"

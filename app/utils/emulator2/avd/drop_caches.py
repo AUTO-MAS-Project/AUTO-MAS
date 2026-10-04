@@ -37,6 +37,7 @@
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
+from contextlib import suppress
 from dataclasses import dataclass
 
 from .constants import (
@@ -58,7 +59,7 @@ class GuestIoSample:
 
 @dataclass
 class DropResult:
-    action: str  # dropped / no_burst / gave_up / skipped / no_data
+    action: str  # dropped / no_burst / gave_up / skipped / no_data / failed
     read_bytes: int | None
     reason: str
     cached_before_kb: int | None = None
@@ -108,18 +109,29 @@ def parse_probe(text: str) -> GuestIoSample:
     return GuestIoSample(fields.get("M") == "1", uptime, _int(fields.get("R")))
 
 
-def parse_drop(text: str) -> tuple[bool, int | None, int | None]:
-    """``(清了没有, 清前 Cached kB, 清后 Cached kB)``；看到 SKIP 表示别处已经清过。"""
+@dataclass
+class DropOutcome:
+    status: str  # dropped / skip（别处已经清过）/ failed（命令本身没跑成）
+    cached_before_kb: int | None = None
+    cached_after_kb: int | None = None
+    detail: str = ""
+
+
+def parse_drop(text: str) -> DropOutcome:
+    """清缓存那条命令的输出。既没有 ``SKIP`` 也没有清前的 ``B=`` 行，就是命令本身失败了
+    （``su`` 不可用、adb 断了等），不能当成「别处刚清过」。"""
     if "SKIP" in text:
-        return False, None, None
+        return DropOutcome("skip")
     fields = _fields(text)
-    return "B" in fields, _int(fields.get("B")), _int(fields.get("A"))
+    if "B" not in fields:
+        return DropOutcome("failed", detail=text.strip()[-200:])
+    return DropOutcome("dropped", _int(fields.get("B")), _int(fields.get("A")))
 
 
 async def run_drop_caches(
     *,
     probe: Callable[[], Awaitable[GuestIoSample]],
-    drop: Callable[[], Awaitable[tuple[bool, int | None, int | None]]],
+    drop: Callable[[], Awaitable[DropOutcome]],
     mark: Callable[[], Awaitable[object]],
     sleep: Callable[[float], Awaitable[object]],
 ) -> DropResult:
@@ -160,11 +172,24 @@ async def run_drop_caches(
                 "no_data", None, "读不到 system_server 的 read_bytes，不清"
             )
         if sample.read_bytes - previous < DROP_CACHES_SETTLED_DELTA_BYTES:
-            dropped, before, after = await drop()
-            if not dropped:
+            outcome = await drop()
+            if outcome.status == "skip":
                 return DropResult("skipped", sample.read_bytes, "别处刚清过")
+            if outcome.status == "failed":
+                # 尽量打上标记：本次开机不再反复尝试（标记命令本身也可能失败，那就算了）
+                with suppress(Exception):
+                    await mark()
+                return DropResult(
+                    "failed",
+                    sample.read_bytes,
+                    f"突发读盘已读完，但清缓存命令失败（{outcome.detail or '无输出'}），没清",
+                )
             return DropResult(
-                "dropped", sample.read_bytes, "突发读盘已读完，清了一次", before, after
+                "dropped",
+                sample.read_bytes,
+                "突发读盘已读完，清了一次",
+                outcome.cached_before_kb,
+                outcome.cached_after_kb,
             )
         previous = sample.read_bytes
 
@@ -173,6 +198,7 @@ __all__ = [
     "DROP_SCRIPT",
     "MARK_SCRIPT",
     "PROBE_SCRIPT",
+    "DropOutcome",
     "DropResult",
     "GuestIoSample",
     "parse_drop",

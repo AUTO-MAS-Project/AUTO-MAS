@@ -379,9 +379,10 @@ WATCHDOG_PROBE_TIMEOUT_SECONDS = 10.0
 WATCHDOG_STRIKES = 2
 
 #: 关机各步的上限。调用方（``app/task/emulator_core.close_emulator``）整体只给 30 秒，超时后连强杀
-#: 都执行不到，所以四步加起来 28 秒：sync 5 + 控制台 kill 3 + 等 qemu 退出 15 + 强杀后等 5。
-#: sync 正常几十毫秒（实测 63–93 ms），qemu 收到 kill 后 2–3 秒退出。
-SYNC_TIMEOUT_SECONDS = 5.0
+#: 都执行不到，所以加起来 28 秒：私有 server 没在跑时起它 2 + sync 3 + 控制台 kill 3 + 等 qemu 退出 15
+#: + 强杀后等 5。sync 正常几十毫秒（实测 46–93 ms），qemu 收到 kill 后 2–3 秒退出。
+ADB_SERVER_START_TIMEOUT_ON_CLOSE_SECONDS = 2.0
+SYNC_TIMEOUT_SECONDS = 3.0
 CONSOLE_KILL_TIMEOUT_SECONDS = 3.0
 CLOSE_TIMEOUT_SECONDS = 15.0
 FORCE_KILL_WAIT_SECONDS = 5.0
