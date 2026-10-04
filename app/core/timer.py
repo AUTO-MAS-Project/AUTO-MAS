@@ -36,6 +36,7 @@ from .community_scheduler import (
     should_run_community_for_source,
 )
 from .config import Config
+from .game_calendar import CALENDAR_CHECK_INTERVAL_SECONDS, GameCalendar
 from .task_manager import TaskManager
 
 logger = get_logger("主业务定时器")
@@ -79,6 +80,7 @@ class _MainTimer:
         self.started = False
         self.second_timer: asyncio.Task[None] | None = None
         self.hour_timer: asyncio.Task[None] | None = None
+        self.calendar_timer: asyncio.Task[None] | None = None
         self.community_sign_task: asyncio.Task | None = None
         # 定时启动的上次检查时刻（带本地偏移），None 表示尚未检查过
         self._last_timed_check: datetime | None = None
@@ -96,6 +98,7 @@ class _MainTimer:
 
         self.second_timer = asyncio.create_task(self.second_task())
         self.hour_timer = asyncio.create_task(self.hour_task())
+        self.calendar_timer = asyncio.create_task(self.calendar_task())
         self.started = True
 
         if Config.ToolsConfig.get("GameSign", "Enabled") and (
@@ -116,6 +119,7 @@ class _MainTimer:
             for task in (
                 self.second_timer,
                 self.hour_timer,
+                self.calendar_timer,
                 self.community_sign_task,
             )
             if task is not None and not task.done()
@@ -173,6 +177,13 @@ class _MainTimer:
         while True:
             await self._run_loop_step("统计上报", upload_statistics)
             await asyncio.sleep(3600)
+
+    async def calendar_task(self) -> None:
+        """启动后立即检查游戏日历，之后每十分钟独立检查一次。"""
+
+        while True:
+            await self._run_loop_step("游戏日历提醒", GameCalendar.check)
+            await asyncio.sleep(CALENDAR_CHECK_INTERVAL_SECONDS)
 
     async def _run_loop_step(
         self, name: str, step: Callable[[], Awaitable[Any]]

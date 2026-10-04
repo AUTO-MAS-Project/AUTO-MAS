@@ -25,6 +25,7 @@ export interface FrontendConfig {
 
   // 首页布局
   homeLayout?: HomeLayoutConfig
+  homeBlueArchiveServer?: 'cn' | 'jp' | 'global'
 
   // 首页快速启动最近选择
   homeQuickStartSelectedTaskIds?: string[]
