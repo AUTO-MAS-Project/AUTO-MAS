@@ -6042,7 +6042,8 @@ class Emulator2AvdHypervisorEnableOut(OutBase):
     reason: str = Field(
         default="",
         description=(
-            "enabled 已开启, 要重启 / cancelled 用户在系统确认框里取消 / "
+            "enabled 已开启, 要重启 / already_enabled 硬件虚拟化已经可用, 没有执行 / "
+            "unchecked 现在查不了硬件虚拟化, 没有执行 / cancelled 用户在系统确认框里取消 / "
             "failed 失败 / running 上一次还没结束"
         ),
     )

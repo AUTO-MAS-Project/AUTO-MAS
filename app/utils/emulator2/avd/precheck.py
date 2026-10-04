@@ -83,17 +83,26 @@ _VK_DEVICE_TYPE_NAMES = {
     4: "CPU",
 }
 
+
 #: 硬件虚拟化不可用、但 CPU 说固件里虚拟化开着：只差系统功能。
-ACCEL_ADVICE_FEATURE_OFF = (
-    "点「开启」，在弹出的系统确认框里点「是」，完成后重启电脑。"
-    "也可以在「启用或关闭 Windows 功能」里手动勾选「Windows 虚拟机监控程序平台」"
-)
-#: 分不清是系统功能没开还是 BIOS 里没开虚拟化：两种都说。
-ACCEL_ADVICE_UNKNOWN = (
-    "可能是「Windows 虚拟机监控程序平台」没有开启：点「开启」，完成后重启电脑。"
-    "重启后仍不可用的话，是 BIOS / UEFI 里没打开 CPU 虚拟化（Intel VT-x / AMD SVM，"
-    "常叫 Virtualization Technology），要进 BIOS 打开"
-)
+def accel_advice_feature_off(elevated: bool | None = None) -> str:
+    """只差系统功能。``elevated`` 决定说不说会弹系统确认框（见 :func:`.hypervisor.enable_hint`）。"""
+    return (
+        hypervisor.enable_hint(elevated)
+        + "也可以在「启用或关闭 Windows 功能」里手动勾选「Windows 虚拟机监控程序平台」"
+    )
+
+
+def accel_advice_unknown(elevated: bool | None = None) -> str:
+    """分不清是系统功能没开还是 BIOS 里没开虚拟化：两种都说。"""
+    return (
+        "可能是「Windows 虚拟机监控程序平台」没有开启："
+        + hypervisor.enable_hint(elevated)
+        + "重启后仍不可用的话，是 BIOS / UEFI 里没打开 CPU 虚拟化（Intel VT-x / AMD SVM，"
+        "常叫 Virtualization Technology），要进 BIOS 打开"
+    )
+
+
 VULKAN_ADVICE = (
     "安装或更新显卡驱动（NVIDIA / AMD / Intel 官网驱动自带 Vulkan）。没有可用的显卡时模拟器只能"
     "软件渲染，游戏会占满 CPU，性能会很差"
@@ -171,7 +180,7 @@ async def acceleration_item(
             False,
             True,
             f"「Windows 虚拟机监控程序平台」没有开启，魔改 AVD 无法启动{checked}",
-            ACCEL_ADVICE_FEATURE_OFF,
+            accel_advice_feature_off(),
             hypervisor.ENABLE_ACTION,
         )
     return PrecheckItem(
@@ -180,7 +189,7 @@ async def acceleration_item(
         False,
         True,
         f"硬件虚拟化（Windows 虚拟机监控程序平台）不可用，魔改 AVD 无法启动{checked}",
-        ACCEL_ADVICE_UNKNOWN,
+        accel_advice_unknown(),
         hypervisor.ENABLE_ACTION,
     )
 

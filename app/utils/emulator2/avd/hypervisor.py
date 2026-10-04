@@ -26,14 +26,16 @@ CPU：``IsProcessorFeaturePresent(PF_VIRT_FIRMWARE_ENABLED)`` 为真说明固件
 可用时也为真），那就只差这个系统功能；为假时分不清（BIOS 没开，或别的虚拟机监控程序让它读不准），
 按钮照样给，说明里把两种可能都写上。
 
-**开启。** 只在用户点了按钮之后执行：提权跑
-``dism /online /enable-feature /featurename:HypervisorPlatform /all /norestart``，会弹 UAC 由用户确认。
-不自动重启，完成后只告诉用户要重启。
+**开启。** 只在用户点了按钮之后执行
+``dism /online /enable-feature /featurename:HypervisorPlatform /all /norestart``。后端已经是管理员进程时
+（正式版前端是 ``requireAdministrator``，后端随它提权）直接跑，不会有任何确认框；不是管理员时用
+``runas`` 提权，会弹系统确认框由用户确认。不自动重启，完成后只告诉用户要重启。
 """
 
 from __future__ import annotations
 
 import ctypes
+import subprocess
 import sys
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -75,6 +77,23 @@ def classify_accel_failure(
 ) -> AccelCause:
     """硬件虚拟化不可用时的原因：``feature_off`` 只差系统功能；``unknown`` 分不清（也可能是 BIOS）。"""
     return "feature_off" if firmware_enabled() else "unknown"
+
+
+def is_elevated() -> bool:
+    """当前进程是不是管理员进程（提权过）。读不到按 ``False``。"""
+    if sys.platform != "win32":
+        return False
+    try:
+        return bool(ctypes.windll.shell32.IsUserAnAdmin())
+    except Exception:  # noqa: BLE001 - 读不到就按没提权，最多多弹一次确认框
+        return False
+
+
+def enable_hint(elevated: bool | None = None) -> str:
+    """「开启」按钮旁的说法：已经是管理员进程就不会有确认框，没提权才会弹。"""
+    if is_elevated() if elevated is None else elevated:
+        return "点「开启」，将以管理员身份开启，完成后需要重启电脑。"
+    return "点「开启」，可能会弹出系统确认框，点「是」，完成后需要重启电脑。"
 
 
 @dataclass(frozen=True)
@@ -133,15 +152,36 @@ def _run_elevated(program: str, parameters: str) -> int:
         pythoncom.CoUninitialize()
 
 
+def _run_direct(program: str, parameters: str) -> int:
+    """已经是管理员进程：直接跑并等它结束，返回退出码。不弹窗口。"""
+    completed = subprocess.run(
+        [program, *parameters.split()],
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        check=False,
+    )
+    return int(completed.returncode)
+
+
 def enable_hypervisor_platform(
     runner: Callable[[str, str], int] | None = None,
+    *,
+    elevated: bool | None = None,
 ) -> EnableResult:
-    """提权开启「Windows 虚拟机监控程序平台」（会弹 UAC）。同步阻塞到 dism 结束，调用方放线程里跑。
+    """开启「Windows 虚拟机监控程序平台」。同步阻塞到 dism 结束，调用方放线程里跑。
 
-    ``runner(程序, 参数) -> 退出码`` 只给测试换成假对象，默认 :func:`_run_elevated`。"""
-    logger.info(f"用户要求开启 Windows 虚拟机监控程序平台: {DISM_EXE} {DISM_ARGS}")
+    已经是管理员进程时直接跑 dism（不会有确认框），否则 ``runas`` 提权（会弹系统确认框）。
+    ``runner(程序, 参数) -> 退出码`` 与 ``elevated`` 只给测试换成假对象。"""
+    elevated = is_elevated() if elevated is None else elevated
+    run = runner or (_run_direct if elevated else _run_elevated)
+    logger.info(
+        f"用户要求开启 Windows 虚拟机监控程序平台（{'已是管理员，直接执行' if elevated else '提权执行'}）: "
+        f"{DISM_EXE} {DISM_ARGS}"
+    )
     try:
-        code = (runner or _run_elevated)(DISM_EXE, DISM_ARGS)
+        code = run(DISM_EXE, DISM_ARGS)
     except ElevationCancelled:
         logger.info("开启 Windows 虚拟机监控程序平台：用户在 UAC 里取消了")
         return EnableResult(False, "cancelled", "已取消，没有改动系统设置")
@@ -171,6 +211,8 @@ __all__ = [
     "ENABLE_ACTION",
     "EnableResult",
     "classify_accel_failure",
+    "enable_hint",
     "enable_hypervisor_platform",
     "firmware_virtualization_enabled",
+    "is_elevated",
 ]

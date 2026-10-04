@@ -391,17 +391,34 @@ async def install_apk(emulator_id: str, slot: str, apk_path: str) -> dict[str, A
 _hypervisor_lock = asyncio.Lock()
 
 
-async def enable_hypervisor_platform() -> dict[str, Any]:
-    """用户点「开启」后提权开启「Windows 虚拟机监控程序平台」（弹 UAC）。不重启电脑。"""
+def _hypervisor_reply(reason: str, message: str) -> dict[str, Any]:
+    return {
+        "ok": False,
+        "reason": reason,
+        "restartRequired": False,
+        "message": message,
+        "exitCode": None,
+    }
+
+
+async def enable_hypervisor_platform(root: str) -> dict[str, Any]:
+    """用户点「开启」后开启「Windows 虚拟机监控程序平台」。不重启电脑。
+
+    已经是管理员进程时直接跑 dism，不会有确认框；否则提权，会弹系统确认框。执行前先在 ``root``
+    上当场跑一次硬件虚拟化检查，只有它确实不通过才执行：后端监听所有网卡、跨域全开，别的网页
+    也能 POST 这个接口，不能让它在虚拟化好好的电脑上改系统功能。"""
+    path = _normalize_root(root)
     if _hypervisor_lock.locked():
-        return {
-            "ok": False,
-            "reason": "running",
-            "restartRequired": False,
-            "message": "正在开启，请在弹出的系统确认框里操作",
-            "exitCode": None,
-        }
+        return _hypervisor_reply("running", "正在开启，请稍候")
     async with _hypervisor_lock:
+        accel = await precheck.acceleration_item(path, use_cache=False)
+        if accel.ok is True:
+            logger.info(f"硬件虚拟化已经可用（{accel.reason}），不执行开启")
+            return _hypervisor_reply("already_enabled", "硬件虚拟化已经可用，无需开启")
+        if accel.ok is None:
+            return _hypervisor_reply(
+                "unchecked", f"现在查不了硬件虚拟化，不执行开启：{accel.reason}"
+            )
         result = await asyncio.to_thread(hypervisor.enable_hypervisor_platform)
     # 系统功能可能变了，下次检查别拿旧结果
     host.forget_acceleration()

@@ -308,15 +308,24 @@ export class ActionService {
     }
     /**
      * 开启 Windows 虚拟机监控程序平台
-     * 只在用户点了「开启」按钮后调用：提权运行 dism 开启该系统功能（会弹系统确认框），
-     * 完成后要重启电脑才生效。不会自动重启。
+     * 只在用户点了「开启」按钮后调用。先在 ``root`` 上当场检查一次硬件虚拟化，确实不可用才执行
+     * dism 开启该系统功能：后端已经是管理员进程时直接执行（没有确认框），否则提权执行（会弹系统
+     * 确认框）。完成后要重启电脑才生效，不会自动重启。
+     * @param requestBody
      * @returns Emulator2AvdHypervisorEnableOut Successful Response
      * @throws ApiError
      */
-    public static avdEnableHypervisorApiEmulator2AvdHypervisorEnablePost(): CancelablePromise<Emulator2AvdHypervisorEnableOut> {
+    public static avdEnableHypervisorApiEmulator2AvdHypervisorEnablePost(
+        requestBody: Emulator2AvdRootIn,
+    ): CancelablePromise<Emulator2AvdHypervisorEnableOut> {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/emulator2/avd/hypervisor/enable',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
         });
     }
     /**

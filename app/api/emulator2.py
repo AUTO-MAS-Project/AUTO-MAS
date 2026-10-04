@@ -593,11 +593,14 @@ async def avd_install_apk(
     response_model=Emulator2AvdHypervisorEnableOut,
     status_code=200,
 )
-async def avd_enable_hypervisor() -> Emulator2AvdHypervisorEnableOut:
-    """只在用户点了「开启」按钮后调用：提权运行 dism 开启该系统功能（会弹系统确认框），
-    完成后要重启电脑才生效。不会自动重启。"""
+async def avd_enable_hypervisor(
+    payload: Emulator2AvdRootIn = Body(...),
+) -> Emulator2AvdHypervisorEnableOut:
+    """只在用户点了「开启」按钮后调用。先在 ``root`` 上当场检查一次硬件虚拟化，确实不可用才执行
+    dism 开启该系统功能：后端已经是管理员进程时直接执行（没有确认框），否则提权执行（会弹系统
+    确认框）。完成后要重启电脑才生效，不会自动重启。"""
     try:
-        result = await avd_service.enable_hypervisor_platform()
+        result = await avd_service.enable_hypervisor_platform(payload.root)
     except Exception as e:
         logger.opt(exception=True).warning(
             f"avd_enable_hypervisor失败: {type(e).__name__}: {e}"

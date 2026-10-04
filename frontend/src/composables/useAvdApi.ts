@@ -149,12 +149,13 @@ export function useAvdApi() {
     )
 
   /**
-   * 只在用户点了「开启」后调：后端提权开启「Windows 虚拟机监控程序平台」，会弹系统确认框，等它结束才返回。
-   * 不重启电脑。用户取消（``reason: cancelled``）、dism 失败都是 ``ok=false``，原样返回。
+   * 只在用户点了「开启」后调：后端先在这个根目录上当场检查一次硬件虚拟化，确实不可用才开启
+   * 「Windows 虚拟机监控程序平台」。后端已是管理员时直接执行，否则提权、可能弹系统确认框；等它结束才返回。
+   * 不重启电脑。已经可用（``already_enabled``）、用户取消、dism 失败都是 ``ok=false``，原样返回。
    */
-  const enableHypervisor = (): Promise<Emulator2AvdHypervisorEnableOut> =>
+  const enableHypervisor = (root: string): Promise<Emulator2AvdHypervisorEnableOut> =>
     call(
-      () => Emulator20Service.avdEnableHypervisorApiEmulator2AvdHypervisorEnablePost(),
+      () => Emulator20Service.avdEnableHypervisorApiEmulator2AvdHypervisorEnablePost({ root }),
       'emulator2.avd.toast.hypervisorFailed'
     )
 

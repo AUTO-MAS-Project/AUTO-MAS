@@ -191,14 +191,18 @@ const addRoot = async () => {
   }
 }
 
-/** 只在用户点了「开启」后执行：后端提权跑 dism，会弹系统确认框；不重启电脑 */
+/** 只在用户点了「开启」后执行：后端当场再查一次，确实不可用才跑 dism（没提权时会弹系统确认框）；不重启电脑 */
 const enableHypervisor = async () => {
   enablingHypervisor.value = true
   try {
-    const result = await api.enableHypervisor()
+    const result = await api.enableHypervisor(root.value.trim())
     if (result.ok) {
       hypervisorRestartPending.value = true
       message.success(result.message, 8)
+    } else if (result.reason === 'already_enabled') {
+      // 当场检查已经通过：没有执行任何东西，刷新一次检查结果
+      message.info(result.message)
+      await check(true)
     } else if (result.reason === 'cancelled') {
       message.info(result.message)
     } else {
