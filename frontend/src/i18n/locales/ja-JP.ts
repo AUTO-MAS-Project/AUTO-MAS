@@ -3191,6 +3191,14 @@ export default {
     afterDoneDelayTip:
       'キュー完了後、この時間だけ待ってから動作を実行します。0 は待機なし。実行前の 60 秒カウントダウンでキャンセルできます。',
     afterDoneDelayUnit: '分',
+    runScriptBefore: 'キューの実行前にスクリプトを実行',
+    runScriptAfter: 'キューの実行後にスクリプトを実行',
+    runCustomScriptBefore:
+      'キュー全体の開始前に一度だけ実行します。アカウントや再試行ごとには繰り返しません',
+    runCustomScriptAfter:
+      'キュー全体の終了後、成功・失敗にかかわらず完了後の操作より先に一度だけ実行します。手動停止時は実行しません',
+    preTaskScriptPath: 'キュー実行前のスクリプトパスを選択しました',
+    postTaskScriptPath: 'キュー実行後のスクリプトパスを選択しました',
     actionPlaceholder: '動作を選択してください',
     action: {
       NoAction: '何もしない',

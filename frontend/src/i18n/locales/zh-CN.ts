@@ -3661,6 +3661,13 @@ export default {
     afterDoneDelayTip:
       '队列完成后先等待这段时间再执行完成后操作，0 表示不等待；执行前仍有 60 秒倒计时可取消',
     afterDoneDelayUnit: '分钟',
+    runScriptBefore: '队列运行前执行脚本',
+    runScriptAfter: '队列运行后执行脚本',
+    runCustomScriptBefore: '整个队列开始运行前执行一次，不会随账号或重试重复执行',
+    runCustomScriptAfter:
+      '整个队列结束后执行一次，成功或失败均执行，先于完成后操作；手动停止时不执行',
+    preTaskScriptPath: '队列运行前脚本路径选择成功',
+    postTaskScriptPath: '队列运行后脚本路径选择成功',
     actionPlaceholder: '请选择操作',
     action: {
       NoAction: '不执行任何操作',

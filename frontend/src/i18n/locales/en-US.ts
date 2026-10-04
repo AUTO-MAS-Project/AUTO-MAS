@@ -3819,6 +3819,14 @@ export default {
     afterDoneDelayTip:
       'Wait this long after the queue completes before running the action; 0 means no wait. The 60-second countdown still runs before it, so you can still cancel.',
     afterDoneDelayUnit: 'min',
+    runScriptBefore: 'Run a script before the queue',
+    runScriptAfter: 'Run a script after the queue',
+    runCustomScriptBefore:
+      'Run once before the entire queue starts, without repeating for accounts or retries',
+    runCustomScriptAfter:
+      'Run once when the entire queue finishes, on success or failure, before the completion action; skipped on manual stop',
+    preTaskScriptPath: 'Pre-queue script path selected',
+    postTaskScriptPath: 'Post-queue script path selected',
     actionPlaceholder: 'Select an action',
     action: {
       NoAction: 'Do nothing',
