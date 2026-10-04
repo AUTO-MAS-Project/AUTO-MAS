@@ -155,6 +155,35 @@ def build_maa_legacy_connect_keys(
     }
 
 
+def apply_maa_avd_settings(
+    root: str | Path,
+    console_port: int,
+    legacy_default: dict[str, Any],
+    connect_settings: dict[str, Any] | None,
+) -> dict[str, Any]:
+    """把官方模拟器实例要的连接配置写进 MAA 的两套配置，返回新的 ``Gui.ConnectSettings``。
+
+    ``legacy_default`` 是 ``gui.json`` 的 ``Configurations.Default``，原地写旧键；新键在返回值里，
+    其余键（``Address``、``AdbPath``、``AddressHistory`` …）原样保留。``AdbPath`` 两套都只在用户
+    没配过时才补 SDK 的 adb。调用前先 :func:`ensure_mumu_shim`。
+    """
+    legacy_default.update(build_maa_legacy_connect_keys(root, console_port))
+    if not str(legacy_default.get("Connect.AdbPath") or "").strip():
+        legacy_default["Connect.AdbPath"] = str(adb_exe(root))
+    return build_maa_connect_settings(root, console_port, connect_settings)
+
+
+def screencap_fallback_status(log: str) -> str | None:
+    """官方模拟器实例上 MAA 截图回落到普通 adb 时给运行结果用的说法；没回落返回 ``None``。"""
+    method = detect_screencap_fallback(log)
+    if method is None:
+        return None
+    return (
+        f"MAA 在官方模拟器上没用上截图增强（{method}），截图回落到普通 adb 会很慢，"
+        "本次判失败；请检查 MAA 的连接设置是否被改动，或 MAA 版本是否过旧"
+    )
+
+
 #: MAA 界面日志里「最快截图耗时: 5ms (MumuExtras)」那一行，括号里是选中的方式。
 MAA_FASTEST_SCREENCAP_PREFIX = "最快截图耗时"
 MAA_MUMU_EXTRAS_METHOD = "MumuExtras"
