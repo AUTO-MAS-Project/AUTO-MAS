@@ -457,11 +457,14 @@ class MumuManager(DeviceBase):
                     )
                 else:
                     await asyncio.sleep(3)
-                await apply_launch_audio_mute(
-                    self._audio_mute_states,
-                    idx,
-                    await self._resolve_audio_pids(idx),
-                )
+                if Config.get("Function", "IfSilence"):
+                    try:
+                        pids = await self._resolve_audio_pids(idx)
+                        await apply_launch_audio_mute(
+                            states_store=self._audio_mute_states, idx=idx, pids=pids
+                        )
+                    except Exception as e:
+                        logger.warning(f"MuMu 音频静音失败，将继续运行: {idx} - {e}")
                 return (await self.getInfo(idx))[idx]
             await asyncio.sleep(0.1)
         else:
@@ -494,18 +497,16 @@ class MumuManager(DeviceBase):
 
         def scan() -> list[int]:
             pids: list[int] = []
-            for proc in psutil.process_iter(["name", "cmdline"]):
+            for proc in psutil.process_iter():
                 try:
-                    name = (proc.info["name"] or "").lower()
+                    name = (proc.name() or "").lower()
                     if name != "mumunxdevice.exe":
                         continue
                     # VM 名可能是独立参数（--vm X）或等号连写（--vm=X）
-                    if any(
-                        part.split("=")[-1] == token
-                        for part in (proc.info["cmdline"] or [])
-                    ):
+                    if any(part.split("=")[-1] == token for part in proc.cmdline()):
                         pids.append(proc.pid)
-                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                except (psutil.NoSuchProcess, psutil.AccessDenied, OSError) as e:
+                    logger.debug(f"跳过无法读取的 MuMu 音频候选进程: {proc.pid} - {e}")
                     continue
             return pids
 
