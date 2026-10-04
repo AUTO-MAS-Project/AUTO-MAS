@@ -18,11 +18,13 @@
 
 #   Contact: DLmaster_361@163.com
 
-"""官方模拟器开机前的电脑检查：硬件虚拟化、显卡 Vulkan、磁盘、内存。
+"""官方模拟器开机前的电脑检查：模拟器版本、硬件虚拟化、显卡 Vulkan、磁盘、内存。
 
 每项给 ``ok``、原因、建议，``/avd/status`` 原样交给前端显示；开机路径（``AvdInstanceManager._launch``）
 里不满足的拦截项直接拒绝开机并给出原因，不静默开下去。只读：不改系统设置、不装任何东西。
 
+- **模拟器版本**：只支持官方模拟器内测包里的自编版（``components.emulator_self_built``），谷歌原版
+  与没有模拟器都拒绝。拦截。
 - **硬件虚拟化**：``emulator -accel-check``（WHPX）。拦截。
 - **内存**：宿主可用内存 ≥ 这次要传的 ``-memory`` + 1.5 GB。拦截。
 - **磁盘**：实例所在盘剩余 ≥ :data:`~.constants.MIN_FREE_DISK_GB_TO_BOOT`。拦截。
@@ -50,7 +52,13 @@ import psutil
 from app.utils import get_logger
 
 from . import host
-from .components import avd_home, emulator_exe
+from .components import (
+    avd_home,
+    emulator_exe,
+    emulator_present,
+    emulator_self_built,
+    read_emulator_version,
+)
 from .constants import (
     DEFAULT_MEMORY_MB,
     HOST_MEMORY_OVERHEAD_MB,
@@ -151,6 +159,36 @@ async def acceleration_item(
         f"硬件虚拟化（Windows 虚拟机监控程序平台）不可用，官方模拟器无法启动"
         f"（检查结果：{summary or '无输出'}）",
         ACCEL_ADVICE,
+    )
+
+
+TEST_PACKAGE_ADVICE = (
+    "请把官方模拟器内测包解压到这个目录（解压后目录里应有 sdk\\emulator）"
+)
+
+
+def emulator_item(root: str | Path) -> PrecheckItem:
+    """模拟器必须是官方模拟器内测包里的自编版（用户定：不支持谷歌原版）。拦截。"""
+    title = "模拟器版本"
+    if not emulator_present(root):
+        return PrecheckItem(
+            "emulator",
+            title,
+            False,
+            True,
+            "这个目录里还没有官方模拟器内测包",
+            TEST_PACKAGE_ADVICE,
+        )
+    version = read_emulator_version(root) or "版本未知"
+    if emulator_self_built(root):
+        return PrecheckItem("emulator", title, True, True, f"内测包（{version}）")
+    return PrecheckItem(
+        "emulator",
+        title,
+        False,
+        True,
+        f"这里的模拟器（{version}）不是官方模拟器内测包里的版本，只支持内测包",
+        TEST_PACKAGE_ADVICE,
     )
 
 
@@ -313,15 +351,16 @@ async def vulkan_item(*, use_cache: bool = True) -> PrecheckItem:
 async def run_prechecks(
     root: str | Path, *, memory_mb: int = DEFAULT_MEMORY_MB, refresh: bool = False
 ) -> list[PrecheckItem]:
-    """四项都查，给 ``/avd/status``。``memory_mb`` 是拿来估内存的实例内存（面板上用默认档）；
+    """五项都查，给 ``/avd/status``。``memory_mb`` 是拿来估内存的实例内存（面板上用默认档）；
     ``refresh``（用户点「检查」）时硬件加速与 Vulkan 都跳过缓存重新查。"""
     accel, vulkan = await asyncio.gather(
         acceleration_item(root, use_cache=not refresh),
         vulkan_item(use_cache=not refresh),
     )
+    emulator = await asyncio.to_thread(emulator_item, root)
     memory = await asyncio.to_thread(memory_item, memory_mb)
     disk = await asyncio.to_thread(disk_item, root)
-    return [accel, vulkan, disk, memory]
+    return [emulator, accel, vulkan, disk, memory]
 
 
 class PrecheckFailed(RuntimeError):
@@ -333,9 +372,10 @@ class PrecheckFailed(RuntimeError):
 
 
 async def check_before_launch(root: str | Path, memory_mb: int) -> list[PrecheckItem]:
-    """开机前检查：硬件虚拟化、内存、磁盘不满足抛 :class:`PrecheckFailed`（带原因与建议）；
+    """开机前检查：模拟器不是内测包的自编版、硬件虚拟化、内存、磁盘不满足抛 :class:`PrecheckFailed`（带原因与建议）；
     Vulkan 不满足只记警告。返回全部结果。``memory_mb`` 必须是这次要传给 ``-memory`` 的值。"""
     items = [
+        await asyncio.to_thread(emulator_item, root),
         await acceleration_item(root),
         await asyncio.to_thread(memory_item, memory_mb),
         await asyncio.to_thread(disk_item, root),

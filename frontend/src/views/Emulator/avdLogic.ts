@@ -107,16 +107,20 @@ export const canResume = (
   return (components ?? []).some(item => !item.installed && (item.downloadedBytes ?? 0) > 0)
 }
 
-/** 组件行的状态：ready 已就绪 / partial 下了一部分 / missing 没下 */
+/**
+ * 组件行的状态：ready 已就绪 / partial 下了一部分 / missing 没下 /
+ * needsPackage 模拟器不下载，要官方模拟器内测包（没有或不是自编版）
+ */
 export const componentState = (item: Emulator2AvdComponentItem) => {
   if (item.installed) return 'ready' as const
+  if (item.needsTestPackage) return 'needsPackage' as const
   if ((item.downloadedBytes ?? 0) > 0) return 'partial' as const
   return 'missing' as const
 }
 
 /**
- * 组件行要显示的版本与大小。已就绪的组件报实际装着的版本、不报大小（已经不用下了），取自本地 SDK
- * 的另外标出来；没就绪的报要下载的固定版本和下载大小。
+ * 组件行要显示的版本与大小。已就绪的组件报实际装着的版本、不报大小（已经不用下了）；来自内测包或
+ * 本地 SDK 的另外标出来。没就绪的报要下载的固定版本和下载大小；模拟器不下载，没有大小可报。
  */
 export const componentDetail = (item: Emulator2AvdComponentItem) => {
   const installed = componentState(item) === 'ready'
@@ -124,6 +128,7 @@ export const componentDetail = (item: Emulator2AvdComponentItem) => {
     version: item.version ?? '',
     sizeBytes: installed ? null : (item.sizeBytes ?? 0) || null,
     localSdk: installed && Boolean(item.localSdk),
+    testPackage: installed && Boolean(item.testPackage),
   }
 }
 

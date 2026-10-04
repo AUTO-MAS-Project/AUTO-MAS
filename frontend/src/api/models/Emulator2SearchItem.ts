@@ -24,7 +24,7 @@ export type Emulator2SearchItem = {
      */
     supported: boolean;
     /**
-     * 判定原因: ok 可添加 / version_too_old 版本太旧 / planned 后续版本接入 / unsupported 暂不支持 / already_added 已添加 / not_found 找不到模拟器程序 / probe_failed 版本认不出 / components_missing 官方模拟器组件还没下载齐
+     * 判定原因: ok 可添加 / version_too_old 版本太旧 / planned 后续版本接入 / unsupported 暂不支持 / already_added 已添加 / not_found 找不到模拟器程序 / probe_failed 版本认不出 / components_missing 官方模拟器组件还没下载齐 / test_package_required 根目录里的模拟器不是官方模拟器内测包里的自编版
      */
     reason: string;
     /**

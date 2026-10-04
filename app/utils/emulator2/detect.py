@@ -80,6 +80,7 @@ class DetectResult:
     #: - ``not_found``       路径下没找到管理器程序
     #: - ``probe_failed``    管理器程序跑不起来或输出认不出
     #: - ``components_missing`` 官方模拟器根目录里的组件还没下载齐
+    #: - ``test_package_required`` 官方模拟器根目录里的模拟器不是内测包里的自编版
 
 
 def parse_ldplayer_version(output: str) -> str | None:
@@ -300,12 +301,26 @@ async def probe_install_path(
 
 def _probe_avd(install_path: str) -> DetectResult:
     """官方模拟器根目录：组件齐了才可添加，版本取 ``source.properties``，不起进程。"""
-    from .avd.components import install_status, read_emulator_version
+    from .avd.components import (
+        emulator_present,
+        emulator_self_built,
+        install_status,
+        read_emulator_version,
+    )
 
     root = avd_root_of(install_path)
     status = install_status(root)
     version = read_emulator_version(root) or ""
     exe = resolve_manager_exe(str(root), "avd")
+    if emulator_present(root) and not emulator_self_built(root):
+        # 只支持官方模拟器内测包里的自编版，谷歌原版不让加
+        return DetectResult(
+            supported=False,
+            reason="test_package_required",
+            type="avd",
+            version=version,
+            install_path=root.as_posix(),
+        )
     if not status["ready"] or exe is None:
         return DetectResult(
             supported=False,

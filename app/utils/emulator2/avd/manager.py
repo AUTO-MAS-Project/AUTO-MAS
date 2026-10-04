@@ -1589,9 +1589,9 @@ class AvdManager(AppLaunchMixin, _AvdCore):
         看门狗在后台继续看到拉起后第 300 秒，期间死锁同样重开。看门狗自己出错（例如客体没有 ``su``）
         返回 ``None``，调用方按普通方式拉起。
 
-        avd-game.ps1 拉起前丢弃客体 ping 的 iptables 规则不搬：那是给 slirp 的 ICMP 套接字堆积兜底的
-        （崩坏三每次启动 ping 约 700 次/秒，拖垮 slirp 主循环），自编模拟器从 sdk-mas9 起已在模拟器里修好；
-        官方 37.1.11 那条路径只作开发兜底。
+        avd-game.ps1 拉起前丢弃客体 ping 的 iptables 规则不搬：那是给原版 slirp 的 ICMP 套接字堆积兜底的
+        （崩坏三每次启动 ping 约 700 次/秒，拖垮 slirp 主循环）。这里只支持官方模拟器内测包里的自编版
+        （开机前检查拒绝原版），自编版从 sdk-mas9 起已在模拟器里修好。
         """
         _, output = await self._shell(idx, f"pm path {package_name}")
         if is_package_missing(output):

@@ -5477,7 +5477,8 @@ class Emulator2SearchItem(BaseModel):
             "判定原因: ok 可添加 / version_too_old 版本太旧 / planned 后续版本接入 / "
             "unsupported 暂不支持 / already_added 已添加 / "
             "not_found 找不到模拟器程序 / probe_failed 版本认不出 / "
-            "components_missing 官方模拟器组件还没下载齐"
+            "components_missing 官方模拟器组件还没下载齐 / "
+            "test_package_required 根目录里的模拟器不是官方模拟器内测包里的自编版"
         ),
     )
     instanceCount: Optional[int] = Field(default=None, description="实例数量")
@@ -5781,6 +5782,17 @@ class Emulator2AvdComponentItem(BaseModel):
         default=False,
         description="是否取自 mas-avd.json 的 sdkRoot 指定的本地 SDK (不经下载器, 没有下载大小可言)",
     )
+    testPackage: bool = Field(
+        default=False,
+        description="仅 Android 模拟器: 根目录里是官方模拟器内测包的自编版, 已就绪",
+    )
+    needsTestPackage: bool = Field(
+        default=False,
+        description=(
+            "仅 Android 模拟器: 根目录里没有模拟器或不是自编版; 模拟器不下载, "
+            "要把官方模拟器内测包解压到根目录"
+        ),
+    )
 
 
 class WSEmulator2AvdInstallProgressData(BaseModel):
@@ -5935,7 +5947,8 @@ class Emulator2AvdInstallOut(OutBase):
         description=(
             "结果原因: started 已开始 / running 已有任务在跑 / ready 组件已齐无需下载 / "
             "license_not_accepted 未同意许可协议 / invalid_root 目录不可用 / "
-            "disk_space 磁盘空间不足 / no_source 所有下载源都不可用"
+            "disk_space 磁盘空间不足 / no_source 所有下载源都不可用 / "
+            "test_package_required 要下载的都齐了, 只差官方模拟器内测包"
         ),
     )
     jobId: str = Field(default="", description="下载任务 ID")

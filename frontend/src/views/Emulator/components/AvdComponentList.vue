@@ -1,5 +1,5 @@
 <script setup lang="ts">
-/** 官方模拟器根目录里的组件：名称、版本（与下载大小或本地 SDK 标记）、状态。 */
+/** 官方模拟器根目录里的组件：名称、版本（与下载大小、内测包或本地 SDK 标记）、状态。模拟器不下载，缺了只提示用内测包。 */
 import { useI18n } from 'vue-i18n'
 
 import type { Emulator2AvdComponentItem } from '@/api'
@@ -13,6 +13,7 @@ const { t } = useI18n()
 const componentText = (item: Emulator2AvdComponentItem) => {
   const state = componentState(item)
   if (state === 'ready') return t('emulator2.avd.componentReady')
+  if (state === 'needsPackage') return t('emulator2.avd.needsTestPackage')
   if (state === 'partial') {
     return t('emulator2.avd.componentPartial', {
       size: `${formatBytes(item.downloadedBytes ?? 0)} / ${formatBytes(item.sizeBytes ?? 0)}`,
@@ -36,7 +37,10 @@ const componentColor = (item: Emulator2AvdComponentItem) => {
       <span class="component-name">{{ item.name }}</span>
       <span class="component-meta">
         {{ componentDetail(item).version }}
-        <template v-if="componentDetail(item).localSdk">
+        <template v-if="componentDetail(item).testPackage">
+          · {{ t('emulator2.avd.testPackage') }}</template
+        >
+        <template v-else-if="componentDetail(item).localSdk">
           · {{ t('emulator2.avd.localSdk') }}</template
         >
         <template v-else-if="componentDetail(item).sizeBytes">
@@ -46,6 +50,12 @@ const componentColor = (item: Emulator2AvdComponentItem) => {
       </span>
       <a-tag :color="componentColor(item)">{{ componentText(item) }}</a-tag>
     </div>
+    <a-alert
+      v-if="components.some(item => componentState(item) === 'needsPackage')"
+      type="warning"
+      show-icon
+      :message="t('emulator2.avd.testPackageHint')"
+    />
   </div>
 </template>
 

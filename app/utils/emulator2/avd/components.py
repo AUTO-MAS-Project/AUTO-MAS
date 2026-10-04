@@ -55,6 +55,9 @@ from .constants import (
     COMPONENTS_DIR,
     DOWNLOAD_SOURCES,
     DOWNLOADS_DIR,
+    EMULATOR_COMPONENT_ID,
+    EMULATOR_COMPONENT_LICENSE,
+    EMULATOR_COMPONENT_NAME,
     FOSSIFY_LAUNCHER,
     LICENSE_ID,
     LICENSE_MANIFEST,
@@ -75,7 +78,6 @@ logger = get_logger("官方模拟器组件")
 #: 解压后大约占多少（字节），只用于下载前的磁盘空间预检，宁多勿少。
 _EXTRACTED_SIZE = {
     "platform-tools": 30 * 1024**2,
-    "emulator": 1200 * 1024**2,
     "system-image": 4600 * 1024**2,
 }
 #: 预检时额外留的余量：第一台实例开机就要写几 GB 数据盘。
@@ -315,6 +317,89 @@ def read_emulator_version(root: str | Path) -> str | None:
     return props.get("Pkg.Revision") or None
 
 
+# ---- Android 模拟器：只认自编版 -------------------------------------------------
+
+#: 自编版的标志：qemu 里有 ``virtio-balloon-pci`` 的 ``free-page-reporting`` 属性（sdk-mas19 起才有；
+#: 谷歌原版 37.1.11 与更早的自编版 sdk-mas18 都没有，10-04 核实）。qemu 没有可靠的查询开关，直接在
+#: exe 的字节里找属性名。
+_SELF_BUILT_MARK = b"free-page-reporting"
+_SELF_BUILT_CHUNK = 4 * 1024 * 1024
+#: ``(路径, 修改时间, 大小)`` → 是否自编版。换了模拟器二进制修改时间就变，自然重查。
+_self_built_cache: dict[tuple[str, int, int], bool] = {}
+
+
+def qemu_headless_exe(root: str | Path) -> Path:
+    return (
+        runtime_sdk_dir(root)
+        / "emulator"
+        / "qemu"
+        / "windows-x86_64"
+        / "qemu-system-x86_64-headless.exe"
+    )
+
+
+def qemu_has_self_built_mark(exe: str | Path) -> bool:
+    """这个 qemu 是不是我们的自编版（找 :data:`_SELF_BUILT_MARK`）。exe 不存在、读不了都算不是。"""
+    path = Path(exe)
+    try:
+        stat = path.stat()
+    except OSError:
+        return False
+    key = (os.path.normcase(str(path)), stat.st_mtime_ns, stat.st_size)
+    cached = _self_built_cache.get(key)
+    if cached is not None:
+        return cached
+    mark = _SELF_BUILT_MARK
+    found = False
+    tail = b""
+    try:
+        with path.open("rb") as file:
+            while True:
+                chunk = file.read(_SELF_BUILT_CHUNK)
+                if not chunk:
+                    break
+                if mark in tail + chunk:
+                    found = True
+                    break
+                tail = chunk[-(len(mark) - 1) :]
+    except OSError as e:
+        logger.warning(f"读取 {path} 判断模拟器版本失败，按不是内测包处理: {e}")
+        return False
+    _self_built_cache[key] = found
+    return found
+
+
+def emulator_present(root: str | Path) -> bool:
+    """实际运行用的 SDK 里模拟器的关键文件都在（不管是不是自编版）。"""
+    target = runtime_sdk_dir(root) / "emulator"
+    return all((target / name).is_file() for name in _KEY_FILES[EMULATOR_COMPONENT_ID])
+
+
+def emulator_self_built(root: str | Path) -> bool:
+    """根目录里的模拟器是我们的自编版（官方模拟器内测包里的那份）。只有它才能用。"""
+    return emulator_present(root) and qemu_has_self_built_mark(qemu_headless_exe(root))
+
+
+def _emulator_item(root: Path, local: bool) -> dict[str, Any]:
+    """组件清单里的「Android 模拟器」一项：不下载，只看根目录里有没有内测包的自编版。"""
+    ready = emulator_self_built(root)
+    return {
+        "id": EMULATOR_COMPONENT_ID,
+        "name": EMULATOR_COMPONENT_NAME,
+        "version": (read_emulator_version(root) or "")
+        if emulator_present(root)
+        else "",
+        "sizeBytes": 0,
+        "installed": ready,
+        "downloadedBytes": 0,
+        "optional": False,
+        "license": EMULATOR_COMPONENT_LICENSE,
+        "localSdk": local,
+        "testPackage": ready,
+        "needsTestPackage": not ready,
+    }
+
+
 def _partial_size(root: str | Path, file_name: str) -> int:
     try:
         return (Path(root) / DOWNLOADS_DIR / (file_name + ".part")).stat().st_size
@@ -355,8 +440,12 @@ def install_status(root: str | Path) -> dict[str, Any]:
                 "optional": False,
                 "license": component.license,
                 "localSdk": local,
+                "testPackage": False,
+                "needsTestPackage": False,
             }
         )
+    # 模拟器排在平台工具后面，与原来的下载顺序一致
+    items.insert(1, _emulator_item(root, local))
     launcher_ok = launcher_downloaded(root)
     items.append(
         {
@@ -369,6 +458,8 @@ def install_status(root: str | Path) -> dict[str, Any]:
             "optional": True,
             "license": FOSSIFY_LAUNCHER.license,
             "localSdk": False,
+            "testPackage": False,
+            "needsTestPackage": False,
         }
     )
     ready = all(item["installed"] for item in items if not item["optional"])
@@ -808,6 +899,7 @@ class InstallJob:
             root,
             components={
                 **{c.id: c.version for c in REQUIRED_COMPONENTS},
+                EMULATOR_COMPONENT_ID: read_emulator_version(root) or "",
                 **(
                     {FOSSIFY_LAUNCHER.id: FOSSIFY_LAUNCHER.version}
                     if launcher_downloaded(root)
@@ -820,7 +912,9 @@ class InstallJob:
         from .maa_shim import ensure_mumu_shim
 
         await asyncio.to_thread(ensure_mumu_shim, root)
-        if self.on_success is not None:
+        # 模拟器不下载：内测包还没解压进来时下载的部分照样算完成，但先不加进配置
+        emulator_ready = await asyncio.to_thread(emulator_self_built, root)
+        if emulator_ready and self.on_success is not None:
             result = self.on_success()
             if asyncio.iscoroutine(result):
                 await result
@@ -829,7 +923,11 @@ class InstallJob:
             force=True,
             stage="completed",
             status="success",
-            message="官方模拟器组件已全部就绪",
+            message=(
+                "官方模拟器组件已全部就绪"
+                if emulator_ready
+                else "平台工具和系统镜像已下载完成，还需要把官方模拟器内测包解压到这个目录"
+            ),
             component="",
             componentName="",
         )

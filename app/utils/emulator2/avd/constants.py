@@ -146,24 +146,6 @@ class Component:
     license: str = "Apache-2.0 / Android SDK License"
 
 
-EMULATOR = Component(
-    id="emulator",
-    name="Android 模拟器（emulator）",
-    version="37.1.11",
-    url="emulator-windows_x64-15917651.zip",
-    size=441_926_448,
-    sha1="54fa750822ff462d57e04fc8e98e60f08df2bb61",
-    target="emulator",
-    archive_root="emulator",
-    source_properties=(
-        "Pkg.UserSrc=false\n"
-        "Pkg.Revision=37.1.11\n"
-        "Pkg.Path=emulator\n"
-        "Pkg.Desc=Android Emulator\n"
-        "Pkg.BuildId=15917651\n"
-    ),
-)
-
 PLATFORM_TOOLS = Component(
     id="platform-tools",
     name="平台工具（adb）",
@@ -201,8 +183,15 @@ SYSTEM_IMAGE = Component(
     ),
 )
 
-#: 必需组件，按下载顺序（小的先下，adb 先到位便于排查）。
-REQUIRED_COMPONENTS: tuple[Component, ...] = (PLATFORM_TOOLS, EMULATOR, SYSTEM_IMAGE)
+#: 要下载的必需组件，按下载顺序（小的先下，adb 先到位便于排查）。Android 模拟器不在里面，见下。
+REQUIRED_COMPONENTS: tuple[Component, ...] = (PLATFORM_TOOLS, SYSTEM_IMAGE)
+
+#: Android 模拟器**不下载**，只认我们的自编版（用户定：必须用官方模拟器内测包）。内测包解压出来就是一个
+#: 官方模拟器根目录，自带 ``sdk\emulator``；原版（谷歌发的）不支持，开机前检查直接拒绝。
+#: 认自编版的办法见 ``components.emulator_self_built``。
+EMULATOR_COMPONENT_ID = "emulator"
+EMULATOR_COMPONENT_NAME = "Android 模拟器（emulator）"
+EMULATOR_COMPONENT_LICENSE = "Apache-2.0 / GPL-2.0"
 
 #: 实例配置里的 ``image.sysdir.1``，相对 SDK 根。
 SYSTEM_IMAGE_SYSDIR = "system-images\\android-34\\google_apis\\x86_64\\"

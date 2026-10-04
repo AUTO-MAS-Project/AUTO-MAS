@@ -2871,6 +2871,7 @@ export default {
       not_found: '找不到模拟器程序',
       probe_failed: '版本认不出',
       components_missing: '组件还没下载齐',
+      test_package_required: '需要官方模拟器内测包',
     },
     avd: {
       add: '添加官方模拟器',
@@ -2889,6 +2890,9 @@ export default {
       components: '组件',
       optional: '可选',
       localSdk: '本地 SDK',
+      testPackage: '内测包',
+      needsTestPackage: '需要内测包',
+      testPackageHint: '请把官方模拟器内测包解压到这个目录（解压后目录里应有 sdk\\emulator）',
       close: '关闭',
       componentReady: '已就绪',
       componentPartial: '已下载 {size}',

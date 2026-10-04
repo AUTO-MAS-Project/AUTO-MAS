@@ -152,6 +152,18 @@ async def install_start(
     if current["ready"] and not launcher_missing:
         await _auto_add(emulator_id, path, alias)
         return {"ok": True, "reason": "ready", "message": "组件已齐全，无需下载"}
+    downloads_done = not launcher_missing and all(
+        item["installed"]
+        for item in current["components"]
+        if not item["optional"] and item["id"] != components.EMULATOR_COMPONENT_ID
+    )
+    if downloads_done:
+        # 要下的都齐了，只差模拟器：模拟器不下载，只能用内测包
+        return {
+            "ok": False,
+            "reason": "test_package_required",
+            "message": "要下载的组件都已就绪，还需要把官方模拟器内测包解压到这个目录",
+        }
 
     try:
         await asyncio.to_thread(components.check_disk_space, path)

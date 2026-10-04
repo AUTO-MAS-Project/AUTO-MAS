@@ -144,12 +144,18 @@ describe('review fixes', () => {
       sizeBytes: 441_000_000,
       localSdk: true,
     })
-    expect(componentDetail(local)).toEqual({ version: '37.2.10', sizeBytes: null, localSdk: true })
+    expect(componentDetail(local)).toEqual({
+      version: '37.2.10',
+      sizeBytes: null,
+      localSdk: true,
+      testPackage: false,
+    })
     const downloaded = component({ installed: true, version: '37.1.11', sizeBytes: 441_000_000 })
     expect(componentDetail(downloaded)).toEqual({
       version: '37.1.11',
       sizeBytes: null,
       localSdk: false,
+      testPackage: false,
     })
   })
 
@@ -159,6 +165,7 @@ describe('review fixes', () => {
       version: '37.1.11',
       sizeBytes: 441_000_000,
       localSdk: false,
+      testPackage: false,
     })
   })
 
@@ -173,5 +180,26 @@ describe('review fixes', () => {
     expect(memoryCell({ value: 6144, state: 'saved' })).toEqual({ auto: false, text: '6144' })
     expect(memoryCell({ value: null, state: 'unset' })).toEqual({ auto: false, text: '—' })
     expect(memoryCell(undefined)).toEqual({ auto: false, text: '—' })
+  })
+})
+
+describe('test package', () => {
+  it('a self-built emulator from the test package is ready and marked', () => {
+    const item = component({ installed: true, version: '37.2.10', testPackage: true, sizeBytes: 0 })
+    expect(componentState(item)).toBe('ready')
+    expect(componentDetail(item)).toEqual({
+      version: '37.2.10',
+      sizeBytes: null,
+      localSdk: false,
+      testPackage: true,
+    })
+  })
+
+  it('missing or official emulator needs the test package, never a download size', () => {
+    const official = component({ version: '37.1.11', needsTestPackage: true, sizeBytes: 0 })
+    expect(componentState(official)).toBe('needsPackage')
+    expect(componentDetail(official).sizeBytes).toBeNull()
+    const none = component({ version: '', needsTestPackage: true, sizeBytes: 0 })
+    expect(componentState(none)).toBe('needsPackage')
   })
 })

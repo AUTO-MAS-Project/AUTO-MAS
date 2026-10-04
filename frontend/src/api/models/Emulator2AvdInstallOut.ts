@@ -21,7 +21,7 @@ export type Emulator2AvdInstallOut = {
      */
     ok?: boolean;
     /**
-     * 结果原因: started 已开始 / running 已有任务在跑 / ready 组件已齐无需下载 / license_not_accepted 未同意许可协议 / invalid_root 目录不可用 / disk_space 磁盘空间不足 / no_source 所有下载源都不可用
+     * 结果原因: started 已开始 / running 已有任务在跑 / ready 组件已齐无需下载 / license_not_accepted 未同意许可协议 / invalid_root 目录不可用 / disk_space 磁盘空间不足 / no_source 所有下载源都不可用 / test_package_required 要下载的都齐了, 只差官方模拟器内测包
      */
     reason?: string;
     /**
