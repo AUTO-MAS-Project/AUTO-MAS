@@ -32,7 +32,7 @@ export type Emulator2AvdInstanceOptionsOut = {
      */
     dataPartitionGb?: (number | null);
     /**
-     * 首次开机初始化是否已完成 (关 WiFi / 去预装等)
+     * 首次开机初始化是否已完成 (去预装 / 装轻量桌面等)
      */
     initialized?: boolean;
     /**

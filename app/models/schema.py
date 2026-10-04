@@ -5846,7 +5846,7 @@ class Emulator2AvdInstanceOptionsOut(OutBase):
     cpu: Optional[int] = Field(default=None, description="CPU 核数")
     dataPartitionGb: Optional[int] = Field(default=None, description="数据盘上限 GB")
     initialized: bool = Field(
-        default=False, description="首次开机初始化是否已完成 (关 WiFi / 去预装等)"
+        default=False, description="首次开机初始化是否已完成 (去预装 / 装轻量桌面等)"
     )
     launcher: str = Field(default="", description="当前桌面包名, pixel 为原生桌面")
     renderer: str = Field(default="", description="首次开机记录的渲染器 (GLES 行)")
