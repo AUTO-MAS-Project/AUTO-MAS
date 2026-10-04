@@ -7,6 +7,7 @@ import type {
   Emulator2AvdComponentItem,
   Emulator2AvdInstanceOptionsOut,
   Emulator2AvdPrecheckItem,
+  Emulator2SettingField,
   WSEmulator2AvdInstallProgressData,
 } from '@/api'
 
@@ -111,6 +112,37 @@ export const componentState = (item: Emulator2AvdComponentItem) => {
   if (item.installed) return 'ready' as const
   if ((item.downloadedBytes ?? 0) > 0) return 'partial' as const
   return 'missing' as const
+}
+
+/**
+ * 组件行要显示的版本与大小。已就绪的组件报实际装着的版本、不报大小（已经不用下了），取自本地 SDK
+ * 的另外标出来；没就绪的报要下载的固定版本和下载大小。
+ */
+export const componentDetail = (item: Emulator2AvdComponentItem) => {
+  const installed = componentState(item) === 'ready'
+  return {
+    version: item.version ?? '',
+    sizeBytes: installed ? null : (item.sizeBytes ?? 0) || null,
+    localSdk: installed && Boolean(item.localSdk),
+  }
+}
+
+/** 这个根目录是不是已经在配置里了（路径写法不同也算同一个）。 */
+export const isRootAdded = (addedRoots: string[], root: string) =>
+  addedRoots.some(item => samePath(item, root))
+
+// ---- 设备表 ----
+
+/**
+ * 设备表「内存」一栏：官方模拟器选了按游戏自动时后端报 ``state: 'auto'``、没有值，显示「按游戏」；
+ * 其余照旧显示数字，没值显示破折号。
+ */
+export const memoryCell = (
+  field: Emulator2SettingField | undefined
+): { auto: true } | { auto: false; text: string } => {
+  if (field?.state === 'auto') return { auto: true }
+  const value = field?.value
+  return { auto: false, text: value === null || value === undefined ? '—' : String(value) }
 }
 
 /** 下载任务整体进度（0–100）。解压阶段按当前组件的解压进度显示；不知道时为 null。 */

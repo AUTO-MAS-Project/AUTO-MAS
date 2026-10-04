@@ -8,12 +8,15 @@ import type {
 import {
   MEMORY_AUTO,
   canResume,
+  componentDetail,
   componentState,
   createOptions,
   defaultAvdOptions,
   hasBlockingFailure,
   isJobRunning,
+  isRootAdded,
   jobPercent,
+  memoryCell,
   optionsChanges,
   optionsFromOut,
   precheckLevel,
@@ -130,5 +133,45 @@ describe('download state', () => {
     expect(jobPercent(job({ stage: 'extracting', percent: 90, extractPercent: 12.2 }))).toBe(12)
     expect(jobPercent(job({ status: 'success', stage: 'completed' }))).toBe(100)
     expect(jobPercent(job({ percent: null }))).toBeNull()
+  })
+})
+
+describe('review fixes', () => {
+  it('ready components show the installed version, no size; local SDK is marked', () => {
+    const local = component({
+      installed: true,
+      version: '37.2.10',
+      sizeBytes: 441_000_000,
+      localSdk: true,
+    })
+    expect(componentDetail(local)).toEqual({ version: '37.2.10', sizeBytes: null, localSdk: true })
+    const downloaded = component({ installed: true, version: '37.1.11', sizeBytes: 441_000_000 })
+    expect(componentDetail(downloaded)).toEqual({
+      version: '37.1.11',
+      sizeBytes: null,
+      localSdk: false,
+    })
+  })
+
+  it('missing components show the version and size to download', () => {
+    const missing = component({ version: '37.1.11', sizeBytes: 441_000_000, localSdk: true })
+    expect(componentDetail(missing)).toEqual({
+      version: '37.1.11',
+      sizeBytes: 441_000_000,
+      localSdk: false,
+    })
+  })
+
+  it('an added root is recognised whatever the spelling', () => {
+    expect(isRootAdded(['E:/emu-tmp/m2-e2e/root1'], 'e:\\emu-tmp\\m2-e2e\\root1\\')).toBe(true)
+    expect(isRootAdded(['E:/emu-tmp/m2-e2e/root1'], 'E:\\emu-tmp\\m2-e2e\\root2')).toBe(false)
+    expect(isRootAdded([], 'E:\\a')).toBe(false)
+  })
+
+  it('memory column: auto for the AVD auto state, numbers otherwise', () => {
+    expect(memoryCell({ value: null, state: 'auto' })).toEqual({ auto: true })
+    expect(memoryCell({ value: 6144, state: 'saved' })).toEqual({ auto: false, text: '6144' })
+    expect(memoryCell({ value: null, state: 'unset' })).toEqual({ auto: false, text: '—' })
+    expect(memoryCell(undefined)).toEqual({ auto: false, text: '—' })
   })
 })

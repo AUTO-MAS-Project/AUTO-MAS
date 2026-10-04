@@ -27,8 +27,10 @@ import {
 import { formatBytes, formatSpeed } from '@/utils/byteFormat'
 import {
   canResume,
+  componentDetail,
   componentState,
   isJobRunning,
+  isRootAdded,
   jobPercent,
   precheckLevel,
   samePath,
@@ -36,7 +38,8 @@ import {
 } from '../avdLogic'
 
 const open = defineModel<boolean>('open', { required: true })
-const props = defineProps<{ emulatorId: string; initialRoot?: string }>()
+/** `addedRoots`：这条配置里已经纳管的官方模拟器根目录，已在里面的不再给「添加」 */
+const props = defineProps<{ emulatorId: string; initialRoot?: string; addedRoots?: string[] }>()
 const emit = defineEmits<{ added: [] }>()
 
 const { t } = useI18n()
@@ -65,6 +68,7 @@ const current = computed(() =>
   status.value && samePath(checkedRoot.value, root.value) ? status.value : null
 )
 const ready = computed(() => Boolean(current.value?.ready))
+const alreadyAdded = computed(() => isRootAdded(props.addedRoots ?? [], root.value))
 const running = computed(() => isJobRunning(job.value))
 const resumable = computed(() => canResume(current.value?.components, job.value))
 const percent = computed(() => jobPercent(job.value))
@@ -331,8 +335,13 @@ onUnmounted(() => {
           <div v-for="item in current.components ?? []" :key="item.id" class="component-row">
             <span class="component-name">{{ item.name }}</span>
             <span class="component-meta">
-              {{ item.version }}
-              <template v-if="item.sizeBytes"> · {{ formatBytes(item.sizeBytes) }}</template>
+              {{ componentDetail(item).version }}
+              <template v-if="componentDetail(item).localSdk">
+                · {{ t('emulator2.avd.localSdk') }}</template
+              >
+              <template v-else-if="componentDetail(item).sizeBytes">
+                · {{ formatBytes(componentDetail(item).sizeBytes ?? 0) }}</template
+              >
               <template v-if="item.optional"> · {{ t('emulator2.avd.optional') }}</template>
             </span>
             <a-tag :color="componentColor(item)">{{ componentText(item) }}</a-tag>
@@ -422,7 +431,9 @@ onUnmounted(() => {
       </template>
 
       <div class="dialog-footer">
-        <a-button @click="open = false">{{ t('emulator.cancel') }}</a-button>
+        <a-button @click="open = false">
+          {{ alreadyAdded ? t('emulator2.avd.close') : t('emulator.cancel') }}
+        </a-button>
         <template v-if="current && !ready">
           <a-button v-if="running" danger :loading="cancelling" @click="cancelDownload">
             {{ t('emulator2.avd.cancelDownload') }}
@@ -437,7 +448,13 @@ onUnmounted(() => {
             {{ resumable ? t('emulator2.avd.resume') : t('emulator2.avd.download') }}
           </a-button>
         </template>
-        <a-button v-else type="primary" :loading="adding" :disabled="!ready" @click="addRoot">
+        <a-button
+          v-else-if="!alreadyAdded"
+          type="primary"
+          :loading="adding"
+          :disabled="!ready"
+          @click="addRoot"
+        >
           {{ t('emulator2.add') }}
         </a-button>
       </div>
