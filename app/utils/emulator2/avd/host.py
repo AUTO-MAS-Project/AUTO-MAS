@@ -183,6 +183,36 @@ def device_missing(serial: str, output: str) -> bool:
     return serial.lower() in text and any(m in text for m in _DEVICE_NOT_FOUND_MARKS)
 
 
+def adb_port_owned_by_instance(console: int) -> bool:
+    """这台实例的 adb 端口（控制台 + 1）确实由它自己的 qemu 在听。
+
+    只看「有人在听」不够：端口可能被别的程序占着；往那里登记等于把别人的端口塞给私有 server。
+    要求监听进程是 ``qemu-system*``，且命令行里 ``-ports`` 是 ``<控制台>,<控制台 + 1>``。
+    """
+    pid = None
+    for conn in psutil.net_connections(kind="tcp"):
+        if (
+            conn.status == psutil.CONN_LISTEN
+            and conn.laddr
+            and conn.laddr.port == console + 1
+        ):
+            pid = conn.pid
+            break
+    if not pid:
+        return False
+    try:
+        process = psutil.Process(pid)
+        if not process.name().lower().startswith("qemu-system"):
+            return False
+        cmdline = process.cmdline()
+    except (psutil.NoSuchProcess, psutil.AccessDenied):
+        return False
+    return any(
+        token == "-ports" and following == f"{console},{console + 1}"
+        for token, following in zip(cmdline, cmdline[1:])
+    )
+
+
 async def register_emulator(server_port: int, emulator_adb_port: int) -> None:
     """替模拟器向私有 adb server 登记：发 ``host:emulator:<adb 端口>``（4 位十六进制长度 + 内容）。
 
@@ -219,7 +249,7 @@ async def reregister_emulator(root: str | Path, serial: str) -> bool:
         code, output = await _run_adb_once(root, "get-state", serial=serial, timeout=5)
         if code == 0 and output.strip() == "device":
             return True  # 别的协程刚登记回来
-        if not await asyncio.to_thread(_port_listening, console + 1):
+        if not await asyncio.to_thread(adb_port_owned_by_instance, console):
             return False
         logger.warning(
             f"私有 adb server（端口 {server_port}）上没有 {serial}，按 adb 端口 "
@@ -253,15 +283,17 @@ async def run_adb(
     *args: str,
     serial: str | None = None,
     timeout: float = ADB_TIMEOUT,
+    reregister: bool = True,
 ) -> tuple[int, str]:
     """跑一条私有 server 上的 adb 命令，返回 ``(返回码, 合并输出)``。**不抛异常。**
 
     轮询会一秒一条，所以这里不像 ``ProcessRunner`` 那样每条都记 info 日志。
     私有 server 上找不到 ``emulator-<控制台端口>`` 时先重新登记（:func:`reregister_emulator`），
-    登记回来就重跑一次。
+    登记回来就重跑一次。``reregister=False`` 不做这一步：开机等待期间模拟器本来就还没登记，
+    关机前的 sync 要守时限，都不该去替它登记。
     """
     code, output = await _run_adb_once(root, *args, serial=serial, timeout=timeout)
-    if code != 0 and serial and device_missing(serial, output):
+    if reregister and code != 0 and serial and device_missing(serial, output):
         if await reregister_emulator(root, serial):
             code, output = await _run_adb_once(
                 root, *args, serial=serial, timeout=timeout

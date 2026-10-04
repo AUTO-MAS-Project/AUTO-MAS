@@ -367,7 +367,10 @@ WATCHDOG_INTERVAL_SECONDS = 30.0
 WATCHDOG_PROBE_TIMEOUT_SECONDS = 10.0
 WATCHDOG_STRIKES = 2
 
-#: ``close`` 等 ``emu kill`` 生效的上限，超时强杀该实例的 qemu 进程。
-CLOSE_TIMEOUT_SECONDS = 20.0
-#: 关机前客体 ``sync`` 的上限（正常几十毫秒；整个关机要在任务收尾的 30 秒内做完）。
-SYNC_TIMEOUT_SECONDS = 8.0
+#: 关机各步的上限。调用方（``app/task/emulator_core.close_emulator``）整体只给 30 秒，超时后连强杀
+#: 都执行不到，所以四步加起来 28 秒：sync 5 + 控制台 kill 3 + 等 qemu 退出 15 + 强杀后等 5。
+#: sync 正常几十毫秒（实测 63–93 ms），qemu 收到 kill 后 2–3 秒退出。
+SYNC_TIMEOUT_SECONDS = 5.0
+CONSOLE_KILL_TIMEOUT_SECONDS = 3.0
+CLOSE_TIMEOUT_SECONDS = 15.0
+FORCE_KILL_WAIT_SECONDS = 5.0

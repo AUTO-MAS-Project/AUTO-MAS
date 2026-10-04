@@ -57,12 +57,15 @@ from .constants import (
     FOSSIFY_LAUNCHER,
     LICENSE_ID,
     LICENSE_MANIFEST,
+    MAX_NATIVE_INDEX,
     METADATA_FILE,
     REQUIRED_COMPONENTS,
     SDK_DIR,
     Component,
     DownloadSource,
     LauncherComponent,
+    console_port,
+    valid_native_index,
 )
 
 logger = get_logger("官方模拟器组件")
@@ -154,13 +157,27 @@ def adb_exe(root: str | Path) -> Path:
 
 
 def adb_server_port(root: str | Path) -> int:
-    """私有 adb server 的端口：``mas-avd.json`` 的 ``adbServerPort``，没设用 20050。"""
+    """私有 adb server 的端口：``mas-avd.json`` 的 ``adbServerPort``，没设用 20050。
+
+    不收 5037（生产在用），也不收任何一台实例的控制台 / adb / gRPC 端口；不合规时回到 20050。
+    """
     raw = read_metadata(root).get("adbServerPort")
     try:
         port = int(raw)
     except (TypeError, ValueError):
         return ADB_SERVER_PORT
-    return port if 1024 <= port <= 65535 and port != 5037 else ADB_SERVER_PORT
+    if not 1024 <= port <= 65535 or port == 5037 or port in _instance_ports():
+        return ADB_SERVER_PORT
+    return port
+
+
+def _instance_ports() -> frozenset[int]:
+    ports = set()
+    for index in range(MAX_NATIVE_INDEX + 1):
+        if valid_native_index(index):
+            console = console_port(index)
+            ports.update((console, console + 1, console + 2))
+    return frozenset(ports)
 
 
 def avd_home(root: str | Path) -> Path:

@@ -74,7 +74,9 @@ from .constants import (
     BALLOON_PAGE_REPORTING_ORDER,
     CACHE_DIR,
     CLOSE_TIMEOUT_SECONDS,
+    CONSOLE_KILL_TIMEOUT_SECONDS,
     DEBLOAT_PACKAGES,
+    FORCE_KILL_WAIT_SECONDS,
     FOSSIFY_LAUNCHER,
     GUEST_TMP_DIR,
     INCOMPATIBLE_PACKAGES,
@@ -575,7 +577,7 @@ class _AvdCore(DeviceBase):
         return found
 
     async def _boot_completed(
-        self, idx: str, timeout: float = _STATUS_ADB_TIMEOUT
+        self, idx: str, timeout: float = _STATUS_ADB_TIMEOUT, *, reregister: bool = True
     ) -> bool:
         code, output = await host.run_adb(
             self.root,
@@ -584,6 +586,7 @@ class _AvdCore(DeviceBase):
             "sys.boot_completed",
             serial=host.serial_of(console_port(idx)),
             timeout=timeout,
+            reregister=reregister,
         )
         return code == 0 and output.strip() == "1"
 
@@ -707,7 +710,8 @@ class _AvdCore(DeviceBase):
         max_wait = float(self.config.get("Info", "MaxWaitTime"))
 
         process = await asyncio.to_thread(host.find_qemu_process, instance.name, port)
-        if process is None:
+        launched = process is None
+        if launched:
             await self._launch(idx, instance)
         else:
             logger.info(f"官方模拟器实例 {idx} 已在运行（pid {process.pid}）")
@@ -717,7 +721,12 @@ class _AvdCore(DeviceBase):
             process = await asyncio.to_thread(
                 host.find_qemu_process, instance.name, port
             )
-            if process is not None and await self._boot_completed(idx):
+            # 刚起的实例：开机期间 qemu 已经占着 adb 端口，模拟器却还没向私有 server 登记，这里查不到
+            # 是正常的，不替它登记（否则每次冷启动都白等 5 秒、多两条警告）。本来就在跑的实例可能
+            # 赶上私有 server 重启过，照常重新登记。
+            if process is not None and await self._boot_completed(
+                idx, reregister=not launched
+            ):
                 break
             if time.monotonic() >= deadline:
                 raise RuntimeError(
@@ -1096,8 +1105,17 @@ class _AvdCore(DeviceBase):
         # 先 sync：控制台 kill / 强杀都直接结束 qemu，客体不走关机流程，页缓存里没写回的数据会丢
         # （10-03 星铁 9 个热更新清单变成 0 字节，表现成「网络请求超时」和黑屏）。磁盘 write-through
         # 只保证已经写到虚拟盘的数据，管不到还在客体内存里的。强制关闭也先 sync。
+        # 时限：调用方（任务收尾 close_emulator）整体只给 30 秒，超了连强杀都执行不到。
+        # sync 5 + 控制台 kill 3 + 等退出 15 + 强杀后等 5 = 28 秒以内。sync 不走重新登记（会多等 5 秒）。
         started = time.monotonic()
-        code, output = await self._shell(idx, "sync", timeout=SYNC_TIMEOUT_SECONDS)
+        code, output = await host.run_adb(
+            self.root,
+            "shell",
+            "sync",
+            serial=host.serial_of(port),
+            timeout=SYNC_TIMEOUT_SECONDS,
+            reregister=False,
+        )
         if code == 0:
             logger.info(
                 f"官方模拟器实例 {idx} 关机前 sync 完成（{(time.monotonic() - started) * 1000:.0f} ms）"
@@ -1107,7 +1125,9 @@ class _AvdCore(DeviceBase):
 
         if not self.config.get("Info", "ForceKillOnClose"):
             try:
-                await host.console_command(port, "kill")
+                await host.console_command(
+                    port, "kill", timeout=CONSOLE_KILL_TIMEOUT_SECONDS
+                )
             except host.ConsoleError as e:
                 logger.warning(f"实例 {idx} 正常关机失败，改为强制结束: {e}")
             else:
@@ -1119,7 +1139,7 @@ class _AvdCore(DeviceBase):
             )
             host.kill_process_tree(process)
             with suppress(psutil.TimeoutExpired):
-                await asyncio.to_thread(process.wait, 10)
+                await asyncio.to_thread(process.wait, FORCE_KILL_WAIT_SECONDS)
         logger.info(f"官方模拟器实例 {idx} 已关闭")
         return DeviceStatus.OFFLINE
 
@@ -1226,6 +1246,7 @@ class _AvdCore(DeviceBase):
 
         不给内存 = 按游戏自动（见 :data:`~.constants.GAME_MEMORY_MB`）。
         """
+        memory_mb = memory_mb or None  # 0 与留空一样：按游戏自动
         _, cores, data_gb = validate_options(memory_mb, cpu, data_partition_gb)
         memory = validate_memory(memory_mb)
         display = validate_resolution(resolution)
