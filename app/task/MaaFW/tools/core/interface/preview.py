@@ -43,6 +43,8 @@ class MaaFWInterfaceValidationReport(BaseModel):
 _EMULATOR_EXTRA_RELATION: dict[str, dict[str, bool]] = {
     "mumu": {"screencap": True, "input": True},
     "ldplayer": {"screencap": True, "input": False},
+    # 官方模拟器（AVD）：AVDExtras 只有截图（MaaFramework v5.7.0 起），输入走默认（Maatouch）
+    "avd": {"screencap": True, "input": False},
 }
 
 
