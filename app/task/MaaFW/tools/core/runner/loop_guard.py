@@ -11,8 +11,8 @@ M9A「智能均衡刷材料」在主线章节列表划到底后无限右划
   指纹去掉分数、id、耗时，非 OCR 算法丢掉没过阈值的 ``all`` 候选（渲染噪声）。
 - 对周期 p = 1..8 各自维护一段「节点名以周期 p 连续重复」的循环；循环起点之后每满 p 步
   记一轮，一轮的内容指纹是这 p 步识别集合的元组。
-- 卡死（stuck）同时满足：轮里有物理动作（点击、滑动、按键……；Custom / DoNothing 不算，
-  等待型轮询本来就该一直等）；≥ 200 轮；持续 ≥ 10 分钟；最近 30 轮的内容指纹不超过 4 种；
+- 卡死（stuck）同时满足：连续各轮都有物理动作（点击、滑动、按键……；Custom / DoNothing
+  不算，等待型轮询本来就该一直等），没有物理动作的一轮让轮数与时长从头数；≥ 200 轮；持续 ≥ 10 分钟；最近 30 轮的内容指纹不超过 4 种；
   最近 30 轮单轮耗时中位数 ≤ 20 秒；循环里没有项目声明豁免的节点
   （``"attach": {"auto_mas_loop_guard": false}``，见 ``parse_loop_guard_exempt``）。
 - 疑似（warn）同样条件、阈值 ≥ 100 轮 / ≥ 5 分钟，每段循环最多一次，只记日志。
@@ -169,6 +169,11 @@ class _PeriodRun:
 
     def restart(self, start: int, start_time: float) -> None:
         self.start = start
+        self.restart_count(start_time)
+
+    def restart_count(self, start_time: float) -> None:
+        """从 start_time 起重新数轮次与时长，轮的划分（start）不变。"""
+
         self.start_time = start_time
         self.iterations = 0
         self.last_end = start_time
@@ -293,21 +298,26 @@ class MaaFWLoopGuard:
             if (index - run.start + 1) % period:
                 continue
             chunk = [history[k] for k in range(-period, 0)]
+            if not any(item.action in PHYSICAL_ACTIONS for item in chunk):
+                # 没有物理动作的一轮（等画面、识别失败、DoNothing）打断计数：要求连续
+                # 各轮都有物理动作。否则同名节点空等几百轮后第一次点下去，就会带着
+                # 前面的轮数和时长当场被判卡死。
+                run.restart_count(step.time)
+                continue
             fingerprint = hash(tuple(item.recos for item in chunk))
             run.push(fingerprint, step.time - run.last_end)
             run.last_end = step.time
             if verdict is not None:
                 continue
-            physical = any(item.action in PHYSICAL_ACTIONS for item in chunk)
-            verdict = self._judge(run, chunk, physical, step.time)
+            verdict = self._judge(run, chunk, step.time)
         if verdict is not None and verdict.kind == "stuck":
             self._stuck_reported = True
         return verdict
 
     def _judge(
-        self, run: _PeriodRun, chunk: list[_Step], physical: bool, now: float
+        self, run: _PeriodRun, chunk: list[_Step], now: float
     ) -> LoopGuardVerdict | None:
-        if not physical or run.iterations < WARN_MIN_ITERATIONS:
+        if run.iterations < WARN_MIN_ITERATIONS:
             return None
         elapsed = now - run.start_time
         if elapsed < WARN_MIN_SECONDS:

@@ -3011,7 +3011,7 @@ class MaaFWConfig(ConfigBase):
             JSONValidator(dict),
         )
         ## 原地打转检测（实验性，默认关）。任务在短周期里反复执行同一串节点（周期 ≤ 8
-        ## 步、带点击 / 滑动等物理动作）、识别结果又几乎不变时判定卡死：≥ 200 轮且持续
+        ## 步、每轮都有点击 / 滑动等物理动作）、识别结果又几乎不变时判定卡死：≥ 200 轮且持续
         ## ≥ 10 分钟就停掉这个任务，收尾与单任务超时同一口径（截图、第一个任务或关键任务
         ## 结束本轮，其余记失败后继续）。判据见 tools/core/runner/loop_guard.py。
         self.Run_LoopGuard = ConfigItem("Run", "LoopGuard", False, BoolValidator())
