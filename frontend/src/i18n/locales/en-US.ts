@@ -1208,6 +1208,7 @@ export default {
       'A line matching this pattern closes the window (inclusive); leave empty for no end condition',
     singleRunTimeLimit: 'Single-run time limit (minutes)',
     singleTaskTimeLimit: 'Single-task time limit (minutes, 0 = unlimited)',
+    loopGuard: 'Loop detection (experimental)',
     echoOfWarStartDay: 'Echo of War start day',
     trailingKeyword: 'Trailing keyword',
     reportIssueGo: 'Report an issue, or go to',

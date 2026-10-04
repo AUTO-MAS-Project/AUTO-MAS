@@ -1169,6 +1169,7 @@ export default {
     lineMatchingThisPattern: '匹配到此正则的行作为窗口结束（含该行）；留空则不限定结束',
     singleRunTimeLimit: '单次运行时间限制（分钟）',
     singleTaskTimeLimit: '单任务时限（分钟，0 表示不限）',
+    loopGuard: '原地打转检测（实验性）',
     echoOfWarStartDay: '历战余响开始日',
     trailingKeyword: '去尾关键字',
     reportIssueGo: '反馈，或前往',

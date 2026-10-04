@@ -107,7 +107,7 @@
     </a-row>
 
     <a-row :gutter="24" class="task-time-limit-row">
-      <a-col :span="12">
+      <a-col :span="8">
         <a-form-item :label="t('edit.singleTaskTimeLimit')">
           <a-input-number
             v-model:value="maafwConfig.Run.TaskTimeLimit"
@@ -120,7 +120,7 @@
           />
         </a-form-item>
       </a-col>
-      <a-col :span="12">
+      <a-col :span="8">
         <!-- 按任务单独设置：摘要 + 弹窗，存的仍是 Run.TaskTimeLimitOverrides 的 JSON 字符串 -->
         <MaaFWTaskTimeLimitField
           :value="maafwConfig.Run.TaskTimeLimitOverrides"
@@ -129,6 +129,11 @@
           :disabled="interfaceDependentDisabled || periodTaskOptions.length === 0"
           @save="handleTaskTimeLimitOverridesSave"
         />
+      </a-col>
+      <a-col :span="8">
+        <a-form-item :label="t('edit.loopGuard')">
+          <a-switch :checked="Boolean(maafwConfig.Run.LoopGuard)" @change="handleLoopGuardChange" />
+        </a-form-item>
       </a-col>
     </a-row>
   </div>
@@ -152,6 +157,12 @@ const emit = defineEmits<MaaFWScriptRunSectionEmits>()
 const handleTaskTimeLimitOverridesSave = (value: string) => {
   props.maafwConfig.Run.TaskTimeLimitOverrides = value
   emit('change', 'Run', 'TaskTimeLimitOverrides', value)
+}
+
+const handleLoopGuardChange = (checked: boolean | string | number) => {
+  const value = checked === true
+  props.maafwConfig.Run.LoopGuard = value
+  emit('change', 'Run', 'LoopGuard', value)
 }
 </script>
 
