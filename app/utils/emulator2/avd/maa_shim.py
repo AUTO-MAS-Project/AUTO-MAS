@@ -184,10 +184,26 @@ def screencap_fallback_status(log: str) -> str | None:
     )
 
 
-#: MAA 界面日志里「最快截图耗时: 5ms (MumuExtras)」那一行，括号里是选中的方式。
-MAA_FASTEST_SCREENCAP_PREFIX = "最快截图耗时"
+#: MAA 界面日志里「最快截图耗时: 5ms (MumuExtras)」那一行（各界面语言的写法），括号里是选中的方式。
+#: MAS 每次运行都把 MAA 界面语言设成 zh-cn，其余语言是防用户在 MAA 里改回去时漏判。原文取自
+#: MAA v6.18.0 的 MAA.dll 内嵌语言资源（各语言的 WPF 资源字典，格式都是 ``<前缀>: {0}ms ({1})``），
+#: 按 zh-cn、zh-tw、en-us、ja-jp、ko-kr 排列。
+MAA_FASTEST_SCREENCAP_PREFIXES = (
+    "最快截图耗时",
+    "最快截圖耗時",
+    "Screenshot test tasks",
+    "スクリーンショット テストには",
+    "스크린샷 캡처 속도",
+)
 MAA_MUMU_EXTRAS_METHOD = "MumuExtras"
-MAA_MUMU_NOT_ENABLED_MARKER = "MuMu 截图增强未生效"
+#: MAA 提示「MuMu 截图增强未生效」的各语言开头（同上，取自 v6.18.0 的 MAA.dll）。
+MAA_MUMU_NOT_ENABLED_MARKERS = (
+    "MuMu 截图增强未生效",
+    "MuMu 截圖增強未生效",
+    "MuMu screenshot enhancement is not working",
+    "MuMu スクリーンショットの強化 が有効になっていません",
+    "MuMu 스크린샷 강화 기능이 활성화되지 않았습니다",
+)
 
 
 def detect_screencap_fallback(log: str) -> str | None:
@@ -197,10 +213,10 @@ def detect_screencap_fallback(log: str) -> str | None:
     官方模拟器上普通 adb 截图约 250 ms，用户明确说过「不如不做」，所以一旦回落就要
     让这次运行失败，而不是静默变慢。
     """
-    if MAA_MUMU_NOT_ENABLED_MARKER in log:
+    if any(marker in log for marker in MAA_MUMU_NOT_ENABLED_MARKERS):
         return "MuMu 截图增强未生效"
     for line in reversed(log.splitlines()):
-        if MAA_FASTEST_SCREENCAP_PREFIX not in line:
+        if not any(prefix in line for prefix in MAA_FASTEST_SCREENCAP_PREFIXES):
             continue
         head, sep, tail = line.rpartition("(")
         method = tail.rstrip(") \r\n") if sep else ""
