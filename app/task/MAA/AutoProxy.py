@@ -2220,10 +2220,11 @@ class AutoProxyTask(ScriptAutoProxyBase):
 
         logger.info("MAA 收尾: 停止日志监控")
         await self.maa_log_monitor.stop()
-        if self.stopped_manually:
-            # 用户强制停止时 MAA 多半还在跑任务, 给它发关闭消息只会弹出
-            # 「确定要退出吗」的确认框并把收尾卡在那里等人点确认; 强制停止就该强杀
-            logger.info("MAA 收尾: 用户强制停止, 直接强杀 MAA 进程")
+        if self.stopped_manually or self.cur_user_log.status == "MAA 正常运行中":
+            # MAA 还在跑任务时给它发关闭消息只会弹出「确定要退出吗」的确认框, 把
+            # 收尾卡在那里等人点确认: 任务被中止(手动停止/总时限到期/异常)与 MAA 仍
+            # 在运行任务这两种情况都直接强杀, 只有 MAA 空闲时才等它自己退出落盘
+            logger.info("MAA 收尾: 任务已中止或 MAA 仍在运行任务, 直接强杀 MAA 进程")
             await self.maa_process_manager.kill()
         else:
             logger.info("MAA 收尾: 停止 MAA 进程")
