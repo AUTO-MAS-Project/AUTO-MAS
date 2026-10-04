@@ -167,8 +167,48 @@ def busy_ports(ports: list[int]) -> list[int]:
     return sorted(busy)
 
 
-class ScriptAdbPortConflict(RuntimeError):
-    """脚本专用 adb 端口被别的程序（不是 adb）占着。"""
+class AdbPortConflict(RuntimeError):
+    """官方模拟器要用的 adb server 端口被别的程序（不是 adb）占着。"""
+
+
+class ScriptAdbPortConflict(AdbPortConflict):
+    """脚本专用 adb 端口（``scriptAdbServerPort``）被别的程序占着。"""
+
+
+class PrivateAdbPortConflict(AdbPortConflict):
+    """私有 adb 端口（``adbServerPort``）被别的程序占着。"""
+
+
+def _port_conflict(
+    root: str | Path,
+    port: int,
+    pid: int | None,
+    name: str,
+    *,
+    label: str,
+    key: str,
+    other_key: str,
+) -> str:
+    return (
+        f"官方模拟器的{label} adb 端口 {port} 被 {name}（PID {pid}）占用，它不是 adb。"
+        f"请在 {Path(root) / METADATA_FILE} 里把 {key} 改成一个没被占用的端口"
+        f"（不能用 5037 和各实例的控制台 / adb / gRPC 端口，也不能和 {other_key} 相同），"
+        f"或者先关掉占用它的程序"
+    )
+
+
+def _private_port_conflict(
+    root: str | Path, port: int, pid: int | None, name: str
+) -> str:
+    return _port_conflict(
+        root,
+        port,
+        pid,
+        name,
+        label="私有",
+        key="adbServerPort",
+        other_key="scriptAdbServerPort",
+    )
 
 
 def _port_listener(port: int) -> tuple[bool, int | None, str | None]:
@@ -203,10 +243,15 @@ async def ensure_script_adb_server(root: str | Path, *, timeout: float = 10.0) -
     if listening:
         if name is not None and not _is_adb_process_name(name):
             raise ScriptAdbPortConflict(
-                f"官方模拟器的脚本专用 adb 端口 {port} 被 {name}（PID {pid}）占用，它不是 adb。"
-                f"请在 {Path(root) / METADATA_FILE} 里把 scriptAdbServerPort 改成一个没被占用的端口"
-                f"（不能用 5037 和各实例的控制台 / adb / gRPC 端口，也不能和 adbServerPort 相同），"
-                f"或者先关掉占用它的程序"
+                _port_conflict(
+                    root,
+                    port,
+                    pid,
+                    name,
+                    label="脚本专用",
+                    key="scriptAdbServerPort",
+                    other_key="adbServerPort",
+                )
             )
         return True
     logger.info(f"启动官方模拟器脚本专用 adb server（端口 {port}）")
@@ -223,9 +268,15 @@ async def ensure_adb_server(root: str | Path, *, timeout: float = 20.0) -> bool:
 
     必须由我们以脱离方式起：让 adb 客户端在普通命令里顺手拉起 server，server 会继承
     这条命令的输出管道，读输出的协程就一直等不到结束。
+
+    端口上在听的不是 adb（按监听进程名判断）时抛 :class:`PrivateAdbPortConflict`，提示去
+    ``mas-avd.json`` 改 ``adbServerPort``；进程名读不到时（权限不够）不下结论，按已就绪处理。
     """
     port = adb_server_port(root)
-    if await asyncio.to_thread(_port_listening, port):
+    listening, pid, name = await asyncio.to_thread(_port_listener, port)
+    if listening:
+        if name is not None and not _is_adb_process_name(name):
+            raise PrivateAdbPortConflict(_private_port_conflict(root, port, pid, name))
         return True
     adb = adb_exe(root)
     logger.info(f"启动官方模拟器私有 adb server（端口 {port}）")
@@ -250,7 +301,10 @@ async def prepare_adb_for_close(
     """
     started = time.monotonic()
     port = adb_server_port(root)
-    if await asyncio.to_thread(_port_listening, port):
+    listening, pid, name = await asyncio.to_thread(_port_listener, port)
+    if listening:
+        if name is not None and not _is_adb_process_name(name):
+            return _private_port_conflict(root, port, pid, name)
         return None
     if not await ensure_adb_server(root, timeout=timeout):
         return f"私有 adb server（端口 {port}）{timeout:.0f} 秒内没起来"
