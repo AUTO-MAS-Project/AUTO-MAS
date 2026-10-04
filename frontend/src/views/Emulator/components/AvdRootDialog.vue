@@ -10,7 +10,6 @@ import { useI18n } from 'vue-i18n'
 import { message } from 'ant-design-vue'
 import { FolderOpenOutlined, ThunderboltOutlined } from '@ant-design/icons-vue'
 
-import { Emulator20Service } from '@/api'
 import type {
   Emulator2AvdComponentItem,
   Emulator2AvdPrecheckItem,
@@ -195,12 +194,8 @@ const cancelDownload = async () => {
 const addRoot = async () => {
   adding.value = true
   try {
-    const response = await Emulator20Service.addPathApiEmulator2PathsAddPost({
-      emulatorId: props.emulatorId,
-      installPath: root.value.trim(),
-      alias: null,
-    })
-    if (response.code !== 200 || !response.ok) {
+    const response = await api.addRoot(props.emulatorId, root.value.trim())
+    if (!response.ok) {
       const key = `emulator2.reason.${response.reason}`
       message.warning(response.reason && t(key) !== key ? t(key) : response.message)
       return
@@ -211,7 +206,7 @@ const addRoot = async () => {
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error)
     logger.error(`添加官方模拟器失败: ${detail}`)
-    message.error(t('emulator2.avd.toast.addFailed'))
+    message.error(detail || t('emulator2.avd.toast.addFailed'))
   } finally {
     adding.value = false
   }
