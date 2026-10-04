@@ -253,9 +253,11 @@ class LDManager(DeviceBase):
 
                 if Config.get("Function", "IfBlockAd"):
                     await self._block_ads_via_adb(idx)
-                device = (await self.get_device_info(idx)).get(idx)
-                pids = [p for p in (device.pid, device.vbox_pid) if p] if device else []
-                await apply_launch_audio_mute(self._audio_mute_states, idx, pids)
+                await apply_launch_audio_mute(
+                    states_store=self._audio_mute_states,
+                    idx=idx,
+                    resolve_pids=lambda: self._resolve_audio_pids(idx),
+                )
                 return (await self.getInfo(idx))[idx]
 
             await asyncio.sleep(0.1)
@@ -263,6 +265,11 @@ class LDManager(DeviceBase):
             if status in [DeviceStatus.ERROR, DeviceStatus.UNKNOWN]:
                 raise RuntimeError(f"模拟器 {idx} 启动失败, 状态码: {status}")
             raise RuntimeError(f"模拟器 {idx} 启动超时, 当前状态码: {status}")
+
+    async def _resolve_audio_pids(self, idx: str) -> list[int]:
+        """窗口进程与虚拟机进程都可能持有该实例的音频会话。"""
+        device = (await self.get_device_info(idx)).get(idx)
+        return [pid for pid in (device.pid, device.vbox_pid) if pid] if device else []
 
     async def close(self, idx: str) -> DeviceStatus:
         async with self._get_instance_lock(idx):

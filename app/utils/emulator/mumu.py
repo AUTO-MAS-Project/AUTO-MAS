@@ -457,14 +457,11 @@ class MumuManager(DeviceBase):
                     )
                 else:
                     await asyncio.sleep(3)
-                if Config.get("Function", "IfSilence"):
-                    try:
-                        pids = await self._resolve_audio_pids(idx)
-                        await apply_launch_audio_mute(
-                            states_store=self._audio_mute_states, idx=idx, pids=pids
-                        )
-                    except Exception as e:
-                        logger.warning(f"MuMu 音频静音失败，将继续运行: {idx} - {e}")
+                await apply_launch_audio_mute(
+                    states_store=self._audio_mute_states,
+                    idx=idx,
+                    resolve_pids=lambda: self._resolve_audio_pids(idx),
+                )
                 return (await self.getInfo(idx))[idx]
             await asyncio.sleep(0.1)
         else:
