@@ -447,11 +447,23 @@ async def ensure_logcat(root: Path, idx: str) -> bool:
 
 
 async def _logcat_after_reregister(root: Path, serial: str) -> None:
-    """私有 server 重启时 logcat 客户端跟着退出；设备登记回来后把落盘续上。"""
+    """设备重新登记回来后把落盘续上。
+
+    要重新登记，说明私有 server 换过了：之前起的 logcat 客户端连的是已经没了的 server，不会再出
+    数据，但不一定马上退出（10-04 实测重新登记 7 秒后还在），留着它会让 :func:`ensure_logcat`
+    以为还在落盘。所以先结束这些旧客户端，再起一个新的。
+    """
     console = int(serial.removeprefix("emulator-"))
     idx = str((console - PORT_BASE) // PORT_STEP)
-    if idx in list_instances(root):
-        await ensure_logcat(root, idx)
+    if idx not in list_instances(root):
+        return
+    stale = await asyncio.to_thread(host.find_logcat_processes, root, serial)
+    for process in stale:
+        with suppress(psutil.Error):
+            process.kill()
+    if stale:
+        await asyncio.to_thread(psutil.wait_procs, stale, 5)
+    await ensure_logcat(root, idx)
 
 
 host.add_reregister_hook(_logcat_after_reregister)
@@ -486,7 +498,7 @@ def _schedule_drop_caches(manager: _AvdCore, idx: str) -> None:
             probe=probe, drop=drop, mark=mark, sleep=asyncio.sleep
         )
         if result.action == "skipped":
-            logger.debug(f"实例 {idx} 清客体页缓存: {result.reason}")
+            logger.debug(f"实例 {idx} 客体页缓存{result.reason}，跳过")
             return
         read = (
             f"{result.read_bytes}（{result.read_bytes / 1024**3:.2f} GB）"
