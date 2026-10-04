@@ -21,6 +21,9 @@ const sharedDeviceOptions = new Map<
   { options: EmulatorDeviceOption[]; expiresAt: number }
 >()
 
+/** 模拟器配置 ID → 配置类型（``Info.Type``）。类型建好就不变，只在作废缓存时一起清。 */
+const sharedEmulatorTypes = new Map<string, string>()
+
 const readShared = (emulatorId: string): EmulatorDeviceOption[] | undefined => {
   const entry = sharedDeviceOptions.get(emulatorId)
   if (!entry) return undefined
@@ -33,16 +36,33 @@ const readShared = (emulatorId: string): EmulatorDeviceOption[] | undefined => {
 
 /** 模拟器页增删了实例 / 路径之后调用，让脚本页下次重新拉列表。 */
 export const invalidateEmulatorDeviceOptions = (emulatorId?: string): void => {
-  if (emulatorId) sharedDeviceOptions.delete(emulatorId)
-  else sharedDeviceOptions.clear()
+  if (emulatorId) {
+    sharedDeviceOptions.delete(emulatorId)
+    sharedEmulatorTypes.delete(emulatorId)
+  } else {
+    sharedDeviceOptions.clear()
+    sharedEmulatorTypes.clear()
+  }
+}
+
+const loadEmulatorType = async (emulatorId: string): Promise<string> => {
+  const cached = sharedEmulatorTypes.get(emulatorId)
+  if (cached !== undefined) return cached
+  const response = await Service.getEmulatorApiEmulatorGetPost({ emulatorId })
+  if (response?.code !== 200) return ''
+  const emulatorType = response.data?.[emulatorId]?.Info?.Type ?? ''
+  sharedEmulatorTypes.set(emulatorId, emulatorType)
+  return emulatorType
 }
 
 /**
- * Emulator 2.0 配置里哪些设备号是魔改 AVD。下拉只有名字，类型要另问一次设备表；不是 Emulator 2.0
- * 配置、或者问失败，都当没有魔改 AVD（保存与运行时后端还会再拦一次）。
+ * Emulator 2.0 配置里哪些设备号是魔改 AVD。下拉只有名字，类型要另问一次设备表；只有 Emulator 2.0
+ * 配置才问（设备表会枚举模拟器，别的配置不白跑一趟）。不是 Emulator 2.0 配置、或者问失败，都当
+ * 没有魔改 AVD（保存与运行时后端还会再拦一次）。
  */
 const loadModAvdSlots = async (emulatorId: string): Promise<Set<string>> => {
   try {
+    if ((await loadEmulatorType(emulatorId)) !== 'emulator2') return new Set()
     const response = await Emulator20Service.listDevicesApiEmulator2DevicesPost({
       emulatorId,
       withSettings: false,
