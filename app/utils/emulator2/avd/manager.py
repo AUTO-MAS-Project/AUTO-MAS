@@ -70,6 +70,7 @@ from .components import (
 )
 from .constants import (
     ADB_SERVER_START_TIMEOUT_ON_CLOSE_SECONDS,
+    APK_INSTALL_TIMEOUT_SECONDS,
     BALLOON_PAGE_REPORTING_ORDER,
     CACHE_DIR,
     CLOSE_TIMEOUT_SECONDS,
@@ -1432,6 +1433,31 @@ class _AvdCore(DeviceBase):
             "adbPort": adb_port(idx),
             "grpcPort": grpc_port(idx),
         }
+
+    async def install_apk(self, idx: str, apk: Path) -> str:
+        """在开着的实例里装一个 ``.apk``（``adb install -r``，同包名覆盖安装、保留数据）。
+
+        只收单个 ``.apk``：``.xapk`` / 拆分包（``install-multiple``）不支持。返回 adb 的结果行。"""
+        self._instance(idx)
+        status = await self.getStatus(idx)
+        if status != DeviceStatus.ONLINE:
+            raise RuntimeError(f"魔改 AVD 实例 {idx} 没有开机，请先开机再安装 APK")
+        logger.info(f"魔改 AVD 实例 {idx} 安装 APK: {apk}")
+        code, output = await host.run_adb(
+            self.root,
+            "install",
+            "-r",
+            str(apk),
+            serial=host.serial_of(console_port(idx)),
+            timeout=APK_INSTALL_TIMEOUT_SECONDS,
+        )
+        lines = [line.strip() for line in (output or "").splitlines() if line.strip()]
+        last = lines[-1] if lines else ""
+        if code != 0 or not last.startswith("Success"):
+            logger.warning(f"魔改 AVD 实例 {idx} 安装 {apk.name} 失败: {output}")
+            raise RuntimeError(f"安装 {apk.name} 失败：{last or f'adb 返回 {code}'}")
+        logger.info(f"魔改 AVD 实例 {idx} 已安装 {apk.name}")
+        return last
 
     def set_headless(self, idx: str, headless: bool) -> dict[str, Any]:
         return self.set_instance_options(idx, headless=headless)

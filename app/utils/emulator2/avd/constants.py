@@ -408,3 +408,5 @@ FORCE_KILL_WAIT_SECONDS = 5.0
 #: 关机 / 重启 / 注销前并发关官方模拟器实例的总时限（单台 27 秒以内，留一点余量）；到点不等，
 #: 电源流程照常按进程名强杀。
 POWER_CLOSE_TIMEOUT_SECONDS = 30.0
+#: 「安装 APK」一次 `adb install` 的时限。游戏安装包常有 1–3 GB，推送加安装在慢盘上要几分钟。
+APK_INSTALL_TIMEOUT_SECONDS = 900.0

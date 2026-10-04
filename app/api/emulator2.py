@@ -27,6 +27,8 @@
 from fastapi import APIRouter, Body
 
 from app.models.schema import (
+    Emulator2AvdApkInstallIn,
+    Emulator2AvdApkInstallOut,
     Emulator2AvdHypervisorEnableOut,
     Emulator2AvdInstallCancelOut,
     Emulator2AvdInstallIn,
@@ -559,6 +561,29 @@ async def avd_set_instance_options(
         )
         return Emulator2AvdInstanceOptionsOut(**_error(e))
     return Emulator2AvdInstanceOptionsOut(**result)
+
+
+@router.post(
+    "/avd/instance/apk/install",
+    tags=["Action"],
+    summary="在魔改 AVD 实例里安装 APK",
+    response_model=Emulator2AvdApkInstallOut,
+    status_code=200,
+)
+async def avd_install_apk(
+    payload: Emulator2AvdApkInstallIn = Body(...),
+) -> Emulator2AvdApkInstallOut:
+    """``adb install -r`` 本机的一个 .apk，实例必须已开机；装完才返回。.xapk / 拆分安装包不支持。"""
+    try:
+        result = await avd_service.install_apk(
+            payload.emulatorId, payload.slot, payload.apkPath
+        )
+    except Exception as e:
+        logger.opt(exception=True).warning(
+            f"avd_install_apk失败: {type(e).__name__}: {e}"
+        )
+        return Emulator2AvdApkInstallOut(**_error(e))
+    return Emulator2AvdApkInstallOut(**result)
 
 
 @router.post(

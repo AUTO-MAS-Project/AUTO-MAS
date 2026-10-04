@@ -367,6 +367,26 @@ async def set_instance_options(
     )
 
 
+async def install_apk(emulator_id: str, slot: str, apk_path: str) -> dict[str, Any]:
+    """在开着的实例里装一个本地 ``.apk``。只认 ``.apk``；``.xapk`` / 拆分包不支持。"""
+    text = str(apk_path or "").strip().strip('"')
+    if not text:
+        raise ValueError("请选择要安装的 APK 文件")
+    apk = Path(text)
+    if apk.suffix.lower() != ".apk":
+        raise ValueError(f"{apk.name} 不是 .apk 安装包（.xapk、拆分安装包暂不支持）")
+    if not await asyncio.to_thread(apk.is_file):
+        raise ValueError(f"找不到安装包 {apk}")
+    backend, native_index = await _backend(emulator_id, slot)
+    result = await backend.install_apk(native_index, apk)
+    return {
+        "ok": True,
+        "reason": "ok",
+        "message": f"已安装 {apk.name}",
+        "result": result,
+    }
+
+
 #: 同一时间只跑一个开启流程：连点两次不该弹两个系统确认框。
 _hypervisor_lock = asyncio.Lock()
 

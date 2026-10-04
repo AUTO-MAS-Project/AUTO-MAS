@@ -2934,6 +2934,9 @@ export default {
       guestAngleHint: '改用系统镜像自带的 ANGLE 渲染画面',
       fieldHeadless: '无头',
       headlessHint: '关掉后开机会显示窗口，第一次登录游戏账号时用',
+      installApk: '安装 APK',
+      installApkHint: '实例开机后才能装；只支持 .apk，.xapk 和拆分安装包暂不支持',
+      apkFiles: 'APK 安装包',
       toast: {
         statusFailed: '读取官方模拟器状态失败',
         licenseFailed: '获取许可协议失败',
@@ -2947,6 +2950,8 @@ export default {
         optionsFailed: '保存实例选项失败',
         optionsLoadFailed: '读取实例选项失败',
         hypervisorFailed: '开启 Windows 虚拟机监控程序平台失败',
+        apkOk: '已安装 {name}',
+        apkFailed: '安装 APK 失败',
       },
     },
     toast: {

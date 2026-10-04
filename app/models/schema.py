@@ -6023,6 +6023,20 @@ class Emulator2AvdInstanceOptionsOut(OutBase):
     grpcPort: int = Field(default=0, description="gRPC 端口 (带 token 鉴权)")
 
 
+class Emulator2AvdApkInstallIn(BaseModel):
+    emulatorId: str = Field(..., description="Emulator 2.0 配置 ID")
+    slot: str = Field(..., description="设备号, 实例必须已开机")
+    apkPath: str = Field(
+        ..., description="本机 .apk 文件的完整路径; .xapk / 拆分安装包不支持"
+    )
+
+
+class Emulator2AvdApkInstallOut(OutBase):
+    ok: bool = Field(default=False, description="是否安装成功")
+    reason: str = Field(default="", description="ok 安装成功")
+    result: str = Field(default="", description="adb install 的结果行 (Success)")
+
+
 class Emulator2AvdHypervisorEnableOut(OutBase):
     ok: bool = Field(default=False, description="是否已开启 (要重启电脑才生效)")
     reason: str = Field(

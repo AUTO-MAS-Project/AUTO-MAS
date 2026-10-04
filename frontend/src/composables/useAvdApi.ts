@@ -2,6 +2,7 @@ import { ref } from 'vue'
 
 import { ApiError, Emulator20Service } from '@/api'
 import type {
+  Emulator2AvdApkInstallOut,
   Emulator2AvdHypervisorEnableOut,
   Emulator2AvdInstallCancelOut,
   Emulator2AvdInstallOut,
@@ -157,6 +158,22 @@ export function useAvdApi() {
       'emulator2.avd.toast.hypervisorFailed'
     )
 
+  /** 在开着的实例里装一个本地 .apk，装完才返回（大安装包要几分钟） */
+  const installApk = (
+    emulatorId: string,
+    slot: string,
+    apkPath: string
+  ): Promise<Emulator2AvdApkInstallOut> =>
+    call(
+      () =>
+        Emulator20Service.avdInstallApkApiEmulator2AvdInstanceApkInstallPost({
+          emulatorId,
+          slot,
+          apkPath,
+        }),
+      'emulator2.avd.toast.apkFailed'
+    )
+
   return {
     loading,
     error,
@@ -169,5 +186,6 @@ export function useAvdApi() {
     getInstanceOptions,
     setInstanceOptions,
     enableHypervisor,
+    installApk,
   }
 }
