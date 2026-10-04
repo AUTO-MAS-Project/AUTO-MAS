@@ -23,7 +23,8 @@
 官方模拟器实例用（MaaFramework 在 MAS 进程里起的 adb 只能落到 5037，见子进程模块说明）。
 解释器与 MAS 同一个（``sys.executable``），maa binding 也就是同一份。任务描述经 **stdin** 传入，
 不进命令行；子进程每行日志在这里再按 ``secrets`` 打一次码才交给 ``on_log``。
-调用方被取消时结束子进程。
+调用方被取消、超时时按进程树结束子进程（连同 MaaFramework 在里面起的 adb）；交了结果却不退出的，
+另等 :data:`RESULT_EXIT_WAIT_SECONDS` 秒后同样结束，结果仍按 RESULT 判。
 """
 
 from __future__ import annotations
@@ -38,19 +39,31 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+import psutil
+
+from app.utils import get_logger
+
 JOB_SCRIPT = Path(__file__).with_name("maafw_adb_job.py")
 #: 一次任务（登录要等游戏加载、选账号）的上限。
 DEFAULT_TIMEOUT_SECONDS = 600.0
+#: 读到 RESULT 之后等子进程自己退出的上限；到点按进程树结束它，结果仍按 RESULT 判。
+RESULT_EXIT_WAIT_SECONDS = 10.0
+#: 结束进程树后等它们退出的上限。
+_KILL_WAIT_SECONDS = 3.0
+
+logger = get_logger("MaaFW 子进程")
 
 
 @dataclass
 class AdbJobResult:
     returncode: int
     result: dict[str, Any] = field(default_factory=dict)
+    #: 子进程交了 RESULT 却迟迟不退出，被我们按进程树结束了。此时返回码是被结束的，不代表任务失败。
+    reaped: bool = False
 
     @property
     def ok(self) -> bool:
-        return self.returncode == 0 and bool(self.result.get("ok"))
+        return (self.returncode == 0 or self.reaped) and bool(self.result.get("ok"))
 
 
 def mask(text: str, secrets: list[str]) -> str:
@@ -62,6 +75,30 @@ def mask(text: str, secrets: list[str]) -> str:
 def build_command() -> list[str]:
     """子进程命令行：只有解释器和脚本路径，任务内容（含账号密码）一律走 stdin。"""
     return [sys.executable, str(JOB_SCRIPT)]
+
+
+def kill_process_tree(pid: int) -> None:
+    """结束 ``pid`` 及其全部子孙进程（MaaFramework 在子进程里起的 adb 客户端一并结束）。
+
+    先列出整棵树再动手：父进程先死，子进程就挂不到它名下、找不到了。
+    """
+    try:
+        parent = psutil.Process(pid)
+        processes = [*parent.children(recursive=True), parent]
+    except psutil.Error:
+        return
+    for process in processes:
+        with suppress(psutil.Error):
+            process.kill()
+    with suppress(psutil.Error):
+        psutil.wait_procs(processes, timeout=_KILL_WAIT_SECONDS)
+
+
+async def _reap(process: asyncio.subprocess.Process) -> None:
+    if process.returncode is None:
+        await asyncio.to_thread(kill_process_tree, process.pid)
+    with suppress(Exception):
+        await asyncio.wait_for(process.wait(), timeout=_KILL_WAIT_SECONDS)
 
 
 async def run_adb_job(
@@ -105,19 +142,31 @@ async def run_adb_job(
                 on_log(line[len("LOG ") :])
             elif line.strip():
                 on_log(line)
-        await process.wait()
 
     try:
         await asyncio.wait_for(pump(), timeout=timeout)
     except BaseException:
-        # 取消、超时、任何异常：子进程不留
-        if process.returncode is None:
-            with suppress(ProcessLookupError):
-                process.kill()
-            with suppress(Exception):
-                await process.wait()
+        # 取消、超时、任何异常：子进程连同它起的 adb 一个不留
+        await _reap(process)
         raise
+    # 交了结果（或输出已结束）后另给一个短时限等它自己退出；退不出就结束整棵进程树，
+    # 结果照样按 RESULT 判，不把已经成功的登录算成失败
+    try:
+        await asyncio.wait_for(process.wait(), timeout=RESULT_EXIT_WAIT_SECONDS)
+    except (asyncio.TimeoutError, TimeoutError):
+        logger.warning(
+            f"MaaFW 子进程（PID {process.pid}）交回结果后 {RESULT_EXIT_WAIT_SECONDS:.0f} 秒"
+            "仍未退出，结束其进程树"
+        )
+        await _reap(process)
+        return AdbJobResult(process.returncode or 0, result, reaped=True)
     return AdbJobResult(process.returncode or 0, result)
 
 
-__all__ = ["AdbJobResult", "build_command", "mask", "run_adb_job"]
+__all__ = [
+    "AdbJobResult",
+    "build_command",
+    "kill_process_tree",
+    "mask",
+    "run_adb_job",
+]
