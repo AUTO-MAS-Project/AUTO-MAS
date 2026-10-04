@@ -1442,6 +1442,7 @@ class _TaskManager:
         中止任务
 
         :param task_id: 任务ID
+        :returns: MAA 配置回写结果；停止全部、任务已结束、非 MAA 任务或结果未确认时为 ``None``
         """
 
         logger.info(f"中止任务: {task_id}")
