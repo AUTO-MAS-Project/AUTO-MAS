@@ -15,6 +15,13 @@ import type { CheckImageOut } from '../models/CheckImageOut';
 import type { ComboBoxOut } from '../models/ComboBoxOut';
 import type { CultivatePreviewIn } from '../models/CultivatePreviewIn';
 import type { CultivatePreviewOut } from '../models/CultivatePreviewOut';
+import type { Emulator2AvdInstanceIn } from '../models/Emulator2AvdInstanceIn';
+import type { Emulator2AvdInstanceOptionsOut } from '../models/Emulator2AvdInstanceOptionsOut';
+import type { Emulator2AvdLicenseIn } from '../models/Emulator2AvdLicenseIn';
+import type { Emulator2AvdLicenseOut } from '../models/Emulator2AvdLicenseOut';
+import type { Emulator2AvdRootIn } from '../models/Emulator2AvdRootIn';
+import type { Emulator2AvdSourcesOut } from '../models/Emulator2AvdSourcesOut';
+import type { Emulator2AvdStatusOut } from '../models/Emulator2AvdStatusOut';
 import type { Emulator2DevicesIn } from '../models/Emulator2DevicesIn';
 import type { Emulator2DevicesOut } from '../models/Emulator2DevicesOut';
 import type { Emulator2InstanceDeleteIn } from '../models/Emulator2InstanceDeleteIn';
@@ -756,6 +763,79 @@ export class GetService {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/emulator2/instances/delete/preview',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 查询官方模拟器根目录的组件状态
+     * 组件清单与是否齐全、磁盘空间、是否同意过许可、硬件加速（WHPX）是否可用，
+     * 以及该目录最近一次下载任务的进度快照。只读，不联网。
+     * @param requestBody
+     * @returns Emulator2AvdStatusOut Successful Response
+     * @throws ApiError
+     */
+    public static avdStatusApiEmulator2AvdStatusPost(
+        requestBody: Emulator2AvdRootIn,
+    ): CancelablePromise<Emulator2AvdStatusOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/emulator2/avd/status',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 获取《Android SDK 许可协议》全文
+     * 从下载源的官方仓库清单里取许可协议全文，给弹窗展示；用户勾选同意后才能下载。
+     * @param requestBody
+     * @returns Emulator2AvdLicenseOut Successful Response
+     * @throws ApiError
+     */
+    public static avdLicenseApiEmulator2AvdLicensePost(
+        requestBody?: Emulator2AvdLicenseIn,
+    ): CancelablePromise<Emulator2AvdLicenseOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/emulator2/avd/license',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 官方模拟器下载源测速
+     * 各下载源依次拉几 MB 测速，按速度排序并给出推荐；失败的源排在最后。
+     * @returns Emulator2AvdSourcesOut Successful Response
+     * @throws ApiError
+     */
+    public static avdSourcesApiEmulator2AvdSourcesPost(): CancelablePromise<Emulator2AvdSourcesOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/emulator2/avd/sources',
+        });
+    }
+    /**
+     * 查询官方模拟器实例选项
+     * 无头 / 带窗口、内存、核数、数据盘、首次初始化与渲染器检测结果、端口。
+     * @param requestBody
+     * @returns Emulator2AvdInstanceOptionsOut Successful Response
+     * @throws ApiError
+     */
+    public static avdInstanceOptionsApiEmulator2AvdInstanceOptionsPost(
+        requestBody: Emulator2AvdInstanceIn,
+    ): CancelablePromise<Emulator2AvdInstanceOptionsOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/emulator2/avd/instance/options',
             body: requestBody,
             mediaType: 'application/json',
             errors: {

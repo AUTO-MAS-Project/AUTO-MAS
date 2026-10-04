@@ -6,6 +6,12 @@ import type { ClickImageIn } from '../models/ClickImageIn';
 import type { ClickOut } from '../models/ClickOut';
 import type { ClickTextIn } from '../models/ClickTextIn';
 import type { DispatchIn } from '../models/DispatchIn';
+import type { Emulator2AvdInstallCancelOut } from '../models/Emulator2AvdInstallCancelOut';
+import type { Emulator2AvdInstallIn } from '../models/Emulator2AvdInstallIn';
+import type { Emulator2AvdInstallOut } from '../models/Emulator2AvdInstallOut';
+import type { Emulator2AvdInstanceOptionsOut } from '../models/Emulator2AvdInstanceOptionsOut';
+import type { Emulator2AvdInstanceOptionsSetIn } from '../models/Emulator2AvdInstanceOptionsSetIn';
+import type { Emulator2AvdRootIn } from '../models/Emulator2AvdRootIn';
 import type { Emulator2DevicesIn } from '../models/Emulator2DevicesIn';
 import type { Emulator2GuardCaptureOut } from '../models/Emulator2GuardCaptureOut';
 import type { Emulator2SettingsApplyAllIn } from '../models/Emulator2SettingsApplyAllIn';
@@ -207,6 +213,69 @@ export class ActionService {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/emulator2/guard/capture',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 开始后台下载官方模拟器组件
+     * 立即返回，进度走 WebSocket（id=EmulatorManager, type=emulator2.avd.install.progress）。
+     *
+     * ``acceptLicense`` 必须是用户亲手勾选的，为 false 时拒绝。断点续传：取消或失败后再调一次
+     * 会从已下载的位置接着下。带 ``emulatorId`` 时下载完成后自动把根目录加进该配置。
+     * @param requestBody
+     * @returns Emulator2AvdInstallOut Successful Response
+     * @throws ApiError
+     */
+    public static avdInstallStartApiEmulator2AvdInstallStartPost(
+        requestBody: Emulator2AvdInstallIn,
+    ): CancelablePromise<Emulator2AvdInstallOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/emulator2/avd/install/start',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 取消官方模拟器组件下载
+     * 取消后已下载的部分保留在根目录的 downloads 里，下次开始时续传。
+     * @param requestBody
+     * @returns Emulator2AvdInstallCancelOut Successful Response
+     * @throws ApiError
+     */
+    public static avdInstallCancelApiEmulator2AvdInstallCancelPost(
+        requestBody: Emulator2AvdRootIn,
+    ): CancelablePromise<Emulator2AvdInstallCancelOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/emulator2/avd/install/cancel',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 修改官方模拟器实例选项
+     * 无头、显示档位、内存（含按游戏自动）、气球、GuestAngle，只改传了的项，下次启动生效。
+     * @param requestBody
+     * @returns Emulator2AvdInstanceOptionsOut Successful Response
+     * @throws ApiError
+     */
+    public static avdSetInstanceOptionsApiEmulator2AvdInstanceOptionsSetPost(
+        requestBody: Emulator2AvdInstanceOptionsSetIn,
+    ): CancelablePromise<Emulator2AvdInstanceOptionsOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/emulator2/avd/instance/options/set',
             body: requestBody,
             mediaType: 'application/json',
             errors: {
