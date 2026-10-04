@@ -38,6 +38,7 @@ import ctypes
 import os
 import re
 import subprocess
+import threading
 import time
 from collections.abc import Awaitable, Callable
 from contextlib import suppress
@@ -805,26 +806,55 @@ def _managed_log_files(log_dir: Path) -> list[tuple[Path, float, int]]:
 
 
 def _try_unlink(path: Path) -> bool | None:
-    """删掉返回 True，删不掉返回 False，已经不在了返回 None。"""
+    """删掉返回 True，删不掉返回 False，已经不在了（别人删了）返回 None。"""
     try:
         path.unlink()
     except FileNotFoundError:
         return None
     except OSError as e:
+        # 另一个进程删到一半时 Windows 报的是拒绝访问（WinError 5），不是找不到：再看一眼
+        if not os.path.lexists(path):
+            return None
         # 正在写的文件（模拟器、logcat 还开着）在 Windows 上删不掉，留到下次
         logger.debug(f"旧日志 {path.name} 删不掉，跳过: {e}")
         return False
     return True
 
 
-def prune_logs(root: str | Path, avd: str) -> tuple[int, int]:
+def _in_use(path: Path) -> bool | None:
+    """文件是否正被别的句柄占着（删不掉），不在了返回 None。
+
+    原地改名要删除权限，和删除一样会被不带共享删除的句柄挡住（模拟器、logcat 子进程拿着的
+    日志句柄就是这种），所以能用来事先认出删不掉的文件，又不改动文件。
+    """
+    try:
+        os.rename(path, path)
+    except FileNotFoundError:
+        return None
+    except OSError:
+        return True if os.path.lexists(path) else None
+    return False
+
+
+#: 多台实例同时开机时会并发清同一个目录：整个清理串行，免得多删、计数重复。
+_PRUNE_LOCK = threading.Lock()
+
+
+def prune_logs(root: str | Path, idx: int | str) -> tuple[int, int]:
     """清旧日志，返回 (删了几份, 释放字节数)。阻塞调用，异步代码里放到线程里跑。
 
-    先按实例：``avd`` 这台实例的模拟器日志、logcat 各按修改时间只留最新
-    :data:`LOG_KEEP_PER_INSTANCE` 份；再按总量：整个日志目录里两种日志加起来超过
-    :data:`LOGS_DIR_MAX_BYTES` 就从最旧的删起（不分实例），删到不超为止。删不掉的跳过。
+    先按实例：实例 ``idx`` 的模拟器日志、logcat 各按修改时间只留最新
+    :data:`LOG_KEEP_PER_INSTANCE` 份；再按总量：整个日志目录里**已关闭的**两种日志加起来超过
+    :data:`LOGS_DIR_MAX_BYTES` 就从最旧的删起（不分实例），删到不超为止。正在写的文件删不掉，
+    跳过，也不算进总量：否则几台实例连跑很久、在写的日志本身就超上限时，每次开机都会把上一轮
+    的日志全删光。
     """
-    log_dir = Path(root) / LOGS_DIR
+    with _PRUNE_LOCK:
+        return _prune_logs_locked(Path(root) / LOGS_DIR, idx)
+
+
+def _prune_logs_locked(log_dir: Path, idx: int | str) -> tuple[int, int]:
+    avd = avd_name(idx)
     files = _managed_log_files(log_dir)
     removed = 0
     freed = 0
@@ -846,22 +876,29 @@ def prune_logs(root: str | Path, avd: str) -> tuple[int, int]:
                 freed += size
 
     rest = [f for f in files if f[0] not in gone]
-    total = sum(size for _path, _mtime, size in rest)
-    if total > LOGS_DIR_MAX_BYTES:
-        rest.sort(key=lambda f: (f[1], f[0].name))
-        for path, _mtime, size in rest:
+    if sum(size for _path, _mtime, size in rest) > LOGS_DIR_MAX_BYTES:
+        closed = []
+        for f in rest:
+            busy = _in_use(f[0])
+            if busy:
+                logger.debug(f"旧日志 {f[0].name} 正在写，不算进总量")
+            elif busy is False:
+                closed.append(f)
+        closed.sort(key=lambda f: (f[1], f[0].name))
+        total = sum(size for _path, _mtime, size in closed)
+        for path, _mtime, size in closed:
             if total <= LOGS_DIR_MAX_BYTES:
                 break
             result = _try_unlink(path)
-            if result is not False:
-                total -= size
+            # 删掉、别人删了、刚变成在写，都不再占「已关闭」的额度
+            total -= size
             if result:
                 removed += 1
                 freed += size
 
     if removed:
         logger.info(
-            f"{avd} 建新日志前清理旧日志 {removed} 份，释放 "
+            f"实例 {idx} 建新日志前清理旧日志 {removed} 份，释放 "
             f"{freed / 1024 / 1024:.1f} MB（{log_dir}）"
         )
     return removed, freed

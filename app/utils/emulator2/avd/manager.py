@@ -421,7 +421,7 @@ def _stop_watchdog(root: Path, native_index: str) -> None:
 async def prune_logs(root: Path, idx: str) -> None:
     """建新日志前清一次这台实例的旧日志（:func:`~.host.prune_logs`）。清理失败不影响开机。"""
     try:
-        await asyncio.to_thread(host.prune_logs, root, avd_name(idx))
+        await asyncio.to_thread(host.prune_logs, root, idx)
     except Exception as e:  # noqa: BLE001 - 清日志失败不能挡住开机
         logger.warning(f"实例 {idx} 清理旧日志失败: {e}")
 
