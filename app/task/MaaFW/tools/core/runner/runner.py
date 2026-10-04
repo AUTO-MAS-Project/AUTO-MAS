@@ -2746,6 +2746,9 @@ class MaaFWRunner:
             # 不清的话这次投递失败会被当成「单任务超时」收尾。
             self._task_deadline_hit.clear()
             if self._loop_guard is not None:
+                # 上一个任务若是被单任务时限抢先收尾，打转判定发起的停止可能还没落地；
+                # 先等它做完，否则它会停掉这次投递的任务，被当成脚本侧强停跳过本轮。
+                self._join_loop_guard_stop()
                 # 每个任务从零开始数循环；上一个任务的命中标记同理清掉。
                 with self._loop_guard_lock:
                     self._loop_guard.reset()
