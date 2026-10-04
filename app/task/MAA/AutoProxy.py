@@ -850,6 +850,8 @@ class AutoProxyTask(ScriptAutoProxyBase):
         self.check_result = "-"
         # 首个 LogRecord 在真正开始跑任务时才创建, 收尾逻辑要能在它之前安全取值
         self.cur_user_log: LogRecord | None = None
+        # 日志分析给出结论前一律按 MAA 可能还在跑任务处理, 收尾据此在强杀与优雅关闭间取舍
+        self.maa_task_running = True
         self._annihilation_weekly_completion_recorded = False
         # 无时段排班表本轮注入的班次：同一用户的多次重试都注入这一个值，
         # 基建换班完成后只把用户配置里的指针推进一次
@@ -2179,6 +2181,12 @@ class AutoProxyTask(ScriptAutoProxyBase):
         else:
             self.cur_user_log.status = "MAA 正常运行中"
 
+        # 只有这两条状态说明 MAA 的任务链可能还在跑; 其余状态都表示 MAA 已不在任务中
+        self.maa_task_running = self.cur_user_log.status in (
+            "MAA 正常运行中",
+            "MAA 进程超时",
+        )
+
         logger.debug(f"MAA 日志分析结果: {self.cur_user_log.status}")
         if self.cur_user_log.status != "MAA 正常运行中":
             logger.info(f"MAA 任务结果: {self.cur_user_log.status}, 日志锁已释放")
@@ -2222,15 +2230,11 @@ class AutoProxyTask(ScriptAutoProxyBase):
 
         logger.info("MAA 收尾: 停止日志监控")
         await self.maa_log_monitor.stop()
-        if (
-            self.stopped_manually
-            or self.cur_user_log is None
-            or self.cur_user_log.status == "MAA 正常运行中"
-        ):
+        if self.stopped_manually or self.maa_task_running:
             # MAA 还在跑任务时给它发关闭消息只会弹出「确定要退出吗」的确认框, 把
-            # 收尾卡在那里等人点确认: 任务被中止(手动停止/总时限到期/异常)与 MAA 仍
-            # 在运行任务这两种情况都直接强杀, 只有确认 MAA 已经空闲时才等它自己退出
-            # 落盘; 日志记录还没创建时无法确认状态, 同样按「可能在跑任务」处理
+            # 收尾卡在那里等人点确认: 任务被中止(手动停止/总时限到期/异常)与 MAA 还在
+            # 跑任务这两种情况都直接强杀, 只有日志明确给出终态、确认 MAA 已不在任务中
+            # 时才等它自己退出落盘
             logger.info(
                 "MAA 收尾: 任务已中止或 MAA 可能仍在运行任务, 直接强杀 MAA 进程"
             )
