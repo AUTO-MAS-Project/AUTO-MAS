@@ -1153,7 +1153,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
                         f"{self.cur_user_log.status}\n正在中止相关程序"
                     )
 
-                    await self.maa_process_manager.close()
+                    await self.maa_process_manager.kill()
                     # 关模拟器之前把现场画面留下来：模拟器一关 adb 就补不到了。
                     # 每次失败尝试都刷新，最后一次失败的画面才是最终现场。
                     self._failure_shot = await self._take_failure_shot()
@@ -1446,7 +1446,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
 
         logger.info(f"开始配置MAA运行参数: {self.mode}")
 
-        await self.maa_process_manager.close()
+        await self.maa_process_manager.kill()
         await System.kill_process(self.maa_exe_path)
 
         # 哔哩哔哩用户协议
@@ -2290,7 +2290,9 @@ class AutoProxyTask(ScriptAutoProxyBase):
         logger.info("MAA 收尾: 停止日志监控")
         await self.maa_log_monitor.stop()
         logger.info("MAA 收尾: 停止 MAA 进程")
-        await self.maa_process_manager.close()
+        # 任务收尾时 MAA 多半还在跑任务, 发关闭消息会弹「确定要退出吗」把收尾卡住;
+        # 需要等 MAA 自己退出去落盘的只有配置会话 (ScriptConfig)。
+        await self.maa_process_manager.kill()
         await System.kill_process(self.maa_exe_path)
         logger.info(f"MAA 收尾: 结束残留 MAA 进程: {self.maa_exe_path}")
 
