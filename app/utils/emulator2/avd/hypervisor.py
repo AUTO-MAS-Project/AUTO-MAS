@@ -35,6 +35,7 @@ CPU：``IsProcessorFeaturePresent(PF_VIRT_FIRMWARE_ENABLED)`` 为真说明固件
 from __future__ import annotations
 
 import ctypes
+import os
 import subprocess
 import sys
 from collections.abc import Callable
@@ -47,7 +48,10 @@ logger = get_logger("魔改 AVD 虚拟化")
 
 #: 前置检查里硬件虚拟化一项挂的动作：前端据此显示「开启」按钮。
 ENABLE_ACTION = "enable_hypervisor_platform"
-DISM_EXE = "dism.exe"
+#: 写全路径：不按 PATH 找，免得同名程序被当成 dism 以管理员身份跑起来。
+DISM_EXE = os.path.join(
+    os.environ.get("SystemRoot", r"C:\Windows"), "System32", "dism.exe"
+)
 DISM_ARGS = "/online /enable-feature /featurename:HypervisorPlatform /all /norestart"
 #: dism 的返回码：0 成功；3010 成功但要重启（``ERROR_SUCCESS_REBOOT_REQUIRED``）。
 _DISM_OK = 0
