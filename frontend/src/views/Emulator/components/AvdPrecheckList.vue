@@ -1,11 +1,21 @@
 <script setup lang="ts">
-/** 官方模拟器开机前的电脑检查：通过的一行显示，不满足的用醒目的提示框写出原因和建议。 */
+/**
+ * 魔改 AVD 开机前的电脑检查：通过的一行显示，不满足的用醒目的提示框写出原因和建议。
+ * 硬件虚拟化没通过时给「开启」按钮，点了由外层调接口；开完要重启，按钮换成提示。
+ */
 import { useI18n } from 'vue-i18n'
 
 import type { Emulator2AvdPrecheckItem } from '@/api'
-import { precheckLevel, type PrecheckLevel } from '../avdLogic'
+import { hasHypervisorAction, precheckLevel, type PrecheckLevel } from '../avdLogic'
 
-defineProps<{ items: Emulator2AvdPrecheckItem[] }>()
+defineProps<{
+  items: Emulator2AvdPrecheckItem[]
+  /** 正在开启（等系统确认框 / dism） */
+  enabling?: boolean
+  /** 这次已经开启成功，等重启 */
+  restartPending?: boolean
+}>()
+const emit = defineEmits<{ enableHypervisor: [] }>()
 
 const { t } = useI18n()
 
@@ -34,7 +44,22 @@ const failing = (item: Emulator2AvdPrecheckItem) => {
         show-icon
         :message="`${item.title}：${item.reason}`"
         :description="item.advice || undefined"
-      />
+      >
+        <template v-if="hasHypervisorAction(item)" #action>
+          <a-tag v-if="restartPending" color="processing">
+            {{ t('emulator2.avd.hypervisorPending') }}
+          </a-tag>
+          <a-button
+            v-else
+            size="small"
+            type="primary"
+            :loading="enabling"
+            @click="emit('enableHypervisor')"
+          >
+            {{ t('emulator2.avd.enableHypervisor') }}
+          </a-button>
+        </template>
+      </a-alert>
       <div v-else class="precheck-row">
         <a-tag :color="LEVEL_COLOR[precheckLevel(item)]">
           {{ levelText(precheckLevel(item)) }}

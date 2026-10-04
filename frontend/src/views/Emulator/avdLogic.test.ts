@@ -13,6 +13,7 @@ import {
   createOptions,
   defaultAvdOptions,
   hasBlockingFailure,
+  hasHypervisorAction,
   isJobRunning,
   isRootAdded,
   jobPercent,
@@ -86,6 +87,18 @@ describe('instance options', () => {
 })
 
 describe('prechecks', () => {
+  it('offers the enable button only on a failed item that carries the action', () => {
+    const base = { id: 'acceleration', title: '', blocking: true }
+    expect(hasHypervisorAction({ ...base, ok: false, action: 'enable_hypervisor_platform' })).toBe(
+      true
+    )
+    expect(hasHypervisorAction({ ...base, ok: true, action: 'enable_hypervisor_platform' })).toBe(
+      false
+    )
+    expect(hasHypervisorAction({ ...base, ok: false, action: '' })).toBe(false)
+    expect(hasHypervisorAction({ ...base, ok: false })).toBe(false)
+  })
+
   it('grades each result', () => {
     expect(precheckLevel({ id: 'disk', title: '', ok: true, blocking: true })).toBe('ok')
     expect(precheckLevel({ id: 'disk', title: '', ok: false, blocking: true })).toBe('error')

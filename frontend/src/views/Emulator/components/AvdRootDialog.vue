@@ -50,6 +50,9 @@ const includeLauncher = ref(true)
 const starting = ref(false)
 const cancelling = ref(false)
 const adding = ref(false)
+const enablingHypervisor = ref(false)
+/** 这次打开弹窗后已经开启成功：不重启不生效，按钮换成「重启后生效」 */
+const hypervisorRestartPending = ref(false)
 
 const current = computed(() =>
   status.value && samePath(checkedRoot.value, root.value) ? status.value : null
@@ -188,6 +191,28 @@ const addRoot = async () => {
   }
 }
 
+/** 只在用户点了「开启」后执行：后端提权跑 dism，会弹系统确认框；不重启电脑 */
+const enableHypervisor = async () => {
+  enablingHypervisor.value = true
+  try {
+    const result = await api.enableHypervisor()
+    if (result.ok) {
+      hypervisorRestartPending.value = true
+      message.success(result.message, 8)
+    } else if (result.reason === 'cancelled') {
+      message.info(result.message)
+    } else {
+      message.warning(result.message || t('emulator2.avd.toast.hypervisorFailed'))
+    }
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error)
+    logger.error(`开启 Windows 虚拟机监控程序平台失败: ${detail}`)
+    message.error(detail || t('emulator2.avd.toast.hypervisorFailed'))
+  } finally {
+    enablingHypervisor.value = false
+  }
+}
+
 const onProgress = (data: WSEmulator2AvdInstallProgressData) => {
   if (!samePath(data.root, root.value)) return
   job.value = data
@@ -244,7 +269,12 @@ onUnmounted(() => {
       </a-form>
 
       <template v-if="current">
-        <AvdPrecheckList :items="current.prechecks ?? []" />
+        <AvdPrecheckList
+          :items="current.prechecks ?? []"
+          :enabling="enablingHypervisor"
+          :restart-pending="hypervisorRestartPending"
+          @enable-hypervisor="enableHypervisor"
+        />
         <AvdComponentList :components="current.components ?? []" />
         <AvdDownloadPanel
           v-if="!ready"

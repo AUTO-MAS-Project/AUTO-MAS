@@ -27,6 +27,7 @@
 from fastapi import APIRouter, Body
 
 from app.models.schema import (
+    Emulator2AvdHypervisorEnableOut,
     Emulator2AvdInstallCancelOut,
     Emulator2AvdInstallIn,
     Emulator2AvdInstallOut,
@@ -558,3 +559,23 @@ async def avd_set_instance_options(
         )
         return Emulator2AvdInstanceOptionsOut(**_error(e))
     return Emulator2AvdInstanceOptionsOut(**result)
+
+
+@router.post(
+    "/avd/hypervisor/enable",
+    tags=["Action"],
+    summary="开启 Windows 虚拟机监控程序平台",
+    response_model=Emulator2AvdHypervisorEnableOut,
+    status_code=200,
+)
+async def avd_enable_hypervisor() -> Emulator2AvdHypervisorEnableOut:
+    """只在用户点了「开启」按钮后调用：提权运行 dism 开启该系统功能（会弹系统确认框），
+    完成后要重启电脑才生效。不会自动重启。"""
+    try:
+        result = await avd_service.enable_hypervisor_platform()
+    except Exception as e:
+        logger.opt(exception=True).warning(
+            f"avd_enable_hypervisor失败: {type(e).__name__}: {e}"
+        )
+        return Emulator2AvdHypervisorEnableOut(**_error(e))
+    return Emulator2AvdHypervisorEnableOut(**result)

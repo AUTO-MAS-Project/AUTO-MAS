@@ -84,6 +84,13 @@ export const precheckLevel = (item: Emulator2AvdPrecheckItem): PrecheckLevel => 
   return 'unknown'
 }
 
+/** 电脑检查里可一键处理的动作：开启「Windows 虚拟机监控程序平台」（与后端 ``ENABLE_ACTION`` 一致）。 */
+export const HYPERVISOR_ACTION = 'enable_hypervisor_platform'
+
+/** 这一项要不要给「开启」按钮：没通过、而且后端说能一键处理。 */
+export const hasHypervisorAction = (item: Emulator2AvdPrecheckItem) =>
+  item.ok === false && item.action === HYPERVISOR_ACTION
+
 /** 有没有会拒绝开机的项。 */
 export const hasBlockingFailure = (items: Emulator2AvdPrecheckItem[] | undefined) =>
   (items ?? []).some(item => precheckLevel(item) === 'error')

@@ -2,6 +2,7 @@ import { ref } from 'vue'
 
 import { ApiError, Emulator20Service } from '@/api'
 import type {
+  Emulator2AvdHypervisorEnableOut,
   Emulator2AvdInstallCancelOut,
   Emulator2AvdInstallOut,
   Emulator2AvdInstanceOptionsOut,
@@ -36,7 +37,7 @@ const errorMessage = (error: unknown, fallback: string): string => {
 
 /**
  * 官方模拟器（AVD）客户端：根目录的组件状态与开机前检查、许可协议、下载源测速、后台下载、
- * 添加根目录，以及实例选项。
+ * 添加根目录，实例选项与安装 APK，以及一键开启「Windows 虚拟机监控程序平台」。
  *
  * 业务失败走 ``code !== 200`` + ``message``（HTTP 仍是 200），HTTP 失败走 ``ApiError``；两种都抛带
  * 说明的 Error，取不到说明时用词表里的兜底文案。下载开始 / 取消、添加根目录的「没办成」（未同意、
@@ -146,6 +147,16 @@ export function useAvdApi() {
       'emulator2.avd.toast.optionsFailed'
     )
 
+  /**
+   * 只在用户点了「开启」后调：后端提权开启「Windows 虚拟机监控程序平台」，会弹系统确认框，等它结束才返回。
+   * 不重启电脑。用户取消（``reason: cancelled``）、dism 失败都是 ``ok=false``，原样返回。
+   */
+  const enableHypervisor = (): Promise<Emulator2AvdHypervisorEnableOut> =>
+    call(
+      () => Emulator20Service.avdEnableHypervisorApiEmulator2AvdHypervisorEnablePost(),
+      'emulator2.avd.toast.hypervisorFailed'
+    )
+
   return {
     loading,
     error,
@@ -157,5 +168,6 @@ export function useAvdApi() {
     addRoot,
     getInstanceOptions,
     setInstanceOptions,
+    enableHypervisor,
   }
 }

@@ -26,7 +26,8 @@
 - **目录路径**：根目录路径不能有中文等非 ASCII 字符（模拟器和 qemu 对这类路径不可靠），空格不拦。拦截。
 - **模拟器版本**：只支持官方模拟器内测包里的自编版（``components.emulator_self_built``），谷歌原版
   与没有模拟器都拒绝。拦截。
-- **硬件虚拟化**：``emulator -accel-check``（WHPX）。拦截。
+- **硬件虚拟化**：``emulator -accel-check``（WHPX）。拦截。不可用时带上「开启」动作，用户点了才由
+  :mod:`.hypervisor` 提权开启系统功能；这里只判断原因，不执行。
 - **内存**：宿主可用内存 ≥ 这次要传的 ``-memory`` + 1.5 GB。拦截。
 - **磁盘**：实例所在盘剩余 ≥ :data:`~.constants.MIN_FREE_DISK_GB_TO_BOOT`。拦截。
 - **显卡 Vulkan**：子进程加载 ``vulkan-1.dll`` 枚举物理设备（:mod:`.vulkan_probe`）。**只提示不拦截**：
@@ -52,7 +53,7 @@ import psutil
 
 from app.utils import get_logger
 
-from . import host
+from . import host, hypervisor
 from .components import (
     avd_home,
     emulator_exe,
@@ -82,9 +83,16 @@ _VK_DEVICE_TYPE_NAMES = {
     4: "CPU",
 }
 
-ACCEL_ADVICE = (
-    "先在 BIOS / UEFI 里打开 CPU 虚拟化（Intel VT-x / AMD SVM，常叫 Virtualization Technology），"
-    "再在「启用或关闭 Windows 功能」里勾选「Windows 虚拟机监控程序平台」，然后重启电脑"
+#: 硬件虚拟化不可用、但 CPU 说固件里虚拟化开着：只差系统功能。
+ACCEL_ADVICE_FEATURE_OFF = (
+    "点「开启」，在弹出的系统确认框里点「是」，完成后重启电脑。"
+    "也可以在「启用或关闭 Windows 功能」里手动勾选「Windows 虚拟机监控程序平台」"
+)
+#: 分不清是系统功能没开还是 BIOS 里没开虚拟化：两种都说。
+ACCEL_ADVICE_UNKNOWN = (
+    "可能是「Windows 虚拟机监控程序平台」没有开启：点「开启」，完成后重启电脑。"
+    "重启后仍不可用的话，是 BIOS / UEFI 里没打开 CPU 虚拟化（Intel VT-x / AMD SVM，"
+    "常叫 Virtualization Technology），要进 BIOS 打开"
 )
 VULKAN_ADVICE = (
     "安装或更新显卡驱动（NVIDIA / AMD / Intel 官网驱动自带 Vulkan）。没有可用的显卡时模拟器只能"
@@ -97,7 +105,7 @@ _vulkan_cache: tuple[float, dict[str, Any]] | None = None
 
 @dataclass(frozen=True)
 class PrecheckItem:
-    #: acceleration / vulkan / disk / memory
+    #: path / emulator / acceleration / vulkan / disk / memory
     id: str
     title: str
     #: ``None`` = 这项现在查不了（比如模拟器组件还没装）
@@ -106,6 +114,8 @@ class PrecheckItem:
     blocking: bool
     reason: str
     advice: str = ""
+    #: 界面上可以一键处理的动作（目前只有 :data:`~.hypervisor.ENABLE_ACTION`），没有为空
+    action: str = ""
 
     def as_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -152,14 +162,26 @@ async def acceleration_item(
     logger.debug(f"-accel-check 输出: {summary}")
     if accel.ok:
         return PrecheckItem("acceleration", title, True, True, _accel_ok_text(summary))
+    checked = f"（检查结果：{summary or '无输出'}）"
+    # -accel-check 只说 WHPX 不可用，分不出原因；再问一次 CPU 固件里虚拟化开没开
+    if await asyncio.to_thread(hypervisor.classify_accel_failure) == "feature_off":
+        return PrecheckItem(
+            "acceleration",
+            title,
+            False,
+            True,
+            f"「Windows 虚拟机监控程序平台」没有开启，魔改 AVD 无法启动{checked}",
+            ACCEL_ADVICE_FEATURE_OFF,
+            hypervisor.ENABLE_ACTION,
+        )
     return PrecheckItem(
         "acceleration",
         title,
         False,
         True,
-        f"硬件虚拟化（Windows 虚拟机监控程序平台）不可用，官方模拟器无法启动"
-        f"（检查结果：{summary or '无输出'}）",
-        ACCEL_ADVICE,
+        f"硬件虚拟化（Windows 虚拟机监控程序平台）不可用，魔改 AVD 无法启动{checked}",
+        ACCEL_ADVICE_UNKNOWN,
+        hypervisor.ENABLE_ACTION,
     )
 
 

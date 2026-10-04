@@ -2887,6 +2887,8 @@ export default {
         warning: '未通过',
         unknown: '未检查',
       },
+      enableHypervisor: '开启',
+      hypervisorPending: '已开启，重启电脑后生效',
       components: '组件',
       optional: '可选',
       localSdk: '本地 SDK',
@@ -2944,6 +2946,7 @@ export default {
         optionsOk: '已保存，下次启动生效',
         optionsFailed: '保存实例选项失败',
         optionsLoadFailed: '读取实例选项失败',
+        hypervisorFailed: '开启 Windows 虚拟机监控程序平台失败',
       },
     },
     toast: {

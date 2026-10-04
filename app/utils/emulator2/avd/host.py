@@ -901,3 +901,8 @@ async def check_acceleration(root: str | Path, *, use_cache: bool = True) -> Acc
         result = AccelCheck(False, f"{type(e).__name__}: {e}")
     _accel_cache[key] = (time.monotonic(), result.ok, result.detail)
     return result
+
+
+def forget_acceleration() -> None:
+    """清掉 ``-accel-check`` 的缓存（用户刚改过系统功能，下次检查重新查）。"""
+    _accel_cache.clear()

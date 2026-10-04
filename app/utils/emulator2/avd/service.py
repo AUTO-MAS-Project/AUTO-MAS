@@ -37,7 +37,7 @@ from typing import Any
 
 from app.utils import get_logger
 
-from . import components, precheck
+from . import components, host, hypervisor, precheck
 from .components import ComponentError, InstallJob
 from .constants import DOWNLOAD_SOURCES, LICENSE_ID, POWER_CLOSE_TIMEOUT_SECONDS
 
@@ -365,3 +365,24 @@ async def set_instance_options(
         balloon=balloon,
         guest_angle=guest_angle,
     )
+
+
+#: 同一时间只跑一个开启流程：连点两次不该弹两个系统确认框。
+_hypervisor_lock = asyncio.Lock()
+
+
+async def enable_hypervisor_platform() -> dict[str, Any]:
+    """用户点「开启」后提权开启「Windows 虚拟机监控程序平台」（弹 UAC）。不重启电脑。"""
+    if _hypervisor_lock.locked():
+        return {
+            "ok": False,
+            "reason": "running",
+            "restartRequired": False,
+            "message": "正在开启，请在弹出的系统确认框里操作",
+            "exitCode": None,
+        }
+    async with _hypervisor_lock:
+        result = await asyncio.to_thread(hypervisor.enable_hypervisor_platform)
+    # 系统功能可能变了，下次检查别拿旧结果
+    host.forget_acceleration()
+    return result.as_dict()

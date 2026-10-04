@@ -5852,6 +5852,13 @@ class Emulator2AvdPrecheckItem(BaseModel):
     )
     reason: str = Field(default="", description="检查结果或不满足的原因")
     advice: str = Field(default="", description="不满足时给用户的处理建议")
+    action: str = Field(
+        default="",
+        description=(
+            "界面可以一键处理的动作: enable_hypervisor_platform 开启「Windows 虚拟机监控程序平台」"
+            " (调 /avd/hypervisor/enable); 没有为空"
+        ),
+    )
 
 
 class Emulator2AvdStatusOut(OutBase):
@@ -6014,6 +6021,21 @@ class Emulator2AvdInstanceOptionsOut(OutBase):
     consolePort: int = Field(default=0, description="控制台端口")
     adbPort: int = Field(default=0, description="adb 端口")
     grpcPort: int = Field(default=0, description="gRPC 端口 (带 token 鉴权)")
+
+
+class Emulator2AvdHypervisorEnableOut(OutBase):
+    ok: bool = Field(default=False, description="是否已开启 (要重启电脑才生效)")
+    reason: str = Field(
+        default="",
+        description=(
+            "enabled 已开启, 要重启 / cancelled 用户在系统确认框里取消 / "
+            "failed 失败 / running 上一次还没结束"
+        ),
+    )
+    restartRequired: bool = Field(default=False, description="是否要重启电脑才生效")
+    exitCode: Optional[int] = Field(
+        default=None, description="dism 的退出码 (0 / 3010 为成功)"
+    )
 
 
 class WebhookInBase(BaseModel):
