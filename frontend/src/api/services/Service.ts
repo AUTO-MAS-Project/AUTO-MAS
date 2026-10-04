@@ -146,6 +146,7 @@ import type { TaskCreateIn } from '../models/TaskCreateIn';
 import type { TaskCreateOut } from '../models/TaskCreateOut';
 import type { TaskRuntimeSnapshot } from '../models/TaskRuntimeSnapshot';
 import type { TaskStatusOut } from '../models/TaskStatusOut';
+import type { TaskStopOut } from '../models/TaskStopOut';
 import type { TaygedoLoginIn } from '../models/TaygedoLoginIn';
 import type { TimeSetCreateOut } from '../models/TimeSetCreateOut';
 import type { TimeSetDeleteIn } from '../models/TimeSetDeleteIn';
@@ -3375,12 +3376,12 @@ export class Service {
     /**
      * 中止任务
      * @param requestBody
-     * @returns OutBase Successful Response
+     * @returns TaskStopOut Successful Response
      * @throws ApiError
      */
     public static stopTaskApiDispatchStopPost(
         requestBody: DispatchIn,
-    ): CancelablePromise<OutBase> {
+    ): CancelablePromise<TaskStopOut> {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/dispatch/stop',

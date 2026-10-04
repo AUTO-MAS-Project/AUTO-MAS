@@ -422,6 +422,7 @@ export type { TaskCreateOut } from './models/TaskCreateOut';
 export type { TaskRuntimeSnapshot } from './models/TaskRuntimeSnapshot';
 export { TaskRuntimeSnapshotItem } from './models/TaskRuntimeSnapshotItem';
 export { TaskStatusOut } from './models/TaskStatusOut';
+export type { TaskStopOut } from './models/TaskStopOut';
 export type { TaygedoLoginIn } from './models/TaygedoLoginIn';
 export type { TimeSet } from './models/TimeSet';
 export type { TimeSet_Info } from './models/TimeSet_Info';

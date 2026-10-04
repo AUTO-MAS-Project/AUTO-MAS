@@ -284,6 +284,14 @@ export default {
     highlightColorsPreview: 'ハイライト色とプレビュー',
   },
   edit: {
+    maaSessionReadFailed: 'MAA の変更は保持されませんでした：設定ファイルを読み取れませんでした',
+    maaSessionNotWritten:
+      'MAA の変更は保持されませんでした：完全な設定ファイルが書き込まれませんでした',
+    maaSessionQueueChanged:
+      'MAA の変更は保持されませんでした：タスクキューまたは設定プロファイルが変更されました',
+    maaSessionSaveUnconfirmed:
+      'MAA の設定が保存されたか確認できません。再度開いて確認してください。',
+    maaSessionClosed: 'MAA のネイティブ設定を閉じました',
     configLocked: 'タスク実行中のため設定はロックされています。終了後に編集できます',
     notifyServerChan: 'ServerChan',
     notifyStatistics: '統計情報',

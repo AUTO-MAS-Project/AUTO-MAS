@@ -2407,6 +2407,14 @@ export default {
     maaSessionOpened: 'MAA setup opened',
     maaSessionStartFailed: 'Could not start the MAA setup session',
     maaSessionStopFailed: 'Could not stop the MAA setup session',
+    maaSessionReadFailed: 'MAA changes were not kept: the configuration file could not be read',
+    maaSessionNotWritten:
+      'MAA changes were not kept: the script did not write a complete configuration',
+    maaSessionQueueChanged:
+      'MAA changes were not kept: the task queue or configuration profile changed',
+    maaSessionSaveUnconfirmed:
+      'Unable to confirm whether MAA settings were saved. Reopen to check.',
+    maaSessionClosed: 'MAA native settings closed',
     maaEditorReloadBlocked:
       'Wait for changes to be saved and configuration operations to finish, then close the MAA setup window before refreshing.',
     maaViewOpened: 'MAA viewer opened',

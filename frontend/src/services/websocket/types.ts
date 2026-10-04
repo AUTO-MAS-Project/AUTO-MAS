@@ -1,5 +1,6 @@
 // WebSocket 统一消息协议类型
 // 与后端 app/core/ws/protocol.py、app/models/schema.py 保持一致
+import type { TaskStopOut } from '@/api'
 
 // ==================== 信封 ====================
 
@@ -138,6 +139,7 @@ export interface WSTaskCompletedData {
   outcome: 'success' | 'error' | 'cancelled'
   error?: string | null
   task_info: WSTaskScriptInfoData[]
+  configResult?: TaskStopOut['configResult']
 }
 
 /** 新任务创建通知数据 (id=TaskManager, type=task.created) */

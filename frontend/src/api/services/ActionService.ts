@@ -25,6 +25,7 @@ import type { ScriptUploadIn } from '../models/ScriptUploadIn';
 import type { ShareAuthStatusOut } from '../models/ShareAuthStatusOut';
 import type { TaskCreateIn } from '../models/TaskCreateIn';
 import type { TaskCreateOut } from '../models/TaskCreateOut';
+import type { TaskStopOut } from '../models/TaskStopOut';
 import type { VirtualDisplayDetachOut } from '../models/VirtualDisplayDetachOut';
 import type { WebhookTestIn } from '../models/WebhookTestIn';
 import type { CancelablePromise } from '../core/CancelablePromise';
@@ -236,12 +237,12 @@ export class ActionService {
     /**
      * 中止任务
      * @param requestBody
-     * @returns OutBase Successful Response
+     * @returns TaskStopOut Successful Response
      * @throws ApiError
      */
     public static stopTaskApiDispatchStopPost(
         requestBody: DispatchIn,
-    ): CancelablePromise<OutBase> {
+    ): CancelablePromise<TaskStopOut> {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/dispatch/stop',

@@ -6071,6 +6071,19 @@ class TaskRuntimeSnapshot(BaseModel):
     )
 
 
+class TaskStopOut(OutBase):
+    configResult: Optional[
+        Literal[
+            "saved",
+            "config_read_failed",
+            "config_not_written",
+            "queue_changed",
+            "failed",
+            "closed",
+        ]
+    ] = Field(default=None, description="MAA 配置回写结果；未确认或其他专项时为空")
+
+
 class TaskStatusOut(OutBase):
     """按 taskId 单点查询一个任务的状态, 不携带日志。"""
 
@@ -6103,6 +6116,16 @@ class WSTaskCompletedData(BaseModel):
     )
     error: Optional[str] = Field(default=None, description="任务错误信息")
     task_info: List[WSTaskScriptInfoData] = Field(..., description="任务信息全量快照")
+    configResult: Optional[
+        Literal[
+            "saved",
+            "config_read_failed",
+            "config_not_written",
+            "queue_changed",
+            "failed",
+            "closed",
+        ]
+    ] = Field(default=None, description="MAA 配置回写结果；未确认或其他专项时为空")
 
 
 class WSTaskCreatedData(BaseModel):

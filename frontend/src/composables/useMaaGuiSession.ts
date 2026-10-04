@@ -4,6 +4,14 @@ import { useNativeGuiSession } from '@/composables/useNativeGuiSession'
 export function useMaaGuiSession() {
   const session = useNativeGuiSession({
     loggerName: 'MAA配置会话',
+    configResultKeys: {
+      saved: 'edit.configurationThisUserWas',
+      config_read_failed: 'edit.maaSessionReadFailed',
+      config_not_written: 'edit.maaSessionNotWritten',
+      queue_changed: 'edit.maaSessionQueueChanged',
+      failed: 'edit.couldNotSaveMaa',
+      closed: 'edit.maaSessionClosed',
+    },
     keys: {
       stopFailed: 'edit.maaSessionStopFailed',
       startFailed: 'edit.maaSessionStartFailed',
@@ -12,7 +20,7 @@ export function useMaaGuiSession() {
       viewOpened: 'edit.maaViewOpened',
       timeoutWarn: 'edit.maaSessionTimeoutWarn',
       saved: 'edit.configurationThisUserWas',
-      saveFailed: 'edit.couldNotSaveMaa',
+      saveFailed: 'edit.maaSessionSaveUnconfirmed',
     },
   })
   return {

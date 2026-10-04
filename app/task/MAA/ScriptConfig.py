@@ -384,12 +384,18 @@ class ScriptConfigTask(TaskExecuteBase):
         if self.view_only:
             logger.success("MAA 查看结束（只读，不回写配置）")
             self.cur_user_item.status = "完成"
+            self.task_info.maa_config_result = (
+                self.task_info.maa_config_result or "closed"
+            )
             return
 
         # 直控会话：MAS 零写入，安装目录配置由本体保存并保留，不回写 MAS 目录
         if self._mas_owner() is None:
             logger.success("MAA 直控配置已由脚本原生 GUI 保存")
             self.cur_user_item.status = "完成"
+            self.task_info.maa_config_result = (
+                self.task_info.maa_config_result or "closed"
+            )
             return
 
         mas_dir = mas_config_dir(self.script_info.script_id, self._mas_owner())
@@ -404,10 +410,12 @@ class ScriptConfigTask(TaskExecuteBase):
                 logger.opt(exception=True).warning(
                     f"读取 MAA 配置以回写失败({name}), 本次修改全部丢弃: {e}"
                 )
+                self.task_info.maa_config_result = "config_read_failed"
                 return
             if not isinstance(current, dict) or not current:
                 # MAA 未写盘(如被强杀)，GUI 改动无从谈起，存档保持 set_maa 下发态
                 logger.info("MAA 配置回写: 无完整落盘内容, 存档保持不变")
+                self.task_info.maa_config_result = "config_not_written"
                 return
             current_docs[name] = current
 
@@ -417,6 +425,7 @@ class ScriptConfigTask(TaskExecuteBase):
             current_docs["gui.new.json"].get("Configurations"),
         ):
             logger.warning("MAA 队列结构或配置方案发生变化, 本次 GUI 配置修改全部丢弃")
+            self.task_info.maa_config_result = "queue_changed"
             return
 
         for name, current in current_docs.items():
@@ -431,8 +440,10 @@ class ScriptConfigTask(TaskExecuteBase):
                         configurations["TaskQueue"] = _repair_maa_task_queue(queue)
         for name, current in current_docs.items():
             write_file(mas_dir / name, current)
+        self.task_info.maa_config_result = self.task_info.maa_config_result or "saved"
 
     async def on_crash(self, e: Exception):
+        self.task_info.maa_config_result = "failed"
         self.cur_user_item.status = "异常"
         logger.opt(exception=True).warning(f"脚本设置任务出现异常: {e}")
         await Publisher.send(

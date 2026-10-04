@@ -47,6 +47,7 @@ from app.models.schema import (
     WSTaskScriptIdentityData,
 )
 from app.models.task import (
+    MaaConfigResult,
     ScriptItem,
     TaskExecuteBase,
     TaskItem,
@@ -936,6 +937,7 @@ class Task(TaskExecuteBase):
                 outcome=self._exit_result,
                 error=self._exit_error,
                 task_info=self.task_info.asdict,
+                configResult=self.task_info.maa_config_result,
             ),
         )
         # 同一步里先留存终态：任务从运行快照摘掉后仍要能凭 taskId 查到
@@ -1435,7 +1437,7 @@ class _TaskManager:
             # 倒计时进度由电源任务经 power.countdown.updated 持续推送
             await System.start_power_task()
 
-    async def stop_task(self, task_id: str) -> None:
+    async def stop_task(self, task_id: str) -> MaaConfigResult | None:
         """
         中止任务
 
@@ -1488,17 +1490,19 @@ class _TaskManager:
             )
         else:
             uid = uuid.UUID(task_id)
-            if uid not in self.task_handler:
+            task_item = self.task_handler.get(uid)
+            if task_item is None:
                 # 任务已经结束时，中止操作仍视为成功。
                 logger.info(f"任务 {task_id} 已结束，无需中止")
                 return
-            if self.task_handler[uid].is_closing:
+            if task_item.is_closing:
                 raise RuntimeError("任务已在中止中")
-            self.task_handler[uid].cancel()
-            self.task_handler[uid].is_closing = True
+            task_item.cancel()
+            task_item.is_closing = True
             logger.info(f"等待任务 {task_id} 结束...")
-            await self.task_handler[uid].accomplish.wait()
+            await task_item.accomplish.wait()
             logger.info(f"任务 {task_id} 已结束")
+            return task_item.task_info.maa_config_result
 
     async def start_startup_queue(self):
         """开始运行启动时运行的调度队列"""

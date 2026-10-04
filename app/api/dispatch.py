@@ -110,19 +110,19 @@ async def add_task(task: TaskCreateIn = Body(...)) -> TaskCreateOut:
     "/stop",
     tags=["Action"],
     summary="中止任务",
-    response_model=OutBase,
+    response_model=TaskStopOut,
     status_code=200,
 )
-async def stop_task(task: DispatchIn = Body(...)) -> OutBase:
+async def stop_task(task: DispatchIn = Body(...)) -> TaskStopOut:
 
     try:
-        await TaskManager.stop_task(task.taskId)
+        result = await TaskManager.stop_task(task.taskId)
     except Exception as e:
         logger.opt(exception=True).warning(f"stop_task失败: {type(e).__name__}: {e}")
-        return OutBase(
+        return TaskStopOut(
             code=500, status="error", message=f"{type(e).__name__}: {str(e)}"
         )
-    return OutBase()
+    return TaskStopOut(configResult=result)
 
 
 @router.post(
