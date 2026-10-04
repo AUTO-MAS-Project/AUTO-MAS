@@ -98,17 +98,7 @@
           <a-button
             :type="status === '运行' ? 'default' : 'primary'"
             :danger="status === '运行'"
-            :disabled="
-              status === '运行'
-                ? false
-                : !localSelectedTaskId ||
-                  !localSelectedMode ||
-                  disabled ||
-                  !taskOptions.some(option => option.value === localSelectedTaskId) ||
-                  (showUserSelect &&
-                    (userOptionsLoading ||
-                      (selectedUserIds !== undefined && localSelectedUserIds.length === 0)))
-            "
+            :disabled="startDisabled"
             size="large"
             @click="onAction"
           >
@@ -120,7 +110,86 @@
           </a-button>
         </a-space>
       </div>
-
+      <!-- 队列任务本次运行的托管/账号范围：常驻展示、账号旁勾选，默认全勾 -->
+      <div v-if="showQueueScope" class="queue-scope">
+        <div class="queue-scope-head">
+          <span class="queue-scope-title">{{ t('scheduler.control.runScopeTitle') }}</span>
+          <a-tooltip :title="t('scheduler.control.runScopeTip')">
+            <QuestionCircleOutlined class="queue-scope-help" />
+          </a-tooltip>
+          <a-tooltip :title="queueScopeToggleText">
+            <a-button
+              type="text"
+              size="small"
+              class="queue-scope-toggle"
+              :aria-expanded="queueScopeExpanded"
+              :aria-label="queueScopeToggleText"
+              @click="toggleQueueScope"
+            >
+              <DownOutlined
+                class="queue-scope-chevron"
+                :class="{ 'is-collapsed': !queueScopeExpanded }"
+              />
+            </a-button>
+          </a-tooltip>
+          <template v-if="!queueScopeLoading && !queueScopeFailed">
+            <span class="queue-scope-summary">
+              {{
+                t('scheduler.control.runScopeSelected', {
+                  selected: queueScopeSelectedCount,
+                  total: queueScopeUserCount,
+                })
+              }}
+            </span>
+            <a-button
+              type="link"
+              size="small"
+              :disabled="queueScopeSelectedCount >= queueScopeUserCount"
+              @click="selectAllQueueUsers"
+            >
+              {{ t('scheduler.control.selectAllUsers') }}
+            </a-button>
+            <a-button
+              type="link"
+              size="small"
+              :disabled="queueScopeSelectedCount === 0"
+              @click="clearAllQueueUsers"
+            >
+              {{ t('scheduler.control.clearAllUsers') }}
+            </a-button>
+          </template>
+        </div>
+        <div v-if="queueScopeLoading" class="queue-scope-tip">
+          {{ t('scheduler.control.runScopeLoading') }}
+        </div>
+        <div v-else-if="queueScopeFailed" class="queue-scope-error">
+          {{ t('scheduler.control.runScopeLoadFailed') }}
+          <a-button type="link" size="small" @click="retryQueueScope">
+            {{ t('scheduler.control.runScopeRetry') }}
+          </a-button>
+        </div>
+        <div v-else-if="queueScopeExpanded && !queueScopeRows.length" class="queue-scope-tip">
+          {{ t('scheduler.control.runScopeNoUsers') }}
+        </div>
+        <div v-else-if="queueScopeExpanded" class="queue-scope-groups">
+          <div v-for="row in queueScopeRows" :key="row.group.scriptId" class="queue-scope-group">
+            <span class="queue-scope-group-name" :title="row.group.scriptName">
+              {{ row.group.scriptName }}
+            </span>
+            <span v-if="!row.group.users.length" class="queue-scope-group-empty">
+              {{ t('scheduler.control.runScopeNoUsers') }}
+            </span>
+            <a-checkbox
+              v-for="user in row.group.users"
+              :key="user.value"
+              :checked="row.selected.has(user.value)"
+              @change="onQueueUserChange(row.group, user.value, $event)"
+            >
+              {{ user.label }}
+            </a-checkbox>
+          </div>
+        </div>
+      </div>
       <!-- 循环运行的下轮预览 -->
       <div v-if="cyclePreview.length" class="cycle-preview">
         <span class="cycle-preview-label">{{ t('scheduler.cycle.nextTitle') }}</span>
@@ -150,11 +219,25 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
 import { computed, defineComponent, ref, watch, type PropType, type VNode } from 'vue'
-import { PlayCircleOutlined, StopOutlined } from '@ant-design/icons-vue'
+import {
+  DownOutlined,
+  PlayCircleOutlined,
+  QuestionCircleOutlined,
+  StopOutlined,
+} from '@ant-design/icons-vue'
 import { TaskCreateIn } from '@/api/models/TaskCreateIn'
 import type { ComboBoxItem } from '@/api/models/ComboBoxItem'
 import type { WSTaskCyclePreviewData } from '@/services/websocket/types'
 import { type SchedulerStatus, getTaskModeOptions } from './schedulerConstants'
+import {
+  countQueueSelectedUsers,
+  countQueueUsers,
+  selectedQueueUsers,
+  withoutAllQueueUsers,
+  withQueueGroupSelection,
+  type QueueScopeGroup,
+  type QueueUserScope,
+} from './schedulerQueueScope'
 
 const { t } = useI18n()
 
@@ -187,6 +270,11 @@ interface Props {
   runningModeLabel?: string
   isCycleQueue?: boolean
   cycleNextList?: WSTaskCyclePreviewData[]
+  // 队列任务本次运行的托管/账号范围，语义见 schedulerQueueScope.ts
+  queueUserScope?: QueueUserScope
+  queueScopeGroups?: QueueScopeGroup[]
+  queueScopeLoading?: boolean
+  queueScopeFailed?: boolean
 }
 
 interface Emits {
@@ -208,6 +296,9 @@ interface Emits {
   (e: 'task-changed', value: string | null): void
   (e: 'refresh-resume-scripts'): void
   (e: 'refresh-users'): void
+
+  (e: 'update:queueUserScope', value: QueueUserScope): void
+  (e: 'refresh-queue-scope'): void
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -222,6 +313,10 @@ const props = withDefaults(defineProps<Props>(), {
   runningModeLabel: '',
   isCycleQueue: false,
   cycleNextList: () => [],
+  queueUserScope: () => ({}),
+  queueScopeGroups: () => [],
+  queueScopeLoading: false,
+  queueScopeFailed: false,
 })
 
 const emit = defineEmits<Emits>()
@@ -249,21 +344,70 @@ const modeOptions = computed(() =>
 
 const cyclePreview = computed(() => (props.status === '运行' ? (props.cycleNextList ?? []) : []))
 
-// 仅当选中队列任务时显示恢复脚本下拉框。
+// 仅当选中队列任务时显示恢复脚本下拉框与本次运行范围。
 // 注：通过任务选项 label 的 "队列 - " 前缀判断，与 useSchedulerLogic.isQueueTask 保持同步。
-const showResumeScriptSelect = computed(() => {
-  const selectedTaskId = localSelectedTaskId.value
-  if (!selectedTaskId) return false
-
-  const taskOption = props.taskOptions.find(opt => opt.value === selectedTaskId)
+const selectedIsQueueTask = computed(() => {
+  const taskOption = props.taskOptions.find(opt => opt.value === localSelectedTaskId.value)
   return Boolean(taskOption?.label.startsWith('队列 - '))
 })
+
+const showResumeScriptSelect = computed(
+  () => Boolean(localSelectedTaskId.value) && selectedIsQueueTask.value
+)
 
 // 脚本自动代理始终保留用户选择框，列表暂时为空时也可打开下拉重试加载。
 const showUserSelect = computed(() => {
   if (localSelectedMode.value !== TaskCreateIn.mode.AUTO_PROXY) return false
   const taskOption = props.taskOptions.find(opt => opt.value === localSelectedTaskId.value)
   return Boolean(taskOption && !taskOption.label.startsWith('队列 - '))
+})
+
+const queueScopeUserCount = computed(() => countQueueUsers(props.queueScopeGroups ?? []))
+
+const queueScopeSelectedCount = computed(() =>
+  countQueueSelectedUsers(props.queueUserScope ?? {}, props.queueScopeGroups ?? [])
+)
+
+// 面板按托管平铺「账号 + 勾选框」，把勾选查表提前算好，避免模板里逐项线性查找
+const queueScopeRows = computed(() =>
+  (props.queueScopeGroups ?? []).map(group => ({
+    group,
+    selected: new Set(selectedQueueUsers(props.queueUserScope ?? {}, group)),
+  }))
+)
+
+// 长的队列会把启动卡撑高、压缩下方的任务总览与日志，允许收起只留标题
+const queueScopeExpanded = ref(true)
+
+const queueScopeToggleText = computed(() =>
+  t(
+    queueScopeExpanded.value
+      ? 'scheduler.control.runScopeCollapse'
+      : 'scheduler.control.runScopeExpand'
+  )
+)
+
+// 运行态整卡换成 running-info，范围面板自然收起
+const showQueueScope = computed(
+  () => props.status !== '运行' && Boolean(localSelectedTaskId.value) && selectedIsQueueTask.value
+)
+
+// 启动按钮的禁用条件集中在这里维护，模板里的表达式不再继续膨胀
+const startDisabled = computed(() => {
+  if (props.status === '运行') return false
+  if (!localSelectedTaskId.value || !localSelectedMode.value || props.disabled) return true
+  if (!props.taskOptions.some(option => option.value === localSelectedTaskId.value)) return true
+  if (
+    showUserSelect.value &&
+    (props.userOptionsLoading ||
+      (props.selectedUserIds !== undefined && localSelectedUserIds.value.length === 0))
+  ) {
+    return true
+  }
+  if (!selectedIsQueueTask.value) return false
+  // 范围还没加载完先不让启动；加载失败则放开按钮，由点击后的报错说明原因
+  if (props.queueScopeLoading) return true
+  return queueScopeUserCount.value > 0 && queueScopeSelectedCount.value === 0
 })
 
 // 运行时的显示文本 - 直接使用 props，不再需要本地 ref
@@ -359,6 +503,33 @@ const onUserDropdownVisibleChange = (open: boolean) => {
   if (open) emit('refresh-users')
 }
 
+// 全选 = 清掉所有显式勾选，回到「缺键即不限制」的默认口径
+const selectAllQueueUsers = () => {
+  emit('update:queueUserScope', {})
+}
+
+const clearAllQueueUsers = () => {
+  emit('update:queueUserScope', withoutAllQueueUsers(props.queueScopeGroups ?? []))
+}
+
+const onQueueUserChange = (
+  group: QueueScopeGroup,
+  userId: string,
+  event: { target: { checked: boolean } }
+) => {
+  const current = selectedQueueUsers(props.queueUserScope ?? {}, group)
+  const next = event.target.checked ? [...current, userId] : current.filter(id => id !== userId)
+  emit('update:queueUserScope', withQueueGroupSelection(props.queueUserScope ?? {}, group, next))
+}
+
+const retryQueueScope = () => {
+  emit('refresh-queue-scope')
+}
+
+const toggleQueueScope = () => {
+  queueScopeExpanded.value = !queueScopeExpanded.value
+}
+
 // 合并的按钮事件处理
 const onAction = () => {
   if (props.status === '运行') {
@@ -397,6 +568,93 @@ const onDropdownVisibleChange = (open: boolean) => {
   gap: 16px;
 }
 
+/* 队列任务「本次运行范围」：与启动栏同一张卡，用一条分隔线分区 */
+.queue-scope {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--ant-color-border-secondary);
+}
+
+.queue-scope-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.queue-scope-title {
+  font-size: 13px;
+  color: var(--ant-color-text);
+}
+
+.queue-scope-help {
+  color: var(--ant-color-text-tertiary);
+  cursor: help;
+}
+
+.queue-scope-toggle {
+  padding: 0 4px;
+  color: var(--ant-color-text-tertiary);
+}
+
+.queue-scope-chevron {
+  font-size: 12px;
+  transition: transform 0.2s ease;
+}
+
+.queue-scope-chevron.is-collapsed {
+  transform: rotate(-90deg);
+}
+
+.queue-scope-summary {
+  margin-left: 8px;
+  font-size: 12px;
+  color: var(--ant-color-text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.queue-scope-error {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--ant-color-error);
+}
+
+.queue-scope-tip {
+  margin-top: 4px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--ant-color-text-tertiary);
+}
+
+.queue-scope-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.queue-scope-group {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.queue-scope-group-empty {
+  font-size: 12px;
+  color: var(--ant-color-text-tertiary);
+}
+
+.queue-scope-group-name {
+  min-width: 96px;
+  max-width: 200px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 13px;
+  color: var(--ant-color-text-secondary);
+}
+
 .cycle-preview {
   display: flex;
   align-items: center;
@@ -433,6 +691,15 @@ const onDropdownVisibleChange = (open: boolean) => {
 
   .control-card {
     padding: 12px;
+  }
+
+  .queue-scope-group {
+    gap: 8px;
+  }
+
+  .queue-scope-group-name {
+    min-width: 0;
+    max-width: 100%;
   }
 }
 

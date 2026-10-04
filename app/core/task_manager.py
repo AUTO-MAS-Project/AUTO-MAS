@@ -518,6 +518,7 @@ class Task(TaskExecuteBase):
         # prepare 也放进 try，它一失败标记就得跟着清。
         try:
             await self.prepare()
+            await self._notice_scope_skipped_scripts()
             while True:
                 await self._run_cycle_round(queue_uid)
         finally:
@@ -530,7 +531,7 @@ class Task(TaskExecuteBase):
 
         queue = Config.QueueConfig[queue_uid]
         now = datetime.now()
-        entries = collect_cycle_entries(queue, Config.ScriptConfig, now)
+        entries = self._collect_entries(queue_uid)
 
         # 首次推算的结果要落盘，重启后才不会当成「立刻可跑」重来一遍。
         # 只在还是空值哨兵时写：已经排过期的每轮重写一遍纯属白费写盘。
@@ -588,11 +589,44 @@ class Task(TaskExecuteBase):
         if results and not any(result == "success" for result in results):
             await asyncio.sleep(CYCLE_RETRY_SLEEP_SECONDS)
 
-    @staticmethod
-    def _collect_entries(queue_uid: uuid.UUID) -> list[CycleEntry]:
-        return collect_cycle_entries(
+    def _scope_skipped_script_ids(self) -> set[str]:
+        """本次运行范围内被整项排除的托管（勾选后一个用户都没选）。"""
+
+        scope = self.task_info.user_ids_by_script
+        if not scope:
+            return set()
+        return {script_id for script_id, user_ids in scope.items() if not user_ids}
+
+    async def _notice_scope_skipped_scripts(self) -> None:
+        """循环运行前把本次未选择任何用户的托管标记为跳过，并只提示一次。"""
+
+        skipped = self._scope_skipped_script_ids()
+        if not skipped:
+            return
+        for script_item in self.task_info.script_list:
+            if script_item.script_id not in skipped:
+                continue
+            script_item.status = "跳过"
+            logger.info(f"跳过任务: {script_item.script_id}, 本次未选择任何用户")
+            await Publisher.send(
+                id=self.task_info.task_id,
+                type=protocol.TASK_NOTICE,
+                data=WSTaskNoticeData(
+                    level="warning",
+                    message=f"任务 {script_item.name} 本次未选择任何用户, 已跳过",
+                ),
+            )
+
+    def _collect_entries(self, queue_uid: uuid.UUID) -> list[CycleEntry]:
+        """收集队列的待运行条目，并剔除本次一个用户都没选的托管。"""
+
+        entries = collect_cycle_entries(
             Config.QueueConfig[queue_uid], Config.ScriptConfig, datetime.now()
         )
+        skipped = self._scope_skipped_script_ids()
+        if not skipped:
+            return entries
+        return [entry for entry in entries if entry.script_id not in skipped]
 
     async def _run_cycle_entry(
         self,
@@ -842,6 +876,21 @@ class Task(TaskExecuteBase):
                     data=WSTaskNoticeData(
                         level="error",
                         message=f"任务 {script_item.name} 对应脚本已被删除",
+                    ),
+                )
+                continue
+
+            # 队列任务按托管勾选了本次运行范围时，一个用户都没选的托管整项跳过
+            script_scope = self.task_info.script_user_scope(script_item.script_id)
+            if script_scope is not None and not script_scope:
+                script_item.status = "跳过"
+                logger.info(f"跳过任务: {current_script_uid}, 本次未选择任何用户")
+                await Publisher.send(
+                    id=self.task_info.task_id,
+                    type=protocol.TASK_NOTICE,
+                    data=WSTaskNoticeData(
+                        level="warning",
+                        message=f"任务 {script_item.name} 本次未选择任何用户, 已跳过",
                     ),
                 )
                 continue
@@ -1221,6 +1270,28 @@ class _TaskManager:
 
         return frozenset(selected)
 
+    def _resolve_queue_user_scope(
+        self, queue_id: uuid.UUID, queue_user_ids: dict[str, list[str]]
+    ) -> dict[str, frozenset[str]]:
+        # 校验队列任务按脚本指定的本次运行用户，口径与脚本任务的多选一致。
+        queue_script_ids = {
+            str(script_id) for script_id in self._queue_script_ids(queue_id)
+        }
+        scope: dict[str, frozenset[str]] = {}
+        for script_id, user_ids in queue_user_ids.items():
+            if script_id not in queue_script_ids:
+                queue_name = Config.QueueConfig[queue_id].get("Info", "Name")
+                raise ValueError(f"脚本 {script_id} 不属于队列 {queue_name}")
+            if not user_ids:
+                # 空集合是有意义的取值：该托管本次一个用户都不跑。
+                scope[script_id] = frozenset()
+                continue
+            scope[script_id] = (
+                self._resolve_target_users(uuid.UUID(script_id), list(user_ids))
+                or frozenset()
+            )
+        return scope
+
     async def add_task(
         self,
         mode: Literal["AutoProxy", "ScriptConfig", "Update", "CycleRun"],
@@ -1229,6 +1300,7 @@ class _TaskManager:
         resume_from_script_id: str | None = None,
         user_id: str | None = None,
         user_ids: list[str] | None = None,
+        queue_user_ids: dict[str, list[str]] | None = None,
         trigger_source: TaskTriggerSource = "manual_task",
         view_only: bool = False,
         instance_idx: int | None = None,
@@ -1242,6 +1314,8 @@ class _TaskManager:
             new_task_info (dict): 新任务项信息. Defaults to {}.
             user_id (str): 单独运行的用户 ID; 仅脚本的自动代理任务可用。
             user_ids (list[str]): 多选运行的用户 ID; 仅脚本的自动代理任务可用。
+            queue_user_ids (dict[str, list[str]]): 按脚本ID指定本次运行的用户 ID;
+                仅队列任务可用, 未列出的脚本不限, 空列表表示该脚本本次整项跳过。
             trigger_source: MAS 任务触发来源，API 手动启动默认 manual_task。
             view_only: 配置查看会话（ScriptConfig 专用）：只读打开原生界面，
                 不注入基线也不回读字段，用于「查看历史备份」等预览场景。
@@ -1269,6 +1343,12 @@ class _TaskManager:
         ):
             raise ValueError("指定运行用户仅支持脚本的自动代理任务")
 
+        # 队列的用户范围是按托管分别收窄，与脚本任务的整任务用户范围是两套入参。
+        if queue_user_ids is not None and (
+            mode not in ("AutoProxy", "CycleRun") or uid not in Config.QueueConfig
+        ):
+            raise ValueError("按脚本指定运行用户仅支持队列任务")
+
         # CycleRun 只是「怎么排」的差别，脚本仍按自动代理执行；各脚本适配器
         # 只认 AutoProxy，所以模式在这里就翻译掉，循环与否记在 is_cycle 上。
         is_cycle = mode == "CycleRun"
@@ -1291,6 +1371,7 @@ class _TaskManager:
             Config.running_cycle_queue_ids.add(uid)
 
         selected_user_ids: frozenset[str] | None = None
+        selected_user_scope: dict[str, frozenset[str]] | None = None
 
         if mode in ("ScriptConfig", "Update"):
             if uid in Config.ScriptConfig:
@@ -1333,6 +1414,10 @@ class _TaskManager:
             ]
             target_script_ids = [script_id for script_id, _ in queue_entries]
             script_run_days = [days for _, days in queue_entries]
+            if queue_user_ids is not None:
+                selected_user_scope = self._resolve_queue_user_scope(
+                    queue_id, queue_user_ids
+                )
         elif script_uid is not None and script_uid in Config.ScriptConfig:
             target_script_ids = [script_uid]
         else:
@@ -1368,6 +1453,7 @@ class _TaskManager:
                 script_id=str(script_uid) if script_uid else None,
                 user_id=str(user_uid) if user_uid else None,
                 user_ids=selected_user_ids,
+                user_ids_by_script=selected_user_scope,
                 resume_from_script_id=resume_from_script_id,
                 trigger_source=trigger_source,
                 is_cycle=is_cycle,

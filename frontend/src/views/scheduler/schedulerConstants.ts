@@ -1,6 +1,7 @@
 import { TaskCreateIn } from '@/api/models/TaskCreateIn'
 import { PowerIn } from '@/api/models/PowerIn'
 import type { WSTaskCyclePreviewData } from '@/services/websocket/types'
+import type { QueueScopeGroup, QueueUserScope } from './schedulerQueueScope'
 
 // 调度台状态
 export type SchedulerStatus = '空闲' | '运行' | '结束' | '异常'
@@ -89,4 +90,10 @@ export interface SchedulerTab {
   isCycleQueue?: boolean
   // 循环运行的待运行条目预览
   cycleNextList?: WSTaskCyclePreviewData[]
+  // 队列任务本次运行的托管/账号范围，语义见 schedulerQueueScope.ts（缺键为默认全选）
+  queueUserScope?: QueueUserScope
+  // 该队列的托管及其可运行账号，供「本次运行范围」面板渲染
+  queueScopeGroups?: QueueScopeGroup[]
+  queueScopeLoading?: boolean
+  queueScopeFailed?: boolean
 }
