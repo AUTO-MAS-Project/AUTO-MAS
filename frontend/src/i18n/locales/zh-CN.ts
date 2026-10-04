@@ -2905,7 +2905,7 @@ export default {
       optionsHint: '下次启动生效',
       softwareRenderer: '这台实例在用软件渲染，游戏会占满 CPU，请更新显卡驱动',
       fieldMemory: '内存',
-      memoryRecommend: '推荐：方舟、1999、崩坏三 {light} GB，星铁 {starRail} GB',
+      memoryRecommend: '推荐：1999 {reverse1999} GB',
       fieldBalloon: '气球',
       balloonHint: '游戏用不完的内存还给系统',
       installApk: '安装 APK',

@@ -22,10 +22,10 @@ export const MEMORY_CHOICES_MB = [3072, 4096, 5120, 6144] as const
 /** 新建实例默认 6 GB（与后端 ``DEFAULT_MEMORY_MB`` 一致）；核数后端默认 6。 */
 export const DEFAULT_MEMORY_MB = 6144
 /**
- * 各游戏的推荐内存（GB），只用来提示（与后端 ``RECOMMENDED_MEMORY_MB`` 一致）。
- * 一台实例一轮里可能先后跑好几个游戏，开机后内存改不了，所以不按游戏自动分配。
+ * 推荐内存（GB），只用来提示（与后端 ``RECOMMENDED_MEMORY_MB`` 一致）。魔改 AVD 目前只支持
+ * M9A，只给 1999 的推荐值；开机后内存改不了，所以不按游戏自动分配。
  */
-export const RECOMMENDED_MEMORY_GB = { light: 4, starRail: 5 } as const
+export const RECOMMENDED_MEMORY_GB = { reverse1999: 4 } as const
 
 export const defaultAvdOptions = (): AvdOptionsForm => ({
   memoryMb: DEFAULT_MEMORY_MB,

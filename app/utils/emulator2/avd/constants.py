@@ -163,15 +163,10 @@ MEMORY_CHOICES_MB = (3072, 4096, 5120, 6144)
 CPU_CHOICES = (2, 4, 6)
 DEFAULT_MEMORY_MB = 6144
 DEFAULT_CPU = 6
-#: 各游戏的推荐内存（MB），只用来提示：界面上的推荐值，以及开机时实例内存低于推荐值记一条日志。
-#: 数据见 aemu-lab ``自研模拟器-动态内存.md`` 第 7.6 节：星铁 4 GB 能跑，但 zram 压了近 2 GB，偏紧。
+#: 游戏的推荐内存（MB），只用来提示：界面上的推荐值，以及开机时实例内存低于推荐值记一条日志。
+#: 魔改 AVD 目前只支持 M9A，只列 1999（数据见 aemu-lab ``自研模拟器-动态内存.md`` 第 7.6 节）。
 RECOMMENDED_MEMORY_MB: dict[str, int] = {
-    "com.hypergryph.arknights": 4096,
-    "com.hypergryph.arknights.bilibili": 4096,
     "com.shenlan.m.reverse1999": 4096,
-    "com.miHoYo.enterprise.NGHSoD": 4096,
-    "com.miHoYo.hkrpg": 5120,
-    "com.miHoYo.hkrpg.bilibili": 5120,
 }
 #: 数据盘上限（GB），按实际写入增长。游戏资源都在里面，崩坏三一款就 36 GB。
 DEFAULT_DATA_PARTITION_GB = 64
