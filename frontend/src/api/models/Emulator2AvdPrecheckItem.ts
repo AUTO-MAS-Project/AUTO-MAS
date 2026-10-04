@@ -30,5 +30,9 @@ export type Emulator2AvdPrecheckItem = {
      * 不满足时给用户的处理建议
      */
     advice?: string;
+    /**
+     * 界面可以一键处理的动作: enable_hypervisor_platform 开启「Windows 虚拟机监控程序平台」 (调 /avd/hypervisor/enable); 没有为空
+     */
+    action?: string;
 };
 

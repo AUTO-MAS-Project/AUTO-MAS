@@ -24,6 +24,7 @@
 把探测放进构造函数会变成每轮一次子进程。
 """
 
+import asyncio
 import uuid
 from dataclasses import dataclass
 
@@ -312,6 +313,16 @@ async def add_path(
             )
 
     await _save(emulator_id, paths, manager.slots)
+
+    if record.type == "avd":
+        # 内测包解压出来就是齐的，没走过下载就没有 mas-avd.json：补一份，不要求先下载或同意许可
+        from .avd.components import ensure_metadata
+
+        try:
+            if await asyncio.to_thread(ensure_metadata, resolved_path):
+                logger.info(f"官方模拟器 {resolved_path} 没有 mas-avd.json，已补写")
+        except OSError as e:
+            logger.warning(f"官方模拟器 {resolved_path} 补写 mas-avd.json 失败: {e}")
 
     # 官方模拟器根目录里一台实例都没有（刚解压的内测包、刚下载完的根目录）：按默认值建第一台，
     # 测试者加完就能直接用。已经有实例的不动；建不出来不影响路径本身已经加好

@@ -6,6 +6,9 @@ import type { ClickImageIn } from '../models/ClickImageIn';
 import type { ClickOut } from '../models/ClickOut';
 import type { ClickTextIn } from '../models/ClickTextIn';
 import type { DispatchIn } from '../models/DispatchIn';
+import type { Emulator2AvdApkInstallIn } from '../models/Emulator2AvdApkInstallIn';
+import type { Emulator2AvdApkInstallOut } from '../models/Emulator2AvdApkInstallOut';
+import type { Emulator2AvdHypervisorEnableOut } from '../models/Emulator2AvdHypervisorEnableOut';
 import type { Emulator2AvdInstallCancelOut } from '../models/Emulator2AvdInstallCancelOut';
 import type { Emulator2AvdInstallIn } from '../models/Emulator2AvdInstallIn';
 import type { Emulator2AvdInstallOut } from '../models/Emulator2AvdInstallOut';
@@ -281,6 +284,39 @@ export class ActionService {
             errors: {
                 422: `Validation Error`,
             },
+        });
+    }
+    /**
+     * 在魔改 AVD 实例里安装 APK
+     * ``adb install -r`` 本机的一个 .apk，实例必须已开机；装完才返回。.xapk / 拆分安装包不支持。
+     * @param requestBody
+     * @returns Emulator2AvdApkInstallOut Successful Response
+     * @throws ApiError
+     */
+    public static avdInstallApkApiEmulator2AvdInstanceApkInstallPost(
+        requestBody: Emulator2AvdApkInstallIn,
+    ): CancelablePromise<Emulator2AvdApkInstallOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/emulator2/avd/instance/apk/install',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 开启 Windows 虚拟机监控程序平台
+     * 只在用户点了「开启」按钮后调用：提权运行 dism 开启该系统功能（会弹系统确认框），
+     * 完成后要重启电脑才生效。不会自动重启。
+     * @returns Emulator2AvdHypervisorEnableOut Successful Response
+     * @throws ApiError
+     */
+    public static avdEnableHypervisorApiEmulator2AvdHypervisorEnablePost(): CancelablePromise<Emulator2AvdHypervisorEnableOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/emulator2/avd/hypervisor/enable',
         });
     }
     /**

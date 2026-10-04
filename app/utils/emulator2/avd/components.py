@@ -252,6 +252,26 @@ def update_metadata(root: str | Path, **changes: Any) -> dict[str, Any]:
     return data
 
 
+def ensure_metadata(root: str | Path) -> bool:
+    """根目录里还没有 ``mas-avd.json``（内测包解压出来、组件自带齐全，没走过下载）时补一份：
+    记下当时装着的各组件版本和添加时间。已有的不动。返回是否新写了。"""
+    if (Path(root) / METADATA_FILE).exists():
+        return False
+    status = install_status(root)
+    write_metadata(
+        root,
+        {
+            "components": {
+                item["id"]: item["version"] or ""
+                for item in status["components"]
+                if item["installed"]
+            },
+            "addedAt": datetime.now().isoformat(timespec="seconds"),
+        },
+    )
+    return True
+
+
 def _read_properties(path: Path) -> dict[str, str]:
     try:
         text = path.read_text(encoding="utf-8", errors="replace")
@@ -1116,5 +1136,6 @@ __all__ = [
     "sdk_dir",
     "start_job",
     "update_metadata",
+    "ensure_metadata",
     "write_metadata",
 ]
