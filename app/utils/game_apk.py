@@ -34,6 +34,8 @@ import shutil
 import struct
 import zlib
 from collections.abc import Awaitable, Callable
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
@@ -91,6 +93,25 @@ class GameUpdateResult:
     未提供时为空字符串"""
 
 
+#: 当前任务上下文里接管 adb 的通道（``await runner(*args, timeout=…)`` → ``(返回码, 输出)``）。
+#: 魔改 AVD 实例上由调用方用 :func:`adb_runner_scope` 设成 MAS 私有 server 的通道：脚本用的
+#: 5037 会和雷电 / MuMu 自带的旧版 adb 互杀。没设时（雷电 / MuMu）照旧按 ``adb_path`` +
+#: ``adb_address`` 执行。ContextVar 按 asyncio 任务隔离，不会串到别的任务。
+_ADB_RUNNER: ContextVar[Callable[..., Awaitable[tuple[int, str]]] | None] = ContextVar(
+    "game_apk_adb_runner", default=None
+)
+
+
+@contextmanager
+def adb_runner_scope(runner: Callable[..., Awaitable[tuple[int, str]]] | None):
+    """在这段上下文里让本模块的 adb 命令改走 ``runner``；``None`` 等于不接管。"""
+    token = _ADB_RUNNER.set(runner)
+    try:
+        yield
+    finally:
+        _ADB_RUNNER.reset(token)
+
+
 async def _run_adb(
     adb_path: Path | None,
     adb_address: str,
@@ -100,7 +121,12 @@ async def _run_adb(
     """执行一条 adb 命令，返回 (返回码, 合并后的输出)。
 
     进程无法启动时返回 ``(-1, 错误文本)``，让调用方按 adb 返回失败处理。
+    上下文里有接管的通道（:func:`adb_runner_scope`）时交给它，``adb_path`` / ``adb_address`` 不用。
     """
+
+    runner = _ADB_RUNNER.get()
+    if runner is not None:
+        return await runner(*args, timeout=timeout)
 
     program: Path | str = adb_path if adb_path is not None else "adb"
     try:
@@ -144,8 +170,8 @@ async def get_installed_client_info(
         游戏未安装或读取失败时整体返回 ``None``。
     """
 
-    if ":" in adb_address:
-        # host:port 形式的设备需要先建立连接，否则 -s 会找不到设备
+    if ":" in adb_address and _ADB_RUNNER.get() is None:
+        # host:port 形式的设备需要先建立连接，否则 -s 会找不到设备（接管的通道自己认设备）
         await _run_adb(adb_path, adb_address, "connect", adb_address, timeout=20)
 
     returncode, output = await _run_adb(

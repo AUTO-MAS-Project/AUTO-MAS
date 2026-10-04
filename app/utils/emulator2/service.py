@@ -24,11 +24,14 @@
 把探测放进构造函数会变成每轮一次子进程。
 """
 
+import asyncio
 import uuid
 from dataclasses import dataclass
+from typing import Any
 
 from app.utils import get_logger
 
+from .avd.constants import MOD_AVD_M9A_ONLY_MESSAGE
 from .detect import DetectResult, probe_install_path
 from .facade import DeviceUnavailableError, Emulator2Manager, dump_paths
 from .guard import capture, dump_baselines
@@ -49,6 +52,15 @@ def readable_error(error: BaseException) -> str:
     if isinstance(error, SettingsConflictError):
         return "配置在编辑期间被改动，请刷新后重试"
     if isinstance(error, ValueError):
+        return str(error)
+    from .avd.host import AdbPortConflict
+    from .avd.precheck import PrecheckFailed
+
+    # 魔改 AVD 这几类的消息本来就是写给用户的中文（含原因与该怎么办），不带类名前缀
+    if isinstance(
+        error,
+        (PrecheckFailed, AdbPortConflict),
+    ):
         return str(error)
     if isinstance(error, KeyError):
         return f"找不到对象: {error.args[0] if error.args else error}"
@@ -215,6 +227,59 @@ def find_affected_scripts(emulator_id: str, slots: list[str]) -> list[AffectedSc
     return affected
 
 
+def script_supports_mod_avd(script: Any) -> bool:
+    """脚本能不能用魔改 AVD：它对应的 MaaFW 特调声明了 ``supports_mod_avd``（目前只有 M9A）。"""
+    from app.task.MaaFW.tools.embedded.flavor import resolve_flavor
+
+    try:
+        flavor = resolve_flavor(script)
+    except Exception:  # noqa: BLE001 - 认不出特调就按不支持处理
+        return False
+    return bool(getattr(flavor, "supports_mod_avd", False))
+
+
+async def is_mod_avd_device(emulator_id: Any, index: Any) -> bool:
+    """这个设备号是不是魔改 AVD 实例。不是 Emulator 2.0 配置、设备号无效都返回 ``False``。"""
+    if str(emulator_id) in ("", "-", "None") or str(index) in ("", "-", "None"):
+        return False
+    try:
+        manager = await build_manager(str(emulator_id))
+        device_ref = manager.resolve_device(str(index))
+    except Exception:  # noqa: BLE001 - 不是 Emulator 2.0 配置或设备号对不上
+        return False
+    return device_ref is not None and device_ref.emulator_type == "avd"
+
+
+async def mod_avd_binding_error(script_id: str, patch: dict) -> str | None:
+    """脚本保存时：不支持魔改 AVD 的脚本（目前只有 M9A 支持）要绑到魔改 AVD 设备，返回拒绝原因；否则 ``None``。
+
+    两套绑定字段（``Emulator.Id/Index`` 与 ``Game.EmulatorId/EmulatorIndex``）都看；这次只改了其中
+    一个字段时，另一个取脚本当前的值。
+    """
+    from app.core import Config
+
+    try:
+        script = Config.ScriptConfig[uuid.UUID(str(script_id))]
+    except Exception:  # noqa: BLE001 - 找不到脚本交给后面的保存逻辑报
+        return None
+    for group, id_field, index_field in _BINDING_FIELDS:
+        changes = patch.get(group) if isinstance(patch, dict) else None
+        if not isinstance(changes, dict) or not (
+            id_field in changes or index_field in changes
+        ):
+            continue
+        try:
+            emulator_id = changes.get(id_field, script.get(group, id_field))
+            index = changes.get(index_field, script.get(group, index_field))
+        except Exception:  # noqa: BLE001 - 脚本类型没有这组字段
+            continue
+        if await is_mod_avd_device(emulator_id, index) and not script_supports_mod_avd(
+            script
+        ):
+            return MOD_AVD_M9A_ONLY_MESSAGE
+    return None
+
+
 async def search(emulator_id: str | None = None) -> list[SearchItem]:
     """自动搜索本机模拟器，并逐条判定能否加入 Emulator 2.0。
 
@@ -301,6 +366,33 @@ async def add_path(
             )
 
     await _save(emulator_id, paths, manager.slots)
+
+    if record.type == "avd":
+        # 内测包解压出来就是齐的，没走过下载就没有 mas-avd.json：补一份，不要求先下载或同意许可
+        from .avd.components import ensure_metadata
+
+        try:
+            if await asyncio.to_thread(ensure_metadata, resolved_path):
+                logger.info(f"魔改 AVD {resolved_path} 没有 mas-avd.json，已补写")
+        except OSError as e:
+            logger.warning(f"魔改 AVD {resolved_path} 补写 mas-avd.json 失败: {e}")
+
+    # 魔改 AVD 根目录里一台实例都没有（刚解压的内测包、刚下载完的根目录）：按默认值建第一台，
+    # 测试者加完就能直接用。已经有实例的不动；建不出来不影响路径本身已经加好
+    if record.type == "avd" and native_indexes is not None and not native_indexes:
+        try:
+            created = await create_instance(emulator_id, path_id, None, {})
+        except Exception as e:  # noqa: BLE001 - 路径已经加好，建实例失败只记下来
+            logger.warning(f"魔改 AVD {resolved_path} 自动新建第一台实例失败: {e}")
+        else:
+            added_slots.append(
+                {"slot": created["slot"], "nativeIndex": created["nativeIndex"]}
+            )
+            logger.info(
+                f"魔改 AVD {resolved_path} 还没有实例，已按默认值新建第一台"
+                f"（设备号 #{created['slot']}）"
+            )
+
     return {
         "ok": True,
         "reason": "ok",
@@ -345,16 +437,28 @@ async def remove_path(emulator_id: str, path_id: str) -> dict:
 
 
 async def create_instance(
-    emulator_id: str, path_id: str, name: str | None = None
+    emulator_id: str,
+    path_id: str,
+    name: str | None = None,
+    options: dict | None = None,
 ) -> dict:
-    """在某条模拟器安装下新建一个实例，并给它分配设备号。"""
+    """在某条模拟器安装下新建一个实例，并给它分配设备号。
+
+    ``options`` 只对魔改 AVD 生效（``memory_mb`` / ``cpu`` / ``data_partition_gb`` /
+    ``balloon`` / ``native_index``）：
+    雷电 / MuMu 新建时用的是模拟器自己的默认配置。
+    """
     manager = await build_manager(emulator_id)
     path = manager.path_of(path_id)
     if path is None:
         return {"ok": False, "reason": "path_not_found"}
 
     backend = await manager.manager_for(path)
-    native_index = await backend.create_instance(name)
+    if path.type == "avd":
+        cleaned = {k: v for k, v in (options or {}).items() if v is not None}
+        native_index = await backend.create_instance(name, **cleaned)
+    else:
+        native_index = await backend.create_instance(name)
 
     added = manager.slots.sync_path(path_id, [native_index])
     await _save(emulator_id, manager.paths, manager.slots)
