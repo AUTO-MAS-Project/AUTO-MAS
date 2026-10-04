@@ -2933,7 +2933,7 @@ export default {
       fieldGuestAngle: 'GuestAngle',
       guestAngleHint: '改用系统镜像自带的 ANGLE 渲染画面',
       fieldHeadless: '无头',
-      headlessHint: '不开窗口，在后台运行',
+      headlessHint: '关掉后开机会显示窗口，第一次登录游戏账号时用',
       toast: {
         statusFailed: '读取官方模拟器状态失败',
         licenseFailed: '获取许可协议失败',
