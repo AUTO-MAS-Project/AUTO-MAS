@@ -288,6 +288,14 @@ def component_installed(root: str | Path, component: Component) -> bool:
     return all((target / name).is_file() for name in _KEY_FILES[component.id])
 
 
+def installed_revision(root: str | Path, component: Component) -> str | None:
+    """实际运行用的 SDK 里这个组件的 ``source.properties`` 版本号；读不到返回 ``None``。"""
+    props = _read_properties(
+        runtime_sdk_dir(root) / component.target / "source.properties"
+    )
+    return props.get("Pkg.Revision") or None
+
+
 def launcher_downloaded(root: str | Path) -> bool:
     path = launcher_apk(root)
     try:
@@ -317,6 +325,7 @@ def install_status(root: str | Path) -> dict[str, Any]:
     """根目录里组件的现状。只读，不联网。"""
     root = Path(root)
     metadata = read_metadata(root)
+    local = local_sdk_root(root) is not None
     items: list[dict[str, Any]] = []
     missing_bytes = 0
     for component in REQUIRED_COMPONENTS:
@@ -328,12 +337,19 @@ def install_status(root: str | Path) -> dict[str, Any]:
             {
                 "id": component.id,
                 "name": component.name,
-                "version": component.version,
+                # 装好了报实际装着的版本（指定本地 SDK 时与下载器固定的版本不同）；
+                # 没装才报要下载的固定版本
+                "version": (
+                    installed_revision(root, component) or component.version
+                    if installed
+                    else component.version
+                ),
                 "sizeBytes": component.size,
                 "installed": installed,
                 "downloadedBytes": partial,
                 "optional": False,
                 "license": component.license,
+                "localSdk": local,
             }
         )
     launcher_ok = launcher_downloaded(root)
@@ -347,6 +363,7 @@ def install_status(root: str | Path) -> dict[str, Any]:
             "downloadedBytes": FOSSIFY_LAUNCHER.size if launcher_ok else 0,
             "optional": True,
             "license": FOSSIFY_LAUNCHER.license,
+            "localSdk": False,
         }
     )
     ready = all(item["installed"] for item in items if not item["optional"])

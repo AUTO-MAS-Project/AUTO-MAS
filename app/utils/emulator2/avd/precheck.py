@@ -36,6 +36,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 import shutil
 import subprocess
 import sys
@@ -117,6 +118,16 @@ def _accel_summary(detail: str) -> str:
     return " ".join(lines) or (detail or "").strip()
 
 
+_ACCEL_NAME_VERSION = re.compile(r"(\w+)\s*\(([\d.]+)\)")
+
+
+def _accel_ok_text(summary: str) -> str:
+    """可用时的中文说法：``WHPX(10.0.26200) is installed and usable.`` → ``可用（WHPX 10.0.26200）``。
+    认不出加速器名和版本就只说「可用」；``-accel-check`` 原文记在调试日志里。"""
+    match = _ACCEL_NAME_VERSION.search(summary or "")
+    return f"可用（{match.group(1)} {match.group(2)}）" if match else "可用"
+
+
 async def acceleration_item(root: str | Path) -> PrecheckItem:
     title = "硬件虚拟化"
     if not emulator_exe(root).is_file():
@@ -125,8 +136,9 @@ async def acceleration_item(root: str | Path) -> PrecheckItem:
         )
     accel = await host.check_acceleration(root)
     summary = _accel_summary(accel.detail)
+    logger.debug(f"-accel-check 输出: {summary}")
     if accel.ok:
-        return PrecheckItem("acceleration", title, True, True, summary)
+        return PrecheckItem("acceleration", title, True, True, _accel_ok_text(summary))
     return PrecheckItem(
         "acceleration",
         title,

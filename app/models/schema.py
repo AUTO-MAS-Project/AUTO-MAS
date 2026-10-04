@@ -5639,7 +5639,10 @@ class Emulator2SettingField(BaseModel):
     value: Optional[int] = Field(default=None, description="当前值, 未设置时为 null")
     state: str = Field(
         default="unset",
-        description="saved 用户保存过 / default 模拟器默认 / unset 未设置 / unreadable 读不出",
+        description=(
+            "saved 用户保存过 / default 模拟器默认 / unset 未设置 / unreadable 读不出 / "
+            "auto 每次启动按要跑的游戏定 (官方模拟器内存按游戏自动, value 为 null)"
+        ),
     )
 
 
@@ -5754,7 +5757,10 @@ class Emulator2AvdComponentItem(BaseModel):
         description="组件标识: platform-tools / emulator / system-image / launcher",
     )
     name: str = Field(..., description="组件名称")
-    version: str = Field(default="", description="固定版本")
+    version: str = Field(
+        default="",
+        description="已就绪时为实际装着的版本 (source.properties), 未就绪时为要下载的固定版本",
+    )
     sizeBytes: int = Field(default=0, description="下载大小 (字节)")
     installed: bool = Field(default=False, description="是否已就绪")
     downloadedBytes: int = Field(
@@ -5764,6 +5770,10 @@ class Emulator2AvdComponentItem(BaseModel):
         default=False, description="是否可选组件 (轻量桌面), 可选组件缺失不影响添加"
     )
     license: str = Field(default="", description="许可证")
+    localSdk: bool = Field(
+        default=False,
+        description="是否取自 mas-avd.json 的 sdkRoot 指定的本地 SDK (不经下载器, 没有下载大小可言)",
+    )
 
 
 class WSEmulator2AvdInstallProgressData(BaseModel):

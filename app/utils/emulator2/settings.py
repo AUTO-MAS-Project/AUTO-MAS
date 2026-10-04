@@ -46,7 +46,8 @@ from typing import Any, Literal
 #: - ``default``     实例配置里没有, 从 ``.vbox`` 回落读到的雷电默认值
 #: - ``unset``       两边都没有 (从未启动过的实例)
 #: - ``unreadable``  配置文件读不出或解析失败
-FieldState = Literal["saved", "default", "unset", "unreadable"]
+#: - ``auto``        不是固定值，每次启动按要跑的游戏定（官方模拟器的「内存按游戏自动」），值为 ``None``
+FieldState = Literal["saved", "default", "unset", "unreadable", "auto"]
 
 #: 对外字段名 → 实例配置里的路径。
 #:

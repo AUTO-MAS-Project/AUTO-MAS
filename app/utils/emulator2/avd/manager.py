@@ -1258,8 +1258,14 @@ class _AvdCore(DeviceBase):
                 }
             )
         # 显示按实例选的档位报（开机前才写进 config.ini）
-        display = resolution_changes(
-            instance.config, instance_resolution(instance_meta(self.root, idx))
+        meta = instance_meta(self.root, idx)
+        display = resolution_changes(instance.config, instance_resolution(meta))
+        # 内存按游戏自动时 config.ini 里的 hw.ramSize 只是兜底值，开机按要跑的游戏用 -memory 传，
+        # 不能当成固定值报出去
+        memory = (
+            FieldValue(instance.memory_mb, "saved")
+            if isinstance(meta.get("memoryMb"), int)
+            else FieldValue(None, "auto")
         )
         return InstanceSettings(
             fields={
@@ -1267,7 +1273,7 @@ class _AvdCore(DeviceBase):
                 "height": FieldValue(_int(display["hw.lcd.height"]), "saved"),
                 "dpi": FieldValue(_int(display["hw.lcd.density"]), "saved"),
                 "cpu": FieldValue(instance.cpu, "saved"),
-                "memoryMb": FieldValue(instance.memory_mb, "saved"),
+                "memoryMb": memory,
                 # 帧率跟着客体 60 Hz 走，没有可设的项
                 "fps": FieldValue(None, "unset"),
             }
