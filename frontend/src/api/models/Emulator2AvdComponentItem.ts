@@ -12,7 +12,7 @@ export type Emulator2AvdComponentItem = {
      */
     name: string;
     /**
-     * 固定版本
+     * 已就绪时为实际装着的版本 (source.properties), 未就绪时为要下载的固定版本
      */
     version?: string;
     /**
@@ -35,5 +35,9 @@ export type Emulator2AvdComponentItem = {
      * 许可证
      */
     license?: string;
+    /**
+     * 是否取自 mas-avd.json 的 sdkRoot 指定的本地 SDK (不经下载器, 没有下载大小可言)
+     */
+    localSdk?: boolean;
 };
 
