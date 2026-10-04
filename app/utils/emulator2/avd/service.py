@@ -368,11 +368,15 @@ async def set_instance_options(
 
 
 async def install_apk(emulator_id: str, slot: str, apk_path: str) -> dict[str, Any]:
-    """在开着的实例里装一个本地 ``.apk``。只认 ``.apk``；``.xapk`` / 拆分包不支持。"""
+    """在开着的实例里装一个本地 ``.apk``。只认 ``.apk``；``.xapk`` / 拆分包不支持。
+
+    只收完整路径：相对路径会按后端的工作目录解析，装进去的未必是用户选的那个文件。"""
     text = str(apk_path or "").strip().strip('"')
     if not text:
         raise ValueError("请选择要安装的 APK 文件")
     apk = Path(text)
+    if not apk.is_absolute():
+        raise ValueError(f"请给出安装包的完整路径（{text}）")
     if apk.suffix.lower() != ".apk":
         raise ValueError(f"{apk.name} 不是 .apk 安装包（.xapk、拆分安装包暂不支持）")
     if not await asyncio.to_thread(apk.is_file):
