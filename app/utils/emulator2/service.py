@@ -51,9 +51,15 @@ def readable_error(error: BaseException) -> str:
     if isinstance(error, ValueError):
         return str(error)
     from .avd.components import ComponentError
+    from .avd.host import AdbPortConflict
     from .avd.manager import IncompatibleGameError
+    from .avd.precheck import PrecheckFailed
 
-    if isinstance(error, (ComponentError, IncompatibleGameError)):
+    # 官方模拟器这几类的消息本来就是写给用户的中文（含原因与该怎么办），不带类名前缀
+    if isinstance(
+        error,
+        (ComponentError, IncompatibleGameError, PrecheckFailed, AdbPortConflict),
+    ):
         return str(error)
     if isinstance(error, KeyError):
         return f"找不到对象: {error.args[0] if error.args else error}"
