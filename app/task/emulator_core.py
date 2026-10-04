@@ -38,6 +38,30 @@ logger = get_logger("模拟器管理")
 EMULATOR_CLOSE_TIMEOUT_SECONDS = 30
 
 
+async def resolve_host_adb(
+    owner: Any, *, index: str | None = None, config_key: str = "Emulator"
+) -> Any | None:
+    """owner 接管的设备是官方模拟器实例时，返回宿主进程对它发 adb 的通道（MAS 私有 server，
+    ``await runner(*args, timeout=…)``，另有 ``screencap_png()``）；其余情况返回 ``None``。
+
+    官方模拟器实例上宿主自己的 adb 命令（游戏更新检查、失败截图）不能落到 5037：脚本用的 SDK adb
+    会和雷电 / MuMu 自带的旧版 adb 互杀 server。雷电 / MuMu 返回 ``None``，调用方照旧走
+    ``get_adb_path()`` + 设备地址。查不到只当作不是官方模拟器。
+    """
+
+    emulator_manager = getattr(owner, "emulator_manager", None)
+    host_adb = getattr(emulator_manager, "host_adb", None)
+    if host_adb is None:
+        return None
+    if index is None:
+        index = owner.script_config.get(config_key, "Index")
+    try:
+        return await host_adb(index)
+    except Exception as e:  # noqa: BLE001 - 认不出就按普通模拟器处理
+        logger.debug(f"查询实例 {index} 的宿主 adb 通道失败，按普通模拟器处理: {e}")
+        return None
+
+
 async def close_emulator(
     owner: Any,
     *,

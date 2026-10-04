@@ -333,12 +333,44 @@ async def run_adb(
     return code, output
 
 
+async def run_adb_bytes(
+    root: str | Path,
+    *args: str,
+    serial: str | None = None,
+    timeout: float = ADB_TIMEOUT,
+) -> tuple[int, bytes, str]:
+    """同 :func:`run_adb`，但标准输出按原始字节返回（``exec-out screencap -p`` 这类二进制输出），
+    标准错误单独解码返回：``(返回码, 输出字节, 错误文本)``。**不抛异常。**"""
+    code, stdout, stderr = await _run_adb_raw(
+        root, *args, serial=serial, timeout=timeout
+    )
+    if code != 0 and serial and device_missing(serial, stderr):
+        if await reregister_emulator(root, serial):
+            code, stdout, stderr = await _run_adb_raw(
+                root, *args, serial=serial, timeout=timeout
+            )
+    return code, stdout, stderr
+
+
 async def _run_adb_once(
     root: str | Path,
     *args: str,
     serial: str | None = None,
     timeout: float = ADB_TIMEOUT,
 ) -> tuple[int, str]:
+    code, stdout, _ = await _run_adb_raw(
+        root, *args, serial=serial, timeout=timeout, merge_stderr=True
+    )
+    return code, decode_bytes(stdout).strip()
+
+
+async def _run_adb_raw(
+    root: str | Path,
+    *args: str,
+    serial: str | None = None,
+    timeout: float = ADB_TIMEOUT,
+    merge_stderr: bool = False,
+) -> tuple[int, bytes, str]:
     try:
         await ensure_adb_server(root)
         command = ["-P", str(adb_server_port(root))]
@@ -350,19 +382,23 @@ async def _run_adb_once(
             *args,
             stdin=asyncio.subprocess.DEVNULL,
             stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.STDOUT,
+            stderr=asyncio.subprocess.STDOUT
+            if merge_stderr
+            else asyncio.subprocess.PIPE,
         )
-    except Exception as e:  # noqa: BLE001 - 见 docstring
-        return -1, f"{type(e).__name__}: {e}"
+    except Exception as e:  # noqa: BLE001 - 见 run_adb 的 docstring
+        message = f"{type(e).__name__}: {e}"
+        return -1, message.encode() if merge_stderr else b"", message
     try:
-        stdout, _ = await asyncio.wait_for(process.communicate(), timeout=timeout)
+        stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=timeout)
     except (asyncio.TimeoutError, TimeoutError):
         with suppress(ProcessLookupError):
             process.kill()
         with suppress(Exception):
             await process.wait()
-        return -1, f"adb {' '.join(args)} 超时（{timeout:.0f} 秒）"
-    return process.returncode or 0, decode_bytes(stdout).strip()
+        message = f"adb {' '.join(args)} 超时（{timeout:.0f} 秒）"
+        return -1, message.encode() if merge_stderr else b"", message
+    return process.returncode or 0, stdout, decode_bytes(stderr or b"").strip()
 
 
 # ---- 控制台 ---------------------------------------------------------------

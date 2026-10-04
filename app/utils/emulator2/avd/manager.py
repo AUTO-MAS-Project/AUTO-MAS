@@ -1454,6 +1454,39 @@ def _resolution_of(width: int | None, height: int | None, dpi: int | None) -> st
     )
 
 
+class AvdHostAdb:
+    """MAS 宿主进程对一台官方模拟器实例发 adb 命令的通道：私有 server ``-P <adbServerPort>
+    -s emulator-<控制台端口>``。脚本的 adb server 杀不到它，丢设备时 :func:`host.run_adb` 会重新登记。
+
+    调用约定同 :data:`~..applaunch.AdbRunner`：``await runner(*args, timeout=…)`` → ``(返回码, 输出)``。
+    给游戏更新检查（:func:`app.utils.game_apk.adb_runner_scope`）与失败截图用。
+    """
+
+    def __init__(self, root: Path, native_index: str) -> None:
+        self.root = Path(root)
+        self.native_index = str(native_index)
+        self.serial = host.serial_of(console_port(native_index))
+
+    async def __call__(self, *args: str, timeout: float = 20.0) -> tuple[int, str]:
+        return await host.run_adb(self.root, *args, serial=self.serial, timeout=timeout)
+
+    async def screencap_png(self, timeout: float = 30.0) -> bytes:
+        """``exec-out screencap -p`` 的 PNG 字节；失败抛 ``RuntimeError``。"""
+        code, data, error = await host.run_adb_bytes(
+            self.root,
+            "exec-out",
+            "screencap",
+            "-p",
+            serial=self.serial,
+            timeout=timeout,
+        )
+        if code != 0 or not data.startswith(b"\x89PNG"):
+            raise RuntimeError(
+                f"官方模拟器实例 {self.native_index} 截图失败（返回码 {code}）: {error[-200:]}"
+            )
+        return data
+
+
 class AvdManager(AppLaunchMixin, _AvdCore):
     """一条官方模拟器安装的管理器。
 
@@ -1462,6 +1495,11 @@ class AvdManager(AppLaunchMixin, _AvdCore):
     """
 
     store_package = None
+
+    def host_adb(self, idx: str) -> AvdHostAdb:
+        """宿主进程对这台实例发 adb 命令的通道（走私有 server，见 :class:`AvdHostAdb`）。"""
+        self._instance(idx)
+        return AvdHostAdb(self.root, str(idx))
 
     async def open(self, idx: str, package_name: str = "") -> DeviceInfo:
         if package_name:

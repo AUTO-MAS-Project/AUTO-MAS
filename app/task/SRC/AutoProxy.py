@@ -37,7 +37,7 @@ from app.models.schema import WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem
 from app.services import Notify
 from app.task.base import ScriptAutoProxyBase
-from app.task.emulator_core import close_emulator
+from app.task.emulator_core import close_emulator, resolve_host_adb
 from app.task.general.tools import execute_script_task
 from app.task.proxy_helpers import (
     CONFIG_SOURCE_SCRIPT,
@@ -47,6 +47,7 @@ from app.task.proxy_helpers import (
 from app.utils import LogMonitor, ProcessManager, get_logger, strptime
 from app.utils.constants import STARRAIL_PACKAGE_NAME, UTC4
 from app.utils.emulator2.avd.manager import IncompatibleGameError
+from app.utils.game_apk import adb_runner_scope
 from app.utils.io import read_file, write_file
 
 from .tools import (
@@ -443,18 +444,22 @@ class AutoProxyTask(ScriptAutoProxyBase):
             self.script_info.log = text
 
         try:
-            result = await ensure_game_updated(
-                adb_path=self.emulator_manager.get_adb_path(),
-                adb_address=emulator_info.adb_address,
-                server=self.cur_user_config.get("Info", "Server"),
-                package_name=STARRAIL_PACKAGE_NAME[
-                    self.cur_user_config.get("Info", "Server")
-                ],
-                apk_dir=Path.cwd() / "data/GameApk",
-                if_auto_install=self.script_config.get("Run", "IfAutoInstallGameApk"),
-                time_limit=self.script_config.get("Run", "GameUpdateTimeLimit"),
-                progress=report,
-            )
+            # 官方模拟器实例：宿主的 adb 走 MAS 私有 server，不落到 5037；其余模拟器不接管
+            with adb_runner_scope(await resolve_host_adb(self)):
+                result = await ensure_game_updated(
+                    adb_path=self.emulator_manager.get_adb_path(),
+                    adb_address=emulator_info.adb_address,
+                    server=self.cur_user_config.get("Info", "Server"),
+                    package_name=STARRAIL_PACKAGE_NAME[
+                        self.cur_user_config.get("Info", "Server")
+                    ],
+                    apk_dir=Path.cwd() / "data/GameApk",
+                    if_auto_install=self.script_config.get(
+                        "Run", "IfAutoInstallGameApk"
+                    ),
+                    time_limit=self.script_config.get("Run", "GameUpdateTimeLimit"),
+                    progress=report,
+                )
         except Exception as e:
             # 检查本身异常不应阻断代理，交回原有登录流程判定
             logger.opt(exception=True).warning(f"游戏更新检查异常: {e}")

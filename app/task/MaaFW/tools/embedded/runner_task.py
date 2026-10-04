@@ -25,7 +25,7 @@ from app.models.emulator import DeviceBase, DeviceInfo
 from app.models.schema import WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem, TaskExecuteBase
 from app.services import Notify
-from app.task.emulator_core import close_emulator
+from app.task.emulator_core import close_emulator, resolve_host_adb
 from app.task.general.tools import execute_script_task
 from app.task.MaaFW.tools.core.controller_win32.service import (
     MaaFWWin32ControllerService,
@@ -72,6 +72,7 @@ from app.task.notify_core import (
 )
 from app.utils import ProcessInfo, ProcessManager, get_logger
 from app.utils.constants import UTC4
+from app.utils.game_apk import adb_runner_scope
 from app.utils.io import migrate_legacy_dir
 from app.utils.paths import SOURCE_ROOT
 
@@ -1210,15 +1211,18 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
 
         self._append_log("正在检查游戏客户端更新")
         try:
-            result = await hook(
-                script_config=self.script_config,
-                resource_name=self.run_plan.resourceName,
-                package_name=self._launched_package_name,
-                adb_path=adb_path,
-                adb_address=address,
-                if_auto_install=mode == "AutoInstall",
-                progress=report,
-            )
+            # 官方模拟器实例：钩子在宿主进程里调 adb（game_apk），改走 MAS 私有 server，
+            # 不落到 5037；其余模拟器不接管
+            with adb_runner_scope(await resolve_host_adb(self)):
+                result = await hook(
+                    script_config=self.script_config,
+                    resource_name=self.run_plan.resourceName,
+                    package_name=self._launched_package_name,
+                    adb_path=adb_path,
+                    adb_address=address,
+                    if_auto_install=mode == "AutoInstall",
+                    progress=report,
+                )
         except Exception as exc:
             logger.opt(exception=True).warning(f"游戏更新检查异常: {exc}")
             self._append_log(f"游戏更新检查出错，本次照常运行: {exc}")

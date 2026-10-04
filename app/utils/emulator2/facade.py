@@ -287,6 +287,15 @@ class Emulator2Manager(DeviceBase):
         manager, native_index = await self._dispatch(idx)
         return await manager.launch_app(native_index, package_name)
 
+    async def host_adb(self, idx: str):
+        """设备是官方模拟器实例时，返回宿主进程对它发 adb 命令的通道（走 MAS 的私有 server，
+        见 :class:`~.avd.manager.AvdHostAdb`）；雷电 / MuMu 返回 ``None``，调用方照旧用
+        ``get_adb_path()`` 与设备地址。"""
+        manager, native_index = await self._dispatch(idx)
+        if isinstance(manager, AvdManager):
+            return manager.host_adb(native_index)
+        return None
+
     async def open_store(self, idx: str) -> AppLaunchResult:
         """打开设备所属模拟器自带的游戏中心，不重开模拟器。
 
