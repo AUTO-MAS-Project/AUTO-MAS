@@ -383,6 +383,16 @@ class ProcessManager:
             return self.process.returncode is None
         return False
 
+    async def wait_for_exit(self, timeout_seconds: float) -> bool:
+        """等待已跟踪的进程自行退出，超时返回 False"""
+
+        deadline = time.monotonic() + timeout_seconds
+        while await self.is_running():
+            if time.monotonic() >= deadline:
+                return False
+            await asyncio.sleep(0.2)
+        return True
+
     async def kill(self) -> None:
         """停止监视器并中止所有跟踪的进程"""
 
@@ -505,3 +515,21 @@ class ProcessManager:
             return window.activate_window(hwnd)
         except Exception:
             return False
+
+    async def stop_gracefully(self, timeout_seconds: float) -> None:
+        """优先请被管理进程自行退出走完它的保存流程，超时或无法请求关闭时才强制结束"""
+
+        if await self.is_running():
+            hwnd = self.main_hwnd
+            closed = False
+            if hwnd is not None:
+                try:
+                    closed = window.close_window(hwnd)
+                except Exception:
+                    closed = False
+            if not closed:
+                logger.warning("未能请求进程自行关闭, 直接强制结束")
+            elif not await self.wait_for_exit(timeout_seconds):
+                logger.warning(f"进程未在 {timeout_seconds} 秒内自行退出, 强制结束")
+
+        await self.kill()
