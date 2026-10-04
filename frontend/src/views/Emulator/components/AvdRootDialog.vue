@@ -4,18 +4,14 @@
  *
  * 组件齐了点「添加」走普通的路径纳管；下载时带上配置 ID，后端下载完成后自己把根目录加进配置，
  * 这里收到完成进度后刷新一次即可。已纳管的根目录也从这里看组件和电脑检查。
+ * 电脑检查、组件列表、下载区各是一个子组件，状态与请求都在这里。
  */
-import { computed, h, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { message } from 'ant-design-vue'
-import { FolderOpenOutlined, ThunderboltOutlined } from '@ant-design/icons-vue'
+import { FolderOpenOutlined } from '@ant-design/icons-vue'
 
-import type {
-  Emulator2AvdComponentItem,
-  Emulator2AvdPrecheckItem,
-  Emulator2AvdSourceItem,
-  Emulator2AvdStatusOut,
-} from '@/api'
+import type { Emulator2AvdSourceItem, Emulator2AvdStatusOut } from '@/api'
 import { useAvdApi } from '@/composables/useAvdApi'
 import { subscribe, unsubscribe } from '@/services/websocket/subscriptions'
 import {
@@ -23,18 +19,10 @@ import {
   WS_ID_EMULATOR_MANAGER,
   type WSEmulator2AvdInstallProgressData,
 } from '@/services/websocket/types'
-import { formatBytes, formatSpeed } from '@/utils/byteFormat'
-import {
-  canResume,
-  componentDetail,
-  componentState,
-  isJobRunning,
-  isRootAdded,
-  jobPercent,
-  precheckLevel,
-  samePath,
-  type PrecheckLevel,
-} from '../avdLogic'
+import { canResume, isJobRunning, isRootAdded, samePath } from '../avdLogic'
+import AvdComponentList from './AvdComponentList.vue'
+import AvdDownloadPanel from './AvdDownloadPanel.vue'
+import AvdPrecheckList from './AvdPrecheckList.vue'
 
 const open = defineModel<boolean>('open', { required: true })
 /** `addedRoots`：这条配置里已经纳管的官方模拟器根目录，已在里面的不再给「添加」 */
@@ -70,7 +58,6 @@ const ready = computed(() => Boolean(current.value?.ready))
 const alreadyAdded = computed(() => isRootAdded(props.addedRoots ?? [], root.value))
 const running = computed(() => isJobRunning(job.value))
 const resumable = computed(() => canResume(current.value?.components, job.value))
-const percent = computed(() => jobPercent(job.value))
 
 const reset = () => {
   root.value = props.initialRoot ?? ''
@@ -135,17 +122,6 @@ const probe = async () => {
     probing.value = false
   }
 }
-
-const sourceOptions = computed(() => [
-  { value: null, label: t('emulator2.avd.sourceAuto') },
-  ...sources.value.map(item => ({
-    value: item.id,
-    label: item.ok
-      ? `${item.name} · ${formatSpeed(item.speedBytesPerSec ?? 0)}`
-      : `${item.name} · ${t('emulator2.avd.sourceDown')}`,
-    disabled: !item.ok,
-  })),
-])
 
 const startDownload = async () => {
   starting.value = true
@@ -225,44 +201,6 @@ const onProgress = (data: WSEmulator2AvdInstallProgressData) => {
   void check()
 }
 
-const stageText = (stage: string) => {
-  const key = `emulator2.avd.stage.${stage}`
-  const text = t(key)
-  return text === key ? stage : text
-}
-
-const componentText = (item: Emulator2AvdComponentItem) => {
-  const state = componentState(item)
-  if (state === 'ready') return t('emulator2.avd.componentReady')
-  if (state === 'partial') {
-    return t('emulator2.avd.componentPartial', {
-      size: `${formatBytes(item.downloadedBytes ?? 0)} / ${formatBytes(item.sizeBytes ?? 0)}`,
-    })
-  }
-  return t('emulator2.avd.componentMissing')
-}
-
-const componentColor = (item: Emulator2AvdComponentItem) => {
-  const state = componentState(item)
-  if (state === 'ready') return 'success'
-  if (state === 'partial') return 'processing'
-  return item.optional ? 'default' : 'warning'
-}
-
-const LEVEL_COLOR: Record<PrecheckLevel, string> = {
-  ok: 'success',
-  error: 'error',
-  warning: 'warning',
-  unknown: 'default',
-}
-
-const levelText = (level: PrecheckLevel) => t(`emulator2.avd.precheck.${level}`)
-
-const failing = (item: Emulator2AvdPrecheckItem) => {
-  const level = precheckLevel(item)
-  return level === 'error' || level === 'warning'
-}
-
 watch(open, value => {
   if (!value) return
   reset()
@@ -306,124 +244,23 @@ onUnmounted(() => {
       </a-form>
 
       <template v-if="current">
-        <h4 class="block-title">{{ t('emulator2.avd.prechecks') }}</h4>
-        <div class="precheck-list">
-          <template v-for="item in current.prechecks ?? []" :key="item.id">
-            <a-alert
-              v-if="failing(item)"
-              :type="precheckLevel(item) === 'error' ? 'error' : 'warning'"
-              show-icon
-              :message="`${item.title}：${item.reason}`"
-              :description="item.advice || undefined"
-            />
-            <div v-else class="precheck-row">
-              <a-tag :color="LEVEL_COLOR[precheckLevel(item)]">
-                {{ levelText(precheckLevel(item)) }}
-              </a-tag>
-              <span class="precheck-title">{{ item.title }}</span>
-              <span class="precheck-reason">{{ item.reason }}</span>
-            </div>
-          </template>
-        </div>
-
-        <h4 class="block-title">{{ t('emulator2.avd.components') }}</h4>
-        <div class="component-list">
-          <div v-for="item in current.components ?? []" :key="item.id" class="component-row">
-            <span class="component-name">{{ item.name }}</span>
-            <span class="component-meta">
-              {{ componentDetail(item).version }}
-              <template v-if="componentDetail(item).localSdk">
-                · {{ t('emulator2.avd.localSdk') }}</template
-              >
-              <template v-else-if="componentDetail(item).sizeBytes">
-                · {{ formatBytes(componentDetail(item).sizeBytes ?? 0) }}</template
-              >
-              <template v-if="item.optional"> · {{ t('emulator2.avd.optional') }}</template>
-            </span>
-            <a-tag :color="componentColor(item)">{{ componentText(item) }}</a-tag>
-          </div>
-        </div>
-
-        <div v-if="!ready" class="download-block">
-          <p v-if="current.requiredDiskBytes" class="disk-line">
-            {{
-              t('emulator2.avd.diskNeed', {
-                need: formatBytes(current.requiredDiskBytes),
-                free:
-                  current.freeDiskBytes === null || current.freeDiskBytes === undefined
-                    ? '—'
-                    : formatBytes(current.freeDiskBytes),
-              })
-            }}
-          </p>
-
-          <template v-if="!running">
-            <a-form layout="vertical">
-              <a-form-item :label="t('emulator2.avd.source')">
-                <div class="root-row">
-                  <a-select v-model:value="sourceId" :options="sourceOptions" style="flex: 1" />
-                  <a-button :icon="h(ThunderboltOutlined)" :loading="probing" @click="probe">
-                    {{ t('emulator2.avd.probe') }}
-                  </a-button>
-                </div>
-              </a-form-item>
-              <a-form-item>
-                <a-checkbox v-model:checked="includeLauncher">
-                  {{ t('emulator2.avd.includeLauncher') }}
-                </a-checkbox>
-              </a-form-item>
-              <a-form-item :label="t('emulator2.avd.license')">
-                <a-spin :spinning="licenseLoading">
-                  <pre class="license-text">{{ licenseText }}</pre>
-                </a-spin>
-                <a-checkbox v-model:checked="agreed" :disabled="!licenseText" class="agree">
-                  {{ t('emulator2.avd.licenseAgree') }}
-                </a-checkbox>
-              </a-form-item>
-            </a-form>
-          </template>
-
-          <div v-if="job" class="progress-block">
-            <div class="progress-head">
-              <span>
-                {{ stageText(job.stage) }}
-                <template v-if="job.componentName && running">
-                  ·
-                  {{
-                    t('emulator2.avd.progressComponent', {
-                      name: job.componentName,
-                      index: job.componentIndex,
-                      count: job.componentCount,
-                    })
-                  }}
-                </template>
-              </span>
-              <span v-if="running && job.stage === 'downloading'" class="progress-meta">
-                {{ formatBytes(job.downloadedBytes ?? 0) }} / {{ formatBytes(job.totalBytes ?? 0) }}
-                <template v-if="job.speedBytesPerSec">
-                  · {{ formatSpeed(job.speedBytesPerSec) }}</template
-                >
-              </span>
-            </div>
-            <a-progress
-              v-if="percent !== null"
-              :percent="percent"
-              :status="
-                job.status === 'failed'
-                  ? 'exception'
-                  : job.status === 'success'
-                    ? 'success'
-                    : 'active'
-              "
-            />
-            <a-alert
-              v-if="job.status === 'failed' && job.error"
-              type="error"
-              show-icon
-              :message="job.error"
-            />
-          </div>
-        </div>
+        <AvdPrecheckList :items="current.prechecks ?? []" />
+        <AvdComponentList :components="current.components ?? []" />
+        <AvdDownloadPanel
+          v-if="!ready"
+          v-model:source-id="sourceId"
+          v-model:include-launcher="includeLauncher"
+          v-model:agreed="agreed"
+          :required-disk-bytes="current.requiredDiskBytes"
+          :free-disk-bytes="current.freeDiskBytes"
+          :license-text="licenseText"
+          :license-loading="licenseLoading"
+          :job="job"
+          :running="running"
+          :sources="sources"
+          :probing="probing"
+          @probe="probe"
+        />
       </template>
 
       <div class="dialog-footer">
@@ -467,94 +304,6 @@ onUnmounted(() => {
 .root-pick {
   cursor: pointer;
   color: var(--ant-color-text-secondary);
-}
-
-.block-title {
-  margin: 16px 0 8px;
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--ant-color-text);
-}
-
-.precheck-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.precheck-row,
-.component-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-}
-
-.precheck-title,
-.component-name {
-  flex-shrink: 0;
-  font-weight: 500;
-}
-
-.precheck-reason,
-.component-meta {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 12px;
-  color: var(--ant-color-text-tertiary);
-}
-
-.component-list {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.download-block {
-  margin-top: 16px;
-  padding-top: 12px;
-  border-top: 1px solid var(--ant-color-border-secondary);
-}
-
-.disk-line {
-  font-size: 12px;
-  color: var(--ant-color-text-secondary);
-}
-
-.license-text {
-  max-height: 200px;
-  overflow-y: auto;
-  margin: 0;
-  padding: 8px 12px;
-  white-space: pre-wrap;
-  font-size: 12px;
-  border: 1px solid var(--ant-color-border-secondary);
-  border-radius: 8px;
-  background: var(--ant-color-fill-quaternary);
-}
-
-.agree {
-  margin-top: 8px;
-}
-
-.progress-block {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.progress-head {
-  display: flex;
-  justify-content: space-between;
-  gap: 8px;
-  font-size: 13px;
-}
-
-.progress-meta {
-  color: var(--ant-color-text-tertiary);
 }
 
 .dialog-footer {
