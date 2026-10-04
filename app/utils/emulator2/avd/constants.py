@@ -271,9 +271,20 @@ SCREEN_WIDTH, SCREEN_HEIGHT, SCREEN_DENSITY = RESOLUTIONS[DEFAULT_RESOLUTION]
 #: 空闲页上报（气球）开着时，开机后把客体 ``page_reporting_order`` 设成这个值（2 MiB 块，
 #: 与 Hyper-V / WSL2 一致；驱动绑定时内核会把它重置成 pageblock_order 10）。
 BALLOON_PAGE_REPORTING_ORDER = 9
-#: 气球开着时，开机后这么久在客体清一次页缓存（只清这一次）。每天第一次开机 ``system_server``
-#: 会读 4–5 GB（≈ 已装游戏 APK 总量），不清就整场不还给宿主。
-BALLOON_DROP_CACHES_DELAY_SECONDS = 60.0
+#: 气球开着时，只在出现「突发读盘」的那次开机清一次客体页缓存（用户 10-04 定）。
+#: 依据：10-04 用 iotrace 抓到，开机后 20–42 秒 ``system_server`` 读了 5.3 GB（量和已装游戏的 APK
+#: 总量相当），客体缓存冲到 4–5 GB，不清就整场不还给宿主；平时开机远小于这个量。
+#: 客体开机这么久开始判断：读 ``system_server`` 的 ``/proc/<pid>/io`` ``read_bytes``。
+DROP_CACHES_CHECK_UPTIME_SECONDS = 60.0
+#: 读到这么多才算突发读盘；不到就本次开机不清。
+DROP_CACHES_BURST_BYTES = 2 * 1024**3
+#: 突发读盘时每隔这么久再读一次，两次之间增量小于下面的值就算读完，读完立刻清。
+DROP_CACHES_POLL_SECONDS = 5.0
+DROP_CACHES_SETTLED_DELTA_BYTES = 50 * 1024**2
+#: 客体开机到这时还没读完就放弃，不清（游戏多半已经起来了，不在运行中清）。
+DROP_CACHES_GIVE_UP_UPTIME_SECONDS = 180.0
+#: 每次开机最多清一次的标记：客体属性，重启即失效，换后端进程 / 重连也看得到。
+DROP_CACHES_MARKER_PROP = "debug.mas.dropped"
 
 #: 客体脚本（``res/avd/guest/``）推到客体的位置。
 GUEST_TMP_DIR = "/data/local/tmp"

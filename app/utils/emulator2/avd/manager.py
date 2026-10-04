@@ -70,7 +70,6 @@ from .components import (
     root_key,
 )
 from .constants import (
-    BALLOON_DROP_CACHES_DELAY_SECONDS,
     BALLOON_PAGE_REPORTING_ORDER,
     CACHE_DIR,
     CLOSE_TIMEOUT_SECONDS,
@@ -112,6 +111,10 @@ from .constants import (
     grpc_port,
     valid_native_index,
 )
+from .drop_caches import DROP_SCRIPT as DROP_CACHES_DROP_SCRIPT
+from .drop_caches import MARK_SCRIPT as DROP_CACHES_MARK_SCRIPT
+from .drop_caches import PROBE_SCRIPT as DROP_CACHES_PROBE_SCRIPT
+from .drop_caches import GuestIoSample, parse_drop, parse_probe, run_drop_caches
 from .instances import (
     AvdInstance,
     apply_resolution,
@@ -418,37 +421,51 @@ _DROP_CACHES: dict[str, asyncio.Task] = {}
 _LOGCATS: dict[str, subprocess.Popen] = {}
 
 
-def _schedule_drop_caches(manager: _AvdCore, idx: str, *, uptime_s: float) -> None:
-    """气球开着时，开机约 1 分钟后在客体清一次页缓存，只清这一次。
+def _schedule_drop_caches(manager: _AvdCore, idx: str) -> None:
+    """气球开着时，开机后有突发读盘就在读完时清一次客体页缓存（规则见 :mod:`.drop_caches`）。
 
-    每台虚拟机每天第一次开机，``system_server`` 会读 4–5 GB（量和已装游戏的 APK 总量相当），客体
-    缓存冲到 4–5 GB；不清，这部分整场不还给宿主（1999 挂 30 分钟一直占 7.7 GB，正常约 5 GB）。
-    游戏跑起来以后不再清：按客体开机时长算，已经开了很久（例如 MAS 重启后接管一台在跑的实例）
-    就不排。
+    每次开机最多判断一次，靠客体里的标记（重启即失效）：同一后端再次 open、后端重启后接管在跑的
+    实例，都只会看到标记然后跳过。进程内另外按实例去重，免得同一时刻排两个。
     """
     key = _instance_key(manager.root, idx)
     existing = _DROP_CACHES.get(key)
     if existing is not None and not existing.done():
         return
-    delay = BALLOON_DROP_CACHES_DELAY_SECONDS - uptime_s
-    if delay < -BALLOON_DROP_CACHES_DELAY_SECONDS:
-        logger.info(
-            f"实例 {idx} 已开机 {uptime_s:.0f} 秒，不再清客体页缓存（只在开机约 1 分钟时清一次）"
-        )
-        return
+
+    async def su(script: str) -> str:
+        _, output = await manager._su(idx, script, timeout=20)
+        return output
+
+    async def probe() -> GuestIoSample:
+        return parse_probe(await su(DROP_CACHES_PROBE_SCRIPT))
+
+    async def drop() -> tuple[bool, int | None, int | None]:
+        return parse_drop(await su(DROP_CACHES_DROP_SCRIPT))
+
+    async def mark() -> None:
+        await su(DROP_CACHES_MARK_SCRIPT)
 
     async def run() -> None:
-        await asyncio.sleep(max(0.0, delay))
-        code, output = await manager._shell(
-            idx,
-            'grep -E "^(MemFree|Cached):" /proc/meminfo | tr -s " " | tr "\\n" " "; '
-            "su 0 sh -c 'echo 1 > /proc/sys/vm/drop_caches'; "
-            'grep -E "^(MemFree|Cached):" /proc/meminfo | tr -s " " | tr "\\n" " "',
+        result = await run_drop_caches(
+            probe=probe, drop=drop, mark=mark, sleep=asyncio.sleep
         )
-        if code == 0:
-            logger.info(f"实例 {idx} 开机后清了一次客体页缓存（清前 / 清后）: {output}")
-        else:
-            logger.warning(f"实例 {idx} 清客体页缓存失败: {output}")
+        if result.action == "skipped":
+            logger.debug(f"实例 {idx} 清客体页缓存: {result.reason}")
+            return
+        read = (
+            f"{result.read_bytes}（{result.read_bytes / 1024**3:.2f} GB）"
+            if result.read_bytes is not None
+            else "读不到"
+        )
+        line = (
+            f"实例 {idx} 清客体页缓存: system_server read_bytes={read}，{result.reason}"
+        )
+        if result.action == "dropped":
+            line += (
+                f"；客体 Cached 清前 {result.cached_before_kb} kB → "
+                f"清后 {result.cached_after_kb} kB"
+            )
+        logger.info(line)
 
     task = asyncio.create_task(run(), name=f"avd-drop-caches-{key}")
     _DROP_CACHES[key] = task
@@ -947,12 +964,7 @@ class _AvdCore(DeviceBase):
             logger.info(
                 f"实例 {idx} 空闲页上报: 气球设备绑定 {bound}，page_reporting_order {current}"
             )
-        _, uptime = await self._shell(idx, "cat /proc/uptime")
-        try:
-            seconds = float(uptime.split()[0])
-        except (IndexError, ValueError):
-            seconds = 0.0
-        _schedule_drop_caches(self, idx, uptime_s=seconds)
+        _schedule_drop_caches(self, idx)
 
     async def _setup_network(self, idx: str) -> None:
         await self._shell(idx, "su 0 svc wifi enable")
