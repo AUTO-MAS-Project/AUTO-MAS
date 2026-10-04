@@ -14,6 +14,14 @@ Unity 播放器把 PlayerPrefs 存在 ``HKCU\\Software\\<公司名>\\<产品名>
   ``GraphicsSettings_PCResolution``、终末地的 ``video_resolution_*``），启动后可能
   按自己那层重新套一遍分辨率。这里**只改 Unity 那层**，游戏自有层的键名与语义各不
   相同，未经实机验证不写；HSR 专项的 ``HSRGameResolutionOverride`` 是那种做法的例子。
+  终末地实测（2026-09-30）：自有层 ``video_full_screen=1`` 时照样按显示器全屏，三次覆盖
+  失效两次。
+- **这个通用选项不做逐游戏适配**，定位是能跑就行（2026-10-04 定）。理由：只有 Win32
+  控制方式会用到它，MaaFW 项目绝大多数走模拟器 ADB，分辨率由模拟器决定；真正走 PC 的
+  Unity 项目寥寥，而且项目自己往往带了改分辨率的预任务（MaaEnd 的 GameSetting 两层都写）。
+  别往这里加游戏专属的键表。某个游戏确有需要时，由它的特调或专项自己调：专项参照
+  ``HSRGameResolutionOverride``、MaaEnd 专项的 ``Game.SetResolution``；特调目前没有
+  启动游戏前的钩子，需要时在 ``flavor.py`` 按 ``ensure_game_updated`` 的样子加一个可选钩子。
 - 游戏正常退出时 Unity 会把当时的分辨率写回这些值，所以恢复不能只删自己写的那几个，
   必须按快照把原值与原类型整表写回、原本不存在的删掉。
 """
