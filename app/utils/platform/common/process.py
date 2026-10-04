@@ -509,11 +509,11 @@ class ProcessManager:
     async def close(self, timeout: float = 10.0) -> None:
         """请被管理进程自行退出，等它走完退出时的配置保存
 
-        启动瞬间主窗口可能还是临时的启动画面, 关闭消息打不到真正的窗口上,
-        所以每轮按当前句柄再请求一次; 同一个窗口只请求一次, 免得被管理进程
-        弹出确认框时反复触发。超过 `timeout` 仍未退出说明它不打算自己走
-        (例如停在需要用户确认的对话框上), 此时强制结束进程: 再等下去只会
-        让调用方一直挂在一个永远不会自己结束的进程上。
+        启动瞬间主窗口可能还是临时的启动画面, 所以每轮取当前句柄; 同一个
+        窗口只请求一次关闭消息, 免得被管理进程弹出确认框时反复触发。超过
+        `timeout` 仍未退出说明它不打算自己走 (例如停在需要用户确认的对话框
+        上), 此时强制结束进程: 再等下去只会让调用方一直挂在一个永远不会
+        自己结束的进程上。
 
         Args:
             timeout (float): 等待被管理进程自行退出的最长时间(秒)
@@ -529,9 +529,7 @@ class ProcessManager:
                 window.close_window(hwnd)
 
             if time.monotonic() >= deadline:
-                logger.warning(
-                    f"被管理进程未响应关闭请求, 已强制结束: {self.main_pid}"
-                )
+                logger.warning(f"被管理进程未响应关闭请求, 已强制结束: {self.main_pid}")
                 await self.kill()
                 return
 
