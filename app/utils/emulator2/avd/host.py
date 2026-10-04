@@ -57,6 +57,7 @@ from .components import (
 )
 from .constants import (
     HOST_MEMORY_OVERHEAD_MB,
+    METADATA_FILE,
     PORT_BASE,
     PORT_STEP,
     SHADER_CACHE_DIR,
@@ -166,15 +167,47 @@ def busy_ports(ports: list[int]) -> list[int]:
     return sorted(busy)
 
 
+class ScriptAdbPortConflict(RuntimeError):
+    """脚本专用 adb 端口被别的程序（不是 adb）占着。"""
+
+
+def _port_listener(port: int) -> tuple[bool, int | None, str | None]:
+    """``(是否有人在听, 监听进程 PID, 进程名)``；PID / 进程名读不到时为 ``None``。"""
+    for conn in psutil.net_connections(kind="tcp"):
+        if conn.status == psutil.CONN_LISTEN and conn.laddr and conn.laddr.port == port:
+            name = None
+            if conn.pid:
+                with suppress(psutil.Error):
+                    name = psutil.Process(conn.pid).name()
+            return True, conn.pid, name
+    return False, None, None
+
+
+def _is_adb_process_name(name: str) -> bool:
+    return name.lower() in ("adb.exe", "adb")
+
+
 async def ensure_script_adb_server(root: str | Path, *, timeout: float = 10.0) -> bool:
     """脚本专用 adb server（``scriptAdbServerPort``）没在跑就以脱离方式起来，返回之后它是否在听。
 
     脚本进程（MAA、SRC、登录子进程 …）里的 adb 客户端顺手拉起的 server 会继承那个进程的输出管道：
     读它输出的一方（登录子进程的日志、SRC 的输出排空）就等不到结束。先由我们起好就没有这个问题。
     查连接表和等监听都放到线程里，不卡事件循环（起 server 要 2 秒左右）。
+
+    端口上在听的不是 adb（按监听进程名判断）时抛 :class:`ScriptAdbPortConflict`，提示去
+    ``mas-avd.json`` 改 ``scriptAdbServerPort``：脚本的 adb 连上去只会一直失败。进程名读不到时
+    （权限不够）不下结论，按已就绪处理。
     """
     port = script_adb_server_port(root)
-    if await asyncio.to_thread(_port_listening, port):
+    listening, pid, name = await asyncio.to_thread(_port_listener, port)
+    if listening:
+        if name is not None and not _is_adb_process_name(name):
+            raise ScriptAdbPortConflict(
+                f"官方模拟器的脚本专用 adb 端口 {port} 被 {name}（PID {pid}）占用，它不是 adb。"
+                f"请在 {Path(root) / METADATA_FILE} 里把 scriptAdbServerPort 改成一个没被占用的端口"
+                f"（不能用 5037 和各实例的控制台 / adb / gRPC 端口，也不能和 adbServerPort 相同），"
+                f"或者先关掉占用它的程序"
+            )
         return True
     logger.info(f"启动官方模拟器脚本专用 adb server（端口 {port}）")
     process = _popen_detached(

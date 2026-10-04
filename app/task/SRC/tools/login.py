@@ -255,8 +255,14 @@ async def _login_in_subprocess(
     env = dict(os.environ)
     env.update(script_adb_env(root))
     # 脚本专用 adb server 先由 MAS 以脱离方式起好，子进程里的 adb 不去顺手拉起（会继承输出管道）
-    with suppress(Exception):
+    try:
         await host.ensure_script_adb_server(root)
+    except host.ScriptAdbPortConflict as e:
+        # 端口被别的程序占着，子进程里的 adb 连上去只会一直失败
+        logger.error(str(e))
+        return False
+    except Exception:  # noqa: BLE001 - 起不来就交给子进程自己的 adb
+        pass
     job = build_login_job(
         device,
         entry,

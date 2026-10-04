@@ -73,6 +73,8 @@ async def script_process_env(manager: Any, index: Any) -> dict[str, str] | None:
     try:
         # 先由 MAS 以脱离方式起好：脚本里的 adb 顺手拉起的 server 会继承脚本的输出管道
         await host.ensure_script_adb_server(root)
+    except host.ScriptAdbPortConflict:
+        raise  # 端口被别的程序占着，脚本的 adb 连上去只会一直失败，直接报给用户
     except Exception as e:  # noqa: BLE001 - 起不来就交给脚本自己的 adb
         logger.warning(f"预先启动脚本专用 adb server 失败: {e}")
     logger.info(

@@ -1389,8 +1389,12 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
 
         root = root_from_manager_exe(device_ref.manager_path)
         # 先由 MAS 以脱离方式起好：worker 里的 adb 顺手拉起的 server 会继承 worker 的输出管道
-        with suppress(Exception):
+        try:
             await host.ensure_script_adb_server(root)
+        except host.ScriptAdbPortConflict:
+            raise  # 端口被别的程序占着，worker 里的 adb 连上去只会一直失败，直接报给用户
+        except Exception:  # noqa: BLE001 - 起不来就交给 worker 自己的 adb
+            pass
         return script_adb_env(root)
 
     def _check_avd_runtime_version(self, maafw_version: str | None) -> None:
