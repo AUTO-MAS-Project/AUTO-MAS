@@ -3,7 +3,7 @@
 /* tslint:disable */
 /* eslint-disable */
 /**
- * 官方模拟器组件后台下载进度 (id=EmulatorManager, type=emulator2.avd.install.progress)
+ * 魔改 AVD 组件后台下载进度 (id=EmulatorManager, type=emulator2.avd.install.progress)
  *
  * 同一份结构也是 ``/avd/status`` 与 ``/avd/install/start`` 返回的 ``job`` 快照。
  * 下载 / 解压这类高频事件按 0.5 秒节流, 阶段切换与收尾事件必发。

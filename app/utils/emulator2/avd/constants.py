@@ -18,7 +18,7 @@
 
 #   Contact: DLmaster_361@163.com
 
-"""官方模拟器（Android Emulator）后端的固定参数。
+"""魔改 AVD（Android Emulator）后端的固定参数。
 
 版本一律写死：官方仓库每隔几周就出新模拟器，自动追最新等于让用户替我们做兼容性测试。
 以后要升级，改这里的常量并重新实测一遍（预研文档记录的就是这组版本）。
@@ -30,16 +30,16 @@ from dataclasses import dataclass
 #: 整段 20000–20100 由用户指定，避开雷电（5554 起）和 MuMu（16384 起）。
 PORT_BASE = 20000
 PORT_STEP = 10
-#: 所有官方模拟器实例共用的私有 adb server。模拟器只向它注册，**永远不碰 5037**：
+#: 所有魔改 AVD 实例共用的私有 adb server。模拟器只向它注册，**永远不碰 5037**：
 #: 5037 是雷电 / MuMu / 生产 MAA 在用的，不同版本的 adb 抢 5037 会互相杀 server。
 ADB_SERVER_PORT = 20050
-#: 脚本（MAA、MaaFW）在官方模拟器实例上用的 adb server。脚本用 SDK 的新版 adb，放在 5037 上会和
+#: 脚本（MAA、MaaFW）在魔改 AVD 实例上用的 adb server。脚本用 SDK 的新版 adb，放在 5037 上会和
 #: 雷电 / MuMu 自带的旧版 adb 互杀 server（用户定：单独一个端口）。``mas-avd.json`` 的
 #: ``scriptAdbServerPort`` 可改。
 SCRIPT_ADB_SERVER_PORT = 20049
 #: 我们起的 adb server（私有、脚本专用）都带这个环境变量：关掉 adb server 对 5555–5585 本地端口的
 #: 模拟器扫描。不关的话它们会自动连上同机的雷电等模拟器（10-04 实测 20058 / 20059 都挂上了生产雷电的
-#: ``emulator-5560``），和生产抢同一个 adbd。官方模拟器实例在 20000 段、靠 ``host:emulator`` 登记，
+#: ``emulator-5560``），和生产抢同一个 adbd。魔改 AVD 实例在 20000 段、靠 ``host:emulator`` 登记，
 #: 本来就不在扫描范围里，关掉不影响。值小于 5555 时 adb 一个端口都不扫。
 ADB_NO_LOCAL_SCAN_ENV = {"ADB_LOCAL_TRANSPORT_MAX_PORT": "5554"}
 #: 原生索引上限。i=5 的端口段 20050–20052 正好压在私有 adb server 上，不能用。
@@ -186,8 +186,8 @@ SYSTEM_IMAGE = Component(
 #: 要下载的必需组件，按下载顺序（小的先下，adb 先到位便于排查）。Android 模拟器不在里面，见下。
 REQUIRED_COMPONENTS: tuple[Component, ...] = (PLATFORM_TOOLS, SYSTEM_IMAGE)
 
-#: Android 模拟器**不下载**，只认我们的自编版（用户定：必须用官方模拟器内测包）。内测包解压出来就是一个
-#: 官方模拟器根目录，自带 ``sdk\emulator``；原版（谷歌发的）不支持，开机前检查直接拒绝。
+#: Android 模拟器**不下载**，只认我们的自编版（用户定：必须用魔改 AVD 内测包）。内测包解压出来就是一个
+#: 魔改 AVD 根目录，自带 ``sdk\emulator``；原版（谷歌发的）不支持，开机前检查直接拒绝。
 #: 认自编版的办法见 ``components.emulator_self_built``。
 EMULATOR_COMPONENT_ID = "emulator"
 EMULATOR_COMPONENT_NAME = "Android 模拟器（emulator）"
@@ -383,7 +383,7 @@ DEBLOAT_PACKAGES: tuple[str, ...] = (
     "com.google.android.markup",
 )
 
-#: 已知在官方模拟器上跑不起来的游戏：包名 → 说明。脚本要拉起它们时直接报错，不去启动。
+#: 已知在魔改 AVD 上跑不起来的游戏：包名 → 说明。脚本要拉起它们时直接报错，不去启动。
 #: 星铁 10 月起不在表里：普通模式靠拉起前的 Vulkan 修复（见 :data:`VULKAN_FIX_PACKAGES`）。
 INCOMPATIBLE_PACKAGES: dict[str, str] = {}
 
@@ -405,7 +405,7 @@ SYNC_TIMEOUT_SECONDS = 3.0
 CONSOLE_KILL_TIMEOUT_SECONDS = 3.0
 CLOSE_TIMEOUT_SECONDS = 12.0
 FORCE_KILL_WAIT_SECONDS = 5.0
-#: 关机 / 重启 / 注销前并发关官方模拟器实例的总时限（单台 27 秒以内，留一点余量）；到点不等，
+#: 关机 / 重启 / 注销前并发关魔改 AVD 实例的总时限（单台 27 秒以内，留一点余量）；到点不等，
 #: 电源流程照常按进程名强杀。
 POWER_CLOSE_TIMEOUT_SECONDS = 30.0
 #: 「安装 APK」一次 `adb install` 的时限。游戏安装包常有 1–3 GB，推送加安装在慢盘上要几分钟。

@@ -5477,8 +5477,8 @@ class Emulator2SearchItem(BaseModel):
             "判定原因: ok 可添加 / version_too_old 版本太旧 / planned 后续版本接入 / "
             "unsupported 暂不支持 / already_added 已添加 / "
             "not_found 找不到模拟器程序 / probe_failed 版本认不出 / "
-            "components_missing 官方模拟器组件还没下载齐 / "
-            "test_package_required 根目录里的模拟器不是官方模拟器内测包里的自编版"
+            "components_missing 魔改 AVD 组件还没下载齐 / "
+            "test_package_required 根目录里的模拟器不是魔改 AVD 内测包里的自编版"
         ),
     )
     instanceCount: Optional[int] = Field(default=None, description="实例数量")
@@ -5569,23 +5569,23 @@ class Emulator2InstanceCreateIn(BaseModel):
     )
     dataPartitionGb: Optional[int] = Field(
         default=None,
-        description="仅官方模拟器: 数据盘上限 GB (16–512), 按实际写入增长, 留空为 64",
+        description="仅魔改 AVD: 数据盘上限 GB (16–512), 按实际写入增长, 留空为 64",
     )
     headless: Optional[bool] = Field(
         default=None,
-        description="仅官方模拟器: 是否无头运行 (没有窗口, 即静默模式), 留空为 true",
+        description="仅魔改 AVD: 是否无头运行 (没有窗口, 即静默模式), 留空为 true",
     )
     resolution: Optional[Literal["720", "1080"]] = Field(
         default=None,
-        description="仅官方模拟器: 显示档位 720 (1280x720) / 1080 (1920x1080), 留空为 720",
+        description="仅魔改 AVD: 显示档位 720 (1280x720) / 1080 (1920x1080), 留空为 720",
     )
     balloon: Optional[bool] = Field(
         default=None,
-        description="仅官方模拟器: 空闲页上报 (气球), 留空为 true",
+        description="仅魔改 AVD: 空闲页上报 (气球), 留空为 true",
     )
     guestAngle: Optional[bool] = Field(
         default=None,
-        description="仅官方模拟器: 客体走镜像自带 ANGLE (GuestAngle), 留空为 false",
+        description="仅魔改 AVD: 客体走镜像自带 ANGLE (GuestAngle), 留空为 false",
     )
 
 
@@ -5740,13 +5740,13 @@ class Emulator2DevicesOut(OutBase):
     )
 
 
-# ---- Emulator 2.0 · 官方模拟器（Android Emulator / AVD）---------------------
+# ---- Emulator 2.0 · 魔改 AVD（Android Emulator / AVD）---------------------
 # 没有厂商管理器: 用户选一个根目录, 同意《Android SDK 许可协议》后由后端从官方仓库
 # 后台下载组件; 组件齐了再按普通路径 ``/paths/add`` 纳管 (installPath = 根目录)。
 
 
 class Emulator2AvdRootIn(BaseModel):
-    root: str = Field(..., description="官方模拟器根目录 (组件与实例都放在里面)")
+    root: str = Field(..., description="魔改 AVD 根目录 (组件与实例都放在里面)")
 
 
 class Emulator2AvdStatusIn(Emulator2AvdRootIn):
@@ -5781,19 +5781,19 @@ class Emulator2AvdComponentItem(BaseModel):
     )
     testPackage: bool = Field(
         default=False,
-        description="仅 Android 模拟器: 根目录里是官方模拟器内测包的自编版, 已就绪",
+        description="仅 Android 模拟器: 根目录里是魔改 AVD 内测包的自编版, 已就绪",
     )
     needsTestPackage: bool = Field(
         default=False,
         description=(
             "仅 Android 模拟器: 根目录里没有模拟器或不是自编版; 模拟器不下载, "
-            "要把官方模拟器内测包解压到根目录"
+            "要把魔改 AVD 内测包解压到根目录"
         ),
     )
 
 
 class WSEmulator2AvdInstallProgressData(BaseModel):
-    """官方模拟器组件后台下载进度 (id=EmulatorManager, type=emulator2.avd.install.progress)
+    """魔改 AVD 组件后台下载进度 (id=EmulatorManager, type=emulator2.avd.install.progress)
 
     同一份结构也是 ``/avd/status`` 与 ``/avd/install/start`` 返回的 ``job`` 快照。
     下载 / 解压这类高频事件按 0.5 秒节流, 阶段切换与收尾事件必发。
@@ -5837,7 +5837,7 @@ class WSEmulator2AvdInstallProgressData(BaseModel):
 
 
 class Emulator2AvdPrecheckItem(BaseModel):
-    """官方模拟器开机前电脑检查的一项。拦截项不满足时开机直接被拒绝, 原因同 reason + advice。"""
+    """魔改 AVD 开机前电脑检查的一项。拦截项不满足时开机直接被拒绝, 原因同 reason + advice。"""
 
     id: str = Field(
         ...,
@@ -5955,7 +5955,7 @@ class Emulator2AvdInstallOut(OutBase):
             "结果原因: started 已开始 / running 已有任务在跑 / ready 组件已齐无需下载 / "
             "license_not_accepted 未同意许可协议 / invalid_root 目录不可用 / "
             "disk_space 磁盘空间不足 / no_source 所有下载源都不可用 / "
-            "test_package_required 要下载的都齐了, 只差官方模拟器内测包"
+            "test_package_required 要下载的都齐了, 只差魔改 AVD 内测包"
         ),
     )
     jobId: str = Field(default="", description="下载任务 ID")

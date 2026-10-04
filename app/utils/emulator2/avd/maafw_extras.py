@@ -18,7 +18,7 @@
 
 #   Contact: DLmaster_361@163.com
 
-"""MaaFramework 在官方模拟器上的截图通道：AVDExtras（读 ``SHM_videmulator<控制台端口>``）。
+"""MaaFramework 在魔改 AVD 上的截图通道：AVDExtras（读 ``SHM_videmulator<控制台端口>``）。
 
 AVDExtras 首次出现在 MaaFramework v5.7.0（#1126）。它连上时跑 ``{ADB} -s {ADB_SERIAL} emu screenrecord
 webrtc start`` 拿共享内存名，断开时跑 ``... webrtc stop``。``adb emu`` 只认 ``emulator-<控制台端口>``
@@ -30,7 +30,7 @@ webrtc start`` 拿共享内存名，断开时跑 ``... webrtc stop``。``adb emu
   同一台实例上的下一个使用者（MAA 的假 MuMu、MaaFW 的下一次连接）拿到的是黑帧。开机调优已经开了
   推流，它本来就该一直开着。
 
-截图方式只给 EmulatorExtras，不留普通 adb 回落（用户 09-26 定：官方模拟器上普通 adb 截图约 250 ms，
+截图方式只给 EmulatorExtras，不留普通 adb 回落（用户 09-26 定：魔改 AVD 上普通 adb 截图约 250 ms，
 「不如不做」）；做不到就让连接失败、明确报错。
 """
 

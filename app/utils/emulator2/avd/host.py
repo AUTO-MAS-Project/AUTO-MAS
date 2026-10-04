@@ -18,7 +18,7 @@
 
 #   Contact: DLmaster_361@163.com
 
-"""官方模拟器的宿主侧操作：私有 adb、控制台、进程、硬件加速检查（开机前的整套电脑检查见
+"""魔改 AVD 的宿主侧操作：私有 adb、控制台、进程、硬件加速检查（开机前的整套电脑检查见
 :mod:`.precheck`）。
 
 两个实测出来的硬约束（预研 §6.1、§6.14）：
@@ -65,7 +65,7 @@ from .constants import (
     avd_name,
 )
 
-logger = get_logger("官方模拟器宿主")
+logger = get_logger("魔改 AVD 宿主")
 
 #: 单条 adb 命令的默认超时。
 ADB_TIMEOUT = 20.0
@@ -171,7 +171,7 @@ def busy_ports(ports: list[int]) -> list[int]:
 
 
 class AdbPortConflict(RuntimeError):
-    """官方模拟器要用的 adb server 端口被别的程序（不是 adb）占着。"""
+    """魔改 AVD 要用的 adb server 端口被别的程序（不是 adb）占着。"""
 
 
 class ScriptAdbPortConflict(AdbPortConflict):
@@ -193,7 +193,7 @@ def _port_conflict(
     other_key: str,
 ) -> str:
     return (
-        f"官方模拟器的{label} adb 端口 {port} 被 {name}（PID {pid}）占用，它不是 adb。"
+        f"魔改 AVD 的{label} adb 端口 {port} 被 {name}（PID {pid}）占用，它不是 adb。"
         f"请在 {Path(root) / METADATA_FILE} 里把 {key} 改成一个没被占用的端口"
         f"（不能用 5037 和各实例的控制台 / adb / gRPC 端口，也不能和 {other_key} 相同），"
         f"或者先关掉占用它的程序"
@@ -257,7 +257,7 @@ async def ensure_script_adb_server(root: str | Path, *, timeout: float = 10.0) -
                 )
             )
         return True
-    logger.info(f"启动官方模拟器脚本专用 adb server（端口 {port}）")
+    logger.info(f"启动魔改 AVD 脚本专用 adb server（端口 {port}）")
     process = _popen_detached(
         [str(adb_exe(root)), "-P", str(port), "start-server"],
         env=emulator_env(root),
@@ -282,7 +282,7 @@ async def ensure_adb_server(root: str | Path, *, timeout: float = 20.0) -> bool:
             raise PrivateAdbPortConflict(_private_port_conflict(root, port, pid, name))
         return True
     adb = adb_exe(root)
-    logger.info(f"启动官方模拟器私有 adb server（端口 {port}）")
+    logger.info(f"启动魔改 AVD 私有 adb server（端口 {port}）")
     process = _popen_detached(
         [str(adb), "-P", str(port), "start-server"],
         env=emulator_env(root),

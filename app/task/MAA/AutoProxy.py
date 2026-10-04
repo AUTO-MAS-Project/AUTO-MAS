@@ -1831,7 +1831,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
         # 模式存在(MAS 零写入, 安装目录原生配置即现场)。
 
     def _resolve_avd_device(self) -> tuple[Path, int] | None:
-        """这次用的设备是官方模拟器实例时返回 ``(根目录, 控制台端口)``，否则 ``None``。"""
+        """这次用的设备是魔改 AVD 实例时返回 ``(根目录, 控制台端口)``，否则 ``None``。"""
         resolve_device = getattr(self.emulator_manager, "resolve_device", None)
         if resolve_device is None:
             return None
@@ -1847,7 +1847,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
         )
 
     async def _maa_process_env(self) -> dict[str, str] | None:
-        """MAA 进程的环境变量。官方模拟器实例上把它（连同 MaaCore 起的 adb）指到脚本专用的 adb
+        """MAA 进程的环境变量。魔改 AVD 实例上把它（连同 MaaCore 起的 adb）指到脚本专用的 adb
         server（``scriptAdbServerPort``，默认 20049）：MAA 用 SDK 的新版 adb，放在 5037 上会和雷电 /
         MuMu 自带的旧版 adb 互杀 server。其余模拟器返回 ``None``，照旧继承 MAS 的环境。"""
         return await script_process_env(
@@ -1876,7 +1876,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 emulator_info.adb_address
             )
 
-        # 官方模拟器实例：MAA 走假 MuMu 截图通道（MuMu 12 预设 + 桥接 + 实例号 = 控制台端口），
+        # 魔改 AVD 实例：MAA 走假 MuMu 截图通道（MuMu 12 预设 + 桥接 + 实例号 = 控制台端口），
         # 雷电 / MuMu 实例不经过这里。这些键和上面的地址一样，由原生配置快照在任务结束后还原。
         avd = self._resolve_avd_device()
         self._avd_screencap_guard = avd is not None
@@ -1887,7 +1887,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 avd_root, avd_console, default_set, current_gui.get("ConnectSettings")
             )
             logger.info(
-                f"官方模拟器实例（控制台端口 {avd_console}）：MAA 截图走假 MuMu 通道"
+                f"魔改 AVD 实例（控制台端口 {avd_console}）：MAA 截图走假 MuMu 通道"
             )
 
         post_actions = MAA_TASK_TRANSITION_METHOD_BOOK[
@@ -2046,7 +2046,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
             self.script_info.log = text
 
         try:
-            # 官方模拟器实例：宿主的 adb 走 MAS 私有 server，不落到 5037；其余模拟器不接管
+            # 魔改 AVD 实例：宿主的 adb 走 MAS 私有 server，不落到 5037；其余模拟器不接管
             with adb_runner_scope(await resolve_host_adb(self)):
                 result = await ensure_game_updated(
                     adb_path=self.emulator_manager.get_adb_path(),
@@ -2171,7 +2171,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
         if self.cur_user_config.get("Info", "IfQuickConfig"):
             await self._collect_cultivate_archive(log)
 
-        # 官方模拟器实例上截图不许回落到普通 adb（约 250 ms，用户 09-26 定「不如不做」）
+        # 魔改 AVD 实例上截图不许回落到普通 adb（约 250 ms，用户 09-26 定「不如不做」）
         avd_fallback = (
             screencap_fallback_status(log)
             if getattr(self, "_avd_screencap_guard", False)
@@ -2261,7 +2261,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 not_before=self.log_start_time,
             )
             if shot is None:
-                # 官方模拟器实例：截图走 MAS 私有 server（get_adb_path() 对它是 None，以前直接跳过）
+                # 魔改 AVD 实例：截图走 MAS 私有 server（get_adb_path() 对它是 None，以前直接跳过）
                 host_adb = await resolve_host_adb(self)
                 shot = await asyncio.wait_for(
                     capture_current_screen(

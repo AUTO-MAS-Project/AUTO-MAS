@@ -4,7 +4,7 @@
 /* eslint-disable */
 export type Emulator2AvdStatusIn = {
     /**
-     * 官方模拟器根目录 (组件与实例都放在里面)
+     * 魔改 AVD 根目录 (组件与实例都放在里面)
      */
     root: string;
     /**

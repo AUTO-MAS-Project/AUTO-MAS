@@ -114,7 +114,7 @@ async def capture_current_screen(
     （空、纯色——雷电上普通 adb 截图拿不到游戏渲染层）时返回 ``None``。
     截图是诊断旁路，任何失败只记日志，不抛出。
 
-    ``png_reader`` 给官方模拟器实例用：由 MAS 私有 adb server 取 PNG 字节（它的 adb 不能落到
+    ``png_reader`` 给魔改 AVD 实例用：由 MAS 私有 adb server 取 PNG 字节（它的 adb 不能落到
     5037，``adb_path`` 对它也是 ``None``），给了就不走 ``adb_path`` / ``adb_address``。
     """
 

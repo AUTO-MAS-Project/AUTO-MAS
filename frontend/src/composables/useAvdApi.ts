@@ -37,7 +37,7 @@ const errorMessage = (error: unknown, fallback: string): string => {
 }
 
 /**
- * 官方模拟器（AVD）客户端：根目录的组件状态与开机前检查、许可协议、下载源测速、后台下载、
+ * 魔改 AVD客户端：根目录的组件状态与开机前检查、许可协议、下载源测速、后台下载、
  * 添加根目录，实例选项与安装 APK，以及一键开启「Windows 虚拟机监控程序平台」。
  *
  * 业务失败走 ``code !== 200`` + ``message``（HTTP 仍是 200），HTTP 失败走 ``ApiError``；两种都抛带

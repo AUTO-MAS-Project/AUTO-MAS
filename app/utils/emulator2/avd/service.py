@@ -18,7 +18,7 @@
 
 #   Contact: DLmaster_361@163.com
 
-"""官方模拟器的服务层：组件状态、许可证、测速、后台下载、实例选项。
+"""魔改 AVD 的服务层：组件状态、许可证、测速、后台下载、实例选项。
 
 添加流程：``status``（缺什么）→ ``license``（给用户看全文、勾选同意）→ ``sources``（测速）
 → ``install_start``（后台下载，进度走 WebSocket，可关弹窗）→ 下载完成后按普通路径纳管
@@ -41,7 +41,7 @@ from . import components, host, hypervisor, precheck
 from .components import ComponentError, InstallJob
 from .constants import DOWNLOAD_SOURCES, LICENSE_ID, POWER_CLOSE_TIMEOUT_SECONDS
 
-logger = get_logger("官方模拟器服务")
+logger = get_logger("魔改 AVD 服务")
 
 #: WebSocket 推送任务的强引用，免得还没发出去就被回收。
 _PENDING_SENDS: set[asyncio.Task] = set()
@@ -50,7 +50,7 @@ _PENDING_SENDS: set[asyncio.Task] = set()
 def _normalize_root(root: str) -> Path:
     path = Path(str(root or "").strip())
     if not str(path) or not path.is_absolute():
-        raise ValueError("请选择一个完整路径的文件夹作为官方模拟器根目录")
+        raise ValueError("请选择一个完整路径的文件夹作为魔改 AVD 根目录")
     if path.exists() and not path.is_dir():
         raise ValueError(f"{path} 不是文件夹")
     return path
@@ -162,7 +162,7 @@ async def install_start(
         return {
             "ok": False,
             "reason": "test_package_required",
-            "message": "要下载的组件都已就绪，还需要把官方模拟器内测包解压到这个目录",
+            "message": "要下载的组件都已就绪，还需要把魔改 AVD 内测包解压到这个目录",
         }
 
     try:
@@ -199,7 +199,7 @@ async def install_start(
         on_success=(lambda: _auto_add(emulator_id, path, alias)),
     )
     job = components.start_job(job)
-    logger.info(f"开始下载官方模拟器组件: {path}（下载源 {source.name}）")
+    logger.info(f"开始下载魔改 AVD 组件: {path}（下载源 {source.name}）")
     return {
         "ok": True,
         "reason": "started",
@@ -217,9 +217,9 @@ async def _auto_add(emulator_id: str | None, root: Path, alias: str | None) -> N
 
     result = await emulator2_service.add_path(emulator_id, str(root), alias)
     if result.get("ok") or result.get("reason") == "already_added":
-        logger.info(f"官方模拟器 {root} 已加入配置 {emulator_id}")
+        logger.info(f"魔改 AVD {root} 已加入配置 {emulator_id}")
     else:
-        logger.warning(f"官方模拟器 {root} 自动加入配置失败: {result}")
+        logger.warning(f"魔改 AVD {root} 自动加入配置失败: {result}")
 
 
 def install_cancel(root: str) -> dict[str, Any]:
@@ -244,7 +244,7 @@ async def wait_job(root: str) -> dict[str, Any] | None:
 
 
 def _avd_roots() -> list[Path]:
-    """Emulator 2.0 配置里纳管的全部官方模拟器根目录（去重）。"""
+    """Emulator 2.0 配置里纳管的全部魔改 AVD 根目录（去重）。"""
     from app.core import Config
 
     from ..detect import avd_root_of
@@ -288,19 +288,19 @@ async def close_instances(
             results[name] = "closed"
         else:
             results[name] = "failed"
-            logger.warning(f"官方模拟器实例 {name} 关机失败: {error}")
+            logger.warning(f"魔改 AVD 实例 {name} 关机失败: {error}")
     for task in pending:
         name = tasks[task]
         task.cancel()
         results[name] = "timeout"
-        logger.warning(f"官方模拟器实例 {name} 未在 {timeout:.0f} 秒内关完，放弃等待")
+        logger.warning(f"魔改 AVD 实例 {name} 未在 {timeout:.0f} 秒内关完，放弃等待")
     return results
 
 
 async def close_running_instances(
     *, timeout: float = POWER_CLOSE_TIMEOUT_SECONDS
 ) -> dict[str, str]:
-    """关机 / 重启 / 注销前，对正在跑的官方模拟器实例逐个走 ``close``（先 ``sync`` 再关）。
+    """关机 / 重启 / 注销前，对正在跑的魔改 AVD 实例逐个走 ``close``（先 ``sync`` 再关）。
 
     电源路径之后会按进程名强杀模拟器，强杀不走客体关机流程，页缓存里没写回的数据会丢（10-03 星铁
     热更新清单变 0 字节）。这里整体限时，不让关机卡住；出任何错都只记日志。
@@ -314,13 +314,13 @@ async def close_running_instances(
             manager = AvdManager(manager_key_exe(root), 60, False)
             running = await asyncio.to_thread(manager._scan_processes)
         except Exception as e:  # noqa: BLE001
-            logger.warning(f"列出 {root} 的官方模拟器实例失败: {e}")
+            logger.warning(f"列出 {root} 的魔改 AVD 实例失败: {e}")
             continue
         for idx in running:
             targets.append((f"{root}#{idx}", lambda m=manager, i=idx: m.close(i)))
     if not targets:
         return {}
-    logger.info(f"关机前先正常关闭 {len(targets)} 台官方模拟器实例（先 sync）")
+    logger.info(f"关机前先正常关闭 {len(targets)} 台魔改 AVD 实例（先 sync）")
     return await close_instances(targets, timeout=timeout)
 
 
@@ -334,7 +334,7 @@ async def _backend(emulator_id: str, slot: str):
     manager = await build_manager(emulator_id)
     path, record = manager.resolve_slot(str(slot))
     if path.type != "avd":
-        raise ValueError("该设备不是官方模拟器")
+        raise ValueError("该设备不是魔改 AVD")
     backend = await manager.manager_for(path)
     assert isinstance(backend, AvdManager)
     return backend, record.native_index

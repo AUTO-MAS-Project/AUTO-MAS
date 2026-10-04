@@ -18,7 +18,7 @@
 
 #   Contact: DLmaster_361@163.com
 
-"""官方模拟器一条安装的设备管理器。
+"""魔改 AVD 一条安装的设备管理器。
 
 对门面暴露的方法与雷电 / MuMu 两家后端相同（``open`` / ``close`` / ``getStatus`` /
 ``getInfo`` / ``list_devices`` / 四项设置 / 稳定模式 / 新建删除实例），区别在于这里没有厂商
@@ -155,7 +155,7 @@ from .startup_watchdog import (
 )
 from .vulkanfix import UNSUPPORTED_IMAGE_MESSAGE, VulkanFixError, patch_vulkan_encoder
 
-logger = get_logger("官方模拟器管理")
+logger = get_logger("魔改 AVD 管理")
 
 #: 仓库里推到客体跑的脚本。
 GUEST_SCRIPTS_DIR = SOURCE_ROOT / "res" / "avd" / "guest"
@@ -166,20 +166,20 @@ _BOOT_POLL_SECONDS = 1.0
 _STATUS_ADB_TIMEOUT = 5.0
 #: 装轻量桌面的超时。
 _INSTALL_TIMEOUT = 180.0
-#: 界面上「打开游戏中心」之类一次点击的上限（官方模拟器没有游戏中心，留作接口一致）。
+#: 界面上「打开游戏中心」之类一次点击的上限（魔改 AVD 没有游戏中心，留作接口一致）。
 _LAUNCH_TIMEOUT_CAP = 45.0
 _BOOT_TIMEOUT_CAP = 120.0
 
 
 class IncompatibleGameError(RuntimeError):
-    """脚本要在官方模拟器上拉起一个已知跑不起来的游戏。"""
+    """脚本要在魔改 AVD 上拉起一个已知跑不起来的游戏。"""
 
 
 def incompatible_reason(package_name: str) -> str | None:
     name = INCOMPATIBLE_PACKAGES.get(package_name)
     if name is None:
         return None
-    return f"该游戏暂不支持官方模拟器：{name}（{package_name}）"
+    return f"该游戏暂不支持魔改 AVD：{name}（{package_name}）"
 
 
 def shm_exists(port: int) -> bool:
@@ -412,7 +412,7 @@ def _start_watchdog(root: Path, native_index: str, pid: int) -> None:
         _FROZEN[key] = reason
 
     watchdog = FreezeWatchdog(
-        f"官方模拟器实例 {avd_name(native_index)}",
+        f"魔改 AVD 实例 {avd_name(native_index)}",
         probe_adb=probe_adb,
         cpu_seconds=lambda: host.process_cpu_seconds(process),
         is_alive=is_alive,
@@ -637,7 +637,7 @@ class _AvdCore(DeviceBase):
     def _instance(self, idx: str) -> AvdInstance:
         instance = self._instances().get(str(idx))
         if instance is None:
-            raise RuntimeError(f"官方模拟器实例 {idx} 不存在")
+            raise RuntimeError(f"魔改 AVD 实例 {idx} 不存在")
         return instance
 
     def _scan_processes(self) -> dict[str, psutil.Process]:
@@ -703,7 +703,7 @@ class _AvdCore(DeviceBase):
         if idx is not None:
             instance = instances.get(str(idx))
             if instance is None:
-                raise RuntimeError(f"官方模拟器实例 {idx} 不存在")
+                raise RuntimeError(f"魔改 AVD 实例 {idx} 不存在")
             instances = {str(idx): instance}
         processes = await asyncio.to_thread(self._scan_processes)
         result: dict[str, DeviceInfo] = {}
@@ -768,7 +768,7 @@ class _AvdCore(DeviceBase):
         headless = bool(instance_meta(self.root, idx).get("headless", True))
         if is_visible and headless:
             logger.info(
-                f"官方模拟器实例 {idx} 以无头方式运行，没有窗口可显示；"
+                f"魔改 AVD 实例 {idx} 以无头方式运行，没有窗口可显示；"
                 "需要看画面请在实例设置里改为带窗口，下次启动生效"
             )
         return await self.getStatus(idx)
@@ -781,7 +781,7 @@ class _AvdCore(DeviceBase):
         ]
         if missing:
             raise RuntimeError(
-                "官方模拟器组件不完整，缺少：" + "、".join(missing) + "，请重新下载组件"
+                "魔改 AVD 组件不完整，缺少：" + "、".join(missing) + "，请重新下载组件"
             )
 
     async def open(self, idx: str, package_name: str = "") -> DeviceInfo:
@@ -801,7 +801,7 @@ class _AvdCore(DeviceBase):
                 host.BOOTING.add(serial)
                 await self._launch(idx, instance)
             else:
-                logger.info(f"官方模拟器实例 {idx} 已在运行（pid {process.pid}）")
+                logger.info(f"魔改 AVD 实例 {idx} 已在运行（pid {process.pid}）")
             process = await self._wait_boot(idx, instance, launched, max_wait)
         finally:
             if launched:
@@ -829,14 +829,14 @@ class _AvdCore(DeviceBase):
                 return process
             if time.monotonic() >= deadline:
                 raise RuntimeError(
-                    f"官方模拟器实例 {idx} 启动超时（{max_wait:.0f} 秒内安卓没有启动完成）"
+                    f"魔改 AVD 实例 {idx} 启动超时（{max_wait:.0f} 秒内安卓没有启动完成）"
                     f"，日志见 {self._log_dir()}"
                 )
             if process is None and self._launcher is not None:
                 code = self._launcher.poll()
                 if code is not None:
                     raise RuntimeError(
-                        f"官方模拟器实例 {idx} 启动失败（emulator.exe 退出码 {code}）："
+                        f"魔改 AVD 实例 {idx} 启动失败（emulator.exe 退出码 {code}）："
                         f"{self._log_tail()}"
                     )
             await asyncio.sleep(_BOOT_POLL_SECONDS)
@@ -876,7 +876,7 @@ class _AvdCore(DeviceBase):
         busy = await asyncio.to_thread(host.busy_ports, ports)
         if busy:
             raise RuntimeError(
-                f"官方模拟器实例 {idx} 要用的端口 {', '.join(map(str, busy))} 已被占用，"
+                f"魔改 AVD 实例 {idx} 要用的端口 {', '.join(map(str, busy))} 已被占用，"
                 "请先关闭占用它们的程序"
             )
 
@@ -895,7 +895,7 @@ class _AvdCore(DeviceBase):
         stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
         self._log_path = self._log_dir() / f"{instance.name}-{stamp}.log"
         logger.info(
-            f"启动官方模拟器实例 {idx}（{'无头' if options['flags']['headless'] else '带窗口'}，"
+            f"启动魔改 AVD 实例 {idx}（{'无头' if options['flags']['headless'] else '带窗口'}，"
             f"{options['resolution']}p，{memory_mb} MB / {instance.cpu} 核，"
             f"气球{'开' if options['flags']['balloon'] else '关'}"
             f"{'，GuestAngle' if options['flags']['guest_angle'] else ''}）: "
@@ -1107,7 +1107,7 @@ class _AvdCore(DeviceBase):
 
     async def _first_boot_init(self, idx: str) -> None:
         """首次开机后的持久设置（重启后保持），做完记进 ``mas-avd.json``。"""
-        logger.info(f"官方模拟器实例 {idx} 首次开机，正在初始化")
+        logger.info(f"魔改 AVD 实例 {idx} 首次开机，正在初始化")
         failures: list[str] = []
 
         # WiFi 不在这里关：每次开机都开 WiFi + fastpath（用户 09-27 定，见 _setup_network）
@@ -1144,7 +1144,7 @@ class _AvdCore(DeviceBase):
         software = "swiftshader" in renderer.lower()
         if software:
             logger.warning(
-                f"官方模拟器实例 {idx} 正在用软件渲染（{renderer}）：没有可用的显卡驱动，"
+                f"魔改 AVD 实例 {idx} 正在用软件渲染（{renderer}）：没有可用的显卡驱动，"
                 "游戏会占满 CPU，请更新显卡驱动"
             )
 
@@ -1160,10 +1160,10 @@ class _AvdCore(DeviceBase):
         )
         if failures:
             logger.warning(
-                f"官方模拟器实例 {idx} 初始化有失败项，下次开机重试: {failures}"
+                f"魔改 AVD 实例 {idx} 初始化有失败项，下次开机重试: {failures}"
             )
         else:
-            logger.info(f"官方模拟器实例 {idx} 初始化完成（桌面: {launcher}）")
+            logger.info(f"魔改 AVD 实例 {idx} 初始化完成（桌面: {launcher}）")
 
     async def _install_launcher(self, idx: str) -> str:
         """装轻量桌面并设为默认、禁用原生桌面。没下载到就保留原生桌面。"""
@@ -1229,10 +1229,10 @@ class _AvdCore(DeviceBase):
             code, output = -1, problem
         if code == 0:
             logger.info(
-                f"官方模拟器实例 {idx} 关机前 sync 完成（{(time.monotonic() - started) * 1000:.0f} ms）"
+                f"魔改 AVD 实例 {idx} 关机前 sync 完成（{(time.monotonic() - started) * 1000:.0f} ms）"
             )
         else:
-            logger.warning(f"官方模拟器实例 {idx} 关机前 sync 失败，照常关机: {output}")
+            logger.warning(f"魔改 AVD 实例 {idx} 关机前 sync 失败，照常关机: {output}")
 
         if not self.config.get("Info", "ForceKillOnClose"):
             try:
@@ -1246,12 +1246,12 @@ class _AvdCore(DeviceBase):
                     await asyncio.to_thread(process.wait, CLOSE_TIMEOUT_SECONDS)
         if process.is_running():
             logger.warning(
-                f"官方模拟器实例 {idx} 未在 {CLOSE_TIMEOUT_SECONDS:.0f} 秒内退出，强制结束"
+                f"魔改 AVD 实例 {idx} 未在 {CLOSE_TIMEOUT_SECONDS:.0f} 秒内退出，强制结束"
             )
             host.kill_process_tree(process)
             with suppress(psutil.TimeoutExpired):
                 await asyncio.to_thread(process.wait, FORCE_KILL_WAIT_SECONDS)
-        logger.info(f"官方模拟器实例 {idx} 已关闭")
+        logger.info(f"魔改 AVD 实例 {idx} 已关闭")
         return DeviceStatus.OFFLINE
 
     # ---- 设置 -----------------------------------------------------------
@@ -1293,7 +1293,7 @@ class _AvdCore(DeviceBase):
         """可改 CPU、内存与显示档位（下次启动生效）；显示只有 720p / 1080p 两档，帧率不可设。"""
         cleaned = validate_setting_changes(changes)
         if "fps" in cleaned:
-            raise ValueError("官方模拟器没有可设置的帧率")
+            raise ValueError("魔改 AVD 没有可设置的帧率")
         instance = self._instance(idx)
         resolution = None
         if {"width", "height", "dpi"} & cleaned.keys():
@@ -1329,11 +1329,11 @@ class _AvdCore(DeviceBase):
             for k, v in cleaned.items()
             if k in ("cpu", "memoryMb", "width", "height", "dpi")
         }
-        logger.info(f"已写入官方模拟器实例 {idx} 的设置: {applied}")
+        logger.info(f"已写入魔改 AVD 实例 {idx} 的设置: {applied}")
         return applied
 
     async def read_stable_mode(self, idx: str) -> tuple[bool, list[str]]:
-        # 官方模拟器没有会干扰截图识别的厂商功能，天然就是「稳定」的
+        # 魔改 AVD 没有会干扰截图识别的厂商功能，天然就是「稳定」的
         return True, []
 
     async def apply_stable_mode(self, idx: str) -> list[str]:
@@ -1378,7 +1378,7 @@ class _AvdCore(DeviceBase):
             guest_angle=guest_angle,
         )
         logger.info(
-            f"已新建官方模拟器实例 {native_index}（内存 "
+            f"已新建魔改 AVD 实例 {native_index}（内存 "
             f"{memory} MB / {cores} 核 / 数据盘 {data_gb} GB / "
             f"{display}p）"
         )
@@ -1393,7 +1393,7 @@ class _AvdCore(DeviceBase):
             if host.busy_ports([port, port + 1, port + 2]):
                 continue
             return index
-        raise RuntimeError("官方模拟器实例已满（端口段 20000–20100 最多 9 台）")
+        raise RuntimeError("魔改 AVD 实例已满（端口段 20000–20100 最多 9 台）")
 
     async def delete_instance(self, native_index: str) -> None:
         status = await self.getStatus(native_index)
@@ -1402,14 +1402,14 @@ class _AvdCore(DeviceBase):
             DeviceStatus.NOT_FOUND,
             DeviceStatus.ERROR,
         ):
-            raise RuntimeError(f"官方模拟器实例 {native_index} 未关闭，无法删除")
+            raise RuntimeError(f"魔改 AVD 实例 {native_index} 未关闭，无法删除")
         if status == DeviceStatus.ERROR:
             # 被看门狗强杀过的实例进程已经不在，只剩状态标记
             _FROZEN.pop(_instance_key(self.root, str(native_index)), None)
         await asyncio.to_thread(delete_instance_files, self.root, native_index)
         # 同一索引以后新建的是另一台实例，之前「镜像不支持星铁普通模式」的结论不能沿用
         _VULKAN_UNSUPPORTED.pop(_instance_key(self.root, str(native_index)), None)
-        logger.info(f"已删除官方模拟器实例 {native_index}")
+        logger.info(f"已删除魔改 AVD 实例 {native_index}")
 
     # ---- 实例选项 ------------------------------------------------------
 
@@ -1490,7 +1490,7 @@ class _AvdCore(DeviceBase):
             changes["guestAngle"] = bool(guest_angle)
         if changes:
             update_instance_meta(self.root, idx, **changes)
-            logger.info(f"已修改官方模拟器实例 {idx} 的选项（下次启动生效）: {changes}")
+            logger.info(f"已修改魔改 AVD 实例 {idx} 的选项（下次启动生效）: {changes}")
         return self.instance_options(idx)
 
 
@@ -1508,12 +1508,12 @@ def _resolution_of(width: int | None, height: int | None, dpi: int | None) -> st
         if sides == [long_side, short_side] and dpi == density:
             return name
     raise ValueError(
-        "官方模拟器的显示只有两档：720p（1280×720、DPI 240）与 1080p（1920×1080、DPI 280）"
+        "魔改 AVD 的显示只有两档：720p（1280×720、DPI 240）与 1080p（1920×1080、DPI 280）"
     )
 
 
 class AvdHostAdb:
-    """MAS 宿主进程对一台官方模拟器实例发 adb 命令的通道：私有 server ``-P <adbServerPort>
+    """MAS 宿主进程对一台魔改 AVD 实例发 adb 命令的通道：私有 server ``-P <adbServerPort>
     -s emulator-<控制台端口>``。脚本的 adb server 杀不到它，丢设备时 :func:`host.run_adb` 会重新登记。
 
     调用约定同 :data:`~..applaunch.AdbRunner`：``await runner(*args, timeout=…)`` → ``(返回码, 输出)``。
@@ -1540,13 +1540,13 @@ class AvdHostAdb:
         )
         if code != 0 or not data.startswith(b"\x89PNG"):
             raise RuntimeError(
-                f"官方模拟器实例 {self.native_index} 截图失败（返回码 {code}）: {error[-200:]}"
+                f"魔改 AVD 实例 {self.native_index} 截图失败（返回码 {code}）: {error[-200:]}"
             )
         return data
 
 
 class AvdManager(AppLaunchMixin, _AvdCore):
-    """一条官方模拟器安装的管理器。
+    """一条魔改 AVD 安装的管理器。
 
     ``AppLaunchMixin.open`` 先开机再拉应用；这里在它之前挡掉已知不兼容的游戏（连模拟器都不开），
     并把拉应用改走私有 adb、先结束其它第三方游戏。
@@ -1614,7 +1614,7 @@ class AvdManager(AppLaunchMixin, _AvdCore):
         返回 ``None``，调用方按普通方式拉起。
 
         avd-game.ps1 拉起前丢弃客体 ping 的 iptables 规则不搬：那是给原版 slirp 的 ICMP 套接字堆积兜底的
-        （崩坏三每次启动 ping 约 700 次/秒，拖垮 slirp 主循环）。这里只支持官方模拟器内测包里的自编版
+        （崩坏三每次启动 ping 约 700 次/秒，拖垮 slirp 主循环）。这里只支持魔改 AVD 内测包里的自编版
         （开机前检查拒绝原版），自编版从 sdk-mas9 起已在模拟器里修好。
         """
         _, output = await self._shell(idx, f"pm path {package_name}")
@@ -1867,7 +1867,7 @@ async def build_manager(
     """与雷电 / MuMu 的 ``build_manager`` 同签名。``manager_exe`` 是 ``sdk\\emulator\\emulator.exe``。"""
     exe = emulator_exe(root_from_manager_exe(manager_exe))
     if not exe.is_file():
-        raise RuntimeError(f"找不到官方模拟器程序 {exe}")
+        raise RuntimeError(f"找不到魔改 AVD 程序 {exe}")
     return AvdManager(manager_exe, max_wait_time, force_kill_on_close)
 
 

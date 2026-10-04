@@ -20,7 +20,7 @@
 
 """宿主侧：起 :mod:`app.core.maafw_adb_job` 子进程跑一次 MaaFramework 任务，转回日志、取回结果。
 
-官方模拟器实例用（MaaFramework 在 MAS 进程里起的 adb 只能落到 5037，见子进程模块说明）。
+魔改 AVD 实例用（MaaFramework 在 MAS 进程里起的 adb 只能落到 5037，见子进程模块说明）。
 解释器与 MAS 同一个（``sys.executable``），maa binding 也就是同一份。任务描述经 **stdin** 传入，
 不进命令行；子进程每行日志在这里再按 ``secrets`` 打一次码才交给 ``on_log``。
 调用方被取消、超时时按进程树结束子进程（连同 MaaFramework 在里面起的 adb）；交了结果却不退出的，

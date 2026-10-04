@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * 添加官方模拟器（AVD）：选根目录 → 看组件与电脑检查 → 组件缺着就同意许可协议后后台下载 → 添加。
+ * 添加魔改 AVD：选根目录 → 看组件与电脑检查 → 组件缺着就同意许可协议后后台下载 → 添加。
  *
  * 组件齐了点「添加」走普通的路径纳管；下载时带上配置 ID，后端下载完成后自己把根目录加进配置，
  * 这里收到完成进度后刷新一次即可。已纳管的根目录也从这里看组件和电脑检查。
@@ -25,7 +25,7 @@ import AvdDownloadPanel from './AvdDownloadPanel.vue'
 import AvdPrecheckList from './AvdPrecheckList.vue'
 
 const open = defineModel<boolean>('open', { required: true })
-/** `addedRoots`：这条配置里已经纳管的官方模拟器根目录，已在里面的不再给「添加」 */
+/** `addedRoots`：这条配置里已经纳管的魔改 AVD 根目录，已在里面的不再给「添加」 */
 const props = defineProps<{ emulatorId: string; initialRoot?: string; addedRoots?: string[] }>()
 const emit = defineEmits<{ added: [] }>()
 
@@ -83,7 +83,7 @@ const check = async (refresh = false) => {
     if (!result.ready && !licenseText.value) void loadLicense()
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error)
-    logger.error(`读取官方模拟器状态失败 (${target}): ${detail}`)
+    logger.error(`读取魔改 AVD 状态失败 (${target}): ${detail}`)
     message.error(detail || t('emulator2.avd.toast.statusFailed'))
   } finally {
     checking.value = false
@@ -149,7 +149,7 @@ const startDownload = async () => {
     job.value = result.job ?? job.value
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error)
-    logger.error(`开始下载官方模拟器组件失败: ${detail}`)
+    logger.error(`开始下载魔改 AVD 组件失败: ${detail}`)
     message.error(detail || t('emulator2.avd.toast.startFailed'))
   } finally {
     starting.value = false
@@ -163,7 +163,7 @@ const cancelDownload = async () => {
     if (!result.ok) message.warning(result.message || t('emulator2.avd.toast.cancelFailed'))
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error)
-    logger.error(`取消下载官方模拟器组件失败: ${detail}`)
+    logger.error(`取消下载魔改 AVD 组件失败: ${detail}`)
     message.error(detail || t('emulator2.avd.toast.cancelFailed'))
   } finally {
     cancelling.value = false
@@ -184,7 +184,7 @@ const addRoot = async () => {
     open.value = false
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error)
-    logger.error(`添加官方模拟器失败: ${detail}`)
+    logger.error(`添加魔改 AVD 失败: ${detail}`)
     message.error(detail || t('emulator2.avd.toast.addFailed'))
   } finally {
     adding.value = false

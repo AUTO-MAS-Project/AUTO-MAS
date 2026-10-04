@@ -646,7 +646,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
             await self.process_manager.open_process(
                 self.baah_path,
                 config_name,
-                # 官方模拟器实例：BAAH 的 adb 走脚本专用 server；其余为 None，照旧继承
+                # 魔改 AVD 实例：BAAH 的 adb 走脚本专用 server；其余为 None，照旧继承
                 env=await script_process_env(
                     self.emulator_manager, self.script_config.get("Emulator", "Index")
                 ),

@@ -330,7 +330,7 @@ export class Emulator20Service {
         });
     }
     /**
-     * 查询官方模拟器根目录的组件状态
+     * 查询魔改 AVD 根目录的组件状态
      * 组件清单与是否齐全、磁盘空间、是否同意过许可、硬件加速（WHPX）是否可用，
      * 以及该目录最近一次下载任务的进度快照。只读，不联网。``refresh`` 为 true 时检查不走缓存。
      * @param requestBody
@@ -371,7 +371,7 @@ export class Emulator20Service {
         });
     }
     /**
-     * 官方模拟器下载源测速
+     * 魔改 AVD 下载源测速
      * 各下载源依次拉几 MB 测速，按速度排序并给出推荐；失败的源排在最后。
      * @returns Emulator2AvdSourcesOut Successful Response
      * @throws ApiError
@@ -383,7 +383,7 @@ export class Emulator20Service {
         });
     }
     /**
-     * 开始后台下载官方模拟器组件
+     * 开始后台下载魔改 AVD 组件
      * 立即返回，进度走 WebSocket（id=EmulatorManager, type=emulator2.avd.install.progress）。
      *
      * ``acceptLicense`` 必须是用户亲手勾选的，为 false 时拒绝。断点续传：取消或失败后再调一次
@@ -406,7 +406,7 @@ export class Emulator20Service {
         });
     }
     /**
-     * 取消官方模拟器组件下载
+     * 取消魔改 AVD 组件下载
      * 取消后已下载的部分保留在根目录的 downloads 里，下次开始时续传。
      * @param requestBody
      * @returns Emulator2AvdInstallCancelOut Successful Response
@@ -426,7 +426,7 @@ export class Emulator20Service {
         });
     }
     /**
-     * 查询官方模拟器实例选项
+     * 查询魔改 AVD 实例选项
      * 无头 / 带窗口、内存、核数、数据盘、首次初始化与渲染器检测结果、端口。
      * @param requestBody
      * @returns Emulator2AvdInstanceOptionsOut Successful Response
@@ -446,7 +446,7 @@ export class Emulator20Service {
         });
     }
     /**
-     * 修改官方模拟器实例选项
+     * 修改魔改 AVD 实例选项
      * 无头、显示档位、内存、气球、GuestAngle，只改传了的项，下次启动生效。
      * @param requestBody
      * @returns Emulator2AvdInstanceOptionsOut Successful Response

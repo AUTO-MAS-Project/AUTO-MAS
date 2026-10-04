@@ -771,7 +771,7 @@ export class GetService {
         });
     }
     /**
-     * 查询官方模拟器根目录的组件状态
+     * 查询魔改 AVD 根目录的组件状态
      * 组件清单与是否齐全、磁盘空间、是否同意过许可、硬件加速（WHPX）是否可用，
      * 以及该目录最近一次下载任务的进度快照。只读，不联网。``refresh`` 为 true 时检查不走缓存。
      * @param requestBody
@@ -812,7 +812,7 @@ export class GetService {
         });
     }
     /**
-     * 官方模拟器下载源测速
+     * 魔改 AVD 下载源测速
      * 各下载源依次拉几 MB 测速，按速度排序并给出推荐；失败的源排在最后。
      * @returns Emulator2AvdSourcesOut Successful Response
      * @throws ApiError
@@ -824,7 +824,7 @@ export class GetService {
         });
     }
     /**
-     * 查询官方模拟器实例选项
+     * 查询魔改 AVD 实例选项
      * 无头 / 带窗口、内存、核数、数据盘、首次初始化与渲染器检测结果、端口。
      * @param requestBody
      * @returns Emulator2AvdInstanceOptionsOut Successful Response

@@ -40,11 +40,11 @@ export type Emulator2AvdComponentItem = {
      */
     localSdk?: boolean;
     /**
-     * 仅 Android 模拟器: 根目录里是官方模拟器内测包的自编版, 已就绪
+     * 仅 Android 模拟器: 根目录里是魔改 AVD 内测包的自编版, 已就绪
      */
     testPackage?: boolean;
     /**
-     * 仅 Android 模拟器: 根目录里没有模拟器或不是自编版; 模拟器不下载, 要把官方模拟器内测包解压到根目录
+     * 仅 Android 模拟器: 根目录里没有模拟器或不是自编版; 模拟器不下载, 要把魔改 AVD 内测包解压到根目录
      */
     needsTestPackage?: boolean;
 };

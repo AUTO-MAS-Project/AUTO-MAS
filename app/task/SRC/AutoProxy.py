@@ -235,7 +235,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
             except Exception as e:
                 if not await self.handle_pre_src_error("模拟器启动失败", e):
                     return
-                # 官方模拟器明确不支持这个游戏（如镜像不支持星铁普通模式）：重试只会一遍遍重开模拟器，
+                # 魔改 AVD 明确不支持这个游戏（如镜像不支持星铁普通模式）：重试只会一遍遍重开模拟器，
                 # 本用户本次直接判失败
                 if isinstance(e, IncompatibleGameError):
                     break
@@ -256,7 +256,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 STARRAIL_PACKAGE_NAME[self.cur_user_config.get("Info", "Server")],
                 self.cur_user_config.get("Info", "Id"),
                 self.cur_user_config.get("Info", "Password"),
-                # 官方模拟器实例：登录改在独立进程里跑（adb 走脚本专用 server）
+                # 魔改 AVD 实例：登录改在独立进程里跑（adb 走脚本专用 server）
                 device_ref=resolve_device_ref(
                     self.emulator_manager, self.script_config.get("Emulator", "Index")
                 ),
@@ -289,7 +289,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
             await self.src_process_manager.open_process(
                 self.src_exe_path,
                 null_stream_to_pipe=True,
-                # 官方模拟器实例：SRC 的 adb 走脚本专用 server；其余模拟器为 None，照旧继承
+                # 魔改 AVD 实例：SRC 的 adb 走脚本专用 server；其余模拟器为 None，照旧继承
                 env=await script_process_env(
                     self.emulator_manager, self.script_config.get("Emulator", "Index")
                 ),
@@ -457,7 +457,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
             self.script_info.log = text
 
         try:
-            # 官方模拟器实例：宿主的 adb 走 MAS 私有 server，不落到 5037；其余模拟器不接管
+            # 魔改 AVD 实例：宿主的 adb 走 MAS 私有 server，不落到 5037；其余模拟器不接管
             with adb_runner_scope(await resolve_host_adb(self)):
                 result = await ensure_game_updated(
                     adb_path=self.emulator_manager.get_adb_path(),

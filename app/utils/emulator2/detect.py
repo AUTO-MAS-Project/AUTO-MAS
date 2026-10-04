@@ -28,7 +28,7 @@ Emulator 2.0 只接受特定大版本，添加路径时必须先探测。探测�
 - 雷电：裸跑 ``ldconsole.exe``，首行形如
   ``dnplayer v14.0.25.1 Command Line Management Interface``
 - MuMu：``MuMuManager.exe version`` 输出 ``{"version": "6.5.9.0"}``
-- 官方模拟器（avd）：没有厂商管理器，「安装路径」是用户选的根目录，主程序是
+- 魔改 AVD（avd）：没有厂商管理器，「安装路径」是用户选的根目录，主程序是
   ``<根>/sdk/emulator/emulator.exe``；版本读 ``sdk/emulator/source.properties`` 的
   ``Pkg.Revision``，不起进程
 
@@ -79,8 +79,8 @@ class DetectResult:
     #: - ``unsupported``     暂不支持（MuMu 12、其他品牌）
     #: - ``not_found``       路径下没找到管理器程序
     #: - ``probe_failed``    管理器程序跑不起来或输出认不出
-    #: - ``components_missing`` 官方模拟器根目录里的组件还没下载齐
-    #: - ``test_package_required`` 官方模拟器根目录里的模拟器不是内测包里的自编版
+    #: - ``components_missing`` 魔改 AVD 根目录里的组件还没下载齐
+    #: - ``test_package_required`` 魔改 AVD 根目录里的模拟器不是内测包里的自编版
 
 
 def parse_ldplayer_version(output: str) -> str | None:
@@ -175,7 +175,7 @@ def resolve_manager_exe(install_path: str, emulator_type: str) -> Path | None:
 
 
 def avd_root_of(install_path: str) -> Path:
-    """官方模拟器的「安装路径」可能是根目录，也可能是用户直接选的 ``emulator.exe``。"""
+    """魔改 AVD 的「安装路径」可能是根目录，也可能是用户直接选的 ``emulator.exe``。"""
     path = Path(install_path)
     if path.name.lower() == "emulator.exe":
         return path.parents[2]
@@ -183,7 +183,7 @@ def avd_root_of(install_path: str) -> Path:
 
 
 def is_avd_root(install_path: str) -> bool:
-    """根目录里有我们的元数据或 SDK 目录，就当官方模拟器根目录。"""
+    """根目录里有我们的元数据或 SDK 目录，就当魔改 AVD 根目录。"""
     from .avd.constants import METADATA_FILE, SDK_DIR
 
     root = avd_root_of(install_path)
@@ -300,7 +300,7 @@ async def probe_install_path(
 
 
 def _probe_avd(install_path: str) -> DetectResult:
-    """官方模拟器根目录：组件齐了才可添加，版本取 ``source.properties``，不起进程。"""
+    """魔改 AVD 根目录：组件齐了才可添加，版本取 ``source.properties``，不起进程。"""
     from .avd.components import (
         emulator_present,
         emulator_self_built,
@@ -313,7 +313,7 @@ def _probe_avd(install_path: str) -> DetectResult:
     version = read_emulator_version(root) or ""
     exe = resolve_manager_exe(str(root), "avd")
     if emulator_present(root) and not emulator_self_built(root):
-        # 只支持官方模拟器内测包里的自编版，谷歌原版不让加
+        # 只支持魔改 AVD 内测包里的自编版，谷歌原版不让加
         return DetectResult(
             supported=False,
             reason="test_package_required",

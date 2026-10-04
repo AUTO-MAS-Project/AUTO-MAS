@@ -51,7 +51,7 @@ def resolve_device_ref(manager: Any, index: Any) -> Any | None:
 
 
 async def script_process_env(manager: Any, index: Any) -> dict[str, str] | None:
-    """为某台设备起脚本进程时要用的环境：官方模拟器实例返回「MAS 环境 + ``ANDROID_ADB_SERVER_PORT``
+    """为某台设备起脚本进程时要用的环境：魔改 AVD 实例返回「MAS 环境 + ``ANDROID_ADB_SERVER_PORT``
     = 脚本专用端口（``scriptAdbServerPort``，默认 20049）」，其余返回 ``None``（照旧继承 MAS 的环境）。
 
     脚本用 SDK 的新版 adb，跑在 5037 上会和雷电 / MuMu 自带的旧版 adb 互杀 server。
@@ -78,7 +78,7 @@ async def script_process_env(manager: Any, index: Any) -> dict[str, str] | None:
     except Exception as e:  # noqa: BLE001 - 起不来就交给脚本自己的 adb
         logger.warning(f"预先启动脚本专用 adb server 失败: {e}")
     logger.info(
-        f"设备 {index} 是官方模拟器实例：脚本的 adb 走专用 server（端口 "
+        f"设备 {index} 是魔改 AVD 实例：脚本的 adb 走专用 server（端口 "
         f"{env['ANDROID_ADB_SERVER_PORT']}）"
     )
     return env
@@ -87,12 +87,12 @@ async def script_process_env(manager: Any, index: Any) -> dict[str, str] | None:
 async def resolve_host_adb(
     owner: Any, *, index: str | None = None, config_key: str = "Emulator"
 ) -> Any | None:
-    """owner 接管的设备是官方模拟器实例时，返回宿主进程对它发 adb 的通道（MAS 私有 server，
+    """owner 接管的设备是魔改 AVD 实例时，返回宿主进程对它发 adb 的通道（MAS 私有 server，
     ``await runner(*args, timeout=…)``，另有 ``screencap_png()``）；其余情况返回 ``None``。
 
-    官方模拟器实例上宿主自己的 adb 命令（游戏更新检查、失败截图）不能落到 5037：脚本用的 SDK adb
+    魔改 AVD 实例上宿主自己的 adb 命令（游戏更新检查、失败截图）不能落到 5037：脚本用的 SDK adb
     会和雷电 / MuMu 自带的旧版 adb 互杀 server。雷电 / MuMu 返回 ``None``，调用方照旧走
-    ``get_adb_path()`` + 设备地址。查不到只当作不是官方模拟器。
+    ``get_adb_path()`` + 设备地址。查不到只当作不是魔改 AVD。
     """
 
     emulator_manager = getattr(owner, "emulator_manager", None)

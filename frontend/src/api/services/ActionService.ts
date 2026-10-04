@@ -224,7 +224,7 @@ export class ActionService {
         });
     }
     /**
-     * 开始后台下载官方模拟器组件
+     * 开始后台下载魔改 AVD 组件
      * 立即返回，进度走 WebSocket（id=EmulatorManager, type=emulator2.avd.install.progress）。
      *
      * ``acceptLicense`` 必须是用户亲手勾选的，为 false 时拒绝。断点续传：取消或失败后再调一次
@@ -247,7 +247,7 @@ export class ActionService {
         });
     }
     /**
-     * 取消官方模拟器组件下载
+     * 取消魔改 AVD 组件下载
      * 取消后已下载的部分保留在根目录的 downloads 里，下次开始时续传。
      * @param requestBody
      * @returns Emulator2AvdInstallCancelOut Successful Response
@@ -267,7 +267,7 @@ export class ActionService {
         });
     }
     /**
-     * 修改官方模拟器实例选项
+     * 修改魔改 AVD 实例选项
      * 无头、显示档位、内存、气球、GuestAngle，只改传了的项，下次启动生效。
      * @param requestBody
      * @returns Emulator2AvdInstanceOptionsOut Successful Response

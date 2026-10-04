@@ -94,7 +94,7 @@ class GameUpdateResult:
 
 
 #: 当前任务上下文里接管 adb 的通道（``await runner(*args, timeout=…)`` → ``(返回码, 输出)``）。
-#: 官方模拟器实例上由调用方用 :func:`adb_runner_scope` 设成 MAS 私有 server 的通道：脚本用的
+#: 魔改 AVD 实例上由调用方用 :func:`adb_runner_scope` 设成 MAS 私有 server 的通道：脚本用的
 #: 5037 会和雷电 / MuMu 自带的旧版 adb 互杀。没设时（雷电 / MuMu）照旧按 ``adb_path`` +
 #: ``adb_address`` 执行。ContextVar 按 asyncio 任务隔离，不会串到别的任务。
 _ADB_RUNNER: ContextVar[Callable[..., Awaitable[tuple[int, str]]] | None] = ContextVar(

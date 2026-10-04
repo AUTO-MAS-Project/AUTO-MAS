@@ -34,7 +34,7 @@ const load = async () => {
     softwareRenderer.value = Boolean(out.softwareRenderer)
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error)
-    logger.error(`读取官方模拟器实例 #${props.deviceSlot} 的选项失败: ${detail}`)
+    logger.error(`读取魔改 AVD 实例 #${props.deviceSlot} 的选项失败: ${detail}`)
     message.error(detail || t('emulator2.avd.toast.optionsLoadFailed'))
     open.value = false
   } finally {
@@ -87,7 +87,7 @@ const save = async () => {
     open.value = false
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error)
-    logger.error(`保存官方模拟器实例 #${props.deviceSlot} 的选项失败: ${detail}`)
+    logger.error(`保存魔改 AVD 实例 #${props.deviceSlot} 的选项失败: ${detail}`)
     message.error(detail || t('emulator2.avd.toast.optionsFailed'))
   } finally {
     saving.value = false

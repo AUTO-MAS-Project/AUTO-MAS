@@ -305,9 +305,9 @@ const confirmRemove = async () => {
 
 const runningAffected = computed(() => removeAffected.value.filter(item => item.running))
 
-// ---- 官方模拟器 ----
+// ---- 魔改 AVD ----
 
-/** 官方模拟器没有安装可搜，用户选根目录添加；已添加的根目录也从同一个弹窗看组件与电脑检查 */
+/** 魔改 AVD 没有安装可搜，用户选根目录添加；已添加的根目录也从同一个弹窗看组件与电脑检查 */
 const avdRootOpen = ref(false)
 const avdRootInitial = ref('')
 const openAvdRoot = (root = '') => {
@@ -339,7 +339,7 @@ const createOpen = ref(false)
 const creating = ref(false)
 const createPathId = ref('')
 const createName = ref('')
-/** 在官方模拟器下新建时一并设好的选项 */
+/** 在魔改 AVD 下新建时一并设好的选项 */
 const createAvd = ref<AvdOptionsForm>(defaultAvdOptions())
 
 const pathSelectOptions = computed(() =>
@@ -1574,7 +1574,7 @@ defineExpose({ reload: loadAll, applyStableMode, captureBaselines, openPaths })
       </a-spin>
     </a-modal>
 
-    <!-- 官方模拟器：添加 / 组件与电脑检查 -->
+    <!-- 魔改 AVD：添加 / 组件与电脑检查 -->
     <AvdRootDialog
       v-model:open="avdRootOpen"
       :emulator-id="emulatorId"
@@ -1583,7 +1583,7 @@ defineExpose({ reload: loadAll, applyStableMode, captureBaselines, openPaths })
       @added="onAvdAdded"
     />
 
-    <!-- 官方模拟器实例选项 -->
+    <!-- 魔改 AVD 实例选项 -->
     <AvdOptionsDialog
       v-if="avdOptionsTarget"
       v-model:open="avdOptionsOpen"

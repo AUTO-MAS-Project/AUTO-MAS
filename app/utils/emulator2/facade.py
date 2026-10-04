@@ -54,7 +54,7 @@ from .mumu6 import build_manager as build_mumu_manager
 from .settings import InstanceSettings
 from .slots import PathRecord, SlotRecord, SlotTable
 
-#: 一条安装的后端管理器。雷电 / MuMu 各自继承旧实现, 官方模拟器（avd）自己驱动
+#: 一条安装的后端管理器。雷电 / MuMu 各自继承旧实现, 魔改 AVD（avd）自己驱动
 #: emulator.exe, 三家对门面暴露同一组方法。
 Backend = LDPlayer14Manager | MuMu6Manager | AvdManager
 
@@ -288,7 +288,7 @@ class Emulator2Manager(DeviceBase):
         return await manager.launch_app(native_index, package_name)
 
     async def host_adb(self, idx: str):
-        """设备是官方模拟器实例时，返回宿主进程对它发 adb 命令的通道（走 MAS 的私有 server，
+        """设备是魔改 AVD 实例时，返回宿主进程对它发 adb 命令的通道（走 MAS 的私有 server，
         见 :class:`~.avd.manager.AvdHostAdb`）；雷电 / MuMu 返回 ``None``，调用方照旧用
         ``get_adb_path()`` 与设备地址。"""
         manager, native_index = await self._dispatch(idx)

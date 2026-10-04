@@ -1,5 +1,5 @@
 <script setup lang="ts">
-/** 官方模拟器根目录里的组件：名称、版本（与下载大小、内测包或本地 SDK 标记）、状态。模拟器不下载，缺了只提示用内测包。 */
+/** 魔改 AVD 根目录里的组件：名称、版本（与下载大小、内测包或本地 SDK 标记）、状态。模拟器不下载，缺了只提示用内测包。 */
 import { useI18n } from 'vue-i18n'
 
 import type { Emulator2AvdComponentItem } from '@/api'

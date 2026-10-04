@@ -18,13 +18,13 @@
 
 #   Contact: DLmaster_361@163.com
 
-"""官方模拟器开机前的电脑检查：目录路径、模拟器版本、硬件虚拟化、显卡 Vulkan、磁盘、内存。
+"""魔改 AVD 开机前的电脑检查：目录路径、模拟器版本、硬件虚拟化、显卡 Vulkan、磁盘、内存。
 
 每项给 ``ok``、原因、建议，``/avd/status`` 原样交给前端显示；开机路径（``AvdInstanceManager._launch``）
 里不满足的拦截项直接拒绝开机并给出原因，不静默开下去。只读：不改系统设置、不装任何东西。
 
 - **目录路径**：根目录路径不能有中文等非 ASCII 字符（模拟器和 qemu 对这类路径不可靠），空格不拦。拦截。
-- **模拟器版本**：只支持官方模拟器内测包里的自编版（``components.emulator_self_built``），谷歌原版
+- **模拟器版本**：只支持魔改 AVD 内测包里的自编版（``components.emulator_self_built``），谷歌原版
   与没有模拟器都拒绝。拦截。
 - **硬件虚拟化**：``emulator -accel-check``（WHPX）。拦截。不可用时带上「开启」动作，用户点了才由
   :mod:`.hypervisor` 提权开启系统功能；这里只判断原因，不执行。
@@ -70,7 +70,7 @@ from .constants import (
     VULKAN_PROBE_TIMEOUT_SECONDS,
 )
 
-logger = get_logger("官方模拟器电脑检查")
+logger = get_logger("魔改 AVD 电脑检查")
 
 PROBE_SCRIPT = Path(__file__).with_name("vulkan_probe.py")
 #: ``VkPhysicalDeviceType``：4 = CPU（软件实现），其余（集成 / 独立 / 虚拟显卡）都算硬件。
@@ -186,12 +186,12 @@ async def acceleration_item(
 
 
 TEST_PACKAGE_ADVICE = (
-    "请把官方模拟器内测包解压到这个目录（解压后目录里应有 sdk\\emulator）"
+    "请把魔改 AVD 内测包解压到这个目录（解压后目录里应有 sdk\\emulator）"
 )
 
 
 def emulator_item(root: str | Path) -> PrecheckItem:
-    """模拟器必须是官方模拟器内测包里的自编版（用户定：不支持谷歌原版）。拦截。"""
+    """模拟器必须是魔改 AVD 内测包里的自编版（用户定：不支持谷歌原版）。拦截。"""
     title = "模拟器版本"
     if not emulator_present(root):
         return PrecheckItem(
@@ -199,7 +199,7 @@ def emulator_item(root: str | Path) -> PrecheckItem:
             title,
             False,
             True,
-            "这个目录里还没有官方模拟器内测包",
+            "这个目录里还没有魔改 AVD 内测包",
             TEST_PACKAGE_ADVICE,
         )
     version = read_emulator_version(root) or "版本未知"
@@ -210,7 +210,7 @@ def emulator_item(root: str | Path) -> PrecheckItem:
         title,
         False,
         True,
-        f"这里的模拟器（{version}）不是官方模拟器内测包里的版本，只支持内测包",
+        f"这里的模拟器（{version}）不是魔改 AVD 内测包里的版本，只支持内测包",
         TEST_PACKAGE_ADVICE,
     )
 
@@ -280,7 +280,7 @@ def disk_item(root: str | Path, free_bytes: int | None = None) -> PrecheckItem:
         True,
         f"{text}，低于开机所需的 {MIN_FREE_DISK_GB_TO_BOOT} GB：数据盘随游戏写入增长，"
         "盘写满时实例数据会损坏",
-        f"清理 {drive} 的空间，或把官方模拟器根目录放到空间更大的盘",
+        f"清理 {drive} 的空间，或把魔改 AVD 根目录放到空间更大的盘",
     )
 
 
@@ -425,10 +425,10 @@ async def check_before_launch(root: str | Path, memory_mb: int) -> list[Precheck
             raise PrecheckFailed(item)
     vulkan = await vulkan_item()
     if vulkan.ok is False:
-        logger.warning(f"官方模拟器开机前检查：{vulkan.message()}")
+        logger.warning(f"魔改 AVD 开机前检查：{vulkan.message()}")
     items.append(vulkan)
     logger.info(
-        "官方模拟器开机前检查："
+        "魔改 AVD 开机前检查："
         + "；".join(
             f"{item.title}{'通过' if item.ok else '未通过' if item.ok is False else '未查'}"
             f"（{item.reason}）"

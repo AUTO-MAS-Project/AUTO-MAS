@@ -18,7 +18,7 @@
 
 #   Contact: DLmaster_361@163.com
 
-"""官方模拟器组件：检查、许可证、测速、下载、校验、解压。
+"""魔改 AVD 组件：检查、许可证、测速、下载、校验、解压。
 
 **不用 sdkmanager、不要 JDK。** 新版 cmdline-tools 已经变成「Android CLI」外壳，分号包名
 静默跳过、退出码 0xC0000409（预研 §6.1）；旧版又得自带 JDK。这里直接按官方仓库里的
@@ -73,7 +73,7 @@ from .constants import (
     valid_native_index,
 )
 
-logger = get_logger("官方模拟器组件")
+logger = get_logger("魔改 AVD 组件")
 
 #: 解压后大约占多少（字节），只用于下载前的磁盘空间预检，宁多勿少。
 _EXTRACTED_SIZE = {
@@ -170,7 +170,7 @@ def adb_server_port(root: str | Path) -> int:
 
 
 def script_adb_server_port(root: str | Path) -> int:
-    """脚本（MAA、MaaFW 的 worker / agent）在官方模拟器实例上用的 adb server 端口。
+    """脚本（MAA、MaaFW 的 worker / agent）在魔改 AVD 实例上用的 adb server 端口。
 
     ``mas-avd.json`` 的 ``scriptAdbServerPort``，默认 20049。脚本用 SDK 的新版 adb，跑在 5037 上会和
     雷电 / MuMu 自带的旧版 adb 互杀 server、掉线（用户定：单独一个端口）。校验同 ``adbServerPort``，
@@ -396,7 +396,7 @@ def emulator_present(root: str | Path) -> bool:
 
 
 def emulator_self_built(root: str | Path) -> bool:
-    """根目录里的模拟器是我们的自编版（官方模拟器内测包里的那份）。只有它才能用。"""
+    """根目录里的模拟器是我们的自编版（魔改 AVD 内测包里的那份）。只有它才能用。"""
     return emulator_present(root) and qemu_has_self_built_mark(qemu_headless_exe(root))
 
 
@@ -527,7 +527,7 @@ def check_disk_space(root: str | Path) -> None:
     free = shutil.disk_usage(_existing_ancestor(root)).free
     if free < required + _DISK_MARGIN:
         raise ComponentError(
-            f"磁盘空间不足：下载并解压官方模拟器组件约需 {_gib(required + _DISK_MARGIN)}，"
+            f"磁盘空间不足：下载并解压魔改 AVD 组件约需 {_gib(required + _DISK_MARGIN)}，"
             f"{_existing_ancestor(root).anchor} 只剩 {_gib(free)}。"
             "游戏资源也会放在这个目录里，请选空间更大的盘"
         )
@@ -870,7 +870,7 @@ class InstallJob:
         try:
             await self._run(root)
         except DownloadCancelled:
-            logger.info(f"官方模拟器组件下载已取消: {root}")
+            logger.info(f"魔改 AVD 组件下载已取消: {root}")
             self._emit(
                 force=True,
                 stage="cancelled",
@@ -878,7 +878,7 @@ class InstallJob:
                 message="下载已取消，已下载的部分会保留，下次继续",
             )
         except Exception as e:  # noqa: BLE001 - 失败原因交给界面
-            logger.opt(exception=True).warning(f"官方模拟器组件准备失败: {e}")
+            logger.opt(exception=True).warning(f"魔改 AVD 组件准备失败: {e}")
             self._emit(
                 force=True,
                 stage="failed",
@@ -944,9 +944,9 @@ class InstallJob:
             stage="completed",
             status="success",
             message=(
-                "官方模拟器组件已全部就绪"
+                "魔改 AVD 组件已全部就绪"
                 if emulator_ready
-                else "平台工具和系统镜像已下载完成，还需要把官方模拟器内测包解压到这个目录"
+                else "平台工具和系统镜像已下载完成，还需要把魔改 AVD 内测包解压到这个目录"
             ),
             component="",
             componentName="",
@@ -1040,7 +1040,7 @@ class InstallJob:
         part.unlink(missing_ok=True)
         self._installed_in_job += component.size
         self.snapshot["extractPercent"] = None
-        logger.info(f"官方模拟器组件已安装: {component.name} → {root}")
+        logger.info(f"魔改 AVD 组件已安装: {component.name} → {root}")
 
     async def _fetch_launcher(
         self, client: httpx.AsyncClient, root: Path, launcher: LauncherComponent

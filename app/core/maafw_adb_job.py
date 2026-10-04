@@ -18,7 +18,7 @@
 
 #   Contact: DLmaster_361@163.com
 
-"""在独立子进程里对一台 ADB 设备跑一次 MaaFramework 任务（官方模拟器实例用）。
+"""在独立子进程里对一台 ADB 设备跑一次 MaaFramework 任务（魔改 AVD 实例用）。
 
 MaaFramework 在 MAS 进程里起的 adb 继承 MAS 的环境，只能落到 5037，又没法逐条命令加 ``-P``；
 放进子进程，由父进程给它设 ``ANDROID_ADB_SERVER_PORT=<脚本专用端口>``，它起的 adb 就都走那里。

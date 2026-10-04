@@ -41,7 +41,7 @@ from typing import Literal
 
 from app.utils import get_logger
 
-logger = get_logger("官方模拟器虚拟化")
+logger = get_logger("魔改 AVD 虚拟化")
 
 #: 前置检查里硬件虚拟化一项挂的动作：前端据此显示「开启」按钮。
 ENABLE_ACTION = "enable_hypervisor_platform"

@@ -1,5 +1,5 @@
 /**
- * 官方模拟器（AVD）面板的纯逻辑：实例选项表单、开机前检查的分级、组件下载任务的状态判断。
+ * 魔改 AVD面板的纯逻辑：实例选项表单、开机前检查的分级、组件下载任务的状态判断。
  *
  * 和界面拆开，是为了能在 node 里直接测；组件只管把结果画出来。
  */
@@ -120,7 +120,7 @@ export const canResume = (
 
 /**
  * 组件行的状态：ready 已就绪 / partial 下了一部分 / missing 没下 /
- * needsPackage 模拟器不下载，要官方模拟器内测包（没有或不是自编版）
+ * needsPackage 模拟器不下载，要魔改 AVD 内测包（没有或不是自编版）
  */
 export const componentState = (item: Emulator2AvdComponentItem) => {
   if (item.installed) return 'ready' as const

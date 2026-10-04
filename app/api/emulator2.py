@@ -400,13 +400,13 @@ async def capture_baselines(
     return Emulator2GuardCaptureOut(**result)
 
 
-# ---- 官方模拟器（Android Emulator）------------------------------------------
+# ---- 魔改 AVD（Android Emulator）------------------------------------------
 
 
 @router.post(
     "/avd/status",
     tags=["Get"],
-    summary="查询官方模拟器根目录的组件状态",
+    summary="查询魔改 AVD 根目录的组件状态",
     response_model=Emulator2AvdStatusOut,
     status_code=200,
 )
@@ -446,7 +446,7 @@ async def avd_license(
 @router.post(
     "/avd/sources",
     tags=["Get"],
-    summary="官方模拟器下载源测速",
+    summary="魔改 AVD 下载源测速",
     response_model=Emulator2AvdSourcesOut,
     status_code=200,
 )
@@ -463,7 +463,7 @@ async def avd_sources() -> Emulator2AvdSourcesOut:
 @router.post(
     "/avd/install/start",
     tags=["Action"],
-    summary="开始后台下载官方模拟器组件",
+    summary="开始后台下载魔改 AVD 组件",
     response_model=Emulator2AvdInstallOut,
     status_code=200,
 )
@@ -495,7 +495,7 @@ async def avd_install_start(
 @router.post(
     "/avd/install/cancel",
     tags=["Action"],
-    summary="取消官方模拟器组件下载",
+    summary="取消魔改 AVD 组件下载",
     response_model=Emulator2AvdInstallCancelOut,
     status_code=200,
 )
@@ -516,7 +516,7 @@ async def avd_install_cancel(
 @router.post(
     "/avd/instance/options",
     tags=["Get"],
-    summary="查询官方模拟器实例选项",
+    summary="查询魔改 AVD 实例选项",
     response_model=Emulator2AvdInstanceOptionsOut,
     status_code=200,
 )
@@ -537,7 +537,7 @@ async def avd_instance_options(
 @router.post(
     "/avd/instance/options/set",
     tags=["Action"],
-    summary="修改官方模拟器实例选项",
+    summary="修改魔改 AVD 实例选项",
     response_model=Emulator2AvdInstanceOptionsOut,
     status_code=200,
 )

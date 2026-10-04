@@ -18,7 +18,7 @@
 
 #   Contact: DLmaster_361@163.com
 
-"""官方模拟器实例（AVD）的配置文件。
+"""魔改 AVD 实例（AVD）的配置文件。
 
 一台实例 = ``avd\\mas_<i>.ini`` + ``avd\\mas_<i>.avd\\config.ini``；原生索引 i 就是名字里的
 数字，端口也按它算，所以枚举只要扫 ``avd\\mas_*.ini``。配置只在停机时由我们写，模拟器
@@ -237,7 +237,7 @@ def validate_resolution(resolution: str | int | None) -> str:
     value = value.removesuffix("p").removesuffix("P")
     if value not in RESOLUTIONS:
         raise ValueError(
-            "官方模拟器的分辨率只能选 720p（1280×720）或 1080p（1920×1080）"
+            "魔改 AVD 的分辨率只能选 720p（1280×720）或 1080p（1920×1080）"
         )
     return value
 
@@ -314,12 +314,12 @@ def validate_options(
     )
     if memory not in MEMORY_CHOICES_MB:
         raise ValueError(
-            "官方模拟器的内存只能选 "
+            "魔改 AVD 的内存只能选 "
             + " / ".join(f"{value // 1024} GB" for value in MEMORY_CHOICES_MB)
         )
     if cores not in CPU_CHOICES:
         raise ValueError(
-            "官方模拟器的 CPU 核数只能选 " + " / ".join(str(v) for v in CPU_CHOICES)
+            "魔改 AVD 的 CPU 核数只能选 " + " / ".join(str(v) for v in CPU_CHOICES)
         )
     low, high = DATA_PARTITION_RANGE_GB
     if not low <= data_gb <= high:

@@ -252,7 +252,7 @@ _FRAMEWORK_COORDINATE_RE = re.compile(
 
 
 def _avd_adb_path(manager_path: str | Path) -> Path:
-    """官方模拟器这条安装的 adb：SDK 的 ``platform-tools\\adb.exe``（指定了本地 SDK 时取它的）。"""
+    """魔改 AVD 这条安装的 adb：SDK 的 ``platform-tools\\adb.exe``（指定了本地 SDK 时取它的）。"""
     from app.utils.emulator2.avd.components import adb_exe, root_from_manager_exe
 
     return adb_exe(root_from_manager_exe(manager_path))
@@ -1211,7 +1211,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
 
         self._append_log("正在检查游戏客户端更新")
         try:
-            # 官方模拟器实例：钩子在宿主进程里调 adb（game_apk），改走 MAS 私有 server，
+            # 魔改 AVD 实例：钩子在宿主进程里调 adb（game_apk），改走 MAS 私有 server，
             # 不落到 5037；其余模拟器不接管
             with adb_runner_scope(await resolve_host_adb(self)):
                 result = await hook(
@@ -1245,7 +1245,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             if resolve_device is not None and emulator_index not in ("", "-"):
                 device_ref = resolve_device(emulator_index)
                 if device_ref is not None and device_ref.emulator_type == "avd":
-                    # 官方模拟器的 adb 在 SDK 的 platform-tools 里（认 sdkRoot），不在主程序旁边
+                    # 魔改 AVD 的 adb 在 SDK 的 platform-tools 里（认 sdkRoot），不在主程序旁边
                     return _avd_adb_path(device_ref.manager_path)
                 if device_ref is not None and device_ref.manager_path:
                     return Path(device_ref.manager_path).parent / "adb.exe"
@@ -1267,7 +1267,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             self._cached_adb_profile = MaaFWAdbControlProfile(None, False, False, {})
             return self._cached_adb_profile
 
-        # 官方模拟器在下面的 try 之外：它没有退回默认配置这条路（截图不许回落到普通 adb），
+        # 魔改 AVD 在下面的 try 之外：它没有退回默认配置这条路（截图不许回落到普通 adb），
         # 构造不出 AVDExtras 配置就直接报错
         avd_ref = None
         with suppress(Exception):
@@ -1340,7 +1340,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         return self._cached_adb_profile
 
     def _build_avd_adb_profile(self, device_ref: Any) -> MaaFWAdbControlProfile:
-        """官方模拟器：只给 AVDExtras 截图，推流开关走私有 adb server。任何一步不成立都抛错。"""
+        """魔改 AVD：只给 AVDExtras 截图，推流开关走私有 adb server。任何一步不成立都抛错。"""
         from app.utils.emulator2.avd.components import (
             adb_server_port,
             root_from_manager_exe,
@@ -1352,21 +1352,21 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         if not capability.get("screencap"):
             raise RuntimeError(
                 "当前 MaaFW 运行时不带模拟器截图增强（MaaAdbControlUnit），"
-                "官方模拟器上截图不能回落到普通 adb，本次不运行"
+                "魔改 AVD 上截图不能回落到普通 adb，本次不运行"
             )
         adb_path = _avd_adb_path(device_ref.manager_path)
         if not adb_path.is_file():
-            raise RuntimeError(f"找不到官方模拟器的 adb：{adb_path}")
+            raise RuntimeError(f"找不到魔改 AVD 的 adb：{adb_path}")
         root = root_from_manager_exe(device_ref.manager_path)
         console = console_port(device_ref.native_index)
         config = build_maafw_avd_config(adb_path, adb_server_port(root), console)
         self._append_log(
-            f"官方模拟器截图走 AVDExtras（共享内存 SHM_videmulator{console}），不回落普通 adb"
+            f"魔改 AVD 截图走 AVDExtras（共享内存 SHM_videmulator{console}），不回落普通 adb"
         )
         return MaaFWAdbControlProfile("avd", True, False, config)
 
     async def _script_adb_env(self) -> dict[str, str]:
-        """官方模拟器实例上叠加给 worker（agent 与它们起的 adb 继承）和 pretask 的环境变量：
+        """魔改 AVD 实例上叠加给 worker（agent 与它们起的 adb 继承）和 pretask 的环境变量：
         ``ANDROID_ADB_SERVER_PORT=<scriptAdbServerPort>``（默认 20049）。脚本用 SDK 的新版 adb，
         放在 5037 上会和雷电 / MuMu 自带的旧版 adb 互杀 server。其余模拟器返回空字典。"""
         emulator_index = self.script_config.get("Emulator", "Index")
@@ -1398,7 +1398,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         return script_adb_env(root)
 
     def _check_avd_runtime_version(self, maafw_version: str | None) -> None:
-        """官方模拟器要 AVDExtras：运行环境的 MaaFramework 低于 5.7.0 时明确报错，不让它静默回落。"""
+        """魔改 AVD 要 AVDExtras：运行环境的 MaaFramework 低于 5.7.0 时明确报错，不让它静默回落。"""
         profile = self._cached_adb_profile
         if profile is None or profile.emulator_type != "avd":
             return
@@ -1407,12 +1407,12 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         supported = avd_extras_supported(maafw_version)
         if supported is False:
             raise RuntimeError(
-                f"项目使用的 MaaFramework {maafw_version} 低于 5.7.0，不支持官方模拟器的截图通道"
+                f"项目使用的 MaaFramework {maafw_version} 低于 5.7.0，不支持魔改 AVD 的截图通道"
                 "（AVDExtras）；请把项目更新到带 MaaFramework 5.7.0 以上的版本"
             )
         if supported is None:
             self._append_log(
-                "认不出项目使用的 MaaFramework 版本，无法预先确认是否支持官方模拟器截图通道"
+                "认不出项目使用的 MaaFramework 版本，无法预先确认是否支持魔改 AVD 截图通道"
                 "（AVDExtras，5.7.0 起）；不支持时连接会直接失败"
             )
 
@@ -1440,7 +1440,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
     def _resolve_adb_screencap_methods(self, profile: MaaFWAdbControlProfile) -> int:
         extra_method = _ADB_SCREENCAP_EMULATOR_EXTRAS
         if profile.emulator_type == "avd":
-            # 官方模拟器只给 AVDExtras，不让测速有机会选普通 adb（约 250 ms）
+            # 魔改 AVD 只给 AVDExtras，不让测速有机会选普通 adb（约 250 ms）
             return extra_method
         if profile.emulator_type in {"ldplayer", "mumu"}:
             default_methods = _ADB_SCREENCAP_DEFAULT
@@ -1474,7 +1474,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             # 文本已改走 ldconsole，见 _ADB_INPUT_LDPLAYER_CONSOLE_TEXT
             return _ADB_INPUT_LDPLAYER_CONSOLE_TEXT
         if profile.emulator_type in {"ldplayer", "mumu", "avd"}:
-            # 官方模拟器：AVDExtras 没有输入，默认会选中 Maatouch（官方镜像上 minitouch 不可用）
+            # 魔改 AVD：AVDExtras 没有输入，默认会选中 Maatouch（官方镜像上 minitouch 不可用）
             return _ADB_INPUT_DEFAULT
 
         configured = int(self.script_config.get("Device", "AdbInputMethods"))
@@ -1741,7 +1741,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             job_path = await asyncio.to_thread(
                 service.write_job_file, payload, work_dir
             )
-            # 官方模拟器实例：worker 及其 agent、adb 子进程的 adb 走脚本专用 server。
+            # 魔改 AVD 实例：worker 及其 agent、adb 子进程的 adb 走脚本专用 server。
             # 另拷一份，不改运行环境对象里那份（可能被缓存复用）
             script_env = await self._script_adb_env()
             worker_env = (
@@ -2042,7 +2042,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         env["PYTHONIOENCODING"] = "utf-8"
         env["PYTHONUTF8"] = "1"
         env.update(self.run_plan.piEnv)
-        # 官方模拟器实例：pretask 若用 adb，也走脚本专用 server（同 worker）
+        # 魔改 AVD 实例：pretask 若用 adb，也走脚本专用 server（同 worker）
         env.update(await self._script_adb_env())
         creationflags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
         for pretask in self.run_plan.pretasks:

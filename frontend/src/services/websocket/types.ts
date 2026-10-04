@@ -68,7 +68,7 @@ export const WS_TOOLKIT_NOTICE = 'toolkit.notice'
 // 模拟器启动 / 关闭 / 显示 / 隐藏这类后台操作结束（id=EmulatorManager）
 export const WS_EMULATOR_OPERATION_FINISHED = 'emulator.operation.finished'
 
-// 官方模拟器组件后台下载进度（id=EmulatorManager）
+// 魔改 AVD 组件后台下载进度（id=EmulatorManager）
 export const WS_EMULATOR2_AVD_INSTALL_PROGRESS = 'emulator2.avd.install.progress'
 
 // 虚拟显示器（id=Main）：真实显示器回来了但有任务在跑，问用户要不要拆；以及提示已作废
@@ -243,7 +243,7 @@ export interface WSEmulatorOperationData {
 }
 
 /**
- * 官方模拟器组件下载进度 (id=EmulatorManager, type=emulator2.avd.install.progress)
+ * 魔改 AVD 组件下载进度 (id=EmulatorManager, type=emulator2.avd.install.progress)
  *
  * 结构同后端 ``WSEmulator2AvdInstallProgressData``，也是 ``/avd/status`` 里的 ``job`` 快照；
  * 下载 / 解压按 0.5 秒节流，阶段切换与收尾必发。

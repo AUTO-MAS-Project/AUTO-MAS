@@ -46,7 +46,7 @@ async def login(
         package_name: 星穹铁道包名
         id: 账号ID
         password: 账号密码
-        device_ref: 设备在 Emulator 2.0 里的归属；官方模拟器实例改在独立子进程里跑
+        device_ref: 设备在 Emulator 2.0 里的归属；魔改 AVD 实例改在独立子进程里跑
             （见 :func:`_login_in_subprocess`），其余模拟器照旧在 MAS 进程里跑
 
     Returns:
@@ -229,7 +229,7 @@ async def _login_in_subprocess(
     id: str,
     password: str,
 ) -> bool:
-    """官方模拟器实例：在独立子进程里跑登录任务。
+    """魔改 AVD 实例：在独立子进程里跑登录任务。
 
     MaaFramework 在 MAS 进程里起的 adb 继承 MAS 的环境，只能落到 5037（会和雷电 / MuMu 自带的旧版
     adb 互杀 server），又没法逐条命令加 ``-P``；子进程带 ``ANDROID_ADB_SERVER_PORT=<脚本专用端口>``，
@@ -272,7 +272,7 @@ async def _login_in_subprocess(
         user_dir=Path.cwd() / "debug" / "maafw-adb-job",
     )
     logger.info(
-        f"模拟器{emulator_info.title}是官方模拟器实例，在独立进程里登录"
+        f"模拟器{emulator_info.title}是魔改 AVD 实例，在独立进程里登录"
         f"（adb server 端口 {env['ANDROID_ADB_SERVER_PORT']}）"
     )
     try:

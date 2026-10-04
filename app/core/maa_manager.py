@@ -101,7 +101,7 @@ class _MaaFWManager:
 
         Args:
             raw_info(DeviceInfo): 包含设备信息的对象
-            device_ref(DeviceRef | None): 设备在 Emulator 2.0 里的归属；是官方模拟器实例时
+            device_ref(DeviceRef | None): 设备在 Emulator 2.0 里的归属；是魔改 AVD 实例时
                 不走 Toolkit 发现（它认不出），直接构造设备
 
         Returns:
@@ -228,7 +228,7 @@ class _MaaFWManager:
 
 
 def _avd_adb_device(raw_info: DeviceInfo, device_ref: DeviceRef) -> AdbDevice:
-    """官方模拟器实例的 AdbDevice：SDK 的 adb、``127.0.0.1:<adb 端口>``、只用 AVDExtras 截图（64），
+    """魔改 AVD 实例的 AdbDevice：SDK 的 adb、``127.0.0.1:<adb 端口>``、只用 AVDExtras 截图（64），
     输入 Default；config 带 AVDExtras 与推流开关改走私有 server 的覆盖（与 MaaFW 运行器同一份）。
     名字取 MaaToolkit 给这类模拟器的名字 ``AVD``。"""
     from app.utils.emulator2.avd.components import (
@@ -242,7 +242,7 @@ def _avd_adb_device(raw_info: DeviceInfo, device_ref: DeviceRef) -> AdbDevice:
     root = root_from_manager_exe(device_ref.manager_path)
     adb_path = adb_exe(root)
     if not adb_path.is_file():
-        raise RuntimeError(f"找不到官方模拟器的 adb：{adb_path}")
+        raise RuntimeError(f"找不到魔改 AVD 的 adb：{adb_path}")
     return AdbDevice(
         name="AVD",
         adb_path=adb_path,

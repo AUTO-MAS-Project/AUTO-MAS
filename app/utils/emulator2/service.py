@@ -56,7 +56,7 @@ def readable_error(error: BaseException) -> str:
     from .avd.manager import IncompatibleGameError
     from .avd.precheck import PrecheckFailed
 
-    # 官方模拟器这几类的消息本来就是写给用户的中文（含原因与该怎么办），不带类名前缀
+    # 魔改 AVD 这几类的消息本来就是写给用户的中文（含原因与该怎么办），不带类名前缀
     if isinstance(
         error,
         (ComponentError, IncompatibleGameError, PrecheckFailed, AdbPortConflict),
@@ -320,23 +320,23 @@ async def add_path(
 
         try:
             if await asyncio.to_thread(ensure_metadata, resolved_path):
-                logger.info(f"官方模拟器 {resolved_path} 没有 mas-avd.json，已补写")
+                logger.info(f"魔改 AVD {resolved_path} 没有 mas-avd.json，已补写")
         except OSError as e:
-            logger.warning(f"官方模拟器 {resolved_path} 补写 mas-avd.json 失败: {e}")
+            logger.warning(f"魔改 AVD {resolved_path} 补写 mas-avd.json 失败: {e}")
 
-    # 官方模拟器根目录里一台实例都没有（刚解压的内测包、刚下载完的根目录）：按默认值建第一台，
+    # 魔改 AVD 根目录里一台实例都没有（刚解压的内测包、刚下载完的根目录）：按默认值建第一台，
     # 测试者加完就能直接用。已经有实例的不动；建不出来不影响路径本身已经加好
     if record.type == "avd" and native_indexes is not None and not native_indexes:
         try:
             created = await create_instance(emulator_id, path_id, None, {})
         except Exception as e:  # noqa: BLE001 - 路径已经加好，建实例失败只记下来
-            logger.warning(f"官方模拟器 {resolved_path} 自动新建第一台实例失败: {e}")
+            logger.warning(f"魔改 AVD {resolved_path} 自动新建第一台实例失败: {e}")
         else:
             added_slots.append(
                 {"slot": created["slot"], "nativeIndex": created["nativeIndex"]}
             )
             logger.info(
-                f"官方模拟器 {resolved_path} 还没有实例，已按默认值新建第一台"
+                f"魔改 AVD {resolved_path} 还没有实例，已按默认值新建第一台"
                 f"（设备号 #{created['slot']}）"
             )
 
@@ -391,7 +391,7 @@ async def create_instance(
 ) -> dict:
     """在某条模拟器安装下新建一个实例，并给它分配设备号。
 
-    ``options`` 只对官方模拟器生效（``memory_mb`` / ``cpu`` / ``data_partition_gb`` /
+    ``options`` 只对魔改 AVD 生效（``memory_mb`` / ``cpu`` / ``data_partition_gb`` /
     ``headless`` / ``resolution`` / ``balloon`` / ``guest_angle`` / ``native_index``）：
     雷电 / MuMu 新建时用的是模拟器自己的默认配置。
     """

@@ -24,23 +24,23 @@ export type Emulator2InstanceCreateIn = {
      */
     cpu?: (number | null);
     /**
-     * 仅官方模拟器: 数据盘上限 GB (16–512), 按实际写入增长, 留空为 64
+     * 仅魔改 AVD: 数据盘上限 GB (16–512), 按实际写入增长, 留空为 64
      */
     dataPartitionGb?: (number | null);
     /**
-     * 仅官方模拟器: 是否无头运行 (没有窗口, 即静默模式), 留空为 true
+     * 仅魔改 AVD: 是否无头运行 (没有窗口, 即静默模式), 留空为 true
      */
     headless?: (boolean | null);
     /**
-     * 仅官方模拟器: 显示档位 720 (1280x720) / 1080 (1920x1080), 留空为 720
+     * 仅魔改 AVD: 显示档位 720 (1280x720) / 1080 (1920x1080), 留空为 720
      */
     resolution?: ('720' | '1080' | null);
     /**
-     * 仅官方模拟器: 空闲页上报 (气球), 留空为 true
+     * 仅魔改 AVD: 空闲页上报 (气球), 留空为 true
      */
     balloon?: (boolean | null);
     /**
-     * 仅官方模拟器: 客体走镜像自带 ANGLE (GuestAngle), 留空为 false
+     * 仅魔改 AVD: 客体走镜像自带 ANGLE (GuestAngle), 留空为 false
      */
     guestAngle?: (boolean | null);
 };

@@ -142,7 +142,7 @@ class _SystemHandler:
 
         if mode not in power.supported_actions:
             raise RuntimeError(f"当前平台不支持电源操作: {mode}")
-        # 强制关机（shutdown /f）不等程序退出，官方模拟器实例同样要先 sync 再关；
+        # 强制关机（shutdown /f）不等程序退出，魔改 AVD 实例同样要先 sync 再关；
         # 其余模拟器的进程清理仍只在原来三种操作上做
         if mode in {"Shutdown", "ShutdownForce", "Reboot", "Logoff"}:
             await self.close_avd_instances()
@@ -282,7 +282,7 @@ class _SystemHandler:
             raise RuntimeError("当前无电源任务在运行")
 
     async def close_avd_instances(self) -> None:
-        """按进程名强杀之前，先把在跑的官方模拟器实例正常关掉（先 sync）。
+        """按进程名强杀之前，先把在跑的魔改 AVD 实例正常关掉（先 sync）。
 
         强杀不走客体关机流程，客体页缓存里没写回的数据会丢。整体限时（30 秒），出错只记日志，
         不拦住电源操作。
@@ -292,7 +292,7 @@ class _SystemHandler:
 
             await avd_service.close_running_instances()
         except Exception as e:  # noqa: BLE001 - 关不掉也要继续关机
-            logger.warning(f"关闭官方模拟器实例失败，继续电源操作: {e}")
+            logger.warning(f"关闭魔改 AVD 实例失败，继续电源操作: {e}")
 
     async def kill_emulator_processes(self):
         """这里暂时仅支持 MuMu 模拟器"""

@@ -48,7 +48,7 @@ from typing import Any
 
 from app.utils import get_logger
 
-logger = get_logger("官方模拟器启动看门狗")
+logger = get_logger("魔改 AVD 启动看门狗")
 
 # ---------------------------------------------------------------------------------------------------------
 # 判据（纯状态机）
