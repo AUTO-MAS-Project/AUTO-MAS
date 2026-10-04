@@ -45,6 +45,7 @@ from app.models.schema import WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem
 from app.services import Notify, System
 from app.task.base import ScriptAutoProxyBase
+from app.task.emulator_core import script_process_env
 from app.task.proxy_helpers import append_push_log
 from app.tools.bluearchive_activity import BlueArchiveLineType, has_running_activity
 from app.utils import LogMonitor, ProcessManager, compile_log_signs, get_logger
@@ -642,7 +643,14 @@ class AutoProxyTask(ScriptAutoProxyBase):
         launch_at = time.time()
 
         try:
-            await self.process_manager.open_process(self.baah_path, config_name)
+            await self.process_manager.open_process(
+                self.baah_path,
+                config_name,
+                # 官方模拟器实例：BAAH 的 adb 走脚本专用 server；其余为 None，照旧继承
+                env=script_process_env(
+                    self.emulator_manager, self.script_config.get("Emulator", "Index")
+                ),
+            )
         except Exception as e:
             logger.opt(exception=True).warning(f"启动 BAAH 进程失败: {e}")
             await self.handle_pre_script_error("启动 BAAH 进程失败", e)

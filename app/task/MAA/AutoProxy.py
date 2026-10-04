@@ -23,7 +23,6 @@
 import asyncio
 import calendar
 import json
-import os
 import re
 import shutil
 import time
@@ -48,7 +47,11 @@ from app.models.schema import WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem
 from app.services import Notify, System
 from app.task.base import ScriptAutoProxyBase
-from app.task.emulator_core import close_emulator, resolve_host_adb
+from app.task.emulator_core import (
+    close_emulator,
+    resolve_host_adb,
+    script_process_env,
+)
 from app.task.general.tools import execute_script_task
 from app.task.notify_core import load_screenshot_images, screenshot_entries
 from app.task.proxy_helpers import (
@@ -70,7 +73,7 @@ from app.utils.constants import (
     UTC4,
     game_now,
 )
-from app.utils.emulator2.avd.components import root_from_manager_exe, script_adb_env
+from app.utils.emulator2.avd.components import root_from_manager_exe
 from app.utils.emulator2.avd.constants import console_port as avd_console_port
 from app.utils.emulator2.avd.maa_shim import (
     apply_maa_avd_settings,
@@ -1847,15 +1850,9 @@ class AutoProxyTask(ScriptAutoProxyBase):
         """MAA 进程的环境变量。官方模拟器实例上把它（连同 MaaCore 起的 adb）指到脚本专用的 adb
         server（``scriptAdbServerPort``，默认 20049）：MAA 用 SDK 的新版 adb，放在 5037 上会和雷电 /
         MuMu 自带的旧版 adb 互杀 server。其余模拟器返回 ``None``，照旧继承 MAS 的环境。"""
-        avd = self._resolve_avd_device()
-        if avd is None:
-            return None
-        env = dict(os.environ)
-        env.update(script_adb_env(avd[0]))
-        logger.info(
-            f"官方模拟器实例：MAA 的 adb 走脚本专用 server（端口 {env['ANDROID_ADB_SERVER_PORT']}）"
+        return script_process_env(
+            self.emulator_manager, self.script_config.get("Emulator", "Index")
         )
-        return env
 
     def _configure_maa_runtime(
         self, gui_set: dict, gui_new_set: dict, emulator_info: DeviceInfo

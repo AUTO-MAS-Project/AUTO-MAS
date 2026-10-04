@@ -42,6 +42,7 @@ from app.models.schema import WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem
 from app.services import Notify, System
 from app.task.base import ScriptAutoProxyBase
+from app.task.emulator_core import script_process_env
 from app.task.proxy_helpers import CONFIG_SOURCE_DIRECT, read_config_source
 from app.utils import (
     LogMonitor,
@@ -421,6 +422,12 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 self.script_exe_path,
                 *self.script_arguments,
                 target_process=self.script_target_process_info,
+                # 官方模拟器实例：脚本的 adb 走脚本专用 server；PC 游戏 / 其余模拟器为 None，照旧继承
+                env=script_process_env(
+                    self.game_manager, self.script_config.get("Game", "EmulatorIndex")
+                )
+                if isinstance(self.game_manager, DeviceBase)
+                else None,
             )
 
             # 等待日志文件生成

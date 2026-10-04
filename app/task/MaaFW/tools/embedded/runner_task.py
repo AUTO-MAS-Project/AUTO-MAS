@@ -1381,12 +1381,17 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             device_ref = resolve_device(emulator_index) if resolve_device else None
         if device_ref is None or device_ref.emulator_type != "avd":
             return {}
+        from app.utils.emulator2.avd import host
         from app.utils.emulator2.avd.components import (
             root_from_manager_exe,
             script_adb_env,
         )
 
-        return script_adb_env(root_from_manager_exe(device_ref.manager_path))
+        root = root_from_manager_exe(device_ref.manager_path)
+        # 先由 MAS 以脱离方式起好：worker 里的 adb 顺手拉起的 server 会继承 worker 的输出管道
+        with suppress(Exception):
+            host.ensure_script_adb_server(root)
+        return script_adb_env(root)
 
     def _check_avd_runtime_version(self, maafw_version: str | None) -> None:
         """官方模拟器要 AVDExtras：运行环境的 MaaFramework 低于 5.7.0 时明确报错，不让它静默回落。"""
