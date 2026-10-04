@@ -364,11 +364,6 @@ def device_missing(serial: str, output: str) -> bool:
     return serial.lower() in text and any(m in text for m in _DEVICE_NOT_FOUND_MARKS)
 
 
-def adb_port_owned_by_instance(console: int) -> bool:
-    """这台实例的 adb 端口（控制台 + 1）确实由它自己的 qemu 在听。"""
-    return instance_qemu_on_adb_port(console) is not None
-
-
 def instance_qemu_on_adb_port(console: int) -> psutil.Process | None:
     """在听这台实例 adb 端口（控制台 + 1）的、确实是它自己的 qemu 进程；不是返回 ``None``。
 
@@ -502,25 +497,6 @@ async def run_adb(
                 root, *args, serial=serial, timeout=timeout
             )
     return code, output
-
-
-async def run_adb_bytes(
-    root: str | Path,
-    *args: str,
-    serial: str | None = None,
-    timeout: float = ADB_TIMEOUT,
-) -> tuple[int, bytes, str]:
-    """同 :func:`run_adb`，但标准输出按原始字节返回（``exec-out screencap -p`` 这类二进制输出），
-    标准错误单独解码返回：``(返回码, 输出字节, 错误文本)``。**不抛异常。**"""
-    code, stdout, stderr = await _run_adb_raw(
-        root, *args, serial=serial, timeout=timeout
-    )
-    if code != 0 and serial and device_missing(serial, stderr):
-        if await reregister_emulator(root, serial):
-            code, stdout, stderr = await _run_adb_raw(
-                root, *args, serial=serial, timeout=timeout
-            )
-    return code, stdout, stderr
 
 
 async def _run_adb_once(

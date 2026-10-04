@@ -42,9 +42,9 @@ async def resolve_host_adb(
     owner: Any, *, index: str | None = None, config_key: str = "Emulator"
 ) -> Any | None:
     """owner 接管的设备是魔改 AVD 实例时，返回宿主进程对它发 adb 的通道（MAS 私有 server，
-    ``await runner(*args, timeout=…)``，另有 ``screencap_png()``）；其余情况返回 ``None``。
+    ``await runner(*args, timeout=…)``）；其余情况返回 ``None``。
 
-    魔改 AVD 实例上宿主自己的 adb 命令（游戏更新检查、失败截图）不能落到 5037：脚本用的 SDK adb
+    魔改 AVD 实例上宿主自己的 adb 命令（游戏更新检查）不能落到 5037：脚本用的 SDK adb
     会和雷电 / MuMu 自带的旧版 adb 互杀 server。雷电 / MuMu 返回 ``None``，调用方照旧走
     ``get_adb_path()`` + 设备地址。查不到只当作不是魔改 AVD。
     """

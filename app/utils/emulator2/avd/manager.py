@@ -1342,7 +1342,7 @@ class AvdHostAdb:
     -s emulator-<控制台端口>``。脚本的 adb server 杀不到它，丢设备时 :func:`host.run_adb` 会重新登记。
 
     调用约定同 :data:`~..applaunch.AdbRunner`：``await runner(*args, timeout=…)`` → ``(返回码, 输出)``。
-    给游戏更新检查（:func:`app.utils.game_apk.adb_runner_scope`）与失败截图用。
+    给游戏更新检查（:func:`app.utils.game_apk.adb_runner_scope`）用。
     """
 
     def __init__(self, root: Path, native_index: str) -> None:
@@ -1352,22 +1352,6 @@ class AvdHostAdb:
 
     async def __call__(self, *args: str, timeout: float = 20.0) -> tuple[int, str]:
         return await host.run_adb(self.root, *args, serial=self.serial, timeout=timeout)
-
-    async def screencap_png(self, timeout: float = 30.0) -> bytes:
-        """``exec-out screencap -p`` 的 PNG 字节；失败抛 ``RuntimeError``。"""
-        code, data, error = await host.run_adb_bytes(
-            self.root,
-            "exec-out",
-            "screencap",
-            "-p",
-            serial=self.serial,
-            timeout=timeout,
-        )
-        if code != 0 or not data.startswith(b"\x89PNG"):
-            raise RuntimeError(
-                f"魔改 AVD 实例 {self.native_index} 截图失败（返回码 {code}）: {error[-200:]}"
-            )
-        return data
 
 
 class AvdManager(AppLaunchMixin, _AvdCore):
