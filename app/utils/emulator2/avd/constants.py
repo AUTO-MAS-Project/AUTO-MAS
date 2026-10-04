@@ -236,15 +236,16 @@ PIXEL_LAUNCHER_PACKAGE = "com.google.android.apps.nexuslauncher"
 
 # ---- 实例 -----------------------------------------------------------------
 
-#: 实例可选的内存（MB）与 CPU 核数（预研 §6.15：3 GB 能跑、很紧）。内存默认「按游戏自动」，
-#: 见 :data:`GAME_MEMORY_MB`；用户手动指定时只收这几档。
+#: 实例可选的内存（MB）与 CPU 核数（预研 §6.15：3 GB 能跑、很紧）。只收这几档，每次开机用实例自己
+#: 设的内存传 ``-memory``。不按游戏自动分配（用户 10-04 定）：一台实例一轮里可能先后跑好几个游戏，
+#: 开机后内存就改不了了。默认 6 核 6 GB，够任何一个游戏用。
 MEMORY_CHOICES_MB = (3072, 4096, 5120, 6144)
 CPU_CHOICES = (2, 4, 6)
-DEFAULT_MEMORY_MB = 4096
-DEFAULT_CPU = 4
-#: 「按游戏自动」的内存（MB），启动时用 ``-memory`` 传入；表里没有的游戏用 :data:`DEFAULT_MEMORY_MB`。
+DEFAULT_MEMORY_MB = 6144
+DEFAULT_CPU = 6
+#: 各游戏的推荐内存（MB），只用来提示：界面上的推荐值，以及开机时实例内存低于推荐值记一条日志。
 #: 数据见 aemu-lab ``自研模拟器-动态内存.md`` 第 7.6 节：星铁 4 GB 能跑，但 zram 压了近 2 GB，偏紧。
-GAME_MEMORY_MB: dict[str, int] = {
+RECOMMENDED_MEMORY_MB: dict[str, int] = {
     "com.hypergryph.arknights": 4096,
     "com.hypergryph.arknights.bilibili": 4096,
     "com.shenlan.m.reverse1999": 4096,

@@ -541,7 +541,7 @@ async def avd_instance_options(
 async def avd_set_instance_options(
     payload: Emulator2AvdInstanceOptionsSetIn = Body(...),
 ) -> Emulator2AvdInstanceOptionsOut:
-    """无头、显示档位、内存（含按游戏自动）、气球、GuestAngle，只改传了的项，下次启动生效。"""
+    """无头、显示档位、内存、气球、GuestAngle，只改传了的项，下次启动生效。"""
     try:
         result = await avd_service.set_instance_options(
             payload.emulatorId,

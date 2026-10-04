@@ -5562,10 +5562,10 @@ class Emulator2InstanceCreateIn(BaseModel):
     )
     memoryMb: Optional[int] = Field(
         default=None,
-        description="仅官方模拟器: 内存 MB, 可选 3072 / 4096 / 5120 / 6144; 留空或 0 为按游戏自动",
+        description="仅魔改 AVD: 内存 MB, 可选 3072 / 4096 / 5120 / 6144; 留空为 6144",
     )
     cpu: Optional[int] = Field(
-        default=None, description="仅官方模拟器: CPU 核数, 可选 2 / 4 / 6, 留空为 4"
+        default=None, description="仅魔改 AVD: CPU 核数, 可选 2 / 4 / 6, 留空为 6"
     )
     dataPartitionGb: Optional[int] = Field(
         default=None,
@@ -5640,10 +5640,7 @@ class Emulator2SettingField(BaseModel):
     value: Optional[int] = Field(default=None, description="当前值, 未设置时为 null")
     state: str = Field(
         default="unset",
-        description=(
-            "saved 用户保存过 / default 模拟器默认 / unset 未设置 / unreadable 读不出 / "
-            "auto 每次启动按要跑的游戏定 (官方模拟器内存按游戏自动, value 为 null)"
-        ),
+        description="saved 用户保存过 / default 模拟器默认 / unset 未设置 / unreadable 读不出",
     )
 
 
@@ -5985,7 +5982,7 @@ class Emulator2AvdInstanceOptionsSetIn(BaseModel):
     )
     memoryMb: Optional[int] = Field(
         default=None,
-        description="内存 MB (3072/4096/5120/6144), 0 = 按游戏自动; 不传不改",
+        description="内存 MB (3072/4096/5120/6144); 不传不改",
     )
     balloon: Optional[bool] = Field(
         default=None, description="空闲页上报 (气球) 开关; 不传不改"
@@ -5998,14 +5995,10 @@ class Emulator2AvdInstanceOptionsSetIn(BaseModel):
 class Emulator2AvdInstanceOptionsOut(OutBase):
     headless: bool = Field(default=True, description="是否无头运行, 下次启动生效")
     resolution: str = Field(default="720", description="显示档位 720 / 1080")
-    memoryAuto: bool = Field(
-        default=True,
-        description="内存是否按游戏自动 (方舟 / 1999 / 崩坏三 4 GB, 星铁 5 GB, 其它 4 GB)",
-    )
     balloon: bool = Field(default=True, description="空闲页上报 (气球) 是否开启")
     guestAngle: bool = Field(default=False, description="是否启用 GuestAngle")
     memoryMb: Optional[int] = Field(
-        default=None, description="手动指定的内存 MB; 按游戏自动时为兜底值 4096"
+        default=None, description="内存 MB, 每次开机用 -memory 传"
     )
     cpu: Optional[int] = Field(default=None, description="CPU 核数")
     dataPartitionGb: Optional[int] = Field(default=None, description="数据盘上限 GB")

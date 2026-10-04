@@ -1,21 +1,20 @@
 <script setup lang="ts">
 /**
- * 官方模拟器实例的五个选项：分辨率、内存、气球、GuestAngle、无头。
+ * 魔改 AVD 实例的五个选项：分辨率、内存、气球、GuestAngle、无头。
  * 新建实例与修改已有实例共用这一组表单项，外层负责提交。
  */
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 
-import { MEMORY_AUTO, MEMORY_CHOICES_MB, type AvdOptionsForm } from '../avdLogic'
+import { MEMORY_CHOICES_MB, RECOMMENDED_MEMORY_GB, type AvdOptionsForm } from '../avdLogic'
 
 const model = defineModel<AvdOptionsForm>({ required: true })
 
 const { t } = useI18n()
 
-const memoryOptions = computed(() => [
-  { value: MEMORY_AUTO, label: t('emulator2.avd.memoryAuto') },
-  ...MEMORY_CHOICES_MB.map(mb => ({ value: mb, label: `${mb / 1024} GB` })),
-])
+const memoryOptions = computed(() =>
+  MEMORY_CHOICES_MB.map(mb => ({ value: mb, label: `${mb / 1024} GB` }))
+)
 
 const update = <K extends keyof AvdOptionsForm>(key: K, value: AvdOptionsForm[K]) => {
   model.value = { ...model.value, [key]: value }
@@ -39,7 +38,7 @@ const update = <K extends keyof AvdOptionsForm>(key: K, value: AvdOptionsForm[K]
     </a-form-item>
     <a-form-item
       :label="t('emulator2.avd.fieldMemory')"
-      :extra="model.memoryMb === MEMORY_AUTO ? t('emulator2.avd.memoryAutoHint') : ''"
+      :extra="t('emulator2.avd.memoryRecommend', RECOMMENDED_MEMORY_GB)"
     >
       <a-select
         :value="model.memoryMb"

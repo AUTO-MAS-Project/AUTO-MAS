@@ -24,10 +24,6 @@ export type Emulator2AvdInstanceOptionsOut = {
      */
     resolution?: string;
     /**
-     * 内存是否按游戏自动 (方舟 / 1999 / 崩坏三 4 GB, 星铁 5 GB, 其它 4 GB)
-     */
-    memoryAuto?: boolean;
-    /**
      * 空闲页上报 (气球) 是否开启
      */
     balloon?: boolean;
@@ -36,7 +32,7 @@ export type Emulator2AvdInstanceOptionsOut = {
      */
     guestAngle?: boolean;
     /**
-     * 手动指定的内存 MB; 按游戏自动时为兜底值 4096
+     * 内存 MB, 每次开机用 -memory 传
      */
     memoryMb?: (number | null);
     /**

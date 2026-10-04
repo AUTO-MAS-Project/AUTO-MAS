@@ -265,7 +265,7 @@ export class ActionService {
     }
     /**
      * 修改官方模拟器实例选项
-     * 无头、显示档位、内存（含按游戏自动）、气球、GuestAngle，只改传了的项，下次启动生效。
+     * 无头、显示档位、内存、气球、GuestAngle，只改传了的项，下次启动生效。
      * @param requestBody
      * @returns Emulator2AvdInstanceOptionsOut Successful Response
      * @throws ApiError

@@ -26,7 +26,7 @@
 
 启动 = 冷启动（``-no-snapshot``，与 MAS 对雷电 / MuMu 每轮开关一致，预研 §6.16），默认无头
 （= 静默模式，预研 §6.14）。启动参数与开机后的调优逐项照 aemu-lab 的启动器 ``avd-p0.ps1``
-（每个开关都真机验证过，原因写在对应函数里）：磁盘 write-through、静音、显示两档、内存按游戏、
+（每个开关都真机验证过，原因写在对应函数里）：磁盘 write-through、静音、显示两档、实例内存、
 空闲页上报、GuestAngle、宿主调度、截图共享内存、cpuinfo、WiFi + fastpath、客体日志落盘。
 首次开机后再做一次持久初始化（关蓝牙、去全屏提示、禁用手机预装应用、换轻量桌面、记录渲染器）。
 
@@ -88,6 +88,7 @@ from .constants import (
     PIXEL_LAUNCHER_PACKAGE,
     PORT_BASE,
     PORT_STEP,
+    RECOMMENDED_MEMORY_MB,
     REQUIRED_COMPONENTS,
     RESOLUTIONS,
     STARTUP_GUARD_AFTER_SECONDS,
@@ -225,7 +226,7 @@ def build_launch_args(
 
     - 冷启动（``-no-snapshot``），与 MAS 对雷电 / MuMu 每轮开关一致；
     - ``-audio none``：静音（用户 09-27 定），客体声卡还在，游戏只是播给空设备；
-    - ``-memory``：本次的客体内存（按游戏自动或用户指定），不改 ``hw.ramSize``；
+    - ``-memory``：实例设的客体内存（:func:`~.instances.memory_for`），不改 ``hw.ramSize``；
     - 气球：``QuickbootFileBacked`` 开着时冷启动也用 ``ram.img`` 文件映射当客体内存，qemu 丢不掉
       文件映射的页，空闲页上报就不生效（10-03 首测），所以关掉它；设备挂在 ``-qemu`` 最后，
       占下一个空闲 PCI 槽、不挪现有设备；
@@ -841,7 +842,7 @@ class _AvdCore(DeviceBase):
 
     _launcher = None
     _log_path: Path | None = None
-    #: 这次 open 要跑的游戏包名，决定「按游戏自动」给多少内存（:class:`AvdManager` 在开机前设）。
+    #: 这次 open 要跑的游戏包名（:class:`AvdManager` 在开机前设），只用来对照推荐内存记日志。
     _open_package: str = ""
 
     def _log_dir(self) -> Path:
@@ -859,8 +860,14 @@ class _AvdCore(DeviceBase):
 
     async def _launch(self, idx: str, instance: AvdInstance) -> None:
         self._check_components()
-        # 电脑检查用的内存就是下面 -memory 要传的值（按游戏自动时也是算好的这一个）
-        memory_mb = memory_for(instance_meta(self.root, idx), self._open_package)
+        # 电脑检查用的内存就是下面 -memory 要传的值：实例自己设的，不按游戏推算
+        memory_mb = memory_for(instance_meta(self.root, idx))
+        recommended = RECOMMENDED_MEMORY_MB.get(self._open_package or "")
+        if recommended and memory_mb < recommended:
+            logger.warning(
+                f"魔改 AVD 实例 {idx} 内存 {memory_mb} MB，低于 {self._open_package} 的推荐值 "
+                f"{recommended} MB，可在魔改 AVD 选项里调大"
+            )
         await precheck.check_before_launch(self.root, memory_mb)
 
         port = console_port(idx)
@@ -1260,13 +1267,8 @@ class _AvdCore(DeviceBase):
         # 显示按实例选的档位报（开机前才写进 config.ini）
         meta = instance_meta(self.root, idx)
         display = resolution_changes(instance.config, instance_resolution(meta))
-        # 内存按游戏自动时 config.ini 里的 hw.ramSize 只是兜底值，开机按要跑的游戏用 -memory 传，
-        # 不能当成固定值报出去
-        memory = (
-            FieldValue(instance.memory_mb, "saved")
-            if isinstance(meta.get("memoryMb"), int)
-            else FieldValue(None, "auto")
-        )
+        # 报开机实际传的 -memory（实例元数据里的值；以前「按游戏自动」的旧实例按默认 6 GB）
+        memory = FieldValue(memory_for(meta), "saved")
         return InstanceSettings(
             fields={
                 "width": FieldValue(_int(display["hw.lcd.width"]), "saved"),
@@ -1300,7 +1302,7 @@ class _AvdCore(DeviceBase):
                 cleaned.get("dpi", _int(instance.config.get("hw.lcd.density"))),
             )
         memory, cpu, _ = validate_options(
-            cleaned.get("memoryMb", instance.memory_mb),
+            cleaned.get("memoryMb", memory_for(instance_meta(self.root, idx))),
             cleaned.get("cpu", instance.cpu),
             instance.data_partition_gb,
         )
@@ -1316,8 +1318,8 @@ class _AvdCore(DeviceBase):
         write_instance_config(
             self.root, idx, {"hw.ramSize": f"{memory}M", "hw.cpu.ncore": str(cpu)}
         )
-        if "memoryMb" in cleaned:
-            update_instance_meta(self.root, idx, memoryMb=memory)
+        # 内存每次都记进元数据：开机按它传 -memory，以前「按游戏自动」的旧实例从此有了固定值
+        update_instance_meta(self.root, idx, memoryMb=memory)
         if resolution is not None:
             # 开机前才写进 config.ini（_launch），这里只记档位
             update_instance_meta(self.root, idx, resolution=resolution)
@@ -1353,11 +1355,9 @@ class _AvdCore(DeviceBase):
     ) -> str:
         """新建实例，返回原生索引。不给索引就取最小的、端口也空着的那个。
 
-        不给内存 = 按游戏自动（见 :data:`~.constants.GAME_MEMORY_MB`）。
+        内存、核数不给就用默认 6 GB / 6 核（:data:`~.constants.DEFAULT_MEMORY_MB` / ``DEFAULT_CPU``）。
         """
-        memory_mb = memory_mb or None  # 0 与留空一样：按游戏自动
-        _, cores, data_gb = validate_options(memory_mb, cpu, data_partition_gb)
-        memory = validate_memory(memory_mb)
+        memory, cores, data_gb = validate_options(memory_mb, cpu, data_partition_gb)
         display = validate_resolution(resolution)
         existing = {int(idx) for idx in self._instances()}
         if native_index is None:
@@ -1378,7 +1378,7 @@ class _AvdCore(DeviceBase):
         )
         logger.info(
             f"已新建官方模拟器实例 {native_index}（内存 "
-            f"{f'{memory} MB' if memory else '按游戏自动'} / {cores} 核 / 数据盘 {data_gb} GB / "
+            f"{memory} MB / {cores} 核 / 数据盘 {data_gb} GB / "
             f"{display}p）"
         )
         return str(native_index)
@@ -1416,14 +1416,12 @@ class _AvdCore(DeviceBase):
         instance = self._instance(idx)
         meta = instance_meta(self.root, idx)
         options = launch_options(meta)
-        explicit = meta.get("memoryMb")
         return {
             "headless": options["flags"]["headless"],
             "resolution": options["resolution"],
-            "memoryAuto": not isinstance(explicit, int),
             "balloon": options["flags"]["balloon"],
             "guestAngle": options["flags"]["guest_angle"],
-            "memoryMb": explicit if isinstance(explicit, int) else instance.memory_mb,
+            "memoryMb": memory_for(meta),
             "cpu": instance.cpu,
             "dataPartitionGb": instance.data_partition_gb,
             "initialized": bool(meta.get("initialized", False)),
@@ -1448,7 +1446,7 @@ class _AvdCore(DeviceBase):
         balloon: bool | None = None,
         guest_angle: bool | None = None,
     ) -> dict[str, Any]:
-        """改实例的 MAS 侧选项，下次启动生效。``None`` = 不改，``memory_mb=0`` = 按游戏自动。
+        """改实例的 MAS 侧选项，下次启动生效。``None`` = 不改。
 
         显示档位在开机前才写进 ``config.ini``（实例在跑时改配置文件没用，还可能被它自己读到一半）。
         """
@@ -1459,7 +1457,7 @@ class _AvdCore(DeviceBase):
         if resolution is not None:
             changes["resolution"] = validate_resolution(resolution)
         if memory_mb is not None:
-            changes["memoryMb"] = validate_memory(memory_mb or None)
+            changes["memoryMb"] = validate_memory(memory_mb)
         if balloon is not None:
             changes["balloon"] = bool(balloon)
         if guest_angle is not None:
@@ -1543,7 +1541,7 @@ class AvdManager(AppLaunchMixin, _AvdCore):
             known = _VULKAN_UNSUPPORTED.get(_instance_key(self.root, str(idx)))
             if known is not None and package_name in VULKAN_FIX_PACKAGES:
                 raise IncompatibleGameError(known)
-        # AppLaunchMixin 有意不把包名传给开机那一步；内存按游戏给，所以在这里记下
+        # AppLaunchMixin 有意不把包名传给开机那一步；开机时要对照推荐内存记日志，所以在这里记下
         self._open_package = package_name or ""
         return await super().open(idx, package_name)
 

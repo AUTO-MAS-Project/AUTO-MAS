@@ -16,11 +16,11 @@ export type Emulator2InstanceCreateIn = {
      */
     name?: (string | null);
     /**
-     * 仅官方模拟器: 内存 MB, 可选 3072 / 4096 / 5120 / 6144; 留空或 0 为按游戏自动
+     * 仅魔改 AVD: 内存 MB, 可选 3072 / 4096 / 5120 / 6144; 留空为 6144
      */
     memoryMb?: (number | null);
     /**
-     * 仅官方模拟器: CPU 核数, 可选 2 / 4 / 6, 留空为 4
+     * 仅魔改 AVD: CPU 核数, 可选 2 / 4 / 6, 留空为 6
      */
     cpu?: (number | null);
     /**

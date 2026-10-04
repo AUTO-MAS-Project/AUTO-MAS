@@ -209,7 +209,7 @@ def path_item(root: str | Path) -> PrecheckItem:
 
 
 def memory_item(memory_mb: int, available_mb: int | None = None) -> PrecheckItem:
-    """``memory_mb`` 是这次开机实际要传的 ``-memory``（按游戏自动时也是算好的值）。"""
+    """``memory_mb`` 是这次开机实际要传的 ``-memory``（实例自己设的内存）。"""
     if available_mb is None:
         available_mb = psutil.virtual_memory().available // (1024 * 1024)
     needed_mb = int(memory_mb) + HOST_MEMORY_OVERHEAD_MB

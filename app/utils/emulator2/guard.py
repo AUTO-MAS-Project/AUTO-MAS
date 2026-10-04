@@ -86,12 +86,11 @@ def drift(baseline: dict[str, int], current: InstanceSettings) -> dict[str, int]
 
     读不出来的字段（``unreadable``）不算偏离：那是没问到，不是被改了，
     这时候硬写回去是拿一份可能过期的基准去覆盖一份根本没看清的现状。
-    按游戏自动的字段（``auto``）也不算：那是用户选的「不固定」，写回固定值会把选择改掉。
     """
     changes: dict[str, int] = {}
     for name, expected in baseline.items():
         item = current.fields.get(name)
-        if item is None or item.state in ("unreadable", "auto"):
+        if item is None or item.state == "unreadable":
             continue
         if item.value != expected:
             changes[name] = expected

@@ -7,7 +7,7 @@
  */
 export type Emulator2AvdPrecheckItem = {
     /**
-     * 检查项: acceleration / vulkan / disk / memory
+     * 检查项: path / emulator / acceleration / vulkan / disk / memory
      */
     id: string;
     /**

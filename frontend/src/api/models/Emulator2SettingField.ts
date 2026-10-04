@@ -14,7 +14,7 @@ export type Emulator2SettingField = {
      */
     value?: (number | null);
     /**
-     * saved 用户保存过 / default 模拟器默认 / unset 未设置 / unreadable 读不出 / auto 每次启动按要跑的游戏定 (官方模拟器内存按游戏自动, value 为 null)
+     * saved 用户保存过 / default 模拟器默认 / unset 未设置 / unreadable 读不出
      */
     state?: string;
 };

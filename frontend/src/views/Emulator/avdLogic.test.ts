@@ -6,7 +6,7 @@ import type {
   WSEmulator2AvdInstallProgressData,
 } from '@/api'
 import {
-  MEMORY_AUTO,
+  DEFAULT_MEMORY_MB,
   canResume,
   componentDetail,
   componentState,
@@ -16,7 +16,6 @@ import {
   isJobRunning,
   isRootAdded,
   jobPercent,
-  memoryCell,
   optionsChanges,
   optionsFromOut,
   precheckLevel,
@@ -45,17 +44,17 @@ describe('instance options', () => {
   it('defaults follow the user-decided values', () => {
     expect(defaultAvdOptions()).toEqual({
       resolution: '720',
-      memoryMb: MEMORY_AUTO,
+      memoryMb: 6144,
       balloon: true,
       guestAngle: false,
       headless: true,
     })
+    expect(DEFAULT_MEMORY_MB).toBe(6144)
   })
 
-  it('reads auto memory as auto even though the backend sends a fallback value', () => {
+  it('reads the instance memory as is', () => {
     const out: Emulator2AvdInstanceOptionsOut = {
       resolution: '1080',
-      memoryAuto: true,
       memoryMb: 4096,
       balloon: false,
       guestAngle: true,
@@ -63,26 +62,26 @@ describe('instance options', () => {
     }
     expect(optionsFromOut(out)).toEqual({
       resolution: '1080',
-      memoryMb: MEMORY_AUTO,
+      memoryMb: 4096,
       balloon: false,
       guestAngle: true,
       headless: false,
     })
-    expect(optionsFromOut({ ...out, memoryAuto: false, memoryMb: 5120 }).memoryMb).toBe(5120)
+    expect(optionsFromOut({ ...out, memoryMb: null }).memoryMb).toBe(DEFAULT_MEMORY_MB)
   })
 
-  it('only sends changed fields, and auto memory as 0', () => {
+  it('only sends changed fields', () => {
     const base = defaultAvdOptions()
     expect(optionsChanges(base, { ...base })).toEqual({})
     expect(optionsChanges({ ...base, memoryMb: 5120 }, { ...base, balloon: false })).toEqual({
-      memoryMb: MEMORY_AUTO,
+      memoryMb: 6144,
       balloon: false,
     })
   })
 
-  it('create leaves auto memory out', () => {
-    expect(createOptions(defaultAvdOptions()).memoryMb).toBeNull()
-    expect(createOptions({ ...defaultAvdOptions(), memoryMb: 6144 }).memoryMb).toBe(6144)
+  it('create always sends a fixed memory', () => {
+    expect(createOptions(defaultAvdOptions()).memoryMb).toBe(6144)
+    expect(createOptions({ ...defaultAvdOptions(), memoryMb: 4096 }).memoryMb).toBe(4096)
   })
 })
 
@@ -173,13 +172,6 @@ describe('review fixes', () => {
     expect(isRootAdded(['E:/emu-tmp/m2-e2e/root1'], 'e:\\emu-tmp\\m2-e2e\\root1\\')).toBe(true)
     expect(isRootAdded(['E:/emu-tmp/m2-e2e/root1'], 'E:\\emu-tmp\\m2-e2e\\root2')).toBe(false)
     expect(isRootAdded([], 'E:\\a')).toBe(false)
-  })
-
-  it('memory column: auto for the AVD auto state, numbers otherwise', () => {
-    expect(memoryCell({ value: null, state: 'auto' })).toEqual({ auto: true })
-    expect(memoryCell({ value: 6144, state: 'saved' })).toEqual({ auto: false, text: '6144' })
-    expect(memoryCell({ value: null, state: 'unset' })).toEqual({ auto: false, text: '—' })
-    expect(memoryCell(undefined)).toEqual({ auto: false, text: '—' })
   })
 })
 

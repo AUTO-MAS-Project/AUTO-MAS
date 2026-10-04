@@ -7,7 +7,6 @@ import type {
   Emulator2AvdComponentItem,
   Emulator2AvdInstanceOptionsOut,
   Emulator2AvdPrecheckItem,
-  Emulator2SettingField,
   WSEmulator2AvdInstallProgressData,
 } from '@/api'
 
@@ -15,7 +14,7 @@ import type {
 
 export type AvdResolution = '720' | '1080'
 
-/** 实例选项表单。``memoryMb`` 为 {@link MEMORY_AUTO} 时表示按游戏自动。 */
+/** 实例选项表单。 */
 export interface AvdOptionsForm {
   resolution: AvdResolution
   memoryMb: number
@@ -24,23 +23,28 @@ export interface AvdOptionsForm {
   headless: boolean
 }
 
-/** 内存「按游戏自动」在表单里的值；后端 ``options/set`` 收 0 也是这个意思。 */
-export const MEMORY_AUTO = 0
-/** 手动指定内存时只收这几档（与后端 ``MEMORY_CHOICES_MB`` 一致）。 */
+/** 内存只收这几档（与后端 ``MEMORY_CHOICES_MB`` 一致）。 */
 export const MEMORY_CHOICES_MB = [3072, 4096, 5120, 6144] as const
+/** 新建实例默认 6 GB（与后端 ``DEFAULT_MEMORY_MB`` 一致）；核数后端默认 6。 */
+export const DEFAULT_MEMORY_MB = 6144
+/**
+ * 各游戏的推荐内存（GB），只用来提示（与后端 ``RECOMMENDED_MEMORY_MB`` 一致）。
+ * 一台实例一轮里可能先后跑好几个游戏，开机后内存改不了，所以不按游戏自动分配。
+ */
+export const RECOMMENDED_MEMORY_GB = { light: 4, starRail: 5 } as const
 
 export const defaultAvdOptions = (): AvdOptionsForm => ({
   resolution: '720',
-  memoryMb: MEMORY_AUTO,
+  memoryMb: DEFAULT_MEMORY_MB,
   balloon: true,
   guestAngle: false,
   headless: true,
 })
 
-/** 后端返回的实例选项 → 表单。按游戏自动时 ``memoryMb`` 只是兜底值，表单里记成自动。 */
+/** 后端返回的实例选项 → 表单。 */
 export const optionsFromOut = (out: Emulator2AvdInstanceOptionsOut): AvdOptionsForm => ({
   resolution: out.resolution === '1080' ? '1080' : '720',
-  memoryMb: out.memoryAuto === false && out.memoryMb ? out.memoryMb : MEMORY_AUTO,
+  memoryMb: out.memoryMb || DEFAULT_MEMORY_MB,
   balloon: out.balloon ?? true,
   guestAngle: out.guestAngle ?? false,
   headless: out.headless ?? true,
@@ -60,10 +64,10 @@ export const optionsChanges = (
   return changes
 }
 
-/** 新建实例时随请求带上的官方模拟器选项。自动内存不传（后端留空即按游戏自动）。 */
+/** 新建实例时随请求带上的魔改 AVD 选项。 */
 export const createOptions = (form: AvdOptionsForm) => ({
   resolution: form.resolution,
-  memoryMb: form.memoryMb === MEMORY_AUTO ? null : form.memoryMb,
+  memoryMb: form.memoryMb,
   balloon: form.balloon,
   guestAngle: form.guestAngle,
   headless: form.headless,
@@ -135,20 +139,6 @@ export const componentDetail = (item: Emulator2AvdComponentItem) => {
 /** 这个根目录是不是已经在配置里了（路径写法不同也算同一个）。 */
 export const isRootAdded = (addedRoots: string[], root: string) =>
   addedRoots.some(item => samePath(item, root))
-
-// ---- 设备表 ----
-
-/**
- * 设备表「内存」一栏：官方模拟器选了按游戏自动时后端报 ``state: 'auto'``、没有值，显示「按游戏」；
- * 其余照旧显示数字，没值显示破折号。
- */
-export const memoryCell = (
-  field: Emulator2SettingField | undefined
-): { auto: true } | { auto: false; text: string } => {
-  if (field?.state === 'auto') return { auto: true }
-  const value = field?.value
-  return { auto: false, text: value === null || value === undefined ? '—' : String(value) }
-}
 
 /** 下载任务整体进度（0–100）。解压阶段按当前组件的解压进度显示；不知道时为 null。 */
 export const jobPercent = (job: WSEmulator2AvdInstallProgressData | null | undefined) => {

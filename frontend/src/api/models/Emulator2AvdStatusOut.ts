@@ -63,7 +63,7 @@ export type Emulator2AvdStatusOut = {
      */
     accelerationDetail?: string;
     /**
-     * 开机前电脑检查: 硬件虚拟化、显卡 Vulkan、磁盘、内存 (内存按默认档实例估), 每项给 ok、原因、建议
+     * 开机前电脑检查: 目录路径、模拟器版本、硬件虚拟化、显卡 Vulkan、磁盘、内存 (内存按默认档实例估), 每项给 ok、原因、建议
      */
     prechecks?: Array<Emulator2AvdPrecheckItem>;
     /**

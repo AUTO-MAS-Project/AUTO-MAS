@@ -355,7 +355,7 @@ async def set_instance_options(
     balloon: bool | None = None,
     guest_angle: bool | None = None,
 ) -> dict[str, Any]:
-    """只改传了的项（``None`` = 不改）；``memory_mb=0`` = 内存按游戏自动。"""
+    """只改传了的项（``None`` = 不改）。"""
     backend, native_index = await _backend(emulator_id, slot)
     return backend.set_instance_options(
         native_index,

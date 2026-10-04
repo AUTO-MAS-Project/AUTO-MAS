@@ -45,7 +45,6 @@ from .constants import (
     DEFAULT_DATA_PARTITION_GB,
     DEFAULT_MEMORY_MB,
     DEFAULT_RESOLUTION,
-    GAME_MEMORY_MB,
     MEMORY_CHOICES_MB,
     RESOLUTIONS,
     SCREEN_DENSITY,
@@ -280,26 +279,26 @@ def apply_resolution(
     return True
 
 
-def validate_memory(memory_mb: int | None) -> int | None:
-    """手动指定的内存只收固定档位；``None`` = 按游戏自动。"""
-    if memory_mb is None:
-        return None
+def validate_memory(memory_mb: int) -> int:
+    """内存只收固定档位，不做静默吸附。"""
     memory = int(memory_mb)
     if memory not in MEMORY_CHOICES_MB:
         raise ValueError(
-            "官方模拟器的内存只能选 "
+            "魔改 AVD 的内存只能选 "
             + " / ".join(f"{value // 1024} GB" for value in MEMORY_CHOICES_MB)
-            + "，或按游戏自动"
         )
     return memory
 
 
-def memory_for(meta: dict[str, Any], package_name: str = "") -> int:
-    """这次开机给多少内存：手动指定的优先，否则按要跑的游戏，认不出的游戏 4 GB。"""
+def memory_for(meta: dict[str, Any]) -> int:
+    """实例的内存，每次开机原样传 ``-memory``。
+
+    以前有过「按游戏自动」（``mas-avd.json`` 里不存 ``memoryMb``），已经取消：这类旧实例和存了
+    不在档位里的值的，一律按默认 :data:`~.constants.DEFAULT_MEMORY_MB`。"""
     explicit = meta.get("memoryMb")
     if isinstance(explicit, int) and explicit in MEMORY_CHOICES_MB:
         return explicit
-    return GAME_MEMORY_MB.get(package_name or "", DEFAULT_MEMORY_MB)
+    return DEFAULT_MEMORY_MB
 
 
 def validate_options(
@@ -333,7 +332,7 @@ def create_instance_files(
     native_index: int,
     *,
     title: str | None,
-    memory_mb: int | None,
+    memory_mb: int,
     cpu: int,
     data_partition_gb: int,
     headless: bool = True,
@@ -343,7 +342,7 @@ def create_instance_files(
 ) -> AvdInstance:
     """写 ``mas_<i>.ini`` 与 ``mas_<i>.avd\\config.ini``。实例已存在时拒绝。
 
-    ``memory_mb=None`` = 内存按游戏自动（每次开机用 ``-memory`` 传，``hw.ramSize`` 只是兜底值）。
+    内存同时记进 ``hw.ramSize`` 和实例元数据；开机用元数据里的值传 ``-memory``。
     """
     if not valid_native_index(native_index):
         raise ValueError(f"原生索引 {native_index} 不可用")
@@ -360,7 +359,7 @@ def create_instance_files(
             "avd.ini.displayname": title or name,
             "disk.dataPartition.size": f"{data_partition_gb}G",
             "hw.cpu.ncore": str(cpu),
-            "hw.ramSize": f"{memory_mb or DEFAULT_MEMORY_MB}M",
+            "hw.ramSize": f"{memory_mb}M",
             "hw.lcd.width": str(SCREEN_WIDTH),
             "hw.lcd.height": str(SCREEN_HEIGHT),
             "hw.lcd.density": str(SCREEN_DENSITY),

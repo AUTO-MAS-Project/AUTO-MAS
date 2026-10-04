@@ -20,7 +20,7 @@ export type Emulator2AvdInstanceOptionsSetIn = {
      */
     resolution?: ('720' | '1080' | null);
     /**
-     * 内存 MB (3072/4096/5120/6144), 0 = 按游戏自动; 不传不改
+     * 内存 MB (3072/4096/5120/6144); 不传不改
      */
     memoryMb?: (number | null);
     /**

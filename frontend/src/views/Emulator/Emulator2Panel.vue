@@ -46,7 +46,7 @@ import {
   type Pending,
   type PendingOp,
 } from './emulator2Status'
-import { createOptions, defaultAvdOptions, memoryCell, type AvdOptionsForm } from './avdLogic'
+import { createOptions, defaultAvdOptions, type AvdOptionsForm } from './avdLogic'
 import AvdOptionsDialog from './components/AvdOptionsDialog.vue'
 import AvdOptionsFields from './components/AvdOptionsFields.vue'
 import AvdRootDialog from './components/AvdRootDialog.vue'
@@ -1169,15 +1169,9 @@ defineExpose({ reload: loadAll, applyStableMode, captureBaselines, openPaths })
               <span v-else class="cell-loading">…</span>
             </template>
             <template v-else-if="column.key === 'memory'">
-              <template v-if="settingsLoaded || record.pendingKey">
-                <a-tooltip
-                  v-if="memoryCell(fieldOf(record, 'memoryMb')).auto"
-                  :title="t('emulator2.avd.memoryAutoHint')"
-                >
-                  <span>{{ t('emulator2.avd.memoryAutoShort') }}</span>
-                </a-tooltip>
-                <span v-else>{{ fieldText(record, 'memoryMb') }}</span>
-              </template>
+              <span v-if="settingsLoaded || record.pendingKey">{{
+                fieldText(record, 'memoryMb')
+              }}</span>
               <span v-else class="cell-loading">…</span>
             </template>
             <template v-else-if="column.key === 'fps'">
