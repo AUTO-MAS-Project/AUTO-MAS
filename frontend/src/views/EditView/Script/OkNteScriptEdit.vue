@@ -208,6 +208,9 @@
                     {{ t('edit.oknteLaunchViaLauncher') }}
                   </a-radio-button>
                 </a-radio-group>
+                <span class="control-hint">
+                  {{ t('edit.oknteLaunchTypeSummary') }}
+                </span>
                 <span v-if="showLaunchModeHint" class="control-hint">
                   {{ t('edit.oknteLaunchModeNeedsLaunchBeforeTask') }}
                 </span>

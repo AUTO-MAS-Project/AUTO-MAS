@@ -1476,6 +1476,8 @@ export default {
     launchDirectly: '直接启动',
     oknteLaunchViaLauncher: '使用启动器启动',
     oknteLaunchModeNeedsLaunchBeforeTask: '仅在「任务前启动游戏」开启时可用',
+    oknteLaunchTypeSummary:
+      '直接启动：静默拉起游戏，无需操作；使用启动器启动：只打开启动器界面，需在其中点击「开始游戏」',
     oknteLaunchTypeHint:
       '直接启动：MAS 带 /autoplay 参数静默拉起游戏，不操作启动器界面（推荐，默认）。使用启动器启动：MAS 只打开启动器界面，需要在该界面上点击「开始游戏」才会进入游戏，请保持启动器窗口可见',
     oknteLauncherClickNotice:

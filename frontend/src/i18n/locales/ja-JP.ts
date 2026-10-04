@@ -1426,6 +1426,8 @@ export default {
     launchDirectly: '直接起動',
     oknteLaunchViaLauncher: 'ランチャー画面から起動',
     oknteLaunchModeNeedsLaunchBeforeTask: '「タスク前にゲームを起動」がオンのときのみ利用できます',
+    oknteLaunchTypeSummary:
+      '直接起動：ゲームをサイレント起動、操作は不要。ランチャー画面から起動：ランチャー画面を開くだけで、そこで「ゲームを開始」をクリックします',
     oknteLaunchTypeHint:
       '直接起動：MAS が /autoplay 引数を付けてゲームをサイレント起動し、ランチャー画面は操作しません（推奨・既定）。ランチャー画面から起動：MAS はランチャー画面を開くだけで、その画面で「ゲームを開始」をクリックするとゲームが起動します。ランチャー画面が見える状態を保ってください',
     oknteLauncherClickNotice:

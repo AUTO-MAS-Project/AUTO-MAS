@@ -1545,6 +1545,8 @@ export default {
     oknteLaunchViaLauncher: 'Launch via launcher UI',
     oknteLaunchModeNeedsLaunchBeforeTask:
       'Only available when "Launch the game before the task" is on',
+    oknteLaunchTypeSummary:
+      'Direct launch: the game is started silently, no action needed; Launch via launcher UI: only the launcher window opens, and you click "Start Game" there',
     oknteLaunchTypeHint:
       'Direct launch: MAS starts the game silently with the /autoplay argument and never touches the launcher UI (recommended, default). Launch via launcher UI: MAS only opens the launcher window; the game starts once "Start Game" is clicked there, so keep the launcher window visible',
     oknteLauncherClickNotice:
