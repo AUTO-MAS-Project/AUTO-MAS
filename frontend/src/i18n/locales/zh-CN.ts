@@ -1621,6 +1621,7 @@ export default {
     missingTaskFieldSeparator: '，',
     adbStrategyPerDevice: '运行时判定',
     adbStrategyEmulatorExtras: '优先使用模拟器自带 ADB（EmulatorExtras）',
+    adbStrategyAvdExtras: '模拟器截图加速（共享内存，EmulatorExtras）',
     adbStrategyDefault: '默认',
     prepareRuntimeEnv: '准备运行环境',
     envPanelPlaceholder: '读取 interface 后会在这里显示运行环境的准备过程',

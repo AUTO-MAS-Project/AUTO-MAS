@@ -270,10 +270,12 @@ export function useMaaFWControlConfig(
     return emulator2DeviceTypeBySlot.value[slot] ?? null
   })
 
+  const selectedCapabilityType = computed(() =>
+    isMultiEmulatorConfig.value ? selectedDeviceRealType.value : selectedEmulatorType.value
+  )
+
   const selectedEmulatorCapability = computed(() => {
-    const emulatorType = isMultiEmulatorConfig.value
-      ? selectedDeviceRealType.value
-      : selectedEmulatorType.value
+    const emulatorType = selectedCapabilityType.value
     if (!emulatorType) return null
     return previewData.value?.controlCapabilities.emulatorExtras[emulatorType] || null
   })
@@ -285,11 +287,16 @@ export function useMaaFWControlConfig(
     const inputWithExtras = Boolean(capability?.input)
 
     // 只列截图与输入两行，值只给一个词：模拟器是上面刚选的，不必再重复；集合怎么组的不解释
+    // 魔改 AVD 的 EmulatorExtras（AVDExtras）截图走共享内存，不是 adb，不能套雷电 / MuMu 那句
+    const extrasText =
+      selectedCapabilityType.value === 'avd'
+        ? t('edit.adbStrategyAvdExtras')
+        : t('edit.adbStrategyEmulatorExtras')
     const pick = (withExtras: boolean) =>
       perDevice
         ? t('edit.adbStrategyPerDevice')
         : withExtras
-          ? t('edit.adbStrategyEmulatorExtras')
+          ? extrasText
           : t('edit.adbStrategyDefault')
     return [
       { label: t('misc.screenshot'), value: pick(screencapWithExtras) },
