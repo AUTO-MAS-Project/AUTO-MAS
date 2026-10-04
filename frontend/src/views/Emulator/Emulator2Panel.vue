@@ -45,6 +45,7 @@ import {
   type Pending,
   type PendingOp,
 } from './emulator2Status'
+import AvdRootDialog from './components/AvdRootDialog.vue'
 import type {
   Emulator2AffectedScript,
   Emulator2BatchResult,
@@ -299,6 +300,21 @@ const confirmRemove = async () => {
 }
 
 const runningAffected = computed(() => removeAffected.value.filter(item => item.running))
+
+// ---- 官方模拟器 ----
+
+/** 官方模拟器没有安装可搜，用户选根目录添加；已添加的根目录也从同一个弹窗看组件与电脑检查 */
+const avdRootOpen = ref(false)
+const avdRootInitial = ref('')
+const openAvdRoot = (root = '') => {
+  avdRootInitial.value = root
+  avdRootOpen.value = true
+}
+
+const onAvdAdded = async () => {
+  invalidateEmulatorDeviceOptions()
+  await loadDevices({ silent: true })
+}
 
 // ---- 新建 / 删除实例 ----
 
@@ -988,15 +1004,25 @@ defineExpose({ reload: loadAll, applyStableMode, captureBaselines, openPaths })
     >
       <div class="section-header" style="margin-top: 0">
         <span class="section-hint">{{ t('emulator2.pathsHint') }}</span>
-        <a-button size="small" type="primary" ghost :icon="h(SearchOutlined)" @click="openSearch">
-          {{ t('emulator2.searchAndAdd') }}
-        </a-button>
+        <a-space :size="8">
+          <a-button size="small" :icon="h(PlusOutlined)" @click="openAvdRoot()">
+            {{ t('emulator2.avd.add') }}
+          </a-button>
+          <a-button size="small" type="primary" ghost :icon="h(SearchOutlined)" @click="openSearch">
+            {{ t('emulator2.searchAndAdd') }}
+          </a-button>
+        </a-space>
       </div>
 
       <a-empty v-if="!paths.length" :description="t('emulator2.noPath')">
-        <a-button type="primary" :icon="h(PlusOutlined)" @click="openSearch">
-          {{ t('emulator2.searchAndAdd') }}
-        </a-button>
+        <a-space :size="8">
+          <a-button :icon="h(PlusOutlined)" @click="openAvdRoot()">
+            {{ t('emulator2.avd.add') }}
+          </a-button>
+          <a-button type="primary" :icon="h(SearchOutlined)" @click="openSearch">
+            {{ t('emulator2.searchAndAdd') }}
+          </a-button>
+        </a-space>
       </a-empty>
 
       <div v-else class="path-grid">
@@ -1009,6 +1035,14 @@ defineExpose({ reload: loadAll, applyStableMode, captureBaselines, openPaths })
             </a-space>
           </template>
           <template #extra>
+            <a-button
+              v-if="path.type === 'avd'"
+              type="text"
+              size="small"
+              @click="openAvdRoot(path.installPath)"
+            >
+              {{ t('emulator2.avd.manage') }}
+            </a-button>
             <a-button type="text" size="small" danger @click="openRemove(path)">
               {{ t('emulator2.removePath') }}
             </a-button>
@@ -1503,6 +1537,14 @@ defineExpose({ reload: loadAll, applyStableMode, captureBaselines, openPaths })
         </a-checkbox-group>
       </a-spin>
     </a-modal>
+
+    <!-- 官方模拟器：添加 / 组件与电脑检查 -->
+    <AvdRootDialog
+      v-model:open="avdRootOpen"
+      :emulator-id="emulatorId"
+      :initial-root="avdRootInitial"
+      @added="onAvdAdded"
+    />
 
     <!-- 移除路径 -->
     <a-modal
