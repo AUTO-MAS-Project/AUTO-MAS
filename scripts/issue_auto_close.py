@@ -16,6 +16,8 @@ from urllib.parse import unquote, urlsplit
 
 UNREAD_GRACE = timedelta(minutes=10)
 LOG_GRACE = timedelta(hours=24)
+# 工作流推到 dev 时就登记，同步到 main 才生效；巡检只补登记最近一天新建的反馈。
+CATCH_UP = timedelta(hours=24)
 STATE_PREFIX = "<!-- auto-mas-issue-policy:v1 "
 STATE_REGEX = re.compile(re.escape(STATE_PREFIX) + r"(\{[^\n]+\}) -->")
 UNREAD_TEXT = "我未仔细阅读这些内容，只是一键已读所有内容，并相信这不会影响问题的处理"
@@ -225,24 +227,27 @@ def process_issue(
     newly_labeled = (
         action == "labeled" and event.get("label", {}).get("name", "").lower() == "bug"
     )
-    new_issue = parse_time(issue["created_at"]) >= policy_started_at
+    new_issue = parse_time(issue["created_at"]) >= max(
+        policy_started_at, now - CATCH_UP
+    )
     previous_body = event.get("changes", {}).get("body", {}).get("from")
     newly_checked = (
         checked and previous_body is not None and not unread_checked(previous_body)
     )
     enroll = new_issue or newly_labeled or include_history
-    # 用工作流首次登记时间补回丢失的 opened 事件，历史 Issue 只在新操作或手动启用时登记。
+    # 巡检补回丢失的 opened 事件，历史 Issue 只在新操作或手动启用时登记。
     if reminder is None and not enroll and not newly_checked:
         return
     if reminder is None and not bug and not checked:
         return
     if reminder is None:
         state["registered_at"] = timestamp(now)
+        if checked and not (new_issue or newly_checked or include_history):
+            # 补打 bug 标签登记的旧 Issue，早就勾上的「未仔细阅读」不追溯计时。
+            state["unread_ignored"] = True
     if bug and not state.get("logs_deadline") and enroll:
-        started = (
-            now if include_history or newly_labeled else parse_time(issue["created_at"])
-        )
-        state["logs_deadline"] = timestamp(started + LOG_GRACE)
+        # 从登记时起算，补登记或迟到的标签不会让期限一出现就已过期。
+        state["logs_deadline"] = timestamp(now + LOG_GRACE)
     if (
         reminder is None
         or action == "reopened"
@@ -267,13 +272,16 @@ def process_issue(
                 state["logs_deadline"] = timestamp(
                     max(parse_time(state["logs_deadline"]), latest + LOG_GRACE)
                 )
-    if checked:
-        if not state.get("unread_since") or (
-            previous_body is not None and not unread_checked(previous_body)
-        ):
+    if newly_checked:
+        state.pop("unread_ignored", None)
+    if checked and not state.get("unread_ignored"):
+        if not state.get("unread_since") or newly_checked:
             state["unread_since"] = timestamp(now)
     else:
         state["unread_since"] = None
+        if not checked:
+            # 取消勾选后解除豁免，之后再勾选按新的误勾选计时。
+            state.pop("unread_ignored", None)
     body = reminder_body(state, logs_present=issue_has_logs(issue, comments), bug=bug)
     if reminder is None:
         github_api(f"{endpoint}/comments", method="POST", payload={"body": body})
