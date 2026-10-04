@@ -47,6 +47,12 @@ DOWNLOADS_DIR = "downloads"
 COMPONENTS_DIR = "components"
 MUMU_SHIM_DIR = "mumu-shim"
 METADATA_FILE = "mas-avd.json"
+#: 模拟器日志、客体 logcat、看门狗证据。
+LOGS_DIR = "logs"
+#: 宿主显卡驱动给这条安装的模拟器用的着色器缓存。
+SHADER_CACHE_DIR = "shader-cache"
+#: 宿主侧临时文件（如星铁补丁拉下来的原库），用完即删。
+CACHE_DIR = "cache"
 
 
 def console_port(native_index: int | str) -> int:
@@ -232,18 +238,74 @@ PIXEL_LAUNCHER_PACKAGE = "com.google.android.apps.nexuslauncher"
 
 # ---- 实例 -----------------------------------------------------------------
 
-#: 新建实例可选的内存（MB）与 CPU 核数，默认 4 GB / 4 核（预研 §6.15：3 GB 能跑、很紧）。
-MEMORY_CHOICES_MB = (3072, 4096, 6144)
+#: 实例可选的内存（MB）与 CPU 核数（预研 §6.15：3 GB 能跑、很紧）。内存默认「按游戏自动」，
+#: 见 :data:`GAME_MEMORY_MB`；用户手动指定时只收这几档。
+MEMORY_CHOICES_MB = (3072, 4096, 5120, 6144)
 CPU_CHOICES = (2, 4, 6)
 DEFAULT_MEMORY_MB = 4096
 DEFAULT_CPU = 4
+#: 「按游戏自动」的内存（MB），启动时用 ``-memory`` 传入；表里没有的游戏用 :data:`DEFAULT_MEMORY_MB`。
+#: 数据见 aemu-lab ``自研模拟器-动态内存.md`` 第 7.6 节：星铁 4 GB 能跑，但 zram 压了近 2 GB，偏紧。
+GAME_MEMORY_MB: dict[str, int] = {
+    "com.hypergryph.arknights": 4096,
+    "com.hypergryph.arknights.bilibili": 4096,
+    "com.shenlan.m.reverse1999": 4096,
+    "com.miHoYo.enterprise.NGHSoD": 4096,
+    "com.miHoYo.hkrpg": 5120,
+    "com.miHoYo.hkrpg.bilibili": 5120,
+}
 #: 数据盘上限（GB），按实际写入增长。游戏资源都在里面，崩坏三一款就 36 GB。
 DEFAULT_DATA_PARTITION_GB = 64
 DATA_PARTITION_RANGE_GB = (16, 512)
-#: 分辨率固定：1920×1080 横屏、DPI 280（预研里调好的 mas_p0）。
-SCREEN_WIDTH = 1920
-SCREEN_HEIGHT = 1080
-SCREEN_DENSITY = 280
+
+#: 显示只有两档（用户 10-03 定），开机前写进 ``config.ini`` 的 ``hw.lcd.*``，不用 ``wm size``
+#: （运行时覆盖出过小毛病）。档位名 → (长边, 短边, DPI)，即雷电 / MuMu 的默认值，脚本都认。
+RESOLUTIONS: dict[str, tuple[int, int, int]] = {
+    "720": (1280, 720, 240),
+    "1080": (1920, 1080, 280),
+}
+DEFAULT_RESOLUTION = "720"
+#: 新建实例模板的显示（= 默认档，横屏）。
+SCREEN_WIDTH, SCREEN_HEIGHT, SCREEN_DENSITY = RESOLUTIONS[DEFAULT_RESOLUTION]
+
+#: 空闲页上报（气球）开着时，开机后把客体 ``page_reporting_order`` 设成这个值（2 MiB 块，
+#: 与 Hyper-V / WSL2 一致；驱动绑定时内核会把它重置成 pageblock_order 10）。
+BALLOON_PAGE_REPORTING_ORDER = 9
+#: 气球开着时，开机后这么久在客体清一次页缓存（只清这一次）。每天第一次开机 ``system_server``
+#: 会读 4–5 GB（≈ 已装游戏 APK 总量），不清就整场不还给宿主。
+BALLOON_DROP_CACHES_DELAY_SECONDS = 60.0
+
+#: 客体脚本（``res/avd/guest/``）推到客体的位置。
+GUEST_TMP_DIR = "/data/local/tmp"
+#: logcat 落盘前把客体日志缓冲调到这么大（默认 256 KB，游戏一跑几分钟就滚掉）。
+LOGCAT_BUFFER_SIZE = "16M"
+
+#: 星铁普通模式（Vulkan）要的客体驱动补丁（aemu-lab ``tools/guest/khrfix.py``）：API 34 镜像的
+#: ``libvulkan_enc.so`` 把两个 KHR 入口直接交给原始编码器，描述符只发出 1 字节，GPU 读到没写过的
+#: 描述符就出错。补丁把两个 KHR 入口各改成 5 字节 ``jmp`` 到核心入口。只在原库哈希对得上时打，
+#: 改好的库只在用户电脑上生成、缓存在客体里，**不分发**。
+VULKAN_ENC_GUEST_PATH = "/vendor/lib64/libvulkan_enc.so"
+VULKAN_ENC_ORIG_SHA256 = (
+    "898c0bbc38077e4b19d112f6c66e2970f1e015fc440fae091974b8f06e40fefb"
+)
+VULKAN_ENC_FIX_SHA256 = (
+    "b3ea750a20884460ec48b0af7522c0905a7df6645c4c10da27bda97c39fef614"
+)
+#: ``.text`` 的虚拟地址与文件偏移之差（vaddr 0x1fcee0，文件偏移 0x1fbee0）。
+VULKAN_ENC_TEXT_DELTA = 0x1000
+#: ``entry_vkUpdateDescriptorSetWithTemplate``（核心入口）。
+VULKAN_ENC_CORE_ENTRY = 0x3D8FA0
+#: (虚拟地址, 原函数开头 8 字节, 名字)：两个要改成 ``jmp`` 核心入口的 KHR 入口。
+VULKAN_ENC_PATCHES: tuple[tuple[int, str, str], ...] = (
+    (0x3DA5B0, "4157415641554154", "entry_vkUpdateDescriptorSetWithTemplateKHR"),
+    (
+        0x3B6ED0,
+        "5541574156415541",
+        "dynCheck_entry_vkUpdateDescriptorSetWithTemplateKHR",
+    ),
+)
+#: 拉起前要先做 Vulkan 修复的游戏（星铁普通模式）。
+VULKAN_FIX_PACKAGES = frozenset({"com.miHoYo.hkrpg", "com.miHoYo.hkrpg.bilibili"})
 
 #: 估宿主内存占用：客体内存 + 这么多（预研 §6.15：3 GB 客体工作集 3.0–3.9 GB，
 #: 4 GB 客体 4.6–5.0 GB）。宿主可用内存不够就拒绝启动，不让系统开始换页。
@@ -276,10 +338,8 @@ DEBLOAT_PACKAGES: tuple[str, ...] = (
 )
 
 #: 已知在官方模拟器上跑不起来的游戏：包名 → 说明。脚本要拉起它们时直接报错，不去启动。
-INCOMPATIBLE_PACKAGES: dict[str, str] = {
-    # 预研 §6.20：GLES 下游戏图形线程崩溃，强制 Vulkan 则模拟器冻结 / 退出（emulator 37.1.11）
-    "com.miHoYo.hkrpg": "崩坏：星穹铁道",
-}
+#: 星铁 10 月起不在表里：普通模式靠拉起前的 Vulkan 修复（见 :data:`VULKAN_FIX_PACKAGES`）。
+INCOMPATIBLE_PACKAGES: dict[str, str] = {}
 
 #: 后台游戏清理时永远不动的第三方包（桌面本身）。输入法按当前默认输入法另外排除。
 KEEP_PACKAGES = frozenset({FOSSIFY_LAUNCHER.package})
@@ -291,3 +351,5 @@ WATCHDOG_STRIKES = 2
 
 #: ``close`` 等 ``emu kill`` 生效的上限，超时强杀该实例的 qemu 进程。
 CLOSE_TIMEOUT_SECONDS = 20.0
+#: 关机前客体 ``sync`` 的上限（正常几十毫秒；整个关机要在任务收尾的 30 秒内做完）。
+SYNC_TIMEOUT_SECONDS = 8.0

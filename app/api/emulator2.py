@@ -535,10 +535,16 @@ async def avd_instance_options(
 async def avd_set_instance_options(
     payload: Emulator2AvdInstanceOptionsSetIn = Body(...),
 ) -> Emulator2AvdInstanceOptionsOut:
-    """目前只有无头 / 带窗口一项，下次启动生效；内存与核数走通用的设置接口。"""
+    """无头、显示档位、内存（含按游戏自动）、气球、GuestAngle，只改传了的项，下次启动生效。"""
     try:
         result = await avd_service.set_instance_options(
-            payload.emulatorId, payload.slot, headless=payload.headless
+            payload.emulatorId,
+            payload.slot,
+            headless=payload.headless,
+            resolution=payload.resolution,
+            memory_mb=payload.memoryMb,
+            balloon=payload.balloon,
+            guest_angle=payload.guestAngle,
         )
     except Exception as e:
         logger.opt(exception=True).warning(

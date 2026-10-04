@@ -44,7 +44,10 @@ from .constants import (
     DEFAULT_CPU,
     DEFAULT_DATA_PARTITION_GB,
     DEFAULT_MEMORY_MB,
+    DEFAULT_RESOLUTION,
+    GAME_MEMORY_MB,
     MEMORY_CHOICES_MB,
+    RESOLUTIONS,
     SCREEN_DENSITY,
     SCREEN_HEIGHT,
     SCREEN_WIDTH,
@@ -53,8 +56,9 @@ from .constants import (
     valid_native_index,
 )
 
-#: 实例配置模板，取自预研里调好的 ``mas_p0``（``pixel_tablet`` 模板改 1920×1080 / DPI 280 /
-#: 横屏 / 显卡直通），去掉了设备外框与设备型号——型号只影响窗口外框，外框也关了。
+#: 实例配置模板，取自预研里调好的 ``mas_p0``（``pixel_tablet`` 模板改横屏 / 显卡直通），去掉了
+#: 设备外框与设备型号——型号只影响窗口外框，外框也关了。显示按默认档 720p（1280×720 / DPI 240）写，
+#: 每次开机前再按实例选的档位重写。
 _CONFIG_TEMPLATE: tuple[tuple[str, str], ...] = (
     ("PlayStore.enabled", "no"),
     ("abi.type", "x86_64"),
@@ -228,6 +232,76 @@ def remove_instance_meta(root: str | Path, native_index: int | str) -> None:
         write_metadata(root, data)
 
 
+def validate_resolution(resolution: str | int | None) -> str:
+    """显示档位只有 ``"720"`` / ``"1080"`` 两档，``None`` 取默认 720p。"""
+    value = DEFAULT_RESOLUTION if resolution is None else str(resolution).strip()
+    value = value.removesuffix("p").removesuffix("P")
+    if value not in RESOLUTIONS:
+        raise ValueError(
+            "官方模拟器的分辨率只能选 720p（1280×720）或 1080p（1920×1080）"
+        )
+    return value
+
+
+def instance_resolution(meta: dict[str, Any]) -> str:
+    raw = meta.get("resolution")
+    return str(raw) if str(raw) in RESOLUTIONS else DEFAULT_RESOLUTION
+
+
+def resolution_changes(config: dict[str, str], resolution: str) -> dict[str, str]:
+    """把档位换成 ``hw.lcd.*``，保持现有横竖屏（照启动器 ``-Resolution`` 的写法）。"""
+    long_side, short_side, dpi = RESOLUTIONS[resolution]
+    width = _int_or_none(config.get("hw.lcd.width")) or 0
+    height = _int_or_none(config.get("hw.lcd.height")) or 0
+    if height > width:
+        width, height = short_side, long_side
+    else:
+        width, height = long_side, short_side
+    return {
+        "hw.lcd.width": str(width),
+        "hw.lcd.height": str(height),
+        "hw.lcd.density": str(dpi),
+    }
+
+
+def apply_resolution(
+    root: str | Path, native_index: int | str, resolution: str
+) -> bool:
+    """开机前把显示档位写进 ``config.ini``，返回是否改了文件。只在停机时调用。"""
+    path = config_path(root, native_index)
+    config = read_ini(path)
+    if not config:
+        raise RuntimeError(f"实例 {avd_name(native_index)} 的配置读不出")
+    changes = resolution_changes(config, resolution)
+    if all(config.get(key) == value for key, value in changes.items()):
+        return False
+    config.update(changes)
+    write_ini(path, config)
+    return True
+
+
+def validate_memory(memory_mb: int | None) -> int | None:
+    """手动指定的内存只收固定档位；``None`` = 按游戏自动。"""
+    if memory_mb is None:
+        return None
+    memory = int(memory_mb)
+    if memory not in MEMORY_CHOICES_MB:
+        raise ValueError(
+            "官方模拟器的内存只能选 "
+            + " / ".join(f"{value // 1024} GB" for value in MEMORY_CHOICES_MB)
+            + "，或按游戏自动"
+        )
+    return memory
+
+
+def memory_for(meta: dict[str, Any], package_name: str = "") -> int:
+    """这次开机给多少内存：手动指定的优先，否则按要跑的游戏，认不出的游戏 4 GB。"""
+    explicit = meta.get("memoryMb")
+    if isinstance(explicit, int) and explicit in MEMORY_CHOICES_MB:
+        return explicit
+    return GAME_MEMORY_MB.get(package_name or "", DEFAULT_MEMORY_MB)
+
+
 def validate_options(
     memory_mb: int | None, cpu: int | None, data_partition_gb: int | None
 ) -> tuple[int, int, int]:
@@ -259,12 +333,18 @@ def create_instance_files(
     native_index: int,
     *,
     title: str | None,
-    memory_mb: int,
+    memory_mb: int | None,
     cpu: int,
     data_partition_gb: int,
     headless: bool = True,
+    resolution: str = DEFAULT_RESOLUTION,
+    balloon: bool = True,
+    guest_angle: bool = False,
 ) -> AvdInstance:
-    """写 ``mas_<i>.ini`` 与 ``mas_<i>.avd\\config.ini``。实例已存在时拒绝。"""
+    """写 ``mas_<i>.ini`` 与 ``mas_<i>.avd\\config.ini``。实例已存在时拒绝。
+
+    ``memory_mb=None`` = 内存按游戏自动（每次开机用 ``-memory`` 传，``hw.ramSize`` 只是兜底值）。
+    """
     if not valid_native_index(native_index):
         raise ValueError(f"原生索引 {native_index} 不可用")
     if ini_path(root, native_index).exists() or avd_dir(root, native_index).exists():
@@ -280,13 +360,14 @@ def create_instance_files(
             "avd.ini.displayname": title or name,
             "disk.dataPartition.size": f"{data_partition_gb}G",
             "hw.cpu.ncore": str(cpu),
-            "hw.ramSize": f"{memory_mb}M",
+            "hw.ramSize": f"{memory_mb or DEFAULT_MEMORY_MB}M",
             "hw.lcd.width": str(SCREEN_WIDTH),
             "hw.lcd.height": str(SCREEN_HEIGHT),
             "hw.lcd.density": str(SCREEN_DENSITY),
             "image.sysdir.1": SYSTEM_IMAGE_SYSDIR,
         }
     )
+    config.update(resolution_changes(config, resolution))
     directory.mkdir(parents=True)
     write_ini(directory / "config.ini", config)
     write_ini(
@@ -302,6 +383,10 @@ def create_instance_files(
         root,
         native_index,
         headless=headless,
+        resolution=resolution,
+        memoryMb=memory_mb,
+        balloon=balloon,
+        guestAngle=guest_angle,
         initialized=False,
         createdAt=datetime.now().isoformat(timespec="seconds"),
     )

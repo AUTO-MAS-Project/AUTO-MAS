@@ -33,6 +33,7 @@
 from __future__ import annotations
 
 import asyncio
+import ctypes
 import os
 import subprocess
 import time
@@ -52,7 +53,12 @@ from .components import (
     emulator_exe,
     runtime_sdk_dir,
 )
-from .constants import HOST_MEMORY_OVERHEAD_MB, PORT_BASE, PORT_STEP
+from .constants import (
+    HOST_MEMORY_OVERHEAD_MB,
+    PORT_BASE,
+    PORT_STEP,
+    SHADER_CACHE_DIR,
+)
 
 logger = get_logger("官方模拟器宿主")
 
@@ -420,17 +426,127 @@ def kill_process_tree(process: psutil.Process) -> None:
         process.kill()
 
 
+def shader_cache_dir(root: str | Path) -> Path:
+    return Path(root) / SHADER_CACHE_DIR
+
+
 def launch_emulator(
     root: str | Path, args: list[str], log_path: Path
 ) -> subprocess.Popen:
-    """起 ``emulator.exe``，输出写到 ``log_path``。"""
+    """起 ``emulator.exe``，输出写到 ``log_path``。
+
+    宿主显卡驱动的着色器缓存放 ``<根>\\shader-cache``（``__GL_SHADER_DISK_CACHE_PATH``，
+    照启动器 ``-ShaderCache``）：和用户的其它程序分开，需要时我们能自己清。
+    """
     log_path.parent.mkdir(parents=True, exist_ok=True)
+    env = emulator_env(root)
+    cache = shader_cache_dir(root)
+    cache.mkdir(parents=True, exist_ok=True)
+    env.update(
+        {
+            "__GL_SHADER_DISK_CACHE": "1",
+            "__GL_SHADER_DISK_CACHE_PATH": str(cache),
+            "__GL_SHADER_DISK_CACHE_SKIP_CLEANUP": "1",
+        }
+    )
     with log_path.open("ab") as log_file:
         return _popen_detached(
             [str(emulator_exe(root)), *args],
+            env=env,
+            stdout=log_file,
+        )
+
+
+def start_logcat(root: str | Path, serial: str, log_path: Path) -> subprocess.Popen:
+    """把客体 logcat 持续写到宿主文件。模拟器一关，adb logcat 自己退出。"""
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    with log_path.open("ab") as log_file:
+        return _popen_detached(
+            [
+                str(adb_exe(root)),
+                "-P",
+                str(adb_server_port(root)),
+                "-s",
+                serial,
+                "logcat",
+                "-v",
+                "threadtime",
+                "-b",
+                "main,system,crash,events",
+            ],
             env=emulator_env(root),
             stdout=log_file,
         )
+
+
+# ---- 宿主调度 -------------------------------------------------------------
+
+
+def _l3_groups() -> list[tuple[int, int]]:
+    """每个 L3 缓存的 (容量字节, 处理器掩码)。只读 ``GetLogicalProcessorInformationEx``。"""
+    try:
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    except (AttributeError, OSError):
+        return []
+    get_info = kernel32.GetLogicalProcessorInformationEx
+    get_info.restype = ctypes.c_int
+    get_info.argtypes = (ctypes.c_int, ctypes.c_void_p, ctypes.POINTER(ctypes.c_uint32))
+    relation_cache = 2
+    length = ctypes.c_uint32(0)
+    get_info(relation_cache, None, ctypes.byref(length))
+    if not length.value:
+        return []
+    buffer = ctypes.create_string_buffer(length.value)
+    if not get_info(relation_cache, buffer, ctypes.byref(length)):
+        return []
+    raw = buffer.raw[: length.value]
+    groups: list[tuple[int, int]] = []
+    offset = 0
+    while offset + 48 <= len(raw):
+        size = int.from_bytes(raw[offset + 4 : offset + 8], "little")
+        if size <= 0:
+            break
+        # CACHE_RELATIONSHIP：Level 在 +8，CacheSize 在 +12，GroupMask.Mask 在 +40
+        if raw[offset + 8] == 3:
+            groups.append(
+                (
+                    int.from_bytes(raw[offset + 12 : offset + 16], "little"),
+                    int.from_bytes(raw[offset + 40 : offset + 48], "little"),
+                )
+            )
+        offset += size
+    return groups
+
+
+def big_l3_cpus() -> list[int] | None:
+    """X3D 处理器上大 L3 那组核心的编号；L3 不分大小（普通处理器）返回 ``None``。"""
+    groups = sorted(_l3_groups(), reverse=True)
+    if len(groups) < 2 or groups[0][0] <= groups[-1][0]:
+        return None
+    mask = groups[0][1]
+    return [cpu for cpu in range(64) if mask >> cpu & 1]
+
+
+def tune_host_scheduling(process: psutil.Process) -> str:
+    """qemu 提到「高于正常」优先级；X3D 处理器上绑到大 L3 那组核心。返回说明给日志。
+
+    09-28 在 7950X3D 上 A/B（崩坏三）：绑到 3D V-cache 那组核心，qemu CPU 降约 20%、游戏主线程
+    每帧 CPU 降约 25%；高频那组不比默认好。只在 L3 大小不一（X3D）时绑，其余交给 Windows。
+    """
+    notes: list[str] = []
+    try:
+        process.nice(psutil.ABOVE_NORMAL_PRIORITY_CLASS)
+        notes.append("优先级高于正常")
+    except (psutil.Error, AttributeError, OSError) as e:
+        notes.append(f"设优先级失败（{e}）")
+    cpus = big_l3_cpus()
+    if cpus:
+        try:
+            process.cpu_affinity(cpus)
+            notes.append(f"绑定大 L3 核心 {cpus[0]}–{cpus[-1]}")
+        except (psutil.Error, OSError, ValueError) as e:
+            notes.append(f"绑核失败（{e}）")
+    return "，".join(notes)
 
 
 # ---- 电脑检查 -------------------------------------------------------------

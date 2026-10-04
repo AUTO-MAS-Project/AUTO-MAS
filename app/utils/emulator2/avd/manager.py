@@ -25,15 +25,20 @@
 管理器可调，每一步都是自己驱动 ``emulator.exe`` 与私有 adb。
 
 启动 = 冷启动（``-no-snapshot``，与 MAS 对雷电 / MuMu 每轮开关一致，预研 §6.16），默认无头
-（= 静默模式，预研 §6.14）。每次开机后做四项调优（重启即失效）：解除 2 GB 测试流量套餐、
-``/data`` 去 barrier、开截图共享内存并强制重绘一帧；首次开机后再做一次持久初始化（关 WiFi
-与蓝牙、去全屏提示、禁用手机预装应用、换轻量桌面、记录渲染器）。
+（= 静默模式，预研 §6.14）。启动参数与开机后的调优逐项照 aemu-lab 的启动器 ``avd-p0.ps1``
+（每个开关都真机验证过，原因写在对应函数里）：磁盘 write-through、静音、显示两档、内存按游戏、
+空闲页上报、GuestAngle、宿主调度、截图共享内存、cpuinfo、WiFi + fastpath、客体日志落盘。
+首次开机后再做一次持久初始化（关蓝牙、去全屏提示、禁用手机预装应用、换轻量桌面、记录渲染器）。
+
+关机先 ``sync`` 再 ``kill``：控制台 ``kill`` 直接结束 qemu，客体不走关机流程，页缓存里没写回的
+数据会丢（10-03 星铁 9 个热更新清单因此变成 0 字节）。
 """
 
 from __future__ import annotations
 
 import asyncio
 import ctypes
+import subprocess
 import tempfile
 import time
 from contextlib import suppress
@@ -45,6 +50,7 @@ import psutil
 
 from app.models.emulator import DeviceBase, DeviceInfo, DeviceRef, DeviceStatus
 from app.utils import get_logger
+from app.utils.paths import SOURCE_ROOT
 
 from ..applaunch import AppLaunchMixin, AppLaunchResult, ensure_app_running
 from ..settings import FieldValue, InstanceSettings, SettingsConflictError
@@ -58,17 +64,26 @@ from .components import (
     root_key,
 )
 from .constants import (
+    BALLOON_DROP_CACHES_DELAY_SECONDS,
+    BALLOON_PAGE_REPORTING_ORDER,
+    CACHE_DIR,
     CLOSE_TIMEOUT_SECONDS,
     DEBLOAT_PACKAGES,
     FOSSIFY_LAUNCHER,
+    GUEST_TMP_DIR,
     INCOMPATIBLE_PACKAGES,
     KEEP_PACKAGES,
+    LOGCAT_BUFFER_SIZE,
+    LOGS_DIR,
     MAX_NATIVE_INDEX,
     PIXEL_LAUNCHER_PACKAGE,
     REQUIRED_COMPONENTS,
-    SCREEN_DENSITY,
-    SCREEN_HEIGHT,
-    SCREEN_WIDTH,
+    RESOLUTIONS,
+    SYNC_TIMEOUT_SECONDS,
+    VULKAN_ENC_FIX_SHA256,
+    VULKAN_ENC_GUEST_PATH,
+    VULKAN_ENC_ORIG_SHA256,
+    VULKAN_FIX_PACKAGES,
     WATCHDOG_INTERVAL_SECONDS,
     WATCHDOG_PROBE_TIMEOUT_SECONDS,
     WATCHDOG_STRIKES,
@@ -80,23 +95,31 @@ from .constants import (
 )
 from .instances import (
     AvdInstance,
+    apply_resolution,
     create_instance_files,
     delete_instance_files,
     instance_meta,
+    instance_resolution,
     list_instances,
+    memory_for,
+    resolution_changes,
     update_instance_meta,
+    validate_memory,
     validate_options,
+    validate_resolution,
     write_instance_config,
 )
+from .vulkanfix import UNSUPPORTED_IMAGE_MESSAGE, VulkanFixError, patch_vulkan_encoder
 
 logger = get_logger("官方模拟器管理")
+
+#: 仓库里推到客体跑的脚本。
+GUEST_SCRIPTS_DIR = SOURCE_ROOT / "res" / "avd" / "guest"
 
 #: 等 ``sys.boot_completed`` 的轮询间隔。
 _BOOT_POLL_SECONDS = 1.0
 #: 状态查询里单条 adb 的超时：状态轮询不能被一台卡住的实例拖住整张表。
 _STATUS_ADB_TIMEOUT = 5.0
-#: ``adb root`` 之后等 adbd 以 root 身份重新连上的上限。
-_ROOT_RECONNECT_TIMEOUT = 30.0
 #: 装轻量桌面的超时。
 _INSTALL_TIMEOUT = 180.0
 #: 界面上「打开游戏中心」之类一次点击的上限（官方模拟器没有游戏中心，留作接口一致）。
@@ -129,6 +152,106 @@ def shm_exists(port: int) -> bool:
         return False
     kernel32.CloseHandle(ctypes.c_void_p(handle))
     return True
+
+
+# ---- 启动参数 -------------------------------------------------------------
+
+
+def launch_options(meta: dict[str, Any]) -> dict[str, Any]:
+    """实例的 MAS 侧选项（``mas-avd.json``）→ 本次开机用的值，缺省值都在这里。"""
+    return {
+        "resolution": instance_resolution(meta),
+        "flags": {
+            "headless": bool(meta.get("headless", True)),
+            # 空闲页上报默认开（10-04 定）；要自编 qemu（sdk-mas19 起）
+            "balloon": bool(meta.get("balloon", True)),
+            "guest_angle": bool(meta.get("guestAngle", False)),
+        },
+    }
+
+
+def build_launch_args(
+    avd: str,
+    console: int,
+    *,
+    memory_mb: int,
+    headless: bool,
+    balloon: bool,
+    guest_angle: bool,
+) -> list[str]:
+    """``emulator.exe`` 的参数，逐项照启动器 ``avd-p0.ps1``（每个开关都真机验证过）。
+
+    - 冷启动（``-no-snapshot``），与 MAS 对雷电 / MuMu 每轮开关一致；
+    - ``-audio none``：静音（用户 09-27 定），客体声卡还在，游戏只是播给空设备；
+    - ``-memory``：本次的客体内存（按游戏自动或用户指定），不改 ``hw.ramSize``；
+    - 气球：``QuickbootFileBacked`` 开着时冷启动也用 ``ram.img`` 文件映射当客体内存，qemu 丢不掉
+      文件映射的页，空闲页上报就不生效（10-03 首测），所以关掉它；设备挂在 ``-qemu`` 最后，
+      占下一个空闲 PCI 槽、不挪现有设备；
+    - 磁盘 write-through：客体不再发 flush（和以前客体侧 ``nobarrier`` 一样快），但 QEMU 每次写
+      都把数据和 qcow2 元数据推到宿主文件，硬杀不丢已写的数据。``nobarrier`` 硬杀 3/3 把 AVD
+      弄坏（内核 panic 循环），这个设置 6/6 无损（09-26）。``-qemu`` 之后全归 QEMU，所以放最后。
+    """
+    args = [
+        "-avd",
+        avd,
+        "-no-snapshot",
+        "-no-boot-anim",
+        "-gpu",
+        "host",
+        "-ports",
+        f"{console},{console + 1}",
+        "-grpc",
+        str(console + 2),
+        "-grpc-use-token",
+        "-audio",
+        "none",
+        "-memory",
+        str(int(memory_mb)),
+    ]
+    if guest_angle:
+        args += ["-feature", "GuestAngle"]
+    if headless:
+        args.append("-no-window")
+    if balloon:
+        args += ["-feature", "-QuickbootFileBacked"]
+    args += [
+        "-qemu",
+        "-global",
+        "virtio-blk-device.write-cache=off",
+        "-global",
+        "virtio-blk-device.config-wce=off",
+    ]
+    if balloon:
+        args += ["-device", "virtio-balloon-pci,free-page-reporting=on"]
+    return args
+
+
+def angle_overrides(current: str) -> str | None:
+    """GuestAngle 要追加的 ``debug.angle.feature_overrides_disabled`` 值；已经有了返回 ``None``。
+
+    照启动器：**只追加，不替换**。开机时模拟器把宿主显卡的变通项从
+    ``ro.boot.hardware.angle_feature_overrides_disabled`` 拷进这个属性，替换掉会让它们重新生效
+    （09-27 晚星铁闪烁、地面破碎）。追加 ``supportsSwapchainMaintenance1`` 关掉 ANGLE 的
+    present fence，修 10–20 分钟后画面冻住（每帧漏一个 VkFence + sync_file fd，09-27）。
+    ``exposeN*`` 要去掉：关掉它会藏起 GLES 3.2，星铁全紫 / 黑场景。属性值上限 91 字符，
+    ANGLE 认 ``*`` 后缀通配。
+    """
+    if "supportsSwapchainM" in current:  # 含被缩写成通配的那种
+        return None
+    parts = [p for p in current.split(":") if p and not p.startswith("exposeN")]
+    want = ":".join([*parts, "supportsSwapchainMaintenance1"])
+    if len(want) > 91:
+        want = (
+            want.replace("supportsSwapchainMaintenance1", "supportsSwapchainM*")
+            .replace("supportsExternalFenceFd", "supportsExternalFen*")
+            .replace("supportsExternalSemaphoreFd", "supportsExternalSem*")
+        )
+    return want
+
+
+def guest_script(name: str) -> Path:
+    """仓库里的客体脚本（``res/avd/guest/``）。"""
+    return GUEST_SCRIPTS_DIR / name
 
 
 # ---- 冻结看门狗 -----------------------------------------------------------
@@ -254,6 +377,57 @@ def _start_watchdog(root: Path, native_index: str, pid: int) -> None:
 
 def _stop_watchdog(root: Path, native_index: str) -> None:
     task = _WATCHDOGS.pop(_instance_key(root, native_index), None)
+    if task is not None and not task.done():
+        task.cancel()
+
+
+# ---- 开机后的一次性清缓存 ----------------------------------------------------
+
+#: ``{实例键: 清缓存任务}``。和看门狗一样挂在模块上：管理器对象会被频繁重建。
+_DROP_CACHES: dict[str, asyncio.Task] = {}
+#: ``{实例键: 宿主侧 adb logcat 进程}``，免得再次 open 一台在跑的实例时重复落盘。
+_LOGCATS: dict[str, subprocess.Popen] = {}
+
+
+def _schedule_drop_caches(manager: _AvdCore, idx: str, *, uptime_s: float) -> None:
+    """气球开着时，开机约 1 分钟后在客体清一次页缓存，只清这一次。
+
+    每台虚拟机每天第一次开机，``system_server`` 会读 4–5 GB（量和已装游戏的 APK 总量相当），客体
+    缓存冲到 4–5 GB；不清，这部分整场不还给宿主（1999 挂 30 分钟一直占 7.7 GB，正常约 5 GB）。
+    游戏跑起来以后不再清：按客体开机时长算，已经开了很久（例如 MAS 重启后接管一台在跑的实例）
+    就不排。
+    """
+    key = _instance_key(manager.root, idx)
+    existing = _DROP_CACHES.get(key)
+    if existing is not None and not existing.done():
+        return
+    delay = BALLOON_DROP_CACHES_DELAY_SECONDS - uptime_s
+    if delay < -BALLOON_DROP_CACHES_DELAY_SECONDS:
+        logger.info(
+            f"实例 {idx} 已开机 {uptime_s:.0f} 秒，不再清客体页缓存（只在开机约 1 分钟时清一次）"
+        )
+        return
+
+    async def run() -> None:
+        await asyncio.sleep(max(0.0, delay))
+        code, output = await manager._shell(
+            idx,
+            'grep -E "^(MemFree|Cached):" /proc/meminfo | tr -s " " | tr "\\n" " "; '
+            "su 0 sh -c 'echo 1 > /proc/sys/vm/drop_caches'; "
+            'grep -E "^(MemFree|Cached):" /proc/meminfo | tr -s " " | tr "\\n" " "',
+        )
+        if code == 0:
+            logger.info(f"实例 {idx} 开机后清了一次客体页缓存（清前 / 清后）: {output}")
+        else:
+            logger.warning(f"实例 {idx} 清客体页缓存失败: {output}")
+
+    task = asyncio.create_task(run(), name=f"avd-drop-caches-{key}")
+    _DROP_CACHES[key] = task
+    task.add_done_callback(lambda _: _DROP_CACHES.pop(key, None))
+
+
+def _cancel_drop_caches(root: Path, native_index: str) -> None:
+    task = _DROP_CACHES.pop(_instance_key(root, native_index), None)
     if task is not None and not task.done():
         task.cancel()
 
@@ -483,9 +657,11 @@ class _AvdCore(DeviceBase):
 
     _launcher = None
     _log_path: Path | None = None
+    #: 这次 open 要跑的游戏包名，决定「按游戏自动」给多少内存（:class:`AvdManager` 在开机前设）。
+    _open_package: str = ""
 
     def _log_dir(self) -> Path:
-        return self.root / "logs"
+        return self.root / LOGS_DIR
 
     def _log_tail(self, lines: int = 8) -> str:
         if self._log_path is None:
@@ -502,7 +678,7 @@ class _AvdCore(DeviceBase):
         accel = await host.check_acceleration(self.root)
         if not accel.ok:
             raise RuntimeError(f"{host.ACCEL_GUIDE}（检查结果：{accel.detail}）")
-        memory_mb = instance.memory_mb or 4096
+        memory_mb = memory_for(instance_meta(self.root, idx), self._open_package)
         host.check_host_memory(memory_mb)
 
         port = console_port(idx)
@@ -515,27 +691,25 @@ class _AvdCore(DeviceBase):
             )
 
         await host.ensure_adb_server(self.root)
-        headless = bool(instance_meta(self.root, idx).get("headless", True))
-        args = [
-            "-avd",
-            instance.name,
-            "-no-snapshot",
-            "-no-boot-anim",
-            "-gpu",
-            "host",
-            "-ports",
-            f"{port},{port + 1}",
-            "-grpc",
-            str(port + 2),
-            "-grpc-use-token",
-        ]
-        if headless:
-            args.append("-no-window")
+        meta = instance_meta(self.root, idx)
+        options = launch_options(meta)
+        if await asyncio.to_thread(
+            apply_resolution, self.root, idx, options["resolution"]
+        ):
+            logger.info(
+                f"实例 {idx} 显示改为 {options['resolution']}p（已写入 config.ini）"
+            )
+        args = build_launch_args(
+            instance.name, port, memory_mb=memory_mb, **options["flags"]
+        )
         stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
         self._log_path = self._log_dir() / f"{instance.name}-{stamp}.log"
         logger.info(
-            f"启动官方模拟器实例 {idx}（{'无头' if headless else '带窗口'}，"
-            f"{memory_mb} MB / {instance.cpu} 核）: emulator {' '.join(args)}"
+            f"启动官方模拟器实例 {idx}（{'无头' if options['flags']['headless'] else '带窗口'}，"
+            f"{options['resolution']}p，{memory_mb} MB / {instance.cpu} 核，"
+            f"气球{'开' if options['flags']['balloon'] else '关'}"
+            f"{'，GuestAngle' if options['flags']['guest_angle'] else ''}）: "
+            f"emulator {' '.join(args)}"
         )
         self._launcher = await asyncio.to_thread(
             host.launch_emulator, self.root, args, self._log_path
@@ -554,57 +728,194 @@ class _AvdCore(DeviceBase):
             timeout=timeout,
         )
 
+    async def _su(
+        self, idx: str, script: str, timeout: float = 30.0
+    ) -> tuple[int, str]:
+        """以 root 跑一段客体命令。这些 userdebug 镜像上 ``su 0`` 不用先 ``adb root``——
+        ``adb root`` 会重启 adbd，把脚本自己那个 adb server 的连接一起断掉，所以不用。"""
+        if "'" in script:
+            raise ValueError("客体脚本里不能有单引号")
+        return await self._shell(idx, f"su 0 sh -c '{script}'", timeout=timeout)
+
+    async def _push(self, idx: str, local: Path, remote: str) -> bool:
+        code, output = await host.run_adb(
+            self.root,
+            "push",
+            str(local),
+            remote,
+            serial=host.serial_of(console_port(idx)),
+            timeout=60,
+        )
+        if code != 0:
+            logger.warning(f"实例 {idx} 推送 {local.name} 失败: {output}")
+        return code == 0
+
     async def _after_boot(self, idx: str, instance: AvdInstance) -> None:
-        """每次开机后的调优（重启即失效）+ 首次开机的一次性初始化。失败只记警告。"""
+        """每次开机后的调优（重启即失效）+ 首次开机的一次性初始化。失败只记警告。
+
+        逐项照启动器 ``avd-p0.ps1`` 开机后那段。**不再做**的两项：
+        ``gsm meter on|off``——每调一次，镜像的 MeterService 反而装上那个 2 GB 测试套餐（用量重置成
+        200 MB），没有这条调用就没有套餐、没有上限（09-26 经 ``dumpsys netpolicy`` 确认）；
+        ``/data`` 的 ``nobarrier``——改由启动参数让磁盘 write-through（见 :func:`build_launch_args`）。
+        """
         port = console_port(idx)
-        serial = host.serial_of(port)
+        options = launch_options(instance_meta(self.root, idx))
+        flags = options["flags"]
 
-        # 1) 镜像自带 2 GB 测试流量套餐（EmulatorDataPlan），用满就断网；标成不计量即解除
-        try:
-            await host.console_command(port, "gsm meter off")
-        except host.ConsoleError as e:
-            logger.warning(f"实例 {idx} 解除流量上限失败: {e}")
+        # 1) 宿主调度：优先级、X3D 绑核
+        process = await asyncio.to_thread(host.find_qemu_process, instance.name, port)
+        if process is not None:
+            note = await asyncio.to_thread(host.tune_host_scheduling, process)
+            logger.info(f"实例 {idx} 宿主调度: {note}")
 
-        # 2) /data 去 barrier：游戏下载时每秒上千次 fsync，每次都要陷出到 QEMU（+55% 下载速度）
-        code, output = await host.run_adb(self.root, "root", serial=serial, timeout=20)
-        if code != 0:
-            logger.warning(f"实例 {idx} 切换 root adbd 失败: {output}")
-        else:
-            await self._wait_adb_back(idx)
-        code, output = await self._shell(idx, "mount -o remount,nobarrier /data")
-        if code != 0:
-            logger.warning(f"实例 {idx} 设置 nobarrier 失败: {output}")
-
-        # 3) 截图共享内存：开推流才会建 SHM_videmulator<端口>，静止画面下它一直是黑帧，
-        #    所以建好后强制 SurfaceFlinger 重绘一帧（预研 §6.16）
+        # 2) 截图共享内存：开推流才会建 SHM_videmulator<端口>，静止画面下它一直是黑帧，
+        #    所以建好后强制 SurfaceFlinger 重绘一帧（预研 §6.16；1004 要 root）
         try:
             await host.console_command(port, "screenrecord webrtc start")
         except host.ConsoleError as e:
             logger.warning(f"实例 {idx} 开启截图共享内存失败: {e}")
-        await self._shell(idx, "service call SurfaceFlinger 1004")
+        await self._shell(idx, "su 0 service call SurfaceFlinger 1004")
+
+        # 3) GuestAngle：ANGLE 在进程初始化 EGL 时读属性，只管之后启动的进程（游戏）
+        if flags["guest_angle"]:
+            await self._apply_angle_overrides(idx)
+
+        # 4) 磁盘与截图通道的现状写进日志（write_cache 要 root 才读得到）
+        _, write_cache = await self._su(
+            idx, "cat /sys/block/vd*/queue/write_cache | sort -u"
+        )
+        logger.info(
+            f"实例 {idx} 磁盘缓存: {' / '.join(ln.strip() for ln in write_cache.splitlines() if ln.strip()) or '读不到'}；"
+            f"截图共享内存 SHM_videmulator{port}: {'在' if shm_exists(port) else '缺失'}"
+        )
+
+        # 5) 空闲页上报：驱动绑定时把 order 重置成 pageblock_order，绑定之后再设
+        if flags["balloon"]:
+            await self._setup_balloon(idx)
+
+        # 6) ARM 转译层的 cpuinfo：每个 vCPU 一条，Unity 才不按单核选最低画质
+        if await self._push(
+            idx, guest_script("cpuinfo-bind.sh"), f"{GUEST_TMP_DIR}/cpuinfo-bind.sh"
+        ):
+            _, cores = await self._shell(
+                idx, f"su 0 sh {GUEST_TMP_DIR}/cpuinfo-bind.sh"
+            )
+            logger.info(f"实例 {idx} ARM 转译 cpuinfo: {cores.strip() or '?'} 核")
+
+        # 7) 崩溃 / 无响应弹窗没人点，挡在游戏前面；关掉（持久）
+        await self._shell(idx, "settings put global hide_error_dialogs 1")
+
+        # 8) 网络：WiFi 一直开着（游戏看到 WiFi 就不弹「非 WiFi 下载」）；fastpath 把本地流量
+        #    走 eth0（虚拟 WiFi 单独只有约 6 MB/s）。WiFi 开关存在 /data 里，每次开机都显式设
+        await self._setup_network(idx)
+
+        # 9) 客体日志：缓冲调到 16 MB（持久），开机后持续落盘到 <根>\logs，问题包要用
+        await self._start_logcat(idx, instance)
 
         meta = instance_meta(self.root, idx)
         if not meta.get("initialized"):
             await self._first_boot_init(idx)
 
-    async def _wait_adb_back(self, idx: str) -> None:
-        deadline = time.monotonic() + _ROOT_RECONNECT_TIMEOUT
-        await asyncio.sleep(1.0)
-        while time.monotonic() < deadline:
-            code, output = await self._shell(idx, "id -u", timeout=5)
-            if code == 0 and output.strip() == "0":
-                return
-            await asyncio.sleep(1.0)
-        logger.warning(f"实例 {idx} 等 root adbd 重连超时")
+    async def _apply_angle_overrides(self, idx: str) -> None:
+        _, current = await self._shell(
+            idx, "getprop debug.angle.feature_overrides_disabled"
+        )
+        current = current.strip()
+        if not current:
+            _, current = await self._shell(
+                idx, "getprop ro.boot.hardware.angle_feature_overrides_disabled"
+            )
+            current = current.strip()
+        want = angle_overrides(current)
+        if want is not None:
+            await self._shell(
+                idx, f"su 0 setprop debug.angle.feature_overrides_disabled '{want}'"
+            )
+            _, current = await self._shell(
+                idx, "getprop debug.angle.feature_overrides_disabled"
+            )
+        logger.info(f"实例 {idx} ANGLE 关闭的特性: {current.strip()}")
+
+    async def _setup_balloon(self, idx: str) -> None:
+        order = BALLOON_PAGE_REPORTING_ORDER
+        param = "/sys/module/page_reporting/parameters/page_reporting_order"
+        _, output = await self._su(
+            idx,
+            "ls /sys/bus/virtio/drivers/virtio_balloon | grep -c virtio; "
+            f"echo {order} > {param}; cat {param}",
+        )
+        parts = output.split()
+        bound = parts[0] if parts else "?"
+        current = parts[1] if len(parts) > 1 else "?"
+        if bound in ("", "0", "?") or current != str(order):
+            logger.warning(
+                f"实例 {idx} 空闲页上报没就位：气球设备绑定 {bound}，"
+                f"page_reporting_order {current}（要 {order}）；模拟器要 sdk-mas19 起的自编 qemu"
+            )
+        else:
+            logger.info(
+                f"实例 {idx} 空闲页上报: 气球设备绑定 {bound}，page_reporting_order {current}"
+            )
+        _, uptime = await self._shell(idx, "cat /proc/uptime")
+        try:
+            seconds = float(uptime.split()[0])
+        except (IndexError, ValueError):
+            seconds = 0.0
+        _schedule_drop_caches(self, idx, uptime_s=seconds)
+
+    async def _setup_network(self, idx: str) -> None:
+        await self._shell(idx, "su 0 svc wifi enable")
+        remote = f"{GUEST_TMP_DIR}/mas-wifi-fastpath.sh"
+        if not await self._push(idx, guest_script("mas-wifi-fastpath.sh"), remote):
+            return
+        await self._shell(idx, f"su 0 sh {remote} on; su 0 sh {remote} daemon")
+        _, status = await self._shell(idx, f"su 0 sh {remote} status")
+        lines = {
+            key: value.strip()
+            for key, _, value in (line.partition(":") for line in status.splitlines())
+        }
+        if "lookup eth0" in lines.get("rule4", ""):
+            logger.info(f"实例 {idx} 网络: WiFi 开，fastpath 生效（{lines['rule4']}）")
+        elif lines.get("watchers"):
+            # 刚开机时 eth0 往往还没起来（没有 eth0 路由表），规则加不上；守护每 10 秒补一次
+            logger.info(
+                f"实例 {idx} 网络: WiFi 开，fastpath 守护已起（pid {lines['watchers']}），"
+                "规则在 eth0 就绪后由守护补上"
+            )
+        else:
+            logger.warning(f"实例 {idx} fastpath 没起来: {status[-300:]}")
+
+    async def _start_logcat(self, idx: str, instance: AvdInstance) -> None:
+        key = _instance_key(self.root, idx)
+        running = _LOGCATS.get(key)
+        if running is not None and running.poll() is None:
+            return  # 这台已经在落盘（再次 open 一台在跑的实例）
+        await self._shell(
+            idx,
+            f"su 0 setprop persist.logd.size {LOGCAT_BUFFER_SIZE}; "
+            f"logcat -G {LOGCAT_BUFFER_SIZE}",
+        )
+        stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+        path = self._log_dir() / f"logcat-{instance.name}-{stamp}.txt"
+        try:
+            _LOGCATS[key] = await asyncio.to_thread(
+                host.start_logcat,
+                self.root,
+                host.serial_of(console_port(idx)),
+                path,
+            )
+        except OSError as e:
+            logger.warning(f"实例 {idx} 客体日志落盘没起来: {e}")
+            return
+        logger.info(f"实例 {idx} 客体日志 → {path}")
 
     async def _first_boot_init(self, idx: str) -> None:
         """首次开机后的持久设置（重启后保持），做完记进 ``mas-avd.json``。"""
         logger.info(f"官方模拟器实例 {idx} 首次开机，正在初始化")
         failures: list[str] = []
 
-        # 虚拟 WiFi 是网络瓶颈（模拟 802.11b，6.4 MB/s），关掉走移动数据快 4.6 倍（预研 §6.10）
+        # WiFi 不在这里关：每次开机都开 WiFi + fastpath（用户 09-27 定，见 _setup_network）
         base = [
-            "svc wifi disable",
             "svc bluetooth disable",
             "settings put secure immersive_mode_confirmations confirmed",
         ]
@@ -692,10 +1003,24 @@ class _AvdCore(DeviceBase):
         instance = self._instance(idx)
         port = console_port(idx)
         _stop_watchdog(self.root, idx)
+        _cancel_drop_caches(self.root, idx)
+        _LOGCATS.pop(_instance_key(self.root, idx), None)
         _FROZEN.pop(_instance_key(self.root, idx), None)
         process = await asyncio.to_thread(host.find_qemu_process, instance.name, port)
         if process is None:
             return DeviceStatus.OFFLINE
+
+        # 先 sync：控制台 kill / 强杀都直接结束 qemu，客体不走关机流程，页缓存里没写回的数据会丢
+        # （10-03 星铁 9 个热更新清单变成 0 字节，表现成「网络请求超时」和黑屏）。磁盘 write-through
+        # 只保证已经写到虚拟盘的数据，管不到还在客体内存里的。强制关闭也先 sync。
+        started = time.monotonic()
+        code, output = await self._shell(idx, "sync", timeout=SYNC_TIMEOUT_SECONDS)
+        if code == 0:
+            logger.info(
+                f"官方模拟器实例 {idx} 关机前 sync 完成（{(time.monotonic() - started) * 1000:.0f} ms）"
+            )
+        else:
+            logger.warning(f"官方模拟器实例 {idx} 关机前 sync 失败，照常关机: {output}")
 
         if not self.config.get("Info", "ForceKillOnClose"):
             try:
@@ -726,12 +1051,15 @@ class _AvdCore(DeviceBase):
                     for name in ("width", "height", "dpi", "cpu", "memoryMb", "fps")
                 }
             )
-        config = instance.config
+        # 显示按实例选的档位报（开机前才写进 config.ini）
+        display = resolution_changes(
+            instance.config, instance_resolution(instance_meta(self.root, idx))
+        )
         return InstanceSettings(
             fields={
-                "width": FieldValue(_int(config.get("hw.lcd.width")), "saved"),
-                "height": FieldValue(_int(config.get("hw.lcd.height")), "saved"),
-                "dpi": FieldValue(_int(config.get("hw.lcd.density")), "saved"),
+                "width": FieldValue(_int(display["hw.lcd.width"]), "saved"),
+                "height": FieldValue(_int(display["hw.lcd.height"]), "saved"),
+                "dpi": FieldValue(_int(display["hw.lcd.density"]), "saved"),
                 "cpu": FieldValue(instance.cpu, "saved"),
                 "memoryMb": FieldValue(instance.memory_mb, "saved"),
                 # 帧率跟着客体 60 Hz 走，没有可设的项
@@ -747,17 +1075,18 @@ class _AvdCore(DeviceBase):
     async def write_instance_settings(
         self, idx: str, changes: dict, expected: dict | None = None
     ) -> dict[str, int]:
-        """只能改 CPU 与内存（下次启动生效）；分辨率固定 1920×1080 / DPI 280，帧率不可设。"""
+        """可改 CPU、内存与显示档位（下次启动生效）；显示只有 720p / 1080p 两档，帧率不可设。"""
         cleaned = validate_setting_changes(changes)
-        fixed = {"width": SCREEN_WIDTH, "height": SCREEN_HEIGHT, "dpi": SCREEN_DENSITY}
-        for name, value in cleaned.items():
-            if name in fixed and value != fixed[name]:
-                raise ValueError(
-                    "官方模拟器的分辨率固定为 1920×1080、DPI 280，不能修改"
-                )
-            if name == "fps":
-                raise ValueError("官方模拟器没有可设置的帧率")
+        if "fps" in cleaned:
+            raise ValueError("官方模拟器没有可设置的帧率")
         instance = self._instance(idx)
+        resolution = None
+        if {"width", "height", "dpi"} & cleaned.keys():
+            resolution = _resolution_of(
+                cleaned.get("width", _int(instance.config.get("hw.lcd.width"))),
+                cleaned.get("height", _int(instance.config.get("hw.lcd.height"))),
+                cleaned.get("dpi", _int(instance.config.get("hw.lcd.density"))),
+            )
         memory, cpu, _ = validate_options(
             cleaned.get("memoryMb", instance.memory_mb),
             cleaned.get("cpu", instance.cpu),
@@ -775,7 +1104,16 @@ class _AvdCore(DeviceBase):
         write_instance_config(
             self.root, idx, {"hw.ramSize": f"{memory}M", "hw.cpu.ncore": str(cpu)}
         )
-        applied = {k: v for k, v in cleaned.items() if k in ("cpu", "memoryMb")}
+        if "memoryMb" in cleaned:
+            update_instance_meta(self.root, idx, memoryMb=memory)
+        if resolution is not None:
+            # 开机前才写进 config.ini（_launch），这里只记档位
+            update_instance_meta(self.root, idx, resolution=resolution)
+        applied = {
+            k: v
+            for k, v in cleaned.items()
+            if k in ("cpu", "memoryMb", "width", "height", "dpi")
+        }
         logger.info(f"已写入官方模拟器实例 {idx} 的设置: {applied}")
         return applied
 
@@ -797,9 +1135,17 @@ class _AvdCore(DeviceBase):
         data_partition_gb: int | None = None,
         headless: bool = True,
         native_index: int | None = None,
+        resolution: str | None = None,
+        balloon: bool = True,
+        guest_angle: bool = False,
     ) -> str:
-        """新建实例，返回原生索引。不给索引就取最小的、端口也空着的那个。"""
-        memory, cores, data_gb = validate_options(memory_mb, cpu, data_partition_gb)
+        """新建实例，返回原生索引。不给索引就取最小的、端口也空着的那个。
+
+        不给内存 = 按游戏自动（见 :data:`~.constants.GAME_MEMORY_MB`）。
+        """
+        _, cores, data_gb = validate_options(memory_mb, cpu, data_partition_gb)
+        memory = validate_memory(memory_mb)
+        display = validate_resolution(resolution)
         existing = {int(idx) for idx in self._instances()}
         if native_index is None:
             native_index = await asyncio.to_thread(self._free_index, existing)
@@ -813,9 +1159,14 @@ class _AvdCore(DeviceBase):
             cpu=cores,
             data_partition_gb=data_gb,
             headless=headless,
+            resolution=display,
+            balloon=balloon,
+            guest_angle=guest_angle,
         )
         logger.info(
-            f"已新建官方模拟器实例 {native_index}（{memory} MB / {cores} 核 / 数据盘 {data_gb} GB）"
+            f"已新建官方模拟器实例 {native_index}（内存 "
+            f"{f'{memory} MB' if memory else '按游戏自动'} / {cores} 核 / 数据盘 {data_gb} GB / "
+            f"{display}p）"
         )
         return str(native_index)
 
@@ -849,9 +1200,15 @@ class _AvdCore(DeviceBase):
     def instance_options(self, idx: str) -> dict[str, Any]:
         instance = self._instance(idx)
         meta = instance_meta(self.root, idx)
+        options = launch_options(meta)
+        explicit = meta.get("memoryMb")
         return {
-            "headless": bool(meta.get("headless", True)),
-            "memoryMb": instance.memory_mb,
+            "headless": options["flags"]["headless"],
+            "resolution": options["resolution"],
+            "memoryAuto": not isinstance(explicit, int),
+            "balloon": options["flags"]["balloon"],
+            "guestAngle": options["flags"]["guest_angle"],
+            "memoryMb": explicit if isinstance(explicit, int) else instance.memory_mb,
             "cpu": instance.cpu,
             "dataPartitionGb": instance.data_partition_gb,
             "initialized": bool(meta.get("initialized", False)),
@@ -864,8 +1221,37 @@ class _AvdCore(DeviceBase):
         }
 
     def set_headless(self, idx: str, headless: bool) -> dict[str, Any]:
+        return self.set_instance_options(idx, headless=headless)
+
+    def set_instance_options(
+        self,
+        idx: str,
+        *,
+        headless: bool | None = None,
+        resolution: str | None = None,
+        memory_mb: int | None = None,
+        balloon: bool | None = None,
+        guest_angle: bool | None = None,
+    ) -> dict[str, Any]:
+        """改实例的 MAS 侧选项，下次启动生效。``None`` = 不改，``memory_mb=0`` = 按游戏自动。
+
+        显示档位在开机前才写进 ``config.ini``（实例在跑时改配置文件没用，还可能被它自己读到一半）。
+        """
         self._instance(idx)
-        update_instance_meta(self.root, idx, headless=bool(headless))
+        changes: dict[str, Any] = {}
+        if headless is not None:
+            changes["headless"] = bool(headless)
+        if resolution is not None:
+            changes["resolution"] = validate_resolution(resolution)
+        if memory_mb is not None:
+            changes["memoryMb"] = validate_memory(memory_mb or None)
+        if balloon is not None:
+            changes["balloon"] = bool(balloon)
+        if guest_angle is not None:
+            changes["guestAngle"] = bool(guest_angle)
+        if changes:
+            update_instance_meta(self.root, idx, **changes)
+            logger.info(f"已修改官方模拟器实例 {idx} 的选项（下次启动生效）: {changes}")
         return self.instance_options(idx)
 
 
@@ -874,6 +1260,17 @@ def _int(raw: object) -> int | None:
         return int(str(raw).strip())
     except (TypeError, ValueError):
         return None
+
+
+def _resolution_of(width: int | None, height: int | None, dpi: int | None) -> str:
+    """宽高 + DPI → 显示档位（横竖屏都认）；不是两档之一就拒绝，不做静默吸附。"""
+    sides = sorted((width or 0, height or 0), reverse=True)
+    for name, (long_side, short_side, density) in RESOLUTIONS.items():
+        if sides == [long_side, short_side] and dpi == density:
+            return name
+    raise ValueError(
+        "官方模拟器的显示只有两档：720p（1280×720、DPI 240）与 1080p（1920×1080、DPI 280）"
+    )
 
 
 class AvdManager(AppLaunchMixin, _AvdCore):
@@ -890,6 +1287,8 @@ class AvdManager(AppLaunchMixin, _AvdCore):
             reason = incompatible_reason(package_name)
             if reason is not None:
                 raise IncompatibleGameError(reason)
+        # AppLaunchMixin 有意不把包名传给开机那一步；内存按游戏给，所以在这里记下
+        self._open_package = package_name or ""
         return await super().open(idx, package_name)
 
     async def launch_app(
@@ -903,6 +1302,8 @@ class AvdManager(AppLaunchMixin, _AvdCore):
         reason = incompatible_reason(package_name)
         if reason is not None:
             raise IncompatibleGameError(reason)
+        if package_name in VULKAN_FIX_PACKAGES:
+            await self.ensure_vulkan_fix(idx)
         serial = host.serial_of(console_port(idx))
         root = self.root
 
@@ -918,6 +1319,105 @@ class AvdManager(AppLaunchMixin, _AvdCore):
             launch_timeout=launch_timeout or min(max_wait, _LAUNCH_TIMEOUT_CAP),
             label=str(idx),
         )
+
+    async def ensure_vulkan_fix(self, idx: str) -> str:
+        """拉起星铁前的 Vulkan 修复：客体驱动补丁 bind mount，再重启 zygote，等 framework 回来。
+
+        照启动器 ``-VulkanFix``。改好的库缓存在客体 ``/data/local/tmp``，下次开机直接 mount；没有
+        缓存时从客体拉出原库，在这里核对 sha256、改 5 字节、推回去（:mod:`.vulkanfix`）。哈希对不上
+        就不打补丁，抛 :class:`IncompatibleGameError`（「这个镜像版本不支持星铁普通模式」）。
+        重启 zygote 会结束客体上所有应用，所以只在拉起星铁前做；本次开机已经做过就什么都不做。
+        返回客体脚本的状态词（MOUNTED / ALREADY）。
+        """
+        remote = f"{GUEST_TMP_DIR}/vulkanfix.sh"
+        if not await self._push(idx, guest_script("vulkanfix.sh"), remote):
+            raise RuntimeError(f"实例 {idx} 推送星铁 Vulkan 修复脚本失败")
+
+        async def run_fix() -> str:
+            _, output = await self._shell(
+                idx,
+                f"su 0 sh {remote} {VULKAN_ENC_ORIG_SHA256} {VULKAN_ENC_FIX_SHA256}",
+                timeout=60,
+            )
+            return output.strip()
+
+        _, ui_before = await self._shell(idx, "pidof com.android.systemui")
+        status = await run_fix()
+        if status.startswith("NEED_UPLOAD"):
+            await self._upload_patched_vulkan(idx)
+            status = await run_fix()
+        if status.startswith("ALREADY"):
+            logger.info(f"实例 {idx} 星铁 Vulkan 修复本次开机已生效")
+            return "ALREADY"
+        if not status.startswith("MOUNTED"):
+            logger.warning(f"实例 {idx} 星铁 Vulkan 修复没做: {status}")
+            if status.startswith("SKIPPED"):
+                raise IncompatibleGameError(
+                    f"{UNSUPPORTED_IMAGE_MESSAGE}（客体驱动库不是预期版本，没有打补丁）"
+                )
+            raise RuntimeError(f"实例 {idx} 星铁 Vulkan 修复失败: {status[-200:]}")
+        started = time.monotonic()
+        back = await self._wait_framework_back(idx, ui_before.strip())
+        logger.info(
+            f"实例 {idx} 星铁 Vulkan 修复已挂上，zygote 重启后 framework "
+            f"{'已回来' if back else '超时未回来'}（{time.monotonic() - started:.0f} 秒）"
+        )
+        return "MOUNTED"
+
+    async def _upload_patched_vulkan(self, idx: str) -> None:
+        """拉客体原库 → 核对哈希并打补丁 → 推到客体的上传位置。宿主侧临时文件用完即删。"""
+        serial = host.serial_of(console_port(idx))
+        work = self.root / CACHE_DIR
+        work.mkdir(parents=True, exist_ok=True)
+        original = work / f"libvulkan_enc-{idx}.so"
+        patched = work / f"libvulkan_enc-{idx}.khrfix.so"
+        try:
+            code, output = await host.run_adb(
+                self.root,
+                "pull",
+                VULKAN_ENC_GUEST_PATH,
+                str(original),
+                serial=serial,
+                timeout=60,
+            )
+            if code != 0 or not original.is_file():
+                raise RuntimeError(f"从客体拉驱动库失败: {output}")
+            try:
+                data = await asyncio.to_thread(
+                    patch_vulkan_encoder, original.read_bytes()
+                )
+            except VulkanFixError as e:
+                raise IncompatibleGameError(str(e)) from e
+            patched.write_bytes(data)
+            code, output = await host.run_adb(
+                self.root,
+                "push",
+                str(patched),
+                f"{GUEST_TMP_DIR}/khrfix-upload.so",
+                serial=serial,
+                timeout=60,
+            )
+            if code != 0:
+                raise RuntimeError(f"推送改好的驱动库失败: {output}")
+            logger.info(f"实例 {idx} 已在本机生成星铁 Vulkan 补丁库并推到客体")
+        finally:
+            original.unlink(missing_ok=True)
+            patched.unlink(missing_ok=True)
+
+    async def _wait_framework_back(
+        self, idx: str, ui_before: str, timeout: float = 120.0
+    ) -> bool:
+        """zygote 重启后等 SystemUI 换了新进程，再多等 8 秒（照启动器）。"""
+        deadline = time.monotonic() + timeout
+        await asyncio.sleep(2.0)
+        while time.monotonic() < deadline:
+            _, ui = await self._shell(idx, "pidof com.android.systemui", timeout=10)
+            ui = ui.strip()
+            if ui and ui != ui_before:
+                await asyncio.sleep(8.0)
+                return True
+            await asyncio.sleep(2.0)
+        return False
 
     async def stop_background_games(self, idx: str, keep: str) -> list[str]:
         """前台只留要跑的那个游戏，其余第三方应用直接结束（用户 09-26 定）。

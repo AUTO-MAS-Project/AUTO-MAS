@@ -244,7 +244,22 @@ async def instance_options(emulator_id: str, slot: str) -> dict[str, Any]:
 
 
 async def set_instance_options(
-    emulator_id: str, slot: str, *, headless: bool
+    emulator_id: str,
+    slot: str,
+    *,
+    headless: bool | None = None,
+    resolution: str | None = None,
+    memory_mb: int | None = None,
+    balloon: bool | None = None,
+    guest_angle: bool | None = None,
 ) -> dict[str, Any]:
+    """只改传了的项（``None`` = 不改）；``memory_mb=0`` = 内存按游戏自动。"""
     backend, native_index = await _backend(emulator_id, slot)
-    return backend.set_headless(native_index, headless)
+    return backend.set_instance_options(
+        native_index,
+        headless=headless,
+        resolution=resolution,
+        memory_mb=memory_mb,
+        balloon=balloon,
+        guest_angle=guest_angle,
+    )

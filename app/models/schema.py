@@ -5908,14 +5908,38 @@ class Emulator2AvdInstanceIn(BaseModel):
 class Emulator2AvdInstanceOptionsSetIn(BaseModel):
     emulatorId: str = Field(..., description="Emulator 2.0 配置 ID")
     slot: str = Field(..., description="设备号")
-    headless: bool = Field(
-        ..., description="true 无头 (静默, 没有窗口) / false 带窗口; 下次启动生效"
+    headless: Optional[bool] = Field(
+        default=None,
+        description="true 无头 (静默, 没有窗口) / false 带窗口; 不传不改; 下次启动生效",
+    )
+    resolution: Optional[Literal["720", "1080"]] = Field(
+        default=None,
+        description="显示档位: 720 (1280x720, DPI 240) / 1080 (1920x1080, DPI 280); 不传不改",
+    )
+    memoryMb: Optional[int] = Field(
+        default=None,
+        description="内存 MB (3072/4096/5120/6144), 0 = 按游戏自动; 不传不改",
+    )
+    balloon: Optional[bool] = Field(
+        default=None, description="空闲页上报 (气球) 开关; 不传不改"
+    )
+    guestAngle: Optional[bool] = Field(
+        default=None, description="客体走镜像自带 ANGLE (GuestAngle); 不传不改"
     )
 
 
 class Emulator2AvdInstanceOptionsOut(OutBase):
     headless: bool = Field(default=True, description="是否无头运行, 下次启动生效")
-    memoryMb: Optional[int] = Field(default=None, description="内存 MB")
+    resolution: str = Field(default="720", description="显示档位 720 / 1080")
+    memoryAuto: bool = Field(
+        default=True,
+        description="内存是否按游戏自动 (方舟 / 1999 / 崩坏三 4 GB, 星铁 5 GB, 其它 4 GB)",
+    )
+    balloon: bool = Field(default=True, description="空闲页上报 (气球) 是否开启")
+    guestAngle: bool = Field(default=False, description="是否启用 GuestAngle")
+    memoryMb: Optional[int] = Field(
+        default=None, description="手动指定的内存 MB; 按游戏自动时为兜底值 4096"
+    )
     cpu: Optional[int] = Field(default=None, description="CPU 核数")
     dataPartitionGb: Optional[int] = Field(default=None, description="数据盘上限 GB")
     initialized: bool = Field(
