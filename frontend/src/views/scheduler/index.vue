@@ -81,7 +81,8 @@
               v-model:selected-task-id="tab.selectedTaskId"
               v-model:selected-mode="tab.selectedMode"
               v-model:resume-from-script-id="tab.resumeFromScriptId"
-              v-model:selected-user-id="tab.selectedUserId"
+              v-model:selected-user-ids="tab.selectedUserIds"
+              v-model:queue-user-scope="tab.queueUserScope"
               v-model:running-task-label="tab.runningTaskLabel"
               v-model:running-mode-label="tab.runningModeLabel"
               :resume-script-options="tab.resumeScriptOptions || []"
@@ -93,10 +94,14 @@
               :status="tab.status"
               :is-cycle-queue="tab.isCycleQueue"
               :cycle-next-list="tab.cycleNextList || []"
+              :queue-scope-groups="tab.queueScopeGroups || []"
+              :queue-scope-loading="tab.queueScopeLoading"
+              :queue-scope-failed="tab.queueScopeFailed"
               :disabled="tab.status === '运行'"
               @task-changed="(taskId: string | null) => handleTaskSelectionChange(tab, taskId)"
               @refresh-resume-scripts="() => loadResumeScriptOptions(tab)"
               @refresh-users="() => loadUserOptions(tab)"
+              @refresh-queue-scope="() => loadQueueScope(tab)"
               @start="onStartTaskClick(tab)"
               @stop="stopTask(tab)"
               @refresh-tasks="loadTaskOptions"
@@ -111,6 +116,7 @@
                 <SchedulerLogPanel
                   :log-content="tab.lastLogContent"
                   :external-log-mode="tab.logMode"
+                  :first-line="tab.displayLogFirstLine ?? tab.logFirstLine ?? 1"
                 />
               </div>
             </div>
@@ -178,6 +184,7 @@ const {
   handleTaskSelectionChange,
   loadResumeScriptOptions,
   loadUserOptions,
+  loadQueueScope,
 
   // keep-alive 激活/停用
   setSchedulerViewActive,

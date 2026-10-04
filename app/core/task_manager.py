@@ -24,10 +24,11 @@ import asyncio
 import os
 import time
 import uuid
+from collections import OrderedDict
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Callable, Dict, Literal
+from typing import Callable, Dict, Iterable, Literal
 
 import app.task as task
 from app.core.desktop_guard import ensure_desktop_available
@@ -35,6 +36,7 @@ from app.models.config import CLASS_BOOK
 from app.models.schema import (
     TaskRuntimeSnapshot,
     TaskRuntimeSnapshotItem,
+    TaskStatusOut,
     WSPowerSignData,
     WSTaskCompletedData,
     WSTaskCreatedData,
@@ -52,6 +54,7 @@ from app.models.task import (
     UserItem,
 )
 from app.runtime_tasks import RuntimeTasks
+from app.tools.push_log import build_task_result_text
 from app.utils import LazyProxy, get_logger
 
 from .config import (
@@ -95,14 +98,20 @@ System = LazyProxy("app.services", "System")
 # 脚本配置类名 → 脚本类型键（与 ScriptCreateIn.type 词表一致）
 _SCRIPT_TYPE_BY_CLASS = {cls.__name__: key for key, cls in CLASS_BOOK.items()}
 
+# 最近完成任务的状态留存：任务一结束就会从运行快照摘掉，凭 taskId 单点查询
+# 只能靠这里回读终态，所以留一个有限窗口（条数上限 + 留存时长）。
+_RECENT_RESULTS_MAX = 200
+_RECENT_RESULTS_TTL_SECONDS = 1800
+
 
 @dataclass(frozen=True)
 class _ManagerBuildContext:
-    """构造脚本调度器所需的额外输入（占用归属与 SRC 根路径）。"""
+    """构造脚本调度器所需的额外输入（占用归属与互斥资源）。"""
 
     script_uid: uuid.UUID
     reservation_owner: str
-    src_root_path: Path | None
+    root_paths: tuple[Path, ...]
+    emulator_key: str | None
     reservations: "_ScriptTaskReservations"
 
 
@@ -111,15 +120,17 @@ def _build_src_manager(
 ) -> TaskExecuteBase:
     """SRC 要把 src 根路径的占用回调交给调度器，占用记在构建上下文的预留表里。"""
 
-    if ctx.src_root_path is None:
+    if not ctx.root_paths:
         raise RuntimeError("SRC 路径占用未初始化")
     return task.SrcManager(
         script_item,
-        reserved_src_root_path=ctx.src_root_path,
+        reserved_src_root_path=ctx.root_paths[0],
+        # 追加历史根目录时要带上模拟器键，别在 re-acquire 时把它丢掉。
         reserve_src_root=lambda root_path: ctx.reservations.try_acquire(
             ctx.script_uid,
             ctx.reservation_owner,
-            src_root_path=root_path,
+            root_paths=(root_path,),
+            emulator_key=ctx.emulator_key,
         ),
     )
 
@@ -168,16 +179,19 @@ class _ScriptTaskReservations:
     def __init__(self) -> None:
         self._owners: dict[tuple[str, str], str] = {}
         self._owner_keys: dict[str, dict[uuid.UUID, set[tuple[str, str]]]] = {}
-        self._src_root_paths: dict[str, Path] = {}
+        self._reserved_root_paths: dict[tuple[str, str], Path] = {}
 
     @staticmethod
     def _resource_keys(
         script_uid: uuid.UUID,
-        src_root_path: Path | None,
+        root_paths: tuple[Path, ...],
+        emulator_key: str | None,
     ) -> set[tuple[str, str]]:
         keys = {("script", str(script_uid))}
-        if src_root_path is not None:
-            keys.add(("src-root", _normalize_src_root_path(src_root_path.resolve())))
+        for root_path in root_paths:
+            keys.add(("install-root", _normalize_src_root_path(root_path)))
+        if emulator_key is not None:
+            keys.add(("emulator", emulator_key))
         return keys
 
     def try_acquire(
@@ -185,29 +199,28 @@ class _ScriptTaskReservations:
         script_uid: uuid.UUID,
         owner: str,
         *,
-        src_root_path: Path | None = None,
+        root_paths: Iterable[Path] = (),
+        emulator_key: str | None = None,
     ) -> bool:
-        resolved_root_path = (
-            src_root_path.resolve() if src_root_path is not None else None
-        )
-        keys = self._resource_keys(script_uid, resolved_root_path)
+        resolved_root_paths = tuple(path.resolve() for path in root_paths)
+        keys = self._resource_keys(script_uid, resolved_root_paths, emulator_key)
         if any(self._owners.get(key) not in (None, owner) for key in keys):
             return False
 
-        root_key = next((key for key in keys if key[0] == "src-root"), None)
-        if root_key is not None and resolved_root_path is not None:
-            root_path = _normalize_src_root_path(resolved_root_path)
-            for key, existing_owner in self._owners.items():
-                if key[0] != "src-root" or existing_owner == owner:
-                    continue
-                existing_src_root_path = self._src_root_paths.get(key)
-                if existing_src_root_path is None:
-                    continue
-                existing_root_path = _normalize_src_root_path(existing_src_root_path)
+        # 父子目录同样算同一个安装目录：所有安装根键参与同一次包含判定。
+        for key, existing_owner in self._owners.items():
+            if key[0] != "install-root" or existing_owner == owner:
+                continue
+            existing_src_root_path = self._reserved_root_paths.get(key)
+            if existing_src_root_path is None:
+                continue
+            existing_root_path = _normalize_src_root_path(existing_src_root_path)
+            for root_path in resolved_root_paths:
+                root_path_key = _normalize_src_root_path(root_path)
                 if (
-                    root_path == existing_root_path
-                    or _is_relative_src_root(root_path, existing_root_path)
-                    or _is_relative_src_root(existing_root_path, root_path)
+                    root_path_key == existing_root_path
+                    or _is_relative_src_root(root_path_key, existing_root_path)
+                    or _is_relative_src_root(existing_root_path, root_path_key)
                 ):
                     return False
 
@@ -216,8 +229,9 @@ class _ScriptTaskReservations:
         self._owner_keys.setdefault(owner, {}).setdefault(script_uid, set()).update(
             keys
         )
-        if root_key is not None and resolved_root_path is not None:
-            self._src_root_paths[root_key] = resolved_root_path
+        for root_path in resolved_root_paths:
+            root_key = ("install-root", _normalize_src_root_path(root_path))
+            self._reserved_root_paths[root_key] = root_path
         return True
 
     def release(self, script_uid: uuid.UUID, owner: str) -> bool:
@@ -232,9 +246,8 @@ class _ScriptTaskReservations:
             )
             if not key_still_reserved and self._owners.get(key) == owner:
                 self._owners.pop(key)
-            if key[0] == "src-root":
-                if not key_still_reserved:
-                    self._src_root_paths.pop(key, None)
+            if key[0] == "install-root" and not key_still_reserved:
+                self._reserved_root_paths.pop(key, None)
         if not self._owner_keys.get(owner):
             self._owner_keys.pop(owner, None)
         return True
@@ -246,16 +259,55 @@ def _normalize_src_root_path(path: Path) -> str:
 
 def _is_relative_src_root(path: Path | str, parent: Path | str) -> bool:
     path = str(path)
-    parent = str(parent)
+    # 父目录是盘根时归一后带尾分隔符（"c:\\"），不先去掉就会拼出双分隔符而判不出子目录。
+    parent = str(parent).rstrip(os.sep)
     return path.startswith(parent + os.sep)
 
 
-def _get_src_root_path(script_config: object) -> Path | None:
-    """返回需要跨配置互斥的 SRC 安装根目录。"""
+def _exclusive_resources(
+    script_config: object,
+) -> tuple[tuple[Path, ...], str | None]:
+    """返回跨配置互斥所需的安装根目录与模拟器实例键。
 
-    if not isinstance(script_config, SrcConfig):
+    安装目录只取运行期真的会写入的来源目录（MAA / MaaEnd / SRC）；MaaFW 跑的是
+    data 下的独立副本，来源目录不进安装目录互斥，否则会把合法的并发压成串行。
+    """
+
+    roots: tuple[Path, ...] = ()
+    if isinstance(script_config, (MaaConfig, SrcConfig, MaaEndConfig)):
+        raw = str(script_config.get("Info", "Path") or "").strip()
+        roots = (Path(raw),) if raw else ()
+    return roots, _emulator_key(script_config)
+
+
+def _emulator_key(script_config: object) -> str | None:
+    """返回「模拟器配置 Id:实例序号」互斥键；未绑定模拟器时返回 None。"""
+
+    if isinstance(script_config, (MaaConfig, SrcConfig, MaaFWConfig, BAAHConfig)):
+        # M9A / MSS 是 MaaFWConfig 的子类，自动覆盖；BAAH 与 MAA 同用 Emulator.Id / Index。
+        emulator_id = script_config.get("Emulator", "Id")
+        index = script_config.get("Emulator", "Index")
+    elif isinstance(script_config, MaaEndConfig):
+        # 这里不看 Game.ControllerType：它是控制器「名字」，协议（Adb/Win32）要读
+        # 控制器配置才知道，调度层不为此去碰文件。Win32 直控的配置留空 "-" 就自
+        # 然没有实例键；真写了模拟器就按占用处理，宁可多串一次也不漏一次冲突。
+        emulator_id = script_config.get("Game", "EmulatorId")
+        index = script_config.get("Game", "EmulatorIndex")
+    elif isinstance(script_config, GeneralConfig):
+        # 通用脚本只在「启用游戏 + 类型为模拟器」时才持有模拟器实例（见 General/manager.py
+        # 的配置检查与 get_emulator_instance 调用）；Client / URL 类型即便残留了模拟器绑定
+        # 也不占实例键，免得把合法并发压成串行。
+        if not script_config.get("Game", "Enabled") or (
+            script_config.get("Game", "Type") != "Emulator"
+        ):
+            return None
+        emulator_id = script_config.get("Game", "EmulatorId")
+        index = script_config.get("Game", "EmulatorIndex")
+    else:
         return None
-    return Path(script_config.get("Info", "Path"))
+    if str(emulator_id or "") in ("", "-") or str(index or "") in ("", "-"):
+        return None
+    return f"{emulator_id}:{index}"
 
 
 class TaskInfo(TaskItem):
@@ -271,28 +323,48 @@ class TaskInfo(TaskItem):
             ),
         )
         if self.current_index != -1:
-            log = self.script_list[self.current_index].log
-            if log == self._last_pushed_log:
+            script = self.script_list[self.current_index]
+            log = script.log
+            if (
+                log == self._last_pushed_log
+                and script.log_first_line == self._last_pushed_log_first_line
+            ):
                 return
             # 日志只在尾部追加时只推增量；首次推送或日志被重置/变短时整体替换。
             # 部分任务模式（MAA/SRC/General/M9A）无上限累积脚本日志，全量 JSON
             # 序列化超大字符串会在 iterencode 阶段 MemoryError；整体替换时做
             # 防御性限长（保留最新日志），一处覆盖所有任务模式。
-            if self._last_pushed_log and log.startswith(self._last_pushed_log):
+            if (
+                self._last_pushed_log
+                and log.startswith(self._last_pushed_log)
+                and script.log_first_line == self._last_pushed_log_first_line
+            ):
                 payload = log[len(self._last_pushed_log) :]
                 append = True
+                # 追加段接着界面已有的内容往下排，行号由前端自己累加，这个值不会被读；
+                # 字段本身有默认值，这里只是把它显式带上，保持两种分支的载荷形状一致。
+                first_line = WSTaskLogUpdatedData.model_fields["firstLine"].default
             else:
                 payload = log[-200_000:]
                 append = False
+                # 界面行号 = 这段内容在完整日志里的真实行号：生产者自己截掉的那部分
+                # （script.log_first_line）加上这里又被截掉的行数。
+                dropped_hint = log[: len(log) - len(payload)]
+                first_line = script.log_first_line + dropped_hint.count("\n")
             self._log_seq += 1
             await Publisher.send(
                 id=self.task_id,
                 type=protocol.TASK_LOG_UPDATED,
                 data=WSTaskLogUpdatedData(
-                    log=payload, seq=self._log_seq, append=append
+                    log=payload,
+                    seq=self._log_seq,
+                    append=append,
+                    firstLine=first_line,
                 ),
             )
             self._last_pushed_log = log
+            if not append:
+                self._last_pushed_log_first_line = script.log_first_line
 
 
 class Task(TaskExecuteBase):
@@ -302,10 +374,13 @@ class Task(TaskExecuteBase):
         script_identities: list[WSTaskScriptIdentityData],
         script_reservations: _ScriptTaskReservations | None = None,
         script_run_days: list[list[str]] | None = None,
+        on_finished: Callable[[TaskStatusOut], None] | None = None,
     ):
         super().__init__()
         self.task_info = task_info
         self.script_identities = script_identities
+        # 结束时的终态回调（调度器用来留存结果，供 taskId 单点查询）
+        self._on_finished = on_finished
         # 队列项限定的运行周几，与 script_identities 一一对应；非队列任务为 None。
         # 以任务创建那一刻的星期为准，队列跨过午夜后后面的项不会按第二天算。
         self.script_run_days = script_run_days
@@ -339,9 +414,17 @@ class Task(TaskExecuteBase):
                 script_id=script_id,
                 status="等待",
                 name=Config.ScriptConfig[uuid.UUID(script_id)].get("Info", "Name"),
-                user_list=[
-                    UserItem(user_id=str(uuid.uuid4()), name="暂未加载", status="等待")
-                ],
+                # AutoProxy 的真实用户由对应 manager 在轮到该脚本时加载；提前
+                # 播种占位项会把未轮到的脚本伪装成已有一个用户。
+                user_list=(
+                    []
+                    if self.task_info.mode == "AutoProxy"
+                    else [
+                        UserItem(
+                            user_id=str(uuid.uuid4()), name="暂未加载", status="等待"
+                        )
+                    ]
+                ),
             )
             for script_id in script_ids
         ]
@@ -396,7 +479,8 @@ class Task(TaskExecuteBase):
         *,
         script_uid: uuid.UUID,
         reservation_owner: str,
-        src_root_path: Path | None,
+        root_paths: tuple[Path, ...],
+        emulator_key: str | None,
     ):
         """按脚本类型构造对应的脚本调度器，类型不支持时返回 None。
 
@@ -412,7 +496,8 @@ class Task(TaskExecuteBase):
             _ManagerBuildContext(
                 script_uid=script_uid,
                 reservation_owner=reservation_owner,
-                src_root_path=src_root_path,
+                root_paths=root_paths,
+                emulator_key=emulator_key,
                 reservations=self.script_reservations,
             ),
         )
@@ -433,6 +518,7 @@ class Task(TaskExecuteBase):
         # prepare 也放进 try，它一失败标记就得跟着清。
         try:
             await self.prepare()
+            await self._notice_scope_skipped_scripts()
             while True:
                 await self._run_cycle_round(queue_uid)
         finally:
@@ -445,7 +531,7 @@ class Task(TaskExecuteBase):
 
         queue = Config.QueueConfig[queue_uid]
         now = datetime.now()
-        entries = collect_cycle_entries(queue, Config.ScriptConfig, now)
+        entries = self._collect_entries(queue_uid)
 
         # 首次推算的结果要落盘，重启后才不会当成「立刻可跑」重来一遍。
         # 只在还是空值哨兵时写：已经排过期的每轮重写一遍纯属白费写盘。
@@ -503,11 +589,44 @@ class Task(TaskExecuteBase):
         if results and not any(result == "success" for result in results):
             await asyncio.sleep(CYCLE_RETRY_SLEEP_SECONDS)
 
-    @staticmethod
-    def _collect_entries(queue_uid: uuid.UUID) -> list[CycleEntry]:
-        return collect_cycle_entries(
+    def _scope_skipped_script_ids(self) -> set[str]:
+        """本次运行范围内被整项排除的托管（勾选后一个用户都没选）。"""
+
+        scope = self.task_info.user_ids_by_script
+        if not scope:
+            return set()
+        return {script_id for script_id, user_ids in scope.items() if not user_ids}
+
+    async def _notice_scope_skipped_scripts(self) -> None:
+        """循环运行前把本次未选择任何用户的托管标记为跳过，并只提示一次。"""
+
+        skipped = self._scope_skipped_script_ids()
+        if not skipped:
+            return
+        for script_item in self.task_info.script_list:
+            if script_item.script_id not in skipped:
+                continue
+            script_item.status = "跳过"
+            logger.info(f"跳过任务: {script_item.script_id}, 本次未选择任何用户")
+            await Publisher.send(
+                id=self.task_info.task_id,
+                type=protocol.TASK_NOTICE,
+                data=WSTaskNoticeData(
+                    level="warning",
+                    message=f"任务 {script_item.name} 本次未选择任何用户, 已跳过",
+                ),
+            )
+
+    def _collect_entries(self, queue_uid: uuid.UUID) -> list[CycleEntry]:
+        """收集队列的待运行条目，并剔除本次一个用户都没选的托管。"""
+
+        entries = collect_cycle_entries(
             Config.QueueConfig[queue_uid], Config.ScriptConfig, datetime.now()
         )
+        skipped = self._scope_skipped_script_ids()
+        if not skipped:
+            return entries
+        return [entry for entry in entries if entry.script_id not in skipped]
 
     async def _run_cycle_entry(
         self,
@@ -547,12 +666,15 @@ class Task(TaskExecuteBase):
             return "failed"
 
         script_config = Config.ScriptConfig[script_uid]
-        src_root_path = _get_src_root_path(script_config)
+        root_paths, emulator_key = _exclusive_resources(script_config)
         reservation_owner = self.task_info.task_id
 
         # 与顺序执行同一套原子占用，不再自己判 is_locked 轮询。
         if script_config.is_locked or not self.script_reservations.try_acquire(
-            script_uid, reservation_owner, src_root_path=src_root_path
+            script_uid,
+            reservation_owner,
+            root_paths=root_paths,
+            emulator_key=emulator_key,
         ):
             script_item.status = "等待"
             logger.info(f"循环等待: {entry.script_name} 已被其他任务占用")
@@ -579,7 +701,8 @@ class Task(TaskExecuteBase):
                 script_config,
                 script_uid=script_uid,
                 reservation_owner=reservation_owner,
-                src_root_path=src_root_path,
+                root_paths=root_paths,
+                emulator_key=emulator_key,
             )
             if task_item is None:
                 script_item.status = "异常"
@@ -757,6 +880,21 @@ class Task(TaskExecuteBase):
                 )
                 continue
 
+            # 队列任务按托管勾选了本次运行范围时，一个用户都没选的托管整项跳过
+            script_scope = self.task_info.script_user_scope(script_item.script_id)
+            if script_scope is not None and not script_scope:
+                script_item.status = "跳过"
+                logger.info(f"跳过任务: {current_script_uid}, 本次未选择任何用户")
+                await Publisher.send(
+                    id=self.task_info.task_id,
+                    type=protocol.TASK_NOTICE,
+                    data=WSTaskNoticeData(
+                        level="warning",
+                        message=f"任务 {script_item.name} 本次未选择任何用户, 已跳过",
+                    ),
+                )
+                continue
+
             if not self._is_script_scheduled_today(self.task_info.current_index):
                 script_item.status = "跳过"
                 logger.info(
@@ -767,11 +905,12 @@ class Task(TaskExecuteBase):
             # 原子占用脚本，避免两个调度器同时通过布尔锁前置检查。
             reservation_owner = self.task_info.task_id
             script_config = Config.ScriptConfig[current_script_uid]
-            src_root_path = _get_src_root_path(script_config)
+            root_paths, emulator_key = _exclusive_resources(script_config)
             if not self.script_reservations.try_acquire(
                 current_script_uid,
                 reservation_owner,
-                src_root_path=src_root_path,
+                root_paths=root_paths,
+                emulator_key=emulator_key,
             ):
                 script_item.status = "跳过"
                 logger.info(
@@ -810,7 +949,8 @@ class Task(TaskExecuteBase):
                     script_config,
                     script_uid=current_script_uid,
                     reservation_owner=reservation_owner,
-                    src_root_path=src_root_path,
+                    root_paths=root_paths,
+                    emulator_key=emulator_key,
                 )
                 if task_item is None:
                     script_item.status = "异常"
@@ -834,16 +974,35 @@ class Task(TaskExecuteBase):
 
         logger.info(f"任务结束: {self.task_info.task_id}")
 
+        # 完成面板文本带采集节点详情（与推送报告同源渲染），
+        # 未配置推送的用户在调度台也能看到
+        result_text = build_task_result_text(self.task_info.script_list)
         await Publisher.send(
             id=str(self.task_info.task_id),
             type=protocol.TASK_COMPLETED,
             data=WSTaskCompletedData(
-                result=self.task_info.result,
+                result=result_text,
                 outcome=self._exit_result,
                 error=self._exit_error,
                 task_info=self.task_info.asdict,
             ),
         )
+        # 同一步里先留存终态：任务从运行快照摘掉后仍要能凭 taskId 查到
+        if self._on_finished is not None:
+            self._on_finished(
+                TaskStatusOut(
+                    taskId=str(self.task_info.task_id),
+                    status=self._exit_result,
+                    detail=result_text,
+                    error=self._exit_error,
+                    mode=self.task_info.mode,
+                    isCycle=self.task_info.is_cycle,
+                    queueId=self.task_info.queue_id,
+                    scriptId=self.task_info.script_id,
+                    userId=self.task_info.user_id,
+                    finishedAt=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                )
+            )
 
         # 循环任务只会被用户主动停止，此时不该再执行队列的「完成后操作」——
         # 那会把关机之类的动作接在一次手动停止后面。
@@ -891,6 +1050,10 @@ class _TaskManager:
 
         self.task_info: Dict[uuid.UUID, TaskInfo] = {}
         self.task_handler: Dict[uuid.UUID, Task] = {}
+        # taskId → (结束时刻的单调读数, 终态)，供单点查询在任务摘掉后回读
+        self._recent_results: OrderedDict[str, tuple[float, TaskStatusOut]] = (
+            OrderedDict()
+        )
         self._script_reservations = _ScriptTaskReservations()
         self._cleanup_tasks: set[asyncio.Task[None]] = set()
         self._stop_all_lock = asyncio.Lock()
@@ -955,6 +1118,50 @@ class _TaskManager:
 
         return list(identities.values())
 
+    def _remember_result(self, status: TaskStatusOut) -> None:
+        """留存刚结束任务的终态，供已摘掉的任务按 taskId 回查。"""
+
+        self._recent_results.pop(status.taskId, None)
+        self._recent_results[status.taskId] = (time.monotonic(), status)
+        while len(self._recent_results) > _RECENT_RESULTS_MAX:
+            self._recent_results.popitem(last=False)
+
+    def _prune_recent_results(self) -> None:
+        """丢弃超出留存时长的终态，避免陈旧结果被当成刚结束的任务。"""
+
+        deadline = time.monotonic() - _RECENT_RESULTS_TTL_SECONDS
+        while self._recent_results:
+            finished_at, _ = next(iter(self._recent_results.values()))
+            if finished_at > deadline:
+                break
+            self._recent_results.popitem(last=False)
+
+    def get_task_status(self, task_id: str) -> TaskStatusOut | None:
+        """按 taskId 单点返回运行中或最近完成任务的终态；找不到返回 None。"""
+
+        try:
+            task_uid = uuid.UUID(task_id)
+        except ValueError:
+            return None
+
+        task_info = self.task_info.get(task_uid)
+        if task_info is not None:
+            handler = self.task_handler.get(task_uid)
+            return TaskStatusOut(
+                taskId=task_id,
+                status="running",
+                mode=task_info.mode,
+                isCycle=task_info.is_cycle,
+                queueId=task_info.queue_id,
+                scriptId=task_info.script_id,
+                userId=task_info.user_id,
+                stopping=bool(handler and handler.is_closing),
+            )
+
+        self._prune_recent_results()
+        remembered = self._recent_results.get(task_id)
+        return remembered[1] if remembered is not None else None
+
     def get_runtime_snapshot(self) -> TaskRuntimeSnapshot:
         """返回任务运行状态与定时队列的 HTTP 初始快照。"""
 
@@ -979,6 +1186,10 @@ class _TaskManager:
                     # 返回上次推送的日志而非当前日志, 保证与下一条增量推送衔接
                     log=task_info._last_pushed_log[-200_000:],
                     logSeq=task_info._log_seq,
+                    logFirstLine=task_info._last_pushed_log_first_line
+                    + task_info._last_pushed_log.count(
+                        "\n", 0, max(0, len(task_info._last_pushed_log) - 200_000)
+                    ),
                 )
             )
         return TaskRuntimeSnapshot(
@@ -1042,6 +1253,45 @@ class _TaskManager:
             )
         return user_uid
 
+    def _resolve_target_users(
+        self, script_uid: uuid.UUID, user_ids: list[str] | None
+    ) -> frozenset[str] | None:
+        # 校验多选运行所指定的用户集合。
+        if user_ids is None:
+            return None
+        if not user_ids:
+            raise ValueError("至少选择一个用户")
+
+        selected: set[str] = set()
+        for user_id in user_ids:
+            user_uid = self._resolve_target_user(script_uid, user_id)
+            if user_uid is not None:
+                selected.add(str(user_uid))
+
+        return frozenset(selected)
+
+    def _resolve_queue_user_scope(
+        self, queue_id: uuid.UUID, queue_user_ids: dict[str, list[str]]
+    ) -> dict[str, frozenset[str]]:
+        # 校验队列任务按脚本指定的本次运行用户，口径与脚本任务的多选一致。
+        queue_script_ids = {
+            str(script_id) for script_id in self._queue_script_ids(queue_id)
+        }
+        scope: dict[str, frozenset[str]] = {}
+        for script_id, user_ids in queue_user_ids.items():
+            if script_id not in queue_script_ids:
+                queue_name = Config.QueueConfig[queue_id].get("Info", "Name")
+                raise ValueError(f"脚本 {script_id} 不属于队列 {queue_name}")
+            if not user_ids:
+                # 空集合是有意义的取值：该托管本次一个用户都不跑。
+                scope[script_id] = frozenset()
+                continue
+            scope[script_id] = (
+                self._resolve_target_users(uuid.UUID(script_id), list(user_ids))
+                or frozenset()
+            )
+        return scope
+
     async def add_task(
         self,
         mode: Literal["AutoProxy", "ScriptConfig", "Update", "CycleRun"],
@@ -1049,6 +1299,8 @@ class _TaskManager:
         new_task_info: dict | None = None,
         resume_from_script_id: str | None = None,
         user_id: str | None = None,
+        user_ids: list[str] | None = None,
+        queue_user_ids: dict[str, list[str]] | None = None,
         trigger_source: TaskTriggerSource = "manual_task",
         view_only: bool = False,
         instance_idx: int | None = None,
@@ -1061,6 +1313,9 @@ class _TaskManager:
             id (str): 任务项对应的配置 ID
             new_task_info (dict): 新任务项信息. Defaults to {}.
             user_id (str): 单独运行的用户 ID; 仅脚本的自动代理任务可用。
+            user_ids (list[str]): 多选运行的用户 ID; 仅脚本的自动代理任务可用。
+            queue_user_ids (dict[str, list[str]]): 按脚本ID指定本次运行的用户 ID;
+                仅队列任务可用, 未列出的脚本不限, 空列表表示该脚本本次整项跳过。
             trigger_source: MAS 任务触发来源，API 手动启动默认 manual_task。
             view_only: 配置查看会话（ScriptConfig 专用）：只读打开原生界面，
                 不注入基线也不回读字段，用于「查看历史备份」等预览场景。
@@ -1078,12 +1333,21 @@ class _TaskManager:
         if self._stopping_all:
             raise RuntimeError("正在停止全部任务，暂不接受新任务")
 
-        # 指定单个用户只对「脚本 + 自动代理」成立；队列到不了用户粒度，设置类任务
+        # 用户范围只对「脚本 + 自动代理」成立；队列到不了用户粒度，设置类任务
         # 的用户由 uid 自身表达。放在循环队列占用标记之前，避免拒绝时留下脏标记。
-        if user_id is not None and (
+        if user_id is not None and user_ids is not None:
+            raise ValueError("多选用户不能与单独运行用户同时使用")
+
+        if (user_id is not None or user_ids is not None) and (
             mode != "AutoProxy" or uid not in Config.ScriptConfig
         ):
-            raise ValueError("指定单个用户仅支持脚本的自动代理任务")
+            raise ValueError("指定运行用户仅支持脚本的自动代理任务")
+
+        # 队列的用户范围是按托管分别收窄，与脚本任务的整任务用户范围是两套入参。
+        if queue_user_ids is not None and (
+            mode not in ("AutoProxy", "CycleRun") or uid not in Config.QueueConfig
+        ):
+            raise ValueError("按脚本指定运行用户仅支持队列任务")
 
         # CycleRun 只是「怎么排」的差别，脚本仍按自动代理执行；各脚本适配器
         # 只认 AutoProxy，所以模式在这里就翻译掉，循环与否记在 is_cycle 上。
@@ -1105,6 +1369,9 @@ class _TaskManager:
                 )
             # 立刻打上占用标记：检查到这里之间没有 await，并发的两次启动才不会都通过
             Config.running_cycle_queue_ids.add(uid)
+
+        selected_user_ids: frozenset[str] | None = None
+        selected_user_scope: dict[str, frozenset[str]] | None = None
 
         if mode in ("ScriptConfig", "Update"):
             if uid in Config.ScriptConfig:
@@ -1132,6 +1399,7 @@ class _TaskManager:
             queue_id = None
             script_uid = uid
             user_uid = self._resolve_target_user(uid, user_id)
+            selected_user_ids = self._resolve_target_users(uid, user_ids)
         else:
             raise ValueError(f"任务 {uid} 无法找到对应脚本配置")
 
@@ -1146,6 +1414,10 @@ class _TaskManager:
             ]
             target_script_ids = [script_id for script_id, _ in queue_entries]
             script_run_days = [days for _, days in queue_entries]
+            if queue_user_ids is not None:
+                selected_user_scope = self._resolve_queue_user_scope(
+                    queue_id, queue_user_ids
+                )
         elif script_uid is not None and script_uid in Config.ScriptConfig:
             target_script_ids = [script_uid]
         else:
@@ -1158,10 +1430,12 @@ class _TaskManager:
         reservation_acquired = False
         if script_uid is not None:
             script_config = Config.ScriptConfig[script_uid]
+            root_paths, emulator_key = _exclusive_resources(script_config)
             if script_config.is_locked or not self._script_reservations.try_acquire(
                 script_uid,
                 reservation_owner,
-                src_root_path=_get_src_root_path(script_config),
+                root_paths=root_paths,
+                emulator_key=emulator_key,
             ):
                 raise RuntimeError(f"任务 {script_config.get('Info', 'Name')} 已在运行")
             reservation_acquired = True
@@ -1178,6 +1452,8 @@ class _TaskManager:
                 queue_id=str(queue_id) if queue_id else None,
                 script_id=str(script_uid) if script_uid else None,
                 user_id=str(user_uid) if user_uid else None,
+                user_ids=selected_user_ids,
+                user_ids_by_script=selected_user_scope,
                 resume_from_script_id=resume_from_script_id,
                 trigger_source=trigger_source,
                 is_cycle=is_cycle,
@@ -1189,6 +1465,7 @@ class _TaskManager:
                 script_identities,
                 self._script_reservations,
                 script_run_days=script_run_days,
+                on_finished=self._remember_result,
             )
             await Publisher.send(
                 id=protocol.ID_TASK_MANAGER,

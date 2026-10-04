@@ -33,7 +33,7 @@ import hashlib
 import json
 import os
 import shutil
-import zipfile
+import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -48,19 +48,9 @@ from app.services.wuthering_waves import (
     write_wuthering_waves_local_version,
 )
 from app.utils import get_logger
+from app.utils.hpatchz import ensure_hpatchz
 
 logger = get_logger("鸣潮更新")
-
-# hpatchz 用于应用官方增量包。上游 sisong/HDiffPatch 为 MIT，与本项目 AGPL 兼容。
-# 仓库不跟踪二进制，故首次需要增量更新时按需下载并校验后缓存。
-_HPATCHZ_VERSION = "v5.1.3"
-_HPATCHZ_URL = (
-    "https://github.com/sisong/HDiffPatch/releases/download/"
-    f"{_HPATCHZ_VERSION}/hdiffpatch_{_HPATCHZ_VERSION}_bin_windows64.zip"
-)
-_HPATCHZ_ZIP_SHA256 = "77f141386e5d8f785c1c846e10fbbc19b6c05aa00e3f59cc44670fb3f0e2ae94"
-_HPATCHZ_MEMBER = "windows64/hpatchz.exe"
-_HPATCHZ_CACHE_DIR = Path.cwd() / "data" / "cache" / "hpatchz"
 
 # 暂存区放在安装目录内，确保与游戏目录同卷，move 才是原子改名而非跨卷复制。
 _STAGING_DIR_NAME = "_mas_update"
@@ -75,6 +65,24 @@ _HTTP_TIMEOUT = httpx.Timeout(30.0, connect=15.0)
 _FULL_SYNC_SIZE_LIMIT = 10 * 1024**3
 
 ProgressHook = Callable[[str], Awaitable[None]]
+# 已收到字节数回调：每写出一块字节调一次，只报本次真正收到的字节。
+BytesHook = Callable[[int], Awaitable[None]]
+
+# 调度台里的下载进度行按「进度跨度 + 时间上限」节流。日志是追加的、只增不减，无脑刷会把
+# 用户自己的运行日志淹掉；但只看跨度（每 5%）在慢网下又要几分钟才一行，正是用户抱怨的
+# 「看着像卡住了」。速度是两条相邻进度行之间的平均，所以两次之间至少要隔 1 秒；时间上限
+# 只在字节还在到达时起作用，真停流会先撞上读超时（_HTTP_TIMEOUT）并报下载失败。
+_PROGRESS_PERCENT_STEP = 5.0
+_PROGRESS_MIN_INTERVAL = 1.0
+_PROGRESS_MAX_INTERVAL = 5.0
+
+# hpatchz 的返回码里，下面这些说明「补丁自己的布局 hpatchz 读不了」，与用户是否改过游戏
+# 文件无关。这时逐组回退整文件重下修不好布局，只会白下几十 GB（issue #1133 的 20GB 就是
+# 这么来的），必须立刻停下报错。其余返回码（旧文件缺失/被改、包下载损坏）仍按组回退。
+_KRD_PATCH_STRUCTURE_CODES = frozenset({101, 102, 103, 109})
+
+# 探测补丁头只取这么多字节：目录数据表本身很小，64KB 足够覆盖头部加目录数据。
+_PATCH_HEAD_PROBE_BYTES = 64 * 1024
 
 
 @dataclass(frozen=True)
@@ -419,9 +427,17 @@ def _entry_url(cdn: str, plan: UpdatePlan, entry: ResourceEntry) -> str:
 
 
 async def _stream_to_file(
-    client: httpx.AsyncClient, url: str, target: Path, expected_size: int
+    client: httpx.AsyncClient,
+    url: str,
+    target: Path,
+    expected_size: int,
+    on_bytes: BytesHook | None = None,
 ) -> None:
-    """流式下载，支持断点续传。"""
+    """流式下载，支持断点续传。
+
+    on_bytes 每写出一块字节被调一次，只报本次真正收到的字节；续传时文件里已有的前缀
+    由调用方算进基线（见 download_plan），不在这里重复报。
+    """
 
     done = target.stat().st_size if target.is_file() else 0
     if done and done >= expected_size:
@@ -433,11 +449,17 @@ async def _stream_to_file(
         # 请求了 Range 但服务端回 200，说明它整体重发了：必须覆盖而不是追加，
         # 否则会把新内容接在旧字节后面，静默写出坏文件。
         mode = "ab" if (done and response.status_code == 206) else "wb"
+        if done and response.status_code != 206 and on_bytes is not None:
+            # 这截暂存前缀已被丢弃，但调用方早把它算进了进度基线（见 download_plan），
+            # 扣回去，否则百分比会提前跑到 100%。负数只表示更正，不是收到的字节。
+            await on_bytes(-done)
         target.parent.mkdir(parents=True, exist_ok=True)
         async with aiofiles.open(target, mode) as handle:
             async for block in response.aiter_bytes(chunk_size=_CHUNK_SIZE):
                 if block:
                     await handle.write(block)
+                    if on_bytes is not None:
+                        await on_bytes(len(block))
 
 
 async def _download_entry(
@@ -447,6 +469,7 @@ async def _download_entry(
     staging: Path,
     *,
     attempts: int = 2,
+    on_bytes: BytesHook | None = None,
 ) -> Path:
     """下载单个条目到暂存区，md5 校验通过才算成功。"""
 
@@ -460,7 +483,7 @@ async def _download_entry(
         url = _entry_url(cdn, plan, entry)
         for attempt in range(attempts):
             try:
-                await _stream_to_file(client, url, target, entry.size)
+                await _stream_to_file(client, url, target, entry.size, on_bytes)
                 actual = await file_md5(target)
                 if actual == entry.md5:
                     return target
@@ -483,19 +506,65 @@ async def download_plan(
     *,
     on_progress: ProgressHook | None = None,
 ) -> None:
-    """并发下载计划里的全部条目。"""
+    """并发下载计划里的全部条目。
+
+    除每个条目下完报一行，还按进度跨度往调度台报「已下 / 总量 + 实时速度」，否则用户
+    看到的只有「3/10」这类条目计数，慢网下会以为卡死。
+    """
 
     total = len(plan.downloads)
     if not total:
         return
+    total_bytes = plan.download_size
     semaphore = asyncio.Semaphore(_DOWNLOAD_CONCURRENCY)
     finished = 0
     lock = asyncio.Lock()
 
+    # 上次中断留下的暂存文件同样算本次进度（条目会续传或直接复用），先并进基线，
+    # 否则续传那次的百分比永远走不到 100%。
+    downloaded = 0
+    for entry in plan.downloads:
+        staged = resolve_within(staging, entry.dest)
+        if staged.is_file():
+            downloaded += min(staged.stat().st_size, entry.size)
+
+    # 速度取两条相邻进度行之间的平均，不是两块 1MB 分块之间的抖动，所以只有真要发一行
+    # 时才采样；采样后立刻把状态前移，并发的其它条目就不会各补一行。
+    sent_bytes = downloaded
+    sent_key = -1
+    sent_at = time.monotonic()
+
+    async def on_bytes(size: int) -> None:
+        nonlocal downloaded, sent_bytes, sent_key, sent_at
+        downloaded += size
+        if size < 0:
+            # 基线更正：两侧同扣，既不发线也不让速度被这截假字节污染。
+            sent_bytes += size
+            return
+        if not total_bytes:
+            return
+        now = time.monotonic()
+        elapsed = now - sent_at
+        if elapsed < _PROGRESS_MIN_INTERVAL:
+            return
+        # md5 不符会删掉残留重下，已下字节可能超过总量：显示封顶，速度仍按真实字节算。
+        shown = min(downloaded, total_bytes)
+        percent = shown / total_bytes * 100
+        key = int(percent // _PROGRESS_PERCENT_STEP)
+        if key == sent_key and elapsed < _PROGRESS_MAX_INTERVAL:
+            return
+        speed = (downloaded - sent_bytes) / elapsed
+        sent_bytes, sent_key, sent_at = downloaded, key, now
+        await _report(
+            on_progress,
+            f"鸣潮更新下载中 {percent:.1f}%（{shown / 1024**3:.2f}/"
+            f"{total_bytes / 1024**3:.2f} GB，{speed / 1024**2:.1f} MB/s）",
+        )
+
     async def worker(entry: ResourceEntry) -> None:
         nonlocal finished
         async with semaphore:
-            await _download_entry(client, plan, entry, staging)
+            await _download_entry(client, plan, entry, staging, on_bytes=on_bytes)
         async with lock:
             finished += 1
             await _report(
@@ -505,45 +574,12 @@ async def download_plan(
     await asyncio.gather(*(worker(entry) for entry in plan.downloads))
 
 
-def _extract_hpatchz(zip_path: Path, target: Path) -> None:
-    with zipfile.ZipFile(zip_path) as archive:
-        with archive.open(_HPATCHZ_MEMBER) as src, target.open("wb") as dst:
-            shutil.copyfileobj(src, dst)
+class HpatchzApplyError(RuntimeError):
+    """hpatchz 退出码非 0。code 取自 HDiffPatch 的 THPatchResult。"""
 
-
-async def ensure_hpatchz(
-    *, on_progress: ProgressHook | None = None, timeout: float = 120.0
-) -> Path:
-    """确保本地有 hpatchz，没有则下载并校验 sha256 后缓存。
-
-    仓库不跟踪二进制，所以按需拉取。校验固定的 sha256 是必须的：
-    这是个会被我们拿去改写游戏文件的可执行体，不能来源不明。
-    """
-
-    exe = _HPATCHZ_CACHE_DIR / "hpatchz.exe"
-    if exe.is_file():
-        return exe
-
-    await _report(on_progress, f"正在获取增量补丁工具 hpatchz {_HPATCHZ_VERSION}...")
-    _HPATCHZ_CACHE_DIR.mkdir(parents=True, exist_ok=True)
-    zip_path = _HPATCHZ_CACHE_DIR / "hpatchz.zip"
-    async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
-        response = await client.get(_HPATCHZ_URL)
-        response.raise_for_status()
-        payload = response.content
-
-    actual = hashlib.sha256(payload).hexdigest()
-    if actual != _HPATCHZ_ZIP_SHA256:
-        raise RuntimeError(
-            f"hpatchz 校验失败: 期望 {_HPATCHZ_ZIP_SHA256} 实际 {actual}"
-        )
-    zip_path.write_bytes(payload)
-    try:
-        await asyncio.to_thread(_extract_hpatchz, zip_path, exe)
-    finally:
-        zip_path.unlink(missing_ok=True)
-    logger.info("hpatchz 就绪: {}", exe)
-    return exe
+    def __init__(self, code: int, detail: str) -> None:
+        self.code = code
+        super().__init__(f"hpatchz 应用失败 (code={code}): {detail}")
 
 
 async def _run_hpatchz(exe: Path, old_dir: Path, blob: Path, out_dir: Path) -> None:
@@ -565,9 +601,7 @@ async def _run_hpatchz(exe: Path, old_dir: Path, blob: Path, out_dir: Path) -> N
     stdout, _ = await process.communicate()
     if process.returncode != 0:
         detail = stdout.decode("utf-8", "replace").strip().splitlines()
-        raise RuntimeError(
-            f"hpatchz 应用失败 (code={process.returncode}): {detail[-1] if detail else ''}"
-        )
+        raise HpatchzApplyError(process.returncode, detail[-1] if detail else "")
 
 
 async def _commit_file(source: Path, install_dir: Path, entry: ResourceEntry) -> None:
@@ -605,11 +639,16 @@ async def _redownload_group(
     group: PatchGroup,
     staging: Path,
     install_dir: Path,
-) -> None:
+    *,
+    on_progress: ProgressHook | None = None,
+) -> int:
     """某个 group 打补丁失败时，整文件重下该组产物。
 
     hpatchz 要求源文件字节精确，用户改过游戏文件就会失败。
     远端清单带全量 md5，所以总能靠整文件重下自愈，不该让整次更新死掉。
+
+    Returns:
+        本组重下条目的声明体积之和，供调用方累计回退体积。
     """
 
     if not plan.whole_file_base_url:
@@ -621,8 +660,156 @@ async def _redownload_group(
         cdn_urls=plan.cdn_urls,
         downloads=group.dst_files,
     )
-    await download_plan(client, fallback, staging)
-    await _commit_entries(staging, install_dir, group.dst_files)
+    await download_plan(client, fallback, staging, on_progress=on_progress)
+    await _commit_entries(
+        staging, install_dir, group.dst_files, on_progress=on_progress
+    )
+    return sum(entry.size for entry in group.dst_files)
+
+
+def _read_packed_uint(data: bytes, pos: int, tag_bit: int = 0) -> tuple[int, int]:
+    """读一个 HDiffPatch packed uint（7 位一组，首字节放最高组）。"""
+
+    payload_bits = 7 - tag_bit
+    payload_mask = (1 << payload_bits) - 1
+    cont_bit = 1 << payload_bits
+    code = data[pos]
+    pos += 1
+    value = code & payload_mask
+    if not code & cont_bit:
+        return value, pos
+    while True:
+        code = data[pos]
+        pos += 1
+        value = (value << 7) | (code & 0x7F)
+        if not code & 0x80:
+            return value, pos
+
+
+def _skip_uint_list(data: bytes, pos: int, count: int, tag_bit: int = 0) -> int:
+    """跳过 count 个 packed uint。列表内容不影响布局判定，只关心读掉多少字节。"""
+
+    for _ in range(count):
+        _value, pos = _read_packed_uint(data, pos, tag_bit)
+    return pos
+
+
+def _skip_same_pairs(data: bytes, pos: int, count: int) -> int:
+    """跳过 samePairList：每对是 varint、1 字节符号位、varint(tag=1)。"""
+
+    for _ in range(count):
+        _new_inc, pos = _read_packed_uint(data, pos)
+        pos += 1
+        _old_inc, pos = _read_packed_uint(data, pos, 1)
+    return pos
+
+
+def probe_dir_patch_layout(head: bytes) -> str:
+    """看一个 .krpdiff 的头，判断它的目录数据用的哪种布局。
+
+    issue #1133：官方 3.7.0 的增量包在 newRefList 之后多插了一段 oldRefSizeList，
+    末尾还多一段 outRefCnt 个 varint，hpatchz v5.1.3 按旧布局读就会错位（退出码 109）。
+    这里不猜也不改数据，只按「按某布局读完之后是否正好用光目录数据」区分：旧布局读得通
+    就是 hpatchz_v5，只有扩展布局成立就是 extended，其余一律 unknown 退回原行为。
+
+    Args:
+        head: 补丁文件开头的若干字节，需覆盖整个头（64KB 足够）。
+
+    Returns:
+        hpatchz_v5 / extended / unknown。
+    """
+
+    try:
+        if not head.startswith(b"HDIFF19&"):
+            return "unknown"
+        pos = len(b"HDIFF19&")
+        for stop in (b"&", b"\x00"):  # compressType、checksumType
+            pos = head.index(stop, pos) + 1
+        fields = []
+        for _ in range(19):
+            value, pos = _read_packed_uint(head, pos)
+            fields.append(value)
+        # 目录数据被压缩时 Python 侧解不开，只能退回原行为；路径标记非法则不是目录差分包。
+        if fields[0] > 1 or fields[1] > 1 or fields[17] > 0:
+            return "unknown"
+        old_path_sum, new_path_sum = fields[3], fields[5]
+        old_ref_count, new_ref_count = fields[6], fields[8]
+        same_pair_count, new_execute_count = fields[10], fields[12]
+        private_reserved = fields[13]
+        head_data_size, checksum_size = fields[16], fields[18]
+        pos += checksum_size * 4
+        if head_data_size > len(head) - pos:
+            return "unknown"
+        dir_data = head[pos : pos + head_data_size]
+        if old_path_sum + new_path_sum > len(dir_data):
+            return "unknown"
+        # 目录数据开头是 oldPathSumSize + newPathSumSize 字节的路径表，直接跳过。
+        pos = old_path_sum + new_path_sum
+        pos = _skip_uint_list(dir_data, pos, old_ref_count)
+        pos = _skip_uint_list(dir_data, pos, new_ref_count)
+        for candidate in ("hpatchz_v5", "extended"):
+            end = pos
+            if candidate == "extended":
+                end = _skip_uint_list(dir_data, end, old_ref_count)
+            end = _skip_uint_list(dir_data, end, new_ref_count)
+            end = _skip_same_pairs(dir_data, end, same_pair_count)
+            end = _skip_uint_list(dir_data, end, new_execute_count)
+            if candidate == "extended":
+                end = _skip_uint_list(dir_data, end, new_ref_count)
+            if end == len(dir_data) - private_reserved:
+                return candidate
+        return "unknown"
+    except (IndexError, ValueError):
+        return "unknown"
+
+
+async def _fetch_patch_head(
+    client: httpx.AsyncClient, plan: UpdatePlan, entry: ResourceEntry
+) -> bytes | None:
+    """取补丁包开头的若干字节；逐个 CDN 试，全失败返回 None（探测失败不该改行为）。"""
+
+    for cdn in plan.cdn_urls:
+        url = _entry_url(cdn, plan, entry)
+        try:
+            headers = {"Range": f"bytes=0-{_PATCH_HEAD_PROBE_BYTES - 1}"}
+            async with client.stream("GET", url, headers=headers) as response:
+                response.raise_for_status()
+                data = bytearray()
+                async for block in response.aiter_bytes(chunk_size=_CHUNK_SIZE):
+                    data += block
+                    # 服务端不认 Range 时会回整包，读够就断开，绝不把整个补丁包拖下来。
+                    if len(data) >= _PATCH_HEAD_PROBE_BYTES:
+                        break
+                return bytes(data[:_PATCH_HEAD_PROBE_BYTES])
+        except httpx.HTTPError as exc:
+            logger.warning("探测增量包头失败，换下一个 CDN: {}", exc)
+    return None
+
+
+async def _reject_unreadable_patch(client: httpx.AsyncClient, plan: UpdatePlan) -> None:
+    """下载前先看第一个补丁包的头部布局，读不了就立刻停。
+
+    issue #1133 里 38 个包全是扩展布局，旧代码要等下完 20GB、hpatchz 逐个返回 109 才开始
+    回退重下。这里在下载任何补丁包之前就能判出来。
+
+    Args:
+        client: 复用的 httpx 客户端。
+        plan: 增量计划。
+
+    Raises:
+        RuntimeError: 探测到 hpatchz 读不了的扩展布局。
+    """
+
+    blob = next((entry for entry in plan.downloads if entry.is_patch_blob), None)
+    if blob is None:
+        return
+    head = await _fetch_patch_head(client, plan, blob)
+    if head is None or probe_dir_patch_layout(head) != "extended":
+        return
+    raise RuntimeError(
+        f"本次增量包 MAS 暂时解不了（{blob.dest} 用了 hpatchz 读不了的扩展布局），"
+        "请用官方启动器更新；已放弃下载增量包"
+    )
 
 
 async def _apply_groups(
@@ -632,17 +819,31 @@ async def _apply_groups(
     install_dir: Path,
     *,
     on_progress: ProgressHook | None = None,
+    fallback_limit: int = _FULL_SYNC_SIZE_LIMIT,
+    downloaded_bytes: int = 0,
 ) -> None:
-    """逐组应用增量补丁，失败的组回退成整文件重下。"""
+    """逐组应用增量补丁，失败的组回退成整文件重下。
+
+    Args:
+        client: 复用的 httpx 客户端。
+        plan: 增量计划。
+        staging: 暂存目录。
+        install_dir: 游戏目录。
+        on_progress: 进度回调。
+        fallback_limit: 回退重下的累计体积上限，超过即中止。
+        downloaded_bytes: 本次已下载字节数，只用于出错提示。
+    """
 
     exe = await ensure_hpatchz(on_progress=on_progress)
     patched_root = staging / "_patched"
     total = len(plan.groups)
+    fallback_bytes = 0
     for done, group in enumerate(plan.groups, start=1):
         blob = resolve_within(staging, group.blob)
         out_dir = patched_root / str(done)
         shutil.rmtree(out_dir, ignore_errors=True)
         out_dir.mkdir(parents=True, exist_ok=True)
+        fallback = False
         try:
             await _run_hpatchz(exe, install_dir, blob, out_dir)
             for entry in group.dst_files:
@@ -650,11 +851,30 @@ async def _apply_groups(
                     resolve_within(out_dir, entry.dest), install_dir, entry
                 )
         except (RuntimeError, OSError, ValueError) as exc:
+            if (
+                isinstance(exc, HpatchzApplyError)
+                and exc.code in _KRD_PATCH_STRUCTURE_CODES
+            ):
+                # 补丁布局本身 hpatchz 读不了，逐组回退不可能修好它，
+                # 只会把剩下的包也白下完（issue #1133 的 20GB），所以立刻停。
+                raise RuntimeError(
+                    f"本次增量包 MAS 暂时解不了（{exc}），请用官方启动器更新；"
+                    f"本次已下载 {downloaded_bytes / 1024**3:.1f}GB"
+                ) from exc
             logger.warning("{} 应用失败，回退整文件重下: {}", group.blob, exc)
             await _report(on_progress, f"补丁 {done}/{total} 应用失败，改为整文件下载")
-            await _redownload_group(client, plan, group, staging, install_dir)
+            fallback = True
         finally:
             shutil.rmtree(out_dir, ignore_errors=True)
+        if fallback:
+            fallback_bytes += await _redownload_group(
+                client, plan, group, staging, install_dir, on_progress=on_progress
+            )
+            if fallback_bytes > fallback_limit:
+                raise RuntimeError(
+                    f"补丁回退重下已累计 {fallback_bytes / 1024**3:.1f}GB（超过 "
+                    f"{fallback_limit / 1024**3:.1f}GB 上限），已中止，请用官方启动器更新"
+                )
         await _report(on_progress, f"鸣潮更新应用中 {done}/{total}")
 
 
@@ -702,7 +922,7 @@ async def update_wuthering_waves(
         resource: `官服` 或 `国际服`。
         local_version: 当前已装版本。
         on_progress: 进度回调，用于推送到调度台。
-        full_sync_limit: 整文件同步的体积上限，超过则拒绝并报错。
+        full_sync_limit: 整文件同步（含补丁失败后的整文件回退）的体积上限，超过则拒绝并报错。
 
     Returns:
         更新后的版本号。
@@ -738,6 +958,9 @@ async def update_wuthering_waves(
                 f"需整文件同步 {size_gb:.1f}GB（超过 "
                 f"{full_sync_limit / 1024**3:.0f}GB 上限），已中止，请手动处理"
             )
+        if plan.kind == "patch":
+            # 下载前先看补丁布局：hpatchz 读不了的格式，一个补丁包都不该下（issue #1133）。
+            await _reject_unreadable_patch(client, plan)
         _check_disk_space(install_dir, plan)
         await _report(
             on_progress,
@@ -747,8 +970,20 @@ async def update_wuthering_waves(
         await download_plan(client, plan, staging, on_progress=on_progress)
 
         if plan.kind == "patch":
+            # 出错时要如实告诉用户这次下了多少，按暂存区实际落盘量算。
+            downloaded_bytes = 0
+            for entry in plan.downloads:
+                staged = resolve_within(staging, entry.dest)
+                if staged.is_file():
+                    downloaded_bytes += min(staged.stat().st_size, entry.size)
             await _apply_groups(
-                client, plan, staging, install_dir, on_progress=on_progress
+                client,
+                plan,
+                staging,
+                install_dir,
+                on_progress=on_progress,
+                fallback_limit=full_sync_limit,
+                downloaded_bytes=downloaded_bytes,
             )
             whole_files = tuple(
                 entry for entry in plan.downloads if not entry.is_patch_blob

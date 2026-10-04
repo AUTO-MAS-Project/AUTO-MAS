@@ -6,6 +6,7 @@ import { getLogger } from './logger'
 import {
   CollectorState,
   Installation,
+  addDebugDirectory,
   addDiagnosticFile,
   addDirectory,
   addLatestMasHistoryLog,
@@ -20,8 +21,7 @@ const logger = getLogger('Whimbox问题包')
 const WHIMBOX_LOG_PREFIX = 'whimbox-'
 
 function addLatestWhimboxScriptLog(state: CollectorState, installations: Installation[]): void {
-  let latest: { sourcePath: string; archivePath: string; mtimeMs: number } | undefined
-
+  // 每个安装各自收录最新一份 whimbox- 日志：多安装互不竞争
   for (const installation of installations) {
     const logsDir = path.join(installation.rootPath, 'logs')
     let entries: fs.Dirent[]
@@ -32,6 +32,7 @@ function addLatestWhimboxScriptLog(state: CollectorState, installations: Install
       continue
     }
 
+    let latest: { sourcePath: string; archivePath: string; mtimeMs: number } | undefined
     for (const entry of entries) {
       if (!entry.isFile() || !entry.name.startsWith(WHIMBOX_LOG_PREFIX)) {
         continue
@@ -51,10 +52,10 @@ function addLatestWhimboxScriptLog(state: CollectorState, installations: Install
         logger.debug(`读取奇想盒日志信息失败: ${logPath}, ${String(error)}`)
       }
     }
-  }
 
-  if (latest) {
-    addDiagnosticFile(state, latest.sourcePath, latest.archivePath)
+    if (latest) {
+      addDiagnosticFile(state, latest.sourcePath, latest.archivePath)
+    }
   }
 }
 
@@ -129,7 +130,7 @@ export function createWhimboxIssueReport(
   addLatestMasHistoryLog(state, dataRoots)
 
   dataRoots.forEach((dataRoot, index) => {
-    addDirectory(
+    addDebugDirectory(
       state,
       path.join(dataRoot, 'debug'),
       index === 0 ? 'logs/auto-mas' : 'logs/auto-mas/backend'

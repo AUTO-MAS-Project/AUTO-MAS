@@ -32,7 +32,7 @@ from app.models.emulator import DeviceProvider
 from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, TaskExecuteBase, UserItem
 from app.task.emulator_core import close_emulator
-from app.tools.push_log import build_user_result_text
+from app.tools.push_log import build_user_result_text, mirror_report_to_dispatch
 from app.utils import get_logger
 from app.utils.constants import TASK_MODE_ZH
 from app.utils.io import (
@@ -46,8 +46,8 @@ from app.utils.io import (
 from .AutoProxy import AutoProxyTask
 from .resource_loader import load_maaend_controller_protocol
 from .ScriptConfig import ScriptConfigTask, maaend_config_mode
-from .tools import push_notification
 from .tools.backup_archive import archive_native_backup
+from .tools.notify import collect_recent_error_images, push_notification
 
 logger = get_logger("MaaEnd 调度器")
 
@@ -287,6 +287,9 @@ class MaaEndManager(TaskExecuteBase):
             finally:
                 if self.task_info.mode != "ScriptConfig":
                     await self._restore_script_config_from_temp()
+            if isinstance(task, AutoProxyTask) and task.update_failed:
+                # 安装状态未确认时，同一目录上的后续用户也不能继续执行。
+                return
 
     async def final_task(self):
 
@@ -328,6 +331,16 @@ class MaaEndManager(TaskExecuteBase):
             # 按用户交错组装「用户结果行 + 该用户节点详情」：
             # 开关关闭的用户未启 log_box，push_log 为空，自然只有结果行。
             has_uncompleted = error_count + wait_count > 0
+            user_result_text = build_user_result_text(
+                self.script_info.user_list, has_uncompleted
+            )
+            # 报告正文整块镜像进调度台，未配置推送的用户也能看到节点详情
+            mirror_report_to_dispatch(self.script_info, user_result_text)
+            error_images = (
+                collect_recent_error_images(self.script_config.get("Info", "Path"))
+                if error_count
+                else ()
+            )
             result = {
                 "title": f"{TASK_MODE_ZH[self.task_info.mode]}任务报告",
                 "script_name": self.script_info.name or "空白",
@@ -335,9 +348,7 @@ class MaaEndManager(TaskExecuteBase):
                 "end_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 "completed_count": over_count,
                 "uncompleted_count": error_count + wait_count,
-                "result": build_user_result_text(
-                    self.script_info.user_list, has_uncompleted
-                ),
+                "result": user_result_text,
             }
 
             try:
@@ -347,6 +358,7 @@ class MaaEndManager(TaskExecuteBase):
                     message=result,
                     user_config=None,
                     task_info=self.task_info,
+                    images=error_images,
                 )
             except Exception as e:
                 logger.opt(exception=True).warning(f"推送代理结果时出现异常: {e}")

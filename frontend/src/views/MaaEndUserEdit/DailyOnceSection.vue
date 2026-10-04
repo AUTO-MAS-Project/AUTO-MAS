@@ -28,13 +28,15 @@ const { t } = useI18n()
 const dailyOnceTaskValues = computed(() => {
   const value = props.value
   if (Array.isArray(value)) {
-    return value.filter((item: unknown): item is string => typeof item === 'string')
+    return value.filter(
+      (item: unknown): item is string => typeof item === 'string' && isOptionalTask(item)
+    )
   }
   if (typeof value === 'string' && value.trim()) {
     try {
       const parsed: unknown = JSON.parse(value)
       return Array.isArray(parsed)
-        ? parsed.filter((item): item is string => typeof item === 'string')
+        ? parsed.filter((item): item is string => typeof item === 'string' && isOptionalTask(item))
         : []
     } catch {
       return []
@@ -46,6 +48,8 @@ const dailyOnceTaskOptions = MAAEND_DAILY_ONCE_TASK_OPTIONS.map(task => ({
   label: task.label,
   value: task.name,
 }))
+
+const isOptionalTask = (name: string) => name !== 'SeizeDeliveryJobs' && name !== 'AutoCollect'
 
 const handleChange = (values: string[]) => {
   if (props.loading) return

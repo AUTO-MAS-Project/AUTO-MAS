@@ -94,6 +94,9 @@ class ScriptItem:
     user_list: List[UserItem] = field(default_factory=list)  # 用户信息列表
     current_index: int = -1  # 当前执行的用户索引，-1 表示未开始
     log: str = ""  # 脚本执行日志
+    # log 第一行在完整日志里的行号。**截断日志的生产者要一起维护它**（如 MaaFW 只留
+    # 最近 80 条），界面才能显示真实行号而不是每次都从 1 重数；不截断就保持 1。
+    log_first_line: int = 1
     _task_item_ref: Optional[weakref.ReferenceType[TaskItem]] = None
 
     def __setattr__(self, name, value):
@@ -135,6 +138,9 @@ class TaskItem(ABC):
     queue_id: str | None  # 执行的队列ID
     script_id: str | None  # 执行的脚本ID
     user_id: str | None  # 执行的用户ID
+    user_ids: frozenset[str] | None = None  # 自动代理时指定的多个用户；None 表示不限制
+    # 队列任务按脚本限定的本次运行用户；未列出的脚本不限，空集合表示该脚本本次整项跳过
+    user_ids_by_script: dict[str, frozenset[str]] | None = None
     script_list: List[ScriptItem] = field(default_factory=list)  # 脚本信息列表
     current_index: int = -1  # 当前执行的脚本索引，-1 表示未开始
     resume_from_script_id: str | None = None  # 可选：从指定脚本ID开始执行（仅队列任务）
@@ -151,8 +157,11 @@ class TaskItem(ABC):
         default=None, init=False, repr=False, compare=False
     )
     _change_dirty: bool = field(default=False, init=False, repr=False, compare=False)
-    # 日志增量推送状态: 上次推送的完整日志 (不截断) 与推送序号, 见 TaskInfo.on_change
+    # 日志增量推送状态：上次推送的完整日志（不截断）、首行基准与推送序号
     _last_pushed_log: str = field(default="", init=False, repr=False, compare=False)
+    _last_pushed_log_first_line: int = field(
+        default=1, init=False, repr=False, compare=False
+    )
     _log_seq: int = field(default=0, init=False, repr=False, compare=False)
 
     @property
@@ -224,6 +233,19 @@ class TaskItem(ABC):
         return self.queue_id is not None
 
     @property
+    def current_script_id(self) -> str | None:
+        """当前正在执行的脚本ID；未开始或下标越界时为 None"""
+        if 0 <= self.current_index < len(self.script_list):
+            return self.script_list[self.current_index].script_id
+        return None
+
+    def script_user_scope(self, script_id: str) -> frozenset[str] | None:
+        """队列任务中该脚本本次要运行的用户；None 表示该脚本不限"""
+        if self.user_ids_by_script is None:
+            return None
+        return self.user_ids_by_script.get(script_id)
+
+    @property
     def target_user_id(self) -> str | None:
         """单独运行时指定的用户ID；未指定或非自动代理时为 None。
 
@@ -242,8 +264,18 @@ class TaskItem(ABC):
             user_id (str): 待判定的用户ID。
 
         Returns:
-            bool: 未指定单独运行的用户时恒为 True。
+            bool: AutoProxy 指定 user_ids 时仅匹配集合内用户，队列任务指定了本次
+            运行范围时仅匹配当前脚本范围内的用户，指定 user_id 时仅匹配该用户；
+            均未指定或非 AutoProxy 模式时恒为 True。
         """
+
+        if self.mode == "AutoProxy":
+            scope = self.user_ids
+            if self.user_ids_by_script is not None:
+                # 队列任务按当前脚本取范围；未列入的脚本不受本次勾选影响
+                scope = self.script_user_scope(self.current_script_id or "")
+            if scope is not None:
+                return user_id in scope
 
         target = self.target_user_id
         return target is None or user_id == target
@@ -267,21 +299,6 @@ class TaskItem(ABC):
             }
             for script_item in self.script_list
         ]
-
-    @property
-    def result(self) -> str:
-        """任务执行情况的简要结果"""
-
-        if not self.script_list:
-            return "任务未加载"
-        return "\n\n\n".join(
-            [
-                f"{script.name}：\n\n"
-                f"    已完成用户数：{sum(1 for user in script.user_list if user.status == '完成')}；未完成用户数：{sum(1 for user in script.user_list if user.status != '完成')}\n\n"
-                f"    {script.result.replace('\n', '\n    ')}"
-                for script in self.script_list
-            ]
-        )
 
 
 @dataclass
@@ -336,10 +353,13 @@ class TaskExecuteBase(ABC):
     @abstractmethod
     async def on_crash(self, e): ...
 
+    async def _run_main_task(self) -> None:
+        await self.main_task()
+
     async def _execute_task(self, parent_tg: asyncio.TaskGroup):
         self._task_group = parent_tg
         try:
-            await self.main_task()
+            await self._run_main_task()
         except asyncio.CancelledError:
             self.stopped_manually = True
             raise

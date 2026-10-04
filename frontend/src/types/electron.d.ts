@@ -200,7 +200,17 @@ export interface ElectronAPI {
   appRestart: () => Promise<void>
   windowIsMaximized: () => Promise<boolean>
   windowFocus: () => Promise<void>
+  /** 电源操作倒计时开始：把窗口拉到最前并临时置顶 */
+  powerWarningStart?: () => Promise<void>
+  /** 倒计时结束或取消：撤回置顶 */
+  powerWarningEnd?: () => Promise<void>
   appQuit: () => Promise<void>
+  /** 保存前领取退出凭证；准备超时不会强制关闭后端。 */
+  appPrepareQuit?: () => Promise<number | null>
+  /** 保存完成后确认凭证仍有效，开始关闭后端的兜底计时。 */
+  appConfirmQuit?: (token: number) => Promise<boolean>
+  /** 页面保存失败：撤销协调退出，取消兜底计时并重新显示窗口。 */
+  appCancelQuit?: (token?: number) => Promise<void>
 
   // 系统休眠恢复与主进程关闭请求（生命周期协调器消费）
   onSystemResume?: (callback: () => void) => () => void
@@ -227,7 +237,8 @@ export interface ElectronAPI {
   stopBackend: () => Promise<{ success: boolean; error?: string }>
 
   // 配置文件操作
-  saveConfig: (config: unknown) => Promise<void>
+  // 仅覆盖 config 中的字段；defaults 只补齐文件中缺失的字段。
+  saveConfig: (config: unknown, defaults?: unknown) => Promise<void>
   loadConfig: () => Promise<ElectronConfig | null>
   resetConfig: () => Promise<void>
 
@@ -284,6 +295,12 @@ export interface ElectronAPI {
     error?: string
   }>
   exportWhimboxIssueReport: () => Promise<{
+    success: boolean
+    message?: string
+    zipPath?: string
+    error?: string
+  }>
+  exportBetterGIIssueReport: () => Promise<{
     success: boolean
     message?: string
     zipPath?: string

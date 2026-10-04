@@ -35,6 +35,7 @@ import json
 import re
 import secrets
 import uuid
+from collections.abc import Sequence
 from contextlib import suppress
 from dataclasses import dataclass
 from time import monotonic
@@ -45,6 +46,7 @@ import httpx
 import websockets
 from websockets.asyncio.client import ClientConnection
 
+from app.models.notification import NotificationImage
 from app.utils import LazyProxy, get_logger
 from app.utils.platform import secret as platform_secret
 
@@ -60,6 +62,8 @@ QR_CONNECT_URL = "https://q.qq.com/qqbot/openclaw/connect.html"
 QR_SESSION_TTL_SECONDS = 5 * 60
 QR_REQUEST_TIMEOUT_SECONDS = 15
 API_REQUEST_TIMEOUT_SECONDS = 15
+MEDIA_UPLOAD_TIMEOUT_SECONDS = 60
+MAX_IMAGE_UPLOAD_BYTES = 30 * 1024 * 1024
 TEXT_CHUNK_LIMIT = 3800
 MESSAGE_SEQUENCE_MAX = 0xFFFFFFFF
 USER_AGENT = "AUTO-MAS QQ Official Bot"
@@ -748,8 +752,14 @@ class OpenClawQQManager:
             await asyncio.sleep(interval_ms / 1000 * 0.8)
             await connection.send(json.dumps({"op": 1, "d": sequence()}))
 
-    async def send(self, title: str, content: str) -> None:
-        """通过官方 C2C 接口发送通知，长文本自动拆分；链接被拒时去除后补发。"""
+    async def send(
+        self,
+        title: str,
+        content: str,
+        *,
+        images: Sequence[NotificationImage] = (),
+    ) -> None:
+        """通过官方 C2C 接口发送正文和图片；长文本自动拆分，链接被拒时去除后补发。"""
 
         async with self._send_lock:
             app_id, client_secret, user_openid = self._credentials()
@@ -785,6 +795,17 @@ class OpenClawQQManager:
                         user_openid=user_openid,
                         body=body,
                     )
+            for image in images:
+                try:
+                    await self._send_image_with_token(
+                        app_id=app_id,
+                        client_secret=client_secret,
+                        user_openid=user_openid,
+                        image=image,
+                    )
+                except Exception as exc:
+                    # 正文已经送达，单张图片失败不应让通知进入渠道级重试。
+                    logger.warning(f"QQ 官方机器人图片发送失败: {image.id} - {exc}")
             logger.success(f"QQ官方机器人通知推送成功: {title}")
 
     def _next_msg_seq(self) -> int:
@@ -803,16 +824,85 @@ class OpenClawQQManager:
     ) -> None:
         """发送单段消息，并在访问令牌过期时无感重试一次。"""
 
+        endpoint = f"{API_BASE_URL}/v2/users/{quote(user_openid, safe='')}/messages"
+        await self._request_with_token(
+            app_id=app_id,
+            client_secret=client_secret,
+            endpoint=endpoint,
+            body=body,
+            operation="QQ 通知发送",
+        )
+
+    async def _send_image_with_token(
+        self,
+        *,
+        app_id: str,
+        client_secret: str,
+        user_openid: str,
+        image: NotificationImage,
+    ) -> None:
+        """上传一张 QQ C2C 图片并发送对应的富媒体消息。"""
+
+        upload_body: dict[str, Any] = {"file_type": 1, "srv_send_msg": False}
+        if image.data is not None:
+            if not image.data:
+                raise ValueError("图片数据为空")
+            if len(image.data) > MAX_IMAGE_UPLOAD_BYTES:
+                raise ValueError("图片超过 QQ 官方机器人的 30 MB 上限")
+            upload_body["file_data"] = base64.b64encode(image.data).decode("ascii")
+        elif image.url:
+            upload_body["url"] = image.url
+        else:
+            raise ValueError("图片没有可上传的数据或 URL")
+
+        upload_endpoint = f"{API_BASE_URL}/v2/users/{quote(user_openid, safe='')}/files"
+        upload = await self._request_with_token(
+            app_id=app_id,
+            client_secret=client_secret,
+            endpoint=upload_endpoint,
+            body=upload_body,
+            operation="QQ 图片上传",
+            timeout=MEDIA_UPLOAD_TIMEOUT_SECONDS,
+        )
+        file_info = upload.get("file_info")
+        if not isinstance(file_info, str) or not file_info:
+            raise RuntimeError("QQ 图片上传响应缺少 file_info")
+
+        await self._send_message_with_token(
+            app_id=app_id,
+            client_secret=client_secret,
+            user_openid=user_openid,
+            body={
+                "msg_type": 7,
+                "msg_seq": self._next_msg_seq(),
+                # QQ 富媒体单聊当前要求 content 非空，空格是官方文档给出的兼容值。
+                "content": " ",
+                "media": {"file_info": file_info},
+            },
+        )
+        logger.success(f"QQ 官方机器人图片发送成功: {image.id}")
+
+    async def _request_with_token(
+        self,
+        *,
+        app_id: str,
+        client_secret: str,
+        endpoint: str,
+        body: dict[str, Any],
+        operation: str,
+        timeout: float = API_REQUEST_TIMEOUT_SECONDS,
+    ) -> dict[str, Any]:
+        """发起带访问令牌的接口请求，并在令牌失效时重试一次。"""
+
         for attempt in range(2):
             access_token = await self._ensure_access_token(app_id, client_secret)
-            endpoint = f"{API_BASE_URL}/v2/users/{quote(user_openid, safe='')}/messages"
             try:
                 response = await self._request_json(
                     "POST",
                     endpoint,
                     body=body,
                     headers=_headers(app_id=app_id, access_token=access_token),
-                    timeout=API_REQUEST_TIMEOUT_SECONDS,
+                    timeout=timeout,
                 )
             except RuntimeError as exc:
                 if attempt == 0 and _is_token_error(exc):
@@ -825,9 +915,10 @@ class OpenClawQQManager:
                     self._invalidate_access_token()
                     continue
                 raise RuntimeError(
-                    f"QQ 通知发送失败（错误码 {code}）：{_business_message(response)}"
+                    f"{operation}失败（错误码 {code}）：{_business_message(response)}"
                 )
-            return
+            return response
+        raise RuntimeError(f"{operation}失败：访问令牌重试后仍无效")
 
     async def _ensure_access_token(self, app_id: str, client_secret: str) -> str:
         """按需换取并缓存官方 access_token。"""

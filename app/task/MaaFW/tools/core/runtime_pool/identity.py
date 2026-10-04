@@ -12,6 +12,8 @@ from typing import Any
 from packaging.requirements import InvalidRequirement, Requirement
 from packaging.utils import canonicalize_name
 
+from .architecture import runtime_identity_architecture
+
 IDENTITY_SCHEMA_VERSION = 1
 RUNTIME_ID_PREFIX = "maafw-runtime-"
 FALLBACK_REQUIREMENT_NAME_RE = re.compile(r"^\s*([A-Za-z0-9][A-Za-z0-9._-]*)")
@@ -59,7 +61,11 @@ def build_runtime_identity(
         soabi = str(sysconfig.get_config_var("SOABI") or "unknown")
         python_version = platform_module.python_version()
         target_platform = sysconfig.get_platform() or sys.platform
-        architecture = platform_module.machine() or "unknown"
+        # 与探针同一口径（installer._probe_python_identity）：按构建平台取，别让仿真跑的
+        # x64 进程记成 ARM64。
+        architecture = runtime_identity_architecture(
+            target_platform, platform_module.machine()
+        )
     else:
         implementation = _required_python_identity_value(
             python_identity,

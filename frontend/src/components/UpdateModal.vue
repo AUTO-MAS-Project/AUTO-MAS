@@ -1,7 +1,7 @@
 <template>
   <a-modal
     v-model:open="visible"
-    :title="`发现新版本 ${latestVersion || ''}`"
+    :title="t('comp.foundNewVersion', { version: latestVersion || '' })"
     :width="800"
     :footer="null"
     :mask-closable="false"

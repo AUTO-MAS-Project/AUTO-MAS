@@ -280,7 +280,9 @@
                     size="middle"
                     class="action-button"
                     :disabled="props.searching"
-                    :aria-label="isUsersCollapsed(script.id) ? '展开用户' : '收起用户'"
+                    :aria-label="
+                      isUsersCollapsed(script.id) ? t('comp.expandUsers') : t('comp.collapseUsers')
+                    "
                     @click="toggleUsersCollapsed(script.id)"
                   >
                     <template #icon>
@@ -960,9 +962,9 @@ const getServerDisplayName = (server: string): string => {
   }
 }
 
-// ZzzOd：配置来源标签（用户模式/直控模式）
+// ZzzOd：配置来源标签（独立模式/原生模式）
 const getZzzOdModeLabel = (user: User): string =>
-  user.Info.Mode === '直控' ? '直控模式' : '用户模式'
+  user.Info.Mode === '直控' ? '原生模式' : '独立模式'
 
 const getZzzOdModeTagColor = (user: User): string => (user.Info.Mode === '直控' ? 'gold' : 'blue')
 

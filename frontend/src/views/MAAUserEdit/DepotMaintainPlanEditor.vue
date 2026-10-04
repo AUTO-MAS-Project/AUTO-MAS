@@ -38,7 +38,7 @@
           {{ t('edit.addItem') }}
         </a-button>
         <a-popconfirm
-          :title="`确定删除选中的 ${selectedRowKeys.length} 项库存保持计划吗？`"
+          :title="t('edit.depotDeleteSelectedConfirm', { n: selectedRowKeys.length })"
           :ok-text="t('edit.ok')"
           :cancel-text="t('edit.cancel')"
           @confirm="removeSelectedPlans"
@@ -50,73 +50,132 @@
         </a-popconfirm>
       </a-space>
     </div>
-    <a-table
-      :columns="columns"
-      :data-source="plans"
-      :pagination="false"
-      :row-selection="rowSelection"
-      :scroll="{ x: 780 }"
-      size="small"
-    >
-      <template #emptyText>{{ t('edit.noStockKeepingPlans') }}</template>
-      <template #bodyCell="{ column, record }">
-        <a-select
-          v-if="column.key === 'stage'"
-          :key="`${record.key}-stage`"
-          v-model:value="record.Stage"
-          :options="stageOptionsFor(record)"
-          :loading="isStageLoading(record)"
-          :disabled="loading"
-          allow-clear
-          show-search
-          option-filter-prop="label"
-          :virtual="false"
-          :get-popup-container="getPopupContainer"
-          :popup-match-select-width="false"
-          :placeholder="t('edit.pickStage')"
-          @change="savePlans"
-        />
-        <a-select
-          v-else-if="column.key === 'item'"
-          :key="`${record.key}-item`"
-          v-model:value="record.DropId"
-          :options="itemOptions"
-          :disabled="loading || itemOptionsLoading"
-          :loading="itemOptionsLoading"
-          allow-clear
-          show-search
-          option-filter-prop="label"
-          :virtual="false"
-          :get-popup-container="getPopupContainer"
-          :placeholder="t('edit.pickItem')"
-          @change="onItemChange(record)"
-        />
-        <a-input-number
-          v-else-if="column.key === 'count'"
-          v-model:value="record.DropCount"
-          :disabled="loading"
-          :min="1"
-          :precision="0"
-          @change="savePlans"
-        />
-        <span v-else-if="column.key === 'stock'" class="stock-value">{{ stockOf(record) }}</span>
-        <a-button
-          v-else-if="column.key === 'action'"
-          type="text"
-          danger
-          :aria-label="t('edit.deleteStockKeepingPlan')"
-          :disabled="loading"
-          @click="removePlan(record.key)"
-        >
-          <DeleteOutlined />
-        </a-button>
-      </template>
-      <template #headerCell="{ column }">
-        <a-tooltip v-if="column.key === 'stock'" :title="stockColumnTitle">
-          <span>{{ t('edit.stock') }}</span>
-        </a-tooltip>
-      </template>
-    </a-table>
+    <!-- 行顺序即 MAA 执行顺序：vuedraggable 拖拽排序（QueueItemManager 先例：
+         a-table 不支持行拖拽，用可拖拽列表承载表格外观）。列对齐由 header 与
+         行共用的 grid 模板保证，窄屏整块横向滚动等价原 :scroll="{ x: 780 }" -->
+    <div v-if="plans.length" class="plan-scroll">
+      <div class="plan-grid-header">
+        <span />
+        <span class="col-check">
+          <a-checkbox
+            :checked="allSelected"
+            :indeterminate="someSelected"
+            :disabled="loading"
+            :aria-label="t('edit.selectPlanRows')"
+            @change="toggleAll($event.target.checked)"
+          />
+        </span>
+        <span>{{ t('edit.stage') }}</span>
+        <span>{{ t('edit.item') }}</span>
+        <span>{{ t('edit.targetStock') }}</span>
+        <span>
+          <a-tooltip :title="stockColumnTitle">
+            <span>{{ t('edit.stock') }}</span>
+          </a-tooltip>
+        </span>
+        <span />
+      </div>
+      <draggable
+        v-model="plans"
+        item-key="key"
+        handle=".depot-drag-handle"
+        :animation="200"
+        ghost-class="depot-row-ghost"
+        :disabled="loading"
+        class="plan-rows"
+        @end="savePlans"
+      >
+        <template #item="{ element: record, index }">
+          <div class="plan-row" :class="{ 'row-selected': selectedKeys.has(record.key) }">
+            <span
+              class="depot-drag-handle"
+              :title="t('edit.maaDepotDragSortHint')"
+              :aria-label="t('edit.maaDepotDragSortHint')"
+            >
+              <span class="drag-dots" aria-hidden="true"></span>
+            </span>
+            <span class="col-check">
+              <a-checkbox
+                :checked="selectedKeys.has(record.key)"
+                :disabled="loading"
+                :aria-label="t('edit.selectPlanRow')"
+                @change="toggleRow(record.key, $event.target.checked)"
+              />
+            </span>
+            <a-select
+              v-model:value="record.Stage"
+              :options="stageOptionsFor(record)"
+              :loading="isStageLoading(record)"
+              :disabled="loading"
+              allow-clear
+              show-search
+              option-filter-prop="label"
+              :virtual="false"
+              :get-popup-container="getPopupContainer"
+              :popup-match-select-width="false"
+              :placeholder="t('edit.pickStage')"
+              @change="onStageChange(record)"
+            />
+            <a-select
+              v-model:value="record.DropId"
+              :options="itemOptions"
+              :disabled="loading || itemOptionsLoading"
+              :loading="itemOptionsLoading"
+              allow-clear
+              show-search
+              option-filter-prop="label"
+              :virtual="false"
+              :get-popup-container="getPopupContainer"
+              :placeholder="t('edit.pickItem')"
+              @change="onItemChange(record)"
+            />
+            <a-input-number
+              v-model:value="record.DropCount"
+              :disabled="loading"
+              :min="1"
+              :precision="0"
+              @change="queueSave"
+            />
+            <span class="stock-value">{{ stockOf(record) }}</span>
+            <span class="col-action">
+              <!-- 键盘排序走上移/下移按钮（MFW 任务队列先例），拖拽手柄供鼠标 -->
+              <a-button
+                type="text"
+                size="small"
+                :aria-label="t('edit.maaDepotMoveUp')"
+                :disabled="loading || index === 0"
+                @click="moveRow(index, -1)"
+              >
+                <ArrowUpOutlined />
+              </a-button>
+              <a-button
+                type="text"
+                size="small"
+                :aria-label="t('edit.maaDepotMoveDown')"
+                :disabled="loading || index === plans.length - 1"
+                @click="moveRow(index, 1)"
+              >
+                <ArrowDownOutlined />
+              </a-button>
+              <a-button
+                type="text"
+                danger
+                :aria-label="t('edit.deleteStockKeepingPlan')"
+                :disabled="loading"
+                @click="removePlan(record.key)"
+              >
+                <DeleteOutlined />
+              </a-button>
+            </span>
+          </div>
+        </template>
+      </draggable>
+    </div>
+    <a-empty
+      v-else
+      :description="t('edit.noStockKeepingPlans')"
+      :image-style="{ height: '48px' }"
+    />
     <a-typography-link
       class="data-source-note"
       href="https://ark.yituliu.cn"
@@ -132,28 +191,27 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
 import { handleExternalLink } from '@/utils/openExternal'
-import { computed, ref, watch } from 'vue'
+import { computed } from 'vue'
+import draggable from 'vuedraggable'
 import {
   AppstoreAddOutlined,
+  ArrowDownOutlined,
+  ArrowUpOutlined,
   DeleteOutlined,
   DownOutlined,
   PlusOutlined,
 } from '@ant-design/icons-vue'
-import type { TableColumnsType } from 'ant-design-vue'
-import {
-  DEPOT_MAINTAIN_PRESETS,
-  getDepotMaintainPreset,
-  type DepotMaintainPlan as SavedDepotMaintainPlan,
-  type DepotMaintainPresetKey,
-} from './depotMaintainPresets'
+import { DEPOT_MAINTAIN_PRESETS } from './depotMaintainPresets'
+import type {
+  DepotMaintainPlanEditorState,
+  DepotMaintainPlanRow as DepotMaintainPlan,
+} from './useDepotMaintainPlanEditor'
 
 const { t } = useI18n()
 
-type SelectOption = { label: string; value: string }
-type DepotMaintainPlan = SavedDepotMaintainPlan & { key: number }
-
 const props = defineProps<{
   formData: any
+  editor: DepotMaintainPlanEditorState
   loading: boolean
   stageOptions: SelectOption[]
   itemOptions: SelectOption[]
@@ -167,19 +225,9 @@ const props = defineProps<{
   inventory: Record<string, number>
   /** 库存档案的最近识别时间（本地格式；空串=未识别） */
   depotInventoryTime: string
-  /** 按需加载某物品的关卡候选（父级负责请求与缓存） */
-  loadStageCandidates: (itemId: string) => Promise<void>
 }>()
 
-const emit = defineEmits<{ save: [key: string, value: any] }>()
-
-const columns: TableColumnsType = [
-  { title: t('edit.stage'), key: 'stage', width: '26%' },
-  { title: t('edit.item'), key: 'item', width: '34%' },
-  { title: t('edit.targetStock'), key: 'count', width: 120 },
-  { title: t('edit.stock'), key: 'stock', width: 90 },
-  { title: '', key: 'action', width: 56, align: 'center' },
-]
+type SelectOption = { label: string; value: string }
 
 const stockColumnTitle = computed(() =>
   props.depotInventoryTime
@@ -187,50 +235,34 @@ const stockColumnTitle = computed(() =>
     : t('edit.stock')
 )
 
-const plans = ref<DepotMaintainPlan[]>([])
-const selectedRowKeys = ref<number[]>([])
-let nextKey = 0
-const rowSelection = computed(() => ({
-  selectedRowKeys: selectedRowKeys.value,
-  getCheckboxProps: () => ({ disabled: props.loading }),
-  onChange: (keys: (string | number)[]) => {
-    selectedRowKeys.value = keys.filter((key): key is number => typeof key === 'number')
-  },
-}))
-
-watch(
-  () => props.formData.Task.DepotMaintainPlans,
-  value => {
-    // 自身 savePlans 的回声：formData 原样写回后会再触发本 watch。若此时
-    // 重建 plans，所有行 key 递增导致整表重挂载，打开中的下拉浮层被拆毁
-    // 重建（表现为下拉内容闪变/污染），因此与当前内容一致时直接跳过
-    const normalized = JSON.stringify(
-      plans.value.map(({ Stage, DropId, DropCount }) => ({ Stage, DropId, DropCount }))
-    )
-    if (value === normalized) return
-    selectedRowKeys.value = []
-    try {
-      const parsed = JSON.parse(value || '[]')
-      plans.value = Array.isArray(parsed)
-        ? parsed
-            .filter(
-              plan =>
-                typeof plan?.Stage === 'string' &&
-                typeof plan?.DropId === 'string' &&
-                typeof plan?.DropCount === 'number'
-            )
-            .map(plan => ({ key: nextKey++, ...plan }))
-        : []
-    } catch {
-      plans.value = []
-    }
-    // 已配置条目的关卡候选预加载，保证过滤与动态预设可用
-    for (const itemId of new Set(plans.value.map(plan => plan.DropId).filter(Boolean))) {
-      props.loadStageCandidates(itemId)
-    }
-  },
-  { immediate: true }
+const {
+  plans,
+  selectedRowKeys,
+  savePlans,
+  queueSave,
+  onItemChange,
+  onStageChange,
+  importPreset,
+  moveRow,
+  addPlan,
+  removePlan,
+  removeSelectedPlans,
+} = props.editor
+const selectedKeys = computed(() => new Set(selectedRowKeys.value))
+const allSelected = computed(
+  () => plans.value.length > 0 && selectedRowKeys.value.length === plans.value.length
 )
+const someSelected = computed(
+  () => selectedRowKeys.value.length > 0 && selectedRowKeys.value.length < plans.value.length
+)
+const toggleRow = (key: number, checked: boolean) => {
+  selectedRowKeys.value = checked
+    ? [...selectedRowKeys.value, key]
+    : selectedRowKeys.value.filter(selectedKey => selectedKey !== key)
+}
+const toggleAll = (checked: boolean) => {
+  selectedRowKeys.value = checked ? plans.value.map(plan => plan.key) : []
+}
 
 // 行内关卡选项四态：
 // - 未选物品 → 全量表（允许先选关卡）
@@ -270,71 +302,6 @@ const stockOf = (record: DepotMaintainPlan): number | string =>
 // 裁掉显示不全），又随页面滚动移动（挂 body 会驻留原地）
 const getPopupContainer = (trigger: HTMLElement): HTMLElement =>
   trigger.closest<HTMLElement>('.depot-plan-editor') ?? document.body
-
-const onItemChange = async (record: DepotMaintainPlan) => {
-  const itemId = record.DropId
-  // 换物品后旧关卡大概率不再掉该材料，清空待重选（防提交无效组合）；
-  // 清空物品同样清掉残留关卡，避免显示物品为空的脏组合
-  record.Stage = ''
-  if (!itemId) {
-    savePlans()
-    return
-  }
-  await props.loadStageCandidates(itemId)
-  // await 期间物品可能又被换了：只为仍是当前物品的请求自动填最优关
-  if (record.DropId === itemId && !record.Stage) {
-    const best = props.stageCandidates?.[itemId]?.[0]
-    if (best) record.Stage = best.value
-  }
-  savePlans()
-}
-
-const savePlans = () => {
-  emit(
-    'save',
-    'Task.DepotMaintainPlans',
-    JSON.stringify(
-      plans.value.map(({ Stage, DropId, DropCount }) => ({ Stage, DropId, DropCount }))
-    )
-  )
-}
-
-const addPlan = () => {
-  plans.value.push({ key: nextKey++, Stage: '', DropId: '', DropCount: 1 })
-  savePlans()
-}
-
-const importPreset = async (preset: DepotMaintainPresetKey) => {
-  selectedRowKeys.value = []
-  const imported = getDepotMaintainPreset(preset).map(plan => ({
-    key: nextKey++,
-    ...plan,
-  }))
-  // 动态预设：先确保候选加载完成，再用当前最优关替代预设里的硬编码关卡
-  await Promise.all(
-    [...new Set(imported.map(plan => plan.DropId).filter(Boolean))].map(itemId =>
-      props.loadStageCandidates(itemId)
-    )
-  )
-  for (const plan of imported) {
-    const best = props.stageCandidates?.[plan.DropId]?.[0]
-    if (best) plan.Stage = best.value
-  }
-  plans.value.push(...imported)
-  savePlans()
-}
-
-const removePlan = (key: number) => {
-  selectedRowKeys.value = selectedRowKeys.value.filter(selectedKey => selectedKey !== key)
-  plans.value = plans.value.filter(plan => plan.key !== key)
-  savePlans()
-}
-
-const removeSelectedPlans = () => {
-  plans.value = plans.value.filter(plan => !selectedRowKeys.value.includes(plan.key))
-  selectedRowKeys.value = []
-  savePlans()
-}
 </script>
 
 <style scoped>
@@ -357,6 +324,80 @@ const removeSelectedPlans = () => {
 
 .plan-actions {
   margin-bottom: 12px;
+}
+
+/* 表格式拖拽列表：表头与数据行共用一份 grid 列模板保证列对齐；
+   窄屏整块横向滚动（min-width 等价原表格 :scroll="{ x: 780 }"） */
+.plan-scroll {
+  overflow-x: auto;
+}
+
+.plan-grid-header,
+.plan-row {
+  display: grid;
+  grid-template-columns: 24px 32px minmax(0, 1fr) minmax(0, 1.3fr) 110px 88px 104px;
+  gap: 8px;
+  align-items: center;
+  min-width: 810px;
+}
+
+.plan-grid-header {
+  padding: 4px 0 8px;
+  font-size: 12px;
+  color: var(--ant-color-text-secondary);
+}
+
+.plan-rows {
+  display: flex;
+  flex-direction: column;
+}
+
+.plan-row {
+  padding: 4px 0;
+  border-bottom: 1px solid var(--ant-color-border-secondary);
+}
+
+.row-selected {
+  background: var(--ant-color-fill-tertiary);
+}
+
+.col-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0;
+}
+
+/* 拖拽手柄：可见把手 + grab 光标，热区仅限手柄（行内控件不受影响） */
+.depot-drag-handle {
+  cursor: grab;
+  padding: 6px 2px;
+  color: var(--ant-color-text-quaternary);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.depot-drag-handle:hover {
+  color: var(--ant-color-text-secondary);
+}
+
+/* 拖拽进行中：光标转 grabbing（拖拽全程按住左键，active 即拖拽态） */
+.depot-drag-handle:active {
+  cursor: grabbing;
+}
+
+.drag-dots {
+  display: inline-block;
+  width: 8px;
+  height: 14px;
+  background-image: radial-gradient(circle, currentColor 1px, transparent 1.2px);
+  background-size: 4px 4px;
+}
+
+/* 拖拽反馈只用一种：拖动中的行半透明（ghost），不叠底色高亮 */
+.depot-row-ghost {
+  opacity: 0.4;
 }
 
 /* 一图流数据署名（CC BY-NC 4.0 授权条件，方案 §5.4/决策 3）；链接走系统浏览器 */

@@ -37,6 +37,7 @@ from app.task.MaaFW.api_service.common import (
     maafw_group_members,
     maafw_script_config,
 )
+from app.task.MaaFW.tools.core.agent_env.env import DETAIL_LOG_PREFIX
 from app.task.MaaFW.tools.core.interface.loader import (
     MaaFWInterfaceLoadError,
     load_interface_model_cached,
@@ -54,6 +55,9 @@ from app.task.MaaFW.tools.embedded.embedded_project import (
     shell_hint_from_report,
 )
 from app.task.MaaFW.tools.embedded.project_path import (
+    begin_project_updating,
+    end_project_updating,
+    is_project_updating,
     release_project_path,
     try_reserve_project_path,
 )
@@ -68,12 +72,30 @@ from app.utils import get_logger
 from app.utils.security import sanitize_log_message
 
 UPDATE_SCRIPT_BUSY = "脚本正在运行，运行结束后再更新项目"
+UPDATE_PROJECT_UPDATING = "该项目正在更新，请等当前更新完成"
+# 预约被占、又不是在更新：编辑页准备运行环境、兄弟脚本的更新切过来后确认环境、导入 / 克隆、
+# 启动期迁移都会短暂持有。分不清是哪一个，只说被占用，不说「正在运行」误导用户。
+UPDATE_PROJECT_OCCUPIED = "项目正被占用（在准备运行环境或切换版本），请稍后再试"
 # 这两种 CDK 状态不需要额外提示：ok 是正常，absent 在选 GitHub 源时本就无关。
 _MAAFW_CDK_QUIET_STATUSES = frozenset({"ok", "absent"})
 _maafw_update_logger = get_logger("MaaFW 项目更新")
 # 手动更新拿项目锁的限时：另一次自动更新 / 预检正持有时回 409，不让同步请求
 # 跟着等几分钟。自动路径不限时。
 _MAAFW_MANUAL_UPDATE_LOCK_TIMEOUT_SECONDS = 5.0
+
+
+def describe_update_busy(root_path: Path, *, script_running: bool) -> str:
+    """现在不能手动更新的原因：正在更新 > 脚本在运行 > 项目被别的事占着。
+
+    「正在更新」看 ``project_path`` 的更新登记（``run_view_update`` 持谱系锁那段与手动更新
+    整段都会登记）；运行前 / 运行后自动更新时脚本也算在运行，但此时说「正在更新」更准。
+    """
+
+    if is_project_updating(root_path):
+        return UPDATE_PROJECT_UPDATING
+    if script_running:
+        return UPDATE_SCRIPT_BUSY
+    return UPDATE_PROJECT_OCCUPIED
 
 
 def _maafw_httpx_proxy(proxy_url: str | None) -> Any:
@@ -176,6 +198,60 @@ def _maafw_update_source_config(script_config: RuntimeMaaFWConfig) -> dict[str, 
     return config
 
 
+async def _heal_projection(
+    script_id: str,
+    script_config: RuntimeMaaFWConfig,
+    root_path: Path,
+    *,
+    channel: str,
+    proxy: Any,
+    proxy_url: str | None,
+    shell_hint: str,
+    send_log: Any,
+) -> None:
+    """手动检查更新前，旧投影规则建的载荷按当前规则补齐一次（与运行前同一条路，同组只查
+    一次）。运行中、项目被占用或同项目正在更新时这次不查；失败只记日志，不影响检查。"""
+
+    from app.task.MaaFW.tools.core.runtime_pool.architecture import (
+        SUPPORTED_ARCHITECTURE,
+        host_architecture,
+    )
+    from app.task.MaaFW.tools.embedded.view_heal import (
+        heal_projection,
+        projection_heal_due,
+    )
+
+    if getattr(script_config, "is_locked", False):
+        return
+    if host_architecture() != SUPPORTED_ARCHITECTURE:
+        # 只支持 x64：补齐要按本机架构取发行包，非 x64 上注定失败；架构提示由后面的检查给出。
+        _maafw_update_logger.info(
+            f"本机架构是 {host_architecture()}，不是 {SUPPORTED_ARCHITECTURE}，"
+            f"跳过旧规则载荷的补齐检查: {script_id}"
+        )
+        return
+    if not await asyncio.to_thread(projection_heal_due, script_id, channel):
+        return
+    reservation = await try_reserve_project_path(root_path)
+    if reservation is None:
+        return
+    try:
+        await heal_projection(
+            script_id,
+            channel=channel,
+            members=lambda: maafw_group_members(script_id),
+            reservation_held=True,
+            send_log=send_log,
+            proxy=proxy,
+            proxy_url=proxy_url,
+            shell_hint=shell_hint,
+            script_name=str(script_config.get("Info", "Name") or script_id[:8]),
+            lock_timeout=_MAAFW_MANUAL_UPDATE_LOCK_TIMEOUT_SECONDS,
+        )
+    finally:
+        await release_project_path(reservation)
+
+
 async def update_project(script_id: str, action: str) -> MaaFWApiReply:
     """按脚本 ``Update.*`` 配置检查（``check``）或应用（``apply``）项目更新。"""
 
@@ -242,13 +318,28 @@ async def update_project(script_id: str, action: str) -> MaaFWApiReply:
         # 写日志前先打码，避免 CDK 等敏感值落盘；WS 通道走同一份打码结果。
         text = sanitize_log_message(str(line))
         _maafw_update_logger.info(text)
+        if text.startswith(DETAIL_LOG_PREFIX):
+            # 详情行（预检里健康检查的完整 traceback）只进后端日志，不上更新面板
+            return
         publish_progress(tracker.log(text))
 
     def report_progress(event: dict[str, Any]) -> None:
-        publish_progress(tracker.event(event))
+        # events() 而不是 event()：解压开始前要多发一条旧前端（v5.6.0）能认的过渡消息。
+        for data in tracker.events(event):
+            publish_progress(data)
 
     if action == "check":
         publish_progress(tracker.checking())
+        await _heal_projection(
+            script_id,
+            script_config,
+            root_path,
+            channel=source_config["channel"],
+            proxy=proxy,
+            proxy_url=proxy_url,
+            shell_hint=str(source_config.get("project_shell_hint") or ""),
+            send_log=send_update_log,
+        )
         try:
             discovery = await discover_maafw_project_update(
                 interface,
@@ -361,15 +452,20 @@ async def update_project(script_id: str, action: str) -> MaaFWApiReply:
     # 只查版本随时可以；真切换要等运行结束（与 dev 一致，运行中的手动更新不支持）：
     # 运行中的脚本只经兄弟脚本的更新被动 pending，跑完后切。
     if getattr(script_config, "is_locked", False):
-        return MaaFWApiReply.error(400, UPDATE_SCRIPT_BUSY)
+        return MaaFWApiReply.error(
+            400, describe_update_busy(root_path, script_running=True)
+        )
     # 下载 + 构建 + 预检要几分钟，锁只在这一刻查过一次：整段持有本视图的项目预约，
     # 运行前检查看到预约就按「正在更新」跳过；切换与之后的运行环境确认都在这段预约里。
     apply_reservation = await try_reserve_project_path(root_path)
     if apply_reservation is None:
-        return MaaFWApiReply.error(400, UPDATE_SCRIPT_BUSY)
-
+        return MaaFWApiReply.error(
+            400, describe_update_busy(root_path, script_running=False)
+        )
     precheck_failure: dict[str, Any] = {}
     script_name = str(script_config.get("Info", "Name") or script_id[:8])
+    # 整段登记为「正在更新」（含切换后的环境确认），这期间再点更新说的是「正在更新」。
+    updating_key = begin_project_updating(root_path)
     try:
         route = await asyncio.to_thread(
             lambda: runtime_pool_route_from_service(MaaFWRuntimePoolService())
@@ -464,6 +560,7 @@ async def update_project(script_id: str, action: str) -> MaaFWApiReply:
         )
         return MaaFWApiReply.error(500, f"MFW 项目更新失败: {exc}")
     finally:
+        end_project_updating(updating_key)
         await release_project_path(apply_reservation)
 
     if outcome.registered_id:

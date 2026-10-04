@@ -104,6 +104,10 @@
           <div class="section-header">
             <h3>{{ t('edit.runConfiguration') }}</h3>
           </div>
+          <ScriptHardTimeoutField
+            v-model:value="whimboxConfig.Run.HardTimeLimit"
+            @save="handleChange('Run', 'HardTimeLimit', whimboxConfig.Run.HardTimeLimit)"
+          />
           <a-row :gutter="24">
             <a-col :span="6">
               <a-form-item>
@@ -194,6 +198,7 @@
 </template>
 
 <script setup lang="ts">
+import ScriptHardTimeoutField from '@/views/EditView/Script/components/ScriptHardTimeoutField.vue'
 import DocLink from '@/components/DocLink.vue'
 import ConfigLockPanel from '@/components/ConfigLockPanel.vue'
 import { MAS_DOC_URLS } from '@/utils/openExternal'
@@ -234,6 +239,7 @@ interface WhimboxInfoForm {
 }
 
 interface WhimboxRunForm {
+  HardTimeLimit: number
   ProxyTimesLimit: number
   RunTimesLimit: number
   RunTimeLimit: number
@@ -257,7 +263,13 @@ const formData = reactive({
 
 const whimboxConfig = reactive<WhimboxScriptConfigForm>({
   Info: { Name: '', RootPath: '.' },
-  Run: { ProxyTimesLimit: 0, RunTimesLimit: 3, RunTimeLimit: 30, UseAdmin: true },
+  Run: {
+    HardTimeLimit: 120,
+    ProxyTimesLimit: 0,
+    RunTimesLimit: 3,
+    RunTimeLimit: 30,
+    UseAdmin: true,
+  },
 })
 
 const rules = computed(() => ({

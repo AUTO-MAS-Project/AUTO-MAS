@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
 import { DownOutlined, PlusOutlined, QuestionCircleOutlined } from '@ant-design/icons-vue'
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import draggable from 'vuedraggable'
 
 import LogHookRule from './LogHookRule.vue'
@@ -34,16 +34,25 @@ const {
   save,
 } = useLogHookRules({
   rulesJson: computed(() => props.rules),
+  masterEnabled: computed(() => props.enabled),
   onChange: json => {
     emit('update:rules', json)
     emit('change', 'Script', 'LogHookRules', json)
   },
 })
 
+// 标题栏支持点击折叠/展开，默认折叠；启用开关时自动展开
+const collapsed = ref(true)
+const toggleCollapsed = () => {
+  collapsed.value = !collapsed.value
+}
+
 // 兼容父组件的 v-model:enabled 事件签名
 const onEnabledChange = (value: boolean) => {
   emit('update:enabled', value)
   emit('change', 'Script', 'LogHookEnabled', value)
+  // 启用时自动展开编辑区方便直接配置规则，停用时自动收起，保持折叠态与开关一致
+  collapsed.value = !value
 }
 
 const addMenuItems = [
@@ -64,32 +73,42 @@ const onRuleUpdate = (idx: number, value: LogHookRuleItem) => {
   onRuleFieldChange()
 }
 
-// 拖拽排序：规则按列表顺序执行，顺序本身是配置的一部分
+// 拖拽排序：规则按列表顺序执行，顺序本身是配置的一部分（结构性操作，不做缺必填字段提示）
 const onDragEnd = () => {
-  save()
+  save({ warn: false })
 }
 </script>
 
 <template>
-  <div class="log-hook-config">
-    <div class="hook-config-header">
+  <div class="log-hook-config" :class="{ collapsed }">
+    <div class="hook-config-header sub-section-header">
       <h3>
-        {{ t('edit.logHooks') }}
+        <a-tooltip :title="collapsed ? t('edit.expandRulesArea') : t('edit.collapseRulesArea')">
+          <span class="hook-config-title-text" @click="toggleCollapsed">
+            {{ t('edit.logHooks') }}
+            <DownOutlined class="hook-config-title-arrow" :class="{ collapsed }" />
+          </span>
+        </a-tooltip>
         <a-tooltip :title="t('edit.whenScriptLogPreprocessed')">
           <QuestionCircleOutlined class="help-icon" />
         </a-tooltip>
       </h3>
-      <a-tooltip :title="t('edit.rulesApplyOnlyWhen')">
-        <a-switch
-          :checked="enabled"
-          :checked-children="'启用'"
-          :un-checked-children="'停用'"
-          @change="onEnabledChange"
-        />
-      </a-tooltip>
+      <div class="hook-config-actions">
+        <span v-if="collapsed && hookRules.length > 0" class="hook-config-summary">
+          {{ t('edit.ruleCountSummary', { n: hookRules.length, m: activeRuleCount }) }}
+        </span>
+        <a-tooltip :title="t('edit.rulesApplyOnlyWhen')">
+          <a-switch
+            :checked="enabled"
+            :checked-children="'启用'"
+            :un-checked-children="'停用'"
+            @change="onEnabledChange"
+          />
+        </a-tooltip>
+      </div>
     </div>
 
-    <div class="hook-config-body">
+    <div v-show="!collapsed" class="hook-config-body">
       <div v-if="!enabled" class="hook-config-disabled-tip">
         {{ t('edit.logHooksOffRules') }}
       </div>
@@ -135,7 +154,7 @@ const onDragEnd = () => {
         </a-dropdown>
 
         <span class="hook-rules-count">
-          共 {{ hookRules.length }} 条规则，{{ activeRuleCount }} 条生效，按列表顺序执行
+          {{ t('edit.ruleCountFooter', { n: hookRules.length, m: activeRuleCount }) }}
         </span>
       </div>
     </div>
@@ -147,26 +166,46 @@ const onDragEnd = () => {
   width: 100%;
 }
 
-.hook-config-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 16px;
-}
-
-.hook-config-header h3 {
-  margin: 0;
-  font-size: 16px;
-  font-weight: 600;
-  color: var(--ant-color-text);
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
 .help-icon {
   color: var(--ant-color-text-tertiary);
   font-size: 14px;
+}
+
+.hook-config-title-text {
+  cursor: pointer;
+  color: inherit;
+  transition: color 0.2s ease;
+}
+
+.hook-config-title-text:hover {
+  color: var(--ant-color-primary);
+}
+
+.hook-config-title-arrow {
+  font-size: 12px;
+  color: var(--ant-color-text-tertiary);
+  vertical-align: middle;
+  transition: transform 0.2s ease;
+}
+
+.hook-config-title-arrow.collapsed {
+  transform: rotate(-90deg);
+}
+
+/* 折叠时正文隐藏、底部 24px 留白随之消失，这里补回，避免与下一配置区贴太近 */
+.log-hook-config.collapsed .hook-config-header {
+  margin-bottom: 24px;
+}
+
+.hook-config-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.hook-config-summary {
+  font-size: 12px;
+  color: var(--ant-color-text-secondary);
 }
 
 .hook-config-body {

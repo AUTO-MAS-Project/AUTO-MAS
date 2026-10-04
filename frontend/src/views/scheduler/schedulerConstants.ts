@@ -1,6 +1,7 @@
 import { TaskCreateIn } from '@/api/models/TaskCreateIn'
 import { PowerIn } from '@/api/models/PowerIn'
 import type { WSTaskCyclePreviewData } from '@/services/websocket/types'
+import type { QueueScopeGroup, QueueUserScope } from './schedulerQueueScope'
 
 // 调度台状态
 export type SchedulerStatus = '空闲' | '运行' | '结束' | '异常'
@@ -59,15 +60,20 @@ export interface SchedulerTab {
   resumeFromScriptId?: string | null
   resumeScriptOptions?: Array<{ label: string; value: string }>
   resumeScriptLoading?: boolean
-  // 脚本任务单独运行的目标用户；为空表示按脚本自身筛选跑全部用户
-  selectedUserId?: string | null
+  // 脚本自动代理的用户范围；undefined 表示动态全选，数组表示显式子集（[] 为取消全选）
+  selectedUserIds?: string[]
   userOptions?: Array<{ label: string; value: string }>
   userOptionsLoading?: boolean
+  userOptionsLoaded?: boolean
   taskId: string | null
   subscriptionIds?: string[]
   // 日志增量协议的 buffer 与 seq，语义见 schedulerLogBuffer.ts
   logBuffer: string
   logSeq?: number
+  // buffer 第一行在完整日志里的行号，界面据此显示真实行号
+  logFirstLine?: number
+  // 裁剪并添加提示行后的首行号，和当前显示内容对应
+  displayLogFirstLine?: number
   // 送给日志面板渲染的内容（logBuffer 再裁到 120,000）
   lastLogContent: string
   // 新增：任务总览快照（用于路由返回时快速恢复显示）
@@ -84,4 +90,10 @@ export interface SchedulerTab {
   isCycleQueue?: boolean
   // 循环运行的待运行条目预览
   cycleNextList?: WSTaskCyclePreviewData[]
+  // 队列任务本次运行的托管/账号范围，语义见 schedulerQueueScope.ts（缺键为默认全选）
+  queueUserScope?: QueueUserScope
+  // 该队列的托管及其可运行账号，供「本次运行范围」面板渲染
+  queueScopeGroups?: QueueScopeGroup[]
+  queueScopeLoading?: boolean
+  queueScopeFailed?: boolean
 }

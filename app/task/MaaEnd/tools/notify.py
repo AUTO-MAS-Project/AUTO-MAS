@@ -20,18 +20,78 @@
 #   Contact: DLmaster_361@163.com
 
 
+import mimetypes
+from collections.abc import Sequence
+from pathlib import Path
+
 from app.core import Config
 from app.core.notify import (
     DispatchResult,
-    NotifyPayload,
     dispatch,
     statistic_targets,
 )
 from app.models.config import MaaEndUserConfig
+from app.models.notification import NotificationImage, NotifyPayload
 from app.task.notify_core import push_proxy_result
 from app.utils import get_logger
 
 logger = get_logger("MaaEnd 通知工具")
+_ERROR_IMAGE_LIMIT = 3
+_IMAGE_SUFFIXES = frozenset({".png", ".jpg", ".jpeg", ".webp", ".bmp"})
+
+
+def collect_recent_error_images(
+    maaend_root_path: str | Path,
+) -> tuple[NotificationImage, ...]:
+    """读取 MaaEnd 最近保存的错误截图，作为通知图片原样传递。"""
+
+    # MaaEnd 的日志根目录是 debug/，save_on_error 截图保存在其 on_error/ 子目录。
+    error_dir = Path(maaend_root_path) / "debug" / "on_error"
+    try:
+        entries = tuple(error_dir.iterdir())
+    except FileNotFoundError:
+        return ()
+    except OSError as exc:
+        logger.warning(f"读取 MaaEnd 错误截图目录失败: {exc}")
+        return ()
+
+    candidates: list[tuple[int, Path]] = []
+    for image_path in entries:
+        if image_path.suffix.lower() not in _IMAGE_SUFFIXES or image_path.is_symlink():
+            continue
+        try:
+            if image_path.is_file():
+                candidates.append((image_path.stat().st_mtime_ns, image_path))
+        except OSError as exc:
+            logger.warning(f"读取 MaaEnd 错误截图信息失败: {image_path.name} - {exc}")
+
+    images: list[NotificationImage] = []
+    for _, image_path in sorted(candidates, key=lambda item: item[0], reverse=True):
+        if len(images) >= _ERROR_IMAGE_LIMIT:
+            break
+        try:
+            image_data = image_path.read_bytes()
+        except OSError as exc:
+            logger.warning(f"读取 MaaEnd 错误截图失败: {image_path.name} - {exc}")
+            continue
+        if not image_data:
+            continue
+
+        mime_type = mimetypes.guess_type(image_path.name)[0]
+        if not mime_type or not mime_type.startswith("image/"):
+            continue
+        images.append(
+            NotificationImage(
+                id=f"maaend-error-{len(images) + 1}",
+                data=image_data,
+                alt="MaaEnd 报错截图",
+                mime_type=mime_type,
+            )
+        )
+
+    if images:
+        logger.info(f"已附带 {len(images)} 张 MaaEnd 报错图片")
+    return tuple(images)
 
 
 def _statistic_sections(message: dict) -> list[str]:
@@ -72,14 +132,15 @@ async def push_notification(
     message: dict,
     user_config: MaaEndUserConfig | None,
     task_info: object | None = None,
+    images: Sequence[NotificationImage] = (),
 ) -> DispatchResult:
-    """通过所有渠道推送通知; 返回分发的实际尝试/成功/失败结果。"""
+    """通过所有渠道推送通知；结果报告可附带图片。"""
 
     logger.info(f"开始推送通知, 模式: {mode}, 标题: {title}")
 
     if mode == "代理结果":
         return await push_proxy_result(
-            title=title, message=message, task_info=task_info
+            title=title, message=message, task_info=task_info, images=images
         )
 
     if mode == "统计信息":
@@ -99,6 +160,7 @@ async def push_notification(
                 title=title,
                 text=message_text,
                 html=template.render(message),
+                images=tuple(images),
             ),
             statistic_targets(user_config),
         )

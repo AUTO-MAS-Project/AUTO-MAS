@@ -42,9 +42,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: 检出代码
-        uses: actions/checkout@v7.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       # 版本号守门要看 tag，release 分支的守门要看 dev；pull_request 的检出默认都没有。
       - name: 拉取目标分支、dev 与全部 tag
@@ -57,7 +58,7 @@ jobs:
             "+refs/tags/*:refs/tags/*"
 
       - name: 设置 Python 环境
-        uses: actions/setup-python@v7.0.0
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: '3.12'
 

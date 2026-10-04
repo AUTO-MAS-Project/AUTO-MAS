@@ -11,9 +11,17 @@ export type OkwwConfig_Game = {
      */
     Enabled?: (boolean | null);
     /**
-     * 游戏启动器路径
+     * 游戏启动方式：Launcher=经官方启动器，Client=直启客户端
+     */
+    Type?: ('Launcher' | 'Client' | null);
+    /**
+     * 鸣潮官方启动器 launcher.exe 路径（两种启动方式均由它定位游戏）
      */
     Path?: (string | null);
+    /**
+     * 直启模式手动指定的客户端程序路径（留空时由启动器路径自动定位）
+     */
+    ClientPath?: (string | null);
     /**
      * 游戏启动参数
      */

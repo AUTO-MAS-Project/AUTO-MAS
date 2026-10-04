@@ -29,7 +29,7 @@ from app.models.ConfigBase import MultipleConfig
 from app.models.schema import WSTaskNoticeData
 from app.models.task import ScriptItem, TaskExecuteBase, UserItem
 from app.task.proxy_helpers import user_uses_direct_control, user_uses_quick_config
-from app.tools.push_log import build_user_result_text
+from app.tools.push_log import build_user_result_text, mirror_report_to_dispatch
 from app.utils import ProcessManager, get_logger
 from app.utils.constants import TASK_MODE_ZH
 from app.utils.io import (
@@ -100,10 +100,7 @@ class OkNteManager(TaskExecuteBase):
 
         # AutoProxy 模式只做用户列表可用性校验；逐用户配置文件检查放到 AutoProxyTask.check()
         if self.task_info.mode == "AutoProxy":
-            if (not self.script_info.user_list) or (
-                self.script_info.user_list
-                and self.script_info.user_list[0].name == "暂未加载"
-            ):
+            if not self.script_info.user_list:
                 self.script_info.user_list = [
                     UserItem(
                         user_id=str(uid), name=config.get("Info", "Name"), status="等待"
@@ -351,6 +348,8 @@ class OkNteManager(TaskExecuteBase):
                 user_result_text = build_user_result_text(
                     self.script_info.user_list, has_uncompleted
                 )
+                # 报告正文整块镜像进调度台，未配置推送的用户也能看到节点详情
+                mirror_report_to_dispatch(self.script_info, user_result_text)
                 result = {
                     "title": f"{TASK_MODE_ZH[self.task_info.mode]}任务报告",
                     "script_name": self.script_info.name or "空白",

@@ -102,7 +102,7 @@
     <!-- 添加/编辑 Webhook 弹窗 -->
     <a-modal
       v-model:open="modalVisible"
-      :title="isEditing ? '编辑 Webhook' : '添加 Webhook'"
+      :title="isEditing ? t('comp.editWebhook') : t('comp.addWebhook')"
       :width="compact ? '560px' : '800px'"
       :get-container="getPopupContainer"
       :z-index="compact ? 1050 : undefined"

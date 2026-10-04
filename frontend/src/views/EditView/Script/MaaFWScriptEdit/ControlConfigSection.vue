@@ -135,10 +135,10 @@
         <!-- type=flex + stretch：右边的策略表跟左边「标签 + 输入框」等高，上下边对齐 -->
         <a-row :gutter="24" type="flex" align="stretch" class="control-detail-row">
           <a-col :span="12">
-            <!-- flavor 支持游戏更新（M9A）时包名右边并排「游戏更新」，窄屏上下排；
-                 不支持时包名独占整列，与通用 MaaFW 一致 -->
+            <!-- 特调在包名旁登记了组件（插入点 besidePackageName）时两列并排，窄屏上下排；
+                 没有时包名独占整列 -->
             <a-row :gutter="16">
-              <a-col :xs="24" :xl="gameUpdateHintKey ? 12 : 24">
+              <a-col :xs="24" :xl="$slots.besidePackageName ? 12 : 24">
                 <a-form-item>
                   <template #label>
                     <a-tooltip :title="t('edit.mfwGamePackageNamePassed')">
@@ -156,25 +156,8 @@
                   />
                 </a-form-item>
               </a-col>
-              <a-col v-if="gameUpdateHintKey" :xs="24" :xl="12">
-                <a-form-item>
-                  <template #label>
-                    <a-tooltip :title="t(gameUpdateHintKey)">
-                      <span class="form-label">
-                        {{ t('edit.gameUpdate') }}
-                        <QuestionCircleOutlined class="help-icon" aria-hidden="true" />
-                      </span>
-                    </a-tooltip>
-                  </template>
-                  <a-select
-                    v-model:value="maafwConfig.Run.GameUpdateMode"
-                    style="width: 100%"
-                    :options="gameUpdateModeOptions"
-                    @change="
-                      (value: string | number) => emit('change', 'Run', 'GameUpdateMode', value)
-                    "
-                  />
-                </a-form-item>
+              <a-col v-if="$slots.besidePackageName" :xs="24" :xl="12">
+                <slot name="besidePackageName" />
               </a-col>
             </a-row>
           </a-col>
@@ -194,7 +177,7 @@
       </div>
 
       <div v-else-if="isDesktopController" key="win32">
-        <!-- 两行摆完：启动方式 | 游戏 exe ；Unity 分辨率 | 启动参数 | 等待时间 | 启动后再等 -->
+        <!-- 两行摆完：启动方式 | 游戏 exe ；Unity 分辨率 | 启动参数 | 等待时间 | 键位映射 -->
         <a-row :gutter="24" class="control-detail-row">
           <a-col :span="12">
             <a-form-item>
@@ -246,6 +229,16 @@
               </a-input-group>
             </a-form-item>
           </a-col>
+          <!-- 游戏已经开着时第二行整行隐藏，键位映射挪到启动方式右边 -->
+          <MaaFWHotkeyField
+            v-if="launchMode !== 'DirectExe'"
+            :script-id="scriptId"
+            :preview-data="previewData"
+            :controller-name="effectiveControllerName"
+            :resource-name="effectiveResourceName"
+            :value="maafwConfig.Game.Hotkeys"
+            @save="handleHotkeysSave"
+          />
         </a-row>
 
         <a-row v-if="launchMode === 'DirectExe'" :gutter="24" class="control-detail-row">
@@ -304,6 +297,15 @@
               />
             </a-form-item>
           </a-col>
+          <MaaFWHotkeyField
+            v-if="launchMode === 'DirectExe'"
+            :script-id="scriptId"
+            :preview-data="previewData"
+            :controller-name="effectiveControllerName"
+            :resource-name="effectiveResourceName"
+            :value="maafwConfig.Game.Hotkeys"
+            @save="handleHotkeysSave"
+          />
         </a-row>
       </div>
     </Transition>
@@ -314,52 +316,28 @@
 import { useI18n } from 'vue-i18n'
 import { computed } from 'vue'
 import { FolderOpenOutlined, QuestionCircleOutlined } from '@ant-design/icons-vue'
-import type { ComboBoxItem } from '@/api'
-import { isDirectControllerType, type EmulatorType } from '@/composables/useMaaFWScriptConfig'
+import { isDirectControllerType } from '@/composables/useMaaFWScriptConfig'
+import type { MaaFWLaunchMode, MaaFWUnityResolution } from '@/types/script'
 import type {
-  MaaFWControllerInfo,
-  MaaFWInterfacePreviewData,
-  MaaFWResourceInfo,
-  MaaFWGameUpdateMode,
-  MaaFWLaunchMode,
-  MaaFWScriptConfig,
-  MaaFWUnityResolution,
-} from '@/types/script'
+  MaaFWScriptControlSectionEmits,
+  MaaFWScriptControlSectionProps,
+} from '../../MaaFWFlavor/sectionContracts'
+import MaaFWHotkeyField from './MaaFWHotkeyField.vue'
 
 const { t } = useI18n()
 
-const props = defineProps<{
-  maafwConfig: MaaFWScriptConfig
-  previewData: MaaFWInterfacePreviewData | null
-  interfaceLoading: boolean
-  emulatorLoading: boolean
-  emulatorOptionsReady: boolean
-  emulatorDeviceLoading: boolean
-  emulatorOptions: ComboBoxItem[]
-  emulatorDeviceOptions: ComboBoxItem[]
-  emulatorTypeById: Record<string, EmulatorType>
-  controllerOptions: MaaFWControllerInfo[]
-  effectiveControllerName: string
-  effectiveControllerType: string
-  isAdbController: boolean
-  isDesktopController: boolean
-  resourceOptions: MaaFWResourceInfo[]
-  adbControlStrategyItems: Array<{ label: string; value: string }>
-  selectedEmulatorLabel: string
-  interfaceDependentDisabled: boolean
-  /** flavor 的「游戏更新」问号提示 key；为空表示该类型不支持游戏更新，不显示下拉 */
-  gameUpdateHintKey: string | null
-}>()
+// props / 事件的契约在 sectionContracts（特调替换这个分节时按同一份契约接收）
+const props = defineProps<MaaFWScriptControlSectionProps>()
 
-const emit = defineEmits<{
-  change: [category: keyof MaaFWScriptConfig, key: string, value: unknown]
-  'controller-change': []
-  'resource-change': []
-  'emulator-select-change': [emulatorId: string]
-  'select-launch-path': []
-}>()
+const emit = defineEmits<MaaFWScriptControlSectionEmits>()
 
 const launchMode = computed<MaaFWLaunchMode>(() => props.maafwConfig.Game.LaunchMode)
+
+// 键位映射弹窗保存：先改草稿再走页面的自动保存通道
+const handleHotkeysSave = (value: string) => {
+  props.maafwConfig.Game.Hotkeys = value
+  emit('change', 'Game', 'Hotkeys', value)
+}
 
 // 只给两档常用尺寸：Unity 播放器只认整数宽高，1080p 是各脚本闸门的基准，720p 留给小屏
 const unityResolutionOptions = computed<Array<{ label: string; value: MaaFWUnityResolution }>>(
@@ -369,13 +347,6 @@ const unityResolutionOptions = computed<Array<{ label: string; value: MaaFWUnity
     { label: '1280×720', value: '1280x720' },
   ]
 )
-
-// 三项与后端 MaaFWConfig.Run.GameUpdateMode 的 OptionsValidator 一致
-const gameUpdateModeOptions = computed<Array<{ label: string; value: MaaFWGameUpdateMode }>>(() => [
-  { label: t('edit.mfwGameUpdateOff'), value: 'Off' },
-  { label: t('edit.mfwGameUpdateCheck'), value: 'Check' },
-  { label: t('edit.mfwGameUpdateAutoInstall'), value: 'AutoInstall' },
-])
 </script>
 
 <style scoped>

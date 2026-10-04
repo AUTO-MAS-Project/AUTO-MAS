@@ -20,6 +20,12 @@ from packaging.requirements import InvalidRequirement, Requirement
 from packaging.specifiers import InvalidSpecifier, SpecifierSet
 from packaging.version import InvalidVersion, Version
 
+from ._shared import output_tail
+from .architecture import (
+    architecture_from_build_platform,
+    runtime_identity_architecture,
+    supported_architecture_target,
+)
 from .host_environment import strip_host_python_environment
 from .identity import (
     find_maafw_requirement,
@@ -272,6 +278,10 @@ def _resolve_python_mirror_candidates(
 # 的 Lib/DLLs 混进 sys.path——3.12.10 的 _ctypes.pyd 装进 3.12.0 的 python312.dll，
 # ``import ctypes`` 直接炸，而 base 解释器自己却是好的。没有 landmark 的解释器
 # 因此不能当 venv 的引导，见 ``host_bootstrap_python_request``。
+#
+# architecture：探针里的 ``platform.machine()`` 只是兜底原值，``_probe_python_identity``
+# 按同一份输出里的构建平台（platform）改写（``runtime_identity_architecture``）——
+# 3.12 的 machine() 在 arm64 机器上会把仿真跑的 x64 解释器报成 ARM64。
 _IDENTITY_PROBE_SCRIPT = (
     "import ctypes,json,os,platform,sys,sysconfig;"
     "print(json.dumps({"
@@ -323,6 +333,22 @@ _HOST_BOOTSTRAP_REQUEST_CACHE: dict[str, dict[str, str] | None] = {}
 
 
 def resolve_python_interpreter(
+    pool_root: str | Path,
+    python_request: Mapping[str, Any],
+    *,
+    allow_install: bool,
+) -> dict[str, Any] | None:
+    """见 :func:`_resolve_python_interpreter`；选中的解释器不是 x64 时给「只支持 x64」。"""
+
+    resolved = _resolve_python_interpreter(
+        pool_root, python_request, allow_install=allow_install
+    )
+    if resolved is not None:
+        _require_supported_interpreter(resolved["identity"])
+    return resolved
+
+
+def _resolve_python_interpreter(
     pool_root: str | Path,
     python_request: Mapping[str, Any],
     *,
@@ -420,12 +446,13 @@ def resolve_python_interpreter(
             # 取 _find_uv_executable 的第一候选（解释器同级）：便携版是
             # environment\python\uv.exe，源码开发是 .venv\Scripts\uv.exe，两种布局都成立。
             portable_uv = Path(sys.executable).resolve().parent / "uv.exe"
+            uv_asset = supported_architecture_target().uv_release_asset
             raise RuntimeError(
                 "未找到 uv，无法为 MFW 项目创建隔离运行环境"
                 "（随包 Python 是精简发行版，不含创建环境所需的组件）。"
                 "二选一，改完重启 AUTO-MAS："
                 "① 从 github.com/astral-sh/uv/releases 下载 "
-                f"uv-x86_64-pc-windows-msvc.zip，把里面的 uv.exe 放到 {portable_uv}"
+                f"{uv_asset}，把里面的 uv.exe 放到 {portable_uv}"
                 "（或设环境变量 AUTO_MAS_UV_EXE 指向已有的 uv.exe）；"
                 "② 本机已装完整 Python 3.12 的话，设环境变量 AUTO_MAS_PYTHON_EXE "
                 "指向它的 python.exe，这样不必再下载一份 Python。"
@@ -982,6 +1009,19 @@ def _pool_python_environment(
     return env
 
 
+def _uv_python_request(target_version: str) -> str:
+    """uv 的 python request；Windows 上显式带架构（``cpython-3.12-windows-x86_64-none``）。
+
+    不带时 uv 按它自己探到的平台挑，arm64 机器上可能给 x64 进程装一份 arm64 的解释器。
+    x64 上带与不带解析到同一个下载键（uv 0.11.26 实测），已装的照样找得到。
+    """
+
+    request = f"cpython-{target_version}"
+    if sys.platform != "win32":
+        return request
+    return f"{request}-{supported_architecture_target().uv_python_platform}"
+
+
 def _find_pool_managed_python(
     uv_executable: str,
     target_version: str,
@@ -1005,7 +1045,7 @@ def _find_pool_managed_python(
                 uv_executable,
                 "python",
                 "find",
-                f"cpython-{target_version}",
+                _uv_python_request(target_version),
                 "--managed-python",
                 "--no-project",
                 "--no-python-downloads",
@@ -1082,7 +1122,7 @@ def _install_pool_managed_python(
         uv_executable,
         "python",
         "install",
-        f"cpython-{target_version}",
+        _uv_python_request(target_version),
         "--install-dir",
         str(python_root),
         "--no-bin",
@@ -1164,7 +1204,7 @@ def _select_uv_python_version(
         detail = (result.stderr or result.stdout or "").strip()
         raise RuntimeError(
             "MaaFW runtime uv Python catalog lookup failed "
-            f"(exit={result.returncode}): {detail[:800]}"
+            f"(exit={result.returncode}): {output_tail(detail, 800)}"
         )
     try:
         rows = json.loads(result.stdout)
@@ -1519,7 +1559,7 @@ def _probe_python_identity(python_executable: Path) -> dict[str, str]:
                 f"Python 运行时，后者删除该运行环境后重新准备即可。原始错误：{detail[-400:]}"
             )
         raise RuntimeError(
-            f"MaaFW runtime ABI 探测失败 (exit={result.returncode}): {detail[:400]}"
+            f"MaaFW runtime ABI 探测失败 (exit={result.returncode}): {output_tail(detail, 400)}"
         )
     try:
         payload = json.loads(result.stdout.strip())
@@ -1527,7 +1567,21 @@ def _probe_python_identity(python_executable: Path) -> dict[str, str]:
         raise RuntimeError("MaaFW runtime ABI 探测返回值不是合法 JSON") from exc
     if not isinstance(payload, dict):
         raise RuntimeError("MaaFW runtime ABI 探测返回值不是 JSON object")
-    return {str(key): str(value) for key, value in payload.items()}
+    identity = {str(key): str(value) for key, value in payload.items()}
+    if "architecture" in identity:
+        identity["architecture"] = runtime_identity_architecture(
+            identity.get("platform"), identity["architecture"]
+        )
+    return identity
+
+
+def _require_supported_interpreter(probe: Mapping[str, Any]) -> None:
+    """运行池解释器（binding 与 DLL 由它加载）不是 x64 时给「只支持 x64」。"""
+
+    supported_architecture_target(
+        architecture_from_build_platform(str(probe.get("platform") or "")) or "",
+        subject="运行池解释器",
+    )
 
 
 def probe_python_identity(python_executable: str | Path) -> dict[str, str]:
@@ -1679,7 +1733,7 @@ def _run(
         return
     detail = (result.stderr or result.stdout or "").strip()
     raise RuntimeError(
-        f"MaaFW runtime 安装失败 (exit={result.returncode}): {detail[:800]}"
+        f"MaaFW runtime 安装失败 (exit={result.returncode}): {output_tail(detail, 800)}"
     )
 
 
@@ -1728,7 +1782,7 @@ def _run_with_source_rotation(
             return source, attempt_index
         detail = (result.stderr or result.stdout or "").strip()
         failed_attempts.append((source, result.returncode, detail))
-        last_message = f"{failure_label}失败 (exit={result.returncode}): {detail[:800]}"
+        last_message = f"{failure_label}失败 (exit={result.returncode}): {output_tail(detail, 800)}"
         if attempt_index < len(sources):
             logger.warning(
                 "%s失败，换下一个源重试（失败源：%s，第 %d/%d 次尝试）：%s",
@@ -1920,7 +1974,7 @@ def _resolved_requirements_with_uv(
         detail = (result.stderr or result.stdout or "").strip()
         raise RuntimeError(
             "MaaFW runtime uv pip freeze 失败 "
-            f"(exit={result.returncode}): {detail[:800]}"
+            f"(exit={result.returncode}): {output_tail(detail, 800)}"
         )
     return _normalized_freeze_lines(result.stdout)
 
@@ -1949,7 +2003,7 @@ def _resolved_requirements(python_executable: Path) -> list[str]:
         detail = (result.stderr or result.stdout or "").strip()
         raise RuntimeError(
             "MaaFW runtime pip freeze --all 失败 "
-            f"(exit={result.returncode}): {detail[:800]}"
+            f"(exit={result.returncode}): {output_tail(detail, 800)}"
         )
     return _normalized_freeze_lines(result.stdout)
 

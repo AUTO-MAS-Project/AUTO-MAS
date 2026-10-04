@@ -46,8 +46,9 @@ from app.core.ws import Publisher, protocol
 from app.models.config import WhimboxConfig, WhimboxUserConfig
 from app.models.ConfigBase import MultipleConfig
 from app.models.schema import WSTaskNoticeData
-from app.models.task import LogRecord, ScriptItem, TaskExecuteBase, UserItem
+from app.models.task import LogRecord, ScriptItem, UserItem
 from app.services import Notify
+from app.task.base import ScriptAutoProxyBase
 from app.task.general.tools import execute_script_task
 from app.task.proxy_helpers import (
     CONFIG_SOURCE_DIRECT,
@@ -112,7 +113,7 @@ def _should_retry(
     return True
 
 
-class AutoProxyTask(TaskExecuteBase):
+class AutoProxyTask(ScriptAutoProxyBase):
     """奇想盒自动代理任务（每用户一轮）。
 
     四边界经构造注入，默认实现就地兜底构造（L1 组合，零容器）；单测经构造
@@ -389,7 +390,8 @@ class AutoProxyTask(TaskExecuteBase):
 
         log = self.feed.log_text
         self.cur_user_log.content = log.splitlines(keepends=True)
-        self.script_info.log = log[-4000:] if len(log) > 4000 else log
+        self.script_info.log_first_line = log[:-4000].count("\n") + 1
+        self.script_info.log = log[-4000:]
 
         # 实时进展：步骤进入/异常/账号切换行的消息段转述到调度台（只推一次）。
         # loguru 行 = 「时间 | 级别 | 模块 - 消息」，emoji 前缀在消息段而非行首；
@@ -479,7 +481,7 @@ class AutoProxyTask(TaskExecuteBase):
         # 写入历史记录（对齐 General/BetterGI 行为）
         statistic_paths: list[Path] = []
         for t, log_item in self.cur_user_item.log_record.items():
-            dt = t.replace(tzinfo=datetime.now().astimezone().tzinfo).astimezone(UTC4)
+            dt = t.astimezone(UTC4)
             log_path = Config.build_history_log_path(
                 script_name=self.script_info.name,
                 user_name=self.cur_user_item.name,

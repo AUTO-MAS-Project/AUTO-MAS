@@ -9,7 +9,7 @@ runner venv（base）里不再装 ``maafw``：worker 靠 ``PYTHONPATH`` 里的 b
 只记路径不加载）。一个 maafw 版本只有一份 0.3 MB 的 binding，DLL 只在项目没自带时
 才落地一份，运行池不再每个版本各拷一套 venv。
 
-来源顺序（方案 D3）：PyPI / 镜像官方 wheel（平台标签 ``win_amd64`` / ``win_arm64``）
+来源顺序（方案 D3）：PyPI / 镜像官方 wheel（平台标签 ``win_amd64``，MFW 只支持 x64）
 → MaaFramework tag 源码（无 DLL，只对自带原生库的项目有意义）。每个目录都带全量
 清单（相对路径 + 大小 + sha256），命中判据是清单全量校验通过，不合即当不存在重建；
 校验结果按进程缓存。目录里从不写 pyc：worker 与自检子进程都设
@@ -26,10 +26,8 @@ import html.parser
 import json
 import logging
 import os
-import platform as platform_module
 import re
 import shutil
-import struct
 import subprocess
 import sys
 import threading
@@ -59,6 +57,10 @@ from ._shared import (
     remove_tree_best_effort,
     utc_now,
     write_json_atomic,
+)
+from .architecture import (
+    MaaFWUnsupportedArchitectureError,
+    supported_architecture_target,
 )
 from .binding_fallback import (
     BINDING_SOURCE_PREFIX,
@@ -188,16 +190,19 @@ def directory_version(name: str) -> str | None:
 
 
 def wheel_platform_tag() -> str:
-    """官方 wheel 是平台标签 ``maafw-<ver>-py3-none-win_amd64.whl``（arm64 是 ``win_arm64``）。"""
+    """官方 wheel 的平台标签（``maafw-<ver>-py3-none-win_amd64.whl``）。
+
+    架构只从 ``architecture.host_architecture()`` 取；MFW 目前只支持 x64，别的架构
+    （含 32 位）给「只支持 x64」而不是悄悄按 x64 选 wheel。运行池解释器的架构在
+    ``installer.resolve_python_interpreter`` 里核过，与本进程一样只能是 x64。
+    """
 
     if sys.platform != "win32":
         raise MaaFWBindingError("MaaFW 官方 wheel 的平台标签只在 Windows 上解析")
-    if struct.calcsize("P") != 8:
-        raise MaaFWBindingError("不支持 32 位 Python 宿主")
-    machine = platform_module.machine().casefold()
-    if "arm" in machine or "aarch" in machine:
-        return "win_arm64"
-    return "win_amd64"
+    try:
+        return supported_architecture_target().wheel_platform
+    except MaaFWUnsupportedArchitectureError as exc:
+        raise MaaFWBindingError(str(exc)) from None
 
 
 # ---------------------------------------------------------------------------

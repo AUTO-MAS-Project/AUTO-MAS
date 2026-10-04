@@ -41,13 +41,14 @@ jobs:
     runs-on: ubuntu-latest
     if: github.repository_owner == 'AUTO-MAS-Project'
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.ref }}
           fetch-depth: 0
+          persist-credentials: false
       
       - name: Sync to CNB Repository
-        uses: docker://tencentcom/git-sync
+        uses: docker://tencentcom/git-sync@sha256:b7c4672616ddea5b89948dcd034610b29d37d8430e74b4bc83b421c963c25f77
         env:
           PLUGIN_TARGET_URL: "https://cnb.cool/AUTO-MAS-Project/AUTO-MAS.git"
           PLUGIN_AUTH_TYPE: "https"

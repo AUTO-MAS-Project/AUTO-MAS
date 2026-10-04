@@ -45,6 +45,7 @@ from app.task.MaaFW.tools.core.project_update.blob_store import (
 from app.task.MaaFW.tools.core.project_update.precheck_memo import (
     precheck_memo_path,
 )
+from app.task.MaaFW.tools.core.project_update.timing import format_duration
 from app.task.MaaFW.tools.core.project_update.updater import (
     MaaFWProjectUpdateError,
 )
@@ -63,6 +64,8 @@ from app.task.MaaFW.tools.embedded.embedded_project import (
     switch_view,
 )
 from app.task.MaaFW.tools.embedded.project_path import (
+    begin_project_updating,
+    end_project_updating,
     release_project_path_sync,
     try_reserve_project_path_sync,
 )
@@ -377,8 +380,12 @@ async def run_view_update(
     script_name: str = "",
     lock_timeout: float | None = None,
     base: Path | None = None,
+    switch_label: str = "新版本",
 ) -> ViewUpdateOutcome:
     """§3.1 第 1–8 步。
+
+    ``switch_label``：登记 / 切换日志里怎么称呼登记出来的载荷（投影补齐走同一条路，那不是
+    新版本）。
 
     ``reservation_held``：调用方是否整段持有 S 视图的项目预约（手动更新持有；运行前 /
     运行后自动更新不持有，这里切 S 时自己拿，拿不到就本轮不切、记一行日志——载荷已登记，
@@ -418,6 +425,9 @@ async def run_view_update(
         raise MaaFWProjectUpdateError(
             "同一项目正在自动更新/预检中，请稍后再试", project_lock_busy=True
         ) from exc
+    # 持谱系锁这段把 S 的视图登记为「正在更新」：手动更新拿不到预约时据此说「正在更新」，
+    # 而不是「脚本正在运行」（运行前 / 运行后自动更新都走这里）。
+    updating_key = begin_project_updating(view)
     try:
         # 1. 先同步到组（不联网）：组里已有别的版本就先切过去，再照常发现。
         synced = await sync_view_to_group(
@@ -469,9 +479,12 @@ async def run_view_update(
                 )
                 if switched is None:
                     outcome.s_skipped_reason = "项目正被占用，本次没切，下次运行前切换"
-                    log(f"新版本已登记，{outcome.s_skipped_reason}")
+                    log(f"{switch_label}已登记，{outcome.s_skipped_reason}")
                 else:
-                    log(f"已切到新版本 {switched.version}（{switched.elapsed:.1f} s）")
+                    log(
+                        f"已切到{switch_label} {switched.version}，"
+                        f"用时 {format_duration(switched.elapsed)}"
+                    )
             propagation = await asyncio.to_thread(
                 propagate_and_confirm,
                 lineage,
@@ -489,6 +502,7 @@ async def run_view_update(
 
         outcome.result = await core_call(view, target, after_register)
     finally:
+        end_project_updating(updating_key)
         lock.release()
 
     final = await asyncio.to_thread(read_view_marker, view)

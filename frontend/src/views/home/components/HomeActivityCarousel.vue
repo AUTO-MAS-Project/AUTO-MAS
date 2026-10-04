@@ -11,7 +11,7 @@
     </a-card>
 
     <template v-else>
-      <div class="activity-sticky-header">
+      <div class="activity-header">
         <!-- 没做 tablist 的方向键漫游焦点，就别用 tab 语义许下做不到的承诺 -->
         <div v-if="items.length > 1" class="banner-switcher">
           <button
@@ -31,7 +31,7 @@
         <slot v-if="activeKey" name="community" :module-key="activeKey" />
       </div>
 
-      <div v-if="activeItem && !isCompact" class="banner-viewport">
+      <div v-if="activeItem" class="banner-viewport">
         <div class="banner-track">
           <article v-for="item in [activeItem]" :key="item.key" class="banner-slide">
             <div class="banner-body" :style="bannerStyle(item)">
@@ -48,12 +48,33 @@
               <div class="banner-overlay" />
 
               <div class="banner-content">
-                <div class="banner-heading">
+                <div class="banner-badge">
                   <span class="banner-dot" :style="{ background: item.accent }" />
-                  <span class="banner-game">{{ item.title }}</span>
+                  <span class="banner-badge-text">{{ bannerBadge(item) }}</span>
                   <a-tag v-if="item.stale" color="orange">{{ t('home.sra.stale') }}</a-tag>
                 </div>
                 <div class="banner-subtitle">{{ bannerSubtitle(item) }}</div>
+              </div>
+
+              <!--
+                左下角给起止时间，右下角是倒计时（相对时间）：
+                两角各占一处，绝对时间与倒计时可对照着看。
+                版本号已经在上面那枚徽章里，这里不再重复一遍
+              -->
+              <div
+                v-if="item.startTime || item.endTime"
+                class="banner-meta"
+                :class="{ 'has-remaining': item.endTime || item.ended }"
+              >
+                <span v-if="item.startTime" class="meta-time">
+                  {{ formatActivityTime(item.startTime, locale) }}
+                </span>
+                <span v-if="item.startTime && item.endTime" class="meta-sep" aria-hidden="true">
+                  ~
+                </span>
+                <span v-if="item.endTime" class="meta-time">
+                  {{ formatActivityTime(item.endTime, locale) }}
+                </span>
               </div>
 
               <!-- 没有进行中的活动时只剩「后续活动即将开始」一行，倒计时整块不出现 -->
@@ -107,6 +128,7 @@ import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import type { CSSProperties } from 'vue'
 import { LeftOutlined, RightOutlined } from '@ant-design/icons-vue'
 import type { ActivityBannerItem, HomeModuleKey } from '@/types/home'
+import { formatActivityTime } from '@/views/home/activityTime'
 
 defineOptions({
   name: 'HomeActivityCarousel',
@@ -122,14 +144,15 @@ const props = withDefaults(defineProps<Props>(), {
   autoplayInterval: 6000,
 })
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 
 /**
  * 封面的铺法。横幅只有 300px 高、接近 5:1，而各家给的图形状差得远，
  * 统一裁法必然裁坏其中几张（实测：绝区零居中裁只剩腿，重返 1999 居中裁只剩空海面）。
  */
 type CoverMode =
-  /** 16:9 主视觉：贴顶裁，游戏 logo 与角色的脸都在图的上半部 */
+  /** 横版主视觉（16:9 那类）：满幅铺开、裁图像中部——横幅接近 5:1，上下必然要裁掉一些，
+      裁中间比贴顶稳妥：贴顶会把角色的身子整个切掉，只剩头部与背景 */
   | 'cover'
   /** 超高竖图（重返 1999 官网图 1920×3902）：只取上部条带，取值沿用原卡片里的 14% */
   | 'tall'
@@ -160,15 +183,14 @@ const activeIndex = computed(() => {
 const activeKey = computed<HomeModuleKey | null>(() => props.items[activeIndex.value]?.key ?? null)
 
 const activeItem = computed(() => props.items[activeIndex.value])
-const isCompact = computed(() =>
-  ['endfield', 'arknights', 'bluearchive'].includes(activeKey.value ?? '')
-)
 
 const remainingStyle: CSSProperties = {
-  color: '#fff',
-  fontSize: '20px',
-  fontWeight: '600',
-  lineHeight: '1.2',
+  color: 'var(--activity-accent)',
+  fontSize: '28px',
+  fontWeight: '700',
+  lineHeight: '1.1',
+  // 数字逐秒变化时宽度不抖
+  fontVariantNumeric: 'tabular-nums',
 }
 
 const hasCover = (item: ActivityBannerItem) =>
@@ -232,11 +254,13 @@ const coverMode = (item: ActivityBannerItem): CoverMode =>
   coverModes.value.get(coverOf(item)) ?? 'cover'
 
 const bannerStyle = (item: ActivityBannerItem): CSSProperties => {
+  const accent = { '--activity-accent': item.accent } as CSSProperties
   if (hasCover(item) && coverMode(item) !== 'inset' && coverModes.value.has(coverOf(item))) {
-    return {}
+    return accent
   }
   // 没有满幅封面时用主题色底纹兜底，文字仍是浅色，观感与有封面的一致
   return {
+    ...accent,
     background: `linear-gradient(120deg, ${item.accent}88 0%, rgba(16, 20, 28, 0.94) 72%)`,
   }
 }
@@ -254,6 +278,10 @@ const bannerSubtitle = (item: ActivityBannerItem) => {
   }
   return item.available ? t('home.carousel.noActivity') : t('home.carousel.unavailable')
 }
+
+/** 徽章：有版本号就报版本，没有的游戏退回游戏名 */
+const bannerBadge = (item: ActivityBannerItem) =>
+  item.version ? t('home.carousel.versionBadge', { version: item.version }) : item.title
 
 const countdownValue = (time: string) => {
   const timestamp = new Date(time).getTime()
@@ -336,14 +364,11 @@ onBeforeUnmount(() => {
   gap: 12px;
 }
 
-.activity-sticky-header {
-  position: sticky;
-  top: 0;
-  z-index: 10;
+/* 切换条与社区信息跟着页面一起滚：吸顶会一直挡着滚上来的横幅与卡片 */
+.activity-header {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  background: var(--ant-color-bg-layout);
 }
 
 .banner-viewport {
@@ -382,21 +407,22 @@ onBeforeUnmount(() => {
   opacity: 1;
 }
 
-.banner-cover.is-cover,
+/* 横版主视觉：满幅铺开、裁图像中部。横幅接近 5:1，上下必然要裁掉一些，
+   裁中间比贴顶稳妥——贴顶会把角色的身子整个切掉，只剩头部与背景 */
+.banner-cover.is-cover {
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center;
+}
+
 .banner-cover.is-tall {
   inset: 0;
   width: 100%;
   height: 100%;
   object-fit: cover;
-}
-
-/* 主视觉的游戏 logo 与角色的脸都在上半部，版本标题在下沿，所以贴顶裁 */
-.banner-cover.is-cover {
-  object-position: center top;
-}
-
-/* 超高竖图内容全挤在顶部一小条里；14% 沿用重返 1999 原卡片验证过的取值 */
-.banner-cover.is-tall {
+  /* 超高竖图内容全挤在顶部一小条里；14% 沿用重返 1999 原卡片验证过的取值 */
   object-position: center 14%;
 }
 
@@ -417,11 +443,13 @@ onBeforeUnmount(() => {
 .banner-overlay {
   position: absolute;
   inset: 0;
+  /* 只在放标题的左侧压暗，越往右越透：原来 0.88 起的整条压暗会把主图盖掉大半，
+     看着像“只露一角”；右下角的倒计时有自己的底衬，不靠这层 */
   background: linear-gradient(
     90deg,
-    rgba(8, 10, 14, 0.88) 0%,
-    rgba(8, 10, 14, 0.62) 46%,
-    rgba(8, 10, 14, 0.18) 100%
+    rgba(8, 10, 14, 0.78) 0%,
+    rgba(8, 10, 14, 0.42) 46%,
+    rgba(8, 10, 14, 0.08) 100%
   );
 }
 
@@ -438,22 +466,27 @@ onBeforeUnmount(() => {
   padding: 0 24px;
 }
 
-.banner-heading {
-  display: flex;
+.banner-badge {
+  display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
+  align-self: flex-start;
+  padding: 4px 12px;
+  border: 1px solid color-mix(in srgb, var(--activity-accent) 45%, transparent);
+  border-radius: 999px;
+  background: rgba(11, 18, 32, 0.55);
 }
 
 .banner-dot {
-  width: 8px;
-  height: 8px;
+  width: 6px;
+  height: 6px;
   border-radius: 50%;
 }
 
-.banner-game {
-  color: rgba(255, 255, 255, 0.82);
-  font-size: 13px;
-  font-weight: 500;
+.banner-badge-text {
+  color: var(--activity-accent);
+  font-size: 12px;
+  font-weight: 600;
   letter-spacing: 0.04em;
 }
 
@@ -461,36 +494,77 @@ onBeforeUnmount(() => {
   display: -webkit-box;
   overflow: hidden;
   color: #fff;
-  font-size: 24px;
-  font-weight: 600;
-  line-height: 1.25;
+  font-size: 30px;
+  font-weight: 700;
+  line-height: 1.2;
   text-overflow: ellipsis;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
+  line-clamp: 2;
+  /* 压暗减了一层，亮封面上的白字靠自身阴影保证读得清 */
+  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.55);
 }
 
-/* 亮色封面右侧几乎没有压暗，倒计时单独垫一层才读得清 */
+/* 亮色封面几乎没有压暗，左右两角的时间信息共用同一套底衬才读得清 */
+.banner-meta,
 .banner-remaining {
   position: absolute;
-  right: 20px;
   bottom: 16px;
-  padding: 6px 12px;
-  text-align: right;
-  background: rgba(8, 10, 14, 0.42);
-  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 22px;
+  background: rgba(8, 10, 14, 0.5);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 14px;
+  backdrop-filter: blur(10px);
+}
+
+.banner-remaining {
+  right: 20px;
+  border-color: color-mix(in srgb, var(--activity-accent) 35%, transparent);
+}
+
+/* 左下角的起止时间，与右下角的倒计时各占一角 */
+.banner-meta {
+  left: 24px;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  padding: 8px 16px;
+  color: rgba(255, 255, 255, 0.8);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+/* 右下角有倒计时时收窄，放不下就换行，不压到倒计时上 */
+.banner-meta.has-remaining {
+  max-width: calc(100% - 260px);
+}
+
+/* 每端时间是一个整体，不从日期中间折行 */
+.meta-time {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 连接符弱化，左右间距收紧，读起来是一整段起止时间 */
+.meta-sep {
+  margin: 0 -3px;
+  color: rgba(255, 255, 255, 0.4);
 }
 
 .remaining-label {
-  margin-bottom: 2px;
-  color: rgba(255, 255, 255, 0.72);
-  font-size: 12px;
+  color: rgba(255, 255, 255, 0.75);
+  font-size: 13px;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
 }
 
-/* 「后续活动即将开始」：只在这张卡展示的是刚结束的那场时出现 */
+/* 倒计时旁边那句注脚：「后续活动即将开始」或「活动已结束」 */
 .remaining-sub {
-  margin-top: 2px;
   color: rgba(255, 255, 255, 0.6);
   font-size: 12px;
+  white-space: nowrap;
 }
 
 .banner-arrow {
@@ -609,6 +683,11 @@ onBeforeUnmount(() => {
   .banner-remaining {
     right: 16px;
     bottom: 12px;
+  }
+
+  .banner-meta {
+    bottom: 12px;
+    left: 16px;
   }
 }
 </style>

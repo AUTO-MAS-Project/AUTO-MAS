@@ -81,6 +81,8 @@ interface EndfieldActivityItem {
   StartTime: string
   EndTime: string
   ImageUrl: string
+  /** 活动背景大图（游戏原生素材，走本软件后端缩放后使用），取不到时为空串 */
+  CoverUrl: string
   Tags: string[]
 }
 
@@ -124,6 +126,11 @@ export interface SraActivityItem {
   startTime: string
   endTime: string
   cover?: string
+  /**
+   * 数据源自己的活动分类：碧蓝档案给的是 Event（限时活动）与总力战一类的战斗玩法，
+   * 星塔旅人给的是「版本活动」这类；横幅按它挑要报的那一类
+   */
+  kind?: string
 }
 
 export interface SraActivityOverview {
@@ -140,57 +147,6 @@ export interface SraActivityOverview {
 
 export type Reverse1999ActivityOverview = SraActivityOverview
 export type BlueArchiveActivityOverview = SraActivityOverview
-
-/**
- * 星塔旅人的活动数据：后端原样转发 StellaBase 的响应，站点已经按状态分好三组，
- * 前端自己挑进行中的那条。与其它游戏不同，这里不需要版本维度，所以单独定义。
- */
-export interface StellaActivityItem {
-  title?: string
-  startTime?: string
-  endTime?: string
-  /**
-   * 活动配图，站点给三张相对路径：
-   * ``background`` 1644×900（弹窗大图，拿来做封面）、``banner`` 310×138、
-   * ``tabBackground`` 308×160（后两张太小，轮播会按「小图嵌入」处理成一小块）。
-   */
-  textures?: { background?: string; banner?: string; tabBackground?: string }
-}
-
-/** 国服官网主推横幅：官方活动主视觉 + 对应新闻页 + 官方标题（前几条才有） */
-export interface StellaOfficialBanner {
-  banner?: string
-  url?: string
-  title?: string
-  /** 标题与当前活动名对得上：封面优先用它，没有命中才退到最新一条 */
-  matched?: boolean
-}
-
-export interface StellaActivityOverview {
-  current: StellaActivityItem[]
-  upcoming: StellaActivityItem[]
-  ended: StellaActivityItem[]
-  /** 国服官网的主推横幅，取不到时为空数组（活动大图 404 时拿它兜底） */
-  official: StellaOfficialBanner[]
-  /**
-   * 这次是否成功取到了活动排期。
-   *
-   * 与「当前有没有进行中的活动」是两件事：站点正常返回、只是两组都空，也算取到了，
-   * 卡片据此显示「暂无进行中的活动」而不是「数据不可用」。
-   */
-  Available: boolean
-  /** 展示的是上一次取到的内容（本次刷新失败），卡片据此提示数据可能已过期 */
-  Stale?: boolean
-}
-
-export const createEmptyStellaActivityOverview = (): StellaActivityOverview => ({
-  current: [],
-  upcoming: [],
-  ended: [],
-  official: [],
-  Available: false,
-  Stale: false,
-})
 
 /** 碧蓝档案的三个服务器；与数据源的 line_type 一一对应 */
 export type BlueArchiveServerKey = 'jp' | 'global' | 'cn'
@@ -238,6 +194,8 @@ export interface ActivityBannerItem {
    * StellaBase 的 `background` 常 404，官网横幅与站点小图依次补位）。
    */
   coverCandidates?: string[]
+  /** 版本号（如 4.4 / 2026-09），取不到时留空，徽章退回游戏名 */
+  version?: string
   /** 版本名或当期活动名 */
   subtitle: string
   /** 活动开始时间；用来区分「还没开始」与「进行中」，取不到时为空串 */

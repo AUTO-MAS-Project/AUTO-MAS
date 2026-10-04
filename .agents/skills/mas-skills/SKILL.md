@@ -27,6 +27,9 @@ Apply these project rules directly when they overlap with a task:
 4. Script adaptation must be complete across config, schema, API, task dispatch, task folder, and frontend entry points, and must respect the black-box boundary: lower the configuration barrier before filling any gap, then decide capability ownership: work the script owns (in-game actions, task execution and verdicts, script config semantics) may only be reused through upstream entry points; when upstream lacks such work, consider contributing it upstream first and only fill in inside MAS as a temporary measure (marked for removal once upstream ships it) when that is not viable; MAS-owned domains (accounts, scheduling, plans, notifications, statistics, emulator lifecycle, cross-script orchestration) may be implemented in MAS but must not read or infer upstream internal state; upstream private formats may only be passed through, never modeled on, and no self-invented verdicts for upstream-executed tasks. Once upstream ships an entry point for such work, existing implementations become violations and must be replaced by reuse. After this skill is loaded, self-check the task and, on a hit, report "This may violate the MAS development norms" with file:line evidence and an alternative; the warning does not block work. Read `.agents/skills/mas-script-specialized-adapter/references/blackbox-boundary.md` before designing.
 5. Frontend work follows the dedicated frontend skills in this directory.
 6. Contribution style follows Conventional Commits, Google-style backend docstrings where useful, config-item comments, and keyword arguments for booleans or multi-argument calls.
+7. CI must pin every external reference to immutable content: GitHub Actions `uses` entries use a full 40-character commit SHA with a `# <tag>` version comment (resolve annotated tags to the peeled commit), and container images use `@sha256:<digest>`. Apply this across GitHub workflows, composite actions, and CNB pipelines; local actions such as `./.github/actions/...` are the only exception. Never leave a mutable tag, branch, or short hash. When changing CI, scan every `uses:` and `image:` reference and verify that all external references remain pinned.
+
+8. Start every branch from the latest upstream `dev` (`git fetch` first; in a fork, branch off upstream `dev`), never from a stale local `dev`: a branch built on an old baseline silently overwrites other people's merged work when it is synced, with no conflict and green type checks. Branch rules: <https://doc.auto-mas.top/developer/development-specifications.html>.
 
 ## Sub-Skills
 Use these skills as needed:
@@ -110,7 +113,7 @@ When using this hub:
 3. Apply only the minimum set required by the task.
 4. Keep compatibility-first decisions for legacy modules unless explicitly asked to refactor broadly.
 5. In review tasks, call out where findings follow known maintainer preferences rather than only generic engineering taste.
-6. For Issue/PR body writing, follow the docs site instead of inventing repository-specific text here.
+6. For Issue/PR body writing, follow the docs site instead of inventing repository-specific text here; the drafting techniques live in the `pr` skill.
 7. For frontend tasks, state whether `mas-frontend-standards` and `mas-frontend-ui` were selected and why.
 
 ## Review Checklist
@@ -123,3 +126,4 @@ When using this hub:
 7. Contribution-process details were not duplicated from the docs site except as links or brief reminders.
 8. Every user-visible feature or fix includes exactly one changelog fragment under `changelog.d/`, and leaves `CHANGELOG.md`, `res/version.json` and the version numbers untouched.
 9. Any cherry-pick to a released branch was verified to touch backend files only.
+10. Every external CI action and container image is pinned to a full commit SHA or digest, with an updater-readable version comment where applicable; no mutable reference remains.

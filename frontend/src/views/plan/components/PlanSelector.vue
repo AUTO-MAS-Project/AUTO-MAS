@@ -39,7 +39,7 @@
               :title="t('plan.drag')"
               @click.stop
             >
-              <MenuOutlined />
+              <span class="plan-drag-dots" aria-hidden="true"></span>
             </span>
 
             <a-input
@@ -83,7 +83,7 @@
 <script setup lang="ts">
 import { nextTick, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { EditOutlined, MenuOutlined } from '@ant-design/icons-vue'
+import { EditOutlined } from '@ant-design/icons-vue'
 import draggable from 'vuedraggable'
 import { PLAN_TYPE_REGISTRY, type PlanConfigType } from '@/utils/planTypeRegistry'
 
@@ -240,7 +240,6 @@ const getPlanTypeLabel = (planType: PlanConfigType) => PLAN_TYPE_REGISTRY[planTy
   user-select: none;
 }
 
-.plan-drag-handle:hover,
 .plan-drag-handle:focus-visible {
   color: var(--ant-color-primary);
   outline: none;
@@ -249,6 +248,20 @@ const getPlanTypeLabel = (planType: PlanConfigType) => PLAN_TYPE_REGISTRY[planTy
 .plan-drag-handle:active,
 .plan-chosen .plan-drag-handle {
   cursor: grabbing;
+}
+
+.plan-drag-dots {
+  width: 10px;
+  height: 16px;
+  display: block;
+  background-image: radial-gradient(currentColor 1.2px, transparent 1.2px);
+  background-size: 5px 5px;
+  opacity: 0.65;
+}
+
+.plan-drag-handle:hover .plan-drag-dots,
+.plan-drag-handle:focus-visible .plan-drag-dots {
+  opacity: 0.85;
 }
 
 .plan-rename-input {

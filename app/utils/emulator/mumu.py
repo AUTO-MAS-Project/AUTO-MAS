@@ -39,6 +39,11 @@ from pathlib import Path
 from app.models.config import EmulatorConfig
 from app.models.emulator import DeviceBase, DeviceInfo, DeviceStatus
 from app.utils import ProcessRunner, get_logger
+from app.utils.emulator.tools import (
+    AudioMuteRecord,
+    apply_launch_audio_mute,
+    restore_audio_before_close,
+)
 
 logger = get_logger("MuMu模拟器管理")
 
@@ -49,6 +54,10 @@ MUMU_FORCE_KILL_KEYWORDS = (
 )
 # 强力清理后等进程真正退出的上限（秒），kill 是异步的，发完信号不等于已经没了
 MUMU_FORCE_KILL_WAIT_SECONDS = 10
+# 关闭后离线要连续保持多久才算关完（秒）。实测 MuMu 6.8：shutdown 后 info 先报一次离线
+# （info_source=local），紧接着的一次偶尔又回关机前的旧快照报在线（pid 已退出），
+# 之后才稳定离线；这时立刻重开会把旧快照当成「已在线」，跳过启动
+MUMU_CLOSE_SETTLE_SECONDS = 2
 MUMU_STORE_PACKAGE = "com.mumu.store"
 MUMU_STORE_OVERLAY_APP_OP = "SYSTEM_ALERT_WINDOW"
 
@@ -70,6 +79,9 @@ class MumuManager(DeviceBase):
         self.config = config
 
         self.emulator_path = Path(config.get("Info", "Path"))
+
+        # {实例索引: 静音记录}，启动时跟随静音、关闭前还原
+        self._audio_mute_states: dict[str, AudioMuteRecord] = {}
 
     def get_adb_path(self) -> Path | None:
         adb_path = self.emulator_path.parent / "adb.exe"
@@ -335,13 +347,22 @@ class MumuManager(DeviceBase):
         while time.monotonic() < deadline:
             status = await self.getStatus(idx)
             if status == DeviceStatus.ONLINE:
+                # 状态和地址以同一份 info 为准：刚关闭时 info 偶尔回一份旧快照报在线，
+                # 下一次已是离线，照样返回只会拿到推算的 ADB 地址
+                info = (await self.getInfo(idx))[idx]
+                if info.status != DeviceStatus.ONLINE:
+                    logger.warning(
+                        f"模拟器 {idx} 报在线后又报 {info.status.name}，继续等待状态稳定"
+                    )
+                    await asyncio.sleep(0.1)
+                    continue
                 logger.info(
                     f"模拟器已在线，跳过应用启动检查: {idx} - {package_name} - "
                     f"用时: {time.monotonic() - started_at:.3f}秒"
                 )
                 if Config.get("Function", "IfBlockAd"):
                     await self._block_store_overlay_ads(idx)
-                return (await self.getInfo(idx))[idx]
+                return info
             elif status == DeviceStatus.OFFLINE:
                 logger.info(f"模拟器离线，开始执行启动流程: {idx} - {package_name}")
                 break
@@ -436,6 +457,11 @@ class MumuManager(DeviceBase):
                     )
                 else:
                     await asyncio.sleep(3)
+                await apply_launch_audio_mute(
+                    self._audio_mute_states,
+                    idx,
+                    await self._resolve_audio_pids(idx),
+                )
                 return (await self.getInfo(idx))[idx]
             await asyncio.sleep(0.1)
         else:
@@ -457,7 +483,36 @@ class MumuManager(DeviceBase):
         """启动失败 / 超时报错的附加说明。旧配置不加，Emulator 2.0 的后端覆盖它。"""
         return ""
 
+    async def _resolve_audio_pids(self, idx: str) -> list[int]:
+        """定位渲染该实例声音的进程（MuMuNxDevice.exe），供音频静音使用。
+
+        声音不在窗口进程（MuMuNxMain.exe）里，而在每实例一个的 nx_device 进程里，
+        其命令行带 VM 名 ``MuMuPlayer-12.0-<idx>``，按它精确匹配，多开也不会误伤
+        其他实例。进程扫描放线程里执行，不占事件循环。
+        """
+        token = f"MuMuPlayer-12.0-{idx}"
+
+        def scan() -> list[int]:
+            pids: list[int] = []
+            for proc in psutil.process_iter(["name", "cmdline"]):
+                try:
+                    name = (proc.info["name"] or "").lower()
+                    if name != "mumunxdevice.exe":
+                        continue
+                    # VM 名可能是独立参数（--vm X）或等号连写（--vm=X）
+                    if any(
+                        part.split("=")[-1] == token
+                        for part in (proc.info["cmdline"] or [])
+                    ):
+                        pids.append(proc.pid)
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                    continue
+            return pids
+
+        return await asyncio.to_thread(scan)
+
     async def close(self, idx: str) -> DeviceStatus:
+        await restore_audio_before_close(self._audio_mute_states, idx)
         started_at = time.monotonic()
         try:
             status = await self.getStatus(idx)
@@ -485,13 +540,24 @@ class MumuManager(DeviceBase):
                 f"{time.monotonic() - started_at:.3f}秒"
             )
             deadline = time.monotonic() + self.config.get("Info", "MaxWaitTime")
+            offline_since: float | None = None
             while time.monotonic() < deadline:
                 status = await self.getStatus(idx)
-                if status == DeviceStatus.OFFLINE:
+                if status != DeviceStatus.OFFLINE:
+                    if offline_since is not None:
+                        logger.warning(
+                            f"模拟器 {idx} 报离线后又报 {status.name}，继续等待状态稳定"
+                        )
+                    offline_since = None
+                elif offline_since is None:
+                    offline_since = time.monotonic()
+                elif time.monotonic() - offline_since >= MUMU_CLOSE_SETTLE_SECONDS:
                     return DeviceStatus.OFFLINE
                 await asyncio.sleep(0.1)
 
             else:
+                if status == DeviceStatus.OFFLINE:
+                    return DeviceStatus.OFFLINE
                 if status in [DeviceStatus.ERROR, DeviceStatus.UNKNOWN]:
                     raise RuntimeError(f"模拟器 {idx} 关闭失败, 状态码: {status}")
                 raise RuntimeError(f"模拟器 {idx} 关闭超时, 当前状态码: {status}")
@@ -720,16 +786,30 @@ class MumuManager(DeviceBase):
             logger.error(f"JSON解析错误: {e}")
             return DeviceStatus.UNKNOWN
 
-        return self._get_status_from_data(data_json)
+        entries = self._extract_device_entries(data_json)
+        if not entries:
+            # 输出里只有埋点或 MuMu 自己的错误对象: 拿不到设备状态, 按未知处理而不是抛异常
+            logger.warning(
+                f"MuMu 输出里没有设备信息（实例 {idx}），按未知状态处理: {str(data)[:200]!r}"
+            )
+            return DeviceStatus.UNKNOWN
+
+        entry = next(
+            (e for e in entries if str(e.get("index")) == str(idx)), entries[0]
+        )
+        return self._get_status_from_data(entry)
 
     @staticmethod
     def _get_status_from_data(data: dict[str, object]) -> DeviceStatus:
-        if data["is_android_started"]:
+        if data.get("is_android_started"):
             return DeviceStatus.ONLINE
-        elif data["is_process_started"]:
+        if data.get("is_process_started"):
             return DeviceStatus.STARTING
-        else:
+        if "is_android_started" in data or "is_process_started" in data:
             return DeviceStatus.OFFLINE
+
+        # 状态键缺失: 既不能当离线(会让 _list_running_instances 漏掉实例), 也不能抛异常
+        return DeviceStatus.UNKNOWN
 
     @staticmethod
     def _resolve_adb_address(data: dict[str, object]) -> str | None:

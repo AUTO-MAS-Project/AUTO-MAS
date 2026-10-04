@@ -3,6 +3,7 @@ import * as path from 'path'
 import AdmZip = require('adm-zip')
 
 import { getLogger } from './logger'
+import { probeProjectRuntime } from './maafwProjectRuntimeProbe'
 import {
   CollectorState,
   addDebugDirectory,
@@ -27,7 +28,7 @@ const MSS_CONFIG_TYPE = 'MSSConfig'
 const VIEW_DIR_NAME_LENGTH = 12
 
 // 与 app/task/MaaFW/tools/embedded/runner_task.py 的 history_dir / history_stamp 同步：
-// history/<YYYY-MM-DD>/<用户名>/<HH-MM-SS>.{json,log,worker.log,maafw.log}，
+// history/<YYYY-MM-DD>/<用户名>/<HH-MM-SS>.{json,log,worker.log,maafw.log,project.log}，
 // 失败截图 <HH-MM-SS>.<failed|timeout>-<HHMMSS>-<任务名>.png 与它们放在一起
 const HISTORY_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/
 const HISTORY_FILE_PATTERN = /^(\d{2}-\d{2}-\d{2})\.(.+)$/
@@ -92,6 +93,8 @@ interface HistoryRun {
   log?: string
   workerLog?: string
   maafwLog?: string
+  /** 项目 agent 自己写的日志本次新增的部分（debug/custom、go-service …），写的时候已打码 */
+  projectLog?: string
   screenshots: string[]
   /** .worker.log 里认出的项目视图；null 表示读过但没认出来 */
   viewDirName?: string | null
@@ -291,6 +294,9 @@ function scanHistoryRuns(dataRoot: string): HistoryRun[] {
             break
           case 'maafw.log':
             run.maafwLog = filePath
+            break
+          case 'project.log':
+            run.projectLog = filePath
             break
           default:
             if (!SCREENSHOT_SUFFIX_PATTERN.test(suffix)) {
@@ -628,6 +634,13 @@ async function createIssueReport(
     includeNativeLog: boolean
   }> = []
   const projectDebugDirs: Array<{ viewDir: string; archiveRoot: string }> = []
+  // 各脚本的运行时检查并行起跑（每个最多 15 秒），收集到它时再取结果
+  const runtimeProbes = new Map(
+    scripts.map(script => [
+      script,
+      probeProjectRuntime(path.join(script.dataRoot, 'data', 'mfw', script.viewDirName)),
+    ])
+  )
 
   for (const script of scripts) {
     const scriptRoot = `scripts/${script.viewDirName}`
@@ -683,8 +696,11 @@ async function createIssueReport(
 
     for (const selected of selectedRuns) {
       const { run } = selected
-      const workerLog = frameworkLogsShareable.get(selected) ? run.workerLog : undefined
-      for (const filePath of [run.json, run.log, workerLog]) {
+      const shareable = frameworkLogsShareable.get(selected)
+      const workerLog = shareable ? run.workerLog : undefined
+      // .project.log 写的时候已按全部用户的密码打码，这里仍与 .worker.log 同一条件从严
+      const projectLog = shareable ? run.projectLog : undefined
+      for (const filePath of [run.json, run.log, workerLog, projectLog]) {
         if (filePath) {
           addDiagnosticFile(state, filePath, historyArchivePath(scriptRoot, run, filePath))
         }
@@ -717,6 +733,7 @@ async function createIssueReport(
       projectLabel: script.projectLabel,
       archiveRoot: scriptRoot,
       projectVersion: readViewVersion(viewDir),
+      projectRuntime: await runtimeProbes.get(script),
       projectDebug: protectSecrets
         ? '未收集：项目带密码输入框，框架与 agent 自己写的日志里可能有密码原文'
         : '已收集（顶层 maafw*.log 即 history 里各次的 .maafw.log，不重复收）',

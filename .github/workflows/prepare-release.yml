@@ -47,8 +47,9 @@ permissions:
   pull-requests: write
 
 concurrency:
-  group: prepare-release-${{ github.ref_name }}
+  group: changelog-${{ github.ref_name }}
   cancel-in-progress: false
+  queue: max
 
 jobs:
   prepare:
@@ -65,9 +66,11 @@ jobs:
           echo "::error::「准备发版」只能在 dev 或 release/* 分支上运行，当前选的是 ${REF_NAME}。请在 Run workflow 的分支下拉框里改选。"
           exit 1
 
+      # 与晚间入账共用分支锁，排队后检出最新分支。
       - name: 检出代码
-        uses: actions/checkout@v7.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ github.ref_name }}
           fetch-depth: 0
           fetch-tags: true
 
@@ -85,7 +88,7 @@ jobs:
           echo "默认分支 ${default_branch} 上没有旧机器人，可以继续"
 
       - name: 设置 Python 环境
-        uses: actions/setup-python@v7.0.0
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: '3.12'
 
@@ -98,7 +101,8 @@ jobs:
         run: |
           echo "base_slug=${REF_NAME//\//-}" >> "$GITHUB_OUTPUT"
 
-      - name: 编译碎片并推进版本号
+      # release 一并入账晚间任务尚未处理的碎片，保留署名与 PR 号。
+      - name: 发版前入账碎片并推进版本号
         id: release
         env:
           # 解析碎片作者用：把提交换成 GitHub 登录名
@@ -120,7 +124,7 @@ jobs:
       # 仓库配置了 RELEASE_PR_TOKEN（PAT 或 GitHub App 令牌）时改用它，检查就能照常触发。
       - name: 开发版 PR
         id: pr
-        uses: peter-evans/create-pull-request@v8
+        uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1 # v8
         with:
           token: ${{ secrets.RELEASE_PR_TOKEN || github.token }}
           base: ${{ github.ref_name }}

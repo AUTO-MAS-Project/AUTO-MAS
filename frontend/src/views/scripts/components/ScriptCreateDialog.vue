@@ -83,65 +83,29 @@
           </a-empty>
         </template>
 
-        <!-- MFW 家族第二步：项目从哪来。已导入过的项目直接列出来复用（从那个脚本的副本克隆，
-             运行时与模型共用、不另占空间，来源目录删了也能建）；只列与入口同类型的项目——
-             选了 M9A 入口就只能复用 M9A 项目。第一行永远是「新建一个别的项目」 -->
+        <!-- MFW 家族第二步：项目从哪来（新建一个别的项目 / 复用已导入的同类型项目）。
+             选项列表是可由特调替换的分节 create.source，选中状态留在这里；
+             之后是特调的插入点 create.afterSourceStep -->
         <template v-else-if="currentStep === 'config' && isMfwFamily(selectedType)">
           <StepHeading
             :title="t('scripts.create.mfwSourceHeading')"
             :description="t('scripts.create.mfwSourceHeadingDesc')"
           />
-          <a-radio-group v-model:value="selectedMfwChoice" class="choice-list">
-            <label :class="['choice-row', { selected: selectedMfwChoice === 'new' }]">
-              <a-radio value="new" />
-              <span class="choice-icon"><FolderOpenOutlined /></span>
-              <span class="choice-copy">
-                <span class="choice-title">{{ t('scripts.create.mfwNewProject') }}</span>
-                <span class="choice-description">{{ t('scripts.create.mfwNewProjectDesc') }}</span>
-              </span>
-            </label>
-            <div class="choice-group-heading">
-              <span class="choice-group-title">{{ t('scripts.create.mfwReuse') }}</span>
-              <span class="choice-group-description">{{ t('scripts.create.mfwReuseDesc') }}</span>
-            </div>
-            <a-alert
-              v-if="mfwSourcesError"
-              type="error"
-              show-icon
-              :message="mfwSourcesError"
-              class="template-alert"
-            >
-              <template #action>
-                <a-button size="small" @click="emit('request-mfw-sources')">{{
-                  t('scripts.create.retry')
-                }}</a-button>
-              </template>
-            </a-alert>
-            <div v-if="mfwSourcesLoading" class="choice-placeholder">
-              <a-spin size="small" />
-              <span>{{ t('scripts.create.mfwReuseLoading') }}</span>
-            </div>
-            <template v-else-if="mfwReuseChoices.length">
-              <label
-                v-for="choice in mfwReuseChoices"
-                :key="choice.scriptId"
-                :class="[
-                  'choice-row',
-                  { selected: selectedMfwChoice === choice.scriptId, disabled: choice.busy },
-                ]"
-              >
-                <a-radio :value="choice.scriptId" :disabled="choice.busy" />
-                <span class="choice-icon"><CopyOutlined /></span>
-                <span class="choice-copy">
-                  <span class="choice-title">{{ mfwReuseTitle(choice) }}</span>
-                  <span class="choice-description">{{ mfwReuseMeta(choice) }}</span>
-                </span>
-              </label>
-            </template>
-            <div v-else-if="!mfwSourcesError" class="choice-placeholder">
-              {{ t('scripts.create.mfwReuseEmpty', { type: selectedType }) }}
-            </div>
-          </a-radio-group>
+          <component
+            :is="createSections.source"
+            v-model:value="selectedMfwChoice"
+            :type="createFlavor.type"
+            :choices="mfwReuseChoices"
+            :loading="mfwSourcesLoading"
+            :error="mfwSourcesError"
+            @retry="emit('request-mfw-sources')"
+          />
+          <MaaFWFlavorSlot
+            part="create"
+            name="afterSourceStep"
+            :flavor="createFlavor"
+            :context="createSlotContext"
+          />
         </template>
 
         <template v-else-if="currentStep === 'config'">
@@ -180,10 +144,12 @@
                 v-model:value="templateKeyword"
                 allow-clear
                 :placeholder="t('scripts.create.templateSearch')"
+                @update:value="scheduleTemplateSearch"
+                @press-enter="requestTemplates(1)"
               >
                 <template #prefix><SearchOutlined /></template>
               </a-input>
-              <a-button :loading="templateLoading" @click="emit('request-templates')">{{
+              <a-button :loading="templateLoading" @click="requestTemplates(templatePage)">{{
                 t('scripts.create.reload')
               }}</a-button>
             </div>
@@ -195,7 +161,7 @@
               class="template-alert"
             >
               <template #action>
-                <a-button size="small" @click="emit('request-templates')">{{
+                <a-button size="small" @click="requestTemplates(templatePage)">{{
                   t('scripts.create.retry')
                 }}</a-button>
               </template>
@@ -203,42 +169,46 @@
             <div v-if="templateLoading" class="template-loading-state">
               <a-spin size="large" :tip="t('scripts.create.templateLoading')" />
             </div>
-            <a-radio-group
-              v-else-if="filteredTemplates.length"
-              v-model:value="selectedTemplateUrl"
-              class="entity-list template-list"
-            >
-              <label
-                v-for="template in filteredTemplates"
-                :key="template.downloadUrl"
-                :class="[
-                  'entity-row template-row',
-                  { selected: selectedTemplateUrl === template.downloadUrl },
-                ]"
-              >
-                <span class="choice-copy">
-                  <span class="choice-title">{{ template.configName }}</span>
-                  <span class="template-meta">
-                    <span
-                      ><UserOutlined />
-                      {{ template.author || t('scripts.template.unknownAuthor') }}</span
-                    >
-                    <span
-                      ><ClockCircleOutlined />
-                      {{ template.createTime || t('scripts.template.unknownTime') }}</span
-                    >
+            <template v-else-if="templates.length">
+              <a-radio-group v-model:value="selectedTemplateKey" class="entity-list template-list">
+                <label
+                  v-for="template in templates"
+                  :key="template.configKey"
+                  :class="[
+                    'entity-row template-row',
+                    { selected: selectedTemplateKey === template.configKey },
+                  ]"
+                >
+                  <span class="choice-copy">
+                    <span class="choice-title">{{ template.displayName }}</span>
+                    <span class="template-meta">
+                      <span
+                        ><UserOutlined />
+                        {{ template.ownerUsername || t('scripts.template.unknownAuthor') }}</span
+                      >
+                      <span
+                        ><ClockCircleOutlined /> {{ formatPublishedAt(template.publishedAt) }}</span
+                      >
+                    </span>
+                    <span class="template-description">{{
+                      template.description || t('scripts.noDescription')
+                    }}</span>
                   </span>
-                  <!-- eslint-disable vue/no-v-html -- MarkdownIt has raw HTML disabled, so template descriptions are escaped. -->
-                  <span
-                    class="template-description"
-                    @click="handleTemplateDescriptionClick"
-                    v-html="parseMarkdown(template.description)"
-                  ></span>
-                  <!-- eslint-enable vue/no-v-html -->
-                </span>
-                <a-radio :value="template.downloadUrl" />
-              </label>
-            </a-radio-group>
+                  <a-radio :value="template.configKey" />
+                </label>
+              </a-radio-group>
+              <div v-if="templateTotal > templatePageSize" class="template-pagination">
+                <a-pagination
+                  size="small"
+                  :current="templatePage"
+                  :page-size="templatePageSize"
+                  :total="templateTotal"
+                  :show-size-changer="false"
+                  :disabled="templateLoading"
+                  @change="requestTemplates"
+                />
+              </div>
+            </template>
             <a-empty
               v-else
               :description="
@@ -247,7 +217,7 @@
                   : t('scripts.create.noTemplates')
               "
             >
-              <a-button v-if="templateKeyword" @click="templateKeyword = ''">{{
+              <a-button v-if="templateKeyword" @click="clearTemplateKeyword">{{
                 t('scripts.clearSearch')
               }}</a-button>
               <a-button v-else @click="chooseCustomConfig">{{
@@ -276,7 +246,7 @@
               {{
                 selectedConfigMode === 'custom'
                   ? t('scripts.create.custom')
-                  : t('scripts.create.sourceTemplate', { name: selectedTemplate?.configName })
+                  : t('scripts.create.sourceTemplate', { name: selectedTemplate?.displayName })
               }}
             </a-descriptions-item>
           </a-descriptions>
@@ -301,22 +271,28 @@
 
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
-import { computed, defineComponent, h, ref, watch } from 'vue'
+import { computed, defineComponent, h, onBeforeUnmount, ref, watch } from 'vue'
 import {
   ArrowLeftOutlined,
   ClockCircleOutlined,
-  CopyOutlined,
   DatabaseOutlined,
-  FolderOpenOutlined,
   SearchOutlined,
   SettingOutlined,
   UserOutlined,
 } from '@ant-design/icons-vue'
-import MarkdownIt from 'markdown-it'
 import type { ScriptType } from '@/types/script'
-import type { WebConfigTemplate } from '@/composables/useTemplateApi'
+import type { ShareTemplateItem } from '@/composables/useTemplateApi'
+import { formatBackendDateTime } from '@/utils/dateDisplay'
 import type { MaaFWEmbeddedSourceItem } from '@/api'
+import {
+  prepareMaaFWFlavorPage,
+  resolveMaaFWFlavor,
+  useMaaFWSections,
+  type MaaFWCreateSlotContext,
+} from '@/composables/useMaaFWFlavor'
+import MaaFWFlavorSlot from '@/views/EditView/MaaFWFlavor/MaaFWFlavorSlot.vue'
 import { openExternalUrl } from '@/utils/openExternal'
+import MaaFWSourceStep from './MaaFWSourceStep.vue'
 import {
   buildCreateRequest,
   buildCreateSteps,
@@ -327,8 +303,8 @@ import {
   type ConfigMode,
   type CreateStepKey,
   buildMfwReuseChoices,
-  type MfwReuseChoice,
   type ScriptCreateRequest,
+  type TemplateRequest,
 } from './scriptCreateFlow'
 
 const { t } = useI18n()
@@ -343,11 +319,14 @@ const StepHeading = defineComponent({
 
 const props = defineProps<{
   open: boolean
-  templates: WebConfigTemplate[]
+  templates: ShareTemplateItem[]
   submitting: boolean
   templateLoading: boolean
   templateError: string | null
-  /** 有健康副本的 MFW / M9A 脚本：MFW 家族第二步「复用已有脚本的项目」的候选 */
+  templatePage: number
+  templatePageSize: number
+  templateTotal: number
+  /** 有健康副本的 MFW 家族脚本：MFW 家族第二步「复用已有脚本的项目」的候选（按类型筛在这里做） */
   mfwSources: MaaFWEmbeddedSourceItem[]
   mfwSourcesLoading: boolean
   /** 候选列表没读出来时的原因；有值就显示错误条 + 重试，而不是把它当成「没有可复用的脚本」 */
@@ -356,21 +335,24 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   'update:open': [open: boolean]
-  'request-templates': []
+  'request-templates': [query: TemplateRequest]
   'request-mfw-sources': []
   submit: [request: ScriptCreateRequest]
 }>()
 
-const md = new MarkdownIt({ html: false, linkify: true, typographer: true })
+// 关键字输入后的静默期，避免每敲一个字就打一次配置中心
+const TEMPLATE_SEARCH_DEBOUNCE = 400
+
 const currentStep = ref<CreateStepKey>('type')
 const selectedType = ref<ScriptType>('MAA')
 const selectedConfigMode = ref<ConfigMode>('template')
-const selectedTemplateUrl = ref<string | null>(null)
+const selectedTemplateKey = ref<string | null>(null)
 const configView = ref<'choice' | 'templates'>('choice')
 /** 'new' = 新建一个别的项目（进引导页选目录）；否则是要复用的项目所属脚本的 id */
 const selectedMfwChoice = ref<string>('new')
 const typeKeyword = ref('')
 const templateKeyword = ref('')
+let searchTimer: ReturnType<typeof setTimeout> | null = null
 
 const steps = computed(() => buildCreateSteps({ type: selectedType.value }))
 const currentStepIndex = computed(() =>
@@ -396,19 +378,17 @@ const filteredTypes = computed(() =>
   filterScriptTypeOptions(typeOptions.value, typeKeyword.value, t)
 )
 const typeSections = computed(() => splitScriptTypeOptions(filteredTypes.value))
-const filteredTemplates = computed(() => {
-  const keyword = templateKeyword.value.trim().toLowerCase()
-  return props.templates.filter(template =>
-    [template.configName, template.author, template.description]
-      .join(' ')
-      .toLowerCase()
-      .includes(keyword)
-  )
-})
 const selectedTemplate = computed(() =>
-  props.templates.find(template => template.downloadUrl === selectedTemplateUrl.value)
+  props.templates.find(template => template.configKey === selectedTemplateKey.value)
 )
 const isMfwStep = computed(() => currentStep.value === 'config' && isMfwFamily(selectedType.value))
+// MFW 家族第二步按选中的类型卡片取特调：分节可被它替换（默认是 MaaFWSourceStep），后面跟它的插入点
+const createFlavor = computed(() => resolveMaaFWFlavor(selectedType.value))
+const createSections = useMaaFWSections(createFlavor, 'create', { source: MaaFWSourceStep })
+const createSlotContext = computed<MaaFWCreateSlotContext>(() => ({
+  type: createFlavor.value.type,
+  selection: selectedMfwChoice.value,
+}))
 // 可复用的项目只列与入口同类型的，同一项目多个脚本并成一行
 const mfwReuseChoices = computed(() => buildMfwReuseChoices(props.mfwSources, selectedType.value))
 // 选中的源以当前列表为准：返回再进来时列表会重新拉，源可能已在运行（busy）或已被删，
@@ -430,7 +410,7 @@ const nextDisabled = computed(() => {
     return selectedMfwChoice.value !== 'new' && (props.mfwSourcesLoading || !selectedMfwReuse.value)
   }
   if (currentStep.value === 'config' && configView.value === 'templates') {
-    return !selectedTemplateUrl.value
+    return !selectedTemplateKey.value
   }
   return false
 })
@@ -462,30 +442,45 @@ watch(
 )
 
 const resetDialog = () => {
+  cancelScheduledSearch()
   currentStep.value = 'type'
   selectedType.value = 'MAA'
   selectedConfigMode.value = 'template'
-  selectedTemplateUrl.value = null
+  selectedTemplateKey.value = null
   configView.value = 'choice'
   selectedMfwChoice.value = 'new'
   typeKeyword.value = ''
   templateKeyword.value = ''
 }
 
-// 标题是项目名（interface 读不出就用脚本名）；副标题「来自脚本「x」 · 版本」，
-// 持有该项目的脚本都在跑时标一句「运行中」，那一行本身已禁用
-const mfwReuseTitle = (choice: MfwReuseChoice) =>
-  choice.projectName || choice.scriptName || choice.scriptId.slice(0, 8)
-const mfwReuseMeta = (choice: MfwReuseChoice) => {
-  const name = choice.scriptName || choice.scriptId.slice(0, 8)
-  const from =
-    choice.scriptCount > 1
-      ? t('scripts.create.mfwReuseFromMany', { name, count: choice.scriptCount })
-      : t('scripts.create.mfwReuseFrom', { name })
-  const parts = [from, choice.version]
-  if (choice.busy) parts.push(t('scripts.create.mfwReuseBusy'))
-  return parts.filter(Boolean).join(' · ')
+const cancelScheduledSearch = () => {
+  if (searchTimer !== null) {
+    clearTimeout(searchTimer)
+    searchTimer = null
+  }
 }
+
+const requestTemplates = (page: number) => {
+  cancelScheduledSearch()
+  selectedTemplateKey.value = null
+  emit('request-templates', { page, keyword: templateKeyword.value.trim() })
+}
+
+const scheduleTemplateSearch = () => {
+  cancelScheduledSearch()
+  searchTimer = setTimeout(() => requestTemplates(1), TEMPLATE_SEARCH_DEBOUNCE)
+}
+
+const clearTemplateKeyword = () => {
+  templateKeyword.value = ''
+  requestTemplates(1)
+}
+
+// 发布时间来自配置中心，按本机时区展示
+const formatPublishedAt = (publishedAt: string | undefined) =>
+  publishedAt ? formatBackendDateTime(publishedAt) : t('scripts.template.unknownTime')
+
+onBeforeUnmount(cancelScheduledSearch)
 
 const getTypeOption = (type: ScriptType) =>
   SCRIPT_TYPE_OPTIONS.find(option => option.value === type) ?? SCRIPT_TYPE_OPTIONS[0]
@@ -504,7 +499,11 @@ const handleNext = () => {
   if (currentStep.value === 'type') {
     if (steps.value.length > 1) {
       currentStep.value = 'config'
-      if (isMfwFamily(selectedType.value)) emit('request-mfw-sources')
+      if (isMfwFamily(selectedType.value)) {
+        emit('request-mfw-sources')
+        // 特调替换的分节与插入点按需加载：进这一步时预取（从不往外抛）
+        void prepareMaaFWFlavorPage(createFlavor.value, 'create')
+      }
     } else {
       submitCurrentSelection()
     }
@@ -517,10 +516,10 @@ const handleNext = () => {
   if (currentStep.value === 'config') {
     if (configView.value === 'choice' && selectedConfigMode.value === 'template') {
       configView.value = 'templates'
-      emit('request-templates')
+      requestTemplates(1)
       return
     }
-    if (selectedConfigMode.value === 'custom' || selectedTemplateUrl.value) submitCurrentSelection()
+    if (selectedConfigMode.value === 'custom' || selectedTemplateKey.value) submitCurrentSelection()
     return
   }
 }
@@ -547,16 +546,6 @@ const clearTypeFilters = () => {
 const chooseCustomConfig = () => {
   selectedConfigMode.value = 'custom'
   configView.value = 'choice'
-}
-
-const parseMarkdown = (text: string) => md.render(text || t('scripts.noDescription'))
-
-const handleTemplateDescriptionClick = (event: MouseEvent) => {
-  const link = (event.target as HTMLElement | null)?.closest('a')
-  if (!link) return
-  event.preventDefault()
-  const url = link.getAttribute('href')
-  if (url) openExternalUrl(url)
 }
 </script>
 
@@ -642,40 +631,9 @@ const handleTemplateDescriptionClick = (event: MouseEvent) => {
   background: var(--ant-color-primary-bg);
 }
 
-.choice-row.disabled,
 .entity-row.disabled {
   cursor: not-allowed;
   opacity: 0.55;
-}
-
-.choice-group-heading {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  margin-top: 10px;
-  padding: 0 2px;
-}
-
-.choice-group-title {
-  color: var(--ant-color-text);
-  font-size: 14px;
-  font-weight: 600;
-}
-
-.choice-group-description {
-  color: var(--ant-color-text-secondary);
-  font-size: 12px;
-}
-
-.choice-placeholder {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 12px 14px;
-  border: 1px dashed var(--ant-color-border);
-  border-radius: 8px;
-  color: var(--ant-color-text-tertiary);
-  font-size: 13px;
 }
 
 .choice-icon {
@@ -801,6 +759,16 @@ const handleTemplateDescriptionClick = (event: MouseEvent) => {
 
 .template-alert {
   margin-bottom: 12px;
+}
+
+.template-pagination {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 12px;
+}
+
+.template-description {
+  white-space: pre-line;
 }
 
 .template-loading-state {

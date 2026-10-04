@@ -12,6 +12,7 @@ export type MaaFWUpdateProgressPhase =
   | 'idle'
   | 'checking'
   | 'downloading'
+  | 'extracting'
   | 'preparing'
   | 'applying'
   | 'validating'
@@ -33,6 +34,11 @@ export interface MaaFWUpdateProgressState {
   packageKind: MaaFWUpdatePackageKind | null
   appliedFiles: number | null
   totalFiles: number | null
+  /** 解压阶段：已解压 / 总文件数，已写出 / 解压后总字节 */
+  extractedFiles: number | null
+  extractTotalFiles: number | null
+  extractedBytes: number | null
+  extractTotalBytes: number | null
   logs: string[]
 }
 
@@ -49,6 +55,7 @@ const STAGE_PHASES: Record<string, MaaFWUpdateProgressPhase> = {
   checking: 'checking',
   downloading: 'downloading',
   downloaded: 'downloading',
+  extracting: 'extracting',
   plan_validated: 'preparing',
   staged: 'preparing',
   applying: 'applying',
@@ -73,6 +80,10 @@ export function createUpdateProgressState(
     packageKind: null,
     appliedFiles: null,
     totalFiles: null,
+    extractedFiles: null,
+    extractTotalFiles: null,
+    extractedBytes: null,
+    extractTotalBytes: null,
     logs: [],
   }
 }
@@ -129,6 +140,12 @@ export function reduceUpdateProgress(
     next.downloadedBytes = toNumber(data.downloadedBytes)
     next.totalBytes = toNumber(data.totalBytes)
     next.speedBytesPerSec = toNumber(data.speedBytesPerSec)
+  } else if (phase === 'extracting') {
+    next.percent = toNumber(data.percent)
+    next.extractedFiles = toNumber(data.extractedFiles)
+    next.extractTotalFiles = toNumber(data.extractTotalFiles)
+    next.extractedBytes = toNumber(data.extractedBytes)
+    next.extractTotalBytes = toNumber(data.extractTotalBytes)
   } else if (phase === 'applying') {
     next.percent = toNumber(data.percent)
     next.appliedFiles = toNumber(data.appliedFiles)
@@ -176,9 +193,28 @@ export function formatAppliedFiles(state: MaaFWUpdateProgressState): string {
   return `${state.appliedFiles}/${state.totalFiles}`
 }
 
+/** 解压阶段的 `120/450`；后端还没给文件数时为空串。 */
+export function formatExtractedFiles(state: MaaFWUpdateProgressState): string {
+  if (state.extractedFiles === null || state.extractTotalFiles === null) return ''
+  return `${state.extractedFiles}/${state.extractTotalFiles}`
+}
+
+/** 解压阶段的 `105 MB / 350 MB`；总量未知时只给已解压量。 */
+export function formatExtractedSize(state: MaaFWUpdateProgressState): string {
+  if (state.extractedBytes === null) return ''
+  const done = formatBytes(state.extractedBytes)
+  return state.extractTotalBytes ? `${done} / ${formatBytes(state.extractTotalBytes)}` : done
+}
+
+const PROGRESS_BAR_PHASES: ReadonlySet<MaaFWUpdateProgressPhase> = new Set([
+  'downloading',
+  'extracting',
+  'applying',
+])
+
 /** 进度条要显示的整数百分比；没有可量化进度的阶段返回 null。 */
 export function progressBarPercent(state: MaaFWUpdateProgressState): number | null {
-  if (state.phase !== 'downloading' && state.phase !== 'applying') return null
+  if (!PROGRESS_BAR_PHASES.has(state.phase)) return null
   if (state.percent === null) return null
   return Math.max(0, Math.min(100, Math.round(state.percent)))
 }

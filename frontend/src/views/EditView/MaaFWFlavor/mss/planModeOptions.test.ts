@@ -30,13 +30,13 @@ afterEach(() => {
 })
 
 describe('MSS 计划表选项', () => {
-  it('prepareUserPage 按 MSS 消费方取计划表，结果给下拉用', async () => {
+  it('userPage.prepare 按 MSS 消费方取计划表，结果给下拉用', async () => {
     const items = [
       { label: 'Fixed', value: 'Fixed' },
       { label: '周常', value: 'plan-1' },
     ]
     getPlanCombox.mockResolvedValue({ code: 200, data: items })
-    await resolveMaaFWFlavor('MSS').prepareUserPage?.()
+    await resolveMaaFWFlavor('MSS').userPage.prepare?.()
     expect(getPlanCombox).toHaveBeenCalledWith({ consumer: PlanComboxIn.consumer.MSS })
     expect(mssPlanComboxItems.value).toEqual(items)
   })

@@ -7,6 +7,8 @@ import {
   formatAppliedFiles,
   formatDownloadSize,
   formatDownloadSpeed,
+  formatExtractedFiles,
+  formatExtractedSize,
   progressBarPercent,
   reduceUpdateProgress,
 } from './updateProgress'
@@ -73,6 +75,27 @@ describe('reduceUpdateProgress', () => {
     expect(progressBarPercent(state)).toBe(27)
   })
 
+  it('解压阶段带文件数、字节与百分比，之后进入准备阶段', () => {
+    let state = reduceUpdateProgress(
+      createUpdateProgressState('downloading'),
+      event({
+        stage: 'extracting',
+        percent: 30,
+        extractedFiles: 120,
+        extractTotalFiles: 450,
+        extractedBytes: 105 * 1024 * 1024,
+        extractTotalBytes: 350 * 1024 * 1024,
+      })
+    )
+    expect(state.phase).toBe('extracting')
+    expect(formatExtractedFiles(state)).toBe('120/450')
+    expect(formatExtractedSize(state)).toBe('105 MB / 350 MB')
+    expect(progressBarPercent(state)).toBe(30)
+    state = reduceUpdateProgress(state, event({ stage: 'plan_validated', packageKind: 'full' }))
+    expect(state.phase).toBe('preparing')
+    expect(progressBarPercent(state)).toBe(null)
+  })
+
   it('status=failed 一律进失败态，之后迟到的 running 事件不再翻回去', () => {
     let state = reduceUpdateProgress(
       createUpdateProgressState('downloading'),
@@ -134,6 +157,13 @@ describe('格式化', () => {
     expect(formatDownloadSize(state)).toBe('1.5 KB')
     expect(formatDownloadSpeed(state)).toBe('')
     expect(formatAppliedFiles(state)).toBe('')
+    expect(formatExtractedFiles(state)).toBe('')
+    expect(formatExtractedSize(state)).toBe('')
+  })
+
+  it('解压总量未知时只给已解压量', () => {
+    const state = { ...createUpdateProgressState('extracting'), extractedBytes: 2048 }
+    expect(formatExtractedSize(state)).toBe('2 KB')
   })
 
   it('非下载 / 覆盖阶段没有进度条', () => {

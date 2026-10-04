@@ -33,17 +33,14 @@ from .applaunch import (
     is_package_foreground,
     is_package_missing,
 )
-from .bosskey import BossKey, decode_boss_key, read_boss_key
 from .detect import DetectResult, probe_install_path
 from .facade import DeviceUnavailableError, Emulator2Manager, dump_paths, load_paths
-from .ldplayer14 import BossKeyUnavailableError, LDPlayer14Manager
+from .ldplayer14 import LDPlayer14Manager
 from .slots import PathRecord, SlotRecord, SlotTable, make_path_id
 
 __all__ = [
     "AppLaunchMixin",
     "AppLaunchResult",
-    "BossKey",
-    "BossKeyUnavailableError",
     "DetectResult",
     "DeviceUnavailableError",
     "Emulator2Manager",
@@ -51,7 +48,6 @@ __all__ = [
     "PathRecord",
     "SlotRecord",
     "SlotTable",
-    "decode_boss_key",
     "dump_paths",
     "ensure_app_running",
     "is_package_foreground",
@@ -59,5 +55,4 @@ __all__ = [
     "load_paths",
     "make_path_id",
     "probe_install_path",
-    "read_boss_key",
 ]

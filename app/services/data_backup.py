@@ -36,7 +36,8 @@ _EXCLUDED_DIRS = {
     "data/maafw_blobs",
     "data/maafw_update_cache",
 }
-_EXCLUDED_SUFFIX = ".maafw.log"
+# MFW 每次运行另存的原生日志与项目 agent 日志（本次新增部分，每次最多 8 MB）
+_EXCLUDED_SUFFIXES = (".maafw.log", ".project.log")
 
 _DATABASE_FILES = {
     "data/data.db",
@@ -87,7 +88,7 @@ def create_data_backup(root: Path | None = None) -> Path:
                             archive_name.startswith(f"{d}/") for d in _EXCLUDED_DIRS
                         ):
                             continue
-                        if path.name.endswith(_EXCLUDED_SUFFIX):
+                        if path.name.endswith(_EXCLUDED_SUFFIXES):
                             continue
                         if path.is_dir():
                             archive.writestr(f"{archive_name}/", b"")
