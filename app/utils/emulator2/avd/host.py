@@ -129,6 +129,29 @@ def _port_listening(port: int) -> bool:
     return False
 
 
+#: 等 adb server 开始监听时的轮询间隔。
+_LISTEN_POLL_SECONDS = 0.1
+
+
+def _wait_listening(
+    port: int, timeout: float, process: subprocess.Popen | None = None
+) -> bool:
+    """等 ``port`` 开始监听，最多 ``timeout`` 秒；返回是否在听。
+
+    不等 ``adb start-server`` 客户端退出：SDK adb 的客户端要 2.08–2.12 秒才返回（第三轮复核实测），
+    server 在那之前就已经在听了。客户端带非零返回码退出且端口没在听，就是起不来，不再干等。
+    """
+    deadline = time.monotonic() + timeout
+    while True:
+        if _port_listening(port):
+            return True
+        if process is not None and process.poll() not in (None, 0):
+            return _port_listening(port)
+        if time.monotonic() >= deadline:
+            return False
+        time.sleep(_LISTEN_POLL_SECONDS)
+
+
 def busy_ports(ports: list[int]) -> list[int]:
     """哪些端口已经有人在监听。只看系统连接表，不去连它（连模拟器的 adb 端口会打扰它）。"""
     wanted = set(ports)
@@ -179,9 +202,47 @@ async def ensure_adb_server(root: str | Path, *, timeout: float = 20.0) -> bool:
         env=emulator_env(root),
         stdout=subprocess.DEVNULL,
     )
-    with suppress(subprocess.TimeoutExpired):
-        await asyncio.to_thread(process.wait, timeout)
-    return await asyncio.to_thread(_port_listening, port)
+    return await asyncio.to_thread(_wait_listening, port, timeout, process)
+
+
+async def prepare_adb_for_close(
+    root: str | Path, console: int, *, timeout: float
+) -> str | None:
+    """关机前让私有 server 能对这台实例发 ``shell sync``，最多 ``timeout`` 秒。可以 sync 返回 ``None``，
+    否则返回不能 sync 的原因。
+
+    server 本来就在听：直接返回（server 认不认识这台实例由 sync 的结果说话）。server 不在：起它，
+    等它开始监听；新起的 server 不认识模拟器（模拟器只在开机时登记一次），确认 adb 端口确实是这台
+    实例自己的 qemu 在听之后直接替它登记，再等它回到 ``device``。不走 :func:`reregister_emulator`：
+    那里的开机期保护（qemu 起来不到 60 秒不登记）和 5 秒等待都不适合关机。
+    """
+    started = time.monotonic()
+    port = adb_server_port(root)
+    if await asyncio.to_thread(_port_listening, port):
+        return None
+    if not await ensure_adb_server(root, timeout=timeout):
+        return f"私有 adb server（端口 {port}）{timeout:.0f} 秒内没起来"
+    if await asyncio.to_thread(instance_qemu_on_adb_port, console) is None:
+        return f"adb 端口 {console + 1} 上不是这台实例的模拟器，不替它登记"
+    serial = serial_of(console)
+    try:
+        await register_emulator(port, console + 1)
+    except (OSError, asyncio.TimeoutError, TimeoutError) as e:
+        return f"向新起的私有 adb server 登记 {serial} 失败: {e}"
+    while True:
+        remaining = timeout - (time.monotonic() - started)
+        if remaining <= 0:
+            return f"新起的私有 adb server 上 {serial} 在 {timeout:.0f} 秒内没有上线"
+        code, output = await _run_adb_once(
+            root, "get-state", serial=serial, timeout=max(remaining, 0.5)
+        )
+        if code == 0 and output.strip() == "device":
+            logger.info(
+                f"关机前私有 adb server 已重新起好并登记 {serial}（用时 "
+                f"{(time.monotonic() - started) * 1000:.0f} ms）"
+            )
+            return None
+        await asyncio.sleep(0.1)
 
 
 #: ``open`` 正在等开机的实例（序列号）。这段时间模拟器还没向私有 server 登记是正常的，

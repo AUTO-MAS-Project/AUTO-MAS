@@ -1203,13 +1203,14 @@ class _AvdCore(DeviceBase):
         # 先 sync：控制台 kill / 强杀都直接结束 qemu，客体不走关机流程，页缓存里没写回的数据会丢
         # （10-03 星铁 9 个热更新清单变成 0 字节，表现成「网络请求超时」和黑屏）。磁盘 write-through
         # 只保证已经写到虚拟盘的数据，管不到还在客体内存里的。强制关闭也先 sync。
-        # 时限：调用方（任务收尾 close_emulator）整体只给 30 秒，超了连强杀都执行不到。
-        # sync 5 + 控制台 kill 3 + 等退出 15 + 强杀后等 5 = 28 秒以内。sync 不走重新登记（会多等 5 秒）。
+        # 时限：调用方（任务收尾 close_emulator）整体只给 30 秒，超了连强杀都执行不到。各步上限见
+        # constants 里关机那一组（合计 27 秒）。sync 不走重新登记（会多等 5 秒）。
         started = time.monotonic()
-        # 私有 server 要是没在跑，起它也算进预算：最多等几秒，起不来就不 sync 了，直接关
-        if await host.ensure_adb_server(
-            self.root, timeout=ADB_SERVER_START_TIMEOUT_ON_CLOSE_SECONDS
-        ):
+        # 私有 server 要是没在跑，起它、替实例登记也算进预算：最多等几秒，不成就不 sync 了，直接关
+        problem = await host.prepare_adb_for_close(
+            self.root, port, timeout=ADB_SERVER_START_TIMEOUT_ON_CLOSE_SECONDS
+        )
+        if problem is None:
             code, output = await host.run_adb(
                 self.root,
                 "shell",
@@ -1219,7 +1220,7 @@ class _AvdCore(DeviceBase):
                 reregister=False,
             )
         else:
-            code, output = -1, "私有 adb server 起不来"
+            code, output = -1, problem
         if code == 0:
             logger.info(
                 f"官方模拟器实例 {idx} 关机前 sync 完成（{(time.monotonic() - started) * 1000:.0f} ms）"
