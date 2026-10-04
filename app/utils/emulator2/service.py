@@ -253,8 +253,8 @@ async def is_mod_avd_device(emulator_id: Any, index: Any) -> bool:
 async def mod_avd_binding_error(script_id: str, patch: dict) -> str | None:
     """脚本保存时：不支持魔改 AVD 的脚本（目前只有 M9A 支持）要绑到魔改 AVD 设备，返回拒绝原因；否则 ``None``。
 
-    两套绑定字段（``Emulator.Id/Index`` 与 ``Game.EmulatorId/EmulatorIndex``）都看；这次只改了其中
-    一个字段时，另一个取脚本当前的值。
+    两套绑定字段（``Emulator.Id/Index`` 与 ``Game.EmulatorId/EmulatorIndex``）都看，只在这次带了设备号
+    时检查；只改了设备号时，模拟器配置取脚本当前的值。只改模拟器配置（没带设备号）不检查。
     """
     from app.core import Config
 
@@ -264,9 +264,10 @@ async def mod_avd_binding_error(script_id: str, patch: dict) -> str | None:
         return None
     for group, id_field, index_field in _BINDING_FIELDS:
         changes = patch.get(group) if isinstance(patch, dict) else None
-        if not isinstance(changes, dict) or not (
-            id_field in changes or index_field in changes
-        ):
+        # 只看这次带了设备号的保存：脚本页换模拟器配置时先单独存 Id、再存 Index，单存 Id 那次
+        # 拿旧设备号去新配置里查会误拦（旧号在新配置里可能正好是魔改 AVD）。没查的这次由运行时
+        # 门面 ``open`` 兜底拒绝。
+        if not isinstance(changes, dict) or index_field not in changes:
             continue
         try:
             emulator_id = changes.get(id_field, script.get(group, id_field))
