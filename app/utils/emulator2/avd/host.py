@@ -37,6 +37,7 @@ import ctypes
 import os
 import subprocess
 import time
+from collections.abc import Awaitable, Callable
 from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
@@ -270,6 +271,7 @@ async def reregister_emulator(root: str | Path, serial: str) -> bool:
                     f"{serial} 已重新登记到私有 adb server（用时 "
                     f"{(time.monotonic() - started) * 1000:.0f} ms）"
                 )
+                _run_reregister_hooks(root, serial)
                 return True
             await asyncio.sleep(0.2)
         logger.warning(
@@ -487,6 +489,50 @@ def launch_emulator(
             env=env,
             stdout=log_file,
         )
+
+
+def find_logcat_processes(root: str | Path, serial: str) -> list[psutil.Process]:
+    """宿主上正在给这台实例落盘的 ``adb -P <端口> -s <序列号> logcat`` 进程（不管是谁起的）。
+
+    只认自己进程表里的记录不够：后端重启后上一个进程起的 logcat 还在跑，再起就是两份。
+    """
+    port = str(adb_server_port(root))
+    found = []
+    for process in psutil.process_iter(["name", "cmdline"]):
+        try:
+            if (process.info.get("name") or "").lower() != "adb.exe":
+                continue
+            cmdline = process.info.get("cmdline") or []
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            continue
+        pairs = set(zip(cmdline, cmdline[1:]))
+        if ("-P", port) in pairs and ("-s", serial) in pairs and "logcat" in cmdline:
+            found.append(process)
+    return found
+
+
+#: 重新登记成功后要做的事（例如把随 server 一起断掉的 logcat 落盘重起来）。参数 (根目录, 序列号)。
+_REREGISTER_HOOKS: list[Callable[[Path, str], Awaitable[object]]] = []
+_HOOK_TASKS: set[asyncio.Task] = set()
+
+
+def add_reregister_hook(hook: Callable[[Path, str], Awaitable[object]]) -> None:
+    if hook not in _REREGISTER_HOOKS:
+        _REREGISTER_HOOKS.append(hook)
+
+
+def _run_reregister_hooks(root: str | Path, serial: str) -> None:
+    for hook in _REREGISTER_HOOKS:
+
+        async def run(hook=hook) -> None:
+            try:
+                await hook(Path(root), serial)
+            except Exception as e:  # noqa: BLE001 - 钩子失败不影响已经恢复的连接
+                logger.warning(f"{serial} 重新登记后的收尾失败: {e}")
+
+        task = asyncio.create_task(run())
+        _HOOK_TASKS.add(task)
+        task.add_done_callback(_HOOK_TASKS.discard)
 
 
 def start_logcat(root: str | Path, serial: str, log_path: Path) -> subprocess.Popen:

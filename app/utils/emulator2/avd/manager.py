@@ -38,7 +38,6 @@ from __future__ import annotations
 
 import asyncio
 import ctypes
-import subprocess
 import tempfile
 import time
 from contextlib import suppress
@@ -84,6 +83,8 @@ from .constants import (
     LOGS_DIR,
     MAX_NATIVE_INDEX,
     PIXEL_LAUNCHER_PACKAGE,
+    PORT_BASE,
+    PORT_STEP,
     REQUIRED_COMPONENTS,
     RESOLUTIONS,
     STARTUP_GUARD_AFTER_SECONDS,
@@ -383,7 +384,12 @@ def _start_watchdog(root: Path, native_index: str, pid: int) -> None:
             serial=serial,
             timeout=WATCHDOG_PROBE_TIMEOUT_SECONDS,
         )
-        return code == 0 and output.strip().endswith("ok")
+        ok = code == 0 and output.strip().endswith("ok")
+        if ok:
+            # 顺带巡检客体日志落盘：私有 server 重启等原因让它退出了就续上
+            with suppress(Exception):
+                await ensure_logcat(root, native_index)
+        return ok
 
     def is_alive() -> bool:
         try:
@@ -417,8 +423,38 @@ def _stop_watchdog(root: Path, native_index: str) -> None:
 
 #: ``{实例键: 清缓存任务}``。和看门狗一样挂在模块上：管理器对象会被频繁重建。
 _DROP_CACHES: dict[str, asyncio.Task] = {}
-#: ``{实例键: 宿主侧 adb logcat 进程}``，免得再次 open 一台在跑的实例时重复落盘。
-_LOGCATS: dict[str, subprocess.Popen] = {}
+
+
+async def ensure_logcat(root: Path, idx: str) -> bool:
+    """这台实例没有在落盘的 logcat 就起一个（文件 ``<根>\\logs\\logcat-mas_<i>-<时间>.txt``），返回起没起。
+
+    按宿主进程表判断（:func:`~.host.find_logcat_processes`），不按本进程的记录：后端重启后上一个
+    进程起的还在跑，不能再起第二份；私有 server 重启时 logcat 客户端会跟着退出，要能重新起来。
+    开机后、重新登记成功后、冻结看门狗每轮巡检时都会调。
+    """
+    serial = host.serial_of(console_port(idx))
+    if await asyncio.to_thread(host.find_logcat_processes, root, serial):
+        return False
+    stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    path = Path(root) / LOGS_DIR / f"logcat-{avd_name(idx)}-{stamp}.txt"
+    try:
+        await asyncio.to_thread(host.start_logcat, root, serial, path)
+    except OSError as e:
+        logger.warning(f"实例 {idx} 客体日志落盘没起来: {e}")
+        return False
+    logger.info(f"实例 {idx} 客体日志 → {path}")
+    return True
+
+
+async def _logcat_after_reregister(root: Path, serial: str) -> None:
+    """私有 server 重启时 logcat 客户端跟着退出；设备登记回来后把落盘续上。"""
+    console = int(serial.removeprefix("emulator-"))
+    idx = str((console - PORT_BASE) // PORT_STEP)
+    if idx in list_instances(root):
+        await ensure_logcat(root, idx)
+
+
+host.add_reregister_hook(_logcat_after_reregister)
 
 
 def _schedule_drop_caches(manager: _AvdCore, idx: str) -> None:
@@ -989,28 +1025,12 @@ class _AvdCore(DeviceBase):
             logger.warning(f"实例 {idx} fastpath 没起来: {status[-300:]}")
 
     async def _start_logcat(self, idx: str, instance: AvdInstance) -> None:
-        key = _instance_key(self.root, idx)
-        running = _LOGCATS.get(key)
-        if running is not None and running.poll() is None:
-            return  # 这台已经在落盘（再次 open 一台在跑的实例）
         await self._shell(
             idx,
             f"su 0 setprop persist.logd.size {LOGCAT_BUFFER_SIZE}; "
             f"logcat -G {LOGCAT_BUFFER_SIZE}",
         )
-        stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-        path = self._log_dir() / f"logcat-{instance.name}-{stamp}.txt"
-        try:
-            _LOGCATS[key] = await asyncio.to_thread(
-                host.start_logcat,
-                self.root,
-                host.serial_of(console_port(idx)),
-                path,
-            )
-        except OSError as e:
-            logger.warning(f"实例 {idx} 客体日志落盘没起来: {e}")
-            return
-        logger.info(f"实例 {idx} 客体日志 → {path}")
+        await ensure_logcat(self.root, idx)
 
     async def _first_boot_init(self, idx: str) -> None:
         """首次开机后的持久设置（重启后保持），做完记进 ``mas-avd.json``。"""
@@ -1108,7 +1128,6 @@ class _AvdCore(DeviceBase):
         _stop_watchdog(self.root, idx)
         _cancel_drop_caches(self.root, idx)
         _cancel_game_guard(_instance_key(self.root, idx))
-        _LOGCATS.pop(_instance_key(self.root, idx), None)
         _FROZEN.pop(_instance_key(self.root, idx), None)
         process = await asyncio.to_thread(host.find_qemu_process, instance.name, port)
         if process is None:
