@@ -32,6 +32,8 @@ body:
       description: |
         Export the AUTO-MAS log archive from Settings → Log Management → Export log archive.
         If a managed script is involved, attach that script's own logs as well.
+        Attach logs or paste timestamped log lines or a complete traceback in the body or comments.
+        Issues labeled bug will be closed automatically if no logs are provided within 24 hours.
       options:
-        - label: I understand I need to attach the log archive in a comment after submitting this issue.
+        - label: I understand bug reports need log attachments or pasted logs within 24 hours to avoid automatic closure.
           required: true
