@@ -22,9 +22,10 @@ export function useAvdApi() {
     return response
   }
 
-  const getStatus = async (root: string): Promise<Emulator2AvdStatusOut> =>
+  /** ``refresh``：用户点「检查」时跳过硬件加速与 Vulkan 检查的缓存 */
+  const getStatus = async (root: string, refresh = false): Promise<Emulator2AvdStatusOut> =>
     ensureOk(
-      await Emulator20Service.avdStatusApiEmulator2AvdStatusPost({ root }),
+      await Emulator20Service.avdStatusApiEmulator2AvdStatusPost({ root, refresh }),
       '读取官方模拟器状态失败'
     )
 

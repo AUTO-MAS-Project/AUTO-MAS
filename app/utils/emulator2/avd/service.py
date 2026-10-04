@@ -56,7 +56,9 @@ def _normalize_root(root: str) -> Path:
     return path
 
 
-async def status(root: str, *, check_acceleration: bool = True) -> dict[str, Any]:
+async def status(
+    root: str, *, check_acceleration: bool = True, refresh: bool = False
+) -> dict[str, Any]:
     """根目录现状：组件、磁盘、许可、硬件加速、开机前电脑检查、最近一次下载任务。只读。"""
     path = _normalize_root(root)
     result = await asyncio.to_thread(components.install_status, path)
@@ -65,7 +67,7 @@ async def status(root: str, *, check_acceleration: bool = True) -> dict[str, Any
     result["prechecks"] = []
     if check_acceleration:
         # 内存按默认档实例估（各实例实际开机时按它要传的 -memory 再查一次）
-        items = await precheck.run_prechecks(path)
+        items = await precheck.run_prechecks(path, refresh=refresh)
         result["prechecks"] = [item.as_dict() for item in items]
         accel = next(item for item in items if item.id == "acceleration")
         result["accelerationOk"] = accel.ok

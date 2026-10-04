@@ -5751,6 +5751,13 @@ class Emulator2AvdRootIn(BaseModel):
     root: str = Field(..., description="官方模拟器根目录 (组件与实例都放在里面)")
 
 
+class Emulator2AvdStatusIn(Emulator2AvdRootIn):
+    refresh: bool = Field(
+        default=False,
+        description="跳过硬件加速与 Vulkan 检查的缓存重新查; 用户点「检查」时传 true",
+    )
+
+
 class Emulator2AvdComponentItem(BaseModel):
     id: str = Field(
         ...,

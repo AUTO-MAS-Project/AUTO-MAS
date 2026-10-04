@@ -81,12 +81,13 @@ const reset = () => {
   agreed.value = false
 }
 
-const check = async () => {
+/** `refresh`：用户主动检查（回车、点「检查」、选了目录）时跳过电脑检查的缓存 */
+const check = async (refresh = false) => {
   const target = root.value.trim()
   if (!target) return
   checking.value = true
   try {
-    const result = await api.getStatus(target)
+    const result = await api.getStatus(target, refresh)
     status.value = result
     checkedRoot.value = target
     job.value = result.job ?? null
@@ -105,7 +106,7 @@ const pickRoot = async () => {
   const picked = await window.electronAPI.selectFolder()
   if (!picked) return
   root.value = picked
-  await check()
+  await check(true)
 }
 
 const loadLicense = async () => {
@@ -296,13 +297,13 @@ onUnmounted(() => {
             <a-input
               v-model:value="root"
               :placeholder="t('emulator2.avd.rootPlaceholder')"
-              @press-enter="check"
+              @press-enter="check(true)"
             >
               <template #suffix>
                 <FolderOpenOutlined class="root-pick" @click="pickRoot" />
               </template>
             </a-input>
-            <a-button :loading="checking" :disabled="!root.trim()" @click="check">
+            <a-button :loading="checking" :disabled="!root.trim()" @click="check(true)">
               {{ t('emulator2.avd.check') }}
             </a-button>
           </div>

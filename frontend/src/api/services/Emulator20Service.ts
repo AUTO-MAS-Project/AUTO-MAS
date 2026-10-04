@@ -12,6 +12,7 @@ import type { Emulator2AvdLicenseIn } from '../models/Emulator2AvdLicenseIn';
 import type { Emulator2AvdLicenseOut } from '../models/Emulator2AvdLicenseOut';
 import type { Emulator2AvdRootIn } from '../models/Emulator2AvdRootIn';
 import type { Emulator2AvdSourcesOut } from '../models/Emulator2AvdSourcesOut';
+import type { Emulator2AvdStatusIn } from '../models/Emulator2AvdStatusIn';
 import type { Emulator2AvdStatusOut } from '../models/Emulator2AvdStatusOut';
 import type { Emulator2DevicesIn } from '../models/Emulator2DevicesIn';
 import type { Emulator2DevicesOut } from '../models/Emulator2DevicesOut';
@@ -328,13 +329,13 @@ export class Emulator20Service {
     /**
      * 查询官方模拟器根目录的组件状态
      * 组件清单与是否齐全、磁盘空间、是否同意过许可、硬件加速（WHPX）是否可用，
-     * 以及该目录最近一次下载任务的进度快照。只读，不联网。
+     * 以及该目录最近一次下载任务的进度快照。只读，不联网。``refresh`` 为 true 时检查不走缓存。
      * @param requestBody
      * @returns Emulator2AvdStatusOut Successful Response
      * @throws ApiError
      */
     public static avdStatusApiEmulator2AvdStatusPost(
-        requestBody: Emulator2AvdRootIn,
+        requestBody: Emulator2AvdStatusIn,
     ): CancelablePromise<Emulator2AvdStatusOut> {
         return __request(OpenAPI, {
             method: 'POST',

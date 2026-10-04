@@ -37,6 +37,7 @@ from app.models.schema import (
     Emulator2AvdLicenseOut,
     Emulator2AvdRootIn,
     Emulator2AvdSourcesOut,
+    Emulator2AvdStatusIn,
     Emulator2AvdStatusOut,
     Emulator2DevicesIn,
     Emulator2DevicesOut,
@@ -406,12 +407,14 @@ async def capture_baselines(
     response_model=Emulator2AvdStatusOut,
     status_code=200,
 )
-async def avd_status(payload: Emulator2AvdRootIn = Body(...)) -> Emulator2AvdStatusOut:
+async def avd_status(
+    payload: Emulator2AvdStatusIn = Body(...),
+) -> Emulator2AvdStatusOut:
     """组件清单与是否齐全、磁盘空间、是否同意过许可、硬件加速（WHPX）是否可用，
-    以及该目录最近一次下载任务的进度快照。只读，不联网。
+    以及该目录最近一次下载任务的进度快照。只读，不联网。``refresh`` 为 true 时检查不走缓存。
     """
     try:
-        result = await avd_service.status(payload.root)
+        result = await avd_service.status(payload.root, refresh=payload.refresh)
     except Exception as e:
         logger.opt(exception=True).warning(f"avd_status失败: {type(e).__name__}: {e}")
         return Emulator2AvdStatusOut(**_error(e))

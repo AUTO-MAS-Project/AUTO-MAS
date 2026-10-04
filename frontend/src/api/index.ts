@@ -99,6 +99,7 @@ export type { Emulator2AvdPrecheckItem } from './models/Emulator2AvdPrecheckItem
 export type { Emulator2AvdRootIn } from './models/Emulator2AvdRootIn';
 export type { Emulator2AvdSourceItem } from './models/Emulator2AvdSourceItem';
 export type { Emulator2AvdSourcesOut } from './models/Emulator2AvdSourcesOut';
+export type { Emulator2AvdStatusIn } from './models/Emulator2AvdStatusIn';
 export type { Emulator2AvdStatusOut } from './models/Emulator2AvdStatusOut';
 export type { Emulator2BatchResult } from './models/Emulator2BatchResult';
 export type { Emulator2DeviceItem } from './models/Emulator2DeviceItem';

@@ -56,6 +56,7 @@ from .constants import (
     HOST_MEMORY_OVERHEAD_MB,
     MIN_FREE_DISK_GB_TO_BOOT,
     VULKAN_PROBE_CACHE_SECONDS,
+    VULKAN_PROBE_TIMEOUT_CACHE_SECONDS,
     VULKAN_PROBE_TIMEOUT_SECONDS,
 )
 
@@ -81,6 +82,7 @@ VULKAN_ADVICE = (
     "软件渲染，游戏会占满 CPU，性能会很差"
 )
 
+#: Vulkan 探测缓存：`(过期时刻 monotonic, 结果)`，过期时长按结果定（见 :func:_remember_vulkan）
 _vulkan_cache: tuple[float, dict[str, Any]] | None = None
 
 
@@ -128,13 +130,15 @@ def _accel_ok_text(summary: str) -> str:
     return f"可用（{match.group(1)} {match.group(2)}）" if match else "可用"
 
 
-async def acceleration_item(root: str | Path) -> PrecheckItem:
+async def acceleration_item(
+    root: str | Path, *, use_cache: bool = True
+) -> PrecheckItem:
     title = "硬件虚拟化"
     if not emulator_exe(root).is_file():
         return PrecheckItem(
             "acceleration", title, None, True, "模拟器组件还没装好，装好后再检查"
         )
-    accel = await host.check_acceleration(root)
+    accel = await host.check_acceleration(root, use_cache=use_cache)
     summary = _accel_summary(accel.detail)
     logger.debug(f"-accel-check 输出: {summary}")
     if accel.ok:
@@ -204,14 +208,26 @@ def disk_item(root: str | Path, free_bytes: int | None = None) -> PrecheckItem:
     )
 
 
-async def probe_vulkan(*, use_cache: bool = True) -> dict[str, Any]:
-    """在子进程里跑 :mod:`.vulkan_probe`，返回它的 JSON；跑不起来时 ``{"error": ...}``。"""
+def _remember_vulkan(result: dict[str, Any], *, timed_out: bool = False) -> None:
+    """按结果决定缓存多久：可用的缓存 :data:`~.constants.VULKAN_PROBE_CACHE_SECONDS`；探测超时的短时
+    缓存 :data:`~.constants.VULKAN_PROBE_TIMEOUT_CACHE_SECONDS`（驱动挂住时不必每次查状态、每次开机
+    都等满超时）；「没有 Vulkan」与其它查不了的不缓存，用户装好驱动后再查马上就能看到。"""
     global _vulkan_cache
-    if (
-        use_cache
-        and _vulkan_cache is not None
-        and time.monotonic() - _vulkan_cache[0] < VULKAN_PROBE_CACHE_SECONDS
-    ):
+    if timed_out:
+        ttl = VULKAN_PROBE_TIMEOUT_CACHE_SECONDS
+    elif vulkan_item_from_probe(result).ok is True:
+        ttl = VULKAN_PROBE_CACHE_SECONDS
+    else:
+        _vulkan_cache = None
+        return
+    _vulkan_cache = (time.monotonic() + ttl, result)
+
+
+async def probe_vulkan(*, use_cache: bool = True) -> dict[str, Any]:
+    """在子进程里跑 :mod:`.vulkan_probe`，返回它的 JSON；跑不起来时 ``{"probeError": ...}``。
+
+    ``use_cache=False``（用户点「检查」）跳过缓存重新探测。"""
+    if use_cache and _vulkan_cache is not None and time.monotonic() < _vulkan_cache[0]:
         return _vulkan_cache[1]
     try:
         process = await asyncio.create_subprocess_exec(
@@ -232,7 +248,9 @@ async def probe_vulkan(*, use_cache: bool = True) -> dict[str, Any]:
         if process.returncode is None:
             process.kill()
             await process.wait()
-        return {"probeError": f"探测超时（{VULKAN_PROBE_TIMEOUT_SECONDS:.0f} 秒）"}
+        result = {"probeError": f"探测超时（{VULKAN_PROBE_TIMEOUT_SECONDS:.0f} 秒）"}
+        _remember_vulkan(result, timed_out=True)
+        return result
     lines = [line for line in stdout.decode("utf-8", "replace").splitlines() if line]
     try:
         result = json.loads(lines[-1])
@@ -242,7 +260,7 @@ async def probe_vulkan(*, use_cache: bool = True) -> dict[str, Any]:
             "probeError": f"探测进程退出码 {process.returncode}，没有结果"
             + (f"：{tail}" if tail else "")
         }
-    _vulkan_cache = (time.monotonic(), result)
+    _remember_vulkan(result)
     return result
 
 
@@ -293,10 +311,14 @@ async def vulkan_item(*, use_cache: bool = True) -> PrecheckItem:
 
 
 async def run_prechecks(
-    root: str | Path, *, memory_mb: int = DEFAULT_MEMORY_MB
+    root: str | Path, *, memory_mb: int = DEFAULT_MEMORY_MB, refresh: bool = False
 ) -> list[PrecheckItem]:
-    """四项都查，给 ``/avd/status``。``memory_mb`` 是拿来估内存的实例内存（面板上用默认档）。"""
-    accel, vulkan = await asyncio.gather(acceleration_item(root), vulkan_item())
+    """四项都查，给 ``/avd/status``。``memory_mb`` 是拿来估内存的实例内存（面板上用默认档）；
+    ``refresh``（用户点「检查」）时硬件加速与 Vulkan 都跳过缓存重新查。"""
+    accel, vulkan = await asyncio.gather(
+        acceleration_item(root, use_cache=not refresh),
+        vulkan_item(use_cache=not refresh),
+    )
     memory = await asyncio.to_thread(memory_item, memory_mb)
     disk = await asyncio.to_thread(disk_item, root)
     return [accel, vulkan, disk, memory]

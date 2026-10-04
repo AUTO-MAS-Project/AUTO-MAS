@@ -354,8 +354,11 @@ HOST_MEMORY_OVERHEAD_MB = 1536
 #: 开机前实例所在盘至少要剩这么多（GB）：数据盘是稀疏文件，随游戏写入增长（崩坏三一款 36 GB），
 #: 盘写满时客体写失败、实例数据会损坏。低于这个值拒绝开机。
 MIN_FREE_DISK_GB_TO_BOOT = 8
-#: 电脑检查里 Vulkan 探测结果缓存多久（秒）：显卡驱动不会频繁变，免得每次开机都起一次子进程。
+#: 电脑检查里 Vulkan「可用」的结果缓存多久（秒）：显卡驱动不会频繁变，免得每次开机都起一次子进程。
+#: 「没有 Vulkan」不缓存：用户装好驱动后再查马上就能看到。
 VULKAN_PROBE_CACHE_SECONDS = 600.0
+#: 探测超时的结果缓存多久（秒）：驱动挂住时不必每次查状态、每次开机都等满超时。
+VULKAN_PROBE_TIMEOUT_CACHE_SECONDS = 60.0
 #: Vulkan 探测子进程的超时（秒）。
 VULKAN_PROBE_TIMEOUT_SECONDS = 30.0
 
