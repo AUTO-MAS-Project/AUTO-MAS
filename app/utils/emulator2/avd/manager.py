@@ -52,7 +52,13 @@ from app.models.emulator import DeviceBase, DeviceInfo, DeviceRef, DeviceStatus
 from app.utils import get_logger
 from app.utils.paths import SOURCE_ROOT
 
-from ..applaunch import AppLaunchMixin, AppLaunchResult, ensure_app_running
+from ..applaunch import (
+    AppLaunchMixin,
+    AppLaunchResult,
+    ensure_app_running,
+    is_package_missing,
+    parse_launch_component,
+)
 from ..settings import FieldValue, InstanceSettings, SettingsConflictError
 from ..settings import validate_changes as validate_setting_changes
 from . import host
@@ -79,6 +85,17 @@ from .constants import (
     PIXEL_LAUNCHER_PACKAGE,
     REQUIRED_COMPONENTS,
     RESOLUTIONS,
+    STARTUP_GUARD_AFTER_SECONDS,
+    STARTUP_GUARD_HARD_SECONDS,
+    STARTUP_GUARD_IDLE_CORES,
+    STARTUP_GUARD_INTERVAL_SECONDS,
+    STARTUP_GUARD_PACKAGES,
+    STARTUP_GUARD_RETRIES,
+    STARTUP_GUARD_STALL_CORES,
+    STARTUP_GUARD_STALL_SECONDS,
+    STARTUP_GUARD_START_TIMEOUT_SECONDS,
+    STARTUP_GUARD_STATIC_SECONDS,
+    STARTUP_GUARD_WATCH_SECONDS,
     SYNC_TIMEOUT_SECONDS,
     VULKAN_ENC_FIX_SHA256,
     VULKAN_ENC_GUEST_PATH,
@@ -108,6 +125,16 @@ from .instances import (
     validate_options,
     validate_resolution,
     write_instance_config,
+)
+from .startup_watchdog import (
+    EVIDENCE_PROBE,
+    ReadyStallDetector,
+    ScreenDiff,
+    StartupGuard,
+    StartupHangDetector,
+    StartupSampler,
+    shm_thumb,
+    su_command,
 )
 from .vulkanfix import UNSUPPORTED_IMAGE_MESSAGE, VulkanFixError, patch_vulkan_encoder
 
@@ -424,6 +451,61 @@ def _schedule_drop_caches(manager: _AvdCore, idx: str, *, uptime_s: float) -> No
     task = asyncio.create_task(run(), name=f"avd-drop-caches-{key}")
     _DROP_CACHES[key] = task
     task.add_done_callback(lambda _: _DROP_CACHES.pop(key, None))
+
+
+#: ``{实例键: 游戏启动看门狗任务}``。启动成功后它还在后台看一段，关机 / 再次拉起时取消。
+_GAME_GUARDS: dict[str, asyncio.Task] = {}
+
+
+def _cancel_game_guard(key: str) -> None:
+    task = _GAME_GUARDS.pop(key, None)
+    if task is not None and not task.done():
+        task.cancel()
+
+
+def _log_guard_record(label: str, record: dict[str, Any]) -> None:
+    """看门狗每个样本记 debug；判出卡死 / 死锁的那个样本记 warning。"""
+    state = record.get("state") or record.get("stall")
+    text = ", ".join(
+        f"{k}={v}" for k, v in record.items() if k not in ("unity_main", "main_thread")
+    )
+    if state in ("hang", "stalled", "exited", "no_process"):
+        logger.warning(
+            f"{label} 启动看门狗: {text}; UnityMain={record.get('unity_main')}; "
+            f"主线程={record.get('main_thread')}"
+        )
+    else:
+        logger.debug(f"{label} 启动看门狗: {text}")
+
+
+async def _run_guard(label: str, guard: StartupGuard) -> dict[str, Any]:
+    """跑完一次守护拉起，把结论写进日志。看门狗自己出错不往外抛，返回 ``{"result": "error"}``。"""
+    try:
+        result = await guard.run()
+    except asyncio.CancelledError:
+        logger.info(f"{label} 启动看门狗已取消")
+        raise
+    except Exception as e:  # noqa: BLE001 - 看门狗失灵不能拖垮拉起流程
+        logger.opt(exception=True).warning(f"{label} 启动看门狗出错，改为普通拉起: {e}")
+        return {"result": "error", "error": str(e)}
+    for attempt in result["attempts"]:
+        if attempt["result"] != "started":
+            logger.warning(
+                f"{label} 第 {attempt['attempt']} 次拉起: {attempt['result']}"
+                f"（{attempt.get('kind') or ''}，第 {attempt.get('t_detect')} 秒），"
+                f"证据 {attempt.get('evidence') or attempt.get('evidence_error') or '无'}"
+            )
+    if result["result"] == "started":
+        logger.info(
+            f"{label} 启动看门狗结束：已启动，重开 {result['relaunches']} 次，"
+            f"用时 {result['seconds']} 秒"
+        )
+    else:
+        logger.error(
+            f"{label} 启动看门狗放弃：拉起 {len(result['attempts'])} 次都卡住"
+            f"（重开上限 {guard.retries} 次）"
+        )
+    return result
 
 
 def _cancel_drop_caches(root: Path, native_index: str) -> None:
@@ -1004,6 +1086,7 @@ class _AvdCore(DeviceBase):
         port = console_port(idx)
         _stop_watchdog(self.root, idx)
         _cancel_drop_caches(self.root, idx)
+        _cancel_game_guard(_instance_key(self.root, idx))
         _LOGCATS.pop(_instance_key(self.root, idx), None)
         _FROZEN.pop(_instance_key(self.root, idx), None)
         process = await asyncio.to_thread(host.find_qemu_process, instance.name, port)
@@ -1311,6 +1394,10 @@ class AvdManager(AppLaunchMixin, _AvdCore):
             return await host.run_adb(root, *args, serial=serial, timeout=timeout)
 
         await self.stop_background_games(idx, keep=package_name)
+        if package_name in STARTUP_GUARD_PACKAGES:
+            result = await self.guarded_launch(idx, package_name)
+            if result is not None:
+                return result
         max_wait = float(self.config.get("Info", "MaxWaitTime"))
         return await ensure_app_running(
             run_adb,
@@ -1318,6 +1405,105 @@ class AvdManager(AppLaunchMixin, _AvdCore):
             boot_timeout=min(max_wait, _BOOT_TIMEOUT_CAP),
             launch_timeout=launch_timeout or min(max_wait, _LAUNCH_TIMEOUT_CAP),
             label=str(idx),
+        )
+
+    async def guarded_launch(
+        self, idx: str, package_name: str
+    ) -> AppLaunchResult | None:
+        """带启动看门狗拉起游戏（:mod:`.startup_watchdog`，崩坏三用）。
+
+        强停 → 拉起 → 每 3 秒采样；启动卡死就留证据、强停、重开，最多重开 5 次。第一次启动成功就返回，
+        看门狗在后台继续看到拉起后第 300 秒，期间死锁同样重开。看门狗自己出错（例如客体没有 ``su``）
+        返回 ``None``，调用方按普通方式拉起。
+        """
+        _, output = await self._shell(idx, f"pm path {package_name}")
+        if is_package_missing(output):
+            logger.warning(f"实例 {idx} 未安装 {package_name}，不再尝试启动")
+            return AppLaunchResult(False, "not-installed")
+        key = _instance_key(self.root, idx)
+        _cancel_game_guard(key)
+        port = console_port(idx)
+        label = f"实例 {idx} {package_name}"
+
+        async def shell(command: str) -> str:
+            _, text = await self._shell(idx, command, timeout=20)
+            return text
+
+        async def stop() -> None:
+            await self._shell(idx, f"am force-stop {package_name}")
+
+        async def launch() -> None:
+            _, resolved = await self._shell(
+                idx,
+                "cmd package resolve-activity --brief "
+                f"-c android.intent.category.LAUNCHER {package_name}",
+            )
+            component = parse_launch_component(resolved, package_name)
+            if component:
+                await self._shell(idx, f"am start -n {component}")
+            else:
+                await self._shell(
+                    idx,
+                    f"monkey -p {package_name} -c android.intent.category.LAUNCHER 1",
+                )
+
+        async def evidence(why: str, attempt: int, pid: int | None) -> dict[str, str]:
+            if not pid:
+                return {}
+            stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+            path = (
+                self._log_dir()
+                / f"startup-{package_name}-{stamp}-a{attempt}-{why}-threads.txt"
+            )
+            text = await shell(su_command(EVIDENCE_PROBE.replace("@PID@", str(pid))))
+            path.parent.mkdir(parents=True, exist_ok=True)
+            await asyncio.to_thread(path.write_text, text, encoding="utf-8")
+            return {"threads": str(path)}
+
+        guard = StartupGuard(
+            StartupSampler(shell, package_name, ScreenDiff(shm_thumb(port))),
+            StartupHangDetector(
+                STARTUP_GUARD_AFTER_SECONDS,
+                STARTUP_GUARD_STATIC_SECONDS,
+                STARTUP_GUARD_IDLE_CORES,
+                STARTUP_GUARD_HARD_SECONDS,
+            ),
+            launch=launch,
+            stop=stop,
+            retries=STARTUP_GUARD_RETRIES,
+            interval=STARTUP_GUARD_INTERVAL_SECONDS,
+            start_timeout_s=STARTUP_GUARD_START_TIMEOUT_SECONDS,
+            stall=ReadyStallDetector(
+                STARTUP_GUARD_STALL_SECONDS, STARTUP_GUARD_STALL_CORES
+            ),
+            watch_s=STARTUP_GUARD_WATCH_SECONDS,
+            evidence=evidence,
+            log=lambda record: _log_guard_record(label, record),
+        )
+        logger.info(f"{label}: 带启动看门狗拉起")
+        task = asyncio.create_task(
+            _run_guard(label, guard), name=f"avd-game-guard-{key}"
+        )
+        _GAME_GUARDS[key] = task
+        task.add_done_callback(
+            lambda t: (
+                _GAME_GUARDS.pop(key, None) if _GAME_GUARDS.get(key) is t else None
+            )
+        )
+        waiter = asyncio.create_task(guard.started.wait())
+        try:
+            await asyncio.wait({task, waiter}, return_when=asyncio.FIRST_COMPLETED)
+        finally:
+            waiter.cancel()
+        if guard.started.is_set():
+            return AppLaunchResult(True, "launched")
+        result = task.result()
+        if result.get("result") == "error":
+            return None
+        return AppLaunchResult(
+            False,
+            "startup-hang",
+            f"启动看门狗重开 {result.get('relaunches', 0)} 次后仍未启动成功",
         )
 
     async def ensure_vulkan_fix(self, idx: str) -> str:

@@ -307,6 +307,24 @@ VULKAN_ENC_PATCHES: tuple[tuple[int, str, str], ...] = (
 #: 拉起前要先做 Vulkan 修复的游戏（星铁普通模式）。
 VULKAN_FIX_PACKAGES = frozenset({"com.miHoYo.hkrpg", "com.miHoYo.hkrpg.bilibili"})
 
+#: 拉起时带启动看门狗的游戏：崩坏三偶尔卡在 miHoYo 标志页（10-04 测试里卡了 30 分钟）。
+STARTUP_GUARD_PACKAGES = frozenset({"com.miHoYo.enterprise.NGHSoD"})
+#: 启动看门狗的参数，取 aemu-lab ``avd-game.ps1`` 的默认值（崩坏三预设）。
+STARTUP_GUARD_RETRIES = 5  # 最多重开几次（= 最多拉起 6 次）
+STARTUP_GUARD_INTERVAL_SECONDS = 3.0  # 采样间隔
+STARTUP_GUARD_AFTER_SECONDS = 45.0  # 规则 d 的 T：拉起后最早多久能判卡死
+STARTUP_GUARD_STATIC_SECONDS = 15.0  # 规则 d 的 S：画面至少静止多久
+STARTUP_GUARD_IDLE_CORES = 0.3  # 进程平均不超过这么多核算空闲
+STARTUP_GUARD_HARD_SECONDS = 120.0  # 进程忙但一直没有渲染线程，到这时也判卡死
+STARTUP_GUARD_START_TIMEOUT_SECONDS = 180.0  # 这么久还没启动成功就重开
+STARTUP_GUARD_STALL_SECONDS = (
+    60.0  # StallSec：启动后画面静止 + 空闲 + 线程停在 futex 这么久判死锁
+)
+STARTUP_GUARD_STALL_CORES = 0.1
+STARTUP_GUARD_WATCH_SECONDS = (
+    300.0  # 启动后看到拉起后第几秒（= avd-game 崩坏三的就绪超时）
+)
+
 #: 估宿主内存占用：客体内存 + 这么多（预研 §6.15：3 GB 客体工作集 3.0–3.9 GB，
 #: 4 GB 客体 4.6–5.0 GB）。宿主可用内存不够就拒绝启动，不让系统开始换页。
 HOST_MEMORY_OVERHEAD_MB = 1536
