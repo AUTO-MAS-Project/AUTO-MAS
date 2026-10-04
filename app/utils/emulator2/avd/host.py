@@ -36,6 +36,7 @@ from __future__ import annotations
 import asyncio
 import ctypes
 import os
+import re
 import subprocess
 import time
 from collections.abc import Awaitable, Callable
@@ -58,6 +59,9 @@ from .components import (
 )
 from .constants import (
     ADB_NO_LOCAL_SCAN_ENV,
+    LOG_KEEP_PER_INSTANCE,
+    LOGS_DIR,
+    LOGS_DIR_MAX_BYTES,
     METADATA_FILE,
     PORT_BASE,
     PORT_STEP,
@@ -768,6 +772,99 @@ def start_logcat(root: str | Path, serial: str, log_path: Path) -> subprocess.Po
             env=emulator_env(root),
             stdout=log_file,
         )
+
+
+# ---- 日志保留 -------------------------------------------------------------
+
+#: 日志目录里归我们管的两种文件：模拟器输出 ``mas_<i>-<时间>.log``、客体 logcat
+#: ``logcat-mas_<i>-<时间>.txt``。别的文件一概不碰。
+_LOG_FILE_PATTERNS = (
+    re.compile(r"^mas_\d+-.+\.log$"),
+    re.compile(r"^logcat-mas_\d+-.+\.txt$"),
+)
+
+
+def _managed_log_files(log_dir: Path) -> list[tuple[Path, float, int]]:
+    """日志目录里两种日志文件的 (路径, 修改时间, 大小)。目录不存在时为空。"""
+    found = []
+    try:
+        entries = list(os.scandir(log_dir))
+    except FileNotFoundError:
+        return found
+    for entry in entries:
+        if not any(p.match(entry.name) for p in _LOG_FILE_PATTERNS):
+            continue
+        try:
+            if not entry.is_file(follow_symlinks=False):
+                continue
+            stat = entry.stat(follow_symlinks=False)
+        except OSError:
+            continue
+        found.append((Path(entry.path), stat.st_mtime, stat.st_size))
+    return found
+
+
+def _try_unlink(path: Path) -> bool | None:
+    """删掉返回 True，删不掉返回 False，已经不在了返回 None。"""
+    try:
+        path.unlink()
+    except FileNotFoundError:
+        return None
+    except OSError as e:
+        # 正在写的文件（模拟器、logcat 还开着）在 Windows 上删不掉，留到下次
+        logger.debug(f"旧日志 {path.name} 删不掉，跳过: {e}")
+        return False
+    return True
+
+
+def prune_logs(root: str | Path, avd: str) -> tuple[int, int]:
+    """清旧日志，返回 (删了几份, 释放字节数)。阻塞调用，异步代码里放到线程里跑。
+
+    先按实例：``avd`` 这台实例的模拟器日志、logcat 各按修改时间只留最新
+    :data:`LOG_KEEP_PER_INSTANCE` 份；再按总量：整个日志目录里两种日志加起来超过
+    :data:`LOGS_DIR_MAX_BYTES` 就从最旧的删起（不分实例），删到不超为止。删不掉的跳过。
+    """
+    log_dir = Path(root) / LOGS_DIR
+    files = _managed_log_files(log_dir)
+    removed = 0
+    freed = 0
+    gone: set[Path] = set()
+
+    for prefix, suffix in ((f"{avd}-", ".log"), (f"logcat-{avd}-", ".txt")):
+        mine = [
+            f
+            for f in files
+            if f[0].name.startswith(prefix) and f[0].name.endswith(suffix)
+        ]
+        mine.sort(key=lambda f: (f[1], f[0].name), reverse=True)
+        for path, _mtime, size in mine[LOG_KEEP_PER_INSTANCE:]:
+            result = _try_unlink(path)
+            if result is not False:
+                gone.add(path)
+            if result:
+                removed += 1
+                freed += size
+
+    rest = [f for f in files if f[0] not in gone]
+    total = sum(size for _path, _mtime, size in rest)
+    if total > LOGS_DIR_MAX_BYTES:
+        rest.sort(key=lambda f: (f[1], f[0].name))
+        for path, _mtime, size in rest:
+            if total <= LOGS_DIR_MAX_BYTES:
+                break
+            result = _try_unlink(path)
+            if result is not False:
+                total -= size
+            if result:
+                removed += 1
+                freed += size
+
+    if removed:
+        logger.info(
+            f"{avd} 建新日志前清理旧日志 {removed} 份，释放 "
+            f"{freed / 1024 / 1024:.1f} MB（{log_dir}）"
+        )
+    return removed, freed
 
 
 # ---- 宿主调度 -------------------------------------------------------------

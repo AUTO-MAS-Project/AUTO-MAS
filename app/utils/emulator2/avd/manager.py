@@ -418,6 +418,14 @@ def _stop_watchdog(root: Path, native_index: str) -> None:
 # ---- 客体日志落盘 ---------------------------------------------------------
 
 
+async def prune_logs(root: Path, idx: str) -> None:
+    """建新日志前清一次这台实例的旧日志（:func:`~.host.prune_logs`）。清理失败不影响开机。"""
+    try:
+        await asyncio.to_thread(host.prune_logs, root, avd_name(idx))
+    except Exception as e:  # noqa: BLE001 - 清日志失败不能挡住开机
+        logger.warning(f"实例 {idx} 清理旧日志失败: {e}")
+
+
 async def ensure_logcat(root: Path, idx: str) -> bool:
     """这台实例没有在落盘的 logcat 就起一个（文件 ``<根>\\logs\\logcat-mas_<i>-<时间>.txt``），返回起没起。
 
@@ -428,6 +436,7 @@ async def ensure_logcat(root: Path, idx: str) -> bool:
     serial = host.serial_of(console_port(idx))
     if await asyncio.to_thread(host.find_logcat_processes, root, serial):
         return False
+    await prune_logs(root, idx)
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     path = Path(root) / LOGS_DIR / f"logcat-{avd_name(idx)}-{stamp}.txt"
     try:
@@ -777,6 +786,7 @@ class _AvdCore(DeviceBase):
             headless=headless,
             **options["flags"],
         )
+        await prune_logs(self.root, idx)
         stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
         self._log_path = self._log_dir() / f"{instance.name}-{stamp}.log"
         logger.info(

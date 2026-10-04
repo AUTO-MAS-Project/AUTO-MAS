@@ -59,6 +59,10 @@ COMPONENTS_DIR = "components"
 METADATA_FILE = "mas-avd.json"
 #: 模拟器日志、客体 logcat。
 LOGS_DIR = "logs"
+#: 每台实例的模拟器日志、客体 logcat 各保留最新的这么多份（开机建新日志前清）。
+LOG_KEEP_PER_INSTANCE = 10
+#: 整个日志目录（只算上面两种日志）的总大小上限，超了从最旧的删起，不分实例。
+LOGS_DIR_MAX_BYTES = 1024**3
 #: 宿主显卡驱动给这条安装的模拟器用的着色器缓存。
 SHADER_CACHE_DIR = "shader-cache"
 
