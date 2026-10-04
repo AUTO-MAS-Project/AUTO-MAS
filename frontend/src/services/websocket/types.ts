@@ -1,6 +1,8 @@
 // WebSocket 统一消息协议类型
 // 与后端 app/core/ws/protocol.py、app/models/schema.py 保持一致
 
+import type { WSEmulator2AvdInstallProgressData as WSEmulator2AvdInstallProgressModel } from '@/api'
+
 // ==================== 信封 ====================
 
 type WSJsonValue = string | number | boolean | null | WSJsonValue[] | WSJsonObject
@@ -65,6 +67,9 @@ export const WS_TOOLKIT_NOTICE = 'toolkit.notice'
 
 // 模拟器启动 / 关闭 / 显示 / 隐藏这类后台操作结束（id=EmulatorManager）
 export const WS_EMULATOR_OPERATION_FINISHED = 'emulator.operation.finished'
+
+// 官方模拟器组件后台下载进度（id=EmulatorManager）
+export const WS_EMULATOR2_AVD_INSTALL_PROGRESS = 'emulator2.avd.install.progress'
 
 // 虚拟显示器（id=Main）：真实显示器回来了但有任务在跑，问用户要不要拆；以及提示已作废
 export const WS_DISPLAY_DETACH_PROMPT = 'display.detach.prompt'
@@ -237,6 +242,14 @@ export interface WSEmulatorOperationData {
   message: string
 }
 
+/**
+ * 官方模拟器组件下载进度 (id=EmulatorManager, type=emulator2.avd.install.progress)
+ *
+ * 结构同后端 ``WSEmulator2AvdInstallProgressData``，也是 ``/avd/status`` 里的 ``job`` 快照；
+ * 下载 / 解压按 0.5 秒节流，阶段切换与收尾必发。
+ */
+export type WSEmulator2AvdInstallProgressData = WSEmulator2AvdInstallProgressModel
+
 /** 一块显示器的工作区（去掉任务栏），物理像素、桌面坐标 */
 export interface WSDisplayMonitorRectData {
   left: number
@@ -289,6 +302,7 @@ interface WSMessageDataMap {
   [WS_EMULATOR_NOTICE]: WSTaskNoticeData
   [WS_TOOLKIT_NOTICE]: WSTaskNoticeData
   [WS_EMULATOR_OPERATION_FINISHED]: WSEmulatorOperationData
+  [WS_EMULATOR2_AVD_INSTALL_PROGRESS]: WSEmulator2AvdInstallProgressData
   [WS_DISPLAY_DETACH_PROMPT]: WSDisplayDetachPromptData
   [WS_DISPLAY_DETACH_PROMPT_CLOSED]: WSEmptyData
   [WS_SYSTEM_NOTICE]: WSSystemNoticeData
