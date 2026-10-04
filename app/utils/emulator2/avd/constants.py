@@ -290,6 +290,13 @@ DROP_CACHES_GIVE_UP_UPTIME_SECONDS = 180.0
 #: 每次开机最多清一次的标记：客体属性，重启即失效，换后端进程 / 重连也看得到。
 DROP_CACHES_MARKER_PROP = "debug.mas.dropped"
 
+#: 客体脏页回写（``/proc/sys/vm/dirty_expire_centisecs`` / ``dirty_writeback_centisecs``，单位 1/100 秒），
+#: 每次开机都设（不持久）。依据 10-04 硬杀实测（aemu-lab ``AGENTS.md``「关机」，32 次冷启动）：「先删旧文件
+#: 再把临时文件改名过去」这种写法，在默认 3000/500 下写完 2–34 秒内被硬杀会变成 0 字节；200/100 把窗口缩到
+#: 约 5 秒，代价是普通负载多写约 14%。AOSP 自己在低内存设备上也用 200。正常关机仍要先 ``sync``。
+GUEST_DIRTY_EXPIRE_CENTISECS = 200
+GUEST_DIRTY_WRITEBACK_CENTISECS = 100
+
 #: 客体脚本（``res/avd/guest/``）推到客体的位置。
 GUEST_TMP_DIR = "/data/local/tmp"
 #: logcat 落盘前把客体日志缓冲调到这么大（默认 256 KB，游戏一跑几分钟就滚掉）。

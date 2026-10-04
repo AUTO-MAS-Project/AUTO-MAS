@@ -77,6 +77,8 @@ from .constants import (
     DEBLOAT_PACKAGES,
     FORCE_KILL_WAIT_SECONDS,
     FOSSIFY_LAUNCHER,
+    GUEST_DIRTY_EXPIRE_CENTISECS,
+    GUEST_DIRTY_WRITEBACK_CENTISECS,
     GUEST_TMP_DIR,
     INCOMPATIBLE_PACKAGES,
     KEEP_PACKAGES,
@@ -971,6 +973,9 @@ class _AvdCore(DeviceBase):
             f"截图共享内存 SHM_videmulator{port}: {'在' if shm_exists(port) else '缺失'}"
         )
 
+        # 4b) 客体脏页回写调短（硬杀时少丢数据，依据见常量注释；不持久，每次开机都设）
+        await self._setup_guest_writeback(idx)
+
         # 5) 空闲页上报：驱动绑定时把 order 重置成 pageblock_order，绑定之后再设
         if flags["balloon"]:
             await self._setup_balloon(idx)
@@ -997,6 +1002,30 @@ class _AvdCore(DeviceBase):
         meta = instance_meta(self.root, idx)
         if not meta.get("initialized"):
             await self._first_boot_init(idx)
+
+    async def _setup_guest_writeback(self, idx: str) -> tuple[int | None, int | None]:
+        """把客体 ``dirty_expire_centisecs`` / ``dirty_writeback_centisecs`` 设成 200 / 100 并读回记日志。"""
+        expire, writeback = (
+            GUEST_DIRTY_EXPIRE_CENTISECS,
+            GUEST_DIRTY_WRITEBACK_CENTISECS,
+        )
+        _, output = await self._su(
+            idx,
+            f"echo {expire} > /proc/sys/vm/dirty_expire_centisecs; "
+            f"echo {writeback} > /proc/sys/vm/dirty_writeback_centisecs; "
+            "cat /proc/sys/vm/dirty_expire_centisecs /proc/sys/vm/dirty_writeback_centisecs",
+        )
+        values = [_int(part) for part in output.split()[:2]]
+        got = (values + [None, None])[:2]
+        if got == [expire, writeback]:
+            logger.info(
+                f"实例 {idx} 客体回写: dirty_expire {got[0]} cs、dirty_writeback {got[1]} cs"
+            )
+        else:
+            logger.warning(
+                f"实例 {idx} 客体回写没设上（要 {expire}/{writeback}）: {output[-200:]}"
+            )
+        return got[0], got[1]
 
     async def _apply_angle_overrides(self, idx: str) -> None:
         _, current = await self._shell(
