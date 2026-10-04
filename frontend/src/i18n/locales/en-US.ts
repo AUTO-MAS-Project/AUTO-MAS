@@ -1546,11 +1546,11 @@ export default {
     oknteLaunchModeNeedsLaunchBeforeTask:
       'Only available when "Launch the game before the task" is on',
     oknteLaunchTypeSummary:
-      'Direct launch: the game is started silently, no action needed; Launch via launcher UI: only the launcher window opens, and you click "Start Game" there',
+      'Direct launch: the game is started silently, nothing for you to do; Launch via launcher UI: the launcher window opens and MAS clicks "Start Game" for you — also fully unattended',
     oknteLaunchTypeHint:
-      'Direct launch: MAS starts the game silently with the /autoplay argument and never touches the launcher UI (recommended, default). Launch via launcher UI: MAS only opens the launcher window; the game starts once "Start Game" is clicked there, so keep the launcher window visible',
+      'Direct launch: MAS starts the game silently with the /autoplay argument and never touches the launcher UI (recommended, default). Launch via launcher UI: MAS opens the launcher window and clicks "Start Game" automatically with simulated mouse input — no manual action is needed, but keep the launcher window visible and unobstructed',
     oknteLauncherClickNotice:
-      '"Launch via launcher UI": MAS only opens the launcher window; the game starts once "Start Game" is clicked there. Do not cover the launcher window while a task runs; a pending game update makes it take longer',
+      '"Launch via launcher UI": MAS opens the launcher window and clicks "Start Game" automatically, so nothing is required from you. Do not cover the launcher window while a task runs (a simulated click can otherwise miss); a pending game update makes it take longer',
     autoUpdateNeedsLauncher:
       'No launcher path is set below: auto-update is unavailable, and the task cannot direct-launch unless you also pick a game client',
     gameClientPathLabel: 'Game client',
