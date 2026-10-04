@@ -38,6 +38,50 @@ logger = get_logger("模拟器管理")
 EMULATOR_CLOSE_TIMEOUT_SECONDS = 30
 
 
+def resolve_device_ref(manager: Any, index: Any) -> Any | None:
+    """设备号 → ``DeviceRef``（Emulator 2.0 才有；旧式管理器、查不到都返回 ``None``）。"""
+    resolve_device = getattr(manager, "resolve_device", None)
+    if resolve_device is None or index in (None, "", "-"):
+        return None
+    try:
+        return resolve_device(str(index))
+    except Exception as e:  # noqa: BLE001 - 认不出就按普通模拟器处理
+        logger.debug(f"解析设备 {index} 失败，按普通模拟器处理: {e}")
+        return None
+
+
+def script_process_env(manager: Any, index: Any) -> dict[str, str] | None:
+    """为某台设备起脚本进程时要用的环境：官方模拟器实例返回「MAS 环境 + ``ANDROID_ADB_SERVER_PORT``
+    = 脚本专用端口（``scriptAdbServerPort``，默认 20049）」，其余返回 ``None``（照旧继承 MAS 的环境）。
+
+    脚本用 SDK 的新版 adb，跑在 5037 上会和雷电 / MuMu 自带的旧版 adb 互杀 server。
+    """
+    device_ref = resolve_device_ref(manager, index)
+    if device_ref is None or getattr(device_ref, "emulator_type", None) != "avd":
+        return None
+    import os
+
+    from app.utils.emulator2.avd import host
+    from app.utils.emulator2.avd.components import (
+        root_from_manager_exe,
+        script_adb_env,
+    )
+
+    root = root_from_manager_exe(device_ref.manager_path)
+    env = dict(os.environ)
+    env.update(script_adb_env(root))
+    try:
+        # 先由 MAS 以脱离方式起好：脚本里的 adb 顺手拉起的 server 会继承脚本的输出管道
+        host.ensure_script_adb_server(root)
+    except Exception as e:  # noqa: BLE001 - 起不来就交给脚本自己的 adb
+        logger.warning(f"预先启动脚本专用 adb server 失败: {e}")
+    logger.info(
+        f"设备 {index} 是官方模拟器实例：脚本的 adb 走专用 server（端口 "
+        f"{env['ANDROID_ADB_SERVER_PORT']}）"
+    )
+    return env
+
+
 async def resolve_host_adb(
     owner: Any, *, index: str | None = None, config_key: str = "Emulator"
 ) -> Any | None:

@@ -37,7 +37,12 @@ from app.models.schema import WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem
 from app.services import Notify
 from app.task.base import ScriptAutoProxyBase
-from app.task.emulator_core import close_emulator, resolve_host_adb
+from app.task.emulator_core import (
+    close_emulator,
+    resolve_device_ref,
+    resolve_host_adb,
+    script_process_env,
+)
 from app.task.general.tools import execute_script_task
 from app.task.proxy_helpers import (
     CONFIG_SOURCE_SCRIPT,
@@ -251,6 +256,10 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 STARRAIL_PACKAGE_NAME[self.cur_user_config.get("Info", "Server")],
                 self.cur_user_config.get("Info", "Id"),
                 self.cur_user_config.get("Info", "Password"),
+                # 官方模拟器实例：登录改在独立进程里跑（adb 走脚本专用 server）
+                device_ref=resolve_device_ref(
+                    self.emulator_manager, self.script_config.get("Emulator", "Index")
+                ),
             ):
                 logger.info(f"用户 {self.cur_user_item.user_id} 登录成功")
             else:
@@ -280,6 +289,10 @@ class AutoProxyTask(ScriptAutoProxyBase):
             await self.src_process_manager.open_process(
                 self.src_exe_path,
                 null_stream_to_pipe=True,
+                # 官方模拟器实例：SRC 的 adb 走脚本专用 server；其余模拟器为 None，照旧继承
+                env=script_process_env(
+                    self.emulator_manager, self.script_config.get("Emulator", "Index")
+                ),
             )
 
             # 静默模式隐藏 SRC 窗口

@@ -42,7 +42,7 @@ from maa.resource import Resource
 from maa.tasker import Tasker
 from maa.toolkit import AdbDevice, Toolkit
 
-from app.models.emulator import DeviceInfo
+from app.models.emulator import DeviceInfo, DeviceRef
 from app.utils import get_logger, resource_path
 
 from .config import Config
@@ -93,12 +93,16 @@ class _MaaFWManager:
                 raise RuntimeError("任务执行失败")
 
     @staticmethod
-    async def convert_adb(raw_info: DeviceInfo) -> AdbDevice:
+    async def convert_adb(
+        raw_info: DeviceInfo, device_ref: DeviceRef | None = None
+    ) -> AdbDevice:
         """
         将设备信息转换为ADB连接所需的地址格式
 
         Args:
             raw_info(DeviceInfo): 包含设备信息的对象
+            device_ref(DeviceRef | None): 设备在 Emulator 2.0 里的归属；是官方模拟器实例时
+                不走 Toolkit 发现（它认不出），直接构造设备
 
         Returns:
             AdbDevice: 表示 ADB 设备的对象
@@ -106,6 +110,9 @@ class _MaaFWManager:
         Raises:
             RuntimeError: 如果无法找到指定设备，则抛出异常，异常信息包含相关的错误信息
         """
+
+        if device_ref is not None and device_ref.emulator_type == "avd":
+            return _avd_adb_device(raw_info, device_ref)
 
         def get_emulator_adb_port(address: str) -> int | None:
             offset = 0
@@ -218,6 +225,34 @@ class _MaaFWManager:
             raise RuntimeError("无法初始化 MaaFW tasker")
 
         return tasker
+
+
+def _avd_adb_device(raw_info: DeviceInfo, device_ref: DeviceRef) -> AdbDevice:
+    """官方模拟器实例的 AdbDevice：SDK 的 adb、``127.0.0.1:<adb 端口>``、只用 AVDExtras 截图（64），
+    输入 Default；config 带 AVDExtras 与推流开关改走私有 server 的覆盖（与 MaaFW 运行器同一份）。
+    名字取 MaaToolkit 给这类模拟器的名字 ``AVD``。"""
+    from app.utils.emulator2.avd.components import (
+        adb_exe,
+        adb_server_port,
+        root_from_manager_exe,
+    )
+    from app.utils.emulator2.avd.constants import console_port
+    from app.utils.emulator2.avd.maafw_extras import build_maafw_avd_config
+
+    root = root_from_manager_exe(device_ref.manager_path)
+    adb_path = adb_exe(root)
+    if not adb_path.is_file():
+        raise RuntimeError(f"找不到官方模拟器的 adb：{adb_path}")
+    return AdbDevice(
+        name="AVD",
+        adb_path=adb_path,
+        address=raw_info.adb_address,
+        screencap_methods=int(MaaAdbScreencapMethodEnum.EmulatorExtras),
+        input_methods=int(MaaAdbInputMethodEnum.Default),
+        config=build_maafw_avd_config(
+            adb_path, adb_server_port(root), console_port(device_ref.native_index)
+        ),
+    )
 
 
 MaaFWManager = _MaaFWManager()

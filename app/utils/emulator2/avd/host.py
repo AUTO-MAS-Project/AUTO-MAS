@@ -53,6 +53,7 @@ from .components import (
     avd_home,
     emulator_exe,
     runtime_sdk_dir,
+    script_adb_server_port,
 )
 from .constants import (
     HOST_MEMORY_OVERHEAD_MB,
@@ -140,6 +141,26 @@ def busy_ports(ports: list[int]) -> list[int]:
         ):
             busy.add(conn.laddr.port)
     return sorted(busy)
+
+
+def ensure_script_adb_server(root: str | Path, *, timeout: float = 10.0) -> bool:
+    """脚本专用 adb server（``scriptAdbServerPort``）没在跑就以脱离方式起来，返回之后它是否在听。
+
+    脚本进程（MAA、SRC、登录子进程 …）里的 adb 客户端顺手拉起的 server 会继承那个进程的输出管道：
+    读它输出的一方（登录子进程的日志、SRC 的输出排空）就等不到结束。先由我们起好就没有这个问题。
+    """
+    port = script_adb_server_port(root)
+    if _port_listening(port):
+        return True
+    logger.info(f"启动官方模拟器脚本专用 adb server（端口 {port}）")
+    process = _popen_detached(
+        [str(adb_exe(root)), "-P", str(port), "start-server"],
+        env=emulator_env(root),
+        stdout=subprocess.DEVNULL,
+    )
+    with suppress(subprocess.TimeoutExpired):
+        process.wait(timeout)
+    return _port_listening(port)
 
 
 async def ensure_adb_server(root: str | Path, *, timeout: float = 20.0) -> bool:

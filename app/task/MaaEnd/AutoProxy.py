@@ -37,7 +37,11 @@ from app.models.schema import WSTaskNoticeData
 from app.models.task import LogRecord, ScriptItem
 from app.services import Notify, System
 from app.task.base import ScriptAutoProxyBase
-from app.task.emulator_core import close_emulator
+from app.task.emulator_core import (
+    close_emulator,
+    resolve_device_ref,
+    script_process_env,
+)
 from app.task.general.tools import execute_script_task
 from app.task.proxy_helpers import append_push_log
 from app.utils import (
@@ -1047,6 +1051,13 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 self.maaend_instance_name,
                 "--quit-after-run",
                 stdout=asyncio.subprocess.PIPE,
+                # 官方模拟器实例：MaaEnd 的 adb 走脚本专用 server；其余为 None，照旧继承
+                env=script_process_env(
+                    self.emulator_manager,
+                    self.script_config.get("Game", "EmulatorIndex"),
+                )
+                if self.emulator_manager is not None
+                else None,
             )
             await asyncio.sleep(3)  # 等待 MaaEnd 启动完成
             # 静默模式隐藏 MaaEnd 窗口
@@ -1616,7 +1627,15 @@ class AutoProxyTask(ScriptAutoProxyBase):
             from app.core import MaaFWManager
 
             maaend_instance["savedDevice"] = {
-                "adbDeviceName": (await MaaFWManager.convert_adb(device_info)).name
+                "adbDeviceName": (
+                    await MaaFWManager.convert_adb(
+                        device_info,
+                        resolve_device_ref(
+                            self.emulator_manager,
+                            self.script_config.get("Game", "EmulatorIndex"),
+                        ),
+                    )
+                ).name
             }
         maaend_tasks = maaend_instance.get("tasks")
         if not isinstance(maaend_tasks, list):
