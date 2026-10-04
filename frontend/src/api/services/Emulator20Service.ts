@@ -2,6 +2,13 @@
 /* istanbul ignore file */
 /* tslint:disable */
 /* eslint-disable */
+import type { Emulator2AvdApkInstallIn } from '../models/Emulator2AvdApkInstallIn';
+import type { Emulator2AvdApkInstallOut } from '../models/Emulator2AvdApkInstallOut';
+import type { Emulator2AvdInstanceIn } from '../models/Emulator2AvdInstanceIn';
+import type { Emulator2AvdInstanceOptionsOut } from '../models/Emulator2AvdInstanceOptionsOut';
+import type { Emulator2AvdInstanceOptionsSetIn } from '../models/Emulator2AvdInstanceOptionsSetIn';
+import type { Emulator2AvdStatusIn } from '../models/Emulator2AvdStatusIn';
+import type { Emulator2AvdStatusOut } from '../models/Emulator2AvdStatusOut';
 import type { Emulator2DevicesIn } from '../models/Emulator2DevicesIn';
 import type { Emulator2DevicesOut } from '../models/Emulator2DevicesOut';
 import type { Emulator2GuardCaptureOut } from '../models/Emulator2GuardCaptureOut';
@@ -307,6 +314,87 @@ export class Emulator20Service {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/emulator2/guard/capture',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 查询魔改 AVD 根目录的组件状态
+     * 组件清单与是否齐全（缺哪几项）、硬件加速（WHPX）是否可用、开机前电脑检查。
+     * 组件随模拟器内测包提供，MAS 不下载。只读，不联网。``refresh`` 为 true 时检查不走缓存。
+     * @param requestBody
+     * @returns Emulator2AvdStatusOut Successful Response
+     * @throws ApiError
+     */
+    public static avdStatusApiEmulator2AvdStatusPost(
+        requestBody: Emulator2AvdStatusIn,
+    ): CancelablePromise<Emulator2AvdStatusOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/emulator2/avd/status',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 查询魔改 AVD 实例选项
+     * 显示档位、内存、核数、数据盘、首次初始化与渲染器检测结果、端口。
+     * @param requestBody
+     * @returns Emulator2AvdInstanceOptionsOut Successful Response
+     * @throws ApiError
+     */
+    public static avdInstanceOptionsApiEmulator2AvdInstanceOptionsPost(
+        requestBody: Emulator2AvdInstanceIn,
+    ): CancelablePromise<Emulator2AvdInstanceOptionsOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/emulator2/avd/instance/options',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 修改魔改 AVD 实例选项
+     * 内存、气球，只改传了的项，下次启动生效。
+     * @param requestBody
+     * @returns Emulator2AvdInstanceOptionsOut Successful Response
+     * @throws ApiError
+     */
+    public static avdSetInstanceOptionsApiEmulator2AvdInstanceOptionsSetPost(
+        requestBody: Emulator2AvdInstanceOptionsSetIn,
+    ): CancelablePromise<Emulator2AvdInstanceOptionsOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/emulator2/avd/instance/options/set',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 在魔改 AVD 实例里安装 APK
+     * ``adb install -r`` 本机的一个 .apk，实例必须已开机；装完才返回。.xapk / 拆分安装包不支持。
+     * @param requestBody
+     * @returns Emulator2AvdApkInstallOut Successful Response
+     * @throws ApiError
+     */
+    public static avdInstallApkApiEmulator2AvdInstanceApkInstallPost(
+        requestBody: Emulator2AvdApkInstallIn,
+    ): CancelablePromise<Emulator2AvdApkInstallOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/emulator2/avd/instance/apk/install',
             body: requestBody,
             mediaType: 'application/json',
             errors: {

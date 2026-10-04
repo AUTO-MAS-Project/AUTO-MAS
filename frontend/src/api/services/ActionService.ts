@@ -6,6 +6,10 @@ import type { ClickImageIn } from '../models/ClickImageIn';
 import type { ClickOut } from '../models/ClickOut';
 import type { ClickTextIn } from '../models/ClickTextIn';
 import type { DispatchIn } from '../models/DispatchIn';
+import type { Emulator2AvdApkInstallIn } from '../models/Emulator2AvdApkInstallIn';
+import type { Emulator2AvdApkInstallOut } from '../models/Emulator2AvdApkInstallOut';
+import type { Emulator2AvdInstanceOptionsOut } from '../models/Emulator2AvdInstanceOptionsOut';
+import type { Emulator2AvdInstanceOptionsSetIn } from '../models/Emulator2AvdInstanceOptionsSetIn';
 import type { Emulator2DevicesIn } from '../models/Emulator2DevicesIn';
 import type { Emulator2GuardCaptureOut } from '../models/Emulator2GuardCaptureOut';
 import type { Emulator2SettingsApplyAllIn } from '../models/Emulator2SettingsApplyAllIn';
@@ -207,6 +211,46 @@ export class ActionService {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/emulator2/guard/capture',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 修改魔改 AVD 实例选项
+     * 内存、气球，只改传了的项，下次启动生效。
+     * @param requestBody
+     * @returns Emulator2AvdInstanceOptionsOut Successful Response
+     * @throws ApiError
+     */
+    public static avdSetInstanceOptionsApiEmulator2AvdInstanceOptionsSetPost(
+        requestBody: Emulator2AvdInstanceOptionsSetIn,
+    ): CancelablePromise<Emulator2AvdInstanceOptionsOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/emulator2/avd/instance/options/set',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * 在魔改 AVD 实例里安装 APK
+     * ``adb install -r`` 本机的一个 .apk，实例必须已开机；装完才返回。.xapk / 拆分安装包不支持。
+     * @param requestBody
+     * @returns Emulator2AvdApkInstallOut Successful Response
+     * @throws ApiError
+     */
+    public static avdInstallApkApiEmulator2AvdInstanceApkInstallPost(
+        requestBody: Emulator2AvdApkInstallIn,
+    ): CancelablePromise<Emulator2AvdApkInstallOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/emulator2/avd/instance/apk/install',
             body: requestBody,
             mediaType: 'application/json',
             errors: {
