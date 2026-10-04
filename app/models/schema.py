@@ -5842,7 +5842,10 @@ class WSEmulator2AvdInstallProgressData(BaseModel):
 class Emulator2AvdPrecheckItem(BaseModel):
     """官方模拟器开机前电脑检查的一项。拦截项不满足时开机直接被拒绝, 原因同 reason + advice。"""
 
-    id: str = Field(..., description="检查项: acceleration / vulkan / disk / memory")
+    id: str = Field(
+        ...,
+        description="检查项: path / emulator / acceleration / vulkan / disk / memory",
+    )
     title: str = Field(..., description="检查项名称")
     ok: Optional[bool] = Field(
         default=None, description="是否满足; null 表示现在查不了 (如模拟器组件还没装)"
@@ -5882,7 +5885,7 @@ class Emulator2AvdStatusOut(OutBase):
     prechecks: List[Emulator2AvdPrecheckItem] = Field(
         default_factory=list,
         description=(
-            "开机前电脑检查: 硬件虚拟化、显卡 Vulkan、磁盘、内存 (内存按默认档实例估), "
+            "开机前电脑检查: 目录路径、模拟器版本、硬件虚拟化、显卡 Vulkan、磁盘、内存 (内存按默认档实例估), "
             "每项给 ok、原因、建议"
         ),
     )

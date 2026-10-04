@@ -18,11 +18,12 @@
 
 #   Contact: DLmaster_361@163.com
 
-"""官方模拟器开机前的电脑检查：模拟器版本、硬件虚拟化、显卡 Vulkan、磁盘、内存。
+"""官方模拟器开机前的电脑检查：目录路径、模拟器版本、硬件虚拟化、显卡 Vulkan、磁盘、内存。
 
 每项给 ``ok``、原因、建议，``/avd/status`` 原样交给前端显示；开机路径（``AvdInstanceManager._launch``）
 里不满足的拦截项直接拒绝开机并给出原因，不静默开下去。只读：不改系统设置、不装任何东西。
 
+- **目录路径**：根目录路径不能有中文等非 ASCII 字符（模拟器和 qemu 对这类路径不可靠），空格不拦。拦截。
 - **模拟器版本**：只支持官方模拟器内测包里的自编版（``components.emulator_self_built``），谷歌原版
   与没有模拟器都拒绝。拦截。
 - **硬件虚拟化**：``emulator -accel-check``（WHPX）。拦截。
@@ -192,6 +193,21 @@ def emulator_item(root: str | Path) -> PrecheckItem:
     )
 
 
+def path_item(root: str | Path) -> PrecheckItem:
+    """根目录路径不能有非 ASCII 字符（中文等）：模拟器和 qemu 对这类路径不可靠。拦截。空格不拦。"""
+    text = str(Path(root))
+    if text.isascii():
+        return PrecheckItem("path", "目录路径", True, True, text)
+    return PrecheckItem(
+        "path",
+        "目录路径",
+        False,
+        True,
+        f"模拟器目录路径里有中文等非英文字符（{text}），模拟器在这类路径下不可靠",
+        "把模拟器目录放到不含中文的路径下，再重新添加",
+    )
+
+
 def memory_item(memory_mb: int, available_mb: int | None = None) -> PrecheckItem:
     """``memory_mb`` 是这次开机实际要传的 ``-memory``（按游戏自动时也是算好的值）。"""
     if available_mb is None:
@@ -351,7 +367,7 @@ async def vulkan_item(*, use_cache: bool = True) -> PrecheckItem:
 async def run_prechecks(
     root: str | Path, *, memory_mb: int = DEFAULT_MEMORY_MB, refresh: bool = False
 ) -> list[PrecheckItem]:
-    """五项都查，给 ``/avd/status``。``memory_mb`` 是拿来估内存的实例内存（面板上用默认档）；
+    """六项都查，给 ``/avd/status``。``memory_mb`` 是拿来估内存的实例内存（面板上用默认档）；
     ``refresh``（用户点「检查」）时硬件加速与 Vulkan 都跳过缓存重新查。"""
     accel, vulkan = await asyncio.gather(
         acceleration_item(root, use_cache=not refresh),
@@ -360,7 +376,7 @@ async def run_prechecks(
     emulator = await asyncio.to_thread(emulator_item, root)
     memory = await asyncio.to_thread(memory_item, memory_mb)
     disk = await asyncio.to_thread(disk_item, root)
-    return [emulator, accel, vulkan, disk, memory]
+    return [path_item(root), emulator, accel, vulkan, disk, memory]
 
 
 class PrecheckFailed(RuntimeError):
@@ -372,9 +388,10 @@ class PrecheckFailed(RuntimeError):
 
 
 async def check_before_launch(root: str | Path, memory_mb: int) -> list[PrecheckItem]:
-    """开机前检查：模拟器不是内测包的自编版、硬件虚拟化、内存、磁盘不满足抛 :class:`PrecheckFailed`（带原因与建议）；
+    """开机前检查：目录路径有非 ASCII 字符、模拟器不是内测包的自编版、硬件虚拟化、内存、磁盘不满足抛 :class:`PrecheckFailed`（带原因与建议）；
     Vulkan 不满足只记警告。返回全部结果。``memory_mb`` 必须是这次要传给 ``-memory`` 的值。"""
     items = [
+        path_item(root),
         await asyncio.to_thread(emulator_item, root),
         await acceleration_item(root),
         await asyncio.to_thread(memory_item, memory_mb),
