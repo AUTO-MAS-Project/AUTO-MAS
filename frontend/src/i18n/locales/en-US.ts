@@ -1542,6 +1542,13 @@ export default {
       'Via launcher: enter the game through the official launcher; Direct launch: start the game client directly (MAS passes -krqlv=hd) without opening the launcher. Both use the launcher path to locate the game',
     launchViaLauncher: 'Via launcher',
     launchDirectly: 'Direct launch',
+    oknteLaunchViaLauncher: 'Launch via launcher UI',
+    oknteLaunchModeNeedsLaunchBeforeTask:
+      'Only available when "Launch the game before the task" is on',
+    oknteLaunchTypeHint:
+      'Direct launch: MAS starts the game silently with the /autoplay argument and never touches the launcher UI (recommended, default). Launch via launcher UI: MAS only opens the launcher window; the game starts once "Start Game" is clicked there, so keep the launcher window visible',
+    oknteLauncherClickNotice:
+      '"Launch via launcher UI": MAS only opens the launcher window; the game starts once "Start Game" is clicked there. Do not cover the launcher window while a task runs; a pending game update makes it take longer',
     autoUpdateNeedsLauncher:
       'No launcher path is set below: auto-update is unavailable, and the task cannot direct-launch unless you also pick a game client',
     gameClientPathLabel: 'Game client',

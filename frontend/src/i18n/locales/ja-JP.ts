@@ -1424,6 +1424,12 @@ export default {
       'ランチャー起動：公式ランチャー経由でゲームに入ります。直接起動：ランチャーを開かずゲームクライアントを直接起動します（MAS が -krqlv=hd を付与）。どちらもランチャーのパスでゲームを特定します',
     launchViaLauncher: 'ランチャー起動',
     launchDirectly: '直接起動',
+    oknteLaunchViaLauncher: 'ランチャー画面から起動',
+    oknteLaunchModeNeedsLaunchBeforeTask: '「タスク前にゲームを起動」がオンのときのみ利用できます',
+    oknteLaunchTypeHint:
+      '直接起動：MAS が /autoplay 引数を付けてゲームをサイレント起動し、ランチャー画面は操作しません（推奨・既定）。ランチャー画面から起動：MAS はランチャー画面を開くだけで、その画面で「ゲームを開始」をクリックするとゲームが起動します。ランチャー画面が見える状態を保ってください',
+    oknteLauncherClickNotice:
+      '「ランチャー画面から起動」：MAS はランチャー画面を開くだけで、その画面で「ゲームを開始」をクリックするとゲームが起動します。タスク実行中はランチャー画面を隠さないでください。ゲームの更新があると、その分長くかかります',
     autoUpdateNeedsLauncher:
       '下で公式ランチャーのパスが未設定です：自動更新は使えず、ゲームクライアントも未選択だと直接起動できません',
     gameClientPathLabel: 'ゲームクライアント',

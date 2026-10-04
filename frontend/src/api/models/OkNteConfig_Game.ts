@@ -15,6 +15,10 @@ export type OkNteConfig_Game = {
      */
     Type?: ('Client' | 'URL' | null);
     /**
+     * 启动方式: 直接启动（启动器静默）/ 使用启动器启动（启动器界面）
+     */
+    LaunchMode?: ('Autoplay' | 'LauncherUi' | null);
+    /**
      * 游戏启动器路径（NTELauncher/NTEGame.exe，直启 HTGame.exe 会卡界面）
      */
     Path?: (string | null);

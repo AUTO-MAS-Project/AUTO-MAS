@@ -4374,6 +4374,15 @@ class OkNteConfig(ConfigBase):
         self.Game_Type = ConfigItem(
             "Game", "Type", "Client", OptionsValidator(["Client", "URL"])
         )
+        # 直接启动（Autoplay，默认）= 启动器带 /autoplay 静默拉起，无需点击；
+        # 使用启动器启动（LauncherUi）= 打开启动器界面，由 OCR 点「开始游戏」。
+        # 默认值排首位：存量配置缺键即维持静默启动现状，无需迁移
+        self.Game_LaunchMode = ConfigItem(
+            "Game",
+            "LaunchMode",
+            "Autoplay",
+            OptionsValidator(["Autoplay", "LauncherUi"]),
+        )
         # 异环直启 HTGame.exe 会卡界面，此路径为启动器 exe（NTELauncher/NTEGame.exe），
         # 旧值为 HTGame.exe 时运行时自动反推同安装根下的启动器
         self.Game_Path = ConfigItem("Game", "Path", "", FileValidator())
