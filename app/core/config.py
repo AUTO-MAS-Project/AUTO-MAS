@@ -3531,18 +3531,39 @@ class AppConfig(GlobalConfig):
 
         await self.ToolsConfig.GameSign_Accounts.setOrder([uuid.UUID(_) for _ in order])
 
+    def obs_replay_options(self):
+        """读取 OBS 连接与保留策略，服务层不依赖全局配置。"""
+        from app.services.obs_replay import ObsReplayOptions
+
+        return ObsReplayOptions(
+            port=self.get("Replay", "Port"),
+            password=self.get("Replay", "Password"),
+            max_replay_count=self.get("Replay", "MaxReplayCount"),
+        )
+
     async def get_setting(self) -> Dict[str, Any]:
         """获取全局设置"""
 
         logger.info("获取全局设置")
 
-        return await self.toDict()
+        data = await self.toDict()
+        replay = data.get("Replay", {})
+        replay["PasswordConfigured"] = bool(replay.pop("Password", ""))
+        return data
 
     async def update_setting(self, data: Dict[str, Dict[str, Any]]) -> None:
         """更新全局设置"""
 
         logger.info("更新全局设置")
 
+        replay = data.get("Replay")
+        if replay is not None:
+            replay = {
+                key: value
+                for key, value in replay.items()
+                if value is not None and key != "PasswordConfigured"
+            }
+            data = {**data, "Replay": replay}
         await self.update(data)
 
         logger.success("全局设置更新成功")

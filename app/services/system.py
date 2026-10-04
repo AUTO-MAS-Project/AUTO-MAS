@@ -128,6 +128,12 @@ class _SystemHandler:
             logger.info("不执行系统电源操作")
             return
 
+        # 回放在后台复制；真正执行电源动作前给它有限的收尾窗口。
+        from app.services.obs_replay import ObsReplay
+
+        if not await ObsReplay.drain():
+            logger.warning("失败回放尚未保存完成，继续执行电源操作")
+
         if mode == "KillSelf" and Config.server is not None:
             logger.info("执行退出主程序操作")
             if not from_frontend:

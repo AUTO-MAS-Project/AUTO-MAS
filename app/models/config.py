@@ -5033,6 +5033,17 @@ class GlobalConfig(ConfigBase):
     """全局配置"""
 
     def __init__(self):
+        ## Replay -----------------------------------------------------------
+        ## 连接已运行的 OBS，在自动代理最终失败时保存回放。
+        self.Replay_Enabled = ConfigItem("Replay", "Enabled", False, BoolValidator())
+        ## OBS WebSocket 仅连接本机。
+        self.Replay_Port = ConfigItem("Replay", "Port", 4455, RangeValidator(1, 65535))
+        ## OBS 认证密码按现有敏感配置规则加密落盘。
+        self.Replay_Password = ConfigItem("Replay", "Password", "", EncryptValidator())
+        ## MAS 副本的保留数量，不清理 OBS 原文件。
+        self.Replay_MaxReplayCount = ConfigItem(
+            "Replay", "MaxReplayCount", 3, RangeValidator(1, 20)
+        )
 
         ## Function ---------------------------------------------------------
         ## 历史记录保留时间（天）

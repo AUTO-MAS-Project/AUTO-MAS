@@ -498,6 +498,9 @@ def main():
             with suppress(RuntimeError):
                 await System.cancel_power_task()
             await Updater.cancel_download(notify=False)
+            from app.services.obs_replay import ObsReplay
+
+            await ObsReplay.stop()
             await RuntimeTasks.shutdown()
             await Matomo.close()
             logger.info("AUTO-MAS 后端服务清理完成")

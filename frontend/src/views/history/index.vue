@@ -3,6 +3,10 @@
     <!-- 页面头部 -->
     <div class="page-header">
       <h1 class="page-title">{{ t('history.title') }}</h1>
+      <a-button class="replay-entry-button" @click="replayModalOpen = true">
+        <template #icon><PlayCircleOutlined /></template>
+        {{ t('history.replays.openList') }}
+      </a-button>
     </div>
 
     <!-- 搜索筛选区域 -->
@@ -71,6 +75,7 @@
       :drop-statistics="currentDetail?.drop_statistics || null"
       :matrix-statistics="getMatrixStatistics(currentDetail)"
       :pull-count-statistics="getPullCountStatistics(currentDetail)"
+      :replays="getReplays(currentDetail)"
       :font-size="editorConfig.fontSize"
       :font-size-options="fontSizeOptions"
       :editor-theme="editorTheme"
@@ -79,22 +84,30 @@
       @close="logModalOpen = false"
       @open-file="handleOpenLogFile"
       @open-directory="handleOpenLogDirectory"
+      @open-replay="handleOpenReplay"
+      @locate-replay="handleLocateReplay"
       @update:font-size="setEditorConfig({ fontSize: $event })"
     />
+
+    <ReplayListModal :open="replayModalOpen" @close="replayModalOpen = false" />
   </div>
 </template>
 
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
 import { ref } from 'vue'
+import { message } from 'ant-design-vue'
+import { PlayCircleOutlined } from '@ant-design/icons-vue'
 import type { HistoryData } from '@/api'
 import HistoryDateSidebar from './components/HistoryDateSidebar.vue'
 import HistoryDetailPanel from './components/HistoryDetailPanel.vue'
 import HistoryLogModal from './components/HistoryLogModal.vue'
 import HistorySearchPanel from './components/HistorySearchPanel.vue'
+import ReplayListModal from './components/ReplayListModal.vue'
 import { useHistoryLogic } from './useHistoryLogic'
 import { formatBackendDateTime } from '@/utils/dateDisplay'
 import type { PullCountStatistics } from '@/types/history'
+import type { ReplayRecord } from '@/types/replay'
 
 const { t } = useI18n()
 
@@ -137,6 +150,7 @@ const {
 
 // 弹窗状态
 const logModalOpen = ref(false)
+const replayModalOpen = ref(false)
 const currentRecordDate = ref('')
 const currentRecordStatus = ref('')
 const currentErrorMessage = ref('')
@@ -144,6 +158,7 @@ const currentErrorMessage = ref('')
 type HistoryDataWithMatrix = HistoryData & {
   matrix_statistics?: Record<string, string> | null
   pull_count_statistics?: PullCountStatistics | null
+  replays?: ReplayRecord[] | null
 }
 
 const getMatrixStatistics = (data: HistoryData | null): Record<string, string> | null => {
@@ -152,6 +167,10 @@ const getMatrixStatistics = (data: HistoryData | null): Record<string, string> |
 
 const getPullCountStatistics = (data: HistoryData | null): PullCountStatistics | null => {
   return (data as HistoryDataWithMatrix | null)?.pull_count_statistics ?? null
+}
+
+const getReplays = (data: HistoryData | null): ReplayRecord[] => {
+  return data?.replays ?? []
 }
 
 const handleModeUpdate = (mode: string) => {
@@ -168,6 +187,44 @@ const handleSelectRecord = async (index: number, record: any) => {
   logModalOpen.value = true
   await selectRecord(index, record)
 }
+
+const handleOpenReplay = async (replay: ReplayRecord) => {
+  if (!replay.filePath) {
+    message.error(t('history.replays.openFileFailed'))
+    return
+  }
+  if (!window.electronAPI?.openFile) {
+    message.error(t('history.replays.openFileUnsupported'))
+    return
+  }
+  try {
+    const result = await window.electronAPI.openFile(replay.filePath)
+    if (result.success) {
+      message.success(t('history.replays.played'))
+    } else {
+      message.error(result.error || t('history.replays.openFileFailed'))
+    }
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : t('history.replays.openFileFailed'))
+  }
+}
+
+const handleLocateReplay = async (replay: ReplayRecord) => {
+  if (!replay.filePath) {
+    message.error(t('history.replays.openDirectoryFailed'))
+    return
+  }
+  if (!window.electronAPI?.showItemInFolder) {
+    message.error(t('history.replays.openDirectoryUnsupported'))
+    return
+  }
+  try {
+    await window.electronAPI.showItemInFolder(replay.filePath)
+    message.success(t('history.replays.directoryOpened'))
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : t('history.replays.openDirectoryFailed'))
+  }
+}
 </script>
 
 <style scoped>
@@ -179,8 +236,16 @@ const handleSelectRecord = async (index: number, record: any) => {
 }
 
 .page-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
   margin-bottom: 24px;
   padding: 0 4px;
+}
+
+.replay-entry-button {
+  flex-shrink: 0;
 }
 
 .page-title {

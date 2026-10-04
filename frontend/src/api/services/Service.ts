@@ -90,6 +90,8 @@ import type { MssDefenseStatusIn } from '../models/MssDefenseStatusIn';
 import type { MssDefenseStatusOut } from '../models/MssDefenseStatusOut';
 import type { NoticeOut } from '../models/NoticeOut';
 import type { NotifyChannelsOut } from '../models/NotifyChannelsOut';
+import type { ObsReplayCheckOut } from '../models/ObsReplayCheckOut';
+import type { ObsReplaySaveOut } from '../models/ObsReplaySaveOut';
 import type { OkwwClientPathOut } from '../models/OkwwClientPathOut';
 import type { OutBase } from '../models/OutBase';
 import type { PatternDebugIn } from '../models/PatternDebugIn';
@@ -121,6 +123,7 @@ import type { QueueItemReorderIn } from '../models/QueueItemReorderIn';
 import type { QueueItemUpdateIn } from '../models/QueueItemUpdateIn';
 import type { QueueSetInBase } from '../models/QueueSetInBase';
 import type { QueueUpdateIn } from '../models/QueueUpdateIn';
+import type { ReplayListOut } from '../models/ReplayListOut';
 import type { ScriptConfigImportIn } from '../models/ScriptConfigImportIn';
 import type { ScriptCreateIn } from '../models/ScriptCreateIn';
 import type { ScriptCreateOut } from '../models/ScriptCreateOut';
@@ -3433,6 +3436,17 @@ export class Service {
         });
     }
     /**
+     * 查询保留的失败回放
+     * @returns ReplayListOut Successful Response
+     * @throws ApiError
+     */
+    public static getObsReplaysApiHistoryReplaysGet(): CancelablePromise<ReplayListOut> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/history/replays',
+        });
+    }
+    /**
      * 搜索历史记录总览信息
      * @param requestBody
      * @returns HistorySearchOut Successful Response
@@ -3636,6 +3650,28 @@ export class Service {
             errors: {
                 422: `Validation Error`,
             },
+        });
+    }
+    /**
+     * 检查 OBS 回放缓冲
+     * @returns ObsReplayCheckOut Successful Response
+     * @throws ApiError
+     */
+    public static checkObsReplayApiSettingObsCheckPost(): CancelablePromise<ObsReplayCheckOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/setting/obs/check',
+        });
+    }
+    /**
+     * 试存 OBS 回放
+     * @returns ObsReplaySaveOut Successful Response
+     * @throws ApiError
+     */
+    public static saveObsReplayApiSettingObsSavePost(): CancelablePromise<ObsReplaySaveOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/setting/obs/save',
         });
     }
     /**

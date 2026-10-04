@@ -39,6 +39,7 @@ import type { MaaDepotInventoryOut } from '../models/MaaDepotInventoryOut';
 import type { MaaEndOptionsOut } from '../models/MaaEndOptionsOut';
 import type { NoticeOut } from '../models/NoticeOut';
 import type { NotifyChannelsOut } from '../models/NotifyChannelsOut';
+import type { ObsReplayCheckOut } from '../models/ObsReplayCheckOut';
 import type { OCRScreenshotIn } from '../models/OCRScreenshotIn';
 import type { OCRScreenshotOut } from '../models/OCRScreenshotOut';
 import type { OkwwClientPathOut } from '../models/OkwwClientPathOut';
@@ -51,6 +52,7 @@ import type { QueueGetIn } from '../models/QueueGetIn';
 import type { QueueGetOut } from '../models/QueueGetOut';
 import type { QueueItemGetIn } from '../models/QueueItemGetIn';
 import type { QueueItemGetOut } from '../models/QueueItemGetOut';
+import type { ReplayListOut } from '../models/ReplayListOut';
 import type { ScriptDeleteIn } from '../models/ScriptDeleteIn';
 import type { ScriptGetIn } from '../models/ScriptGetIn';
 import type { ScriptGetOut } from '../models/ScriptGetOut';
@@ -877,6 +879,17 @@ export class GetService {
         });
     }
     /**
+     * 查询保留的失败回放
+     * @returns ReplayListOut Successful Response
+     * @throws ApiError
+     */
+    public static getObsReplaysApiHistoryReplaysGet(): CancelablePromise<ReplayListOut> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/history/replays',
+        });
+    }
+    /**
      * 搜索历史记录总览信息
      * @param requestBody
      * @returns HistorySearchOut Successful Response
@@ -924,6 +937,17 @@ export class GetService {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/tools/get',
+        });
+    }
+    /**
+     * 检查 OBS 回放缓冲
+     * @returns ObsReplayCheckOut Successful Response
+     * @throws ApiError
+     */
+    public static checkObsReplayApiSettingObsCheckPost(): CancelablePromise<ObsReplayCheckOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/setting/obs/check',
         });
     }
     /**
