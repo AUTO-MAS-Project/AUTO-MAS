@@ -107,7 +107,7 @@
     </a-row>
 
     <a-row :gutter="24" class="task-time-limit-row">
-      <a-col :span="8">
+      <a-col :span="12">
         <a-form-item :label="t('edit.singleTaskTimeLimit')">
           <a-input-number
             v-model:value="maafwConfig.Run.TaskTimeLimit"
@@ -120,20 +120,17 @@
           />
         </a-form-item>
       </a-col>
-      <a-col :span="8">
-        <!-- 按任务单独设置：摘要 + 弹窗，存的仍是 Run.TaskTimeLimitOverrides 的 JSON 字符串 -->
+      <a-col :span="12">
+        <!-- 按任务单独设置：摘要 + 弹窗，存的仍是 Run.TaskTimeLimitOverrides 的 JSON 字符串；
+             原地打转检测（Run.LoopGuard）的开关也在这个弹窗里 -->
         <MaaFWTaskTimeLimitField
           :value="maafwConfig.Run.TaskTimeLimitOverrides"
+          :loop-guard="Boolean(maafwConfig.Run.LoopGuard)"
           :tasks="periodTaskOptions"
           :default-minutes="maafwConfig.Run.TaskTimeLimit ?? 0"
           :disabled="interfaceDependentDisabled || periodTaskOptions.length === 0"
           @save="handleTaskTimeLimitOverridesSave"
         />
-      </a-col>
-      <a-col :span="8">
-        <a-form-item :label="t('edit.loopGuard')">
-          <a-switch :checked="Boolean(maafwConfig.Run.LoopGuard)" @change="handleLoopGuardChange" />
-        </a-form-item>
       </a-col>
     </a-row>
   </div>
@@ -154,15 +151,13 @@ const props = defineProps<MaaFWScriptRunSectionProps>()
 
 const emit = defineEmits<MaaFWScriptRunSectionEmits>()
 
-const handleTaskTimeLimitOverridesSave = (value: string) => {
+const handleTaskTimeLimitOverridesSave = (value: string, loopGuard: boolean) => {
   props.maafwConfig.Run.TaskTimeLimitOverrides = value
   emit('change', 'Run', 'TaskTimeLimitOverrides', value)
-}
-
-const handleLoopGuardChange = (checked: boolean | string | number) => {
-  const value = checked === true
-  props.maafwConfig.Run.LoopGuard = value
-  emit('change', 'Run', 'LoopGuard', value)
+  if (loopGuard !== Boolean(props.maafwConfig.Run.LoopGuard)) {
+    props.maafwConfig.Run.LoopGuard = loopGuard
+    emit('change', 'Run', 'LoopGuard', loopGuard)
+  }
 }
 </script>
 
