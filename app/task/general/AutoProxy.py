@@ -423,7 +423,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 *self.script_arguments,
                 target_process=self.script_target_process_info,
                 # 官方模拟器实例：脚本的 adb 走脚本专用 server；PC 游戏 / 其余模拟器为 None，照旧继承
-                env=script_process_env(
+                env=await script_process_env(
                     self.game_manager, self.script_config.get("Game", "EmulatorIndex")
                 )
                 if isinstance(self.game_manager, DeviceBase)

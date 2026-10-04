@@ -1365,7 +1365,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         )
         return MaaFWAdbControlProfile("avd", True, False, config)
 
-    def _script_adb_env(self) -> dict[str, str]:
+    async def _script_adb_env(self) -> dict[str, str]:
         """官方模拟器实例上叠加给 worker（agent 与它们起的 adb 继承）和 pretask 的环境变量：
         ``ANDROID_ADB_SERVER_PORT=<scriptAdbServerPort>``（默认 20049）。脚本用 SDK 的新版 adb，
         放在 5037 上会和雷电 / MuMu 自带的旧版 adb 互杀 server。其余模拟器返回空字典。"""
@@ -1390,7 +1390,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         root = root_from_manager_exe(device_ref.manager_path)
         # 先由 MAS 以脱离方式起好：worker 里的 adb 顺手拉起的 server 会继承 worker 的输出管道
         with suppress(Exception):
-            host.ensure_script_adb_server(root)
+            await host.ensure_script_adb_server(root)
         return script_adb_env(root)
 
     def _check_avd_runtime_version(self, maafw_version: str | None) -> None:
@@ -1739,7 +1739,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
             )
             # 官方模拟器实例：worker 及其 agent、adb 子进程的 adb 走脚本专用 server。
             # 另拷一份，不改运行环境对象里那份（可能被缓存复用）
-            script_env = self._script_adb_env()
+            script_env = await self._script_adb_env()
             worker_env = (
                 {**runner_environment.env, **script_env}
                 if script_env
@@ -2039,7 +2039,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         env["PYTHONUTF8"] = "1"
         env.update(self.run_plan.piEnv)
         # 官方模拟器实例：pretask 若用 adb，也走脚本专用 server（同 worker）
-        env.update(self._script_adb_env())
+        env.update(await self._script_adb_env())
         creationflags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
         for pretask in self.run_plan.pretasks:
             display_name = _task_display_name(pretask)

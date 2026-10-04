@@ -290,7 +290,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 self.src_exe_path,
                 null_stream_to_pipe=True,
                 # 官方模拟器实例：SRC 的 adb 走脚本专用 server；其余模拟器为 None，照旧继承
-                env=script_process_env(
+                env=await script_process_env(
                     self.emulator_manager, self.script_config.get("Emulator", "Index")
                 ),
             )

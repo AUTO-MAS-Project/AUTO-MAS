@@ -256,7 +256,7 @@ async def _login_in_subprocess(
     env.update(script_adb_env(root))
     # 脚本专用 adb server 先由 MAS 以脱离方式起好，子进程里的 adb 不去顺手拉起（会继承输出管道）
     with suppress(Exception):
-        await asyncio.to_thread(host.ensure_script_adb_server, root)
+        await host.ensure_script_adb_server(root)
     job = build_login_job(
         device,
         entry,

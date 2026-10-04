@@ -1114,7 +1114,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 logger.info(f"启动MAA进程: {self.maa_exe_path}")
                 self.wait_event.clear()
                 await self.maa_process_manager.open_process(
-                    self.maa_exe_path, env=self._maa_process_env()
+                    self.maa_exe_path, env=await self._maa_process_env()
                 )
                 logger.info(
                     f"MAA 进程已创建: {self.maa_exe_path} - "
@@ -1846,11 +1846,11 @@ class AutoProxyTask(ScriptAutoProxyBase):
             avd_console_port(device_ref.native_index),
         )
 
-    def _maa_process_env(self) -> dict[str, str] | None:
+    async def _maa_process_env(self) -> dict[str, str] | None:
         """MAA 进程的环境变量。官方模拟器实例上把它（连同 MaaCore 起的 adb）指到脚本专用的 adb
         server（``scriptAdbServerPort``，默认 20049）：MAA 用 SDK 的新版 adb，放在 5037 上会和雷电 /
         MuMu 自带的旧版 adb 互杀 server。其余模拟器返回 ``None``，照旧继承 MAS 的环境。"""
-        return script_process_env(
+        return await script_process_env(
             self.emulator_manager, self.script_config.get("Emulator", "Index")
         )
 

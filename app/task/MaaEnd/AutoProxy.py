@@ -1052,7 +1052,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 "--quit-after-run",
                 stdout=asyncio.subprocess.PIPE,
                 # 官方模拟器实例：MaaEnd 的 adb 走脚本专用 server；其余为 None，照旧继承
-                env=script_process_env(
+                env=await script_process_env(
                     self.emulator_manager,
                     self.script_config.get("Game", "EmulatorIndex"),
                 )

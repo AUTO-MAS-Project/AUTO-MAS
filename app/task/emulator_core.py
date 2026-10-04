@@ -50,7 +50,7 @@ def resolve_device_ref(manager: Any, index: Any) -> Any | None:
         return None
 
 
-def script_process_env(manager: Any, index: Any) -> dict[str, str] | None:
+async def script_process_env(manager: Any, index: Any) -> dict[str, str] | None:
     """为某台设备起脚本进程时要用的环境：官方模拟器实例返回「MAS 环境 + ``ANDROID_ADB_SERVER_PORT``
     = 脚本专用端口（``scriptAdbServerPort``，默认 20049）」，其余返回 ``None``（照旧继承 MAS 的环境）。
 
@@ -72,7 +72,7 @@ def script_process_env(manager: Any, index: Any) -> dict[str, str] | None:
     env.update(script_adb_env(root))
     try:
         # 先由 MAS 以脱离方式起好：脚本里的 adb 顺手拉起的 server 会继承脚本的输出管道
-        host.ensure_script_adb_server(root)
+        await host.ensure_script_adb_server(root)
     except Exception as e:  # noqa: BLE001 - 起不来就交给脚本自己的 adb
         logger.warning(f"预先启动脚本专用 adb server 失败: {e}")
     logger.info(
