@@ -848,8 +848,6 @@ class AutoProxyTask(ScriptAutoProxyBase):
             self.cur_user_config, CONFIG_SOURCE_SCRIPT
         )
         self.check_result = "-"
-        # 日志分析给出结论前一律按 MAA 可能还在跑任务处理, 收尾据此在强杀与优雅关闭间取舍
-        self.maa_task_running = True
         self._annihilation_weekly_completion_recorded = False
         # 无时段排班表本轮注入的班次：同一用户的多次重试都注入这一个值，
         # 基建换班完成后只把用户配置里的指针推进一次
@@ -1032,8 +1030,6 @@ class AutoProxyTask(ScriptAutoProxyBase):
                 self.cur_user_item.log_record[self.log_start_time] = (
                     self.cur_user_log
                 ) = LogRecord()
-                # 新一轮尝试会重新拉起 MAA, 在日志分析给出结论前又是「可能还在跑任务」
-                self.maa_task_running = True
 
                 try:
                     self.script_info.log = "正在启动模拟器"
@@ -1143,7 +1139,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
                         f"{self.cur_user_log.status}\n正在中止相关程序"
                     )
 
-                    await self._stop_maa()
+                    await self.maa_process_manager.kill()
                     # 关模拟器之前把现场画面留下来：模拟器一关 adb 就补不到了。
                     # 每次失败尝试都刷新，最后一次失败的画面才是最终现场。
                     self._failure_shot = await self._take_failure_shot()
@@ -1436,7 +1432,7 @@ class AutoProxyTask(ScriptAutoProxyBase):
 
         logger.info(f"开始配置MAA运行参数: {self.mode}")
 
-        await self.maa_process_manager.close()
+        await self.maa_process_manager.kill()
         await System.kill_process(self.maa_exe_path)
 
         # 哔哩哔哩用户协议
@@ -2181,12 +2177,6 @@ class AutoProxyTask(ScriptAutoProxyBase):
         else:
             self.cur_user_log.status = "MAA 正常运行中"
 
-        # 只有这两条状态说明 MAA 的任务链可能还在跑; 其余状态都表示 MAA 已不在任务中
-        self.maa_task_running = self.cur_user_log.status in (
-            "MAA 正常运行中",
-            "MAA 进程超时",
-        )
-
         logger.debug(f"MAA 日志分析结果: {self.cur_user_log.status}")
         if self.cur_user_log.status != "MAA 正常运行中":
             logger.info(f"MAA 任务结果: {self.cur_user_log.status}, 日志锁已释放")
@@ -2221,23 +2211,6 @@ class AutoProxyTask(ScriptAutoProxyBase):
             return None
         return shot
 
-    async def _stop_maa(self):
-        """结束 MAA 进程: 可能还在跑任务时直接强杀, 否则等它自己退出把配置写完
-
-        给还在跑任务的 MAA 发关闭消息, 它只会弹出「确定要退出吗」的确认框, 把调用方
-        卡在那里等人点确认; 优雅关闭的价值只是让它走完退出时的配置写入, 所以只有日志
-        明确给出终态、确认它已不在任务中时才用。
-        """
-
-        if self.stopped_manually or self.maa_task_running:
-            logger.info(
-                "MAA 收尾: 任务已中止或 MAA 可能仍在运行任务, 直接强杀 MAA 进程"
-            )
-            await self.maa_process_manager.kill()
-        else:
-            logger.info("MAA 收尾: 停止 MAA 进程")
-            await self.maa_process_manager.close()
-
     async def final_task(self):
         if self.check_result != "Pass":
             logger.info(f"MAA 检查未通过，跳过任务收尾: {self.check_result}")
@@ -2247,7 +2220,10 @@ class AutoProxyTask(ScriptAutoProxyBase):
 
         logger.info("MAA 收尾: 停止日志监控")
         await self.maa_log_monitor.stop()
-        await self._stop_maa()
+        logger.info("MAA 收尾: 停止 MAA 进程")
+        # MAA 很可能还在跑任务: 对它发关闭消息只会弹出「确定要退出吗」的确认框, 把收尾
+        # 卡在等人点确认上; 需要等它自己退出去落盘的只有配置会话 (ScriptConfig)。
+        await self.maa_process_manager.kill()
         await System.kill_process(self.maa_exe_path)
         logger.info(f"MAA 收尾: 结束残留 MAA 进程: {self.maa_exe_path}")
 
