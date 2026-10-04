@@ -312,6 +312,23 @@ async def add_path(
             )
 
     await _save(emulator_id, paths, manager.slots)
+
+    # 官方模拟器根目录里一台实例都没有（刚解压的内测包、刚下载完的根目录）：按默认值建第一台，
+    # 测试者加完就能直接用。已经有实例的不动；建不出来不影响路径本身已经加好
+    if record.type == "avd" and native_indexes is not None and not native_indexes:
+        try:
+            created = await create_instance(emulator_id, path_id, None, {})
+        except Exception as e:  # noqa: BLE001 - 路径已经加好，建实例失败只记下来
+            logger.warning(f"官方模拟器 {resolved_path} 自动新建第一台实例失败: {e}")
+        else:
+            added_slots.append(
+                {"slot": created["slot"], "nativeIndex": created["nativeIndex"]}
+            )
+            logger.info(
+                f"官方模拟器 {resolved_path} 还没有实例，已按默认值新建第一台"
+                f"（设备号 #{created['slot']}）"
+            )
+
     return {
         "ok": True,
         "reason": "ok",
