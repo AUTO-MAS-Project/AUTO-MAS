@@ -14,6 +14,8 @@ import GlobalPowerCountdown from './components/GlobalPowerCountdown.vue'
 import AppClosingOverlay from './components/AppClosingOverlay.vue'
 import BackendStartupOverlay from './components/BackendStartupOverlay.vue'
 import CursorEffectLayer from './components/CursorEffectLayer.vue'
+import AppearanceDecoration from './components/AppearanceDecoration.vue'
+import ThemeTokenBridge from './components/ThemeTokenBridge'
 import { useCursorEffectStore } from './stores/cursorEffect'
 import { usePerformanceStore } from './stores/performance'
 import { useLocale } from './composables/useLocale.ts'
@@ -26,7 +28,7 @@ const DebugPanel = import.meta.env.DEV
   : null
 
 const route = useRoute()
-const { antdTheme, initTheme } = useTheme()
+const { antdTheme } = useTheme()
 const { antdLocale } = useLocale()
 const { updateVisible, updateData, latestVersion, onUpdateConfirmed } = useUpdateModal()
 const { isClosing } = useAppClosing()
@@ -45,7 +47,6 @@ const isStandalonePage = computed(
 
 onMounted(async () => {
   logger.info('App组件已挂载')
-  initTheme()
   logger.info('主题初始化完成')
   await performanceStore.initialize()
   logger.info(`性能模式初始化完成: ${performanceStore.lowPerformanceMode ? '低性能' : '标准'}`)
@@ -72,6 +73,8 @@ onMounted(async () => {
 
 <template>
   <ConfigProvider :theme="antdTheme" :locale="antdLocale">
+    <ThemeTokenBridge />
+    <AppearanceDecoration :show-mascot="!isInitializationPage && !isStandalonePage" />
     <!-- 初始化页面使用带标题栏的全屏布局 -->
     <div v-if="isInitializationPage" class="initialization-container">
       <TitleBar />
@@ -118,19 +121,27 @@ onMounted(async () => {
   box-sizing: border-box;
 }
 
+#app {
+  background: transparent;
+}
+
 .app-container {
+  position: relative;
   height: 100vh;
   display: flex;
   flex-direction: column;
 }
 
 .initialization-container {
+  position: relative;
   height: 100vh;
   display: flex;
   flex-direction: column;
 }
 
 .initialization-content {
+  position: relative;
+  z-index: 1;
   flex: 1;
   overflow-y: auto;
   overflow-x: hidden;
@@ -143,6 +154,8 @@ onMounted(async () => {
 }
 
 .standalone-container {
+  position: relative;
+  z-index: 1;
   height: 100vh;
   width: 100vw;
   overflow: hidden;
