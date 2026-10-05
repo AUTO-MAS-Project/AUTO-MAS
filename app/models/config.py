@@ -5238,6 +5238,13 @@ class GlobalConfig(ConfigBase):
             "2000-01-01 00:00:00",
             DateTimeValidator("%Y-%m-%d %H:%M:%S"),
         )
+        ## 上次记录遥测日活的 UTC 日期
+        self.Data_LastTelemetryActive = ConfigItem(
+            "Data",
+            "LastTelemetryActive",
+            "2000-01-01",
+            DateTimeValidator("%Y-%m-%d"),
+        )
         ## 上次关卡更新时间
         self.Data_LastStageUpdated = ConfigItem(
             "Data",

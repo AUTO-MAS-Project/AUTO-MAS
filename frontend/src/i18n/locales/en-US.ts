@@ -4333,7 +4333,7 @@ export default {
         'Stops the system from sleeping while the app is running. The screen can still turn off.',
       telemetry: 'Anonymous telemetry',
       telemetryTip:
-        'Sends anonymized error and performance data to help diagnose problems; when off, no data is sent at all',
+        'Sends anonymized error, performance and usage data to help diagnose problems; when off, no data is sent at all',
       biliPolicy: 'Handle Bilibili game privacy prompts',
       biliIntro:
         'Turning this on means you have read and accepted the agreements below, and authorize the app to handle the related prompts for you in whatever way it deems appropriate:',

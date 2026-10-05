@@ -79,6 +79,7 @@ To better serve you, AUTO-MAS will automatically collect the following informati
 - Software version number
 - Runtime error information
 - Performance tracing information
+- Usage statistics: run counts and results per script type, the project name declared in a MaaFramework project's `interface.json`, and one daily-active count per day (no device identifier)
 
 AUTO-MAS respects and protects user privacy. This information is redacted on the client before being sent to Sentry SaaS (US region) for error and performance analysis. User identity, cookies, request headers, request bodies, URL query parameters, local variables, and absolute local paths are not sent. Anonymous telemetry is enabled by default and can be disabled under 「Settings -> Function Settings」; once disabled, neither the frontend nor backend sends telemetry data.
 
