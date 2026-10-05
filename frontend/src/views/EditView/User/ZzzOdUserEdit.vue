@@ -1898,6 +1898,18 @@ const setActiveInstance = async (inst: ZzzOdInstanceOut) => {
 // ══ 快速导入配置：左侧母版下拉 + 右侧导入按钮共同构成导入功能 ══
 // 当前选中的母版（来源）实例；导入成功后复位
 const importSourceIdx = ref<number | null>(null)
+watch(
+  importInstanceOptions,
+  options => {
+    if (
+      importSourceIdx.value !== null &&
+      !options.some(item => item.value === importSourceIdx.value)
+    ) {
+      importSourceIdx.value = null
+    }
+  },
+  { immediate: true }
+)
 const importLoading = ref(false)
 // 预备编队组件引用：导入整体覆盖槽配置后需要强制刷新编队显示
 const teamsRef = ref<InstanceType<typeof ZzzOdPredefinedTeams> | null>(null)
