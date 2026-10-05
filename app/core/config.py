@@ -4468,13 +4468,14 @@ class AppConfig(GlobalConfig):
                     if not user_folder.is_dir():
                         continue  # 只处理用户文件夹
 
-                    if user_folder.stem not in history_dict[date_name]:
-                        history_dict[date_name][user_folder.stem] = list(
-                            user_folder.with_suffix("").glob("*.json")
+                    # 键必须用完整目录名: 用户名本身可含点, stem/with_suffix 会把最后一个点当扩展名截断
+                    if user_folder.name not in history_dict[date_name]:
+                        history_dict[date_name][user_folder.name] = list(
+                            user_folder.glob("*.json")
                         )
                     else:
-                        history_dict[date_name][user_folder.stem] += list(
-                            user_folder.with_suffix("").glob("*.json")
+                        history_dict[date_name][user_folder.name] += list(
+                            user_folder.glob("*.json")
                         )
 
             except ValueError:
