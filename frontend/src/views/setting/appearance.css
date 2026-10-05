@@ -1,0 +1,24 @@
+.appearance-preview-content {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--ant-color-text);
+}
+
+.appearance-preview-image {
+  display: block;
+  width: 100%;
+  max-height: min(180px, 25vh);
+  object-fit: contain;
+  margin-bottom: 12px;
+  border-radius: 8px;
+  background: var(--ant-color-bg-layout);
+}
+
+.appearance-modal {
+  top: 32px;
+}
+
+.appearance-modal .ant-modal-content {
+  max-height: calc(100vh - 64px);
+  overflow-y: auto;
+}

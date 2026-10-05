@@ -2,7 +2,7 @@ import * as fs from 'fs'
 import * as os from 'os'
 import * as path from 'path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { patchConfigFile } from './configFile'
+import { clearAppearanceConfigIfCurrent, patchConfigFile } from './configFile'
 
 let testRoot: string
 let configPath: string
@@ -25,6 +25,40 @@ afterEach(() => {
 const readConfig = () => JSON.parse(fs.readFileSync(configPath, 'utf8'))
 
 describe('主进程配置补丁写入', () => {
+  it('清理旧外观不会覆盖另一窗口刚持久化的新外观', () => {
+    patchConfigFile(configPath, { appearanceId: 'x', UI: { location: '100,100' } })
+    patchConfigFile(configPath, { appearanceId: 'y' })
+
+    const result = clearAppearanceConfigIfCurrent(configPath, 'x', () => true)
+
+    expect(result.cleared).toBe(false)
+    expect(result.config.appearanceId).toBe('y')
+    expect(readConfig()).toEqual({ appearanceId: 'y', UI: { location: '100,100' } })
+  })
+
+  it('同步清理当前失效外观并保留所有其他配置字段', () => {
+    patchConfigFile(configPath, { appearanceId: 'x', themeColor: 'green', custom: 'preserved' })
+
+    const result = clearAppearanceConfigIfCurrent(configPath, 'x', () => true)
+
+    expect(result).toEqual({
+      cleared: true,
+      config: { appearanceId: null, themeColor: 'green', custom: 'preserved' },
+    })
+    expect(readConfig()).toEqual(result.config)
+  })
+
+  it('有效包和缺失配置文件都不触发写入', () => {
+    expect(clearAppearanceConfigIfCurrent(configPath, 'x', () => true)).toEqual({
+      cleared: false,
+      config: {},
+    })
+    expect(fs.existsSync(configPath)).toBe(false)
+    patchConfigFile(configPath, { appearanceId: 'x' })
+    expect(clearAppearanceConfigIfCurrent(configPath, 'x', () => false).cleared).toBe(false)
+    expect(readConfig()).toEqual({ appearanceId: 'x' })
+  })
+
   it('保存偏好保留磁盘最新的窗口、Runtime 和未知字段', () => {
     const previous = {
       UI: { location: '100,100', size: '1600,1000' },

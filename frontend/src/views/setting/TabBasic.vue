@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { QuestionCircleOutlined } from '@ant-design/icons-vue'
+import { DeleteOutlined, QuestionCircleOutlined, UploadOutlined } from '@ant-design/icons-vue'
 import { useI18n } from 'vue-i18n'
 
 import { useLocale } from '@/composables/useLocale'
@@ -14,15 +14,22 @@ import TrayMenuEditor from './components/TrayMenuEditor.vue'
 interface TabBasicProps {
   settings: GlobalConfig
   themeMode: ThemeMode | 'system'
+  appearanceValue: string
+  appearanceOptions: { label: string; value: string }[]
   themeColor: ThemeColor
+  themeColorDisabled?: boolean
+  appearanceBusy: boolean
   themeModeOptions: { label: string; value: string }[]
   themeColorOptions: { label: string; value: string; color: string }[]
   cursorEffect: CursorEffect
   cursorEffectOptions: { label: string; value: CursorEffect }[]
   lowPerformanceMode: boolean
   lowPerformanceModeSaving: boolean
-  handleThemeModeChange(value: SelectValue): void
-  handleThemeColorChange(value: SelectValue): void
+  handleThemeModeChange(value: SelectValue): Promise<void>
+  handleAppearanceChange(value: SelectValue): Promise<void>
+  handleAppearanceImport(): Promise<void>
+  handleAppearanceRemove(): Promise<void>
+  handleThemeColorChange(value: SelectValue): Promise<void>
   handleCursorEffectChange(value: SelectValue): Promise<void>
   handleLowPerformanceModeChange(_enabled: boolean): Promise<void>
   handleSettingChange(category: keyof GlobalConfig, key: string, value: any): Promise<void>
@@ -31,7 +38,11 @@ interface TabBasicProps {
 const {
   settings,
   themeMode,
+  appearanceValue,
+  appearanceOptions,
   themeColor,
+  themeColorDisabled = false,
+  appearanceBusy,
   themeModeOptions,
   themeColorOptions,
   cursorEffect,
@@ -39,6 +50,9 @@ const {
   lowPerformanceMode,
   lowPerformanceModeSaving,
   handleThemeModeChange,
+  handleAppearanceChange,
+  handleAppearanceImport,
+  handleAppearanceRemove,
   handleThemeColorChange,
   handleCursorEffectChange,
   handleLowPerformanceModeChange,
@@ -68,20 +82,42 @@ const handleLocaleChange = (value: unknown): void => {
                 <QuestionCircleOutlined class="help-icon" />
               </a-tooltip>
             </div>
-            <a-select
-              :value="themeMode"
-              size="large"
-              style="width: 100%"
-              @change="handleThemeModeChange"
-            >
-              <a-select-option
-                v-for="option in themeModeOptions"
-                :key="option.value"
-                :value="option.value"
+            <div class="appearance-controls">
+              <a-select
+                class="appearance-select"
+                :value="appearanceValue"
+                size="large"
+                @change="handleAppearanceChange"
               >
-                {{ option.label }}
-              </a-select-option>
-            </a-select>
+                <a-select-option
+                  v-for="option in appearanceOptions"
+                  :key="option.value"
+                  :value="option.value"
+                >
+                  {{ option.label }}
+                </a-select-option>
+              </a-select>
+              <a-button
+                :aria-label="t('setting.basic.importAppearance')"
+                :loading="appearanceBusy"
+                :disabled="appearanceBusy"
+                @click="handleAppearanceImport"
+              >
+                <template #icon><UploadOutlined /></template>
+                {{ t('setting.basic.importAppearance') }}
+              </a-button>
+              <a-button
+                v-if="appearanceValue.startsWith('appearance:')"
+                danger
+                :loading="appearanceBusy"
+                :disabled="appearanceBusy"
+                :aria-label="t('setting.basic.removeAppearance')"
+                @click="handleAppearanceRemove"
+              >
+                <template #icon><DeleteOutlined /></template>
+                {{ t('setting.basic.removeAppearance') }}
+              </a-button>
+            </div>
           </div>
         </a-col>
         <a-col :span="12">
@@ -94,6 +130,7 @@ const handleLocaleChange = (value: unknown): void => {
             </div>
             <a-select
               :value="themeColor"
+              :disabled="themeColorDisabled"
               size="large"
               style="width: 100%"
               @change="handleThemeColorChange"
@@ -272,3 +309,28 @@ const handleLocaleChange = (value: unknown): void => {
     </div>
   </div>
 </template>
+
+<style scoped>
+.appearance-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+
+.appearance-select {
+  flex: 1 1 144px;
+  min-width: 144px;
+}
+
+@media (max-width: 1200px) {
+  .appearance-controls {
+    align-items: stretch;
+    flex-wrap: wrap;
+  }
+
+  .appearance-controls :deep(.ant-select) {
+    flex-basis: 100%;
+  }
+}
+</style>
