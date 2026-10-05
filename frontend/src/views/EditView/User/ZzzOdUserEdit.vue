@@ -197,7 +197,7 @@
                   <div class="import-group">
                     <a-select
                       v-model:value="importSourceIdx"
-                      :options="instanceOptions"
+                      :options="importInstanceOptions"
                       :placeholder="t('edit.zzzodImportPlaceholder')"
                       :loading="instancesLoading"
                       size="large"
@@ -1687,6 +1687,11 @@ const instanceOptions = computed(() =>
     label: `${String(item.idx).padStart(2, '0')} - ${item.name}`,
     value: item.idx,
   }))
+)
+
+// 导入母版与直控实例选择独立；后端另按原生注册表校验来源。
+const importInstanceOptions = computed(() =>
+  instanceOptions.value.filter(item => item.value !== formData.Info.SlotIdx)
 )
 
 const loadInstances = async () => {
