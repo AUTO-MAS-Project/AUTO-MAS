@@ -25,6 +25,7 @@ from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
 from app.services import Matomo
+from app.services.telemetry import record_daily_active
 from app.utils import get_logger
 from app.utils.constants import UTC8
 from app.utils.platform import IS_WINDOWS
@@ -170,8 +171,17 @@ class _MainTimer:
                     datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 )
 
+        async def record_telemetry_active() -> None:
+            # 按 UTC 日期去重：Sentry 按 UTC 自然日聚合，跨日最多晚一小时记上
+            today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+            if Config.get("Data", "LastTelemetryActive") == today:
+                return
+            if record_daily_active():
+                await Config.set("Data", "LastTelemetryActive", today)
+
         while True:
             await self._run_loop_step("统计上报", upload_statistics)
+            await self._run_loop_step("遥测日活", record_telemetry_active)
             await asyncio.sleep(3600)
 
     async def _run_loop_step(

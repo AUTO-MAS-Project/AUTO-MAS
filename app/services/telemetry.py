@@ -418,6 +418,24 @@ def record_count(
         pass
 
 
+def record_daily_active() -> bool:
+    """记一次客户端日活，返回是否已记录；遥测关闭或 SDK 报错时不记。
+
+    不带任何机器标识：由调用方保证每台机器每个 UTC 自然日只记一次，
+    这样 Sentry 里一天的计数之和就是当天活跃的客户端数。返回 False 时
+    调用方不会记下日期，下次再试。
+    """
+
+    if not _sentry_started:
+        return False
+
+    try:
+        metrics.count("auto_mas.app.daily_active", 1, attributes={})
+    except Exception:
+        return False
+    return True
+
+
 def record_distribution(
     name: str,
     value: float,
@@ -497,6 +515,7 @@ __all__ = [
     "is_telemetry_enabled",
     "observe_span",
     "record_count",
+    "record_daily_active",
     "record_distribution",
     "resolve_sentry_dist",
     "sample_trace",

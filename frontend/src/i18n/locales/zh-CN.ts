@@ -4200,7 +4200,7 @@ export default {
       preventSleep: '运行时阻止系统休眠',
       preventSleepTip: '程序运行时阻止系统进入休眠状态，不影响电脑进入熄屏',
       telemetry: '匿名遥测',
-      telemetryTip: '发送经脱敏的错误与性能数据，帮助定位问题；关闭后不再发送任何数据',
+      telemetryTip: '发送经脱敏的错误、性能数据与使用统计，帮助定位问题；关闭后不再发送任何数据',
       biliPolicy: '托管Bilibili游戏隐私政策',
       biliIntro:
         '开启本项即代表你已完整阅读并同意以下协议，并授权本程序在其认定需要时以其认定合适的方法替你处理相关弹窗：',

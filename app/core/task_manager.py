@@ -25,6 +25,8 @@ import os
 import time
 import uuid
 from collections import OrderedDict
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -76,6 +78,7 @@ from .config import (
     ZzzOdConfig,
 )
 from .queue_cycle import (
+    SUCCESS_USER_STATUSES,
     CycleEntry,
     collect_cycle_entries,
     due_entries,
@@ -487,6 +490,46 @@ class Task(TaskExecuteBase):
                 attributes=metric_attributes,
             )
 
+    @contextmanager
+    def _observe_script_run(
+        self, script_item: ScriptItem, script_config
+    ) -> Iterator[None]:
+        """按专项记一次脚本运行；顺序执行与循环运行共用。
+
+        结果只看用户状态：MAA、通用脚本等专项无论成败都把脚本状态收成「完成」，
+        拿脚本状态判会把全员失败也记成成功，各专项之间没法比。
+        """
+
+        from app.services.telemetry import record_count
+
+        outcome = "error"
+        try:
+            yield
+            user_statuses = [user.status for user in script_item.user_list]
+            if not user_statuses:
+                # 运行前检查没过时还没加载用户，脚本状态是「异常」
+                outcome = "failed" if script_item.status == "异常" else "no_user"
+            elif all(status in SUCCESS_USER_STATUSES for status in user_statuses):
+                outcome = "success"
+            elif "异常" in user_statuses:
+                outcome = "failed"
+            else:
+                outcome = "incomplete"
+        except asyncio.CancelledError:
+            outcome = "cancelled"
+            raise
+        finally:
+            record_count(
+                "auto_mas.script.runs",
+                attributes={
+                    "script_type": _SCRIPT_TYPE_BY_CLASS.get(
+                        type(script_config).__name__, "unknown"
+                    ),
+                    "mode": self.task_info.mode,
+                    "outcome": outcome,
+                },
+            )
+
     def _build_task_item(
         self,
         script_item: ScriptItem,
@@ -736,7 +779,8 @@ class Task(TaskExecuteBase):
                 # 开跑那一刻就把预览翻成「运行中」，别等旁路任务 5 秒后才刷新
                 await self._publish_cycle_preview(entries, running=entry)
 
-                await self._spawn_with_preview(task_item, entry, queue_uid)
+                with self._observe_script_run(script_item, script_config):
+                    await self._spawn_with_preview(task_item, entry, queue_uid)
 
                 success = is_script_success(
                     script_item.status,
@@ -1053,7 +1097,8 @@ class Task(TaskExecuteBase):
                     continue
 
                 # 运行任务
-                await self.spawn(task_item)
+                with self._observe_script_run(script_item, script_config):
+                    await self.spawn(task_item)
             finally:
                 self.script_reservations.release(current_script_uid, reservation_owner)
 
