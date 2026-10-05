@@ -1495,13 +1495,13 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
         self._users_completed = True
 
     async def _record_project_run(self) -> None:
-        """记一次项目运行，项目按 interface.json 的 ``name`` 区分。
-
-        ``name`` 是项目作者写死的标识（M9A、MaaEnd……），不随用户配置变；
-        读不到或是没翻译的 ``$键`` 时记成 unknown。遥测失败不影响任务。
-        """
+        """记一次项目运行；只认白名单里的公开项目，其余记 ``other``。遥测失败不影响任务。"""
 
         from app.services.telemetry import record_count
+        from app.task.MaaFW.tools.embedded.telemetry_project import (
+            OTHER_PROJECT,
+            telemetry_project_name,
+        )
 
         assert self.script_config is not None
         try:
@@ -1511,12 +1511,9 @@ class MaaFWEmbeddedManager(TaskExecuteBase):
             interface = await asyncio.to_thread(
                 self._load_interface_model, project_path
             )
-            name = getattr(interface, "name", None)
-            project = name.strip()[:64] if isinstance(name, str) else ""
+            project = telemetry_project_name(getattr(interface, "github", None))
         except Exception:  # noqa: BLE001 - 遥测失败不影响任务
-            project = ""
-        if not project or project.startswith("$"):
-            project = "unknown"
+            project = OTHER_PROJECT
         record_count(
             "auto_mas.maafw.project.runs",
             attributes={
