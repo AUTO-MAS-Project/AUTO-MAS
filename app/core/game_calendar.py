@@ -9,8 +9,10 @@ import hashlib
 import json
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime, time, timedelta
 from pathlib import Path
+
+from pydantic import AwareDatetime, TypeAdapter
 
 from app.core.config import Config
 from app.core.notify import dispatch, global_target
@@ -25,13 +27,25 @@ from app.utils.constants import UTC8
 from app.utils.io import write_file
 
 logger = get_logger("游戏日历")
-CALENDAR_CHECK_INTERVAL_SECONDS = 10 * 60
+CALENDAR_REFRESH_INTERVAL_SECONDS = 60 * 60
+CALENDAR_RETRY_INTERVAL_SECONDS = 10 * 60
 
 
-@dataclass(frozen=True)
+@dataclass
 class CalendarReminder:
     key: str
+    game: str
+    source: str
+    due_at: AwareDatetime
+    expires_at: AwareDatetime
     payload: NotifyPayload
+    delivered: tuple[str, ...] = ()
+    completed: bool = False
+    active: bool = True
+    next_attempt_at: AwareDatetime | None = None
+
+
+_SCHEDULE_ADAPTER = TypeAdapter(list[CalendarReminder])
 
 
 def visible_calendar_games(config: Mapping[str, object]) -> dict[str, tuple[str, str]]:
@@ -78,12 +92,12 @@ def calendar_reminders(
     activities: Sequence[Mapping[str, object]],
     *,
     game: str,
+    source: str,
     label: str,
     now: datetime,
 ) -> list[CalendarReminder]:
-    """只生成开始当天和结束日期前三天的提醒，不补发已错过日期的消息。"""
+    """按活动日期提前生成两条日程，过期日程不再登记。"""
 
-    today = now.astimezone(UTC8).date()
     reminders: dict[str, CalendarReminder] = {}
     for activity in activities:
         name = str(activity.get("name") or "").strip()
@@ -91,19 +105,32 @@ def calendar_reminders(
         end = _activity_time(activity.get("endTime"))
         if not name or start is None or end is None or end <= start or now >= end:
             continue
-        due = []
-        if today == start.date():
-            due.append(("start", "今日开始"))
-        if today == end.date() - timedelta(days=3) and today >= start.date():
-            due.append(("end", "三天后结束"))
-        for kind, reason in due:
+        due = [("start", "今日开始", start.date())]
+        ending_date = end.date() - timedelta(days=3)
+        if ending_date >= start.date():
+            due.append(("end", "三天后结束", ending_date))
+        for kind, reason, reminder_date in due:
+            due_at = datetime.combine(reminder_date, time.min, tzinfo=UTC8)
+            expires_at = min(due_at + timedelta(days=1), end)
+            if now >= expires_at:
+                continue
             # 开始提醒不随结束时间调整而重发；同场活动重复条目只分发一次。
-            identity = [game, name, start.isoformat(), kind, today.isoformat()]
+            identity = [
+                source or game,
+                name,
+                start.isoformat(),
+                kind,
+                reminder_date.isoformat(),
+            ]
             key = hashlib.sha256(
                 json.dumps(identity, ensure_ascii=False).encode()
             ).hexdigest()
             reminders[key] = CalendarReminder(
                 key=key,
+                game=game,
+                source=source,
+                due_at=due_at,
+                expires_at=expires_at,
                 payload=NotifyPayload(
                     title=f"{label}活动提醒：{reason}",
                     body_title=f"【{label}活动提醒】",
@@ -121,76 +148,179 @@ def calendar_reminders(
 class _GameCalendar:
     def __init__(self) -> None:
         self._lock = asyncio.Lock()
-        self._date = ""
-        self._delivered: dict[str, list[str]] = {}
+        self._loaded = False
+        self._reminders: dict[str, CalendarReminder] = {}
+        self._legacy_delivered: dict[str, list[str]] = {}
         self._dirty = False
+        self._save_retry_at: datetime | None = None
 
-    async def check(self) -> None:
-        """读取当前显示设置，独立检查每个游戏并记录实际送达的渠道。"""
+    def _load_schedule(self) -> None:
+        """恢复已生成的日程，启动后的推送不等待活动接口。"""
 
+        if self._loaded:
+            return
+        path = Config.config_path / "GameCalendarSchedule.json"
+        if path.exists():
+            data = json.loads(path.read_text(encoding="utf-8"))
+            reminders = _SCHEDULE_ADAPTER.validate_python(data["reminders"])
+            self._reminders = {reminder.key: reminder for reminder in reminders}
+        # 兼容此前按当天记账的发送记录，迁移后仍按相同活动和渠道去重。
+        self._legacy_delivered = self._load_delivered(
+            Config.config_path / "GameCalendarNotify.json",
+            today=datetime.now(tz=UTC8).date().isoformat(),
+        )
+        self._loaded = True
+
+    @staticmethod
+    def _visible_games() -> dict[str, tuple[str, str]]:
+        path = Config.config_path / "frontend_config.json"
+        config = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
+        games = visible_calendar_games(config)
+        # 老版本的服务器偏好在浏览器里，先等首页迁移，不能猜成国服发送。
+        if "homeBlueArchiveServer" not in config:
+            games.pop("bluearchive", None)
+        return games
+
+    async def refresh_schedule(self) -> None:
+        """刷新活动并更新未来日程；此入口只登记日程，不发送通知。"""
+
+        self._load_schedule()
+        games = self._visible_games()
+        for game, (source, label) in games.items():
+            try:
+                # 取数在日程锁外，到点的已登记日程不受慢请求或断网影响。
+                activities = await fetch_calendar_activities(source)
+                if activities is None:
+                    continue
+                now = datetime.now(tz=UTC8)
+                reminders = calendar_reminders(
+                    activities, game=game, source=source, label=label, now=now
+                )
+                async with self._lock:
+                    updated = {
+                        key: reminder
+                        for key, reminder in self._reminders.items()
+                        if reminder.expires_at > now
+                    }
+                    # 撤下的活动取消日程，但当天的送达记录保留，重新出现也不重复推送。
+                    for previous in updated.values():
+                        if previous.game == game:
+                            previous.active = False
+                    for reminder in reminders:
+                        previous = self._reminders.get(reminder.key)
+                        if previous is not None:
+                            reminder.delivered = previous.delivered
+                            reminder.completed = previous.completed
+                            reminder.next_attempt_at = previous.next_attempt_at
+                        else:
+                            reminder.delivered = tuple(
+                                self._legacy_delivered.get(reminder.key, ())
+                            )
+                        updated[reminder.key] = reminder
+                    self._reminders = updated
+                    self._save_schedule()
+            except asyncio.CancelledError:
+                raise
+            except Exception as error:
+                logger.opt(exception=error).warning(
+                    f"更新{label}活动日程失败，保留已有日程"
+                )
+
+    def has_due_reminders(self) -> bool:
+        """供主定时器按已登记日程派发后台推送，不查询活动源。"""
+
+        self._load_schedule()
+        now = datetime.now(tz=UTC8)
+        if self._dirty:
+            return self._save_retry_at is None or now >= self._save_retry_at
+        return any(
+            reminder.active
+            and not reminder.completed
+            and (reminder.next_attempt_at or reminder.due_at)
+            <= now
+            < reminder.expires_at
+            for reminder in self._reminders.values()
+        )
+
+    async def send_due_reminders(self) -> None:
+        """执行已到点的日程，按渠道保存送达状态与下次重试时刻。"""
+
+        self._load_schedule()
         async with self._lock:
-            frontend_path = Config.config_path / "frontend_config.json"
-            config = (
-                json.loads(frontend_path.read_text(encoding="utf-8"))
-                if frontend_path.exists()
-                else {}
-            )
-            games = visible_calendar_games(config)
-            target = global_target(include_system=True, empty_policy="skip")
-            if not games or not target.channels:
-                return
-            now = datetime.now(tz=UTC8)
-            today = now.date().isoformat()
-            ledger_path = Config.config_path / "GameCalendarNotify.json"
-            if self._date != today:
-                self._delivered = self._load_delivered(ledger_path, today=today)
-                self._date = today
-                self._dirty = False
-            # 落盘暂时失败后先重试保存，不能因为渠道已送达就永远跳过写盘。
             if self._dirty:
-                self._save_delivered(ledger_path)
-
-            for game, (source, label) in games.items():
-                # 老版本的服务器偏好在浏览器里，先等首页迁移，不能猜成国服发送。
-                if game == "bluearchive" and "homeBlueArchiveServer" not in config:
+                self._save_schedule()
+            games = self._visible_games()
+            target = global_target(include_system=True, empty_policy="skip")
+            target_ids = {channel_target.id for _, channel_target in target.channels}
+            for reminder in self._reminders.values():
+                now = datetime.now(tz=UTC8)
+                if (
+                    not reminder.active
+                    or reminder.completed
+                    or not (
+                        (reminder.next_attempt_at or reminder.due_at)
+                        <= now
+                        < reminder.expires_at
+                    )
+                ):
+                    continue
+                current_game = games.get(reminder.game)
+                if (
+                    current_game is None
+                    or current_game[0] != reminder.source
+                    or not target_ids
+                ):
+                    reminder.next_attempt_at = now + timedelta(
+                        seconds=CALENDAR_RETRY_INTERVAL_SECONDS
+                    )
+                    self._save_schedule()
                     continue
                 try:
-                    activities = await fetch_calendar_activities(source)
-                    if activities is None:
-                        continue
-                    # 网络等待可能跨日，下一轮按新日期重新检查，不发送旧日期消息。
-                    checked_at = datetime.now(tz=UTC8)
-                    if checked_at.date() != now.date():
-                        return
-                    for reminder in calendar_reminders(
-                        activities, game=source or game, label=label, now=checked_at
-                    ):
-                        delivered = self._delivered.setdefault(reminder.key, [])
+                    if target_ids.issubset(reminder.delivered):
+                        reminder.completed = True
+                    else:
                         result = await dispatch(
                             reminder.payload,
                             [target],
-                            skip_channel_ids=tuple(delivered),
+                            skip_channel_ids=reminder.delivered,
                             attempts=3,
                             retry_delay=3,
                         )
-                        if result.succeeded_ids:
-                            delivered.extend(result.succeeded_ids)
-                            self._dirty = True
-                            self._save_delivered(ledger_path)
+                        reminder.delivered = tuple(
+                            dict.fromkeys((*reminder.delivered, *result.succeeded_ids))
+                        )
+                        reminder.completed = result.attempted > 0 and not result.failed
                         if result.failed:
                             logger.warning(
-                                f"{label}活动提醒部分发送失败：{'、'.join(result.failed)}"
+                                f"游戏日历提醒部分发送失败：{'、'.join(result.failed)}"
                             )
                 except asyncio.CancelledError:
                     raise
                 except Exception as error:
                     logger.opt(exception=error).warning(
-                        f"检查{label}活动提醒失败，下次重试"
+                        "执行游戏日历日程失败，下次重试"
                     )
+                reminder.next_attempt_at = now + timedelta(
+                    seconds=CALENDAR_RETRY_INTERVAL_SECONDS
+                )
+                self._save_schedule()
 
-    def _save_delivered(self, path: Path) -> None:
-        write_file(path, {"date": self._date, "delivered": self._delivered})
+    def _save_schedule(self) -> None:
+        self._dirty = True
+        try:
+            write_file(
+                Config.config_path / "GameCalendarSchedule.json",
+                {
+                    "reminders": _SCHEDULE_ADAPTER.dump_python(
+                        list(self._reminders.values()), mode="json"
+                    )
+                },
+            )
+        except (OSError, TypeError, ValueError):
+            self._save_retry_at = datetime.now(tz=UTC8) + timedelta(minutes=1)
+            raise
         self._dirty = False
+        self._save_retry_at = None
 
     @staticmethod
     def _load_delivered(path: Path, *, today: str) -> dict[str, list[str]]:
