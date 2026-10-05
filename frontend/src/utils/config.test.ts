@@ -88,6 +88,20 @@ describe('共享前端配置读写', () => {
     expect(legacy.size).toBe(0)
   })
 
+  it('迁移失败后用户显式保存的主题，不会被下次迁移用旧键覆盖', async () => {
+    disk = { language: 'zh-CN' }
+    legacy.set('theme-mode', 'dark')
+    legacy.set('theme-color', 'green')
+    saveConfig.mockRejectedValueOnce(new Error('disk unavailable'))
+    const config = await import('./config')
+
+    await config.getConfig()
+    await config.saveConfig({ themeMode: 'light' })
+    await config.getConfig()
+    expect(disk).toMatchObject({ themeMode: 'light', themeColor: 'green' })
+    expect(legacy.size).toBe(0)
+  })
+
   it('前端读取后主进程更新窗口设置，保存偏好不会回写旧窗口设置', async () => {
     disk = { themeMode: 'light', UI: { location: '100,100', size: '1600,1000' } }
     const config = await import('./config')

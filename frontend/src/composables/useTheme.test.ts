@@ -112,6 +112,22 @@ describe('useTheme custom appearance persistence', () => {
     expect(saveConfig).not.toHaveBeenCalled()
   })
 
+  it('theme config echo reuses cached packages instead of re-listing them', async () => {
+    const theme = useTheme()
+    await theme.initTheme({ themeMode: 'light', themeColor: 'blue', appearanceId: null })
+    listAppearances.mockClear()
+
+    themeConfigCallback?.({ themeMode: 'light', themeColor: 'red', appearanceId: 'demo' })
+    expect(theme.activeAppearance.value?.id).toBe('demo')
+    themeConfigCallback?.({ themeMode: 'dark', themeColor: 'red', appearanceId: null })
+    expect(theme.activeAppearance.value).toBe(null)
+    expect(listAppearances).not.toHaveBeenCalled()
+
+    themeConfigCallback?.({ themeMode: 'dark', themeColor: 'red', appearanceId: 'unknown' })
+    expect(listAppearances).toHaveBeenCalledTimes(1)
+    await vi.waitFor(() => expect(clearInvalidAppearance).toHaveBeenCalledWith('unknown'))
+  })
+
   it('late invalid-package cleanup preserves another window selecting a valid package', async () => {
     let releaseCleanup!: (result: AppearanceCleanupResult) => void
     clearInvalidAppearance.mockReturnValueOnce(

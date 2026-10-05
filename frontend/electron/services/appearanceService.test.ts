@@ -5,6 +5,7 @@ import AdmZip = require('adm-zip')
 import { afterEach, describe, expect, it } from 'vitest'
 import {
   importAppearancePackage,
+  isAppearanceGone,
   listAppearances,
   removeAppearance,
   validateAppearanceManifest,
@@ -327,5 +328,48 @@ describe('appearanceService', () => {
     const result = importAppearancePackage(root, zipPath)
     expect(result.success).toBe(false)
     expect(fs.existsSync(path.join(outside, 'theme.json'))).toBe(false)
+  })
+
+  it('works when an ancestor of userData is a junction', () => {
+    const root = makeRoot()
+    const real = path.join(root, 'real')
+    fs.mkdirSync(real)
+    const linked = path.join(root, 'linked')
+    try {
+      fs.symlinkSync(real, linked, 'junction')
+    } catch {
+      return
+    }
+    const userData = path.join(linked, 'userData')
+    fs.mkdirSync(userData)
+    const result = importAppearancePackage(userData, makeZip(root, 'via-junction'))
+    expect(result.success).toBe(true)
+    expect(listAppearances(userData).map(item => item.id)).toEqual(['via-junction'])
+    expect(isAppearanceGone(userData, 'via-junction')).toBe(false)
+  })
+
+  it('rejects Windows reserved names as id', () => {
+    const root = makeRoot()
+    const result = importAppearancePackage(root, makeZip(root, 'nul'))
+    expect(result).toMatchObject({ success: false, code: 'INVALID_PACKAGE' })
+  })
+
+  it('reports corrupt entries as invalid packages', () => {
+    const root = makeRoot()
+    const zipPath = makeZip(root, 'corrupt')
+    const zip = new AdmZip(zipPath)
+    const entry = zip.getEntry('assets/background.png')!
+    entry.header.crc = (entry.header.crc + 1) >>> 0
+    zip.writeZip(zipPath)
+    const result = importAppearancePackage(root, zipPath)
+    expect(result).toMatchObject({ success: false, code: 'INVALID_PACKAGE' })
+  })
+
+  it('treats missing or invalid packages as gone', () => {
+    const root = makeRoot()
+    expect(isAppearanceGone(root, 'missing')).toBe(true)
+    expect(importAppearancePackage(root, makeZip(root, 'broken')).success).toBe(true)
+    fs.rmSync(path.join(root, 'appearances', 'broken', 'assets', 'background.png'))
+    expect(isAppearanceGone(root, 'broken')).toBe(true)
   })
 })

@@ -7,6 +7,8 @@ import type { InstalledAppearance } from '@/types/appearance'
 
 type AntTokens = ReturnType<typeof theme.useToken>['token']['value']
 let resolvedAntTokens: AntTokens | undefined
+// null 表示还没写过，首次必须落一次 'none'。
+let appliedBackgroundUrl: string | undefined | null = null
 
 export type ThemeMode = 'system' | 'light' | 'dark'
 export type ThemeColor =
@@ -155,12 +157,15 @@ const updateCSSVariables = () => {
     root.classList.remove('appearance-background-custom')
   }
   // 素材和开关独立于 token bridge，清除外观时立即恢复，不依赖下一次组件渲染。
-  root.style.setProperty(
-    '--app-appearance-background-image',
-    activeAppearance.value?.backgroundUrl
-      ? `url("${activeAppearance.value.backgroundUrl}")`
-      : 'none'
-  )
+  // 背景是数 MB 的 data URL，只在图片真的变了时才写，避免每次换主题色都重解析整串。
+  const backgroundUrl = activeAppearance.value?.backgroundUrl
+  if (backgroundUrl !== appliedBackgroundUrl) {
+    root.style.setProperty(
+      '--app-appearance-background-image',
+      backgroundUrl ? `url("${backgroundUrl}")` : 'none'
+    )
+    appliedBackgroundUrl = backgroundUrl
+  }
   root.style.setProperty(
     '--app-appearance-background-opacity',
     String(activeAppearance.value?.background?.opacity ?? 1)
@@ -172,10 +177,6 @@ const updateCSSVariables = () => {
   root.style.setProperty(
     '--app-appearance-background-size',
     activeAppearance.value?.background?.size ?? 'cover'
-  )
-  root.style.setProperty(
-    '--app-appearance-mascot-image',
-    activeAppearance.value?.mascotUrl ? `url("${activeAppearance.value.mascotUrl}")` : 'none'
   )
   root.style.setProperty(
     '--app-appearance-mascot-width',
@@ -745,9 +746,19 @@ export function useTheme() {
         themeColor.value = config.themeColor
       }
       appearanceId.value = typeof config.appearanceId === 'string' ? config.appearanceId : null
-      if (activeAppearance.value?.id !== appearanceId.value) activeAppearance.value = null
       commitPersistedThemeSnapshot()
-      void loadAppearances()
+      // 回声只换选择：缓存里有就直接用，全量重读留给 appearance-changed，
+      // 否则每切一次主题色，每个窗口都要把所有包的素材经 IPC 重传一遍。
+      const cached = appearanceId.value
+        ? appearances.value.find(item => item.id === appearanceId.value)
+        : null
+      if (cached === undefined) {
+        activeAppearance.value = null
+        void loadAppearances()
+        return
+      }
+      activeAppearance.value = cached
+      updateTheme()
     })
   }
 

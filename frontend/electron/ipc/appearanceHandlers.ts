@@ -4,6 +4,7 @@ import * as path from 'path'
 import {
   getAppearance,
   importAppearancePackage,
+  isAppearanceGone,
   listAppearances,
   removeAppearance,
 } from '../services/appearanceService'
@@ -26,10 +27,8 @@ function broadcastAppearanceChange(): void {
 
 function clearInvalidAppearance(id: string) {
   const configPath = path.join(getAppRoot(), 'config', 'frontend_config.json')
-  const result = clearAppearanceConfigIfCurrent(
-    configPath,
-    id,
-    () => getAppearance(userDataPath(), id) === null
+  const result = clearAppearanceConfigIfCurrent(configPath, id, () =>
+    isAppearanceGone(userDataPath(), id)
   )
   if (result.cleared) {
     for (const window of BrowserWindow.getAllWindows()) {

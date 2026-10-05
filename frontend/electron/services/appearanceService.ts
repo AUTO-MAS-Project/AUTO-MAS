@@ -174,6 +174,7 @@ function normalizeManifest(value: unknown): AppearanceManifest {
 
   const id = assertString(raw.id, 'id', 64)
   if (!APPEARANCE_ID.test(id)) fail('id 只能包含小写字母、数字、下划线和短横线')
+  if (WINDOWS_DEVICE_NAME.test(id)) fail('id 不能使用 Windows 保留名')
   const name = assertString(raw.name, 'name', 80)
   const description =
     raw.description === undefined ? undefined : assertString(raw.description, 'description', 300)
@@ -421,12 +422,13 @@ function ensureWithinRoot(root: string, candidate: string): string {
   return resolvedCandidate
 }
 
-function assertNoReparsePoint(target: string): void {
+// 只检查 base 以下的各级目录：userData 的上级被用户用 mklink /J 挪盘很常见，不能因此禁用外观。
+function assertNoReparsePoint(base: string, target: string): void {
+  const resolvedBase = path.resolve(base)
   let current = path.resolve(target)
-  while (true) {
-    if (fs.existsSync(current)) {
-      const stat = fs.lstatSync(current)
-      if (stat.isSymbolicLink()) throw new Error('外观目录不允许符号链接或目录联接')
+  while (current !== resolvedBase) {
+    if (fs.existsSync(current) && fs.lstatSync(current).isSymbolicLink()) {
+      throw new Error('外观目录不允许符号链接或目录联接')
     }
     const parent = path.dirname(current)
     if (parent === current) break
@@ -436,15 +438,19 @@ function assertNoReparsePoint(target: string): void {
 
 function appearanceRoot(userDataPath: string): string {
   const root = ensureWithinRoot(userDataPath, path.join(userDataPath, 'appearances'))
-  assertNoReparsePoint(root)
+  assertNoReparsePoint(userDataPath, root)
   return root
 }
 
+function isValidAppearanceId(id: string): boolean {
+  return APPEARANCE_ID.test(id) && !WINDOWS_DEVICE_NAME.test(id)
+}
+
 function appearanceDirectory(userDataPath: string, id: string): string {
-  if (!APPEARANCE_ID.test(id)) throw new Error('外观 ID 无效')
+  if (!isValidAppearanceId(id)) throw new Error('外观 ID 无效')
   const root = appearanceRoot(userDataPath)
   const directory = ensureWithinRoot(root, path.join(root, id))
-  assertNoReparsePoint(directory)
+  assertNoReparsePoint(root, directory)
   return directory
 }
 
@@ -594,7 +600,14 @@ function parseArchive(zipPath: string): { manifest: AppearanceManifest; files: S
     if (!Number.isSafeInteger(compressedSize) || compressedSize <= 0) fail('ZIP 文件大小字段无效')
     declaredTotal += size
     if (declaredTotal > APPEARANCE_LIMITS.extractedBytes) fail('ZIP 解压总大小超限')
-    const data = entry.getData()
+    let data: Buffer
+    try {
+      data = entry.getData()
+    } catch (error) {
+      fail(
+        `ZIP 文件损坏或使用了不支持的压缩方式: ${name}（${error instanceof Error ? error.message : String(error)}）`
+      )
+    }
     if (data.length !== size) fail(`ZIP 文件大小校验失败: ${name}`)
 
     if (name === 'theme.json') {
@@ -747,6 +760,23 @@ export function getAppearance(userDataPath: string, id: string): InstalledAppear
     return serializeAppearance(directory, manifest)
   } catch {
     return null
+  }
+}
+
+/**
+ * 外观包确实已不存在或内容无效时返回 true；读文件被占用等暂时性 IO 错误直接抛出，
+ * 避免调用方据此永久清掉用户的外观选择。
+ */
+export function isAppearanceGone(userDataPath: string, id: string): boolean {
+  const directory = appearanceDirectory(userDataPath, id)
+  if (!fs.existsSync(directory)) return true
+  try {
+    validateInstalledDirectory(directory)
+    return false
+  } catch (error) {
+    if (error instanceof AppearanceError) return true
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return true
+    throw error
   }
 }
 

@@ -27,6 +27,7 @@ vi.mock('../services/logger', () => ({
 }))
 vi.mock('../services/appearanceService', () => ({
   getAppearance: (_root: string, id: string) => (state.installed.has(id) ? { id } : null),
+  isAppearanceGone: (_root: string, id: string) => !state.installed.has(id),
   listAppearances: () => [],
   importAppearancePackage: vi.fn(),
   removeAppearance: (_root: string, id: string) =>

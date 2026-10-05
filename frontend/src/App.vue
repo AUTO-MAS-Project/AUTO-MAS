@@ -121,11 +121,6 @@ onMounted(async () => {
   box-sizing: border-box;
 }
 
-html,
-body {
-  background: var(--ant-color-bg-layout);
-}
-
 #app {
   background: transparent;
 }

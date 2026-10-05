@@ -179,6 +179,9 @@ export async function saveConfig(config: Partial<FrontendConfig>): Promise<void>
       logger.info(`开始保存配置: 键=${Object.keys(config).join(',')}`)
       const defaults = await getConfigInternal() // 保留默认值和旧配置迁移
       await window.electronAPI.saveConfig(config, defaults)
+      // 迁移曾失败时旧主题键还在；用户已显式保存新值，删掉对应旧键，免得下次迁移把它覆盖回去。
+      if (config.themeMode !== undefined) localStorage.removeItem('theme-mode')
+      if (config.themeColor !== undefined) localStorage.removeItem('theme-color')
       logger.info('配置保存成功')
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error)
@@ -195,6 +198,8 @@ export async function resetConfig(): Promise<void> {
       await window.electronAPI.resetConfig()
       localStorage.removeItem('app-config')
       localStorage.removeItem('theme-settings')
+      localStorage.removeItem('theme-mode')
+      localStorage.removeItem('theme-color')
       localStorage.removeItem('app-initialized')
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error)

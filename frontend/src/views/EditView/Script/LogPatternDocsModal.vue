@@ -400,7 +400,7 @@ watch(
 }
 
 /* 暗色模式适配 */
-:global(html.dark) .docs-toc {
+html.dark .docs-toc {
   border-right-color: var(--ant-color-border);
 }
 </style>
