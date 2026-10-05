@@ -365,6 +365,23 @@ describe('appearanceService', () => {
     expect(result).toMatchObject({ success: false, code: 'INVALID_PACKAGE' })
   })
 
+  it('explains a package zipped with its outer folder', () => {
+    const root = makeRoot()
+    const source = new AdmZip(makeZip(root, 'nested'))
+    const zip = new AdmZip()
+    for (const entry of source.getEntries()) {
+      zip.addFile(
+        `nested/${entry.entryName}`,
+        entry.isDirectory ? Buffer.alloc(0) : entry.getData()
+      )
+    }
+    const zipPath = path.join(root, 'nested-folder.zip')
+    zip.writeZip(zipPath)
+    const result = importAppearancePackage(root, zipPath)
+    expect(result).toMatchObject({ success: false, code: 'INVALID_PACKAGE' })
+    expect(result.error).toContain('根目录')
+  })
+
   it('treats missing or invalid packages as gone', () => {
     const root = makeRoot()
     expect(isAppearanceGone(root, 'missing')).toBe(true)

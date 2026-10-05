@@ -577,6 +577,14 @@ function parseArchive(zipPath: string): { manifest: AppearanceManifest; files: S
     throw new AppearanceError('INVALID_PACKAGE', '外观 ZIP 文件数量超限')
   }
 
+  // 最常见的打包错误是连外层文件夹一起压缩，先给出明确提示，别让它报成别的错。
+  if (
+    !entries.some(entry => entry.entryName === 'theme.json') &&
+    entries.some(entry => path.posix.basename(entry.entryName) === 'theme.json')
+  ) {
+    fail('theme.json 必须在 ZIP 根目录：请选中外观包里的文件压缩，不要压缩外层文件夹')
+  }
+
   const names = new Set<string>()
   let declaredTotal = 0
   let manifestData: Buffer | undefined
