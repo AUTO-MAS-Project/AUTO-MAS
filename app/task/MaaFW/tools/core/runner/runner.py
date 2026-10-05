@@ -1228,14 +1228,12 @@ class MaaFWRunner:
         self._capture_failure_screenshot(task.name, kind="timeout")
         limit_text = _format_task_limit(self._task_deadline_limit_seconds)
         display_name = _task_display_name(task)
-        # 结束本轮也要等：重试可能复用同一个 tasker。
-        settled = self._wait_task_deadline_stop()
         if index == 0 or task.abortRoundMessage:
             reason = f"{TASK_TIMEOUT_MESSAGE}（限制 {limit_text}）"
             if task.abortRoundMessage:
                 reason = f"{task.abortRoundMessage}：{reason}"
             raise RuntimeError(f"{reason}，本轮已结束: {display_name}")
-        if not settled:
+        if not self._wait_task_deadline_stop():
             raise RuntimeError(
                 f"{TASK_TIMEOUT_MESSAGE}（限制 {limit_text}），停止后 "
                 f"{TASK_STOP_SETTLE_SECONDS:.0f} 秒仍未停下，本轮剩余任务已跳过: "
@@ -1263,10 +1261,12 @@ class MaaFWRunner:
         节点，tasker 没空闲前投递一律被拒（task_id=0）。定时器线程在 ``_post_self_stop``
         里等停止 job，那个 job 排在当前任务之后，它返回就是停止生效；之后 tasker 还要
         收个尾才空闲，所以再看一次 ``running``。返回 False 表示等满也没停下。
+        等的时候整轮时限到点就直接按整轮超时收尾，不再说「继续后续任务」。
         """
 
         give_up_at = time.monotonic() + TASK_STOP_SETTLE_SECONDS
         while True:
+            self._raise_if_deadline_hit()
             thread = self._task_deadline_stop_thread
             busy = thread is not None and thread.is_alive()
             if not busy and self.tasker is not None:
