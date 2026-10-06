@@ -631,12 +631,18 @@ type WindowActivity = 'visible' | 'background'
 let lastWindowActivity: WindowActivity | null = null
 
 function notifyWindowActivity(activity: WindowActivity) {
-  if (!mainWindow || mainWindow.isDestroyed() || lastWindowActivity === activity) {
+  const win = mainWindow
+  if (
+    !win ||
+    win.isDestroyed() ||
+    win.webContents.isDestroyed() ||
+    lastWindowActivity === activity
+  ) {
     return
   }
 
+  win.webContents.send('window-activity-changed', activity)
   lastWindowActivity = activity
-  mainWindow.webContents.send('window-activity-changed', activity)
 }
 
 const TITLE_BAR_HEIGHT = 32
