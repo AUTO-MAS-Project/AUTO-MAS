@@ -1137,6 +1137,7 @@ export default {
       'この正規表現に一致した行を範囲の終わりとします（その行を含む）。空の場合は終わりを限定しません',
     singleRunTimeLimit: '1 回の実行時間の上限（分）',
     singleTaskTimeLimit: '単一タスクの制限時間（分、0 で無制限）',
+    loopGuard: 'ループ検出（実験的）',
     echoOfWarStartDay: '歴戦余韻の開始日',
     trailingKeyword: '末尾を切るキーワード',
     reportIssueGo: 'でフィードバックするか、こちらへ：',

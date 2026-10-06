@@ -1492,6 +1492,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         task_limit_seconds, task_limit_overrides = task_time_limits_from_config(
             self.script_config
         )
+        loop_guard = loop_guard_from_config(self.script_config)
         # 截止时刻交给 worker：到点它自己停任务、截图、把已完成的任务带回来。
         # 宿主这层只在 worker 没停下时才强杀，那时既没有截图也没有进度。
         run_deadline_at = time.time() + timeout
@@ -1502,6 +1503,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                     run_deadline_at=run_deadline_at,
                     task_time_limit_seconds=task_limit_seconds,
                     task_time_limit_overrides=task_limit_overrides,
+                    loop_guard=loop_guard,
                 ),
                 timeout=timeout + _RUN_DEADLINE_GRACE_SECONDS,
             )
@@ -1521,6 +1523,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
         run_deadline_at: float | None = None,
         task_time_limit_seconds: int = 0,
         task_time_limit_overrides: dict[str, int] | None = None,
+        loop_guard: bool = False,
     ) -> MaaFWRunResult:
         if self.run_plan is None:
             raise RuntimeError("MaaFW 运行计划尚未初始化")
@@ -1630,6 +1633,7 @@ class MaaFWPluginAutoProxyTask(TaskExecuteBase):
                 run_deadline_at=run_deadline_at,
                 task_time_limit_seconds=task_time_limit_seconds,
                 task_time_limit_overrides=task_time_limit_overrides,
+                loop_guard=loop_guard,
             )
             work_dir = _maafw_runner_jobs_dir()
             job_path = await asyncio.to_thread(
@@ -3230,6 +3234,15 @@ def task_time_limits_from_config(config: Any) -> tuple[int, dict[str, int]]:
         ).items()
     }
     return default_seconds, overrides
+
+
+def loop_guard_from_config(config: Any) -> bool:
+    """读 Run.LoopGuard（原地打转检测，实验性，默认关）；读不到或写坏都按关。"""
+
+    try:
+        return config.get("Run", "LoopGuard") is True
+    except Exception:
+        return False
 
 
 def _load_json_list(value: Any) -> list[str]:
