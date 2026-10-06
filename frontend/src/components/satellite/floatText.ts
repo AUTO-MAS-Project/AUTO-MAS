@@ -1,6 +1,10 @@
 import type { ScreenPoint } from './satelliteScene'
 
-export type FloatTextVariant = 'star' | 'rainbow' | 'hint' | 'huge'
+/**
+ * star / rainbow：按中心冒的 star!；hint：小提示；huge：彩蛋大字；love：粉色大字；
+ * speech：角色台词气泡，停得久一些
+ */
+export type FloatTextVariant = 'star' | 'rainbow' | 'hint' | 'huge' | 'love' | 'speech'
 
 /** 同时在飞的浮字上限；快速连点时先到的先让位，免得 DOM 和合成层无限堆 */
 const MAX_FLOAT_TEXTS = 12
@@ -41,6 +45,19 @@ function popUp(element: HTMLSpanElement): Animation {
   )
 }
 
+/** 台词气泡：从卫星上方冒出来，停三秒多再飘走 */
+function speak(element: HTMLSpanElement): Animation {
+  return element.animate(
+    [
+      { transform: 'translate(-50%, -100%) scale(0.6)', opacity: 0 },
+      { offset: 0.08, transform: 'translate(-50%, calc(-100% - 46px)) scale(1)', opacity: 1 },
+      { offset: 0.85, transform: 'translate(-50%, calc(-100% - 52px)) scale(1)', opacity: 1 },
+      { transform: 'translate(-50%, calc(-100% - 70px)) scale(0.96)', opacity: 0 },
+    ],
+    { duration: 3600, easing: 'ease-out', fill: 'forwards' }
+  )
+}
+
 /**
  * 卫星区域里冒出来的浮字。样式（.star-burst 及各变体）写在 SatelliteAnimation.vue 里，
  * 用 :deep 管到这些运行时创建的节点。
@@ -75,7 +92,12 @@ export function createFloatTextLayer() {
       }
     }
 
-    const animation = variant === 'huge' ? popUp(element) : riseAway(element)
+    const animation =
+      variant === 'huge' || variant === 'love'
+        ? popUp(element)
+        : variant === 'speech'
+          ? speak(element)
+          : riseAway(element)
     animation.onfinish = () => {
       const index = active.indexOf(element)
       if (index >= 0) {

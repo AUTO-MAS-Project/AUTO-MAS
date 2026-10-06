@@ -53,10 +53,20 @@ export interface TaskRuntimeState {
   completedAt: number | null
 }
 
-interface ScriptRuntimeStatus {
+export interface ScriptRuntimeStatus {
   queued: boolean
   running: boolean
   lastFailed: boolean
+}
+
+/** 脚本运行状态按什么汇总：默认按脚本类型，主页卫星把通用 MFW 再按项目分开 */
+export type ScriptStatusKeyOf = (identity: WSTaskScriptIdentityData) => string
+
+/** 某个脚本最近一次结束的任务里有没有失败；seq 越大越新，同一个任务里的脚本 seq 相同 */
+export interface TerminalFailure {
+  scriptType: string
+  failed: boolean
+  seq: number
 }
 
 export type TaskRuntimeEvent =
@@ -67,8 +77,10 @@ export type TaskRuntimeEvent =
 type TaskRuntimeListener = (event: TaskRuntimeEvent) => void | Promise<void>
 
 const taskStates = ref(new Map<string, TaskRuntimeState>())
-const scheduledScriptTypes = ref(new Set<string>())
-const lastTerminalFailureByType = ref(new Map<string, boolean>())
+const scheduledScripts = ref<WSTaskScriptIdentityData[]>([])
+/** 按脚本 ID 记最近一次结束的任务有没有失败 */
+const lastTerminalFailures = ref(new Map<string, TerminalFailure>())
+let terminalFailureSeq = 0
 const listeners = new Set<TaskRuntimeListener>()
 const taskSubscriptionIds = new Map<string, string[]>()
 const residentSubscriptionIds: string[] = []
@@ -276,9 +288,7 @@ const loadTaskRuntimeSnapshot = async (
     const activeStates: TaskRuntimeState[] = []
     const removedTaskIds: string[] = []
 
-    scheduledScriptTypes.value = new Set(
-      (snapshot.scheduledScripts ?? []).map(script => script.scriptType)
-    )
+    scheduledScripts.value = cloneScripts(snapshot.scheduledScripts)
 
     for (const item of snapshot.tasks ?? []) {
       const state = stateFromSnapshot(item, next.get(item.taskId))
@@ -315,56 +325,66 @@ export function refreshTaskRuntimeSnapshot(): Promise<void> {
   return loadTaskRuntimeSnapshot(0, false)
 }
 
-const getOrCreateScriptStatus = (
-  statuses: Map<string, ScriptRuntimeStatus>,
-  scriptType: string
-) => {
-  let status = statuses.get(scriptType)
+const getOrCreateScriptStatus = (statuses: Map<string, ScriptRuntimeStatus>, key: string) => {
+  let status = statuses.get(key)
   if (!status) {
     status = { queued: false, running: false, lastFailed: false }
-    statuses.set(scriptType, status)
+    statuses.set(key, status)
   }
   return status
 }
 
 const updateLastTerminalFailures = (task: TaskRuntimeState): void => {
-  if (task.mode === 'ScriptConfig') return
+  if (task.mode === 'ScriptConfig' || task.scripts.length === 0) return
 
   const failedScriptIds = new Set(
     task.taskInfo
       .filter(info => scriptHasStatus(info, FAILED_TASK_STATUSES))
       .map(info => info.script_id)
   )
-  const failAllTypes = task.outcome === 'error' && failedScriptIds.size === 0
-  const failureByType = new Map<string, boolean>()
+  const failAllScripts = task.outcome === 'error' && failedScriptIds.size === 0
+  const seq = ++terminalFailureSeq
+  const next = new Map(lastTerminalFailures.value)
 
   for (const identity of task.scripts) {
-    const failed = failAllTypes || failedScriptIds.has(identity.scriptId)
-    failureByType.set(
-      identity.scriptType,
-      (failureByType.get(identity.scriptType) ?? false) || failed
-    )
+    const failed = failAllScripts || failedScriptIds.has(identity.scriptId)
+    // 同一个任务里同一个脚本出现多次时，有一次失败就算失败
+    const previous = next.get(identity.scriptId)
+    next.set(identity.scriptId, {
+      scriptType: identity.scriptType,
+      failed: (previous?.seq === seq && previous.failed) || failed,
+      seq,
+    })
   }
-
-  if (failureByType.size === 0) return
-  const next = new Map(lastTerminalFailureByType.value)
-  failureByType.forEach((failed, scriptType) => next.set(scriptType, failed))
-  lastTerminalFailureByType.value = next
+  lastTerminalFailures.value = next
 }
 
-const scriptStatusesByType = computed(() => {
+/**
+ * 把排队、运行中的任务和最近一次结束的结果按 keyOf 汇总成各组的状态。
+ *
+ * 「上次失败」看每组里最近结束的那个任务：那个任务里这组有脚本失败就算失败，
+ * 更早的任务不管成败都被它盖掉。
+ */
+export function collectScriptStatuses(
+  source: {
+    tasks: Iterable<TaskRuntimeState>
+    scheduled: readonly WSTaskScriptIdentityData[]
+    failures: ReadonlyMap<string, TerminalFailure>
+  },
+  keyOf: ScriptStatusKeyOf
+): Map<string, ScriptRuntimeStatus> {
   const statuses = new Map<string, ScriptRuntimeStatus>()
 
-  for (const scriptType of scheduledScriptTypes.value) {
-    getOrCreateScriptStatus(statuses, scriptType).queued = true
+  for (const identity of source.scheduled) {
+    getOrCreateScriptStatus(statuses, keyOf(identity)).queued = true
   }
 
-  for (const task of taskStates.value.values()) {
+  for (const task of source.tasks) {
     if (task.mode === 'ScriptConfig' || task.phase === 'completed') continue
 
     const infoByScriptId = new Map(task.taskInfo.map(info => [info.script_id, info]))
     for (const identity of task.scripts) {
-      const status = getOrCreateScriptStatus(statuses, identity.scriptType)
+      const status = getOrCreateScriptStatus(statuses, keyOf(identity))
       const scriptInfo = infoByScriptId.get(identity.scriptId)
 
       if (!scriptInfo || scriptHasStatus(scriptInfo, WAITING_STATUSES)) status.queued = true
@@ -372,12 +392,36 @@ const scriptStatusesByType = computed(() => {
     }
   }
 
-  lastTerminalFailureByType.value.forEach((failed, scriptType) => {
-    getOrCreateScriptStatus(statuses, scriptType).lastFailed = failed
+  const latest = new Map<string, { seq: number; failed: boolean }>()
+  source.failures.forEach((failure, scriptId) => {
+    const key = keyOf({ scriptId, scriptType: failure.scriptType })
+    const current = latest.get(key)
+    if (!current || failure.seq > current.seq) {
+      latest.set(key, { seq: failure.seq, failed: failure.failed })
+    } else if (failure.seq === current.seq) {
+      current.failed ||= failure.failed
+    }
+  })
+  latest.forEach(({ failed }, key) => {
+    getOrCreateScriptStatus(statuses, key).lastFailed = failed
   })
 
   return statuses
-})
+}
+
+const scriptStatusesBy = (keyOf: ScriptStatusKeyOf) =>
+  computed(() =>
+    collectScriptStatuses(
+      {
+        tasks: taskStates.value.values(),
+        scheduled: scheduledScripts.value,
+        failures: lastTerminalFailures.value,
+      },
+      keyOf
+    )
+  )
+
+const scriptStatusesByType = scriptStatusesBy(identity => identity.scriptType)
 
 const pruneCompletedStates = (): void => {
   const now = Date.now()
@@ -426,8 +470,8 @@ export function disposeTaskRuntimeState(): void {
     completedStateCleanupTimer = null
   }
   taskStates.value = new Map()
-  scheduledScriptTypes.value = new Set()
-  lastTerminalFailureByType.value = new Map()
+  scheduledScripts.value = []
+  lastTerminalFailures.value = new Map()
   bootstrapped = false
 }
 
@@ -448,6 +492,7 @@ export function useTaskRuntimeState() {
   return {
     tasks: computed(() => taskStates.value),
     scriptStatusesByType,
+    scriptStatusesBy,
     refresh: refreshTaskRuntimeSnapshot,
   }
 }

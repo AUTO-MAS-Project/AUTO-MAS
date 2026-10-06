@@ -1,6 +1,5 @@
 /** 场景尺寸与动画参数；长度是 three.js 世界单位 */
 export const SATELLITE_CONFIG = {
-  containerHeight: 400,
   /** 长焦：透视收敛一些，前后卫星的大小差在两倍左右，近处的不至于糊到镜头上 */
   cameraFov: 24,
   /** 镜头离星核的基准距离；容器太窄时会自动拉远，保证主轨道左右不出画 */

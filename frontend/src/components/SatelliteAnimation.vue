@@ -2,7 +2,7 @@
   <div
     ref="container"
     class="satellite-container"
-    :class="{ 'is-pointing': pointingSatellite, 'is-dragging': dragging }"
+    :class="{ 'is-pointing': pointingSatellite, 'is-dragging': dragging, 'is-storm': stormTint }"
     @pointerdown="handlePointerDown"
     @pointermove="handlePointerMove"
     @pointerup="handlePointerUp"
@@ -10,65 +10,105 @@
     @pointerleave="handlePointerLeave"
   >
     <div v-if="loading" class="loading-spinner"></div>
-    <div v-show="hoverLabel" ref="labelElement" class="satellite-label">
-      <span class="satellite-label-name">{{ hoverLabel?.name }}</span>
-      <span v-if="hoverLabel?.status" class="satellite-label-status">{{ hoverLabel.status }}</span>
-    </div>
+    <img v-if="staticImage" class="satellite-static" :src="staticImage" alt="" />
+    <SatelliteHoverLabel
+      ref="hoverLabel"
+      :name="hoveredModule?.label ?? null"
+      :status="hoveredStatus"
+    />
+    <SatelliteFloatLayer ref="floatLayer" />
+    <SatelliteEggStage ref="eggStage" />
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
-import { useI18n } from 'vue-i18n'
+import { computed, nextTick, onMounted, onUnmounted, ref, shallowRef, watch } from 'vue'
 import { useTheme } from '@/composables/useTheme'
 import { useScriptApi } from '@/composables/useScriptApi'
-import { satelliteModules, centerIconUrl } from '@/composables/satellite-config'
-import { useSatelliteStatus, type SatelliteModuleStatus } from '@/composables/useSatelliteStatus'
+import {
+  buildOrbitModules,
+  centerIconUrl,
+  orbitKeysByScriptId,
+  type OrbitModule,
+} from '@/composables/satellite-config'
+import { useSatelliteStatus } from '@/composables/useSatelliteStatus'
 import { requestUpdateCheck } from '@/composables/useUpdateChecker'
 import { usePerformanceStore } from '@/stores/performance'
 import { connectionState, onConnected } from '@/services/websocket/connection'
-import type { ScriptType } from '@/types/script'
-import { SCRIPT_LABELS } from '@/utils/scriptLogos'
-import { createFloatTextLayer, type FloatTextVariant } from './satellite/floatText'
+import { consumeFirstVisit } from './satellite/eggs'
+import type { FloatTextVariant } from './satellite/floatText'
 import { createAnimationFrameScheduler } from './satellite/frameScheduler'
-import { SatelliteScene, type ScreenPoint } from './satellite/satelliteScene'
+import type { CenterGlowMode } from './satellite/motion'
+import SatelliteEggStage from './satellite/SatelliteEggStage.vue'
+import SatelliteFloatLayer from './satellite/SatelliteFloatLayer.vue'
+import SatelliteHoverLabel from './satellite/SatelliteHoverLabel.vue'
+import { INTRO_IGNITE_MS, SatelliteScene, type ScreenPoint } from './satellite/satelliteScene'
 import { useSatelliteEggs } from './satellite/useSatelliteEggs'
 import { useSatellitePointer } from './satellite/useSatellitePointer'
+import { useSatelliteStill } from './satellite/useSatelliteStill'
 
 /** 主 WS 没开着时，按这个间隔拉运行快照兜底 */
 const STATUS_POLL_INTERVAL = 10000
 
-const { t } = useI18n()
 const logger = window.electronAPI.getLogger('卫星动画')
 const { isDark } = useTheme()
 const { getScripts } = useScriptApi()
 const performanceStore = usePerformanceStore()
 // 卫星状态来自任务运行时常驻订阅（WS 增量 + HTTP 快照兜底）
-const { statuses: satelliteStatuses, refresh: refreshSatelliteStatuses } = useSatelliteStatus()
+const {
+  statuses: satelliteStatuses,
+  setScriptKeys: setSatelliteScriptKeys,
+  refresh: refreshSatelliteStatuses,
+} = useSatelliteStatus()
 
 const container = ref<HTMLDivElement | null>(null)
-const labelElement = ref<HTMLDivElement | null>(null)
+const hoverLabel = ref<InstanceType<typeof SatelliteHoverLabel> | null>(null)
+const eggStage = ref<InstanceType<typeof SatelliteEggStage> | null>(null)
+const floatLayer = ref<InstanceType<typeof SatelliteFloatLayer> | null>(null)
 const loading = ref(true)
+/** 1999 暴雨期间画面泛黄，像老照片 */
+const stormTint = ref(false)
 /** 指针停在卫星上时显示手型；中心图标的连点是彩蛋，不提示可点 */
 const pointingSatellite = ref(false)
 const hoveredSatellite = ref<number | null>(null)
-const hoveredType = ref<ScriptType | null>(null)
+const hoveredModule = shallowRef<OrbitModule | null>(null)
 
+/** 实时场景；低性能模式下为 null，所有动画、交互、彩蛋都跟着它一起没有 */
 let scene: SatelliteScene | null = null
+let liveLoading = false
+/** 上轨道的卫星：挂载时按用户建过的脚本算一次 */
+let visibleModules: OrbitModule[] | null = null
+let centerGlowMode: CenterGlowMode = 'green'
 let isUnmounted = false
 let statusPollTimer: ReturnType<typeof setInterval> | null = null
 let disposeBackendReadyListener: (() => void) | null = null
 let lastFrameAt: number | null = null
 const frameScheduler = createAnimationFrameScheduler(requestAnimationFrame, cancelAnimationFrame)
-const floatTexts = createFloatTextLayer()
+/** 低性能模式下只放这张静态图，没有实时场景 */
+const {
+  image: staticImage,
+  render: renderStill,
+  schedule: scheduleStill,
+  clear: clearStill,
+} = useSatelliteStill({
+  getContainer: () => container.value,
+  getModules: () => visibleModules,
+  getStatuses: () => satelliteStatuses.value,
+  getCenterGlowMode: () => centerGlowMode,
+  isDark: () => isDark.value,
+  isWanted: () => !isUnmounted && performanceStore.lowPerformanceMode,
+})
 const eggs = useSatelliteEggs({
   getScene: () => scene,
-  isLowPower: () => performanceStore.isLowPower,
+  getStage: () => eggStage.value,
   spawnText,
   getContainerSize: () =>
     container.value
       ? { width: container.value.clientWidth, height: container.value.clientHeight }
       : null,
+  setStormTint: on => {
+    stormTint.value = on
+  },
   requestRender,
 })
 const {
@@ -82,49 +122,39 @@ const {
 } = useSatellitePointer({
   getScene: () => scene,
   getContainer: () => container.value,
-  isLowPower: () => performanceStore.isLowPower,
   isBackgrounded: () => performanceStore.isBackgrounded,
   setHovered,
   spawnText,
   requestRender,
   onCenterTap: eggs.pokeCenter,
   onSatelliteTap: handleSatelliteTap,
+  onEmptyPress: eggs.tryCatchMeteor,
 })
 
-/** 悬停标签：脚本名，有运行状态时带上状态 */
-const hoverLabel = computed(() => {
-  const type = hoveredType.value
-  if (!type) return null
-  return { name: SCRIPT_LABELS[type], status: describeStatus(satelliteStatuses.value.get(type)) }
-})
+const hoveredStatus = computed(() =>
+  hoveredModule.value ? satelliteStatuses.value.get(hoveredModule.value.key) : undefined
+)
 
 // ==================== 监听 ====================
 
 watch(isDark, dark => {
   scene?.setDark(dark)
   requestRender()
+  scheduleStill()
 })
 
 // 常驻订阅推送新状态时同步刷新展示
 watch(satelliteStatuses, statuses => {
   scene?.setStatuses(statuses)
+  eggs.onStatusesChange(statuses)
   requestRender()
+  scheduleStill()
 })
 
+// 低性能模式只留一张静态图：切进去就拆掉实时场景拍一张，切回来再搭实时场景
 watch(
   () => performanceStore.lowPerformanceMode,
-  lowPerformanceMode => {
-    if (!scene) return
-
-    scene.setLowPerformance(lowPerformanceMode)
-    if (lowPerformanceMode) {
-      // 彩蛋跟着低性能模式一起收掉：不然会停在一张静止的彩虹图上，补渲一帧还会跳一次色相
-      scene.setCenterRainbow(false)
-      scene.resetCenterPress()
-      scene.skipAppear()
-    }
-    requestRender()
-  }
+  () => void applyMode()
 )
 
 // WS 打开时事件推送足够，停掉 HTTP 轮询（运行态资源在 onConnected 里已重拉一次快照）；
@@ -146,6 +176,7 @@ watch(
       stopStatusPolling()
       cancelPress()
       scene?.clearExplosions()
+      scene?.clearEffects()
       return
     }
 
@@ -174,15 +205,15 @@ onMounted(async () => {
   if (isUnmounted) return
 
   try {
-    await initScene()
+    visibleModules = await loadVisibleModules()
+    await applyMode()
   } catch (err) {
     logger.error(`初始化场景失败: ${String(err)}`)
   } finally {
     loading.value = false
   }
-  if (isUnmounted || !scene || !container.value) return
+  if (isUnmounted) return
 
-  requestRender()
   window.addEventListener('resize', handleResize)
   window.addEventListener('keydown', eggs.handleKeydown)
 
@@ -193,8 +224,10 @@ onMounted(async () => {
   try {
     const updateRes = await requestUpdateCheck(false)
     if (updateRes.code === 200 && updateRes.if_need_update && !isUnmounted) {
+      centerGlowMode = 'rainbow'
       scene?.setCenterGlowMode('rainbow')
       requestRender()
+      scheduleStill()
     }
   } catch {
     // 静默失败，保持绿色
@@ -206,11 +239,9 @@ onUnmounted(() => {
   disposeBackendReadyListener?.()
   window.removeEventListener('resize', handleResize)
   window.removeEventListener('keydown', eggs.handleKeydown)
-  frameScheduler.cancel()
   stopStatusPolling()
-  floatTexts.dispose()
-  scene?.dispose()
-  scene = null
+  clearStill()
+  teardownLive()
 })
 
 // ==================== 场景 ====================
@@ -227,63 +258,108 @@ function waitBackendReady(): Promise<void> {
   })
 }
 
-async function initScene(): Promise<void> {
+/** 只有用户建过的脚本才上轨道：每种脚本类型一颗，通用 MFW 每个项目一颗 */
+async function loadVisibleModules(): Promise<OrbitModule[]> {
   let userScripts: Awaited<ReturnType<typeof getScripts>> = []
   try {
     userScripts = await getScripts()
   } catch (err) {
     logger.warn(`获取脚本列表失败，按空集合处理: ${String(err)}`)
   }
-  if (!container.value || isUnmounted) return
 
-  // 只有用户建过的脚本类型才上轨道
-  const userScriptTypes = new Set<ScriptType>(userScripts.map(s => s.type as ScriptType))
-  const modules = satelliteModules.filter(m => m.enabled && userScriptTypes.has(m.scriptType))
+  const modules = buildOrbitModules(userScripts)
+  setSatelliteScriptKeys(orbitKeysByScriptId(modules))
   if (modules.length === 0) {
     logger.info('没有可显示的卫星模块，仅渲染中心图标和轨道')
   }
+  return modules
+}
 
-  const created = new SatelliteScene(container.value, {
-    lowPerformance: performanceStore.lowPerformanceMode,
-    isDark: isDark.value,
-  })
+/** 按当前性能模式摆出实时场景或静态图 */
+async function applyMode(): Promise<void> {
+  if (isUnmounted || !visibleModules) return
+
+  if (performanceStore.lowPerformanceMode) {
+    teardownLive()
+    await renderStill()
+    return
+  }
+
+  clearStill()
+  if (!scene && !liveLoading) {
+    await startLive()
+  }
+}
+
+async function startLive(): Promise<void> {
+  if (!container.value || !visibleModules) return
+
+  liveLoading = true
+  const created = new SatelliteScene(container.value, { isDark: isDark.value })
   try {
-    if (!(await created.load(centerIconUrl, modules, () => isUnmounted))) {
+    const loaded = await created.load(
+      centerIconUrl,
+      visibleModules,
+      () => isUnmounted || performanceStore.lowPerformanceMode
+    )
+    if (!loaded) {
       created.dispose()
       return
     }
   } catch (err) {
     created.dispose()
     throw err
+  } finally {
+    liveLoading = false
   }
 
   scene = created
-  // 加载图片期间主题或低性能模式可能已经变了，watcher 那时还够不着场景
+  // 加载图片期间主题、状态可能已经变了，watcher 那时还够不着场景
   scene.setDark(isDark.value)
-  scene.setLowPerformance(performanceStore.lowPerformanceMode)
   scene.setStatuses(satelliteStatuses.value)
-  if (performanceStore.isLowPower) {
+  scene.setCenterGlowMode(centerGlowMode)
+  // 记下此刻已经在跑的脚本：之后看着它开跑才喊「启动」
+  eggs.onStatusesChange(satelliteStatuses.value)
+
+  const now = Date.now()
+  if (performanceStore.isBackgrounded) {
     scene.skipAppear()
+  } else if (consumeFirstVisit()) {
+    // 本次启动应用后第一次进主页：曲速跃迁进场，星核点燃时卫星再甩出来
+    scene.startIntro(now)
+    scene.startAppear(now + INTRO_IGNITE_MS)
   } else {
-    scene.startAppear(Date.now())
+    scene.startAppear(now)
   }
+  lastFrameAt = null
+  requestRender()
 }
 
-/** 画一帧。平时逐帧连续画；低性能模式只在有变化时补帧，动画放完之前例外 */
+/** 拆掉实时场景连同它的帧循环、手势、彩蛋和浮字 */
+function teardownLive(): void {
+  frameScheduler.cancel()
+  cancelPress()
+  setHovered(null)
+  eggs.dispose()
+  floatLayer.value?.clear()
+  scene?.dispose()
+  scene = null
+}
+
+/** 实时场景逐帧连续画 */
 function drawFrame(): void {
   if (isUnmounted || !scene || performanceStore.isBackgrounded) return
 
   const now = Date.now()
-  const dt = lastFrameAt === null ? 16 : Math.min(100, now - lastFrameAt)
+  // 系统时间被往回调时帧间隔会是负的，按 0 算
+  const dt = lastFrameAt === null ? 16 : Math.min(100, Math.max(0, now - lastFrameAt))
   lastFrameAt = now
   updateCoreCharge()
   eggs.checkDizzy(dt, now)
 
-  const busy = scene.renderFrame(now)
+  scene.renderFrame(now)
   updateLabelPosition()
-  if (!performanceStore.isLowPower || busy) {
-    frameScheduler.request(drawFrame)
-  }
+  frameScheduler.request(drawFrame)
 }
 
 function requestRender(): void {
@@ -294,6 +370,7 @@ function requestRender(): void {
 function handleResize(): void {
   scene?.resize()
   requestRender()
+  scheduleStill()
 }
 
 function stopStatusPolling(): void {
@@ -317,34 +394,21 @@ function startStatusPolling(): void {
 
 // ==================== 悬停标签 ====================
 
-function describeStatus(status: SatelliteModuleStatus | undefined): string {
-  if (!status) return ''
-  if (status.lastFailed) {
-    return t(status.running ? 'home.satelliteStatus.failedRunning' : 'home.satelliteStatus.failed')
-  }
-  if (status.running) return t('home.satelliteStatus.running')
-  if (status.queued) return t('home.satelliteStatus.queued')
-  return ''
-}
-
 function setHovered(index: number | null): void {
   if (hoveredSatellite.value === index) return
   hoveredSatellite.value = index
-  hoveredType.value = index === null ? null : (scene?.satelliteType(index) ?? null)
+  hoveredModule.value = index === null ? null : (visibleModules?.[index] ?? null)
   pointingSatellite.value = index !== null
   scene?.setHovered(index)
+  eggs.onHoverChange(index)
   requestRender()
 }
 
-/** 标签跟着卫星走，每帧直接改样式，不经过响应式 */
 function updateLabelPosition(): void {
   const index = hoveredSatellite.value
-  const element = labelElement.value
-  if (index === null || !element || !scene) return
+  if (index === null || !scene) return
   const point = scene.projectSatellite(index)
-  if (point) {
-    element.style.transform = `translate(${point.x}px, ${point.y - 52}px) translate(-50%, -100%)`
-  }
+  if (point) hoverLabel.value?.moveTo(point)
 }
 
 // ==================== 交互 ====================
@@ -358,15 +422,16 @@ function handleSatelliteTap(index: number, now: number): void {
 }
 
 function spawnText(point: ScreenPoint, text: string, variant: FloatTextVariant): void {
-  if (!container.value || isUnmounted) return
-  floatTexts.spawn(container.value, point, text, variant)
+  if (isUnmounted) return
+  floatLayer.value?.spawn(point, text, variant)
 }
 </script>
 
 <style scoped>
 .satellite-container {
   width: 100%;
-  height: 400px;
+  /* 窗口越宽卫星区域越高：420 起步，宽屏上给星系多一点纵深 */
+  height: clamp(420px, 34vw, 540px);
   position: relative;
   overflow: hidden;
   user-select: none;
@@ -378,6 +443,24 @@ function spawnText(point: ScreenPoint, text: string, variant: FloatTextVariant):
 
 .satellite-container.is-dragging {
   cursor: grabbing;
+}
+
+/* 1999 暴雨：画面褪成老照片的颜色 */
+.satellite-container :deep(canvas) {
+  transition: filter 900ms ease;
+}
+
+.satellite-container.is-storm :deep(canvas) {
+  filter: sepia(0.75) saturate(0.8) contrast(1.05);
+}
+
+/* 低性能模式的静态图，和实时画布一样铺满 */
+.satellite-static {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
 }
 
 .loading-spinner {
@@ -396,81 +479,6 @@ function spawnText(point: ScreenPoint, text: string, variant: FloatTextVariant):
 @keyframes spin {
   to {
     transform: rotate(360deg);
-  }
-}
-
-.satellite-label {
-  position: absolute;
-  top: 0;
-  left: 0;
-  z-index: 5;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 3px 10px;
-  border-radius: 999px;
-  border: 1px solid var(--ant-color-border-secondary);
-  background: var(--ant-color-bg-elevated);
-  box-shadow: var(--ant-box-shadow-secondary);
-  color: var(--ant-color-text);
-  font-size: 12px;
-  line-height: 18px;
-  white-space: nowrap;
-  pointer-events: none;
-}
-
-.satellite-label-name {
-  font-weight: 600;
-}
-
-.satellite-label-status {
-  color: var(--ant-color-text-secondary);
-}
-
-/* 浮字是运行时创建的，不在模板里，scoped 的选择器要用 :deep 才管得到 */
-.satellite-container :deep(.star-burst) {
-  position: absolute;
-  /* 浮字得压在场景画布上面才看得见 */
-  z-index: 10;
-  transform: translate(-50%, -50%);
-  font-size: 17px;
-  font-weight: 800;
-  letter-spacing: 0.02em;
-  color: var(--ant-color-warning);
-  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.18);
-  pointer-events: none;
-  white-space: nowrap;
-  will-change: transform, opacity;
-}
-
-.satellite-container :deep(.star-burst-hint) {
-  font-size: 20px;
-  color: var(--ant-color-primary);
-}
-
-.satellite-container :deep(.star-burst-huge) {
-  font-size: 44px;
-  font-weight: 900;
-  letter-spacing: 0.06em;
-  color: var(--ant-color-warning);
-  -webkit-text-stroke: 1.5px rgba(0, 0, 0, 0.35);
-  text-shadow: 0 4px 18px rgba(0, 0, 0, 0.35);
-}
-
-.satellite-container :deep(.star-burst-rainbow) {
-  background-image: linear-gradient(90deg, #ff5f6d, #ffc371, #47e5bc, #4facfe, #b06ab3, #ff5f6d);
-  background-size: 200% auto;
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-  -webkit-text-fill-color: transparent;
-  text-shadow: none;
-  animation: star-rainbow 1.2s linear infinite;
-}
-
-@keyframes star-rainbow {
-  to {
-    background-position: 200% center;
   }
 }
 </style>

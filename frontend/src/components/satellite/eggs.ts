@@ -1,3 +1,5 @@
+import type { ScriptType } from '@/types/script'
+
 // ==================== 科乐美秘技 ====================
 
 /** ↑↑↓↓←→←→BA：主页上按出来就开超频 */
@@ -37,43 +39,66 @@ export function createKonamiMatcher() {
   return { feed }
 }
 
-// ==================== MAA 点满 325 下 ====================
+// ==================== 点卫星攒保底 ====================
 
-export const MAA_POKE_TARGET = 325
+/** 攒满之后的奖励：周哥出场，或者一场出金（文字和颜色按游戏区分） */
+export type PityReward = 'zhouge' | 'gold' | 'sixStar' | 'sRank' | 'spark'
 
-/** 点到这些下数时给一点预告，免得点了两百多下还以为什么都没有 */
-const MAA_POKE_HINTS: Readonly<Record<number, 'maaHint1' | 'maaHint2' | 'maaHint3'>> = {
-  100: 'maaHint1',
-  200: 'maaHint2',
-  300: 'maaHint3',
+export interface PityEggConfig {
+  /** 点满这么多下给奖励 */
+  target: number
+  /** 点到这些下数时冒一句预告，值是 home.satelliteEgg 下的词条 */
+  hints: Readonly<Record<number, string>>
+  /** 最后这么多下倒数 */
+  countdown: number
+  reward: PityReward
 }
 
-export type MaaPokeEvent =
-  | { kind: 'hint'; hint: 'maaHint1' | 'maaHint2' | 'maaHint3' }
-  | { kind: 'countdown'; remaining: number }
-  | { kind: 'reveal' }
-
 /**
- * MAA 卫星的点击计数。不要求连点，也不落盘：计数存在模块里，切页面回来接着数，重启应用清零。
- * 点满 325 下周哥出场，然后从头数。
+ * 各游戏的保底抽数（2026-10 查证）：原神、星铁、绝区零 90 抽，74 抽起概率上涨；
+ * 鸣潮 80 抽，70 抽起猛涨；终末地 80 抽，65 抽起每抽 +5%；重返未来 1999 角色池 70 抽；
+ * 蔚蓝档案 200 抽天井。MAA 点满 325 下是周哥。
  */
-export function createMaaPokeTally() {
+export const PITY_EGGS: Readonly<Partial<Record<ScriptType, PityEggConfig>>> = {
+  MAA: {
+    target: 325,
+    hints: { 100: 'maaHint1', 200: 'maaHint2', 300: 'maaHint3' },
+    countdown: 5,
+    reward: 'zhouge',
+  },
+  BetterGI: { target: 90, hints: { 74: 'softPity' }, countdown: 0, reward: 'gold' },
+  SRC: { target: 90, hints: { 74: 'softPity' }, countdown: 0, reward: 'gold' },
+  HSR: { target: 90, hints: { 74: 'softPity' }, countdown: 0, reward: 'gold' },
+  ZzzOd: { target: 90, hints: { 74: 'softPity' }, countdown: 0, reward: 'sRank' },
+  Okww: { target: 80, hints: { 70: 'softPity' }, countdown: 0, reward: 'gold' },
+  MaaEnd: { target: 80, hints: { 65: 'softPity' }, countdown: 0, reward: 'sixStar' },
+  M9A: { target: 70, hints: {}, countdown: 0, reward: 'sixStar' },
+  BAAH: { target: 200, hints: { 100: 'halfway' }, countdown: 0, reward: 'spark' },
+}
+
+export type PityEvent =
+  | { kind: 'hint'; key: string }
+  | { kind: 'countdown'; remaining: number }
+  | { kind: 'reward'; reward: PityReward }
+
+/** 一颗卫星的点击计数：不要求连点，攒满给奖励后从头数 */
+export function createPityTally(config: PityEggConfig) {
   let count = 0
 
-  function poke(): MaaPokeEvent | null {
+  function poke(): PityEvent | null {
     count += 1
-    if (count >= MAA_POKE_TARGET) {
+    if (count >= config.target) {
       count = 0
-      return { kind: 'reveal' }
+      return { kind: 'reward', reward: config.reward }
     }
 
-    const remaining = MAA_POKE_TARGET - count
-    if (remaining <= 5) {
+    const remaining = config.target - count
+    if (remaining <= config.countdown) {
       return { kind: 'countdown', remaining }
     }
 
-    const hint = MAA_POKE_HINTS[count]
-    return hint ? { kind: 'hint', hint } : null
+    const key = config.hints[count]
+    return key ? { kind: 'hint', key } : null
   }
 
   return {
@@ -84,8 +109,96 @@ export function createMaaPokeTally() {
   }
 }
 
-/** 跨组件实例共用，主页卸载再挂载不清零 */
-export const maaPokeTally = createMaaPokeTally()
+/** 计数存在模块里，切页面回来接着数，重启应用清零；不落盘 */
+const pityTallies = new Map<ScriptType, ReturnType<typeof createPityTally>>()
+
+/** 点了一下 type 的卫星；这个游戏没有保底彩蛋时返回 null */
+export function pokePity(type: ScriptType): PityEvent | null {
+  const config = PITY_EGGS[type]
+  if (!config) return null
+  let tally = pityTallies.get(type)
+  if (!tally) {
+    tally = createPityTally(config)
+    pityTallies.set(type, tally)
+  }
+  return tally.poke()
+}
+
+// ==================== 连点 ====================
+
+/** windowMs 内连点满 count 下算一次；触发后 cooldownMs 内不再触发 */
+export function createRapidClickDetector(count: number, windowMs: number, cooldownMs: number) {
+  const clicks: number[] = []
+  let lastHitAt = -Infinity
+
+  function click(now: number): boolean {
+    clicks.push(now)
+    while (clicks.length > 0 && now - clicks[0] > windowMs) {
+      clicks.shift()
+    }
+    if (clicks.length < count || now - lastHitAt < cooldownMs) {
+      return false
+    }
+    clicks.length = 0
+    lastHitAt = now
+    return true
+  }
+
+  return { click }
+}
+
+// ==================== 键盘口令 ====================
+
+/**
+ * 主页上直接敲的口令：648 首充双倍、1999 暴雨、666 烟花、520 爱心、404 卫星走丢、
+ * 233 笑出声、mas 开发者火箭打榜。
+ */
+export const KEY_CODES = ['648', '1999', '666', '520', '404', '233', 'mas'] as const
+export type KeyCode = (typeof KEY_CODES)[number]
+
+/** 只认连续敲的数字和字母（不分大小写），中间按了别的键就从头来 */
+export function createCodeMatcher<T extends string>(codes: readonly T[]) {
+  const maxLength = Math.max(...codes.map(code => code.length))
+  let buffer = ''
+
+  function feed(key: string): T | null {
+    const normalized = key.toLowerCase()
+    if (!/^[0-9a-z]$/.test(normalized)) {
+      buffer = ''
+      return null
+    }
+    buffer = (buffer + normalized).slice(-maxLength)
+    const hit = codes.find(code => buffer.endsWith(code))
+    if (hit) {
+      buffer = ''
+      return hit
+    }
+    return null
+  }
+
+  return { feed }
+}
+
+// ==================== 会话级标记 ====================
+// 存在模块里：切页面回来还在，重启应用清零
+
+let firstVisitConsumed = false
+
+/** 本次启动应用后第一次进主页返回 true（放入场跃迁），之后都是 false */
+export function consumeFirstVisit(): boolean {
+  if (firstVisitConsumed) return false
+  firstVisitConsumed = true
+  return true
+}
+
+const launchedKeys = new Set<string>()
+
+/** 这颗卫星本次启动应用后第一次开跑返回 true（喊一句「××，启动！」），之后都是 false */
+export function consumeFirstLaunch(key: string): boolean {
+  if (launchedKeys.has(key)) return false
+  launchedKeys.add(key)
+  return true
+}
 
 // ==================== 转晕 ====================
 
@@ -102,6 +215,7 @@ export function createDizzyDetector() {
 
   /** 每帧喂当前转速和帧间隔；该晕的那一帧返回 true */
   function feed(angularSpeed: number, dt: number, now: number): boolean {
+    if (dt <= 0) return false
     if (Math.abs(angularSpeed) >= DIZZY_SPIN_SPEED) {
       spinTime += dt
     } else {

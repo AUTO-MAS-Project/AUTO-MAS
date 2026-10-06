@@ -23,7 +23,6 @@ interface SatellitePointerOptions {
   /** 场景还没建好或已经销毁时返回 null */
   getScene: () => SatelliteScene | null
   getContainer: () => HTMLElement | null
-  isLowPower: () => boolean
   isBackgrounded: () => boolean
   setHovered: (index: number | null) => void
   spawnText: (point: ScreenPoint, text: string, variant: FloatTextVariant) => void
@@ -32,6 +31,8 @@ interface SatellitePointerOptions {
   onCenterTap: () => void
   /** 点了第 index 颗卫星 */
   onSatelliteTap: (index: number, now: number) => void
+  /** 按在空白处：返回 true 表示这一下被用掉了（比如接住了流星），不再当拖动 */
+  onEmptyPress: (clientX: number, clientY: number) => boolean
 }
 
 /**
@@ -39,7 +40,7 @@ interface SatellitePointerOptions {
  * 点击在松手时判定，挪远了就算拖动，不会误触。
  */
 export function useSatellitePointer(options: SatellitePointerOptions) {
-  const { getScene, getContainer, isLowPower, isBackgrounded, setHovered, requestRender } = options
+  const { getScene, getContainer, isBackgrounded, setHovered, requestRender } = options
   const { t } = useI18n()
   const logger = window.electronAPI.getLogger('卫星动画')
   const dragging = ref(false)
@@ -73,6 +74,9 @@ export function useSatellitePointer(options: SatellitePointerOptions) {
     }
 
     const target = pickAt(event)
+    if (target === null && options.onEmptyPress(event.clientX, event.clientY)) {
+      return
+    }
     press = {
       pointerId: event.pointerId,
       target,
@@ -86,9 +90,8 @@ export function useSatellitePointer(options: SatellitePointerOptions) {
     }
     getContainer()?.setPointerCapture(event.pointerId)
 
-    // 按在中心图标上时给它一个压扁的形变，再冒一句 star!；
-    // 低性能模式下动画循环是停的，按压形变和浮字都不会动，这俩干脆别做
-    if (target === 'center' && !isLowPower()) {
+    // 按在中心图标上时给它一个压扁的形变，再冒一句 star!
+    if (target === 'center') {
       scene.setCenterPressed(true)
       const local = toLocalPoint(event)
       if (local) {
@@ -160,7 +163,7 @@ export function useSatellitePointer(options: SatellitePointerOptions) {
     const now = Date.now()
     if (finished.target === 'center') {
       const held = performance.now() - finished.startedAt
-      if (held >= CORE_CHARGE.chargeFull && !isLowPower()) {
+      if (held >= CORE_CHARGE.chargeFull) {
         scene.shockwave(now)
         logger.info('卫星彩蛋触发：冲击波')
       } else if (held < CORE_CHARGE.chargeStart) {
@@ -190,7 +193,7 @@ export function useSatellitePointer(options: SatellitePointerOptions) {
   /** 每帧调用：一直按着星核就蓄力，满了松手放冲击波 */
   function updateCoreCharge(): void {
     const scene = getScene()
-    if (!scene || !press || press.dragging || press.target !== 'center' || isLowPower()) return
+    if (!scene || !press || press.dragging || press.target !== 'center') return
     const held = performance.now() - press.startedAt
     scene.setCoreCharge(
       (held - CORE_CHARGE.chargeStart) / (CORE_CHARGE.chargeFull - CORE_CHARGE.chargeStart)

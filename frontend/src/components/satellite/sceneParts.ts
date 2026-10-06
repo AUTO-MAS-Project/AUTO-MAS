@@ -27,27 +27,20 @@ export const RENDER_ORDER = {
 
 // ==================== 贴图 ====================
 
-export async function loadImageToCanvas(url: string): Promise<HTMLCanvasElement> {
+/** 加载一张图画到画布上；加载失败或 5 秒没回来给 null */
+function tryLoadImage(url: string): Promise<HTMLCanvasElement | null> {
   return new Promise(resolve => {
     const img = new Image()
     let settled = false
-    const finish = (canvas: HTMLCanvasElement) => {
+    let timer = 0
+    const finish = (canvas: HTMLCanvasElement | null) => {
       if (settled) return
       settled = true
+      window.clearTimeout(timer)
       resolve(canvas)
     }
-    const fallback = () => {
-      const canvas = document.createElement('canvas')
-      canvas.width = 64
-      canvas.height = 64
-      const ctx = canvas.getContext('2d')!
-      ctx.fillStyle = '#888888'
-      ctx.fillRect(0, 0, 64, 64)
-      finish(canvas)
-    }
-    const timer = window.setTimeout(fallback, 5000)
+    timer = window.setTimeout(() => finish(null), 5000)
     img.onload = () => {
-      window.clearTimeout(timer)
       const canvas = document.createElement('canvas')
       canvas.width = img.width
       canvas.height = img.height
@@ -55,12 +48,30 @@ export async function loadImageToCanvas(url: string): Promise<HTMLCanvasElement>
       ctx.drawImage(img, 0, 0)
       finish(canvas)
     }
-    img.onerror = () => {
-      window.clearTimeout(timer)
-      fallback()
+    img.onerror = () => finish(null)
+    // 后端给的图（MFW 项目图标）和页面不同源，不带 CORS 取回来会污染画布，做不成 WebGL 贴图
+    if (/^https?:/i.test(url) && new URL(url).origin !== window.location.origin) {
+      img.crossOrigin = 'anonymous'
     }
     img.src = url
   })
+}
+
+/** 加载图标；取不到时换 fallbackUrl，再取不到画一块灰 */
+export async function loadImageToCanvas(
+  url: string,
+  fallbackUrl?: string
+): Promise<HTMLCanvasElement> {
+  const canvas = (await tryLoadImage(url)) ?? (fallbackUrl ? await tryLoadImage(fallbackUrl) : null)
+  if (canvas) return canvas
+
+  const blank = document.createElement('canvas')
+  blank.width = 64
+  blank.height = 64
+  const ctx = blank.getContext('2d')!
+  ctx.fillStyle = '#888888'
+  ctx.fillRect(0, 0, 64, 64)
+  return blank
 }
 
 export function createCanvasTexture(canvas: HTMLCanvasElement): THREE.CanvasTexture {
@@ -68,39 +79,6 @@ export function createCanvasTexture(canvas: HTMLCanvasElement): THREE.CanvasText
   texture.colorSpace = THREE.SRGBColorSpace
   texture.needsUpdate = true
   return texture
-}
-
-export function createGlowTexture(): THREE.CanvasTexture {
-  const canvas = document.createElement('canvas')
-  canvas.width = 128
-  canvas.height = 128
-  const ctx = canvas.getContext('2d')!
-  const gradient = ctx.createRadialGradient(64, 64, 0, 64, 64, 64)
-  gradient.addColorStop(0, 'rgba(255, 255, 255, 0.85)')
-  gradient.addColorStop(0.15, 'rgba(255, 255, 255, 0.55)')
-  gradient.addColorStop(0.35, 'rgba(255, 255, 255, 0.2)')
-  gradient.addColorStop(0.6, 'rgba(255, 255, 255, 0.05)')
-  gradient.addColorStop(1, 'rgba(255, 255, 255, 0)')
-  ctx.fillStyle = gradient
-  ctx.fillRect(0, 0, 128, 128)
-  return new THREE.CanvasTexture(canvas)
-}
-
-/** 冲击波：一圈两侧虚化的细光环，贴在正对镜头的平面上往外扩 */
-export function createShockwaveTexture(): THREE.CanvasTexture {
-  const canvas = document.createElement('canvas')
-  canvas.width = 256
-  canvas.height = 256
-  const ctx = canvas.getContext('2d')!
-  const gradient = ctx.createRadialGradient(128, 128, 0, 128, 128, 128)
-  gradient.addColorStop(0, 'rgba(140, 231, 255, 0)')
-  gradient.addColorStop(0.78, 'rgba(140, 231, 255, 0)')
-  gradient.addColorStop(0.92, 'rgba(200, 245, 255, 0.95)')
-  gradient.addColorStop(0.96, 'rgba(140, 231, 255, 0.35)')
-  gradient.addColorStop(1, 'rgba(140, 231, 255, 0)')
-  ctx.fillStyle = gradient
-  ctx.fillRect(0, 0, 256, 256)
-  return new THREE.CanvasTexture(canvas)
 }
 
 export function createGlowSprite(texture: THREE.Texture, renderOrder: number): THREE.Sprite {

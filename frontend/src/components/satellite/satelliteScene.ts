@@ -12,6 +12,7 @@ import {
 } from './config'
 import { isAprilFools } from './eggs'
 import { SatelliteExplosion } from './explosionEffect'
+import { FxDirector } from './fxDirector'
 import {
   easeOutBack,
   easeOutCubic,
@@ -27,6 +28,7 @@ import {
   getRingSpeed,
   getSatelliteFloat,
   getSatelliteSlot,
+  getStatusKind,
   getTrailStatusColor,
   type CenterGlowMode,
   type SatelliteSlot,
@@ -37,12 +39,10 @@ import {
   createCoreShell,
   createCoreSwirl,
   createGlowSprite,
-  createGlowTexture,
   createGyroRing,
   createOrbitLine,
   createPointCloud,
   createSatelliteTile,
-  createShockwaveTexture,
   createStarfield,
   disposeObject,
   loadImageToCanvas,
@@ -50,6 +50,13 @@ import {
   type PointCloud,
   type SatelliteTile,
 } from './sceneParts'
+import { createBadgeTextures, SatelliteDecor, type StatusTextures } from './statusDecor'
+import {
+  createGlowTexture,
+  createNebulaTexture,
+  createRaysTexture,
+  createShockwaveTexture,
+} from './textures'
 import { createZhougeFaceCanvas } from './zhougeFace'
 import { ZhougeReveal } from './zhougeReveal'
 
@@ -58,13 +65,18 @@ import { ZhougeReveal } from './zhougeReveal'
 type IconMesh = THREE.Mesh<THREE.PlaneGeometry, THREE.MeshBasicMaterial>
 
 interface Satellite extends SatelliteTile {
+  /** 卫星键，运行状态按它取 */
+  key: string
   type: ScriptType
+  label: string
   iconCanvas: HTMLCanvasElement
   slot: SatelliteSlot
   activityGlow: THREE.Sprite
   errorGlow: THREE.Sprite
   /** 点一下冒的青色闪光 */
   pingGlow: THREE.Sprite
+  /** 光芒、进度弧、警示环、徽标 */
+  decor: SatelliteDecor
   status: SatelliteModuleStatus
   explosion: SatelliteExplosion | null
   /** 本帧在轨道上的角度和半径，彗尾沿着它往回画 */
@@ -78,8 +90,13 @@ interface Satellite extends SatelliteTile {
 }
 
 export interface SatelliteSceneModule {
+  /** 卫星键：一般就是脚本类型，通用 MFW 每个项目一颗 */
+  key: string
   scriptType: ScriptType
+  label: string
   iconUrl: string
+  /** iconUrl 加载不出来时换用的图标 */
+  fallbackIconUrl?: string
 }
 
 /** 指针下是什么：中心图标、第几颗卫星，或者什么都没点到 */
@@ -103,6 +120,13 @@ const MAX_SPIN = 0.018
 const AZIMUTH_RETURN_DELAY = 3500
 /** 松手前最后一次挪动在这么久以内，才算甩出去 */
 const FLING_WINDOW = 80
+/** 入场跃迁：多久后星核点燃、卫星甩出来；镜头从多远推进来 */
+export const INTRO_IGNITE_MS = 1300
+const INTRO_DOLLY_MS = 1800
+const INTRO_DOLLY_FROM = 3.4
+const STORM_MS = 6500
+const VANISH_MS = 3000
+const CORE_FLASH_MS = 1400
 
 function clamp01(value: number): number {
   return Math.min(1, Math.max(0, value))
@@ -122,18 +146,30 @@ function envelope(elapsed: number, duration: number, rampIn: number, rampOut: nu
  */
 export class SatelliteScene {
   private readonly host: HTMLElement
-  private lowPerformance: boolean
   private isDark: boolean
   private renderer: THREE.WebGLRenderer
   private environment: THREE.WebGLRenderTarget | null = null
   private readonly scene = new THREE.Scene()
   private readonly camera: THREE.PerspectiveCamera
   private cameraDistance: number = C.cameraDistance
+  /** 本帧镜头到星核的实际距离：入场推镜头时比 cameraDistance 远 */
+  private viewDistance: number = C.cameraDistance
   private readonly raycaster = new THREE.Raycaster()
   private readonly pointer = new THREE.Vector2()
   private readonly glowTexture = createGlowTexture()
+  private readonly raysTexture = createRaysTexture()
+  private readonly statusTextures: StatusTextures = {
+    rays: this.raysTexture,
+    glow: this.glowTexture,
+    badges: createBadgeTextures(),
+  }
+  private readonly fx: FxDirector
 
   private readonly stars = createStarfield()
+  /** 星核背后一圈慢慢转的光芒 */
+  private readonly coreRays: THREE.Sprite
+  /** 深色主题下远处的几团星云 */
+  private readonly nebula: THREE.Sprite[]
   private readonly swirl = createCoreSwirl()
   private readonly shell = createCoreShell()
   private readonly gyroRings = [createGyroRing(104, 0.9), createGyroRing(122, 0.6)]
@@ -178,6 +214,12 @@ export class SatelliteScene {
   private dizzyAt = -Infinity
   private charge = 0
   private shockwaveAt = -Infinity
+  private shockwaveColor: number = SATELLITE_COLORS.explosionFlash
+  private coreFlashAt = -Infinity
+  private readonly coreFlashColor = new THREE.Color()
+  private introAt = -Infinity
+  private stormAt = -Infinity
+  private vanishAt = -Infinity
   private reveal: { effect: ZhougeReveal; satellite: number } | null = null
   private revealPending = false
   private disposed = false
@@ -187,9 +229,8 @@ export class SatelliteScene {
   private readonly tmpQuaternion = new THREE.Quaternion()
   private readonly tmpColor = new THREE.Color()
 
-  constructor(host: HTMLElement, options: { lowPerformance: boolean; isDark: boolean }) {
+  constructor(host: HTMLElement, options: { isDark: boolean }) {
     this.host = host
-    this.lowPerformance = options.lowPerformance
     this.isDark = options.isDark
 
     this.camera = new THREE.PerspectiveCamera(C.cameraFov, 1, 1, 6000)
@@ -197,16 +238,40 @@ export class SatelliteScene {
     this.applyEnvironment()
 
     this.coreGlow = createGlowSprite(this.glowTexture, RENDER_ORDER.coreGlow)
+    this.coreRays = createGlowSprite(this.raysTexture, RENDER_ORDER.coreGlow)
+    this.coreRays.scale.setScalar(560)
+    this.nebula = [200, 265, 300, 175, 325].map((hue, index) => {
+      const cloud = createGlowSprite(createNebulaTexture(hue), RENDER_ORDER.stars)
+      const angle = (index / 5) * Math.PI * 2 + 0.4
+      cloud.position.set(
+        Math.cos(angle) * 1500,
+        (Math.random() - 0.5) * 900,
+        -1700 - Math.random() * 600
+      )
+      cloud.scale.setScalar(1300 + Math.random() * 800)
+      cloud.material.rotation = Math.random() * Math.PI * 2
+      // 只当远景的一点颜色，浓了会抢卫星的戏
+      cloud.material.opacity = 0.3
+      return cloud
+    })
     this.gyroRings[0].rotation.set(1.2, 0.3, 0)
     this.gyroRings[1].rotation.set(0.4, -0.9, 0.5)
+    // 镜头也挂进场景：曲速线、雨幕、流星是镜头空间里的东西，要跟着镜头走
     this.scene.add(
+      this.camera,
       this.stars.points,
+      ...this.nebula,
       this.swirl.points,
       this.shell,
+      this.coreRays,
       this.coreGlow,
       ...this.gyroRings,
       ...this.orbitLines
     )
+    this.fx = new FxDirector(this.scene, this.camera, {
+      glow: this.glowTexture,
+      rays: this.raysTexture,
+    })
 
     this.setDark(options.isDark)
     this.resize()
@@ -220,7 +285,7 @@ export class SatelliteScene {
   ): Promise<boolean> {
     const [centerCanvas, ...iconCanvases] = await Promise.all([
       loadImageToCanvas(centerIconUrl),
-      ...modules.map(module => loadImageToCanvas(module.iconUrl)),
+      ...modules.map(module => loadImageToCanvas(module.iconUrl, module.fallbackIconUrl)),
     ])
     if (isCancelled()) {
       return false
@@ -248,12 +313,15 @@ export class SatelliteScene {
       tile.body.material.color.setHex(this.tileColor)
       const satellite: Satellite = {
         ...tile,
+        key: modules[index].key,
         type: modules[index].scriptType,
+        label: modules[index].label,
         iconCanvas,
         slot: getSatelliteSlot(index, modules.length),
         activityGlow: createGlowSprite(this.glowTexture, RENDER_ORDER.satelliteGlow),
         errorGlow: createGlowSprite(this.glowTexture, RENDER_ORDER.satelliteGlow),
         pingGlow: createGlowSprite(this.glowTexture, RENDER_ORDER.effect),
+        decor: new SatelliteDecor(this.scene, this.statusTextures),
         status: IDLE_STATUS,
         explosion: null,
         angle: 0,
@@ -280,8 +348,11 @@ export class SatelliteScene {
 
   setDark(isDark: boolean): void {
     this.isDark = isDark
-    // 星空只在深色主题下有意义，浅色背景上就是一片灰点
+    // 星空、星云只在深色主题下有意义，浅色背景上就是一片灰点
     this.stars.points.visible = isDark
+    for (const cloud of this.nebula) {
+      cloud.visible = isDark
+    }
     const orbitColor = isDark ? SATELLITE_COLORS.orbitDark : SATELLITE_COLORS.orbitLight
     for (const line of this.orbitLines) {
       line.material.uniforms.uColor.value.setHex(orbitColor)
@@ -295,29 +366,9 @@ export class SatelliteScene {
     }
   }
 
-  /** 抗锯齿和功耗偏好只能在建上下文时定，换模式就重建渲染器 */
-  setLowPerformance(lowPerformance: boolean): void {
-    if (lowPerformance === this.lowPerformance) {
-      return
-    }
-
-    this.lowPerformance = lowPerformance
-    this.clearExplosions()
-    this.disposeRenderer()
-    this.renderer = this.createRenderer()
-    this.applyEnvironment()
-    this.syncPixelRatio()
-    if (lowPerformance) {
-      this.spinVelocity = 0
-      this.overclockAt = -Infinity
-      this.dizzyAt = -Infinity
-      this.charge = 0
-    }
-  }
-
   setStatuses(statuses: ReadonlyMap<string, SatelliteModuleStatus>): void {
     for (const satellite of this.satellites) {
-      satellite.status = statuses.get(satellite.type) ?? IDLE_STATUS
+      satellite.status = statuses.get(satellite.key) ?? IDLE_STATUS
     }
   }
 
@@ -409,7 +460,6 @@ export class SatelliteScene {
 
   /** 指针在容器里的归一化坐标（-1~1），镜头跟着轻轻偏转；拖出容器外的按边缘算 */
   setPointer(x: number, y: number): void {
-    if (this.lowPerformance) return
     this.parallaxTarget.set(THREE.MathUtils.clamp(x, -1, 1), THREE.MathUtils.clamp(y, -1, 1))
   }
 
@@ -423,7 +473,7 @@ export class SatelliteScene {
     const delta = (-dx / Math.max(1, this.host.clientWidth)) * Math.PI * 1.6
     this.azimuth += delta
     this.elevation = THREE.MathUtils.clamp(
-      this.elevation + (dy / C.containerHeight) * 0.9,
+      this.elevation + (dy / this.height) * 0.9,
       C.cameraElevationMin,
       C.cameraElevationMax
     )
@@ -439,7 +489,7 @@ export class SatelliteScene {
     this.dragging = false
     this.lastDragAt = this.lastTime ?? 0
     // 拖到一半停住再松手不该甩出去：离最后一次挪动隔久了就当没有惯性
-    if (this.lowPerformance || performance.now() - this.lastDragMoveAt > FLING_WINDOW) {
+    if (performance.now() - this.lastDragMoveAt > FLING_WINDOW) {
       this.spinVelocity = 0
     }
   }
@@ -487,13 +537,114 @@ export class SatelliteScene {
     this.charge = clamp01(level)
   }
 
-  /** 星核放冲击波：卫星被震开再弹回轨道，顺便都翻个面 */
-  shockwave(time: number): void {
+  /** 星核放冲击波：卫星被震开再弹回轨道，顺便都翻个面；color 是光环颜色 */
+  shockwave(time: number, color: number = SATELLITE_COLORS.explosionFlash): void {
     this.shockwaveAt = time
+    this.shockwaveColor = color
     this.charge = 0
     for (const satellite of this.satellites) {
       satellite.punchAt = time + satellite.slot.ring * 60
     }
+  }
+
+  /** 收掉所有在放的特效和流星（切后台时） */
+  clearEffects(): void {
+    this.fx.clear()
+    this.stormAt = -Infinity
+    this.vanishAt = -Infinity
+  }
+
+  /**
+   * 入场曲速跃迁：星光拉成线迎面冲过来、镜头从远处推近，INTRO_IGNITE_MS 时星核点燃。
+   * 卫星的入场由调用方按点燃时间安排。
+   */
+  startIntro(time: number): void {
+    this.introAt = time
+    this.fx.warp(time)
+    this.shockwave(time + INTRO_IGNITE_MS)
+    this.flashCore(time + INTRO_IGNITE_MS, SATELLITE_COLORS.explosionFlash)
+  }
+
+  /** 攒满保底：金色流星砸中第 index 颗卫星，冲击波、金粉、星核一起亮 */
+  playGoldPull(index: number, time: number, color: number, rainbow: boolean): void {
+    const satellite = this.satellites[index]
+    if (!satellite) return
+    this.fx.goldPull({
+      time,
+      color,
+      rainbow,
+      pixelRatio: this.renderer.getPixelRatio(),
+      getTarget: () => satellite.root.position,
+      onImpact: impactAt => {
+        this.shockwave(impactAt, color)
+        this.flashCore(impactAt, color)
+        satellite.pingAt = impactAt
+      },
+    })
+  }
+
+  /** 1999：暴雨降临，时间倒流——雨幕落下，卫星倒着转 */
+  startStorm(time: number): void {
+    this.stormAt = time
+    this.fx.rain(time, STORM_MS)
+  }
+
+  /** 404：卫星集体闪烁着消失，过一会儿再弹回来 */
+  vanish(time: number): void {
+    this.vanishAt = time
+  }
+
+  playCrystalRain(time: number): void {
+    this.fx.crystalRain(time)
+    this.flashCore(time, 0xffd36b)
+  }
+
+  playHearts(time: number): void {
+    this.fx.hearts(time)
+  }
+
+  playFireworks(time: number): void {
+    this.fx.fireworks(time, this.renderer.getPixelRatio())
+  }
+
+  /** 点中背景里的流星就接住它，返回它在容器里的位置；没点中返回 null */
+  catchMeteor(clientX: number, clientY: number, time: number): ScreenPoint | null {
+    const bounds = this.renderer.domElement.getBoundingClientRect()
+    const pointer = { x: clientX - bounds.left, y: clientY - bounds.top }
+    const head = this.fx.catchMeteor(
+      pointer,
+      world => this.project(world),
+      time,
+      this.renderer.getPixelRatio()
+    )
+    return head ? this.project(head) : null
+  }
+
+  /**
+   * 低性能模式用的静态图：按 time 摆好画一帧，导出成透明底的图片。调用方拿到图就把整个
+   * 场景销毁，页面上只留这张图——不跑动画、不占着 WebGL。
+   */
+  renderStill(time: number): string {
+    this.renderFrame(time)
+    return this.renderer.domElement.toDataURL('image/png')
+  }
+
+  /**
+   * 给当前画面拍一张照片（三月七的相册）：重画一帧后立刻读画布——画布不保留绘制缓冲，
+   * 不在同一个任务里读就是一片空白。底色按主题铺，免得透明背景在相纸上发灰。
+   */
+  captureSnapshot(): string | null {
+    this.renderer.render(this.scene, this.camera)
+    const source = this.renderer.domElement
+    const canvas = document.createElement('canvas')
+    canvas.width = source.width
+    canvas.height = source.height
+    const context = canvas.getContext('2d')
+    if (!context) return null
+    context.fillStyle = this.isDark ? '#0b0f17' : '#f4f6fb'
+    context.fillRect(0, 0, canvas.width, canvas.height)
+    context.drawImage(source, 0, 0)
+    return canvas.toDataURL('image/jpeg', 0.86)
   }
 
   startOverclock(time: number): void {
@@ -533,6 +684,16 @@ export class SatelliteScene {
     return this.satellites[index]?.type ?? null
   }
 
+  satelliteLabel(index: number): string | null {
+    return this.satellites[index]?.label ?? null
+  }
+
+  /** 这个卫星键的卫星是第几颗；没上轨道返回 null */
+  findSatellite(key: string): number | null {
+    const index = this.satellites.findIndex(satellite => satellite.key === key)
+    return index < 0 ? null : index
+  }
+
   projectSatellite(index: number): ScreenPoint | null {
     const satellite = this.satellites[index]
     return satellite ? this.project(satellite.root.position) : null
@@ -544,17 +705,20 @@ export class SatelliteScene {
 
   // ==================== 渲染 ====================
 
-  /** 推进到 time 时刻并画一帧；返回是否还有动画没放完（低性能模式据此决定要不要继续出帧） */
-  renderFrame(time: number): boolean {
+  /** 推进到 time 时刻并画一帧 */
+  renderFrame(time: number): void {
     const dt = this.lastTime === null ? 16 : Math.min(50, Math.max(0, time - this.lastTime))
     this.lastTime = time
 
     const overclock = envelope(time - this.overclockAt, OVERCLOCK_MS, 500, 1500)
     const dizzy = envelope(time - this.dizzyAt, DIZZY_MS, 300, 1500)
     const knock = getKnockback(time - this.shockwaveAt)
-    this.orbitPhase += dt * C.orbitSpeed * (1 + 5 * overclock) * (this.reversed ? -1 : 1)
+    // 暴雨里时间倒流：轨道慢慢停下、再倒着转
+    const storm = envelope(time - this.stormAt, STORM_MS, 900, 1400)
+    const direction = (this.reversed ? -1 : 1) * (1 - 2.6 * storm)
+    this.orbitPhase += dt * C.orbitSpeed * (1 + 5 * overclock) * direction
 
-    const cameraMoving = this.updateCamera(time, dt, overclock)
+    this.updateCamera(time, dt, overclock)
     this.azimuthRate = dt > 0 ? (Math.abs(this.azimuth - this.previousAzimuth) / dt) * 1000 : 0
     this.previousAzimuth = this.azimuth
     const count = this.satellites.length
@@ -569,34 +733,32 @@ export class SatelliteScene {
       this.updateSatellite(satellite, index, time, dt, appearElapsed, knock, dizzy)
     )
     const centerY = this.updateCore(time, dt, appearElapsed, overclock)
-    this.updateTrails(time, overclock)
+    this.updateTrails(time, overclock, direction)
+
+    for (const cloud of this.nebula) {
+      cloud.material.rotation += dt * 0.000012
+    }
 
     for (const line of this.orbitLines) {
       const { uniforms } = line.material
       uniforms.uTime.value = time
-      uniforms.uCenterDepth.value = -this.cameraDistance
+      uniforms.uCenterDepth.value = -this.viewDistance
       uniforms.uFlow.value = 1 + 6 * overclock
     }
     this.stars.points.material.uniforms.uTime.value = time
     this.stars.points.rotation.y += dt * 0.000006
 
-    let busy = cameraMoving || appearElapsed !== null
-    this.satellites.forEach((satellite, index) => {
+    for (const satellite of this.satellites) {
       if (satellite.explosion?.update(time)) {
         this.finishExplosion(satellite)
-      } else if (satellite.explosion) {
-        busy = true
       }
-      busy ||= time - satellite.punchAt < PUNCH_MS || time - satellite.pingAt < PING_MS
-      // 悬停放大是逐帧逼近的，没到位之前低性能模式也得接着出帧
-      busy ||= Math.abs(satellite.hover - (this.hovered === index ? 1 : 0)) > 0.01
-    })
-    busy = this.updateShockwave(time, centerY) || busy
-    busy = this.updateReveal(time) || busy
-    busy ||= overclock > 0 || dizzy > 0 || knock !== 0
+    }
+    this.updateShockwave(time, centerY)
+    this.updateReveal(time)
+    // 流星只在深色主题、不在入场时出
+    this.fx.update(time, this.isDark && time - this.introAt >= INTRO_DOLLY_MS)
 
     this.renderer.render(this.scene, this.camera)
-    return busy
   }
 
   resize(): void {
@@ -605,7 +767,7 @@ export class SatelliteScene {
       return
     }
 
-    const aspect = width / C.containerHeight
+    const aspect = width / this.height
     const halfFov = Math.tan(THREE.MathUtils.degToRad(C.cameraFov / 2))
     // 主轨道左右两端加一颗卫星的余量都要在画面里，窄容器就把镜头拉远
     this.cameraDistance = Math.max(
@@ -615,13 +777,14 @@ export class SatelliteScene {
     this.camera.aspect = aspect
     this.camera.updateProjectionMatrix()
     this.renderer.setPixelRatio(this.pixelRatio)
-    this.renderer.setSize(width, C.containerHeight)
+    this.renderer.setSize(width, this.height)
     this.syncPixelRatio()
   }
 
   dispose(): void {
     this.disposed = true
     this.clearExplosions()
+    this.fx.clear()
     this.reveal?.effect.dispose()
     this.reveal = null
     disposeObject(this.scene)
@@ -639,39 +802,36 @@ export class SatelliteScene {
 
   // ==================== 每帧更新 ====================
 
-  private updateCamera(time: number, dt: number, overclock: number): boolean {
-    let returning = false
+  private updateCamera(time: number, dt: number, overclock: number): void {
     if (!this.dragging) {
       this.azimuth += this.spinVelocity * dt
       this.spinVelocity *= Math.exp(-dt / 700)
       if (Math.abs(this.spinVelocity) < 0.00002) this.spinVelocity = 0
 
-      // 停手一会儿后俯仰角回到默认、慢慢转回正面：默认构图是按正面摆的。
-      // 低性能模式不为这个连续出帧，镜头停在用户拖到的角度
-      if (!this.lowPerformance) {
-        this.elevation += (C.cameraElevation - this.elevation) * (1 - Math.exp(-dt / 1600))
-      }
+      // 停手一会儿后俯仰角回到默认、慢慢转回正面：默认构图是按正面摆的
+      this.elevation += (C.cameraElevation - this.elevation) * (1 - Math.exp(-dt / 1600))
       const front = Math.round(this.azimuth / (Math.PI * 2)) * Math.PI * 2
-      if (
-        !this.lowPerformance &&
-        this.spinVelocity === 0 &&
-        time - this.lastDragAt > AZIMUTH_RETURN_DELAY &&
-        Math.abs(this.azimuth - front) > 0.001
-      ) {
+      if (this.spinVelocity === 0 && time - this.lastDragAt > AZIMUTH_RETURN_DELAY) {
         this.azimuth += (front - this.azimuth) * (1 - Math.exp(-dt / 1400))
-        returning = true
       }
     }
     this.parallax.lerp(this.parallaxTarget, 1 - Math.exp(-dt / 220))
 
-    const sway = this.lowPerformance ? 0 : Math.sin(time * 0.00011) * 0.05
+    const sway = Math.sin(time * 0.00011) * 0.05
     const yaw = this.azimuth + this.parallax.x * C.parallaxYaw + sway
     const pitch = THREE.MathUtils.clamp(
       this.elevation + this.parallax.y * C.parallaxPitch,
       C.cameraElevationMin,
       C.cameraElevationMax
     )
-    const distance = this.cameraDistance
+    // 入场时镜头从远处推进来
+    const intro = time - this.introAt
+    const dolly =
+      intro >= 0 && intro < INTRO_DOLLY_MS
+        ? 1 + (INTRO_DOLLY_FROM - 1) * (1 - easeOutCubic(intro / INTRO_DOLLY_MS))
+        : 1
+    const distance = this.cameraDistance * dolly
+    this.viewDistance = distance
     this.camera.position.set(
       distance * Math.sin(yaw) * Math.cos(pitch),
       distance * Math.sin(pitch),
@@ -679,18 +839,14 @@ export class SatelliteScene {
     )
 
     // 冲击波和超频时镜头抖一抖
-    const shake = Math.max(0, 1 - (time - this.shockwaveAt) / 500) * 9 + overclock * 1.6
+    const sinceShock = time - this.shockwaveAt
+    const shake = (sinceShock < 0 ? 0 : Math.max(0, 1 - sinceShock / 500) * 9) + overclock * 1.6
     if (shake > 0) {
       this.camera.position.x += (Math.random() - 0.5) * shake
       this.camera.position.y += (Math.random() - 0.5) * shake
     }
     this.camera.lookAt(0, C.cameraTargetY, 0)
     this.camera.updateMatrixWorld()
-
-    const settling =
-      (!this.lowPerformance && Math.abs(this.elevation - C.cameraElevation) > 0.001) ||
-      this.parallax.distanceToSquared(this.parallaxTarget) > 1e-6
-    return this.dragging || this.spinVelocity !== 0 || settling || returning
   }
 
   private updateSatellite(
@@ -717,6 +873,11 @@ export class SatelliteScene {
       root.position.x += Math.sin(time * 0.013 + index * 2.1) * 16 * dizzy
       root.position.y += Math.cos(time * 0.017 + index * 1.3) * 12 * dizzy
     }
+    const kind = getStatusKind(satellite.status)
+    // 上次失败的卫星隔一阵哆嗦一下
+    if (kind === 'failed' && (time + index * 700) % 2600 < 220) {
+      root.position.x += Math.sin(time * 0.09) * 3
+    }
 
     // 朝向：先正对镜头，再叠摆动、翻面、转晕和愚人节倒置
     const phase = index * 1.7
@@ -735,36 +896,32 @@ export class SatelliteScene {
     satellite.hover +=
       ((this.hovered === index ? 1 : 0) - satellite.hover) * (1 - Math.exp(-dt / 90))
     const pulse = punch >= 0 && punch < 300 ? 1 + 0.22 * Math.sin((Math.PI * punch) / 300) : 1
+    const vanish = this.getVanishScale(time, index)
     root.scale.setScalar(
-      Math.max(0.001, easeOutCubic(appear) * (1 + 0.18 * satellite.hover) * pulse)
+      Math.max(0.001, easeOutCubic(appear) * (1 + 0.18 * satellite.hover) * pulse * vanish)
     )
 
     // 远处的暗一些：按到镜头的深度换算
     this.tmpVector.copy(root.position).applyMatrix4(this.camera.matrixWorldInverse)
     const front = clamp01(
-      ((this.tmpVector.z + this.cameraDistance) / ORBIT_RINGS[0].radius) * 0.5 + 0.5
+      ((this.tmpVector.z + this.viewDistance) / ORBIT_RINGS[0].radius) * 0.5 + 0.5
     )
-    satellite.fade = (0.45 + 0.55 * front) * easeOutCubic(appear)
+    satellite.fade = (0.45 + 0.55 * front) * easeOutCubic(appear) * Math.min(1, vanish)
     satellite.body.material.opacity = 0.94 * satellite.fade
     satellite.iconMaterial.opacity = Math.min(1, satellite.fade * 1.1)
 
-    if (this.lowPerformance) {
-      satellite.activityGlow.material.opacity = 0
-      satellite.errorGlow.material.opacity = 0
-    } else {
-      applyGlow(
-        satellite.activityGlow,
-        getActivityGlow(satellite.status, time),
-        root.position,
-        satellite.fade
-      )
-      applyGlow(
-        satellite.errorGlow,
-        getErrorGlow(satellite.status, time),
-        root.position,
-        satellite.fade
-      )
-    }
+    applyGlow(
+      satellite.activityGlow,
+      getActivityGlow(satellite.status, time),
+      root.position,
+      satellite.fade
+    )
+    applyGlow(
+      satellite.errorGlow,
+      getErrorGlow(satellite.status, time),
+      root.position,
+      satellite.fade
+    )
 
     const ping = time - satellite.pingAt
     if (ping >= 0 && ping < PING_MS) {
@@ -775,6 +932,34 @@ export class SatelliteScene {
     } else {
       satellite.pingGlow.material.opacity = 0
     }
+
+    satellite.decor.update(kind, {
+      time,
+      dt,
+      anchor: root.position,
+      camera: this.camera,
+      fade: satellite.fade,
+      scale: root.scale.x,
+      visible: root.visible,
+      isDark: this.isDark,
+    })
+  }
+
+  /** 404 期间卫星的缩放系数：先闪烁，再消失，最后带回弹地冒回来 */
+  private getVanishScale(time: number, index: number): number {
+    const elapsed = time - this.vanishAt
+    if (elapsed < 0 || elapsed >= VANISH_MS) return 1
+    if (elapsed < 420) return Math.floor(elapsed / 55 + index) % 2 === 0 ? 1 : 0.001
+    // 依次冒回来，错开的时间封顶，保证最后一颗也在 404 结束前弹完
+    const back = VANISH_MS - 800 + Math.min(index, 5) * 40
+    if (elapsed < back) return 0.001
+    return Math.max(0.001, easeOutBack(Math.min(1, (elapsed - back) / 560)))
+  }
+
+  /** 星核闪一下 color 色：外壳变色变亮，CORE_FLASH_MS 内慢慢退回去 */
+  private flashCore(time: number, color: number): void {
+    this.coreFlashAt = time
+    this.coreFlashColor.setHex(color)
   }
 
   /** 更新星核，返回它当前的高度（冲击波从这里出发） */
@@ -817,27 +1002,37 @@ export class SatelliteScene {
     const coreAppear =
       appearElapsed === null ? 1 : easeOutCubic(getAppearProgress(appearElapsed, 0))
     const glow = getCenterGlow(this.centerGlowMode, time)
-    if (this.lowPerformance) {
-      this.coreGlow.material.opacity = 0
-    } else {
-      applyGlow(
-        this.coreGlow,
-        { ...glow, size: glow.size * (1 + 0.7 * this.charge) },
-        this.tmpVector.set(0, centerY, 0),
-        coreAppear
-      )
-    }
+    applyGlow(
+      this.coreGlow,
+      { ...glow, size: glow.size * (1 + 0.7 * this.charge) },
+      this.tmpVector.set(0, centerY, 0),
+      coreAppear
+    )
 
-    // 外壳颜色跟中心光晕走：平时绿色，有新版本时彩虹
+    // 外壳颜色跟中心光晕走：平时绿色，有新版本时彩虹；出金、点燃时被闪光色盖过去
     const shellUniforms = this.shell.material.uniforms
+    const shellColor: THREE.Color = shellUniforms.uColor.value
     if (typeof glow.color === 'number') {
-      shellUniforms.uColor.value.setHex(glow.color)
+      shellColor.setHex(glow.color)
     } else {
-      shellUniforms.uColor.value.setHSL(glow.color[0], glow.color[1], glow.color[2])
+      shellColor.setHSL(glow.color[0], glow.color[1], glow.color[2])
     }
-    const flash = Math.max(0, 1 - (time - this.shockwaveAt) / 400)
+    const sinceFlash = time - this.coreFlashAt
+    const coreFlash = sinceFlash < 0 ? 0 : Math.max(0, 1 - sinceFlash / CORE_FLASH_MS)
+    shellColor.lerp(this.coreFlashColor, coreFlash)
+    const sinceShock = time - this.shockwaveAt
+    const flash = sinceShock < 0 ? 0 : Math.max(0, 1 - sinceShock / 400)
     shellUniforms.uIntensity.value =
-      (0.85 + 0.7 * overclock + 1.5 * this.charge + 1.6 * flash) * coreAppear
+      (0.85 + 0.7 * overclock + 1.5 * this.charge + 1.6 * flash + 2 * coreFlash) * coreAppear
+
+    // 星核背后的光芒：跟外壳同色，蓄力、超频、闪光时更亮更大、转得更快
+    const raysBoost = 1 + 1.4 * this.charge + 0.8 * overclock + 2.2 * coreFlash
+    this.coreRays.position.set(0, centerY, 0)
+    this.coreRays.material.color.copy(shellColor)
+    this.coreRays.material.rotation += dt * 0.00007 * (1 + 3 * overclock + 4 * this.charge)
+    this.coreRays.material.opacity =
+      Math.min(1, (this.isDark ? 0.3 : 0.18) * raysBoost) * coreAppear
+    this.coreRays.scale.setScalar(560 * (0.9 + 0.1 * raysBoost) * Math.max(0.001, coreAppear))
     shellUniforms.uTime.value = time
     this.shell.position.y = centerY
     this.shell.scale.setScalar(Math.max(0.001, coreAppear * (1 + 0.08 * this.charge)))
@@ -860,13 +1055,13 @@ export class SatelliteScene {
     return centerY
   }
 
-  /** 彗尾：沿轨道往回取一串点，越往后越淡越小；超频时变彩虹 */
-  private updateTrails(time: number, overclock: number): void {
+  /** 彗尾：沿轨道往回取一串点，越往后越淡越小；超频时变彩虹，倒着转时拖在另一侧 */
+  private updateTrails(time: number, overclock: number, motion: number): void {
     const trails = this.trails
     if (!trails) return
 
     const length = C.trailLength
-    const direction = this.reversed ? -1 : 1
+    const direction = motion < 0 ? -1 : 1
     const spacing = C.trailSpacing * (1 + 1.5 * overclock)
     const idleColor = this.isDark ? SATELLITE_COLORS.trailDark : SATELLITE_COLORS.trailLight
     const color = this.tmpColor
@@ -905,11 +1100,11 @@ export class SatelliteScene {
     trails.commit()
   }
 
-  private updateShockwave(time: number, centerY: number): boolean {
+  private updateShockwave(time: number, centerY: number): void {
     const elapsed = time - this.shockwaveAt
     if (elapsed < 0 || elapsed > SHOCKWAVE_MS) {
       if (this.shockwaveRing) this.shockwaveRing.visible = false
-      return false
+      return
     }
 
     if (!this.shockwaveRing) {
@@ -929,17 +1124,17 @@ export class SatelliteScene {
 
     const progress = elapsed / SHOCKWAVE_MS
     const ring = this.shockwaveRing
+    ring.material.color.setHex(this.shockwaveColor)
     ring.visible = true
     ring.position.set(0, centerY, 0)
     ring.quaternion.copy(this.camera.quaternion)
     ring.scale.setScalar(60 + easeOutCubic(progress) * 620)
     ring.material.opacity = 1 - progress
-    return true
   }
 
-  private updateReveal(time: number): boolean {
+  private updateReveal(time: number): void {
     if (!this.reveal) {
-      return this.revealPending
+      return
     }
 
     const from =
@@ -953,9 +1148,7 @@ export class SatelliteScene {
     if (this.reveal.effect.update(time, from, stage, visibleHeight * 0.72)) {
       this.reveal.effect.dispose()
       this.reveal = null
-      return false
     }
-    return true
   }
 
   // ==================== 内部 ====================
@@ -964,8 +1157,13 @@ export class SatelliteScene {
     return this.isDark ? SATELLITE_COLORS.tileDark : SATELLITE_COLORS.tileLight
   }
 
+  /** 卫星区域的高度跟着窗口宽度走（见组件样式），每次都读容器的实际高度 */
+  private get height(): number {
+    return Math.max(1, this.host.clientHeight)
+  }
+
   private get pixelRatio(): number {
-    return Math.min(window.devicePixelRatio || 1, this.lowPerformance ? 1 : 2)
+    return Math.min(window.devicePixelRatio || 1, 2)
   }
 
   /** 粒子的像素大小要乘设备像素比，否则高分屏上一半大 */
@@ -993,19 +1191,20 @@ export class SatelliteScene {
     const projected = position.clone().project(this.camera)
     return {
       x: ((projected.x + 1) / 2) * this.host.clientWidth,
-      y: ((1 - projected.y) / 2) * C.containerHeight,
+      y: ((1 - projected.y) / 2) * this.height,
     }
   }
 
   private createRenderer(): THREE.WebGLRenderer {
+    // 低性能模式下主页根本不挂卫星，这里不用为它降配
     const renderer = new THREE.WebGLRenderer({
-      antialias: !this.lowPerformance,
+      antialias: true,
       alpha: true,
-      powerPreference: this.lowPerformance ? 'low-power' : 'high-performance',
+      powerPreference: 'high-performance',
     })
     renderer.setClearColor(0x000000, 0)
     renderer.setPixelRatio(this.pixelRatio)
-    renderer.setSize(Math.max(1, this.host.clientWidth), C.containerHeight)
+    renderer.setSize(Math.max(1, this.host.clientWidth), this.height)
 
     const canvas = renderer.domElement
     canvas.setAttribute('aria-label', '脚本卫星互动区域')

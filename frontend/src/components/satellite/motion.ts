@@ -169,6 +169,16 @@ export function getErrorGlow(status: SatelliteModuleStatus, time: number): GlowA
   return { color: SATELLITE_COLORS.failed, opacity: 0.42, size: size * (1 + pulse * 0.04) }
 }
 
+/** 卫星状态的五种表现：空闲、排队、运行中、上次失败、失败后又在跑 */
+export type StatusKind = 'idle' | 'queued' | 'running' | 'failed' | 'retrying'
+
+export function getStatusKind(status: SatelliteModuleStatus): StatusKind {
+  if (status.lastFailed) return status.running ? 'retrying' : 'failed'
+  if (status.running) return 'running'
+  if (status.queued) return 'queued'
+  return 'idle'
+}
+
 /** 彗尾颜色跟着状态走：失败红、失败重跑琥珀、运行或排队绿，空闲时为 null（用主题色） */
 export function getTrailStatusColor(status: SatelliteModuleStatus): number | null {
   if (status.lastFailed) {

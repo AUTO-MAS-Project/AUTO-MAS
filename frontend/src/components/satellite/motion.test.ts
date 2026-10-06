@@ -16,6 +16,7 @@ import {
   getRingPoint,
   getRingSpeed,
   getSatelliteSlot,
+  getStatusKind,
   getTrailStatusColor,
 } from './motion'
 
@@ -94,6 +95,14 @@ describe('satellite glow', () => {
     )
     expect(getTrailStatusColor(failed)).toBe(SATELLITE_COLORS.failed)
     expect(getTrailStatusColor({ ...idle, running: true })).toBe(SATELLITE_COLORS.active)
+  })
+
+  it('状态分成空闲、排队、运行、失败、失败重跑五种', () => {
+    expect(getStatusKind(idle)).toBe('idle')
+    expect(getStatusKind({ ...idle, queued: true })).toBe('queued')
+    expect(getStatusKind({ ...idle, queued: true, running: true })).toBe('running')
+    expect(getStatusKind({ ...idle, lastFailed: true })).toBe('failed')
+    expect(getStatusKind({ ...idle, lastFailed: true, running: true })).toBe('retrying')
   })
 
   it('中心光晕平时绿色，有新版本时走彩虹', () => {
