@@ -113,6 +113,47 @@ export const renameMaaFWQueueTemplate = (
   return templates.map(item => (item.name === name ? { ...item, name: trimmed } : item))
 }
 
+/**
+ * 按键（脚本 id）协调模板的读写，供模块级共享：用户页卸载后它发起的写入照样排在队里，
+ * 进同一脚本的另一个用户页再写，会等前一次写完、读到它的结果再改。
+ *
+ * - `write`：同一个键的写入一个接一个执行（不同键互不等待）；开始与结束时各让版本号加一。
+ * - `epoch` / `settled`：刷新时先等在途写入落定、记下版本号，读完比对；中途有写入开始或完成
+ *   （版本号变了）就说明读到的可能是旧列表，丢弃。
+ *
+ * 只管同一个前端进程内；两个窗口同时写的原子性要后端做版本校验，这里不管。
+ */
+export const createMaaFWKeyedWriteCoordinator = () => {
+  const tails = new Map<string, Promise<unknown>>()
+  const epochs = new Map<string, number>()
+  const bump = (key: string) => epochs.set(key, (epochs.get(key) ?? 0) + 1)
+
+  const write = <T>(key: string, task: () => Promise<T>): Promise<T> => {
+    const run = (tails.get(key) ?? Promise.resolve()).then(async () => {
+      bump(key)
+      try {
+        return await task()
+      } finally {
+        bump(key)
+      }
+    })
+    const tail = run.catch(() => undefined)
+    tails.set(key, tail)
+    void tail.then(() => {
+      if (tails.get(key) === tail) tails.delete(key)
+    })
+    return run
+  }
+
+  return {
+    write,
+    epoch: (key: string) => epochs.get(key) ?? 0,
+    /** 这个键上已排队的写入全部落定（成功或失败）后完成 */
+    settled: (key: string): Promise<void> =>
+      (tails.get(key) ?? Promise.resolve()).then(() => undefined),
+  }
+}
+
 /** 删除一个模板（不在就原样返回） */
 export const removeMaaFWQueueTemplate = (
   templates: readonly MaaFWQueueTemplate[],

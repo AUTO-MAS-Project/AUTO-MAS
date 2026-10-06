@@ -167,6 +167,27 @@ describe('buildMaaFWQueueReplacement：用来源替换当前队列', () => {
     expect(countMaaFWQueueReplacementImports(withPretask, snapshot(['日常']), isPretaskId)).toBe(3)
   })
 
+  it('当前前置任务没有选项表时，来源同 id 前置任务的自定义选项也不带过来', () => {
+    // 加前置任务后应用过项目预设：前置任务 id 留着，选项表里却没有它
+    const currentWithoutOptions = snapshot(['__MXU_PRETASK__启动', '日常'])
+    const sourceWithPretask = describeMaaFWQueueSource(
+      snapshot(['__MXU_PRETASK__启动', '战斗'], {
+        __MXU_PRETASK__启动: { 备注: { 内容: '来源前置' } },
+        战斗: { 备注: { 内容: '来源' } },
+      }),
+      context
+    )
+    const replaced = buildMaaFWQueueReplacement(
+      sourceWithPretask,
+      currentWithoutOptions,
+      isPretaskId,
+      passwordFields
+    )
+    expect(replaced.taskOrder).toEqual(['__MXU_PRETASK__启动', '战斗'])
+    expect(replaced.taskOptions.__MXU_PRETASK__启动).toEqual({})
+    expect(replaced.taskOptions.战斗).toEqual({ 备注: { 内容: '来源' } })
+  })
+
   it('密码值不带过去；新快照的选项是深拷贝，改它不会改到来源', () => {
     expect(next.taskOptions.日常).toEqual({ 登录: { 账号: 'u' } })
     ;(next.taskOptions.战斗.备注 as Record<string, string>).内容 = '改了'

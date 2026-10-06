@@ -5,6 +5,7 @@ import {
   addMaaFWQueueTemplate,
   buildMaaFWQueueTemplateSnapshot,
   checkMaaFWQueueTemplateName,
+  createMaaFWKeyedWriteCoordinator,
   parseMaaFWQueueTemplates,
   removeMaaFWQueueTemplate,
   renameMaaFWQueueTemplate,
@@ -83,6 +84,82 @@ describe('增删改', () => {
   it('删除只去掉同名那一个', () => {
     expect(removeMaaFWQueueTemplate(list, '日常').map(item => item.name)).toEqual(['周常'])
     expect(removeMaaFWQueueTemplate(list, '不存在')).toEqual(list)
+  })
+})
+
+describe('createMaaFWKeyedWriteCoordinator：按脚本串行写、刷新丢弃旧结果', () => {
+  const deferred = () => {
+    let resolve!: () => void
+    const promise = new Promise<void>(done => (resolve = done))
+    return { promise, resolve }
+  }
+
+  it('同一个键的写入一个接一个（前一个写完后一个才开始读），不同键互不等待', async () => {
+    const writes = createMaaFWKeyedWriteCoordinator()
+    // 模拟后端里的模板列表：每次写入先读、再改、再写
+    let stored: string[] = []
+    const gate = deferred()
+    const log: string[] = []
+    const append = (name: string, wait?: Promise<void>) =>
+      writes.write('s1', async () => {
+        const latest = [...stored]
+        log.push(`start:${name}`)
+        if (wait) await wait
+        stored = [...latest, name]
+        log.push(`end:${name}`)
+        return true
+      })
+    // 页面 A 的写入还没完成（卡在 gate），另一个用户页（另一个组件实例，同一个协调器）写 B
+    const a = append('A', gate.promise)
+    const b = append('B')
+    const other = writes.write('s2', async () => {
+      log.push('s2')
+      return 's2'
+    })
+    await other
+    expect(log).toEqual(['start:A', 's2'])
+    gate.resolve()
+    await Promise.all([a, b])
+    expect(stored).toEqual(['A', 'B'])
+    expect(log).toEqual(['start:A', 's2', 'end:A', 'start:B', 'end:B'])
+  })
+
+  it('前一个写入失败不挡后一个；失败原样抛给调用方', async () => {
+    const writes = createMaaFWKeyedWriteCoordinator()
+    const failed = writes.write('s1', async () => {
+      throw new Error('boom')
+    })
+    const next = writes.write('s1', async () => 'ok')
+    await expect(failed).rejects.toThrow('boom')
+    await expect(next).resolves.toBe('ok')
+  })
+
+  it('写入开始与完成都让版本号变化：读之前记下的版本号对不上，读到的结果就该丢弃', async () => {
+    const writes = createMaaFWKeyedWriteCoordinator()
+    const before = writes.epoch('s1')
+    const gate = deferred()
+    const pending = writes.write('s1', () => gate.promise)
+    await Promise.resolve()
+    const started = writes.epoch('s1')
+    expect(started).not.toBe(before)
+    gate.resolve()
+    await pending
+    expect(writes.epoch('s1')).not.toBe(started)
+    expect(writes.epoch('s2')).toBe(0)
+  })
+
+  it('settled 等到已排队的写入全部落定', async () => {
+    const writes = createMaaFWKeyedWriteCoordinator()
+    const gate = deferred()
+    let done = false
+    void writes.write('s1', async () => {
+      await gate.promise
+      done = true
+    })
+    const settled = writes.settled('s1').then(() => done)
+    gate.resolve()
+    await expect(settled).resolves.toBe(true)
+    await expect(writes.settled('没写过的脚本')).resolves.toBeUndefined()
   })
 })
 

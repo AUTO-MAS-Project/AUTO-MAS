@@ -22,8 +22,10 @@
           <span class="column-title">{{ t('edit.taskQueue') }}</span>
           <!-- 不用 a-space：列窄下来时级联选择器要能收缩，标题行不能折成两行，否则两栏顶边对不齐 -->
           <div class="column-actions">
+            <!-- 队列为空时空态里已列出模板与预设；但有自定义模板时仍要能进弹窗改名、删除
+                 （模板全部失效时空态卡片的「应用」都是灰的） -->
             <a-button
-              v-if="orderedTasks.length > 0"
+              v-if="orderedTasks.length > 0 || queueTemplates.length > 0"
               type="link"
               size="small"
               @click="showPresetModalModel = true"

@@ -7,6 +7,7 @@ import type { MaaFWQueueTemplateView } from '../../MaaFWFlavor/sectionContracts'
 import {
   addMaaFWQueueTemplate,
   buildMaaFWQueueTemplateSnapshot,
+  createMaaFWKeyedWriteCoordinator,
   parseMaaFWQueueTemplates,
   removeMaaFWQueueTemplate,
   renameMaaFWQueueTemplate,
@@ -30,10 +31,18 @@ interface MaaFWQueueTemplatesOptions {
 }
 
 /**
+ * 模板写入按脚本 id 串行、刷新按版本号丢弃旧结果，放在模块级：页面卸载后在途的写入照样排队，
+ * 同一脚本的下一个用户页也在同一条队里。
+ */
+const templateWrites = createMaaFWKeyedWriteCoordinator()
+const MAX_REFRESH_ATTEMPTS = 3
+
+/**
  * 用户页的自定义模板：脚本级 `Task.Templates`，同一脚本的用户共用。
  *
  * 写之前一律先从后端读最新的列表再改（读最新 → 改 → 写），不拿页面加载时那份旧列表整份覆盖：
  * 另一个用户页同时在存模板时，旧列表会把对方刚存的冲掉。打开模板弹窗时也重读一次。
+ * 两个窗口同时写的原子性要后端做版本校验，这里不管。
  */
 export function useMaaFWQueueTemplates({
   scriptId,
@@ -81,17 +90,26 @@ export function useMaaFWQueueTemplates({
     }
   }
 
+  /**
+   * 重读模板列表。先等本脚本在途的写入落定再读；读的过程中有写入开始或完成（任何一个用户页的），
+   * 这次读到的可能是旧列表，丢弃后再读，最多三次。
+   */
   const refreshQueueTemplates = async () => {
-    const latest = await readLatestTemplates()
-    if (latest) templates.value = latest
+    for (let attempt = 0; attempt < MAX_REFRESH_ATTEMPTS; attempt += 1) {
+      await templateWrites.settled(scriptId)
+      const epoch = templateWrites.epoch(scriptId)
+      const latest = await readLatestTemplates()
+      if (templateWrites.epoch(scriptId) !== epoch) continue
+      if (latest) templates.value = latest
+      return
+    }
   }
 
-  // 同一页面上连着点（删完马上又存）也按顺序一次一次来，每次都基于上一次写完的结果
-  let writing: Promise<unknown> = Promise.resolve()
+  // 按脚本串行（模块级共享）：连着点、或刚离开的用户页还在写，都等前一次写完、基于它的结果再改
   const writeTemplates = (
     mutate: (latest: MaaFWQueueTemplate[]) => MaaFWQueueTemplate[] | null
-  ): Promise<boolean> => {
-    const run = writing.then(async () => {
+  ): Promise<boolean> =>
+    templateWrites.write(scriptId, async () => {
       const latest = await readLatestTemplates()
       if (!latest) return false
       const next = mutate(latest)
@@ -105,9 +123,6 @@ export function useMaaFWQueueTemplates({
       templates.value = success ? next : latest
       return success
     })
-    writing = run.catch(() => undefined)
-    return run
-  }
 
   const rejectDuplicate = (next: MaaFWQueueTemplate[] | null) => {
     if (!next) message.error(t('edit.queueTemplateNameExists'))

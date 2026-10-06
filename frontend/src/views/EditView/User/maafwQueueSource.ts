@@ -165,10 +165,12 @@ export const buildMaaFWQueueReplacement = (
   isPretaskId: (taskId: string) => boolean,
   passwordFields: MaaFWPasswordFields
 ): MaaFWTaskSnapshot => {
+  // 每个保留下来的当前前置任务都要盖住来源的同 id 选项：当前没有选项表（如加前置任务后应用过
+  // 项目预设）的用空表占位，留在默认值上，不让来源那份混进来
   const currentPretaskOptions = Object.fromEntries(
     current.taskOrder
-      .filter(taskId => isPretaskId(taskId) && current.taskOptions[taskId])
-      .map(taskId => [taskId, current.taskOptions[taskId]])
+      .filter(taskId => isPretaskId(taskId))
+      .map(taskId => [taskId, current.taskOptions[taskId] ?? {}])
   )
   // 深拷贝一份：之后在队列里改选项不能改到来源（模板列表、别的用户）身上
   const sourceOptions = JSON.parse(
