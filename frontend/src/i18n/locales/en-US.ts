@@ -2371,6 +2371,16 @@ export default {
       'This backup was created in {backup} config, while the current config source is {current}. Continuing switches the config source to {backup} and then writes the config there.',
     configRestoreCrossSourceShared:
       'Shared config is shared by every account of this managed script; restoring overwrites the config other accounts are currently using.',
+    // Shared native settings session: dialog shown when the backend discards this session's changes
+    configSessionDiscardedTitle: 'Settings not saved',
+    configSessionDiscardedStructure:
+      'This session changed the task queue structure (tasks added, removed, reordered or a different configuration profile), so it no longer matched the state when the settings were opened and none of these changes were written to the archive.\nNext: reopen the settings and adjust only task switches and advanced options before saving.',
+    configSessionDiscardedUnreadable:
+      'Reading the configuration written by the native program failed, so none of these changes were written to the archive.\nNext: make sure the program directory is accessible, then reopen the settings and edit again.',
+    configSessionDiscardedNotWritten:
+      'The native program did not write a complete configuration (it may have been killed), so none of these changes were written to the archive.\nNext: reopen the settings and edit again, and let the program close by itself.',
+    configSessionDiscardedUnknown:
+      'These changes were not written to the archive.\nNext: reopen the settings and edit again.',
     // ok-nte 原生配置备份的描述覆写（ok-nte 无直控模式，归档时机与通用措辞不同）
     oknteConfigRestoreScriptDesc:
       'Backups of the OK-NTE native config; restoring applies directly to OK-NTE itself. Created automatically (dedup) when opening this edit page, before running OK-NTE or opening its config UI, latest 10 kept',

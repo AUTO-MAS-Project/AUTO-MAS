@@ -2250,6 +2250,15 @@ export default {
       '该备份来自{backup}配置，当前为{current}。继续恢复会把配置来源切换为{backup}，再写入对应配置。',
     configRestoreCrossSourceShared:
       '共享配置由本托管的全部账号共享，恢复会覆盖其他账号当前使用的配置。',
+    // 原生设置会话通用：会话改动被后端丢弃时的弹窗（每条原因都给恢复路径）
+    configSessionDiscardedTitle: '设置未保存',
+    configSessionDiscardedStructure:
+      '本次会话改动了任务队列的结构（增删任务、调整顺序或切换配置方案），与打开设置时不一致，因此这次的全部修改都没有写入存档。\n下一步：重新打开设置，只调整任务开关与高级设置后保存。',
+    configSessionDiscardedUnreadable:
+      '读取原生程序落盘的配置失败，本次的全部修改都没有写入存档。\n下一步：确认程序目录可访问后，重新打开设置再改一次。',
+    configSessionDiscardedNotWritten:
+      '原生程序没有写出完整配置（可能被强制结束），本次的全部修改都没有写入存档。\n下一步：重新打开设置再改一次，退出时让程序自行关闭。',
+    configSessionDiscardedUnknown: '本次的全部修改都没有写入存档。\n下一步：重新打开设置再改一次。',
     // ok-nte 原生配置备份的描述覆写（ok-nte 无直控模式，归档时机与通用措辞不同）
     oknteConfigRestoreScriptDesc:
       'ok-nte 原生配置的备份，恢复会直接作用于 ok-nte 本体；打开本编辑页、运行 ok-nte 或打开配置界面前会自动去重创建，保留最近 10 份',

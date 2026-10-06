@@ -5969,6 +5969,19 @@ class WSTaskNoticeData(BaseModel):
     message: str = Field(..., description="提示内容")
 
 
+class WSTaskConfigDiscardedData(BaseModel):
+    """配置会话改动被丢弃的消息数据 (type=task.config.discarded)
+
+    reason 是机器可读原因，正文由前端按语言本地化：structure=队列结构或配置
+    方案与基线不一致, unreadable=读取落盘配置失败, not_written=原生程序没写出
+    完整配置。
+    """
+
+    reason: Literal["structure", "unreadable", "not_written"] = Field(
+        ..., description="丢弃原因"
+    )
+
+
 class WSSystemNoticeData(BaseModel):
     """系统通知数据 (type=system.notice, id=Main)：启动期攒下、主连接建立后发出。"""
 

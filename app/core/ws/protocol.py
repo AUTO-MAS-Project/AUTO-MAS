@@ -54,6 +54,8 @@ TASK_INFO_UPDATED = "task.info.updated"
 TASK_LOG_UPDATED = "task.log.updated"
 TASK_NOTICE = "task.notice"
 TASK_COMPLETED = "task.completed"
+# 配置会话结束、本次改动被丢弃（id 为任务 UUID）：前端据此显式弹窗，不再只提示已保存
+TASK_CONFIG_DISCARDED = "task.config.discarded"
 
 # 任务创建通知（id=TaskManager）
 TASK_CREATED = "task.created"
