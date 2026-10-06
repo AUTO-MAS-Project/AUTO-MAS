@@ -1,4 +1,6 @@
 import { computed, ref, shallowRef } from 'vue'
+import { message } from 'ant-design-vue'
+import { translate as t } from '@/i18n'
 import { useUserApi } from '@/composables/useUserApi'
 import type { MaaFWUserConfig } from '@/types/script'
 import type { MaaFWUserQueueImportCandidate } from '../../MaaFWFlavor/sectionContracts'
@@ -64,11 +66,18 @@ export function useMaaFWUserQueueImport({
       .filter(candidate => candidate.chips.length > 0)
   )
 
-  /** 用选中用户的队列替换当前队列；返回实际导入的实例数，找不到该用户返回 null */
+  /**
+   * 用选中用户的队列替换当前队列。写进后端后才提示「已导入 N 个任务」（N 是实际写入的实例数）；
+   * 保存失败时 updateUser 与页头保存状态已经报过错，这里不再提示。没导进来的任务卡片上已经标过。
+   */
   const importQueueFromUser = async (userId: string) => {
     const candidate = userImportCandidates.value.find(item => item.userId === userId)
     if (!candidate || candidate.entries.length === 0) return null
-    return await queue.replaceQueueWith(candidate)
+    const importedCount = await queue.replaceQueueWith(candidate)
+    if (importedCount !== null) {
+      message.success(t('edit.shellQueueImportDone', { count: importedCount }))
+    }
+    return importedCount
   }
 
   return {

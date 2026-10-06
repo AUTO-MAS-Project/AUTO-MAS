@@ -141,6 +141,21 @@ export const describeMaaFWQueueSource = (
 }
 
 /**
+ * 替换后队列里实际来自来源的实例数：与当前前置任务同一个 id 的来源项被去重掉（留的是当前那份），
+ * 不算导入。成功提示里的「已导入 N 个任务」用它。
+ */
+export const countMaaFWQueueReplacementImports = (
+  source: Pick<MaaFWQueueSource, 'entries'>,
+  current: MaaFWTaskSnapshot,
+  isPretaskId: (taskId: string) => boolean
+): number => {
+  const currentPretaskIds = new Set(current.taskOrder.filter(taskId => isPretaskId(taskId)))
+  return new Set(
+    source.entries.map(entry => entry.id).filter(taskId => !currentPretaskIds.has(taskId))
+  ).size
+}
+
+/**
  * 用来源的可用项替换当前队列，与套用预设同一套：当前队列里的前置任务留在最前（带着自己的选项），
  * 其余换成来源的各个实例，每个实例带来源的那套选项（密码字段的值去掉）。
  */

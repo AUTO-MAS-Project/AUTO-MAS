@@ -1,5 +1,5 @@
 <template>
-  <a-button size="small" :loading="loading" @click="openDialog">
+  <a-button size="small" @click="openDialog">
     <template #icon>
       <ImportOutlined />
     </template>
@@ -24,7 +24,7 @@
 
     <!-- 本脚本的其他用户：单选卡片，选中的那份队列覆盖当前用户的 -->
     <template v-if="sourceKind === 'users'">
-      <a-spin :spinning="userLoading" class="queue-import-spin">
+      <a-spin :spinning="userLoading" :class="{ 'queue-import-spin': userLoading }">
         <div v-if="userCandidates.length > 0" class="queue-import-users" role="radiogroup">
           <div
             v-for="candidate in userCandidates"
@@ -73,17 +73,19 @@
         </a-button>
       </div>
 
-      <a-select
-        v-if="instances.length > 0"
-        v-model:value="picked"
-        class="shell-queue-import-select"
-        :options="instanceOptions"
-      />
-      <a-empty
-        v-else
-        class="shell-queue-import-empty"
-        :description="t('edit.shellQueueImportNone')"
-      />
+      <a-spin :spinning="shellLoading" :class="{ 'queue-import-spin': shellLoading }">
+        <a-select
+          v-if="instances.length > 0"
+          v-model:value="picked"
+          class="shell-queue-import-select"
+          :options="instanceOptions"
+        />
+        <a-empty
+          v-else-if="!shellLoading"
+          class="shell-queue-import-empty"
+          :description="t('edit.shellQueueImportNone')"
+        />
+      </a-spin>
     </template>
 
     <a-alert type="warning" show-icon :message="t('edit.shellQueueImportNote')" />
@@ -140,7 +142,7 @@ const userId = route.params.userId as string
 const { listShellInstances, pickShellInstanceDirectory, applyShellInstanceToUser } =
   useMaaFWShellInstanceApi()
 
-const loading = ref(false)
+const shellLoading = ref(false)
 const applying = ref(false)
 const modalOpen = ref(false)
 const instances = ref<MaaFWShellInstanceItem[]>([])
@@ -170,7 +172,7 @@ watch(
 const canApply = computed(() => {
   if (applying.value) return false
   if (sourceKind.value === 'users') return Boolean(pickedUser.value?.entries.length)
-  return Boolean(picked.value)
+  return Boolean(picked.value) && !shellLoading.value
 })
 
 const shownDir = computed(
@@ -201,29 +203,44 @@ const showInstances = (found: MaaFWShellInstanceItem[]) => {
   picked.value = found.length > 0 ? (found.find(item => item.active) || found[0]).id : ''
 }
 
-const openDialog = async () => {
-  sourceKind.value = 'users'
-  pickedUserId.value = ''
-  emit('load-users')
-  pickedDir.value = ''
-  loading.value = true
+/** 外壳实例的读取序号：读到一半又重开弹窗或改选了目录，旧的那次结果作废 */
+let shellListRequest = 0
+
+const loadShellInstances = async () => {
+  const request = ++shellListRequest
+  shellLoading.value = true
+  // 上次「选择其他目录」列出来的那批不能留着：目录已经回到默认，覆盖时会去默认目录按 ID 找
+  showInstances([])
   try {
-    showInstances(await listShellInstances(scriptId))
+    const found = await listShellInstances(scriptId)
+    if (request === shellListRequest) showInstances(found)
   } catch (error) {
-    // 上次「选择其他目录」列出来的那批不能留着：目录已经回到默认，覆盖时会去默认目录按 ID 找
+    if (request !== shellListRequest) return
     showInstances([])
     message.error(error instanceof Error ? error.message : t('edit.shellQueueImportFailed'))
   } finally {
-    loading.value = false
+    if (request === shellListRequest) shellLoading.value = false
   }
-  // 默认目录里一份都没有、读失败也要开：弹窗里能改指别的目录，那正是「脚本挪过位置」时的出路
+}
+
+const openDialog = () => {
+  sourceKind.value = 'users'
+  pickedUserId.value = ''
+  pickedDir.value = ''
+  emit('load-users')
+  // 先开弹窗（默认页签是本脚本其他用户），外壳实例在后台读，外壳页签里转圈。
+  // 默认目录里一份都没有、读失败也照样开着：弹窗里能改指别的目录，那正是「脚本挪过位置」时的出路
   modalOpen.value = true
+  void loadShellInstances()
 }
 
 const pickDirectory = async () => {
   try {
     const found = await pickShellInstanceDirectory(scriptId)
     if (!found) return
+    // 选了目录就以它为准，还没读完的默认目录那次作废
+    shellListRequest += 1
+    shellLoading.value = false
     showInstances(found.instances)
     pickedDir.value = found.dir
     if (found.instances.length === 0) {
@@ -238,10 +255,9 @@ const apply = async () => {
   if (sourceKind.value === 'users') {
     const candidate = pickedUser.value
     if (!candidate || candidate.entries.length === 0) return
-    // 替换与落盘由父级做；没导进来的已经在卡片上标过，不再另弹通知
+    // 替换、落盘与成功提示都由父级做：保存真正成功后才提示，条数是实际写入的实例数
     emit('import-from-user', candidate.userId)
     modalOpen.value = false
-    message.success(t('edit.shellQueueImportDone', { count: candidate.entries.length }))
     return
   }
   applying.value = true
@@ -314,7 +330,7 @@ const apply = async () => {
   margin-bottom: 12px;
 }
 
-/* 读用户列表时还没有内容，留出转圈的位置 */
+/* 读用户列表 / 外壳实例时还没有内容，留出转圈的位置 */
 .queue-import-spin {
   display: block;
   min-height: 64px;

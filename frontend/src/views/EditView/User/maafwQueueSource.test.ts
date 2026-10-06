@@ -3,6 +3,7 @@ import type { MaaFWOptionInfo, MaaFWTaskInfo, MaaFWTaskSnapshot } from '@/types/
 import {
   buildMaaFWQueueReplacement,
   countMaaFWPasswordValues,
+  countMaaFWQueueReplacementImports,
   describeMaaFWQueueSource,
   maafwPasswordFields,
   stripMaaFWPasswordValues,
@@ -150,6 +151,20 @@ describe('buildMaaFWQueueReplacement：用来源替换当前队列', () => {
     expect(next.taskOptions.__MXU_PRETASK__启动).toEqual({ 备注: { 内容: '当前前置' } })
     expect(next.taskOptions.战斗).toEqual({ 备注: { 内容: '来源' } })
     expect(Object.values(next.taskChecked).every(Boolean)).toBe(true)
+  })
+
+  it('导入条数是实际写入的来源实例：与当前前置任务同 id 的来源项被去重，不算', () => {
+    expect(countMaaFWQueueReplacementImports(source, current, isPretaskId)).toBe(2)
+    const withPretask = describeMaaFWQueueSource(
+      snapshot(['__MXU_PRETASK__启动', '战斗', '日常']),
+      context
+    )
+    expect(withPretask.entries).toHaveLength(3)
+    const replaced = buildMaaFWQueueReplacement(withPretask, current, isPretaskId, passwordFields)
+    expect(replaced.taskOrder).toEqual(['__MXU_PRETASK__启动', '战斗', '日常'])
+    expect(countMaaFWQueueReplacementImports(withPretask, current, isPretaskId)).toBe(2)
+    // 当前没有前置任务时，来源的前置任务是真的写进去了
+    expect(countMaaFWQueueReplacementImports(withPretask, snapshot(['日常']), isPretaskId)).toBe(3)
   })
 
   it('密码值不带过去；新快照的选项是深拷贝，改它不会改到来源', () => {

@@ -8,6 +8,7 @@ import { maafwMissingTaskName } from '../maafwTaskChanges'
 import { isManagedMaaFWTask, withoutManagedMaaFWTasks } from '../maafwManagedTasks'
 import {
   buildMaaFWQueueReplacement,
+  countMaaFWQueueReplacementImports,
   describeMaaFWQueueSource,
   maafwPasswordFields,
   type MaaFWQueueSource,
@@ -29,7 +30,8 @@ interface MaaFWTaskQueueOptions {
   taskSnapshot: Ref<MaaFWTaskSnapshot>
   formData: MaaFWUserFormState
   context: MaaFWUserTaskContext
-  savePresetAndSnapshot: () => Promise<void>
+  /** 返回这次是否真的写进了后端 */
+  savePresetAndSnapshot: () => Promise<boolean>
 }
 
 type QueueEntryDraft =
@@ -226,10 +228,14 @@ export function useMaaFWTaskQueue({
   }
 
   /**
-   * 用一份别处的快照（其他用户的队列）替换当前队列，语义同套用预设；返回实际导入的实例数。
+   * 用一份别处的快照（其他用户的队列）替换当前队列，语义同套用预设。
+   * 写进了后端就返回实际导入的实例数，没写进去返回 null（失败提示由保存路径给出）。
    * `SelectedPreset` 必须写空：快照为空时运行器会按它的名字去找项目 preset。
    */
-  const replaceQueueWith = async (source: Pick<MaaFWQueueSource, 'entries' | 'taskOptions'>) => {
+  const replaceQueueWith = async (
+    source: Pick<MaaFWQueueSource, 'entries' | 'taskOptions'>
+  ): Promise<number | null> => {
+    const importedCount = countMaaFWQueueReplacementImports(source, taskSnapshot.value, isPretaskId)
     const nextSnapshot = buildMaaFWQueueReplacement(
       source,
       taskSnapshot.value,
@@ -242,8 +248,7 @@ export function useMaaFWTaskQueue({
     selectedTaskId.value = nextSnapshot.taskOrder[0] || ''
     formData.Task.SelectedPreset = ''
     showPresetModal.value = false
-    await savePresetAndSnapshot()
-    return source.entries.length
+    return (await savePresetAndSnapshot()) ? importedCount : null
   }
 
   const deleteSelectedTask = async () => {
