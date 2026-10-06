@@ -1,32 +1,63 @@
-/** 场景尺寸与动画参数；长度是 three.js 世界单位，相机在 500 处，约 1.18 单位对应 1 像素 */
+/** 场景尺寸与动画参数；长度是 three.js 世界单位 */
 export const SATELLITE_CONFIG = {
   containerHeight: 400,
-  orbitRadiusX: 400,
-  orbitRadiusY: 170,
-  orbitTilt: 0.35,
-  orbitOpacity: 0.4,
-  centerCardSize: 90,
-  satelliteCardSize: 60,
+  /** 长焦：透视收敛一些，前后卫星的大小差在两倍左右，近处的不至于糊到镜头上 */
+  cameraFov: 24,
+  /** 镜头离星核的基准距离；容器太窄时会自动拉远，保证主轨道左右不出画 */
+  cameraDistance: 1130,
+  /** 镜头默认俯视角（弧度） */
+  cameraElevation: 0.14,
+  cameraElevationMin: -0.05,
+  cameraElevationMax: 0.6,
   /**
-   * 图标面朝镜头前移的距离。卡片以前是有厚度的立方体，正面在厚度一半处；
-   * 现在只画正面，留着这个偏移让画面和以前一致。
+   * 镜头注视点略低于星核。俯视时主轨道离镜头近的半圈会被透视往下拉，
+   * 不往下看一点，近处的卫星会顶到容器底边。
    */
-  centerCardFaceOffset: 5,
-  satelliteCardFaceOffset: 4,
-  satelliteOrbitSpeed: 0.0006,
-  satelliteFloatAmplitude: 10,
+  cameraTargetY: -30,
+  /** 鼠标视差：指针移到容器边缘时镜头最多偏转的角度 */
+  parallaxYaw: 0.14,
+  parallaxPitch: 0.06,
+
+  centerCardSize: 96,
+  coreShellRadius: 70,
+
+  satelliteSize: 70,
+  satelliteDepth: 8,
+  /** 轨道基础角速度（弧度/毫秒），内圈按开普勒规律转得更快 */
+  orbitSpeed: 0.00042,
+  satelliteFloatAmplitude: 6,
   satelliteFloatSpeed: 1.2,
   centerFloatAmplitude: 4,
   centerFloatSpeed: 0.8,
-  cameraFov: 50,
-  cameraY: 80,
-  cameraZ: 500,
+  /** 卫星绕自身的摆动幅度（弧度），露出方块的厚度和金属边 */
+  satelliteWobble: 0.42,
+
   cardAppearDelay: 150,
-  cardAppearDuration: 400,
-  glowSizeMultiplier: 3.5,
-  activityGlowZOffset: -5,
-  errorGlowZOffset: -3,
+  cardAppearDuration: 700,
+  glowSizeMultiplier: 3.2,
+
+  trailLength: 44,
+  /** 彗尾相邻两点在轨道上相隔的角度 */
+  trailSpacing: 0.011,
+  starCount: 520,
+  swirlCount: 260,
 } as const
+
+/**
+ * 轨道：先绕 x 轴倾斜 tiltX，再绕视线（z 轴）转 tiltZ。
+ * 第二条几乎侧对镜头，卫星会从星核前后穿过；另外两条斜着交叉，像原子模型。
+ */
+export interface OrbitRing {
+  radius: number
+  tiltX: number
+  tiltZ: number
+}
+
+export const ORBIT_RINGS: readonly OrbitRing[] = [
+  { radius: 430, tiltX: 0.14, tiltZ: 0 },
+  { radius: 270, tiltX: -0.1, tiltZ: 0.5 },
+  { radius: 300, tiltX: 0.3, tiltZ: -0.4 },
+]
 
 export const SATELLITE_COLORS = {
   /** 排队、运行中的光晕，也是中心图标平时的光晕 */
@@ -37,10 +68,22 @@ export const SATELLITE_COLORS = {
   failedRunning: 0xffc247,
   explosionFlash: 0x8ce7ff,
   explosionRing: 0x6ce0ff,
-  orbitDark: 0x555555,
-  orbitLight: 0xbbbbbb,
+  orbitDark: 0x6f8fb3,
+  orbitLight: 0x8a9bb0,
+  trailDark: 0x7fd3ff,
+  trailLight: 0x3f7fd6,
+  tileDark: 0x1a2130,
+  tileLight: 0xf3f6fb,
+  gyroDark: 0x63e6ff,
+  gyroLight: 0x2f8fd8,
 } as const
 
 /** 中心图标按下去时的形变，照 dsh-whale-widget 的 SQUISH 加大幅度：压扁、横向撑开 */
 export const CENTER_PRESS_SCALE_X = 1.15
 export const CENTER_PRESS_SCALE_Y = 0.75
+
+/** 长按星核：按住超过 chargeStart 开始蓄力，满 chargeFull 松手放冲击波 */
+export const CORE_CHARGE = {
+  chargeStart: 450,
+  chargeFull: 1300,
+} as const

@@ -3305,6 +3305,18 @@ export default {
     viewNotice: 'Announcements',
     satelliteEgg: {
       star: 'star!',
+      overclock: 'Overclock!',
+      dizzy: 'So dizzy…',
+      maaHint1: '?',
+      maaHint2: '??',
+      maaHint3: "It's coming…",
+      zhouge: 'Zhou-ge!',
+    },
+    satelliteStatus: {
+      running: 'Running',
+      queued: 'Queued',
+      failed: 'Last run failed',
+      failedRunning: 'Running again',
     },
     greeting: {
       morning: 'Good morning — welcome to AUTO-MAS',

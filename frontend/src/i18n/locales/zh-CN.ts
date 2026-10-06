@@ -3156,6 +3156,18 @@ export default {
     viewNotice: '查看公告',
     satelliteEgg: {
       star: 'star！',
+      overclock: '超频！',
+      dizzy: '晕了……',
+      maaHint1: '？',
+      maaHint2: '？？',
+      maaHint3: '要来了……',
+      zhouge: '周哥！',
+    },
+    satelliteStatus: {
+      running: '运行中',
+      queued: '排队中',
+      failed: '上次失败',
+      failedRunning: '重新运行中',
     },
     greeting: {
       morning: '早上好！欢迎使用 AUTO-MAS',

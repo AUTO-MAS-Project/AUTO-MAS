@@ -2687,6 +2687,18 @@ export default {
     viewNotice: 'お知らせ',
     satelliteEgg: {
       star: 'star！',
+      overclock: 'オーバークロック！',
+      dizzy: '目が回る……',
+      maaHint1: '？',
+      maaHint2: '？？',
+      maaHint3: '来るぞ……',
+      zhouge: '周哥！',
+    },
+    satelliteStatus: {
+      running: '実行中',
+      queued: '待機中',
+      failed: '前回失敗',
+      failedRunning: '再実行中',
     },
     greeting: {
       morning: 'おはようございます — AUTO-MAS へようこそ',

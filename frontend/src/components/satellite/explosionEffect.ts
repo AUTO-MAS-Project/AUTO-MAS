@@ -9,6 +9,7 @@ import {
   type ExplosionFragmentMotion,
 } from './explosionMotion'
 import type { Point3 } from './motion'
+import { RENDER_ORDER } from './sceneParts'
 
 interface ExplosionFragment {
   mesh: THREE.Mesh<THREE.PlaneGeometry, THREE.MeshBasicMaterial>
@@ -23,12 +24,13 @@ export interface SatelliteExplosionOptions {
   source: HTMLCanvasElement
   seed: number
   glowTexture: THREE.Texture
-  /** 碎片画在卡片层 */
-  cardScene: THREE.Scene
-  /** 闪光和冲击环画在光晕层；低性能模式不画光晕层，这时也放卡片层 */
-  effectScene: THREE.Scene
+  scene: THREE.Scene
   startTime: number
 }
+
+/** 碎片铺满的是图标那一面，比方块本身小一圈 */
+const ICON_SIZE = C.satelliteSize * 0.84
+const ICON_FACE_Z = C.satelliteDepth / 2 + 0.3
 
 function createFragmentTexture(
   source: HTMLCanvasElement,
@@ -64,8 +66,7 @@ function createFragmentTexture(
 /** 点卫星的碎裂特效：图标切成 4×4 碎片飞散，带一道闪光和一圈冲击环，最后拼回原样 */
 export class SatelliteExplosion {
   private readonly card: THREE.Object3D
-  private readonly cardScene: THREE.Scene
-  private readonly effectScene: THREE.Scene
+  private readonly scene: THREE.Scene
   private readonly startTime: number
   private readonly group = new THREE.Group()
   private readonly fragments: ExplosionFragment[] = []
@@ -75,18 +76,17 @@ export class SatelliteExplosion {
   constructor(options: SatelliteExplosionOptions) {
     const { card, source, seed } = options
     this.card = card
-    this.cardScene = options.cardScene
-    this.effectScene = options.effectScene
+    this.scene = options.scene
     this.startTime = options.startTime
 
     const columns = SATELLITE_EXPLOSION_CONFIG.fragmentColumns
     const rows = SATELLITE_EXPLOSION_CONFIG.fragmentRows
-    const fragmentWidth = C.satelliteCardSize / columns
-    const fragmentHeight = C.satelliteCardSize / rows
+    const fragmentWidth = ICON_SIZE / columns
+    const fragmentHeight = ICON_SIZE / rows
     this.group.position.copy(card.position)
     this.group.quaternion.copy(card.quaternion)
     this.group.scale.copy(card.scale)
-    this.group.renderOrder = 2
+    this.group.renderOrder = RENDER_ORDER.effect
 
     for (let row = 0; row < rows; row++) {
       for (let column = 0; column < columns; column++) {
@@ -103,7 +103,7 @@ export class SatelliteExplosion {
         const origin = {
           x: (column + 0.5 - columns / 2) * fragmentWidth,
           y: (rows / 2 - row - 0.5) * fragmentHeight,
-          z: C.satelliteCardFaceOffset + 0.4,
+          z: ICON_FACE_Z + 0.1,
         }
         mesh.position.set(origin.x, origin.y, origin.z)
         this.group.add(mesh)
@@ -126,8 +126,8 @@ export class SatelliteExplosion {
       })
     )
     this.flashSprite.position.copy(card.position)
-    this.flashSprite.scale.setScalar(C.satelliteCardSize * 1.2)
-    this.flashSprite.renderOrder = 3
+    this.flashSprite.scale.setScalar(C.satelliteSize * 1.2)
+    this.flashSprite.renderOrder = RENDER_ORDER.effect
 
     this.ringMesh = new THREE.Mesh<THREE.RingGeometry, THREE.MeshBasicMaterial>(
       new THREE.RingGeometry(26, 31, 48),
@@ -143,10 +143,9 @@ export class SatelliteExplosion {
     this.ringMesh.position.copy(card.position)
     this.ringMesh.quaternion.copy(card.quaternion)
     this.ringMesh.scale.setScalar(0.2)
-    this.ringMesh.renderOrder = 2
+    this.ringMesh.renderOrder = RENDER_ORDER.effect
 
-    this.cardScene.add(this.group)
-    this.effectScene.add(this.flashSprite, this.ringMesh)
+    this.scene.add(this.group, this.flashSprite, this.ringMesh)
   }
 
   /** 推进到 time 时刻；返回 true 表示已经放完、可以 dispose */
@@ -171,7 +170,7 @@ export class SatelliteExplosion {
       SATELLITE_EXPLOSION_CONFIG.flashDuration
     )
     this.flashSprite.material.opacity = 1 - flashProgress
-    this.flashSprite.scale.setScalar(C.satelliteCardSize * (1.2 + flashProgress * 0.8))
+    this.flashSprite.scale.setScalar(C.satelliteSize * (1.2 + flashProgress * 0.8))
 
     const ringProgress = getExplosionEffectProgress(
       elapsed,
@@ -184,8 +183,7 @@ export class SatelliteExplosion {
   }
 
   dispose(): void {
-    this.cardScene.remove(this.group)
-    this.effectScene.remove(this.flashSprite, this.ringMesh)
+    this.scene.remove(this.group, this.flashSprite, this.ringMesh)
 
     for (const { mesh } of this.fragments) {
       mesh.geometry.dispose()
