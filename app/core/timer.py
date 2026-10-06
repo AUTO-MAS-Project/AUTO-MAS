@@ -137,9 +137,15 @@ class _MainTimer:
             if IS_WINDOWS and Config.ToolsConfig.get("ArknightsPC", "Enabled"):
                 # 懒导入：启动期导入失败（如更新后端撞上 app/ 重拷窗口）时这里会再抛，
                 # 不能让它把整个每秒循环带走，否则定时队列跟着停摆（#738）
-                from app.MaaFW.ArknightWin32 import ArknightWin32Toolkit
+                from app.MaaFW import arknights_pc
 
-                await ArknightWin32Toolkit.scheduled_task()
+                toolkit = arknights_pc.loaded_toolkit()
+                if toolkit is None:
+                    # 还没加载（或上次加载失败）：后台发起加载，本秒跳过，
+                    # 不在这里等导入，免得卡住定时启动检查
+                    arknights_pc.ensure_loading()
+                    return
+                await toolkit.scheduled_task()
 
         while True:
             await self._run_loop_step("定时启动检查", self.timed_start)
