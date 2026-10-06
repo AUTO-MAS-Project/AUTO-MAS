@@ -610,11 +610,22 @@ describe('online appearance prepare and install', () => {
   })
 
   it('aborts a stream without Content-Length once it exceeds 16 MiB', async () => {
-    addFile('alpha', [{ versionNo: 1, data: Buffer.from('x'), mode: 'stream-overflow' }])
+    addFile('alpha', [
+      { versionNo: 1, data: Buffer.from('x'), fileSize: 16 * MIB, mode: 'stream-overflow' },
+    ])
     const result = await makeService().prepare('alpha', 1)
     expect(result).toMatchObject({ success: false, code: 'TOO_LARGE' })
     await site.downloadClosed
     expect(site.sentBytes).toBeLessThan(40 * MIB)
+    expect(cacheFiles()).toEqual([])
+  })
+
+  it('stops as soon as the stream outgrows the size registered on the site', async () => {
+    addFile('alpha', [{ versionNo: 1, data: Buffer.from('x'), mode: 'stream-overflow' }])
+    const result = await makeService().prepare('alpha', 1)
+    expect(result).toMatchObject({ success: false, code: 'CHECKSUM_MISMATCH' })
+    await site.downloadClosed
+    expect(site.sentBytes).toBeLessThan(16 * MIB)
     expect(cacheFiles()).toEqual([])
   })
 

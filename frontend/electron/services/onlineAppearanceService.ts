@@ -610,10 +610,14 @@ export function createOnlineAppearanceService(
     }
   }
 
-  /** 流式下载到 `<token>.part`，边下边算 SHA-256 与字节数；任何失败都删掉 .part。 */
+  /**
+   * 流式下载到 `<token>.part`，边下边算 SHA-256 与字节数；超过 16 MiB 或站端登记的大小
+   * 就立即中止，任何失败都删掉 .part。
+   */
   const download = async (
     fileKey: string,
     versionNo: number,
+    expectedBytes: number,
     partPath: string
   ): Promise<{ bytes: number; sha256: string }> => {
     const limit = APPEARANCE_LIMITS.archiveBytes
@@ -664,6 +668,12 @@ export function createOnlineAppearanceService(
         if (!chunk.value || chunk.value.byteLength === 0) continue
         bytes += chunk.value.byteLength
         if (bytes > limit) throw new OnlineAppearanceError('TOO_LARGE', '外观包超过 16 MiB 上限')
+        if (bytes > expectedBytes) {
+          throw new OnlineAppearanceError(
+            'CHECKSUM_MISMATCH',
+            '下载内容比分享站登记的大小更大，已停止下载'
+          )
+        }
         hash.update(chunk.value)
         await handle.write(chunk.value)
       }
@@ -774,7 +784,7 @@ export function createOnlineAppearanceService(
       logger.info(
         `开始下载在线外观: ${fileKey} 版本 ${version.versionNo}，大小 ${version.fileSize} 字节`
       )
-      const downloaded = await download(fileKey, version.versionNo, partPath)
+      const downloaded = await download(fileKey, version.versionNo, version.fileSize, partPath)
       if (downloaded.bytes !== version.fileSize || downloaded.sha256 !== version.sha256) {
         removeQuietly(partPath)
         logger.warn(

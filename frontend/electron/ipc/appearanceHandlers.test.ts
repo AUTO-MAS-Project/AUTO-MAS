@@ -36,7 +36,11 @@ vi.mock('../services/appearanceService', () => ({
 
 const { registerAppearanceHandlers } = await import('./appearanceHandlers')
 const { patchConfigFile } = await import('../utils/configFile')
+// 注册时会清理在线外观缓存目录，先给一个临时根目录，别让它落到当前工作目录的相对路径上。
+const bootstrapRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'auto-mas-appearance-ipc-'))
+state.root = bootstrapRoot
 registerAppearanceHandlers()
+fs.rmSync(bootstrapRoot, { recursive: true, force: true })
 
 const configPath = () => path.join(state.root, 'config', 'frontend_config.json')
 const readConfig = () => JSON.parse(fs.readFileSync(configPath(), 'utf8'))

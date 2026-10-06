@@ -154,7 +154,7 @@ const handleVersionChange = (value: SelectValue): void => {
           <a-select
             :value="selectedVersionNo ?? undefined"
             :options="versionOptions"
-            :disabled="installing || versions.length === 0"
+            :disabled="installing || preparing || versions.length === 0"
             class="online-version-select"
             @change="handleVersionChange"
           />
@@ -186,7 +186,7 @@ const handleVersionChange = (value: SelectValue): void => {
           <a-button
             type="primary"
             :loading="installing"
-            :disabled="preparing || selectedVersionNo === null"
+            :disabled="preparing || !prepared"
             @click="install"
           >
             {{ t('setting.onlineAppearance.install') }}

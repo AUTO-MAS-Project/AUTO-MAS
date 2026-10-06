@@ -1,4 +1,5 @@
 import { app, BrowserWindow, ipcMain, net } from 'electron'
+import * as crypto from 'crypto'
 import * as fs from 'fs'
 import * as path from 'path'
 import {
@@ -44,6 +45,13 @@ function userDataPath(): string {
   return app.getPath('userData')
 }
 
+// 开发版和正式版的 userData 不同、可以同时运行，却共用系统临时目录；按 userData 分子目录，
+// 免得一个实例启动清理时删掉另一个实例刚下好的临时包。
+function onlineCacheDir(): string {
+  const instance = crypto.createHash('sha256').update(userDataPath()).digest('hex').slice(0, 12)
+  return path.join(app.getPath('temp'), 'auto-mas-online-appearance', instance)
+}
+
 function broadcastAppearanceChange(): void {
   for (const window of BrowserWindow.getAllWindows()) {
     if (!window.isDestroyed()) window.webContents.send('appearance-changed')
@@ -82,7 +90,7 @@ export function registerAppearanceHandlers(options: AppearanceHandlerOptions = {
   const online = createOnlineAppearanceService({
     fetch: (url, init) => net.fetch(url, init),
     userDataPath,
-    cacheDir: () => path.join(app.getPath('temp'), 'auto-mas-online-appearance'),
+    cacheDir: onlineCacheDir,
     logger,
     ...options.online,
   })
