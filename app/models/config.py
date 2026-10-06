@@ -3070,6 +3070,15 @@ class MaaFWConfig(ConfigBase):
             "Selection", "Tasks", "[ ]", JSONValidator(list)
         )
 
+        ## Task ------------------------------------------------------------
+        ## 用户页任务队列的自定义模板，同一脚本的用户共用。JSON 列表，每项
+        ## ``{"name": 模板名, "snapshot": {taskOrder, taskChecked, taskOptions}}``，
+        ## 快照形状同用户的 Task.TaskSnapshot（键是任务实例 id），但不含受管任务与密码字段；
+        ## 名称在脚本内唯一。运行流程不读它，只由用户页套用到某个用户的队列。
+        self.Task_Templates = ConfigItem(
+            "Task", "Templates", "[ ]", JSONValidator(list)
+        )
+
         self.UserData = MultipleConfig([self.USER_CONFIG_CLASS])
 
         super().__init__()

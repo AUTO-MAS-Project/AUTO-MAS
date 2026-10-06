@@ -4072,6 +4072,13 @@ class MaaFWConfig_Selection(BaseModel):
     )
 
 
+class MaaFWConfig_Task(BaseModel):
+    Templates: Optional[str] = Field(
+        default=None,
+        description='用户页任务队列的自定义模板，JSON 字符串 [{"name": 模板名, "snapshot": 任务快照}]，同一脚本的用户共用',
+    )
+
+
 class MaaFWConfig(BaseModel):
     Info: Optional[MaaFWConfig_Info] = Field(default=None, description="脚本基础信息")
     Emulator: Optional[MaaFWConfig_Emulator] = Field(
@@ -4091,6 +4098,7 @@ class MaaFWConfig(BaseModel):
     Selection: Optional[MaaFWConfig_Selection] = Field(
         default=None, description="controller、resource 与 task 选择"
     )
+    Task: Optional[MaaFWConfig_Task] = Field(default=None, description="任务队列模板")
 
 
 class M9AUserConfig(MaaFWUserConfig):
