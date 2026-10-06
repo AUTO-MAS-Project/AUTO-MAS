@@ -34,8 +34,6 @@ import time
 from typing import TYPE_CHECKING
 
 from app.core import Config
-from app.core.ws import Publisher, protocol
-from app.models.schema import WSTaskNoticeData
 from app.utils import get_logger
 
 if TYPE_CHECKING:
@@ -51,6 +49,9 @@ _toolkit: "_ArknightWin32Toolkit | None" = None
 _loading: asyncio.Task[None] | None = None
 _bound = False
 _retry_at = 0.0
+# 这次加载失败要不要提示用户：启动和打开开关时置位，巡检发起的重试不置位。
+# 打开开关时复用了巡检正在跑的那次加载，也靠它把提示补上
+_notify_failure = False
 
 
 def loaded_toolkit() -> "_ArknightWin32Toolkit | None":
@@ -59,8 +60,8 @@ def loaded_toolkit() -> "_ArknightWin32Toolkit | None":
     return _toolkit
 
 
-async def _load(notify: bool) -> None:
-    global _toolkit, _retry_at
+async def _load() -> None:
+    global _toolkit, _retry_at, _notify_failure
 
     try:
         # 导入很重且是同步的，放到线程里，不卡事件循环
@@ -68,40 +69,44 @@ async def _load(notify: bool) -> None:
             importlib.import_module, "app.MaaFW.ArknightWin32"
         )
         toolkit = module.ArknightWin32Toolkit
+        # init 按当时的开关值走一遍 on_enabled_change，且其中没有挂起点：从读开关到
+        # 下面给 _toolkit 赋值之间插不进开关回调，之后的变化都由 _on_enabled_change 转发
         await toolkit.init()
     except Exception as e:
         _retry_at = time.monotonic() + LOAD_RETRY_SECONDS
         logger.exception(f"明日方舟 PC 工具加载失败: {e}")
-        # 启动期不再等加载，失败进不了后台初始化告警；启动和打开开关时各提示一次，
-        # 定时巡检的重试只记日志
-        if notify:
-            await Publisher.send(
-                id=protocol.ID_ARKNIGHTS_PC_TOOLKIT,
-                type=protocol.TOOLKIT_NOTICE,
-                data=WSTaskNoticeData(
-                    level="error", message=f"明日方舟 PC 工具加载失败: {e}"
-                ),
+        if _notify_failure:
+            _notify_failure = False
+            # 启动期不等加载，失败进不了后台初始化告警；前端多半还没连上，
+            # push_system_notice 会攒到连上再发
+            await Config.push_system_notice(
+                level="error",
+                title="明日方舟 PC 工具加载失败",
+                lines=[f"{type(e).__name__}: {e}"],
             )
         return
+    _notify_failure = False
     _toolkit = toolkit
 
 
 def ensure_loading(force: bool = False) -> asyncio.Task[None] | None:
     """未加载时在后台发起加载，返回加载任务（正在加载则复用同一个）。
 
-    已加载，或上次失败后仍在重试间隔内（``force`` 为假时）返回 None。
-    ``force`` 同时表示失败时要向前端提示。
+    ``force`` 表示由启动或用户打开开关发起：不受重试间隔限制，失败时提示用户。
+    已加载，或非 ``force`` 且仍在重试间隔内时返回 None。
     """
 
-    global _loading
+    global _loading, _notify_failure
 
     if _toolkit is not None:
         return None
+    if force:
+        _notify_failure = True
     if _loading is not None and not _loading.done():
         return _loading
     if not force and time.monotonic() < _retry_at:
         return None
-    _loading = asyncio.create_task(_load(notify=force))
+    _loading = asyncio.create_task(_load())
     return _loading
 
 
