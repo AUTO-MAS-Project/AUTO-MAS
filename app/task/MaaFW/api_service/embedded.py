@@ -348,8 +348,9 @@ async def reimport_embedded(script_id: str, source_path: str | None) -> MaaFWApi
         return MaaFWApiReply.error(400, busy)
     source = str(source_path or "").strip()
     # 来源最后要写进 Info.Path，先按它的校验器过一遍（系统目录、AUTO-MAS 自己的目录不收）：
-    # 拖到复制之后才发现，副本已经换成新项目、来源却写不进去，端点还会直接 500
-    if path_error := _source_path_error(script_config, source):
+    # 拖到复制之后才发现，副本已经换成新项目、来源却写不进去，端点还会直接 500。
+    # 校验要碰磁盘（is_dir / resolve），来源在慢网络盘上时别卡住事件循环
+    if path_error := await asyncio.to_thread(_source_path_error, script_config, source):
         return MaaFWApiReply.error(400, f"重新导入失败: {path_error}")
     copy_dir = embedded_project_dir(script_id)
     # 换树前记下旧副本钉定的 maafw 版本：重导后版本换了，旧 binding 不必再等宽限
@@ -371,7 +372,8 @@ def _source_path_error(script_config: RuntimeMaaFWConfig, source: str) -> str | 
 
     try:
         script_config.Info_Path.validator.correct(source)
-    except ValueError as exc:
+    # 路径里的符号链接成环时，Python 3.12 的 Path.resolve 抛 RuntimeError
+    except (ValueError, RuntimeError) as exc:
         return str(exc)
     return None
 
